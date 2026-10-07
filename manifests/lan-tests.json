@@ -215,6 +215,15 @@
       "received": 3,
       "loss_percent": 0
     },
-    "ipv6_neighbor_discovery": true
+    "ipv6_neighbor_discovery": true,
+    "network_after_cleanup": {
+      "mac_address_via_dhcp": "192.168.1.172",
+      "static_alias_removed": true,
+      "temporary_route_removed": true,
+      "authenticated_luci_http": 200,
+      "ping_sent": 3,
+      "ping_received": 3,
+      "dhcp_renewal": "client initially retried; subsequent device DHCPACK and Mac getpacket agree"
+    }
   }
 }

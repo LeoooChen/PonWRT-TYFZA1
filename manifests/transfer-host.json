@@ -8,7 +8,8 @@
   "mac_file_view": "/Users/leo/OrbStack/ubuntu2404/home/leo/PonWRT-TYFZA1",
   "temporary_alias_removed": true,
   "tftp_service_stopped": true,
-  "uart_session_closed": false,
-  "device_left_running": "OpenWrt r0-79bc56c / Linux 6.18.55 initramfs with DHCP and LuCI; XRAM LAN",
-  "mac_dhcp_address": "192.168.1.172"
+  "uart_session_closed": true,
+  "device_left_running": "OpenWrt r0-79bc56c / Linux 6.18.55 initramfs, XRAM LAN with multicast, DHCP and LuCI",
+  "mac_dhcp_address": "192.168.1.172",
+  "temporary_direct_route_removed": true
 }
