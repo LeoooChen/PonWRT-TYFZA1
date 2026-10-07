@@ -1,0 +1,7 @@
+evidence/
+artifacts/
+logs/
+analysis/private/
+__pycache__/
+*.pyc
+.venv/
