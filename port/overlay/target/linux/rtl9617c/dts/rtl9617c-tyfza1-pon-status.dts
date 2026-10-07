@@ -4,12 +4,24 @@
 / { model = "Tianyi TYFZA1 (native NI/PON bring-up)"; };
 
 &{/soc} {
+	ne_irq: interrupt-controller@f4320164 {
+		compatible = "realtek,rtl9617c-per-ictl", "cortina,per-ictl";
+		reg = <0 0xf4320164 0 0x10>;
+		interrupt-controller;
+		#interrupt-cells = <1>;
+		#address-cells = <0>;
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SPI 1 IRQ_TYPE_LEVEL_HIGH>;
+	};
+
 	pon@4f5500000 {
 		compatible = "realtek,rtl9617c-pon";
 		reg = <4 0xf5500000 0 0xc000>, <4 0xf4320094 0 4>,
 		      <4 0xf4320074 0 4>, <4 0xf432022c 0 4>,
-		      <4 0xf4320080 0 4>, <4 0xf4320090 0 4>;
-		reg-names = "mac", "control", "epon-control", "serdes-init", "optical-control", "optical-status";
+		      <4 0xf4320080 0 4>, <4 0xf4320090 0 4>, <4 0xf4320180 0 8>;
+		reg-names = "mac", "control", "epon-control", "serdes-init", "optical-control", "optical-status", "top-irq";
+		interrupt-parent = <&ne_irq>;
+		interrupts = <5>;
 		realtek,burst-polarity = <0>;
 		realtek,los-invert = <0>;
 	};

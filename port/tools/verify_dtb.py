@@ -80,9 +80,15 @@ def inspect(stock, native):
         if pon[:4] != stock_ni[8 * 4:8 * 4 + 4]:
             raise ValueError("PON MAC window differs from stock NI resource8")
         if pon[4:] != [4, 0xf4320094, 0, 4, 4, 0xf4320074, 0, 4, 4, 0xf432022c, 0, 4,
-                       4, 0xf4320080, 0, 4, 4, 0xf4320090, 0, 4]:
+                       4, 0xf4320080, 0, 4, 4, 0xf4320090, 0, 4, 4, 0xf4320180, 0, 8]:
             raise ValueError("PON global control window differs from register definition")
         checked.append("PON MAC/global registers")
+        for prop in ("reg", "interrupts"):
+            if get(native, "/soc/interrupt-controller@f4320164", prop) != get(stock, "/ne_ictl@0xf4320164", prop):
+                raise ValueError("NE/PON interrupt topology differs from stock")
+        if get(native, "/soc/pon@4f5500000", "interrupts") != get(stock, "/ethernet@f4300000/pon_ictl@0", "interrupts"):
+            raise ValueError("PON interrupt bank bit differs from stock")
+        checked.append("NE/PON interrupt topology")
     if reservations(stock) != reservations(native):
         raise ValueError("Stock reserved memory ranges changed")
     if get(native, "/psci", "method", "s") != get(stock, "/psci", "method", "s"):

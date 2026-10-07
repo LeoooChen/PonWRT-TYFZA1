@@ -18,7 +18,7 @@
 @@ -1,4 +1,6 @@
  # SPDX-License-Identifier: GPL-2.0-only
 +obj-$(CONFIG_RTL9617C_PON) += rtl9617c-pon-core.o
-+rtl9617c-pon-core-y := rtl9617c-pon.o rtl9617c-pon-serdes.o rtl9617c-pon-epon.o
++rtl9617c-pon-core-y := rtl9617c-pon.o rtl9617c-pon-serdes.o rtl9617c-pon-epon.o rtl9617c-pon-mpcp.o rtl9617c-pon-pdc.o
  obj-$(CONFIG_RTL9617C_XRAM_ETH) += rtl9617c-eth.o
  rtl9617c-eth-y := rtl9617c-xram.o rtl9617c-dma.o rtl9617c-qm.o
  #

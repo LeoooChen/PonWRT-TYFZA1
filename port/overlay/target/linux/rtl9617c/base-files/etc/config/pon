@@ -1,3 +1,4 @@
 config pon 'pon'
 	option enabled '1'
 	option mode 'epon-d10g'
+	option llid_count '1'

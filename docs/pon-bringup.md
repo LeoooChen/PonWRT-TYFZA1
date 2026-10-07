@@ -27,3 +27,7 @@ PON MAC资源4f5500000/0xc000来自原厂DTB的NI resource8。新增原生DTS分
 ## 下一步
 
 接入MPCP参数、ONU MAC及LLID注册事件，移植OAM收发和认证；配置PUC/PDC队列并将PON接口接入Linux网络栈。MAC收发使能与业务队列一起接入，完成注册后验证PON业务。随后按既定顺序继续Wi-Fi和硬件加速，并完成原生UBI安装/升级/恢复流程。
+
+原生MPCP控制已在实机配置，ONU身份来自原机EPON_LLID_TBL第0项；Linux delayed_work与threaded IRQ接管注册轮询、状态事件和NACK静默期。NE IRQ拓扑匹配原机：GIC SPI1 → NE bank bit5 → PON MAC/MPCP。实机LLID间接接口成功添加、读回和删除index62/mac31/LLID1234；这项只验证硬件表操作。1/4/32项配置切换分别得到waiting=1/f/ffffffff、SYNCTIME=f820/e020/0020，回到原厂单LLID配置后LAN错误/丢弃仍0。LOS1条件下注册尝试保持0。
+
+原生rtl9617c-pon-pdc.c已设置PDC控制及256项下行映射，通过硬件间接接口抽样读回index0/31/63/64/127/192/255。数据目标CPU16、PON源7、FE bypass=1，MPCP/OAM优先级7，控制寄存器7。重复初始化及与MPCP同时配置均成功；此项证明硬件映射，光口下行报文仍待PCS同步。NI接收已按原厂从COS7到COS0顺序处理，以优先接收PON控制帧。

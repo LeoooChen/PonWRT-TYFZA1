@@ -275,10 +275,11 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 	struct net_device *dev = napi->dev;
 	u32 refill[NAPI_POLL_WEIGHT];
 	unsigned int refill_count = 0;
-	unsigned int cos;
+	int cos;
 	int count = 0;
 
-	for (cos = 0; cos < RTL_QM_VOQS && count < budget; cos++) {
+	/* Service PON control traffic before bulk data, matching the stock RX order. */
+	for (cos = RTL_QM_VOQS - 1; cos >= 0 && count < budget; cos--) {
 		unsigned int wr = readl(rx->ni + EPP_WRITE + cos * 4) & 0xffffff;
 		bool full = rx->read[cos] == wr && (readl(rx->ni + 0x659c) & BIT(cos));
 

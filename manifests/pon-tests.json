@@ -39,7 +39,7 @@
     "profile_manifest": "manifests/pon-serdes-profiles.json",
     "loader_machine_code_evidence": "analysis/private/target-psds-profile-loader.txt"
   },
-  "next": "Native MPCP parameters, LLID registration states, ONU identity, OAM transport, PUC/PDC queues and PON netdev",
+  "next": "Complete PUC queues/internal frame formats and PON/OAM netdev; optical registration remains unverified",
   "PON_registered_and_business_verified": false,
   "full_main_verified": {
     "payload": "artifacts/full-ni-pon-base-6.18.55/ram-pon",
@@ -237,5 +237,150 @@
     "luci_overview_http": 200,
     "DHCP_address": "192.168.1.170",
     "luci_after_DHCP_http": 200
+  },
+  "identity_import": {
+    "source": "Original EPON_LLID_TBL index0; actual MAC agrees with stock hardware ELAN MAC",
+    "tool": "tools/prepare_pon_identity.py",
+    "receipt": {
+      "identity_source": "Original EPON_LLID_TBL index0",
+      "llid_count": 1,
+      "stock_configuration_sha256": "ea00049305496424b4dd22101d9588c8c12c30b397a2a52dc9485f8481624e36",
+      "scfg_sha256": "27a2ccfeda5fab6cedb3920843f33997bdf00a1df69f75e0c4e0990a9fd95987",
+      "uci_sha256": "7ad3e26454ce9806b26053b201cce54665043eea48b9fd1156be97230ab4b297"
+    },
+    "native_uci": "artifacts/pon-config/pon",
+    "note": "Byte-level extraction of the known ASCII LLID chains from the original MIB export"
+  },
+  "mpcp_first_test": {
+    "payload": "artifacts/ram-mpcp-01",
+    "fit": {
+      "kernel_version": "6.18.55",
+      "cpus": 4,
+      "kernel_load": "0x200000",
+      "fdt_load": "0x1800000",
+      "image_sha256": "8703e0c503ae916c3d4e49797d22ca41f6894f8c605a0c0f1c6a52a8582eac71",
+      "dtb_sha256": "3c6a590116066fc8164117cf462c178119e36874a2aa2a8b27081bebad46faad",
+      "fit_sha256": "fd307901838448c4ac47409bc79600a5a7bbd74a2448c2a1ffbfeee46be085a3",
+      "fit_bytes": 5215876
+    },
+    "identity_matches_original_LLID0": true,
+    "llid_count": 1,
+    "configured": true,
+    "enabled": true,
+    "registered": 0,
+    "waiting": 1,
+    "attempts_during_LOS": 0,
+    "registers": {
+      "cfg0": "0x00010084",
+      "cfg": "0x81270020",
+      "sync": "0x0020f820",
+      "timers": "0x01f41388",
+      "register_timeout": "0x8000ffff",
+      "laser_time": "0x00200020",
+      "mapping": "0x3c3f00bf"
+    },
+    "IRQ_binding": "native NE interrupt bank bit5, parent GIC SPI1",
+    "hardware_table_test": {
+      "operation": "add/delete internal index62, MAC31, LLID0x1234, unicast",
+      "add_exit": 0,
+      "readback": "entry0 index62 mac31 llid1234 multicast0",
+      "delete_exit": 0,
+      "table_empty_after": true,
+      "proves": "hardware LLID access API; not OLT registration"
+    },
+    "rx_errors": 0,
+    "raw_logs": [
+      "logs/mpcp01-configure.txt",
+      "logs/mpcp01-llid-access.txt",
+      "logs/mpcp01-count-switch.txt"
+    ],
+    "count_switch": {
+      "counts": [
+        4,
+        32,
+        1
+      ],
+      "waiting": [
+        "0x0000000f",
+        "0xffffffff",
+        "0x00000001"
+      ],
+      "cfg0": [
+        "0x20010084",
+        "0x20010084",
+        "0x00010084"
+      ],
+      "sync": [
+        "0x0020e020",
+        "0x00200020",
+        "0x0020f820"
+      ]
+    }
+  },
+  "MPCP_main_auto": {
+    "payload": "artifacts/full-pon-mpcp-6.18.55/ram-pon",
+    "fit": {
+      "kernel_version": "6.18.55",
+      "cpus": 4,
+      "kernel_load": "0x200000",
+      "fdt_load": "0x1800000",
+      "image_sha256": "a78f9f5579a2dbc45d4b4e87074f1d8526100543a8149bcea3c5062bdedb78f0",
+      "dtb_sha256": "3c6a590116066fc8164117cf462c178119e36874a2aa2a8b27081bebad46faad",
+      "fit_sha256": "4ea5e23fe4cab4932d974c908fc60233fc8f44e11ed2b58f88e6e300753a9ade",
+      "fit_bytes": 5897256
+    },
+    "revision": "r0-79bc56c",
+    "kernel": "6.18.55",
+    "compiler": "GCC14.4.0",
+    "automatic_MPCP_configured_at_seconds": 14.49,
+    "identity_matches_stock": true,
+    "LLIDs": 1,
+    "waiting": 1,
+    "registered": 0,
+    "attempts_during_LOS": 0,
+    "reload_success": true,
+    "RX_errors": 0,
+    "RX_dropped": 0,
+    "logs": [
+      "logs/mpcp-main-auto.txt",
+      "logs/mpcp-main-reload.txt"
+    ]
+  },
+  "PDC_first_test": {
+    "payload": "artifacts/ram-pdc-01",
+    "fit": {
+      "kernel_version": "6.18.55",
+      "cpus": 4,
+      "kernel_load": "0x200000",
+      "fdt_load": "0x1800000",
+      "image_sha256": "e0e37a8a8086f6360afe5be2e0890ad2837db26d486f88959492021996f4b803",
+      "dtb_sha256": "3c6a590116066fc8164117cf462c178119e36874a2aa2a8b27081bebad46faad",
+      "fit_sha256": "c80ff33a7a86432bea479f2e9df1a30ba767d59d87dd4601f956631095cb4f67",
+      "fit_bytes": 5217024
+    },
+    "map_entries_written": 256,
+    "control": "0x00000007",
+    "counter_cfg": "0x00000000",
+    "samples": {
+      "0": "0x00008e80/0x00000000",
+      "31": "0x00008e80/0x00000000",
+      "63": "0x00008e80/0x00000000",
+      "64": "0x00008e87/0x00000000",
+      "127": "0x00008e87/0x00000000",
+      "192": "0x00008e87/0x00000000",
+      "255": "0x00008e87/0x00000000"
+    },
+    "logical_destination": 16,
+    "PON_source": 7,
+    "FE_bypass": true,
+    "control_frame_cos": 7,
+    "repeat_init_verified": true,
+    "rx_errors": 0,
+    "rx_dropped": 0,
+    "logs": [
+      "logs/pdc01-configuration.txt",
+      "logs/pdc01-reconfigure.txt"
+    ],
+    "scope": "Hardware downstream map configuration/readback; optical packets pending PCS sync"
   }
 }

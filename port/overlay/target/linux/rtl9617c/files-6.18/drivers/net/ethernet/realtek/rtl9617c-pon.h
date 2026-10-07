@@ -20,8 +20,10 @@ struct rtl9617c_pon {
 	void __iomem *serdes_init;
 	void __iomem *optical_control;
 	void __iomem *optical_status;
+	void __iomem *top_irq;
 	struct mutex lock;
 	struct delayed_work serdes_work;
+	struct delayed_work mpcp_work;
 	enum rtl_pon_mode mode;
 	unsigned int burst_polarity;
 	unsigned int los_invert;
@@ -34,6 +36,20 @@ struct rtl9617c_pon {
 	bool rx_synced;
 	bool mac_prepared;
 	int mac_error;
+	u8 onu_mac[6];
+	unsigned int llid_count;
+	bool mpcp_configured;
+	bool mpcp_enabled;
+	bool pdc_configured;
+	int pdc_error;
+	u32 registered;
+	u32 waiting;
+	u32 registration_attempts;
+	u32 registration_events;
+	u32 register_frames;
+	u32 mpcp_irq_count;
+	u32 last_mpcp_irq;
+	unsigned long silence_until[32];
 };
 
 void rtl_pon_update(void __iomem *reg, u32 mask, u32 value);
@@ -45,4 +61,13 @@ ssize_t rtl_pon_serdes_state(struct rtl9617c_pon *pon, char *buf);
 ssize_t rtl_pon_serdes_registers(struct rtl9617c_pon *pon, char *buf);
 int rtl_pon_epon_prepare(struct rtl9617c_pon *pon);
 ssize_t rtl_pon_epon_state(struct rtl9617c_pon *pon, char *buf);
+int rtl_pon_mpcp_init(struct rtl9617c_pon *pon, int irq);
+void rtl_pon_mpcp_stop(struct rtl9617c_pon *pon);
+int rtl_pon_mpcp_configure(struct rtl9617c_pon *pon);
+ssize_t rtl_pon_mpcp_state(struct rtl9617c_pon *pon, char *buf);
+ssize_t rtl_pon_llid_table(struct rtl9617c_pon *pon, char *buf);
+int rtl_pon_llid_update(struct rtl9617c_pon *pon, bool add, unsigned int index,
+			 unsigned int mac, u16 llid, bool multicast);
+int rtl_pon_pdc_configure(struct rtl9617c_pon *pon);
+ssize_t rtl_pon_pdc_state(struct rtl9617c_pon *pon, char *buf);
 #endif

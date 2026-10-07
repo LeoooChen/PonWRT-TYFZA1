@@ -149,6 +149,7 @@ int rtl_pon_serdes_configure(struct rtl9617c_pon *pon, enum rtl_pon_mode mode)
 	ret = rtl_pon_profile_validate(fw);
 	if (ret)
 		goto release;
+	rtl_pon_mpcp_stop(pon);
 	cancel_delayed_work_sync(&pon->serdes_work);
 	mutex_lock(&pon->lock);
 	pon->serdes_configured = false;

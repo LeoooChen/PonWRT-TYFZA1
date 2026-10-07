@@ -68,12 +68,14 @@ int rtl_pon_epon_prepare(struct rtl9617c_pon *pon)
 	unsigned int onu_mode = pon->mode == RTL_PON_EPON_1G ? 1 : pon->mode == RTL_PON_EPON_D10G ? 2 : 3;
 	int ret;
 
+	rtl_pon_mpcp_stop(pon);
 	mutex_lock(&pon->lock);
 	if (!pon->serdes_configured) {
 		ret = -EAGAIN;
 		goto unlock;
 	}
 	pon->mac_prepared = false;
+	pon->pdc_configured = false;
 	rtl_epon_csr_reset(pon);
 	rtl_pon_update(pon->mac + MIB_CTRL, BIT(0), 0);
 	rtl_pon_update(pon->mac + LINK_DETECT, GENMASK(13, 8), 0x3f << 8);

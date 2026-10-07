@@ -6,6 +6,7 @@
  */
 #include <linux/bitfield.h>
 #include <linux/io.h>
+#include <linux/etherdevice.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
@@ -108,12 +109,153 @@ static ssize_t mac_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_RW(mac);
 
+static ssize_t onu_mac_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	return sysfs_emit(buf, "%pM\n", pon->onu_mac);
+}
+
+static ssize_t onu_mac_store(struct device *dev, struct device_attribute *attr,
+			    const char *buf, size_t count)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	u8 mac[ETH_ALEN];
+	if (!mac_pton(buf, mac) || !is_valid_ether_addr(mac))
+		return -EINVAL;
+	mutex_lock(&pon->lock);
+	if (pon->mpcp_enabled) {
+		mutex_unlock(&pon->lock);
+		return -EBUSY;
+	}
+	ether_addr_copy(pon->onu_mac, mac);
+	mutex_unlock(&pon->lock);
+	return count;
+}
+static DEVICE_ATTR_RW(onu_mac);
+
+static ssize_t llid_count_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	return sysfs_emit(buf, "%u\n", pon->llid_count);
+}
+
+static ssize_t llid_count_store(struct device *dev, struct device_attribute *attr,
+			       const char *buf, size_t count)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	unsigned int value;
+	int ret = kstrtouint(buf, 0, &value);
+	if (ret)
+		return ret;
+	if (!value || value > 32)
+		return -EINVAL;
+	mutex_lock(&pon->lock);
+	if (pon->mpcp_enabled) {
+		mutex_unlock(&pon->lock);
+		return -EBUSY;
+	}
+	pon->llid_count = value;
+	mutex_unlock(&pon->lock);
+	return count;
+}
+static DEVICE_ATTR_RW(llid_count);
+
+static ssize_t mpcp_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	ssize_t size;
+	mutex_lock(&pon->lock);
+	size = rtl_pon_mpcp_state(pon, buf);
+	mutex_unlock(&pon->lock);
+	return size;
+}
+
+static ssize_t mpcp_store(struct device *dev, struct device_attribute *attr,
+			 const char *buf, size_t count)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	bool enabled;
+	int ret = kstrtobool(buf, &enabled);
+	if (ret)
+		return ret;
+	if (enabled)
+		ret = rtl_pon_mpcp_configure(pon);
+	else
+		rtl_pon_mpcp_stop(pon);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_RW(mpcp);
+
+static ssize_t llid_table_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	ssize_t size;
+	mutex_lock(&pon->lock);
+	size = rtl_pon_llid_table(pon, buf);
+	mutex_unlock(&pon->lock);
+	return size;
+}
+
+static ssize_t llid_table_store(struct device *dev, struct device_attribute *attr,
+			       const char *buf, size_t count)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	char operation[7];
+	unsigned int index, mac, llid, multicast;
+	bool add;
+	int ret;
+	if (sscanf(buf, "%6s %u %u %x %u", operation, &index, &mac, &llid, &multicast) != 5 ||
+	    index > 63 || mac > 31 || llid > 0xffff || multicast > 1)
+		return -EINVAL;
+	if (!strcmp(operation, "add"))
+		add = true;
+	else if (!strcmp(operation, "delete"))
+		add = false;
+	else
+		return -EINVAL;
+	mutex_lock(&pon->lock);
+	ret = rtl_pon_llid_update(pon, add, index, mac, llid, multicast);
+	mutex_unlock(&pon->lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_RW(llid_table);
+
+static ssize_t pdc_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	ssize_t size;
+	mutex_lock(&pon->lock);
+	size = rtl_pon_pdc_state(pon, buf);
+	mutex_unlock(&pon->lock);
+	return size;
+}
+
+static ssize_t pdc_store(struct device *dev, struct device_attribute *attr,
+			const char *buf, size_t count)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	bool enabled;
+	int ret = kstrtobool(buf, &enabled);
+	if (ret)
+		return ret;
+	if (!enabled)
+		return -EINVAL;
+	ret = rtl_pon_pdc_configure(pon);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_RW(pdc);
+
 static struct attribute *rtl9617c_pon_attrs[] = {
 	&dev_attr_state.attr,
 	&dev_attr_serdes.attr,
 	&dev_attr_serdes_registers.attr,
 	&dev_attr_optical.attr,
 	&dev_attr_mac.attr,
+	&dev_attr_onu_mac.attr,
+	&dev_attr_llid_count.attr,
+	&dev_attr_mpcp.attr,
+	&dev_attr_llid_table.attr,
+	&dev_attr_pdc.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(rtl9617c_pon);
@@ -154,6 +296,18 @@ static int rtl9617c_pon_probe(struct platform_device *pdev)
 	of_property_read_u32(dev->of_node, "realtek,los-invert", &pon->los_invert);
 	if (pon->los_invert > 1)
 		return -EINVAL;
+	pon->top_irq = devm_platform_ioremap_resource(pdev, 6);
+	if (IS_ERR(pon->top_irq))
+		return PTR_ERR(pon->top_irq);
+	{
+		int irq = platform_get_irq(pdev, 0);
+		int ret;
+		if (irq < 0)
+			return irq;
+		ret = rtl_pon_mpcp_init(pon, irq);
+		if (ret)
+			return ret;
+	}
 	platform_set_drvdata(pdev, pon);
 	dev_info(dev, "native PON MAC binding: global control=%08x\n", readl(pon->control));
 	return 0;
@@ -161,6 +315,7 @@ static int rtl9617c_pon_probe(struct platform_device *pdev)
 
 static void rtl9617c_pon_remove(struct platform_device *pdev)
 {
+	rtl_pon_mpcp_stop(platform_get_drvdata(pdev));
 	rtl_pon_serdes_stop_work(platform_get_drvdata(pdev));
 }
 
