@@ -40,5 +40,12 @@
     "loader_machine_code_evidence": "analysis/private/target-psds-profile-loader.txt"
   },
   "next": "Native firmware API, PON SerDes/gearbox initialization, then MPCP/OAM and PUC/PDC queues",
-  "PON_registered_and_business_verified": false
+  "PON_registered_and_business_verified": false,
+  "full_main_verified": {
+    "payload": "artifacts/full-ni-pon-base-6.18.55/ram-pon",
+    "fit_sha256": "bdcf7be27718d6279fff6c9dcf41fbcc0da05d59791b81fcd8dfd1c685d6af21",
+    "revision": "r0-79bc56c",
+    "kernel": "6.18.55",
+    "same_PON_MAC_state_as_bringup": true
+  }
 }

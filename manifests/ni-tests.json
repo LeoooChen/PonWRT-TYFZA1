@@ -44,7 +44,7 @@
       "TCAM_monitor": "0x04001040",
       "EPP_read_write": "0/0"
     },
-    "next_test": "Full OpenWrt main/GCC14.4/LuCI build with TQM reset and full EPP ring handling; link reopen and DHCP"
+    "next_test": "Native PON SerDes/gearbox and MPCP/OAM"
   },
   "native_bidirectional_test": {
     "payload": "artifacts/ram-ni-12",
@@ -510,6 +510,66 @@
       },
       "note": "PHY autonegotiation can take4s; early3s ping attempts precede carrier readiness",
       "log": "logs/ni29-reopen-settled.txt"
+    }
+  },
+  "full_main_verified": {
+    "payload": "artifacts/full-ni-pon-base-6.18.55/ram-pon",
+    "fit": {
+      "kernel_version": "6.18.55",
+      "cpus": 4,
+      "kernel_load": "0x200000",
+      "fdt_load": "0x1800000",
+      "image_sha256": "f77a972cb25a163bb85aaebdf287a7c0b6f5087ba0338a3d6f726716f0966e61",
+      "dtb_sha256": "78e69e859ba2f7892fd6f6e6a3242dc221ea663b8718fd5a2e05a4d06399fc01",
+      "fit_sha256": "bdcf7be27718d6279fff6c9dcf41fbcc0da05d59791b81fcd8dfd1c685d6af21",
+      "fit_bytes": 5887780
+    },
+    "revision": "r0-79bc56c",
+    "compiler": "GCC14.4.0 / musl",
+    "kernel": "6.18.55",
+    "cpus": 4,
+    "udp10000pps": {
+      "expected": 100000,
+      "received": 100000,
+      "unique": 100000,
+      "missing": 0,
+      "duplicate": 0,
+      "bad": 0,
+      "reordered": 0
+    },
+    "tcp_mac_to_device": {
+      "mode": "send",
+      "peer": [
+        "192.168.1.1",
+        41590
+      ],
+      "bytes": 16777216,
+      "seconds": 0.322,
+      "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+    },
+    "tcp_device_to_mac": {
+      "mode": "receive",
+      "peer": [
+        "192.168.1.1",
+        41596
+      ],
+      "bytes": 16777216,
+      "seconds": 0.457,
+      "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+    },
+    "cmp_exit": 0,
+    "TCP_checksum_errors": 0,
+    "rx_errors": 0,
+    "rx_dropped": 0,
+    "luci_login_http": 302,
+    "luci_authenticated_overview_http": 200,
+    "IRQ_GIC116_count": 52291,
+    "dhcp": {
+      "host_interface": "en5",
+      "host_address": "192.168.1.170",
+      "server": "192.168.1.1",
+      "ack_verified": true,
+      "authenticated_luci_after_dhcp_http": 200
     }
   }
 }
