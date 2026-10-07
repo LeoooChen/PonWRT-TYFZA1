@@ -1,0 +1,35 @@
+{
+  "transmit": {
+    "mechanism": "native Linux DMA API, DMA-LSO VP8 TXQ0, 64 descriptors",
+    "CCI_ring_high_byte": 2,
+    "CCI_packet_high_byte": 2,
+    "LSO_bytes": 8,
+    "HeaderA_bytes": 8,
+    "descriptor_word1": "0x61000002 | ((frame_len+16)<<8)",
+    "L2TM_scheduler_enabled": true,
+    "NI_management_port_mux": 15,
+    "wire_evidence": "00:50:c2:01:02:03 -> ff:ff:ff:ff:ff:ff ARP who-has192.168.1.170, captured on Mac en5",
+    "complete_bidirectional": false
+  },
+  "receive": {
+    "mechanism": "L3QM CPU0/EQ4, eight1024-byte EPP64 rings,256 coherent2048-byte buffers",
+    "implemented": true,
+    "first_fit": {
+      "kernel_version": "6.18.55",
+      "cpus": 4,
+      "kernel_load": "0x200000",
+      "fdt_load": "0x1800000",
+      "image_sha256": "6b67dd3ffd449d8fcccba9f523ee8f6ec8b3ff39493538c3163826c375b248d8",
+      "dtb_sha256": "5c7eaea255a76e9ffdcce675220a860baf2ca92b4c7fdffc09c466c2db196d49",
+      "fit_sha256": "6bfac2825f7bcc92c115c0649b694e3467dd56a24d76bb59076b234c23d64d2a",
+      "fit_bytes": 5206688
+    },
+    "verification": "initialization succeeded, checking ingress classification and DMA write visibility",
+    "classifier_test": {
+      "PONCLE_rule0_monitor": "0x04001040",
+      "hit_bit12": true,
+      "L3QM_rx_count": 0,
+      "first_adjustment": "Enable internal L2TM scheduler port8 (documented L3QM PDPID)"
+    }
+  }
+}

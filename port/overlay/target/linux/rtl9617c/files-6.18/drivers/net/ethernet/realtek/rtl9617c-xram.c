@@ -20,6 +20,8 @@
 #include <linux/unaligned.h>
 
 #include "rtl9617c-xram-format.h"
+#include "rtl9617c-dma.h"
+#include "rtl9617c-qm.h"
 
 #define GLB_STATIC 0xa01c
 #define PORT_TO_CPU GENMASK(3, 0)
@@ -55,6 +57,10 @@ struct rtl_xram {
 	bool tx_pending;
 	unsigned int tx_length;
 	u8 tx_buffer[2048];
+	bool dma_tx;
+	struct rtl_dma_tx dma;
+	bool qm_rx;
+	struct rtl_qm_rx qm;
 };
 
 static unsigned int rtl_pointer(struct rtl_xram *priv, unsigned int reg)
@@ -88,6 +94,8 @@ static void rtl_rx_mode(struct net_device *dev)
 	bool accept_all = (dev->flags & (IFF_PROMISC | IFF_ALLMULTI)) ||
 			  !netdev_mc_empty(dev);
 
+	if (priv->qm_rx)
+		return;
 	/* Taurus's management filter uses mode 1 for promiscuous receive. */
 	rtl_update(priv, XRAM_CFG, RX_PROMISC, FIELD_PREP(RX_PROMISC, accept_all));
 }
@@ -97,6 +105,13 @@ static int rtl_poll(struct napi_struct *napi, int budget)
 	struct rtl_xram *priv = container_of(napi, struct rtl_xram, napi);
 	struct net_device *dev = priv->netdev;
 	int packets = 0;
+
+	if (priv->qm_rx) {
+		packets = rtl_qm_rx_poll(&priv->qm, napi, budget);
+		if (packets < budget)
+			napi_complete_done(napi, packets);
+		return packets;
+	}
 
 	while (packets < budget) {
 		unsigned int rd = rtl_pointer(priv, RX_READ);
@@ -159,7 +174,9 @@ static enum hrtimer_restart rtl_timer(struct hrtimer *timer)
 
 	napi_schedule(&priv->napi);
 	spin_lock(&priv->tx_lock);
-	if (priv->tx_pending && rtl_pointer(priv, TX_READ) == rtl_pointer(priv, TX_WRITE)) {
+	if (priv->dma_tx) {
+		rtl_dma_tx_complete(&priv->dma, priv->netdev);
+	} else if (priv->tx_pending && rtl_pointer(priv, TX_READ) == rtl_pointer(priv, TX_WRITE)) {
 		priv->tx_pending = false;
 		priv->netdev->stats.tx_packets++;
 		priv->netdev->stats.tx_bytes += priv->tx_length;
@@ -183,6 +200,12 @@ static netdev_tx_t rtl_xmit(struct sk_buff *skb, struct net_device *dev)
 		return NETDEV_TX_OK;
 	}
 	spin_lock_irqsave(&priv->tx_lock, flags);
+	if (priv->dma_tx) {
+		netdev_tx_t result = rtl_dma_tx_frame(&priv->dma, skb, dev);
+
+		spin_unlock_irqrestore(&priv->tx_lock, flags);
+		return result;
+	}
 	pointer = rtl_pointer(priv, TX_WRITE);
 	if (priv->tx_pending || rtl_pointer(priv, TX_READ) != pointer) {
 		netif_stop_queue(dev);
@@ -216,15 +239,36 @@ static int rtl_open(struct net_device *dev)
 {
 	struct rtl_xram *priv = netdev_priv(dev);
 	u32 config;
+	int ret;
 
-	rtl_update(priv, GLB_STATIC, PORT_TO_CPU, priv->port);
+	if (priv->dma_tx) {
+		/* The bootloader's XRAM path leaves the normal LAN scheduler off. */
+		rtl_update(priv, 0x2208, BIT(30) | BIT(31), BIT(31));
+		writel(0x08008021, priv->ni + 0x2210);
+		rtl_update(priv, 0x2300, BIT(31) | BIT(priv->port),
+			   BIT(31) | BIT(priv->port));
+		rtl_update(priv, 0x2304 + 12 * priv->port, 0xff, 0xff);
+		ret = rtl_dma_tx_start(&priv->dma);
+		if (ret)
+			return ret;
+	}
+	if (priv->qm_rx) {
+		ret = rtl_qm_rx_start(&priv->qm, priv->port);
+		if (ret) {
+			rtl_dma_tx_stop(&priv->dma);
+			return ret;
+		}
+	}
+
+	rtl_update(priv, GLB_STATIC, PORT_TO_CPU, priv->dma_tx ? 0xf : priv->port);
 	rtl_mac_address(priv);
 	writel((RTL_XRAM_RX_END - 1) << 16, priv->ni + RX_ADDR);
 	writel((RTL_XRAM_TX_END - 1) << 16 | RTL_XRAM_TX_START, priv->ni + TX_ADDR);
 	config = readl(priv->ni + XRAM_CFG) & ~RX_PROMISC;
 	writel(config | CPU_DISABLE, priv->ni + XRAM_CFG);
 	udelay(100);
-	writel(config & ~CPU_DISABLE, priv->ni + XRAM_CFG);
+	writel(priv->qm_rx ? config | CPU_DISABLE : config & ~CPU_DISABLE,
+	       priv->ni + XRAM_CFG);
 	rtl_rx_mode(dev);
 	rtl_update(priv, PORT_RX + priv->port * PORT_STRIDE, BIT(0), BIT(0));
 	rtl_update(priv, PORT_TX + priv->port * PORT_STRIDE, BIT(0), BIT(0));
@@ -244,6 +288,10 @@ static int rtl_stop(struct net_device *dev)
 	hrtimer_cancel(&priv->timer);
 	phy_stop(dev->phydev);
 	napi_disable(&priv->napi);
+	if (priv->qm_rx)
+		rtl_qm_rx_stop(&priv->qm);
+	if (priv->dma_tx)
+		rtl_dma_tx_stop(&priv->dma);
 	rtl_update(priv, XRAM_CFG, CPU_DISABLE, CPU_DISABLE);
 	return 0;
 }
@@ -268,6 +316,35 @@ static ssize_t xram_state_show(struct device *dev, struct device_attribute *attr
 		rtl_pointer(priv, TX_READ), rtl_pointer(priv, TX_WRITE), priv->tx_pending);
 }
 static DEVICE_ATTR_RO(xram_state);
+
+static ssize_t dma_state_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+
+	return priv->dma_tx ? rtl_dma_tx_state(&priv->dma, buf) : sysfs_emit(buf, "XRAM TX\n");
+}
+static DEVICE_ATTR_RO(dma_state);
+
+static ssize_t pipeline_state_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+
+	return sysfs_emit(buf, "l2tm_es=%08x l2tm_port0=%08x qm_eq=%08x ni_internal=%08x ni_nitx=%08x ni_qm=%08x rx_hdr=%08x/%08x/%08x rx_pkts=%u rx_out=%08x/%08x l2qm_free=%08x\n",
+		readl(priv->ni + 0x2300), readl(priv->ni + 0x2304),
+		readl(priv->ni + 0x2208), readl(priv->ni + 0xa1bc), readl(priv->ni + 0xa1f4),
+		readl(priv->ni + 0xa120), readl(priv->ni + 0xa088),
+		readl(priv->ni + 0xa08c), readl(priv->ni + 0xa090), readl(priv->ni + 0xa094),
+		readl(priv->ni + 0xa10c), readl(priv->ni + 0xa110), readl(priv->ni + 0x2234));
+}
+static DEVICE_ATTR_RO(pipeline_state);
+
+static ssize_t qm_state_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+
+	return priv->qm_rx ? rtl_qm_rx_state(&priv->qm, buf) : sysfs_emit(buf, "XRAM RX\n");
+}
+static DEVICE_ATTR_RO(qm_state);
 
 static int rtl_probe(struct platform_device *pdev)
 {
@@ -311,19 +388,62 @@ static int rtl_probe(struct platform_device *pdev)
 		goto del_napi;
 	}
 	of_node_put(phy);
+	priv->dma_tx = of_property_read_bool(dev->of_node, "realtek,dma-tx");
+	if (priv->dma_tx) {
+		priv->dma.registers = devm_platform_ioremap_resource(pdev, 2);
+		if (IS_ERR(priv->dma.registers)) {
+			ret = PTR_ERR(priv->dma.registers);
+			goto disconnect_phy;
+		}
+		priv->dma.port = priv->port;
+		priv->dma.vp = 8;
+		ret = rtl_dma_tx_alloc(dev, &priv->dma);
+		if (ret)
+			goto disconnect_phy;
+	}
+	priv->qm_rx = of_property_read_bool(dev->of_node, "realtek,qm-rx");
+	if (priv->qm_rx) {
+		priv->qm.ni = priv->ni;
+		ret = rtl_qm_rx_alloc(dev, &priv->qm);
+		if (ret)
+			goto free_dma;
+	}
 	ret = register_netdev(netdev);
 	if (ret)
-		goto disconnect_phy;
+		goto free_dma;
 	platform_set_drvdata(pdev, netdev);
 	ret = device_create_file(dev, &dev_attr_xram_state);
 	if (ret)
 		goto unregister_netdev;
+	ret = device_create_file(dev, &dev_attr_dma_state);
+	if (ret) {
+		device_remove_file(dev, &dev_attr_xram_state);
+		goto unregister_netdev;
+	}
+	ret = device_create_file(dev, &dev_attr_qm_state);
+	if (ret) {
+		device_remove_file(dev, &dev_attr_pipeline_state);
+		device_remove_file(dev, &dev_attr_dma_state);
+		device_remove_file(dev, &dev_attr_xram_state);
+		goto unregister_netdev;
+	}
+	ret = device_create_file(dev, &dev_attr_pipeline_state);
+	if (ret) {
+		device_remove_file(dev, &dev_attr_dma_state);
+		device_remove_file(dev, &dev_attr_xram_state);
+		goto unregister_netdev;
+	}
 	dev_info(dev, "%s: port %u management XRAM, PHY %08x, MAC %pM\n",
 		 netdev->name, priv->port, netdev->phydev->phy_id, netdev->dev_addr);
 	return 0;
 
 unregister_netdev:
 	unregister_netdev(netdev);
+free_dma:
+	if (priv->qm_rx && priv->qm.memory)
+		rtl_qm_rx_free(dev, &priv->qm);
+	if (priv->dma_tx)
+		rtl_dma_tx_free(dev, &priv->dma);
 disconnect_phy:
 	phy_disconnect(netdev->phydev);
 del_napi:
@@ -339,7 +459,14 @@ static void rtl_remove(struct platform_device *pdev)
 	struct rtl_xram *priv = netdev_priv(dev);
 
 	device_remove_file(&pdev->dev, &dev_attr_xram_state);
+	device_remove_file(&pdev->dev, &dev_attr_dma_state);
+	device_remove_file(&pdev->dev, &dev_attr_pipeline_state);
+	device_remove_file(&pdev->dev, &dev_attr_qm_state);
 	unregister_netdev(dev);
+	if (priv->qm_rx)
+		rtl_qm_rx_free(&pdev->dev, &priv->qm);
+	if (priv->dma_tx)
+		rtl_dma_tx_free(&pdev->dev, &priv->dma);
 	phy_disconnect(dev->phydev);
 	netif_napi_del(&priv->napi);
 	free_netdev(dev);

@@ -1,0 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
+#include "rtl9617c-tyfza1-dma-tx.dts"
+
+/ { model = "Tianyi TYFZA1 (native NI/DMA bring-up)"; };
+
+&{/soc/ethernet@4f4300000} {
+	realtek,qm-rx;
+};

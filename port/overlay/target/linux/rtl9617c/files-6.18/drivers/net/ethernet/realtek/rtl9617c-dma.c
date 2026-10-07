@@ -1,0 +1,170 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Taurus TX DMA-LSO, using the native Linux DMA API and netdev queues.
+ * Hardware sequence/descriptor reference: Copyright (c) Cortina-Access 2015,
+ * GPL-2.0+ ca-network-drivers 8b4f4882ff0e237a1fa558fb0838e4b680bd6bd0,
+ * aal-77c/aal_ni.c and ni-drv-77c/ca_ni_tx.[ch].
+ * The TYFZA1 configuration selects CCI: descriptor fetch uses upper byte 2.
+ * The standard Linux DMA API still allocates the underlying RAM and buffers.
+ */
+#include <linux/bitfield.h>
+#include <linux/delay.h>
+#include <linux/io.h>
+#include <linux/iopoll.h>
+#include <linux/slab.h>
+#include <linux/unaligned.h>
+
+#include "rtl9617c-dma.h"
+
+#define CTRL 0x000
+#define CTRL_ENABLE BIT(0)
+#define CTRL_RESET BIT(8)
+#define AXI_USER_SELECT 0x014
+#define AXI_USER_PATTERN1 0x01c
+#define VP_BASE 0x100
+#define VP_STRIDE 0xa0
+#define VP_ENABLE 0x00
+#define VP_BASE_ACCESS 0x04
+#define VP_BASE_HIGH 0x08
+#define VP_BASE_LOW 0x0c
+#define VP_WRITE 0x18
+#define VP_READ 0x1c
+#define VP_IRQ_ENABLE 0x64
+#define VP_MISC_IRQ 0x68
+#define VP_HEADER_A 0x78
+#define SS_CTRL 0x900
+#define AXI_CONFIG 0xd80
+#define AFT_CTRL 0xf00
+#define MEMORY_BYTES (RTL_DMA_COUNT * (sizeof(struct rtl_dma_descriptor) + RTL_DMA_BUFFER_SIZE))
+
+static void __iomem *rtl_dma_vp(struct rtl_dma_tx *tx)
+{
+	return tx->registers + VP_BASE + tx->vp * VP_STRIDE;
+}
+
+int rtl_dma_tx_alloc(struct device *dev, struct rtl_dma_tx *tx)
+{
+	int ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
+
+	if (ret)
+		return ret;
+	tx->memory = dma_alloc_coherent(dev, MEMORY_BYTES, &tx->memory_dma, GFP_KERNEL);
+	if (!tx->memory)
+		return -ENOMEM;
+	tx->descriptors = tx->memory;
+	return 0;
+}
+
+int rtl_dma_tx_start(struct rtl_dma_tx *tx)
+{
+	void __iomem *base = tx->registers;
+	void __iomem *vp = rtl_dma_vp(tx);
+	u32 value;
+	int ret;
+
+	writel(readl(base + CTRL) | CTRL_RESET, base + CTRL);
+	udelay(10);
+	writel(readl(base + CTRL) & ~(CTRL_RESET | CTRL_ENABLE), base + CTRL);
+	writel(0, vp + VP_ENABLE);
+	writel(0, vp + VP_IRQ_ENABLE);
+	writel(0, vp + VP_WRITE);
+	memset(tx->memory, 0, MEMORY_BYTES);
+	tx->read = 0;
+	tx->write = 0;
+	writel(lower_32_bits(tx->memory_dma) | RTL_DMA_DEPTH, vp + VP_BASE_LOW);
+	writel(2, vp + VP_BASE_HIGH);
+	writel(BIT(31) | BIT(30), vp + VP_BASE_ACCESS);
+	ret = readl_poll_timeout(vp + VP_BASE_ACCESS, value, !(value & BIT(31)), 1, 100000);
+	if (ret)
+		return ret;
+	writel((tx->port << 3) | BIT(9), vp + VP_HEADER_A);
+	/* Select the same descriptor-fetch AXI pattern as the Taurus driver. */
+	value = readl(base + AXI_USER_SELECT);
+	value &= ~(3U << (tx->vp * 2));
+	value |= 1U << (tx->vp * 2);
+	writel(value, base + AXI_USER_SELECT);
+	writel(0x02008080, base + AXI_USER_PATTERN1);
+	value = readl(base + AXI_CONFIG);
+	value = (value & ~GENMASK(14, 0)) | 0x7aff;
+	writel(value, base + AXI_CONFIG);
+	writel(readl(base + SS_CTRL) | BIT(31) | BIT(tx->vp), base + SS_CTRL);
+	/* The direct mode consumes Ethernet bytes, and DMA-AFT/MAC supplies FCS. */
+	writel((64 << 4) | BIT(0), base + AFT_CTRL);
+	writel(BIT(0), vp + VP_ENABLE);
+	writel(BIT(0) | (3 << 2) | BIT(4), base + CTRL);
+	return 0;
+}
+
+void rtl_dma_tx_stop(struct rtl_dma_tx *tx)
+{
+	void __iomem *base = tx->registers;
+
+	writel(0, rtl_dma_vp(tx) + VP_ENABLE);
+	writel(readl(base + CTRL) & ~CTRL_ENABLE, base + CTRL);
+	writel(readl(base + CTRL) | CTRL_RESET, base + CTRL);
+	udelay(10);
+	writel(readl(base + CTRL) & ~CTRL_RESET, base + CTRL);
+}
+
+void rtl_dma_tx_free(struct device *dev, struct rtl_dma_tx *tx)
+{
+	dma_free_coherent(dev, MEMORY_BYTES, tx->memory, tx->memory_dma);
+}
+
+void rtl_dma_tx_complete(struct rtl_dma_tx *tx, struct net_device *dev)
+{
+	unsigned int hardware_read = readl(rtl_dma_vp(tx) + VP_READ) & (RTL_DMA_COUNT - 1);
+
+	while (tx->read != hardware_read) {
+		dev->stats.tx_packets++;
+		dev->stats.tx_bytes += tx->lengths[tx->read];
+		tx->read = (tx->read + 1) & (RTL_DMA_COUNT - 1);
+	}
+	if (netif_queue_stopped(dev) &&
+	    ((tx->write + 1) & (RTL_DMA_COUNT - 1)) != tx->read)
+		netif_wake_queue(dev);
+}
+
+netdev_tx_t rtl_dma_tx_frame(struct rtl_dma_tx *tx, struct sk_buff *skb,
+			   struct net_device *dev)
+{
+	unsigned int next = (tx->write + 1) & (RTL_DMA_COUNT - 1);
+	unsigned int offset = RTL_DMA_COUNT * sizeof(*tx->descriptors) +
+			      tx->write * RTL_DMA_BUFFER_SIZE;
+	unsigned int length = max(skb->len, 60U);
+
+	rtl_dma_tx_complete(tx, dev);
+	if (next == tx->read) {
+		netif_stop_queue(dev);
+		return NETDEV_TX_BUSY;
+	}
+	/* Native LSO parameters + Header A, with both checksum engines disabled. */
+	memset(tx->memory + offset, 0, length + 16);
+	put_unaligned_le32(0, tx->memory + offset);
+	put_unaligned_le32(length, tx->memory + offset + 4);
+	put_unaligned_le32(BIT(13), tx->memory + offset + 8);
+	put_unaligned_le32((length << 15) | (16 << 9) | (tx->port << 3) | BIT(29),
+			   tx->memory + offset + 12);
+	skb_copy_bits(skb, 0, tx->memory + offset + 16, skb->len);
+	tx->descriptors[tx->write].address = cpu_to_le32(tx->memory_dma + offset);
+	tx->descriptors[tx->write].control = cpu_to_le32(0x61000002U | ((length + 16) << 8));
+	tx->lengths[tx->write] = skb->len;
+	dma_wmb();
+	tx->write = next;
+	writel(next, rtl_dma_vp(tx) + VP_WRITE);
+	writel(BIT(0), rtl_dma_vp(tx) + VP_MISC_IRQ);
+	dev_consume_skb_any(skb);
+	return NETDEV_TX_OK;
+}
+
+ssize_t rtl_dma_tx_state(struct rtl_dma_tx *tx, char *buf)
+{
+	void __iomem *base = tx->registers;
+	void __iomem *vp = rtl_dma_vp(tx);
+
+	return sysfs_emit(buf, "vp=%u port=%u desc=%pad sw=%u/%u hw=%u/%u ctrl=%08x vpctl=%08x ss=%08x misc=%08x base_hi=%08x axistat=%08x\n",
+		tx->vp, tx->port, &tx->memory_dma, tx->read, tx->write,
+		readl(vp + VP_READ), readl(vp + VP_WRITE), readl(base + CTRL),
+		readl(vp + VP_ENABLE), readl(base + SS_CTRL), readl(vp + VP_MISC_IRQ),
+		readl(vp + VP_BASE_HIGH), readl(base + 0xd88));
+}

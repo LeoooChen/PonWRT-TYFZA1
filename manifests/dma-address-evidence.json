@@ -1,0 +1,39 @@
+{
+  "module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+  "function": "aal_ni_set_dma_lso_base_depth_addr",
+  "observations": [
+    {
+      "offset": "0x6168",
+      "detail": "VP stride is 160 bytes"
+    },
+    {
+      "offset": "0x6178",
+      "detail": "ring depth is log2 descriptor count (stock uses 10)"
+    },
+    {
+      "offset": "0x61a8",
+      "detail": "dma_lso_ace_test selects upper address byte"
+    },
+    {
+      "offset": "0x61b0",
+      "detail": "ACE test branch sets upper byte 2"
+    },
+    {
+      "offset": "0x626c",
+      "detail": "normal DMA branch clears upper byte to 0"
+    }
+  ],
+  "implementation": "Linux dma_alloc_coherent allocates RAM; descriptor base upper byte uses 2, matching the selected stock ACE/CCI branch",
+  "next_verification": "actual DMA queue and wire capture",
+  "stock_configuration": {
+    "path": "analysis/private/live-files/var/config/default_scfg.txt",
+    "CFG_ID_DMA_LSO_ACE_TEST": 1
+  },
+  "first_test": {
+    "descriptor_fetch_read_pointer_advanced": true,
+    "software_read_write": "41/41",
+    "hardware_read_write": "41/41",
+    "wire_response": false,
+    "next_change": "descriptor fetch high byte 0 -> 2 (stock selected CCI branch)"
+  }
+}

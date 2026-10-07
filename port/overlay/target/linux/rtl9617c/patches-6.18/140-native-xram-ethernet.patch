@@ -24,9 +24,10 @@
  
 --- a/drivers/net/ethernet/realtek/Makefile
 +++ b/drivers/net/ethernet/realtek/Makefile
-@@ -1,4 +1,5 @@
+@@ -1,4 +1,6 @@
  # SPDX-License-Identifier: GPL-2.0-only
-+obj-$(CONFIG_RTL9617C_XRAM_ETH) += rtl9617c-xram.o
++obj-$(CONFIG_RTL9617C_XRAM_ETH) += rtl9617c-eth.o
++rtl9617c-eth-y := rtl9617c-xram.o rtl9617c-dma.o rtl9617c-qm.o
  #
  # Makefile for the Realtek network device drivers.
  #
