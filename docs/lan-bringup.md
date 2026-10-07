@@ -19,3 +19,12 @@
 完整 main 实机结果：r0-79bc56c / Linux 6.18.55 / OpenWrt GCC 14.4.0。dnsmasq 已向 Mac en5 分配 192.168.1.172；设备 lease 和 Mac DHCP ACK 对应。uhttpd/rpcd/LuCI 正常，root 空密码登录返回302，认证后概览页返回200。该完整载荷额外50个满MTU ping全部收到回复。
 
 IPv6补测发现网桥设置了 promiscuous/allmulticast，但第一版驱动没有 ndo_set_rx_mode，硬件仍按 mode0 过滤。已增加对应回调，按 Taurus GPL 参考的 mode1 接收。实机复测单独记录。
+
+重新构建 LAN/LuCI 载荷：
+
+```sh
+sh scripts/prepare_luci_feeds.sh
+bash scripts/build_lan_ui.sh
+```
+
+feeds 使用 configs/feeds.conf 的固定提交，额外安装 cgi-io 与 luasrcdiet。完整固件包含 xram-lan.dtb；MAC 0的测试载荷使用这份 DTB。

@@ -5,6 +5,9 @@ P=/home/leo/PonWRT-TYFZA1
 cd "$P"
 export http_proxy=http://host.orb.internal:7897 https_proxy=http://host.orb.internal:7897
 export CURL_OPTIONS='--speed-time 60 --speed-limit 1024'
+if [ ! -e "$P/sources/openwrt/package/feeds/packages/cgi-io" ] || [ ! -e "$P/sources/openwrt/package/feeds/luci/luci" ]; then
+    sh scripts/prepare_luci_feeds.sh "$P/sources/openwrt"
+fi
 sh port/scripts/sync-overlay.sh "$P/sources/openwrt"
 cd sources/openwrt
 make defconfig
