@@ -5,5 +5,9 @@
   "temporary_alias": "192.168.1.170/24",
   "tftp_port": 69,
   "tftp_root": "/home/leo/PonWRT-TYFZA1/artifacts/prior-native-20261002/signed/ram",
-  "mac_file_view": "/Users/leo/OrbStack/ubuntu2404/home/leo/PonWRT-TYFZA1"
+  "mac_file_view": "/Users/leo/OrbStack/ubuntu2404/home/leo/PonWRT-TYFZA1",
+  "temporary_alias_removed": true,
+  "tftp_service_stopped": true,
+  "uart_session_closed": true,
+  "device_left_running": "OpenWrt initramfs / Linux 6.18.55, four CPUs, read-only UBI attached"
 }
