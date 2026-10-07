@@ -1,0 +1,66 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/dts-v1/;
+#include "rtl9617c.dtsi"
+
+/ {
+	model = "Tianyi TYFZA1 (RTL9617C serial bring-up)";
+	compatible = "tianyi,tyfza1", "realtek,rtl9617c";
+
+	aliases {
+		serial0 = &uart0;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+		bootargs = "earlycon console=ttyS0,115200n8 loglevel=8 ignore_loglevel clk_ignore_unused maxcpus=1";
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0 0 0 0x20000000>;
+	};
+
+	// Keep every stock reservation until live firmware/BL31 evidence proves
+	// it can be released. No PE, VoIP, NI, optical or FPGA driver is enabled.
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+		voip-vector@0 {
+			reg = <0 0 0 0x1000>;
+			no-map;
+		};
+		voip@2000000 {
+			reg = <0 0x02000000 0 0x00300000>;
+			no-map;
+		};
+		voip-ipc@2300000 {
+			reg = <0 0x02300000 0 0x00100000>;
+			no-map;
+		};
+		ddr-noncache@9000000 {
+			reg = <0 0x09000000 0 0x01a50000>;
+		};
+		ddr-cache@bc48000 {
+			reg = <0 0x0bc48000 0 0x10000>;
+		};
+		tz-smc@eeff000 {
+			reg = <0 0x0eeff000 0 0x1000>;
+			no-map;
+		};
+		tz@ffc0000 {
+			reg = <0 0x0ffc0000 0 0x40000>;
+		};
+	};
+};
+
+&uart0 {
+	status = "okay";
+};
+
+// Values and wiring from the identified TYFZA1 DTB, not another Taurus board.
+&watchdog {
+	reset-on-timeout;
+	delay-reset = <134>;
+	status = "okay";
+};

@@ -1,0 +1,11 @@
+--- a/tools/fakeroot/Makefile
++++ b/tools/fakeroot/Makefile
+@@ -28,7 +28,7 @@ HOST_CONFIGURE_VARS += \
+ 	CPP="$(HOSTCC) -E"
+ 
+ HOST_CONFIGURE_ARGS += \
+-	--with-ipc=tcp
++	--with-ipc=sysv
+ 
+ define Host/Uninstall
+ 	-$(call Host/Compile/Default,uninstall)

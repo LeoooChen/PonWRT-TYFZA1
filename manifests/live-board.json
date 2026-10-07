@@ -1,0 +1,20 @@
+{
+  "model": "TYFZA1",
+  "soc": "RTL9617CVW",
+  "arch": "aarch64",
+  "ram_bytes": 536870912,
+  "nand": {
+    "manufacturer": "GigaDevice",
+    "id": "0xc892",
+    "bytes": 268435456,
+    "page": 2048,
+    "oob": 64,
+    "eraseblock": 131072
+  },
+  "stock_fit_dtb_sha256": "5124f860df3bcd2e20b87d058e19b1ddfdc7a46c9d876663ba9feeff5a0f13ac",
+  "matches_research_dtb": true,
+  "uart": "/dev/cu.usbserial-1120",
+  "baud": 115200,
+  "host_lan": "192.168.1.170",
+  "source": "evidence/stock-backup/inventory/uboot-inventory.json and actual kernel FIT"
+}

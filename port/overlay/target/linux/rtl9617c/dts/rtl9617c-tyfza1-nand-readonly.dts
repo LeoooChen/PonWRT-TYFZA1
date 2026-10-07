@@ -1,0 +1,18 @@
+// SPDX-License-Identifier: GPL-2.0-only
+#include "rtl9617c-tyfza1.dts"
+
+/ {
+	model = "Tianyi TYFZA1 (RTL9617C NAND read-only experiment)";
+};
+
+&qspi {
+	status = "okay";
+	flash@0 {
+		compatible = "spi-nand";
+		reg = <0>;
+		spi-tx-bus-width = <1>;
+		spi-rx-bus-width = <1>;
+		read-only;
+		// No guessed partitions, ECC, chip ID or calibration data.
+	};
+};

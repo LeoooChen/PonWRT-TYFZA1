@@ -1,0 +1,42 @@
+--- a/drivers/irqchip/Kconfig
++++ b/drivers/irqchip/Kconfig
+@@ -1,3 +1,11 @@
+ # SPDX-License-Identifier: GPL-2.0-only
++config RTL9617C_PER_IRQ
++	bool "RTL9617C peripheral interrupt controller"
++	depends on OF && ARCH_RTL9617C
++	select GENERIC_IRQ_CHIP
++	select IRQ_DOMAIN
++	help
++	  CPU0 peripheral interrupt bank used by the Taurus watchdog.
++
+ menu "IRQ chip support"
+ 
+--- a/drivers/irqchip/Makefile
++++ b/drivers/irqchip/Makefile
+@@ -1,3 +1,4 @@
+ # SPDX-License-Identifier: GPL-2.0
++obj-$(CONFIG_RTL9617C_PER_IRQ) += irq-rtl9617c-per.o
+ obj-$(CONFIG_IRQCHIP)			+= irqchip.o
+ 
+--- a/drivers/watchdog/Kconfig
++++ b/drivers/watchdog/Kconfig
+@@ -1,3 +1,11 @@
+ # SPDX-License-Identifier: GPL-2.0-only
++config RTL9617C_WATCHDOG
++	tristate "RTL9617C peripheral watchdog"
++	depends on WATCHDOG && OF && ARCH_RTL9617C
++	select WATCHDOG_CORE
++	help
++	  Native port of the Taurus watchdog, including bootloader trial-slot
++	  takeover until OpenWrt procd opens the standard watchdog device.
++
+ 
+ #
+--- a/drivers/watchdog/Makefile
++++ b/drivers/watchdog/Makefile
+@@ -1,3 +1,4 @@
+ # SPDX-License-Identifier: GPL-2.0
++obj-$(CONFIG_RTL9617C_WATCHDOG) += rtl9617c-wdt.o
+ #
+ # Makefile for the WatchDog device drivers.

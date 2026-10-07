@@ -1,0 +1,6 @@
+[submodule "sources/openwrt"]
+	path = sources/openwrt
+	url = https://github.com/openwrt/openwrt.git
+[submodule "sources/ponwrt-reference"]
+	path = sources/ponwrt-reference
+	url = https://github.com/pbs05/ponwrt.git

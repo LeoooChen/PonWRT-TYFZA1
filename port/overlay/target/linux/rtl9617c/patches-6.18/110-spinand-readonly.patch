@@ -1,0 +1,13 @@
+--- a/drivers/mtd/nand/spi/core.c
++++ b/drivers/mtd/nand/spi/core.c
+@@ -1716,6 +1716,10 @@ static int spinand_probe(struct spi_mem *mem)
+ 	if (ret)
+ 		return ret;
+ 
++	/* Also prevent UBI/MTD from attempting writes in the read-only experiment. */
++	if (of_property_read_bool(mem->spi->dev.of_node, "read-only"))
++		mtd->flags &= ~MTD_WRITEABLE;
++
+ 	ret = mtd_device_register(mtd, NULL, 0);
+ 	if (ret)
+ 		goto err_spinand_cleanup;

@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "selected_on": "2026-10-07",
+  "openwrt": {
+    "url": "https://github.com/openwrt/openwrt.git",
+    "ref_observed": "refs/heads/main",
+    "commit": "79bc56cb7483bc716da07c369530b792631904b4",
+    "commit_date": "2026-10-07T14:29:03+02:00",
+    "kernel": "6.18.55",
+    "kernel_sha256": "f410638061a165c12f42ab871d2f3fcd525515359b5faeee80969cff84524df9"
+  },
+  "sdk_reference": {
+    "url": "https://github.com/jameywine/GPL-for-GP3000.git",
+    "commit": "5090fbcb6ba743dd7b1314811ef557bad0460147",
+    "scope": "Taurus peripheral register definitions and GPL drivers only; not GP3000 board data"
+  },
+  "ponwrt": {
+    "url": "https://github.com/pbs05/ponwrt.git",
+    "commit": "04986da1e63cf2c52521c1aa737ee5d59e05986d"
+  },
+  "pon_drivers": {
+    "url": "https://github.com/pbs05/openwrt-pon-drivers.git",
+    "commit": "20615a09f79c34b6f65b2e49474b805b8e6ac33c",
+    "scope": "Airoha reference; no register definitions imported into RTL9617C"
+  },
+  "pon_userspace": {
+    "url": "https://github.com/pbs05/openwrt-pon-userspace.git",
+    "commit": "cce9d756742487b378749c606b30e13ee9b0f093"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "openwrt": {
+    "url": "https://github.com/openwrt/openwrt.git",
+    "ref_observed": "refs/heads/main",
+    "commit": "79bc56cb7483bc716da07c369530b792631904b4",
+    "commit_date": "2026-10-07T14:29:03+02:00",
+    "kernel": "6.18.55",
+    "kernel_sha256": "f410638061a165c12f42ab871d2f3fcd525515359b5faeee80969cff84524df9"
+  },
+  "ponwrt_reference": {
+    "url": "https://github.com/pbs05/ponwrt.git",
+    "commit": "04986da1e63cf2c52521c1aa737ee5d59e05986d"
+  },
+  "inherited_port": "9617C芯片研究/openwrt",
+  "research_snapshot": {
+    "files": 42319,
+    "bytes": 4708719103,
+    "restored_and_hash_verified": true
+  }
+}

@@ -5,3 +5,4 @@ analysis/private/
 __pycache__/
 *.pyc
 .venv/
+analysis/python-deps/

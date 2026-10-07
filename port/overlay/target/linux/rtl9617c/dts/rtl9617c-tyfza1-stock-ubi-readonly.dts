@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Layout from CRC-verified TYFZA1 environment and zero-entry factory BBLs.
+// Only for the matching stock layout; not a universal TYFZA1 flash layout.
+#include "rtl9617c-tyfza1-nand-readonly.dts"
+
+/ { model = "Tianyi TYFZA1 (stock UBI layout, read-only experiment)"; };
+
+&qspi {
+	flash@0 {
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			partition@0 {
+				label = "boot";
+				reg = <0x0 0x200000>;
+				read-only;
+			};
+			partition@280000 {
+				label = "env";
+				reg = <0x280000 0x40000>;
+				read-only;
+			};
+			partition@2c0000 {
+				label = "env2";
+				reg = <0x2c0000 0x40000>;
+				read-only;
+			};
+			partition@300000 {
+				label = "static_conf";
+				reg = <0x300000 0x40000>;
+				read-only;
+			};
+			partition@340000 {
+				label = "ubi_device";
+				reg = <0x340000 0xf5c0000>;
+				read-only;
+			};
+		};
+	};
+};
