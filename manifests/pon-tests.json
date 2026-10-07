@@ -39,7 +39,7 @@
     "profile_manifest": "manifests/pon-serdes-profiles.json",
     "loader_machine_code_evidence": "analysis/private/target-psds-profile-loader.txt"
   },
-  "next": "Complete PUC queues/internal frame formats and PON/OAM netdev; optical registration remains unverified",
+  "next": "Native PUC upstream queues, OAM receive/transmit, PON netdev and optical end-to-end validation",
   "PON_registered_and_business_verified": false,
   "full_main_verified": {
     "payload": "artifacts/full-ni-pon-base-6.18.55/ram-pon",
@@ -382,5 +382,74 @@
       "logs/pdc01-reconfigure.txt"
     ],
     "scope": "Hardware downstream map configuration/readback; optical packets pending PCS sync"
+  },
+  "MPCP_PDC_main_auto": {
+    "payload": "artifacts/full-pon-mpcp-pdc-6.18.55/ram-pon",
+    "fit": {
+      "kernel_version": "6.18.55",
+      "cpus": 4,
+      "kernel_load": "0x200000",
+      "fdt_load": "0x1800000",
+      "image_sha256": "6e5c7875a5f2baebfbe4384ea388dbd04c43c140de2ac02a85e2ae389bb31584",
+      "dtb_sha256": "3c6a590116066fc8164117cf462c178119e36874a2aa2a8b27081bebad46faad",
+      "fit_sha256": "fe556c4135ca2e42858496faad1c10c91b5be51715b6444c05c0711d0c9eefc2",
+      "fit_bytes": 5894740
+    },
+    "revision": "r0-79bc56c",
+    "compiler": "GCC14.4.0 / musl",
+    "kernel": "6.18.55",
+    "automatic_stages": [
+      "SerDes",
+      "MAC/PCS/FEC",
+      "PDC256 entries",
+      "MPCP with original ONU identity"
+    ],
+    "PDC_time_seconds": 10.22,
+    "MPCP_time_seconds": 10.23,
+    "original_identity_matches": true,
+    "reload_verified": true,
+    "LOST_optical": true,
+    "PCS_sync_verified": false,
+    "registered_LLIDs": 0,
+    "registration_attempts_during_LOS": 0,
+    "udp10000pps": {
+      "expected": 100000,
+      "received": 100000,
+      "unique": 100000,
+      "missing": 0,
+      "duplicate": 0,
+      "bad": 0,
+      "reordered": 0
+    },
+    "tcp_mac_to_device": {
+      "mode": "send",
+      "peer": [
+        "192.168.1.1",
+        41748
+      ],
+      "bytes": 16777216,
+      "seconds": 0.441,
+      "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+    },
+    "tcp_device_to_mac": {
+      "mode": "receive",
+      "peer": [
+        "192.168.1.1",
+        56476
+      ],
+      "bytes": 16777216,
+      "seconds": 0.472,
+      "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+    },
+    "tcp_cmp_exit": 0,
+    "TCP_checksum_errors": 0,
+    "RX_errors": 0,
+    "RX_dropped": 0,
+    "LuCI_login_http": 302,
+    "LuCI_overview_http": 200,
+    "logs": [
+      "logs/mpcp-pdc-main-auto.txt",
+      "logs/mpcp-pdc-main-reload.txt"
+    ]
   }
 }
