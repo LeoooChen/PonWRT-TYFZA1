@@ -368,6 +368,28 @@ static ssize_t qm_state_show(struct device *dev, struct device_attribute *attr, 
 }
 static DEVICE_ATTR_RO(qm_state);
 
+static ssize_t qm_trace_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	return rtl_qm_rx_trace(&priv->qm, buf);
+}
+
+static ssize_t qm_trace_store(struct device *dev, struct device_attribute *attr,
+			     const char *buf, size_t count)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	priv->qm.trace_count = 0;
+	return count;
+}
+static DEVICE_ATTR_RW(qm_trace);
+
+static ssize_t qm_pool_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	return rtl_qm_rx_pool(&priv->qm, buf);
+}
+static DEVICE_ATTR_RO(qm_pool);
+
 static ssize_t qm_wait_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
@@ -391,6 +413,44 @@ static ssize_t qm_wait_store(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 static DEVICE_ATTR_RW(qm_wait);
+
+static ssize_t qm_es_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	return sysfs_emit(buf, "%08x\n", readl(priv->ni + 0x6108));
+}
+
+static ssize_t qm_es_store(struct device *dev, struct device_attribute *attr,
+			  const char *buf, size_t count)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	u32 value;
+	int ret = kstrtou32(buf, 0, &value);
+	if (ret)
+		return ret;
+	writel(value, priv->ni + 0x6108);
+	return count;
+}
+static DEVICE_ATTR_RW(qm_es);
+
+static ssize_t qm_buffer_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	return sysfs_emit(buf, "%08x\n", readl(priv->ni + 0x68b0));
+}
+
+static ssize_t qm_buffer_store(struct device *dev, struct device_attribute *attr,
+			      const char *buf, size_t count)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	u32 value;
+	int ret = kstrtou32(buf, 0, &value);
+	if (ret)
+		return ret;
+	writel(value, priv->ni + 0x68b0);
+	return count;
+}
+static DEVICE_ATTR_RW(qm_buffer);
 
 /* Direct ingress to CPU0 isolates NI/QM from the classification pipeline. */
 static ssize_t rx_bypass_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -421,7 +481,11 @@ static struct attribute *rtl_native_attrs[] = {
 	&dev_attr_dma_state.attr,
 	&dev_attr_pipeline_state.attr,
 	&dev_attr_qm_state.attr,
+	&dev_attr_qm_trace.attr,
+	&dev_attr_qm_pool.attr,
 	&dev_attr_qm_wait.attr,
+	&dev_attr_qm_es.attr,
+	&dev_attr_qm_buffer.attr,
 	&dev_attr_rx_bypass.attr,
 	NULL,
 };
@@ -488,6 +552,11 @@ static int rtl_probe(struct platform_device *pdev)
 		priv->qm.axi_reorder = devm_platform_ioremap_resource(pdev, 3);
 		if (IS_ERR(priv->qm.axi_reorder)) {
 			ret = PTR_ERR(priv->qm.axi_reorder);
+			goto free_dma;
+		}
+		priv->qm.block_reset = devm_platform_ioremap_resource(pdev, 4);
+		if (IS_ERR(priv->qm.block_reset)) {
+			ret = PTR_ERR(priv->qm.block_reset);
 			goto free_dma;
 		}
 		ret = rtl_qm_rx_alloc(dev, &priv->qm);

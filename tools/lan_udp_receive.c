@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /* Sequenced UDP ingress measurement for native TYFZA1 DMA validation. */
+#define _GNU_SOURCE
 #include <arpa/inet.h>
 #include <stdint.h>
+#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
@@ -17,7 +19,12 @@ int main(int argc, char **argv)
 	unsigned int count, received = 0, unique = 0, duplicate = 0, bad = 0, reordered = 0, last = 0;
 	int fd = socket(AF_INET, SOCK_DGRAM, 0), size = 4 * 1024 * 1024;
 
-	if (argc != 3) { fprintf(stderr, "usage: lan_udp_receive port count\n"); return 1; }
+	if (argc != 3 && argc != 4) { fprintf(stderr, "usage: lan_udp_receive port count [cpu]\n"); return 1; }
+	if (argc == 4) {
+		cpu_set_t cpus;
+		CPU_ZERO(&cpus); CPU_SET(atoi(argv[3]), &cpus);
+		if (sched_setaffinity(0, sizeof(cpus), &cpus)) { perror("affinity"); return 1; }
+	}
 	address.sin_port = htons(atoi(argv[1]));
 	count = atoi(argv[2]);
 	seen = calloc(count, 1);

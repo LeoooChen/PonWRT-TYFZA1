@@ -24,7 +24,7 @@
       "fit_sha256": "6bfac2825f7bcc92c115c0649b694e3467dd56a24d76bb59076b234c23d64d2a",
       "fit_bytes": 5206688
     },
-    "verification": "Native DMA TX / L3QM RX pass MTU1500 ping and 16MiB TCP integrity; CCI receive checksum errors are under hardware investigation",
+    "verification": "Native DMA TX / L3QM RX verified:100000 sequenced UDP packets without loss/duplicates/corruption;16MiB bidirectional TCP cmp0; RX0.289s TX0.368s",
     "classifier_test": {
       "PONCLE_rule0_monitor": "0x04001040",
       "hit_bit12": true,
@@ -44,7 +44,7 @@
       "TCAM_monitor": "0x04001040",
       "EPP_read_write": "0/0"
     },
-    "next_test": "Restore reset cpuepp_wait_timer_max=1, which stock RMW keeps but native hardcoded ES_CTRL cleared"
+    "next_test": "Full OpenWrt main/GCC14.4/LuCI build with TQM reset and full EPP ring handling; link reopen and DHCP"
   },
   "native_bidirectional_test": {
     "payload": "artifacts/ram-ni-12",
@@ -294,5 +294,205 @@
       "bad": 0,
       "reordered": 0
     }
+  },
+  "epp_wait_test": {
+    "1": {
+      "expected": 10000,
+      "received": 10000,
+      "unique": 4852,
+      "missing": 5148,
+      "duplicate": 5148,
+      "bad": 0,
+      "reordered": 0
+    },
+    "2": {
+      "expected": 10000,
+      "received": 10000,
+      "unique": 4988,
+      "missing": 5012,
+      "duplicate": 5012,
+      "bad": 0,
+      "reordered": 0
+    },
+    "3": {
+      "expected": 10000,
+      "received": 9999,
+      "unique": 4993,
+      "missing": 5007,
+      "duplicate": 5006,
+      "bad": 0,
+      "reordered": 0
+    }
+  },
+  "distinct_pool_test": {
+    "payload": "artifacts/ram-ni-22",
+    "pool_ids": [
+      4,
+      5
+    ],
+    "buffers_per_pool": 256,
+    "udp10000pps": {
+      "expected": 10000,
+      "received": 10000,
+      "unique": 4990,
+      "missing": 5010,
+      "duplicate": 5010,
+      "bad": 0,
+      "reordered": 0
+    },
+    "conclusion": "Distinct pools do not eliminate duplicate reception"
+  },
+  "released_bid_test": {
+    "payload": "artifacts/ram-ni-23",
+    "defer_refill_to_end_of_napi": true,
+    "require_inactive_bid_count": true,
+    "atomic_push_poll": true,
+    "udp10000pps": {
+      "expected": 10000,
+      "received": 10000,
+      "unique": 4980,
+      "missing": 5020,
+      "duplicate": 5020,
+      "bad": 0,
+      "reordered": 0
+    },
+    "cpu0_udp10000pps": {
+      "expected": 10000,
+      "received": 9999,
+      "unique": 4915,
+      "missing": 5085,
+      "duplicate": 5084,
+      "bad": 0,
+      "reordered": 0
+    },
+    "conclusion": "BID gating and deferred refill alone do not eliminate duplication; CPU0 affinity gives the same result"
+  },
+  "reopen_pointer_test": {
+    "payload": "artifacts/ram-ni-24",
+    "retire_hardware_write_pointer_before_pool_reload": true,
+    "startup_rx_errors": 0,
+    "udp10000pps": {
+      "expected": 10000,
+      "received": 10000,
+      "unique": 4983,
+      "missing": 5017,
+      "duplicate": 5017,
+      "bad": 0,
+      "reordered": 0
+    },
+    "conclusion": "Startup stale EPP errors eliminated; duplicate reception remains"
+  },
+  "noncached_mapping_test": {
+    "payload": "artifacts/ram-ni-24-nc",
+    "same_kernel_image_as_ni24": true,
+    "dma_coherent": false,
+    "udp10000pps": {
+      "expected": 10000,
+      "received": 9952,
+      "unique": 5002,
+      "missing": 4998,
+      "duplicate": 4950,
+      "bad": 0,
+      "reordered": 0
+    },
+    "conclusion": "Uncached CPU mapping does not eliminate duplicate reception"
+  },
+  "xram_control": {
+    "payload": "artifacts/ram-ni25-xram-control",
+    "same_kernel_image_as_ni25": true,
+    "udp1000pps": {
+      "expected": 10000,
+      "received": 9999,
+      "unique": 9999,
+      "missing": 1,
+      "duplicate": 0,
+      "bad": 0,
+      "reordered": 0
+    },
+    "udp10000pps": {
+      "expected": 10000,
+      "received": 9537,
+      "unique": 9537,
+      "missing": 463,
+      "duplicate": 0,
+      "bad": 0,
+      "reordered": 0
+    },
+    "conclusion": "No duplicates on XRAM under the same sender/interface/PHY/kernel; duplication is specific to native QM/DMA path"
+  },
+  "trace_evidence": {
+    "payload": "artifacts/ram-ni-26",
+    "log": "logs/ni26-epp-trace.txt",
+    "observation": "Distinct EPP read positions repeatedly contain identical address0x02701000/EQ4; payload sequence changes as newer packets overwrite that buffer"
+  },
+  "bid_evidence": {
+    "payload": "artifacts/ram-ni-27",
+    "log": "logs/ni27-pool.txt",
+    "BID0": "0x02701000",
+    "BID1": "0x02602800",
+    "BID2": "0x02603000",
+    "EQ4_active_count": 281,
+    "EQ4_buffer_count_configured": 256,
+    "observation": "EQ linked-list count exceeds configured pool size, BID0 overwritten repeatedly; native ownership needs TQM reset and complete EQ initialization"
+  },
+  "TQM_reset_test": {
+    "payload": "artifacts/ram-ni-28",
+    "reset_bit": "GLOBAL_BLOCK_RESET bit5",
+    "all_EQ_load": "0xffff",
+    "udp10000pps": {
+      "expected": 10000,
+      "received": 10000,
+      "unique": 10000,
+      "missing": 0,
+      "duplicate": 0,
+      "bad": 0,
+      "reordered": 0
+    },
+    "trace": "logs/ni28-epp-trace.txt",
+    "conclusion": "Distinct buffer addresses and sequential packet numbers restored; zero duplicates/missing/bad frames in10000-packet trial",
+    "burst_issue": {
+      "EPP_STATUS0": 1,
+      "read_pointer": 576,
+      "write_pointer": 576,
+      "inactive_BIDs_EQ4": 128,
+      "explanation": "Full EPP ring has equal pointers; native poll needs status-qualified full-ring processing"
+    }
+  },
+  "native_stable_test": {
+    "payload": "artifacts/ram-ni-29",
+    "full_EPP_ring_status_handled": true,
+    "udp10000pps": {
+      "expected": 100000,
+      "received": 100000,
+      "unique": 100000,
+      "missing": 0,
+      "duplicate": 0,
+      "bad": 0,
+      "reordered": 0
+    },
+    "tcp_mac_to_device": {
+      "mode": "send",
+      "peer": [
+        "192.168.1.1",
+        54494
+      ],
+      "bytes": 16777216,
+      "seconds": 0.289,
+      "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+    },
+    "tcp_device_to_mac": {
+      "mode": "receive",
+      "peer": [
+        "192.168.1.1",
+        38006
+      ],
+      "bytes": 16777216,
+      "seconds": 0.368,
+      "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+    },
+    "cmp_exit": 0,
+    "tcp_checksum_errors": 0,
+    "driver_rx_errors": 0,
+    "driver_rx_dropped": 0
   }
 }

@@ -8,6 +8,7 @@
  */
 #include <linux/bitfield.h>
 #include <linux/etherdevice.h>
+#include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/unaligned.h>
@@ -38,15 +39,20 @@ static int rtl_qm_attribute(struct rtl_qm_rx *rx, unsigned int entry, u32 value)
 	return rtl_qm_indirect(rx, 0x66a4, BIT(31) | BIT(30) | entry);
 }
 
-static int rtl_qm_push(struct rtl_qm_rx *rx, u32 address)
+static int rtl_qm_push(struct rtl_qm_rx *rx, u32 address, unsigned int eqid)
 {
 	u32 status;
 	int ret;
 
-	ret = readl_poll_timeout(rx->ni + CPU_READY, status, status & BIT(31), 1, 10000);
+	/* EQM must have a released BID; PUSH FIFO readiness alone is insufficient. */
+	ret = readl_poll_timeout_atomic(rx->ni + 0x6328 + eqid * 4, status,
+				       status & GENMASK(13, 0), 1, 10000);
 	if (ret)
 		return ret;
-	writel(address | EQ_ID, rx->ni + CPU_PUSH);
+	ret = readl_poll_timeout_atomic(rx->ni + CPU_READY, status, status & BIT(31), 1, 10000);
+	if (ret)
+		return ret;
+	writel(address | eqid, rx->ni + CPU_PUSH);
 	return 0;
 }
 
@@ -162,25 +168,52 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 
 	writel(readl(ni + RMU_CTRL) & ~BIT(31), ni + RMU_CTRL);
 	writel(readl(ni + ES_CTRL) & ~BIT(31), ni + ES_CTRL);
+	/* Native ownership starts with the same TQM reset as the stock Linux driver. */
+	writel(readl(rx->block_reset) | BIT(5), rx->block_reset);
+	udelay(1000);
+	writel(readl(rx->block_reset) & ~BIT(5), rx->block_reset);
+	ret = readl_poll_timeout(ni + 0x6850, value, value & BIT(30), 1, 100000);
+	if (ret)
+		return ret;
+	writel(readl(ni + RMU_CTRL) & ~BIT(31), ni + RMU_CTRL);
+	writel(readl(ni + ES_CTRL) & ~BIT(31), ni + ES_CTRL);
 	writel(0, ni + 0x6110);
 	writel(0, ni + 0x6114);
+	/* Hardware write pointers survive ndo_stop/open; retire the old queue first. */
+	for (i = 0; i < RTL_QM_VOQS; i++) {
+		rx->read[i] = readl(ni + EPP_WRITE + i * 4) & (RTL_QM_RING_BYTES - 1);
+		writel(rx->read[i], ni + EPP_READ + i * 4);
+	}
+	readl(ni + EPP_READ);
 	rtl_qm_axi_reorder(rx);
 	memset(rx->memory, 0, RTL_QM_MEMORY_BYTES);
-	memset(rx->read, 0, sizeof(rx->read));
-	/* EQ4, 256 buffers, 2KiB buffer size, CPU refill, CCI pool addressing. */
-	writel(1, ni + EQ_CFG);
-	writel(RTL_QM_BUFFERS << 16, ni + EQ_CFG + 4);
-	writel(5 | BIT(3) | (24 << 8), ni + EQ_CFG + 8);
-	writel(0x61008060, ni + EQ_CFG + 12);
-	writel(2, ni + EQ_CFG + 16);
-	writel(EQ_ID | (EQ_ID << 4), ni + EQ_PROFILE);
+	rx->trace_count = 0;
+	/* Unused bootloader EQs must not retain overlapping BID ownership. */
+	for (i = 0; i < 16; i++) {
+		writel(0, ni + 0x61e8 + i * 20);
+		writel(0, ni + 0x61ec + i * 20);
+	}
+	/* Distinct EQ4/EQ5: each has 256 buffers and its own BID range. */
+	for (i = 0; i < 2; i++) {
+		unsigned int cfg = EQ_CFG + i * 20;
+
+		writel(1, ni + cfg);
+		writel((RTL_QM_BUFFERS_PER_EQ << 16) | (i * RTL_QM_BUFFERS_PER_EQ), ni + cfg + 4);
+		writel(5 | BIT(3) | (24 << 8), ni + cfg + 8);
+		writel(0x61008060, ni + cfg + 12);
+		writel(2, ni + cfg + 16);
+	}
+	writel(EQ_ID | ((EQ_ID + 1) << 4), ni + EQ_PROFILE);
 	writel(EQ_ID, ni + 0x6148);
 	writel(0x00020002, ni + 0x61c8); /* 32-byte first/rest headroom */
 	writel(0x05102013, ni + 0x66d4);
-	writel(BIT(EQ_ID), ni + 0x63a8);
+	writel(0xffff, ni + 0x63a8);
 	writel(0, ni + 0x63a8);
 	writel(0, ni + 0x66d4);
 	ret = rtl_qm_attribute(rx, EQ_ID, 0x0a008060);
+	if (ret)
+		return ret;
+	ret = rtl_qm_attribute(rx, EQ_ID + 1, 0x0a008060);
 	if (ret)
 		return ret;
 	ret = rtl_qm_attribute(rx, 48, 0x0a008060);
@@ -196,11 +229,10 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	for (i = 0; i < RTL_QM_VOQS; i++) {
 		writel(EQ_ID, ni + 0x65a4 + i * 4);
 		writel(rx->memory_dma + i * RTL_QM_RING_BYTES, ni + EPP_BASE + i * 4);
-		writel(0, ni + EPP_READ + i * 4);
 	}
 	for (i = 0; i < RTL_QM_BUFFERS; i++) {
 		ret = rtl_qm_push(rx, rx->memory_dma + RTL_QM_RING_BYTES * RTL_QM_VOQS +
-				  i * RTL_QM_BUFFER_BYTES);
+				  i * RTL_QM_BUFFER_BYTES, EQ_ID + i / RTL_QM_BUFFERS_PER_EQ);
 		if (ret)
 			return ret;
 	}
@@ -241,18 +273,22 @@ void rtl_qm_rx_free(struct device *dev, struct rtl_qm_rx *rx)
 int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 {
 	struct net_device *dev = napi->dev;
+	u32 refill[NAPI_POLL_WEIGHT];
+	unsigned int refill_count = 0;
 	unsigned int cos;
 	int count = 0;
 
 	for (cos = 0; cos < RTL_QM_VOQS && count < budget; cos++) {
 		unsigned int wr = readl(rx->ni + EPP_WRITE + cos * 4) & 0xffffff;
+		bool full = rx->read[cos] == wr && (readl(rx->ni + 0x659c) & BIT(cos));
 
-		while (rx->read[cos] != wr && count < budget) {
+		while ((rx->read[cos] != wr || full) && count < budget) {
 			void *entry = rx->memory + cos * RTL_QM_RING_BYTES + rx->read[cos];
 			u32 command, length_word, address, offset, h0, h1;
 			unsigned int length, header;
 			struct sk_buff *skb;
 			bool refill_buffer = false;
+			full = false;
 
 			dma_rmb();
 			command = get_unaligned_le32(entry);
@@ -263,7 +299,8 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			offset = address - lower_32_bits(rx->memory_dma);
 			count++;
 			if (offset < RTL_QM_RING_BYTES * RTL_QM_VOQS ||
-			    offset >= RTL_QM_MEMORY_BYTES || (command & 0xf) != EQ_ID) {
+			    offset >= RTL_QM_MEMORY_BYTES ||
+			    ((command & 0xf) != EQ_ID && (command & 0xf) != EQ_ID + 1)) {
 				dev->stats.rx_errors++;
 				goto consume;
 			}
@@ -287,6 +324,17 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				goto consume;
 			}
 			memcpy(skb_put(skb, length), rx->memory + offset + 32 + header, length);
+			if (rx->trace_count < ARRAY_SIZE(rx->trace) && length >= 46 &&
+			    get_unaligned_be16(skb->data + 12) == ETH_P_IP &&
+			    skb->data[23] == IPPROTO_UDP &&
+			    get_unaligned_be16(skb->data + 36) == 18081) {
+				u32 *trace = rx->trace[rx->trace_count++];
+
+				trace[0] = rx->read[cos]; trace[1] = wr;
+				trace[2] = command; trace[3] = length_word;
+				trace[4] = h0; trace[5] = h1;
+				trace[6] = get_unaligned_be32(skb->data + 42);
+			}
 			skb->protocol = eth_type_trans(skb, dev);
 			dev->stats.rx_packets++;
 			dev->stats.rx_bytes += length;
@@ -297,10 +345,14 @@ consume:
 			rx->read[cos] = (rx->read[cos] + RTL_QM_COMMAND_BYTES) & (RTL_QM_RING_BYTES - 1);
 			writel(rx->read[cos], rx->ni + EPP_READ + cos * 4);
 			if (refill_buffer)
-				rtl_qm_push(rx, address);
+				refill[refill_count++] = command;
 			wr = readl(rx->ni + EPP_WRITE + cos * 4) & 0xffffff;
 		}
 	}
+	/* Vendor receive retires the whole EPP batch before refilling released BIDs. */
+	for (cos = 0; cos < refill_count; cos++)
+		if (rtl_qm_push(rx, refill[cos] & 0xffffff80, refill[cos] & 0xf))
+			dev->stats.rx_dropped++;
 	return count;
 }
 
@@ -317,4 +369,44 @@ ssize_t rtl_qm_rx_state(struct rtl_qm_rx *rx, char *buf)
 		readl(rx->ni + 0x67ec), readl(rx->ni + 0x6818), readl(rx->ni + 0x681c),
 		readl(rx->ni + 0x6824), readl(rx->ni + 0x2d60), readl(rx->ni + 0x2d64),
 		readl(rx->ni + 0x2d78));
+}
+
+ssize_t rtl_qm_rx_trace(struct rtl_qm_rx *rx, char *buf)
+{
+	ssize_t length = 0;
+	unsigned int i;
+
+	for (i = 0; i < rx->trace_count; i++) {
+		u32 *t = rx->trace[i];
+		length += scnprintf(buf + length, PAGE_SIZE - length,
+			"%u rd=%u wr=%u epp=%08x/%08x hdr=%08x/%08x sequence=%u\n",
+			i, t[0], t[1], t[2], t[3], t[4], t[5], t[6]);
+	}
+	return length;
+}
+
+ssize_t rtl_qm_rx_pool(struct rtl_qm_rx *rx, char *buf)
+{
+	ssize_t length = 0;
+	unsigned int i;
+
+	for (i = 0; i < 2; i++) {
+		unsigned int cfg = EQ_CFG + i * 20;
+		unsigned int monitor = 0x66d8 + (EQ_ID + i) * 16;
+		length += scnprintf(buf + length, PAGE_SIZE - length,
+			"eq%u cfg=%08x/%08x/%08x/%08x/%08x mon=%08x/%08x/%08x/%08x req=%08x\n",
+			EQ_ID + i, readl(rx->ni + cfg), readl(rx->ni + cfg + 4),
+			readl(rx->ni + cfg + 8), readl(rx->ni + cfg + 12), readl(rx->ni + cfg + 16),
+			readl(rx->ni + monitor), readl(rx->ni + monitor + 4),
+			readl(rx->ni + monitor + 8), readl(rx->ni + monitor + 12),
+			readl(rx->ni + 0x6328 + (EQ_ID + i) * 4));
+	}
+	for (i = 0; i < 8; i++) {
+		int ret = rtl_qm_indirect(rx, 0x66b0, BIT(31) | i);
+		if (ret)
+			return ret;
+		length += scnprintf(buf + length, PAGE_SIZE - length, "bid%u=%08x\n", i,
+				    readl(rx->ni + 0x66b4));
+	}
+	return length;
 }

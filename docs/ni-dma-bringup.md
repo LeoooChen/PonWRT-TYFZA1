@@ -23,3 +23,11 @@ tools/lan_capture.c在实机AF_PACKET入口抓包；tools/analyze_lan_capture.py
 ni-17加入dma-coherent后，16MiB接收67.464s，TCP校验和错误降至5，驱动rx_errors为8。ni-19进一步在EPP读指针提交之后归还缓冲，且用完整内存屏障覆盖CPU读取，16MiB接收55.216s、TCP校验和错误3。Mac en5专用抓包ni19-en5.pcap确认设备发出的ACK校验和无错误，但重复ACK与源端重传很多；入口no-drop字段继续做单项对照。
 
 完整主线GCC14.4.0/LuCI/NI镜像503002c64dc2eb021a3397836b1683e41b7c9046f820ed4b073d75cbf7cc4388在实机启动，LuCI空密码登录返回302、登录后Overview返回200。带序号UDP证明接收路径在1000pps产生3次重复/3个缺号，在10000pps产生5019次重复/5019个缺号，接收总数都是10000、正文一致、UDP校验和错误0。由此把丢失/重复问题进一步定位到EPP命令或缓冲可见性，不归因于TCP机制。下一对照恢复原厂ES_CTRL读改写保留的cpuepp_wait_timer_max=1。
+
+ni-21的EPP等待字段1/2/3在10000pps对照中均产生约一半重复包，因此等待字段未解决原因。当前实现的EQ profile把主池和备用池都选为EQ4，原厂为独立池。ni-22改为独立EQ4/EQ5，分别256个2KiB缓冲，BID范围0..255和256..511，回收使用EPP中实际EQID。
+
+ni-22双池、ni-23释放BID计数检查/批量归还均未消除UDP重复；CPU0固定接收程序也复现。当前ni-24修正OpenWrt preinit后重开：先将各VOQ读指针推进到保留的硬件写指针，再重新配置缓冲池；避免把重开前的EPP位置当作新队列。可缓存/不可缓存两份DTB使用同一内核Image作映射对照。
+
+ni-24实机重开后的rx_errors为0，修正了原来每次启动约8个无效EPP；10000pps仍重复约半数。使用同一个Image而只移除dma-coherent的ni-24-nc，也复现重复，排除了单纯CPU缓存映射这一项。下一组用XRAM管理通路作为独立对照，并继续核验QM CRC/低延迟配置。
+
+已解决接收根因：ni-26跟踪中不同EPP位置反复指向同一地址，ni-27硬件BID表/monitor证明池链表计数异常。ni-28补入原厂Linux启动时的TQM复位，并清空未使用EQ、EQ_CFG_LOAD全16项重载后，10000包全部收到且地址各异。突发流量进一步触发EPP满环：读写指针相等且EPP_STATUS0仍置位。ni-29将其作为满环处理后，100000包/10000pps全部收到、零重复/错包/丢失；16MiB接收0.289s、发送0.368s，SHA256一致、cmp0、TCP校验和错误0、驱动rx_errors/rx_dropped均0。
