@@ -11,6 +11,7 @@
 #include <linux/delay.h>
 #include <linux/etherdevice.h>
 #include <linux/hrtimer.h>
+#include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/of_mdio.h>
@@ -61,6 +62,8 @@ struct rtl_xram {
 	struct rtl_dma_tx dma;
 	bool qm_rx;
 	struct rtl_qm_rx qm;
+	int rx_irq;
+	bool irq_requested;
 };
 
 static unsigned int rtl_pointer(struct rtl_xram *priv, unsigned int reg)
@@ -108,8 +111,8 @@ static int rtl_poll(struct napi_struct *napi, int budget)
 
 	if (priv->qm_rx) {
 		packets = rtl_qm_rx_poll(&priv->qm, napi, budget);
-		if (packets < budget)
-			napi_complete_done(napi, packets);
+		if (packets < budget && napi_complete_done(napi, packets))
+			rtl_update(priv, 0x6110, 0xff, 0xff);
 		return packets;
 	}
 
@@ -172,7 +175,8 @@ static enum hrtimer_restart rtl_timer(struct hrtimer *timer)
 {
 	struct rtl_xram *priv = container_of(timer, struct rtl_xram, timer);
 
-	napi_schedule(&priv->napi);
+	if (!priv->qm_rx)
+		napi_schedule(&priv->napi);
 	spin_lock(&priv->tx_lock);
 	if (priv->dma_tx) {
 		rtl_dma_tx_complete(&priv->dma, priv->netdev);
@@ -185,6 +189,15 @@ static enum hrtimer_restart rtl_timer(struct hrtimer *timer)
 	spin_unlock(&priv->tx_lock);
 	hrtimer_forward_now(timer, ms_to_ktime(1));
 	return HRTIMER_RESTART;
+}
+
+static irqreturn_t rtl_rx_irq(int irq, void *data)
+{
+	struct rtl_xram *priv = data;
+
+	rtl_update(priv, 0x6110, 0xff, 0);
+	napi_schedule_irqoff(&priv->napi);
+	return IRQ_HANDLED;
 }
 
 static netdev_tx_t rtl_xmit(struct sk_buff *skb, struct net_device *dev)
@@ -258,6 +271,9 @@ static int rtl_open(struct net_device *dev)
 			rtl_dma_tx_stop(&priv->dma);
 			return ret;
 		}
+		rtl_update(priv, 0xa5f8 + PORT_STRIDE * priv->port,
+			   BIT(28) | GENMASK(21, 16) | BIT(31),
+			   BIT(28) | (16 << 16));
 	}
 
 	rtl_update(priv, GLB_STATIC, PORT_TO_CPU, priv->dma_tx ? 0xf : priv->port);
@@ -274,6 +290,8 @@ static int rtl_open(struct net_device *dev)
 	rtl_update(priv, PORT_TX + priv->port * PORT_STRIDE, BIT(0), BIT(0));
 	priv->tx_pending = false;
 	napi_enable(&priv->napi);
+	if (priv->qm_rx)
+		rtl_update(priv, 0x6110, 0xff, 0xff);
 	phy_start(dev->phydev);
 	netif_start_queue(dev);
 	hrtimer_start(&priv->timer, ms_to_ktime(1), HRTIMER_MODE_REL);
@@ -286,6 +304,10 @@ static int rtl_stop(struct net_device *dev)
 
 	netif_stop_queue(dev);
 	hrtimer_cancel(&priv->timer);
+	if (priv->qm_rx) {
+		rtl_update(priv, 0x6110, 0xff, 0);
+		synchronize_irq(priv->rx_irq);
+	}
 	phy_stop(dev->phydev);
 	napi_disable(&priv->napi);
 	if (priv->qm_rx)
@@ -346,6 +368,65 @@ static ssize_t qm_state_show(struct device *dev, struct device_attribute *attr, 
 }
 static DEVICE_ATTR_RO(qm_state);
 
+static ssize_t qm_wait_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	unsigned int value = FIELD_GET(GENMASK(27, 26), readl(priv->ni + 0x6108));
+
+	return sysfs_emit(buf, "%u\n", value);
+}
+
+static ssize_t qm_wait_store(struct device *dev, struct device_attribute *attr,
+			    const char *buf, size_t count)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	unsigned int value;
+	int ret = kstrtouint(buf, 0, &value);
+
+	if (ret)
+		return ret;
+	if (value > 3)
+		return -EINVAL;
+	rtl_update(priv, 0x6108, GENMASK(27, 26), FIELD_PREP(GENMASK(27, 26), value));
+	return count;
+}
+static DEVICE_ATTR_RW(qm_wait);
+
+/* Direct ingress to CPU0 isolates NI/QM from the classification pipeline. */
+static ssize_t rx_bypass_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+
+	return sysfs_emit(buf, "%08x\n", readl(priv->ni + 0xa5f8 + PORT_STRIDE * priv->port));
+}
+
+static ssize_t rx_bypass_store(struct device *dev, struct device_attribute *attr,
+			      const char *buf, size_t count)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	bool enabled;
+	int ret = kstrtobool(buf, &enabled);
+
+	if (ret)
+		return ret;
+	rtl_update(priv, 0xa5f8 + PORT_STRIDE * priv->port,
+		   BIT(28) | GENMASK(21, 16) | BIT(31),
+		   enabled ? BIT(28) | (16 << 16) : 0);
+	return count;
+}
+static DEVICE_ATTR_RW(rx_bypass);
+
+static struct attribute *rtl_native_attrs[] = {
+	&dev_attr_xram_state.attr,
+	&dev_attr_dma_state.attr,
+	&dev_attr_pipeline_state.attr,
+	&dev_attr_qm_state.attr,
+	&dev_attr_qm_wait.attr,
+	&dev_attr_rx_bypass.attr,
+	NULL,
+};
+ATTRIBUTE_GROUPS(rtl_native);
+
 static int rtl_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -404,42 +485,42 @@ static int rtl_probe(struct platform_device *pdev)
 	priv->qm_rx = of_property_read_bool(dev->of_node, "realtek,qm-rx");
 	if (priv->qm_rx) {
 		priv->qm.ni = priv->ni;
+		priv->qm.axi_reorder = devm_platform_ioremap_resource(pdev, 3);
+		if (IS_ERR(priv->qm.axi_reorder)) {
+			ret = PTR_ERR(priv->qm.axi_reorder);
+			goto free_dma;
+		}
 		ret = rtl_qm_rx_alloc(dev, &priv->qm);
 		if (ret)
 			goto free_dma;
+		priv->rx_irq = platform_get_irq(pdev, 0);
+		if (priv->rx_irq < 0) {
+			ret = priv->rx_irq;
+			goto free_dma;
+		}
+		rtl_update(priv, 0x6110, 0xff, 0);
+		ret = request_irq(priv->rx_irq, rtl_rx_irq, 0, "rtl9617c-rx0", priv);
+		if (ret)
+			goto free_dma;
+		priv->irq_requested = true;
 	}
 	ret = register_netdev(netdev);
 	if (ret)
 		goto free_dma;
 	platform_set_drvdata(pdev, netdev);
-	ret = device_create_file(dev, &dev_attr_xram_state);
+	ret = sysfs_create_groups(&dev->kobj, rtl_native_groups);
 	if (ret)
 		goto unregister_netdev;
-	ret = device_create_file(dev, &dev_attr_dma_state);
-	if (ret) {
-		device_remove_file(dev, &dev_attr_xram_state);
-		goto unregister_netdev;
-	}
-	ret = device_create_file(dev, &dev_attr_qm_state);
-	if (ret) {
-		device_remove_file(dev, &dev_attr_pipeline_state);
-		device_remove_file(dev, &dev_attr_dma_state);
-		device_remove_file(dev, &dev_attr_xram_state);
-		goto unregister_netdev;
-	}
-	ret = device_create_file(dev, &dev_attr_pipeline_state);
-	if (ret) {
-		device_remove_file(dev, &dev_attr_dma_state);
-		device_remove_file(dev, &dev_attr_xram_state);
-		goto unregister_netdev;
-	}
-	dev_info(dev, "%s: port %u management XRAM, PHY %08x, MAC %pM\n",
-		 netdev->name, priv->port, netdev->phydev->phy_id, netdev->dev_addr);
+	dev_info(dev, "%s: port %u %s, PHY %08x, MAC %pM\n",
+		 netdev->name, priv->port, priv->qm_rx ? "native NI/DMA" : "management XRAM",
+		 netdev->phydev->phy_id, netdev->dev_addr);
 	return 0;
 
 unregister_netdev:
 	unregister_netdev(netdev);
 free_dma:
+	if (priv->irq_requested)
+		free_irq(priv->rx_irq, priv);
 	if (priv->qm_rx && priv->qm.memory)
 		rtl_qm_rx_free(dev, &priv->qm);
 	if (priv->dma_tx)
@@ -458,11 +539,10 @@ static void rtl_remove(struct platform_device *pdev)
 	struct net_device *dev = platform_get_drvdata(pdev);
 	struct rtl_xram *priv = netdev_priv(dev);
 
-	device_remove_file(&pdev->dev, &dev_attr_xram_state);
-	device_remove_file(&pdev->dev, &dev_attr_dma_state);
-	device_remove_file(&pdev->dev, &dev_attr_pipeline_state);
-	device_remove_file(&pdev->dev, &dev_attr_qm_state);
+	sysfs_remove_groups(&pdev->dev.kobj, rtl_native_groups);
 	unregister_netdev(dev);
+	if (priv->irq_requested)
+		free_irq(priv->rx_irq, priv);
 	if (priv->qm_rx)
 		rtl_qm_rx_free(&pdev->dev, &priv->qm);
 	if (priv->dma_tx)

@@ -115,13 +115,14 @@ void rtl_dma_tx_complete(struct rtl_dma_tx *tx, struct net_device *dev)
 {
 	unsigned int hardware_read = readl(rtl_dma_vp(tx) + VP_READ) & (RTL_DMA_COUNT - 1);
 
-	while (tx->read != hardware_read) {
+	/* Taurus prefetches descriptors; the stock completion path retains two. */
+	while (((hardware_read - tx->read) & (RTL_DMA_COUNT - 1)) > 2) {
 		dev->stats.tx_packets++;
 		dev->stats.tx_bytes += tx->lengths[tx->read];
 		tx->read = (tx->read + 1) & (RTL_DMA_COUNT - 1);
 	}
 	if (netif_queue_stopped(dev) &&
-	    ((tx->write + 1) & (RTL_DMA_COUNT - 1)) != tx->read)
+	    ((tx->read - tx->write - 1) & (RTL_DMA_COUNT - 1)) > 2)
 		netif_wake_queue(dev);
 }
 
@@ -134,7 +135,7 @@ netdev_tx_t rtl_dma_tx_frame(struct rtl_dma_tx *tx, struct sk_buff *skb,
 	unsigned int length = max(skb->len, 60U);
 
 	rtl_dma_tx_complete(tx, dev);
-	if (next == tx->read) {
+	if (((tx->read - tx->write - 1) & (RTL_DMA_COUNT - 1)) <= 2) {
 		netif_stop_queue(dev);
 		return NETDEV_TX_BUSY;
 	}

@@ -4,5 +4,10 @@
 / { model = "Tianyi TYFZA1 (native NI/DMA bring-up)"; };
 
 &{/soc/ethernet@4f4300000} {
+	reg = <4 0xf4300000 0 0x10000>, <0 0xf4500000 0 0x2000>,
+	      <4 0xf7001000 0 0x1000>, <4 0xf432d000 0 0x1000>;
+	reg-names = "ni", "xram", "dma-lso", "qm-axi-reorder";
+	dma-coherent;
 	realtek,qm-rx;
+	interrupts = <GIC_SPI 84 IRQ_TYPE_LEVEL_HIGH>;
 };

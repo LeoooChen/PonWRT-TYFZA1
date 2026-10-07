@@ -131,6 +131,28 @@ int rtl_qm_rx_alloc(struct device *dev, struct rtl_qm_rx *rx)
 	return rx->memory ? 0 : -ENOMEM;
 }
 
+static void rtl_qm_axi_reorder(struct rtl_qm_rx *rx)
+{
+	void __iomem *base = rx->axi_reorder;
+
+	/* GPL aal_l3qm_axi_reo_{rd,wr}_init: deep-Q and EPP AXI ID maps. */
+	writel(15, base);
+	writel(BIT(31) | 12, base + 4);
+	writel(BIT(28), base + 8);
+	writel(BIT(28), base + 12);
+	writel(BIT(31) | 13, base + 16);
+	writel(15, base + 0x400);
+	writel(BIT(31) | 12, base + 0x404);
+	writel(BIT(28), base + 0x408);
+	writel(BIT(28), base + 0x40c);
+	writel(BIT(31) | 13, base + 0x410);
+	writel(2, base + 0x480);
+	writel(BIT(31) | 8, base + 0x484);
+	writel(BIT(28), base + 0x488);
+	writel(BIT(28), base + 0x48c);
+	writel(BIT(31) | 9, base + 0x490);
+}
+
 int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 {
 	void __iomem *ni = rx->ni;
@@ -142,6 +164,7 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	writel(readl(ni + ES_CTRL) & ~BIT(31), ni + ES_CTRL);
 	writel(0, ni + 0x6110);
 	writel(0, ni + 0x6114);
+	rtl_qm_axi_reorder(rx);
 	memset(rx->memory, 0, RTL_QM_MEMORY_BYTES);
 	memset(rx->read, 0, sizeof(rx->read));
 	/* EQ4, 256 buffers, 2KiB buffer size, CPU refill, CCI pool addressing. */
@@ -167,7 +190,9 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	writel((value & ~(BIT(11) | BIT(13))) | 0xff, ni + 0x6000);
 	writel(readl(ni + 0x68f4) | BIT(2), ni + 0x68f4);
 	writel(0, ni + 0x6558);
-	writel((64 << 8) | 0xf2, ni + 0x657c + EQ_ID * 4);
+	/* Size counts four 32-bit FIFO words, including in EPP64 mode. */
+	writel(((RTL_QM_RING_BYTES / 16) << 8) | 0xf2,
+	       ni + 0x657c + EQ_ID * 4);
 	for (i = 0; i < RTL_QM_VOQS; i++) {
 		writel(EQ_ID, ni + 0x65a4 + i * 4);
 		writel(rx->memory_dma + i * RTL_QM_RING_BYTES, ni + EPP_BASE + i * 4);
@@ -184,12 +209,20 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	ret = rtl_qm_ingress(rx, port);
 	if (ret)
 		return ret;
+	/* The vendor credit table marks counter MSBs valid during initialization. */
+	for (i = 0; i < 16; i++) {
+		writel(0x8e308000, ni + 0x2db8);
+		ret = rtl_qm_indirect(rx, 0x2db4, BIT(31) | BIT(30) | i);
+		if (ret)
+			return ret;
+	}
 	/* Enable both CPU forwarding and the queue-manager fabric connection. */
 	writel(readl(ni + 0x2300) | BIT(8) | BIT(9), ni + 0x2300);
 	writel(0xff | (6 << 16), ni + 0x2304 + 12 * 8);
 	writel(0xff | (6 << 16), ni + 0x2304 + 12 * 9);
 	/* CRC is stripped by QM; CPU0 dequeue and normal NI input are enabled. */
-	writel(0x8062ff01, ni + ES_CTRL);
+	/* Keep the reset EPP wait setting, as the vendor RMW sequence does. */
+	writel(0x8462ff01, ni + ES_CTRL);
 	writel(readl(ni + RMU_CTRL) | BIT(31), ni + RMU_CTRL);
 	return 0;
 }
@@ -219,6 +252,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			u32 command, length_word, address, offset, h0, h1;
 			unsigned int length, header;
 			struct sk_buff *skb;
+			bool refill_buffer = false;
 
 			dma_rmb();
 			command = get_unaligned_le32(entry);
@@ -233,6 +267,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				dev->stats.rx_errors++;
 				goto consume;
 			}
+			refill_buffer = true;
 			h0 = get_unaligned_be32(rx->memory + offset + 32);
 			h1 = get_unaligned_be32(rx->memory + offset + 36);
 			rx->last_header[0] = h0;
@@ -244,24 +279,25 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			if ((command & (BIT(4) | BIT(6))) != (BIT(4) | BIT(6)) ||
 			    length < ETH_HLEN || length > 1522) {
 				dev->stats.rx_errors++;
-				goto refill;
+				goto consume;
 			}
 			skb = napi_alloc_skb(napi, length);
 			if (!skb) {
 				dev->stats.rx_dropped++;
-				goto refill;
+				goto consume;
 			}
 			memcpy(skb_put(skb, length), rx->memory + offset + 32 + header, length);
 			skb->protocol = eth_type_trans(skb, dev);
 			dev->stats.rx_packets++;
 			dev->stats.rx_bytes += length;
 			napi_gro_receive(napi, skb);
-refill:
-			dma_wmb();
-			rtl_qm_push(rx, address);
 consume:
-			rx->read[cos] = (rx->read[cos] + 8) & (RTL_QM_RING_BYTES - 1);
+			/* Retire the EPP/BID before returning its RAM to the hardware pool. */
+			mb();
+			rx->read[cos] = (rx->read[cos] + RTL_QM_COMMAND_BYTES) & (RTL_QM_RING_BYTES - 1);
 			writel(rx->read[cos], rx->ni + EPP_READ + cos * 4);
+			if (refill_buffer)
+				rtl_qm_push(rx, address);
 			wr = readl(rx->ni + EPP_WRITE + cos * 4) & 0xffffff;
 		}
 	}
@@ -271,7 +307,7 @@ consume:
 ssize_t rtl_qm_rx_state(struct rtl_qm_rx *rx, char *buf)
 {
 	writel(0x82, rx->ni + 0x105c);
-	return sysfs_emit(buf, "memory=%pad rmu=%08x es=%08x status=%08x eqreq=%08x pushrdy=%08x epp=%08x wr0=%u rd0=%u last=%08x/%08x hdra=%08x/%08x monitor=%08x ni_demux=%08x rxcount=%u txcount=%u no_buffer=%u fe_drop=%u lenerr=%u\n",
+	return sysfs_emit(buf, "memory=%pad rmu=%08x es=%08x status=%08x eqreq=%08x pushrdy=%08x epp=%08x wr0=%u rd0=%u last=%08x/%08x hdra=%08x/%08x monitor=%08x ni_demux=%08x rxcount=%u txcount=%u no_buffer=%u fe_drop=%u lenerr=%u td_global=%08x td_port=%08x td_priority=%08x\n",
 		&rx->memory_dma, readl(rx->ni + RMU_CTRL), readl(rx->ni + ES_CTRL),
 		readl(rx->ni + 0x6850), readl(rx->ni + 0x6328 + EQ_ID * 4),
 		readl(rx->ni + CPU_READY), readl(rx->ni + 0x659c),
@@ -279,5 +315,6 @@ ssize_t rtl_qm_rx_state(struct rtl_qm_rx *rx, char *buf)
 		rx->last_address, rx->last_size, rx->last_header[0], rx->last_header[1],
 		readl(rx->ni + 0x1060), readl(rx->ni + 0xa1dc), readl(rx->ni + 0x67d8),
 		readl(rx->ni + 0x67ec), readl(rx->ni + 0x6818), readl(rx->ni + 0x681c),
-		readl(rx->ni + 0x6824));
+		readl(rx->ni + 0x6824), readl(rx->ni + 0x2d60), readl(rx->ni + 0x2d64),
+		readl(rx->ni + 0x2d78));
 }

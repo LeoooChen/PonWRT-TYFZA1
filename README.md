@@ -6,6 +6,8 @@ TYFZA1 / RTL9617CVW 的原生 OpenWrt 主线移植项目。
 
 LAN 首轮：原生 XRAM 管理通路已提供 eth0/br-lan，1Gbps 协商、1000 个满 MTU 包与 1MiB 双向 TCP 哈希校验通过。完整 main（r0-79bc56c）已在实机通过 DHCP、LuCI登录和IPv6邻居发现/ping，最终 RAM 载荷保存于 artifacts/full-lan-luci-multicast-6.18.55/。
 
+NI/DMA 已在实机实现 Linux DMA API 发送、L3QM/EPP64 中断接收与软件转发。16MiB 双向 TCP 内容校验通过；接收端重传与吞吐仍在调试。当前验证日志及各单项对照见 docs/ni-dma-bringup.md 和 manifests/ni-tests.json。
+
 开发顺序：系统启动 → PON（包括 NI/DMA 数据通路）→ Wi-Fi → 硬件加速。最终交付目标是原生 UBI 固件与完整安装/升级/恢复步骤。
 
 当前主线基线：OpenWrt `79bc56cb7483bc716da07c369530b792631904b4`，Linux `6.18.55`。本机原厂 DTB 与资料库原生代码采用的 TYFZA1 DTB SHA256 相同。

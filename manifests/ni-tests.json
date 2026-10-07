@@ -9,7 +9,7 @@
     "L2TM_scheduler_enabled": true,
     "NI_management_port_mux": 15,
     "wire_evidence": "00:50:c2:01:02:03 -> ff:ff:ff:ff:ff:ff ARP who-has192.168.1.170, captured on Mac en5",
-    "complete_bidirectional": false
+    "complete_bidirectional": true
   },
   "receive": {
     "mechanism": "L3QM CPU0/EQ4, eight1024-byte EPP64 rings,256 coherent2048-byte buffers",
@@ -24,12 +24,275 @@
       "fit_sha256": "6bfac2825f7bcc92c115c0649b694e3467dd56a24d76bb59076b234c23d64d2a",
       "fit_bytes": 5206688
     },
-    "verification": "initialization succeeded, checking ingress classification and DMA write visibility",
+    "verification": "Native DMA TX / L3QM RX pass MTU1500 ping and 16MiB TCP integrity; CCI receive checksum errors are under hardware investigation",
     "classifier_test": {
       "PONCLE_rule0_monitor": "0x04001040",
       "hit_bit12": true,
       "L3QM_rx_count": 0,
       "first_adjustment": "Enable internal L2TM scheduler port8 (documented L3QM PDPID)"
+    },
+    "latest_observed": {
+      "fit": "ni-11",
+      "rx_count": 0,
+      "tx_count": 0,
+      "no_buffer": 0,
+      "fe_drop": 0,
+      "length_errors": 0,
+      "L2TE_tail_drop_global": "0x00230000",
+      "L2TE_tail_drop_port": "0x00000000",
+      "L2TE_tail_drop_priority": "0x00000000",
+      "TCAM_monitor": "0x04001040",
+      "EPP_read_write": "0/0"
+    },
+    "next_test": "Restore reset cpuepp_wait_timer_max=1, which stock RMW keeps but native hardcoded ES_CTRL cleared"
+  },
+  "native_bidirectional_test": {
+    "payload": "artifacts/ram-ni-12",
+    "rx_bypass_register": "0x98100400",
+    "cpu_route": "NI ingress bypass to logical CPU16, L3QM CPU0/EQ4",
+    "ping_mtu1500": {
+      "sent": 1000,
+      "received": 1000,
+      "loss_percent": 0,
+      "mean_ms": 1.033
+    },
+    "tcp_device_to_mac": {
+      "mode": "receive",
+      "peer": [
+        "192.168.1.1",
+        47630
+      ],
+      "bytes": 16777216,
+      "seconds": 0.397,
+      "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+    },
+    "tcp_mac_to_device": {
+      "mode": "send",
+      "peer": [
+        "192.168.1.1",
+        51836
+      ],
+      "bytes": 16777216,
+      "seconds": 64.509,
+      "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+    },
+    "cmp_exit": 0
+  },
+  "irq_test": {
+    "payload": "artifacts/ram-ni-14",
+    "interrupt": "GIC SPI84, GIC INTID116, CPU0 EPP0..7, NAPI",
+    "observed_irq_count": 45591,
+    "tcp_mac_to_device": {
+      "mode": "send",
+      "peer": [
+        "192.168.1.1",
+        43852
+      ],
+      "bytes": 16777216,
+      "seconds": 47.604,
+      "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+    },
+    "device_sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5",
+    "tcp_checksum_errors_observed": 158
+  },
+  "axi_reorder_test": {
+    "payload": "artifacts/ram-ni-15",
+    "tcp_mac_to_device": {
+      "mode": "send",
+      "peer": [
+        "192.168.1.1",
+        39738
+      ],
+      "bytes": 16777216,
+      "seconds": 76.462,
+      "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+    },
+    "tcp_checksum_errors": 224,
+    "capture": {
+      "counts": {
+        "frames": 15461,
+        "ipv4": 15454,
+        "tcp": 15454,
+        "tcp_bad": 1,
+        "truncated": 1
+      },
+      "samples": [
+        {
+          "capture_offset": 292,
+          "length": 1514,
+          "seq": 1594903798,
+          "ip_checksum_valid": true,
+          "payload_offset": 10136,
+          "mismatched_bytes": 856,
+          "first_mismatches": [
+            590,
+            591,
+            592,
+            593,
+            594,
+            595,
+            596,
+            597,
+            598,
+            599,
+            600,
+            601,
+            602,
+            603,
+            604,
+            605
+          ],
+          "last_mismatches": [
+            1432,
+            1433,
+            1434,
+            1435,
+            1436,
+            1437,
+            1438,
+            1439,
+            1440,
+            1441,
+            1442,
+            1443,
+            1444,
+            1445,
+            1446,
+            1447
+          ],
+          "corrupted_tail_payload_offset": 12174
+        }
+      ]
+    },
+    "conclusion": "AXI reorder initialization alone does not eliminate receive corruption"
+  },
+  "ordinary_axi_test": {
+    "payload": "artifacts/ram-ni-16",
+    "EQ_CFG3": 0,
+    "EQ_CFG4": 0,
+    "AXI_attributes": 0,
+    "tcp_mac_to_device": {
+      "mode": "send",
+      "peer": [
+        "192.168.1.1",
+        36460
+      ],
+      "bytes": 16777216,
+      "seconds": 75.276,
+      "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+    },
+    "tcp_checksum_errors": 435,
+    "conclusion": "Ordinary AXI addressing does not eliminate corruption"
+  },
+  "ring_depth_control_test": {
+    "payload": "artifacts/ram-ni-18",
+    "profile_size": 32,
+    "allocated_ring_bytes": 1024,
+    "tcp_mac_to_device": {
+      "mode": "send",
+      "peer": [
+        "192.168.1.1",
+        43632
+      ],
+      "bytes": 16777216,
+      "seconds": 51.581,
+      "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+    },
+    "tcp_checksum_errors": 232,
+    "rx_errors": 15178,
+    "rx_packets": 15200,
+    "conclusion": "Profile size32 makes hardware wrap at512 bytes; the correct value is64 for1024 bytes. EPP64 profile units remain16 bytes."
+  },
+  "coherent_mapping_test": {
+    "payload": "artifacts/ram-ni-17",
+    "dma_coherent": true,
+    "tcp_mac_to_device": {
+      "mode": "send",
+      "peer": [
+        "192.168.1.1",
+        46260
+      ],
+      "bytes": 16777216,
+      "seconds": 67.464,
+      "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+    },
+    "tcp_checksum_errors": 5,
+    "rx_errors": 8,
+    "rx_packets": 17682,
+    "conclusion": "CCI coherent mapping greatly reduces checksum errors; receive throughput and duplicate data remain unresolved"
+  },
+  "retire_before_refill_test": {
+    "payload": "artifacts/ram-ni-19",
+    "dma_coherent": true,
+    "read_pointer_before_refill": true,
+    "full_memory_barrier_before_retirement": true,
+    "tcp_mac_to_device": {
+      "mode": "send",
+      "peer": [
+        "192.168.1.1",
+        55164
+      ],
+      "bytes": 16777216,
+      "seconds": 55.216,
+      "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+    },
+    "tcp_checksum_errors": 3,
+    "wire_capture": "logs/ni19-en5.pcap",
+    "device_wire_ack_checksum_errors": 0,
+    "conclusion": "Receive integrity improves; duplicate ACKs and retransmission still limit throughput"
+  },
+  "normal_drop_test": {
+    "payload": "artifacts/ram-ni-20",
+    "rx_bypass": "0x18100400",
+    "tcp_mac_to_device": {
+      "mode": "send",
+      "peer": [
+        "192.168.1.1",
+        37162
+      ],
+      "bytes": 16777216,
+      "seconds": 61.407,
+      "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+    },
+    "tcp_checksum_errors": 16,
+    "rx_errors": 10,
+    "conclusion": "Clearing ingress no-drop does not resolve throughput; retain ordinary CPU forwarding semantics"
+  },
+  "full_main_NI": {
+    "payload": "artifacts/full-ni-luci-coherent-6.18.55/ram-ni",
+    "fit": {
+      "kernel_version": "6.18.55",
+      "cpus": 4,
+      "kernel_load": "0x200000",
+      "fdt_load": "0x1800000",
+      "image_sha256": "0c4973ac77301f69aee3b5e7829c30ec63a28ba9f7cc870bafac2fddb12adc65",
+      "dtb_sha256": "67cce5c634478eb146f6017169e6dc2bef17e0a9990b61f90c194e80d829c75a",
+      "fit_sha256": "503002c64dc2eb021a3397836b1683e41b7c9046f820ed4b073d75cbf7cc4388",
+      "fit_bytes": 5885320
+    },
+    "revision": "r0-79bc56c",
+    "compiler": "OpenWrt GCC14.4.0 / musl",
+    "booted": true,
+    "cpus": 4,
+    "luci_login_http": 302,
+    "luci_authenticated_overview_http": 200,
+    "udp_1000pps": {
+      "expected": 10000,
+      "received": 10000,
+      "unique": 9997,
+      "missing": 3,
+      "duplicate": 3,
+      "bad": 0,
+      "reordered": 0
+    },
+    "udp_10000pps": {
+      "expected": 10000,
+      "received": 10000,
+      "unique": 4981,
+      "missing": 5019,
+      "duplicate": 5019,
+      "bad": 0,
+      "reordered": 0
     }
   }
 }

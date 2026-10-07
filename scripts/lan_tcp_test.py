@@ -3,8 +3,8 @@
 import argparse,socket,time,hashlib,json
 from pathlib import Path
 p=Path(__file__).resolve().parents[1]
-a=argparse.ArgumentParser(); a.add_argument('mode',choices=('receive','send'));args=a.parse_args()
-f=p/'artifacts/lan-tcp/payload.bin';f.parent.mkdir(parents=True,exist_ok=True)
+a=argparse.ArgumentParser(); a.add_argument('mode',choices=('receive','send'));a.add_argument('--label',default='lan');a.add_argument('--file',type=Path,default=p/'artifacts/lan-tcp/payload.bin');args=a.parse_args()
+f=args.file;f.parent.mkdir(parents=True,exist_ok=True)
 s=socket.socket();s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);s.bind(('192.168.1.170',18080));s.listen(1)
 print('Listening',args.mode,flush=True)
 conn,peer=s.accept();start=time.monotonic();size=0
@@ -18,5 +18,5 @@ with conn:
  else:
   data=f.read_bytes();conn.sendall(data);size=len(data)
 record={'mode':args.mode,'peer':peer,'bytes':size,'seconds':round(time.monotonic()-start,3),'sha256':hashlib.sha256(f.read_bytes()).hexdigest()}
-(p/('logs/lan-tcp-'+args.mode+'.json')).write_text(json.dumps(record,indent=2)+'\n')
+(p/('logs/'+args.label+'-tcp-'+args.mode+'.json')).write_text(json.dumps(record,indent=2)+'\n')
 print(record,flush=True)
