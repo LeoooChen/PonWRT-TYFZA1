@@ -23,7 +23,8 @@ fi
 printf 'file /init %s 0755 0 0\n' "$G/other-files/init" > "$B/init-cpio-list"
 cp "$P/artifacts/prior-native-20261002/verification/kernel.config" "$B/.config"
 "$K/scripts/config" --file "$B/.config" --set-str INITRAMFS_SOURCE "$R $B/init-cpio-list $G/image/initramfs-base-files.txt" --set-val INITRAMFS_ROOT_UID 501 --set-val INITRAMFS_ROOT_GID 501
+"$K/scripts/config" --file "$B/.config" --enable NET_VENDOR_REALTEK --enable RTL9617C_XRAM_ETH --enable REALTEK_PHY
 make -C "$K" O="$B" ARCH=arm64 olddefconfig
-make -C "$K" O="$B" ARCH=arm64 -j4 Image
+make -C "$K" O="$B" ARCH=arm64 -j2 Image
 sh "$P/port/scripts/check-dtb.sh" "$K" "$P/artifacts/dtb-6.18.55" "$P/analysis/private/live-fit.dtb"
 sha256sum "$B/arch/arm64/boot/Image"

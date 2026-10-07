@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: GPL-2.0-only
+#include "rtl9617c-tyfza1-stock-ubi-readonly.dts"
+
+/ { model = "Tianyi TYFZA1 (management XRAM LAN bring-up)"; };
+
+&mdio {
+	status = "okay";
+	phy0: ethernet-phy@1 {
+		reg = <1>;
+	};
+};
+
+&{/soc} {
+	ethernet@4f4300000 {
+		compatible = "realtek,rtl9617c-xram-eth";
+		reg = <4 0xf4300000 0 0x10000>, <0 0xf4500000 0 0x2000>;
+		reg-names = "ni", "xram";
+		realtek,port = <0>;
+		phy-handle = <&phy0>;
+	};
+};

@@ -1,0 +1,104 @@
+{
+  "test": "16 TX Header-XT patterns, one 98-byte Ethernet frame each; packet capture on Mac en5",
+  "pcap_sha256": "9560c8ed9cc8cc5e5b4c47bd3bb5db49cc95ae4a3977fa1ca88e33ba7c4ebd2f",
+  "observed": [
+    {
+      "written_field_at_shift_10": 0,
+      "frame_bytes_without_fcs": 100,
+      "expected_frame_bytes": 98,
+      "actual_tail_code": 0
+    },
+    {
+      "written_field_at_shift_10": 1,
+      "frame_bytes_without_fcs": 100,
+      "expected_frame_bytes": 98,
+      "actual_tail_code": 0
+    },
+    {
+      "written_field_at_shift_10": 2,
+      "frame_bytes_without_fcs": 100,
+      "expected_frame_bytes": 98,
+      "actual_tail_code": 0
+    },
+    {
+      "written_field_at_shift_10": 3,
+      "frame_bytes_without_fcs": 100,
+      "expected_frame_bytes": 98,
+      "actual_tail_code": 0
+    },
+    {
+      "written_field_at_shift_10": 4,
+      "frame_bytes_without_fcs": 93,
+      "expected_frame_bytes": 98,
+      "actual_tail_code": 1
+    },
+    {
+      "written_field_at_shift_10": 5,
+      "frame_bytes_without_fcs": 93,
+      "expected_frame_bytes": 98,
+      "actual_tail_code": 1
+    },
+    {
+      "written_field_at_shift_10": 6,
+      "frame_bytes_without_fcs": 93,
+      "expected_frame_bytes": 98,
+      "actual_tail_code": 1
+    },
+    {
+      "written_field_at_shift_10": 7,
+      "frame_bytes_without_fcs": 93,
+      "expected_frame_bytes": 98,
+      "actual_tail_code": 1
+    },
+    {
+      "written_field_at_shift_10": 8,
+      "frame_bytes_without_fcs": 94,
+      "expected_frame_bytes": 98,
+      "actual_tail_code": 2
+    },
+    {
+      "written_field_at_shift_10": 9,
+      "frame_bytes_without_fcs": 94,
+      "expected_frame_bytes": 98,
+      "actual_tail_code": 2
+    },
+    {
+      "written_field_at_shift_10": 10,
+      "frame_bytes_without_fcs": 94,
+      "expected_frame_bytes": 98,
+      "actual_tail_code": 2
+    },
+    {
+      "written_field_at_shift_10": 11,
+      "frame_bytes_without_fcs": 94,
+      "expected_frame_bytes": 98,
+      "actual_tail_code": 2
+    },
+    {
+      "written_field_at_shift_10": 12,
+      "frame_bytes_without_fcs": 95,
+      "expected_frame_bytes": 98,
+      "actual_tail_code": 3
+    },
+    {
+      "written_field_at_shift_10": 13,
+      "frame_bytes_without_fcs": 95,
+      "expected_frame_bytes": 98,
+      "actual_tail_code": 3
+    },
+    {
+      "written_field_at_shift_10": 14,
+      "frame_bytes_without_fcs": 95,
+      "expected_frame_bytes": 98,
+      "actual_tail_code": 3
+    },
+    {
+      "written_field_at_shift_10": 15,
+      "frame_bytes_without_fcs": 95,
+      "expected_frame_bytes": 98,
+      "actual_tail_code": 3
+    }
+  ],
+  "finding": "Bits 11:10 do not affect frame length; bit 12 increments valid bytes. Correct field is bits 14:12 (3 bits).",
+  "legacy_reference_field": "bits 13:10 (4 bits), unsuitable for this device"
+}

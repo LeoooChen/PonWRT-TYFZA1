@@ -1,0 +1,26 @@
+[
+  {
+    "url": "https://raw.githubusercontent.com/jameywine/GPL-for-GP3000/5090fbcb6ba743dd7b1314811ef557bad0460147/bootloader/u-boot-2022.10/board/realtek_10G_PON/common/eth_ni.c",
+    "path": "evidence/lan-reference/bootloader/u-boot-2022.10/board/realtek_10G_PON/common/eth_ni.c",
+    "sha256": "c775db433cf1fa42397eb3c3fe50dfc37deeca109288066fa84e73a5a38a9611",
+    "bytes": 41753
+  },
+  {
+    "url": "https://raw.githubusercontent.com/jameywine/GPL-for-GP3000/5090fbcb6ba743dd7b1314811ef557bad0460147/bootloader/u-boot-2022.10/board/realtek_10G_PON/common/eth_ni.h",
+    "path": "evidence/lan-reference/bootloader/u-boot-2022.10/board/realtek_10G_PON/common/eth_ni.h",
+    "sha256": "cd104f504e9e196619c44a6205956f67df292494e2b9f130628351bedf107b39",
+    "bytes": 7004
+  },
+  {
+    "repository_commit": "5090fbcb6ba743dd7b1314811ef557bad0460147",
+    "path": "evidence/rtl-workspace/downloads/reference/taurus-uboot-study-20261005/bootloader/u-boot-2022.10/board/realtek_10G_PON/common/eth_ni_taurus.c",
+    "sha256": "129a60467a94ef6b9d6c2d61f69fccc963db952c3183d2a718d44203f99383ec",
+    "scope": "Taurus port-to-CPU mux, management XRAM register offsets and fields"
+  },
+  {
+    "repository_commit": "5090fbcb6ba743dd7b1314811ef557bad0460147",
+    "path": "evidence/rtl-workspace/downloads/reference/taurus-uboot-study-20261005/bootloader/u-boot-2022.10/board/realtek_10G_PON/common/ne/taurus/include/reg/rtl9617c_registers.h",
+    "sha256": "4823880e97964266e248f43212f23e8e9fae3cf6a0486a4ea1ad02b19cc9468d",
+    "scope": "Taurus port-to-CPU mux, management XRAM register offsets and fields"
+  }
+]
