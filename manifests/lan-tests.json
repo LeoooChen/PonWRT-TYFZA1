@@ -181,6 +181,40 @@
       "received": 50,
       "loss_percent": 0
     },
-    "ipv6_multicast": "initial test did not receive NDP; receive-mode callback added, retest pending"
+    "ipv6_multicast": "Fixed and retested successfully in final_runtime"
+  },
+  "multicast_build": {
+    "firmware_compile": "passed",
+    "packaging_shell": "failed because build_lan_ui.sh was edited while the running shell still read it",
+    "packaging_recovery": "direct make_ram_fit invocation succeeded; all firmware files copied",
+    "fit": {
+      "kernel_version": "6.18.55",
+      "cpus": 4,
+      "kernel_load": "0x200000",
+      "fdt_load": "0x1800000",
+      "image_sha256": "42c69dc037f73adda74a2f204d08c7ca70f7bc87126ecdac6fc18e35fb1b73d3",
+      "dtb_sha256": "1ef97cc1844853b5ff14e0deef34e4f066db1939912f9cc2a9c49f2ad13e9f8a",
+      "fit_sha256": "fd0c18ba791cf56a6b4dbb1d22f0534e47559dbe0939fe7089514e9120866ac6",
+      "fit_bytes": 5881724
+    },
+    "future_background_scripts": "scripts/start_lan_build.sh starts an immutable script snapshot"
+  },
+  "final_runtime": {
+    "revision": "r0-79bc56c",
+    "kernel": "6.18.55",
+    "fit_sha256": "fd0c18ba791cf56a6b4dbb1d22f0534e47559dbe0939fe7089514e9120866ac6",
+    "image": "artifacts/full-lan-luci-multicast-6.18.55/ram/image.itb",
+    "cpu_online": "0-3",
+    "watchdog": "active",
+    "xram_rx_mode_register": "0x00004000",
+    "dhcp_address": "192.168.1.172",
+    "luci_login_post_http": 302,
+    "luci_overview_http": 200,
+    "ipv6_link_local_ping": {
+      "sent": 3,
+      "received": 3,
+      "loss_percent": 0
+    },
+    "ipv6_neighbor_discovery": true
   }
 }

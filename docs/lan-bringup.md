@@ -28,3 +28,7 @@ bash scripts/build_lan_ui.sh
 ```
 
 feeds 使用 configs/feeds.conf 的固定提交，额外安装 cgi-io 与 luasrcdiet。完整固件包含 xram-lan.dtb；MAC 0的测试载荷使用这份 DTB。
+
+最终组播版本复测通过：XRAM_CFG=0x00004000，IPv6邻居条目正确建立；Mac→光猫IPv6 link-local ping 3/3，无丢包。DHCP仍为192.168.1.172，LuCI登录302、认证后概览200。最终载荷位于 artifacts/full-lan-luci-multicast-6.18.55/ram/image.itb，SHA256=`fd0c18ba791cf56a6b4dbb1d22f0534e47559dbe0939fe7089514e9120866ac6`。
+
+独立后台构建通过 `sh scripts/start_lan_build.sh` 启动；它保存本次脚本副本，运行过程中修改源码不会再改变 shell 正在读取的脚本。
