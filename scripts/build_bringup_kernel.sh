@@ -1,0 +1,29 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+# Build the current OpenWrt-patched kernel with the already booted native rootfs.
+set -eu
+P=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+K=$P/artifacts/kernel-source/linux-6.18.55
+B=$P/artifacts/kernel-build-6.18.55
+R=$P/artifacts/bringup-rootfs
+G=$P/sources/openwrt/target/linux/generic
+if [ ! -f "$K/.tyfza1-prepared" ]; then
+    for kind in backport pending hack; do
+        sh "$P/sources/openwrt/scripts/patch-kernel.sh" "$K" "$G/$kind-6.18"
+    done
+    cp -a "$G/files/." "$K/"
+    sh "$P/sources/openwrt/scripts/patch-kernel.sh" "$K" "$P/port/overlay/target/linux/rtl9617c/patches-6.18"
+    touch "$K/.tyfza1-prepared"
+fi
+cp -a "$P/port/overlay/target/linux/rtl9617c/files-6.18/." "$K/"
+mkdir -p "$B" "$R"
+if [ ! -e "$R/sbin/init" ]; then
+    tar -xzf "$P/artifacts/prior-native-20261002/firmware/openwrt-rtl9617c-generic-tianyi_tyfza1-rootfs.tar.gz" -C "$R"
+fi
+printf 'file /init %s 0755 0 0\n' "$G/other-files/init" > "$B/init-cpio-list"
+cp "$P/artifacts/prior-native-20261002/verification/kernel.config" "$B/.config"
+"$K/scripts/config" --file "$B/.config" --set-str INITRAMFS_SOURCE "$R $B/init-cpio-list $G/image/initramfs-base-files.txt" --set-val INITRAMFS_ROOT_UID 501 --set-val INITRAMFS_ROOT_GID 501
+make -C "$K" O="$B" ARCH=arm64 olddefconfig
+make -C "$K" O="$B" ARCH=arm64 -j4 Image
+sh "$P/port/scripts/check-dtb.sh" "$K" "$P/artifacts/dtb-6.18.55" "$P/analysis/private/live-fit.dtb"
+sha256sum "$B/arch/arm64/boot/Image"

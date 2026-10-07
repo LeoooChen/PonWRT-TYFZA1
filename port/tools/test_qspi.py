@@ -109,6 +109,17 @@ int main(int argc, char **argv)
         CHECK(rtl_qspi_adjust_op_size(&mem, &op) == 0 && op.data.nbytes == 2048);
         op.data.buswidth = 4;
         CHECK(!rtl_qspi_supports_op(&mem, &op));
+    } else if (!strcmp(argv[1], "dirmap-template")) {
+        op.cmd.opcode = 0x03;
+        op.addr.nbytes = 2; op.addr.buswidth = 1;
+        op.dummy.nbytes = 1; op.dummy.buswidth = 1;
+        op.data.nbytes = 0; op.data.buswidth = 1;
+        op.data.dir = SPI_MEM_DATA_IN;
+        CHECK(rtl_qspi_supports_op(&mem, &op));
+        op.cmd.opcode = 0x02; op.dummy.nbytes = 0;
+        op.data.dir = SPI_MEM_DATA_OUT;
+        CHECK(rtl_qspi_supports_op(&mem, &op));
+        CHECK(nkicks == 0);
     } else if (!strcmp(argv[1], "timeout")) {
         op.cmd.opcode = 0x03; op.data.nbytes = 8; op.data.buswidth = 1;
         op.data.dir = SPI_MEM_DATA_IN; op.data.buf.in = buffer;
@@ -150,6 +161,9 @@ class QspiTransactions(unittest.TestCase):
 
     def test_read_tail_count_and_capabilities(self):
         self.run_case('read-tail')
+
+    def test_spinand_dirmap_zero_length_template(self):
+        self.run_case('dirmap-template')
 
     def test_timeout_releases_burst(self):
         self.run_case('timeout')

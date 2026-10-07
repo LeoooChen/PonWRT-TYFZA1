@@ -1,0 +1,38 @@
+{
+  "2026-10-07": {
+    "first_ram_boot": {
+      "kernel": "6.18.52",
+      "fit_sha256": "9edfe7e23568ed71964b1e85bba98fd2abe744e01e4d751de933452b0f4d2262",
+      "download_crc32": "37575af9",
+      "bootloader_signature_verified": true,
+      "shell": true,
+      "uart_rx_tx": true,
+      "gicv3": true,
+      "timer_mhz": 25,
+      "procd_ubus": true,
+      "watchdog_state": "active",
+      "watchdog_timeout_seconds": 30,
+      "uptime_observed_seconds": 163,
+      "cpus_online": "0",
+      "kernel_load": "0x00000000",
+      "finding": "Kernel at zero overlaps stock 4KiB VoIP reservation; next RAM FIT moves Image and entry to 0x00200000."
+    },
+    "serial_log": "logs/serial-20261007-212948.txt",
+    "smp_ram_boot": {
+      "kernel": "6.18.52",
+      "kernel_load": "0x00200000",
+      "fit_sha256": "1bcdcbc7b7fca89a5798f2ab4a492e6f89f67c73e2904c47310e17a81a744ce9",
+      "cpu_online": "0-3",
+      "gic_timer_uart_working": true,
+      "uptime_observed_seconds": 126,
+      "voip_vector_reserved": true,
+      "nand_probe_error": -95,
+      "nand_probe_cause": "supports_op rejected spi-mem dirmap op template because data.nbytes=0; template still has DATA_IN/OUT direction",
+      "fix": "Decide command-only format from data.dir==SPI_MEM_NO_DATA",
+      "qspi_regression": {
+        "before": "1 failed, 4 passed",
+        "after": "5 passed"
+      }
+    }
+  }
+}

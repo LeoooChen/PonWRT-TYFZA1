@@ -57,9 +57,10 @@ static bool rtl_qspi_supports_op(struct spi_mem *mem, const struct spi_mem_op *o
 		return false;
 	if ((op->addr.nbytes && op->addr.buswidth != 1) ||
 	    (op->dummy.nbytes && op->dummy.buswidth != 1) ||
-	    (op->data.nbytes && op->data.buswidth != 1))
+	    (op->data.dir != SPI_MEM_NO_DATA && op->data.buswidth != 1))
 		return false;
-	if (!op->data.nbytes && (op->dummy.nbytes ||
+	// spi-mem dirmap templates have a data direction with zero length.
+	if (op->data.dir == SPI_MEM_NO_DATA && (op->dummy.nbytes ||
 	    (op->addr.nbytes && op->addr.nbytes != 3 && op->addr.nbytes != 4)))
 		return false;
 	return spi_mem_default_supports_op(mem, op);

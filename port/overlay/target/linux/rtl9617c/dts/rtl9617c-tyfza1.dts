@@ -12,7 +12,7 @@
 
 	chosen {
 		stdout-path = "serial0:115200n8";
-		bootargs = "earlycon console=ttyS0,115200n8 loglevel=8 ignore_loglevel clk_ignore_unused maxcpus=1";
+		bootargs = "earlycon console=ttyS0,115200n8 loglevel=7 clk_ignore_unused maxcpus=4";
 	};
 
 	memory@0 {
