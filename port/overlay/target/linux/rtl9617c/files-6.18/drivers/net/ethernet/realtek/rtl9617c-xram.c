@@ -23,6 +23,7 @@
 #include "rtl9617c-xram-format.h"
 #include "rtl9617c-dma.h"
 #include "rtl9617c-qm.h"
+#include "rtl9617c-ni.h"
 
 #define GLB_STATIC 0xa01c
 #define PORT_TO_CPU GENMASK(3, 0)
@@ -65,6 +66,26 @@ struct rtl_xram {
 	int rx_irq;
 	bool irq_requested;
 };
+
+int rtl9617c_ni_report_configure(struct device *dev, unsigned int low, unsigned int high)
+{
+	struct net_device *netdev = dev_get_drvdata(dev);
+	struct rtl_xram *priv;
+
+	if (!netdev)
+		return -EPROBE_DEFER;
+	priv = netdev_priv(netdev);
+	writel((high << 14) | low, priv->ni + 0x96d4);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_report_configure);
+
+u32 rtl9617c_ni_report_state(struct device *dev)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	return readl(priv->ni + 0x96d4);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_report_state);
 
 static unsigned int rtl_pointer(struct rtl_xram *priv, unsigned int reg)
 {

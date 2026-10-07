@@ -39,7 +39,7 @@
     "profile_manifest": "manifests/pon-serdes-profiles.json",
     "loader_machine_code_evidence": "analysis/private/target-psds-profile-loader.txt"
   },
-  "next": "Native PUC upstream queues, OAM receive/transmit, PON netdev and optical end-to-end validation",
+  "next": "PON netdev, NI source-port demultiplexing, OAM receive/transmit and optical end-to-end validation",
   "PON_registered_and_business_verified": false,
   "full_main_verified": {
     "payload": "artifacts/full-ni-pon-base-6.18.55/ram-pon",
@@ -451,5 +451,183 @@
       "logs/mpcp-pdc-main-auto.txt",
       "logs/mpcp-pdc-main-reload.txt"
     ]
+  },
+  "native_PUC": {
+    "source": "GPL ca-network-engine/aal-77c/aal_puc.c and Taurus register header",
+    "driver": "rtl9617c-pon-puc.c",
+    "fit": {
+      "kernel_version": "6.18.55",
+      "cpus": 4,
+      "kernel_load": "0x200000",
+      "fdt_load": "0x1800000",
+      "image_sha256": "d538d46eb5e4c704304af32d8129f54a4456fcc6a8f50d9fb2dd3d119bc4980c",
+      "dtb_sha256": "bc87f468bdff3a81179d93361bd7d49b73308ec23e55e6c553d382a4ebb6360f",
+      "fit_sha256": "168a27eb5ba659b4ba252ffd73324d1f2a4111c38a3f24fca4323bce8454ed7e",
+      "fit_bytes": 5217988
+    },
+    "payload": "artifacts/ram-puc-02",
+    "PVT_entries": 64,
+    "CIR_entries": 256,
+    "PIR_entries": 256,
+    "modes_verified": [
+      {
+        "LLIDs": 1,
+        "queues_per_LLID": 8
+      },
+      {
+        "LLIDs": 4,
+        "queues_per_LLID": 8
+      },
+      {
+        "LLIDs": 32,
+        "queues_per_LLID": 4
+      }
+    ],
+    "port0_single_LLID": [
+      "1c0a0300",
+      "c1a0b048",
+      "00001083",
+      "00000000",
+      "00000000"
+    ],
+    "port1_single_LLID": [
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000",
+      "00000000"
+    ],
+    "CIR_PIR_readback_samples": [
+      0,
+      7,
+      127,
+      255
+    ],
+    "CIR_config": {
+      "rate_k": 0,
+      "rate_m": 0,
+      "burst": 0,
+      "enable": 2
+    },
+    "PIR_config": {
+      "rate_k": 1023,
+      "rate_m": 65535,
+      "burst": 4095,
+      "enable": 2
+    },
+    "token_count_field": "DATA1[29:9] is a dynamic hardware counter",
+    "NI_report_threshold": "00370052",
+    "NI_report_low": 82,
+    "NI_report_high": 220,
+    "buffer_limits": [
+      "000007a0",
+      "000003b0",
+      "00000200"
+    ],
+    "report_thresholds": [
+      "ffff8000",
+      "80008000"
+    ],
+    "special_control_queue": 127,
+    "configuration_error": 0,
+    "hardware_queue_mapping_verified": true,
+    "optical_transmission_verified": false,
+    "logs": [
+      "logs/puc01-configure.txt",
+      "logs/puc01-mode-switch.txt",
+      "logs/puc01-decoded-port0.json",
+      "logs/puc02-readback.txt",
+      "logs/puc02-lan-state.txt",
+      "logs/puc02-dtb-validation.json"
+    ],
+    "full_main": {
+      "payload": "artifacts/full-pon-puc02-6.18.55/ram-pon",
+      "fit": {
+        "kernel_version": "6.18.55",
+        "cpus": 4,
+        "kernel_load": "0x200000",
+        "fdt_load": "0x1800000",
+        "image_sha256": "76d93224498acdaca1260f0e9d0bf09dac2f5e14a3e9ce3599015a3392219262",
+        "dtb_sha256": "bc87f468bdff3a81179d93361bd7d49b73308ec23e55e6c553d382a4ebb6360f",
+        "fit_sha256": "810465cb518aa24a38723a54bd30fc2bfd817e8dc8177315b8f464030451185b",
+        "fit_bytes": 5896572
+      },
+      "revision": "r0-79bc56c",
+      "kernel": "6.18.55",
+      "compiler": "OpenWrt GCC14.4/musl",
+      "background_unit": "ponwrt-tyfza1-lan-20261008-064625",
+      "build_exit": 0,
+      "automatic_startup": true,
+      "PUC_initialized_at_seconds": 14.749109,
+      "MPCP_initialized_at_seconds": 14.766676,
+      "startup_order": [
+        "SerDes",
+        "ONU identity and LLID count",
+        "MAC/PCS/FEC",
+        "PUC",
+        "PDC",
+        "MPCP"
+      ],
+      "reload_verified": true,
+      "signal_loss": 1,
+      "PCS_sync": false,
+      "registered_LLIDs": 0,
+      "UDP": {
+        "expected": 100000,
+        "received": 100000,
+        "unique": 100000,
+        "missing": 0,
+        "duplicate": 0,
+        "bad": 0,
+        "reordered": 0
+      },
+      "TCP_send": {
+        "mode": "send",
+        "peer": [
+          "192.168.1.1",
+          36318
+        ],
+        "bytes": 16777216,
+        "seconds": 0.514,
+        "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+      },
+      "TCP_receive": {
+        "mode": "receive",
+        "peer": [
+          "192.168.1.1",
+          50814
+        ],
+        "bytes": 16777216,
+        "seconds": 0.465,
+        "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+      },
+      "TCP_roundtrip_cmp_exit": 0,
+      "TCP_checksum_errors": 0,
+      "RX_errors": 0,
+      "RX_dropped": 0,
+      "logs": [
+        "logs/puc02-main-startup.txt",
+        "logs/puc02-main-reload-and-lan.txt",
+        "logs/puc02-main-udp-receive.txt",
+        "logs/puc02-main-udp-send.json",
+        "logs/puc02-main-tcp-device-receive.txt",
+        "logs/puc02-main-dhcp.txt",
+        "logs/puc02-main-luci.json",
+        "logs/puc02-main-final-system.txt"
+      ],
+      "DHCP": {
+        "interface": "Mac en5",
+        "address": "192.168.1.170",
+        "server": "192.168.1.1",
+        "ACK": true,
+        "log": "logs/puc02-main-dhcp.txt"
+      },
+      "LuCI": {
+        "login_status": "302",
+        "overview_status": "200",
+        "login_exit": 0,
+        "overview_exit": 0
+      }
+    }
   }
 }

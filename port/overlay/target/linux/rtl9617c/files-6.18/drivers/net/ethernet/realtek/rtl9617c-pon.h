@@ -14,6 +14,7 @@ enum rtl_pon_mode {
 
 struct rtl9617c_pon {
 	struct device *dev;
+	struct device *ni_dev;
 	void __iomem *control;
 	void __iomem *mac;
 	void __iomem *epon_control;
@@ -42,6 +43,8 @@ struct rtl9617c_pon {
 	bool mpcp_enabled;
 	bool pdc_configured;
 	int pdc_error;
+	bool puc_configured;
+	int puc_error;
 	u32 registered;
 	u32 waiting;
 	u32 registration_attempts;
@@ -70,4 +73,6 @@ int rtl_pon_llid_update(struct rtl9617c_pon *pon, bool add, unsigned int index,
 			 unsigned int mac, u16 llid, bool multicast);
 int rtl_pon_pdc_configure(struct rtl9617c_pon *pon);
 ssize_t rtl_pon_pdc_state(struct rtl9617c_pon *pon, char *buf);
+int rtl_pon_puc_configure(struct rtl9617c_pon *pon);
+ssize_t rtl_pon_puc_state(struct rtl9617c_pon *pon, char *buf);
 #endif

@@ -11,7 +11,7 @@
 };
 
 &{/soc} {
-	ethernet@4f4300000 {
+	ni0: ethernet@4f4300000 {
 		compatible = "realtek,rtl9617c-xram-eth";
 		reg = <4 0xf4300000 0 0x10000>, <0 0xf4500000 0 0x2000>;
 		reg-names = "ni", "xram";

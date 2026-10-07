@@ -83,6 +83,10 @@ def inspect(stock, native):
                        4, 0xf4320080, 0, 4, 4, 0xf4320090, 0, 4, 4, 0xf4320180, 0, 8]:
             raise ValueError("PON global control window differs from register definition")
         checked.append("PON MAC/global registers")
+        supplier = get(native, "/soc/pon@4f5500000", "realtek,network-engine")
+        if supplier != get(native, "/soc/ethernet@4f4300000", "phandle"):
+            raise ValueError("PON network engine supplier differs from the native NI device")
+        checked.append("PON/NI supplier binding")
         for prop in ("reg", "interrupts"):
             if get(native, "/soc/interrupt-controller@f4320164", prop) != get(stock, "/ne_ictl@0xf4320164", prop):
                 raise ValueError("NE/PON interrupt topology differs from stock")

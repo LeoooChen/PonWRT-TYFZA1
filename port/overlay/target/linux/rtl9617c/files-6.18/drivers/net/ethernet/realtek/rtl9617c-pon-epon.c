@@ -76,6 +76,7 @@ int rtl_pon_epon_prepare(struct rtl9617c_pon *pon)
 	}
 	pon->mac_prepared = false;
 	pon->pdc_configured = false;
+	pon->puc_configured = false;
 	rtl_epon_csr_reset(pon);
 	rtl_pon_update(pon->mac + MIB_CTRL, BIT(0), 0);
 	rtl_pon_update(pon->mac + LINK_DETECT, GENMASK(13, 8), 0x3f << 8);

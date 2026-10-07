@@ -1,35 +1,37 @@
 # TYFZA1 原生 PON 移植
 
-2026-10-08，原生SerDes、gearbox、EPON MAC/PCS/FEC初始化已在TYFZA1实机验证，并由完整OpenWrt main r0-79bc56c / Linux6.18.55 / GCC14.4.0的S25pon服务自动执行。最新RAM载荷为artifacts/full-pon-auto-init-6.18.55/ram-pon/image.itb，SHA256=37c59a602af4f01d3eced6d62b14e9beb99d6928d2cbf8f710b6d3ea3b7eb117。
+截至2026-10-08，TYFZA1的原生PON驱动已包含SerDes、gearbox、EPON MAC/PCS/FEC、MPCP注册控制、PDC下行映射和PUC上行队列。代码位于port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek，使用Linux platform_driver、firmware API、mutex、delayed_work及threaded IRQ。
 
-## 已移植与实机结果
+当前光口LOS=1、PCS同步=0、注册LLID位图=0。实机验证覆盖初始化、寄存器/间接表操作及LAN回归；PON注册和光口业务尚待验证。结构化证据和载荷哈希见manifests/pon-tests.json。
 
-rtl9617c-pon-serdes.c用Linux firmware API加载本机SerDes参数，替换原厂内核内的文本解析、OSAL延时和轮询。已实现模拟复位、CSR释放、模式设置、burst极性、LOS极性、参数加载、时钟同步检查和gearbox复位；Linux delayed_work读取同步状态。
+## 板级资源与参数
 
-非对称10G EPON的320条参数在实机执行后，PSDS状态0x4001→0x5c01，RX/TX/MPCP时钟均0→1。模拟寄存器0420/0424/0429/0780/0796/079f读回与原厂表一致；1G、非对称10G、对称10G模式寄存器分别为040c/044c/046c，均完成参数加载及时钟初始化。当前LOS=1、BER_NOTIFY=0、MPCP注册位图0；这些模式切换测试证明初始化和寄存器行为。
+PON MAC窗口4f5500000/0xc000来自原厂DTB的NI resource8。DTS另映射GLOBAL_PON_CNTL、GLOBAL_EPON_CNTL、GLOBAL_PSDS_INIT_CNTL、光模块控制/状态和顶层IRQ；NE IRQ拓扑为GIC SPI1 → NE bank bit5 → PON MAC/MPCP。PON通过realtek,network-engine引用原生NI，由NI驱动配置PUC报告阈值。port/tools/verify_dtb.py核对窗口、IRQ和supplier绑定。
 
-rtl9617c-pon-epon.c已移植CSR复位、MAC/PCS控制、正常burst配置、帧大小/控制帧过滤、RTT补偿、统计RAM初始化和FEC配置。非对称10G的实读包括EPON_CNTL=000200ef、PCS_RX=5000、PCS_TX=03020000、XG_FEC=20、MIB_RAM_STATUS=1，配置错误0。
+原厂配置为非对称10G EPON，LLID模式single、数量1、广播映射索引63、report模式0、laser on/off各32TQ。tools/prepare_pon_identity.py从备份EPON_LLID_TBL第0项提取ONU MAC，生成镜像内/etc/config/pon。
 
-OpenWrt使用/etc/config/pon选择模式；S25pon在启动时加载SerDes并初始化MAC/PCS/FEC，配置变更可reload。完整主线实机于13.9s完成SerDes、14.3s完成MAC初始化。PON初始化后100000个UDP包零丢失/重复/错包，16MiB双向TCP内容一致、TCP校验和错误0、LAN接收错误/丢弃0；DHCP及LuCI登录正常。
+原厂/etc/serdes/pon_serdes_*.txt的12组参数完整保留。tools/prepare_pon_serdes.py生成little-endian TPON记录：magic、版本1、行数及偏移/值/延时us；原厂延时0按10us执行。本机ca-ne.ko反汇编确认原加载器最多512条，地址低16位映射PON窗口。记录装入/lib/firmware/realtek/rtl9617c，哈希见manifests/pon-serdes-profiles.json。
 
-结构化证据在manifests/pon-tests.json，原始状态和传输记录在logs/serdes*、logs/epon01-*和logs/pon-auto-*。
+## SerDes、MAC与注册控制
 
-## 资料和板级资源
+rtl9617c-pon-serdes.c实现模拟复位、CSR释放、模式选择、burst/LOS极性、参数加载、时钟同步检查和gearbox复位。非对称10G的320条参数实机执行后，PSDS状态0x4001→0x5c01，RX/TX/MPCP时钟均0→1。模拟寄存器0420/0424/0429/0780/0796/079f读回与原厂表一致；1G、非对称10G、对称10G均完成参数加载，模式值分别为040c/044c/046c。
 
-本机原厂配置选择EPON/非对称10G，LLID模式single、数量1、广播映射索引63、report模式0、laser on/off各32TQ。
+rtl9617c-pon-epon.c实现MAC CSR复位、PCS、FEC、burst、帧大小/控制帧过滤、RTT补偿及统计RAM初始化。非对称10G实读包括EPON_CNTL=000200ef、PCS_RX=5000、PCS_TX=03020000、XG_FEC=20、MIB_RAM_STATUS=1。
 
-PON MAC资源4f5500000/0xc000来自原厂DTB的NI resource8。新增原生DTS分别映射GLOBAL_PON_CNTL、GLOBAL_EPON_CNTL、GLOBAL_PSDS_INIT_CNTL及光模块控制/状态寄存器；verify_dtb.py检查其与原厂DTB及寄存器定义的对应关系。
+rtl9617c-pon-mpcp.c配置ONU MAC、1..32个LLID及MPCP定时参数，处理注册轮询、REGISTER帧、NACK静默期、注册变化和中断。实机间接接口成功添加、读回、删除index62/mac31/LLID1234；1/4/32项配置的waiting位图分别为1/f/ffffffff。当前LOS1时注册尝试保持0。
 
-参数来自原厂/etc/serdes/pon_serdes_*.txt，12组完整保留。目标ca-ne.ko的机器码确认最多512条、地址低16位映射PON窗口、延时0采用10us。tools/prepare_pon_serdes.py生成Linux固件记录：little-endian TPON magic、u32版本1、u32行数、每行u32偏移/值/延时us；构建脚本将记录装入/lib/firmware/realtek/rtl9617c。哈希见manifests/pon-serdes-profiles.json。
+## PDC与PUC
 
-寄存器序列参考GPL aal_psds.c、aal_epon_mac.c、aal_epon_fec.c，同时核对本机ca-ne.ko机器码。原生代码使用Linux platform_driver、mutex、firmware API、delayed_work和内核I/O接口。
+rtl9617c-pon-pdc.c配置256项下行映射，目标CPU16、源PON7、FE bypass=1，控制报文COS7。实机抽样读回index0/31/63/64/127/192/255正确；重复配置及与MPCP同时初始化通过。NI按COS7→COS0处理CPU接收环。
 
-## 下一步
+rtl9617c-pon-puc.c配置64项PVT、256项CIR/PIR、VOQ有效位图、缓冲限制、report queue set、上行调度与NI报告阈值。1..16 LLID配置时每项使用8队列，17..32项时使用4队列；未使用的PVT项清零，保留原厂特殊控制队列127。
 
-接入MPCP参数、ONU MAC及LLID注册事件，移植OAM收发和认证；配置PUC/PDC队列并将PON接口接入Linux网络栈。MAC收发使能与业务队列一起接入，完成注册后验证PON业务。随后按既定顺序继续Wi-Fi和硬件加速，并完成原生UBI安装/升级/恢复流程。
+快速镜像ram-puc-01在实机验证1、4、32 LLID队列模式及映射，并恢复单LLID。ram-puc-02进一步读回NI报告阈值00370052（82/220）和CIR/PIR抽样0/7/127/255；CIR配置为rate=0、burst=0、enb=2，PIR为K=3ff、M=ffff、burst=fff、enb=2。DATA1的29:9是硬件动态token计数，会随运行变化。端口0的DATA0..4为1c0a0300/c1a0b048/00001083/0/0，解码为队列0..7全部使能；端口1为0。缓冲限制7a0/3b0/200，report阈值ffff8000/80008000，错误码0。证据在logs/puc01-*和logs/puc02-*。
 
-原生MPCP控制已在实机配置，ONU身份来自原机EPON_LLID_TBL第0项；Linux delayed_work与threaded IRQ接管注册轮询、状态事件和NACK静默期。NE IRQ拓扑匹配原机：GIC SPI1 → NE bank bit5 → PON MAC/MPCP。实机LLID间接接口成功添加、读回和删除index62/mac31/LLID1234；这项只验证硬件表操作。1/4/32项配置切换分别得到waiting=1/f/ffffffff、SYNCTIME=f820/e020/0020，回到原厂单LLID配置后LAN错误/丢弃仍0。LOS1条件下注册尝试保持0。
+S25pon启动顺序为SerDes → ONU身份/LLID数量 → MAC/PCS/FEC → PUC → PDC → MPCP，支持/etc/init.d/pon reload。
 
-原生rtl9617c-pon-pdc.c已设置PDC控制及256项下行映射，通过硬件间接接口抽样读回index0/31/63/64/127/192/255。数据目标CPU16、PON源7、FE bypass=1，MPCP/OAM优先级7，控制寄存器7。重复初始化及与MPCP同时配置均成功；此项证明硬件映射，光口下行报文仍待PCS同步。NI接收已按原厂从COS7到COS0顺序处理，以优先接收PON控制帧。
+## 主线验证与后续工作
 
-完整main/GCC14.4/musl镜像已自动按SerDes→MAC/PCS/FEC→PDC→MPCP顺序启动，PDC于10.22s、MPCP于10.23s完成配置。identity来源原机LLID0，LOS1时注册等待位图1、尝试0，reload通过。初始化后的100000个UDP包零丢失/重复/错包，16MiB双向TCP cmp0、TCP校验和错误0、LAN错误/丢弃0，LuCI登录302/Overview200。最新载荷artifacts/full-pon-mpcp-pdc-6.18.55/ram-pon/image.itb，SHA256=fe556c4135ca2e42858496faad1c10c91b5be51715b6444c05c0711d0c9eefc2。下一步PUC上行队列、OAM及PON业务接口，实际注册仍需光路同步。
+完整OpenWrt main r0-79bc56c / Linux6.18.55 / GCC14.4 / musl的MPCP/PDC自动启动已通过实机测试。初始化后100000个UDP包零丢失/重复/错包，16MiB双向TCP内容一致，LAN接收错误/丢弃0；DHCP和LuCI登录/Overview正常。载荷为artifacts/full-pon-mpcp-pdc-6.18.55/ram-pon/image.itb，SHA256=fe556c4135ca2e42858496faad1c10c91b5be51715b6444c05c0711d0c9eefc2。
+
+PUC完整主线自动启动已在实机验证，14.75s完成PUC、14.77s完成MPCP，reload通过；100000个UDP包零丢失/重复/错包，16MiB双向TCP sha256与cmp一致，TCP校验和错误和LAN接收错误/丢弃均0。en5已恢复DHCP并收到192.168.1.170，LuCI登录302、Overview200。新载荷artifacts/full-pon-puc02-6.18.55/ram-pon/image.itb，SHA256=810465cb518aa24a38723a54bd30fc2bfd817e8dc8177315b8f464030451185b。下一步按docs/pon-data-path.md接入PON netdev、NI源端口分流和OAM内部封装，继续原生OAM发现、认证及业务配置，完成光路注册和端到端业务测试。随后继续Wi-Fi、硬件加速及原生UBI安装/升级/恢复流程。

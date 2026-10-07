@@ -5,7 +5,7 @@
 +
 +config RTL9617C_PON
 +	tristate "RTL9617C native PON MAC platform"
-+	depends on OF && ARCH_RTL9617C
++	depends on OF && ARCH_RTL9617C && RTL9617C_XRAM_ETH
 +	select FW_LOADER
 +	help
 +	  Taurus PON register resources and MAC state for native PON bring-up.
@@ -18,7 +18,7 @@
 @@ -1,4 +1,6 @@
  # SPDX-License-Identifier: GPL-2.0-only
 +obj-$(CONFIG_RTL9617C_PON) += rtl9617c-pon-core.o
-+rtl9617c-pon-core-y := rtl9617c-pon.o rtl9617c-pon-serdes.o rtl9617c-pon-epon.o rtl9617c-pon-mpcp.o rtl9617c-pon-pdc.o
++rtl9617c-pon-core-y := rtl9617c-pon.o rtl9617c-pon-serdes.o rtl9617c-pon-epon.o rtl9617c-pon-mpcp.o rtl9617c-pon-pdc.o rtl9617c-pon-puc.o
  obj-$(CONFIG_RTL9617C_XRAM_ETH) += rtl9617c-eth.o
  rtl9617c-eth-y := rtl9617c-xram.o rtl9617c-dma.o rtl9617c-qm.o
  #

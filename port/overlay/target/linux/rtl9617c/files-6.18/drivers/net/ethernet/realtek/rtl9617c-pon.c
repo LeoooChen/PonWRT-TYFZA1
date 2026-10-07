@@ -9,6 +9,7 @@
 #include <linux/etherdevice.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include "rtl9617c-pon.h"
 
@@ -245,6 +246,31 @@ static ssize_t pdc_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_RW(pdc);
 
+static ssize_t puc_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	ssize_t size;
+	mutex_lock(&pon->lock);
+	size = rtl_pon_puc_state(pon, buf);
+	mutex_unlock(&pon->lock);
+	return size;
+}
+
+static ssize_t puc_store(struct device *dev, struct device_attribute *attr,
+			const char *buf, size_t count)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	bool enabled;
+	int ret = kstrtobool(buf, &enabled);
+	if (ret)
+		return ret;
+	if (!enabled)
+		return -EINVAL;
+	ret = rtl_pon_puc_configure(pon);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_RW(puc);
+
 static struct attribute *rtl9617c_pon_attrs[] = {
 	&dev_attr_state.attr,
 	&dev_attr_serdes.attr,
@@ -256,6 +282,7 @@ static struct attribute *rtl9617c_pon_attrs[] = {
 	&dev_attr_mpcp.attr,
 	&dev_attr_llid_table.attr,
 	&dev_attr_pdc.attr,
+	&dev_attr_puc.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(rtl9617c_pon);
@@ -269,6 +296,23 @@ static int rtl9617c_pon_probe(struct platform_device *pdev)
 	if (!pon)
 		return -ENOMEM;
 	pon->dev = dev;
+	{
+		struct device_node *node = of_parse_phandle(dev->of_node, "realtek,network-engine", 0);
+		struct platform_device *engine = of_find_device_by_node(node);
+		of_node_put(node);
+		if (!engine)
+			return -EPROBE_DEFER;
+		if (!platform_get_drvdata(engine)) {
+			put_device(&engine->dev);
+			return -EPROBE_DEFER;
+		}
+		pon->ni_dev = &engine->dev;
+		if (!device_link_add(dev, pon->ni_dev, DL_FLAG_AUTOREMOVE_CONSUMER)) {
+			put_device(&engine->dev);
+			return -ENOMEM;
+		}
+		put_device(&engine->dev);
+	}
 	pon->mode = RTL_PON_EPON_D10G;
 	mutex_init(&pon->lock);
 	rtl_pon_serdes_init_work(pon);
