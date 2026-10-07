@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-only
+#include "rtl9617c-tyfza1-ni.dts"
+
+/ { model = "Tianyi TYFZA1 (native NI/PON bring-up)"; };
+
+&{/soc} {
+	pon@4f5500000 {
+		compatible = "realtek,rtl9617c-pon";
+		reg = <4 0xf5500000 0 0xc000>, <4 0xf4320094 0 4>;
+		reg-names = "mac", "control";
+	};
+};

@@ -1,0 +1,158 @@
+{
+  "pon_serdes_activee_100m.txt": {
+    "sha256": "2d2fcfc36cf2e89657aa18e4c7b7a23352415e266d1b4e29573cf5ccdfcd23d7",
+    "rows": 322,
+    "columns": {
+      "4": 322
+    },
+    "addresses": [
+      "0xf550a0cc",
+      "0xf550a0d0"
+    ],
+    "delay_total_us": 0,
+    "comment": "# RL6706_P7_Ethernet_125M_20220606"
+  },
+  "pon_serdes_activee_10d3125g.txt": {
+    "sha256": "d27131f46e9dba78afe60fddb74c9a5d9ce8be0051301e7aced47caf610c2905",
+    "rows": 320,
+    "columns": {
+      "4": 320
+    },
+    "addresses": [
+      "0xf550a0cc",
+      "0xf550a0d0"
+    ],
+    "delay_total_us": 0,
+    "comment": "# RL6706_P7_Ethernet_10.3125G_20220315"
+  },
+  "pon_serdes_activee_1d25g.txt": {
+    "sha256": "bb70bf8b1095c03cbcc7408493efc2464578b53b2cbe23428a1bb2b414e3f5d9",
+    "rows": 320,
+    "columns": {
+      "4": 320
+    },
+    "addresses": [
+      "0xf550a0cc",
+      "0xf550a0d0"
+    ],
+    "delay_total_us": 0,
+    "comment": "# RL6706_P7_Ethernet_1.25G_20220506"
+  },
+  "pon_serdes_activee_3d125g.txt": {
+    "sha256": "7496c1cf999dccd9c8fd2e3e3b9417294fafcbfefb2d77c216d741d20c3f06dd",
+    "rows": 320,
+    "columns": {
+      "4": 320
+    },
+    "addresses": [
+      "0xf550a0cc",
+      "0xf550a0d0"
+    ],
+    "delay_total_us": 0,
+    "comment": "# RL6706_P7_Ethernet_3.125G_20220506"
+  },
+  "pon_serdes_epon.txt": {
+    "sha256": "122455f69a575d0846c3b06aae2303f6dcbd57102ae986335eaece29f0fc5052",
+    "rows": 320,
+    "columns": {
+      "4": 320
+    },
+    "addresses": [
+      "0xf550a0cc",
+      "0xf550a0d0"
+    ],
+    "delay_total_us": 0,
+    "comment": "# RL6706_P7_EPON_PX_20220321"
+  },
+  "pon_serdes_epon_A.txt": {
+    "sha256": "b8d21de8b98af7e4463d5d2acbac7102d02d6814edf9ef04e003bb0c6159810c",
+    "rows": 320,
+    "columns": {
+      "4": 320
+    },
+    "addresses": [
+      "0xf550a0cc",
+      "0xf550a0d0"
+    ],
+    "delay_total_us": 0,
+    "comment": "# RL6706_P7_EPON_PX_20211108"
+  },
+  "pon_serdes_epon_bi10g.txt": {
+    "sha256": "3c6ced5a6a341987df97ee32cfcd1465c5856d8adbe52ead54b0f6f72baaac00",
+    "rows": 320,
+    "columns": {
+      "4": 320
+    },
+    "addresses": [
+      "0xf550a0cc",
+      "0xf550a0d0"
+    ],
+    "delay_total_us": 0,
+    "comment": "# RL6706_P7_EPON_PR_20220315"
+  },
+  "pon_serdes_epon_d10g.txt": {
+    "sha256": "192856e7a7aa40895a0e213b4071329c6e3715a00683ba85d7b3275adbc122da",
+    "rows": 320,
+    "columns": {
+      "4": 320
+    },
+    "addresses": [
+      "0xf550a0cc",
+      "0xf550a0d0"
+    ],
+    "delay_total_us": 0,
+    "comment": "# RL6706_P7_EPON_PRX_20220321"
+  },
+  "pon_serdes_gpon.txt": {
+    "sha256": "2773c5136213793a521a3fcda796c659b288c5c9bb2b07d767efffa1eb0fe061",
+    "rows": 320,
+    "columns": {
+      "4": 320
+    },
+    "addresses": [
+      "0xf550a0cc",
+      "0xf550a0d0"
+    ],
+    "delay_total_us": 0,
+    "comment": "# RL6706_P7_GPON_20220321"
+  },
+  "pon_serdes_gpon_A.txt": {
+    "sha256": "3fde692d780a8f1c9228300f017364747cb3785a8974815ec4683293253040ad",
+    "rows": 320,
+    "columns": {
+      "4": 320
+    },
+    "addresses": [
+      "0xf550a0cc",
+      "0xf550a0d0"
+    ],
+    "delay_total_us": 0,
+    "comment": "# RL6706_P7_GPON_20211108"
+  },
+  "pon_serdes_xgpon.txt": {
+    "sha256": "239c7c675caefe7b0b8dbc3747023793b29255f39b349406501ab7be57e7271f",
+    "rows": 320,
+    "columns": {
+      "4": 320
+    },
+    "addresses": [
+      "0xf550a0cc",
+      "0xf550a0d0"
+    ],
+    "delay_total_us": 0,
+    "comment": "# RL6706_P7_XGPON_20220321"
+  },
+  "pon_serdes_xgspon.txt": {
+    "sha256": "365c3c1fd6d24acb4aca751eab365dcb24e3c25105f2ca89e67e641de7d373ac",
+    "rows": 320,
+    "columns": {
+      "4": 320
+    },
+    "addresses": [
+      "0xf550a0cc",
+      "0xf550a0d0"
+    ],
+    "delay_total_us": 0,
+    "comment": "# RL6706_P7_XGSPON_20220315"
+  }
+}

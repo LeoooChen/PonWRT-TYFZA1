@@ -7,7 +7,7 @@ KERNEL=${1:?Usage: check-dtb.sh /path/to/linux-source /path/to/output /path/to/s
 OUT=${2:?Specify an output directory}
 STOCK=${3:?Specify the identified TYFZA1 backup DTB}
 mkdir -p "$OUT"
-for name in rtl9617c-tyfza1 rtl9617c-tyfza1-nand-readonly rtl9617c-tyfza1-stock-ubi-readonly rtl9617c-tyfza1-mdio rtl9617c-tyfza1-xram-lan rtl9617c-tyfza1-dma-tx rtl9617c-tyfza1-ni; do
+for name in rtl9617c-tyfza1 rtl9617c-tyfza1-nand-readonly rtl9617c-tyfza1-stock-ubi-readonly rtl9617c-tyfza1-mdio rtl9617c-tyfza1-xram-lan rtl9617c-tyfza1-dma-tx rtl9617c-tyfza1-ni rtl9617c-tyfza1-pon-status; do
     gcc -E -P -x assembler-with-cpp -nostdinc -undef -D__DTS__ \
         -I "$KERNEL/include" "$PORT/overlay/target/linux/rtl9617c/dts/$name.dts" \
         -o "$OUT/$name.dts"

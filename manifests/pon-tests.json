@@ -1,0 +1,44 @@
+{
+  "platform": {
+    "driver": "rtl9617c-pon, native Linux platform_driver",
+    "MAC_window": "0x4f5500000/0xc000",
+    "global_control": "0x4f4320094/4",
+    "fit": {
+      "kernel_version": "6.18.55",
+      "cpus": 4,
+      "kernel_load": "0x200000",
+      "fdt_load": "0x1800000",
+      "image_sha256": "a6404ed040b69717b5786de6fce5aec98a0dd53c459332379df57b15e4a12874",
+      "dtb_sha256": "78e69e859ba2f7892fd6f6e6a3242dc221ea663b8718fd5a2e05a4d06399fc01",
+      "fit_sha256": "4cae6f5f176b31585f685f3c4ac7dbd2affbb0000fdc069e10cacd952fb021f4",
+      "fit_bytes": 5208428
+    },
+    "hardware_read": {
+      "family": "epon",
+      "GLOBAL_PON_CNTL": "0x0000030f",
+      "EPON_STATUS": "0x00000021",
+      "signal_loss": 1,
+      "pcs10g_sync": 0,
+      "pcs1g_sync": 0,
+      "registered_llids": "0x00000000"
+    },
+    "raw_log": "logs/pon01-platform-state.txt"
+  },
+  "stock_mode": {
+    "PON_MODE": 2,
+    "PON_SPEED": 1,
+    "meaning": "asymmetric10G EPON",
+    "identity_and_auth": "retained only in private stock backup"
+  },
+  "serdes": {
+    "tables": 12,
+    "target_epon_d10g_records": 320,
+    "stock_loader_max_records": 512,
+    "zero_delay_us": 10,
+    "native_firmware": "artifacts/pon-serdes-firmware",
+    "profile_manifest": "manifests/pon-serdes-profiles.json",
+    "loader_machine_code_evidence": "analysis/private/target-psds-profile-loader.txt"
+  },
+  "next": "Native firmware API, PON SerDes/gearbox initialization, then MPCP/OAM and PUC/PDC queues",
+  "PON_registered_and_business_verified": false
+}

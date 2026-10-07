@@ -493,6 +493,23 @@
     "cmp_exit": 0,
     "tcp_checksum_errors": 0,
     "driver_rx_errors": 0,
-    "driver_rx_dropped": 0
+    "driver_rx_dropped": 0,
+    "ping_mtu1500": {
+      "sent": 1000,
+      "received": 1000,
+      "loss_percent": 0,
+      "mean_ms": 0.557
+    },
+    "link_reopen": {
+      "cycles_before_settled_check": 3,
+      "final_settled_check": {
+        "sent": 2,
+        "received": 2,
+        "rx_errors": 0,
+        "rx_dropped": 0
+      },
+      "note": "PHY autonegotiation can take4s; early3s ping attempts precede carrier readiness",
+      "log": "logs/ni29-reopen-settled.txt"
+    }
   }
 }

@@ -62,6 +62,26 @@ def inspect(stock, native):
     if get(native, "/soc/mdio@4f4329118", "reg") != mdio_windows:
         raise ValueError("MDIO/OCP/wrapper windows differ from stock NI resources")
     checked.append("MDIO/OCP/wrapper registers")
+    nodes = children(native, "/soc")
+    if "ethernet@4f4300000" in nodes:
+        windows = get(native, "/soc/ethernet@4f4300000", "reg")
+        names = get(native, "/soc/ethernet@4f4300000", "reg-names", "s")
+        for name, index in (("ni", 0), ("xram", 3), ("dma-lso", 4), ("qm-axi-reorder", 10)):
+            if name not in names:
+                continue
+            pos = names.index(name) * 4
+            expected = stock_ni[index * 4:index * 4 + 4]
+            actual = windows[pos:pos + 4]
+            if actual[:3] != expected[:3] or actual[3] > expected[3]:
+                raise ValueError(f"Native {name} window differs from stock NI resource")
+            checked.append(f"NI {name} registers")
+    if "pon@4f5500000" in nodes:
+        pon = get(native, "/soc/pon@4f5500000", "reg")
+        if pon[:4] != stock_ni[8 * 4:8 * 4 + 4]:
+            raise ValueError("PON MAC window differs from stock NI resource8")
+        if pon[4:] != [4, 0xf4320094, 0, 4]:
+            raise ValueError("PON global control window differs from register definition")
+        checked.append("PON MAC/global registers")
     if reservations(stock) != reservations(native):
         raise ValueError("Stock reserved memory ranges changed")
     if get(native, "/psci", "method", "s") != get(stock, "/psci", "method", "s"):
