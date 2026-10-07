@@ -9,6 +9,9 @@ if [ ! -e "$P/sources/openwrt/package/feeds/packages/cgi-io" ] || [ ! -e "$P/sou
     sh scripts/prepare_luci_feeds.sh "$P/sources/openwrt"
 fi
 sh port/scripts/sync-overlay.sh "$P/sources/openwrt"
+python3 tools/prepare_pon_serdes.py "$P/analysis/private/live-files/etc/serdes" "$P/artifacts/pon-serdes-firmware"
+mkdir -p "$P/sources/openwrt/files/lib/firmware/realtek/rtl9617c"
+cp "$P/artifacts/pon-serdes-firmware/"*.bin "$P/sources/openwrt/files/lib/firmware/realtek/rtl9617c/"
 cd sources/openwrt
 make defconfig
 make -j2 download

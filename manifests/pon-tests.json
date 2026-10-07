@@ -39,7 +39,7 @@
     "profile_manifest": "manifests/pon-serdes-profiles.json",
     "loader_machine_code_evidence": "analysis/private/target-psds-profile-loader.txt"
   },
-  "next": "Native firmware API, PON SerDes/gearbox initialization, then MPCP/OAM and PUC/PDC queues",
+  "next": "Native MPCP parameters, LLID registration states, ONU identity, OAM transport, PUC/PDC queues and PON netdev",
   "PON_registered_and_business_verified": false,
   "full_main_verified": {
     "payload": "artifacts/full-ni-pon-base-6.18.55/ram-pon",
@@ -47,5 +47,195 @@
     "revision": "r0-79bc56c",
     "kernel": "6.18.55",
     "same_PON_MAC_state_as_bringup": true
+  },
+  "serdes_native_first_test": {
+    "payload": "artifacts/ram-serdes-01",
+    "fit": {
+      "kernel_version": "6.18.55",
+      "cpus": 4,
+      "kernel_load": "0x200000",
+      "fdt_load": "0x1800000",
+      "image_sha256": "44305aebd10421e1d2fa9f6f34630a2014dffd12164120c8ee103490130ecc75",
+      "dtb_sha256": "07ea603f5d27b8aaa6882ad003da58d670fc7242e8d3efa05300fdb34a4dd5fd",
+      "fit_sha256": "97f52c59e44363e1243f8e9bae61de8af71a16a87e76830ab266258d34e89e9a",
+      "fit_bytes": 5212828
+    },
+    "firmware_api": "request_firmware_direct",
+    "profile": "pon_serdes_epon_d10g.bin",
+    "records_applied": 320,
+    "before": {
+      "status": "0x00004001",
+      "rx_clock": 0,
+      "tx_clock": 0,
+      "mpcp_clock": 0,
+      "init_register": "0x00000000"
+    },
+    "after": {
+      "status": "0x00005c01",
+      "rx_clock": 1,
+      "tx_clock": 1,
+      "mpcp_clock": 1,
+      "init_register": "0x00000020",
+      "mode_register": "0x0000044c",
+      "gearbox_register": "0x00000454",
+      "rx_los": 1,
+      "ber_notify": 0,
+      "configuration_error": 0,
+      "gearbox_reset_completed": true
+    },
+    "ping_mtu1500": {
+      "sent": 100,
+      "received": 100,
+      "mean_ms": 0.641,
+      "loss_percent": 0
+    },
+    "driver_rx_errors": 0,
+    "driver_rx_dropped": 0,
+    "logs": [
+      "logs/serdes01-init.txt",
+      "logs/serdes01-settled-state.txt",
+      "logs/serdes01-ping.txt"
+    ]
+  },
+  "serdes_parameter_readback": {
+    "payload": "artifacts/ram-serdes-02",
+    "registers": {
+      "0x0420": "0x4802",
+      "0x0424": "0xf0f0",
+      "0x0429": "0x8007",
+      "0x0780": "0x0018",
+      "0x0796": "0x5437",
+      "0x079f": "0x0f0f"
+    },
+    "profile_defined_values_match": true,
+    "log": "logs/serdes02-d10g-readback.txt",
+    "optical_status_raw": "0x00000009"
+  },
+  "serdes_mode_switch": {
+    "modes": [
+      "epon",
+      "epon-bi10g",
+      "epon-d10g"
+    ],
+    "profile_rows_each": 320,
+    "mode_registers": [
+      "0x0000040c",
+      "0x0000046c",
+      "0x0000044c"
+    ],
+    "clock_status_each": "0x00005c01",
+    "parameter_0x796": [
+      "0x5072",
+      "0x5477",
+      "0x5437"
+    ],
+    "rx_errors_after": 0,
+    "log": "logs/serdes02-mode-switch.txt",
+    "signal_loss": 1,
+    "PON_registration_verified": false
+  },
+  "native_MAC_PCS_FEC_test": {
+    "payload": "artifacts/ram-epon-01",
+    "fit": {
+      "kernel_version": "6.18.55",
+      "cpus": 4,
+      "kernel_load": "0x200000",
+      "fdt_load": "0x1800000",
+      "image_sha256": "deb0ded2e5fb78ca90d78d873dfb1671151c763700771d764111143b45e65339",
+      "dtb_sha256": "a6e840ae32ea82ade3909f0c7cf9e18ad32410df5a038cf1001fb23fef8ac688",
+      "fit_sha256": "f874f71558350957aa729fc7e130716f61219383fd31860b76811baaccd670b8",
+      "fit_bytes": 5214128
+    },
+    "mode": "epon-d10g",
+    "MIB_RAM_init_done": true,
+    "configuration_error": 0,
+    "epon_control": "0x000200ef",
+    "RX_XG": "0x0d481210",
+    "TX_XG": "0x1c40c030",
+    "PCS_RX": "0x00005000",
+    "PCS_TX": "0x03020000",
+    "XG_FEC": "0x00000020",
+    "frame_drop": "0x2c0ff000",
+    "RTT_RX": "0x00590048",
+    "RTT_TX": "0x00180016",
+    "serdes_init": "0x00000030",
+    "RX_errors": 0,
+    "RX_dropped": 0,
+    "log": "logs/epon01-mac-fec.txt",
+    "scope": "SerDes,MAC,PCS,FEC initialized; MPCP registration and OAM/data queues pending"
+  },
+  "stock_MPCP_configuration": {
+    "LLID_MODE": 0,
+    "LLID_NUM": 1,
+    "broadcast_LLID_index": 63,
+    "report_mode": 0,
+    "laser_on_TQ": 32,
+    "laser_off_TQ": 32,
+    "source": "analysis/private/live-files/var/config/default_scfg.txt",
+    "native_transition": "Linux delayed work and LLID state replace OSAL timers and locks"
+  },
+  "automatic_main_startup": {
+    "payload": "artifacts/full-pon-auto-init-6.18.55/ram-pon",
+    "fit": {
+      "kernel_version": "6.18.55",
+      "cpus": 4,
+      "kernel_load": "0x200000",
+      "fdt_load": "0x1800000",
+      "image_sha256": "c741648ef6334471f8a3e2c99a8e469fb5c0618aa032d9353b1f799c42e33e6e",
+      "dtb_sha256": "a6e840ae32ea82ade3909f0c7cf9e18ad32410df5a038cf1001fb23fef8ac688",
+      "fit_sha256": "37c59a602af4f01d3eced6d62b14e9beb99d6928d2cbf8f710b6d3ea3b7eb117",
+      "fit_bytes": 5895044
+    },
+    "revision": "r0-79bc56c",
+    "compiler": "GCC14.4.0 / musl",
+    "kernel": "6.18.55",
+    "automatic": true,
+    "service": "/etc/rc.d/S25pon",
+    "uci_mode": "epon-d10g",
+    "firmware_rows": 320,
+    "all_three_clocks_ready": true,
+    "MAC_prepared": true,
+    "MIB_RAM_initialized": true,
+    "configuration_errors": 0,
+    "optical_loss": true,
+    "registration_verified": false,
+    "raw_log": "logs/pon-auto-init-main.txt",
+    "udp_10000pps": {
+      "expected": 100000,
+      "received": 100000,
+      "unique": 100000,
+      "missing": 0,
+      "duplicate": 0,
+      "bad": 0,
+      "reordered": 0
+    },
+    "tcp_mac_to_device": {
+      "mode": "send",
+      "peer": [
+        "192.168.1.1",
+        52802
+      ],
+      "bytes": 16777216,
+      "seconds": 0.458,
+      "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+    },
+    "tcp_device_to_mac": {
+      "mode": "receive",
+      "peer": [
+        "192.168.1.1",
+        48732
+      ],
+      "bytes": 16777216,
+      "seconds": 0.453,
+      "sha256": "4cc4d94ce666af30e3c1fd0798837966d07627bbfb43716382b859774d626fd5"
+    },
+    "tcp_cmp_exit": 0,
+    "TCP_checksum_errors": 0,
+    "RX_errors": 0,
+    "RX_dropped": 0,
+    "luci_login_http": 302,
+    "luci_overview_http": 200,
+    "DHCP_address": "192.168.1.170",
+    "luci_after_DHCP_http": 200
   }
 }

@@ -1,11 +1,12 @@
 --- a/drivers/net/ethernet/realtek/Kconfig
 +++ b/drivers/net/ethernet/realtek/Kconfig
-@@ -1,4 +1,11 @@
+@@ -1,4 +1,12 @@
  # SPDX-License-Identifier: GPL-2.0-only
 +
 +config RTL9617C_PON
 +	tristate "RTL9617C native PON MAC platform"
 +	depends on OF && ARCH_RTL9617C
++	select FW_LOADER
 +	help
 +	  Taurus PON register resources and MAC state for native PON bring-up.
 +
@@ -14,9 +15,10 @@
  	tristate "RTL9617C management XRAM Ethernet"
 --- a/drivers/net/ethernet/realtek/Makefile
 +++ b/drivers/net/ethernet/realtek/Makefile
-@@ -1,4 +1,5 @@
+@@ -1,4 +1,6 @@
  # SPDX-License-Identifier: GPL-2.0-only
-+obj-$(CONFIG_RTL9617C_PON) += rtl9617c-pon.o
++obj-$(CONFIG_RTL9617C_PON) += rtl9617c-pon-core.o
++rtl9617c-pon-core-y := rtl9617c-pon.o rtl9617c-pon-serdes.o rtl9617c-pon-epon.o
  obj-$(CONFIG_RTL9617C_XRAM_ETH) += rtl9617c-eth.o
  rtl9617c-eth-y := rtl9617c-xram.o rtl9617c-dma.o rtl9617c-qm.o
  #

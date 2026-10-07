@@ -6,7 +6,11 @@
 &{/soc} {
 	pon@4f5500000 {
 		compatible = "realtek,rtl9617c-pon";
-		reg = <4 0xf5500000 0 0xc000>, <4 0xf4320094 0 4>;
-		reg-names = "mac", "control";
+		reg = <4 0xf5500000 0 0xc000>, <4 0xf4320094 0 4>,
+		      <4 0xf4320074 0 4>, <4 0xf432022c 0 4>,
+		      <4 0xf4320080 0 4>, <4 0xf4320090 0 4>;
+		reg-names = "mac", "control", "epon-control", "serdes-init", "optical-control", "optical-status";
+		realtek,burst-polarity = <0>;
+		realtek,los-invert = <0>;
 	};
 };

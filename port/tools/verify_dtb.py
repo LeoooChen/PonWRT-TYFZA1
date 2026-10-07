@@ -79,7 +79,8 @@ def inspect(stock, native):
         pon = get(native, "/soc/pon@4f5500000", "reg")
         if pon[:4] != stock_ni[8 * 4:8 * 4 + 4]:
             raise ValueError("PON MAC window differs from stock NI resource8")
-        if pon[4:] != [4, 0xf4320094, 0, 4]:
+        if pon[4:] != [4, 0xf4320094, 0, 4, 4, 0xf4320074, 0, 4, 4, 0xf432022c, 0, 4,
+                       4, 0xf4320080, 0, 4, 4, 0xf4320090, 0, 4]:
             raise ValueError("PON global control window differs from register definition")
         checked.append("PON MAC/global registers")
     if reservations(stock) != reservations(native):

@@ -21,4 +21,6 @@ NI/DMA 已在实机实现 Linux DMA API 发送、L3QM/EPP64 中断接收与软�
 
 工作目录：Ubuntu `/home/leo/PonWRT-TYFZA1`。Mac 可查看 `~/OrbStack/ubuntu2404/home/leo/PonWRT-TYFZA1`。
 
-PON平台驱动已在实机绑定并读到EPON MAC状态；本机12份SerDes参数表已转成原生固件记录，后续移植SerDes/gearbox、MPCP与OAM。详细记录见 docs/pon-bringup.md。
+PON原生SerDes、gearbox、MAC/PCS/FEC已完成实机初始化，三个时钟就绪、关键参数读回匹配、统计RAM初始化完成。最新完整主线镜像通过UCI pon与S25pon自动执行；后续接入MPCP/LLID、OAM与PUC/PDC业务队列。详细记录见 docs/pon-bringup.md。
+
+最新PON初始化验证镜像：artifacts/full-pon-auto-init-6.18.55/ram-pon/image.itb。
