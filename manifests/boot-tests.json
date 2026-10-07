@@ -33,6 +33,41 @@
         "before": "1 failed, 4 passed",
         "after": "5 passed"
       }
+    },
+    "kernel_6_18_55": {
+      "kernel_version": "6.18.55",
+      "cpus": 4,
+      "kernel_load": "0x200000",
+      "fdt_load": "0x1800000",
+      "image_sha256": "bf6cbc773558c2605afde841d640f3ecb6152ccd0c06b241cefb520f2d928110",
+      "dtb_sha256": "5ba730dffaaef3a043d717cc4f814fc30ebc4873a40d52a57213e5790dae5e8a",
+      "fit_sha256": "5edbb2481661c7bd695fccec11b724adfceabb5f7674abe87b8500a3649f3574",
+      "fit_bytes": 5189324,
+      "rootfs_revision": "r0-c759267",
+      "kernel_source_base": "OpenWrt main 79bc56cb7483bc716da07c369530b792631904b4 generic patches and rtl9617c target",
+      "compiler": "Ubuntu GCC 13.3.0",
+      "shell": true,
+      "cpu_online": "0-3",
+      "uart_rx_tx": true,
+      "nand_probe": true,
+      "mtd_partition_count": 5,
+      "ubi": {
+        "read_only": true,
+        "volumes": 11,
+        "good_pebs": 1966,
+        "bad_pebs": 0,
+        "corrupted_pebs": 0,
+        "peb_bytes": 131072,
+        "leb_bytes": 126976,
+        "vid_offset": 2048,
+        "data_offset": 4096
+      },
+      "readback_sha256": {
+        "boot_entire_2MiB": "7524c98bdfc23c387ed3a720c50839fffb36a1a1f8b9128019ca8e59dc5c957e",
+        "static_conf_entire_256KiB": "3b874d3ba46c638fc3094f8e92fb744ca974893873f8885f54e23760f9b6311b",
+        "ubi_k0_entire_volume": "4af8d36db16492b4c764bc856b04b68f4403b893d9fabc0bfe00625c509d9743"
+      },
+      "readback_matches_stock_backup": true
     }
   }
 }

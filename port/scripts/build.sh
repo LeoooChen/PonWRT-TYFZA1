@@ -4,7 +4,7 @@ set -eu
 export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 export http_proxy=${TYFZA1_PROXY:-http://host.orb.internal:7897}
 export https_proxy=$http_proxy
-export CURL_OPTIONS='--speed-time 30 --speed-limit 1024 --max-time 300'
+export CURL_OPTIONS='--speed-time 60 --speed-limit 1024'
 umask 022
 PORT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 TREE=${1:?Usage: build.sh /path/to/openwrt-checkout [jobs]}

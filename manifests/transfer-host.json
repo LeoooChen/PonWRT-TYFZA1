@@ -1,0 +1,9 @@
+{
+  "scope": "TYFZA1 TTL and TFTP only",
+  "mac_uart": "/dev/cu.usbserial-1120",
+  "mac_interface": "en5",
+  "temporary_alias": "192.168.1.170/24",
+  "tftp_port": 69,
+  "tftp_root": "/home/leo/PonWRT-TYFZA1/artifacts/prior-native-20261002/signed/ram",
+  "mac_file_view": "/Users/leo/OrbStack/ubuntu2404/home/leo/PonWRT-TYFZA1"
+}

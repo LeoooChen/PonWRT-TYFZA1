@@ -22,3 +22,7 @@ source ${unzip_src}:script
 第二次 RAM 启动：kernel load/entry=`0x00200000`，CPU0–3 全部 online；原厂 VoIP 4KiB 预留不再冲突。SPI-NAND 已识别 GigaDevice 256MiB，但 dirmap 创建返回 -95；QSPI supports_op 已修复零长度模板判断，新增回归用例在修复前失败、修复后通过。
 
 NAND 页外空间：原厂导出的 64B 是 ECC 开启时的用户页外视图，物理页外区为 128B，后 64B用于 ECC。Linux 报告 128B 与芯片规格对应。参考 [GigaDevice GD5F2GM7 官方数据手册](https://download.gigadevice.com/Datasheet/DS-00820-GD5F2GM7UE-Rev1.5.pdf)，页 4、9、45；本地 SHA256=`c34de661b6e4b59b89ac6422bd2dda932b8cedd78bb0ef75bf2d6e680a30f8bb`。
+
+第三次 RAM 启动：Linux 6.18.55，使用当前 OpenWrt main 的 generic patches、RTL9617C target 和 GCC 13.3.0，用户态沿用 r0-c759267。4 核、UART、watchdog 正常。修复后的 QSPI 完成 SPI-NAND probe，5 个物理分区全部建立。`ubiattach -m 4 -r` 成功识别 11 个原厂卷；PEB=131072、LEB=126976、VID offset=2048、data offset=4096，good PEB=1966，bad/corrupted=0。
+
+整分区/卷读回验证：boot 2MiB、static_conf 256KiB、ubi_k0 6,348,800 字节的 SHA256 均与原厂备份逐项一致。完整数值见 manifests/boot-tests.json。

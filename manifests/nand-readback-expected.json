@@ -1,0 +1,11 @@
+{
+  "mtd0-boot-ecc-data.bin": {
+    "first_8192_sha256": "5e66dc6d6041947be1f3ec2ef03f7a0dfaab37fcb6916f5cbab347bb87d0ebbd"
+  },
+  "mtd3-static_conf-ecc-data.bin": {
+    "first_8192_sha256": "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f"
+  },
+  "mtd4-ubi_device-ecc-data.bin": {
+    "first_8192_sha256": "4966da962ba4a2de8ddbafe0489ac4563b26a67679f2b4a0aed21fc60f02a651"
+  }
+}
