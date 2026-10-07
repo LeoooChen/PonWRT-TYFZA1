@@ -4,7 +4,7 @@ TYFZA1 / RTL9617CVW 的原生 OpenWrt 主线移植项目。
 
 2026-10-07：实机已启动原生 Linux 6.18.55 / OpenWrt initramfs。四核、UART RX/TX、PSCI、GICv3、timer、procd/ubus 与 watchdog 正常；原生 SPI NAND/MTD 和 UBI 读取通过。11 个原厂 UBI 卷全部识别，boot、static_conf 和 ubi_k0 的完整读回 SHA256 与本机原厂备份一致。
 
-当前 RAM 载荷使用 6.18.55 新内核和已启动的 r0-c759267 用户态，完整 main 构建继续独立推进。
+LAN 首轮：原生 XRAM 管理通路已提供 eth0/br-lan，1Gbps 协商、1000 个满 MTU 包与 1MiB 双向 TCP 哈希校验通过。完整 main（r0-79bc56c）含 dnsmasq 与 LuCI 的载荷已构建，保存于 artifacts/full-lan-luci-6.18.55/。
 
 开发顺序：系统启动 → PON（包括 NI/DMA 数据通路）→ Wi-Fi → 硬件加速。最终交付目标是原生 UBI 固件与完整安装/升级/恢复步骤。
 

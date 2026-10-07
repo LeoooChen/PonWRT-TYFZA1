@@ -1,0 +1,186 @@
+{
+  "kernel": "6.18.55",
+  "fit": {
+    "kernel_version": "6.18.55",
+    "cpus": 4,
+    "kernel_load": "0x200000",
+    "fdt_load": "0x1800000",
+    "image_sha256": "ae3dd63e751d2297ed91ac353f2ccd2ace5ed2d463282aa98a0b2bc83d5ebdfa",
+    "dtb_sha256": "1ef97cc1844853b5ff14e0deef34e4f066db1939912f9cc2a9c49f2ad13e9f8a",
+    "fit_sha256": "f9997454ce3853ab718df18dc6134475c110e2bcd0fededa8f37ccb96b891f1f",
+    "fit_bytes": 5203388
+  },
+  "phy_id": "0x001ccac4",
+  "port": 0,
+  "link": "1000Mbps full duplex",
+  "netdev": "eth0",
+  "bridge": "br-lan",
+  "device_ip": "192.168.1.1",
+  "host_ip_for_static_tests": "192.168.1.170",
+  "mtu_sweep": [
+    {
+      "icmp_payload": 1,
+      "passed": true,
+      "output": [
+        "--- 192.168.1.1 ping statistics ---",
+        "2 packets transmitted, 2 packets received, 0.0% packet loss"
+      ]
+    },
+    {
+      "icmp_payload": 56,
+      "passed": true,
+      "output": [
+        "2 packets transmitted, 2 packets received, 0.0% packet loss",
+        "round-trip min/avg/max/stddev = 1.230/1.335/1.439/0.104 ms"
+      ]
+    },
+    {
+      "icmp_payload": 64,
+      "passed": true,
+      "output": [
+        "2 packets transmitted, 2 packets received, 0.0% packet loss",
+        "round-trip min/avg/max/stddev = 1.407/1.473/1.538/0.065 ms"
+      ]
+    },
+    {
+      "icmp_payload": 512,
+      "passed": true,
+      "output": [
+        "2 packets transmitted, 2 packets received, 0.0% packet loss",
+        "round-trip min/avg/max/stddev = 0.836/0.849/0.863/0.014 ms"
+      ]
+    },
+    {
+      "icmp_payload": 1000,
+      "passed": true,
+      "output": [
+        "2 packets transmitted, 2 packets received, 0.0% packet loss",
+        "round-trip min/avg/max/stddev = 0.915/0.980/1.045/0.065 ms"
+      ]
+    },
+    {
+      "icmp_payload": 1400,
+      "passed": true,
+      "output": [
+        "2 packets transmitted, 2 packets received, 0.0% packet loss",
+        "round-trip min/avg/max/stddev = 0.991/1.012/1.034/0.022 ms"
+      ]
+    },
+    {
+      "icmp_payload": 1450,
+      "passed": true,
+      "output": [
+        "2 packets transmitted, 2 packets received, 0.0% packet loss",
+        "round-trip min/avg/max/stddev = 0.923/0.968/1.013/0.045 ms"
+      ]
+    },
+    {
+      "icmp_payload": 1460,
+      "passed": true,
+      "output": [
+        "2 packets transmitted, 2 packets received, 0.0% packet loss",
+        "round-trip min/avg/max/stddev = 1.218/1.256/1.293/0.037 ms"
+      ]
+    },
+    {
+      "icmp_payload": 1464,
+      "passed": true,
+      "output": [
+        "2 packets transmitted, 2 packets received, 0.0% packet loss",
+        "round-trip min/avg/max/stddev = 1.150/1.337/1.524/0.187 ms"
+      ]
+    },
+    {
+      "icmp_payload": 1468,
+      "passed": true,
+      "output": [
+        "2 packets transmitted, 2 packets received, 0.0% packet loss",
+        "round-trip min/avg/max/stddev = 0.796/0.829/0.862/0.033 ms"
+      ]
+    },
+    {
+      "icmp_payload": 1472,
+      "passed": true,
+      "output": [
+        "2 packets transmitted, 2 packets received, 0.0% packet loss",
+        "round-trip min/avg/max/stddev = 1.008/1.133/1.259/0.126 ms"
+      ]
+    }
+  ],
+  "continuous_mtu1500_ping": {
+    "transmitted": 1000,
+    "received": 1000,
+    "loss_percent": 0,
+    "mean_ms": 1.068
+  },
+  "tcp_1MiB_roundtrip": {
+    "receive": {
+      "mode": "receive",
+      "peer": [
+        "192.168.1.1",
+        46114
+      ],
+      "bytes": 1048576,
+      "seconds": 0.728,
+      "sha256": "b4e42f0d923ebf64dee5ff3eb46fa79fcb9a3904de571259a0bf972a138a3047"
+    },
+    "send": {
+      "mode": "send",
+      "peer": [
+        "192.168.1.1",
+        36778
+      ],
+      "bytes": 1048576,
+      "seconds": 0.503,
+      "sha256": "b4e42f0d923ebf64dee5ff3eb46fa79fcb9a3904de571259a0bf972a138a3047"
+    },
+    "device_cmp_exit": 0
+  },
+  "mechanism": "Native Linux netdev/NAPI via XRAM management FIFO; stock bootloader PHY setup retained",
+  "full_ni_dma_implemented": false,
+  "interface_reopen": {
+    "cycles": 3,
+    "ping_each_cycle": 2,
+    "replies_each_cycle": 2,
+    "waited_for_actual_phy_carrier": true
+  },
+  "full_lan_ui_build": {
+    "openwrt_commit": "79bc56cb7483bc716da07c369530b792631904b4",
+    "revision": "r0-79bc56c",
+    "gcc": "14.4.0",
+    "fit": {
+      "kernel_version": "6.18.55",
+      "cpus": 4,
+      "kernel_load": "0x200000",
+      "fdt_load": "0x1800000",
+      "image_sha256": "84c13c397f9db5e683f226f0b30cfd49fb33cf7fb8023e6ee74dc840f9936a66",
+      "dtb_sha256": "1ef97cc1844853b5ff14e0deef34e4f066db1939912f9cc2a9c49f2ad13e9f8a",
+      "fit_sha256": "e58f522bca5af49b18720be4379ecb5d0f9e768fe83b5be417cef93008c88001",
+      "fit_bytes": 5881448
+    }
+  },
+  "full_lan_ui_runtime": {
+    "revision": "r0-79bc56c",
+    "kernel": "6.18.55",
+    "cpu_online": "0-3",
+    "watchdog": "active",
+    "dhcp": {
+      "client_mac": "00:e0:4c:16:74:b0",
+      "address": "192.168.1.172",
+      "server": "192.168.1.1",
+      "confirmed_in_device_lease_and_mac_dhcp_ack": true
+    },
+    "luci": {
+      "url": "http://192.168.1.1/cgi-bin/luci/",
+      "login_post_http": 302,
+      "authenticated_overview_http": 200,
+      "root_password_state": "empty on this RAM test system"
+    },
+    "mtu1500_ping": {
+      "transmitted": 50,
+      "received": 50,
+      "loss_percent": 0
+    },
+    "ipv6_multicast": "initial test did not receive NDP; receive-mode callback added, retest pending"
+  }
+}

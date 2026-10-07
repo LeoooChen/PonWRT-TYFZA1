@@ -82,6 +82,16 @@ static void rtl_adjust_link(struct net_device *dev)
 	phy_print_status(dev->phydev);
 }
 
+static void rtl_rx_mode(struct net_device *dev)
+{
+	struct rtl_xram *priv = netdev_priv(dev);
+	bool accept_all = (dev->flags & (IFF_PROMISC | IFF_ALLMULTI)) ||
+			  !netdev_mc_empty(dev);
+
+	/* Taurus's management filter uses mode 1 for promiscuous receive. */
+	rtl_update(priv, XRAM_CFG, RX_PROMISC, FIELD_PREP(RX_PROMISC, accept_all));
+}
+
 static int rtl_poll(struct napi_struct *napi, int budget)
 {
 	struct rtl_xram *priv = container_of(napi, struct rtl_xram, napi);
@@ -215,6 +225,7 @@ static int rtl_open(struct net_device *dev)
 	writel(config | CPU_DISABLE, priv->ni + XRAM_CFG);
 	udelay(100);
 	writel(config & ~CPU_DISABLE, priv->ni + XRAM_CFG);
+	rtl_rx_mode(dev);
 	rtl_update(priv, PORT_RX + priv->port * PORT_STRIDE, BIT(0), BIT(0));
 	rtl_update(priv, PORT_TX + priv->port * PORT_STRIDE, BIT(0), BIT(0));
 	priv->tx_pending = false;
@@ -241,6 +252,7 @@ static const struct net_device_ops rtl_netdev_ops = {
 	.ndo_open = rtl_open,
 	.ndo_stop = rtl_stop,
 	.ndo_start_xmit = rtl_xmit,
+	.ndo_set_rx_mode = rtl_rx_mode,
 	.ndo_set_mac_address = eth_mac_addr,
 	.ndo_validate_addr = eth_validate_addr,
 };

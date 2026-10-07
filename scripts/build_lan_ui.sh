@@ -12,7 +12,7 @@ make -j2 download
 make -j2 world
 cd "$P"
 BIN=$P/sources/openwrt/bin/targets/rtl9617c/generic
-OUT=$P/artifacts/full-lan-luci-6.18.55
+OUT=${TYFZA1_LAN_OUT:-$P/artifacts/full-lan-luci-6.18.55}
 mkdir -p "$OUT/firmware"
 cp -a "$BIN/." "$OUT/firmware/"
 set -- "$BIN"/*-initramfs-Image
