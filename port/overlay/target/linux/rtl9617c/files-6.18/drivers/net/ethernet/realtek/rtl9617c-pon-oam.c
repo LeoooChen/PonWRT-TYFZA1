@@ -14,6 +14,22 @@ struct rtl_oam_port {
 	unsigned int llid;
 };
 
+static ssize_t llid_index_show(struct device *device, struct device_attribute *attribute, char *buf)
+{
+	struct rtl_oam_port *port = netdev_priv(to_net_dev(device));
+
+	return sysfs_emit(buf, "%u\n", port->llid);
+}
+static DEVICE_ATTR_RO(llid_index);
+
+static struct attribute *rtl_oam_attrs[] = {
+	&dev_attr_llid_index.attr,
+	NULL,
+};
+static const struct attribute_group rtl_oam_group = {
+	.attrs = rtl_oam_attrs,
+};
+
 static struct rtl9617c_pon *rtl_oam_pon(struct net_device *dev)
 {
 	return ((struct rtl_oam_port *)netdev_priv(dev))->pon;
@@ -71,7 +87,6 @@ static const struct net_device_ops rtl_oam_ops = {
 	.ndo_open = rtl_oam_open,
 	.ndo_stop = rtl_oam_stop,
 	.ndo_start_xmit = rtl_oam_transmit,
-	.ndo_set_mac_address = eth_mac_addr,
 	.ndo_validate_addr = eth_validate_addr,
 };
 
@@ -143,18 +158,22 @@ void rtl_pon_oam_address(struct rtl9617c_pon *pon)
 {
 	unsigned int i;
 
-	rcu_read_lock();
+	ASSERT_RTNL();
+	lockdep_assert_held(&pon->control_lock);
 	for (i = 0; i < 32; i++) {
-		struct net_device *dev = rcu_dereference(pon->oam_devices[i]);
+		struct net_device *dev = rtnl_dereference(pon->oam_devices[i]);
 		u8 mac[ETH_ALEN];
 
 		if (dev) {
 			ether_addr_copy(mac, pon->onu_mac);
 			mac[5] += i; /* aal_mpcp_mac_addr_get: MAC-index increments the final byte. */
+			netdev_lock(dev);
 			eth_hw_addr_set(dev, mac);
+			dev->addr_assign_type = NET_ADDR_SET;
+			call_netdevice_notifiers(NETDEV_CHANGEADDR, dev);
+			netdev_unlock(dev);
 		}
 	}
-	rcu_read_unlock();
 }
 
 static struct net_device *rtl_oam_allocate(struct rtl9617c_pon *pon, unsigned int index)
@@ -171,6 +190,7 @@ static struct net_device *rtl_oam_allocate(struct rtl9617c_pon *pon, unsigned in
 	SET_NETDEV_DEV(dev, pon->dev);
 	snprintf(dev->name, sizeof(dev->name), "pon-oam%u", index);
 	dev->netdev_ops = &rtl_oam_ops;
+	dev->sysfs_groups[0] = &rtl_oam_group;
 	dev->max_mtu = ETH_DATA_LEN;
 	dev->flags |= IFF_NOARP;
 	if (is_valid_ether_addr(pon->onu_mac)) {

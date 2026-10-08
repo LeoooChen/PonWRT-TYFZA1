@@ -334,9 +334,11 @@ int main(int argc, char **argv)
 				receive_errors++;
 				continue;
 			}
+			if (ret == PON_OAM_IGNORED)
+				continue;
 			last_received = monotonic_ms();
 			session_valid = true;
-			if (ret > 0) {
+			if (ret > PON_OAM_HANDLED) {
 				if (send(fd, output, ret, 0) == ret)
 					session.tx_frames++;
 				else

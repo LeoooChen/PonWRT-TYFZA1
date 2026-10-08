@@ -172,20 +172,7 @@ static ssize_t configure_show(struct device *dev, struct device_attribute *attri
 	return rtl9617c_bosa_state(dev, buf);
 }
 
-static ssize_t configure_store(struct device *dev, struct device_attribute *attribute,
-			       const char *buf, size_t count)
-{
-	bool configure;
-	int ret = kstrtobool(buf, &configure);
-
-	if (ret)
-		return ret;
-	if (!configure)
-		return -EINVAL;
-	ret = rtl_bosa_configure(dev_get_drvdata(dev));
-	return ret ? ret : count;
-}
-static DEVICE_ATTR_RW(configure);
+static DEVICE_ATTR_RO(configure);
 
 static ssize_t diagnostics_show(struct device *dev, struct device_attribute *attribute, char *buf)
 {

@@ -9,10 +9,11 @@ umask 022
 PORT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 PROJECT=$(CDPATH= cd -- "$PORT/.." && pwd)
 TREE=${1:?Usage: build.sh /path/to/openwrt-checkout [jobs]}
+TREE=$(realpath "$TREE")
 JOBS=${2:-2}
 python3 "$PROJECT/tools/prepare_pon_runtime.py" "$TREE/files" \
     --stock "${TYFZA1_STOCK_INPUTS:-$PROJECT/analysis/private/live-files}" \
-    --auth-config "${TYFZA1_AUTH_CONFIG:-$PROJECT/analysis/private/pon-auth.json}"
+    --auth-config "${TYFZA1_AUTH_CONFIG:-$PROJECT/analysis/private/pon-auth.json}" --check-inputs-only
 if [ ! -e "$TREE/package/feeds/packages/cgi-io" ] || [ ! -e "$TREE/package/feeds/luci/luci" ]; then
     sh "$PROJECT/scripts/prepare_luci_feeds.sh" "$TREE"
 fi
@@ -28,4 +29,12 @@ if grep -qi microsoft /proc/sys/kernel/osrelease; then
     fi
 fi
 make -j"$JOBS" download
+set -- "$TREE"/build_dir/target-*/uci-*/uci
+if [ "$#" != 1 ] || [ ! -x "$1" ]; then
+    make -j"$JOBS" package/system/uci/compile
+fi
+export TYFZA1_UCI_TREE="$TREE"
+python3 "$PROJECT/tools/prepare_pon_runtime.py" "$TREE/files" \
+    --stock "${TYFZA1_STOCK_INPUTS:-$PROJECT/analysis/private/live-files}" \
+    --auth-config "${TYFZA1_AUTH_CONFIG:-$PROJECT/analysis/private/pon-auth.json}"
 make -j"$JOBS" world

@@ -13,6 +13,30 @@ static void message(uint8_t *frame, const uint8_t *payload, size_t size)
 	memcpy(frame + 18, payload, size);
 }
 
+static void test_set_selectors(struct pon_oam_session *session, const struct pon_oam_identity *identity)
+{
+	struct pon_oam_session selected = *session;
+	uint8_t frame[PON_OAM_FRAME_MAX], reply[PON_OAM_FRAME_MAX];
+	/* Two port instances and both selector widths, followed by Set variables. */
+	const uint8_t request[] = {0x11,0x11,0x11,3,
+		0x37,0,1,4,1,0,0,7, 0xc7,0,0x25,1,2,
+		0x36,0,1,1,3, 0xc7,0,0x13,2,0,0xe3, 0};
+	const uint8_t response[] = {0x11,0x11,0x11,4,
+		0x37,0,1,4,1,0,0,7, 0xc7,0,0x25,0x87,
+		0x36,0,1,1,3, 0xc7,0,0x13,0x87, 0};
+
+	session = &selected;
+	message(frame, request, sizeof(request));
+	assert(pon_oam_receive(session, identity, frame, 60, reply) == 60);
+	assert(!memcmp(reply + 18, response, sizeof(response)));
+	frame[25] = 3; /* 0x37 needs its four-byte instance width. */
+	assert(pon_oam_receive(session, identity, frame, 60, reply) == -EPROTO);
+	message(frame, request, sizeof(request));
+	assert(pon_oam_receive(session, identity, frame, 29, reply) == -EPROTO);
+	frame[22] = 0x36; frame[25] = 1;
+	assert(pon_oam_receive(session, identity, frame, 26, reply) == -EPROTO);
+}
+
 int main(void)
 {
 	struct pon_oam_identity identity = {.loid_configured = true};
@@ -41,13 +65,14 @@ int main(void)
 	/* Peer Local first, then a genuine Remote echo of our transmitted TLV. */
 	frame[16] = 8;
 	frame[21] = 2; frame[22] = 3;
-	assert(pon_oam_receive(&session, &identity, frame, 60, reply) == 0);
+	assert(pon_oam_receive(&session, &identity, frame, 60, reply) == PON_OAM_HANDLED);
 	assert(!session.local_echoed && pon_oam_flags(&session) == 0x28);
 	frame[16] = 16;
 	frame[34] = 2; frame[35] = 16; memcpy(frame + 36, local, 14);
 	memcpy(frame + 50, "\xfe\x0b\x11\x11\x11\x01\x30\x11\x11\x11\x30\0\0", 13);
-	assert(pon_oam_receive(&session, &identity, frame, 63, reply) == 0);
+	assert(pon_oam_receive(&session, &identity, frame, 63, reply) == PON_OAM_HANDLED);
 	assert(session.local_echoed && pon_oam_flags(&session) == 0x50);
+	test_set_selectors(&session, &identity);
 	assert(pon_oam_information(&session, &identity, reply) == 63);
 	assert(!memcmp(reply + 50, "\xfe\x0b\x11\x11\x11\x01\0\x11\x11\x11\x30", 11));
 	/* Blank password is a valid supplied value; encode all twelve zero bytes. */
@@ -58,8 +83,27 @@ int main(void)
 	for (unsigned int i = 50; i < 62; i++) assert(reply[i] == 0);
 	assert(session.auth == PON_AUTH_CHALLENGE);
 	message(frame, accepted, sizeof(accepted));
-	assert(pon_oam_receive(&session, &identity, frame, 60, reply) == 0);
+	assert(pon_oam_receive(&session, &identity, frame, 60, reply) == PON_OAM_HANDLED);
 	assert(session.auth == PON_AUTH_ACCEPTED && session.auth_results == 1);
+	/* Invalid/ignored PDUs must remain distinct from validated peer activity. */
+	{
+		struct pon_oam_session live = session;
+		message(frame, accepted, sizeof(accepted));
+		for (size_t size = 18; size < 22; size++)
+			assert(pon_oam_receive(&live, &identity, frame, size, reply) == -EMSGSIZE);
+		frame[17] = 2;
+		assert(pon_oam_receive(&live, &identity, frame, 60, reply) == PON_OAM_IGNORED);
+		frame[17] = 0xfe; frame[18] = 0x12;
+		assert(pon_oam_receive(&live, &identity, frame, 60, reply) == PON_OAM_IGNORED);
+		frame[18] = 0x11; frame[21] = 0x7f;
+		assert(pon_oam_receive(&live, &identity, frame, 60, reply) == PON_OAM_IGNORED);
+		frame[21] = 1; memset(frame + 22, 0, sizeof(frame) - 22);
+		assert(pon_oam_receive(&live, &identity, frame, 60, reply) == PON_OAM_IGNORED);
+		frame[21] = 3;
+		assert(pon_oam_receive(&live, &identity, frame, 60, reply) == PON_OAM_IGNORED);
+		assert(live.auth == PON_AUTH_ACCEPTED && live.auth_results == session.auth_results);
+		assert(live.extension_selected == session.extension_selected);
+	}
 	/* Same peer Local, but Remote echo withdrawn: no stale auth or selection. */
 	for (unsigned int mismatch = 0; mismatch < 2; mismatch++) {
 		struct pon_oam_session regressed = session;
@@ -77,21 +121,21 @@ int main(void)
 			memcpy(information + 36, regressed.last_local, 14);
 			information[38] ^= 1;
 		}
-		assert(pon_oam_receive(&regressed, &identity, information, 60, reply) == 0);
+		assert(pon_oam_receive(&regressed, &identity, information, 60, reply) == PON_OAM_HANDLED);
 		assert(!regressed.local_echoed && !regressed.have_sent);
 		assert(regressed.auth == PON_AUTH_WAITING && !regressed.auth_failure);
 		assert(!regressed.extension_selected && !regressed.extension_advertised);
 		assert(!regressed.extension_version && regressed.auth_successes == 1);
 		assert(regressed.generation == generation + 1);
 		/* Continuous EVAL messages do not inherit success or rotate revisions. */
-		assert(pon_oam_receive(&regressed, &identity, information, 60, reply) == 0);
+		assert(pon_oam_receive(&regressed, &identity, information, 60, reply) == PON_OAM_HANDLED);
 		assert(regressed.generation == generation + 1);
 	}
 	message(frame, challenge, sizeof(challenge));
 	assert(pon_oam_receive(&session, &identity, frame, 60, reply) == 62);
 	assert(session.auth == PON_AUTH_CHALLENGE);
 	message(frame, rejected, sizeof(rejected));
-	assert(pon_oam_receive(&session, &identity, frame, 60, reply) == 0);
+	assert(pon_oam_receive(&session, &identity, frame, 60, reply) == PON_OAM_HANDLED);
 	assert(session.auth == PON_AUTH_REJECTED && session.auth_failure == 7);
 	assert(session.auth_successes == 1 && session.auth_failures == 1);
 	/* Version parameters reach the actual C7 identity and firmware Get responses. */

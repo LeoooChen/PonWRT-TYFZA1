@@ -1,10 +1,10 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-only
-# Compile against the same 6.18.52 source; no hardware or emulation is run.
+# Compile against the same the locked kernel source; no hardware or emulation is run.
 set -eu
 export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 PORT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-SRC=${1:?Usage: check-drivers.sh /path/to/linux-6.18.52 /path/to/output}
+SRC=${1:?Usage: check-drivers.sh /path/to/linux-the locked kernel /path/to/output}
 OUT=${2:?Specify a separate kernel output directory}
 OVERLAY=$PORT/overlay/target/linux/rtl9617c
 for diff in "$OVERLAY"/patches-6.18/*.patch; do

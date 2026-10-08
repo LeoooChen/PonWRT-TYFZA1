@@ -33,3 +33,5 @@ tools/pon_oam_probe.c可向控制接口提交原始OAM Information PDU。LOS1测
 原生tyfza1-pon-control包通过AF_PACKET实现IEEE802.3ah发现、CTC扩展协商、空密码LOID认证及C7版本查询。S25pon为每个已配置LLID建立procd实例；仅对应注册位有效时发送Information。MPCP掉线、对端Local变更、Remote回抄撤回或5秒报文超时都会撤销当前认证，历史计数保留。LuCI按PID/进程启动时间和状态时间戳读取各LLID状态。scripts/test_oam_daemon.py使用实际OpenWrt ARM64/musl二进制在Ubuntu隔离veth网络中完成11项流程测试，结果见logs/oam-daemon-netns-test.json。
 
 MPCP NACK、QM待归还缓冲及构建输入的修复和验证见pon-review-fixes.md。业务PON netdev和L3QM深队列继续移植；光口注册、OAM往返及业务仍需实际光路结果。
+
+后续大budget接收、按模式暴露诊断、CTC对象实例、控制事务、有效报文超时及MAC地址锁的复核见pon-control-review.md。OAM守护进程只将经过验证且已处理的报文视为会话活动；接口MAC由ONU身份统一派生。

@@ -7,6 +7,13 @@
 
 #define PON_OAM_FRAME_MAX 1514
 
+/* Receive result: negative errno = invalid, 0 = ignored, 1 = handled without
+ * a reply; 60..FRAME_MAX = validated reply length. Only handled PDUs are live. */
+enum pon_oam_receive_result {
+	PON_OAM_IGNORED,
+	PON_OAM_HANDLED,
+};
+
 struct pon_oam_identity {
 	uint8_t mac[6];
 	uint8_t loid[24];

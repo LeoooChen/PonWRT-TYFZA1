@@ -18,12 +18,13 @@ import tempfile
 from pathlib import Path
 
 from inspect_stock_layout import DUMP_SHA256
+from project_paths import source_lock, receipt
 from plan_ram_boot import reg_intervals, validate
 from verify_artifacts import image_info
 from verify_dtb import get, children
 
 PROJECT = Path(__file__).resolve().parents[2]
-BASE_ARGS = 'earlycon console=ttyS0,115200n8 loglevel=8 ignore_loglevel clk_ignore_unused maxcpus=1'
+BASE_ARGS = 'earlycon console=ttyS0,115200n8 loglevel=8 ignore_loglevel clk_ignore_unused maxcpus=4'
 
 
 def boot_script(mode, verity=None):
@@ -76,7 +77,7 @@ def make_its(load, entry, fdt_load, signed=False):
     #address-cells = <1>;
     images {{
         kernel {{
-            description = "Native OpenWrt Linux 6.18.52";
+            description = "Native OpenWrt Linux {source_lock()['openwrt']['kernel']}";
             data = /incbin/("kernel.lzma");
             type = "kernel"; arch = "arm64"; os = "linux";
             compression = "lzma"; load = <{load:#x}>; entry = <{entry:#x}>;
@@ -141,7 +142,7 @@ def verify_configuration_signature(fit, key_dtb, checker):
         raise ValueError('Configuration verification requires fdtput and fdtget')
     node = '/signature/key-dev'
     algorithm = subprocess.check_output([get_tool, '-t', 's', str(key_dtb), node, 'algo'], text=True).strip()
-    with tempfile.TemporaryDirectory() as work:
+    with tempfile.TemporaryDirectory(dir=PROJECT / 'artifacts') as work:
         work = Path(work)
         verification_key = key_dtb.resolve()
         note = ''
@@ -182,7 +183,7 @@ def verify_payload_signatures(fit, certificate):
     tools = {name: shutil.which(name) for name in ('dumpimage', 'fdtget', 'openssl')}
     if not all(tools.values()):
         raise ValueError('Payload verification needs dumpimage, fdtget and openssl')
-    with tempfile.TemporaryDirectory() as work:
+    with tempfile.TemporaryDirectory(dir=PROJECT / 'artifacts') as work:
         work = Path(work)
         public = work / 'public.pem'
         public.write_bytes(subprocess.check_output([
@@ -208,9 +209,9 @@ def verify_payload_signatures(fit, certificate):
 def build(image, dtb, output, mode, rootfs=None, key_dir=None, key_dtb=None):
     if output.exists():
         raise ValueError('Output directory already exists')
-    contract = json.loads((PROJECT / 'data/receipts/tyfza1-boot-compression.json').read_text())
-    layout = json.loads((PROJECT / 'data/receipts/tyfza1-stock-layout.json').read_text())
-    volumes = json.loads((PROJECT / 'data/receipts/tyfza1-stock-volume-ids.json').read_text())['volumes']
+    contract = json.loads((receipt('tyfza1-boot-compression.json')).read_text())
+    layout = json.loads((receipt('tyfza1-stock-layout.json')).read_text())
+    volumes = json.loads((receipt('tyfza1-stock-volume-ids.json')).read_text())['volumes']
     if layout['dump_sha256'] != DUMP_SHA256 or not layout['factory_translation_is_identity']:
         raise ValueError('This candidate only supports the verified zero-factory-BBL fixture')
     info = image_info(image)
@@ -240,6 +241,9 @@ def build(image, dtb, output, mode, rootfs=None, key_dir=None, key_dtb=None):
     stock = {v['name']: v for v in contract['images']}
     load, entry = (int(stock['kernel'][k][0], 0) for k in ('load', 'entry'))
     fdt_load = int(stock['fdt-dts']['load'][0], 0)
+    if mode == 'ram':
+        load = entry = 0x200000
+        fdt_load = 0x1800000
     memory = reg_intervals(get(dtb, '/memory@0', 'reg'))
     reserved = [r for n in children(dtb, '/reserved-memory')
                 for r in reg_intervals(get(dtb, '/reserved-memory/' + n, 'reg'))]
@@ -265,7 +269,7 @@ def build(image, dtb, output, mode, rootfs=None, key_dir=None, key_dtb=None):
     (output / 'fdt.lzma').write_bytes(compress(dtb.read_bytes(), stock['fdt-dts']['lzma_alone']))
     (output / 'boot.cmd').write_text(boot_script(mode, verity), encoding='ascii')
     (output / 'image.its').write_text(make_its(load, entry, fdt_load, key_dir is not None), encoding='ascii')
-    source = json.loads((PROJECT / 'openwrt/sources.lock.json').read_text())['openwrt']
+    source = source_lock()['openwrt']
     env = dict(os.environ)
     env['SOURCE_DATE_EPOCH'] = str(int(datetime.datetime.fromisoformat(source['commit_date']).timestamp()))
     command = [tool, '-f', 'image.its']

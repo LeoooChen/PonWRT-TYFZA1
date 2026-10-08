@@ -195,8 +195,9 @@ int rtl_pon_mpcp_init(struct rtl9617c_pon *pon, int irq)
 					 IRQF_ONESHOT, "rtl9617c-mpcp", pon);
 }
 
-void rtl_pon_mpcp_stop(struct rtl9617c_pon *pon)
+void rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon)
 {
+	lockdep_assert_held(&pon->control_lock);
 	cancel_delayed_work_sync(&pon->mpcp_work);
 	mutex_lock(&pon->lock);
 	pon->mpcp_enabled = false;
@@ -220,12 +221,17 @@ void rtl_pon_mpcp_stop(struct rtl9617c_pon *pon)
 	synchronize_irq(pon->mpcp_irq);
 }
 
-int rtl_pon_mpcp_configure(struct rtl9617c_pon *pon)
+int rtl_pon_mpcp_configure_locked(struct rtl9617c_pon *pon)
 {
 	u32 sync;
 	int ret = 0;
 
+	lockdep_assert_held(&pon->control_lock);
 	mutex_lock(&pon->lock);
+	if (!rtl_pon_mode_is_epon(pon->mode)) {
+		ret = -EOPNOTSUPP;
+		goto unlock;
+	}
 	if (!pon->mac_prepared || !is_valid_ether_addr(pon->onu_mac)) {
 		ret = -EAGAIN;
 		goto unlock;

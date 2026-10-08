@@ -86,13 +86,14 @@ static int rtl_puc_token_buckets(struct rtl9617c_pon *pon)
 	return 0;
 }
 
-int rtl_pon_puc_configure(struct rtl9617c_pon *pon)
+int rtl_pon_puc_configure_locked(struct rtl9617c_pon *pon)
 {
 	u32 status;
 	unsigned int i, ports = pon->llid_count;
 	unsigned int queues = ports > 16 ? 4 : 8;
 	int ret;
 
+	lockdep_assert_held(&pon->control_lock);
 	mutex_lock(&pon->lock);
 	if (!pon->mac_prepared) {
 		ret = -EAGAIN;

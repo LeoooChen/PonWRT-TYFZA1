@@ -18,11 +18,12 @@ static int rtl_pdc_access(struct rtl9617c_pon *pon, unsigned int index, bool wri
 	return readl_poll_timeout(pon->mac + PDC_ACCESS, status, !(status & BIT(31)), 1, 100000);
 }
 
-int rtl_pon_pdc_configure(struct rtl9617c_pon *pon)
+int rtl_pon_pdc_configure_locked(struct rtl9617c_pon *pon)
 {
 	unsigned int index;
 	int ret = 0;
 
+	lockdep_assert_held(&pon->control_lock);
 	mutex_lock(&pon->lock);
 	if (!pon->mac_prepared) {
 		ret = -EAGAIN;

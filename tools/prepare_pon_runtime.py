@@ -15,6 +15,7 @@ parser.add_argument('output', type=Path, help='OpenWrt files/ or unpacked rootfs
 parser.add_argument('--stock', type=Path, default=project / 'analysis/private/live-files')
 parser.add_argument('--auth-config', type=Path, default=project / 'analysis/private/pon-auth.json')
 parser.add_argument('--manifest', type=Path, default=project / 'artifacts/pon-runtime-manifest.json')
+parser.add_argument('--check-inputs-only', action='store_true')
 args = parser.parse_args()
 required_profiles = ('epon', 'epon_d10g', 'epon_bi10g', 'gpon', 'xgpon', 'xgspon')
 
@@ -30,6 +31,9 @@ try:
             raise ValueError(f'Missing mandatory PON input: {source}')
     if calibration.stat().st_size != 1024:
         raise ValueError('This board requires the original 1024-byte BOSA calibration')
+    if args.check_inputs_only:
+        print('Mandatory PON board inputs are present')
+        raise SystemExit(0)
     project.joinpath('artifacts').mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='pon-runtime-', dir=project / 'artifacts') as temporary:
         stage = Path(temporary)

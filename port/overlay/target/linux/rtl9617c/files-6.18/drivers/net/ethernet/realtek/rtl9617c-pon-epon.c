@@ -62,18 +62,20 @@ static void rtl_epon_fec_configure(struct rtl9617c_pon *pon)
 	}
 }
 
-int rtl_pon_epon_prepare(struct rtl9617c_pon *pon)
+int rtl_pon_epon_prepare_locked(struct rtl9617c_pon *pon)
 {
 	u32 status, drop_mask = GENMASK(19, 13) | GENMASK(29, 26);
-	unsigned int onu_mode = pon->mode == RTL_PON_EPON_1G ? 1 : pon->mode == RTL_PON_EPON_D10G ? 2 : 3;
+	unsigned int onu_mode;
 	int ret;
 
-	if (!rtl_pon_mode_is_epon(pon->mode)) {
-		pon->mac_error = -EOPNOTSUPP;
-		return -EOPNOTSUPP;
-	}
-	rtl_pon_mpcp_stop(pon);
+	lockdep_assert_held(&pon->control_lock);
+	rtl_pon_mpcp_stop_locked(pon);
 	mutex_lock(&pon->lock);
+	if (!rtl_pon_mode_is_epon(pon->mode)) {
+		ret = -EOPNOTSUPP;
+		goto unlock;
+	}
+	onu_mode = rtl_pon_modes[pon->mode].epon_onu_mode;
 	if (!pon->serdes_configured) {
 		ret = -EAGAIN;
 		goto unlock;
@@ -132,13 +134,16 @@ unlock:
 	return ret;
 }
 
-int rtl_pon_epon_traffic(struct rtl9617c_pon *pon, bool enable)
+int rtl_pon_epon_traffic_locked(struct rtl9617c_pon *pon, bool enable)
 {
 	int ret = 0;
 
-	if (!rtl_pon_mode_is_epon(pon->mode))
-		return enable ? -EOPNOTSUPP : 0;
+	lockdep_assert_held(&pon->control_lock);
 	mutex_lock(&pon->lock);
+	if (!rtl_pon_mode_is_epon(pon->mode)) {
+		ret = enable ? -EOPNOTSUPP : 0;
+		goto unlock;
+	}
 	if (enable && (!pon->puc_configured || !pon->pdc_configured ||
 		       !netif_running(pon->oam_endpoint.netdev))) {
 		ret = -EAGAIN;

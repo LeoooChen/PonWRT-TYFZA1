@@ -57,6 +57,8 @@ struct rtl_xram {
 	struct napi_struct napi;
 	struct hrtimer timer;
 	spinlock_t tx_lock;
+	spinlock_t rx_lock;
+	bool rx_active;
 	u32 port;
 	bool tx_pending;
 	unsigned int tx_length;
@@ -134,9 +136,14 @@ static int rtl_poll(struct napi_struct *napi, int budget)
 	int packets = 0;
 
 	if (priv->qm_rx) {
+		unsigned long flags;
+
 		packets = rtl_qm_rx_poll(&priv->qm, napi, budget);
-		if (packets < budget && napi_complete_done(napi, packets))
+		/* Complete and rearm form one critical section with engine shutdown. */
+		spin_lock_irqsave(&priv->rx_lock, flags);
+		if (packets < budget && napi_complete_done(napi, packets) && priv->rx_active)
 			rtl_update(priv, 0x6110, 0xff, 0xff);
+		spin_unlock_irqrestore(&priv->rx_lock, flags);
 		return packets;
 	}
 
@@ -321,22 +328,37 @@ static int rtl_engine_start(struct rtl_xram *priv)
 	rtl_update(priv, PORT_TX + priv->port * PORT_STRIDE, BIT(0), BIT(0));
 	priv->tx_pending = false;
 	napi_enable(&priv->napi);
-	if (priv->qm_rx)
+	if (priv->qm_rx) {
+		unsigned long flags;
+
+		spin_lock_irqsave(&priv->rx_lock, flags);
+		priv->rx_active = true;
 		rtl_update(priv, 0x6110, 0xff, 0xff);
+		spin_unlock_irqrestore(&priv->rx_lock, flags);
+	}
 	hrtimer_start(&priv->timer, ms_to_ktime(1), HRTIMER_MODE_REL);
 	return 0;
 }
 
 static void rtl_engine_stop(struct rtl_xram *priv)
 {
+	unsigned long flags;
+
 	hrtimer_cancel(&priv->timer);
 	if (priv->qm_rx) {
+		spin_lock_irqsave(&priv->rx_lock, flags);
+		priv->rx_active = false;
 		rtl_update(priv, 0x6110, 0xff, 0);
+		spin_unlock_irqrestore(&priv->rx_lock, flags);
 		synchronize_irq(priv->rx_irq);
 	}
 	napi_disable(&priv->napi);
-	if (priv->qm_rx)
+	if (priv->qm_rx) {
+		/* A completing poll may release NAPI ownership before dropping rx_lock. */
+		spin_lock_irqsave(&priv->rx_lock, flags);
 		rtl_qm_rx_stop(&priv->qm);
+		spin_unlock_irqrestore(&priv->rx_lock, flags);
+	}
 	if (priv->dma_tx)
 		rtl_dma_tx_stop(&priv->dma);
 	rtl_update(priv, XRAM_CFG, CPU_DISABLE, CPU_DISABLE);
@@ -633,7 +655,27 @@ static struct attribute *rtl_native_attrs[] = {
 	&dev_attr_rx_bypass.attr,
 	NULL,
 };
-ATTRIBUTE_GROUPS(rtl_native);
+static umode_t rtl_native_visible(struct kobject *kobj, struct attribute *attr, int index)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(kobj_to_dev(kobj)));
+
+	if (!priv->qm_rx &&
+	    (attr == &dev_attr_qm_pool.attr || attr == &dev_attr_qm_trace.attr ||
+	     attr == &dev_attr_qm_wait.attr || attr == &dev_attr_qm_es.attr ||
+	     attr == &dev_attr_qm_buffer.attr))
+		return 0;
+	return attr->mode;
+}
+
+static const struct attribute_group rtl_native_group = {
+	.attrs = rtl_native_attrs,
+	.is_visible = rtl_native_visible,
+};
+
+static const struct attribute_group *rtl_native_groups[] = {
+	&rtl_native_group,
+	NULL,
+};
 
 static int rtl_probe(struct platform_device *pdev)
 {
@@ -668,6 +710,7 @@ static int rtl_probe(struct platform_device *pdev)
 	netdev->netdev_ops = &rtl_netdev_ops;
 	netdev->max_mtu = ETH_DATA_LEN;
 	spin_lock_init(&priv->tx_lock);
+	spin_lock_init(&priv->rx_lock);
 	netif_napi_add(netdev, &priv->napi, rtl_poll);
 	hrtimer_setup(&priv->timer, rtl_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	phy = of_parse_phandle(dev->of_node, "phy-handle", 0);

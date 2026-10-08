@@ -26,5 +26,9 @@
   "pon_userspace": {
     "url": "https://github.com/pbs05/openwrt-pon-userspace.git",
     "commit": "cce9d756742487b378749c606b30e13ee9b0f093"
+  },
+  "uboot_tools": {
+    "version": "2026.07",
+    "sha256": "78e8bfc382fe388f9b55aa1daf8c563522a037779b5d4c349d1415e381f1243e"
   }
 }

@@ -1,0 +1,129 @@
+{
+  "issues": {
+    "QM_budget": "old overflow reproduced; persistent queue in 3f3fda1 verified using actual RX",
+    "QM_diagnostics": "confirmed and fixed",
+    "CTC_Set_selector": "confirmed and fixed",
+    "EPON_mode_check": "confirmed and fixed",
+    "PON_control_transaction": "confirmed and fixed",
+    "OAM_invalid_liveness": "confirmed and fixed",
+    "ONU_MAC_address_lock": "confirmed and fixed"
+  },
+  "source_sha256": {
+    "port/packages/tyfza1-pon-control/src/pon-oam.c": "6eb516d381a4b61c3280805478169e1c5a3c23281965e3d9b388745cb78b66fe",
+    "port/packages/tyfza1-pon-control/src/pon-oam.h": "5061cfc59b94442bbcba20d24c7b3a341537720b905b817f413e16f8a35c4334",
+    "port/packages/tyfza1-pon-control/src/pon-oamd.c": "a206516c1244cc6d00d914fb4441d8a540f53508e7ce42914b7a0e8141165e6c",
+    "scripts/test_oam_control.c": "ed5776485ff28115cb6bcd604c5545418154a03caddae67c945eb7fcfac3de71",
+    "scripts/test_oam_daemon.py": "d2665c0cd7551d1ea90d69e7cb0d9d684dfc24422f9e6d7ade922f4b6b0bb354"
+  },
+  "native_rx": {
+    "tests": [
+      {
+        "case": "qm",
+        "passed": true,
+        "output": "Actual QM RX: 65/129/256/512 packets, budget64..1024 and blocked-pool recovery passed"
+      },
+      {
+        "case": "diagnostics",
+        "passed": true,
+        "output": "Actual sysfs visibility/show: XRAM and DMA-TX hide QM-only attributes; QM mode reads pool normally"
+      },
+      {
+        "case": "epon",
+        "passed": true,
+        "output": "Actual EPON prepare/traffic: three modes, concurrent GPON-family switch and fresh ONU mode passed"
+      }
+    ],
+    "production_source_sha256": {
+      "rtl9617c-qm.c": "0be19bbb13d694db51c719e103912efd39a8fb8ce36c809cc05dbb2ca6f7e646",
+      "rtl9617c-qm.h": "960ce9749248ab1943bcb711641155d84bddaceddcfc3be7e8ae3ef11fa80169",
+      "rtl9617c-xram.c": "f347329927a81e30fd95bb877acc0523fd48d03631d0aa0ccfe8bedf3843f4cf",
+      "rtl9617c-pon-epon.c": "3b702cd67ceeb8e12ab9333e83f296b044e6d9febe73cec663108f599f32e647"
+    },
+    "sanitizers": [
+      "ASan",
+      "UBSan"
+    ],
+    "MMIO": "modeled; no hardware access"
+  },
+  "control_transactions": {
+    "tests": [
+      {
+        "case": "transactions",
+        "passed": true,
+        "output": "Actual SerDes/MPCP transaction: concurrent restart blocked, all GPON-family results idle, state workers finish during cancel"
+      },
+      {
+        "case": "address",
+        "passed": true,
+        "output": "Actual ONU MAC store: RTNL/device locks, LLID-derived addresses, change notifications and busy rejection passed"
+      }
+    ],
+    "production_source_sha256": {
+      "rtl9617c-pon.c": "5503d89f81fcea74007174d1097fd1bf6f9143781624c8c5935d68c859eee32b",
+      "rtl9617c-pon-serdes.c": "8ae4545aadc7701663ae758c52d96825343c881317a8dd47057e2e12a2c8880a",
+      "rtl9617c-pon-mpcp.c": "7d7ec01d8ca0aeb5075941ab76c8d46d1764ba203d30b129370a2fd5921805ae",
+      "rtl9617c-pon-oam.c": "bdadef42983462f5be71152a07322aba2623f839a102cf49d9161a89365255d9"
+    },
+    "sanitizers": [
+      "ASan",
+      "UBSan"
+    ],
+    "hardware_access": false
+  },
+  "native_baselines": [
+    {
+      "case": "qm",
+      "revision": "c6c5079",
+      "reproduced": true,
+      "failure_marker": "stack-buffer-overflow"
+    },
+    {
+      "case": "diagnostics",
+      "revision": "3f3fda1",
+      "reproduced": true,
+      "failure_marker": "AddressSanitizer"
+    },
+    {
+      "case": "epon",
+      "revision": "3f3fda1",
+      "reproduced": true,
+      "failure_marker": "assert_epon"
+    }
+  ],
+  "control_baselines": [
+    {
+      "case": "transactions",
+      "revision": "3f3fda1",
+      "reproduced": true,
+      "failure_marker": "start_result<0"
+    },
+    {
+      "case": "address",
+      "revision": "3f3fda1",
+      "reproduced": true,
+      "failure_marker": "rtnl&&dev->locked"
+    }
+  ],
+  "OAM_actual_process": {
+    "binary": "/home/leo/PonWRT-TYFZA1/artifacts/review-fixes/final-fit-pon-oamd",
+    "runtime": "AArch64 OpenWrt GCC14.4/musl",
+    "network": "isolated veth namespace",
+    "passed": [
+      "unregistered process sends no OAM",
+      "registered Information discovery reaches stable with remote echo",
+      "actual process sends 24-byte LOID and blank 12-byte password",
+      "OLT success changes state without publishing credential values",
+      "UCI hardware/software versions enter live Get replies",
+      "Set response retains complete four-byte and one-byte port instances",
+      "same Local EVAL without Remote echo revokes success and negotiates a fresh revision",
+      "reauthentication clears success and records rejection",
+      "MPCP loss resets current auth and retains result history",
+      "OAM peer timeout revokes current auth while MPCP remains registered",
+      "truncated, unsupported-code and unknown-OUI traffic cannot extend an accepted session",
+      "duplicate LLID daemon rejected",
+      "SIGTERM removes current status and closes socket"
+    ],
+    "PON_hardware_verified": false
+  },
+  "board_tests_this_revision": false
+}

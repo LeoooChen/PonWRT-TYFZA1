@@ -1,0 +1,117 @@
+{
+  "completed_on": "2026-10-08T14:13:57.222093+08:00",
+  "issues": {
+    "FIT_payload_binding": "confirmed and fixed",
+    "BOSA_direct_write": "confirmed and fixed",
+    "NI_late_NAPI_IRQ": "confirmed and fixed",
+    "current_tool_paths_versions": "confirmed and fixed",
+    "UCI_string_import": "confirmed and fixed",
+    "OAM_probe_LLID": "confirmed and fixed",
+    "capture_wrong_interface": "confirmed and fixed",
+    "platform_patch_fuzz": "confirmed and fixed"
+  },
+  "source_sha256": {
+    "tools/verify_pon_payload.py": "acdc51755ba4720cfc935d71d68c3d6d58e903d8cc437d2e3b1d01166ea87607",
+    "tools/fit_payload.py": "80da6f1a92823fc254efcfb67b267491b2ecc594a5024e2e727aff4e0fb784c8",
+    "tools/prepare_pon_identity.py": "f14a789eab82c20e369884817571675913a7b8cf0199f5db14a764282b932ad1",
+    "tools/uci_config.py": "354d3810736bb67efad4979f4b0070edf0b33da83ed41887aef21a741584583c",
+    "tools/pon_oam_probe.c": "a36bcc05dc2b00678da601e7d291ed0a956de5112c26c291785e8bde4201cb04",
+    "tools/lan_capture.c": "4e68b4b32d83d676f4fda922030de964d80caa6faaff7af189da53fcf966f576",
+    "port/scripts/build.sh": "d8302611d3aba3bd52efa0c573472fff31bb97f4ab388cf414b9acf6f8139ec0",
+    "port/scripts/export-artifacts.sh": "638a0ecac02079e6e3fe642c4e25c0d32609389c010fa285e332a4568f2284d4",
+    "port/scripts/normalize-kconfig.sh": "86d2423b7e313a5cb0abad7cd825670e7785023d67a6fafb0be7cdc59068e45f",
+    "port/tools/make_boot_fit.py": "4e55f3d357fff364c9a7aae002f7f105e5dc6161f34077f2c0a983dcf2acae1b",
+    "port/tools/verify_artifacts.py": "5368036a1bf8325ea45b4cb467511af72e1dc1437a2019c3ac556630ec0c7900",
+    "port/tools/project_paths.py": "c81f5ffb424b96805bf0edd92620a560536374ff9eea62f0a09b25c77fa702a5",
+    "port/overlay/target/linux/rtl9617c/patches-6.18/100-platform-peripherals.patch": "19ddce9b77d74614f29394e67ff450d56760c65ee52c451f9c9a40d27e99be2f"
+  },
+  "artifact_input_tests": {
+    "passed": [
+      "Actual OpenWrt libuci round-trips apostrophe, backslash, double quote, UTF-8 and empty strings",
+      "Control characters rejected and UTF-8 limits measured in bytes",
+      "Actual final-FIT verifier rejects new firmware plus old FIT and valid old manifest",
+      "Positive final FIT yields actual kernel, DTB and complete rootfs comparison"
+    ]
+  },
+  "capture_probe_tests": {
+    "passed": [
+      "Actual capture rejects missing interface before socket/output creation",
+      "Actual probe reports driver LLID7 even when interface name is changed",
+      "Old conflicting interface-plus-LLID argument is rejected before opening socket"
+    ],
+    "network_traffic_generated": false
+  },
+  "rx_shutdown_tests": {
+    "actual_stop_and_poll_branch": true,
+    "controlled_threads": 2,
+    "both_interleavings_passed": true,
+    "hardware_access": false
+  },
+  "BOSA_entry": {
+    "i2c_configuration_read_only": true,
+    "only_runtime_prepare_caller": "PON bosa_store transaction"
+  },
+  "compiled_source_binding": {
+    "overlay_matches_compiled_tree": {
+      "rtl9617c-bosa.c": "f29c196ed49be867b8ae57cfb74dc04d914a0ddf6f59d7fab3131ec28d3dea36",
+      "rtl9617c-pon.c": "5503d89f81fcea74007174d1097fd1bf6f9143781624c8c5935d68c859eee32b",
+      "rtl9617c-pon.h": "3d78ed1cb78a5e03561fa0f691a953b4d093af410d0f2a317cad3e5df3d97a4b",
+      "rtl9617c-pon-serdes.c": "8ae4545aadc7701663ae758c52d96825343c881317a8dd47057e2e12a2c8880a",
+      "rtl9617c-pon-mpcp.c": "7d7ec01d8ca0aeb5075941ab76c8d46d1764ba203d30b129370a2fd5921805ae",
+      "rtl9617c-pon-epon.c": "3b702cd67ceeb8e12ab9333e83f296b044e6d9febe73cec663108f599f32e647",
+      "rtl9617c-pon-pdc.c": "19a448b09ed13376476550138ed345e92180ae522f67ad016668a72ab6597518",
+      "rtl9617c-pon-puc.c": "ed784414ea9916ef8d7456ef57ef6e744e4dae79594c2ebeb0fd8ac03dafdd4f",
+      "rtl9617c-pon-oam.c": "055f5b12517bb2e150c4564355bb1f94c166526ec7a748469fa1a933d50605a1",
+      "rtl9617c-xram.c": "fccf198d5a883ef96f13f07b1d7b6e7dec225f41c89615df6624d606d0687073"
+    }
+  },
+  "actual_final_FIT_signatures": {
+    "FIT_sha256": "deae61b6e06987ceb9caed813cca8587472c7d56f4e1cda31dbe853cfbb995a5",
+    "configuration_verified": true,
+    "broken_signature_rejected": true,
+    "payload_signatures": "kernel, fdt-dts and script SHA256/RSA signatures independently verified"
+  },
+  "embedded_OAM_daemon_tests": {
+    "binary": "/home/leo/PonWRT-TYFZA1/artifacts/review-fixes/final-fit-pon-oamd",
+    "runtime": "AArch64 OpenWrt GCC14.4/musl",
+    "network": "isolated veth namespace",
+    "passed": [
+      "unregistered process sends no OAM",
+      "registered Information discovery reaches stable with remote echo",
+      "actual process sends 24-byte LOID and blank 12-byte password",
+      "OLT success changes state without publishing credential values",
+      "UCI hardware/software versions enter live Get replies",
+      "Set response retains complete four-byte and one-byte port instances",
+      "same Local EVAL without Remote echo revokes success and negotiates a fresh revision",
+      "reauthentication clears success and records rejection",
+      "MPCP loss resets current auth and retains result history",
+      "OAM peer timeout revokes current auth while MPCP remains registered",
+      "truncated, unsupported-code and unknown-OUI traffic cannot extend an accepted session",
+      "duplicate LLID daemon rejected",
+      "SIGTERM removes current status and closes socket"
+    ],
+    "PON_hardware_verified": false
+  },
+  "current_maintenance_tools": {
+    "artifact_verifier": "passed on locked current OpenWrt tree",
+    "unsigned_candidate": "artifacts/current-candidate-audit",
+    "signed_candidate": "artifacts/current-signed-candidate-audit",
+    "export": "artifacts/current-final-tool-export",
+    "host_tests": {
+      "run": 54,
+      "skipped": 1,
+      "passed": true
+    },
+    "normalize_kconfig": "executed; kernel packages refreshed; full build passed",
+    "native_userspace": "native ARM64/musl full entry executed; 13 integration checks passed",
+    "Airoha_reference_entry": "isolated under port/scripts/reference; syntax checked; not part of TYFZA1 runtime"
+  },
+  "platform_patch": {
+    "method": "git diff from Linux6.18.55 archive",
+    "zero_fuzz_dry_run": true,
+    "files": 5
+  },
+  "final_build_unit": "ponwrt-tyfza1-lan-20261008-140435",
+  "final_FIT_sha256": "deae61b6e06987ceb9caed813cca8587472c7d56f4e1cda31dbe853cfbb995a5",
+  "board_tests_this_revision": false
+}

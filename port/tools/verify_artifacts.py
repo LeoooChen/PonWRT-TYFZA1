@@ -9,7 +9,10 @@ from pathlib import Path
 
 from verify_dtb import inspect as inspect_dtb
 
-PIN = 'c759267c92b0697a6fd6f369164a5ed4c1a6a03c'
+from project_paths import source_lock, kernel_directory
+
+PIN = source_lock()['openwrt']['commit']
+KERNEL = source_lock()['openwrt']['kernel']
 
 
 def one(directory, pattern):
@@ -26,7 +29,7 @@ def image_info(path):
     offset, size, flags = struct.unpack_from('<QQQ', data, 8)
     if size == 0 or flags & 1 or not flags & 8:
         raise ValueError(f'Unsupported ARM64 image placement/endianness: {path}')
-    if b'Linux version 6.18.52 ' not in data:
+    if ('Linux version ' + KERNEL + ' ').encode() not in data:
         raise ValueError(f'Wrong kernel version: {path}')
     return {'bytes': len(data), 'image_size': size, 'text_offset': offset,
             'flags': flags, 'sha256': hashlib.sha256(data).hexdigest()}
@@ -67,7 +70,7 @@ def verify(tree, stock):
         if not any(line.startswith(required + ' ') for line in manifest.splitlines()):
             raise ValueError(f'Missing required package: {required}')
     kdir = tree / 'build_dir/target-aarch64_cortex-a55_musl/linux-rtl9617c_generic'
-    config = (kdir / 'linux-6.18.52/.config').read_text().splitlines()
+    config = (kernel_directory(tree) / '.config').read_text().splitlines()
     for symbol in ('ARM64', 'ARM_GIC_V3', 'ARM_ARCH_TIMER', 'ARM_PSCI_FW',
                    'SERIAL_RTL9617C', 'SERIAL_RTL9617C_CONSOLE', 'SPI_RTL9617C',
                    'MTD_SPI_NAND', 'MTD_UBI', 'MTD_UBI_BLOCK', 'SQUASHFS',
@@ -80,7 +83,7 @@ def verify(tree, stock):
     if 'CONFIG_WATCHDOG_OPEN_TIMEOUT=60' not in config:
         raise ValueError('Trial-slot watchdog handoff must not feed forever before procd opens it')
     return {'scope': 'offline artifact inspection only', 'openwrt_commit': commit,
-            'kernel_version': '6.18.52', 'images': images, 'dtbs': dtbs,
+            'kernel_version': KERNEL, 'images': images, 'dtbs': dtbs,
             'rootfs_sha256': hashlib.sha256(rootfs.read_bytes()).hexdigest(),
             'rootfs_aarch64_executables': elfs, 'upgrade_guard': 'rejects writes',
             'hardware_boot_tested': False, 'native_ubi_installation_ready': False,

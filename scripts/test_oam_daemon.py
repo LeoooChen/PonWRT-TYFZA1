@@ -102,6 +102,12 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
         assert versions[48:64] == b'SOFTWARE-2'.ljust(16, b'\0')
         assert versions[84:100] == b'SOFTWARE-2'.ljust(16, b'\0')
         tests.append('UCI hardware/software versions enter live Get replies')
+        set_request = bytes.fromhex('11111103 37000104 01000007 c700250102 3600010103 c700130200e3 00')
+        set_response = bytes.fromhex('11111104 37000104 01000007 c7002587 3600010103 c7001387 00')
+        sock.send(ethernet(set_request, code=0xfe, flags=0x50))
+        actual_set = receive(sock, 0xfe)
+        assert actual_set[18:18 + len(set_response)] == set_response
+        tests.append('Set response retains complete four-byte and one-byte port instances')
         # Continuous Information must revoke auth immediately, without waiting
         # for the five-second peer timeout or a changed peer Local TLV.
         sock.send(ethernet(b'\x01\x10' + peer_local + b'\0\0', flags=8))
@@ -136,6 +142,27 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
         timed_out = status(state_file, lambda s: not s['discovery_stable'] and s['auth_state'] == 'waiting', timeout=7)
         assert timed_out['auth_successes'] == 2 and timed_out['registered']
         tests.append('OAM peer timeout revokes current auth while MPCP remains registered')
+        # Establish another accepted session, then keep feeding invalid or
+        # unhandled traffic past the five-second liveness deadline.
+        fresh = receive(sock, 0)
+        while int.from_bytes(fresh[21:23], 'big') != (timed_out['generation'] & 0xffff):
+            fresh = receive(sock, 0)
+        fresh_info = b'\x01\x10' + peer_local + b'\x02\x10' + fresh[20:34] + b'\0\0'
+        sock.send(ethernet(fresh_info, flags=16))
+        status(state_file, lambda s: s['discovery_stable'])
+        sock.send(ethernet(b'\x11\x11\x11\x05\x03\0\0', code=0xfe, flags=0x50))
+        live = status(state_file, lambda s: s['auth_state'] == 'accepted')
+        invalid = (ethernet(b'', code=0xfe)[:18], ethernet(b'', code=2),
+                   ethernet(b'\x12\x34\x56\x05\x03\0\0', code=0xfe),
+                   ethernet(b'\x11\x11\x11\x7f', code=0xfe))
+        for _ in range(10):
+            for frame in invalid:
+                sock.send(frame)
+            time.sleep(.7)
+        expired = status(state_file, lambda s: s['auth_state'] == 'waiting' and not s['discovery_stable'])
+        assert expired['registered'] and expired['generation'] == live['generation'] + 1
+        assert expired['auth_successes'] == 3
+        tests.append('truncated, unsupported-code and unknown-OUI traffic cannot extend an accepted session')
         duplicate = subprocess.run([str(loader), '--library-path', str(libraries) + ':' + str(toolchain / 'lib'),
             str(args.binary), '--config-dir', str(config), '--mpcp-status', str(mpcp), '--state-dir', str(state)],
             capture_output=True, text=True)

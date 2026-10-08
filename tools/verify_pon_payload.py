@@ -5,6 +5,10 @@ import hashlib
 import json
 from pathlib import Path
 import tarfile
+import posixpath
+import tempfile
+from fit_payload import embedded_rootfs, fit_images
+from uci_config import validate
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
@@ -12,6 +16,18 @@ parser.add_argument("payload", type=Path)
 parser.add_argument("--build-unit", required=True)
 parser.add_argument("--output", type=Path, default=root / "manifests/bosa-luci-build.json")
 args = parser.parse_args()
+fit = json.loads((args.payload / 'ram-pon/manifest.json').read_text())
+fit_path = args.payload / 'ram-pon/image.itb'
+assert hashlib.sha256(fit_path.read_bytes()).hexdigest() == fit['fit_sha256']
+actual = fit_images(fit_path)
+kernel = actual['kernel']
+assert hashlib.sha256(kernel).hexdigest() == fit['image_sha256'], 'FIT kernel differs from manifest'
+assert hashlib.sha256(actual['fdt']).hexdigest() == fit['dtb_sha256'], 'FIT DTB differs from manifest'
+external_kernel = next((args.payload / 'firmware').glob('*initramfs-Image')).read_bytes()
+assert kernel == external_kernel, 'Final FIT kernel does not match firmware directory'
+external_dtb = args.payload / 'firmware/openwrt-rtl9617c-generic-tianyi_tyfza1-pon-status.dtb'
+assert actual['fdt'] == external_dtb.read_bytes(), 'Final FIT DTB does not match firmware directory'
+embedded, initramfs_start, initramfs_end = embedded_rootfs(kernel)
 archive = args.payload / "firmware/openwrt-rtl9617c-generic-tianyi_tyfza1-rootfs.tar.gz"
 files = ["etc/init.d/pon", "etc/config/pon", "lib/firmware/realtek/rtl9617c/bosa-calibration.bin",
          "usr/share/rpcd/ucode/luci.tyfza1-pon", "usr/share/rpcd/acl.d/luci-app-tyfza1-pon.json",
@@ -21,32 +37,44 @@ with tarfile.open(archive) as tar:
     members = {member.name.removeprefix("./"): member for member in tar.getmembers()}
     checks = []
     for name in files:
-        data = tar.extractfile(members[name]).read()
+        data = embedded[name]['data']
+        assert data == tar.extractfile(members[name]).read(), f'FIT initramfs differs from rootfs: {name}'
+        assert embedded[name]['mode'] & 0o777 == members[name].mode & 0o777
         checks.append({"path": name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(),
                        "mode": oct(members[name].mode & 0o777)})
-    calibration = tar.extractfile(members[files[2]]).read()
+    # Every external regular file/symlink must belong to this same initramfs.
+    for name, member in members.items():
+        if member.isfile():
+            assert name in embedded and embedded[name]['data'] == tar.extractfile(member).read(), name
+        elif member.issym():
+            def destination(link):
+                return posixpath.normpath(posixpath.join(posixpath.dirname(name), link.split('\0', 1)[0])).lstrip('/')
+            assert name in embedded and destination(embedded[name]['data'].decode()) == destination(member.linkname), name
+    calibration = embedded[files[2]]['data']
     assert calibration == (root / "analysis/private/live-files/var/config/rtkbosa_k.bin").read_bytes()
     auth = json.loads((root / "analysis/private/pon-auth.json").read_text())
-    config = tar.extractfile(members["etc/config/pon"]).read().decode()
-    assert "option loid '" + auth["loid"] + "'" in config
+    config = embedded['etc/config/pon']['data'].decode()
+    with tempfile.TemporaryDirectory(prefix='fit-uci-', dir=root / 'artifacts') as temporary:
+        candidate = Path(temporary) / 'pon'
+        candidate.touch(mode=0o600)
+        candidate.write_text(config)
+        validate(candidate, {'loid': auth['loid'], 'loid_password': auth['password'],
+                             'wan_protocol': auth['network_protocol']})
     assert "option wan_protocol 'dhcp'" in config
     assert members["etc/config/pon"].mode & 0o777 == 0o600
     runtime = json.loads((root / 'artifacts/pon-runtime-manifest.json').read_text())
     assert hashlib.sha256(config.encode()).hexdigest() == runtime['identity']['uci_sha256']
     for profile in runtime['profiles'].values():
-        blob = tar.extractfile(members['lib/firmware/realtek/rtl9617c/' + profile['firmware']]).read()
+        blob = embedded['lib/firmware/realtek/rtl9617c/' + profile['firmware']]['data']
         assert hashlib.sha256(blob).hexdigest() == profile['firmware_sha256']
     for name in ("epon", "epon_d10g", "epon_bi10g", "gpon", "xgpon", "xgspon"):
         assert f"lib/firmware/realtek/rtl9617c/pon_serdes_{name}.bin" in members
-    service = tar.extractfile(members["etc/init.d/pon"]).read().decode()
+    service = embedded['etc/init.d/pon']['data'].decode()
     assert service.index('> "$device/bosa"') < service.index('> "$device/serdes"')
     assert '/usr/sbin/pon-oamd --interface' in service
     assert members["etc/rc.d/S25pon"].issym()
     acl = json.loads(tar.extractfile(members[files[4]]).read())
     assert "status" in acl["luci-app-tyfza1-pon"]["read"]["ubus"]["luci.tyfza1-pon"]
-fit = json.loads((args.payload / "ram-pon/manifest.json").read_text())
-assert hashlib.sha256((args.payload / "ram-pon/image.itb").read_bytes()).hexdigest() == fit["fit_sha256"]
-kernel = next((args.payload / 'firmware').glob('*initramfs-Image')).read_bytes()
 for marker in (b'silence_scope=shared-engine', b'refill_pending=%u', b'refill_retries=%u'):
     assert marker in kernel, marker
 record = {"payload": str(args.payload.relative_to(root)) if args.payload.is_absolute() else str(args.payload),
@@ -55,6 +83,9 @@ record = {"payload": str(args.payload.relative_to(root)) if args.payload.is_abso
           "private_identity_injected": True, "identity_file_mode": "0600", "WAN_protocol": "dhcp",
           "runtime_matches_current_preparation": True,
           "corrected_NACK_and_refill_in_kernel": True,
+          "verification_entry": "final FIT selected configuration",
+          "FIT_kernel_DTB_and_initramfs_match_external_files": True,
+          "initramfs": {"start": initramfs_start, "end": initramfs_end, "members": len(embedded)},
           "BOSA_precedes_SerDes": True, "S25pon_enabled": True,
           "hardware_boot_verified": False, "FIT": fit}
 args.output.write_text(json.dumps(record, indent=2) + "\n")

@@ -22,6 +22,9 @@ struct rtl9617c_pon {
 	void __iomem *optical_status;
 	void __iomem *top_irq;
 	struct mutex lock;
+	/* Control transactions precede state lock. Work/IRQ threads use only lock;
+	 * cancel_delayed_work_sync must run without holding that state lock. */
+	struct mutex control_lock;
 	struct delayed_work serdes_work;
 	struct delayed_work mpcp_work;
 	enum rtl_pon_mode mode;
@@ -86,4 +89,13 @@ void rtl_pon_oam_remove(struct rtl9617c_pon *pon);
 void rtl_pon_oam_carrier(struct rtl9617c_pon *pon);
 int rtl_pon_oam_resize(struct rtl9617c_pon *pon, unsigned int count);
 void rtl_pon_oam_address(struct rtl9617c_pon *pon);
+
+/* Internal control steps: caller owns control_lock, never acquire it again. */
+int rtl_pon_serdes_configure_locked(struct rtl9617c_pon *pon, enum rtl_pon_mode mode);
+int rtl_pon_epon_prepare_locked(struct rtl9617c_pon *pon);
+int rtl_pon_epon_traffic_locked(struct rtl9617c_pon *pon, bool enable);
+void rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon);
+int rtl_pon_mpcp_configure_locked(struct rtl9617c_pon *pon);
+int rtl_pon_pdc_configure_locked(struct rtl9617c_pon *pon);
+int rtl_pon_puc_configure_locked(struct rtl9617c_pon *pon);
 #endif

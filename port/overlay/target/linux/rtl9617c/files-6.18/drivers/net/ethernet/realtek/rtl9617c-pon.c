@@ -12,12 +12,80 @@
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
+#include <linux/rtnetlink.h>
 #include "rtl9617c-pon.h"
 #include "rtl9617c-bosa.h"
 
 #define PON_EPON_MODE BIT(0)
 #define EPON_STATUS 0x0010
 #define MPCP_REGISTERED 0x2014
+
+int rtl_pon_serdes_configure(struct rtl9617c_pon *pon, enum rtl_pon_mode mode)
+{
+	int ret;
+
+	mutex_lock(&pon->control_lock);
+	ret = rtl_pon_serdes_configure_locked(pon, mode);
+	mutex_unlock(&pon->control_lock);
+	return ret;
+}
+
+int rtl_pon_epon_prepare(struct rtl9617c_pon *pon)
+{
+	int ret;
+
+	mutex_lock(&pon->control_lock);
+	ret = rtl_pon_epon_prepare_locked(pon);
+	mutex_unlock(&pon->control_lock);
+	return ret;
+}
+
+int rtl_pon_epon_traffic(struct rtl9617c_pon *pon, bool enable)
+{
+	int ret;
+
+	mutex_lock(&pon->control_lock);
+	ret = rtl_pon_epon_traffic_locked(pon, enable);
+	mutex_unlock(&pon->control_lock);
+	return ret;
+}
+
+void rtl_pon_mpcp_stop(struct rtl9617c_pon *pon)
+{
+	mutex_lock(&pon->control_lock);
+	rtl_pon_mpcp_stop_locked(pon);
+	mutex_unlock(&pon->control_lock);
+}
+
+int rtl_pon_mpcp_configure(struct rtl9617c_pon *pon)
+{
+	int ret;
+
+	mutex_lock(&pon->control_lock);
+	ret = rtl_pon_mpcp_configure_locked(pon);
+	mutex_unlock(&pon->control_lock);
+	return ret;
+}
+
+int rtl_pon_pdc_configure(struct rtl9617c_pon *pon)
+{
+	int ret;
+
+	mutex_lock(&pon->control_lock);
+	ret = rtl_pon_pdc_configure_locked(pon);
+	mutex_unlock(&pon->control_lock);
+	return ret;
+}
+
+int rtl_pon_puc_configure(struct rtl9617c_pon *pon)
+{
+	int ret;
+
+	mutex_lock(&pon->control_lock);
+	ret = rtl_pon_puc_configure_locked(pon);
+	mutex_unlock(&pon->control_lock);
+	return ret;
+}
 
 static ssize_t state_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -56,9 +124,11 @@ static ssize_t bosa_store(struct device *dev, struct device_attribute *attr,
 		return ret;
 	if (!prepare)
 		return -EINVAL;
-	rtl_pon_epon_traffic(pon, false);
-	rtl_pon_mpcp_stop(pon);
+	mutex_lock(&pon->control_lock);
+	rtl_pon_epon_traffic_locked(pon, false);
+	rtl_pon_mpcp_stop_locked(pon);
 	ret = rtl9617c_bosa_prepare(pon->bosa_dev);
+	mutex_unlock(&pon->control_lock);
 	return ret ? ret : count;
 }
 static DEVICE_ATTR_RW(bosa);
@@ -150,14 +220,20 @@ static ssize_t onu_mac_store(struct device *dev, struct device_attribute *attr,
 	u8 mac[ETH_ALEN];
 	if (!mac_pton(buf, mac) || !is_valid_ether_addr(mac))
 		return -EINVAL;
+	mutex_lock(&pon->control_lock);
+	rtnl_lock();
 	mutex_lock(&pon->lock);
 	if (pon->mpcp_enabled) {
 		mutex_unlock(&pon->lock);
+		rtnl_unlock();
+		mutex_unlock(&pon->control_lock);
 		return -EBUSY;
 	}
 	ether_addr_copy(pon->onu_mac, mac);
-	rtl_pon_oam_address(pon);
 	mutex_unlock(&pon->lock);
+	rtl_pon_oam_address(pon);
+	rtnl_unlock();
+	mutex_unlock(&pon->control_lock);
 	return count;
 }
 static DEVICE_ATTR_RW(onu_mac);
@@ -178,15 +254,20 @@ static ssize_t llid_count_store(struct device *dev, struct device_attribute *att
 		return ret;
 	if (!value || value > 32)
 		return -EINVAL;
+	mutex_lock(&pon->control_lock);
 	mutex_lock(&pon->lock);
 	if (pon->mpcp_enabled) {
 		mutex_unlock(&pon->lock);
+		mutex_unlock(&pon->control_lock);
 		return -EBUSY;
 	}
+	mutex_unlock(&pon->lock);
 	ret = rtl_pon_oam_resize(pon, value);
+	mutex_lock(&pon->lock);
 	if (!ret)
 		pon->llid_count = value;
 	mutex_unlock(&pon->lock);
+	mutex_unlock(&pon->control_lock);
 	return ret ? ret : count;
 }
 static DEVICE_ATTR_RW(llid_count);
@@ -244,9 +325,11 @@ static ssize_t llid_table_store(struct device *dev, struct device_attribute *att
 		add = false;
 	else
 		return -EINVAL;
+	mutex_lock(&pon->control_lock);
 	mutex_lock(&pon->lock);
 	ret = rtl_pon_llid_update(pon, add, index, mac, llid, multicast);
 	mutex_unlock(&pon->lock);
+	mutex_unlock(&pon->control_lock);
 	return ret ? ret : count;
 }
 static DEVICE_ATTR_RW(llid_table);
@@ -405,6 +488,7 @@ static int rtl9617c_pon_probe(struct platform_device *pdev)
 	}
 	pon->mode = RTL_PON_EPON_D10G;
 	mutex_init(&pon->lock);
+	mutex_init(&pon->control_lock);
 	rtl_pon_serdes_init_work(pon);
 	pon->control = devm_platform_ioremap_resource(pdev, 1);
 	if (IS_ERR(pon->control))
@@ -452,10 +536,14 @@ static int rtl9617c_pon_probe(struct platform_device *pdev)
 
 static void rtl9617c_pon_remove(struct platform_device *pdev)
 {
-	rtl_pon_epon_traffic(platform_get_drvdata(pdev), false);
-	rtl_pon_mpcp_stop(platform_get_drvdata(pdev));
-	rtl_pon_serdes_stop_work(platform_get_drvdata(pdev));
-	rtl_pon_oam_remove(platform_get_drvdata(pdev));
+	struct rtl9617c_pon *pon = platform_get_drvdata(pdev);
+
+	mutex_lock(&pon->control_lock);
+	rtl_pon_epon_traffic_locked(pon, false);
+	rtl_pon_mpcp_stop_locked(pon);
+	rtl_pon_serdes_stop_work(pon);
+	rtl_pon_oam_remove(pon);
+	mutex_unlock(&pon->control_lock);
 }
 
 static const struct of_device_id rtl9617c_pon_of_match[] = {

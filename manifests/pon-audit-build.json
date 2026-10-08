@@ -1,0 +1,81 @@
+{
+  "payload": "artifacts/full-pon-audit-final-6.18.55",
+  "build_unit": "ponwrt-tyfza1-lan-20261008-140435",
+  "required_files": [
+    {
+      "path": "etc/init.d/pon",
+      "bytes": 1834,
+      "sha256": "64190e8df8741db0f6cbc2c2c30a8803ffca8e360a076e40e684141a90d16fd1",
+      "mode": "0o755"
+    },
+    {
+      "path": "etc/config/pon",
+      "bytes": 200,
+      "sha256": "78fa5c3642686f41a63f03f221746feaf0053878ad63f8f65cfbbd344bd76a7b",
+      "mode": "0o600"
+    },
+    {
+      "path": "lib/firmware/realtek/rtl9617c/bosa-calibration.bin",
+      "bytes": 1024,
+      "sha256": "07f4014678ce52bee03b0aa2f9e2eabca85419402fcccad6b5ad07e6b18e3b5b",
+      "mode": "0o644"
+    },
+    {
+      "path": "usr/share/rpcd/ucode/luci.tyfza1-pon",
+      "bytes": 2051,
+      "sha256": "ad8bc290db09f77c2009a0b0a87cf9f1937c9e5fc1a5894c43375cd5a4e8ba3e",
+      "mode": "0o644"
+    },
+    {
+      "path": "usr/share/rpcd/acl.d/luci-app-tyfza1-pon.json",
+      "bytes": 247,
+      "sha256": "8bcfcfcb7457a889d18ff774b6b42e4eba0cbafcc2af95b3935547dd425dcc64",
+      "mode": "0o644"
+    },
+    {
+      "path": "usr/share/luci/menu.d/luci-app-tyfza1-pon.json",
+      "bytes": 209,
+      "sha256": "1507adcff76042218b73b8efedc482d1ccccccfa96cba7126c310a0678e96309",
+      "mode": "0o644"
+    },
+    {
+      "path": "www/luci-static/resources/view/network/tyfza1-pon.js",
+      "bytes": 3956,
+      "sha256": "adc24cc6d899255d8b9502d8f92bd92a4592780349a482f5c0a7168496a5f5ca",
+      "mode": "0o644"
+    },
+    {
+      "path": "usr/sbin/pon-oamd",
+      "bytes": 16393,
+      "sha256": "131f67f96a048c1e9a0170e6d72307d4ee84a2d1911de73fc53bef238538eba5",
+      "mode": "0o755"
+    }
+  ],
+  "calibration_matches_original": true,
+  "six_protocol_profiles": true,
+  "private_identity_injected": true,
+  "identity_file_mode": "0600",
+  "WAN_protocol": "dhcp",
+  "runtime_matches_current_preparation": true,
+  "corrected_NACK_and_refill_in_kernel": true,
+  "verification_entry": "final FIT selected configuration",
+  "FIT_kernel_DTB_and_initramfs_match_external_files": true,
+  "initramfs": {
+    "start": 9986116,
+    "end": 18384140,
+    "members": 966
+  },
+  "BOSA_precedes_SerDes": true,
+  "S25pon_enabled": true,
+  "hardware_boot_verified": false,
+  "FIT": {
+    "kernel_version": "6.18.55",
+    "cpus": 4,
+    "kernel_load": "0x200000",
+    "fdt_load": "0x1800000",
+    "image_sha256": "37c8e83ea56d49624697c221fe8d6f695a8bb4671090e2898c23f465c9b5ca5f",
+    "dtb_sha256": "1287b9a90e3876bdd718e5e3ad343632513832fabe8df4d7a2688bbd6e56f65c",
+    "fit_sha256": "deae61b6e06987ceb9caed813cca8587472c7d56f4e1cda31dbe853cfbb995a5",
+    "fit_bytes": 5939220
+  }
+}

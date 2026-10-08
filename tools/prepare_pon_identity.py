@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 import xml.etree.ElementTree as ET
+from uci_config import field, quote, validate
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("stock_configuration", type=Path)
@@ -27,15 +28,18 @@ count = int(re.search(r'CFG_ID_PON_LLID_NUM\s*=\s*(0x[0-9a-fA-F]+|\d+)', scfg)[1
 if not 1 <= count <= 32:
     raise ValueError("MPCP hardware supports 1..32 MAC instances")
 args.output.parent.mkdir(parents=True, exist_ok=True)
-args.output.write_text("config pon 'pon'\n\toption enabled '1'\n\toption mode 'epon-d10g'\n"
-                      f"\toption onu_mac '{mac}'\n\toption llid_count '{count}'\n")
+options = [('enabled', '1'), ('mode', 'epon-d10g'), ('onu_mac', mac), ('llid_count', str(count))]
 if args.auth_config:
     auth = json.loads(args.auth_config.read_text())
-    with args.output.open("a") as output:
-        for key, value in (("loid", auth["loid"]), ("loid_password", auth["password"]),
-                           ("wan_protocol", auth["network_protocol"])):
-            output.write(f"\toption {key} '{value}'\n")
-    args.output.chmod(0o600)
+    options += [('loid', field(auth['loid'], 'LOID', 24)),
+                ('loid_password', field(auth['password'], 'LOID password', 12)),
+                ('wan_protocol', field(auth['network_protocol'], 'WAN protocol', 16))]
+    if auth['network_protocol'] not in ('dhcp', 'pppoe', 'static'):
+        raise ValueError('Unsupported WAN protocol')
+args.output.touch(mode=0o600, exist_ok=True)
+args.output.chmod(0o600)
+args.output.write_text("config pon 'pon'\n" + ''.join(f'\toption {key} {quote(value)}\n' for key, value in options))
+validate(args.output, dict(options))
 record = {"identity_source": "Original EPON_LLID_TBL index0", "llid_count": count,
           "stock_configuration_sha256": hashlib.sha256(args.stock_configuration.read_bytes()).hexdigest(),
           "scfg_sha256": hashlib.sha256(args.scfg.read_bytes()).hexdigest(),

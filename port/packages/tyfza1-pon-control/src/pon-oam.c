@@ -187,7 +187,7 @@ static int receive_auth(struct pon_oam_session *session, const struct pon_oam_id
 		session->auth = PON_AUTH_ACCEPTED;
 		session->auth_results++;
 		session->auth_successes++;
-		return 0;
+		return PON_OAM_HANDLED;
 	}
 	if (code == 4) {
 		if (size != 1)
@@ -196,7 +196,7 @@ static int receive_auth(struct pon_oam_session *session, const struct pon_oam_id
 		session->auth_failure = input[25];
 		session->auth_results++;
 		session->auth_failures++;
-		return 0;
+		return PON_OAM_HANDLED;
 	}
 	if (code != 1 || (size != 1 && size != 0x0101))
 		return -EPROTO;
@@ -226,6 +226,7 @@ static int receive_get(const struct pon_oam_identity *identity, const uint8_t *i
 {
 	uint8_t onu[54] = {};
 	size_t offset = 22, position;
+	bool variables = false;
 
 	memcpy(onu, identity->vendor, 4);
 	memcpy(onu + 4, identity->model, 4);
@@ -257,6 +258,7 @@ static int receive_get(const struct pon_oam_identity *identity, const uint8_t *i
 		if (position + 3 > length)
 			return -EMSGSIZE;
 		leaf = be16(input + position + 1);
+		variables = true;
 		if (branch == 0xc7 && leaf == 1) {
 			data = onu;
 			size = sizeof(onu);
@@ -276,17 +278,32 @@ static int receive_get(const struct pon_oam_identity *identity, const uint8_t *i
 		}
 		position += 3;
 	}
-	return offset < 60 ? 60 : offset;
+	return variables ? (offset < 60 ? 60 : offset) : PON_OAM_IGNORED;
 }
 
 static int receive_set(const uint8_t *input, size_t length, uint8_t *output)
 {
 	size_t position = 22, offset = 22;
+	bool variables = false;
 
 	output[21] = 4;
 	while (position < length && input[position]) {
 		size_t size;
 
+		/* Object selectors identify the following variables' port instance.
+		 * Echo their complete 1/4-byte instance, as in the Get response. */
+		if (input[position] == 0x36 || input[position] == 0x37) {
+			size_t object_size = input[position] == 0x36 ? 5 : 8;
+
+			if (position + object_size > length || input[position + 3] != object_size - 4)
+				return -EPROTO;
+			if (offset + object_size > PON_OAM_FRAME_MAX)
+				return -EMSGSIZE;
+			memcpy(output + offset, input + position, object_size);
+			offset += object_size;
+			position += object_size;
+			continue;
+		}
 		if (position + 4 > length)
 			return -EMSGSIZE;
 		size = input[position + 3];
@@ -295,34 +312,45 @@ static int receive_set(const uint8_t *input, size_t length, uint8_t *output)
 		if (offset + 4 > PON_OAM_FRAME_MAX)
 			return -EMSGSIZE;
 		memcpy(output + offset, input + position, 3);
+		variables = true;
 		output[offset + 3] = 0x87; /* No completed business configuration backend yet. */
 		offset += 4;
 		position += 4 + size;
 	}
-	return offset < 60 ? 60 : offset;
+	return variables ? (offset < 60 ? 60 : offset) : PON_OAM_IGNORED;
 }
 
 int pon_oam_receive(struct pon_oam_session *session, const struct pon_oam_identity *identity,
 		    const uint8_t *input, size_t length, uint8_t output[PON_OAM_FRAME_MAX])
 {
+	int ret;
+
 	if (length < 18 || length > PON_OAM_FRAME_MAX || input[12] != 0x88 || input[13] != 9 || input[14] != 3)
 		return -EPROTO;
 	session->rx_frames++;
-	if (!input[17])
-		return receive_information(session, input, length);
-	if (input[17] != 0xfe || length < 22 || !ctc_oui(input + 18))
-		return 0;
+	if (!input[17]) {
+		ret = receive_information(session, input, length);
+		return ret < 0 ? ret : PON_OAM_HANDLED;
+	}
+	if (input[17] != 0xfe)
+		return PON_OAM_IGNORED;
+	if (length < 22)
+		return -EMSGSIZE;
+	if (!ctc_oui(input + 18) || (input[21] != 1 && input[21] != 3 && input[21] != 5))
+		return PON_OAM_IGNORED;
 	if (!session->local_echoed)
 		return -EAGAIN;
 	ethernet_header(session, identity, output, 0xfe);
 	memcpy(output + 18, input + 18, 3);
-	session->extension_selected = true;
-	memcpy(session->extension_oui, input + 18, 3);
 	if (input[21] == 5)
-		return receive_auth(session, identity, input, length, output);
-	if (input[21] == 1)
-		return receive_get(identity, input, length, output);
-	if (input[21] == 3)
-		return receive_set(input, length, output);
-	return 0;
+		ret = receive_auth(session, identity, input, length, output);
+	else if (input[21] == 1)
+		ret = receive_get(identity, input, length, output);
+	else
+		ret = receive_set(input, length, output);
+	if (ret > PON_OAM_IGNORED) {
+		session->extension_selected = true;
+		memcpy(session->extension_oui, input + 18, 3);
+	}
+	return ret;
 }

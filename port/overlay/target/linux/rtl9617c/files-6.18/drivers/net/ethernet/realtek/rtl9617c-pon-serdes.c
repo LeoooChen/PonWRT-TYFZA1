@@ -129,21 +129,22 @@ void rtl_pon_serdes_stop_work(struct rtl9617c_pon *pon)
 	cancel_delayed_work_sync(&pon->serdes_work);
 }
 
-int rtl_pon_serdes_configure(struct rtl9617c_pon *pon, enum rtl_pon_mode mode)
+int rtl_pon_serdes_configure_locked(struct rtl9617c_pon *pon, enum rtl_pon_mode mode)
 {
 	const struct firmware *fw;
 	const struct rtl_pon_mode_configuration *configuration = &rtl_pon_modes[mode];
 	bool epon = rtl_pon_mode_is_epon(mode);
 	int ret;
 
+	lockdep_assert_held(&pon->control_lock);
 	ret = request_firmware_direct(&fw, configuration->profile, pon->dev);
 	if (ret)
 		return ret;
 	ret = rtl_pon_profile_validate(fw);
 	if (ret)
 		goto release;
-	rtl_pon_mpcp_stop(pon);
-	rtl_pon_epon_traffic(pon, false);
+	rtl_pon_mpcp_stop_locked(pon);
+	rtl_pon_epon_traffic_locked(pon, false);
 	cancel_delayed_work_sync(&pon->serdes_work);
 	mutex_lock(&pon->lock);
 	pon->serdes_configured = false;
