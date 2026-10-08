@@ -59,8 +59,9 @@
   "integrated_downstream_build": {
     "unit": "ponwrt-tyfza1-lan-20261008-223541.service",
     "payload": "artifacts/full-pon-downstream01-6.18.55",
-    "status": "running",
-    "hardware_boot_verified": false
+    "status": "success",
+    "hardware_boot_verified": true,
+    "FIT_sha256": "0ad400ea4ae5c1d43d3cf27831cb9d20c10d38c8042188dc1777249c4696a4c6"
   },
   "other_families_hardware_tested": false,
   "multiple_LLID_hardware_tested": false,

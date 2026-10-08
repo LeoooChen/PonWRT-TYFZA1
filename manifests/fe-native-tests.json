@@ -1,0 +1,59 @@
+{
+  "action_oracle": {
+    "scope": "actual stock ARM64 conversion emulated offline; no original module loaded",
+    "native_header_sha256": "2d837807149720330d88e19ddce1c89e65d2e4ebd8095df31d4010f07ca9635c",
+    "stock_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+    "GPL_layout_sha256": "c010db3ede906c81eb82ea203b652ffae1b3f4dabbaea5201e4658d5dff846a9",
+    "action_groups": [
+      18,
+      20
+    ],
+    "action_bits": 224,
+    "slot_bytes": 32,
+    "fields": 67,
+    "vectors": 330,
+    "all_match_stock_machine_code": true,
+    "hardware_forwarding_verified": false
+  },
+  "key_oracle": {
+    "stock_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+    "native_header_sha256": "2d837807149720330d88e19ddce1c89e65d2e4ebd8095df31d4010f07ca9635c",
+    "vectors": 160,
+    "key_bytes": 92,
+    "mask_bytes": 28,
+    "actual_stock_masked_key_and_CRC16_CRC32_match": true,
+    "protocols": [
+      "IPv4 TCP",
+      "IPv4 UDP"
+    ],
+    "LLIDs": 32,
+    "profiles": 4,
+    "tuple_rotation_mode": "neutral",
+    "hardware_access": false
+  },
+  "native_host_test": {
+    "sanitizers": [
+      "ASan",
+      "UBSan"
+    ],
+    "mask_slots": 64,
+    "mask_bank_transactions_and_restore": true,
+    "failures_propagated": true
+  },
+  "hardware_mask_test": {
+    "slot": 63,
+    "banks": 2,
+    "native_write_read_match": true,
+    "original_restored": true,
+    "PON_and_WAN_remained_up": true,
+    "HashINI": "00000000",
+    "CacheINI": "00000000",
+    "log": "logs/live-fe-mask01-device.txt"
+  },
+  "hardware_forwarding_enabled": false,
+  "scope": "first wired LAN/PON IPv4 TCP/UDP; Wi-Fi later",
+  "native_sources": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-format.h": "2d837807149720330d88e19ddce1c89e65d2e4ebd8095df31d4010f07ca9635c",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-table.h": "36aa351df4e398c64326c425a76412ccc093087c074f9cef4c358ac3a9352048"
+  }
+}

@@ -8,7 +8,7 @@
 
 随后在 RAM 中加载本轮下行修复模块。pon-data0 获得 192.168.71.28/24，网关192.168.71.1、租约86400秒及运营商 DNS；实际业务收发计数增长、错误/丢弃为0。网关及公网1.1.1.1分别5个ping零丢包，DNS解析成功；校正开发机时钟后，HTTPS证书验证和OpenWrt下载站9097字节页面下载成功。Mac以en5上的192.168.1.170为源，经光猫LAN/软件NAT/PON访问1.1.1.1，5个ping零丢包；fw3实际规则包含zone_wan_postrouting的MASQUERADE。
 
-上述联网结果包含RAM中替换的PON模块，不能归到原始FIT本身。full-pon-downstream01-6.18.55正在后台整合PDC/POL_ID/NI接收修复，完整镜像的再次启动结果另记录到构建与板测清单。
+上述联网结果包含RAM中替换的PON模块，不能归到原始FIT本身。full-pon-downstream01-6.18.55随后完成构建与整包重启验收，FIT SHA256为0ad400ea4ae5c1d43d3cf27831cb9d20c10d38c8042188dc1777249c4696a4c6。此镜像在约12秒注册，自动认证并获得相同DHCP租约，公网ping、DNS、证书校验的HTTPS及en5经软件NAT联网再次通过；不需要RAM补丁模块。原始记录为logs/downstream01-integrated-board.txt和logs/downstream01-integrated-lan-nat.txt，清单为manifests/pon-downstream-build.json。
 
 ## 从板测定位的缺口
 
