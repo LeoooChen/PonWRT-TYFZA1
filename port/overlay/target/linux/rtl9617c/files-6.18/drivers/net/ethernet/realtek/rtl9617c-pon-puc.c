@@ -6,6 +6,7 @@
 #include <linux/iopoll.h>
 #include "rtl9617c-pon.h"
 #include "rtl9617c-ni.h"
+#include "rtl9617c-pon-queue.h"
 
 #define PVT_ACCESS 0x8000
 #define PVT_DATA0 0x8014
@@ -86,12 +87,36 @@ static int rtl_puc_token_buckets(struct rtl9617c_pon *pon)
 	return 0;
 }
 
+static unsigned int rtl_puc_bp_read(void *context, unsigned int reg)
+{
+	struct rtl9617c_pon *pon = context;
+
+	return readl(pon->mac + reg);
+}
+
+static void rtl_puc_bp_write(void *context, unsigned int reg, unsigned int value)
+{
+	struct rtl9617c_pon *pon = context;
+
+	writel(value, pon->mac + reg);
+}
+
+static int rtl_puc_bp_access(void *context, unsigned int reg, unsigned int value)
+{
+	struct rtl9617c_pon *pon = context;
+	u32 status;
+
+	writel(value, pon->mac + reg);
+	return readl_poll_timeout(pon->mac + reg, status, !(status & BIT(31)), 1, 100000);
+}
+
 int rtl_pon_puc_configure_locked(struct rtl9617c_pon *pon)
 {
 	u32 status;
 	unsigned int i, ports = pon->llid_count;
 	unsigned int queues = ports > 16 ? 4 : 8;
 	int ret;
+	const struct rtl_dq_io bp = {pon, rtl_puc_bp_read, rtl_puc_bp_write, rtl_puc_bp_access};
 
 	lockdep_assert_held(&pon->control_lock);
 	mutex_lock(&pon->lock);
@@ -162,6 +187,9 @@ int rtl_pon_puc_configure_locked(struct rtl9617c_pon *pon)
 	ret = rtl_puc_token_buckets(pon);
 	if (ret)
 		goto unlock;
+	ret = rtl_pon_queue_backpressure(&bp);
+	if (ret)
+		goto unlock;
 	rtl_pon_update(pon->mac + AGGREGATE0, GENMASK(25, 0), 0);
 	rtl_pon_update(pon->mac + AGGREGATE1, GENMASK(11, 0), 0);
 	pon->puc_configured = true;
@@ -208,6 +236,13 @@ ssize_t rtl_pon_puc_state(struct rtl9617c_pon *pon, char *buf)
 			return ret;
 		length += scnprintf(buf + length, PAGE_SIZE - length, "pir%u=%08x/%08x\n",
 			sample[i], readl(pon->mac + PIR_DATA0), readl(pon->mac + PIR_DATA1));
+	}
+	for (i = 0; i < ARRAY_SIZE(sample); i++) {
+		ret = rtl_puc_access(pon, 0x80e8, sample[i], false);
+		if (ret)
+			return ret;
+		length += scnprintf(buf + length, PAGE_SIZE - length, "bp%u=%u\n",
+			sample[i], readl(pon->mac + 0x80ec) & 255);
 	}
 	return length;
 }

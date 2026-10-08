@@ -49,6 +49,8 @@ struct rtl9617c_pon {
 	int puc_error;
 	struct rtl9617c_ni_endpoint oam_endpoint;
 	struct net_device __rcu *oam_devices[32];
+	struct net_device __rcu *data_devices[32];
+	u8 pdc_source[64];
 	bool traffic_enabled;
 	unsigned int last_oam_llid;
 	unsigned int last_oam_source;
@@ -81,6 +83,7 @@ ssize_t rtl_pon_llid_table(struct rtl9617c_pon *pon, char *buf);
 int rtl_pon_llid_update(struct rtl9617c_pon *pon, bool add, unsigned int index,
 			 unsigned int mac, u16 llid, bool multicast);
 int rtl_pon_pdc_configure(struct rtl9617c_pon *pon);
+int rtl_pon_pdc_refresh(struct rtl9617c_pon *pon);
 ssize_t rtl_pon_pdc_state(struct rtl9617c_pon *pon, char *buf);
 int rtl_pon_puc_configure(struct rtl9617c_pon *pon);
 ssize_t rtl_pon_puc_state(struct rtl9617c_pon *pon, char *buf);

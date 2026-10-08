@@ -33,6 +33,7 @@ files = ["etc/init.d/pon", "etc/config/pon", "lib/firmware/realtek/rtl9617c/bosa
          "usr/share/rpcd/ucode/luci.tyfza1-pon", "usr/share/rpcd/acl.d/luci-app-tyfza1-pon.json",
          "usr/share/luci/menu.d/luci-app-tyfza1-pon.json", "www/luci-static/resources/view/network/tyfza1-pon.js"]
 files.append("usr/sbin/pon-oamd")
+files.append('etc/uci-defaults/90-tyfza1-pon-wan')
 with tarfile.open(archive) as tar:
     members = {member.name.removeprefix("./"): member for member in tar.getmembers()}
     checks = []
@@ -72,10 +73,14 @@ with tarfile.open(archive) as tar:
     service = embedded['etc/init.d/pon']['data'].decode()
     assert service.index('> "$device/bosa"') < service.index('> "$device/serdes"')
     assert '/usr/sbin/pon-oamd --interface' in service
+    assert 'ip link set "pon-data$i" up' in service
+    defaults = embedded['etc/uci-defaults/90-tyfza1-pon-wan']['data'].decode()
+    assert "network.wan.device='pon-data0'" in defaults and "network.wan.proto='dhcp'" in defaults
     assert members["etc/rc.d/S25pon"].issym()
     acl = json.loads(tar.extractfile(members[files[4]]).read())
     assert "status" in acl["luci-app-tyfza1-pon"]["read"]["ubus"]["luci.tyfza1-pon"]
-for marker in (b'silence_scope=shared-engine', b'refill_pending=%u', b'refill_retries=%u'):
+for marker in (b'silence_scope=shared-engine', b'refill_pending=%u', b'refill_retries=%u',
+               b'pon-data%u', b'buffers_per_pool=%u', b'pon_deepq'):
     assert marker in kernel, marker
 record = {"payload": str(args.payload.relative_to(root)) if args.payload.is_absolute() else str(args.payload),
           "build_unit": args.build_unit, "required_files": checks,
@@ -87,6 +92,7 @@ record = {"payload": str(args.payload.relative_to(root)) if args.payload.is_abso
           "FIT_kernel_DTB_and_initramfs_match_external_files": True,
           "initramfs": {"start": initramfs_start, "end": initramfs_end, "members": len(embedded)},
           "BOSA_precedes_SerDes": True, "S25pon_enabled": True,
+          "per_LLID_business_devices_in_kernel": True, "PON_DHCP_WAN_default": True,
           "hardware_boot_verified": False, "FIT": fit}
 args.output.write_text(json.dumps(record, indent=2) + "\n")
 print(json.dumps({key: value for key, value in record.items() if key not in ("required_files", "FIT")}, indent=2))

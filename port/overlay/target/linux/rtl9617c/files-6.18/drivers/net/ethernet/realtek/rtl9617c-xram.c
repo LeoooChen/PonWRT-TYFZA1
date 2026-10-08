@@ -556,6 +556,14 @@ static ssize_t qm_pool_show(struct device *dev, struct device_attribute *attr, c
 }
 static DEVICE_ATTR_RO(qm_pool);
 
+static ssize_t pon_deepq_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+
+	return rtl_qm_deepq_state(&priv->qm, buf);
+}
+static DEVICE_ATTR_RO(pon_deepq);
+
 static ssize_t qm_wait_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
@@ -649,6 +657,7 @@ static struct attribute *rtl_native_attrs[] = {
 	&dev_attr_qm_state.attr,
 	&dev_attr_qm_trace.attr,
 	&dev_attr_qm_pool.attr,
+	&dev_attr_pon_deepq.attr,
 	&dev_attr_qm_wait.attr,
 	&dev_attr_qm_es.attr,
 	&dev_attr_qm_buffer.attr,
@@ -660,7 +669,7 @@ static umode_t rtl_native_visible(struct kobject *kobj, struct attribute *attr, 
 	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(kobj_to_dev(kobj)));
 
 	if (!priv->qm_rx &&
-	    (attr == &dev_attr_qm_pool.attr || attr == &dev_attr_qm_trace.attr ||
+	    (attr == &dev_attr_qm_pool.attr || attr == &dev_attr_pon_deepq.attr || attr == &dev_attr_qm_trace.attr ||
 	     attr == &dev_attr_qm_wait.attr || attr == &dev_attr_qm_es.attr ||
 	     attr == &dev_attr_qm_buffer.attr))
 		return 0;

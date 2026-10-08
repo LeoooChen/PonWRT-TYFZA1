@@ -1,0 +1,53 @@
+{
+  "references": {
+    "GPL_QM": {
+      "path": "evidence/rtl-workspace/downloads/reference/ca-network-drivers-20261005/ca-network-engine/1.0-r0/ca-network-engine-1.0/aal-77c/aal_l3qm.c",
+      "sha256": "27698b3872a22c6c8bb7ebb90f2d6541c908ffc7646b79d4d959ad7def0354a1"
+    },
+    "GPL_CB": {
+      "path": "evidence/rtl-workspace/downloads/reference/ca-network-drivers-20261005/ca-network-engine/1.0-r0/ca-network-engine-1.0/aal-77c/aal_l3_te_cb.c",
+      "sha256": "daa12c2b0ab75526d11334097c766554d35fa079f08bb4643823d31a7d84cab6"
+    },
+    "GPL_PDC": {
+      "path": "evidence/rtl-workspace/downloads/reference/ca-network-drivers-20261005/ca-network-engine/1.0-r0/ca-network-engine-1.0/aal-77c/aal_pdc.c",
+      "sha256": "d2c8b63a6b9b209610ab57e2cf62cf49682c184d1032cc40544c7e2bd56c2b9c"
+    },
+    "GPL_PUC": {
+      "path": "evidence/rtl-workspace/downloads/reference/ca-network-drivers-20261005/ca-network-engine/1.0-r0/ca-network-engine-1.0/aal-77c/aal_puc.c",
+      "sha256": "06b5c674216fe5a84d82796bd080744d89974fbc3dfb61fac657bfd2ccfece0e"
+    },
+    "GPL_TX": {
+      "path": "evidence/rtl-workspace/downloads/reference/ca-network-drivers-20261005/ca-network-engine/1.0-r0/ca-network-engine-1.0/ni-drv-77c/ca_ni_tx.c",
+      "sha256": "cc230194952e6e24946079347bb62a2ca9c731bf157263530ee6afa5fa0d8a36"
+    },
+    "RTL9617C_registers": {
+      "path": "evidence/rtl-workspace/downloads/reference/taurus-uboot-study-20261005/bootloader/u-boot-2022.10/board/realtek_10G_PON/common/ne/taurus/include/reg/rtl9617c_registers.h",
+      "sha256": "4823880e97964266e248f43212f23e8e9fae3cf6a0486a4ea1ad02b19cc9468d"
+    }
+  },
+  "DQ_allocation": "Linux coherent DMA, two 512 x 2048-byte pools",
+  "BID_regions": {
+    "CPU_EQ4": [
+      0,
+      255
+    ],
+    "CPU_EQ5": [
+      256,
+      511
+    ],
+    "WAN_EQ1": [
+      512,
+      1023
+    ],
+    "shared_EQ2": [
+      1024,
+      1535
+    ]
+  },
+  "stock_disassembly_evidence": [
+    "analysis/private/pon-deepq-upper-map.txt",
+    "analysis/private/pon-puc-bp-remap.txt"
+  ],
+  "GPON_data_path_complete": false,
+  "PON_hardware_tested_this_revision": false
+}

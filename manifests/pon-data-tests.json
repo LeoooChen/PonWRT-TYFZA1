@@ -1,0 +1,97 @@
+{
+  "completed_on": "2026-10-08T15:42:34.709400+08:00",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-qm-deepq.h": "c7f16240ea038ced4d444fcbfe30cd8db1eb5167d455d64ce6076db598359f92",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-queue.h": "2bc1bed1de5525c660f4646d6719567b2dfbcb73c721fa75388b38b736f90077",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-data.h": "5168583279209fb9ff86801d5fc9bbd7afb86b3fbf5d70c4077c6861540a53e0",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-qm.c": "97a2b3098ff0e52e24fd683ce07af828ead83ec9b3e7ddb945f5c137c94456e3",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-oam.c": "d2547b33212e09a374f3e1ff88e777785119a5160c2c9fe3ee41dd06037cb644",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-pdc.c": "4a3100b8e4adda764896f309a1402d82021913fcfa56632f47229a1771f876af",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-puc.c": "890b1159f0c758ce62e06a965dd795faa35b3744952c02fb41bea9e913ea0727",
+    "scripts/test_pon_deepq.c": "79474d2454820abccf3daf4056f02bc90d2258eee196cf5c6ff28f7c04148174",
+    "scripts/test_pon_data_path.py": "3715b6d728a72bfd97ae6e5ecef4d81ea7de5d829ba81fb7ef4df9e93a3dfc70",
+    "scripts/test_pon_pdc_map.py": "20c8675d1dd0efdeafb38e804f94533babc70bec2df1aac7ade1089d960e6a74",
+    "scripts/test_pon_wan_default.py": "8341d4281e70fc65301ac186847b9adbd37a8ba89a07a88fe0edda9fd2899d80"
+  },
+  "deepq_tests": {
+    "actual_production_sequence_executed": true,
+    "sanitizers": [
+      "ASan",
+      "UBSan"
+    ],
+    "CPU_WAN_shared_BIDs_disjoint": true,
+    "PON_DQ_ports": 16,
+    "VOQs": 128,
+    "PUC_BP_entries": 256,
+    "all_145_DQ_indirect_failure_points_tested": true,
+    "all_512_BP_read_write_failure_points_tested": true
+  },
+  "data_path_tests": {
+    "actual_driver_functions_executed": true,
+    "LLIDs": 32,
+    "queue_modes": [
+      8,
+      4
+    ],
+    "VLAN_bytes_preserved": true,
+    "carrier_gating": true,
+    "allocation_failures_tested": 64,
+    "sanitizers": [
+      "ASan",
+      "UBSan"
+    ],
+    "PON_hardware_verified": false
+  },
+  "PDC_tests": {
+    "actual_functions": true,
+    "entries": 256,
+    "LLID_table_MAC_index_used": true,
+    "changed_only_refresh": true,
+    "failure_recovery_tested": true,
+    "hardware_access": false,
+    "sanitizers": [
+      "ASan",
+      "UBSan"
+    ]
+  },
+  "WAN_defaults": {
+    "actual_uci": true,
+    "DHCP_device": "pon-data0",
+    "existing_WAN_preserved": true,
+    "LAN_preserved": true,
+    "hardware_verified": false
+  },
+  "final_fit_binding": {
+    "FIT_sha256": "a89172c417c82b1053bed54b15bb2ab28379fcf94b509cad2ede209020606dfb",
+    "configuration_signature_verified": true,
+    "payload_signatures_verified": true,
+    "corrupted_signature_rejected": true,
+    "kernel_sources_match_build": {
+      "rtl9617c-pon-data.h": "5168583279209fb9ff86801d5fc9bbd7afb86b3fbf5d70c4077c6861540a53e0",
+      "rtl9617c-pon-queue.h": "2bc1bed1de5525c660f4646d6719567b2dfbcb73c721fa75388b38b736f90077",
+      "rtl9617c-qm-deepq.h": "c7f16240ea038ced4d444fcbfe30cd8db1eb5167d455d64ce6076db598359f92",
+      "rtl9617c-qm.c": "97a2b3098ff0e52e24fd683ce07af828ead83ec9b3e7ddb945f5c137c94456e3",
+      "rtl9617c-qm.h": "dfc046346f92f1ffbfa8ed30189e2ebf94f15f59cc2014e046f7c507bbe5229f",
+      "rtl9617c-pon.c": "ff8cb1c65bd4b549853aa6176c98195330efe80c3ca4e6b9185f3622ea66efa3",
+      "rtl9617c-pon.h": "aff1d64fda867edb5f18e9392a8d52d7bb752781dd391928a89b0ed485931cc6",
+      "rtl9617c-pon-oam.c": "d2547b33212e09a374f3e1ff88e777785119a5160c2c9fe3ee41dd06037cb644",
+      "rtl9617c-pon-mpcp.c": "85bba654c87a4f9fa951b388c618a459c0c6463f4826a91281a3cb4226c87f91",
+      "rtl9617c-pon-pdc.c": "4a3100b8e4adda764896f309a1402d82021913fcfa56632f47229a1771f876af",
+      "rtl9617c-pon-puc.c": "890b1159f0c758ce62e06a965dd795faa35b3744952c02fb41bea9e913ea0727",
+      "rtl9617c-xram.c": "31908ab67748c72aaabfba7bb2e1e27e1caf9e4571e4636a69a6c83057b2138a"
+    },
+    "embedded_daemon_identical_to_previous_13_check_binary": true,
+    "new_business_UI_in_final_FIT": true,
+    "hardware_verified": false
+  },
+  "full_build": "ponwrt-tyfza1-lan-20261008-152136",
+  "protocol_mode_policy": "manual only",
+  "PON_hardware_tested_this_revision": false,
+  "remaining_PON_work": [
+    "OLT CTC business parameter consumers/VLAN rules",
+    "real XEPON registration authentication DHCP and data test",
+    "32 LLID and 4Q hardware mapping test",
+    "GPON/XG-PON/XGS-PON MAC PLOAM OMCI and business path",
+    "FTTR optical output"
+  ]
+}

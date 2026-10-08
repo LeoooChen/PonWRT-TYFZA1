@@ -1,0 +1,9 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+[ -e /sys/class/net/pon-data0/llid_index ] || exit 0
+uci -q get network.wan >/dev/null && exit 0
+uci set network.wan='interface'
+uci set network.wan.device='pon-data0'
+uci set network.wan.proto='dhcp'
+uci commit network
+exit 0

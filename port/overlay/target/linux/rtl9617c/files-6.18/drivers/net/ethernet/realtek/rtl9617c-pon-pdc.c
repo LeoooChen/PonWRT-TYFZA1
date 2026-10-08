@@ -4,6 +4,7 @@
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include "rtl9617c-pon.h"
+#include "rtl9617c-pon-data.h"
 
 #define PDC_COUNTER 0x9000
 #define PDC_CTRL 0x9014
@@ -18,6 +19,34 @@ static int rtl_pdc_access(struct rtl9617c_pon *pon, unsigned int index, bool wri
 	return readl_poll_timeout(pon->mac + PDC_ACCESS, status, !(status & BIT(31)), 1, 100000);
 }
 
+int rtl_pon_pdc_refresh(struct rtl9617c_pon *pon)
+{
+	unsigned int index, bank;
+	int ret;
+
+	lockdep_assert_held(&pon->lock);
+	if (!pon->pdc_configured)
+		return 0;
+	for (index = 0; index < 64; index++) {
+		u32 source = rtl_pon_data_source(index, readl(pon->mac + 0x64 + index * 4));
+
+		if (pon->pdc_source[index] == source)
+			continue;
+		for (bank = 0; bank < 2; bank++) {
+			writel((16 << 3) | (source << 9) | BIT(15), pon->mac + PDC_DATA0);
+			writel(0, pon->mac + PDC_DATA1);
+			ret = rtl_pdc_access(pon, index | (bank << 7), true);
+			if (ret) {
+				pon->pdc_error = ret;
+				pon->pdc_configured = false;
+				return ret;
+			}
+		}
+		pon->pdc_source[index] = source;
+	}
+	return 0;
+}
+
 int rtl_pon_pdc_configure_locked(struct rtl9617c_pon *pon)
 {
 	unsigned int index;
@@ -29,13 +58,19 @@ int rtl_pon_pdc_configure_locked(struct rtl9617c_pon *pon)
 		ret = -EAGAIN;
 		goto unlock;
 	}
+	pon->pdc_configured = false;
 	/* CRC stays on the wire only; PDC inserts its original 16-byte control header. */
 	rtl_pon_update(pon->mac + PDC_CTRL, GENMASK(2, 0) | GENMASK(25, 16), 7);
 	for (index = 0; index < 256; index++) {
-		/* Logical CPU16, physical PON source7, bypass FE for software forwarding. */
-		u32 data0 = (16 << 3) | (7 << 9) | BIT(15);
+		unsigned int entry = index & 63;
+		unsigned int source = index & BIT(6) ? 7 :
+			rtl_pon_data_source(entry, readl(pon->mac + 0x64 + entry * 4));
+		u32 data0 = (16 << 3) | (source << 9) | BIT(15);
+
 		if (index & BIT(6))
-			data0 |= 7; /* MPCP/OAM classes receive priority7. */
+			data0 |= 7;
+		else
+			pon->pdc_source[entry] = source;
 		writel(data0, pon->mac + PDC_DATA0);
 		writel(0, pon->mac + PDC_DATA1);
 		ret = rtl_pdc_access(pon, index, true);

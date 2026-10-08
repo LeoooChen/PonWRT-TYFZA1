@@ -12,6 +12,7 @@
 struct rtl_oam_port {
 	struct rtl9617c_pon *pon;
 	unsigned int llid;
+	bool control;
 };
 
 static ssize_t llid_index_show(struct device *device, struct device_attribute *attribute, char *buf)
@@ -42,7 +43,8 @@ static int rtl_oam_open(struct net_device *dev)
 
 	if (ret)
 		return ret;
-	ret = rtl9617c_ni_oam_configure(pon->ni_dev);
+	ret = ((struct rtl_oam_port *)netdev_priv(dev))->control ?
+		rtl9617c_ni_oam_configure(pon->ni_dev) : 0;
 	if (ret) {
 		rtl9617c_ni_close(pon->ni_dev, dev);
 		return ret;
@@ -83,10 +85,37 @@ static netdev_tx_t rtl_oam_transmit(struct sk_buff *skb, struct net_device *dev)
 	return rtl9617c_ni_transmit(pon->ni_dev, dev, skb, &frame);
 }
 
+static netdev_tx_t rtl_data_transmit(struct sk_buff *skb, struct net_device *dev)
+{
+	struct rtl_oam_port *port = netdev_priv(dev);
+	struct rtl9617c_pon *pon = port->pon;
+	unsigned int queues = READ_ONCE(pon->llid_count) > 16 ? 4 : 8;
+	struct rtl9617c_ni_frame frame = {
+		.header_high = BIT(30), /* Business packets use the native deep queue. */
+		.header_low = (skb->priority & (queues - 1)) | ((32 + port->llid) << 3) |
+			      (16 << 9) | BIT(29),
+	};
+
+	if (!netif_carrier_ok(dev) || skb->len < ETH_HLEN || skb->len > 1522) {
+		dev->stats.tx_dropped++;
+		dev_kfree_skb_any(skb);
+		return NETDEV_TX_OK;
+	}
+	/* Ordinary Ethernet/VLAN bytes, without the OAM control container. */
+	return rtl9617c_ni_transmit(pon->ni_dev, dev, skb, &frame);
+}
+
 static const struct net_device_ops rtl_oam_ops = {
 	.ndo_open = rtl_oam_open,
 	.ndo_stop = rtl_oam_stop,
 	.ndo_start_xmit = rtl_oam_transmit,
+	.ndo_validate_addr = eth_validate_addr,
+};
+
+static const struct net_device_ops rtl_data_ops = {
+	.ndo_open = rtl_oam_open,
+	.ndo_stop = rtl_oam_stop,
+	.ndo_start_xmit = rtl_data_transmit,
 	.ndo_validate_addr = eth_validate_addr,
 };
 
@@ -95,21 +124,32 @@ static void rtl_oam_receive(struct rtl9617c_ni_endpoint *endpoint, struct napi_s
 {
 	struct rtl9617c_pon *pon = container_of(endpoint, struct rtl9617c_pon, oam_endpoint);
 	struct net_device *dev;
-	unsigned int llid, offset = rtl_oam_receive_offset(skb->data, skb->len, &llid);
+	struct net_device *drop_owner = endpoint->netdev;
+	unsigned int llid, offset;
 
-	if (!offset) {
-		endpoint->netdev->stats.rx_dropped++;
-		dev_kfree_skb_any(skb);
+	if (source >= 32 && source < 64) {
+		llid = source - 32;
+		dev = rcu_dereference(pon->data_devices[llid]);
+		if (dev)
+			drop_owner = dev;
+		if (!dev || !netif_running(dev) || !netif_carrier_ok(dev) || skb->len < ETH_HLEN)
+			goto drop;
+		dev->stats.rx_packets++;
+		dev->stats.rx_bytes += skb->len;
+		skb->protocol = eth_type_trans(skb, dev);
+		napi_gro_receive(napi, skb);
 		return;
 	}
+	offset = rtl_oam_receive_offset(skb->data, skb->len, &llid);
+	if (!offset)
+		goto drop;
 	if (llid == 63 || (pon->llid_count == 1 && (llid == 8 || llid == 10 || llid == 11)))
 		llid = 0;
 	dev = llid < 32 ? rcu_dereference(pon->oam_devices[llid]) : NULL;
-	if (!dev || !netif_running(dev)) {
-		endpoint->netdev->stats.rx_dropped++;
-		dev_kfree_skb_any(skb);
-		return;
-	}
+	if (dev)
+		drop_owner = dev;
+	if (!dev || !netif_running(dev))
+		goto drop;
 	WRITE_ONCE(pon->last_oam_llid, llid);
 	WRITE_ONCE(pon->last_oam_source, source);
 	skb_pull(skb, offset);
@@ -118,6 +158,10 @@ static void rtl_oam_receive(struct rtl9617c_ni_endpoint *endpoint, struct napi_s
 	dev->stats.rx_bytes += skb->len;
 	skb->protocol = eth_type_trans(skb, dev);
 	napi_gro_receive(napi, skb);
+	return;
+drop:
+	drop_owner->stats.rx_dropped++;
+	dev_kfree_skb_any(skb);
 }
 
 static void rtl_oam_wake(struct rtl9617c_ni_endpoint *endpoint)
@@ -128,6 +172,9 @@ static void rtl_oam_wake(struct rtl9617c_ni_endpoint *endpoint)
 	for (i = 0; i < 32; i++) {
 		struct net_device *dev = rcu_dereference(pon->oam_devices[i]);
 
+		if (dev && netif_running(dev) && netif_queue_stopped(dev))
+			netif_wake_queue(dev);
+		dev = rcu_dereference(pon->data_devices[i]);
 		if (dev && netif_running(dev) && netif_queue_stopped(dev))
 			netif_wake_queue(dev);
 	}
@@ -144,14 +191,35 @@ void rtl_pon_oam_carrier(struct rtl9617c_pon *pon)
 	for (i = 0; i < 32; i++) {
 		struct net_device *dev = rcu_dereference(pon->oam_devices[i]);
 
-		if (!dev)
-			continue;
-		if (pon->traffic_enabled && pon->mpcp_enabled && synced && (pon->registered & BIT(i)))
-			netif_carrier_on(dev);
-		else
-			netif_carrier_off(dev);
+		if (dev) {
+			if (pon->traffic_enabled && pon->mpcp_enabled && synced && (pon->registered & BIT(i)))
+				netif_carrier_on(dev);
+			else
+				netif_carrier_off(dev);
+		}
+		dev = rcu_dereference(pon->data_devices[i]);
+		if (dev) {
+			if (pon->traffic_enabled && pon->mpcp_enabled && pon->pdc_configured &&
+			    pon->puc_configured && synced && (pon->registered & BIT(i)))
+				netif_carrier_on(dev);
+			else
+				netif_carrier_off(dev);
+		}
 	}
 	rcu_read_unlock();
+}
+
+static void rtl_port_address(struct net_device *dev, const u8 *base, unsigned int index)
+{
+	u8 mac[ETH_ALEN];
+
+	ether_addr_copy(mac, base);
+	mac[5] += index;
+	netdev_lock(dev);
+	eth_hw_addr_set(dev, mac);
+	dev->addr_assign_type = NET_ADDR_SET;
+	call_netdevice_notifiers(NETDEV_CHANGEADDR, dev);
+	netdev_unlock(dev);
 }
 
 void rtl_pon_oam_address(struct rtl9617c_pon *pon)
@@ -162,21 +230,15 @@ void rtl_pon_oam_address(struct rtl9617c_pon *pon)
 	lockdep_assert_held(&pon->control_lock);
 	for (i = 0; i < 32; i++) {
 		struct net_device *dev = rtnl_dereference(pon->oam_devices[i]);
-		u8 mac[ETH_ALEN];
-
-		if (dev) {
-			ether_addr_copy(mac, pon->onu_mac);
-			mac[5] += i; /* aal_mpcp_mac_addr_get: MAC-index increments the final byte. */
-			netdev_lock(dev);
-			eth_hw_addr_set(dev, mac);
-			dev->addr_assign_type = NET_ADDR_SET;
-			call_netdevice_notifiers(NETDEV_CHANGEADDR, dev);
-			netdev_unlock(dev);
-		}
+		if (dev)
+			rtl_port_address(dev, pon->onu_mac, i);
+		dev = rtnl_dereference(pon->data_devices[i]);
+		if (dev)
+			rtl_port_address(dev, pon->onu_mac, i);
 	}
 }
 
-static struct net_device *rtl_oam_allocate(struct rtl9617c_pon *pon, unsigned int index)
+static struct net_device *rtl_oam_allocate(struct rtl9617c_pon *pon, unsigned int index, bool control)
 {
 	struct net_device *dev = alloc_etherdev(sizeof(struct rtl_oam_port));
 	struct rtl_oam_port *port;
@@ -187,12 +249,14 @@ static struct net_device *rtl_oam_allocate(struct rtl9617c_pon *pon, unsigned in
 	port = netdev_priv(dev);
 	port->pon = pon;
 	port->llid = index;
+	port->control = control;
 	SET_NETDEV_DEV(dev, pon->dev);
-	snprintf(dev->name, sizeof(dev->name), "pon-oam%u", index);
-	dev->netdev_ops = &rtl_oam_ops;
+	snprintf(dev->name, sizeof(dev->name), control ? "pon-oam%u" : "pon-data%u", index);
+	dev->netdev_ops = control ? &rtl_oam_ops : &rtl_data_ops;
 	dev->sysfs_groups[0] = &rtl_oam_group;
 	dev->max_mtu = ETH_DATA_LEN;
-	dev->flags |= IFF_NOARP;
+	if (control)
+		dev->flags |= IFF_NOARP;
 	if (is_valid_ether_addr(pon->onu_mac)) {
 		ether_addr_copy(mac, pon->onu_mac);
 		mac[5] += index;
@@ -206,47 +270,57 @@ static struct net_device *rtl_oam_allocate(struct rtl9617c_pon *pon, unsigned in
 
 int rtl_pon_oam_resize(struct rtl9617c_pon *pon, unsigned int count)
 {
-	struct net_device *created[32] = {};
-	unsigned int i;
+	struct net_device *created[2][32] = {};
+	struct net_device __rcu **devices;
+	unsigned int role, i;
 	int ret = 0;
 
 	rtnl_lock();
-	for (i = 0; i < count; i++) {
-		if (rtnl_dereference(pon->oam_devices[i]))
-			continue;
-		created[i] = rtl_oam_allocate(pon, i);
-		if (!created[i]) {
-			ret = -ENOMEM;
-			goto undo;
+	for (role = 0; role < 2; role++) {
+		devices = role ? pon->data_devices : pon->oam_devices;
+		for (i = 0; i < count; i++) {
+			if (rtnl_dereference(devices[i]))
+				continue;
+			created[role][i] = rtl_oam_allocate(pon, i, role == 0);
+			if (!created[role][i]) {
+				ret = -ENOMEM;
+				goto undo;
+			}
+			ret = register_netdevice(created[role][i]);
+			if (ret) {
+				free_netdev(created[role][i]);
+				created[role][i] = NULL;
+				goto undo;
+			}
+			rcu_assign_pointer(devices[i], created[role][i]);
 		}
-		ret = register_netdevice(created[i]);
-		if (ret) {
-			free_netdev(created[i]);
-			created[i] = NULL;
-			goto undo;
-		}
-		rcu_assign_pointer(pon->oam_devices[i], created[i]);
 	}
-	for (i = count; i < 32; i++) {
-		struct net_device *dev = rtnl_dereference(pon->oam_devices[i]);
+	for (role = 0; role < 2; role++) {
+		devices = role ? pon->data_devices : pon->oam_devices;
+		for (i = count; i < 32; i++) {
+			struct net_device *dev = rtnl_dereference(devices[i]);
 
-		if (!dev)
-			continue;
-		rcu_assign_pointer(pon->oam_devices[i], NULL);
-		synchronize_net();
-		unregister_netdevice(dev);
-		free_netdev(dev);
+			if (!dev)
+				continue;
+			rcu_assign_pointer(devices[i], NULL);
+			synchronize_net();
+			unregister_netdevice(dev);
+			free_netdev(dev);
+		}
 	}
 	rtnl_unlock();
 	return 0;
 undo:
-	for (i = 0; i < count; i++) {
-		if (!created[i])
-			continue;
-		rcu_assign_pointer(pon->oam_devices[i], NULL);
-		synchronize_net();
-		unregister_netdevice(created[i]);
-		free_netdev(created[i]);
+	for (role = 0; role < 2; role++) {
+		devices = role ? pon->data_devices : pon->oam_devices;
+		for (i = 0; i < count; i++) {
+			if (!created[role][i])
+				continue;
+			rcu_assign_pointer(devices[i], NULL);
+			synchronize_net();
+			unregister_netdevice(created[role][i]);
+			free_netdev(created[role][i]);
+		}
 	}
 	rtnl_unlock();
 	return ret;
@@ -254,7 +328,7 @@ undo:
 
 int rtl_pon_oam_init(struct rtl9617c_pon *pon)
 {
-	struct net_device *dev = rtl_oam_allocate(pon, 0);
+	struct net_device *dev = rtl_oam_allocate(pon, 0, true);
 	int ret;
 
 	if (!dev)
@@ -268,6 +342,12 @@ int rtl_pon_oam_init(struct rtl9617c_pon *pon)
 		goto free;
 	ret = register_netdev(dev);
 	if (ret) {
+		rtl9617c_ni_pon_detach(pon->ni_dev);
+		goto free;
+	}
+	ret = rtl_pon_oam_resize(pon, 1);
+	if (ret) {
+		unregister_netdev(dev);
 		rtl9617c_ni_pon_detach(pon->ni_dev);
 		goto free;
 	}

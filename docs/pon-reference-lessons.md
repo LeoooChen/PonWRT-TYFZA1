@@ -14,3 +14,5 @@
 本轮已接入原生OAM控制接口、共享NI生命周期、独立MPCP状态、BOSA状态和LuCI实时读取；手动模式覆盖六个原厂SerDes参数入口。GPON/XG-PON/XGS-PON的MAC、PLOAM、OMCI、GEM/Alloc及业务规则继续移植。
 
 新LuCI提供LOID、LOID口令、SN、Registration ID、PLOAM口令、厂商ID、设备型号、硬件版本、软件版本和WAN协议/VLAN配置。这些值保存到/etc/config/pon；ONU MAC和LLID数量已有内核消费者。新增订户/版本/WAN字段的完整协议消费者仍在开发，字段保存不代表OLT已接受它们。
+
+2026-10-08业务netdev/DQ接入后的下一项是CTC Set后台。notes/verify-snap/src/userspace/epon_oamd/epon_oamd.c:1030..1165给出branch37对象与各setter的归属：C7/0021为对象相关VLAN模式，C7/0041、0042为对象相关组播处理，C7/0017、0045等还需要实际端口消费者。参考项目在HGU路径对部分字段依原厂语义ACK，不调用SFU VLAN API；本项目应先确认TYFZA1的同项处理，再把必要动作落到Linux VLAN、桥接或端口设置。特别是单个对象后的多个变量、多个对象、多VID以及恢复会话时撤销规则，不能仅靠返回ACK表示已经配置成功。

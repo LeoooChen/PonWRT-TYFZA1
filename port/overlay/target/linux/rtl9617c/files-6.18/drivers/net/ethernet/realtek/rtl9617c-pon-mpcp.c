@@ -134,6 +134,7 @@ static void rtl_mpcp_refresh(struct rtl9617c_pon *pon)
 		rtl_mpcp_registration_event(pon, registered);
 	pon->registered = registered;
 	pon->waiting = rtl_pon_llid_mask(pon) & ~registered;
+	rtl_pon_pdc_refresh(pon);
 	rtl_pon_oam_carrier(pon);
 }
 

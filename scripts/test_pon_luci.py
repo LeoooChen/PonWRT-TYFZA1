@@ -22,6 +22,13 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
     }
     for name, value in samples.items():
         (device / name).write_text(value)
+    deepq = d / 'sys/bus/platform/devices/4f4300000.ethernet/pon_deepq'
+    deepq.parent.mkdir(parents=True)
+    deepq.write_text('configured=1 buffers_per_pool=512 map=0000000a\n')
+    for name, value in (('rx_packets', '0'), ('tx_packets', '17')):
+        counter = d / 'sys/class/net/pon-data0/statistics' / name
+        counter.parent.mkdir(parents=True, exist_ok=True)
+        counter.write_text(value + '\n')
     for name in ("rx_errors", "rx_dropped"):
         p = d / "sys/class/net/eth0/statistics" / name
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -45,6 +52,8 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
     assert observed["traffic"]["rx"] == "0"
     assert observed["bosa"]["error"] == "-6"
     assert observed["lan_rx_errors"] == "0"
+    assert observed['deepq']['configured'] == '1' and observed['wan_rx_packets'] == '0'
+    assert observed['wan_tx_packets'] == '17'
     assert observed['oam_ports'][0]['live'] is True, observed['oam_ports']
     assert observed['oam_ports'][0]['auth_state'] == 'accepted'
     process.write_text('123 (another-process) ' + ' '.join(['S'] + ['0'] * 18 + ['654321'] + ['0'] * 30) + '\n')
@@ -54,6 +63,7 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
     marker.unlink()
     for path in device.iterdir():
         path.unlink()
+    deepq.unlink()
     absent = json.loads(subprocess.check_output([str(ucode), str(program)], text=True))
     assert absent["state"] is None and absent["serdes"] is None and absent["mpcp"] is None
     assert absent["bosa"] is None and absent["traffic"] is None

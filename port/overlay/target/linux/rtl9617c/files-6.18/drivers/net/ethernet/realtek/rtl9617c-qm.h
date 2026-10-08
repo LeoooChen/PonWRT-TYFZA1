@@ -5,6 +5,7 @@
 #include <linux/netdevice.h>
 #include "rtl9617c-ni.h"
 #include "rtl9617c-qm-refill.h"
+#include "rtl9617c-qm-deepq.h"
 
 #define RTL_QM_RING_BYTES 1024
 #define RTL_QM_COMMAND_BYTES 8
@@ -20,6 +21,9 @@ struct rtl_qm_rx {
 	void __iomem *block_reset;
 	void *memory;
 	dma_addr_t memory_dma;
+	void *deepq_memory;
+	dma_addr_t deepq_dma;
+	bool deepq_configured;
 	unsigned int read[RTL_QM_VOQS];
 	u32 last_address;
 	u32 last_size;
@@ -39,4 +43,5 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget);
 ssize_t rtl_qm_rx_state(struct rtl_qm_rx *rx, char *buf);
 ssize_t rtl_qm_rx_trace(struct rtl_qm_rx *rx, char *buf);
 ssize_t rtl_qm_rx_pool(struct rtl_qm_rx *rx, char *buf);
+ssize_t rtl_qm_deepq_state(struct rtl_qm_rx *rx, char *buf);
 #endif

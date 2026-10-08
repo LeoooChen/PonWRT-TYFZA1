@@ -4,7 +4,7 @@
 
 | UCI模式 | 协议 | SerDes模式值/极性页 | 当前实现 | 光口验收 |
 | --- | --- | --- | --- | --- |
-| epon | 1G EPON | 040c / 62 | SerDes、MAC/PCS/FEC、PUC/PDC、MPCP、OAM传输接口 | 待注册/认证/业务测试 |
+| epon | 1G EPON | 040c / 62 | SerDes、MAC/PCS/FEC、PUC/PDC、MPCP、OAM守护进程、业务netdev/DQ | 待注册/认证/业务测试 |
 | epon-d10g | 非对称10G EPON | 044c / 60 | 同上；当前用户线路选择 | 待正确上联光口测试 |
 | epon-bi10g | 对称10G EPON | 046c / 60 | 同上 | 待注册/认证/业务测试 |
 | gpon | GPON | 0408 / 61 | 原厂参数、家族选择、SerDes/LOS复位序列接入；MAC/PLOAM/OMCI继续移植 | 未验证 |
@@ -15,4 +15,4 @@ scripts/test_pon_modes.py依据固定GPL aal_psds.c检查全部六项模式值�
 
 GPON族需要独立MAC/ANI、PLOAM激活、ONU-ID/测距/定时器、密钥、OMCI通道、GEM/Alloc/T-CONT及业务规则。当前GPON族的MAC启动返回EOPNOTSUPP，状态显示prepared=0/error=-95；SerDes配置不能作为GPON完整注册证据。对应后续任务与参考教训在pon-reference-lessons.md。
 
-EPON族已接入原生OAM发现、CTC扩展协商、LOID认证、版本查询和每LLID守护进程/状态，实际ARM64/musl进程的隔离网络测试通过。每LLID业务队列、PON业务netdev和DHCP/桥接业务继续移植。其寄存器初始化及LAN传输已通过板测，真实光口注册、认证及业务尚待测试。
+EPON族已接入原生OAM发现、CTC扩展协商、LOID认证、版本查询和每LLID守护进程/状态，实际ARM64/musl进程的隔离网络测试通过。每LLID业务netdev、上行DQ缓冲/credit、PUC背压、PDC分流及DHCP默认WAN已进入代码和主线构建；生产函数的寄存器/网络栈模型验证通过。OLT业务规则、CTC Set后台及其VLAN配置继续移植。其既有寄存器初始化及LAN传输已通过板测，新业务路径和真实光口注册、认证仍待测试。

@@ -26,6 +26,7 @@ start_service() {
 	while [ "$i" -lt "$llids" ]; do
 		printf '1\n' > "/proc/sys/net/ipv6/conf/pon-oam$i/disable_ipv6"
 		ip link set "pon-oam$i" up || return $?
+		ip link set "pon-data$i" up || return $?
 		i=$((i + 1))
 	done
 	printf '1\n' > "$device/traffic" || return $?
@@ -49,6 +50,9 @@ stop_service() {
 	if [ -w "$device/traffic" ]; then
 		printf '0\n' > "$device/traffic"
 		for interface in /sys/class/net/pon-oam*; do
+			[ -d "$interface" ] && ip link set "${interface##*/}" down
+		done
+		for interface in /sys/class/net/pon-data*; do
 			[ -d "$interface" ] && ip link set "${interface##*/}" down
 		done
 	fi

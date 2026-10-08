@@ -148,7 +148,34 @@ static int rtl_qm_ingress(struct rtl_qm_rx *rx, unsigned int port)
 int rtl_qm_rx_alloc(struct device *dev, struct rtl_qm_rx *rx)
 {
 	rx->memory = dma_alloc_coherent(dev, RTL_QM_MEMORY_BYTES, &rx->memory_dma, GFP_KERNEL);
-	return rx->memory ? 0 : -ENOMEM;
+	if (!rx->memory)
+		return -ENOMEM;
+	rx->deepq_memory = dma_alloc_coherent(dev, RTL_DQ_MEMORY_BYTES, &rx->deepq_dma, GFP_KERNEL);
+	if (!rx->deepq_memory) {
+		dma_free_coherent(dev, RTL_QM_MEMORY_BYTES, rx->memory, rx->memory_dma);
+		rx->memory = NULL;
+		return -ENOMEM;
+	}
+	return 0;
+}
+
+static unsigned int rtl_dq_read(void *context, unsigned int reg)
+{
+	struct rtl_qm_rx *rx = context;
+
+	return readl(rx->ni + reg);
+}
+
+static void rtl_dq_write(void *context, unsigned int reg, unsigned int value)
+{
+	struct rtl_qm_rx *rx = context;
+
+	writel(value, rx->ni + reg);
+}
+
+static int rtl_dq_indirect(void *context, unsigned int reg, unsigned int value)
+{
+	return rtl_qm_indirect(context, reg, value);
 }
 
 static void rtl_qm_axi_reorder(struct rtl_qm_rx *rx)
@@ -179,8 +206,10 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	unsigned int i;
 	u32 value;
 	int ret;
+	const struct rtl_dq_io dq = {rx, rtl_dq_read, rtl_dq_write, rtl_dq_indirect};
 
 	rx->lan_source = port;
+	rx->deepq_configured = false;
 	writel(readl(ni + RMU_CTRL) & ~BIT(31), ni + RMU_CTRL);
 	writel(readl(ni + ES_CTRL) & ~BIT(31), ni + ES_CTRL);
 	/* Native ownership starts with the same TQM reset as the stock Linux driver. */
@@ -220,6 +249,9 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 		writel(0x61008060, ni + cfg + 12);
 		writel(2, ni + cfg + 16);
 	}
+	ret = rtl_qm_deepq_prepare(&dq, lower_32_bits(rx->deepq_dma));
+	if (ret)
+		return ret;
 	writel(EQ_ID | ((EQ_ID + 1) << 4), ni + EQ_PROFILE);
 	writel(EQ_ID, ni + 0x6148);
 	writel(0x00020002, ni + 0x61c8); /* 32-byte first/rest headroom */
@@ -231,6 +263,12 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	if (ret)
 		return ret;
 	ret = rtl_qm_attribute(rx, EQ_ID + 1, 0x0a008060);
+	if (ret)
+		return ret;
+	ret = rtl_qm_attribute(rx, RTL_DQ_EQ_PRIVATE, 0x0a008060);
+	if (ret)
+		return ret;
+	ret = rtl_qm_attribute(rx, RTL_DQ_EQ_SHARED, 0x0a008060);
 	if (ret)
 		return ret;
 	ret = rtl_qm_attribute(rx, 48, 0x0a008060);
@@ -272,18 +310,23 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	/* CRC is stripped by QM; CPU0 dequeue and normal NI input are enabled. */
 	/* Keep the reset EPP wait setting, as the vendor RMW sequence does. */
 	writel(0x8462ff01, ni + ES_CTRL);
+	writel(readl(ni + 0x610c) | 0xffffU, ni + 0x610c);
 	writel(readl(ni + RMU_CTRL) | BIT(31), ni + RMU_CTRL);
+	rx->deepq_configured = true;
 	return 0;
 }
 
 void rtl_qm_rx_stop(struct rtl_qm_rx *rx)
 {
+	rx->deepq_configured = false;
+	writel(readl(rx->ni + 0x610c) & ~0xffffU, rx->ni + 0x610c);
 	writel(readl(rx->ni + RMU_CTRL) & ~BIT(31), rx->ni + RMU_CTRL);
 	writel(readl(rx->ni + ES_CTRL) & ~BIT(31), rx->ni + ES_CTRL);
 }
 
 void rtl_qm_rx_free(struct device *dev, struct rtl_qm_rx *rx)
 {
+	dma_free_coherent(dev, RTL_DQ_MEMORY_BYTES, rx->deepq_memory, rx->deepq_dma);
 	dma_free_coherent(dev, RTL_QM_MEMORY_BYTES, rx->memory, rx->memory_dma);
 }
 
@@ -408,6 +451,25 @@ ssize_t rtl_qm_rx_state(struct rtl_qm_rx *rx, char *buf)
 		readl(rx->ni + 0x6824), readl(rx->ni + 0x2d60), readl(rx->ni + 0x2d64),
 		readl(rx->ni + 0x2d78), READ_ONCE(rx->refill.pending),
 		rx->refill.retries, rx->refill.returned, rx->refill.peak);
+}
+
+ssize_t rtl_qm_deepq_state(struct rtl_qm_rx *rx, char *buf)
+{
+	ssize_t length;
+	unsigned int eq, cfg;
+
+	length = sysfs_emit(buf, "configured=%u memory=%pad bytes=%u buffers_per_pool=%u map=%08x puc_enable=%08x profile=%08x port16=%08x port31=%08x\n",
+		rx->deepq_configured, &rx->deepq_dma, RTL_DQ_MEMORY_BYTES, RTL_DQ_BUFFERS,
+		readl(rx->ni + 0x68f8), readl(rx->ni + 0x610c), readl(rx->ni + 0x612c),
+		readl(rx->ni + 0x6148 + 16 * 4), readl(rx->ni + 0x6148 + 31 * 4));
+	for (eq = RTL_DQ_EQ_PRIVATE; eq <= RTL_DQ_EQ_SHARED; eq++) {
+		cfg = 0x61e8 + eq * 20;
+		length += scnprintf(buf + length, PAGE_SIZE - length,
+			"eq%u=%08x/%08x/%08x/%08x/%08x\n", eq,
+			readl(rx->ni + cfg), readl(rx->ni + cfg + 4), readl(rx->ni + cfg + 8),
+			readl(rx->ni + cfg + 12), readl(rx->ni + cfg + 16));
+	}
+	return length;
 }
 
 ssize_t rtl_qm_rx_trace(struct rtl_qm_rx *rx, char *buf)

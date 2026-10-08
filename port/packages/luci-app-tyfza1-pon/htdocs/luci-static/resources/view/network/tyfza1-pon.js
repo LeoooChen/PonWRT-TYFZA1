@@ -32,6 +32,8 @@ function statusPanel(data) {
 		['已注册 LLID 位图', value(data.mpcp, 'registered')],
 		['MPCP 注册尝试', value(data.mpcp, 'attempts')],
 		['OAM 收发', value(data.traffic, 'rx') + ' / ' + value(data.traffic, 'tx')],
+		['PON 业务收 / 发', (data.wan_rx_packets ?? '—') + ' / ' + (data.wan_tx_packets ?? '—')],
+		['上行业务队列初始化', value(data.deepq, 'configured')],
 		['LAN 接收错误 / 丢弃', (data.lan_rx_errors ?? '—') + ' / ' + (data.lan_rx_dropped ?? '—')]
 	];
 	return E('div', {class: 'cbi-section'}, [

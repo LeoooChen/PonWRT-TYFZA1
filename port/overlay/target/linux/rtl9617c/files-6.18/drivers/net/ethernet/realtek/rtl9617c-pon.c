@@ -328,6 +328,8 @@ static ssize_t llid_table_store(struct device *dev, struct device_attribute *att
 	mutex_lock(&pon->control_lock);
 	mutex_lock(&pon->lock);
 	ret = rtl_pon_llid_update(pon, add, index, mac, llid, multicast);
+	if (!ret)
+		ret = rtl_pon_pdc_refresh(pon);
 	mutex_unlock(&pon->lock);
 	mutex_unlock(&pon->control_lock);
 	return ret ? ret : count;

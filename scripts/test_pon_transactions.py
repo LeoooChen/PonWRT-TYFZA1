@@ -150,7 +150,7 @@ address_model = r'''
 #define NETDEV_CHANGEADDR 8
 struct net_device {u8 address[6];bool locked;int addr_assign_type;unsigned int updates,notifications;};
 struct device {void *data;};struct device_attribute {};
-struct rtl9617c_pon {struct mutex control_lock,lock;bool mpcp_enabled;u8 onu_mac[6];struct net_device *oam_devices[32];};
+struct rtl9617c_pon {struct mutex control_lock,lock;bool mpcp_enabled;u8 onu_mac[6];struct net_device *oam_devices[32],*data_devices[32];};
 static bool rtnl;
 #define ASSERT_RTNL() assert(rtnl)
 #define rtnl_dereference(p) (assert(rtnl),(p))
@@ -170,15 +170,17 @@ static int is_valid_ether_addr(const u8 *mac) {return !(mac[0]&1)&&memcmp(mac,"\
 '''
 address_test = r'''
 int main(void) {
-    struct rtl9617c_pon pon={};struct device device={&pon};struct net_device ports[3]={};
-    pon.oam_devices[0]=ports;pon.oam_devices[7]=ports+1;pon.oam_devices[31]=ports+2;
+    struct rtl9617c_pon pon={};struct device device={&pon};struct net_device ports[3]={},data[3]={};
+	pon.oam_devices[0]=ports;pon.oam_devices[7]=ports+1;pon.oam_devices[31]=ports+2;
+    pon.data_devices[0]=data;pon.data_devices[7]=data+1;pon.data_devices[31]=data+2;
     pthread_mutex_init(&pon.lock.native,NULL);pthread_mutex_init(&pon.control_lock.native,NULL);
     const char *mac="02:11:22:33:44:f0";
     assert(onu_mac_store(&device,NULL,mac,17)==17);
     const u8 expected[3]={0xf0,0xf7,0x0f};
     for(unsigned int i=0;i<3;i++) {
         assert(ports[i].address[5]==expected[i] && ports[i].updates==1 && ports[i].notifications==1);
-        assert(!ports[i].locked);
+		assert(!ports[i].locked);
+        assert(!memcmp(data[i].address,ports[i].address,6) && data[i].updates==1 && data[i].notifications==1);
     }
     pon.mpcp_enabled=true;assert(onu_mac_store(&device,NULL,"02:11:22:33:44:01",17)==-EBUSY);
     assert(!rtnl&&!pon.lock.held&&!pon.control_lock.held);
@@ -210,7 +212,8 @@ with tempfile.TemporaryDirectory(prefix='control-tests-', dir=root / 'artifacts'
                 assert '.ndo_set_mac_address =' not in oam
             # Reuse the host mutex primitive; the RX/MMIO model is unnecessary.
             prefix = common[:common.index('struct delayed_work')]
-            source = prefix + address_model + function(oam, 'rtl_pon_oam_address') + function(controller, 'onu_mac_store') + address_test
+            helper = function(oam, 'rtl_port_address') if 'static void rtl_port_address' in oam else ''
+            source = prefix + address_model + helper + function(oam, 'rtl_pon_oam_address') + function(controller, 'onu_mac_store') + address_test
         cfile = directory / f'{case}.c'
         binary = directory / case
         cfile.write_text(source)

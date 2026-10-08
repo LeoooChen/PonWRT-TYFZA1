@@ -52,6 +52,7 @@ common = r'''
 #include <string.h>
 #include <sys/types.h>
 #include "rtl9617c-qm-refill.h"
+#include "rtl9617c-qm-deepq.h"
 typedef uint32_t u32;
 typedef uint16_t u16;
 typedef uint8_t u8;
@@ -175,10 +176,10 @@ struct kobject {struct device *dev;};
 #define dev_get_drvdata(d) ((d)->data)
 #define kobj_to_dev(k) ((k)->dev)
 static struct device_attribute dev_attr_qm_pool={{0444}},dev_attr_qm_trace={{0644}},
-    dev_attr_qm_wait={{0644}},dev_attr_qm_es={{0644}},dev_attr_qm_buffer={{0644}},dev_attr_qm_state={{0444}};
+    dev_attr_qm_wait={{0644}},dev_attr_qm_es={{0644}},dev_attr_qm_buffer={{0644}},dev_attr_qm_state={{0444}},dev_attr_pon_deepq={{0444}};
 int main(void) {
     struct rtl_xram priv={};struct device dev={&priv};struct kobject kobj={&dev};
-    struct device_attribute *attrs[]={&dev_attr_qm_pool,&dev_attr_qm_trace,&dev_attr_qm_wait,&dev_attr_qm_es,&dev_attr_qm_buffer};
+    struct device_attribute *attrs[]={&dev_attr_qm_pool,&dev_attr_qm_trace,&dev_attr_qm_wait,&dev_attr_qm_es,&dev_attr_qm_buffer,&dev_attr_pon_deepq};
     char buf[4096];
     for (unsigned int dma=0;dma<2;dma++) {
         priv.dma_tx=dma;
