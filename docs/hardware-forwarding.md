@@ -50,4 +50,20 @@ rtl9617c-fe-format.h提供位字段写入、IPv4动作/流键、掩码及CRC；r
 
 由实包暴露并修复的格式问题：TTL mask的0是忽略TTL，3为TTL范围编码；初始全1掩码导致实包CRC不同，离线测试新增变化TTL覆盖。FDB命令必须暂设cpu_opt_mode bit31；append成功应答不提供目的MAC索引，重新lookup才得到3056。原厂模块table ID20/23及机器码证明MAC CAM selector为3，旧参考注释4不适用本机。源MAC改写使用smac_trans=0并指定有效L3出口接口。
 
-物理LAN入口仍缺前端配置。修改PONCLE目的而保留强制CPU旁路时不经过Hash；移除旁路后，即使PONCLE目标仍设CPU16，管理报文也未送到CPU，表明下一步要补齐物理入口分类/CPU miss。测试已通过TTL恢复全部临时配置，XEPON认证、WAN租约、公网ping正常。原始证据见manifests/fe-native-tests.json。
+该轮物理入口实验尚未打通；其UDP发送工具后来被证实没有始终在en5线上发送指定五元组，因此不能单凭这些实验判断分类级故障。NI的a5f8为RX控制帧旁路配置，原来的“强制全部CPU旁路”名称不准确。下面的直接以太网注入实验解决了这两个证据问题。
+
+## 2026-10-09：物理LAN与XEPON双向硬件转发
+
+tools/mac_fe_inject.c通过Mac BPF直接注入固定Ethernet/IPv4/UDP帧，避免普通UDP套接字的实际源地址、端口与静态Hash键不一致。芯片L2/L3监视锁存和指定五元组的采样确认实际解析内容；采样保留匹配时的Header-I，后续串口输出不再被其他流量替换。
+
+物理LAN入口只需把NI RXctrl目的从CPU16改为LAN L3连接器25。逐项隔离验证：保持该目标16并修改ICLS/PONCLE没有硬件返回；目标25且保持ICLS/PONCLE原内容时10帧全部硬件返回。10帧的NAT、MAC、TTL、IPv4/UDP校验和、载荷完整性均通过。证据为logs/fe-physical-wire02.pcap及其-check.json。
+
+XEPON上行使用LDPID32和deepq，经过本工程原生QM/PUC进入LLID0。运营商DNS收到ASIC改写为WAN地址及端口62000的请求并发回对应答复。下行仅调整PDC正常业务的0/128两项到WAN L3连接器24，并清除FE bypass；PDC控制/OAM项保持CPU路径。WAN入口LPB使用分类profile1，默认Hash选择仍为profile0。反向Hash动作执行目的IP/端口DNAT，并改写LAN源/目的MAC。
+
+实际下行Header-I验证了LSPID7。该测试掩码忽略orig_lspid，因此构造CRC时必须清除此字段：实际masked tuple word22为00000700；错误的0000071c导致Hash miss。修正后的双向规则收到3/3 DNS答复，目的还原为测试客户端10.23.42.1:53000，IPv4/UDP校验和均正确。最终pcap和逐包验收在logs/fe-bidir-dns04.pcap、logs/fe-bidir-dns04-check.json。
+
+同时在光猫eth0和pon-data0采集CPU收到的帧：规则生效阶段指定DNS流没有进入CPU；删除主Hash age、失效对应cache后，硬件返回停止，原请求与软件转发回包进入CPU。此轮没有出现删除后的旧缓存硬件返回。证据为logs/fe-bidir-lifecycle02-check.json，私有CPU抓包位于analysis/private/live-oam/。
+
+normal action的L3_IF_COUNTER_EN bit42启用出口接口MIB，每个接口拥有64位字节数、32位单播包数等7个word。原生fe-pipeline.h增加64个TX IFID槽的读取。实机上行3包/213字节、下行3包/1275字节，两个方向丢弃数均0；ASan/UBSan测试包含该实测布局。主Hash age初始1在当前配置下未随命中改变，尚不能将其直接当作活跃计数；Linux流统计与lastused将依据实测IFID计数推进。
+
+本轮验证为两条原生静态IPv4/UDP规则，尚未完成Linux动态flowtable安装、删除、老化以及TCP/VLAN参数覆盖。固件常规启动仍使用已验证软件转发，hardware_forwarding_enabled保持false。下一步完成动态有线卸载与协议切换生命周期后，再适配Wi-Fi，最后实施原生OpenWrt UBI安装与升级；GPON族按用户要求暂缓。

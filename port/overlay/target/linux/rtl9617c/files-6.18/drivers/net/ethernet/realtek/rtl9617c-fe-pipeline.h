@@ -60,6 +60,18 @@ static inline int rtl_fe_source_mac_write(const struct rtl_dq_io *io,unsigned in
  for(i=0;i<5;i++)io->write(io->context,0x3214-i*4,words[i]);
  return io->indirect(io->context,0x3200,0xc0030000U|index);
 }
+/* TX interface MIB is224 bits:bytes64,UC32,non-UC32,drop-bytes64,
+ * drop-packets32. A flow can own one of64 egress-interface counter slots. */
+static inline int rtl_fe_tx_counter_read(const struct rtl_dq_io *io,
+ unsigned int index,unsigned int words[7])
+{
+ unsigned int i;
+ int ret=io->indirect(io->context,0x35c8,0x80000000U|index);
+
+ if(ret)return ret;
+ for(i=0;i<7;i++)words[i]=io->read(io->context,0x35e4-i*4);
+ return 0;
+}
 /* L2 FDB key stores a48-bit MAC beginning at bit51; the return value's
  * high13 bits are the same destination-MAC index used by the Hash action. */
 static inline void rtl_fe_fdb_key(unsigned int words[4],const unsigned char mac[6])

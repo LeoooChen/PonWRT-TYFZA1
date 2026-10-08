@@ -118,6 +118,16 @@ static inline int rtl_fe_main_age(const struct rtl_dq_io *io,unsigned int index,
  io->write(io->context,reg,value);
  return io->indirect(io->context,0x3928,0xc0000000U|row);
 }
+static inline int rtl_fe_main_age_read(const struct rtl_dq_io *io,
+ unsigned int index,unsigned int *age)
+{
+ unsigned int slot=index&31;
+ int ret=io->indirect(io->context,0x3928,0x80000000U|(index>>5));
+
+ if(ret)return ret;
+ *age=(io->read(io->context,0x3938-(slot>>3)*4)>>((slot&7)*4))&15;
+ return 0;
+}
 static inline int rtl_fe_cache_command(const struct rtl_dq_io *io,unsigned int index,
  unsigned short crc16,unsigned int command)
 {

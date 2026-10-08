@@ -55,8 +55,8 @@
   "scope": "first wired LAN/PON IPv4 TCP/UDP; Wi-Fi later",
   "native_sources": {
     "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-format.h": "407534222bfc5c95b476144675c58e1464cc2caa702c57d52439f92c05118b0c",
-    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-table.h": "98bf4ada1c4697aea4429a7e21642d897a92f4c87231d3b2a68e9d6f51ac6304",
-    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-pipeline.h": "a1223f6c8f700ebcd0fdc3a445eb74d9cb11fb5b2638569ca6a5294f690cc43c"
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-table.h": "a23c79c29bf3533042b7588c1b1c63646a80ef6b58b2ef9a52e32f0184357fa1",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-pipeline.h": "6139817974cc984e764564c62a66a41202f69640d3ded0cf00b0ba704a902e33"
   },
   "hardware_CRC": {
     "vectors": 128,
@@ -137,14 +137,59 @@
     "FDB commands require cpu_opt_mode bit31; original mode restored after each command.",
     "FDB append returns status5 without usable destination index; relookup yields actual index3056.",
     "Source MAC CAM is selector3, proven by this machine table IDs20/23 and assembler; old reference comment selector4 is obsolete.",
-    "Source MAC rewrite uses smac_trans0 with valid egress L3 interface;1 is the original-MAC mode."
+    "Source MAC rewrite uses smac_trans0 with valid egress L3 interface;1 is the original-MAC mode.",
+    "Real PON LLID0 Header-I selected LSPID7; ignored orig_lspid must be zero before CRC (actual masked word22=00000700, not0000071c).",
+    "PDC FE bypass sets t0_ctrl1 and skips Hash; normal business ingress clears that bit, while OAM stays on CPU.",
+    "Normal action bit42 enables64 TX IFID counter slots; actual3-packet/byte deltas verified in both directions."
   ],
   "physical_LAN_ingress_test": {
-    "PONCLE_destination_only_with_force_CPU_enabled": "no hardware match",
-    "force_CPU_removed_with_PONCLE_target16": "management packets not delivered",
-    "rollback": "TTL rmmod restores NI bypass and original classifier/FDB/CAM/register values",
+    "result": "physical LAN->ASIC->LAN and LAN->XEPON->LAN static rules passed",
+    "NI_RXctrl": "default CPU16 target changed to internal LAN L3 connector25",
+    "ICLS_and_PONCLE_modifications_required": false,
+    "PDC_business_LLID0": "destination24 and FE bypass cleared; control LLID entries unchanged",
+    "rollback": "restore LAN RXctrl and PDC ingress before detaching DMA; restore original maps/classifier/FDB/CAM/registers",
     "PON_authentication_and_WAN_restored": true,
-    "next": "complete physical LAN classifier and CPU miss before enabling dynamic offload",
-    "serial_log": "logs/serial-20261009-005447.txt"
+    "next": "integrate native Linux flowtable callbacks, counters/aging and mode lifecycle; then Wi-Fi",
+    "serial_log": "logs/fe-physical-lan-pon-device.txt"
+  },
+  "hardware_LAN_physical_ingress": {
+    "fixed_Ethernet_frames": 10,
+    "ASIC_NAT_MAC_TTL_checksums_and_payload_valid": true,
+    "wire_pcap": "logs/fe-physical-wire02.pcap",
+    "pcap_sha256": "2d4a823ead993e09a997a4c16f02ce7110079ed8cb7aeaa51740a4ad8a66d8af",
+    "check": "logs/fe-physical-wire02-check.json",
+    "minimal_ingress_setup": "NI RXctrl destination25; ICLS and PONCLE tables unchanged"
+  },
+  "hardware_XEPON_bidirectional_static": {
+    "protocol": "epon-d10g (10G downstream /1G upstream)",
+    "LLID_index": 0,
+    "LAN_requests": 3,
+    "LAN_replies": 3,
+    "IPv4_and_UDP_checksums_valid": true,
+    "NAT_SIP_and_port_upstream": true,
+    "NAT_DIP_and_port_downstream": true,
+    "wire_pcap": "logs/fe-bidir-dns04.pcap",
+    "pcap_sha256": "2cb618017e9e13127206a52c1481ccfc53ec00d47579ab65c230b0139fab0228",
+    "check": "logs/fe-bidir-dns04-check.json",
+    "forward_CRC32": "a5d66a59",
+    "forward_CRC16": "4c6f",
+    "reverse_CRC32": "6b393d94",
+    "reverse_CRC16": "ff4b",
+    "CPU_bypass_and_deletion_check": "logs/fe-bidir-lifecycle02-check.json",
+    "hardware_phase_test_frames_on_CPU": 0,
+    "stale_hardware_replies_after_delete": 0,
+    "CPU_miss_after_delete_verified": true,
+    "scope": "Two static IPv4/UDP rules; dynamic Linux flowtable and other EPON optical modes not yet accepted"
+  },
+  "hardware_flow_counters": {
+    "TX_IFID_slots": 64,
+    "enable": "normal action L3_IF_COUNTER_EN bit42",
+    "forward_packets": 3,
+    "forward_bytes": 213,
+    "reverse_packets": 3,
+    "reverse_bytes": 1275,
+    "dropped_packets": 0,
+    "log": "logs/fe-physical-lan-pon-device.txt",
+    "Hash_age_observation": "initial age1 stayed1 across packet hits with current configuration; use verified per-flow IFID counters for activity until age behavior is resolved"
   }
 }
