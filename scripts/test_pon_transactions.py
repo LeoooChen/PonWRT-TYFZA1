@@ -64,12 +64,15 @@ struct delayed_work {bool pending;};
 struct rtl9617c_pon {
     struct mutex lock,control_lock;enum rtl_pon_mode mode;
     void *mac,*control,*epon_control,*gpon_control,*serdes_init,*optical_control,*top_irq,*dev;
-    bool mpcp_enabled,mpcp_configured,mac_prepared,traffic_enabled,serdes_configured,gearbox_ready,rx_synced,puc_configured,pdc_configured;
+    bool mpcp_enabled,mpcp_configured,mac_prepared,traffic_enabled,serdes_configured,gearbox_ready,rx_synced,puc_configured,pdc_configured,fe_enabled;
     u32 registered,waiting,serdes_status;int sync_result,serdes_error,mpcp_irq;
     unsigned int llid_count,los_invert,profile_rows;u8 onu_mac[6];
     struct rtl_mpcp_backoff backoff;struct delayed_work mpcp_work,serdes_work;
 };
 static struct rtl9617c_pon *current;
+static int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon,bool enable) {
+    lockdep_assert_held(&pon->control_lock);pon->fe_enabled=enable;return 0;
+}
 static unsigned int canceled;
 static void *state_reader(void *unused) {
     (void)unused;mutex_lock(&current->lock);mutex_unlock(&current->lock);return NULL;
@@ -130,12 +133,12 @@ int main(void) {
     mac[PSDS_STATUS/4]=PSDS_SYNC_GOAL;
     for(unsigned int mode=RTL_PON_GPON;mode<RTL_PON_MODE_COUNT;mode++) {
         pon.mode=RTL_PON_EPON_D10G;pon.mac_prepared=true;pon.mpcp_enabled=pon.mpcp_configured=true;
-        pon.mpcp_work.pending=true;top[1]=1;window=attempted=finished=false;
+        pon.mpcp_work.pending=true;pon.fe_enabled=true;top[1]=1;window=attempted=finished=false;
         assert(pthread_create(&starter,NULL,concurrent_start,&pon)==0);
         assert(rtl_pon_serdes_configure(&pon,mode)==0);
         assert(pthread_join(starter,NULL)==0);
         assert(start_result<0 && pon.mode==(enum rtl_pon_mode)mode && !pon.mpcp_enabled && !pon.mpcp_configured);
-        assert(!pon.mpcp_work.pending && !(top[1]&1) && pon.serdes_work.pending);
+        assert(!pon.mpcp_work.pending && !(top[1]&1) && pon.serdes_work.pending && !pon.fe_enabled);
         assert(!pon.control_lock.held && !pon.lock.held);
     }
     assert(canceled==6);

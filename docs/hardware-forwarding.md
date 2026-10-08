@@ -67,3 +67,21 @@ XEPON上行使用LDPID32和deepq，经过本工程原生QM/PUC进入LLID0。运�
 normal action的L3_IF_COUNTER_EN bit42启用出口接口MIB，每个接口拥有64位字节数、32位单播包数等7个word。原生fe-pipeline.h增加64个TX IFID槽的读取。实机上行3包/213字节、下行3包/1275字节，两个方向丢弃数均0；ASan/UBSan测试包含该实测布局。主Hash age初始1在当前配置下未随命中改变，尚不能将其直接当作活跃计数；Linux流统计与lastused将依据实测IFID计数推进。
 
 本轮验证为两条原生静态IPv4/UDP规则，尚未完成Linux动态flowtable安装、删除、老化以及TCP/VLAN参数覆盖。固件常规启动仍使用已验证软件转发，hardware_forwarding_enabled保持false。下一步完成动态有线卸载与协议切换生命周期后，再适配Wi-Fi，最后实施原生OpenWrt UBI安装与升级；GPON族按用户要求暂缓。
+
+## 2026-10-09：Linux动态flowtable后端与实机验收
+
+新增rtl9617c-fe.c，连接Linux TC_SETUP_FT/FLOW_CLS_REPLACE、DESTROY和STATS。内核的IPv4 TCP/UDP五元组、以太网改写与单向NAT动作转换为原生Hash动作；主Hash使用4096个槽、每bucket32槽，当前逐流统计占用64个TX IFID资源。源MAC CAM与目的FDB按引用共享，出口接口和Hash槽在最后引用释放后恢复。槽不足或当前尚未实现的IPv6、VLAN、隧道、双侧NAT动作继续由Linux软件路径处理，尚未作为全部硬件功能完成。
+
+eth0和每个pon-dataN接入flowtable回调；PON控制事务负责启停FE和PDC业务入口。停止MPCP/traffic后先移除硬件流与入口，再进行PON重置；OAM保持原有CPU路径。动态回调只获取FE锁，不获取PON状态锁或RTNL，避免与控制事务形成反向锁序。接口关闭清除相关流，接口注销遇到尚未完成的释放时保留其记录，待清理结束再回收。
+
+主Hash配置增加TCP FIN/SYN/RST、IPv4错误/分片和untagged匹配约束。GPL aal_common.h中mask.vlan_cnt位于bit100；最初误写为bit114，引入错误字段匹配，导致内核虽标HW_OFFLOAD但实际仍走软件。运行中的原生诊断模块修正了mask63 word3，之后实际UDP和TCP均命中；full-pon-flowtable04镜像内置正确位，启动无需诊断修补。
+
+Linux当前nf_flow_table_offload.c的实际NAT构造函数生成1024个TCP/UDP双向向量，对照生产解析函数，通过ASan/UBSan验证端口、IPv4及MAC字节序。生产释放函数验证共享MAC的最后引用、CAM恢复失败重试、注销记录保留和Hash/计数器资源释放。统计测试验证355个线速字节/5包转换为285个IP字节，空闲lastused保持不变，以及32位包计数回绕。
+
+首次动态UDP验收：由Linux创建双向规则，之后5请求/5答复未出现在设备eth0/pon-data0的CPU抓包中，conntrack两个方向各增加5包。初始统计包含以太网头，现已减去untagged的14字节以匹配conntrack；最新镜像上行5包/285字节与真实IPv4长度一致。抓包前等待HW_OFFLOAD，避免把异步安装期间的首批软件转发算作硬件阶段。UDP GRO会合并多个帧，少量CPU抓包条数不能证明绕过CPU，只有目标流零CPU记录与真实收发、计数同时成立才验收。
+
+TCP使用tools/mac_fe_tcp.c在Mac en5注入原始Ethernet帧，完成10.23.42.1:53123→1.1.1.1:80的握手及30次HTTP请求，收到11580字节响应；持续阶段6秒CPU捕获中该TCP流在两个方向均0帧，conntrack标HW_OFFLOAD并增加计数。普通主机socket请求没有出现在光猫conntrack中，其结果不作为光猫TCP验收证据。
+
+最新镜像为artifacts/full-pon-flowtable04-6.18.55/ram-pon/image.itb，SHA256为02351a56b688ea757f00ea26527fc94d05e174df5c39197b39263dd618ab519f，6087828字节。最终FIT内核、DTB、内置initramfs994项与外置对应内容一致，校准、身份、六个SerDes协议配置齐全，实机四核、XEPON注册、认证和DHCP已恢复。MPCP停止实测把FE从enabled=1/flows=2变成enabled=0/prepared=0/flows=0，PDC恢复CPU16；重新注册后OAM generation=4、认证历史成功数2、WAN网关ping3/3。
+
+当前启动默认仍为软件转发。测试启用方式为PON设备fe属性写1，再开启firewall defaults的flow_offloading与flow_offloading_hw并reload fw3；这只是一条当前开发控制入口，UCI/LuCI持久配置尚待接入。现有实机证明为XEPON的IPv4 untagged TCP/UDP动态卸载；其他两种EPON光链路、VLAN/IPv6卸载、完整吞吐及长期稳定性仍需对应验证。按用户顺序完成这些有线工作后推进Wi-Fi，GPON族暂缓，最后完成原生UBI安装与升级。

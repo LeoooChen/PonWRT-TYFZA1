@@ -1,0 +1,678 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/* Native Linux flowtable backend for the Taurus main Hash/packet editor. */
+#include <linux/bitmap.h>
+#include <linux/delay.h>
+#include <linux/dma-mapping.h>
+#include <linux/etherdevice.h>
+#include <linux/io.h>
+#include <linux/iopoll.h>
+#include <linux/ip.h>
+#include <linux/list.h>
+#include <linux/mutex.h>
+#include <linux/slab.h>
+#include <linux/unaligned.h>
+#include <net/flow_offload.h>
+#include <net/pkt_cls.h>
+#include "rtl9617c-fe.h"
+#include "rtl9617c-fe-pipeline.h"
+
+#define FE_COUNTERS 64
+#define FE_SOURCE_MACS 15
+
+struct rtl_fe_port {
+ struct list_head list;
+ struct rtl_fe *fe;
+ struct net_device *netdev;
+ unsigned int source, destination, llid;
+ bool retired;
+};
+struct rtl_fe_mac {
+ unsigned int users, saved[5];
+ u8 address[ETH_ALEN];
+};
+struct rtl_fe_flow {
+ struct list_head list;
+ unsigned long cookie, lastused;
+ struct rtl_fe_port *input, *output;
+ unsigned int hash_index, counter, source_mac, destination_index;
+ unsigned int interface_saved, destination_saved[4];
+ u16 crc16;
+ bool destination_created;
+ bool published, source_owned, destination_owned, interface_owned;
+ u8 destination[ETH_ALEN];
+ u64 bytes;
+ u32 packets;
+};
+static const unsigned int fe_registers[] = {
+ 0x3834,0x3838,0x383c,0x3840,0x3844,0x3848,0x384c,0x3850,
+ 0x3854,0x3858,0x385c,0x38a0,0x38c4,0x3724,
+ 0x3400,0x3404,0x3414,0x3418,0x341c,0x3420,0x3424,0x3428,
+ 0x3700,0x3704,0x3860,0x394c,0x3950,0x3954,0x3958,0x395c,
+ 0x2300,0x23a0,0x23a4,0xa5f8,
+};
+struct rtl_fe {
+ struct device *device;
+ void __iomem *registers;
+ struct mutex lock;
+ struct list_head ports, flows, blocks;
+ void *memory;
+ dma_addr_t dma;
+ bool enabled, prepared;
+ int error;
+ u64 installs, deletes, misses;
+ unsigned int saved[ARRAY_SIZE(fe_registers)], mask_saved[8];
+ unsigned int classifier_saved[2][7], map_saved[2][4];
+ struct rtl_fe_mac source_macs[FE_SOURCE_MACS];
+ DECLARE_BITMAP(hashes,RTL_FE_HASH_ENTRIES);
+ DECLARE_BITMAP(counters,FE_COUNTERS);
+};
+static unsigned int fe_read(void *context,unsigned int address)
+{
+ struct rtl_fe *fe=context;
+ return readl(fe->registers+address);
+}
+static void fe_write(void *context,unsigned int address,unsigned int value)
+{
+ struct rtl_fe *fe=context;
+ writel(value,fe->registers+address);
+}
+static int fe_access(void *context,unsigned int address,unsigned int value)
+{
+ struct rtl_fe *fe=context;
+ u32 status, busy=(address==0x38b0 || address==0x393c)?1:BIT(31);
+ writel(value,fe->registers+address);
+ return readl_poll_timeout(fe->registers+address,status,!(status&busy),1,100000);
+}
+static struct rtl_dq_io fe_io(struct rtl_fe *fe)
+{
+ return (struct rtl_dq_io){fe,fe_read,fe_write,fe_access};
+}
+static struct rtl_fe_port *fe_port(struct rtl_fe *fe,struct net_device *netdev)
+{
+ struct rtl_fe_port *port;
+ list_for_each_entry(port,&fe->ports,list)
+  if(!port->retired && port->netdev==netdev)return port;
+ return NULL;
+}
+static struct rtl_fe_flow *fe_flow(struct rtl_fe *fe,unsigned long cookie)
+{
+ struct rtl_fe_flow *flow;
+ list_for_each_entry(flow,&fe->flows,list)
+  if(flow->cookie==cookie)return flow;
+ return NULL;
+}
+static void fe_collect_ports(struct rtl_fe *fe)
+{
+ struct rtl_fe_port *port,*next;
+ struct rtl_fe_flow *flow;
+
+ list_for_each_entry_safe(port,next,&fe->ports,list) {
+  bool owned=false;
+  if(!port->retired)continue;
+  list_for_each_entry(flow,&fe->flows,list)
+   if(flow->input==port || flow->output==port){owned=true;break;}
+  if(!owned){list_del(&port->list);kfree(port);}
+ }
+}
+
+/* PON normal business entry changes are made by the PON control transaction,
+ * outside this backend. No flow callback acquires the PON state/RTNL locks. */
+static int fe_prepare(struct rtl_fe *fe)
+{
+ struct rtl_dq_io io=fe_io(fe);
+ unsigned int mask[8],cls[7],lpb[3],i,side;
+ int ret;
+
+ for(i=0;i<ARRAY_SIZE(fe_registers);i++)fe->saved[i]=fe_read(fe,fe_registers[i]);
+ ret=rtl_fe_mask_read(&io,63,fe->mask_saved);
+ if(ret)return ret;
+ for(i=0;i<2;i++) {
+  ret=rtl_fe_classifier_read(&io,1024+i,fe->classifier_saved[i]);
+  if(ret)return ret;
+  for(side=0;side<4;side++) {
+   ret=fe_access(fe,0x1654,BIT(31)|(24+i)|(side<<6));
+   if(ret)return ret;
+   fe->map_saved[i][side]=fe_read(fe,0x1658);
+  }
+ }
+ fe->prepared=true;
+ rtl_fe_dma_tables(&io,lower_32_bits(fe->dma),(upper_32_bits(fe->dma)&255)|2);
+ ret=fe_access(fe,0x393c,1);
+ if(ret)return ret;
+ rtl_fe_ipv4_mask(mask);
+ /* Keep LLID/POL_ID and LSPID in the key; orig_lspid/profile are ignored.
+  * Only untagged IPv4 and TCP without FIN/SYN/RST match this first profile. */
+ mask[6]|=BIT(23)|BIT(26);
+ mask[0]&=~(BIT(1)|BIT(2)|BIT(3));
+ mask[3]&=~BIT(4); /* mask.vlan_cnt bit100, key.vlan_cnt bits464..465 */
+ ret=rtl_fe_mask_write(&io,63,mask);
+ if(ret)return ret;
+ for(i=0;i<2;i++) {
+  rtl_fe_classify_hash(cls,0,i?7:0);
+  ret=rtl_fe_classifier_write(&io,1024+i,cls);
+  if(ret)return ret;
+  rtl_fe_ingress_lpb(lpb,i?7:0,16);
+  rtl_fe_bits_set(lpb,42,4,i);
+  for(side=0;side<3;side++)fe_write(fe,0x3414+i*12+side*4,lpb[side]);
+  for(side=0;side<4;side++) {
+   fe_write(fe,0x1658,i?12:13);
+   ret=fe_access(fe,0x1654,BIT(31)|BIT(30)|(i?24:25)|(side<<6));
+   if(ret)return ret;
+  }
+ }
+ fe_write(fe,0x3400,(fe_read(fe,0x3400)&~(BIT(0)|BIT(10)|BIT(19)))|BIT(3)|BIT(2));
+ fe_write(fe,0x3404,7|(25<<8)|(1<<14)|(24<<16)|(2<<22)|(3<<24));
+ fe_write(fe,0x2300,fe_read(fe,0x2300)|BIT(12)|BIT(13));
+ fe_write(fe,0x2304+12*12,0xff|(6<<16));
+ fe_write(fe,0x2304+13*12,0xff|(6<<16));
+ for(i=0;i<5;i++)fe_write(fe,0x394c+i*4,0);
+ fe_write(fe,0x3724,RTL_FE_ACTION_GROUPS|(3U<<25));
+ fe_write(fe,0x3704,63|(7<<8));
+ fe_write(fe,0x3700,1);
+ fe_write(fe,0x3860,0x020d0000);
+ return 0;
+}
+static int fe_restore(struct rtl_fe *fe)
+{
+ struct rtl_dq_io io=fe_io(fe);
+ unsigned int i,side;
+ int ret;
+
+ if(!fe->prepared)return 0;
+ fe_write(fe,0x38c4,0);
+ ret=fe_access(fe,0x393c,1);
+ if(ret)return ret;
+ for(i=0;i<2;i++) {
+  for(side=0;side<4;side++) {
+   fe_write(fe,0x1658,fe->map_saved[i][side]);
+   ret=fe_access(fe,0x1654,BIT(31)|BIT(30)|(24+i)|(side<<6));
+   if(ret)return ret;
+  }
+  ret=rtl_fe_classifier_write(&io,1024+i,fe->classifier_saved[i]);
+  if(ret)return ret;
+ }
+ ret=rtl_fe_mask_write(&io,63,fe->mask_saved);
+ if(ret)return ret;
+ for(i=0;i<ARRAY_SIZE(fe_registers);i++)fe_write(fe,fe_registers[i],fe->saved[i]);
+ fe_read(fe,0x383c);
+ fe->prepared=false;
+ return 0;
+}
+static int fe_source_get(struct rtl_fe *fe,const u8 *address,unsigned int *index)
+{
+ struct rtl_dq_io io=fe_io(fe);
+ unsigned int i,words[5]={};
+ int ret;
+
+ for(i=0;i<FE_SOURCE_MACS;i++)
+  if(fe->source_macs[i].users && ether_addr_equal(address,fe->source_macs[i].address)) {
+   fe->source_macs[i].users++;
+   *index=i;
+   return 0;
+  }
+ for(i=0;i<FE_SOURCE_MACS;i++)if(!fe->source_macs[i].users)break;
+ if(i==FE_SOURCE_MACS)return -ENOSPC;
+ ret=rtl_fe_source_mac_read(&io,i,fe->source_macs[i].saved);
+ if(ret)return ret;
+ for(unsigned int byte=0;byte<ETH_ALEN;byte++)rtl_fe_bits_set(words,(5-byte)*8,8,address[byte]);
+ words[1]|=BIT(16);
+ ret=rtl_fe_source_mac_write(&io,i,words);
+ if(ret)return ret;
+ ether_addr_copy(fe->source_macs[i].address,address);
+ fe->source_macs[i].users=1;
+ *index=i;
+ return 0;
+}
+static int fe_source_put(struct rtl_fe *fe,unsigned int index)
+{
+ struct rtl_dq_io io=fe_io(fe);
+ int ret;
+
+ if(fe->source_macs[index].users>1){fe->source_macs[index].users--;return 0;}
+ ret=rtl_fe_source_mac_write(&io,index,fe->source_macs[index].saved);
+ if(!ret)fe->source_macs[index].users=0;
+ return ret;
+}
+static int fe_destination_get(struct rtl_fe *fe,struct rtl_fe_flow *flow,const u8 *address)
+{
+ struct rtl_dq_io io=fe_io(fe);
+ struct rtl_fe_flow *other;
+ unsigned int words[4],result;
+ int ret;
+
+ ether_addr_copy(flow->destination,address);
+ list_for_each_entry(other,&fe->flows,list)
+  if(ether_addr_equal(other->destination,address)) {
+   flow->destination_index=other->destination_index;
+   memcpy(flow->destination_saved,other->destination_saved,sizeof(flow->destination_saved));
+   flow->destination_created=other->destination_created;
+   flow->destination_owned=true;
+   return 0;
+  }
+ rtl_fe_fdb_key(words,address);
+ ret=rtl_fe_fdb_command(&io,4,words,&result);
+ if(ret)return ret;
+ flow->destination_created=(result&15)!=5;
+ if(!flow->destination_created)memcpy(flow->destination_saved,words,sizeof(words));
+ /* APPEND updates an existing key in place. Pin its MAC/permissions until
+  * the last Linux flow releases it, then restore its original contents. */
+ if(flow->destination_created)rtl_fe_fdb_key(words,address);
+ else words[0]|=BIT(9)|BIT(19)|BIT(20)|BIT(21);
+ ret=rtl_fe_fdb_command(&io,0x45,words,&result);
+ if(ret)return ret;
+ if((result&15)!=5)return -ENOSPC;
+ flow->destination_owned=true;
+ rtl_fe_fdb_key(words,address);
+ ret=rtl_fe_fdb_command(&io,4,words,&result);
+ if(ret)return ret;
+ if((result&15)!=5)return -EIO;
+ flow->destination_index=(result>>4)&0x1fff;
+ return 0;
+}
+static int fe_destination_put(struct rtl_fe *fe,struct rtl_fe_flow *flow)
+{
+ struct rtl_dq_io io=fe_io(fe);
+ struct rtl_fe_flow *other;
+ unsigned int words[4],result;
+
+ list_for_each_entry(other,&fe->flows,list)
+  if(other!=flow && ether_addr_equal(other->destination,flow->destination))return 0;
+ if(flow->destination_created) {
+  rtl_fe_fdb_key(words,flow->destination);
+  return rtl_fe_fdb_command(&io,0x85,words,&result);
+ }
+ memcpy(words,flow->destination_saved,sizeof(words));
+ return rtl_fe_fdb_command(&io,0x45,words,&result);
+}
+
+struct rtl_fe_rule {
+ struct rtl_fe_ipv4_key key;
+ struct rtl_fe_ipv4_action action;
+ struct rtl_fe_port *input,*output;
+ u8 source[ETH_ALEN],destination[ETH_ALEN];
+};
+static int fe_parse(struct rtl_fe_port *port,struct flow_cls_offload *cls,struct rtl_fe_rule *data)
+{
+ struct flow_rule *rule=flow_cls_offload_flow_rule(cls);
+ struct flow_match_meta meta;
+ struct flow_match_basic basic;
+ struct flow_match_ipv4_addrs addresses;
+ struct flow_match_ports ports;
+ struct flow_action_entry *act;
+ struct net_device *output=NULL;
+ u8 ethernet[ETH_HLEN]={};
+ __be32 new_source,new_destination;
+ __be16 new_sport,new_dport;
+ bool source_changed,destination_changed;
+ int i;
+
+ if(!flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_META) ||
+    !flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_BASIC) ||
+    !flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_IPV4_ADDRS) ||
+    !flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_PORTS))return -EOPNOTSUPP;
+ flow_rule_match_meta(rule,&meta);
+ if(meta.key->ingress_ifindex!=port->netdev->ifindex)return -EOPNOTSUPP;
+ flow_rule_match_basic(rule,&basic);
+ if(basic.key->n_proto!=htons(ETH_P_IP) || basic.mask->n_proto!=htons(0xffff) ||
+    basic.mask->ip_proto!=255 || (basic.key->ip_proto!=IPPROTO_TCP && basic.key->ip_proto!=IPPROTO_UDP))
+  return -EOPNOTSUPP;
+ if(flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_VLAN) ||
+    flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_CVLAN) ||
+    flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_ENC_CONTROL))return -EOPNOTSUPP;
+ flow_rule_match_ipv4_addrs(rule,&addresses);
+ flow_rule_match_ports(rule,&ports);
+ if(addresses.mask->src!=htonl(~0U) || addresses.mask->dst!=htonl(~0U) ||
+    ports.mask->src!=htons(0xffff) || ports.mask->dst!=htons(0xffff))return -EOPNOTSUPP;
+ data->input=port;
+ data->key=(struct rtl_fe_ipv4_key){.source=ntohl(addresses.key->src),.destination=ntohl(addresses.key->dst),
+  .source_port=ntohs(ports.key->src),.destination_port=ntohs(ports.key->dst),
+  .protocol=basic.key->ip_proto,.ingress=port->source,.llid=port->llid,.mask=63};
+ new_source=addresses.key->src;new_destination=addresses.key->dst;
+ new_sport=ports.key->src;new_dport=ports.key->dst;
+ flow_action_for_each(i,act,&rule->action) {
+  unsigned int offset=act->mangle.offset;
+  u32 value;
+
+  switch(act->id) {
+  case FLOW_ACTION_REDIRECT:output=act->dev;break;
+  case FLOW_ACTION_CSUM:break;
+  case FLOW_ACTION_MANGLE:
+   if(act->mangle.htype==FLOW_ACT_MANGLE_HDR_TYPE_ETH) {
+    if(offset>ETH_HLEN-sizeof(value))return -EOPNOTSUPP;
+    value=get_unaligned((u32 *)(ethernet+offset));
+    put_unaligned((value&act->mangle.mask)|act->mangle.val,(u32 *)(ethernet+offset));
+   } else if(act->mangle.htype==FLOW_ACT_MANGLE_HDR_TYPE_IP4) {
+    if(act->mangle.mask)return -EOPNOTSUPP;
+    if(offset==offsetof(struct iphdr,saddr))memcpy(&new_source,&act->mangle.val,4);
+    else if(offset==offsetof(struct iphdr,daddr))memcpy(&new_destination,&act->mangle.val,4);
+    else return -EOPNOTSUPP;
+   } else if(act->mangle.htype==FLOW_ACT_MANGLE_HDR_TYPE_TCP || act->mangle.htype==FLOW_ACT_MANGLE_HDR_TYPE_UDP) {
+    __be16 pair[2]={new_sport,new_dport};
+    if(offset)return -EOPNOTSUPP;
+    memcpy(&value,pair,4);
+    value=(value&act->mangle.mask)|act->mangle.val;
+    memcpy(pair,&value,4);
+    new_sport=pair[0];new_dport=pair[1];
+   } else return -EOPNOTSUPP;
+   break;
+  default:return -EOPNOTSUPP;
+  }
+ }
+ data->output=fe_port(port->fe,output);
+ if(!data->output || data->input==data->output)return -EOPNOTSUPP;
+ ether_addr_copy(data->destination,ethernet);
+ ether_addr_copy(data->source,ethernet+ETH_ALEN);
+ if(!is_valid_ether_addr(data->source) || !is_valid_ether_addr(data->destination))return -EINVAL;
+ source_changed=new_source!=addresses.key->src || new_sport!=ports.key->src;
+ destination_changed=new_destination!=addresses.key->dst || new_dport!=ports.key->dst;
+ if(source_changed && destination_changed)return -EOPNOTSUPP;
+ data->action=(struct rtl_fe_ipv4_action){.destination=data->output->destination,
+  .deep_queue=data->output->destination>=32,.translate=source_changed||destination_changed,
+  .translate_destination=destination_changed,.address=ntohl(destination_changed?new_destination:new_source),
+  .port=ntohs(destination_changed?new_dport:new_sport)};
+ return 0;
+}
+
+static int fe_delete(struct rtl_fe *fe,struct rtl_fe_flow *flow)
+{
+ struct rtl_dq_io io=fe_io(fe);
+ int ret;
+
+ if(flow->published) {
+  ret=rtl_fe_main_age(&io,flow->hash_index,0);
+  if(ret)return ret;
+  ret=rtl_fe_cache_command(&io,flow->hash_index,flow->crc16,1);
+  if(ret)return ret;
+  flow->published=false;
+ }
+ ((__le32 *)fe->memory)[flow->hash_index]=0;
+ dma_wmb();
+ if(flow->destination_owned) {
+  ret=fe_destination_put(fe,flow);
+  if(ret)return ret;
+  flow->destination_owned=false;
+ }
+ if(flow->source_owned) {
+  ret=fe_source_put(fe,flow->source_mac);
+  if(ret)return ret;
+  flow->source_owned=false;
+ }
+ if(flow->interface_owned) {
+  fe_write(fe,0x3004,flow->interface_saved);
+  ret=fe_access(fe,0x3000,BIT(31)|BIT(30)|flow->counter);
+  if(ret)return ret;
+  flow->interface_owned=false;
+ }
+ __clear_bit(flow->hash_index,fe->hashes);
+ __clear_bit(flow->counter,fe->counters);
+ list_del(&flow->list);
+ kfree(flow);
+ fe->deletes++;
+ return 0;
+}
+static int fe_replace(struct rtl_fe_port *port,struct flow_cls_offload *cls)
+{
+ struct rtl_fe *fe=port->fe;
+ struct rtl_dq_io io=fe_io(fe);
+ struct rtl_fe_rule data={};
+ struct rtl_fe_flow *flow;
+ unsigned int words[23],action[8],crc32,counter,index,start,counters[7];
+ u16 crc16;
+ int ret;
+
+ if(port->retired)return -ENODEV;
+ ret=fe_parse(port,cls,&data);
+ if(ret)return ret;
+ if(!fe->enabled || !netif_running(data.input->netdev) || !netif_running(data.output->netdev) ||
+    !netif_carrier_ok(data.input->netdev) || !netif_carrier_ok(data.output->netdev))return -EAGAIN;
+ if(fe_flow(fe,cls->cookie))return -EEXIST;
+ counter=find_first_zero_bit(fe->counters,FE_COUNTERS);
+ if(counter==FE_COUNTERS)return -ENOSPC;
+ rtl_fe_ipv4_key(words,&data.key);
+ rtl_fe_key_set(words,RTL_FE_KEY_ORIG_LSPID,0);
+ rtl_fe_key_set(words,RTL_FE_KEY_CTRL_SET_ID,0);
+ rtl_fe_key_set(words,RTL_FE_KEY_HKEY_ID,0);
+ rtl_fe_key_set(words,RTL_FE_KEY_TABLE_ID,0);
+ rtl_fe_key_crc(words,&crc32,&crc16);
+ start=(crc16&0xfe00)>>4;
+ for(index=start;index<start+32;index++)if(!test_bit(index,fe->hashes))break;
+ if(index==start+32)return -ENOSPC;
+ flow=kzalloc(sizeof(*flow),GFP_KERNEL);
+ if(!flow)return -ENOMEM;
+ flow->cookie=cls->cookie;flow->hash_index=index;flow->crc16=crc16;flow->counter=counter;
+ flow->input=data.input;flow->output=data.output;flow->lastused=jiffies;
+ ret=fe_source_get(fe,data.source,&flow->source_mac);
+ if(ret)goto free;
+ flow->source_owned=true;
+ ret=fe_destination_get(fe,flow,data.destination);
+ if(ret)goto destination;
+ ret=fe_access(fe,0x3000,BIT(31)|counter);
+ if(ret)goto destination;
+ flow->interface_saved=fe_read(fe,0x3004);
+ flow->interface_owned=true;
+ fe_write(fe,0x3004,BIT(18)|((flow->source_mac+1)<<19));
+ ret=fe_access(fe,0x3000,BIT(31)|BIT(30)|counter);
+ if(ret)goto interface;
+ ret=rtl_fe_tx_counter_read(&io,counter,counters);
+ if(ret)goto interface;
+ flow->bytes=(u64)counters[1]<<32|counters[0];flow->packets=counters[2];
+ data.action.mac_da_index=flow->destination_index;
+ data.action.egress_interface=counter;
+ rtl_fe_ipv4_action(action,&data.action);
+ rtl_fe_action_set(action,RTL_FE_L3_IF_COUNTER_EN,1);
+ ((__le32 *)fe->memory)[index]=cpu_to_le32(crc32);
+ memcpy(fe->memory+RTL_FE_ACTION_OFFSET+index*32,action,32);
+ dma_wmb();
+ ret=rtl_fe_main_age(&io,index,7);
+ if(ret)goto interface;
+ flow->published=true;
+ __set_bit(index,fe->hashes);__set_bit(counter,fe->counters);
+ list_add_tail(&flow->list,&fe->flows);
+ fe->installs++;
+ return 0;
+interface:
+ fe_write(fe,0x3004,flow->interface_saved);
+ fe_access(fe,0x3000,BIT(31)|BIT(30)|counter);
+destination:
+ if(flow->destination_owned)fe_destination_put(fe,flow);
+ fe_source_put(fe,flow->source_mac);
+free:
+ kfree(flow);
+ return ret;
+}
+static int fe_stats(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct flow_cls_offload *cls)
+{
+ struct rtl_dq_io io=fe_io(fe);
+ unsigned int words[7];
+ u64 bytes;
+ u64 byte_delta;
+ u32 packets;
+ u32 packet_delta;
+ int ret;
+
+ if(!flow->published)return -ENOENT;
+ ret=rtl_fe_tx_counter_read(&io,flow->counter,words);
+ if(ret)return ret;
+ bytes=(u64)words[1]<<32|words[0];packets=words[2];
+ if(bytes!=flow->bytes || packets!=flow->packets)flow->lastused=jiffies;
+ byte_delta=bytes-flow->bytes;packet_delta=packets-flow->packets;
+ /* The PE MIB includes Ethernet; conntrack accounts the network packet.
+  * Only untagged frames enter this profile, so the header is14 bytes. */
+ flow_stats_update(&cls->stats,byte_delta-(u64)packet_delta*ETH_HLEN,packet_delta,0,
+                   flow->lastused,FLOW_ACTION_HW_STATS_DELAYED);
+ flow->bytes=bytes;flow->packets=packets;
+ return 0;
+}
+static int fe_block_callback(enum tc_setup_type type,void *data,void *private)
+{
+ struct rtl_fe_port *port=private;
+ struct rtl_fe *fe=port->fe;
+ struct flow_cls_offload *cls=data;
+ struct rtl_fe_flow *flow;
+ int ret;
+
+ if(type!=TC_SETUP_CLSFLOWER)return -EOPNOTSUPP;
+ mutex_lock(&fe->lock);
+ flow=fe_flow(fe,cls->cookie);
+ switch(cls->command) {
+ case FLOW_CLS_REPLACE:ret=fe_replace(port,cls);break;
+ case FLOW_CLS_DESTROY:
+  ret=flow && flow->input==port?fe_delete(fe,flow):-ENOENT;
+  break;
+ case FLOW_CLS_STATS:
+  ret=flow && flow->input==port?fe_stats(fe,flow,cls):-ENOENT;
+  break;
+ default:ret=-EOPNOTSUPP;
+ }
+ if(ret && ret!=-EOPNOTSUPP && ret!=-ENOENT && ret!=-EEXIST)fe->misses++;
+ fe_collect_ports(fe);
+ mutex_unlock(&fe->lock);
+ return ret;
+}
+int rtl_fe_setup_tc(struct rtl_fe *fe,struct net_device *netdev,enum tc_setup_type type,void *data)
+{
+ struct rtl_fe_port *port;
+ struct flow_block_offload *block=data;
+ int ret;
+
+ if(!fe || type!=TC_SETUP_FT)return -EOPNOTSUPP;
+ if(block->binder_type!=FLOW_BLOCK_BINDER_TYPE_CLSACT_INGRESS)return -EOPNOTSUPP;
+ mutex_lock(&fe->lock);
+ port=fe_port(fe,netdev);
+ ret=port?flow_block_cb_setup_simple(block,&fe->blocks,fe_block_callback,port,port,true):-ENODEV;
+ mutex_unlock(&fe->lock);
+ return ret;
+}
+
+struct rtl_fe *rtl_fe_allocate(struct device *device,void __iomem *registers)
+{
+ struct rtl_fe *fe=kzalloc(sizeof(*fe),GFP_KERNEL);
+ unsigned int *defaults,i;
+
+ if(!fe)return ERR_PTR(-ENOMEM);
+ fe->device=device;fe->registers=registers;
+ mutex_init(&fe->lock);
+ INIT_LIST_HEAD(&fe->ports);INIT_LIST_HEAD(&fe->flows);INIT_LIST_HEAD(&fe->blocks);
+ fe->memory=dma_alloc_coherent(device,RTL_FE_MEMORY_BYTES,&fe->dma,GFP_KERNEL);
+ if(!fe->memory){kfree(fe);return ERR_PTR(-ENOMEM);}
+ defaults=fe->memory+RTL_FE_DEFAULT_OFFSET;
+ for(i=0;i<32;i++)rtl_fe_cpu_miss(defaults+i*4);
+ dma_wmb();
+ return fe;
+}
+int rtl_fe_add_port(struct rtl_fe *fe,struct net_device *netdev,unsigned int source,
+                    unsigned int destination,unsigned int llid)
+{
+ struct rtl_fe_port *port;
+
+ if(!fe)return 0;
+ port=kzalloc(sizeof(*port),GFP_KERNEL);
+ if(!port)return -ENOMEM;
+ port->fe=fe;port->netdev=netdev;port->source=source;port->destination=destination;port->llid=llid;
+ mutex_lock(&fe->lock);
+ list_add_tail(&port->list,&fe->ports);
+ netdev->hw_features|=NETIF_F_HW_TC;
+ netdev->features|=NETIF_F_HW_TC;
+ mutex_unlock(&fe->lock);
+ return 0;
+}
+void rtl_fe_remove_port(struct rtl_fe *fe,struct net_device *netdev)
+{
+ struct rtl_fe_port *port;
+ struct rtl_fe_flow *flow,*next;
+
+ if(!fe)return;
+ mutex_lock(&fe->lock);
+ port=fe_port(fe,netdev);
+ if(port) {
+  port->retired=true;
+  list_for_each_entry_safe(flow,next,&fe->flows,list)
+   if(flow->input==port || flow->output==port) {
+    int ret=fe_delete(fe,flow);
+    if(ret)fe->error=ret;
+   }
+  fe_collect_ports(fe);
+ }
+ mutex_unlock(&fe->lock);
+}
+void rtl_fe_flush_port(struct rtl_fe *fe,struct net_device *netdev)
+{
+ struct rtl_fe_port *port;
+ struct rtl_fe_flow *flow,*next;
+
+ if(!fe)return;
+ mutex_lock(&fe->lock);
+ port=fe_port(fe,netdev);
+ list_for_each_entry_safe(flow,next,&fe->flows,list)
+  if(flow->input==port || flow->output==port) {
+   int ret=fe_delete(fe,flow);
+   if(ret)fe->error=ret;
+  }
+ mutex_unlock(&fe->lock);
+}
+int rtl_fe_enable(struct rtl_fe *fe)
+{
+ int ret;
+
+ if(!fe)return -EOPNOTSUPP;
+ mutex_lock(&fe->lock);
+ if(fe->enabled){ret=0;goto unlock;}
+ ret=fe_prepare(fe);
+ if(ret){fe_restore(fe);goto unlock;}
+ /* The DMA tables, miss actions and port maps exist before admitting LAN. */
+ fe_write(fe,0xa5f8,(fe_read(fe,0xa5f8)&~(63U<<16))|(25U<<16));
+ fe->enabled=true;
+unlock:
+ fe->error=ret;
+ mutex_unlock(&fe->lock);
+ return ret;
+}
+int rtl_fe_disable(struct rtl_fe *fe)
+{
+ struct rtl_fe_flow *flow,*next;
+ unsigned int i;
+ int ret=0;
+
+ if(!fe)return 0;
+ mutex_lock(&fe->lock);
+ fe->enabled=false;
+ if(fe->prepared) {
+  for(i=0;i<ARRAY_SIZE(fe_registers);i++)
+   if(fe_registers[i]==0xa5f8)fe_write(fe,0xa5f8,fe->saved[i]);
+  usleep_range(1000,2000);
+  list_for_each_entry_safe(flow,next,&fe->flows,list) {
+   ret=fe_delete(fe,flow);
+   if(ret)goto unlock;
+  }
+  ret=fe_restore(fe);
+ }
+ fe_collect_ports(fe);
+unlock:
+ fe->error=ret;
+ mutex_unlock(&fe->lock);
+ return ret;
+}
+void rtl_fe_free(struct rtl_fe *fe)
+{
+ struct rtl_fe_port *port,*next;
+ struct rtl_fe_flow *flow,*flow_next;
+
+ if(!fe)return;
+ rtl_fe_disable(fe);
+ list_for_each_entry_safe(flow,flow_next,&fe->flows,list){list_del(&flow->list);kfree(flow);}
+ list_for_each_entry_safe(port,next,&fe->ports,list){list_del(&port->list);kfree(port);}
+ dma_free_coherent(fe->device,RTL_FE_MEMORY_BYTES,fe->memory,fe->dma);
+ kfree(fe);
+}
+ssize_t rtl_fe_state(struct rtl_fe *fe,char *buffer)
+{
+ ssize_t length;
+
+ if(!fe)return sysfs_emit(buffer,"available=0\n");
+ mutex_lock(&fe->lock);
+ length=sysfs_emit(buffer,"available=1 enabled=%u prepared=%u error=%d flows=%u hash_entries=%u counter_slots=%u installs=%llu deletes=%llu rejected=%llu\n",
+  fe->enabled,fe->prepared,fe->error,bitmap_weight(fe->counters,FE_COUNTERS),RTL_FE_HASH_ENTRIES,
+  FE_COUNTERS,fe->installs,fe->deletes,fe->misses);
+ mutex_unlock(&fe->lock);
+ return length;
+}

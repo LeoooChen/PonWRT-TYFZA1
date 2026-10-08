@@ -210,7 +210,7 @@ struct mutex {pthread_mutex_t native;bool held;};
 struct net_device {};
 struct rtl9617c_pon {
 	struct mutex lock,control_lock;enum rtl_pon_mode mode;
-    bool serdes_configured,mac_prepared,pdc_configured,puc_configured,traffic_enabled;
+    bool serdes_configured,mac_prepared,pdc_configured,puc_configured,traffic_enabled,fe_enabled;
     int mac_error;struct {struct net_device *netdev;} oam_endpoint;
     void *mac,*epon_control,*control,*serdes_init,*dev,*tx_disable;
 };
@@ -246,6 +246,9 @@ static void rtl_pon_update(void *reg,u32 mask,u32 value) {writel((readl(reg)&~ma
 #define dev_info(...) ((void)0)
 static void rtl_pon_mpcp_stop(struct rtl9617c_pon *pon) {(void)pon;}
 static void rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon) {assert(pon->control_lock.held);}
+static int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon,bool enable) {
+    assert(pon->control_lock.held && !pon->lock.held);pon->fe_enabled=enable;return 0;
+}
 static void rtl_pon_oam_carrier(struct rtl9617c_pon *pon) {assert(pon->lock.held);}
 static int netif_running(struct net_device *dev) {(void)dev;return 1;}
 '''
@@ -262,7 +265,8 @@ int main(void) {
         assert(((epon>>16)&3)==mode+1);
         pon.puc_configured=pon.pdc_configured=true;
         assert(rtl_pon_epon_traffic(&pon,true)==0 && pon.traffic_enabled);
-        assert(rtl_pon_epon_traffic(&pon,false)==0 && !pon.traffic_enabled);
+        pon.fe_enabled=true;
+        assert(rtl_pon_epon_traffic(&pon,false)==0 && !pon.traffic_enabled && !pon.fe_enabled);
     }
     /* Another thread switches while the caller is about to take the mutex. */
     for(unsigned int mode=RTL_PON_GPON;mode<RTL_PON_MODE_COUNT;mode++) {

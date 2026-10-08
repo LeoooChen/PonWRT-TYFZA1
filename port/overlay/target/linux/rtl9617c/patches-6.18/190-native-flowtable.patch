@@ -1,0 +1,25 @@
+diff --git a/drivers/net/ethernet/realtek/Kconfig b/drivers/net/ethernet/realtek/Kconfig
+index 33085f6..366198f 100644
+--- a/drivers/net/ethernet/realtek/Kconfig
++++ b/drivers/net/ethernet/realtek/Kconfig
+@@ -16,6 +16,7 @@ config RTL9617C_XRAM_ETH
+ 	tristate "RTL9617C management XRAM Ethernet"
+ 	depends on OF && ARCH_RTL9617C && PHYLIB
+ 	select CRC32
++	select NET_CLS_ACT
+ 	help
+ 	  Single-port management Ethernet through the Taurus XRAM packet path.
+ 
+diff --git a/drivers/net/ethernet/realtek/Makefile b/drivers/net/ethernet/realtek/Makefile
+index 92acc4d..b3e8227 100644
+--- a/drivers/net/ethernet/realtek/Makefile
++++ b/drivers/net/ethernet/realtek/Makefile
+@@ -3,7 +3,7 @@ obj-$(CONFIG_RTL9617C_BOSA) += rtl9617c-bosa.o
+ obj-$(CONFIG_RTL9617C_PON) += rtl9617c-pon-core.o
+ rtl9617c-pon-core-y := rtl9617c-pon.o rtl9617c-pon-serdes.o rtl9617c-pon-epon.o rtl9617c-pon-mpcp.o rtl9617c-pon-pdc.o rtl9617c-pon-puc.o rtl9617c-pon-oam.o
+ obj-$(CONFIG_RTL9617C_XRAM_ETH) += rtl9617c-eth.o
+-rtl9617c-eth-y := rtl9617c-xram.o rtl9617c-dma.o rtl9617c-qm.o
++rtl9617c-eth-y := rtl9617c-xram.o rtl9617c-dma.o rtl9617c-qm.o rtl9617c-fe.o
+ #
+ # Makefile for the Realtek network device drivers.
+ #

@@ -33,7 +33,8 @@ int rtl_pon_pdc_refresh(struct rtl9617c_pon *pon)
 		if (pon->pdc_source[index] == source)
 			continue;
 		for (bank = 0; bank < 2; bank++) {
-			writel((16 << 3) | (7 << 9) | BIT(15), pon->mac + PDC_DATA0);
+			writel((pon->fe_enabled?24:16) << 3 | (7 << 9) |
+			       (pon->fe_enabled?0:BIT(15)), pon->mac + PDC_DATA0);
 			writel((source - 32) << 4, pon->mac + PDC_DATA1);
 			ret = rtl_pdc_access(pon, index | (bank << 7), true);
 			if (ret) {
@@ -87,6 +88,38 @@ unlock:
 	pon->pdc_error = ret;
 	mutex_unlock(&pon->lock);
 	return ret;
+}
+
+int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon,bool enable)
+{
+ unsigned int entry,bank;
+ int ret=0;
+
+ lockdep_assert_held(&pon->control_lock);
+ mutex_lock(&pon->lock);
+ if(enable && (!rtl_pon_mode_is_epon(pon->mode) || !pon->pdc_configured ||
+               !pon->puc_configured || !pon->traffic_enabled)) {
+  ret=-EAGAIN;
+  goto unlock;
+ }
+ if(enable) {
+  ret=rtl9617c_ni_fe_enable(pon->ni_dev);
+  if(ret)goto unlock;
+ }
+ /* OAM/control maps retain CPU16 and their original header container. */
+ if(pon->pdc_configured)
+  for(entry=0;entry<64;entry++)
+   for(bank=0;bank<2;bank++) {
+    writel(((enable?24:16)<<3)|(7<<9)|(enable?0:BIT(15)),pon->mac+PDC_DATA0);
+    writel((pon->pdc_source[entry]-32)<<4,pon->mac+PDC_DATA1);
+    ret=rtl_pdc_access(pon,entry|(bank<<7),true);
+    if(ret)goto unlock;
+   }
+ pon->fe_enabled=enable;
+ if(!enable)ret=rtl9617c_ni_fe_disable(pon->ni_dev);
+unlock:
+ mutex_unlock(&pon->lock);
+ return ret;
 }
 
 ssize_t rtl_pon_pdc_state(struct rtl9617c_pon *pon, char *buf)

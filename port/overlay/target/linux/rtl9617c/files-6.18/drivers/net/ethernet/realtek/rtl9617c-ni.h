@@ -29,4 +29,11 @@ void rtl9617c_ni_close(struct device *dev, struct net_device *owner);
 netdev_tx_t rtl9617c_ni_transmit(struct device *dev, struct net_device *owner,
 			       struct sk_buff *skb, const struct rtl9617c_ni_frame *frame);
 int rtl9617c_ni_oam_configure(struct device *dev);
+int rtl9617c_ni_fe_add_port(struct device *dev,struct net_device *netdev,unsigned int llid);
+void rtl9617c_ni_fe_remove_port(struct device *dev,struct net_device *netdev);
+int rtl9617c_ni_fe_setup_tc(struct device *dev,struct net_device *netdev,
+ enum tc_setup_type type,void *data);
+int rtl9617c_ni_fe_enable(struct device *dev);
+int rtl9617c_ni_fe_disable(struct device *dev);
+ssize_t rtl9617c_ni_fe_state(struct device *dev,char *buffer);
 #endif

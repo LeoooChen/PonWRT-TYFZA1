@@ -123,7 +123,13 @@ static int rtl_data_set_address(struct net_device *dev, void *address)
  return ret;
 }
 
+static int rtl_data_setup_tc(struct net_device *dev,enum tc_setup_type type,void *data)
+{
+ struct rtl_oam_port *port=netdev_priv(dev);
+ return rtl9617c_ni_fe_setup_tc(port->pon->ni_dev,dev,type,data);
+}
 static const struct net_device_ops rtl_data_ops = {
+ .ndo_setup_tc = rtl_data_setup_tc,
 	.ndo_open = rtl_oam_open,
 	.ndo_stop = rtl_oam_stop,
 	.ndo_start_xmit = rtl_data_transmit,
@@ -282,7 +288,17 @@ static struct net_device *rtl_oam_allocate(struct rtl9617c_pon *pon, unsigned in
 		eth_hw_addr_random(dev);
 	}
 	netif_carrier_off(dev);
+	if(!control && rtl9617c_ni_fe_add_port(pon->ni_dev,dev,index)) {
+		free_netdev(dev);
+		return NULL;
+	}
 	return dev;
+}
+static void rtl_oam_free(struct net_device *dev)
+{
+ struct rtl_oam_port *port=netdev_priv(dev);
+ if(!port->control)rtl9617c_ni_fe_remove_port(port->pon->ni_dev,dev);
+ free_netdev(dev);
 }
 
 int rtl_pon_oam_resize(struct rtl9617c_pon *pon, unsigned int count)
@@ -305,7 +321,7 @@ int rtl_pon_oam_resize(struct rtl9617c_pon *pon, unsigned int count)
 			}
 			ret = register_netdevice(created[role][i]);
 			if (ret) {
-				free_netdev(created[role][i]);
+				rtl_oam_free(created[role][i]);
 				created[role][i] = NULL;
 				goto undo;
 			}
@@ -322,7 +338,7 @@ int rtl_pon_oam_resize(struct rtl9617c_pon *pon, unsigned int count)
 			rcu_assign_pointer(devices[i], NULL);
 			synchronize_net();
 			unregister_netdevice(dev);
-			free_netdev(dev);
+			rtl_oam_free(dev);
 		}
 	}
 	rtnl_unlock();
@@ -336,7 +352,7 @@ undo:
 			rcu_assign_pointer(devices[i], NULL);
 			synchronize_net();
 			unregister_netdevice(created[role][i]);
-			free_netdev(created[role][i]);
+			rtl_oam_free(created[role][i]);
 		}
 	}
 	rtnl_unlock();
@@ -372,7 +388,7 @@ int rtl_pon_oam_init(struct rtl9617c_pon *pon)
 	return 0;
 free:
 	rcu_assign_pointer(pon->oam_devices[0], NULL);
-	free_netdev(dev);
+	rtl_oam_free(dev);
 	return ret;
 }
 

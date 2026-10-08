@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <arpa/inet.h>
 
 static void be16(unsigned char *p,unsigned int value) {p[0]=value>>8;p[1]=value;}
 static unsigned int sum(const unsigned char *p,unsigned int size)
@@ -24,14 +25,16 @@ int main(int argc,char **argv)
  char error[PCAP_ERRBUF_SIZE];
  unsigned char frame[128]={0};
  const unsigned char da[]={0,0x50,0xc2,1,2,3},sa[]={0,0xe0,0x4c,0x16,0x74,0xb0};
- const unsigned char source[]={10,23,42,1},destination[]={192,168,1,1};
+ unsigned char source[]={10,23,42,1};
+ const unsigned char destination[]={192,168,1,1};
  const char payload[]="TYFZA1-FE-NAT-TEST";
  unsigned char *ip=frame+14,*udp=frame+34;
  unsigned int size=14+20+8+sizeof(payload),udp_size=8+sizeof(payload),value;
  pcap_t *pcap;
  int sent;
 
- if(argc!=2 && argc!=3){fprintf(stderr,"usage: mac_fe_inject interface\n");return 1;}
+ if(argc<2 || argc>4){fprintf(stderr,"usage: mac_fe_inject interface [interactive [sourceIPv4]]\n");return 1;}
+ if(argc==4 && inet_pton(AF_INET,argv[3],source)!=1){fprintf(stderr,"invalid sourceIPv4\n");return 1;}
  memcpy(frame,da,6);memcpy(frame+6,sa,6);be16(frame+12,0x800);
  ip[0]=0x45;be16(ip+2,20+udp_size);ip[8]=64;ip[9]=17;
  memcpy(ip+12,source,4);memcpy(ip+16,destination,4);be16(ip+10,finish(sum(ip,20)));
@@ -41,7 +44,7 @@ int main(int argc,char **argv)
  be16(udp+6,value?value:65535);
  pcap=pcap_open_live(argv[1],2048,0,10,error);
  if(!pcap){fprintf(stderr,"%s\n",error);return 1;}
- if(argc==3) {
+ if(argc>=3) {
   char line[32];
   static const unsigned char gateway[]={192,168,71,1};
   static const unsigned char dns_server[]={116,228,111,118};

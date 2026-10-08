@@ -26,6 +26,7 @@
 #include "rtl9617c-dma.h"
 #include "rtl9617c-qm.h"
 #include "rtl9617c-ni.h"
+#include "rtl9617c-fe.h"
 
 #define GLB_STATIC 0xa01c
 #define PORT_TO_CPU GENMASK(3, 0)
@@ -70,7 +71,46 @@ struct rtl_xram {
 	int rx_irq;
 	bool irq_requested;
 	unsigned int engine_users;
+	struct rtl_fe *fe;
 };
+
+int rtl9617c_ni_fe_add_port(struct device *dev,struct net_device *netdev,unsigned int llid)
+{
+ struct rtl_xram *priv=netdev_priv(dev_get_drvdata(dev));
+ return rtl_fe_add_port(priv->fe,netdev,7,32+llid,llid);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_fe_add_port);
+void rtl9617c_ni_fe_remove_port(struct device *dev,struct net_device *netdev)
+{
+ struct rtl_xram *priv=netdev_priv(dev_get_drvdata(dev));
+ rtl_fe_remove_port(priv->fe,netdev);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_fe_remove_port);
+int rtl9617c_ni_fe_setup_tc(struct device *dev,struct net_device *netdev,
+ enum tc_setup_type type,void *data)
+{
+ struct rtl_xram *priv=netdev_priv(dev_get_drvdata(dev));
+ return rtl_fe_setup_tc(priv->fe,netdev,type,data);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_fe_setup_tc);
+int rtl9617c_ni_fe_enable(struct device *dev)
+{
+ struct rtl_xram *priv=netdev_priv(dev_get_drvdata(dev));
+ return rtl_fe_enable(priv->fe);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_fe_enable);
+int rtl9617c_ni_fe_disable(struct device *dev)
+{
+ struct rtl_xram *priv=netdev_priv(dev_get_drvdata(dev));
+ return rtl_fe_disable(priv->fe);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_fe_disable);
+ssize_t rtl9617c_ni_fe_state(struct device *dev,char *buffer)
+{
+ struct rtl_xram *priv=netdev_priv(dev_get_drvdata(dev));
+ return rtl_fe_state(priv->fe,buffer);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_fe_state);
 
 int rtl9617c_ni_report_configure(struct device *dev, unsigned int low, unsigned int high)
 {
@@ -441,6 +481,7 @@ void rtl9617c_ni_close(struct device *dev, struct net_device *owner)
 	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
 	unsigned long flags;
 
+	rtl_fe_flush_port(priv->fe,owner);
 	spin_lock_irqsave(&priv->tx_lock, flags);
 	rtl_dma_tx_forget(&priv->dma, owner);
 	spin_unlock_irqrestore(&priv->tx_lock, flags);
@@ -484,7 +525,13 @@ int rtl9617c_ni_oam_configure(struct device *dev)
 }
 EXPORT_SYMBOL_GPL(rtl9617c_ni_oam_configure);
 
+static int rtl_setup_tc(struct net_device *netdev,enum tc_setup_type type,void *data)
+{
+ struct rtl_xram *priv=netdev_priv(netdev);
+ return rtl_fe_setup_tc(priv->fe,netdev,type,data);
+}
 static const struct net_device_ops rtl_netdev_ops = {
+ .ndo_setup_tc = rtl_setup_tc,
 	.ndo_open = rtl_open,
 	.ndo_stop = rtl_stop,
 	.ndo_start_xmit = rtl_xmit,
@@ -769,6 +816,12 @@ static int rtl_probe(struct platform_device *pdev)
 			goto free_dma;
 		priv->irq_requested = true;
 	}
+	if(priv->qm_rx) {
+		priv->fe=rtl_fe_allocate(dev,priv->ni);
+		if(IS_ERR(priv->fe)){ret=PTR_ERR(priv->fe);priv->fe=NULL;goto free_dma;}
+		ret=rtl_fe_add_port(priv->fe,netdev,priv->port,priv->port,0);
+		if(ret)goto free_dma;
+	}
 	ret = register_netdev(netdev);
 	if (ret)
 		goto free_dma;
@@ -784,6 +837,7 @@ static int rtl_probe(struct platform_device *pdev)
 unregister_netdev:
 	unregister_netdev(netdev);
 free_dma:
+	rtl_fe_free(priv->fe);
 	if (priv->irq_requested)
 		free_irq(priv->rx_irq, priv);
 	if (priv->qm_rx && priv->qm.memory)
@@ -806,6 +860,7 @@ static void rtl_remove(struct platform_device *pdev)
 
 	sysfs_remove_groups(&pdev->dev.kobj, rtl_native_groups);
 	unregister_netdev(dev);
+	rtl_fe_free(priv->fe);
 	if (priv->irq_requested)
 		free_irq(priv->rx_irq, priv);
 	if (priv->qm_rx)

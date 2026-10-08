@@ -56,7 +56,9 @@
   "native_sources": {
     "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-format.h": "407534222bfc5c95b476144675c58e1464cc2caa702c57d52439f92c05118b0c",
     "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-table.h": "a23c79c29bf3533042b7588c1b1c63646a80ef6b58b2ef9a52e32f0184357fa1",
-    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-pipeline.h": "6139817974cc984e764564c62a66a41202f69640d3ded0cf00b0ba704a902e33"
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-pipeline.h": "6139817974cc984e764564c62a66a41202f69640d3ded0cf00b0ba704a902e33",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe.c": "bc26aaccf3d0b2e1a347ddc240f713e39c659f37d11bee3efa96e260a17985b9",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe.h": "7145474ff7ba128944b6dec06d651baca4c4a2d8087a255b7075098b8bfa384a"
   },
   "hardware_CRC": {
     "vectors": 128,
@@ -191,5 +193,57 @@
     "dropped_packets": 0,
     "log": "logs/fe-physical-lan-pon-device.txt",
     "Hash_age_observation": "initial age1 stayed1 across packet hits with current configuration; use verified per-flow IFID counters for activity until age behavior is resolved"
+  },
+  "Linux_flowtable_backend": {
+    "callbacks": [
+      "TC_SETUP_FT",
+      "FLOW_CLS_REPLACE",
+      "FLOW_CLS_DESTROY",
+      "FLOW_CLS_STATS"
+    ],
+    "protocols_verified": [
+      "IPv4 UDP",
+      "IPv4 TCP"
+    ],
+    "counter_slots": 64,
+    "Hash_entries": 4096,
+    "default_boot_enabled": false,
+    "dynamic_hardware_UDP_verified": true,
+    "dynamic_hardware_TCP_verified": true,
+    "UDP_evidence": "logs/fe-dynamic-udp02-check.json",
+    "TCP_evidence": "logs/fe-dynamic-tcp02-check.json",
+    "MPCP_stop_clears_FE_and_restores_CPU_PDC": true,
+    "control_evidence": "logs/flowtable04-mpcp-stop-restart.txt",
+    "registration_authentication_recovered": "logs/flowtable04-restart-recovered.txt",
+    "GRO_evidence_limit": "GRO merges software packets;nonzero target CPU frames are not hardware bypass evidence",
+    "unverified_or_pending": [
+      "UCI/LuCI persistent enable",
+      "IPv6/VLAN/tunnel hardware rules",
+      "dual-address NAT",
+      "other EPON optical links",
+      "throughput and long-duration validation"
+    ]
+  },
+  "native_flow_tests": {
+    "Linux_NAT_builders_vectors": 1024,
+    "source_parser_test": "scripts/test_fe_flow_parser.py",
+    "MAC_refs_release_retry": "scripts/test_fe_flow_release.py",
+    "IP_bytes_idle_lastused_and_counter_wrap": "scripts/test_fe_flow_stats.py",
+    "sanitizers": [
+      "ASan",
+      "UBSan"
+    ]
+  },
+  "latest_native_boot": {
+    "payload": "artifacts/full-pon-flowtable04-6.18.55",
+    "build_unit": "ponwrt-tyfza1-lan-20261009-035225",
+    "FIT_SHA256": "02351a56b688ea757f00ea26527fc94d05e174df5c39197b39263dd618ab519f",
+    "FIT_bytes": 6087828,
+    "hardware_boot_verified": true,
+    "PON_auth_accepted": true,
+    "kernel_cpus": 4,
+    "default_FE_enabled": false,
+    "current_FE_enabled": false,
+    "payload_verifier": "logs/flowtable04-payload-verification.json"
   }
 }

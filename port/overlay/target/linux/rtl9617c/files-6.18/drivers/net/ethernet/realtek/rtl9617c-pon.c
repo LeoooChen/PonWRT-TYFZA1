@@ -484,7 +484,28 @@ static ssize_t traffic_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_RW(traffic);
 
+static ssize_t fe_show(struct device *device,struct device_attribute *attribute,char *buffer)
+{
+ struct rtl9617c_pon *pon=dev_get_drvdata(device);
+ return rtl9617c_ni_fe_state(pon->ni_dev,buffer);
+}
+static ssize_t fe_store(struct device *device,struct device_attribute *attribute,
+ const char *buffer,size_t count)
+{
+ struct rtl9617c_pon *pon=dev_get_drvdata(device);
+ bool enable;
+ int ret=kstrtobool(buffer,&enable);
+
+ if(ret)return ret;
+ mutex_lock(&pon->control_lock);
+ ret=rtl_pon_fe_configure_locked(pon,enable);
+ mutex_unlock(&pon->control_lock);
+ return ret?ret:count;
+}
+static DEVICE_ATTR_RW(fe);
+
 static struct attribute *rtl9617c_pon_attrs[] = {
+ &dev_attr_fe.attr,
 	&dev_attr_state.attr,
 	&dev_attr_bosa.attr,
 	&dev_attr_serdes.attr,

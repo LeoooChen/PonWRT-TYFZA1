@@ -218,6 +218,7 @@ int rtl_pon_mpcp_init(struct rtl9617c_pon *pon, int irq)
 
 void rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon)
 {
+ if(pon->fe_enabled)rtl_pon_fe_configure_locked(pon,false);
 	lockdep_assert_held(&pon->control_lock);
 	cancel_delayed_work_sync(&pon->mpcp_work);
 	mutex_lock(&pon->lock);

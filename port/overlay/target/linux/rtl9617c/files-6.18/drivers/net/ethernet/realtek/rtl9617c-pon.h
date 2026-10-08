@@ -68,6 +68,7 @@ struct rtl9617c_pon {
 	u32 last_optical_irq;
 	int mpcp_irq;
 	struct rtl_mpcp_backoff backoff;
+	bool fe_enabled;
 };
 
 void rtl_pon_update(void __iomem *reg, u32 mask, u32 value);
@@ -90,6 +91,7 @@ int rtl_pon_llid_update(struct rtl9617c_pon *pon, bool add, unsigned int index,
 int rtl_pon_pdc_configure(struct rtl9617c_pon *pon);
 int rtl_pon_pdc_refresh(struct rtl9617c_pon *pon);
 ssize_t rtl_pon_pdc_state(struct rtl9617c_pon *pon, char *buf);
+int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon,bool enable);
 int rtl_pon_puc_configure(struct rtl9617c_pon *pon);
 ssize_t rtl_pon_puc_state(struct rtl9617c_pon *pon, char *buf);
 int rtl_pon_oam_init(struct rtl9617c_pon *pon);
