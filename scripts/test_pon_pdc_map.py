@@ -63,8 +63,9 @@ int main(void) {
         unsigned int entry=index&63;
         unsigned int expected=7;
         if(!(index&64))expected=entry==17?40:entry==20?32:32+(entry<32?entry:0);
-        assert(((maps[index][0]>>9)&63)==expected);
-        assert(((maps[index][0]>>3)&63)==16 && (maps[index][0]&BIT(15)) && !maps[index][1]);
+        assert(((maps[index][0]>>9)&63)==7);
+        assert(((maps[index][1]>>4)&511)==((index&64)?0:expected-32));
+        assert(((maps[index][0]>>3)&63)==16 && (maps[index][0]&BIT(15)) && !(maps[index][1]&15));
         assert((maps[index][0]&7)==((index&64)?7:0));
     }
     /* Registration changes table slot17 from MAC8 to MAC3; only its two
@@ -73,7 +74,7 @@ int main(void) {
     pon.lock.held=true;
     unsigned int before=accesses;
     assert(rtl_pon_pdc_refresh(&pon)==0 && accesses==before+2);
-    assert(((maps[17][0]>>9)&63)==35 && ((maps[145][0]>>9)&63)==35);
+    assert(((maps[17][1]>>4)&511)==3 && ((maps[145][1]>>4)&511)==3);
     assert(((maps[81][0]>>9)&63)==7 && ((maps[209][0]>>9)&63)==7);
     before=accesses;assert(rtl_pon_pdc_refresh(&pon)==0 && accesses==before);
     registers[(0x64+17*4)/4]=BIT(23)|(4<<24)|0x1234;

@@ -1,0 +1,86 @@
+{
+  "date": "2026-10-08",
+  "mode": "epon-d10g",
+  "LLIDs_hardware_tested": 1,
+  "booted_FIT": "artifacts/full-pon-live-fec02-6.18.55/ram-pon/image.itb",
+  "booted_FIT_sha256": "eaf8773ccbe204135fc702ac734346dcaf87d73e258e3d5e48b2272a47c455cf",
+  "RAM_PON_module": "artifacts/live-pon-modules/tyfza1_pon_live.ko",
+  "RAM_PON_module_sha256": "e4900b7d5236de98a357d756c8eb5491616d5560fed778933c30a050d1c62b77",
+  "MPCP_registered": true,
+  "LOID_authentication": "accepted",
+  "password": "blank",
+  "OLT_FEC_Set": {
+    "branch": 7,
+    "leaf": "013A",
+    "value": 2,
+    "response": "80",
+    "kernel_readback": {
+      "encoder": "00000002",
+      "btc": "03100114",
+      "report": "0110c081"
+    }
+  },
+  "WAN": {
+    "protocol": "dhcp",
+    "device": "pon-data0",
+    "VLAN": "untagged",
+    "IPv4": "192.168.71.28/24",
+    "gateway": "192.168.71.1",
+    "lease_seconds": 86400
+  },
+  "connectivity": {
+    "gateway_ping_5_of_5": true,
+    "public_ping_5_of_5": true,
+    "DNS": true,
+    "HTTPS_cert_verified": true,
+    "HTTPS_download_bytes": 9097,
+    "LAN_en5_via_software_NAT_ping_5_of_5": true
+  },
+  "diagnosis": {
+    "before": "DHCP Offers observed on eth0, pon-data0 RX zero",
+    "after": "PDC physical source7 with LLID in disabled-policer POL_ID; WAN receives lease"
+  },
+  "tests": {
+    "native_FEC_real_codec_backend_ASan_UBSan": true,
+    "daemon_ARM64_musl_netnamespace_cases": 13,
+    "PDC_and_receive_32_LLID_models": true,
+    "QM_POL_ID_13_and_31_model": true,
+    "large_NAPI_budget_refill_regression": true,
+    "control_transaction_and_address_regression": true,
+    "GPIO_patch_zero_fuzz_Linux61855": true
+  },
+  "evidence_logs": [
+    "logs/serial-20261008-202000.txt",
+    "logs/live-downstream01-device.txt",
+    "logs/live-downstream01-internet.txt",
+    "logs/live-downstream01-final-state.txt",
+    "logs/live-downstream01-lan-nat-ping.txt"
+  ],
+  "integrated_downstream_build": {
+    "unit": "ponwrt-tyfza1-lan-20261008-223541.service",
+    "payload": "artifacts/full-pon-downstream01-6.18.55",
+    "status": "running",
+    "hardware_boot_verified": false
+  },
+  "other_families_hardware_tested": false,
+  "multiple_LLID_hardware_tested": false,
+  "final_UBI_installation_verified": false,
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.c": "aa6f6669af3df6f2ada31f2b4cc327b322a4b263b5e5832241aff0d82317e7fa",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.h": "941b452c6f56096aa22d086795ceedc60326169394dd73a9bb065235a4bd13c2",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-serdes.c": "8ae4545aadc7701663ae758c52d96825343c881317a8dd47057e2e12a2c8880a",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-epon.c": "8446c6abb73d9452a99a13276c9ee3f67c5784dc7315fdfa68eed1f571f52d69",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-mpcp.c": "be830211f0d58fb0373c5fa29be80424dc609aa45460cb49004c2ebad64c25a7",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-pdc.c": "4ad149f55ec479f61717412e9942f571e692f6a98319d118a554e034281d426a",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-puc.c": "08ad9103f8d66ad432d27e729903dd4c2b9a16974e9ebf5fdf3fffa2f91cbabd",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-oam-format.h": "0c619deb3d185dbd5888f84fb57fad51752bf155c8f5719fa30bb6b66d18b3c9",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-oam.c": "6f10768431186d858b7d4c99ccc83412621ab6d18cec2702457bcb2e6639013a",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-mode.h": "cfa99fc01a012fcfeed34b817db5cd6b961b8d84f29c6e171ecff200bb6d39db",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-queue.h": "2bc1bed1de5525c660f4646d6719567b2dfbcb73c721fa75388b38b736f90077",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-data.h": "5168583279209fb9ff86801d5fc9bbd7afb86b3fbf5d70c4077c6861540a53e0",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-fec.h": "dea71e80e9129fabfa8ae62c1e4657f7471873dea00115c222edccaebc3804e4",
+    "port/packages/tyfza1-pon-control/src/pon-oam.c": "02a2adbe69f6e51261c29eb4c311e2a22f12ef983f26c53cace516aea58c87a7",
+    "port/packages/tyfza1-pon-control/src/pon-oamd.c": "30bad668ba06aa4d5123a3b867e770f4a13996ef70179eb351117e893e3213bb",
+    "port/packages/tyfza1-pon-control/src/pon-backend.c": "9b6b382706f50cf2f764f8d9f1c696ee7c82ae8be1106784524ba5440bd8549b"
+  }
+}

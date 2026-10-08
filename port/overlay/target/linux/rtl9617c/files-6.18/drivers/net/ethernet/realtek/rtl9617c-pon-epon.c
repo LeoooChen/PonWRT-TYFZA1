@@ -69,6 +69,7 @@ int rtl_pon_epon_prepare_locked(struct rtl9617c_pon *pon)
 	int ret;
 
 	lockdep_assert_held(&pon->control_lock);
+	gpiod_set_value_cansleep(pon->tx_disable, 1);
 	rtl_pon_mpcp_stop_locked(pon);
 	mutex_lock(&pon->lock);
 	if (!rtl_pon_mode_is_epon(pon->mode)) {
@@ -139,6 +140,8 @@ int rtl_pon_epon_traffic_locked(struct rtl9617c_pon *pon, bool enable)
 	int ret = 0;
 
 	lockdep_assert_held(&pon->control_lock);
+	if (!enable)
+		gpiod_set_value_cansleep(pon->tx_disable, 1);
 	mutex_lock(&pon->lock);
 	if (!rtl_pon_mode_is_epon(pon->mode)) {
 		ret = enable ? -EOPNOTSUPP : 0;
@@ -158,6 +161,7 @@ int rtl_pon_epon_traffic_locked(struct rtl9617c_pon *pon, bool enable)
 	rtl_pon_update(pon->mac + TX_1G, BIT(0),
 		enable && pon->mode != RTL_PON_EPON_BI10G ? BIT(0) : 0);
 	pon->traffic_enabled = enable;
+	gpiod_set_value_cansleep(pon->tx_disable, !enable);
 	rtl_pon_oam_carrier(pon);
 unlock:
 	mutex_unlock(&pon->lock);

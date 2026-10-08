@@ -13,6 +13,7 @@ struct rtl_oam_port {
 	struct rtl9617c_pon *pon;
 	unsigned int llid;
 	bool control;
+	bool mac_configured;
 };
 
 static ssize_t llid_index_show(struct device *device, struct device_attribute *attribute, char *buf)
@@ -112,10 +113,21 @@ static const struct net_device_ops rtl_oam_ops = {
 	.ndo_validate_addr = eth_validate_addr,
 };
 
+static int rtl_data_set_address(struct net_device *dev, void *address)
+{
+ struct rtl_oam_port *port = netdev_priv(dev);
+ int ret = eth_mac_addr(dev, address);
+
+ if (!ret)
+  port->mac_configured = true;
+ return ret;
+}
+
 static const struct net_device_ops rtl_data_ops = {
 	.ndo_open = rtl_oam_open,
 	.ndo_stop = rtl_oam_stop,
 	.ndo_start_xmit = rtl_data_transmit,
+	.ndo_set_mac_address = rtl_data_set_address,
 	.ndo_validate_addr = eth_validate_addr,
 };
 
@@ -125,8 +137,13 @@ static void rtl_oam_receive(struct rtl9617c_ni_endpoint *endpoint, struct napi_s
 	struct rtl9617c_pon *pon = container_of(endpoint, struct rtl9617c_pon, oam_endpoint);
 	struct net_device *dev;
 	struct net_device *drop_owner = endpoint->netdev;
-	unsigned int llid, offset;
+	unsigned int llid, offset, flow = source >> 8;
 
+	source &= 255;
+	/* PDC preserves the physical PON source. Its disabled-policer POL_ID
+	 * tags normal Ethernet frames with their LLID. OAM keeps its container. */
+	if (source == 7 && !rtl_oam_receive_offset(skb->data, skb->len, &llid))
+		source = flow < 32 ? 32 + flow : 255;
 	if (source >= 32 && source < 64) {
 		llid = source - 32;
 		dev = rcu_dereference(pon->data_devices[llid]);
@@ -233,7 +250,7 @@ void rtl_pon_oam_address(struct rtl9617c_pon *pon)
 		if (dev)
 			rtl_port_address(dev, pon->onu_mac, i);
 		dev = rtnl_dereference(pon->data_devices[i]);
-		if (dev)
+		if (dev && !((struct rtl_oam_port *)netdev_priv(dev))->mac_configured)
 			rtl_port_address(dev, pon->onu_mac, i);
 	}
 }

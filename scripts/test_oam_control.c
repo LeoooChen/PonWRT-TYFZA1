@@ -85,6 +85,27 @@ int main(void)
 	message(frame, accepted, sizeof(accepted));
 	assert(pon_oam_receive(&session, &identity, frame, 60, reply) == PON_OAM_HANDLED);
 	assert(session.auth == PON_AUTH_ACCEPTED && session.auth_results == 1);
+	/* Live OLT: five advertised versions and revision1 -> revision0 after
+	 * authentication, with the stable flag and the same Remote echo. */
+	{
+		struct pon_oam_session live = session;
+		uint8_t info[PON_OAM_FRAME_MAX];
+		pon_oam_information(&live, &identity, info);
+		memcpy(info + 20, live.peer_local, 14);
+		info[21] ^= 1;
+		info[16] = 0x50;
+		info[34] = 2; info[35] = 16;
+		memcpy(info + 36, live.last_local, 14);
+		memcpy(info + 50, "\xfe\x1b\x11\x11\x11\x01\x30\x11\x11\x11\x30\x11\x11\x11\x21\x11\x11\x11\x20\x11\x11\x11\x13\x11\x11\x11\x01\0\0", 29);
+		assert(pon_oam_receive(&live, &identity, info, 79, reply) == PON_OAM_HANDLED);
+		assert(live.local_echoed && live.generation == session.generation);
+		assert(live.auth == PON_AUTH_ACCEPTED && live.auth_successes == 1);
+		assert(live.extension_advertised && live.extension_version == 0x30);
+		assert(pon_oam_information(&live, &identity, reply) == 63);
+		assert(reply[51] == 11 && reply[60] == 0x30);
+		info[51] = 26;
+		assert(pon_oam_receive(&live, &identity, info, 79, reply) == -EPROTO);
+	}
 	/* Invalid/ignored PDUs must remain distinct from validated peer activity. */
 	{
 		struct pon_oam_session live = session;

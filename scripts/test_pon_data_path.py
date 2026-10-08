@@ -141,6 +141,14 @@ int main(void) {
         assert(pon.data_devices[i]->stats.rx_packets==before+1);
         assert(last_length==128&&!memcmp(last_bytes,ethernet,128));
     }
+    /* Native PDC physical-source7 plus disabled POL_ID routes all 32
+     * business LLIDs; control containers still use their own LLID byte. */
+    for(unsigned int i=0;i<32;i++) {
+        unsigned int previous=pon.data_devices[i]->stats.rx_packets;
+        rtl_oam_receive(&pon.oam_endpoint,&napi,packet(ethernet,128),7|(i<<8));
+        assert(pon.data_devices[i]->stats.rx_packets==previous+1);
+        assert(last_length==128&&!memcmp(last_bytes,ethernet,128));
+    }
     /* A nontrivial LLID-table slot must map to its MAC instance, not slot ID. */
     assert(rtl_pon_data_source(17,0x08800001)==40);
     assert(rtl_pon_data_source(3,0x1f800123)==63);

@@ -33,8 +33,8 @@ int rtl_pon_pdc_refresh(struct rtl9617c_pon *pon)
 		if (pon->pdc_source[index] == source)
 			continue;
 		for (bank = 0; bank < 2; bank++) {
-			writel((16 << 3) | (source << 9) | BIT(15), pon->mac + PDC_DATA0);
-			writel(0, pon->mac + PDC_DATA1);
+			writel((16 << 3) | (7 << 9) | BIT(15), pon->mac + PDC_DATA0);
+			writel((source - 32) << 4, pon->mac + PDC_DATA1);
 			ret = rtl_pdc_access(pon, index | (bank << 7), true);
 			if (ret) {
 				pon->pdc_error = ret;
@@ -65,14 +65,17 @@ int rtl_pon_pdc_configure_locked(struct rtl9617c_pon *pon)
 		unsigned int entry = index & 63;
 		unsigned int source = index & BIT(6) ? 7 :
 			rtl_pon_data_source(entry, readl(pon->mac + 0x64 + entry * 4));
-		u32 data0 = (16 << 3) | (source << 9) | BIT(15);
+		u32 data0 = (16 << 3) | (7 << 9) | BIT(15);
 
 		if (index & BIT(6))
 			data0 |= 7;
 		else
 			pon->pdc_source[entry] = source;
 		writel(data0, pon->mac + PDC_DATA0);
-		writel(0, pon->mac + PDC_DATA1);
+		/* Keep the physical PON source; POL_ID carries the LLID without
+		 * enabling either hardware policer. Upper CPU source IDs are
+		 * normalized by the NI receive fabric on this board. */
+		writel(index & BIT(6) ? 0 : (source - 32) << 4, pon->mac + PDC_DATA1);
 		ret = rtl_pdc_access(pon, index, true);
 		if (ret)
 			goto unlock;
@@ -100,11 +103,11 @@ ssize_t rtl_pon_pdc_state(struct rtl9617c_pon *pon, char *buf)
 		if (ret)
 			return ret;
 		length += scnprintf(buf + length, PAGE_SIZE - length,
-			"index=%u data=%08x/%08x destination=%u source=%u bypass=%u cos=%u\n",
+			"index=%u data=%08x/%08x destination=%u source=%u bypass=%u cos=%u llid=%u\n",
 			sample[i], readl(pon->mac + PDC_DATA0), readl(pon->mac + PDC_DATA1),
 			(unsigned int)FIELD_GET(GENMASK(8, 3), readl(pon->mac + PDC_DATA0)),
 			(unsigned int)FIELD_GET(GENMASK(14, 9), readl(pon->mac + PDC_DATA0)),
-			!!(readl(pon->mac + PDC_DATA0) & BIT(15)), readl(pon->mac + PDC_DATA0) & 7);
+			!!(readl(pon->mac + PDC_DATA0) & BIT(15)), readl(pon->mac + PDC_DATA0) & 7, (readl(pon->mac + PDC_DATA1) >> 4) & 511);
 	}
 	return length;
 }

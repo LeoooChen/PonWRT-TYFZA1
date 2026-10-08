@@ -5,6 +5,7 @@
  * Realtek Taurus register header, and the TYFZA1 stock DTB NI resources.
  */
 #include <linux/bitfield.h>
+#include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/i2c.h>
 #include <linux/etherdevice.h>
@@ -15,6 +16,7 @@
 #include <linux/rtnetlink.h>
 #include "rtl9617c-pon.h"
 #include "rtl9617c-bosa.h"
+#include "rtl9617c-pon-fec.h"
 
 #define PON_EPON_MODE BIT(0)
 #define EPON_STATUS 0x0010
@@ -176,9 +178,10 @@ static ssize_t optical_show(struct device *dev, struct device_attribute *attr, c
 {
 	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
 	u32 status = readl(pon->optical_status);
-	return sysfs_emit(buf, "control=%08x status=%08x rx_los=%u module_absent=%u tx_signal_detect=%u tx_fault=%u\n",
+	return sysfs_emit(buf, "control=%08x status=%08x rx_los=%u module_absent=%u tx_signal_detect=%u tx_fault=%u tx_disabled=%u irq_count=%u last_irq=%08x\n",
 		readl(pon->optical_control), status, !!(status & BIT(3)), !!(status & BIT(2)),
-		!!(status & BIT(1)), !!(status & BIT(0)));
+		!!(status & BIT(1)), !!(status & BIT(0)), gpiod_get_value_cansleep(pon->tx_disable),
+		pon->optical_irq_count, pon->last_optical_irq);
 }
 static DEVICE_ATTR_RO(optical);
 
@@ -206,6 +209,61 @@ static ssize_t mac_store(struct device *dev, struct device_attribute *attr,
 	return ret ? ret : count;
 }
 static DEVICE_ATTR_RW(mac);
+
+static unsigned int rtl_fec_read(void *context, unsigned int reg)
+{
+	struct rtl9617c_pon *pon = context;
+
+	return readl(pon->mac + reg);
+}
+
+static void rtl_fec_write(void *context, unsigned int reg, unsigned int value)
+{
+	struct rtl9617c_pon *pon = context;
+
+	writel(value, pon->mac + reg);
+}
+
+static ssize_t fec_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	ssize_t size;
+
+	mutex_lock(&pon->lock);
+	if (!rtl_pon_mode_is_epon(pon->mode))
+		size = -EOPNOTSUPP;
+	else
+		size = sysfs_emit(buf, "supported=1 upstream=%u encoder=%08x btc=%08x report=%08x\n",
+			pon->mode == RTL_PON_EPON_BI10G ? !(readl(pon->mac + 0x24) & BIT(0)) :
+			!!(readl(pon->mac + 0x810) & BIT(1)), readl(pon->mac + 0x810),
+			readl(pon->mac + 0x8050), readl(pon->mac + 0x8054));
+	mutex_unlock(&pon->lock);
+	return size;
+}
+
+static ssize_t fec_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	const struct rtl_dq_io io = {pon, rtl_fec_read, rtl_fec_write, NULL};
+	bool enable;
+	int ret = kstrtobool(buf, &enable);
+
+	if (ret)
+		return ret;
+	mutex_lock(&pon->control_lock);
+	mutex_lock(&pon->lock);
+	if (!rtl_pon_mode_is_epon(pon->mode) || !pon->mac_prepared)
+		ret = -EOPNOTSUPP;
+	else {
+		rtl_pon_fec_set(&io, pon->mode, enable);
+		if (!enable && pon->mode != RTL_PON_EPON_BI10G)
+			msleep(5);
+	}
+	mutex_unlock(&pon->lock);
+	mutex_unlock(&pon->control_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_RW(fec);
 
 static ssize_t onu_mac_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -433,6 +491,7 @@ static struct attribute *rtl9617c_pon_attrs[] = {
 	&dev_attr_serdes_registers.attr,
 	&dev_attr_optical.attr,
 	&dev_attr_mac.attr,
+	&dev_attr_fec.attr,
 	&dev_attr_onu_mac.attr,
 	&dev_attr_llid_count.attr,
 	&dev_attr_mpcp.attr,
@@ -453,6 +512,9 @@ static int rtl9617c_pon_probe(struct platform_device *pdev)
 	if (!pon)
 		return -ENOMEM;
 	pon->dev = dev;
+	pon->tx_disable = devm_gpiod_get(dev, "tx-disable", GPIOD_OUT_HIGH);
+	if (IS_ERR(pon->tx_disable))
+		return dev_err_probe(dev, PTR_ERR(pon->tx_disable), "PON TX-disable GPIO\n");
 	{
 		struct device_node *node = of_parse_phandle(dev->of_node, "realtek,optical-front-end", 0);
 		struct i2c_client *client = of_find_i2c_device_by_node(node);
@@ -516,6 +578,16 @@ static int rtl9617c_pon_probe(struct platform_device *pdev)
 	pon->optical_status = devm_platform_ioremap_resource(pdev, 5);
 	if (IS_ERR(pon->optical_status))
 		return PTR_ERR(pon->optical_status);
+	{
+		struct resource optical = *platform_get_resource(pdev, IORESOURCE_MEM, 4);
+
+		optical.start += 8;
+		optical.end = optical.start + 7;
+		optical.name = "optical-irq";
+		pon->optical_irq = devm_ioremap_resource(dev, &optical);
+		if (IS_ERR(pon->optical_irq))
+			return PTR_ERR(pon->optical_irq);
+	}
 	of_property_read_u32(dev->of_node, "realtek,los-invert", &pon->los_invert);
 	if (pon->los_invert > 1)
 		return -EINVAL;
@@ -544,6 +616,9 @@ static void rtl9617c_pon_remove(struct platform_device *pdev)
 	rtl_pon_epon_traffic_locked(pon, false);
 	rtl_pon_mpcp_stop_locked(pon);
 	rtl_pon_serdes_stop_work(pon);
+	writel(0, pon->top_irq + 4);
+	writel(0, pon->optical_irq + 4);
+	synchronize_irq(pon->mpcp_irq);
 	rtl_pon_oam_remove(pon);
 	mutex_unlock(&pon->control_lock);
 }

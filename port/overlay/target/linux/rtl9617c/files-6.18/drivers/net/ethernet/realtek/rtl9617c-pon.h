@@ -3,6 +3,7 @@
 #define RTL9617C_PON_H
 
 #include <linux/device.h>
+#include <linux/gpio/consumer.h>
 #include <linux/mutex.h>
 #include <linux/workqueue.h>
 #include "rtl9617c-ni.h"
@@ -13,6 +14,7 @@ struct rtl9617c_pon {
 	struct device *dev;
 	struct device *ni_dev;
 	struct device *bosa_dev;
+	struct gpio_desc *tx_disable;
 	void __iomem *control;
 	void __iomem *mac;
 	void __iomem *epon_control;
@@ -20,6 +22,7 @@ struct rtl9617c_pon {
 	void __iomem *serdes_init;
 	void __iomem *optical_control;
 	void __iomem *optical_status;
+	void __iomem *optical_irq;
 	void __iomem *top_irq;
 	struct mutex lock;
 	/* Control transactions precede state lock. Work/IRQ threads use only lock;
@@ -61,6 +64,8 @@ struct rtl9617c_pon {
 	u32 register_frames;
 	u32 mpcp_irq_count;
 	u32 last_mpcp_irq;
+	u32 optical_irq_count;
+	u32 last_optical_irq;
 	int mpcp_irq;
 	struct rtl_mpcp_backoff backoff;
 };

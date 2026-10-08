@@ -40,6 +40,22 @@ static int rtl_qm_attribute(struct rtl_qm_rx *rx, unsigned int entry, u32 value)
 	return rtl_qm_indirect(rx, 0x66a4, BIT(31) | BIT(30) | entry);
 }
 
+static int rtl_qm_pon_destination_map(struct rtl_qm_rx *rx)
+{
+	unsigned int port, flags;
+	int ret;
+
+	/* LDPID32..63 must enter PDPID8 (QM) for both my-MAC and deep-Q flags. */
+	for (flags = 0; flags < 256; flags += 64)
+		for (port = 32; port < 64; port++) {
+			writel(8, rx->ni + 0x1658);
+			ret = rtl_qm_indirect(rx, 0x1654, BIT(31) | BIT(30) | flags | port);
+			if (ret)
+				return ret;
+		}
+	return 0;
+}
+
 static int rtl_qm_push(struct rtl_qm_rx *rx, u32 address, unsigned int eqid)
 {
 	u32 status;
@@ -296,6 +312,9 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	ret = rtl_qm_ingress(rx, port);
 	if (ret)
 		return ret;
+	ret = rtl_qm_pon_destination_map(rx);
+	if (ret)
+		return ret;
 	/* The vendor credit table marks counter MSBs valid during initialization. */
 	for (i = 0; i < 16; i++) {
 		writel(0x8e308000, ni + 0x2db8);
@@ -394,7 +413,8 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				rcu_read_lock();
 				endpoint = rcu_dereference(rx->pon);
 				if (endpoint && (source == 7 || source >= 32))
-					endpoint->receive(endpoint, napi, skb, source);
+					endpoint->receive(endpoint, napi, skb, source |
+						(FIELD_GET(GENMASK(26, 18), h0) << 8));
 				else {
 					dev->stats.rx_dropped++;
 					dev_kfree_skb_any(skb);

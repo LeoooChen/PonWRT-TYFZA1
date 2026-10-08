@@ -81,7 +81,7 @@ struct sk_buff {unsigned char *data; unsigned int protocol;};
 struct rtl9617c_ni_endpoint {
     void (*receive)(struct rtl9617c_ni_endpoint *,struct napi_struct *,struct sk_buff *,unsigned int);
 };
-static unsigned int delivered, returned, owned[512];
+static unsigned int delivered, returned, owned[512], expected_source;
 static unsigned char *registers;
 static u32 readl(const void *address) {u32 value; memcpy(&value,address,4); return value;}
 static void writel(u32 value,void *address) {
@@ -122,10 +122,16 @@ static int scnprintf(char *buf,size_t size,const char *fmt,...) {
 '''
 
 rx_test = r'''
+static void pon_receive(struct rtl9617c_ni_endpoint *endpoint,struct napi_struct *napi,struct sk_buff *skb,unsigned int source) {
+    (void)endpoint;(void)napi;
+    assert(source==expected_source);delivered++;dev_kfree_skb_any(skb);
+}
 static void store(void *p,u32 value) {memcpy(p,&value,4);}
-static void check(unsigned int packets,int budget,bool blocked) {
+static void check(unsigned int packets,int budget,bool blocked,int flow) {
     struct net_device dev={}; struct napi_struct napi={&dev}; struct rtl_qm_rx rx={};
     unsigned int count=0;
+    struct rtl9617c_ni_endpoint endpoint={pon_receive};
+    if(flow>=0){rx.pon=&endpoint;expected_source=7|((unsigned int)flow<<8);}
     registers=calloc(1,0x10000);rx.ni=registers;
     rx.memory=calloc(1,RTL_QM_MEMORY_BYTES);rx.memory_dma=0x10000000;
     memset(owned,0,sizeof(owned));delivered=returned=0;
@@ -140,8 +146,8 @@ static void check(unsigned int packets,int budget,bool blocked) {
             unsigned int offset=8192+count*2048;
             unsigned int command=(rx.memory_dma+offset)|BIT(4)|BIT(6)|(4+count/256);
             store(rx.memory+cos*1024+j*8,command);
-            store(rx.memory+offset+32,0);
-            store(rx.memory+offset+36,__builtin_bswap32(60U<<15));
+            store(rx.memory+offset+32,flow>=0?__builtin_bswap32((unsigned int)flow<<18):0);
+            store(rx.memory+offset+36,__builtin_bswap32((60U<<15)|(flow>=0?7<<9:0)));
         }
     }
     int consumed=rtl_qm_rx_poll(&rx,&napi,budget);
@@ -158,9 +164,10 @@ static void check(unsigned int packets,int budget,bool blocked) {
     free(rx.memory);free(registers);
 }
 int main(void) {
-    check(65,65,false);check(65,256,true);
-    check(129,256,false);check(256,256,true);
-    check(512,512,true);check(512,1024,false);check(129,64,true);
+    check(65,65,false,-1);check(65,256,true,-1);
+    check(129,256,false,-1);check(256,256,true,-1);
+    check(512,512,true,-1);check(512,1024,false,-1);check(129,64,true,-1);
+    check(65,65,false,13);check(65,256,true,31);
     puts("Actual QM RX: 65/129/256/512 packets, budget64..1024 and blocked-pool recovery passed");
 }
 '''
@@ -205,9 +212,10 @@ struct rtl9617c_pon {
 	struct mutex lock,control_lock;enum rtl_pon_mode mode;
     bool serdes_configured,mac_prepared,pdc_configured,puc_configured,traffic_enabled;
     int mac_error;struct {struct net_device *netdev;} oam_endpoint;
-    void *mac,*epon_control,*control,*serdes_init,*dev;
+    void *mac,*epon_control,*control,*serdes_init,*dev,*tx_disable;
 };
 static struct rtl9617c_pon *current;
+static void gpiod_set_value_cansleep(void *gpio, int value) {(void)gpio;(void)value;}
 static int switch_to=-1;
 static unsigned int io_writes;
 static void *switch_protocol(void *arg) {

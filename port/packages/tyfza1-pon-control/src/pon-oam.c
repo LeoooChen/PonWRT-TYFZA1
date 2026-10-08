@@ -122,6 +122,7 @@ static int receive_information(struct pon_oam_session *session, const uint8_t *i
 {
 	const uint8_t *local = NULL, *remote = NULL, *extension = NULL;
 	size_t offset;
+	bool echoed, revision_only;
 
 	for (offset = 18; offset < length;) {
 		uint8_t type = input[offset], size;
@@ -140,7 +141,9 @@ static int receive_information(struct pon_oam_session *session, const uint8_t *i
 				local = input + offset + 2;
 			else
 				remote = input + offset + 2;
-		} else if (type == 0xfe && (size == 7 || size == 11) && ctc_oui(input + offset + 2)) {
+		} else if (type == 0xfe && size >= 7 && ctc_oui(input + offset + 2)) {
+			if ((size - 7) % 4)
+				return -EPROTO;
 			extension = input + offset;
 		}
 		offset += size;
@@ -150,7 +153,13 @@ static int receive_information(struct pon_oam_session *session, const uint8_t *i
 	/* A missing/mismatched Remote echo ends the established discovery session,
 	 * even when the peer's Local TLV has not changed. Require a new revision
 	 * echo before accepting authentication for the next session. */
-	if ((session->have_peer && memcmp(session->peer_local, local, 14)) ||
+	echoed = remote && session->have_sent && !memcmp(remote, session->last_local, 14);
+	/* An OLT can change only its revision after provisioning while still
+	 * advertising stable and echoing our current revision. That is an update
+	 * within discovery, not a new discovery/authentication session. */
+	revision_only = session->have_peer && echoed && (be16(input + 15) & LOCAL_STABLE) &&
+		local[0] == session->peer_local[0] && !memcmp(local + 3, session->peer_local + 3, 11);
+	if ((session->have_peer && memcmp(session->peer_local, local, 14) && !revision_only) ||
 	    (session->local_echoed && (!remote || !session->have_sent ||
 				     memcmp(remote, session->last_local, 14))))
 		pon_oam_reset(session);
@@ -158,11 +167,21 @@ static int receive_information(struct pon_oam_session *session, const uint8_t *i
 	session->have_peer = true;
 	session->local_echoed = remote && session->have_sent && !memcmp(remote, session->last_local, 14);
 	session->peer_flags = be16(input + 15);
-	if (extension && (extension[1] == 11 || session->local_echoed)) {
-		memcpy(session->extension_oui, extension + 2, 3);
-		session->extension_selected = extension[1] == 7;
-		session->extension_advertised = extension[1] == 11;
-		session->extension_version = extension[1] == 7 ? extension[6] : extension[10];
+	if (extension && (extension[1] > 7 || session->local_echoed)) {
+		unsigned int version = 0;
+		/* OLT advertisements contain any number of OUI/version tuples. */
+		for (offset = 7; offset + 4 <= extension[1]; offset += 4)
+			if (ctc_oui(extension + offset) && extension[offset + 3] <= 0x30 &&
+			    extension[offset + 3] > version)
+				version = extension[offset + 3];
+		if (extension[1] == 7)
+			version = extension[6];
+		if (version) {
+			memcpy(session->extension_oui, extension + 2, 3);
+			session->extension_selected = extension[1] == 7;
+			session->extension_advertised = extension[1] > 7;
+			session->extension_version = version;
+		}
 	}
 	return 0;
 }
@@ -226,6 +245,9 @@ static int receive_get(const struct pon_oam_identity *identity, const uint8_t *i
 {
 	uint8_t onu[54] = {};
 	size_t offset = 22, position;
+	const uint8_t *object = NULL;
+	size_t object_size = 0;
+	uint8_t backend_value[127];
 	bool variables = false;
 
 	memcpy(onu, identity->vendor, 4);
@@ -244,13 +266,14 @@ static int receive_get(const struct pon_oam_identity *identity, const uint8_t *i
 		if (!branch)
 			break;
 		if (branch == 0x36 || branch == 0x37) {
-			size_t object_size = branch == 0x36 ? 5 : 8;
+			object_size = branch == 0x36 ? 5 : 8;
 
 			if (position + object_size > length || input[position + 3] != object_size - 4)
 				return -EPROTO;
 			if (offset + object_size > PON_OAM_FRAME_MAX)
 				return -EMSGSIZE;
 			memcpy(output + offset, input + position, object_size);
+			object = input + position;
 			offset += object_size;
 			position += object_size;
 			continue;
@@ -265,6 +288,14 @@ static int receive_get(const struct pon_oam_identity *identity, const uint8_t *i
 		} else if (branch == 0xc7 && leaf == 2) {
 			data = identity->software;
 			size = sizeof(identity->software);
+		} else if (identity->get_parameter) {
+			int result = identity->get_parameter(identity->backend_context, branch, leaf,
+				object, object_size, backend_value, sizeof(backend_value));
+
+			if (result >= 0 && (size_t)result <= sizeof(backend_value)) {
+				data = backend_value;
+				size = result;
+			}
 		}
 		if (offset + 4 + size > PON_OAM_FRAME_MAX)
 			return -EMSGSIZE;
@@ -281,9 +312,12 @@ static int receive_get(const struct pon_oam_identity *identity, const uint8_t *i
 	return variables ? (offset < 60 ? 60 : offset) : PON_OAM_IGNORED;
 }
 
-static int receive_set(const uint8_t *input, size_t length, uint8_t *output)
+static int receive_set(const struct pon_oam_identity *identity, const uint8_t *input,
+		       size_t length, uint8_t *output)
 {
 	size_t position = 22, offset = 22;
+	const uint8_t *object = NULL;
+	size_t object_size = 0;
 	bool variables = false;
 
 	output[21] = 4;
@@ -293,13 +327,14 @@ static int receive_set(const uint8_t *input, size_t length, uint8_t *output)
 		/* Object selectors identify the following variables' port instance.
 		 * Echo their complete 1/4-byte instance, as in the Get response. */
 		if (input[position] == 0x36 || input[position] == 0x37) {
-			size_t object_size = input[position] == 0x36 ? 5 : 8;
+			object_size = input[position] == 0x36 ? 5 : 8;
 
 			if (position + object_size > length || input[position + 3] != object_size - 4)
 				return -EPROTO;
 			if (offset + object_size > PON_OAM_FRAME_MAX)
 				return -EMSGSIZE;
 			memcpy(output + offset, input + position, object_size);
+			object = input + position;
 			offset += object_size;
 			position += object_size;
 			continue;
@@ -313,7 +348,9 @@ static int receive_set(const uint8_t *input, size_t length, uint8_t *output)
 			return -EMSGSIZE;
 		memcpy(output + offset, input + position, 3);
 		variables = true;
-		output[offset + 3] = 0x87; /* No completed business configuration backend yet. */
+		output[offset + 3] = identity->set_parameter ?
+			identity->set_parameter(identity->backend_context, input[position],
+				be16(input + position + 1), object, object_size, input + position + 4, size) : 0x87;
 		offset += 4;
 		position += 4 + size;
 	}
@@ -347,7 +384,7 @@ int pon_oam_receive(struct pon_oam_session *session, const struct pon_oam_identi
 	else if (input[21] == 1)
 		ret = receive_get(identity, input, length, output);
 	else
-		ret = receive_set(input, length, output);
+		ret = receive_set(identity, input, length, output);
 	if (ret > PON_OAM_IGNORED) {
 		session->extension_selected = true;
 		memcpy(session->extension_oui, input + 18, 3);

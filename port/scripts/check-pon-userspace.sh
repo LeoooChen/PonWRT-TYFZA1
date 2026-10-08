@@ -15,6 +15,6 @@ export STAGING_DIR="$TREE/staging_dir/target-aarch64_cortex-a55_musl"
 mkdir -p "$OUT"
 OUT=$(realpath "$OUT")
 SOURCE=$PORT/packages/tyfza1-pon-control/src
-"$CC" -Wall -Wextra -Werror -O2 -I"$STAGING_DIR/usr/include" "$SOURCE/pon-oamd.c" "$SOURCE/pon-oam.c" -L"$STAGING_DIR/usr/lib" -luci -o "$OUT/pon-oamd"
+"$CC" -Wall -Wextra -Werror -O2 -I"$STAGING_DIR/usr/include" "$SOURCE/pon-oamd.c" "$SOURCE/pon-oam.c" "$SOURCE/pon-backend.c" -L"$STAGING_DIR/usr/lib" -luci -o "$OUT/pon-oamd"
 sudo -n unshare --net python3 "$PROJECT/scripts/test_oam_daemon.py" --binary "$OUT/pon-oamd"
 sha256sum "$OUT/pon-oamd" > "$OUT/SHA256SUMS"

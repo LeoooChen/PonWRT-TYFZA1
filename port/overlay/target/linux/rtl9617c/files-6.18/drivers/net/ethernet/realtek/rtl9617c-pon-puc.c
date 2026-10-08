@@ -190,6 +190,8 @@ int rtl_pon_puc_configure_locked(struct rtl9617c_pon *pon)
 	ret = rtl_pon_queue_backpressure(&bp);
 	if (ret)
 		goto unlock;
+	/* The final RTL8277C DAL stage enables both schedulers after AAL setup. */
+	rtl_pon_update(pon->mac + BTC, BIT(24) | BIT(25), BIT(24) | BIT(25));
 	rtl_pon_update(pon->mac + AGGREGATE0, GENMASK(25, 0), 0);
 	rtl_pon_update(pon->mac + AGGREGATE1, GENMASK(11, 0), 0);
 	pon->puc_configured = true;

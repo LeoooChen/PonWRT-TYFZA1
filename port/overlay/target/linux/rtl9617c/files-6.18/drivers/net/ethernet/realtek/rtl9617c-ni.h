@@ -4,6 +4,8 @@
 #include <linux/device.h>
 #include <linux/netdevice.h>
 
+/* receive source: physical/logical LSPID in low eight bits, POL_ID flow
+ * in the upper bits. Native PDC uses the flow field for its business LLID. */
 struct rtl9617c_ni_endpoint {
 	struct net_device *netdev;
 	void (*receive)(struct rtl9617c_ni_endpoint *endpoint, struct napi_struct *napi,

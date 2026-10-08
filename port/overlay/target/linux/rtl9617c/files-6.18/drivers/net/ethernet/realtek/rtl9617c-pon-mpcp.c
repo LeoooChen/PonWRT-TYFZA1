@@ -34,6 +34,8 @@
 #define SYNC_TIME 0x20d0
 #define OFFLINE 0x20e0
 #define MPCP_EVENT_MASK (BIT(0) | BIT(1) | BIT(2) | BIT(3) | BIT(6) | BIT(14))
+#define OPT_EVENT_MASK (BIT(0) | BIT(1) | BIT(2) | BIT(8) | BIT(9))
+#define PON_TOP_EVENTS (BIT(0) | BIT(3))
 
 static u32 rtl_pon_llid_mask(struct rtl9617c_pon *pon)
 {
@@ -174,13 +176,24 @@ static irqreturn_t rtl_mpcp_irq_thread(int irq, void *data)
 	struct rtl9617c_pon *pon = data;
 	u32 pending = readl(pon->top_irq) & readl(pon->top_irq + 4);
 
-	if (!(pending & BIT(0)))
+	if (!(pending & PON_TOP_EVENTS))
 		return IRQ_NONE;
 	mutex_lock(&pon->lock);
-	pon->mpcp_irq_count++;
-	rtl_mpcp_refresh(pon);
-	writel(BIT(3), pon->mac + GLB_IRQ);
-	writel(BIT(0), pon->top_irq);
+	if (pending & BIT(3)) {
+		u32 optical = readl(pon->optical_irq) & readl(pon->optical_irq + 4);
+
+		pon->last_optical_irq = optical;
+		pon->optical_irq_count++;
+		writel(optical, pon->optical_irq);
+		if (rtl_pon_mode_is_epon(pon->mode))
+			rtl_pon_oam_carrier(pon);
+	}
+	if ((pending & BIT(0)) && rtl_pon_mode_is_epon(pon->mode)) {
+		pon->mpcp_irq_count++;
+		rtl_mpcp_refresh(pon);
+		writel(BIT(3), pon->mac + GLB_IRQ);
+	}
+	writel(pending & PON_TOP_EVENTS, pon->top_irq);
 	mutex_unlock(&pon->lock);
 	return IRQ_HANDLED;
 }
@@ -190,7 +203,14 @@ int rtl_pon_mpcp_init(struct rtl9617c_pon *pon, int irq)
 	pon->mpcp_irq = irq;
 	pon->llid_count = 1;
 	INIT_DELAYED_WORK(&pon->mpcp_work, rtl_mpcp_work);
-	rtl_pon_update(pon->top_irq + 4, BIT(0), 0);
+	/* This controller owns the PON bank. Remove inherited optical enables and
+	 * acknowledge their leaf events before request_irq unmasks its parent. */
+	writel(0, pon->top_irq + 4);
+	writel(0, pon->optical_irq + 4);
+	writel(readl(pon->optical_irq) & OPT_EVENT_MASK, pon->optical_irq);
+	writel(PON_TOP_EVENTS, pon->top_irq);
+	writel(OPT_EVENT_MASK, pon->optical_irq + 4);
+	writel(BIT(3), pon->top_irq + 4);
 	writel(0, pon->mac + MPCP_IE);
 	return devm_request_threaded_irq(pon->dev, irq, NULL, rtl_mpcp_irq_thread,
 					 IRQF_ONESHOT, "rtl9617c-mpcp", pon);
@@ -267,7 +287,7 @@ int rtl_pon_mpcp_configure_locked(struct rtl9617c_pon *pon)
 	writel(MPCP_EVENT_MASK, pon->mac + MPCP_IRQ);
 	writel(MPCP_EVENT_MASK, pon->mac + MPCP_IE);
 	rtl_pon_update(pon->mac + GLB_IE, BIT(3), BIT(3));
-	rtl_pon_update(pon->top_irq + 4, BIT(0), BIT(0));
+	rtl_pon_update(pon->top_irq + 4, PON_TOP_EVENTS, PON_TOP_EVENTS);
 	schedule_delayed_work(&pon->mpcp_work, HZ);
 	dev_info(pon->dev, "native MPCP configured: ONU %pM, %u LLIDs\n", pon->onu_mac, pon->llid_count);
 unlock:

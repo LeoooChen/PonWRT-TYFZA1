@@ -148,7 +148,8 @@ address_model = r'''
 #define ETH_ALEN 6
 #define NET_ADDR_SET 3
 #define NETDEV_CHANGEADDR 8
-struct net_device {u8 address[6];bool locked;int addr_assign_type;unsigned int updates,notifications;};
+struct rtl_oam_port {bool mac_configured;};
+struct net_device {struct rtl_oam_port private;u8 address[6];bool locked;int addr_assign_type;unsigned int updates,notifications;};
 struct device {void *data;};struct device_attribute {};
 struct rtl9617c_pon {struct mutex control_lock,lock;bool mpcp_enabled;u8 onu_mac[6];struct net_device *oam_devices[32],*data_devices[32];};
 static bool rtnl;
@@ -160,10 +161,15 @@ static bool rtnl;
 #define dev_get_drvdata(dev) ((struct rtl9617c_pon *)(dev)->data)
 static void rtnl_lock(void) {assert(!rtnl);rtnl=true;}
 static void rtnl_unlock(void) {assert(rtnl);rtnl=false;}
+static void *netdev_priv(struct net_device *dev) {return &dev->private;}
 static void netdev_lock(struct net_device *dev) {assert(rtnl&&!dev->locked);dev->locked=true;}
 static void netdev_unlock(struct net_device *dev) {assert(dev->locked);dev->locked=false;}
 static void ether_addr_copy(u8 *dst,const u8 *src) {memcpy(dst,src,6);}
 static void eth_hw_addr_set(struct net_device *dev,const u8 *mac) {assert(rtnl&&dev->locked);memcpy(dev->address,mac,6);dev->updates++;}
+static int eth_mac_addr(struct net_device *dev,void *address) {
+ if(!address)return -EINVAL;
+ eth_hw_addr_set(dev,address);return 0;
+}
 static void call_netdevice_notifiers(int event,struct net_device *dev) {assert(rtnl&&dev->locked&&event==NETDEV_CHANGEADDR);dev->notifications++;}
 static int mac_pton(const char *text,u8 *out) {unsigned int b[6];if(sscanf(text,"%x:%x:%x:%x:%x:%x",b,b+1,b+2,b+3,b+4,b+5)!=6)return 0;for(unsigned int i=0;i<6;i++)out[i]=b[i];return 1;}
 static int is_valid_ether_addr(const u8 *mac) {return !(mac[0]&1)&&memcmp(mac,"\0\0\0\0\0\0",6);}
@@ -182,9 +188,19 @@ int main(void) {
 		assert(!ports[i].locked);
         assert(!memcmp(data[i].address,ports[i].address,6) && data[i].updates==1 && data[i].notifications==1);
     }
-    pon.mpcp_enabled=true;assert(onu_mac_store(&device,NULL,"02:11:22:33:44:01",17)==-EBUSY);
+    /* The normal network MAC path owns the business address, while OAM
+     * remains derived from ONU MAC. Test both failed and successful setters. */
+    const u8 configured[6]={2,0x55,0x44,0x33,0x22,0x11};
+    rtnl_lock();netdev_lock(data+1);
+    assert(rtl_data_set_address(data+1,NULL)==-EINVAL && !data[1].private.mac_configured);
+    assert(rtl_data_set_address(data+1,(void *)configured)==0 && data[1].private.mac_configured);
+    netdev_unlock(data+1);rtnl_unlock();
+    assert(onu_mac_store(&device,NULL,"02:11:22:33:44:02",17)==17);
+    assert(!memcmp(data[1].address,configured,6) && ports[1].address[5]==9);
+    assert(data[0].address[5]==2 && data[2].address[5]==33);
+        pon.mpcp_enabled=true;assert(onu_mac_store(&device,NULL,"02:11:22:33:44:01",17)==-EBUSY);
     assert(!rtnl&&!pon.lock.held&&!pon.control_lock.held);
-    for(unsigned int i=0;i<3;i++)assert(ports[i].updates==1);
+    for(unsigned int i=0;i<3;i++)assert(ports[i].updates==2);
     pthread_mutex_destroy(&pon.lock.native);pthread_mutex_destroy(&pon.control_lock.native);
     puts("Actual ONU MAC store: RTNL/device locks, LLID-derived addresses, change notifications and busy rejection passed");
 }
@@ -209,10 +225,10 @@ with tempfile.TemporaryDirectory(prefix='control-tests-', dir=root / 'artifacts'
             source = common + constants + '\n' + definitions + transaction_test
         else:
             if not args.revision:
-                assert '.ndo_set_mac_address =' not in oam
+                assert '.ndo_set_mac_address =' not in oam.split('static const struct net_device_ops rtl_oam_ops = {')[1].split('};',1)[0]
             # Reuse the host mutex primitive; the RX/MMIO model is unnecessary.
             prefix = common[:common.index('struct delayed_work')]
-            helper = function(oam, 'rtl_port_address') if 'static void rtl_port_address' in oam else ''
+            helper = function(oam, 'rtl_data_set_address') + function(oam, 'rtl_port_address') if 'static void rtl_port_address' in oam else ''
             source = prefix + address_model + helper + function(oam, 'rtl_pon_oam_address') + function(controller, 'onu_mac_store') + address_test
         cfile = directory / f'{case}.c'
         binary = directory / case

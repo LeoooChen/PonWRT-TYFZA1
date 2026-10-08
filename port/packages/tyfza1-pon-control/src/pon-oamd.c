@@ -23,6 +23,7 @@
 #include <uci.h>
 #include <unistd.h>
 #include "pon-oam.h"
+#include "pon-backend.h"
 
 static volatile sig_atomic_t running = 1;
 
@@ -207,6 +208,7 @@ int main(int argc, char **argv)
 	const char *state_directory = "/var/run/pon-oam";
 	struct pon_oam_identity identity = {};
 	struct pon_oam_session session = {};
+	struct pon_backend backend = {};
 	unsigned int llid = 0, send_errors = 0, receive_errors = 0;
 	bool online = false, check_config = false;
 	bool session_valid = false;
@@ -237,6 +239,9 @@ int main(int argc, char **argv)
 	}
 	if (llid >= 32)
 		return 2;
+	if (pon_backend_init(&backend, mpcp))
+		return 2;
+	pon_backend_bind(&identity, &backend);
 	ret = identity_load(configuration, &identity);
 	if (ret) {
 		fprintf(stderr, "PON identity configuration failed: %s\n", strerror(-ret));

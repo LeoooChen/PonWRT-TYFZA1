@@ -24,6 +24,11 @@ struct pon_oam_identity {
 	uint8_t hardware[16];
 	uint8_t software[16];
 	bool loid_configured;
+	void *backend_context;
+	int (*get_parameter)(void *context, uint8_t branch, uint16_t leaf,
+		const uint8_t *object, size_t object_size, uint8_t *value, size_t capacity);
+	uint8_t (*set_parameter)(void *context, uint8_t branch, uint16_t leaf,
+		const uint8_t *object, size_t object_size, const uint8_t *value, size_t size);
 };
 
 enum pon_oam_auth {

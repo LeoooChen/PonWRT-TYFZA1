@@ -90,11 +90,24 @@ static int rtl_set_mux(struct pinctrl_dev *dev, unsigned int function, unsigned 
 	return 0;
 }
 
+static int rtl_gpio_request(struct pinctrl_dev *dev, struct pinctrl_gpio_range *range, unsigned int pin)
+{
+	struct rtl9617c_pinctrl *controller = pinctrl_dev_get_drvdata(dev);
+	unsigned long flags;
+	unsigned int reg = 0x10 + (pin / 32) * 4;
+
+	spin_lock_irqsave(&controller->lock, flags);
+	writel(readl(controller->base + reg) | BIT(pin % 32), controller->base + reg);
+	spin_unlock_irqrestore(&controller->lock, flags);
+	return 0;
+}
+
 static const struct pinmux_ops rtl_mux_ops = {
 	.get_functions_count = rtl_function_count,
 	.get_function_name = rtl_function_name,
 	.get_function_groups = rtl_function_groups,
 	.set_mux = rtl_set_mux,
+	.gpio_request_enable = rtl_gpio_request,
 	.strict = true,
 };
 
