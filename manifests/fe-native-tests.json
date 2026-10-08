@@ -1,7 +1,7 @@
 {
   "action_oracle": {
     "scope": "actual stock ARM64 conversion emulated offline; no original module loaded",
-    "native_header_sha256": "2d837807149720330d88e19ddce1c89e65d2e4ebd8095df31d4010f07ca9635c",
+    "native_header_sha256": "c8e63b1acd87be6c95247e2f1e59de76d91fd418dc18ff2242f4665d3b8b7e58",
     "stock_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
     "GPL_layout_sha256": "c010db3ede906c81eb82ea203b652ffae1b3f4dabbaea5201e4658d5dff846a9",
     "action_groups": [
@@ -17,7 +17,7 @@
   },
   "key_oracle": {
     "stock_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
-    "native_header_sha256": "2d837807149720330d88e19ddce1c89e65d2e4ebd8095df31d4010f07ca9635c",
+    "native_header_sha256": "c8e63b1acd87be6c95247e2f1e59de76d91fd418dc18ff2242f4665d3b8b7e58",
     "vectors": 160,
     "key_bytes": 92,
     "mask_bytes": 28,
@@ -38,7 +38,8 @@
     ],
     "mask_slots": 64,
     "mask_bank_transactions_and_restore": true,
-    "failures_propagated": true
+    "failures_propagated": true,
+    "age_slots_preserve_neighbors": 4096
   },
   "hardware_mask_test": {
     "slot": 63,
@@ -53,7 +54,41 @@
   "hardware_forwarding_enabled": false,
   "scope": "first wired LAN/PON IPv4 TCP/UDP; Wi-Fi later",
   "native_sources": {
-    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-format.h": "2d837807149720330d88e19ddce1c89e65d2e4ebd8095df31d4010f07ca9635c",
-    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-table.h": "36aa351df4e398c64326c425a76412ccc093087c074f9cef4c358ac3a9352048"
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-format.h": "c8e63b1acd87be6c95247e2f1e59de76d91fd418dc18ff2242f4665d3b8b7e58",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-table.h": "98bf4ada1c4697aea4429a7e21642d897a92f4c87231d3b2a68e9d6f51ac6304"
+  },
+  "hardware_CRC": {
+    "vectors": 128,
+    "network_fields": "IPv4 TCP/UDP five-tuple plus LSPID0/7",
+    "full_tuple_matches": true,
+    "CRC16_and_CRC32_match": true,
+    "input": "1024-bit Header-I",
+    "mask_slot": 63,
+    "original_mask_restored": true,
+    "log": "logs/live-fe-crc03-device.txt",
+    "SWO_metadata_gap": "orig_lspid, POL_ID and profile not emitted by the tested SWO diagnostic input; actual ingress metadata still to verify"
+  },
+  "hardware_DMA_tables": {
+    "coherent_allocation_bytes": 151552,
+    "Hash_entries": 4096,
+    "bucket_entries": 32,
+    "action_bytes": 32,
+    "default_bytes": 16,
+    "cache_entries": 256,
+    "cache_action": "internal224-bit SRAM",
+    "CCI_high_address_alias": 2,
+    "hardware_memory_initialization_completed": true,
+    "original_registers_restored": true,
+    "log": "logs/live-fe-memory01-device.txt"
+  },
+  "hardware_DMA_fetch": {
+    "Hash_CRC32_read_from_CPU_DMA_memory": "12345678",
+    "NAT_action_bits": 224,
+    "all_action_words_match": true,
+    "cache_allocation_location": "stage3 loc=1",
+    "stage2_loc0_result": "cache key read; action remained zero",
+    "invalidation_and_age_removal": true,
+    "log": "logs/live-fe-fetch04-device.txt",
+    "actual_packet_forwarding_verified": false
   }
 }

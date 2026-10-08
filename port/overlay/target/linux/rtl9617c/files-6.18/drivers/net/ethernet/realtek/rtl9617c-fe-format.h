@@ -150,18 +150,24 @@ static const struct rtl_fe_field_layout rtl_fe_action_fields[RTL_FE_FIELD_COUNT]
 	[RTL_FE_VXLAN_SPORT_UPDATE_EN] = {223, 1},
 };
 
+static inline void rtl_fe_bits_set(unsigned int *words, unsigned int bit,
+ unsigned int width, unsigned int value)
+{
+ unsigned int word = bit / 32, shift = bit % 32;
+ unsigned int mask = width == 32 ? ~0U : (1U << width) - 1;
+
+ value &= mask;
+ words[word] = (words[word] & ~(mask << shift)) | (value << shift);
+ if (shift + width > 32)
+  words[word + 1] = (words[word + 1] & ~(mask >> (32 - shift))) | (value >> (32 - shift));
+}
+
 /* The fixed field layout guarantees each value spans at most two words. */
 static inline void rtl_fe_action_set(unsigned int words[RTL_FE_ACTION_WORDS],
  enum rtl_fe_action_field field, unsigned int value)
 {
  const struct rtl_fe_field_layout *layout = &rtl_fe_action_fields[field];
- unsigned int word = layout->bit / 32, shift = layout->bit % 32;
- unsigned int mask = layout->width == 32 ? ~0U : (1U << layout->width) - 1;
-
- value &= mask;
- words[word] = (words[word] & ~(mask << shift)) | (value << shift);
- if (shift + layout->width > 32)
-  words[word + 1] = (words[word + 1] & ~(mask >> (32 - shift))) | (value >> (32 - shift));
+ rtl_fe_bits_set(words, layout->bit, layout->width, value);
 }
 
 /* Source/destination IPv4 NAT share one address/port rewrite selector per
@@ -260,13 +266,7 @@ static inline void rtl_fe_key_set(unsigned int words[RTL_FE_KEY_WORDS],
  enum rtl_fe_key_field field, unsigned int value)
 {
  const struct rtl_fe_field_layout *layout = &rtl_fe_key_fields[field];
- unsigned int word = layout->bit / 32, shift = layout->bit % 32;
- unsigned int mask = layout->width == 32 ? ~0U : (1U << layout->width) - 1;
-
- value &= mask;
- words[word] = (words[word] & ~(mask << shift)) | (value << shift);
- if (shift + layout->width > 32)
-  words[word + 1] = (words[word + 1] & ~(mask >> (32 - shift))) | (value >> (32 - shift));
+ rtl_fe_bits_set(words, layout->bit, layout->width, value);
 }
 
 /* Addresses and ports are numerical host-order values. This representation
@@ -358,5 +358,26 @@ static inline void rtl_fe_ipv4_mask(unsigned int words[RTL_FE_MASK_WORDS])
  words[6] = (words[6] & ~0x01000000U) | 0x00000000U; /* lspid */
  words[6] = (words[6] & ~0x00000200U) | 0x00000000U; /* pol_id */
  words[6] = (words[6] & ~0x04000000U) | 0x00000000U; /* ctrl_set_id */
+}
+
+#define RTL_FE_HEADER_WORDS 32
+/* Header-I is the hardware parser's 1024-bit representation. The SWO CRC
+ * port takes this header, rather than the 736-bit software hash key. */
+static inline void rtl_fe_header_ipv4(unsigned int words[RTL_FE_HEADER_WORDS],
+ const struct rtl_fe_ipv4_key *key)
+{
+ unsigned int i;
+ for (i = 0; i < RTL_FE_HEADER_WORDS; i++)
+  words[i] = 0;
+ rtl_fe_bits_set(words, 74, 16, key->destination_port); /* l4_dp */
+ rtl_fe_bits_set(words, 90, 16, key->source_port); /* l4_sp */
+ rtl_fe_bits_set(words, 233, 32, key->destination); /* ip_da_0 */
+ rtl_fe_bits_set(words, 361, 32, key->source); /* ip_sa_0 */
+ rtl_fe_bits_set(words, 492, 8, key->protocol); /* ip_protocol */
+ rtl_fe_bits_set(words, 510, 1, 1); /* ip_vld */
+ rtl_fe_bits_set(words, 802, 8, key->llid); /* pol_id */
+ rtl_fe_bits_set(words, 831, 6, key->ingress); /* o_lspid */
+ rtl_fe_bits_set(words, 837, 6, key->ingress); /* lspid */
+ rtl_fe_bits_set(words, 978, 4, key->profile); /* t2_ctrl */
 }
 #endif

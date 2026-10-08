@@ -27,3 +27,16 @@ rtl9617c-fe-format.h提供位字段写入、IPv4动作/流键、掩码及CRC；r
 配置由Linux拥有的Hash/动作/默认miss DMA表与cache，补齐MAC和L3接口索引表、双向NAT动作及CPU miss通路。接入Linux flow block/flowtable回调，让连接规则安装、删除、计数和老化由内核状态驱动。有线入口命中后进入硬件包编辑器，LAN下行到NI，PON上行进入原生深队列/PUC；OAM及未命中报文继续CPU路径。
 
 验收同时核对硬件命中/字节计数、LAN↔PON实际报文、NAT端口/IP/MAC/TTL/校验和、连接删除/老化以及CPU接收计数。硬件吞吐和CPU减少需从这些实机数据得出，不能由编码或表项读回代替。
+
+
+## 2026-10-09：ASIC CRC与DMA动作读取
+
+原生Header-I构造为1024位，SWO端口依次提交32个word及mask指针，通过bit0等待计算完成，再读实际CRC和736位输出tuple。128组IPv4 TCP/UDP、LAN LSPID0/PON LSPID7向量与软件流键及CRC16/CRC32完全一致。诊断SWO输入的orig_lspid、POL_ID和profile未进入输出tuple；逐位扫描输入头已经记录，实际报文入口的LLID/stream metadata仍需从后续包轨迹验证，不能将软件布局一致扩大为这些字段的硬件闭环。
+
+原生FE DMA准备层分配151552字节Linux coherent内存，包含4096个CRC表项、4096个32字节动作、64个overflow动作和32个16字节默认miss动作。4096条采用32槽bucket；cache为256条内部224位SRAM。base寄存器使用已验证的CCI高地址别名2。硬件MEM_INI请求完成，全部base与size读回符合配置，退出时恢复原配置并释放内存。
+
+实际硬件cache分配从上述Linux内存读取到CRC32=12345678。stage2 loc=0时读回动作为零，stage3 loc=1时224位NAT动作逐word与CPU写入内容一致。确认主Hash和动作的DMA可达性、age发布及cache invalidate入口。此轮保持有线入口在已验证软件路径，尚未启用真实连接的硬件转发。
+
+接下来通过L3FE入口profile、分类默认结果和明确的静态双向流，把真实报文送入Hash/包编辑器；验证NAT改写、TTL/校验和与CPU miss后接Linux flow block/flowtable。未启用的硬件转发不在LuCI中标为成功。
+
+用户新增无线研究已冻结到evidence/wireless-study-20261008，共433个文件、约66MB，逐文件收据为evidence/wireless-study-import-files.json。含RTL8192XB/RTL8832C固件与原厂FC/NE元数据链，按用户顺序在EPON有线硬件转发完成后推进Wi-Fi。GPON/XG-PON/XGS-PON暂缓，最后实施OpenWrt UBI刷入。

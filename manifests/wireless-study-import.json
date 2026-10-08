@@ -1,0 +1,9 @@
+{
+  "source": "User supplied TYFZA1 wireless study",
+  "evidence_directory": "evidence/wireless-study-20261008",
+  "files_copied": 433,
+  "bytes_copied": 66186467,
+  "files_receipt": "evidence/wireless-study-import-files.json",
+  "Finder_metadata_excluded": true,
+  "scripts_executed": false
+}
