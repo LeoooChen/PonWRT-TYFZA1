@@ -12,6 +12,10 @@
 sh port/scripts/build.sh /home/leo/PonWRT-TYFZA1/sources/openwrt 2
 ```
 
+三个构建入口共用 `tools/prepare_pon_runtime.py`，在 make 前生成六种协议的 SerDes 固件、复制本机 1024 字节 BOSA 校准，并从原厂配置提取 ONU MAC、注入私有认证配置。输入默认位于 `analysis/private/live-files/` 和 `analysis/private/pon-auth.json`；缺失输入会直接终止构建，已有 `files/` 内容不能替代输入。完整构建入口可通过 `TYFZA1_STOCK_INPUTS`、`TYFZA1_AUTH_CONFIG` 指定输入位置。认证配置以 0600 安装，准备结果及哈希保存于 `artifacts/pon-runtime-manifest.json`。
+
+需要后台构建和签名 RAM 测试载荷时运行 `sh scripts/start_lan_build.sh`。它以 systemd 用户服务运行，调用上述完整构建入口，日志保存在 `logs/lan-build-*.log`。
+
 快速验证启动修正：
 
 ```sh

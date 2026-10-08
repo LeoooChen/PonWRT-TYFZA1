@@ -1,0 +1,58 @@
+{
+  "date": "2026-10-08T03:38:53.374753+00:00",
+  "issues": {
+    "MPCP_NACK": "confirmed and fixed",
+    "OAM_discovery_auth": "confirmed and fixed",
+    "QM_refill_ownership": "confirmed and fixed",
+    "clean_build_runtime_inputs": "confirmed and fixed"
+  },
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-mpcp-backoff.h": "1c203147c647e590a57dc09aee2a408ccfe1dc7c8ced1717479a19ccec283cde",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-qm-refill.h": "48956b5490b39a1ab6a2f4f536d782848872b169cd11afbd252babb086cbbdca",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-qm.c": "0be19bbb13d694db51c719e103912efd39a8fb8ce36c809cc05dbb2ca6f7e646",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-mpcp.c": "20ab57bf4505c7260fe7a4983d5be2dbb35b787364b57c742a8c3703135995c7",
+    "port/packages/tyfza1-pon-control/src/pon-oam.c": "fd539a36e60b1854dc4ef737836a526d2726b97472d965260c05d27d9085ecd3",
+    "tools/prepare_pon_runtime.py": "a00f82acb83099e9e383b9b60718019be078df238be4ddb12fb8cf9260062813",
+    "scripts/test_oam_control.c": "ad607d4a1cb8608f6ef75b267e69826150813ac10731e17dd81863d235be4110",
+    "scripts/test_pon_recovery.c": "02d4284655eae2f3aac771b54f3d3b72a95080b1e99470772054bc10c7b0f2d0",
+    "scripts/test_pon_runtime.py": "29126f284ca7c523d6e97227f6735b0d884127e4d46a8d87ec7c127526b8ff7f",
+    "scripts/test_oam_daemon.py": "62db769c10da3b3a3840e7de7b7e8b16a667cfbb9eb7d6b2d4dee180d3073001"
+  },
+  "C_tests": "ASan/UBSan passed: codec and driver backoff/refill implementation",
+  "daemon_payload_integration": {
+    "binary": "/home/leo/PonWRT-TYFZA1/artifacts/review-fixes/payload-pon-oamd",
+    "runtime": "AArch64 OpenWrt GCC14.4/musl",
+    "network": "isolated veth namespace",
+    "passed": [
+      "unregistered process sends no OAM",
+      "registered Information discovery reaches stable with remote echo",
+      "actual process sends 24-byte LOID and blank 12-byte password",
+      "OLT success changes state without publishing credential values",
+      "UCI hardware/software versions enter live Get replies",
+      "same Local EVAL without Remote echo revokes success and negotiates a fresh revision",
+      "reauthentication clears success and records rejection",
+      "MPCP loss resets current auth and retains result history",
+      "OAM peer timeout revokes current auth while MPCP remains registered",
+      "duplicate LLID daemon rejected",
+      "SIGTERM removes current status and closes socket"
+    ],
+    "PON_hardware_verified": false
+  },
+  "runtime_preparation": {
+    "passed": [
+      "empty files tree gets all six profiles, exact BOSA calibration and private original-MAC config",
+      "all ten missing mandatory inputs fail despite pre-existing runtime files",
+      "empty SerDes profile fails",
+      "truncated BOSA calibration fails",
+      "documented full-build entry fails before make when mandatory board data is absent"
+    ]
+  },
+  "clean_checkout": {
+    "revision": "79bc56cb7483bc716da07c369530b792631904b4",
+    "files_absent_before_preparation": true,
+    "profiles": 12
+  },
+  "full_build_unit": "ponwrt-tyfza1-lan-20261008-112907",
+  "FIT_sha256": "8925c02a5f1b15301e8a37fa851f438ba265dd40f370b05a6eea9a2119d75d6b",
+  "board_tests_this_revision": false
+}

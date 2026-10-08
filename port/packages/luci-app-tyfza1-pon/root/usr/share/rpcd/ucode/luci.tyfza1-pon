@@ -15,6 +15,30 @@ function fields(text) {
 	return result;
 }
 
+function oam_ports() {
+	let ports = [];
+	const uptime = split(trim(readfile('/proc/uptime')), ' ');
+	const now_ms = +uptime[0] * 1000;
+	for (let llid = 0; llid < 32; llid++) {
+		let text = readfile('/var/run/pon-oam/llid-' + llid + '.json');
+		if (text == null)
+			continue;
+		let status = json(text);
+		let process = readfile('/proc/' + status.pid + '/stat');
+		let end = process != null ? index(process, ') ') : -1;
+		let state = end >= 0 ? split(substr(process, end + 2), ' ') : [];
+		status.live = length(state) > 19 && state[0] != 'Z' && state[0] != 'X' &&
+			state[19] == status.process_start && now_ms >= status.updated_ms && now_ms - status.updated_ms < 5000;
+		if (!status.live) {
+			status.registered = false;
+			status.auth_state = null;
+			status.discovery_stable = false;
+		}
+		push(ports, status);
+	}
+	return ports;
+}
+
 const methods = {
 	status: {
 		call: function() {
@@ -32,7 +56,7 @@ const methods = {
 				llids: readfile(device + 'llid_table'),
 				lan_rx_errors: trim(readfile('/sys/class/net/eth0/statistics/rx_errors')),
 				lan_rx_dropped: trim(readfile('/sys/class/net/eth0/statistics/rx_dropped')),
-				oam_state: readfile('/var/run/pon-oam/status.json'),
+				oam_ports: oam_ports(),
 				queried_at: time()
 			};
 		}

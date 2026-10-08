@@ -39,6 +39,17 @@ function statusPanel(data) {
 		E('table', {class: 'table'}, rows.map(function(row) {
 			return E('tr', {class: 'tr'}, [E('td', {class: 'td'}, row[0]), E('td', {class: 'td'}, row[1])]);
 		})),
+		E('h4', {}, 'OAM 与订户认证'),
+		E('table', {class: 'table'}, (data.oam_ports || []).map(function(port) {
+			var labels = {waiting: '等待', challenge: '正在认证', accepted: '通过', rejected: '拒绝'};
+			return E('tr', {class: 'tr'}, [
+				E('td', {class: 'td'}, 'LLID ' + port.llid_index),
+				E('td', {class: 'td'}, port.live ? '进程运行中' : '进程已停止'),
+				E('td', {class: 'td'}, port.discovery_stable ? 'OAM 发现完成' : 'OAM 发现中'),
+				E('td', {class: 'td'}, labels[port.auth_state] || '—'),
+				E('td', {class: 'td'}, '收 / 发 ' + port.rx_frames + ' / ' + port.tx_frames)
+			]);
+		})),
 		E('details', {}, [E('summary', {}, '队列与 LLID 状态'),
 			E('pre', {}, (data.puc ?? '') + '\n' + (data.pdc ?? '') + '\n' + (data.llids ?? ''))])
 	]);
@@ -72,6 +83,7 @@ return view.extend({
 			['registration_id', 'Registration ID', 36, true],
 			['ploam_password', 'PLOAM 密码', 10, true],
 			['vendor_id', '厂商 ID', 4, false],
+			['oam_model', 'EPON OAM 型号字段', 4, false],
 			['equipment_id', '设备型号', 20, false],
 			['hardware_version', '硬件版本', 16, false],
 			['software_version', '软件版本', 16, false]

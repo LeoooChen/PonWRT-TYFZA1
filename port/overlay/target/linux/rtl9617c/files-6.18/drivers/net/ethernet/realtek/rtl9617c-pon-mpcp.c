@@ -21,7 +21,7 @@
 #define MPCP_IRQ 0x2000
 #define MPCP_IE 0x2004
 #define MPCP_INIT 0x2008
-#define MPCP_START 0x200c
+#define MPCP_START RTL_MPCP_START
 #define REGISTER_FRAME 0x2010
 #define REGISTER_STATUS 0x2014
 #define MPCP_CFG0 0x2020
@@ -88,27 +88,37 @@ static void rtl_mpcp_registration_event(struct rtl9617c_pon *pon, u32 registered
 	dev_info(pon->dev, "MPCP registered LLIDs: %08x -> %08x\n", pon->registered, registered);
 }
 
+static unsigned int rtl_mpcp_read(void *context, unsigned int reg)
+{
+	struct rtl9617c_pon *pon = context;
+
+	return readl(pon->mac + reg);
+}
+
+static void rtl_mpcp_write(void *context, unsigned int reg, unsigned int value)
+{
+	struct rtl9617c_pon *pon = context;
+
+	writel(value, pon->mac + reg);
+}
+
 static void rtl_mpcp_refresh(struct rtl9617c_pon *pon)
 {
 	u32 flags = readl(pon->mac + MPCP_IRQ) & MPCP_EVENT_MASK;
 	u32 registered;
 	unsigned int i;
+	const struct rtl_mpcp_io io = {pon, rtl_mpcp_read, rtl_mpcp_write};
 
 	pon->last_mpcp_irq = flags;
+	if (rtl_mpcp_backoff_event(&pon->backoff, &io, flags, jiffies,
+				   msecs_to_jiffies(60000)) && pon->llid_count == 1)
+		rtl_mpcp_remove_mac(pon, 0);
 	if (flags & BIT(1)) {
 		for (i = 0; i < 64; i++) {
 			u32 frame = readl(pon->mac + REGISTER_FRAME);
-			unsigned int mac, flag;
-
 			if (!(frame & BIT(25)))
 				break;
-			mac = FIELD_GET(GENMASK(24, 20), frame);
-			flag = FIELD_GET(GENMASK(19, 16), frame);
 			pon->register_frames++;
-			if (flag == 4) {
-				pon->silence_until[mac] = jiffies + msecs_to_jiffies(60000);
-				rtl_mpcp_remove_mac(pon, mac);
-			}
 		}
 	}
 	if (flags)
@@ -141,9 +151,9 @@ static void rtl_mpcp_work(struct work_struct *work)
 	status = readl(pon->mac + 0x10);
 	synced = !(status & BIT(0)) &&
 		 !!(status & (pon->mode == RTL_PON_EPON_1G ? BIT(2) : BIT(1)));
-	if (pon->mpcp_enabled && synced) {
+	if (pon->mpcp_enabled && synced && !rtl_mpcp_backoff_active(&pon->backoff, jiffies)) {
 		for (mac = 0; mac < pon->llid_count; mac++) {
-			if (!(pon->waiting & BIT(mac)) || time_before(jiffies, pon->silence_until[mac]))
+			if (!(pon->waiting & BIT(mac)))
 				continue;
 			rtl_pon_update(pon->mac + MPCP_INIT, GENMASK(13, 8) | GENMASK(4, 0),
 					   (mac << 8) | mac);
@@ -190,6 +200,7 @@ void rtl_pon_mpcp_stop(struct rtl9617c_pon *pon)
 	cancel_delayed_work_sync(&pon->mpcp_work);
 	mutex_lock(&pon->lock);
 	pon->mpcp_enabled = false;
+	pon->backoff.active = 0;
 	if (!rtl_pon_mode_is_epon(pon->mode)) {
 		mutex_unlock(&pon->lock);
 		return;
@@ -212,7 +223,6 @@ void rtl_pon_mpcp_stop(struct rtl9617c_pon *pon)
 int rtl_pon_mpcp_configure(struct rtl9617c_pon *pon)
 {
 	u32 sync;
-	unsigned int i;
 	int ret = 0;
 
 	mutex_lock(&pon->lock);
@@ -242,8 +252,7 @@ int rtl_pon_mpcp_configure(struct rtl9617c_pon *pon)
 	rtl_pon_update(pon->mac + REGISTER_TIMEOUT, GENMASK(19, 0) | BIT(31), 0xffff | BIT(31));
 	rtl_pon_update(pon->mac + LASER_TIME, GENMASK(7, 0) | GENMASK(23, 16), 32 | (32 << 16));
 	writel(0, pon->mac + OFFLINE);
-	for (i = 0; i < 32; i++)
-		pon->silence_until[i] = jiffies;
+	pon->backoff.active = 0;
 	pon->registered = readl(pon->mac + REGISTER_STATUS) & rtl_pon_llid_mask(pon);
 	pon->waiting = rtl_pon_llid_mask(pon) & ~pon->registered;
 	pon->mpcp_configured = true;
@@ -262,14 +271,17 @@ unlock:
 ssize_t rtl_pon_mpcp_state(struct rtl9617c_pon *pon, char *buf)
 {
 	return sysfs_emit(buf,
-		"configured=%u enabled=%u mac=%pM llids=%u registered=%08x waiting=%08x attempts=%u events=%u irq_count=%u frames=%u cfg0=%08x cfg=%08x sync=%08x timers=%08x register_timeout=%08x laser_time=%08x mapping=%08x init=%08x start=%08x\n",
+		"configured=%u enabled=%u mac=%pM llids=%u registered=%08x waiting=%08x attempts=%u events=%u irq_count=%u frames=%u cfg0=%08x cfg=%08x sync=%08x timers=%08x register_timeout=%08x laser_time=%08x mapping=%08x init=%08x start=%08x register_flag=%u nacks=%u silence_scope=shared-engine silence_ms=%u\n",
 		pon->mpcp_configured, pon->mpcp_enabled, pon->onu_mac, pon->llid_count,
 		pon->registered, pon->waiting, pon->registration_attempts, pon->registration_events,
 		pon->mpcp_irq_count, pon->register_frames, readl(pon->mac + MPCP_CFG0),
 		readl(pon->mac + MPCP_CFG), readl(pon->mac + SYNC_TIME),
 		readl(pon->mac + TIMEOUT_THRESHOLD), readl(pon->mac + REGISTER_TIMEOUT),
 		readl(pon->mac + LASER_TIME), readl(pon->mac + LLID_MAPPING),
-		readl(pon->mac + MPCP_INIT), readl(pon->mac + MPCP_START));
+		readl(pon->mac + MPCP_INIT), readl(pon->mac + MPCP_START),
+		pon->backoff.register_flag, pon->backoff.nacks,
+		pon->backoff.active && time_before(jiffies, pon->backoff.until) ?
+		jiffies_to_msecs(pon->backoff.until - jiffies) : 0);
 }
 
 ssize_t rtl_pon_llid_table(struct rtl9617c_pon *pon, char *buf)

@@ -26,6 +26,15 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
         p = d / "sys/class/net/eth0/statistics" / name
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("0\n")
+    (d / 'proc').mkdir()
+    (d / 'proc/uptime').write_text('100.00 150.00\n')
+    process = d / 'proc/123/stat'
+    process.parent.mkdir()
+    process.write_text('123 (pon-oamd) ' + ' '.join(['S'] + ['0'] * 18 + ['123456'] + ['0'] * 30) + '\n')
+    marker = d / 'var/run/pon-oam/llid-0.json'
+    marker.parent.mkdir(parents=True)
+    marker.write_text(json.dumps({'pid':123, 'process_start':'123456', 'updated_ms':99500,
+                                 'registered':True, 'discovery_stable':True, 'auth_state':'accepted'}))
     program = d / "status.uc"
     program.write_text("const FIXTURE = " + json.dumps(str(d)) + ";\n" +
                        source.replace("return { 'luci.tyfza1-pon': methods };",
@@ -36,13 +45,21 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
     assert observed["traffic"]["rx"] == "0"
     assert observed["bosa"]["error"] == "-6"
     assert observed["lan_rx_errors"] == "0"
-    assert observed["oam_state"] is None
+    assert observed['oam_ports'][0]['live'] is True, observed['oam_ports']
+    assert observed['oam_ports'][0]['auth_state'] == 'accepted'
+    process.write_text('123 (another-process) ' + ' '.join(['S'] + ['0'] * 18 + ['654321'] + ['0'] * 30) + '\n')
+    stale = json.loads(subprocess.check_output([str(ucode), str(program)], text=True))
+    assert stale['oam_ports'][0]['live'] is False
+    assert stale['oam_ports'][0]['auth_state'] is None
+    marker.unlink()
     for path in device.iterdir():
         path.unlink()
     absent = json.loads(subprocess.check_output([str(ucode), str(program)], text=True))
     assert absent["state"] is None and absent["serdes"] is None and absent["mpcp"] is None
     assert absent["bosa"] is None and absent["traffic"] is None
+    assert absent['oam_ports'] == []
 (root / "logs/pon-luci-status-test.json").write_text(json.dumps({"actual_rpcd_source_executed": True,
     "observed_zero_and_error_fields_preserved": True, "missing_device_is_null": True,
+    "OAM_live_process_identity_checked": True, "stale_auth_result_hidden": True,
     "LuCI_hardware_UI_verified": False}, indent=2) + "\n")
-print("rpcd status parsing: observed zeros, error codes and absent devices passed")
+print("rpcd status parsing: observed zeros/errors, live OAM identity and stale auth cases passed")

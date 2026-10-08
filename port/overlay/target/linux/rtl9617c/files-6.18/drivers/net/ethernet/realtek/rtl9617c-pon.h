@@ -7,6 +7,7 @@
 #include <linux/workqueue.h>
 #include "rtl9617c-ni.h"
 #include "rtl9617c-pon-mode.h"
+#include "rtl9617c-mpcp-backoff.h"
 
 struct rtl9617c_pon {
 	struct device *dev;
@@ -44,6 +45,7 @@ struct rtl9617c_pon {
 	bool puc_configured;
 	int puc_error;
 	struct rtl9617c_ni_endpoint oam_endpoint;
+	struct net_device __rcu *oam_devices[32];
 	bool traffic_enabled;
 	unsigned int last_oam_llid;
 	unsigned int last_oam_source;
@@ -55,7 +57,7 @@ struct rtl9617c_pon {
 	u32 mpcp_irq_count;
 	u32 last_mpcp_irq;
 	int mpcp_irq;
-	unsigned long silence_until[32];
+	struct rtl_mpcp_backoff backoff;
 };
 
 void rtl_pon_update(void __iomem *reg, u32 mask, u32 value);
@@ -82,4 +84,6 @@ ssize_t rtl_pon_puc_state(struct rtl9617c_pon *pon, char *buf);
 int rtl_pon_oam_init(struct rtl9617c_pon *pon);
 void rtl_pon_oam_remove(struct rtl9617c_pon *pon);
 void rtl_pon_oam_carrier(struct rtl9617c_pon *pon);
+int rtl_pon_oam_resize(struct rtl9617c_pon *pon, unsigned int count);
+void rtl_pon_oam_address(struct rtl9617c_pon *pon);
 #endif

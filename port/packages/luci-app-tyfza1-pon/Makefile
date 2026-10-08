@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 LUCI_TITLE:=TYFZA1 PON configuration and live status
-LUCI_DEPENDS:=+luci-base +rpcd-mod-ucode +ucode-mod-fs
+LUCI_DEPENDS:=+luci-base +rpcd-mod-ucode +ucode-mod-fs +tyfza1-pon-control
 LUCI_PKGARCH:=all
 PKG_VERSION:=0.1.0
 PKG_RELEASE:=1

@@ -199,7 +199,7 @@ static enum hrtimer_restart rtl_timer(struct hrtimer *timer)
 {
 	struct rtl_xram *priv = container_of(timer, struct rtl_xram, timer);
 
-	if (!priv->qm_rx)
+	if (!priv->qm_rx || READ_ONCE(priv->qm.refill.pending))
 		napi_schedule(&priv->napi);
 	spin_lock(&priv->tx_lock);
 	if (priv->dma_tx) {
@@ -208,9 +208,8 @@ static enum hrtimer_restart rtl_timer(struct hrtimer *timer)
 		rtl_dma_tx_complete(&priv->dma, priv->netdev);
 		rcu_read_lock();
 		endpoint = rcu_dereference(priv->qm.pon);
-		if (endpoint && netif_running(endpoint->netdev) &&
-		    netif_queue_stopped(endpoint->netdev) && rtl_dma_tx_available(&priv->dma))
-			netif_wake_queue(endpoint->netdev);
+		if (endpoint && rtl_dma_tx_available(&priv->dma))
+			endpoint->wake(endpoint);
 		rcu_read_unlock();
 	} else if (priv->tx_pending && rtl_pointer(priv, TX_READ) == rtl_pointer(priv, TX_WRITE)) {
 		priv->tx_pending = false;

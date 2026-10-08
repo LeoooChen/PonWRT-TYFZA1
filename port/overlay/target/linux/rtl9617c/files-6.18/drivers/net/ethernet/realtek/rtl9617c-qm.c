@@ -57,6 +57,19 @@ static int rtl_qm_push(struct rtl_qm_rx *rx, u32 address, unsigned int eqid)
 	return 0;
 }
 
+static int rtl_qm_try_push(void *context, unsigned int address, unsigned int eqid)
+{
+	struct rtl_qm_rx *rx = context;
+
+	/* NAPI retains busy buffers; it never waits 10ms per buffer. The engine's
+	 * 1ms timer schedules another poll even if every RX buffer is pending. */
+	if (!(readl(rx->ni + 0x6328 + eqid * 4) & GENMASK(13, 0)) ||
+	    !(readl(rx->ni + CPU_READY) & BIT(31)))
+		return -EAGAIN;
+	writel(address | eqid, rx->ni + CPU_PUSH);
+	return 0;
+}
+
 static int rtl_qm_ingress(struct rtl_qm_rx *rx, unsigned int port)
 {
 	/* ILPB and ICLS values from the Taurus CPU rule; CPU0 target is 0x42. */
@@ -177,6 +190,8 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	ret = readl_poll_timeout(ni + 0x6850, value, value & BIT(30), 1, 100000);
 	if (ret)
 		return ret;
+	/* TQM reset invalidates old BIDs; all buffers are loaded anew below. */
+	memset(&rx->refill, 0, sizeof(rx->refill));
 	writel(readl(ni + RMU_CTRL) & ~BIT(31), ni + RMU_CTRL);
 	writel(readl(ni + ES_CTRL) & ~BIT(31), ni + ES_CTRL);
 	writel(0, ni + 0x6110);
@@ -275,11 +290,10 @@ void rtl_qm_rx_free(struct device *dev, struct rtl_qm_rx *rx)
 int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 {
 	struct net_device *dev = napi->dev;
-	u32 refill[NAPI_POLL_WEIGHT];
-	unsigned int refill_count = 0;
 	int cos;
 	int count = 0;
 
+	rtl_qm_refill_drain(&rx->refill, rx, rtl_qm_try_push, NAPI_POLL_WEIGHT);
 	/* Service PON control traffic before bulk data, matching the stock RX order. */
 	for (cos = RTL_QM_VOQS - 1; cos >= 0 && count < budget; cos--) {
 		unsigned int wr = readl(rx->ni + EPP_WRITE + cos * 4) & 0xffffff;
@@ -297,6 +311,9 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			command = get_unaligned_le32(entry);
 			length_word = get_unaligned_le32(entry + 4);
 			address = command & 0xffffff80;
+			if (((command & 15) == EQ_ID || (command & 15) == EQ_ID + 1) &&
+			    rx->refill.count[(command & 15) - EQ_ID] == RTL_QM_REFILL_SIZE)
+				break;
 			rx->last_address = command;
 			rx->last_size = length_word;
 			offset = address - lower_32_bits(rx->memory_dma);
@@ -368,21 +385,19 @@ consume:
 			rx->read[cos] = (rx->read[cos] + RTL_QM_COMMAND_BYTES) & (RTL_QM_RING_BYTES - 1);
 			writel(rx->read[cos], rx->ni + EPP_READ + cos * 4);
 			if (refill_buffer)
-				refill[refill_count++] = command;
+				rtl_qm_refill_add(&rx->refill, command);
 			wr = readl(rx->ni + EPP_WRITE + cos * 4) & 0xffffff;
 		}
 	}
 	/* Vendor receive retires the whole EPP batch before refilling released BIDs. */
-	for (cos = 0; cos < refill_count; cos++)
-		if (rtl_qm_push(rx, refill[cos] & 0xffffff80, refill[cos] & 0xf))
-			dev->stats.rx_dropped++;
+	rtl_qm_refill_drain(&rx->refill, rx, rtl_qm_try_push, NAPI_POLL_WEIGHT);
 	return count;
 }
 
 ssize_t rtl_qm_rx_state(struct rtl_qm_rx *rx, char *buf)
 {
 	writel(0x82, rx->ni + 0x105c);
-	return sysfs_emit(buf, "memory=%pad rmu=%08x es=%08x status=%08x eqreq=%08x pushrdy=%08x epp=%08x wr0=%u rd0=%u last=%08x/%08x hdra=%08x/%08x monitor=%08x ni_demux=%08x rxcount=%u txcount=%u no_buffer=%u fe_drop=%u lenerr=%u td_global=%08x td_port=%08x td_priority=%08x\n",
+	return sysfs_emit(buf, "memory=%pad rmu=%08x es=%08x status=%08x eqreq=%08x pushrdy=%08x epp=%08x wr0=%u rd0=%u last=%08x/%08x hdra=%08x/%08x monitor=%08x ni_demux=%08x rxcount=%u txcount=%u no_buffer=%u fe_drop=%u lenerr=%u td_global=%08x td_port=%08x td_priority=%08x refill_pending=%u refill_retries=%u refill_returned=%u refill_peak=%u\n",
 		&rx->memory_dma, readl(rx->ni + RMU_CTRL), readl(rx->ni + ES_CTRL),
 		readl(rx->ni + 0x6850), readl(rx->ni + 0x6328 + EQ_ID * 4),
 		readl(rx->ni + CPU_READY), readl(rx->ni + 0x659c),
@@ -391,7 +406,8 @@ ssize_t rtl_qm_rx_state(struct rtl_qm_rx *rx, char *buf)
 		readl(rx->ni + 0x1060), readl(rx->ni + 0xa1dc), readl(rx->ni + 0x67d8),
 		readl(rx->ni + 0x67ec), readl(rx->ni + 0x6818), readl(rx->ni + 0x681c),
 		readl(rx->ni + 0x6824), readl(rx->ni + 0x2d60), readl(rx->ni + 0x2d64),
-		readl(rx->ni + 0x2d78));
+		readl(rx->ni + 0x2d78), READ_ONCE(rx->refill.pending),
+		rx->refill.retries, rx->refill.returned, rx->refill.peak);
 }
 
 ssize_t rtl_qm_rx_trace(struct rtl_qm_rx *rx, char *buf)

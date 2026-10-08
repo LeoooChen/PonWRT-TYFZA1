@@ -4,6 +4,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/netdevice.h>
 #include "rtl9617c-ni.h"
+#include "rtl9617c-qm-refill.h"
 
 #define RTL_QM_RING_BYTES 1024
 #define RTL_QM_COMMAND_BYTES 8
@@ -26,6 +27,7 @@ struct rtl_qm_rx {
 	u32 trace[32][7];
 	unsigned int trace_count;
 	unsigned int lan_source;
+	struct rtl_qm_refill refill;
 	struct rtl9617c_ni_endpoint __rcu *pon;
 };
 

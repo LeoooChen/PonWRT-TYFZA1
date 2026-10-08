@@ -12,7 +12,10 @@ parser.add_argument("output", type=Path)
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
 manifest = {}
-for source in sorted(args.stock_directory.glob("pon_serdes_*.txt")):
+sources = sorted(args.stock_directory.glob("pon_serdes_*.txt"))
+if not sources:
+    raise ValueError(f"No original SerDes profiles: {args.stock_directory}")
+for source in sources:
     records = []
     for line in source.read_text().splitlines():
         if not line.strip().startswith("0x"):
@@ -23,7 +26,7 @@ for source in sorted(args.stock_directory.glob("pon_serdes_*.txt")):
             raise ValueError(f"PON register outside MAC resource: {address:#x}")
         records.append((offset, value, delay or 10))
     # The verified stock loader caps tables at 512 rows and uses value column1.
-    if len(records) > 512:
+    if not records or len(records) > 512:
         raise ValueError(f"Table exceeds the verified stock loader: {source.name}")
     firmware = struct.pack("<4sII", b"TPON", 1, len(records))
     firmware += b"".join(struct.pack("<III", *record) for record in records)

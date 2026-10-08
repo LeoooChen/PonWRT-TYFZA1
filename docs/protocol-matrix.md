@@ -15,4 +15,4 @@ scripts/test_pon_modes.py依据固定GPL aal_psds.c检查全部六项模式值�
 
 GPON族需要独立MAC/ANI、PLOAM激活、ONU-ID/测距/定时器、密钥、OMCI通道、GEM/Alloc/T-CONT及业务规则。当前GPON族的MAC启动返回EOPNOTSUPP，状态显示prepared=0/error=-95；SerDes配置不能作为GPON完整注册证据。对应后续任务与参考教训在pon-reference-lessons.md。
 
-EPON族还需完整原生OAM守护进程、LOID结果状态、每LLID业务队列、PON业务netdev和DHCP/桥接业务。其寄存器初始化及LAN传输已通过板测，真实光口收发尚未通过。
+EPON族已接入原生OAM发现、CTC扩展协商、LOID认证、版本查询和每LLID守护进程/状态，实际ARM64/musl进程的隔离网络测试通过。每LLID业务队列、PON业务netdev和DHCP/桥接业务继续移植。其寄存器初始化及LAN传输已通过板测，真实光口注册、认证及业务尚待测试。

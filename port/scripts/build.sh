@@ -7,8 +7,15 @@ export https_proxy=$http_proxy
 export CURL_OPTIONS='--speed-time 60 --speed-limit 1024'
 umask 022
 PORT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+PROJECT=$(CDPATH= cd -- "$PORT/.." && pwd)
 TREE=${1:?Usage: build.sh /path/to/openwrt-checkout [jobs]}
-JOBS=${2:-8}
+JOBS=${2:-2}
+python3 "$PROJECT/tools/prepare_pon_runtime.py" "$TREE/files" \
+    --stock "${TYFZA1_STOCK_INPUTS:-$PROJECT/analysis/private/live-files}" \
+    --auth-config "${TYFZA1_AUTH_CONFIG:-$PROJECT/analysis/private/pon-auth.json}"
+if [ ! -e "$TREE/package/feeds/packages/cgi-io" ] || [ ! -e "$TREE/package/feeds/luci/luci" ]; then
+    sh "$PROJECT/scripts/prepare_luci_feeds.sh" "$TREE"
+fi
 sh "$PORT/scripts/sync-overlay.sh" "$TREE"
 cd "$TREE"
 make defconfig

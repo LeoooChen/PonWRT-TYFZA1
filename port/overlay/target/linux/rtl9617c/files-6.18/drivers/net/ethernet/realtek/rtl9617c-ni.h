@@ -8,6 +8,7 @@ struct rtl9617c_ni_endpoint {
 	struct net_device *netdev;
 	void (*receive)(struct rtl9617c_ni_endpoint *endpoint, struct napi_struct *napi,
 			struct sk_buff *skb, unsigned int source);
+	void (*wake)(struct rtl9617c_ni_endpoint *endpoint);
 };
 
 struct rtl9617c_ni_frame {

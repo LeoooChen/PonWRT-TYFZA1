@@ -8,23 +8,7 @@ exec 9>"$P/artifacts/openwrt-world.lock"
 flock 9
 export http_proxy=http://host.orb.internal:7897 https_proxy=http://host.orb.internal:7897
 export CURL_OPTIONS='--speed-time 60 --speed-limit 1024'
-if [ ! -e "$P/sources/openwrt/package/feeds/packages/cgi-io" ] || [ ! -e "$P/sources/openwrt/package/feeds/luci/luci" ]; then
-    sh scripts/prepare_luci_feeds.sh "$P/sources/openwrt"
-fi
-sh port/scripts/sync-overlay.sh "$P/sources/openwrt"
-python3 tools/prepare_pon_serdes.py "$P/analysis/private/live-files/etc/serdes" "$P/artifacts/pon-serdes-firmware"
-mkdir -p "$P/sources/openwrt/files/lib/firmware/realtek/rtl9617c"
-cp "$P/artifacts/pon-serdes-firmware/"*.bin "$P/sources/openwrt/files/lib/firmware/realtek/rtl9617c/"
-cp "$P/analysis/private/live-files/var/config/rtkbosa_k.bin" "$P/sources/openwrt/files/lib/firmware/realtek/rtl9617c/bosa-calibration.bin"
-python3 tools/prepare_pon_identity.py "$P/analysis/private/live-files/var/config/config.xml" \
-    "$P/analysis/private/live-files/var/config/default_scfg.txt" "$P/artifacts/pon-config/pon" \
-    --auth-config "$P/analysis/private/pon-auth.json"
-mkdir -p "$P/sources/openwrt/files/etc/config"
-install -m 600 "$P/artifacts/pon-config/pon" "$P/sources/openwrt/files/etc/config/pon"
-cd sources/openwrt
-make defconfig
-make -j2 download
-make -j2 world
+sh port/scripts/build.sh "$P/sources/openwrt" 2
 cd "$P"
 BIN=$P/sources/openwrt/bin/targets/rtl9617c/generic
 OUT=${TYFZA1_LAN_OUT:-$P/artifacts/full-lan-luci-6.18.55}

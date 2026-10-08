@@ -20,14 +20,7 @@ mkdir -p "$B" "$R"
 if [ ! -e "$R/sbin/init" ]; then
     tar -xzf "$P/artifacts/prior-native-20261002/firmware/openwrt-rtl9617c-generic-tianyi_tyfza1-rootfs.tar.gz" -C "$R"
 fi
-python3 "$P/tools/prepare_pon_serdes.py" "$P/analysis/private/live-files/etc/serdes" "$P/artifacts/pon-serdes-firmware"
-mkdir -p "$R/lib/firmware/realtek/rtl9617c"
-cp "$P/artifacts/pon-serdes-firmware/"*.bin "$R/lib/firmware/realtek/rtl9617c/"
-cp "$P/analysis/private/live-files/var/config/rtkbosa_k.bin" "$R/lib/firmware/realtek/rtl9617c/bosa-calibration.bin"
-python3 "$P/tools/prepare_pon_identity.py" "$P/analysis/private/live-files/var/config/config.xml" \
-    "$P/analysis/private/live-files/var/config/default_scfg.txt" "$P/artifacts/pon-config/pon" \
-    --auth-config "$P/analysis/private/pon-auth.json"
-install -m 600 "$P/artifacts/pon-config/pon" "$R/etc/config/pon"
+python3 "$P/tools/prepare_pon_runtime.py" "$R"
 printf 'file /init %s 0755 0 0\n' "$G/other-files/init" > "$B/init-cpio-list"
 cp "$P/artifacts/prior-native-20261002/verification/kernel.config" "$B/.config"
 "$K/scripts/config" --file "$B/.config" --set-str INITRAMFS_SOURCE "$R $B/init-cpio-list $G/image/initramfs-base-files.txt" --set-val INITRAMFS_ROOT_UID 501 --set-val INITRAMFS_ROOT_GID 501

@@ -156,7 +156,7 @@ static ssize_t onu_mac_store(struct device *dev, struct device_attribute *attr,
 		return -EBUSY;
 	}
 	ether_addr_copy(pon->onu_mac, mac);
-	eth_hw_addr_set(pon->oam_endpoint.netdev, mac);
+	rtl_pon_oam_address(pon);
 	mutex_unlock(&pon->lock);
 	return count;
 }
@@ -183,9 +183,11 @@ static ssize_t llid_count_store(struct device *dev, struct device_attribute *att
 		mutex_unlock(&pon->lock);
 		return -EBUSY;
 	}
-	pon->llid_count = value;
+	ret = rtl_pon_oam_resize(pon, value);
+	if (!ret)
+		pon->llid_count = value;
 	mutex_unlock(&pon->lock);
-	return count;
+	return ret ? ret : count;
 }
 static DEVICE_ATTR_RW(llid_count);
 
@@ -303,11 +305,26 @@ static ssize_t traffic_show(struct device *dev, struct device_attribute *attr, c
 {
 	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
 	struct net_device *oam = pon->oam_endpoint.netdev;
+	unsigned long received = 0, transmitted = 0, receive_drops = 0, transmit_drops = 0;
+	unsigned int i;
+
+	rcu_read_lock();
+	for (i = 0; i < 32; i++) {
+		struct net_device *port = rcu_dereference(pon->oam_devices[i]);
+
+		if (port) {
+			received += port->stats.rx_packets;
+			transmitted += port->stats.tx_packets;
+			receive_drops += port->stats.rx_dropped;
+			transmit_drops += port->stats.tx_dropped;
+		}
+	}
+	rcu_read_unlock();
 
 	return sysfs_emit(buf, "enabled=%u oam_device=%s carrier=%u last_llid=%u last_source=%u rx=%lu tx=%lu rx_dropped=%lu tx_dropped=%lu\n",
 		pon->traffic_enabled, oam->name, netif_carrier_ok(oam),
 		READ_ONCE(pon->last_oam_llid), READ_ONCE(pon->last_oam_source),
-		oam->stats.rx_packets, oam->stats.tx_packets, oam->stats.rx_dropped, oam->stats.tx_dropped);
+		received, transmitted, receive_drops, transmit_drops);
 }
 
 static ssize_t traffic_store(struct device *dev, struct device_attribute *attr,
