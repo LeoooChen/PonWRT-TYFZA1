@@ -34,6 +34,10 @@ function statusPanel(data) {
 		['OAM 收发', value(data.traffic, 'rx') + ' / ' + value(data.traffic, 'tx')],
 		['PON 业务收 / 发', (data.wan_rx_packets ?? '—') + ' / ' + (data.wan_tx_packets ?? '—')],
 		['上行业务队列初始化', value(data.deepq, 'configured')],
+		['有线硬件转发', data.fe && data.fe.available === '1' ?
+			(data.fe.enabled === '1' ? '已启用' : '已关闭') : '不可用'],
+		['硬件流数量', value(data.fe, 'flows') + ' / ' + value(data.fe, 'counter_slots')],
+		['硬件流安装 / 释放', value(data.fe, 'installs') + ' / ' + value(data.fe, 'deletes')],
 		['LAN 接收错误 / 丢弃', (data.lan_rx_errors ?? '—') + ' / ' + (data.lan_rx_dropped ?? '—')]
 	];
 	return E('div', {class: 'cbi-section'}, [
@@ -59,10 +63,11 @@ function statusPanel(data) {
 
 return view.extend({
 	load: function() {
-		return Promise.all([uci.load('pon'), callStatus()]);
+		return Promise.all([uci.load('pon'), callStatus(), uci.load('firewall')]);
 	},
 	render: function(data) {
 		var m = new form.Map('pon', 'PON 管理');
+		m.chain('firewall');
 		var s = m.section(form.NamedSection, 'pon', 'pon');
 		s.tab('link', '光链路');
 		s.tab('identity', '认证与设备身份');
@@ -102,6 +107,18 @@ return view.extend({
 		o = s.taboption('wan', form.Value, 'wan_vlan', '业务 VLAN ID');
 		o.datatype = 'range(1,4094)';
 		o.placeholder = '由 OLT 业务配置确定';
+		var defaults = uci.sections('firewall', 'defaults')[0];
+		o = s.taboption('wan', form.Flag, 'hardware_offload', '有线硬件转发');
+		o.description = '由连接跟踪自动安装和释放硬件流。';
+		o.uciconfig = 'firewall';
+		o.ucisection = defaults['.name'];
+		o.ucioption = 'flow_offloading_hw';
+		o.rmempty = false;
+		o.write = function(section, enabled) {
+			uci.set('firewall', defaults['.name'], 'flow_offloading_hw', enabled);
+			if (enabled === '1')
+				uci.set('firewall', defaults['.name'], 'flow_offloading', '1');
+		};
 		var status = E('div', {}, statusPanel(data[1]));
 		poll.add(function() {
 			return callStatus().then(function(next) { status.replaceChildren(statusPanel(next)); });

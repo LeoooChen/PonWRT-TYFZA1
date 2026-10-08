@@ -18,7 +18,8 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
         "serdes": "mode=epon-d10g configured=1 error=0 rx_los=1\n",
         "bosa": "configured=0 model=205 eeprom=0 writes=599 error=-6 identity=47/39/37\n",
         "traffic": "enabled=1 rx=0 tx=0 carrier=0\n",
-        "mpcp": "registered=00000000 attempts=0\n"
+        "mpcp": "registered=00000000 attempts=0\n",
+        "fe": "available=1 enabled=1 prepared=1 error=0 flows=2 counter_slots=64 installs=8 deletes=6\n"
     }
     for name, value in samples.items():
         (device / name).write_text(value)
@@ -54,6 +55,7 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
     assert observed["lan_rx_errors"] == "0"
     assert observed['deepq']['configured'] == '1' and observed['wan_rx_packets'] == '0'
     assert observed['wan_tx_packets'] == '17'
+    assert observed['fe']['enabled'] == '1' and observed['fe']['flows'] == '2'
     assert observed['oam_ports'][0]['live'] is True, observed['oam_ports']
     assert observed['oam_ports'][0]['auth_state'] == 'accepted'
     process.write_text('123 (another-process) ' + ' '.join(['S'] + ['0'] * 18 + ['654321'] + ['0'] * 30) + '\n')
@@ -67,6 +69,7 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
     absent = json.loads(subprocess.check_output([str(ucode), str(program)], text=True))
     assert absent["state"] is None and absent["serdes"] is None and absent["mpcp"] is None
     assert absent["bosa"] is None and absent["traffic"] is None
+    assert absent['fe'] is None
     assert absent['oam_ports'] == []
 (root / "logs/pon-luci-status-test.json").write_text(json.dumps({"actual_rpcd_source_executed": True,
     "observed_zero_and_error_fields_preserved": True, "missing_device_is_null": True,

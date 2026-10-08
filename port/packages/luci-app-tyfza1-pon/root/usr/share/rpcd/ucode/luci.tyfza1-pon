@@ -50,6 +50,7 @@ const methods = {
 				mac: fields(readfile(device + 'mac')),
 				mpcp: fields(readfile(device + 'mpcp')),
 				traffic: fields(readfile(device + 'traffic')),
+				fe: fields(readfile(device + 'fe')),
 				optical: fields(readfile(device + 'optical')),
 				puc: readfile(device + 'puc'),
 				pdc: readfile(device + 'pdc'),

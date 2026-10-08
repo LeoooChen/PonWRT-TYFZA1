@@ -41,10 +41,11 @@ typedef uint8_t u8;typedef uint16_t __be16;typedef uint32_t u32;
 #define ETH_ALEN 6
 #define ETH_HLEN 14
 #define ETH_P_IP 0x800
+#define ETH_P_IPV6 0x86dd
 #define NF_FLOW_RULE_ACTION_MAX 16
 #define unlikely(x) (x)
 enum {FLOW_DISSECTOR_KEY_META,FLOW_DISSECTOR_KEY_BASIC,FLOW_DISSECTOR_KEY_IPV4_ADDRS,
- FLOW_DISSECTOR_KEY_PORTS,FLOW_DISSECTOR_KEY_VLAN,FLOW_DISSECTOR_KEY_CVLAN,FLOW_DISSECTOR_KEY_ENC_CONTROL};
+ FLOW_DISSECTOR_KEY_PORTS,FLOW_DISSECTOR_KEY_VLAN,FLOW_DISSECTOR_KEY_CVLAN,FLOW_DISSECTOR_KEY_ENC_CONTROL,FLOW_DISSECTOR_KEY_IPV6_ADDRS};
 enum {FLOW_ACTION_REDIRECT,FLOW_ACTION_CSUM,FLOW_ACTION_MANGLE};
 enum flow_action_mangle_base {FLOW_ACT_MANGLE_HDR_TYPE_ETH,FLOW_ACT_MANGLE_HDR_TYPE_IP4,
  FLOW_ACT_MANGLE_HDR_TYPE_TCP,FLOW_ACT_MANGLE_HDR_TYPE_UDP};
@@ -52,6 +53,7 @@ struct net_device {int ifindex;};
 struct flow_dissector_key_meta {int ingress_ifindex;};
 struct flow_dissector_key_basic {__be16 n_proto;u8 ip_proto;};
 struct flow_dissector_key_ipv4_addrs {__be32 src,dst;};
+struct flow_dissector_key_ipv6_addrs {struct in6_addr src,dst;};
 struct flow_dissector_key_ports {__be16 src,dst;};
 struct flow_action_entry {int id;union {struct net_device *dev;
  struct {enum flow_action_mangle_base htype;u32 offset,mask,val;} mangle;};};
@@ -61,6 +63,7 @@ struct flow_rule {
  struct flow_dissector_key_meta meta,meta_mask;
  struct flow_dissector_key_basic basic,basic_mask;
  struct flow_dissector_key_ipv4_addrs ipv4,ipv4_mask;
+ struct flow_dissector_key_ipv6_addrs ipv6,ipv6_mask;
  struct flow_dissector_key_ports ports,ports_mask;
  struct flow_action action;
 };
@@ -70,10 +73,12 @@ struct flow_cls_offload {struct flow_rule *rule;};
 FLOW_MATCH(meta,meta)
 FLOW_MATCH(basic,basic)
 FLOW_MATCH(ipv4_addrs,ipv4_addrs)
+FLOW_MATCH(ipv6_addrs,ipv6_addrs)
 FLOW_MATCH(ports,ports)
 static void flow_rule_match_meta(struct flow_rule *r,struct flow_match_meta *m){m->key=&r->meta;m->mask=&r->meta_mask;}
 static void flow_rule_match_basic(struct flow_rule *r,struct flow_match_basic *m){m->key=&r->basic;m->mask=&r->basic_mask;}
 static void flow_rule_match_ipv4_addrs(struct flow_rule *r,struct flow_match_ipv4_addrs *m){m->key=&r->ipv4;m->mask=&r->ipv4_mask;}
+static void flow_rule_match_ipv6_addrs(struct flow_rule *r,struct flow_match_ipv6_addrs *m){m->key=&r->ipv6;m->mask=&r->ipv6_mask;}
 static void flow_rule_match_ports(struct flow_rule *r,struct flow_match_ports *m){m->key=&r->ports;m->mask=&r->ports_mask;}
 static bool flow_rule_match_key(struct flow_rule *r,unsigned int key){return r->used&(1U<<key);}
 static struct flow_rule *flow_cls_offload_flow_rule(struct flow_cls_offload *f){return f->rule;}
@@ -150,6 +155,29 @@ int main(void)
     assert(fe_parse(dir?&pp:&lp,&cls,&parsed)==-EOPNOTSUPP);
     cases++;
    }
+ for(unsigned int direction=0;direction<2;direction++)
+  for(unsigned int protocol=6;protocol<=17;protocol+=11) {
+   struct flow_rule rule={.used=(1U<<FLOW_DISSECTOR_KEY_META)|(1U<<FLOW_DISSECTOR_KEY_BASIC)|
+    (1U<<FLOW_DISSECTOR_KEY_PORTS)|(1U<<FLOW_DISSECTOR_KEY_IPV6_ADDRS),
+    .meta={.ingress_ifindex=direction?4:2},.basic={.n_proto=htons(ETH_P_IPV6),.ip_proto=protocol},
+    .basic_mask={.n_proto=65535,.ip_proto=255},.ports={htons(53123),htons(443)},.ports_mask={65535,65535}};
+   struct nf_flow_rule nf={.rule=&rule};struct flow_cls_offload cls={.rule=&rule};
+   struct rtl_fe_rule parsed={};
+   for(unsigned int word=0;word<4;word++) {
+    rule.ipv6.src.s6_addr32[word]=htonl(0x20010db8+word*37);
+    rule.ipv6.dst.s6_addr32[word]=htonl(0x20010db8+word*103+1);
+    rule.ipv6_mask.src.s6_addr32[word]=~0U;rule.ipv6_mask.dst.s6_addr32[word]=~0U;
+   }
+   ethernet_actions(&nf,source,destination,direction?&lan:&pon);
+   assert(!fe_parse(direction?&pp:&lp,&cls,&parsed) && parsed.ipv6 && !parsed.action.translate);
+   for(unsigned int word=0;word<4;word++) {
+    assert(parsed.key6.source[word]==0x20010db8+word*37);
+    assert(parsed.key6.destination[word]==0x20010db8+word*103+1);
+   }
+   assert(parsed.action.destination==(direction?0:32));
+   assert(parsed.key6.source_port==53123 && parsed.key6.destination_port==443);
+   cases++;
+  }
  printf("Native flow parser: %u actual Linux TCP/UDP NAT action vectors, both directions, Ethernet and port byte order passed\n",cases);
 }
 '''
@@ -170,6 +198,6 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts',prefix='fe-parser-') as 
     'production_source_sha256':hashlib.sha256(native.encode()).hexdigest(),
     'Linux_NAT_builder_sha256':hashlib.sha256(upstream.encode()).hexdigest(),
     'Linux_version':'6.18.55','TCP_UDP_both_directions':True,
-    'vectors':1024,'sanitizers':['ASan','UBSan'],
+    'vectors':1028,'IPv6_128bit_route_vectors':4,'sanitizers':['ASan','UBSan'],
     'hardware_flowtable_acceptance':False,
 },indent=2)+'\n')

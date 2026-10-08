@@ -7,11 +7,13 @@
 #include <linux/platform_device.h>
 #include <linux/etherdevice.h>
 #include <linux/ip.h>
+#include <linux/ipv6.h>
 #include <linux/udp.h>
 #include <linux/delay.h>
 #include <linux/workqueue.h>
 #include <net/ip.h>
 #include <net/checksum.h>
+#include <net/ip6_checksum.h>
 #include <linux/unaligned.h>
 #include "rtl9617c-ni.h"
 #include "rtl9617c-pon.h"
@@ -43,9 +45,15 @@ static unsigned int lan_frontend=3;
 module_param(lan_frontend,uint,0600);
 static unsigned int test_age=7;
 module_param(test_age,uint,0600);
+static unsigned int test_cache_control=1;
+module_param(test_cache_control,uint,0600);
+static unsigned int test_cache_misc;
+module_param(test_cache_misc,uint,0600);
 static unsigned int lan_fib_saved[3],lan_icls_saved[5];
 static bool lan_fib_configured;
 static bool packet_test;
+static bool ipv6_test;
+module_param(ipv6_test,bool,0600);
 static bool mac_test;
 module_param(mac_test,bool,0600);
 static bool destination_test=true;
@@ -243,6 +251,7 @@ static int configure_reverse(const struct rtl_dq_io *io)
  if(ret)return ret;
  action.mac_da_index=da_index;
  rtl_fe_ipv4_action(words,&action);
+ rtl_fe_action_set(words,RTL_FE_CACHE_CTRL1,test_cache_control);
  rtl_fe_action_set(words,RTL_FE_L3_IF_COUNTER_EN,1);
  rtl_fe_ipv4_key(key_words,&key);
  rtl_fe_key_set(key_words,RTL_FE_KEY_HKEY_ID,0);
@@ -308,6 +317,8 @@ static int packet_pipeline(const struct rtl_dq_io *io)
   .source_port=53000,.destination_port=18082,.protocol=17,.ingress=0,.mask=63};
  struct rtl_fe_ipv4_action action={.address=0xc6336401,.port=62000,.destination=16,
   .translate=1,.cos=0};
+ struct rtl_fe_ipv6_key key6={.source={0x20010db8,1,0,2},.destination={0x20010db8,2,0,2},
+  .source_port=53000,.destination_port=18082,.protocol=17,.mask=63};
  unsigned int mask[8],key_words[RTL_FE_KEY_WORDS],action_words[8],cls[7],lpb[3],crc32,index,i,trace[64];
  unsigned short crc16;
  unsigned int destination_index;
@@ -315,6 +326,7 @@ static int packet_pipeline(const struct rtl_dq_io *io)
  struct sk_buff *skb;
  struct ethhdr *eth;
  struct iphdr *ip;
+ struct ipv6hdr *ip6=NULL;
  struct udphdr *udp;
  const struct rtl9617c_ni_frame frame={.header_low=(25<<3)|BIT(29)};
  int ret;
@@ -324,6 +336,7 @@ static int packet_pipeline(const struct rtl_dq_io *io)
  key.destination_port=test_port;
  action.address=nat_source;
  action.deep_queue=egress>=32;
+ if(ipv6_test)action.translate=0;
  ret=rtl_fe_mask_read(io,63,mask_saved);
  if(ret)return ret;
  for(i=0;i<2;i++) {
@@ -336,7 +349,8 @@ static int packet_pipeline(const struct rtl_dq_io *io)
   map_saved[i]=io->read(io->context,0x1658);
  }
  pipeline_configured=true;
- rtl_fe_ipv4_mask(mask);
+ if(ipv6_test)rtl_fe_ipv6_mask(mask);
+ else rtl_fe_ipv4_mask(mask);
  mask[6]|=BIT(201-192)|BIT(215-192)|BIT(218-192);
  ret=rtl_fe_mask_write(io,63,mask);
  if(ret)return ret;
@@ -360,12 +374,14 @@ static int packet_pipeline(const struct rtl_dq_io *io)
  writel(63|(7<<8),base+0x3704);
  writel(1,base+0x3700);
  writel(0x020d0000,base+0x3860); /* group16/18/19,128-bit CPU miss */
- rtl_fe_ipv4_key(key_words,&key);
+ if(ipv6_test)rtl_fe_ipv6_key(key_words,&key6);
+ else rtl_fe_ipv4_key(key_words,&key);
  rtl_fe_key_set(key_words,RTL_FE_KEY_HKEY_ID,0);
  rtl_fe_key_set(key_words,RTL_FE_KEY_TABLE_ID,0);
  rtl_fe_key_crc(key_words,&crc32,&crc16);
  index=(crc16&0xfe00)>>4;
  rtl_fe_ipv4_action(action_words,&action);
+ rtl_fe_action_set(action_words,RTL_FE_CACHE_CTRL1,test_cache_control);
  rtl_fe_action_set(action_words,RTL_FE_MCGID,egress);
  rtl_fe_action_set(action_words,RTL_FE_L3_IF_VLD1,0);
  rtl_fe_action_set(action_words,RTL_FE_SMAC_TRANS,0);
@@ -390,26 +406,40 @@ static int packet_pipeline(const struct rtl_dq_io *io)
   ret=configure_reverse(io);
   if(ret)return ret;
  }
+ writel(test_cache_misc,base+0x38c4);
  if(wired_ingress)return configure_lan_ingress(io);
  skb=alloc_skb(128,GFP_KERNEL);
  if(!skb)return -ENOMEM;
  eth=skb_put(skb,sizeof(*eth));
  ether_addr_copy(eth->h_dest,owner->dev_addr);
  ether_addr_copy(eth->h_source,(u8[]){2,0x11,0x22,0x33,0x44,0x55});
- eth->h_proto=htons(ETH_P_IP);
- ip=skb_put_zero(skb,sizeof(*ip));
- ip->version=4;ip->ihl=5;ip->ttl=64;ip->protocol=17;
- ip->saddr=htonl(key.source);ip->daddr=htonl(key.destination);
- ip->tot_len=htons(sizeof(*ip)+sizeof(*udp)+sizeof(payload));
- ip_send_check(ip);
+ eth->h_proto=htons(ipv6_test?ETH_P_IPV6:ETH_P_IP);
+ if(ipv6_test) {
+  ip6=skb_put_zero(skb,sizeof(*ip6));
+  ip6->version=6;ip6->hop_limit=64;ip6->nexthdr=17;
+  ip6->payload_len=htons(sizeof(*udp)+sizeof(payload));
+  for(i=0;i<4;i++) {
+   ip6->saddr.s6_addr32[i]=htonl(key6.source[i]);
+   ip6->daddr.s6_addr32[i]=htonl(key6.destination[i]);
+  }
+ } else {
+  ip=skb_put_zero(skb,sizeof(*ip));
+  ip->version=4;ip->ihl=5;ip->ttl=64;ip->protocol=17;
+  ip->saddr=htonl(key.source);ip->daddr=htonl(key.destination);
+  ip->tot_len=htons(sizeof(*ip)+sizeof(*udp)+sizeof(payload));
+  ip_send_check(ip);
+ }
  udp=skb_put_zero(skb,sizeof(*udp));
  udp->source=htons(key.source_port);udp->dest=htons(key.destination_port);
  udp->len=htons(sizeof(*udp)+sizeof(payload));
  memcpy(skb_put(skb,sizeof(payload)),payload,sizeof(payload));
- udp->check=csum_tcpudp_magic(ip->saddr,ip->daddr,sizeof(*udp)+sizeof(payload),17,
-  csum_partial(udp,sizeof(*udp)+sizeof(payload),0));
+ if(ipv6_test)
+  udp->check=csum_ipv6_magic(&ip6->saddr,&ip6->daddr,sizeof(*udp)+sizeof(payload),17,
+   csum_partial(udp,sizeof(*udp)+sizeof(payload),0));
+ else udp->check=csum_tcpudp_magic(ip->saddr,ip->daddr,sizeof(*udp)+sizeof(payload),17,
+   csum_partial(udp,sizeof(*udp)+sizeof(payload),0));
  if(!udp->check)udp->check=CSUM_MANGLED_0;
- skb->dev=owner;skb->protocol=htons(ETH_P_IP);
+ skb->dev=owner;skb->protocol=htons(ipv6_test?ETH_P_IPV6:ETH_P_IP);
  pr_info("TYFZA1 FE packet egress=%u CPU_RX_before=%lu\n",egress,owner->stats.rx_packets);
  ret=rtl9617c_ni_transmit(device,owner,skb,&frame);
  if(ret==NETDEV_TX_BUSY){kfree_skb(skb);return -EBUSY;}
@@ -440,6 +470,14 @@ static int packet_pipeline(const struct rtl_dq_io *io)
   writel((14<<5)|i,base+0x30b8);
   pr_info("TYFZA1 FE packet output_HeaderA%u=%08x\n",i,readl(base+0x30bc));
  }
+ for(i=0;i<32;i++) {
+  writel((8<<5)|i,base+0x30b8);
+  trace[i]=readl(base+0x30bc);
+ }
+ for(i=0;i<32;i+=4)
+  pr_info("TYFZA1 FE before_PE words%u=%08x/%08x/%08x/%08x\n",i,trace[i],trace[i+1],trace[i+2],trace[i+3]);
+ writel(3<<5,base+0x30c4);
+ pr_info("TYFZA1 FE PE drop_latch=%08x\n",readl(base+0x30c8));
  return 0;
 }
 
@@ -567,6 +605,19 @@ static int monitor_set(const char *value,const struct kernel_param *parameter)
    pr_info("TYFZA1 FE direction%u TX IFID%u packet_delta=%u bytes_delta=%llu dropped_delta=%u\n",
     i,state->interface_id,words[2]-state->counters_before[2],bytes-before,words[6]-state->counters_before[6]);
   }
+ }
+ else if(monitor==7) {
+  const struct rtl_dq_io io={NULL,reg_read,reg_write,reg_access};
+  unsigned int slot,words[7],count=0;
+
+  for(slot=0;slot<256;slot++) {
+   ret=rtl_fe_cache_read(&io,slot,0,words);
+   if(ret)return ret;
+   if(!words[0])continue;
+   count++;
+   pr_info("TYFZA1 FE cache%u key=%08x metadata=%08x/%08x\n",slot,words[0],words[1],words[2]);
+  }
+  pr_info("TYFZA1 FE populated cache entries=%u CACHE_MISC=%08x\n",count,readl(base+0x38c4));
  }
  else return -EINVAL;
  return 0;

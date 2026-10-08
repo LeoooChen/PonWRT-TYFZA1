@@ -7,6 +7,7 @@
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/ip.h>
+#include <linux/ipv6.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
@@ -139,9 +140,10 @@ static int fe_prepare(struct rtl_fe *fe)
  rtl_fe_dma_tables(&io,lower_32_bits(fe->dma),(upper_32_bits(fe->dma)&255)|2);
  ret=fe_access(fe,0x393c,1);
  if(ret)return ret;
- rtl_fe_ipv4_mask(mask);
+ rtl_fe_ipv6_mask(mask);
  /* Keep LLID/POL_ID and LSPID in the key; orig_lspid/profile are ignored.
-  * Only untagged IPv4 and TCP without FIN/SYN/RST match this first profile. */
+  * Full128 address prefixes also cover IPv4, which the parser clamps to32.
+  * TCP FIN/SYN/RST continue on the kernel control path. */
  mask[6]|=BIT(23)|BIT(26);
  mask[0]&=~(BIT(1)|BIT(2)|BIT(3));
  mask[3]&=~BIT(4); /* mask.vlan_cnt bit100, key.vlan_cnt bits464..465 */
@@ -287,6 +289,8 @@ static int fe_destination_put(struct rtl_fe *fe,struct rtl_fe_flow *flow)
 
 struct rtl_fe_rule {
  struct rtl_fe_ipv4_key key;
+ struct rtl_fe_ipv6_key key6;
+ bool ipv6;
  struct rtl_fe_ipv4_action action;
  struct rtl_fe_port *input,*output;
  u8 source[ETH_ALEN],destination[ETH_ALEN];
@@ -297,6 +301,7 @@ static int fe_parse(struct rtl_fe_port *port,struct flow_cls_offload *cls,struct
  struct flow_match_meta meta;
  struct flow_match_basic basic;
  struct flow_match_ipv4_addrs addresses;
+ struct flow_match_ipv6_addrs addresses6;
  struct flow_match_ports ports;
  struct flow_action_entry *act;
  struct net_device *output=NULL;
@@ -308,26 +313,45 @@ static int fe_parse(struct rtl_fe_port *port,struct flow_cls_offload *cls,struct
 
  if(!flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_META) ||
     !flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_BASIC) ||
-    !flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_IPV4_ADDRS) ||
+    (!flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_IPV4_ADDRS) &&
+     !flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_IPV6_ADDRS)) ||
     !flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_PORTS))return -EOPNOTSUPP;
  flow_rule_match_meta(rule,&meta);
  if(meta.key->ingress_ifindex!=port->netdev->ifindex)return -EOPNOTSUPP;
  flow_rule_match_basic(rule,&basic);
- if(basic.key->n_proto!=htons(ETH_P_IP) || basic.mask->n_proto!=htons(0xffff) ||
+ data->ipv6=basic.key->n_proto==htons(ETH_P_IPV6);
+ if((basic.key->n_proto!=htons(ETH_P_IP) && !data->ipv6) || basic.mask->n_proto!=htons(0xffff) ||
     basic.mask->ip_proto!=255 || (basic.key->ip_proto!=IPPROTO_TCP && basic.key->ip_proto!=IPPROTO_UDP))
   return -EOPNOTSUPP;
  if(flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_VLAN) ||
     flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_CVLAN) ||
     flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_ENC_CONTROL))return -EOPNOTSUPP;
- flow_rule_match_ipv4_addrs(rule,&addresses);
  flow_rule_match_ports(rule,&ports);
- if(addresses.mask->src!=htonl(~0U) || addresses.mask->dst!=htonl(~0U) ||
-    ports.mask->src!=htons(0xffff) || ports.mask->dst!=htons(0xffff))return -EOPNOTSUPP;
+ if(ports.mask->src!=htons(0xffff) || ports.mask->dst!=htons(0xffff))return -EOPNOTSUPP;
  data->input=port;
- data->key=(struct rtl_fe_ipv4_key){.source=ntohl(addresses.key->src),.destination=ntohl(addresses.key->dst),
+ data->key=(struct rtl_fe_ipv4_key){
   .source_port=ntohs(ports.key->src),.destination_port=ntohs(ports.key->dst),
   .protocol=basic.key->ip_proto,.ingress=port->source,.llid=port->llid,.mask=63};
- new_source=addresses.key->src;new_destination=addresses.key->dst;
+ if(data->ipv6) {
+  if(!flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_IPV6_ADDRS))return -EOPNOTSUPP;
+  flow_rule_match_ipv6_addrs(rule,&addresses6);
+  data->key6=(struct rtl_fe_ipv6_key){.source_port=data->key.source_port,
+   .destination_port=data->key.destination_port,.protocol=data->key.protocol,
+   .ingress=data->key.ingress,.llid=data->key.llid,.mask=63};
+  for(i=0;i<4;i++) {
+   if(addresses6.mask->src.s6_addr32[i]!=htonl(~0U) ||
+      addresses6.mask->dst.s6_addr32[i]!=htonl(~0U))return -EOPNOTSUPP;
+   data->key6.source[i]=ntohl(addresses6.key->src.s6_addr32[i]);
+   data->key6.destination[i]=ntohl(addresses6.key->dst.s6_addr32[i]);
+  }
+  new_source=new_destination=0;
+ } else {
+  if(!flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_IPV4_ADDRS))return -EOPNOTSUPP;
+  flow_rule_match_ipv4_addrs(rule,&addresses);
+  if(addresses.mask->src!=htonl(~0U) || addresses.mask->dst!=htonl(~0U))return -EOPNOTSUPP;
+  data->key.source=ntohl(addresses.key->src);data->key.destination=ntohl(addresses.key->dst);
+  new_source=addresses.key->src;new_destination=addresses.key->dst;
+ }
  new_sport=ports.key->src;new_dport=ports.key->dst;
  flow_action_for_each(i,act,&rule->action) {
   unsigned int offset=act->mangle.offset;
@@ -342,6 +366,7 @@ static int fe_parse(struct rtl_fe_port *port,struct flow_cls_offload *cls,struct
     value=get_unaligned((u32 *)(ethernet+offset));
     put_unaligned((value&act->mangle.mask)|act->mangle.val,(u32 *)(ethernet+offset));
    } else if(act->mangle.htype==FLOW_ACT_MANGLE_HDR_TYPE_IP4) {
+    if(data->ipv6)return -EOPNOTSUPP;
     if(act->mangle.mask)return -EOPNOTSUPP;
     if(offset==offsetof(struct iphdr,saddr))memcpy(&new_source,&act->mangle.val,4);
     else if(offset==offsetof(struct iphdr,daddr))memcpy(&new_destination,&act->mangle.val,4);
@@ -353,6 +378,7 @@ static int fe_parse(struct rtl_fe_port *port,struct flow_cls_offload *cls,struct
     value=(value&act->mangle.mask)|act->mangle.val;
     memcpy(pair,&value,4);
     new_sport=pair[0];new_dport=pair[1];
+    if(data->ipv6 && (new_sport!=ports.key->src || new_dport!=ports.key->dst))return -EOPNOTSUPP;
    } else return -EOPNOTSUPP;
    break;
   default:return -EOPNOTSUPP;
@@ -363,8 +389,8 @@ static int fe_parse(struct rtl_fe_port *port,struct flow_cls_offload *cls,struct
  ether_addr_copy(data->destination,ethernet);
  ether_addr_copy(data->source,ethernet+ETH_ALEN);
  if(!is_valid_ether_addr(data->source) || !is_valid_ether_addr(data->destination))return -EINVAL;
- source_changed=new_source!=addresses.key->src || new_sport!=ports.key->src;
- destination_changed=new_destination!=addresses.key->dst || new_dport!=ports.key->dst;
+ source_changed=!data->ipv6 && (new_source!=addresses.key->src || new_sport!=ports.key->src);
+ destination_changed=!data->ipv6 && (new_destination!=addresses.key->dst || new_dport!=ports.key->dst);
  if(source_changed && destination_changed)return -EOPNOTSUPP;
  data->action=(struct rtl_fe_ipv4_action){.destination=data->output->destination,
   .deep_queue=data->output->destination>=32,.translate=source_changed||destination_changed,
@@ -428,7 +454,8 @@ static int fe_replace(struct rtl_fe_port *port,struct flow_cls_offload *cls)
  if(fe_flow(fe,cls->cookie))return -EEXIST;
  counter=find_first_zero_bit(fe->counters,FE_COUNTERS);
  if(counter==FE_COUNTERS)return -ENOSPC;
- rtl_fe_ipv4_key(words,&data.key);
+ if(data.ipv6)rtl_fe_ipv6_key(words,&data.key6);
+ else rtl_fe_ipv4_key(words,&data.key);
  rtl_fe_key_set(words,RTL_FE_KEY_ORIG_LSPID,0);
  rtl_fe_key_set(words,RTL_FE_KEY_CTRL_SET_ID,0);
  rtl_fe_key_set(words,RTL_FE_KEY_HKEY_ID,0);

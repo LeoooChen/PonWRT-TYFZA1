@@ -85,3 +85,17 @@ TCP使用tools/mac_fe_tcp.c在Mac en5注入原始Ethernet帧，完成10.23.42.1:
 最新镜像为artifacts/full-pon-flowtable04-6.18.55/ram-pon/image.itb，SHA256为02351a56b688ea757f00ea26527fc94d05e174df5c39197b39263dd618ab519f，6087828字节。最终FIT内核、DTB、内置initramfs994项与外置对应内容一致，校准、身份、六个SerDes协议配置齐全，实机四核、XEPON注册、认证和DHCP已恢复。MPCP停止实测把FE从enabled=1/flows=2变成enabled=0/prepared=0/flows=0，PDC恢复CPU16；重新注册后OAM generation=4、认证历史成功数2、WAN网关ping3/3。
 
 当前启动默认仍为软件转发。测试启用方式为PON设备fe属性写1，再开启firewall defaults的flow_offloading与flow_offloading_hw并reload fw3；这只是一条当前开发控制入口，UCI/LuCI持久配置尚待接入。现有实机证明为XEPON的IPv4 untagged TCP/UDP动态卸载；其他两种EPON光链路、VLAN/IPv6卸载、完整吞吐及长期稳定性仍需对应验证。按用户顺序完成这些有线工作后推进Wi-Fi，GPON族暂缓，最后完成原生UBI安装与升级。
+
+## 2026-10-09：持久配置、IPv6格式和原厂通路核对
+
+硬件入口现在由OpenWrt firewall defaults中的flow_offloading和flow_offloading_hw共同控制。首次配置默认启用；已经明确配置为0的值不覆盖。PON服务启动执行offload动作，firewall配置事件只更新FE，不重启OAM。LuCI PON页使用同一项原生防火墙配置并显示实际FE状态、流数、安装和删除数量。板上关闭/启用事件前后OAM PID3153、process_start137102保持不变，认证持续accepted；服务触发器同时包含pon reload和firewall offload。
+
+整包artifacts/full-pon-offload-ui01-6.18.55/ram-pon/image.itb已实机默认启动：SHA256696e7da4a1823b653abf0a51adfd68d8bc497dadfd221cd795ff3e9933ae565d，6088340字节，UCI硬件开关1，FE enabled1且动态流已安装，XEPON认证与DHCP恢复。最终FIT根文件系统995项校验通过，证据为logs/offload-ui01-default-boot-device.txt和offload-ui01-payload-verification.json。
+
+IPv6 key和Header-I包含完整128位地址；网络序word0为高32位，硬件ip_sa/da_0为低32位。SWO除了ip_ver，还需要IPv6 packet type6；补齐后128组IPv6 TCP/UDP tuple和CRC与ASIC全部一致，同一full128 mask的128组IPv4也通过。实包NI注入经Hash命中后从LAN输出，IPv6地址2001:db8:0:1::2→2001:db8:0:2::2不变、Hop Limit64→63、源/目的MAC改写、UDP校验和和载荷正确，CPU RX前后均2623。该轮为静态NI注入，不扩大成外部PON IPv6动态验收。原生动态解析器已加入IPv6路由，1028组IPv4 NAT/IPv6解析向量通过；动态IPv6整包及实机尚待完成。第一轮抓包地址误写成2001:db8:1::2，空pcap不是出口故障证据，按实际地址/MAC重新抓取通过。
+
+用户要求按原厂核对UNB/BND。这两个名称在Airoha PPE中是FOE的UNBIND/BIND状态，不能直接当作RTL9617C寄存器枚举。当前已验证的硬件业务属于“软件建流→有效Hash查表命中→硬件NAT/包编辑→实际出口”语义，等价于用户关注的BND型查表转发。本机ca-ne.ko的aal_hash_add、aal_hash_profile_init、convert_act_flow_nomal_mode、_hash_hw_entry_set已查到真实代码；RTL8277C原厂参考的path34/5使用五元组profile并调用aal_hash_add。当前对照的是同一主Hash/packet editor，不套用Airoha FOE格式。
+
+原厂type0动作设置cache_ctrl1=1，原生初期动作默认0，本轮已修正。实机原生模块以该字段1完成双向3包，上行213字节、下行1275字节，均0丢弃。原厂参考将非软件整形流age置1；当前原生动态后端age7由Linux按逐流IFID统计管理生命周期，这一差别尚待对齐。本机default_scfg.txt声明主Hash65536项、cache2048项、动作槽48字节；当前原生Hash4096项、cache256项、224位动作32字节、独立IFID统计最多64个方向流。该文件是原厂默认配置，尚未替代原厂运行时寄存器快照。不能宣称参数容量已经完整复现。
+
+实验性设置CACHE_MISC=80000000/c0000000后双向转发与统计仍正常，但自动cache扫描未见有效项、main age仍1。自动cache与原厂活跃/老化路径仍需继续查证；原生动态流的实测硬件计数和CPU绕行结论保持有效。证据记录为logs/fe-stock-cache-alignment-device.txt。

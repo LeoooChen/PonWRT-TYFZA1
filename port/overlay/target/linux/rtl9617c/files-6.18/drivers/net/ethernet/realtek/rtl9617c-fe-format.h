@@ -199,6 +199,7 @@ static inline void rtl_fe_ipv4_action(unsigned int words[RTL_FE_ACTION_WORDS],
  rtl_fe_action_set(words, RTL_FE_IP_TTL_ZERO_DISCARD_EN1, 1);
  rtl_fe_action_set(words, RTL_FE_MAC_DA_IDX_VLD, 1);
  rtl_fe_action_set(words, RTL_FE_MAC_DA_IDX, action->mac_da_index);
+ rtl_fe_action_set(words, RTL_FE_CACHE_CTRL1, 1); /* Original FC type0 action. */
  rtl_fe_action_set(words, RTL_FE_COS_UPDATE_EN, 1);
  rtl_fe_action_set(words, RTL_FE_COS1, action->cos);
  rtl_fe_action_set(words, RTL_FE_IP_ADDR_VLD, action->translate);
@@ -216,8 +217,14 @@ enum rtl_fe_key_field {
 	RTL_FE_KEY_L3_CHKSUM_ERR,
 	RTL_FE_KEY_IP_FRAGMENT_FLAG,
 	RTL_FE_KEY_IP_OPTIONS,
-	RTL_FE_KEY_IP_DA_0,
-	RTL_FE_KEY_IP_SA_0,
+ RTL_FE_KEY_IP_DA_0,
+ RTL_FE_KEY_IP_DA_1,
+ RTL_FE_KEY_IP_DA_2,
+ RTL_FE_KEY_IP_DA_3,
+ RTL_FE_KEY_IP_SA_0,
+ RTL_FE_KEY_IP_SA_1,
+ RTL_FE_KEY_IP_SA_2,
+ RTL_FE_KEY_IP_SA_3,
 	RTL_FE_KEY_IP_PROTOCOL,
 	RTL_FE_KEY_IP_VER,
 	RTL_FE_KEY_IP_VLD,
@@ -244,7 +251,13 @@ static const struct rtl_fe_field_layout rtl_fe_key_fields[RTL_FE_KEY_FIELD_COUNT
 	[RTL_FE_KEY_IP_FRAGMENT_FLAG] = {92, 1},
 	[RTL_FE_KEY_IP_OPTIONS] = {94, 1},
 	[RTL_FE_KEY_IP_DA_0] = {123, 32},
+	[RTL_FE_KEY_IP_DA_1] = {155, 32},
+	[RTL_FE_KEY_IP_DA_2] = {187, 32},
+	[RTL_FE_KEY_IP_DA_3] = {219, 32},
 	[RTL_FE_KEY_IP_SA_0] = {251, 32},
+	[RTL_FE_KEY_IP_SA_1] = {283, 32},
+	[RTL_FE_KEY_IP_SA_2] = {315, 32},
+	[RTL_FE_KEY_IP_SA_3] = {347, 32},
 	[RTL_FE_KEY_IP_PROTOCOL] = {382, 8},
 	[RTL_FE_KEY_IP_VER] = {398, 1},
 	[RTL_FE_KEY_IP_VLD] = {399, 1},
@@ -296,6 +309,29 @@ static inline void rtl_fe_ipv4_key(unsigned int words[RTL_FE_KEY_WORDS],
  rtl_fe_key_set(words, RTL_FE_KEY_HKEY_ID, key->mask);
  rtl_fe_key_set(words, RTL_FE_KEY_CTRL_SET_ID, key->profile);
  rtl_fe_key_set(words, RTL_FE_KEY_TABLE_ID, 1);
+}
+
+/* IPv6 words are ordered as the network address:word0 is the MSB.
+ * Hardware ip_sa/da_0 is the LSB, matching the physical parser and GPL layout. */
+struct rtl_fe_ipv6_key {
+ unsigned int source[4],destination[4];
+ unsigned short source_port,destination_port,llid;
+ unsigned char protocol,ingress,profile,mask;
+};
+static inline void rtl_fe_ipv6_key(unsigned int words[RTL_FE_KEY_WORDS],
+ const struct rtl_fe_ipv6_key *key)
+{
+ struct rtl_fe_ipv4_key low={.source=key->source[3],.destination=key->destination[3],
+  .source_port=key->source_port,.destination_port=key->destination_port,
+  .llid=key->llid,.protocol=key->protocol,.ingress=key->ingress,.profile=key->profile,.mask=key->mask};
+ unsigned int i;
+
+ rtl_fe_ipv4_key(words,&low);
+ rtl_fe_key_set(words,RTL_FE_KEY_IP_VER,1);
+ for(i=1;i<4;i++) {
+  rtl_fe_bits_set(words,123+i*32,32,key->destination[3-i]);
+  rtl_fe_bits_set(words,251+i*32,32,key->source[3-i]);
+ }
 }
 
 static inline unsigned int rtl_fe_reverse(unsigned int value, unsigned int bits)
@@ -361,6 +397,12 @@ static inline void rtl_fe_ipv4_mask(unsigned int words[RTL_FE_MASK_WORDS])
  words[6] = (words[6] & ~0x00000200U) | 0x00000000U; /* pol_id */
  words[6] = (words[6] & ~0x04000000U) | 0x00000000U; /* ctrl_set_id */
 }
+static inline void rtl_fe_ipv6_mask(unsigned int words[RTL_FE_MASK_WORDS])
+{
+ rtl_fe_ipv4_mask(words);
+ rtl_fe_bits_set(words,58,9,128); /* full128-bit destination */
+ rtl_fe_bits_set(words,67,9,128); /* full128-bit source */
+}
 
 #define RTL_FE_HEADER_WORDS 32
 /* Header-I is the hardware parser's 1024-bit representation. The SWO CRC
@@ -381,5 +423,21 @@ static inline void rtl_fe_header_ipv4(unsigned int words[RTL_FE_HEADER_WORDS],
  rtl_fe_bits_set(words, 831, 6, key->ingress); /* o_lspid */
  rtl_fe_bits_set(words, 837, 6, key->ingress); /* lspid */
  rtl_fe_bits_set(words, 978, 4, key->profile); /* t2_ctrl */
+}
+static inline void rtl_fe_header_ipv6(unsigned int words[RTL_FE_HEADER_WORDS],
+ const struct rtl_fe_ipv6_key *key)
+{
+ struct rtl_fe_ipv4_key low={.source=key->source[3],.destination=key->destination[3],
+  .source_port=key->source_port,.destination_port=key->destination_port,
+  .llid=key->llid,.protocol=key->protocol,.ingress=key->ingress,.profile=key->profile};
+ unsigned int i;
+
+ rtl_fe_header_ipv4(words,&low);
+ rtl_fe_bits_set(words,489,3,6); /* IPv6 parser type; SWO address masking uses it. */
+ rtl_fe_bits_set(words,509,1,1); /* IPv6 */
+ for(i=1;i<4;i++) {
+  rtl_fe_bits_set(words,233+i*32,32,key->destination[3-i]);
+  rtl_fe_bits_set(words,361+i*32,32,key->source[3-i]);
+ }
 }
 #endif
