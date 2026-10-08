@@ -1,0 +1,66 @@
+{
+  "payload": "artifacts/full-bosa-luci03-6.18.55",
+  "build_unit": "ponwrt-tyfza1-lan-20261008-101555",
+  "required_files": [
+    {
+      "path": "etc/init.d/pon",
+      "bytes": 1335,
+      "sha256": "e7b2b1f418e0b1d3c9959d6b16a1ad67871dc5dd7ca756816cb9ace910fe612b",
+      "mode": "0o755"
+    },
+    {
+      "path": "etc/config/pon",
+      "bytes": 200,
+      "sha256": "78fa5c3642686f41a63f03f221746feaf0053878ad63f8f65cfbbd344bd76a7b",
+      "mode": "0o600"
+    },
+    {
+      "path": "lib/firmware/realtek/rtl9617c/bosa-calibration.bin",
+      "bytes": 1024,
+      "sha256": "07f4014678ce52bee03b0aa2f9e2eabca85419402fcccad6b5ad07e6b18e3b5b",
+      "mode": "0o644"
+    },
+    {
+      "path": "usr/share/rpcd/ucode/luci.tyfza1-pon",
+      "bytes": 1247,
+      "sha256": "ee2b455285d9616e1fcac394edf1b38acd9fe8a77307661809ae30d8825dec8f",
+      "mode": "0o644"
+    },
+    {
+      "path": "usr/share/rpcd/acl.d/luci-app-tyfza1-pon.json",
+      "bytes": 247,
+      "sha256": "8bcfcfcb7457a889d18ff774b6b42e4eba0cbafcc2af95b3935547dd425dcc64",
+      "mode": "0o644"
+    },
+    {
+      "path": "usr/share/luci/menu.d/luci-app-tyfza1-pon.json",
+      "bytes": 209,
+      "sha256": "1507adcff76042218b73b8efedc482d1ccccccfa96cba7126c310a0678e96309",
+      "mode": "0o644"
+    },
+    {
+      "path": "www/luci-static/resources/view/network/tyfza1-pon.js",
+      "bytes": 3374,
+      "sha256": "1a62e0f5629be112b4652c39bc448a37e271ba627231742fb7f6782cfac5eb9c",
+      "mode": "0o644"
+    }
+  ],
+  "calibration_matches_original": true,
+  "six_protocol_profiles": true,
+  "private_identity_injected": true,
+  "identity_file_mode": "0600",
+  "WAN_protocol": "dhcp",
+  "BOSA_precedes_SerDes": true,
+  "S25pon_enabled": true,
+  "hardware_boot_verified": false,
+  "FIT": {
+    "kernel_version": "6.18.55",
+    "cpus": 4,
+    "kernel_load": "0x200000",
+    "fdt_load": "0x1800000",
+    "image_sha256": "23eca6da4d209edcdbd759ecb84aeb68fb55bb8e2348d3cadc4949a9023310bc",
+    "dtb_sha256": "1287b9a90e3876bdd718e5e3ad343632513832fabe8df4d7a2688bbd6e56f65c",
+    "fit_sha256": "173fbcce88703d294baee59c94a9d6fe480426f8812317318da32af9373ea605",
+    "fit_bytes": 5934340
+  }
+}

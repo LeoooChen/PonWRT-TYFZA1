@@ -13,6 +13,7 @@ start_service() {
 	config_get_bool enabled pon enabled 1
 	[ "$enabled" = 1 ] || return 0
 	config_get mode pon mode epon-d10g
+	printf '1\n' > "$device/bosa" || return $?
 	printf '%s\n' "$mode" > "$device/serdes" || return $?
 	config_get onu_mac pon onu_mac
 	config_get llids pon llid_count 1
@@ -21,11 +22,18 @@ start_service() {
 	printf '1\n' > "$device/mac" || return $?
 	printf '1\n' > "$device/puc" || return $?
 	printf '1\n' > "$device/pdc" || return $?
+	printf '1\n' > /proc/sys/net/ipv6/conf/pon-oam0/disable_ipv6
+	ip link set pon-oam0 up || return $?
+	printf '1\n' > "$device/traffic" || return $?
 	printf '1\n' > "$device/mpcp"
 }
 
 stop_service() {
 	local device=/sys/bus/platform/devices/4f5500000.pon
+	if [ -w "$device/traffic" ]; then
+		printf '0\n' > "$device/traffic"
+		ip link set pon-oam0 down
+	fi
 	[ -w "$device/mpcp" ] && printf '0\n' > "$device/mpcp"
 }
 

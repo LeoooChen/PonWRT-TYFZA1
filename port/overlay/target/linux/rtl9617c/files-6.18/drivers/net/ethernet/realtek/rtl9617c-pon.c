@@ -6,12 +6,14 @@
  */
 #include <linux/bitfield.h>
 #include <linux/io.h>
+#include <linux/i2c.h>
 #include <linux/etherdevice.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include "rtl9617c-pon.h"
+#include "rtl9617c-bosa.h"
 
 #define PON_EPON_MODE BIT(0)
 #define EPON_STATUS 0x0010
@@ -36,6 +38,31 @@ static ssize_t state_show(struct device *dev, struct device_attribute *attr, cha
 }
 static DEVICE_ATTR_RO(state);
 
+static ssize_t bosa_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+
+	return rtl9617c_bosa_state(pon->bosa_dev, buf);
+}
+
+static ssize_t bosa_store(struct device *dev, struct device_attribute *attr,
+			 const char *buf, size_t count)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	bool prepare;
+	int ret = kstrtobool(buf, &prepare);
+
+	if (ret)
+		return ret;
+	if (!prepare)
+		return -EINVAL;
+	rtl_pon_epon_traffic(pon, false);
+	rtl_pon_mpcp_stop(pon);
+	ret = rtl9617c_bosa_prepare(pon->bosa_dev);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_RW(bosa);
+
 static ssize_t serdes_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
@@ -54,10 +81,10 @@ static ssize_t serdes_store(struct device *dev, struct device_attribute *attr,
 	unsigned int mode;
 	int ret;
 
-	for (mode = RTL_PON_EPON_1G; mode <= RTL_PON_EPON_BI10G; mode++)
+	for (mode = 0; mode < RTL_PON_MODE_COUNT; mode++)
 		if (sysfs_streq(buf, rtl_pon_mode_name(mode)))
 			break;
-	if (mode > RTL_PON_EPON_BI10G)
+	if (mode == RTL_PON_MODE_COUNT)
 		return -EINVAL;
 	ret = rtl_pon_serdes_configure(pon, mode);
 	return ret ? ret : count;
@@ -129,6 +156,7 @@ static ssize_t onu_mac_store(struct device *dev, struct device_attribute *attr,
 		return -EBUSY;
 	}
 	ether_addr_copy(pon->onu_mac, mac);
+	eth_hw_addr_set(pon->oam_endpoint.netdev, mac);
 	mutex_unlock(&pon->lock);
 	return count;
 }
@@ -271,8 +299,34 @@ static ssize_t puc_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_RW(puc);
 
+static ssize_t traffic_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	struct net_device *oam = pon->oam_endpoint.netdev;
+
+	return sysfs_emit(buf, "enabled=%u oam_device=%s carrier=%u last_llid=%u last_source=%u rx=%lu tx=%lu rx_dropped=%lu tx_dropped=%lu\n",
+		pon->traffic_enabled, oam->name, netif_carrier_ok(oam),
+		READ_ONCE(pon->last_oam_llid), READ_ONCE(pon->last_oam_source),
+		oam->stats.rx_packets, oam->stats.tx_packets, oam->stats.rx_dropped, oam->stats.tx_dropped);
+}
+
+static ssize_t traffic_store(struct device *dev, struct device_attribute *attr,
+			    const char *buf, size_t count)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	bool enable;
+	int ret = kstrtobool(buf, &enable);
+
+	if (ret)
+		return ret;
+	ret = rtl_pon_epon_traffic(pon, enable);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_RW(traffic);
+
 static struct attribute *rtl9617c_pon_attrs[] = {
 	&dev_attr_state.attr,
+	&dev_attr_bosa.attr,
 	&dev_attr_serdes.attr,
 	&dev_attr_serdes_registers.attr,
 	&dev_attr_optical.attr,
@@ -283,6 +337,7 @@ static struct attribute *rtl9617c_pon_attrs[] = {
 	&dev_attr_llid_table.attr,
 	&dev_attr_pdc.attr,
 	&dev_attr_puc.attr,
+	&dev_attr_traffic.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(rtl9617c_pon);
@@ -296,6 +351,24 @@ static int rtl9617c_pon_probe(struct platform_device *pdev)
 	if (!pon)
 		return -ENOMEM;
 	pon->dev = dev;
+	{
+		struct device_node *node = of_parse_phandle(dev->of_node, "realtek,optical-front-end", 0);
+		struct i2c_client *client = of_find_i2c_device_by_node(node);
+
+		of_node_put(node);
+		if (!client)
+			return -EPROBE_DEFER;
+		if (!i2c_get_clientdata(client)) {
+			put_device(&client->dev);
+			return -EPROBE_DEFER;
+		}
+		pon->bosa_dev = &client->dev;
+		if (!device_link_add(dev, pon->bosa_dev, DL_FLAG_AUTOREMOVE_CONSUMER)) {
+			put_device(&client->dev);
+			return -ENOMEM;
+		}
+		put_device(&client->dev);
+	}
 	{
 		struct device_node *node = of_parse_phandle(dev->of_node, "realtek,network-engine", 0);
 		struct platform_device *engine = of_find_device_by_node(node);
@@ -325,6 +398,9 @@ static int rtl9617c_pon_probe(struct platform_device *pdev)
 	pon->epon_control = devm_platform_ioremap_resource(pdev, 2);
 	if (IS_ERR(pon->epon_control))
 		return PTR_ERR(pon->epon_control);
+	pon->gpon_control = devm_platform_ioremap_resource(pdev, 7);
+	if (IS_ERR(pon->gpon_control))
+		return PTR_ERR(pon->gpon_control);
 	pon->serdes_init = devm_platform_ioremap_resource(pdev, 3);
 	if (IS_ERR(pon->serdes_init))
 		return PTR_ERR(pon->serdes_init);
@@ -354,13 +430,15 @@ static int rtl9617c_pon_probe(struct platform_device *pdev)
 	}
 	platform_set_drvdata(pdev, pon);
 	dev_info(dev, "native PON MAC binding: global control=%08x\n", readl(pon->control));
-	return 0;
+	return rtl_pon_oam_init(pon);
 }
 
 static void rtl9617c_pon_remove(struct platform_device *pdev)
 {
+	rtl_pon_epon_traffic(platform_get_drvdata(pdev), false);
 	rtl_pon_mpcp_stop(platform_get_drvdata(pdev));
 	rtl_pon_serdes_stop_work(platform_get_drvdata(pdev));
+	rtl_pon_oam_remove(platform_get_drvdata(pdev));
 }
 
 static const struct of_device_id rtl9617c_pon_of_match[] = {

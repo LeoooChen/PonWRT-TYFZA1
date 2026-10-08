@@ -3,6 +3,7 @@
 #define RTL9617C_QM_H
 #include <linux/dma-mapping.h>
 #include <linux/netdevice.h>
+#include "rtl9617c-ni.h"
 
 #define RTL_QM_RING_BYTES 1024
 #define RTL_QM_COMMAND_BYTES 8
@@ -24,6 +25,8 @@ struct rtl_qm_rx {
 	u32 last_header[2];
 	u32 trace[32][7];
 	unsigned int trace_count;
+	unsigned int lan_source;
+	struct rtl9617c_ni_endpoint __rcu *pon;
 };
 
 int rtl_qm_rx_alloc(struct device *dev, struct rtl_qm_rx *rx);

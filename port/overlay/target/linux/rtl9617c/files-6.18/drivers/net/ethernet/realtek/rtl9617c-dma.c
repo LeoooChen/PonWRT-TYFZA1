@@ -69,6 +69,7 @@ int rtl_dma_tx_start(struct rtl_dma_tx *tx)
 	writel(0, vp + VP_IRQ_ENABLE);
 	writel(0, vp + VP_WRITE);
 	memset(tx->memory, 0, MEMORY_BYTES);
+	memset(tx->owners, 0, sizeof(tx->owners));
 	tx->read = 0;
 	tx->write = 0;
 	writel(lower_32_bits(tx->memory_dma) | RTL_DMA_DEPTH, vp + VP_BASE_LOW);
@@ -117,25 +118,42 @@ void rtl_dma_tx_complete(struct rtl_dma_tx *tx, struct net_device *dev)
 
 	/* Taurus prefetches descriptors; the stock completion path retains two. */
 	while (((hardware_read - tx->read) & (RTL_DMA_COUNT - 1)) > 2) {
-		dev->stats.tx_packets++;
-		dev->stats.tx_bytes += tx->lengths[tx->read];
+		struct net_device *owner = tx->owners[tx->read];
+
+		if (owner) {
+			owner->stats.tx_packets++;
+			owner->stats.tx_bytes += tx->lengths[tx->read];
+		}
+		tx->owners[tx->read] = NULL;
 		tx->read = (tx->read + 1) & (RTL_DMA_COUNT - 1);
 	}
-	if (netif_queue_stopped(dev) &&
-	    ((tx->read - tx->write - 1) & (RTL_DMA_COUNT - 1)) > 2)
+	if (netif_queue_stopped(dev) && rtl_dma_tx_available(tx))
 		netif_wake_queue(dev);
 }
 
+void rtl_dma_tx_forget(struct rtl_dma_tx *tx, struct net_device *dev)
+{
+	unsigned int i;
+
+	/* Buffers remain NI-owned; retire interface references before unregister. */
+	for (i = 0; i < RTL_DMA_COUNT; i++)
+		if (tx->owners[i] == dev)
+			tx->owners[i] = NULL;
+}
+
 netdev_tx_t rtl_dma_tx_frame(struct rtl_dma_tx *tx, struct sk_buff *skb,
-			   struct net_device *dev)
+			   struct net_device *dev, const struct rtl9617c_ni_frame *frame)
 {
 	unsigned int next = (tx->write + 1) & (RTL_DMA_COUNT - 1);
 	unsigned int offset = RTL_DMA_COUNT * sizeof(*tx->descriptors) +
 			      tx->write * RTL_DMA_BUFFER_SIZE;
-	unsigned int length = max(skb->len, 60U);
+	unsigned int prefix = frame ? frame->prefix_length : 0;
+	unsigned int length = max(skb->len, 60U) + prefix;
+	u32 high = frame ? frame->header_high : BIT(13);
+	u32 low = frame ? frame->header_low : (16 << 9) | (tx->port << 3) | BIT(29);
 
 	rtl_dma_tx_complete(tx, dev);
-	if (((tx->read - tx->write - 1) & (RTL_DMA_COUNT - 1)) <= 2) {
+	if (!rtl_dma_tx_available(tx)) {
 		netif_stop_queue(dev);
 		return NETDEV_TX_BUSY;
 	}
@@ -143,13 +161,15 @@ netdev_tx_t rtl_dma_tx_frame(struct rtl_dma_tx *tx, struct sk_buff *skb,
 	memset(tx->memory + offset, 0, length + 16);
 	put_unaligned_le32(0, tx->memory + offset);
 	put_unaligned_le32(length, tx->memory + offset + 4);
-	put_unaligned_le32(BIT(13), tx->memory + offset + 8);
-	put_unaligned_le32((length << 15) | (16 << 9) | (tx->port << 3) | BIT(29),
-			   tx->memory + offset + 12);
-	skb_copy_bits(skb, 0, tx->memory + offset + 16, skb->len);
+	put_unaligned_le32(high, tx->memory + offset + 8);
+	put_unaligned_le32((length << 15) | low, tx->memory + offset + 12);
+	if (prefix)
+		memcpy(tx->memory + offset + 16, frame->prefix, prefix);
+	skb_copy_bits(skb, 0, tx->memory + offset + 16 + prefix, skb->len);
 	tx->descriptors[tx->write].address = cpu_to_le32(tx->memory_dma + offset);
 	tx->descriptors[tx->write].control = cpu_to_le32(0x61000002U | ((length + 16) << 8));
 	tx->lengths[tx->write] = skb->len;
+	tx->owners[tx->write] = dev;
 	dma_wmb();
 	tx->write = next;
 	writel(next, rtl_dma_vp(tx) + VP_WRITE);

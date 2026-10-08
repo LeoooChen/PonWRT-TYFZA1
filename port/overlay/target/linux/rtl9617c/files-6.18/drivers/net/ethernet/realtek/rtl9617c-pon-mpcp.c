@@ -124,6 +124,7 @@ static void rtl_mpcp_refresh(struct rtl9617c_pon *pon)
 		rtl_mpcp_registration_event(pon, registered);
 	pon->registered = registered;
 	pon->waiting = rtl_pon_llid_mask(pon) & ~registered;
+	rtl_pon_oam_carrier(pon);
 }
 
 static void rtl_mpcp_work(struct work_struct *work)
@@ -175,6 +176,7 @@ static irqreturn_t rtl_mpcp_irq_thread(int irq, void *data)
 
 int rtl_pon_mpcp_init(struct rtl9617c_pon *pon, int irq)
 {
+	pon->mpcp_irq = irq;
 	pon->llid_count = 1;
 	INIT_DELAYED_WORK(&pon->mpcp_work, rtl_mpcp_work);
 	rtl_pon_update(pon->top_irq + 4, BIT(0), 0);
@@ -188,6 +190,10 @@ void rtl_pon_mpcp_stop(struct rtl9617c_pon *pon)
 	cancel_delayed_work_sync(&pon->mpcp_work);
 	mutex_lock(&pon->lock);
 	pon->mpcp_enabled = false;
+	if (!rtl_pon_mode_is_epon(pon->mode)) {
+		mutex_unlock(&pon->lock);
+		return;
+	}
 	rtl_pon_update(pon->top_irq + 4, BIT(0), 0);
 	writel(0, pon->mac + MPCP_IE);
 	rtl_pon_update(pon->mac + GLB_IE, BIT(3), 0);
@@ -197,7 +203,10 @@ void rtl_pon_mpcp_stop(struct rtl9617c_pon *pon)
 	pon->waiting = 0;
 	pon->registered = readl(pon->mac + REGISTER_STATUS) & rtl_pon_llid_mask(pon);
 	pon->mpcp_configured = false;
+	rtl_pon_oam_carrier(pon);
 	mutex_unlock(&pon->lock);
+	/* Finish queued IRQ threads before changing modes or freeing the OAM netdev. */
+	synchronize_irq(pon->mpcp_irq);
 }
 
 int rtl_pon_mpcp_configure(struct rtl9617c_pon *pon)

@@ -121,5 +121,29 @@
 			#size-cells = <0>;
 			status = "disabled";
 		};
+
+		pinctrl: pinctrl@4f43200f0 {
+			compatible = "realtek,rtl9617c-pinctrl";
+			reg = <4 0xf43200f0 0 0x24>;
+
+			i2c0_pins: i2c0-default {
+				data-signals {
+					pins = "GPIO_204", "GPIO_205", "PMUX_120";
+					function = "multi-fn";
+				};
+			};
+		};
+
+		i2c0: i2c@4f4329160 {
+			compatible = "realtek,rtl9617c-i2c";
+			reg = <4 0xf4329160 0 0x28>;
+			clocks = <&apb_clk>;
+			clock-frequency = <100000>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&i2c0_pins>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
 	};
 };

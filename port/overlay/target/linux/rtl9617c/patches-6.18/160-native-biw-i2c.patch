@@ -1,0 +1,22 @@
+--- a/drivers/i2c/busses/Kconfig
++++ b/drivers/i2c/busses/Kconfig
+@@ -1,4 +1,11 @@
+ # SPDX-License-Identifier: GPL-2.0-only
++
++config I2C_RTL9617C
++	tristate "RTL9617C BIW I2C controller"
++	depends on ARCH_RTL9617C && OF && I2C
++	help
++	  Native Linux I2C adapter for the Taurus optical front-end bus.
++
+ #
+ # Sensor device configuration
+ #
+--- a/drivers/i2c/busses/Makefile
++++ b/drivers/i2c/busses/Makefile
+@@ -1,4 +1,5 @@
+ # SPDX-License-Identifier: GPL-2.0
++obj-$(CONFIG_I2C_RTL9617C) += i2c-rtl9617c.o
+ #
+ # Makefile for the i2c bus drivers.
+ #

@@ -1,6 +1,6 @@
 # TYFZA1 原生 PON 移植
 
-截至2026-10-08，TYFZA1的原生PON驱动已包含SerDes、gearbox、EPON MAC/PCS/FEC、MPCP注册控制、PDC下行映射和PUC上行队列。代码位于port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek，使用Linux platform_driver、firmware API、mutex、delayed_work及threaded IRQ。
+截至2026-10-08，TYFZA1的原生PON驱动已包含SerDes、gearbox、EPON MAC/PCS/FEC、MPCP注册控制、PDC下行映射、PUC上行队列和原生OAM控制网络接口。代码位于port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek，使用Linux platform_driver、firmware API、mutex、delayed_work及threaded IRQ。
 
 当前光口LOS=1、PCS同步=0、注册LLID位图=0。实机验证覆盖初始化、寄存器/间接表操作及LAN回归；PON注册和光口业务尚待验证。结构化证据和载荷哈希见manifests/pon-tests.json。
 
@@ -28,10 +28,16 @@ rtl9617c-pon-puc.c配置64项PVT、256项CIR/PIR、VOQ有效位图、缓冲限�
 
 快速镜像ram-puc-01在实机验证1、4、32 LLID队列模式及映射，并恢复单LLID。ram-puc-02进一步读回NI报告阈值00370052（82/220）和CIR/PIR抽样0/7/127/255；CIR配置为rate=0、burst=0、enb=2，PIR为K=3ff、M=ffff、burst=fff、enb=2。DATA1的29:9是硬件动态token计数，会随运行变化。端口0的DATA0..4为1c0a0300/c1a0b048/00001083/0/0，解码为队列0..7全部使能；端口1为0。缓冲限制7a0/3b0/200，report阈值ffff8000/80008000，错误码0。证据在logs/puc01-*和logs/puc02-*。
 
-S25pon启动顺序为SerDes → ONU身份/LLID数量 → MAC/PCS/FEC → PUC → PDC → MPCP，支持/etc/init.d/pon reload。
+S25pon启动顺序为SerDes → ONU身份/LLID数量 → MAC/PCS/FEC → PUC → PDC → OAM接口/模式对应的MAC收发使能 → MPCP，支持/etc/init.d/pon reload。
 
 ## 主线验证与后续工作
 
 完整OpenWrt main r0-79bc56c / Linux6.18.55 / GCC14.4 / musl的MPCP/PDC自动启动已通过实机测试。初始化后100000个UDP包零丢失/重复/错包，16MiB双向TCP内容一致，LAN接收错误/丢弃0；DHCP和LuCI登录/Overview正常。载荷为artifacts/full-pon-mpcp-pdc-6.18.55/ram-pon/image.itb，SHA256=fe556c4135ca2e42858496faad1c10c91b5be51715b6444c05c0711d0c9eefc2。
 
-PUC完整主线自动启动已在实机验证，14.75s完成PUC、14.77s完成MPCP，reload通过；100000个UDP包零丢失/重复/错包，16MiB双向TCP sha256与cmp一致，TCP校验和错误和LAN接收错误/丢弃均0。en5已恢复DHCP并收到192.168.1.170，LuCI登录302、Overview200。新载荷artifacts/full-pon-puc02-6.18.55/ram-pon/image.itb，SHA256=810465cb518aa24a38723a54bd30fc2bfd817e8dc8177315b8f464030451185b。下一步按docs/pon-data-path.md接入PON netdev、NI源端口分流和OAM内部封装，继续原生OAM发现、认证及业务配置，完成光路注册和端到端业务测试。随后继续Wi-Fi、硬件加速及原生UBI安装/升级/恢复流程。
+PUC完整主线自动启动已在实机验证，14.75s完成PUC、14.77s完成MPCP，reload通过；100000个UDP包零丢失/重复/错包，16MiB双向TCP sha256与cmp一致，TCP校验和错误和LAN接收错误/丢弃均0。en5已恢复DHCP并收到192.168.1.170，LuCI登录302、Overview200。新载荷artifacts/full-pon-puc02-6.18.55/ram-pon/image.itb，SHA256=810465cb518aa24a38723a54bd30fc2bfd817e8dc8177315b8f464030451185b。原生pon-oam0、NI源端口分流、每包发送元数据和OAM内部封装已接入，详见docs/pon-data-path.md。共享NI启停已在板上验证；1G、非对称10G和对称10G的模式对应MAC使能读回正确。原生OAM控制接口打开后，完整主线100000个UDP包零丢失/重复/错包，16MiB双向TCP内容一致，LAN错误/丢弃0。下一步接入业务PON netdev/L3QM深队列及原生OAM发现、认证和业务配置，完成光路注册与端到端业务测试。随后继续Wi-Fi、硬件加速及原生UBI安装/升级/恢复流程。
+
+## 离线光前端与多协议工作（2026-10-08）
+
+原生BIW I2C、pinctrl和BOSA校准已接入。5个Semtech型号的原厂初始化函数与原生序列共10组逐操作对照通过；板级识别及光口验收待设备恢复连接。完整记录见optical-front-end.md。
+
+六种手动模式的SerDes入口和原厂参数已接入，GPON族MAC/PLOAM/OMCI和业务继续移植，当前阶段见protocol-matrix.md。自动识别按用户要求暂不实现。LuCI网络→PON管理增加身份、版本和WAN参数，同时读取内核实态；新增字段的管理协议消费者继续开发。参考pon-fw-r1的经验及落点见pon-reference-lessons.md。

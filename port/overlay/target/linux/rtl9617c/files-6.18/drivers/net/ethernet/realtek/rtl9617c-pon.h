@@ -5,19 +5,17 @@
 #include <linux/device.h>
 #include <linux/mutex.h>
 #include <linux/workqueue.h>
-
-enum rtl_pon_mode {
-	RTL_PON_EPON_1G,
-	RTL_PON_EPON_D10G,
-	RTL_PON_EPON_BI10G,
-};
+#include "rtl9617c-ni.h"
+#include "rtl9617c-pon-mode.h"
 
 struct rtl9617c_pon {
 	struct device *dev;
 	struct device *ni_dev;
+	struct device *bosa_dev;
 	void __iomem *control;
 	void __iomem *mac;
 	void __iomem *epon_control;
+	void __iomem *gpon_control;
 	void __iomem *serdes_init;
 	void __iomem *optical_control;
 	void __iomem *optical_status;
@@ -45,6 +43,10 @@ struct rtl9617c_pon {
 	int pdc_error;
 	bool puc_configured;
 	int puc_error;
+	struct rtl9617c_ni_endpoint oam_endpoint;
+	bool traffic_enabled;
+	unsigned int last_oam_llid;
+	unsigned int last_oam_source;
 	u32 registered;
 	u32 waiting;
 	u32 registration_attempts;
@@ -52,6 +54,7 @@ struct rtl9617c_pon {
 	u32 register_frames;
 	u32 mpcp_irq_count;
 	u32 last_mpcp_irq;
+	int mpcp_irq;
 	unsigned long silence_until[32];
 };
 
@@ -64,6 +67,7 @@ ssize_t rtl_pon_serdes_state(struct rtl9617c_pon *pon, char *buf);
 ssize_t rtl_pon_serdes_registers(struct rtl9617c_pon *pon, char *buf);
 int rtl_pon_epon_prepare(struct rtl9617c_pon *pon);
 ssize_t rtl_pon_epon_state(struct rtl9617c_pon *pon, char *buf);
+int rtl_pon_epon_traffic(struct rtl9617c_pon *pon, bool enable);
 int rtl_pon_mpcp_init(struct rtl9617c_pon *pon, int irq);
 void rtl_pon_mpcp_stop(struct rtl9617c_pon *pon);
 int rtl_pon_mpcp_configure(struct rtl9617c_pon *pon);
@@ -75,4 +79,7 @@ int rtl_pon_pdc_configure(struct rtl9617c_pon *pon);
 ssize_t rtl_pon_pdc_state(struct rtl9617c_pon *pon, char *buf);
 int rtl_pon_puc_configure(struct rtl9617c_pon *pon);
 ssize_t rtl_pon_puc_state(struct rtl9617c_pon *pon, char *buf);
+int rtl_pon_oam_init(struct rtl9617c_pon *pon);
+void rtl_pon_oam_remove(struct rtl9617c_pon *pon);
+void rtl_pon_oam_carrier(struct rtl9617c_pon *pon);
 #endif

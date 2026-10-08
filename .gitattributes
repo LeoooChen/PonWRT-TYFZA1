@@ -1,0 +1,2 @@
+# Unified patch context contains its own leading space and source indentation.
+port/overlay/**/*.patch -whitespace

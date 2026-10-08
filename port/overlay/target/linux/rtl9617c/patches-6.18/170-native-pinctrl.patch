@@ -1,0 +1,23 @@
+--- a/drivers/pinctrl/Kconfig
++++ b/drivers/pinctrl/Kconfig
+@@ -1,4 +1,12 @@
+ # SPDX-License-Identifier: GPL-2.0-only
++
++config PINCTRL_RTL9617C
++	bool "RTL9617C native pinmux controller"
++	depends on ARCH_RTL9617C && OF && PINCTRL
++	select PINMUX
++	select GENERIC_PINCONF
++	select PINCONF
++
+ #
+ # PINCTRL infrastructure and drivers
+ #
+--- a/drivers/pinctrl/Makefile
++++ b/drivers/pinctrl/Makefile
+@@ -1,4 +1,5 @@
+ # SPDX-License-Identifier: GPL-2.0
++obj-$(CONFIG_PINCTRL_RTL9617C) += pinctrl-rtl9617c.o
+ # generic pinmux support
+ 
+ subdir-ccflags-$(CONFIG_DEBUG_PINCTRL)	+= -DDEBUG

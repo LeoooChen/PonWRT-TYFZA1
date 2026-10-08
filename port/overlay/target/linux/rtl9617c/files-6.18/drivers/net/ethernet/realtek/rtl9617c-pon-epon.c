@@ -68,6 +68,10 @@ int rtl_pon_epon_prepare(struct rtl9617c_pon *pon)
 	unsigned int onu_mode = pon->mode == RTL_PON_EPON_1G ? 1 : pon->mode == RTL_PON_EPON_D10G ? 2 : 3;
 	int ret;
 
+	if (!rtl_pon_mode_is_epon(pon->mode)) {
+		pon->mac_error = -EOPNOTSUPP;
+		return -EOPNOTSUPP;
+	}
 	rtl_pon_mpcp_stop(pon);
 	mutex_lock(&pon->lock);
 	if (!pon->serdes_configured) {
@@ -77,6 +81,7 @@ int rtl_pon_epon_prepare(struct rtl9617c_pon *pon)
 	pon->mac_prepared = false;
 	pon->pdc_configured = false;
 	pon->puc_configured = false;
+	pon->traffic_enabled = false;
 	rtl_epon_csr_reset(pon);
 	rtl_pon_update(pon->mac + MIB_CTRL, BIT(0), 0);
 	rtl_pon_update(pon->mac + LINK_DETECT, GENMASK(13, 8), 0x3f << 8);
@@ -123,6 +128,33 @@ int rtl_pon_epon_prepare(struct rtl9617c_pon *pon)
 	dev_info(pon->dev, "%s MAC/PCS/FEC prepared; MIB RAM initialized\n", rtl_pon_mode_name(pon->mode));
 unlock:
 	pon->mac_error = ret;
+	mutex_unlock(&pon->lock);
+	return ret;
+}
+
+int rtl_pon_epon_traffic(struct rtl9617c_pon *pon, bool enable)
+{
+	int ret = 0;
+
+	if (!rtl_pon_mode_is_epon(pon->mode))
+		return enable ? -EOPNOTSUPP : 0;
+	mutex_lock(&pon->lock);
+	if (enable && (!pon->puc_configured || !pon->pdc_configured ||
+		       !netif_running(pon->oam_endpoint.netdev))) {
+		ret = -EAGAIN;
+		goto unlock;
+	}
+	rtl_pon_update(pon->mac + RX_XG, BIT(7),
+		enable && pon->mode != RTL_PON_EPON_1G ? BIT(7) : 0);
+	rtl_pon_update(pon->mac + TX_XG, BIT(3),
+		enable && pon->mode == RTL_PON_EPON_BI10G ? BIT(3) : 0);
+	rtl_pon_update(pon->mac + RX_1G, BIT(0),
+		enable && pon->mode == RTL_PON_EPON_1G ? BIT(0) : 0);
+	rtl_pon_update(pon->mac + TX_1G, BIT(0),
+		enable && pon->mode != RTL_PON_EPON_BI10G ? BIT(0) : 0);
+	pon->traffic_enabled = enable;
+	rtl_pon_oam_carrier(pon);
+unlock:
 	mutex_unlock(&pon->lock);
 	return ret;
 }

@@ -13,11 +13,13 @@
 #include <linux/hrtimer.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
+#include <linux/iopoll.h>
 #include <linux/module.h>
 #include <linux/of_mdio.h>
 #include <linux/of_net.h>
 #include <linux/phy.h>
 #include <linux/platform_device.h>
+#include <linux/rcupdate.h>
 #include <linux/unaligned.h>
 
 #include "rtl9617c-xram-format.h"
@@ -65,6 +67,7 @@ struct rtl_xram {
 	struct rtl_qm_rx qm;
 	int rx_irq;
 	bool irq_requested;
+	unsigned int engine_users;
 };
 
 int rtl9617c_ni_report_configure(struct device *dev, unsigned int low, unsigned int high)
@@ -200,7 +203,15 @@ static enum hrtimer_restart rtl_timer(struct hrtimer *timer)
 		napi_schedule(&priv->napi);
 	spin_lock(&priv->tx_lock);
 	if (priv->dma_tx) {
+		struct rtl9617c_ni_endpoint *endpoint;
+
 		rtl_dma_tx_complete(&priv->dma, priv->netdev);
+		rcu_read_lock();
+		endpoint = rcu_dereference(priv->qm.pon);
+		if (endpoint && netif_running(endpoint->netdev) &&
+		    netif_queue_stopped(endpoint->netdev) && rtl_dma_tx_available(&priv->dma))
+			netif_wake_queue(endpoint->netdev);
+		rcu_read_unlock();
 	} else if (priv->tx_pending && rtl_pointer(priv, TX_READ) == rtl_pointer(priv, TX_WRITE)) {
 		priv->tx_pending = false;
 		priv->netdev->stats.tx_packets++;
@@ -235,7 +246,7 @@ static netdev_tx_t rtl_xmit(struct sk_buff *skb, struct net_device *dev)
 	}
 	spin_lock_irqsave(&priv->tx_lock, flags);
 	if (priv->dma_tx) {
-		netdev_tx_t result = rtl_dma_tx_frame(&priv->dma, skb, dev);
+		netdev_tx_t result = rtl_dma_tx_frame(&priv->dma, skb, dev, NULL);
 
 		spin_unlock_irqrestore(&priv->tx_lock, flags);
 		return result;
@@ -269,9 +280,9 @@ static netdev_tx_t rtl_xmit(struct sk_buff *skb, struct net_device *dev)
 	return NETDEV_TX_OK;
 }
 
-static int rtl_open(struct net_device *dev)
+static int rtl_engine_start(struct rtl_xram *priv)
 {
-	struct rtl_xram *priv = netdev_priv(dev);
+	struct net_device *dev = priv->netdev;
 	u32 config;
 	int ret;
 
@@ -313,9 +324,56 @@ static int rtl_open(struct net_device *dev)
 	napi_enable(&priv->napi);
 	if (priv->qm_rx)
 		rtl_update(priv, 0x6110, 0xff, 0xff);
+	hrtimer_start(&priv->timer, ms_to_ktime(1), HRTIMER_MODE_REL);
+	return 0;
+}
+
+static void rtl_engine_stop(struct rtl_xram *priv)
+{
+	hrtimer_cancel(&priv->timer);
+	if (priv->qm_rx) {
+		rtl_update(priv, 0x6110, 0xff, 0);
+		synchronize_irq(priv->rx_irq);
+	}
+	napi_disable(&priv->napi);
+	if (priv->qm_rx)
+		rtl_qm_rx_stop(&priv->qm);
+	if (priv->dma_tx)
+		rtl_dma_tx_stop(&priv->dma);
+	rtl_update(priv, XRAM_CFG, CPU_DISABLE, CPU_DISABLE);
+	return;
+}
+
+static int rtl_engine_get(struct rtl_xram *priv)
+{
+	int ret;
+
+	/* Both netdev open/stop paths are serialized by RTNL. */
+	if (priv->engine_users) {
+		priv->engine_users++;
+		return 0;
+	}
+	ret = rtl_engine_start(priv);
+	if (!ret)
+		priv->engine_users = 1;
+	return ret;
+}
+
+static void rtl_engine_put(struct rtl_xram *priv)
+{
+	if (!--priv->engine_users)
+		rtl_engine_stop(priv);
+}
+
+static int rtl_open(struct net_device *dev)
+{
+	struct rtl_xram *priv = netdev_priv(dev);
+	int ret = rtl_engine_get(priv);
+
+	if (ret)
+		return ret;
 	phy_start(dev->phydev);
 	netif_start_queue(dev);
-	hrtimer_start(&priv->timer, ms_to_ktime(1), HRTIMER_MODE_REL);
 	return 0;
 }
 
@@ -324,20 +382,86 @@ static int rtl_stop(struct net_device *dev)
 	struct rtl_xram *priv = netdev_priv(dev);
 
 	netif_stop_queue(dev);
-	hrtimer_cancel(&priv->timer);
-	if (priv->qm_rx) {
-		rtl_update(priv, 0x6110, 0xff, 0);
-		synchronize_irq(priv->rx_irq);
-	}
 	phy_stop(dev->phydev);
-	napi_disable(&priv->napi);
-	if (priv->qm_rx)
-		rtl_qm_rx_stop(&priv->qm);
-	if (priv->dma_tx)
-		rtl_dma_tx_stop(&priv->dma);
-	rtl_update(priv, XRAM_CFG, CPU_DISABLE, CPU_DISABLE);
+	rtl_engine_put(priv);
 	return 0;
 }
+
+int rtl9617c_ni_pon_attach(struct device *dev, struct rtl9617c_ni_endpoint *endpoint)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+
+	if (!priv->qm_rx || !priv->dma_tx)
+		return -EOPNOTSUPP;
+	rcu_assign_pointer(priv->qm.pon, endpoint);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_pon_attach);
+
+void rtl9617c_ni_pon_detach(struct device *dev)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+
+	rcu_assign_pointer(priv->qm.pon, NULL);
+	synchronize_net();
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_pon_detach);
+
+int rtl9617c_ni_open(struct device *dev)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+
+	return rtl_engine_get(priv);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_open);
+
+void rtl9617c_ni_close(struct device *dev, struct net_device *owner)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	unsigned long flags;
+
+	spin_lock_irqsave(&priv->tx_lock, flags);
+	rtl_dma_tx_forget(&priv->dma, owner);
+	spin_unlock_irqrestore(&priv->tx_lock, flags);
+	rtl_engine_put(priv);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_close);
+
+netdev_tx_t rtl9617c_ni_transmit(struct device *dev, struct net_device *owner,
+			       struct sk_buff *skb, const struct rtl9617c_ni_frame *frame)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	unsigned long flags;
+	netdev_tx_t result;
+
+	spin_lock_irqsave(&priv->tx_lock, flags);
+	result = rtl_dma_tx_frame(&priv->dma, skb, owner, frame);
+	spin_unlock_irqrestore(&priv->tx_lock, flags);
+	return result;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_transmit);
+
+int rtl9617c_ni_oam_configure(struct device *dev)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	static const unsigned int index[] = {15, 0x8f, 0x4f, 0xcf};
+	u32 status;
+	unsigned int i;
+	int ret;
+
+	/* aal_port: NI7 ninth queue (LDPID15) enters the OAM physical port12. */
+	for (i = 0; i < ARRAY_SIZE(index); i++) {
+		writel(12, priv->ni + 0x1658);
+		writel(BIT(31) | BIT(30) | index[i], priv->ni + 0x1654);
+		ret = readl_poll_timeout(priv->ni + 0x1654, status, !(status & BIT(31)), 1, 100000);
+		if (ret)
+			return ret;
+	}
+	writel(0xff | (6 << 16), priv->ni + 0x2304 + 12 * 12);
+	rtl_update(priv, 0x2300, BIT(12), BIT(12));
+	return 0;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_oam_configure);
 
 static const struct net_device_ops rtl_netdev_ops = {
 	.ndo_open = rtl_open,

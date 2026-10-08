@@ -1,0 +1,12 @@
+{
+  "luci-app-tyfza1-pon": {
+    "description": "Configure TYFZA1 PON identity and read native PON status",
+    "read": {
+      "ubus": { "luci.tyfza1-pon": ["status"] },
+      "uci": ["pon"]
+    },
+    "write": {
+      "uci": ["pon"]
+    }
+  }
+}

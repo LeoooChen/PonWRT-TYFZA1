@@ -12,5 +12,7 @@ test "$(git -C "$TREE" rev-parse HEAD)" = "$PIN" || {
 }
 mkdir -p "$TREE/target/linux/rtl9617c"
 cp -a "$PORT/overlay/target/linux/rtl9617c/." "$TREE/target/linux/rtl9617c/"
+mkdir -p "$TREE/package/luci-app-tyfza1-pon"
+cp -a "$PORT/packages/luci-app-tyfza1-pon/." "$TREE/package/luci-app-tyfza1-pon/"
 cp "$PORT/configs/tyfza1-boot.config" "$TREE/.config"
 echo "Applied RTL9617C overlay to $TREE at $PIN"

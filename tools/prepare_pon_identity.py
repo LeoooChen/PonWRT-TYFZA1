@@ -11,6 +11,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("stock_configuration", type=Path)
 parser.add_argument("scfg", type=Path)
 parser.add_argument("output", type=Path)
+parser.add_argument("--auth-config", type=Path, help="Private LOID and WAN protocol configuration")
 args = parser.parse_args()
 text = args.stock_configuration.read_bytes()
 # The original MIB exports contain unescaped text elsewhere; LLID chains are XML.
@@ -28,6 +29,13 @@ if not 1 <= count <= 32:
 args.output.parent.mkdir(parents=True, exist_ok=True)
 args.output.write_text("config pon 'pon'\n\toption enabled '1'\n\toption mode 'epon-d10g'\n"
                       f"\toption onu_mac '{mac}'\n\toption llid_count '{count}'\n")
+if args.auth_config:
+    auth = json.loads(args.auth_config.read_text())
+    with args.output.open("a") as output:
+        for key, value in (("loid", auth["loid"]), ("loid_password", auth["password"]),
+                           ("wan_protocol", auth["network_protocol"])):
+            output.write(f"\toption {key} '{value}'\n")
+    args.output.chmod(0o600)
 record = {"identity_source": "Original EPON_LLID_TBL index0", "llid_count": count,
           "stock_configuration_sha256": hashlib.sha256(args.stock_configuration.read_bytes()).hexdigest(),
           "scfg_sha256": hashlib.sha256(args.scfg.read_bytes()).hexdigest(),

@@ -63,6 +63,14 @@ def inspect(stock, native):
         raise ValueError("MDIO/OCP/wrapper windows differ from stock NI resources")
     checked.append("MDIO/OCP/wrapper registers")
     nodes = children(native, "/soc")
+    if "i2c@4f4329160" in nodes:
+        old = get(stock, "/i2c@f4329160", "reg")
+        new = get(native, "/soc/i2c@4f4329160", "reg")
+        if new != [4, old[1], old[2], old[3]]:
+            raise ValueError("Native BIW I2C window differs from the stock controller")
+        if get(native, "/soc/i2c@4f4329160", "clock-frequency") != get(stock, "/i2c@f4329160", "clock-frequency"):
+            raise ValueError("BIW I2C bus frequency differs from stock")
+        checked.append("BIW I2C registers/bus frequency")
     if "ethernet@4f4300000" in nodes:
         windows = get(native, "/soc/ethernet@4f4300000", "reg")
         names = get(native, "/soc/ethernet@4f4300000", "reg-names", "s")
@@ -80,13 +88,21 @@ def inspect(stock, native):
         if pon[:4] != stock_ni[8 * 4:8 * 4 + 4]:
             raise ValueError("PON MAC window differs from stock NI resource8")
         if pon[4:] != [4, 0xf4320094, 0, 4, 4, 0xf4320074, 0, 4, 4, 0xf432022c, 0, 4,
-                       4, 0xf4320080, 0, 4, 4, 0xf4320090, 0, 4, 4, 0xf4320180, 0, 8]:
+                       4, 0xf4320080, 0, 4, 4, 0xf4320090, 0, 4, 4, 0xf4320180, 0, 8, 4, 0xf432007c, 0, 4]:
             raise ValueError("PON global control window differs from register definition")
         checked.append("PON MAC/global registers")
         supplier = get(native, "/soc/pon@4f5500000", "realtek,network-engine")
         if supplier != get(native, "/soc/ethernet@4f4300000", "phandle"):
             raise ValueError("PON network engine supplier differs from the native NI device")
         checked.append("PON/NI supplier binding")
+        bosa_node = "/soc/i2c@4f4329160/optical-front-end@51"
+        if get(native, "/soc/pon@4f5500000", "realtek,optical-front-end") != get(native, bosa_node, "phandle"):
+            raise ValueError("PON optical front-end supplier differs from the BOSA I2C client")
+        if get(native, bosa_node, "reg") != [0x51]:
+            raise ValueError("BOSA address differs from the original rtkbosa bus access")
+        if get(native, "/soc/pinctrl@4f43200f0/i2c0-default/data-signals", "pins", "s") != get(stock, "/pinctrl@0xf43200f0/i2c0_default/data_signals", "pins", "s"):
+            raise ValueError("I2C pad routing differs from the stock board")
+        checked.append("PON/BOSA supplier and I2C pad routing")
         for prop in ("reg", "interrupts"):
             if get(native, "/soc/interrupt-controller@f4320164", prop) != get(stock, "/ne_ictl@0xf4320164", prop):
                 raise ValueError("NE/PON interrupt topology differs from stock")

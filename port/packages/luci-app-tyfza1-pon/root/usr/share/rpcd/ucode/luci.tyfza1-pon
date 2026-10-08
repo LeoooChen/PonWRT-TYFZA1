@@ -1,0 +1,42 @@
+#!/usr/bin/env ucode
+// SPDX-License-Identifier: GPL-2.0-or-later
+'use strict';
+import { readfile } from 'fs';
+
+function fields(text) {
+	if (text == null)
+		return null;
+	let result = {};
+	for (let token in split(trim(text), /\s+/)) {
+		let position = index(token, '=');
+		if (position > 0)
+			result[substr(token, 0, position)] = substr(token, position + 1);
+	}
+	return result;
+}
+
+const methods = {
+	status: {
+		call: function() {
+			const device = '/sys/bus/platform/devices/4f5500000.pon/';
+			return {
+				state: fields(readfile(device + 'state')),
+				serdes: fields(readfile(device + 'serdes')),
+				bosa: fields(readfile(device + 'bosa')),
+				mac: fields(readfile(device + 'mac')),
+				mpcp: fields(readfile(device + 'mpcp')),
+				traffic: fields(readfile(device + 'traffic')),
+				optical: fields(readfile(device + 'optical')),
+				puc: readfile(device + 'puc'),
+				pdc: readfile(device + 'pdc'),
+				llids: readfile(device + 'llid_table'),
+				lan_rx_errors: trim(readfile('/sys/class/net/eth0/statistics/rx_errors')),
+				lan_rx_dropped: trim(readfile('/sys/class/net/eth0/statistics/rx_dropped')),
+				oam_state: readfile('/var/run/pon-oam/status.json'),
+				queried_at: time()
+			};
+		}
+	}
+};
+
+return { 'luci.tyfza1-pon': methods };

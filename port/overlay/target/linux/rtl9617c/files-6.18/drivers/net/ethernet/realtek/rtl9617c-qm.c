@@ -11,6 +11,7 @@
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
+#include <linux/rcupdate.h>
 #include <linux/unaligned.h>
 #include "rtl9617c-qm.h"
 
@@ -166,6 +167,7 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	u32 value;
 	int ret;
 
+	rx->lan_source = port;
 	writel(readl(ni + RMU_CTRL) & ~BIT(31), ni + RMU_CTRL);
 	writel(readl(ni + ES_CTRL) & ~BIT(31), ni + ES_CTRL);
 	/* Native ownership starts with the same TQM reset as the stock Linux driver. */
@@ -315,7 +317,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			if (h0 & BIT(31))
 				length -= 8;
 			if ((command & (BIT(4) | BIT(6))) != (BIT(4) | BIT(6)) ||
-			    length < ETH_HLEN || length > 1522) {
+			    length < ETH_HLEN || length > RTL_QM_BUFFER_BYTES - 32 - header) {
 				dev->stats.rx_errors++;
 				goto consume;
 			}
@@ -325,6 +327,26 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				goto consume;
 			}
 			memcpy(skb_put(skb, length), rx->memory + offset + 32 + header, length);
+			if (FIELD_GET(GENMASK(14, 9), h1) != rx->lan_source) {
+				struct rtl9617c_ni_endpoint *endpoint;
+				unsigned int source = FIELD_GET(GENMASK(14, 9), h1);
+
+				rcu_read_lock();
+				endpoint = rcu_dereference(rx->pon);
+				if (endpoint && (source == 7 || source >= 32))
+					endpoint->receive(endpoint, napi, skb, source);
+				else {
+					dev->stats.rx_dropped++;
+					dev_kfree_skb_any(skb);
+				}
+				rcu_read_unlock();
+				goto consume;
+			}
+			if (!netif_running(dev)) {
+				dev->stats.rx_dropped++;
+				dev_kfree_skb_any(skb);
+				goto consume;
+			}
 			if (rx->trace_count < ARRAY_SIZE(rx->trace) && length >= 46 &&
 			    get_unaligned_be16(skb->data + 12) == ETH_P_IP &&
 			    skb->data[23] == IPPROTO_UDP &&

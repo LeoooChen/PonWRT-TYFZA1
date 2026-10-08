@@ -1,0 +1,8 @@
+{
+  "admin/network/pon": {
+    "title": "PON 管理",
+    "order": 25,
+    "action": {"type": "view", "path": "network/tyfza1-pon"},
+    "depends": {"acl": ["luci-app-tyfza1-pon"], "uci": {"pon": true}}
+  }
+}

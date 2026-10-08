@@ -112,6 +112,12 @@ int rtl_pon_puc_configure(struct rtl9617c_pon *pon)
 	if (ret)
 		goto unlock;
 	writel(0, pon->mac + PUC_IE);
+	/* Explicit RTL8277C OAM container addresses and EtherTypes. */
+	writel(0x25000001, pon->mac + 0x8154);
+	writel(0x00000013, pon->mac + 0x8150);
+	writel(0x00132500, pon->mac + 0x814c);
+	writel(0xfff00000, pon->mac + 0x8158);
+	writel(0xfff10000, pon->mac + 0x815c);
 	rtl_pon_update(pon->mac + PUC_CONFIG, GENMASK(1, 0) | GENMASK(18, 16) | BIT(30),
 		2 | BIT(30)); /* CRC regenerate, counters retained, invalid queue drop. */
 	writel(0x7a0, pon->mac + LIMIT_A);

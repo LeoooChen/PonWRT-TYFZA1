@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Native PON SerDes initialization for Taurus EPON modes.
+ * Native PON SerDes initialization for Taurus EPON and ITU modes.
  * Sequence: Cortina-Access 2015 GPL-2.0+ aal_psds.c, checked against
  * TYFZA1 V1.0.5 ca-ne.ko aal_psds_{init,out_of_reset} machine code.
  * Register parameter firmware is generated from this device's stock tables.
@@ -26,16 +26,9 @@
 #define PSDS_SYNC_MASK (BIT(0) | BIT(10) | BIT(11) | BIT(12) | BIT(15))
 #define PSDS_SYNC_GOAL (BIT(10) | BIT(11) | BIT(12) | BIT(15))
 
-static const char * const rtl_pon_names[] = {"epon", "epon-d10g", "epon-bi10g"};
-static const char * const rtl_pon_profiles[] = {
-	"realtek/rtl9617c/pon_serdes_epon.bin",
-	"realtek/rtl9617c/pon_serdes_epon_d10g.bin",
-	"realtek/rtl9617c/pon_serdes_epon_bi10g.bin",
-};
-
 const char *rtl_pon_mode_name(enum rtl_pon_mode mode)
 {
-	return rtl_pon_names[mode];
+	return rtl_pon_modes[mode].name;
 }
 
 void rtl_pon_update(void __iomem *reg, u32 mask, u32 value)
@@ -139,43 +132,56 @@ void rtl_pon_serdes_stop_work(struct rtl9617c_pon *pon)
 int rtl_pon_serdes_configure(struct rtl9617c_pon *pon, enum rtl_pon_mode mode)
 {
 	const struct firmware *fw;
-	unsigned int onu_mode = mode == RTL_PON_EPON_1G ? 1 : mode == RTL_PON_EPON_D10G ? 2 : 3;
-	unsigned int sub_mode = mode == RTL_PON_EPON_1G ? 0 : mode == RTL_PON_EPON_D10G ? 2 : 3;
+	const struct rtl_pon_mode_configuration *configuration = &rtl_pon_modes[mode];
+	bool epon = rtl_pon_mode_is_epon(mode);
 	int ret;
 
-	ret = request_firmware_direct(&fw, rtl_pon_profiles[mode], pon->dev);
+	ret = request_firmware_direct(&fw, configuration->profile, pon->dev);
 	if (ret)
 		return ret;
 	ret = rtl_pon_profile_validate(fw);
 	if (ret)
 		goto release;
 	rtl_pon_mpcp_stop(pon);
+	rtl_pon_epon_traffic(pon, false);
 	cancel_delayed_work_sync(&pon->serdes_work);
 	mutex_lock(&pon->lock);
 	pon->serdes_configured = false;
 	pon->gearbox_ready = false;
 	pon->rx_synced = false;
 	pon->mac_prepared = false;
+	pon->puc_configured = false;
+	pon->pdc_configured = false;
 	pon->mode = mode;
 	rtl_pon_update(pon->optical_control, BIT(30), pon->los_invert << 30);
-	rtl_pon_update(pon->control, BIT(0), BIT(0));
-	rtl_pon_update(pon->epon_control, GENMASK(17, 16), onu_mode << 16);
+	rtl_pon_update(pon->control, BIT(0), epon ? BIT(0) : 0);
+	if (epon)
+		rtl_pon_update(pon->epon_control, GENMASK(17, 16), configuration->epon_onu_mode << 16);
+	else
+		rtl_pon_update(pon->gpon_control, BIT(8) | BIT(9), mode == RTL_PON_XGSPON ? BIT(8) | BIT(9) : 0);
 	rtl_pon_update(pon->serdes_init, PSDS_POWER, 0);
 	msleep(1);
 	rtl_pon_update(pon->control, PSDS_CSR_RESET_N, 0);
 	msleep(1);
 	rtl_pon_update(pon->control, PSDS_CSR_RESET_N, PSDS_CSR_RESET_N);
 	msleep(100);
-	rtl_pon_update(pon->mac + PSDS_MODE, GENMASK(10, 0), BIT(10) | (sub_mode << 5) | 0xc);
+	rtl_pon_update(pon->mac + PSDS_MODE, GENMASK(10, 0), configuration->sds_mode);
 	udelay(10);
 	rtl_pon_profile_load(pon, fw);
-	ret = rtl_pon_burst_polarity(pon, mode == RTL_PON_EPON_1G ? 62 : 60);
+	ret = rtl_pon_burst_polarity(pon, configuration->burst_page);
 	if (ret)
 		goto unlock;
+	if (!epon) {
+		/* The GPL ITU out-of-reset sequence disables automatic LOS resets. */
+		rtl_pon_update(pon->epon_control, BIT(0), BIT(0));
+		rtl_pon_update(pon->mac + 0x1c8, BIT(31), BIT(31));
+	}
 	rtl_pon_update(pon->serdes_init, PSDS_POWER, PSDS_POWER);
 	msleep(100);
 	pon->sync_result = readl_poll_timeout(pon->mac + PSDS_STATUS, pon->serdes_status,
 		(pon->serdes_status & PSDS_SYNC_MASK) == PSDS_SYNC_GOAL, 1000, 1000000);
+	if (!epon && !pon->sync_result)
+		rtl_pon_update(pon->epon_control, BIT(0), 0);
 	/* The original out_of_reset sequence resets the gearbox even on LOS. */
 	rtl_pon_gearbox_release(pon);
 	pon->serdes_configured = true;

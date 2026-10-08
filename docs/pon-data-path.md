@@ -6,7 +6,9 @@
 
 参考ca-network-engine/ni-drv-77c/ca_ni_titan.h的HEADER_A_T：低32位为COS[2:0]、LDPID[8:3]、LSPID[14:9]、长度[28:15]、FE bypass[29]、header type[31:30]；高32位包含no_drop[13]、deep_q[30]、cpu_flg[31]。接收RAM的两字使用网络字节序，高字在先、低字在后，本机LAN实测与rtl9617c-qm.c一致。DMA-LSO发送缓冲的LSO两个字之后使用little-endian高字、低字。
 
-LAN当前指定LDPID0、LSPID16、bypass=1，DMA VP8。PON需要独立发送元数据，并让共享硬件所有者管理NI全局DMA/QM启停；接口停止时需要保持其他接口的DMA和CPU环运行。
+LAN指定LDPID0、LSPID16、bypass=1，DMA VP8。原生NI现已提供每包Header A和前缀元数据，并由NI统一管理DMA/QM启停。每个DMA描述符记录发送接口，完成统计计入对应netdev；接口关闭时清除描述符中的接口引用，DMA缓冲仍由NI持有。接收通过Header A的LSPID分流，PON源7或32..63交给PON端点，LAN源0交给eth0。
+
+原厂aal_port.c将普通LDPID7映射到blackhole。业务上行需要使用L3QM的PON深队列，而OAM走LDPID15/PDPID12。aal_l3qm.c的upper LDPID map控制PON偏移；dal_rtl8277c_ponmac.c的背压重映射将PUC队列0..127对应到NI队列64..191。下一步业务队列应沿此路径移植。
 
 ## OAM封装
 
@@ -16,10 +18,12 @@ LAN当前指定LDPID0、LSPID16、bypass=1，DMA VP8。PON需要独立发送元�
 - _oam_receive_from_nic在NI接收路径识别内部DA=00:13:25:00:00:01和EtherType=fff1，也支持内部单VLAN封装。LLID取内部源MAC末字节低6位，移除16或20字节，再检查实际OAM帧EtherType=8809、subtype=03。
 - 原厂将广播LLID索引8/10/11/63交给LLID0；其他索引减去MPCP软件索引偏移，原生单LLID配置当前偏移0。
 
-PUC的GLOBAL_DA_SA0/1/2和GLOBAL_LNK_TYPE提供对应内部地址、协议类型。原生初始化需要明确配置并读回，同时核对Header A处理和内部帧剥离。
+PUC初始化明确写入GLOBAL_DA_SA0/1/2、GLOBAL_MAC_TYPE和GLOBAL_LNK_TYPE。NI配置LDPID15→PDPID12和port12调度；rtl9617c-pon-oam.c创建pon-oam0，将原始8809/subtype03帧加上内部封装后交给共享VP8。LLID发送索引使用SO_PRIORITY高16位；接收支持内部普通和单VLAN容器，并保留SDK的广播索引归一化。
+
+S25pon在SerDes/MAC/PUC/PDC初始化后打开pon-oam0，启用当前模式的MAC收发，再启动MPCP。非对称10G实机读回RX_XG=0d481290、TX_1G=0001c001。carrier由LOS、PCS同步和注册位图决定，当前LOS1时为0。
 
 ## 接入顺序与验证
 
-先实现NI按Header A源端口选择Linux接收接口，保持LAN回归；再接入PON/OAM发送、内部封装、每LLID队列和carrier事件。PON netdev的carrier来自真实PCS同步与LLID注册。接入后用AF_PACKET收发原始8809 OAM帧，原生用户态实现发现、扩展TLV和本机认证协议。
+已通过scripts/test_pon_oam_format.py的SDK容器字节、RX/VLAN解析、其他subtype及截断帧测试（ASan/UBSan）。实机验证了共享NI生命周期：仅关闭LAN时DMA/QM继续运行；两个接口均关闭后DMA/QM停止；先打开OAM时硬件重新初始化，随后LAN恢复千兆链路。原始记录在logs/serial-20261008-071004.txt和logs/oam01-*。
 
-离线验证覆盖源端口分流、封装往返、VLAN及LLID解码；实机验证覆盖CPU/QM/DMA表和LAN传输。光口注册与业务结果由真实光路收发、OLT注册状态、上下行业务及内容校验给出。当前LOS=1，尚无这项结果。
+tools/pon_oam_probe.c可向控制接口提交原始OAM Information PDU。当前LOS1时AF_PACKET接受了10个提交，OAM TX完成计数仍0；这项只验证用户态接口。原生OAM发现、扩展TLV和认证守护进程、业务PON netdev和L3QM深队列继续移植。光口注册、OAM往返及业务仍需实际光路结果。

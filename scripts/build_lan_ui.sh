@@ -15,10 +15,12 @@ sh port/scripts/sync-overlay.sh "$P/sources/openwrt"
 python3 tools/prepare_pon_serdes.py "$P/analysis/private/live-files/etc/serdes" "$P/artifacts/pon-serdes-firmware"
 mkdir -p "$P/sources/openwrt/files/lib/firmware/realtek/rtl9617c"
 cp "$P/artifacts/pon-serdes-firmware/"*.bin "$P/sources/openwrt/files/lib/firmware/realtek/rtl9617c/"
+cp "$P/analysis/private/live-files/var/config/rtkbosa_k.bin" "$P/sources/openwrt/files/lib/firmware/realtek/rtl9617c/bosa-calibration.bin"
 python3 tools/prepare_pon_identity.py "$P/analysis/private/live-files/var/config/config.xml" \
-    "$P/analysis/private/live-files/var/config/default_scfg.txt" "$P/artifacts/pon-config/pon"
+    "$P/analysis/private/live-files/var/config/default_scfg.txt" "$P/artifacts/pon-config/pon" \
+    --auth-config "$P/analysis/private/pon-auth.json"
 mkdir -p "$P/sources/openwrt/files/etc/config"
-cp "$P/artifacts/pon-config/pon" "$P/sources/openwrt/files/etc/config/pon"
+install -m 600 "$P/artifacts/pon-config/pon" "$P/sources/openwrt/files/etc/config/pon"
 cd sources/openwrt
 make defconfig
 make -j2 download
