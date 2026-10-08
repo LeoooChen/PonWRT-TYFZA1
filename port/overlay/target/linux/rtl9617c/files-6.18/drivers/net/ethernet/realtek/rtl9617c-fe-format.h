@@ -192,7 +192,7 @@ static inline void rtl_fe_ipv4_action(unsigned int words[RTL_FE_ACTION_WORDS],
  rtl_fe_action_set(words, RTL_FE_DEEPQ, action->deep_queue);
  rtl_fe_action_set(words, RTL_FE_MCGID, action->destination);
  rtl_fe_action_set(words, RTL_FE_L3_IF_VLD1, 1);
- rtl_fe_action_set(words, RTL_FE_SMAC_TRANS, 1);
+ rtl_fe_action_set(words, RTL_FE_SMAC_TRANS, 0); /* Egress interface supplies source MAC. */
  rtl_fe_action_set(words, RTL_FE_IGR_L3_IF_IDX1, action->ingress_interface);
  rtl_fe_action_set(words, RTL_FE_EGR_L3_IF_IDX1, action->egress_interface);
  rtl_fe_action_set(words, RTL_FE_IP_TTL_DEC1, 1);
@@ -342,6 +342,8 @@ static inline void rtl_fe_ipv4_mask(unsigned int words[RTL_FE_MASK_WORDS])
  for (i = 0; i < 7; i++)
   words[i] = ~0U;
  words[7] = 0;
+ /* TTL mask is a two-bit selector:0 ignores TTL;3 hashes a range code. */
+ words[1] &= ~(3U << 23);
  words[0] = (words[0] & ~0x07fffc00U) | 0x00000000U; /* l4_dp_exact_range */
  words[0] = (words[0] & ~0xf8000000U) | 0x00000000U; /* l4_sp_exact_range */
  words[1] = (words[1] & ~0x00000fffU) | 0x00000000U;

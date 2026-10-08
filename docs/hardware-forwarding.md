@@ -40,3 +40,14 @@ rtl9617c-fe-format.h提供位字段写入、IPv4动作/流键、掩码及CRC；r
 接下来通过L3FE入口profile、分类默认结果和明确的静态双向流，把真实报文送入Hash/包编辑器；验证NAT改写、TTL/校验和与CPU miss后接Linux flow block/flowtable。未启用的硬件转发不在LuCI中标为成功。
 
 用户新增无线研究已冻结到evidence/wireless-study-20261008，共433个文件、约66MB，逐文件收据为evidence/wireless-study-import-files.json。含RTL8192XB/RTL8832C固件与原厂FC/NE元数据链，按用户顺序在EPON有线硬件转发完成后推进Wi-Fi。GPON/XG-PON/XGS-PON暂缓，最后实施OpenWrt UBI刷入。
+
+
+## 2026-10-09：真实包的硬件NAT、MAC与LAN出口
+
+新增原生fe-pipeline.h，实现分类默认FIB、入口LPB、源MAC CAM、L3出口接口和目的FDB命令。以NI DMA注入一条UDP五元组，经LDPID25/PDPID13进入L3FE。实际包经过Hash profile0匹配index1280（CRC ceb0f986/5141），源IP从10.23.42.1改为198.51.100.1，源端口53000改为62000，TTL64改为63；源MAC和目的MAC分别改为02:66:55:44:33:22、02:77:66:55:44:33。payload完整，IPv4和非零UDP校验和均正确。
+
+把同一匹配流的出口改为LDPID0后，Mac en5在线上抓到相同的正确改写帧；本次测试CPU RX计数前后均7626。这证明Hash、包编辑器和LAN物理出口已在硬件通路执行。它仍是明确的一条NI注入静态流，尚未作为Linux动态连接卸载。
+
+由实包暴露并修复的格式问题：TTL mask的0是忽略TTL，3为TTL范围编码；初始全1掩码导致实包CRC不同，离线测试新增变化TTL覆盖。FDB命令必须暂设cpu_opt_mode bit31；append成功应答不提供目的MAC索引，重新lookup才得到3056。原厂模块table ID20/23及机器码证明MAC CAM selector为3，旧参考注释4不适用本机。源MAC改写使用smac_trans=0并指定有效L3出口接口。
+
+物理LAN入口仍缺前端配置。修改PONCLE目的而保留强制CPU旁路时不经过Hash；移除旁路后，即使PONCLE目标仍设CPU16，管理报文也未送到CPU，表明下一步要补齐物理入口分类/CPU miss。测试已通过TTL恢复全部临时配置，XEPON认证、WAN租约、公网ping正常。原始证据见manifests/fe-native-tests.json。

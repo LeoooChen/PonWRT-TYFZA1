@@ -1,7 +1,7 @@
 {
   "action_oracle": {
     "scope": "actual stock ARM64 conversion emulated offline; no original module loaded",
-    "native_header_sha256": "c8e63b1acd87be6c95247e2f1e59de76d91fd418dc18ff2242f4665d3b8b7e58",
+    "native_header_sha256": "407534222bfc5c95b476144675c58e1464cc2caa702c57d52439f92c05118b0c",
     "stock_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
     "GPL_layout_sha256": "c010db3ede906c81eb82ea203b652ffae1b3f4dabbaea5201e4658d5dff846a9",
     "action_groups": [
@@ -17,7 +17,7 @@
   },
   "key_oracle": {
     "stock_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
-    "native_header_sha256": "c8e63b1acd87be6c95247e2f1e59de76d91fd418dc18ff2242f4665d3b8b7e58",
+    "native_header_sha256": "407534222bfc5c95b476144675c58e1464cc2caa702c57d52439f92c05118b0c",
     "vectors": 160,
     "key_bytes": 92,
     "mask_bytes": 28,
@@ -54,8 +54,9 @@
   "hardware_forwarding_enabled": false,
   "scope": "first wired LAN/PON IPv4 TCP/UDP; Wi-Fi later",
   "native_sources": {
-    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-format.h": "c8e63b1acd87be6c95247e2f1e59de76d91fd418dc18ff2242f4665d3b8b7e58",
-    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-table.h": "98bf4ada1c4697aea4429a7e21642d897a92f4c87231d3b2a68e9d6f51ac6304"
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-format.h": "407534222bfc5c95b476144675c58e1464cc2caa702c57d52439f92c05118b0c",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-table.h": "98bf4ada1c4697aea4429a7e21642d897a92f4c87231d3b2a68e9d6f51ac6304",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-pipeline.h": "a1223f6c8f700ebcd0fdc3a445eb74d9cb11fb5b2638569ca6a5294f690cc43c"
   },
   "hardware_CRC": {
     "vectors": 128,
@@ -90,5 +91,60 @@
     "invalidation_and_age_removal": true,
     "log": "logs/live-fe-fetch04-device.txt",
     "actual_packet_forwarding_verified": false
+  },
+  "hardware_static_packet": {
+    "scope": "NI DMA injection through internal L3PID25/PDPID13, Hash profile0, packet editor, CPU16 capture",
+    "five_tuple": "10.23.42.1:53000 -> 192.168.1.1:18082 UDP",
+    "Hash_index": 1280,
+    "CRC32": "ceb0f986",
+    "CRC16": "5141",
+    "result": [
+      {
+        "DA": "027766554433",
+        "SA": "026655443322",
+        "TTL": 63,
+        "source_IP": "198.51.100.1",
+        "source_port": 62000,
+        "IP_checksum_valid": true,
+        "UDP_checksum_valid": true,
+        "payload_intact": true
+      }
+    ],
+    "source_MAC": "02:66:55:44:33:22",
+    "destination_MAC": "02:77:66:55:44:33",
+    "source_CAM_index": 14,
+    "egress_interface_index": 31,
+    "FDB_index": 3056,
+    "payload": "TYFZA1-FE-NAT-TEST",
+    "IPv4_checksum": true,
+    "UDP_nonzero_checksum": true,
+    "log": "logs/live-fe-mac06-device.txt",
+    "private_pcap": "analysis/private/live-oam/fe-mac06.pcap"
+  },
+  "hardware_LAN_wire_egress": {
+    "scope": "same NI-injected matched flow with LDPID0 hardware output",
+    "wire_capture": "logs/fe-wire-lan01.pcap",
+    "packets_observed": 1,
+    "CPU_RX_before": 7626,
+    "CPU_RX_after": 7626,
+    "actual_packet_on_Mac_en5": true,
+    "log": "logs/live-fe-wire01-device.txt",
+    "external_LAN_ingress_verified": false,
+    "PON_business_hardware_offload_verified": false
+  },
+  "new_findings": [
+    "TTL mask selector0 ignores TTL; selector3 includes hardware TTL-range code and caused real packet Hash miss.",
+    "FDB commands require cpu_opt_mode bit31; original mode restored after each command.",
+    "FDB append returns status5 without usable destination index; relookup yields actual index3056.",
+    "Source MAC CAM is selector3, proven by this machine table IDs20/23 and assembler; old reference comment selector4 is obsolete.",
+    "Source MAC rewrite uses smac_trans0 with valid egress L3 interface;1 is the original-MAC mode."
+  ],
+  "physical_LAN_ingress_test": {
+    "PONCLE_destination_only_with_force_CPU_enabled": "no hardware match",
+    "force_CPU_removed_with_PONCLE_target16": "management packets not delivered",
+    "rollback": "TTL rmmod restores NI bypass and original classifier/FDB/CAM/register values",
+    "PON_authentication_and_WAN_restored": true,
+    "next": "complete physical LAN classifier and CPU miss before enabling dynamic offload",
+    "serial_log": "logs/serial-20261009-005447.txt"
   }
 }

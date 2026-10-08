@@ -107,7 +107,7 @@ emulator.hook_add(UC_HOOK_CODE, unexpected_call)
 mask = bytearray(b"\xff" * mask_size)
 for name, value in {"l4_dp_exact_range": 0, "l4_sp_exact_range": 0, "ip_sa": 32, "ip_da": 32,
                     "ip_protocol": 0, "ip_vld": 0, "ip_ver": 0, "orig_lspid": 0, "lspid": 0,
-                    "pol_id": 0, "ctrl_set_id": 0}.items():
+                    "pol_id": 0, "ctrl_set_id": 0, "ip_ttl": 0}.items():
     set_value(mask, *mask_layout[name], value)
 fields = re.findall(r"RTL_FE_KEY_(\w+),", header.read_text().split("enum rtl_fe_key_field {", 1)[1].split("};", 1)[0])
 fields = [name.lower() for name in fields if name != "FIELD_COUNT"]
@@ -117,7 +117,7 @@ for i in range(160):
     cases.append({"l4_dp_exact_range": rng.getrandbits(16), "l4_sp_exact_range": rng.getrandbits(16),
                   "ip_da_0": rng.getrandbits(32), "ip_sa_0": rng.getrandbits(32), "ip_protocol": 6 if i % 2 else 17,
                   "ip_vld": 1, "pol_id": i % 32, "orig_lspid": 7 if i % 2 else 0,
-                  "lspid": 7 if i % 2 else 0, "ctrl_set_id": i % 4, "table_id": 1})
+                  "lspid": 7 if i % 2 else 0, "ctrl_set_id": i % 4, "table_id": 1, "ip_ttl": (i * 13) & 255})
 with tempfile.TemporaryDirectory(prefix="fe-key-", dir=root / "artifacts") as temporary:
     temporary = Path(temporary)
     source = temporary / "key.c"

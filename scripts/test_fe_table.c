@@ -2,7 +2,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include "rtl9617c-fe-table.h"
+#include "rtl9617c-fe-pipeline.h"
 
 struct model {
  unsigned int reg[0x4000/4], table[64][8], ages[128][4], calls, fail;
@@ -94,6 +94,17 @@ int main(void)
   .destination_port=443,.llid=31,.protocol=6,.ingress=7,.profile=3,.mask=63};
  rtl_fe_ipv4_key(key.words,&input);
  assert(key.before==0x12345678 && key.after==0xabcdef01);
+ unsigned int fib[7],lpb[3],fdb[4];
+ rtl_fe_classify_hash(fib,3,7);
+ assert((fib[6]&0xff00U)==0x3800U); /* valid+profile3 in bits203..207 */
+ assert(((fib[6]>>17)&63)==7 && (fib[6]&(1U<<16)));
+ rtl_fe_ingress_lpb(lpb,0,16);
+ assert(((lpb[2]>>4)&63)==16 && ((lpb[1]>>6)&15)==15);
+ rtl_fe_fdb_key(fdb,(const unsigned char[]){2,0x77,0x66,0x55,0x44,0x33});
+ assert(fdb[0]==0x003ffa00U);
+ assert(fdb[1]==0x21980000U && fdb[2]==0x13bb32aaU && fdb[3]==0);
+ unsigned int ttl_mask[8];rtl_fe_ipv4_mask(ttl_mask);
+ assert(!(ttl_mask[1]&(3U<<23))); /* TTL is the ignore selector, not range3. */
  unsigned int c32;unsigned short c16;
  rtl_fe_key_set(key.words,RTL_FE_KEY_HKEY_ID,0);
  rtl_fe_key_set(key.words,RTL_FE_KEY_TABLE_ID,0);
