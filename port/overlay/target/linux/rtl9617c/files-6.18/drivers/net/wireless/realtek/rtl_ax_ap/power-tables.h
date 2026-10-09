@@ -3,6 +3,7 @@
 #define RTL_AX_AP_POWER_TABLES_H
 #include <linux/types.h>
 #include "phy.h"
+#include "limits.h"
 
 /* Actual halrf_power_by_rate_store_to_array has three145-byte band arrays.
  * Offsets140..144 are HE/DCM,VHT,HT,OFDM,CCK adjustments in quarter-dBm. */
@@ -14,8 +15,10 @@ struct rtl_ax_power_stage {
 };
 struct rtl_ax_power_inputs {
 	struct rtl_ax_power_stage stage[RTL_AX_PHY_STAGES];
+	struct rtl_ax_limits limits[RTL_AX_PHY_STAGES];
 	bool ready;
 };
 int rtl_ax_power_inputs_load(struct device *dev, unsigned int chip,
 			     struct rtl_ax_power_inputs *inputs);
+void rtl_ax_power_inputs_release(struct rtl_ax_power_inputs *inputs);
 #endif

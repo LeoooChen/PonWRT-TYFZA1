@@ -206,7 +206,22 @@ int rtl_ax_power_inputs_load(struct device *dev, unsigned int chip,
 			if (ret)
 				return dev_err_probe(dev, ret, "invalid stock power input %s\n", name);
 		}
+		{
+			int ret = rtl_ax_limits_load(dev, chip, stage, &inputs->limits[stage]);
+
+			if (ret)
+				return ret;
+		}
 	}
 	inputs->ready = true;
 	return 0;
+}
+
+void rtl_ax_power_inputs_release(struct rtl_ax_power_inputs *inputs)
+{
+	unsigned int stage;
+
+	for (stage = 0; stage < RTL_AX_PHY_STAGES; stage++)
+		rtl_ax_limits_release(&inputs->limits[stage]);
+	inputs->ready = false;
 }

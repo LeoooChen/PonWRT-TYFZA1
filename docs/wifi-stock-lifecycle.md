@@ -236,3 +236,17 @@ C和XB两次读取分别逐字节一致，均1536B，且5e9=aa与此前identity�
 full-pon-radio-power01-6.18.55 的 ram-pcie/image.itb（6539368B，SHA256 a2d9c7a8567e881f91c0341f413d947e1af58a300f87f9161587ce01ed70eb53）由独立后台服务ponwrt-tyfza1-lan-20261009-222938成功构建。2026-10-09经原机U-Boot TFTP、签名校验与整机RAM启动，当前两颗均绑定内置rtl_ax_ap，自动完成BB、第一遍Radio和ByRate/TrackTSSI解析；BA CAM ACK/RXQ各1，错误全0。模拟/数字RF读回差异与live模块一致，保留待完整频道/校准继续核对。XEPON自动获取192.168.71.28，公网ping2/2。结果logs/radio-power01-ram-20261009.txt。
 
 最终FIT实际解压内核已核对BB/RF/power/读回入口，此镜像对应284e563阶段；eFuse采集接口是随后54d127e原生模块实机验证的，未包含在这个FIT。当前镜像不包含完整limit/RU、第二遍Radio/FEM执行或AP，不报告SSID/关联/无线业务已经可用。
+
+## 普通限幅、RU 与完整基础/FEM参数阶段实机执行
+
+limits.c 按原机_hal_parse_txpwrlmt@1d6408、RU parser及store回调保存band/bw/ntx/rate/BF/regulation/channel/quarter-dBm/PShape。原生使用稀疏记录及地区名索引，避免依赖原厂rf_info字节偏移；保留国家/DomainCode映射、6G各功率类型、NA=63与WW=-63编码。普通查询按原机store赋值规则取最后记录；WW查询按本机set_worldwide取各地区最终记录最小值，忽略-128未设置项，全缺项返回0。基础/FEM的limit集合分开，对应原厂每阶段limit_default清空再配置，而非无条件继承基础限幅。
+
+实际加载发现原机两份6G RU文件的RU106/2T PShape缺项：LPI声明8列只有7个零，VLP声明1列为空；同文件另外五个RU表PShape均为对应列数的零。准备工具针对两份确切原始SHA256补齐缺失零值，原始证据不修改，manifest分别记录original_sha256、安装sha256与corrections。未在通用parser中添加缺值默认成功。
+
+上机limits03：C基础8文件，ordinary10416/RU6864条；FEM6文件，ordinary5480/RU3552条。XB基础/FEM各2文件，ordinary4452/RU3024条。C CN/5G/ch36/20M/1T/OFDM=50 quarter-dBm、RU26 HE=16；XB CN/2G/ch1/20M/1T/CCK=60/PShape1、RU26 HE=32/PShape0，均对应实际文件。所有42份参数已被原生驱动读取/解码，6G记录作为文件数据保留，并非本机开放6G射频。结果logs/radio-live-limits03-20261009.txt。
+
+按rtw_hal_init_rf_reg@1bef20与halrf_config_rf_parameter@303760接入第二遍Radio，然后按hal_start_C/XB的RFE54分支重新执行FEM BB/gain/offset/reset和两遍FEM Radio。原机XTAL tracking配置为无操作；XB且RFE>50的EDPK函数@357060只读81ac/82ac bits18..23、81f0/82f0低9位并设host reference0xa00，未添加假想寄存器写入。
+
+fem01原生模块SHA256 76807da6c19bbad667dfb2374822765a5073b87cff4c61f5bb43cf75fea7661d在两颗原机执行，radio_passes=2,2、active_stage=FEM。C基础A/B总写4088/4022、FEM256/256，基础固件页每路2×1568B、FEM每路2×484B。XB基础974/812、FEM8/8；其FEM无数字RF缓存项，但原机最终空页仍按class8/9各发送两次。XB EDPK gain=51/51、RXBB=120/120、reference2560。SIPI读回与前一阶段一致，RX错误0。输出logs/radio-live-fem01-20261009.txt。
+
+接下来必须先执行rtw_hal_bb_dm_init@1b7d94→halbb_dm_init@2b055c：IC hardware/TDMA/DCR、GPIO、普通/hidden eFuse、supportability、PHY status、统计、EDCCA/DFS/DIG/CFO/RA/环境监控/功率控制等，再进入RF DM的NCTL和校准。完整PHY参数配置不等于BB DM/RF校准或AP完成，状态仍为bb_rf=pending。

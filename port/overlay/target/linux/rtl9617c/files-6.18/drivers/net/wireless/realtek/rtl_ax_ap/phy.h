@@ -27,7 +27,7 @@ struct rtl_ax_phy_inputs {
 	struct rtl_ax_phy_table table[RTL_AX_PHY_STAGES][RTL_AX_PHY_TABLES];
 	struct rtl_ax_phy_gain gain[RTL_AX_PHY_STAGES];
 	s8 gain_offset[2], gain_offset_tb[2];
-	unsigned int radio_writes[2], radio_last_path, radio_last_address;
+	unsigned int radio_writes[RTL_AX_PHY_STAGES][2], radio_last_path, radio_last_address;
 	u32 digital_requested[2][2], digital_immediate[2][2];
 	unsigned int chip;
 };

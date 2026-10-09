@@ -322,6 +322,7 @@ static int rtl_ax_phy_rf_write(const struct rtl_ax_io *io, unsigned int path,
 static int rtl_ax_phy_radio_path(const struct rtl_ax_io *io,
 				const struct rtl_ax_phy_table *table, unsigned int path,
 				struct rtl_ax_phy_inputs *inputs,
+				enum rtl_ax_phy_stage stage,
 				const struct rtl_ax_phy_commands *commands)
 {
 	__le32 *words;
@@ -342,7 +343,7 @@ static int rtl_ax_phy_radio_path(const struct rtl_ax_io *io,
 		ret = rtl_ax_phy_rf_write(io, path, address, value);
 		if (ret)
 			goto release;
-		inputs->radio_writes[path]++;
+		inputs->radio_writes[stage][path]++;
 		/* Live observation of RF mode/channel writes. Readbacks are evidence,
 		 * never a fabricated table-success test or an extra register write. */
 		if (address == 0x10000 || address == 0x10018) {
@@ -381,9 +382,9 @@ int rtl_ax_phy_radio_apply(const struct rtl_ax_io *io,
 
 	/* Actual halrf_config_radio@3030e8: C runs B then A;XB runs A then B. */
 	ret = rtl_ax_phy_radio_path(io, &inputs->table[stage][RTL_AX_RADIO_A + first],
-				    first, inputs, commands);
+				    first, inputs, stage, commands);
 	if (ret)
 		return ret;
 	return rtl_ax_phy_radio_path(io, &inputs->table[stage][RTL_AX_RADIO_A + !first],
-				    !first, inputs, commands);
+				    !first, inputs, stage, commands);
 }

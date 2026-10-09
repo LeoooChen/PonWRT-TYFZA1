@@ -51,10 +51,25 @@ try:
             target = args.output / 'lib/firmware' / relative
             target.mkdir(parents=True, exist_ok=True)
             for file in files:
-                shutil.copyfile(file, target / file.name)
+                data = file.read_bytes()
+                original_sha256 = hashlib.sha256(data).hexdigest()
+                corrections = []
+                # The board's RU106/2T6GHz LPI row declares8 regulations,
+                # but its PShape row has7 zeros. The other fiveRU rows use8
+                # zeros. Keep the source evidence intact and repair its
+                # missing zero explicitly in the installed parameter file.
+                if original_sha256 == '7b63295122bb38ac76a62f052246525f094d17b48be0176c13d19da5ea2dc38f':
+                    data = data.replace(b'PShape\t0\t0\t0\t0\t0\t\t0\t0',
+                                        b'PShape\t0\t0\t0\t0\t0\t0\t0\t0')
+                    corrections.append('RU106/2T6GHzLPI: complete8-column zeroPShape row')
+                if original_sha256 == 'dd73d905c7841f2220d3a6b0ba90a6b48cf8456ca6886837ed567d12e39beff3':
+                    data = data.replace(b'PShape\t\t\t\t\t', b'PShape\t0\t\t\t\t')
+                    corrections.append('RU106/2T6GHzVLP: restore single zeroPShape entry')
+                (target / file.name).write_bytes(data)
                 parameters.append({'path': str(Path('lib/firmware') / relative / file.name),
                                    'band': band, 'FEM': fem, 'RFE': 54, 'load_stage': stage,
-                                   'sha256': hashlib.sha256(file.read_bytes()).hexdigest()})
+                                   'original_sha256': original_sha256,
+                                   'sha256': hashlib.sha256(data).hexdigest(), 'corrections': corrections})
     report = {'study': str(args.study.relative_to(root)), 'native_format_header_sha256':
               hashlib.sha256((root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/fw.h').read_bytes()).hexdigest(),
               'firmware': firmware, 'parameters': parameters,
