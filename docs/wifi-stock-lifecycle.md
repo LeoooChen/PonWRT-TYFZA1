@@ -348,3 +348,9 @@ scripts/build_rx_stage_observe.sh构建原生实机观察模块，tools/wifi_rx_
 持续观察模块5c29a4a131b644cdfbf917a341395835f30bb2970986db5c140310fd23ee15f4最终在XB收到10个已确认的802.11 Probe Request帧：每帧200B，WD type0、hardware rate0（CCK1Mbps）、CRC_error0/ICV_error0；24B帧头FC0040，协议版本0、management type0/subtype4，目的地址和BSSID为broadcast，sequence字段变化。WD长度、payload边界、PHY/MAC CRC与DMA→IRQ→主机解析链对应。证据logs/radio-first-80211-20261010.txt、manifests/radio-first-80211-20261010.json。这是实际无线帧接收的首个阶段结果，仍不包含OFDM/5GHz成功或AP业务。此前没有源持续发送的短窗口返回零帧，不能由该结果推断接收永远阻塞。
 
 正式原生backend现在在已实现的PHY初始化结束后恢复PCI bus master/H2C及RXQ/RPQ IRQ，保留可用RX继续收帧；正常停止入口仍先同步关闭RX、WCPU/HCI再释放DMA。radio_state根据真实HAXI enable bits报告active/paused，不再写死paused。正常overlay不加入观察延时、额外命令或帧头日志；mac80211分发暂未接入，真实type0帧仍计入unhandled。这些计数保留直到普通802.11帧转交native mac80211。
+
+RX_ACTIVE01正式FIT（sourcee75bf3b）SHA256f34fbd0e8355adb77626418ec30bbdc49e0402ed5e6a1e819c723797bbfcbd05，6549320B，实际内核SHA2560f982cab65f79fbeab40fbc432f851e7d51a56389191e68ae6ef973ec8329208，经U-Boot签名验证及整机RAM冷启动。两颗内置rtl_ax_ap自动hci=active/RX running1，环境监测36项字段读回匹配，XEPON DHCP192.168.71.28、公网2/2。随后保留XB内置驱动持续收包，已收到14个CRC正确的真实type0帧、RXQ15（含C2H1）、格式/tag错误0。证据logs/radio-rx-active01-ram-20261010.txt、logs/radio-rx-active01-builtin-frames-20261010.txt及对应manifest。因此接收结果已进入正式启动镜像，不仅是临时观察模块。
+
+C单独替换为原生读取模块以核对5GHz状态，XB仍使用上面正式FIT中的内置驱动收帧。C BB实际中心频率5800MHz、SCO45、channel report0；模拟RF18为A01001/B01000，低8位频道1/0，原机RF5GHz band编码位未设置。BB与RF默认频道/频段尚未统一，完整rtw_hal_set_ch_bw路径是5GHz验证的下一项。证据logs/radio-channel-read-C-20261010.txt、manifests/radio-channel-read-C-20261010.json。
+
+频道和RFK后段需要部分RF字段写，已严格核对本机模拟写C@2e2e64/XB@2ed448与数字写C@2e3060/XB@2ed644：模拟写等待31次busy观察；部分mask时写BB0374低20位，再按首个mask位移位data并在BB0370命令中置bit31。原机使用硬件mask写，不是先读RF再拼写。数字写使用e000/f000窗口的字段更新及1us delay。公共native masked API已接入原有全20bit Radio表加载；C实际回归完成全部base/FEM加载及成功BA ACK，部分mask调用将随完整频道/RFK控制验证。另核对C频道控制中的pathB SYN修正是hardwareCV0条件，本机CV1跳过，不能把hal_com字段4误解释成PCIe bus type。

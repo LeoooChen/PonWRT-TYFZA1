@@ -992,6 +992,8 @@ static ssize_t radio_rx_pipeline_show(struct device *dev,
 		snapshot.haxi, snapshot.dmac, snapshot.cmac, snapshot.rx_index[0], snapshot.rx_index[1]);
 	length += sysfs_emit_at(buffer, length, "CCK_gate_0700_2320_0c80=%08x,%08x,%08x\n",
 		snapshot.cck_gate[0], snapshot.cck_gate[1], snapshot.cck_gate[2]);
+	length += sysfs_emit_at(buffer, length, "BB_center_frequency_MHz=%u SCO=%u channel_report=%u\n",
+		snapshot.center_frequency, snapshot.sco, snapshot.channel_report);
 	for (i = 0; i < 5; i++)
 		length += sysfs_emit_at(buffer, length, "PHY=%s CRC_OK=%u CRC_error=%u\n",
 			phy_names[i], snapshot.crc_ok[i], snapshot.crc_error[i]);

@@ -1,0 +1,16 @@
+{
+  "radio": "8852C",
+  "BB_center_frequency_MHz": 5800,
+  "BB_SCO": 45,
+  "BB_channel_report": 0,
+  "analog_RF18_A": "01001",
+  "analog_RF18_B": "01000",
+  "RF_channel_low8_A_B": [
+    1,
+    0
+  ],
+  "RF_5G_band_bits_not_set": true,
+  "original_RF_band_channel_entry": "halrf_ctl_band_ch_bw_8852c@30b1a0",
+  "BB_RF_band_channel_configuration_not_yet_integrated": true,
+  "log": "logs/radio-channel-read-C-20261010.txt"
+}

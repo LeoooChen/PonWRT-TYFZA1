@@ -1,0 +1,78 @@
+{
+  "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "BB_DM_remaining_initialization": {
+    "RA": "actual2cd49c loop skips non-null objects; station lifecycle later",
+    "dynamic_power": "2c7794/2c76fc host only; per-station state and thresholds70,78,87,90,255,255; power20,12,6",
+    "RUA": "28965c has no hardware operations",
+    "antenna_diversity": "2d198c host defaults; hardware entry conditional on abilitybit10 or dev_capantenna=1",
+    "channel_info": "2918c8/291834 cfg calls291474; config0,1,3,3,bitmap303,block1,type0",
+    "path_diversity": "2d9c90 conditional on supportbit12; C38ba enabled/XB8bb disabled",
+    "MCC": "2d84a8 host defaults only",
+    "PLCP": "2c0050 host enable1,lock0,mode1",
+    "sniffer_PHY_status": "2db16c logging only"
+  },
+  "channel_info_matrices_rodata_offset": "231b8",
+  "channel_info_matrices": [
+    [
+      52,
+      26,
+      14,
+      4,
+      104,
+      52,
+      28,
+      8,
+      208,
+      104,
+      56,
+      16,
+      416,
+      208,
+      112,
+      32
+    ],
+    [
+      56,
+      28,
+      14,
+      4,
+      114,
+      58,
+      30,
+      8,
+      242,
+      122,
+      62,
+      16,
+      484,
+      244,
+      124,
+      32
+    ],
+    [
+      242,
+      122,
+      62,
+      16,
+      484,
+      242,
+      122,
+      32,
+      996,
+      498,
+      250,
+      64,
+      1992,
+      996,
+      500,
+      128
+    ]
+  ],
+  "band_channel_entry": "rtw_hal_set_ch_bw@1cf3cc: MAC BW -> BB ch/BW -> RF ch/BW -> power -> RFK",
+  "RF_channel_calls": {
+    "shared": "halrf_ctrl_bw_ch@2f8c60: ctl_ch -> ctl_bw -> ctl_band_ch_bw -> rxbb_bw",
+    "C": "ctl_band_ch_bw_8852c@30b1a0 reads analog18/digital10018 for both paths, updates band/ch/BW with100us delay; non-DBCC pathB SYN correction is conditional on hal_com hardwareCV==0, so boardCV1 skips it",
+    "XB": "ctl_ch_8192xb/ch_setting,ctl_bw_8192xb/bw_setting,rxbb_bw"
+  },
+  "implemented": false
+}

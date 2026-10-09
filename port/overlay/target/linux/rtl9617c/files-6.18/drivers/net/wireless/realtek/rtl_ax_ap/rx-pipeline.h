@@ -8,6 +8,8 @@ struct rtl_ax_rx_pipeline {
 	u16 mac_crc_ok[8], mac_crc_error[8], mac_false_alarm[8];
 	u32 rx_index[2], haxi, dmac, cmac;
 	u32 cck_gate[3];
+	u16 center_frequency;
+	u8 sco, channel_report;
 };
 
 static inline void rtl_ax_rx_pipeline_read(const struct rtl_ax_io *io,
@@ -49,5 +51,9 @@ static inline void rtl_ax_rx_pipeline_read(const struct rtl_ax_io *io,
 	snapshot->cck_gate[0] = io->read32(io->ctx, 0x10700);
 	snapshot->cck_gate[1] = io->read32(io->ctx, 0x12320);
 	snapshot->cck_gate[2] = io->read32(io->ctx, 0x10c80);
+	/* Actual ctrl_ch_C/XB frequency, SCO and PHY channel report fields. */
+	snapshot->center_frequency = io->read32(io->ctx, 0x14e30) & 0x1fff;
+	snapshot->sco = io->read32(io->ctx, 0x14974) & 0x7f;
+	snapshot->channel_report = (io->read32(io->ctx, 0x10734) >> 16) & 255;
 }
 #endif

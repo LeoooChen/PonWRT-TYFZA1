@@ -1,40 +1,28 @@
 {
   "current_on_board": {
-    "FIT": "artifacts/full-pon-radio-start-rx01-6.18.55/ram-pcie/image.itb",
-    "sha256": "90c5b7cb79ff0db351e072371d77625c551177954eb92a85cc1eeb6f2c9209df",
-    "bytes": 6547104,
-    "source_stage": "3b1b0e5",
+    "FIT": "artifacts/full-pon-radio-rx-active01-6.18.55/ram-pcie/image.itb",
+    "sha256": "f34fbd0e8355adb77626418ec30bbdc49e0402ed5e6a1e819c723797bbfcbd05",
+    "bytes": 6549320,
+    "source_stage": "e75bf3b",
     "native_driver": "rtl_ax_ap built-in",
-    "log": "logs/radio-start-rx01-ram-20261010.txt",
-    "implemented_and_observed": [
-      "base and FEM BB/gain/RF registers",
-      "two Radio passes per stage",
-      "all42 parameter files decoded",
-      "ordinary and RU limit input records",
-      "IC hardware configuration",
-      "RFE54 GPIO polarities and TRSW",
-      "normal flash and hidden physicalOTP gain inputs",
-      "32 PHY report bitmap readbacks",
-      "96 original ELF TXdiff readbacks",
-      "256 cleared MACID power DWORDs",
-      "CRC selectors",
-      "LA/PSD/EDCCA initialization",
-      "original AP_NORMAL4 RX filters and MPDU/RTS limits"
-    ],
-    "PHY_bitmap_in_this_FIT": true,
+    "log": "logs/radio-rx-active01-ram-20261010.txt",
+    "kernel_sha256": "0f982cab65f79fbeab40fbc432f851e7d51a56389191e68ae6ef973ec8329208",
+    "DTB_sha256": "ed3a18f2b09dbec988883e9a36b47efdae819c82db47864deb3ad1e4eecd23ac",
+    "cold_boot_verified": true,
+    "native_RX_active_both_radios": true,
+    "RX_errors": 0,
+    "environment_readbacks_match": 36,
     "AP_available": false,
     "XEPON_DHCP": "192.168.71.28/24",
     "public_ping": "2/2",
-    "kernel_sha256": "f5b82e8f9a61e1f631244db23e59b63d83d703fb7308ee44741cf3f29b3a19db",
-    "DTB_sha256": "ed3a18f2b09dbec988883e9a36b47efdae819c82db47864deb3ad1e4eecd23ac",
-    "cold_boot_verified": true,
+    "frame_confirmation_from_prior_live_native_code": "manifests/radio-first-80211-20261010.json",
     "active_RAM_driver_override": {
-      "module": "artifacts/live-radio-rx-continuous01/rtl_ax_ap_live.ko",
-      "sha256": "5c29a4a131b644cdfbf917a341395835f30bb2970986db5c140310fd23ee15f4",
-      "log": "logs/radio-rx-continuous01-20261010.txt",
-      "continuous_RX": true,
-      "latest_source_steps_in_boot_FIT": false,
-      "observer_in_production": false
+      "radio": "0000:01:00.0 / 8852C only",
+      "module": "artifacts/live-radio-channel-read01/rtl_ax_ap_live.ko",
+      "sha256": "9a5f0b9d2d866756f08c138720f9fdd7931fff9298b4dcfaa7cab26502a92c18",
+      "log": "logs/radio-channel-read-C-20261010.txt",
+      "purpose": "read actual BB frequency/SCO and RF channel",
+      "8192XB": "still built-in rtl_ax_ap native RX"
     }
   },
   "radios": [
@@ -187,12 +175,12 @@
     "hardware_verified": false
   },
   "previous_on_board": {
-    "FIT": "artifacts/full-pon-radio-bb-dm01-6.18.55/ram-pcie/image.itb",
-    "sha256": "3a567502bb0e271970a7d614500113230c2d678010350f0345acb8ce8b088a7f",
-    "bytes": 6544376,
-    "source_stage": "9eace47",
+    "FIT": "artifacts/full-pon-radio-start-rx01-6.18.55/ram-pcie/image.itb",
+    "sha256": "90c5b7cb79ff0db351e072371d77625c551177954eb92a85cc1eeb6f2c9209df",
+    "bytes": 6547104,
+    "source_stage": "3b1b0e5",
     "native_driver": "rtl_ax_ap built-in",
-    "log": "logs/radio-bb-dm01-ram-20261009.txt",
+    "log": "logs/radio-start-rx01-ram-20261010.txt",
     "implemented_and_observed": [
       "base and FEM BB/gain/RF registers",
       "two Radio passes per stage",
@@ -200,11 +188,28 @@
       "ordinary and RU limit input records",
       "IC hardware configuration",
       "RFE54 GPIO polarities and TRSW",
-      "normal flash and hidden physicalOTP gain inputs"
+      "normal flash and hidden physicalOTP gain inputs",
+      "32 PHY report bitmap readbacks",
+      "96 original ELF TXdiff readbacks",
+      "256 cleared MACID power DWORDs",
+      "CRC selectors",
+      "LA/PSD/EDCCA initialization",
+      "original AP_NORMAL4 RX filters and MPDU/RTS limits"
     ],
-    "PHY_bitmap_in_this_FIT": false,
+    "PHY_bitmap_in_this_FIT": true,
     "AP_available": false,
     "XEPON_DHCP": "192.168.71.28/24",
-    "public_ping": "2/2"
+    "public_ping": "2/2",
+    "kernel_sha256": "f5b82e8f9a61e1f631244db23e59b63d83d703fb7308ee44741cf3f29b3a19db",
+    "DTB_sha256": "ed3a18f2b09dbec988883e9a36b47efdae819c82db47864deb3ad1e4eecd23ac",
+    "cold_boot_verified": true,
+    "active_RAM_driver_override": {
+      "module": "artifacts/live-radio-rx-continuous01/rtl_ax_ap_live.ko",
+      "sha256": "5c29a4a131b644cdfbf917a341395835f30bb2970986db5c140310fd23ee15f4",
+      "log": "logs/radio-rx-continuous01-20261010.txt",
+      "continuous_RX": true,
+      "latest_source_steps_in_boot_FIT": false,
+      "observer_in_production": false
+    }
   }
 }

@@ -1,0 +1,18 @@
+{
+  "FIT": "artifacts/full-pon-radio-rx-active01-6.18.55/ram-pcie/image.itb",
+  "sha256": "f34fbd0e8355adb77626418ec30bbdc49e0402ed5e6a1e819c723797bbfcbd05",
+  "bytes": 6549320,
+  "source_stage": "e75bf3b",
+  "native_driver": "rtl_ax_ap built-in",
+  "log": "logs/radio-rx-active01-ram-20261010.txt",
+  "kernel_sha256": "0f982cab65f79fbeab40fbc432f851e7d51a56389191e68ae6ef973ec8329208",
+  "DTB_sha256": "ed3a18f2b09dbec988883e9a36b47efdae819c82db47864deb3ad1e4eecd23ac",
+  "cold_boot_verified": true,
+  "native_RX_active_both_radios": true,
+  "RX_errors": 0,
+  "environment_readbacks_match": 36,
+  "AP_available": false,
+  "XEPON_DHCP": "192.168.71.28/24",
+  "public_ping": "2/2",
+  "frame_confirmation_from_prior_live_native_code": "manifests/radio-first-80211-20261010.json"
+}

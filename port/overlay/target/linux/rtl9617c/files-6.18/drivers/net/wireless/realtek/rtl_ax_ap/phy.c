@@ -288,17 +288,22 @@ int rtl_ax_phy_rf_read(const struct rtl_ax_io *io, unsigned int path,
 	return 0;
 }
 
-static int rtl_ax_phy_rf_write(const struct rtl_ax_io *io, unsigned int path,
-			       unsigned int address, unsigned int value)
+int rtl_ax_phy_rf_write_masked(const struct rtl_ax_io *io, unsigned int path,
+	unsigned int address, u32 mask, u32 value)
 {
-	unsigned int attempt, busy;
+	unsigned int attempt, busy, shift, command_masked = 0;
+
+	mask &= 0xfffff;
+	value &= 0xfffff;
+	for (shift = 0; shift < 20 && !(mask & BIT(shift)); shift++)
+		;
 
 	/* halbb_write_rf_reg_* selects the die using bit16 of the RF address.
-	 * Original flat radio callbacks pass a full20-bit mask. */
+	 * C/XB share the same digital and analog mask encoding. */
 	if (address & 0x10000) {
 		unsigned int direct = (path ? 0xf000 : 0xe000) + ((address & 0xff) << 2);
 
-		rtl_ax_update32(io, direct | 0x10000, 0xfffff, value & 0xfffff);
+		rtl_ax_update32(io, direct | 0x10000, mask, (value << shift) & mask);
 		io->delay_us(io->ctx, 1);
 		return 0;
 	}
@@ -314,8 +319,16 @@ static int rtl_ax_phy_rf_write(const struct rtl_ax_io *io, unsigned int path,
 	}
 	if (busy)
 		return -ETIMEDOUT;
+	/* Actual analog masked writer C@2e2e64/XB@2ed448 uses SIPI's
+	 * mask register and command bit31, rather than a software RF read.
+	 * The input value is shifted by the first mask bit; hardware masks it. */
+	if (mask != 0xfffff) {
+		rtl_ax_update32(io, 0x10374, 0xfffff, mask);
+		value = (value << shift) & 0xfffff;
+		command_masked = BIT(31);
+	}
 	io->write32(io->ctx, 0x10370,
-		    (path << 28) | ((address & 0xff) << 20) | (value & 0xfffff));
+		    command_masked | (path << 28) | ((address & 0xff) << 20) | value);
 	return 0;
 }
 
@@ -340,7 +353,7 @@ static int rtl_ax_phy_radio_path(const struct rtl_ax_io *io,
 		 * includingf9..fe;they do not use BB table delay opcodes. */
 		inputs->radio_last_path = path;
 		inputs->radio_last_address = address;
-		ret = rtl_ax_phy_rf_write(io, path, address, value);
+		ret = rtl_ax_phy_rf_write_masked(io, path, address, 0xfffff, value);
 		if (ret)
 			goto release;
 		inputs->radio_writes[stage][path]++;

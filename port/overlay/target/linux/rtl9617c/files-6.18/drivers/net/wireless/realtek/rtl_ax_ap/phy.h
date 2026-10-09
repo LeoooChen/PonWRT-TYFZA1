@@ -48,6 +48,8 @@ void rtl_ax_phy_bb_reset(const struct rtl_ax_io *io, unsigned int chip);
 void rtl_ax_phy_bb_offset(const struct rtl_ax_io *io, struct rtl_ax_phy_inputs *inputs);
 int rtl_ax_phy_rf_read(const struct rtl_ax_io *io, unsigned int path,
 		       unsigned int address, u32 *value);
+int rtl_ax_phy_rf_write_masked(const struct rtl_ax_io *io, unsigned int path,
+	unsigned int address, u32 mask, u32 value);
 int rtl_ax_phy_radio_apply(const struct rtl_ax_io *io,
 			   struct rtl_ax_phy_inputs *inputs, enum rtl_ax_phy_stage stage,
 			   const struct rtl_ax_phy_commands *commands);

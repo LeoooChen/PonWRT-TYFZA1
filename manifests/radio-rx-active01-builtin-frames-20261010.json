@@ -1,0 +1,14 @@
+{
+  "boot_FIT": "artifacts/full-pon-radio-rx-active01-6.18.55/ram-pcie/image.itb",
+  "FIT_sha256": "f34fbd0e8355adb77626418ec30bbdc49e0402ed5e6a1e819c723797bbfcbd05",
+  "boot_source": "e75bf3b",
+  "radio": "8192XB / 0001:01:00.0",
+  "driver": "rtl_ax_ap built-in",
+  "RX_running": true,
+  "actual_80211_CRC_OK": 14,
+  "RX_errors": 0,
+  "AP_available": false,
+  "log": "logs/radio-rx-active01-builtin-frames-20261010.txt",
+  "log_sha256": "df14bad732620a941efb713ec58e6269b7953b53002b1b7cf3aec6c37dad6f7a",
+  "raw_Probe_Request_header_evidence": "manifests/radio-first-80211-20261010.json"
+}
