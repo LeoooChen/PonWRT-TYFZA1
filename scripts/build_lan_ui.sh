@@ -22,4 +22,6 @@ set -- "$BIN"/*-initramfs-Image
 python3 tools/verify_pcie_dtb.py "$P/evidence/wireless-study-20261008/evidence/stock/live-fit.dtb" "$BIN/openwrt-rtl9617c-generic-tianyi_tyfza1-pcie.dtb" --output "$OUT/pcie-dtb-verification.json"
 .venv/bin/python scripts/make_ram_fit.py "$1" "$BIN/openwrt-rtl9617c-generic-tianyi_tyfza1-pcie.dtb" "$OUT/ram-pcie" --keys "$P/evidence/rtl-workspace/private/tyfza1-build-keys" --kernel-version "$KERNEL_VERSION" --cpus 4
 python3 tools/verify_pcie_payload.py "$OUT"
-python3 tools/verify_wifi_payload.py "$OUT"
+KERNEL_DIRECTORY=$(python3 port/tools/project_paths.py --kernel-directory "$P/sources/openwrt")
+python3 tools/verify_wifi_payload.py "$OUT" \
+    --kernel-elf "$(dirname "$KERNEL_DIRECTORY")/vmlinux-initramfs.debug"

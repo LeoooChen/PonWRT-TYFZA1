@@ -12,7 +12,7 @@
 
 原生rtl_ax_ap/fw.h解析8852C与8192XB AP固件的主头、动态头和section。MAC枚举2选择8852C，3选择8192XB；host cv0选择u1，其余选择u2，与原机mac_query_fw_buff一致。当前四份固件版本均0.27.84.3，firmware cut字段1/2与host cv0/1分别记录。
 
-原始主头32字节、四项段头64字节、动态头64字节，累计160字节；段数据使用完整RISC-V地址。下载phase1仅发送主头和段头共96字节，并将分段长度字段改为2020；原始数组保持不变。sections按2020字节拆分，末包使用实际剩余长度，载荷累计与原段完全相同。该实现提供驱动下载协议的数据处理；实际PCIe H2C ring、MCU ready和mac80211接口继续实现。
+原始主头32字节、四项段头64字节、动态头64字节，累计160字节；段数据使用完整RISC-V地址。下载phase1仅发送主头和段头共96字节，并将分段长度字段改为2020；原始数组保持不变。sections按2020字节拆分，末包使用实际剩余长度，载荷累计与原段完全相同。后续已接入原生PCIe H2C ring及MCU ready控制；mac80211接口继续实现。
 
 tools/prepare_wifi_runtime.py直接使用原生C格式处理，向构建目录安装四份原机AP固件数据与选中FEM目录的20份RF参数。路径为lib/firmware/realtek/tyfza1，固件、RF参数均留有源哈希。没有复制或加载原机主机侧ko。参数目录含6GHz备用表，保留数据不等于启用未确认频段；实际radio能力仍以对应驱动与板级身份决定。
 
@@ -34,7 +34,7 @@ power.h按本机AP PCIe流程实现。8192XB包含0x244[25]、0x16[2:3]、0xcc[3
 
 0x5e9校准标志、0x5ea身份/工艺字段和0x5f0/1 ADIE位于1536字节DDV物理bank，不使用1216字节逻辑映射区作为读取上限，也不误切DAV。efuse读取只发读命令，并配对开关读电源窗口；超时也释放该窗口。ADIE读取及未烧录时的0x6758/0x6816值依据GPL对应芯片分支；本机模块没有独立get_aid_info符号，ADIE查询的GPL验证与本机power/FV验证分别记录。固件缺失、截断或chip/cut不匹配时执行已上电设备的关电流程；remove/shutdown也调用同一路径。
 
-后端只暴露只读radio_state，列出初始/最终cv、factory、ADIE、校准标志和固件版本，并明确firmware_state=validated、transport=pending、mac80211=pending。该阶段完成MAC上电准备，尚未启动WCPU固件或注册无线接口。RFE54文件已进入载荷，BB/RF表尚未应用。
+上电准备阶段只验证固件；后续channel12已接入probe，radio_state现在报告最终MCU状态、下载包数/字节、download_memory及mac80211=pending。该只读属性只在probe完整成功后创建，firmware_state=ready要求MCU实际返回初始化完成状态，不从固件文件校验结果推导。RFE54文件已进入载荷，BB/RF表尚未应用，无线接口尚未注册。
 
 ## 后端离线验证与构建
 
@@ -48,7 +48,7 @@ scripts/test_radio_probe.py运行实际pci.c控制函数，使用四份完整原
 
 ## 原生下载前 DLE/HFC 准备
 
-download.h接入PCI probe，在固件身份/格式校验后准备下载专用DMAC、DLE和HFC；radio_state新增download_memory=ready及hci=paused。主机bus mastering保持关闭，HCI TX/RX和所有TX channel暂停，直到后续host ring完成初始化。失败退出撤销DLE使能，remove/shutdown关闭下载资源。
+download.h接入PCI probe，在固件身份/格式校验后准备下载专用DMAC、DLE和HFC；radio_state包含download_memory及hci状态。主机bus mastering保持关闭，HCI TX/RX和所有TX channel暂停，直到channel12 host ring完成初始化。失败退出撤销DLE使能，remove/shutdown关闭下载资源。
 
 两颗芯片的本机PCIe DLFW表相同：WDE64字节页、0 linked/2048 unlinked；PLE128字节页、2544 linked/16 unlinked，总计458752字节。WDE下载最大配额为零，最小WCPU配额从本机SCC/STF运行配置复制60。PLE C2H最小16/最大32、H2C最小和最大均256；其余下载通道配额为零。只在WDE与PLE状态寄存器的queue/buffer ready位都置位后继续。
 
@@ -58,10 +58,24 @@ scripts/test_radio_download_memory.py直接解开本机ELF的两份PCIe表及其
 
 ## 固件 transport 的实现顺序
 
-原厂fwdl_phase0等待WCPU_FW_CTRL=0x1e0的H2C_PATH_RDY位1；发送带H2C头的96字节固件头后，phase1等待同寄存器FWDL_PATH_RDY位2，再清HALT H2C/C2H控制。phase2按2020字节分段发送裸固件段的FWDL类型描述符，随后检查0x1e0[7:5]等于7；checksum、security和cut错误是不同终止状态。第一阶段带H2C command header，段数据没有同样的H2C header，不能把两者当成同一包格式。
+原厂fwdl_phase0等待WCPU_FW_CTRL=0x1e0的H2C_PATH_RDY位1；发送带H2C头的96字节固件头后，phase1等待同寄存器FWDL_PATH_RDY位2，再清HALT H2C/C2H控制。phase2按2020字节分段发送裸固件段的FWDL类型描述符，随后检查0x1e0[7:5]等于7；checksum、security和cut错误是不同终止状态。第一阶段带H2C command header，段数据没有同样的H2C header。transport.h已实现这三阶段，错误分别返回EBADMSG、EKEYREJECTED和ENOEXEC。
 
-下一步先完成DLE/HFC下载前配置与PCIe H2C channel12的descriptor/ring、TXBD index及completion，再启用WCPU并执行上述阶段。原厂fwdl_precheck还核对PLE PAXIDMA队列和HAXIDMA channel12是否空；只有上电和分段格式尚不足以开始下载。Linux rtw89的8852C使用16字节fwcmd描述符、32bit TXBD和同一channel12思路，可复用Linux DMA和completion生命周期，但8192XB的寄存器、配额和AP固件ABI需分别落实。
+原厂fwdl_precheck核对PLE PAXIDMA队列0/1和HAXIDMA channel12是否空；原生实现通过DFI target7和TXBD index执行对应检查后才启用WCPU。Linux rtw89的8852C使用16字节fwcmd描述符、32bit TXBD和同一channel12思路；本后端使用Linux DMA API并按两颗芯片原机包格式实现。常规RX/TX、C2H/IRQ、BB/RF以及完整AP接口仍继续落实。
+
+## Channel12 下载队列及 WCPU 控制
+
+PCI probe在最终chip/cut/固件校验之后，先执行本机CPU-off流程：关闭WCPU、下载标志、CPU clock，并按chk_patch_pcie_hang覆盖两芯片的原机行为，切换PLATFORM_EN。这个复位在DLE及host ring初始化之前完成。启用时重新清debug/错误状态、配置下载标志及power-on boot reason，核对空队列/空index，再启用WCPU并等待H2C ready。
+
+本阶段分配256项8字节TXBD及2048字节coherent packet，均归PCI设备的32bit DMA地址域。配置0x1280/1284 descriptor地址、0x1038项数和0x1328的原机BDRAM参数{60,4,1}；数量/BDRAM字段用对应掩码更新。清channel12 index并等待消费/生产指针为零，等待BDRAM reset位自行清零。host ring就绪后仅开放channel12 TX，RX和普通TX仍暂停；本阶段没有常规RX ring。
+
+固件包使用16字节短RX格式WD。第一包为WD type13 + 8字节H2C头 + 96字节固件头，H2C type0/MAC category1/class3/function0；段包为WD type14 + 原始段字节，最长2020字节。TXBD长度包含WD，其LS为bit30，低32位填写PCI DMA地址。dma_wmb在发布生产指针前执行；硬件消费指针追上后才复用coherent packet，dma_rmb配对完成读取。下载成功后暂停HCI并关闭bus mastering，保留固件和队列对象供后续接数据面；remove/shutdown停止WCPU、关闭下载资源并释放host缓冲。
+
+MCU状态等待使用当前Linux6.18.55的readb_poll_timeout按elapsed time计时，400ms超时；状态2/3/4/7立即结束等待，再映射对应错误/成功。没有将400000次可睡眠轮询当作400ms。512组本机mac_disable_cpu/mac_enable_cpu寄存器轨迹与原生实现一致。实际Linux轮询宏另用100ms调度睡眠验证，仍按400ms边界结束；四个终止状态均有延迟出现测试。结果在logs/radio-WCPU-control-test.json。
+
+scripts/test_radio_transport_format.py执行本机两芯片mac_txdesc_len/txdes_proc_h2c_fwdl及h2c_pkt_set_hdr_fwdl机器码，8080组WD/H2C包逐字节匹配。PCI控制函数测试扩展为43组，四份完整固件的每个段包对应原始offset/长度/字节，另外600次发送验证生产指针绕过256项边界。DMA分配、idle/index/BDRAM超时、队列不空、H2C/FWDL/消费指针超时、MCU校验/安全/cut错误及ready超时均退出并释放对象，ASan/UBSan通过。
+
+artifacts/full-pon-radio-transport02-6.18.55已由systemd用户服务ponwrt-tyfza1-lan-20261009-130452完成构建，退出码0。最终FIT SHA256=2d1c5f58d41a88c62789046f54e182517a5fd19bcecaf19341e25c12ad238cbb。已提取实际选中FIT内核，逐字节核对probe/H2C发送/MCU等待/shutdown四个函数与同次编译链接ELF中的机器码，并验证四份固件/20份RF参数。构建入口也已接入verify_wifi_payload.py --kernel-elf，报告保存在产物目录。所有MCU ready和DMA完成验证目前是模拟硬件；两颗芯片实际枚举、下载成功、常规收发和AP都尚未上板验证。
 
 ## 下一步
 
-接入两颗无线芯片的MAC/PHY与固件下载transport、RX/TX ring和completion、RFE54/FEM参数及校准，再完成原生mac80211/cfg80211、双频AP、STA/密钥生命周期及OpenWrt配置。基础无线完成后接原厂NI/QM metadata和NE流表通路；最后完成OpenWrt UBI刷入、升级与恢复。
+继续完成下载后MAC配置、常规RX/TX ring与IRQ/C2H、RFE54/FEM参数和BB/RF校准，再接原生mac80211/cfg80211、双频AP、STA/密钥生命周期及OpenWrt配置。板测先验证PCIe枚举、chip/cut、WCPU phase0/1/2和DMA完成；基础无线完成后接原厂NI/QM metadata和NE流表通路，最后完成OpenWrt UBI刷入、升级与恢复。

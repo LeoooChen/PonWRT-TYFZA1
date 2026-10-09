@@ -4,6 +4,6 @@ config RTL_AX_AP
 	depends on PCI && ARCH_RTL9617C
 	select FW_LOADER
 	help
-	  Native PCI endpoint identity, AP power and calibration for both TYFZA1
-	  radios. Firmware transport and mac80211 data operations are developed
-	  on top of this backend; this stage does not create a wireless interface.
+	  Native PCI endpoint identity, AP power, calibration and channel12 WCPU
+	  firmware download for both TYFZA1 radios. The mac80211 data operations
+	  are developed on top of this backend; no wireless interface exists yet.

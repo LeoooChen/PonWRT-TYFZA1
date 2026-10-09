@@ -182,5 +182,18 @@
   },
   "stage": "download memory ready;host DMA paused until channel12 ring exists",
   "firmware_transport_implemented": false,
-  "hardware_verified": false
+  "hardware_verified": false,
+  "build_exit_status": 0,
+  "build_service": "ponwrt-tyfza1-lan-20261009-122552",
+  "FIT": {
+    "kernel_version": "6.18.55",
+    "cpus": 4,
+    "kernel_load": "0x200000",
+    "fdt_load": "0x1800000",
+    "image_sha256": "26eaa3c68626df73e9d2cc3203b8eed3a2ef0682dbc9b8347dbeab238494387e",
+    "dtb_sha256": "60d1b8a0388516325024c390c13edcdb4376d910c34722223060d247a39efde8",
+    "fit_sha256": "f5b449cb4f88bb2b046747c549a599cabdd8c928181aff7d9ee7215302505b53",
+    "fit_bytes": 6501404
+  },
+  "final_FIT_verification": "artifacts/full-pon-radio-memory01-6.18.55/wifi-input-verification.json"
 }

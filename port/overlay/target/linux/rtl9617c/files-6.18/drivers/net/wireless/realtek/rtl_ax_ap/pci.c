@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Native TYFZA1 radio endpoint backend. No vendor host module is loaded. */
 #include <linux/delay.h>
+#include <linux/dma-mapping.h>
 #include <linux/firmware.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
@@ -9,6 +10,7 @@
 #include "fw.h"
 #include "power.h"
 #include "download.h"
+#include "transport.h"
 
 struct rtl_ax_ap {
 	struct pci_dev *pdev;
@@ -17,9 +19,14 @@ struct rtl_ax_ap {
 	struct rtl_ax_calibration calibration;
 	struct rtl_ax_identity identity;
 	struct rtl_ax_ap_image firmware;
+	struct rtl_ax_fw_transport transport;
+	unsigned char *h2c_ring, *h2c_packet;
+	dma_addr_t h2c_ring_dma, h2c_packet_dma;
+	unsigned int h2c_producer;
 	unsigned char chip;
 	bool powered;
 	bool download_prepared;
+	bool firmware_ready;
 };
 
 static unsigned char rtl_ax_read8(void *ctx, unsigned int reg)
@@ -67,6 +74,98 @@ static int rtl_ax_poll32(void *ctx, unsigned int reg, unsigned int mask,
 				 (*last & mask) == expected, delay_us, timeout_us);
 }
 
+static int rtl_ax_h2c_send(void *ctx, const unsigned char *data,
+			   unsigned int bytes, int section)
+{
+	struct rtl_ax_ap *radio = ctx;
+	unsigned int next, last;
+	int length, ret;
+
+	length = rtl_ax_fw_packet(radio->h2c_packet, RTL_AX_H2C_BUFFER_BYTES,
+				data, bytes, 0, section);
+	if (length < 0)
+		return length;
+	rtl_ax_txbd(radio->h2c_ring + radio->h2c_producer * 8,
+		    lower_32_bits(radio->h2c_packet_dma), length);
+	next = (radio->h2c_producer + 1) % RTL_AX_H2C_ENTRIES;
+	/* The coherent packet/descriptor must reach memory before publishing
+	 * the producer. Reuse the packet only after the device consumer catches up. */
+	dma_wmb();
+	rtl_ax_write16(radio, RTL_AX_H2C_INDEX, next);
+	ret = radio->io.poll32(radio, RTL_AX_H2C_INDEX, 0x3ff0000, next << 16,
+			       10, 400000, &last);
+	if (ret)
+		return ret;
+	dma_rmb();
+	radio->h2c_producer = next;
+	return 0;
+}
+
+static int rtl_ax_wait_firmware(void *ctx, unsigned int *control)
+{
+	struct rtl_ax_ap *radio = ctx;
+
+	/* Linux elapsed-time polling retains the original 400ms bound even
+	 * when the scheduler extends a requested polling sleep. */
+	return readb_poll_timeout(radio->bar + RTL_AX_WCPU_CONTROL, *control,
+				 rtl_ax_fw_result(*control) != -EINPROGRESS, 10, 400000);
+}
+
+static void rtl_ax_ring_free(struct rtl_ax_ap *radio)
+{
+	if (radio->h2c_packet)
+		dma_free_coherent(&radio->pdev->dev, RTL_AX_H2C_BUFFER_BYTES,
+				  radio->h2c_packet, radio->h2c_packet_dma);
+	if (radio->h2c_ring)
+		dma_free_coherent(&radio->pdev->dev, RTL_AX_H2C_ENTRIES * 8,
+				  radio->h2c_ring, radio->h2c_ring_dma);
+	radio->h2c_packet = radio->h2c_ring = NULL;
+}
+
+static int rtl_ax_ring_prepare(struct rtl_ax_ap *radio)
+{
+	radio->h2c_ring = dma_alloc_coherent(&radio->pdev->dev, RTL_AX_H2C_ENTRIES * 8,
+					    &radio->h2c_ring_dma, GFP_KERNEL);
+	if (!radio->h2c_ring)
+		return -ENOMEM;
+	radio->h2c_packet = dma_alloc_coherent(&radio->pdev->dev, RTL_AX_H2C_BUFFER_BYTES,
+					      &radio->h2c_packet_dma, GFP_KERNEL);
+	if (!radio->h2c_packet)
+		return -ENOMEM;
+	memset(radio->h2c_ring, 0, RTL_AX_H2C_ENTRIES * 8);
+	return rtl_ax_h2c_ring_configure(&radio->io, lower_32_bits(radio->h2c_ring_dma));
+}
+
+static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *fw)
+{
+	int ret;
+
+	ret = rtl_ax_ring_prepare(radio);
+	if (ret)
+		return ret;
+	radio->transport = (struct rtl_ax_fw_transport) {
+		.io = &radio->io, .ctx = radio, .send = rtl_ax_h2c_send,
+		.wait_ready = rtl_ax_wait_firmware,
+	};
+	pci_set_master(radio->pdev);
+	rtl_ax_h2c_start(&radio->io);
+	ret = rtl_ax_wcpu_enable(&radio->io);
+	if (!ret)
+		ret = rtl_ax_fw_download(&radio->transport, fw->data, &radio->firmware);
+	rtl_ax_hci_pause(&radio->io);
+	pci_clear_master(radio->pdev);
+	if (ret) {
+		dev_err(&radio->pdev->dev,
+			"AP download failed: %d, control=0x%08x index=0x%08x packets=%u bytes=%u\n",
+			ret, rtl_ax_read32(radio, RTL_AX_WCPU_CONTROL),
+			rtl_ax_read32(radio, RTL_AX_H2C_INDEX), radio->transport.packets,
+			radio->transport.transferred_bytes);
+		return ret;
+	}
+	radio->firmware_ready = true;
+	return 0;
+}
+
 static ssize_t radio_state_show(struct device *dev,
 	struct device_attribute *attr, char *buffer)
 {
@@ -77,13 +176,15 @@ static ssize_t radio_state_show(struct device *dev,
 		"chip=0x%02x hardware_cv=%u cv=%u factory=%c adie=0x%04x "
 		"power=%s calibration=0x%02x efuse5ea=0x%02x "
 		"firmware=%u.%u.%u.%u firmware_cut=%u sections=%u "
-		"firmware_state=validated download_memory=%s hci=paused "
-		"transport=pending mac80211=pending\n",
+		"firmware_state=%s download_memory=%s hci=paused "
+		"transport=channel12 packets=%u bytes=%u control=0x%02x mac80211=pending\n",
 		radio->chip, radio->identity.hardware_cv, radio->identity.cv,
 		radio->identity.factory, radio->identity.adie, radio->powered ? "on" : "off",
 		radio->calibration.tag, radio->calibration.process,
 		image->version[0], image->version[1], image->version[2], image->version[3],
-		image->cut, image->section_count, radio->download_prepared ? "ready" : "off");
+		image->cut, image->section_count, radio->firmware_ready ? "ready" : "off",
+		radio->download_prepared ? "ready" : "off", radio->transport.packets,
+		radio->transport.transferred_bytes, radio->transport.last_control);
 }
 static DEVICE_ATTR_RO(radio_state);
 static struct attribute *rtl_ax_attrs[] = {
@@ -100,6 +201,8 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 	pci_clear_master(radio->pdev);
 	if (radio->download_prepared) {
 		rtl_ax_download_stop(&radio->io);
+		rtl_ax_wcpu_stop(&radio->io);
+		radio->firmware_ready = false;
 		radio->download_prepared = false;
 	}
 	ret = rtl_ax_ap_power_off(&radio->io);
@@ -107,6 +210,9 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		dev_err(&radio->pdev->dev, "AP power off failed: %d\n", ret);
 	if (!ret)
 		radio->powered = false;
+	/* Bus mastering was cleared before pausing/resetting radio DMA and
+	 * powering down the MAC. The host ring no longer belongs to the device. */
+	rtl_ax_ring_free(radio);
 }
 
 static int rtl_ax_probe(struct pci_dev *pdev, const struct pci_device_id *id)
@@ -165,24 +271,33 @@ static int rtl_ax_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (ret)
 		goto stop;
 	ret = rtl_ax_ap_parse(fw->data, fw->size, &radio->firmware);
+	if (ret)
+		goto release;
+	ret = rtl_ax_ap_match(radio->chip, radio->identity.cv, &radio->firmware);
+	if (ret)
+		goto release;
+	/* Complete the stock CPU-off/platform-reset workaround before setting
+	 * DLE and host DMA rings. Their setup survives no unverified reset bit. */
+	rtl_ax_wcpu_stop(&radio->io);
+	ret = rtl_ax_download_prepare(&radio->io);
+	if (ret)
+		goto release;
+	radio->download_prepared = true;
+	ret = rtl_ax_load_firmware(radio, fw);
 	release_firmware(fw);
 	if (ret)
 		goto stop;
-	ret = rtl_ax_ap_match(radio->chip, radio->identity.cv, &radio->firmware);
-	if (ret)
-		goto stop;
-	ret = rtl_ax_download_prepare(&radio->io);
-	if (ret)
-		goto stop;
-	radio->download_prepared = true;
 	dev_info(&pdev->dev,
-		 "native AP backend chip=0x%02x cv=%u factory=%c adie=0x%04x; %s validated; DLE/HFC ready, HCI paused\n",
+		 "native AP backend chip=0x%02x cv=%u factory=%c adie=0x%04x; %s WCPU ready; packets=%u bytes=%u\n",
 		 radio->chip, radio->identity.cv, radio->identity.factory,
-		 radio->identity.adie, name);
+		 radio->identity.adie, name, radio->transport.packets,
+		 radio->transport.transferred_bytes);
 	return 0;
+release:
+	release_firmware(fw);
 stop:
 	rtl_ax_stop(radio);
-	return dev_err_probe(&pdev->dev, ret, "AP identity or firmware preparation failed\n");
+	return dev_err_probe(&pdev->dev, ret, "AP identity or firmware startup failed\n");
 }
 
 static void rtl_ax_remove(struct pci_dev *pdev)

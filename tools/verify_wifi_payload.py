@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import sys
 from fit_payload import embedded_rootfs, fit_images
 from radio_inputs import NativeRadioFormat
 
@@ -11,11 +12,12 @@ root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('payload', type=Path)
 parser.add_argument('--manifest', type=Path, default=root / 'artifacts/wifi-runtime-manifest.json')
+parser.add_argument('--kernel-elf', type=Path, help='Compare linked native radio code with the final FIT kernel')
 args = parser.parse_args()
 fit = args.payload / 'ram-pcie/image.itb'
 selected = fit_images(fit)
 assert b'native AP backend chip=' in selected['kernel'], 'Native AP PCI backend missing from selected FIT kernel'
-assert b'firmware_state=validated' in selected['kernel'] and b'transport=pending mac80211=pending' in selected['kernel'], 'Native AP backend stage absent'
+assert b'transport=channel12 packets=' in selected['kernel'], 'Native AP channel12 transport missing from selected FIT kernel'
 members, start, end = embedded_rootfs(selected['kernel'])
 expected = json.loads(args.manifest.read_text())
 codec = NativeRadioFormat()
@@ -34,8 +36,26 @@ try:
               'selected_RFE54_parameter_files': len(expected['parameters']),
               'all_bytes_match_prepared_board_inputs': True,
               'native_AP_PCI_backend_present_in_selected_kernel': True,
-              'firmware_transport_implemented': False, 'mac80211_implemented': False,
+              'firmware_transport_implemented': True, 'mac80211_implemented': False,
               'initramfs_members': len(members), 'radio_hardware_verified': False}
+    if args.kernel_elf is not None:
+        sys.path.insert(0, str(root / 'analysis/python-deps'))
+        from elftools.elf.elffile import ELFFile
+        functions = []
+        with args.kernel_elf.open('rb') as stream:
+            elf = ELFFile(stream)
+            table = elf.get_section_by_name('.symtab')
+            base = table.get_symbol_by_name('_text')[0]['st_value']
+            for name in ('rtl_ax_probe', 'rtl_ax_h2c_send', 'rtl_ax_wait_firmware', 'rtl_ax_shutdown'):
+                symbol = table.get_symbol_by_name(name)[0]
+                section = elf.get_section(symbol['st_shndx'])
+                start = symbol['st_value'] - section['sh_addr']
+                code = section.data()[start:start + symbol['st_size']]
+                offset = symbol['st_value'] - base
+                assert code and selected['kernel'][offset:offset + len(code)] == code, name
+                functions.append({'function': name, 'selected_FIT_kernel_offset': offset,
+                                  'code_bytes': len(code), 'SHA256': hashlib.sha256(code).hexdigest()})
+        report['actual_radio_code_matches_linked_ELF'] = functions
     (args.payload / 'wifi-input-verification.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))
 finally:

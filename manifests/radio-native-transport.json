@@ -1,0 +1,174 @@
+{
+  "kernel": "6.18.55",
+  "source_parent": "6a8f59c",
+  "native_sources": {
+    "fw.h": "e43f809542391a28b75d28234611a2e275919af0e381bbae6b8db99f82b788ab",
+    "power.h": "6177e5506ebc9c30949396b6978cf8bfe8742df6896e8f6aa1b305cab85a98dd",
+    "Kconfig": "714d61e0b0720c0af2b2e8615779ffc7ee6a122982fd5d36457cd04fd18905c3",
+    "Makefile": "1930c1a4d58f32b498b0ba52c0cbb5b20499f27186f713174829f6220928c484",
+    "pci.c": "45135fa78984e40a9bc4fc3c945d36f024c16db68904a45506ba1422616081df",
+    "download.h": "eb1ed23e8e59ee83dbdee0ce057b559278beefacd8f80f2ad231d38f0231f452",
+    "transport.h": "cf53b76e66cb10d5d522742ccf133c7fe50d62a2ad60fb6ca75324152cba29bc"
+  },
+  "stock_WD_H2C_packets": {
+    "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+    "native_transport_header_sha256": "cf53b76e66cb10d5d522742ccf133c7fe50d62a2ad60fb6ca75324152cba29bc",
+    "stock_machine_code_packet_vectors": 8080,
+    "both_PCIe_chips_actual_WD_length": 16,
+    "firmware_header_has_8_byte_H2C": true,
+    "section_packets_have_no_H2C_command_header": true,
+    "TXBD_LS_bit": 30,
+    "DMA_mask": 32,
+    "sanitizers": [
+      "ASan",
+      "UBSan"
+    ],
+    "hardware_verified": false
+  },
+  "stock_WCPU_control": {
+    "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+    "native_transport_header_sha256": "cf53b76e66cb10d5d522742ccf133c7fe50d62a2ad60fb6ca75324152cba29bc",
+    "native_PCI_source_sha256": "45135fa78984e40a9bc4fc3c945d36f024c16db68904a45506ba1422616081df",
+    "Linux_iopoll_header_sha256": "9edf274f8555e266233ba151942af51e83ad175d885478556075258044dd3a0b",
+    "stock_CPU_start_stop_trace_vectors": 512,
+    "original_PLATFORM_EN_reset_workaround_matches": true,
+    "terminal_MCU_states": [
+      2,
+      3,
+      4,
+      7
+    ],
+    "ready_timeout_uses_elapsed_time_us": 400000,
+    "long_scheduler_sleep_model_us": 100000,
+    "sanitizers": [
+      "ASan",
+      "UBSan"
+    ],
+    "hardware_verified": false
+  },
+  "production_PCI_probe": {
+    "native_sources": {
+      "pci.c": "45135fa78984e40a9bc4fc3c945d36f024c16db68904a45506ba1422616081df",
+      "power.h": "6177e5506ebc9c30949396b6978cf8bfe8742df6896e8f6aa1b305cab85a98dd",
+      "download.h": "eb1ed23e8e59ee83dbdee0ce057b559278beefacd8f80f2ad231d38f0231f452",
+      "transport.h": "cf53b76e66cb10d5d522742ccf133c7fe50d62a2ad60fb6ca75324152cba29bc",
+      "fw.h": "e43f809542391a28b75d28234611a2e275919af0e381bbae6b8db99f82b788ab"
+    },
+    "production_probe_cases": 43,
+    "original_firmware_images": 4,
+    "production_DMA_send_ring_wrap_packets": 600,
+    "actual_driver_DMA_rings_and_firmware_payloads_verified": true,
+    "MCU_checksum_security_cut_errors_and_timeouts_exit": true,
+    "DMA_and_BDRAM_and_queue_and_firmware_failures_release_host_buffers": true,
+    "DLE_ready_and_HCI_paused_without_host_DMA_rings": true,
+    "WDE_PLE_timeouts_leave_DLE_disabled_and_HCI_paused": true,
+    "efuse_cv_override_before_firmware_selection": true,
+    "DMA_mask_bits": 32,
+    "first_memory_BAR_test_index": 2,
+    "missing_wrong_and_truncated_firmware_release_power": true,
+    "remove_after_shutdown_does_not_repeat_completed_power_off": true,
+    "sanitizers": [
+      "ASan",
+      "UBSan"
+    ],
+    "hardware_verified": false
+  },
+  "prior_transport01_FIT": {
+    "kernel_version": "6.18.55",
+    "cpus": 4,
+    "kernel_load": "0x200000",
+    "fdt_load": "0x1800000",
+    "image_sha256": "a1f1e161a5930474b84666271b113be757293b48092cd35ad2775ca63f558145",
+    "dtb_sha256": "60d1b8a0388516325024c390c13edcdb4376d910c34722223060d247a39efde8",
+    "fit_sha256": "529c32e04c1dddf97c2b710658e0b9c87464acdfdd0b95c2eaa9dd50fe390199",
+    "fit_bytes": 6502188
+  },
+  "current_build_service": "ponwrt-tyfza1-lan-20261009-130452",
+  "current_build_output": "artifacts/full-pon-radio-transport02-6.18.55",
+  "build_status": "complete",
+  "firmware_transport_implemented": true,
+  "firmware_download_hardware_verified": false,
+  "mac80211_implemented": false,
+  "original_host_modules_loaded": false,
+  "build_exit_status": 0,
+  "FIT": {
+    "kernel_version": "6.18.55",
+    "cpus": 4,
+    "kernel_load": "0x200000",
+    "fdt_load": "0x1800000",
+    "image_sha256": "9c877415d1ce1bd60efe413c730e18a79a51e0c633c083e27d4248f4787d6cdc",
+    "dtb_sha256": "60d1b8a0388516325024c390c13edcdb4376d910c34722223060d247a39efde8",
+    "fit_sha256": "2d1c5f58d41a88c62789046f54e182517a5fd19bcecaf19341e25c12ad238cbb",
+    "fit_bytes": 6502252
+  },
+  "final_FIT_verification": "artifacts/full-pon-radio-transport02-6.18.55/wifi-input-verification.json",
+  "linked_code_verification": {
+    "FIT_sha256": "2d1c5f58d41a88c62789046f54e182517a5fd19bcecaf19341e25c12ad238cbb",
+    "compiled_sources_match_overlay": true,
+    "actual_radio_code_matches_selected_FIT_kernel": [
+      {
+        "function": "rtl_ax_probe",
+        "selected_FIT_kernel_offset": 5336204,
+        "code_bytes": 6616,
+        "SHA256": "c9da0fb93886dff73cbbbb0982e407924b86d50e858fa26f006e186a813b1d47"
+      },
+      {
+        "function": "rtl_ax_h2c_send",
+        "selected_FIT_kernel_offset": 5332912,
+        "code_bytes": 320,
+        "SHA256": "da3f195bcaa1f5737ef876eff16e887c52b37cd326c5083c4f8350dc6776e410"
+      },
+      {
+        "function": "rtl_ax_wait_firmware",
+        "selected_FIT_kernel_offset": 5333736,
+        "code_bytes": 188,
+        "SHA256": "6b430f44f7672bfb22ef51d6e4db5405540612603cde772192b60a27723d33b0"
+      },
+      {
+        "function": "rtl_ax_shutdown",
+        "selected_FIT_kernel_offset": 5336168,
+        "code_bytes": 36,
+        "SHA256": "d2a2344be204ef62142cd5d19ec7c6114ece43fcc63fca49b7d1e9a845e5b427"
+      }
+    ],
+    "hardware_verified": false
+  },
+  "final_FIT_details": {
+    "FIT_sha256": "2d1c5f58d41a88c62789046f54e182517a5fd19bcecaf19341e25c12ad238cbb",
+    "verification_entry": "Final PCIe FIT selected kernel initramfs",
+    "original_radio_firmware_files": 4,
+    "selected_RFE54_parameter_files": 20,
+    "all_bytes_match_prepared_board_inputs": true,
+    "native_AP_PCI_backend_present_in_selected_kernel": true,
+    "firmware_transport_implemented": true,
+    "mac80211_implemented": false,
+    "initramfs_members": 1026,
+    "radio_hardware_verified": false,
+    "actual_radio_code_matches_linked_ELF": [
+      {
+        "function": "rtl_ax_probe",
+        "selected_FIT_kernel_offset": 5336204,
+        "code_bytes": 6616,
+        "SHA256": "c9da0fb93886dff73cbbbb0982e407924b86d50e858fa26f006e186a813b1d47"
+      },
+      {
+        "function": "rtl_ax_h2c_send",
+        "selected_FIT_kernel_offset": 5332912,
+        "code_bytes": 320,
+        "SHA256": "da3f195bcaa1f5737ef876eff16e887c52b37cd326c5083c4f8350dc6776e410"
+      },
+      {
+        "function": "rtl_ax_wait_firmware",
+        "selected_FIT_kernel_offset": 5333736,
+        "code_bytes": 188,
+        "SHA256": "6b430f44f7672bfb22ef51d6e4db5405540612603cde772192b60a27723d33b0"
+      },
+      {
+        "function": "rtl_ax_shutdown",
+        "selected_FIT_kernel_offset": 5336168,
+        "code_bytes": 36,
+        "SHA256": "d2a2344be204ef62142cd5d19ec7c6114ece43fcc63fca49b7d1e9a845e5b427"
+      }
+    ]
+  }
+}
