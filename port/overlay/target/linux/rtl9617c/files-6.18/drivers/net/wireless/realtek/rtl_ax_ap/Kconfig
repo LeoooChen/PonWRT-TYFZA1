@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config RTL_AX_AP
+	bool "TYFZA1 RTL8852C/RTL8192XB native AP backend"
+	depends on PCI && ARCH_RTL9617C
+	select FW_LOADER
+	help
+	  Native PCI endpoint identity, AP power and calibration for both TYFZA1
+	  radios. Firmware transport and mac80211 data operations are developed
+	  on top of this backend; this stage does not create a wireless interface.

@@ -55,7 +55,7 @@ try:
                                'band': band, 'FEM': fem, 'RFE': 54,
                                'sha256': hashlib.sha256(file.read_bytes()).hexdigest()})
     report = {'study': str(args.study.relative_to(root)), 'native_format_header_sha256':
-              hashlib.sha256((root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtw89/rtl_ax_ap_fw.h').read_bytes()).hexdigest(),
+              hashlib.sha256((root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/fw.h').read_bytes()).hexdigest(),
               'firmware': firmware, 'parameters': parameters, 'radio_driver_available': False}
     args.manifest.parent.mkdir(parents=True, exist_ok=True)
     args.manifest.write_text(json.dumps(report, indent=2) + '\n')

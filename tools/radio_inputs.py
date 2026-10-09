@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-HEADER = ROOT / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtw89/rtl_ax_ap_fw.h'
+HEADER = ROOT / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/fw.h'
 
 class Section(ctypes.Structure):
     _fields_ = [('address', ctypes.c_uint), ('offset', ctypes.c_uint), ('bytes', ctypes.c_uint),
@@ -22,11 +22,12 @@ class NativeRadioFormat:
         self.temporary = tempfile.TemporaryDirectory(dir=ROOT / 'artifacts', prefix='radio-format-')
         work = Path(self.temporary.name)
         source, binary = work / 'format.c', work / 'format.so'
-        source.write_text('''#include "rtl_ax_ap_fw.h"
+        source.write_text('''#include "fw.h"
 int parse(const unsigned char *p,size_t n,struct rtl_ax_ap_image *out){return rtl_ax_ap_parse(p,n,out);}
 int header(const unsigned char *p,const struct rtl_ax_ap_image *in,unsigned char *out,size_t n){return rtl_ax_ap_download_header(p,in,out,n);}
 const char *name(unsigned int chip,unsigned int cv){return rtl_ax_ap_name(chip,cv);}
 unsigned int chunk(unsigned int n){return rtl_ax_ap_chunk_bytes(n);}
+int match(unsigned int chip,unsigned int cv,const struct rtl_ax_ap_image *image){return rtl_ax_ap_match(chip,cv,image);}
 ''')
         subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-shared', '-fPIC',
                         '-I' + str(HEADER.parent), str(source), '-o', str(binary)], check=True)
@@ -37,6 +38,7 @@ unsigned int chunk(unsigned int n){return rtl_ax_ap_chunk_bytes(n);}
         self.library.name.restype = ctypes.c_char_p
         self.library.chunk.argtypes = [ctypes.c_uint]
         self.library.chunk.restype = ctypes.c_uint
+        self.library.match.argtypes = [ctypes.c_uint, ctypes.c_uint, ctypes.POINTER(Image)]
 
     def parse(self, data):
         image = Image()

@@ -25,6 +25,11 @@ try:
             expected['cut_id'], expected['version'], expected['header_length'])
         assert image.section_count == len(expected['sections'])
         assert hashlib.sha256(data).hexdigest() == expected['sha256']
+        hardware_chip = 0x52 if '8852c' in name else 0x53
+        cv = image.cut - 1
+        assert not format.library.match(hardware_chip, cv, ctypes.byref(image))
+        assert format.library.match(hardware_chip ^ 1, cv, ctypes.byref(image)) < 0
+        assert format.library.match(hardware_chip, not cv, ctypes.byref(image)) < 0
         header = format.header(data, image)
         assert len(header) == 96 and header[:28] == data[:28] and header[30:] == data[30:96]
         assert struct.unpack_from('<H', header, 28)[0] == 2020
@@ -59,7 +64,7 @@ finally:
 unit = r'''
 #include <assert.h>
 #include <stdio.h>
-#include "rtl_ax_ap_fw.h"
+#include "fw.h"
 int main(void){
  unsigned char bytes[160]={};struct rtl_ax_ap_image image;
  for(unsigned int n=0;n<32;n++)assert(rtl_ax_ap_parse(bytes,n,&image)==-EINVAL);

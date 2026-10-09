@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify radio inputs inside the selected final FIT's actual initramfs."""
+"""Verify native radio backend and inputs in the selected final FIT."""
 import argparse
 import hashlib
 import json
@@ -14,6 +14,8 @@ parser.add_argument('--manifest', type=Path, default=root / 'artifacts/wifi-runt
 args = parser.parse_args()
 fit = args.payload / 'ram-pcie/image.itb'
 selected = fit_images(fit)
+assert b'native AP backend chip=' in selected['kernel'], 'Native AP PCI backend missing from selected FIT kernel'
+assert b'firmware_state=validated transport=pending mac80211=pending' in selected['kernel'], 'Native AP backend stage absent'
 members, start, end = embedded_rootfs(selected['kernel'])
 expected = json.loads(args.manifest.read_text())
 codec = NativeRadioFormat()
@@ -31,6 +33,8 @@ try:
               'original_radio_firmware_files': len(expected['firmware']),
               'selected_RFE54_parameter_files': len(expected['parameters']),
               'all_bytes_match_prepared_board_inputs': True,
+              'native_AP_PCI_backend_present_in_selected_kernel': True,
+              'firmware_transport_implemented': False, 'mac80211_implemented': False,
               'initramfs_members': len(members), 'radio_hardware_verified': False}
     (args.payload / 'wifi-input-verification.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Native format for this board's8852C/8192XB AP WCPU images. Field behavior
+/* Native format for this board's 8852C/8192XB AP WCPU images. Field behavior
  * references Realtek's GPL fwdl.c and the original board firmware arrays. */
 #ifndef RTL_AX_AP_FW_H
 #define RTL_AX_AP_FW_H
@@ -24,6 +24,19 @@ struct rtl_ax_ap_image {
 	unsigned char cut, version[4], command_version;
 	struct rtl_ax_ap_section sections[RTL_AX_AP_SECTIONS];
 };
+static inline int rtl_ax_ap_match(unsigned int hardware_chip, unsigned int cv,
+	const struct rtl_ax_ap_image *image)
+{
+	unsigned int family;
+
+	if (hardware_chip == 0x52)
+		family = 0x885202;
+	else if (hardware_chip == 0x53)
+		family = 0x819201;
+	else
+		return -ENODEV;
+	return image->chip == family && image->cut == (cv ? 2 : 1) ? 0 : -EINVAL;
+}
 static inline unsigned int rtl_ax_ap_read32(const unsigned char *data)
 {
 	return (unsigned int)data[0] | (unsigned int)data[1] << 8 |

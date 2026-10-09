@@ -1,0 +1,122 @@
+{
+  "stage": "Native PCI AP endpoint power and identity;firmware validated,transport pending",
+  "source_parent": "8051b74",
+  "kernel": "6.18.55",
+  "native_sources": {
+    "Kconfig": "bef7ab8f2cea93b36396d45872e7644bd712f5ac2f8892c2d493bf4d3a6e0c56",
+    "Makefile": "1930c1a4d58f32b498b0ba52c0cbb5b20499f27186f713174829f6220928c484",
+    "fw.h": "e43f809542391a28b75d28234611a2e275919af0e381bbae6b8db99f82b788ab",
+    "pci.c": "b3474d2c57c6946bf6ef2b0ca249fbbe4ce56b42ada70339734b1fef52d8c696",
+    "power.h": "6177e5506ebc9c30949396b6978cf8bfe8742df6896e8f6aa1b305cab85a98dd"
+  },
+  "stock_machine_code_oracle": {
+    "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+    "native_source_sha256": "6177e5506ebc9c30949396b6978cf8bfe8742df6896e8f6aa1b305cab85a98dd",
+    "stock_machine_code_power_trace_vectors": 1024,
+    "stock_CV_FV_vectors": 8192,
+    "GPIO_MAC_XTAL_power_and_XB_calibration_match": true,
+    "8852C_has_no_SDK_added_voltage_calibration": true,
+    "zero_FV_retains_hardware_CV": true,
+    "efuse_read_window_tested_separately_against_GPL": true,
+    "original_module_loaded_on_hardware": false,
+    "hardware_verified": false
+  },
+  "GPL_power_and_identity": {
+    "native_source_sha256": "6177e5506ebc9c30949396b6978cf8bfe8742df6896e8f6aa1b305cab85a98dd",
+    "references": {
+      "evidence/rtl-workspace/downloads/reference/phoebus-sdk-20261005/vendor/realtek-wireless/g6_wifi_driver/phl/hal_g6/mac/mac_reg_ax.h": "c61b6916d117c9abd7913e5b08cc6aa07865efa179e782e21bb196872eeba91e",
+      "evidence/rtl-workspace/downloads/reference/phoebus-sdk-20261005/vendor/realtek-wireless/g6_wifi_driver/phl/hal_g6/mac/mac_ax/hw.c": "3cfd687fe752fe7015e3e835d3220e5aaf10bc0e2621eb3a166b7d9f1ca939db",
+      "evidence/rtl-workspace/downloads/reference/phoebus-sdk-20261005/vendor/realtek-wireless/g6_wifi_driver/phl/hal_g6/mac/mac_ax/efuse.c": "f7521c6c98098de7eab62801014c8dc481e72524ccd34acf5619953dedd46171",
+      "evidence/rtl-workspace/downloads/reference/phoebus-sdk-20261005/vendor/realtek-wireless/g6_wifi_driver/phl/hal_g6/mac/mac_ax/mac_8852c/efuse_8852c.c": "a8359cd2b7dd414285e6d08000b1272c01f56414bb3a7ce00c2144d101b423a9",
+      "evidence/rtl-workspace/downloads/reference/phoebus-sdk-20261005/vendor/realtek-wireless/g6_wifi_driver/phl/hal_g6/mac/mac_ax/mac_8192xb/efuse_8192xb.c": "ac627ae4a6a725203ed8f7f9102ac0d3897d615642f48cdd6da031df58e1a335",
+      "evidence/rtl-workspace/downloads/reference/phoebus-sdk-20261005/vendor/realtek-wireless/g6_wifi_driver/phl/hal_g6/mac/mac_ax/mac_8852c/pwr_seq_func_8852c.c": "79b2e18a66cdefd59b60810bd19706ab9aff072124897592ce740ae6bc3aae03",
+      "evidence/rtl-workspace/downloads/reference/phoebus-sdk-20261005/vendor/realtek-wireless/g6_wifi_driver/phl/hal_g6/mac/mac_ax/mac_8192xb/pwr_seq_func_8192xb.c": "4c7bad2c767801e3005ab20951011107eacbf58c2bf660199871188ce6032f5b"
+    },
+    "original_on_off_trace_vectors": 1536,
+    "chips": [
+      "RTL8852C",
+      "RTL8192XB"
+    ],
+    "GPL_power_on_chips": [
+      "RTL8192XB"
+    ],
+    "stock_power_on_test": "scripts/test_radio_stock_power.py",
+    "GPL_identity_vectors": 8160,
+    "stock_zero_FV_exception_test": "scripts/test_radio_stock_power.py",
+    "calibration_and_process_and_ADIE_branches": true,
+    "get_fv_and_get_aid_queries_in_power_oracle": false,
+    "original_no_effect_LED1_write_omitted": true,
+    "power_and_XTAL_timeouts": true,
+    "efuse_timeout_releases_read_window": true,
+    "sanitizers": [
+      "ASan",
+      "UBSan"
+    ],
+    "hardware_verified": false
+  },
+  "PCI_probe": {
+    "native_sources": {
+      "pci.c": "b3474d2c57c6946bf6ef2b0ca249fbbe4ce56b42ada70339734b1fef52d8c696",
+      "power.h": "6177e5506ebc9c30949396b6978cf8bfe8742df6896e8f6aa1b305cab85a98dd",
+      "fw.h": "e43f809542391a28b75d28234611a2e275919af0e381bbae6b8db99f82b788ab"
+    },
+    "production_probe_cases": 28,
+    "original_firmware_images": 4,
+    "efuse_cv_override_before_firmware_selection": true,
+    "DMA_mask_bits": 32,
+    "first_memory_BAR_test_index": 2,
+    "missing_wrong_and_truncated_firmware_release_power": true,
+    "remove_after_shutdown_does_not_repeat_completed_power_off": true,
+    "sanitizers": [
+      "ASan",
+      "UBSan"
+    ],
+    "hardware_verified": false
+  },
+  "firmware_format": {
+    "native_header_sha256": "e43f809542391a28b75d28234611a2e275919af0e381bbae6b8db99f82b788ab",
+    "original_images": [
+      {
+        "image": "array_8192xb_u1_ap",
+        "sections": 4,
+        "download_header_bytes": 96,
+        "sha256": "e6f4557929fd9d99ba36a97e4b2f78fd1aa86c4a77fa986ffffaaf85ad87425b"
+      },
+      {
+        "image": "array_8192xb_u2_ap",
+        "sections": 4,
+        "download_header_bytes": 96,
+        "sha256": "d7f0cf58c5c4e10f3e4e10d076423dc12454f3ef6b495b9538871e4d95926314"
+      },
+      {
+        "image": "array_8852c_u1_ap",
+        "sections": 4,
+        "download_header_bytes": 96,
+        "sha256": "df1e59e3cba26f5dad36f7835ef8710bb06f73248c0e1e5226f2232a00381131"
+      },
+      {
+        "image": "array_8852c_u2_ap",
+        "sections": 4,
+        "download_header_bytes": 96,
+        "sha256": "a6e200954f05180e2388d1556a2d7553587fb59f733c0be1b5f6d1cc7d85b561"
+      }
+    ],
+    "section_payloads_and_addresses_match_oracle": true,
+    "chunk_reassembly_exact": true,
+    "host_cv_selection_vectors": 18,
+    "sanitizers": [
+      "ASan",
+      "UBSan"
+    ],
+    "radio_driver_or_hardware_test": false
+  },
+  "stock_disassembly": "analysis/radio-stock-power/manifest.json",
+  "patch_zero_fuzz": "logs/radio-patch-zero-fuzz.txt",
+  "build_service": "ponwrt-tyfza1-lan-20261009-115208",
+  "build_output": "artifacts/full-pon-radio-power03-6.18.55",
+  "build_status": "running",
+  "hardware_verified": false,
+  "WCPU_firmware_running": false,
+  "mac80211_interfaces_available": false,
+  "original_host_modules_loaded": false
+}
