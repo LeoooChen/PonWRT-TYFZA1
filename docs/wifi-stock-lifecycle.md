@@ -214,3 +214,11 @@ bbrf01 完整FIT（e3c1d08d46322a1d119037ab329eaa4de1b1b40587f3230a727dd5d065e3b
 继续按原机 halbb_read_rf_reg_8852c_a@2e2954/XB_a@2ed074 实现SIPI读取：忙位24/25共31次观察、0378地址/路径字段、2us延时、26位done等待，再读取174c低20位。交易由command_mutex串行化，仅读取模拟RF寄存器，不增加初始化写入。
 
 rf-read原生模块SHA256 b2c9a576ada5b75345739d74c31967e4dc52ab289b0ce9d767b322183f5a7304在原机运行：C模拟30两路=109b7、XB=381f2，均与实际Radio表相符；C模拟18为A1001/B1000，XB两路1c01；模拟RF00为C两路337e1，XB A377e1/B337e1。这些读取均成功且重复读取一致。模式、增益与带宽寄存器受硬件状态控制，当前尚未完成完整频道/校准；C B初始频道为0也保留为待核对事实，不以猜测修改表值。结果 logs/radio-live-rf-read-20261009.txt 与全数字窗口记录 logs/radio-live-rf-bank-20261009.txt。所有上述阶段仍不包括AP关联或无线业务。
+
+## 本机后续 RF DM 顺序与 NCTL 数据
+
+rtw_hal_rf_dm_init@1befc8 调用 halrf_dm_init@303c14。实际顺序为共享XTAL、命令解析host对象、final RF ability、RFE初始化及GPIO、NCTL、RFK host状态、reference power对象、RCK、DACK、RX DCK、TXA LCTK、eFuse trim、TSSI eFuse，随后按配置执行FCS和各PHY power control。它在基础及FEM完整重初始化后运行，不能越过尚未实现的limit/RU与第二遍Radio直接触发校准。
+
+已从本机ELF提取三份NCTL参数数据到analysis/radio-stock-lifecycle/nctl（未在硬件执行）：C cut0为1769对，C非zero cut为1782对，XB为1421对。C函数@3106f8根据hal_com的cv字段选择两份表；XB@33ffb0固定其表。二者先使能0c60/0c6c及58ac/78ac的NCTL相关位，写8000=8，然后重复写8080=4、延时1us并读回，最多1000轮；原机到上限后继续加载表。提取哈希、参数和顺序在manifests/radio-stock-rf-dm.json。
+
+另核对了原机limit文本parser：其小数路径不是ByRate的整数规则，而是integer×4+floor(fraction×4/100)，再处理正负；实际保存9B limit record。后续原生limit解析必须保留17.5等半dBm输入，不能截成整数。IQK也同时存在host与firmware路径（halrf_iqk@30ad50按host配置选择），必须追清本机配置来源及完成条件后接入。

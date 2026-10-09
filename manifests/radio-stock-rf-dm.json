@@ -1,0 +1,153 @@
+{
+  "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "stock_DM_entry": "rtw_hal_rf_dm_init@1befc8 -> halrf_dm_init@303c14",
+  "order": [
+    "share_xtal",
+    "command_parser_host_objects",
+    "final_rfability",
+    "rfe_init",
+    "rfe_type_GPIO",
+    "NCTL",
+    "rfk_self_init",
+    "reference_power_host_object",
+    "RCK",
+    "DACK",
+    "RX_DCK",
+    "TXA_LCTK",
+    "efuse_trim",
+    "TSSI_efuse",
+    "FCS_if_enabled",
+    "per_PHY_WLAN_power_control"
+  ],
+  "NCTL": {
+    "C_entry": "3106f8",
+    "XB_entry": "33ffb0",
+    "C_cut_selection": "hal_com field4 ==0 chooses _a;nonzero chooses other table",
+    "preamble": [
+      "BB0c60 mask3 value3",
+      "BB0c6c bit0=1",
+      "BB58ac/78ac bit27=1",
+      "BB8000=8",
+      "BB8080=4,1us,read compare4,up to1000 iterations"
+    ],
+    "timeout_behavior": "original continues to table after1000 iterations",
+    "tables": [
+      {
+        "symbol": "array_mp_8852c_nctl_reg_a",
+        "section": ".rodata",
+        "offset": 242672,
+        "bytes": 14152,
+        "pairs": 1769,
+        "sha256": "09f08d60b630e30dd0c3a4d09601fcee831970a46538233a54afbf312113477f",
+        "first_pairs": [
+          [
+            32768,
+            8
+          ],
+          [
+            32776,
+            0
+          ],
+          [
+            32772,
+            4035324262
+          ]
+        ],
+        "last_pairs": [
+          [
+            32896,
+            4
+          ],
+          [
+            32896,
+            0
+          ],
+          [
+            32904,
+            0
+          ]
+        ]
+      },
+      {
+        "symbol": "array_mp_8852c_nctl_reg",
+        "section": ".rodata",
+        "offset": 256824,
+        "bytes": 14256,
+        "pairs": 1782,
+        "sha256": "04c6d40224cef32e7cdb4bbddc079a337bff0d6969301abb883ec6c58891f4ee",
+        "first_pairs": [
+          [
+            32768,
+            8
+          ],
+          [
+            32776,
+            0
+          ],
+          [
+            32772,
+            4035324262
+          ]
+        ],
+        "last_pairs": [
+          [
+            32896,
+            4
+          ],
+          [
+            32896,
+            0
+          ],
+          [
+            32904,
+            0
+          ]
+        ]
+      },
+      {
+        "symbol": "array_mp_8192xb_nctl_reg",
+        "section": ".rodata",
+        "offset": 658872,
+        "bytes": 11368,
+        "pairs": 1421,
+        "sha256": "60ca54c0b50f0040fa0b339a68a67fa756b893b10c50d758fd397bdc4240e353",
+        "first_pairs": [
+          [
+            32768,
+            8
+          ],
+          [
+            32776,
+            0
+          ],
+          [
+            32772,
+            3901107046
+          ]
+        ],
+        "last_pairs": [
+          [
+            32896,
+            4
+          ],
+          [
+            32896,
+            0
+          ],
+          [
+            32904,
+            0
+          ]
+        ]
+      }
+    ],
+    "hardware_execution": false
+  },
+  "power_limits": {
+    "parser": "_hal_parse_txpwrlmt@1d6408",
+    "unit": "quarter-dBm",
+    "fraction_conversion": "integer*4 + floor(fraction_hundredths*4/100), then signed",
+    "original_record_bytes": 9,
+    "native_consumer": "pending"
+  }
+}
