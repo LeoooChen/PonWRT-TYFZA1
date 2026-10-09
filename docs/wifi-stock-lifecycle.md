@@ -88,3 +88,13 @@ mac-runtime.h现在接在WCPU download ready之后。它按本机mac_hal_init的
 依据不是主线NIC默认表：原机dmac_func_en_8852c@0x24c1b8与dmac_func_en_8192xb@0x26a558都写DMAC=fb7d4000、clock=0b1f0000；cmac_func_en(BAND0,1)把c004的4000003f和c000的f000003f置位；mac_chk_sec_rec@0x2454d8读取DDV efuse5ed的bit7并反转为secure标记。BB/RF使能还保留8852C的SPS/ADC LDO设置，XTAL3分别为8852C的0d、8192XB的0f。
 
 SCC直接使用本机ELF的wde_size19/ple_size19/wde_qt18/ple_qt46/ple_qt47。原机AP HFC并非主线8852C常见group0/group1各1614：本机hfc_pubcfg_pcie_scc为{3228,0,3228,0}，普通有效channels0..3/8/9的min=26、max=3098、group0；XB跳过不可用的4..7/10/11。实际hfc_preccfg_pcie={2,40,0,0,X2,X1,X1,X1}，SCC为POH mode0。preload(BAND0)的9f48/9f4c字段按原机82080000/134设置，并保留CAM entry字段。ARM64对象编译完成；本机运行、完整MAC TRX和新的最终FIT仍待后续。
+
+## DMAC hardware engines 后段
+
+原机dmac_init@0x23e898在DLE/preload/HFC后启用9e10的STA scheduler，等待INIT_DONE_1(bit31)，设置warm-init(bit29)，按原机FW TX policy控制bit28，并把52C/92XB的9e50 SS2F目的队列字段修正为0a。FW调度分支还写9e24=3001b、9e1c=10050、9ea4/9e9c=ffff及9e20的3f3f；这些值直接由该原机函数的内联实现确认。
+
+发送模式的来源是原厂netdev-open阶段的txbf_mu || ofdma_enable || force_fw_tx，不是chip_id或PCI编号。原生后端保留txbf_mu/ofdma/force_fw_tx三个只读加载输入，未指定输入时三者为零；这属于当前后端的显式启动配置，不伪称读取了本机在线MIB。后续AP/UCI启动将接同一规则。单纯移植寄存器时不得固定删掉另一个模式分支。
+
+STA scheduler之后按原机顺序写MPDU action/trigger forwarding、FCS/ICV追加以及A-MSDU cut配置；再使能安全引擎cipher clocks和TX/RX、组播/管理帧加解密，配置MIC/ICV、TX timeout及AP driver-info patch。PCIe分支保留TX_PARTIAL_MODE；不误套原厂USB分支的清位动作。radio_state只报告dmac_engines，不将其等同于key/STA表或CMAC/PHY完成。
+
+sec_info_tbl_init的原机行为是分配并置INVALID的host SEC_CAM/MACID信息对象，另由key/role路径写硬件。原生对应key/STA生命周期继续接入mac80211，不能将“安全引擎使能”或“空的报告计数”当作密钥安装成功。普通RX/TX仍未开放。

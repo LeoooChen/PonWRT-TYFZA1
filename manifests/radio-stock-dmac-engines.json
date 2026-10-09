@@ -1,0 +1,22 @@
+{
+  "source_parent": "c7029f8",
+  "basis": "actual stock dmac_init@0x23e898 inline STA/MPDU/security instructions and original os_intfs TX policy",
+  "original_order": [
+    "STA scheduler",
+    "SS2F path workaround",
+    "MPDU action/trigger/FCS/ICV/A-MSDU",
+    "security cipher and MIC/ICV/TX timeout/AP driver-info"
+  ],
+  "firmware_TX_policy": "txbf_mu || ofdma_enable || force_fw_tx",
+  "native_inputs": "txbf_mu/ofdma/force_fw_tx read-only load parameters;not an online factory MIB claim",
+  "native_sources": {
+    "pci.c": "d226242daf45ea7533e238828a8971daf7e87861000a1c2342dc18f0e000af45",
+    "mac-runtime.h": "66e9abe4977dfd3a84420f70287035ca6fb50567c33896c31f3b37554190423e"
+  },
+  "kernel": "6.18.55",
+  "ARM64_object_compile_exit_status": 0,
+  "build_service": "ponwrt-tyfza1-stock-dmac-engines-final-compile",
+  "CMAC_and_keys_and_STA_lifecycle_complete": false,
+  "new_final_FIT_generated": false,
+  "hardware_verified": false
+}

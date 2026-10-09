@@ -127,4 +127,59 @@ static inline int rtl_ax_mac_memory_start(const struct rtl_ax_io *io,
 	rtl_ax_hfc_scc(io, chip);
 	return 0;
 }
+
+static inline int rtl_ax_sta_scheduler(const struct rtl_ax_io *io, int firmware_tx)
+{
+	unsigned int last;
+	int ret;
+
+	/* Original dmac_init inlines sta_sch_init at0x23e99c: enable, wait
+	 * INIT_DONE_1, warm-init flag, mode and52C/92XB SS2F path correction. */
+	rtl_ax_update8(io, 0x9e10, 0, 1);
+	ret = io->poll32(io->ctx, 0x9e10, RTL_AX_BIT(31), RTL_AX_BIT(31),
+			 1, 2000, &last);
+	if (ret)
+		return ret;
+	rtl_ax_update32(io, 0x9e10, 0, RTL_AX_BIT(29));
+	rtl_ax_update32(io, 0x9e10, RTL_AX_BIT(28), firmware_tx ? RTL_AX_BIT(28) : 0);
+	rtl_ax_update32(io, 0x9e50, 0x3f00, 0x0a00);
+	if (firmware_tx) {
+		io->write32(io->ctx, 0x9e24, 0x0003001b);
+		io->write32(io->ctx, 0x9e1c, 0x00010050);
+		io->write32(io->ctx, 0x9ea4, 0x0000ffff);
+		io->write32(io->ctx, 0x9e9c, 0x0000ffff);
+		rtl_ax_update32(io, 0x9e20, 0, 0x00003f3f);
+	}
+	return 0;
+}
+
+static inline void rtl_ax_mpdu_initialize(const struct rtl_ax_io *io)
+{
+	io->write32(io->ctx, 0x9c04, 0x02a95a95); /* ACTION_FWD0 */
+	io->write32(io->ctx, 0x9c14, 0x0000aa55); /* Trigger frame forwarding. */
+	rtl_ax_update32(io, 0x9c00, 0, 3); /* Append FCS,accept ICV errors as original. */
+	io->write32(io->ctx, 0x9c40, 0x010e05f0); /* CUT_AMSDU_CTRL. */
+}
+
+static inline void rtl_ax_security_initialize(const struct rtl_ax_io *io)
+{
+	/* Original PCIe branch retains TX_PARTIAL_MODE and enables cipher
+	 * clocks,TX encryption/RX decryption including multicast/management. */
+	rtl_ax_update32(io, 0x9d00, 0, 0x0000073f);
+	rtl_ax_update32(io, 0x9d04, 0, 3); /* Append MIC and ICV. */
+	rtl_ax_update32(io, 0x9d1c, 0xc0000000, 0x80000000); /* TX timeout selector. */
+	rtl_ax_update32(io, 0xce00, 0x00000700, 0x00000500); /* AP driver-info patch. */
+}
+
+static inline int rtl_ax_mac_dmac_start(const struct rtl_ax_io *io, int firmware_tx)
+{
+	int ret;
+
+	ret = rtl_ax_sta_scheduler(io, firmware_tx);
+	if (ret)
+		return ret;
+	rtl_ax_mpdu_initialize(io);
+	rtl_ax_security_initialize(io);
+	return 0;
+}
 #endif

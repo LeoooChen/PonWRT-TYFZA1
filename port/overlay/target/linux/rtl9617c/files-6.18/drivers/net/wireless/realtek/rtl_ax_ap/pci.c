@@ -13,6 +13,18 @@
 #include "transport.h"
 #include "mac-runtime.h"
 
+/* Original netdev-open policy in os_intfs.c: MU beamforming, OFDMA or
+ * force_fw_tx selects firmware scheduling. Preserve all three inputs. */
+static bool txbf_mu;
+static bool ofdma;
+static bool force_fw_tx;
+module_param(txbf_mu, bool, 0444);
+module_param(ofdma, bool, 0444);
+module_param(force_fw_tx, bool, 0444);
+MODULE_PARM_DESC(txbf_mu, "Original AP MU beamforming scheduling input");
+MODULE_PARM_DESC(ofdma, "Original AP OFDMA scheduling input");
+MODULE_PARM_DESC(force_fw_tx, "Original AP force firmware TX input");
+
 struct rtl_ax_ap {
 	struct pci_dev *pdev;
 	void __iomem *bar;
@@ -31,6 +43,7 @@ struct rtl_ax_ap {
 	bool download_prepared;
 	bool firmware_ready;
 	bool mac_memory_ready;
+	bool dmac_engines_ready, firmware_tx;
 };
 
 static unsigned char rtl_ax_read8(void *ctx, unsigned int reg)
@@ -177,6 +190,11 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	if (ret)
 		return ret;
 	radio->mac_memory_ready = true;
+	radio->firmware_tx = txbf_mu || ofdma || force_fw_tx;
+	ret = rtl_ax_mac_dmac_start(&radio->io, radio->firmware_tx);
+	if (ret)
+		return ret;
+	radio->dmac_engines_ready = true;
 	return 0;
 }
 
@@ -192,7 +210,8 @@ static ssize_t radio_state_show(struct device *dev,
 		"firmware=%u.%u.%u.%u firmware_cut=%u sections=%u "
 		"firmware_state=%s download_memory=%s hci=paused "
 		"transport=channel12 packets=%u bytes=%u control=0x%02x "
-		"mac_memory=%s secure=%u mac_trx=pending mac80211=pending\n",
+		"mac_memory=%s secure=%u dmac_engines=%s firmware_tx=%u "
+		"cmac_trx=pending mac80211=pending\n",
 		radio->chip, radio->identity.hardware_cv, radio->identity.cv,
 		radio->identity.factory, radio->identity.adie, radio->powered ? "on" : "off",
 		radio->calibration.tag, radio->calibration.process,
@@ -200,7 +219,8 @@ static ssize_t radio_state_show(struct device *dev,
 		image->cut, image->section_count, radio->firmware_ready ? "ready" : "off",
 		radio->download_prepared ? "ready" : "off", radio->transport.packets,
 		radio->transport.transferred_bytes, radio->transport.last_control,
-		radio->mac_memory_ready ? "SCC" : "off", radio->secure);
+		radio->mac_memory_ready ? "SCC" : "off", radio->secure,
+		radio->dmac_engines_ready ? "ready" : "off", radio->firmware_tx);
 }
 static DEVICE_ATTR_RO(radio_state);
 static struct attribute *rtl_ax_attrs[] = {
@@ -220,6 +240,7 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		rtl_ax_wcpu_stop(&radio->io);
 		radio->firmware_ready = false;
 		radio->mac_memory_ready = false;
+		radio->dmac_engines_ready = false;
 		radio->download_prepared = false;
 	}
 	ret = rtl_ax_ap_power_off(&radio->io);
