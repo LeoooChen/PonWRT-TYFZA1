@@ -98,5 +98,11 @@
   "log": "logs/radio-channel-rxdck-20261010.txt",
   "receive_log": "logs/radio-channel-rxdck-receive-20261010.txt",
   "IQK_implemented": false,
-  "XB_OFDM_quality_resolved": false
+  "XB_OFDM_quality_resolved": false,
+  "C_filtered_data_observation": {
+    "duration_seconds": 45,
+    "frames": 0,
+    "timeout": true,
+    "payload_receive_conclusion": "not established in this window; separate32 incoming frame FCS capture passed"
+  }
 }

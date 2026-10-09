@@ -504,4 +504,4 @@ TYFC0003容器284B增加真实HS slope gain/CW两路数组，以及上述原机�
 
 iqk_init_C@31b43c与XB@3448c4首次都将FW IQK选择字段301写0；generic FW IQK完成/取结果的dispatcher只处理C。当前正常初始化路径必须继续移植host IQK，不能把XB直接发送H2C当成校准完成。原生IQK尚未实现，本记录用于接下来的完整LOK/TXK/RXK实现。
 
-频道RX_DCK live模块25510362e676ea491d70b4ce1722d208e3048918e7aa9a3dda2d3e198bbbeee5已原机验证：XB频道1/11/6每次都四个done1、14个backup读回恢复一致，C36两路第一遍done1、35次读取，条件ReK未触发。恢复C36/XB6后各32个真实入站帧全部FCS匹配；另过滤去掉Null Data，两路各16个真正Data/QoS Data完整FCS全匹配，记录每帧长度范围与protected标志，不把Null Data当作有效载荷证据。host descriptor/tag/RDU错误0，kernel抓包丢包0，XEPON公网2/2。记录manifests/radio-channel-rxdck-20261010.json和四个对应pcap。XB OFDM质量尚未宣布解决，IQK仍待按原机host路径实现。
+频道RX_DCK live模块25510362e676ea491d70b4ce1722d208e3048918e7aa9a3dda2d3e198bbbeee5已原机验证：XB频道1/11/6每次都四个done1、14个backup读回恢复一致，C36两路第一遍done1、35次读取，条件ReK未触发。恢复C36/XB6后各32个真实入站帧全部FCS匹配；另过滤去掉Null Data，XB取得16个真正Data帧（86..200B，全部protected），完整FCS全匹配；C在该45秒窗口取得0个Data/QoS Data，记录为未观察到，不能算作数据载荷验收。两颗普通接收各32帧已独立通过。host descriptor/tag/RDU错误0，kernel抓包丢包0，XEPON公网2/2。记录manifests/radio-channel-rxdck-20261010.json和四个对应pcap。XB OFDM质量尚未宣布解决，IQK仍待按原机host路径实现。
