@@ -1,0 +1,67 @@
+{
+  "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "stock_entry_points": {
+    "DIG": "2d69f8",
+    "DIG_CR": "2d8374",
+    "DIG_gain": "2d6054",
+    "CFO": "28e2c4",
+    "digital_CFO": "28e03c",
+    "CFO_CR": "29094c"
+  },
+  "native_DIG_module_sha256": "83972588ee95864a317693dae63baf083967a465a8820dd70fc3fd6f678c4588",
+  "native_CFO_module_sha256": "d10d6ee9ac771c0d624f17fe66e561414635a6753502fdffbfbb5904d055781f",
+  "post_CFO_diagnostic_module_sha256": "beb2f8a019c0b19de6178644ea1fc4a512ae65d4b08ad6a022674ee8476f736a",
+  "post_CFO_command_in_production": false,
+  "extra_actual_BA_CAM_success_ACK_per_radio": 1,
+  "RX_errors": 0,
+  "DIG": {
+    "initial_RSSI": 28,
+    "IGI": 28,
+    "max_gaincode": [
+      6,
+      1,
+      31
+    ],
+    "PD_requested": 93,
+    "OFDM_encoded": 1,
+    "CCK_low": -98,
+    "CCK_high": 127,
+    "FA_thresholds": [
+      196,
+      352,
+      440,
+      528
+    ],
+    "initial_gain_CR_masks_disabled_in_actual_module": true,
+    "periodic_control_implemented": false
+  },
+  "CFO": {
+    "flash_xcap": [
+      71,
+      63
+    ],
+    "bounds": [
+      [
+        21,
+        121
+      ],
+      [
+        13,
+        113
+      ]
+    ],
+    "manual_compensation": 0,
+    "valid": 1,
+    "weight": 8,
+    "MAC_compensation_C_XB": [
+      0,
+      6
+    ],
+    "crystal_cap_written_by_this_initializer": false,
+    "periodic_control_implemented": false
+  },
+  "log": "logs/radio-live-post-cfo-ack-20261010.txt",
+  "log_sha256": "674d06f30a6b557dac04238980da9d39e23593acadbba7c2c6cb93f5ad0de912",
+  "AP_available": false,
+  "ordinary_80211_RX_verified": false
+}

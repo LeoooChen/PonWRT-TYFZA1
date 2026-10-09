@@ -21,6 +21,8 @@
 #include "power-tables.h"
 #include "bb-dm.h"
 #include "dfs.h"
+#include "dig.h"
+#include "cfo.h"
 
 /* Original netdev-open policy in os_intfs.c: MU beamforming, OFDMA or
  * force_fw_tx selects firmware scheduling. Preserve all three inputs. */
@@ -64,6 +66,8 @@ struct rtl_ax_ap {
 	struct rtl_ax_bb_dm bb_dm;
 	struct rtl_ax_board_cal flash_calibration;
 	struct rtl_ax_dfs dfs;
+	struct rtl_ax_dig dig;
+	struct rtl_ax_cfo cfo;
 	struct rtl_ax_rx *rx;
 	struct mutex command_mutex;
 	spinlock_t command_lock;
@@ -536,6 +540,8 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	rtl_ax_bb_dm_statistics_start(&radio->io, &radio->bb_dm);
 	rtl_ax_bb_dm_signal_start(&radio->io, radio->chip, edcca_mode, &radio->bb_dm);
 	rtl_ax_dfs_initialize(&radio->dfs, dfs_region);
+	rtl_ax_dig_initialize(&radio->io, &radio->dig);
+	rtl_ax_cfo_initialize(&radio->io, radio->chip, radio->flash_calibration.xtal, &radio->cfo);
 	return 0;
 }
 
@@ -838,7 +844,7 @@ static ssize_t radio_signal_show(struct device *dev,
 	return sysfs_emit(buffer, "LA=%s buffer=%u samples=%u trigger_us=%u cfg=%08x "
 		"PSD=%s fft=%u IQ=%u average=%u path=%u input=%u cfg=%08x "
 		"EDCCA=%s mode=%u power_offset=%u capabilities=%u,%u,%u,%u "
-		"collision_state=%u cfg=%08x dynamic_policy=pending DFS=pending DIG=pending\n",
+		"collision_state=%u cfg=%08x dynamic_policy=pending DFS_runtime=pending DIG_periodic=pending\n",
 		dm->la_ready ? "initialized" : "pending", dm->la_buffer_bytes, dm->la_samples, dm->la_trigger_time, la,
 		dm->psd_ready ? "initialized" : "pending", dm->psd_fft_points,
 		(psd >> 11) & 3, (psd >> 13) & 3, (psd >> 17) & 3, (psd >> 19) & 3, psd,
@@ -882,6 +888,56 @@ static ssize_t radio_dfs_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_dfs);
 
+static ssize_t radio_dig_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_dig *dig = &radio->dig;
+	u32 ofdm = rtl_ax_read32(radio, 0x1481c);
+	u32 cck = rtl_ax_read32(radio, 0x14b64);
+	u32 cck_control = rtl_ax_read32(radio, 0x14b74);
+
+	return sysfs_emit(buffer, "initialization=%s mode=%u max_gaincode=%u,%u,%u "
+		"IB_peak=%d IB_backoff=%u initial_RSSI=%u IGI=%u FA=%u,%u,%u,%u "
+		"TDMA_ms=%u FAHM_ms=%u damping=%u/%u PD_requested=%u bandwidth_index=%u "
+		"OFDM_enable=%u encoded=%u cfg=%08x CCK_enable=%u low=%d high=%u "
+		"cfg=%08x/%08x follow_PAGC=%u periodic_DIG=pending\n",
+		dig->initialized ? "applied" : "pending", dig->mode,
+		dig->max_gaincode[0], dig->max_gaincode[1], dig->max_gaincode[2],
+		dig->ib_peak_power, dig->ib_backoff, dig->igi_rssi, dig->unit[0].igi,
+		dig->unit[0].fa_threshold[0], dig->unit[0].fa_threshold[1],
+		dig->unit[0].fa_threshold[2], dig->unit[0].fa_threshold[3],
+		dig->tdma_period, dig->fahm_time, dig->damping_enabled, dig->damping_count_limit,
+		dig->pd_requested, dig->bandwidth, !!(ofdm & BIT(29)), (ofdm >> 6) & 31,
+		ofdm, !!(cck_control & BIT(30)), (s8)(cck >> 24), (cck >> 16) & 255,
+		cck, cck_control, dig->unit[0].follow_pagc);
+}
+static DEVICE_ATTR_RO(radio_dig);
+
+static ssize_t radio_cfo_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_cfo *cfo = &radio->cfo;
+	u32 valid = rtl_ax_read32(radio, 0x14494);
+	u32 weight = rtl_ax_read32(radio, 0x14490);
+	u32 power = rtl_ax_read32(radio, 0xd248);
+
+	return sysfs_emit(buffer, "initialization=%s flash_xcap=%u bounds=%u..%u "
+		"thresholds=%u,%u,%u,%u steps=%u,%u,%u,%u digital_shift=%u "
+		"timer_ms=%u timer_enabled=%u dynamic_acceleration=%u "
+		"manual_comp=%u valid=%u weight=%u MAC_comp=%u "
+		"cfg=%08x/%08x/%08x periodic_CFO=pending crystal_adjustment=pending\n",
+		cfo->initialized ? "applied" : "pending", cfo->crystal_default,
+		cfo->crystal_lower, cfo->crystal_upper,
+		cfo->threshold[0], cfo->threshold[1], cfo->threshold[2], cfo->threshold[3],
+		cfo->step[0], cfo->step[1], cfo->step[2], cfo->step[3], cfo->digital_shift,
+		cfo->timer_period, cfo->timer_enabled, cfo->dynamic_acceleration,
+		rtl_ax_read32(radio, 0x14264) & 255, !!(valid & BIT(29)), (weight >> 24) & 15,
+		power & 7, valid, weight, power);
+}
+static DEVICE_ATTR_RO(radio_cfo);
+
 static ssize_t radio_efuse_read(struct file *file, struct kobject *kobject,
 	const struct bin_attribute *attr, char *buffer, loff_t offset, size_t count)
 {
@@ -921,7 +977,8 @@ static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_rf.attr, &dev_attr_radio_rf_bank.attr, &dev_attr_radio_rf_analog.attr,
 	&dev_attr_radio_power.attr, &dev_attr_radio_limits.attr, &dev_attr_radio_bb_dm.attr,
 	&dev_attr_radio_physts.attr, &dev_attr_radio_txdiff.attr, &dev_attr_radio_phy_stats.attr,
-	&dev_attr_radio_signal.attr, &dev_attr_radio_filter.attr, &dev_attr_radio_dfs.attr, NULL,
+	&dev_attr_radio_signal.attr, &dev_attr_radio_filter.attr, &dev_attr_radio_dfs.attr,
+	&dev_attr_radio_dig.attr, &dev_attr_radio_cfo.attr, NULL,
 };
 static const struct attribute_group rtl_ax_group = {
 	.attrs = rtl_ax_attrs, .bin_attrs = rtl_ax_bin_attrs,
@@ -962,6 +1019,8 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		radio->bb_dm.psd_ready = false;
 		radio->bb_dm.edcca_ready = false;
 		radio->dfs.initialized = false;
+		radio->dig.initialized = false;
+		radio->cfo.initialized = false;
 		radio->power_inputs.ready = false;
 		radio->download_prepared = false;
 	}

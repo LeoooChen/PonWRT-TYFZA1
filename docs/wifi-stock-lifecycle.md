@@ -312,3 +312,19 @@ dfs.h 按dfs_init@29e498和rgn_dmn_dflt_cnfg@29e138保存本机Gen1单位PW200ns
 host默认参数继续用原机debug命令的field-name/offset交叉核对：fk_dfs_num_th=5、idle_period=35、FA threshold50、fake_radar_count4、PW diff18、long-chirp diff20、PRI diff80，PPB原始参数5。原机halbb_dfs_debug的字段映射保存在analysis/radio-stock-lifecycle/dfs-field-names.json，避免将新版struct相邻字段套到旧机器码上。
 
 DFS-host03原生模块SHA256a4a73e4ad2949d8d2c285e846d1479bfcda48c4ab224003b17f67d33b3604747在两颗原机完成初始化，默认region0、profile未配置，RX错误0。此结果仅证明host初始化与现有启动链相容，不证明雷达检测、pulse parser或CAC已经实现。日志logs/radio-live-dfs-host-20261010.txt。后续重点是DIG、其余BB DM和RF校准，最终再接native AP与DFS运行态。
+
+## 2026-10-10 START_RX完整镜像冷启动与DIG/CFO实机推进
+
+START_RX01完整FIT（source3b1b0e5）SHA25690c5b7cb79ff0db351e072371d77625c551177954eb92a85cc1eeb6f2c9209df，6547104字节，U-Boot验证签名并从RAM启动。最终FIT内核SHA256f5b82e8f9a61e1f631244db23e59b63d83d703fb7308ee44741cf3f29b3a19db，DTBed3a18f2b09dbec988883e9a36b47efdae819c82db47864deb3ad1e4eecd23ac；验证器从最终FIT解出的内核/DTB/initramfs匹配外部产物。两颗原生built-in驱动均获真实BA CAM成功ACK，RXQ/IRQ1、错误0。32个PHY bitmap、96个原机ELF TXdiff项读回一致，256个MACID power DWORD均0；AP_NORMAL4=0816440e，MGMT/CTRL=55555555，DATA=51515455，MPDU11264B、RX_INFO006f、RTS0。XEPON取得192.168.71.28，公网ping2/2。日志logs/radio-start-rx01-ram-20261010.txt，证据manifests/radio-start-rx01-live-20261010.json。此FIT不包含后续DFS/DIG/CFO新增步骤。
+
+DIG严格跟随本机halbb_dig_init@2d69f8、CR@2d8374、gain_para_init@2d6054、reset@2d678c和cfg_bbcr@2d68f0。原机bb_info由zvmalloc清零；CLIENT CR仅设置初始索引和PD相关字段，IB power/LNA/TIA error CR未填充。get_reg_cmn先与mask相与，零mask产生零校正，因此原机初始化gain对象采用LNA{-24,-16,-8,0,8,16,24}、2G TIA{12,20}、5G TIA{16,24}，不是使用较新SDK被#if0隔离的寄存器。A路径真实初始索引读取472c[26:24]、473c[9]、46a8[14:10]。reset关闭OFDM481c[29]和CCK4b74[30]；follow_PAGC host默认false，与请求相等，原机不写四个follow CR。
+
+原机reset调用PD函数的IGI参数38，随后初始igi_rssi写28，不能把两个常量混为一谈。无关联FA阈值从原机.rodata+25148提取196/352/440/528；H/L绝对范围12..90、12..38，PD offset16，FAHM1900ms，TDMA50ms，damping count6。初始IGI28，PD函数取max(IGI,RSSI+5)-min(offset,该值)=17，请求门限110-17=93；20MHz路径OFDM加7并向上取偶数100，编码(102-100)/2=1；CCK加5取负=-98，高门限127并启用。本机C/XB各自chip函数核对，PHY0寄存器操作一致，XB CCK使用direct BB写。
+
+DIG原生模块83972588ee95864a317693dae63baf083967a465a8820dd70fc3fd6f678c4588在两颗原机索引6/1/31、IGI28、OFDM encoded1、CCK-98/127读回一致，错误0。日志logs/radio-live-dig-20261010.txt。目前接入原机正常未关联20MHz初始化，周期DIG、关联后FA/带宽更新仍待接入。
+
+CFO按halbb_cfo_trk_init@28e2c4和digital_cfo_comp_init@28e03c接入：flash xcap71/63分别形成21..121、13..113 host边界，阈值12/40/80/120、step1/1/3/3，timer250ms但未启用。原机此initializer不调用set_crystal_cap；rtw_hal_nvm_apply_dev_cap@1da9d8仅对8852A写xcap，因此C/XB也不在这里臆加晶振写。实际初始写4264低8位0、4494[29]=1、4490[27:24]=8；MAC d248低3位C=0（DBCC2TX数字补偿），XB=6（硬件补偿）。原机动态加速条件为dev_cap RFE<=49，板卡RFE54故false，与新版SDK的条件不同。
+
+CFO原生模块d10d6ee9ac771c0d624f17fe66e561414635a6753502fdffbfbb5904d055781f在两颗原机读回全部一致，RX错误0、公网2/2。随后仅在临时diagnostic模块beb2f8a019c0b19de6178644ea1fc4a512ae65d4b08ad6a022674ee8476f736a追加一次post-CFO BA CAM实际命令，两颗均成功ACK，done_acks/RXQ/IRQ=2，错误0。正式overlay不增加此命令；板上已恢复正常CFO模块。日志logs/radio-live-cfo-20261010.txt和logs/radio-live-post-cfo-ack-20261010.txt，证据manifests/radio-live-dig-cfo-20261010.json。周期CFO及实际晶振调整、普通802.11收发和AP仍待实现。
+
+下一个原机halbb_ra_init@2cd49c仅遍历128个33B host对象，非空对象直接跳过，没有硬件或H2C操作。不照搬其异常空指针memset分支；原生station/RA对象将在真正MACID关联生命周期接入。继续紧随其后的env_mntr_init@2acfa0，按CCX→CLM→NHM→IFS→FAHM→EDCCA-CLM顺序核对原机函数。
