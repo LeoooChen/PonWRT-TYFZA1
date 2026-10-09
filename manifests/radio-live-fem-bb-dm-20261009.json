@@ -11,11 +11,11 @@
     "active_RAM_driver_override": {
       "radio": "both endpoints C and XB",
       "driver": "rtl_ax_ap_live",
-      "module": "artifacts/live-radio-c-gapk02/rtl_ax_ap_live.ko",
-      "sha256": "a2a07bb378faf85a4c1423d7f95bb2820a2aa38201c656af4922327460e0bd67",
-      "interfaces": "phy20/mon0 channel36;phy21/mon1 channel6",
-      "evidence": "manifests/radio-c-gapk-20261010.json",
-      "boot_FIT_contains_GAPK": false
+      "module": "artifacts/live-radio-xb-tssi02/rtl_ax_ap_live.ko",
+      "sha256": "3de28c23dd3fb2abc4afa4f4bd5bbcc25ce03299c039aea97d7e20b0cc313425",
+      "interfaces": "phy24/mon0 channel36;phy25/mon1 channel6",
+      "evidence": "manifests/radio-xb-tssi-20261010.json",
+      "boot_FIT_contains_XB_TSSI": false
     },
     "C_native_mac80211_monitor": true,
     "XB_native_mac80211_monitor": true,
@@ -209,10 +209,10 @@
     "receive_evidence": "manifests/radio-mac80211-signeddb02-live-20261010.json"
   },
   "latest_complete_candidate": {
-    "FIT": "artifacts/full-pon-radio-both-iqk01-6.18.55/ram-pcie/image.itb",
-    "source": "29c50e7",
-    "contains_both_host_IQK": true,
-    "contains_GAPK": false,
+    "FIT": "artifacts/full-pon-radio-c-gapk01-6.18.55/ram-pcie/image.itb",
+    "source": "ff9c8d7",
+    "contains_C_GAPK": true,
+    "contains_XB_TSSI": false,
     "hardware_boot_verified": false
   }
 }

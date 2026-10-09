@@ -177,6 +177,27 @@ try:
                                    'band': band, 'FEM': fem, 'RFE': 54, 'load_stage': stage,
                                    'original_sha256': original_sha256,
                                    'sha256': hashlib.sha256(data).hexdigest(), 'corrections': corrections})
+    # The original file loader assigns base curves then overwrites them
+    # with the selected FEM layer. Keep the actual four2G ALL curves.
+    track_source = args.study / 'evidence/stock/radio-parameters/rtl8192xbe/RFE54'
+    curves = {}
+    for layer in (track_source, track_source / 'RTK66287'):
+        source = layer / 'TXPWR_TrackTSSI.txt'
+        for path in ('A', 'B'):
+            for sign in ('+', '-'):
+                pattern = r'\[2G\]\[' + path + r'\]\[' + re.escape(sign) + r'\]\[ALL\]\s*=\s*\{([^}]+)\}'
+                values = bytes(int(value) & 255 for value in re.search(pattern, source.read_text())[1].split(','))
+                if len(values) != 30:
+                    raise ValueError('Unexpected original TSSI thermal curve length')
+                curves[(path, sign)] = values
+    data = b''.join(curves[(path, sign)] for path in ('A', 'B') for sign in ('+', '-'))
+    relative = Path('lib/firmware/realtek/tyfza1/rtl8192xbe/tssi-thermal-2g.bin')
+    (args.output / relative).write_bytes(data)
+    parameters.append({'path': str(relative), 'band': '2.4GHz', 'FEM': 'RTK66287', 'RFE': 54,
+                       'load_stage': 'derived-base-then-FEM-thermal', 'bytes': len(data),
+                       'source': 'original TXPWR_TrackTSSI.txt 2G A/B +/- ALL rows',
+                       'sha256': hashlib.sha256(data).hexdigest(),
+                       'selected_FEM_sha256': hashlib.sha256(source.read_bytes()).hexdigest()})
     report = {'study': str(args.study.relative_to(root)), 'native_format_header_sha256':
               hashlib.sha256((root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/fw.h').read_bytes()).hexdigest(),
               'firmware': firmware, 'parameters': parameters, 'calibration': calibration, 'NCTL': nctl,

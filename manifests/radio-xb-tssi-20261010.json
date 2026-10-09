@@ -1,0 +1,130 @@
+{
+  "original_host_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "normal_RFE54_2G_TSSI_implemented": true,
+  "native_register_operations": 300,
+  "thermal_words": 32,
+  "thermal_curve_source": "evidence/wireless-study-20261009-104746/evidence/stock/radio-parameters/rtl8192xbe/RFE54/RTK66287/TXPWR_TrackTSSI.txt",
+  "thermal_curve_sha256": "a0866255bd11c9fbb0423d45d9e776c614e167c7f2d621fc0b74b9d953119edf",
+  "trace": "manifests/radio-stock-XB-TSSI-program.json",
+  "trace_input_reads": [
+    [
+      "hal",
+      905,
+      1
+    ],
+    [
+      "phl",
+      22778,
+      1
+    ],
+    [
+      "rf",
+      0,
+      8
+    ],
+    [
+      "rf",
+      8,
+      8
+    ],
+    [
+      "rf",
+      52,
+      4
+    ],
+    [
+      "rf",
+      16404,
+      1
+    ]
+  ],
+  "register_header": "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/xb-tssi-program.h",
+  "channels": [
+    {
+      "channel": 1,
+      "tracking_A_B": [
+        1,
+        1
+      ],
+      "paused_A_B": [
+        0,
+        0
+      ],
+      "thermal_reference_A_B": [
+        24,
+        24
+      ],
+      "RX_DCK_done": "1,1/1,1"
+    },
+    {
+      "channel": 11,
+      "tracking_A_B": [
+        1,
+        1
+      ],
+      "paused_A_B": [
+        0,
+        0
+      ],
+      "thermal_reference_A_B": [
+        24,
+        24
+      ],
+      "RX_DCK_done": "1,1/1,1"
+    },
+    {
+      "channel": 6,
+      "tracking_A_B": [
+        1,
+        1
+      ],
+      "paused_A_B": [
+        0,
+        0
+      ],
+      "thermal_reference_A_B": [
+        24,
+        24
+      ],
+      "RX_DCK_done": "1,1/1,1"
+    }
+  ],
+  "captures": [
+    {
+      "chip": "C",
+      "frames": 64,
+      "FCS_match": 64,
+      "subtypes": {
+        "1/11": 28,
+        "1/12": 29,
+        "0/8": 4,
+        "1/14": 1,
+        "0/4": 2
+      },
+      "pcap": "logs/radio-xb-tssi-C.pcap",
+      "sha256": "565c70e4a2b700f4d88594fd3326d9b4709b539265cdbfea41d51ddc35995051"
+    },
+    {
+      "chip": "XB",
+      "frames": 64,
+      "FCS_match": 64,
+      "subtypes": {
+        "0/8": 7,
+        "0/5": 46,
+        "0/4": 11
+      },
+      "pcap": "logs/radio-xb-tssi-XB.pcap",
+      "sha256": "6982e494e57eaec79de3b6144ee86e1d7a8edc4375eed3ae0d224e9328d71c1f"
+    }
+  ],
+  "capture_module_sha256": "d2fa04b94b074d52411076df4ade2915a9fb1f51c94386108343d0be153ae829",
+  "current_module": "artifacts/live-radio-xb-tssi02/rtl_ax_ap_live.ko",
+  "current_module_sha256": "3de28c23dd3fb2abc4afa4f4bd5bbcc25ce03299c039aea97d7e20b0cc313425",
+  "final_module_change": "diagnostic label now reports XB tracking enabled;hardware program unchanged",
+  "log": "logs/radio-xb-tssi-20261010.txt",
+  "final_log": "logs/radio-xb-tssi-final-20261010.txt",
+  "C_TSSI_complete": false,
+  "AP_transmit_power_loop_verified": false,
+  "AP_transmit_association_complete": false,
+  "XB_OFDM_quality_resolved": false
+}

@@ -543,3 +543,13 @@ gapk.h接入首次频道GAPK初始化，c-gapk.h依据C main@314ec0、non_dbcc@3
 RFE54 5G track选择2aa8、second ItQt36、first ItQt9，power选择0、ItQt9；17组delta按7bit signed、adjustment按6bit signed读出。原机done_check@30df90每个poll从计数1起到2000停止（1999观察），first bff8=55失败间隔10us、second80fc=8000失败间隔1us，返回值体现第二完成。before_one_shot仅bff8非0时清8010并等1us；NCTL命令不借用IQK额外初始/结束等待或8008失败判定。校准恢复后再运行原生IQK和TSSI DE。
 
 模块a2a07bb378faf85a4c1423d7f95bb2820a2aa38201c656af4922327460e0bd67实机C36两路共10步全部bff8=55、80fc=8000；track/power34组实际结果保留，首次观察track delta11项非0、adjust28项非0，power在原机gain_stage0路径当前均0。14个BB读回与非RF0的RF恢复全部匹配，RF0为自动增益变化；后续C/XB IQK继续通过。XB6 HW table0、正确报告原厂RFE54跳过，无测量恢复伪记录。两路各64个实际用户态入站帧FCS全匹配、kernel丢包0、XEPON公网2/2。证据manifests/radio-c-gapk-20261010.json、logs/radio-c-gapk-20261010.txt及pcap。MCC多频道缓存和其他带宽仍继续适配；当前正常SCC20MHz每次table0重新测量。
+
+## 2026-10-10 XB原生硬件TSSI初始化与tracking
+
+trace_stock_tssi_xb.py使用现有ARM64 ELF分析器直接执行本机原厂函数，明确输入RFE54、band2G、CV1、normal TSSI type，捕获wreg/wrf操作。静态步骤只读取rf->phl_com、debugmask和RFE；温度步骤额外读取channel与type，使用真实HS thermal和原机选中RTK66287 FEM 2G A/B +/- ALL曲线。实际base后FEM覆盖曲线当前120B全0，不能误用base中的负值曲线。工具不运行在光猫上，不把模拟执行当作板测。generate_xb_tssi_program.py生成256个native常量操作，温度44个操作由native运行时根据board cal和独立thermal曲线输入计算，总计300。
+
+按原机do_tssi@361060实现disable→A sys/txpower/HE_TB/DCK/BBgain/thermal/slope-org/alignment/slope/run-slope→B同序→enable→原生DE。RFE54走supportabilitybit0 enable分支，11..20特殊type条件不适用。实际SYS0308高byte为28，区别于旧SDK31，操作保持实际ELF顺序。热表使用原厂30点上下曲线并按原序饱和组成64点；reference使用HS24/24，32个32bit字实际全0。原机enable写RF10055[7]而非RF7f，逐项保持真实操作。
+
+第一live模块d2fa04b94b074d52411076df4ade2915a9fb1f51c94386108343d0be153ae829原机完成300操作，两路5818 trackingbit28=1、pausebit30=0，reference24，RF10055=80。频道1/11/6逐次验证tracking恢复1、pause0，RX_DCK4个done均1；RX_DCK在TSSI active时按原机33c5c0/33c5d8逐路暂停/恢复，而不是继续沿初始化is_tssi_mode0路径。两路各64个真实用户态入站帧FCS全部匹配，kernel丢包0；XB PHY OFDM正确224/错误18001、HT正确17/错误23，质量问题仍未宣称解决。记录manifests/radio-xb-tssi-20261010.json及logs/pcap。最终诊断文字模块3de28c23dd3fb2abc4afa4f4bd5bbcc25ce03299c039aea97d7e20b0cc313425已上机，硬件程序一致、状态读回再次tracking1。尚未验证真实AP发射时的功率反馈，C TSSI和完整AP收发仍继续实现。
+
+准备脚本生成thermal曲线固件，完整构建保存当次wifi-runtime-manifest.json并明确传入FIT验证器。已完成的071409 GAPK镜像缺新thermal输入，使用其42参数独立清单与实际选中FIT逐项核对；没有将新的43参数清单当作旧镜像输入。

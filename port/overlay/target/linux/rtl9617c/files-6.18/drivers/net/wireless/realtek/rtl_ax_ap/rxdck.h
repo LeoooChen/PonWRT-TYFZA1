@@ -80,7 +80,7 @@ static inline void rtl_ax_xb_rxdck_afe(const struct rtl_ax_io *io,
 }
 
 static inline int rtl_ax_xb_rxdck_start(const struct rtl_ax_io *io,
-	struct rtl_ax_rxdck *state)
+	struct rtl_ax_rxdck *state, bool tssi_running)
 {
 	unsigned int path;
 	int ret;
@@ -89,6 +89,9 @@ static inline int rtl_ax_xb_rxdck_start(const struct rtl_ax_io *io,
 	 * brackets both paths in8080=4/0 and returnsRF5 to automatic. */
 	io->write32(io->ctx, 0x18080, 4);
 	for (path = 0; path < 2; path++) {
+		/* Actual33c5c0/33c5d8 pause and resume active TSSI perpath. */
+		if (tssi_running)
+			rtl_ax_channel_field(io, 0x5818 + path * 0x2000, BIT(30), 1);
 		ret = rtl_ax_phy_rf_write_masked(io, path, 5, 0xfffff, 0);
 		if (ret)
 			return ret;
@@ -110,6 +113,8 @@ static inline int rtl_ax_xb_rxdck_start(const struct rtl_ax_io *io,
 		ret = rtl_ax_phy_rf_write_masked(io, path, 5, 0xfffff, 1);
 		if (ret)
 			return ret;
+		if (tssi_running)
+			rtl_ax_channel_field(io, 0x5818 + path * 0x2000, BIT(30), 0);
 	}
 	io->write32(io->ctx, 0x18080, 0);
 	state->ready = true;

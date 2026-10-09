@@ -39,6 +39,7 @@
 #include "trim.h"
 #include "ref-power.h"
 #include "tssi-de.h"
+#include "xb-tssi.h"
 
 /* Original netdev-open policy in os_intfs.c: MU beamforming, OFDMA or
  * force_fw_tx selects firmware scheduling. Preserve all three inputs. */
@@ -97,6 +98,7 @@ struct rtl_ax_ap {
 	struct rtl_ax_trim trim;
 	struct rtl_ax_ref_power ref_power;
 	struct rtl_ax_tssi_de tssi_de;
+	struct rtl_ax_xb_tssi xb_tssi;
 	struct rtl_ax_rx *rx;
 	struct ieee80211_hw *hw;
 	struct ieee80211_supported_band band;
@@ -571,6 +573,11 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	ret = rtl_ax_board_cal_load(&radio->pdev->dev, radio->chip, &radio->flash_calibration);
 	if (ret)
 		return ret;
+	if (radio->chip == RTL_AX_8192XB) {
+		ret = rtl_ax_xb_tssi_load(&radio->pdev->dev, &radio->xb_tssi);
+		if (ret)
+			return ret;
+	}
 	ret = rtl_ax_bb_dm_gain_start(&radio->io, radio->chip,
 				    &radio->flash_calibration, &radio->bb_dm);
 	if (ret)
@@ -602,7 +609,7 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	ret = rtl_ax_dack_dac_start(&radio->io, radio->chip, &radio->dack);
 	if (ret)
 		return ret;
-	ret = radio->chip == RTL_AX_8192XB ? rtl_ax_xb_rxdck_start(&radio->io, &radio->rxdck) :
+	ret = radio->chip == RTL_AX_8192XB ? rtl_ax_xb_rxdck_start(&radio->io, &radio->rxdck, false) :
 		rtl_ax_c_rxdck_start(&radio->io, &radio->rxdck);
 	if (ret)
 		return ret;
@@ -1140,7 +1147,7 @@ static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int chan
 	 * XB AFE/1; initial calibration cannot replace this channel step. */
 	if (!ret) {
 		memset(&radio->rxdck, 0, sizeof(radio->rxdck));
-		ret = radio->chip == RTL_AX_8192XB ? rtl_ax_xb_rxdck_start(&radio->io, &radio->rxdck) :
+		ret = radio->chip == RTL_AX_8192XB ? rtl_ax_xb_rxdck_start(&radio->io, &radio->rxdck, radio->xb_tssi.ready) :
 			rtl_ax_c_rxdck_start(&radio->io, &radio->rxdck);
 		if (!ret)
 			radio->rxdck_channel = channel;
@@ -1155,6 +1162,10 @@ static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int chan
 			ret = rtl_ax_xb_iqk_start20(&radio->io, channel, &radio->xb_iqk);
 		else
 			ret = rtl_ax_c_iqk_start20(&radio->io, channel, &radio->c_iqk);
+	}
+	if (!ret) {
+		if (radio->chip == RTL_AX_8192XB)
+			ret = rtl_ax_xb_tssi_start(&radio->io, &radio->flash_calibration, &radio->xb_tssi);
 	}
 	if (!ret) {
 		if (radio->chip == RTL_AX_8192XB)
@@ -1489,8 +1500,9 @@ static ssize_t radio_tssi_de_show(struct device *dev,
 	struct rtl_ax_tssi_de *state = &radio->tssi_de;
 	unsigned int path, i;
 	ssize_t length = sysfs_emit(buffer, "TSSI_DE=%s channel=%u CCK_group=%u OFDM_group=%04x trim_group=%04x "
-		"hardware_TSSI_tracking=pending C_BW_slope_inputs=flash-imported slope_no_pg=%u\n",
+		"hardware_TSSI_tracking=%s C_BW_slope_inputs=flash-imported slope_no_pg=%u\n",
 		state->ready ? "applied" : "pending", state->center, state->cck_group, state->ofdm_group, state->trim_group,
+		radio->xb_tssi.ready ? "XB-enabled" : "pending",
 		state->slope_no_pg);
 
 	for (path = 0; path < 2; path++) {
@@ -1505,6 +1517,36 @@ static ssize_t radio_tssi_de_show(struct device *dev,
 	return length;
 }
 static DEVICE_ATTR_RO(radio_tssi_de);
+
+static ssize_t radio_tssi_hw_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_xb_tssi *state = &radio->xb_tssi;
+	unsigned int path, i;
+	ssize_t length;
+
+	mutex_lock(&radio->command_mutex);
+	length = sysfs_emit(buffer, "TSSI_hw=%s chip=%02x input=%u operations=%u C_tracking=pending\n",
+		state->ready ? "applied" : "pending", radio->chip, state->input_ready, state->operations);
+	if (radio->chip == RTL_AX_8192XB)
+		for (path = 0; path < 2; path++) {
+			u32 ctl = rtl_ax_read32(radio, 0x15818 + path * 0x2000);
+			u32 meter = rtl_ax_read32(radio, 0x15810 + path * 0x2000);
+			u32 average = rtl_ax_read32(radio, 0x158e4 + path * 0x2000);
+
+			length += sysfs_emit_at(buffer, length, "path=%u tracking=%u paused=%u flash_thermal=%u "
+				"meter_reference=%u RF10055=%05x ctl=%08x meter=%08x average=%08x\n",
+				path, !!(ctl & BIT(28)), !!(ctl & BIT(30)), state->thermal[path],
+				(meter >> 10) & 63, state->RF10055[path], ctl, meter, average);
+			for (i = 0; i < 16; i++)
+				length += sysfs_emit_at(buffer, length, "path=%u thermal_word=%u readback=%08x\n",
+					path, i, state->thermal_readback[path][i]);
+		}
+	mutex_unlock(&radio->command_mutex);
+	return length;
+}
+static DEVICE_ATTR_RO(radio_tssi_hw);
 
 static ssize_t radio_efuse_read(struct file *file, struct kobject *kobject,
 	const struct bin_attribute *attr, char *buffer, loff_t offset, size_t count)
@@ -1550,7 +1592,7 @@ static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_rx_pipeline.attr, &dev_attr_radio_channel.attr, &dev_attr_radio_rx_mode.attr,
 	&dev_attr_radio_rf_start.attr, &dev_attr_radio_dack.attr, &dev_attr_radio_dac.attr,
 	&dev_attr_radio_mac80211.attr, &dev_attr_radio_rx_dck.attr, &dev_attr_radio_trim.attr,
-	&dev_attr_radio_ref_power.attr, &dev_attr_radio_tssi_de.attr, &dev_attr_radio_iqk.attr,
+	&dev_attr_radio_ref_power.attr, &dev_attr_radio_tssi_de.attr, &dev_attr_radio_tssi_hw.attr, &dev_attr_radio_iqk.attr,
 	&dev_attr_radio_iqk_restore.attr, &dev_attr_radio_gapk.attr, &dev_attr_radio_gapk_restore.attr, NULL,
 };
 static const struct attribute_group rtl_ax_group = {
