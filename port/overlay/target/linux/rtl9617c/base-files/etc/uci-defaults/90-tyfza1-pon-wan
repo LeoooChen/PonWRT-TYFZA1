@@ -1,9 +1,13 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-only
 [ -e /sys/class/net/pon-data0/llid_index ] || exit 0
-uci -q get network.wan >/dev/null && exit 0
+# All four copper interfaces are LAN. config_generate's generic eth1 WAN
+# choice must be replaced by the native PON business interface.
 uci set network.wan='interface'
 uci set network.wan.device='pon-data0'
 uci set network.wan.proto='dhcp'
+uci set network.wan6='interface'
+uci set network.wan6.device='pon-data0'
+uci set network.wan6.proto='dhcpv6'
 uci commit network
 exit 0

@@ -172,3 +172,5 @@ runtime-c2h01 的实际 RAM FIT（SHA256 80709389748fc564ab313cb65378f10dcfe94c9
 PHY_REG_GAIN按本机halbb_cfg_bb_gain_C/XB实际回调解码为LNA/TIA、bypass、op1dB、RXSC RPL、WB gain index、GS与eLNA对象。机器码只接受band0..7/path0..1，不能照搬新版SDK12-band布局。FEM输入叠加到基础对象，未提及的RXSC字段保留；不把gain地址当成MMIO地址。
 
 原机halbb_reset_bb_phy进一步指向C/XB不同函数：C callback只有日志；XB临时保持58dc/5818/78dc/7818的TSSI bit30，0704 bit1按1→0→1写，再释放TSSI。原生执行接口按这条差异实现，未加虚构的C reset写入。该阶段对象/接口已通过ARM64目录构建，具体函数来源为manifests/radio-stock-bb-gain.json；此改动在runtime-c2h01之后，尚未在该FIT中。
+
+2026-10-09 晚间 four-lan03（FIT SHA256 46539868ddcffac3c957ad9573db0cbe5ed18def18c40c7d2789adc141231f38）已包含增益对象并在原机运行。两颗无线芯片各收到 BA CAM 成功应答，RXQ/IRQ 各1、RX错误全0；通过 SSH 依次 unbind/bind 后，两颗再次完成固件下载和成功应答。实际输出保存在 logs/radio-rebind-20261009.txt。此复测证明当前供电、下载、运行态控制 DMA 与启停可重复，BB/RF 与 AP 仍未完成。

@@ -96,6 +96,16 @@ static int rtl_qm_ingress(struct rtl_qm_rx *rx, unsigned int port)
 	unsigned int i;
 	int ret;
 
+	/* Original aal_port_init builds both my-MAC cases: ordinary LAN
+	 * LDPID maps to its physical MAC,deep-buffer traffic enters PDPID8.
+	 * Port0 previously worked with the reset default;ports1..3 need their
+	 * own mapping rather than inheriting port0 as the egress destination. */
+	for (i = 0; i < 256; i += 64) {
+		writel(i & 64 ? 8 : port, rx->ni + 0x1658);
+		ret = rtl_qm_indirect(rx, 0x1654, BIT(31) | BIT(30) | i | port);
+		if (ret)
+			return ret;
+	}
 	writel(port, rx->ni + 0x11e0);
 	ret = rtl_qm_indirect(rx, 0x11dc, BIT(31) | BIT(30) | port);
 	if (ret)

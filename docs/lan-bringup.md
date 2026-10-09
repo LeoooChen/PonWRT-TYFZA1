@@ -46,3 +46,7 @@ RX依据原机Header A的LSPID字段，将source0..3递交对应LAN接口；PON 
 NI/DMA目标DTS提供realtek,lan-phys四个PHY句柄；XRAM历史调试目标仍使用其单口管理路径。89-tyfza1-lan-ports默认脚本把存在的eth0..eth3加入统一br-lan，地址、DHCP和LuCI通过同一个LAN网络提供。各口不要求重配IP或换用特定插口。
 
 ARM64的NI/QM对象编译已通过。全量候选由后台服务ponwrt-tyfza1-lan-20261009-210804构建到artifacts/full-pon-four-lan01-6.18.55，实机验证正在继续；不能将四口代码接入等同于四个插口都已完成现场数据测试。
+
+four-lan01 实机能从 port3 接收，但发送未到该物理口。继续对照原厂 aal_port_init，补齐 LAN LDPID 的 ARB normal/deep 映射（normal 指向对应 physical port，deep 指向 QM8）；four-lan02 上 port3 双向 ping 3/3、DHCP 和 SSH 成功。generic config_generate 同时生成了 eth1 WAN，90-tyfza1-pon-wan 已改为将本平台 WAN/WAN6 明确绑定 pon-data0。
+
+最终 four-lan03 RAM FIT SHA256 为 46539868ddcffac3c957ad9573db0cbe5ed18def18c40c7d2789adc141231f38。实机启动后 eth0..eth3 均进入 br-lan、port3 千兆 carrier 在线，SSH 可用；默认 WAN=pon-data0，XEPON 自动取得 192.168.71.28/24 和默认路由。当前只连接 port3，四个物理插口逐一测试尚未执行；后续工作按用户要求回到无线。
