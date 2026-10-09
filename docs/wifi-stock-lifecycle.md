@@ -260,3 +260,11 @@ bb-dm.h 依本机halbb_ic_hw_setting_init@2b011c顺序初始化TDMA host字段�
 继续追normal gain发现本机C@2e81ac/XB@2f2290调用的是rtw_hal_flash_get_info@1daa58→rtw_nvm_get_info@4f0→rtw_flash_get_info@26c4，不能从physicalOTP逻辑map替代。实际ELF flash字典每项44B，gain IDs329..333对应2G CCK、2G OFDM、5G低/中/高，shadow offsets2d6/2d4/2d8/2da/2dc；每个byte高nibble是A、低nibble是B，有符号4bit。原机HS备份中HW_RX_GAINGAP对应50/50/239/15/0。prepare_wifi_runtime现在额外生成两个66B native flash-calibration.bin，保存这五项、各WLAN的thermal/xtal及实际2G/5G TSSI数据，manifest记录HS原文件哈希和安装文件哈希；没有复制HS中的密码等其他配置。6G normal gain的shadow填充尚未追清，本机2G/5G数据单独标定，不声称完成6G射频。
 
 hidden gain仍使用本机物理路径：读585开始55B，再按实际ELF地址数组解码C每路径12组/XB每路径4组，CS取高nibble、CG取低nibble；全ff则invalid。原生bb-gain模块SHA2560a590c04f46ad97b50d926c78ef8df852e348857c206bd32dd9df393ed3e80fc在原机normal A=3,3,-2,0,0、B=2,2,-1,-1,0。C hidden_valid=0、thermal=28/28、xtal=71；XB hidden_valid=1、thermal=24/24、xtal=63；均与本机flash/OTP来源相符，RX错误0。结果logs/radio-live-bb-gain-20261009.txt。当前只完成BB DM前三个入口，supportability/PHY status及动态跟踪继续接入，RF校准/AP仍未完成。
+
+## 原机普通模式能力位与 PHY report bitmap
+
+halbb_supportability_default@2b03dc 的C/XB基础mask为38fa/8fb；share_xtal=false清bit6，RFE>49且配置antenna_diversity才置bit10。原生保留这两个只读启动输入；默认输入显式为false，不伪称已取到原机在线的两项dev_cap。两颗在halbb_cmn_info_self_init@2b01d0选择BB_CLIENT CR type2，不能因其MAC固件为AP而误用BB_AP地址。
+
+physts CR@2c6aa4的bitmap数组基址073c；page9保留，page10..15的实际地址索引减1。halbb_physts_parsing_init@2c61a0先保存各页并为11..15置IE9，为6/7启用IE13，supportability bit3时为0..3/8/12..15置IE24。原生按该顺序读写及保存bitmap；普通PPDU解析尚未实现，不把这个寄存器配置说成收到无线帧。
+
+physts模块SHA256 f5c276f0ecf5a862490ac55e83b0b2c6bb777d83cab2702b900e62df7c23505c在原机两颗supportability=38ba/8bb。逐页readback与对象一致，page6=2006、7=a002、11=201、12..14=1000202、15=1000206；RX错误0。输出logs/radio-live-physts-20261009.txt。后续继续common report/debug对象、TX power diff/MACID、统计及EDCCA/DFS/DIG/CFO/RA等原机入口，暂未进入RF DM。

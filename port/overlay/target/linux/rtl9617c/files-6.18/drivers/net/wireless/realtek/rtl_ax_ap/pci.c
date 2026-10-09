@@ -26,12 +26,18 @@
 static bool txbf_mu;
 static bool ofdma;
 static bool force_fw_tx;
+static bool share_xtal;
+static bool antenna_diversity;
 module_param(txbf_mu, bool, 0444);
 module_param(ofdma, bool, 0444);
 module_param(force_fw_tx, bool, 0444);
+module_param(share_xtal, bool, 0444);
+module_param(antenna_diversity, bool, 0444);
 MODULE_PARM_DESC(txbf_mu, "Original AP MU beamforming scheduling input");
 MODULE_PARM_DESC(ofdma, "Original AP OFDMA scheduling input");
 MODULE_PARM_DESC(force_fw_tx, "Original AP force firmware TX input");
+MODULE_PARM_DESC(share_xtal, "Original platform shared crystal input");
+MODULE_PARM_DESC(antenna_diversity, "Original RFE54 antenna diversity input");
 
 struct rtl_ax_ap {
 	struct pci_dev *pdev;
@@ -507,8 +513,12 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	ret = rtl_ax_board_cal_load(&radio->pdev->dev, radio->chip, &radio->flash_calibration);
 	if (ret)
 		return ret;
-	return rtl_ax_bb_dm_gain_start(&radio->io, radio->chip,
-				     &radio->flash_calibration, &radio->bb_dm);
+	ret = rtl_ax_bb_dm_gain_start(&radio->io, radio->chip,
+				    &radio->flash_calibration, &radio->bb_dm);
+	if (ret)
+		return ret;
+	rtl_ax_bb_dm_physts_start(&radio->io, radio->chip, share_xtal, antenna_diversity, &radio->bb_dm);
+	return 0;
 }
 
 static ssize_t radio_state_show(struct device *dev,
@@ -740,6 +750,24 @@ static ssize_t radio_bb_dm_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_bb_dm);
 
+static ssize_t radio_physts_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_bb_dm *dm = &radio->bb_dm;
+	unsigned int page;
+	ssize_t length;
+
+	length = sysfs_emit(buffer, "configuration=%s BB_CR=client supportability=%llx "
+		"share_xtal=%u antenna_diversity=%u runtime_PPDU_parser=pending\n",
+		dm->physts_ready ? "applied" : "pending", dm->supportability, share_xtal, antenna_diversity);
+	for (page = 0; page < 16; page++)
+		length += sysfs_emit_at(buffer, length, "page=%u bitmap=%08x readback=%08x\n",
+			page, dm->physts_bitmap[page], rtl_ax_bb_physts_get(&radio->io, page));
+	return length;
+}
+static DEVICE_ATTR_RO(radio_physts);
+
 static ssize_t radio_efuse_read(struct file *file, struct kobject *kobject,
 	const struct bin_attribute *attr, char *buffer, loff_t offset, size_t count)
 {
@@ -777,7 +805,8 @@ static DEVICE_ATTR_RO(radio_rx);
 static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_state.attr, &dev_attr_radio_rx.attr, &dev_attr_radio_bb.attr,
 	&dev_attr_radio_rf.attr, &dev_attr_radio_rf_bank.attr, &dev_attr_radio_rf_analog.attr,
-	&dev_attr_radio_power.attr, &dev_attr_radio_limits.attr, &dev_attr_radio_bb_dm.attr, NULL,
+	&dev_attr_radio_power.attr, &dev_attr_radio_limits.attr, &dev_attr_radio_bb_dm.attr,
+	&dev_attr_radio_physts.attr, NULL,
 };
 static const struct attribute_group rtl_ax_group = {
 	.attrs = rtl_ax_attrs, .bin_attrs = rtl_ax_bin_attrs,
@@ -809,6 +838,7 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		radio->bb_dm.ic_ready = false;
 		radio->bb_dm.gpio_ready = false;
 		radio->bb_dm.gain_ready = false;
+		radio->bb_dm.physts_ready = false;
 		radio->power_inputs.ready = false;
 		radio->download_prepared = false;
 	}

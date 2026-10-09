@@ -8,6 +8,9 @@ struct rtl_ax_bb_dm {
 	bool ic_ready, gpio_ready, gain_ready, normal_gain_valid, hidden_gain_valid;
 	s8 normal_gain[2][5], hidden_cs[2][12], hidden_cg[2][12];
 	u8 hidden[55], hidden_bands;
+	u64 supportability;
+	u32 physts_bitmap[16];
+	bool physts_ready;
 	bool tdma_cr_enabled, tdma_cr_state;
 	u32 tdma_cr_period[2], tdma_cr_index;
 	bool dynamic_csi_response, csi_response, dynamic_csi_debug;
@@ -149,5 +152,57 @@ static inline int rtl_ax_bb_dm_gain_start(const struct rtl_ax_io *io, unsigned i
 		}
 	dm->gain_ready = true;
 	return 0;
+}
+
+static inline u32 rtl_ax_bb_physts_get(const struct rtl_ax_io *io, unsigned int page)
+{
+	/* Original page9 is reserved;page10..15 skip it in the CR array. */
+	if (page == 9)
+		return 0;
+	return io->read32(io->ctx, 0x1073c + (page - (page > 9)) * 4);
+}
+
+static inline void rtl_ax_bb_physts_set(const struct rtl_ax_io *io,
+	unsigned int page, u32 bitmap, struct rtl_ax_bb_dm *dm)
+{
+	if (page == 9)
+		return;
+	dm->physts_bitmap[page] = bitmap;
+	io->write32(io->ctx, 0x1073c + (page - (page > 9)) * 4, bitmap);
+}
+
+static inline void rtl_ax_bb_dm_physts_start(const struct rtl_ax_io *io, unsigned int chip,
+	bool share_xtal, bool antenna_diversity, struct rtl_ax_bb_dm *dm)
+{
+	unsigned int page;
+	u32 bitmap;
+
+	/* Actual normal-mode supportability_default@2b03dc. User-controlled
+	 * platform inputs retain the original sharing/diversity policy. */
+	dm->supportability = chip == RTL_AX_8852C ? 0x38fa : 0x8fb;
+	if (!share_xtal)
+		dm->supportability &= ~BIT_ULL(6);
+	if (antenna_diversity)
+		dm->supportability |= BIT_ULL(10);
+	/* Both endpoints use original BB_CLIENT CR type2,while MAC/AP policy
+	 * remains AP. cr_cfg_physts_init@2c6aa4 sets bitmap array base073c. */
+	for (page = 0; page < 16; page++) {
+		bitmap = rtl_ax_bb_physts_get(io, page);
+		if (page > 10) {
+			rtl_ax_bb_physts_set(io, page, bitmap | BIT(9), dm);
+			bitmap = rtl_ax_bb_physts_get(io, page);
+		}
+		dm->physts_bitmap[page] = bitmap;
+	}
+	/* Actual physts_parsing_init enables IE13 for CCK/OFDM. */
+	for (page = 6; page <= 7; page++)
+		rtl_ax_bb_physts_set(io, page, rtl_ax_bb_physts_get(io, page) | BIT(13), dm);
+	if (dm->supportability & BIT_ULL(3))
+		for (page = 0; page < 16; page++) {
+			if ((page >= 4 && page <= 7) || (page >= 9 && page <= 11))
+				continue;
+			rtl_ax_bb_physts_set(io, page, rtl_ax_bb_physts_get(io, page) | BIT(24), dm);
+		}
+	dm->physts_ready = true;
 }
 #endif
