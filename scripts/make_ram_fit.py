@@ -18,7 +18,7 @@ if args.kernel_version != source_lock()['openwrt']['kernel']:
 args.output.mkdir(parents=True,exist_ok=True)
 o=args.output.resolve()
 image=args.image.read_bytes(); dtb=args.dtb.read_bytes()
-load=0x200000; fdt_load=0x1800000
+load=0x200000; fdt_load=0x2000000
 if image[56:60]!=b'ARM\x64': raise ValueError('Expected ARM64 Image')
 image_size=struct.unpack_from('<Q',image,16)[0]
 if load+max(len(image),image_size)>fdt_load: raise ValueError('Kernel overlaps DTB load region')

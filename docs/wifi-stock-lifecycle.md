@@ -402,3 +402,9 @@ DAC 两路保持本机差异：C 清 TX force → 选择时钟 → 开 force，X
 随后接入Linux6.18.55原生cfg80211/mac80211，不同时加载OpenWrt backports中的另一套无线核心。`monitor.h`把本次已验证的C5GHz20MHz通道接到nl80211监听接口；配置复用原机MAC/BB/RF频道操作，过滤复用SNIFFER0。普通type0描述符复制实际payload到skb，按本机WD字段转换速率/带宽/GI及CRC状态，保留真实FCS，再交ieee80211_rx_irqsafe。未实现PPDU RSSI时明确使用RX_FLAG_NO_SIGNAL_VAL。驱动计数`handed_to_mac80211`用于与实际用户态Radiotap抓包对照。
 
 此阶段只注册C的36/40/44/48频道监听接收。XB频道、原厂MAC角色、TX描述符/队列、AP关联及加密尚未接入，接口能力不宣称AP；monitor注入报文不送硬件，计入TX_unimplemented。正常接口停止同步关闭RX，注销先停止无线层再释放原生DMA。原机HS中的WLAN_MAC_ADDR随native calibration容器TYFC0002保存供接口标识，尚未把此HS字段宣称为已核实的两颗无线运行时地址分配规则。新原生mac80211入口等待完整FIT RAM上机验证。
+
+继续核对后续原机流程：`halrf_dm_init@303c14` 在 DACK 后调用 `halrf_rx_dck_trigger@2f53e0(phy0,1)`；实际 trigger 不透传这个1，而是对RF IC8/C强制传0，对IC32/XB强制传1。因此C执行RF RX_DCK，XB执行AFE RX_DCK。C按kpath及RF5自动控制状态保存必要RF0，TSSI正在运行时暂停58/78xx，再执行RF93低4位清零、toggle和原厂条件重校准；XB在8080=4/0之间分别处理A/B，其AFE helper额外保存ADC/时钟寄存器、配置时钟和ADC直流补偿。后续实现必须保留这两条分支，不能只统一脉冲RF92/93。
+
+原机普通TX BD入口C@27cdb4/XB@283890已提取：每个BD条目8B，低16位为WD页长度，bit30为last segment，地址高8位编码到[29:22]、低32位在第二字；生产者索引按实际ring长度回绕。原厂48B host ring对象、WD page指针数组及内核缓存维护接口属于原厂host布局，原生实现将使用Linux DMA和自己的skb所有权。普通TX仍需核对完整WD构造、MAC角色/地址CAM、功率/RFK和RPQ释放报告，不能把已有H2C固件下载通路当成普通802.11 TX。
+
+原生mac80211和iw/tcpdump进入完整initramfs后，实际Image为24502280B，内核从2MiB加载，已越过原24MiB DTB位置。RAM FIT构建因此明确失败。新RAM FIT把DTB放到32MiB，保留2MiB内核、80MiB FIT输入，签名和实际载荷核对沿用原流程；历史已启动FIT及其manifest保留原地址。

@@ -174,7 +174,7 @@ static inline void rtl_ax_dack_reload_path(const struct rtl_ax_io *io,
 	unsigned int index, i, group;
 	static const u16 manual[4] = { 0xc004, 0xc024, 0xc104, 0xc124 };
 
-	/* Actual reload_C@326488/XB@34cd30 have the same result layout. */
+	/* Actual reload_C@326488/XB@34caf4 have the same result layout. */
 	for (index = 0; index < 2; index++) {
 		unsigned int offset = path * 0x28 + index * 0x14;
 
@@ -201,7 +201,7 @@ static inline int rtl_ax_dack_dac_start(const struct rtl_ax_io *io,
 	unsigned int path, i;
 	int ret;
 
-	/* Actual per-path DACK C@32747c/32767c,XB@34d8fc/34dba8.
+	/* Actual per-path DACK C@32747c/32767c,XB@34d900/34db00.
 	 * C clears force, sets the selector and enables force; XB enables
 	 * force before setting the selector. */
 	for (path = 0; path < 2; path++) {

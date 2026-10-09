@@ -1,0 +1,89 @@
+{
+  "payload": "artifacts/full-pon-radio-dack01-6.18.55",
+  "build_unit": "ponwrt-tyfza1-lan-20261010-033921",
+  "required_files": [
+    {
+      "path": "etc/init.d/pon",
+      "bytes": 2553,
+      "sha256": "f0048b1a8fc17c968c7bac785e37db0ac7b07abba7a28375294d43254936fc67",
+      "mode": "0o755"
+    },
+    {
+      "path": "etc/config/pon",
+      "bytes": 200,
+      "sha256": "78fa5c3642686f41a63f03f221746feaf0053878ad63f8f65cfbbd344bd76a7b",
+      "mode": "0o600"
+    },
+    {
+      "path": "lib/firmware/realtek/rtl9617c/bosa-calibration.bin",
+      "bytes": 1024,
+      "sha256": "07f4014678ce52bee03b0aa2f9e2eabca85419402fcccad6b5ad07e6b18e3b5b",
+      "mode": "0o644"
+    },
+    {
+      "path": "usr/share/rpcd/ucode/luci.tyfza1-pon",
+      "bytes": 2351,
+      "sha256": "58766e66b4c7ba7240df561a5d46874107c4974eefce0526233cf69a492774de",
+      "mode": "0o644"
+    },
+    {
+      "path": "usr/share/rpcd/acl.d/luci-app-tyfza1-pon.json",
+      "bytes": 271,
+      "sha256": "66a1f3b6450ddaf03fe72947f2e098d242c7af805b3c563dbae0981f2277bd24",
+      "mode": "0o644"
+    },
+    {
+      "path": "usr/share/luci/menu.d/luci-app-tyfza1-pon.json",
+      "bytes": 209,
+      "sha256": "1507adcff76042218b73b8efedc482d1ccccccfa96cba7126c310a0678e96309",
+      "mode": "0o644"
+    },
+    {
+      "path": "www/luci-static/resources/view/network/tyfza1-pon.js",
+      "bytes": 5015,
+      "sha256": "2e2605b92492a84d0dad50af413e2cbe60d547229ac5cfc30ce9dd73fd9559c2",
+      "mode": "0o644"
+    },
+    {
+      "path": "usr/sbin/pon-oamd",
+      "bytes": 20489,
+      "sha256": "8cffd733c0b0960b3dac57633f145da0368cd4f8b7af336b074ab04a7e781544",
+      "mode": "0o755"
+    },
+    {
+      "path": "etc/uci-defaults/90-tyfza1-pon-wan",
+      "bytes": 479,
+      "sha256": "5594bef42a0c6598625742c819ea131178c7b46f0abf2b304e042885b9ae9e04",
+      "mode": "0o644"
+    }
+  ],
+  "calibration_matches_original": true,
+  "six_protocol_profiles": true,
+  "private_identity_injected": true,
+  "identity_file_mode": "0600",
+  "WAN_protocol": "dhcp",
+  "runtime_matches_current_preparation": true,
+  "corrected_NACK_and_refill_in_kernel": true,
+  "verification_entry": "final FIT selected configuration",
+  "FIT_kernel_DTB_and_initramfs_match_external_files": true,
+  "initramfs": {
+    "start": 10445808,
+    "end": 21440292,
+    "members": 1054
+  },
+  "BOSA_precedes_SerDes": true,
+  "S25pon_enabled": true,
+  "per_LLID_business_devices_in_kernel": true,
+  "PON_DHCP_WAN_default": true,
+  "hardware_boot_verified": false,
+  "FIT": {
+    "kernel_version": "6.18.55",
+    "cpus": 4,
+    "kernel_load": "0x200000",
+    "fdt_load": "0x1800000",
+    "image_sha256": "856dd8ee281780d5868a354fadab8e6600c6cafc845a7de40ebbef35ab6bc31f",
+    "dtb_sha256": "86a90a0a1b2b5ace56a32b5e799d8b668a2c4d36cdf850fddcb2e769bc719400",
+    "fit_sha256": "fb3f8a543c649ccf85f1a8018f326cf29ee1193f5550409ffcf11aece0791b53",
+    "fit_bytes": 6563620
+  }
+}
