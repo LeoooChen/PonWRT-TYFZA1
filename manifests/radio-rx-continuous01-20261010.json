@@ -1,0 +1,15 @@
+{
+  "last_boot_FIT": "artifacts/full-pon-radio-start-rx01-6.18.55/ram-pcie/image.itb",
+  "last_boot_FIT_source": "3b1b0e5",
+  "active_native_RAM_module": "artifacts/live-radio-rx-continuous01/rtl_ax_ap_live.ko",
+  "sha256": "5c29a4a131b644cdfbf917a341395835f30bb2970986db5c140310fd23ee15f4",
+  "continuous_RX": true,
+  "normal_TX_or_AP_not_yet_connected": true,
+  "frame_headers_recorded_limit": 16,
+  "frame_header_log": "logs/radio-rx-continuous01-20261010.txt",
+  "last_snapshot": "logs/radio-rx-continuous-followup-20261010.txt",
+  "previous_actual_type0_observation": "manifests/radio-rx-stage-cck01-20261010.json",
+  "current_observation_has_new_type0_frames": false,
+  "full_latest_build_unit": "ponwrt-tyfza1-lan-20261010-015433",
+  "full_latest_build_output": "artifacts/full-pon-radio-rx-pipeline01-6.18.55"
+}

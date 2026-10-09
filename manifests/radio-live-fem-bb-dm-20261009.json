@@ -29,11 +29,12 @@
     "DTB_sha256": "ed3a18f2b09dbec988883e9a36b47efdae819c82db47864deb3ad1e4eecd23ac",
     "cold_boot_verified": true,
     "active_RAM_driver_override": {
-      "module": "artifacts/live-radio-cfo01/rtl_ax_ap_live.ko",
-      "sha256": "d10d6ee9ac771c0d624f17fe66e561414635a6753502fdffbfbb5904d055781f",
-      "log": "logs/radio-live-cfo-20261010.txt",
-      "DIG_CFO_in_boot_FIT": false,
-      "extra_diagnostic_command": false
+      "module": "artifacts/live-radio-rx-continuous01/rtl_ax_ap_live.ko",
+      "sha256": "5c29a4a131b644cdfbf917a341395835f30bb2970986db5c140310fd23ee15f4",
+      "log": "logs/radio-rx-continuous01-20261010.txt",
+      "continuous_RX": true,
+      "latest_source_steps_in_boot_FIT": false,
+      "observer_in_production": false
     }
   },
   "radios": [
