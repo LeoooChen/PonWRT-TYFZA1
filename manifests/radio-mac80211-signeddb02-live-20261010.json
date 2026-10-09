@@ -1,0 +1,34 @@
+{
+  "cold_RAM_boot_verified": true,
+  "FIT": {
+    "kernel_version": "6.18.55",
+    "cpus": 4,
+    "kernel_load": "0x200000",
+    "fdt_load": "0x2000000",
+    "image_sha256": "18ae2848ff5ee0ef39042c1170ea4f4cbad5d46c5d52cf9afd62b4248742d512",
+    "dtb_sha256": "ed3a18f2b09dbec988883e9a36b47efdae819c82db47864deb3ad1e4eecd23ac",
+    "fit_sha256": "aca49174f37e88cb4a05e7b433bde85dd1773f1c623f57d6590175bbd24b3368",
+    "fit_bytes": 7315360
+  },
+  "native_driver": "built-in rtl_ax_ap",
+  "kernel_taint": 0,
+  "signed_regdb_cold_load": true,
+  "country": "CN",
+  "MAC80211_actual_received_frames": 64,
+  "all_actual_FCS_matches": true,
+  "types_subtypes": {
+    "(1, 11)": 27,
+    "(1, 12)": 27,
+    "(0, 8)": 9,
+    "(0, 0)": 1
+  },
+  "pcap": "logs/radio-mac80211-signeddb02.pcap",
+  "pcap_sha256": "ddd897bb83c0da5ca01605b57ca60a0b6fea06683d51624906f5903eba01d6fe",
+  "RX_descriptor_errors": 0,
+  "kernel_capture_dropped": 0,
+  "DACK_all_four_paths_done": true,
+  "XEPON_DHCP": "192.168.71.28/24",
+  "public_ping": "2/2",
+  "AP_available": false,
+  "log": "logs/radio-mac80211-signeddb02-20261010.txt"
+}
