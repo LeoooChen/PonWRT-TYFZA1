@@ -294,3 +294,13 @@ edcca_dev_hw_cap@2a5264的C raw caps为2G65/5G60/6G53/carrier65，XB为68/63/未
 signal原生模块SHA256ac4a4911cd6b7dffcbf0367567b22af9f68991be7d44698bcb5aa96e1c0bdfad实机两颗LA9660=65200001，PSD422c=0078f002，解码FFT512/IQ2/HWavg3/path0/input3；EDCCA power offset18、collision_state41、0c70=069bfe60，RX错误0。输出logs/radio-live-signal-20261010.txt。
 
 随后仅在临时diagnostic生成源码中增加post-signal原机BA CAM命令，模块SHA2562ed3be2859134f97dcec7ce05cf92aa0a1e19b6bd2e645f2a785106ae97c8f0e。两颗完成所有已实现的BB步骤后仍收到匹配成功done-ACK，done_acks/RXQ/IRQ各2、错误0。正式overlay不增加此命令。结果logs/radio-live-post-signal-ack-20261010.txt。DFS/DIG及其余BB DM、RF DM与AP业务继续实现。
+
+## 被动接收观测与遗漏的 hal_start RX 策略
+
+在RAM上仅用临时diagnostic源码打开RX DMA3s，复用原生rx_open/start/close与DMA解析函数，没有发送802.11探测帧或收集SSID/完整报文。两颗都只有已知type10 MCU ACK，未观察到type0普通802.11帧或Beacon，RX错误0。结果logs/radio-live-passive-20261010.txt；它不证明普通无线接收成功，也没有单凭无帧结果指定根因。
+
+回到hal_start_C@27792c/XB@27e410，确认MAC init后、BB/RF之前遗漏了实际AP_NORMAL4过滤策略、11264B MPDU limit、RTS阈值和特定DATA子类型过滤。rtw_hal_mac_set_rxfltr_by_mode@1b1514的AP4分支经rx_fltr_opt_2_uint@22fddc得到policy440e/flagmask47ff；原生先更新该策略再明确写MPDU22×512B。RTS API@1eb5b8在c614用highbyte32us/lowbyte16B编码，C/XB HW能力默认时间/长度0，原生保留两项只读启动输入以供后续AP配置。
+
+frame type3在本机rtw_hal_mac_set_rxfltr_by_subtype@1b199c映射MAC DATA2；继续追mac_set_typsbtyp_fltr_opt@230444确认DATA对应ce24、CTRL对应ce28、MGMT对应ce2c。第一份临时版本误把DATA寄存器填ce2c，已在正式提交前按实际callback纠正，并重做板测。不得把“type3”解释成CTRL或沿用未经核对的寄存器排序。原厂DATA13/9/4三种subtype设DROP。
+
+start-rx正式原生模块SHA256db21a32c7fdf103ef89c498017c03fb70be35e5fd1c255b0ad7ec24ece2ff8f0两颗实机RX policy=0816440e、MPDU11264B、MGMT/CTRL55555555、DATA51515455、RX_INFO006f、RTS0000。补齐后被动观测仍无普通802.11帧，故继续完成BB/RF与role/channel阶段，不宣称RX/AP已完成。结果logs/radio-live-start-rx-20261010.txt和logs/radio-live-ap-filter02-20261010.txt。正式源码不保留三秒诊断等待。

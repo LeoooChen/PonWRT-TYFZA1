@@ -224,6 +224,25 @@ static inline void rtl_ax_cmac_receive_filter(const struct rtl_ax_io *io)
 	io->write16(io->ctx, 0xce04, 0x007f);
 }
 
+static inline void rtl_ax_hal_start_receive(const struct rtl_ax_io *io,
+	unsigned int rts_time, unsigned int rts_length)
+{
+	/* Actual hal_start_C/XB normal path uses RX_FLTR_MODE_AP_NORMAL4.
+	 * rtw_hal_mac_set_rxfltr_by_mode@1b170c→converter@22fddc produces
+	 * policy value440e/mask47ff. Its flags precede the original explicit
+	 * MPDU limit11264B,represented by22 units of512B. */
+	rtl_ax_update32(io, 0xce20, 0x000047ff, 0x0000440e);
+	rtl_ax_update32(io, 0xce20, 0x003f0000, 22U << 16);
+	/* hw_rts_th@1eb5b8:32us time units/highbyte,16B length units/lowbyte.
+	 * Actual C/XB hw capability defaults both inputs to0. */
+	io->write16(io->ctx, 0xc614, ((rts_time >> 5) << 8) | ((rts_length >> 4) & 255));
+	/* The board passes frame type3 to subtype filtering. Its wrapper
+	 * maps3→MAC DATA2. Actual callback maps DATA2 toce24. */
+	rtl_ax_update32(io, 0xce24, 3U << 26, 0);
+	rtl_ax_update32(io, 0xce24, 3U << 18, 0);
+	rtl_ax_update32(io, 0xce24, 3U << 8, 0);
+}
+
 static inline void rtl_ax_cmac_medium_access(const struct rtl_ax_io *io)
 {
 	/* cmac_init@23f4e4 and240050. chk_patch_dis_resp_chk returnsfalse
