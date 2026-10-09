@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Linux receive integration for the board-verified C 5GHz/20MHz path.
+/* Linux receive integration for the native C 5GHz and XB2.4GHz paths.
  * Hardware channel and filters reuse the original-backed native controls. */
 #ifndef RTL_AX_AP_MONITOR_H
 #define RTL_AX_AP_MONITOR_H
@@ -118,7 +118,7 @@ static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 	 * GI/LTF25:27 and bandwidth29:31; no PPDU-derived RSSI is invented. */
 	if (bandwidth >= ARRAY_SIZE(bandwidths))
 		return -EOPNOTSUPP;
-	if ((rate >> 7) == 0 && (rate < 4 || rate > 11))
+	if ((rate >> 7) == 0 && (rate > 11 || (radio->chip == RTL_AX_8852C && rate < 4)))
 		return -EOPNOTSUPP;
 	if ((rate >> 7) == 3 && gi_ltf >= ARRAY_SIZE(he_gi))
 		return -EOPNOTSUPP;
@@ -131,13 +131,13 @@ static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 	status->flag = RX_FLAG_ONLY_MONITOR | RX_FLAG_NO_SIGNAL_VAL;
 	if (packet->crc_error || packet->icv_error)
 		status->flag |= RX_FLAG_FAILED_FCS_CRC;
-	status->band = NL80211_BAND_5GHZ;
+	status->band = radio->chip == RTL_AX_8852C ? NL80211_BAND_5GHZ : NL80211_BAND_2GHZ;
 	status->freq = ieee80211_channel_to_frequency(radio->channel.primary, status->band);
 	status->bw = bandwidths[bandwidth];
 	switch (rate >> 7) {
 	case 0:
 		status->encoding = RX_ENC_LEGACY;
-		status->rate_idx = rate - 4;
+		status->rate_idx = radio->chip == RTL_AX_8852C ? rate - 4 : rate;
 		break;
 	case 1:
 		status->encoding = RX_ENC_HT;
@@ -168,15 +168,13 @@ static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 
 static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 {
-	static const u16 rates[] = { 60, 90, 120, 180, 240, 360, 480, 540 };
+	static const u16 rates[] = { 10, 20, 55, 110, 60, 90, 120, 180, 240, 360, 480, 540 };
 	struct ieee80211_hw *hw;
-	unsigned int i;
+	unsigned int i, first_rate = radio->chip == RTL_AX_8852C ? 4 : 0;
+	unsigned int channels = radio->chip == RTL_AX_8852C ? 4 : 13;
+	enum nl80211_band band = radio->chip == RTL_AX_8852C ? NL80211_BAND_5GHZ : NL80211_BAND_2GHZ;
 	int ret;
 
-	/* XB remains on its native RX backend until its channel operation is
-	 * ported; registering it with the default5800MHz BB state is incorrect. */
-	if (radio->chip != RTL_AX_8852C)
-		return 0;
 	hw = ieee80211_alloc_hw(sizeof(radio), &rtl_ax_monitor_ops);
 	if (!hw)
 		return -ENOMEM;
@@ -187,20 +185,20 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	ieee80211_hw_set(hw, RX_INCLUDES_FCS);
 	hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_MONITOR);
 	hw->wiphy->available_antennas_rx = 3;
-	for (i = 0; i < ARRAY_SIZE(radio->channels_5g); i++) {
-		radio->channels_5g[i].band = NL80211_BAND_5GHZ;
-		radio->channels_5g[i].center_freq = 5180 + i * 20;
-		radio->channels_5g[i].hw_value = 36 + i * 4;
+	for (i = 0; i < channels; i++) {
+		radio->channels[i].band = band;
+		radio->channels[i].hw_value = band == NL80211_BAND_5GHZ ? 36 + i * 4 : i + 1;
+		radio->channels[i].center_freq = ieee80211_channel_to_frequency(radio->channels[i].hw_value, band);
 	}
-	for (i = 0; i < ARRAY_SIZE(rates); i++) {
-		radio->rates_5g[i].bitrate = rates[i];
-		radio->rates_5g[i].hw_value = i + 4;
+	for (i = first_rate; i < ARRAY_SIZE(rates); i++) {
+		radio->rates[i - first_rate].bitrate = rates[i];
+		radio->rates[i - first_rate].hw_value = i;
 	}
-	radio->band_5g.channels = radio->channels_5g;
-	radio->band_5g.n_channels = ARRAY_SIZE(radio->channels_5g);
-	radio->band_5g.bitrates = radio->rates_5g;
-	radio->band_5g.n_bitrates = ARRAY_SIZE(radio->rates_5g);
-	hw->wiphy->bands[NL80211_BAND_5GHZ] = &radio->band_5g;
+	radio->band.channels = radio->channels;
+	radio->band.n_channels = channels;
+	radio->band.bitrates = radio->rates;
+	radio->band.n_bitrates = ARRAY_SIZE(rates) - first_rate;
+	hw->wiphy->bands[band] = &radio->band;
 	radio->hw = hw;
 	ret = ieee80211_register_hw(hw);
 	if (ret) {

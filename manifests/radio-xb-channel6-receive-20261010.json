@@ -1,0 +1,23 @@
+{
+  "actual_air_frames": 64,
+  "all_complete_FCS_match": true,
+  "channel": 6,
+  "band": "2.4GHz",
+  "frequency_MHz": 2437,
+  "driver": "native rtl_ax_ap_live, XB only; C remains builtin",
+  "module_sha256": "5294c84b54dde6857ff940f23f03d0e1415c288a5b56552da2e7e3f3db04b0b5",
+  "types_subtypes": {
+    "(0, 8)": 36,
+    "(0, 0)": 1,
+    "(1, 12)": 5,
+    "(2, 4)": 14,
+    "(2, 0)": 2,
+    "(0, 4)": 2,
+    "(0, 5)": 4
+  },
+  "pcap": "logs/radio-xb-mon1-channel6.pcap",
+  "pcap_sha256": "4cfa4915403b977aab098a7ae1d224a72b516a50a8865d928dc07391f4be22c7",
+  "log": "logs/radio-xb-mon1-channel6-20261010.txt",
+  "AP_available": false,
+  "full_RF_calibration_complete": false
+}

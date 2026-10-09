@@ -72,19 +72,20 @@ static inline void rtl_ax_rf_gpio_start(const struct rtl_ax_io *io,
 }
 
 static inline int rtl_ax_rf_crystal_start(const struct rtl_ax_io *io,
-	unsigned int chip, bool shared, u8 flash_cap, struct rtl_ax_rf_start *rf)
+	unsigned int chip, bool independent, u8 flash_cap, struct rtl_ax_rf_start *rf)
 {
 	int ret;
 
 	/* Actual halrf_set_share_xtal_C@30fd14/XB@33f8fc, first RF DM
-	 * operation. C clears8[1:0] when not shared and always uses flash
-	 * xcap; XB uses127 when not shared,flash xcap only when shared. */
-	if (chip == RTL_AX_8852C && !shared) {
+	 * operation. Input is dev_cap.is_indiv_xtal, not its inverse.
+	 * Shared (0): C clears8[1:0]; XB uses127. Independent (1):
+	 * C preserves8[1:0]; XB uses flash xcap. C always uses flash xcap. */
+	if (chip == RTL_AX_8852C && !independent) {
 		ret = rtl_ax_xtal_write(io, 8, 0, 3);
 		if (ret)
 			return ret;
 	}
-	rf->crystal_requested = chip == RTL_AX_8192XB && !shared ? 127 : flash_cap;
+	rf->crystal_requested = chip == RTL_AX_8192XB && !independent ? 127 : flash_cap;
 	ret = rtl_ax_xtal_write(io, 4, rf->crystal_requested, 127);
 	if (ret)
 		return ret;

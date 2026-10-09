@@ -27,6 +27,7 @@
 #include "environment.h"
 #include "rx-pipeline.h"
 #include "channel.h"
+#include "xb-channel.h"
 #include "rf-start.h"
 #include "dack.h"
 
@@ -35,7 +36,7 @@
 static bool txbf_mu;
 static bool ofdma;
 static bool force_fw_tx;
-static bool share_xtal;
+static bool independent_xtal;
 static bool antenna_diversity;
 static unsigned int edcca_mode;
 static unsigned int hw_rts_time, hw_rts_length;
@@ -43,7 +44,7 @@ static unsigned int dfs_region;
 module_param(txbf_mu, bool, 0444);
 module_param(ofdma, bool, 0444);
 module_param(force_fw_tx, bool, 0444);
-module_param(share_xtal, bool, 0444);
+module_param(independent_xtal, bool, 0444);
 module_param(antenna_diversity, bool, 0444);
 module_param(edcca_mode, uint, 0444);
 module_param(hw_rts_time, uint, 0444);
@@ -52,7 +53,7 @@ module_param(dfs_region, uint, 0444);
 MODULE_PARM_DESC(txbf_mu, "Original AP MU beamforming scheduling input");
 MODULE_PARM_DESC(ofdma, "Original AP OFDMA scheduling input");
 MODULE_PARM_DESC(force_fw_tx, "Original AP force firmware TX input");
-MODULE_PARM_DESC(share_xtal, "Original platform shared crystal input");
+MODULE_PARM_DESC(independent_xtal, "Original dev_cap.is_indiv_xtal input");
 MODULE_PARM_DESC(antenna_diversity, "Original RFE54 antenna diversity input");
 MODULE_PARM_DESC(edcca_mode, "Original EDCCA operating mode input");
 MODULE_PARM_DESC(hw_rts_time, "Original hardware RTS time threshold in microseconds");
@@ -80,9 +81,9 @@ struct rtl_ax_ap {
 	struct rtl_ax_dack dack;
 	struct rtl_ax_rx *rx;
 	struct ieee80211_hw *hw;
-	struct ieee80211_supported_band band_5g;
-	struct ieee80211_channel channels_5g[4];
-	struct ieee80211_rate rates_5g[8];
+	struct ieee80211_supported_band band;
+	struct ieee80211_channel channels[13];
+	struct ieee80211_rate rates[12];
 	bool monitor_started;
 	u64 mac80211_packets, tx_unimplemented;
 	struct mutex command_mutex;
@@ -556,7 +557,7 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 				    &radio->flash_calibration, &radio->bb_dm);
 	if (ret)
 		return ret;
-	rtl_ax_bb_dm_physts_start(&radio->io, radio->chip, share_xtal, antenna_diversity, &radio->bb_dm);
+	rtl_ax_bb_dm_physts_start(&radio->io, radio->chip, independent_xtal, antenna_diversity, &radio->bb_dm);
 	rtl_ax_bb_dm_reports_start(&radio->io, &radio->bb_dm);
 	rtl_ax_bb_dm_statistics_start(&radio->io, &radio->bb_dm);
 	rtl_ax_bb_dm_signal_start(&radio->io, radio->chip, edcca_mode, &radio->bb_dm);
@@ -564,7 +565,7 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	rtl_ax_dig_initialize(&radio->io, &radio->dig);
 	rtl_ax_cfo_initialize(&radio->io, radio->chip, radio->flash_calibration.xtal, &radio->cfo);
 	rtl_ax_environment_initialize(&radio->io, radio->chip, &radio->environment);
-	ret = rtl_ax_rf_crystal_start(&radio->io, radio->chip, share_xtal,
+	ret = rtl_ax_rf_crystal_start(&radio->io, radio->chip, independent_xtal,
 				    radio->flash_calibration.xtal, &radio->rf_start);
 	if (ret)
 		return ret;
@@ -831,8 +832,8 @@ static ssize_t radio_physts_show(struct device *dev,
 	ssize_t length;
 
 	length = sysfs_emit(buffer, "configuration=%s BB_CR=client supportability=%llx "
-		"share_xtal=%u antenna_diversity=%u runtime_PPDU_parser=pending\n",
-		dm->physts_ready ? "applied" : "pending", dm->supportability, share_xtal, antenna_diversity);
+		"independent_xtal=%u antenna_diversity=%u runtime_PPDU_parser=pending\n",
+		dm->physts_ready ? "applied" : "pending", dm->supportability, independent_xtal, antenna_diversity);
 	for (page = 0; page < 16; page++)
 		length += sysfs_emit_at(buffer, length, "page=%u bitmap=%08x readback=%08x\n",
 			page, dm->physts_bitmap[page], rtl_ax_bb_physts_get(&radio->io, page));
@@ -1084,12 +1085,14 @@ static ssize_t radio_channel_show(struct device *dev,
 		if (ret)
 			goto unlock;
 	}
-	ret = sysfs_emit(buffer, "native_operation=5GHz/20MHz configured=%u band=%u primary=%u center=%u "
+	ret = sysfs_emit(buffer, "native_operation=%s/20MHz configured=%u band=%u primary=%u center=%u "
 		"BB_frequency=%u BB_channel=%u RF18_analog=%05x,%05x digital=%05x,%05x "
-		"external_loss=%d,%d RFK=pending mac80211_channel=pending\n",
+		"external_loss=%d,%d RFK=pending mac80211_channel=%s\n",
+		radio->chip == RTL_AX_8852C ? "5GHz" : "2.4GHz",
 		channel->configured, channel->band, channel->primary, channel->center,
 		rtl_ax_read32(radio, 0x14e30) & 0x1fff, (rtl_ax_read32(radio, 0x10734) >> 16) & 255,
-		analog[0], analog[1], digital[0], digital[1], channel->external_loss[0], channel->external_loss[1]);
+		analog[0], analog[1], digital[0], digital[1], channel->external_loss[0], channel->external_loss[1],
+		radio->hw ? "connected" : "pending");
 unlock:
 	mutex_unlock(&radio->command_mutex);
 	return ret;
@@ -1100,12 +1103,12 @@ static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int chan
 {
 	int ret;
 
-	if (radio->chip != RTL_AX_8852C)
-		return -EOPNOTSUPP;
 	rtl_ax_rx_close(radio->rx);
 	rtl_ax_hci_pause(&radio->io);
 	pci_clear_master(radio->pdev);
-	ret = rtl_ax_c_receive_channel20(&radio->io, &radio->phy, &radio->bb_dm, channel, &radio->channel);
+	ret = radio->chip == RTL_AX_8852C ?
+		rtl_ax_c_receive_channel20(&radio->io, &radio->phy, &radio->bb_dm, channel, &radio->channel) :
+		rtl_ax_xb_receive_channel20(&radio->io, &radio->phy, &radio->bb_dm, channel, &radio->channel);
 	pci_set_master(radio->pdev);
 	rtl_ax_h2c_start(&radio->io);
 	rtl_ax_rx_open(radio->rx);
@@ -1144,7 +1147,7 @@ static ssize_t radio_rf_start_show(struct device *dev,
 		"NCTL=%s pairs=%u reset_observations=%u reset_readback=%08x "
 		"NCTL8000=%08x NCTL8080=%08x RCK=%s code=%u,%u done=%u,%u "
 		"observations=%u,%u DACK=%s RX_DCK=pending calibration=pending\n",
-		rf->crystal_ready ? "applied" : "pending", share_xtal, rf->crystal_requested,
+		rf->crystal_ready ? "applied" : "pending", independent_xtal, rf->crystal_requested,
 		rf->crystal_observed[0], rf->crystal_observed[1], rf->share_control,
 		rf->gpio_ready ? "applied" : "pending", rtl_ax_read32(radio, 0x1033c),
 		rtl_ax_read32(radio, 0x15890), rtl_ax_read32(radio, 0x17890),

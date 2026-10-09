@@ -371,7 +371,7 @@ rx_mode接入本机RX_FLTR_MODE SNIFFER0、SCAN1、AP_NORMAL4：本机wrapper@1b
 
 ## 2026-10-10 RF晶振、RF GPIO、NCTL和RCK实机阶段
 
-RF启动开始于本机share_xtal_C@30fd14/XB@33f8fc。native share_xtal是明确的host配置输入，当前false；尚未读到原机运行时dev_cap的此字段，不把此默认宣称为原机运行值。C非共享时先清XSI8低2位，然后XSI4/5低7位写flash xcap71；共享时保留XSI8，仍写flash。XB非共享写127，共享才写flash63。这一点不能统一成两颗都写flash。mac_read_xtal_si@21e364命令为81000000|address，busy31、50us观察、返回0271字节；native按此读回两颗XSI4/5分别47/47和7f/7f，XSI8均34。CFO host默认值保持其原机较早initializer中的flash来源，周期控制继续接入。
+RF启动开始于本机share_xtal_C@30fd14/XB@33f8fc。native independent_xtal对应原厂dev_cap.is_indiv_xtal，当前false（共享）；尚未读到原机运行时此字段，不把此默认宣称为原机运行值。C共享时先清XSI8低2位，然后XSI4/5低7位写flash xcap71；独立晶振时保留XSI8，仍写flash。XB共享写127，独立晶振才写flash63。这一点不能统一成两颗都写flash。mac_read_xtal_si@21e364命令为81000000|address，busy31、50us观察、返回0271字节；native按此读回两颗XSI4/5分别47/47和7f/7f，XSI8均34。CFO host默认值保持其原机较早initializer中的flash来源，周期控制继续接入。
 
 RF GPIO采用set_gpio_C@30f69c/XB@33e32c实际RFE54分支。C BB pin配置A10/TRSW/inverse1、A7/LNA/inverse1、A6/PAPE/inverse0，B1/TRSW/inverse1、B2/LNA/inverse1、B3/PAPE/inverse0，额外A11/inverse1/ZERO7。XB为A11/PAPE/inverse0、A7/TRSW/inverse1、A6/LNA/inverse1，B1/PAPE/inverse0、B2/TRSW/inverse1、B3/LNA/inverse1，额外A12/inverse1/ZERO7。对应MAC GPIO func19直接从本机C.rodata+1f820、XB+21508的指针表解析ELF relocation，每项12B记录func/reg/mask/value。全部14个本板pin记录均为地址2d0+pin/2、低/高nibble选择8。
 
@@ -418,3 +418,17 @@ DAC 两路保持本机差异：C 清 TX force → 选择时钟 → 开 force，X
 SIGNEDDB02正式完整构建服务ponwrt-tyfza1-lan-20261010-041510成功结束，source c4458e1。实际启动FIT SHA256aca49174f37e88cb4a05e7b433bde85dd1773f1c623f57d6590175bbd24b3368、7315360B；内核18ae2848ff5ee0ef39042c1170ea4f4cbad5d46c5d52cf9afd62b4248742d512、DTB ed3a18f2b09dbec988883e9a36b47efdae819c82db47864deb3ad1e4eecd23ac。经U-Boot实际验证签名并冷启动，内置rtl_ax_ap、kernel taint0，无RAM覆盖模块。最终FIT的内核、DTB、initramfs及原机校准/身份输入均已核对；原生radio代码与链接ELF逐项对应。
 
 新镜像冷启动即读到正式db/p7s配对，两文件SHA与release清单一致，CN规则接受，日志无缺失签名/无效db信息。频道36 mon0再次得到64个实际Radiotap帧（RTS27、CTS27、Beacon9、Association Request1），完整FCS全部匹配。native rx_unhandled=0、格式/tag错误0、内核抓包丢包0；两颗DACK各路完成，XEPON DHCP192.168.71.28、公网2/2。记录`logs/radio-mac80211-signeddb02-serial-20261010.txt`、`logs/radio-mac80211-signeddb02-20261010.txt`、`logs/radio-mac80211-signeddb02.pcap`、`manifests/radio-mac80211-signeddb02-live-20261010.json`。当前原机运行此正式镜像，mon0保留接收。接收阶段已达到用户态真实帧验收，继续按原机补XB频道、RX_DCK及原生AP收发/关联，不把监听接收视为完整AP移植。
+
+## 2026-10-10 XB2.4GHz频道与原生mac80211交付
+
+继续前的原机XB统计：CCK正确110，OFDM正确0/错误65535，BB默认5800MHz/SCO45/channel0。`xb-channel.h`按本机ctrl_bw_ch@2f35fc实现PHY0/BAND2G/20MHz：MAC带宽 → CCK SCO → BB频率/增益/校准/带宽 → RF频道/带宽。LNA、bypass、op1dB和TIA地址及mask从实际ELF `.rodata+2b9a8+940..a98`逐项提取；两路normal/hidden校准按A→B保留共享CCK2340回填语义，RFE54 external FEM的WB ELNA/LNA/TIA、GS及ELNA均接入。
+
+本板factory trim cc、ADC trim f9低5位25，实际bw_setting@2ede40走2ee188专用参数8/2/2/4/15/10、c0ec/c1ec高byte3；随后hardwareCV1分支写12a0/32a0高字段146，两次均清c000[18]，BW20选择c0ec/c1ec[14:13]=2。原机2.4GHz wrapper最终走2f3954关闭spur，不能误写5GHz151/153/155的滤波参数。原机CCK使能、loop filter20值2、5M关闭、TSSI reset、BB reset原顺序保留；频道14专用SCO及CCK系数也按原机常量处理，当前CN无线接口公布1..13频道。
+
+RF ctrl_ch@33ba58对A模拟/数字→B模拟/数字分别调用ch_setting@33b72c，更新RF18前按频道1..4/5..10/11..13/14写RFbe=a0/800a2/800a4/a5，保留A路30次读取/5us延迟及重写的实际语义，B路直接延迟5us。RF18按原机清掩码、频道值写入并等100us；随后ctrl_bw@33b628对各路各bank保留20MHz位。op5k的初始化host备份/周期策略继续接入，RX_DCK和完整RFK仍待后续移植。
+
+首个channel模块9d4d3124da079cf7ce1dc2d65025e1bc3fa2e1d48cc0a64f2fd95b4c2b51fe63只替换XB，C内置mon0持续接收。频道1 BB2412/SCO109/channel1，模拟RF18两路01c01、数字00c01。1/6/11各5秒被动窗口中，频道6首次得到正确OFDM2、HT3，累计Beacon40；到频道11 host正确139、Beacon71，格式/tag错误0。原始记录`logs/radio-xb-channel-passive-20261010.txt`保留了仍较多的PHY OFDM错误。
+
+原生mac80211增加XB13个2.4GHz频道、12个CCK/OFDM速率，RX metadata按实际芯片转换band/frequency及legacy rate索引。模块5294c84b54dde6857ff940f23f03d0e1415c288a5b56552da2e7e3f3db04b0b5在原机注册phy1/mon1，频道6实测2437MHz；tcpdump获得64帧，其中Beacon36、普通Data2、Null Data14及其他管理/控制帧，完整FCS全匹配、内核丢包0，native rx_unhandled=0、格式/tag错误0。证据`logs/radio-xb-mon1-channel6.pcap`、`logs/radio-xb-mon1-channel6-20261010.txt`、`manifests/radio-xb-channel6-receive-20261010.json`。当前C内置原生mon0与XB原生live mon1同时工作，未加载原厂host模块。
+
+复核原机晶振字段时确认此前命名有误：实际RF函数读取phl_com+58fd的`dev_cap.is_indiv_xtal`，0代表共享、1代表独立，而不是share_xtal。native输入改名independent_xtal，保留已实测的值0及对应寄存器动作。BB supportability也按此字段0关闭CFO tracking能力；C在0时清XSI8低2位，XB在0时写127，在1时写flash63。上述晶振章节语义已修正；旧日志中的share字段是旧名称下的实际布尔输入，数值不变。本机运行原厂时的最终赋值仍未读到。GPL存在仅dev_id2启用independent的triband条件，而本机实际final_cap_decision函数没有直接写58fd，继续追原机字段初始化来源。

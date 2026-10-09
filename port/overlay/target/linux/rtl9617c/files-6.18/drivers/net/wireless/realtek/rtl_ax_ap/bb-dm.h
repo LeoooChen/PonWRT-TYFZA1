@@ -188,15 +188,15 @@ static inline void rtl_ax_bb_physts_set(const struct rtl_ax_io *io,
 }
 
 static inline void rtl_ax_bb_dm_physts_start(const struct rtl_ax_io *io, unsigned int chip,
-	bool share_xtal, bool antenna_diversity, struct rtl_ax_bb_dm *dm)
+	bool independent_xtal, bool antenna_diversity, struct rtl_ax_bb_dm *dm)
 {
 	unsigned int page;
 	u32 bitmap;
 
 	/* Actual normal-mode supportability_default@2b03dc. User-controlled
-	 * platform inputs retain the original sharing/diversity policy. */
+	 * platform inputs retain the original independent-crystal/diversity policy. */
 	dm->supportability = chip == RTL_AX_8852C ? 0x38fa : 0x8fb;
-	if (!share_xtal)
+	if (!independent_xtal)
 		dm->supportability &= ~BIT_ULL(6);
 	if (antenna_diversity)
 		dm->supportability |= BIT_ULL(10);
