@@ -1,0 +1,21 @@
+{
+  "issues": [
+    "BER notify timeout stopped startup",
+    "post_init overwritten INTx enable after driver binding",
+    "ATU fixture inverted production completion"
+  ],
+  "native_source_sha256": "4f31050e1390f059d8d550eb1c7f1d48d21989514ede0454cb8a1f0d1b709d76",
+  "regression": "logs/pcie-host-control-test.json",
+  "FIT": {
+    "kernel_version": "6.18.55",
+    "cpus": 4,
+    "kernel_load": "0x200000",
+    "fdt_load": "0x1800000",
+    "image_sha256": "c0c3167072adf15e3f650c6ae752f00485ce722cde8732e208c149795dcdd76b",
+    "dtb_sha256": "60d1b8a0388516325024c390c13edcdb4376d910c34722223060d247a39efde8",
+    "fit_sha256": "22cbf8e954a2b0e06aeaf83241691a4cd4acbddb960552d8d6a009247b773381",
+    "fit_bytes": 6207716
+  },
+  "final_payload_verification": "artifacts/full-pon-pcie-control02-6.18.55/pcie-payload-verification.json",
+  "hardware_verified": false
+}

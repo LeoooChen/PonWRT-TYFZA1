@@ -57,6 +57,11 @@ static void native_delay(void *context){(void)context;}
 static int native_wait(void *context,unsigned int reg,unsigned int mask){
  (void)context;return (memory[reg/4]&mask)==mask?0:-ETIMEDOUT;
 }
+static int atu_wait_clear(void *context,unsigned int reg,unsigned int mask){
+ (void)context;assert(reg==0 && mask==BIT(31));
+ assert(memory[reg/4]&mask);memory[reg/4]&=~mask;
+ return 0;
+}
 '''
 test = r'''
 int main(void){
@@ -79,10 +84,12 @@ int main(void){
  memset(memory,0,sizeof(memory));used=0;
  assert(rtl_pcie_serdes_calibrate(&io,0,'B')==-ETIMEDOUT);
  /* Literal Taurus ATU fixture:512MiB DDR,64KiB pages,CCI alias4. */
- used=0;assert(!rtl_pcie_atu_ddr(&io,0x2000,4));
+ struct rtl_pcie_io atu_io={NULL,native_read,native_write,NULL,atu_wait_clear};
+ used=0;assert(!rtl_pcie_atu_ddr(&atu_io,0x2000,4));
+ assert(memory[0]==1); /* Command completed after the hardware cleared busy. */
  assert(memory[1]==0 && memory[2]==0xffffe000 && memory[3]==0x40000);
  assert(memory[4]==0x07ff0022 && memory[5]==0x80 && memory[6]==0x80);
- puts("Native PCIe:2048 stock-calibration write traces match;analog timeout and512MiB CCI ATU fixture passed");
+ puts("Native PCIe:2048 stock-calibration write traces match;analog timeout and512MiB ATU data fixture passed");
 }
 '''
 with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='pcie-sequence-') as directory:
@@ -97,5 +104,6 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='pcie-sequence-'
     'native_header_sha256': hashlib.sha256(header.read_bytes()).hexdigest(),
     'stock_write_trace_vectors': 2048, 'profiles': ['A', 'B'], 'controllers': [0, 1],
     'lanes': 1, 'analog_timeout_reported': True, 'DDR_ATU_fixture_bytes': 536870912,
+    'ATU_fixture_completion': 'mock hardware clears busy;production wait tested separately',
     'sanitizers': ['ASan', 'UBSan'], 'hardware_verified': False,
 }, indent=2) + '\n')

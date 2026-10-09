@@ -28,6 +28,14 @@ tools/verify_pcie_dtb.py对实际编译DTB核对reset引脚/极性、PCIe与cohe
 
 完整构建服务ponwrt-tyfza1-lan-20261009-102606正常退出0。载荷artifacts/full-pon-pcie04-6.18.55/ram-pcie/image.itb，6207972字节，SHA256 a5d38ef7c243371438b02061b20c9e0d834c5f9c5da14926c0b1b8fbaa72d139。最终选中的DTB包含101/102，DTB SHA256为60d1b8a0388516325024c390c13edcdb4376d910c34722223060d247a39efde8；实际kernel/DTB与外置目录一致。PON载荷的校准、身份和内置initramfs995项一致验证通过。
 
+## 2026-10-09：BER、中断时序和ATU等待修正
+
+原厂BER notify未就绪只记录诊断并继续释放端点与建链。原生host startup现保持同一行为；offset校准和ATU初始化分别按实际错误处理。实际host startup在模拟内存运行16组A/B、两个控制器及两bank BER状态组合，均在BER缺失时继续准备DMA并释放端点。
+
+Linux6.18的DesignWare post_init在pci_host_probe之后执行，原生驱动已移除该阶段对wrapper中断的设置。MSI初始化完成后，在设备probe前安装wrapper parent handler并使能MSI；IRQ enable按irq_lock读改写，只增加MSI位，保留INTx各自的使能状态。挂接parent IRQ交由DesignWare MSI生命周期清理，避免domain释放后仍留parent handler。16组INTx组合及MSI初始化失败回归通过，设备绑定后的pending状态没有被清除。
+
+旧序列测试的ATU callback误用了SerDes就绪位为1的条件。该fixture现模拟硬件清除busy；新增test_pcie_host_control.py直接运行实际rtl_atu_wait与当前Linux iopoll宏，覆盖read/write busy位30/31的延迟清除、立即完成和超时六组。结果为logs/pcie-host-control-test.json。上述为离线代码验证，设备仍未连接。
+
 ## 下一步
 
 继续落实两颗radio的cut/PCI subsystem/RFE及固件协议，按原生mac80211/cfg80211接口完成无线驱动。设备恢复后先验PCIe枚举与DMA，再验独立AP收发；基础无线完成后，按已读资料接专用NI TX与QM metadata路径，最后完成无线NE卸载和原生UBI交付。

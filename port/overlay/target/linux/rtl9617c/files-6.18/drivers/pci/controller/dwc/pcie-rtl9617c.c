@@ -8,6 +8,7 @@
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/irqdomain.h>
+#include <linux/irqchip/chained_irq.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/phy/phy.h>
@@ -44,6 +45,7 @@ struct rtl_pcie {
 	u32 atu_saved[8][6], atu_enabled;
 	bool clock_on, phy_on, atu_owned;
 };
+static void rtl_pcie_irq(struct irq_desc *desc);
 
 static struct rtl_pcie *rtl_pcie_from_dw(struct dw_pcie *pci)
 {
@@ -168,6 +170,7 @@ static int rtl_pcie_host_start(struct dw_pcie_rp *pp)
 		return ret;
 	pcie->clock_on = true;
 	gpiod_set_value_cansleep(pcie->endpoint_reset, 1);
+	writel(readl(pcie->global + GLB_IRQ_STATUS), pcie->global + GLB_IRQ_STATUS);
 	ret = reset_control_assert(pcie->core_reset);
 	if (ret)
 		goto stop;
@@ -201,7 +204,8 @@ static int rtl_pcie_host_start(struct dw_pcie_rp *pp)
 	if (!ret)
 		ret = rtl_serdes_wait(pcie, 0x17c, BIT(0));
 	if (ret)
-		goto stop;
+		dev_info(pcie->pci.dev, "PCIe%u BER notify not ready (%08x/%08x); continue link training\n",
+			 pcie->index, readl(pcie->serdes + 0x7c), readl(pcie->serdes + 0x17c));
 	ret = rtl_atu_prepare(pcie);
 	if (ret)
 		goto stop;
@@ -219,7 +223,12 @@ stop:
 }
 static void rtl_pcie_host_stop(struct dw_pcie_rp *pp)
 {
-	rtl_pcie_power_stop(rtl_pcie_from_dw(to_dw_pcie_from_pp(pp)));
+	struct rtl_pcie *pcie = rtl_pcie_from_dw(to_dw_pcie_from_pp(pp));
+
+	writel(0, pcie->global + GLB_IRQ_ENABLE);
+	irq_set_chained_handler_and_data(pcie->irq, NULL, NULL);
+	synchronize_irq(pcie->irq);
+	rtl_pcie_power_stop(pcie);
 }
 static bool rtl_pcie_link_up(struct dw_pcie *pci)
 {
@@ -243,27 +252,33 @@ static void rtl_pcie_link_stop(struct dw_pcie *pci)
 }
 static int rtl_pcie_msi_init(struct dw_pcie_rp *pp)
 {
-	/* Wrapper IRQ multiplexes MSI and INTx. The generic MSI domain remains
- * owned by DesignWare; this glue supplies its parent interrupt handler. */
-	pp->has_msi_ctrl = true;
-	pp->msi_irq[0] = -1;
-	pp->num_vectors = 32;
-	return dw_pcie_msi_host_init(pp);
-}
-static void rtl_pcie_post_init(struct dw_pcie_rp *pp)
-{
 	struct rtl_pcie *pcie = rtl_pcie_from_dw(to_dw_pcie_from_pp(pp));
+	unsigned long flags;
+	int ret;
 
+	/* Wrapper IRQ multiplexes MSI and INTx. The generic MSI domain remains
+	 * owned by DesignWare; this glue supplies its parent interrupt handler. */
+	pp->has_msi_ctrl = true;
+	pp->msi_irq[0] = pcie->irq;
+	pp->num_vectors = 32;
+	ret = dw_pcie_msi_host_init(pp);
+	if (ret)
+		return ret;
+	irq_set_chained_handler_and_data(pcie->irq, rtl_pcie_irq, pcie);
+
+	/* Admit MSI before pci_host_probe() can bind an endpoint driver. INTx
+	 * unmask uses the same lock and retains ownership of its enable bits. */
 	writel(~0U, pcie->global + GLB_MSI_ENABLE);
-	writel(readl(pcie->global + GLB_IRQ_STATUS), pcie->global + GLB_IRQ_STATUS);
-	/* INTx lines are admitted by their IRQ chip only after Linux maps them. */
-	writel(pp->has_msi_ctrl ? GLB_MSI_IRQ : 0, pcie->global + GLB_IRQ_ENABLE);
+	raw_spin_lock_irqsave(&pcie->irq_lock, flags);
+	writel(readl(pcie->global + GLB_IRQ_ENABLE) | GLB_MSI_IRQ,
+	       pcie->global + GLB_IRQ_ENABLE);
+	raw_spin_unlock_irqrestore(&pcie->irq_lock, flags);
+	return 0;
 }
 static const struct dw_pcie_host_ops rtl_pcie_host_ops = {
 	.init = rtl_pcie_host_start,
 	.deinit = rtl_pcie_host_stop,
 	.msi_init = rtl_pcie_msi_init,
-	.post_init = rtl_pcie_post_init,
 };
 static const struct dw_pcie_ops rtl_pcie_ops = {
 	.link_up = rtl_pcie_link_up,
@@ -304,21 +319,21 @@ static const struct irq_domain_ops rtl_pcie_intx_ops = {
 	.map = rtl_pcie_intx_map,
 	.xlate = irq_domain_xlate_onecell,
 };
-static irqreturn_t rtl_pcie_irq(int irq, void *data)
+static void rtl_pcie_irq(struct irq_desc *desc)
 {
-	struct rtl_pcie *pcie = data;
+	struct rtl_pcie *pcie = irq_desc_get_handler_data(desc);
+	struct irq_chip *chip = irq_desc_get_chip(desc);
 	u32 status = readl(pcie->global + GLB_IRQ_STATUS);
 	unsigned int pin;
 
-	if (!(status & (GLB_INTX_IRQS | GLB_MSI_IRQ)))
-		return IRQ_NONE;
-	if (status & GLB_MSI_IRQ)
+	chained_irq_enter(chip, desc);
+	if (pcie->pci.pp.has_msi_ctrl && status & GLB_MSI_IRQ)
 		dw_handle_msi_irq(&pcie->pci.pp);
 	for (pin = 0; pin < 4; pin++)
 		if (status & BIT(pin * 2))
 			generic_handle_domain_irq(pcie->intx, pin);
 	writel(status, pcie->global + GLB_IRQ_STATUS);
-	return IRQ_HANDLED;
+	chained_irq_exit(chip, desc);
 }
 static void rtl_pcie_phy_exit(void *data)
 {
@@ -415,15 +430,13 @@ static int rtl_pcie_probe(struct platform_device *pdev)
 	if (!pcie->intx)
 		return -ENOMEM;
 	platform_set_drvdata(pdev, pcie);
-	ret = devm_request_irq(dev, pcie->irq, rtl_pcie_irq, 0, dev_name(dev), pcie);
-	if (ret)
-		goto remove_domain;
+	irq_set_chained_handler_and_data(pcie->irq, rtl_pcie_irq, pcie);
 	ret = dw_pcie_host_init(&pcie->pci.pp);
 	if (!ret)
 		return 0;
 	writel(0, pcie->global + GLB_IRQ_ENABLE);
+	irq_set_chained_handler_and_data(pcie->irq, NULL, NULL);
 	synchronize_irq(pcie->irq);
-remove_domain:
 	irq_domain_remove(pcie->intx);
 	return ret;
 }
@@ -441,6 +454,7 @@ static void rtl_pcie_shutdown(struct platform_device *pdev)
 	struct rtl_pcie *pcie = platform_get_drvdata(pdev);
 
 	writel(0, pcie->global + GLB_IRQ_ENABLE);
+	irq_set_chained_handler_and_data(pcie->irq, NULL, NULL);
 	synchronize_irq(pcie->irq);
 	rtl_pcie_link_stop(&pcie->pci);
 	rtl_pcie_power_stop(pcie);
