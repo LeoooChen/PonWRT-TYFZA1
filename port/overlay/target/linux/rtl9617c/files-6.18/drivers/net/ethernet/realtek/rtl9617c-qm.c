@@ -133,19 +133,19 @@ static int rtl_qm_ingress(struct rtl_qm_rx *rx, unsigned int port)
 	writel(~(port << 6), rx->ni + 0x1e10);
 	writel(~0U, rx->ni + 0x1e0c);
 	writel(~0U, rx->ni + 0x1e08);
-	ret = rtl_qm_indirect(rx, 0x1e04, BIT(31) | BIT(30));
+	ret = rtl_qm_indirect(rx, 0x1e04, BIT(31) | BIT(30) | port);
 	if (ret)
 		return ret;
 	writel(~0xfc0U | (port << 6), rx->ni + 0x1e10);
 	writel(~0U, rx->ni + 0x1e0c);
 	writel(~0U, rx->ni + 0x1e08);
-	ret = rtl_qm_indirect(rx, 0x1e04, BIT(31) | BIT(30) | 512);
+	ret = rtl_qm_indirect(rx, 0x1e04, BIT(31) | BIT(30) | (512 + port));
 	if (ret)
 		return ret;
 	writel(0, rx->ni + 0x1e20);
 	writel((3 << 5) | (16 << 8), rx->ni + 0x1e1c);
 	writel(BIT(6), rx->ni + 0x1e18);
-	ret = rtl_qm_indirect(rx, 0x1e14, BIT(31) | BIT(30));
+	ret = rtl_qm_indirect(rx, 0x1e14, BIT(31) | BIT(30) | port);
 	if (ret)
 		return ret;
 	writel(BIT(1), rx->ni + 0x1428);
@@ -224,7 +224,6 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	int ret;
 	const struct rtl_dq_io dq = {rx, rtl_dq_read, rtl_dq_write, rtl_dq_indirect};
 
-	rx->lan_source = port;
 	rx->deepq_configured = false;
 	writel(readl(ni + RMU_CTRL) & ~BIT(31), ni + RMU_CTRL);
 	writel(readl(ni + ES_CTRL) & ~BIT(31), ni + ES_CTRL);
@@ -309,9 +308,13 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	}
 	writel(0xff, ni + 0x63c4);
 	writel(readl(ni + 0xa1bc) & ~0xffU, ni + 0xa1bc);
-	ret = rtl_qm_ingress(rx, port);
-	if (ret)
-		return ret;
+	/* All registered LAN sources use the shared CPU0 receive pool. */
+	for (i = 0; i < ARRAY_SIZE(rx->lan); i++)
+		if (rcu_access_pointer(rx->lan[i])) {
+			ret = rtl_qm_ingress(rx, i);
+			if (ret)
+				return ret;
+		}
 	ret = rtl_qm_pon_destination_map(rx);
 	if (ret)
 		return ret;
@@ -366,6 +369,8 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			u32 command, length_word, address, offset, h0, h1;
 			unsigned int length, header;
 			struct sk_buff *skb;
+			struct net_device *input;
+			unsigned int source;
 			bool refill_buffer = false;
 			full = false;
 
@@ -406,9 +411,9 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				goto consume;
 			}
 			memcpy(skb_put(skb, length), rx->memory + offset + 32 + header, length);
-			if (FIELD_GET(GENMASK(14, 9), h1) != rx->lan_source) {
+			source = FIELD_GET(GENMASK(14, 9), h1);
+			if (source >= ARRAY_SIZE(rx->lan)) {
 				struct rtl9617c_ni_endpoint *endpoint;
-				unsigned int source = FIELD_GET(GENMASK(14, 9), h1);
 
 				rcu_read_lock();
 				endpoint = rcu_dereference(rx->pon);
@@ -422,9 +427,12 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				rcu_read_unlock();
 				goto consume;
 			}
-			if (!netif_running(dev)) {
+			rcu_read_lock();
+			input = rcu_dereference(rx->lan[source]);
+			if (!input || !netif_running(input)) {
 				dev->stats.rx_dropped++;
 				dev_kfree_skb_any(skb);
+				rcu_read_unlock();
 				goto consume;
 			}
 			if (rx->trace_count < ARRAY_SIZE(rx->trace) && length >= 46 &&
@@ -438,10 +446,11 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				trace[4] = h0; trace[5] = h1;
 				trace[6] = get_unaligned_be32(skb->data + 42);
 			}
-			skb->protocol = eth_type_trans(skb, dev);
-			dev->stats.rx_packets++;
-			dev->stats.rx_bytes += length;
+			skb->protocol = eth_type_trans(skb, input);
+			input->stats.rx_packets++;
+			input->stats.rx_bytes += length;
 			napi_gro_receive(napi, skb);
+			rcu_read_unlock();
 consume:
 			/* Retire the EPP/BID before returning its RAM to the hardware pool. */
 			mb();

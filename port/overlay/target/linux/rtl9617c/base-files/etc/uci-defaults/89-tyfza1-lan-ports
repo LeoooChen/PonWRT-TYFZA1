@@ -1,0 +1,12 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+# Four native NI ports share one OpenWrt LAN bridge.
+for device in $(uci -q show network | sed -n 's/^network\.\([^.=]*\)=device$/\1/p'); do
+	[ "$(uci -q get network.$device.name)" = br-lan ] || continue
+	uci -q delete network.$device.ports
+	for port in eth0 eth1 eth2 eth3; do
+		[ -e /sys/class/net/$port ] && uci add_list network.$device.ports=$port
+	done
+done
+uci commit network
+exit 0

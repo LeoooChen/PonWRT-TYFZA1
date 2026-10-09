@@ -9,5 +9,6 @@
 	      <4 0xf4320098 0 4>;
 	reg-names = "ni", "xram", "dma-lso", "qm-axi-reorder", "block-reset";
 	realtek,qm-rx;
+	realtek,lan-phys = <&phy0 &phy1 &phy2 &phy3>;
 	interrupts = <GIC_SPI 84 IRQ_TYPE_LEVEL_HIGH>;
 };

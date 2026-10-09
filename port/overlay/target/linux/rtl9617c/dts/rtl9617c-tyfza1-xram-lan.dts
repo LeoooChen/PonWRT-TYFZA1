@@ -8,6 +8,9 @@
 	phy0: ethernet-phy@1 {
 		reg = <1>;
 	};
+	phy1: ethernet-phy@2 { reg = <2>; };
+	phy2: ethernet-phy@3 { reg = <3>; };
+	phy3: ethernet-phy@4 { reg = <4>; };
 };
 
 &{/soc} {

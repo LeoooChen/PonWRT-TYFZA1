@@ -51,8 +51,19 @@
 #define PKT_VALID BIT(19)
 #define PKT_ERRORS (GENMASK(23, 20) | BIT(25) | BIT(26))
 
+struct rtl_xram;
+struct rtl_lan {
+	struct rtl_xram *shared;
+	unsigned int port;
+};
+
 struct rtl_xram {
+	/* Primary netdev embeds the shared engine;other LANs only carry this
+	 * initial per-port member and use the same NI/DMA/QM owner. */
+	struct rtl_lan lan;
 	struct net_device *netdev;
+	struct net_device *ports[4];
+	unsigned int registered_ports;
 	void __iomem *ni;
 	void __iomem *xram;
 	struct napi_struct napi;
@@ -73,6 +84,11 @@ struct rtl_xram {
 	unsigned int engine_users;
 	struct rtl_fe *fe;
 };
+
+static struct rtl_xram *rtl_shared(struct net_device *dev)
+{
+	return ((struct rtl_lan *)netdev_priv(dev))->shared;
+}
 
 int rtl9617c_ni_fe_add_port(struct device *dev,struct net_device *netdev,unsigned int llid)
 {
@@ -159,7 +175,7 @@ static void rtl_adjust_link(struct net_device *dev)
 
 static void rtl_rx_mode(struct net_device *dev)
 {
-	struct rtl_xram *priv = netdev_priv(dev);
+	struct rtl_xram *priv = rtl_shared(dev);
 	bool accept_all = (dev->flags & (IFF_PROMISC | IFF_ALLMULTI)) ||
 			  !netdev_mc_empty(dev);
 
@@ -258,6 +274,14 @@ static enum hrtimer_restart rtl_timer(struct hrtimer *timer)
 		if (endpoint && rtl_dma_tx_available(&priv->dma))
 			endpoint->wake(endpoint);
 		rcu_read_unlock();
+		if (rtl_dma_tx_available(&priv->dma)) {
+			unsigned int port;
+
+			for (port = 0; port < ARRAY_SIZE(priv->ports); port++)
+				if (priv->ports[port] && netif_running(priv->ports[port]) &&
+				    netif_queue_stopped(priv->ports[port]))
+					netif_wake_queue(priv->ports[port]);
+		}
 	} else if (priv->tx_pending && rtl_pointer(priv, TX_READ) == rtl_pointer(priv, TX_WRITE)) {
 		priv->tx_pending = false;
 		priv->netdev->stats.tx_packets++;
@@ -280,7 +304,8 @@ static irqreturn_t rtl_rx_irq(int irq, void *data)
 
 static netdev_tx_t rtl_xmit(struct sk_buff *skb, struct net_device *dev)
 {
-	struct rtl_xram *priv = netdev_priv(dev);
+	struct rtl_lan *lan = netdev_priv(dev);
+	struct rtl_xram *priv = lan->shared;
 	unsigned int pointer, offset, wire, i;
 	unsigned long flags;
 	u32 crc;
@@ -292,7 +317,11 @@ static netdev_tx_t rtl_xmit(struct sk_buff *skb, struct net_device *dev)
 	}
 	spin_lock_irqsave(&priv->tx_lock, flags);
 	if (priv->dma_tx) {
-		netdev_tx_t result = rtl_dma_tx_frame(&priv->dma, skb, dev, NULL);
+		const struct rtl9617c_ni_frame frame = {
+			.header_high = BIT(13),
+			.header_low = (16 << 9) | (lan->port << 3) | BIT(29),
+		};
+		netdev_tx_t result = rtl_dma_tx_frame(&priv->dma, skb, dev, &frame);
 
 		spin_unlock_irqrestore(&priv->tx_lock, flags);
 		return result;
@@ -329,6 +358,7 @@ static netdev_tx_t rtl_xmit(struct sk_buff *skb, struct net_device *dev)
 static int rtl_engine_start(struct rtl_xram *priv)
 {
 	struct net_device *dev = priv->netdev;
+	unsigned int port;
 	u32 config;
 	int ret;
 
@@ -336,9 +366,11 @@ static int rtl_engine_start(struct rtl_xram *priv)
 		/* The bootloader's XRAM path leaves the normal LAN scheduler off. */
 		rtl_update(priv, 0x2208, BIT(30) | BIT(31), BIT(31));
 		writel(0x08008021, priv->ni + 0x2210);
-		rtl_update(priv, 0x2300, BIT(31) | BIT(priv->port),
-			   BIT(31) | BIT(priv->port));
-		rtl_update(priv, 0x2304 + 12 * priv->port, 0xff, 0xff);
+		for (port = 0; port < ARRAY_SIZE(priv->ports); port++)
+			if (priv->ports[port]) {
+				rtl_update(priv, 0x2300, BIT(31) | BIT(port), BIT(31) | BIT(port));
+				rtl_update(priv, 0x2304 + 12 * port, 0xff, 0xff);
+			}
 		ret = rtl_dma_tx_start(&priv->dma);
 		if (ret)
 			return ret;
@@ -349,9 +381,10 @@ static int rtl_engine_start(struct rtl_xram *priv)
 			rtl_dma_tx_stop(&priv->dma);
 			return ret;
 		}
-		rtl_update(priv, 0xa5f8 + PORT_STRIDE * priv->port,
-			   BIT(28) | GENMASK(21, 16) | BIT(31),
-			   BIT(28) | (16 << 16));
+		for (port = 0; port < ARRAY_SIZE(priv->ports); port++)
+			if (priv->ports[port])
+				rtl_update(priv, 0xa5f8 + PORT_STRIDE * port,
+					   BIT(28) | GENMASK(21, 16) | BIT(31), BIT(28) | (16 << 16));
 	}
 
 	rtl_update(priv, GLB_STATIC, PORT_TO_CPU, priv->dma_tx ? 0xf : priv->port);
@@ -364,8 +397,6 @@ static int rtl_engine_start(struct rtl_xram *priv)
 	writel(priv->qm_rx ? config | CPU_DISABLE : config & ~CPU_DISABLE,
 	       priv->ni + XRAM_CFG);
 	rtl_rx_mode(dev);
-	rtl_update(priv, PORT_RX + priv->port * PORT_STRIDE, BIT(0), BIT(0));
-	rtl_update(priv, PORT_TX + priv->port * PORT_STRIDE, BIT(0), BIT(0));
 	priv->tx_pending = false;
 	napi_enable(&priv->napi);
 	if (priv->qm_rx) {
@@ -428,11 +459,16 @@ static void rtl_engine_put(struct rtl_xram *priv)
 
 static int rtl_open(struct net_device *dev)
 {
-	struct rtl_xram *priv = netdev_priv(dev);
+	struct rtl_lan *lan = netdev_priv(dev);
+	struct rtl_xram *priv = lan->shared;
 	int ret = rtl_engine_get(priv);
 
 	if (ret)
 		return ret;
+	rtl_update(priv, PORT_STATIC + lan->port * PORT_STRIDE,
+		   GENMASK(31, 24), (u32)dev->dev_addr[5] << 24);
+	rtl_update(priv, PORT_RX + lan->port * PORT_STRIDE, BIT(0), BIT(0));
+	rtl_update(priv, PORT_TX + lan->port * PORT_STRIDE, BIT(0), BIT(0));
 	phy_start(dev->phydev);
 	netif_start_queue(dev);
 	return 0;
@@ -440,10 +476,20 @@ static int rtl_open(struct net_device *dev)
 
 static int rtl_stop(struct net_device *dev)
 {
-	struct rtl_xram *priv = netdev_priv(dev);
+	struct rtl_lan *lan = netdev_priv(dev);
+	struct rtl_xram *priv = lan->shared;
+	unsigned long flags;
 
 	netif_stop_queue(dev);
 	phy_stop(dev->phydev);
+	rtl_update(priv, PORT_RX + lan->port * PORT_STRIDE, BIT(0), 0);
+	rtl_update(priv, PORT_TX + lan->port * PORT_STRIDE, BIT(0), 0);
+	rtl_fe_flush_port(priv->fe, dev);
+	if (priv->dma_tx) {
+		spin_lock_irqsave(&priv->tx_lock, flags);
+		rtl_dma_tx_forget(&priv->dma, dev);
+		spin_unlock_irqrestore(&priv->tx_lock, flags);
+	}
 	rtl_engine_put(priv);
 	return 0;
 }
@@ -527,7 +573,7 @@ EXPORT_SYMBOL_GPL(rtl9617c_ni_oam_configure);
 
 static int rtl_setup_tc(struct net_device *netdev,enum tc_setup_type type,void *data)
 {
- struct rtl_xram *priv=netdev_priv(netdev);
+ struct rtl_xram *priv=rtl_shared(netdev);
  return rtl_fe_setup_tc(priv->fe,netdev,type,data);
 }
 static const struct net_device_ops rtl_netdev_ops = {
@@ -539,6 +585,81 @@ static const struct net_device_ops rtl_netdev_ops = {
 	.ndo_set_mac_address = eth_mac_addr,
 	.ndo_validate_addr = eth_validate_addr,
 };
+
+static void rtl_unregister_extra_lans(struct rtl_xram *priv)
+{
+	unsigned int port;
+
+	for (port = 1; port < ARRAY_SIZE(priv->ports); port++) {
+		struct net_device *dev = priv->ports[port];
+
+		if (!dev)
+			continue;
+		rcu_assign_pointer(priv->qm.lan[port], NULL);
+		if (priv->registered_ports & BIT(port))
+			unregister_netdev(dev);
+		rtl_fe_remove_port(priv->fe, dev);
+		synchronize_net();
+		if (dev->phydev)
+			phy_disconnect(dev->phydev);
+		free_netdev(dev);
+		priv->ports[port] = NULL;
+		priv->registered_ports &= ~BIT(port);
+	}
+}
+
+static int rtl_register_extra_lans(struct rtl_xram *priv, struct device *parent)
+{
+	unsigned int port;
+	int ret;
+
+	if (!of_find_property(parent->of_node, "realtek,lan-phys", NULL))
+		return 0;
+	for (port = 1; port < ARRAY_SIZE(priv->ports); port++) {
+		struct device_node *phy;
+		struct net_device *dev;
+		struct rtl_lan *lan;
+		u8 mac[ETH_ALEN];
+
+		phy = of_parse_phandle(parent->of_node, "realtek,lan-phys", port);
+		dev = alloc_etherdev(sizeof(*lan));
+		if (!dev) {
+			of_node_put(phy);
+			ret = -ENOMEM;
+			goto unwind;
+		}
+		priv->ports[port] = dev;
+		SET_NETDEV_DEV(dev, parent);
+		lan = netdev_priv(dev);
+		lan->shared = priv;
+		lan->port = port;
+		dev->netdev_ops = &rtl_netdev_ops;
+		dev->max_mtu = ETH_DATA_LEN;
+		ether_addr_copy(mac, priv->netdev->dev_addr);
+		mac[5] += port;
+		eth_hw_addr_set(dev, mac);
+		if (!of_phy_connect(dev, phy, rtl_adjust_link, 0, PHY_INTERFACE_MODE_GMII)) {
+			of_node_put(phy);
+			ret = -EPROBE_DEFER;
+			goto unwind;
+		}
+		of_node_put(phy);
+		ret = rtl_fe_add_port(priv->fe, dev, port, port, 0);
+		if (ret)
+			goto unwind;
+		rcu_assign_pointer(priv->qm.lan[port], dev);
+		ret = register_netdev(dev);
+		if (ret)
+			goto unwind;
+		priv->registered_ports |= BIT(port);
+		dev_info(parent, "%s: LAN port %u shared native NI/DMA, PHY %08x, MAC %pM\n",
+			 dev->name, port, dev->phydev->phy_id, dev->dev_addr);
+	}
+	return 0;
+unwind:
+	rtl_unregister_extra_lans(priv);
+	return ret;
+}
 
 static ssize_t xram_state_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -748,6 +869,7 @@ static int rtl_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	SET_NETDEV_DEV(netdev, dev);
 	priv = netdev_priv(netdev);
+	priv->lan.shared = priv;
 	priv->netdev = netdev;
 	priv->ni = devm_platform_ioremap_resource(pdev, 0);
 	priv->xram = devm_platform_ioremap_resource(pdev, 1);
@@ -758,6 +880,9 @@ static int rtl_probe(struct platform_device *pdev)
 	ret = of_property_read_u32(dev->of_node, "realtek,port", &priv->port);
 	if (ret)
 		goto free_netdev;
+	priv->lan.port = priv->port;
+	priv->ports[priv->port] = netdev;
+	rcu_assign_pointer(priv->qm.lan[priv->port], netdev);
 	value = readl(priv->ni + MAC_ADDR0);
 	put_unaligned_be32(value, mac);
 	mac[4] = readl(priv->ni + MAC_ADDR1);
@@ -825,6 +950,10 @@ static int rtl_probe(struct platform_device *pdev)
 	ret = register_netdev(netdev);
 	if (ret)
 		goto free_dma;
+	priv->registered_ports |= BIT(priv->port);
+	ret = rtl_register_extra_lans(priv, dev);
+	if (ret)
+		goto unregister_netdev;
 	platform_set_drvdata(pdev, netdev);
 	ret = sysfs_create_groups(&dev->kobj, rtl_native_groups);
 	if (ret)
@@ -835,6 +964,7 @@ static int rtl_probe(struct platform_device *pdev)
 	return 0;
 
 unregister_netdev:
+	rtl_unregister_extra_lans(priv);
 	unregister_netdev(netdev);
 free_dma:
 	rtl_fe_free(priv->fe);
@@ -859,7 +989,10 @@ static void rtl_remove(struct platform_device *pdev)
 	struct rtl_xram *priv = netdev_priv(dev);
 
 	sysfs_remove_groups(&pdev->dev.kobj, rtl_native_groups);
+	rtl_unregister_extra_lans(priv);
+	rcu_assign_pointer(priv->qm.lan[priv->port], NULL);
 	unregister_netdev(dev);
+	synchronize_net();
 	rtl_fe_free(priv->fe);
 	if (priv->irq_requested)
 		free_irq(priv->rx_irq, priv);

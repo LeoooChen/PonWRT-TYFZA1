@@ -34,3 +34,15 @@ feeds 使用 configs/feeds.conf 的固定提交，额外安装 cgi-io 与 luasrc
 独立后台构建通过 `sh scripts/start_lan_build.sh` 启动；它保存本次脚本副本，运行过程中修改源码不会再改变 shell 正在读取的脚本。
 
 收尾状态：临时静态地址192.168.1.170与直连路由已移除，en5只保留DHCP分配的192.168.1.172；LuCI认证概览仍返回200，IPv4 ping3/3。清理后手工重启DHCP客户端曾先重试，随后设备DHCPACK和Mac getpacket一致，最终网络配置已恢复。串口/TFTP进程已退出，光猫继续运行最终RAM载荷。
+
+## 四个 LAN 口共享原生 NI 数据面
+
+2026-10-09 晚间重新连接设备，U-Boot 检测网线在 physical port3；旧 RAM 镜像只登记 port0/PHY1，故有线链路在 Mac 端在线，但 eth0 carrier=0。这是原生驱动只接入一个 LAN 的实际缺口。
+
+现实现四个独立 netdev（eth0..eth3），对应 Taurus 内置 PHY 地址1..4，共用一个 NI、TX DMA/VP8、CPU0 QM pool、NAPI及 FE 实例。每个LAN使用自己的PHY状态和netdev队列；各接口open/stop按RTNL引用计数共享engine，只控制自己的MAC RX/TX。PON继续使用同一共享engine及其独立endpoint，不被关闭一个LAN口重置。
+
+RX依据原机Header A的LSPID字段，将source0..3递交对应LAN接口；PON source7/32以上保留原来LLID分流。四条LAN ILPB/PONCLE CPU0规则分别使用自己的TCAM/action槽，避免后一个端口覆盖前一个。TX将目的physical port写入每包Header A，继续使用共享DMA ring，不通过切换整个VP的默认目的端口发送。完成统计归属原始netdev；环恢复空间时分别唤醒各LAN及PON队列。每个LAN都登记到native FE接口表，供相应硬件流的入口/出口归属。
+
+NI/DMA目标DTS提供realtek,lan-phys四个PHY句柄；XRAM历史调试目标仍使用其单口管理路径。89-tyfza1-lan-ports默认脚本把存在的eth0..eth3加入统一br-lan，地址、DHCP和LuCI通过同一个LAN网络提供。各口不要求重配IP或换用特定插口。
+
+ARM64的NI/QM对象编译已通过。全量候选由后台服务ponwrt-tyfza1-lan-20261009-210804构建到artifacts/full-pon-four-lan01-6.18.55，实机验证正在继续；不能将四口代码接入等同于四个插口都已完成现场数据测试。
