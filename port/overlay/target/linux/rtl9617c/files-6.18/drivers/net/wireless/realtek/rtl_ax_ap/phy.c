@@ -254,6 +254,40 @@ void rtl_ax_phy_bb_reset(const struct rtl_ax_io *io, unsigned int chip)
 		rtl_ax_update32(io, hold[i], RTL_AX_BIT(30), 0);
 }
 
+int rtl_ax_phy_rf_read(const struct rtl_ax_io *io, unsigned int path,
+		       unsigned int address, u32 *value)
+{
+	unsigned int attempt, status;
+
+	/* Actual read_rf_reg_C/XB selects digital using address bit16. */
+	if (address & 0x10000) {
+		*value = io->read32(io->ctx,
+			(path ? 0x1f000 : 0x1e000) + ((address & 255) << 2)) & 0xfffff;
+		return 0;
+	}
+	for (attempt = 0; attempt < 31; attempt++) {
+		status = io->read32(io->ctx, 0x1174c) & RTL_AX_BIT(24);
+		status |= io->read32(io->ctx, 0x1174c) & RTL_AX_BIT(25);
+		io->delay_us(io->ctx, 1);
+		if (!status)
+			break;
+	}
+	if (status)
+		return -ETIMEDOUT;
+	rtl_ax_update32(io, 0x10378, 0x7ff, (path << 8) | (address & 255));
+	io->delay_us(io->ctx, 2);
+	for (attempt = 0; attempt < 31; attempt++) {
+		status = io->read32(io->ctx, 0x1174c) & RTL_AX_BIT(26);
+		io->delay_us(io->ctx, 1);
+		if (status)
+			break;
+	}
+	if (!status)
+		return -ETIMEDOUT;
+	*value = io->read32(io->ctx, 0x1174c) & 0xfffff;
+	return 0;
+}
+
 static int rtl_ax_phy_rf_write(const struct rtl_ax_io *io, unsigned int path,
 			       unsigned int address, unsigned int value)
 {
@@ -309,6 +343,15 @@ static int rtl_ax_phy_radio_path(const struct rtl_ax_io *io,
 		if (ret)
 			goto release;
 		inputs->radio_writes[path]++;
+		/* Live observation of RF mode/channel writes. Readbacks are evidence,
+		 * never a fabricated table-success test or an extra register write. */
+		if (address == 0x10000 || address == 0x10018) {
+			unsigned int sample = address == 0x10018;
+			unsigned int direct = (path ? 0x1f000 : 0x1e000) + ((address & 255) << 2);
+
+			inputs->digital_requested[path][sample] = value & 0xfffff;
+			inputs->digital_immediate[path][sample] = io->read32(io->ctx, direct) & 0xfffff;
+		}
 		/* Original store_radio_* excludes analog RF and delay addresses;
 		 * firmware gets (8-bit register <<20)|value for digital RF only. */
 		if (address > 0xff)

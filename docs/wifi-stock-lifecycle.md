@@ -204,3 +204,13 @@ power-tables.c 按 halrf_power_by_rate_store_to_array@305790 的实际目的布�
 原机旧文本parser只用AllRate1/AllRate2前缀，而备份文件含AllRate2_1/AllRate2_2和5/6G后缀；原生按实际文件完整label解码到store函数对应offset字段，不将旧parser对新label的含混路径当作新接口。TrackTSSI保存原文件每组30项，包括文件里的6G组；本机旧parser只显式识别2G/5G，C的store_pwr_track只复制6G每路径90B。这些差异已保留为后续校准消费时的依据，当前还没有调用6G射频/校准功能。
 
 第一次上机发现内核sscanf不支持用于解析右方括号的scanset，TrackTSSI报EINVAL；改为原文件固定字段宽度后直接上机复测通过，未编写仿真测试。power02原生模块SHA256 9a9dd658c8e7b0a65cc7e078bfca19c193888807d35939109688eb5b30da1aa3；C基础/FEM各35行ByRate、36行Track，XB各24/20。C基础OFDM6=80/72/64 quarter-dBm，FEM=80/96/76；XB基础=84/80/0，FEM=100/100/0，与实际文件相符。全部BB/RF、BA CAM应答仍正常，输出 logs/radio-live-power02-20261009.txt。limit/RU/calibration明确待完成，此处只有host对象，不声称已经写入硬件功率或发出AP。
+
+## 完整 RAM 启动与 RF 读回差异
+
+bbrf01 完整FIT（e3c1d08d46322a1d119037ab329eaa4de1b1b40587f3230a727dd5d065e3b60b）经原机U-Boot校验、重启进入OpenWrt，两颗内置原生驱动从启动开始完成BB与第一遍Radio，结果与live模块相同，RX错误0。XEPON恢复192.168.71.28并公网ping2/2。原始结果 logs/radio-bbrf01-ram-20261009.txt。这个FIT包含b12b93a阶段；后续功率对象与RF读回观测通过独立原生模块上机，不能说已进入这个FIT。
+
+直接数字RF读回发现实际值与表最后写入不完全一致，已增加只读radio_rf_bank及关键写入的即时读回。C RF00请求33c00，即时读30000；RF18请求1001读1。XB RF18请求1c01读c01，路径B最终RF00=30001。数字05、C55与两颗30读回均与表对应值匹配。不能把“完成了循环、TXBD已消费”解释成RF所有字段写入成功。
+
+继续按原机 halbb_read_rf_reg_8852c_a@2e2954/XB_a@2ed074 实现SIPI读取：忙位24/25共31次观察、0378地址/路径字段、2us延时、26位done等待，再读取174c低20位。交易由command_mutex串行化，仅读取模拟RF寄存器，不增加初始化写入。
+
+rf-read原生模块SHA256 b2c9a576ada5b75345739d74c31967e4dc52ab289b0ce9d767b322183f5a7304在原机运行：C模拟30两路=109b7、XB=381f2，均与实际Radio表相符；C模拟18为A1001/B1000，XB两路1c01；模拟RF00为C两路337e1，XB A377e1/B337e1。这些读取均成功且重复读取一致。模式、增益与带宽寄存器受硬件状态控制，当前尚未完成完整频道/校准；C B初始频道为0也保留为待核对事实，不以猜测修改表值。结果 logs/radio-live-rf-read-20261009.txt 与全数字窗口记录 logs/radio-live-rf-bank-20261009.txt。所有上述阶段仍不包括AP关联或无线业务。

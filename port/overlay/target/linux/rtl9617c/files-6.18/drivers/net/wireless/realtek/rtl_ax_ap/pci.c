@@ -499,15 +499,67 @@ static ssize_t radio_rf_show(struct device *dev,
 	return sysfs_emit(buffer,
 		"base_writes=%u,%u firmware_pages=%u,%u firmware_bytes=%u,%u "
 		"last_path=%u last_address=0x%x sipi=0x%08x "
-		"digital00=0x%05x,0x%05x digital18=0x%05x,0x%05x\n",
+		"digital00=0x%05x,0x%05x digital18=0x%05x,0x%05x "
+		"requested00=0x%05x,0x%05x immediate00=0x%05x,0x%05x "
+		"requested18=0x%05x,0x%05x immediate18=0x%05x,0x%05x\n",
 		radio->phy.radio_writes[0], radio->phy.radio_writes[1],
 		radio->radio_pages[0], radio->radio_pages[1], radio->radio_bytes[0], radio->radio_bytes[1],
 		radio->phy.radio_last_path, radio->phy.radio_last_address,
 		rtl_ax_read32(radio, 0x1174c), rtl_ax_read32(radio, 0x1e000) & 0xfffff,
 		rtl_ax_read32(radio, 0x1f000) & 0xfffff, rtl_ax_read32(radio, 0x1e060) & 0xfffff,
-		rtl_ax_read32(radio, 0x1f060) & 0xfffff);
+		rtl_ax_read32(radio, 0x1f060) & 0xfffff,
+		radio->phy.digital_requested[0][0], radio->phy.digital_requested[1][0],
+		radio->phy.digital_immediate[0][0], radio->phy.digital_immediate[1][0],
+		radio->phy.digital_requested[0][1], radio->phy.digital_requested[1][1],
+		radio->phy.digital_immediate[0][1], radio->phy.digital_immediate[1][1]);
 }
 static DEVICE_ATTR_RO(radio_rf);
+
+static ssize_t radio_rf_bank_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	unsigned int path, reg;
+	ssize_t length = 0;
+
+	/* Original read_rf_reg_d uses these same direct windows. Read-only
+	 * register evidence for comparing the actual board with its RF table. */
+	for (path = 0; path < 2; path++) {
+		length += sysfs_emit_at(buffer, length, "path=%u\n", path);
+		for (reg = 0; reg < 256; reg++) {
+			if (!(reg & 15))
+				length += sysfs_emit_at(buffer, length, "%02x:", reg);
+			length += sysfs_emit_at(buffer, length, " %05x%s",
+				rtl_ax_read32(radio, (path ? 0x1f000 : 0x1e000) + reg * 4) & 0xfffff,
+				(reg & 15) == 15 ? "\n" : "");
+		}
+	}
+	return length;
+}
+static DEVICE_ATTR_RO(radio_rf_bank);
+
+static ssize_t radio_rf_analog_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	const unsigned int regs[] = {0x00, 0x18, 0x30};
+	unsigned int path, i;
+	ssize_t length = 0;
+
+	/* Serializes the original SIPI read request/result transaction. */
+	mutex_lock(&radio->command_mutex);
+	for (path = 0; path < 2; path++)
+		for (i = 0; i < ARRAY_SIZE(regs); i++) {
+			u32 value = 0;
+			int ret = rtl_ax_phy_rf_read(&radio->io, path, regs[i], &value);
+
+			length += sysfs_emit_at(buffer, length,
+				"path=%u address=%02x result=%d value=%05x\n", path, regs[i], ret, value);
+		}
+	mutex_unlock(&radio->command_mutex);
+	return length;
+}
+static DEVICE_ATTR_RO(radio_rf_analog);
 
 static ssize_t radio_power_show(struct device *dev,
 	struct device_attribute *attr, char *buffer)
@@ -543,7 +595,8 @@ static ssize_t radio_rx_show(struct device *dev,
 static DEVICE_ATTR_RO(radio_rx);
 static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_state.attr, &dev_attr_radio_rx.attr, &dev_attr_radio_bb.attr,
-	&dev_attr_radio_rf.attr, &dev_attr_radio_power.attr, NULL,
+	&dev_attr_radio_rf.attr, &dev_attr_radio_rf_bank.attr, &dev_attr_radio_rf_analog.attr,
+	&dev_attr_radio_power.attr, NULL,
 };
 ATTRIBUTE_GROUPS(rtl_ax);
 

@@ -1,0 +1,142 @@
+{
+  "stock_module_reference": {
+    "path": "evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko",
+    "sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+    "executed_on_openwrt": false
+  },
+  "cold_RAM_boot": {
+    "FIT": "artifacts/full-pon-radio-bbrf01-6.18.55/ram-pcie/image.itb",
+    "sha256": "e3c1d08d46322a1d119037ab329eaa4de1b1b40587f3230a727dd5d065e3b60b",
+    "bytes": 6537676,
+    "verified_live": true,
+    "log": "logs/radio-bbrf01-ram-20261009.txt",
+    "includes": [
+      "base_BB",
+      "first_base_Radio_pass"
+    ],
+    "does_not_include": [
+      "power_objects",
+      "RF_read_observation"
+    ]
+  },
+  "current_native_live_module": {
+    "path": "artifacts/live-radio-rf-read/rtl_ax_ap_live.ko",
+    "sha256": "b2c9a576ada5b75345739d74c31967e4dc52ab289b0ce9d767b322183f5a7304",
+    "log": "logs/radio-live-rf-read-20261009.txt",
+    "source_hashes": {
+      "download.h": "23afbe9d675553d09b5ea36e8b0bb570222320fecfa9254fd2e0f3b5149d7b74",
+      "fw.h": "e43f809542391a28b75d28234611a2e275919af0e381bbae6b8db99f82b788ab",
+      "mac-runtime.h": "a9eda967b9c608a67006ae552c1912eb8908dd97681cc53903a2b16737517a67",
+      "pci.c": "175776559bf4179b0a86ab663294092293952c3cd7c42c9ca1ebcd5fbc5ae816",
+      "phy.c": "8d83ddef4241ca27446fb2cf1218bb9c3bc26f8504175f882f3071031f360ba1",
+      "phy.h": "8834c75dd2a66edad1026ce6a999caf2f1cf8ca65e5c06e1a6d48d160fbacd99",
+      "power-tables.c": "3993741db9eb814d53c0727a6e54c89716700031d7f5a2922c8940d5c64d48ad",
+      "power-tables.h": "aaccfbe3a06baa95661681e3b02c6927d77f73088b3dbe9ef0d46b3fca947a66",
+      "power.h": "5faf7737edf8bb86baf7909a03a84b0db1df9f90cbe0acc863972ca8d6ab72df",
+      "receive.h": "8c12a5ad063a1888d74d1dc351116f24b8a843a98ed4af98134a7f359844a5a6",
+      "rx.c": "e4deaca1558f1d73a249557ed045abce2bb3e6772eab2d18f32cb33e38cfa160",
+      "rx.h": "c061746628abf781b517c47452fd89ac82960fe19a97b7c53498a6b0588e3e6a",
+      "transport.h": "6d58cf8d0770630e2c214f018feeced9317a020716673ca5b40f8281afc2502a"
+    }
+  },
+  "radios": [
+    {
+      "family": "RTL8852C",
+      "PCI": "0000:01:00.0",
+      "base_BB_rows": 1432,
+      "base_gain_rows": 336,
+      "base_radio_writes_A_B": [
+        2044,
+        2011
+      ],
+      "radio_pages_A_B": [
+        1,
+        1
+      ],
+      "radio_page_bytes_A_B": [
+        1568,
+        1568
+      ],
+      "BA_CAM_done_acks": 1,
+      "RX_errors": 0,
+      "ByRate_rows_base_FEM": [
+        35,
+        35
+      ],
+      "Track_rows_base_FEM": [
+        36,
+        36
+      ],
+      "analog_RF30": [
+        68023,
+        68023
+      ],
+      "analog_RF18": [
+        4097,
+        4096
+      ],
+      "digital_RF18": [
+        1,
+        1
+      ]
+    },
+    {
+      "family": "RTL8192XB",
+      "PCI": "0001:01:00.0",
+      "base_BB_rows": 1417,
+      "base_gain_rows": 128,
+      "base_radio_writes_A_B": [
+        487,
+        406
+      ],
+      "radio_pages_A_B": [
+        1,
+        1
+      ],
+      "radio_page_bytes_A_B": [
+        312,
+        312
+      ],
+      "BA_CAM_done_acks": 1,
+      "RX_errors": 0,
+      "ByRate_rows_base_FEM": [
+        24,
+        24
+      ],
+      "Track_rows_base_FEM": [
+        20,
+        20
+      ],
+      "analog_RF30": [
+        229874,
+        229874
+      ],
+      "analog_RF18": [
+        7169,
+        7169
+      ],
+      "digital_RF18": [
+        3073,
+        3073
+      ]
+    }
+  ],
+  "RF_fields_unresolved": [
+    "mode/gain and bandwidth readback differs from the last table write",
+    "RTL8852C pathB analogRF18 channel reads0 before complete channel/calibration setup"
+  ],
+  "pending": [
+    "power_limit",
+    "RU_limit",
+    "second_RF_pass",
+    "FEM_execution",
+    "RF_DM_and_calibration",
+    "normal_TX_WP",
+    "mac80211_AP_and_association"
+  ],
+  "PON": {
+    "mode": "epon-d10g",
+    "DHCP": "192.168.71.28/24",
+    "public_ping": "2/2"
+  }
+}
