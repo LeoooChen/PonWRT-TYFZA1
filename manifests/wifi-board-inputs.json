@@ -1,0 +1,406 @@
+{
+  "extracted_at": "2026-10-09T09:46:42.822815+08:00",
+  "stock_DTB_sha256": "5124f860df3bcd2e20b87d058e19b1ddfdc7a46c9d876663ba9feeff5a0f13ac",
+  "stock_wireless_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "PCIe_hosts": [
+    {
+      "node": "/pcie@f4325000",
+      "index": 0,
+      "status": "okay",
+      "lanes": 1,
+      "resources": {
+        "glbl_regs": {
+          "address": "0xf4325000",
+          "bytes": 1024
+        },
+        "rc_dbi": {
+          "address": "0xa0000000",
+          "bytes": 4096
+        },
+        "config": {
+          "address": "0xa0001000",
+          "bytes": 8192
+        },
+        "iatu": {
+          "address": "0xa0300000",
+          "bytes": 1048576
+        },
+        "serdes_phy": {
+          "address": "0xf4333000",
+          "bytes": 8192
+        }
+      },
+      "interrupts_GIC_cells": [
+        0,
+        42,
+        4,
+        0,
+        43,
+        4,
+        0,
+        44,
+        4,
+        0,
+        45,
+        4
+      ],
+      "resets": {
+        "core_reset": {
+          "provider": "/reset-controller@0xf4320098",
+          "arguments": [
+            6
+          ],
+          "provider_reg": [
+            "0x0",
+            "0xf4320098",
+            "0x0",
+            "0x4"
+          ]
+        },
+        "phy_reset": {
+          "provider": "/reset-controller@0xf43200a0",
+          "arguments": [
+            0
+          ],
+          "provider_reg": [
+            "0x0",
+            "0xf43200a0",
+            "0x0",
+            "0x4"
+          ]
+        },
+        "device_reset": {
+          "provider": "/gpio-reset/pcie0_device",
+          "arguments": [],
+          "endpoint_GPIO": {
+            "controller": "/gpio-controller@f43292c0/bank@3",
+            "pin": 5,
+            "flags": 1
+          }
+        }
+      },
+      "clock": {
+        "provider": "/soc_clks/gate_pcie0",
+        "gate_shift": 10
+      },
+      "SoC_ATU": {
+        "provider": "/atu@f432c000",
+        "reg_cells": [
+          "0x0",
+          "0xf432c000",
+          "0x0",
+          "0x1c"
+        ],
+        "coherent_hi_addr": 4
+      },
+      "dma_coherent": true,
+      "SerDes_profiles": {
+        "A": {
+          "version": "revA v1.3 (2022.04.22)",
+          "register_pairs": 33,
+          "sha256": "4b779e6c62e85189d39f74a5ec0fd3d8c59b2ea8c63feb4ee6b4f090887c6875"
+        },
+        "B": {
+          "version": "revB v1.2 (2022.04.22)",
+          "register_pairs": 38,
+          "sha256": "dcd9aa86b59e3d4639af818d1bacde2592961d6b648613510bc24547846e85e4"
+        }
+      }
+    },
+    {
+      "node": "/pcie@f4326000",
+      "index": 1,
+      "status": "okay",
+      "lanes": 1,
+      "resources": {
+        "glbl_regs": {
+          "address": "0xf4326000",
+          "bytes": 1024
+        },
+        "rc_dbi": {
+          "address": "0xb0000000",
+          "bytes": 4096
+        },
+        "config": {
+          "address": "0xb0001000",
+          "bytes": 8192
+        },
+        "iatu": {
+          "address": "0xb0300000",
+          "bytes": 1048576
+        },
+        "serdes_phy": {
+          "address": "0xf4335000",
+          "bytes": 8192
+        }
+      },
+      "interrupts_GIC_cells": [
+        0,
+        46,
+        4,
+        0,
+        47,
+        4,
+        0,
+        48,
+        4,
+        0,
+        49,
+        4
+      ],
+      "resets": {
+        "core_reset": {
+          "provider": "/reset-controller@0xf4320098",
+          "arguments": [
+            7
+          ],
+          "provider_reg": [
+            "0x0",
+            "0xf4320098",
+            "0x0",
+            "0x4"
+          ]
+        },
+        "phy_reset": {
+          "provider": "/reset-controller@0xf43200a0",
+          "arguments": [
+            1
+          ],
+          "provider_reg": [
+            "0x0",
+            "0xf43200a0",
+            "0x0",
+            "0x4"
+          ]
+        },
+        "device_reset": {
+          "provider": "/gpio-reset/pcie1_device",
+          "arguments": [],
+          "endpoint_GPIO": {
+            "controller": "/gpio-controller@f43292c0/bank@3",
+            "pin": 6,
+            "flags": 1
+          }
+        }
+      },
+      "clock": {
+        "provider": "/soc_clks/gate_pcie1",
+        "gate_shift": 12
+      },
+      "SoC_ATU": {
+        "provider": "/atu@f432c100",
+        "reg_cells": [
+          "0x0",
+          "0xf432c100",
+          "0x0",
+          "0x1c"
+        ],
+        "coherent_hi_addr": 4
+      },
+      "dma_coherent": true,
+      "SerDes_profiles": {
+        "A": {
+          "version": "revA v1.3 (2022.04.22)",
+          "register_pairs": 33,
+          "sha256": "4b779e6c62e85189d39f74a5ec0fd3d8c59b2ea8c63feb4ee6b4f090887c6875"
+        },
+        "B": {
+          "version": "revB v1.2 (2022.04.22)",
+          "register_pairs": 38,
+          "sha256": "dcd9aa86b59e3d4639af818d1bacde2592961d6b648613510bc24547846e85e4"
+        }
+      }
+    },
+    {
+      "node": "/pcie@f4327000",
+      "index": 2,
+      "status": "disabled",
+      "lanes": 1,
+      "resources": {
+        "glbl_regs": {
+          "address": "0xf4327000",
+          "bytes": 1024
+        },
+        "rc_dbi": {
+          "address": "0xc0000000",
+          "bytes": 4096
+        },
+        "config": {
+          "address": "0xc0001000",
+          "bytes": 8192
+        },
+        "iatu": {
+          "address": "0xc0300000",
+          "bytes": 1048576
+        },
+        "serdes_phy": {
+          "address": "0xf4337000",
+          "bytes": 4096
+        }
+      },
+      "interrupts_GIC_cells": [
+        0,
+        50,
+        4,
+        0,
+        51,
+        4,
+        0,
+        52,
+        4,
+        0,
+        53,
+        4
+      ],
+      "resets": {
+        "core_reset": {
+          "provider": "/reset-controller@0xf4320098",
+          "arguments": [
+            8
+          ],
+          "provider_reg": [
+            "0x0",
+            "0xf4320098",
+            "0x0",
+            "0x4"
+          ]
+        },
+        "phy_reset": {
+          "provider": "/reset-controller@0xf43200a0",
+          "arguments": [
+            2
+          ],
+          "provider_reg": [
+            "0x0",
+            "0xf43200a0",
+            "0x0",
+            "0x4"
+          ]
+        },
+        "device_reset": {
+          "provider": "/gpio-reset/pcie2_device",
+          "arguments": [],
+          "endpoint_GPIO": {
+            "controller": "/gpio-controller@f43292c0/bank@3",
+            "pin": 255,
+            "flags": 1
+          }
+        }
+      },
+      "clock": {
+        "provider": "/soc_clks/gate_pcie2",
+        "gate_shift": 14
+      },
+      "SoC_ATU": {
+        "provider": "/atu@f432c200",
+        "reg_cells": [
+          "0x0",
+          "0xf432c200",
+          "0x0",
+          "0x1c"
+        ],
+        "coherent_hi_addr": 4
+      },
+      "dma_coherent": false,
+      "SerDes_profiles": {
+        "A": {
+          "version": "revA v1.3 (2022.04.22)",
+          "register_pairs": 35,
+          "sha256": "e3cc08d74d0771fac3c509a89c732066ab9365a1e7470cc04cf025dce3be327b"
+        },
+        "B": {
+          "version": "revB v1.2 (2022.04.22)",
+          "register_pairs": 40,
+          "sha256": "f7a603f831a09209b39fd18bb19a0bf66fb0256aef3ad4a5ef80d9ad35df3b7c"
+        }
+      }
+    }
+  ],
+  "compiled_PCI_matches": [
+    {
+      "vendor": "0x10ec",
+      "device": "0xb814",
+      "subvendor": "0xffffffff",
+      "subdevice": "0xffffffff",
+      "class": "0x0",
+      "class_mask": "0x0",
+      "driver_data": "0x0"
+    },
+    {
+      "vendor": "0x10ec",
+      "device": "0xc852",
+      "subvendor": "0xffffffff",
+      "subdevice": "0xffffffff",
+      "class": "0x0",
+      "class_mask": "0x0",
+      "driver_data": "0x3"
+    },
+    {
+      "vendor": "0x10ec",
+      "device": "0x192",
+      "subvendor": "0xffffffff",
+      "subdevice": "0xffffffff",
+      "class": "0x0",
+      "class_mask": "0x0",
+      "driver_data": "0x4"
+    }
+  ],
+  "live_PCI_identity": "Await native PCIe enumeration; compiled matches are not board enumeration",
+  "firmware_candidates": {
+    "array_8192xb_u1_ap": {
+      "bytes": 387680,
+      "sha256": "e6f4557929fd9d99ba36a97e4b2f78fd1aa86c4a77fa986ffffaaf85ad87425b",
+      "cut_id": 1,
+      "firmware_chip_id": "0x819201",
+      "version": [
+        0,
+        27,
+        84,
+        3
+      ],
+      "header_length": 160
+    },
+    "array_8192xb_u2_ap": {
+      "bytes": 387752,
+      "sha256": "d7f0cf58c5c4e10f3e4e10d076423dc12454f3ef6b495b9538871e4d95926314",
+      "cut_id": 2,
+      "firmware_chip_id": "0x819201",
+      "version": [
+        0,
+        27,
+        84,
+        3
+      ],
+      "header_length": 160
+    },
+    "array_8852c_u1_ap": {
+      "bytes": 406448,
+      "sha256": "df1e59e3cba26f5dad36f7835ef8710bb06f73248c0e1e5226f2232a00381131",
+      "cut_id": 1,
+      "firmware_chip_id": "0x885202",
+      "version": [
+        0,
+        27,
+        84,
+        3
+      ],
+      "header_length": 160
+    },
+    "array_8852c_u2_ap": {
+      "bytes": 369160,
+      "sha256": "a6e200954f05180e2388d1556a2d7553587fb59f733c0be1b5f6d1cc7d85b561",
+      "cut_id": 2,
+      "firmware_chip_id": "0x885202",
+      "version": [
+        0,
+        27,
+        84,
+        3
+      ],
+      "header_length": 160
+    }
+  },
+  "RFE_FEM_selection": "Read cut/efuse/board subtype and initialization overrides before choosing RF tables",
+  "native_driver_order": "docs/wifi-port-order.md",
+  "hardware_verified": false
+}

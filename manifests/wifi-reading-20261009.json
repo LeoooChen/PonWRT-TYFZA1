@@ -1,0 +1,71 @@
+{
+  "read_at": "2026-10-09T09:42:23.306344+08:00",
+  "source": "/Users/leo/Documents/Codex项目/TYFZA1/无线芯片研究",
+  "full_documents_read": [
+    {
+      "path": "README.md",
+      "sha256": "8f4bfdcc35bbd65bee617d4239191ebe830e7359564f3afbaf7bc64398f7bb31"
+    },
+    {
+      "path": "docs/01-findings.md",
+      "sha256": "ef35a89b0aea744fda2f88edbc68b8cd0d4ea7050c7f7de1ad0b69b6280d0ee8"
+    },
+    {
+      "path": "docs/02-stock-datapath.md",
+      "sha256": "2b6cd9e10921e632cf1f388ec03b74edcd14dad9a46110d075f0caa5c88d2f9d"
+    },
+    {
+      "path": "docs/03-descriptor-abi.md",
+      "sha256": "37c7c6ed609acc1f3446264b45030764f7fd9356d8db7b66e8a81414a5ed57b0"
+    },
+    {
+      "path": "docs/04-metadata-pipeline.md",
+      "sha256": "deb86e3e20a99d9de93084b0058001d9978eb5c4e4843eaa364c7772e5a2227e"
+    },
+    {
+      "path": "docs/05-wfo-firmware.md",
+      "sha256": "0ed983f30e57d73df9662782de6d8b40ce3df11afa0dcf373d40ac792851b608"
+    },
+    {
+      "path": "docs/06-openwrt-plan.md",
+      "sha256": "d892e26c0924af7ebfad15c750fec0a94c1584fbcc7c915672806fe81c6420b4"
+    },
+    {
+      "path": "docs/07-sources.md",
+      "sha256": "a0446d471dc7da74a7db18138728c239559f271b559396ed72aa23b47542c489"
+    },
+    {
+      "path": "docs/08-history-and-corrections.md",
+      "sha256": "01d92ede27fef91ecd0f33bf9a57e5c899cb031390fb6df7d1cf0afcefc2ebad"
+    },
+    {
+      "path": "docs/09-reproduction.md",
+      "sha256": "05e4893bcf4d5462ee1cc5cca942998ae11d1d4266cba16e6111e39cc15950cf"
+    },
+    {
+      "path": "docs/10-open-questions.md",
+      "sha256": "bd5c41372734d26a70056e3e3bc2fcca899544392d70d4ad968680e00a391817"
+    },
+    {
+      "path": "docs/11-live-readonly-and-rx-contract.md",
+      "sha256": "de5fe366bd2c19c756f28c93483b2a364b0921151a1328931e26f7a7e2c3571c"
+    },
+    {
+      "path": "logs/research-log.md",
+      "sha256": "7b045b5c141866a639cbb397615f90f35fc0696eba03c646a2db92cfaa9ff15a"
+    }
+  ],
+  "current_inventory": "logs/wireless-study-current.json",
+  "effective_files": 433,
+  "new_or_changed_since_import": false,
+  "source_receipts_matched": 76,
+  "supplement_receipts_matched": 147,
+  "plan": "docs/wifi-port-order.md",
+  "machine_code_rechecks": [
+    "logs/wifi-study-descriptor-recheck.json",
+    "logs/wifi-study-rx-contract-recheck.json",
+    "logs/wifi-study-stream-recheck.json"
+  ],
+  "hardware_connected": false,
+  "original_material_modified": false
+}
