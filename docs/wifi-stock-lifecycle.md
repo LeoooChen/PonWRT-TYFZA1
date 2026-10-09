@@ -344,3 +344,7 @@ scripts/build_rx_stage_observe.sh构建原生实机观察模块，tools/wifi_rx_
 第二次观察出现了不同的实机结果：模块60e1ca0e3a40b6e45b42428b346c5c381716616026ce8948b9658da06a0f6a1f的XB在base/FEM窗口已达到CCK PHY/MAC CRC_OK各12、type0描述符8、RXQ index00090009，主机格式/tag错误0。此时尚未执行追加的CCK使能写。追加前后gate完整读回都为00000030/00000000/38000000，说明BB表已经使能这些位，不能把收到帧归因于追加的CCK操作。只缺少调用某个函数不等于其控制位没被设置。日志logs/radio-rx-stage-cck01-20261010.txt和证据manifests/radio-rx-stage-cck01-20261010.json保留此次区别。第一轮零帧是该次窗口的结果，并非已证明所有后续阶段永久无法收帧。
 
 接收描述符CRC/ICV状态从两颗原机WD解析函数核对为DWORD3 bits9/10；原生packet和RX统计已接入每帧CRC标志，Beacon计数要求完整24B管理帧头及12B固定参数。进一步的临时观察模块只记录前16个type0帧的WD、长度、速率及前24B帧头，确认实际802.11类型及状态；正式驱动不增加报文日志。持续观察模块在已实现的初始化后保持原生RX运行，让后续原厂信道/RF路径研究期间也能继续积累真实计数。观察模块的生命周期仍由正常RX关闭/WCPU关闭/DMA释放处理。
+
+持续观察模块5c29a4a131b644cdfbf917a341395835f30bb2970986db5c140310fd23ee15f4最终在XB收到10个已确认的802.11 Probe Request帧：每帧200B，WD type0、hardware rate0（CCK1Mbps）、CRC_error0/ICV_error0；24B帧头FC0040，协议版本0、management type0/subtype4，目的地址和BSSID为broadcast，sequence字段变化。WD长度、payload边界、PHY/MAC CRC与DMA→IRQ→主机解析链对应。证据logs/radio-first-80211-20261010.txt、manifests/radio-first-80211-20261010.json。这是实际无线帧接收的首个阶段结果，仍不包含OFDM/5GHz成功或AP业务。此前没有源持续发送的短窗口返回零帧，不能由该结果推断接收永远阻塞。
+
+正式原生backend现在在已实现的PHY初始化结束后恢复PCI bus master/H2C及RXQ/RPQ IRQ，保留可用RX继续收帧；正常停止入口仍先同步关闭RX、WCPU/HCI再释放DMA。radio_state根据真实HAXI enable bits报告active/paused，不再写死paused。正常overlay不加入观察延时、额外命令或帧头日志；mac80211分发暂未接入，真实type0帧仍计入unhandled。这些计数保留直到普通802.11帧转交native mac80211。

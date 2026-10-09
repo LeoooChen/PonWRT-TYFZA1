@@ -1,0 +1,185 @@
+{
+  "radio": "8192XB / 0001:01:00.0",
+  "valid_80211_frames_received": 10,
+  "frame_type": "management Probe Request",
+  "hardware_rate_index": 0,
+  "rate_Mbps": 1,
+  "receive_chain": "PHY -> MAC -> native RX DMA -> IRQ -> RXBD/WD parser -> actual 802.11 header",
+  "module_sha256": "5c29a4a131b644cdfbf917a341395835f30bb2970986db5c140310fd23ee15f4",
+  "frames": [
+    {
+      "bytes": 200,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "hardware_rate": 0,
+      "WD": [
+        "d01800c8",
+        "0000c010",
+        "0e61b9fc",
+        "00200000"
+      ],
+      "frame_control": "0040",
+      "protocol_version": 0,
+      "type": 0,
+      "subtype": 4,
+      "header_length_captured": 24
+    },
+    {
+      "bytes": 200,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "hardware_rate": 0,
+      "WD": [
+        "d01800c8",
+        "0000c020",
+        "0e61e592",
+        "00200000"
+      ],
+      "frame_control": "0040",
+      "protocol_version": 0,
+      "type": 0,
+      "subtype": 4,
+      "header_length_captured": 24
+    },
+    {
+      "bytes": 200,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "hardware_rate": 0,
+      "WD": [
+        "d01800c8",
+        "0000c030",
+        "0e621160",
+        "00200000"
+      ],
+      "frame_control": "0040",
+      "protocol_version": 0,
+      "type": 0,
+      "subtype": 4,
+      "header_length_captured": 24
+    },
+    {
+      "bytes": 200,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "hardware_rate": 0,
+      "WD": [
+        "d01800c8",
+        "0000c040",
+        "0e623cc6",
+        "00200000"
+      ],
+      "frame_control": "0040",
+      "protocol_version": 0,
+      "type": 0,
+      "subtype": 4,
+      "header_length_captured": 24
+    },
+    {
+      "bytes": 200,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "hardware_rate": 0,
+      "WD": [
+        "d01800c8",
+        "0000c070",
+        "23e648ce",
+        "00200000"
+      ],
+      "frame_control": "0040",
+      "protocol_version": 0,
+      "type": 0,
+      "subtype": 4,
+      "header_length_captured": 24
+    },
+    {
+      "bytes": 200,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "hardware_rate": 0,
+      "WD": [
+        "d01800c8",
+        "0000c000",
+        "23e6a013",
+        "00200000"
+      ],
+      "frame_control": "0040",
+      "protocol_version": 0,
+      "type": 0,
+      "subtype": 4,
+      "header_length_captured": 24
+    },
+    {
+      "bytes": 200,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "hardware_rate": 0,
+      "WD": [
+        "d01800c8",
+        "0000c010",
+        "23e6c63e",
+        "00200000"
+      ],
+      "frame_control": "0040",
+      "protocol_version": 0,
+      "type": 0,
+      "subtype": 4,
+      "header_length_captured": 24
+    },
+    {
+      "bytes": 200,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "hardware_rate": 0,
+      "WD": [
+        "d01800c8",
+        "0000c020",
+        "23e6f1fd",
+        "00200000"
+      ],
+      "frame_control": "0040",
+      "protocol_version": 0,
+      "type": 0,
+      "subtype": 4,
+      "header_length_captured": 24
+    },
+    {
+      "bytes": 200,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "hardware_rate": 0,
+      "WD": [
+        "d01800c8",
+        "0000c030",
+        "23e71dd0",
+        "00200000"
+      ],
+      "frame_control": "0040",
+      "protocol_version": 0,
+      "type": 0,
+      "subtype": 4,
+      "header_length_captured": 24
+    },
+    {
+      "bytes": 200,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "hardware_rate": 0,
+      "WD": [
+        "d01800c8",
+        "0000c040",
+        "23e749d2",
+        "00200000"
+      ],
+      "frame_control": "0040",
+      "protocol_version": 0,
+      "type": 0,
+      "subtype": 4,
+      "header_length_captured": 24
+    }
+  ],
+  "log": "logs/radio-first-80211-20261010.txt",
+  "log_sha256": "e79e7ec3cc91d6b75a1038883327f68203ef17c420bc190971a05d63e1b0654c",
+  "AP_available": false,
+  "OFDM_5GHz_receive_verified": false
+}

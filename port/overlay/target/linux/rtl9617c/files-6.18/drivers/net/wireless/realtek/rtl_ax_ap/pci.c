@@ -546,6 +546,12 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	rtl_ax_dig_initialize(&radio->io, &radio->dig);
 	rtl_ax_cfo_initialize(&radio->io, radio->chip, radio->flash_calibration.xtal, &radio->cfo);
 	rtl_ax_environment_initialize(&radio->io, radio->chip, &radio->environment);
+	/* Native RXQ/RPQ and IRQ are already prepared. Resume receive after
+	 * the implemented PHY startup so ordinary 802.11 frames reach the
+	 * native dispatcher, using the same path verified on this board. */
+	pci_set_master(radio->pdev);
+	rtl_ax_h2c_start(&radio->io);
+	rtl_ax_rx_open(radio->rx);
 	return 0;
 }
 

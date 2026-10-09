@@ -9,7 +9,8 @@
   "frame_header_log": "logs/radio-rx-continuous01-20261010.txt",
   "last_snapshot": "logs/radio-rx-continuous-followup-20261010.txt",
   "previous_actual_type0_observation": "manifests/radio-rx-stage-cck01-20261010.json",
-  "current_observation_has_new_type0_frames": false,
+  "current_observation_has_new_type0_frames": true,
   "full_latest_build_unit": "ponwrt-tyfza1-lan-20261010-015433",
-  "full_latest_build_output": "artifacts/full-pon-radio-rx-pipeline01-6.18.55"
+  "full_latest_build_output": "artifacts/full-pon-radio-rx-pipeline01-6.18.55",
+  "confirmed_frame_evidence": "manifests/radio-first-80211-20261010.json"
 }
