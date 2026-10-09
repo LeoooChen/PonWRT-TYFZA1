@@ -268,3 +268,5 @@ halbb_supportability_default@2b03dc 的C/XB基础mask为38fa/8fb；share_xtal=fa
 physts CR@2c6aa4的bitmap数组基址073c；page9保留，page10..15的实际地址索引减1。halbb_physts_parsing_init@2c61a0先保存各页并为11..15置IE9，为6/7启用IE13，supportability bit3时为0..3/8/12..15置IE24。原生按该顺序读写及保存bitmap；普通PPDU解析尚未实现，不把这个寄存器配置说成收到无线帧。
 
 physts模块SHA256 f5c276f0ecf5a862490ac55e83b0b2c6bb777d83cab2702b900e62df7c23505c在原机两颗supportability=38ba/8bb。逐页readback与对象一致，page6=2006、7=a002、11=201、12..14=1000202、15=1000206；RX错误0。输出logs/radio-live-physts-20261009.txt。后续继续common report/debug对象、TX power diff/MACID、统计及EDCCA/DFS/DIG/CFO/RA等原机入口，暂未进入RF DM。
+
+最后进行实际post-PHY控制应答验证：临时诊断模块在全部已实现的基础/FEM、限幅、IC/GPIO、增益和PHY bitmap后再次发送原机BA CAM8初始化命令。此额外命令只放在artifacts/live-radio-post-phy-ack生成源码，正式overlay启动顺序不增加它。模块SHA25682f7d5a3c424b31a7e4daf04471c45881c74ec60d11dfdf52c7ee9799aa45835实机两颗done_acks=2、RXQ/IRQ各2、所有RX错误0，证明上述PHY配置完成后MCU与控制DMA仍然应答。结果logs/radio-live-post-phy-ack-20261009.txt。
