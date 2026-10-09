@@ -3,8 +3,8 @@
 import argparse
 import hashlib
 import json
+import xml.etree.ElementTree as ET
 from pathlib import Path
-import shutil
 from radio_inputs import NativeRadioFormat
 
 root = Path(__file__).resolve().parents[1]
@@ -12,6 +12,8 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('output', type=Path)
 parser.add_argument('--study', type=Path)
 parser.add_argument('--manifest', type=Path, default=root / 'artifacts/wifi-runtime-manifest.json')
+parser.add_argument('--hardware-settings', type=Path,
+                    default=root / 'evidence/pre-disassembly/backups/2026-10-07/working-dhcp/current-hs.xml')
 args = parser.parse_args()
 if args.study is None:
     args.study = root / json.loads((root / 'manifests/wireless-study-current.json').read_text())['snapshot']
@@ -42,7 +44,36 @@ try:
                              'firmware_cut': image.cut, 'version': list(image.version),
                              'download_header_bytes': len(header), 'section_packet_bytes': 2020})
     parameters = []
+    calibration = []
+    hs_data = args.hardware_settings.read_bytes()
+    hs = {item.attrib['Name']: item.attrib['Value']
+          for item in ET.fromstring(hs_data).iter('Value')}
+    gain_keys = ('HW_RX_GAINGAP_2G_CCK_AB', 'HW_RX_GAINGAP_2G_OFDM_AB',
+                 'HW_RX_GAINGAP_5GL_AB', 'HW_RX_GAINGAP_5GM_AB', 'HW_RX_GAINGAP_5GH_AB')
     for family, band, fem in (('rtl8852ce', '5GHz', 'RTK66587_BPF'), ('rtl8192xbe', '2.4GHz', 'RTK66287')):
+        wlan = 0 if family == 'rtl8852ce' else 1
+        # Actual original normal gain calls query the flash shadow,not the
+        # physicalOTP. Preserve the board's exported2G/5G gain/TSSI inputs.
+        data = bytearray(b'TYFC0001')
+        data.extend(int(hs[key]) for key in gain_keys)
+        data.extend(int(hs[f'HW_THERMAL_{path}_WLAN{wlan}']) for path in ('A', 'B'))
+        data.append(int(hs[f'HW_XCAP_WLAN{wlan}_AX']))
+        for prefix, count in (('HW_2G_CCK_TSSI_', 6), ('HW_2G_BW40_1S_TSSI_', 5),
+                              ('HW_5G_BW40_1S_TSSI_', 14)):
+            for path in ('A', 'B'):
+                values = bytes(int(value, 16) for value in hs[prefix + path].split(','))
+                if len(values) != count:
+                    raise ValueError(f'Unexpected original calibration length: {prefix}{path}')
+                data.extend(values)
+        relative = Path('lib/firmware/realtek/tyfza1') / family / 'flash-calibration.bin'
+        destination = args.output / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(data)
+        calibration.append({'path': str(relative), 'bytes': len(data),
+                            'sha256': hashlib.sha256(data).hexdigest(),
+                            'hardware_settings_sha256': hashlib.sha256(hs_data).hexdigest(),
+                            'wlan': wlan, 'source': 'original HS flash gain,thermal,xtal,TSSI fields',
+                            'physical_OTP_is_separate': True})
         for stage, subdirectory in (('base', Path()), ('FEM-extension', Path(fem))):
             relative = Path('realtek/tyfza1') / family / 'RFE54' / subdirectory
             source = args.study / 'evidence/stock/radio-parameters' / family / 'RFE54' / subdirectory
@@ -72,7 +103,7 @@ try:
                                    'sha256': hashlib.sha256(data).hexdigest(), 'corrections': corrections})
     report = {'study': str(args.study.relative_to(root)), 'native_format_header_sha256':
               hashlib.sha256((root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/fw.h').read_bytes()).hexdigest(),
-              'firmware': firmware, 'parameters': parameters,
+              'firmware': firmware, 'parameters': parameters, 'calibration': calibration,
               'RF_load_order': ['base', 'FEM-extension'],
               'RF_tables_applied_by_driver': False, 'radio_driver_available': False}
     args.manifest.parent.mkdir(parents=True, exist_ok=True)

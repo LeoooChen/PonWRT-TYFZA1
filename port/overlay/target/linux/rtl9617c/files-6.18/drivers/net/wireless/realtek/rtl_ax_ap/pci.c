@@ -19,6 +19,7 @@
 #include "receive.h"
 #include "rx.h"
 #include "power-tables.h"
+#include "bb-dm.h"
 
 /* Original netdev-open policy in os_intfs.c: MU beamforming, OFDMA or
  * force_fw_tx selects firmware scheduling. Preserve all three inputs. */
@@ -42,6 +43,8 @@ struct rtl_ax_ap {
 	struct rtl_ax_fw_transport transport;
 	struct rtl_ax_phy_inputs phy;
 	struct rtl_ax_power_inputs power_inputs;
+	struct rtl_ax_bb_dm bb_dm;
+	struct rtl_ax_board_cal flash_calibration;
 	struct rtl_ax_rx *rx;
 	struct mutex command_mutex;
 	spinlock_t command_lock;
@@ -494,7 +497,18 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	ret = rtl_ax_mac_features(radio);
 	if (ret)
 		return ret;
-	return rtl_ax_phy_configuration_start(radio);
+	ret = rtl_ax_phy_configuration_start(radio);
+	if (ret)
+		return ret;
+	ret = rtl_ax_bb_dm_ic_start(&radio->io, radio->chip, &radio->bb_dm);
+	if (ret)
+		return ret;
+	rtl_ax_bb_dm_gpio_start(&radio->io, radio->chip, &radio->bb_dm);
+	ret = rtl_ax_board_cal_load(&radio->pdev->dev, radio->chip, &radio->flash_calibration);
+	if (ret)
+		return ret;
+	return rtl_ax_bb_dm_gain_start(&radio->io, radio->chip,
+				     &radio->flash_calibration, &radio->bb_dm);
 }
 
 static ssize_t radio_state_show(struct device *dev,
@@ -513,7 +527,7 @@ static ssize_t radio_state_show(struct device *dev,
 		"cmac_registers=%s trx_registers=%s phy_inputs=%s "
 		"features=%s done_acks=%llu bb_base=%s radio_base=%s "
 		"phy_configuration=%s radio_passes=%u,%u "
-		"bb_rf=pending roles=pending mac80211=pending\n",
+		"bb_dm_ic=%s bb_rf=pending roles=pending mac80211=pending\n",
 		radio->chip, radio->identity.hardware_cv, radio->identity.cv,
 		radio->identity.factory, radio->identity.adie, radio->powered ? "on" : "off",
 		radio->calibration.tag, radio->calibration.process,
@@ -529,7 +543,8 @@ static ssize_t radio_state_show(struct device *dev,
 		radio->features_ready ? "BA-CAM8-acknowledged" : "off", radio->done_acks,
 		radio->bb_base_ready ? "applied" : "off", radio->radio_base_ready ? "applied" : "off",
 		radio->fem_ready ? "base-and-FEM" : "pending",
-		radio->radio_passes[0], radio->radio_passes[1]);
+		radio->radio_passes[0], radio->radio_passes[1],
+		radio->bb_dm.ic_ready ? "applied" : "pending");
 }
 static DEVICE_ATTR_RO(radio_state);
 
@@ -692,6 +707,39 @@ static ssize_t radio_limits_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_limits);
 
+static ssize_t radio_bb_dm_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_bb_dm *dm = &radio->bb_dm;
+
+	return sysfs_emit(buffer,
+		"ic=%s tdma_period=%u,%u dynamic_csi=%u csi_response=%u "
+		"cck_backup=%u,%u,%u factory_trim=%02x adc_trim=%02x "
+		"a10=%08x,2a10=%08x t2r0624=%08x t2r0608=%08x "
+		"GPIO=%s TRSW=%08x,%08x RFM=%08x,%08x "
+		"gain_efuse=%s normal_valid=%u normal_A=%d,%d,%d,%d,%d "
+		"normal_B=%d,%d,%d,%d,%d hidden_valid=%u hidden_groups=%u "
+		"hidden_2G_CS=%d,%d hidden_2G_CG=%d,%d thermal=%u,%u xtal=%u tracking=pending\n",
+		dm->ic_ready ? "applied" : "pending", dm->tdma_cr_period[0], dm->tdma_cr_period[1],
+		dm->dynamic_csi_response, dm->csi_response, dm->cck_packet_threshold,
+		dm->cck_rssi_offset, dm->cck_sbd_threshold, dm->factory_trim, dm->adc_timing_trim,
+		rtl_ax_read32(radio, 0x10a10), rtl_ax_read32(radio, 0x12a10),
+		rtl_ax_read32(radio, 0x10624), rtl_ax_read32(radio, 0x10608),
+		dm->gpio_ready ? "applied" : "pending",
+		rtl_ax_read32(radio, 0x15868), rtl_ax_read32(radio, 0x17868),
+		rtl_ax_read32(radio, 0x15894), rtl_ax_read32(radio, 0x17894),
+		dm->gain_ready ? "decoded" : "pending", dm->normal_gain_valid,
+		dm->normal_gain[0][0], dm->normal_gain[0][1], dm->normal_gain[0][2],
+		dm->normal_gain[0][3], dm->normal_gain[0][4], dm->normal_gain[1][0],
+		dm->normal_gain[1][1], dm->normal_gain[1][2], dm->normal_gain[1][3], dm->normal_gain[1][4],
+		dm->hidden_gain_valid, dm->hidden_bands,
+		dm->hidden_cs[0][0], dm->hidden_cs[1][0], dm->hidden_cg[0][0], dm->hidden_cg[1][0],
+		radio->flash_calibration.thermal[0], radio->flash_calibration.thermal[1],
+		radio->flash_calibration.xtal);
+}
+static DEVICE_ATTR_RO(radio_bb_dm);
+
 static ssize_t radio_efuse_read(struct file *file, struct kobject *kobject,
 	const struct bin_attribute *attr, char *buffer, loff_t offset, size_t count)
 {
@@ -729,7 +777,7 @@ static DEVICE_ATTR_RO(radio_rx);
 static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_state.attr, &dev_attr_radio_rx.attr, &dev_attr_radio_bb.attr,
 	&dev_attr_radio_rf.attr, &dev_attr_radio_rf_bank.attr, &dev_attr_radio_rf_analog.attr,
-	&dev_attr_radio_power.attr, &dev_attr_radio_limits.attr, NULL,
+	&dev_attr_radio_power.attr, &dev_attr_radio_limits.attr, &dev_attr_radio_bb_dm.attr, NULL,
 };
 static const struct attribute_group rtl_ax_group = {
 	.attrs = rtl_ax_attrs, .bin_attrs = rtl_ax_bin_attrs,
@@ -758,6 +806,9 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		radio->bb_base_ready = false;
 		radio->radio_base_ready = false;
 		radio->fem_ready = false;
+		radio->bb_dm.ic_ready = false;
+		radio->bb_dm.gpio_ready = false;
+		radio->bb_dm.gain_ready = false;
 		radio->power_inputs.ready = false;
 		radio->download_prepared = false;
 	}

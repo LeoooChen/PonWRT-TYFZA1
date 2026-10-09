@@ -250,3 +250,13 @@ limits.c 按原机_hal_parse_txpwrlmt@1d6408、RU parser及store回调保存band
 fem01原生模块SHA256 76807da6c19bbad667dfb2374822765a5073b87cff4c61f5bb43cf75fea7661d在两颗原机执行，radio_passes=2,2、active_stage=FEM。C基础A/B总写4088/4022、FEM256/256，基础固件页每路2×1568B、FEM每路2×484B。XB基础974/812、FEM8/8；其FEM无数字RF缓存项，但原机最终空页仍按class8/9各发送两次。XB EDPK gain=51/51、RXBB=120/120、reference2560。SIPI读回与前一阶段一致，RX错误0。输出logs/radio-live-fem01-20261009.txt。
 
 接下来必须先执行rtw_hal_bb_dm_init@1b7d94→halbb_dm_init@2b055c：IC hardware/TDMA/DCR、GPIO、普通/hidden eFuse、supportability、PHY status、统计、EDCCA/DFS/DIG/CFO/RA/环境监控/功率控制等，再进入RF DM的NCTL和校准。完整PHY参数配置不等于BB DM/RF校准或AP完成，状态仍为bb_rf=pending。
+
+## BB DM 的 IC、GPIO 与实际 flash/OTP 增益来源
+
+bb-dm.h 依本机halbb_ic_hw_setting_init@2b011c顺序初始化TDMA host字段，执行C@2e14c4的a10/2a10 bit0（DBCC80+80 EVM report selection），或XB@2ebf68的0624低6位=15、0608bits8..13=9；XB还保存4b48/4ba4 CCK阈值，并读物理5e3/5af。DCR@2d912c只初始化host状态，不增加虚构硬件写入。
+
+随后gpio_setting_init_C@2e585c/XB@2f0218按原机RFE54分支配置两路5868/7868、TRSW查表、0334输出及RFM PAPE/TRSW/LNA。两颗的RFE54 LNA信号反相且standby=1，RFM低3bytes=0a0604；XB另置bit25。gpio02模块SHA2563ba3368e6484f22c2076749706e3c164daba35b08580e252b17df6593707f998实机TRSW两路=a9a90002，C RFM=010a0604、XB=030a0604；XB timing0624=0101030f、0608=1e1e091e，factory/ADC trim=cc/f9与物理备份相符。输出logs/radio-live-bb-dm-gpio02-20261009.txt。
+
+继续追normal gain发现本机C@2e81ac/XB@2f2290调用的是rtw_hal_flash_get_info@1daa58→rtw_nvm_get_info@4f0→rtw_flash_get_info@26c4，不能从physicalOTP逻辑map替代。实际ELF flash字典每项44B，gain IDs329..333对应2G CCK、2G OFDM、5G低/中/高，shadow offsets2d6/2d4/2d8/2da/2dc；每个byte高nibble是A、低nibble是B，有符号4bit。原机HS备份中HW_RX_GAINGAP对应50/50/239/15/0。prepare_wifi_runtime现在额外生成两个66B native flash-calibration.bin，保存这五项、各WLAN的thermal/xtal及实际2G/5G TSSI数据，manifest记录HS原文件哈希和安装文件哈希；没有复制HS中的密码等其他配置。6G normal gain的shadow填充尚未追清，本机2G/5G数据单独标定，不声称完成6G射频。
+
+hidden gain仍使用本机物理路径：读585开始55B，再按实际ELF地址数组解码C每路径12组/XB每路径4组，CS取高nibble、CG取低nibble；全ff则invalid。原生bb-gain模块SHA2560a590c04f46ad97b50d926c78ef8df852e348857c206bd32dd9df393ed3e80fc在原机normal A=3,3,-2,0,0、B=2,2,-1,-1,0。C hidden_valid=0、thermal=28/28、xtal=71；XB hidden_valid=1、thermal=24/24、xtal=63；均与本机flash/OTP来源相符，RX错误0。结果logs/radio-live-bb-gain-20261009.txt。当前只完成BB DM前三个入口，supportability/PHY status及动态跟踪继续接入，RF校准/AP仍未完成。

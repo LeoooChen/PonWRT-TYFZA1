@@ -30,10 +30,13 @@ try:
         assert len(codec.header(data, image)) == item['download_header_bytes']
     for item in expected['parameters']:
         assert hashlib.sha256(members[item['path']]['data']).hexdigest() == item['sha256'], item['path']
+    for item in expected.get('calibration', []):
+        assert hashlib.sha256(members[item['path']]['data']).hexdigest() == item['sha256'], item['path']
     report = {'FIT_sha256': hashlib.sha256(fit.read_bytes()).hexdigest(),
               'verification_entry': 'Final PCIe FIT selected kernel initramfs',
               'original_radio_firmware_files': len(expected['firmware']),
               'selected_RFE54_parameter_files': len(expected['parameters']),
+              'board_flash_calibration_files': len(expected.get('calibration', [])),
               'all_bytes_match_prepared_board_inputs': True,
               'native_AP_PCI_backend_present_in_selected_kernel': True,
               'firmware_transport_implemented': True, 'mac80211_implemented': False,
