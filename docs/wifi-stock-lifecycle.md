@@ -533,3 +533,13 @@ c-iqk.h按本机C generic doiQK和3178ac/31abdc/31a914/317ba0/31a63c/31a70c实�
 初次原机A范围判断暴露一个移植错误：用到了旧GPL3..53及其额外首DAC判断。重新核对本机fine-check@3158bc，实际减3后unsigned比较57，即3..60；actual start中没有首DAC边界检查。已按机器码纠正，旧观察日志保留。
 
 模块b4ccaa23d2dd55ebc975bd27e0fc676995fde9420715fb586c75ee172b0f67eb实机C36，A因首次结果按原机范围触发第二次偏置，共20个步骤；B一次偏置、14个步骤。34步均bff8=55、80fc=8000、failure0，两路LOK/TX/RX判定0。A LOK_IDACee0f4/B95774、thermal29/30；16个C BB与非RF0的RF读回全部恢复原值，RF0在自动RF5/AGC下gain变化、mode3保持。XB同时保留两路32步成功。两频各64个实际入站帧FCS全部匹配、kernel丢包0，XEPON公网2/2；证据manifests/radio-c-iqk-20261010.json及对应logs/pcap。当前仍是native live覆盖；完整GAPK、TSSI tracking、AP发射关联和全带宽频道继续实现。
+
+## 2026-10-10 原机GAPK的RFE54分支与C实际测量
+
+GAPK trigger@2f643c检查supportability bit4。原机init_C@3157fc/XB@35b300首次select HW table0，两路RF10055[19]写0。原机do_txgapk_XB@35b17c在RFE>50时只保存channel metadata并返回，TYFZA1 RFE54跳过测量；没有强制执行另一份SDK的XB efem校准。C没有这一门限，正常SCC5G路径依旧测量。
+
+gapk.h接入首次频道GAPK初始化，c-gapk.h依据C main@314ec0、non_dbcc@3152a8实现两路测量前统一备份7KIP/4RF（原机backup/reload跳过RF5，结束强制自动），D3[8]在模拟/数字RF18[19]选择table0前后关闭/开启，禁用AGC，GAPK专用AFE/preset、RF_DPK、RF_RXDCK，Track1019/1519、Power1119/1619和Restore1219（B对应加16）。原机GAPK AFE没有IQK额外5670 DAC/ADC控制写入，B在ADC cfg后独有c1d4=1/c1d8=11覆盖，均保留。
+
+RFE54 5G track选择2aa8、second ItQt36、first ItQt9，power选择0、ItQt9；17组delta按7bit signed、adjustment按6bit signed读出。原机done_check@30df90每个poll从计数1起到2000停止（1999观察），first bff8=55失败间隔10us、second80fc=8000失败间隔1us，返回值体现第二完成。before_one_shot仅bff8非0时清8010并等1us；NCTL命令不借用IQK额外初始/结束等待或8008失败判定。校准恢复后再运行原生IQK和TSSI DE。
+
+模块a2a07bb378faf85a4c1423d7f95bb2820a2aa38201c656af4922327460e0bd67实机C36两路共10步全部bff8=55、80fc=8000；track/power34组实际结果保留，首次观察track delta11项非0、adjust28项非0，power在原机gain_stage0路径当前均0。14个BB读回与非RF0的RF恢复全部匹配，RF0为自动增益变化；后续C/XB IQK继续通过。XB6 HW table0、正确报告原厂RFE54跳过，无测量恢复伪记录。两路各64个实际用户态入站帧FCS全匹配、kernel丢包0、XEPON公网2/2。证据manifests/radio-c-gapk-20261010.json、logs/radio-c-gapk-20261010.txt及pcap。MCC多频道缓存和其他带宽仍继续适配；当前正常SCC20MHz每次table0重新测量。

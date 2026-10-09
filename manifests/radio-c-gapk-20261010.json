@@ -1,0 +1,343 @@
+{
+  "module": "artifacts/live-radio-c-gapk02/rtl_ax_ap_live.ko",
+  "sha256": "a2a07bb378faf85a4c1423d7f95bb2820a2aa38201c656af4922327460e0bd67",
+  "original_sources": [
+    "init_C@3157fc",
+    "select_table_C@31563c",
+    "do_txgapk_XB@35b17c RFE>50 returns",
+    "main_C@314ec0",
+    "track5G_C@3135a4",
+    "power5G_C@3143f4",
+    "done_check_C@30df90"
+  ],
+  "HW_table_A_B": [
+    0,
+    0
+  ],
+  "C_scope": "RFE54 normalSCC5G20 table0 track/power measurement and restore before IQK",
+  "C_shots": 10,
+  "all_bff8_55_and_80fc_8000": true,
+  "C_coefficients": [
+    {
+      "path": 0,
+      "entry": 0,
+      "track_delta": 0,
+      "track_adjust": -3,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 0,
+      "entry": 1,
+      "track_delta": 0,
+      "track_adjust": -3,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 0,
+      "entry": 2,
+      "track_delta": 0,
+      "track_adjust": -3,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 0,
+      "entry": 3,
+      "track_delta": 5,
+      "track_adjust": -3,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 0,
+      "entry": 4,
+      "track_delta": 0,
+      "track_adjust": -5,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 0,
+      "entry": 5,
+      "track_delta": 4,
+      "track_adjust": -5,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 0,
+      "entry": 6,
+      "track_delta": 0,
+      "track_adjust": -7,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 0,
+      "entry": 7,
+      "track_delta": -2,
+      "track_adjust": -7,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 0,
+      "entry": 8,
+      "track_delta": 0,
+      "track_adjust": -6,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 0,
+      "entry": 9,
+      "track_delta": 1,
+      "track_adjust": -6,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 0,
+      "entry": 10,
+      "track_delta": 0,
+      "track_adjust": -7,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 0,
+      "entry": 11,
+      "track_delta": 0,
+      "track_adjust": -7,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 0,
+      "entry": 12,
+      "track_delta": 0,
+      "track_adjust": -7,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 0,
+      "entry": 13,
+      "track_delta": -13,
+      "track_adjust": -7,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 0,
+      "entry": 14,
+      "track_delta": 0,
+      "track_adjust": 0,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 0,
+      "entry": 15,
+      "track_delta": 0,
+      "track_adjust": 0,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 0,
+      "entry": 16,
+      "track_delta": 0,
+      "track_adjust": 0,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 1,
+      "entry": 0,
+      "track_delta": 0,
+      "track_adjust": -1,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 1,
+      "entry": 1,
+      "track_delta": 0,
+      "track_adjust": -1,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 1,
+      "entry": 2,
+      "track_delta": 0,
+      "track_adjust": -1,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 1,
+      "entry": 3,
+      "track_delta": 5,
+      "track_adjust": -1,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 1,
+      "entry": 4,
+      "track_delta": 0,
+      "track_adjust": -3,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 1,
+      "entry": 5,
+      "track_delta": 4,
+      "track_adjust": -3,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 1,
+      "entry": 6,
+      "track_delta": 0,
+      "track_adjust": -5,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 1,
+      "entry": 7,
+      "track_delta": -2,
+      "track_adjust": -5,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 1,
+      "entry": 8,
+      "track_delta": 0,
+      "track_adjust": -4,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 1,
+      "entry": 9,
+      "track_delta": 1,
+      "track_adjust": -4,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 1,
+      "entry": 10,
+      "track_delta": 0,
+      "track_adjust": -5,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 1,
+      "entry": 11,
+      "track_delta": 2,
+      "track_adjust": -5,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 1,
+      "entry": 12,
+      "track_delta": 0,
+      "track_adjust": -6,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 1,
+      "entry": 13,
+      "track_delta": -11,
+      "track_adjust": -6,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 1,
+      "entry": 14,
+      "track_delta": 0,
+      "track_adjust": 0,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 1,
+      "entry": 15,
+      "track_delta": 0,
+      "track_adjust": 0,
+      "power_delta": 0,
+      "power_adjust": 0
+    },
+    {
+      "path": 1,
+      "entry": 16,
+      "track_delta": 0,
+      "track_adjust": 0,
+      "power_delta": 0,
+      "power_adjust": 0
+    }
+  ],
+  "C_14_BB_restore_all_match": true,
+  "RF_differences": [
+    {
+      "path": 0,
+      "address": "00000",
+      "saved": "337e1",
+      "restored": "377e1"
+    },
+    {
+      "path": 1,
+      "address": "00000",
+      "saved": "337e1",
+      "restored": "377e1"
+    }
+  ],
+  "XB_measurement": "skipped by actual original RFE54 branch after initialization and channel metadata",
+  "captures": [
+    {
+      "chip": "C",
+      "frames": 64,
+      "FCS_match": 64,
+      "subtypes": {
+        "1/11": 30,
+        "1/12": 29,
+        "0/8": 5
+      },
+      "pcap": "logs/radio-c-gapk-C.pcap",
+      "sha256": "ea16f43d436e399c909803d4c152a67e18ab13cdadb6aced53a58d3e63c24b4e"
+    },
+    {
+      "chip": "XB",
+      "frames": 64,
+      "FCS_match": 64,
+      "subtypes": {
+        "0/8": 50,
+        "2/0": 3,
+        "1/11": 4,
+        "1/12": 4,
+        "2/4": 2,
+        "2/8": 1
+      },
+      "pcap": "logs/radio-c-gapk-XB.pcap",
+      "sha256": "ff4db42b982cf76186613cf693dfd1f413565f339c10d3abbb99eab68ccbdb45"
+    }
+  ],
+  "log": "logs/radio-c-gapk-20261010.txt",
+  "hardware_TSSI_tracking_complete": false,
+  "AP_transmit_association_complete": false,
+  "XEPON_public_ping": "2/2"
+}

@@ -34,6 +34,8 @@
 #include "c-rxdck.h"
 #include "xb-iqk.h"
 #include "c-iqk.h"
+#include "gapk.h"
+#include "c-gapk.h"
 #include "trim.h"
 #include "ref-power.h"
 #include "tssi-de.h"
@@ -90,6 +92,8 @@ struct rtl_ax_ap {
 	u8 rxdck_channel;
 	struct rtl_ax_xb_iqk xb_iqk;
 	struct rtl_ax_c_iqk c_iqk;
+	struct rtl_ax_gapk gapk;
+	struct rtl_ax_c_gapk c_gapk;
 	struct rtl_ax_trim trim;
 	struct rtl_ax_ref_power ref_power;
 	struct rtl_ax_tssi_de tssi_de;
@@ -1142,6 +1146,11 @@ static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int chan
 			radio->rxdck_channel = channel;
 	}
 	if (!ret) {
+		ret = rtl_ax_gapk_channel(&radio->io, radio->chip, channel, &radio->gapk);
+		if (!ret && radio->chip == RTL_AX_8852C)
+			ret = rtl_ax_c_gapk_start(&radio->io, channel, &radio->c_gapk);
+	}
+	if (!ret) {
 		if (radio->chip == RTL_AX_8192XB)
 			ret = rtl_ax_xb_iqk_start20(&radio->io, channel, &radio->xb_iqk);
 		else
@@ -1297,7 +1306,7 @@ static ssize_t radio_iqk_show(struct device *dev,
 		struct rtl_ax_c_iqk *c = &radio->c_iqk;
 
 		length = sysfs_emit(buffer, "IQK=%s chip=%02x method=host normal_SCC_5G_20 channel=%u "
-			"times=%u failures=%u status=%08x GAPK=pending\n",
+			"times=%u failures=%u status=%08x\n",
 			c->ready ? "applied" : "pending", radio->chip, c->channel, c->times, c->failures, c->status);
 		for (path = 0; path < 2; path++) {
 			length += sysfs_emit_at(buffer, length, "path=%u shots=%u narrow=%u LOK_attempts=%u "
@@ -1317,7 +1326,7 @@ static ssize_t radio_iqk_show(struct device *dev,
 		goto unlock;
 	}
 	length = sysfs_emit(buffer, "IQK=%s chip=%02x method=host normal_SCC_2G_20 channel=%u "
-		"times=%u failures=%u status=%08x GAPK=pending\n",
+		"times=%u failures=%u status=%08x\n",
 		state->ready ? "applied" : "pending", radio->chip, state->channel,
 		state->times, state->failures, state->status);
 	for (path = 0; path < 2; path++) {
@@ -1372,6 +1381,70 @@ unlock:
 	return length;
 }
 static DEVICE_ATTR_RO(radio_iqk_restore);
+
+static ssize_t radio_gapk_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_gapk *state = &radio->gapk;
+	ssize_t length;
+
+	mutex_lock(&radio->command_mutex);
+	length = sysfs_emit(buffer, "GAPK_init=%s channel=%u RFE=54 calibration=%s "
+		"RF10055_A_B=%05x,%05x HW_table_A_B=%u,%u\n", state->initialized ? "applied" : "pending",
+		state->channel, state->xb_rfe_skip ? "skipped-by-original-XB-RFE-gate" :
+			radio->c_gapk.ready ? "C-SCC5G-applied" : "C-measurement-pending",
+		state->table_readback[0], state->table_readback[1],
+		(state->table_readback[0] >> 19) & 1, (state->table_readback[1] >> 19) & 1);
+	if (radio->chip == RTL_AX_8852C) {
+		struct rtl_ax_c_gapk *c = &radio->c_gapk;
+		unsigned int path, i;
+
+		for (path = 0; path < 2; path++) {
+			for (i = 0; i < 5; i++)
+				length += sysfs_emit_at(buffer, length,
+					"path=%u shot=%u reads=%u/%u first=%04x second=%04x done=%u\n",
+					path, i, c->first_reads[path][i], c->second_reads[path][i],
+					c->first[path][i], c->second[path][i], c->done[path][i]);
+			for (i = 0; i < 17; i++)
+				length += sysfs_emit_at(buffer, length, "path=%u entry=%u track_delta=%d track_adjust=%d power_delta=%d power_adjust=%d\n",
+					path, i, c->delta[path][0][i], c->adjustment[path][0][i],
+					c->delta[path][1][i], c->adjustment[path][1][i]);
+		}
+	}
+	mutex_unlock(&radio->command_mutex);
+	return length;
+}
+static DEVICE_ATTR_RO(radio_gapk);
+
+static ssize_t radio_gapk_restore_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_c_gapk *state = &radio->c_gapk;
+	unsigned int path, i;
+	ssize_t length = 0;
+
+	mutex_lock(&radio->command_mutex);
+	if (radio->chip == RTL_AX_8192XB) {
+		length = sysfs_emit(buffer, "GAPK_measurement=skipped-by-original-XB-RFE54\n");
+		goto unlock;
+	}
+	for (path = 0; path < 2; path++) {
+		for (i = 0; i < ARRAY_SIZE(rtl_ax_c_gapk_kip); i++)
+			length += sysfs_emit_at(buffer, length, "path=%u BB=%04x saved=%08x restored=%08x\n",
+				path, rtl_ax_c_gapk_kip[i] + path * 0x100, state->kip_saved[path][i], state->kip_restored[path][i]);
+		for (i = 0; i < ARRAY_SIZE(rtl_ax_c_gapk_rf); i++) {
+			if (rtl_ax_c_gapk_rf[i] == 5) continue;
+			length += sysfs_emit_at(buffer, length, "path=%u RF=%05x saved=%05x restored=%05x\n",
+				path, rtl_ax_c_gapk_rf[i], state->rf_saved[path][i], state->rf_restored[path][i]);
+		}
+	}
+unlock:
+	mutex_unlock(&radio->command_mutex);
+	return length;
+}
+static DEVICE_ATTR_RO(radio_gapk_restore);
 
 static ssize_t radio_trim_show(struct device *dev,
 	struct device_attribute *attr, char *buffer)
@@ -1478,7 +1551,7 @@ static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_rf_start.attr, &dev_attr_radio_dack.attr, &dev_attr_radio_dac.attr,
 	&dev_attr_radio_mac80211.attr, &dev_attr_radio_rx_dck.attr, &dev_attr_radio_trim.attr,
 	&dev_attr_radio_ref_power.attr, &dev_attr_radio_tssi_de.attr, &dev_attr_radio_iqk.attr,
-	&dev_attr_radio_iqk_restore.attr, NULL,
+	&dev_attr_radio_iqk_restore.attr, &dev_attr_radio_gapk.attr, &dev_attr_radio_gapk_restore.attr, NULL,
 };
 static const struct attribute_group rtl_ax_group = {
 	.attrs = rtl_ax_attrs, .bin_attrs = rtl_ax_bin_attrs,
