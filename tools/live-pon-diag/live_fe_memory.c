@@ -22,7 +22,7 @@
 
 static const unsigned int regs[] = {
  0x3834,0x3838,0x383c,0x3840,0x3844,0x3848,0x384c,0x3850,
- 0x3854,0x3858,0x385c,0x38a0,0x38c4,0x3724,
+ 0x3854,0x3858,0x385c,0x38a0,0x38b8,0x38bc,0x38c4,0x3924,0x3724,
  0x3400,0x3404,0x3414,0x3418,0x341c,0x3420,0x3424,0x3428,0x3700,0x3704,0x3860,
  0x394c,0x3950,0x3954,0x3958,0x395c,
  0x2300,0x23a0,0x23a4,0x30b8,0x30c0,0x30c4,0xa5f8,0x1058,0x105c,
@@ -104,15 +104,16 @@ static int cache_dma_check(const struct rtl_dq_io *io)
 {
  struct rtl_fe_ipv4_action action={.address=0xc6336401,.port=62000,.destination=32,
   .mac_da_index=2,.ingress_interface=0,.egress_interface=1,.cos=0,.translate=1,.deep_queue=1};
- unsigned int expected[8],actual[7],metadata[7],slot,index=0;
+ unsigned int expected[8],actual[7],metadata[7],slot,index;
  unsigned int crc32=0x12345678;
  unsigned short crc16=0x0123;
  unsigned int *hash=memory,*actions=memory+RTL_FE_ACTION_OFFSET;
  int ret;
 
+ index=rtl_fe_hash_bucket(crc16);
  rtl_fe_ipv4_action(expected,&action);
  hash[index]=cpu_to_le32(crc32);
- memcpy(actions+index*8,expected,32);
+ memcpy((u8 *)actions+index*RTL_FE_ACTION_BYTES,expected,sizeof(expected));
  dma_wmb();
  ret=rtl_fe_main_age(io,index,7);
  if(ret)return ret;
@@ -123,7 +124,7 @@ static int cache_dma_check(const struct rtl_dq_io *io)
  if(ret)return ret;
  pr_info("TYFZA1 FE cache allocation status=%08x\n",readl(base+0x38b4));
  if(readl(base+0x38b4)&6)return -EIO;
- for(slot=0;slot<32;slot++) {
+ for(slot=0;slot<RTL_FE_CACHE_ENTRIES;slot++) {
   ret=rtl_fe_cache_read(io,slot,0,metadata);
   if(ret)return ret;
   if(metadata[0]!=crc32 || (metadata[1]&0x1fff)!=crc16)continue;
@@ -238,7 +239,7 @@ static int configure_reverse(const struct rtl_dq_io *io)
 {
  struct rtl_fe_ipv4_key key={.source=test_destination,.destination=nat_source,
   .source_port=test_port,.destination_port=62000,.protocol=17,.ingress=7,.mask=63};
- struct rtl_fe_ipv4_action action={.address=0x0a172a01,.port=53000,.destination=0,
+ struct rtl_fe_ipv4_action action={.address=0x0a172a01,.port=53000,.destination=0,.check_mask=63,
   .translate=1,.translate_destination=1,.egress_interface=30};
  struct net_device *owner=dev_get_drvdata(device);
  unsigned int key_words[RTL_FE_KEY_WORDS],words[8],cls[7],lpb[3],crc32,index,i,da_index;
@@ -258,9 +259,9 @@ static int configure_reverse(const struct rtl_dq_io *io)
  rtl_fe_key_set(key_words,RTL_FE_KEY_TABLE_ID,0);
  rtl_fe_key_set(key_words,RTL_FE_KEY_ORIG_LSPID,0);
  rtl_fe_key_crc(key_words,&crc32,&crc16);
- index=(crc16&0xfe00)>>4;
+ index=rtl_fe_hash_bucket(crc16);
  ((u32 *)memory)[index]=cpu_to_le32(crc32);
- memcpy(memory+RTL_FE_ACTION_OFFSET+index*32,words,32);
+ memcpy(memory+RTL_FE_ACTION_OFFSET+index*RTL_FE_ACTION_BYTES,words,sizeof(words));
  dma_wmb();
  ret=rtl_fe_main_age(io,index,test_age);
  if(ret)return ret;
@@ -315,7 +316,7 @@ static int packet_pipeline(const struct rtl_dq_io *io)
 {
  struct rtl_fe_ipv4_key key={.source=0x0a172a01,.destination=0xc0a80101,
   .source_port=53000,.destination_port=18082,.protocol=17,.ingress=0,.mask=63};
- struct rtl_fe_ipv4_action action={.address=0xc6336401,.port=62000,.destination=16,
+ struct rtl_fe_ipv4_action action={.address=0xc6336401,.port=62000,.destination=16,.check_mask=63,
   .translate=1,.cos=0};
  struct rtl_fe_ipv6_key key6={.source={0x20010db8,1,0,2},.destination={0x20010db8,2,0,2},
   .source_port=53000,.destination_port=18082,.protocol=17,.mask=63};
@@ -371,7 +372,7 @@ static int packet_pipeline(const struct rtl_dq_io *io)
  writel(readl(base+0x2300)|BIT(13),base+0x2300);
  writel(0xff|(6<<16),base+0x2304+13*12);
  for(i=0;i<5;i++)writel(0,base+0x394c+i*4);
- writel(63|(7<<8),base+0x3704);
+ writel(63,base+0x3704);
  writel(1,base+0x3700);
  writel(0x020d0000,base+0x3860); /* group16/18/19,128-bit CPU miss */
  if(ipv6_test)rtl_fe_ipv6_key(key_words,&key6);
@@ -379,7 +380,7 @@ static int packet_pipeline(const struct rtl_dq_io *io)
  rtl_fe_key_set(key_words,RTL_FE_KEY_HKEY_ID,0);
  rtl_fe_key_set(key_words,RTL_FE_KEY_TABLE_ID,0);
  rtl_fe_key_crc(key_words,&crc32,&crc16);
- index=(crc16&0xfe00)>>4;
+ index=rtl_fe_hash_bucket(crc16);
  rtl_fe_ipv4_action(action_words,&action);
  rtl_fe_action_set(action_words,RTL_FE_CACHE_CTRL1,test_cache_control);
  rtl_fe_action_set(action_words,RTL_FE_MCGID,egress);
@@ -396,7 +397,7 @@ static int packet_pipeline(const struct rtl_dq_io *io)
   rtl_fe_action_set(action_words,RTL_FE_L3_IF_COUNTER_EN,1);
  }
  ((u32 *)memory)[index]=cpu_to_le32(crc32);
- memcpy(memory+RTL_FE_ACTION_OFFSET+index*32,action_words,32);
+ memcpy(memory+RTL_FE_ACTION_OFFSET+index*RTL_FE_ACTION_BYTES,action_words,sizeof(action_words));
  dma_wmb();
  ret=rtl_fe_main_age(io,index,test_age);
  if(ret)return ret;
@@ -407,6 +408,10 @@ static int packet_pipeline(const struct rtl_dq_io *io)
   if(ret)return ret;
  }
  writel(test_cache_misc,base+0x38c4);
+ if(test_cache_misc) {
+  rtl_fe_cache_start(io);
+  writel(test_cache_misc,base+0x38c4);
+ }
  if(wired_ingress)return configure_lan_ingress(io);
  skb=alloc_skb(128,GFP_KERNEL);
  if(!skb)return -ENOMEM;
@@ -610,7 +615,7 @@ static int monitor_set(const char *value,const struct kernel_param *parameter)
   const struct rtl_dq_io io={NULL,reg_read,reg_write,reg_access};
   unsigned int slot,words[7],count=0;
 
-  for(slot=0;slot<256;slot++) {
+  for(slot=0;slot<RTL_FE_CACHE_ENTRIES;slot++) {
    ret=rtl_fe_cache_read(&io,slot,0,words);
    if(ret)return ret;
    if(!words[0])continue;
@@ -714,8 +719,8 @@ static int __init memory_init(void)
  writel(1,base+0x393c);
  ret=readl_poll_timeout(base+0x393c,status,!(status&1),1,100000);
  if(ret)goto restore_tables;
- pr_info("TYFZA1 native FE DMA:address=%pad bytes=%u main=%u flow32B defaults16B cache256-internal; memory initialization complete\n",
-  &dma_address,RTL_FE_MEMORY_BYTES,RTL_FE_HASH_ENTRIES);
+ pr_info("TYFZA1 native FE DMA:address=%pad bytes=%u main=%u flow%uB defaults16B cache%u-internal; memory initialization complete\n",
+  &dma_address,RTL_FE_MEMORY_BYTES,RTL_FE_HASH_ENTRIES,RTL_FE_ACTION_BYTES,RTL_FE_CACHE_ENTRIES);
  pr_info("TYFZA1 FE DMA readback:HASH=%08x/%08x ACTION=%08x/%08x DEFAULT=%08x/%08x config=%08x cache=%08x\n",
   readl(base+0x3838),readl(base+0x383c),readl(base+0x3840),readl(base+0x3844),
   readl(base+0x3858),readl(base+0x385c),readl(base+0x3834),readl(base+0x38a0));

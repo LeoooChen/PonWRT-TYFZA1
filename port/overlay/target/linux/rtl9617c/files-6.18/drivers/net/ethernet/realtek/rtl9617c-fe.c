@@ -46,7 +46,7 @@ struct rtl_fe_flow {
 };
 static const unsigned int fe_registers[] = {
  0x3834,0x3838,0x383c,0x3840,0x3844,0x3848,0x384c,0x3850,
- 0x3854,0x3858,0x385c,0x38a0,0x38c4,0x3724,
+ 0x3854,0x3858,0x385c,0x38a0,0x38b8,0x38bc,0x38c4,0x3924,0x3724,
  0x3400,0x3404,0x3414,0x3418,0x341c,0x3420,0x3424,0x3428,
  0x3700,0x3704,0x3860,0x394c,0x3950,0x3954,0x3958,0x395c,
  0x2300,0x23a0,0x23a4,0xa5f8,
@@ -169,9 +169,10 @@ static int fe_prepare(struct rtl_fe *fe)
  fe_write(fe,0x2304+13*12,0xff|(6<<16));
  for(i=0;i<5;i++)fe_write(fe,0x394c+i*4,0);
  fe_write(fe,0x3724,RTL_FE_ACTION_GROUPS|(3U<<25));
- fe_write(fe,0x3704,63|(7<<8));
+ fe_write(fe,0x3704,63); /* Stock FC five-tuple priority0. */
  fe_write(fe,0x3700,1);
  fe_write(fe,0x3860,0x020d0000);
+ rtl_fe_cache_start(&io);
  return 0;
 }
 static int fe_restore(struct rtl_fe *fe)
@@ -392,7 +393,7 @@ static int fe_parse(struct rtl_fe_port *port,struct flow_cls_offload *cls,struct
  source_changed=!data->ipv6 && (new_source!=addresses.key->src || new_sport!=ports.key->src);
  destination_changed=!data->ipv6 && (new_destination!=addresses.key->dst || new_dport!=ports.key->dst);
  if(source_changed && destination_changed)return -EOPNOTSUPP;
- data->action=(struct rtl_fe_ipv4_action){.destination=data->output->destination,
+ data->action=(struct rtl_fe_ipv4_action){.destination=data->output->destination,.check_mask=63,
   .deep_queue=data->output->destination>=32,.translate=source_changed||destination_changed,
   .translate_destination=destination_changed,.address=ntohl(destination_changed?new_destination:new_source),
   .port=ntohs(destination_changed?new_dport:new_sport)};
@@ -461,7 +462,7 @@ static int fe_replace(struct rtl_fe_port *port,struct flow_cls_offload *cls)
  rtl_fe_key_set(words,RTL_FE_KEY_HKEY_ID,0);
  rtl_fe_key_set(words,RTL_FE_KEY_TABLE_ID,0);
  rtl_fe_key_crc(words,&crc32,&crc16);
- start=(crc16&0xfe00)>>4;
+ start=rtl_fe_hash_bucket(crc16);
  for(index=start;index<start+32;index++)if(!test_bit(index,fe->hashes))break;
  if(index==start+32)return -ENOSPC;
  flow=kzalloc(sizeof(*flow),GFP_KERNEL);
@@ -488,9 +489,9 @@ static int fe_replace(struct rtl_fe_port *port,struct flow_cls_offload *cls)
  rtl_fe_ipv4_action(action,&data.action);
  rtl_fe_action_set(action,RTL_FE_L3_IF_COUNTER_EN,1);
  ((__le32 *)fe->memory)[index]=cpu_to_le32(crc32);
- memcpy(fe->memory+RTL_FE_ACTION_OFFSET+index*32,action,32);
+ memcpy(fe->memory+RTL_FE_ACTION_OFFSET+index*RTL_FE_ACTION_BYTES,action,sizeof(action));
  dma_wmb();
- ret=rtl_fe_main_age(&io,index,7);
+ ret=rtl_fe_main_age(&io,index,1); /* FC idle/valid; hardware hit raises age. */
  if(ret)goto interface;
  flow->published=true;
  __set_bit(index,fe->hashes);__set_bit(counter,fe->counters);

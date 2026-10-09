@@ -60,15 +60,18 @@ static inline int rtl_fe_crc_hardware(const struct rtl_dq_io *io,
  return 0;
 }
 
-#define RTL_FE_HASH_ENTRIES 4096
+#define RTL_FE_HASH_ENTRIES 65536
+#define RTL_FE_CACHE_ENTRIES 2048
+#define RTL_FE_ACTION_BYTES 48
 #define RTL_FE_HASH_BYTES (RTL_FE_HASH_ENTRIES * 4)
 #define RTL_FE_ACTION_OFFSET RTL_FE_HASH_BYTES
-#define RTL_FE_OVERFLOW_OFFSET (RTL_FE_ACTION_OFFSET + RTL_FE_HASH_ENTRIES * 32)
-#define RTL_FE_DEFAULT_OFFSET (RTL_FE_OVERFLOW_OFFSET + 64 * 32)
+#define RTL_FE_OVERFLOW_OFFSET (RTL_FE_ACTION_OFFSET + RTL_FE_HASH_ENTRIES * RTL_FE_ACTION_BYTES)
+#define RTL_FE_DEFAULT_OFFSET (RTL_FE_OVERFLOW_OFFSET + 64 * RTL_FE_ACTION_BYTES)
 #define RTL_FE_MEMORY_BYTES ((RTL_FE_DEFAULT_OFFSET + 32 * 16 + 4095) & ~4095U)
 
-/* 4K main entries,32-entry buckets,256-bit flow actions;128-bit default
- * actions live in DMA memory. Cache uses its own internal224-bit SRAM.
+/* Original board defaults:64K main entries,32-entry buckets,384-bit slots.
+ * The224-bit normal action fits its48-byte slot;defaults use128-bit slots.
+ * Cache has2048 entries and its own internal224-bit action SRAM.
  * The DMA provider supplies the board's coherent CCI address alias. */
 static inline void rtl_fe_dma_tables(const struct rtl_dq_io *io,
  unsigned int address, unsigned int address_high)
@@ -83,10 +86,25 @@ static inline void rtl_fe_dma_tables(const struct rtl_dq_io *io,
  io->write(io->context, 0x3858, address_high);
  io->write(io->context, 0x385c, address + RTL_FE_DEFAULT_OFFSET);
  io->write(io->context, 0x3834,
-  (io->read(io->context, 0x3834) & ~0x300ffU) | 3 | (3 << 2) | (3 << 5));
- io->write(io->context, 0x3848, 3);
+  (io->read(io->context, 0x3834) & ~0x300ffU) | 3 | (7 << 2) | (4 << 5));
+ io->write(io->context, 0x3848, 4);
  io->write(io->context, 0x3854, 1);
- io->write(io->context, 0x38a0, (1 << 16) | (3 << 8) | 1);
+ io->write(io->context, 0x38a0, (1 << 18) | (1 << 16) | (3 << 8) | 4);
+}
+/* Stock cache initialization and FC lifetime management:stage3 allocation
+ * with replacement, full cache age units, and no main aging countdown.
+ * The owner saves/restores all five configuration registers. */
+static inline void rtl_fe_cache_start(const struct rtl_dq_io *io)
+{
+ io->write(io->context,0x3924,0);
+ io->write(io->context,0x38b8,0xffffffffU);
+ io->write(io->context,0x38bc,0xffffffffU);
+ io->write(io->context,0x38c4,0xa0000000U);
+}
+static inline unsigned int rtl_fe_hash_bucket(unsigned short crc16)
+{
+ /* GPL crc16_mask[32-entry bucket][64K table] is0xffe0. */
+ return crc16&0xffe0U;
 }
 
 /* Group16+18+19 CPU miss action in its128-bit slot. It preserves packet

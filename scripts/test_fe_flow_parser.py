@@ -147,6 +147,7 @@ int main(void)
     assert(parsed.action.address==(dir?0x0a172a01:0xc0a8471c));
     assert(parsed.action.port==(dir?port:65536-port));
     assert(parsed.action.destination==(dir?0:32) && parsed.action.deep_queue==!dir);
+    assert(parsed.action.check_mask==63);
     assert(!memcmp(parsed.source,source,6) && !memcmp(parsed.destination,destination,6));
     rule.used|=1U<<FLOW_DISSECTOR_KEY_VLAN;
     assert(fe_parse(dir?&pp:&lp,&cls,&parsed)==-EOPNOTSUPP);
@@ -175,6 +176,7 @@ int main(void)
     assert(parsed.key6.destination[word]==0x20010db8+word*103+1);
    }
    assert(parsed.action.destination==(direction?0:32));
+   assert(parsed.action.check_mask==63);
    assert(parsed.key6.source_port==53123 && parsed.key6.destination_port==443);
    cases++;
   }

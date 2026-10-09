@@ -54,9 +54,9 @@ struct rtl_fe {
  struct list_head flows,ports;
  void *memory;
  struct rtl_fe_mac source_macs[15];
- unsigned long hashes[4096/64],counters[1];
+ unsigned long hashes[RTL_FE_HASH_ENTRIES/64],counters[1];
  u64 deletes;
- unsigned int registers[0x4000/4],ages[128][4],cam[5];
+ unsigned int registers[0x4000/4],ages[RTL_FE_HASH_ENTRIES/32][4],cam[5];
  unsigned int deletes_FDB,restores_CAM,restores_IF,cache_invalidates;
  bool fail_CAM;
 };
@@ -65,7 +65,7 @@ static void fe_write(void *context,unsigned int reg,unsigned int value){((struct
 static int fe_access(void *context,unsigned int reg,unsigned int value){
  struct rtl_fe *fe=context;
  if(reg==0x3928){
-  unsigned int row=value&127;
+  unsigned int row=value&(RTL_FE_HASH_ENTRIES/32-1);
   for(unsigned int i=0;i<4;i++) {
    if(value&BIT(30))fe->ages[row][i]=fe_read(fe,0x3938-i*4);
    else fe_write(fe,0x3938-i*4,fe->ages[row][i]);
@@ -94,29 +94,29 @@ int main(void){
   .destination_created=true,.published=true,.source_owned=true,.destination_owned=true,.interface_owned=true,
   .destination={2,0x77,0x66,0x55,0x44,0x33}};
  a->input=port;
- *b=*a;b->hash_index=4064;b->counter=30;b->crc16=0xff4b;
+ *b=*a;b->hash_index=65344;b->counter=30;b->crc16=0xff4b;
  list_add_tail(&a->list,&fe.flows);list_add_tail(&b->list,&fe.flows);
  set_bit(a->hash_index,fe.hashes);set_bit(b->hash_index,fe.hashes);
  set_bit(a->counter,fe.counters);set_bit(b->counter,fe.counters);
- ((u32 *)fe.memory)[1280]=0x12345678;((u32 *)fe.memory)[4064]=0x87654321;
+ ((u32 *)fe.memory)[1280]=0x12345678;((u32 *)fe.memory)[65344]=0x87654321;
  fe_collect_ports(&fe);assert(fe.ports.next==&port->list);
  assert(!fe_delete(&fe,a));
  fe_collect_ports(&fe);assert(fe.ports.next==&port->list);
  assert(fe.source_macs[0].users==1 && !fe.deletes_FDB && !fe.restores_CAM);
- assert(!test_bit(1280,fe.hashes) && test_bit(4064,fe.hashes));
+ assert(!test_bit(1280,fe.hashes) && test_bit(65344,fe.hashes));
  fe.fail_CAM=true;
  assert(fe_delete(&fe,b)==-ETIMEDOUT);
  fe_collect_ports(&fe);assert(fe.ports.next==&port->list);
  assert(fe.deletes_FDB==1 && fe.source_macs[0].users==1);
  assert(!b->published && !b->destination_owned && b->source_owned && b->interface_owned);
- assert(test_bit(4064,fe.hashes) && test_bit(30,fe.counters));
- assert(!((u32 *)fe.memory)[4064]);
+ assert(test_bit(65344,fe.hashes) && test_bit(30,fe.counters));
+ assert(!((u32 *)fe.memory)[65344]);
  assert(!fe_delete(&fe,b));
  fe_collect_ports(&fe);assert(fe.ports.next==&fe.ports);
  assert(fe.source_macs[0].users==0 && fe.deletes_FDB==1 && fe.restores_CAM==1);
  assert(fe.cache_invalidates==2 && fe.restores_IF==2 && fe.deletes==2);
  for(unsigned int i=0;i<5;i++)assert(fe.cam[i]==0x51000000+i);
- assert(fe.flows.next==&fe.flows && !test_bit(4064,fe.hashes) && !test_bit(30,fe.counters));
+ assert(fe.flows.next==&fe.flows && !test_bit(65344,fe.hashes) && !test_bit(30,fe.counters));
  free(fe.memory);
  puts("Native FE teardown:shared FDB/source MAC,last-owner restore,failed CAM retry and DMA/hash/counter ownership passed");
 }

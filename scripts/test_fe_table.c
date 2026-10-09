@@ -5,7 +5,7 @@
 #include "rtl9617c-fe-pipeline.h"
 
 struct model {
- unsigned int reg[0x4000/4], table[64][8], ages[128][4], counters[64][7], calls, fail;
+ unsigned int reg[0x4000/4], table[64][8], ages[RTL_FE_HASH_ENTRIES/32][4], counters[64][7], calls, fail;
 };
 static unsigned int read_reg(void *context,unsigned int address)
 {
@@ -31,7 +31,7 @@ static int access_reg(void *context,unsigned int address,unsigned int value)
   return 0;
  }
  if(address==0x3928){
-  unsigned int row=value&127;
+  unsigned int row=value&(RTL_FE_HASH_ENTRIES/32-1);
   if(++m->calls==m->fail)return -1;
   for(unsigned int i=0;i<4;i++){
    if(value&0x40000000U)m->ages[row][i]=m->reg[(0x3938-i*4)/4];
@@ -69,7 +69,7 @@ int main(void)
   assert(rtl_fe_mask_read(&io,63,output)==-1);
  }
  /* Every age slot updates exactly one nibble and keeps all other owners. */
- for(unsigned int row=0;row<128;row++)
+ for(unsigned int row=0;row<RTL_FE_HASH_ENTRIES/32;row++)
   for(unsigned int word=0;word<4;word++)m.ages[row][word]=0x54321076U;
  for(unsigned int index=0;index<RTL_FE_HASH_ENTRIES;index++){
   unsigned int row=index>>5,slot=index&31,old=m.ages[row][slot>>3],shift=(slot&7)*4;
@@ -91,23 +91,29 @@ int main(void)
  memset(counters,0xa5,sizeof(counters));
  assert(rtl_fe_tx_counter_read(&io,31,counters)==-1 && counters[0]==0xa5a5a5a5);
  m.fail=0;
+ for(unsigned int crc=0;crc<=65535;crc++)assert(rtl_fe_hash_bucket(crc)==(crc&0xffe0U));
  rtl_fe_dma_tables(&io,0x03400000,2);
  assert(read_reg(&m,0x3838)==2 && read_reg(&m,0x383c)==0x03400000);
  assert(read_reg(&m,0x3844)==0x03400000+RTL_FE_ACTION_OFFSET);
  assert(read_reg(&m,0x3850)==0x03400000+RTL_FE_OVERFLOW_OFFSET);
  assert(read_reg(&m,0x385c)==0x03400000+RTL_FE_DEFAULT_OFFSET);
- assert(RTL_FE_ACTION_OFFSET+4096*32<=RTL_FE_OVERFLOW_OFFSET);
- assert(RTL_FE_OVERFLOW_OFFSET+64*32<=RTL_FE_DEFAULT_OFFSET);
+ assert(RTL_FE_ACTION_OFFSET+RTL_FE_HASH_ENTRIES*RTL_FE_ACTION_BYTES<=RTL_FE_OVERFLOW_OFFSET);
+ assert(RTL_FE_OVERFLOW_OFFSET+64*RTL_FE_ACTION_BYTES<=RTL_FE_DEFAULT_OFFSET);
  assert(RTL_FE_DEFAULT_OFFSET+32*16<=RTL_FE_MEMORY_BYTES);
- assert(read_reg(&m,0x3834)==0x6f && read_reg(&m,0x38a0)==0x10301);
+ assert(read_reg(&m,0x3834)==0x9f && read_reg(&m,0x38a0)==0x50304);
+ rtl_fe_cache_start(&io);
+ assert(!read_reg(&m,0x3924) && read_reg(&m,0x38b8)==0xffffffffU);
+ assert(read_reg(&m,0x38bc)==0xffffffffU && read_reg(&m,0x38c4)==0xa0000000U);
  unsigned int miss[4];rtl_fe_cpu_miss(miss);
  assert(((miss[1]>>22)&3)==3); /* Both keep-original enable/value. */
  assert(((miss[0]>>30)|(miss[1]<<2))%1024==16); /* Miss goes toCPU16. */
  struct {unsigned int before,words[8],after;} guarded={.before=0x12345678,.after=0xabcdef01};
  struct rtl_fe_ipv4_action action={.address=0xc0a8471c,.port=62000,.destination=32,
-  .mac_da_index=8191,.ingress_interface=63,.egress_interface=62,.cos=7,.translate=1,.deep_queue=1};
+  .mac_da_index=8191,.ingress_interface=63,.egress_interface=62,.cos=7,.check_mask=63,.translate=1,.deep_queue=1};
  rtl_fe_ipv4_action(guarded.words,&action);
  assert(guarded.before==0x12345678 && guarded.after==0xabcdef01 && guarded.words[7]==0);
+ /* Original group20 check-mask bits94..99 must identify the matched mask. */
+ assert(((guarded.words[2]>>30)|(guarded.words[3]<<2))%64==63);
  struct {unsigned int before,words[23],after;} key={.before=0x12345678,.after=0xabcdef01};
  struct rtl_fe_ipv4_key input={.source=0xc0a801aa,.destination=0x01010101,.source_port=54321,
   .destination_port=443,.llid=31,.protocol=6,.ingress=7,.profile=3,.mask=63};

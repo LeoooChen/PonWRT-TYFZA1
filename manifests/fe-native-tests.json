@@ -1,7 +1,7 @@
 {
   "action_oracle": {
     "scope": "actual stock ARM64 conversion emulated offline; no original module loaded",
-    "native_header_sha256": "ff2d406dd0fca03d864b9edc79bbbaf2ebe1e54d2f1d737c50c1091e87cabe43",
+    "native_header_sha256": "b62841e5838aa9479fa0853726c12287c1f982767639cd8af69737e9956d89b2",
     "stock_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
     "GPL_layout_sha256": "c010db3ede906c81eb82ea203b652ffae1b3f4dabbaea5201e4658d5dff846a9",
     "action_groups": [
@@ -17,7 +17,7 @@
   },
   "key_oracle": {
     "stock_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
-    "native_header_sha256": "ff2d406dd0fca03d864b9edc79bbbaf2ebe1e54d2f1d737c50c1091e87cabe43",
+    "native_header_sha256": "b62841e5838aa9479fa0853726c12287c1f982767639cd8af69737e9956d89b2",
     "vectors": 160,
     "key_bytes": 92,
     "mask_bytes": 28,
@@ -39,7 +39,8 @@
     "mask_slots": 64,
     "mask_bank_transactions_and_restore": true,
     "failures_propagated": true,
-    "age_slots_preserve_neighbors": 4096
+    "age_slots_preserve_neighbors": 65536,
+    "CRC16_bucket_mapping_vectors": 65536
   },
   "hardware_mask_test": {
     "slot": 63,
@@ -54,10 +55,10 @@
   "hardware_forwarding_enabled": true,
   "scope": "first wired LAN/PON IPv4 TCP/UDP; Wi-Fi later",
   "native_sources": {
-    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-format.h": "ff2d406dd0fca03d864b9edc79bbbaf2ebe1e54d2f1d737c50c1091e87cabe43",
-    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-table.h": "a23c79c29bf3533042b7588c1b1c63646a80ef6b58b2ef9a52e32f0184357fa1",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-format.h": "b62841e5838aa9479fa0853726c12287c1f982767639cd8af69737e9956d89b2",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-table.h": "9e2152090078ab86cd2688865a0eacf3ea947e69718834303665ce03c54a341f",
     "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-pipeline.h": "6139817974cc984e764564c62a66a41202f69640d3ded0cf00b0ba704a902e33",
-    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe.c": "00cdbc14ec872c6adc00c2b287a07d092294605ae9f03502e4eab91bccc08f97",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe.c": "88ee2e7439c5319813ed7c58b966a6305dfd7e6826441a4cb111ab566d973f6f",
     "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe.h": "7145474ff7ba128944b6dec06d651baca4c4a2d8087a255b7075098b8bfa384a"
   },
   "hardware_CRC": {
@@ -293,16 +294,88 @@
     "hardware_cache_ctrl1_verified_both_directions": true,
     "evidence": "logs/fe-stock-cache-alignment-device.txt",
     "original_default_Hash_count": 65536,
-    "native_Hash_count": 4096,
+    "native_Hash_count": 65536,
     "original_default_cache_count": 2048,
-    "native_cache_count": 256,
+    "native_cache_count": 2048,
     "original_default_action_slot_bytes": 48,
-    "native_action_slot_bytes": 32,
+    "native_action_slot_bytes": 48,
     "original_non_shaper_age": 1,
-    "native_dynamic_age": 7,
+    "native_dynamic_age": 1,
     "native_lifetime": "Linux flowtable lastused from dedicated IFID counters",
     "capacity_cache_aging_fully_aligned": false,
     "original_defaults_are_not_runtime_register_snapshots": true,
-    "automatic_cache_occupancy_verified": false
+    "automatic_cache_occupancy_verified": true,
+    "capacity_source_and_diagnostic_aligned": true,
+    "capacity_integrated_image_boot_verified": false,
+    "running_image_Hash_count": 4096,
+    "capacity_hardware_test": {
+      "evidence": "logs/fe-stock-capacity02-device.txt",
+      "DMA_bytes": 3411968,
+      "HashINI": "0000009f",
+      "CacheINI": "00010304",
+      "indices": [
+        19552,
+        65344
+      ],
+      "packets": [
+        3,
+        3
+      ],
+      "bytes": [
+        213,
+        1275
+      ],
+      "drops": [
+        0,
+        0
+      ],
+      "automatic_cache_entries": 0,
+      "manual_cache_DMA_fetch_verified": true,
+      "source_sha256": "1f8d787241cc17f355f8794c6d4cc3077bd1a37ceb016614e090934a6f0b19fc"
+    },
+    "cache_check_mask": {
+      "original_aal_hash_add": "chk_msk_ptr1=mask_id",
+      "native_previous": 0,
+      "native_flow_mask": 63,
+      "source_corrected": true,
+      "hardware_test_pending": false,
+      "hardware_test_passed": true
+    },
+    "original_cache_init_machine_code": {
+      "evidence": "logs/original-hash-cache-init.asm",
+      "CACHE_MISC": "a0000000",
+      "CACHE_AGE10": "ffffffff",
+      "CACHE_AGE32": "ffffffff"
+    },
+    "original_FC_aging_countdown": false,
+    "original_FC_liveness": "aal_hash_traffic_status_get:32 ages per row,active if age>1,restore valid age1",
+    "automatic_cache_test": {
+      "evidence": [
+        "logs/fe-stock-cache05-device.txt",
+        "logs/fe-stock-cache05-wire-check.json",
+        "logs/fe-stock-cache06-device.txt",
+        "logs/fe-stock-cache06-cpu-check.json"
+      ],
+      "cache_indices": [
+        608,
+        2016
+      ],
+      "main_idle_age": 1,
+      "main_hit_age": 6,
+      "automatic_entries": 2,
+      "delete_and_resend_entries": 0,
+      "hardware_packets_before_after_delete": [
+        3,
+        3
+      ],
+      "CPU_GRO_records_after_delete": 1,
+      "CPU_GRO_DNS_payload_copies": 3,
+      "CacheINI": "00050304",
+      "tuple_priority": 0,
+      "main_aging_countdown": 0,
+      "wire_requests": 3,
+      "wire_replies": 3,
+      "wire_checksums_valid": true
+    }
   }
 }

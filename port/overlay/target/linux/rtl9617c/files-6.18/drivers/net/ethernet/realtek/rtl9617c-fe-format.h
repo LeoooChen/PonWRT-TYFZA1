@@ -175,7 +175,7 @@ static inline void rtl_fe_action_set(unsigned int words[RTL_FE_ACTION_WORDS],
 struct rtl_fe_ipv4_action {
  unsigned int address;
  unsigned short port, destination, mac_da_index;
- unsigned char ingress_interface, egress_interface, cos;
+ unsigned char ingress_interface, egress_interface, cos, check_mask;
  unsigned char translate, translate_destination, deep_queue;
 };
 
@@ -199,6 +199,7 @@ static inline void rtl_fe_ipv4_action(unsigned int words[RTL_FE_ACTION_WORDS],
  rtl_fe_action_set(words, RTL_FE_IP_TTL_ZERO_DISCARD_EN1, 1);
  rtl_fe_action_set(words, RTL_FE_MAC_DA_IDX_VLD, 1);
  rtl_fe_action_set(words, RTL_FE_MAC_DA_IDX, action->mac_da_index);
+ rtl_fe_action_set(words, RTL_FE_CHK_MSK_PTR1, action->check_mask);
  rtl_fe_action_set(words, RTL_FE_CACHE_CTRL1, 1); /* Original FC type0 action. */
  rtl_fe_action_set(words, RTL_FE_COS_UPDATE_EN, 1);
  rtl_fe_action_set(words, RTL_FE_COS1, action->cos);

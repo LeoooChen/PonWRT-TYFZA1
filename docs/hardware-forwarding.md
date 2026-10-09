@@ -1,6 +1,6 @@
 # RTL9617C 有线硬件转发移植
 
-当前优先LAN↔PON的IPv4 TCP/UDP硬件转发。Wi-Fi通路随后接入。Linux软件NAT已经板测通过，FE硬件加速尚未启用。
+当前优先LAN↔EPON有线硬件转发。XEPON的IPv4 TCP/UDP动态硬件NAT与持久配置已实机验证；IPv6路由格式和原厂表容量继续对齐。Wi-Fi通路随后接入。
 
 ## 已确认的硬件实现
 
@@ -8,7 +8,7 @@
 
 流键为736位（92字节），包括IPv4地址、协议、TCP/UDP端口、入口、POL_ID/LLID和profile。掩码的软件格式224位（28字节）；硬件分为两个128位bank，访问地址bit6选择上半部，DATA0..3对应NI窗口3920、391c、3918、3914。原生事务使用完整8个word，未使用的最高word置0。
 
-普通流动作使用group18+20，合计224位，占32字节槽。包含目的LDPID/深队列、入口/出口L3接口、源MAC改写、目的MAC索引、TTL、单向NAT地址和端口、VLAN、COS等67个字段。正常模式选择字段ip_type区分源/目的IPv4改写；每个方向独立建流。
+普通流动作使用group18+20，合计224位；按本机原厂默认参数使用48字节槽。包含目的LDPID/深队列、入口/出口L3接口、源MAC改写、目的MAC索引、TTL、单向NAT地址和端口、VLAN、COS等67个字段。正常模式选择字段ip_type区分源/目的IPv4改写；每个方向独立建流。
 
 主Hash大小支持512..65536条、bucket4..32槽；Hash值和动作存放于设备DMA内存。硬件cache最高2048条，可使用内部SRAM容纳224位普通动作。初始化还涉及默认miss动作、overflow、aging、cache失效、L3入口profile和AXI重排序。GPL原厂路径把默认FIB设为外部存储，并配置L3FE AXI原ID=0xf、新ID8/9，这些初始化关系会纳入原生实现。
 
@@ -99,3 +99,18 @@ IPv6 key和Header-I包含完整128位地址；网络序word0为高32位，硬件
 原厂type0动作设置cache_ctrl1=1，原生初期动作默认0，本轮已修正。实机原生模块以该字段1完成双向3包，上行213字节、下行1275字节，均0丢弃。原厂参考将非软件整形流age置1；当前原生动态后端age7由Linux按逐流IFID统计管理生命周期，这一差别尚待对齐。本机default_scfg.txt声明主Hash65536项、cache2048项、动作槽48字节；当前原生Hash4096项、cache256项、224位动作32字节、独立IFID统计最多64个方向流。该文件是原厂默认配置，尚未替代原厂运行时寄存器快照。不能宣称参数容量已经完整复现。
 
 实验性设置CACHE_MISC=80000000/c0000000后双向转发与统计仍正常，但自动cache扫描未见有效项、main age仍1。自动cache与原厂活跃/老化路径仍需继续查证；原生动态流的实测硬件计数和CPU绕行结论保持有效。证据记录为logs/fe-stock-cache-alignment-device.txt。
+
+
+## 2026-10-09：原厂容量与缓存检查掩码
+
+原生主Hash调整为65536项、每桶32槽，内部动作cache配置2048项，主动作槽48字节。分配3411968字节coherent DMA，HashINI读回0000009f、CacheINI读回00010304。CRC16桶映射使用原厂crc16_mask对应的crc16 & 0xffe0；全部65536个CRC桶映射和65536项age更新通过ASan/UBSan模型验证，并保留相邻31项。
+
+实机诊断模块完成主Hash/DMA/cache手动取数自检和物理LAN↔XEPON双向转发。上行CRC4c6f命中19552槽，下行CRCff4b命中65344槽；两个方向各3包，上行213字节、下行1275字节、0丢弃。该测试验证高地址槽及48字节动作跨度，证据为logs/fe-stock-capacity02-device.txt。首次容量诊断仍将CRC0123测试项写在旧几何的槽0，cache命令返回err_hash；诊断已改为从相同CRC桶函数确定实际槽256后通过。
+
+原厂aal_hash_cache_init实际机器码设置CACHE_MISC=a0000000、两个cache age单位寄存器ffffffff。按这组参数，容量诊断暂未观察自动cache项。继续对照aal_hash_add和FC动作生成，发现原厂会把chk_msk_ptr1设为该流mask索引；原生动作先前为0，而实际流使用63。生产动作和实机诊断已加入检查mask参数，修正后的缓存板测待执行。主Hash非整形age1/原生动态age7、64个独立IFID统计资源限制仍是后续对齐工作。
+
+原厂FC初始化还显式调用aal_hash_aging_timer_set(0)，关闭硬件老化倒计时；rtk_8277c_asic_flow_traffic_get调用aal_hash_traffic_status_get，以32项为组读age>1活跃位，并把有效项恢复为age1。当前由Linux flowtable通过IFID计数更新lastused，与原厂同属软件管理生命周期；原生尚未使用这组活跃位，所以仍保留64方向流的计数资源限制。此处依据原厂FC/NE参考实现，待进一步对照本机实际模块的相关函数。
+
+chk_msk_ptr1=63修正后的实机模块在同样3次双向请求中自动生成cache608/2016，主Hash两方向age均从1升到6；线上6帧的IPv4和UDP校验和、DNS ID正确。接着按原厂补齐cache_age0_hit、tuple priority0和main aging countdown0，双向转发与自动cache继续通过。删除两个流后cache从2变0，再发送3次请求，原IFID计数保持3/3、cache仍0，CPU捕获到1条GRO记录，载荷正好为3份完整DNS查询。证据为logs/fe-stock-cache05-wire-check.json、fe-stock-cache05-device.txt、fe-stock-cache06-device.txt和fe-stock-cache06-cpu-check.json。
+
+生产后端已接入这些原生配置：64K Hash（65536项）、2K内部cache、48字节主动作槽、check mask63、自动cache替换、有效/空闲age1与Linux连接生命周期。artifacts/full-pon-stock-fe02-6.18.55由脱离Codex的systemd后台服务构建，最终镜像启动测试尚待完成。64方向流的独立IFID统计限制仍待解除。
