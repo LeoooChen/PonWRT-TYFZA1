@@ -1,0 +1,28 @@
+{
+  "reference_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "table": {
+    "section": ".rodata",
+    "offset": 150360,
+    "bytes": 192,
+    "sha256": "013af0d7ba273a7e5443ed18ad1508d2641d3060018ac097a02d3869390ab759",
+    "runtime_MAC_range": [
+      "d56c",
+      "d628"
+    ]
+  },
+  "native_module_sha256": "b7848aa55eecc28ddc3ede8850fe728527a739c10112e847f504b8a6fc5937b4",
+  "actual_board": [
+    "8852C",
+    "8192XB"
+  ],
+  "hardware_readback": {
+    "TXdiff_words_per_chip": 48,
+    "all_words_match_original_parameters": true,
+    "MACID_power_words_per_chip": 128,
+    "MACID_nonzero_words": 0,
+    "CRC_selector": "0400000b",
+    "RX_errors": 0
+  },
+  "log": "logs/radio-live-statistics-20261009.txt",
+  "scope": "BB initialization only;periodic statistics,RF DM and AP pending"
+}

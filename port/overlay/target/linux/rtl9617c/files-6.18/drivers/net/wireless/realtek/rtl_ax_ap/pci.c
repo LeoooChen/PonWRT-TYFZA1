@@ -518,6 +518,8 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	if (ret)
 		return ret;
 	rtl_ax_bb_dm_physts_start(&radio->io, radio->chip, share_xtal, antenna_diversity, &radio->bb_dm);
+	rtl_ax_bb_dm_reports_start(&radio->io, &radio->bb_dm);
+	rtl_ax_bb_dm_statistics_start(&radio->io, &radio->bb_dm);
 	return 0;
 }
 
@@ -768,6 +770,47 @@ static ssize_t radio_physts_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_physts);
 
+static ssize_t radio_txdiff_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_bb_dm *dm = &radio->bb_dm;
+	unsigned int i, nonzero = 0;
+	ssize_t length = sysfs_emit(buffer, "reports=%s txdiff=%s macid_power=%s "
+		"debug_clock=%08x debug_port=%08x\n",
+		dm->reports_ready ? "initialized" : "pending", dm->txdiff_ready ? "applied" : "pending",
+		dm->macid_power_ready ? "initialized" : "pending", rtl_ax_read32(radio, 0x120f4),
+		rtl_ax_read32(radio, 0x120f8));
+
+	for (i = 0; i < ARRAY_SIZE(rtl_ax_txdiff_table); i++)
+		length += sysfs_emit_at(buffer, length, "%04x expected=%08x readback=%08x\n",
+		0xd56c + i * 4, rtl_ax_txdiff_table[i], rtl_ax_read32(radio, 0xd56c + i * 4));
+	for (i = 0; i < 128; i++)
+		nonzero += rtl_ax_read32(radio, 0xd36c + i * 4) != 0;
+	length += sysfs_emit_at(buffer, length, "macid_power_words=128 nonzero=%u\n", nonzero);
+	return length;
+}
+static DEVICE_ATTR_RO(radio_txdiff);
+
+static ssize_t radio_phy_stats_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_bb_dm *dm = &radio->bb_dm;
+	u32 selection = rtl_ax_read32(radio, 0x10900);
+
+	return sysfs_emit(buffer, "initialization=%s counter_reset=%u rates=%u,%u,%u,%u "
+		"selected=%08x OFDM_LSIG=%u HT_MCS=%u VHT_MCS=%u VHT_NSS=%u "
+		"HE_MCS=%u HE_NSS=%u frame_type=%u "
+		"periodic_collection=pending\n",
+		dm->statistics_ready ? "applied" : "pending", dm->counter_reset,
+		dm->crc_rate[0], dm->crc_rate[1], dm->crc_rate[2], dm->crc_rate[3], selection,
+		selection & 15, (selection >> 4) & 127, (selection >> 11) & 15,
+		((selection >> 19) & 3) + 1, (selection >> 15) & 15,
+		((selection >> 21) & 3) + 1, (selection >> 23) & 63);
+}
+static DEVICE_ATTR_RO(radio_phy_stats);
+
 static ssize_t radio_efuse_read(struct file *file, struct kobject *kobject,
 	const struct bin_attribute *attr, char *buffer, loff_t offset, size_t count)
 {
@@ -806,7 +849,7 @@ static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_state.attr, &dev_attr_radio_rx.attr, &dev_attr_radio_bb.attr,
 	&dev_attr_radio_rf.attr, &dev_attr_radio_rf_bank.attr, &dev_attr_radio_rf_analog.attr,
 	&dev_attr_radio_power.attr, &dev_attr_radio_limits.attr, &dev_attr_radio_bb_dm.attr,
-	&dev_attr_radio_physts.attr, NULL,
+	&dev_attr_radio_physts.attr, &dev_attr_radio_txdiff.attr, &dev_attr_radio_phy_stats.attr, NULL,
 };
 static const struct attribute_group rtl_ax_group = {
 	.attrs = rtl_ax_attrs, .bin_attrs = rtl_ax_bin_attrs,
@@ -839,6 +882,10 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		radio->bb_dm.gpio_ready = false;
 		radio->bb_dm.gain_ready = false;
 		radio->bb_dm.physts_ready = false;
+		radio->bb_dm.reports_ready = false;
+		radio->bb_dm.txdiff_ready = false;
+		radio->bb_dm.macid_power_ready = false;
+		radio->bb_dm.statistics_ready = false;
 		radio->power_inputs.ready = false;
 		radio->download_prepared = false;
 	}

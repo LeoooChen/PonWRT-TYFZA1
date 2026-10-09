@@ -276,3 +276,11 @@ physts模块SHA256 f5c276f0ecf5a862490ac55e83b0b2c6bb777d83cab2702b900e62df7c235
 full-pon-radio-bb-dm01-6.18.55/ram-pcie/image.itb 的6544376B FIT（SHA2563a567502bb0e271970a7d614500113230c2d678010350f0345acb8ce8b088a7f）已经原机U-Boot签名校验并整机RAM启动。当前两个endpoint绑定内置rtl_ax_ap；基础/FEM各两遍、全部限幅输入、IC/GPIO、normal flash gain及hidden OTP gain都自动执行，结果与live模块一致，RX错误0。两份66B flash校准文件从最终FIT内置initramfs提取、与构建输入及设备实际文件核对一致；XEPON恢复192.168.71.28、公网ping2/2。结果logs/radio-bb-dm01-ram-20261009.txt。
 
 该FIT对应9eace47阶段，不包括随后0427aa8的PHY bitmap或额外诊断命令。包含bitmap的候选full-pon-radio-physts01-6.18.55正由独立后台服务ponwrt-tyfza1-lan-20261009-233526构建；是否完成、是否上机以实际服务及后续记录为准。SSID/AP、普通PPDU/TX/WP、其余BB DM及RF校准仍待实现。
+
+## 公共报告、TX power difference、MACID 与 CRC 筛选
+
+继续沿本机BB DM：common report@296fe4的三个11项host直方图阈值直接取自原机常量；debug init@29b47c在BB20f4 bit24和20f8 bit31开启报告/调试端口时钟。TXdiff@2c7ebc使用原机.rodata+24b58的48个DWORD，写MAC d56c..d628；mac_write_pwr_reg@21ecb8明确是直接MAC地址，不能增加BB10000前缀。MACID init@2c7e0c在非DBCC startup清MAC d36c..d568的128个DWORD，覆盖256个MACID。
+
+statistics_init@2cfad0只重置host统计并配置CRC2/CRC3筛选，没有虚构的hardware reset。原始rate参数为4/128/256/384，即OFDM6M/HT0/VHT1SS0/HE1SS0。实际legacy_rate_2_spec_rate@2c9eb8把6M映射LSIG codeb；BB_CLIENT的CRC字段全部来自cr_cfg_stat_init@2cfb48的BB0900，依原机顺序写OFDM、HT、VHT MCS/NSS、HE MCS/NSS，最后STATE_BEACON2映射MAC subtype8。
+
+statistics原生模块SHA256 b7848aa55eecc28ddc3ede8850fe728527a739c10112e847f504b8a6fc5937b4在两颗原机全部48项TXdiff读回与原机常量一致，128个MACID power DWORD均0；报告clock/port分别01000000/80000000。CRC selector读回0400000b，解码OFDM_LSIG11、HT/VHT/HE MCS0、VHT/HE NSS1、frame_type8，RX错误0。输出logs/radio-live-statistics-20261009.txt。这里只完成初始化和寄存器配置，统计周期采集、普通PPDU、LA/PSD/EDCCA/DFS/DIG/CFO/RA后段及RF DM继续接入。

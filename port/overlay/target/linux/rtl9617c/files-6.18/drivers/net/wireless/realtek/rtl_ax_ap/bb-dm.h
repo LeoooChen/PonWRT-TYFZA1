@@ -11,6 +11,15 @@ struct rtl_ax_bb_dm {
 	u64 supportability;
 	u32 physts_bitmap[16];
 	bool physts_ready;
+	bool reports_ready, txdiff_ready, macid_power_ready;
+	bool statistics_ready, counter_reset;
+	u16 crc_rate[4];
+	u8 crc_frame_type;
+	u8 histogram_threshold[3][11];
+	u64 report_packets;
+	u64 debug_components;
+	u8 debug_port_profile, debug_port_previous_profile;
+	u32 monitor_register_count;
 	bool tdma_cr_enabled, tdma_cr_state;
 	u32 tdma_cr_period[2], tdma_cr_index;
 	bool dynamic_csi_response, csi_response, dynamic_csi_debug;
@@ -204,5 +213,75 @@ static inline void rtl_ax_bb_dm_physts_start(const struct rtl_ax_io *io, unsigne
 			rtl_ax_bb_physts_set(io, page, rtl_ax_bb_physts_get(io, page) | BIT(24), dm);
 		}
 	dm->physts_ready = true;
+}
+
+static const u32 rtl_ax_txdiff_table[48] = {
+	0,0,0,0,
+	0x11111,0x11111,0x11111,0x11111,
+	0x22211,0x22222,0x22222,0x22222,
+	0x22211,0x33333,0x33333,0x33333,
+	0x22211,0x44433,0x44444,0x44444,
+	0x21111,0x43332,0x55554,0x55555,
+	0x22222,0x44433,0x66655,0x66666,
+	0x33321,0x54443,0x76655,0x77777,
+	0x32111,0x44444,0x66655,0x88877,
+	0x22221,0x55443,0x76655,0x88877,
+	0x22111,0x44333,0x66665,0x88777,
+	0x22211,0x44433,0x77654,0x88777,
+};
+
+static inline void rtl_ax_bb_dm_reports_start(const struct rtl_ax_io *io,
+					    struct rtl_ax_bb_dm *dm)
+{
+	static const u8 histograms[3][11] = {
+		{5,8,11,14,17,20,23,26,29,32,35},
+		{2,3,4,5,6,8,10,12,14,16,18},
+		{1,5,10,15,20,30,60,90,120,150,200},
+	};
+	unsigned int i;
+
+	/* Actual common report@296fe4 initializes host histogram and counters;
+	 * debug init@29b47c enables two BB debug-port clocks. */
+	memcpy(dm->histogram_threshold, histograms, sizeof(histograms));
+	dm->report_packets = 0;
+	dm->monitor_register_count = 50;
+	dm->debug_components = 0;
+	dm->debug_port_profile = dm->debug_port_previous_profile = 2;
+	rtl_ax_update32(io, 0x120f4, 0, BIT(24));
+	rtl_ax_update32(io, 0x120f8, 0, BIT(31));
+	dm->reports_ready = true;
+	/* halbb_txdiff_tbl_init@2c7ebc copies192B of actual board data.
+	 * mac_write_pwr_reg@21ecb8 uses direct MAC offsets,without BB prefix. */
+	for (i = 0; i < ARRAY_SIZE(rtl_ax_txdiff_table); i++)
+		io->write32(io->ctx, 0xd56c + i * 4, rtl_ax_txdiff_table[i]);
+	dm->txdiff_ready = true;
+	/* Actual macid_ctrl_init@2c7e0c:128 DWORDs covering256 MACIDs,
+	 * band0 only in this original board's non-DBCC startup. */
+	for (i = 0; i < 128; i++)
+		io->write32(io->ctx, 0xd36c + i * 4, 0);
+	dm->macid_power_ready = true;
+}
+
+static inline void rtl_ax_bb_dm_statistics_start(const struct rtl_ax_io *io,
+					       struct rtl_ax_bb_dm *dm)
+{
+	/* Actual statistics_init@2cfad0 has no hardwarecounter reset;it resets
+	 * host counters and selects CRC rates/formats. BB_CLIENT's selectors
+	 * from cr_cfg_stat_init@2cfb48 all reside in BB0900. */
+	dm->counter_reset = true;
+	dm->crc_rate[0] = 4;
+	dm->crc_rate[1] = 128;
+	dm->crc_rate[2] = 256;
+	dm->crc_rate[3] = 384;
+	dm->crc_frame_type = 8; /* Actual STATE_BEACON2→MAC subtype8. */
+	/* OFDM6M maps toLSIG codeb via legacy_rate_2_spec_rate@2c9eb8. */
+	rtl_ax_update32(io, 0x10900, 0xf, 0xb);
+	rtl_ax_update32(io, 0x10900, 0x7f0, 0); /* HT MCS0. */
+	rtl_ax_update32(io, 0x10900, 0x7800, 0); /* VHT MCS0. */
+	rtl_ax_update32(io, 0x10900, 0x180000, 0); /* VHT NSS1. */
+	rtl_ax_update32(io, 0x10900, 0x78000, 0); /* HE MCS0. */
+	rtl_ax_update32(io, 0x10900, 0x600000, 0); /* HE NSS1. */
+	rtl_ax_update32(io, 0x10900, 0x1f800000, 8U << 23); /* Beacon. */
+	dm->statistics_ready = true;
 }
 #endif
