@@ -432,3 +432,13 @@ RF ctrl_ch@33ba58对A模拟/数字→B模拟/数字分别调用ch_setting@33b72c
 原生mac80211增加XB13个2.4GHz频道、12个CCK/OFDM速率，RX metadata按实际芯片转换band/frequency及legacy rate索引。模块5294c84b54dde6857ff940f23f03d0e1415c288a5b56552da2e7e3f3db04b0b5在原机注册phy1/mon1，频道6实测2437MHz；tcpdump获得64帧，其中Beacon36、普通Data2、Null Data14及其他管理/控制帧，完整FCS全匹配、内核丢包0，native rx_unhandled=0、格式/tag错误0。证据`logs/radio-xb-mon1-channel6.pcap`、`logs/radio-xb-mon1-channel6-20261010.txt`、`manifests/radio-xb-channel6-receive-20261010.json`。当前C内置原生mon0与XB原生live mon1同时工作，未加载原厂host模块。
 
 复核原机晶振字段时确认此前命名有误：实际RF函数读取phl_com+58fd的`dev_cap.is_indiv_xtal`，0代表共享、1代表独立，而不是share_xtal。native输入改名independent_xtal，保留已实测的值0及对应寄存器动作。BB supportability也按此字段0关闭CFO tracking能力；C在0时清XSI8低2位，XB在0时写127，在1时写flash63。上述晶振章节语义已修正；旧日志中的share字段是旧名称下的实际布尔输入，数值不变。本机运行原厂时的最终赋值仍未读到。GPL存在仅dev_id2启用independent的triband条件，而本机实际final_cap_decision函数没有直接写58fd，继续追原机字段初始化来源。
+
+## 2026-10-10 原机XB AFE RX_DCK
+
+`rxdck.h`在初始DACK之后接XB原机rx_dck@33c498：8080=4，A→B的RF5手动、RF0模式3、RF93低4位8、AFE校准、RF5自动，结束8080=0。当前对应初始化is_tssi_mode=0；后续TSSI运行时的暂停/恢复继续接入。AFE helper@33be54保存12a0/32a0、c0d4/c1d4、d8、c4、e8、8034、80d4七组寄存器；强制RX时钟selector3的CV1参数严格取本机`.data+196c38={9,0,0,3,15,10}`。按原机设置ADC、滤波reset、NCTL子页，再分别用fc030001/7c030001及fc050001/7c050001测量RX与DPK，观察80fc[16]，结束恢复七组寄存器。
+
+原机ELF和GPL参考在这里有差异：ELF两轮测量之间、结束后均没有SDK的RF8f操作，也没有其额外5670切换，原生保持实际机器码。等待保持原机最多1501次读取/1500次2us延迟，观察到上限后仍执行原机下一测量与恢复顺序。C走RF RX_DCK，仍待另外接入完整的RF LUT offset检查/修正路径，本阶段不声明全RF校准完成。
+
+前两次观察四个完成位均1、14个寄存器恢复匹配，但c400/d400读取全部为零。随后逐项检查本机ELF所有重定位，halrf_rx_dck_check_8192xb没有任何调用或函数指针引用；其旧BB表检查不能作为本机实际AFE验收条件。原机halrf_get_rx_dck_value@2fba44由RX_DCK debug调用，实际读取RF92/93，因此观察改为保存当前RF gain处的真实RF92/93，不把未用的BB表检查塞进初始化。
+
+模块eb65ac58e01ba18a5012cb7110d74b8479125e66799ef6369d3a14b131619bfd实机RX/DPK完成位1/1、1/1，观察222/22、222/22；14个寄存器逐项恢复匹配。A RF92/93=79c00/67808，B=65c00/88008，记录`logs/radio-xb-rxdck-result-20261010.txt`。这是当前gain处的实际结果读回，不代表整个RF gain曲线已逐项验收。 较早观察模块0ba086ba3a4a1444b3ce891d44e469e326d8f277a8ba8f42a02eef7d40c4307d在校准后频道6仍捕到64帧，host正确75、描述符错误0；PHY OFDM58/错误13157，继续核对其他原机RFK和动态跟踪，尚不能把接收错误变化归因于单一校准步骤。

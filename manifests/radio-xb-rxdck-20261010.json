@@ -1,0 +1,22 @@
+{
+  "module_sha256": "eb65ac58e01ba18a5012cb7110d74b8479125e66799ef6369d3a14b131619bfd",
+  "stage": "initial XB AFE RX_DCK",
+  "completion": "RX_DCK=applied method=AFE done=1,1/1,1 observations=222,22/222,22",
+  "restored_registers_matching": 14,
+  "RF92_RF93": [
+    [
+      "79c00",
+      "67808"
+    ],
+    [
+      "65c00",
+      "88008"
+    ]
+  ],
+  "BB_c400_checker_actual_ELF_relocations": 0,
+  "full_RF_gain_curve_verified": false,
+  "C_RF_RX_DCK_implemented": false,
+  "full_RF_calibration_complete": false,
+  "log": "logs/radio-xb-rxdck-result-20261010.txt",
+  "log_sha256": "e43a48c23163c4dfe36f9486f0b7436a78796c346138a4efb5b92ebf75a57b8c"
+}

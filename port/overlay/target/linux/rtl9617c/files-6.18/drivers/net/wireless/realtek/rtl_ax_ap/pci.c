@@ -30,6 +30,7 @@
 #include "xb-channel.h"
 #include "rf-start.h"
 #include "dack.h"
+#include "rxdck.h"
 
 /* Original netdev-open policy in os_intfs.c: MU beamforming, OFDMA or
  * force_fw_tx selects firmware scheduling. Preserve all three inputs. */
@@ -79,6 +80,7 @@ struct rtl_ax_ap {
 	struct rtl_ax_channel channel;
 	struct rtl_ax_rf_start rf_start;
 	struct rtl_ax_dack dack;
+	struct rtl_ax_rxdck rxdck;
 	struct rtl_ax_rx *rx;
 	struct ieee80211_hw *hw;
 	struct ieee80211_supported_band band;
@@ -583,6 +585,11 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	ret = rtl_ax_dack_dac_start(&radio->io, radio->chip, &radio->dack);
 	if (ret)
 		return ret;
+	if (radio->chip == RTL_AX_8192XB) {
+		ret = rtl_ax_xb_rxdck_start(&radio->io, &radio->rxdck);
+		if (ret)
+			return ret;
+	}
 	/* Native RXQ/RPQ and IRQ are already prepared. Resume receive after
 	 * the implemented PHY startup so ordinary 802.11 frames reach the
 	 * native dispatcher, using the same path verified on this board. */
@@ -1146,7 +1153,7 @@ static ssize_t radio_rf_start_show(struct device *dev,
 		"source=%08x,%08x/%08x,%08x MAC_mux=%02x,%02x,%02x,%02x,%02x,%02x,%02x "
 		"NCTL=%s pairs=%u reset_observations=%u reset_readback=%08x "
 		"NCTL8000=%08x NCTL8080=%08x RCK=%s code=%u,%u done=%u,%u "
-		"observations=%u,%u DACK=%s RX_DCK=pending calibration=pending\n",
+		"observations=%u,%u DACK=%s RX_DCK=%s calibration=pending\n",
 		rf->crystal_ready ? "applied" : "pending", independent_xtal, rf->crystal_requested,
 		rf->crystal_observed[0], rf->crystal_observed[1], rf->share_control,
 		rf->gpio_ready ? "applied" : "pending", rtl_ax_read32(radio, 0x1033c),
@@ -1159,7 +1166,7 @@ static ssize_t radio_rf_start_show(struct device *dev,
 		rf->nctl_wait_value, rtl_ax_read32(radio, 0x18000), rtl_ax_read32(radio, 0x18080),
 		rf->rck_ready ? "applied" : "pending", rf->rck_code[0], rf->rck_code[1],
 		rf->rck_done[0], rf->rck_done[1], rf->rck_observations[0], rf->rck_observations[1],
-		radio->dack.dac_ready ? "applied" : "pending");
+		radio->dack.dac_ready ? "applied" : "pending", radio->rxdck.ready ? "AFE-applied" : "pending");
 }
 static DEVICE_ATTR_RO(radio_rf_start);
 
@@ -1207,6 +1214,28 @@ static ssize_t radio_dac_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_dac);
 
+static ssize_t radio_rx_dck_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_rxdck *state = &radio->rxdck;
+	unsigned int path, i;
+	ssize_t length = sysfs_emit(buffer, "RX_DCK=%s method=%s done=%u,%u/%u,%u observations=%u,%u/%u,%u\n",
+		state->ready ? "applied" : "pending", radio->chip == RTL_AX_8192XB ? "AFE" : "RF",
+		state->done[0][0], state->done[0][1], state->done[1][0], state->done[1][1],
+		state->observations[0][0], state->observations[0][1], state->observations[1][0], state->observations[1][1]);
+
+	for (path = 0; path < 2; path++) {
+		for (i = 0; i < 7; i++)
+			length += sysfs_emit_at(buffer, length, "path=%u backup=%u saved=%08x restored=%08x\n",
+				path, i, state->saved[path][i], state->restored[path][i]);
+		length += sysfs_emit_at(buffer, length, "path=%u RF92=%05x RF93=%05x\n",
+			path, state->rf_result[path][0], state->rf_result[path][1]);
+	}
+	return length;
+}
+static DEVICE_ATTR_RO(radio_rx_dck);
+
 static ssize_t radio_efuse_read(struct file *file, struct kobject *kobject,
 	const struct bin_attribute *attr, char *buffer, loff_t offset, size_t count)
 {
@@ -1250,7 +1279,7 @@ static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_dig.attr, &dev_attr_radio_cfo.attr, &dev_attr_radio_environment.attr,
 	&dev_attr_radio_rx_pipeline.attr, &dev_attr_radio_channel.attr, &dev_attr_radio_rx_mode.attr,
 	&dev_attr_radio_rf_start.attr, &dev_attr_radio_dack.attr, &dev_attr_radio_dac.attr,
-	&dev_attr_radio_mac80211.attr, NULL,
+	&dev_attr_radio_mac80211.attr, &dev_attr_radio_rx_dck.attr, NULL,
 };
 static const struct attribute_group rtl_ax_group = {
 	.attrs = rtl_ax_attrs, .bin_attrs = rtl_ax_bin_attrs,
@@ -1301,6 +1330,7 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		radio->dack.drck_ready = false;
 		radio->dack.adc_ready = false;
 		radio->dack.dac_ready = false;
+		radio->rxdck.ready = false;
 		radio->power_inputs.ready = false;
 		radio->download_prepared = false;
 	}
