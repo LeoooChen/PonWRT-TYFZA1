@@ -1,0 +1,243 @@
+{
+  "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "functions": {
+    "halrf_config_radio": {
+      "address": "0x3030e8",
+      "bytes": 104,
+      "sha256": "6d1a28c4f597dd022064358b3ebd469766055e1d2db721185bb4ff9fcd81bb76"
+    },
+    "rtw_hal_init_rf_reg": {
+      "address": "0x1bef20",
+      "bytes": 168,
+      "sha256": "eceae02c4de15eb6936834e7f025ac6e97851ca7aedbdd1a2474604140073dc5"
+    },
+    "halrf_config_rf_parameter": {
+      "address": "0x303760",
+      "bytes": 204,
+      "sha256": "360a94cd027a5d58dca6d2bd66671ee4770be56efee3489e9678d4138f0da5c7"
+    },
+    "halbb_cfg_bb_phy_8852c": {
+      "address": "0x2eb388",
+      "bytes": 388,
+      "sha256": "3789cafb8b682b4339ce0fc5f9ccba3297a650fe1786e49f09c6c3586e11354e"
+    },
+    "halbb_cfg_bb_phy_8192xb": {
+      "address": "0x2f4b88",
+      "bytes": 388,
+      "sha256": "3789cafb8b682b4339ce0fc5f9ccba3297a650fe1786e49f09c6c3586e11354e"
+    },
+    "halbb_set_cr": {
+      "address": "0x2b0da4",
+      "bytes": 88,
+      "sha256": "bd070a7db1257f2e2a62e7d604ea6a7fb66063d5d22b4c3ac3b5dd88f4e8626b"
+    },
+    "halbb_write_rf_reg_8852c_a": {
+      "address": "0x2e2e64",
+      "bytes": 508,
+      "sha256": "7de5e56dd16d739804da93910011fe35c02f680adb3d59d489fc80cc105d9c58"
+    },
+    "halbb_write_rf_reg_8852c_d": {
+      "address": "0x2e3060",
+      "bytes": 292,
+      "sha256": "c613dedb2833c3c30af3e10ce0b4f9266ba1e1c208bc2e65b27dd58e6d0329d6"
+    },
+    "halbb_write_rf_reg_8192xb_a": {
+      "address": "0x2ed448",
+      "bytes": 508,
+      "sha256": "ad0a3214f7c1a461dfabef483b532cf9786bb756892cfdc86701459547f97279"
+    },
+    "halbb_write_rf_reg_8192xb_d": {
+      "address": "0x2ed644",
+      "bytes": 292,
+      "sha256": "5aaed87364e3cb00a3047159c341982182ad90c06af88e0c6ba4d65ce736d293"
+    },
+    "halrf_cfg_rf_radio_a_8852c": {
+      "address": "0x31bc84",
+      "bytes": 96,
+      "sha256": "42f778ce8fb8fefaa9017bc4361107b05726c495827bc6b22ee4c302285b0f32"
+    },
+    "halrf_cfg_rf_radio_a_8192xb": {
+      "address": "0x344f20",
+      "bytes": 96,
+      "sha256": "42f778ce8fb8fefaa9017bc4361107b05726c495827bc6b22ee4c302285b0f32"
+    },
+    "halrf_config_8192xb_store_radio_a_reg": {
+      "address": "0x33fa9c",
+      "bytes": 296,
+      "sha256": "b7bdd1572b51f38cf0521781089da784fdf40d0e43327d77a5affb0f779d6051"
+    },
+    "halrf_config_8192xb_write_radio_a_reg_to_fw": {
+      "address": "0x33fcf0",
+      "bytes": 332,
+      "sha256": "23629bce8ef1ae447a377988a136da2ef891abc05457f7ee8f046b817763c77f"
+    },
+    "halrf_fill_h2c_cmd": {
+      "address": "0x304254",
+      "bytes": 256,
+      "sha256": "f5957401c81df31ff4dd4471afb911e996eab2ee47e17313e77affedfb79aca5"
+    },
+    "mac_outsrc_h2c_common": {
+      "address": "0x20d404",
+      "bytes": 348,
+      "sha256": "87dbe0ab8ba313822c4a4e1923120b0e8396e351e6d80a3d88a73f161877278c"
+    }
+  },
+  "inputs": [
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8192xbe/RFE54/PHY_REG.txt",
+      "sha256": "943f9753c2f81005693b94ffa9763dfe8073af59426e75c8eb4ef10301c1edcd",
+      "pairs": 1417,
+      "headless_flat": true,
+      "max_address": "0xc1f8",
+      "digital_RF_words": null,
+      "RF_WCPU_pages": null
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8192xbe/RFE54/PHY_REG_GAIN.txt",
+      "sha256": "6c6398aafaa5a51c2bc93617b53fc476a91f114852682769d6e2912ce1b76b3b",
+      "pairs": 128,
+      "headless_flat": true,
+      "max_address": "0x4030105",
+      "digital_RF_words": null,
+      "RF_WCPU_pages": null
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8192xbe/RFE54/RTK66287/PHY_REG.txt",
+      "sha256": "9455303939f8b63177643e9c15ebae5aa8e6b9f0d56b9ecbe38fcbefaa15677d",
+      "pairs": 50,
+      "headless_flat": true,
+      "max_address": "0x82f0",
+      "digital_RF_words": null,
+      "RF_WCPU_pages": null
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8192xbe/RFE54/RTK66287/PHY_REG_GAIN.txt",
+      "sha256": "dfd58bec460d742794fb60fd4a4f222c4ec198d6cf608a5ab3ae4bec61ba6d7a",
+      "pairs": 128,
+      "headless_flat": true,
+      "max_address": "0x4030105",
+      "digital_RF_words": null,
+      "RF_WCPU_pages": null
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8192xbe/RFE54/RTK66287/RadioA.txt",
+      "sha256": "d5545c44ec3f4ae6b5f1c6d9dcbcdf4d5e4e44728c9958ea2f074732419bda34",
+      "pairs": 4,
+      "headless_flat": true,
+      "max_address": "0xfd",
+      "digital_RF_words": 0,
+      "RF_WCPU_pages": 1
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8192xbe/RFE54/RTK66287/RadioB.txt",
+      "sha256": "d5545c44ec3f4ae6b5f1c6d9dcbcdf4d5e4e44728c9958ea2f074732419bda34",
+      "pairs": 4,
+      "headless_flat": true,
+      "max_address": "0xfd",
+      "digital_RF_words": 0,
+      "RF_WCPU_pages": 1
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8192xbe/RFE54/RadioA.txt",
+      "sha256": "80316c4ea64d53f14b9c7a100f57fa76830f560367944468f17a95ed3dcadda4",
+      "pairs": 487,
+      "headless_flat": true,
+      "max_address": "0x100ee",
+      "digital_RF_words": 78,
+      "RF_WCPU_pages": 1
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8192xbe/RFE54/RadioB.txt",
+      "sha256": "4b0236fbfddc5d87aaff968d96b5e85cdcfbb08a961f71b849ad54127d867ca0",
+      "pairs": 406,
+      "headless_flat": true,
+      "max_address": "0x100ee",
+      "digital_RF_words": 78,
+      "RF_WCPU_pages": 1
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8852ce/RFE54/PHY_REG.txt",
+      "sha256": "b0c44852223bc5d9bb118140d7dbbb4ac42f110c491d49f0e607826eeeb73a19",
+      "pairs": 1432,
+      "headless_flat": true,
+      "max_address": "0xc1f8",
+      "digital_RF_words": null,
+      "RF_WCPU_pages": null
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8852ce/RFE54/PHY_REG_GAIN.txt",
+      "sha256": "b36e6fc7fa2acd50f0d0f407f6e29f459361f399a57553ca60ae6652233ded3a",
+      "pairs": 336,
+      "headless_flat": true,
+      "max_address": "0x4030105",
+      "digital_RF_words": null,
+      "RF_WCPU_pages": null
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8852ce/RFE54/RTK66587_BPF/PHY_REG.txt",
+      "sha256": "db15ba2ffaa450f2451475cc800b707aa0d4aa9921913f10acae12dc52b94913",
+      "pairs": 40,
+      "headless_flat": true,
+      "max_address": "0x78d8",
+      "digital_RF_words": null,
+      "RF_WCPU_pages": null
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8852ce/RFE54/RTK66587_BPF/PHY_REG_GAIN.txt",
+      "sha256": "0d1735af7c8b16250a8287d00593b8cec1887b39de3590caa593739df7be2a8d",
+      "pairs": 176,
+      "headless_flat": true,
+      "max_address": "0x4030105",
+      "digital_RF_words": null,
+      "RF_WCPU_pages": null
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8852ce/RFE54/RTK66587_BPF/RadioA.txt",
+      "sha256": "6bbdde5cb43c74dcc27fe2a78e997cf1e71fcc7046fdb19551a6272b08dc4a8e",
+      "pairs": 128,
+      "headless_flat": true,
+      "max_address": "0x100ee",
+      "digital_RF_words": 121,
+      "RF_WCPU_pages": 1
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8852ce/RFE54/RTK66587_BPF/RadioB.txt",
+      "sha256": "6bbdde5cb43c74dcc27fe2a78e997cf1e71fcc7046fdb19551a6272b08dc4a8e",
+      "pairs": 128,
+      "headless_flat": true,
+      "max_address": "0x100ee",
+      "digital_RF_words": 121,
+      "RF_WCPU_pages": 1
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8852ce/RFE54/RadioA.txt",
+      "sha256": "d5fd415ad81d086e5833968cf03126f52226b571020e1bfaecd505e62a55072c",
+      "pairs": 2044,
+      "headless_flat": true,
+      "max_address": "0x100ee",
+      "digital_RF_words": 392,
+      "RF_WCPU_pages": 1
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8852ce/RFE54/RadioB.txt",
+      "sha256": "b2dd5527add93a98fa21c78f05d5b0b9e9ee72d90267e7da24336f006a29f8af",
+      "pairs": 2011,
+      "headless_flat": true,
+      "max_address": "0x100ee",
+      "digital_RF_words": 392,
+      "RF_WCPU_pages": 1
+    }
+  ],
+  "native_scope": "load core RFE54 base/FEM tables; BB writes,full-mask analog/digital RF writes and original radio H2C page payloads implemented",
+  "integration": "probe loads inputs; PHY hardware execution awaits MAC tail and runtime H2C integration; gain/power/calibration pending",
+  "validation": {
+    "ARM64_kernel_objects": "pci.o and phy.o compiled",
+    "board_run": false
+  },
+  "runtime_H2C_entry": {
+    "ops_slot": "mac8852c_ops/mac8192xb_ops+0x440",
+    "function": "mac_outsrc_h2c_common",
+    "category": 2,
+    "native_transport": "pending"
+  }
+}

@@ -112,3 +112,19 @@ RRSR 的间接调用经实际 ELF private-ops 槽 0xa0/0xa8 分别确认为两�
 原机 is_qta_poh@0x202c00 对 PCIe SCC 返回真，因此 PTCL 配置 CTS-to-self 和 2ms arbitration timeout。这个布尔判断与 HFC POH 字段的 mode0 编码不是一个含义。C/XB 的 VHT aggregation/timer-source/CMAC DMA patch 返回无需写寄存器；原机 RMAC 也没有新版 SDK 的 RX_TIME_MON 写入。完整来源、地址及 private-ops 记录在 manifests/radio-stock-cmac.json。
 
 后台服务 ponwrt-tyfza1-stock-cmac-compile 完成 Linux 6.18.55 的 ARM64 pci.o 编译，退出码 0。编译仅确认当前真实内核接口和生成对象；设备离线，本阶段还没有上板结果或新的最终 FIT。接下来依据 hal_start 的实机顺序处理基础 BB/RF、RFE54 FEM 扩展、普通 TX/RX 和 AP role/key 对象。
+
+## 原生 RFE54 BB/RF 输入及执行接口
+
+phy.c 已实现两颗芯片基础与 FEM 目录的 PHY_REG、PHY_REG_GAIN、RadioA、RadioB 文本读取，共 16 份实际文件、8919 对数据。当前 probe 读取它们并保留两个层次；radio_state 报告 phy_inputs=RFE54-base-and-FEM、bb_rf=pending。这是实际文件读取与执行接口接入，尚未在 probe 执行 BB/RF 写入。MAC TRX 后段、运行态 H2C、增益/功率对象和校准流程接齐后，AP start 才按原厂顺序调用执行接口。
+
+BB 写入链是 halbb_cfg_bb_phy → halbb_set_reg → halbb_set_cr@0x2b0da4 → _hal_write32；原机最后 OR 0x10000，故 PHY_REG 的 0x4000 对应 PCI BAR 的 0x14000。f9..fe 在 BB 文件中分别表示 1/5/50us、1/5/50ms 延时。PHY_REG_GAIN 的地址编码 band/path/type 的增益对象，不是 PCI BAR 地址；保留该输入供原生增益对象实现使用。
+
+RF 地址 bit16 决定 die：analog 使用 SIPI（BB 0x174c bits24/25 空闲、0x370 命令），digital 使用 path A/B 的 BB 0xe000/0xf000 窗口加低八位寄存器号×4，并按原厂保留寄存器高位。原机 analog 写入等待计数是 31，命令只写一次；新版 SDK 的 500 次回读重试和额外写后延时没有进入本机机器码，原生不加入这些动作。digital 写后保留 1us 延时。两个芯片实际函数均已反汇编核对。
+
+尤其不能把 BB 延时语义套进 Radio 文件：本机 halrf_cfg_rf_radio_a/b → halrf_wrf@0x3040dc 直接调用 RF 写入，f9..fe 也经过这条写入链。随后 store_radio_* 才排除所有 analog 地址及这些值，只将 digital 地址/数据打包为 ((address & 0xff)<<20)|value。原生实现保留这个区别。
+
+halrf_config_radio@0x3030e8 对 C 按 B→A，对 XB 按 A→B。每条路径写入后按原机发送 category OUTSRC、LONG_DATA、class8(A)/9(B)、function=page，每页 500 个 little-endian word（2000B）；结尾即使剩余长度为 0 也发送最后一页。执行接口要求调用者提供真实的 send_radio 运行态 H2C 入口，没有以计数或本地回调成功代替 WCPU 通路。
+
+rtw_hal_init_rf_reg@0x1bef20 先调用 radio 配置，保存 by-rate/track/limit/RU，再调用 halrf_config_rf_parameter@0x303760；后者还会再次配置 radio，并加载功率、tracking、XTAL 和 EDPK。这两次 radio 配置不能擅自合并。hal_start 对基础表与 FEM 扩展重复整个 BB/RF 初始化也要保留。相应执行顺序和功率/增益/校准对象继续实现；当前没有声明 RF 已初始化。
+
+来源地址、每份实际表的数量/哈希及 digital-RF 分页数量见 manifests/radio-stock-phy-inputs.json。脱离 Codex 的后台服务 ponwrt-tyfza1-stock-phy-input-compile 已编译 pci.o 和 phy.o，退出码 0。
