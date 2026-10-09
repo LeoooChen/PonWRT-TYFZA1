@@ -1,0 +1,355 @@
+{
+  "module_sha256": "a66ae0f88f4c73481b8a1e3563726549aecbfe2b36da95e7ccdad9c6cf690ed4",
+  "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "radios": {
+    "8852C": {
+      "dack": "done=1 code=19 observations=5 c0c4=00004c13 c0c8=0009cc08 ADC_DC=applied done=1,1 I_Q_A=1,7 I_Q_B=993,11 observations=1,1 reload=30040701,3f840b01 DAC_DC=applied DACK=applied",
+      "DAC": "DAC_DC=applied done=1,1 observations=465,471 bias=53,55/40,41 DC=110,132/120,143",
+      "reload_words": [
+        {
+          "path": 0,
+          "IQ": 0,
+          "reg": "1c200",
+          "written": "727a7278",
+          "readback": "727a7278",
+          "matches": true
+        },
+        {
+          "path": 0,
+          "IQ": 0,
+          "reg": "1c204",
+          "written": "767c747c",
+          "readback": "767c747c",
+          "matches": true
+        },
+        {
+          "path": 0,
+          "IQ": 0,
+          "reg": "1c208",
+          "written": "7c7c8080",
+          "readback": "7c7c8080",
+          "matches": true
+        },
+        {
+          "path": 0,
+          "IQ": 0,
+          "reg": "1c20c",
+          "written": "88908c8e",
+          "readback": "88908c8e",
+          "matches": true
+        },
+        {
+          "path": 0,
+          "IQ": 0,
+          "reg": "1c210",
+          "written": "0d5b8001",
+          "readback": "0d5b8001",
+          "matches": true
+        },
+        {
+          "path": 0,
+          "IQ": 1,
+          "reg": "1c214",
+          "written": "8787898d",
+          "readback": "8787898d",
+          "matches": true
+        },
+        {
+          "path": 0,
+          "IQ": 1,
+          "reg": "1c218",
+          "written": "8d8f8f87",
+          "readback": "8d8f8f87",
+          "matches": true
+        },
+        {
+          "path": 0,
+          "IQ": 1,
+          "reg": "1c21c",
+          "written": "89858989",
+          "readback": "89858989",
+          "matches": true
+        },
+        {
+          "path": 0,
+          "IQ": 1,
+          "reg": "1c220",
+          "written": "837b7d79",
+          "readback": "837b7d79",
+          "matches": true
+        },
+        {
+          "path": 0,
+          "IQ": 1,
+          "reg": "1c224",
+          "written": "0de10001",
+          "readback": "0de10001",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 0,
+          "reg": "1c228",
+          "written": "858b878f",
+          "readback": "858b878f",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 0,
+          "reg": "1c22c",
+          "written": "8787878f",
+          "readback": "8787878f",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 0,
+          "reg": "1c230",
+          "written": "87858585",
+          "readback": "87858585",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 0,
+          "reg": "1c234",
+          "written": "85837f7b",
+          "readback": "85837f7b",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 0,
+          "reg": "1c238",
+          "written": "0a1e0001",
+          "readback": "0a1e0001",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 1,
+          "reg": "1c23c",
+          "written": "989a9698",
+          "readback": "989a9698",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 1,
+          "reg": "1c240",
+          "written": "90969296",
+          "readback": "90969296",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 1,
+          "reg": "1c244",
+          "written": "8e8a807e",
+          "readback": "8e8a807e",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 1,
+          "reg": "1c248",
+          "written": "78766e68",
+          "readback": "78766e68",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 1,
+          "reg": "1c24c",
+          "written": "0a63c001",
+          "readback": "0a63c001",
+          "matches": true
+        }
+      ]
+    },
+    "8192XB": {
+      "dack": "done=1 code=13 observations=3 c0c4=005e340d c0c8=000e3408 ADC_DC=applied done=1,1 I_Q_A=1017,0 I_Q_B=998,11 observations=1,1 reload=3fe40001,3f980b01 DAC_DC=applied DACK=applied",
+      "DAC": "DAC_DC=applied done=1,1 observations=313,318 bias=88,89/81,82 DC=76,94/83,65",
+      "reload_words": [
+        {
+          "path": 0,
+          "IQ": 0,
+          "reg": "1c200",
+          "written": "c2aab09c",
+          "readback": "c2aab09c",
+          "matches": true
+        },
+        {
+          "path": 0,
+          "IQ": 0,
+          "reg": "1c204",
+          "written": "a4929886",
+          "readback": "a4929886",
+          "matches": true
+        },
+        {
+          "path": 0,
+          "IQ": 0,
+          "reg": "1c208",
+          "written": "86747a68",
+          "readback": "86747a68",
+          "matches": true
+        },
+        {
+          "path": 0,
+          "IQ": 0,
+          "reg": "1c20c",
+          "written": "685a4e3e",
+          "readback": "685a4e3e",
+          "matches": true
+        },
+        {
+          "path": 0,
+          "IQ": 0,
+          "reg": "1c210",
+          "written": "16130001",
+          "readback": "16130001",
+          "matches": true
+        },
+        {
+          "path": 0,
+          "IQ": 1,
+          "reg": "1c214",
+          "written": "ddcbcbb3",
+          "readback": "ddcbcbb3",
+          "matches": true
+        },
+        {
+          "path": 0,
+          "IQ": 1,
+          "reg": "1c218",
+          "written": "b1a3a591",
+          "readback": "b1a3a591",
+          "matches": true
+        },
+        {
+          "path": 0,
+          "IQ": 1,
+          "reg": "1c21c",
+          "written": "87736b5d",
+          "readback": "87736b5d",
+          "matches": true
+        },
+        {
+          "path": 0,
+          "IQ": 1,
+          "reg": "1c220",
+          "written": "51412f23",
+          "readback": "51412f23",
+          "matches": true
+        },
+        {
+          "path": 0,
+          "IQ": 1,
+          "reg": "1c224",
+          "written": "16578001",
+          "readback": "00178001",
+          "matches": false
+        },
+        {
+          "path": 1,
+          "IQ": 0,
+          "reg": "1c228",
+          "written": "ddc9c7b1",
+          "readback": "ddc9c7b1",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 0,
+          "reg": "1c22c",
+          "written": "b197957f",
+          "readback": "b197957f",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 0,
+          "reg": "1c230",
+          "written": "7f69615b",
+          "readback": "7f69615b",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 0,
+          "reg": "1c234",
+          "written": "4f3f2f23",
+          "readback": "4f3f2f23",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 0,
+          "reg": "1c238",
+          "written": "1454c001",
+          "readback": "1454c001",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 1,
+          "reg": "1c23c",
+          "written": "f5dfd3c1",
+          "readback": "f5dfd3c1",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 1,
+          "reg": "1c240",
+          "written": "c1a59987",
+          "readback": "c1a59987",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 1,
+          "reg": "1c244",
+          "written": "81695d49",
+          "readback": "81695d49",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 1,
+          "reg": "1c248",
+          "written": "3f2d1d0b",
+          "readback": "3f2d1d0b",
+          "matches": true
+        },
+        {
+          "path": 1,
+          "IQ": 1,
+          "reg": "1c24c",
+          "written": "14904001",
+          "readback": "00104001",
+          "matches": false
+        }
+      ]
+    }
+  },
+  "original_transaction_kept_across_ADC_and_DAC": true,
+  "DACK_measurement_done_all_paths": true,
+  "XB_Q_bias_readback_semantics_unresolved": true,
+  "receive_after_calibration": {
+    "C_channel": 36,
+    "C_mode": "SNIFFER0",
+    "C_PHY_MAC_OFDM_CRC_OK": 6977,
+    "C_host_CRC_correct": 3729,
+    "C_Beacons": 262,
+    "XB_host_CRC_correct": 6,
+    "descriptor_errors": 0
+  },
+  "XEPON_public_ping": "2/2",
+  "full_RF_calibration_complete": false,
+  "AP_available": false,
+  "log": "logs/radio-dack-20261010.txt",
+  "log_sha256": "c8e2b13e8d0ce61e8add86aad53e703ab2d6d73af81434c59b12981593c02253"
+}

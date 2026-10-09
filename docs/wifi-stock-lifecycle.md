@@ -357,7 +357,7 @@ C单独替换为原生读取模块以核对5GHz状态，XB仍使用上面正式F
 
 ## 2026-10-10 C5GHz频道设置与实际OFDM帧接收
 
-原生channel.h接入本板C、非DBCC/PHY0、5GHz20MHz频道操作，用于继续定位接收链；40/80/160MHz、XB频道、完整功率/RFK和mac80211配置入口继续实现。radio_channel写频道号，控制事务持command_mutex，先同步关闭RX并暂停HCI/bus master，按MAC BW→BB频道/增益/ADC/BW→RF频道/接收BB LUT顺序执行，再恢复RX。没有在运行中写任意调试寄存器。
+原生channel.h接入本板C、非DBCC/PHY0、5GHz20MHz频道操作，用于继续定位接收链；40/80/160MHz、XB频道、完整功率/RFK和mac80211配置入口继续实现。radio_channel写频道号，控制事务持command_mutex，先同步关闭RX并暂停HCI/bus master，按MAC BW→BB频道/增益/ADC/BW→RF频道/接收BB LUT顺序执行，再恢复RX。
 
 MAC cfg_mac_bw@21d980的20MHz5GHz分支更新c010低2位0、c628字段3、c0880。BB ctrl_ch_C@2e9430按路径A→B应用原机gain表、hidden/normal校准及band mode，随后SCO中心频率/补偿和CCK参数。gain CR数组从本机.rodata+26140/260c8/26178/261b0/261d0/26208/26240逐项提取，原生RFE54分支还包含wideband ELNA/LNA/TIA、GS和ELNA。原机隐藏OTP全ff故不写hidden校正；normal低5G取A-2/B-1和PHY0初始offset24，external_loss14/10，RSSI correction-14/-10及RPL/TB字段均按原机计算。
 
@@ -373,14 +373,26 @@ rx_mode接入本机RX_FLTR_MODE SNIFFER0、SCAN1、AP_NORMAL4：本机wrapper@1b
 
 RF启动开始于本机share_xtal_C@30fd14/XB@33f8fc。native share_xtal是明确的host配置输入，当前false；尚未读到原机运行时dev_cap的此字段，不把此默认宣称为原机运行值。C非共享时先清XSI8低2位，然后XSI4/5低7位写flash xcap71；共享时保留XSI8，仍写flash。XB非共享写127，共享才写flash63。这一点不能统一成两颗都写flash。mac_read_xtal_si@21e364命令为81000000|address，busy31、50us观察、返回0271字节；native按此读回两颗XSI4/5分别47/47和7f/7f，XSI8均34。CFO host默认值保持其原机较早initializer中的flash来源，周期控制继续接入。
 
-RF GPIO采用set_gpio_C@30f69c/XB@33e32c实际RFE54分支。C BB pin配置A10/TRSW/inverse1、A7/LNA/inverse1、A6/PAPE/inverse0，B1/TRSW/inverse1、B2/LNA/inverse1、B3/PAPE/inverse0，额外A11/inverse1/ZERO7。XB为A11/PAPE/inverse0、A7/TRSW/inverse1、A6/LNA/inverse1，B1/PAPE/inverse0、B2/TRSW/inverse1、B3/LNA/inverse1，额外A12/inverse1/ZERO7。对应MAC GPIO func19直接从本机C.rodata+1f820、XB+21508的指针表解析ELF relocation，每项12B记录func/reg/mask/value。全部14个本板pin记录均为027?范围2d0+pin/2、低/高nibble选择8；这不是从新版SDK猜测mux。
+RF GPIO采用set_gpio_C@30f69c/XB@33e32c实际RFE54分支。C BB pin配置A10/TRSW/inverse1、A7/LNA/inverse1、A6/PAPE/inverse0，B1/TRSW/inverse1、B2/LNA/inverse1、B3/PAPE/inverse0，额外A11/inverse1/ZERO7。XB为A11/PAPE/inverse0、A7/TRSW/inverse1、A6/LNA/inverse1，B1/PAPE/inverse0、B2/TRSW/inverse1、B3/LNA/inverse1，额外A12/inverse1/ZERO7。对应MAC GPIO func19直接从本机C.rodata+1f820、XB+21508的指针表解析ELF relocation，每项12B记录func/reg/mask/value。全部14个本板pin记录均为地址2d0+pin/2、低/高nibble选择8。
 
 实机BB path selector均00000054。C inverse00000c80/00000006，source30777777/77777477、77770347/77777777；XB inverse000010c0/0000000c，source43777777/77770777、77773407/77777777。MAC mux逐项与原机记录相符。原生重新选择RFE pin后继续验证接收，不把初始化寄存器写完当作RF校准完成。
 
-prepare_wifi_runtime从原机host ELF提取三个NCTL微程序常量数组，验证原机host SHA和各symbol长度/hash后安装到lib/firmware/realtek/tyfza1，记录NCTL输入清单；完整FIT验证器从实际内置initramfs核对它们。driver使用native request_firmware/MMIO loader，按hardwareCV选择C1769/1782对、XB1421对。实际config_nctl_C@3106f8/XB@33ffb0先写0c60/0c6c、58ac/78ac、8000，再写8080=4、1us、读回，最多1000次；本机到上限仍加载table，native保持这个语义。NCTL callback的f9..fe延时也是原机格式的一部分，三个本板数组均无此类地址。原机数组是设备微程序数据，host控制代码已由原生驱动实现。
+prepare_wifi_runtime从原机host ELF提取三个NCTL微程序常量数组，验证原机host SHA和各symbol长度/hash后安装到lib/firmware/realtek/tyfza1，记录NCTL输入清单；完整FIT验证器从实际内置initramfs核对它们。driver使用native request_firmware/MMIO loader，按hardwareCV选择C1769/1782对、XB1421对。实际config_nctl_C@3106f8/XB@33ffb0先写0c60/0c6c、58ac/78ac、8000，再写8080=4、1us、读回，最多1000次；本机到上限仍加载table，native保持这个语义。NCTL callback的f9..fe延时也是原机格式的一部分，三个本板数组均无此类地址。原机数组作为设备微程序数据，NCTL加载控制由原生驱动执行。
 
 两颗原机NCTL reset均第一次读回4，随后加载C1782、XB1421对，结束8000=8/8080=0。RCK primitive C@30cc44/XB@33c69c硬件步骤相同：RF5=0、RF0模式3、RF1b=240，先立即读取RF1c完成bit3，最多11读/10次2us延时，读取RF1b[14:10]结果并写回RF1b，RF5=1。本机等待到上限仍提取和安装结果，native不把它改成中止启动。原机rck_trigger@2f6654总是A→B。
 
 RCK原生模块22f120fe59acad504193e7a0cd79c039c239fecea2b7e8754c37cae2d3a92d81实机C两路code16/16、XB8/8，四路全部完成位1且均首个观察完成。结果logs/radio-rck-20261010.txt和manifests/radio-rf-nctl-rck-20261010.json。RFK host状态、reference power对象、DACK/RX_DCK/TXA_LCTK/trim/TSSI及完整频道功率/RFK仍继续实现，当前不声明全RF校准或AP完成。
 
 接收统计另对齐了本机CRC CR：HE=1a58、VHT=1a5c、HT=1a60、legacy OFDM=1a64。较早radio_rx_pipeline把HE/VHT文字标签互换，新版已修正；原始历史日志保留。5GHz24Mbps RTS对应legacy OFDM路径，已有16帧软件FCS验证证据不受此标签修正影响。
+
+## 2026-10-10 原机 DRCK、ADDCK、DAC 测量和回填
+
+`dack.h` 按本机 `halrf_dac_cal_8852c`、`halrf_dac_cal_8192xb` 的实际调用顺序实现：保存 RF0 A/B → DRCK → 关闭手动结果 → RF5 A/B=0、RF0 A/B=337e1 → RX 时钟 → ADDCK → 释放 RX 时钟 → 回填 ADC I/Q → RF1 A/B=0 → DAC A/B 测量、保存、回填 → 恢复 RF0 A/B、RF5 A/B=1。ADC 与 DAC 之间保持手动射频控制，整段在恢复主机 RX 之前执行。C 的 BTC 通知在这些调用处 state=2/3；实际 `halrf_btc_rfk_ntfy@2f8824` 只有 state=1 进入等待，其余只有条件日志，因此这里没有额外硬件命令。
+
+DRCK 使用 c0c4[6] 触发、c0c8[3] 完成位，随后按原机脉冲 c094[9]、读取 c0c8[14:10]、回填 c0c4[4:0]。XB 先选择 c0c4[9]，C 无此初始操作。ADDCK 两路按实际 36 次字段写启动，c0fc/c1fc[0] 完成，I/Q 各 10 位回填 c0f8/c1f8。硬件 CV1 的 XB RX 时钟参数来自本机 `.data+196c98`，不是新 SDK 表。
+
+DAC 两路保持本机差异：C 清 TX force → 选择时钟 → 开 force，XB 开 force → 选择时钟；C 写 c004/c024 高字段 0x30 且启动后等 1us，XB 无这三步。四个完成条件依次读取 c040/c064[31]、c05c/c080[2]。每路保存 16 个 I/Q MSBK 项、bias 和 DC，并按本机逆序四组 MSBK、第五字 bias/DC 的布局写 c200..c24c、置结果选择 bit0。原机观察到上限仍保存和回填结果，原生控制保持此语义。
+
+模块 a66ae0f88f4c73481b8a1e3563726549aecbfe2b36da95e7ccdad9c6cf690ed4 在原机实测：C DRCK code19、XB13；两颗 ADDCK 两路均首读完成。C DAC A/B 在 465/471 次观察完成，XB 在 313/318 次观察完成。C 20 个结果字读回全部等于写入值；XB 16 个 MSBK 字、两路 I 的 bias/DC 字匹配，Q 的 c224/c24c bias 高位读回为零，DC/选择位匹配。原机 ELF 的回填函数和 GPL 均对这两字写 bias<<22 | DC<<14，当前保留真实差异，尚未证明 XB Q bias 的硬件读回语义，不用任意寄存器改写消除差异。证据 `logs/radio-dack-20261010.txt`、`manifests/radio-dack-20261010.json`。
+
+该次校准后 C 在频道36、原机 SNIFFER0 下收到 3729 个 CRC 正确的实际 type0 帧，其中 262 个 Beacon；PHY/MAC OFDM CRC_OK 均6977，描述符格式/tag错误0。XB收到6个CRC正确type0帧。XEPON公网2/2。普通帧当前仍返回 unhandled，下一步把真实帧接入 Linux 无线层；RF 其余校准和 AP 收发业务仍继续实现。

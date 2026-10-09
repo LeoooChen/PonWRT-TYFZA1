@@ -27,6 +27,7 @@
 #include "rx-pipeline.h"
 #include "channel.h"
 #include "rf-start.h"
+#include "dack.h"
 
 /* Original netdev-open policy in os_intfs.c: MU beamforming, OFDMA or
  * force_fw_tx selects firmware scheduling. Preserve all three inputs. */
@@ -75,6 +76,7 @@ struct rtl_ax_ap {
 	struct rtl_ax_environment environment;
 	struct rtl_ax_channel channel;
 	struct rtl_ax_rf_start rf_start;
+	struct rtl_ax_dack dack;
 	struct rtl_ax_rx *rx;
 	struct mutex command_mutex;
 	spinlock_t command_lock;
@@ -560,6 +562,12 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	if (ret)
 		return ret;
 	ret = rtl_ax_rf_rck_start(&radio->io, &radio->rf_start);
+	if (ret)
+		return ret;
+	ret = rtl_ax_dack_adc_start(&radio->io, radio->chip, &radio->dack);
+	if (ret)
+		return ret;
+	ret = rtl_ax_dack_dac_start(&radio->io, radio->chip, &radio->dack);
 	if (ret)
 		return ret;
 	/* Native RXQ/RPQ and IRQ are already prepared. Resume receive after
@@ -1111,7 +1119,7 @@ static ssize_t radio_rf_start_show(struct device *dev,
 		"source=%08x,%08x/%08x,%08x MAC_mux=%02x,%02x,%02x,%02x,%02x,%02x,%02x "
 		"NCTL=%s pairs=%u reset_observations=%u reset_readback=%08x "
 		"NCTL8000=%08x NCTL8080=%08x RCK=%s code=%u,%u done=%u,%u "
-		"observations=%u,%u DACK=pending RX_DCK=pending calibration=pending\n",
+		"observations=%u,%u DACK=%s RX_DCK=pending calibration=pending\n",
 		rf->crystal_ready ? "applied" : "pending", share_xtal, rf->crystal_requested,
 		rf->crystal_observed[0], rf->crystal_observed[1], rf->share_control,
 		rf->gpio_ready ? "applied" : "pending", rtl_ax_read32(radio, 0x1033c),
@@ -1123,9 +1131,54 @@ static ssize_t radio_rf_start_show(struct device *dev,
 		rf->nctl_ready ? "loaded" : "pending", rf->nctl_pairs, rf->nctl_wait_observations,
 		rf->nctl_wait_value, rtl_ax_read32(radio, 0x18000), rtl_ax_read32(radio, 0x18080),
 		rf->rck_ready ? "applied" : "pending", rf->rck_code[0], rf->rck_code[1],
-		rf->rck_done[0], rf->rck_done[1], rf->rck_observations[0], rf->rck_observations[1]);
+		rf->rck_done[0], rf->rck_done[1], rf->rck_observations[0], rf->rck_observations[1],
+		radio->dack.dac_ready ? "applied" : "pending");
 }
 static DEVICE_ATTR_RO(radio_rf_start);
+
+static ssize_t radio_dack_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_dack *dack = &radio->dack;
+
+	return sysfs_emit(buffer, "DRCK=%s done=%u code=%u observations=%u c0c4=%08x c0c8=%08x "
+		"ADC_DC=%s done=%u,%u I_Q_A=%u,%u I_Q_B=%u,%u observations=%u,%u "
+		"reload=%08x,%08x DAC_DC=%s DACK=%s\n",
+		dack->drck_ready ? "applied" : "pending", dack->drck_done, dack->drck_code,
+		dack->drck_observations, rtl_ax_read32(radio, 0x1c0c4), rtl_ax_read32(radio, 0x1c0c8),
+		dack->adc_ready ? "applied" : "pending", dack->adc_done[0], dack->adc_done[1],
+		dack->adc_dc[0][0], dack->adc_dc[0][1], dack->adc_dc[1][0], dack->adc_dc[1][1],
+		dack->adc_observations[0], dack->adc_observations[1], rtl_ax_read32(radio, 0x1c0f8),
+		rtl_ax_read32(radio, 0x1c1f8), dack->dac_ready ? "applied" : "pending",
+		dack->dac_ready ? "applied" : "pending");
+}
+static DEVICE_ATTR_RO(radio_dack);
+
+static ssize_t radio_dac_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_dack *dack = &radio->dack;
+	unsigned int path, index, group;
+	ssize_t length = sysfs_emit(buffer, "DAC_DC=%s done=%u,%u observations=%u,%u bias=%u,%u/%u,%u "
+		"DC=%u,%u/%u,%u\n", dack->dac_ready ? "applied" : "pending",
+		dack->dac_done[0], dack->dac_done[1], dack->dac_observations[0], dack->dac_observations[1],
+		dack->bias[0][0], dack->bias[0][1], dack->bias[1][0], dack->bias[1][1],
+		dack->dac_dc[0][0], dack->dac_dc[0][1], dack->dac_dc[1][0], dack->dac_dc[1][1]);
+
+	for (path = 0; path < 2; path++)
+		for (index = 0; index < 2; index++)
+			for (group = 0; group < 5; group++) {
+				u32 address = 0x1c200 + path * 0x28 + index * 0x14 + group * 4;
+				u32 expected = dack->reload[path][index][group] | (group == 4 ? 1 : 0);
+
+				length += sysfs_emit_at(buffer, length, "path=%u IQ=%u reg=%05x expected=%08x readback=%08x\n",
+					path, index, address, expected, rtl_ax_read32(radio, address));
+			}
+	return length;
+}
+static DEVICE_ATTR_RO(radio_dac);
 
 static ssize_t radio_efuse_read(struct file *file, struct kobject *kobject,
 	const struct bin_attribute *attr, char *buffer, loff_t offset, size_t count)
@@ -1169,7 +1222,7 @@ static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_signal.attr, &dev_attr_radio_filter.attr, &dev_attr_radio_dfs.attr,
 	&dev_attr_radio_dig.attr, &dev_attr_radio_cfo.attr, &dev_attr_radio_environment.attr,
 	&dev_attr_radio_rx_pipeline.attr, &dev_attr_radio_channel.attr, &dev_attr_radio_rx_mode.attr,
-	&dev_attr_radio_rf_start.attr, NULL,
+	&dev_attr_radio_rf_start.attr, &dev_attr_radio_dack.attr, &dev_attr_radio_dac.attr, NULL,
 };
 static const struct attribute_group rtl_ax_group = {
 	.attrs = rtl_ax_attrs, .bin_attrs = rtl_ax_bin_attrs,
@@ -1217,6 +1270,9 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		radio->rf_start.gpio_ready = false;
 		radio->rf_start.nctl_ready = false;
 		radio->rf_start.rck_ready = false;
+		radio->dack.drck_ready = false;
+		radio->dack.adc_ready = false;
+		radio->dack.dac_ready = false;
 		radio->power_inputs.ready = false;
 		radio->download_prepared = false;
 	}
