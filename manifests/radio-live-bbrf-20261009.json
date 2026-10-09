@@ -140,6 +140,27 @@
     }
   },
   "current_on_board": {
+    "FIT": "artifacts/full-pon-radio-bb-dm01-6.18.55/ram-pcie/image.itb",
+    "sha256": "3a567502bb0e271970a7d614500113230c2d678010350f0345acb8ce8b088a7f",
+    "bytes": 6544376,
+    "source_stage": "9eace47",
+    "native_driver": "rtl_ax_ap built-in",
+    "log": "logs/radio-bb-dm01-ram-20261009.txt",
+    "implemented_and_observed": [
+      "base and FEM BB/gain/RF registers",
+      "two Radio passes per stage",
+      "all42 parameter files decoded",
+      "ordinary and RU limit input records",
+      "IC hardware configuration",
+      "RFE54 GPIO polarities and TRSW",
+      "normal flash and hidden physicalOTP gain inputs"
+    ],
+    "PHY_bitmap_in_this_FIT": false,
+    "AP_available": false,
+    "XEPON_DHCP": "192.168.71.28/24",
+    "public_ping": "2/2"
+  },
+  "previous_on_board": {
     "FIT": "artifacts/full-pon-radio-power01-6.18.55/ram-pcie/image.itb",
     "sha256": "a2d9c7a8567e881f91c0341f413d947e1af58a300f87f9161587ce01ed70eb53",
     "bytes": 6539368,

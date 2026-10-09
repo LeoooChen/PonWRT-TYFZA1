@@ -270,3 +270,9 @@ physts CR@2c6aa4的bitmap数组基址073c；page9保留，page10..15的实际地
 physts模块SHA256 f5c276f0ecf5a862490ac55e83b0b2c6bb777d83cab2702b900e62df7c23505c在原机两颗supportability=38ba/8bb。逐页readback与对象一致，page6=2006、7=a002、11=201、12..14=1000202、15=1000206；RX错误0。输出logs/radio-live-physts-20261009.txt。后续继续common report/debug对象、TX power diff/MACID、统计及EDCCA/DFS/DIG/CFO/RA等原机入口，暂未进入RF DM。
 
 最后进行实际post-PHY控制应答验证：临时诊断模块在全部已实现的基础/FEM、限幅、IC/GPIO、增益和PHY bitmap后再次发送原机BA CAM8初始化命令。此额外命令只放在artifacts/live-radio-post-phy-ack生成源码，正式overlay启动顺序不增加它。模块SHA25682f7d5a3c424b31a7e4daf04471c45881c74ec60d11dfdf52c7ee9799aa45835实机两颗done_acks=2、RXQ/IRQ各2、所有RX错误0，证明上述PHY配置完成后MCU与控制DMA仍然应答。结果logs/radio-live-post-phy-ack-20261009.txt。
+
+## 最新完整 BB DM RAM 镜像
+
+full-pon-radio-bb-dm01-6.18.55/ram-pcie/image.itb 的6544376B FIT（SHA2563a567502bb0e271970a7d614500113230c2d678010350f0345acb8ce8b088a7f）已经原机U-Boot签名校验并整机RAM启动。当前两个endpoint绑定内置rtl_ax_ap；基础/FEM各两遍、全部限幅输入、IC/GPIO、normal flash gain及hidden OTP gain都自动执行，结果与live模块一致，RX错误0。两份66B flash校准文件从最终FIT内置initramfs提取、与构建输入及设备实际文件核对一致；XEPON恢复192.168.71.28、公网ping2/2。结果logs/radio-bb-dm01-ram-20261009.txt。
+
+该FIT对应9eace47阶段，不包括随后0427aa8的PHY bitmap或额外诊断命令。包含bitmap的候选full-pon-radio-physts01-6.18.55正由独立后台服务ponwrt-tyfza1-lan-20261009-233526构建；是否完成、是否上机以实际服务及后续记录为准。SSID/AP、普通PPDU/TX/WP、其余BB DM及RF校准仍待实现。

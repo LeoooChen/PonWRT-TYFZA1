@@ -1,0 +1,172 @@
+{
+  "current_on_board": {
+    "FIT": "artifacts/full-pon-radio-bb-dm01-6.18.55/ram-pcie/image.itb",
+    "sha256": "3a567502bb0e271970a7d614500113230c2d678010350f0345acb8ce8b088a7f",
+    "bytes": 6544376,
+    "source_stage": "9eace47",
+    "native_driver": "rtl_ax_ap built-in",
+    "log": "logs/radio-bb-dm01-ram-20261009.txt",
+    "implemented_and_observed": [
+      "base and FEM BB/gain/RF registers",
+      "two Radio passes per stage",
+      "all42 parameter files decoded",
+      "ordinary and RU limit input records",
+      "IC hardware configuration",
+      "RFE54 GPIO polarities and TRSW",
+      "normal flash and hidden physicalOTP gain inputs"
+    ],
+    "PHY_bitmap_in_this_FIT": false,
+    "AP_available": false,
+    "XEPON_DHCP": "192.168.71.28/24",
+    "public_ping": "2/2"
+  },
+  "radios": [
+    {
+      "chip": "8852C",
+      "radio_passes": [
+        2,
+        2
+      ],
+      "limit_records_base": [
+        10416,
+        6864
+      ],
+      "limit_records_FEM": [
+        5480,
+        3552
+      ],
+      "RFM": [
+        "010a0604",
+        "010a0604"
+      ],
+      "normal_gain_A": [
+        3,
+        3,
+        -2,
+        0,
+        0
+      ],
+      "normal_gain_B": [
+        2,
+        2,
+        -1,
+        -1,
+        0
+      ],
+      "hidden_gain_valid": false,
+      "thermal": [
+        28,
+        28
+      ],
+      "xtal": 71,
+      "RX_errors": 0
+    },
+    {
+      "chip": "8192XB",
+      "radio_passes": [
+        2,
+        2
+      ],
+      "limit_records_base": [
+        4452,
+        3024
+      ],
+      "limit_records_FEM": [
+        4452,
+        3024
+      ],
+      "RFM": [
+        "030a0604",
+        "030a0604"
+      ],
+      "normal_gain_A": [
+        3,
+        3,
+        -2,
+        0,
+        0
+      ],
+      "normal_gain_B": [
+        2,
+        2,
+        -1,
+        -1,
+        0
+      ],
+      "hidden_gain_valid": true,
+      "thermal": [
+        24,
+        24
+      ],
+      "xtal": 63,
+      "RX_errors": 0
+    }
+  ],
+  "calibration": [
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8852ce/flash-calibration.bin",
+      "bytes": 66,
+      "sha256": "106750c394cf7687f752dd4d163c14cf6270e568ec0abaa4db35232030074063",
+      "hardware_settings_sha256": "71fc7a28d9edac631708a1742b9c5a4a52a6710691c876e46f1da98bcd007d6a",
+      "wlan": 0,
+      "source": "original HS flash gain,thermal,xtal,TSSI fields",
+      "physical_OTP_is_separate": true
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8192xbe/flash-calibration.bin",
+      "bytes": 66,
+      "sha256": "48e148ab1778265ca3a7f81c155e7258a3b484052ba72b87afe08aaa50afbe09",
+      "hardware_settings_sha256": "71fc7a28d9edac631708a1742b9c5a4a52a6710691c876e46f1da98bcd007d6a",
+      "wlan": 1,
+      "source": "original HS flash gain,thermal,xtal,TSSI fields",
+      "physical_OTP_is_separate": true
+    }
+  ],
+  "post_PHY_actual_MCU_check": {
+    "diagnostic_module_sha256": "82f7d5a3c424b31a7e4daf04471c45881c74ec60d11dfdf52c7ee9799aa45835",
+    "extra_diagnostic_command_in_production_source": false,
+    "done_acks_per_chip": 2,
+    "RXQ_per_chip": 2,
+    "RX_errors": 0,
+    "log": "logs/radio-live-post-phy-ack-20261009.txt"
+  },
+  "source_parameter_repairs": [
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8852ce/RFE54/TXPWR_LMT_RU_6G_LPI.txt",
+      "band": "5GHz",
+      "FEM": "RTK66587_BPF",
+      "RFE": 54,
+      "load_stage": "base",
+      "original_sha256": "7b63295122bb38ac76a62f052246525f094d17b48be0176c13d19da5ea2dc38f",
+      "sha256": "06dfea07f170877987d4d5eb5b670b5bec5e2d938db7a6b10c8323d9319f115a",
+      "corrections": [
+        "RU106/2T6GHzLPI: complete8-column zeroPShape row"
+      ]
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8852ce/RFE54/TXPWR_LMT_RU_6G_VLP.txt",
+      "band": "5GHz",
+      "FEM": "RTK66587_BPF",
+      "RFE": 54,
+      "load_stage": "base",
+      "original_sha256": "dd73d905c7841f2220d3a6b0ba90a6b48cf8456ca6886837ed567d12e39beff3",
+      "sha256": "e48af225055735f5d501a2c12aab742552a62b04f4fb5921ccbb8f20310da36c",
+      "corrections": [
+        "RU106/2T6GHzVLP: restore single zeroPShape entry"
+      ]
+    }
+  ],
+  "pending": [
+    "remaining BB DM",
+    "normal PPDU/TX/WP",
+    "RF DM and calibrations",
+    "channel setup",
+    "native mac80211 AP and association"
+  ],
+  "background_candidate": {
+    "unit": "ponwrt-tyfza1-lan-20261009-233526",
+    "output": "artifacts/full-pon-radio-physts01-6.18.55",
+    "build_status": "inspect live unit",
+    "hardware_verified": false
+  }
+}
