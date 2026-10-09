@@ -447,3 +447,13 @@ RF ctrl_ch@33ba58对A模拟/数字→B模拟/数字分别调用ch_setting@33b72c
 DUAL_MONITOR01完整构建（source278250a，服务ponwrt-tyfza1-lan-20261010-044513）经实际载荷核对、U-Boot签名验证和RAM冷启动。FIT SHA25692dfd5a3bf320ef39ebb90323165ffd512994af672d39f8e0b5584150f6e4813、7316324B；kernel cec12fe35a11b61cd464bbcbd4febbc3f0e9cecc10be679a03e09382687d2fc6。两颗均内置rtl_ax_ap，taint0，没有live覆盖。建立phy0/mon0频道36与phy1/mon1频道6后同时实际抓包：C32帧，XB64帧，全部完整FCS匹配；XB其中Beacon53、普通Data5，内核抓包丢包0，格式/tag错误0。XEPON仍获192.168.71.28并公网2/2。当前原机保留此正式双频镜像及两路监听，证据manifests/radio-dual-builtin-20261010.json、logs/radio-dual-builtin-C.pcap、logs/radio-dual-builtin-XB.pcap。
 
 包含初始XB AFE RX_DCK的下一完整构建已独立后台启动：source7e3848d，服务ponwrt-tyfza1-lan-20261010-050226，输出artifacts/full-pon-radio-dual-rxdck01-6.18.55。它与上述已冷启动镜像分开记录，完成后继续上机核对。C RF RX_DCK、完整RF gain曲线、动态跟踪及AP收发/关联保持后续工作范围。
+
+## 2026-10-10 原机C RF RX_DCK
+
+`c-rxdck.h`按本机初始化路径实现C RF RX_DCK。rx_dck_init@2f69ec读取A路RF95[3]决定额外reK能力；各路先观察RF5是否自动，手动情况下保存RF0，随后RF5=0、RF0模式3、DBCC bit1=0、RF93低4位0。toggle@30c150执行RF92[0]0→1，立即读取RF93[5]，最多501观察/500次2us延迟，最后清RF92[0]。启用reK且RF92[7:5]>1时，按原机RF8f[11:9]选择值再次触发，随后恢复该字段1。
+
+read_offset@30be50按原机顺序读取0/1/12/13和16/17/28/29增益点的RF92/93[15:9]。check@30bd3c逐项计算I/Q无符号偏移的绝对差；超过9才以对应0/1或16/17参考分量替换12/13或28/29，不超限分量保留其原值。value_rewrite@30b854把I/Q分别右移1、Q放高6位，依次打开RFec[19]、f0[16]、92[1]，选RF33低byte的增益索引、两次写RF3f，再按原机顺序关闭三项控制。随后热检测按get_thermal@30e790对RF42[19]1→0→1、等待200us、取[6:1]；恢复RF5自动，仅原先手动时恢复保存RF0。
+
+原生live模块5abbace9ad67f781e9d03f5bc5cf9a463c736cf7679113fa6de0670740c33ecd只替换C，XB继续内置2.4GHz接收。两路RF测量均35次观察完成，RF95额外reK能力为1、本次结果码未要求第二次测量；温度30/31。八个增益点均有真实I/Q，比较差值均不超过9，本次corrections0。RF92/93两路为68620/79800、48220/67c00。随后频道36再次由mac80211交付32个实际用户态Radiotap帧，全部完整FCS匹配，描述符/tag错误0、kernel抓包丢包0，XEPON公网2/2。证据`manifests/radio-c-rxdck-20261010.json`及对应logs/pcap。增益替换及额外reK的硬件分支本次未触发，代码逐项来自实际原机函数。
+
+后续TXA LCTK也已核对实际模块：trigger@2f52bc仅检查supportability[25]、记录host时间/状态及BTC通知，没有两颗芯片的硬件调用；本机最终C88e17f和XB38e17f均未置bit25。因此不增加自拟TXA LCTK寄存器操作。继续移植原机trim/TSSI和频道功率控制，再接普通TX与MAC角色/关联。

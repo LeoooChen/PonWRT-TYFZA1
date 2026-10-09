@@ -31,6 +31,7 @@
 #include "rf-start.h"
 #include "dack.h"
 #include "rxdck.h"
+#include "c-rxdck.h"
 
 /* Original netdev-open policy in os_intfs.c: MU beamforming, OFDMA or
  * force_fw_tx selects firmware scheduling. Preserve all three inputs. */
@@ -585,11 +586,10 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	ret = rtl_ax_dack_dac_start(&radio->io, radio->chip, &radio->dack);
 	if (ret)
 		return ret;
-	if (radio->chip == RTL_AX_8192XB) {
-		ret = rtl_ax_xb_rxdck_start(&radio->io, &radio->rxdck);
-		if (ret)
-			return ret;
-	}
+	ret = radio->chip == RTL_AX_8192XB ? rtl_ax_xb_rxdck_start(&radio->io, &radio->rxdck) :
+		rtl_ax_c_rxdck_start(&radio->io, &radio->rxdck);
+	if (ret)
+		return ret;
 	/* Native RXQ/RPQ and IRQ are already prepared. Resume receive after
 	 * the implemented PHY startup so ordinary 802.11 frames reach the
 	 * native dispatcher, using the same path verified on this board. */
@@ -1166,7 +1166,7 @@ static ssize_t radio_rf_start_show(struct device *dev,
 		rf->nctl_wait_value, rtl_ax_read32(radio, 0x18000), rtl_ax_read32(radio, 0x18080),
 		rf->rck_ready ? "applied" : "pending", rf->rck_code[0], rf->rck_code[1],
 		rf->rck_done[0], rf->rck_done[1], rf->rck_observations[0], rf->rck_observations[1],
-		radio->dack.dac_ready ? "applied" : "pending", radio->rxdck.ready ? "AFE-applied" : "pending");
+		radio->dack.dac_ready ? "applied" : "pending", radio->rxdck.ready ? "applied" : "pending");
 }
 static DEVICE_ATTR_RO(radio_rf_start);
 
@@ -1226,9 +1226,19 @@ static ssize_t radio_rx_dck_show(struct device *dev,
 		state->observations[0][0], state->observations[0][1], state->observations[1][0], state->observations[1][1]);
 
 	for (path = 0; path < 2; path++) {
-		for (i = 0; i < 7; i++)
-			length += sysfs_emit_at(buffer, length, "path=%u backup=%u saved=%08x restored=%08x\n",
-				path, i, state->saved[path][i], state->restored[path][i]);
+		if (radio->chip == RTL_AX_8192XB) {
+			for (i = 0; i < 7; i++)
+				length += sysfs_emit_at(buffer, length, "path=%u backup=%u saved=%08x restored=%08x\n",
+					path, i, state->saved[path][i], state->restored[path][i]);
+		} else {
+			static const u8 gain[] = { 0, 1, 12, 13, 16, 17, 28, 29 };
+
+			length += sysfs_emit_at(buffer, length, "path=%u thermal=%u reK_enabled=%u corrections=%u\n",
+				path, state->thermal[path], state->rek_enabled, state->corrections[path]);
+			for (i = 0; i < 8; i++)
+				length += sysfs_emit_at(buffer, length, "path=%u gain=%u I=%u Q=%u\n",
+					path, gain[i], state->offsets[path][i][0], state->offsets[path][i][1]);
+		}
 		length += sysfs_emit_at(buffer, length, "path=%u RF92=%05x RF93=%05x\n",
 			path, state->rf_result[path][0], state->rf_result[path][1]);
 	}

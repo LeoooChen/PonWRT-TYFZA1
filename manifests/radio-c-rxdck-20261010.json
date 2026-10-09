@@ -1,0 +1,50 @@
+{
+  "module_sha256": "5abbace9ad67f781e9d03f5bc5cf9a463c736cf7679113fa6de0670740c33ecd",
+  "stage": "initial C RF RX_DCK",
+  "primary_done": [
+    true,
+    true
+  ],
+  "observations": [
+    35,
+    35
+  ],
+  "reK_enabled": true,
+  "reK_needed_this_measurement": false,
+  "thermal": [
+    30,
+    31
+  ],
+  "gain_indices": [
+    0,
+    1,
+    12,
+    13,
+    16,
+    17,
+    28,
+    29
+  ],
+  "corrections": [
+    0,
+    0
+  ],
+  "RF92_RF93": [
+    [
+      "68620",
+      "79800"
+    ],
+    [
+      "48220",
+      "67c00"
+    ]
+  ],
+  "post_calibration_actual_MAC80211_frames": 32,
+  "post_calibration_full_FCS_match": true,
+  "pcap": "logs/radio-c-rxdck-receive.pcap",
+  "pcap_sha256": "0ea03a386f354d9ceb0104c86e5738614cfd03f5ceb0a93e8c0094b26bc9eff7",
+  "log": "logs/radio-c-rxdck-20261010.txt",
+  "receive_log": "logs/radio-c-rxdck-receive-20261010.txt",
+  "full_RF_calibration_complete": false,
+  "AP_available": false
+}
