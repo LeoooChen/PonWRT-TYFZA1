@@ -10,9 +10,13 @@ from zoneinfo import ZoneInfo
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('source', type=Path)
-parser.add_argument('--baseline', type=Path, default=root / 'evidence/wireless-study-20261008')
+parser.add_argument('--baseline', type=Path)
 parser.add_argument('--output', type=Path, default=root / 'logs/wireless-study-current.json')
 args = parser.parse_args()
+if args.baseline is None:
+    selected = root / 'manifests/wireless-study-current.json'
+    args.baseline = root / json.loads(selected.read_text())['snapshot'] if selected.exists() \
+        else root / 'evidence/wireless-study-20261008'
 
 def inventory(directory):
     entries = {}

@@ -35,6 +35,8 @@ Linux6.18现有rtw89_8852ce匹配c852，是8852C主线基础候选；该树没�
 
 原机FEM配置238、ELF初始RFE50及目录RFE54属于不同层，初始化存在覆盖；按实际分支落实最终RF表。源代码允许借鉴寄存器及协议行为、复用适合主线的GPL实现；运行时不加载原厂rtk_wifi6.ko、fc_mgr.ko或fc_8277c.ko。
 
+2026-10-09增量阅读：新增docs/12、13、14及相关证据，当前冻结快照为evidence/wireless-study-20261009-104746，502个有效文件。原机内核配置、频段覆盖和FEM字符串已经共同确认最终RFE54，5GHz/wlan0选择RTK66587_BPF、2.4GHz/wlan1选择RTK66287。固件选择读取MAC层chip_id/cv，cv0选u1，其他已支持cut走u2；固件头cut1/2与主机cv0/1分别解释。无线probe请求32bit DMA，与SoC ATU alias4配合。无线WD与NI lookup描述符、无线MACID与NE接口ID分别实现。
+
 ## 3至4：无线先完成正常服务
 
 基础实现依次完成设备power/reset、MAC初始化与固件下载、DMA rings/IRQ、RX/TX completion、BB/RF参数及校准，然后mac80211/cfg80211的AP/STA、密钥、beacon、STA增删和频道控制。两频段分别验证后接hostapd、OpenWrt wireless UCI与LuCI，再验证LAN桥和XEPON业务。

@@ -1,0 +1,79 @@
+{
+  "native_header_sha256": "8965a5c4b465f996c49c29ebec06cd19123a7422be32e8a3363d8649adc9c4be",
+  "original_AP_firmware_data": [
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8852c-u1-ap.bin",
+      "bytes": 406448,
+      "sha256": "df1e59e3cba26f5dad36f7835ef8710bb06f73248c0e1e5226f2232a00381131",
+      "MAC_chip_id": 2,
+      "host_cv": 0,
+      "firmware_cut": 1,
+      "version": [
+        0,
+        27,
+        84,
+        3
+      ],
+      "download_header_bytes": 96,
+      "section_packet_bytes": 2020
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8852c-u2-ap.bin",
+      "bytes": 369160,
+      "sha256": "a6e200954f05180e2388d1556a2d7553587fb59f733c0be1b5f6d1cc7d85b561",
+      "MAC_chip_id": 2,
+      "host_cv": 1,
+      "firmware_cut": 2,
+      "version": [
+        0,
+        27,
+        84,
+        3
+      ],
+      "download_header_bytes": 96,
+      "section_packet_bytes": 2020
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8192xb-u1-ap.bin",
+      "bytes": 387680,
+      "sha256": "e6f4557929fd9d99ba36a97e4b2f78fd1aa86c4a77fa986ffffaaf85ad87425b",
+      "MAC_chip_id": 3,
+      "host_cv": 0,
+      "firmware_cut": 1,
+      "version": [
+        0,
+        27,
+        84,
+        3
+      ],
+      "download_header_bytes": 96,
+      "section_packet_bytes": 2020
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/rtl8192xb-u2-ap.bin",
+      "bytes": 387752,
+      "sha256": "d7f0cf58c5c4e10f3e4e10d076423dc12454f3ef6b495b9538871e4d95926314",
+      "MAC_chip_id": 3,
+      "host_cv": 1,
+      "firmware_cut": 2,
+      "version": [
+        0,
+        27,
+        84,
+        3
+      ],
+      "download_header_bytes": 96,
+      "section_packet_bytes": 2020
+    }
+  ],
+  "selected_RF_parameter_files": 20,
+  "RFE": 54,
+  "FEM_by_band": {
+    "5GHz": "RTK66587_BPF",
+    "2.4GHz": "RTK66287"
+  },
+  "format_regression": "logs/radio-firmware-format-test.json",
+  "radio_driver_available": false,
+  "hardware_verified": false,
+  "current_build_service": "ponwrt-tyfza1-lan-20261009-110428"
+}

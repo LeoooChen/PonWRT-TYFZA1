@@ -1,0 +1,79 @@
+{
+  "read_at": "2026-10-09T10:55:47.768055+08:00",
+  "snapshot": "evidence/wireless-study-20261009-104746",
+  "effective_files": 502,
+  "bytes": 67861334,
+  "full_documents_read": [
+    {
+      "path": "README.md",
+      "sha256": "1928172fcc4f3ec5572f9ab3e374a02e794c8bdc7328e390535bc78166b55e3a"
+    },
+    {
+      "path": "docs/01-findings.md",
+      "sha256": "1a7c6078896839190e4c54cbdf0a6e3fc2ba83c5b800d9581fbab03e76278b82"
+    },
+    {
+      "path": "docs/02-stock-datapath.md",
+      "sha256": "2b6cd9e10921e632cf1f388ec03b74edcd14dad9a46110d075f0caa5c88d2f9d"
+    },
+    {
+      "path": "docs/03-descriptor-abi.md",
+      "sha256": "37c7c6ed609acc1f3446264b45030764f7fd9356d8db7b66e8a81414a5ed57b0"
+    },
+    {
+      "path": "docs/04-metadata-pipeline.md",
+      "sha256": "deb86e3e20a99d9de93084b0058001d9978eb5c4e4843eaa364c7772e5a2227e"
+    },
+    {
+      "path": "docs/05-wfo-firmware.md",
+      "sha256": "117275b89653526f8dfe0dea7b14405c2fddcf1645ee1f093ff178fa1a8d56be"
+    },
+    {
+      "path": "docs/06-openwrt-plan.md",
+      "sha256": "c594cd7e25a697ec4c1298e30399e75b324ded5fa7ca2487fde4a945c5dd78df"
+    },
+    {
+      "path": "docs/07-sources.md",
+      "sha256": "46258171ec27f69348ee4d5c64c8de58997b46e8fe91be2b3ddfa94394f9114c"
+    },
+    {
+      "path": "docs/08-history-and-corrections.md",
+      "sha256": "1c8dc148c87d5002989d7672d2cd597e5cb6c5f195c01009910df260c9c13c34"
+    },
+    {
+      "path": "docs/09-reproduction.md",
+      "sha256": "62ee04ad4094af0569cd99d8bf78cfc3e630c654c8d27c5a64cdd1c670f1fbe7"
+    },
+    {
+      "path": "docs/10-open-questions.md",
+      "sha256": "1aac4b296c51111f90ef7f8e9d4ce4b51090c50d031f708e86596ada63a3b4aa"
+    },
+    {
+      "path": "docs/11-live-readonly-and-rx-contract.md",
+      "sha256": "de5fe366bd2c19c756f28c93483b2a364b0921151a1328931e26f7a7e2c3571c"
+    },
+    {
+      "path": "docs/12-radio-chips-firmware-rfe.md",
+      "sha256": "ad38b67d13b2e21af56efe4a918f795fee7a76b14d32d66bb2f524717a866de4"
+    },
+    {
+      "path": "docs/13-radio-offload-and-software-cooperation.md",
+      "sha256": "7bd053c3b5e3b7cbbd14348564f1a7ce6db8afc6365d12e224eb5c5e74339129"
+    },
+    {
+      "path": "docs/14-pcie-dma-address-contract.md",
+      "sha256": "8c4cba5a26c4c7098e850c6dcf794a8308f63f9917389c25ed15d18531202682"
+    },
+    {
+      "path": "logs/research-log.md",
+      "sha256": "27e7843701a60505185f3fbfddad657cfd0c511c922378e96c9109ee6ce7f7e4"
+    }
+  ],
+  "new_key_findings": [
+    "RFE54 override and per-band FEM table chain",
+    "WCPU firmware chip/cv selection and2020-byte section chunks",
+    "radio WD0 distinct from NI lookup descriptor",
+    "PCIe32bit DMA with platform alias4"
+  ],
+  "plan": "docs/wifi-port-order.md"
+}

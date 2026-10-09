@@ -37,4 +37,5 @@ export TYFZA1_UCI_TREE="$TREE"
 python3 "$PROJECT/tools/prepare_pon_runtime.py" "$TREE/files" \
     --stock "${TYFZA1_STOCK_INPUTS:-$PROJECT/analysis/private/live-files}" \
     --auth-config "${TYFZA1_AUTH_CONFIG:-$PROJECT/analysis/private/pon-auth.json}"
+python3 "$PROJECT/tools/prepare_wifi_runtime.py" "$TREE/files"
 make -j"$JOBS" world
