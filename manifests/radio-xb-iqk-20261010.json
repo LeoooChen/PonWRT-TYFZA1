@@ -1,0 +1,59 @@
+{
+  "module": "artifacts/live-radio-xb-iqk02/rtl_ax_ap_live.ko",
+  "sha256": "21c8da33c31b20dbb1a8fd429cd4aa4e210c0726b1b282047440929ef0288565",
+  "original_host_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "native_scope": "XB normal SCC 2G20 host LOK/TXK/RXK; both paths",
+  "channel": 6,
+  "one_shots": 32,
+  "all_original_bff8_done": true,
+  "all_failure_bits_zero": true,
+  "all_LOK_ranges_good": true,
+  "all_22_BB_backups_match": true,
+  "RF_restore_differences": [
+    {
+      "path": 0,
+      "address": "00000",
+      "saved": "32be1",
+      "restored": "3b6a1"
+    }
+  ],
+  "RF0_control": "original restores RF5 automatic and enables AGC; RF0 mode3 retained, gain fields observed changed",
+  "captures": [
+    {
+      "chip": "C",
+      "frames": 64,
+      "FCS_match": 64,
+      "subtypes": {
+        "1/11": 27,
+        "1/12": 26,
+        "0/8": 9,
+        "2/4": 2
+      },
+      "pcap": "logs/radio-xb-iqk-C.pcap",
+      "sha256": "10767f1c6555e09633059851bf0a191854dab8ec60569bf539be333c5345b5cf"
+    },
+    {
+      "chip": "XB",
+      "frames": 64,
+      "FCS_match": 64,
+      "subtypes": {
+        "0/8": 51,
+        "2/0": 3,
+        "1/11": 1,
+        "1/12": 1,
+        "2/4": 1,
+        "0/4": 2,
+        "0/5": 5
+      },
+      "pcap": "logs/radio-xb-iqk-XB.pcap",
+      "sha256": "563cdbae0ec3ef63c5a5b0916f5b19eed50b00e41c1fa821c95f3c485f49fad6"
+    }
+  ],
+  "log": "logs/radio-xb-iqk-20261010.txt",
+  "C_IQK_complete": false,
+  "GAPK_complete": false,
+  "hardware_TSSI_tracking_complete": false,
+  "XB_OFDM_quality_resolved": false,
+  "AP_transmit_association_complete": false,
+  "XEPON_public_ping": "2/2"
+}

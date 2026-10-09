@@ -32,6 +32,7 @@
 #include "dack.h"
 #include "rxdck.h"
 #include "c-rxdck.h"
+#include "xb-iqk.h"
 #include "trim.h"
 #include "ref-power.h"
 #include "tssi-de.h"
@@ -86,6 +87,7 @@ struct rtl_ax_ap {
 	struct rtl_ax_dack dack;
 	struct rtl_ax_rxdck rxdck;
 	u8 rxdck_channel;
+	struct rtl_ax_xb_iqk xb_iqk;
 	struct rtl_ax_trim trim;
 	struct rtl_ax_ref_power ref_power;
 	struct rtl_ax_tssi_de tssi_de;
@@ -1139,6 +1141,10 @@ static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int chan
 	}
 	if (!ret) {
 		if (radio->chip == RTL_AX_8192XB)
+			ret = rtl_ax_xb_iqk_start20(&radio->io, channel, &radio->xb_iqk);
+	}
+	if (!ret) {
+		if (radio->chip == RTL_AX_8192XB)
 			rtl_ax_xb_tssi_de(&radio->io, &radio->flash_calibration, &radio->trim, channel, &radio->tssi_de);
 		else
 			rtl_ax_c_tssi_de20(&radio->io, &radio->flash_calibration, &radio->trim, channel, &radio->tssi_de);
@@ -1274,6 +1280,57 @@ static ssize_t radio_rx_dck_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_rx_dck);
 
+static ssize_t radio_iqk_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_xb_iqk *state = &radio->xb_iqk;
+	unsigned int path, i;
+	ssize_t length;
+
+	mutex_lock(&radio->command_mutex);
+	length = sysfs_emit(buffer, "IQK=%s chip=%02x method=host normal_SCC_2G_20 channel=%u "
+		"times=%u failures=%u status=%08x C_IQK=pending GAPK=pending\n",
+		state->ready ? "applied" : "pending", radio->chip, state->channel,
+		state->times, state->failures, state->status);
+	for (path = 0; path < 2; path++) {
+		length += sysfs_emit_at(buffer, length, "path=%u shots=%u LOK_range_fail=%u TX_fail=%u RX_fail=%u "
+			"thermal=%u LOK_IDAC=%05x LOK_vbuf=%05x IQC=%08x TX_result=%08x RX_result=%08x\n",
+			path, state->shots[path], state->lok_range_fail[path], state->tx_fail[path], state->rx_fail[path],
+			state->thermal[path], state->lok_idac[path], state->lok_vbuffer[path],
+			state->iqc_enable[path], state->tx_result[path], state->rx_result[path]);
+		for (i = 0; i < state->shots[path]; i++)
+			length += sysfs_emit_at(buffer, length, "path=%u shot=%u reads=%u first=%04x second=%04x fail=%u\n",
+				path, i, state->observations[path][i], state->first_status[path][i],
+				state->second_status[path][i], state->shot_fail[path][i]);
+	}
+	mutex_unlock(&radio->command_mutex);
+	return length;
+}
+static DEVICE_ATTR_RO(radio_iqk);
+
+static ssize_t radio_iqk_restore_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_xb_iqk *state = &radio->xb_iqk;
+	unsigned int path, i;
+	ssize_t length = 0;
+
+	mutex_lock(&radio->command_mutex);
+	for (path = 0; path < 2; path++) {
+		for (i = 0; i < ARRAY_SIZE(rtl_ax_xb_iqk_bb_regs); i++)
+			length += sysfs_emit_at(buffer, length, "path=%u BB=%04x saved=%08x restored=%08x\n",
+				path, rtl_ax_xb_iqk_bb_regs[i], state->bb_saved[path][i], state->bb_restored[path][i]);
+		for (i = 0; i < ARRAY_SIZE(rtl_ax_xb_iqk_rf_regs); i++)
+			length += sysfs_emit_at(buffer, length, "path=%u RF=%05x saved=%05x restored=%05x\n",
+				path, rtl_ax_xb_iqk_rf_regs[i], state->rf_saved[path][i], state->rf_restored[path][i]);
+	}
+	mutex_unlock(&radio->command_mutex);
+	return length;
+}
+static DEVICE_ATTR_RO(radio_iqk_restore);
+
 static ssize_t radio_trim_show(struct device *dev,
 	struct device_attribute *attr, char *buffer)
 {
@@ -1378,7 +1435,8 @@ static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_rx_pipeline.attr, &dev_attr_radio_channel.attr, &dev_attr_radio_rx_mode.attr,
 	&dev_attr_radio_rf_start.attr, &dev_attr_radio_dack.attr, &dev_attr_radio_dac.attr,
 	&dev_attr_radio_mac80211.attr, &dev_attr_radio_rx_dck.attr, &dev_attr_radio_trim.attr,
-	&dev_attr_radio_ref_power.attr, &dev_attr_radio_tssi_de.attr, NULL,
+	&dev_attr_radio_ref_power.attr, &dev_attr_radio_tssi_de.attr, &dev_attr_radio_iqk.attr,
+	&dev_attr_radio_iqk_restore.attr, NULL,
 };
 static const struct attribute_group rtl_ax_group = {
 	.attrs = rtl_ax_attrs, .bin_attrs = rtl_ax_bin_attrs,

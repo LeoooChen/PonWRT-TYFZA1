@@ -515,3 +515,11 @@ IQK one-shot又有实际ELF/SDK差异：XB@341c48的第一done条件为bff8低by
 live模块d75fc8d30fec2b4dc04aba38e1a9c71c75a2d52df63cc40fce74a33ca7a0fede实际C PHY HE CRC_OK2，host WD HE2/非Null数据2，QoS Data子类型8为2；host CRC正确310全部交给mac80211310。用户态64帧包含2个受保护QoS Data（86/122B），64帧FCS全部匹配。XB host CRC正确76、交付76，legacy非Null数据3；用户态64帧包含1个Data与1个QoS Data，完整FCS全匹配。两颗descriptor/tag/RDU错误0，kernel抓包丢包0，XEPON公网2/2。记录manifests/radio-rx-stages-20261010.json。HE调制依据实际WD统计，pcap当前没有完整HE radiotap字段，不声明HE SIG/MCS元数据完整。
 
 这次结果证明C之前零Data观察窗口不是固定DMA/交付阻塞；它已经取得新的真实QoS载荷。XB OFDM质量仍待原机host IQK与后续动态流程。061457完整构建已成功、最终PCIe FIT68f7a0dbf520664ca3a621eb20c0ef2f0230136783c197de0030c1e3b5654848核对通过，包含C DE和频道RX_DCK，尚未上机启动；当前启动FIT仍为2201a0f，以上新步骤与统计通过两颗native live覆盖验证。
+
+## 2026-10-10 XB原生主机IQK第一次原机完成
+
+xb-iqk.h依据本机generic doiQK@30a91c与XB callback实现正常SCC/2G/20MHz、硬件CV1的完整每路host IQK：原机BB11/RF7备份→MAC/BB/时钟→preset→LOK四步→TXK三组→RXAGC/RXK四组→thermal/结果→IQC restore→AFE/BB/RF恢复。16个one-shot各路原厂命令108/308/208/308、808三次、708/c08四组、1208；采用本机one_shot@341c48的bff8=55成功分支直接读8008[26]，不采用另一个SDK的独立第二poll。ADC时钟selector3/2的6字段来自本机.data196c38/196c98，TX selector7与强制顺序来自33e0c4。当前只加入XB正常20MHz频道路径，GAPK、C IQK和完整TSSI tracking继续实现。
+
+第一模块5f477193580e0d7f65844ef9c23aec2ab3ed7ed76279ede41ede51f5d685529d原机两路32个one-shot全部真实bff8=55、failure0，LOK range检查0。随后加入独立restore读回属性，模块21c8da33c31b20dbb1a8fd429cd4aa4e210c0726b1b282047440929ef0288565重复原机初始化与频道6，32步再全部完成；每路reads分别约147/97/54/97、157..158、RXAGC45..60/RXK230、restore21。A LOK_IDAC83ab4、vbuf96298，B aca08/ba238，thermal25/25，IQC00000101，TX/RX40000000。
+
+22个BB读回全部恢复原值，RF除A的RF0增益变化外均匹配（共36个读回中的35个匹配）。RF5按照原机恢复自动控制并恢复AGC，A RF0从32be1读到3b6a1，mode3保持，增益字段变化；保留实际读回，不把自动RF0增益作为固定值验收。随后双频各64个实际用户态入站帧FCS全部匹配、descriptor/tag/RDU错误0、kernel抓包丢包0，XEPON公网2/2。证据manifests/radio-xb-iqk-20261010.json与对应logs/pcap。XB OFDM错误仍高，本次证明原机IQK流程原生完成，不宣称接收质量已全部解决。
