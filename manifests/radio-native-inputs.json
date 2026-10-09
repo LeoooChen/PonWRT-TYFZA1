@@ -75,5 +75,18 @@
   "format_regression": "logs/radio-firmware-format-test.json",
   "radio_driver_available": false,
   "hardware_verified": false,
-  "current_build_service": "ponwrt-tyfza1-lan-20261009-110428"
+  "current_build_service": "ponwrt-tyfza1-lan-20261009-110428",
+  "build_exit_status": 0,
+  "FIT": {
+    "kernel_version": "6.18.55",
+    "cpus": 4,
+    "kernel_load": "0x200000",
+    "fdt_load": "0x1800000",
+    "image_sha256": "0244aad9f0c8ad77d9e61a14e1bb527bdd73b9fae090f810e64be040cab0f1c4",
+    "dtb_sha256": "60d1b8a0388516325024c390c13edcdb4376d910c34722223060d247a39efde8",
+    "fit_sha256": "fdb8bda314c250b7d45c6cf61cb0f9a54d99ab00c189440b175ade8b4d600140",
+    "fit_bytes": 6497856
+  },
+  "final_FIT_input_verification": "artifacts/full-pon-radio-inputs01-6.18.55/wifi-input-verification.json",
+  "final_FIT_PCIe_verification": "artifacts/full-pon-radio-inputs01-6.18.55/pcie-payload-verification.json"
 }
