@@ -148,7 +148,16 @@
     "source_stage": "278250a",
     "native_driver": "rtl_ax_ap builtin, both endpoints",
     "cold_boot_verified": true,
-    "active_RAM_driver_override": null,
+    "active_RAM_driver_override": {
+      "radio": "C / 0000:01:00.0",
+      "driver": "rtl_ax_ap_live",
+      "module": "artifacts/live-radio-c-rxdck01/rtl_ax_ap_live.ko",
+      "sha256": "5abbace9ad67f781e9d03f5bc5cf9a463c736cf7679113fa6de0670740c33ecd",
+      "C_interface": "phy2 / mon0 / channel36",
+      "XB_still_builtin": "phy1 / mon1 / channel6",
+      "C_RX_DCK_evidence": "manifests/radio-c-rxdck-20261010.json",
+      "boot_FIT_contains_C_RX_DCK": false
+    },
     "C_native_mac80211_monitor": true,
     "XB_native_mac80211_monitor": true,
     "channels": [
