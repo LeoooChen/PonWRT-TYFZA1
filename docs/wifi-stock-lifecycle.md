@@ -523,3 +523,13 @@ xb-iqk.h依据本机generic doiQK@30a91c与XB callback实现正常SCC/2G/20MHz�
 第一模块5f477193580e0d7f65844ef9c23aec2ab3ed7ed76279ede41ede51f5d685529d原机两路32个one-shot全部真实bff8=55、failure0，LOK range检查0。随后加入独立restore读回属性，模块21c8da33c31b20dbb1a8fd429cd4aa4e210c0726b1b282047440929ef0288565重复原机初始化与频道6，32步再全部完成；每路reads分别约147/97/54/97、157..158、RXAGC45..60/RXK230、restore21。A LOK_IDAC83ab4、vbuf96298，B aca08/ba238，thermal25/25，IQC00000101，TX/RX40000000。
 
 22个BB读回全部恢复原值，RF除A的RF0增益变化外均匹配（共36个读回中的35个匹配）。RF5按照原机恢复自动控制并恢复AGC，A RF0从32be1读到3b6a1，mode3保持，增益字段变化；保留实际读回，不把自动RF0增益作为固定值验收。随后双频各64个实际用户态入站帧FCS全部匹配、descriptor/tag/RDU错误0、kernel抓包丢包0，XEPON公网2/2。证据manifests/radio-xb-iqk-20261010.json与对应logs/pcap。XB OFDM错误仍高，本次证明原机IQK流程原生完成，不宣称接收质量已全部解决。
+
+## 2026-10-10 C原生主机IQK正常5G20MHz实机完成
+
+c-iqk.h按本机C generic doiQK和3178ac/31abdc/31a914/317ba0/31a63c/31a70c实现8个BB、7个RF备份，SCC syn1to2=1，原机preset的BB页选择（实际ELF无另一份SDK的RF55/RF18页写入）。5G LOK读取四个RF8 DAC结果，再按tracking0/4/6/7的低7/高3 TXBB分组回填40个增益档；原机偏置3/7最多两次。TXK三组使用C特有CFIR选择bit4和808c=10010，RXK使用两个gain190/310、AGC4/6和LUT组0/2。原机温度<20切换narrow、保存/恢复c0e8[6]的分支也接入；此分支未通过实际降温验证。
+
+完成条件独立遵循check_cal_C@315f98：bff8低byte55最多821次、每次10us，随后无条件读取80fc低16=8000最多21次，再取8008[26]。LOK直接命令与one-shot的初始等待区别保留；restore命令延迟200us后执行同一完成路径。C adc_cfg的公共模拟字段与selector3/2数字字段独立于XB表，不沿用XB输入。
+
+初次原机A范围判断暴露一个移植错误：用到了旧GPL3..53及其额外首DAC判断。重新核对本机fine-check@3158bc，实际减3后unsigned比较57，即3..60；actual start中没有首DAC边界检查。已按机器码纠正，旧观察日志保留。
+
+模块b4ccaa23d2dd55ebc975bd27e0fc676995fde9420715fb586c75ee172b0f67eb实机C36，A因首次结果按原机范围触发第二次偏置，共20个步骤；B一次偏置、14个步骤。34步均bff8=55、80fc=8000、failure0，两路LOK/TX/RX判定0。A LOK_IDACee0f4/B95774、thermal29/30；16个C BB与非RF0的RF读回全部恢复原值，RF0在自动RF5/AGC下gain变化、mode3保持。XB同时保留两路32步成功。两频各64个实际入站帧FCS全部匹配、kernel丢包0，XEPON公网2/2；证据manifests/radio-c-iqk-20261010.json及对应logs/pcap。当前仍是native live覆盖；完整GAPK、TSSI tracking、AP发射关联和全带宽频道继续实现。

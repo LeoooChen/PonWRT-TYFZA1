@@ -1,0 +1,76 @@
+{
+  "module": "artifacts/live-radio-c-iqk02/rtl_ax_ap_live.ko",
+  "sha256": "b4ccaa23d2dd55ebc975bd27e0fc676995fde9420715fb586c75ee172b0f67eb",
+  "native_scope": "C host IQK SCC5G20,normal hot path measured; stock thermal<20 narrow branch implemented but not temperature-tested",
+  "channel": 36,
+  "one_shots_C": 34,
+  "path0_shots": 20,
+  "path1_shots": 14,
+  "LOK_attempts_A_B": [
+    2,
+    1
+  ],
+  "all_original_bff8_55_and_80fc_8000": true,
+  "all_failure_bits_zero": true,
+  "actual_LOK_bounds": [
+    3,
+    60
+  ],
+  "older_GPL_LOK_bounds_incorrect_for_this_host": [
+    3,
+    53
+  ],
+  "all_16_C_BB_restore_match": true,
+  "RF_restore_differences": [
+    {
+      "path": 0,
+      "address": "00000",
+      "saved": "337e1",
+      "restored": "377e1"
+    },
+    {
+      "path": 1,
+      "address": "00000",
+      "saved": "337e1",
+      "restored": "377e1"
+    }
+  ],
+  "RF0_control": "original automatic RF5/AGC restored;RF0 mode3 retained while gain changes",
+  "captures": [
+    {
+      "chip": "C",
+      "frames": 64,
+      "FCS_match": 64,
+      "subtypes": {
+        "1/11": 30,
+        "1/12": 31,
+        "0/8": 3
+      },
+      "pcap": "logs/radio-c-iqk-C.pcap",
+      "sha256": "bbd8d6f788942e4cf97659e22d5bae4ca65abeabe1076bb8965b20927d2eaf33"
+    },
+    {
+      "chip": "XB",
+      "frames": 64,
+      "FCS_match": 64,
+      "subtypes": {
+        "0/8": 40,
+        "0/4": 1,
+        "2/4": 2,
+        "2/0": 3,
+        "0/5": 5,
+        "1/11": 6,
+        "1/12": 2,
+        "2/8": 5
+      },
+      "pcap": "logs/radio-c-iqk-XB.pcap",
+      "sha256": "3c4fcb326ba3c5489a8582004908b3089fd12660e3b4ffdb8fd63d080872d8f7"
+    }
+  ],
+  "log": "logs/radio-c-iqk-20261010.txt",
+  "earlier_incorrect_range_observation": "logs/radio-c-iqk-first-20261010.txt",
+  "GAPK_complete": false,
+  "hardware_TSSI_tracking_complete": false,
+  "AP_transmit_association_complete": false,
+  "XEPON_public_ping": "2/2"
+}

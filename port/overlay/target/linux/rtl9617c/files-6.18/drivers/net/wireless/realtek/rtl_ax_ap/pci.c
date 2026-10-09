@@ -33,6 +33,7 @@
 #include "rxdck.h"
 #include "c-rxdck.h"
 #include "xb-iqk.h"
+#include "c-iqk.h"
 #include "trim.h"
 #include "ref-power.h"
 #include "tssi-de.h"
@@ -88,6 +89,7 @@ struct rtl_ax_ap {
 	struct rtl_ax_rxdck rxdck;
 	u8 rxdck_channel;
 	struct rtl_ax_xb_iqk xb_iqk;
+	struct rtl_ax_c_iqk c_iqk;
 	struct rtl_ax_trim trim;
 	struct rtl_ax_ref_power ref_power;
 	struct rtl_ax_tssi_de tssi_de;
@@ -1142,6 +1144,8 @@ static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int chan
 	if (!ret) {
 		if (radio->chip == RTL_AX_8192XB)
 			ret = rtl_ax_xb_iqk_start20(&radio->io, channel, &radio->xb_iqk);
+		else
+			ret = rtl_ax_c_iqk_start20(&radio->io, channel, &radio->c_iqk);
 	}
 	if (!ret) {
 		if (radio->chip == RTL_AX_8192XB)
@@ -1289,8 +1293,31 @@ static ssize_t radio_iqk_show(struct device *dev,
 	ssize_t length;
 
 	mutex_lock(&radio->command_mutex);
+	if (radio->chip == RTL_AX_8852C) {
+		struct rtl_ax_c_iqk *c = &radio->c_iqk;
+
+		length = sysfs_emit(buffer, "IQK=%s chip=%02x method=host normal_SCC_5G_20 channel=%u "
+			"times=%u failures=%u status=%08x GAPK=pending\n",
+			c->ready ? "applied" : "pending", radio->chip, c->channel, c->times, c->failures, c->status);
+		for (path = 0; path < 2; path++) {
+			length += sysfs_emit_at(buffer, length, "path=%u shots=%u narrow=%u LOK_attempts=%u "
+				"LOK_range_fail=%u TX_fail=%u RX_fail=%u thermal=%u "
+				"LOK_IDAC=%05x LOK_vbuf=%05x LOK_DAC=%05x,%05x,%05x,%05x "
+				"IQC=%08x TX_result=%08x RX_result=%08x\n", path, c->shots[path], c->narrow[path],
+				c->lok_attempts[path], c->lok_range_fail[path], c->tx_fail[path], c->rx_fail[path],
+				c->thermal[path], c->lok_idac[path], c->lok_vbuffer[path], c->lok_dac[path][0],
+				c->lok_dac[path][1], c->lok_dac[path][2], c->lok_dac[path][3],
+				c->iqc_enable[path], c->tx_result[path], c->rx_result[path]);
+			for (i = 0; i < c->shots[path]; i++)
+				length += sysfs_emit_at(buffer, length,
+					"path=%u shot=%u cmd=%04x reads=%u/%u first=%04x second=%04x fail=%u\n",
+					path, i, c->command[path][i], c->first_reads[path][i], c->second_reads[path][i],
+					c->first_status[path][i], c->second_status[path][i], c->shot_fail[path][i]);
+		}
+		goto unlock;
+	}
 	length = sysfs_emit(buffer, "IQK=%s chip=%02x method=host normal_SCC_2G_20 channel=%u "
-		"times=%u failures=%u status=%08x C_IQK=pending GAPK=pending\n",
+		"times=%u failures=%u status=%08x GAPK=pending\n",
 		state->ready ? "applied" : "pending", radio->chip, state->channel,
 		state->times, state->failures, state->status);
 	for (path = 0; path < 2; path++) {
@@ -1304,6 +1331,7 @@ static ssize_t radio_iqk_show(struct device *dev,
 				path, i, state->observations[path][i], state->first_status[path][i],
 				state->second_status[path][i], state->shot_fail[path][i]);
 	}
+unlock:
 	mutex_unlock(&radio->command_mutex);
 	return length;
 }
@@ -1318,6 +1346,19 @@ static ssize_t radio_iqk_restore_show(struct device *dev,
 	ssize_t length = 0;
 
 	mutex_lock(&radio->command_mutex);
+	if (radio->chip == RTL_AX_8852C) {
+		struct rtl_ax_c_iqk *c = &radio->c_iqk;
+
+		for (path = 0; path < 2; path++) {
+			for (i = 0; i < ARRAY_SIZE(rtl_ax_c_iqk_bb_regs); i++)
+				length += sysfs_emit_at(buffer, length, "path=%u BB=%04x saved=%08x restored=%08x\n",
+					path, rtl_ax_c_iqk_bb_regs[i], c->bb_saved[path][i], c->bb_restored[path][i]);
+			for (i = 0; i < ARRAY_SIZE(rtl_ax_xb_iqk_rf_regs); i++)
+				length += sysfs_emit_at(buffer, length, "path=%u RF=%05x saved=%05x restored=%05x\n",
+					path, rtl_ax_xb_iqk_rf_regs[i], c->rf_saved[path][i], c->rf_restored[path][i]);
+		}
+		goto unlock;
+	}
 	for (path = 0; path < 2; path++) {
 		for (i = 0; i < ARRAY_SIZE(rtl_ax_xb_iqk_bb_regs); i++)
 			length += sysfs_emit_at(buffer, length, "path=%u BB=%04x saved=%08x restored=%08x\n",
@@ -1326,6 +1367,7 @@ static ssize_t radio_iqk_restore_show(struct device *dev,
 			length += sysfs_emit_at(buffer, length, "path=%u RF=%05x saved=%05x restored=%05x\n",
 				path, rtl_ax_xb_iqk_rf_regs[i], state->rf_saved[path][i], state->rf_restored[path][i]);
 	}
+unlock:
 	mutex_unlock(&radio->command_mutex);
 	return length;
 }
