@@ -1,0 +1,321 @@
+{
+  "radio": "8852C / 0000:01:00.0",
+  "channel": 36,
+  "bandwidth_MHz": 20,
+  "receive_mode": "original SNIFFER0",
+  "native_channel_module_sha256": "78a8c5eb257ba29f9e5d6e27dd3fabec6a8a0fd4cebc3e08c1bac9be09dca237",
+  "header_diagnostic_module_sha256": "44a28708ee1f14fb73ac9065c9d9edc2fef8783caf40b13d31efe1c6f30c6fa0",
+  "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "frame_type": "802.11 control RTS",
+  "hardware_rate_index": 8,
+  "rate_Mbps": 24,
+  "software_verified_actual_FCS_frames": 16,
+  "frames": [
+    {
+      "length": 20,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "WD": [
+        "d0100014",
+        "0008c052",
+        "00040a3d",
+        "00200000"
+      ],
+      "FCS": "a3a0b822",
+      "calculated_FCS": "a3a0b822",
+      "FCS_matches": true,
+      "frame_control": "0xb4",
+      "type": 1,
+      "subtype": 11,
+      "rate_index": 8
+    },
+    {
+      "length": 20,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "WD": [
+        "d0100014",
+        "0008c002",
+        "0004138c",
+        "00200000"
+      ],
+      "FCS": "a3a0b822",
+      "calculated_FCS": "a3a0b822",
+      "FCS_matches": true,
+      "frame_control": "0xb4",
+      "type": 1,
+      "subtype": 11,
+      "rate_index": 8
+    },
+    {
+      "length": 20,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "WD": [
+        "d0100014",
+        "0008c022",
+        "000417c7",
+        "00200000"
+      ],
+      "FCS": "a3a0b822",
+      "calculated_FCS": "a3a0b822",
+      "FCS_matches": true,
+      "frame_control": "0xb4",
+      "type": 1,
+      "subtype": 11,
+      "rate_index": 8
+    },
+    {
+      "length": 20,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "WD": [
+        "d0100014",
+        "0008c052",
+        "000424b3",
+        "00200000"
+      ],
+      "FCS": "a3a0b822",
+      "calculated_FCS": "a3a0b822",
+      "FCS_matches": true,
+      "frame_control": "0xb4",
+      "type": 1,
+      "subtype": 11,
+      "rate_index": 8
+    },
+    {
+      "length": 20,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "WD": [
+        "d0100014",
+        "0008c042",
+        "0004f083",
+        "00200000"
+      ],
+      "FCS": "a3a0b822",
+      "calculated_FCS": "a3a0b822",
+      "FCS_matches": true,
+      "frame_control": "0xb4",
+      "type": 1,
+      "subtype": 11,
+      "rate_index": 8
+    },
+    {
+      "length": 20,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "WD": [
+        "d0100014",
+        "0008c062",
+        "0004f4ec",
+        "00200000"
+      ],
+      "FCS": "a3a0b822",
+      "calculated_FCS": "a3a0b822",
+      "FCS_matches": true,
+      "frame_control": "0xb4",
+      "type": 1,
+      "subtype": 11,
+      "rate_index": 8
+    },
+    {
+      "length": 20,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "WD": [
+        "d0100014",
+        "0008c002",
+        "00050d7a",
+        "00200000"
+      ],
+      "FCS": "a3a0b822",
+      "calculated_FCS": "a3a0b822",
+      "FCS_matches": true,
+      "frame_control": "0xb4",
+      "type": 1,
+      "subtype": 11,
+      "rate_index": 8
+    },
+    {
+      "length": 20,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "WD": [
+        "d0100014",
+        "0008c022",
+        "000511a7",
+        "00200000"
+      ],
+      "FCS": "a3a0b822",
+      "calculated_FCS": "a3a0b822",
+      "FCS_matches": true,
+      "frame_control": "0xb4",
+      "type": 1,
+      "subtype": 11,
+      "rate_index": 8
+    },
+    {
+      "length": 20,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "WD": [
+        "d0100014",
+        "0008c062",
+        "00052cfc",
+        "00200000"
+      ],
+      "FCS": "a3a0b822",
+      "calculated_FCS": "a3a0b822",
+      "FCS_matches": true,
+      "frame_control": "0xb4",
+      "type": 1,
+      "subtype": 11,
+      "rate_index": 8
+    },
+    {
+      "length": 20,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "WD": [
+        "d0100014",
+        "0008c022",
+        "0006068f",
+        "00200000"
+      ],
+      "FCS": "a3a0b822",
+      "calculated_FCS": "a3a0b822",
+      "FCS_matches": true,
+      "frame_control": "0xb4",
+      "type": 1,
+      "subtype": 11,
+      "rate_index": 8
+    },
+    {
+      "length": 20,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "WD": [
+        "d0100014",
+        "0008c042",
+        "00060b42",
+        "00200000"
+      ],
+      "FCS": "a3a0b822",
+      "calculated_FCS": "a3a0b822",
+      "FCS_matches": true,
+      "frame_control": "0xb4",
+      "type": 1,
+      "subtype": 11,
+      "rate_index": 8
+    },
+    {
+      "length": 20,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "WD": [
+        "d0100014",
+        "0008c002",
+        "0006ccfc",
+        "00200000"
+      ],
+      "FCS": "a3a0b822",
+      "calculated_FCS": "a3a0b822",
+      "FCS_matches": true,
+      "frame_control": "0xb4",
+      "type": 1,
+      "subtype": 11,
+      "rate_index": 8
+    },
+    {
+      "length": 20,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "WD": [
+        "d0100014",
+        "0008c022",
+        "0006cfb0",
+        "00200000"
+      ],
+      "FCS": "a3a0b822",
+      "calculated_FCS": "a3a0b822",
+      "FCS_matches": true,
+      "frame_control": "0xb4",
+      "type": 1,
+      "subtype": 11,
+      "rate_index": 8
+    },
+    {
+      "length": 20,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "WD": [
+        "d0100014",
+        "0008c052",
+        "0006e040",
+        "00200000"
+      ],
+      "FCS": "a3a0b822",
+      "calculated_FCS": "a3a0b822",
+      "FCS_matches": true,
+      "frame_control": "0xb4",
+      "type": 1,
+      "subtype": 11,
+      "rate_index": 8
+    },
+    {
+      "length": 20,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "WD": [
+        "d0100014",
+        "0008c072",
+        "0006e44e",
+        "00200000"
+      ],
+      "FCS": "a3a0b822",
+      "calculated_FCS": "a3a0b822",
+      "FCS_matches": true,
+      "frame_control": "0xb4",
+      "type": 1,
+      "subtype": 11,
+      "rate_index": 8
+    },
+    {
+      "length": 20,
+      "CRC_error": 0,
+      "ICV_error": 0,
+      "WD": [
+        "d0100014",
+        "0008c012",
+        "0006e9a6",
+        "00200000"
+      ],
+      "FCS": "a3a0b822",
+      "calculated_FCS": "a3a0b822",
+      "FCS_matches": true,
+      "frame_control": "0xb4",
+      "type": 1,
+      "subtype": 11,
+      "rate_index": 8
+    }
+  ],
+  "prior_snapshot_valid_received_80211": 681,
+  "RX_descriptor_errors": 0,
+  "logs": [
+    "logs/radio-channel-C36-monitor-20261010.txt",
+    "logs/radio-channel-C36-headers-20261010.txt",
+    "logs/radio-channel-C-passive-scan-20261010.txt"
+  ],
+  "passive_scan_channels": [
+    36,
+    40,
+    44,
+    48
+  ],
+  "AP_available": false,
+  "ordinary_data_or_beacon_verified": false,
+  "RF_calibration_complete": false,
+  "analog_RF18_B_does_not_mirror_A": true,
+  "branch_difference": "original C channel function has no SDK trailing IQG toggle; original0734 field uses channel directly"
+}

@@ -243,6 +243,22 @@ static inline void rtl_ax_hal_start_receive(const struct rtl_ax_io *io,
 	rtl_ax_update32(io, 0xce24, 3U << 8, 0);
 }
 
+static inline int rtl_ax_receive_mode(const struct rtl_ax_io *io, unsigned int mode)
+{
+	/* Actual wrapper@1b1514 and converter@22fddc. Restore AP_NORMAL4
+	 * before selecting SCAN1/SNIFFER0 so a previous monitor bit does
+	 * not survive into a different requested operating mode. The explicit
+	 * startup MPDU11264B limit is retained, as after the original wrapper. */
+	if (mode != 0 && mode != 1 && mode != 4)
+		return -EINVAL;
+	rtl_ax_update32(io, 0xce20, 0x47ff, 0x440e);
+	if (mode == 0)
+		rtl_ax_update32(io, 0xce20, 0, 1);
+	else if (mode == 1)
+		rtl_ax_update32(io, 0xce20, 0xbe, 0x0e);
+	return 0;
+}
+
 static inline void rtl_ax_cmac_medium_access(const struct rtl_ax_io *io)
 {
 	/* cmac_init@23f4e4 and240050. chk_patch_dis_resp_chk returnsfalse

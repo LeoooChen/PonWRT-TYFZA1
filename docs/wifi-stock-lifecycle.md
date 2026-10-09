@@ -354,3 +354,17 @@ RX_ACTIVE01正式FIT（sourcee75bf3b）SHA256f34fbd0e8355adb77626418ec30bbdc49e0
 C单独替换为原生读取模块以核对5GHz状态，XB仍使用上面正式FIT中的内置驱动收帧。C BB实际中心频率5800MHz、SCO45、channel report0；模拟RF18为A01001/B01000，低8位频道1/0，原机RF5GHz band编码位未设置。BB与RF默认频道/频段尚未统一，完整rtw_hal_set_ch_bw路径是5GHz验证的下一项。证据logs/radio-channel-read-C-20261010.txt、manifests/radio-channel-read-C-20261010.json。
 
 频道和RFK后段需要部分RF字段写，已严格核对本机模拟写C@2e2e64/XB@2ed448与数字写C@2e3060/XB@2ed644：模拟写等待31次busy观察；部分mask时写BB0374低20位，再按首个mask位移位data并在BB0370命令中置bit31。原机使用硬件mask写，不是先读RF再拼写。数字写使用e000/f000窗口的字段更新及1us delay。公共native masked API已接入原有全20bit Radio表加载；C实际回归完成全部base/FEM加载及成功BA ACK，部分mask调用将随完整频道/RFK控制验证。另核对C频道控制中的pathB SYN修正是hardwareCV0条件，本机CV1跳过，不能把hal_com字段4误解释成PCIe bus type。
+
+## 2026-10-10 C5GHz频道设置与实际OFDM帧接收
+
+原生channel.h接入本板C、非DBCC/PHY0、5GHz20MHz频道操作，用于继续定位接收链；40/80/160MHz、XB频道、完整功率/RFK和mac80211配置入口继续实现。radio_channel写频道号，控制事务持command_mutex，先同步关闭RX并暂停HCI/bus master，按MAC BW→BB频道/增益/ADC/BW→RF频道/接收BB LUT顺序执行，再恢复RX。没有在运行中写任意调试寄存器。
+
+MAC cfg_mac_bw@21d980的20MHz5GHz分支更新c010低2位0、c628字段3、c0880。BB ctrl_ch_C@2e9430按路径A→B应用原机gain表、hidden/normal校准及band mode，随后SCO中心频率/补偿和CCK参数。gain CR数组从本机.rodata+26140/260c8/26178/261b0/261d0/26208/26240逐项提取，原生RFE54分支还包含wideband ELNA/LNA/TIA、GS和ELNA。原机隐藏OTP全ff故不写hidden校正；normal低5G取A-2/B-1和PHY0初始offset24，external_loss14/10，RSSI correction-14/-10及RPL/TB字段均按原机计算。
+
+原机C直接把频道号写0734[23:16]，并未调用新SDK的ch_idx_encode。BW20 ADC@2e333c在BB c0xx/c1xx窗口执行完整字段配置，RFE54的c0ec/c1ec[23:16]=2。接入edcca per20、5GHz CCK关闭、PD boost关闭、5M mask关闭、两路径TSSI reset和BB reset。RFE54跳过iFEM spur branch，ctrl_btg_C对RFE>49直接返回。RF ctl_band_ch_bw_C@30b1a0先读四个RF18，随后A模拟/数字、B模拟/数字各写并延迟100us；本机CV1跳过CV0 B SYN workaround。原机函数不存在新SDK末尾IQG toggle。rxbb_bw_C按原机ee[2]、33、3f LUT设置20MHz值27，再退出LUT写模式。
+
+channel-C01模块8a5c32f098970710a1c1abfa8e95adfa2fc86267ba916c85914d13f9ae488e76在原机写36后BB5180MHz/SCO51/channel36，RF模拟A11d24、B01c00、数字两路10d24。B模拟寄存器未镜像A，这一点保留为实际读回，不据此臆加CV0 workaround。随后C PHY/MAC OFDM CRC_OK增长至2345、CRC_error116，RXQ仍只有C2H。有效解调已发生，阻塞范围缩到过滤/主机转交，而不是原先BB/RF频段未统一。
+
+rx_mode接入本机RX_FLTR_MODE SNIFFER0、SCAN1、AP_NORMAL4：本机wrapper@1b1514和converter@22fddc分别产生SNIFFER bit0、SCAN maskbe/value0e、AP mask47ff/value440e。显式MPDU11264B继续保留。切换时先恢复AP模式，再设置请求模式，避免上一次SNIFFER标志遗留。没有把监听默认用于AP。SCAN1实机options0816440e、有效PHY解调仍无主机帧；SNIFFER0 options0816440f后，主机迅速收到681个CRC正确type0帧，RXQ/IRQ增长，格式/tag错误0。日志logs/radio-channel-C36-scan-20261010.txt和logs/radio-channel-C36-monitor-20261010.txt。
+
+只在临时header诊断模块44a28708ee1f14fb73ac9065c9d9edc2fef8783caf40b13d31efe1c6f30c6fa0记录前16帧的WD、前24B及FCS计算，正式overlay不加帧头日志。16帧均20B（含4B FCS），frame control00b4是RTS，WD rate8为24Mbps OFDM，CRC/ICV错误0，每帧FCS与crc32_le计算逐项一致。实际air-frame→PHY→MAC→DMA→IRQ→native WD/payload解析已在5GHz确认。原机36/40/44/48四个频道各5000ms被动观察都继续收到CRC正确type0帧，RXQ绕环运行且错误0；暂无Beacon或普通数据帧证据。证据manifests/radio-5g-80211-C-20261010.json。继续完成RF校准、普通数据及mac80211/AP业务，保持全移植目标。

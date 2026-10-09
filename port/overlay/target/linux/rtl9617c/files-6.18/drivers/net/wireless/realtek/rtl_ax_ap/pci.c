@@ -25,6 +25,7 @@
 #include "cfo.h"
 #include "environment.h"
 #include "rx-pipeline.h"
+#include "channel.h"
 
 /* Original netdev-open policy in os_intfs.c: MU beamforming, OFDMA or
  * force_fw_tx selects firmware scheduling. Preserve all three inputs. */
@@ -71,6 +72,7 @@ struct rtl_ax_ap {
 	struct rtl_ax_dig dig;
 	struct rtl_ax_cfo cfo;
 	struct rtl_ax_environment environment;
+	struct rtl_ax_channel channel;
 	struct rtl_ax_rx *rx;
 	struct mutex command_mutex;
 	spinlock_t command_lock;
@@ -880,6 +882,32 @@ static ssize_t radio_filter_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_filter);
 
+static ssize_t radio_rx_mode_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	u32 options = rtl_ax_read32(radio, 0xce20);
+
+	return sysfs_emit(buffer, "options=%08x sniffer=%u modes=0:SNIFFER,1:SCAN,4:AP_NORMAL "
+		"MPDU_max_bytes=%u\n", options, options & 1, ((options >> 16) & 63) * 512);
+}
+
+static ssize_t radio_rx_mode_store(struct device *dev,
+	struct device_attribute *attr, const char *buffer, size_t length)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	unsigned int mode;
+	int ret = kstrtouint(buffer, 0, &mode);
+
+	if (ret)
+		return ret;
+	mutex_lock(&radio->command_mutex);
+	ret = rtl_ax_receive_mode(&radio->io, mode);
+	mutex_unlock(&radio->command_mutex);
+	return ret ? ret : length;
+}
+static DEVICE_ATTR_RW(radio_rx_mode);
+
 static ssize_t radio_dfs_show(struct device *dev,
 	struct device_attribute *attr, char *buffer)
 {
@@ -1004,6 +1032,60 @@ static ssize_t radio_rx_pipeline_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_rx_pipeline);
 
+static ssize_t radio_channel_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_channel *channel = &radio->channel;
+	u32 analog[2], digital[2];
+	unsigned int path;
+	int ret;
+
+	mutex_lock(&radio->command_mutex);
+	for (path = 0; path < 2; path++) {
+		ret = rtl_ax_phy_rf_read(&radio->io, path, 0x18, &analog[path]);
+		if (ret)
+			goto unlock;
+		ret = rtl_ax_phy_rf_read(&radio->io, path, 0x10018, &digital[path]);
+		if (ret)
+			goto unlock;
+	}
+	ret = sysfs_emit(buffer, "native_operation=5GHz/20MHz configured=%u band=%u primary=%u center=%u "
+		"BB_frequency=%u BB_channel=%u RF18_analog=%05x,%05x digital=%05x,%05x "
+		"external_loss=%d,%d RFK=pending mac80211_channel=pending\n",
+		channel->configured, channel->band, channel->primary, channel->center,
+		rtl_ax_read32(radio, 0x14e30) & 0x1fff, (rtl_ax_read32(radio, 0x10734) >> 16) & 255,
+		analog[0], analog[1], digital[0], digital[1], channel->external_loss[0], channel->external_loss[1]);
+unlock:
+	mutex_unlock(&radio->command_mutex);
+	return ret;
+}
+
+static ssize_t radio_channel_store(struct device *dev,
+	struct device_attribute *attr, const char *buffer, size_t length)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	unsigned int channel;
+	int ret;
+
+	if (radio->chip != RTL_AX_8852C)
+		return -EOPNOTSUPP;
+	ret = kstrtouint(buffer, 0, &channel);
+	if (ret)
+		return ret;
+	mutex_lock(&radio->command_mutex);
+	rtl_ax_rx_close(radio->rx);
+	rtl_ax_hci_pause(&radio->io);
+	pci_clear_master(radio->pdev);
+	ret = rtl_ax_c_receive_channel20(&radio->io, &radio->phy, &radio->bb_dm, channel, &radio->channel);
+	pci_set_master(radio->pdev);
+	rtl_ax_h2c_start(&radio->io);
+	rtl_ax_rx_open(radio->rx);
+	mutex_unlock(&radio->command_mutex);
+	return ret ? ret : length;
+}
+static DEVICE_ATTR_RW(radio_channel);
+
 static ssize_t radio_efuse_read(struct file *file, struct kobject *kobject,
 	const struct bin_attribute *attr, char *buffer, loff_t offset, size_t count)
 {
@@ -1045,7 +1127,7 @@ static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_physts.attr, &dev_attr_radio_txdiff.attr, &dev_attr_radio_phy_stats.attr,
 	&dev_attr_radio_signal.attr, &dev_attr_radio_filter.attr, &dev_attr_radio_dfs.attr,
 	&dev_attr_radio_dig.attr, &dev_attr_radio_cfo.attr, &dev_attr_radio_environment.attr,
-	&dev_attr_radio_rx_pipeline.attr, NULL,
+	&dev_attr_radio_rx_pipeline.attr, &dev_attr_radio_channel.attr, &dev_attr_radio_rx_mode.attr, NULL,
 };
 static const struct attribute_group rtl_ax_group = {
 	.attrs = rtl_ax_attrs, .bin_attrs = rtl_ax_bin_attrs,
