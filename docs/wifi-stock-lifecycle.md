@@ -487,3 +487,11 @@ trim模块dcedab8919e784875486751b5e3a3628d8067395569876c9011edb692e029348实机
 各阶段读数同时保留：C PHY OFDM CRC_OK17938/错误2，HE正确23/错误1；host RXQ9847、普通802.11 CRC正确9846、交给mac80211 9846，描述符/tag错误0、RDU0。XB PHY CCK正确960/错误10、OFDM正确71/错误32385、HT正确7/错误22；host RXQ957、普通CRC正确956、交给mac80211 953（启动monitor前的3帧未交付），描述符/tag错误0、RDU0。PHY计数会包含被MAC过滤的帧且计数范围不同，不能要求与host计数逐帧相等。XB OFDM接收质量仍需对照原机RFK/动态配置，不将成功抓包等同全部调优完成。
 
 XEPON epon-d10g注册认证、DHCP192.168.71.28与公网ping2/2均恢复。当前原机保持phy0/mon0频道36与phy1/mon1频道6接收；AP发射、关联、加密和实际业务仍待移植。本次只采用内置原生host驱动，WCPU设备微码和原机参数作为硬件输入。
+
+## 2026-10-10 C normal TSSI DE与实际Flash接口的BW/slope输入
+
+本机rtw_hal_flash_get_info@1daa58→rtw_nvm_get_info@4f0→rtw_flash_get_info@26c4并非通用SDK的完整Flash查询：最后一层对ID>550返回0，不改输出byte。C RFE54的_is_efem@32c9c4取RFE>50，get_efuse_C@334834查询A/B BW20/80/160 IDs551..634，A保留初始flash_tmp0，B保留此前A的最后5G slope-CW byte；原机HS该byte0。BW40是未改的zero baseline。因此本板四种宽度实际BW差值均0，不能把缺字段随意等同零或采用另一个SDK的支持路径。
+
+TYFC0003容器284B增加真实HS slope gain/CW两路数组，以及上述原机调用结果的BW差值。C set_efuse_to_slope@336a1c在5G gain/CW56个byte均0时slop_no_pg=1并返回；本机HS正是该条件，native保留不写slope的原厂分支。普通DE按set_efuse_to_de_C@33607c在每路依次写CCK long/short、MCS20和两个legacy20、40、80、160字段；各width加入对应带宽差值。当前native频道20MHz，RFE>=50的当前160MHz ADC WA不触发；160MHz频道和TSSI_CAL后续继续移植。
+
+实际原生live模块0c5fd5ea20d014587716ed5f4e7ad00852d52e4372df1fd6ab212f962a689648，原机频道36/44/48各16个10bit字段读回全部匹配，C slope_no_pg1。恢复C36/XB6后每路64个真实入站用户态无线帧完整FCS全匹配、kernel抓包丢包0、描述符/tag错误0；XEPON公网2/2。当前live覆盖两颗，boot FIT仍是2201a0f版本，完整C DE镜像另行后台构建，不把RAM live变更当成已进入旧FIT。证据manifests/radio-c-tssi-de-20261010.json及对应logs/pcap。

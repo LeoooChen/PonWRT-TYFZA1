@@ -1126,8 +1126,12 @@ static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int chan
 	ret = radio->chip == RTL_AX_8852C ?
 		rtl_ax_c_receive_channel20(&radio->io, &radio->phy, &radio->bb_dm, channel, &radio->channel) :
 		rtl_ax_xb_receive_channel20(&radio->io, &radio->phy, &radio->bb_dm, channel, &radio->channel);
-	if (!ret && radio->chip == RTL_AX_8192XB)
-		rtl_ax_xb_tssi_de(&radio->io, &radio->flash_calibration, &radio->trim, channel, &radio->tssi_de);
+	if (!ret) {
+		if (radio->chip == RTL_AX_8192XB)
+			rtl_ax_xb_tssi_de(&radio->io, &radio->flash_calibration, &radio->trim, channel, &radio->tssi_de);
+		else
+			rtl_ax_c_tssi_de20(&radio->io, &radio->flash_calibration, &radio->trim, channel, &radio->tssi_de);
+	}
 	pci_set_master(radio->pdev);
 	rtl_ax_h2c_start(&radio->io);
 	rtl_ax_rx_open(radio->rx);
@@ -1301,15 +1305,18 @@ static ssize_t radio_tssi_de_show(struct device *dev,
 	struct rtl_ax_tssi_de *state = &radio->tssi_de;
 	unsigned int path, i;
 	ssize_t length = sysfs_emit(buffer, "TSSI_DE=%s channel=%u CCK_group=%u OFDM_group=%04x trim_group=%04x "
-		"hardware_TSSI_tracking=pending C_BW_slope_inputs=pending\n",
-		state->ready ? "applied" : "pending", state->center, state->cck_group, state->ofdm_group, state->trim_group);
+		"hardware_TSSI_tracking=pending C_BW_slope_inputs=flash-imported slope_no_pg=%u\n",
+		state->ready ? "applied" : "pending", state->center, state->cck_group, state->ofdm_group, state->trim_group,
+		state->slope_no_pg);
 
 	for (path = 0; path < 2; path++) {
 		length += sysfs_emit_at(buffer, length, "path=%u CCK_DE=%d OFDM_DE=%d trim=%d\n",
 			path, state->cck[path], state->ofdm[path], state->trim[path]);
+		length += sysfs_emit_at(buffer, length, "path=%u BW20_40_80_160_diff=%d,%d,%d,%d\n",
+			path, state->bw_diff[path][0], state->bw_diff[path][1], state->bw_diff[path][2], state->bw_diff[path][3]);
 		for (i = 0; i < 8; i++)
-			length += sysfs_emit_at(buffer, length, "path=%u slot=%u readback=%u\n",
-				path, i, state->readback[path][i]);
+			length += sysfs_emit_at(buffer, length, "path=%u slot=%u expected=%u readback=%u\n",
+				path, i, state->expected[path][i], state->readback[path][i]);
 	}
 	return length;
 }

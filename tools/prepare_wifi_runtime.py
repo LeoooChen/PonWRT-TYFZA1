@@ -98,7 +98,7 @@ try:
         wlan = 0 if family == 'rtl8852ce' else 1
         # Actual original normal gain calls query the flash shadow,not the
         # physicalOTP. Preserve the board's exported2G/5G gain/TSSI inputs.
-        data = bytearray(b'TYFC0002')
+        data = bytearray(b'TYFC0003')
         data.extend(int(hs[key]) for key in gain_keys)
         data.extend(int(hs[f'HW_THERMAL_{path}_WLAN{wlan}']) for path in ('A', 'B'))
         data.append(int(hs[f'HW_XCAP_WLAN{wlan}_AX']))
@@ -113,6 +113,28 @@ try:
         if len(wlan_address) != 6 or wlan_address[0] & 1:
             raise ValueError('Original HS WLAN_MAC_ADDR is not a unicast MAC address')
         data.extend(wlan_address)
+        slope = {}
+        for kind in ('GAIN', 'CW'):
+            for band_name, count in (('2G_CCK', 6), ('2G', 5), ('5G', 14)):
+                for path in ('A', 'B'):
+                    key = f'HW_{band_name}_TSSI_{kind}_DIFF_{path}'
+                    values = bytes(int(value, 16) for value in hs[key].split(','))
+                    if len(values) != count:
+                        raise ValueError(f'Unexpected original calibration length: {key}')
+                    slope[(kind, band_name, path)] = values
+            for path in ('A', 'B'):
+                data.extend(slope[(kind, '2G_CCK', path)])
+            for path in ('A', 'B'):
+                data.extend(slope[(kind, '2G', path)] + slope[(kind, '5G', path)])
+        # The actual board ELF's rtw_flash_get_info@26c4 accepts IDs <=550.
+        # C RFE54 asks for BW20/80/160 IDs551..634; those calls leave the
+        # output byte untouched. A starts with zero; B retains A's final
+        # 5G slope-CW byte. BW40 is the zero baseline. Preserve that actual
+        # board input, rather than substituting another SDK's flash table.
+        bw_seed = (0, slope[('CW', '5G', 'A')][-1])
+        for path in range(2):
+            for width in range(4):
+                data.extend(bytes([0 if width == 1 else bw_seed[path]]) * 14)
         relative = Path('lib/firmware/realtek/tyfza1') / family / 'flash-calibration.bin'
         destination = args.output / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -121,6 +143,12 @@ try:
                             'sha256': hashlib.sha256(data).hexdigest(),
                             'hardware_settings_sha256': hashlib.sha256(hs_data).hexdigest(),
                             'wlan': wlan, 'source': 'original HS flash gain,thermal,xtal,TSSI and WLAN_MAC_ADDR fields',
+                            'native_container': 'TYFC0003',
+                            'C_BW_input': {'source': 'actual host ELF flash API ID range and retained flash_tmp byte',
+                                           'unsupported_original_query_IDs': [551, 634],
+                                           'BW20_80_160_seed_A_B': list(bw_seed),
+                                           'BW40_baseline': 0},
+                            'slope_gain_CW_source': 'original HS TSSI GAIN_DIFF and CW_DIFF arrays',
                             'physical_OTP_is_separate': True})
         for stage, subdirectory in (('base', Path()), ('FEM-extension', Path(fem))):
             relative = Path('realtek/tyfza1') / family / 'RFE54' / subdirectory
