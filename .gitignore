@@ -6,3 +6,5 @@ __pycache__/
 *.pyc
 .venv/
 analysis/python-deps/
+analysis/radio-stock-power/
+analysis/radio-stock-download/

@@ -1,0 +1,186 @@
+{
+  "kernel": "6.18.55",
+  "native_download_header_sha256": "eb1ed23e8e59ee83dbdee0ce057b559278beefacd8f80f2ad231d38f0231f452",
+  "native_PCI_source_sha256": "755e82ba7986e9ab5e290d6625da09f860618b472bf4810101c311f475f21282",
+  "stock_DLFW_validation": {
+    "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+    "native_download_header_sha256": "eb1ed23e8e59ee83dbdee0ce057b559278beefacd8f80f2ad231d38f0231f452",
+    "stock_PCIe_DLFW_tables": {
+      "8852c": [
+        [
+          64,
+          0,
+          2048
+        ],
+        [
+          128,
+          2544,
+          16
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          16,
+          256,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          32,
+          256,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "8192xb": [
+        [
+          64,
+          0,
+          2048
+        ],
+        [
+          128,
+          2544,
+          16
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          16,
+          256,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          32,
+          256,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    "stock_machine_code_vectors": 768,
+    "WCPU_minimum_from_operational_profile": 60,
+    "HFC_precost_retention": [
+      {
+        "chip": "8852c",
+        "H2C_precost": 0,
+        "retained": true
+      },
+      {
+        "chip": "8852c",
+        "H2C_precost": 40,
+        "retained": true
+      },
+      {
+        "chip": "8852c",
+        "H2C_precost": 256,
+        "retained": true
+      },
+      {
+        "chip": "8192xb",
+        "H2C_precost": 0,
+        "retained": true
+      },
+      {
+        "chip": "8192xb",
+        "H2C_precost": 40,
+        "retained": true
+      },
+      {
+        "chip": "8192xb",
+        "H2C_precost": 256,
+        "retained": true
+      }
+    ],
+    "FIFO_bytes": 458752,
+    "download_H2C_minimum_and_maximum_pages": 256,
+    "native_cold_HFC_precost": 0,
+    "HW_firmware_download_verified": false
+  },
+  "PCI_probe_validation": {
+    "native_sources": {
+      "pci.c": "755e82ba7986e9ab5e290d6625da09f860618b472bf4810101c311f475f21282",
+      "power.h": "6177e5506ebc9c30949396b6978cf8bfe8742df6896e8f6aa1b305cab85a98dd",
+      "download.h": "eb1ed23e8e59ee83dbdee0ce057b559278beefacd8f80f2ad231d38f0231f452",
+      "fw.h": "e43f809542391a28b75d28234611a2e275919af0e381bbae6b8db99f82b788ab"
+    },
+    "production_probe_cases": 30,
+    "original_firmware_images": 4,
+    "DLE_ready_and_HCI_paused_without_host_DMA_rings": true,
+    "WDE_PLE_timeouts_leave_DLE_disabled_and_HCI_paused": true,
+    "efuse_cv_override_before_firmware_selection": true,
+    "DMA_mask_bits": 32,
+    "first_memory_BAR_test_index": 2,
+    "missing_wrong_and_truncated_firmware_release_power": true,
+    "remove_after_shutdown_does_not_repeat_completed_power_off": true,
+    "sanitizers": [
+      "ASan",
+      "UBSan"
+    ],
+    "hardware_verified": false
+  },
+  "stage": "download memory ready;host DMA paused until channel12 ring exists",
+  "firmware_transport_implemented": false,
+  "hardware_verified": false
+}

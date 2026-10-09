@@ -44,7 +44,17 @@ scripts/test_radio_power.py另编译真实GPL函数，1536组匹配8192XB上电�
 
 scripts/test_radio_probe.py运行实际pci.c控制函数，使用四份完整原机固件数据及模拟MMIO。28组案例覆盖寄存器cv与efuse cv不一致、全零/未烧录FV、选取第一个memory BAR（测试为BAR2）、32bit DMA、原厂chip/cut匹配、输入错误后的关电和shutdown/remove配合。测试通过ASan/UBSan；设备枚举和无线收发仍待实测。报告位于logs/radio-power-test.json及logs/radio-probe-test.json。
 
-201-native-radio.patch从锁定Linux6.18.55原始源码生成，patch --fuzz=0 --dry-run通过。CONFIG_RTL_AX_AP已接入目标配置并完成Kconfig闭包。首次ARM64编译发现sysfs属性数组与ATTRIBUTE_GROUPS宏命名不一致，已修正；接着按本机机器码落实上述SDK差异。最新完整镜像输出artifacts/full-pon-radio-power03-6.18.55，由systemd用户服务脱离Codex构建。
+201-native-radio.patch从锁定Linux6.18.55原始源码生成，patch --fuzz=0 --dry-run通过。CONFIG_RTL_AX_AP已接入目标配置并完成Kconfig闭包。首次ARM64编译发现sysfs属性数组与ATTRIBUTE_GROUPS宏命名不一致，已修正；接着按本机机器码落实上述SDK差异。完整镜像artifacts/full-pon-radio-power03-6.18.55已由systemd用户服务ponwrt-tyfza1-lan-20261009-115208构建成功，退出码0。最终ram-pcie/image.itb为6500696字节，SHA256=bab2cd618002b9f0c2dc324d0e012a0c78b275a3bd8c3fb975bd616eae43174f；从实际选中FIT内核核对到原生backend，并验证其中1026项initramfs、四份固件和20份RF参数。此镜像尚未上板。
+
+## 原生下载前 DLE/HFC 准备
+
+download.h接入PCI probe，在固件身份/格式校验后准备下载专用DMAC、DLE和HFC；radio_state新增download_memory=ready及hci=paused。主机bus mastering保持关闭，HCI TX/RX和所有TX channel暂停，直到后续host ring完成初始化。失败退出撤销DLE使能，remove/shutdown关闭下载资源。
+
+两颗芯片的本机PCIe DLFW表相同：WDE64字节页、0 linked/2048 unlinked；PLE128字节页、2544 linked/16 unlinked，总计458752字节。WDE下载最大配额为零，最小WCPU配额从本机SCC/STF运行配置复制60。PLE C2H最小16/最大32、H2C最小和最大均256；其余下载通道配额为零。只在WDE与PLE状态寄存器的queue/buffer ready位都置位后继续。
+
+SDK中的hfc_preccfg_pcie_dlfw表不能直接当作本机下载写入值：本机hfc_reset_param(DLFW)只复位部分软件状态，保留已分配precost结构，实际set_fc_h2c使用保留的值。原生冷启动状态明确为零；后续运行态将另行配置。H2C的256页PLE配额与HFC pre-cost是不同字段，不将它们混为一项。
+
+scripts/test_radio_download_memory.py直接解开本机ELF的两份PCIe表及其重定位，并执行真实DMAC预启用、DLE布局/配额和HFC寄存器函数。768组写入轨迹与原生实现一致；另用H2C pre-cost为0/40/256的六组初始状态执行真实hfc_reset_param，验证DLFW保留行为。结果在logs/radio-download-memory-test.json。PCI probe已扩展到30组，覆盖WDE/PLE ready超时后DLE关闭与HCI暂停；ASan/UBSan通过。
 
 ## 固件 transport 的实现顺序
 

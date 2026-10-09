@@ -32,6 +32,7 @@ common = r'''
 #include <string.h>
 #include "fw.h"
 #include "power.h"
+#include "download.h"
 typedef uint32_t u32;
 #define __iomem
 #define GFP_KERNEL 0
@@ -49,8 +50,9 @@ static int fault,fw_requests,fw_releases,off_requests;
 static void *allocation;
 static unsigned int selected_bar;
 static const char *requested;
-enum {ENABLE=1,MASK,ALLOC,BARS,BAR_LENGTH,MAP,POWER,EFUSE_READ,MISSING_FW,TRUNCATED_FW,WRONG_FW};
+enum {ENABLE=1,MASK,ALLOC,BARS,BAR_LENGTH,MAP,POWER,EFUSE_READ,MISSING_FW,TRUNCATED_FW,WRONG_FW,WDE_TIMEOUT,PLE_TIMEOUT};
 static int pcim_enable_device(struct pci_dev *d){return fault==ENABLE?-EIO:0;}
+static void pci_clear_master(struct pci_dev *d){}
 static int dma_set_mask_and_coherent(struct device *d,unsigned long long mask){
  assert(mask==0xffffffffULL);return fault==MASK?-EIO:0;
 }
@@ -70,6 +72,8 @@ static unsigned int readl(void *p){
  unsigned int n;memcpy(&n,p,4);size_t reg=(unsigned char *)p-memory;
  if(reg==RTL_AX_POWER){n&=~(RTL_AX_BIT(8)|RTL_AX_BIT(9));if(fault==POWER)n&=~RTL_AX_BIT(17);}
  if(reg==RTL_AX_XTAL)n&=~RTL_AX_BIT(31);
+ if(reg==0x8d00)n=fault==WDE_TIMEOUT?0:3;
+ if(reg==0x9100)n=fault==PLE_TIMEOUT?0:3;
  if(reg==RTL_AX_EFUSE){unsigned int address=(n>>16)&0x7ff;assert(address<sizeof(efuse));
   n=(n&~255U)|efuse[address];if(fault!=EFUSE_READ)n|=RTL_AX_BIT(29);}
  return n;
@@ -132,15 +136,23 @@ int main(void){
    unsigned int cv=factory==255 || !factory?raw_cv:factory>>4;
    assert(radio->identity.cv==cv && selected_bar==2 && fw_requests==1 && fw_releases==1);
    assert(radio->firmware.cut==(cv?2:1));
+   assert(radio->download_prepared);
+   assert((readl(memory+RTL_AX_HAXI_CONFIG)&(RTL_AX_BIT(7)|RTL_AX_BIT(15)|RTL_AX_BIT(17)))==RTL_AX_BIT(17));
+   assert((readl(memory+RTL_AX_HAXI_STOP1)&0xfff00)==0xfff00);
    assert(!strcmp(requested,rtl_ax_ap_name(chip==RTL_AX_8852C?2:3,cv)));
    rtl_ax_shutdown(&device);assert(!radio->powered && off_requests==1);
+   assert(!radio->download_prepared && !(readl(memory+RTL_AX_DMAC)&RTL_AX_DLE_ENABLE));
    rtl_ax_remove(&device);assert(off_requests==1);finish();cases++;
   }
- for(int f=ENABLE;f<=WRONG_FW;f++){
+ for(int f=ENABLE;f<=PLE_TIMEOUT;f++){
   fault=f;prepare(RTL_AX_8192XB,0,31);struct pci_dev device={};
   int ret=rtl_ax_probe(&device,NULL);assert(ret<0);
-  if(f==EFUSE_READ || f==MISSING_FW || f==TRUNCATED_FW || f==WRONG_FW){
+  if(f==EFUSE_READ || f==MISSING_FW || f==TRUNCATED_FW || f==WRONG_FW || f==WDE_TIMEOUT || f==PLE_TIMEOUT){
    assert(off_requests==1);struct rtl_ax_ap *radio=device.data;assert(!radio->powered);
+  }
+  if(f==WDE_TIMEOUT || f==PLE_TIMEOUT){
+   assert(!(readl(memory+RTL_AX_DMAC)&RTL_AX_DLE_ENABLE));
+   assert((readl(memory+RTL_AX_HAXI_CONFIG)&(RTL_AX_BIT(7)|RTL_AX_BIT(15)|RTL_AX_BIT(17)))==RTL_AX_BIT(17));
   }
   if(f<=MAP || f==POWER || f==EFUSE_READ)assert(!fw_requests);
   finish();cases++;
@@ -160,8 +172,10 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='radio-probe-') 
     subprocess.run([str(binary)], check=True)
 (root / 'logs/radio-probe-test.json').write_text(json.dumps({
     'native_sources': {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
-                       for p in (native / 'pci.c', native / 'power.h', native / 'fw.h')},
-    'production_probe_cases': 28, 'original_firmware_images': 4,
+                       for p in (native / 'pci.c', native / 'power.h', native / 'download.h', native / 'fw.h')},
+    'production_probe_cases': 30, 'original_firmware_images': 4,
+    'DLE_ready_and_HCI_paused_without_host_DMA_rings': True,
+    'WDE_PLE_timeouts_leave_DLE_disabled_and_HCI_paused': True,
     'efuse_cv_override_before_firmware_selection': True,
     'DMA_mask_bits': 32, 'first_memory_BAR_test_index': 2,
     'missing_wrong_and_truncated_firmware_release_power': True,

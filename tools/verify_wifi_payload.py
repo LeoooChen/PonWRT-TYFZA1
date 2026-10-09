@@ -15,7 +15,7 @@ args = parser.parse_args()
 fit = args.payload / 'ram-pcie/image.itb'
 selected = fit_images(fit)
 assert b'native AP backend chip=' in selected['kernel'], 'Native AP PCI backend missing from selected FIT kernel'
-assert b'firmware_state=validated transport=pending mac80211=pending' in selected['kernel'], 'Native AP backend stage absent'
+assert b'firmware_state=validated' in selected['kernel'] and b'transport=pending mac80211=pending' in selected['kernel'], 'Native AP backend stage absent'
 members, start, end = embedded_rootfs(selected['kernel'])
 expected = json.loads(args.manifest.read_text())
 codec = NativeRadioFormat()

@@ -114,9 +114,22 @@
   "patch_zero_fuzz": "logs/radio-patch-zero-fuzz.txt",
   "build_service": "ponwrt-tyfza1-lan-20261009-115208",
   "build_output": "artifacts/full-pon-radio-power03-6.18.55",
-  "build_status": "running",
+  "build_status": "complete",
   "hardware_verified": false,
   "WCPU_firmware_running": false,
   "mac80211_interfaces_available": false,
-  "original_host_modules_loaded": false
+  "original_host_modules_loaded": false,
+  "build_exit_status": 0,
+  "FIT": {
+    "kernel_version": "6.18.55",
+    "cpus": 4,
+    "kernel_load": "0x200000",
+    "fdt_load": "0x1800000",
+    "image_sha256": "aeabdfc62c603e5b65d532b0eef743a0c17dafc7571b2aebeacd231d19d56105",
+    "dtb_sha256": "60d1b8a0388516325024c390c13edcdb4376d910c34722223060d247a39efde8",
+    "fit_sha256": "bab2cd618002b9f0c2dc324d0e012a0c78b275a3bd8c3fb975bd616eae43174f",
+    "fit_bytes": 6500696
+  },
+  "final_FIT_verification": "artifacts/full-pon-radio-power03-6.18.55/wifi-input-verification.json",
+  "ARM64_object_validation": "logs/radio-ARM64-build.json"
 }

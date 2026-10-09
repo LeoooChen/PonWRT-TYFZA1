@@ -8,6 +8,7 @@
 #include <linux/pci.h>
 #include "fw.h"
 #include "power.h"
+#include "download.h"
 
 struct rtl_ax_ap {
 	struct pci_dev *pdev;
@@ -18,6 +19,7 @@ struct rtl_ax_ap {
 	struct rtl_ax_ap_image firmware;
 	unsigned char chip;
 	bool powered;
+	bool download_prepared;
 };
 
 static unsigned char rtl_ax_read8(void *ctx, unsigned int reg)
@@ -75,12 +77,13 @@ static ssize_t radio_state_show(struct device *dev,
 		"chip=0x%02x hardware_cv=%u cv=%u factory=%c adie=0x%04x "
 		"power=%s calibration=0x%02x efuse5ea=0x%02x "
 		"firmware=%u.%u.%u.%u firmware_cut=%u sections=%u "
-		"firmware_state=validated transport=pending mac80211=pending\n",
+		"firmware_state=validated download_memory=%s hci=paused "
+		"transport=pending mac80211=pending\n",
 		radio->chip, radio->identity.hardware_cv, radio->identity.cv,
 		radio->identity.factory, radio->identity.adie, radio->powered ? "on" : "off",
 		radio->calibration.tag, radio->calibration.process,
 		image->version[0], image->version[1], image->version[2], image->version[3],
-		image->cut, image->section_count);
+		image->cut, image->section_count, radio->download_prepared ? "ready" : "off");
 }
 static DEVICE_ATTR_RO(radio_state);
 static struct attribute *rtl_ax_attrs[] = {
@@ -94,6 +97,11 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 
 	if (!radio->powered)
 		return;
+	pci_clear_master(radio->pdev);
+	if (radio->download_prepared) {
+		rtl_ax_download_stop(&radio->io);
+		radio->download_prepared = false;
+	}
 	ret = rtl_ax_ap_power_off(&radio->io);
 	if (ret)
 		dev_err(&radio->pdev->dev, "AP power off failed: %d\n", ret);
@@ -111,6 +119,7 @@ static int rtl_ax_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	ret = pcim_enable_device(pdev);
 	if (ret)
 		return ret;
+	pci_clear_master(pdev);
 	ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
 	if (ret)
 		return ret;
@@ -162,8 +171,12 @@ static int rtl_ax_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	ret = rtl_ax_ap_match(radio->chip, radio->identity.cv, &radio->firmware);
 	if (ret)
 		goto stop;
+	ret = rtl_ax_download_prepare(&radio->io);
+	if (ret)
+		goto stop;
+	radio->download_prepared = true;
 	dev_info(&pdev->dev,
-		 "native AP backend chip=0x%02x cv=%u factory=%c adie=0x%04x; %s validated; transport pending\n",
+		 "native AP backend chip=0x%02x cv=%u factory=%c adie=0x%04x; %s validated; DLE/HFC ready, HCI paused\n",
 		 radio->chip, radio->identity.cv, radio->identity.factory,
 		 radio->identity.adie, name);
 	return 0;
