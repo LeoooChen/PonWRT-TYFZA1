@@ -2,6 +2,8 @@
 
 当前优先LAN↔EPON有线硬件转发。XEPON的IPv4 TCP/UDP动态硬件NAT与持久配置已实机验证；IPv6路由格式和原厂表容量继续对齐。Wi-Fi通路随后接入。
 
+2026-10-09离线更新：VLAN/QinQ和共享L3出口接口进入生产源码，镜像full-pon-wired-vlan01-6.18.55已构建并通过最终FIT载荷核验。实机离线，新增功能仍待板测。Wi-Fi实施顺序见wifi-port-order.md。
+
 ## 已确认的硬件实现
 
 本机原厂ca-ne.ko包含aal_hash_add、aal_hash_profile_init、hash_value_calculate、convert_act_flow_nomal_mode和_hash_hw_entry_set；Cortina GPL参考的aal-77c提供同一主Hash/分类/包编辑器实现。aal_hashlite.c及其部分头文件仅6字节占位，当前依据实际主Hash实现推进。
@@ -111,6 +113,20 @@ IPv6 key和Header-I包含完整128位地址；网络序word0为高32位，硬件
 
 原厂FC初始化还显式调用aal_hash_aging_timer_set(0)，关闭硬件老化倒计时；rtk_8277c_asic_flow_traffic_get调用aal_hash_traffic_status_get，以32项为组读age>1活跃位，并把有效项恢复为age1。当前由Linux flowtable通过IFID计数更新lastused，与原厂同属软件管理生命周期；原生尚未使用这组活跃位，所以仍保留64方向流的计数资源限制。此处依据原厂FC/NE参考实现，待进一步对照本机实际模块的相关函数。
 
+## 2026-10-09：离线容量、VLAN与生命周期更新
+
+原生L3出口接口改为独立引用对象；前64个方向流有独立MIB，后续流可共享相同源MAC接口并关闭动作中的interface counter位，避免污染其他流的计数。所有流读取主Hash age活跃位，只有age>1或独立MIB有变化才更新Linux lastused；读取活跃位后恢复age1。之前实机已确认自动cache命中时age能6→1→6，本轮新增共享接口实现尚待板测。
+
+4096流/15源MAC离线调用实际生产资源函数通过ASan/UBSan，覆盖共享引用、原计数流删除、计数重新归属、最后引用恢复和寄存器失败重试。精确计数最多64个方向流；其他流有独立活跃状态，不报告伪造的逐流字节/包数量。sysfs和LuCI分开显示总流数、counted_flows及activity_flows。安装过程中发生释放失败时保留硬件资源对象，由下一次控制回调重试；共享FDB引用只复用实际仍持有目的对象的流。
+
+VLAN实现匹配外/内VID、TPID和标签数，保持PCP/DEI不参与key。TPID原厂解析表8100/88a8/9100/9200、使能77；当前路由动作支持802.1Q/802.1ad字段和LinuxVLAN POP/PUSH，最终动作写入0..2个标签。Linux当前flowtable实际构造802.1Q匹配及动作；802.1ad字段接受不扩大为该上游自动生成QinQ卸载。保留未知PCP/DEI的部分栈改写仍由Linux处理，完整pop/push和untouched栈可以表达。
+
+1028组NAT/IPv6及288组使用实际Linux匹配与POP/PUSH代码的VLAN向量通过；VID0/4095、TCP/UDP、输入/输出0..2层、标签顺序、无效掩码和动作位域均检查。计数按实际输出Ethernet头长度14/18/22扣除，QinQ五包395线包字节对应285IP字节通过。镜像SHA256=95f2ea01e98e400556ccf9e5b1a7b4c2b445d6675351920702add93a5ca350c7，6089552字节；FIT实际内核/DTB/initramfs995项一致。新增功能没有在离线期间标作硬件验收。
+
+证据：logs/fe-interface-capacity.json、fe-flow-parser.json、fe-flow-release.json、wired-vlan01-payload-verification.json；构建服务ponwrt-tyfza1-lan-20261009-092739正常退出0。
+
 chk_msk_ptr1=63修正后的实机模块在同样3次双向请求中自动生成cache608/2016，主Hash两方向age均从1升到6；线上6帧的IPv4和UDP校验和、DNS ID正确。接着按原厂补齐cache_age0_hit、tuple priority0和main aging countdown0，双向转发与自动cache继续通过。删除两个流后cache从2变0，再发送3次请求，原IFID计数保持3/3、cache仍0，CPU捕获到1条GRO记录，载荷正好为3份完整DNS查询。证据为logs/fe-stock-cache05-wire-check.json、fe-stock-cache05-device.txt、fe-stock-cache06-device.txt和fe-stock-cache06-cpu-check.json。
 
 生产后端已接入这些原生配置：64K Hash（65536项）、2K内部cache、48字节主动作槽、check mask63、自动cache替换、有效/空闲age1与Linux连接生命周期。artifacts/full-pon-stock-fe02-6.18.55由脱离Codex的systemd后台服务构建，最终镜像启动测试尚待完成。64方向流的独立IFID统计限制仍待解除。
+
+新增160组VLAN/QinQ流键直接对照本机原厂hash_value_calculate实际机器码，总计320组masked key及CRC16/CRC32全部一致；保留原160组IPv4 TCP/UDP向量。

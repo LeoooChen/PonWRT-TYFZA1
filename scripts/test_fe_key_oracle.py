@@ -118,6 +118,14 @@ for i in range(160):
                   "ip_da_0": rng.getrandbits(32), "ip_sa_0": rng.getrandbits(32), "ip_protocol": 6 if i % 2 else 17,
                   "ip_vld": 1, "pol_id": i % 32, "orig_lspid": 7 if i % 2 else 0,
                   "lspid": 7 if i % 2 else 0, "ctrl_set_id": i % 4, "table_id": 1, "ip_ttl": (i * 13) & 255})
+for i in range(160):
+    tagged = dict(cases[i])
+    count = i % 3
+    tagged.update(vlan_cnt=count,top_vid=(i * 4095 // 159) if count else 0,
+                  top_tpid_enc=1+(i%2) if count else 0,
+                  inner_vid=(4095-i*4095//159) if count==2 else 0,
+                  inner_tpid_enc=1+(i%2) if count==2 else 0)
+    cases.append(tagged)
 with tempfile.TemporaryDirectory(prefix="fe-key-", dir=root / "artifacts") as temporary:
     temporary = Path(temporary)
     source = temporary / "key.c"
@@ -138,7 +146,11 @@ with tempfile.TemporaryDirectory(prefix="fe-key-", dir=root / "artifacts") as te
         for index, name in enumerate(fields):
             native.set(native_key, index, 0 if name == "table_id" else case.get(name, 0))
         emulator.mem_write(scratch, bytes(original_key))
-        emulator.mem_write(scratch + 0x1000, bytes(mask))
+        case_mask = bytearray(mask)
+        if 'vlan_cnt' in case:
+            for name in ('vlan_cnt','top_vid','top_tpid_enc','inner_vid','inner_tpid_enc'):
+                set_value(case_mask,*mask_layout[name],0)
+        emulator.mem_write(scratch + 0x1000, bytes(case_mask))
         emulator.mem_write(scratch + 0x2000, bytes(32))
         for register, value in ((UC_ARM64_REG_X0, scratch), (UC_ARM64_REG_X1, scratch + 0x1000),
                                 (UC_ARM64_REG_X2, scratch + 0x2000), (UC_ARM64_REG_SP, scratch + 0xf000),
@@ -156,7 +168,7 @@ with tempfile.TemporaryDirectory(prefix="fe-key-", dir=root / "artifacts") as te
 
 record = {"stock_module_sha256": hashlib.sha256(stock.read_bytes()).hexdigest(),
           "native_header_sha256": hashlib.sha256(header.read_bytes()).hexdigest(),
-          "vectors": len(cases), "key_bytes": key_size, "mask_bytes": mask_size,
+          "vectors": len(cases), "VLAN_QinQ_vectors":160,"key_bytes": key_size, "mask_bytes": mask_size,
           "actual_stock_masked_key_and_CRC16_CRC32_match": True,
           "protocols": ["IPv4 TCP", "IPv4 UDP"], "LLIDs": 32, "profiles": 4,
           "tuple_rotation_mode": "neutral", "hardware_access": False}

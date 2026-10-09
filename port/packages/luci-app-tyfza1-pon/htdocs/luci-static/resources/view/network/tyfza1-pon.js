@@ -36,7 +36,9 @@ function statusPanel(data) {
 		['上行业务队列初始化', value(data.deepq, 'configured')],
 		['有线硬件转发', data.fe && data.fe.available === '1' ?
 			(data.fe.enabled === '1' ? '已启用' : '已关闭') : '不可用'],
-		['硬件流数量', value(data.fe, 'flows') + ' / ' + value(data.fe, 'counter_slots')],
+		['硬件流数量', value(data.fe, 'flows')],
+		['Hash 表容量', value(data.fe, 'hash_entries')],
+		['逐流计数 / 活跃标志', value(data.fe, 'counted_flows') + ' / ' + value(data.fe, 'activity_flows')],
 		['硬件流安装 / 释放', value(data.fe, 'installs') + ' / ' + value(data.fe, 'deletes')],
 		['LAN 接收错误 / 丢弃', (data.lan_rx_errors ?? '—') + ' / ' + (data.lan_rx_dropped ?? '—')]
 	];

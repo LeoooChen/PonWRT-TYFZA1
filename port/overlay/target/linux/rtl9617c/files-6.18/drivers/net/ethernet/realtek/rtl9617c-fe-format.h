@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /* RTL9617C L3FE native Hash type0, normal action groups18+20.
  * Hardware format: Cortina GPL aal-77c/include/aal_common.h.
- * This format is 224 bits within a 256-bit DRAM/cache action slot. */
+ * Normal actions are224 bits; main DRAM slots are384 bits on this board. */
 #ifndef RTL9617C_FE_FORMAT_H
 #define RTL9617C_FE_FORMAT_H
 
@@ -172,11 +172,17 @@ static inline void rtl_fe_action_set(unsigned int words[RTL_FE_ACTION_WORDS],
 
 /* Source/destination IPv4 NAT share one address/port rewrite selector per
  * directional flow. Indexed DA and egress interface supply Ethernet rewrite. */
+struct rtl_fe_vlan {
+ unsigned short vid;
+ unsigned char tpid, priority;
+};
 struct rtl_fe_ipv4_action {
  unsigned int address;
  unsigned short port, destination, mac_da_index;
  unsigned char ingress_interface, egress_interface, cos, check_mask;
  unsigned char translate, translate_destination, deep_queue;
+ unsigned char vlan_set, vlan_count;
+ struct rtl_fe_vlan vlan[2]; /* Outermost tag first; TPID hardware index+1. */
 };
 
 static inline void rtl_fe_ipv4_action(unsigned int words[RTL_FE_ACTION_WORDS],
@@ -207,6 +213,16 @@ static inline void rtl_fe_ipv4_action(unsigned int words[RTL_FE_ACTION_WORDS],
  rtl_fe_action_set(words, RTL_FE_IP_TYPE, action->translate_destination);
  rtl_fe_action_set(words, RTL_FE_IP_ADDR, action->address);
  rtl_fe_action_set(words, RTL_FE_L4_PORT, action->port);
+ if(action->vlan_set) {
+  rtl_fe_action_set(words,RTL_FE_VLAN_VLD1,1);
+  rtl_fe_action_set(words,RTL_FE_VLAN_CNT1,action->vlan_count);
+  for(i=0;i<action->vlan_count;i++) {
+   rtl_fe_action_set(words,i?RTL_FE_INNER_VID1:RTL_FE_TOP_VID1,action->vlan[i].vid);
+   rtl_fe_action_set(words,i?RTL_FE_INNER_TPID_ENC1:RTL_FE_TOP_TPID_ENC1,action->vlan[i].tpid);
+   rtl_fe_action_set(words,i?RTL_FE_INNER_802_1P1:RTL_FE_TOP_802_1P1,action->vlan[i].priority);
+   rtl_fe_action_set(words,i?RTL_FE_INNER_802_1P_UPDATE_EN:RTL_FE_TOP_802_1P_UPDATE_EN,1);
+  }
+ }
 }
 
 #define RTL_FE_KEY_WORDS 23
@@ -281,6 +297,16 @@ static inline void rtl_fe_key_set(unsigned int words[RTL_FE_KEY_WORDS],
 {
  const struct rtl_fe_field_layout *layout = &rtl_fe_key_fields[field];
  rtl_fe_bits_set(words, layout->bit, layout->width, value);
+}
+static inline void rtl_fe_vlan_key(unsigned int words[RTL_FE_KEY_WORDS],
+ const struct rtl_fe_vlan vlan[2],unsigned int count)
+{
+ unsigned int i;
+ rtl_fe_key_set(words,RTL_FE_KEY_VLAN_CNT,count);
+ for(i=0;i<count;i++) {
+  rtl_fe_key_set(words,i?RTL_FE_KEY_INNER_VID:RTL_FE_KEY_TOP_VID,vlan[i].vid);
+  rtl_fe_key_set(words,i?RTL_FE_KEY_INNER_TPID_ENC:RTL_FE_KEY_TOP_TPID_ENC,vlan[i].tpid);
+ }
 }
 
 /* Addresses and ports are numerical host-order values. This representation

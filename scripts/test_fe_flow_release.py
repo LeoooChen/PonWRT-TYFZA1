@@ -50,10 +50,12 @@ struct rtl_fe;
 struct net_device {};
 struct rtl_fe_port {struct list_head list;struct rtl_fe *fe;struct net_device *netdev;unsigned int source,destination,llid;bool retired;};
 struct rtl_fe_mac {unsigned int users,saved[5];u8 address[6];};
+struct rtl_fe_interface {unsigned int users,saved,source_mac;bool counted;};
 struct rtl_fe {
  struct list_head flows,ports;
  void *memory;
  struct rtl_fe_mac source_macs[15];
+ struct rtl_fe_interface interfaces[64];
  unsigned long hashes[RTL_FE_HASH_ENTRIES/64],counters[1];
  u64 deletes;
  unsigned int registers[0x4000/4],ages[RTL_FE_HASH_ENTRIES/32][4],cam[5];
@@ -91,10 +93,12 @@ int main(void){
  for(unsigned int i=0;i<5;i++)fe.source_macs[0].saved[i]=0x51000000+i;
  struct rtl_fe_flow *a=calloc(1,sizeof(*a)),*b=calloc(1,sizeof(*b));assert(a&&b);
  *a=(struct rtl_fe_flow){.hash_index=1280,.counter=31,.source_mac=0,.crc16=0x5141,
-  .destination_created=true,.published=true,.source_owned=true,.destination_owned=true,.interface_owned=true,
+  .destination_created=true,.published=true,.installed=true,.counted=true,.source_owned=true,.destination_owned=true,.interface_owned=true,
   .destination={2,0x77,0x66,0x55,0x44,0x33}};
  a->input=port;
  *b=*a;b->hash_index=65344;b->counter=30;b->crc16=0xff4b;
+ fe.interfaces[31]=(struct rtl_fe_interface){.users=1,.counted=true};
+ fe.interfaces[30]=(struct rtl_fe_interface){.users=1,.counted=true};
  list_add_tail(&a->list,&fe.flows);list_add_tail(&b->list,&fe.flows);
  set_bit(a->hash_index,fe.hashes);set_bit(b->hash_index,fe.hashes);
  set_bit(a->counter,fe.counters);set_bit(b->counter,fe.counters);
@@ -122,7 +126,7 @@ int main(void){
 }
 '''
 parts = [common,re.search(r'struct rtl_fe_flow \{.*?\n\};',native,re.S)[0]]
-parts += [function(n) for n in ('fe_collect_ports','fe_source_put','fe_destination_put','fe_delete')]
+parts += [function(n) for n in ('fe_collect_ports','fe_source_put','fe_interface_put','fe_destination_put','fe_delete')]
 parts.append(test)
 with tempfile.TemporaryDirectory(dir=root/'artifacts',prefix='fe-release-') as work:
     source=Path(work)/'release.c';binary=Path(work)/'release'

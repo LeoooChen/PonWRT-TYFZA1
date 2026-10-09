@@ -1,7 +1,7 @@
 {
   "action_oracle": {
     "scope": "actual stock ARM64 conversion emulated offline; no original module loaded",
-    "native_header_sha256": "b62841e5838aa9479fa0853726c12287c1f982767639cd8af69737e9956d89b2",
+    "native_header_sha256": "4d34cf0e7e92c6110acc36cdab7f5ba348fdcde0362243e53b97720b2d2e35de",
     "stock_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
     "GPL_layout_sha256": "c010db3ede906c81eb82ea203b652ffae1b3f4dabbaea5201e4658d5dff846a9",
     "action_groups": [
@@ -17,8 +17,8 @@
   },
   "key_oracle": {
     "stock_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
-    "native_header_sha256": "b62841e5838aa9479fa0853726c12287c1f982767639cd8af69737e9956d89b2",
-    "vectors": 160,
+    "native_header_sha256": "4d34cf0e7e92c6110acc36cdab7f5ba348fdcde0362243e53b97720b2d2e35de",
+    "vectors": 320,
     "key_bytes": 92,
     "mask_bytes": 28,
     "actual_stock_masked_key_and_CRC16_CRC32_match": true,
@@ -29,7 +29,8 @@
     "LLIDs": 32,
     "profiles": 4,
     "tuple_rotation_mode": "neutral",
-    "hardware_access": false
+    "hardware_access": false,
+    "VLAN_QinQ_vectors": 160
   },
   "native_host_test": {
     "sanitizers": [
@@ -55,10 +56,10 @@
   "hardware_forwarding_enabled": true,
   "scope": "first wired LAN/PON IPv4 TCP/UDP; Wi-Fi later",
   "native_sources": {
-    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-format.h": "b62841e5838aa9479fa0853726c12287c1f982767639cd8af69737e9956d89b2",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-format.h": "4d34cf0e7e92c6110acc36cdab7f5ba348fdcde0362243e53b97720b2d2e35de",
     "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-table.h": "9e2152090078ab86cd2688865a0eacf3ea947e69718834303665ce03c54a341f",
     "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-pipeline.h": "6139817974cc984e764564c62a66a41202f69640d3ded0cf00b0ba704a902e33",
-    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe.c": "88ee2e7439c5319813ed7c58b966a6305dfd7e6826441a4cb111ab566d973f6f",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe.c": "1c029816e360bebc5db8de0010d56c461e6572ec5272351dfb9e3db3dc62ca95",
     "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe.h": "7145474ff7ba128944b6dec06d651baca4c4a2d8087a255b7075098b8bfa384a"
   },
   "hardware_CRC": {
@@ -377,5 +378,48 @@
       "wire_replies": 3,
       "wire_checksums_valid": true
     }
+  },
+  "native_interface_capacity": {
+    "hardware_verified": false,
+    "production_function_host_test": "logs/fe-interface-capacity.json",
+    "flows_tested": 4096,
+    "source_MACs": 15,
+    "independent_counter_owners": 64,
+    "other_flows": "Hash age activity only;no invented packet/byte counts",
+    "reference_Hash_hit_age_cycle": "logs/fe-stock-activity01-device.txt",
+    "reference_cycle": [
+      6,
+      1,
+      6
+    ],
+    "shared_interface_counter_bit_disabled": true
+  },
+  "native_VLAN": {
+    "hardware_verified": false,
+    "Linux_match_and_action_vectors": 288,
+    "host_test": "logs/fe-flow-parser.json",
+    "tags": 2,
+    "VID_TPID_and_count_matched": true,
+    "PCP_DEI_preserved_without_edits": true,
+    "partial_stack_with_unknown_PCP_DEI": "software",
+    "tag_protocols": [
+      "802.1Q",
+      "802.1ad"
+    ],
+    "upstream_flowtable_current_generation": "802.1Q",
+    "output_Ethernet_accounting_bytes": [
+      14,
+      18,
+      22
+    ]
+  },
+  "offline_build_20261009": {
+    "payload": "artifacts/full-pon-wired-vlan01-6.18.55",
+    "service": "ponwrt-tyfza1-lan-20261009-092739",
+    "exit_status": 0,
+    "FIT_sha256": "95f2ea01e98e400556ccf9e5b1a7b4c2b445d6675351920702add93a5ca350c7",
+    "FIT_bytes": 6089552,
+    "verification": "logs/wired-vlan01-payload-verification.json",
+    "hardware_verified": false
   }
 }

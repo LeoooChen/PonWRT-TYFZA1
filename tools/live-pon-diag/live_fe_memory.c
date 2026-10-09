@@ -586,11 +586,15 @@ static int monitor_set(const char *value,const struct kernel_param *parameter)
  } else if(monitor==2)snapshot_pipeline(NULL);
  else if(monitor==3){trace_attempts=0;schedule_delayed_work(&trace_work,0);}
  else if(monitor==4)return remove_test_flows();
- else if(monitor==5) {
+ else if(monitor==5 || monitor==8) {
   const struct rtl_dq_io io={NULL,reg_read,reg_write,reg_access};
   unsigned int i,age;
 
   for(i=0;i<2;i++)if(flow_installed[i]) {
+   if(monitor==8) {
+    ret=rtl_fe_main_age(&io,flow_indices[i],1);
+    if(ret)return ret;
+   }
    ret=rtl_fe_main_age_read(&io,flow_indices[i],&age);
    if(ret)return ret;
    pr_info("TYFZA1 FE direction%u index%u current_age=%u\n",i,flow_indices[i],age);

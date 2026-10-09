@@ -8,7 +8,7 @@ LAN 首轮：原生 XRAM 管理通路已提供 eth0/br-lan，1Gbps 协商、1000
 
 NI/DMA 已在实机实现 Linux DMA API 发送、L3QM/EPP64 中断接收与软件转发。TQM 复位和 EPP 满环处理已修正；100000 个带序号 UDP 包零丢失/重复/错包，16MiB 双向 TCP cmp0，完整主线接收约417Mbps、发送约294Mbps，DHCP和LuCI正常。最新验证镜像为 artifacts/full-ni-pon-base-6.18.55/ram-pon/image.itb。当前验证日志及各单项对照见 docs/ni-dma-bringup.md 和 manifests/ni-tests.json。
 
-开发顺序：系统启动 → PON（包括 NI/DMA 数据通路）→ Wi-Fi → 硬件加速。最终交付目标是原生 UBI 固件与完整安装/升级/恢复步骤。
+当前开发顺序：EPON有线硬件转发 → Wi-Fi → 原生OpenWrt UBI安装/升级/恢复。GPON族按用户要求暂缓。无线资料完整文档阅读与实施顺序见docs/wifi-port-order.md；每个新阶段先核对用户资料目录的增量。
 
 当前主线基线：OpenWrt `79bc56cb7483bc716da07c369530b792631904b4`，Linux `6.18.55`。本机原厂 DTB 与资料库原生代码采用的 TYFZA1 DTB SHA256 相同。
 
@@ -23,4 +23,4 @@ NI/DMA 已在实机实现 Linux DMA API 发送、L3QM/EPP64 中断接收与软�
 
 PON原生SerDes、gearbox、MAC/PCS/FEC已完成实机初始化，三个时钟就绪、关键参数读回匹配、统计RAM初始化完成。最新完整主线镜像通过UCI pon与S25pon自动执行；MPCP/LLID控制、原机ONU身份导入及PDC映射已进入原生驱动，后续接通PUC上行队列、OAM和PON业务接口。详细记录见 docs/pon-bringup.md。
 
-最新PON初始化验证镜像：artifacts/full-pon-mpcp-pdc-6.18.55/ram-pon/image.itb。MPCP身份/参数与PDC映射已在完整主线上自动初始化；OLT注册、OAM认证和业务尚在移植。
+2026-10-09：XEPON的MPCP注册、CTC OAM认证、FEC、WAN DHCP和LAN↔PON业务已实机通过；IPv4 TCP/UDP动态硬件NAT、cache自动分配/删除及原厂64K Hash/48字节槽诊断通过。新源码补齐VLAN/QinQ及共享出口接口，完整镜像artifacts/full-pon-wired-vlan01-6.18.55构建/载荷校验通过，新功能待设备重新连接后板测。当前Wi-Fi从板级PCIe与芯片身份开始，尚未声明无线可用。
