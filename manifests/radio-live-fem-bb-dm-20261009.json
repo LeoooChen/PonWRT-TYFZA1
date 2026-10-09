@@ -1,25 +1,23 @@
 {
   "current_on_board": {
-    "FIT": "artifacts/full-pon-radio-mac80211-rx02-signeddb-6.18.55/ram-pcie/image.itb",
-    "sha256": "aca49174f37e88cb4a05e7b433bde85dd1773f1c623f57d6590175bbd24b3368",
-    "bytes": 7315360,
-    "source_stage": "c4458e1",
-    "kernel_sha256": "18ae2848ff5ee0ef39042c1170ea4f4cbad5d46c5d52cf9afd62b4248742d512",
+    "FIT": "artifacts/full-pon-radio-dual-monitor01-6.18.55/ram-pcie/image.itb",
+    "sha256": "92dfd5a3bf320ef39ebb90323165ffd512994af672d39f8e0b5584150f6e4813",
+    "bytes": 7316324,
+    "kernel_sha256": "cec12fe35a11b61cd464bbcbd4febbc3f0e9cecc10be679a03e09382687d2fc6",
     "DTB_sha256": "ed3a18f2b09dbec988883e9a36b47efdae819c82db47864deb3ad1e4eecd23ac",
-    "native_driver": "rtl_ax_ap built-in",
+    "source_stage": "278250a",
+    "native_driver": "rtl_ax_ap builtin, both endpoints",
     "cold_boot_verified": true,
     "active_RAM_driver_override": null,
-    "native_RX_active_both_radios": true,
     "C_native_mac80211_monitor": true,
-    "C_channel": 36,
-    "RX_errors": 0,
-    "DACK_all_four_paths_done": true,
-    "signed_regdb_in_actual_boot_FIT": true,
+    "XB_native_mac80211_monitor": true,
+    "channels": [
+      36,
+      6
+    ],
+    "actual_receive_evidence": "manifests/radio-dual-builtin-20261010.json",
     "AP_available": false,
-    "XEPON_DHCP": "192.168.71.28/24",
-    "public_ping": "2/2",
-    "log": "logs/radio-mac80211-signeddb02-20261010.txt",
-    "receive_evidence": "manifests/radio-mac80211-signeddb02-live-20261010.json"
+    "XEPON_DHCP": "192.168.71.28/24"
   },
   "radios": [
     {
@@ -171,32 +169,35 @@
     "hardware_verified": false
   },
   "previous_on_board": {
-    "FIT": "artifacts/full-pon-radio-rx-active01-6.18.55/ram-pcie/image.itb",
-    "sha256": "f34fbd0e8355adb77626418ec30bbdc49e0402ed5e6a1e819c723797bbfcbd05",
-    "bytes": 6549320,
-    "source_stage": "e75bf3b",
-    "native_driver": "rtl_ax_ap built-in",
-    "log": "logs/radio-rx-active01-ram-20261010.txt",
-    "kernel_sha256": "0f982cab65f79fbeab40fbc432f851e7d51a56389191e68ae6ef973ec8329208",
+    "FIT": "artifacts/full-pon-radio-mac80211-rx02-signeddb-6.18.55/ram-pcie/image.itb",
+    "sha256": "aca49174f37e88cb4a05e7b433bde85dd1773f1c623f57d6590175bbd24b3368",
+    "bytes": 7315360,
+    "source_stage": "c4458e1",
+    "kernel_sha256": "18ae2848ff5ee0ef39042c1170ea4f4cbad5d46c5d52cf9afd62b4248742d512",
     "DTB_sha256": "ed3a18f2b09dbec988883e9a36b47efdae819c82db47864deb3ad1e4eecd23ac",
+    "native_driver": "rtl_ax_ap built-in",
     "cold_boot_verified": true,
+    "active_RAM_driver_override": {
+      "radio": "8192XB / 0001:01:00.0",
+      "driver": "rtl_ax_ap_live",
+      "module": "artifacts/live-radio-xb-monitor01/rtl_ax_ap_live.ko",
+      "sha256": "5294c84b54dde6857ff940f23f03d0e1415c288a5b56552da2e7e3f3db04b0b5",
+      "Linux_interface": "phy1 / mon1",
+      "channel": 6,
+      "raw_receive_evidence": "manifests/radio-xb-channel6-receive-20261010.json",
+      "C_still_builtin": "phy0 / mon0 / channel36",
+      "boot_FIT_contains_XB_channel_operation": false
+    },
     "native_RX_active_both_radios": true,
+    "C_native_mac80211_monitor": true,
+    "C_channel": 36,
     "RX_errors": 0,
-    "environment_readbacks_match": 36,
+    "DACK_all_four_paths_done": true,
+    "signed_regdb_in_actual_boot_FIT": true,
     "AP_available": false,
     "XEPON_DHCP": "192.168.71.28/24",
     "public_ping": "2/2",
-    "frame_confirmation_from_prior_live_native_code": "manifests/radio-first-80211-20261010.json",
-    "active_RAM_driver_override": {
-      "radios": "both endpoints / C and XB",
-      "module": "artifacts/live-radio-rck01/rtl_ax_ap_live.ko",
-      "sha256": "22f120fe59acad504193e7a0cd79c039c239fecea2b7e8754c37cae2d3a92d81",
-      "log": "logs/radio-rck-20261010.txt",
-      "source_NCTL_inputs_added_to_RAM_root": true,
-      "C_receive_channel": 36,
-      "C_receive_mode": "SNIFFER0",
-      "boot_FIT_contains_RF_new_steps": false
-    },
-    "builtin_80211_receive_evidence": "manifests/radio-rx-active01-builtin-frames-20261010.json"
+    "log": "logs/radio-mac80211-signeddb02-20261010.txt",
+    "receive_evidence": "manifests/radio-mac80211-signeddb02-live-20261010.json"
   }
 }

@@ -442,3 +442,8 @@ RF ctrl_ch@33ba58对A模拟/数字→B模拟/数字分别调用ch_setting@33b72c
 前两次观察四个完成位均1、14个寄存器恢复匹配，但c400/d400读取全部为零。随后逐项检查本机ELF所有重定位，halrf_rx_dck_check_8192xb没有任何调用或函数指针引用；其旧BB表检查不能作为本机实际AFE验收条件。原机halrf_get_rx_dck_value@2fba44由RX_DCK debug调用，实际读取RF92/93，因此观察改为保存当前RF gain处的真实RF92/93，不把未用的BB表检查塞进初始化。
 
 模块eb65ac58e01ba18a5012cb7110d74b8479125e66799ef6369d3a14b131619bfd实机RX/DPK完成位1/1、1/1，观察222/22、222/22；14个寄存器逐项恢复匹配。A RF92/93=79c00/67808，B=65c00/88008，记录`logs/radio-xb-rxdck-result-20261010.txt`。这是当前gain处的实际结果读回，不代表整个RF gain曲线已逐项验收。 较早观察模块0ba086ba3a4a1444b3ce891d44e469e326d8f277a8ba8f42a02eef7d40c4307d在校准后频道6仍捕到64帧，host正确75、描述符错误0；PHY OFDM58/错误13157，继续核对其他原机RFK和动态跟踪，尚不能把接收错误变化归因于单一校准步骤。
+
+
+DUAL_MONITOR01完整构建（source278250a，服务ponwrt-tyfza1-lan-20261010-044513）经实际载荷核对、U-Boot签名验证和RAM冷启动。FIT SHA25692dfd5a3bf320ef39ebb90323165ffd512994af672d39f8e0b5584150f6e4813、7316324B；kernel cec12fe35a11b61cd464bbcbd4febbc3f0e9cecc10be679a03e09382687d2fc6。两颗均内置rtl_ax_ap，taint0，没有live覆盖。建立phy0/mon0频道36与phy1/mon1频道6后同时实际抓包：C32帧，XB64帧，全部完整FCS匹配；XB其中Beacon53、普通Data5，内核抓包丢包0，格式/tag错误0。XEPON仍获192.168.71.28并公网2/2。当前原机保留此正式双频镜像及两路监听，证据manifests/radio-dual-builtin-20261010.json、logs/radio-dual-builtin-C.pcap、logs/radio-dual-builtin-XB.pcap。
+
+包含初始XB AFE RX_DCK的下一完整构建已独立后台启动：source7e3848d，服务ponwrt-tyfza1-lan-20261010-050226，输出artifacts/full-pon-radio-dual-rxdck01-6.18.55。它与上述已冷启动镜像分开记录，完成后继续上机核对。C RF RX_DCK、完整RF gain曲线、动态跟踪及AP收发/关联保持后续工作范围。

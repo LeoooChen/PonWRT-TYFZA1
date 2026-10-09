@@ -1,0 +1,51 @@
+{
+  "actual_cold_RAM_boot_verified": true,
+  "FIT": {
+    "kernel_version": "6.18.55",
+    "cpus": 4,
+    "kernel_load": "0x200000",
+    "fdt_load": "0x2000000",
+    "image_sha256": "cec12fe35a11b61cd464bbcbd4febbc3f0e9cecc10be679a03e09382687d2fc6",
+    "dtb_sha256": "ed3a18f2b09dbec988883e9a36b47efdae819c82db47864deb3ad1e4eecd23ac",
+    "fit_sha256": "92dfd5a3bf320ef39ebb90323165ffd512994af672d39f8e0b5584150f6e4813",
+    "fit_bytes": 7316324
+  },
+  "source": "278250a",
+  "native_driver": "builtin rtl_ax_ap on both endpoints",
+  "active_live_module_override": null,
+  "kernel_taint": 0,
+  "C_channel": 36,
+  "XB_channel": 6,
+  "actual_receive": {
+    "C": {
+      "frames": 32,
+      "complete_FCS_all_match": true,
+      "types_subtypes": {
+        "(1, 11)": 16,
+        "(1, 12)": 15,
+        "(0, 8)": 1
+      },
+      "pcap": "logs/radio-dual-builtin-C.pcap",
+      "pcap_sha256": "4932d8dfcd71ce3c3f2fbabbeeaf76079b844190fc04aabe2653a783dfbb2357"
+    },
+    "XB": {
+      "frames": 64,
+      "complete_FCS_all_match": true,
+      "types_subtypes": {
+        "(0, 8)": 53,
+        "(0, 0)": 1,
+        "(2, 0)": 5,
+        "(1, 11)": 1,
+        "(1, 12)": 1,
+        "(2, 4)": 1,
+        "(0, 4)": 2
+      },
+      "pcap": "logs/radio-dual-builtin-XB.pcap",
+      "pcap_sha256": "79a8f3a552363d276183bf3731b5f998c9649e477dc315b6bd25467004d54fca"
+    }
+  },
+  "XEPON_DHCP": "192.168.71.28/24",
+  "public_ping": "2/2",
+  "AP_available": false,
+  "log": "logs/radio-dual-builtin-20261010.txt"
+}
