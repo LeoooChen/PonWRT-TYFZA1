@@ -505,3 +505,13 @@ TYFC0003容器284B增加真实HS slope gain/CW两路数组，以及上述原机�
 iqk_init_C@31b43c与XB@3448c4首次都将FW IQK选择字段301写0；generic FW IQK完成/取结果的dispatcher只处理C。当前正常初始化路径必须继续移植host IQK，不能把XB直接发送H2C当成校准完成。原生IQK尚未实现，本记录用于接下来的完整LOK/TXK/RXK实现。
 
 频道RX_DCK live模块25510362e676ea491d70b4ce1722d208e3048918e7aa9a3dda2d3e198bbbeee5已原机验证：XB频道1/11/6每次都四个done1、14个backup读回恢复一致，C36两路第一遍done1、35次读取，条件ReK未触发。恢复C36/XB6后各32个真实入站帧全部FCS匹配；另过滤去掉Null Data，XB取得16个真正Data帧（86..200B，全部protected），完整FCS全匹配；C在该45秒窗口取得0个Data/QoS Data，记录为未观察到，不能算作数据载荷验收。两颗普通接收各32帧已独立通过。host descriptor/tag/RDU错误0，kernel抓包丢包0，XEPON公网2/2。记录manifests/radio-channel-rxdck-20261010.json和四个对应pcap。XB OFDM质量尚未宣布解决，IQK仍待按原机host路径实现。
+
+IQK one-shot又有实际ELF/SDK差异：XB@341c48的第一done条件为bff8低byte55，失败读取每次1us、上限8201。第一poll正常成功后由341f40直接到3420a4，延迟后读8008 bit26，不读取80fc第二完成状态。仅第一poll超时分支才观察80fc低16与8000比较，沿用已经>8200的计数再与200比较；并不是SDK里的重新清零、独立200次第二poll。后续native需要保留本机实际成功路径，不能拿SDK两级等待桩代替本机事实。
+
+## 2026-10-10 驱动交付前的实际帧类型/调制统计
+
+原生RX在已验证的type0 RXWD边界、mac80211回调之前按802.11 FC字段记录4类16子类型，并按本机RXWD word1 bits23..24记录legacy/HT/VHT/HE；每个调制单列有Data bit的非Null帧。这些是原机报文统计，不是模拟帧或测试桩。
+
+live模块d75fc8d30fec2b4dc04aba38e1a9c71c75a2d52df63cc40fce74a33ca7a0fede实际C PHY HE CRC_OK2，host WD HE2/非Null数据2，QoS Data子类型8为2；host CRC正确310全部交给mac80211310。用户态64帧包含2个受保护QoS Data（86/122B），64帧FCS全部匹配。XB host CRC正确76、交付76，legacy非Null数据3；用户态64帧包含1个Data与1个QoS Data，完整FCS全匹配。两颗descriptor/tag/RDU错误0，kernel抓包丢包0，XEPON公网2/2。记录manifests/radio-rx-stages-20261010.json。HE调制依据实际WD统计，pcap当前没有完整HE radiotap字段，不声明HE SIG/MCS元数据完整。
+
+这次结果证明C之前零Data观察窗口不是固定DMA/交付阻塞；它已经取得新的真实QoS载荷。XB OFDM质量仍待原机host IQK与后续动态流程。061457完整构建已成功、最终PCIe FIT68f7a0dbf520664ca3a621eb20c0ef2f0230136783c197de0030c1e3b5654848核对通过，包含C DE和频道RX_DCK，尚未上机启动；当前启动FIT仍为2201a0f，以上新步骤与统计通过两颗native live覆盖验证。

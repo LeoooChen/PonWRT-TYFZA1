@@ -145,5 +145,16 @@
       ],
       "hardware_specification_object_offset": "0x196b30"
     }
+  },
+  "XB_normal_one_shot_completion": {
+    "source": "actual _iqk_one_shot_XB@341c48,branches341f40->3420a4 and341f64->341f98",
+    "first_read_register": "bff8 low8",
+    "first_done": 85,
+    "first_failed_read_limit": 8201,
+    "delay_us_per_failed_read": 1,
+    "successful_first_poll": "delay1 then10us; read8008 bit26; skip80fc second poll",
+    "first_poll_timeout_path": "one80fc low16 observation compared with8000,using original already>8200 count and200 limit; nofresh200-iteration poll",
+    "finish": "clear8010 low8",
+    "GPL_reference_has_different_second_poll": true
   }
 }

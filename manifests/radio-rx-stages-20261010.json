@@ -1,0 +1,94 @@
+{
+  "module": "artifacts/live-radio-rx-stages01/rtl_ax_ap_live.ko",
+  "sha256": "d75fc8d30fec2b4dc04aba38e1a9c71c75a2d52df63cc40fce74a33ca7a0fede",
+  "statistics_location": "after RXWD validation, before mac80211 callback",
+  "radios": [
+    {
+      "chip": "C",
+      "host_DMA_80211_CRC_OK": 310,
+      "handed_to_mac80211": 310,
+      "modulation_from_original_RX_WD": [
+        {
+          "encoding": "legacy",
+          "CRC_OK": 308,
+          "data_not_null": 0
+        },
+        {
+          "encoding": "HT",
+          "CRC_OK": 0,
+          "data_not_null": 0
+        },
+        {
+          "encoding": "VHT",
+          "CRC_OK": 0,
+          "data_not_null": 0
+        },
+        {
+          "encoding": "HE",
+          "CRC_OK": 2,
+          "data_not_null": 2
+        }
+      ],
+      "pcap_frames": 64,
+      "pcap_FCS_match": 64,
+      "pcap_non_null_data": 2,
+      "pcap_types": {
+        "1/11": 25,
+        "1/12": 26,
+        "0/8": 9,
+        "2/8": 2,
+        "1/14": 1,
+        "0/4": 1
+      },
+      "pcap": "logs/radio-rx-stages-C.pcap",
+      "sha256": "038c0f5593eef8ee500bfa9f81afef9c45327f933ecac1b47bd8d820584962f2"
+    },
+    {
+      "chip": "XB",
+      "host_DMA_80211_CRC_OK": 76,
+      "handed_to_mac80211": 76,
+      "modulation_from_original_RX_WD": [
+        {
+          "encoding": "legacy",
+          "CRC_OK": 76,
+          "data_not_null": 3
+        },
+        {
+          "encoding": "HT",
+          "CRC_OK": 0,
+          "data_not_null": 0
+        },
+        {
+          "encoding": "VHT",
+          "CRC_OK": 0,
+          "data_not_null": 0
+        },
+        {
+          "encoding": "HE",
+          "CRC_OK": 0,
+          "data_not_null": 0
+        }
+      ],
+      "pcap_frames": 64,
+      "pcap_FCS_match": 64,
+      "pcap_non_null_data": 2,
+      "pcap_types": {
+        "0/8": 15,
+        "2/0": 1,
+        "0/4": 10,
+        "0/5": 31,
+        "1/11": 1,
+        "1/12": 1,
+        "2/8": 1,
+        "2/12": 2,
+        "2/4": 2
+      },
+      "pcap": "logs/radio-rx-stages-XB.pcap",
+      "sha256": "d01db6bfd3f9c5f759705a56bdfe4abdc7866ef834bc844f6df360df27110e92"
+    }
+  ],
+  "all_mac80211_handoffs_match_CRC_OK": true,
+  "log": "logs/radio-rx-stages-20261010.txt",
+  "full_HE_radiotap_metadata": false,
+  "AP_transmit_association_complete": false
+}

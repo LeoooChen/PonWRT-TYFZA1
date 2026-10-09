@@ -19,6 +19,7 @@ struct rtl_ax_rx_queue {
 	unsigned int consumer, tag, buffer_bytes;
 	u64 packets, malformed, tag_pending, unhandled;
 	u64 types[16], beacons, wifi_crc_ok, wifi_crc_error;
+	u64 wifi_frames[4][16], wifi_encoding[4], wifi_data_encoding[4];
 };
 
 struct rtl_ax_rx {
@@ -79,10 +80,20 @@ static bool rtl_ax_rx_drain(struct rtl_ax_rx *rx, unsigned int number)
 				queue->wifi_crc_ok += !packet.crc_error;
 				queue->wifi_crc_error += packet.crc_error;
 			}
-			if (packet.type == 0 && !packet.crc_error && packet.bytes >= 36) {
+			if (packet.type == 0 && !packet.crc_error && packet.bytes >= 2) {
 				u16 fc = packet.payload[0] | (u16)packet.payload[1] << 8;
+				unsigned int type = (fc >> 2) & 3, subtype = (fc >> 4) & 15;
+				/* Original RX WD word1 rate16:24: legacy/HT/VHT/HE.
+				 * Count before the Linux receive callback, so a missing
+				 * userspace Data frame can be located at the host boundary. */
+				unsigned int encoding = (rtl_ax_ap_read32(packet.descriptor + 4) >> 23) & 3;
 
-				if ((fc & 0x00ff) == 0x0080)
+				queue->wifi_frames[type][subtype]++;
+				queue->wifi_encoding[encoding]++;
+				if (type == 2 && !(subtype & 4))
+					queue->wifi_data_encoding[encoding]++;
+
+				if ((fc & 0x00ff) == 0x0080 && packet.bytes >= 36)
 					queue->beacons++;
 			}
 			ret = rx->handler(rx->handler_ctx, &packet);
@@ -271,7 +282,8 @@ free:
 
 int rtl_ax_rx_status(struct rtl_ax_rx *rx, char *out, size_t capacity)
 {
-	unsigned int type;
+	static const char * const encodings[] = { "legacy", "HT", "VHT", "HE" };
+	unsigned int type, subtype;
 	int length = scnprintf(out, capacity,
 		"rxq=%llu rpq=%llu rx_malformed=%llu rx_tag_pending=%llu rx_unhandled=%llu "
 		"irq=%llu rdu=%llu halt=0x%08x\n",
@@ -290,5 +302,19 @@ int rtl_ax_rx_status(struct rtl_ax_rx *rx, char *out, size_t capacity)
 	for (type = 0; type < 16; type++)
 		length += scnprintf(out + length, capacity - length, "descriptor_type=%u packets=%llu\n",
 			type, rx->queues[0].types[type] + rx->queues[1].types[type]);
+	for (type = 0; type < 4; type++) {
+		length += scnprintf(out + length, capacity - length,
+			"80211_encoding=%s CRC_OK=%llu data_not_null=%llu\n", encodings[type],
+			rx->queues[0].wifi_encoding[type] + rx->queues[1].wifi_encoding[type],
+			rx->queues[0].wifi_data_encoding[type] + rx->queues[1].wifi_data_encoding[type]);
+		for (subtype = 0; subtype < 16; subtype++) {
+			u64 packets = rx->queues[0].wifi_frames[type][subtype] +
+				rx->queues[1].wifi_frames[type][subtype];
+
+			if (packets)
+				length += scnprintf(out + length, capacity - length,
+					"80211_type=%u subtype=%u CRC_OK=%llu\n", type, subtype, packets);
+		}
+	}
 	return length;
 }
