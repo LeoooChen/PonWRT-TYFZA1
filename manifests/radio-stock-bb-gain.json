@@ -1,0 +1,40 @@
+{
+  "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "functions": {
+    "halbb_cfg_bb_gain_8852c": {
+      "address": "0x2eb50c",
+      "sha256": "9a48f1581ee81cf1fa7111f0b0e41227c079d5e8122861cda292dffda01f6e54"
+    },
+    "halbb_cfg_bb_gain_8192xb": {
+      "address": "0x2f4d0c",
+      "sha256": "9a48f1581ee81cf1fa7111f0b0e41227c079d5e8122861cda292dffda01f6e54"
+    },
+    "halbb_cfg_bb_rpl_ofst": {
+      "address": "0x2aeba8",
+      "sha256": "11af87dd644a29eeab67827aaf0e732350484c81317d5803a97fe02f0118ffde"
+    },
+    "halbb_reset_bb_phy": {
+      "address": "0x2871e0",
+      "sha256": "46206186a705206ab2b9f8fcc615e19a9ffa41db32052418b22b4e45427d4247"
+    },
+    "halbb_bb_reset_8852c": {
+      "address": "0x2e25b4",
+      "sha256": "e6d95337eadc8b93cece5ef0ce073b777ba1aea8ecf02dc32e56d42ea0282198"
+    },
+    "halbb_bb_reset_8192xb": {
+      "address": "0x2ecc30",
+      "sha256": "b4fa9556b21e55595cb1f8d3a8ce90342ec1cd8e5c4321946f1207b0628fe7e5"
+    }
+  },
+  "implemented": [
+    "native gain object decoding for original bands0..7 paths0..1",
+    "base to FEM gain overlay preserving omitted fields",
+    "original XB BB reset sequence;C logging-only callback"
+  ],
+  "validation": {
+    "kernel_directory_build": "passed",
+    "log": "logs/stock-gain-objects.log",
+    "board_run": false,
+    "in_runtime_c2h01_FIT": false
+  }
+}

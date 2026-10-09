@@ -14,8 +14,18 @@ enum rtl_ax_phy_table_id {
 
 struct rtl_ax_phy_pair { u32 address, value; };
 struct rtl_ax_phy_table { struct rtl_ax_phy_pair *pairs; unsigned int count; };
+/* Actual board gain callback accepts bands0..7 and paths0..1;the newer
+ * SDK's12-band host layout is not the original module's layout. */
+struct rtl_ax_phy_gain {
+	s8 lna[8][2][7], tia[8][2][2], lna_bypass[8][2][7];
+	s8 lna_op1db[8][2][7], tia_lna_op1db[8][2][8];
+	s8 rpl20[8][2], rpl40[8][2][9], rpl80[8][2][13], rpl160[8][2][15];
+	u32 wb_elna[8][2], gs[8][2][2];
+	u8 wb_lna_tia[8][2][16], elna[8][2][2];
+};
 struct rtl_ax_phy_inputs {
 	struct rtl_ax_phy_table table[RTL_AX_PHY_STAGES][RTL_AX_PHY_TABLES];
+	struct rtl_ax_phy_gain gain[RTL_AX_PHY_STAGES];
 	unsigned int chip;
 };
 
@@ -31,6 +41,7 @@ int rtl_ax_phy_load(struct device *dev, unsigned int chip, struct rtl_ax_phy_inp
 void rtl_ax_phy_release(struct rtl_ax_phy_inputs *inputs);
 void rtl_ax_phy_bb_apply(const struct rtl_ax_io *io, const struct rtl_ax_phy_inputs *inputs,
 			enum rtl_ax_phy_stage stage);
+void rtl_ax_phy_bb_reset(const struct rtl_ax_io *io, unsigned int chip);
 int rtl_ax_phy_radio_apply(const struct rtl_ax_io *io,
 			   const struct rtl_ax_phy_inputs *inputs, enum rtl_ax_phy_stage stage,
 			   const struct rtl_ax_phy_commands *commands);

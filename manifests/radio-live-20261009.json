@@ -1,0 +1,54 @@
+{
+  "FIT": "artifacts/full-pon-radio-runtime-c2h01-6.18.55/ram-pcie/image.itb",
+  "FIT_sha256": "80709389748fc564ab313cb65378f10dcfe94c98ce052df1a1079d402340b92d",
+  "UART_log": "logs/serial-20261009-204954.txt",
+  "PCIe0": "Gen2x1 RTL8852C 10ec:c852",
+  "PCIe1": "Gen1x1 RTL8192XB 10ec:0192",
+  "radios": [
+    {
+      "chip": "8852C",
+      "hardware_cv": 1,
+      "cv": 1,
+      "factory": "U",
+      "adie": "6758",
+      "firmware": "rtl8852c-u2-ap.bin",
+      "version": "0.27.84.3",
+      "packets": 186,
+      "bytes": 369096,
+      "BA_CAM_done_acks": 1,
+      "RXQ": 1,
+      "IRQ": 1,
+      "RX_errors": 0
+    },
+    {
+      "chip": "8192XB",
+      "hardware_cv": 1,
+      "cv": 1,
+      "factory": "T",
+      "adie": "6816",
+      "firmware": "rtl8192xb-u2-ap.bin",
+      "version": "0.27.84.3",
+      "packets": 195,
+      "bytes": 387688,
+      "BA_CAM_done_acks": 1,
+      "RXQ": 1,
+      "IRQ": 1,
+      "RX_errors": 0
+    }
+  ],
+  "pon": {
+    "mode": "epon-d10g",
+    "LLID0_registered": true,
+    "DHCP_ipv4": "192.168.71.28/24",
+    "gateway": "192.168.71.1",
+    "gateway_ping": "3/3",
+    "public_ping": "observed replies to1.1.1.1"
+  },
+  "LAN": {
+    "bootloader_cable_port": 3,
+    "current_native_port": 0,
+    "carrier": 0,
+    "remaining": "four-port native support is being implemented"
+  },
+  "RF_AP": "gain/power/calibration and mac80211 remain incomplete"
+}

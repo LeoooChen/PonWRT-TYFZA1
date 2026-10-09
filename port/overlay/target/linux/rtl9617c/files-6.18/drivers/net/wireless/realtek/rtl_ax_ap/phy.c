@@ -8,6 +8,111 @@
 #include <linux/string.h>
 #include "phy.h"
 
+static void rtl_ax_gain_bytes(s8 *out, unsigned int count, u32 value)
+{
+	unsigned int i;
+
+	for (i = 0; i < count; i++)
+		out[i] = (s8)(value >> (8 * i));
+}
+
+static void rtl_ax_gain_rpl(struct rtl_ax_phy_gain *gain, unsigned int band,
+			    unsigned int path, unsigned int selector, u32 value)
+{
+	unsigned int bandwidth = selector >> 4, first = selector & 15, count = 0;
+	s8 *out;
+
+	/* halbb_cfg_bb_rpl_ofst: exact full/20/40/80 MHz RXSC groups. */
+	if (!bandwidth) {
+		gain->rpl20[band][path] = (s8)value;
+		return;
+	}
+	switch (bandwidth) {
+	case 1:
+		out = gain->rpl40[band][path];
+		count = first == 0 ? 1 : first == 1 ? 2 : 0;
+		break;
+	case 2:
+		out = gain->rpl80[band][path];
+		count = first == 0 ? 1 : first == 1 ? 4 : first == 9 ? 2 : 0;
+		break;
+	case 3:
+		out = gain->rpl160[band][path];
+		count = first == 0 ? 1 : first == 1 || first == 5 || first == 9 ? 4 :
+			first == 13 ? 2 : 0;
+		break;
+	default:
+		return;
+	}
+	if (count)
+		rtl_ax_gain_bytes(out + first, count, value);
+}
+
+static void rtl_ax_gain_decode(struct rtl_ax_phy_gain *gain,
+			       const struct rtl_ax_phy_table *table)
+{
+	unsigned int entry, i;
+
+	for (entry = 0; entry < table->count; entry++) {
+		u32 address = table->pairs[entry].address, value = table->pairs[entry].value;
+		unsigned int category = address >> 24, band = (address >> 16) & 255;
+		unsigned int path = (address >> 8) & 255, type = address & 255;
+		s8 *out;
+
+		/* Original halbb_cfg_bb_gain_C/XB bounds precede all stores. */
+		if (band >= 8 || path >= 2)
+			continue;
+		switch (category) {
+		case 0:
+			if (type == 2) {
+				rtl_ax_gain_bytes(gain->tia[band][path], 2, value);
+				break;
+			}
+			out = gain->lna[band][path];
+			if (type <= 1)
+				rtl_ax_gain_bytes(out + type * 4, type ? 3 : 4, value);
+			break;
+		case 1:
+			rtl_ax_gain_rpl(gain, band, path, type, value);
+			break;
+		case 2:
+			out = gain->lna_bypass[band][path];
+			if (type <= 1)
+				rtl_ax_gain_bytes(out + type * 4, type ? 3 : 4, value);
+			break;
+		case 3:
+			if (type <= 1)
+				rtl_ax_gain_bytes(gain->lna_op1db[band][path] + type * 4,
+						  type ? 3 : 4, value);
+			else if (type <= 3)
+				rtl_ax_gain_bytes(gain->tia_lna_op1db[band][path] + (type - 2) * 4,
+						  4, value);
+			break;
+		case 4:
+			switch (type) {
+			case 0:
+				gain->wb_elna[band][path] = value;
+				break;
+			case 1:
+			case 2:
+				for (i = 0; i < 8; i++)
+					gain->wb_lna_tia[band][path][(type - 1) * 8 + i] =
+						(value >> (4 * i)) & 7;
+				break;
+			case 3:
+			case 4:
+				gain->gs[band][path][type - 3] = value;
+				break;
+			case 5:
+				for (i = 0; i < 2; i++)
+					gain->elna[band][path][i] = value >> (8 * i);
+				break;
+			}
+			break;
+		}
+	}
+}
+
 static int rtl_ax_phy_read_table(struct device *dev, const char *name,
 				 struct rtl_ax_phy_table *table)
 {
@@ -92,6 +197,11 @@ int rtl_ax_phy_load(struct device *dev, unsigned int chip, struct rtl_ax_phy_inp
 				return ret;
 			}
 		}
+	/* Stock FEM re-init overlays the existing gain object;unmentioned
+	 * RXSC/band fields survive from the base table. Keep both stages. */
+	rtl_ax_gain_decode(&inputs->gain[RTL_AX_PHY_BASE], &inputs->table[RTL_AX_PHY_BASE][RTL_AX_PHY_GAIN]);
+	inputs->gain[RTL_AX_PHY_FEM] = inputs->gain[RTL_AX_PHY_BASE];
+	rtl_ax_gain_decode(&inputs->gain[RTL_AX_PHY_FEM], &inputs->table[RTL_AX_PHY_FEM][RTL_AX_PHY_GAIN]);
 	return 0;
 }
 
@@ -112,6 +222,24 @@ void rtl_ax_phy_bb_apply(const struct rtl_ax_io *io, const struct rtl_ax_phy_inp
 		else
 			io->write32(io->ctx, address | 0x10000, table->pairs[i].value);
 	}
+}
+
+void rtl_ax_phy_bb_reset(const struct rtl_ax_io *io, unsigned int chip)
+{
+	const unsigned int hold[] = {0x158dc, 0x15818, 0x178dc, 0x17818};
+	unsigned int i;
+
+	/* The actual C implementation is logging-only. XB holds both paths'
+	 * TSSI blocks,then performs BB0704 bit1=1→0→1 before releasing them. */
+	if (chip == RTL_AX_8852C)
+		return;
+	for (i = 0; i < ARRAY_SIZE(hold); i++)
+		rtl_ax_update32(io, hold[i], 0, RTL_AX_BIT(30));
+	rtl_ax_update32(io, 0x10704, 0, RTL_AX_BIT(1));
+	rtl_ax_update32(io, 0x10704, RTL_AX_BIT(1), 0);
+	rtl_ax_update32(io, 0x10704, 0, RTL_AX_BIT(1));
+	for (i = 0; i < ARRAY_SIZE(hold); i++)
+		rtl_ax_update32(io, hold[i], RTL_AX_BIT(30), 0);
 }
 
 static int rtl_ax_phy_rf_write(const struct rtl_ax_io *io, unsigned int path,

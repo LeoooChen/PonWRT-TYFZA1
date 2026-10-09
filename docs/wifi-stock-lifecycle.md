@@ -156,3 +156,19 @@ RX中断工作队列将完整 C2H 交给命令处理。FW_INFO(class0)函数0是
 RX关闭与中断恢复共用irq_lock的running状态，并等待IRQ及工作队列退出后释放DMA；迟到的工作尾部不会重新使能中断。当前控制回调只处理上述MAC ACK，普通Wi-Fi/WP/PPDU/PHY事件明确记为unhandled，继续按原厂相应路径接入，不以收到报文计数宣称业务完成。
 
 Linux6.18.55使用PCI_IRQ_INTX，已采用当前接口。后台服务ponwrt-tyfza1-stock-runtime-c2h-driver在真实内核配置下编译pci.o、phy.o、rx.o和builtin archive，退出码0。初次命令误用了不存在的单独builtin composite对象目标，随后对象编译发现旧PCI IRQ宏；两项已修正并以目录构建通过。源地址、默认表及ACK协议记录见manifests/radio-stock-runtime-c2h.json；尚无本阶段的板测结果。
+
+## 2026-10-09 原生无线运行态实机验证
+
+runtime-c2h01 的实际 RAM FIT（SHA256 80709389748fc564ab313cb65378f10dcfe94c98ce052df1a1079d402340b92d）经原机 U-Boot 签名/哈希校验并启动。两个 PCIe endpoint 分别枚举为 10ec:c852（Gen2 x1）和 10ec:0192（Gen1 x1），使用各自独立的 PCI domain。BER-notify 超时后继续训练的原厂路径在本机完成 link up。
+
+原生 driver 读回两颗芯片 cv=1，C 为 factory U/ADIE6758，XB 为 factory T/ADIE6816，分别下载 u2 AP 固件0.27.84.3。C 实际发送186包/369096B，XB195包/387688B；两者 WCPU均就绪，完成 SCC DMAC/CMAC/TRX 寄存器和RFE54基础/FEM输入读取。
+
+两颗芯片都收到自己BA CAM8项初始化的真实done-ACK，features=BA-CAM8-acknowledged、done_acks=1。各自RXQ=1、IRQ=1，malformed/tag_pending/unhandled/RDU均0。这是本机PCIe DMA→WCPU→RX DMA→C2H实际闭环；尚不包括普通无线收发、BB/RF校准或AP接口。完整串口记录为logs/serial-20261009-204954.txt，结构化结果为manifests/radio-live-20261009.json。
+
+同次启动XEPON/epon-d10g自动完成LLID0注册并取得192.168.71.28/24，网关192.168.71.1和公网1.1.1.1各3个ping零丢包。网线当前接LAN port3而旧原生LAN只绑定port0，这个四口支持缺口正在修复。
+
+## 原生 BB 增益对象与芯片 reset 差异
+
+PHY_REG_GAIN按本机halbb_cfg_bb_gain_C/XB实际回调解码为LNA/TIA、bypass、op1dB、RXSC RPL、WB gain index、GS与eLNA对象。机器码只接受band0..7/path0..1，不能照搬新版SDK12-band布局。FEM输入叠加到基础对象，未提及的RXSC字段保留；不把gain地址当成MMIO地址。
+
+原机halbb_reset_bb_phy进一步指向C/XB不同函数：C callback只有日志；XB临时保持58dc/5818/78dc/7818的TSSI bit30，0704 bit1按1→0→1写，再释放TSSI。原生执行接口按这条差异实现，未加虚构的C reset写入。该阶段对象/接口已通过ARM64目录构建，具体函数来源为manifests/radio-stock-bb-gain.json；此改动在runtime-c2h01之后，尚未在该FIT中。
