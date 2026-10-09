@@ -20,6 +20,7 @@
 #include "rx.h"
 #include "power-tables.h"
 #include "bb-dm.h"
+#include "dfs.h"
 
 /* Original netdev-open policy in os_intfs.c: MU beamforming, OFDMA or
  * force_fw_tx selects firmware scheduling. Preserve all three inputs. */
@@ -30,6 +31,7 @@ static bool share_xtal;
 static bool antenna_diversity;
 static unsigned int edcca_mode;
 static unsigned int hw_rts_time, hw_rts_length;
+static unsigned int dfs_region;
 module_param(txbf_mu, bool, 0444);
 module_param(ofdma, bool, 0444);
 module_param(force_fw_tx, bool, 0444);
@@ -38,6 +40,7 @@ module_param(antenna_diversity, bool, 0444);
 module_param(edcca_mode, uint, 0444);
 module_param(hw_rts_time, uint, 0444);
 module_param(hw_rts_length, uint, 0444);
+module_param(dfs_region, uint, 0444);
 MODULE_PARM_DESC(txbf_mu, "Original AP MU beamforming scheduling input");
 MODULE_PARM_DESC(ofdma, "Original AP OFDMA scheduling input");
 MODULE_PARM_DESC(force_fw_tx, "Original AP force firmware TX input");
@@ -46,6 +49,7 @@ MODULE_PARM_DESC(antenna_diversity, "Original RFE54 antenna diversity input");
 MODULE_PARM_DESC(edcca_mode, "Original EDCCA operating mode input");
 MODULE_PARM_DESC(hw_rts_time, "Original hardware RTS time threshold in microseconds");
 MODULE_PARM_DESC(hw_rts_length, "Original hardware RTS length threshold in bytes");
+MODULE_PARM_DESC(dfs_region, "Original DFS region0=unset,1=FCC,2=MKK,3=ETSI,4=KCC");
 
 struct rtl_ax_ap {
 	struct pci_dev *pdev;
@@ -59,6 +63,7 @@ struct rtl_ax_ap {
 	struct rtl_ax_power_inputs power_inputs;
 	struct rtl_ax_bb_dm bb_dm;
 	struct rtl_ax_board_cal flash_calibration;
+	struct rtl_ax_dfs dfs;
 	struct rtl_ax_rx *rx;
 	struct mutex command_mutex;
 	spinlock_t command_lock;
@@ -530,6 +535,7 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	rtl_ax_bb_dm_reports_start(&radio->io, &radio->bb_dm);
 	rtl_ax_bb_dm_statistics_start(&radio->io, &radio->bb_dm);
 	rtl_ax_bb_dm_signal_start(&radio->io, radio->chip, edcca_mode, &radio->bb_dm);
+	rtl_ax_dfs_initialize(&radio->dfs, dfs_region);
 	return 0;
 }
 
@@ -856,6 +862,26 @@ static ssize_t radio_filter_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_filter);
 
+static ssize_t radio_dfs_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_dfs *dfs = &radio->dfs;
+	unsigned int i;
+	ssize_t length = sysfs_emit(buffer, "host=%s region=%u dynamic=%u "
+		"units=PW200ns_PRI25us PPB_parameter=%u radar_enable=pending "
+		"pulse_parser=pending CAC_lifecycle=pending MKK_channel_profile=pending\n",
+		dfs->initialized ? "initialized" : "pending", dfs->region,
+		dfs->dynamic_setting, dfs->ppb_parameter);
+
+	for (i = 0; i < 8; i++)
+		length += sysfs_emit_at(buffer, length, "type=%u PW=%u..%u PRI=%u..%u pulses=%u\n",
+			i, dfs->profile.pw_min[i], dfs->profile.pw_max[i],
+			dfs->profile.pri_min[i], dfs->profile.pri_max[i], dfs->profile.pulses[i]);
+	return length;
+}
+static DEVICE_ATTR_RO(radio_dfs);
+
 static ssize_t radio_efuse_read(struct file *file, struct kobject *kobject,
 	const struct bin_attribute *attr, char *buffer, loff_t offset, size_t count)
 {
@@ -895,7 +921,7 @@ static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_rf.attr, &dev_attr_radio_rf_bank.attr, &dev_attr_radio_rf_analog.attr,
 	&dev_attr_radio_power.attr, &dev_attr_radio_limits.attr, &dev_attr_radio_bb_dm.attr,
 	&dev_attr_radio_physts.attr, &dev_attr_radio_txdiff.attr, &dev_attr_radio_phy_stats.attr,
-	&dev_attr_radio_signal.attr, &dev_attr_radio_filter.attr, NULL,
+	&dev_attr_radio_signal.attr, &dev_attr_radio_filter.attr, &dev_attr_radio_dfs.attr, NULL,
 };
 static const struct attribute_group rtl_ax_group = {
 	.attrs = rtl_ax_attrs, .bin_attrs = rtl_ax_bin_attrs,
@@ -935,6 +961,7 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		radio->bb_dm.la_ready = false;
 		radio->bb_dm.psd_ready = false;
 		radio->bb_dm.edcca_ready = false;
+		radio->dfs.initialized = false;
 		radio->power_inputs.ready = false;
 		radio->download_prepared = false;
 	}

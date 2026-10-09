@@ -304,3 +304,11 @@ signal原生模块SHA256ac4a4911cd6b7dffcbf0367567b22af9f68991be7d44698bcb5aa96e
 frame type3在本机rtw_hal_mac_set_rxfltr_by_subtype@1b199c映射MAC DATA2；继续追mac_set_typsbtyp_fltr_opt@230444确认DATA对应ce24、CTRL对应ce28、MGMT对应ce2c。第一份临时版本误把DATA寄存器填ce2c，已在正式提交前按实际callback纠正，并重做板测。不得把“type3”解释成CTRL或沿用未经核对的寄存器排序。原厂DATA13/9/4三种subtype设DROP。
 
 start-rx正式原生模块SHA256db21a32c7fdf103ef89c498017c03fb70be35e5fd1c255b0ad7ec24ece2ff8f0两颗实机RX policy=0816440e、MPDU11264B、MGMT/CTRL55555555、DATA51515455、RX_INFO006f、RTS0000。补齐后被动观测仍无普通802.11帧，故继续完成BB/RF与role/channel阶段，不宣称RX/AP已完成。结果logs/radio-live-start-rx-20261010.txt和logs/radio-live-ap-filter02-20261010.txt。正式源码不保留三秒诊断等待。
+
+## 本机 DFS host 参数与地区表
+
+dfs.h 按dfs_init@29e498和rgn_dmn_dflt_cnfg@29e138保存本机Gen1单位PW200ns/PRI25us、FCC1/ETSI3/KCC4的8类波形表；MKK2的W53/W56另有频道相关配置，继续接入。原机FCC pulses=18/23/16/12/15/18/15/255，不能使用新SDK的11/14/10/7/9/11/9/255。地区输入默认0未配置，后续由AP法规/频道生命周期选择；初始化只保存host数据，没有启用雷达硬件或报告。
+
+host默认参数继续用原机debug命令的field-name/offset交叉核对：fk_dfs_num_th=5、idle_period=35、FA threshold50、fake_radar_count4、PW diff18、long-chirp diff20、PRI diff80，PPB原始参数5。原机halbb_dfs_debug的字段映射保存在analysis/radio-stock-lifecycle/dfs-field-names.json，避免将新版struct相邻字段套到旧机器码上。
+
+DFS-host03原生模块SHA256a4a73e4ad2949d8d2c285e846d1479bfcda48c4ab224003b17f67d33b3604747在两颗原机完成初始化，默认region0、profile未配置，RX错误0。此结果仅证明host初始化与现有启动链相容，不证明雷达检测、pulse parser或CAC已经实现。日志logs/radio-live-dfs-host-20261010.txt。后续重点是DIG、其余BB DM和RF校准，最终再接native AP与DFS运行态。
