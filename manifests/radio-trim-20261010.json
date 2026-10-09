@@ -1,0 +1,40 @@
+{
+  "stage": "trim",
+  "actual_receive": {
+    "C": {
+      "actual_frames": 32,
+      "all_complete_FCS_match": true,
+      "pcap": "logs/radio-trim-C.pcap",
+      "SHA256": "84b406e8cb94ffc0fa17722da713c961049e1bbe18e42c0cee00d6fea3c5c36a"
+    },
+    "XB": {
+      "actual_frames": 32,
+      "all_complete_FCS_match": true,
+      "pcap": "logs/radio-trim-XB.pcap",
+      "SHA256": "5619b2c541e047d3c80b1e9f9b8b1fc196ee865f7974b742818b9d5c52a9274f"
+    }
+  },
+  "original_host_ELF_reference": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "AP_available": false,
+  "full_TSSI_implemented": false,
+  "module_sha256": "dcedab8919e784875486751b5e3a3628d8067395569876c9011edb692e029348",
+  "C_thermal": [
+    "24",
+    "24"
+  ],
+  "C_bias": [
+    "4f",
+    "4f"
+  ],
+  "XB_thermal": [
+    "20",
+    "24"
+  ],
+  "XB_bias": [
+    "f3",
+    "f0"
+  ],
+  "all_trim_fields_readback_match": true,
+  "OTP_TSSI_all_erased": true,
+  "log": "logs/radio-trim-20261010.txt"
+}

@@ -457,3 +457,15 @@ read_offset@30be50按原机顺序读取0/1/12/13和16/17/28/29增益点的RF92/9
 原生live模块5abbace9ad67f781e9d03f5bc5cf9a463c736cf7679113fa6de0670740c33ecd只替换C，XB继续内置2.4GHz接收。两路RF测量均35次观察完成，RF95额外reK能力为1、本次结果码未要求第二次测量；温度30/31。八个增益点均有真实I/Q，比较差值均不超过9，本次corrections0。RF92/93两路为68620/79800、48220/67c00。随后频道36再次由mac80211交付32个实际用户态Radiotap帧，全部完整FCS匹配，描述符/tag错误0、kernel抓包丢包0，XEPON公网2/2。证据`manifests/radio-c-rxdck-20261010.json`及对应logs/pcap。增益替换及额外reK的硬件分支本次未触发，代码逐项来自实际原机函数。
 
 后续TXA LCTK也已核对实际模块：trigger@2f52bc仅检查supportability[25]、记录host时间/状态及BTC通知，没有两颗芯片的硬件调用；本机最终C88e17f和XB38e17f均未置bit25。因此不增加自拟TXA LCTK寄存器操作。继续移植原机trim/TSSI和频道功率控制，再接普通TX与MAC角色/关联。
+
+## 2026-10-10 原机thermal/PA/TSSI trim与参考功率
+
+`trim.h`按原机get_total_efuse_C@338810读取物理590..5df共80B、XB@3620b8读取5a0..5df共64B。两颗thermal取A5df/B5dc，将byte低4位中的bit0移到bit3、原bits3:1右移1，写RF43[19:16]；PA bias取A5de/B5db，C按A低nibble→高nibble、B低→高写RF60[15:12]/[19:16]，XB只写低nibble。原机两byte均ff才跳过整对，不逐路替换ff值。
+
+TSSI trim的物理地址顺序由本机函数逐项核对：2G/5G A5d6..5cf、B5ab..5a4；C6G A5ce..5c7、B5a3..59c，各8B，有符号byte保存。原机对各频段的两路共16B一起检查，全ff才整组归零。部分擦除时ff保留signed-1；这与普通TSSI的原机HS输入是不同数据来源。C物理TSSI trim32B、XB16B本机均全ff。硬件TSSI初始化/按频道回填继续移植。
+
+trim模块dcedab8919e784875486751b5e3a3628d8067395569876c9011edb692e029348实机C thermal24/24→code2/2、RF43=25000/25000；PA4f/4f→RF60=4f110/4f110。XB thermal20/24→code0/2、RF43=02180/22180；PAf3/f0→RF60=03010/00010，符合其仅2G nibble的原机动作。两路各32个实际用户态无线帧完整FCS全匹配，kernel dropped0，XEPON公网2/2；记录manifests/radio-trim-20261010.json和对应logs/pcap。
+
+重新逐层核对原机ref_power_to_struct_C@320f18/XB@3485c4发现它不止初始化host对象：两颗均调用rtw_hal_bb_set_tx_pow_ref→halbb_set_tx_pow_ref→MAC与BB实现。RFE54原机reference偏移0、base code33、TSSI16dBm code300、OFDM/CCK reference0；MAC d200[27:19]/[18:10]写两个zero reference。两颗BB函数对上述初值计算powerCW264、TSSI_CW172，组合27bit值02b21000并按5804/5808/7804/7808顺序回填。
+
+`ref-power.h`已在NCTL之后、RCK之前接入该实际硬件动作。模块89f2767d7a8e064b6d1e1cfcd15d283431b3a099572843e8a4c03b7541946d34两颗MAC d200=0、八个BB字段读回均02b21000；随后每路32个实际无线帧完整FCS全匹配，描述符/tag错误0、kernel抓包丢包0，XEPON公网2/2。记录manifests/radio-ref-power-20261010.json。后续普通TSSI读取实际调用的是rtw_hal_flash_get_info，需保留原机HS分组值、gain/CW/BW差异和功率策略，不能用物理trim取代。

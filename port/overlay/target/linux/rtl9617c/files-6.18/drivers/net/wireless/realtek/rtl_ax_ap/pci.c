@@ -32,6 +32,8 @@
 #include "dack.h"
 #include "rxdck.h"
 #include "c-rxdck.h"
+#include "trim.h"
+#include "ref-power.h"
 
 /* Original netdev-open policy in os_intfs.c: MU beamforming, OFDMA or
  * force_fw_tx selects firmware scheduling. Preserve all three inputs. */
@@ -82,6 +84,8 @@ struct rtl_ax_ap {
 	struct rtl_ax_rf_start rf_start;
 	struct rtl_ax_dack dack;
 	struct rtl_ax_rxdck rxdck;
+	struct rtl_ax_trim trim;
+	struct rtl_ax_ref_power ref_power;
 	struct rtl_ax_rx *rx;
 	struct ieee80211_hw *hw;
 	struct ieee80211_supported_band band;
@@ -577,6 +581,7 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 				 radio->identity.hardware_cv, &radio->rf_start);
 	if (ret)
 		return ret;
+	rtl_ax_ref_power_start(&radio->io, &radio->ref_power);
 	ret = rtl_ax_rf_rck_start(&radio->io, &radio->rf_start);
 	if (ret)
 		return ret;
@@ -588,6 +593,9 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 		return ret;
 	ret = radio->chip == RTL_AX_8192XB ? rtl_ax_xb_rxdck_start(&radio->io, &radio->rxdck) :
 		rtl_ax_c_rxdck_start(&radio->io, &radio->rxdck);
+	if (ret)
+		return ret;
+	ret = rtl_ax_trim_start(&radio->io, radio->chip, &radio->trim);
 	if (ret)
 		return ret;
 	/* Native RXQ/RPQ and IRQ are already prepared. Resume receive after
@@ -1246,6 +1254,42 @@ static ssize_t radio_rx_dck_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_rx_dck);
 
+static ssize_t radio_trim_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_trim *trim = &radio->trim;
+	unsigned int path, i;
+	ssize_t length = sysfs_emit(buffer, "trim=%s physical_OTP=%03x+%u thermal_written=%u bias_written=%u "
+		"TSSI_2G5G_erased=%u TSSI_6G_erased=%u hardware_TSSI=pending\n",
+		trim->ready ? "decoded-and-applied" : "pending", trim->otp_start, trim->otp_bytes,
+		trim->thermal_written, trim->bias_written, trim->tssi_erased, trim->tssi_6g_erased);
+
+	for (path = 0; path < 2; path++) {
+		length += sysfs_emit_at(buffer, length, "path=%u thermal_byte=%02x code=%u RF43=%05x bias_byte=%02x RF60=%05x\n",
+			path, trim->thermal[path], trim->thermal_code[path], trim->rf43[path], trim->bias[path], trim->rf60[path]);
+		for (i = 0; i < 8; i++)
+			length += sysfs_emit_at(buffer, length, "path=%u group=%u TSSI_2G5G=%d TSSI_6G=%d\n",
+				path, i, trim->tssi[path][i], trim->tssi_6g[path][i]);
+	}
+	return length;
+}
+static DEVICE_ATTR_RO(radio_trim);
+
+static ssize_t radio_ref_power_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_ref_power *state = &radio->ref_power;
+
+	return sysfs_emit(buffer, "reference_power=%s OFDM_CCK_ref=0,0 base_code=33 power_CW=%u TSSI_CW=%u "
+		"expected_BB=%08x D200=%08x BB5804_5808_7804_7808=%08x,%08x,%08x,%08x\n",
+		state->ready ? "applied" : "pending", state->power_cw, state->tssi_cw, state->bb_word,
+		state->mac_readback, state->bb_readback[0], state->bb_readback[1],
+		state->bb_readback[2], state->bb_readback[3]);
+}
+static DEVICE_ATTR_RO(radio_ref_power);
+
 static ssize_t radio_efuse_read(struct file *file, struct kobject *kobject,
 	const struct bin_attribute *attr, char *buffer, loff_t offset, size_t count)
 {
@@ -1289,7 +1333,8 @@ static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_dig.attr, &dev_attr_radio_cfo.attr, &dev_attr_radio_environment.attr,
 	&dev_attr_radio_rx_pipeline.attr, &dev_attr_radio_channel.attr, &dev_attr_radio_rx_mode.attr,
 	&dev_attr_radio_rf_start.attr, &dev_attr_radio_dack.attr, &dev_attr_radio_dac.attr,
-	&dev_attr_radio_mac80211.attr, &dev_attr_radio_rx_dck.attr, NULL,
+	&dev_attr_radio_mac80211.attr, &dev_attr_radio_rx_dck.attr, &dev_attr_radio_trim.attr,
+	&dev_attr_radio_ref_power.attr, NULL,
 };
 static const struct attribute_group rtl_ax_group = {
 	.attrs = rtl_ax_attrs, .bin_attrs = rtl_ax_bin_attrs,
@@ -1341,6 +1386,8 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		radio->dack.adc_ready = false;
 		radio->dack.dac_ready = false;
 		radio->rxdck.ready = false;
+		radio->trim.ready = false;
+		radio->ref_power.ready = false;
 		radio->power_inputs.ready = false;
 		radio->download_prepared = false;
 	}

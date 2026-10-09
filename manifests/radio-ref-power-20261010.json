@@ -1,0 +1,27 @@
+{
+  "stage": "ref-power",
+  "actual_receive": {
+    "C": {
+      "actual_frames": 32,
+      "all_complete_FCS_match": true,
+      "pcap": "logs/radio-ref-power-C.pcap",
+      "SHA256": "f9c838ee5ca1847ba320b0316af45c36569172b7198bd4e180f361cbd395d0b7"
+    },
+    "XB": {
+      "actual_frames": 32,
+      "all_complete_FCS_match": true,
+      "pcap": "logs/radio-ref-power-XB.pcap",
+      "SHA256": "763d0489edbffa50e6713e12ab879b88962efc22cbabe3a1a03b15d56a546383"
+    }
+  },
+  "original_host_ELF_reference": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "AP_available": false,
+  "full_TSSI_implemented": false,
+  "module_sha256": "89f2767d7a8e064b6d1e1cfcd15d283431b3a099572843e8a4c03b7541946d34",
+  "reference_base_code": 33,
+  "power_CW": 264,
+  "TSSI_CW": 172,
+  "both_chips_four_BB_readbacks": "02b21000",
+  "both_MAC_D200": "00000000",
+  "log": "logs/radio-ref-power-20261010.txt"
+}
