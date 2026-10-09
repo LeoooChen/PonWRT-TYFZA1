@@ -1,0 +1,29 @@
+{
+  "native_module_sha256": "10b49a3d939d88016a23a11843db20b6268eae788664ba49e96ba268f79452ea",
+  "read_method": "DDV physical bank using original identity read sequence",
+  "records": [
+    {
+      "family": "rtl8852c",
+      "physical_file": "analysis/private/radio-efuse-20261009/rtl8852c-physical.bin",
+      "bytes": 1536,
+      "sha256": "7f4daec072d575821239f00ea6e39ff16c881dbc89d9489820e239b4608fafb3",
+      "repeated_read_matches": true,
+      "non_ff_bytes": 165,
+      "mode": "0o600",
+      "identity_calibration_tag_matches": true,
+      "logical_map": "not decoded yet"
+    },
+    {
+      "family": "rtl8192xb",
+      "physical_file": "analysis/private/radio-efuse-20261009/rtl8192xb-physical.bin",
+      "bytes": 1536,
+      "sha256": "445e2c78a3427df3d412bb25d2ebab8b174663b80380d898c961c0bd3452e3c1",
+      "repeated_read_matches": true,
+      "non_ff_bytes": 223,
+      "mode": "0o600",
+      "identity_calibration_tag_matches": true,
+      "logical_map": "not decoded yet"
+    }
+  ],
+  "factory_trim_apply": "pending"
+}

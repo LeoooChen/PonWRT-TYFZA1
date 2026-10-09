@@ -585,6 +585,32 @@ static ssize_t radio_power_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_power);
 
+static ssize_t radio_efuse_read(struct file *file, struct kobject *kobject,
+	const struct bin_attribute *attr, char *buffer, loff_t offset, size_t count)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(kobj_to_dev(kobject));
+	size_t i;
+	int ret = 0;
+
+	/* Actual DDV1536-byte Wi-Fi bank,using the same stock physical read
+	 * sequence as identity. Preserve factory trim for native RF calibration. */
+	mutex_lock(&radio->command_mutex);
+	for (i = 0; i < count; i++) {
+		ret = rtl_ax_efuse_read(&radio->io, offset + i, (unsigned char *)buffer + i);
+		if (ret)
+			break;
+	}
+	mutex_unlock(&radio->command_mutex);
+	return i ? i : ret;
+}
+static const struct bin_attribute bin_attr_radio_efuse = {
+	.attr = { .name = "radio_efuse", .mode = 0400 },
+	.size = 1536, .read = radio_efuse_read,
+};
+static const struct bin_attribute *rtl_ax_bin_attrs[] = {
+	&bin_attr_radio_efuse, NULL,
+};
+
 static ssize_t radio_rx_show(struct device *dev,
 	struct device_attribute *attr, char *buffer)
 {
@@ -598,7 +624,10 @@ static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_rf.attr, &dev_attr_radio_rf_bank.attr, &dev_attr_radio_rf_analog.attr,
 	&dev_attr_radio_power.attr, NULL,
 };
-ATTRIBUTE_GROUPS(rtl_ax);
+static const struct attribute_group rtl_ax_group = {
+	.attrs = rtl_ax_attrs, .bin_attrs = rtl_ax_bin_attrs,
+};
+static const struct attribute_group *rtl_ax_groups[] = { &rtl_ax_group, NULL };
 
 static void rtl_ax_stop(struct rtl_ax_ap *radio)
 {

@@ -222,3 +222,11 @@ rtw_hal_rf_dm_init@1befc8 调用 halrf_dm_init@303c14。实际顺序为共享XTA
 已从本机ELF提取三份NCTL参数数据到analysis/radio-stock-lifecycle/nctl（未在硬件执行）：C cut0为1769对，C非zero cut为1782对，XB为1421对。C函数@3106f8根据hal_com的cv字段选择两份表；XB@33ffb0固定其表。二者先使能0c60/0c6c及58ac/78ac的NCTL相关位，写8000=8，然后重复写8080=4、延时1us并读回，最多1000轮；原机到上限后继续加载表。提取哈希、参数和顺序在manifests/radio-stock-rf-dm.json。
 
 另核对了原机limit文本parser：其小数路径不是ByRate的整数规则，而是integer×4+floor(fraction×4/100)，再处理正负；实际保存9B limit record。后续原生limit解析必须保留17.5等半dBm输入，不能截成整数。IQK也同时存在host与firmware路径（halrf_iqk@30ad50按host配置选择），必须追清本机配置来源及完成条件后接入。
+
+## 两颗无线芯片的本机物理 eFuse
+
+radio_efuse只读二进制属性复用identity阶段已在原机验证的DDV读取路径，读取1536B Wi-Fi物理bank，事务与RF控制共用command_mutex。2026-10-09通过原生模块10b49a3d939d88016a23a11843db20b6268eae788664ba49e96ba268f79452ea读取两颗芯片，各重复一次。
+
+C和XB两次读取分别逐字节一致，均1536B，且5e9=aa与此前identity相符；非ff字节分别165/223。原始数据保存在analysis/private/radio-efuse-20261009，目录0700、文件0600；公开记录只包含哈希与长度，见manifests/radio-live-efuse-20261009.json。当前尚未解码logical map或使用trim数据进行校准。
+
+继续核对iqk_init_C@31b43c，首次host初始化明确将FW IQK选择字段清0；后续是否有显式配置覆盖仍待核对。因此不能因为AP固件包含IQK命令就直接默认切到firmware校准路径。完整RF初始化和校准继续沿本机调用链实现。
