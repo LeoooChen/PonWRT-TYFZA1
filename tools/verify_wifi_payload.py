@@ -34,12 +34,16 @@ try:
         assert hashlib.sha256(members[item['path']]['data']).hexdigest() == item['sha256'], item['path']
     for item in expected.get('NCTL', []):
         assert hashlib.sha256(members[item['path']]['data']).hexdigest() == item['sha256'], item['path']
+    if b'handed_to_mac80211=' in selected['kernel']:
+        for item in expected['regulatory_database']:
+            assert hashlib.sha256(members[item['path']]['data']).hexdigest() == item['sha256'], item['path']
     report = {'FIT_sha256': hashlib.sha256(fit.read_bytes()).hexdigest(),
               'verification_entry': 'Final PCIe FIT selected kernel initramfs',
               'original_radio_firmware_files': len(expected['firmware']),
               'selected_RFE54_parameter_files': len(expected['parameters']),
               'board_flash_calibration_files': len(expected.get('calibration', [])),
               'original_NCTL_tables': len(expected.get('NCTL', [])),
+              'released_regulatory_database_and_signature': len(expected.get('regulatory_database', [])),
               'all_bytes_match_prepared_board_inputs': True,
               'native_AP_PCI_backend_present_in_selected_kernel': True,
               'firmware_transport_implemented': True,

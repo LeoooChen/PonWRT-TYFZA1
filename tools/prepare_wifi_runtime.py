@@ -3,7 +3,9 @@
 import argparse
 import hashlib
 import json
+import re
 import sys
+import tarfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from radio_inputs import NativeRadioFormat
@@ -13,6 +15,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('output', type=Path)
 parser.add_argument('--study', type=Path)
 parser.add_argument('--manifest', type=Path, default=root / 'artifacts/wifi-runtime-manifest.json')
+parser.add_argument('--openwrt-tree', type=Path, default=root / 'sources/openwrt')
 parser.add_argument('--hardware-settings', type=Path,
                     default=root / 'evidence/pre-disassembly/backups/2026-10-07/working-dhcp/current-hs.xml')
 args = parser.parse_args()
@@ -22,6 +25,23 @@ saved = json.loads((args.study / 'evidence/derived/stock-wifi-firmware-manifest.
 codec = NativeRadioFormat()
 firmware = []
 try:
+    package = (args.openwrt_tree / 'package/firmware/wireless-regdb/Makefile').read_text()
+    version = re.search(r'^PKG_VERSION:=(\S+)', package, re.M).group(1)
+    archive_hash = re.search(r'^PKG_HASH:=(\S+)', package, re.M).group(1)
+    archive = args.openwrt_tree / 'dl' / f'wireless-regdb-{version}.tar.xz'
+    if hashlib.sha256(archive.read_bytes()).hexdigest() != archive_hash:
+        raise ValueError('Wireless regulatory release differs from the pinned OpenWrt package')
+    regulatory = []
+    with tarfile.open(archive) as release:
+        for name in ('regulatory.db', 'regulatory.db.p7s'):
+            data = release.extractfile(f'wireless-regdb-{version}/{name}').read()
+            relative = Path('lib/firmware') / name
+            destination = args.output / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(data)
+            regulatory.append({'path': str(relative), 'bytes': len(data),
+                               'sha256': hashlib.sha256(data).hexdigest(),
+                               'release': version, 'archive_sha256': archive_hash})
     for mac, family in ((2, '8852c'), (3, '8192xb')):
         for cv in (0, 1):
             name = f'array_{family}_u{cv + 1}_ap'
@@ -132,6 +152,7 @@ try:
     report = {'study': str(args.study.relative_to(root)), 'native_format_header_sha256':
               hashlib.sha256((root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/fw.h').read_bytes()).hexdigest(),
               'firmware': firmware, 'parameters': parameters, 'calibration': calibration, 'NCTL': nctl,
+              'regulatory_database': regulatory,
               'RF_load_order': ['base', 'FEM-extension'],
               'RF_tables_applied_by_driver': False, 'radio_driver_available': False}
     args.manifest.parent.mkdir(parents=True, exist_ok=True)

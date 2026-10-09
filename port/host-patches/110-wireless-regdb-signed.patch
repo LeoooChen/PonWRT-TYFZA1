@@ -1,0 +1,17 @@
+--- a/package/firmware/wireless-regdb/Makefile
++++ b/package/firmware/wireless-regdb/Makefile
+@@ -23,12 +23,13 @@
+ endef
+ 
+ define Build/Compile
+-	$(STAGING_DIR_HOST)/bin/$(PYTHON) $(PKG_BUILD_DIR)/db2fw.py $(PKG_BUILD_DIR)/regulatory.db $(PKG_BUILD_DIR)/db.txt
++	# Keep the released regulatory.db paired with its upstream signature.
+ endef
+ 
+ define Package/wireless-regdb/install
+ 	$(INSTALL_DIR) $(1)/lib/firmware
+ 	$(CP) $(PKG_BUILD_DIR)/regulatory.db $(1)/lib/firmware/
++	$(CP) $(PKG_BUILD_DIR)/regulatory.db.p7s $(1)/lib/firmware/
+ endef
+ 
+ $(eval $(call BuildPackage,wireless-regdb))

@@ -19,6 +19,10 @@ if [ ! -e "$TREE/package/feeds/packages/cgi-io" ] || [ ! -e "$TREE/package/feeds
 fi
 sh "$PORT/scripts/sync-overlay.sh" "$TREE"
 cd "$TREE"
+if ! grep -Fq 'regulatory.db.p7s' package/firmware/wireless-regdb/Makefile; then
+    patch -p1 --fuzz=0 < "$PORT/host-patches/110-wireless-regdb-signed.patch"
+    make package/firmware/wireless-regdb/clean
+fi
 make defconfig
 # On this WSL host, TCP fakeroot fails at the first file operation. Use the
 # existing upstream SysV backend, not root builds or altered package ownership.
@@ -37,5 +41,5 @@ export TYFZA1_UCI_TREE="$TREE"
 python3 "$PROJECT/tools/prepare_pon_runtime.py" "$TREE/files" \
     --stock "${TYFZA1_STOCK_INPUTS:-$PROJECT/analysis/private/live-files}" \
     --auth-config "${TYFZA1_AUTH_CONFIG:-$PROJECT/analysis/private/pon-auth.json}"
-python3 "$PROJECT/tools/prepare_wifi_runtime.py" "$TREE/files"
+python3 "$PROJECT/tools/prepare_wifi_runtime.py" "$TREE/files" --openwrt-tree "$TREE"
 make -j"$JOBS" world
