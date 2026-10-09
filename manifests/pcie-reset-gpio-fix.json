@@ -1,0 +1,33 @@
+{
+  "issue": "PCIe endpoint reset lost stock GPIO bank offset",
+  "status": "source-and-compiled-DTB-corrected",
+  "stock_DTB_sha256": "5124f860df3bcd2e20b87d058e19b1ddfdc7a46c9d876663ba9feeff5a0f13ac",
+  "pins": [
+    {
+      "controller": 0,
+      "stock_bank": 3,
+      "stock_pin": 5,
+      "old_native_pin": 5,
+      "corrected_native_pin": 101
+    },
+    {
+      "controller": 1,
+      "stock_bank": 3,
+      "stock_pin": 6,
+      "old_native_pin": 6,
+      "corrected_native_pin": 102
+    }
+  ],
+  "flags": "active-low preserved",
+  "regression": "logs/pcie-gpio-regression.json",
+  "DTB_verification": "logs/pcie-dtb-verification.json",
+  "generator": "tools/make_pcie_dts.py",
+  "final_FIT_verifier": "tools/verify_pcie_payload.py",
+  "hardware_verified": false,
+  "build_service": "ponwrt-tyfza1-lan-20261009-102606",
+  "scope": "Device offline;no wrong-pin hardware test performed",
+  "build_exit_status": 0,
+  "payload": "artifacts/full-pon-pcie04-6.18.55/ram-pcie/image.itb",
+  "FIT_sha256": "a5d38ef7c243371438b02061b20c9e0d834c5f9c5da14926c0b1b8fbaa72d139",
+  "final_FIT_GPIO_validation": true
+}

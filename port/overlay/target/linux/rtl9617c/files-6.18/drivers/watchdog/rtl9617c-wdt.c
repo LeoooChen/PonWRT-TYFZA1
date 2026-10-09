@@ -10,8 +10,10 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/module.h>
+#include <linux/mfd/syscon.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#include <linux/regmap.h>
 #include <linux/watchdog.h>
 
 #define WDT_CTRL	0x00
@@ -32,7 +34,7 @@
 
 struct rtl9617c_wdt {
 	void __iomem *base;
-	void __iomem *reset;
+	struct regmap *reset;
 	u32 prescaler;
 	u32 delay_cycles;
 	spinlock_t lock;
@@ -52,11 +54,14 @@ static int rtl_wdt_start(struct watchdog_device *wdd)
 	struct rtl9617c_wdt *wdt = watchdog_get_drvdata(wdd);
 	unsigned long flags;
 	u32 ctrl;
+	int ret;
 
+	ret = regmap_update_bits(wdt->reset, 0, WDT_RESET_ROUTE, WDT_RESET_ROUTE);
+	if (ret)
+		return ret;
 	spin_lock_irqsave(&wdt->lock, flags);
 	ctrl = readl(wdt->base + WDT_CTRL);
 	writel(ctrl & ~WDT_ENABLE, wdt->base + WDT_CTRL);
-	writel(readl(wdt->reset) | WDT_RESET_ROUTE, wdt->reset);
 	/* Vendor normal-resolution path: APB/1000 - 1, then divide by 1000. */
 	writel(wdt->prescaler, wdt->base + WDT_PS);
 	writel(1000, wdt->base + WDT_DIV);
@@ -146,7 +151,7 @@ static int rtl_wdt_probe(struct platform_device *pdev)
 	wdt->base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(wdt->base))
 		return PTR_ERR(wdt->base);
-	wdt->reset = devm_platform_ioremap_resource(pdev, 1);
+	wdt->reset = syscon_regmap_lookup_by_phandle(dev->of_node, "realtek,global-config");
 	if (IS_ERR(wdt->reset))
 		return PTR_ERR(wdt->reset);
 	clk = devm_clk_get_enabled(dev, NULL);

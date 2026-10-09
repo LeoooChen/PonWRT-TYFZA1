@@ -1,0 +1,16 @@
+{
+  "commit": "5090fbcb6ba743dd7b1314811ef557bad0460147",
+  "files": [
+    {
+      "file": "evidence/pcie-native-reference-20261009/phy-rtk-taurus.c",
+      "sha256": "72e9abdff5340e206868c932d65168c9a2589bf8edd42a50033f0beb98a2e2f0",
+      "url": "https://github.com/jameywine/GPL-for-GP3000/blob/5090fbcb6ba743dd7b1314811ef557bad0460147/linux-5.10.x/drivers/phy/phy-rtk-taurus.c"
+    },
+    {
+      "file": "evidence/pcie-native-reference-20261009/cortina-soc.c",
+      "sha256": "45134d472570d76fce82caad657a9ddfff6eb757a7f7b429d644c87d5416d682",
+      "url": "https://github.com/jameywine/GPL-for-GP3000/blob/5090fbcb6ba743dd7b1314811ef557bad0460147/linux-5.10.x/drivers/soc/cortina/cortina-soc.c"
+    }
+  ],
+  "scope": "Taurus PHY controls and SoC identity;native driver uses Linux6.18 frameworks"
+}

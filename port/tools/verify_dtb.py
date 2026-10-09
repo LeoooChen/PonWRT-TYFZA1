@@ -50,6 +50,13 @@ def inspect(stock, native):
     checked = []
     for label, old_node, new_node, prop in pairs:
         old, new = get(stock, old_node, prop), get(native, new_node, prop)
+        if label == "Watchdog registers" and len(new) == 4:
+            if old[:4] != new or old[4:8] != get(native, "/soc/syscon@f43200c0", "reg"):
+                raise ValueError("Watchdog timer/shared global config differs from stock")
+            if get(native, new_node, "realtek,global-config") != get(native, "/soc/syscon@f43200c0", "phandle"):
+                raise ValueError("Watchdog shared global config supplier differs")
+            checked.append(label + " with shared syscon")
+            continue
         if old != new:
             raise ValueError(f"{label} differs: {old!r} != {new!r}")
         checked.append(label)

@@ -1,0 +1,20 @@
+{
+  "kernel": "6.18.55",
+  "phase": "native PCIe foundation",
+  "native_sources": {
+    "drivers/pci/controller/dwc/pcie-rtl9617c.c": "7336687fec30062271c3f59188bd7e3994d2413e5d36be6cd9fe90b13ab525a8",
+    "drivers/pci/controller/dwc/rtl9617c-pcie-sequence.h": "a8153e1793abed5fd0cecd1932fa0df34881461cc918144e6ab7d376db4e090d",
+    "drivers/phy/phy-rtl9617c-pcie.c": "7364a45bc984d7639339ac75f48c041b10624bead8d395e6fecb25d2e43060e3",
+    "drivers/watchdog/rtl9617c-wdt.c": "645830df4084a25ef8be49064147a8941e6a3b974df8085569e39318eeb3d6b6"
+  },
+  "host_compile_exit": 0,
+  "full_build_service": "ponwrt-tyfza1-lan-20261009-102606",
+  "full_build_exit": 0,
+  "sequence_test": "logs/pcie-sequence-test.json",
+  "controls_test": "logs/pcie-controls-test.json",
+  "GPIO_regression_test": "logs/pcie-gpio-regression.json",
+  "payload_verification": "artifacts/full-pon-pcie04-6.18.55/pcie-payload-verification.json",
+  "PON_payload_verification": "logs/pcie04-pon-payload-verification.json",
+  "hardware_verified": false,
+  "next": "PCIe enumeration/DMA and native radio firmware/driver work"
+}

@@ -76,6 +76,11 @@
 		#size-cells = <2>;
 		ranges;
 
+		global_config: syscon@f43200c0 {
+			compatible = "realtek,rtl9617c-global-config", "syscon";
+			reg = <0 0xf43200c0 0 4>;
+		};
+
 		per_ictl: interrupt-controller@f4329004 {
 			compatible = "realtek,rtl9617c-per-ictl", "cortina,per-ictl";
 			reg = <0 0xf4329004 0 0x10>;
@@ -87,7 +92,8 @@
 
 		watchdog: watchdog@f432901c {
 			compatible = "realtek,rtl9617c-wdt", "cortina,wdt";
-			reg = <0 0xf432901c 0 0x30>, <0 0xf43200c0 0 4>;
+			reg = <0 0xf432901c 0 0x30>;
+			realtek,global-config = <&global_config>;
 			interrupt-parent = <&per_ictl>;
 			interrupts = <6>;
 			clocks = <&apb_clk>;

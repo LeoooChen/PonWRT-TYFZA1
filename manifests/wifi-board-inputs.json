@@ -1,5 +1,5 @@
 {
-  "extracted_at": "2026-10-09T09:46:42.822815+08:00",
+  "extracted_at": "2026-10-09T10:23:07.433119+08:00",
   "stock_DTB_sha256": "5124f860df3bcd2e20b87d058e19b1ddfdc7a46c9d876663ba9feeff5a0f13ac",
   "stock_wireless_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
   "PCIe_hosts": [
@@ -74,8 +74,11 @@
           "arguments": [],
           "endpoint_GPIO": {
             "controller": "/gpio-controller@f43292c0/bank@3",
-            "pin": 5,
-            "flags": 1
+            "bank": 3,
+            "bank_pin": 5,
+            "native_pin": 101,
+            "flags": 1,
+            "unused": false
           }
         }
       },
@@ -178,8 +181,11 @@
           "arguments": [],
           "endpoint_GPIO": {
             "controller": "/gpio-controller@f43292c0/bank@3",
-            "pin": 6,
-            "flags": 1
+            "bank": 3,
+            "bank_pin": 6,
+            "native_pin": 102,
+            "flags": 1,
+            "unused": false
           }
         }
       },
@@ -282,8 +288,11 @@
           "arguments": [],
           "endpoint_GPIO": {
             "controller": "/gpio-controller@f43292c0/bank@3",
-            "pin": 255,
-            "flags": 1
+            "bank": 3,
+            "bank_pin": 255,
+            "native_pin": null,
+            "flags": 1,
+            "unused": true
           }
         }
       },

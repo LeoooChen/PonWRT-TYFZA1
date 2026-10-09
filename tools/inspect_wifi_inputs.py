@@ -18,40 +18,7 @@ parser.add_argument('--study', type=Path, default=root / 'evidence/wireless-stud
 parser.add_argument('--output', type=Path, default=root / 'manifests/wifi-board-inputs.json')
 args = parser.parse_args()
 
-def fdt_nodes(data):
-    header = struct.unpack_from('>10I', data)
-    assert header[0] == 0xd00dfeed and header[1] == len(data)
-    strings = data[header[3]:header[3] + header[8]]
-    position, stack, nodes = header[2], [], {}
-    while position < header[2] + header[9]:
-        token = struct.unpack_from('>I', data, position)[0]
-        position += 4
-        if token == 1:
-            end = data.index(b'\0', position)
-            stack.append(data[position:end].decode())
-            nodes['/' + '/'.join(stack[1:])] = {}
-            position = (end + 4) & ~3
-        elif token == 2:
-            stack.pop()
-        elif token == 3:
-            length, name_offset = struct.unpack_from('>II', data, position)
-            position += 8
-            name = strings[name_offset:strings.index(b'\0', name_offset)].decode()
-            nodes['/' + '/'.join(stack[1:])][name] = data[position:position + length]
-            position = (position + length + 3) & ~3
-        elif token == 4:
-            continue
-        elif token == 9:
-            return nodes
-        else:
-            raise ValueError('Unknown FDT token')
-    raise ValueError('Missing FDT end')
-
-def cells(value):
-    return list(struct.unpack('>%dI' % (len(value) // 4), value))
-
-def names(value):
-    return value.rstrip(b'\0').decode().split('\0')
+from stock_dtb import banked_gpio, cells, fdt_nodes, names
 
 dtb = args.study / 'evidence/stock/live-fit.dtb'
 nodes = fdt_nodes(dtb.read_bytes())
@@ -78,7 +45,8 @@ for path, props in nodes.items():
             item['provider_reg'] = [hex(v) for v in cells(provider['reg'])]
         if 'gpios' in provider:
             gpios = cells(provider['gpios'])
-            item['endpoint_GPIO'] = {'controller': handles[gpios[0]][0], 'pin': gpios[1], 'flags': gpios[2]}
+            item['endpoint_GPIO'] = banked_gpio(handles, gpios,
+                enabled=names(provider.get('status', b'okay'))[0] != 'disabled')
         resets[name] = item
         cursor += count + 1
     assert cursor == len(reset_refs)

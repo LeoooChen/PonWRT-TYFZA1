@@ -10,7 +10,7 @@ define Device/tianyi_tyfza1
   DEVICE_VENDOR := Tianyi
   DEVICE_MODEL := TYFZA1
   DEVICE_VARIANT := native bring-up
-  DEVICE_DTS := rtl9617c-tyfza1 rtl9617c-tyfza1-nand-readonly rtl9617c-tyfza1-stock-ubi-readonly rtl9617c-tyfza1-mdio rtl9617c-tyfza1-xram-lan rtl9617c-tyfza1-dma-tx rtl9617c-tyfza1-ni rtl9617c-tyfza1-pon-status
+  DEVICE_DTS := rtl9617c-tyfza1 rtl9617c-tyfza1-nand-readonly rtl9617c-tyfza1-stock-ubi-readonly rtl9617c-tyfza1-mdio rtl9617c-tyfza1-xram-lan rtl9617c-tyfza1-dma-tx rtl9617c-tyfza1-ni rtl9617c-tyfza1-pon-status rtl9617c-tyfza1-pcie
   DEVICE_DTS_DIR := ../dts
   KERNEL := kernel-bin
   KERNEL_INITRAMFS := kernel-bin
@@ -20,7 +20,7 @@ define Device/tianyi_tyfza1
   FILESYSTEMS := squashfs
   IMAGES := rootfs.squashfs
   IMAGE/rootfs.squashfs := append-rootfs
-  ARTIFACTS := board.dtb nand-readonly.dtb stock-ubi-readonly.dtb mdio-probe.dtb xram-lan.dtb dma-tx.dtb ni.dtb pon-status.dtb
+  ARTIFACTS := board.dtb nand-readonly.dtb stock-ubi-readonly.dtb mdio-probe.dtb xram-lan.dtb dma-tx.dtb ni.dtb pon-status.dtb pcie.dtb
   ARTIFACT/board.dtb := tyfza1-dtb rtl9617c-tyfza1
   ARTIFACT/nand-readonly.dtb := tyfza1-dtb rtl9617c-tyfza1-nand-readonly
   ARTIFACT/stock-ubi-readonly.dtb := tyfza1-dtb rtl9617c-tyfza1-stock-ubi-readonly
@@ -29,6 +29,7 @@ define Device/tianyi_tyfza1
   ARTIFACT/dma-tx.dtb := tyfza1-dtb rtl9617c-tyfza1-dma-tx
   ARTIFACT/ni.dtb := tyfza1-dtb rtl9617c-tyfza1-ni
   ARTIFACT/pon-status.dtb := tyfza1-dtb rtl9617c-tyfza1-pon-status
+  ARTIFACT/pcie.dtb := tyfza1-dtb rtl9617c-tyfza1-pcie
 endef
 TARGET_DEVICES += tianyi_tyfza1
 
