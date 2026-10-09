@@ -230,3 +230,9 @@ radio_efuse只读二进制属性复用identity阶段已在原机验证的DDV读�
 C和XB两次读取分别逐字节一致，均1536B，且5e9=aa与此前identity相符；非ff字节分别165/223。原始数据保存在analysis/private/radio-efuse-20261009，目录0700、文件0600；公开记录只包含哈希与长度，见manifests/radio-live-efuse-20261009.json。当前尚未解码logical map或使用trim数据进行校准。
 
 继续核对iqk_init_C@31b43c，首次host初始化明确将FW IQK选择字段清0；后续是否有显式配置覆盖仍待核对。因此不能因为AP固件包含IQK命令就直接默认切到firmware校准路径。完整RF初始化和校准继续沿本机调用链实现。
+
+## 当前原机运行镜像
+
+full-pon-radio-power01-6.18.55 的 ram-pcie/image.itb（6539368B，SHA256 a2d9c7a8567e881f91c0341f413d947e1af58a300f87f9161587ce01ed70eb53）由独立后台服务ponwrt-tyfza1-lan-20261009-222938成功构建。2026-10-09经原机U-Boot TFTP、签名校验与整机RAM启动，当前两颗均绑定内置rtl_ax_ap，自动完成BB、第一遍Radio和ByRate/TrackTSSI解析；BA CAM ACK/RXQ各1，错误全0。模拟/数字RF读回差异与live模块一致，保留待完整频道/校准继续核对。XEPON自动获取192.168.71.28，公网ping2/2。结果logs/radio-power01-ram-20261009.txt。
+
+最终FIT实际解压内核已核对BB/RF/power/读回入口，此镜像对应284e563阶段；eFuse采集接口是随后54d127e原生模块实机验证的，未包含在这个FIT。当前镜像不包含完整limit/RU、第二遍Radio/FEM执行或AP，不报告SSID/关联/无线业务已经可用。
