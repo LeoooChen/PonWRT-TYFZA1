@@ -8,3 +8,4 @@ __pycache__/
 analysis/python-deps/
 analysis/radio-stock-power/
 analysis/radio-stock-download/
+analysis/radio-stock-lifecycle/

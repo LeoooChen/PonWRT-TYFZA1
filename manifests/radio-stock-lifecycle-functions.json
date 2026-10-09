@@ -1,0 +1,2578 @@
+{
+  "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "functions": {
+    "rtw_dev_probe": {
+      "path": "analysis/radio-stock-lifecycle/rtw_dev_probe.asm",
+      "sha256": "185c69fd2854505da34234ad9c72b41a15d977a77f25f0c2d679e64239726a76",
+      "indirect_calls": 0,
+      "direct_calls_with_addresses": [
+        {
+          "address": "3be04",
+          "function": "printk"
+        },
+        {
+          "address": "3be64",
+          "function": "devobj_init"
+        },
+        {
+          "address": "3be84",
+          "function": "pci_enable_device"
+        },
+        {
+          "address": "3bea4",
+          "function": "devobj_deinit"
+        },
+        {
+          "address": "3bf18",
+          "function": "printk"
+        },
+        {
+          "address": "3bf4c",
+          "function": "printk"
+        },
+        {
+          "address": "3bf60",
+          "function": "dma_set_mask"
+        },
+        {
+          "address": "3bf70",
+          "function": "dma_set_coherent_mask"
+        },
+        {
+          "address": "3bf7c",
+          "function": "pci_set_master"
+        },
+        {
+          "address": "3bf8c",
+          "function": "pci_request_regions"
+        },
+        {
+          "address": "3bfc8",
+          "function": "printk"
+        },
+        {
+          "address": "3bff4",
+          "function": "printk"
+        },
+        {
+          "address": "3c048",
+          "function": "pci_iomap"
+        },
+        {
+          "address": "3c09c",
+          "function": "pci_read_config_word"
+        },
+        {
+          "address": "3c0cc",
+          "function": "pci_write_config_word"
+        },
+        {
+          "address": "3c11c",
+          "function": "iounmap"
+        },
+        {
+          "address": "3c144",
+          "function": "pci_release_regions"
+        },
+        {
+          "address": "3c150",
+          "function": "pci_disable_device"
+        },
+        {
+          "address": "3c178",
+          "function": "printk"
+        },
+        {
+          "address": "3c1a4",
+          "function": "printk"
+        },
+        {
+          "address": "3c1d0",
+          "function": "printk"
+        },
+        {
+          "address": "3c1ec",
+          "function": "printk"
+        },
+        {
+          "address": "3c20c",
+          "function": "printk"
+        },
+        {
+          "address": "3c220",
+          "function": "pci_read_config_word"
+        },
+        {
+          "address": "3c250",
+          "function": "printk"
+        },
+        {
+          "address": "3c284",
+          "function": "printk"
+        },
+        {
+          "address": "3c2d8",
+          "function": "pci_read_config_byte"
+        },
+        {
+          "address": "3c308",
+          "function": "printk"
+        },
+        {
+          "address": "3c328",
+          "function": "printk"
+        },
+        {
+          "address": "3c358",
+          "function": "printk"
+        },
+        {
+          "address": "3c374",
+          "function": "pci_write_config_word"
+        },
+        {
+          "address": "3c3a4",
+          "function": "printk"
+        },
+        {
+          "address": "3c3b8",
+          "function": "pci_read_config_word"
+        },
+        {
+          "address": "3c3e8",
+          "function": "printk"
+        },
+        {
+          "address": "3c41c",
+          "function": "printk"
+        },
+        {
+          "address": "3c450",
+          "function": "printk"
+        },
+        {
+          "address": "3c46c",
+          "function": "printk"
+        },
+        {
+          "address": "3c4a4",
+          "function": "pci_read_config_byte"
+        },
+        {
+          "address": "3c4e4",
+          "function": "printk"
+        },
+        {
+          "address": "3c500",
+          "function": "printk"
+        },
+        {
+          "address": "3c538",
+          "function": "pci_read_config_byte"
+        },
+        {
+          "address": "3c570",
+          "function": "pci_write_config_byte"
+        },
+        {
+          "address": "3c5b0",
+          "function": "printk"
+        },
+        {
+          "address": "3c5cc",
+          "function": "printk"
+        },
+        {
+          "address": "3c5e8",
+          "function": "printk"
+        },
+        {
+          "address": "3c604",
+          "function": "printk"
+        },
+        {
+          "address": "3c618",
+          "function": "pci_read_config_byte"
+        },
+        {
+          "address": "3c658",
+          "function": "printk"
+        },
+        {
+          "address": "3c684",
+          "function": "printk"
+        },
+        {
+          "address": "3c6a0",
+          "function": "printk"
+        },
+        {
+          "address": "3c6b4",
+          "function": "pci_write_config_byte"
+        },
+        {
+          "address": "3c6c4",
+          "function": "pci_read_config_byte"
+        },
+        {
+          "address": "3c6f4",
+          "function": "pci_read_config_dword"
+        },
+        {
+          "address": "3c718",
+          "function": "printk"
+        },
+        {
+          "address": "3c728",
+          "function": "rtw_os_rx_init"
+        },
+        {
+          "address": "3c754",
+          "function": "printk"
+        },
+        {
+          "address": "3c75c",
+          "function": "rtw_hw_deinit"
+        },
+        {
+          "address": "3c768",
+          "function": "rtw_check_efem_type"
+        },
+        {
+          "address": "3c778",
+          "function": "rtw_ther_default_mib"
+        },
+        {
+          "address": "3c780",
+          "function": "rtw_init_txq"
+        },
+        {
+          "address": "3c788",
+          "function": "rtw_init_lmt_txreq"
+        },
+        {
+          "address": "3c790",
+          "function": "rtw_txsc_amsdu_timeout_init"
+        },
+        {
+          "address": "3c798",
+          "function": "rtw_swq_priv_init"
+        },
+        {
+          "address": "3c7ac",
+          "function": "rtw_pci_primary_adapter_init"
+        },
+        {
+          "address": "3c7dc",
+          "function": "printk"
+        },
+        {
+          "address": "3c7e4",
+          "function": "rtw_swq_priv_deinit"
+        },
+        {
+          "address": "3c7ec",
+          "function": "rtw_os_rx_deinit"
+        },
+        {
+          "address": "3c7f8",
+          "function": "rtw_drv_add_vir_ifaces"
+        },
+        {
+          "address": "3c808",
+          "function": "devobj_data_init"
+        },
+        {
+          "address": "3c838",
+          "function": "printk"
+        },
+        {
+          "address": "3c840",
+          "function": "devobj_data_deinit"
+        },
+        {
+          "address": "3c848",
+          "function": "rtw_drv_stop_vir_ifaces"
+        },
+        {
+          "address": "3c850",
+          "function": "rtw_drv_free_vir_ifaces"
+        },
+        {
+          "address": "3c858",
+          "function": "rtw_pci_primary_adapter_deinit"
+        },
+        {
+          "address": "3c890",
+          "function": "printk"
+        },
+        {
+          "address": "3c89c",
+          "function": "find_vpid"
+        },
+        {
+          "address": "3c8a8",
+          "function": "kill_pid"
+        },
+        {
+          "address": "3c8b0",
+          "function": "rtw_os_ndevs_init"
+        },
+        {
+          "address": "3c8e0",
+          "function": "printk"
+        },
+        {
+          "address": "3c8ec",
+          "function": "rtw_ctcwifi_adapter_set"
+        },
+        {
+          "address": "3c8f4",
+          "function": "pci_alloc_irq"
+        },
+        {
+          "address": "3c924",
+          "function": "printk"
+        },
+        {
+          "address": "3c92c",
+          "function": "rtw_os_ndevs_deinit"
+        },
+        {
+          "address": "3c964",
+          "function": "printk"
+        },
+        {
+          "address": "3c97c",
+          "function": "pci_read_config_byte"
+        },
+        {
+          "address": "3c994",
+          "function": "pci_write_config_byte"
+        },
+        {
+          "address": "3c9b0",
+          "function": "pci_read_config_byte"
+        },
+        {
+          "address": "3c9fc",
+          "function": "printk"
+        },
+        {
+          "address": "3ca04",
+          "function": "devobj_trx_resource_init"
+        },
+        {
+          "address": "3ca14",
+          "function": "rtw_hw_init"
+        },
+        {
+          "address": "3ca44",
+          "function": "printk"
+        },
+        {
+          "address": "3ca4c",
+          "function": "devobj_trx_resource_deinit"
+        },
+        {
+          "address": "3ca54",
+          "function": "pci_dvobj_deinit"
+        },
+        {
+          "address": "3ca70",
+          "function": "__stack_chk_fail"
+        }
+      ],
+      "relocated_direct_calls": [
+        "printk",
+        "devobj_init",
+        "pci_enable_device",
+        "devobj_deinit",
+        "printk",
+        "printk",
+        "dma_set_mask",
+        "dma_set_coherent_mask",
+        "pci_set_master",
+        "pci_request_regions",
+        "printk",
+        "printk",
+        "pci_iomap",
+        "pci_read_config_word",
+        "pci_write_config_word",
+        "iounmap",
+        "pci_release_regions",
+        "pci_disable_device",
+        "printk",
+        "printk",
+        "printk",
+        "printk",
+        "printk",
+        "pci_read_config_word",
+        "printk",
+        "printk",
+        "pci_read_config_byte",
+        "printk",
+        "printk",
+        "printk",
+        "pci_write_config_word",
+        "printk",
+        "pci_read_config_word",
+        "printk",
+        "printk",
+        "printk",
+        "printk",
+        "pci_read_config_byte",
+        "printk",
+        "printk",
+        "pci_read_config_byte",
+        "pci_write_config_byte",
+        "printk",
+        "printk",
+        "printk",
+        "printk",
+        "pci_read_config_byte",
+        "printk",
+        "printk",
+        "printk",
+        "pci_write_config_byte",
+        "pci_read_config_byte",
+        "pci_read_config_dword",
+        "printk",
+        "rtw_os_rx_init",
+        "printk",
+        "rtw_hw_deinit",
+        "rtw_check_efem_type",
+        "rtw_ther_default_mib",
+        "rtw_init_txq",
+        "rtw_init_lmt_txreq",
+        "rtw_txsc_amsdu_timeout_init",
+        "rtw_swq_priv_init",
+        "rtw_pci_primary_adapter_init",
+        "printk",
+        "rtw_swq_priv_deinit",
+        "rtw_os_rx_deinit",
+        "rtw_drv_add_vir_ifaces",
+        "devobj_data_init",
+        "printk",
+        "devobj_data_deinit",
+        "rtw_drv_stop_vir_ifaces",
+        "rtw_drv_free_vir_ifaces",
+        "printk",
+        "find_vpid",
+        "kill_pid",
+        "rtw_os_ndevs_init",
+        "printk",
+        "rtw_ctcwifi_adapter_set",
+        "pci_alloc_irq",
+        "printk",
+        "rtw_os_ndevs_deinit",
+        "printk",
+        "pci_read_config_byte",
+        "pci_write_config_byte",
+        "pci_read_config_byte",
+        "printk",
+        "devobj_trx_resource_init",
+        "rtw_hw_init",
+        "printk",
+        "devobj_trx_resource_deinit",
+        "__stack_chk_fail"
+      ]
+    },
+    "rtw_hw_init": {
+      "path": "analysis/radio-stock-lifecycle/rtw_hw_init.asm",
+      "sha256": "82252b317bcf49f789d03e358c37c6ddfd5aa01b29a8a439ec0934f4398493b7",
+      "indirect_calls": 0,
+      "direct_calls_with_addresses": [
+        {
+          "address": "10cfe4",
+          "function": "_rtw_memset"
+        },
+        {
+          "address": "10d008",
+          "function": "rtw_phl_init"
+        },
+        {
+          "address": "10d01c",
+          "function": "rtw_phl_get_com"
+        },
+        {
+          "address": "10d028",
+          "function": "rtw_nvm_efuse_init"
+        },
+        {
+          "address": "10d030",
+          "function": "rtw_core_update_default_setting"
+        },
+        {
+          "address": "10d038",
+          "function": "rtw_phl_cap_pre_config"
+        },
+        {
+          "address": "10d040",
+          "function": "rtw_phl_trx_alloc"
+        },
+        {
+          "address": "10d07c",
+          "function": "rtw_core_register_phl_msg"
+        },
+        {
+          "address": "10d090",
+          "function": "rtw_phl_preload"
+        },
+        {
+          "address": "10d098",
+          "function": "rtw_phl_final_cap_decision"
+        },
+        {
+          "address": "10d0a4",
+          "function": "rtw_hw_dump_hal_spec"
+        },
+        {
+          "address": "10d0c0",
+          "function": "rtw_phl_watchdog_init"
+        },
+        {
+          "address": "10d128",
+          "function": "printk"
+        },
+        {
+          "address": "10d138",
+          "function": "rtw_phl_deinit"
+        },
+        {
+          "address": "10d148",
+          "function": "__stack_chk_fail"
+        }
+      ],
+      "relocated_direct_calls": [
+        "_rtw_memset",
+        "rtw_phl_init",
+        "rtw_phl_get_com",
+        "rtw_nvm_efuse_init",
+        "rtw_core_update_default_setting",
+        "rtw_phl_cap_pre_config",
+        "rtw_phl_trx_alloc",
+        "rtw_core_register_phl_msg",
+        "rtw_phl_preload",
+        "rtw_phl_final_cap_decision",
+        "rtw_hw_dump_hal_spec",
+        "rtw_phl_watchdog_init",
+        "printk",
+        "rtw_phl_deinit",
+        "__stack_chk_fail"
+      ]
+    },
+    "rtw_phl_start": {
+      "path": "analysis/radio-stock-lifecycle/rtw_phl_start.asm",
+      "sha256": "90dc832e2f67d410eac2c418dda98c96feb331e42a83a7c4e01c76595089708a",
+      "indirect_calls": 0,
+      "direct_calls_with_addresses": [
+        {
+          "address": "12da34",
+          "function": "rtw_hal_start"
+        },
+        {
+          "address": "12da58",
+          "function": "rtw_phl_init_free_para_buf"
+        },
+        {
+          "address": "12da90",
+          "function": "phl_test_module_start"
+        },
+        {
+          "address": "12dac4",
+          "function": "printk"
+        },
+        {
+          "address": "12dad0",
+          "function": "phl_disp_eng_start"
+        },
+        {
+          "address": "12dae8",
+          "function": "phl_msg_hub_start"
+        },
+        {
+          "address": "12db10",
+          "function": "_rtw_memset"
+        },
+        {
+          "address": "12db30",
+          "function": "phl_msg_hub_register_recver"
+        },
+        {
+          "address": "12db3c",
+          "function": "phl_datapath_start"
+        },
+        {
+          "address": "12db88",
+          "function": "phl_test_module_stop"
+        },
+        {
+          "address": "12db98",
+          "function": "printk"
+        },
+        {
+          "address": "12dbb4",
+          "function": "phl_msg_hub_update_recver_mask"
+        },
+        {
+          "address": "12dbc0",
+          "function": "phl_module_stop"
+        },
+        {
+          "address": "12dbd4",
+          "function": "rtw_hal_stop"
+        },
+        {
+          "address": "12dbdc",
+          "function": "__stack_chk_fail"
+        }
+      ],
+      "relocated_direct_calls": [
+        "rtw_hal_start",
+        "rtw_phl_init_free_para_buf",
+        "phl_test_module_start",
+        "printk",
+        "phl_disp_eng_start",
+        "phl_msg_hub_start",
+        "_rtw_memset",
+        "phl_msg_hub_register_recver",
+        "phl_datapath_start",
+        "phl_test_module_stop",
+        "printk",
+        "phl_msg_hub_update_recver_mask",
+        "rtw_hal_stop",
+        "__stack_chk_fail"
+      ]
+    },
+    "rtw_hal_start": {
+      "path": "analysis/radio-stock-lifecycle/rtw_hal_start.asm",
+      "sha256": "28c1a2d111a77974719373c3eb98f84edb8e349062d077955cee435702e5862a",
+      "indirect_calls": 1,
+      "direct_calls_with_addresses": [
+        {
+          "address": "1c54f8",
+          "function": "_rtw_memset"
+        },
+        {
+          "address": "1c5514",
+          "function": "_rtw_memset"
+        },
+        {
+          "address": "1c5530",
+          "function": "rtw_hal_set_default_var"
+        },
+        {
+          "address": "1c5544",
+          "function": "rtw_hal_mac_get_pwr_reg"
+        },
+        {
+          "address": "1c5580",
+          "function": "rtw_hal_mac_write_pwr_limit_en"
+        },
+        {
+          "address": "1c558c",
+          "function": "rtw_hal_rf_set_regulation"
+        },
+        {
+          "address": "1c55b8",
+          "function": "rtw_hal_mac_set_pwr_reg"
+        },
+        {
+          "address": "1c55e8",
+          "function": "rtw_hal_rf_set_power"
+        },
+        {
+          "address": "1c55f4",
+          "function": "_get_path_from_ant_num"
+        },
+        {
+          "address": "1c5600",
+          "function": "_get_path_from_ant_num"
+        },
+        {
+          "address": "1c5618",
+          "function": "rtw_hal_bb_trx_path_cfg"
+        },
+        {
+          "address": "1c5624",
+          "function": "_get_path_from_ant_num"
+        },
+        {
+          "address": "1c5634",
+          "function": "rtw_hal_mac_set_dbglog_cfg"
+        },
+        {
+          "address": "1c569c",
+          "function": "printk"
+        },
+        {
+          "address": "1c56bc",
+          "function": "printk"
+        },
+        {
+          "address": "1c56e4",
+          "function": "printk"
+        },
+        {
+          "address": "1c5700",
+          "function": "printk"
+        },
+        {
+          "address": "1c5740",
+          "function": "printk"
+        },
+        {
+          "address": "1c5758",
+          "function": "printk"
+        },
+        {
+          "address": "1c576c",
+          "function": "__stack_chk_fail"
+        }
+      ],
+      "relocated_direct_calls": [
+        "_rtw_memset",
+        "_rtw_memset",
+        "rtw_hal_set_default_var",
+        "rtw_hal_mac_get_pwr_reg",
+        "rtw_hal_mac_write_pwr_limit_en",
+        "rtw_hal_rf_set_regulation",
+        "rtw_hal_mac_set_pwr_reg",
+        "rtw_hal_rf_set_power",
+        "_get_path_from_ant_num",
+        "_get_path_from_ant_num",
+        "rtw_hal_bb_trx_path_cfg",
+        "_get_path_from_ant_num",
+        "rtw_hal_mac_set_dbglog_cfg",
+        "printk",
+        "printk",
+        "printk",
+        "printk",
+        "printk",
+        "printk",
+        "__stack_chk_fail"
+      ]
+    },
+    "hal_start_8852ce": {
+      "path": "analysis/radio-stock-lifecycle/hal_start_8852ce.asm",
+      "sha256": "5a5edbcf92333881a978eebb2375f876e5b537fdf58c0d0148a4fe584e13d0ae",
+      "indirect_calls": 0,
+      "direct_calls_with_addresses": [
+        {
+          "address": "27b044",
+          "function": "_rtw_memset"
+        },
+        {
+          "address": "27b054",
+          "function": "_hal_pre_init_8852ce"
+        },
+        {
+          "address": "27b064",
+          "function": "hal_start_8852c"
+        },
+        {
+          "address": "27b0c0",
+          "function": "printk"
+        },
+        {
+          "address": "27b0cc",
+          "function": "_hal_set_pcicfg_8852ce"
+        },
+        {
+          "address": "27b100",
+          "function": "printk"
+        },
+        {
+          "address": "27b10c",
+          "function": "_hal_ltr_set_pcie_8852ce"
+        },
+        {
+          "address": "27b140",
+          "function": "printk"
+        },
+        {
+          "address": "27b14c",
+          "function": "_hal_ltr_sw_init_state_8852ce"
+        },
+        {
+          "address": "27b180",
+          "function": "printk"
+        },
+        {
+          "address": "27b188",
+          "function": "__stack_chk_fail"
+        }
+      ],
+      "relocated_direct_calls": [
+        "_rtw_memset",
+        "hal_start_8852c",
+        "printk",
+        "_hal_set_pcicfg_8852ce",
+        "printk",
+        "_hal_ltr_set_pcie_8852ce",
+        "printk",
+        "_hal_ltr_sw_init_state_8852ce",
+        "printk",
+        "__stack_chk_fail"
+      ]
+    },
+    "hal_start_8192xbe": {
+      "path": "analysis/radio-stock-lifecycle/hal_start_8192xbe.asm",
+      "sha256": "b16a91c73e121dbbc69e68878b5f297ac8b1d2a18faa4eff59f378bbf9e5b30f",
+      "indirect_calls": 0,
+      "direct_calls_with_addresses": [
+        {
+          "address": "281ae8",
+          "function": "_rtw_memset"
+        },
+        {
+          "address": "281af8",
+          "function": "_hal_pre_init_8192xbe"
+        },
+        {
+          "address": "281b08",
+          "function": "hal_start_8192xb"
+        },
+        {
+          "address": "281b64",
+          "function": "printk"
+        },
+        {
+          "address": "281b70",
+          "function": "_hal_set_pcicfg_8192xbe"
+        },
+        {
+          "address": "281ba4",
+          "function": "printk"
+        },
+        {
+          "address": "281bb0",
+          "function": "_hal_ltr_set_pcie_8192xbe"
+        },
+        {
+          "address": "281be4",
+          "function": "printk"
+        },
+        {
+          "address": "281bf0",
+          "function": "_hal_ltr_sw_init_state_8192xbe"
+        },
+        {
+          "address": "281c24",
+          "function": "printk"
+        },
+        {
+          "address": "281c2c",
+          "function": "__stack_chk_fail"
+        }
+      ],
+      "relocated_direct_calls": [
+        "_rtw_memset",
+        "hal_start_8192xb",
+        "printk",
+        "_hal_set_pcicfg_8192xbe",
+        "printk",
+        "_hal_ltr_set_pcie_8192xbe",
+        "printk",
+        "_hal_ltr_sw_init_state_8192xbe",
+        "printk",
+        "__stack_chk_fail"
+      ]
+    },
+    "hal_start_8852c": {
+      "path": "analysis/radio-stock-lifecycle/hal_start_8852c.asm",
+      "sha256": "f60758c87ff94685533bbc4ce2e4545f3c45c7a0db300c4c51dcc49a72a58d11",
+      "indirect_calls": 0,
+      "direct_calls_with_addresses": [
+        {
+          "address": "27795c",
+          "function": "rtw_hal_mac_hal_init"
+        },
+        {
+          "address": "277980",
+          "function": "rtw_hal_set_rxfltr_by_mode"
+        },
+        {
+          "address": "277990",
+          "function": "rtw_hal_mac_set_rxfltr_mpdu_size"
+        },
+        {
+          "address": "2779ac",
+          "function": "rtw_hal_mac_set_hw_rts_th"
+        },
+        {
+          "address": "2779d4",
+          "function": "rtw_hal_mac_set_rxfltr_by_subtype"
+        },
+        {
+          "address": "277a00",
+          "function": "rtw_hal_final_cap_decision"
+        },
+        {
+          "address": "277a10",
+          "function": "rtw_hal_dl_all_para_file"
+        },
+        {
+          "address": "277a1c",
+          "function": "rtw_hal_mac_enable_bb_rf"
+        },
+        {
+          "address": "277a28",
+          "function": "rtw_hal_mac_enable_bb_rf"
+        },
+        {
+          "address": "277a30",
+          "function": "rtw_hal_init_bb_reg"
+        },
+        {
+          "address": "277a3c",
+          "function": "rtw_hal_init_rf_reg"
+        },
+        {
+          "address": "277a54",
+          "function": "rtw_hal_bb_dm_init"
+        },
+        {
+          "address": "277a5c",
+          "function": "rtw_hal_rf_dm_init"
+        },
+        {
+          "address": "277a68",
+          "function": "rtw_hal_mac_get_append_fcs"
+        },
+        {
+          "address": "277ac8",
+          "function": "rtw_hal_set_rxfltr_by_mode"
+        },
+        {
+          "address": "277ad8",
+          "function": "rtw_hal_mac_set_rxfltr_mpdu_size"
+        },
+        {
+          "address": "277af4",
+          "function": "rtw_hal_mac_set_hw_rts_th"
+        },
+        {
+          "address": "277b14",
+          "function": "printk"
+        },
+        {
+          "address": "277b30",
+          "function": "rtw_hal_mac_set_rxfltr_by_subtype"
+        },
+        {
+          "address": "277b6c",
+          "function": "printk"
+        },
+        {
+          "address": "277b88",
+          "function": "rtw_hal_mac_set_rxfltr_by_subtype"
+        },
+        {
+          "address": "277bc4",
+          "function": "printk"
+        },
+        {
+          "address": "277be0",
+          "function": "rtw_hal_mac_set_rxfltr_by_subtype"
+        },
+        {
+          "address": "277c1c",
+          "function": "printk"
+        },
+        {
+          "address": "277c30",
+          "function": "rtw_hal_dl_all_ext_para_file"
+        },
+        {
+          "address": "277c38",
+          "function": "rtw_hal_init_bb_reg"
+        },
+        {
+          "address": "277c44",
+          "function": "rtw_hal_init_rf_reg"
+        },
+        {
+          "address": "277c68",
+          "function": "rtw_hal_mac_get_acpt_icv_err"
+        },
+        {
+          "address": "277cd4",
+          "function": "rtw_hal_mac_ppdu_stat_cfg"
+        },
+        {
+          "address": "277d00",
+          "function": "rtw_hal_hdr_conv_cfg"
+        },
+        {
+          "address": "277d10",
+          "function": "hal_fw_en_basic_log"
+        },
+        {
+          "address": "277d20",
+          "function": "_hal_read32"
+        },
+        {
+          "address": "277d38",
+          "function": "_hal_write32"
+        },
+        {
+          "address": "277d48",
+          "function": "_hal_read32"
+        },
+        {
+          "address": "277d58",
+          "function": "_hal_write32"
+        },
+        {
+          "address": "277d68",
+          "function": "printk"
+        },
+        {
+          "address": "277d78",
+          "function": "rtw_hal_mac_drvinfo_cfg"
+        },
+        {
+          "address": "277d9c",
+          "function": "printk"
+        },
+        {
+          "address": "277da4",
+          "function": "__stack_chk_fail"
+        }
+      ],
+      "relocated_direct_calls": [
+        "rtw_hal_mac_hal_init",
+        "rtw_hal_set_rxfltr_by_mode",
+        "rtw_hal_mac_set_rxfltr_mpdu_size",
+        "rtw_hal_mac_set_hw_rts_th",
+        "rtw_hal_mac_set_rxfltr_by_subtype",
+        "rtw_hal_final_cap_decision",
+        "rtw_hal_dl_all_para_file",
+        "rtw_hal_mac_enable_bb_rf",
+        "rtw_hal_mac_enable_bb_rf",
+        "rtw_hal_init_bb_reg",
+        "rtw_hal_init_rf_reg",
+        "rtw_hal_bb_dm_init",
+        "rtw_hal_rf_dm_init",
+        "rtw_hal_mac_get_append_fcs",
+        "rtw_hal_set_rxfltr_by_mode",
+        "rtw_hal_mac_set_rxfltr_mpdu_size",
+        "rtw_hal_mac_set_hw_rts_th",
+        "printk",
+        "rtw_hal_mac_set_rxfltr_by_subtype",
+        "printk",
+        "rtw_hal_mac_set_rxfltr_by_subtype",
+        "printk",
+        "rtw_hal_mac_set_rxfltr_by_subtype",
+        "printk",
+        "rtw_hal_dl_all_ext_para_file",
+        "rtw_hal_init_bb_reg",
+        "rtw_hal_init_rf_reg",
+        "rtw_hal_mac_get_acpt_icv_err",
+        "rtw_hal_mac_ppdu_stat_cfg",
+        "rtw_hal_hdr_conv_cfg",
+        "hal_fw_en_basic_log",
+        "_hal_read32",
+        "_hal_write32",
+        "_hal_read32",
+        "_hal_write32",
+        "printk",
+        "rtw_hal_mac_drvinfo_cfg",
+        "printk",
+        "__stack_chk_fail"
+      ]
+    },
+    "hal_start_8192xb": {
+      "path": "analysis/radio-stock-lifecycle/hal_start_8192xb.asm",
+      "sha256": "5d862473c6a0c6ef73a2e7d41d63449b1078e462de9a34070684ef7ec2c5d42a",
+      "indirect_calls": 0,
+      "direct_calls_with_addresses": [
+        {
+          "address": "27e440",
+          "function": "rtw_hal_mac_hal_init"
+        },
+        {
+          "address": "27e464",
+          "function": "rtw_hal_set_rxfltr_by_mode"
+        },
+        {
+          "address": "27e474",
+          "function": "rtw_hal_mac_set_rxfltr_mpdu_size"
+        },
+        {
+          "address": "27e490",
+          "function": "rtw_hal_mac_set_hw_rts_th"
+        },
+        {
+          "address": "27e4b8",
+          "function": "rtw_hal_mac_set_rxfltr_by_subtype"
+        },
+        {
+          "address": "27e4e4",
+          "function": "rtw_hal_final_cap_decision"
+        },
+        {
+          "address": "27e4f4",
+          "function": "rtw_hal_dl_all_para_file"
+        },
+        {
+          "address": "27e500",
+          "function": "rtw_hal_mac_enable_bb_rf"
+        },
+        {
+          "address": "27e50c",
+          "function": "rtw_hal_mac_enable_bb_rf"
+        },
+        {
+          "address": "27e514",
+          "function": "rtw_hal_init_bb_reg"
+        },
+        {
+          "address": "27e520",
+          "function": "rtw_hal_init_rf_reg"
+        },
+        {
+          "address": "27e538",
+          "function": "rtw_hal_bb_dm_init"
+        },
+        {
+          "address": "27e540",
+          "function": "rtw_hal_rf_dm_init"
+        },
+        {
+          "address": "27e54c",
+          "function": "rtw_hal_mac_get_append_fcs"
+        },
+        {
+          "address": "27e5ac",
+          "function": "rtw_hal_set_rxfltr_by_mode"
+        },
+        {
+          "address": "27e5bc",
+          "function": "rtw_hal_mac_set_rxfltr_mpdu_size"
+        },
+        {
+          "address": "27e5d8",
+          "function": "rtw_hal_mac_set_hw_rts_th"
+        },
+        {
+          "address": "27e5f8",
+          "function": "printk"
+        },
+        {
+          "address": "27e614",
+          "function": "rtw_hal_mac_set_rxfltr_by_subtype"
+        },
+        {
+          "address": "27e650",
+          "function": "printk"
+        },
+        {
+          "address": "27e66c",
+          "function": "rtw_hal_mac_set_rxfltr_by_subtype"
+        },
+        {
+          "address": "27e6a8",
+          "function": "printk"
+        },
+        {
+          "address": "27e6c4",
+          "function": "rtw_hal_mac_set_rxfltr_by_subtype"
+        },
+        {
+          "address": "27e700",
+          "function": "printk"
+        },
+        {
+          "address": "27e714",
+          "function": "rtw_hal_dl_all_ext_para_file"
+        },
+        {
+          "address": "27e71c",
+          "function": "rtw_hal_init_bb_reg"
+        },
+        {
+          "address": "27e728",
+          "function": "rtw_hal_init_rf_reg"
+        },
+        {
+          "address": "27e74c",
+          "function": "rtw_hal_mac_get_acpt_icv_err"
+        },
+        {
+          "address": "27e7b8",
+          "function": "rtw_hal_mac_ppdu_stat_cfg"
+        },
+        {
+          "address": "27e7e4",
+          "function": "rtw_hal_hdr_conv_cfg"
+        },
+        {
+          "address": "27e7f4",
+          "function": "hal_fw_en_basic_log"
+        },
+        {
+          "address": "27e804",
+          "function": "_hal_read32"
+        },
+        {
+          "address": "27e81c",
+          "function": "_hal_write32"
+        },
+        {
+          "address": "27e82c",
+          "function": "_hal_read32"
+        },
+        {
+          "address": "27e83c",
+          "function": "_hal_write32"
+        },
+        {
+          "address": "27e84c",
+          "function": "printk"
+        },
+        {
+          "address": "27e85c",
+          "function": "rtw_hal_mac_drvinfo_cfg"
+        },
+        {
+          "address": "27e880",
+          "function": "printk"
+        },
+        {
+          "address": "27e888",
+          "function": "__stack_chk_fail"
+        }
+      ],
+      "relocated_direct_calls": [
+        "rtw_hal_mac_hal_init",
+        "rtw_hal_set_rxfltr_by_mode",
+        "rtw_hal_mac_set_rxfltr_mpdu_size",
+        "rtw_hal_mac_set_hw_rts_th",
+        "rtw_hal_mac_set_rxfltr_by_subtype",
+        "rtw_hal_final_cap_decision",
+        "rtw_hal_dl_all_para_file",
+        "rtw_hal_mac_enable_bb_rf",
+        "rtw_hal_mac_enable_bb_rf",
+        "rtw_hal_init_bb_reg",
+        "rtw_hal_init_rf_reg",
+        "rtw_hal_bb_dm_init",
+        "rtw_hal_rf_dm_init",
+        "rtw_hal_mac_get_append_fcs",
+        "rtw_hal_set_rxfltr_by_mode",
+        "rtw_hal_mac_set_rxfltr_mpdu_size",
+        "rtw_hal_mac_set_hw_rts_th",
+        "printk",
+        "rtw_hal_mac_set_rxfltr_by_subtype",
+        "printk",
+        "rtw_hal_mac_set_rxfltr_by_subtype",
+        "printk",
+        "rtw_hal_mac_set_rxfltr_by_subtype",
+        "printk",
+        "rtw_hal_dl_all_ext_para_file",
+        "rtw_hal_init_bb_reg",
+        "rtw_hal_init_rf_reg",
+        "rtw_hal_mac_get_acpt_icv_err",
+        "rtw_hal_mac_ppdu_stat_cfg",
+        "rtw_hal_hdr_conv_cfg",
+        "hal_fw_en_basic_log",
+        "_hal_read32",
+        "_hal_write32",
+        "_hal_read32",
+        "_hal_write32",
+        "printk",
+        "rtw_hal_mac_drvinfo_cfg",
+        "printk",
+        "__stack_chk_fail"
+      ]
+    },
+    "rtw_hal_mac_hal_init": {
+      "path": "analysis/radio-stock-lifecycle/rtw_hal_mac_hal_init.asm",
+      "sha256": "0ed6278581a23b6a7938918e4aaba772cfa8c070b5fd9ff75d305de935508c03",
+      "indirect_calls": 2,
+      "direct_calls_with_addresses": [
+        {
+          "address": "1ab554",
+          "function": "printk"
+        },
+        {
+          "address": "1ab590",
+          "function": "printk"
+        },
+        {
+          "address": "1ab59c",
+          "function": "hal_mac_print_fw_version"
+        },
+        {
+          "address": "1ab5bc",
+          "function": "printk"
+        },
+        {
+          "address": "1ab5d4",
+          "function": "_hal_mac_get_ofld_cap"
+        },
+        {
+          "address": "1ab63c",
+          "function": "printk"
+        },
+        {
+          "address": "1ab644",
+          "function": "__stack_chk_fail"
+        }
+      ],
+      "relocated_direct_calls": [
+        "printk",
+        "printk",
+        "hal_mac_print_fw_version",
+        "printk",
+        "_hal_mac_get_ofld_cap",
+        "printk",
+        "__stack_chk_fail"
+      ]
+    },
+    "mac_hal_init": {
+      "path": "analysis/radio-stock-lifecycle/mac_hal_init.asm",
+      "sha256": "617d7d32b56a38b4a09191759f51030ce61749a6f643bae9d503894df7b128b1",
+      "indirect_calls": 38,
+      "direct_calls_with_addresses": [
+        {
+          "address": "2218cc",
+          "function": "mac_set_dut_env_mode"
+        },
+        {
+          "address": "221974",
+          "function": "_mp_core_swr_volt"
+        },
+        {
+          "address": "2219ac",
+          "function": "hci_func_en"
+        },
+        {
+          "address": "2219d8",
+          "function": "dmac_pre_init"
+        },
+        {
+          "address": "221ad0",
+          "function": "set_enable_bb_rf"
+        },
+        {
+          "address": "221c00",
+          "function": "clr_pcie_avoid_pldr_polling_fail"
+        },
+        {
+          "address": "221e78",
+          "function": "__stack_chk_fail"
+        }
+      ],
+      "relocated_direct_calls": [
+        "mac_set_dut_env_mode",
+        "hci_func_en",
+        "dmac_pre_init",
+        "set_enable_bb_rf",
+        "__stack_chk_fail"
+      ]
+    },
+    "pcie_pre_init": {
+      "path": "analysis/radio-stock-lifecycle/pcie_pre_init.asm",
+      "sha256": "9e608c61d6618514e20879c9d76121451acd82f801fed3d0f373d2314b14d191",
+      "indirect_calls": 103,
+      "direct_calls_with_addresses": [
+        {
+          "address": "249330",
+          "function": "chk_patch_rx_prefetch"
+        },
+        {
+          "address": "24936c",
+          "function": "chk_patch_l12_reboot"
+        },
+        {
+          "address": "2493a8",
+          "function": "chk_patch_pcie_deglitch"
+        },
+        {
+          "address": "2493b8",
+          "function": "chk_patch_pcie_l2_rxen_lat"
+        },
+        {
+          "address": "249420",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "249430",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "2494a0",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "2494b0",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "2494c0",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "2494d4",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "2494e4",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "2494f4",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "249504",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "24953c",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "24954c",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "24955c",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "249570",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "2495d4",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "2495e4",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "2495f4",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "249614",
+          "function": "chk_patch_pcie_err_ind"
+        },
+        {
+          "address": "249650",
+          "function": "chk_patch_pclk_nrdy"
+        },
+        {
+          "address": "24968c",
+          "function": "chk_patch_sic_clkreq"
+        },
+        {
+          "address": "2496d8",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "249774",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "249854",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "249864",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "249874",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "2499a4",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "2499b4",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "249b00",
+          "function": "chk_patch_dis_separation"
+        },
+        {
+          "address": "249be8",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "249bf8",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "249d2c",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "24a11c",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "24a168",
+          "function": "chk_patch_pcie_power_wake"
+        },
+        {
+          "address": "24a1a4",
+          "function": "chk_patch_apb_hang"
+        },
+        {
+          "address": "24a204",
+          "function": "chk_patch_pcie_vmain"
+        },
+        {
+          "address": "24a240",
+          "function": "chk_patch_pcie_gen2_force_ib"
+        },
+        {
+          "address": "24a2c8",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "24a2f8",
+          "function": "set_pcie_wd_exit_l1"
+        },
+        {
+          "address": "24a32c",
+          "function": "chk_patch_pcie_autok_x"
+        },
+        {
+          "address": "24a36c",
+          "function": "chk_patch_aphy_pc"
+        },
+        {
+          "address": "24a3a8",
+          "function": "chk_patch_pcie_hci_ldo"
+        },
+        {
+          "address": "24a3b8",
+          "function": "chk_patch_pcie_clkreq_delay"
+        },
+        {
+          "address": "24a3f4",
+          "function": "__stack_chk_fail"
+        }
+      ],
+      "relocated_direct_calls": [
+        "chk_patch_rx_prefetch",
+        "chk_patch_l12_reboot",
+        "chk_patch_pcie_deglitch",
+        "chk_patch_pcie_l2_rxen_lat",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "chk_patch_pcie_err_ind",
+        "chk_patch_pclk_nrdy",
+        "chk_patch_sic_clkreq",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "chk_patch_dis_separation",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "chk_patch_pcie_power_wake",
+        "chk_patch_apb_hang",
+        "chk_patch_pcie_vmain",
+        "chk_patch_pcie_gen2_force_ib",
+        "is_chip_id",
+        "set_pcie_wd_exit_l1",
+        "chk_patch_pcie_autok_x",
+        "chk_patch_aphy_pc",
+        "chk_patch_pcie_hci_ldo",
+        "chk_patch_pcie_clkreq_delay",
+        "__stack_chk_fail"
+      ]
+    },
+    "pcie_init": {
+      "path": "analysis/radio-stock-lifecycle/pcie_init.asm",
+      "sha256": "0c20cef5e4d6aab8eeba1e1222c457fe0168963bb9f0848a9c9ce217b59d9ffc",
+      "indirect_calls": 12,
+      "direct_calls_with_addresses": [
+        {
+          "address": "24a4b0",
+          "function": "chk_patch_pcie_power_wake_efuse"
+        },
+        {
+          "address": "24a4b8",
+          "function": "chk_patch_pcie_sw_ltr"
+        },
+        {
+          "address": "24a50c",
+          "function": "chk_patch_pcie_sw_ltr"
+        },
+        {
+          "address": "24a668",
+          "function": "__stack_chk_fail"
+        }
+      ],
+      "relocated_direct_calls": [
+        "chk_patch_pcie_power_wake_efuse",
+        "chk_patch_pcie_sw_ltr",
+        "chk_patch_pcie_sw_ltr",
+        "__stack_chk_fail"
+      ]
+    },
+    "dmac_init": {
+      "path": "analysis/radio-stock-lifecycle/dmac_init.asm",
+      "sha256": "821839dda9ea2c0f664549d3e19c229ab4705937dda9ae1c91528dbe6f7d9a66",
+      "indirect_calls": 38,
+      "direct_calls_with_addresses": [
+        {
+          "address": "23e8bc",
+          "function": "dle_init"
+        },
+        {
+          "address": "23e908",
+          "function": "preload_init"
+        },
+        {
+          "address": "23e94c",
+          "function": "hfc_init"
+        },
+        {
+          "address": "23e990",
+          "function": "check_mac_en"
+        },
+        {
+          "address": "23eab4",
+          "function": "chk_patch_ss2f_path"
+        },
+        {
+          "address": "23eb88",
+          "function": "check_mac_en"
+        },
+        {
+          "address": "23ec10",
+          "function": "check_mac_en"
+        },
+        {
+          "address": "23ec70",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23eca8",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23ed08",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23ed18",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23ed28",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23ed3c",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23ed4c",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23ed5c",
+          "function": "is_chip_id"
+        }
+      ],
+      "relocated_direct_calls": [
+        "dle_init",
+        "preload_init",
+        "hfc_init",
+        "check_mac_en",
+        "chk_patch_ss2f_path",
+        "check_mac_en",
+        "check_mac_en",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id"
+      ]
+    },
+    "cmac_init": {
+      "path": "analysis/radio-stock-lifecycle/cmac_init.asm",
+      "sha256": "18129aa17f5433dba5eb4eea48bb06939a23250454e862012d99a4991f748524",
+      "indirect_calls": 99,
+      "direct_calls_with_addresses": [
+        {
+          "address": "23f084",
+          "function": "check_mac_en"
+        },
+        {
+          "address": "23f0f0",
+          "function": "is_qta_poh"
+        },
+        {
+          "address": "23f12c",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f158",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f1d4",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f258",
+          "function": "set_hw_edca_param"
+        },
+        {
+          "address": "23f26c",
+          "function": "rst_port_info"
+        },
+        {
+          "address": "23f2ac",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f2bc",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f2cc",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f2e8",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f2f8",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f314",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f328",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f374",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f384",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f394",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f3a8",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f3b8",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f3c8",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f3d8",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f418",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f428",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f444",
+          "function": "addr_cam_init"
+        },
+        {
+          "address": "23f484",
+          "function": "rx_fltr_init"
+        },
+        {
+          "address": "23f4d0",
+          "function": "check_mac_en"
+        },
+        {
+          "address": "23f528",
+          "function": "chk_patch_dis_resp_chk"
+        },
+        {
+          "address": "23f5a4",
+          "function": "mac_two_nav_cfg"
+        },
+        {
+          "address": "23f5b0",
+          "function": "spatial_reuse_init"
+        },
+        {
+          "address": "23f630",
+          "function": "check_mac_en"
+        },
+        {
+          "address": "23f6fc",
+          "function": "check_mac_en"
+        },
+        {
+          "address": "23f740",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f75c",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f77c",
+          "function": "rst_bacam"
+        },
+        {
+          "address": "23f7dc",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f878",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f888",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f8a0",
+          "function": "is_qta_poh"
+        },
+        {
+          "address": "23f95c",
+          "function": "chk_patch_vht_ampdu_max_len"
+        },
+        {
+          "address": "23f978",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f990",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23f9a8",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23fab8",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23fb08",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23fbbc",
+          "function": "check_mac_en"
+        },
+        {
+          "address": "23fbe8",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23fc90",
+          "function": "check_mac_en"
+        },
+        {
+          "address": "23fd04",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23fda4",
+          "function": "chk_patch_wmac_timer_src"
+        },
+        {
+          "address": "23fe60",
+          "function": "check_mac_en"
+        },
+        {
+          "address": "23feb4",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "23ff08",
+          "function": "check_mac_en"
+        },
+        {
+          "address": "23ffa8",
+          "function": "chk_patch_vht_ampdu_max_len"
+        },
+        {
+          "address": "23ffec",
+          "function": "check_mac_en"
+        },
+        {
+          "address": "2400e0",
+          "function": "check_mac_en"
+        },
+        {
+          "address": "240138",
+          "function": "chk_patch_dis_resp_chk"
+        },
+        {
+          "address": "240174",
+          "function": "__stack_chk_fail"
+        }
+      ],
+      "relocated_direct_calls": [
+        "check_mac_en",
+        "is_qta_poh",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "set_hw_edca_param",
+        "rst_port_info",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "addr_cam_init",
+        "rx_fltr_init",
+        "check_mac_en",
+        "chk_patch_dis_resp_chk",
+        "mac_two_nav_cfg",
+        "spatial_reuse_init",
+        "check_mac_en",
+        "check_mac_en",
+        "is_chip_id",
+        "is_chip_id",
+        "rst_bacam",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_qta_poh",
+        "chk_patch_vht_ampdu_max_len",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "is_chip_id",
+        "check_mac_en",
+        "is_chip_id",
+        "check_mac_en",
+        "is_chip_id",
+        "chk_patch_wmac_timer_src",
+        "check_mac_en",
+        "is_chip_id",
+        "check_mac_en",
+        "chk_patch_vht_ampdu_max_len",
+        "check_mac_en",
+        "check_mac_en",
+        "chk_patch_dis_resp_chk",
+        "__stack_chk_fail"
+      ]
+    },
+    "hal_update_txbd_8852ce": {
+      "path": "analysis/radio-stock-lifecycle/hal_update_txbd_8852ce.asm",
+      "sha256": "f88a75ecc433152026c411dbadb85c10e1db5e47006a1b56abd4126c4fd0c724",
+      "indirect_calls": 0,
+      "direct_calls_with_addresses": [
+        {
+          "address": "27cea0",
+          "function": "printk"
+        },
+        {
+          "address": "27cf50",
+          "function": "printk"
+        },
+        {
+          "address": "27cf74",
+          "function": "printk"
+        },
+        {
+          "address": "27cf98",
+          "function": "printk"
+        }
+      ],
+      "relocated_direct_calls": [
+        "printk",
+        "printk",
+        "printk",
+        "printk"
+      ]
+    },
+    "hal_update_txbd_8192xbe": {
+      "path": "analysis/radio-stock-lifecycle/hal_update_txbd_8192xbe.asm",
+      "sha256": "22b327eec787fdae1975568df52f14d56562fd305e0e8c400bd252dfd237f71c",
+      "indirect_calls": 0,
+      "direct_calls_with_addresses": [
+        {
+          "address": "28397c",
+          "function": "printk"
+        },
+        {
+          "address": "283a2c",
+          "function": "printk"
+        },
+        {
+          "address": "283a50",
+          "function": "printk"
+        },
+        {
+          "address": "283a74",
+          "function": "printk"
+        }
+      ],
+      "relocated_direct_calls": [
+        "printk",
+        "printk",
+        "printk",
+        "printk"
+      ]
+    },
+    "hal_pltfm_tx_8852ce": {
+      "path": "analysis/radio-stock-lifecycle/hal_pltfm_tx_8852ce.asm",
+      "sha256": "7d843973a29768422cdc5e2a38ceb21c361f0a9d49d66bbabf6eb4bd1a67d997",
+      "indirect_calls": 0,
+      "direct_calls_with_addresses": [],
+      "relocated_direct_calls": []
+    },
+    "hal_pltfm_tx_8192xbe": {
+      "path": "analysis/radio-stock-lifecycle/hal_pltfm_tx_8192xbe.asm",
+      "sha256": "7d843973a29768422cdc5e2a38ceb21c361f0a9d49d66bbabf6eb4bd1a67d997",
+      "indirect_calls": 0,
+      "direct_calls_with_addresses": [],
+      "relocated_direct_calls": []
+    },
+    "_hal_pre_init_8852ce": {
+      "path": "analysis/radio-stock-lifecycle/_hal_pre_init_8852ce.asm",
+      "sha256": "a5403efdc8eee1fa3b0389f9aab910e1df51289bacd9ba735d0ac705ab9b604a",
+      "direct_calls_with_addresses": [
+        {
+          "address": "27a3e0",
+          "function": "printk"
+        },
+        {
+          "address": "27a400",
+          "function": "printk"
+        },
+        {
+          "address": "27a424",
+          "function": "printk"
+        },
+        {
+          "address": "27a460",
+          "function": "rtw_phl_get_txbd_buf"
+        },
+        {
+          "address": "27a46c",
+          "function": "rtw_phl_get_rxbd_buf"
+        }
+      ]
+    },
+    "_hal_pre_init_8192xbe": {
+      "path": "analysis/radio-stock-lifecycle/_hal_pre_init_8192xbe.asm",
+      "sha256": "280462ad9c60b53881dade83ec36c269093a5d2ea22e39fb27e46c990ed7cb30",
+      "direct_calls_with_addresses": [
+        {
+          "address": "280e54",
+          "function": "printk"
+        },
+        {
+          "address": "280e74",
+          "function": "printk"
+        },
+        {
+          "address": "280e98",
+          "function": "printk"
+        },
+        {
+          "address": "280ed4",
+          "function": "rtw_phl_get_txbd_buf"
+        },
+        {
+          "address": "280ee0",
+          "function": "rtw_phl_get_rxbd_buf"
+        }
+      ]
+    },
+    "_hal_dl_para_file": {
+      "path": "analysis/radio-stock-lifecycle/_hal_dl_para_file.asm",
+      "sha256": "cd1c5f29a3d54a9f85e75aa74b67983ea732861ada5971db5eb5d2d6e174529d",
+      "direct_calls_with_addresses": [
+        {
+          "address": "1d828c",
+          "function": "printk"
+        },
+        {
+          "address": "1d82e4",
+          "function": "dbg_rtw_zvmalloc"
+        },
+        {
+          "address": "1d82f8",
+          "function": "rtw_nvm_get_para_path"
+        },
+        {
+          "address": "1d8304",
+          "function": "rtw_phl_get_rfe_type"
+        },
+        {
+          "address": "1d8314",
+          "function": "rtw_gen_sub_dir_name"
+        },
+        {
+          "address": "1d8348",
+          "function": "snprintf"
+        },
+        {
+          "address": "1d8378",
+          "function": "rtw_retrieve_from_file"
+        },
+        {
+          "address": "1d8404",
+          "function": "printk"
+        },
+        {
+          "address": "1d8408",
+          "function": "dump_stack"
+        },
+        {
+          "address": "1d8444",
+          "function": "printk"
+        },
+        {
+          "address": "1d8464",
+          "function": "printk"
+        },
+        {
+          "address": "1d84b4",
+          "function": "dbg_rtw_vmfree"
+        },
+        {
+          "address": "1d8518",
+          "function": "printk"
+        },
+        {
+          "address": "1d851c",
+          "function": "dump_stack"
+        },
+        {
+          "address": "1d8540",
+          "function": "printk"
+        },
+        {
+          "address": "1d8570",
+          "function": "printk"
+        },
+        {
+          "address": "1d85e4",
+          "function": "dbg_rtw_vmfree"
+        },
+        {
+          "address": "1d8600",
+          "function": "printk"
+        },
+        {
+          "address": "1d863c",
+          "function": "printk"
+        },
+        {
+          "address": "1d8640",
+          "function": "dump_stack"
+        },
+        {
+          "address": "1d865c",
+          "function": "__stack_chk_fail"
+        }
+      ]
+    },
+    "_hal_dl_ext_para_file": {
+      "path": "analysis/radio-stock-lifecycle/_hal_dl_ext_para_file.asm",
+      "sha256": "2dc6c525b6981c3790b6f2f49402194062907ba4e0510daf2bf5011d0f5a4427",
+      "direct_calls_with_addresses": [
+        {
+          "address": "1d8710",
+          "function": "printk"
+        },
+        {
+          "address": "1d8768",
+          "function": "dbg_rtw_zvmalloc"
+        },
+        {
+          "address": "1d877c",
+          "function": "rtw_nvm_get_para_path"
+        },
+        {
+          "address": "1d8794",
+          "function": "rtw_get_fem_name"
+        },
+        {
+          "address": "1d879c",
+          "function": "rtw_phl_get_rfe_type"
+        },
+        {
+          "address": "1d87ac",
+          "function": "rtw_gen_sub_dir_name"
+        },
+        {
+          "address": "1d87e8",
+          "function": "snprintf"
+        },
+        {
+          "address": "1d8818",
+          "function": "rtw_retrieve_from_file"
+        },
+        {
+          "address": "1d88a4",
+          "function": "printk"
+        },
+        {
+          "address": "1d88a8",
+          "function": "dump_stack"
+        },
+        {
+          "address": "1d88e4",
+          "function": "printk"
+        },
+        {
+          "address": "1d8904",
+          "function": "printk"
+        },
+        {
+          "address": "1d8954",
+          "function": "dbg_rtw_vmfree"
+        },
+        {
+          "address": "1d89b8",
+          "function": "printk"
+        },
+        {
+          "address": "1d89bc",
+          "function": "dump_stack"
+        },
+        {
+          "address": "1d89e0",
+          "function": "printk"
+        },
+        {
+          "address": "1d8a10",
+          "function": "printk"
+        },
+        {
+          "address": "1d8a84",
+          "function": "dbg_rtw_vmfree"
+        },
+        {
+          "address": "1d8aa0",
+          "function": "printk"
+        },
+        {
+          "address": "1d8adc",
+          "function": "printk"
+        },
+        {
+          "address": "1d8ae0",
+          "function": "dump_stack"
+        },
+        {
+          "address": "1d8afc",
+          "function": "__stack_chk_fail"
+        }
+      ]
+    },
+    "rtw_hal_dl_all_para_file": {
+      "path": "analysis/radio-stock-lifecycle/rtw_hal_dl_all_para_file.asm",
+      "sha256": "b86f544944a94a5f031b33785a4b5d9c3e23e92fb5429636ce28d233fccd948c",
+      "direct_calls_with_addresses": [
+        {
+          "address": "1d8fe8",
+          "function": "phl_load_file_data_alloc"
+        },
+        {
+          "address": "1d8ffc",
+          "function": "phl_load_file_data_alloc"
+        },
+        {
+          "address": "1d9010",
+          "function": "phl_load_file_data_alloc"
+        },
+        {
+          "address": "1d9024",
+          "function": "phl_load_file_data_alloc"
+        },
+        {
+          "address": "1d9038",
+          "function": "phl_load_file_data_alloc"
+        },
+        {
+          "address": "1d904c",
+          "function": "phl_load_file_data_alloc"
+        },
+        {
+          "address": "1d9060",
+          "function": "_phl_pwrlmt_para_alloc"
+        },
+        {
+          "address": "1d9074",
+          "function": "_phl_pwrlmt_para_alloc"
+        },
+        {
+          "address": "1d9088",
+          "function": "_phl_pwrlmt_para_alloc"
+        },
+        {
+          "address": "1d909c",
+          "function": "_phl_pwrlmt_para_alloc"
+        },
+        {
+          "address": "1d90f0",
+          "function": "_hal_dl_para_file"
+        },
+        {
+          "address": "1d910c",
+          "function": "_hal_dl_para_file"
+        },
+        {
+          "address": "1d9130",
+          "function": "_hal_dl_para_file"
+        },
+        {
+          "address": "1d9154",
+          "function": "_hal_dl_para_file"
+        },
+        {
+          "address": "1d9178",
+          "function": "_hal_dl_para_file"
+        },
+        {
+          "address": "1d919c",
+          "function": "_hal_dl_para_file"
+        },
+        {
+          "address": "1d91c0",
+          "function": "_hal_dl_para_file"
+        },
+        {
+          "address": "1d91e4",
+          "function": "_hal_dl_para_file"
+        },
+        {
+          "address": "1d9208",
+          "function": "_hal_dl_para_file"
+        },
+        {
+          "address": "1d922c",
+          "function": "_hal_dl_para_file"
+        }
+      ]
+    },
+    "rtw_hal_dl_all_ext_para_file": {
+      "path": "analysis/radio-stock-lifecycle/rtw_hal_dl_all_ext_para_file.asm",
+      "sha256": "d5860cf6afd232195fb71869780b319c1bee4e7f0ab46403fb9603751a8dc5a3",
+      "direct_calls_with_addresses": [
+        {
+          "address": "1d926c",
+          "function": "_hal_dl_ext_para_file"
+        },
+        {
+          "address": "1d928c",
+          "function": "_hal_dl_ext_para_file"
+        },
+        {
+          "address": "1d92b4",
+          "function": "_hal_dl_ext_para_file"
+        },
+        {
+          "address": "1d92d4",
+          "function": "_hal_dl_ext_para_file"
+        },
+        {
+          "address": "1d92f8",
+          "function": "_hal_dl_ext_para_file"
+        },
+        {
+          "address": "1d931c",
+          "function": "_hal_dl_ext_para_file"
+        },
+        {
+          "address": "1d9340",
+          "function": "_hal_dl_ext_para_file"
+        },
+        {
+          "address": "1d9364",
+          "function": "_hal_dl_ext_para_file"
+        }
+      ]
+    },
+    "mac_trx_init": {
+      "path": "analysis/radio-stock-lifecycle/mac_trx_init.asm",
+      "sha256": "632d6463214b4ad88d2bb0e72c9bb80cd4a084cbc81894cb077cfeb462a15a49",
+      "direct_calls_with_addresses": [
+        {
+          "address": "2401b0",
+          "function": "dmac_init"
+        },
+        {
+          "address": "240218",
+          "function": "cmac_init"
+        },
+        {
+          "address": "240290",
+          "function": "is_qta_dbcc"
+        },
+        {
+          "address": "2402cc",
+          "function": "mac_enable_imr"
+        },
+        {
+          "address": "240350",
+          "function": "mac_enable_imr"
+        },
+        {
+          "address": "240388",
+          "function": "mac_err_imr_ctrl"
+        },
+        {
+          "address": "2403c0",
+          "function": "set_host_rpr"
+        },
+        {
+          "address": "2403f4",
+          "function": "set_l2_status"
+        },
+        {
+          "address": "24042c",
+          "function": "__stack_chk_fail"
+        }
+      ]
+    },
+    "rtw_phl_final_cap_decision": {
+      "path": "analysis/radio-stock-lifecycle/rtw_phl_final_cap_decision.asm",
+      "sha256": "fdbe3b144f0f74cc5a3df10ca3c43eb2c42bbeb6f545c1503bd87bf524b2b025",
+      "direct_calls_with_addresses": [
+        {
+          "address": "150118",
+          "function": "rtw_hal_final_cap_decision"
+        }
+      ]
+    },
+    "init_hal_spec_8192xbe": {
+      "path": "analysis/radio-stock-lifecycle/init_hal_spec_8192xbe.asm",
+      "sha256": "3c64cac6aab8e0d20cec7d5af1b395476dd4eed919a1bc63be48f2e2cd880b22",
+      "direct_calls_with_addresses": [
+        {
+          "address": "2813f4",
+          "function": "init_hal_spec_8192xb"
+        }
+      ]
+    },
+    "init_hal_spec_8852ce": {
+      "path": "analysis/radio-stock-lifecycle/init_hal_spec_8852ce.asm",
+      "sha256": "f2572bcf108d2950d0dc4e5c613b003f5caaa4bb9e44f76c28f55de17b5e5826",
+      "direct_calls_with_addresses": [
+        {
+          "address": "27a94c",
+          "function": "init_hal_spec_8852c"
+        }
+      ]
+    },
+    "phl_release_busy_h2c_pkt": {
+      "path": "analysis/radio-stock-lifecycle/phl_release_busy_h2c_pkt.asm",
+      "sha256": "bb6ab82f325bde39c1a86c7b1140abb2c3b50592fdeecf9787a9b915207cff39",
+      "direct_calls_with_addresses": [
+        {
+          "address": "1914c0",
+          "function": "rtw_hal_get_fwcmd_queue_idx"
+        },
+        {
+          "address": "19150c",
+          "function": "rtw_hal_get_fwcmd_queue_idx"
+        },
+        {
+          "address": "1915d4",
+          "function": "__local_bh_enable_ip"
+        },
+        {
+          "address": "1915e0",
+          "function": "phl_enqueue_idle_h2c_pkt"
+        },
+        {
+          "address": "19161c",
+          "function": "phl_query_busy_h2c_pkt"
+        },
+        {
+          "address": "19163c",
+          "function": "phl_enqueue_idle_h2c_pkt"
+        },
+        {
+          "address": "1916bc",
+          "function": "__local_bh_enable_ip"
+        },
+        {
+          "address": "191740",
+          "function": "queued_spin_lock_slowpath"
+        }
+      ]
+    },
+    "hal_hci_cfg_8192xbe": {
+      "path": "analysis/radio-stock-lifecycle/hal_hci_cfg_8192xbe.asm",
+      "sha256": "329521f7890c0c20459becee0fa1e10f7a21a14753d9bbb854d2f75483bfbbc7",
+      "direct_calls_with_addresses": []
+    },
+    "hal_hci_cfg_8852ce": {
+      "path": "analysis/radio-stock-lifecycle/hal_hci_cfg_8852ce.asm",
+      "sha256": "134e0a8a5d9f240a112f925aa513e81eaebbbd6fa4450f18466bc5dbbe1edfad",
+      "direct_calls_with_addresses": []
+    }
+  },
+  "complete_callgraph": false,
+  "indirect_calls_require_ELF_ops_and_runtime_selection": true
+}

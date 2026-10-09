@@ -7,6 +7,11 @@
 
 #define RTL_AX_H2C_ENTRIES 256
 #define RTL_AX_H2C_BUFFER_BYTES 2048
+#define RTL_AX_H2C_RETAINED 8
+/* Original DATA and LONG_DATA keep separate eight-entry work rings. One
+ * additional slot per class is the currently available download packet. */
+#define RTL_AX_H2C_CLASS_BUFFERS (RTL_AX_H2C_RETAINED + 1)
+#define RTL_AX_H2C_POOL_BYTES (2 * RTL_AX_H2C_CLASS_BUFFERS * RTL_AX_H2C_BUFFER_BYTES)
 #define RTL_AX_H2C_INDEX 0x1080
 #define RTL_AX_WCPU_CONTROL 0x01e0
 

@@ -68,14 +68,14 @@ static void pci_clear_master(struct pci_dev *d){master=0;}
 static void pci_set_master(struct pci_dev *d){master=1;assert(dma_live==2);}
 static void *dma_alloc_coherent(struct device *d,size_t n,dma_addr_t *dma,int flags){
  unsigned int call=dma_calls++;
- assert(call<2 && n==2048);
+ assert(call<2 && n==(call==0?RTL_AX_H2C_ENTRIES*8:RTL_AX_H2C_POOL_BYTES));
  if(fault==(call==0?DMA_RING_ALLOC:DMA_PACKET_ALLOC))return NULL;
  dma_buffers[call]=calloc(1,n);dma_live++;*dma=call==0?0x100000:0x102000;
  return dma_buffers[call];
 }
 static void dma_free_coherent(struct device *d,size_t n,void *p,dma_addr_t dma){
  assert(!master && !(memory[RTL_AX_PLATFORM]&RTL_AX_BIT(1)));
- assert(n==2048 && p==dma_buffers[dma==0x100000?0:1]);dma_live--;free(p);
+ assert(n==(dma==0x100000?RTL_AX_H2C_ENTRIES*8:RTL_AX_H2C_POOL_BYTES) && p==dma_buffers[dma==0x100000?0:1]);dma_live--;free(p);
 }
 static int dma_set_mask_and_coherent(struct device *d,unsigned long long mask){
  assert(mask==0xffffffffULL);return fault==MASK?-EIO:0;
@@ -128,8 +128,9 @@ static void writew(unsigned short n,void *p){
   const unsigned char *bd=(unsigned char *)dma_buffers[0]+previous*8;
   unsigned int length=rtl_ax_ap_read32(bd)&0xffff;
   assert((rtl_ax_ap_read32(bd)&~0xffffU)==RTL_AX_BIT(30));
-  assert(rtl_ax_ap_read32(bd+4)==0x102000 && length<=2048);
-  const unsigned char *packet=dma_buffers[1];
+  unsigned int address=rtl_ax_ap_read32(bd+4);
+  assert(address>=0x102000 && address<0x102000+RTL_AX_H2C_POOL_BYTES && length<=2048);
+  const unsigned char *packet=(unsigned char *)dma_buffers[1]+address-0x102000;
   unsigned int wd=rtl_ax_ap_read32(packet),payload=wd&0x3fff,type=wd>>24;
   assert(length==payload+16 && !rtl_ax_ap_read32(packet+4) && !rtl_ax_ap_read32(packet+8) && !rtl_ax_ap_read32(packet+12));
   if(ring_only){

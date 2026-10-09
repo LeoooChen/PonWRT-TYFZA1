@@ -54,7 +54,8 @@ static inline int rtl_ax_dle_download(const struct rtl_ax_io *io,
 	rtl_ax_update32(io, 0x9008, 0x1fff3f03, (2544U << 16) | (16U << 8) | 1);
 	io->write32(io->ctx, 0x8c40, 0);
 	/* DLFW copies the operational profile's minimum WCPU quota: 60 for
-	 * this board's SCC/STF profile. Its download maximum remains zero. */
+	 * this board's SCC profile. STF has a different WCPU minimum (20),
+	 * so the caller must supply the selected profile's value. */
 	io->write32(io->ctx, 0x8c44, wcpu_minimum);
 	io->write32(io->ctx, 0x8c4c, 0);
 	io->write32(io->ctx, 0x8c50, 0);

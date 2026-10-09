@@ -23,6 +23,7 @@ struct rtl_ax_ap {
 	unsigned char *h2c_ring, *h2c_packet;
 	dma_addr_t h2c_ring_dma, h2c_packet_dma;
 	unsigned int h2c_producer;
+	unsigned int h2c_available[2];
 	unsigned char chip;
 	bool powered;
 	bool download_prepared;
@@ -78,18 +79,19 @@ static int rtl_ax_h2c_send(void *ctx, const unsigned char *data,
 			   unsigned int bytes, int section)
 {
 	struct rtl_ax_ap *radio = ctx;
-	unsigned int next, last;
+	unsigned int next, last, class = section ? 1 : 0;
+	unsigned int slot = class * RTL_AX_H2C_CLASS_BUFFERS + radio->h2c_available[class];
+	unsigned int offset = slot * RTL_AX_H2C_BUFFER_BYTES;
 	int length, ret;
 
-	length = rtl_ax_fw_packet(radio->h2c_packet, RTL_AX_H2C_BUFFER_BYTES,
+	length = rtl_ax_fw_packet(radio->h2c_packet + offset, RTL_AX_H2C_BUFFER_BYTES,
 				data, bytes, 0, section);
 	if (length < 0)
 		return length;
 	rtl_ax_txbd(radio->h2c_ring + radio->h2c_producer * 8,
-		    lower_32_bits(radio->h2c_packet_dma), length);
+		    lower_32_bits(radio->h2c_packet_dma + offset), length);
 	next = (radio->h2c_producer + 1) % RTL_AX_H2C_ENTRIES;
-	/* The coherent packet/descriptor must reach memory before publishing
-	 * the producer. Reuse the packet only after the device consumer catches up. */
+	/* Publish the coherent packet/descriptor before advancing producer. */
 	dma_wmb();
 	rtl_ax_write16(radio, RTL_AX_H2C_INDEX, next);
 	ret = radio->io.poll32(radio, RTL_AX_H2C_INDEX, 0x3ff0000, next << 16,
@@ -98,6 +100,11 @@ static int rtl_ax_h2c_send(void *ctx, const unsigned char *data,
 		return ret;
 	dma_rmb();
 	radio->h2c_producer = next;
+	/* The board sets txbd_upd_lmt=1 and txbd_multi_tag=8. A consumed
+	 * packet remains in its DATA/LONG_DATA work ring through eight more
+	 * completions of that class. The ninth slot supplies the next packet. */
+	radio->h2c_available[class] =
+		(radio->h2c_available[class] + 1) % RTL_AX_H2C_CLASS_BUFFERS;
 	return 0;
 }
 
@@ -114,7 +121,7 @@ static int rtl_ax_wait_firmware(void *ctx, unsigned int *control)
 static void rtl_ax_ring_free(struct rtl_ax_ap *radio)
 {
 	if (radio->h2c_packet)
-		dma_free_coherent(&radio->pdev->dev, RTL_AX_H2C_BUFFER_BYTES,
+		dma_free_coherent(&radio->pdev->dev, RTL_AX_H2C_POOL_BYTES,
 				  radio->h2c_packet, radio->h2c_packet_dma);
 	if (radio->h2c_ring)
 		dma_free_coherent(&radio->pdev->dev, RTL_AX_H2C_ENTRIES * 8,
@@ -128,7 +135,7 @@ static int rtl_ax_ring_prepare(struct rtl_ax_ap *radio)
 					    &radio->h2c_ring_dma, GFP_KERNEL);
 	if (!radio->h2c_ring)
 		return -ENOMEM;
-	radio->h2c_packet = dma_alloc_coherent(&radio->pdev->dev, RTL_AX_H2C_BUFFER_BYTES,
+	radio->h2c_packet = dma_alloc_coherent(&radio->pdev->dev, RTL_AX_H2C_POOL_BYTES,
 					      &radio->h2c_packet_dma, GFP_KERNEL);
 	if (!radio->h2c_packet)
 		return -ENOMEM;

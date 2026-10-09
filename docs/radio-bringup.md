@@ -50,7 +50,7 @@ scripts/test_radio_probe.py运行实际pci.c控制函数，使用四份完整原
 
 download.h接入PCI probe，在固件身份/格式校验后准备下载专用DMAC、DLE和HFC；radio_state包含download_memory及hci状态。主机bus mastering保持关闭，HCI TX/RX和所有TX channel暂停，直到channel12 host ring完成初始化。失败退出撤销DLE使能，remove/shutdown关闭下载资源。
 
-两颗芯片的本机PCIe DLFW表相同：WDE64字节页、0 linked/2048 unlinked；PLE128字节页、2544 linked/16 unlinked，总计458752字节。WDE下载最大配额为零，最小WCPU配额从本机SCC/STF运行配置复制60。PLE C2H最小16/最大32、H2C最小和最大均256；其余下载通道配额为零。只在WDE与PLE状态寄存器的queue/buffer ready位都置位后继续。
+两颗芯片的本机PCIe DLFW表相同：WDE64字节页、0 linked/2048 unlinked；PLE128字节页、2544 linked/16 unlinked，总计458752字节。WDE下载最大配额为零，最小WCPU配额从选中的运行配置复制：本机SCC表是60，STF表是20，二者不能混用。当前原生入口按SCC选择60。PLE C2H最小16/最大32、H2C最小和最大均256；其余下载通道配额为零。只在WDE与PLE状态寄存器的queue/buffer ready位都置位后继续。
 
 SDK中的hfc_preccfg_pcie_dlfw表不能直接当作本机下载写入值：本机hfc_reset_param(DLFW)只复位部分软件状态，保留已分配precost结构，实际set_fc_h2c使用保留的值。原生冷启动状态明确为零；后续运行态将另行配置。H2C的256页PLE配额与HFC pre-cost是不同字段，不将它们混为一项。
 
@@ -68,7 +68,7 @@ PCI probe在最终chip/cut/固件校验之后，先执行本机CPU-off流程：�
 
 本阶段分配256项8字节TXBD及2048字节coherent packet，均归PCI设备的32bit DMA地址域。配置0x1280/1284 descriptor地址、0x1038项数和0x1328的原机BDRAM参数{60,4,1}；数量/BDRAM字段用对应掩码更新。清channel12 index并等待消费/生产指针为零，等待BDRAM reset位自行清零。host ring就绪后仅开放channel12 TX，RX和普通TX仍暂停；本阶段没有常规RX ring。
 
-固件包使用16字节短RX格式WD。第一包为WD type13 + 8字节H2C头 + 96字节固件头，H2C type0/MAC category1/class3/function0；段包为WD type14 + 原始段字节，最长2020字节。TXBD长度包含WD，其LS为bit30，低32位填写PCI DMA地址。dma_wmb在发布生产指针前执行；硬件消费指针追上后才复用coherent packet，dma_rmb配对完成读取。下载成功后暂停HCI并关闭bus mastering，保留固件和队列对象供后续接数据面；remove/shutdown停止WCPU、关闭下载资源并释放host缓冲。
+固件包使用16字节短RX格式WD。第一包为WD type13 + 8字节H2C头 + 96字节固件头，H2C type0/MAC category1/class3/function0；段包为WD type14 + 原始段字节，最长2020字节。TXBD长度包含WD，其LS为bit30，低32位填写PCI DMA地址。dma_wmb在发布生产指针前执行；硬件消费指针完成后dma_rmb配对完成读取。2026-10-09进一步追清本机txbd_upd_lmt=1及八项H2C work ring，现已纠正消费后立即复用单packet的偏差，改为DATA/LONG_DATA每类八项保留加一项可用的独立pool。下载成功后暂停HCI并关闭bus mastering；remove/shutdown停止WCPU、关闭下载资源并释放host缓冲。该回收修正尚未生成新的完整FIT。
 
 MCU状态等待使用当前Linux6.18.55的readb_poll_timeout按elapsed time计时，400ms超时；状态2/3/4/7立即结束等待，再映射对应错误/成功。没有将400000次可睡眠轮询当作400ms。512组本机mac_disable_cpu/mac_enable_cpu寄存器轨迹与原生实现一致。实际Linux轮询宏另用100ms调度睡眠验证，仍按400ms边界结束；四个终止状态均有延迟出现测试。结果在logs/radio-WCPU-control-test.json。
 
@@ -78,4 +78,4 @@ artifacts/full-pon-radio-transport02-6.18.55已由systemd用户服务ponwrt-tyfz
 
 ## 下一步
 
-继续完成下载后MAC配置、常规RX/TX ring与IRQ/C2H、RFE54/FEM参数和BB/RF校准，再接原生mac80211/cfg80211、双频AP、STA/密钥生命周期及OpenWrt配置。板测先验证PCIe枚举、chip/cut、WCPU phase0/1/2和DMA完成；基础无线完成后接原厂NI/QM metadata和NE流表通路，最后完成OpenWrt UBI刷入、升级与恢复。
+2026-10-09用户纠正工作重点后，先完整贯通原厂初始化、配置覆盖、收发和完成回收，再按确认的原机行为实现。新的RX试验已存入Git stash，当前主线保留9b76b2e的下载后端；RX试验不作为候选固件或完成证据。具体缺口和原机调用/ops表记录在docs/wifi-stock-lifecycle.md。后续仍完成下载后MAC配置、常规RX/TX与IRQ/C2H、RFE54/FEM参数和BB/RF校准，再接mac80211/cfg80211、双频AP、STA/密钥生命周期及OpenWrt配置；之后接无线NE及原生UBI交付。

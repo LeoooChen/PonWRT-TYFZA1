@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install original radio firmware data and the board's selected RFE54 tables."""
+"""Install original AP firmware and the stock base-then-FEM RF input layers."""
 import argparse
 import hashlib
 import json
@@ -43,20 +43,23 @@ try:
                              'download_header_bytes': len(header), 'section_packet_bytes': 2020})
     parameters = []
     for family, band, fem in (('rtl8852ce', '5GHz', 'RTK66587_BPF'), ('rtl8192xbe', '2.4GHz', 'RTK66287')):
-        relative = Path('realtek/tyfza1') / family / 'RFE54' / fem
-        source = args.study / 'evidence/stock/radio-parameters' / family / 'RFE54' / fem
-        files = sorted(source.glob('*.txt'))
-        assert {'RadioA.txt', 'RadioB.txt', 'PHY_REG.txt', 'TXPWR_LMT.txt'} <= {f.name for f in files}
-        target = args.output / 'lib/firmware' / relative
-        target.mkdir(parents=True, exist_ok=True)
-        for file in files:
-            shutil.copyfile(file, target / file.name)
-            parameters.append({'path': str(Path('lib/firmware') / relative / file.name),
-                               'band': band, 'FEM': fem, 'RFE': 54,
-                               'sha256': hashlib.sha256(file.read_bytes()).hexdigest()})
+        for stage, subdirectory in (('base', Path()), ('FEM-extension', Path(fem))):
+            relative = Path('realtek/tyfza1') / family / 'RFE54' / subdirectory
+            source = args.study / 'evidence/stock/radio-parameters' / family / 'RFE54' / subdirectory
+            files = sorted(source.glob('*.txt'))
+            assert {'RadioA.txt', 'RadioB.txt', 'PHY_REG.txt', 'TXPWR_LMT.txt'} <= {f.name for f in files}
+            target = args.output / 'lib/firmware' / relative
+            target.mkdir(parents=True, exist_ok=True)
+            for file in files:
+                shutil.copyfile(file, target / file.name)
+                parameters.append({'path': str(Path('lib/firmware') / relative / file.name),
+                                   'band': band, 'FEM': fem, 'RFE': 54, 'load_stage': stage,
+                                   'sha256': hashlib.sha256(file.read_bytes()).hexdigest()})
     report = {'study': str(args.study.relative_to(root)), 'native_format_header_sha256':
               hashlib.sha256((root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/fw.h').read_bytes()).hexdigest(),
-              'firmware': firmware, 'parameters': parameters, 'radio_driver_available': False}
+              'firmware': firmware, 'parameters': parameters,
+              'RF_load_order': ['base', 'FEM-extension'],
+              'RF_tables_applied_by_driver': False, 'radio_driver_available': False}
     args.manifest.parent.mkdir(parents=True, exist_ok=True)
     args.manifest.write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps({'radio_firmwares': len(firmware), 'selected_RF_parameter_files': len(parameters),

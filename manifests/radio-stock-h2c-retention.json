@@ -1,0 +1,23 @@
+{
+  "source_parent": "9b76b2e",
+  "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "original_HCI_config": {
+    "8852CE_function": "0x27b1a0",
+    "8192XBE_function": "0x281c44",
+    "txbd_upd_lmt": 1,
+    "txbd_multi_tag": 8
+  },
+  "stock_release_function": "phl_release_busy_h2c_pkt@0x19148c",
+  "DATA_and_LONG_DATA_work_rings": "independent,each retains eight completed buffers",
+  "native_synchronous_download": "each class has eight retained slots plus one available slot",
+  "native_pool_bytes": 36864,
+  "native_sources": {
+    "pci.c": "fc55397157ef4bbfb4e007832ba78221e43cb8ecdcf2ae3d3efe23ccdfcb5481",
+    "transport.h": "614f905752432f21606a1556ba02eef4e6b875dddc1877490992a3f5011103c8"
+  },
+  "ARM64_object_compile_exit_status": 0,
+  "compile_service": "ponwrt-tyfza1-stock-h2c-compile",
+  "full_FIT_contains_retention_fix": false,
+  "hardware_verified": false,
+  "basis": "actual board ELF flag stores,release branch andGPL explanation;no new simulator used to infer these values"
+}
