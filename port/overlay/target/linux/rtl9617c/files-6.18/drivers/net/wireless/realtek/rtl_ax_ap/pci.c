@@ -23,6 +23,8 @@
 #include "dfs.h"
 #include "dig.h"
 #include "cfo.h"
+#include "environment.h"
+#include "rx-pipeline.h"
 
 /* Original netdev-open policy in os_intfs.c: MU beamforming, OFDMA or
  * force_fw_tx selects firmware scheduling. Preserve all three inputs. */
@@ -68,6 +70,7 @@ struct rtl_ax_ap {
 	struct rtl_ax_dfs dfs;
 	struct rtl_ax_dig dig;
 	struct rtl_ax_cfo cfo;
+	struct rtl_ax_environment environment;
 	struct rtl_ax_rx *rx;
 	struct mutex command_mutex;
 	spinlock_t command_lock;
@@ -542,6 +545,7 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	rtl_ax_dfs_initialize(&radio->dfs, dfs_region);
 	rtl_ax_dig_initialize(&radio->io, &radio->dig);
 	rtl_ax_cfo_initialize(&radio->io, radio->chip, radio->flash_calibration.xtal, &radio->cfo);
+	rtl_ax_environment_initialize(&radio->io, radio->chip, &radio->environment);
 	return 0;
 }
 
@@ -555,7 +559,7 @@ static ssize_t radio_state_show(struct device *dev,
 		"chip=0x%02x hardware_cv=%u cv=%u factory=%c adie=0x%04x "
 		"power=%s calibration=0x%02x efuse5ea=0x%02x "
 		"firmware=%u.%u.%u.%u firmware_cut=%u sections=%u "
-		"firmware_state=%s download_memory=%s hci=paused "
+		"firmware_state=%s download_memory=%s hci=%s "
 		"transport=channel12 packets=%u bytes=%u control=0x%02x "
 		"mac_memory=%s secure=%u dmac_engines=%s firmware_tx=%u "
 		"cmac_registers=%s trx_registers=%s phy_inputs=%s "
@@ -567,7 +571,9 @@ static ssize_t radio_state_show(struct device *dev,
 		radio->calibration.tag, radio->calibration.process,
 		image->version[0], image->version[1], image->version[2], image->version[3],
 		image->cut, image->section_count, radio->firmware_ready ? "ready" : "off",
-		radio->download_prepared ? "ready" : "off", radio->transport.packets,
+		radio->download_prepared ? "ready" : "off",
+		rtl_ax_read32(radio, RTL_AX_HAXI_CONFIG) & (BIT(7) | BIT(15)) ? "active" : "paused",
+		radio->transport.packets,
 		radio->transport.transferred_bytes, radio->transport.last_control,
 		radio->mac_memory_ready ? "SCC" : "off", radio->secure,
 		radio->dmac_engines_ready ? "ready" : "off", radio->firmware_tx,
@@ -938,6 +944,58 @@ static ssize_t radio_cfo_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_cfo);
 
+static ssize_t radio_environment_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_environment *environment = &radio->environment;
+	unsigned int i;
+	ssize_t length = sysfs_emit(buffer, "initialization=%s CCX_unit=%u CLM_input=%u "
+		"NHM_include_CCA=%u threshold_last_NHM_FAHM=%u,%u "
+		"measurement_trigger=pending report_collection=pending\n",
+		environment->initialized ? "applied" : "pending", environment->ccx_unit,
+		environment->clm_input, environment->nhm_include_cca,
+		environment->nhm_threshold[10], environment->fahm_threshold[10]);
+
+	for (i = 0; i < ARRAY_SIZE(rtl_ax_environment_start); i++) {
+		const struct rtl_ax_environment_write *write = &rtl_ax_environment_start[i];
+
+		length += sysfs_emit_at(buffer, length, "entry=%u register=%04x mask=%08x "
+			"expected=%08x readback=%08x\n", i, write->address, write->mask,
+			write->value, rtl_ax_read32(radio, 0x10000 | write->address) & write->mask);
+	}
+	return length;
+}
+static DEVICE_ATTR_RO(radio_environment);
+
+static ssize_t radio_rx_pipeline_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	static const char * const phy_names[5] = { "CCK", "OFDM", "HT", "VHT", "HE" };
+	static const char * const mac_names[8] = { "CCK", "OFDM", "HT", "VHTSU", "VHTMU", "HESU", "HEMU", "HETB" };
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_rx_pipeline snapshot;
+	unsigned int i;
+	ssize_t length;
+
+	mutex_lock(&radio->command_mutex);
+	rtl_ax_rx_pipeline_read(&radio->io, &snapshot);
+	mutex_unlock(&radio->command_mutex);
+	length = sysfs_emit(buffer, "CCK_CCA=%u OFDM_CCA=%u HAXI=%08x DMAC=%08x CMAC=%08x "
+		"RXQ_index=%08x RPQ_index=%08x\n", snapshot.cca[0], snapshot.cca[1],
+		snapshot.haxi, snapshot.dmac, snapshot.cmac, snapshot.rx_index[0], snapshot.rx_index[1]);
+	length += sysfs_emit_at(buffer, length, "CCK_gate_0700_2320_0c80=%08x,%08x,%08x\n",
+		snapshot.cck_gate[0], snapshot.cck_gate[1], snapshot.cck_gate[2]);
+	for (i = 0; i < 5; i++)
+		length += sysfs_emit_at(buffer, length, "PHY=%s CRC_OK=%u CRC_error=%u\n",
+			phy_names[i], snapshot.crc_ok[i], snapshot.crc_error[i]);
+	for (i = 0; i < 8; i++)
+		length += sysfs_emit_at(buffer, length, "MAC=%s CRC_OK=%u CRC_error=%u false_alarm=%u\n",
+			mac_names[i], snapshot.mac_crc_ok[i], snapshot.mac_crc_error[i], snapshot.mac_false_alarm[i]);
+	return length;
+}
+static DEVICE_ATTR_RO(radio_rx_pipeline);
+
 static ssize_t radio_efuse_read(struct file *file, struct kobject *kobject,
 	const struct bin_attribute *attr, char *buffer, loff_t offset, size_t count)
 {
@@ -978,7 +1036,8 @@ static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_power.attr, &dev_attr_radio_limits.attr, &dev_attr_radio_bb_dm.attr,
 	&dev_attr_radio_physts.attr, &dev_attr_radio_txdiff.attr, &dev_attr_radio_phy_stats.attr,
 	&dev_attr_radio_signal.attr, &dev_attr_radio_filter.attr, &dev_attr_radio_dfs.attr,
-	&dev_attr_radio_dig.attr, &dev_attr_radio_cfo.attr, NULL,
+	&dev_attr_radio_dig.attr, &dev_attr_radio_cfo.attr, &dev_attr_radio_environment.attr,
+	&dev_attr_radio_rx_pipeline.attr, NULL,
 };
 static const struct attribute_group rtl_ax_group = {
 	.attrs = rtl_ax_attrs, .bin_attrs = rtl_ax_bin_attrs,
@@ -1021,6 +1080,7 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		radio->dfs.initialized = false;
 		radio->dig.initialized = false;
 		radio->cfo.initialized = false;
+		radio->environment.initialized = false;
 		radio->power_inputs.ready = false;
 		radio->download_prepared = false;
 	}

@@ -18,6 +18,7 @@ struct rtl_ax_rx_queue {
 	dma_addr_t descriptor_dma, buffer_dma;
 	unsigned int consumer, tag, buffer_bytes;
 	u64 packets, malformed, tag_pending, unhandled;
+	u64 types[16], beacons, wifi_crc_ok, wifi_crc_error;
 };
 
 struct rtl_ax_rx {
@@ -73,6 +74,17 @@ static bool rtl_ax_rx_drain(struct rtl_ax_rx *rx, unsigned int number)
 			queue->malformed++;
 		else {
 			queue->packets++;
+			queue->types[packet.type]++;
+			if (packet.type == 0) {
+				queue->wifi_crc_ok += !packet.crc_error;
+				queue->wifi_crc_error += packet.crc_error;
+			}
+			if (packet.type == 0 && !packet.crc_error && packet.bytes >= 36) {
+				u16 fc = packet.payload[0] | (u16)packet.payload[1] << 8;
+
+				if ((fc & 0x00ff) == 0x0080)
+					queue->beacons++;
+			}
 			ret = rx->handler(rx->handler_ctx, &packet);
 			if (ret == -EOPNOTSUPP)
 				queue->unhandled++;
@@ -259,7 +271,8 @@ free:
 
 int rtl_ax_rx_status(struct rtl_ax_rx *rx, char *out, size_t capacity)
 {
-	return scnprintf(out, capacity,
+	unsigned int type;
+	int length = scnprintf(out, capacity,
 		"rxq=%llu rpq=%llu rx_malformed=%llu rx_tag_pending=%llu rx_unhandled=%llu "
 		"irq=%llu rdu=%llu halt=0x%08x\n",
 		rx->queues[0].packets, rx->queues[1].packets,
@@ -267,4 +280,15 @@ int rtl_ax_rx_status(struct rtl_ax_rx *rx, char *out, size_t capacity)
 		rx->queues[0].tag_pending + rx->queues[1].tag_pending,
 		rx->queues[0].unhandled + rx->queues[1].unhandled,
 		rx->interrupts, rx->unavailable, rx->halt_error);
+	length += scnprintf(out + length, capacity - length,
+		"running=%u RXQ_consumer=%u RPQ_consumer=%u 80211_beacons=%llu "
+		"80211_CRC_OK=%llu 80211_CRC_error=%llu\n",
+		rx->running, rx->queues[0].consumer, rx->queues[1].consumer,
+		rx->queues[0].beacons + rx->queues[1].beacons,
+		rx->queues[0].wifi_crc_ok + rx->queues[1].wifi_crc_ok,
+		rx->queues[0].wifi_crc_error + rx->queues[1].wifi_crc_error);
+	for (type = 0; type < 16; type++)
+		length += scnprintf(out + length, capacity - length, "descriptor_type=%u packets=%llu\n",
+			type, rx->queues[0].types[type] + rx->queues[1].types[type]);
+	return length;
 }

@@ -1,0 +1,17 @@
+{
+  "module_sha256": "60e1ca0e3a40b6e45b42428b346c5c381716616026ce8948b9658da06a0f6a1f",
+  "log": "logs/radio-rx-stage-cck01-20261010.txt",
+  "log_sha256": "7c2a4203452d7fcb181a0e4d7242fc4a8e66d7f5497a336a95724b0fdc66584d",
+  "XB_80211_descriptor_type0": 8,
+  "XB_CCK_PHY_CRC_OK": 12,
+  "XB_CCK_MAC_CRC_OK": 12,
+  "CRC_events_precede_additional_CCK_gate_writes": true,
+  "CCK_gate_before_and_after": [
+    "00000030",
+    "00000000",
+    "38000000"
+  ],
+  "source_of_CCK_enable": "base/FEM BB table already enables CCK gates",
+  "frame_header_confirmation": "next real-board capture",
+  "AP_available": false
+}

@@ -14,6 +14,7 @@ struct rtl_ax_rx_packet {
 	const unsigned char *descriptor, *driver_info, *payload;
 	unsigned int bytes, driver_info_bytes;
 	unsigned char type, long_descriptor;
+	unsigned char crc_error, icv_error;
 };
 
 static inline unsigned int rtl_ax_rx_next_tag(unsigned int tag)
@@ -43,6 +44,9 @@ static inline int rtl_ax_receive_packet(const unsigned char *buffer,
 	packet->bytes = word & 0x3fff;
 	packet->type = (word >> 24) & 15;
 	packet->long_descriptor = word >> 31;
+	/* Actual C/XB RX WD parsing: DWORD3 bits9/10 are CRC32/ICV errors. */
+	packet->crc_error = (rtl_ax_ap_read32(packet->descriptor + 12) >> 9) & 1;
+	packet->icv_error = (rtl_ax_ap_read32(packet->descriptor + 12) >> 10) & 1;
 	descriptor_bytes = packet->long_descriptor ? 32 : 16;
 	packet->driver_info_bytes = ((word >> 28) & 7) * 16;
 	offset = 4 + descriptor_bytes + ((word >> 14) & 3) * 2 + packet->driver_info_bytes;

@@ -1,0 +1,148 @@
+{
+  "native_diagnostic_module_sha256": "614c77907b3a8dd19fde7e832b7d65da1cdc4d5170542494181dc86a38a3a546",
+  "source_base_commit": "6f11e6c",
+  "observation_window_ms": 5000,
+  "observation_stages": [
+    {
+      "chip": "0000:01:00.0",
+      "stage": "MAC",
+      "before": {
+        "CCK_CCA": 0,
+        "OFDM_CCA": 0,
+        "RXQ_index": "00010001",
+        "RPQ_index": "00000000"
+      },
+      "after": {
+        "CCK_CCA": 0,
+        "OFDM_CCA": 0,
+        "RXQ_index": "00010001",
+        "RPQ_index": "00000000"
+      }
+    },
+    {
+      "chip": "0000:01:00.0",
+      "stage": "base-FEM",
+      "before": {
+        "CCK_CCA": 0,
+        "OFDM_CCA": 710,
+        "RXQ_index": "00010001",
+        "RPQ_index": "00000000"
+      },
+      "after": {
+        "CCK_CCA": 0,
+        "OFDM_CCA": 65535,
+        "RXQ_index": "00010001",
+        "RPQ_index": "00000000"
+      }
+    },
+    {
+      "chip": "0000:01:00.0",
+      "stage": "DIG-CFO",
+      "before": {
+        "CCK_CCA": 0,
+        "OFDM_CCA": 65535,
+        "RXQ_index": "00010001",
+        "RPQ_index": "00000000"
+      },
+      "after": {
+        "CCK_CCA": 0,
+        "OFDM_CCA": 65535,
+        "RXQ_index": "00010001",
+        "RPQ_index": "00000000"
+      }
+    },
+    {
+      "chip": "0000:01:00.0",
+      "stage": "environment",
+      "before": {
+        "CCK_CCA": 0,
+        "OFDM_CCA": 65535,
+        "RXQ_index": "00010001",
+        "RPQ_index": "00000000"
+      },
+      "after": {
+        "CCK_CCA": 0,
+        "OFDM_CCA": 65535,
+        "RXQ_index": "00010001",
+        "RPQ_index": "00000000"
+      }
+    },
+    {
+      "chip": "0001:01:00.0",
+      "stage": "MAC",
+      "before": {
+        "CCK_CCA": 0,
+        "OFDM_CCA": 0,
+        "RXQ_index": "00010001",
+        "RPQ_index": "00000000"
+      },
+      "after": {
+        "CCK_CCA": 0,
+        "OFDM_CCA": 0,
+        "RXQ_index": "00010001",
+        "RPQ_index": "00000000"
+      }
+    },
+    {
+      "chip": "0001:01:00.0",
+      "stage": "base-FEM",
+      "before": {
+        "CCK_CCA": 0,
+        "OFDM_CCA": 21,
+        "RXQ_index": "00010001",
+        "RPQ_index": "00000000"
+      },
+      "after": {
+        "CCK_CCA": 0,
+        "OFDM_CCA": 567,
+        "RXQ_index": "00010001",
+        "RPQ_index": "00000000"
+      }
+    },
+    {
+      "chip": "0001:01:00.0",
+      "stage": "DIG-CFO",
+      "before": {
+        "CCK_CCA": 0,
+        "OFDM_CCA": 603,
+        "RXQ_index": "00010001",
+        "RPQ_index": "00000000"
+      },
+      "after": {
+        "CCK_CCA": 0,
+        "OFDM_CCA": 716,
+        "RXQ_index": "00010001",
+        "RPQ_index": "00000000"
+      }
+    },
+    {
+      "chip": "0001:01:00.0",
+      "stage": "environment",
+      "before": {
+        "CCK_CCA": 0,
+        "OFDM_CCA": 726,
+        "RXQ_index": "00010001",
+        "RPQ_index": "00000000"
+      },
+      "after": {
+        "CCK_CCA": 0,
+        "OFDM_CCA": 865,
+        "RXQ_index": "00010001",
+        "RPQ_index": "00000000"
+      }
+    }
+  ],
+  "80211_descriptor_type0": 0,
+  "80211_beacons": 0,
+  "PHY_CRC_OK": 0,
+  "MAC_CRC_OK": 0,
+  "XB_OFDM_CRC_error": 1,
+  "RXQ_host_errors": 0,
+  "environment_register_readbacks_match": 36,
+  "hardware_COUNTER_reset_issued": false,
+  "diagnostic_stage_waits_in_production": false,
+  "log": "logs/radio-rx-stage01-20261010.txt",
+  "log_sha256": "b32be5e14f447042ffefc4992c1a546c2cb8c86deba0fa35aa7a3d384ba469fa",
+  "finding": "base/FEM turns on OFDM CCA activity; no valid CRC decode observed, so no delivered 802.11 frame yet",
+  "next": "original band/channel, RX path enable and RF calibration"
+}

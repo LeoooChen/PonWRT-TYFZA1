@@ -328,3 +328,19 @@ CFO按halbb_cfo_trk_init@28e2c4和digital_cfo_comp_init@28e03c接入：flash xca
 CFO原生模块d10d6ee9ac771c0d624f17fe66e561414635a6753502fdffbfbb5904d055781f在两颗原机读回全部一致，RX错误0、公网2/2。随后仅在临时diagnostic模块beb2f8a019c0b19de6178644ea1fc4a512ae65d4b08ad6a022674ee8476f736a追加一次post-CFO BA CAM实际命令，两颗均成功ACK，done_acks/RXQ/IRQ=2，错误0。正式overlay不增加此命令；板上已恢复正常CFO模块。日志logs/radio-live-cfo-20261010.txt和logs/radio-live-post-cfo-ack-20261010.txt，证据manifests/radio-live-dig-cfo-20261010.json。周期CFO及实际晶振调整、普通802.11收发和AP仍待实现。
 
 下一个原机halbb_ra_init@2cd49c仅遍历128个33B host对象，非空对象直接跳过，没有硬件或H2C操作。不照搬其异常空指针memset分支；原生station/RA对象将在真正MACID关联生命周期接入。继续紧随其后的env_mntr_init@2acfa0，按CCX→CLM→NHM→IFS→FAHM→EDCCA-CLM顺序核对原机函数。
+
+## 2026-10-10 用原机接收计数定位802.11阻塞
+
+环境监测已按env_mntr_init@2acfa0和CLIENT CR@2ae66c接入18次初始化写，顺序CCX→CLM→NHM→IFS→FAHM→EDCCA-CLM。原机set_reg_phy0_1@2b0f54实际只操作一个0x10000 BB窗口；保留CCX32us、CLM input8、NHM includeCCA2、nav/rssi使能host状态，以及原机11档NHM/FAHM阈值。C最后编码阈值218、XB120，阈值参数留在host，测量触发和采集继续接入。两颗36项寄存器字段读回全部匹配，日志logs/radio-rx-stage01-20261010.txt。
+
+真实802.11帧接收是当前主要阶段验收项。生产代码增加描述符type0..15、Beacon计数和radio_rx_pipeline；后者按原机CLIENT统计寄存器读取CCK/OFDM CCA、五类CRC，按mac_rx_cnt@1f6b08的selector cee0/W8→cee2/R16读取八类MAC CRC/FA，并报告HAXI、DMAC/CMAC、两路RXBD指针和CCK gate。只计数和读回，不把BA CAM成功ACK当作802.11接收成功。OFDM CCA地址通过原机CR字段168和对应统计读取链核对为1a24低16位。
+
+scripts/build_rx_stage_observe.sh构建原生实机观察模块，tools/wifi_rx_stage_observe.py仅在生成源码加入MAC、base/FEM、DIG/CFO、环境监测后四个5000ms接收窗口；窗口内实际开启PCI bus master和原生RX，中间记录PHY/MAC及DMA指针，结束同步关闭并报告已消费的描述符。正式驱动不加入这些启动延时，也不发送802.11探测帧。
+
+实机模块SHA256614c77907b3a8dd19fde7e832b7d65da1cdc4d5170542494181dc86a38a3a546结果：MAC阶段两颗CCA0；base/FEM后C OFDM CCA710→65535，随后读数保持上限；XB21→567，DIG/CFO603→716，环境监测726→865。所有阶段有效PHY/MAC CRC均0，XB OFDM错误CRC1，RXQ指针均00010001，只有初始C2H type10=1；802.11 type0和Beacon均0，RX owner/tag/格式错误均0。证据manifests/radio-rx-stage01-20261010.json。当前有CCA活动但未观察到有效帧解调，排查优先指向频段/信道、接收使能和RF校准；没有据此声称已证明DMA或后续解析完整可用。
+
+原机rtw_hal_set_ch_bw@1cf3cc会执行MAC带宽→BB频道/带宽→RF频道/带宽→功率和RFK。当前链尚未接入完整频道设置，尤其本机halbb_ctrl_bw_ch_8192xb在2.4GHz路径调用halbb_ctrl_cck_en_8192xb@2ef190：0700[5]=1、2320[0]=0、0c80[31]=0。接下来在实机对比该原机使能步骤前后CCK/CRC/主机收包结果，再补齐对应频道和RFK路径。
+
+第二次观察出现了不同的实机结果：模块60e1ca0e3a40b6e45b42428b346c5c381716616026ce8948b9658da06a0f6a1f的XB在base/FEM窗口已达到CCK PHY/MAC CRC_OK各12、type0描述符8、RXQ index00090009，主机格式/tag错误0。此时尚未执行追加的CCK使能写。追加前后gate完整读回都为00000030/00000000/38000000，说明BB表已经使能这些位，不能把收到帧归因于追加的CCK操作。只缺少调用某个函数不等于其控制位没被设置。日志logs/radio-rx-stage-cck01-20261010.txt和证据manifests/radio-rx-stage-cck01-20261010.json保留此次区别。第一轮零帧是该次窗口的结果，并非已证明所有后续阶段永久无法收帧。
+
+接收描述符CRC/ICV状态从两颗原机WD解析函数核对为DWORD3 bits9/10；原生packet和RX统计已接入每帧CRC标志，Beacon计数要求完整24B管理帧头及12B固定参数。进一步的临时观察模块只记录前16个type0帧的WD、长度、速率及前24B帧头，确认实际802.11类型及状态；正式驱动不增加报文日志。持续观察模块在已实现的初始化后保持原生RX运行，让后续原厂信道/RF路径研究期间也能继续积累真实计数。观察模块的生命周期仍由正常RX关闭/WCPU关闭/DMA释放处理。
