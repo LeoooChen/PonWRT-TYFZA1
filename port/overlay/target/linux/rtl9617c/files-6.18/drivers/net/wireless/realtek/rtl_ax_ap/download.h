@@ -14,6 +14,9 @@
 
 static inline void rtl_ax_dmac_pre_enable(const struct rtl_ax_io *io)
 {
+	/* mac_hal_init calls hci_func_en before dmac_pre_init. Both original
+	 * chips use7880,independently of the HAXI run/stop bits at1000. */
+	rtl_ax_update32(io, 0x7880, 0, 3);
 	io->write32(io->ctx, RTL_AX_DMAC, 0x60444000);
 	io->write32(io->ctx, RTL_AX_DMAC_CLOCK, RTL_AX_BIT(18));
 	/* Native PCIe one-buffer DMA mode. */
@@ -22,6 +25,18 @@ static inline void rtl_ax_dmac_pre_enable(const struct rtl_ax_io *io)
 	rtl_ax_update32(io, RTL_AX_HAXI_STOP1, 0x7ff00, 0);
 	rtl_ax_update32(io, RTL_AX_HAXI_STOP2, 3, 0);
 	rtl_ax_update32(io, RTL_AX_PLATFORM, 0, RTL_AX_BIT(3));
+}
+
+static inline void rtl_ax_hci_packet_mode(const struct rtl_ax_io *io)
+{
+	unsigned int append = io->read32(io->ctx, 0x1004);
+
+	/* Original C/XB intf_info_def: TX burst2(256B),RX burst1(128B),
+	 * idle/active WD interval1(256ns),multi-tag7(eight tags). The AP
+	 * _hal_pre_init override selects packet RX rather than default SEP. */
+	rtl_ax_update32(io, RTL_AX_HAXI_CONFIG, 0xff004303, 0x11000102);
+	io->write32(io->ctx, 0x1004, append);
+	rtl_ax_update32(io, 0x1204, 7, 7);
 }
 
 static inline void rtl_ax_hci_pause(const struct rtl_ax_io *io)

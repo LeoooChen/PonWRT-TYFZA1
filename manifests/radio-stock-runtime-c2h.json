@@ -1,0 +1,158 @@
+{
+  "stock_module": "evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko",
+  "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "functions": {
+    "hci_func_en": {
+      "address": "0x22128c",
+      "bytes": 160,
+      "sha256": "a7858f6b7a5b063b3ab1f4faefbfa55aac7843ca8dc7e0f21333602e7f8f28e9"
+    },
+    "mode_op_pcie_8852c": {
+      "address": "0x2612a8",
+      "bytes": 584,
+      "sha256": "81e69e5d80c607fa4fb97e529fc15ef99375f4dc8fa79c307673259e6a68c9dc"
+    },
+    "mode_op_pcie_8192xb": {
+      "address": "0x276780",
+      "bytes": 584,
+      "sha256": "81e69e5d80c607fa4fb97e529fc15ef99375f4dc8fa79c307673259e6a68c9dc"
+    },
+    "hal_check_rxrdy_8192xbe": {
+      "address": "0x2830cc",
+      "bytes": 220,
+      "sha256": "febf514eb5611d5cc6773e977cd8a21becb6cb70607402851c465536ad9d845c"
+    },
+    "hal_handle_rxbd_info_8192xbe": {
+      "address": "0x283030",
+      "bytes": 156,
+      "sha256": "7156d7dc9f6f40dda4b5188701a1d2457b446a75dd69d270f4d587ffa62f2bc2"
+    },
+    "hal_update_rxbd_8192xbe": {
+      "address": "0x28330c",
+      "bytes": 164,
+      "sha256": "09d823a3f2dc380ac52da9594fb8159204e5fb30d3ffa4680bdca21250d6fc4f"
+    },
+    "hal_notify_rxdone_8192xbe": {
+      "address": "0x283424",
+      "bytes": 84,
+      "sha256": "6b7ecd2524974fd11543421c3c9d8751a713e2e9355918a441a0c64c8fcd98e4"
+    },
+    "hal_parsing_rx_wd_8192xb": {
+      "address": "0x27ebfc",
+      "bytes": 1296,
+      "sha256": "c98992f528a9f9046f6635cd88e1ad7124c708224eafcfa3cdb6acf8e620890b"
+    },
+    "txdes_proc_h2c_fwdl_8852c": {
+      "address": "0x251adc",
+      "bytes": 160,
+      "sha256": "8b75b9c0226ca84dccd0a932a1b522a8695a43838cad94a2c8282f703b34e0f5"
+    },
+    "h2c_pkt_set_hdr": {
+      "address": "0x20cda4",
+      "bytes": 452,
+      "sha256": "b564a48c57071eaaca9d4e2e5ba89d343ac8944eaf7e3e4c1585fdcf1fd5d6c5"
+    },
+    "h2c_end_flow": {
+      "address": "0x20cb78",
+      "bytes": 96,
+      "sha256": "0d7daa9142a9e907be3377d12fb093518bafb99d3ad75e947ee07a2a6228ce8a"
+    },
+    "c2h_fwi_rev_ack": {
+      "address": "0x20c81c",
+      "bytes": 560,
+      "sha256": "7ccca816a26b67852c6052a087523c41229b0cd7e36bbc9b3e417cb6dc94ca05"
+    },
+    "c2h_fwi_done_ack": {
+      "address": "0x20bd4c",
+      "bytes": 2768,
+      "sha256": "6479dd88c4dbd8ee11b6cfceb2682ef0ab2aa1111842aaa87ceb97f15ae53c69"
+    },
+    "mac_process_c2h": {
+      "address": "0x20d294",
+      "bytes": 368,
+      "sha256": "4e3821278d298841e616fe6ce22abefc6bd1d8dea7362e078b990d7d546308a3"
+    },
+    "mac_bacam_init_upd": {
+      "address": "0x23c6e0",
+      "bytes": 648,
+      "sha256": "c91efc79d4dc4bc3aed7c78a5f2c7367d9058fdcc34e03494808f296724b028a"
+    }
+  },
+  "PCIe_defaults": {
+    "intf_info_def_8852c": {
+      "address": "0xfad0",
+      "bytes": 104,
+      "sha256": "43bae5fba0b636f37b5192a8e53f181692a93bacfc2ba2378d231c86b1397812",
+      "initial_fields": [
+        0,
+        0,
+        1,
+        1,
+        2,
+        1,
+        1,
+        1,
+        7
+      ]
+    },
+    "intf_info_def_8192xb": {
+      "address": "0xd4c90",
+      "bytes": 104,
+      "sha256": "43bae5fba0b636f37b5192a8e53f181692a93bacfc2ba2378d231c86b1397812",
+      "initial_fields": [
+        0,
+        0,
+        1,
+        1,
+        2,
+        1,
+        1,
+        1,
+        7
+      ]
+    }
+  },
+  "native_receive": {
+    "RXQ_entries": 256,
+    "RPQ_entries": 256,
+    "RXQ_buffer_bytes": 12288,
+    "RPQ_buffer_bytes": 512,
+    "buffer_sizing": "native full-MPDU and121 WP report sizing,not claimed original allocator geometry",
+    "FS_LS": "both1,as original packet mode",
+    "tag": "13bits,8191\u21921,10000 reads,advance only after match",
+    "payload": "RXBD4 + WD16/32 + shift2B + driver_info16B + MAC-info4 unlessPPDU"
+  },
+  "H2C": {
+    "classes": [
+      "CMD",
+      "DATA",
+      "LONG_DATA"
+    ],
+    "buffers_per_class": 9,
+    "retained_per_class": 8,
+    "bytes_per_buffer": 2048,
+    "BA_CAM": {
+      "category": 1,
+      "class": 12,
+      "function": 2,
+      "payload_hex": "08000000",
+      "done_ACK": true
+    },
+    "ACK_matching": [
+      "category",
+      "class",
+      "function",
+      "H2C_sequence_from_ACK_payload"
+    ],
+    "native_command_deadline_ms": 1000,
+    "deadline_is_original_parameter": false
+  },
+  "validation": {
+    "ARM64_kernel_build": "native directory built-in.a,including pci.o phy.o rx.o",
+    "service": "ponwrt-tyfza1-stock-runtime-c2h-driver",
+    "exit_status": 0,
+    "new_FIT": "pending",
+    "board_run": false
+  },
+  "pending": "normal TX/WP ownership,RF gain/power/calibration and mac80211 AP lifecycle"
+}

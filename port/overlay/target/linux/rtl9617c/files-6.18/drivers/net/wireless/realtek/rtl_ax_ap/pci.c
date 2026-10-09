@@ -1,18 +1,23 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Native TYFZA1 radio endpoint backend. No vendor host module is loaded. */
 #include <linux/delay.h>
+#include <linux/completion.h>
 #include <linux/dma-mapping.h>
 #include <linux/firmware.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/pci.h>
+#include <linux/spinlock.h>
 #include "fw.h"
 #include "power.h"
 #include "download.h"
 #include "transport.h"
 #include "mac-runtime.h"
 #include "phy.h"
+#include "receive.h"
+#include "rx.h"
 
 /* Original netdev-open policy in os_intfs.c: MU beamforming, OFDMA or
  * force_fw_tx selects firmware scheduling. Preserve all three inputs. */
@@ -35,10 +40,18 @@ struct rtl_ax_ap {
 	struct rtl_ax_ap_image firmware;
 	struct rtl_ax_fw_transport transport;
 	struct rtl_ax_phy_inputs phy;
+	struct rtl_ax_rx *rx;
+	struct mutex command_mutex;
+	spinlock_t command_lock;
+	struct completion command_done;
 	unsigned char *h2c_ring, *h2c_packet;
 	dma_addr_t h2c_ring_dma, h2c_packet_dma;
 	unsigned int h2c_producer;
-	unsigned int h2c_available[2];
+	unsigned int h2c_available[RTL_AX_H2C_CLASSES];
+	unsigned char command_sequence, pending_sequence, pending_category, pending_class, pending_function;
+	unsigned char command_result;
+	bool command_pending, command_received;
+	u64 receive_acks, done_acks, unmatched_acks;
 	unsigned char chip;
 	unsigned char secure;
 	bool powered;
@@ -49,6 +62,7 @@ struct rtl_ax_ap {
 	bool cmac_registers_ready;
 	bool trx_registers_ready;
 	bool phy_inputs_ready;
+	bool features_ready;
 };
 
 static unsigned char rtl_ax_read8(void *ctx, unsigned int reg)
@@ -106,19 +120,13 @@ static int rtl_ax_poll16(void *ctx, unsigned int reg, unsigned short mask,
 				 (*last & mask) == expected, delay_us, timeout_us);
 }
 
-static int rtl_ax_h2c_send(void *ctx, const unsigned char *data,
-			   unsigned int bytes, int section)
+static int rtl_ax_h2c_publish(struct rtl_ax_ap *radio, unsigned int class, unsigned int length)
 {
-	struct rtl_ax_ap *radio = ctx;
-	unsigned int next, last, class = section ? 1 : 0;
+	unsigned int next, last;
 	unsigned int slot = class * RTL_AX_H2C_CLASS_BUFFERS + radio->h2c_available[class];
 	unsigned int offset = slot * RTL_AX_H2C_BUFFER_BYTES;
-	int length, ret;
+	int ret;
 
-	length = rtl_ax_fw_packet(radio->h2c_packet + offset, RTL_AX_H2C_BUFFER_BYTES,
-				data, bytes, 0, section);
-	if (length < 0)
-		return length;
 	rtl_ax_txbd(radio->h2c_ring + radio->h2c_producer * 8,
 		    lower_32_bits(radio->h2c_packet_dma + offset), length);
 	next = (radio->h2c_producer + 1) % RTL_AX_H2C_ENTRIES;
@@ -132,11 +140,145 @@ static int rtl_ax_h2c_send(void *ctx, const unsigned char *data,
 	dma_rmb();
 	radio->h2c_producer = next;
 	/* The board sets txbd_upd_lmt=1 and txbd_multi_tag=8. A consumed
-	 * packet remains in its DATA/LONG_DATA work ring through eight more
+	 * packet remains in its CMD/DATA/LONG_DATA work ring through eight more
 	 * completions of that class. The ninth slot supplies the next packet. */
 	radio->h2c_available[class] =
 		(radio->h2c_available[class] + 1) % RTL_AX_H2C_CLASS_BUFFERS;
 	return 0;
+}
+
+static int rtl_ax_h2c_send(void *ctx, const unsigned char *data,
+			   unsigned int bytes, int section)
+{
+	struct rtl_ax_ap *radio = ctx;
+	unsigned int class = section ? RTL_AX_H2C_LONG_DATA : RTL_AX_H2C_DATA;
+	unsigned int slot = class * RTL_AX_H2C_CLASS_BUFFERS + radio->h2c_available[class];
+	int length;
+
+	length = rtl_ax_fw_packet(radio->h2c_packet + slot * RTL_AX_H2C_BUFFER_BYTES,
+				RTL_AX_H2C_BUFFER_BYTES, data, bytes, 0, section);
+	if (length < 0)
+		return length;
+	return rtl_ax_h2c_publish(radio, class, length);
+}
+
+static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
+{
+	struct rtl_ax_ap *radio = ctx;
+	struct rtl_ax_c2h message;
+	unsigned int ack, sequence;
+	unsigned long flags;
+	int ret;
+
+	if (packet->type != 10)
+		return -EOPNOTSUPP;
+	ret = rtl_ax_c2h_parse(packet->payload, packet->bytes, &message);
+	if (ret)
+		return ret;
+	/* Original MAC/FW_INFO rec-ACK and done-ACK. The outer C2H sequence
+	 * belongs to C2H;the command's H2C sequence is in its ACK payload. */
+	if (message.category != 1 || message.class != 0 || message.function > 1)
+		return -EOPNOTSUPP;
+	if (message.bytes < 4)
+		return -EINVAL;
+	ack = rtl_ax_ap_read32(message.payload);
+	sequence = message.function ? ack >> 24 : (ack >> 16) & 255;
+	spin_lock_irqsave(&radio->command_lock, flags);
+	if (!radio->command_pending || (ack & 3) != radio->pending_category ||
+	    ((ack >> 2) & 63) != radio->pending_class ||
+	    ((ack >> 8) & 255) != radio->pending_function || sequence != radio->pending_sequence) {
+		radio->unmatched_acks++;
+		spin_unlock_irqrestore(&radio->command_lock, flags);
+		return -EOPNOTSUPP;
+	}
+	if (!message.function) {
+		radio->command_received = true;
+		radio->receive_acks++;
+	} else {
+		radio->command_result = (ack >> 16) & 255;
+		radio->command_pending = false;
+		radio->done_acks++;
+		complete(&radio->command_done);
+	}
+	spin_unlock_irqrestore(&radio->command_lock, flags);
+	return 0;
+}
+
+static int rtl_ax_command(struct rtl_ax_ap *radio, unsigned int buffer_class,
+	unsigned int category, unsigned int class, unsigned int function,
+	const void *data, unsigned int bytes, bool done_ack)
+{
+	unsigned int slot;
+	unsigned long flags;
+	int length, ret;
+
+	mutex_lock(&radio->command_mutex);
+	slot = buffer_class * RTL_AX_H2C_CLASS_BUFFERS + radio->h2c_available[buffer_class];
+	length = rtl_ax_command_packet(radio->h2c_packet + slot * RTL_AX_H2C_BUFFER_BYTES,
+				       RTL_AX_H2C_BUFFER_BYTES, data, bytes, category, class,
+				       function, radio->command_sequence, 0, done_ack);
+	if (length < 0) {
+		ret = length;
+		goto unlock;
+	}
+	if (done_ack) {
+		reinit_completion(&radio->command_done);
+		spin_lock_irqsave(&radio->command_lock, flags);
+		radio->pending_category = category;
+		radio->pending_class = class;
+		radio->pending_function = function;
+		radio->pending_sequence = radio->command_sequence;
+		radio->command_pending = true;
+		radio->command_received = false;
+		spin_unlock_irqrestore(&radio->command_lock, flags);
+	}
+	ret = rtl_ax_h2c_publish(radio, buffer_class, length);
+	if (!ret)
+		radio->command_sequence++;
+	if (!ret && done_ack) {
+		/* Native startup transaction deadline. Original requests done-ACK;
+		 * TXBD consumption alone is never treated as command execution. */
+		if (!wait_for_completion_timeout(&radio->command_done, msecs_to_jiffies(1000)))
+			ret = -ETIMEDOUT;
+		else if (radio->command_result)
+			ret = -EREMOTEIO;
+	}
+	if (done_ack) {
+		spin_lock_irqsave(&radio->command_lock, flags);
+		radio->command_pending = false;
+		spin_unlock_irqrestore(&radio->command_lock, flags);
+	}
+unlock:
+	mutex_unlock(&radio->command_mutex);
+	return ret;
+}
+
+static int rtl_ax_mac_features(struct rtl_ax_ap *radio)
+{
+	__le32 entries = cpu_to_le32(8);
+	int ret;
+
+	/* mac_feat_init→mac_bacam_init_upd(8,0,0): MAC/class12/function2,
+	 * CMD buffer,4-byte payload and done-ACK requested. */
+	radio->rx = rtl_ax_rx_prepare(radio->pdev, &radio->io, rtl_ax_receive, radio);
+	if (IS_ERR(radio->rx)) {
+		ret = PTR_ERR(radio->rx);
+		radio->rx = NULL;
+		return ret;
+	}
+	pci_set_master(radio->pdev);
+	rtl_ax_h2c_start(&radio->io);
+	rtl_ax_rx_open(radio->rx);
+	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 12, 2, &entries, sizeof(entries), true);
+	rtl_ax_rx_close(radio->rx);
+	rtl_ax_hci_pause(&radio->io);
+	pci_clear_master(radio->pdev);
+	if (ret)
+		dev_err(&radio->pdev->dev,
+			"BA CAM initialization failed: %d, firmware return=%u done_acks=%llu\n",
+			ret, radio->command_result, radio->done_acks);
+	radio->features_ready = !ret;
+	return ret;
 }
 
 static int rtl_ax_wait_firmware(void *ctx, unsigned int *control)
@@ -217,9 +359,10 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	rtl_ax_mac_trx_registers(&radio->io);
 	radio->trx_registers_ready = true;
 	ret = rtl_ax_phy_load(&radio->pdev->dev, radio->chip, &radio->phy);
-	if (!ret)
-		radio->phy_inputs_ready = true;
-	return ret;
+	if (ret)
+		return ret;
+	radio->phy_inputs_ready = true;
+	return rtl_ax_mac_features(radio);
 }
 
 static ssize_t radio_state_show(struct device *dev,
@@ -236,7 +379,7 @@ static ssize_t radio_state_show(struct device *dev,
 		"transport=channel12 packets=%u bytes=%u control=0x%02x "
 		"mac_memory=%s secure=%u dmac_engines=%s firmware_tx=%u "
 		"cmac_registers=%s trx_registers=%s phy_inputs=%s "
-		"features=pending bb_rf=pending roles=pending mac80211=pending\n",
+		"features=%s done_acks=%llu bb_rf=pending roles=pending mac80211=pending\n",
 		radio->chip, radio->identity.hardware_cv, radio->identity.cv,
 		radio->identity.factory, radio->identity.adie, radio->powered ? "on" : "off",
 		radio->calibration.tag, radio->calibration.process,
@@ -248,11 +391,21 @@ static ssize_t radio_state_show(struct device *dev,
 		radio->dmac_engines_ready ? "ready" : "off", radio->firmware_tx,
 		radio->cmac_registers_ready ? "ready" : "off",
 		radio->trx_registers_ready ? "ready" : "off",
-		radio->phy_inputs_ready ? "RFE54-base-and-FEM" : "off");
+		radio->phy_inputs_ready ? "RFE54-base-and-FEM" : "off",
+		radio->features_ready ? "BA-CAM8-acknowledged" : "off", radio->done_acks);
 }
 static DEVICE_ATTR_RO(radio_state);
+
+static ssize_t radio_rx_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+
+	return rtl_ax_rx_status(radio->rx, buffer, PAGE_SIZE);
+}
+static DEVICE_ATTR_RO(radio_rx);
 static struct attribute *rtl_ax_attrs[] = {
-	&dev_attr_radio_state.attr, NULL,
+	&dev_attr_radio_state.attr, &dev_attr_radio_rx.attr, NULL,
 };
 ATTRIBUTE_GROUPS(rtl_ax);
 
@@ -263,6 +416,8 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 	if (!radio->powered)
 		return;
 	pci_clear_master(radio->pdev);
+	if (radio->rx)
+		rtl_ax_rx_close(radio->rx);
 	if (radio->download_prepared) {
 		rtl_ax_download_stop(&radio->io);
 		rtl_ax_wcpu_stop(&radio->io);
@@ -272,6 +427,7 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		radio->cmac_registers_ready = false;
 		radio->trx_registers_ready = false;
 		radio->phy_inputs_ready = false;
+		radio->features_ready = false;
 		radio->download_prepared = false;
 	}
 	ret = rtl_ax_ap_power_off(&radio->io);
@@ -283,6 +439,10 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 	 * powering down the MAC. The host ring no longer belongs to the device. */
 	rtl_ax_ring_free(radio);
 	rtl_ax_phy_release(&radio->phy);
+	if (radio->rx) {
+		rtl_ax_rx_free(radio->rx);
+		radio->rx = NULL;
+	}
 }
 
 static int rtl_ax_probe(struct pci_dev *pdev, const struct pci_device_id *id)
@@ -303,6 +463,9 @@ static int rtl_ax_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (!radio)
 		return -ENOMEM;
 	radio->pdev = pdev;
+	mutex_init(&radio->command_mutex);
+	spin_lock_init(&radio->command_lock);
+	init_completion(&radio->command_done);
 	/* The original driver chooses the first memory BAR, not a fixed index. */
 	bar = pci_select_bars(pdev, IORESOURCE_MEM);
 	if (!bar)

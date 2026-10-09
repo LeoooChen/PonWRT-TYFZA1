@@ -136,3 +136,23 @@ rtw_hal_init_rf_reg@0x1bef20 先调用 radio 配置，保存 by-rate/track/limit
 set_host_rpr@0x21e430 的 PCIe SCC POH profile 选择 path0，开启 TXOK/retry-limit/lifetime-drop/MACID-drop 四类结果。原机 _hal_pre_init_Ce/XBe 根据 RP buffer 算聚合上限，再 cap 到 121；当前计划的原生 RP buffer 同样容纳该值。原机 ELF data+c2f0 的 agg/timer 默认是 79/ff，timer 保持 ff；按原机设置 9408、9410、9414，值未变化时跳过写入。set_l2_status 仅修改软件状态，未添加对应假想寄存器。
 
 mac_feat_init 的 private ops 0x1d8 实际指向 mac_bacam_init，对两颗芯片调用 mac_bacam_init_upd(8,0,0)，经 category MAC、class12、function2 的 H2C 初始化 8 个 BA CAM，并要求 done-ACK。其完成必须接上运行态 RX/C2H。这个阶段和 PCIe normal-channel/LTR 接入尚未完成；当前状态仅为 trx_registers=ready，features 与 bb_rf 仍为 pending。原生 ordinary host RX/TX 继续处于暂停阶段。实际函数、ops 槽位和报告配置的依据见 manifests/radio-stock-trx-tail.json。
+
+## 运行态 H2C 与原机 RX/C2H 完成链
+
+继续沿 mac_hal_init → mac_feat_init → mac_bacam_init_upd 实际调用链时，确认原生下载准备漏掉 hci_func_en@0x22128c。原机在 DMAC pre-init 前将 7880 的 TX/RX DMA function bits0/1 置位；1000 的 HAXI run/stop 不能替代这次写入。download.h 已补齐该先后顺序。
+
+两颗原机 ELF 的 intf_info_def 均为前九个 word {0,0,1,1,2,1,1,1,7}；_hal_pre_init 把 RXBD mode 从默认 SEP 改为 packet，并保留多 tag。mode_op_pcie 最终使用 TX burst2（256B）、RX burst1（128B）、WD idle/active interval1（256ns）、tag count7（8 tags）。transport.h 在设置下载环前按该值写 1000/1004/1204，不继续依赖复位默认值。
+
+本轮重新按原机实现 RXQ/RPQ，而非恢复旧 RX 试验。hal_handle_rxbd_info_8192xbe@0x283030 只接受 FS=LS=1；旧试验的分片拼接没有这条原机路径依据，未纳入当前驱动。hal_check_rxrdy_8192xbe@0x2830cc 从 coherently mapped buffer 读取 13-bit tag，10000 次读取上限，8191 后回到 1，只在匹配时更新已消费 tag（这里与 SDK 的失败时提前推进不同）。RX WD 根据实际字段计算 4B RXBD info、16/32B descriptor、2B shift 单位、16B driver-info 单位，以及非 PPDU 的可选 4B MAC-info。按原机 payload end 与 DMA write size 的检查读取完整包。
+
+原生 RXQ 使用 256×12288B，覆盖 11966B MPDU 加最大描述符/附加信息，并满足 RXBD 的 14-bit buffer size 字段；RPQ 使用 256×512B，容纳原机聚合121个4B释放结果及20B RXBD/short WD。这是原生分配器的几何选择，不冒称原机 allocator 的内存布局。回调同步消费 payload 后清 tag、补 RXBD、dma_wmb，再通过16-bit host index归还；使用 Linux DMA API，不读取原机 skb owner/headroom。
+
+运行态 H2C 使用与原机 txdes_proc_h2c_fwdl@0x251adc 一致的16B WD(type13)和8B命令头。CMD、DATA、LONG_DATA各有8个保留slot加1个当前slot，总计27×2048B；不会把CMD的完成覆盖进DATA/LONG_DATA的回收环。category/class/function/sequence 和 receive/done ACK 位按 h2c_pkt_set_hdr 编码，成功发布后推进 sequence。
+
+RX中断工作队列将完整 C2H 交给命令处理。FW_INFO(class0)函数0是rec-ACK、函数1是done-ACK；两者的被应答 H2C sequence分别在ACK payload的bits16..23和24..31，不能使用外层C2H sequence匹配。目标 category/class/function/sequence必须与当前命令一致。done-ACK同时保存固件返回码并唤醒completion；TXBD消费和rec-ACK不代替done-ACK。
+
+当前启动实际配置并开启RXQ/RPQ及channel12，发送MAC/class12/function2、4B payload=08000000、CMD类的BA CAM8项初始化命令。features只有在收到匹配且返回码0的done-ACK后才置为BA-CAM8-acknowledged。原厂请求done-ACK但提交函数本身不阻塞；原生将确认纳入启动事务，使用明确的1000ms命令deadline，不冒称这个超时来自原机参数。此后暂停HCI并保留环资源，接下来继续normal-channel/LTR、RF对象/校准和AP启动。
+
+RX关闭与中断恢复共用irq_lock的running状态，并等待IRQ及工作队列退出后释放DMA；迟到的工作尾部不会重新使能中断。当前控制回调只处理上述MAC ACK，普通Wi-Fi/WP/PPDU/PHY事件明确记为unhandled，继续按原厂相应路径接入，不以收到报文计数宣称业务完成。
+
+Linux6.18.55使用PCI_IRQ_INTX，已采用当前接口。后台服务ponwrt-tyfza1-stock-runtime-c2h-driver在真实内核配置下编译pci.o、phy.o、rx.o和builtin archive，退出码0。初次命令误用了不存在的单独builtin composite对象目标，随后对象编译发现旧PCI IRQ宏；两项已修正并以目录构建通过。源地址、默认表及ACK协议记录见manifests/radio-stock-runtime-c2h.json；尚无本阶段的板测结果。

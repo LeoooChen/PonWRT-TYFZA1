@@ -8,10 +8,14 @@
 #define RTL_AX_H2C_ENTRIES 256
 #define RTL_AX_H2C_BUFFER_BYTES 2048
 #define RTL_AX_H2C_RETAINED 8
-/* Original DATA and LONG_DATA keep separate eight-entry work rings. One
- * additional slot per class is the currently available download packet. */
+/* Original CMD,DATA and LONG_DATA keep separate eight-entry work rings.
+ * One additional slot per class is the currently available packet. */
+#define RTL_AX_H2C_CMD 0
+#define RTL_AX_H2C_DATA 1
+#define RTL_AX_H2C_LONG_DATA 2
+#define RTL_AX_H2C_CLASSES 3
 #define RTL_AX_H2C_CLASS_BUFFERS (RTL_AX_H2C_RETAINED + 1)
-#define RTL_AX_H2C_POOL_BYTES (2 * RTL_AX_H2C_CLASS_BUFFERS * RTL_AX_H2C_BUFFER_BYTES)
+#define RTL_AX_H2C_POOL_BYTES (RTL_AX_H2C_CLASSES * RTL_AX_H2C_CLASS_BUFFERS * RTL_AX_H2C_BUFFER_BYTES)
 #define RTL_AX_H2C_INDEX 0x1080
 #define RTL_AX_WCPU_CONTROL 0x01e0
 
@@ -53,12 +57,35 @@ static inline void rtl_ax_txbd(unsigned char *out, unsigned int dma_address,
 	rtl_ax_store32(out + 4, dma_address);
 }
 
+static inline int rtl_ax_command_packet(unsigned char *out, size_t capacity,
+	const void *data, unsigned int bytes, unsigned int category, unsigned int class,
+	unsigned int function, unsigned char sequence, int receive_ack, int done_ack)
+{
+	unsigned int length = bytes + 8;
+
+	if (bytes > RTL_AX_H2C_BUFFER_BYTES - 24 || bytes + 24 > capacity)
+		return -ENOSPC;
+	/* txdes_proc_h2c_fwdl_C/XB uses short16-byte RX-format WD,type13. */
+	memset(out, 0, 24);
+	rtl_ax_store32(out, length | (13U << 24));
+	/* h2c_pkt_set_hdr@20cda4. Runtime sequence advances through
+	 * h2c_end_flow;ACKs carry this H2C sequence in their payload. */
+	rtl_ax_store32(out + 16, (category & 3) | ((class & 63) << 2) |
+			(function & 255) << 8 | (unsigned int)sequence << 24);
+	rtl_ax_store32(out + 20, length | (receive_ack ? RTL_AX_BIT(14) : 0) |
+			(done_ack ? RTL_AX_BIT(15) : 0));
+	if (bytes)
+		memcpy(out + 24, data, bytes);
+	return bytes + 24;
+}
+
 static inline int rtl_ax_h2c_ring_configure(const struct rtl_ax_io *io,
 					 unsigned int dma_address)
 {
 	unsigned int last;
 	int ret;
 
+	rtl_ax_hci_packet_mode(io);
 	rtl_ax_hci_pause(io);
 	ret = io->poll32(io->ctx, 0x101c, RTL_AX_BIT(20) | RTL_AX_BIT(18), 0,
 			 10, 100000, &last);
