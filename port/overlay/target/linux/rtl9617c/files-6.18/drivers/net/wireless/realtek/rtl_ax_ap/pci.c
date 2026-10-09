@@ -10,6 +10,7 @@
 #include <linux/mutex.h>
 #include <linux/pci.h>
 #include <linux/spinlock.h>
+#include <net/mac80211.h>
 #include "fw.h"
 #include "power.h"
 #include "download.h"
@@ -78,6 +79,12 @@ struct rtl_ax_ap {
 	struct rtl_ax_rf_start rf_start;
 	struct rtl_ax_dack dack;
 	struct rtl_ax_rx *rx;
+	struct ieee80211_hw *hw;
+	struct ieee80211_supported_band band_5g;
+	struct ieee80211_channel channels_5g[4];
+	struct ieee80211_rate rates_5g[8];
+	bool monitor_started;
+	u64 mac80211_packets, tx_unimplemented;
 	struct mutex command_mutex;
 	spinlock_t command_lock;
 	struct completion command_done;
@@ -206,6 +213,9 @@ static int rtl_ax_h2c_send(void *ctx, const unsigned char *data,
 	return rtl_ax_h2c_publish(radio, class, length);
 }
 
+static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
+	const struct rtl_ax_rx_packet *packet);
+
 static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 {
 	struct rtl_ax_ap *radio = ctx;
@@ -214,6 +224,8 @@ static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 	unsigned long flags;
 	int ret;
 
+	if (packet->type == 0 && READ_ONCE(radio->monitor_started))
+		return rtl_ax_monitor_receive(radio, packet);
 	if (packet->type != 10)
 		return -EOPNOTSUPP;
 	ret = rtl_ax_c2h_parse(packet->payload, packet->bytes, &message);
@@ -595,7 +607,7 @@ static ssize_t radio_state_show(struct device *dev,
 		"cmac_registers=%s trx_registers=%s phy_inputs=%s "
 		"features=%s done_acks=%llu bb_base=%s radio_base=%s "
 		"phy_configuration=%s radio_passes=%u,%u "
-		"bb_dm_ic=%s bb_rf=pending roles=pending mac80211=pending\n",
+		"bb_dm_ic=%s bb_rf=pending roles=pending mac80211=%s\n",
 		radio->chip, radio->identity.hardware_cv, radio->identity.cv,
 		radio->identity.factory, radio->identity.adie, radio->powered ? "on" : "off",
 		radio->calibration.tag, radio->calibration.process,
@@ -614,7 +626,7 @@ static ssize_t radio_state_show(struct device *dev,
 		radio->bb_base_ready ? "applied" : "off", radio->radio_base_ready ? "applied" : "off",
 		radio->fem_ready ? "base-and-FEM" : "pending",
 		radio->radio_passes[0], radio->radio_passes[1],
-		radio->bb_dm.ic_ready ? "applied" : "pending");
+		radio->bb_dm.ic_ready ? "applied" : "pending", radio->hw ? "monitor" : "pending");
 }
 static DEVICE_ATTR_RO(radio_state);
 
@@ -1083,19 +1095,13 @@ unlock:
 	return ret;
 }
 
-static ssize_t radio_channel_store(struct device *dev,
-	struct device_attribute *attr, const char *buffer, size_t length)
+/* Caller holds command_mutex across channel and receive-mode ownership. */
+static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int channel)
 {
-	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
-	unsigned int channel;
 	int ret;
 
 	if (radio->chip != RTL_AX_8852C)
 		return -EOPNOTSUPP;
-	ret = kstrtouint(buffer, 0, &channel);
-	if (ret)
-		return ret;
-	mutex_lock(&radio->command_mutex);
 	rtl_ax_rx_close(radio->rx);
 	rtl_ax_hci_pause(&radio->io);
 	pci_clear_master(radio->pdev);
@@ -1103,10 +1109,28 @@ static ssize_t radio_channel_store(struct device *dev,
 	pci_set_master(radio->pdev);
 	rtl_ax_h2c_start(&radio->io);
 	rtl_ax_rx_open(radio->rx);
+	return ret;
+}
+
+static ssize_t radio_channel_store(struct device *dev,
+	struct device_attribute *attr, const char *buffer, size_t length)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	unsigned int channel;
+	int ret;
+
+	ret = kstrtouint(buffer, 0, &channel);
+	if (ret)
+		return ret;
+	/* Once nl80211 owns the channel, its chandef must describe every RX. */
+	mutex_lock(&radio->command_mutex);
+	ret = radio->monitor_started ? -EBUSY : rtl_ax_receive_set_channel(radio, channel);
 	mutex_unlock(&radio->command_mutex);
 	return ret ? ret : length;
 }
 static DEVICE_ATTR_RW(radio_channel);
+
+#include "monitor.h"
 
 static ssize_t radio_rf_start_show(struct device *dev,
 	struct device_attribute *attr, char *buffer)
@@ -1222,7 +1246,8 @@ static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_signal.attr, &dev_attr_radio_filter.attr, &dev_attr_radio_dfs.attr,
 	&dev_attr_radio_dig.attr, &dev_attr_radio_cfo.attr, &dev_attr_radio_environment.attr,
 	&dev_attr_radio_rx_pipeline.attr, &dev_attr_radio_channel.attr, &dev_attr_radio_rx_mode.attr,
-	&dev_attr_radio_rf_start.attr, &dev_attr_radio_dack.attr, &dev_attr_radio_dac.attr, NULL,
+	&dev_attr_radio_rf_start.attr, &dev_attr_radio_dack.attr, &dev_attr_radio_dac.attr,
+	&dev_attr_radio_mac80211.attr, NULL,
 };
 static const struct attribute_group rtl_ax_group = {
 	.attrs = rtl_ax_attrs, .bin_attrs = rtl_ax_bin_attrs,
@@ -1367,6 +1392,9 @@ static int rtl_ax_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	release_firmware(fw);
 	if (ret)
 		goto stop;
+	ret = rtl_ax_monitor_register(radio);
+	if (ret)
+		goto stop;
 	dev_info(&pdev->dev,
 		 "native AP backend chip=0x%02x cv=%u factory=%c adie=0x%04x; %s WCPU ready; packets=%u bytes=%u\n",
 		 radio->chip, radio->identity.cv, radio->identity.factory,
@@ -1382,12 +1410,18 @@ stop:
 
 static void rtl_ax_remove(struct pci_dev *pdev)
 {
-	rtl_ax_stop(pci_get_drvdata(pdev));
+	struct rtl_ax_ap *radio = pci_get_drvdata(pdev);
+
+	rtl_ax_monitor_unregister(radio);
+	rtl_ax_stop(radio);
 }
 
 static void rtl_ax_shutdown(struct pci_dev *pdev)
 {
-	rtl_ax_stop(pci_get_drvdata(pdev));
+	struct rtl_ax_ap *radio = pci_get_drvdata(pdev);
+
+	rtl_ax_monitor_unregister(radio);
+	rtl_ax_stop(radio);
 }
 
 static const struct pci_device_id rtl_ax_ids[] = {

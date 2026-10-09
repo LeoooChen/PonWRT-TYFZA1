@@ -42,7 +42,9 @@ try:
               'original_NCTL_tables': len(expected.get('NCTL', [])),
               'all_bytes_match_prepared_board_inputs': True,
               'native_AP_PCI_backend_present_in_selected_kernel': True,
-              'firmware_transport_implemented': True, 'mac80211_implemented': False,
+              'firmware_transport_implemented': True,
+              'native_mac80211_monitor_backend_present': b'handed_to_mac80211=' in selected['kernel'],
+              'full_AP_operations_implemented': False,
               'initramfs_members': len(members), 'radio_hardware_verified': False}
     if args.kernel_elf is not None:
         sys.path.insert(0, str(root / 'analysis/python-deps'))

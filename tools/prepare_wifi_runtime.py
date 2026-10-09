@@ -78,7 +78,7 @@ try:
         wlan = 0 if family == 'rtl8852ce' else 1
         # Actual original normal gain calls query the flash shadow,not the
         # physicalOTP. Preserve the board's exported2G/5G gain/TSSI inputs.
-        data = bytearray(b'TYFC0001')
+        data = bytearray(b'TYFC0002')
         data.extend(int(hs[key]) for key in gain_keys)
         data.extend(int(hs[f'HW_THERMAL_{path}_WLAN{wlan}']) for path in ('A', 'B'))
         data.append(int(hs[f'HW_XCAP_WLAN{wlan}_AX']))
@@ -89,6 +89,10 @@ try:
                 if len(values) != count:
                     raise ValueError(f'Unexpected original calibration length: {prefix}{path}')
                 data.extend(values)
+        wlan_address = bytes.fromhex(hs['WLAN_MAC_ADDR'])
+        if len(wlan_address) != 6 or wlan_address[0] & 1:
+            raise ValueError('Original HS WLAN_MAC_ADDR is not a unicast MAC address')
+        data.extend(wlan_address)
         relative = Path('lib/firmware/realtek/tyfza1') / family / 'flash-calibration.bin'
         destination = args.output / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -96,7 +100,7 @@ try:
         calibration.append({'path': str(relative), 'bytes': len(data),
                             'sha256': hashlib.sha256(data).hexdigest(),
                             'hardware_settings_sha256': hashlib.sha256(hs_data).hexdigest(),
-                            'wlan': wlan, 'source': 'original HS flash gain,thermal,xtal,TSSI fields',
+                            'wlan': wlan, 'source': 'original HS flash gain,thermal,xtal,TSSI and WLAN_MAC_ADDR fields',
                             'physical_OTP_is_separate': True})
         for stage, subdirectory in (('base', Path()), ('FEM-extension', Path(fem))):
             relative = Path('realtek/tyfza1') / family / 'RFE54' / subdirectory

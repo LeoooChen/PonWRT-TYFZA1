@@ -12,6 +12,7 @@ struct rtl_ax_board_cal {
 	u8 magic[8];
 	u8 gain_2g5g[5], thermal[2], xtal;
 	s8 tssi_cck[2][6], tssi_2g[2][5], tssi_5g[2][14];
+	u8 wlan_address[6];
 } __packed;
 
 static inline int rtl_ax_board_cal_load(struct device *dev, unsigned int chip,
@@ -25,7 +26,7 @@ static inline int rtl_ax_board_cal_load(struct device *dev, unsigned int chip,
 
 	if (ret)
 		return ret;
-	if (fw->size != sizeof(*calibration) || memcmp(fw->data, "TYFC0001", 8))
+	if (fw->size != sizeof(*calibration) || memcmp(fw->data, "TYFC0002", 8))
 		ret = -EINVAL;
 	else
 		memcpy(calibration, fw->data, sizeof(*calibration));

@@ -396,3 +396,9 @@ DAC 两路保持本机差异：C 清 TX force → 选择时钟 → 开 force，X
 模块 a66ae0f88f4c73481b8a1e3563726549aecbfe2b36da95e7ccdad9c6cf690ed4 在原机实测：C DRCK code19、XB13；两颗 ADDCK 两路均首读完成。C DAC A/B 在 465/471 次观察完成，XB 在 313/318 次观察完成。C 20 个结果字读回全部等于写入值；XB 16 个 MSBK 字、两路 I 的 bias/DC 字匹配，Q 的 c224/c24c bias 高位读回为零，DC/选择位匹配。原机 ELF 的回填函数和 GPL 均对这两字写 bias<<22 | DC<<14，当前保留真实差异，尚未证明 XB Q bias 的硬件读回语义，不用任意寄存器改写消除差异。证据 `logs/radio-dack-20261010.txt`、`manifests/radio-dack-20261010.json`。
 
 该次校准后 C 在频道36、原机 SNIFFER0 下收到 3729 个 CRC 正确的实际 type0 帧，其中 262 个 Beacon；PHY/MAC OFDM CRC_OK 均6977，描述符格式/tag错误0。XB收到6个CRC正确type0帧。XEPON公网2/2。普通帧当前仍返回 unhandled，下一步把真实帧接入 Linux 无线层；RF 其余校准和 AP 收发业务仍继续实现。
+
+实机观察模块718589290145d2ae6ff17488b08d6a236c63302a3f7f7b260f45a135207f77e5按802.11类型/子类型分别取两个实际帧，记录WD速率、前36B及整帧软件FCS；只在生成的观察模块加入日志，正式overlay没有这些帧头日志。18个实测帧的末尾FCS均与crc32_le结果一致，包括C的两帧289B Beacon、QoS Data、普通Data、Null Data、RTS、CTS、Probe Request、CF-End，以及XB的两帧Probe Request。QoS Data的WD rate410即原厂enum中的HE2SS MCS10；这证明已经收到真实HE数据帧，不只是CCA活动或控制帧。证据`logs/radio-dack-frames-20261010.txt`、`manifests/radio-real-beacon-data-20261010.json`。
+
+随后接入Linux6.18.55原生cfg80211/mac80211，不同时加载OpenWrt backports中的另一套无线核心。`monitor.h`把本次已验证的C5GHz20MHz通道接到nl80211监听接口；配置复用原机MAC/BB/RF频道操作，过滤复用SNIFFER0。普通type0描述符复制实际payload到skb，按本机WD字段转换速率/带宽/GI及CRC状态，保留真实FCS，再交ieee80211_rx_irqsafe。未实现PPDU RSSI时明确使用RX_FLAG_NO_SIGNAL_VAL。驱动计数`handed_to_mac80211`用于与实际用户态Radiotap抓包对照。
+
+此阶段只注册C的36/40/44/48频道监听接收。XB频道、原厂MAC角色、TX描述符/队列、AP关联及加密尚未接入，接口能力不宣称AP；monitor注入报文不送硬件，计入TX_unimplemented。正常接口停止同步关闭RX，注销先停止无线层再释放原生DMA。原机HS中的WLAN_MAC_ADDR随native calibration容器TYFC0002保存供接口标识，尚未把此HS字段宣称为已核实的两颗无线运行时地址分配规则。新原生mac80211入口等待完整FIT RAM上机验证。
