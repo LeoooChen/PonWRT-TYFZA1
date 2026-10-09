@@ -495,3 +495,13 @@ XEPON epon-d10g注册认证、DHCP192.168.71.28与公网ping2/2均恢复。当�
 TYFC0003容器284B增加真实HS slope gain/CW两路数组，以及上述原机调用结果的BW差值。C set_efuse_to_slope@336a1c在5G gain/CW56个byte均0时slop_no_pg=1并返回；本机HS正是该条件，native保留不写slope的原厂分支。普通DE按set_efuse_to_de_C@33607c在每路依次写CCK long/short、MCS20和两个legacy20、40、80、160字段；各width加入对应带宽差值。当前native频道20MHz，RFE>=50的当前160MHz ADC WA不触发；160MHz频道和TSSI_CAL后续继续移植。
 
 实际原生live模块0c5fd5ea20d014587716ed5f4e7ad00852d52e4372df1fd6ab212f962a689648，原机频道36/44/48各16个10bit字段读回全部匹配，C slope_no_pg1。恢复C36/XB6后每路64个真实入站用户态无线帧完整FCS全匹配、kernel抓包丢包0、描述符/tag错误0；XEPON公网2/2。当前live覆盖两颗，boot FIT仍是2201a0f版本，完整C DE镜像另行后台构建，不把RAM live变更当成已进入旧FIT。证据manifests/radio-c-tssi-de-20261010.json及对应logs/pcap。
+
+## 2026-10-10 后续频道RFK和IQK的原机边界
+
+原机chl_rfk_trigger_traditional@2f7858在正常运行分支依次RX_DCK→GAPK→IQK→TSSI→DPK→FW通知。rx_dck_trigger@2f53e0仍固定C RF0/XB AFE1。初始化时做一次RX_DCK不能覆盖频道切换后的校准，因此native频道流程继续加入该真实动作，DMA暂停期间校准、再DE回填后恢复。
+
+直接提取两颗IQK hwspec与其64B callback table的ELF重定位：C备份BB8个，XB备份BB11个，RF均7个（dc/ef/de/0/1e/5/10005）；实际MAC备份数量0，其指针落在BSS，不采用另一份SDK的MAC数组。generic halrf_doiqk@30a91c按callback执行get_ch_info→backup→MAC/BB setting→preset→LOK/TXK/RXK→restore→AFE restore→原寄存器恢复→RF5自动。各callback名称、实际地址和原机SHA保存在manifests/radio-stock-iqk.json，97个实际C/XB IQK函数反汇编位于analysis/radio-stock-lifecycle。
+
+iqk_init_C@31b43c与XB@3448c4首次都将FW IQK选择字段301写0；generic FW IQK完成/取结果的dispatcher只处理C。当前正常初始化路径必须继续移植host IQK，不能把XB直接发送H2C当成校准完成。原生IQK尚未实现，本记录用于接下来的完整LOK/TXK/RXK实现。
+
+频道RX_DCK live模块25510362e676ea491d70b4ce1722d208e3048918e7aa9a3dda2d3e198bbbeee5已原机验证：XB频道1/11/6每次都四个done1、14个backup读回恢复一致，C36两路第一遍done1、35次读取，条件ReK未触发。恢复C36/XB6后各32个真实入站帧全部FCS匹配；另过滤去掉Null Data，两路各16个真正Data/QoS Data完整FCS全匹配，记录每帧长度范围与protected标志，不把Null Data当作有效载荷证据。host descriptor/tag/RDU错误0，kernel抓包丢包0，XEPON公网2/2。记录manifests/radio-channel-rxdck-20261010.json和四个对应pcap。XB OFDM质量尚未宣布解决，IQK仍待按原机host路径实现。

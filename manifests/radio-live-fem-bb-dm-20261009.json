@@ -11,11 +11,11 @@
     "active_RAM_driver_override": {
       "radio": "both endpoints C and XB",
       "driver": "rtl_ax_ap_live",
-      "module": "artifacts/live-radio-c-tssi-de01/rtl_ax_ap_live.ko",
-      "sha256": "0c5fd5ea20d014587716ed5f4e7ad00852d52e4372df1fd6ab212f962a689648",
-      "interfaces": "phy2/mon0 channel36;phy3/mon1 channel6",
-      "evidence": "manifests/radio-c-tssi-de-20261010.json",
-      "boot_FIT_contains_C_TSSI_DE": false
+      "module": "artifacts/live-radio-channel-rxdck01/rtl_ax_ap_live.ko",
+      "sha256": "25510362e676ea491d70b4ce1722d208e3048918e7aa9a3dda2d3e198bbbeee5",
+      "interfaces": "phy4/mon0 channel36;phy5/mon1 channel6",
+      "evidence": "manifests/radio-channel-rxdck-20261010.json",
+      "boot_FIT_contains_channel_RX_DCK": false
     },
     "C_native_mac80211_monitor": true,
     "XB_native_mac80211_monitor": true,

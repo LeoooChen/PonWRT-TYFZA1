@@ -17,11 +17,6 @@
       "channel": 48,
       "fields": 16,
       "all_readback_match": true
-    },
-    {
-      "channel": 6,
-      "fields": 16,
-      "all_readback_match": true
     }
   ],
   "actual_receive": [
@@ -50,5 +45,6 @@
   "C_BW_inputs_original_source": "rtw_flash_get_info@26c4 ignores query IDs551..634 without modifying output; get_efuse_C@334834 starts A flash_tmp zero; B retains last A5G slope-CW byte, original HS zero",
   "hardware_TSSI_tracking_complete": false,
   "AP_transmit_association_complete": false,
-  "log": "logs/radio-c-tssi-de-20261010.txt"
+  "log": "logs/radio-c-tssi-de-20261010.txt",
+  "XB_channel6_fields_match": true
 }

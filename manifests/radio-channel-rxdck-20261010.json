@@ -1,0 +1,102 @@
+{
+  "module": "artifacts/live-radio-channel-rxdck01/rtl_ax_ap_live.ko",
+  "sha256": "25510362e676ea491d70b4ce1722d208e3048918e7aa9a3dda2d3e198bbbeee5",
+  "original_source": [
+    "chl_rfk_trigger_traditional@2f7858",
+    "rx_dck_trigger@2f53e0"
+  ],
+  "XB": [
+    {
+      "channel": 1,
+      "done": "1,1/1,1",
+      "backup_words": 14,
+      "all_restored_match": true
+    },
+    {
+      "channel": 11,
+      "done": "1,1/1,1",
+      "backup_words": 14,
+      "all_restored_match": true
+    },
+    {
+      "channel": 6,
+      "done": "1,1/1,1",
+      "backup_words": 14,
+      "all_restored_match": true
+    }
+  ],
+  "C_channel36": {
+    "method": "RF",
+    "done": "1,0/1,0",
+    "observations": "35,0/35,0",
+    "conditional_second_pass_not_needed": true
+  },
+  "captures": [
+    {
+      "label": "C",
+      "frames": 32,
+      "FCS_match": 32,
+      "subtypes": {
+        "0/8": 2,
+        "1/11": 15,
+        "1/12": 15
+      },
+      "protected": 0,
+      "frame_bytes_min_max": [
+        14,
+        289
+      ],
+      "pcap": "logs/radio-channel-rxdck-C.pcap",
+      "sha256": "7d3e9f9f562e747cd6f6134f9a0c4d69fa9fbdb1f283e086c2fa931d7d5002c3"
+    },
+    {
+      "label": "XB",
+      "frames": 32,
+      "FCS_match": 32,
+      "subtypes": {
+        "0/8": 22,
+        "2/0": 2,
+        "1/11": 2,
+        "1/12": 2,
+        "2/12": 2,
+        "2/4": 2
+      },
+      "protected": 2,
+      "frame_bytes_min_max": [
+        14,
+        246
+      ],
+      "pcap": "logs/radio-channel-rxdck-XB.pcap",
+      "sha256": "f5390ac8860d570343b51f36cb4a4a28265b7650ec721f03cbb02c1f0536d264"
+    },
+    {
+      "label": "data-C",
+      "frames": 0,
+      "FCS_match": 0,
+      "subtypes": {},
+      "protected": 0,
+      "frame_bytes_min_max": null,
+      "pcap": "logs/radio-channel-rxdck-data-C.pcap",
+      "sha256": "7408df6f1ed5ac518e1f3fe5315845fc0cb2b0c79572df40e99ecabf34fd205e"
+    },
+    {
+      "label": "data-XB",
+      "frames": 16,
+      "FCS_match": 16,
+      "subtypes": {
+        "2/0": 16
+      },
+      "protected": 16,
+      "frame_bytes_min_max": [
+        86,
+        200
+      ],
+      "pcap": "logs/radio-channel-rxdck-data-XB.pcap",
+      "sha256": "ba358c5e57579a92113c02fcbf703379442de1bb9d1ac82656462f1333734b47"
+    }
+  ],
+  "log": "logs/radio-channel-rxdck-20261010.txt",
+  "receive_log": "logs/radio-channel-rxdck-receive-20261010.txt",
+  "IQK_implemented": false,
+  "XB_OFDM_quality_resolved": false
+}

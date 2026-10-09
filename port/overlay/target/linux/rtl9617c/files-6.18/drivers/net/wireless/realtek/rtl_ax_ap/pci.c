@@ -85,6 +85,7 @@ struct rtl_ax_ap {
 	struct rtl_ax_rf_start rf_start;
 	struct rtl_ax_dack dack;
 	struct rtl_ax_rxdck rxdck;
+	u8 rxdck_channel;
 	struct rtl_ax_trim trim;
 	struct rtl_ax_ref_power ref_power;
 	struct rtl_ax_tssi_de tssi_de;
@@ -1126,6 +1127,16 @@ static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int chan
 	ret = radio->chip == RTL_AX_8852C ?
 		rtl_ax_c_receive_channel20(&radio->io, &radio->phy, &radio->bb_dm, channel, &radio->channel) :
 		rtl_ax_xb_receive_channel20(&radio->io, &radio->phy, &radio->bb_dm, channel, &radio->channel);
+	/* Original chl_rfk_trigger_traditional@2f7858 runs RX_DCK after
+	 * each channel change. rx_dck_trigger@2f53e0 selects C RF/0 and
+	 * XB AFE/1; initial calibration cannot replace this channel step. */
+	if (!ret) {
+		memset(&radio->rxdck, 0, sizeof(radio->rxdck));
+		ret = radio->chip == RTL_AX_8192XB ? rtl_ax_xb_rxdck_start(&radio->io, &radio->rxdck) :
+			rtl_ax_c_rxdck_start(&radio->io, &radio->rxdck);
+		if (!ret)
+			radio->rxdck_channel = channel;
+	}
 	if (!ret) {
 		if (radio->chip == RTL_AX_8192XB)
 			rtl_ax_xb_tssi_de(&radio->io, &radio->flash_calibration, &radio->trim, channel, &radio->tssi_de);
@@ -1236,8 +1247,9 @@ static ssize_t radio_rx_dck_show(struct device *dev,
 	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
 	struct rtl_ax_rxdck *state = &radio->rxdck;
 	unsigned int path, i;
-	ssize_t length = sysfs_emit(buffer, "RX_DCK=%s method=%s done=%u,%u/%u,%u observations=%u,%u/%u,%u\n",
+	ssize_t length = sysfs_emit(buffer, "RX_DCK=%s method=%s channel=%u done=%u,%u/%u,%u observations=%u,%u/%u,%u\n",
 		state->ready ? "applied" : "pending", radio->chip == RTL_AX_8192XB ? "AFE" : "RF",
+		radio->rxdck_channel,
 		state->done[0][0], state->done[0][1], state->done[1][0], state->done[1][1],
 		state->observations[0][0], state->observations[0][1], state->observations[1][0], state->observations[1][1]);
 

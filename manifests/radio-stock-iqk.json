@@ -1,0 +1,149 @@
+{
+  "original_host_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "primary_evidence": "actual TYFZA1 original ELF relocations,hardware specification objects and function disassembly",
+  "native_IQK_complete": false,
+  "normal_initial_FW_IQK_selector": 0,
+  "normal_initial_FW_IQK_selector_source": "iqk_init_C@31b43c and XB@3448c4 store byte301=0",
+  "channel_RF_calibration_order": [
+    "RX_DCK",
+    "GAPK",
+    "IQK",
+    "TSSI",
+    "DPK",
+    "firmware_notification"
+  ],
+  "IQK_host_operation_order": [
+    "get_channel_info",
+    "backup_MAC_BB_RF",
+    "MAC_BB_setting",
+    "preset",
+    "LOK_TXK_RXK",
+    "restore_IQC",
+    "AFE_BB_restore",
+    "restore_MAC_BB_RF",
+    "RF5_automatic"
+  ],
+  "chips": {
+    "8852c": {
+      "backup_registers": {
+        "MAC": [],
+        "BB": [
+          "02344",
+          "0c0c4",
+          "0c0d4",
+          "0c0d8",
+          "0c0e8",
+          "0c1d4",
+          "0c1d8",
+          "0c1e8"
+        ],
+        "RF": [
+          "000dc",
+          "000ef",
+          "000de",
+          "00000",
+          "0001e",
+          "00005",
+          "10005"
+        ]
+      },
+      "actual_callback_table": [
+        {
+          "slot": 0,
+          "function": "halrf_kpath_8852c"
+        },
+        {
+          "slot": 1,
+          "function": "iqk_mcc_page_sel_8852c"
+        },
+        {
+          "slot": 2,
+          "function": "iqk_get_ch_info_8852c"
+        },
+        {
+          "slot": 3,
+          "function": "iqk_preset_8852c"
+        },
+        {
+          "slot": 4,
+          "function": "iqk_macbb_setting_8852c"
+        },
+        {
+          "slot": 5,
+          "function": "iqk_start_iqk_8852c"
+        },
+        {
+          "slot": 6,
+          "function": "iqk_restore_8852c"
+        },
+        {
+          "slot": 7,
+          "function": "iqk_afebb_restore_8852c"
+        }
+      ],
+      "hardware_specification_object_offset": "0x196a38"
+    },
+    "8192xb": {
+      "backup_registers": {
+        "MAC": [],
+        "BB": [
+          "02344",
+          "0c0d4",
+          "0c0d8",
+          "0c0c4",
+          "0c0e8",
+          "0c0ec",
+          "0c1d4",
+          "0c1d8",
+          "0c1c4",
+          "0c1e8",
+          "0c1ec"
+        ],
+        "RF": [
+          "000dc",
+          "000ef",
+          "000de",
+          "00000",
+          "0001e",
+          "00005",
+          "10005"
+        ]
+      },
+      "actual_callback_table": [
+        {
+          "slot": 0,
+          "function": "halrf_kpath_8192xb"
+        },
+        {
+          "slot": 1,
+          "function": "iqk_mcc_page_sel_8192xb"
+        },
+        {
+          "slot": 2,
+          "function": "iqk_get_ch_info_8192xb"
+        },
+        {
+          "slot": 3,
+          "function": "iqk_preset_8192xb"
+        },
+        {
+          "slot": 4,
+          "function": "iqk_macbb_setting_8192xb"
+        },
+        {
+          "slot": 5,
+          "function": "iqk_start_iqk_8192xb"
+        },
+        {
+          "slot": 6,
+          "function": "iqk_restore_8192xb"
+        },
+        {
+          "slot": 7,
+          "function": "iqk_afebb_restore_8192xb"
+        }
+      ],
+      "hardware_specification_object_offset": "0x196b30"
+    }
+  }
+}
