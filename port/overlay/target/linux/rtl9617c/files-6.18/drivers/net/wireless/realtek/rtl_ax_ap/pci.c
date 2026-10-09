@@ -34,6 +34,7 @@
 #include "c-rxdck.h"
 #include "trim.h"
 #include "ref-power.h"
+#include "tssi-de.h"
 
 /* Original netdev-open policy in os_intfs.c: MU beamforming, OFDMA or
  * force_fw_tx selects firmware scheduling. Preserve all three inputs. */
@@ -86,6 +87,7 @@ struct rtl_ax_ap {
 	struct rtl_ax_rxdck rxdck;
 	struct rtl_ax_trim trim;
 	struct rtl_ax_ref_power ref_power;
+	struct rtl_ax_tssi_de tssi_de;
 	struct rtl_ax_rx *rx;
 	struct ieee80211_hw *hw;
 	struct ieee80211_supported_band band;
@@ -1124,6 +1126,8 @@ static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int chan
 	ret = radio->chip == RTL_AX_8852C ?
 		rtl_ax_c_receive_channel20(&radio->io, &radio->phy, &radio->bb_dm, channel, &radio->channel) :
 		rtl_ax_xb_receive_channel20(&radio->io, &radio->phy, &radio->bb_dm, channel, &radio->channel);
+	if (!ret && radio->chip == RTL_AX_8192XB)
+		rtl_ax_xb_tssi_de(&radio->io, &radio->flash_calibration, &radio->trim, channel, &radio->tssi_de);
 	pci_set_master(radio->pdev);
 	rtl_ax_h2c_start(&radio->io);
 	rtl_ax_rx_open(radio->rx);
@@ -1290,6 +1294,27 @@ static ssize_t radio_ref_power_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_ref_power);
 
+static ssize_t radio_tssi_de_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_tssi_de *state = &radio->tssi_de;
+	unsigned int path, i;
+	ssize_t length = sysfs_emit(buffer, "TSSI_DE=%s channel=%u CCK_group=%u OFDM_group=%04x trim_group=%04x "
+		"hardware_TSSI_tracking=pending C_BW_slope_inputs=pending\n",
+		state->ready ? "applied" : "pending", state->center, state->cck_group, state->ofdm_group, state->trim_group);
+
+	for (path = 0; path < 2; path++) {
+		length += sysfs_emit_at(buffer, length, "path=%u CCK_DE=%d OFDM_DE=%d trim=%d\n",
+			path, state->cck[path], state->ofdm[path], state->trim[path]);
+		for (i = 0; i < 8; i++)
+			length += sysfs_emit_at(buffer, length, "path=%u slot=%u readback=%u\n",
+				path, i, state->readback[path][i]);
+	}
+	return length;
+}
+static DEVICE_ATTR_RO(radio_tssi_de);
+
 static ssize_t radio_efuse_read(struct file *file, struct kobject *kobject,
 	const struct bin_attribute *attr, char *buffer, loff_t offset, size_t count)
 {
@@ -1334,7 +1359,7 @@ static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_rx_pipeline.attr, &dev_attr_radio_channel.attr, &dev_attr_radio_rx_mode.attr,
 	&dev_attr_radio_rf_start.attr, &dev_attr_radio_dack.attr, &dev_attr_radio_dac.attr,
 	&dev_attr_radio_mac80211.attr, &dev_attr_radio_rx_dck.attr, &dev_attr_radio_trim.attr,
-	&dev_attr_radio_ref_power.attr, NULL,
+	&dev_attr_radio_ref_power.attr, &dev_attr_radio_tssi_de.attr, NULL,
 };
 static const struct attribute_group rtl_ax_group = {
 	.attrs = rtl_ax_attrs, .bin_attrs = rtl_ax_bin_attrs,

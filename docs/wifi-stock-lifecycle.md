@@ -462,10 +462,18 @@ read_offset@30be50按原机顺序读取0/1/12/13和16/17/28/29增益点的RF92/9
 
 `trim.h`按原机get_total_efuse_C@338810读取物理590..5df共80B、XB@3620b8读取5a0..5df共64B。两颗thermal取A5df/B5dc，将byte低4位中的bit0移到bit3、原bits3:1右移1，写RF43[19:16]；PA bias取A5de/B5db，C按A低nibble→高nibble、B低→高写RF60[15:12]/[19:16]，XB只写低nibble。原机两byte均ff才跳过整对，不逐路替换ff值。
 
-TSSI trim的物理地址顺序由本机函数逐项核对：2G/5G A5d6..5cf、B5ab..5a4；C6G A5ce..5c7、B5a3..59c，各8B，有符号byte保存。原机对各频段的两路共16B一起检查，全ff才整组归零。部分擦除时ff保留signed-1；这与普通TSSI的原机HS输入是不同数据来源。C物理TSSI trim32B、XB16B本机均全ff。硬件TSSI初始化/按频道回填继续移植。
+TSSI trim的物理地址顺序由本机函数逐项核对：2G/5G A5d6..5cf、B5ab..5a4；C6G A5ce..5c7、B5a3..59c，各8B，有符号byte保存。原机对各频段的两路共16B一起检查，全ff才整组归零。部分擦除时ff保留signed-1；这与普通TSSI的原机HS输入是不同数据来源。前一次观察误取B组地址而报告全ff；按原机正确分组重新读取后，2G/5G整组并非全ff，A路ff保留signed-1，B路有实际编程值。详见后续地址映射修正记录。硬件TSSI初始化/按频道回填继续移植。
 
 trim模块dcedab8919e784875486751b5e3a3628d8067395569876c9011edb692e029348实机C thermal24/24→code2/2、RF43=25000/25000；PA4f/4f→RF60=4f110/4f110。XB thermal20/24→code0/2、RF43=02180/22180；PAf3/f0→RF60=03010/00010，符合其仅2G nibble的原机动作。两路各32个实际用户态无线帧完整FCS全匹配，kernel dropped0，XEPON公网2/2；记录manifests/radio-trim-20261010.json和对应logs/pcap。
 
 重新逐层核对原机ref_power_to_struct_C@320f18/XB@3485c4发现它不止初始化host对象：两颗均调用rtw_hal_bb_set_tx_pow_ref→halbb_set_tx_pow_ref→MAC与BB实现。RFE54原机reference偏移0、base code33、TSSI16dBm code300、OFDM/CCK reference0；MAC d200[27:19]/[18:10]写两个zero reference。两颗BB函数对上述初值计算powerCW264、TSSI_CW172，组合27bit值02b21000并按5804/5808/7804/7808顺序回填。
 
 `ref-power.h`已在NCTL之后、RCK之前接入该实际硬件动作。模块89f2767d7a8e064b6d1e1cfcd15d283431b3a099572843e8a4c03b7541946d34两颗MAC d200=0、八个BB字段读回均02b21000；随后每路32个实际无线帧完整FCS全匹配，描述符/tag错误0、kernel抓包丢包0，XEPON公网2/2。记录manifests/radio-ref-power-20261010.json。后续普通TSSI读取实际调用的是rtw_hal_flash_get_info，需保留原机HS分组值、gain/CW/BW差异和功率策略，不能用物理trim取代。
+
+## 2026-10-10 XB TSSI频道DE回填与OTP分组复核
+
+`tssi-de.h`接入本机XB set_efuse_to_de@360ab8的normal-type路径，随native频道设置在恢复DMA前执行。CCK按1..2/3..5/6..8/9..11/12..13/14选择六个HS组，OFDM按原机19个2G/5G组选择，组间编码0506等按有符号和除2、向零截断。物理trim使用原机8组及0203等显式插值编码；先匹配范围再判断插值，保留原机存在但被前面范围覆盖的条件。A→B分别计算HS CCK/OFDM值加物理trim，再按5858/5860、5838/5840/5848/5850/5828/5830顺序写10bit[21:12]。硬件tracking、TSSI_CAL模式及C的BW/slope差异输入仍继续接入，当前不声明完整TSSI。
+
+复核地址后纠正了前一轮trim观察：B路2G/5G应读取5ab..5a4，此前观察模块误取5ce..5c7，从而把整组错误报告为全ff。正式trim.h的地址已按原机机器码修正；这次实际读取A路2G/5G为ff（signed-1），B路有实际编程值，如频道6对应trim=-4。因此原机整组16个byte不全ff，不会把A的ff单独改0。先前原始日志保留，manifest和文档标明旧分组错误，正确输入见logs/radio-trim-corrected-map-20261010.txt。
+
+原生模块15bb7ce9cb42e3c97e91405341c487a2b6e35bb0c4695de7617e2e46993a4c93实机频道6 CCK/OFDM DE两路=-1/-1、4/4；频道1=2/1、1/-1；频道11=2/1、3/1。每个频道16个字段读回全部等于原厂算法结果，负值-1实际编码1023。频道6随后32个真实用户态无线帧完整FCS全匹配、descriptor/tag错误0、kernel丢包0，XEPON公网2/2。记录manifests/radio-tssi-de-XB-20261010.json、logs/radio-tssi-de-20261010.txt及pcap。C继续同模块原生接收，但C DE/BW/slope尚未加入频道路径。

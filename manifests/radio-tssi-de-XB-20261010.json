@@ -1,0 +1,67 @@
+{
+  "module_sha256": "15bb7ce9cb42e3c97e91405341c487a2b6e35bb0c4695de7617e2e46993a4c93",
+  "actual_channel_results": [
+    {
+      "configuration": "applied channel=6 CCK_group=2 OFDM_group=0002 trim_group=0000 hardware_TSSI_tracking=pending C_BW_slope_inputs=pending",
+      "paths": [
+        [
+          "0",
+          "-1",
+          "-1",
+          "-1"
+        ],
+        [
+          "1",
+          "4",
+          "4",
+          "-4"
+        ]
+      ],
+      "all_16_fields_match": true
+    },
+    {
+      "configuration": "applied channel=1 CCK_group=0 OFDM_group=0000 trim_group=0000 hardware_TSSI_tracking=pending C_BW_slope_inputs=pending",
+      "paths": [
+        [
+          "0",
+          "2",
+          "1",
+          "-1"
+        ],
+        [
+          "1",
+          "1",
+          "-1",
+          "-4"
+        ]
+      ],
+      "all_16_fields_match": true
+    },
+    {
+      "configuration": "applied channel=11 CCK_group=3 OFDM_group=0003 trim_group=0001 hardware_TSSI_tracking=pending C_BW_slope_inputs=pending",
+      "paths": [
+        [
+          "0",
+          "2",
+          "1",
+          "-1"
+        ],
+        [
+          "1",
+          "3",
+          "1",
+          "-4"
+        ]
+      ],
+      "all_16_fields_match": true
+    }
+  ],
+  "actual_receive_frames": 32,
+  "all_FCS_match": true,
+  "pcap": "logs/radio-tssi-de-XB.pcap",
+  "pcap_sha256": "cd226fa7e5a619edf34a718c80eff4ffc464fe23ad70e51318b4f7328897d4d9",
+  "corrected_OTP_map_log": "logs/radio-trim-corrected-map-20261010.txt",
+  "hardware_TSSI_tracking_implemented": false,
+  "C_BW_slope_inputs_complete": false,
+  "log": "logs/radio-tssi-de-20261010.txt"
+}

@@ -35,6 +35,9 @@
     "f0"
   ],
   "all_trim_fields_readback_match": true,
-  "OTP_TSSI_all_erased": true,
-  "log": "logs/radio-trim-20261010.txt"
+  "OTP_TSSI_all_erased": false,
+  "log": "logs/radio-trim-20261010.txt",
+  "earlier_observation_used_wrong_B_trim_group": true,
+  "corrected_OTP_address_map": "2G5G A5d6..5cf B5ab..5a4;C6G A5ce..5c7 B5a3..59c",
+  "corrected_log": "logs/radio-trim-corrected-map-20261010.txt"
 }
