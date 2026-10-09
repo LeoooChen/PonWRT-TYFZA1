@@ -134,6 +134,8 @@ static int rtl_ax_phy_rf_write(const struct rtl_ax_io *io, unsigned int path,
 	ret = io->poll32(io->ctx, 0x1174c, 0x03000000, 0, 1, 31, &last);
 	if (ret)
 		return ret;
+	/* The original delays1us even on its final idle observation. */
+	io->delay_us(io->ctx, 1);
 	io->write32(io->ctx, 0x10370,
 		    (path << 28) | ((address & 0xff) << 20) | (value & 0xfffff));
 	return 0;

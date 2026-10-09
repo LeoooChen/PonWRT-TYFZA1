@@ -1,0 +1,107 @@
+{
+  "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "functions": {
+    "mac_trx_init": {
+      "address": "0x240178",
+      "bytes": 696,
+      "sha256": "db7859031a16034626db340d6d53e7c43917fc46cdce96fa251552e73a0dbeab"
+    },
+    "coex_mac_init_8852c": {
+      "address": "0x2547f0",
+      "bytes": 44,
+      "sha256": "f6886b8ced3fe3607819992240b77f9ed0fa9a6a48c15d1d2c28ca8591d729d4"
+    },
+    "coex_mac_init_8192xb": {
+      "address": "0x26af0c",
+      "bytes": 44,
+      "sha256": "f6886b8ced3fe3607819992240b77f9ed0fa9a6a48c15d1d2c28ca8591d729d4"
+    },
+    "ser_imr_config_8852c": {
+      "address": "0x24f4c4",
+      "bytes": 1880,
+      "sha256": "b055e204df6d12b86933b2af76fc354a123ed86922ea7b7459f11df15ab7bfd6"
+    },
+    "ser_imr_config_8192xb": {
+      "address": "0x267b0c",
+      "bytes": 1880,
+      "sha256": "b055e204df6d12b86933b2af76fc354a123ed86922ea7b7459f11df15ab7bfd6"
+    },
+    "mac_enable_imr": {
+      "address": "0x23eea4",
+      "bytes": 88,
+      "sha256": "6886a36c79985ea322689d5af39e7bdb754e5d5a835999ea3ffb713e4b870248"
+    },
+    "mac_err_imr_ctrl": {
+      "address": "0x235100",
+      "bytes": 128,
+      "sha256": "50abde6825b59764fcb61b84111e987dcac735dc89898c1be23bbe1d55838dd1"
+    },
+    "set_host_rpr": {
+      "address": "0x21e430",
+      "bytes": 604,
+      "sha256": "58a6ad4c1665701242096fbf8981e1c6aa3e47c22d4061a11b59b316ac4fc085"
+    },
+    "set_l2_status": {
+      "address": "0x21e68c",
+      "bytes": 16,
+      "sha256": "17678eb682cf1a7cda12b8359bd0db1a055b519d33f9c7cda1a092d5101b6f5a"
+    },
+    "chk_patch_haxidma_ind": {
+      "address": "0x246e50",
+      "bytes": 136,
+      "sha256": "791bab6f8cfb3b19ebd5fd6e2a6e3b1ef237fd247fe049f605841936fc2bc9ba"
+    },
+    "mac_feat_init": {
+      "address": "0x240430",
+      "bytes": 88,
+      "sha256": "ed700d59550947f852c038c7e3574a42c10f9e1367eebeda7767f25461741bf8"
+    },
+    "mac_bacam_init": {
+      "address": "0x23c968",
+      "bytes": 196,
+      "sha256": "76d6ed75cff6ed35155736a0645f670781ceae7fd3b46846575333e381122978"
+    },
+    "mac_bacam_init_upd": {
+      "address": "0x23c6e0",
+      "bytes": 648,
+      "sha256": "c91efc79d4dc4bc3aed7c78a5f2c7367d9058fdcc34e03494808f296724b028a"
+    },
+    "h2c_pkt_set_hdr": {
+      "address": "0x20cda4",
+      "bytes": 452,
+      "sha256": "b564a48c57071eaaca9d4e2e5ba89d343ac8944eaf7e3e4c1585fdcf1fd5d6c5"
+    },
+    "h2c_pkt_build_txd": {
+      "address": "0x20d08c",
+      "bytes": 312,
+      "sha256": "5c357b04ee2800bcf8cf3580402cc86304b38e4279dc149ba44be5a200b2ba23"
+    },
+    "h2c_end_flow": {
+      "address": "0x20cb78",
+      "bytes": 96,
+      "sha256": "0d7daa9142a9e907be3377d12fb093518bafb99d3ad75e947ee07a2a6228ce8a"
+    }
+  },
+  "private_ops": {
+    "0x78": "ser_imr_config_C/XB",
+    "0x128": "coex_mac_init_C/XB",
+    "0x1d8": "mac_bacam_init"
+  },
+  "implemented": "coex,D/C MAC SER masks,DMAC/CMAC0 error masks,PCIe SCC WP reporting",
+  "WP_reporting": {
+    "aggregation": 121,
+    "timer": 255,
+    "txok": true,
+    "retry_limit": true,
+    "lifetime_drop": true,
+    "MACID_drop": true,
+    "source": "original _hal_pre_init_Ce/XBe and ELF data+c2f0"
+  },
+  "pending": "BA-CAM feature H2C and complete RX/C2H/PCIe normal data lifecycle",
+  "board_run": false,
+  "validation": {
+    "ARM64_kernel_objects": "pci.o and phy.o compiled",
+    "service": "ponwrt-tyfza1-stock-trx-tail-final-compile",
+    "board_run": false
+  }
+}

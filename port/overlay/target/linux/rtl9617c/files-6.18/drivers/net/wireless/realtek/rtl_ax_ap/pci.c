@@ -47,6 +47,7 @@ struct rtl_ax_ap {
 	bool mac_memory_ready;
 	bool dmac_engines_ready, firmware_tx;
 	bool cmac_registers_ready;
+	bool trx_registers_ready;
 	bool phy_inputs_ready;
 };
 
@@ -213,6 +214,8 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	if (ret)
 		return ret;
 	radio->cmac_registers_ready = true;
+	rtl_ax_mac_trx_registers(&radio->io);
+	radio->trx_registers_ready = true;
 	ret = rtl_ax_phy_load(&radio->pdev->dev, radio->chip, &radio->phy);
 	if (!ret)
 		radio->phy_inputs_ready = true;
@@ -232,7 +235,8 @@ static ssize_t radio_state_show(struct device *dev,
 		"firmware_state=%s download_memory=%s hci=paused "
 		"transport=channel12 packets=%u bytes=%u control=0x%02x "
 		"mac_memory=%s secure=%u dmac_engines=%s firmware_tx=%u "
-		"cmac_registers=%s phy_inputs=%s bb_rf=pending roles=pending mac80211=pending\n",
+		"cmac_registers=%s trx_registers=%s phy_inputs=%s "
+		"features=pending bb_rf=pending roles=pending mac80211=pending\n",
 		radio->chip, radio->identity.hardware_cv, radio->identity.cv,
 		radio->identity.factory, radio->identity.adie, radio->powered ? "on" : "off",
 		radio->calibration.tag, radio->calibration.process,
@@ -243,6 +247,7 @@ static ssize_t radio_state_show(struct device *dev,
 		radio->mac_memory_ready ? "SCC" : "off", radio->secure,
 		radio->dmac_engines_ready ? "ready" : "off", radio->firmware_tx,
 		radio->cmac_registers_ready ? "ready" : "off",
+		radio->trx_registers_ready ? "ready" : "off",
 		radio->phy_inputs_ready ? "RFE54-base-and-FEM" : "off");
 }
 static DEVICE_ATTR_RO(radio_state);
@@ -265,6 +270,7 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		radio->mac_memory_ready = false;
 		radio->dmac_engines_ready = false;
 		radio->cmac_registers_ready = false;
+		radio->trx_registers_ready = false;
 		radio->phy_inputs_ready = false;
 		radio->download_prepared = false;
 	}
@@ -302,7 +308,7 @@ static int rtl_ax_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (!bar)
 		return -ENODEV;
 	bar = __ffs(bar);
-	if (pci_resource_len(pdev, bar) < 0xce4b)
+	if (pci_resource_len(pdev, bar) < 0xda4c)
 		return -ENODEV;
 	radio->bar = pcim_iomap_region(pdev, bar, "rtl_ax_ap");
 	if (IS_ERR(radio->bar))

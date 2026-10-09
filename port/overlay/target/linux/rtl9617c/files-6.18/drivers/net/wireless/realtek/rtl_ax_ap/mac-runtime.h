@@ -320,4 +320,70 @@ static inline int rtl_ax_mac_cmac_start(const struct rtl_ax_io *io,
 	rtl_ax_cmac_protocol(io, firmware_tx);
 	return 0;
 }
+
+static inline void rtl_ax_mac_trx_registers(const struct rtl_ax_io *io)
+{
+	const struct {
+		unsigned int address, keep, enable;
+	} dmac[] = {
+		{0x9430, 0xffffccc8, 0x00003327}, /* WDRLS */
+		{0x9d2c, 0xffffffff, 0x00000003}, /* Security */
+		{0x9bf4, 0xfffffc01, 0x0000036e}, /* MPDU TX */
+		{0x9cf4, 0xfffffff4, 0x00000008}, /* MPDU RX */
+		{0x9ef0, 0xffffffff, 0x00000007}, /* STA scheduler */
+		{0x9f78, 0xffcaf0f0, 0x00350f03}, /* TX packet control0 */
+		{0x9fb8, 0xffcaf0f0, 0x00350f03}, /* TX packet control1 */
+		{0x8c38, 0xc0f00c00, 0x3f0ff3ff}, /* WDE */
+		{0x9038, 0xc0f00c00, 0x3f0ff3ff}, /* PLE */
+		{0x9a20, 0xffffffff, 0x00000001}, /* Packet-in */
+		{0x8850, 0x00380000, 0x0c100060}, /* Host dispatcher */
+		{0x8854, 0x80840002, 0x36000060}, /* CPU dispatcher */
+		{0x8858, 0x00002020, 0x303cc000}, /* Other dispatcher */
+		{0x9840, 0xffffeeee, 0x00001111}, /* CPU IO */
+		{0x9608, 0xfffffffc, 0x00000000}, /* BB report common */
+		{0x9628, 0xffffffff, 0x000000ff}, /* Channel-info */
+		{0x9638, 0xffffffff, 0x00000001}, /* DFS */
+		{0x966c, 0xffffffff, 0x00000001}, /* LA */
+		{0x10b8, 0xffffffff, 0x0000000f}, /* PCIe HAXI errors */
+	}, cmac[] = {
+		{0xc3e8, 0xfffffffc, 0x00000001}, /* Scheduler */
+		{0xc6c0, 0xffffffff, 0x00000003}, /* Protocol */
+		{0xc804, 0x800000f9, 0x7fffff06}, /* CMAC DMA */
+		{0xc870, 0xffffffff, 0xff00c000}, /* PHY interface */
+		{0xccf8, 0xffffffff, 0x0000003f}, /* TRX protocol */
+		{0xcef8, 0xfffffc00, 0x000003c0}, /* RMAC */
+		{0xccbc, 0xfffffe00, 0x0000017f}, /* RX trigger */
+	};
+	unsigned int i, value, next;
+
+	/* Actual mac_trx_init private slot0x128: both chips' coex init only
+	 * writesda48=0. Then SER IMR runs DMAC before CMAC band0. */
+	io->write32(io->ctx, 0xda48, 0);
+	for (i = 0; i < sizeof(dmac) / sizeof(dmac[0]); i++)
+		io->write32(io->ctx, dmac[i].address,
+			    (io->read32(io->ctx, dmac[i].address) & dmac[i].keep) | dmac[i].enable);
+	for (i = 0; i < sizeof(cmac) / sizeof(cmac[0]); i++)
+		io->write32(io->ctx, cmac[i].address,
+			    (io->read32(io->ctx, cmac[i].address) & cmac[i].keep) | cmac[i].enable);
+	/* mac_err_imr_ctrl(1),SCC has no CMAC1. */
+	io->write32(io->ctx, 0x8520, 0xffffffff);
+	io->write32(io->ctx, 0xc160, 0xffffffff);
+	/* set_host_rpr: PCIe SCC's POH profile chooses path0 and enables all
+	 * four WP report outcomes. Original AP override caps aggregation121;
+	 * default timer isff. Preserve its skip-write-if-unchanged behavior. */
+	value = io->read32(io->ctx, 0x9408);
+	next = value & ~3U;
+	if (value != next)
+		io->write32(io->ctx, 0x9408, next);
+	value = io->read32(io->ctx, 0x9410);
+	next = value | 0x0f000000;
+	if (value != next)
+		io->write32(io->ctx, 0x9410, next);
+	value = io->read32(io->ctx, 0x9414);
+	next = (value & 0xff00ff00) | 0x00ff0079;
+	if (value != next)
+		io->write32(io->ctx, 0x9414, next);
+	/* set_l2_status changes a host state byte,not a hardware register.
+	 * mac_feat_init next sends BA-CAM8-entry H2C;runtime H2C follows. */
+}
 #endif

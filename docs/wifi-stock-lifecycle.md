@@ -128,3 +128,11 @@ halrf_config_radio@0x3030e8 对 C 按 B→A，对 XB 按 A→B。每条路径写
 rtw_hal_init_rf_reg@0x1bef20 先调用 radio 配置，保存 by-rate/track/limit/RU，再调用 halrf_config_rf_parameter@0x303760；后者还会再次配置 radio，并加载功率、tracking、XTAL 和 EDPK。这两次 radio 配置不能擅自合并。hal_start 对基础表与 FEM 扩展重复整个 BB/RF 初始化也要保留。相应执行顺序和功率/增益/校准对象继续实现；当前没有声明 RF 已初始化。
 
 来源地址、每份实际表的数量/哈希及 digital-RF 分页数量见 manifests/radio-stock-phy-inputs.json。脱离 Codex 的后台服务 ponwrt-tyfza1-stock-phy-input-compile 已编译 pci.o 和 phy.o，退出码 0。
+
+## MAC TRX 的共存、错误中断和释放报告寄存器
+
+沿原机 mac_trx_init@0x240178 继续落实后段：private ops 的 0x128 指向 coex_mac_init_C/XB，两者实际只写 da48=0；0x78 指向 ser_imr_config_C/XB，依次配置 DMAC 的 19 处、CMAC band0 的 7 处 SER 掩码；mac_err_imr_ctrl(1) 写 DMAC/CMAC0 总错误掩码。每处保留位与使能值来自对应实际机器码，SCC 不触碰 band1。
+
+set_host_rpr@0x21e430 的 PCIe SCC POH profile 选择 path0，开启 TXOK/retry-limit/lifetime-drop/MACID-drop 四类结果。原机 _hal_pre_init_Ce/XBe 根据 RP buffer 算聚合上限，再 cap 到 121；当前计划的原生 RP buffer 同样容纳该值。原机 ELF data+c2f0 的 agg/timer 默认是 79/ff，timer 保持 ff；按原机设置 9408、9410、9414，值未变化时跳过写入。set_l2_status 仅修改软件状态，未添加对应假想寄存器。
+
+mac_feat_init 的 private ops 0x1d8 实际指向 mac_bacam_init，对两颗芯片调用 mac_bacam_init_upd(8,0,0)，经 category MAC、class12、function2 的 H2C 初始化 8 个 BA CAM，并要求 done-ACK。其完成必须接上运行态 RX/C2H。这个阶段和 PCIe normal-channel/LTR 接入尚未完成；当前状态仅为 trx_registers=ready，features 与 bb_rf 仍为 pending。原生 ordinary host RX/TX 继续处于暂停阶段。实际函数、ops 槽位和报告配置的依据见 manifests/radio-stock-trx-tail.json。
