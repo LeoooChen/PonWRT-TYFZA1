@@ -5,6 +5,13 @@
 #define RTL_AX_AP_MAC_RUNTIME_H
 #include "download.h"
 
+static inline void rtl_ax_bb_rf_disable(const struct rtl_ax_io *io)
+{
+	/* set_enable_bb_rf(enable=0), actual C/XB branch at21e29c. */
+	rtl_ax_update32(io, 0x02f0, RTL_AX_BIT(17), 0);
+	rtl_ax_update8(io, 0x0002, 3, 0);
+}
+
 static inline int rtl_ax_bb_rf_enable(const struct rtl_ax_io *io, unsigned int chip)
 {
 	unsigned int i;

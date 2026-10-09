@@ -26,6 +26,7 @@ struct rtl_ax_phy_gain {
 struct rtl_ax_phy_inputs {
 	struct rtl_ax_phy_table table[RTL_AX_PHY_STAGES][RTL_AX_PHY_TABLES];
 	struct rtl_ax_phy_gain gain[RTL_AX_PHY_STAGES];
+	s8 gain_offset[2], gain_offset_tb[2];
 	unsigned int chip;
 };
 
@@ -42,6 +43,7 @@ void rtl_ax_phy_release(struct rtl_ax_phy_inputs *inputs);
 void rtl_ax_phy_bb_apply(const struct rtl_ax_io *io, const struct rtl_ax_phy_inputs *inputs,
 			enum rtl_ax_phy_stage stage);
 void rtl_ax_phy_bb_reset(const struct rtl_ax_io *io, unsigned int chip);
+void rtl_ax_phy_bb_offset(const struct rtl_ax_io *io, struct rtl_ax_phy_inputs *inputs);
 int rtl_ax_phy_radio_apply(const struct rtl_ax_io *io,
 			   const struct rtl_ax_phy_inputs *inputs, enum rtl_ax_phy_stage stage,
 			   const struct rtl_ax_phy_commands *commands);

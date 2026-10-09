@@ -63,6 +63,7 @@ struct rtl_ax_ap {
 	bool trx_registers_ready;
 	bool phy_inputs_ready;
 	bool features_ready;
+	bool bb_base_ready;
 };
 
 static unsigned char rtl_ax_read8(void *ctx, unsigned int reg)
@@ -291,6 +292,23 @@ static int rtl_ax_wait_firmware(void *ctx, unsigned int *control)
 				 rtl_ax_fw_result(*control) != -EINPROGRESS, 10, 400000);
 }
 
+static int rtl_ax_bb_base_start(struct rtl_ax_ap *radio)
+{
+	int ret;
+
+	/* hal_start_C/XB: MAC init→BB/RF off/on→rtw_hal_init_bb_reg.
+	 * Stop at the base BB boundary while RF/power objects are ported. */
+	rtl_ax_bb_rf_disable(&radio->io);
+	ret = rtl_ax_bb_rf_enable(&radio->io, radio->chip);
+	if (ret)
+		return ret;
+	rtl_ax_phy_bb_apply(&radio->io, &radio->phy, RTL_AX_PHY_BASE);
+	rtl_ax_phy_bb_offset(&radio->io, &radio->phy);
+	rtl_ax_phy_bb_reset(&radio->io, radio->chip);
+	radio->bb_base_ready = true;
+	return 0;
+}
+
 static void rtl_ax_ring_free(struct rtl_ax_ap *radio)
 {
 	if (radio->h2c_packet)
@@ -362,7 +380,10 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	if (ret)
 		return ret;
 	radio->phy_inputs_ready = true;
-	return rtl_ax_mac_features(radio);
+	ret = rtl_ax_mac_features(radio);
+	if (ret)
+		return ret;
+	return rtl_ax_bb_base_start(radio);
 }
 
 static ssize_t radio_state_show(struct device *dev,
@@ -379,7 +400,7 @@ static ssize_t radio_state_show(struct device *dev,
 		"transport=channel12 packets=%u bytes=%u control=0x%02x "
 		"mac_memory=%s secure=%u dmac_engines=%s firmware_tx=%u "
 		"cmac_registers=%s trx_registers=%s phy_inputs=%s "
-		"features=%s done_acks=%llu bb_rf=pending roles=pending mac80211=pending\n",
+		"features=%s done_acks=%llu bb_base=%s bb_rf=pending roles=pending mac80211=pending\n",
 		radio->chip, radio->identity.hardware_cv, radio->identity.cv,
 		radio->identity.factory, radio->identity.adie, radio->powered ? "on" : "off",
 		radio->calibration.tag, radio->calibration.process,
@@ -392,9 +413,30 @@ static ssize_t radio_state_show(struct device *dev,
 		radio->cmac_registers_ready ? "ready" : "off",
 		radio->trx_registers_ready ? "ready" : "off",
 		radio->phy_inputs_ready ? "RFE54-base-and-FEM" : "off",
-		radio->features_ready ? "BA-CAM8-acknowledged" : "off", radio->done_acks);
+		radio->features_ready ? "BA-CAM8-acknowledged" : "off", radio->done_acks,
+		radio->bb_base_ready ? "applied" : "off");
 }
 static DEVICE_ATTR_RO(radio_state);
+
+static ssize_t radio_bb_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+
+	return sysfs_emit(buffer,
+		"base_rows=%u gain_rows=%u gain_offset=%d,%d gain_offset_tb=%d,%d "
+		"sys_func=0x%02x rf_ctrl=0x%08x bb0704=0x%08x "
+		"bb4df0=0x%08x bb6df0=0x%08x bb4e0c=0x%08x bb6e0c=0x%08x\n",
+		radio->phy.table[RTL_AX_PHY_BASE][RTL_AX_PHY_REG].count,
+		radio->phy.table[RTL_AX_PHY_BASE][RTL_AX_PHY_GAIN].count,
+		radio->phy.gain_offset[0], radio->phy.gain_offset[1],
+		radio->phy.gain_offset_tb[0], radio->phy.gain_offset_tb[1],
+		rtl_ax_read8(radio, 0x0002), rtl_ax_read32(radio, 0x02f0),
+		rtl_ax_read32(radio, 0x10704), rtl_ax_read32(radio, 0x14df0),
+		rtl_ax_read32(radio, 0x16df0), rtl_ax_read32(radio, 0x14e0c),
+		rtl_ax_read32(radio, 0x16e0c));
+}
+static DEVICE_ATTR_RO(radio_bb);
 
 static ssize_t radio_rx_show(struct device *dev,
 	struct device_attribute *attr, char *buffer)
@@ -405,7 +447,7 @@ static ssize_t radio_rx_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_rx);
 static struct attribute *rtl_ax_attrs[] = {
-	&dev_attr_radio_state.attr, &dev_attr_radio_rx.attr, NULL,
+	&dev_attr_radio_state.attr, &dev_attr_radio_rx.attr, &dev_attr_radio_bb.attr, NULL,
 };
 ATTRIBUTE_GROUPS(rtl_ax);
 
@@ -428,6 +470,7 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		radio->trx_registers_ready = false;
 		radio->phy_inputs_ready = false;
 		radio->features_ready = false;
+		radio->bb_base_ready = false;
 		radio->download_prepared = false;
 	}
 	ret = rtl_ax_ap_power_off(&radio->io);

@@ -174,3 +174,13 @@ PHY_REG_GAIN按本机halbb_cfg_bb_gain_C/XB实际回调解码为LNA/TIA、bypass
 原机halbb_reset_bb_phy进一步指向C/XB不同函数：C callback只有日志；XB临时保持58dc/5818/78dc/7818的TSSI bit30，0704 bit1按1→0→1写，再释放TSSI。原生执行接口按这条差异实现，未加虚构的C reset写入。该阶段对象/接口已通过ARM64目录构建，具体函数来源为manifests/radio-stock-bb-gain.json；此改动在runtime-c2h01之后，尚未在该FIT中。
 
 2026-10-09 晚间 four-lan03（FIT SHA256 46539868ddcffac3c957ad9573db0cbe5ed18def18c40c7d2789adc141231f38）已包含增益对象并在原机运行。两颗无线芯片各收到 BA CAM 成功应答，RXQ/IRQ 各1、RX错误全0；通过 SSH 依次 unbind/bind 后，两颗再次完成固件下载和成功应答。实际输出保存在 logs/radio-rebind-20261009.txt。此复测证明当前供电、下载、运行态控制 DMA 与启停可重复，BB/RF 与 AP 仍未完成。
+
+## 基础 BB 原机执行验证
+
+hal_start_C@277a14/XB@27e4f8 在 MAC init 后先 set_enable_bb_rf(0→1)。off 分支@21e29c 对 C/XB 清 WLRF_CTRL 02f0 bit17，再清 SYS_FUNC 0002 bits0/1；原生已接此顺序。rtw_hal_init_bb_reg@1b7ea4 依次执行 halbb_init_reg 和 halbb_reset_bb。halbb_init_reg@2af4c4 先写 PHY_REG，再解码增益对象、调用 halbb_get_efuse_ofst_init；该名字对应的是读取表初始化后的 BB 寄存器，并非再次读取物理 eFuse。
+
+C@2e80ec 保存 4df0/6df0 低8位与4e0c/6e0c高8位的有符号 offset；XB@2f2210 只保存共享 PHY0 的4df0/4e0c。基础执行在此处暂停，尚未执行完整 RF/power/FEM/DM/AP。
+
+scripts/build_live_radio.sh 将 overlay 的同一份 pci.c/phy.c/rx.c 编为本机 Linux6.18.55 原生模块，仅将 PCI driver 名改成 rtl_ax_ap_live，以便在 RAM 系统 unbind 内置版本后上机迭代。没有加载原厂 host ko。bb01 模块 SHA256 8f6baa01dc171952331a0e4aa1a95c6c775a5da9ed3af4614f3e11191d261add，经 SCP 校验后在本机加载。
+
+实际 C 的1432项BB、336项gain，XB的1417项BB、128项gain完成；SYS_FUNC均c3、WLRF_CTRL均00820000。C的0704=601c0502、4df0=08080618；XB的0704=601e0d02、4df0=0，与各自原机基础表最终值一致。捕获C offset=24,0，XB=0,0；两颗BA CAM应答和RX错误计数仍正常。原始输出 logs/radio-live-bb01-20261009.txt，不将 BB 基础执行等同于 RF/AP 完成。

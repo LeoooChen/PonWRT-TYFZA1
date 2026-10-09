@@ -224,6 +224,18 @@ void rtl_ax_phy_bb_apply(const struct rtl_ax_io *io, const struct rtl_ax_phy_inp
 	}
 }
 
+void rtl_ax_phy_bb_offset(const struct rtl_ax_io *io, struct rtl_ax_phy_inputs *inputs)
+{
+	/* halbb_init_reg captures these post-table signed offsets. XB has one
+	 * shared PHY0 pair;C retains independent path A/B pairs. */
+	inputs->gain_offset[0] = (s8)io->read32(io->ctx, 0x14df0);
+	if (inputs->chip == RTL_AX_8852C)
+		inputs->gain_offset[1] = (s8)io->read32(io->ctx, 0x16df0);
+	inputs->gain_offset_tb[0] = (s8)(io->read32(io->ctx, 0x14e0c) >> 24);
+	if (inputs->chip == RTL_AX_8852C)
+		inputs->gain_offset_tb[1] = (s8)(io->read32(io->ctx, 0x16e0c) >> 24);
+}
+
 void rtl_ax_phy_bb_reset(const struct rtl_ax_io *io, unsigned int chip)
 {
 	const unsigned int hold[] = {0x158dc, 0x15818, 0x178dc, 0x17818};
