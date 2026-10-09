@@ -1,0 +1,75 @@
+{
+  "pcap": "logs/radio-mac80211-data-first01.pcap",
+  "pcap_sha256": "eae5c4631310c24a20f6de001f52055aa834084c9568a3614ebec7ecbaa83346",
+  "actual_data_frames": 8,
+  "all_complete_frame_FCS_match": true,
+  "frames": [
+    {
+      "bytes": 28,
+      "Radiotap_bytes": 18,
+      "type": 2,
+      "subtype": 4,
+      "protected": false,
+      "FCS_matches": true
+    },
+    {
+      "bytes": 28,
+      "Radiotap_bytes": 18,
+      "type": 2,
+      "subtype": 4,
+      "protected": false,
+      "FCS_matches": true
+    },
+    {
+      "bytes": 28,
+      "Radiotap_bytes": 18,
+      "type": 2,
+      "subtype": 4,
+      "protected": false,
+      "FCS_matches": true
+    },
+    {
+      "bytes": 28,
+      "Radiotap_bytes": 18,
+      "type": 2,
+      "subtype": 4,
+      "protected": false,
+      "FCS_matches": true
+    },
+    {
+      "bytes": 28,
+      "Radiotap_bytes": 18,
+      "type": 2,
+      "subtype": 4,
+      "protected": false,
+      "FCS_matches": true
+    },
+    {
+      "bytes": 28,
+      "Radiotap_bytes": 18,
+      "type": 2,
+      "subtype": 4,
+      "protected": false,
+      "FCS_matches": true
+    },
+    {
+      "bytes": 130,
+      "Radiotap_bytes": 18,
+      "type": 2,
+      "subtype": 8,
+      "protected": true,
+      "FCS_matches": true
+    },
+    {
+      "bytes": 28,
+      "Radiotap_bytes": 18,
+      "type": 2,
+      "subtype": 4,
+      "protected": false,
+      "FCS_matches": true
+    }
+  ],
+  "runtime_driver": "built-in rtl_ax_ap",
+  "source": "actual mon0 Radiotap capture on TYFZA1",
+  "AP_implemented": false
+}

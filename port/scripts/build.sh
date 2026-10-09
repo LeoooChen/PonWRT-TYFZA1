@@ -19,11 +19,15 @@ if [ ! -e "$TREE/package/feeds/packages/cgi-io" ] || [ ! -e "$TREE/package/feeds
 fi
 sh "$PORT/scripts/sync-overlay.sh" "$TREE"
 cd "$TREE"
+REGDB_PATCHED=0
 if ! grep -Fq 'regulatory.db.p7s' package/firmware/wireless-regdb/Makefile; then
     patch -p1 --fuzz=0 < "$PORT/host-patches/110-wireless-regdb-signed.patch"
-    make package/firmware/wireless-regdb/clean
+    REGDB_PATCHED=1
 fi
 make defconfig
+if [ "$REGDB_PATCHED" = 1 ]; then
+    make package/firmware/wireless-regdb/clean
+fi
 # On this WSL host, TCP fakeroot fails at the first file operation. Use the
 # existing upstream SysV backend, not root builds or altered package ownership.
 if grep -qi microsoft /proc/sys/kernel/osrelease; then
