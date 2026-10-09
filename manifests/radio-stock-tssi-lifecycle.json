@@ -1,0 +1,24 @@
+{
+  "original_host_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "XB_do_tssi": "361060",
+  "XB_order": [
+    "disable",
+    "A:sys,txpower,HE_TB,dck,bbgain,tmeter,slope_org,alignment,slope,run_slope",
+    "B:same",
+    "enable",
+    "efuse_DE"
+  ],
+  "XB_RFE54_enable_gate": "actual3611f4 checks supportabilitybit0;RFE11..20 tssi_type special case does not apply to54",
+  "XB_current_original_RF_ability": "38e17f",
+  "XB_TSSI_enabled_by_original_RFE54_gate": true,
+  "native_hardware_TSSI_tracking_complete": false,
+  "C_extra_steps": [
+    "channel-index alignment cache",
+    "SW_DCK",
+    "alignmentK",
+    "cut-specific alignment",
+    "slope input",
+    "efem setup"
+  ],
+  "next_native_work": "port actual perpath hardware initialization and thermal tables, then original enable/DE sequence"
+}
