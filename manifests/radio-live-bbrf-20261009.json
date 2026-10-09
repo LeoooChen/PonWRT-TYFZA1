@@ -158,12 +158,13 @@
     "frame_confirmation_from_prior_live_native_code": "manifests/radio-first-80211-20261010.json",
     "active_RAM_driver_override": {
       "radio": "0000:01:00.0 / 8852C only",
-      "module": "artifacts/live-radio-channel-read01/rtl_ax_ap_live.ko",
-      "sha256": "9a5f0b9d2d866756f08c138720f9fdd7931fff9298b4dcfaa7cab26502a92c18",
-      "log": "logs/radio-channel-read-C-20261010.txt",
-      "purpose": "read actual BB frequency/SCO and RF channel",
-      "8192XB": "still built-in rtl_ax_ap native RX"
-    }
+      "module": "artifacts/live-radio-rf-mask01/rtl_ax_ap_live.ko",
+      "sha256": "64066ed9a7343f1bc7cc7b7b923afa713743ea3f94630ba39746373e3b7af7bd",
+      "log": "logs/radio-rf-mask-C-20261010.txt",
+      "purpose": "original full-mask Radio load regression and RF channel readback",
+      "8192XB": "built-in rtl_ax_ap received14 CRC-valid real 802.11 frames"
+    },
+    "builtin_80211_receive_evidence": "manifests/radio-rx-active01-builtin-frames-20261010.json"
   },
   "previous_on_board": {
     "FIT": "artifacts/full-pon-radio-start-rx01-6.18.55/ram-pcie/image.itb",
