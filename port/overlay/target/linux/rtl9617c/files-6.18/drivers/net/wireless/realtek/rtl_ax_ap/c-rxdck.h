@@ -122,7 +122,7 @@ static inline int rtl_ax_c_rxdck_offsets(const struct rtl_ax_io *io,
 }
 
 static inline int rtl_ax_c_rxdck_start(const struct rtl_ax_io *io,
-	struct rtl_ax_rxdck *state)
+	struct rtl_ax_rxdck *state, bool tssi_running)
 {
 	u32 value, rf0 = 0;
 	unsigned int path, i;
@@ -130,7 +130,7 @@ static inline int rtl_ax_c_rxdck_start(const struct rtl_ax_io *io,
 	int ret;
 
 	/* Original RX_DCK initializer@2f69ec enables the extra reK from
-	 * pathA RF95[3]. Initial MP=0,TSSI=0,DBCC=0 path of rx_dck@30c310. */
+	 * pathA RF95[3]. Normal MP=0,DBCC=0 path of rx_dck@30c310. */
 	ret = rtl_ax_phy_rf_read(io, 0, 0x95, &value);
 	if (ret)
 		return ret;
@@ -145,6 +145,8 @@ static inline int rtl_ax_c_rxdck_start(const struct rtl_ax_io *io,
 			if (ret)
 				return ret;
 		}
+		if (tssi_running)
+			rtl_ax_channel_field(io, 0x5818 + path * 0x2000, BIT(30), 1);
 		ret = rtl_ax_phy_rf_write_masked(io, path, 5, 0xfffff, 0);
 		if (ret)
 			return ret;
@@ -198,6 +200,8 @@ static inline int rtl_ax_c_rxdck_start(const struct rtl_ax_io *io,
 			if (ret)
 				return ret;
 		}
+		if (tssi_running)
+			rtl_ax_channel_field(io, 0x5818 + path * 0x2000, BIT(30), 0);
 		ret = rtl_ax_phy_rf_read(io, path, 0x92, &state->rf_result[path][0]);
 		if (ret)
 			return ret;

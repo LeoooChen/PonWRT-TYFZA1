@@ -1,0 +1,1911 @@
+{
+  "original_host_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "scope": "actual original machine-code register extraction; hardware verification is separate",
+  "inputs": {
+    "RFE": 54,
+    "band": 1,
+    "channel": 36,
+    "hardware_cv": 1,
+    "normal_TSSI_type": 1,
+    "DBCC": 0,
+    "MP_driver_mode": 0,
+    "cached_alignment": false
+  },
+  "host_memory_reads": [
+    [
+      "hal",
+      892,
+      4
+    ],
+    [
+      "hal",
+      905,
+      1
+    ],
+    [
+      "hal",
+      1580,
+      1
+    ],
+    [
+      "phl",
+      12812,
+      4
+    ],
+    [
+      "phl",
+      22778,
+      1
+    ],
+    [
+      "rf",
+      0,
+      8
+    ],
+    [
+      "rf",
+      8,
+      8
+    ],
+    [
+      "rf",
+      52,
+      4
+    ],
+    [
+      "rf",
+      16404,
+      1
+    ],
+    [
+      "rf",
+      17570,
+      1
+    ]
+  ],
+  "programs": [
+    {
+      "function": "halrf_tssi_disable_8852c",
+      "path": 0,
+      "operations": [
+        {
+          "address": 22560,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 22552,
+          "mask": 268435456,
+          "value": 0
+        },
+        {
+          "address": 22756,
+          "mask": 16384,
+          "value": 1
+        },
+        {
+          "address": 30752,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 30744,
+          "mask": 268435456,
+          "value": 0
+        },
+        {
+          "address": 30948,
+          "mask": 16384,
+          "value": 1
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_set_sys_8852c",
+      "path": 0,
+      "operations": [
+        {
+          "address": 4796,
+          "mask": 1048560,
+          "value": 46517
+        },
+        {
+          "address": 12988,
+          "mask": 1048560,
+          "value": 46517
+        },
+        {
+          "address": 768,
+          "mask": 4278190080,
+          "value": 22
+        },
+        {
+          "address": 772,
+          "mask": 65535,
+          "value": 7961
+        },
+        {
+          "address": 776,
+          "mask": 4278190080,
+          "value": 29
+        },
+        {
+          "address": 788,
+          "mask": 4294901760,
+          "value": 8257
+        },
+        {
+          "address": 792,
+          "mask": 4294967295,
+          "value": 536944705
+        },
+        {
+          "address": 804,
+          "mask": 4294901760,
+          "value": 8193
+        },
+        {
+          "address": 32,
+          "mask": 24576,
+          "value": 3
+        },
+        {
+          "address": 36,
+          "mask": 24576,
+          "value": 3
+        },
+        {
+          "address": 1796,
+          "mask": 4294901760,
+          "value": 24606
+        },
+        {
+          "address": 9988,
+          "mask": 4294901760,
+          "value": 24606
+        },
+        {
+          "address": 1792,
+          "mask": 4026531840,
+          "value": 4
+        },
+        {
+          "address": 9984,
+          "mask": 4026531840,
+          "value": 4
+        },
+        {
+          "address": 1616,
+          "mask": 1006632960,
+          "value": 0
+        },
+        {
+          "address": 9808,
+          "mask": 1006632960,
+          "value": 0
+        },
+        {
+          "address": 4620,
+          "mask": 255,
+          "value": 68
+        },
+        {
+          "address": 4800,
+          "mask": 267386880,
+          "value": 68
+        },
+        {
+          "address": 22776,
+          "mask": 1073741824,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_ini_txpwr_ctrl_bb_8852c",
+      "path": 0,
+      "operations": [
+        {
+          "address": 22124,
+          "mask": 4096,
+          "value": 0
+        },
+        {
+          "address": 22528,
+          "mask": 4294967295,
+          "value": 4161663
+        },
+        {
+          "address": 22540,
+          "mask": 127,
+          "value": 64
+        },
+        {
+          "address": 22540,
+          "mask": 268435200,
+          "value": 64
+        },
+        {
+          "address": 22544,
+          "mask": 4294967295,
+          "value": 1493237760
+        },
+        {
+          "address": 22548,
+          "mask": 4095,
+          "value": 0
+        },
+        {
+          "address": 22548,
+          "mask": 4096,
+          "value": 1
+        },
+        {
+          "address": 22548,
+          "mask": 16384,
+          "value": 1
+        },
+        {
+          "address": 22548,
+          "mask": 229376,
+          "value": 5
+        },
+        {
+          "address": 22548,
+          "mask": 29360128,
+          "value": 0
+        },
+        {
+          "address": 22548,
+          "mask": 4160749568,
+          "value": 0
+        },
+        {
+          "address": 22552,
+          "mask": 4294967295,
+          "value": 2889960
+        },
+        {
+          "address": 22556,
+          "mask": 1048575,
+          "value": 524928
+        },
+        {
+          "address": 22556,
+          "mask": 1048576,
+          "value": 0
+        },
+        {
+          "address": 22556,
+          "mask": 536870912,
+          "value": 1
+        },
+        {
+          "address": 22560,
+          "mask": 4294967295,
+          "value": 128
+        },
+        {
+          "address": 22760,
+          "mask": 63,
+          "value": 3
+        },
+        {
+          "address": 22624,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 22628,
+          "mask": 134217727,
+          "value": 524799
+        },
+        {
+          "address": 22680,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "address": 22684,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "address": 22692,
+          "mask": 255,
+          "value": 22
+        },
+        {
+          "address": 22708,
+          "mask": 2147483647,
+          "value": 167780352
+        },
+        {
+          "address": 22712,
+          "mask": 2147483647,
+          "value": 30248
+        },
+        {
+          "address": 22716,
+          "mask": 134217727,
+          "value": 128417919
+        },
+        {
+          "address": 22720,
+          "mask": 4294836224,
+          "value": 63
+        },
+        {
+          "address": 22724,
+          "mask": 4294967295,
+          "value": 262143
+        },
+        {
+          "address": 22728,
+          "mask": 16777215,
+          "value": 0
+        },
+        {
+          "address": 22728,
+          "mask": 4026531840,
+          "value": 0
+        },
+        {
+          "address": 22732,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "address": 22736,
+          "mask": 134217727,
+          "value": 33587457
+        },
+        {
+          "address": 22740,
+          "mask": 255,
+          "value": 0
+        },
+        {
+          "address": 22740,
+          "mask": 261632,
+          "value": 255
+        },
+        {
+          "address": 22740,
+          "mask": 133955584,
+          "value": 256
+        },
+        {
+          "address": 22748,
+          "mask": 131071,
+          "value": 32895
+        },
+        {
+          "address": 22748,
+          "mask": 4293918720,
+          "value": 3072
+        },
+        {
+          "address": 22768,
+          "mask": 262143,
+          "value": 511
+        },
+        {
+          "address": 22772,
+          "mask": 1048575,
+          "value": 0
+        },
+        {
+          "address": 22776,
+          "mask": 1048575,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_ini_txpwr_ctrl_bb_he_tb_8852c",
+      "path": 0,
+      "operations": [
+        {
+          "address": 22688,
+          "mask": 4294967295,
+          "value": 254
+        },
+        {
+          "address": 22756,
+          "mask": 127,
+          "value": 31
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_set_dck_8852c",
+      "path": 0,
+      "operations": [
+        {
+          "address": 22724,
+          "mask": 1073479680,
+          "value": 0
+        },
+        {
+          "address": 22728,
+          "mask": 4095,
+          "value": 0
+        },
+        {
+          "address": 22728,
+          "mask": 16773120,
+          "value": 0
+        },
+        {
+          "address": 22540,
+          "mask": 268369920,
+          "value": 0
+        },
+        {
+          "address": 22548,
+          "mask": 4096,
+          "value": 1
+        },
+        {
+          "address": 22548,
+          "mask": 245760,
+          "value": 11
+        },
+        {
+          "address": 22548,
+          "mask": 402653184,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_set_bbgain_split_8852c",
+      "path": 0,
+      "operations": [
+        {
+          "address": 22552,
+          "mask": 134217728,
+          "value": 1
+        },
+        {
+          "address": 22740,
+          "mask": 4026531840,
+          "value": 7
+        },
+        {
+          "address": 22768,
+          "mask": 786432,
+          "value": 1
+        },
+        {
+          "address": 22768,
+          "mask": 4293918720,
+          "value": 1024
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_set_tmeter_tbl_8852c",
+      "path": 0,
+      "operations": [
+        {
+          "address": 22544,
+          "mask": 65536,
+          "value": 0
+        },
+        {
+          "address": 22544,
+          "mask": 16777216,
+          "value": 1
+        },
+        {
+          "address": 22544,
+          "mask": 64512,
+          "value": 28
+        },
+        {
+          "address": 22628,
+          "mask": 66060288,
+          "value": 28
+        },
+        {
+          "address": 23552,
+          "mask": 4294967295,
+          "value": 16842752
+        },
+        {
+          "address": 23556,
+          "mask": 4294967295,
+          "value": 50528770
+        },
+        {
+          "address": 23560,
+          "mask": 4294967295,
+          "value": 67372036
+        },
+        {
+          "address": 23564,
+          "mask": 4294967295,
+          "value": 84215045
+        },
+        {
+          "address": 23568,
+          "mask": 4294967295,
+          "value": 101058054
+        },
+        {
+          "address": 23572,
+          "mask": 4294967295,
+          "value": 117901063
+        },
+        {
+          "address": 23576,
+          "mask": 4294967295,
+          "value": 134744072
+        },
+        {
+          "address": 23580,
+          "mask": 4294967295,
+          "value": 134744072
+        },
+        {
+          "address": 23584,
+          "mask": 4294967295,
+          "value": 4193909241
+        },
+        {
+          "address": 23588,
+          "mask": 4294967295,
+          "value": 4210752250
+        },
+        {
+          "address": 23592,
+          "mask": 4294967295,
+          "value": 4227595259
+        },
+        {
+          "address": 23596,
+          "mask": 4294967295,
+          "value": 4244438268
+        },
+        {
+          "address": 23600,
+          "mask": 4294967295,
+          "value": 4261281277
+        },
+        {
+          "address": 23604,
+          "mask": 4294967295,
+          "value": 4278124286
+        },
+        {
+          "address": 23608,
+          "mask": 4294967295,
+          "value": 4294967295
+        },
+        {
+          "address": 23612,
+          "mask": 4294967295,
+          "value": 65535
+        },
+        {
+          "address": 22628,
+          "mask": 67108864,
+          "value": 1
+        },
+        {
+          "address": 22628,
+          "mask": 67108864,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_slope_cal_org_8852c",
+      "path": 0,
+      "operations": [
+        {
+          "address": 22024,
+          "mask": 134217727,
+          "value": 2101256
+        },
+        {
+          "address": 22028,
+          "mask": 134217727,
+          "value": 2101256
+        },
+        {
+          "address": 22032,
+          "mask": 134217727,
+          "value": 2101256
+        },
+        {
+          "address": 22036,
+          "mask": 134217727,
+          "value": 2101256
+        },
+        {
+          "address": 22040,
+          "mask": 134217727,
+          "value": 2101256
+        },
+        {
+          "address": 22044,
+          "mask": 511,
+          "value": 8
+        },
+        {
+          "address": 22044,
+          "mask": 4294901760,
+          "value": 2056
+        },
+        {
+          "address": 22048,
+          "mask": 4294967295,
+          "value": 134744072
+        },
+        {
+          "address": 22052,
+          "mask": 4294967295,
+          "value": 134744072
+        },
+        {
+          "address": 22056,
+          "mask": 4294967295,
+          "value": 134744072
+        },
+        {
+          "address": 22060,
+          "mask": 65535,
+          "value": 2056
+        },
+        {
+          "address": 22556,
+          "mask": 1048576,
+          "value": 0
+        },
+        {
+          "address": 22556,
+          "mask": 1048576,
+          "value": 1
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_set_alignment_default_8852cb",
+      "path": 0,
+      "operations": [
+        {
+          "address": 22020,
+          "mask": 2147483648,
+          "value": 1
+        },
+        {
+          "address": 22016,
+          "mask": 63,
+          "value": 0
+        },
+        {
+          "address": 22016,
+          "mask": 16128,
+          "value": 0
+        },
+        {
+          "address": 22016,
+          "mask": 4128768,
+          "value": 0
+        },
+        {
+          "address": 22016,
+          "mask": 1056964608,
+          "value": 0
+        },
+        {
+          "address": 22020,
+          "mask": 63,
+          "value": 0
+        },
+        {
+          "address": 22020,
+          "mask": 16128,
+          "value": 0
+        },
+        {
+          "address": 22020,
+          "mask": 4128768,
+          "value": 33
+        },
+        {
+          "address": 22064,
+          "mask": 1023,
+          "value": 0
+        },
+        {
+          "address": 22064,
+          "mask": 1047552,
+          "value": 0
+        },
+        {
+          "address": 22064,
+          "mask": 1072693248,
+          "value": 0
+        },
+        {
+          "address": 22068,
+          "mask": 1023,
+          "value": 0
+        },
+        {
+          "address": 22068,
+          "mask": 1047552,
+          "value": 0
+        },
+        {
+          "address": 22068,
+          "mask": 1072693248,
+          "value": 0
+        },
+        {
+          "address": 22072,
+          "mask": 1023,
+          "value": 0
+        },
+        {
+          "address": 22072,
+          "mask": 1047552,
+          "value": 0
+        },
+        {
+          "address": 22076,
+          "mask": 1023,
+          "value": 0
+        },
+        {
+          "address": 22076,
+          "mask": 1047552,
+          "value": 0
+        },
+        {
+          "address": 22076,
+          "mask": 1072693248,
+          "value": 0
+        },
+        {
+          "address": 22080,
+          "mask": 1023,
+          "value": 0
+        },
+        {
+          "address": 22080,
+          "mask": 1047552,
+          "value": 0
+        },
+        {
+          "address": 22080,
+          "mask": 1072693248,
+          "value": 0
+        },
+        {
+          "address": 22084,
+          "mask": 1023,
+          "value": 0
+        },
+        {
+          "address": 22084,
+          "mask": 1047552,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_set_slope_8852c",
+      "path": 0,
+      "operations": [
+        {
+          "address": 22560,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 22552,
+          "mask": 268435456,
+          "value": 0
+        },
+        {
+          "address": 22548,
+          "mask": 2048,
+          "value": 1
+        },
+        {
+          "address": 22556,
+          "mask": 536870912,
+          "value": 1
+        },
+        {
+          "address": 22760,
+          "mask": 63,
+          "value": 15
+        },
+        {
+          "address": 22556,
+          "mask": 1023,
+          "value": 640
+        },
+        {
+          "address": 22556,
+          "mask": 1047552,
+          "value": 512
+        },
+        {
+          "address": 22712,
+          "mask": 8323072,
+          "value": 0
+        },
+        {
+          "address": 22712,
+          "mask": 2130706432,
+          "value": 0
+        },
+        {
+          "address": 22708,
+          "mask": 2130706432,
+          "value": 10
+        },
+        {
+          "address": 22712,
+          "mask": 127,
+          "value": 40
+        },
+        {
+          "address": 22712,
+          "mask": 32512,
+          "value": 118
+        },
+        {
+          "address": 22544,
+          "mask": 536870912,
+          "value": 0
+        },
+        {
+          "address": 22548,
+          "mask": 536870912,
+          "value": 1
+        },
+        {
+          "address": 22540,
+          "mask": 268435456,
+          "value": 0
+        },
+        {
+          "address": 22540,
+          "mask": 1073741824,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_run_slope_8852c",
+      "path": 0,
+      "operations": [
+        {
+          "address": 22560,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 22560,
+          "mask": 2147483648,
+          "value": 1
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_alimentk_rfe_type_other_8852c",
+      "path": 0,
+      "operations": [],
+      "hardware_measurement_required": true
+    },
+    {
+      "function": "_halrf_tssi_set_sys_8852c",
+      "path": 1,
+      "operations": [
+        {
+          "address": 4796,
+          "mask": 1048560,
+          "value": 46517
+        },
+        {
+          "address": 12988,
+          "mask": 1048560,
+          "value": 46517
+        },
+        {
+          "address": 768,
+          "mask": 4278190080,
+          "value": 22
+        },
+        {
+          "address": 772,
+          "mask": 65535,
+          "value": 7961
+        },
+        {
+          "address": 776,
+          "mask": 4278190080,
+          "value": 29
+        },
+        {
+          "address": 788,
+          "mask": 4294901760,
+          "value": 8257
+        },
+        {
+          "address": 792,
+          "mask": 4294967295,
+          "value": 536944705
+        },
+        {
+          "address": 804,
+          "mask": 4294901760,
+          "value": 8193
+        },
+        {
+          "address": 32,
+          "mask": 24576,
+          "value": 3
+        },
+        {
+          "address": 36,
+          "mask": 24576,
+          "value": 3
+        },
+        {
+          "address": 1796,
+          "mask": 4294901760,
+          "value": 24606
+        },
+        {
+          "address": 9988,
+          "mask": 4294901760,
+          "value": 24606
+        },
+        {
+          "address": 1792,
+          "mask": 4026531840,
+          "value": 4
+        },
+        {
+          "address": 9984,
+          "mask": 4026531840,
+          "value": 4
+        },
+        {
+          "address": 1616,
+          "mask": 1006632960,
+          "value": 0
+        },
+        {
+          "address": 9808,
+          "mask": 1006632960,
+          "value": 0
+        },
+        {
+          "address": 12812,
+          "mask": 255,
+          "value": 68
+        },
+        {
+          "address": 12992,
+          "mask": 267386880,
+          "value": 68
+        },
+        {
+          "address": 30968,
+          "mask": 1073741824,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_ini_txpwr_ctrl_bb_8852c",
+      "path": 1,
+      "operations": [
+        {
+          "address": 22124,
+          "mask": 4096,
+          "value": 0
+        },
+        {
+          "address": 30720,
+          "mask": 4294967295,
+          "value": 4161663
+        },
+        {
+          "address": 30732,
+          "mask": 127,
+          "value": 64
+        },
+        {
+          "address": 30732,
+          "mask": 268435200,
+          "value": 64
+        },
+        {
+          "address": 30736,
+          "mask": 4294967295,
+          "value": 1493237760
+        },
+        {
+          "address": 30740,
+          "mask": 4095,
+          "value": 0
+        },
+        {
+          "address": 30740,
+          "mask": 4096,
+          "value": 1
+        },
+        {
+          "address": 30740,
+          "mask": 16384,
+          "value": 1
+        },
+        {
+          "address": 30740,
+          "mask": 229376,
+          "value": 5
+        },
+        {
+          "address": 30740,
+          "mask": 29360128,
+          "value": 0
+        },
+        {
+          "address": 30740,
+          "mask": 4160749568,
+          "value": 0
+        },
+        {
+          "address": 30744,
+          "mask": 4294967295,
+          "value": 2889960
+        },
+        {
+          "address": 30748,
+          "mask": 1048575,
+          "value": 524928
+        },
+        {
+          "address": 30748,
+          "mask": 1048576,
+          "value": 0
+        },
+        {
+          "address": 30748,
+          "mask": 536870912,
+          "value": 1
+        },
+        {
+          "address": 30752,
+          "mask": 4294967295,
+          "value": 128
+        },
+        {
+          "address": 30952,
+          "mask": 63,
+          "value": 3
+        },
+        {
+          "address": 30816,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 30820,
+          "mask": 134217727,
+          "value": 524799
+        },
+        {
+          "address": 30872,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "address": 30876,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "address": 30884,
+          "mask": 255,
+          "value": 22
+        },
+        {
+          "address": 30900,
+          "mask": 2147483647,
+          "value": 167780352
+        },
+        {
+          "address": 30904,
+          "mask": 2147483647,
+          "value": 30248
+        },
+        {
+          "address": 30908,
+          "mask": 134217727,
+          "value": 128417919
+        },
+        {
+          "address": 30912,
+          "mask": 4294836224,
+          "value": 63
+        },
+        {
+          "address": 30916,
+          "mask": 4294967295,
+          "value": 262143
+        },
+        {
+          "address": 30920,
+          "mask": 16777215,
+          "value": 0
+        },
+        {
+          "address": 30920,
+          "mask": 4026531840,
+          "value": 0
+        },
+        {
+          "address": 30924,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "address": 30928,
+          "mask": 134217727,
+          "value": 33587457
+        },
+        {
+          "address": 30932,
+          "mask": 255,
+          "value": 0
+        },
+        {
+          "address": 30932,
+          "mask": 261632,
+          "value": 255
+        },
+        {
+          "address": 30932,
+          "mask": 133955584,
+          "value": 256
+        },
+        {
+          "address": 30940,
+          "mask": 131071,
+          "value": 32895
+        },
+        {
+          "address": 30940,
+          "mask": 4293918720,
+          "value": 3072
+        },
+        {
+          "address": 30960,
+          "mask": 262143,
+          "value": 511
+        },
+        {
+          "address": 30964,
+          "mask": 1048575,
+          "value": 0
+        },
+        {
+          "address": 30968,
+          "mask": 1048575,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_ini_txpwr_ctrl_bb_he_tb_8852c",
+      "path": 1,
+      "operations": [
+        {
+          "address": 30880,
+          "mask": 4294967295,
+          "value": 254
+        },
+        {
+          "address": 30948,
+          "mask": 127,
+          "value": 31
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_set_dck_8852c",
+      "path": 1,
+      "operations": [
+        {
+          "address": 30916,
+          "mask": 1073479680,
+          "value": 0
+        },
+        {
+          "address": 30920,
+          "mask": 4095,
+          "value": 0
+        },
+        {
+          "address": 30920,
+          "mask": 16773120,
+          "value": 0
+        },
+        {
+          "address": 30732,
+          "mask": 268369920,
+          "value": 0
+        },
+        {
+          "address": 30740,
+          "mask": 4096,
+          "value": 1
+        },
+        {
+          "address": 30740,
+          "mask": 245760,
+          "value": 11
+        },
+        {
+          "address": 30740,
+          "mask": 402653184,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_set_bbgain_split_8852c",
+      "path": 1,
+      "operations": [
+        {
+          "address": 30744,
+          "mask": 134217728,
+          "value": 1
+        },
+        {
+          "address": 30932,
+          "mask": 4026531840,
+          "value": 7
+        },
+        {
+          "address": 30960,
+          "mask": 786432,
+          "value": 1
+        },
+        {
+          "address": 30960,
+          "mask": 4293918720,
+          "value": 1024
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_set_tmeter_tbl_8852c",
+      "path": 1,
+      "operations": [
+        {
+          "address": 30736,
+          "mask": 65536,
+          "value": 0
+        },
+        {
+          "address": 30736,
+          "mask": 16777216,
+          "value": 1
+        },
+        {
+          "address": 30736,
+          "mask": 64512,
+          "value": 28
+        },
+        {
+          "address": 30820,
+          "mask": 66060288,
+          "value": 28
+        },
+        {
+          "address": 31744,
+          "mask": 4294967295,
+          "value": 16842752
+        },
+        {
+          "address": 31748,
+          "mask": 4294967295,
+          "value": 50528770
+        },
+        {
+          "address": 31752,
+          "mask": 4294967295,
+          "value": 67372036
+        },
+        {
+          "address": 31756,
+          "mask": 4294967295,
+          "value": 84215045
+        },
+        {
+          "address": 31760,
+          "mask": 4294967295,
+          "value": 101058054
+        },
+        {
+          "address": 31764,
+          "mask": 4294967295,
+          "value": 117901063
+        },
+        {
+          "address": 31768,
+          "mask": 4294967295,
+          "value": 134744072
+        },
+        {
+          "address": 31772,
+          "mask": 4294967295,
+          "value": 134744072
+        },
+        {
+          "address": 31776,
+          "mask": 4294967295,
+          "value": 4126537205
+        },
+        {
+          "address": 31780,
+          "mask": 4294967295,
+          "value": 4143380214
+        },
+        {
+          "address": 31784,
+          "mask": 4294967295,
+          "value": 4160223223
+        },
+        {
+          "address": 31788,
+          "mask": 4294967295,
+          "value": 4177066232
+        },
+        {
+          "address": 31792,
+          "mask": 4294967295,
+          "value": 4210686457
+        },
+        {
+          "address": 31796,
+          "mask": 4294967295,
+          "value": 4244372474
+        },
+        {
+          "address": 31800,
+          "mask": 4294967295,
+          "value": 4278058492
+        },
+        {
+          "address": 31804,
+          "mask": 4294967295,
+          "value": 65534
+        },
+        {
+          "address": 30820,
+          "mask": 67108864,
+          "value": 1
+        },
+        {
+          "address": 30820,
+          "mask": 67108864,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_slope_cal_org_8852c",
+      "path": 1,
+      "operations": [
+        {
+          "address": 30216,
+          "mask": 134217727,
+          "value": 2101256
+        },
+        {
+          "address": 30220,
+          "mask": 134217727,
+          "value": 2101256
+        },
+        {
+          "address": 30224,
+          "mask": 134217727,
+          "value": 2101256
+        },
+        {
+          "address": 30228,
+          "mask": 134217727,
+          "value": 2101256
+        },
+        {
+          "address": 30232,
+          "mask": 134217727,
+          "value": 2101256
+        },
+        {
+          "address": 30236,
+          "mask": 511,
+          "value": 8
+        },
+        {
+          "address": 30236,
+          "mask": 4294901760,
+          "value": 2056
+        },
+        {
+          "address": 30240,
+          "mask": 4294967295,
+          "value": 134744072
+        },
+        {
+          "address": 30244,
+          "mask": 4294967295,
+          "value": 134744072
+        },
+        {
+          "address": 30248,
+          "mask": 4294967295,
+          "value": 134744072
+        },
+        {
+          "address": 30252,
+          "mask": 65535,
+          "value": 2056
+        },
+        {
+          "address": 30748,
+          "mask": 1048576,
+          "value": 0
+        },
+        {
+          "address": 30748,
+          "mask": 1048576,
+          "value": 1
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_set_alignment_default_8852cb",
+      "path": 1,
+      "operations": [
+        {
+          "address": 30212,
+          "mask": 2147483648,
+          "value": 1
+        },
+        {
+          "address": 30208,
+          "mask": 63,
+          "value": 0
+        },
+        {
+          "address": 30208,
+          "mask": 16128,
+          "value": 0
+        },
+        {
+          "address": 30208,
+          "mask": 4128768,
+          "value": 0
+        },
+        {
+          "address": 30208,
+          "mask": 1056964608,
+          "value": 0
+        },
+        {
+          "address": 30212,
+          "mask": 63,
+          "value": 0
+        },
+        {
+          "address": 30212,
+          "mask": 16128,
+          "value": 0
+        },
+        {
+          "address": 30212,
+          "mask": 4128768,
+          "value": 33
+        },
+        {
+          "address": 30256,
+          "mask": 1023,
+          "value": 0
+        },
+        {
+          "address": 30256,
+          "mask": 1047552,
+          "value": 0
+        },
+        {
+          "address": 30256,
+          "mask": 1072693248,
+          "value": 0
+        },
+        {
+          "address": 30260,
+          "mask": 1023,
+          "value": 0
+        },
+        {
+          "address": 30260,
+          "mask": 1047552,
+          "value": 0
+        },
+        {
+          "address": 30260,
+          "mask": 1072693248,
+          "value": 0
+        },
+        {
+          "address": 30264,
+          "mask": 1023,
+          "value": 0
+        },
+        {
+          "address": 30264,
+          "mask": 1047552,
+          "value": 0
+        },
+        {
+          "address": 30268,
+          "mask": 1023,
+          "value": 0
+        },
+        {
+          "address": 30268,
+          "mask": 1047552,
+          "value": 0
+        },
+        {
+          "address": 30268,
+          "mask": 1072693248,
+          "value": 0
+        },
+        {
+          "address": 30272,
+          "mask": 1023,
+          "value": 0
+        },
+        {
+          "address": 30272,
+          "mask": 1047552,
+          "value": 0
+        },
+        {
+          "address": 30272,
+          "mask": 1072693248,
+          "value": 0
+        },
+        {
+          "address": 30276,
+          "mask": 1023,
+          "value": 0
+        },
+        {
+          "address": 30276,
+          "mask": 1047552,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_set_slope_8852c",
+      "path": 1,
+      "operations": [
+        {
+          "address": 30752,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 30744,
+          "mask": 268435456,
+          "value": 0
+        },
+        {
+          "address": 30740,
+          "mask": 2048,
+          "value": 1
+        },
+        {
+          "address": 30748,
+          "mask": 536870912,
+          "value": 1
+        },
+        {
+          "address": 30952,
+          "mask": 63,
+          "value": 15
+        },
+        {
+          "address": 30748,
+          "mask": 1023,
+          "value": 640
+        },
+        {
+          "address": 30748,
+          "mask": 1047552,
+          "value": 512
+        },
+        {
+          "address": 30904,
+          "mask": 8323072,
+          "value": 0
+        },
+        {
+          "address": 30904,
+          "mask": 2130706432,
+          "value": 0
+        },
+        {
+          "address": 30900,
+          "mask": 2130706432,
+          "value": 10
+        },
+        {
+          "address": 30904,
+          "mask": 127,
+          "value": 40
+        },
+        {
+          "address": 30904,
+          "mask": 32512,
+          "value": 118
+        },
+        {
+          "address": 30736,
+          "mask": 536870912,
+          "value": 0
+        },
+        {
+          "address": 30740,
+          "mask": 536870912,
+          "value": 1
+        },
+        {
+          "address": 30732,
+          "mask": 268435456,
+          "value": 0
+        },
+        {
+          "address": 30732,
+          "mask": 1073741824,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_run_slope_8852c",
+      "path": 1,
+      "operations": [
+        {
+          "address": 30752,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 30752,
+          "mask": 2147483648,
+          "value": 1
+        }
+      ]
+    },
+    {
+      "function": "_halrf_tssi_alimentk_rfe_type_other_8852c",
+      "path": 1,
+      "operations": [],
+      "hardware_measurement_required": true
+    },
+    {
+      "function": "halrf_tssi_enable_8852c",
+      "path": "both",
+      "operations": [
+        {
+          "address": 22560,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 22552,
+          "mask": 268435456,
+          "value": 0
+        },
+        {
+          "address": 22548,
+          "mask": 2048,
+          "value": 0
+        },
+        {
+          "address": 22556,
+          "mask": 536870912,
+          "value": 1
+        },
+        {
+          "address": 22628,
+          "mask": 1023,
+          "value": 511
+        },
+        {
+          "address": 22628,
+          "mask": 1047552,
+          "value": 512
+        },
+        {
+          "address": 22560,
+          "mask": 4095,
+          "value": 128
+        },
+        {
+          "address": 22548,
+          "mask": 16777216,
+          "value": 0
+        },
+        {
+          "address": 22756,
+          "mask": 14336,
+          "value": 1
+        },
+        {
+          "address": 22756,
+          "mask": 16384,
+          "value": 0
+        },
+        {
+          "address": 22756,
+          "mask": 32768,
+          "value": 1
+        },
+        {
+          "address": 22756,
+          "mask": 983040,
+          "value": 0
+        },
+        {
+          "address": 22760,
+          "mask": 63,
+          "value": 4
+        },
+        {
+          "address": 22756,
+          "mask": 16384,
+          "value": 0
+        },
+        {
+          "address": 22560,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 22560,
+          "mask": 2147483648,
+          "value": 1
+        },
+        {
+          "RF_path": 0,
+          "address": 65621,
+          "mask": 128,
+          "value": 1
+        },
+        {
+          "address": 22552,
+          "mask": 268435456,
+          "value": 1
+        },
+        {
+          "address": 30752,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 30744,
+          "mask": 268435456,
+          "value": 0
+        },
+        {
+          "address": 30740,
+          "mask": 2048,
+          "value": 0
+        },
+        {
+          "address": 30748,
+          "mask": 536870912,
+          "value": 1
+        },
+        {
+          "address": 30820,
+          "mask": 1023,
+          "value": 511
+        },
+        {
+          "address": 30820,
+          "mask": 1047552,
+          "value": 512
+        },
+        {
+          "address": 30752,
+          "mask": 4095,
+          "value": 128
+        },
+        {
+          "address": 30740,
+          "mask": 16777216,
+          "value": 0
+        },
+        {
+          "address": 30948,
+          "mask": 14336,
+          "value": 1
+        },
+        {
+          "address": 30948,
+          "mask": 16384,
+          "value": 0
+        },
+        {
+          "address": 30948,
+          "mask": 32768,
+          "value": 1
+        },
+        {
+          "address": 30948,
+          "mask": 983040,
+          "value": 0
+        },
+        {
+          "address": 30952,
+          "mask": 63,
+          "value": 4
+        },
+        {
+          "address": 30948,
+          "mask": 16384,
+          "value": 0
+        },
+        {
+          "address": 30752,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 30752,
+          "mask": 2147483648,
+          "value": 1
+        },
+        {
+          "RF_path": 1,
+          "address": 65621,
+          "mask": 128,
+          "value": 1
+        },
+        {
+          "address": 30744,
+          "mask": 268435456,
+          "value": 1
+        }
+      ]
+    }
+  ],
+  "thermal_table_and_final_enable_included": true,
+  "thermal_flash_A_B": [
+    28,
+    28
+  ],
+  "tracking_FEM_file": "evidence/wireless-study-20261009-104746/evidence/stock/radio-parameters/rtl8852ce/RFE54/RTK66587_BPF/TXPWR_TrackTSSI.txt",
+  "tracking_FEM_sha256": "48407e69fde5c6613fe7399b596399c49e914130f256c511c550829e56559536"
+}

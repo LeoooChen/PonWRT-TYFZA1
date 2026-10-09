@@ -553,3 +553,15 @@ trace_stock_tssi_xb.py使用现有ARM64 ELF分析器直接执行本机原厂函�
 第一live模块d2fa04b94b074d52411076df4ade2915a9fb1f51c94386108343d0be153ae829原机完成300操作，两路5818 trackingbit28=1、pausebit30=0，reference24，RF10055=80。频道1/11/6逐次验证tracking恢复1、pause0，RX_DCK4个done均1；RX_DCK在TSSI active时按原机33c5c0/33c5d8逐路暂停/恢复，而不是继续沿初始化is_tssi_mode0路径。两路各64个真实用户态入站帧FCS全部匹配，kernel丢包0；XB PHY OFDM正确224/错误18001、HT正确17/错误23，质量问题仍未宣称解决。记录manifests/radio-xb-tssi-20261010.json及logs/pcap。最终诊断文字模块3de28c23dd3fb2abc4afa4f4bd5bbcc25ce03299c039aea97d7e20b0cc313425已上机，硬件程序一致、状态读回再次tracking1。尚未验证真实AP发射时的功率反馈，C TSSI和完整AP收发仍继续实现。
 
 准备脚本生成thermal曲线固件，完整构建保存当次wifi-runtime-manifest.json并明确传入FIT验证器。已完成的071409 GAPK镜像缺新thermal输入，使用其42参数独立清单与实际选中FIT逐项核对；没有将新的43参数清单当作旧镜像输入。
+
+## 2026-10-10 C原生TSSI单音alignment与RFE54 DPK
+
+C实际do_tssi@336df0按disable→A所有阶段→B所有阶段→enable→DE执行。CV1走alignment_default_8852cb@32f760并跳过仅CV0执行的SW_DCK；传统频道RFK的force=1要求每路执行alignmentK。trace_stock_tssi_c.py从原机ELF提取338个操作，其中44个thermal操作由原生代码根据实际HS28/28和RTK66587_BPF 5G三组曲线计算；360B热输入SHA256为2f6958c3252bc74096f7700aae788fbad0053039e39bcb0b44497eebec2f0172。两路32个热表字与原厂机器码的输出逐字相同。静态操作作用于当前正常SCC/5G20/CV1；尚未宣称其他带宽完成。
+
+实际alignment_other@333c04在band5G复制sp+136的52/24/8/-8功率数组，非另一份SDK的48/40/8/-8。设置5680/5684/5688/56cc、禁止IQK、启动单音后等2000us；每点5820[31]0→1、等100us，finish@332f78从1c18/3c18[16]读取完成，最多10次失败间隔500us，完成后读低10位codeword。前两点用CW0-CW1-56修正5638/5644低10位，后两点用CW2-CW3-32修正5634/5640高/中10位；按原机signed10bit解码和[-512,511]饱和。尾部使用原机334260的5680[3]清零、5684[7]脉冲、5864[27]恢复、56cc[28]停发、FIFO复位。当前校准返回前停止本次单音。没有把回填常数冒充硬件测量。
+
+第一模块3354b0540b0f23d09f62bf2c13041db2af55e6a96ebf2a27c340f630a38e0ee8在C36/44/48/36的两路四点测量全部完成；每点第二次读完成，12个校正字段读回匹配。第一轮A149/148/150/95、B127/132/132/72；高功率两点接近，功率线性及真实AP发射闭环仍待验证，不能由完成位判定发射功率正常。两路各64个实际入站pcap帧FCS全通过，XEPON公网2/2。trace_stock_c_alignment.py将实际原机codeword输入原厂ELF算法，所得12个字段与原生硬件回读完全一致；此核对只证明算法/寄存器操作一致，不替代RF功率测量。
+
+原机DPK trigger@2f5b34检查supportabilitybit3。RFE54在C bypass_check@32b3e8的>50和XB@3523ec的51..89分支旁路测量，force_bypass/onoff将SCC当前DPK index0的81bc/82bc高nibble清零。原生代码采用这两次写入，没有强制执行其他FEM的DPK测量。C dpk@32b938在reK标志设置时即使旁路也重新调用RF RX_DCK，当前原机reK=1，该步骤已接入，并按原机30c4bc/30c488逐路暂停/恢复已启用TSSI。工具trace_stock_dpk_bypass.py记录实际ELF的旁路条件、两次写入及追加RX_DCK调用边界。
+
+最终模块c0c39a5d1b22d9c03b4cba150a9d13539aa03b37222753ac30afbcd9918ce28e实际C36测得A148/149/149/91、B128/133/130/70，两路tracking1/pause0/RF10055=80；12个校正字段仍与原厂算法一致。两颗DPK控制字段实际均0，C追加RX_DCK执行后接收继续工作。证据manifests/radio-c-tssi-20261010.json及logs/radio-c-tssi-final.log。原生AP的普通TX、角色/CAM、beacon/关联/密钥以及真实发射反馈仍继续完成；监控接口收帧不等于AP可用。

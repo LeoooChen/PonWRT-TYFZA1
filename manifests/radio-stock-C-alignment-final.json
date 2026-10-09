@@ -1,0 +1,528 @@
+{
+  "original_host_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "board_measurement_log": "logs/radio-c-tssi-final.log",
+  "board_log_sha256": "d90ec902a2eda0a660f84df36e6136fb7018bbd0ecd6c2d1f9019fb0ca6651fa",
+  "scope": "original ELF arithmetic and register operands with actual board codewords; emulation does not verify RF power",
+  "paths": [
+    {
+      "path": 0,
+      "actual_board_CW": [
+        148,
+        149,
+        149,
+        91
+      ],
+      "original_power_operands": [
+        52,
+        24,
+        8,
+        504
+      ],
+      "original_field_results": [
+        967,
+        967,
+        26,
+        26,
+        26,
+        26
+      ],
+      "native_hardware_field_readbacks": [
+        967,
+        967,
+        26,
+        26,
+        26,
+        26
+      ],
+      "original_delay_us_sequence": [
+        2000,
+        100,
+        100,
+        100,
+        100
+      ],
+      "original_operations": [
+        {
+          "address": 8200,
+          "mask": 33554431,
+          "value": 1048575
+        },
+        {
+          "address": 22152,
+          "mask": 67043328,
+          "value": 929
+        },
+        {
+          "address": 22144,
+          "mask": 1048560,
+          "value": 0
+        },
+        {
+          "address": 22144,
+          "mask": 133169152,
+          "value": 127
+        },
+        {
+          "address": 22144,
+          "mask": 4026531840,
+          "value": 2
+        },
+        {
+          "address": 22144,
+          "mask": 134217728,
+          "value": 0
+        },
+        {
+          "address": 22148,
+          "mask": 127,
+          "value": 1
+        },
+        {
+          "address": 22148,
+          "mask": 8323072,
+          "value": 8
+        },
+        {
+          "address": 22152,
+          "mask": 1073741824,
+          "value": 1
+        },
+        {
+          "address": 4620,
+          "mask": 61440,
+          "value": 1
+        },
+        {
+          "address": 22220,
+          "mask": 268435456,
+          "value": 1
+        },
+        {
+          "address": 22220,
+          "mask": 267911168,
+          "value": 52
+        },
+        {
+          "address": 22628,
+          "mask": 134217728,
+          "value": 0
+        },
+        {
+          "address": 22144,
+          "mask": 4,
+          "value": 1
+        },
+        {
+          "address": 22144,
+          "mask": 4,
+          "value": 0
+        },
+        {
+          "address": 22560,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 22560,
+          "mask": 2147483648,
+          "value": 1
+        },
+        {
+          "address": 22220,
+          "mask": 267911168,
+          "value": 24
+        },
+        {
+          "address": 22560,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 22560,
+          "mask": 2147483648,
+          "value": 1
+        },
+        {
+          "address": 22072,
+          "mask": 1023,
+          "value": 967
+        },
+        {
+          "address": 22084,
+          "mask": 1023,
+          "value": 967
+        },
+        {
+          "address": 22220,
+          "mask": 267911168,
+          "value": 8
+        },
+        {
+          "address": 22560,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 22560,
+          "mask": 2147483648,
+          "value": 1
+        },
+        {
+          "address": 22220,
+          "mask": 267911168,
+          "value": 504
+        },
+        {
+          "address": 22560,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 22560,
+          "mask": 2147483648,
+          "value": 1
+        },
+        {
+          "address": 22068,
+          "mask": 1072693248,
+          "value": 26
+        },
+        {
+          "address": 22080,
+          "mask": 1072693248,
+          "value": 26
+        },
+        {
+          "address": 22068,
+          "mask": 1047552,
+          "value": 26
+        },
+        {
+          "address": 22080,
+          "mask": 1047552,
+          "value": 26
+        },
+        {
+          "address": 22144,
+          "mask": 8,
+          "value": 0
+        },
+        {
+          "address": 22148,
+          "mask": 128,
+          "value": 1
+        },
+        {
+          "address": 22148,
+          "mask": 128,
+          "value": 0
+        },
+        {
+          "address": 22628,
+          "mask": 134217728,
+          "value": 1
+        },
+        {
+          "address": 22220,
+          "mask": 268435456,
+          "value": 0
+        },
+        {
+          "address": 828,
+          "mask": 4278190080,
+          "value": 31
+        },
+        {
+          "address": 572,
+          "mask": 4294901760,
+          "value": 8193
+        },
+        {
+          "address": 22128,
+          "mask": 1,
+          "value": 1
+        },
+        {
+          "address": 764,
+          "mask": 65536,
+          "value": 1
+        },
+        {
+          "address": 764,
+          "mask": 1048576,
+          "value": 0
+        },
+        {
+          "address": 22128,
+          "mask": 1,
+          "value": 0
+        },
+        {
+          "address": 764,
+          "mask": 65536,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": 1,
+      "actual_board_CW": [
+        128,
+        133,
+        130,
+        70
+      ],
+      "original_power_operands": [
+        52,
+        24,
+        8,
+        504
+      ],
+      "original_field_results": [
+        963,
+        963,
+        28,
+        28,
+        28,
+        28
+      ],
+      "native_hardware_field_readbacks": [
+        963,
+        963,
+        28,
+        28,
+        28,
+        28
+      ],
+      "original_delay_us_sequence": [
+        2000,
+        100,
+        100,
+        100,
+        100
+      ],
+      "original_operations": [
+        {
+          "address": 8200,
+          "mask": 33554431,
+          "value": 1048575
+        },
+        {
+          "address": 30344,
+          "mask": 67043328,
+          "value": 929
+        },
+        {
+          "address": 30336,
+          "mask": 1048560,
+          "value": 0
+        },
+        {
+          "address": 30336,
+          "mask": 133169152,
+          "value": 127
+        },
+        {
+          "address": 30336,
+          "mask": 4026531840,
+          "value": 2
+        },
+        {
+          "address": 30336,
+          "mask": 134217728,
+          "value": 0
+        },
+        {
+          "address": 30340,
+          "mask": 127,
+          "value": 1
+        },
+        {
+          "address": 30340,
+          "mask": 8323072,
+          "value": 8
+        },
+        {
+          "address": 30344,
+          "mask": 1073741824,
+          "value": 1
+        },
+        {
+          "address": 12812,
+          "mask": 61440,
+          "value": 1
+        },
+        {
+          "address": 30412,
+          "mask": 268435456,
+          "value": 1
+        },
+        {
+          "address": 30412,
+          "mask": 267911168,
+          "value": 52
+        },
+        {
+          "address": 30820,
+          "mask": 134217728,
+          "value": 0
+        },
+        {
+          "address": 30336,
+          "mask": 4,
+          "value": 1
+        },
+        {
+          "address": 30336,
+          "mask": 4,
+          "value": 0
+        },
+        {
+          "address": 30752,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 30752,
+          "mask": 2147483648,
+          "value": 1
+        },
+        {
+          "address": 30412,
+          "mask": 267911168,
+          "value": 24
+        },
+        {
+          "address": 30752,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 30752,
+          "mask": 2147483648,
+          "value": 1
+        },
+        {
+          "address": 30264,
+          "mask": 1023,
+          "value": 963
+        },
+        {
+          "address": 30276,
+          "mask": 1023,
+          "value": 963
+        },
+        {
+          "address": 30412,
+          "mask": 267911168,
+          "value": 8
+        },
+        {
+          "address": 30752,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 30752,
+          "mask": 2147483648,
+          "value": 1
+        },
+        {
+          "address": 30412,
+          "mask": 267911168,
+          "value": 504
+        },
+        {
+          "address": 30752,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 30752,
+          "mask": 2147483648,
+          "value": 1
+        },
+        {
+          "address": 30260,
+          "mask": 1072693248,
+          "value": 28
+        },
+        {
+          "address": 30272,
+          "mask": 1072693248,
+          "value": 28
+        },
+        {
+          "address": 30260,
+          "mask": 1047552,
+          "value": 28
+        },
+        {
+          "address": 30272,
+          "mask": 1047552,
+          "value": 28
+        },
+        {
+          "address": 30336,
+          "mask": 8,
+          "value": 0
+        },
+        {
+          "address": 30340,
+          "mask": 128,
+          "value": 1
+        },
+        {
+          "address": 30340,
+          "mask": 128,
+          "value": 0
+        },
+        {
+          "address": 30820,
+          "mask": 134217728,
+          "value": 1
+        },
+        {
+          "address": 30412,
+          "mask": 268435456,
+          "value": 0
+        },
+        {
+          "address": 828,
+          "mask": 4278190080,
+          "value": 31
+        },
+        {
+          "address": 572,
+          "mask": 4294901760,
+          "value": 8193
+        },
+        {
+          "address": 30320,
+          "mask": 1,
+          "value": 1
+        },
+        {
+          "address": 764,
+          "mask": 131072,
+          "value": 1
+        },
+        {
+          "address": 764,
+          "mask": 2097152,
+          "value": 0
+        },
+        {
+          "address": 30320,
+          "mask": 1,
+          "value": 0
+        },
+        {
+          "address": 764,
+          "mask": 131072,
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

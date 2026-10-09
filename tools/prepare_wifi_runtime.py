@@ -198,6 +198,27 @@ try:
                        'source': 'original TXPWR_TrackTSSI.txt 2G A/B +/- ALL rows',
                        'sha256': hashlib.sha256(data).hexdigest(),
                        'selected_FEM_sha256': hashlib.sha256(source.read_bytes()).hexdigest()})
+    track_source = args.study / 'evidence/stock/radio-parameters/rtl8852ce/RFE54'
+    curves = {}
+    for layer in (track_source, track_source / 'RTK66587_BPF'):
+        source = layer / 'TXPWR_TrackTSSI.txt'
+        for group in range(3):
+            for path in ('A', 'B'):
+                for sign in ('+', '-'):
+                    pattern = r'\[5G\]\[' + path + r'\]\[' + re.escape(sign) + r'\]\[ALL\]\[' + str(group) + r'\]\s*=\s*\{([^}]+)\}'
+                    values = bytes(int(value) & 255 for value in re.search(pattern, source.read_text())[1].split(','))
+                    if len(values) != 30:
+                        raise ValueError('Unexpected original C TSSI thermal curve length')
+                    curves[(group, path, sign)] = values
+    data = b''.join(curves[(group, path, sign)] for group in range(3)
+                    for path in ('A', 'B') for sign in ('+', '-'))
+    relative = Path('lib/firmware/realtek/tyfza1/rtl8852ce/tssi-thermal-5g.bin')
+    (args.output / relative).write_bytes(data)
+    parameters.append({'path': str(relative), 'band': '5GHz', 'FEM': 'RTK66587_BPF', 'RFE': 54,
+                       'load_stage': 'derived-base-then-FEM-thermal', 'bytes': len(data),
+                       'source': 'original TXPWR_TrackTSSI.txt 5G A/B +/- groups 0,1,2',
+                       'sha256': hashlib.sha256(data).hexdigest(),
+                       'selected_FEM_sha256': hashlib.sha256(source.read_bytes()).hexdigest()})
     report = {'study': str(args.study.relative_to(root)), 'native_format_header_sha256':
               hashlib.sha256((root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/fw.h').read_bytes()).hexdigest(),
               'firmware': firmware, 'parameters': parameters, 'calibration': calibration, 'NCTL': nctl,

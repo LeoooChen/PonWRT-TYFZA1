@@ -1,0 +1,53 @@
+{
+  "original_host_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "scope": "actual original DPK bypass register operands; post-stage RX_DCK recorded at call boundary",
+  "programs": [
+    {
+      "chip": "8852c",
+      "RFE": 54,
+      "band": 1,
+      "hardware_cv": 1,
+      "normal_SCC_DPK_index": 0,
+      "bypass": 1,
+      "original_operations": [
+        {
+          "address": 33212,
+          "mask": 4026531840,
+          "value": 0
+        },
+        {
+          "address": 33468,
+          "mask": 4026531840,
+          "value": 0
+        }
+      ],
+      "post_DPK_RX_DCK_calls": [
+        {
+          "phy": 0,
+          "is_AFE": 0
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "RFE": 54,
+      "band": 0,
+      "hardware_cv": 1,
+      "normal_SCC_DPK_index": 0,
+      "bypass": 1,
+      "original_operations": [
+        {
+          "address": 33212,
+          "mask": 4026531840,
+          "value": 0
+        },
+        {
+          "address": 33468,
+          "mask": 4026531840,
+          "value": 0
+        }
+      ],
+      "post_DPK_RX_DCK_calls": []
+    }
+  ]
+}

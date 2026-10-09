@@ -1,0 +1,69 @@
+{
+  "scope": "actual native live radio on TYFZA1; full FIT boot remains separate",
+  "source_base_commit": "161d3ae",
+  "source_worktree_C_TSSI_DPK_changes": true,
+  "original_host_module_used_on_device": false,
+  "live_native_module_sha256": "c0c39a5d1b22d9c03b4cba150a9d13539aa03b37222753ac30afbcd9918ce28e",
+  "C_channel": 36,
+  "XB_channel": 6,
+  "C_TSSI_operations": 338,
+  "C_TSSI_measurements": [
+    {
+      "path": 0,
+      "CW": [
+        148,
+        149,
+        149,
+        91
+      ],
+      "polls": [
+        2,
+        2,
+        2,
+        2
+      ],
+      "correction": [
+        -57,
+        26
+      ]
+    },
+    {
+      "path": 1,
+      "CW": [
+        128,
+        133,
+        130,
+        70
+      ],
+      "polls": [
+        2,
+        2,
+        2,
+        2
+      ],
+      "correction": [
+        -61,
+        28
+      ]
+    }
+  ],
+  "C_alignment_hardware_fields_equal_original_ELF_results": true,
+  "C_tone_stopped_after_measurement": true,
+  "DPK_RFE54_original_bypass_both_paths": true,
+  "C_DPK_post_TSSI_RX_DCK_executed": true,
+  "manual_C_channels_measured": [
+    36,
+    44,
+    48,
+    36
+  ],
+  "real_AP_TX_power_loop_verified": false,
+  "AP_beacons_association_keys_data_TX": "pending",
+  "record": "logs/radio-c-tssi-final.log",
+  "first_native_calibration_module_sha256": "3354b0540b0f23d09f62bf2c13041db2af55e6a96ebf2a27c340f630a38e0ee8",
+  "first_module_incoming_FCS_valid_C_XB": [
+    64,
+    64
+  ],
+  "final_module_FIT_boot_verified": false
+}
