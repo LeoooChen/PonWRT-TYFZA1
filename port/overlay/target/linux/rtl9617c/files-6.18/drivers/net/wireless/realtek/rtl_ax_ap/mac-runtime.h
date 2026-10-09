@@ -182,4 +182,142 @@ static inline int rtl_ax_mac_dmac_start(const struct rtl_ax_io *io, int firmware
 	rtl_ax_security_initialize(io);
 	return 0;
 }
+
+static inline void rtl_ax_cmac_scheduler(const struct rtl_ax_io *io,
+					 unsigned int chip)
+{
+	/* cmac_init@23f100..23f258, ASIC band0. AP beacon EDCA is16-bit. */
+	rtl_ax_update32(io, 0xc33c, 0x7f, chip == RTL_AX_8852C ? 0x3e : 0x40);
+	rtl_ax_update32(io, 0xc340, RTL_AX_BIT(5), 0);
+	if (!(io->read32(io->ctx, 0x9d00) & RTL_AX_BIT(11)))
+		rtl_ax_update32(io, 0xc338, 0x1f, 0x10);
+	if (chip == RTL_AX_8852C)
+		rtl_ax_update32(io, 0xc340, 0xff000000, 0x6a000000);
+	io->write16(io->ctx, 0xc326, 0x3219); /* CWmin2,CWmax3,AIFS25. */
+}
+
+static inline int rtl_ax_cmac_address_cam(const struct rtl_ax_io *io)
+{
+	unsigned short last;
+
+	/* addr_cam_init@1e8598: clear request is bit8,read back as16-bit. */
+	rtl_ax_update32(io, 0xce34, 0, 0x007f0101);
+	return io->poll16(io->ctx, 0xce34, 0x100, 0, 1, 2000, &last);
+}
+
+static inline void rtl_ax_cmac_receive_filter(const struct rtl_ax_io *io)
+{
+	/* Original rx_fltr_init and mac_set_typ_fltr_opt: HOST for all types.
+	 * ELF rx_fltr_init_opt={3f,00,00,08,7f}; all five mask bytes areff.
+	 * The original getter/converter discards undefined register bits. */
+	io->write32(io->ctx, 0xce28, 0x55555555);
+	io->write32(io->ctx, 0xce24, 0x55555555);
+	io->write32(io->ctx, 0xce2c, 0x55555555);
+	io->write32(io->ctx, 0xce20, 0x0800003f);
+	io->write16(io->ctx, 0xce04, 0x007f);
+}
+
+static inline void rtl_ax_cmac_medium_access(const struct rtl_ax_io *io)
+{
+	/* cmac_init@23f4e4 and240050. chk_patch_dis_resp_chk returnsfalse
+	 * for both MAC chip IDs2/3,independent of their cuts. */
+	rtl_ax_update32(io, 0xc390, ~0x71e1feffU, 0x712100ff);
+	rtl_ax_update32(io, 0xcc00, 0, 0x00380000);
+	rtl_ax_update32(io, 0xcc04, 0x00080000, 0x1f800000);
+	/* mac_two_nav_cfg@23efb8: PLCP/trigger updates and12ms upper NAV,
+	 * encoded as93 units of128us. */
+	rtl_ax_update32(io, 0xcc80, 0x0000ff00, 0x04035d00);
+	/* spatial_reuse_init@244f04 only clears SR_EN inthis board module. */
+	rtl_ax_update8(io, 0xce4a, 1, 0);
+}
+
+static inline void rtl_ax_cmac_transmit(const struct rtl_ax_io *io)
+{
+	/* Original normal-mode TMAC. Its AP binary has no SW_PREFER_AC write
+	 * between TXD_FIFO_CTRL and TRXPTCL,unlike the newer reference SDK. */
+	rtl_ax_update32(io, 0xcc20, 1, 0);
+	rtl_ax_update32(io, 0xca00, 0x007f0000, 0x00060000);
+	rtl_ax_update32(io, 0xca1c, 0x0000ff00, 0x00007700);
+}
+
+static inline void rtl_ax_cmac_response(const struct rtl_ax_io *io)
+{
+	unsigned int control, rate, rates;
+
+	/* Original C/XB branch uses CCK SIFS10,OFDM SIFS17 and checks trigger
+	 * FCS. Private RRSR ops preserve defined fields,then write full words. */
+	rtl_ax_update32(io, 0xcc04, 0x0000ffff, 0x0000110a);
+	rtl_ax_update32(io, 0xccb0, 0, RTL_AX_BIT(20));
+	control = io->read32(io->ctx, 0xcc08);
+	rate = io->read32(io->ctx, 0xc090);
+	rates = io->read32(io->ctx, 0xc08c);
+	/* MAC get/set RRSR@24f09c/24f1d8: refer to RX rate AND CMAC table,
+	 * retain OFDM/HT/VHT/HE rates,enable legacy rates and CCK1M only. */
+	io->write32(io->ctx, 0xcc08, control & 0x0f3001ff);
+	io->write32(io->ctx, 0xc090, (rate & 0x00000fc0) | 0x101);
+	io->write32(io->ctx, 0xc08c, rates);
+}
+
+static inline int rtl_ax_cmac_receive(const struct rtl_ax_io *io, int firmware_tx)
+{
+	unsigned int last;
+	int ret;
+
+	/* rst_bacam@23c48c,all entries: bits0/1 must both clear. */
+	rtl_ax_update32(io, 0xce3c, 3, 2);
+	ret = io->poll32(io->ctx, 0xce3c, 3, 0, 1, 1000, &last);
+	if (ret)
+		return ret;
+	rtl_ax_update8(io, 0xce3c, 0, 4); /* SSN selection. */
+	/* cmac_init@23fcd0: keep low byte,replace upper byte of DLK timer. */
+	io->write16(io->ctx, 0xce02, (io->read16(io->ctx, 0xce02) & 0xff) | 0x80f2);
+	/* Original board binary@23f7fc uses15 for SW TX mode,1 for HW TX.
+	 * This is a complete low-byte RCR write,not the newer SDK's RMW. */
+	io->write8(io->ctx, 0xce00, firmware_tx ? 0x0f : 1);
+	/* SCC C0 min quota100 x256B exceeds11966B spec maximum;512B units. */
+	rtl_ax_update32(io, 0xce20, 0x003f0000, 23U << 16);
+	/* chk_patch_wmac_timer_src returnsfalse forC/XB;no timer-source patch.
+	 * Original RMAC skips VHT SU SIG-B CRC and has no RX_TIME_MON write. */
+	rtl_ax_update8(io, 0xce04, 0x10, 0);
+	return 0;
+}
+
+static inline void rtl_ax_cmac_protocol(const struct rtl_ax_io *io, int firmware_tx)
+{
+	/* cmac_com_init,normal TXSC. C/XB skip the older chips' RRSR1 patch. */
+	rtl_ax_update32(io, 0xc088, 0xfff, 0);
+	/* Original is_qta_poh@202c00 returns1 for PCIe SCC. That predicate
+	 * is separate from the HFC POH control field's encoded mode0. */
+	rtl_ax_update32(io, 0xc624, 0xfffc0000, 0x04050000);
+	rtl_ax_update32(io, 0xc6e8, 0x40, 0x3f);
+	if (firmware_tx)
+		rtl_ax_update8(io, 0xc600, 3, 0x1c);
+	else
+		rtl_ax_update8(io, 0xc600, 0x1c, 3);
+	rtl_ax_update8(io, 0xc660, 0x30, 0x10); /* Special reports to WCPU. */
+	/* Original VHT aggregation patch and CMAC DMA writes are for other
+	 * chip families. BothC/XB return without those writes. */
+}
+
+static inline int rtl_ax_mac_cmac_start(const struct rtl_ax_io *io,
+					unsigned int chip, int firmware_tx)
+{
+	int ret;
+
+	rtl_ax_cmac_scheduler(io, chip);
+	/* rst_port_info resets host port/report objects only. Those belong to
+	 * the forthcoming native AP role lifecycle,before host data starts. */
+	ret = rtl_ax_cmac_address_cam(io);
+	if (ret)
+		return ret;
+	rtl_ax_cmac_receive_filter(io);
+	rtl_ax_cmac_medium_access(io);
+	rtl_ax_cmac_transmit(io);
+	rtl_ax_cmac_response(io);
+	ret = rtl_ax_cmac_receive(io, firmware_tx);
+	if (ret)
+		return ret;
+	rtl_ax_cmac_protocol(io, firmware_tx);
+	return 0;
+}
 #endif

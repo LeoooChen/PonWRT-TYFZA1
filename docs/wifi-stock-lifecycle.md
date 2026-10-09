@@ -98,3 +98,17 @@ SCC直接使用本机ELF的wde_size19/ple_size19/wde_qt18/ple_qt46/ple_qt47。�
 STA scheduler之后按原机顺序写MPDU action/trigger forwarding、FCS/ICV追加以及A-MSDU cut配置；再使能安全引擎cipher clocks和TX/RX、组播/管理帧加解密，配置MIC/ICV、TX timeout及AP driver-info patch。PCIe分支保留TX_PARTIAL_MODE；不误套原厂USB分支的清位动作。radio_state只报告dmac_engines，不将其等同于key/STA表或CMAC/PHY完成。
 
 sec_info_tbl_init的原机行为是分配并置INVALID的host SEC_CAM/MACID信息对象，另由key/role路径写硬件。原生对应key/STA生命周期继续接入mac80211，不能将“安全引擎使能”或“空的报告计数”当作密钥安装成功。普通RX/TX仍未开放。
+
+## 按原机机器码接入 CMAC 寄存器阶段
+
+mac-runtime.h 的 rtl_ax_mac_cmac_start 接在 DMAC hardware engines 后，依 cmac_init@0x23f040 顺序执行 band0 ASIC 的 scheduler、ADDR CAM、RX filter、CCA/NAV、spatial reuse、TMAC、TRX response、RMAC、CMAC common 和 PTCL。原机 rst_port_info@0x225324 只清 host port/beacon-report 对象；这些对象随后接入 native AP role 生命周期，不添加虚构的硬件重置。SEC_CAM、MACID、port 的 host 生命周期，以及 mac_trx_init 后段 IMR/feature/PCIe normal-channel 初始化仍需继续，当前状态因此报告 cmac_registers，不报告完整 MAC/AP 已就绪。
+
+SIFS_MACTXEN_T1 在 C/XB 分别为 0x3e/0x40；C 独有 c340 高字节 0x6a。BCN EDCA 经 get_edca_addr@0x1ea748 确认为 c326，16 位写 0x3219。ADDR CAM 设置 ce34 的 0x007f0101，按原机读取宽度用 16 位等待 bit8 清除。RX 三类 subtype 转发均为 HOST；原机 ELF 的初始参数五字节为 3f0000087f，全掩码为 ffffffffff，经原机 converter 得到 ce20=0800003f、ce04=007f。
+
+CCA 的 response-check patch 对两颗 MAC chip ID 2/3 均不启用，按正常分支设置 NAV/CCA，保留 ACK/BA 忽略 CCA 的原机设置。AP NAV 上限是 0x5d 个 128us 单位（12ms），不是把十进制 12 直接写字段。spatial_reuse_init@0x244f04 只清 ce4a bit0；没有照抄新版 SDK 额外的 PLCP/BSSID 修改。原机 TMAC 也没有新版 SDK 的 SW_PREFER_AC 操作。
+
+RRSR 的间接调用经实际 ELF private-ops 槽 0xa0/0xa8 分别确认为两颗芯片的 mac_get_rrsr_cfg/mac_set_rrsr_cfg；只保留这些实现认可的字段，开启 legacy rate，CCK 应答只用 1M，参考 RX rate 与 CMAC table 的较小值。RMAC 先重置全部 BA CAM，等 bits0/1 清除，再设置 SSN/DLK/RCR。原机 RCR 低字节 SW TX mode 写 0x0f，HW mode 写 1；不把新版 SDK 的统一 RX_CH_8_USER 写法强套进本机。SCC 的 C0 quota 100×256B 高于 MPDU 规格上限，RX 长度字段为 23 个 512B 单位。
+
+原机 is_qta_poh@0x202c00 对 PCIe SCC 返回真，因此 PTCL 配置 CTS-to-self 和 2ms arbitration timeout。这个布尔判断与 HFC POH 字段的 mode0 编码不是一个含义。C/XB 的 VHT aggregation/timer-source/CMAC DMA patch 返回无需写寄存器；原机 RMAC 也没有新版 SDK 的 RX_TIME_MON 写入。完整来源、地址及 private-ops 记录在 manifests/radio-stock-cmac.json。
+
+后台服务 ponwrt-tyfza1-stock-cmac-compile 完成 Linux 6.18.55 的 ARM64 pci.o 编译，退出码 0。编译仅确认当前真实内核接口和生成对象；设备离线，本阶段还没有上板结果或新的最终 FIT。接下来依据 hal_start 的实机顺序处理基础 BB/RF、RFE54 FEM 扩展、普通 TX/RX 和 AP role/key 对象。

@@ -36,6 +36,9 @@ struct rtl_ax_io {
 	void (*write16)(void *ctx, unsigned int reg, unsigned short value);
 	void (*write32)(void *ctx, unsigned int reg, unsigned int value);
 	void (*delay_us)(void *ctx, unsigned int usec);
+	int (*poll16)(void *ctx, unsigned int reg, unsigned short mask,
+		      unsigned short expected, unsigned int delay_us,
+		      unsigned int timeout_us, unsigned short *last);
 	int (*poll32)(void *ctx, unsigned int reg, unsigned int mask,
 		      unsigned int expected, unsigned int delay_us,
 		      unsigned int timeout_us, unsigned int *last);

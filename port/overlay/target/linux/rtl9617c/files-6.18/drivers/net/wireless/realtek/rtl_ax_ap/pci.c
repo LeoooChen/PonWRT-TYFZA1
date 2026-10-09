@@ -44,6 +44,7 @@ struct rtl_ax_ap {
 	bool firmware_ready;
 	bool mac_memory_ready;
 	bool dmac_engines_ready, firmware_tx;
+	bool cmac_registers_ready;
 };
 
 static unsigned char rtl_ax_read8(void *ctx, unsigned int reg)
@@ -88,6 +89,16 @@ static int rtl_ax_poll32(void *ctx, unsigned int reg, unsigned int mask,
 	struct rtl_ax_ap *radio = ctx;
 
 	return readl_poll_timeout(radio->bar + reg, *last,
+				 (*last & mask) == expected, delay_us, timeout_us);
+}
+
+static int rtl_ax_poll16(void *ctx, unsigned int reg, unsigned short mask,
+	unsigned short expected, unsigned int delay_us, unsigned int timeout_us,
+	unsigned short *last)
+{
+	struct rtl_ax_ap *radio = ctx;
+
+	return readw_poll_timeout(radio->bar + reg, *last,
 				 (*last & mask) == expected, delay_us, timeout_us);
 }
 
@@ -195,6 +206,10 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	if (ret)
 		return ret;
 	radio->dmac_engines_ready = true;
+	ret = rtl_ax_mac_cmac_start(&radio->io, radio->chip, radio->firmware_tx);
+	if (ret)
+		return ret;
+	radio->cmac_registers_ready = true;
 	return 0;
 }
 
@@ -211,7 +226,7 @@ static ssize_t radio_state_show(struct device *dev,
 		"firmware_state=%s download_memory=%s hci=paused "
 		"transport=channel12 packets=%u bytes=%u control=0x%02x "
 		"mac_memory=%s secure=%u dmac_engines=%s firmware_tx=%u "
-		"cmac_trx=pending mac80211=pending\n",
+		"cmac_registers=%s roles=pending mac80211=pending\n",
 		radio->chip, radio->identity.hardware_cv, radio->identity.cv,
 		radio->identity.factory, radio->identity.adie, radio->powered ? "on" : "off",
 		radio->calibration.tag, radio->calibration.process,
@@ -220,7 +235,8 @@ static ssize_t radio_state_show(struct device *dev,
 		radio->download_prepared ? "ready" : "off", radio->transport.packets,
 		radio->transport.transferred_bytes, radio->transport.last_control,
 		radio->mac_memory_ready ? "SCC" : "off", radio->secure,
-		radio->dmac_engines_ready ? "ready" : "off", radio->firmware_tx);
+		radio->dmac_engines_ready ? "ready" : "off", radio->firmware_tx,
+		radio->cmac_registers_ready ? "ready" : "off");
 }
 static DEVICE_ATTR_RO(radio_state);
 static struct attribute *rtl_ax_attrs[] = {
@@ -241,6 +257,7 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		radio->firmware_ready = false;
 		radio->mac_memory_ready = false;
 		radio->dmac_engines_ready = false;
+		radio->cmac_registers_ready = false;
 		radio->download_prepared = false;
 	}
 	ret = rtl_ax_ap_power_off(&radio->io);
@@ -276,7 +293,7 @@ static int rtl_ax_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (!bar)
 		return -ENODEV;
 	bar = __ffs(bar);
-	if (pci_resource_len(pdev, bar) < RTL_AX_CMAC + sizeof(u32))
+	if (pci_resource_len(pdev, bar) < 0xce4b)
 		return -ENODEV;
 	radio->bar = pcim_iomap_region(pdev, bar, "rtl_ax_ap");
 	if (IS_ERR(radio->bar))
@@ -285,7 +302,7 @@ static int rtl_ax_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		.ctx = radio,
 		.read8 = rtl_ax_read8, .read16 = rtl_ax_read16, .read32 = rtl_ax_read32,
 		.write8 = rtl_ax_write8, .write16 = rtl_ax_write16, .write32 = rtl_ax_write32,
-		.delay_us = rtl_ax_delay_us, .poll32 = rtl_ax_poll32,
+		.delay_us = rtl_ax_delay_us, .poll16 = rtl_ax_poll16, .poll32 = rtl_ax_poll32,
 	};
 	radio->chip = rtl_ax_read8(radio, RTL_AX_CHIP);
 	radio->identity.hardware_cv = rtl_ax_read8(radio, RTL_AX_CONFIG + 1) >> 4;

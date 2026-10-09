@@ -1,0 +1,125 @@
+{
+  "stock_module": "evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko",
+  "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "functions": {
+    "cmac_init": {
+      "address": "0x23f040",
+      "bytes": 4408,
+      "sha256": "47aa511d43ef2e64e9b30fc1674f3e1ba5807b70312ce860e0c0ca4945750dcf"
+    },
+    "addr_cam_init": {
+      "address": "0x1e8598",
+      "bytes": 292,
+      "sha256": "d469d9e0e136ef0dcdcfa2f9af9b4e18f951a394b30f854ff5076b8f69bab8e6"
+    },
+    "rx_fltr_init": {
+      "address": "0x22fe30",
+      "bytes": 240,
+      "sha256": "bf58afc0796a2db0e5a7af3ed72038a51270ef1700c1435ef96fe2eafdcfef2a"
+    },
+    "mac_set_typ_fltr_opt": {
+      "address": "0x2302bc",
+      "bytes": 392,
+      "sha256": "57bcc244b6a0ec1127ea00148ff5cfd4c0a67b07bb60e8315dd087c21620afc2"
+    },
+    "mac_set_rx_fltr_opt": {
+      "address": "0x2300e4",
+      "bytes": 472,
+      "sha256": "0c8a5aeda5cea341d6762cff6027b726075144e6479702baf67c3da688ad91cb"
+    },
+    "rx_fltr_opt_2_uint": {
+      "address": "0x22fddc",
+      "bytes": 84,
+      "sha256": "b197cd48eb1395d8c7d9dcb4df93058021fe30a5877d5455e88dcc2249ccb8c4"
+    },
+    "set_hw_edca_param": {
+      "address": "0x1ea960",
+      "bytes": 252,
+      "sha256": "0a3068eec56939d7fe39a7735362902b89dd8527a6b6686c257dd5abe6802c11"
+    },
+    "get_edca_addr": {
+      "address": "0x1ea748",
+      "bytes": 536,
+      "sha256": "2a37e255f4028eef152a7ac60443616960faa150df578bb0c2a2d1a000c4691b"
+    },
+    "rst_port_info": {
+      "address": "0x225324",
+      "bytes": 188,
+      "sha256": "3ee6fbd702fc40a6502be8a8d927c0be3ba86ee3ae4b9b8a04bf998f9029b1ee"
+    },
+    "mac_two_nav_cfg": {
+      "address": "0x23efb8",
+      "bytes": 136,
+      "sha256": "7cee14cf9fd2c11d00223ada35ebcaf93de51547f24df8032780004aefcccd0a"
+    },
+    "spatial_reuse_init": {
+      "address": "0x244f04",
+      "bytes": 124,
+      "sha256": "4a0a8247118d12301d994ff74f67c11bd9012cd83f9860ca1ca16efbf4f4f48e"
+    },
+    "rst_bacam": {
+      "address": "0x23c48c",
+      "bytes": 268,
+      "sha256": "1f9ee8559967fd18bb12b32550892a33d9006a7634c61b7702e43a50f0f4d2fd"
+    },
+    "chk_patch_dis_resp_chk": {
+      "address": "0x246bc8",
+      "bytes": 128,
+      "sha256": "13a3a28d284534098e1abbaf778c0db67699bd5c4cfecb3ed3acc3d8469096ac"
+    },
+    "chk_patch_vht_ampdu_max_len": {
+      "address": "0x246ddc",
+      "bytes": 116,
+      "sha256": "9224a5d30b93476f47c2836d0006fd17161a622aad8e6b9d775a7c50101180c9"
+    },
+    "chk_patch_wmac_timer_src": {
+      "address": "0x24713c",
+      "bytes": 104,
+      "sha256": "874dc3a9ee21499d2b1e77fa9b63ee4f0140f5e81f1e014f29333ae0ab2a18ed"
+    },
+    "is_qta_poh": {
+      "address": "0x202c00",
+      "bytes": 44,
+      "sha256": "7d32d08f1ebd0923a7d5507cb3c6e07c1e7c2c66515c64998b48d2f5c2cb3c57"
+    },
+    "mac_get_rrsr_cfg_8852c": {
+      "address": "0x24f09c",
+      "bytes": 316,
+      "sha256": "8ae7a2447a22a5086711afa65c22c5db358a74cefe031e930a42fe217387a07d"
+    },
+    "mac_set_rrsr_cfg_8852c": {
+      "address": "0x24f1d8",
+      "bytes": 360,
+      "sha256": "eaac4f72a1aebc4beb7c1559e800ac39aa148a79c1a22d80c9980cdde62bec4b"
+    },
+    "mac_get_rrsr_cfg_8192xb": {
+      "address": "0x26a6fc",
+      "bytes": 316,
+      "sha256": "8ae7a2447a22a5086711afa65c22c5db358a74cefe031e930a42fe217387a07d"
+    },
+    "mac_set_rrsr_cfg_8192xb": {
+      "address": "0x26a838",
+      "bytes": 360,
+      "sha256": "eaac4f72a1aebc4beb7c1559e800ac39aa148a79c1a22d80c9980cdde62bec4b"
+    }
+  },
+  "private_RRSR_ops": {
+    "mac8852c_priv_ops": {
+      "0xa0": "mac_get_rrsr_cfg_8852c",
+      "0xa8": "mac_set_rrsr_cfg_8852c"
+    },
+    "mac8192xb_priv_ops": {
+      "0xa0": "mac_get_rrsr_cfg_8192xb",
+      "0xa8": "mac_set_rrsr_cfg_8192xb"
+    }
+  },
+  "RX_filter_initial_option_bytes": "3f0000087f",
+  "RX_filter_mask_bytes": "ffffffffff",
+  "implementation": "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/mac-runtime.h",
+  "scope": "ASIC band0 PCIe SCC CMAC registers; AP roles and host RX/TX pending",
+  "validation": {
+    "ARM64_kernel_object_compile": "passed",
+    "service": "ponwrt-tyfza1-stock-cmac-compile",
+    "board_run": false
+  }
+}
