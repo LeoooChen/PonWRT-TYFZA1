@@ -34,6 +34,7 @@ common = r'''
 #include "power.h"
 #include "download.h"
 #include "transport.h"
+#include "mac-runtime.h"
 typedef uint32_t u32;
 typedef uint64_t dma_addr_t;
 #define lower_32_bits(x) ((u32)(x))

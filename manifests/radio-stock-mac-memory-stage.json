@@ -1,0 +1,27 @@
+{
+  "source_parent": "7835ed6",
+  "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "original_functions": [
+    "set_enable_bb_rf@0x21de94",
+    "dmac_func_en_8852c@0x24c1b8",
+    "dmac_func_en_8192xb@0x26a558",
+    "cmac_func_en@0x221418",
+    "mac_chk_sec_rec@0x2454d8",
+    "dle_init",
+    "preload_init_set_8192xb@0x273aac",
+    "hfc_init"
+  ],
+  "actual_DMAC_function_mask": "fb7d4000",
+  "actual_DMAC_clock_mask": "0b1f0000",
+  "actual_SCC_tables": "manifests/radio-stock-operational-memory.json",
+  "actual_HFC_tables": "manifests/radio-stock-operational-HFC.json",
+  "native_source_sha256": {
+    "mac-runtime.h": "898cd73c5b3b7012012e370b81889c3c5e9c754dd644ee1a82ad4fc45881018a",
+    "pci.c": "5e96af823c12777fa70d3a823f4a0054a64465774452d4f8bdf0381f94aabbc3"
+  },
+  "ARM64_object_compile_exit_status": 0,
+  "build_service": "ponwrt-tyfza1-stock-mac-memory-compile",
+  "stage": "post-download memory SCC;MAC TRX/STA/security/PHY table application still incomplete",
+  "hardware_verified": false,
+  "new_final_FIT_generated": false
+}

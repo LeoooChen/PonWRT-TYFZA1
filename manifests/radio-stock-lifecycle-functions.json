@@ -2571,6 +2571,184 @@
       "path": "analysis/radio-stock-lifecycle/hal_hci_cfg_8852ce.asm",
       "sha256": "134e0a8a5d9f240a112f925aa513e81eaebbbd6fa4450f18466bc5dbbe1edfad",
       "direct_calls_with_addresses": []
+    },
+    "dmac_func_en_8852c": {
+      "path": "analysis/radio-stock-lifecycle/dmac_func_en_8852c.asm",
+      "sha256": "dd104356671d66984edff05fd4892f8cdf8738903eff73da4f8bec9c8d1d06f1",
+      "direct_calls_with_addresses": []
+    },
+    "dmac_func_en_8192xb": {
+      "path": "analysis/radio-stock-lifecycle/dmac_func_en_8192xb.asm",
+      "sha256": "dc76cde98e8aa7b6258cc7803a1f4d40b7105dbd87824becb40b91559c74f801",
+      "direct_calls_with_addresses": []
+    },
+    "cmac_func_en": {
+      "path": "analysis/radio-stock-lifecycle/cmac_func_en.asm",
+      "sha256": "489befc90f809cb808c9af5584f51e7e296ddcea0c409f0aaa06d792dcdeef6f",
+      "direct_calls_with_addresses": [
+        {
+          "address": "2216bc",
+          "function": "__stack_chk_fail"
+        }
+      ]
+    },
+    "mac_chk_sec_rec": {
+      "path": "analysis/radio-stock-lifecycle/mac_chk_sec_rec.asm",
+      "sha256": "d127d88d77a4ee61a17d6af10562980ba6e534f79524a6ae1158f88c7d95b1f2",
+      "direct_calls_with_addresses": [
+        {
+          "address": "2455c0",
+          "function": "__stack_chk_fail"
+        }
+      ]
+    },
+    "set_fc_mix_cfg_8192xb": {
+      "path": "analysis/radio-stock-lifecycle/set_fc_mix_cfg_8192xb.asm",
+      "sha256": "52bda67f534005bf12b7815a289dc0903480c517954dfd53347516dc4ec7826f",
+      "direct_calls_with_addresses": []
+    },
+    "set_fc_pubpg_8192xb": {
+      "path": "analysis/radio-stock-lifecycle/set_fc_pubpg_8192xb.asm",
+      "sha256": "0a91c8d67be32003eecde4d48652a76b801508f532af12039bd98774af4cae74",
+      "direct_calls_with_addresses": []
+    },
+    "preload_init": {
+      "path": "analysis/radio-stock-lifecycle/preload_init.asm",
+      "sha256": "e715f60b5ad74f40d4057aeed98e1fe5dfd059f4aabc0ddd3f28f39e58d7235b",
+      "direct_calls_with_addresses": [
+        {
+          "address": "202e4c",
+          "function": "chk_preload_allow"
+        }
+      ]
+    },
+    "preload_init_set_8192xb": {
+      "path": "analysis/radio-stock-lifecycle/preload_init_set_8192xb.asm",
+      "sha256": "e461cc1c86f01b82e5d97ff24264e757a5edda361505b2c332f2ba40bc9410fc",
+      "direct_calls_with_addresses": []
+    },
+    "preload_init_set_8852c": {
+      "path": "analysis/radio-stock-lifecycle/preload_init_set_8852c.asm",
+      "sha256": "9a5dad3f2937d2179ad3825ecd3c1a923b63ddf2a469f194ba1183cbb9717fa1",
+      "direct_calls_with_addresses": []
+    },
+    "chk_preload_allow": {
+      "path": "analysis/radio-stock-lifecycle/chk_preload_allow.asm",
+      "sha256": "ba6400f8b54be4c300279e0ceca7a59ffaf20999ccd98c0c7e91125588227545",
+      "direct_calls_with_addresses": [
+        {
+          "address": "202c50",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "202c64",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "202c78",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "202cc8",
+          "function": "is_qta_poh"
+        },
+        {
+          "address": "202cf0",
+          "function": "__stack_chk_fail"
+        }
+      ]
+    },
+    "mac_sys_init": {
+      "path": "analysis/radio-stock-lifecycle/mac_sys_init.asm",
+      "sha256": "3d71970c47583f6291b786b6beee2b9531161893cfd387c3df462cc917f58c18",
+      "direct_calls_with_addresses": [
+        {
+          "address": "22180c",
+          "function": "chip_func_en"
+        },
+        {
+          "address": "221844",
+          "function": "mac_chk_sec_rec"
+        },
+        {
+          "address": "221874",
+          "function": "__stack_chk_fail"
+        }
+      ]
+    },
+    "set_enable_bb_rf": {
+      "path": "analysis/radio-stock-lifecycle/set_enable_bb_rf.asm",
+      "sha256": "328775ead37a8bceddafa8ce3c64d3f582353a61685fbbb0470616c15751f69c",
+      "direct_calls_with_addresses": [
+        {
+          "address": "21deec",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "21dfc8",
+          "function": "mac_write_xtal_si"
+        },
+        {
+          "address": "21e004",
+          "function": "mac_write_xtal_si"
+        },
+        {
+          "address": "21e040",
+          "function": "mac_write_xtal_si"
+        },
+        {
+          "address": "21e07c",
+          "function": "mac_write_xtal_si"
+        },
+        {
+          "address": "21e0b8",
+          "function": "mac_write_xtal_si"
+        },
+        {
+          "address": "21e0cc",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "21e150",
+          "function": "mac_write_xtal_si"
+        },
+        {
+          "address": "21e1ac",
+          "function": "mac_write_xtal_si"
+        },
+        {
+          "address": "21e1e8",
+          "function": "mac_write_xtal_si"
+        },
+        {
+          "address": "21e224",
+          "function": "mac_write_xtal_si"
+        },
+        {
+          "address": "21e260",
+          "function": "mac_write_xtal_si"
+        },
+        {
+          "address": "21e2a8",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "21e300",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "21e32c",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "21e340",
+          "function": "is_chip_id"
+        },
+        {
+          "address": "21e35c",
+          "function": "is_chip_id"
+        }
+      ]
     }
   },
   "complete_callgraph": false,

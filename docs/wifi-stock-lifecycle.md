@@ -80,3 +80,11 @@ RXBD info、短/长WD、packet offset及C2H头的局部格式已有原机依据�
 未提交的RX/IRQ代码及其局部测试已经保存到Git stash（描述RX experiment retained pending complete stock lifecycle understanding），可以恢复重做；不把这份试验作为新候选固件。其后台构建已经终止为failed，当前最后成功载荷仍为9b76b2e下载阶段的transport02。
 
 接下来先把pcie_pre_init实际cut分支、运行态DMAC/CMAC、cap/profile选择、基础/扩展BB/RF和普通TX/WP生命周期继续追清，给每个步骤记录原机入口、参数来源、寄存器/对象变化、完成条件和依赖；据此调整移植顺序和实现。验证用于核对已明确的原机行为，不能用自行设定的模拟条件替代行为依据。
+
+## 已依本机实现的运行内存阶段
+
+mac-runtime.h现在接在WCPU download ready之后。它按本机mac_hal_init的先后实现set_enable_bb_rf、mac_sys_init中的完整function/clock及安全模式查询，然后执行SCC DLE、preload和运行HFC。PCIe host数据面仍暂停，STA scheduler/MPDU/security/CMAC TRX等后段尚未执行，radio_state明确记录mac_memory=SCC、mac_trx=pending。
+
+依据不是主线NIC默认表：原机dmac_func_en_8852c@0x24c1b8与dmac_func_en_8192xb@0x26a558都写DMAC=fb7d4000、clock=0b1f0000；cmac_func_en(BAND0,1)把c004的4000003f和c000的f000003f置位；mac_chk_sec_rec@0x2454d8读取DDV efuse5ed的bit7并反转为secure标记。BB/RF使能还保留8852C的SPS/ADC LDO设置，XTAL3分别为8852C的0d、8192XB的0f。
+
+SCC直接使用本机ELF的wde_size19/ple_size19/wde_qt18/ple_qt46/ple_qt47。原机AP HFC并非主线8852C常见group0/group1各1614：本机hfc_pubcfg_pcie_scc为{3228,0,3228,0}，普通有效channels0..3/8/9的min=26、max=3098、group0；XB跳过不可用的4..7/10/11。实际hfc_preccfg_pcie={2,40,0,0,X2,X1,X1,X1}，SCC为POH mode0。preload(BAND0)的9f48/9f4c字段按原机82080000/134设置，并保留CAM entry字段。ARM64对象编译完成；本机运行、完整MAC TRX和新的最终FIT仍待后续。

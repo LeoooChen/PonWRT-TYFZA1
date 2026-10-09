@@ -11,6 +11,7 @@
 #include "power.h"
 #include "download.h"
 #include "transport.h"
+#include "mac-runtime.h"
 
 struct rtl_ax_ap {
 	struct pci_dev *pdev;
@@ -25,9 +26,11 @@ struct rtl_ax_ap {
 	unsigned int h2c_producer;
 	unsigned int h2c_available[2];
 	unsigned char chip;
+	unsigned char secure;
 	bool powered;
 	bool download_prepared;
 	bool firmware_ready;
+	bool mac_memory_ready;
 };
 
 static unsigned char rtl_ax_read8(void *ctx, unsigned int reg)
@@ -170,6 +173,10 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 		return ret;
 	}
 	radio->firmware_ready = true;
+	ret = rtl_ax_mac_memory_start(&radio->io, radio->chip, &radio->secure);
+	if (ret)
+		return ret;
+	radio->mac_memory_ready = true;
 	return 0;
 }
 
@@ -184,14 +191,16 @@ static ssize_t radio_state_show(struct device *dev,
 		"power=%s calibration=0x%02x efuse5ea=0x%02x "
 		"firmware=%u.%u.%u.%u firmware_cut=%u sections=%u "
 		"firmware_state=%s download_memory=%s hci=paused "
-		"transport=channel12 packets=%u bytes=%u control=0x%02x mac80211=pending\n",
+		"transport=channel12 packets=%u bytes=%u control=0x%02x "
+		"mac_memory=%s secure=%u mac_trx=pending mac80211=pending\n",
 		radio->chip, radio->identity.hardware_cv, radio->identity.cv,
 		radio->identity.factory, radio->identity.adie, radio->powered ? "on" : "off",
 		radio->calibration.tag, radio->calibration.process,
 		image->version[0], image->version[1], image->version[2], image->version[3],
 		image->cut, image->section_count, radio->firmware_ready ? "ready" : "off",
 		radio->download_prepared ? "ready" : "off", radio->transport.packets,
-		radio->transport.transferred_bytes, radio->transport.last_control);
+		radio->transport.transferred_bytes, radio->transport.last_control,
+		radio->mac_memory_ready ? "SCC" : "off", radio->secure);
 }
 static DEVICE_ATTR_RO(radio_state);
 static struct attribute *rtl_ax_attrs[] = {
@@ -210,6 +219,7 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		rtl_ax_download_stop(&radio->io);
 		rtl_ax_wcpu_stop(&radio->io);
 		radio->firmware_ready = false;
+		radio->mac_memory_ready = false;
 		radio->download_prepared = false;
 	}
 	ret = rtl_ax_ap_power_off(&radio->io);
