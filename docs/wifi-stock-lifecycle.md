@@ -477,3 +477,13 @@ trim模块dcedab8919e784875486751b5e3a3628d8067395569876c9011edb692e029348实机
 复核地址后纠正了前一轮trim观察：B路2G/5G应读取5ab..5a4，此前观察模块误取5ce..5c7，从而把整组错误报告为全ff。正式trim.h的地址已按原机机器码修正；这次实际读取A路2G/5G为ff（signed-1），B路有实际编程值，如频道6对应trim=-4。因此原机整组16个byte不全ff，不会把A的ff单独改0。先前原始日志保留，manifest和文档标明旧分组错误，正确输入见logs/radio-trim-corrected-map-20261010.txt。
 
 原生模块15bb7ce9cb42e3c97e91405341c487a2b6e35bb0c4695de7617e2e46993a4c93实机频道6 CCK/OFDM DE两路=-1/-1、4/4；频道1=2/1、1/-1；频道11=2/1、3/1。每个频道16个字段读回全部等于原厂算法结果，负值-1实际编码1023。频道6随后32个真实用户态无线帧完整FCS全匹配、descriptor/tag错误0、kernel丢包0，XEPON公网2/2。记录manifests/radio-tssi-de-XB-20261010.json、logs/radio-tssi-de-20261010.txt及pcap。C继续同模块原生接收，但C DE/BW/slope尚未加入频道路径。
+
+## 2026-10-10 最新完整镜像内置驱动的双频接收验收
+
+完整服务ponwrt-tyfza1-lan-20261010-054938成功结束，source2201a0f；实际启动PCIe FIT SHA25632e7fe6dc72f89f385801ce2775267b3d66c931fc0d7a2f7dcaa44d515072679，7322244B，kernel029e2db52f2ef14c8b5d06ca3e332a3211c8f7fb713f703d8adfd00e7fd110c0。U-Boot校验签名后重启到内置rtl_ax_ap，taint0，无live覆盖模块；两路RCK/DACK/RX_DCK/thermal/PA/reference及XB TSSI DE均在该启动内核中。最终FIT里的kernel/DTB/initramfs输入已经核对。
+
+频道36与6各取得128个真实入站Radiotap帧，256帧完整FCS全部匹配、kernel抓包丢包0；C含57RTS、56CTS、13Beacon、2Probe Response，XB含85Beacon、11Data、12Probe Request、10Probe Response、4Null Data、3RTS、3CTS。初次未指定方向的pcap混入Linux本地生成的出站IPv6以太帧，不用于验收；正式pcap明确tcpdump -Q in。日志和manifest为radio-native-tssi-in-builtin-20261010及radio-native-tssi-builtin-20261010。
+
+各阶段读数同时保留：C PHY OFDM CRC_OK17938/错误2，HE正确23/错误1；host RXQ9847、普通802.11 CRC正确9846、交给mac80211 9846，描述符/tag错误0、RDU0。XB PHY CCK正确960/错误10、OFDM正确71/错误32385、HT正确7/错误22；host RXQ957、普通CRC正确956、交给mac80211 953（启动monitor前的3帧未交付），描述符/tag错误0、RDU0。PHY计数会包含被MAC过滤的帧且计数范围不同，不能要求与host计数逐帧相等。XB OFDM接收质量仍需对照原机RFK/动态配置，不将成功抓包等同全部调优完成。
+
+XEPON epon-d10g注册认证、DHCP192.168.71.28与公网ping2/2均恢复。当前原机保持phy0/mon0频道36与phy1/mon1频道6接收；AP发射、关联、加密和实际业务仍待移植。本次只采用内置原生host驱动，WCPU设备微码和原机参数作为硬件输入。

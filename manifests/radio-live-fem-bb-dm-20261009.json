@@ -1,30 +1,21 @@
 {
   "current_on_board": {
-    "FIT": "artifacts/full-pon-radio-dual-monitor01-6.18.55/ram-pcie/image.itb",
-    "sha256": "92dfd5a3bf320ef39ebb90323165ffd512994af672d39f8e0b5584150f6e4813",
-    "bytes": 7316324,
-    "kernel_sha256": "cec12fe35a11b61cd464bbcbd4febbc3f0e9cecc10be679a03e09382687d2fc6",
+    "FIT": "artifacts/full-pon-radio-xb-tssi-de01-6.18.55/ram-pcie/image.itb",
+    "sha256": "32e7fe6dc72f89f385801ce2775267b3d66c931fc0d7a2f7dcaa44d515072679",
+    "bytes": 7322244,
+    "kernel_sha256": "029e2db52f2ef14c8b5d06ca3e332a3211c8f7fb713f703d8adfd00e7fd110c0",
     "DTB_sha256": "ed3a18f2b09dbec988883e9a36b47efdae819c82db47864deb3ad1e4eecd23ac",
-    "source_stage": "278250a",
+    "source_stage": "2201a0f",
     "native_driver": "rtl_ax_ap builtin, both endpoints",
     "cold_boot_verified": true,
-    "active_RAM_driver_override": {
-      "radio": "both endpoints C and XB",
-      "driver": "rtl_ax_ap_live",
-      "module": "artifacts/live-radio-ref-power01/rtl_ax_ap_live.ko",
-      "sha256": "89f2767d7a8e064b6d1e1cfcd15d283431b3a099572843e8a4c03b7541946d34",
-      "interfaces": "phy5/mon0 channel36;phy6/mon1 channel6",
-      "trim_evidence": "manifests/radio-trim-20261010.json",
-      "reference_power_evidence": "manifests/radio-ref-power-20261010.json",
-      "boot_FIT_contains_trim_reference_power": false
-    },
+    "active_RAM_driver_override": null,
     "C_native_mac80211_monitor": true,
     "XB_native_mac80211_monitor": true,
     "channels": [
       36,
       6
     ],
-    "actual_receive_evidence": "manifests/radio-dual-builtin-20261010.json",
+    "actual_receive_evidence": "manifests/radio-native-tssi-builtin-20261010.json",
     "AP_available": false,
     "XEPON_DHCP": "192.168.71.28/24"
   },

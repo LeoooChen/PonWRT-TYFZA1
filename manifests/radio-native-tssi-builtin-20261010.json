@@ -1,0 +1,57 @@
+{
+  "source_commit": "2201a0f",
+  "build_unit": "ponwrt-tyfza1-lan-20261010-054938",
+  "fit": {
+    "kernel_version": "6.18.55",
+    "cpus": 4,
+    "kernel_load": "0x200000",
+    "fdt_load": "0x2000000",
+    "image_sha256": "029e2db52f2ef14c8b5d06ca3e332a3211c8f7fb713f703d8adfd00e7fd110c0",
+    "dtb_sha256": "ed3a18f2b09dbec988883e9a36b47efdae819c82db47864deb3ad1e4eecd23ac",
+    "fit_sha256": "32e7fe6dc72f89f385801ce2775267b3d66c931fc0d7a2f7dcaa44d515072679",
+    "fit_bytes": 7322244
+  },
+  "cold_boot_builtin": true,
+  "tainted": 0,
+  "host_driver": "native rtl_ax_ap built into Linux6.18.55",
+  "radio_host_original_ko_loaded": false,
+  "radio_device_microcode": "original board WCPU firmware",
+  "captures": [
+    {
+      "chip": "C",
+      "channel": 36,
+      "frames": 128,
+      "FCS_match": 128,
+      "types": {
+        "type1_subtype11": 57,
+        "type1_subtype12": 56,
+        "type0_subtype8": 13,
+        "type0_subtype5": 2
+      },
+      "file": "logs/radio-native-tssi-in-C.pcap",
+      "sha256": "3ace798bb4e46d4823c3e9d84ffbe885c3168de4d8bc33eab190a77260c58e85"
+    },
+    {
+      "chip": "XB",
+      "channel": 6,
+      "frames": 128,
+      "FCS_match": 128,
+      "types": {
+        "type0_subtype8": 85,
+        "type2_subtype0": 11,
+        "type0_subtype4": 12,
+        "type0_subtype5": 10,
+        "type1_subtype12": 3,
+        "type2_subtype4": 4,
+        "type1_subtype11": 3
+      },
+      "file": "logs/radio-native-tssi-in-XB.pcap",
+      "sha256": "03a7490890b8ff9aa38ad71329d8cc8b561b81924f49cb489bacd2cfbe79629e"
+    }
+  ],
+  "log": "logs/radio-native-tssi-in-builtin-20261010.txt",
+  "initialization_log": "logs/radio-native-tssi-builtin-20261010.txt",
+  "capture_direction": "in only; unfiltered earlier files include local outgoing IPv6 and are not used for acceptance",
+  "AP_transmit_association_complete": false,
+  "XEPON": "epon-d10g DHCP 192.168.71.28 public ping2/2"
+}
