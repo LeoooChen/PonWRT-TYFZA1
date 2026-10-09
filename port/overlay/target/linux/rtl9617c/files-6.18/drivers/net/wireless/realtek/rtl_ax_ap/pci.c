@@ -28,16 +28,19 @@ static bool ofdma;
 static bool force_fw_tx;
 static bool share_xtal;
 static bool antenna_diversity;
+static unsigned int edcca_mode;
 module_param(txbf_mu, bool, 0444);
 module_param(ofdma, bool, 0444);
 module_param(force_fw_tx, bool, 0444);
 module_param(share_xtal, bool, 0444);
 module_param(antenna_diversity, bool, 0444);
+module_param(edcca_mode, uint, 0444);
 MODULE_PARM_DESC(txbf_mu, "Original AP MU beamforming scheduling input");
 MODULE_PARM_DESC(ofdma, "Original AP OFDMA scheduling input");
 MODULE_PARM_DESC(force_fw_tx, "Original AP force firmware TX input");
 MODULE_PARM_DESC(share_xtal, "Original platform shared crystal input");
 MODULE_PARM_DESC(antenna_diversity, "Original RFE54 antenna diversity input");
+MODULE_PARM_DESC(edcca_mode, "Original EDCCA operating mode input");
 
 struct rtl_ax_ap {
 	struct pci_dev *pdev;
@@ -520,6 +523,7 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	rtl_ax_bb_dm_physts_start(&radio->io, radio->chip, share_xtal, antenna_diversity, &radio->bb_dm);
 	rtl_ax_bb_dm_reports_start(&radio->io, &radio->bb_dm);
 	rtl_ax_bb_dm_statistics_start(&radio->io, &radio->bb_dm);
+	rtl_ax_bb_dm_signal_start(&radio->io, radio->chip, edcca_mode, &radio->bb_dm);
 	return 0;
 }
 
@@ -811,6 +815,27 @@ static ssize_t radio_phy_stats_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_phy_stats);
 
+static ssize_t radio_signal_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_bb_dm *dm = &radio->bb_dm;
+	u32 psd = rtl_ax_read32(radio, 0x1422c), la = rtl_ax_read32(radio, 0x9660);
+	u32 collision = rtl_ax_read32(radio, 0x10c70);
+
+	return sysfs_emit(buffer, "LA=%s buffer=%u samples=%u trigger_us=%u cfg=%08x "
+		"PSD=%s fft=%u IQ=%u average=%u path=%u input=%u cfg=%08x "
+		"EDCCA=%s mode=%u power_offset=%u capabilities=%u,%u,%u,%u "
+		"collision_state=%u cfg=%08x dynamic_policy=pending DFS=pending DIG=pending\n",
+		dm->la_ready ? "initialized" : "pending", dm->la_buffer_bytes, dm->la_samples, dm->la_trigger_time, la,
+		dm->psd_ready ? "initialized" : "pending", dm->psd_fft_points,
+		(psd >> 11) & 3, (psd >> 13) & 3, (psd >> 17) & 3, (psd >> 19) & 3, psd,
+		dm->edcca_ready ? "initialized" : "pending", dm->edcca_mode, dm->edcca_power_offset,
+		dm->edcca_cap_2g, dm->edcca_cap_5g, dm->edcca_cap_6g, dm->edcca_cap_carrier,
+		(collision >> 20) & 63, collision);
+}
+static DEVICE_ATTR_RO(radio_signal);
+
 static ssize_t radio_efuse_read(struct file *file, struct kobject *kobject,
 	const struct bin_attribute *attr, char *buffer, loff_t offset, size_t count)
 {
@@ -849,7 +874,8 @@ static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_state.attr, &dev_attr_radio_rx.attr, &dev_attr_radio_bb.attr,
 	&dev_attr_radio_rf.attr, &dev_attr_radio_rf_bank.attr, &dev_attr_radio_rf_analog.attr,
 	&dev_attr_radio_power.attr, &dev_attr_radio_limits.attr, &dev_attr_radio_bb_dm.attr,
-	&dev_attr_radio_physts.attr, &dev_attr_radio_txdiff.attr, &dev_attr_radio_phy_stats.attr, NULL,
+	&dev_attr_radio_physts.attr, &dev_attr_radio_txdiff.attr, &dev_attr_radio_phy_stats.attr,
+	&dev_attr_radio_signal.attr, NULL,
 };
 static const struct attribute_group rtl_ax_group = {
 	.attrs = rtl_ax_attrs, .bin_attrs = rtl_ax_bin_attrs,
@@ -886,6 +912,9 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		radio->bb_dm.txdiff_ready = false;
 		radio->bb_dm.macid_power_ready = false;
 		radio->bb_dm.statistics_ready = false;
+		radio->bb_dm.la_ready = false;
+		radio->bb_dm.psd_ready = false;
+		radio->bb_dm.edcca_ready = false;
 		radio->power_inputs.ready = false;
 		radio->download_prepared = false;
 	}

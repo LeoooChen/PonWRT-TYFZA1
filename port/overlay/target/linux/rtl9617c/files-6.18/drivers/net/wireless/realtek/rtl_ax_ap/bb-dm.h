@@ -13,6 +13,13 @@ struct rtl_ax_bb_dm {
 	bool physts_ready;
 	bool reports_ready, txdiff_ready, macid_power_ready;
 	bool statistics_ready, counter_reset;
+	bool la_ready, psd_ready, edcca_ready;
+	u32 la_buffer_bytes, la_samples, la_trigger_time;
+	u8 la_buffer_mode, la_repeat;
+	u16 psd_fft_points, psd_software_average;
+	u8 psd_hardware_average, psd_iq, psd_path, psd_input, psd_channel, psd_center;
+	u8 edcca_mode, edcca_high, edcca_low, edcca_low_bound, edcca_power_offset;
+	u8 edcca_cap_2g, edcca_cap_5g, edcca_cap_6g, edcca_cap_carrier;
 	u16 crc_rate[4];
 	u8 crc_frame_type;
 	u8 histogram_threshold[3][11];
@@ -283,5 +290,54 @@ static inline void rtl_ax_bb_dm_statistics_start(const struct rtl_ax_io *io,
 	rtl_ax_update32(io, 0x10900, 0x600000, 0); /* HE NSS1. */
 	rtl_ax_update32(io, 0x10900, 0x1f800000, 8U << 23); /* Beacon. */
 	dm->statistics_ready = true;
+}
+
+static inline void rtl_ax_bb_dm_signal_start(const struct rtl_ax_io *io, unsigned int chip,
+	unsigned int edcca_mode, struct rtl_ax_bb_dm *dm)
+{
+	/* Original LA reset@2b2fc4 initializes trigger time404us. Its MAC
+	 * common cfg@222a6c enables LA function/clock and programs exponent2,
+	 * count101,enable1,while preserving9660 bits8..19. It does not capture
+	 * samples or allocate a hostbuffer during startup. */
+	dm->la_trigger_time = 404;
+	dm->la_repeat = 1;
+	rtl_ax_update32(io, 0x8400, 0, BIT(17));
+	rtl_ax_update32(io, 0x8404, 0, BIT(17));
+	io->write32(io->ctx, 0x9660, (io->read32(io->ctx, 0x9660) & 0x000fff00) | 0x65200001);
+	/* la_mac_cfg_buf_default@2b1d34 is host configuration only. */
+	dm->la_buffer_bytes = 262144;
+	dm->la_buffer_mode = 3;
+	dm->la_samples = dm->la_buffer_bytes / 8;
+	dm->la_ready = true;
+	/* Exact psd_init@2c1b94 calls para_setting(1,3,2,512,0,3,36,42,2,1).
+	 * It sets parameters without triggering PSD or switching channels. */
+	dm->psd_software_average = 1;
+	dm->psd_hardware_average = 3;
+	dm->psd_iq = 2;
+	dm->psd_fft_points = 512;
+	dm->psd_path = 0;
+	dm->psd_input = 3;
+	dm->psd_channel = 36;
+	dm->psd_center = 42;
+	rtl_ax_update32(io, 0x1422c, 0x18000, 1U << 15);
+	rtl_ax_update32(io, 0x1422c, 0x1800, 2U << 11);
+	rtl_ax_update32(io, 0x1422c, 0x6000, 3U << 13);
+	rtl_ax_update32(io, 0x1422c, 0x60000, 0);
+	rtl_ax_update32(io, 0x1422c, 0x180000, 3U << 19);
+	dm->psd_ready = true;
+	/* Actual edcca_dev_hw_cap@2a5264 C/XB raw capability defaults. AP
+	 * regulatory/UCI policy can override them when its lifecycle is added. */
+	dm->edcca_cap_2g = chip == RTL_AX_8852C ? 65 : 68;
+	dm->edcca_cap_5g = chip == RTL_AX_8852C ? 60 : 63;
+	dm->edcca_cap_6g = chip == RTL_AX_8852C ? 53 : 0;
+	dm->edcca_cap_carrier = chip == RTL_AX_8852C ? 65 : 75;
+	/* edcca_init@2a52d4 initializes host limits and readsBB power offset;
+	 * its only write sets0c70 collisionT2R state41,for9.6us timing. */
+	dm->edcca_mode = edcca_mode;
+	dm->edcca_high = dm->edcca_low = 249;
+	dm->edcca_low_bound = 46;
+	dm->edcca_power_offset = (io->read32(io->ctx, 0x14848) >> 17) & 31;
+	rtl_ax_update32(io, 0x10c70, 0x3f00000, 41U << 20);
+	dm->edcca_ready = true;
 }
 #endif

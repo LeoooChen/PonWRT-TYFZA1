@@ -284,3 +284,13 @@ full-pon-radio-bb-dm01-6.18.55/ram-pcie/image.itb 的6544376B FIT（SHA2563a5675
 statistics_init@2cfad0只重置host统计并配置CRC2/CRC3筛选，没有虚构的hardware reset。原始rate参数为4/128/256/384，即OFDM6M/HT0/VHT1SS0/HE1SS0。实际legacy_rate_2_spec_rate@2c9eb8把6M映射LSIG codeb；BB_CLIENT的CRC字段全部来自cr_cfg_stat_init@2cfb48的BB0900，依原机顺序写OFDM、HT、VHT MCS/NSS、HE MCS/NSS，最后STATE_BEACON2映射MAC subtype8。
 
 statistics原生模块SHA256 b7848aa55eecc28ddc3ede8850fe728527a739c10112e847f504b8a6fc5937b4在两颗原机全部48项TXdiff读回与原机常量一致，128个MACID power DWORD均0；报告clock/port分别01000000/80000000。CRC selector读回0400000b，解码OFDM_LSIG11、HT/VHT/HE MCS0、VHT/HE NSS1、frame_type8，RX错误0。输出logs/radio-live-statistics-20261009.txt。这里只完成初始化和寄存器配置，统计周期采集、普通PPDU、LA/PSD/EDCCA/DFS/DIG/CFO/RA后段及RF DM继续接入。
+
+## LA、PSD 与 EDCCA 初始化原机验证
+
+la_init@2b3020→la_reset@2b2fc4的common参数为trigger404us；mac_lamode_cfg@222a6c使能MAC8400/8404 bit17，保留9660 bits8..19，并编码enable1、exponent2、count101。默认LA capacity是262144B/32768个8B样本，但原机此时只配置host容量，没有在Linux分配262144B buffer或执行样本捕获。PSD init@2c1b94的实际参数为(1,3,2,512,0,3,36,42,2,1)，按para_setting@2c0c44的顺序设置BB422c FFT/IQ/HW-average/path/input字段；这里不发起单独的PSD测量或频道切换命令。
+
+edcca_dev_hw_cap@2a5264的C raw caps为2G65/5G60/6G53/carrier65，XB为68/63/未设6G/carrier75。此处使用实际HW默认能力，后续AP配置可以覆盖；不把SDK通用默认值声称为本机在线配置。edcca_init@2a52d4初始化host high/low249、low_bound46，读取4848bits17..21的power offset，并只写0c70bits20..25=41来配置9.6us collision T2R。EDCCA mode是原生只读启动输入，默认0；动态门限策略仍待AP/周期管理接入。
+
+signal原生模块SHA256ac4a4911cd6b7dffcbf0367567b22af9f68991be7d44698bcb5aa96e1c0bdfad实机两颗LA9660=65200001，PSD422c=0078f002，解码FFT512/IQ2/HWavg3/path0/input3；EDCCA power offset18、collision_state41、0c70=069bfe60，RX错误0。输出logs/radio-live-signal-20261010.txt。
+
+随后仅在临时diagnostic生成源码中增加post-signal原机BA CAM命令，模块SHA2562ed3be2859134f97dcec7ce05cf92aa0a1e19b6bd2e645f2a785106ae97c8f0e。两颗完成所有已实现的BB步骤后仍收到匹配成功done-ACK，done_acks/RXQ/IRQ各2、错误0。正式overlay不增加此命令。结果logs/radio-live-post-signal-ack-20261010.txt。DFS/DIG及其余BB DM、RF DM与AP业务继续实现。
