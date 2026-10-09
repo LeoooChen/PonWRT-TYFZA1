@@ -257,8 +257,7 @@ void rtl_ax_phy_bb_reset(const struct rtl_ax_io *io, unsigned int chip)
 static int rtl_ax_phy_rf_write(const struct rtl_ax_io *io, unsigned int path,
 			       unsigned int address, unsigned int value)
 {
-	unsigned int last;
-	int ret;
+	unsigned int attempt, busy;
 
 	/* halbb_write_rf_reg_* selects the die using bit16 of the RF address.
 	 * Original flat radio callbacks pass a full20-bit mask. */
@@ -271,11 +270,16 @@ static int rtl_ax_phy_rf_write(const struct rtl_ax_io *io, unsigned int path,
 	}
 	/* The board binary waits31 times for read/write busy to clear. Its
 	 * analog write is a single SIPI command,without newer SDK retries. */
-	ret = io->poll32(io->ctx, 0x1174c, 0x03000000, 0, 1, 31, &last);
-	if (ret)
-		return ret;
-	/* The original delays1us even on its final idle observation. */
-	io->delay_us(io->ctx, 1);
+	for (attempt = 0; attempt < 31; attempt++) {
+		busy = io->read32(io->ctx, 0x1174c) & RTL_AX_BIT(24);
+		busy |= io->read32(io->ctx, 0x1174c) & RTL_AX_BIT(25);
+		/* The original delays1us even on its final idle observation. */
+		io->delay_us(io->ctx, 1);
+		if (!busy)
+			break;
+	}
+	if (busy)
+		return -ETIMEDOUT;
 	io->write32(io->ctx, 0x10370,
 		    (path << 28) | ((address & 0xff) << 20) | (value & 0xfffff));
 	return 0;
@@ -283,6 +287,7 @@ static int rtl_ax_phy_rf_write(const struct rtl_ax_io *io, unsigned int path,
 
 static int rtl_ax_phy_radio_path(const struct rtl_ax_io *io,
 				const struct rtl_ax_phy_table *table, unsigned int path,
+				struct rtl_ax_phy_inputs *inputs,
 				const struct rtl_ax_phy_commands *commands)
 {
 	__le32 *words;
@@ -298,9 +303,12 @@ static int rtl_ax_phy_radio_path(const struct rtl_ax_io *io,
 
 		/* Original halrf_cfg_rf_radio callbacks call halrf_wrf directly,
 		 * includingf9..fe;they do not use BB table delay opcodes. */
+		inputs->radio_last_path = path;
+		inputs->radio_last_address = address;
 		ret = rtl_ax_phy_rf_write(io, path, address, value);
 		if (ret)
 			goto release;
+		inputs->radio_writes[path]++;
 		/* Original store_radio_* excludes analog RF and delay addresses;
 		 * firmware gets (8-bit register <<20)|value for digital RF only. */
 		if (address > 0xff)
@@ -322,7 +330,7 @@ release:
 }
 
 int rtl_ax_phy_radio_apply(const struct rtl_ax_io *io,
-			   const struct rtl_ax_phy_inputs *inputs, enum rtl_ax_phy_stage stage,
+			   struct rtl_ax_phy_inputs *inputs, enum rtl_ax_phy_stage stage,
 			   const struct rtl_ax_phy_commands *commands)
 {
 	unsigned int first = inputs->chip == RTL_AX_8852C ? 1 : 0;
@@ -330,9 +338,9 @@ int rtl_ax_phy_radio_apply(const struct rtl_ax_io *io,
 
 	/* Actual halrf_config_radio@3030e8: C runs B then A;XB runs A then B. */
 	ret = rtl_ax_phy_radio_path(io, &inputs->table[stage][RTL_AX_RADIO_A + first],
-				    first, commands);
+				    first, inputs, commands);
 	if (ret)
 		return ret;
 	return rtl_ax_phy_radio_path(io, &inputs->table[stage][RTL_AX_RADIO_A + !first],
-				    !first, commands);
+				    !first, inputs, commands);
 }

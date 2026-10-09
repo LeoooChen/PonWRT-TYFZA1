@@ -184,3 +184,13 @@ C@2e80ec 保存 4df0/6df0 低8位与4e0c/6e0c高8位的有符号 offset；XB@2f2
 scripts/build_live_radio.sh 将 overlay 的同一份 pci.c/phy.c/rx.c 编为本机 Linux6.18.55 原生模块，仅将 PCI driver 名改成 rtl_ax_ap_live，以便在 RAM 系统 unbind 内置版本后上机迭代。没有加载原厂 host ko。bb01 模块 SHA256 8f6baa01dc171952331a0e4aa1a95c6c775a5da9ed3af4614f3e11191d261add，经 SCP 校验后在本机加载。
 
 实际 C 的1432项BB、336项gain，XB的1417项BB、128项gain完成；SYS_FUNC均c3、WLRF_CTRL均00820000。C的0704=601c0502、4df0=08080618；XB的0704=601e0d02、4df0=0，与各自原机基础表最终值一致。捕获C offset=24,0，XB=0,0；两颗BA CAM应答和RX错误计数仍正常。原始输出 logs/radio-live-bb01-20261009.txt，不将 BB 基础执行等同于 RF/AP 完成。
+
+## 第一遍基础 Radio 原机执行验证
+
+rtw_hal_init_rf_reg@1bef20 的第一项是 halrf_config_radio@3030e8；C先B后A，XB先A后B。此阶段接上现有原生 RF 写入接口与 H2C：halrf_fill_h2c_cmd@304254 的 header 请求 LONG_DATA（2），mac_outsrc_h2c_common@20d404 编码 OUTSRC category2、class8(A)/9(B)、function=page。每页最多500 words、最后不足页也发送；原厂不请求 ACK，不能把 TXBD 消费说成固件执行确认。
+
+analog 写入按本机 halbb_write_rf_reg_8852c_a@2e2e64 的31次 busy 观察执行：分别读174c bits24/25，每次包括最后空闲观察都延时1us，然后写0370。数字RF走e000/f000对应窗口。没有引入新版SDK重写/重试循环。
+
+rf01 原生诊断模块 SHA256 ded1a418155b37cb5e03821a7cdb174ad8fad100f6a5b4283dadc9405c4e0b9a 实机完成 C A/B=2044/2011 次、XB=487/406次 RF 写入；SIPI=0、两条路径各一页，C每页1568B、XB312B。数字RF00读回A/B=30000/30001，RF18的C=1/1、XB=c01/c01。该临时诊断模块在RF结束额外重复一次BA CAM命令，两个MCU都成功应答，RXQ/IRQ各2、错误全0；额外诊断命令已从正式启动源码移除，正式代码继续遵守原厂顺序。输出 logs/radio-live-rf01-20261009.txt。
+
+当前停止在第一遍基础Radio后，尚未接 power-by-rate/track/limit/RU 对象、第二遍Radio、FEM重初始化和DM/校准。因此 radio_base=applied 与 bb_rf=pending 同时报告，不等同于完整RF或AP。
