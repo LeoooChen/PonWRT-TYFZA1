@@ -21,7 +21,7 @@ p.write_text(p.read_text().replace('.name = "rtl_ax_ap",', '.name = "rtl_ax_ap_l
 PY
 cat > "$OUT/Makefile" <<'MAKE'
 obj-m := rtl_ax_ap_live.o
-rtl_ax_ap_live-y := pci.o phy.o rx.o
+rtl_ax_ap_live-y := pci.o phy.o rx.o power-tables.o
 MAKE
 TOOLCHAIN=$(dirname "$P"/sources/openwrt/staging_dir/toolchain-aarch64_cortex-a55_gcc-*_musl/bin/aarch64-openwrt-linux-musl-gcc)
 export PATH="$TOOLCHAIN:$PATH"

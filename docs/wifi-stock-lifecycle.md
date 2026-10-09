@@ -194,3 +194,13 @@ analog 写入按本机 halbb_write_rf_reg_8852c_a@2e2e64 的31次 busy 观察执
 rf01 原生诊断模块 SHA256 ded1a418155b37cb5e03821a7cdb174ad8fad100f6a5b4283dadc9405c4e0b9a 实机完成 C A/B=2044/2011 次、XB=487/406次 RF 写入；SIPI=0、两条路径各一页，C每页1568B、XB312B。数字RF00读回A/B=30000/30001，RF18的C=1/1、XB=c01/c01。该临时诊断模块在RF结束额外重复一次BA CAM命令，两个MCU都成功应答，RXQ/IRQ各2、错误全0；额外诊断命令已从正式启动源码移除，正式代码继续遵守原厂顺序。输出 logs/radio-live-rf01-20261009.txt。
 
 当前停止在第一遍基础Radio后，尚未接 power-by-rate/track/limit/RU 对象、第二遍Radio、FEM重初始化和DM/校准。因此 radio_base=applied 与 bb_rf=pending 同时报告，不等同于完整RF或AP。
+
+rf02 移除额外诊断命令后在原机重新加载验证成功，模块 SHA256 451e39052534a065bf796fa9da017e34d118395735912c4d6458c0651313953f；两颗 RF 写入/页数/读回不变，BA CAM与RXQ各1、错误0，原始输出 logs/radio-live-rf02-20261009.txt。完整镜像服务 ponwrt-tyfza1-lan-20261009-220620 已以退出码0构建完成，ram-pcie/image.itb SHA256 e3c1d08d46322a1d119037ab329eaa4de1b1b40587f3230a727dd5d065e3b60b，位于 artifacts/full-pon-radio-bbrf01-6.18.55；冷启动验证另记。
+
+## ByRate 与 TrackTSSI 对象实机解析
+
+power-tables.c 按 halrf_power_by_rate_store_to_array@305790 的实际目的布局保存3×145项有符号 ByRate：CCK/OFDM、HT、VHT、HE、HEDCM及rate offsets。phypg_combvalue_fromstring@1d2188 将整数byte乘4，文件H-byte→L-byte逆序保存；机器码没有把fraction加入结果。基础与FEM对象分开保留，FEM叠加到已有基础对象。实际文件中全部rate offsets为0。
+
+原机旧文本parser只用AllRate1/AllRate2前缀，而备份文件含AllRate2_1/AllRate2_2和5/6G后缀；原生按实际文件完整label解码到store函数对应offset字段，不将旧parser对新label的含混路径当作新接口。TrackTSSI保存原文件每组30项，包括文件里的6G组；本机旧parser只显式识别2G/5G，C的store_pwr_track只复制6G每路径90B。这些差异已保留为后续校准消费时的依据，当前还没有调用6G射频/校准功能。
+
+第一次上机发现内核sscanf不支持用于解析右方括号的scanset，TrackTSSI报EINVAL；改为原文件固定字段宽度后直接上机复测通过，未编写仿真测试。power02原生模块SHA256 9a9dd658c8e7b0a65cc7e078bfca19c193888807d35939109688eb5b30da1aa3；C基础/FEM各35行ByRate、36行Track，XB各24/20。C基础OFDM6=80/72/64 quarter-dBm，FEM=80/96/76；XB基础=84/80/0，FEM=100/100/0，与实际文件相符。全部BB/RF、BA CAM应答仍正常，输出 logs/radio-live-power02-20261009.txt。limit/RU/calibration明确待完成，此处只有host对象，不声称已经写入硬件功率或发出AP。

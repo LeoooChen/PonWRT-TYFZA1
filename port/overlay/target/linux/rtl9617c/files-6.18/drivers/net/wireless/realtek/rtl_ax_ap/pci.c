@@ -18,6 +18,7 @@
 #include "phy.h"
 #include "receive.h"
 #include "rx.h"
+#include "power-tables.h"
 
 /* Original netdev-open policy in os_intfs.c: MU beamforming, OFDMA or
  * force_fw_tx selects firmware scheduling. Preserve all three inputs. */
@@ -40,6 +41,7 @@ struct rtl_ax_ap {
 	struct rtl_ax_ap_image firmware;
 	struct rtl_ax_fw_transport transport;
 	struct rtl_ax_phy_inputs phy;
+	struct rtl_ax_power_inputs power_inputs;
 	struct rtl_ax_rx *rx;
 	struct mutex command_mutex;
 	spinlock_t command_lock;
@@ -430,7 +432,10 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	ret = rtl_ax_bb_base_start(radio);
 	if (ret)
 		return ret;
-	return rtl_ax_radio_base_start(radio);
+	ret = rtl_ax_radio_base_start(radio);
+	if (ret)
+		return ret;
+	return rtl_ax_power_inputs_load(&radio->pdev->dev, radio->chip, &radio->power_inputs);
 }
 
 static ssize_t radio_state_show(struct device *dev,
@@ -504,6 +509,30 @@ static ssize_t radio_rf_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_rf);
 
+static ssize_t radio_power_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_power_stage *base = &radio->power_inputs.stage[RTL_AX_PHY_BASE];
+	struct rtl_ax_power_stage *fem = &radio->power_inputs.stage[RTL_AX_PHY_FEM];
+
+	return sysfs_emit(buffer,
+		"inputs=%s units=quarter-dBm rate_rows=%u,%u track_rows=%u,%u "
+		"base_cck1=%d base_ofdm6=%d,%d,%d base_he1_mcs11=%d,%d,%d "
+		"fem_cck1=%d fem_ofdm6=%d,%d,%d fem_he1_mcs11=%d,%d,%d "
+		"base_track2g_A_29=%d,%d fem_track2g_A_29=%d,%d "
+		"limit=pending RU=pending calibration=pending\n",
+		radio->power_inputs.ready ? "decoded" : "off",
+		base->rate_rows, fem->rate_rows, base->track_rows, fem->track_rows,
+		base->rate[0][0], base->rate[0][4], base->rate[1][4], base->rate[2][4],
+		base->rate[0][95], base->rate[1][95], base->rate[2][95],
+		fem->rate[0][0], fem->rate[0][4], fem->rate[1][4], fem->rate[2][4],
+		fem->rate[0][95], fem->rate[1][95], fem->rate[2][95],
+		base->track_2g[0][0][29], base->track_2g[0][1][29],
+		fem->track_2g[0][0][29], fem->track_2g[0][1][29]);
+}
+static DEVICE_ATTR_RO(radio_power);
+
 static ssize_t radio_rx_show(struct device *dev,
 	struct device_attribute *attr, char *buffer)
 {
@@ -514,7 +543,7 @@ static ssize_t radio_rx_show(struct device *dev,
 static DEVICE_ATTR_RO(radio_rx);
 static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_state.attr, &dev_attr_radio_rx.attr, &dev_attr_radio_bb.attr,
-	&dev_attr_radio_rf.attr, NULL,
+	&dev_attr_radio_rf.attr, &dev_attr_radio_power.attr, NULL,
 };
 ATTRIBUTE_GROUPS(rtl_ax);
 
@@ -539,6 +568,7 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		radio->features_ready = false;
 		radio->bb_base_ready = false;
 		radio->radio_base_ready = false;
+		radio->power_inputs.ready = false;
 		radio->download_prepared = false;
 	}
 	ret = rtl_ax_ap_power_off(&radio->io);
