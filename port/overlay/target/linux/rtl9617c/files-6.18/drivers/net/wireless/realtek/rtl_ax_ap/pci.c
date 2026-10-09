@@ -26,6 +26,7 @@
 #include "environment.h"
 #include "rx-pipeline.h"
 #include "channel.h"
+#include "rf-start.h"
 
 /* Original netdev-open policy in os_intfs.c: MU beamforming, OFDMA or
  * force_fw_tx selects firmware scheduling. Preserve all three inputs. */
@@ -73,6 +74,7 @@ struct rtl_ax_ap {
 	struct rtl_ax_cfo cfo;
 	struct rtl_ax_environment environment;
 	struct rtl_ax_channel channel;
+	struct rtl_ax_rf_start rf_start;
 	struct rtl_ax_rx *rx;
 	struct mutex command_mutex;
 	spinlock_t command_lock;
@@ -548,6 +550,18 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	rtl_ax_dig_initialize(&radio->io, &radio->dig);
 	rtl_ax_cfo_initialize(&radio->io, radio->chip, radio->flash_calibration.xtal, &radio->cfo);
 	rtl_ax_environment_initialize(&radio->io, radio->chip, &radio->environment);
+	ret = rtl_ax_rf_crystal_start(&radio->io, radio->chip, share_xtal,
+				    radio->flash_calibration.xtal, &radio->rf_start);
+	if (ret)
+		return ret;
+	rtl_ax_rf_gpio_start(&radio->io, radio->chip, &radio->rf_start);
+	ret = rtl_ax_rf_nctl_start(&radio->pdev->dev, &radio->io, radio->chip,
+				 radio->identity.hardware_cv, &radio->rf_start);
+	if (ret)
+		return ret;
+	ret = rtl_ax_rf_rck_start(&radio->io, &radio->rf_start);
+	if (ret)
+		return ret;
 	/* Native RXQ/RPQ and IRQ are already prepared. Resume receive after
 	 * the implemented PHY startup so ordinary 802.11 frames reach the
 	 * native dispatcher, using the same path verified on this board. */
@@ -1086,6 +1100,33 @@ static ssize_t radio_channel_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(radio_channel);
 
+static ssize_t radio_rf_start_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_rf_start *rf = &radio->rf_start;
+
+	return sysfs_emit(buffer, "crystal=%s shared=%u requested=%u XSI4=%02x XSI5=%02x XSI8=%02x "
+		"RF_GPIO=%s selector=%08x inverse=%08x,%08x "
+		"source=%08x,%08x/%08x,%08x MAC_mux=%02x,%02x,%02x,%02x,%02x,%02x,%02x "
+		"NCTL=%s pairs=%u reset_observations=%u reset_readback=%08x "
+		"NCTL8000=%08x NCTL8080=%08x RCK=%s code=%u,%u done=%u,%u "
+		"observations=%u,%u DACK=pending RX_DCK=pending calibration=pending\n",
+		rf->crystal_ready ? "applied" : "pending", share_xtal, rf->crystal_requested,
+		rf->crystal_observed[0], rf->crystal_observed[1], rf->share_control,
+		rf->gpio_ready ? "applied" : "pending", rtl_ax_read32(radio, 0x1033c),
+		rtl_ax_read32(radio, 0x15890), rtl_ax_read32(radio, 0x17890),
+		rtl_ax_read32(radio, 0x15880), rtl_ax_read32(radio, 0x15884),
+		rtl_ax_read32(radio, 0x17880), rtl_ax_read32(radio, 0x17884),
+		rtl_ax_read8(radio, 0x2d0), rtl_ax_read8(radio, 0x2d1), rtl_ax_read8(radio, 0x2d2),
+		rtl_ax_read8(radio, 0x2d3), rtl_ax_read8(radio, 0x2d4), rtl_ax_read8(radio, 0x2d5), rtl_ax_read8(radio, 0x2d6),
+		rf->nctl_ready ? "loaded" : "pending", rf->nctl_pairs, rf->nctl_wait_observations,
+		rf->nctl_wait_value, rtl_ax_read32(radio, 0x18000), rtl_ax_read32(radio, 0x18080),
+		rf->rck_ready ? "applied" : "pending", rf->rck_code[0], rf->rck_code[1],
+		rf->rck_done[0], rf->rck_done[1], rf->rck_observations[0], rf->rck_observations[1]);
+}
+static DEVICE_ATTR_RO(radio_rf_start);
+
 static ssize_t radio_efuse_read(struct file *file, struct kobject *kobject,
 	const struct bin_attribute *attr, char *buffer, loff_t offset, size_t count)
 {
@@ -1127,7 +1168,8 @@ static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_physts.attr, &dev_attr_radio_txdiff.attr, &dev_attr_radio_phy_stats.attr,
 	&dev_attr_radio_signal.attr, &dev_attr_radio_filter.attr, &dev_attr_radio_dfs.attr,
 	&dev_attr_radio_dig.attr, &dev_attr_radio_cfo.attr, &dev_attr_radio_environment.attr,
-	&dev_attr_radio_rx_pipeline.attr, &dev_attr_radio_channel.attr, &dev_attr_radio_rx_mode.attr, NULL,
+	&dev_attr_radio_rx_pipeline.attr, &dev_attr_radio_channel.attr, &dev_attr_radio_rx_mode.attr,
+	&dev_attr_radio_rf_start.attr, NULL,
 };
 static const struct attribute_group rtl_ax_group = {
 	.attrs = rtl_ax_attrs, .bin_attrs = rtl_ax_bin_attrs,
@@ -1171,6 +1213,10 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 		radio->dig.initialized = false;
 		radio->cfo.initialized = false;
 		radio->environment.initialized = false;
+		radio->rf_start.crystal_ready = false;
+		radio->rf_start.gpio_ready = false;
+		radio->rf_start.nctl_ready = false;
+		radio->rf_start.rck_ready = false;
 		radio->power_inputs.ready = false;
 		radio->download_prepared = false;
 	}

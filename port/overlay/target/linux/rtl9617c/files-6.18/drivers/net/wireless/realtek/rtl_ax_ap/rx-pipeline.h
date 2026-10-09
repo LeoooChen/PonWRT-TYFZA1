@@ -17,7 +17,7 @@ static inline void rtl_ax_rx_pipeline_read(const struct rtl_ax_io *io,
 {
 	/* Actual CLIENT stat CR@2cfb48 and statistics@2cf1c0/2cf3a8.
 	 * CCK, legacy OFDM, HT, VHT, HE; low16 OK, high16 CRC error. */
-	static const u16 crc_registers[5] = { 0x1714, 0x1a64, 0x1a60, 0x1a58, 0x1a5c };
+	static const u16 crc_registers[5] = { 0x1714, 0x1a64, 0x1a60, 0x1a5c, 0x1a58 };
 	/* Actual mac_rx_cnt@1f6b08 constructs these eight-entry arrays.
 	 * Order CCK,OFDM,HT,VHTSU,VHTMU,HESU,HEMU,HETB. */
 	static const u8 mac_indices[3][8] = {

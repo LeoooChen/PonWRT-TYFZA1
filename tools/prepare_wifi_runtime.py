@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from radio_inputs import NativeRadioFormat
@@ -45,6 +46,29 @@ try:
                              'download_header_bytes': len(header), 'section_packet_bytes': 2020})
     parameters = []
     calibration = []
+    # NCTL constants from this board's host ELF are device microprogram
+    # input data. The native loader never loads the original host module.
+    sys.path.insert(0, str(root / 'analysis/python-deps'))
+    from elftools.elf.elffile import ELFFile
+    nctl = []
+    nctl_inputs = json.loads((root / 'manifests/radio-stock-rf-dm.json').read_text())
+    host_source = args.study / 'evidence/stock/modules/rtk_wifi6.ko'
+    assert hashlib.sha256(host_source.read_bytes()).hexdigest() == nctl_inputs['stock_module_sha256']
+    with host_source.open('rb') as stream:
+        elf = ELFFile(stream)
+        symbols = elf.get_section_by_name('.symtab')
+        for item in nctl_inputs['NCTL']['tables']:
+            symbol = symbols.get_symbol_by_name(item['symbol'])[0]
+            section = elf.get_section(symbol['st_shndx'])
+            data = section.data()[symbol['st_value']:symbol['st_value'] + symbol['st_size']]
+            assert len(data) == item['bytes'] and hashlib.sha256(data).hexdigest() == item['sha256']
+            relative = Path('lib/firmware/realtek/tyfza1') / (item['symbol'] + '.bin')
+            destination = args.output / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(data)
+            nctl.append({'path': str(relative), 'bytes': len(data), 'pairs': item['pairs'],
+                         'sha256': item['sha256'], 'source_symbol': item['symbol'],
+                         'source_host_sha256': nctl_inputs['stock_module_sha256']})
     hs_data = args.hardware_settings.read_bytes()
     hs = {item.attrib['Name']: item.attrib['Value']
           for item in ET.fromstring(hs_data).iter('Value')}
@@ -103,12 +127,13 @@ try:
                                    'sha256': hashlib.sha256(data).hexdigest(), 'corrections': corrections})
     report = {'study': str(args.study.relative_to(root)), 'native_format_header_sha256':
               hashlib.sha256((root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/fw.h').read_bytes()).hexdigest(),
-              'firmware': firmware, 'parameters': parameters, 'calibration': calibration,
+              'firmware': firmware, 'parameters': parameters, 'calibration': calibration, 'NCTL': nctl,
               'RF_load_order': ['base', 'FEM-extension'],
               'RF_tables_applied_by_driver': False, 'radio_driver_available': False}
     args.manifest.parent.mkdir(parents=True, exist_ok=True)
     args.manifest.write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps({'radio_firmwares': len(firmware), 'selected_RF_parameter_files': len(parameters),
+                      'NCTL_tables': len(nctl),
                       'output': str(args.output), 'native_driver_in_progress': True}, indent=2))
 finally:
     codec.close()

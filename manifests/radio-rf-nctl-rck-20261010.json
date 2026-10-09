@@ -1,0 +1,120 @@
+{
+  "module_sha256": "22f120fe59acad504193e7a0cd79c039c239fecea2b7e8754c37cae2d3a92d81",
+  "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "crystal": {
+    "share_xtal_input": false,
+    "original_share_xtal_board_runtime_value_not_yet_read": true,
+    "C_requested_readback": [
+      71,
+      71,
+      71
+    ],
+    "XB_requested_readback": [
+      127,
+      127,
+      127
+    ],
+    "XSI8": "34"
+  },
+  "RF_GPIO": {
+    "C_pins": [
+      1,
+      2,
+      3,
+      6,
+      7,
+      10,
+      11
+    ],
+    "XB_pins": [
+      1,
+      2,
+      3,
+      6,
+      7,
+      11,
+      12
+    ],
+    "MAC_mux_func19_records_from_actual_ELF": 14,
+    "mux_field_value": 8,
+    "BB_path_selector": "00000054",
+    "inverse_C": [
+      "00000c80",
+      "00000006"
+    ],
+    "inverse_XB": [
+      "000010c0",
+      "0000000c"
+    ],
+    "source_C": [
+      "30777777",
+      "77777477",
+      "77770347",
+      "77777777"
+    ],
+    "source_XB": [
+      "43777777",
+      "77770777",
+      "77773407",
+      "77777777"
+    ]
+  },
+  "NCTL": {
+    "C_pairs": 1782,
+    "XB_pairs": 1421,
+    "both_reset_observations": 1,
+    "both_reset_readback": "00000004",
+    "both_final_8000": "00000008",
+    "both_final_8080": "00000000",
+    "data_source": "original host ELF constant arrays; native Linux loader",
+    "timeout_policy": "continue table load after1000 original reset observations"
+  },
+  "RCK": {
+    "actual_steps_identical_C_XB": true,
+    "C_code": [
+      16,
+      16
+    ],
+    "XB_code": [
+      8,
+      8
+    ],
+    "both_paths_both_chips_done": true,
+    "observations": [
+      1,
+      1
+    ],
+    "original_no_done_limit_policy": "extract and install result after11reads/10delays2us"
+  },
+  "DACK_complete": false,
+  "RX_DCK_complete": false,
+  "full_RF_calibration_complete": false,
+  "log": "logs/radio-rck-20261010.txt",
+  "log_sha256": "97587cca02bbf32bcf76039b52ae4842f272b60c4147c60ef53643f96b06d9aa",
+  "input_files": [
+    {
+      "path": "lib/firmware/realtek/tyfza1/array_mp_8852c_nctl_reg_a.bin",
+      "bytes": 14152,
+      "pairs": 1769,
+      "sha256": "09f08d60b630e30dd0c3a4d09601fcee831970a46538233a54afbf312113477f",
+      "source_symbol": "array_mp_8852c_nctl_reg_a",
+      "source_host_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e"
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/array_mp_8852c_nctl_reg.bin",
+      "bytes": 14256,
+      "pairs": 1782,
+      "sha256": "04c6d40224cef32e7cdb4bbddc079a337bff0d6969301abb883ec6c58891f4ee",
+      "source_symbol": "array_mp_8852c_nctl_reg",
+      "source_host_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e"
+    },
+    {
+      "path": "lib/firmware/realtek/tyfza1/array_mp_8192xb_nctl_reg.bin",
+      "bytes": 11368,
+      "pairs": 1421,
+      "sha256": "60ca54c0b50f0040fa0b339a68a67fa756b893b10c50d758fd397bdc4240e353",
+      "source_symbol": "array_mp_8192xb_nctl_reg",
+      "source_host_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e"
+    }
+  ]
+}

@@ -73,6 +73,21 @@ static inline int rtl_ax_xtal_write(const struct rtl_ax_io *io,
 			  50, 50000, &last);
 }
 
+static inline int rtl_ax_xtal_read(const struct rtl_ax_io *io,
+	unsigned char address, unsigned char *value)
+{
+	unsigned int last;
+	int ret;
+
+	/* Actual mac_read_xtal_si@21e364:command81000000|address,
+	 * busy bit31,50us observations, returned byte at0271. */
+	io->write32(io->ctx, RTL_AX_XTAL, 0x81000000 | address);
+	ret = io->poll32(io->ctx, RTL_AX_XTAL, RTL_AX_BIT(31), 0, 50, 50000, &last);
+	if (!ret)
+		*value = io->read8(io->ctx, RTL_AX_XTAL + 1);
+	return ret;
+}
+
 /* DDV physical offsets, including the 0x5e9/0x5ea calibration bytes, are
  * in the 1536-byte Wi-Fi bank. They are not offsets in the DAV bank. */
 static inline int rtl_ax_efuse_read(const struct rtl_ax_io *io,

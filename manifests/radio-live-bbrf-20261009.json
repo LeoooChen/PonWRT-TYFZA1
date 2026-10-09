@@ -157,12 +157,14 @@
     "public_ping": "2/2",
     "frame_confirmation_from_prior_live_native_code": "manifests/radio-first-80211-20261010.json",
     "active_RAM_driver_override": {
-      "radio": "0000:01:00.0 / 8852C only",
-      "module": "artifacts/live-radio-rf-mask01/rtl_ax_ap_live.ko",
-      "sha256": "64066ed9a7343f1bc7cc7b7b923afa713743ea3f94630ba39746373e3b7af7bd",
-      "log": "logs/radio-rf-mask-C-20261010.txt",
-      "purpose": "original full-mask Radio load regression and RF channel readback",
-      "8192XB": "built-in rtl_ax_ap received14 CRC-valid real 802.11 frames"
+      "radios": "both endpoints / C and XB",
+      "module": "artifacts/live-radio-rck01/rtl_ax_ap_live.ko",
+      "sha256": "22f120fe59acad504193e7a0cd79c039c239fecea2b7e8754c37cae2d3a92d81",
+      "log": "logs/radio-rck-20261010.txt",
+      "source_NCTL_inputs_added_to_RAM_root": true,
+      "C_receive_channel": 36,
+      "C_receive_mode": "SNIFFER0",
+      "boot_FIT_contains_RF_new_steps": false
     },
     "builtin_80211_receive_evidence": "manifests/radio-rx-active01-builtin-frames-20261010.json"
   },

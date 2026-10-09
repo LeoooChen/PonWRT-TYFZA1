@@ -368,3 +368,19 @@ channel-C01模块8a5c32f098970710a1c1abfa8e95adfa2fc86267ba916c85914d13f9ae488e7
 rx_mode接入本机RX_FLTR_MODE SNIFFER0、SCAN1、AP_NORMAL4：本机wrapper@1b1514和converter@22fddc分别产生SNIFFER bit0、SCAN maskbe/value0e、AP mask47ff/value440e。显式MPDU11264B继续保留。切换时先恢复AP模式，再设置请求模式，避免上一次SNIFFER标志遗留。没有把监听默认用于AP。SCAN1实机options0816440e、有效PHY解调仍无主机帧；SNIFFER0 options0816440f后，主机迅速收到681个CRC正确type0帧，RXQ/IRQ增长，格式/tag错误0。日志logs/radio-channel-C36-scan-20261010.txt和logs/radio-channel-C36-monitor-20261010.txt。
 
 只在临时header诊断模块44a28708ee1f14fb73ac9065c9d9edc2fef8783caf40b13d31efe1c6f30c6fa0记录前16帧的WD、前24B及FCS计算，正式overlay不加帧头日志。16帧均20B（含4B FCS），frame control00b4是RTS，WD rate8为24Mbps OFDM，CRC/ICV错误0，每帧FCS与crc32_le计算逐项一致。实际air-frame→PHY→MAC→DMA→IRQ→native WD/payload解析已在5GHz确认。原机36/40/44/48四个频道各5000ms被动观察都继续收到CRC正确type0帧，RXQ绕环运行且错误0；暂无Beacon或普通数据帧证据。证据manifests/radio-5g-80211-C-20261010.json。继续完成RF校准、普通数据及mac80211/AP业务，保持全移植目标。
+
+## 2026-10-10 RF晶振、RF GPIO、NCTL和RCK实机阶段
+
+RF启动开始于本机share_xtal_C@30fd14/XB@33f8fc。native share_xtal是明确的host配置输入，当前false；尚未读到原机运行时dev_cap的此字段，不把此默认宣称为原机运行值。C非共享时先清XSI8低2位，然后XSI4/5低7位写flash xcap71；共享时保留XSI8，仍写flash。XB非共享写127，共享才写flash63。这一点不能统一成两颗都写flash。mac_read_xtal_si@21e364命令为81000000|address，busy31、50us观察、返回0271字节；native按此读回两颗XSI4/5分别47/47和7f/7f，XSI8均34。CFO host默认值保持其原机较早initializer中的flash来源，周期控制继续接入。
+
+RF GPIO采用set_gpio_C@30f69c/XB@33e32c实际RFE54分支。C BB pin配置A10/TRSW/inverse1、A7/LNA/inverse1、A6/PAPE/inverse0，B1/TRSW/inverse1、B2/LNA/inverse1、B3/PAPE/inverse0，额外A11/inverse1/ZERO7。XB为A11/PAPE/inverse0、A7/TRSW/inverse1、A6/LNA/inverse1，B1/PAPE/inverse0、B2/TRSW/inverse1、B3/LNA/inverse1，额外A12/inverse1/ZERO7。对应MAC GPIO func19直接从本机C.rodata+1f820、XB+21508的指针表解析ELF relocation，每项12B记录func/reg/mask/value。全部14个本板pin记录均为027?范围2d0+pin/2、低/高nibble选择8；这不是从新版SDK猜测mux。
+
+实机BB path selector均00000054。C inverse00000c80/00000006，source30777777/77777477、77770347/77777777；XB inverse000010c0/0000000c，source43777777/77770777、77773407/77777777。MAC mux逐项与原机记录相符。原生重新选择RFE pin后继续验证接收，不把初始化寄存器写完当作RF校准完成。
+
+prepare_wifi_runtime从原机host ELF提取三个NCTL微程序常量数组，验证原机host SHA和各symbol长度/hash后安装到lib/firmware/realtek/tyfza1，记录NCTL输入清单；完整FIT验证器从实际内置initramfs核对它们。driver使用native request_firmware/MMIO loader，按hardwareCV选择C1769/1782对、XB1421对。实际config_nctl_C@3106f8/XB@33ffb0先写0c60/0c6c、58ac/78ac、8000，再写8080=4、1us、读回，最多1000次；本机到上限仍加载table，native保持这个语义。NCTL callback的f9..fe延时也是原机格式的一部分，三个本板数组均无此类地址。原机数组是设备微程序数据，host控制代码已由原生驱动实现。
+
+两颗原机NCTL reset均第一次读回4，随后加载C1782、XB1421对，结束8000=8/8080=0。RCK primitive C@30cc44/XB@33c69c硬件步骤相同：RF5=0、RF0模式3、RF1b=240，先立即读取RF1c完成bit3，最多11读/10次2us延时，读取RF1b[14:10]结果并写回RF1b，RF5=1。本机等待到上限仍提取和安装结果，native不把它改成中止启动。原机rck_trigger@2f6654总是A→B。
+
+RCK原生模块22f120fe59acad504193e7a0cd79c039c239fecea2b7e8754c37cae2d3a92d81实机C两路code16/16、XB8/8，四路全部完成位1且均首个观察完成。结果logs/radio-rck-20261010.txt和manifests/radio-rf-nctl-rck-20261010.json。RFK host状态、reference power对象、DACK/RX_DCK/TXA_LCTK/trim/TSSI及完整频道功率/RFK仍继续实现，当前不声明全RF校准或AP完成。
+
+接收统计另对齐了本机CRC CR：HE=1a58、VHT=1a5c、HT=1a60、legacy OFDM=1a64。较早radio_rx_pipeline把HE/VHT文字标签互换，新版已修正；原始历史日志保留。5GHz24Mbps RTS对应legacy OFDM路径，已有16帧软件FCS验证证据不受此标签修正影响。
