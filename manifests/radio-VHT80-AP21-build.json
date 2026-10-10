@@ -1,0 +1,92 @@
+{
+  "at": "2026-10-10T14:33:49.209803+08:00",
+  "runtime_source_commit": "5100bc3",
+  "service": "ponwrt-tyfza1-lan-20261010-142437.service",
+  "ExecMainStatus": 0,
+  "actual_FIT_verification": {
+    "FIT_sha256": "77b29afbbe016f29bbc556c249913ea09fa97626eca1741c3ae184eac0e11a37",
+    "verification_entry": "Final PCIe FIT selected kernel initramfs",
+    "original_radio_firmware_files": 4,
+    "selected_RFE54_parameter_files": 44,
+    "board_flash_calibration_files": 2,
+    "original_NCTL_tables": 3,
+    "released_regulatory_database_and_signature": 2,
+    "all_bytes_match_prepared_board_inputs": true,
+    "native_AP_PCI_backend_present_in_selected_kernel": true,
+    "firmware_transport_implemented": true,
+    "native_mac80211_monitor_backend_present": true,
+    "full_AP_operations_implemented": false,
+    "initramfs_members": 1096,
+    "radio_hardware_verified": false,
+    "actual_radio_code_matches_linked_ELF": [
+      {
+        "function": "rtl_ax_probe",
+        "selected_FIT_kernel_offset": 5465424,
+        "code_bytes": 9892,
+        "SHA256": "6390169ce07f8ecc1813ae2743006a45fe9dde6585c421bf0c729296d3b43580"
+      },
+      {
+        "function": "rtl_ax_h2c_send",
+        "selected_FIT_kernel_offset": 5398976,
+        "code_bytes": 268,
+        "SHA256": "d0f48457dae2b5818961cb3c2785386796b38184009a6ed94227507387a13fb3"
+      },
+      {
+        "function": "rtl_ax_wait_firmware",
+        "selected_FIT_kernel_offset": 5404560,
+        "code_bytes": 192,
+        "SHA256": "383aa927e0a377b6eb32f2e8158a48b69936b9bac86fe1bc15641f6cfa6b2928"
+      },
+      {
+        "function": "rtl_ax_shutdown",
+        "selected_FIT_kernel_offset": 5442784,
+        "code_bytes": 4,
+        "SHA256": "060bafc9bf89e5e4e210f014bbcb70368ecad88912be4c91e1ab95ddd5348800"
+      },
+      {
+        "function": "rtl_ax_receive_configure",
+        "selected_FIT_kernel_offset": 5483632,
+        "code_bytes": 10044,
+        "SHA256": "b7510a91c03fc2377d5ff708ab05f7c2d84f60ba26894ff1faf84e5963e795b9"
+      },
+      {
+        "function": "rtl_ax_ap_conf_tx",
+        "selected_FIT_kernel_offset": 5398176,
+        "code_bytes": 164,
+        "SHA256": "f6ddc445719e22265d04c861294ba26e02444ea156f2738cb814da714c418205"
+      },
+      {
+        "function": "rtl_ax_monitor_tx",
+        "selected_FIT_kernel_offset": 5398340,
+        "code_bytes": 404,
+        "SHA256": "13cf17ad8a5711b72b452c46765e7a9bcf235139d47c249e53af7cbd40362914"
+      },
+      {
+        "function": "rtl_ax_ampdu_action",
+        "selected_FIT_kernel_offset": 5404752,
+        "code_bytes": 1256,
+        "SHA256": "222f8cea459c981510d45e7993101cdcebbd00bdf5fba9ea9e011526f1a59293"
+      },
+      {
+        "function": "rtl_ax_station_tables",
+        "selected_FIT_kernel_offset": 5402116,
+        "code_bytes": 232,
+        "SHA256": "4fb93eb8b5716aef10ca44d80b133af638d073a462928f9781eb70f905d4cb63"
+      },
+      {
+        "function": "rtl_ax_tx_submit",
+        "selected_FIT_kernel_offset": 5505504,
+        "code_bytes": 1776,
+        "SHA256": "6796d2ae18ef34182b2ea4650c6f19f3402569be7482422a4f94029d39008bfb"
+      },
+      {
+        "function": "rtl_ax_tx_report",
+        "selected_FIT_kernel_offset": 5507280,
+        "code_bytes": 808,
+        "SHA256": "ad8bcded2751b95b51abd5ea736c7993b399a0175fc3dfef11f40f1408b936d6"
+      }
+    ]
+  },
+  "FIT_rebooted_on_board": false,
+  "board_validation_manifest": "manifests/radio-native-VHT80-20261010.json"
+}

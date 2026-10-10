@@ -13,6 +13,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('payload', type=Path)
 parser.add_argument('--manifest', type=Path, default=root / 'artifacts/wifi-runtime-manifest.json')
 parser.add_argument('--kernel-elf', type=Path, help='Compare linked native radio code with the final FIT kernel')
+parser.add_argument('--require-wifi-management', action='store_true', help='Verify the packaged UCI/netifd/wpad runtime')
 args = parser.parse_args()
 fit = args.payload / 'ram-pcie/image.itb'
 selected = fit_images(fit)
@@ -50,6 +51,15 @@ try:
               'native_mac80211_monitor_backend_present': b'handed_to_mac80211=' in selected['kernel'],
               'full_AP_operations_implemented': False,
               'initramfs_members': len(members), 'radio_hardware_verified': False}
+    if args.require_wifi_management:
+        paths = ('usr/sbin/wpad', 'sbin/wifi', 'lib/netifd/wireless/mac80211.sh',
+                 'usr/share/hostap/hostapd.uc', 'usr/share/acl.d/wpad.json',
+                 'usr/lib/ucode/nl80211.so', 'usr/lib/ucode/rtnl.so')
+        assert all(path in members for path in paths), 'OpenWrt Wi-Fi management runtime missing'
+        assert b'vht_oper_chwidth' in members['usr/sbin/wpad']['data'], 'wpad VHT parser missing'
+        assert b'he_oper_chwidth' in members['usr/sbin/wpad']['data'], 'wpad HE parser missing'
+        report['OpenWrt_wifi_management'] = [{
+            'path': path, 'SHA256': hashlib.sha256(members[path]['data']).hexdigest()} for path in paths]
     if args.kernel_elf is not None:
         sys.path.insert(0, str(root / 'analysis/python-deps'))
         from elftools.elf.elffile import ELFFile

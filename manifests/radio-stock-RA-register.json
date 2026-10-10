@@ -1,0 +1,1214 @@
+{
+  "scope": "Execute original RA registration and feedback with explicit host STA inputs.",
+  "original_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "executed_functions": [
+    "rtw_halbb_raregistered",
+    "halbb_init_ra_by_rssi",
+    "halbb_nss_mapping",
+    "halbb_hw_mode_mapping",
+    "halbb_get_opt_giltf",
+    "halbb_ax_giltf_chk",
+    "halbb_hw_bw_mapping",
+    "halbb_hw_bw_mode_chk",
+    "halbb_chk_bw_under_40",
+    "halbb_giltf_trans",
+    "halbb_stbc_mapping",
+    "halbb_ldpc_chk",
+    "halbb_sgi_chk",
+    "halbb_ac_n_sgi_chk",
+    "halbb_ramask_mod",
+    "halbb_ramask_trans",
+    "halbb_set_csi_rate",
+    "halbb_rssi_lv_dec",
+    "halbb_ramask_by_rssi",
+    "halbb_get_fw_ra_rpt",
+    "halbb_c2h_ra_parsing",
+    "rtw_halbb_c2h_parsing"
+  ],
+  "boundary": "H2C publication/logging mocked; no hardware or firmware execution",
+  "inputs": "MACID1, RFE54, SCC TX2SS, no BF/STBC/LDPC or optional GI capabilities, no noisy flag",
+  "feedback": {
+    "vectors": 2304,
+    "category": 2,
+    "class": 1,
+    "function": 0,
+    "payload_bytes": 8,
+    "MACID": "little-endian16 bytes0..1",
+    "retry_ratio": "byte2",
+    "rate": "byte4 bits0..6, bit7 MU report skips SU state",
+    "mode_GI_BW": "byte5 mode0..1, GI_LTF2..4, bandwidth5..6",
+    "scope": "original host parser accepts supplied mode/rate/GI values; not proof all combinations are valid PHY rates"
+  },
+  "records": [
+    {
+      "chip": "8852c",
+      "mode": "HT",
+      "width_MHz": 20,
+      "NSS": 1,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "0c011c0010f00f000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HT",
+      "width_MHz": 20,
+      "NSS": 1,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "0c01180010f00f000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HT",
+      "width_MHz": 20,
+      "NSS": 1,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "0c01140000000f000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HT",
+      "width_MHz": 20,
+      "NSS": 2,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "0c011c0110f00f0f0000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HT",
+      "width_MHz": 20,
+      "NSS": 2,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "0c01180110f00f0f0000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HT",
+      "width_MHz": 20,
+      "NSS": 2,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "0c01140100000f0f0000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HT",
+      "width_MHz": 40,
+      "NSS": 1,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "4c011c0010f00f000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HT",
+      "width_MHz": 40,
+      "NSS": 1,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "4c01180010f00f000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HT",
+      "width_MHz": 40,
+      "NSS": 1,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "4c01140000000f000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HT",
+      "width_MHz": 40,
+      "NSS": 2,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "4c011c0110f00f0f0000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HT",
+      "width_MHz": 40,
+      "NSS": 2,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "4c01180110f00f0f0000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HT",
+      "width_MHz": 40,
+      "NSS": 2,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "4c01140100000f0f0000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HT",
+      "width_MHz": 80,
+      "NSS": 1,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "8c011c0010f00f000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HT",
+      "width_MHz": 80,
+      "NSS": 1,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "8c01180010f00f000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HT",
+      "width_MHz": 80,
+      "NSS": 1,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "8c01140000000f000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HT",
+      "width_MHz": 80,
+      "NSS": 2,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "8c011c0110f00f0f0000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HT",
+      "width_MHz": 80,
+      "NSS": 2,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "8c01180110f00f0f0000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HT",
+      "width_MHz": 80,
+      "NSS": 2,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "8c01140100000f0f0000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "VHT",
+      "width_MHz": 20,
+      "NSS": 1,
+      "assoc_RSSI": 20,
+      "input_mask": "0x3ff3fffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "14011c0010f03f000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "VHT",
+      "width_MHz": 20,
+      "NSS": 1,
+      "assoc_RSSI": 40,
+      "input_mask": "0x3ff3fffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "1401180010f03f000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "VHT",
+      "width_MHz": 20,
+      "NSS": 1,
+      "assoc_RSSI": 70,
+      "input_mask": "0x3ff3fffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "1401140000003f000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "VHT",
+      "width_MHz": 20,
+      "NSS": 2,
+      "assoc_RSSI": 20,
+      "input_mask": "0x3ff3fffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "14011c0110f03fff0300008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "VHT",
+      "width_MHz": 20,
+      "NSS": 2,
+      "assoc_RSSI": 40,
+      "input_mask": "0x3ff3fffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "1401180110f03fff0300008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "VHT",
+      "width_MHz": 20,
+      "NSS": 2,
+      "assoc_RSSI": 70,
+      "input_mask": "0x3ff3fffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "1401140100003fff0300008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "VHT",
+      "width_MHz": 40,
+      "NSS": 1,
+      "assoc_RSSI": 20,
+      "input_mask": "0x3ff3fffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "54011c0010f03f000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "VHT",
+      "width_MHz": 40,
+      "NSS": 1,
+      "assoc_RSSI": 40,
+      "input_mask": "0x3ff3fffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "5401180010f03f000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "VHT",
+      "width_MHz": 40,
+      "NSS": 1,
+      "assoc_RSSI": 70,
+      "input_mask": "0x3ff3fffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "5401140000003f000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "VHT",
+      "width_MHz": 40,
+      "NSS": 2,
+      "assoc_RSSI": 20,
+      "input_mask": "0x3ff3fffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "54011c0110f03fff0300008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "VHT",
+      "width_MHz": 40,
+      "NSS": 2,
+      "assoc_RSSI": 40,
+      "input_mask": "0x3ff3fffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "5401180110f03fff0300008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "VHT",
+      "width_MHz": 40,
+      "NSS": 2,
+      "assoc_RSSI": 70,
+      "input_mask": "0x3ff3fffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "5401140100003fff0300008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "VHT",
+      "width_MHz": 80,
+      "NSS": 1,
+      "assoc_RSSI": 20,
+      "input_mask": "0x3ff3fffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "94011c0010f03f000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "VHT",
+      "width_MHz": 80,
+      "NSS": 1,
+      "assoc_RSSI": 40,
+      "input_mask": "0x3ff3fffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "9401180010f03f000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "VHT",
+      "width_MHz": 80,
+      "NSS": 1,
+      "assoc_RSSI": 70,
+      "input_mask": "0x3ff3fffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "9401140000003f000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "VHT",
+      "width_MHz": 80,
+      "NSS": 2,
+      "assoc_RSSI": 20,
+      "input_mask": "0x3ff3fffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "94011c0110f03fff0300008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "VHT",
+      "width_MHz": 80,
+      "NSS": 2,
+      "assoc_RSSI": 40,
+      "input_mask": "0x3ff3fffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "9401180110f03fff0300008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "VHT",
+      "width_MHz": 80,
+      "NSS": 2,
+      "assoc_RSSI": 70,
+      "input_mask": "0x3ff3fffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "9401140100003fff0300008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HE",
+      "width_MHz": 20,
+      "NSS": 1,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "24011c0010f0ff000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HE",
+      "width_MHz": 20,
+      "NSS": 1,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "2401180010f0ff000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HE",
+      "width_MHz": 20,
+      "NSS": 1,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "240114000000ff000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HE",
+      "width_MHz": 20,
+      "NSS": 2,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "24011c0110f0ffff0f00008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HE",
+      "width_MHz": 20,
+      "NSS": 2,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "2401180110f0ffff0f00008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HE",
+      "width_MHz": 20,
+      "NSS": 2,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "240114010000ffff0f00008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HE",
+      "width_MHz": 40,
+      "NSS": 1,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "64011c0010f0ff000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HE",
+      "width_MHz": 40,
+      "NSS": 1,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "6401180010f0ff000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HE",
+      "width_MHz": 40,
+      "NSS": 1,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "640114000000ff000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HE",
+      "width_MHz": 40,
+      "NSS": 2,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "64011c0110f0ffff0f00008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HE",
+      "width_MHz": 40,
+      "NSS": 2,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "6401180110f0ffff0f00008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HE",
+      "width_MHz": 40,
+      "NSS": 2,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "640114010000ffff0f00008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HE",
+      "width_MHz": 80,
+      "NSS": 1,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "a4011c0010f0ff000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HE",
+      "width_MHz": 80,
+      "NSS": 1,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "a401180010f0ff000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HE",
+      "width_MHz": 80,
+      "NSS": 1,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "a40114000000ff000000008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HE",
+      "width_MHz": 80,
+      "NSS": 2,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "a4011c0110f0ffff0f00008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HE",
+      "width_MHz": 80,
+      "NSS": 2,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "a401180110f0ffff0f00008000380020"
+      }
+    },
+    {
+      "chip": "8852c",
+      "mode": "HE",
+      "width_MHz": 80,
+      "NSS": 2,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "a40114010000ffff0f00008000380020"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HT",
+      "width_MHz": 20,
+      "NSS": 1,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "0e011c0015f00f000000008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HT",
+      "width_MHz": 20,
+      "NSS": 1,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "0e01180010f00f000000008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HT",
+      "width_MHz": 20,
+      "NSS": 1,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "0e01140000000f000000008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HT",
+      "width_MHz": 20,
+      "NSS": 2,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "0e011c0115f00f0f0000008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HT",
+      "width_MHz": 20,
+      "NSS": 2,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "0e01180110f00f0f0000008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HT",
+      "width_MHz": 20,
+      "NSS": 2,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "0e01140100000f0f0000008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HT",
+      "width_MHz": 40,
+      "NSS": 1,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "4e011c0015f00f000000008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HT",
+      "width_MHz": 40,
+      "NSS": 1,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "4e01180010f00f000000008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HT",
+      "width_MHz": 40,
+      "NSS": 1,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "4e01140000000f000000008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HT",
+      "width_MHz": 40,
+      "NSS": 2,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "4e011c0115f00f0f0000008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HT",
+      "width_MHz": 40,
+      "NSS": 2,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "4e01180110f00f0f0000008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HT",
+      "width_MHz": 40,
+      "NSS": 2,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "4e01140100000f0f0000008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HE",
+      "width_MHz": 20,
+      "NSS": 1,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "26011c0015f0ff000000008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HE",
+      "width_MHz": 20,
+      "NSS": 1,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "2601180010f0ff000000008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HE",
+      "width_MHz": 20,
+      "NSS": 1,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "260114000000ff000000008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HE",
+      "width_MHz": 20,
+      "NSS": 2,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "26011c0115f0ffff0f00008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HE",
+      "width_MHz": 20,
+      "NSS": 2,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "2601180110f0ffff0f00008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HE",
+      "width_MHz": 20,
+      "NSS": 2,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "260114010000ffff0f00008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HE",
+      "width_MHz": 40,
+      "NSS": 1,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "66011c0015f0ff000000008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HE",
+      "width_MHz": 40,
+      "NSS": 1,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "6601180010f0ff000000008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HE",
+      "width_MHz": 40,
+      "NSS": 1,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "660114000000ff000000008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HE",
+      "width_MHz": 40,
+      "NSS": 2,
+      "assoc_RSSI": 20,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "66011c0115f0ffff0f00008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HE",
+      "width_MHz": 40,
+      "NSS": 2,
+      "assoc_RSSI": 40,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "6601180110f0ffff0f00008000380080"
+      }
+    },
+    {
+      "chip": "8192xb",
+      "mode": "HE",
+      "width_MHz": 40,
+      "NSS": 2,
+      "assoc_RSSI": 70,
+      "input_mask": "0xfffffffff",
+      "status": 1,
+      "H2C": {
+        "class": 1,
+        "function": 0,
+        "bytes": 16,
+        "payload": "660114010000ffff0f00008000380080"
+      }
+    }
+  ]
+}
