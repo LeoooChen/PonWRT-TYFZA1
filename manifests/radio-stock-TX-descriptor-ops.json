@@ -1,0 +1,55 @@
+{
+  "scope": "actual original ELF ops pointer tables, not inferred direct-call names",
+  "programs": [
+    {
+      "chip": "8852c",
+      "actual_descriptor_ops": [
+        {
+          "descriptor_type": 2,
+          "builder": "txdes_proc_h2c_fwdl_8852c",
+          "text_address": "0x251adc"
+        },
+        {
+          "descriptor_type": 4,
+          "builder": "txdes_proc_h2c_fwdl_8852c",
+          "text_address": "0x251adc"
+        },
+        {
+          "descriptor_type": 0,
+          "builder": "txdes_proc_data_8852c",
+          "text_address": "0x2522c0"
+        },
+        {
+          "descriptor_type": 1,
+          "builder": "txdes_proc_mgnt_8852c",
+          "text_address": "0x251e14"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "actual_descriptor_ops": [
+        {
+          "descriptor_type": 2,
+          "builder": "txdes_proc_h2c_fwdl_8192xb",
+          "text_address": "0x264cdc"
+        },
+        {
+          "descriptor_type": 4,
+          "builder": "txdes_proc_h2c_fwdl_8192xb",
+          "text_address": "0x264cdc"
+        },
+        {
+          "descriptor_type": 0,
+          "builder": "txdes_proc_data_8192xb",
+          "text_address": "0x2654b8"
+        },
+        {
+          "descriptor_type": 1,
+          "builder": "txdes_proc_mgnt_8192xb",
+          "text_address": "0x265014"
+        }
+      ]
+    }
+  ]
+}

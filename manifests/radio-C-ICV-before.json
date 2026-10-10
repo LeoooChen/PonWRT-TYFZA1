@@ -1,0 +1,18 @@
+{
+  "native_module_sha256": "c0c39a5d1b22d9c03b4cba150a9d13539aa03b37222753ac30afbcd9918ce28e",
+  "capture_monitor_flags": [
+    "fcsfail"
+  ],
+  "capture": "artifacts/radio-c-tssi-ICV-before.pcap",
+  "frames": [
+    {
+      "bytes": 174,
+      "type": 2,
+      "subtype": 0,
+      "protected": true,
+      "radiotap_flags": 16,
+      "marked_bad_FCS": false,
+      "actual_FCS_valid": true
+    }
+  ]
+}

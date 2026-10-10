@@ -565,3 +565,15 @@ C实际do_tssi@336df0按disable→A所有阶段→B所有阶段→enable→DE执
 原机DPK trigger@2f5b34检查supportabilitybit3。RFE54在C bypass_check@32b3e8的>50和XB@3523ec的51..89分支旁路测量，force_bypass/onoff将SCC当前DPK index0的81bc/82bc高nibble清零。原生代码采用这两次写入，没有强制执行其他FEM的DPK测量。C dpk@32b938在reK标志设置时即使旁路也重新调用RF RX_DCK，当前原机reK=1，该步骤已接入，并按原机30c4bc/30c488逐路暂停/恢复已启用TSSI。工具trace_stock_dpk_bypass.py记录实际ELF的旁路条件、两次写入及追加RX_DCK调用边界。
 
 最终模块c0c39a5d1b22d9c03b4cba150a9d13539aa03b37222753ac30afbcd9918ce28e实际C36测得A148/149/149/91、B128/133/130/70，两路tracking1/pause0/RF10055=80；12个校正字段仍与原厂算法一致。两颗DPK控制字段实际均0，C追加RX_DCK执行后接收继续工作。证据manifests/radio-c-tssi-20261010.json及logs/radio-c-tssi-final.log。原生AP的普通TX、角色/CAM、beacon/关联/密钥以及真实发射反馈仍继续完成；监控接口收帧不等于AP可用。
+
+## 2026-10-10 下一阶段普通TX入口已从原机ops解析
+
+实际mac_build_txdesc_C@251c3c/XB@264e3c读取.data+e000/d1970的16B表项，以metadata首dword选择type，再BLR调用表内builder。type2/4均走H2C/FWDL，type0走data_C@2522c0/data_XB@2654b8，type1走mgnt_C@251e14/mgnt_XB@265014。现有channel12下载/控制成功只验证type2/4，不能推导type0/1普通TX已工作。数据和管理两个builder均另调用mac_txdesc_len与mac_wd_checksum；WD page更新还经过HAL ops+168间接入口。后续按原机完整路径处理普通TX描述符、地址信息/WD序号、TXBD/ring与RPQ释放，再接AP角色/CAM和beacon/关联；当前没有把H2C描述符当作普通无线帧描述符发送。映射见manifests/radio-stock-TX-descriptor-ops.json。
+
+## 2026-10-10 监控接收FCS/ICV状态分开
+
+monitor.h此前把原机RX WD独立的crc_error与icv_error一起映射到Linux RX_FLAG_FAILED_FCS_CRC；Linux6.18该标志明确只表示FCS失败。当前被动监控输出raw帧且没有RX_FLAG_DECRYPTED，已改为仅由crc_error设置该标志，并增加真实ICV错误及FCS正确非空数据帧ICV错误计数。该改动不承担AP密钥/解密处理。
+
+实际三个C非空数据抓取窗口分别35/55/55秒为空，但累计WD非空数据计数增加；旧模块用fcsfail监控选项抓得一个174B受保护Data帧，实际FCS正确且radiotap未标BADFCS。这条帧不支持ICV映射是上述空窗口的原因。修正模块3be17c5407a8f96607405294dbad84f81819d93b450b437d74ad8c617cb930a5实际累计7845帧（legacy非空8、HE非空21），ICV计数0，55秒数据pcap仍0。保留实际零结果，继续定位WD→Linux→pcap数据路径，未把代码语义修正宣称为已解决本次丢失。证据manifests/radio-C-ICV-before.json、radio-C-ICV-after.json及对应日志/pcap。
+
+1603490完整构建已完成，ram-pcie FIT93ea65bc34cb5b2a06a2ec3d16d370661be24fdc0315406ba26f8e56c686a444，实际kernel0d85ad53e34653a48f379b62a5ce7383b470097e1458f53e96c1efa38efdbe55、DTBed3a18f2b09dbec988883e9a36b47efdae819c82db47864deb3ad1e4eecd23ac，含C thermal输入；与当次独立wifi清单核对通过。此FIT含C TSSI/DPK而不含后续ICV语义修正；硬件启动记录另行保存。

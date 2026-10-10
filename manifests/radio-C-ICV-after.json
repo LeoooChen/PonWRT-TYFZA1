@@ -1,0 +1,9 @@
+{
+  "native_module_sha256": "3be17c5407a8f96607405294dbad84f81819d93b450b437d74ad8c617cb930a5",
+  "monitor_flags": "default; no fcsfail",
+  "capture": "artifacts/radio-C-ICV-after.pcap",
+  "capture_sha256": "7408df6f1ed5ac518e1f3fe5315845fc0cb2b0c79572df40e99ecabf34fd205e",
+  "frames": [],
+  "ICV_counters_record": "logs/radio-C-ICV-after-rx.log",
+  "causal_link_to_previous_zero_capture_windows": "not established"
+}

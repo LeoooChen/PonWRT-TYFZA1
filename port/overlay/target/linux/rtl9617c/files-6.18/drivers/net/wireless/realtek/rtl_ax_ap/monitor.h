@@ -129,7 +129,10 @@ static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 	status = IEEE80211_SKB_RXCB(skb);
 	memset(status, 0, sizeof(*status));
 	status->flag = RX_FLAG_ONLY_MONITOR | RX_FLAG_NO_SIGNAL_VAL;
-	if (packet->crc_error || packet->icv_error)
+	/* Original WD reports FCS and decrypt ICV separately. This passive
+	 * path supplies the raw encrypted frame, without RX_FLAG_DECRYPTED;
+	 * a missing decryption key does not make its FCS invalid. */
+	if (packet->crc_error)
 		status->flag |= RX_FLAG_FAILED_FCS_CRC;
 	status->band = radio->chip == RTL_AX_8852C ? NL80211_BAND_5GHZ : NL80211_BAND_2GHZ;
 	status->freq = ieee80211_channel_to_frequency(radio->channel.primary, status->band);

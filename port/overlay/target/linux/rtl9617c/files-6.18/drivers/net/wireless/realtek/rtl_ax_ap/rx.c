@@ -19,6 +19,7 @@ struct rtl_ax_rx_queue {
 	unsigned int consumer, tag, buffer_bytes;
 	u64 packets, malformed, tag_pending, unhandled;
 	u64 types[16], beacons, wifi_crc_ok, wifi_crc_error;
+	u64 wifi_icv_error, wifi_data_icv_crc_ok;
 	u64 wifi_frames[4][16], wifi_encoding[4], wifi_data_encoding[4];
 };
 
@@ -79,6 +80,7 @@ static bool rtl_ax_rx_drain(struct rtl_ax_rx *rx, unsigned int number)
 			if (packet.type == 0) {
 				queue->wifi_crc_ok += !packet.crc_error;
 				queue->wifi_crc_error += packet.crc_error;
+				queue->wifi_icv_error += packet.icv_error;
 			}
 			if (packet.type == 0 && !packet.crc_error && packet.bytes >= 2) {
 				u16 fc = packet.payload[0] | (u16)packet.payload[1] << 8;
@@ -90,8 +92,10 @@ static bool rtl_ax_rx_drain(struct rtl_ax_rx *rx, unsigned int number)
 
 				queue->wifi_frames[type][subtype]++;
 				queue->wifi_encoding[encoding]++;
-				if (type == 2 && !(subtype & 4))
+				if (type == 2 && !(subtype & 4)) {
 					queue->wifi_data_encoding[encoding]++;
+					queue->wifi_data_icv_crc_ok += packet.icv_error;
+				}
 
 				if ((fc & 0x00ff) == 0x0080 && packet.bytes >= 36)
 					queue->beacons++;
@@ -299,6 +303,10 @@ int rtl_ax_rx_status(struct rtl_ax_rx *rx, char *out, size_t capacity)
 		rx->queues[0].beacons + rx->queues[1].beacons,
 		rx->queues[0].wifi_crc_ok + rx->queues[1].wifi_crc_ok,
 		rx->queues[0].wifi_crc_error + rx->queues[1].wifi_crc_error);
+	length += scnprintf(out + length, capacity - length,
+		"80211_ICV_error=%llu data_FCS_OK_ICV_error=%llu\n",
+		rx->queues[0].wifi_icv_error + rx->queues[1].wifi_icv_error,
+		rx->queues[0].wifi_data_icv_crc_ok + rx->queues[1].wifi_data_icv_crc_ok);
 	for (type = 0; type < 16; type++)
 		length += scnprintf(out + length, capacity - length, "descriptor_type=%u packets=%llu\n",
 			type, rx->queues[0].types[type] + rx->queues[1].types[type]);
