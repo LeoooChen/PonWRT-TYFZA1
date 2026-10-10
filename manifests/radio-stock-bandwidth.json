@@ -1,0 +1,1594 @@
+{
+  "scope": "Extract actual C/XB 20/40/80 MHz BB/ADC operations before extending the port.",
+  "original_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "executed_functions": [
+    "halbb_ctrl_bw_8852c",
+    "halbb_adc_cfg_8852c",
+    "halbb_edcca_per20_bitmap_sifs_8852c",
+    "halbb_ctrl_bw_8192xb",
+    "halbb_bw_setting_8192xb",
+    "halbb_edcca_per20_bitmap_sifs_8192xb",
+    "rtw_hal_mac_set_bw",
+    "cfg_mac_bw",
+    "rtw_hal_bb_get_txsc",
+    "halbb_get_txsc"
+  ],
+  "inputs": "RFE54, PHY0/MACband0, DBCC0, BB and MAC writers captured separately; RF/RFK/TPU not configured",
+  "records": [
+    {
+      "chip": "8852c",
+      "width_MHz": 20,
+      "bandwidth_enum": 0,
+      "primary_index": 0,
+      "PHY": 0,
+      "status": 1,
+      "writes": [
+        {
+          "address": "0x4974",
+          "mask": "0xc0000000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0x3000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0xf00",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4e30",
+          "mask": "0x4000000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4424",
+          "mask": "0x4",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0x780",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc0e8",
+          "mask": "0xffff0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0xc0e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0x12a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc0ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0x7800",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0xc000000",
+          "value": "0x3"
+        },
+        {
+          "address": "0xc0d8",
+          "mask": "0x1e0",
+          "value": "0xf"
+        },
+        {
+          "address": "0xc0c4",
+          "mask": "0x3e0000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0ec",
+          "mask": "0xff0000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0x780",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc1e8",
+          "mask": "0xffff0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0xc1e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0x32a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc1ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0x7800",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0xc000000",
+          "value": "0x3"
+        },
+        {
+          "address": "0xc1d8",
+          "mask": "0x1e0",
+          "value": "0xf"
+        },
+        {
+          "address": "0xc1c4",
+          "mask": "0x3e0000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc1ec",
+          "mask": "0xff0000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc9c",
+          "mask": "0xff000",
+          "value": "0xff"
+        },
+        {
+          "address": "0xca0",
+          "mask": "0xff000",
+          "value": "0x0"
+        }
+      ],
+      "MAC_parameter": "2424000000000000",
+      "primary_channel": 36,
+      "center_channel": 36,
+      "MAC_writes": [
+        {
+          "operation": "write8",
+          "address": "0xc010",
+          "value": "0x0"
+        },
+        {
+          "operation": "write8",
+          "address": "0xc628",
+          "value": "0x13"
+        },
+        {
+          "operation": "write32",
+          "address": "0xc088",
+          "value": "0x0"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "width_MHz": 40,
+      "bandwidth_enum": 1,
+      "primary_index": 1,
+      "PHY": 0,
+      "status": 1,
+      "writes": [
+        {
+          "address": "0x4974",
+          "mask": "0xc0000000",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0x3000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0xf00",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4e30",
+          "mask": "0x4000000",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4424",
+          "mask": "0x4",
+          "value": "0x1"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0x780",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc0e8",
+          "mask": "0xffff0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0xc0e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0x12a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc0ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0x7800",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0xc000000",
+          "value": "0x3"
+        },
+        {
+          "address": "0xc0d8",
+          "mask": "0x1e0",
+          "value": "0xf"
+        },
+        {
+          "address": "0xc0c4",
+          "mask": "0x3e0000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0ec",
+          "mask": "0xff0000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0x780",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc1e8",
+          "mask": "0xffff0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0xc1e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0x32a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc1ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0x7800",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0xc000000",
+          "value": "0x3"
+        },
+        {
+          "address": "0xc1d8",
+          "mask": "0x1e0",
+          "value": "0xf"
+        },
+        {
+          "address": "0xc1c4",
+          "mask": "0x3e0000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc1ec",
+          "mask": "0xff0000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc9c",
+          "mask": "0xff000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xca0",
+          "mask": "0xff000",
+          "value": "0x0"
+        }
+      ],
+      "MAC_parameter": "2826000001000000",
+      "primary_channel": 40,
+      "center_channel": 38,
+      "MAC_writes": [
+        {
+          "operation": "write8",
+          "address": "0xc010",
+          "value": "0x1"
+        },
+        {
+          "operation": "write8",
+          "address": "0xc628",
+          "value": "0x13"
+        },
+        {
+          "operation": "write32",
+          "address": "0xc088",
+          "value": "0x1"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "width_MHz": 40,
+      "bandwidth_enum": 1,
+      "primary_index": 2,
+      "PHY": 0,
+      "status": 1,
+      "writes": [
+        {
+          "address": "0x4974",
+          "mask": "0xc0000000",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0x3000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0xf00",
+          "value": "0x2"
+        },
+        {
+          "address": "0x4e30",
+          "mask": "0x4000000",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4424",
+          "mask": "0x4",
+          "value": "0x1"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0x780",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc0e8",
+          "mask": "0xffff0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0xc0e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0x12a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc0ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0x7800",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0xc000000",
+          "value": "0x3"
+        },
+        {
+          "address": "0xc0d8",
+          "mask": "0x1e0",
+          "value": "0xf"
+        },
+        {
+          "address": "0xc0c4",
+          "mask": "0x3e0000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0ec",
+          "mask": "0xff0000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0x780",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc1e8",
+          "mask": "0xffff0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0xc1e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0x32a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc1ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0x7800",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0xc000000",
+          "value": "0x3"
+        },
+        {
+          "address": "0xc1d8",
+          "mask": "0x1e0",
+          "value": "0xf"
+        },
+        {
+          "address": "0xc1c4",
+          "mask": "0x3e0000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc1ec",
+          "mask": "0xff0000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc9c",
+          "mask": "0xff000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xca0",
+          "mask": "0xff000",
+          "value": "0x0"
+        }
+      ],
+      "MAC_parameter": "2426000001000000",
+      "primary_channel": 36,
+      "center_channel": 38,
+      "MAC_writes": [
+        {
+          "operation": "write8",
+          "address": "0xc010",
+          "value": "0x1"
+        },
+        {
+          "operation": "write8",
+          "address": "0xc628",
+          "value": "0x13"
+        },
+        {
+          "operation": "write32",
+          "address": "0xc088",
+          "value": "0x2"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "width_MHz": 80,
+      "bandwidth_enum": 2,
+      "primary_index": 1,
+      "PHY": 0,
+      "status": 1,
+      "writes": [
+        {
+          "address": "0x4974",
+          "mask": "0xc0000000",
+          "value": "0x2"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0x3000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0xf00",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4e30",
+          "mask": "0x4000000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4424",
+          "mask": "0x4",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0x780",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc0e8",
+          "mask": "0xffff0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0xc0e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0x12a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc0ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0x7800",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0xc000000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc0d8",
+          "mask": "0x1e0",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc0c4",
+          "mask": "0x3e0000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0ec",
+          "mask": "0xff0000",
+          "value": "0x3"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0x780",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc1e8",
+          "mask": "0xffff0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0xc1e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0x32a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc1ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0x7800",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0xc000000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d8",
+          "mask": "0x1e0",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc1c4",
+          "mask": "0x3e0000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc1ec",
+          "mask": "0xff0000",
+          "value": "0x3"
+        },
+        {
+          "address": "0xc9c",
+          "mask": "0xff000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xca0",
+          "mask": "0xff000",
+          "value": "0x0"
+        }
+      ],
+      "MAC_parameter": "2c2a000002000000",
+      "primary_channel": 44,
+      "center_channel": 42,
+      "MAC_writes": [
+        {
+          "operation": "write8",
+          "address": "0xc010",
+          "value": "0x2"
+        },
+        {
+          "operation": "write8",
+          "address": "0xc628",
+          "value": "0x13"
+        },
+        {
+          "operation": "write32",
+          "address": "0xc088",
+          "value": "0x91"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "width_MHz": 80,
+      "bandwidth_enum": 2,
+      "primary_index": 2,
+      "PHY": 0,
+      "status": 1,
+      "writes": [
+        {
+          "address": "0x4974",
+          "mask": "0xc0000000",
+          "value": "0x2"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0x3000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0xf00",
+          "value": "0x2"
+        },
+        {
+          "address": "0x4e30",
+          "mask": "0x4000000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4424",
+          "mask": "0x4",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0x780",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc0e8",
+          "mask": "0xffff0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0xc0e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0x12a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc0ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0x7800",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0xc000000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc0d8",
+          "mask": "0x1e0",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc0c4",
+          "mask": "0x3e0000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0ec",
+          "mask": "0xff0000",
+          "value": "0x3"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0x780",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc1e8",
+          "mask": "0xffff0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0xc1e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0x32a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc1ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0x7800",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0xc000000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d8",
+          "mask": "0x1e0",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc1c4",
+          "mask": "0x3e0000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc1ec",
+          "mask": "0xff0000",
+          "value": "0x3"
+        },
+        {
+          "address": "0xc9c",
+          "mask": "0xff000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xca0",
+          "mask": "0xff000",
+          "value": "0x0"
+        }
+      ],
+      "MAC_parameter": "282a000002000000",
+      "primary_channel": 40,
+      "center_channel": 42,
+      "MAC_writes": [
+        {
+          "operation": "write8",
+          "address": "0xc010",
+          "value": "0x2"
+        },
+        {
+          "operation": "write8",
+          "address": "0xc628",
+          "value": "0x13"
+        },
+        {
+          "operation": "write32",
+          "address": "0xc088",
+          "value": "0xa2"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "width_MHz": 80,
+      "bandwidth_enum": 2,
+      "primary_index": 3,
+      "PHY": 0,
+      "status": 1,
+      "writes": [
+        {
+          "address": "0x4974",
+          "mask": "0xc0000000",
+          "value": "0x2"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0x3000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0xf00",
+          "value": "0x3"
+        },
+        {
+          "address": "0x4e30",
+          "mask": "0x4000000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4424",
+          "mask": "0x4",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0x780",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc0e8",
+          "mask": "0xffff0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0xc0e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0x12a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc0ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0x7800",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0xc000000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc0d8",
+          "mask": "0x1e0",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc0c4",
+          "mask": "0x3e0000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0ec",
+          "mask": "0xff0000",
+          "value": "0x3"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0x780",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc1e8",
+          "mask": "0xffff0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0xc1e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0x32a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc1ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0x7800",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0xc000000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d8",
+          "mask": "0x1e0",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc1c4",
+          "mask": "0x3e0000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc1ec",
+          "mask": "0xff0000",
+          "value": "0x3"
+        },
+        {
+          "address": "0xc9c",
+          "mask": "0xff000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xca0",
+          "mask": "0xff000",
+          "value": "0x0"
+        }
+      ],
+      "MAC_parameter": "302a000002000000",
+      "primary_channel": 48,
+      "center_channel": 42,
+      "MAC_writes": [
+        {
+          "operation": "write8",
+          "address": "0xc010",
+          "value": "0x2"
+        },
+        {
+          "operation": "write8",
+          "address": "0xc628",
+          "value": "0x13"
+        },
+        {
+          "operation": "write32",
+          "address": "0xc088",
+          "value": "0x93"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "width_MHz": 80,
+      "bandwidth_enum": 2,
+      "primary_index": 4,
+      "PHY": 0,
+      "status": 1,
+      "writes": [
+        {
+          "address": "0x4974",
+          "mask": "0xc0000000",
+          "value": "0x2"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0x3000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0xf00",
+          "value": "0x4"
+        },
+        {
+          "address": "0x4e30",
+          "mask": "0x4000000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4424",
+          "mask": "0x4",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0x780",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc0e8",
+          "mask": "0xffff0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0xc0e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0x12a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc0ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0x7800",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0xc000000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc0d8",
+          "mask": "0x1e0",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc0c4",
+          "mask": "0x3e0000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc0ec",
+          "mask": "0xff0000",
+          "value": "0x3"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0x780",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc1e8",
+          "mask": "0xffff0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0xc1e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0x32a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc1ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0x7800",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0xc000000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d8",
+          "mask": "0x1e0",
+          "value": "0x8"
+        },
+        {
+          "address": "0xc1c4",
+          "mask": "0x3e0000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc1ec",
+          "mask": "0xff0000",
+          "value": "0x3"
+        },
+        {
+          "address": "0xc9c",
+          "mask": "0xff000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xca0",
+          "mask": "0xff000",
+          "value": "0x0"
+        }
+      ],
+      "MAC_parameter": "242a000002000000",
+      "primary_channel": 36,
+      "center_channel": 42,
+      "MAC_writes": [
+        {
+          "operation": "write8",
+          "address": "0xc010",
+          "value": "0x2"
+        },
+        {
+          "operation": "write8",
+          "address": "0xc628",
+          "value": "0x13"
+        },
+        {
+          "operation": "write32",
+          "address": "0xc088",
+          "value": "0xa4"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "width_MHz": 20,
+      "bandwidth_enum": 0,
+      "primary_index": 0,
+      "PHY": 0,
+      "status": 1,
+      "writes": [
+        {
+          "address": "0x4974",
+          "mask": "0xc0000000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0x3000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0xf00",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4c00",
+          "mask": "0x10",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4cc4",
+          "mask": "0x10",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4e30",
+          "mask": "0x4000000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4424",
+          "mask": "0x4",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4ab0",
+          "mask": "0x1",
+          "value": "0x1"
+        },
+        {
+          "address": "0xc0e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0xc000000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc0d8",
+          "mask": "0x1e0",
+          "value": "0xf"
+        },
+        {
+          "address": "0xc0c4",
+          "mask": "0x3e0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0x12a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc0ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc1e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0xc000000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d8",
+          "mask": "0x1e0",
+          "value": "0xf"
+        },
+        {
+          "address": "0xc1c4",
+          "mask": "0x3e0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0x32a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc1ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc9c",
+          "mask": "0xff000",
+          "value": "0xff"
+        },
+        {
+          "address": "0xca0",
+          "mask": "0xff000",
+          "value": "0x0"
+        }
+      ],
+      "MAC_parameter": "0606000000000000",
+      "primary_channel": 6,
+      "center_channel": 6,
+      "MAC_writes": [
+        {
+          "operation": "write8",
+          "address": "0xc010",
+          "value": "0x0"
+        },
+        {
+          "operation": "write8",
+          "address": "0xc628",
+          "value": "0x10"
+        },
+        {
+          "operation": "write32",
+          "address": "0xc088",
+          "value": "0x0"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "width_MHz": 40,
+      "bandwidth_enum": 1,
+      "primary_index": 1,
+      "PHY": 0,
+      "status": 1,
+      "writes": [
+        {
+          "address": "0x4974",
+          "mask": "0xc0000000",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0x3000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0xf00",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4c00",
+          "mask": "0x10",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4cc4",
+          "mask": "0x10",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4e30",
+          "mask": "0x4000000",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4424",
+          "mask": "0x4",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4ab0",
+          "mask": "0x1",
+          "value": "0x1"
+        },
+        {
+          "address": "0xc0e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0xc000000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc0d8",
+          "mask": "0x1e0",
+          "value": "0xf"
+        },
+        {
+          "address": "0xc0c4",
+          "mask": "0x3e0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0x12a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc0ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc1e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0xc000000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d8",
+          "mask": "0x1e0",
+          "value": "0xf"
+        },
+        {
+          "address": "0xc1c4",
+          "mask": "0x3e0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0x32a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc1ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc9c",
+          "mask": "0xff000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xca0",
+          "mask": "0xff000",
+          "value": "0x0"
+        }
+      ],
+      "MAC_parameter": "0806000001000000",
+      "primary_channel": 8,
+      "center_channel": 6,
+      "MAC_writes": [
+        {
+          "operation": "write8",
+          "address": "0xc010",
+          "value": "0x1"
+        },
+        {
+          "operation": "write8",
+          "address": "0xc628",
+          "value": "0x10"
+        },
+        {
+          "operation": "write32",
+          "address": "0xc088",
+          "value": "0x1"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "width_MHz": 40,
+      "bandwidth_enum": 1,
+      "primary_index": 2,
+      "PHY": 0,
+      "status": 1,
+      "writes": [
+        {
+          "address": "0x4974",
+          "mask": "0xc0000000",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0x3000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4978",
+          "mask": "0xf00",
+          "value": "0x2"
+        },
+        {
+          "address": "0x4c00",
+          "mask": "0x10",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4cc4",
+          "mask": "0x10",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4e30",
+          "mask": "0x4000000",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4424",
+          "mask": "0x4",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4ab0",
+          "mask": "0x1",
+          "value": "0x1"
+        },
+        {
+          "address": "0xc0e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc0d4",
+          "mask": "0xc000000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc0d8",
+          "mask": "0x1e0",
+          "value": "0xf"
+        },
+        {
+          "address": "0xc0c4",
+          "mask": "0x3e0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0x12a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc0ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc1e4",
+          "mask": "0x30",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d4",
+          "mask": "0xc000000",
+          "value": "0x2"
+        },
+        {
+          "address": "0xc1d8",
+          "mask": "0x1e0",
+          "value": "0xf"
+        },
+        {
+          "address": "0xc1c4",
+          "mask": "0x3e0000",
+          "value": "0x9"
+        },
+        {
+          "address": "0x32a0",
+          "mask": "0xff800000",
+          "value": "0x49"
+        },
+        {
+          "address": "0xc1ec",
+          "mask": "0x6000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xc9c",
+          "mask": "0xff000",
+          "value": "0x0"
+        },
+        {
+          "address": "0xca0",
+          "mask": "0xff000",
+          "value": "0x0"
+        }
+      ],
+      "MAC_parameter": "0406000001000000",
+      "primary_channel": 4,
+      "center_channel": 6,
+      "MAC_writes": [
+        {
+          "operation": "write8",
+          "address": "0xc010",
+          "value": "0x1"
+        },
+        {
+          "operation": "write8",
+          "address": "0xc628",
+          "value": "0x10"
+        },
+        {
+          "operation": "write32",
+          "address": "0xc088",
+          "value": "0x2"
+        }
+      ]
+    }
+  ]
+}
