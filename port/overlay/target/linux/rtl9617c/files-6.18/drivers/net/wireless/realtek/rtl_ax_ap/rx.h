@@ -14,4 +14,5 @@ void rtl_ax_rx_open(struct rtl_ax_rx *rx);
 void rtl_ax_rx_close(struct rtl_ax_rx *rx);
 void rtl_ax_rx_free(struct rtl_ax_rx *rx);
 int rtl_ax_rx_status(struct rtl_ax_rx *rx, char *out, size_t capacity);
+int rtl_ax_rx_data_observation(struct rtl_ax_rx *rx, char *out, size_t capacity);
 #endif

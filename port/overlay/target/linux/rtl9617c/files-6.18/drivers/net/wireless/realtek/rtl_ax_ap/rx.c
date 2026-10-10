@@ -2,6 +2,7 @@
 /* Native RXQ/RPQ ownership and packet dispatch,following the board's
  * hal_check_rxrdy/hal_handle_rxbd_info/update_rxbd/notify_rxdone path. */
 #include <linux/dma-mapping.h>
+#include <linux/crc32.h>
 #include <linux/interrupt.h>
 #include <linux/pci.h>
 #include <linux/slab.h>
@@ -13,6 +14,13 @@
 #define RTL_AX_RX_IRQS (BIT(20) | BIT(19) | BIT(2) | BIT(0))
 #define RTL_AX_IRQ_INDICATION (BIT(29) | BIT(24))
 
+struct rtl_ax_data_observation {
+	u64 sequence;
+	u32 words[8], bytes, info_bytes, payload_offset;
+	u32 computed_fcs, frame_fcs;
+	u8 prefix[64], prefix_bytes;
+};
+
 struct rtl_ax_rx_queue {
 	u8 *descriptors, *buffers;
 	dma_addr_t descriptor_dma, buffer_dma;
@@ -21,6 +29,8 @@ struct rtl_ax_rx_queue {
 	u64 types[16], beacons, wifi_crc_ok, wifi_crc_error;
 	u64 wifi_icv_error, wifi_data_icv_crc_ok;
 	u64 wifi_frames[4][16], wifi_encoding[4], wifi_data_encoding[4];
+	u64 data_fcs_ok[4], data_fcs_error[4];
+	struct rtl_ax_data_observation last_data[4];
 };
 
 struct rtl_ax_rx {
@@ -93,8 +103,32 @@ static bool rtl_ax_rx_drain(struct rtl_ax_rx *rx, unsigned int number)
 				queue->wifi_frames[type][subtype]++;
 				queue->wifi_encoding[encoding]++;
 				if (type == 2 && !(subtype & 4)) {
+					struct rtl_ax_data_observation *last = &queue->last_data[encoding];
+					unsigned long flags;
+					u32 computed = 0, frame = 0;
+
 					queue->wifi_data_encoding[encoding]++;
 					queue->wifi_data_icv_crc_ok += packet.icv_error;
+					if (packet.bytes >= 4) {
+						computed = crc32_le(~0U, packet.payload, packet.bytes - 4) ^ ~0U;
+						frame = rtl_ax_ap_read32(packet.payload + packet.bytes - 4);
+						queue->data_fcs_ok[encoding] += computed == frame;
+						queue->data_fcs_error[encoding] += computed != frame;
+					}
+					/* Snapshot the actual DMA result before Linux submission.
+					 * The short copy shares the IRQ lock with its sysfs reader. */
+					spin_lock_irqsave(&rx->irq_lock, flags);
+					last->sequence = queue->wifi_data_encoding[encoding];
+					memset(last->words, 0, sizeof(last->words));
+					memcpy(last->words, packet.descriptor, packet.long_descriptor ? 32 : 16);
+					last->bytes = packet.bytes;
+					last->info_bytes = packet.driver_info_bytes;
+					last->payload_offset = packet.payload - packet.descriptor;
+					last->computed_fcs = computed;
+					last->frame_fcs = frame;
+					last->prefix_bytes = min_t(unsigned int, packet.bytes, sizeof(last->prefix));
+					memcpy(last->prefix, packet.payload, last->prefix_bytes);
+					spin_unlock_irqrestore(&rx->irq_lock, flags);
 				}
 
 				if ((fc & 0x00ff) == 0x0080 && packet.bytes >= 36)
@@ -312,9 +346,11 @@ int rtl_ax_rx_status(struct rtl_ax_rx *rx, char *out, size_t capacity)
 			type, rx->queues[0].types[type] + rx->queues[1].types[type]);
 	for (type = 0; type < 4; type++) {
 		length += scnprintf(out + length, capacity - length,
-			"80211_encoding=%s CRC_OK=%llu data_not_null=%llu\n", encodings[type],
+			"80211_encoding=%s CRC_OK=%llu data_not_null=%llu data_software_FCS_OK=%llu data_software_FCS_error=%llu\n", encodings[type],
 			rx->queues[0].wifi_encoding[type] + rx->queues[1].wifi_encoding[type],
-			rx->queues[0].wifi_data_encoding[type] + rx->queues[1].wifi_data_encoding[type]);
+			rx->queues[0].wifi_data_encoding[type] + rx->queues[1].wifi_data_encoding[type],
+			rx->queues[0].data_fcs_ok[type] + rx->queues[1].data_fcs_ok[type],
+			rx->queues[0].data_fcs_error[type] + rx->queues[1].data_fcs_error[type]);
 		for (subtype = 0; subtype < 16; subtype++) {
 			u64 packets = rx->queues[0].wifi_frames[type][subtype] +
 				rx->queues[1].wifi_frames[type][subtype];
@@ -323,6 +359,32 @@ int rtl_ax_rx_status(struct rtl_ax_rx *rx, char *out, size_t capacity)
 				length += scnprintf(out + length, capacity - length,
 					"80211_type=%u subtype=%u CRC_OK=%llu\n", type, subtype, packets);
 		}
+	}
+	return length;
+}
+
+int rtl_ax_rx_data_observation(struct rtl_ax_rx *rx, char *out, size_t capacity)
+{
+	struct rtl_ax_data_observation observations[4];
+	unsigned long flags;
+	unsigned int encoding;
+	int length = 0;
+
+	spin_lock_irqsave(&rx->irq_lock, flags);
+	memcpy(observations, rx->queues[0].last_data, sizeof(observations));
+	spin_unlock_irqrestore(&rx->irq_lock, flags);
+	for (encoding = 0; encoding < 4; encoding++) {
+		struct rtl_ax_data_observation *last = &observations[encoding];
+
+		length += scnprintf(out + length, capacity - length,
+			"encoding=%u sequence=%llu bytes=%u driver_info=%u payload_offset=%u computed_FCS=%08x frame_FCS=%08x\n",
+			encoding, last->sequence, last->bytes, last->info_bytes, last->payload_offset,
+			last->computed_fcs, last->frame_fcs);
+		length += scnprintf(out + length, capacity - length,
+			"WD=%08x,%08x,%08x,%08x,%08x,%08x,%08x,%08x prefix=%*phN\n",
+			last->words[0], last->words[1], last->words[2], last->words[3],
+			last->words[4], last->words[5], last->words[6], last->words[7],
+			last->prefix_bytes, last->prefix);
 	}
 	return length;
 }

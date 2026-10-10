@@ -1646,8 +1646,16 @@ static ssize_t radio_rx_show(struct device *dev,
 	return rtl_ax_rx_status(radio->rx, buffer, PAGE_SIZE);
 }
 static DEVICE_ATTR_RO(radio_rx);
+static ssize_t radio_rx_data_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+
+	return rtl_ax_rx_data_observation(radio->rx, buffer, PAGE_SIZE);
+}
+static DEVICE_ATTR_RO(radio_rx_data);
 static struct attribute *rtl_ax_attrs[] = {
-	&dev_attr_radio_state.attr, &dev_attr_radio_rx.attr, &dev_attr_radio_bb.attr,
+	&dev_attr_radio_state.attr, &dev_attr_radio_rx.attr, &dev_attr_radio_rx_data.attr, &dev_attr_radio_bb.attr,
 	&dev_attr_radio_rf.attr, &dev_attr_radio_rf_bank.attr, &dev_attr_radio_rf_analog.attr,
 	&dev_attr_radio_power.attr, &dev_attr_radio_limits.attr, &dev_attr_radio_bb_dm.attr,
 	&dev_attr_radio_physts.attr, &dev_attr_radio_txdiff.attr, &dev_attr_radio_phy_stats.attr,

@@ -1,0 +1,62 @@
+{
+  "native_module_sha256": "530934e9f9605728a19d44ebfa65ab3abbb24ff6b4df2dc7c13dc23e81330eed",
+  "capture": "artifacts/radio-C-data-filter-corrected.pcap",
+  "sha256": "a499c2daaa2b0e66b424fb02a835fdf8f4d5d1e89e3830d3723b503e6587c54d",
+  "filter": "wlan[0] = 0x08 or wlan[0] = 0x88",
+  "frames": [
+    {
+      "bytes": 86,
+      "FC": "0xc188",
+      "type": 2,
+      "subtype": 8,
+      "FCS_valid": true,
+      "radiotap_present": "0x480a"
+    },
+    {
+      "bytes": 130,
+      "FC": "0xc188",
+      "type": 2,
+      "subtype": 8,
+      "FCS_valid": true,
+      "radiotap_present": "0x480a"
+    },
+    {
+      "bytes": 122,
+      "FC": "0xc188",
+      "type": 2,
+      "subtype": 8,
+      "FCS_valid": true,
+      "radiotap_present": "0x480a"
+    },
+    {
+      "bytes": 122,
+      "FC": "0xc188",
+      "type": 2,
+      "subtype": 8,
+      "FCS_valid": true,
+      "radiotap_present": "0x480a"
+    },
+    {
+      "bytes": 86,
+      "FC": "0xc188",
+      "type": 2,
+      "subtype": 8,
+      "FCS_valid": true,
+      "radiotap_present": "0x480a"
+    },
+    {
+      "bytes": 122,
+      "FC": "0xc188",
+      "type": 2,
+      "subtype": 8,
+      "FCS_valid": true,
+      "radiotap_present": "0x480a"
+    }
+  ],
+  "boundary_evidence": "logs/radio-C-data-boundary-before.log and logs/radio-C-data-boundary-after.log",
+  "original_masked_filter_bug": "libpcap 1.10.7 optimizer removes mask before JEQ 128; actual QoS FC byte is 136",
+  "before_Linux_HE_software_FCS_OK": 29,
+  "before_Linux_HE_software_FCS_error": 0,
+  "Linux_to_monitor_counters_matched": true,
+  "AP_TX_association_keys": "pending"
+}

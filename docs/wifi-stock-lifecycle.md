@@ -579,3 +579,13 @@ monitor.h此前把原机RX WD独立的crc_error与icv_error一起映射到Linux 
 1603490完整构建已完成，ram-pcie FIT93ea65bc34cb5b2a06a2ec3d16d370661be24fdc0315406ba26f8e56c686a444，实际kernel0d85ad53e34653a48f379b62a5ce7383b470097e1458f53e96c1efa38efdbe55、DTBed3a18f2b09dbec988883e9a36b47efdae819c82db47864deb3ad1e4eecd23ac，含C thermal输入；与当次独立wifi清单核对通过。此FIT含C TSSI/DPK而不含后续ICV语义修正；硬件启动记录另行保存。
 
 1603490 FIT已实际经U-Boot source脚本校验、解压并RAM重启进入Linux6.18.55。内置rtl_ax_ap绑定两颗PCI设备、未加载live或原厂host模块、taint0。C36两路CW152/150/151/97与131/128/132/79、完成poll均2、12个回填字段与实际原厂算法一致；tracking1/pause0、RF10055=80，两路DPK高字段0且C追加RX_DCK执行。XB6原生TSSI及IQK继续运行。两个实际入站pcap各64帧逐帧FCS全匹配、kernel丢包0；C该64帧窗口只含control/beacon，XB含两个非空data帧，不能把C管理/控制帧验收当作C非空数据完整性证明。XEPON重新注册、DHCP192.168.71.28、公网2/2。记录manifests/radio-c-tssi-builtin-20261010.json、radio-stock-C-alignment-builtin.json和logs/radio-c-tssi-builtin-*。下一步优先对C非空Data在WD→Linux→pcap的差异取实际帧/描述符证据，并对照原厂RX WD解析与主线接收入口；普通TX/AP继续接在这条验证后。
+
+## 2026-10-10 C非空数据接收已用分段证据确认；此前QoS过滤结论纠正
+
+RXQ在原生Linux提交前对真实非空Data计算软件FCS，并保存每种调制最近一帧的原始WD、长度、driver-info、payload offset和64B帧头。实际C HE8/8、随后29/29 FCS匹配、错误0；legacy6/6匹配。实际WD d01e0082/079a4057等对应80B driver-info、32B长WD、offset112；原机hal_parsing_rx_wd_C@278118运行于同一份真实WD，返回长度/offset/driver-info/rate/GI/BW及CRC/ICV与原生值完全一致。driver-info单位16B保留，没有按别的芯片8B猜测改偏移。原机RXSC_INVALID_MACID=256是无缓存解析分支，PCIe HCI1在原解析器入口加4B RXBD。证据manifests/radio-stock-C-real-RX-WD.json及trace_stock_rx_descriptor.py。
+
+同一实际抓包窗口，handed_to_mac80211与mon0接收累计计数均从7725到8634。无过滤incoming pcap512帧全部FCS正确，包含4个HE QoS Data和4个legacy Data；C的数据链路已实际到达用户态。此前“数据缺口”定位不能继续归因Linux丢包，当前窗口对应计数一致。实际512帧pcap的8个非空Data由Mac解析和原始FC/FCS计算共同确认。
+
+板上tcpdump4.99.7/libpcap1.10.7对原掩码OR表达式优化出14条BPF：在type检验后使用JSET240、JEQ128，漏掉第二次AND240；实际QoS FC字节136被JEQ128排除。对完全相同的pcap，板上优化后仅匹配4个legacy Data，-O禁用优化匹配全部8个，Mac亦匹配8个。因此旧35/55秒过滤结果0未证明C不能接收QoS/HE Data。新抓包脚本scripts/capture_wifi_data.sh使用完整合法FC字节8或136，两种Data都匹配；不借这个依赖问题改变原生硬件收帧路径。
+
+实际新过滤命令45秒抓得6个C QoS/HE Data，86..130B，均FCS正确、kernel丢包0；保留目标8但实际只6的原记录。该结果验证本阶段真实入站收帧，未代表完整AP关联、解密、TX或其他带宽。manifests/radio-C-native-data-receive-20261010.json、logs/radio-C-data-filter-optimization.log及对应pcap为当前权威结论。原始失败观察日志和ICV语义修正记录继续保留，ICV计数实际0，不再把它描述成本次过滤失败的原因。
