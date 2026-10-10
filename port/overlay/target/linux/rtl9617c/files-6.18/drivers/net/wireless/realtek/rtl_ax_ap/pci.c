@@ -31,6 +31,7 @@
 #include "environment.h"
 #include "rx-pipeline.h"
 #include "channel.h"
+#include "trx-paths.h"
 #include "xb-channel.h"
 #include "rf-start.h"
 #include "dack.h"
@@ -90,6 +91,9 @@ struct rtl_ax_ap {
 	struct rtl_ax_fw_transport transport;
 	struct rtl_ax_phy_inputs phy;
 	struct rtl_ax_power_inputs power_inputs;
+	struct rtl_ax_power_hardware power_hardware;
+	char power_country[3];
+	int requested_tx_dbm;
 	struct rtl_ax_bb_dm bb_dm;
 	struct rtl_ax_board_cal flash_calibration;
 	struct rtl_ax_dfs dfs;
@@ -126,6 +130,12 @@ struct rtl_ax_ap {
 	int ap_result;
 	DECLARE_BITMAP(station_ids, 128);
 	u64 station_added, station_removed;
+	struct { u8 macid, tid; bool valid; } rx_ba[8];
+	u64 rx_ba_started, rx_ba_stopped;
+	int rx_ba_result;
+	struct ieee80211_tx_queue_params edca[IEEE80211_NUM_ACS];
+	u32 edca_words[IEEE80211_NUM_ACS];
+	u8 edca_valid;
 	u64 mac80211_packets, tx_unimplemented;
 	struct mutex command_mutex;
 	spinlock_t command_lock;
@@ -423,18 +433,55 @@ static int rtl_ax_command(struct rtl_ax_ap *radio, unsigned int buffer_class,
 
 static int rtl_ax_station_tables(struct rtl_ax_ap *radio, unsigned int macid)
 {
-	u8 cmac[68];
+	u8 cmac[68], dmac[68] = {};
+	int ret;
 
 	rtl_ax_station_cmac(cmac, macid);
-	return rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 2, cmac, sizeof(cmac), true);
+	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 2, cmac, sizeof(cmac), true);
+	if (ret)
+		return ret;
+	/* Actual C/XB ops+0x110 selects DCTL V1,68B/function9.
+	 * The generic36B/function1 function is not this board's callback. */
+	rtl_ax_store32(dmac, macid | 0x80);
+	return rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 9, dmac, sizeof(dmac), true);
 }
 
 static int rtl_ax_station_connected_table(struct rtl_ax_ap *radio, unsigned int macid)
 {
 	u8 cmac[68];
 
-	rtl_ax_station_cmac_legacy(cmac, macid, radio->chip == RTL_AX_8852C);
+	rtl_ax_station_cmac_connected(cmac, macid, radio->chip == RTL_AX_8852C, 0);
 	return rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 2, cmac, sizeof(cmac), true);
+}
+
+static int rtl_ax_bb_info_locked(struct rtl_ax_ap *radio, const u8 information[20])
+{
+	unsigned int slot = RTL_AX_H2C_LONG_DATA * RTL_AX_H2C_CLASS_BUFFERS +
+		radio->h2c_available[RTL_AX_H2C_LONG_DATA];
+	int length, ret;
+
+	/* halbb_fill_h2c_cmd@2b107c selects LONG_DATA, category OUTSRC. */
+	length = rtl_ax_command_packet(radio->h2c_packet + slot * RTL_AX_H2C_BUFFER_BYTES,
+		RTL_AX_H2C_BUFFER_BYTES, information, 20, 2, 0, 6, radio->command_sequence,
+		false, false);
+	if (length < 0)
+		return length;
+	ret = rtl_ax_h2c_publish(radio, RTL_AX_H2C_LONG_DATA, length);
+	if (!ret)
+		radio->command_sequence++;
+	return ret;
+}
+
+static int rtl_ax_bb_channel_notify_locked(struct rtl_ax_ap *radio)
+{
+	u8 information[20] = {};
+
+	/* Original halbb_ch_bw_upd,20MHz: update channel and zero TXSC.
+	 * Both physical chips use MAC band0; RF band is a separate field. */
+	rtl_ax_store32(information, 1 | radio->channel.band << 12 |
+		radio->channel.primary << 16 | radio->channel.center << 24);
+	rtl_ax_store32(information + 12, 1);
+	return rtl_ax_bb_info_locked(radio, information);
 }
 
 /* Caller owns command_mutex. Original halrf_fw_ntfy_C@30de08
@@ -871,7 +918,17 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	pci_set_master(radio->pdev);
 	rtl_ax_h2c_start(&radio->io);
 	rtl_ax_rx_open(radio->rx);
-	return 0;
+	/* Actual common HAL-start tail after chip-specific startup. Configure
+	 * normal2T2R PHY-user defaults and notify firmware of encodedNSS1. */
+	rtl_ax_trx_paths_apply(&radio->io, radio->chip);
+	{
+		u8 information[20] = {};
+
+		rtl_ax_store32(information + 8, 0x00001101);
+		ret = rtl_ax_command(radio, RTL_AX_H2C_LONG_DATA, 2, 0, 6,
+			information, sizeof(information), false);
+	}
+	return ret;
 }
 
 static ssize_t radio_state_show(struct device *dev,
@@ -1350,6 +1407,28 @@ static ssize_t radio_rx_pipeline_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_rx_pipeline);
 
+static ssize_t radio_power_hardware_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	unsigned int i;
+	ssize_t length = sysfs_emit(buffer, "applied=%u units=half-dBm regulation=%s country=%s requested_dBm=%d\n",
+		radio->power_hardware.applied, radio->power_hardware.regulation,
+		radio->power_country, radio->requested_tx_dbm);
+
+	mutex_lock(&radio->command_mutex);
+	for (i = 0; i < 43; i++) {
+		u32 address = i < 11 ? 0xd2c0 + i * 4 : i < 31 ? 0xd2ec + (i - 11) * 4 :
+			0xd33c + (i - 31) * 4;
+
+		length += sysfs_emit_at(buffer, length, "register=%04x applied=%08x current=%08x\n",
+			address, radio->power_hardware.readback[i], rtl_ax_read32(radio, address));
+	}
+	mutex_unlock(&radio->command_mutex);
+	return length;
+}
+static DEVICE_ATTR_RO(radio_power_hardware);
+
 static ssize_t radio_channel_show(struct device *dev,
 	struct device_attribute *attr, char *buffer)
 {
@@ -1395,6 +1474,10 @@ static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int chan
 	ret = radio->chip == RTL_AX_8852C ?
 		rtl_ax_c_receive_channel20(&radio->io, &radio->phy, &radio->bb_dm, channel, &radio->channel) :
 		rtl_ax_xb_receive_channel20(&radio->io, &radio->phy, &radio->bb_dm, channel, &radio->channel);
+	if (!ret)
+		ret = rtl_ax_power_apply20(&radio->io, radio->chip, &radio->power_inputs,
+			radio->channel.band, channel, radio->power_country,
+			radio->requested_tx_dbm, &radio->power_hardware);
 	/* Original chl_rfk_trigger_traditional@2f7858 runs RX_DCK after
 	 * each channel change. rx_dck_trigger@2f53e0 selects C RF/0 and
 	 * XB AFE/1; initial calibration cannot replace this channel step. */
@@ -1443,6 +1526,8 @@ static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int chan
 	pci_set_master(radio->pdev);
 	rtl_ax_h2c_start(&radio->io);
 	rtl_ax_rx_open(radio->rx);
+	if (!ret)
+		ret = rtl_ax_bb_channel_notify_locked(radio);
 	if (!ret && radio->chip == RTL_AX_8852C)
 		ret = rtl_ax_rfk_notify_locked(radio);
 	if (!ret && radio->monitor_started)
@@ -1960,6 +2045,42 @@ static ssize_t radio_rx_data_show(struct device *dev,
 	return rtl_ax_rx_data_observation(radio->rx, buffer, PAGE_SIZE);
 }
 static DEVICE_ATTR_RO(radio_rx_data);
+static ssize_t radio_tx_pipeline_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	u32 ofdm = rtl_ax_read32(radio, 0x11a40);
+	u32 cck_mac = rtl_ax_read32(radio, 0x11700);
+	u32 cck_phy = rtl_ax_read32(radio, 0x11704);
+
+	/* Actual halbb_cr_cfg_stat_init CR type2 and statistics functions.
+	 * Counters saturate at65535; the final RF result needs air evidence. */
+	return sysfs_emit(buffer, "OFDM_MAC_TXEN=%u OFDM_PHY_TXON=%u CCK_MAC_TXEN=%u CCK_PHY_TXON=%u "
+		"PHY_TXINFO=%08x,%08x,%08x,%08x\n",
+		ofdm >> 16, ofdm & 65535, cck_mac >> 16, cck_phy & 65535,
+		rtl_ax_read32(radio, 0x11800), rtl_ax_read32(radio, 0x11804),
+		rtl_ax_read32(radio, 0x11808), rtl_ax_read32(radio, 0x1180c));
+}
+static DEVICE_ATTR_RO(radio_tx_pipeline);
+
+static ssize_t radio_edca_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	static const u16 addresses[] = { 0xc30c, 0xc308, 0xc300, 0xc304 };
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	unsigned int ac;
+	int length = 0;
+
+	mutex_lock(&radio->command_mutex);
+	for (ac = 0; ac < IEEE80211_NUM_ACS; ac++)
+		length += sysfs_emit_at(buffer, length, "mac80211_AC=%u valid=%u register=%04x expected=%08x actual=%08x\n",
+			ac, !!(radio->edca_valid & BIT(ac)), addresses[ac], radio->edca_words[ac],
+			rtl_ax_read32(radio, addresses[ac]));
+	mutex_unlock(&radio->command_mutex);
+	return length;
+}
+static DEVICE_ATTR_RO(radio_edca);
+
 static ssize_t radio_tx_show(struct device *dev,
 	struct device_attribute *attr, char *buffer)
 {
@@ -2050,9 +2171,9 @@ static ssize_t radio_port_show(struct device *dev,
 static DEVICE_ATTR_RO(radio_port);
 static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_beacon.attr,
-	&dev_attr_radio_state.attr, &dev_attr_radio_rx.attr, &dev_attr_radio_rx_data.attr, &dev_attr_radio_tx.attr, &dev_attr_radio_role.attr, &dev_attr_radio_port.attr, &dev_attr_radio_bb.attr,
+	&dev_attr_radio_state.attr, &dev_attr_radio_rx.attr, &dev_attr_radio_rx_data.attr, &dev_attr_radio_tx.attr, &dev_attr_radio_tx_pipeline.attr, &dev_attr_radio_edca.attr, &dev_attr_radio_role.attr, &dev_attr_radio_port.attr, &dev_attr_radio_bb.attr,
 	&dev_attr_radio_rf.attr, &dev_attr_radio_rf_bank.attr, &dev_attr_radio_rf_analog.attr,
-	&dev_attr_radio_power.attr,
+	&dev_attr_radio_power.attr, &dev_attr_radio_power_hardware.attr,
 	&dev_attr_radio_limits.attr, &dev_attr_radio_bb_dm.attr,
 	&dev_attr_radio_physts.attr, &dev_attr_radio_txdiff.attr, &dev_attr_radio_phy_stats.attr,
 	&dev_attr_radio_signal.attr, &dev_attr_radio_filter.attr, &dev_attr_radio_dfs.attr,

@@ -156,13 +156,14 @@ for chip in ('8852c', '8192xb'):
         oracle.word(adapter + 88, oracle.symbols['mac' + chip + '_hw_info'][0])
         oracle.uc.mem_write(pinfo, bytes(64))
         # Same AP/band0/port0 role as original rtw_hal_mac_port_init;
-        # 100 TU interval, DTIM1, color0, HIQ window0. Its port0 default is MBID7.
-        oracle.uc.mem_write(params, struct.pack('<IIIBBBxH2xI', 0, 0, 3, 1, mbssid, 0, 100, 0))
+        # rtw_phl_wifi_role_alloc@13af14..13af28 initializes AP interval100,
+        # HIQ window50. rtw_hal_mac_port_init@1aa14c copies role+1268.
+        oracle.uc.mem_write(params, struct.pack('<IIIBBBxH2xI', 0, 0, 3, 1, mbssid, 0, 100, 50))
         status = oracle.call('mac_port_init', adapter, params)
         if status:
             raise RuntimeError((chip, mbssid, status, state['operations'][-6:]))
         programs.append({'chip': chip, 'band': 0, 'port': 0, 'MBSSID_count': mbssid,
-            'interval_TU': 100, 'DTIM': 1, 'original_status': status,
+            'interval_TU': 100, 'DTIM': 1, 'HIQ_window': 50, 'original_status': status,
             'original_port_state': bytes(oracle.uc.mem_read(pinfo, 3)).hex(),
             'operations': list(state['operations']),
             'final_registers': {hex(a): hex(sum(state['registers'].get(a + i, 0) << (8 * i) for i in range(4)))

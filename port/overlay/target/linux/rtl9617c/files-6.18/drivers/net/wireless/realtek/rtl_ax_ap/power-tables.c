@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* TYFZA1 original ByRate and thermal tracking host objects. Hardware power
- * programming belongs to the later channel/calibration path. */
+ * uses the original SCC TPU fields. */
 #include <linux/ctype.h>
 #include <linux/device.h>
 #include <linux/firmware.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 #include "power-tables.h"
+#include "tx-shape.h"
 
 static void rtl_ax_rate_copy(s8 *out, const s8 *values, unsigned int count)
 {
@@ -224,4 +225,102 @@ void rtl_ax_power_inputs_release(struct rtl_ax_power_inputs *inputs)
 	for (stage = 0; stage < RTL_AX_PHY_STAGES; stage++)
 		rtl_ax_limits_release(&inputs->limits[stage]);
 	inputs->ready = false;
+}
+
+static u8 rtl_ax_half_dbm(int quarter_dbm, int max_dbm)
+{
+	/* Same signed /2 toward zero and7-bit TPU encoding as the original;
+	 * cap requested TX power using the Linux channel/user limit. */
+	return (min(quarter_dbm, max_dbm * 4) / 2) & 0x7f;
+}
+
+static int rtl_ax_channel_power(const struct rtl_ax_limits *limits,
+	const struct rtl_ax_limit_key *key, const char *regulation, int *value)
+{
+	s8 limit;
+	u8 shape;
+	int ret = rtl_ax_limit_get(limits, key, regulation, &limit, &shape);
+
+	if (ret == -ENOENT) {
+		/* Original untouched limit slots use-128; its query maps to0. */
+		*value = 0;
+		return 0;
+	}
+	if (ret)
+		return ret;
+	*value = limit == -128 || limit == 127 ? 0 : limit;
+	return 0;
+}
+
+int rtl_ax_power_apply20(const struct rtl_ax_io *io, unsigned int chip,
+	const struct rtl_ax_power_inputs *inputs, unsigned int band, unsigned int channel,
+	const char *country, int max_dbm, struct rtl_ax_power_hardware *state)
+{
+	const struct rtl_ax_power_stage *power = &inputs->stage[RTL_AX_PHY_FEM];
+	const struct rtl_ax_limits *limits = &inputs->limits[RTL_AX_PHY_FEM];
+	const char *regulation = "WW";
+	unsigned int i, nss, bf;
+	u32 offset_mode = 0;
+
+	for (i = 0; i < limits->regulations; i++)
+		if (!strncmp(limits->regulation[i], country, 2) && !limits->regulation[i][2])
+			regulation = limits->regulation[i];
+	strscpy(state->regulation, regulation, sizeof(state->regulation));
+	for (i = 0; i < 12; i++)
+		/* Actual get_power_by_rate fetches CCK from2G on a5G channel. */
+		state->rate[i] = rtl_ax_half_dbm(power->rate[i < 4 ? 0 : band][i], max_dbm);
+	for (nss = 0; nss < 2; nss++) {
+		for (i = 0; i < 12; i++)
+			state->rate[12 + nss * 16 + i] =
+				rtl_ax_half_dbm(power->rate[band][84 + nss * 12 + i], max_dbm);
+		for (i = 0; i < 4; i++)
+			state->rate[24 + nss * 16 + i] =
+				rtl_ax_half_dbm(power->rate[band][132 + nss * 4 + i], max_dbm);
+	}
+	for (i = 0; i < 5; i++)
+		offset_mode |= ((power->rate[i == 4 ? 0 : band][140 + i] / 2) & 15) << (i * 4);
+	memset(state->limit20, 0, sizeof(state->limit20));
+	memset(state->ru20, 0, sizeof(state->ru20));
+	for (nss = 0; nss < 2; nss++) {
+		for (i = 0; i < 4; i++)
+			for (bf = 0; bf < 2; bf++) {
+				struct rtl_ax_limit_key key = { .band = band, .channel = channel,
+					.ntx = nss, .bf = bf, .bandwidth = i == 1,
+					.rate = i < 2 ? 0 : i == 2 ? 1 : 4 };
+				int value, ret;
+
+				ret = rtl_ax_channel_power(limits, &key, regulation, &value);
+				if (ret)
+					return ret;
+				state->limit20[nss * 40 + i * 2 + bf] = rtl_ax_half_dbm(value, max_dbm);
+			}
+		for (i = 0; i < 3; i++) {
+			struct rtl_ax_limit_key key = { .band = band, .channel = channel,
+				.ntx = nss, .bandwidth = i, .rate = 4, .ru = 1 };
+			int value, ret;
+
+			ret = rtl_ax_channel_power(limits, &key, regulation, &value);
+			if (ret)
+				return ret;
+			state->ru20[nss * 24 + i * 8] = rtl_ax_half_dbm(value, max_dbm);
+		}
+	}
+	/* Actual TPU MAC register map:11 by-rate DWORDs,20 limits,12 RU.
+	 * Both C andXB use SCC MAC band0 independent of physicalRF band. */
+	for (i = 0; i < 43; i++) {
+		const u8 *bytes;
+		unsigned int address;
+		u32 word;
+
+		if (i < 11) { address = 0xd2c0 + i * 4; bytes = state->rate + i * 4; }
+		else if (i < 31) { address = 0xd2ec + (i - 11) * 4; bytes = state->limit20 + (i - 11) * 4; }
+		else { address = 0xd33c + (i - 31) * 4; bytes = state->ru20 + (i - 31) * 4; }
+		word = bytes[0] | (u32)bytes[1] << 8 | (u32)bytes[2] << 16 | (u32)bytes[3] << 24;
+		io->write32(io->ctx, address, word);
+		state->readback[i] = io->read32(io->ctx, address);
+	}
+	rtl_ax_update32(io, 0xd204, 0x000fffff, offset_mode);
+	rtl_ax_tx_shape_zero(io, chip);
+	state->applied = true;
+	return 0;
 }

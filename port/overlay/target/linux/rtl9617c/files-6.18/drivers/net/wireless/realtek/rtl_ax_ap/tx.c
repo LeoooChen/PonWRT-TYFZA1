@@ -28,6 +28,7 @@ struct rtl_ax_tx_slot {
 
 struct rtl_ax_tx {
 	struct pci_dev *pdev;
+	struct ieee80211_hw *hw;
 	const struct rtl_ax_io *io;
 	spinlock_t lock;
 	u8 *ring, *pages;
@@ -37,14 +38,19 @@ struct rtl_ax_tx {
 	unsigned int producer[RTL_AX_TX_RINGS];
 	u64 submitted_ring[RTL_AX_TX_RINGS], completed_ring[RTL_AX_TX_RINGS];
 	bool running, paused;
+	bool queues_stopped;
+	unsigned int occupied;
+	u64 queue_stops, queue_wakes;
+	u64 ampdu_submitted, ampdu_completed;
 	u32 scheduler_saved, last_words[14], last_report, last_sequence;
 	u64 submitted, completed, status_count[8], polluted, unmatched, stopped, full;
 };
 
 static void rtl_ax_tx_wd(u8 *out, unsigned int bytes,
-	unsigned int addresses, unsigned int rate, unsigned int sequence,
+	unsigned int addresses, unsigned int rate, unsigned int gi, unsigned int sequence,
 	unsigned int header_bytes, bool no_ack, bool multicast,
-	unsigned int channel, unsigned int qsel, bool tid_ind, unsigned int macid)
+	unsigned int channel, unsigned int qsel, bool tid_ind, unsigned int macid,
+	unsigned int aggregate, unsigned int density)
 {
 	/* Actual txdes_proc_mgnt_C@251e14/XB@265014 PCIe2/SCC:
 	 * MAC band0,port0,MACID0,raw header,fixed rate,WD-info56.
@@ -56,10 +62,12 @@ static void rtl_ax_tx_wd(u8 *out, unsigned int bytes,
 		(no_ack ? BIT(31) : 0));
 	rtl_ax_store32(out + 4, (addresses & 63) << 26);
 	rtl_ax_store32(out + 8, macid << 24 | qsel << 17 | (tid_ind ? BIT(23) : 0) | (bytes & 0x3fff));
-	rtl_ax_store32(out + 12, sequence & 0xfff);
-	rtl_ax_store32(out + 28, BIT(31) | (rate & 0x1ff) << 16);
+	rtl_ax_store32(out + 12, (sequence & 0xfff) | (aggregate ? BIT(12) : 0));
+	/* Actual C/XB DATA-WD@2525ac: GI[27:25], rate[24:16], fixed-rate[31]. */
+	rtl_ax_store32(out + 28, BIT(31) | (gi & 7) << 25 | (rate & 0x1ff) << 16);
 	rtl_ax_store32(out + 32, BIT(9) | BIT(10));
-	rtl_ax_store32(out + 36, multicast ? BIT(11) : 0);
+	rtl_ax_store32(out + 36, (multicast ? BIT(11) : 0) | (aggregate ? (aggregate - 1) & 0xff : 0));
+	rtl_ax_store32(out + 40, aggregate ? (density & 7) << 18 : 0);
 }
 
 static void rtl_ax_tx_checksum(u8 *descriptor)
@@ -159,11 +167,17 @@ void rtl_ax_tx_open(struct rtl_ax_tx *tx)
 	rtl_ax_update32(io, 0x1010, RTL_AX_TX_STOP_MASK, 0);
 	tx->paused = false;
 	tx->running = true;
+	if (tx->queues_stopped && tx->occupied <= RTL_AX_TX_ENTRIES / 2) {
+		tx->queues_stopped = false;
+		tx->queue_wakes++;
+		ieee80211_wake_queues(tx->hw);
+	}
 	spin_unlock_irqrestore(&tx->lock, flags);
 }
 
 int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
-	struct sk_buff *skb, unsigned int rate, unsigned int macid)
+	struct sk_buff *skb, unsigned int rate, unsigned int gi, unsigned int macid,
+	unsigned int aggregate, unsigned int density)
 {
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_hdr *header = (void *)skb->data;
@@ -211,24 +225,34 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	memset(page, 0, RTL_AX_TX_WP_BYTES);
 	addresses = rtl_ax_tx_wp_addresses(page + 56 + RTL_AX_TX_WP_SEQUENCE_BYTES, lower_32_bits(dma), skb->len);
 	length = 56 + RTL_AX_TX_WP_SEQUENCE_BYTES + addresses * RTL_AX_TX_WP_ADDRESS_BYTES;
-	rtl_ax_tx_wd(page, skb->len, addresses, rate,
+	rtl_ax_tx_wd(page, skb->len, addresses, rate, gi,
 		le16_to_cpu(header->seq_ctrl) >> 4, ieee80211_hdrlen(header->frame_control),
 		info->flags & IEEE80211_TX_CTL_NO_ACK, is_multicast_ether_addr(header->addr1),
-		rtl_ax_tx_channels[ring], qsel, tid_indicators[tid], macid);
+		rtl_ax_tx_channels[ring], qsel, tid_indicators[tid], macid, aggregate, density);
 	if (tx->io->read32(tx->io->ctx, 0x8830) & BIT(0))
 		rtl_ax_tx_checksum(page);
 	rtl_ax_tx_wp_sequence(page + 56, id | (tid_indicators[tid] ? BIT(14) : 0));
 	tx->slots[id] = (struct rtl_ax_tx_slot) { .skb = skb, .dma = dma, .bytes = skb->len, .ring = ring };
 	__set_bit(id, tx->pending);
+	tx->hw = hw;
+	tx->occupied++;
 	rtl_ax_txbd(tx->ring + (ring * RTL_AX_TX_ENTRIES + tx->producer[ring]) * 8,
 		lower_32_bits(tx->pages_dma + id * RTL_AX_TX_WP_BYTES), length);
 	dma_wmb();
 	tx->producer[ring] = next;
 	tx->submitted++;
+	tx->ampdu_submitted += !!aggregate;
 	tx->submitted_ring[ring]++;
 	tx->last_sequence = id;
 	memcpy(tx->last_words, page, sizeof(tx->last_words));
 	tx->io->write16(tx->io->ctx, rtl_ax_tx_indices[ring], next);
+	/* WP IDs are shared by all six DMA rings. Pause mac80211 dequeue
+	 * before exhausting them; RPQ release owns the matching wake. */
+	if (tx->occupied >= RTL_AX_TX_ENTRIES - 32 && !tx->queues_stopped) {
+		tx->queues_stopped = true;
+		tx->queue_stops++;
+		ieee80211_stop_queues(hw);
+	}
 	spin_unlock_irqrestore(&tx->lock, flags);
 	return 0;
 unmap:
@@ -262,10 +286,16 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 		slot = tx->slots[id];
 		tx->slots[id].skb = NULL;
 		__clear_bit(id, tx->pending);
+		tx->occupied--;
 		tx->completed++;
 		tx->completed_ring[ring]++;
 		tx->status_count[status]++;
 		tx->polluted += !!(report & BIT(31));
+		if (tx->queues_stopped && tx->running && tx->occupied <= RTL_AX_TX_ENTRIES / 2) {
+			tx->queues_stopped = false;
+			tx->queue_wakes++;
+			ieee80211_wake_queues(hw);
+		}
 		spin_unlock_irqrestore(&tx->lock, flags);
 		dma_unmap_single(&tx->pdev->dev, slot.dma, slot.bytes, DMA_TO_DEVICE);
 		info = IEEE80211_SKB_CB(slot.skb);
@@ -274,6 +304,16 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 			info->flags |= info->flags & IEEE80211_TX_CTL_NO_ACK ?
 				IEEE80211_TX_STAT_NOACK_TRANSMITTED : IEEE80211_TX_STAT_ACK;
 		info->status.rates[0].count = 1;
+		if (info->flags & IEEE80211_TX_CTL_AMPDU) {
+			/* RPQ returns one WP/MPDU at a time, not a PPDU aggregate count.
+			 * Account the actual completed MPDU and its individual result. */
+			info->flags |= IEEE80211_TX_STAT_AMPDU;
+			info->status.ampdu_len = 1;
+			info->status.ampdu_ack_len = !!(info->flags & IEEE80211_TX_STAT_ACK);
+			spin_lock_irqsave(&tx->lock, flags);
+			tx->ampdu_completed++;
+			spin_unlock_irqrestore(&tx->lock, flags);
+		}
 		/* RPQ is dispatched by the same RX worker as received frames.
 		 * Pair its process-context delivery with ieee80211_rx_ni. */
 		ieee80211_tx_status_ni(hw, slot.skb);
@@ -317,6 +357,11 @@ int rtl_ax_tx_status(struct rtl_ax_tx *tx, char *out, size_t capacity)
 		length += scnprintf(out + length, capacity - length, "DMA_channel=%u submitted=%llu completed=%llu producer=%u hardware=%u\n",
 			rtl_ax_tx_channels[i], tx->submitted_ring[i], tx->completed_ring[i], tx->producer[i],
 			(tx->io->read32(tx->io->ctx, rtl_ax_tx_indices[i]) >> 16) & 0x3ff);
+	length += scnprintf(out + length, capacity - length,
+		"queues_stopped=%u queue_stops=%llu queue_wakes=%llu\n",
+		tx->queues_stopped, tx->queue_stops, tx->queue_wakes);
+	length += scnprintf(out + length, capacity - length, "AMPDU_submitted_MPDU=%llu AMPDU_completed_MPDU=%llu\n",
+		tx->ampdu_submitted, tx->ampdu_completed);
 	for (i = 0; i < 8; i++)
 		length += scnprintf(out + length, capacity - length, "TX_status=%u count=%llu\n", i, tx->status_count[i]);
 	for (i = 0; i < 14; i++)

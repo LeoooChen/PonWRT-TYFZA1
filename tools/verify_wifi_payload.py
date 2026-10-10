@@ -58,7 +58,9 @@ try:
             elf = ELFFile(stream)
             table = elf.get_section_by_name('.symtab')
             base = table.get_symbol_by_name('_text')[0]['st_value']
-            for name in ('rtl_ax_probe', 'rtl_ax_h2c_send', 'rtl_ax_wait_firmware', 'rtl_ax_shutdown'):
+            for name in ('rtl_ax_probe', 'rtl_ax_h2c_send', 'rtl_ax_wait_firmware', 'rtl_ax_shutdown',
+                         'rtl_ax_receive_set_channel', 'rtl_ax_ap_conf_tx', 'rtl_ax_monitor_tx',
+                         'rtl_ax_ampdu_action', 'rtl_ax_station_tables', 'rtl_ax_tx_submit', 'rtl_ax_tx_report'):
                 symbol = table.get_symbol_by_name(name)[0]
                 section = elf.get_section(symbol['st_shndx'])
                 start = symbol['st_value'] - section['sh_addr']

@@ -15,15 +15,16 @@ root=Path(__file__).resolve().parents[1]
 module=root/'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
 names=['halrf_set_power_by_rate_to_struct_'+c for c in ('8852c','8192xb')]
 names += ['halrf_get_power_limit_to_struct_20m_'+c for c in ('8852c','8192xb')]
+names += ['halrf_get_power_limit_ru_to_struct_20m_'+c for c in ('8852c','8192xb')]
 names += ['halrf_modify_pwr_table_bitmask','mac_write_pwr_by_rate_reg','mac_write_pwr_ofst_mode',
-    'mac_write_pwr_limit_reg','check_mac_en','halrf_hw_rate_to_pwr_by_rate','halrf_get_dcm_offset_pwr_by_rate']
+    'mac_write_pwr_limit_reg','mac_write_pwr_limit_rua_reg','check_mac_en','halrf_hw_rate_to_pwr_by_rate','halrf_get_dcm_offset_pwr_by_rate']
 rf,hal,adapter,ops,io_ops,platform=[0x6000000+i*0x10000 for i in range(6)]
 queries=[]; writes=[]
 def callback(name,args):
     if name in ('printk',): return 0
     if name == '_rtw_memset':
         oracle.uc.mem_write(args[0],bytes([args[1]&255])*args[2]); return args[0]
-    if name in ('halrf_get_power_by_rate','halrf_get_power_limit'):
+    if name in ('halrf_get_power_by_rate','halrf_get_power_limit','halrf_get_power_limit_ru'):
         extra=[oracle.uc.reg_read(r) for r in (UC_ARM64_REG_X4,UC_ARM64_REG_X5,UC_ARM64_REG_X6,UC_ARM64_REG_X7)]
         tag=len(queries)+1
         queries.append({'tag':tag,'api':name,'arguments':args[1:]+extra})
@@ -42,15 +43,16 @@ oracle.uc.mem_write(hal+905,b'\x24')
 records=[]
 for chip in ('8852c','8192xb'):
     oracle.word(adapter+88,oracle.symbols['mac'+chip+'_hw_info'][0])
-    for kind in ('rate','limit'):
+    for kind in ('rate','limit','ru'):
         queries.clear();writes.clear();oracle.uc.mem_write(hal+920,bytes(180))
-        function=('halrf_set_power_by_rate_to_struct_' if kind=='rate' else 'halrf_get_power_limit_to_struct_20m_')+chip
+        function=({'rate':'halrf_set_power_by_rate_to_struct_', 'limit':'halrf_get_power_limit_to_struct_20m_', 'ru':'halrf_get_power_limit_ru_to_struct_20m_'}[kind])+chip
         oracle.call(function,rf,0)
-        oracle.call('halrf_modify_pwr_table_bitmask',rf,0,1 if kind=='rate' else 2)
+        oracle.call('halrf_modify_pwr_table_bitmask',rf,0,1 if kind=='rate' else 2 if kind=='limit' else 4)
         if kind=='rate':
             oracle.call('mac_write_pwr_by_rate_reg',adapter,0,hal+948)
             oracle.call('mac_write_pwr_ofst_mode',adapter,0,hal+920)
-        else: oracle.call('mac_write_pwr_limit_reg',adapter,0,hal+992)
+        elif kind=='limit': oracle.call('mac_write_pwr_limit_reg',adapter,0,hal+992)
+        else: oracle.call('mac_write_pwr_limit_rua_reg',adapter,0,hal+920)
         for q in queries:
             if kind=='rate':
                 args=q['arguments'];q['native_input_index']=oracle.call('halrf_get_dcm_offset_pwr_by_rate',rf,args[2],args[3],args[4])

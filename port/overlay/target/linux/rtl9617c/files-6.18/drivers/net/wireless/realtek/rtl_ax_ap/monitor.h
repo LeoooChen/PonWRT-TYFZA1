@@ -46,8 +46,19 @@ static int rtl_ax_monitor_config(struct ieee80211_hw *hw, int radio_idx, u32 cha
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
 	int ret;
 
-	if (!(changed & IEEE80211_CONF_CHANGE_CHANNEL))
+	if (changed & IEEE80211_CONF_CHANGE_POWER)
+		radio->requested_tx_dbm = hw->conf.power_level;
+	if (!(changed & IEEE80211_CONF_CHANGE_CHANNEL)) {
+		if ((changed & IEEE80211_CONF_CHANGE_POWER) && radio->channel.configured) {
+			mutex_lock(&radio->command_mutex);
+			ret = rtl_ax_power_apply20(&radio->io, radio->chip, &radio->power_inputs,
+				radio->channel.band, radio->channel.center, radio->power_country,
+				radio->requested_tx_dbm, &radio->power_hardware);
+			mutex_unlock(&radio->command_mutex);
+			return ret;
+		}
 		return 0;
+	}
 	if (hw->conf.chandef.width != NL80211_CHAN_WIDTH_20 &&
 	    hw->conf.chandef.width != NL80211_CHAN_WIDTH_20_NOHT)
 		return -EOPNOTSUPP;
@@ -129,12 +140,50 @@ static void rtl_ax_ap_stop(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	rtl_ax_receive_mode(&radio->io, 0);
 }
 
+static void rtl_ax_edca_apply(struct rtl_ax_ap *radio, struct ieee80211_vif *vif, unsigned int ac)
+{
+	static const u16 addresses[] = { 0xc30c, 0xc308, 0xc300, 0xc304 };
+	const struct ieee80211_tx_queue_params *params = &radio->edca[ac];
+	unsigned int sifs = radio->chip == RTL_AX_8852C ? 16 : 10;
+	unsigned int slot = vif->bss_conf.use_short_slot || radio->chip == RTL_AX_8852C ? 9 : 20;
+
+	/* Actual rtw_hal_mac_set_edca@1b1e04 -> set_hw_edca_param@1ea960:
+	 * SCC MAC band0/WMM0, TXOP[26:16], ECWmax[15:12], ECWmin[11:8], AIFS us[7:0]. */
+	radio->edca_words[ac] = (params->txop & 0x7ff) << 16 |
+		ilog2(params->cw_max + 1) << 12 | ilog2(params->cw_min + 1) << 8 |
+		(sifs + params->aifs * slot);
+	rtl_ax_write32(radio, addresses[ac], radio->edca_words[ac]);
+}
+
+static int rtl_ax_ap_conf_tx(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+	unsigned int link_id, u16 ac, const struct ieee80211_tx_queue_params *params)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+
+	mutex_lock(&radio->command_mutex);
+	radio->edca[ac] = *params;
+	radio->edca_valid |= BIT(ac);
+	rtl_ax_edca_apply(radio, vif, ac);
+	mutex_unlock(&radio->command_mutex);
+	return 0;
+}
+
 static void rtl_ax_ap_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	struct ieee80211_bss_conf *conf, u64 changed)
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	unsigned int ac;
 
-	if (vif->type != NL80211_IFTYPE_AP || !radio->ap_started)
+	if (vif->type != NL80211_IFTYPE_AP)
+		return;
+	if (changed & BSS_CHANGED_ERP_SLOT) {
+		mutex_lock(&radio->command_mutex);
+		for (ac = 0; ac < IEEE80211_NUM_ACS; ac++)
+			if (radio->edca_valid & BIT(ac))
+				rtl_ax_edca_apply(radio, vif, ac);
+		mutex_unlock(&radio->command_mutex);
+	}
+	if (!radio->ap_started)
 		return;
 	if (changed & BSS_CHANGED_BEACON) {
 		radio->ap_result = rtl_ax_ap_template(hw, vif, conf);
@@ -221,6 +270,89 @@ remove:
 	return ret;
 }
 
+static int rtl_ax_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+	struct ieee80211_ampdu_params *params)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	struct rtl_ax_station *station = (void *)params->sta->drv_priv;
+	u8 cmac[68], ba[8];
+	unsigned int i, aggregate = 0;
+	int ret;
+
+	switch (params->action) {
+	case IEEE80211_AMPDU_TX_START:
+		return IEEE80211_AMPDU_TX_START_IMMEDIATE;
+	case IEEE80211_AMPDU_TX_OPERATIONAL:
+		aggregate = min_t(unsigned int, params->buf_size, 64);
+		/* rtw_hal_cfg_tx_ampdu(count64) -> set_hw_ampdu_cfg, band0,
+		 * normal/non-single mode, maximum time165 and number64. */
+		rtl_ax_update8(&radio->io, 0xc604, 7, 0);
+		rtl_ax_update32(&radio->io, 0xc610, 0xff0000ff, 0xa500003f);
+		rtl_ax_station_cmac_connected(cmac, station->macid, radio->chip == RTL_AX_8852C, aggregate);
+		ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 2, cmac, sizeof(cmac), true);
+		if (ret)
+			return ret;
+		WRITE_ONCE(station->tx_aggregation[params->tid], aggregate);
+		dev_info(&radio->pdev->dev, "native TX BA MACID%u TID%u size%u operational\n",
+			station->macid, params->tid, aggregate);
+		return 0;
+	case IEEE80211_AMPDU_TX_STOP_CONT:
+	case IEEE80211_AMPDU_TX_STOP_FLUSH:
+	case IEEE80211_AMPDU_TX_STOP_FLUSH_CONT:
+		WRITE_ONCE(station->tx_aggregation[params->tid], 0);
+		for (i = 0; i < IEEE80211_NUM_TIDS; i++)
+			aggregate = max_t(unsigned int, aggregate, station->tx_aggregation[i]);
+		rtl_ax_station_cmac_connected(cmac, station->macid, radio->chip == RTL_AX_8852C, aggregate);
+		if (!aggregate)
+			rtl_ax_store32(cmac + 48, 0x3ff);
+		ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 2, cmac, sizeof(cmac), true);
+		ieee80211_stop_tx_ba_cb_irqsafe(vif, params->sta->addr, params->tid);
+		return ret;
+	case IEEE80211_AMPDU_RX_START:
+		for (i = 0; i < ARRAY_SIZE(radio->rx_ba); i++)
+			if (!radio->rx_ba[i].valid)
+				break;
+		if (i == ARRAY_SIZE(radio->rx_ba))
+			return -ENOSPC;
+		/* Actual C/XB MAC ops+496 reports extended standard entries8..15.
+		 * ops+504 selects mac_bacam_info@23ca2c: index belongs to word1,
+		 * standard-enable bit8, band0; own Linux allocation retains that ABI. */
+		rtl_ax_store32(ba, 3 | (params->tid & 15) << 4 | station->macid << 8 |
+			(params->ssn & 0xfff) << 20);
+		rtl_ax_store32(ba + 4, (i + 8) << 28 | BIT(8));
+		ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 12, 0, ba, sizeof(ba), true);
+		radio->rx_ba_result = ret;
+		if (ret)
+			return ret;
+		radio->rx_ba[i].macid = station->macid;
+		radio->rx_ba[i].tid = params->tid;
+		radio->rx_ba[i].valid = true;
+		radio->rx_ba_started++;
+		dev_info(&radio->pdev->dev, "native RX BA MACID%u TID%u entry%u SSN%u FW completed\n",
+			station->macid, params->tid, i + 8, params->ssn);
+		return 0;
+	case IEEE80211_AMPDU_RX_STOP:
+		for (i = 0; i < ARRAY_SIZE(radio->rx_ba); i++)
+			if (radio->rx_ba[i].valid && radio->rx_ba[i].macid == station->macid &&
+			    radio->rx_ba[i].tid == params->tid)
+				break;
+		if (i == ARRAY_SIZE(radio->rx_ba))
+			return 0;
+		rtl_ax_store32(ba, 2 | station->macid << 8);
+		rtl_ax_store32(ba + 4, (i + 8) << 28);
+		ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 12, 0, ba, sizeof(ba), true);
+		radio->rx_ba_result = ret;
+		if (ret)
+			return ret;
+		radio->rx_ba[i].valid = false;
+		radio->rx_ba_stopped++;
+		dev_info(&radio->pdev->dev, "native RX BA MACID%u TID%u entry%u removed\n",
+			station->macid, params->tid, i + 8);
+		return 0;
+	}
+	return -EOPNOTSUPP;
+}
+
 static void rtl_ax_monitor_filter(struct ieee80211_hw *hw,
 	unsigned int changed, unsigned int *flags, u64 multicast)
 {
@@ -238,17 +370,29 @@ static void rtl_ax_monitor_tx(struct ieee80211_hw *hw,
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
 	struct ieee80211_hdr *header = (void *)skb->data;
-	int rate_index = IEEE80211_SKB_CB(skb)->control.rates[0].idx;
+	const struct ieee80211_tx_rate *selected = &IEEE80211_SKB_CB(skb)->control.rates[0];
 	unsigned int rate = radio->chip == RTL_AX_8852C ? 4 : 0;
+	unsigned int gi = 0;
 	unsigned int macid = control->sta ? ((struct rtl_ax_station *)control->sta->drv_priv)->macid : 0;
+	unsigned int aggregate = 0, density = 0;
 
-	/* Raw management first: same original builder used by AP beacon,
-	 * probe and association traffic. DATA WD and roles follow this path. */
 	if (skb->len >= 24 && skb->len <= 0x3fff &&
 	    (ieee80211_is_mgmt(header->frame_control) || ieee80211_is_data(header->frame_control))) {
-		if (rate_index >= 0 && rate_index < radio->band.n_bitrates)
-			rate = radio->band.bitrates[rate_index].hw_value;
-		if (!rtl_ax_tx_submit(radio->tx, hw, skb, rate, macid))
+		/* Original RTW_DATA_RATE_MCS0=0x80, GI0=long/GI1=short.
+		 * mac80211's MCS index must not index the legacy bitrate array. */
+		if (selected->flags & IEEE80211_TX_RC_MCS) {
+			rate = 0x80 + selected->idx;
+			gi = !!(selected->flags & IEEE80211_TX_RC_SHORT_GI);
+		} else if (selected->idx >= 0 && selected->idx < radio->band.n_bitrates)
+			rate = radio->band.bitrates[selected->idx].hw_value;
+		if (control->sta && (IEEE80211_SKB_CB(skb)->flags & IEEE80211_TX_CTL_AMPDU)) {
+			unsigned int tid = *ieee80211_get_qos_ctl(header) & IEEE80211_QOS_CTL_TID_MASK;
+			struct rtl_ax_station *station = (void *)control->sta->drv_priv;
+
+			aggregate = READ_ONCE(station->tx_aggregation[tid]);
+			density = control->sta->deflink.ht_cap.ampdu_density;
+		}
+		if (!rtl_ax_tx_submit(radio->tx, hw, skb, rate, gi, macid, aggregate, density))
 			return;
 	} else
 		radio->tx_unimplemented++;
@@ -266,6 +410,8 @@ static const struct ieee80211_ops rtl_ax_monitor_ops = {
 	.start_ap = rtl_ax_ap_start,
 	.stop_ap = rtl_ax_ap_stop,
 	.bss_info_changed = rtl_ax_ap_changed,
+	.conf_tx = rtl_ax_ap_conf_tx,
+	.ampdu_action = rtl_ax_ampdu_action,
 	.sta_add = rtl_ax_station_add,
 	.sta_remove = rtl_ax_station_remove,
 	.configure_filter = rtl_ax_monitor_filter,
@@ -355,6 +501,16 @@ static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 	return 0;
 }
 
+static void rtl_ax_regulatory_notify(struct wiphy *wiphy, struct regulatory_request *request)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(wiphy_to_ieee80211_hw(wiphy));
+
+	mutex_lock(&radio->command_mutex);
+	radio->power_country[0] = request->alpha2[0];
+	radio->power_country[1] = request->alpha2[1];
+	mutex_unlock(&radio->command_mutex);
+}
+
 static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 {
 	static const u16 rates[] = { 10, 20, 55, 110, 60, 90, 120, 180, 240, 360, 480, 540 };
@@ -371,8 +527,16 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	SET_IEEE80211_DEV(hw, &radio->pdev->dev);
 	SET_IEEE80211_PERM_ADDR(hw, radio->flash_calibration.wlan_address);
 	hw->queues = 4;
+	hw->max_rates = 1;
+	hw->max_report_rates = 1;
+	radio->requested_tx_dbm = 20;
+	memcpy(radio->power_country, "00", 3);
+	hw->wiphy->reg_notifier = rtl_ax_regulatory_notify;
 	hw->sta_data_size = sizeof(struct rtl_ax_station);
 	ieee80211_hw_set(hw, RX_INCLUDES_FCS);
+	ieee80211_hw_set(hw, AMPDU_AGGREGATION);
+	hw->max_tx_aggregation_subframes = 64;
+	hw->max_rx_aggregation_subframes = 64;
 	hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_MONITOR) | BIT(NL80211_IFTYPE_AP);
 	hw->wiphy->available_antennas_rx = 3;
 	for (i = 0; i < channels; i++) {
@@ -388,6 +552,15 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	radio->band.n_channels = channels;
 	radio->band.bitrates = radio->rates;
 	radio->band.n_bitrates = ARRAY_SIZE(rates) - first_rate;
+	/* Board 2T2R is configured by the original normal-mode TRX tail.
+	 * Publish the implemented 20MHz HT TX/RX path; BA/AMPDU follows separately. */
+	radio->band.ht_cap.ht_supported = true;
+	radio->band.ht_cap.cap = IEEE80211_HT_CAP_SGI_20;
+	radio->band.ht_cap.ampdu_factor = IEEE80211_HT_MAX_AMPDU_64K;
+	radio->band.ht_cap.mcs.rx_mask[0] = 0xff;
+	radio->band.ht_cap.mcs.rx_mask[1] = 0xff;
+	radio->band.ht_cap.mcs.rx_highest = cpu_to_le16(144);
+	radio->band.ht_cap.mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
 	hw->wiphy->bands[band] = &radio->band;
 	radio->hw = hw;
 	ret = ieee80211_register_hw(hw);
@@ -419,9 +592,11 @@ static ssize_t radio_mac80211_show(struct device *dev,
 	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
 
 	return sysfs_emit(buffer, "registered=%u receive_active=%u handed_to_mac80211=%llu "
-		"TX_unimplemented=%llu AP_started=%u AP_result=%d station_added=%llu station_removed=%llu\n",
+		"TX_unimplemented=%llu AP_started=%u AP_result=%d station_added=%llu station_removed=%llu "
+		"RX_BA_started=%llu RX_BA_stopped=%llu RX_BA_result=%d\n",
 		!!radio->hw, radio->monitor_started, radio->mac80211_packets, radio->tx_unimplemented,
-		radio->ap_started, radio->ap_result, radio->station_added, radio->station_removed);
+		radio->ap_started, radio->ap_result, radio->station_added, radio->station_removed,
+		radio->rx_ba_started, radio->rx_ba_stopped, radio->rx_ba_result);
 }
 static DEVICE_ATTR_RO(radio_mac80211);
 #endif

@@ -12,32 +12,30 @@
 
 struct rtl_ax_station {
 	u8 macid;
+	u8 tx_aggregation[IEEE80211_NUM_TIDS];
 };
 
-/* Actual rtw_hal_add_sta_entry@1c9234, followed through the original
- * C/XB antenna selector and mac_upd_cctl_info. Both board radios are 2T:
- * antenna code0x43 selects A+B and maps the second stream to B.
- * Only the original default-field masks are written. */
+/* Actual C/XB ops+0x118 selects the chip-specific CCTL V1 encoder.
+ * rtw_hal_add_sta_entry sets host antenna fields, but this encoder does
+ * not put those legacy fields into its command. Both actual callbacks
+ * encode only these selected initial masks. */
 static inline void rtl_ax_station_cmac(unsigned char out[68], unsigned int macid)
 {
 	memset(out, 0, 68);
 	rtl_ax_store32(out, macid | 0x80);
-	rtl_ax_store32(out + 24, 0x00430000);
-	rtl_ax_store32(out + 52, 0x00000e00);
-	rtl_ax_store32(out + 56, 0xffff0000);
 	rtl_ax_store32(out + 60, 0x0f0c0000);
 }
 
 /* Original rtw_hal_update_cctrl_tbl -> mac_upd_cctl_info for a legacy
  * AP station: fallback off, port/MBID0, retry limits255 (hardware default),
- * no aggregation/PPE override. Antenna fields retain the default table. */
-static inline void rtl_ax_station_cmac_legacy(unsigned char out[68],
-	unsigned int macid, bool band5g)
+ * no aggregation/PPE override. Wire layout follows the actual V1 ops. */
+static inline void rtl_ax_station_cmac_connected(unsigned char out[68],
+	unsigned int macid, bool band5g, unsigned int aggregate)
 {
 	static const u32 words[17] = {
 		0x80, 0x0600019b, 0x00080000, 0x00002000, 0, 0, 0, 0, 0,
 		0x060001ff, 0xf1ff0800, 0x000060c0, 0x00000300, 0x000010f7,
-		0, 0xc0f20000, 0x30000000,
+		0, 0x000200ff, 0,
 	};
 	unsigned int i;
 
@@ -47,6 +45,12 @@ static inline void rtl_ax_station_cmac_legacy(unsigned char out[68],
 	/* Original RTS fallback is CCK1 on2G and OFDM6 on5G. */
 	if (band5g)
 		rtl_ax_store32(out + 8, words[2] | BIT(30));
+	if (aggregate) {
+		/* Actual rtw_hal_update_cctrl_tbl -> CCTL V1 output for num_ampdu:
+		 * masks/packing differ from the same-named generic CCTL encoder. */
+		rtl_ax_store32(out + 16, (aggregate - 1) & 0xfe);
+		rtl_ax_store32(out + 48, 0x3ff);
+	}
 }
 
 static inline void rtl_ax_peer_cam(unsigned char out[60], unsigned int macid,

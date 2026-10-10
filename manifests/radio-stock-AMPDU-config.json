@@ -1,0 +1,64 @@
+{
+  "scope": "Execute original per-station AMPDU wrapper and CMAC global limit writer.",
+  "original_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "executed_functions": [
+    "rtw_hal_cfg_tx_ampdu",
+    "rtw_hal_mac_set_hw_ampdu_cfg",
+    "set_hw_ampdu_cfg",
+    "check_mac_en"
+  ],
+  "initial_registers": {
+    "c604": "80",
+    "c610": "12340000"
+  },
+  "records": [
+    {
+      "maximum_aggregation": 64,
+      "original_parameter": "0000000000000000000000004000a500",
+      "writes": [
+        {
+          "operation": "write8",
+          "address": "0xc604",
+          "value": "0x80"
+        },
+        {
+          "operation": "write32",
+          "address": "0xc610",
+          "value": "0xa534003f"
+        }
+      ]
+    },
+    {
+      "maximum_aggregation": 128,
+      "original_parameter": "0000000000000000000000008000a500",
+      "writes": [
+        {
+          "operation": "write8",
+          "address": "0xc604",
+          "value": "0x80"
+        },
+        {
+          "operation": "write32",
+          "address": "0xc610",
+          "value": "0xa534007f"
+        }
+      ]
+    },
+    {
+      "maximum_aggregation": 256,
+      "original_parameter": "0000000000000000000000000001a500",
+      "writes": [
+        {
+          "operation": "write8",
+          "address": "0xc604",
+          "value": "0x80"
+        },
+        {
+          "operation": "write32",
+          "address": "0xc610",
+          "value": "0xa53400ff"
+        }
+      ]
+    }
+  ]
+}

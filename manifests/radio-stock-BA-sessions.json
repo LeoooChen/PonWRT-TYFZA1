@@ -1,0 +1,574 @@
+{
+  "scope": "Execute original TYFZA1 RX BA creation/deletion and its actual MAC callback.",
+  "original_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "executed_functions": [
+    "rtw_hal_start_ba_session",
+    "rtw_hal_stop_ba_session",
+    "_hal_update_ba_cam",
+    "rtw_hal_bacam_cfg",
+    "mac_bacam_info",
+    "mac_bacam_avl_std_entry_idx"
+  ],
+  "records": [
+    {
+      "chip": "8852c",
+      "MACID": 1,
+      "action": "start",
+      "TID": 0,
+      "SSN": 123,
+      "buffer_size": 64,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "0301b00700000000"
+        }
+      ],
+      "original_BA_control": "0100000001"
+    },
+    {
+      "chip": "8852c",
+      "MACID": 1,
+      "action": "start",
+      "TID": 6,
+      "SSN": 2047,
+      "buffer_size": 64,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "6301f07f00000000"
+        }
+      ],
+      "original_BA_control": "0101000602"
+    },
+    {
+      "chip": "8852c",
+      "MACID": 1,
+      "action": "stop",
+      "TID": 0,
+      "SSN": 0,
+      "buffer_size": 64,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "0201000000000000"
+        }
+      ],
+      "original_BA_control": "0001ff0601"
+    },
+    {
+      "chip": "8852c",
+      "MACID": 1,
+      "action": "stop",
+      "TID": 6,
+      "SSN": 0,
+      "buffer_size": 64,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "0201000000000000"
+        }
+      ],
+      "original_BA_control": "0000ffff00"
+    },
+    {
+      "chip": "8852c",
+      "MACID": 2,
+      "action": "start",
+      "TID": 0,
+      "SSN": 123,
+      "buffer_size": 64,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "0302b00700000000"
+        }
+      ],
+      "original_BA_control": "0100000001"
+    },
+    {
+      "chip": "8852c",
+      "MACID": 2,
+      "action": "start",
+      "TID": 6,
+      "SSN": 2047,
+      "buffer_size": 64,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "6302f07f00000000"
+        }
+      ],
+      "original_BA_control": "0101000602"
+    },
+    {
+      "chip": "8852c",
+      "MACID": 2,
+      "action": "stop",
+      "TID": 0,
+      "SSN": 0,
+      "buffer_size": 64,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "0202000000000000"
+        }
+      ],
+      "original_BA_control": "0001ff0601"
+    },
+    {
+      "chip": "8852c",
+      "MACID": 2,
+      "action": "stop",
+      "TID": 6,
+      "SSN": 0,
+      "buffer_size": 64,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "0202000000000000"
+        }
+      ],
+      "original_BA_control": "0000ffff00"
+    },
+    {
+      "chip": "8852c",
+      "MACID": 1,
+      "action": "direct_MAC_encoder",
+      "valid": false,
+      "TID": 6,
+      "extended_entry_index": 8,
+      "standard_entry_enabled": false,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "0201000000000080"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "MACID": 1,
+      "action": "direct_MAC_encoder",
+      "valid": true,
+      "TID": 6,
+      "extended_entry_index": 8,
+      "standard_entry_enabled": true,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "6301b00700010080"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "MACID": 1,
+      "action": "direct_MAC_encoder",
+      "valid": false,
+      "TID": 6,
+      "extended_entry_index": 9,
+      "standard_entry_enabled": false,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "0201000000000090"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "MACID": 1,
+      "action": "direct_MAC_encoder",
+      "valid": true,
+      "TID": 6,
+      "extended_entry_index": 9,
+      "standard_entry_enabled": true,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "6301b00700010090"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "MACID": 1,
+      "action": "direct_MAC_encoder",
+      "valid": false,
+      "TID": 6,
+      "extended_entry_index": 15,
+      "standard_entry_enabled": false,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "02010000000000f0"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "MACID": 1,
+      "action": "direct_MAC_encoder",
+      "valid": true,
+      "TID": 6,
+      "extended_entry_index": 15,
+      "standard_entry_enabled": true,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "6301b007000100f0"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "MACID": 1,
+      "action": "start",
+      "TID": 0,
+      "SSN": 123,
+      "buffer_size": 64,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "0301b00700000000"
+        }
+      ],
+      "original_BA_control": "0100000001"
+    },
+    {
+      "chip": "8192xb",
+      "MACID": 1,
+      "action": "start",
+      "TID": 6,
+      "SSN": 2047,
+      "buffer_size": 64,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "6301f07f00000000"
+        }
+      ],
+      "original_BA_control": "0101000602"
+    },
+    {
+      "chip": "8192xb",
+      "MACID": 1,
+      "action": "stop",
+      "TID": 0,
+      "SSN": 0,
+      "buffer_size": 64,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "0201000000000000"
+        }
+      ],
+      "original_BA_control": "0001ff0601"
+    },
+    {
+      "chip": "8192xb",
+      "MACID": 1,
+      "action": "stop",
+      "TID": 6,
+      "SSN": 0,
+      "buffer_size": 64,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "0201000000000000"
+        }
+      ],
+      "original_BA_control": "0000ffff00"
+    },
+    {
+      "chip": "8192xb",
+      "MACID": 2,
+      "action": "start",
+      "TID": 0,
+      "SSN": 123,
+      "buffer_size": 64,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "0302b00700000000"
+        }
+      ],
+      "original_BA_control": "0100000001"
+    },
+    {
+      "chip": "8192xb",
+      "MACID": 2,
+      "action": "start",
+      "TID": 6,
+      "SSN": 2047,
+      "buffer_size": 64,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "6302f07f00000000"
+        }
+      ],
+      "original_BA_control": "0101000602"
+    },
+    {
+      "chip": "8192xb",
+      "MACID": 2,
+      "action": "stop",
+      "TID": 0,
+      "SSN": 0,
+      "buffer_size": 64,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "0202000000000000"
+        }
+      ],
+      "original_BA_control": "0001ff0601"
+    },
+    {
+      "chip": "8192xb",
+      "MACID": 2,
+      "action": "stop",
+      "TID": 6,
+      "SSN": 0,
+      "buffer_size": 64,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "0202000000000000"
+        }
+      ],
+      "original_BA_control": "0000ffff00"
+    },
+    {
+      "chip": "8192xb",
+      "MACID": 1,
+      "action": "direct_MAC_encoder",
+      "valid": false,
+      "TID": 6,
+      "extended_entry_index": 8,
+      "standard_entry_enabled": false,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "0201000000000080"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "MACID": 1,
+      "action": "direct_MAC_encoder",
+      "valid": true,
+      "TID": 6,
+      "extended_entry_index": 8,
+      "standard_entry_enabled": true,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "6301b00700010080"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "MACID": 1,
+      "action": "direct_MAC_encoder",
+      "valid": false,
+      "TID": 6,
+      "extended_entry_index": 9,
+      "standard_entry_enabled": false,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "0201000000000090"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "MACID": 1,
+      "action": "direct_MAC_encoder",
+      "valid": true,
+      "TID": 6,
+      "extended_entry_index": 9,
+      "standard_entry_enabled": true,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "6301b00700010090"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "MACID": 1,
+      "action": "direct_MAC_encoder",
+      "valid": false,
+      "TID": 6,
+      "extended_entry_index": 15,
+      "standard_entry_enabled": false,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "02010000000000f0"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "MACID": 1,
+      "action": "direct_MAC_encoder",
+      "valid": true,
+      "TID": 6,
+      "extended_entry_index": 15,
+      "standard_entry_enabled": true,
+      "commands": [
+        {
+          "buffer": 0,
+          "category": 1,
+          "class": 12,
+          "function": 0,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "6301b007000100f0"
+        }
+      ]
+    }
+  ]
+}

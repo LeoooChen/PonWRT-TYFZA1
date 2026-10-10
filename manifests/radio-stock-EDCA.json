@@ -1,0 +1,180 @@
+{
+  "scope": "Execute the original TYFZA1 EDCA wrapper, address selector and writer.",
+  "original_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "executed_functions": [
+    "rtw_hal_mac_set_edca",
+    "set_hw_edca_param",
+    "get_edca_addr",
+    "check_mac_en"
+  ],
+  "records": [
+    {
+      "chip": "8852c",
+      "AC": "BE",
+      "MAC_band": 0,
+      "WMM": 0,
+      "AIFSN": 3,
+      "SIFS_us": 16,
+      "slot_us": 9,
+      "ECW_min": 4,
+      "ECW_max": 10,
+      "TXOP_32us": 0,
+      "wrapper_packed": "0xa42b",
+      "original_parameter": "000000000000000000000a042b000000",
+      "writes": [
+        {
+          "operation": "write32",
+          "address": "0xc300",
+          "value": "0xa42b"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "AC": "BK",
+      "MAC_band": 0,
+      "WMM": 0,
+      "AIFSN": 7,
+      "SIFS_us": 16,
+      "slot_us": 9,
+      "ECW_min": 4,
+      "ECW_max": 10,
+      "TXOP_32us": 0,
+      "wrapper_packed": "0xa44f",
+      "original_parameter": "000000000100000000000a044f000000",
+      "writes": [
+        {
+          "operation": "write32",
+          "address": "0xc304",
+          "value": "0xa44f"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "AC": "VI",
+      "MAC_band": 0,
+      "WMM": 0,
+      "AIFSN": 2,
+      "SIFS_us": 16,
+      "slot_us": 9,
+      "ECW_min": 3,
+      "ECW_max": 4,
+      "TXOP_32us": 94,
+      "wrapper_packed": "0x5e4322",
+      "original_parameter": "00000000020000005e00040322000000",
+      "writes": [
+        {
+          "operation": "write32",
+          "address": "0xc308",
+          "value": "0x5e4322"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "AC": "VO",
+      "MAC_band": 0,
+      "WMM": 0,
+      "AIFSN": 2,
+      "SIFS_us": 16,
+      "slot_us": 9,
+      "ECW_min": 2,
+      "ECW_max": 3,
+      "TXOP_32us": 47,
+      "wrapper_packed": "0x2f3222",
+      "original_parameter": "00000000030000002f00030222000000",
+      "writes": [
+        {
+          "operation": "write32",
+          "address": "0xc30c",
+          "value": "0x2f3222"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "AC": "BE",
+      "MAC_band": 0,
+      "WMM": 0,
+      "AIFSN": 3,
+      "SIFS_us": 10,
+      "slot_us": 9,
+      "ECW_min": 4,
+      "ECW_max": 10,
+      "TXOP_32us": 0,
+      "wrapper_packed": "0xa425",
+      "original_parameter": "000000000000000000000a0425000000",
+      "writes": [
+        {
+          "operation": "write32",
+          "address": "0xc300",
+          "value": "0xa425"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "AC": "BK",
+      "MAC_band": 0,
+      "WMM": 0,
+      "AIFSN": 7,
+      "SIFS_us": 10,
+      "slot_us": 9,
+      "ECW_min": 4,
+      "ECW_max": 10,
+      "TXOP_32us": 0,
+      "wrapper_packed": "0xa449",
+      "original_parameter": "000000000100000000000a0449000000",
+      "writes": [
+        {
+          "operation": "write32",
+          "address": "0xc304",
+          "value": "0xa449"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "AC": "VI",
+      "MAC_band": 0,
+      "WMM": 0,
+      "AIFSN": 2,
+      "SIFS_us": 10,
+      "slot_us": 9,
+      "ECW_min": 3,
+      "ECW_max": 4,
+      "TXOP_32us": 94,
+      "wrapper_packed": "0x5e431c",
+      "original_parameter": "00000000020000005e0004031c000000",
+      "writes": [
+        {
+          "operation": "write32",
+          "address": "0xc308",
+          "value": "0x5e431c"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "AC": "VO",
+      "MAC_band": 0,
+      "WMM": 0,
+      "AIFSN": 2,
+      "SIFS_us": 10,
+      "slot_us": 9,
+      "ECW_min": 2,
+      "ECW_max": 3,
+      "TXOP_32us": 47,
+      "wrapper_packed": "0x2f321c",
+      "original_parameter": "00000000030000002f0003021c000000",
+      "writes": [
+        {
+          "operation": "write32",
+          "address": "0xc30c",
+          "value": "0x2f321c"
+        }
+      ]
+    }
+  ]
+}

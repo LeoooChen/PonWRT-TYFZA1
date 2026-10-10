@@ -20,5 +20,14 @@ struct rtl_ax_power_inputs {
 };
 int rtl_ax_power_inputs_load(struct device *dev, unsigned int chip,
 			     struct rtl_ax_power_inputs *inputs);
+struct rtl_ax_power_hardware {
+	bool applied;
+	char regulation[3];
+	u8 rate[44], limit20[80], ru20[48];
+	u32 readback[43];
+};
+int rtl_ax_power_apply20(const struct rtl_ax_io *io, unsigned int chip,
+	const struct rtl_ax_power_inputs *inputs, unsigned int band, unsigned int channel,
+	const char *country, int max_dbm, struct rtl_ax_power_hardware *state);
 void rtl_ax_power_inputs_release(struct rtl_ax_power_inputs *inputs);
 #endif

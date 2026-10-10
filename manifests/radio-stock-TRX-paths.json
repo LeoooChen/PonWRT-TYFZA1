@@ -1,0 +1,1960 @@
+{
+  "scope": "Trace TYFZA1's actual rtw_hal_start -> 2T2R BB/PHY-user initialization.",
+  "original_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "executed_functions": [
+    "halbb_ctrl_trx_path",
+    "halbb_ctrl_btg_8852c",
+    "halbb_trxpath_notif",
+    "halbb_path_num",
+    "halbb_trxpath_upd",
+    "halbb_bbinfo_cfg",
+    "halbb_ch_bw_upd",
+    "halbb_ch_bw_notif",
+    "halbb_ctrl_trx_path_8852c",
+    "halbb_ctrl_rx_path_8852c",
+    "halbb_ctrl_tx_path_tmac_8852c",
+    "halbb_ctrl_trx_path_8192xb",
+    "halbb_ctrl_rx_path_8192xb",
+    "halbb_ctrl_tx_path_tmac_8192xb"
+  ],
+  "start_callsite": "rtw_hal_start@1c55ec..1c5618",
+  "inputs": "RFE54,DBCC0,normal mode,capabilities2T2R",
+  "records": [
+    {
+      "chip": "8852c",
+      "TX_path": 4,
+      "TX_NSS": 2,
+      "RX_path": 4,
+      "RX_NSS": 2,
+      "writes": [
+        {
+          "space": "BB",
+          "address": 18808,
+          "mask": 15,
+          "value": 3
+        },
+        {
+          "space": "BB",
+          "address": 18804,
+          "mask": 245760,
+          "value": 3
+        },
+        {
+          "space": "BB",
+          "address": 18804,
+          "mask": 3932160,
+          "value": 3
+        },
+        {
+          "space": "BB",
+          "address": 3352,
+          "mask": 768,
+          "value": 1
+        },
+        {
+          "space": "BB",
+          "address": 3352,
+          "mask": 6291456,
+          "value": 1
+        },
+        {
+          "space": "BB",
+          "address": 3456,
+          "mask": 16320,
+          "value": 8
+        },
+        {
+          "space": "BB",
+          "address": 3456,
+          "mask": 114688,
+          "value": 1
+        },
+        {
+          "space": "BB",
+          "address": 3456,
+          "mask": 58720256,
+          "value": 1
+        },
+        {
+          "space": "BB",
+          "address": 30940,
+          "mask": 3221225472,
+          "value": 1
+        },
+        {
+          "space": "BB",
+          "address": 30940,
+          "mask": 3221225472,
+          "value": 3
+        },
+        {
+          "space": "BB",
+          "address": 3352,
+          "mask": 768,
+          "value": 1
+        },
+        {
+          "space": "BB",
+          "address": 3352,
+          "mask": 6291456,
+          "value": 1
+        },
+        {
+          "space": "BB",
+          "address": 3456,
+          "mask": 114688,
+          "value": 1
+        },
+        {
+          "space": "BB",
+          "address": 3456,
+          "mask": 58720256,
+          "value": 1
+        },
+        {
+          "space": "BB",
+          "address": 2468,
+          "mask": 28,
+          "value": 0
+        },
+        {
+          "space": "BB",
+          "address": 2468,
+          "mask": 28,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56320,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56324,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56328,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56332,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56336,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56340,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56344,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56348,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56352,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56356,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56360,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56364,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56368,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56372,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56376,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56380,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56384,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56388,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56392,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56396,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56400,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56404,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56408,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56412,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56416,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56420,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56424,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56428,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56432,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56436,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56440,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56444,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56448,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56452,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56456,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56460,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56464,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56468,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56472,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56476,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56480,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56484,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56488,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56492,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56496,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56500,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56504,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56508,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56512,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56516,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56520,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56524,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56528,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56532,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56536,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56540,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56544,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56548,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56552,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56556,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56560,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56564,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56568,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56572,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56576,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56580,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56584,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56588,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56592,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56596,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56600,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56604,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56608,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56612,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56616,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56620,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56624,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56628,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56632,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56636,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56640,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56644,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56648,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56652,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56656,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56660,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56664,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56668,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56672,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56676,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56680,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56684,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56688,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56692,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56696,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56700,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56704,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56708,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56712,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56716,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56720,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56724,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56728,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56732,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56736,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56740,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56744,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56748,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56752,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56756,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56760,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56764,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56768,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56772,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56776,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56780,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56784,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56788,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56792,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56796,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56800,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56804,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56808,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56812,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56816,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56820,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56824,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56828,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 55296,
+          "mask": 4294967295,
+          "value": 429496704
+        },
+        {
+          "space": "MAC",
+          "address": 55300,
+          "mask": 4294967295,
+          "value": 858993459
+        },
+        {
+          "space": "MAC",
+          "address": 55304,
+          "mask": 4294967295,
+          "value": 18912051
+        },
+        {
+          "space": "MAC",
+          "address": 55308,
+          "mask": 4294967295,
+          "value": 1227133513
+        },
+        {
+          "space": "MAC",
+          "address": 55312,
+          "mask": 4294967295,
+          "value": 480025673
+        },
+        {
+          "space": "MAC",
+          "address": 55316,
+          "mask": 4294967295,
+          "value": 960051513
+        },
+        {
+          "space": "MAC",
+          "address": 55320,
+          "mask": 4294967295,
+          "value": 960051513
+        },
+        {
+          "space": "MAC",
+          "address": 55324,
+          "mask": 4294967295,
+          "value": 960051513
+        },
+        {
+          "space": "MAC",
+          "address": 55328,
+          "mask": 4294967295,
+          "value": 14649
+        },
+        {
+          "space": "MAC",
+          "address": 55332,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 55336,
+          "mask": 4294967295,
+          "value": 3758096384
+        },
+        {
+          "space": "MAC",
+          "address": 55340,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "H2C",
+          "bytes": 20,
+          "function": 6,
+          "class": 0,
+          "payload": "0000000000000000011100000000000000000000"
+        },
+        {
+          "space": "H2C",
+          "bytes": 20,
+          "function": 6,
+          "class": 0,
+          "payload": "0110242400000000000000000100000000000000"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "TX_path": 4,
+      "TX_NSS": 2,
+      "RX_path": 4,
+      "RX_NSS": 2,
+      "writes": [
+        {
+          "space": "BB",
+          "address": 18808,
+          "mask": 15,
+          "value": 3
+        },
+        {
+          "space": "BB",
+          "address": 18804,
+          "mask": 245760,
+          "value": 3
+        },
+        {
+          "space": "BB",
+          "address": 18804,
+          "mask": 3932160,
+          "value": 3
+        },
+        {
+          "space": "BB",
+          "address": 3352,
+          "mask": 768,
+          "value": 1
+        },
+        {
+          "space": "BB",
+          "address": 3352,
+          "mask": 6291456,
+          "value": 1
+        },
+        {
+          "space": "BB",
+          "address": 3456,
+          "mask": 16320,
+          "value": 4
+        },
+        {
+          "space": "BB",
+          "address": 3456,
+          "mask": 114688,
+          "value": 1
+        },
+        {
+          "space": "BB",
+          "address": 3456,
+          "mask": 58720256,
+          "value": 1
+        },
+        {
+          "space": "BB",
+          "address": 3456,
+          "mask": 16320,
+          "value": 8
+        },
+        {
+          "space": "BB",
+          "address": 30940,
+          "mask": 3221225472,
+          "value": 1
+        },
+        {
+          "space": "BB",
+          "address": 30940,
+          "mask": 3221225472,
+          "value": 3
+        },
+        {
+          "space": "BB",
+          "address": 19272,
+          "mask": 255,
+          "value": 0
+        },
+        {
+          "space": "BB",
+          "address": 19272,
+          "mask": 16711680,
+          "value": 0
+        },
+        {
+          "space": "BB",
+          "address": 19364,
+          "mask": 255,
+          "value": 0
+        },
+        {
+          "space": "BB",
+          "address": 3352,
+          "mask": 768,
+          "value": 1
+        },
+        {
+          "space": "BB",
+          "address": 3352,
+          "mask": 6291456,
+          "value": 1
+        },
+        {
+          "space": "BB",
+          "address": 3456,
+          "mask": 114688,
+          "value": 1
+        },
+        {
+          "space": "BB",
+          "address": 3456,
+          "mask": 58720256,
+          "value": 1
+        },
+        {
+          "space": "BB",
+          "address": 2468,
+          "mask": 28,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56064,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56068,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56072,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56076,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56080,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56084,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56088,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56092,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56096,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56100,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56104,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56108,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56112,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56116,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56120,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56124,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56128,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56132,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56136,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56140,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56144,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56148,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56152,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56156,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56160,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56164,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56168,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56172,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56176,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56180,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56184,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56188,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56192,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56196,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56200,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56204,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56208,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56212,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56216,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56220,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56224,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56228,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56232,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56236,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56240,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56244,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56248,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56252,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56256,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56260,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56264,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56268,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56272,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56276,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56280,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56284,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56288,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56292,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56296,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56300,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56304,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56308,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56312,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56316,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56320,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56324,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56328,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56332,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56336,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56340,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56344,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56348,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56352,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56356,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56360,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56364,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56368,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56372,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56376,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56380,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56384,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56388,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56392,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56396,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56400,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56404,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56408,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56412,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56416,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56420,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56424,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56428,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56432,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56436,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56440,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56444,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56448,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56452,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56456,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56460,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56464,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56468,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56472,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56476,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56480,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56484,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56488,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56492,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56496,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56500,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56504,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56508,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56512,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56516,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56520,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56524,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56528,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56532,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56536,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56540,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56544,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56548,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56552,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56556,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56560,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56564,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56568,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 56572,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "MAC",
+          "address": 55296,
+          "mask": 4294967295,
+          "value": 429496704
+        },
+        {
+          "space": "MAC",
+          "address": 55300,
+          "mask": 4294967295,
+          "value": 858993459
+        },
+        {
+          "space": "MAC",
+          "address": 55304,
+          "mask": 4294967295,
+          "value": 18912051
+        },
+        {
+          "space": "MAC",
+          "address": 55308,
+          "mask": 4294967295,
+          "value": 1227133513
+        },
+        {
+          "space": "MAC",
+          "address": 55312,
+          "mask": 4294967295,
+          "value": 480025673
+        },
+        {
+          "space": "MAC",
+          "address": 55316,
+          "mask": 4294967295,
+          "value": 960051513
+        },
+        {
+          "space": "MAC",
+          "address": 55320,
+          "mask": 4294967295,
+          "value": 960051513
+        },
+        {
+          "space": "MAC",
+          "address": 55324,
+          "mask": 4294967295,
+          "value": 960051513
+        },
+        {
+          "space": "MAC",
+          "address": 55328,
+          "mask": 4294967295,
+          "value": 14649
+        },
+        {
+          "space": "MAC",
+          "address": 55332,
+          "mask": 4294967295,
+          "value": 1984
+        },
+        {
+          "space": "MAC",
+          "address": 55336,
+          "mask": 4294967295,
+          "value": 3758096384
+        },
+        {
+          "space": "MAC",
+          "address": 55340,
+          "mask": 4294967295,
+          "value": 0
+        },
+        {
+          "space": "H2C",
+          "bytes": 20,
+          "function": 6,
+          "class": 0,
+          "payload": "0000000000000000011100000000000000000000"
+        },
+        {
+          "space": "H2C",
+          "bytes": 20,
+          "function": 6,
+          "class": 0,
+          "payload": "0100060600000000000000000100000000000000"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "snapshot": "evidence/wireless-study-20261010-121438",
+  "read_at": "2026-10-10T12:14:40.361528+08:00",
+  "read_documents": [
+    {
+      "path": "docs/15-h2c-firmware-and-command-ownership.md",
+      "sha256": "89ccbc218118599e1f430f79739547ab5450d0f65fd33282b1b55b55f567a2a9"
+    },
+    {
+      "path": "docs/16-netdev-sta-and-ne-invalidation.md",
+      "sha256": "6dcf67fc3accd2dd68dba777a9d9766752932eafb67edfa3e6aefe10b56ab18f"
+    },
+    {
+      "path": "docs/17-c2h-completion-drop-and-sta-reuse.md",
+      "sha256": "14f736eea562c4a1df043bdbcd554bc6097693274337468b4cb9d3fd8e6d4dfe"
+    },
+    {
+      "path": "docs/18-radio-firmware-dispatch-and-rom-boundary.md",
+      "sha256": "3ce418f920b69219db86842e991ce3252b5307552dbefbdbae92f807deea3001"
+    },
+    {
+      "path": "docs/01-findings.md",
+      "sha256": "0ec5e4f719d1e392a2176b83a8ce72185ca88cadf10c3064c93d1fb042d60105"
+    },
+    {
+      "path": "docs/10-open-questions.md",
+      "sha256": "1caf11a19818246d74434ae1247e65d6de35b53d7577149059b26742f612480f"
+    },
+    {
+      "path": "README.md",
+      "sha256": "d1f592ee8651a764cd9641889b9ebb3ca4a920539595959f50b0cd3d6dc1249c"
+    },
+    {
+      "path": "docs/07-sources.md",
+      "sha256": "a155230531b5877b09decc31d4cfe4ce324a8a16b967a00fe6e2b70f707960be"
+    },
+    {
+      "path": "docs/09-reproduction.md",
+      "sha256": "c7f4b556aa2a78ae03aa0ff6d9d75971cd3b8d2a7541a75a680bdb56a85b00a5"
+    }
+  ],
+  "consequences": [
+    "Original C/XB ops select chip-specific DCTL V1, class5/function9/68B",
+    "Retain existing actual-board U2 identities; U1 firmware-dispatch findings are branch-specific",
+    "Next STA removal must include original four-AC PKT_DROP before role removal; completion scope remains to verify"
+  ]
+}

@@ -61,7 +61,9 @@ static inline int rtl_ax_port0_start(const struct rtl_ax_io *io,
 	rtl_ax_port0_field(io, 0xc6a0, 0x3f, 0);
 	rtl_ax_update16(io, 0xc412, 0xff00, 1U << 8);
 	for (i = 0; i <= 7; i++) {
-		io->write8(io->ctx, 0xc590 + i, 0);
+		/* Actual AP role allocation sets hiq_win50@13af24..13af28;
+		 * port_init copies it into each port0 MBID's transmission window. */
+		io->write8(io->ctx, 0xc590 + i, 50);
 		mode = io->read8(io->ctx, 0xca08);
 		if ((mode | 3) != mode)
 			io->write8(io->ctx, 0xca08, mode | 3);

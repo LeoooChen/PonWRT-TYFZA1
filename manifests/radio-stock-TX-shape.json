@@ -1,0 +1,1379 @@
+{
+  "scope": "Trace the real TYFZA1 RFE54 transmit shape functions with explicit IO.",
+  "original_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "executed_functions": [
+    "halbb_set_tx_pow_pattern_shap",
+    "halbb_tx_triangular_shap_cfg_8852c",
+    "halbb_tx_dfir_shap_cck_8852c",
+    "halbb_tx_triangular_shap_cfg_8192xb",
+    "halbb_tx_dfir_shap_cck_8192xb",
+    "halbb_tssi_ctrl_set_bandedge_cfg",
+    "halbb_tssi_ctrl_set_fast_mode_cfg"
+  ],
+  "records": [
+    {
+      "chip": "8852c",
+      "channel": 36,
+      "shape": 0,
+      "modulation": "OFDM",
+      "writes": [
+        {
+          "address": 55580,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55584,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55584,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55584,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55584,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55588,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55588,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55576,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55576,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55576,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55576,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55580,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55580,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55580,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55628,
+          "mask": 3221225472,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55604,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55604,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55608,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55604,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 22776,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 30968,
+          "mask": 2147483648,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "channel": 36,
+      "shape": 0,
+      "modulation": "CCK",
+      "writes": []
+    },
+    {
+      "chip": "8852c",
+      "channel": 36,
+      "shape": 1,
+      "modulation": "OFDM",
+      "writes": [
+        {
+          "address": 55568,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55568,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55568,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55568,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55628,
+          "mask": 3221225472,
+          "value": 1,
+          "space": "MAC"
+        },
+        {
+          "address": 55600,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55600,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55604,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55600,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 22776,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 30968,
+          "mask": 2147483648,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "channel": 36,
+      "shape": 1,
+      "modulation": "CCK",
+      "writes": []
+    },
+    {
+      "chip": "8852c",
+      "channel": 36,
+      "shape": 2,
+      "modulation": "OFDM",
+      "writes": [
+        {
+          "address": 55568,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55568,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55568,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55568,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55628,
+          "mask": 3221225472,
+          "value": 2,
+          "space": "MAC"
+        },
+        {
+          "address": 55600,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55600,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55604,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55600,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 22776,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 30968,
+          "mask": 2147483648,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "channel": 36,
+      "shape": 2,
+      "modulation": "CCK",
+      "writes": []
+    },
+    {
+      "chip": "8852c",
+      "channel": 36,
+      "shape": 3,
+      "modulation": "OFDM",
+      "writes": [
+        {
+          "address": 55568,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55568,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55568,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55568,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55628,
+          "mask": 3221225472,
+          "value": 3,
+          "space": "MAC"
+        },
+        {
+          "address": 55600,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55600,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55604,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55600,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 22776,
+          "mask": 2147483648,
+          "value": 0
+        },
+        {
+          "address": 30968,
+          "mask": 2147483648,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "channel": 36,
+      "shape": 3,
+      "modulation": "CCK",
+      "writes": []
+    },
+    {
+      "chip": "8192xb",
+      "channel": 6,
+      "shape": 0,
+      "modulation": "OFDM",
+      "writes": [
+        {
+          "address": 55580,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55584,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55584,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55584,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55584,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55588,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55588,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55576,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55576,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55576,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55576,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55580,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55580,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55580,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55628,
+          "mask": 3221225472,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55604,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55604,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55608,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55604,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 22212,
+          "mask": 16,
+          "value": 1
+        },
+        {
+          "address": 22124,
+          "mask": 2097152,
+          "value": 1
+        },
+        {
+          "address": 30404,
+          "mask": 16,
+          "value": 1
+        },
+        {
+          "address": 30316,
+          "mask": 2097152,
+          "value": 1
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "channel": 6,
+      "shape": 0,
+      "modulation": "CCK",
+      "writes": [
+        {
+          "address": 17852,
+          "mask": 16777215,
+          "value": 4006911
+        },
+        {
+          "address": 17868,
+          "mask": 16777215,
+          "value": 2732884
+        },
+        {
+          "address": 17872,
+          "mask": 16777215,
+          "value": 1032648
+        },
+        {
+          "address": 17876,
+          "mask": 16777215,
+          "value": 16625747
+        },
+        {
+          "address": 17880,
+          "mask": 16777215,
+          "value": 16281498
+        },
+        {
+          "address": 17856,
+          "mask": 16777215,
+          "value": 16445330
+        },
+        {
+          "address": 17860,
+          "mask": 16777215,
+          "value": 16670668
+        },
+        {
+          "address": 17864,
+          "mask": 16777215,
+          "value": 16769013
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "channel": 6,
+      "shape": 1,
+      "modulation": "OFDM",
+      "writes": [
+        {
+          "address": 55568,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55568,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55568,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55568,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55628,
+          "mask": 3221225472,
+          "value": 1,
+          "space": "MAC"
+        },
+        {
+          "address": 55600,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55600,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55604,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55600,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 22212,
+          "mask": 16,
+          "value": 1
+        },
+        {
+          "address": 22124,
+          "mask": 2097152,
+          "value": 1
+        },
+        {
+          "address": 30404,
+          "mask": 16,
+          "value": 1
+        },
+        {
+          "address": 30316,
+          "mask": 2097152,
+          "value": 1
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "channel": 6,
+      "shape": 1,
+      "modulation": "CCK",
+      "writes": [
+        {
+          "address": 17852,
+          "mask": 16777215,
+          "value": 4031487
+        },
+        {
+          "address": 17868,
+          "mask": 16777215,
+          "value": 2909034
+        },
+        {
+          "address": 17872,
+          "mask": 16777215,
+          "value": 1307140
+        },
+        {
+          "address": 17876,
+          "mask": 16777215,
+          "value": 32912
+        },
+        {
+          "address": 17880,
+          "mask": 16777215,
+          "value": 16285616
+        },
+        {
+          "address": 17856,
+          "mask": 16777215,
+          "value": 16359299
+        },
+        {
+          "address": 17860,
+          "mask": 16777215,
+          "value": 16629690
+        },
+        {
+          "address": 17864,
+          "mask": 16777215,
+          "value": 16373
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "channel": 6,
+      "shape": 2,
+      "modulation": "OFDM",
+      "writes": [
+        {
+          "address": 55568,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55568,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55568,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55568,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55628,
+          "mask": 3221225472,
+          "value": 2,
+          "space": "MAC"
+        },
+        {
+          "address": 55600,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55600,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55604,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55600,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 22212,
+          "mask": 16,
+          "value": 1
+        },
+        {
+          "address": 22124,
+          "mask": 2097152,
+          "value": 1
+        },
+        {
+          "address": 30404,
+          "mask": 16,
+          "value": 1
+        },
+        {
+          "address": 30316,
+          "mask": 2097152,
+          "value": 1
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "channel": 6,
+      "shape": 2,
+      "modulation": "CCK",
+      "writes": [
+        {
+          "address": 17852,
+          "mask": 16777215,
+          "value": 4031487
+        },
+        {
+          "address": 17868,
+          "mask": 16777215,
+          "value": 2909034
+        },
+        {
+          "address": 17872,
+          "mask": 16777215,
+          "value": 1307140
+        },
+        {
+          "address": 17876,
+          "mask": 16777215,
+          "value": 32912
+        },
+        {
+          "address": 17880,
+          "mask": 16777215,
+          "value": 16285616
+        },
+        {
+          "address": 17856,
+          "mask": 16777215,
+          "value": 16359299
+        },
+        {
+          "address": 17860,
+          "mask": 16777215,
+          "value": 16629690
+        },
+        {
+          "address": 17864,
+          "mask": 16777215,
+          "value": 16373
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "channel": 6,
+      "shape": 3,
+      "modulation": "OFDM",
+      "writes": [
+        {
+          "address": 55568,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55568,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55568,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55568,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55572,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55560,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55564,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55628,
+          "mask": 3221225472,
+          "value": 3,
+          "space": "MAC"
+        },
+        {
+          "address": 55600,
+          "mask": 16711680,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55600,
+          "mask": 4278190080,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55604,
+          "mask": 255,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 55600,
+          "mask": 65280,
+          "value": 0,
+          "space": "MAC"
+        },
+        {
+          "address": 22212,
+          "mask": 16,
+          "value": 1
+        },
+        {
+          "address": 22124,
+          "mask": 2097152,
+          "value": 1
+        },
+        {
+          "address": 30404,
+          "mask": 16,
+          "value": 1
+        },
+        {
+          "address": 30316,
+          "mask": 2097152,
+          "value": 1
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "channel": 6,
+      "shape": 3,
+      "modulation": "CCK",
+      "writes": [
+        {
+          "address": 17852,
+          "mask": 16777215,
+          "value": 4031487
+        },
+        {
+          "address": 17868,
+          "mask": 16777215,
+          "value": 2909034
+        },
+        {
+          "address": 17872,
+          "mask": 16777215,
+          "value": 1307140
+        },
+        {
+          "address": 17876,
+          "mask": 16777215,
+          "value": 32912
+        },
+        {
+          "address": 17880,
+          "mask": 16777215,
+          "value": 16285616
+        },
+        {
+          "address": 17856,
+          "mask": 16777215,
+          "value": 16359299
+        },
+        {
+          "address": 17860,
+          "mask": 16777215,
+          "value": 16629690
+        },
+        {
+          "address": 17864,
+          "mask": 16777215,
+          "value": 16373
+        }
+      ]
+    }
+  ]
+}

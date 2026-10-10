@@ -1,54 +1,148 @@
 {
   "date": "2026-10-10",
-  "scope": "native AP work on actual TYFZA1, plus user scanning/throughput observations",
+  "captured_at": "2026-10-10T12:59:53.983434+08:00",
+  "scope": "native TYFZA1 dualband 20MHz 2SS HT/WMM/BA, actual board and user throughput",
   "original_host_module_loaded": false,
-  "runtime_firmware": "original WCPU0.27.84.3 and board RF/calibration data",
-  "XB_live_module_sha256": "f0595eefe2e5fc54672ff75effc2468f46095130dbde2589801a724ed712e186",
-  "C_live_module_sha256": "7efa0340faf9c9ae3b1f62aeca58e9e063bb7291665776379cb5204223fd6685",
-  "verified_2g": [
-    "user observed SSID",
-    "actual WPA2 four-way handshake",
-    "authorized station",
-    "bridged data and user upstream speed test"
+  "runtime_firmware": "original matching C/XB U2 WCPU firmware and board data",
+  "C_live_module": {
+    "path": "artifacts/live-radio-ap17c/rtl_ax_ap_live_c.ko",
+    "sha256": "2f22e0583ac78b5f940f3ee6b95f287e7bcbd324a6cf7675cd3683946dbd352c",
+    "bytes": 1027080
+  },
+  "XB_live_module": {
+    "path": "artifacts/live-radio-ap17xb/rtl_ax_ap_live_xb.ko",
+    "sha256": "56f01a384603aea308512f60df16fb40dcb522ec9894ac433e12d339ae1860e1",
+    "bytes": 1027096
+  },
+  "user_throughput_Mbps": {
+    "5GHz": {
+      "download": 50,
+      "upload": 20
+    },
+    "2.4GHz": {
+      "download": 50,
+      "upload": 20
+    }
+  },
+  "user_access_link_upload_Mbps": 20,
+  "observations": "5GHz throughput reported across AP16/17 iteration; 2.4GHz50/20 explicitly after AP17XB deployment",
+  "physical_mode": "20MHz HT,MCS0..15,two streams,short GI,WMM; client TX144.4Mbps verified",
+  "verified": [
+    "both SSIDs visible and WPA2 connections",
+    "actual HT DATA FCS",
+    "EDCA expected/actual register equality",
+    "TX BA negotiation and per-MPDU RPQ release",
+    "RX BA done-ACK creation/deletion",
+    "HIQ window50 drains formerly pending WP",
+    "upstream DHCP/XEPON and public connectivity"
   ],
-  "user_initial_throughput_Mbps": 5,
-  "maximum_advertised_modes": "legacy,20MHz,WMM off",
-  "verified_5g": [
-    "user saw SSID on one AP04 restart",
-    "actual authentication/association requests"
+  "XB_AP17_board": {
+    "AMPDU_submitted_MPDU": 12468,
+    "AMPDU_completed_MPDU": 12468,
+    "HT_DATA_FCS_OK": 14804,
+    "HT_DATA_FCS_error": 0,
+    "pending": 0,
+    "full": 0,
+    "RDU": 0,
+    "station_TX_failed": 54,
+    "station_TX_packets": 12479,
+    "RX_BA_sessions": 2
+  },
+  "full_wifi_port_complete": false,
+  "remaining": [
+    "40/80MHz RF and TPU alignment",
+    "VHT/HE TX and capabilities",
+    "complete TIM/power-save lifecycle",
+    "hardware crypto and station queue teardown",
+    "wireless NE forwarding",
+    "built-in FIT RAM reboot verification"
   ],
-  "5g_completed_wpa2": false,
-  "5g_stable_scan": false,
-  "wifi_port_complete": false,
-  "power_20MHz_draft_enabled_in_default_source": false,
   "evidence": {
-    "radio-ap04-connected.txt": {
-      "sha256": "a6f8e536aa13e62c65b25a6f0b36e2087bf9719d23974b81a77da82263a7518e",
-      "bytes": 2696
+    "radio-ap13c-dualband-connected.txt": {
+      "sha256": "33f8e18327e9bdafcbdaaae31c6458f48721c1b5259baa9bc8e825283952ca33",
+      "bytes": 4213
     },
-    "radio-ap05-power-regression.txt": {
-      "sha256": "3e5f880345275224a143d1c04e54a65dff91d2dd4845ac69ccdccfd8c4868e6c",
-      "bytes": 5407
+    "radio-ap14c-HT-connected.txt": {
+      "sha256": "e59aa6acee5ef074a5f2e35cee5bff212ca35d5ff48e893d72580d647f558fb7",
+      "bytes": 2464
     },
-    "radio-ap06-not-visible.txt": {
-      "sha256": "bae4282230e1b6fc94fb43435502b68b8493a7244024a5d950086d1c849e85e9",
-      "bytes": 1992
+    "radio-ap14c-speed16-ap15xb-start.txt": {
+      "sha256": "a78c6e7e4ff5193d14f21d44261c5b1405859b0ef4dedade9e13b7fe0e53246b",
+      "bytes": 2460
     },
-    "radio-ap07-mac-scan2.txt": {
-      "sha256": "5aff60b01a4d696fab46ba73bde99d7330fde66c282de91b32d86394e0db20b4",
-      "bytes": 197
+    "radio-ap16c-first.txt": {
+      "sha256": "0d1663884afa08fbd3b211f0de13132a3206dfb8243bbb3693ff667bd2250c06",
+      "bytes": 4700
     },
-    "radio-ap07-channel44-mac-scan.txt": {
-      "sha256": "5aff60b01a4d696fab46ba73bde99d7330fde66c282de91b32d86394e0db20b4",
-      "bytes": 197
+    "radio-ap17c-BA-first.txt": {
+      "sha256": "41179ff00e22a3478779489aabaf58141f03c1f3168ad66d00d63999a862f0d8",
+      "bytes": 2546
     },
-    "radio-ap09c-mac-scan.txt": {
-      "sha256": "6f16b08c5f79a43c8946ee83f6285fb577d8eb79ac9bee481b4d7ad5a9b2922c",
-      "bytes": 197
+    "radio-HT-BA-before-XB17.txt": {
+      "sha256": "72e03ee1cad8b359f2c8aa50b4656101f5e4fa321ceeadca4a7f0d20b9dc3567",
+      "bytes": 9379
     },
-    "radio-ap09c-XB07-state.txt": {
-      "sha256": "5e7e35fef3ae0ea00f36a6e2e84364740d2debf7a737b02af1ab66acacf7a9c5",
-      "bytes": 4937
+    "radio-ap15xb-HT-connected.txt": {
+      "sha256": "dfbe245fdd387e8d4428a9bc3ab5ecf0a2d49feeabf6829669e1d7093ddcf901",
+      "bytes": 4046
+    },
+    "radio-ap17-dualband-50Mbps.txt": {
+      "sha256": "0876b882e02abb57d138fa234036ef103b90a16a4cf1f1bfc2b395c73ba13154",
+      "bytes": 10705
+    }
+  },
+  "historical_AP01_AP09": {
+    "date": "2026-10-10",
+    "scope": "native AP work on actual TYFZA1, plus user scanning/throughput observations",
+    "original_host_module_loaded": false,
+    "runtime_firmware": "original WCPU0.27.84.3 and board RF/calibration data",
+    "XB_live_module_sha256": "f0595eefe2e5fc54672ff75effc2468f46095130dbde2589801a724ed712e186",
+    "C_live_module_sha256": "7efa0340faf9c9ae3b1f62aeca58e9e063bb7291665776379cb5204223fd6685",
+    "verified_2g": [
+      "user observed SSID",
+      "actual WPA2 four-way handshake",
+      "authorized station",
+      "bridged data and user upstream speed test"
+    ],
+    "user_initial_throughput_Mbps": 5,
+    "maximum_advertised_modes": "legacy,20MHz,WMM off",
+    "verified_5g": [
+      "user saw SSID on one AP04 restart",
+      "actual authentication/association requests"
+    ],
+    "5g_completed_wpa2": false,
+    "5g_stable_scan": false,
+    "wifi_port_complete": false,
+    "power_20MHz_draft_enabled_in_default_source": false,
+    "evidence": {
+      "radio-ap04-connected.txt": {
+        "sha256": "a6f8e536aa13e62c65b25a6f0b36e2087bf9719d23974b81a77da82263a7518e",
+        "bytes": 2696
+      },
+      "radio-ap05-power-regression.txt": {
+        "sha256": "3e5f880345275224a143d1c04e54a65dff91d2dd4845ac69ccdccfd8c4868e6c",
+        "bytes": 5407
+      },
+      "radio-ap06-not-visible.txt": {
+        "sha256": "bae4282230e1b6fc94fb43435502b68b8493a7244024a5d950086d1c849e85e9",
+        "bytes": 1992
+      },
+      "radio-ap07-mac-scan2.txt": {
+        "sha256": "5aff60b01a4d696fab46ba73bde99d7330fde66c282de91b32d86394e0db20b4",
+        "bytes": 197
+      },
+      "radio-ap07-channel44-mac-scan.txt": {
+        "sha256": "5aff60b01a4d696fab46ba73bde99d7330fde66c282de91b32d86394e0db20b4",
+        "bytes": 197
+      },
+      "radio-ap09c-mac-scan.txt": {
+        "sha256": "6f16b08c5f79a43c8946ee83f6285fb577d8eb79ac9bee481b4d7ad5a9b2922c",
+        "bytes": 197
+      },
+      "radio-ap09c-XB07-state.txt": {
+        "sha256": "5e7e35fef3ae0ea00f36a6e2e84364740d2debf7a737b02af1ab66acacf7a9c5",
+        "bytes": 4937
+      }
     }
   }
 }
