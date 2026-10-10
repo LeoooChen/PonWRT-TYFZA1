@@ -1,0 +1,393 @@
+{
+  "at": "2026-10-10T17:50:30.765546+08:00",
+  "stage": "wired LAN to XEPON hardware forwarding; preserve existing Wi-Fi for GPT",
+  "implemented_LAN_ports": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "RAM_register_verified_LAN_ports": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "physical_throughput_verified_LAN_ports": [
+    3
+  ],
+  "remaining_acceptance": [
+    "boot new firmware when GPT has an independent network",
+    "physical cable tests on LAN0, LAN1 and LAN2"
+  ],
+  "production_source_sha256": "c0e0de5074ba67dc6f0c2e0d25e6221a60666126a145187e95dc7b75c5a307ef",
+  "fixes": [
+    "admit and restore all four LAN RX controls",
+    "preserve physical LAN LSPID through STG0 and classifier, including CPU misses",
+    "send post-NAT LAN0..3 directly to L2TM rather than a second L2 lookup"
+  ],
+  "connected_port": {
+    "netdev": "eth3",
+    "Mac_interface": "en5",
+    "link_Mbps": 1000,
+    "duplex": "full"
+  },
+  "benchmark_path": {
+    "program": "tools/mac_lan_speedtest.c",
+    "launcher": "independent one-shot LaunchAgent, removed after tests",
+    "real_DNS_pinned": true,
+    "IP_BOUND_IF": "en5",
+    "explicit_curl_proxy": "disabled",
+    "Clash_and_Antify_configuration_changed": false,
+    "proof": "en5 capture, router conntrack with real destination and HW_OFFLOAD, completed HTTPS transfer"
+  },
+  "excluded_earlier_results": [
+    "lan-real-*",
+    "lan-offload-real-*",
+    "ordinary Codex child socket benchmarks without en5 and router path evidence"
+  ],
+  "baseline": {
+    "hardware_enabled_download": {
+      "direction": "download",
+      "IP_BOUND_IF": 28,
+      "local": "192.168.1.172",
+      "remote": "202.38.95.110",
+      "bytes": 4227072,
+      "seconds": 25.033763,
+      "Mbps": 1.351,
+      "http_code": 206,
+      "curl_result": 28
+    },
+    "hardware_disabled_download": {
+      "direction": "download",
+      "IP_BOUND_IF": 28,
+      "local": "192.168.1.172",
+      "remote": "202.38.95.110",
+      "bytes": 104857600,
+      "seconds": 9.60927,
+      "Mbps": 87.297,
+      "http_code": 206,
+      "curl_result": 0
+    }
+  },
+  "final_concurrent_transfer": {
+    "download": {
+      "direction": "download",
+      "IP_BOUND_IF": 28,
+      "local": "192.168.1.172",
+      "remote": "202.38.95.110",
+      "bytes": 104857600,
+      "seconds": 9.162278,
+      "Mbps": 91.556,
+      "http_code": 206,
+      "curl_result": 0,
+      "started_monotonic": 203213.584573,
+      "finished_monotonic": 203222.747037
+    },
+    "upload": {
+      "direction": "upload",
+      "IP_BOUND_IF": 28,
+      "local": "192.168.1.172",
+      "remote": "202.119.32.33",
+      "bytes": 16777216,
+      "seconds": 13.018318,
+      "Mbps": 10.31,
+      "http_code": 200,
+      "curl_result": 0,
+      "started_monotonic": 203213.584659,
+      "finished_monotonic": 203226.603167
+    }
+  },
+  "packet_and_CPU_analysis": {
+    "lan-final-cpu-lan.pcap": {
+      "targets": {
+        "202.119.32.33": {
+          "packets": 6,
+          "TCP_payload_bytes": 323,
+          "control_FIN_SYN_RST": 4,
+          "data_packets": 1
+        },
+        "202.38.95.110": {
+          "packets": 6,
+          "TCP_payload_bytes": 24,
+          "control_FIN_SYN_RST": 5,
+          "data_packets": 1
+        }
+      },
+      "MAC_pairs": [
+        {
+          "destination": "00:50:c2:01:02:00",
+          "source": "00:e0:4c:16:74:b0",
+          "packets": 8
+        },
+        {
+          "destination": "00:e0:4c:16:74:b0",
+          "source": "00:50:c2:01:02:00",
+          "packets": 4
+        }
+      ]
+    },
+    "lan-final-cpu-pon.pcap": {
+      "targets": {
+        "202.119.32.33": {
+          "packets": 6,
+          "TCP_payload_bytes": 323,
+          "control_FIN_SYN_RST": 4,
+          "data_packets": 1
+        },
+        "202.38.95.110": {
+          "packets": 6,
+          "TCP_payload_bytes": 24,
+          "control_FIN_SYN_RST": 5,
+          "data_packets": 1
+        }
+      },
+      "MAC_pairs": [
+        {
+          "destination": "7c:c9:26:ef:07:c9",
+          "source": "98:1e:89:61:68:d0",
+          "packets": 8
+        },
+        {
+          "destination": "98:1e:89:61:68:d0",
+          "source": "7c:c9:26:ef:07:c9",
+          "packets": 4
+        }
+      ]
+    },
+    "lan-final-en5.pcap": {
+      "targets": {
+        "202.119.32.33": {
+          "packets": 19677,
+          "TCP_payload_bytes": 19244620,
+          "control_FIN_SYN_RST": 4,
+          "data_packets": 14087
+        },
+        "202.38.95.110": {
+          "packets": 139661,
+          "TCP_payload_bytes": 105706598,
+          "control_FIN_SYN_RST": 5,
+          "data_packets": 77304
+        }
+      },
+      "MAC_pairs": [
+        {
+          "destination": "00:50:c2:01:02:00",
+          "source": "00:e0:4c:16:74:b0",
+          "packets": 76449
+        },
+        {
+          "destination": "00:e0:4c:16:74:b0",
+          "source": "00:50:c2:01:02:00",
+          "packets": 82889
+        }
+      ]
+    },
+    "CPU": {
+      "basis": "/proc/stat over first through last HW_OFFLOAD sample; includes active Wi-Fi, SSH and capture",
+      "sample_start": 2,
+      "sample_end": 14,
+      "sample_seconds": 12.24,
+      "busy_percent": {
+        "cpu": 1.797,
+        "cpu0": 3.676,
+        "cpu1": 0.49,
+        "cpu2": 2.288,
+        "cpu3": 0.735
+      },
+      "after_test_all_core_busy_percent": 1.117
+    }
+  },
+  "application_bulk_on_CPU": false,
+  "CPU_edge_packets": "TLS ClientHello323 bytes before flow setup, TCP handshakes and closes,24-byte TLS record with FIN",
+  "WiFi_configuration_changed": false,
+  "device_rebooted": false,
+  "NAND_written": false,
+  "RAM_fix": {
+    "source": "tools/live_fe_lan_fix.c",
+    "source_sha256": "6177e884d2cab2ef24ee397fb1e0f12f21a50dffba9794a0ee7e7f5c99194944",
+    "module_sha256": "4059e20475454972bfc7134a02dde6e22943cb272f61bb90052ff5ba0757ac4c",
+    "loaded": true,
+    "scope": "current prepared FE, reversible; does not replace the new firmware lifecycle"
+  },
+  "tests": {
+    "four_LAN_lifecycle": {
+      "production_source_sha256": "c0e0de5074ba67dc6f0c2e0d25e6221a60666126a145187e95dc7b75c5a307ef",
+      "LAN_ports": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "exact_enable_disable_cycles": 3,
+      "failed_prepare_admits_no_LAN": true,
+      "physical_LSPID_preserved": true,
+      "post_PE_LAN_output": "NI demux3 to L2TM; upper selectors preserved",
+      "sanitizers": [
+        "ASan",
+        "UBSan"
+      ],
+      "hardware_verified_by_this_test": false
+    },
+    "old_revision_07f2567_fails_same_contract": true,
+    "NAT_IPv6_parser_vectors": 1028,
+    "VLAN_parser_vectors": 288,
+    "EIF_capacity_flows": 4096,
+    "statistics_and_shared_release_passed": true
+  },
+  "build": {
+    "artifact": "artifacts/full-pon-four-lan-fe01-6.18.55",
+    "unit": "ponwrt-tyfza1-lan-20261010-172604.service",
+    "ExecMainStatus": 0,
+    "selected_FIT": "artifacts/full-pon-four-lan-fe01-6.18.55/ram-pcie/image.itb",
+    "selected_FIT_sha256": "49c48e9011a978fd7d7fc241e8c72014410dc65028eba57fd98d643ffcbf057c",
+    "FE_code_verification": {
+      "FIT_sha256": "49c48e9011a978fd7d7fc241e8c72014410dc65028eba57fd98d643ffcbf057c",
+      "production_source_sha256": "c0e0de5074ba67dc6f0c2e0d25e6221a60666126a145187e95dc7b75c5a307ef",
+      "built_source_matches_production": true,
+      "selected_FIT_FE_code_matches_linked_ELF": [
+        {
+          "function": "rtl_fe_enable",
+          "bytes": 204,
+          "selected_FIT_offset": 5386540,
+          "SHA256": "d1ab5ca794f88ab36ed96423c3b4f861a88a31857920341ecd002d3807886b01"
+        },
+        {
+          "function": "rtl_fe_disable",
+          "bytes": 32,
+          "selected_FIT_offset": 5386752,
+          "SHA256": "bb89f5b4125b59d365f2559491bb34ff9cc0496d7e20e20f85f556acafbe5d3b"
+        },
+        {
+          "function": "fe_restore",
+          "bytes": 556,
+          "selected_FIT_offset": 5378016,
+          "SHA256": "7ea9b6ec46459c2e405b7bcfdc80912bcedb51a56944d41db960d43c59c58b83"
+        },
+        {
+          "function": "fe_prepare",
+          "bytes": 1860,
+          "selected_FIT_offset": 5383488,
+          "SHA256": "365f694e1d6f5625b27d19909a3622c9df283a678d125de9c280303507e74c14"
+        },
+        {
+          "function": "rtl_fe_disable.part.0",
+          "bytes": 256,
+          "selected_FIT_offset": 5378572,
+          "SHA256": "704a6031bd4242a3b712eb60cb6f9f2dfa689a3b9b292b03d4856096b3906968"
+        }
+      ],
+      "boot_verified": false,
+      "linked_ELF_sha256": "e7955963e801eb4fee1e15d4067bc064bbe1feeb0d18db0f2c1ef68c4dd36f36"
+    },
+    "wifi_management_verification": "artifacts/full-pon-four-lan-fe01-6.18.55/wifi-input-verification.json",
+    "PON_payload_verification": "logs/lan-four-port-pon-payload.json",
+    "boot_verified": false
+  },
+  "evidence_SHA256": {
+    "logs/lan-final-download.json": "2d5b95c26836dac7adda82011f0592bf5e9e50b5f7237916e9c9f1a28f4455a7",
+    "logs/lan-final-upload.json": "8a5cb104caf9ca00df12ee64fc34f44e06e710a9d6f7504cf29e567d9a880ccb",
+    "logs/lan-final-samples.txt": "228eaff30b5fcb33897fb33c7344a432fe86804e280b072ee961288fa8fad94d",
+    "logs/lan-final-analysis.json": "b0c6dbfa8d451ec5a1730be645760839b16a3b10a89c0b85c741808fda2f6369",
+    "logs/lan-final-cpu-lan.pcap": "1887819b447df08f86b6c83c2e48a5c17905ad0fd25a61b403349ec7e7c510b8",
+    "logs/lan-final-cpu-pon.pcap": "070b453a7fc683f02ac104849407eee466a5926727fb67f2b05b3d8e8f05657f",
+    "logs/lan-final-en5.pcap": "e6c3542cf6e4daf58fe93e404a83e9256720c5e5ef5ab51ffb025b8cd8a9f929",
+    "logs/lan-four-port-ram-fix.txt": "569ff20c081899c6b877e2ba5d4326cf58cc8ebff84aa04dfc05defd5271ad69",
+    "logs/lan-final-connectivity-state.txt": "6dd4893c866c504a069bc3d801a0f0897ae602ebdb74e87bae4bee7f4aba59b5",
+    "logs/fe-four-lan-lifecycle-baseline.txt": "5799f647e95247a1342b3f93bba9251aa2ecc35d7e012c3bcf3887a762230766"
+  },
+  "hardware_protocols_verified_this_run": [
+    "IPv4 TCP over HTTPS"
+  ],
+  "final_PON_read_only_status": {
+    "MPCP_registered": true,
+    "OAM_state": "waiting",
+    "historical_auth_successes": 1,
+    "historical_auth_failures": 0,
+    "fresh_authentication_verified_this_run": false
+  },
+  "user_manual_test": {
+    "recorded_at": "2026-10-10T18:43:45.623868+08:00",
+    "site": "南京大学测速站（用户报告）",
+    "WiFi_disabled_by_user": true,
+    "wired_only": true,
+    "download_Mbps": 100,
+    "upload_Mbps": 20,
+    "hardware_config_confirmed_after_report": {
+      "software_flow_offloading": 1,
+      "hardware_flow_offloading": 1,
+      "FE_enabled": true,
+      "FE_prepared": true,
+      "FE_error": 0,
+      "four_LAN_RAM_fix_loaded": true
+    },
+    "synchronized_per_flow_capture_of_manual_test": false,
+    "separate_same_port_automatic_tests_verified_bulk_hardware_path": true
+  },
+  "supplemental_upload_probes": {
+    "sw-ab": {
+      "result": {
+        "direction": "upload",
+        "IP_BOUND_IF": 28,
+        "local": "192.168.1.172",
+        "remote": "202.119.32.33",
+        "bytes": 16777216,
+        "seconds": 8.624531,
+        "Mbps": 15.562,
+        "http_code": 200,
+        "curl_result": 0,
+        "started_monotonic": 204651.759638,
+        "finished_monotonic": 204660.38432
+      },
+      "valid_full_transfer": true
+    },
+    "hw-ab": {
+      "result": {
+        "direction": "upload",
+        "IP_BOUND_IF": 28,
+        "local": "192.168.1.172",
+        "remote": "202.119.32.33",
+        "bytes": 16777216,
+        "seconds": 10.697394,
+        "Mbps": 12.547,
+        "http_code": 200,
+        "curl_result": 0,
+        "started_monotonic": 204770.317648,
+        "finished_monotonic": 204781.015189
+      },
+      "valid_full_transfer": true
+    },
+    "hw-tongji": {
+      "result": {
+        "direction": "upload",
+        "IP_BOUND_IF": 28,
+        "local": "192.168.1.172",
+        "remote": "202.120.182.167",
+        "bytes": 130878,
+        "seconds": 0.042039,
+        "Mbps": 24.906,
+        "http_code": 413,
+        "curl_result": 0,
+        "started_monotonic": 205353.175012,
+        "finished_monotonic": 205353.217051
+      },
+      "valid_full_transfer": false
+    },
+    "hw-tongji-1m": {
+      "result": {
+        "direction": "upload",
+        "IP_BOUND_IF": 28,
+        "local": "192.168.1.172",
+        "remote": "202.120.182.167",
+        "bytes": 130879,
+        "seconds": 0.035071,
+        "Mbps": 29.855,
+        "http_code": 500,
+        "curl_result": 0,
+        "started_monotonic": 205389.077177,
+        "finished_monotonic": 205389.112248
+      },
+      "valid_full_transfer": false
+    }
+  }
+}

@@ -20,6 +20,8 @@
 
 #define FE_COUNTERS 64
 #define FE_SOURCE_MACS 15
+#define FE_LAN_PORTS 4
+#define FE_LAN_RX_CTRL(port) (0xa5f8+0x90*(port))
 
 struct rtl_fe_port {
  struct list_head list;
@@ -55,7 +57,7 @@ static const unsigned int fe_registers[] = {
  0x3854,0x3858,0x385c,0x38a0,0x38b8,0x38bc,0x38c4,0x3924,0x3724,
  0x3400,0x3404,0x3414,0x3418,0x341c,0x3420,0x3424,0x3428,
  0x3700,0x3704,0x3860,0x394c,0x3950,0x3954,0x3958,0x395c,
- 0x2300,0x23a0,0x23a4,0xa5f8,
+ 0x2300,0x23a0,0x23a4,0xa1e0,
  0x3278,0x327c,0x3280,
 };
 struct rtl_fe {
@@ -69,6 +71,7 @@ struct rtl_fe {
  int error;
  u64 installs, deletes, misses;
  unsigned int saved[ARRAY_SIZE(fe_registers)], mask_saved[8];
+ unsigned int lan_saved[FE_LAN_PORTS];
  unsigned int classifier_saved[2][7], map_saved[2][4];
  struct rtl_fe_mac source_macs[FE_SOURCE_MACS];
  struct rtl_fe_interface interfaces[FE_COUNTERS];
@@ -133,6 +136,7 @@ static int fe_prepare(struct rtl_fe *fe)
  int ret;
 
  for(i=0;i<ARRAY_SIZE(fe_registers);i++)fe->saved[i]=fe_read(fe,fe_registers[i]);
+ for(i=0;i<FE_LAN_PORTS;i++)fe->lan_saved[i]=fe_read(fe,FE_LAN_RX_CTRL(i));
  ret=rtl_fe_mask_read(&io,63,fe->mask_saved);
  if(ret)return ret;
  for(i=0;i<2;i++) {
@@ -162,6 +166,9 @@ static int fe_prepare(struct rtl_fe *fe)
  if(ret)return ret;
  for(i=0;i<2;i++) {
   rtl_fe_classify_hash(cls,0,i?7:0);
+  /* LAN0..3 share a connector, but CPU misses and flow keys must retain
+   * the real ingress port. PON keeps its logical source7. */
+  if(!i)rtl_fe_bits_set(cls,208,1,0);
   ret=rtl_fe_classifier_write(&io,1024+i,cls);
   if(ret)return ret;
   rtl_fe_ingress_lpb(lpb,i?7:0,16);
@@ -173,7 +180,7 @@ static int fe_prepare(struct rtl_fe *fe)
    if(ret)return ret;
   }
  }
- fe_write(fe,0x3400,(fe_read(fe,0x3400)&~(BIT(0)|BIT(10)|BIT(19)))|BIT(3)|BIT(2));
+ fe_write(fe,0x3400,(fe_read(fe,0x3400)&~(BIT(0)|BIT(10)))|BIT(3)|BIT(2)|BIT(19));
  fe_write(fe,0x3404,7|(25<<8)|(1<<14)|(24<<16)|(2<<22)|(3<<24));
  fe_write(fe,0x2300,fe_read(fe,0x2300)|BIT(12)|BIT(13));
  fe_write(fe,0x2304+12*12,0xff|(6<<16));
@@ -186,6 +193,10 @@ static int fe_prepare(struct rtl_fe *fe)
  fe_write(fe,0x3278,0x88a88100);
  fe_write(fe,0x327c,0x92009100);
  fe_write(fe,0x3280,0x77); /* Original parser TPID defaults. */
+ /* The Linux rule already selected the physical LAN output. A second
+  * L2 lookup would override it with the indexed DA entry's forwarding port.
+  * NI demux3 enters L2TM directly; only LAN0..3's selectors change. */
+ fe_write(fe,0xa1e0,fe_read(fe,0xa1e0)|0xff);
  rtl_fe_cache_start(&io);
  return 0;
 }
@@ -211,6 +222,7 @@ static int fe_restore(struct rtl_fe *fe)
  ret=rtl_fe_mask_write(&io,63,fe->mask_saved);
  if(ret)return ret;
  for(i=0;i<ARRAY_SIZE(fe_registers);i++)fe_write(fe,fe_registers[i],fe->saved[i]);
+ for(i=0;i<FE_LAN_PORTS;i++)fe_write(fe,FE_LAN_RX_CTRL(i),fe->lan_saved[i]);
  fe_read(fe,0x383c);
  fe->prepared=false;
  return 0;
@@ -772,6 +784,7 @@ void rtl_fe_flush_port(struct rtl_fe *fe,struct net_device *netdev)
 }
 int rtl_fe_enable(struct rtl_fe *fe)
 {
+ unsigned int i;
  int ret;
 
  if(!fe)return -EOPNOTSUPP;
@@ -780,7 +793,8 @@ int rtl_fe_enable(struct rtl_fe *fe)
  ret=fe_prepare(fe);
  if(ret){fe_restore(fe);goto unlock;}
  /* The DMA tables, miss actions and port maps exist before admitting LAN. */
- fe_write(fe,0xa5f8,(fe_read(fe,0xa5f8)&~(63U<<16))|(25U<<16));
+ for(i=0;i<FE_LAN_PORTS;i++)
+  fe_write(fe,FE_LAN_RX_CTRL(i),(fe_read(fe,FE_LAN_RX_CTRL(i))&~(63U<<16))|(25U<<16));
  fe->enabled=true;
 unlock:
  fe->error=ret;
@@ -797,8 +811,7 @@ int rtl_fe_disable(struct rtl_fe *fe)
  mutex_lock(&fe->lock);
  fe->enabled=false;
  if(fe->prepared) {
-  for(i=0;i<ARRAY_SIZE(fe_registers);i++)
-   if(fe_registers[i]==0xa5f8)fe_write(fe,0xa5f8,fe->saved[i]);
+  for(i=0;i<FE_LAN_PORTS;i++)fe_write(fe,FE_LAN_RX_CTRL(i),fe->lan_saved[i]);
   usleep_range(1000,2000);
   list_for_each_entry_safe(flow,next,&fe->flows,list) {
    ret=fe_delete(fe,flow);

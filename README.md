@@ -25,4 +25,6 @@ PON原生SerDes、gearbox、MAC/PCS/FEC已完成实机初始化，三个时钟�
 
 2026-10-09：XEPON的MPCP注册、CTC OAM认证、FEC、WAN DHCP和LAN↔PON业务已实机通过；IPv4 TCP/UDP动态硬件NAT、cache自动分配/删除及原厂64K Hash/48字节槽诊断通过。新源码补齐VLAN/QinQ及共享出口接口，完整镜像artifacts/full-pon-wired-vlan01-6.18.55构建/载荷校验通过，新功能待设备重新连接后板测。当前Wi-Fi从板级PCIe与芯片身份开始，尚未声明无线可用。
 
+2026-10-10：双频HT/VHT Wi-Fi已可用并接入原生UCI/netifd/wpad。四LAN的硬件入口、真实来源保留与NAT后出口修复已进入正式驱动；LAN3实测下载94.4Mbps、上传主体绕过CPU，完整四口镜像已构建/核验。保留当前Wi-Fi供GPT通信，没有为新镜像重启设备。其他三口逐口插线验收仍待完成，详见[四LAN修复记录](docs/lan-hardware-fix-20261010.md)。
+
 2026-10-10：原生双频AP、WPA2、HT/WMM/BA已实机可用，5GHz进一步接入VHT80/两空间流，终端双向链路866.7Mbps，用户业务实测100Mbps下载/20Mbps上传，达到宽带上限；2.4GHz HT20此前约60Mbps下载。HE速率控制、无线NE卸载与正式UBI安装仍待完成。详见docs/wifi-wideband-bringup.md。
