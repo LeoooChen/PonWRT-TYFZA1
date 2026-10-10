@@ -122,6 +122,12 @@ static inline void rtl_ax_c_tssi_tone_stop(const struct rtl_ax_io *io,
 	rtl_ax_channel_field(io, 0x5670 + offset, BIT(0), 1);
 	rtl_ax_channel_field(io, 0x02fc, BIT(16 + path), 1);
 	rtl_ax_channel_field(io, 0x02fc, BIT(20 + path), 0);
+	/* Original successful tail pulses the DAC path before releasing it;
+	 * a final clear alone omits this hardware transition. */
+	rtl_ax_channel_field(io, 0x023c, 0xffff0000, 0x2001);
+	rtl_ax_channel_field(io, 0x5670 + offset, BIT(0), 1);
+	rtl_ax_channel_field(io, 0x02fc, BIT(16 + path), 1);
+	rtl_ax_channel_field(io, 0x02fc, BIT(20 + path), 0);
 	rtl_ax_channel_field(io, 0x5670 + offset, BIT(0), 0);
 	rtl_ax_channel_field(io, 0x02fc, BIT(16 + path), 0);
 	state->cleanup[path][0] = io->read32(io->ctx, (0x5680 + offset) | 0x10000);

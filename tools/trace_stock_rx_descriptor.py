@@ -41,7 +41,13 @@ for match in re.finditer(pattern, text):
     oracle.uc.mem_write(rxbuffer + 4, struct.pack('<8I', *words))
     oracle.uc.mem_write(rxbuffer + 4 + offset, bytes.fromhex(match[7]))
     oracle.uc.mem_write(output, bytes(512))
-    status = oracle.call(name, phl, hal, rxbuffer, output, output + 16, output + 32)
+    # XB's original signature has a separate PHY-status pointer output in X5;
+    # its RX metadata is in X6. C has metadata in X5 and no PHY pointer output.
+    args = [phl, hal, rxbuffer, output, output + 16]
+    if chip == '8192xb':
+        args.append(output + 24)
+    args.append(output + 32)
+    status = oracle.call(name, *args)
     metadata = output + 32
     original_pointer = oracle.unpack(output, 'Q')[0]
     original_length = oracle.unpack(output + 16, 'H')[0]

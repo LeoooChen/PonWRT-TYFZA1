@@ -1,0 +1,43 @@
+{
+  "original_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "scope": "Execute the original C-only RFK channel-history and FW notification path.",
+  "executed_original_functions": [
+    "halrf_mcc_info_init",
+    "halrf_mcc_get_ch_info",
+    "halrf_fw_ntfy_8852c"
+  ],
+  "records": [
+    {
+      "length": 24,
+      "function": 2,
+      "class": 10,
+      "buffer": 1,
+      "payload": "240000000000000001000000000000002400000001000000",
+      "channel": 36
+    },
+    {
+      "length": 24,
+      "function": 2,
+      "class": 10,
+      "buffer": 1,
+      "payload": "240000002400000001000000010000002400000001000000",
+      "channel": 36
+    },
+    {
+      "length": 24,
+      "function": 2,
+      "class": 10,
+      "buffer": 1,
+      "payload": "2c0000002400000001000000010000002c00000001000000",
+      "channel": 44
+    },
+    {
+      "length": 24,
+      "function": 2,
+      "class": 10,
+      "buffer": 1,
+      "payload": "2c0000002800000001000000010000002800000001000000",
+      "channel": 40
+    }
+  ]
+}

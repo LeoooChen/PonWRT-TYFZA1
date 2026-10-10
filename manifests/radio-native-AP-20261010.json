@@ -1,0 +1,54 @@
+{
+  "date": "2026-10-10",
+  "scope": "native AP work on actual TYFZA1, plus user scanning/throughput observations",
+  "original_host_module_loaded": false,
+  "runtime_firmware": "original WCPU0.27.84.3 and board RF/calibration data",
+  "XB_live_module_sha256": "f0595eefe2e5fc54672ff75effc2468f46095130dbde2589801a724ed712e186",
+  "C_live_module_sha256": "7efa0340faf9c9ae3b1f62aeca58e9e063bb7291665776379cb5204223fd6685",
+  "verified_2g": [
+    "user observed SSID",
+    "actual WPA2 four-way handshake",
+    "authorized station",
+    "bridged data and user upstream speed test"
+  ],
+  "user_initial_throughput_Mbps": 5,
+  "maximum_advertised_modes": "legacy,20MHz,WMM off",
+  "verified_5g": [
+    "user saw SSID on one AP04 restart",
+    "actual authentication/association requests"
+  ],
+  "5g_completed_wpa2": false,
+  "5g_stable_scan": false,
+  "wifi_port_complete": false,
+  "power_20MHz_draft_enabled_in_default_source": false,
+  "evidence": {
+    "radio-ap04-connected.txt": {
+      "sha256": "a6f8e536aa13e62c65b25a6f0b36e2087bf9719d23974b81a77da82263a7518e",
+      "bytes": 2696
+    },
+    "radio-ap05-power-regression.txt": {
+      "sha256": "3e5f880345275224a143d1c04e54a65dff91d2dd4845ac69ccdccfd8c4868e6c",
+      "bytes": 5407
+    },
+    "radio-ap06-not-visible.txt": {
+      "sha256": "bae4282230e1b6fc94fb43435502b68b8493a7244024a5d950086d1c849e85e9",
+      "bytes": 1992
+    },
+    "radio-ap07-mac-scan2.txt": {
+      "sha256": "5aff60b01a4d696fab46ba73bde99d7330fde66c282de91b32d86394e0db20b4",
+      "bytes": 197
+    },
+    "radio-ap07-channel44-mac-scan.txt": {
+      "sha256": "5aff60b01a4d696fab46ba73bde99d7330fde66c282de91b32d86394e0db20b4",
+      "bytes": 197
+    },
+    "radio-ap09c-mac-scan.txt": {
+      "sha256": "6f16b08c5f79a43c8946ee83f6285fb577d8eb79ac9bee481b4d7ad5a9b2922c",
+      "bytes": 197
+    },
+    "radio-ap09c-XB07-state.txt": {
+      "sha256": "5e7e35fef3ae0ea00f36a6e2e84364740d2debf7a737b02af1ab66acacf7a9c5",
+      "bytes": 4937
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "scope": "actual original parser on WD bytes captured from this board; no simulated RF completion",
+  "original_host_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "observation_source": "logs/radio-native-tx01-builtin-8852c.txt",
+  "observation_sha256": "1e7afce387e9b8bb7733e694374bc5efd8c62d6b20d34a7a12f32fcd4a915bea",
+  "chip": "8852c",
+  "native_packet_length_and_offset_equal_original": true,
+  "snapshots": [
+    {
+      "encoding": 3,
+      "actual_snapshot_sequence": 4,
+      "original_status": 0,
+      "original_packet_length": 130,
+      "original_payload_offset_from_WD": 112,
+      "original_driver_info_bytes": 80,
+      "original_rate": 390,
+      "original_GI_LTF": 3,
+      "original_bandwidth": 0,
+      "original_CRC_error": 0,
+      "original_ICV_error": 0
+    }
+  ]
+}

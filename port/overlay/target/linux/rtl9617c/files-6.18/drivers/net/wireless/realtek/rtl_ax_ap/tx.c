@@ -44,7 +44,7 @@ struct rtl_ax_tx {
 static void rtl_ax_tx_wd(u8 *out, unsigned int bytes,
 	unsigned int addresses, unsigned int rate, unsigned int sequence,
 	unsigned int header_bytes, bool no_ack, bool multicast,
-	unsigned int channel, unsigned int qsel, bool tid_ind)
+	unsigned int channel, unsigned int qsel, bool tid_ind, unsigned int macid)
 {
 	/* Actual txdes_proc_mgnt_C@251e14/XB@265014 PCIe2/SCC:
 	 * MAC band0,port0,MACID0,raw header,fixed rate,WD-info56.
@@ -55,7 +55,7 @@ static void rtl_ax_tx_wd(u8 *out, unsigned int bytes,
 	rtl_ax_store32(out, BIT(7) | ((56U & 31) << 24) | channel << 16 | BIT(22) | ((header_bytes / 2) & 31) << 11 |
 		(no_ack ? BIT(31) : 0));
 	rtl_ax_store32(out + 4, (addresses & 63) << 26);
-	rtl_ax_store32(out + 8, qsel << 17 | (tid_ind ? BIT(23) : 0) | (bytes & 0x3fff));
+	rtl_ax_store32(out + 8, macid << 24 | qsel << 17 | (tid_ind ? BIT(23) : 0) | (bytes & 0x3fff));
 	rtl_ax_store32(out + 12, sequence & 0xfff);
 	rtl_ax_store32(out + 28, BIT(31) | (rate & 0x1ff) << 16);
 	rtl_ax_store32(out + 32, BIT(9) | BIT(10));
@@ -163,7 +163,7 @@ void rtl_ax_tx_open(struct rtl_ax_tx *tx)
 }
 
 int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
-	struct sk_buff *skb, unsigned int rate)
+	struct sk_buff *skb, unsigned int rate, unsigned int macid)
 {
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_hdr *header = (void *)skb->data;
@@ -214,7 +214,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	rtl_ax_tx_wd(page, skb->len, addresses, rate,
 		le16_to_cpu(header->seq_ctrl) >> 4, ieee80211_hdrlen(header->frame_control),
 		info->flags & IEEE80211_TX_CTL_NO_ACK, is_multicast_ether_addr(header->addr1),
-		rtl_ax_tx_channels[ring], qsel, tid_indicators[tid]);
+		rtl_ax_tx_channels[ring], qsel, tid_indicators[tid], macid);
 	if (tx->io->read32(tx->io->ctx, 0x8830) & BIT(0))
 		rtl_ax_tx_checksum(page);
 	rtl_ax_tx_wp_sequence(page + 56, id | (tid_indicators[tid] ? BIT(14) : 0));
@@ -274,7 +274,9 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 			info->flags |= info->flags & IEEE80211_TX_CTL_NO_ACK ?
 				IEEE80211_TX_STAT_NOACK_TRANSMITTED : IEEE80211_TX_STAT_ACK;
 		info->status.rates[0].count = 1;
-		ieee80211_tx_status_irqsafe(hw, slot.skb);
+		/* RPQ is dispatched by the same RX worker as received frames.
+		 * Pair its process-context delivery with ieee80211_rx_ni. */
+		ieee80211_tx_status_ni(hw, slot.skb);
 	}
 	return 0;
 }

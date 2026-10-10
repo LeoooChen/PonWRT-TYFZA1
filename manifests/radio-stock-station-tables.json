@@ -1,0 +1,382 @@
+{
+  "scope": "Execute TYFZA1 original default station CMAC/DMAC table construction.\n\nCAM creation and BB host-list insertion are explicit external boundaries.\nThe actual HAL table initialization, antenna selection and MAC H2C encoders\nexecute from the original ELF. No hardware access or RF claim is made.\n",
+  "original_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "executed_original_functions": [
+    "rtw_hal_add_sta_entry",
+    "rtw_hal_update_cctrl_tbl",
+    "_hal_sta_set_default_value",
+    "_hal_update_dctrl_tbl",
+    "rtw_hal_cmc_tbl_cfg",
+    "rtw_hal_dmc_tbl_cfg",
+    "mac_upd_cctl_info",
+    "mac_upd_dctl_info",
+    "rtw_hal_bb_cfg_cmac_tx_ant",
+    "halbb_cfg_cmac_tx_ant",
+    "halbb_cfg_cmac_tx_ant_8852c",
+    "halbb_cfg_cmac_tx_ant_8192xb"
+  ],
+  "records": [
+    {
+      "chip": "8852c",
+      "tx_nss": 1,
+      "MACID": 0,
+      "status": 0,
+      "operations": [
+        {
+          "boundary": "rtw_hal_mac_addr_cam_add_entry"
+        },
+        {
+          "H2C_buffer": 1,
+          "category": 1,
+          "class": 5,
+          "function": 2,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "80000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000e00000000ffff00000c0f00000000"
+        },
+        {
+          "boundary": "mac_upd_role_cctrl"
+        },
+        {
+          "H2C_buffer": 0,
+          "category": 1,
+          "class": 5,
+          "function": 1,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "800000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "boundary": "rtw_hal_bb_stainfo_add"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "tx_nss": 1,
+      "MACID": 1,
+      "status": 0,
+      "operations": [
+        {
+          "boundary": "rtw_hal_mac_addr_cam_add_entry"
+        },
+        {
+          "H2C_buffer": 1,
+          "category": 1,
+          "class": 5,
+          "function": 2,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "81000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000e00000000ffff00000c0f00000000"
+        },
+        {
+          "boundary": "mac_upd_role_cctrl"
+        },
+        {
+          "H2C_buffer": 0,
+          "category": 1,
+          "class": 5,
+          "function": 1,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "810000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "boundary": "rtw_hal_bb_stainfo_add"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "tx_nss": 2,
+      "MACID": 0,
+      "status": 0,
+      "operations": [
+        {
+          "boundary": "rtw_hal_mac_addr_cam_add_entry"
+        },
+        {
+          "H2C_buffer": 1,
+          "category": 1,
+          "class": 5,
+          "function": 2,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "80000000000000000000000000000000000000000000000000004300000000000000000000000000000000000000000000000000000e00000000ffff00000c0f00000000"
+        },
+        {
+          "boundary": "mac_upd_role_cctrl"
+        },
+        {
+          "H2C_buffer": 0,
+          "category": 1,
+          "class": 5,
+          "function": 1,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "800000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "boundary": "rtw_hal_bb_stainfo_add"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "tx_nss": 2,
+      "MACID": 1,
+      "status": 0,
+      "operations": [
+        {
+          "boundary": "rtw_hal_mac_addr_cam_add_entry"
+        },
+        {
+          "H2C_buffer": 1,
+          "category": 1,
+          "class": 5,
+          "function": 2,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "81000000000000000000000000000000000000000000000000004300000000000000000000000000000000000000000000000000000e00000000ffff00000c0f00000000"
+        },
+        {
+          "boundary": "mac_upd_role_cctrl"
+        },
+        {
+          "H2C_buffer": 0,
+          "category": 1,
+          "class": 5,
+          "function": 1,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "810000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "boundary": "rtw_hal_bb_stainfo_add"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "tx_nss": 1,
+      "MACID": 0,
+      "status": 0,
+      "operations": [
+        {
+          "boundary": "rtw_hal_mac_addr_cam_add_entry"
+        },
+        {
+          "H2C_buffer": 1,
+          "category": 1,
+          "class": 5,
+          "function": 2,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "80000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000e00000000ffff00000c0f00000000"
+        },
+        {
+          "boundary": "mac_upd_role_cctrl"
+        },
+        {
+          "H2C_buffer": 0,
+          "category": 1,
+          "class": 5,
+          "function": 1,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "800000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "boundary": "rtw_hal_bb_stainfo_add"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "tx_nss": 1,
+      "MACID": 1,
+      "status": 0,
+      "operations": [
+        {
+          "boundary": "rtw_hal_mac_addr_cam_add_entry"
+        },
+        {
+          "H2C_buffer": 1,
+          "category": 1,
+          "class": 5,
+          "function": 2,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "81000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000e00000000ffff00000c0f00000000"
+        },
+        {
+          "boundary": "mac_upd_role_cctrl"
+        },
+        {
+          "H2C_buffer": 0,
+          "category": 1,
+          "class": 5,
+          "function": 1,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "810000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "boundary": "rtw_hal_bb_stainfo_add"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "tx_nss": 2,
+      "MACID": 0,
+      "status": 0,
+      "operations": [
+        {
+          "boundary": "rtw_hal_mac_addr_cam_add_entry"
+        },
+        {
+          "H2C_buffer": 1,
+          "category": 1,
+          "class": 5,
+          "function": 2,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "80000000000000000000000000000000000000000000000000004300000000000000000000000000000000000000000000000000000e00000000ffff00000c0f00000000"
+        },
+        {
+          "boundary": "mac_upd_role_cctrl"
+        },
+        {
+          "H2C_buffer": 0,
+          "category": 1,
+          "class": 5,
+          "function": 1,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "800000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "boundary": "rtw_hal_bb_stainfo_add"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "tx_nss": 2,
+      "MACID": 1,
+      "status": 0,
+      "operations": [
+        {
+          "boundary": "rtw_hal_mac_addr_cam_add_entry"
+        },
+        {
+          "H2C_buffer": 1,
+          "category": 1,
+          "class": 5,
+          "function": 2,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "81000000000000000000000000000000000000000000000000004300000000000000000000000000000000000000000000000000000e00000000ffff00000c0f00000000"
+        },
+        {
+          "boundary": "mac_upd_role_cctrl"
+        },
+        {
+          "H2C_buffer": 0,
+          "category": 1,
+          "class": 5,
+          "function": 1,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "810000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "boundary": "rtw_hal_bb_stainfo_add"
+        }
+      ]
+    }
+  ],
+  "legacy_updates": [
+    {
+      "chip": "8852c",
+      "MACID": 0,
+      "status": 0,
+      "parameters": "legacy AP, no aggregation, default RTS/data retry limits255, port0/MBID0, no forced HE rate",
+      "operations": [
+        {
+          "H2C_buffer": 1,
+          "category": 1,
+          "class": 5,
+          "function": 2,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "800000009b01000600000840002000000000000000000000000000000000000000000000ff0100060008fff1c060000000030000f7100000000000000000f2c000000030"
+        },
+        {
+          "boundary": "mac_upd_role_cctrl"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "MACID": 1,
+      "status": 0,
+      "parameters": "legacy AP, no aggregation, default RTS/data retry limits255, port0/MBID0, no forced HE rate",
+      "operations": [
+        {
+          "H2C_buffer": 1,
+          "category": 1,
+          "class": 5,
+          "function": 2,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "810000009b01000600000840002000000000000000000000000000000000000000000000ff0100060008fff1c060000000030000f7100000000000000000f2c000000030"
+        },
+        {
+          "boundary": "mac_upd_role_cctrl"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "MACID": 0,
+      "status": 0,
+      "parameters": "legacy AP, no aggregation, default RTS/data retry limits255, port0/MBID0, no forced HE rate",
+      "operations": [
+        {
+          "H2C_buffer": 1,
+          "category": 1,
+          "class": 5,
+          "function": 2,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "800000009b01000600000800002000000000000000000000000000000000000000000000ff0100060008fff1c060000000030000f7100000000000000000f2c000000030"
+        },
+        {
+          "boundary": "mac_upd_role_cctrl"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "MACID": 1,
+      "status": 0,
+      "parameters": "legacy AP, no aggregation, default RTS/data retry limits255, port0/MBID0, no forced HE rate",
+      "operations": [
+        {
+          "H2C_buffer": 1,
+          "category": 1,
+          "class": 5,
+          "function": 2,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "810000009b01000600000800002000000000000000000000000000000000000000000000ff0100060008fff1c060000000030000f7100000000000000000f2c000000030"
+        },
+        {
+          "boundary": "mac_upd_role_cctrl"
+        }
+      ]
+    }
+  ]
+}

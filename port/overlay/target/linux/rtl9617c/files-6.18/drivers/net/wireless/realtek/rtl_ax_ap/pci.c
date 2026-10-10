@@ -15,6 +15,9 @@
 #include "power.h"
 #include "download.h"
 #include "transport.h"
+#include "role.h"
+#include "port0.h"
+#include "beacon.h"
 #include "mac-runtime.h"
 #include "phy.h"
 #include "receive.h"
@@ -50,6 +53,8 @@ static bool ofdma;
 static bool force_fw_tx;
 static bool independent_xtal;
 static bool antenna_diversity;
+static bool prepare_ap_role;
+static unsigned int beacon_tx_ant;
 static unsigned int edcca_mode;
 static unsigned int hw_rts_time, hw_rts_length;
 static unsigned int dfs_region;
@@ -58,6 +63,8 @@ module_param(ofdma, bool, 0444);
 module_param(force_fw_tx, bool, 0444);
 module_param(independent_xtal, bool, 0444);
 module_param(antenna_diversity, bool, 0444);
+module_param(prepare_ap_role, bool, 0444);
+module_param(beacon_tx_ant, uint, 0444);
 module_param(edcca_mode, uint, 0444);
 module_param(hw_rts_time, uint, 0444);
 module_param(hw_rts_length, uint, 0444);
@@ -67,6 +74,7 @@ MODULE_PARM_DESC(ofdma, "Original AP OFDMA scheduling input");
 MODULE_PARM_DESC(force_fw_tx, "Original AP force firmware TX input");
 MODULE_PARM_DESC(independent_xtal, "Original dev_cap.is_indiv_xtal input");
 MODULE_PARM_DESC(antenna_diversity, "Original RFE54 antenna diversity input");
+MODULE_PARM_DESC(prepare_ap_role, "Create the native AP self-role during probe for board verification");
 MODULE_PARM_DESC(edcca_mode, "Original EDCCA operating mode input");
 MODULE_PARM_DESC(hw_rts_time, "Original hardware RTS time threshold in microseconds");
 MODULE_PARM_DESC(hw_rts_length, "Original hardware RTS length threshold in bytes");
@@ -89,6 +97,9 @@ struct rtl_ax_ap {
 	struct rtl_ax_cfo cfo;
 	struct rtl_ax_environment environment;
 	struct rtl_ax_channel channel;
+	u8 rfk_channels[2], rfk_bands[2], rfk_channel_index;
+	u8 rfk_notification[24];
+	u64 rfk_notifications;
 	struct rtl_ax_rf_start rf_start;
 	struct rtl_ax_dack dack;
 	struct rtl_ax_rxdck rxdck;
@@ -110,6 +121,11 @@ struct rtl_ax_ap {
 	struct ieee80211_channel channels[13];
 	struct ieee80211_rate rates[12];
 	bool monitor_started;
+	struct ieee80211_vif *ap_vif;
+	bool ap_started;
+	int ap_result;
+	DECLARE_BITMAP(station_ids, 128);
+	u64 station_added, station_removed;
 	u64 mac80211_packets, tx_unimplemented;
 	struct mutex command_mutex;
 	spinlock_t command_lock;
@@ -121,7 +137,18 @@ struct rtl_ax_ap {
 	unsigned char command_sequence, pending_sequence, pending_category, pending_class, pending_function;
 	unsigned char command_result;
 	bool command_pending, command_received;
+	bool pending_done;
 	u64 receive_acks, done_acks, unmatched_acks;
+	u8 role_stage;
+	int role_result;
+	u8 role_cam[60];
+	struct rtl_ax_port0 port0;
+	bool beacon_enabled;
+	u32 beacon_bytes, beacon_header[4], beacon_last_stats[2];
+	u64 beacon_reports, beacon_ok, beacon_fail[10];
+	u32 rejected_c2h[8], rejected_c2h_bytes;
+	u64 rejected_c2h_count;
+	u32 last_c2h[8], last_c2h_bytes;
 	unsigned char chip;
 	unsigned char secure;
 	bool powered;
@@ -258,9 +285,50 @@ static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 		return rtl_ax_tx_report(radio->tx, radio->hw, packet);
 	if (packet->type != 10)
 		return -EOPNOTSUPP;
+	spin_lock_irqsave(&radio->command_lock, flags);
+	radio->last_c2h_bytes = packet->bytes;
+	memset(radio->last_c2h, 0, sizeof(radio->last_c2h));
+	memcpy(radio->last_c2h, packet->payload,
+	       min_t(size_t, packet->bytes, sizeof(radio->last_c2h)));
+	spin_unlock_irqrestore(&radio->command_lock, flags);
 	ret = rtl_ax_c2h_parse(packet->payload, packet->bytes, &message);
-	if (ret)
+	if (ret) {
+		spin_lock_irqsave(&radio->command_lock, flags);
+		radio->rejected_c2h_count++;
+		radio->rejected_c2h_bytes = packet->bytes;
+		memset(radio->rejected_c2h, 0, sizeof(radio->rejected_c2h));
+		memcpy(radio->rejected_c2h, packet->payload,
+		       min_t(size_t, packet->bytes, sizeof(radio->rejected_c2h)));
+		spin_unlock_irqrestore(&radio->command_lock, flags);
 		return ret;
+	}
+	/* Original mac_parse_bcn_stats_c2h@22910c, MAC/FW_INFO/BCN_CNT3.
+	 * Each report describes ten beacon opportunities for one port. */
+	if (message.category == 1 && message.class == 0 && message.function == 3) {
+		u32 first, second;
+		unsigned int i;
+
+		/* Board WCPU sends seven bytes (C2H total15). The original
+		 * parser only uses bits0..19 of the second word. */
+		if (message.bytes < 7)
+			return -EINVAL;
+		first = rtl_ax_ap_read32(message.payload);
+		second = message.payload[4] | (u32)message.payload[5] << 8 |
+			 (u32)message.payload[6] << 16;
+		if (first & 255) /* SCC band0 / port0 / root BSSID */
+			return -EOPNOTSUPP;
+		spin_lock_irqsave(&radio->command_lock, flags);
+		radio->beacon_reports++;
+		radio->beacon_ok += (second >> 16) & 15;
+		for (i = 0; i < 6; i++)
+			radio->beacon_fail[i] += (first >> (8 + 4 * i)) & 15;
+		for (i = 0; i < 4; i++)
+			radio->beacon_fail[6 + i] += (second >> (4 * i)) & 15;
+		radio->beacon_last_stats[0] = first;
+		radio->beacon_last_stats[1] = second;
+		spin_unlock_irqrestore(&radio->command_lock, flags);
+		return 0;
+	}
 	/* Original MAC/FW_INFO rec-ACK and done-ACK. The outer C2H sequence
 	 * belongs to C2H;the command's H2C sequence is in its ACK payload. */
 	if (message.category != 1 || message.class != 0 || message.function > 1)
@@ -280,6 +348,11 @@ static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 	if (!message.function) {
 		radio->command_received = true;
 		radio->receive_acks++;
+		if (!radio->pending_done) {
+			radio->command_result = 0;
+			radio->command_pending = false;
+			complete(&radio->command_done);
+		}
 	} else {
 		radio->command_result = (ack >> 16) & 255;
 		radio->command_pending = false;
@@ -290,9 +363,9 @@ static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 	return 0;
 }
 
-static int rtl_ax_command(struct rtl_ax_ap *radio, unsigned int buffer_class,
+static int rtl_ax_command_flags(struct rtl_ax_ap *radio, unsigned int buffer_class,
 	unsigned int category, unsigned int class, unsigned int function,
-	const void *data, unsigned int bytes, bool done_ack)
+	const void *data, unsigned int bytes, bool receive_ack, bool done_ack)
 {
 	unsigned int slot;
 	unsigned long flags;
@@ -302,12 +375,12 @@ static int rtl_ax_command(struct rtl_ax_ap *radio, unsigned int buffer_class,
 	slot = buffer_class * RTL_AX_H2C_CLASS_BUFFERS + radio->h2c_available[buffer_class];
 	length = rtl_ax_command_packet(radio->h2c_packet + slot * RTL_AX_H2C_BUFFER_BYTES,
 				       RTL_AX_H2C_BUFFER_BYTES, data, bytes, category, class,
-				       function, radio->command_sequence, 0, done_ack);
+				       function, radio->command_sequence, receive_ack, done_ack);
 	if (length < 0) {
 		ret = length;
 		goto unlock;
 	}
-	if (done_ack) {
+	if (receive_ack || done_ack) {
 		reinit_completion(&radio->command_done);
 		spin_lock_irqsave(&radio->command_lock, flags);
 		radio->pending_category = category;
@@ -316,26 +389,182 @@ static int rtl_ax_command(struct rtl_ax_ap *radio, unsigned int buffer_class,
 		radio->pending_sequence = radio->command_sequence;
 		radio->command_pending = true;
 		radio->command_received = false;
+		radio->pending_done = done_ack;
 		spin_unlock_irqrestore(&radio->command_lock, flags);
 	}
 	ret = rtl_ax_h2c_publish(radio, buffer_class, length);
 	if (!ret)
 		radio->command_sequence++;
-	if (!ret && done_ack) {
-		/* Native startup transaction deadline. Original requests done-ACK;
-		 * TXBD consumption alone is never treated as command execution. */
+	if (!ret && (receive_ack || done_ack)) {
+		/* Wait for the requested firmware ACK. A receive-only command
+		 * proves acceptance; done-ACK proves execution. */
 		if (!wait_for_completion_timeout(&radio->command_done, msecs_to_jiffies(1000)))
 			ret = -ETIMEDOUT;
 		else if (radio->command_result)
 			ret = -EREMOTEIO;
 	}
-	if (done_ack) {
+	if (receive_ack || done_ack) {
 		spin_lock_irqsave(&radio->command_lock, flags);
 		radio->command_pending = false;
 		spin_unlock_irqrestore(&radio->command_lock, flags);
 	}
 unlock:
 	mutex_unlock(&radio->command_mutex);
+	return ret;
+}
+
+static int rtl_ax_command(struct rtl_ax_ap *radio, unsigned int buffer_class,
+	unsigned int category, unsigned int class, unsigned int function,
+	const void *data, unsigned int bytes, bool done_ack)
+{
+	return rtl_ax_command_flags(radio, buffer_class, category, class, function,
+				    data, bytes, false, done_ack);
+}
+
+static int rtl_ax_station_tables(struct rtl_ax_ap *radio, unsigned int macid)
+{
+	u8 cmac[68];
+
+	rtl_ax_station_cmac(cmac, macid);
+	return rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 2, cmac, sizeof(cmac), true);
+}
+
+static int rtl_ax_station_connected_table(struct rtl_ax_ap *radio, unsigned int macid)
+{
+	u8 cmac[68];
+
+	rtl_ax_station_cmac_legacy(cmac, macid, radio->chip == RTL_AX_8852C);
+	return rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 2, cmac, sizeof(cmac), true);
+}
+
+/* Caller owns command_mutex. Original halrf_fw_ntfy_C@30de08
+ * follows channel RFK and mac_outsrc_h2c_common (category2/class10/func2).
+ * This notification requests no ACK; record DMA publication separately. */
+static int rtl_ax_rfk_notify_locked(struct rtl_ax_ap *radio)
+{
+	unsigned int i, slot = RTL_AX_H2C_DATA * RTL_AX_H2C_CLASS_BUFFERS +
+		radio->h2c_available[RTL_AX_H2C_DATA];
+	unsigned int index = !radio->rfk_channels[0] ? 0 :
+		!radio->rfk_channels[1] ? 1 : (radio->rfk_channel_index + 1) & 1;
+	u32 fields[6];
+	int bytes, ret;
+
+	radio->rfk_channel_index = index;
+	radio->rfk_channels[index] = radio->channel.center;
+	radio->rfk_bands[index] = radio->channel.band;
+	fields[0] = radio->rfk_channels[0];
+	fields[1] = radio->rfk_channels[1];
+	fields[2] = radio->rfk_bands[0];
+	fields[3] = radio->rfk_bands[1];
+	fields[4] = radio->channel.center;
+	fields[5] = radio->channel.band;
+	for (i = 0; i < ARRAY_SIZE(fields); i++)
+		rtl_ax_store32(radio->rfk_notification + i * 4, fields[i]);
+	bytes = rtl_ax_command_packet(radio->h2c_packet + slot * RTL_AX_H2C_BUFFER_BYTES,
+		RTL_AX_H2C_BUFFER_BYTES, radio->rfk_notification, sizeof(radio->rfk_notification),
+		2, 10, 2, radio->command_sequence, false, false);
+	if (bytes < 0)
+		return bytes;
+	ret = rtl_ax_h2c_publish(radio, RTL_AX_H2C_DATA, bytes);
+	if (!ret) {
+		radio->command_sequence++;
+		radio->rfk_notifications++;
+	}
+	return ret;
+}
+
+static int rtl_ax_beacon_update(struct rtl_ax_ap *radio, const u8 *frame,
+	unsigned int bytes, unsigned int tim, unsigned int rate)
+{
+	u8 *packet;
+	int ret;
+
+	if (bytes > 700 || tim < 24 || tim - 24 > 127)
+		return -E2BIG;
+	packet = kmalloc(bytes + 16, GFP_KERNEL);
+	if (!packet)
+		return -ENOMEM;
+	rtl_ax_beacon_header(packet, tim - 24, rate, beacon_tx_ant);
+	memcpy(packet + 16, frame, bytes);
+	ret = rtl_ax_command(radio, RTL_AX_H2C_LONG_DATA, 1, 5, 16,
+			     packet, bytes + 16, false);
+	if (!ret) {
+		radio->beacon_bytes = bytes;
+		memcpy(radio->beacon_header, packet, 16);
+	}
+	kfree(packet);
+	return ret;
+}
+
+static int rtl_ax_port0_drop_mbid(void *ctx, unsigned int mbid)
+{
+	struct rtl_ax_ap *radio = ctx;
+	u8 packet[24] = {};
+
+	/* Original h2c_pkt_drop@1ec128: HIQ_MBSSID selector8, band0/port0,
+	 * MBID in word1. No receive/done ACK requested for this command. */
+	rtl_ax_store32(packet, 8);
+	rtl_ax_store32(packet + 4, mbid);
+	return rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 9, 27,
+			     packet, sizeof(packet), false);
+}
+
+static int rtl_ax_self_role_prepare(struct rtl_ax_ap *radio, const u8 *address,
+	unsigned int interval, unsigned int dtim)
+{
+	u8 unpause[32], create[4], join[4];
+	bool owns_transport = !radio->monitor_started;
+	int ret;
+
+	/* Probe has not yet registered the wiphy. Keep the C2H receive ring
+	 * available for original receive/done acknowledgements. */
+	rtl_ax_role_unpause(unpause, 0);
+	rtl_ax_role_create(create, 0);
+	rtl_ax_role_join(join, 0);
+	rtl_ax_role_cam(radio->role_cam, 0, address);
+	pci_set_master(radio->pdev);
+	rtl_ax_h2c_start(&radio->io);
+	rtl_ax_rx_open(radio->rx);
+	if (radio->role_stage >= 4)
+		goto update_cam;
+	ret = rtl_ax_command_flags(radio, RTL_AX_H2C_CMD, 1, 9, 8,
+				   unpause, sizeof(unpause), true, false);
+	if (ret)
+		goto stop;
+	radio->role_stage = 1;
+	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 4,
+			     create, sizeof(create), true);
+	if (ret)
+		goto stop;
+	radio->role_stage = 2;
+	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 0,
+			     join, sizeof(join), true);
+	if (ret)
+		goto stop;
+	radio->role_stage = 3;
+update_cam:
+	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0,
+			     radio->role_cam, sizeof(radio->role_cam), true);
+	if (!ret) {
+		radio->role_stage = 4;
+		ret = rtl_ax_station_tables(radio, 0);
+	}
+	if (!ret) {
+		ret = rtl_ax_port0_start(&radio->io, &radio->port0, radio,
+					rtl_ax_port0_drop_mbid, interval, dtim);
+		radio->port0.result = ret;
+		if (!ret)
+			radio->role_stage = 5;
+	}
+stop:
+	radio->role_result = ret;
+	if (owns_transport) {
+		rtl_ax_rx_close(radio->rx);
+		rtl_ax_hci_pause(&radio->io);
+		pci_clear_master(radio->pdev);
+	}
+	dev_info(&radio->pdev->dev, "native AP self-role stage=%u result=%d receive_acks=%llu done_acks=%llu\n",
+		 radio->role_stage, ret, radio->receive_acks, radio->done_acks);
 	return ret;
 }
 
@@ -661,7 +890,7 @@ static ssize_t radio_state_show(struct device *dev,
 		"cmac_registers=%s trx_registers=%s phy_inputs=%s "
 		"features=%s done_acks=%llu bb_base=%s radio_base=%s "
 		"phy_configuration=%s radio_passes=%u,%u "
-		"bb_dm_ic=%s bb_rf=pending roles=pending mac80211=%s\n",
+		"bb_dm_ic=%s AP_role_stage=%u mac80211=%s\n",
 		radio->chip, radio->identity.hardware_cv, radio->identity.cv,
 		radio->identity.factory, radio->identity.adie, radio->powered ? "on" : "off",
 		radio->calibration.tag, radio->calibration.process,
@@ -680,7 +909,8 @@ static ssize_t radio_state_show(struct device *dev,
 		radio->bb_base_ready ? "applied" : "off", radio->radio_base_ready ? "applied" : "off",
 		radio->fem_ready ? "base-and-FEM" : "pending",
 		radio->radio_passes[0], radio->radio_passes[1],
-		radio->bb_dm.ic_ready ? "applied" : "pending", radio->hw ? "monitor" : "pending");
+		radio->bb_dm.ic_ready ? "applied" : "pending", radio->role_stage,
+		radio->hw ? "AP-and-monitor" : "pending");
 }
 static DEVICE_ATTR_RO(radio_state);
 
@@ -1140,12 +1370,12 @@ static ssize_t radio_channel_show(struct device *dev,
 	}
 	ret = sysfs_emit(buffer, "native_operation=%s/20MHz configured=%u band=%u primary=%u center=%u "
 		"BB_frequency=%u BB_channel=%u RF18_analog=%05x,%05x digital=%05x,%05x "
-		"external_loss=%d,%d RFK=pending mac80211_channel=%s\n",
+		"external_loss=%d,%d RFK=pending mac80211_channel=%s FW_RFK_notifications=%llu\n",
 		radio->chip == RTL_AX_8852C ? "5GHz" : "2.4GHz",
 		channel->configured, channel->band, channel->primary, channel->center,
 		rtl_ax_read32(radio, 0x14e30) & 0x1fff, (rtl_ax_read32(radio, 0x10734) >> 16) & 255,
 		analog[0], analog[1], digital[0], digital[1], channel->external_loss[0], channel->external_loss[1],
-		radio->hw ? "connected" : "pending");
+		radio->hw ? "connected" : "pending", radio->rfk_notifications);
 unlock:
 	mutex_unlock(&radio->command_mutex);
 	return ret;
@@ -1213,6 +1443,8 @@ static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int chan
 	pci_set_master(radio->pdev);
 	rtl_ax_h2c_start(&radio->io);
 	rtl_ax_rx_open(radio->rx);
+	if (!ret && radio->chip == RTL_AX_8852C)
+		ret = rtl_ax_rfk_notify_locked(radio);
 	if (!ret && radio->monitor_started)
 		rtl_ax_tx_open(radio->tx);
 	return ret;
@@ -1652,8 +1884,64 @@ static const struct bin_attribute bin_attr_radio_efuse = {
 	.attr = { .name = "radio_efuse", .mode = 0400 },
 	.size = 1536, .read = radio_efuse_read,
 };
+static ssize_t radio_beacon_write(struct file *file, struct kobject *kobject,
+	const struct bin_attribute *attr, char *buffer, loff_t offset, size_t count)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(kobj_to_dev(kobject));
+	u8 *packet;
+	unsigned int pos = 36, tim = 0, rate = radio->chip == RTL_AX_8852C ? 4 : 0;
+	int ret;
+
+	if (offset || count < 36 || count > 700 ||
+	    !ieee80211_is_beacon(get_unaligned_le16(buffer)))
+		return -EINVAL;
+	while (pos + 2 <= count) {
+		if (pos + 2 + (u8)buffer[pos + 1] > count)
+			return -EINVAL;
+		if ((u8)buffer[pos] == WLAN_EID_TIM) {
+			tim = pos - 24;
+			break;
+		}
+		pos += 2 + (u8)buffer[pos + 1];
+	}
+	if (!tim || tim > 127)
+		return -EINVAL;
+	packet = kmalloc(count + 16, GFP_KERNEL);
+	if (!packet)
+		return -ENOMEM;
+	rtl_ax_beacon_header(packet, tim, rate, beacon_tx_ant);
+	memcpy(packet + 16, buffer, count);
+	wiphy_lock(radio->hw->wiphy);
+	if (!radio->monitor_started || !radio->port0.ready) {
+		ret = -ENETDOWN;
+		goto unlock;
+	}
+	/* Same 100 TU / DTIM1 profile as port0 preparation for this board stage. */
+	if (get_unaligned_le16(buffer + 32) != 100 ||
+	    !ether_addr_equal(buffer + 10, radio->flash_calibration.wlan_address) ||
+	    !ether_addr_equal(buffer + 16, radio->flash_calibration.wlan_address)) {
+		ret = -EINVAL;
+		goto unlock;
+	}
+	ret = rtl_ax_command(radio, RTL_AX_H2C_LONG_DATA, 1, 5, 16,
+			     packet, count + 16, false);
+	if (!ret) {
+		radio->beacon_bytes = count;
+		memcpy(radio->beacon_header, packet, 16);
+		rtl_ax_update32(&radio->io, 0xc400, 0, BIT(12));
+		radio->beacon_enabled = true;
+	}
+unlock:
+	wiphy_unlock(radio->hw->wiphy);
+	kfree(packet);
+	return ret ? ret : count;
+}
+static const struct bin_attribute bin_attr_radio_beacon = {
+	.attr = { .name = "radio_beacon_template", .mode = 0200 },
+	.size = 700, .write = radio_beacon_write,
+};
 static const struct bin_attribute *rtl_ax_bin_attrs[] = {
-	&bin_attr_radio_efuse, NULL,
+	&bin_attr_radio_efuse, &bin_attr_radio_beacon, NULL,
 };
 
 static ssize_t radio_rx_show(struct device *dev,
@@ -1680,10 +1968,92 @@ static ssize_t radio_tx_show(struct device *dev,
 	return rtl_ax_tx_status(radio->tx, buffer, PAGE_SIZE);
 }
 static DEVICE_ATTR_RO(radio_tx);
+static ssize_t radio_role_show(struct device *dev,
+	struct device_attribute *attribute, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	unsigned int bytes, i;
+
+	bytes = sysfs_emit(buffer, "AP_self_role_stage=%u result=%d receive_acks=%llu done_acks=%llu unmatched_acks=%llu\nCAM=",
+		radio->role_stage, radio->role_result, radio->receive_acks, radio->done_acks, radio->unmatched_acks);
+	for (i = 0; i < sizeof(radio->role_cam); i++)
+		bytes += sysfs_emit_at(buffer, bytes, "%02x", radio->role_cam[i]);
+	return bytes + sysfs_emit_at(buffer, bytes, "\n");
+}
+static DEVICE_ATTR_RO(radio_role);
+static ssize_t radio_beacon_show(struct device *dev,
+	struct device_attribute *attribute, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	unsigned long flags;
+	unsigned int bytes, i;
+	static const char * const reasons[] = {
+		"CCA", "EDCCA", "NAV", "TXON", "MAC", "others", "lock", "compare", "invalid", "search_end"
+	};
+
+	spin_lock_irqsave(&radio->command_lock, flags);
+	bytes = sysfs_emit(buffer, "enabled=%u template_bytes=%u reports=%llu OK=%llu last_stats=%08x,%08x H2C_header=%08x,%08x,%08x,%08x\n",
+		radio->beacon_enabled, radio->beacon_bytes, radio->beacon_reports, radio->beacon_ok,
+		radio->beacon_last_stats[0], radio->beacon_last_stats[1],
+		radio->beacon_header[0], radio->beacon_header[1], radio->beacon_header[2], radio->beacon_header[3]);
+	for (i = 0; i < ARRAY_SIZE(reasons); i++)
+		bytes += sysfs_emit_at(buffer, bytes, "failure_%s=%llu\n", reasons[i], radio->beacon_fail[i]);
+	bytes += sysfs_emit_at(buffer, bytes, "rejected_C2H=%llu bytes=%u words=%08x,%08x,%08x,%08x,%08x,%08x,%08x,%08x\n",
+		radio->rejected_c2h_count, radio->rejected_c2h_bytes,
+		radio->rejected_c2h[0], radio->rejected_c2h[1], radio->rejected_c2h[2], radio->rejected_c2h[3],
+		radio->rejected_c2h[4], radio->rejected_c2h[5], radio->rejected_c2h[6], radio->rejected_c2h[7]);
+	bytes += sysfs_emit_at(buffer, bytes, "last_C2H_bytes=%u words=%08x,%08x,%08x,%08x,%08x,%08x,%08x,%08x\n",
+		radio->last_c2h_bytes, radio->last_c2h[0], radio->last_c2h[1], radio->last_c2h[2], radio->last_c2h[3],
+		radio->last_c2h[4], radio->last_c2h[5], radio->last_c2h[6], radio->last_c2h[7]);
+	spin_unlock_irqrestore(&radio->command_lock, flags);
+	bytes += sysfs_emit_at(buffer, bytes, "port=%08x error_count=%08x error_flags=%08x timer=%08x scheduler=%08x\n",
+		rtl_ax_read32(radio, 0xc400), rtl_ax_read32(radio, 0xc420),
+		rtl_ax_read32(radio, 0xc424), rtl_ax_read32(radio, 0xc434), rtl_ax_read32(radio, 0xc398));
+	return bytes;
+}
+static ssize_t radio_beacon_store(struct device *dev,
+	struct device_attribute *attribute, const char *buffer, size_t count)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	bool enable;
+	int ret = kstrtobool(buffer, &enable);
+
+	if (ret)
+		return ret;
+	wiphy_lock(radio->hw->wiphy);
+	if (enable && (!radio->monitor_started || !radio->beacon_bytes))
+		ret = -ENETDOWN;
+	else {
+		rtl_ax_update32(&radio->io, 0xc400, BIT(12), enable ? BIT(12) : 0);
+		radio->beacon_enabled = enable;
+	}
+	wiphy_unlock(radio->hw->wiphy);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_RW(radio_beacon);
+static ssize_t radio_port_show(struct device *dev,
+	struct device_attribute *attribute, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	unsigned int bytes, i, reg;
+
+	bytes = sysfs_emit(buffer, "port0_ready=%u result=%d interval_TU=%u DTIM=%u MBID=7 timer_before=%u timer_after=%u timer_reads=%u\n",
+		radio->port0.ready, radio->port0.result, radio->port0.interval, radio->port0.dtim, radio->port0.timer_before,
+		radio->port0.timer_after, radio->port0.timer_reads);
+	for (i = 0; i < ARRAY_SIZE(rtl_ax_port0_registers); i++) {
+		reg = rtl_ax_port0_registers[i];
+		bytes += sysfs_emit_at(buffer, bytes, "register=%04x before=%08x current=%08x\n",
+			reg, radio->port0.before[i], rtl_ax_read32(radio, reg));
+	}
+	return bytes;
+}
+static DEVICE_ATTR_RO(radio_port);
 static struct attribute *rtl_ax_attrs[] = {
-	&dev_attr_radio_state.attr, &dev_attr_radio_rx.attr, &dev_attr_radio_rx_data.attr, &dev_attr_radio_tx.attr, &dev_attr_radio_bb.attr,
+	&dev_attr_radio_beacon.attr,
+	&dev_attr_radio_state.attr, &dev_attr_radio_rx.attr, &dev_attr_radio_rx_data.attr, &dev_attr_radio_tx.attr, &dev_attr_radio_role.attr, &dev_attr_radio_port.attr, &dev_attr_radio_bb.attr,
 	&dev_attr_radio_rf.attr, &dev_attr_radio_rf_bank.attr, &dev_attr_radio_rf_analog.attr,
-	&dev_attr_radio_power.attr, &dev_attr_radio_limits.attr, &dev_attr_radio_bb_dm.attr,
+	&dev_attr_radio_power.attr,
+	&dev_attr_radio_limits.attr, &dev_attr_radio_bb_dm.attr,
 	&dev_attr_radio_physts.attr, &dev_attr_radio_txdiff.attr, &dev_attr_radio_phy_stats.attr,
 	&dev_attr_radio_signal.attr, &dev_attr_radio_filter.attr, &dev_attr_radio_dfs.attr,
 	&dev_attr_radio_dig.attr, &dev_attr_radio_cfo.attr, &dev_attr_radio_environment.attr,
@@ -1841,6 +2211,11 @@ static int rtl_ax_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	release_firmware(fw);
 	if (ret)
 		goto stop;
+	if (prepare_ap_role) {
+		ret = rtl_ax_self_role_prepare(radio, radio->flash_calibration.wlan_address, 100, 1);
+		if (ret)
+			goto stop;
+	}
 	ret = rtl_ax_monitor_register(radio);
 	if (ret)
 		goto stop;

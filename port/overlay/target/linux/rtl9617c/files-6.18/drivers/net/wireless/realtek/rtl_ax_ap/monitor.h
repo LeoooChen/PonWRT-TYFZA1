@@ -20,7 +20,7 @@ static int rtl_ax_monitor_start(struct ieee80211_hw *hw)
 		mutex_unlock(&radio->command_mutex);
 		return ret;
 	}
-	rtl_ax_update32(&radio->io, 0xce20, 0x47ff, 0x440f);
+	rtl_ax_receive_mode(&radio->io, radio->ap_started ? 4 : 0);
 	WRITE_ONCE(radio->monitor_started, true);
 	rtl_ax_rx_open(radio->rx);
 	rtl_ax_tx_open(radio->tx);
@@ -34,6 +34,8 @@ static void rtl_ax_monitor_stop(struct ieee80211_hw *hw, bool suspend)
 
 	mutex_lock(&radio->command_mutex);
 	WRITE_ONCE(radio->monitor_started, false);
+	rtl_ax_update32(&radio->io, 0xc400, BIT(12), 0);
+	radio->beacon_enabled = false;
 	rtl_ax_tx_pause(radio->tx);
 	rtl_ax_rx_close(radio->rx);
 	mutex_unlock(&radio->command_mutex);
@@ -57,12 +59,166 @@ static int rtl_ax_monitor_config(struct ieee80211_hw *hw, int radio_idx, u32 cha
 
 static int rtl_ax_monitor_add_interface(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 {
-	/* Passive monitors need no original MAC role or address-CAM entry. */
-	return vif->type == NL80211_IFTYPE_MONITOR ? 0 : -EOPNOTSUPP;
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+
+	if (vif->type == NL80211_IFTYPE_MONITOR)
+		return 0;
+	if (vif->type != NL80211_IFTYPE_AP)
+		return -EOPNOTSUPP;
+	if (radio->ap_vif)
+		return -EBUSY;
+	radio->ap_vif = vif;
+	return 0;
 }
 
 static void rtl_ax_monitor_remove_interface(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 {
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+
+	if (radio->ap_vif == vif)
+		radio->ap_vif = NULL;
+}
+
+static int rtl_ax_ap_template(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+	struct ieee80211_bss_conf *conf)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	struct ieee80211_mutable_offsets offsets = {};
+	struct sk_buff *skb;
+	unsigned int rate = radio->chip == RTL_AX_8852C ? 4 : 0;
+	int ret;
+
+	skb = ieee80211_beacon_get_template(hw, vif, &offsets, conf->link_id);
+	if (!skb)
+		return -ENOMEM;
+	if (conf->basic_rates)
+		rate = radio->rates[__ffs(conf->basic_rates)].hw_value;
+	ret = rtl_ax_beacon_update(radio, skb->data, skb->len, offsets.tim_offset, rate);
+	dev_kfree_skb(skb);
+	return ret;
+}
+
+static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+	struct ieee80211_bss_conf *conf)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	int ret;
+
+	ret = rtl_ax_self_role_prepare(radio, vif->addr, conf->beacon_int, conf->dtim_period);
+	if (!ret)
+		ret = rtl_ax_ap_template(hw, vif, conf);
+	radio->ap_result = ret;
+	if (ret) {
+		rtl_ax_update32(&radio->io, 0xc400, BIT(12), 0);
+		return ret;
+	}
+	rtl_ax_receive_mode(&radio->io, 4);
+	WRITE_ONCE(radio->ap_started, true);
+	radio->beacon_enabled = true;
+	return 0;
+}
+
+static void rtl_ax_ap_stop(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+	struct ieee80211_bss_conf *conf)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+
+	rtl_ax_update32(&radio->io, 0xc400, BIT(12), 0);
+	radio->beacon_enabled = false;
+	WRITE_ONCE(radio->ap_started, false);
+	rtl_ax_receive_mode(&radio->io, 0);
+}
+
+static void rtl_ax_ap_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+	struct ieee80211_bss_conf *conf, u64 changed)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+
+	if (vif->type != NL80211_IFTYPE_AP || !radio->ap_started)
+		return;
+	if (changed & BSS_CHANGED_BEACON) {
+		radio->ap_result = rtl_ax_ap_template(hw, vif, conf);
+		if (radio->ap_result)
+			dev_err(&radio->pdev->dev, "beacon template update failed: %d\n", radio->ap_result);
+	}
+	if (changed & BSS_CHANGED_BEACON_ENABLED) {
+		rtl_ax_update32(&radio->io, 0xc400, BIT(12), conf->enable_beacon ? BIT(12) : 0);
+		radio->beacon_enabled = conf->enable_beacon;
+	}
+}
+
+static int rtl_ax_station_remove(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+	struct ieee80211_sta *sta)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	struct rtl_ax_station *station = (void *)sta->drv_priv;
+	u8 command[4], cam[60];
+	int ret;
+
+	if (!station->macid)
+		return 0;
+	/* Actual _remove_role: FW role REMOVE followed by address CAM valid0;
+	 * BSSID CAM remains valid while the AP's self-role uses it. */
+	rtl_ax_store32(command, station->macid | 0x4600);
+	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 4, command, sizeof(command), true);
+	if (ret)
+		return ret;
+	rtl_ax_peer_cam(cam, station->macid, vif->addr, sta->addr, sta->aid, false);
+	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0, cam, sizeof(cam), true);
+	if (!ret) {
+		__clear_bit(station->macid, radio->station_ids);
+		station->macid = 0;
+		radio->station_removed++;
+	}
+	return ret;
+}
+
+static int rtl_ax_station_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+	struct ieee80211_sta *sta)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	struct rtl_ax_station *station = (void *)sta->drv_priv;
+	u8 unpause[32], command[4], cam[60];
+	unsigned int id = find_next_zero_bit(radio->station_ids, 128, 1);
+	int ret;
+
+	if (id == 128)
+		return -ENOSPC;
+	rtl_ax_role_unpause(unpause, id);
+	ret = rtl_ax_command_flags(radio, RTL_AX_H2C_CMD, 1, 9, 8, unpause, sizeof(unpause), true, false);
+	if (ret)
+		return ret;
+	rtl_ax_store32(command, id | 0x4200);
+	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 4, command, sizeof(command), true);
+	if (ret)
+		return ret;
+	station->macid = id;
+	__set_bit(id, radio->station_ids);
+	rtl_ax_peer_cam(cam, id, vif->addr, sta->addr, 0, true);
+	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0, cam, sizeof(cam), true);
+	if (ret)
+		goto remove;
+	ret = rtl_ax_station_tables(radio, id);
+	if (ret)
+		goto remove;
+	ret = rtl_ax_station_connected_table(radio, id);
+	if (ret)
+		goto remove;
+	/* Original connect transition: self AP_CLIENT2, AP3, legacy TF padding1. */
+	rtl_ax_store32(command, id | 0x8b040000);
+	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 0, command, sizeof(command), true);
+	if (ret)
+		goto remove;
+	rtl_ax_peer_cam(cam, id, vif->addr, sta->addr, sta->aid, true);
+	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0, cam, sizeof(cam), true);
+	if (ret)
+		goto remove;
+	radio->station_added++;
+	dev_info(&radio->pdev->dev, "native AP station MACID%u AID%u connected\n", id, sta->aid);
+	return 0;
+remove:
+	rtl_ax_station_remove(hw, vif, sta);
+	return ret;
 }
 
 static void rtl_ax_monitor_filter(struct ieee80211_hw *hw,
@@ -73,7 +229,7 @@ static void rtl_ax_monitor_filter(struct ieee80211_hw *hw,
 	*flags &= FIF_ALLMULTI | FIF_BCN_PRBRESP_PROMISC | FIF_CONTROL |
 		FIF_OTHER_BSS | FIF_PSPOLL | FIF_PROBE_REQ | FIF_MCAST_ACTION;
 	mutex_lock(&radio->command_mutex);
-	rtl_ax_update32(&radio->io, 0xce20, 0x47ff, 0x440f);
+	rtl_ax_receive_mode(&radio->io, radio->ap_started ? 4 : 0);
 	mutex_unlock(&radio->command_mutex);
 }
 
@@ -84,6 +240,7 @@ static void rtl_ax_monitor_tx(struct ieee80211_hw *hw,
 	struct ieee80211_hdr *header = (void *)skb->data;
 	int rate_index = IEEE80211_SKB_CB(skb)->control.rates[0].idx;
 	unsigned int rate = radio->chip == RTL_AX_8852C ? 4 : 0;
+	unsigned int macid = control->sta ? ((struct rtl_ax_station *)control->sta->drv_priv)->macid : 0;
 
 	/* Raw management first: same original builder used by AP beacon,
 	 * probe and association traffic. DATA WD and roles follow this path. */
@@ -91,7 +248,7 @@ static void rtl_ax_monitor_tx(struct ieee80211_hw *hw,
 	    (ieee80211_is_mgmt(header->frame_control) || ieee80211_is_data(header->frame_control))) {
 		if (rate_index >= 0 && rate_index < radio->band.n_bitrates)
 			rate = radio->band.bitrates[rate_index].hw_value;
-		if (!rtl_ax_tx_submit(radio->tx, hw, skb, rate))
+		if (!rtl_ax_tx_submit(radio->tx, hw, skb, rate, macid))
 			return;
 	} else
 		radio->tx_unimplemented++;
@@ -106,6 +263,11 @@ static const struct ieee80211_ops rtl_ax_monitor_ops = {
 	.config = rtl_ax_monitor_config,
 	.add_interface = rtl_ax_monitor_add_interface,
 	.remove_interface = rtl_ax_monitor_remove_interface,
+	.start_ap = rtl_ax_ap_start,
+	.stop_ap = rtl_ax_ap_stop,
+	.bss_info_changed = rtl_ax_ap_changed,
+	.sta_add = rtl_ax_station_add,
+	.sta_remove = rtl_ax_station_remove,
 	.configure_filter = rtl_ax_monitor_filter,
 	.add_chanctx = ieee80211_emulate_add_chanctx,
 	.remove_chanctx = ieee80211_emulate_remove_chanctx,
@@ -129,6 +291,10 @@ static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 	u16 rate = (word >> 16) & 0x1ff;
 	u8 bandwidth = word >> 29, gi_ltf = (word >> 25) & 7;
 
+	/* mac80211 RX_INCLUDES_FCS requires a MAC header before the FCS.
+	 * Hardware can report FCS-only records during receive transitions. */
+	if (packet->bytes < 2 + FCS_LEN)
+		return -EINVAL;
 	/* Actual hal_parsing_rx_wd_C/XB word1 carries rate16:24,
 	 * GI/LTF25:27 and bandwidth29:31; no PPDU-derived RSSI is invented. */
 	if (bandwidth >= ARRAY_SIZE(bandwidths))
@@ -143,7 +309,9 @@ static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 	skb_put_data(skb, packet->payload, packet->bytes);
 	status = IEEE80211_SKB_RXCB(skb);
 	memset(status, 0, sizeof(*status));
-	status->flag = RX_FLAG_ONLY_MONITOR | RX_FLAG_NO_SIGNAL_VAL;
+	status->flag = RX_FLAG_NO_SIGNAL_VAL;
+	if (!READ_ONCE(radio->ap_started))
+		status->flag |= RX_FLAG_ONLY_MONITOR;
 	/* Original WD reports FCS and decrypt ICV separately. This passive
 	 * path supplies the raw encrypted frame, without RX_FLAG_DECRYPTED;
 	 * a missing decryption key does not make its FCS invalid. */
@@ -180,7 +348,10 @@ static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 	if (packet->bytes >= 2 && ieee80211_is_beacon(*(__le16 *)packet->payload))
 		status->boottime_ns = ktime_get_boottime_ns();
 	radio->mac80211_packets++;
-	ieee80211_rx_irqsafe(radio->hw, skb);
+	/* RX dispatch runs in rtl_ax_rx_work, not the hardware IRQ. Process
+	 * the frame here so rx_close's synchronous work cancellation also
+	 * completes mac80211 delivery before .stop returns. */
+	ieee80211_rx_ni(radio->hw, skb);
 	return 0;
 }
 
@@ -200,8 +371,9 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	SET_IEEE80211_DEV(hw, &radio->pdev->dev);
 	SET_IEEE80211_PERM_ADDR(hw, radio->flash_calibration.wlan_address);
 	hw->queues = 4;
+	hw->sta_data_size = sizeof(struct rtl_ax_station);
 	ieee80211_hw_set(hw, RX_INCLUDES_FCS);
-	hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_MONITOR);
+	hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_MONITOR) | BIT(NL80211_IFTYPE_AP);
 	hw->wiphy->available_antennas_rx = 3;
 	for (i = 0; i < channels; i++) {
 		radio->channels[i].band = band;
@@ -247,8 +419,9 @@ static ssize_t radio_mac80211_show(struct device *dev,
 	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
 
 	return sysfs_emit(buffer, "registered=%u receive_active=%u handed_to_mac80211=%llu "
-		"TX_unimplemented=%llu interface=monitor AP=pending\n",
-		!!radio->hw, radio->monitor_started, radio->mac80211_packets, radio->tx_unimplemented);
+		"TX_unimplemented=%llu AP_started=%u AP_result=%d station_added=%llu station_removed=%llu\n",
+		!!radio->hw, radio->monitor_started, radio->mac80211_packets, radio->tx_unimplemented,
+		radio->ap_started, radio->ap_result, radio->station_added, radio->station_removed);
 }
 static DEVICE_ATTR_RO(radio_mac80211);
 #endif

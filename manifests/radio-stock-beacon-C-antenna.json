@@ -1,0 +1,15 @@
+{
+  "length": 89,
+  "buffer_class": 2,
+  "category": 1,
+  "command_class": 5,
+  "function": 16,
+  "receive_ack": 0,
+  "done_ack": 0,
+  "scope": "Original ELF payload construction; no hardware TX emulated",
+  "original_status": 0,
+  "original_host_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "frame_sha256": "abb659919303d99a05fc32350110b1558d272ddebd351c8f58cd53b46bcc29f0",
+  "tim_offset_after_MAC_header": 43,
+  "payload": "000000ab00450001870000000000000080000000ffffffffffff00e04c07680200e04c07680200000000000000000000640001000010506f6e5752542d5459465a41312d354701088c129824b048606c030124050400010000"
+}
