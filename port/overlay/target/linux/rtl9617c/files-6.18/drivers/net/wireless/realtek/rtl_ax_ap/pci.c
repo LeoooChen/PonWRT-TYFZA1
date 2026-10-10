@@ -480,7 +480,10 @@ static int rtl_ax_bb_channel_notify_locked(struct rtl_ax_ap *radio)
 	 * Both physical chips use MAC band0; RF band is a separate field. */
 	rtl_ax_store32(information, 1 | radio->channel.band << 12 |
 		radio->channel.primary << 16 | radio->channel.center << 24);
+	rtl_ax_store32(information + 4, radio->channel.bandwidth);
 	rtl_ax_store32(information + 12, 1);
+	if (radio->channel.bandwidth)
+		rtl_ax_store32(information + 16, radio->channel.primary > radio->channel.center ? 1 : 2);
 	return rtl_ax_bb_info_locked(radio, information);
 }
 
@@ -1412,8 +1415,8 @@ static ssize_t radio_power_hardware_show(struct device *dev,
 {
 	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
 	unsigned int i;
-	ssize_t length = sysfs_emit(buffer, "applied=%u units=half-dBm regulation=%s country=%s requested_dBm=%d\n",
-		radio->power_hardware.applied, radio->power_hardware.regulation,
+	ssize_t length = sysfs_emit(buffer, "applied=%u bandwidth_MHz=%u units=half-dBm regulation=%s country=%s requested_dBm=%d\n",
+		radio->power_hardware.applied, 20U << radio->power_hardware.bandwidth, radio->power_hardware.regulation,
 		radio->power_country, radio->requested_tx_dbm);
 
 	mutex_lock(&radio->command_mutex);
@@ -1447,13 +1450,14 @@ static ssize_t radio_channel_show(struct device *dev,
 		if (ret)
 			goto unlock;
 	}
-	ret = sysfs_emit(buffer, "native_operation=%s/20MHz configured=%u band=%u primary=%u center=%u "
+	ret = sysfs_emit(buffer, "native_operation=%s/%uMHz configured=%u band=%u primary=%u center=%u "
 		"BB_frequency=%u BB_channel=%u RF18_analog=%05x,%05x digital=%05x,%05x "
-		"external_loss=%d,%d RFK=pending mac80211_channel=%s FW_RFK_notifications=%llu\n",
-		radio->chip == RTL_AX_8852C ? "5GHz" : "2.4GHz",
+		"external_loss=%d,%d IQK_ready=%u mac80211_channel=%s FW_RFK_notifications=%llu\n",
+		radio->chip == RTL_AX_8852C ? "5GHz" : "2.4GHz", 20U << channel->bandwidth,
 		channel->configured, channel->band, channel->primary, channel->center,
 		rtl_ax_read32(radio, 0x14e30) & 0x1fff, (rtl_ax_read32(radio, 0x10734) >> 16) & 255,
 		analog[0], analog[1], digital[0], digital[1], channel->external_loss[0], channel->external_loss[1],
+		radio->chip == RTL_AX_8852C ? radio->c_iqk.ready : radio->xb_iqk.ready,
 		radio->hw ? "connected" : "pending", radio->rfk_notifications);
 unlock:
 	mutex_unlock(&radio->command_mutex);
@@ -1461,7 +1465,7 @@ unlock:
 }
 
 /* Caller holds command_mutex across channel and receive-mode ownership. */
-static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int channel)
+static int rtl_ax_receive_configure(struct rtl_ax_ap *radio, unsigned int primary, unsigned int channel, unsigned int bandwidth)
 {
 	int ret;
 
@@ -1472,11 +1476,11 @@ static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int chan
 	rtl_ax_hci_pause(&radio->io);
 	pci_clear_master(radio->pdev);
 	ret = radio->chip == RTL_AX_8852C ?
-		rtl_ax_c_receive_channel20(&radio->io, &radio->phy, &radio->bb_dm, channel, &radio->channel) :
+		rtl_ax_c_receive_channel(&radio->io, &radio->phy, &radio->bb_dm, primary, channel, bandwidth, &radio->channel) :
 		rtl_ax_xb_receive_channel20(&radio->io, &radio->phy, &radio->bb_dm, channel, &radio->channel);
 	if (!ret)
-		ret = rtl_ax_power_apply20(&radio->io, radio->chip, &radio->power_inputs,
-			radio->channel.band, channel, radio->power_country,
+		ret = rtl_ax_power_apply(&radio->io, radio->chip, &radio->power_inputs,
+			radio->channel.band, primary, channel, bandwidth, radio->power_country,
 			radio->requested_tx_dbm, &radio->power_hardware);
 	/* Original chl_rfk_trigger_traditional@2f7858 runs RX_DCK after
 	 * each channel change. rx_dck_trigger@2f53e0 selects C RF/0 and
@@ -1497,7 +1501,7 @@ static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int chan
 		if (radio->chip == RTL_AX_8192XB)
 			ret = rtl_ax_xb_iqk_start20(&radio->io, channel, &radio->xb_iqk);
 		else
-			ret = rtl_ax_c_iqk_start20(&radio->io, channel, &radio->c_iqk);
+			ret = rtl_ax_c_iqk_start(&radio->io, channel, radio->channel.bandwidth, &radio->c_iqk);
 	}
 	if (!ret) {
 		if (radio->chip == RTL_AX_8192XB)
@@ -1533,6 +1537,11 @@ static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int chan
 	if (!ret && radio->monitor_started)
 		rtl_ax_tx_open(radio->tx);
 	return ret;
+}
+
+static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int channel)
+{
+	return rtl_ax_receive_configure(radio, channel, channel, 0);
 }
 
 static ssize_t radio_channel_store(struct device *dev,
@@ -1672,9 +1681,9 @@ static ssize_t radio_iqk_show(struct device *dev,
 	if (radio->chip == RTL_AX_8852C) {
 		struct rtl_ax_c_iqk *c = &radio->c_iqk;
 
-		length = sysfs_emit(buffer, "IQK=%s chip=%02x method=host normal_SCC_5G_20 channel=%u "
+		length = sysfs_emit(buffer, "IQK=%s chip=%02x method=host normal_SCC_5G_%u channel=%u "
 			"times=%u failures=%u status=%08x\n",
-			c->ready ? "applied" : "pending", radio->chip, c->channel, c->times, c->failures, c->status);
+			c->ready ? "applied" : "pending", radio->chip, 20U << c->bandwidth, c->channel, c->times, c->failures, c->status);
 		for (path = 0; path < 2; path++) {
 			length += sysfs_emit_at(buffer, length, "path=%u shots=%u narrow=%u LOK_attempts=%u "
 				"LOK_range_fail=%u TX_fail=%u RX_fail=%u thermal=%u "

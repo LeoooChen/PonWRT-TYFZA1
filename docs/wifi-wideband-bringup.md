@@ -24,7 +24,7 @@ C 80MHz相对20MHz的ADC变化包含每条路径C0/C1窗口的D4 mask0x0c000000�
 
 ## 下一条完整链
 
-原机`rtw_hal_set_ch_bw@1cf3cc`计算中心频道，先配置MAC，再调用BB和RF频道/带宽链。`halrf_ctrl_bw_ch@2f8c60`分别执行ctl_ch、ctl_bw、ctl_band_ch_bw和rxbb_bw：C使用`halrf_ctl_band_ch_bw_8852c@30b1a0`及`halrf_rxbb_bw_8852c@30db98`；XB使用独立ctrl_ch/ctrl_bw及`halrf_rxbb_bw_8192xb@33ce5c`。C函数读取HAL+1580的真实CV字段，沿用本板CV1。
+原机`rtw_hal_set_ch_bw@1cf3cc`计算中心频道，先配置MAC，再调用BB和RF频道/带宽链。`halrf_ctrl_bw_ch@2f8c60`分别执行ctl_ch、ctl_bw、ctl_band_ch_bw和rxbb_bw：C使用`halrf_ctl_band_ch_bw_8852c@30b1a0`及`halrf_rxbb_bw_8852c@30db98`；XB使用独立ctrl_ch/ctrl_bw及`halrf_rxbb_bw_8192xb@33ce5c`。C读取HAL+1580作为DBCC开关，HAL+4作为CV；本板为DBCC0/CV1，两条射频路径都配置。之前把+1580标为CV的文档错误已更正。
 
 现有原生`rtl_ax_receive_set_channel`有完整停TX、停RX/HCI、BB/RF、TPU、RX_DCK、GAPK、IQK、TSSI及恢复/通知顺序，但频道参数和多个校准入口仍限定20MHz。接续将主频道、中心频道、带宽和PHY primary index作为同一频道状态传递，分别对齐以下原机步骤：
 
@@ -35,3 +35,15 @@ C 80MHz相对20MHz的ADC变化包含每条路径C0/C1窗口的D4 mask0x0c000000�
 5. 逐包WD的BW/GI/速率与终端控制表，再发布HT40及C的VHT/HE能力。
 
 当前完整构建服务`ponwrt-tyfza1-lan-20261010-130028`使用已实测提交`cd402d5`；这份更高带宽提取尚未改变生产驱动。
+
+## IQK原机对齐及HT40板测
+
+继续执行原机完整`iqk_start_iqk_8852c`及其局部helper，确认20MHz采用四次LOK（0x008/0x308/0x508/0x308），40/80MHz才用六次增益/LUT程序。接收IQK的ADC selector在20/40MHz为1、80MHz为2；接收AGC命令是0x1708。原生旧实现混用了宽带LOK、selector2和0x708，另多写了原机这条路径不存在的808c=10010。已按完整原机输出修正，且让TX/RX宽带IQK命令、诊断状态随带宽变化。
+
+原机指令输出为`radio-stock-C-calibration-bandwidth.json`；显式宿主完成值和温度仅用于提取执行路径。实际AP18板上两条射频路径全部完成、失败标志0，用户复测仍为50/20Mbps。没有将这次校准修正称作已测得吞吐增益。日志`radio-ap18c-IQK-first.txt`、`radio-ap18c-IQK-connected-50Mbps.txt`。
+
+AP19cb接入C的HT40：主频道44、中心46（44+48）、PHY primary index2、MAC TXSC2，RF18/RXBB、普通功率及RU限值对应40MHz，BBinfo通知包含带宽和TXSC，逐包WD7的BW[29:28]由mac80211选定速率传入。C628 bit4也按实际原机cfg_mac_bw补齐。原机功率构造器及WD编码见`radio-stock-power-registers-40.json`、`radio-stock-HT40-WD.json`。
+
+用户实测5GHz下载达到百兆宽带上限、上传20Mbps；真实站点双向MCS15、40MHz/短GI、300Mbps。快照中70792个聚合MPDU全部收到RPQ完成，full0、pending0，停队列/恢复各7次，TX failed0；RX曾出现1次RDU，记录保留。普通/RU/by-rate的43个DWORD实机readback全部吻合。证据`logs/radio-ap19cb-HT40-100Mbps.txt`。2G目前仍为已验收的20MHz/2SS/BA路径。
+
+接续80MHz还需普通限值中的40m_0p5双子带最小值、四个20MHz子带及RU列、ADC数字时序、完整主子频道/TXSC，并补齐VHT/HE的实际发送和能力发布；然后接2G的HT40及HE。

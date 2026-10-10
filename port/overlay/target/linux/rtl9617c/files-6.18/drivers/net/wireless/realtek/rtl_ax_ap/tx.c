@@ -47,7 +47,7 @@ struct rtl_ax_tx {
 };
 
 static void rtl_ax_tx_wd(u8 *out, unsigned int bytes,
-	unsigned int addresses, unsigned int rate, unsigned int gi, unsigned int sequence,
+	unsigned int addresses, unsigned int rate, unsigned int gi, unsigned int bandwidth, unsigned int sequence,
 	unsigned int header_bytes, bool no_ack, bool multicast,
 	unsigned int channel, unsigned int qsel, bool tid_ind, unsigned int macid,
 	unsigned int aggregate, unsigned int density)
@@ -64,7 +64,7 @@ static void rtl_ax_tx_wd(u8 *out, unsigned int bytes,
 	rtl_ax_store32(out + 8, macid << 24 | qsel << 17 | (tid_ind ? BIT(23) : 0) | (bytes & 0x3fff));
 	rtl_ax_store32(out + 12, (sequence & 0xfff) | (aggregate ? BIT(12) : 0));
 	/* Actual C/XB DATA-WD@2525ac: GI[27:25], rate[24:16], fixed-rate[31]. */
-	rtl_ax_store32(out + 28, BIT(31) | (gi & 7) << 25 | (rate & 0x1ff) << 16);
+	rtl_ax_store32(out + 28, BIT(31) | (bandwidth & 3) << 28 | (gi & 7) << 25 | (rate & 0x1ff) << 16);
 	rtl_ax_store32(out + 32, BIT(9) | BIT(10));
 	rtl_ax_store32(out + 36, (multicast ? BIT(11) : 0) | (aggregate ? (aggregate - 1) & 0xff : 0));
 	rtl_ax_store32(out + 40, aggregate ? (density & 7) << 18 : 0);
@@ -176,7 +176,7 @@ void rtl_ax_tx_open(struct rtl_ax_tx *tx)
 }
 
 int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
-	struct sk_buff *skb, unsigned int rate, unsigned int gi, unsigned int macid,
+	struct sk_buff *skb, unsigned int rate, unsigned int gi, unsigned int bandwidth, unsigned int macid,
 	unsigned int aggregate, unsigned int density)
 {
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
@@ -225,7 +225,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	memset(page, 0, RTL_AX_TX_WP_BYTES);
 	addresses = rtl_ax_tx_wp_addresses(page + 56 + RTL_AX_TX_WP_SEQUENCE_BYTES, lower_32_bits(dma), skb->len);
 	length = 56 + RTL_AX_TX_WP_SEQUENCE_BYTES + addresses * RTL_AX_TX_WP_ADDRESS_BYTES;
-	rtl_ax_tx_wd(page, skb->len, addresses, rate, gi,
+	rtl_ax_tx_wd(page, skb->len, addresses, rate, gi, bandwidth,
 		le16_to_cpu(header->seq_ctrl) >> 4, ieee80211_hdrlen(header->frame_control),
 		info->flags & IEEE80211_TX_CTL_NO_ACK, is_multicast_ether_addr(header->addr1),
 		rtl_ax_tx_channels[ring], qsel, tid_indicators[tid], macid, aggregate, density);

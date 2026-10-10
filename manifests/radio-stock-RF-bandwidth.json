@@ -1,0 +1,337 @@
+{
+  "scope": "Execute original C channel/BW and RXBB control with tagged RF18 inputs.",
+  "original_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "executed_functions": [
+    "halrf_ctrl_bw_ch",
+    "halrf_ctl_ch",
+    "halrf_ctl_bw",
+    "halrf_ctl_band_ch_bw",
+    "halrf_rxbb_bw",
+    "halrf_ctl_band_ch_bw_8852c",
+    "halrf_kpath_8852c",
+    "halrf_rxbb_bw_8852c",
+    "halrf_set_rxbb_bw_8852c",
+    "halrf_write_fwofld_start",
+    "halrf_write_fwofld_end"
+  ],
+  "records": [
+    {
+      "chip": "8852c",
+      "CV": 1,
+      "PHY": 0,
+      "DBCC": 0,
+      "width_MHz": 20,
+      "center": 36,
+      "initial_RF18": {
+        "0:0x18": "0xe5a5a",
+        "0:0x10018": "0xc5a5a",
+        "1:0x18": "0xa5a5a",
+        "1:0x10018": "0x85a5a"
+      },
+      "operations": [
+        {
+          "path": 0,
+          "address": "0x18",
+          "mask": "0xfffff",
+          "value": "0xd1d24"
+        },
+        {
+          "delay_us": 100
+        },
+        {
+          "path": 0,
+          "address": "0x10018",
+          "mask": "0xfffff",
+          "value": "0xd1d24"
+        },
+        {
+          "delay_us": 100
+        },
+        {
+          "path": 1,
+          "address": "0x18",
+          "mask": "0xfffff",
+          "value": "0x91d24"
+        },
+        {
+          "delay_us": 100
+        },
+        {
+          "path": 1,
+          "address": "0x10018",
+          "mask": "0xfffff",
+          "value": "0x91d24"
+        },
+        {
+          "delay_us": 100
+        },
+        {
+          "path": 0,
+          "address": "0xee",
+          "mask": "0x4",
+          "value": "0x1"
+        },
+        {
+          "path": 0,
+          "address": "0x33",
+          "mask": "0x1f",
+          "value": "0xa"
+        },
+        {
+          "path": 0,
+          "address": "0x3f",
+          "mask": "0x3f",
+          "value": "0x1b"
+        },
+        {
+          "path": 0,
+          "address": "0xee",
+          "mask": "0x4",
+          "value": "0x0"
+        },
+        {
+          "path": 1,
+          "address": "0xee",
+          "mask": "0x4",
+          "value": "0x1"
+        },
+        {
+          "path": 1,
+          "address": "0x33",
+          "mask": "0x1f",
+          "value": "0xa"
+        },
+        {
+          "path": 1,
+          "address": "0x3f",
+          "mask": "0x3f",
+          "value": "0x1b"
+        },
+        {
+          "path": 1,
+          "address": "0xee",
+          "mask": "0x4",
+          "value": "0x0"
+        }
+      ],
+      "final_RF18": {
+        "0:0x18": "0xd1d24",
+        "0:0x10018": "0xd1d24",
+        "1:0x18": "0x91d24",
+        "1:0x10018": "0x91d24"
+      }
+    },
+    {
+      "chip": "8852c",
+      "CV": 1,
+      "PHY": 0,
+      "DBCC": 0,
+      "width_MHz": 40,
+      "center": 38,
+      "initial_RF18": {
+        "0:0x18": "0xe5a5a",
+        "0:0x10018": "0xc5a5a",
+        "1:0x18": "0xa5a5a",
+        "1:0x10018": "0x85a5a"
+      },
+      "operations": [
+        {
+          "path": 0,
+          "address": "0x18",
+          "mask": "0xfffff",
+          "value": "0xd1926"
+        },
+        {
+          "delay_us": 100
+        },
+        {
+          "path": 0,
+          "address": "0x10018",
+          "mask": "0xfffff",
+          "value": "0xd1926"
+        },
+        {
+          "delay_us": 100
+        },
+        {
+          "path": 1,
+          "address": "0x18",
+          "mask": "0xfffff",
+          "value": "0x91926"
+        },
+        {
+          "delay_us": 100
+        },
+        {
+          "path": 1,
+          "address": "0x10018",
+          "mask": "0xfffff",
+          "value": "0x91926"
+        },
+        {
+          "delay_us": 100
+        },
+        {
+          "path": 0,
+          "address": "0xee",
+          "mask": "0x4",
+          "value": "0x1"
+        },
+        {
+          "path": 0,
+          "address": "0x33",
+          "mask": "0x1f",
+          "value": "0xa"
+        },
+        {
+          "path": 0,
+          "address": "0x3f",
+          "mask": "0x3f",
+          "value": "0x13"
+        },
+        {
+          "path": 0,
+          "address": "0xee",
+          "mask": "0x4",
+          "value": "0x0"
+        },
+        {
+          "path": 1,
+          "address": "0xee",
+          "mask": "0x4",
+          "value": "0x1"
+        },
+        {
+          "path": 1,
+          "address": "0x33",
+          "mask": "0x1f",
+          "value": "0xa"
+        },
+        {
+          "path": 1,
+          "address": "0x3f",
+          "mask": "0x3f",
+          "value": "0x13"
+        },
+        {
+          "path": 1,
+          "address": "0xee",
+          "mask": "0x4",
+          "value": "0x0"
+        }
+      ],
+      "final_RF18": {
+        "0:0x18": "0xd1926",
+        "0:0x10018": "0xd1926",
+        "1:0x18": "0x91926",
+        "1:0x10018": "0x91926"
+      }
+    },
+    {
+      "chip": "8852c",
+      "CV": 1,
+      "PHY": 0,
+      "DBCC": 0,
+      "width_MHz": 80,
+      "center": 42,
+      "initial_RF18": {
+        "0:0x18": "0xe5a5a",
+        "0:0x10018": "0xc5a5a",
+        "1:0x18": "0xa5a5a",
+        "1:0x10018": "0x85a5a"
+      },
+      "operations": [
+        {
+          "path": 0,
+          "address": "0x18",
+          "mask": "0xfffff",
+          "value": "0xd152a"
+        },
+        {
+          "delay_us": 100
+        },
+        {
+          "path": 0,
+          "address": "0x10018",
+          "mask": "0xfffff",
+          "value": "0xd152a"
+        },
+        {
+          "delay_us": 100
+        },
+        {
+          "path": 1,
+          "address": "0x18",
+          "mask": "0xfffff",
+          "value": "0x9152a"
+        },
+        {
+          "delay_us": 100
+        },
+        {
+          "path": 1,
+          "address": "0x10018",
+          "mask": "0xfffff",
+          "value": "0x9152a"
+        },
+        {
+          "delay_us": 100
+        },
+        {
+          "path": 0,
+          "address": "0xee",
+          "mask": "0x4",
+          "value": "0x1"
+        },
+        {
+          "path": 0,
+          "address": "0x33",
+          "mask": "0x1f",
+          "value": "0xa"
+        },
+        {
+          "path": 0,
+          "address": "0x3f",
+          "mask": "0x3f",
+          "value": "0xb"
+        },
+        {
+          "path": 0,
+          "address": "0xee",
+          "mask": "0x4",
+          "value": "0x0"
+        },
+        {
+          "path": 1,
+          "address": "0xee",
+          "mask": "0x4",
+          "value": "0x1"
+        },
+        {
+          "path": 1,
+          "address": "0x33",
+          "mask": "0x1f",
+          "value": "0xa"
+        },
+        {
+          "path": 1,
+          "address": "0x3f",
+          "mask": "0x3f",
+          "value": "0xb"
+        },
+        {
+          "path": 1,
+          "address": "0xee",
+          "mask": "0x4",
+          "value": "0x0"
+        }
+      ],
+      "final_RF18": {
+        "0:0x18": "0xd152a",
+        "0:0x10018": "0xd152a",
+        "1:0x18": "0x9152a",
+        "1:0x10018": "0x9152a"
+      }
+    }
+  ]
+}

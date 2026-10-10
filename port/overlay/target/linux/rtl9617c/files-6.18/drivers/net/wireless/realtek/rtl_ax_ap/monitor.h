@@ -15,7 +15,9 @@ static int rtl_ax_monitor_start(struct ieee80211_hw *hw)
 	int ret;
 
 	mutex_lock(&radio->command_mutex);
-	ret = rtl_ax_receive_set_channel(radio, hw->conf.chandef.chan->hw_value);
+	ret = rtl_ax_receive_configure(radio, hw->conf.chandef.chan->hw_value,
+		ieee80211_frequency_to_channel(hw->conf.chandef.center_freq1),
+		hw->conf.chandef.width == NL80211_CHAN_WIDTH_40);
 	if (ret) {
 		mutex_unlock(&radio->command_mutex);
 		return ret;
@@ -51,8 +53,9 @@ static int rtl_ax_monitor_config(struct ieee80211_hw *hw, int radio_idx, u32 cha
 	if (!(changed & IEEE80211_CONF_CHANGE_CHANNEL)) {
 		if ((changed & IEEE80211_CONF_CHANGE_POWER) && radio->channel.configured) {
 			mutex_lock(&radio->command_mutex);
-			ret = rtl_ax_power_apply20(&radio->io, radio->chip, &radio->power_inputs,
-				radio->channel.band, radio->channel.center, radio->power_country,
+			ret = rtl_ax_power_apply(&radio->io, radio->chip, &radio->power_inputs,
+				radio->channel.band, radio->channel.primary, radio->channel.center,
+				radio->channel.bandwidth, radio->power_country,
 				radio->requested_tx_dbm, &radio->power_hardware);
 			mutex_unlock(&radio->command_mutex);
 			return ret;
@@ -60,10 +63,13 @@ static int rtl_ax_monitor_config(struct ieee80211_hw *hw, int radio_idx, u32 cha
 		return 0;
 	}
 	if (hw->conf.chandef.width != NL80211_CHAN_WIDTH_20 &&
+	    !(radio->chip == RTL_AX_8852C && hw->conf.chandef.width == NL80211_CHAN_WIDTH_40) &&
 	    hw->conf.chandef.width != NL80211_CHAN_WIDTH_20_NOHT)
 		return -EOPNOTSUPP;
 	mutex_lock(&radio->command_mutex);
-	ret = rtl_ax_receive_set_channel(radio, hw->conf.chandef.chan->hw_value);
+	ret = rtl_ax_receive_configure(radio, hw->conf.chandef.chan->hw_value,
+		ieee80211_frequency_to_channel(hw->conf.chandef.center_freq1),
+		hw->conf.chandef.width == NL80211_CHAN_WIDTH_40);
 	mutex_unlock(&radio->command_mutex);
 	return ret;
 }
@@ -372,7 +378,7 @@ static void rtl_ax_monitor_tx(struct ieee80211_hw *hw,
 	struct ieee80211_hdr *header = (void *)skb->data;
 	const struct ieee80211_tx_rate *selected = &IEEE80211_SKB_CB(skb)->control.rates[0];
 	unsigned int rate = radio->chip == RTL_AX_8852C ? 4 : 0;
-	unsigned int gi = 0;
+	unsigned int gi = 0, bandwidth = 0;
 	unsigned int macid = control->sta ? ((struct rtl_ax_station *)control->sta->drv_priv)->macid : 0;
 	unsigned int aggregate = 0, density = 0;
 
@@ -383,6 +389,7 @@ static void rtl_ax_monitor_tx(struct ieee80211_hw *hw,
 		if (selected->flags & IEEE80211_TX_RC_MCS) {
 			rate = 0x80 + selected->idx;
 			gi = !!(selected->flags & IEEE80211_TX_RC_SHORT_GI);
+			bandwidth = !!(selected->flags & IEEE80211_TX_RC_40_MHZ_WIDTH);
 		} else if (selected->idx >= 0 && selected->idx < radio->band.n_bitrates)
 			rate = radio->band.bitrates[selected->idx].hw_value;
 		if (control->sta && (IEEE80211_SKB_CB(skb)->flags & IEEE80211_TX_CTL_AMPDU)) {
@@ -392,7 +399,7 @@ static void rtl_ax_monitor_tx(struct ieee80211_hw *hw,
 			aggregate = READ_ONCE(station->tx_aggregation[tid]);
 			density = control->sta->deflink.ht_cap.ampdu_density;
 		}
-		if (!rtl_ax_tx_submit(radio->tx, hw, skb, rate, gi, macid, aggregate, density))
+		if (!rtl_ax_tx_submit(radio->tx, hw, skb, rate, gi, bandwidth, macid, aggregate, density))
 			return;
 	} else
 		radio->tx_unimplemented++;
@@ -561,6 +568,10 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	radio->band.ht_cap.mcs.rx_mask[1] = 0xff;
 	radio->band.ht_cap.mcs.rx_highest = cpu_to_le16(144);
 	radio->band.ht_cap.mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
+	if (radio->chip == RTL_AX_8852C) {
+		radio->band.ht_cap.cap |= IEEE80211_HT_CAP_SUP_WIDTH_20_40 | IEEE80211_HT_CAP_SGI_40;
+		radio->band.ht_cap.mcs.rx_highest = cpu_to_le16(300);
+	}
 	hw->wiphy->bands[band] = &radio->band;
 	radio->hw = hw;
 	ret = ieee80211_register_hw(hw);

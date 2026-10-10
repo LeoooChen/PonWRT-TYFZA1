@@ -93,13 +93,13 @@ class ModuleOracle:
     def unpack(self, address, format):
         return struct.unpack('<' + format, self.uc.mem_read(address, struct.calcsize('<' + format)))
 
-    def call(self, name, *args):
+    def call(self, name, *args, instruction_budget=100000):
         for register, value in zip((UC_ARM64_REG_X0, UC_ARM64_REG_X1, UC_ARM64_REG_X2, UC_ARM64_REG_X3,
                                     UC_ARM64_REG_X4, UC_ARM64_REG_X5, UC_ARM64_REG_X6, UC_ARM64_REG_X7), args):
             self.uc.reg_write(register, value)
         end = self.scratch + 0x8000
         self.uc.reg_write(UC_ARM64_REG_SP, self.scratch + 0xff00)
         self.uc.reg_write(UC_ARM64_REG_LR, end)
-        self.uc.emu_start(self.functions[name], end, count=100000)
-        assert self.uc.reg_read(UC_ARM64_REG_PC) == end, name
+        self.uc.emu_start(self.functions[name], end, count=instruction_budget)
+        assert self.uc.reg_read(UC_ARM64_REG_PC) == end, (name, hex(self.uc.reg_read(UC_ARM64_REG_PC)))
         return self.uc.reg_read(UC_ARM64_REG_X0)

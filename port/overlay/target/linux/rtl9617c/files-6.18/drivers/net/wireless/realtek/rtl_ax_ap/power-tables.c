@@ -252,8 +252,8 @@ static int rtl_ax_channel_power(const struct rtl_ax_limits *limits,
 	return 0;
 }
 
-int rtl_ax_power_apply20(const struct rtl_ax_io *io, unsigned int chip,
-	const struct rtl_ax_power_inputs *inputs, unsigned int band, unsigned int channel,
+int rtl_ax_power_apply(const struct rtl_ax_io *io, unsigned int chip,
+	const struct rtl_ax_power_inputs *inputs, unsigned int band, unsigned int primary, unsigned int channel, unsigned int bandwidth,
 	const char *country, int max_dbm, struct rtl_ax_power_hardware *state)
 {
 	const struct rtl_ax_power_stage *power = &inputs->stage[RTL_AX_PHY_FEM];
@@ -266,6 +266,7 @@ int rtl_ax_power_apply20(const struct rtl_ax_io *io, unsigned int chip,
 		if (!strncmp(limits->regulation[i], country, 2) && !limits->regulation[i][2])
 			regulation = limits->regulation[i];
 	strscpy(state->regulation, regulation, sizeof(state->regulation));
+	state->bandwidth = bandwidth;
 	for (i = 0; i < 12; i++)
 		/* Actual get_power_by_rate fetches CCK from2G on a5G channel. */
 		state->rate[i] = rtl_ax_half_dbm(power->rate[i < 4 ? 0 : band][i], max_dbm);
@@ -282,27 +283,37 @@ int rtl_ax_power_apply20(const struct rtl_ax_io *io, unsigned int chip,
 	memset(state->limit20, 0, sizeof(state->limit20));
 	memset(state->ru20, 0, sizeof(state->ru20));
 	for (nss = 0; nss < 2; nss++) {
-		for (i = 0; i < 4; i++)
+		for (i = 0; i < (bandwidth ? 6 : 4); i++)
 			for (bf = 0; bf < 2; bf++) {
-				struct rtl_ax_limit_key key = { .band = band, .channel = channel,
-					.ntx = nss, .bf = bf, .bandwidth = i == 1,
+				unsigned int query_channel = !bandwidth ? channel :
+					i == 0 || i == 3 ? channel - 2 : i == 4 ? channel + 2 :
+					i == 2 ? primary : channel;
+				struct rtl_ax_limit_key key = { .band = band, .channel = query_channel,
+					.ntx = nss, .bf = bf, .bandwidth = i == 1 || i == 5,
 					.rate = i < 2 ? 0 : i == 2 ? 1 : 4 };
 				int value, ret;
 
 				ret = rtl_ax_channel_power(limits, &key, regulation, &value);
 				if (ret)
 					return ret;
-				state->limit20[nss * 40 + i * 2 + bf] = rtl_ax_half_dbm(value, max_dbm);
+				/* Original40m constructor: two HE20 pairs then HE40
+				 * at byte22; the MAC writer retains the full40-byte/NSS layout. */
+				state->limit20[nss * 40 + (i == 5 ? 22 : i * 2) + bf] = rtl_ax_half_dbm(value, max_dbm);
 			}
 		for (i = 0; i < 3; i++) {
-			struct rtl_ax_limit_key key = { .band = band, .channel = channel,
-				.ntx = nss, .bandwidth = i, .rate = 4, .ru = 1 };
-			int value, ret;
+			unsigned int subchannel;
 
-			ret = rtl_ax_channel_power(limits, &key, regulation, &value);
-			if (ret)
-				return ret;
-			state->ru20[nss * 24 + i * 8] = rtl_ax_half_dbm(value, max_dbm);
+			for (subchannel = 0; subchannel < (bandwidth ? 2 : 1); subchannel++) {
+				struct rtl_ax_limit_key key = { .band = band,
+					.channel = bandwidth ? channel - 2 + subchannel * 4 : channel,
+					.ntx = nss, .bandwidth = i, .rate = 4, .ru = 1 };
+				int value, ret;
+
+				ret = rtl_ax_channel_power(limits, &key, regulation, &value);
+				if (ret)
+					return ret;
+				state->ru20[nss * 24 + i * 8 + subchannel] = rtl_ax_half_dbm(value, max_dbm);
+			}
 		}
 	}
 	/* Actual TPU MAC register map:11 by-rate DWORDs,20 limits,12 RU.

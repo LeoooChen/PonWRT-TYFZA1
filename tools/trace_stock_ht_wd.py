@@ -2,11 +2,16 @@
 """Execute actual C/XB DATA descriptors for HT MCS0..15 and long/short GI."""
 from pathlib import Path
 import hashlib
+import argparse
 import json
 import struct
 from arm64_module_oracle import ModuleOracle
 
 root = Path(__file__).resolve().parents[1]
+parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--width',type=int,choices=(20,40),default=20)
+parser.add_argument('--output',type=Path,default=root/'manifests/radio-stock-HT-WD.json')
+options=parser.parse_args()
 module = root / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
 names = ['_phl_fill_tx_meta_data'] + [base + '_' + chip for chip in ('8852c', '8192xb')
                                     for base in ('txdes_proc_data', 'mac_txdesc_len')]
@@ -45,7 +50,7 @@ for chip in ('8852c', '8192xb'):
             if aggregate:
                 value = int.from_bytes(data[32:40], 'little') | 64 << 32 | 1 << 41 | 4 << 43
                 struct.pack_into('<Q', data, 32, value)
-            struct.pack_into('<Q', data, 40, 0x1840 | gi)  # fixed rate,no fallback,ACK required
+            struct.pack_into('<Q', data, 40, 0x1840 | gi | (int(options.width==40) << 3))
             oracle.uc.mem_write(request, bytes(256))
             oracle.uc.mem_write(request + 32, bytes(data))
             oracle.uc.mem_write(request + 108, b'\x01')
@@ -55,12 +60,12 @@ for chip in ('8852c', '8192xb'):
             size = oracle.call('mac_txdesc_len_' + chip, adapter, metadata)
             assert size == 56
             assert oracle.call('txdes_proc_data_' + chip, adapter, metadata, output, size) == 0
-            records.append({'chip': chip, 'MCS': mcs, 'GI': gi, 'bandwidth': 20, 'MACID': 1,
+            records.append({'chip': chip, 'MCS': mcs, 'GI': gi, 'bandwidth': options.width, 'MACID': 1,
                             'AMPDU': aggregate, 'maximum_aggregation': 64 if aggregate else 0,
                             'density': 4 if aggregate else 0,
                             'metadata': bytes(oracle.uc.mem_read(metadata, 96)).hex(),
                             'WD_words': [hex(w) for w in oracle.unpack(output, '14I')]})
-(root / 'manifests/radio-stock-HT-WD.json').write_text(json.dumps({
+options.output.write_text(json.dumps({
     'scope': __doc__, 'original_sha256': hashlib.sha256(module.read_bytes()).hexdigest(),
     'executed_functions': names, 'records': records}, indent=2) + '\n')
 for chip in ('8852c', '8192xb'):

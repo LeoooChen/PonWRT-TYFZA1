@@ -236,7 +236,7 @@ static inline int rtl_ax_xb_receive_channel20(const struct rtl_ax_io *io,
 		return -EINVAL;
 	/* cfg_mac_bw@21d980,BAND2G/PHY0/BW20:clear bits0/1/4. */
 	rtl_ax_update8(io, 0xc010, 3, 0);
-	rtl_ax_update8(io, 0xc628, 0x13, 0);
+	rtl_ax_update8(io, 0xc628, 0x13, 0x10);
 	io->write32(io->ctx, 0xc088, 0);
 	rtl_ax_xb_bb2g20(io, phy, dm, center, channel);
 	ret = rtl_ax_xb_rf2g20(io, center, channel);

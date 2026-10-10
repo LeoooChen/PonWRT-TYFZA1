@@ -1,0 +1,75 @@
+{
+  "at": "2026-10-10T13:37:32.769285+08:00",
+  "scope": "Actual C/5GHz HT40 and original IQK alignment, original host module not loaded",
+  "module": {
+    "path": "artifacts/live-radio-ap19cb/rtl_ax_ap_live_c.ko",
+    "sha256": "b3d22779d924fa056ea874400e2f2b517e46e2c569389af085f1ba16d26ae7d4",
+    "bytes": 1036352
+  },
+  "configuration": {
+    "primary": 44,
+    "center": 46,
+    "width_MHz": 40,
+    "MAC_band": 0,
+    "RF_band": 1,
+    "PHY_primary_index": 2,
+    "password": "88888888"
+  },
+  "user_speed_Mbps": {
+    "download": 100,
+    "upload": 20,
+    "access_link_saturated": true
+  },
+  "board": {
+    "rate_both_directions_Mbps": 300,
+    "MCS": 15,
+    "short_GI": true,
+    "AMPDU_submitted": 70792,
+    "AMPDU_completed": 70792,
+    "pending": 0,
+    "full": 0,
+    "queue_stops": 7,
+    "queue_wakes": 7,
+    "TX_failed": 0,
+    "RDU": 1,
+    "power_DWORD_readback_matches": 43
+  },
+  "evidence": [
+    {
+      "path": "logs/radio-ap18c-IQK-first.txt",
+      "sha256": "16e7b13b761b20470d6a827ca46463a03c696805d813731920c3aa2a13508dc6",
+      "bytes": 4441
+    },
+    {
+      "path": "logs/radio-ap18c-IQK-connected-50Mbps.txt",
+      "sha256": "b6650b0852a6ccb9bc6b773a62be66b22a9822d576f540aa07af6655832c7f3b",
+      "bytes": 5649
+    },
+    {
+      "path": "logs/radio-ap19cb-HT40-first.txt",
+      "sha256": "d95c5744c0b0287d1aa1e9efa0bfa8e6374b82299c6318568c69cd9abb60789a",
+      "bytes": 7328
+    },
+    {
+      "path": "logs/radio-ap19cb-HT40-100Mbps.txt",
+      "sha256": "4a76473a32fb4d315aee2dbfbf61ea48c80a79655b8caa5870f88a0ad83fffb4",
+      "bytes": 9620
+    }
+  ],
+  "source_functions": [
+    "iqk_start_iqk_8852c",
+    "_iqk_rxk_setting_8852c",
+    "halrf_ctrl_bw_ch",
+    "halrf_ctl_band_ch_bw_8852c",
+    "halrf_get_power_limit_to_struct_40m_8852c",
+    "halrf_get_power_limit_ru_to_struct_40m_8852c",
+    "txdes_proc_data_8852c"
+  ],
+  "remaining": [
+    "80MHz and VHT/HE TX/RA",
+    "2G HT40 and HE",
+    "complete TIM/STA/key lifecycle",
+    "wireless NE acceleration",
+    "native UBI install and recovery"
+  ]
+}
