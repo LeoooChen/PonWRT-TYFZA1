@@ -476,14 +476,18 @@ static int rtl_ax_bb_channel_notify_locked(struct rtl_ax_ap *radio)
 {
 	u8 information[20] = {};
 
-	/* Original halbb_ch_bw_upd,20MHz: update channel and zero TXSC.
+	/* Original halbb_ch_bw_upd: update channel and subchannel TXSC.
 	 * Both physical chips use MAC band0; RF band is a separate field. */
 	rtl_ax_store32(information, 1 | radio->channel.band << 12 |
 		radio->channel.primary << 16 | radio->channel.center << 24);
 	rtl_ax_store32(information + 4, radio->channel.bandwidth);
 	rtl_ax_store32(information + 12, 1);
 	if (radio->channel.bandwidth)
-		rtl_ax_store32(information + 16, radio->channel.primary > radio->channel.center ? 1 : 2);
+		rtl_ax_store32(information + 16,
+			rtl_ax_channel_primary_index(radio->channel.primary,
+				radio->channel.center, radio->channel.bandwidth) |
+			(radio->channel.bandwidth == 2 ?
+				(radio->channel.primary > radio->channel.center ? 9 : 10) << 8 : 0));
 	return rtl_ax_bb_info_locked(radio, information);
 }
 

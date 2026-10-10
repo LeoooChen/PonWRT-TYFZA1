@@ -17,6 +17,7 @@ static int rtl_ax_monitor_start(struct ieee80211_hw *hw)
 	mutex_lock(&radio->command_mutex);
 	ret = rtl_ax_receive_configure(radio, hw->conf.chandef.chan->hw_value,
 		ieee80211_frequency_to_channel(hw->conf.chandef.center_freq1),
+		hw->conf.chandef.width == NL80211_CHAN_WIDTH_80 ? 2 :
 		hw->conf.chandef.width == NL80211_CHAN_WIDTH_40);
 	if (ret) {
 		mutex_unlock(&radio->command_mutex);
@@ -63,12 +64,14 @@ static int rtl_ax_monitor_config(struct ieee80211_hw *hw, int radio_idx, u32 cha
 		return 0;
 	}
 	if (hw->conf.chandef.width != NL80211_CHAN_WIDTH_20 &&
-	    !(radio->chip == RTL_AX_8852C && hw->conf.chandef.width == NL80211_CHAN_WIDTH_40) &&
+	    !(radio->chip == RTL_AX_8852C &&
+	      (hw->conf.chandef.width == NL80211_CHAN_WIDTH_40 || hw->conf.chandef.width == NL80211_CHAN_WIDTH_80)) &&
 	    hw->conf.chandef.width != NL80211_CHAN_WIDTH_20_NOHT)
 		return -EOPNOTSUPP;
 	mutex_lock(&radio->command_mutex);
 	ret = rtl_ax_receive_configure(radio, hw->conf.chandef.chan->hw_value,
 		ieee80211_frequency_to_channel(hw->conf.chandef.center_freq1),
+		hw->conf.chandef.width == NL80211_CHAN_WIDTH_80 ? 2 :
 		hw->conf.chandef.width == NL80211_CHAN_WIDTH_40);
 	mutex_unlock(&radio->command_mutex);
 	return ret;
@@ -386,7 +389,13 @@ static void rtl_ax_monitor_tx(struct ieee80211_hw *hw,
 	    (ieee80211_is_mgmt(header->frame_control) || ieee80211_is_data(header->frame_control))) {
 		/* Original RTW_DATA_RATE_MCS0=0x80, GI0=long/GI1=short.
 		 * mac80211's MCS index must not index the legacy bitrate array. */
-		if (selected->flags & IEEE80211_TX_RC_MCS) {
+		if (selected->flags & IEEE80211_TX_RC_VHT_MCS) {
+			rate = 0x100 + (ieee80211_rate_get_vht_nss(selected) - 1) * 16 +
+				ieee80211_rate_get_vht_mcs(selected);
+			gi = !!(selected->flags & IEEE80211_TX_RC_SHORT_GI);
+			bandwidth = selected->flags & IEEE80211_TX_RC_80_MHZ_WIDTH ? 2 :
+				!!(selected->flags & IEEE80211_TX_RC_40_MHZ_WIDTH);
+		} else if (selected->flags & IEEE80211_TX_RC_MCS) {
 			rate = 0x80 + selected->idx;
 			gi = !!(selected->flags & IEEE80211_TX_RC_SHORT_GI);
 			bandwidth = !!(selected->flags & IEEE80211_TX_RC_40_MHZ_WIDTH);
@@ -571,6 +580,14 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	if (radio->chip == RTL_AX_8852C) {
 		radio->band.ht_cap.cap |= IEEE80211_HT_CAP_SUP_WIDTH_20_40 | IEEE80211_HT_CAP_SGI_40;
 		radio->band.ht_cap.mcs.rx_highest = cpu_to_le16(300);
+		radio->band.vht_cap.vht_supported = true;
+		radio->band.vht_cap.cap = IEEE80211_VHT_CAP_SHORT_GI_80 |
+			(IEEE80211_VHT_MAX_AMPDU_64K << IEEE80211_VHT_CAP_MAX_A_MPDU_LENGTH_EXPONENT_SHIFT);
+		/* Two streams MCS0..9; all higher NSS are unsupported. */
+		radio->band.vht_cap.vht_mcs.rx_mcs_map = cpu_to_le16(0xfffa);
+		radio->band.vht_cap.vht_mcs.tx_mcs_map = cpu_to_le16(0xfffa);
+		radio->band.vht_cap.vht_mcs.rx_highest = cpu_to_le16(867);
+		radio->band.vht_cap.vht_mcs.tx_highest = cpu_to_le16(867);
 	}
 	hw->wiphy->bands[band] = &radio->band;
 	radio->hw = hw;

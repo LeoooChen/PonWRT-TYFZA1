@@ -61,3 +61,17 @@ HE发送的实际主机注册入口是`rtw_hal_bb_ra_register@1b822c -> rtw_halb
 生产源码`05dd751`的完整构建运行在独立服务`ponwrt-tyfza1-lan-20261010-133756`，输出`artifacts/full-pon-radio-ht40-ap19-6.18.55`。实机当前C为AP19cb/HT40，XB为AP19/HT20；这份80MHz提取没有改变已验收的生产源码。
 
 该AP19完整构建已退出0，最终FIT直接核对实际内核/initramfs输入和11个原生入口代码通过，FIT SHA256为`160f8724a2e20936048559adfbadb6dd816c3ab6cf878ee6ca1be56676f37fd8`。记录`manifests/radio-HT40-AP19-build.json`。随后C实机升级为AP20，新增5M掩码属于后续源码增量；当前设备仍运行RAM开发环境，完整FIT尚未重新RAM启动。
+
+## AP21：VHT80原生实现与百兆业务验收
+
+2026-10-10在新会话接续。C的80MHz路径补齐：BB primary index、两路径ADC时序、RF18的80MHz位组合、RXBB LUT值11、MAC TXSC20/TXSC40、20字节BBinfo通知，以及四个HE20子频道、两个HE40子频道、HE80、40m_0p5和四列RU功率限值。保留既有20/40MHz分支。IQK使用原机80MHz的RX clock selector2、TX/RX宽带命令；TSSI常量步骤重新执行原机80MHz输入，输出与既有20MHz表一致，不把函数名中的20当成带宽限制。
+
+mac80211发布C的两空间流VHT MCS0..9、80MHz/短GI和64KiB最大聚合长度；发送速率从mac80211 VHT NSS/MCS转换到原机`0x100+(NSS-1)*16+MCS`，逐包WD继续使用固定选定速率与真实RPQ反馈。XB仍运行已验收的HT20。`scripts/test_radio_wideband.py`编译生产函数体，对照原机ELF：20/40/80MHz全部普通/RU功率寄存器（含负数限值）、RF18与ADC匹配；180组VHT WD逐字一致。测试的硬件IO与功率查询被替换，不是硬件仿真。证据`manifests/radio-wideband-contract-test.json`及对应原厂contract、VHT WD文件。
+
+上机发现原测试hostapd没有VHT解析能力。OpenWrt的`DRIVER_11AC_SUPPORT/DRIVER_11AX_SUPPORT`是隐藏Kconfig，直接写.config会被defconfig移除；已在RTL9617C target通过原生`DEPENDS +@...`选择，重新编译wpad-mbedtls。编译日志`logs/hostapd-vht-he-build.log`。HE解析可用不代表驱动已实现HE，当前不发布HE能力。
+
+实际AP：PonWRT-Test-5G、主44、中心42、80MHz、HT40+、WPA2-CCMP。用户确认正常上网，下载100Mbps/上传20Mbps，达到宽带上限。终端双向VHT MCS9、NSS2、80MHz/短GI，866.7Mbps；这是链路速率，未测得866.7Mbps吞吐。快照112910次提交/完成、pending0、full0、polluted0、unmatched0，112833个聚合MPDU全部收到完成；其中266次RPQ TX状态1，iw同步显示TX failed266，未称零失败。103653个VHT接收数据帧的软件FCS全部正确。两路径IQK TX/RX失败标志0，43个功率DWORD读回相同。证据`logs/radio-ap21c-VHT80-100-20Mbps.txt`、`manifests/radio-native-VHT80-20261010.json`。
+
+原无线研究已新增到704个文件，完整副本冻结在`evidence/wireless-study-20261010-continuation`，实际文件哈希与阅读收据为`manifests/wifi-reading-20261010-continuation.json`。旧研究SHA256SUMS仍列660个文件，尚未覆盖新增第18篇等文件；未改动原目录，新增材料用本次实际文件哈希固定。第15/17/18篇约束继续适用：DMA回收与固件完成分开；U1 PKT_DROP分派证据不等于DMA排空或FIFO证明。
+
+AP20完整FIT也已验证完成，SHA256=`c391300b8a1f8c892b1e0121aca96898b8b6468c58bfd2cb33e83277ef738b69`，记录`manifests/radio-HT40-AP20-build.json`。AP21 VHT80进入完整构建；当前板上仍为RAM开发系统。下一阶段按原机完整RA注册/更新、RSSI报告及C2H速率反馈接HE，再连接NI/QM与NE无线转发。

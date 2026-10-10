@@ -16,7 +16,9 @@ root=Path(__file__).resolve().parents[1]
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--width',type=int,choices=(20,40,80),default=20)
 parser.add_argument('--output',type=Path,default=root/'manifests/radio-stock-power-registers.json')
+parser.add_argument('--contract-values',action='store_true',help='Stable signed query values for native/ELF comparison')
 args=parser.parse_args()
+contract_values=args.contract_values
 module=root/'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
 chips=('8852c',) if args.width==80 else ('8852c','8192xb')
 names=['halrf_set_power_by_rate_to_struct_'+c for c in chips]
@@ -33,8 +35,17 @@ def callback(name,args):
     if name in ('halrf_get_power_by_rate','halrf_get_power_limit','halrf_get_power_limit_ru'):
         extra=[oracle.uc.reg_read(r) for r in (UC_ARM64_REG_X4,UC_ARM64_REG_X5,UC_ARM64_REG_X6,UC_ARM64_REG_X7)]
         tag=len(queries)+1
-        queries.append({'tag':tag,'api':name,'arguments':args[1:]+extra})
-        return tag*2
+        fields=args[1:]+extra
+        value=tag*2
+        if contract_values and name != 'halrf_get_power_by_rate':
+            if name == 'halrf_get_power_limit':
+                _,_,rate,bw,bf,ntx,channel=fields
+                value=(channel*3+bw*11+bf*7+ntx*13+(17 if rate==11 else 0))%161-80
+            else:
+                _,_,rate,ru,ntx,channel,_=fields
+                value=(channel*3+ru*11+ntx*13)%161-80
+        queries.append({'tag':tag,'api':name,'arguments':fields,'quarter_dBm':value})
+        return value & 0xffffffff
     if name=='write32':
         writes.append({'address':hex(args[1]),'value':hex(args[2]&0xffffffff),'byte_tags':list(struct.pack('<I',args[2]&0xffffffff))}); return 0
     if name=='read32': return 0

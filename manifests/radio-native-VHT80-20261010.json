@@ -1,0 +1,56 @@
+{
+  "at": "2026-10-10T14:24:37.299542+08:00",
+  "chip": "8852C",
+  "primary": 44,
+  "center": 42,
+  "width_MHz": 80,
+  "PHY_primary_index": 1,
+  "MAC_TXSC": "0x91",
+  "TX_RX_link": {
+    "encoding": "VHT",
+    "MCS": 9,
+    "NSS": 2,
+    "short_GI": true,
+    "Mbps": 866.7
+  },
+  "user_test": {
+    "internet_works": true,
+    "download_Mbps": 100,
+    "upload_Mbps": 20,
+    "limited_by_access_link": true
+  },
+  "RPQ": {
+    "submitted": 112910,
+    "completed": 112910,
+    "AMPDU_MPDU": 112833,
+    "status1": 266,
+    "pending": 0,
+    "full": 0,
+    "polluted": 0,
+    "unmatched": 0,
+    "queue_stops": 194,
+    "queue_wakes": 194
+  },
+  "RX_VHT_software_FCS": {
+    "OK": 103653,
+    "error": 0
+  },
+  "IQK_TX_RX_fail_both_paths": 0,
+  "power_register_readback_matches": 43,
+  "module": {
+    "path": "artifacts/live-radio-ap21c/rtl_ax_ap_live_c.ko",
+    "sha256": "0fc047d98e779ea9fd6b6fe5c40e48a20fc47767b673544f112813309759e70f"
+  },
+  "hostapd": {
+    "OpenWrt_hidden_driver_selects": [
+      "DRIVER_11AC_SUPPORT",
+      "DRIVER_11AX_SUPPORT"
+    ],
+    "sha256": "69c9665a466a2d0161e606a96b10d936747c8689a6e534ccb8a5e1d55ae68a02"
+  },
+  "evidence": {
+    "path": "logs/radio-ap21c-VHT80-100-20Mbps.txt",
+    "sha256": "289a460091ee13a3f50eadf149eec3ef91d1a37eff9fc44e2acd7102501b3fde"
+  },
+  "scope": "RAM native driver/live AP; no NAND writes, no HE or wireless NE offload claim"
+}

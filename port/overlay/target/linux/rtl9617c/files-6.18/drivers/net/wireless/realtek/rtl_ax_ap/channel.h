@@ -105,11 +105,21 @@ static inline void rtl_ax_c_channel_calibration(const struct rtl_ax_io *io,
 	}
 }
 
-static inline void rtl_ax_c_adc20(const struct rtl_ax_io *io, unsigned int path)
+static inline unsigned int rtl_ax_channel_primary_index(unsigned int primary,
+	unsigned int center, unsigned int bandwidth)
+{
+	if (!bandwidth)
+		return 0;
+	return (primary > center ? 1 : 2) +
+		(bandwidth == 2 && abs((int)primary - (int)center) == 6 ? 2 : 0);
+}
+
+static inline void rtl_ax_c_adc(const struct rtl_ax_io *io, unsigned int path,
+	unsigned int bandwidth)
 {
 	unsigned int base = path ? 0xc100 : 0xc000;
 
-	/* Actual adc_cfg_C@2e333c BW20, RFE54. These are BB addresses,
+	/* Actual adc_cfg_C@2e333c BW20/40/80, RFE54. These are BB addresses,
 	 * including c0xx/c1xx; use the 0x10000 BB window. */
 	rtl_ax_channel_field(io, base + 0xd4, 0x780, 8);
 	rtl_ax_channel_field(io, base + 0xe8, 0xffff0000, 9);
@@ -117,10 +127,10 @@ static inline void rtl_ax_c_adc20(const struct rtl_ax_io *io, unsigned int path)
 	rtl_ax_channel_field(io, path ? 0x32a0 : 0x12a0, 0xff800000, 73);
 	rtl_ax_channel_field(io, base + 0xec, 0x6000, 0);
 	rtl_ax_channel_field(io, base + 0xd4, 0x7800, 2);
-	rtl_ax_channel_field(io, base + 0xd4, 0x0c000000, 3);
-	rtl_ax_channel_field(io, base + 0xd8, 0x1e0, 15);
+	rtl_ax_channel_field(io, base + 0xd4, 0x0c000000, bandwidth == 2 ? 2 : 3);
+	rtl_ax_channel_field(io, base + 0xd8, 0x1e0, bandwidth == 2 ? 8 : 15);
 	rtl_ax_channel_field(io, base + 0xc4, 0x3e0000, 0);
-	rtl_ax_channel_field(io, base + 0xec, 0xff0000, 2);
+	rtl_ax_channel_field(io, base + 0xec, 0xff0000, bandwidth == 2 ? 3 : 2);
 }
 
 static inline void rtl_ax_c_5m_mask(const struct rtl_ax_io *io,
@@ -168,14 +178,15 @@ static inline void rtl_ax_c_bb_5g(const struct rtl_ax_io *io,
 	/* Actual ctrl_ch_C@2e9648 passes center directly to0734, unlike
 	 * the newer SDK's ch_idx_encode call. */
 	rtl_ax_channel_field(io, 0x0734, 0xff0000, center);
-	/* ctrl_bw_C@2e4238,20/40MHz and both ADC paths. */
+	/* ctrl_bw_C@2e4238,20/40/80MHz and both ADC paths. */
 	rtl_ax_channel_field(io, 0x4974, 0xc0000000, bandwidth);
 	rtl_ax_channel_field(io, 0x4978, 0x3000, 0);
-	rtl_ax_channel_field(io, 0x4978, 0x0f00, bandwidth ? (primary > center ? 1 : 2) : 0);
+	rtl_ax_channel_field(io, 0x4978, 0x0f00,
+		rtl_ax_channel_primary_index(primary, center, bandwidth));
 	rtl_ax_channel_field(io, 0x4e30, BIT(26), bandwidth == 1);
 	rtl_ax_channel_field(io, 0x4424, BIT(2), bandwidth == 1);
-	rtl_ax_c_adc20(io, 0);
-	rtl_ax_c_adc20(io, 1);
+	rtl_ax_c_adc(io, 0, bandwidth);
+	rtl_ax_c_adc(io, 1, bandwidth);
 	rtl_ax_channel_field(io, 0x0c9c, 0xff000, bandwidth ? 0 : 255);
 	rtl_ax_channel_field(io, 0x0ca0, 0xff000, 0);
 	/* ctrl_bw_ch_C@2e9a40: 5GHz CCK off. RFE54 skips iFEM spur
@@ -224,7 +235,8 @@ static inline int rtl_ax_c_rf_5g(const struct rtl_ax_io *io, unsigned int center
 		for (bank = 0; bank < 2; bank++) {
 			u32 value = channel->rf18[path][bank];
 
-			value = ((value & ~0x3efff) | center | BIT(16) | BIT(8) | BIT(11) | (bandwidth ? 0 : BIT(10)));
+			value = (value & ~0x3efff) | center | BIT(16) | BIT(8) |
+				(bandwidth == 2 ? BIT(10) : BIT(11) | (bandwidth ? 0 : BIT(10)));
 			value = (value & 0xf0fff) | BIT(12);
 			ret = rtl_ax_phy_rf_write_masked(io, path, addresses[bank], 0xfffff, value);
 			if (ret)
@@ -233,7 +245,7 @@ static inline int rtl_ax_c_rf_5g(const struct rtl_ax_io *io, unsigned int center
 			io->delay_us(io->ctx, 100);
 		}
 	/* rxbb_bw_C@30da54: perpath ee[2]=1,33[4:0]=10,
-	 * LUT3f[5:0]=27/19 for20/40MHz,ee[2]=0. */
+	 * LUT3f[5:0]=27/19/11 for20/40/80MHz,ee[2]=0. */
 	for (path = 0; path < 2; path++) {
 		ret = rtl_ax_phy_rf_write_masked(io, path, 0xee, 4, 1);
 		if (ret)
@@ -241,7 +253,7 @@ static inline int rtl_ax_c_rf_5g(const struct rtl_ax_io *io, unsigned int center
 		ret = rtl_ax_phy_rf_write_masked(io, path, 0x33, 31, 10);
 		if (ret)
 			return ret;
-		ret = rtl_ax_phy_rf_write_masked(io, path, 0x3f, 63, bandwidth ? 19 : 27);
+		ret = rtl_ax_phy_rf_write_masked(io, path, 0x3f, 63, 27 - bandwidth * 8);
 		if (ret)
 			return ret;
 		ret = rtl_ax_phy_rf_write_masked(io, path, 0xee, 4, 0);
@@ -261,10 +273,12 @@ static inline int rtl_ax_c_receive_channel(const struct rtl_ax_io *io,
 	if (!((center >= 36 && center <= 64) || (center >= 100 && center <= 144) ||
 	      (center >= 149 && center <= 177)))
 		return -EINVAL;
-	/* cfg_mac_bw@21d980,PHY0/MACband0,normal20/40MHz. */
+	/* cfg_mac_bw@21d980,PHY0/MACband0,normal20/40/80MHz. */
 	rtl_ax_update8(io, 0xc010, 3, bandwidth);
 	rtl_ax_update8(io, 0xc628, 0x13, 0x13);
-	io->write32(io->ctx, 0xc088, bandwidth ? (primary > center ? 1 : 2) : 0);
+	io->write32(io->ctx, 0xc088,
+		rtl_ax_channel_primary_index(primary, center, bandwidth) |
+		(bandwidth == 2 ? (primary > center ? 9 : 10) << 4 : 0));
 	rtl_ax_c_bb_5g(io, phy, dm, primary, center, bandwidth, channel);
 	ret = rtl_ax_c_rf_5g(io, center, bandwidth, channel);
 	if (ret)

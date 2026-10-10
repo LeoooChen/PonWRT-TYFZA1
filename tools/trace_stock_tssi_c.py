@@ -6,11 +6,17 @@ from pathlib import Path
 import struct
 import re
 import sys
+import argparse
 from arm64_module_oracle import ModuleOracle
 from unicorn import UC_HOOK_MEM_READ
 from unicorn.arm64_const import UC_ARM64_REG_X4
 
 root = Path(__file__).resolve().parents[1]
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('output', nargs='?', type=Path, default=root / 'manifests/radio-stock-C-TSSI-program.json')
+parser.add_argument('--width', type=int, choices=(20, 40, 80), default=20)
+parser.add_argument('--channel', type=int, default=36)
+options = parser.parse_args()
 module = root / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
 steps = ['halrf_tssi_disable_8852c', '_halrf_tssi_set_sys_8852c',
          '_halrf_tssi_ini_txpwr_ctrl_bb_8852c', '_halrf_tssi_ini_txpwr_ctrl_bb_he_tb_8852c',
@@ -60,8 +66,8 @@ oracle.uc.mem_write(rf + 0x4014, b'\x01')
 oracle.uc.mem_write(phl + 0x58fa, b'\x36')
 oracle.uc.mem_write(hal + 4, struct.pack('<I', 1))
 oracle.uc.mem_write(hal + 892, struct.pack('<I', 1))
-oracle.uc.mem_write(hal + 896, b'\x00')
-oracle.uc.mem_write(hal + 905, b'\x24')
+oracle.uc.mem_write(hal + 896, struct.pack('<I', options.width.bit_length() - 5))
+oracle.uc.mem_write(hal + 905, bytes([options.channel]))
 calibration = (root / 'sources/openwrt/files/lib/firmware/realtek/tyfza1/rtl8852ce/flash-calibration.bin').read_bytes()
 tracking = root / 'evidence/wireless-study-20261009-104746/evidence/stock/radio-parameters/rtl8852ce/RFE54/RTK66587_BPF/TXPWR_TrackTSSI.txt'
 for path, path_name in enumerate(('A', 'B')):
@@ -94,13 +100,13 @@ oracle.call('halrf_tssi_enable_8852c', rf, 0)
 programs.append({'function': 'halrf_tssi_enable_8852c', 'path': 'both', 'operations': operations})
 report = {'original_host_sha256': hashlib.sha256(module.read_bytes()).hexdigest(),
           'scope': 'actual original machine-code register extraction; hardware verification is separate',
-          'inputs': {'RFE': 54, 'band': 1, 'channel': 36, 'hardware_cv': 1, 'normal_TSSI_type': 1, 'DBCC': 0, 'MP_driver_mode': 0, 'cached_alignment': False},
+          'inputs': {'RFE': 54, 'band': 1, 'channel': options.channel, 'width_MHz': options.width, 'hardware_cv': 1, 'normal_TSSI_type': 1, 'DBCC': 0, 'MP_driver_mode': 0, 'cached_alignment': False},
           'host_memory_reads': sorted(memory_reads), 'programs': programs,
           'thermal_table_and_final_enable_included': True,
           'thermal_flash_A_B': list(calibration[13:15]),
           'tracking_FEM_file': str(tracking.relative_to(root)),
           'tracking_FEM_sha256': hashlib.sha256(tracking.read_bytes()).hexdigest()}
-output = Path(sys.argv[1]) if len(sys.argv) > 1 else root / 'manifests/radio-stock-C-TSSI-program.json'
+output = options.output
 output.write_text(json.dumps(report, indent=2) + '\n')
 print(json.dumps({'output': str(output), 'steps': len(programs),
                   'operations': sum(len(p['operations']) for p in programs),
