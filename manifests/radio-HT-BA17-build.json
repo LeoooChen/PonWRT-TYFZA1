@@ -1,0 +1,99 @@
+{
+  "recorded_at": "2026-10-10T13:09:09.439228+08:00",
+  "runtime_source_commit": "cd402d5",
+  "wideband_research_commit": "df258df",
+  "systemd_unit": "ponwrt-tyfza1-lan-20261010-130028.service",
+  "service_ExecMainStatus": 0,
+  "output_directory": "artifacts/full-pon-radio-ht-ba17-6.18.55",
+  "selected_FIT": "ram-pcie/image.itb",
+  "actual_FIT_verification": {
+    "FIT_sha256": "75bd34886c208611e27c0ca56a6c03d64d687297c158d3687c0cc8494d5b6de1",
+    "verification_entry": "Final PCIe FIT selected kernel initramfs",
+    "original_radio_firmware_files": 4,
+    "selected_RFE54_parameter_files": 44,
+    "board_flash_calibration_files": 2,
+    "original_NCTL_tables": 3,
+    "released_regulatory_database_and_signature": 2,
+    "all_bytes_match_prepared_board_inputs": true,
+    "native_AP_PCI_backend_present_in_selected_kernel": true,
+    "firmware_transport_implemented": true,
+    "native_mac80211_monitor_backend_present": true,
+    "full_AP_operations_implemented": false,
+    "initramfs_members": 1096,
+    "radio_hardware_verified": false,
+    "actual_radio_code_matches_linked_ELF": [
+      {
+        "function": "rtl_ax_probe",
+        "selected_FIT_kernel_offset": 5480908,
+        "code_bytes": 9924,
+        "SHA256": "4570bcddb910dc5e16ff45bb714c3f1332510abea47866984a96ffacf8eef6e3"
+      },
+      {
+        "function": "rtl_ax_h2c_send",
+        "selected_FIT_kernel_offset": 5398304,
+        "code_bytes": 268,
+        "SHA256": "48f6e89775099e077226ba5c2a47e9459ac11ac866f667b04f6b7dc2755c6d21"
+      },
+      {
+        "function": "rtl_ax_wait_firmware",
+        "selected_FIT_kernel_offset": 5403888,
+        "code_bytes": 192,
+        "SHA256": "9dad34413cbbf9a23d6a0a1948ccf69e255f996ab06eb151ddcae1cbe4d6d85d"
+      },
+      {
+        "function": "rtl_ax_shutdown",
+        "selected_FIT_kernel_offset": 5441856,
+        "code_bytes": 4,
+        "SHA256": "060bafc9bf89e5e4e210f014bbcb70368ecad88912be4c91e1ab95ddd5348800"
+      },
+      {
+        "function": "rtl_ax_receive_set_channel",
+        "selected_FIT_kernel_offset": 5466384,
+        "code_bytes": 9956,
+        "SHA256": "f5bcf91f9d3c984ba1c1bd4168cba805f0977e53e974f35cd897121d46941965"
+      },
+      {
+        "function": "rtl_ax_ap_conf_tx",
+        "selected_FIT_kernel_offset": 5397600,
+        "code_bytes": 164,
+        "SHA256": "1a6e3cfc636a38bf4da13a1f749459a5a5255a677456a52309053531bfb9f500"
+      },
+      {
+        "function": "rtl_ax_monitor_tx",
+        "selected_FIT_kernel_offset": 5397764,
+        "code_bytes": 320,
+        "SHA256": "7cb5bcd13929ee7b9b47679d445cf2994482da2cbae83dfaed5d896e287ade06"
+      },
+      {
+        "function": "rtl_ax_ampdu_action",
+        "selected_FIT_kernel_offset": 5404080,
+        "code_bytes": 1256,
+        "SHA256": "16e1ea552aa21bf48a102a16bd95954b444be8825f7abf2201c4f0d599539d25"
+      },
+      {
+        "function": "rtl_ax_station_tables",
+        "selected_FIT_kernel_offset": 5401444,
+        "code_bytes": 232,
+        "SHA256": "d01d42e35d130520e62478a99212f0ea6b48c34253937c25ba35e46bcf8de571"
+      },
+      {
+        "function": "rtl_ax_tx_submit",
+        "selected_FIT_kernel_offset": 5501760,
+        "code_bytes": 1776,
+        "SHA256": "2fd01a866f97d1af7c6fd47e821de7e8f8536aee7d3f30a84db981910ee7e6db"
+      },
+      {
+        "function": "rtl_ax_tx_report",
+        "selected_FIT_kernel_offset": 5503536,
+        "code_bytes": 808,
+        "SHA256": "cbadee54258c93b95e5cd74ed38ae870fd56d7ad9f0983e002914a80533abd2c"
+      }
+    ]
+  },
+  "board_state": "C/AP17c and XB/AP17xb live native modules, dualband50/20Mbps user tests",
+  "full_FIT_rebooted_on_board": false,
+  "log": {
+    "path": "logs/lan-build-20261010-130028.log",
+    "sha256": "8d6250d922643fadef1455e5f8b51a50cb0ff6765463c4489a1af0071cd09fdd"
+  }
+}

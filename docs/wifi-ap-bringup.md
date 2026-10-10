@@ -65,3 +65,5 @@ AP16/17接入原机终端CMAC聚合mask、WD3 AGG_EN、WD9最大聚合数、WD10
 HIQ原机AP初始化值50可从`rtw_phl_wifi_role_alloc@13af24..13af28`及模式变化`13b964..13b968`直接确认，`rtw_hal_mac_port_init@1aa14c`读role+1268。之前trace输入误设0，移植随之遗漏。更新原机trace及port初始化后，C积压的两个HIQ WP都完成，pending归零。
 
 AP17双频采用同一源码、独立原生模块。用户复测2G也达到50Mbps下载/20Mbps上传；XB实机12468个聚合MPDU提交/完成，14804个HT数据帧软件FCS全对，full0/RDU0、队列无积压，TX_failed54/12479保留原样。完整证据`logs/radio-ap17-dualband-50Mbps.txt`及`manifests/radio-native-AP-20261010.json`。50Mbps是实际宽带测速结果，不是144.4Mbps物理速率，也不是完整带宽能力已完成。
+
+本轮生产源码提交`cd402d5`，更高带宽提取提交`df258df`。独立systemd完整构建`ponwrt-tyfza1-lan-20261010-130028`已成功退出0，产物`artifacts/full-pon-radio-ht-ba17-6.18.55`。最终PCIe FIT验证直接解开其内核/initramfs，核对实际运行时输入和11个原生入口的ELF代码，包括HT发送、EDCA、BA及RPQ完成。记录`manifests/radio-HT-BA17-build.json`；该完整FIT本轮尚未重新RAM启动。
