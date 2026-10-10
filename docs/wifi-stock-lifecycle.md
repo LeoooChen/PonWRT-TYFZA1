@@ -601,3 +601,5 @@ mac_txdesc_len_C@251be8/XB@264de8对type0/1根据mdata byte33 bit5(wdinfo_en)返
 80132de完整FIT ada86eb9d03d9dcdd9fea3e0508421d83ee62ea3e4885b79b640b723002db3bc已实际经U-Boot RAM重启验证，内置rtl_ax_ap、taint0、未加载原厂或live模块。C36用修正精确FC过滤抓得4个HE QoS Data（86/122B），XB6抓得4个legacy Data（86B），8个帧FCS全部正确；kernel丢包0、XEPON公网2/2。这进一步排除了仅live诊断模块才能收Data的结论。记录manifests/radio-native-data-builtin-80132de.json与对应日志/pcap。
 
 c1c4387完整后台构建082639已成功结束并通过当次实际FIT载荷/源码核对，ram-pcie FIT fbdc387a995ed49906c661f5467cf69dda558b4823a5bd10af7ae8c9cb6331a9，实际kernel5620df020502a44a8b2144a06063af93dbf9072e287655d1e0da8e781e547811，包含新增软件FCS/真实WD观测。9cc0bfa新增的TX WP基础不在该构建快照中，且尚未接通TX，不应将它计作硬件发射成功。
+
+c1c4387完整FIT fbdc387a995ed49906c661f5467cf69dda558b4823a5bd10af7ae8c9cb6331a9现已经U-Boot实际RAM重启进入内置rtl_ax_ap，taint0、未加载live或原厂host模块；新增radio_rx_data/软件FCS统计已从最终载荷进入实际运行。C36本次4个HE非空Data在WD统计、软件FCS4/4和实际用户态pcap4/4闭合，XB6实际pcap4个Data FCS全匹配，kernel丢包0、XEPON公网2/2。这个已验证的最终启动载荷保留在artifacts/full-pon-radio-rx-data01-6.18.55，记录manifests/radio-native-data-builtin-c1c4387.json及logs/radio-data-builtin-c1c4387-*。当前仍没有AP普通TX/关联/密钥业务，后续接通真实TX/RPQ/角色；TX格式新增9cc0bfa仅为下一阶段基础，未被标成实际发送成功。

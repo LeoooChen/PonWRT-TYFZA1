@@ -1,0 +1,96 @@
+{
+  "scope": "actual TYFZA1 built-in native C and XB data receive after U-Boot RAM boot",
+  "built_source_commit": "c1c4387",
+  "FIT_sha256": "fbdc387a995ed49906c661f5467cf69dda558b4823a5bd10af7ae8c9cb6331a9",
+  "kernel_sha256": "5620df020502a44a8b2144a06063af93dbf9072e287655d1e0da8e781e547811",
+  "DTB_sha256": "ed3a18f2b09dbec988883e9a36b47efdae819c82db47864deb3ad1e4eecd23ac",
+  "hardware_boot_verified": true,
+  "kernel_taint": 0,
+  "native_driver": "rtl_ax_ap",
+  "live_module_loaded": false,
+  "vendor_host_module_loaded": false,
+  "C_HE_non_null_data_before_Linux": 4,
+  "C_HE_software_FCS_OK": 4,
+  "C_HE_software_FCS_error": 0,
+  "filter": "wlan[0] = 0x08 or wlan[0] = 0x88",
+  "captures": [
+    {
+      "radio": "C",
+      "pcap": "artifacts/radio-data-builtin-c1c4387-C.pcap",
+      "sha256": "99e60e114b27e71ce66859128500082ef4e9cae80583099542a0757968815349",
+      "frames": [
+        {
+          "bytes": 130,
+          "FC": "0xc188",
+          "type": 2,
+          "subtype": 8,
+          "FCS_valid": true
+        },
+        {
+          "bytes": 122,
+          "FC": "0xc188",
+          "type": 2,
+          "subtype": 8,
+          "FCS_valid": true
+        },
+        {
+          "bytes": 86,
+          "FC": "0xc188",
+          "type": 2,
+          "subtype": 8,
+          "FCS_valid": true
+        },
+        {
+          "bytes": 130,
+          "FC": "0xc188",
+          "type": 2,
+          "subtype": 8,
+          "FCS_valid": true
+        }
+      ]
+    },
+    {
+      "radio": "XB",
+      "pcap": "artifacts/radio-data-builtin-c1c4387-XB.pcap",
+      "sha256": "c7eaa6379b78b3d833cb981a0146946d9d153b0d4a51c988fe262059dd404849",
+      "frames": [
+        {
+          "bytes": 86,
+          "FC": "0x4208",
+          "type": 2,
+          "subtype": 0,
+          "FCS_valid": true
+        },
+        {
+          "bytes": 86,
+          "FC": "0x4208",
+          "type": 2,
+          "subtype": 0,
+          "FCS_valid": true
+        },
+        {
+          "bytes": 86,
+          "FC": "0x4208",
+          "type": 2,
+          "subtype": 0,
+          "FCS_valid": true
+        },
+        {
+          "bytes": 86,
+          "FC": "0x4208",
+          "type": 2,
+          "subtype": 0,
+          "FCS_valid": true
+        }
+      ]
+    }
+  ],
+  "XEPON_mode": "epon-d10g",
+  "XEPON_public_ping_received_transmitted": [
+    2,
+    2
+  ],
+  "receiver_record": "logs/radio-data-builtin-c1c4387-final.log",
+  "AP_TX_association_keys": "pending",
+  "TX_WP_format_in_this_build": false
+}
