@@ -71,5 +71,29 @@
     "complete TIM/STA/key lifecycle",
     "wireless NE acceleration",
     "native UBI install and recovery"
-  ]
+  ],
+  "later_factory_5M_alignment": {
+    "at": "2026-10-10T13:58:04.005557+08:00",
+    "C_module": {
+      "path": "artifacts/live-radio-ap20c/rtl_ax_ap_live_c.ko",
+      "sha256": "6c2c2cf1fd256c0456b729372fbe4398fc6c5a72e473345b5a6ed4725fefabe0"
+    },
+    "XB_module": {
+      "path": "artifacts/live-radio-ap19xb/rtl_ax_ap_live_xb.ko",
+      "sha256": "e38dc6867b84212985f668502c6d94c494b3e4dfd6d1fd18504938bfd98f68be"
+    },
+    "actual_5M_registers": {
+      "BB4c4c": "00001104",
+      "BB4d10": "00001104",
+      "BB4450_bit24": 1
+    },
+    "user_result": {
+      "5GHz_download_Mbps": 100,
+      "2.4GHz_download_Mbps_approx": 60
+    },
+    "evidence": {
+      "path": "logs/radio-ap20c-ap19xb-100-60Mbps.txt",
+      "sha256": "5c865bcb8e73b04bf539de7909ca675ccb1e7b9bd19ae148e36fbf6f0dedd56d"
+    }
+  }
 }

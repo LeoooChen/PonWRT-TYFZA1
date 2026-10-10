@@ -123,6 +123,28 @@ static inline void rtl_ax_c_adc20(const struct rtl_ax_io *io, unsigned int path)
 	rtl_ax_channel_field(io, base + 0xec, 0xff0000, 2);
 }
 
+static inline void rtl_ax_c_5m_mask(const struct rtl_ax_io *io,
+	unsigned int primary, unsigned int bandwidth)
+{
+	static const u16 addresses[] = { 0x4c4c, 0x4d10 };
+	bool enable = bandwidth == 1 || (bandwidth == 2 && (primary == 3 || primary == 4));
+	bool lower = bandwidth == 1 ? primary == 2 : primary == 4;
+	unsigned int i;
+
+	/* Exact halbb_5m_mask_C@2e37a4, including the actual channel
+	 * argument forwarded by ctrl_bw_ch_C@2e9b34. */
+	for (i = 0; i < ARRAY_SIZE(addresses); i++) {
+		if (enable) {
+			rtl_ax_channel_field(io, addresses[i], 0x3f, 4);
+			rtl_ax_channel_field(io, addresses[i], BIT(12), 1);
+			rtl_ax_channel_field(io, addresses[i], BIT(8), !lower);
+			rtl_ax_channel_field(io, addresses[i], BIT(6), lower);
+		} else
+			rtl_ax_channel_field(io, addresses[i], BIT(12), 0);
+	}
+	rtl_ax_channel_field(io, 0x4450, BIT(24), enable);
+}
+
 static inline void rtl_ax_c_bb_5g(const struct rtl_ax_io *io,
 	const struct rtl_ax_phy_inputs *phy, const struct rtl_ax_bb_dm *dm,
 	unsigned int primary, unsigned int center, unsigned int bandwidth, struct rtl_ax_channel *channel)
@@ -162,9 +184,7 @@ static inline void rtl_ax_c_bb_5g(const struct rtl_ax_io *io,
 	rtl_ax_channel_field(io, 0x2320, BIT(0), 1);
 	rtl_ax_channel_field(io, 0x0c80, BIT(31), 1);
 	rtl_ax_channel_field(io, 0x49e8, BIT(7), 0);
-	rtl_ax_channel_field(io, 0x4c4c, BIT(12), 0);
-	rtl_ax_channel_field(io, 0x4d10, BIT(12), 0);
-	rtl_ax_channel_field(io, 0x4450, BIT(24), 0);
+	rtl_ax_c_5m_mask(io, primary, bandwidth);
 	for (path = 0; path < 2; path++) {
 		rtl_ax_channel_field(io, path ? 0x78dc : 0x58dc, 0xc0000000, 1);
 		rtl_ax_channel_field(io, path ? 0x78dc : 0x58dc, 0xc0000000, 3);

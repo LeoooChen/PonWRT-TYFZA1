@@ -54,8 +54,10 @@ AP19cb接入C的HT40：主频道44、中心46（44+48）、PHY primary index2、
 
 BBinfo实际20字节通知也已追通并归档：C80/主44/中心42为`01102c2a02000000000000000100000001090000`，末word含TXSC20=1、TXSC40=9；主36则TXSC20=4、TXSC40=10。20/40MHz的当前原生通知与原机输出吻合。
 
-原机`halbb_5m_mask_8852c`随带宽变化，40MHz会配置4c4c/4d10低6位4、使能bit12及方向位，80MHz还按其入口参数选择边缘子带。当前原生40MHz沿用初始关闭值，下一次更高带宽接入时按完整调用入口再对齐该步骤。
+原机`halbb_5m_mask_8852c`随带宽变化，40MHz会配置4c4c/4d10低6位4、使能bit12及方向位，80MHz还按其入口参数选择边缘子带。AP20已按实际ctrl_bw_ch入口补齐该步骤；板上4c4c/4d10均读回0x1104、4450 bit24置位。用户再次确认5GHz仍跑满百兆，2G/AP19约60Mbps下载；两颗芯片的BA建立/删除和重连成功。证据`logs/radio-ap20c-ap19xb-100-60Mbps.txt`。
 
 HE发送的实际主机注册入口是`rtw_hal_bb_ra_register@1b822c -> rtw_halbb_raregistered@2cbb84`，更新入口为`rtw_halbb_raupdate@2cc1d0`，RSSI更新为`halbb_ra_rssi_setting_watchdog@2ccfd0`。当前主机采用mac80211/minstrel HT速率选择；HE接续需完整接入原机WCPU速率控制及真实反馈，不能仅在Beacon发布HE能力。
 
 生产源码`05dd751`的完整构建运行在独立服务`ponwrt-tyfza1-lan-20261010-133756`，输出`artifacts/full-pon-radio-ht40-ap19-6.18.55`。实机当前C为AP19cb/HT40，XB为AP19/HT20；这份80MHz提取没有改变已验收的生产源码。
+
+该AP19完整构建已退出0，最终FIT直接核对实际内核/initramfs输入和11个原生入口代码通过，FIT SHA256为`160f8724a2e20936048559adfbadb6dd816c3ab6cf878ee6ca1be56676f37fd8`。记录`manifests/radio-HT40-AP19-build.json`。随后C实机升级为AP20，新增5M掩码属于后续源码增量；当前设备仍运行RAM开发环境，完整FIT尚未重新RAM启动。

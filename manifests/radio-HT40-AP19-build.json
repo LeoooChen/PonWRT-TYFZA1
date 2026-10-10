@@ -1,0 +1,98 @@
+{
+  "at": "2026-10-10T13:55:55.973481+08:00",
+  "runtime_source_commit": "05dd751",
+  "service": "ponwrt-tyfza1-lan-20261010-133756.service",
+  "ExecMainStatus": 0,
+  "output_directory": "artifacts/full-pon-radio-ht40-ap19-6.18.55",
+  "actual_FIT_verification": {
+    "FIT_sha256": "160f8724a2e20936048559adfbadb6dd816c3ab6cf878ee6ca1be56676f37fd8",
+    "verification_entry": "Final PCIe FIT selected kernel initramfs",
+    "original_radio_firmware_files": 4,
+    "selected_RFE54_parameter_files": 44,
+    "board_flash_calibration_files": 2,
+    "original_NCTL_tables": 3,
+    "released_regulatory_database_and_signature": 2,
+    "all_bytes_match_prepared_board_inputs": true,
+    "native_AP_PCI_backend_present_in_selected_kernel": true,
+    "firmware_transport_implemented": true,
+    "native_mac80211_monitor_backend_present": true,
+    "full_AP_operations_implemented": false,
+    "initramfs_members": 1096,
+    "radio_hardware_verified": false,
+    "actual_radio_code_matches_linked_ELF": [
+      {
+        "function": "rtl_ax_probe",
+        "selected_FIT_kernel_offset": 5458576,
+        "code_bytes": 9824,
+        "SHA256": "215c3a4ccee5084a17afc0f5c6bd0b82f3aff0356a648640582a45449f123a86"
+      },
+      {
+        "function": "rtl_ax_h2c_send",
+        "selected_FIT_kernel_offset": 5398368,
+        "code_bytes": 268,
+        "SHA256": "4998a18ce072db638ea3a969790a584fcf88c69adaf8457cbd97549eea689c5f"
+      },
+      {
+        "function": "rtl_ax_wait_firmware",
+        "selected_FIT_kernel_offset": 5403952,
+        "code_bytes": 192,
+        "SHA256": "ba57804df23dcc984bdecd727b298481a902257ec5f5662b7dad600509e44a95"
+      },
+      {
+        "function": "rtl_ax_shutdown",
+        "selected_FIT_kernel_offset": 5442176,
+        "code_bytes": 4,
+        "SHA256": "060bafc9bf89e5e4e210f014bbcb70368ecad88912be4c91e1ab95ddd5348800"
+      },
+      {
+        "function": "rtl_ax_receive_configure",
+        "selected_FIT_kernel_offset": 5481476,
+        "code_bytes": 10336,
+        "SHA256": "9ab51c6bef4421292b81c2b19b7b8c55a1125e5b5f266a9259957933fba54a01"
+      },
+      {
+        "function": "rtl_ax_ap_conf_tx",
+        "selected_FIT_kernel_offset": 5397632,
+        "code_bytes": 164,
+        "SHA256": "7912c9e465077961127d1dc7b88e1005cea8f79cd1241317af479e5b2bbcdd17"
+      },
+      {
+        "function": "rtl_ax_monitor_tx",
+        "selected_FIT_kernel_offset": 5397796,
+        "code_bytes": 352,
+        "SHA256": "929c12a6d00c8fd74959047f1a7a3b0d9aeaf88a96940486bd4c9b02437cb828"
+      },
+      {
+        "function": "rtl_ax_ampdu_action",
+        "selected_FIT_kernel_offset": 5404144,
+        "code_bytes": 1256,
+        "SHA256": "a485b99bcb5b45d6f9f8fd3ff9421cb1089abc72ad0e42b627ffcbcdffe5c913"
+      },
+      {
+        "function": "rtl_ax_station_tables",
+        "selected_FIT_kernel_offset": 5401508,
+        "code_bytes": 232,
+        "SHA256": "5d9bcf1f0c7b17dc35771e3506b28cbe6f051386b8b8b11274d38937cfef91bf"
+      },
+      {
+        "function": "rtl_ax_tx_submit",
+        "selected_FIT_kernel_offset": 5503616,
+        "code_bytes": 1776,
+        "SHA256": "f43d452ad04ad2bde53e3db8f1412bea8e6ca4868b2c45a1b80cd819c20028d9"
+      },
+      {
+        "function": "rtl_ax_tx_report",
+        "selected_FIT_kernel_offset": 5505392,
+        "code_bytes": 808,
+        "SHA256": "02d5750016b3acfa398c5109e2517a452e9f6f3abd805c37b326a808bafc6d80"
+      }
+    ]
+  },
+  "FIT_rebooted_on_board": false,
+  "board_verification": "AP19cb HT40 actual 100/20Mbps; see radio-native-HT40-20261010.json",
+  "later_live_change": "AP20c adds original dynamic5M masking; this delta is outside this AP19 FIT",
+  "build_log": {
+    "path": "logs/lan-build-20261010-133756.log",
+    "sha256": "547ecf850097663d2fbae15499531a5092ca3ac3a6718e2c5653811f03ed034b"
+  }
+}
