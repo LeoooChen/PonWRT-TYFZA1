@@ -47,3 +47,15 @@ AP19cb接入C的HT40：主频道44、中心46（44+48）、PHY primary index2、
 用户实测5GHz下载达到百兆宽带上限、上传20Mbps；真实站点双向MCS15、40MHz/短GI、300Mbps。快照中70792个聚合MPDU全部收到RPQ完成，full0、pending0，停队列/恢复各7次，TX failed0；RX曾出现1次RDU，记录保留。普通/RU/by-rate的43个DWORD实机readback全部吻合。证据`logs/radio-ap19cb-HT40-100Mbps.txt`。2G目前仍为已验收的20MHz/2SS/BA路径。
 
 接续80MHz还需普通限值中的40m_0p5双子带最小值、四个20MHz子带及RU列、ADC数字时序、完整主子频道/TXSC，并补齐VHT/HE的实际发送和能力发布；然后接2G的HT40及HE。
+
+## 构建期间的80MHz依据
+
+`radio-stock-power-registers-80.json`已执行C实际80m普通/RU构造器和MAC writer。普通限值每NSS40字节：OFDM主20MHz在4..5，四个HE20子带在6..13，两个HE40子带在22..25，HE80在30..31，40m_0p5在36..37，为两侧40MHz限值先按有符号半dBm比较后的最小值。RU26/52/106各8字节，80MHz填四列，对应中心频道-6/-2/+2/+6。C/XB实用频段分开，80MHz仅接C。
+
+BBinfo实际20字节通知也已追通并归档：C80/主44/中心42为`01102c2a02000000000000000100000001090000`，末word含TXSC20=1、TXSC40=9；主36则TXSC20=4、TXSC40=10。20/40MHz的当前原生通知与原机输出吻合。
+
+原机`halbb_5m_mask_8852c`随带宽变化，40MHz会配置4c4c/4d10低6位4、使能bit12及方向位，80MHz还按其入口参数选择边缘子带。当前原生40MHz沿用初始关闭值，下一次更高带宽接入时按完整调用入口再对齐该步骤。
+
+HE发送的实际主机注册入口是`rtw_hal_bb_ra_register@1b822c -> rtw_halbb_raregistered@2cbb84`，更新入口为`rtw_halbb_raupdate@2cc1d0`，RSSI更新为`halbb_ra_rssi_setting_watchdog@2ccfd0`。当前主机采用mac80211/minstrel HT速率选择；HE接续需完整接入原机WCPU速率控制及真实反馈，不能仅在Beacon发布HE能力。
+
+生产源码`05dd751`的完整构建运行在独立服务`ponwrt-tyfza1-lan-20261010-133756`，输出`artifacts/full-pon-radio-ht40-ap19-6.18.55`。实机当前C为AP19cb/HT40，XB为AP19/HT20；这份80MHz提取没有改变已验收的生产源码。

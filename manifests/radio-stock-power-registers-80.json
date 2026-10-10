@@ -1,0 +1,2058 @@
+{
+  "scope": "Derive native TPU byte/register mapping by executing original C/XB ELF.\n\nThe power-query boundary supplies distinct tagged half-dBm values. Original\nTPU constructors, bit masks and MAC register writers execute unchanged. This\nrecords the mapping; production power is read from the actual board files.\n",
+  "width_MHz": 80,
+  "original_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "executed_functions": [
+    "halrf_set_power_by_rate_to_struct_8852c",
+    "halrf_get_power_limit_to_struct_80m_8852c",
+    "halrf_get_power_limit_ru_to_struct_80m_8852c",
+    "halrf_modify_pwr_table_bitmask",
+    "mac_write_pwr_by_rate_reg",
+    "mac_write_pwr_ofst_mode",
+    "mac_write_pwr_limit_reg",
+    "mac_write_pwr_limit_rua_reg",
+    "check_mac_en",
+    "halrf_hw_rate_to_pwr_by_rate",
+    "halrf_get_dcm_offset_pwr_by_rate"
+  ],
+  "records": [
+    {
+      "chip": "8852c",
+      "kind": "rate",
+      "queries": [
+        {
+          "tag": 1,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 0
+        },
+        {
+          "tag": 2,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 1
+        },
+        {
+          "tag": 3,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            2,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 2
+        },
+        {
+          "tag": 4,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            3,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 3
+        },
+        {
+          "tag": 5,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            4,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 4
+        },
+        {
+          "tag": 6,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            5,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 5
+        },
+        {
+          "tag": 7,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            6,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 6
+        },
+        {
+          "tag": 8,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            7,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 7
+        },
+        {
+          "tag": 9,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            8,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 8
+        },
+        {
+          "tag": 10,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            9,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 9
+        },
+        {
+          "tag": 11,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            10,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 10
+        },
+        {
+          "tag": 12,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            11,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 11
+        },
+        {
+          "tag": 13,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            384,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 84
+        },
+        {
+          "tag": 14,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            385,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 85
+        },
+        {
+          "tag": 15,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            386,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 86
+        },
+        {
+          "tag": 16,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            387,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 87
+        },
+        {
+          "tag": 17,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            388,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 88
+        },
+        {
+          "tag": 18,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            389,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 89
+        },
+        {
+          "tag": 19,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            390,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 90
+        },
+        {
+          "tag": 20,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 91
+        },
+        {
+          "tag": 21,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            392,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 92
+        },
+        {
+          "tag": 22,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            393,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 93
+        },
+        {
+          "tag": 23,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            394,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 94
+        },
+        {
+          "tag": 24,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            395,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 95
+        },
+        {
+          "tag": 25,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            384,
+            1,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 132
+        },
+        {
+          "tag": 26,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            385,
+            1,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 133
+        },
+        {
+          "tag": 27,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            387,
+            1,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 134
+        },
+        {
+          "tag": 28,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            388,
+            1,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 135
+        },
+        {
+          "tag": 29,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            400,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 96
+        },
+        {
+          "tag": 30,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            401,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 97
+        },
+        {
+          "tag": 31,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            402,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 98
+        },
+        {
+          "tag": 32,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            403,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 99
+        },
+        {
+          "tag": 33,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            404,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 100
+        },
+        {
+          "tag": 34,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            405,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 101
+        },
+        {
+          "tag": 35,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            406,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 102
+        },
+        {
+          "tag": 36,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            407,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 103
+        },
+        {
+          "tag": 37,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            408,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 104
+        },
+        {
+          "tag": 38,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            409,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 105
+        },
+        {
+          "tag": 39,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            410,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 106
+        },
+        {
+          "tag": 40,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            411,
+            0,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 107
+        },
+        {
+          "tag": 41,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            400,
+            1,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 136
+        },
+        {
+          "tag": 42,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            401,
+            1,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 137
+        },
+        {
+          "tag": 43,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            403,
+            1,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 138
+        },
+        {
+          "tag": 44,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            404,
+            1,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 139
+        },
+        {
+          "tag": 45,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            400,
+            1,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 136
+        },
+        {
+          "tag": 46,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            401,
+            1,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 137
+        },
+        {
+          "tag": 47,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            403,
+            1,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 138
+        },
+        {
+          "tag": 48,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            404,
+            1,
+            0,
+            0,
+            0
+          ],
+          "native_input_index": 139
+        },
+        {
+          "tag": 49,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            395,
+            0,
+            1,
+            0,
+            0
+          ],
+          "native_input_index": 140
+        },
+        {
+          "tag": 50,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            265,
+            0,
+            1,
+            0,
+            0
+          ],
+          "native_input_index": 141
+        },
+        {
+          "tag": 51,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            135,
+            0,
+            1,
+            0,
+            0
+          ],
+          "native_input_index": 142
+        },
+        {
+          "tag": 52,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            11,
+            0,
+            1,
+            0,
+            0
+          ],
+          "native_input_index": 143
+        },
+        {
+          "tag": 53,
+          "api": "halrf_get_power_by_rate",
+          "arguments": [
+            0,
+            0,
+            3,
+            0,
+            1,
+            0,
+            0
+          ],
+          "native_input_index": 144
+        }
+      ],
+      "writes": [
+        {
+          "address": "0xd2c0",
+          "value": "0x4030201",
+          "byte_tags": [
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "address": "0xd2c4",
+          "value": "0x8070605",
+          "byte_tags": [
+            5,
+            6,
+            7,
+            8
+          ]
+        },
+        {
+          "address": "0xd2c8",
+          "value": "0xc0b0a09",
+          "byte_tags": [
+            9,
+            10,
+            11,
+            12
+          ]
+        },
+        {
+          "address": "0xd2cc",
+          "value": "0x100f0e0d",
+          "byte_tags": [
+            13,
+            14,
+            15,
+            16
+          ]
+        },
+        {
+          "address": "0xd2d0",
+          "value": "0x14131211",
+          "byte_tags": [
+            17,
+            18,
+            19,
+            20
+          ]
+        },
+        {
+          "address": "0xd2d4",
+          "value": "0x18171615",
+          "byte_tags": [
+            21,
+            22,
+            23,
+            24
+          ]
+        },
+        {
+          "address": "0xd2d8",
+          "value": "0x1c1b1a19",
+          "byte_tags": [
+            25,
+            26,
+            27,
+            28
+          ]
+        },
+        {
+          "address": "0xd2dc",
+          "value": "0x201f1e1d",
+          "byte_tags": [
+            29,
+            30,
+            31,
+            32
+          ]
+        },
+        {
+          "address": "0xd2e0",
+          "value": "0x24232221",
+          "byte_tags": [
+            33,
+            34,
+            35,
+            36
+          ]
+        },
+        {
+          "address": "0xd2e4",
+          "value": "0x28272625",
+          "byte_tags": [
+            37,
+            38,
+            39,
+            40
+          ]
+        },
+        {
+          "address": "0xd2e8",
+          "value": "0x302f2e2d",
+          "byte_tags": [
+            45,
+            46,
+            47,
+            48
+          ]
+        },
+        {
+          "address": "0xd204",
+          "value": "0x54321",
+          "byte_tags": [
+            33,
+            67,
+            5,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "kind": "limit",
+      "queries": [
+        {
+          "tag": 1,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            11,
+            0,
+            0,
+            0,
+            36
+          ]
+        },
+        {
+          "tag": 2,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            11,
+            0,
+            1,
+            0,
+            36
+          ]
+        },
+        {
+          "tag": 3,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            0,
+            0,
+            36
+          ]
+        },
+        {
+          "tag": 4,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            0,
+            0,
+            40
+          ]
+        },
+        {
+          "tag": 5,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            0,
+            0,
+            44
+          ]
+        },
+        {
+          "tag": 6,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            0,
+            0,
+            48
+          ]
+        },
+        {
+          "tag": 7,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            1,
+            0,
+            36
+          ]
+        },
+        {
+          "tag": 8,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            1,
+            0,
+            40
+          ]
+        },
+        {
+          "tag": 9,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            1,
+            0,
+            44
+          ]
+        },
+        {
+          "tag": 10,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            1,
+            0,
+            48
+          ]
+        },
+        {
+          "tag": 11,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            0,
+            0,
+            38
+          ]
+        },
+        {
+          "tag": 12,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            0,
+            0,
+            46
+          ]
+        },
+        {
+          "tag": 13,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            1,
+            0,
+            38
+          ]
+        },
+        {
+          "tag": 14,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            1,
+            0,
+            46
+          ]
+        },
+        {
+          "tag": 15,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            2,
+            0,
+            0,
+            42
+          ]
+        },
+        {
+          "tag": 16,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            2,
+            1,
+            0,
+            42
+          ]
+        },
+        {
+          "tag": 17,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            0,
+            0,
+            38
+          ]
+        },
+        {
+          "tag": 18,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            0,
+            0,
+            46
+          ]
+        },
+        {
+          "tag": 19,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            1,
+            0,
+            38
+          ]
+        },
+        {
+          "tag": 20,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            1,
+            0,
+            46
+          ]
+        },
+        {
+          "tag": 21,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            11,
+            0,
+            0,
+            1,
+            36
+          ]
+        },
+        {
+          "tag": 22,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            11,
+            0,
+            1,
+            1,
+            36
+          ]
+        },
+        {
+          "tag": 23,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            0,
+            1,
+            36
+          ]
+        },
+        {
+          "tag": 24,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            0,
+            1,
+            40
+          ]
+        },
+        {
+          "tag": 25,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            0,
+            1,
+            44
+          ]
+        },
+        {
+          "tag": 26,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            0,
+            1,
+            48
+          ]
+        },
+        {
+          "tag": 27,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            1,
+            1,
+            36
+          ]
+        },
+        {
+          "tag": 28,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            1,
+            1,
+            40
+          ]
+        },
+        {
+          "tag": 29,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            1,
+            1,
+            44
+          ]
+        },
+        {
+          "tag": 30,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            1,
+            1,
+            48
+          ]
+        },
+        {
+          "tag": 31,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            0,
+            1,
+            38
+          ]
+        },
+        {
+          "tag": 32,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            0,
+            1,
+            46
+          ]
+        },
+        {
+          "tag": 33,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            1,
+            1,
+            38
+          ]
+        },
+        {
+          "tag": 34,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            1,
+            1,
+            46
+          ]
+        },
+        {
+          "tag": 35,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            2,
+            0,
+            1,
+            42
+          ]
+        },
+        {
+          "tag": 36,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            2,
+            1,
+            1,
+            42
+          ]
+        },
+        {
+          "tag": 37,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            0,
+            1,
+            38
+          ]
+        },
+        {
+          "tag": 38,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            0,
+            1,
+            46
+          ]
+        },
+        {
+          "tag": 39,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            1,
+            1,
+            38
+          ]
+        },
+        {
+          "tag": 40,
+          "api": "halrf_get_power_limit",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            1,
+            1,
+            46
+          ]
+        }
+      ],
+      "writes": [
+        {
+          "address": "0xd2ec",
+          "value": "0x0",
+          "byte_tags": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0xd2f0",
+          "value": "0x7030201",
+          "byte_tags": [
+            1,
+            2,
+            3,
+            7
+          ]
+        },
+        {
+          "address": "0xd2f4",
+          "value": "0x9050804",
+          "byte_tags": [
+            4,
+            8,
+            5,
+            9
+          ]
+        },
+        {
+          "address": "0xd2f8",
+          "value": "0xa06",
+          "byte_tags": [
+            6,
+            10,
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0xd2fc",
+          "value": "0x0",
+          "byte_tags": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0xd300",
+          "value": "0xd0b0000",
+          "byte_tags": [
+            0,
+            0,
+            11,
+            13
+          ]
+        },
+        {
+          "address": "0xd304",
+          "value": "0xe0c",
+          "byte_tags": [
+            12,
+            14,
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0xd308",
+          "value": "0x100f0000",
+          "byte_tags": [
+            0,
+            0,
+            15,
+            16
+          ]
+        },
+        {
+          "address": "0xd30c",
+          "value": "0x0",
+          "byte_tags": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0xd310",
+          "value": "0x1311",
+          "byte_tags": [
+            17,
+            19,
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0xd314",
+          "value": "0x0",
+          "byte_tags": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0xd318",
+          "value": "0x1b171615",
+          "byte_tags": [
+            21,
+            22,
+            23,
+            27
+          ]
+        },
+        {
+          "address": "0xd31c",
+          "value": "0x1d191c18",
+          "byte_tags": [
+            24,
+            28,
+            25,
+            29
+          ]
+        },
+        {
+          "address": "0xd320",
+          "value": "0x1e1a",
+          "byte_tags": [
+            26,
+            30,
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0xd324",
+          "value": "0x0",
+          "byte_tags": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0xd328",
+          "value": "0x211f0000",
+          "byte_tags": [
+            0,
+            0,
+            31,
+            33
+          ]
+        },
+        {
+          "address": "0xd32c",
+          "value": "0x2220",
+          "byte_tags": [
+            32,
+            34,
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0xd330",
+          "value": "0x24230000",
+          "byte_tags": [
+            0,
+            0,
+            35,
+            36
+          ]
+        },
+        {
+          "address": "0xd334",
+          "value": "0x0",
+          "byte_tags": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0xd338",
+          "value": "0x2725",
+          "byte_tags": [
+            37,
+            39,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "kind": "ru",
+      "queries": [
+        {
+          "tag": 1,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            0,
+            36,
+            100728838
+          ]
+        },
+        {
+          "tag": 2,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            0,
+            40,
+            100728838
+          ]
+        },
+        {
+          "tag": 3,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            0,
+            44,
+            100728838
+          ]
+        },
+        {
+          "tag": 4,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            0,
+            48,
+            100728838
+          ]
+        },
+        {
+          "tag": 5,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            0,
+            36,
+            100728838
+          ]
+        },
+        {
+          "tag": 6,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            0,
+            40,
+            100728838
+          ]
+        },
+        {
+          "tag": 7,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            0,
+            44,
+            100728838
+          ]
+        },
+        {
+          "tag": 8,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            0,
+            48,
+            100728838
+          ]
+        },
+        {
+          "tag": 9,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            2,
+            0,
+            36,
+            100728838
+          ]
+        },
+        {
+          "tag": 10,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            2,
+            0,
+            40,
+            100728838
+          ]
+        },
+        {
+          "tag": 11,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            2,
+            0,
+            44,
+            100728838
+          ]
+        },
+        {
+          "tag": 12,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            2,
+            0,
+            48,
+            100728838
+          ]
+        },
+        {
+          "tag": 13,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            1,
+            36,
+            100728838
+          ]
+        },
+        {
+          "tag": 14,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            1,
+            40,
+            100728838
+          ]
+        },
+        {
+          "tag": 15,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            1,
+            44,
+            100728838
+          ]
+        },
+        {
+          "tag": 16,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            0,
+            1,
+            48,
+            100728838
+          ]
+        },
+        {
+          "tag": 17,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            1,
+            36,
+            100728838
+          ]
+        },
+        {
+          "tag": 18,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            1,
+            40,
+            100728838
+          ]
+        },
+        {
+          "tag": 19,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            1,
+            44,
+            100728838
+          ]
+        },
+        {
+          "tag": 20,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            1,
+            1,
+            48,
+            100728838
+          ]
+        },
+        {
+          "tag": 21,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            2,
+            1,
+            36,
+            100728838
+          ]
+        },
+        {
+          "tag": 22,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            2,
+            1,
+            40,
+            100728838
+          ]
+        },
+        {
+          "tag": 23,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            2,
+            1,
+            44,
+            100728838
+          ]
+        },
+        {
+          "tag": 24,
+          "api": "halrf_get_power_limit_ru",
+          "arguments": [
+            0,
+            0,
+            391,
+            2,
+            1,
+            48,
+            100728838
+          ]
+        }
+      ],
+      "writes": [
+        {
+          "address": "0xd33c",
+          "value": "0x4030201",
+          "byte_tags": [
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "address": "0xd340",
+          "value": "0x0",
+          "byte_tags": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0xd344",
+          "value": "0x8070605",
+          "byte_tags": [
+            5,
+            6,
+            7,
+            8
+          ]
+        },
+        {
+          "address": "0xd348",
+          "value": "0x0",
+          "byte_tags": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0xd34c",
+          "value": "0xc0b0a09",
+          "byte_tags": [
+            9,
+            10,
+            11,
+            12
+          ]
+        },
+        {
+          "address": "0xd350",
+          "value": "0x0",
+          "byte_tags": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0xd354",
+          "value": "0x100f0e0d",
+          "byte_tags": [
+            13,
+            14,
+            15,
+            16
+          ]
+        },
+        {
+          "address": "0xd358",
+          "value": "0x0",
+          "byte_tags": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0xd35c",
+          "value": "0x14131211",
+          "byte_tags": [
+            17,
+            18,
+            19,
+            20
+          ]
+        },
+        {
+          "address": "0xd360",
+          "value": "0x0",
+          "byte_tags": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "address": "0xd364",
+          "value": "0x18171615",
+          "byte_tags": [
+            21,
+            22,
+            23,
+            24
+          ]
+        },
+        {
+          "address": "0xd368",
+          "value": "0x0",
+          "byte_tags": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    }
+  ]
+}

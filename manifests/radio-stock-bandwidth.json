@@ -11,7 +11,11 @@
     "rtw_hal_mac_set_bw",
     "cfg_mac_bw",
     "rtw_hal_bb_get_txsc",
-    "halbb_get_txsc"
+    "halbb_get_txsc",
+    "halbb_5m_mask_8852c",
+    "halbb_ch_bw_upd",
+    "halbb_ch_bw_notif",
+    "halbb_bbinfo_cfg"
   ],
   "inputs": "RFE54, PHY0/MACband0, DBCC0, BB and MAC writers captured separately; RF/RFK/TPU not configured",
   "records": [
@@ -157,6 +161,21 @@
           "address": "0xca0",
           "mask": "0xff000",
           "value": "0x0"
+        },
+        {
+          "address": "0x4c4c",
+          "mask": "0x1000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4d10",
+          "mask": "0x1000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4450",
+          "mask": "0x1000000",
+          "value": "0x0"
         }
       ],
       "MAC_parameter": "2424000000000000",
@@ -177,6 +196,14 @@
           "operation": "write32",
           "address": "0xc088",
           "value": "0x0"
+        }
+      ],
+      "BBinfo_H2C": [
+        {
+          "class": 0,
+          "function": 6,
+          "bytes": 20,
+          "payload": "0110242400000000000000000100000000000000"
         }
       ]
     },
@@ -322,6 +349,51 @@
           "address": "0xca0",
           "mask": "0xff000",
           "value": "0x0"
+        },
+        {
+          "address": "0x4c4c",
+          "mask": "0x3f",
+          "value": "0x4"
+        },
+        {
+          "address": "0x4c4c",
+          "mask": "0x1000",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4c4c",
+          "mask": "0x100",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4c4c",
+          "mask": "0x40",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4d10",
+          "mask": "0x3f",
+          "value": "0x4"
+        },
+        {
+          "address": "0x4d10",
+          "mask": "0x1000",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4d10",
+          "mask": "0x100",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4d10",
+          "mask": "0x40",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4450",
+          "mask": "0x1000000",
+          "value": "0x1"
         }
       ],
       "MAC_parameter": "2826000001000000",
@@ -342,6 +414,14 @@
           "operation": "write32",
           "address": "0xc088",
           "value": "0x1"
+        }
+      ],
+      "BBinfo_H2C": [
+        {
+          "class": 0,
+          "function": 6,
+          "bytes": 20,
+          "payload": "0110282601000000000000000100000001000000"
         }
       ]
     },
@@ -487,6 +567,51 @@
           "address": "0xca0",
           "mask": "0xff000",
           "value": "0x0"
+        },
+        {
+          "address": "0x4c4c",
+          "mask": "0x3f",
+          "value": "0x4"
+        },
+        {
+          "address": "0x4c4c",
+          "mask": "0x1000",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4c4c",
+          "mask": "0x100",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4c4c",
+          "mask": "0x40",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4d10",
+          "mask": "0x3f",
+          "value": "0x4"
+        },
+        {
+          "address": "0x4d10",
+          "mask": "0x1000",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4d10",
+          "mask": "0x100",
+          "value": "0x1"
+        },
+        {
+          "address": "0x4d10",
+          "mask": "0x40",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4450",
+          "mask": "0x1000000",
+          "value": "0x1"
         }
       ],
       "MAC_parameter": "2426000001000000",
@@ -507,6 +632,14 @@
           "operation": "write32",
           "address": "0xc088",
           "value": "0x2"
+        }
+      ],
+      "BBinfo_H2C": [
+        {
+          "class": 0,
+          "function": 6,
+          "bytes": 20,
+          "payload": "0110242601000000000000000100000002000000"
         }
       ]
     },
@@ -651,6 +784,21 @@
         {
           "address": "0xca0",
           "mask": "0xff000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4c4c",
+          "mask": "0x1000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4d10",
+          "mask": "0x1000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4450",
+          "mask": "0x1000000",
           "value": "0x0"
         }
       ],
@@ -673,6 +821,14 @@
           "address": "0xc088",
           "value": "0x91"
         }
+      ],
+      "BBinfo_H2C": [
+        {
+          "class": 0,
+          "function": 6,
+          "bytes": 20,
+          "payload": "01102c2a02000000000000000100000001090000"
+        }
       ]
     },
     {
@@ -817,6 +973,21 @@
           "address": "0xca0",
           "mask": "0xff000",
           "value": "0x0"
+        },
+        {
+          "address": "0x4c4c",
+          "mask": "0x1000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4d10",
+          "mask": "0x1000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4450",
+          "mask": "0x1000000",
+          "value": "0x0"
         }
       ],
       "MAC_parameter": "282a000002000000",
@@ -837,6 +1008,14 @@
           "operation": "write32",
           "address": "0xc088",
           "value": "0xa2"
+        }
+      ],
+      "BBinfo_H2C": [
+        {
+          "class": 0,
+          "function": 6,
+          "bytes": 20,
+          "payload": "0110282a020000000000000001000000020a0000"
         }
       ]
     },
@@ -982,6 +1161,21 @@
           "address": "0xca0",
           "mask": "0xff000",
           "value": "0x0"
+        },
+        {
+          "address": "0x4c4c",
+          "mask": "0x1000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4d10",
+          "mask": "0x1000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4450",
+          "mask": "0x1000000",
+          "value": "0x0"
         }
       ],
       "MAC_parameter": "302a000002000000",
@@ -1002,6 +1196,14 @@
           "operation": "write32",
           "address": "0xc088",
           "value": "0x93"
+        }
+      ],
+      "BBinfo_H2C": [
+        {
+          "class": 0,
+          "function": 6,
+          "bytes": 20,
+          "payload": "0110302a02000000000000000100000003090000"
         }
       ]
     },
@@ -1147,6 +1349,21 @@
           "address": "0xca0",
           "mask": "0xff000",
           "value": "0x0"
+        },
+        {
+          "address": "0x4c4c",
+          "mask": "0x1000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4d10",
+          "mask": "0x1000",
+          "value": "0x0"
+        },
+        {
+          "address": "0x4450",
+          "mask": "0x1000000",
+          "value": "0x0"
         }
       ],
       "MAC_parameter": "242a000002000000",
@@ -1167,6 +1384,14 @@
           "operation": "write32",
           "address": "0xc088",
           "value": "0xa4"
+        }
+      ],
+      "BBinfo_H2C": [
+        {
+          "class": 0,
+          "function": 6,
+          "bytes": 20,
+          "payload": "0110242a020000000000000001000000040a0000"
         }
       ]
     },
@@ -1308,6 +1533,14 @@
           "address": "0xc088",
           "value": "0x0"
         }
+      ],
+      "BBinfo_H2C": [
+        {
+          "class": 0,
+          "function": 6,
+          "bytes": 20,
+          "payload": "0100060600000000000000000100000000000000"
+        }
       ]
     },
     {
@@ -1448,6 +1681,14 @@
           "address": "0xc088",
           "value": "0x1"
         }
+      ],
+      "BBinfo_H2C": [
+        {
+          "class": 0,
+          "function": 6,
+          "bytes": 20,
+          "payload": "0100080601000000000000000100000001000000"
+        }
       ]
     },
     {
@@ -1587,6 +1828,14 @@
           "operation": "write32",
           "address": "0xc088",
           "value": "0x2"
+        }
+      ],
+      "BBinfo_H2C": [
+        {
+          "class": 0,
+          "function": 6,
+          "bytes": 20,
+          "payload": "0100040601000000000000000100000002000000"
         }
       ]
     }
