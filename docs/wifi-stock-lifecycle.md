@@ -589,3 +589,11 @@ RXQ在原生Linux提交前对真实非空Data计算软件FCS，并保存每种�
 板上tcpdump4.99.7/libpcap1.10.7对原掩码OR表达式优化出14条BPF：在type检验后使用JSET240、JEQ128，漏掉第二次AND240；实际QoS FC字节136被JEQ128排除。对完全相同的pcap，板上优化后仅匹配4个legacy Data，-O禁用优化匹配全部8个，Mac亦匹配8个。因此旧35/55秒过滤结果0未证明C不能接收QoS/HE Data。新抓包脚本scripts/capture_wifi_data.sh使用完整合法FC字节8或136，两种Data都匹配；不借这个依赖问题改变原生硬件收帧路径。
 
 实际新过滤命令45秒抓得6个C QoS/HE Data，86..130B，均FCS正确、kernel丢包0；保留目标8但实际只6的原记录。该结果验证本阶段真实入站收帧，未代表完整AP关联、解密、TX或其他带宽。manifests/radio-C-native-data-receive-20261010.json、logs/radio-C-data-filter-optimization.log及对应pcap为当前权威结论。原始失败观察日志和ICV语义修正记录继续保留，ICV计数实际0，不再把它描述成本次过滤失败的原因。
+
+## 2026-10-10 原机普通TX WP格式与DMA channel基础
+
+原机hal_mapping_hw_tx_chnl_C@27c014/XB@282af0对TID0..7/management8/high9在MAC band0映射0,1,1,0,2,2,3,3,8,9；MAC band1的数据通道加4、management/high加2。两颗独立TYFZA1无线芯片目前都为各自MAC SCC band0，不能把C5GHz当MAC band1。
+
+实际fill_wp_seq@27cfbc保留word高16、写低15序号并置bit15 valid；fill_wp_addr_info@27cfd0使用6B压缩地址项：11bit length、bit15 last、32bit DMA地址。它与某些SDK的8B地址项不同，不能复制完整地址项的wp_num/mpdu/msdu flags。超过2047B的一帧必须分段地址项，最后一项置last；tx-format.h已按实际机器码提供原生编码和连续MPDU分段，尚未接通普通TX ring/角色或宣称实际发射。
+
+mac_txdesc_len_C@251be8/XB@264de8对type0/1根据mdata byte33 bit5(wdinfo_en)返回32B或56B。mgmt builder在PCIe接口（MAC adapter hw_info interface值2，区别于PHL HCI PCIe值1）使用SCC正常布局；WD后还有4B sequence和每项6B地址信息，故带WD-info的单段WP为66B，不是H2C的16B内联packet。TXBD填入的是WD page DMA，WP地址项再指向实际MPDU。这些基础继续接入普通发射与RPQ释放。

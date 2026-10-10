@@ -1,0 +1,26 @@
+{
+  "original_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "scope": "actual original disassembly; native helpers are not yet wired to normal TX",
+  "TID0_to_7_management_high_band0": [
+    0,
+    1,
+    1,
+    0,
+    2,
+    2,
+    3,
+    3,
+    8,
+    9
+  ],
+  "WP_sequence_bytes": 4,
+  "WP_address_bytes": 6,
+  "WP_fragment_length_bits": 11,
+  "WP_fragment_max_bytes": 2047,
+  "WP_last_bit": 15,
+  "WP_DMA_address_bits": 32,
+  "WD_body_bytes": 32,
+  "WD_with_info_bytes": 56,
+  "single_fragment_WP_with_info_bytes": 66,
+  "hardware_TX_verified": false
+}
