@@ -87,10 +87,11 @@ static void rtl_ax_monitor_tx(struct ieee80211_hw *hw,
 
 	/* Raw management first: same original builder used by AP beacon,
 	 * probe and association traffic. DATA WD and roles follow this path. */
-	if (skb->len >= 24 && skb->len <= 0x3fff && ieee80211_is_mgmt(header->frame_control)) {
+	if (skb->len >= 24 && skb->len <= 0x3fff &&
+	    (ieee80211_is_mgmt(header->frame_control) || ieee80211_is_data(header->frame_control))) {
 		if (rate_index >= 0 && rate_index < radio->band.n_bitrates)
 			rate = radio->band.bitrates[rate_index].hw_value;
-		if (!rtl_ax_tx_management(radio->tx, hw, skb, rate))
+		if (!rtl_ax_tx_submit(radio->tx, hw, skb, rate))
 			return;
 	} else
 		radio->tx_unimplemented++;

@@ -613,3 +613,13 @@ c1c4387完整FIT fbdc387a995ed49906c661f5467cf69dda558b4823a5bd10af7ae8c9cb6331a
 最终原生模块e7a90c425ab0b97cf4aad9dd971c1856abb297fd2768308b599e3d36a6074138，两颗实机各提交265个57B管理beacon、收到265个真正RPQ TX_DONE，pending0、polluted/unmatched/full/failure均0，256项ring回绕后producer=hardware=9。频道C36→44→36、XB6→11→6之后的发包也全部完成，XEPON公网2/2。首次RPQ字00001200对应MACID0/qsel12/status0/seq0。RFK前按原机set_hw_sch_tx_en写C398低18位暂停，tx_idle_poll_band@1ea504轮询C6ec[7]最多2199次×30us；停止新提交和DMA，再校准，完成后恢复调度/channel8。两颗当前均独立MAC SCC band0，不能拿C5G映射成MAC band1。
 
 tools/trace_stock_tx_management.py执行实际原厂PHL metadata填充及MAC descriptor builder，原生实际上机WD与原厂输出一致。tools/wifi_management_probe.c通过mac80211正常管理帧TX入口提交本工程单播/广播probe中的广播beacon，未调用原厂host程序。这一证据证明原生管理帧完成及回收，尚无独立空口抓取、AP角色/关联/密钥或普通DATA TX业务；后续继续原厂DATA builder、数据DMA队列及AP角色/CAM。证据manifests/radio-native-management-TX-20261010.json及对应真实日志。
+
+## 2026-10-10 原生DATA TX四队列与多地址WP
+
+依据实际DATA_C@2522c0/XB@2654b8、PHL填充@1955e8及两颗芯片完全相同的ops/resource表，tx.c扩展DMA0/1/2/3、管理8及高优先级9六个ring；TXBD idx1058/105c/1060/1064/1078/107c、DESA1230+channel*8、NUM1024+channel*2、BDRAM1300+channel*4，原机实际data表起点0/5/10/15 max5 min2、管理/高40/45 max5 min1。256个待回收WP在各ring间共享，RPQ低12位ID与原提交ring一起确认归属；只有实际完成才unmap/free并回送mac80211 TX status。
+
+原机正常MAC SCC band0和invalid DBCC WMM4路径：TID0..7的DMA映射0,1,1,0,2,2,3,3，qsel0,1,1,0,2,2,3,3，tid indicator0,0,1,1,0,1,0,1；indicator同时进入WD bit23与WPseq bit14，RPQ seq回收时只取低12位。tools/trace_stock_tx_data.py直接执行实际ELF的PHL和DATA builder，分别记录16个C/XB原厂56B WD；不把自写实现的通过当作硬件正确性依据。原生目前raw、固定基础速率、未加密、不聚合；AP角色、STA MACID、rate-control/HT/VHT/HE发送及密钥继续接入。
+
+模块95404bae13e230a01c3fb3da7f59879cb73200328bf162398a86d7c04035b869实际两颗各20次提交/20次RPQ TX_DONE/pending0；其中TID0..7各2次，首次TID0一次，管理一次，TID7的2200B帧两次。四个data ring分别5/4/4/6次全部完成，管理1次；高队列9已准备但本轮没有实际业务提交，不能计为板测通过。2200B按原机11bit长度拆成2047+153两个地址项，已收到真实正确TID7指示RPQ40000300/40010300，polluted/unmatched/full/failure0、halt0。起初3000/11962B AF_PACKET发送被Linux接口MTU1500拒绝并未进驱动，原记录保留；随后只在任务监控接口把MTU设2304并用2200B验证分段，不强行宣称最大聚合帧验证。
+
+工具wifi_data_probe.c从mac80211注入raw广播QoS Data和已知实验EtherType88b5 payload，未调用原厂host程序。它证明当前native DATA DMA/硬件完成/回收，没有独立空口接收器或AP关联业务证明。证据manifests/radio-native-data-TX-20261010.json与logs/radio-data-tx1-*。当前后端继续完成AP port、CAM、自身/客户role和正常桥接。

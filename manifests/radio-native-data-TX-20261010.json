@@ -1,0 +1,50 @@
+{
+  "scope": "actual native raw DATA/management TX completion and RPQ recycling, not AP association or independent over-air reception",
+  "native_module_sha256": "95404bae13e230a01c3fb3da7f59879cb73200328bf162398a86d7c04035b869",
+  "each_chip": {
+    "submitted": 20,
+    "completed_TX_DONE": 20,
+    "pending": 0,
+    "data_DMA0_1_2_3_completed": [
+      5,
+      4,
+      4,
+      6
+    ],
+    "management_completed": 1,
+    "high_priority_submitted": 0,
+    "failures": 0,
+    "polluted": 0,
+    "unmatched": 0,
+    "full": 0,
+    "DMAC_halt": 0
+  },
+  "real_TIDs": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "multi_address_frame_bytes": 2200,
+  "address_fragments": [
+    2047,
+    153
+  ],
+  "large_packets_rejected_before_driver": [
+    3000,
+    11962
+  ],
+  "task_monitor_MTU_for_multiple_addresses": 2304,
+  "records": [
+    "logs/radio-data-tx1-first.log",
+    "logs/radio-data-tx1-all-TID-result.log",
+    "logs/radio-data-tx1-multiple-address-result.log"
+  ],
+  "original_module_loaded": false,
+  "native_AP_roles_keys_rate_control": "pending",
+  "full_FIT_boot_verified": false
+}
