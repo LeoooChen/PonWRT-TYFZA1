@@ -597,3 +597,7 @@ RXQ在原生Linux提交前对真实非空Data计算软件FCS，并保存每种�
 实际fill_wp_seq@27cfbc保留word高16、写低15序号并置bit15 valid；fill_wp_addr_info@27cfd0使用6B压缩地址项：11bit length、bit15 last、32bit DMA地址。它与某些SDK的8B地址项不同，不能复制完整地址项的wp_num/mpdu/msdu flags。超过2047B的一帧必须分段地址项，最后一项置last；tx-format.h已按实际机器码提供原生编码和连续MPDU分段，尚未接通普通TX ring/角色或宣称实际发射。
 
 mac_txdesc_len_C@251be8/XB@264de8对type0/1根据mdata byte33 bit5(wdinfo_en)返回32B或56B。mgmt builder在PCIe接口（MAC adapter hw_info interface值2，区别于PHL HCI PCIe值1）使用SCC正常布局；WD后还有4B sequence和每项6B地址信息，故带WD-info的单段WP为66B，不是H2C的16B内联packet。TXBD填入的是WD page DMA，WP地址项再指向实际MPDU。这些基础继续接入普通发射与RPQ释放。
+
+80132de完整FIT ada86eb9d03d9dcdd9fea3e0508421d83ee62ea3e4885b79b640b723002db3bc已实际经U-Boot RAM重启验证，内置rtl_ax_ap、taint0、未加载原厂或live模块。C36用修正精确FC过滤抓得4个HE QoS Data（86/122B），XB6抓得4个legacy Data（86B），8个帧FCS全部正确；kernel丢包0、XEPON公网2/2。这进一步排除了仅live诊断模块才能收Data的结论。记录manifests/radio-native-data-builtin-80132de.json与对应日志/pcap。
+
+c1c4387完整后台构建082639已成功结束并通过当次实际FIT载荷/源码核对，ram-pcie FIT fbdc387a995ed49906c661f5467cf69dda558b4823a5bd10af7ae8c9cb6331a9，实际kernel5620df020502a44a8b2144a06063af93dbf9072e287655d1e0da8e781e547811，包含新增软件FCS/真实WD观测。9cc0bfa新增的TX WP基础不在该构建快照中，且尚未接通TX，不应将它计作硬件发射成功。
