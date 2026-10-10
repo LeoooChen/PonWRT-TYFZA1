@@ -19,6 +19,7 @@
 #include "phy.h"
 #include "receive.h"
 #include "rx.h"
+#include "tx.h"
 #include "power-tables.h"
 #include "bb-dm.h"
 #include "dfs.h"
@@ -103,6 +104,7 @@ struct rtl_ax_ap {
 	struct rtl_ax_c_tssi c_tssi;
 	bool dpk_bypassed;
 	struct rtl_ax_rx *rx;
+	struct rtl_ax_tx *tx;
 	struct ieee80211_hw *hw;
 	struct ieee80211_supported_band band;
 	struct ieee80211_channel channels[13];
@@ -250,6 +252,10 @@ static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 
 	if (packet->type == 0 && READ_ONCE(radio->monitor_started))
 		return rtl_ax_monitor_receive(radio, packet);
+	/* Original hal_handle_rx_buffer_C@279904/XB@28036c:
+	 * descriptor type7 is the WP recycle report; type8 is not RPQ. */
+	if (packet->type == 7)
+		return rtl_ax_tx_report(radio->tx, radio->hw, packet);
 	if (packet->type != 10)
 		return -EOPNOTSUPP;
 	ret = rtl_ax_c2h_parse(packet->payload, packet->bytes, &message);
@@ -504,6 +510,13 @@ static void rtl_ax_ring_free(struct rtl_ax_ap *radio)
 
 static int rtl_ax_ring_prepare(struct rtl_ax_ap *radio)
 {
+	radio->tx = rtl_ax_tx_prepare(radio->pdev, &radio->io);
+	if (IS_ERR(radio->tx)) {
+		int ret = PTR_ERR(radio->tx);
+
+		radio->tx = NULL;
+		return ret;
+	}
 	radio->h2c_ring = dma_alloc_coherent(&radio->pdev->dev, RTL_AX_H2C_ENTRIES * 8,
 					    &radio->h2c_ring_dma, GFP_KERNEL);
 	if (!radio->h2c_ring)
@@ -1143,6 +1156,9 @@ static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int chan
 {
 	int ret;
 
+	ret = rtl_ax_tx_pause(radio->tx);
+	if (ret)
+		return ret;
 	rtl_ax_rx_close(radio->rx);
 	rtl_ax_hci_pause(&radio->io);
 	pci_clear_master(radio->pdev);
@@ -1197,6 +1213,8 @@ static int rtl_ax_receive_set_channel(struct rtl_ax_ap *radio, unsigned int chan
 	pci_set_master(radio->pdev);
 	rtl_ax_h2c_start(&radio->io);
 	rtl_ax_rx_open(radio->rx);
+	if (!ret && radio->monitor_started)
+		rtl_ax_tx_open(radio->tx);
 	return ret;
 }
 
@@ -1654,8 +1672,16 @@ static ssize_t radio_rx_data_show(struct device *dev,
 	return rtl_ax_rx_data_observation(radio->rx, buffer, PAGE_SIZE);
 }
 static DEVICE_ATTR_RO(radio_rx_data);
+static ssize_t radio_tx_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+
+	return rtl_ax_tx_status(radio->tx, buffer, PAGE_SIZE);
+}
+static DEVICE_ATTR_RO(radio_tx);
 static struct attribute *rtl_ax_attrs[] = {
-	&dev_attr_radio_state.attr, &dev_attr_radio_rx.attr, &dev_attr_radio_rx_data.attr, &dev_attr_radio_bb.attr,
+	&dev_attr_radio_state.attr, &dev_attr_radio_rx.attr, &dev_attr_radio_rx_data.attr, &dev_attr_radio_tx.attr, &dev_attr_radio_bb.attr,
 	&dev_attr_radio_rf.attr, &dev_attr_radio_rf_bank.attr, &dev_attr_radio_rf_analog.attr,
 	&dev_attr_radio_power.attr, &dev_attr_radio_limits.attr, &dev_attr_radio_bb_dm.attr,
 	&dev_attr_radio_physts.attr, &dev_attr_radio_txdiff.attr, &dev_attr_radio_phy_stats.attr,
@@ -1730,6 +1756,8 @@ static void rtl_ax_stop(struct rtl_ax_ap *radio)
 	/* Bus mastering was cleared before pausing/resetting radio DMA and
 	 * powering down the MAC. The host ring no longer belongs to the device. */
 	rtl_ax_ring_free(radio);
+	rtl_ax_tx_free(radio->tx, radio->hw);
+	radio->tx = NULL;
 	rtl_ax_phy_release(&radio->phy);
 	rtl_ax_power_inputs_release(&radio->power_inputs);
 	if (radio->rx) {
@@ -1835,6 +1863,7 @@ static void rtl_ax_remove(struct pci_dev *pdev)
 
 	rtl_ax_monitor_unregister(radio);
 	rtl_ax_stop(radio);
+	rtl_ax_monitor_free(radio);
 }
 
 static void rtl_ax_shutdown(struct pci_dev *pdev)
@@ -1843,6 +1872,7 @@ static void rtl_ax_shutdown(struct pci_dev *pdev)
 
 	rtl_ax_monitor_unregister(radio);
 	rtl_ax_stop(radio);
+	rtl_ax_monitor_free(radio);
 }
 
 static const struct pci_device_id rtl_ax_ids[] = {

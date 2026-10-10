@@ -1,0 +1,51 @@
+{
+  "scope": "actual TYFZA1 native live management TX and RPQ completion, not an independent over-air capture",
+  "original_host_loaded": false,
+  "native_module_sha256": "e7a90c425ab0b97cf4aad9dd971c1856abb297fd2768308b599e3d36a6074138",
+  "C_channel_sequence": [
+    36,
+    44,
+    36
+  ],
+  "XB_channel_sequence": [
+    6,
+    11,
+    6
+  ],
+  "each_chip": {
+    "submitted": 265,
+    "RPQ_TX_DONE": 265,
+    "pending": 0,
+    "producer_after_256_ring_wrap": 9,
+    "hardware_consumer": 9,
+    "polluted": 0,
+    "unmatched": 0,
+    "full": 0,
+    "TX_failures": 0
+  },
+  "WP_sequence_region_bytes": 8,
+  "sequence_written_bytes": 4,
+  "address_item_bytes": 6,
+  "single_fragment_page_bytes": 70,
+  "RX_descriptor_report_type": 7,
+  "first_real_RPQ_word": "0x00001200",
+  "regulatory_domain": "CN",
+  "original_PHL_mdata_WP_offset": 56,
+  "original_PHL_mdata_WD_page_size": 1,
+  "records": [
+    "logs/radio-management-tx4-first.log",
+    "logs/radio-management-tx4-wrap-channel.log",
+    "logs/radio-management-tx4-RPQ-and-RX.log"
+  ],
+  "first_invalid_layout_corrections": [
+    "WD page-size and wp-offset supplied by _phl_fill_tx_meta_data@1955e8",
+    "8-byte sequence region from init_hal_spec@27a930/2813d8",
+    "RPQ descriptor type7 from hal_handle_rx_buffer@279904/28036c"
+  ],
+  "XEPON_public_ping": [
+    2,
+    2
+  ],
+  "full_FIT_boot_verified": false,
+  "AP_association_keys_data_TX": "pending"
+}

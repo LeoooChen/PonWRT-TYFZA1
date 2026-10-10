@@ -13,7 +13,7 @@
     8,
     9
   ],
-  "WP_sequence_bytes": 4,
+  "WP_sequence_bytes": 8,
   "WP_address_bytes": 6,
   "WP_fragment_length_bits": 11,
   "WP_fragment_max_bytes": 2047,
@@ -21,6 +21,12 @@
   "WP_DMA_address_bits": 32,
   "WD_body_bytes": 32,
   "WD_with_info_bytes": 56,
-  "single_fragment_WP_with_info_bytes": 66,
-  "hardware_TX_verified": false
+  "single_fragment_WP_with_info_bytes": 70,
+  "hardware_TX_verified": false,
+  "WP_sequence_written_bytes": 4,
+  "bus_cap_evidence": {
+    "C_init_hal_spec": "0x27a930; HAL+723=8",
+    "XB_init_hal_spec": "0x2813d8; HAL+723=8"
+  },
+  "correction": "Sequence writer width4 does not determine sequence-region stride8"
 }

@@ -23,6 +23,7 @@ static int rtl_ax_monitor_start(struct ieee80211_hw *hw)
 	rtl_ax_update32(&radio->io, 0xce20, 0x47ff, 0x440f);
 	WRITE_ONCE(radio->monitor_started, true);
 	rtl_ax_rx_open(radio->rx);
+	rtl_ax_tx_open(radio->tx);
 	mutex_unlock(&radio->command_mutex);
 	return 0;
 }
@@ -33,6 +34,7 @@ static void rtl_ax_monitor_stop(struct ieee80211_hw *hw, bool suspend)
 
 	mutex_lock(&radio->command_mutex);
 	WRITE_ONCE(radio->monitor_started, false);
+	rtl_ax_tx_pause(radio->tx);
 	rtl_ax_rx_close(radio->rx);
 	mutex_unlock(&radio->command_mutex);
 }
@@ -78,8 +80,20 @@ static void rtl_ax_monitor_filter(struct ieee80211_hw *hw,
 static void rtl_ax_monitor_tx(struct ieee80211_hw *hw,
 	struct ieee80211_tx_control *control, struct sk_buff *skb)
 {
-	/* This receive milestone has no native TX WD/ring operation yet. */
-	rtl_ax_monitor_radio(hw)->tx_unimplemented++;
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	struct ieee80211_hdr *header = (void *)skb->data;
+	int rate_index = IEEE80211_SKB_CB(skb)->control.rates[0].idx;
+	unsigned int rate = radio->chip == RTL_AX_8852C ? 4 : 0;
+
+	/* Raw management first: same original builder used by AP beacon,
+	 * probe and association traffic. DATA WD and roles follow this path. */
+	if (skb->len >= 24 && skb->len <= 0x3fff && ieee80211_is_mgmt(header->frame_control)) {
+		if (rate_index >= 0 && rate_index < radio->band.n_bitrates)
+			rate = radio->band.bitrates[rate_index].hw_value;
+		if (!rtl_ax_tx_management(radio->tx, hw, skb, rate))
+			return;
+	} else
+		radio->tx_unimplemented++;
 	ieee80211_free_txskb(hw, skb);
 }
 
@@ -216,6 +230,12 @@ static void rtl_ax_monitor_unregister(struct rtl_ax_ap *radio)
 	if (!radio->hw)
 		return;
 	ieee80211_unregister_hw(radio->hw);
+}
+
+static void rtl_ax_monitor_free(struct rtl_ax_ap *radio)
+{
+	if (!radio->hw)
+		return;
 	ieee80211_free_hw(radio->hw);
 	radio->hw = NULL;
 }

@@ -603,3 +603,13 @@ mac_txdesc_len_C@251be8/XB@264de8对type0/1根据mdata byte33 bit5(wdinfo_en)返
 c1c4387完整后台构建082639已成功结束并通过当次实际FIT载荷/源码核对，ram-pcie FIT fbdc387a995ed49906c661f5467cf69dda558b4823a5bd10af7ae8c9cb6331a9，实际kernel5620df020502a44a8b2144a06063af93dbf9072e287655d1e0da8e781e547811，包含新增软件FCS/真实WD观测。9cc0bfa新增的TX WP基础不在该构建快照中，且尚未接通TX，不应将它计作硬件发射成功。
 
 c1c4387完整FIT fbdc387a995ed49906c661f5467cf69dda558b4823a5bd10af7ae8c9cb6331a9现已经U-Boot实际RAM重启进入内置rtl_ax_ap，taint0、未加载live或原厂host模块；新增radio_rx_data/软件FCS统计已从最终载荷进入实际运行。C36本次4个HE非空Data在WD统计、软件FCS4/4和实际用户态pcap4/4闭合，XB6实际pcap4个Data FCS全匹配，kernel丢包0、XEPON公网2/2。这个已验证的最终启动载荷保留在artifacts/full-pon-radio-rx-data01-6.18.55，记录manifests/radio-native-data-builtin-c1c4387.json及logs/radio-data-builtin-c1c4387-*。当前仍没有AP普通TX/关联/密钥业务，后续接通真实TX/RPQ/角色；TX格式新增9cc0bfa仅为下一阶段基础，未被标成实际发送成功。
+
+## 2026-10-10 原生管理帧TX与RPQ回收已在两颗芯片运行
+
+原生tx.c实现PCIe channel8/256项TXBD、128B WP池、DMA映射，提交mac80211原始管理帧及按实际RPQ结果回收skb/映射。WD由原机mgmt_C@251e14/XB@265014和上层_phl_fill_tx_meta_data@1955e8共同确定：56B body+info、wp_offset56、wd_page_size1，SCC/MACband0、管理DMA8/qsel0x12、正常MACID0/raw头。硬件checksum寄存器8830 bit0当前0，与原机hw_info默认0一致；开启时按实际251d2c的全部16bit XOR回填DW4低16。channel8资源NUM1034、IDX1078、DESA1270/1274、BDRAM1320原机表{40,5,1}。TXBD消费只代表DMA读入，只有真正RPQ才能作为发射完成证据。
+
+首次试验暴露了两个实现错误：原生遗漏原厂PHL设置的WP offset/page-size，以及把seq writer写4B误当为seq区大小4B。原机init_hal_spec_C@27a930/XB@2813d8明确HAL+723=8，WP中56B WD后是8B序号区、再接6B地址项，所以单段WP70B。已修改tx-format.h和radio-stock-TX-WP-format.json；之前文档66B是已纠正的历史错误。type7是原机WP recycle report，type8不是RPQ。前两模块实际DMAC0x1000/未完成记录保留，不算成功，第三布局修正后实际RPQ到达而错误清零，再修正type7分发闭合回收。
+
+最终原生模块e7a90c425ab0b97cf4aad9dd971c1856abb297fd2768308b599e3d36a6074138，两颗实机各提交265个57B管理beacon、收到265个真正RPQ TX_DONE，pending0、polluted/unmatched/full/failure均0，256项ring回绕后producer=hardware=9。频道C36→44→36、XB6→11→6之后的发包也全部完成，XEPON公网2/2。首次RPQ字00001200对应MACID0/qsel12/status0/seq0。RFK前按原机set_hw_sch_tx_en写C398低18位暂停，tx_idle_poll_band@1ea504轮询C6ec[7]最多2199次×30us；停止新提交和DMA，再校准，完成后恢复调度/channel8。两颗当前均独立MAC SCC band0，不能拿C5G映射成MAC band1。
+
+tools/trace_stock_tx_management.py执行实际原厂PHL metadata填充及MAC descriptor builder，原生实际上机WD与原厂输出一致。tools/wifi_management_probe.c通过mac80211正常管理帧TX入口提交本工程单播/广播probe中的广播beacon，未调用原厂host程序。这一证据证明原生管理帧完成及回收，尚无独立空口抓取、AP角色/关联/密钥或普通DATA TX业务；后续继续原厂DATA builder、数据DMA队列及AP角色/CAM。证据manifests/radio-native-management-TX-20261010.json及对应真实日志。

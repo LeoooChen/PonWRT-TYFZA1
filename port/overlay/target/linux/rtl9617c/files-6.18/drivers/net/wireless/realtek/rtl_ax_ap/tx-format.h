@@ -6,7 +6,7 @@
 #include <linux/types.h>
 #include "transport.h"
 
-#define RTL_AX_TX_WP_SEQUENCE_BYTES 4
+#define RTL_AX_TX_WP_SEQUENCE_BYTES 8
 #define RTL_AX_TX_WP_ADDRESS_BYTES 6
 #define RTL_AX_TX_WP_FRAGMENT_BYTES 2047
 
@@ -21,7 +21,8 @@ static inline unsigned int rtl_ax_tx_dma_channel(unsigned int category, unsigned
 
 static inline void rtl_ax_tx_wp_sequence(u8 *out, u16 sequence)
 {
-	/* Actual fill_seq@27cfbc: preserve upper16, low15 sequence, valid15. */
+	/* Actual fill_seq@27cfbc writes the first word of the eight-byte
+	 * sequence region: preserve upper16, low15 sequence, valid15. */
 	rtl_ax_store32(out, (rtl_ax_ap_read32(out) & 0xffff0000) | 0x8000 | (sequence & 0x7fff));
 }
 
