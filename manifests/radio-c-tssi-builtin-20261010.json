@@ -1,0 +1,66 @@
+{
+  "scope": "real TYFZA1 U-Boot RAM boot with native built-in radio; no live replacement",
+  "built_source_commit": "1603490",
+  "FIT_sha256": "93ea65bc34cb5b2a06a2ec3d16d370661be24fdc0315406ba26f8e56c686a444",
+  "kernel_sha256": "0d85ad53e34653a48f379b62a5ce7383b470097e1458f53e96c1efa38efdbe55",
+  "DTB_sha256": "ed3a18f2b09dbec988883e9a36b47efdae819c82db47864deb3ad1e4eecd23ac",
+  "kernel_version": "6.18.55",
+  "hardware_boot_verified": true,
+  "kernel_taint": 0,
+  "native_driver": "rtl_ax_ap",
+  "vendor_host_module_loaded": false,
+  "live_module_loaded": false,
+  "C_TSSI_alignment_complete": true,
+  "C_alignment_fields_match_actual_original_ELF": true,
+  "C_tracking_A_B": [
+    1,
+    1
+  ],
+  "C_paused_A_B": [
+    0,
+    0
+  ],
+  "C_DPK_post_TSSI_RX_DCK": true,
+  "DPK_original_RFE54_bypass_both_chips": true,
+  "C_calibration_record": "logs/radio-c-tssi-builtin-calibration.log",
+  "XEPON_mode": "epon-d10g",
+  "WAN_DHCP": "192.168.71.28",
+  "public_ping_received_transmitted": [
+    2,
+    2
+  ],
+  "capture_results": [
+    {
+      "radio": "C",
+      "frames": 64,
+      "FCS_verified": 64,
+      "bad_FCS": 0,
+      "type_subtype": {
+        "1/11": 31,
+        "1/12": 30,
+        "0/8": 3
+      },
+      "pcap": "artifacts/radio-c-tssi-builtin-C.pcap",
+      "sha256": "60bc713a728264bfbaa72b97e5e6e95bf0f59dbc7dccc28c0b6fc119b24ddae5"
+    },
+    {
+      "radio": "XB",
+      "frames": 64,
+      "FCS_verified": 64,
+      "bad_FCS": 0,
+      "type_subtype": {
+        "1/12": 24,
+        "0/8": 9,
+        "2/4": 4,
+        "1/11": 25,
+        "2/0": 1,
+        "2/8": 1
+      },
+      "pcap": "artifacts/radio-c-tssi-builtin-XB.pcap",
+      "sha256": "c7277afab5341f714b751c198488af296a63ae7c803b671a80d314a097419c66"
+    }
+  ],
+  "ICV_semantics_fix_in_this_FIT": false,
+  "AP_TX_association_keys": "pending",
+  "C_non_null_data_to_pcap_gap": "still under investigation"
+}
