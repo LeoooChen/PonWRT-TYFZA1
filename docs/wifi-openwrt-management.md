@@ -13,3 +13,5 @@
 HE接续的原机依据已保存：tools/trace_stock_ra.py执行完整RA注册及本机helper，78组C/XB、HT/VHT/HE、20/40/80MHz、1/2SS与关联RSSI输入取得16字节H2C；另经完整BB C2H分派验证2304组速率反馈字段解析。主机日志和H2C发布被模拟，不是无线固件执行或HE业务验收。生产驱动仍使用已验收的HT/VHT路径。资料见manifests/radio-stock-RA-register.json。
 
 用户最新顺序：Wi-Fi功能收尾后，先验证及修正有线LAN↔PON硬件转发，再做Wi-Fi硬件加速；保持GPON族暂缓。
+
+AP22完整构建的编译阶段通过，但最终无线管理核验最初把ACL路径误写为wpad.json，导致构建服务退出1。已按实际包文件更正为wpad_acl.json，重新核验AP22最终FIT通过；不能把原服务的退出码写成0。后续四LAN修复完整构建使用正确核验路径，服务退出0，包含同一双频UCI/netifd/wpad管理组件。设备未为此重新启动无线或整机。

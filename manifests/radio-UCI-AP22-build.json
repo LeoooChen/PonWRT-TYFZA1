@@ -1,0 +1,124 @@
+{
+  "at": "2026-10-10T17:50:30.915280+08:00",
+  "source_parent_commit": "07f2567",
+  "artifact": "artifacts/full-pon-radio-vht80-uci-ap22-6.18.55",
+  "original_build_unit": "ponwrt-tyfza1-lan-20261010-153208.service",
+  "original_ExecMainStatus": 1,
+  "reason": "final verifier initially expected wpad.json; actual package uses wpad_acl.json",
+  "corrected_final_FIT_verification": {
+    "FIT_sha256": "d6af9b062005e5b4f78a352f4046efb524a72df0e8e5790fbeeb032d46616148",
+    "verification_entry": "Final PCIe FIT selected kernel initramfs",
+    "original_radio_firmware_files": 4,
+    "selected_RFE54_parameter_files": 44,
+    "board_flash_calibration_files": 2,
+    "original_NCTL_tables": 3,
+    "released_regulatory_database_and_signature": 2,
+    "all_bytes_match_prepared_board_inputs": true,
+    "native_AP_PCI_backend_present_in_selected_kernel": true,
+    "firmware_transport_implemented": true,
+    "native_mac80211_monitor_backend_present": true,
+    "full_AP_operations_implemented": false,
+    "initramfs_members": 1133,
+    "radio_hardware_verified": false,
+    "OpenWrt_wifi_management": [
+      {
+        "path": "usr/sbin/wpad",
+        "SHA256": "33278729c1373ca27ca78700cce4a011b14ceecbf2956fac5a1edcd266864817"
+      },
+      {
+        "path": "sbin/wifi",
+        "SHA256": "44e8d36504c097484a6053a5d7b5604e33a2116be2c4ac12f2e799eaa37cd8c9"
+      },
+      {
+        "path": "lib/netifd/wireless/mac80211.sh",
+        "SHA256": "00e952186aaa31a16a29d4868e9192552f57c42d98fcdd3f1ff0b97e838a0e7d"
+      },
+      {
+        "path": "usr/share/hostap/hostapd.uc",
+        "SHA256": "56df2b06e51fd630443958da12cfcd6172094b2557af0137d8b90f32506d9b6e"
+      },
+      {
+        "path": "usr/share/acl.d/wpad_acl.json",
+        "SHA256": "f0c216e04533dd12aa92606726cb0426eea31233da783bbb7ad7f56e5eb5d12b"
+      },
+      {
+        "path": "usr/lib/ucode/nl80211.so",
+        "SHA256": "10e7e109495aa46900b21642cc76cac309db24a683f2822ce644a0ac8bb2b3ab"
+      },
+      {
+        "path": "usr/lib/ucode/rtnl.so",
+        "SHA256": "a470319fa443b6670366b3b1c69d5f191599cc709be7983d54b8920fef6ebe14"
+      }
+    ],
+    "actual_radio_code_matches_linked_ELF": [
+      {
+        "function": "rtl_ax_probe",
+        "selected_FIT_kernel_offset": 5465424,
+        "code_bytes": 9892,
+        "SHA256": "3244058db0ab9fda6a33b31c124c97435b41531aaead8c4c69495a4c4f6f2288"
+      },
+      {
+        "function": "rtl_ax_h2c_send",
+        "selected_FIT_kernel_offset": 5398976,
+        "code_bytes": 268,
+        "SHA256": "d0f48457dae2b5818961cb3c2785386796b38184009a6ed94227507387a13fb3"
+      },
+      {
+        "function": "rtl_ax_wait_firmware",
+        "selected_FIT_kernel_offset": 5404560,
+        "code_bytes": 192,
+        "SHA256": "383aa927e0a377b6eb32f2e8158a48b69936b9bac86fe1bc15641f6cfa6b2928"
+      },
+      {
+        "function": "rtl_ax_shutdown",
+        "selected_FIT_kernel_offset": 5442784,
+        "code_bytes": 4,
+        "SHA256": "060bafc9bf89e5e4e210f014bbcb70368ecad88912be4c91e1ab95ddd5348800"
+      },
+      {
+        "function": "rtl_ax_receive_configure",
+        "selected_FIT_kernel_offset": 5483632,
+        "code_bytes": 10044,
+        "SHA256": "b7510a91c03fc2377d5ff708ab05f7c2d84f60ba26894ff1faf84e5963e795b9"
+      },
+      {
+        "function": "rtl_ax_ap_conf_tx",
+        "selected_FIT_kernel_offset": 5398176,
+        "code_bytes": 164,
+        "SHA256": "f6ddc445719e22265d04c861294ba26e02444ea156f2738cb814da714c418205"
+      },
+      {
+        "function": "rtl_ax_monitor_tx",
+        "selected_FIT_kernel_offset": 5398340,
+        "code_bytes": 404,
+        "SHA256": "13cf17ad8a5711b72b452c46765e7a9bcf235139d47c249e53af7cbd40362914"
+      },
+      {
+        "function": "rtl_ax_ampdu_action",
+        "selected_FIT_kernel_offset": 5404752,
+        "code_bytes": 1256,
+        "SHA256": "222f8cea459c981510d45e7993101cdcebbd00bdf5fba9ea9e011526f1a59293"
+      },
+      {
+        "function": "rtl_ax_station_tables",
+        "selected_FIT_kernel_offset": 5402116,
+        "code_bytes": 232,
+        "SHA256": "4fb93eb8b5716aef10ca44d80b133af638d073a462928f9781eb70f905d4cb63"
+      },
+      {
+        "function": "rtl_ax_tx_submit",
+        "selected_FIT_kernel_offset": 5505504,
+        "code_bytes": 1776,
+        "SHA256": "f27a090ec2a3132b4631f49c086371033832dd1aef5724c75bfaaa93e243fc44"
+      },
+      {
+        "function": "rtl_ax_tx_report",
+        "selected_FIT_kernel_offset": 5507280,
+        "code_bytes": 808,
+        "SHA256": "ad8bcded2751b95b51abd5ea736c7993b399a0175fc3dfef11f40f1408b936d6"
+      }
+    ]
+  },
+  "corrected_verifier_log": "logs/radio-AP22-wifi-verification-corrected.txt",
+  "boot_verified": false
+}

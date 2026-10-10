@@ -53,7 +53,7 @@ try:
               'initramfs_members': len(members), 'radio_hardware_verified': False}
     if args.require_wifi_management:
         paths = ('usr/sbin/wpad', 'sbin/wifi', 'lib/netifd/wireless/mac80211.sh',
-                 'usr/share/hostap/hostapd.uc', 'usr/share/acl.d/wpad.json',
+                 'usr/share/hostap/hostapd.uc', 'usr/share/acl.d/wpad_acl.json',
                  'usr/lib/ucode/nl80211.so', 'usr/lib/ucode/rtnl.so')
         assert all(path in members for path in paths), 'OpenWrt Wi-Fi management runtime missing'
         assert b'vht_oper_chwidth' in members['usr/sbin/wpad']['data'], 'wpad VHT parser missing'
