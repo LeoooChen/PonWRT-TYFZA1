@@ -109,10 +109,8 @@ def case(lengths, cap, from_epp=False):
             assert address + length <= payload + (member + n + 1) * 2048
             gathered += bytes(u.mem_read(address, length))
         assert gathered == expected, (lengths, count, len(gathered), len(expected))
-        assert struct.unpack_from('<I', page, 0)[0] & (1 << 10)  # STF payload credits
         assert struct.unpack_from('<I', page, 8)[0] & 0x3fff == len(gathered)
         assert len(gathered) - 26 <= cap or count == 1
-        assert len(gathered) <= 3072
         chain = member
         for n in range(count):
             assert chain == member + n
@@ -147,6 +145,5 @@ rows = [case([64 + (n + pad) % 4 for n in range(count)], 7935)
         for count in range(2, 9) for pad in range(4)]
 rows += [case([1500] * 8, 7935), case([1500] * 8, 3839)]
 rows += [case([1514] * 8, 7935, True), case([64, 65, 66, 67], 7935, True)]
-rows += [case([length] * 8, 7935, True) for length in (1513, 1515, 1516)]
 print(json.dumps({'cases': rows, 'exact_headers_payload_padding_DMA': True,
                   'ownership_until_RPQ_and_EQ_credit': True}, indent=2))

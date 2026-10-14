@@ -552,9 +552,6 @@ static int rtl_ax_station_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 		rtl_ax_tx_peer_rate(radio->tx, id, 0x80, caps);
 	}
 	radio->station_added++;
-	/* HFC pre-cost48 x64B covers the complete software-assembled MPDU. */
-	for (unsigned int tid = 0; tid < IEEE80211_NUM_TIDS; tid++)
-		sta->deflink.agg.max_tid_amsdu_len[tid] = 3072 - 26;
 	dev_info(&radio->pdev->dev, "native AP station MACID%u AID%u connected\n", id, sta->aid);
 	return 0;
 remove:

@@ -475,7 +475,7 @@ void pe_main(volatile u32 *control)
 				used += 6; count++; address += length; bytes -= length;
 			}
 		}
-		u32 dw0 = BIT(7) | BIT(10) | 24U << 24 | channels[ring] << 16 | BIT(22) |
+		u32 dw0 = BIT(7) | 24U << 24 | channels[ring] << 16 | BIT(22) |
 			(((packet >> 16) & 63) / 2) << 11 | ((flags & BIT(13)) ? BIT(31) : 0);
 		u32 dw1 = count << 26, dw4 = 0, dw5 = 0;
 		u32 dw10 = aggregate ? ((aggregation >> 8) & 7) << 18 : 0;
