@@ -146,7 +146,7 @@ int main(void)
 		struct timespec security_received, security_replied;
 		int backend_result = 0;
 		if (security_set) clock_gettime(CLOCK_MONOTONIC, &security_received);
-		if (tyfza1_omci_broadcast(input, length, broadcast))
+		if (tyfza1_omci_broadcast(agent, input, length, broadcast))
 			backend_result = put_file(PON_SYSFS "omci_broadcast", broadcast, sizeof(broadcast));
 		length = tyfza1_omci_dispatch(agent, input, length, output, backend_result);
 		if (length < 0) { invalid++; continue; }

@@ -70,8 +70,11 @@ pub extern "C" fn tyfza1_omci_epoch(agent: &mut Agent) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn tyfza1_omci_broadcast(data: *const u8, length: usize, row: *mut u8) -> i32 {
-    let Ok(request) = Request::parse(slice::from_raw_parts(data, length)) else { return 0; };
+pub unsafe extern "C" fn tyfza1_omci_broadcast(agent: &Agent, data: *const u8, length: usize, row: *mut u8) -> i32 {
+    let data = slice::from_raw_parts(data, length);
+    // The daemon programs the key before dispatch; a cached reply must also skip that write.
+    if agent.cache.iter().any(|(key, _)| key == data) { return 0; }
+    let Ok(request) = Request::parse(data) else { return 0; };
     if request.action == protocol::ACTION_SET && request.class_id == schema::CLASS_ENHANCED_SECURITY_CONTROL
         && request.entity_id == 0 && request.attribute_mask == 0x0020 && request.content.len() >= 18 {
         std::ptr::copy_nonoverlapping(request.content.as_ptr(), row, 18);
