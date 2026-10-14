@@ -124,7 +124,7 @@ static void rtl_ax_tx_wd(u8 *out, unsigned int bytes,
 	memset(out, 0, 56);
 	/* Actual PHL fill_mdata@1955e8 supplies wp_offset56 and
 	 * wd_page_size=wdinfo_en before the MAC descriptor constructor. */
-	rtl_ax_store32(out, BIT(7) | ((56U & 31) << 24) | channel << 16 | BIT(22) | ((header_bytes / 2) & 31) << 11 |
+	rtl_ax_store32(out, BIT(7) | BIT(10) | ((56U & 31) << 24) | channel << 16 | BIT(22) | ((header_bytes / 2) & 31) << 11 |
 		(no_ack ? BIT(31) : 0));
 	rtl_ax_store32(out + 4, (addresses & 63) << 26);
 	rtl_ax_store32(out + 8, macid << 24 | qsel << 17 | (tid_ind ? BIT(23) : 0) | (bytes & 0x3fff));

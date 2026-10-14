@@ -140,7 +140,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 						u32 other = next - 1;
 						u32 *part = (void *)(memory + NI_WAIT + other * 16);
 						u32 pad = (0U - body) & 3;
-						if (body + pad + part[1] + 8 > (caps >> 18)) break;
+						if (body + pad + part[1] + 8 > (caps >> 18) ||
+						    26 + body + pad + part[1] + 8 > 3072) break;
 						request[8 + frames * 2] = part[0];
 						request[9 + frames * 2] = part[1];
 						body += pad + part[1] + 8;

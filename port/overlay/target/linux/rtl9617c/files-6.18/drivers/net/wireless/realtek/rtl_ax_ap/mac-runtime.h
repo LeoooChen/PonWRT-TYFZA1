@@ -54,18 +54,18 @@ static inline int rtl_ax_mac_system(const struct rtl_ax_io *io, unsigned char *s
 
 static inline int rtl_ax_dle_scc(const struct rtl_ax_io *io)
 {
-	const unsigned short wde[] = {3228, 60, 0, 0, 40};
-	const unsigned short ple_min[] = {100, 0, 8, 10, 7, 7, 90, 0, 16, 31, 4, 8};
-	const unsigned short ple_max[] = {771, 0, 16, 10, 678, 7, 761, 0, 687, 31, 80, 679};
+	const unsigned short wde[] = {216, 20, 0, 0, 20};
+	const unsigned short ple_min[] = {1248, 0, 16, 20, 13, 13, 130, 0, 32, 38, 8, 16};
+	const unsigned short ple_max[] = {3154, 0, 32, 20, 1919, 13, 2036, 0, 1938, 38, 40, 1922};
 	unsigned int i, last;
 	int ret;
 
-	/* Actual AP SCC: 3328 x64B WDE; PLE952 linked+8 unlinked x256B.
-	 * PLE starts after WDE at 26 x8KiB; the combined FIFO remains448KiB. */
+	/* Original C/XB SCC_STF table: software A-MSDU uses payload credits.
+	 * WDE256 x64B; PLE3440 linked+16 unlinked x128B, still448KiB total. */
 	rtl_ax_update32(io, RTL_AX_DMAC, RTL_AX_DLE_ENABLE, 0);
 	rtl_ax_update32(io, RTL_AX_DMAC_CLOCK, 0, RTL_AX_DLE_ENABLE);
-	rtl_ax_update32(io, 0x8c08, 0x1fff3f03, 3328U << 16);
-	rtl_ax_update32(io, 0x9008, 0x1fff3f03, (952U << 16) | (26U << 8) | 2);
+	rtl_ax_update32(io, 0x8c08, 0x1fff3f03, 256U << 16);
+	rtl_ax_update32(io, 0x9008, 0x1fff3f03, (3440U << 16) | (2U << 8) | 1);
 	for (i = 0; i < 5; i++) {
 		if (i == 2)
 			continue; /* Original WDE quota routine does not write DCPU Q2. */
@@ -100,18 +100,20 @@ static inline void rtl_ax_hfc_scc(const struct rtl_ax_io *io, unsigned int chip)
 
 		if (chip == RTL_AX_8192XB && ((0x0cf0U >> channel) & 1))
 			continue; /* Original HFC skips XB's unavailable DMA channels. */
-		value = channel < 4 || channel == 8 || channel == 9 ?
-			26 | (3098U << 16) : 0;
+		if (chip == RTL_AX_8192XB)
+			value = channel < 4 ? 4 | (216U << 16) : 2 | (108U << 16);
+		else
+			value = 2 | (108U << 16) |
+				((channel >= 4 && channel < 8) || channel >= 10 ? 1U << 31 : 0);
 		io->write32(io->ctx, 0x1710 + channel * 4, value);
 	}
-	/* Board AP tables put all3228 public pages in group0. */
-	io->write32(io->ctx, 0x1790, 3228);
+	io->write32(io->ctx, 0x1790, chip == RTL_AX_8192XB ? 216 : 108 | (108U << 16));
 	io->write32(io->ctx, 0x17a4, 0);
-	/* Actual hfc_preccfg_pcie={2,40,0,0,X2,X1,X1,X1},POH mode0. */
-	io->write32(io->ctx, 0x1704, 2 | (40U << 16));
-	io->write32(io->ctx, 0x1794, 3228);
-	io->write32(io->ctx, 0x17a0, 0);
-	rtl_ax_update32(io, 0x1700, 0xff6, 1U << 4);
+	/* C/XB STF pre-cost {1,40,48,48,X2,X1,X1,X1}; WP48 x64B. */
+	io->write32(io->ctx, 0x1704, 1 | (40U << 16));
+	io->write32(io->ctx, 0x1794, 216);
+	io->write32(io->ctx, 0x17a0, 48 | (48U << 16));
+	rtl_ax_update32(io, 0x1700, 0xff6, (1U << 4) | (1U << 1));
 	rtl_ax_update32(io, 0x1700, 0, RTL_AX_BIT(0) | RTL_AX_BIT(3));
 	io->delay_us(io->ctx, 10);
 }
@@ -316,7 +318,7 @@ static inline int rtl_ax_cmac_receive(const struct rtl_ax_io *io, int firmware_t
 	/* Original board binary@23f7fc uses15 for SW TX mode,1 for HW TX.
 	 * This is a complete low-byte RCR write,not the newer SDK's RMW. */
 	io->write8(io->ctx, 0xce00, firmware_tx ? 0x0f : 1);
-	/* SCC C0 min quota100 x256B exceeds11966B spec maximum;512B units. */
+	/* STF C0 RX min quota130 x128B exceeds11966B;512B units. */
 	rtl_ax_update32(io, 0xce20, 0x003f0000, 23U << 16);
 	/* chk_patch_wmac_timer_src returnsfalse forC/XB;no timer-source patch.
 	 * Original RMAC skips VHT SU SIG-B CRC and has no RX_TIME_MON write. */
