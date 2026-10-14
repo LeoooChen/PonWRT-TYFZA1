@@ -4,9 +4,10 @@
 for device in $(uci -q show network | sed -n 's/^network\.\([^.=]*\)=device$/\1/p'); do
 	[ "$(uci -q get network.$device.name)" = br-lan ] || continue
 	uci -q delete network.$device.ports
-	for port in eth0 eth1 eth2 eth3 eth4; do
-		[ -e /sys/class/net/$port ] && uci add_list network.$device.ports=$port
+	for port in eth0 eth1 eth2 eth3; do
+		uci add_list network.$device.ports=$port
 	done
+	[ -e /sys/class/net/eth4 ] && uci add_list network.$device.ports=eth4
 done
 uci commit network
 exit 0
