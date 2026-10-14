@@ -11,6 +11,8 @@ struct rtl9617c_bridge_tag {
 /* Captured before the bridge applies its ingress PVID or removes a tag. */
 struct rtl9617c_bridge_frame {
 	u32 ingress, port, epoch;
+	u64 pon_generation;
+	u16 pon_gem;
 	u16 protocol, session, vid, ppp_protocol;
 	u8 source[6], destination[6], tags;
 	struct rtl9617c_bridge_tag tag[2];

@@ -93,9 +93,15 @@ static unsigned int fe_bridge_wire(void *private,struct sk_buff *skb,
 {
  struct rtl_fe_bridge *bridge=private;
  struct rtl9617c_bridge_frame frame={},*saved;
+ const struct rtl9617c_bridge_frame *received;
 
  if(!rtl_fe_enabled(bridge->fe) || skb_is_gso(skb) || fe_bridge_frame(skb,&frame))return NF_ACCEPT;
  frame.ingress=state->in->ifindex;frame.epoch=atomic_read(&bridge->epoch);
+ received=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
+ if(received && received->pon_gem) {
+  frame.pon_gem=received->pon_gem;frame.pon_generation=received->pon_generation;
+  frame.tags=received->tags;memcpy(frame.tag,received->tag,sizeof(frame.tag));
+ }
  saved=skb_ext_add(skb,SKB_EXT_RTL9617C_BRIDGE);
  if(saved)*saved=frame;
  return NF_ACCEPT;
@@ -148,6 +154,7 @@ static unsigned int fe_bridge_capture(void *private,struct sk_buff *skb,
  wire=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
  if(!wire || wire->epoch!=(u32)atomic_read(&bridge->epoch))return NF_ACCEPT;
  frame.ingress=wire->ingress;frame.epoch=wire->epoch;
+ frame.pon_gem=wire->pon_gem;frame.pon_generation=wire->pon_generation;
  frame.tags=wire->tags;
  memcpy(frame.tag,wire->tag,sizeof(frame.tag));
  saved=skb_ext_add(skb,SKB_EXT_RTL9617C_BRIDGE);
@@ -220,7 +227,7 @@ static int fe_bridge_learn(struct rtl_fe_bridge *bridge,const struct fe_bridge_p
   return -ENOENT;
  data.input=fe_port(fe,__dev_get_by_index(packet->net,packet->input.ingress));
  data.output=fe_port(fe,outdev);
- if(!data.input || !data.output || data.input==data.output)return -EOPNOTSUPP;
+ if(!data.input || !data.output || data.input==data.output || packet->input.tags>2)return -EOPNOTSUPP;
  list_for_each_entry(flow,&fe->flows,list)
   if(flow->learned && flow->input==data.input && flow->output==data.output &&
      flow->ethernet_protocol==packet->input.protocol && flow->ingress_session==packet->input.session &&
@@ -261,18 +268,21 @@ static int fe_bridge_learn(struct rtl_fe_bridge *bridge,const struct fe_bridge_p
    .priority=tag->tci>>VLAN_PRIO_SHIFT,.dei=!!(tag->tci&VLAN_CFI_MASK)};
  }
  if(data.input->netdev==fe->itu_netdev) {
-  const struct rtl_itu_path *path=rtl_itu_path_downstream(fe->itu_paths,
-   data.vlan_count?data.vlan[0].vid:65535,1U<<(data.vlan_count?data.ingress_tci[0]>>VLAN_PRIO_SHIFT:0));
-  if(!path)return -ENOENT;
-  data.key.llid=path->index;
+  struct rtl_evto_packet wire;
+  struct fe_evto_result inverse;
+  if(!packet->input.pon_gem || packet->input.pon_generation!=fe->itu_paths->generation)return -ENOENT;
+  fe_evto_packet(&wire,data.vlan,data.vlan_count,data.ethernet_protocol);
+  for(i=0;i<wire.count;i++)wire.tag[i].tci=data.ingress_tci[i];
+  if(wire.count)wire.priority=wire.tag[0].tci>>13;
+  ret=fe_evto_invariant(fe->itu_paths,&wire,false,true,true,packet->input.pon_gem,&inverse);
+  if(ret)return ret;
+  data.key.llid=packet->input.pon_gem;
  }
  if(data.output->netdev==fe->itu_netdev) {
-  const struct rtl_itu_path *path=rtl_itu_path_select(fe->itu_paths,
-   data.action.vlan_count?data.action.vlan[0].vid:65535,
-   data.action.vlan_count?data.action.vlan[0].priority:0);
-  if(!path)return -ENOENT;
-  data.action.destination=32+path->tcont;data.action.deep_queue=0;
-  data.action.cos=path->queue;data.action.gem_set=1;data.action.gem_index=path->index;
+  struct rtl_evto_packet logical;
+  fe_evto_packet(&logical,data.action.vlan,data.action.vlan_count,data.ethernet_protocol);
+  ret=fe_evto_upstream(&data,&logical,true);
+  if(ret)return ret;
  }
  data.ethernet_bytes=ETH_HLEN+VLAN_HLEN*data.action.vlan_count+(data.pppoe_input?8:0);
  /* A live flow allocation is its unique cookie; clsact/flowtable own other cookies. */

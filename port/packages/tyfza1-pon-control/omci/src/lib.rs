@@ -147,12 +147,18 @@ pub unsafe extern "C" fn tyfza1_omci_notification(agent: &mut Agent, output: *mu
 
 #[no_mangle]
 pub unsafe extern "C" fn tyfza1_omci_paths(agent: &Agent, output: *mut u8) -> i32 {
-    let paths = agent.mib.provisioning_snapshot().data_paths;
+    let snapshot = agent.mib.provisioning_snapshot();
+    let paths = snapshot.data_paths;
     if paths.len() > 248 { return -28; }
+    let profiles: Vec<_> = snapshot.vlan_profiles.into_iter().filter(|profile|
+        paths.iter().any(|path| path.vlan_profiles.contains(&Some(profile.entity_id)))).collect();
+    if profiles.iter().any(|profile| profile.rows.len() > 32) { return -28; }
     let graph = agent.mib.data_path_graph();
-    let mut bytes = Vec::with_capacity(4 + paths.len() * 13);
-    bytes.extend_from_slice(&2u16.to_le_bytes());
+    let mut bytes = Vec::with_capacity(12 + paths.len() * 50 + profiles.len() * 544);
+    bytes.extend_from_slice(&3u16.to_le_bytes());
     bytes.extend_from_slice(&(paths.len() as u16).to_le_bytes());
+    bytes.extend_from_slice(&(profiles.len() as u16).to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
     for path in paths {
         let mut tcont = 0;
         let mut queue = 0;
@@ -180,7 +186,27 @@ pub unsafe extern "C" fn tyfza1_omci_paths(agent: &Agent, output: *mut u8) -> i3
         bytes.push(encrypted);
         bytes.extend_from_slice(&tcont.to_le_bytes());
         bytes.push(path.downstream_pbits);
+        for id in path.vlan_profiles {
+            let index = id.and_then(|id| profiles.iter().position(|profile| profile.entity_id == id))
+                .map(|index| index as u16).unwrap_or(u16::MAX);
+            bytes.extend_from_slice(&index.to_le_bytes());
+        }
+        bytes.push(path.vlan_exclude);
+        bytes.push(path.unmarked_mode);
+        bytes.push(path.default_priority);
+        bytes.extend_from_slice(&path.mapper_dscp);
     }
+    for profile in profiles {
+        bytes.extend_from_slice(&profile.entity_id.to_le_bytes());
+        bytes.extend_from_slice(&profile.input_tpid.to_le_bytes());
+        bytes.extend_from_slice(&profile.output_tpid.to_le_bytes());
+        bytes.push(profile.downstream_mode);
+        bytes.push(profile.rows.len() as u8);
+        bytes.extend_from_slice(&profile.dscp);
+        for row in profile.rows { bytes.extend_from_slice(&row); }
+    }
+    let length = bytes.len() as u32;
+    bytes[8..12].copy_from_slice(&length.to_le_bytes());
     std::ptr::copy_nonoverlapping(bytes.as_ptr(), output, bytes.len());
     bytes.len() as i32
 }

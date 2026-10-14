@@ -7,10 +7,12 @@
 #include <linux/rcupdate.h>
 #include <linux/slab.h>
 #include <linux/unaligned.h>
+#include <linux/rtl9617c-bridge.h>
 #include "rtl9617c-pon.h"
 #include "rtl9617c-gpon-hw.h"
 #include "rtl9617c-xgpon-hw.h"
 #include "rtl9617c-pon-itu-puc.h"
+#include "rtl9617c-pon-vlan-skb.h"
 
 static unsigned int path_read(void *context, unsigned int address)
 {
@@ -152,17 +154,20 @@ ssize_t rtl_pon_itu_paths_write(struct rtl9617c_pon *pon, const char *buf, size_
 {
 	struct rtl_itu_path_state *state, *old;
 	struct net_device *dev;
-	unsigned int i, j, entries, unique = 0;
+	unsigned int i, j, entries, profiles, unique = 0, cursor;
 	int ret = 0;
 
-	if (count < 4 || get_unaligned_le16(buf) != 2) return -EINVAL;
+	if (count < 12 || get_unaligned_le16(buf) != 3 || get_unaligned_le32(buf + 8) != count) return -EINVAL;
 	entries = get_unaligned_le16(buf + 2);
-	if (entries > RTL_ITU_PATH_MAX || count != 4 + entries * RTL_ITU_PATH_WIRE_BYTES) return -EMSGSIZE;
-	state = kzalloc(sizeof(*state), GFP_KERNEL);
+	profiles = get_unaligned_le16(buf + 4);
+	cursor = 12 + entries * RTL_ITU_PATH_WIRE_BYTES;
+	if (entries > RTL_ITU_PATH_MAX || profiles > entries * RTL_EVTO_STAGES || cursor > count) return -EMSGSIZE;
+	state = kvzalloc(sizeof(*state) + profiles * sizeof(struct rtl_evto_profile), GFP_KERNEL);
 	if (!state) return -ENOMEM;
 	state->paths.count = entries;
+	state->paths.profile_count = profiles;
 	for (i = 0; i < entries; i++) {
-		const u8 *record = (const u8 *)buf + 4 + i * RTL_ITU_PATH_WIRE_BYTES;
+		const u8 *record = (const u8 *)buf + 12 + i * RTL_ITU_PATH_WIRE_BYTES;
 		struct rtl_itu_path *path = &state->paths.path[i];
 
 		path->alloc_id = get_unaligned_le16(record);
@@ -172,6 +177,15 @@ ssize_t rtl_pon_itu_paths_write(struct rtl9617c_pon *pon, const char *buf, size_
 		path->queue = record[8]; path->encrypted = record[9];
 		path->tcont = get_unaligned_le16(record + 10);
 		path->downstream_pbits = record[12];
+		for (j = 0; j < RTL_EVTO_STAGES; j++) {
+			path->vlan_profile[j] = get_unaligned_le16(record + 13 + j * 2);
+			if (path->vlan_profile[j] != RTL_EVTO_NONE && path->vlan_profile[j] >= profiles) {
+				ret = -EINVAL; goto free;
+			}
+		}
+		path->vlan_exclude = record[23]; path->unmarked_mode = record[24]; path->default_priority = record[25];
+		memcpy(path->mapper_dscp, record + 26, 24);
+		if (path->unmarked_mode > 2 || path->default_priority > 7) { ret = -EINVAL; goto free; }
 		if ((path->vlan < RTL_ITU_VLAN_TAGGED && path->vlan > 4094) || path->multicast > 1 ||
 		    path->encrypted > 1 || path->queue > 7 || !(path->pbits | path->downstream_pbits) ||
 		    (!path->multicast && ((path->pbits && !path->tcont) || path->tcont > 31 ||
@@ -184,7 +198,11 @@ ssize_t rtl_pon_itu_paths_write(struct rtl9617c_pon *pon, const char *buf, size_
 
 			if (!path->multicast && !previous->multicast &&
 			    ((path->tcont == previous->tcont && path->alloc_id != previous->alloc_id) ||
-			    (path->vlan == previous->vlan && (path->pbits & previous->pbits) &&
+			    (path->vlan_profile[0] == RTL_EVTO_NONE && path->vlan_profile[1] == RTL_EVTO_NONE &&
+			     path->vlan_profile[2] == RTL_EVTO_NONE && previous->vlan_profile[0] == RTL_EVTO_NONE &&
+			     previous->vlan_profile[1] == RTL_EVTO_NONE && previous->vlan_profile[2] == RTL_EVTO_NONE &&
+			     path->vlan == previous->vlan && (path->pbits & previous->pbits &
+			     ~path->vlan_exclude & ~previous->vlan_exclude) &&
 			    path->gem_id != previous->gem_id))) { ret = -EINVAL; goto free; }
 			if (previous->gem_id == path->gem_id) {
 				if (previous->tcont != path->tcont || previous->queue != path->queue ||
@@ -196,6 +214,22 @@ ssize_t rtl_pon_itu_paths_write(struct rtl9617c_pon *pon, const char *buf, size_
 		}
 		if (path->index == 8 + unique) unique++;
 	}
+	for (i = 0; i < profiles; i++) {
+		struct rtl_evto_profile *profile = &state->paths.profile[i];
+		if (cursor + 32 > count) { ret = -EMSGSIZE; goto free; }
+		profile->entity = get_unaligned_le16(buf + cursor);
+		profile->input_tpid = get_unaligned_le16(buf + cursor + 2);
+		profile->output_tpid = get_unaligned_le16(buf + cursor + 4);
+		profile->downstream = buf[cursor + 6]; profile->count = buf[cursor + 7];
+		if (profile->count > RTL_EVTO_ROWS || cursor + 32 + profile->count * 16 > count) {
+			ret = -EMSGSIZE; goto free;
+		}
+		memcpy(profile->dscp, buf + cursor + 8, 24);
+		memcpy(profile->row, buf + cursor + 32, profile->count * 16);
+		if (!rtl_evto_valid(profile)) { ret = -EINVAL; goto free; }
+		cursor += 32 + profile->count * 16;
+	}
+	if (cursor != count) { ret = -EMSGSIZE; goto free; }
 	mutex_lock(&pon->control_lock);
 	mutex_lock(&pon->lock);
 	if (rtl_pon_mode_is_epon(pon->mode) || !pon->puc_configured || !pon->pdc_configured) {
@@ -208,7 +242,9 @@ ssize_t rtl_pon_itu_paths_write(struct rtl9617c_pon *pon, const char *buf, size_
 			ret = -EINVAL; goto unlock;
 		}
 	old = rcu_dereference_protected(pon->itu_paths, lockdep_is_held(&pon->lock));
-	if (pon->itu_paths_ready && old && !memcmp(&old->paths, &state->paths, sizeof(state->paths)))
+	if (old) state->paths.generation = old->paths.generation;
+	if (pon->itu_paths_ready && old && rtl_itu_paths_bytes(&old->paths) == rtl_itu_paths_bytes(&state->paths) &&
+	    !memcmp(&old->paths, &state->paths, rtl_itu_paths_bytes(&state->paths)))
 		goto unlock;
 	dev = rcu_access_pointer(pon->data_devices[0]);
 	netif_tx_disable(dev);
@@ -217,10 +253,11 @@ ssize_t rtl_pon_itu_paths_write(struct rtl9617c_pon *pon, const char *buf, size_
 	if (ret) goto wake;
 	ret = path_program(pon, &state->paths);
 	if (ret) goto wake;
+	state->paths.generation = pon->itu_path_epoch;
 	ret = rtl9617c_ni_itu_paths(pon->ni_dev, dev, &state->paths);
 	if (ret) goto wake;
 	old = rcu_replace_pointer(pon->itu_paths, state, lockdep_is_held(&pon->lock));
-	if (old) kfree_rcu(old, rcu);
+	if (old) kvfree_rcu(old, rcu);
 	state = NULL;
 	pon->itu_paths_ready = entries != 0;
 	rtl_pon_itu_carrier(pon);
@@ -231,8 +268,42 @@ unlock:
 	mutex_unlock(&pon->lock);
 	mutex_unlock(&pon->control_lock);
 free:
-	kfree(state);
+	kvfree(state);
 	return ret ? ret : count;
+}
+
+/* kernfs splits binary writes at PAGE_SIZE. Commit only the complete snapshot. */
+ssize_t rtl_pon_itu_paths_upload(struct rtl9617c_pon *pon, const char *buf, loff_t offset, size_t count)
+{
+	void *complete = NULL;
+	size_t bytes = 0;
+	int ret = 0;
+	mutex_lock(&pon->control_lock);
+	if (!offset) {
+		if (count < 12 || get_unaligned_le16(buf) != 3) { ret = -EINVAL; goto unlock; }
+		bytes = get_unaligned_le32(buf + 8);
+		if (bytes < 12 || bytes > RTL_ITU_CONFIG_WIRE_MAX) { ret = -EMSGSIZE; goto unlock; }
+		kvfree(pon->itu_upload);
+		pon->itu_upload = kvmalloc(bytes, GFP_KERNEL);
+		pon->itu_upload_received = 0;
+		pon->itu_upload_size = bytes;
+		if (!pon->itu_upload) { ret = -ENOMEM; goto unlock; }
+	}
+	if (!pon->itu_upload || offset != pon->itu_upload_received ||
+	    count > pon->itu_upload_size - pon->itu_upload_received) { ret = -EINVAL; goto unlock; }
+	memcpy(pon->itu_upload + offset, buf, count);
+	pon->itu_upload_received += count;
+	if (pon->itu_upload_received == pon->itu_upload_size) {
+		complete = pon->itu_upload; bytes = pon->itu_upload_size;
+		pon->itu_upload = NULL;
+	}
+unlock:
+	mutex_unlock(&pon->control_lock);
+	if (complete) {
+		ret = rtl_pon_itu_paths_write(pon, complete, bytes);
+		kvfree(complete);
+	}
+	return ret < 0 ? ret : count;
 }
 
 ssize_t rtl_pon_itu_paths_state(struct rtl9617c_pon *pon, char *buf)
@@ -243,15 +314,16 @@ ssize_t rtl_pon_itu_paths_state(struct rtl9617c_pon *pon, char *buf)
 
 	lockdep_assert_held(&pon->lock);
 	state = rcu_dereference_protected(pon->itu_paths, lockdep_is_held(&pon->lock));
-	length = sysfs_emit(buf, "configured=%u error=%d epoch=%llu paths=%u session=%llu\n",
+	length = sysfs_emit(buf, "configured=%u error=%d epoch=%llu paths=%u session=%llu profiles=%u\n",
 		pon->itu_paths_ready, pon->itu_paths_error, pon->itu_path_epoch,
-		state ? state->paths.count : 0, pon->itu_line_epoch);
-	if (state) for (i = 0; i < state->paths.count && length < PAGE_SIZE - 100; i++) {
+		state ? state->paths.count : 0, pon->itu_line_epoch, state ? state->paths.profile_count : 0);
+	if (state) for (i = 0; i < state->paths.count && length < PAGE_SIZE - 180; i++) {
 		const struct rtl_itu_path *path = &state->paths.path[i];
 
-		length += sysfs_emit_at(buf, length, "gem=%u index=%u alloc=%u tcont=%u queue=%u vlan=%u pbits=%02x multicast=%u upstream_aes=%u downstream_pbits=%02x\n",
+		length += sysfs_emit_at(buf, length, "gem=%u index=%u alloc=%u tcont=%u queue=%u vlan=%u pbits=%02x multicast=%u upstream_aes=%u downstream_pbits=%02x vlan_exclude=%02x unmarked=%u\n",
 			path->gem_id, path->index, path->alloc_id, path->tcont, path->queue,
-			path->vlan, path->pbits, path->multicast, path->encrypted, path->downstream_pbits);
+			path->vlan, path->pbits, path->multicast, path->encrypted, path->downstream_pbits,
+			path->vlan_exclude, path->unmarked_mode);
 	}
 	return length;
 }
@@ -261,20 +333,23 @@ netdev_tx_t rtl_pon_itu_data_transmit(struct rtl9617c_pon *pon, struct sk_buff *
 	struct rtl_itu_path_state *state;
 	const struct rtl_itu_path *path;
 	struct rtl9617c_ni_frame frame = {.header_high = BIT(30), .header_low = (16 << 9) | BIT(29)};
-	u16 tci = 0;
-	unsigned int vlan = 65535, priority = skb->priority & 7;
+	struct rtl_evto_packet input, output;
+	unsigned int wire_tags;
 	bool found = false;
 
-	if (!netif_carrier_ok(dev) || skb->len < ETH_HLEN || skb->len > 1522) goto drop;
-	if (!vlan_get_tag(skb, &tci)) { vlan = tci & VLAN_VID_MASK; priority = tci >> VLAN_PRIO_SHIFT; }
+	if (!netif_carrier_ok(dev)) goto drop;
 	rcu_read_lock();
 	state = rcu_dereference(pon->itu_paths);
-	path = state ? rtl_itu_path_select(&state->paths, vlan, priority) : NULL;
-	if (path && READ_ONCE(pon->itu_paths_ready)) {
+	if (!state || !READ_ONCE(pon->itu_paths_ready) || rtl_evto_skb_read(&state->paths, skb, &input, &wire_tags))
+		goto unlock;
+	path = rtl_itu_path_transmit_vlan(&state->paths, &input, &output);
+	/* A NI BID holds2048 bytes, including32 bytes prefix and16 bytes HEADER_A. */
+	if (path && !rtl_evto_skb_write(skb, &input, &output, wire_tags) && skb->len <= 2000) {
 		frame.header_high |= (u32)path->index << 18;
 		frame.header_low |= path->queue | ((32 + path->tcont) << 3);
 		found = true;
 	}
+unlock:
 	rcu_read_unlock();
 	if (!found) goto drop;
 	return rtl9617c_ni_transmit(pon->ni_dev, dev, skb, &frame);
@@ -289,18 +364,25 @@ void rtl_pon_itu_data_receive(struct rtl9617c_pon *pon, struct napi_struct *napi
 {
 	struct net_device *dev = rcu_dereference(pon->data_devices[0]);
 	struct rtl_itu_path_state *state = rcu_dereference(pon->itu_paths);
-	unsigned int i, index = source >> 8;
-	unsigned int vlan = RTL_ITU_VLAN_ANY, priority = skb->priority & 7;
-	u16 tci = 0;
+	const struct rtl_itu_path *path;
+	unsigned int index = source >> 8, wire_tags;
+	struct rtl_evto_packet input, output;
 
 	if ((source & 255) != 7 || !state || !READ_ONCE(pon->itu_paths_ready) ||
 	    !netif_running(dev) || !netif_carrier_ok(dev) || skb->len < ETH_HLEN) goto drop;
-	if (!vlan_get_tag(skb, &tci)) { vlan = tci & VLAN_VID_MASK; priority = tci >> VLAN_PRIO_SHIFT; }
-	for (i = 0; i < state->paths.count; i++)
-		if (state->paths.path[i].index == index &&
-		    (state->paths.path[i].downstream_pbits & BIT(priority)) &&
-		    rtl_itu_path_matches(&state->paths.path[i], vlan)) break;
-	if (i == state->paths.count) goto drop;
+	if (rtl_evto_skb_read(&state->paths, skb, &input, &wire_tags)) goto drop;
+	path = rtl_itu_path_receive_vlan(&state->paths, index, &input, &output);
+	if (!path || rtl_evto_skb_write(skb, &input, &output, wire_tags)) goto drop;
+	{
+		struct rtl9617c_bridge_frame *wire = skb_ext_add(skb, SKB_EXT_RTL9617C_BRIDGE);
+		if (wire) {
+			memset(wire, 0, sizeof(*wire));
+			wire->pon_gem = index; wire->pon_generation = state->paths.generation;
+			wire->tags = input.count;
+			for (unsigned int i = 0; i < input.count && i < 2; i++)
+				wire->tag[i] = (struct rtl9617c_bridge_tag){input.tag[i].tci, input.tag[i].tpid};
+		}
+	}
 	dev->stats.rx_packets++;
 	dev->stats.rx_bytes += skb->len;
 	skb->protocol = eth_type_trans(skb, dev);
@@ -316,5 +398,6 @@ void rtl_pon_itu_paths_remove(struct rtl9617c_pon *pon)
 	struct rtl_itu_path_state *state = rcu_access_pointer(pon->itu_paths);
 
 	RCU_INIT_POINTER(pon->itu_paths, NULL);
-	if (state) kfree_rcu(state, rcu);
+	if (state) kvfree_rcu(state, rcu);
+	kvfree(pon->itu_upload);
 }

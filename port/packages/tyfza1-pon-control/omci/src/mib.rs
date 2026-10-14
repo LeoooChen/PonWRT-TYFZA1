@@ -513,9 +513,26 @@ impl Mib {
                 Response::new(request, RESULT_UNKNOWN_ME)
             };
         }
-        let Some(entity) = Self::dynamic_entity(request.class_id, request.payload) else {
+        let Some(mut entity) = Self::dynamic_entity(request.class_id, request.payload) else {
             return Response::new(request, RESULT_PARAMETER_ERROR);
         };
+        if request.class_id == CLASS_EXTENDED_VLAN_TAGGING {
+            if !matches!(entity.attributes[&1].value[0], 0..=7 | 9..=12) {
+                return Response::new(request, RESULT_PARAMETER_ERROR);
+            }
+            let table = entity.attributes.get_mut(&6).unwrap();
+            for (outer, inner) in [(0xf8000000u32, 0xf8000000u32),
+                                   (0xf8000000, 0xe8000000), (0xe8000000, 0xe8000000)] {
+                let mut row = Vec::with_capacity(16);
+                for word in [outer, inner, 0x000f0000, 0x000f0000] {
+                    row.extend_from_slice(&word.to_be_bytes());
+                }
+                table.table_rows.insert(row[..8].to_vec(), row);
+            }
+        }
+        if request.class_id == CLASS_IEEE_8021P_MAPPER && entity.attributes[&10].value[0] > 1 {
+            return Response::new(request, RESULT_PARAMETER_ERROR);
+        }
         if let Some(existing) = self.entities.get(&(request.class_id, request.entity_id)) {
             /* Repeated Create requests recover a lost response; identical content reuses the instance and MIB Data Sync value. */
             let result = if existing == &entity {
@@ -762,6 +779,16 @@ impl Mib {
             if end > request.content.len() {
                 return Response::new(request, RESULT_PARAMETER_ERROR);
             }
+            if request.class_id == CLASS_EXTENDED_VLAN_TAGGING
+                && ((index == 1 && !matches!(request.content[cursor], 0..=7 | 9..=12))
+                    || (index == 5 && request.content[cursor] > 8)
+                    || (index == 6 && !valid_extended_vlan_row(&request.content[cursor..end]))) {
+                return Response::new(request, RESULT_PARAMETER_ERROR);
+            }
+            if request.class_id == CLASS_IEEE_8021P_MAPPER
+                && index == 10 && request.content[cursor] > 1 {
+                return Response::new(request, RESULT_PARAMETER_ERROR);
+            }
             updates.push((
                 index,
                 request.content[cursor..end].to_vec(),
@@ -788,6 +815,10 @@ impl Mib {
                 if value[8..].iter().all(|byte| *byte == 0xff) {
                     attribute.table_rows.remove(&key);
                 } else {
+                    if request.class_id == CLASS_EXTENDED_VLAN_TAGGING && index == 6
+                        && !attribute.table_rows.contains_key(&key) && attribute.table_rows.len() == 32 {
+                        return Response::new(request, 1);
+                    }
                     attribute.table_rows.insert(key, value);
                 }
             } else {
@@ -1057,14 +1088,22 @@ impl Mib {
         }
 
         // Set-table applies rows in wire order using each table's add/delete control field.
+        let mut rows = attribute.table_rows.clone();
         for row in request.content.chunks_exact(row_len) {
+            if request.class_id == CLASS_EXTENDED_VLAN_TAGGING && index == 6 && !valid_extended_vlan_row(row) {
+                return Response::new(request, RESULT_PARAMETER_ERROR);
+            }
             let key = row[..8].to_vec();
             if row[8..].iter().all(|byte| *byte == 0xff) {
-                attribute.table_rows.remove(&key);
+                rows.remove(&key);
             } else {
-                attribute.table_rows.insert(key, row.to_vec());
+                rows.insert(key, row.to_vec());
             }
         }
+        if request.class_id == CLASS_EXTENDED_VLAN_TAGGING && index == 6 && rows.len() > 32 {
+            return Response::new(request, 1);
+        }
+        attribute.table_rows = rows;
         self.increment_mib_sync();
         Response::set_success(request)
     }
@@ -1120,8 +1159,40 @@ impl Mib {
         let mut gem_id_by_entity = BTreeMap::<u16, u16>::new();
         let mut unicast_by_entity = BTreeMap::<u16, DataPathCandidate>::new();
         let mut multicast_by_iwtp = BTreeMap::<u16, DataPathCandidate>::new();
-        let mut mapper_paths = BTreeMap::<(u16, u16), DataPathCandidate>::new();
+        let mut mapper_paths = BTreeMap::<(u16, u16, Option<u16>), DataPathCandidate>::new();
         let mut bridge_paths = BTreeMap::<u16, Vec<DataPathCandidate>>::new();
+        use super::provisioning::VlanProfile;
+        let mut profiles = BTreeMap::<(u16, u16), u16>::new();
+        for (&(class, id), entity) in &self.entities {
+            if class != CLASS_EXTENDED_VLAN_TAGGING { continue; }
+            let attr = |i| entity.attributes.get(&i).map(|a| a.value.as_slice()).unwrap();
+            let class = match attr(1)[0] {
+                0 => CLASS_MAC_BRIDGE_PORT_CONFIG_DATA,
+                1 => CLASS_IEEE_8021P_MAPPER,
+                2 => CLASS_PPTP_ETHERNET_UNI,
+                5 => CLASS_GEM_INTERWORKING_TP,
+                6 => CLASS_MULTICAST_GEM_INTERWORKING_TP,
+                10 => CLASS_VEIP,
+                _ => continue,
+            };
+            profiles.insert((class, be_u16(attr(7)).unwrap()), id);
+            snapshot.vlan_profiles.push(VlanProfile {
+                entity_id: id, input_tpid: be_u16(attr(3)).unwrap(),
+                output_tpid: be_u16(attr(4)).unwrap(), downstream_mode: attr(5)[0],
+                dscp: attr(8).try_into().unwrap(),
+                rows: entity.attributes[&6].table_rows.values()
+                    .map(|row| row.as_slice().try_into().unwrap()).collect(),
+            });
+        }
+        let profile = |class, id| profiles.get(&(class, id)).copied();
+        let mut uni_profiles = BTreeMap::<u16, [Option<u16>; 2]>::new();
+        for (&(class, id), entity) in &self.entities {
+            if class != CLASS_MAC_BRIDGE_PORT_CONFIG_DATA { continue; }
+            let attr = |i| entity.attributes.get(&i).map(|a| a.value.as_slice()).unwrap();
+            let tp_class = match attr(3)[0] { 1 => CLASS_PPTP_ETHERNET_UNI, 11 => CLASS_VEIP, _ => continue };
+            uni_profiles.insert(be_u16(attr(1)).unwrap(),
+                [profile(tp_class, be_u16(attr(4)).unwrap()), profile(class, id)]);
+        }
 
         if let Some(olt) = self.entities.get(&(CLASS_OLT_G, 0)) {
             snapshot.olt_vendor_id = olt
@@ -1205,6 +1276,8 @@ impl Mib {
                             pbit_mask: if direction & 1 != 0 { u8::MAX } else { 0 },
                             downstream_pbits: if direction & 2 != 0 { u8::MAX } else { 0 },
                             multicast: false,
+                            vlan_profiles: [None; 5],
+                            vlan_exclude: 0, unmarked_mode: 0, default_priority: 0, mapper_dscp: [0; 24],
                         },
                     );
                 }
@@ -1236,6 +1309,9 @@ impl Mib {
                     pbit_mask: u8::MAX,
                     downstream_pbits: u8::MAX,
                     multicast: true,
+                    vlan_profiles: [None, None, None,
+                        None, profile(CLASS_MULTICAST_GEM_INTERWORKING_TP, iwtp_id)],
+                    vlan_exclude: 0, unmarked_mode: 0, default_priority: 0, mapper_dscp: [0; 24],
                 },
             );
         }
@@ -1266,11 +1342,17 @@ impl Mib {
                     .and_then(|attr| be_u16(&attr.value))
                     .unwrap_or(pointer);
                 if let Some(path) = unicast_by_entity.get(&ctp_entity) {
+                    let iwtp_profile = profile(CLASS_GEM_INTERWORKING_TP, pointer);
                     let mapped = mapper_paths
-                        .entry((mapper_id, path.gem_id))
+                        .entry((mapper_id, path.gem_id, iwtp_profile))
                         .or_insert_with(|| {
                             let mut mapped = path.clone();
                             mapped.pbit_mask = 0;
+                            mapped.vlan_profiles[3] = profile(CLASS_IEEE_8021P_MAPPER, mapper_id);
+                            mapped.vlan_profiles[4] = iwtp_profile;
+                            mapped.unmarked_mode = if mapper.attributes[&10].value[0] == 0 { 1 } else { 2 };
+                            mapped.default_priority = mapper.attributes[&12].value[0] & 7;
+                            mapped.mapper_dscp = mapper.attributes[&11].value.as_slice().try_into().unwrap();
                             mapped
                         });
                     mapped.pbit_mask |= path.pbit_mask & (1 << pbit);
@@ -1299,10 +1381,10 @@ impl Mib {
                 continue;
             };
 
-            let paths = match tp_type {
+            let mut paths = match tp_type {
                 Some(3) => mapper_paths
                     .iter()
-                    .filter(|((mapper_id, _), _)| *mapper_id == pointer)
+                    .filter(|((mapper_id, _, _), _)| *mapper_id == pointer)
                     .map(|(_, path)| path.clone())
                     .collect::<Vec<_>>(),
                 Some(5) => self
@@ -1321,6 +1403,16 @@ impl Mib {
                     .collect::<Vec<_>>(),
                 _ => Vec::new(),
             };
+            let bridge = bridge.attributes.get(&1).and_then(|a| be_u16(&a.value)).unwrap();
+            let uni = uni_profiles.get(&bridge).copied().unwrap_or([
+                profile(CLASS_VEIP, VEIP_ENTITY), None]);
+            for path in &mut paths {
+                path.vlan_profiles[..2].copy_from_slice(&uni);
+                path.vlan_profiles[2] = profile(CLASS_MAC_BRIDGE_PORT_CONFIG_DATA, entity_id);
+                if tp_type == Some(5) {
+                    path.vlan_profiles[4] = profile(CLASS_GEM_INTERWORKING_TP, pointer);
+                }
+            }
             if !paths.is_empty() {
                 bridge_paths.insert(entity_id, paths);
             }
@@ -1391,7 +1483,7 @@ impl Mib {
                         path.vlan_id = DATA_PATH_VLAN_TAGGED;
                     }
                     if matches!(mode, 4 | 5 | 7 | 8) {
-                        path.pbit_mask &= 1 << ((tci >> 13) & 7);
+                        path.vlan_exclude |= !(1 << ((tci >> 13) & 7));
                         path.downstream_pbits &= 1 << ((tci >> 13) & 7);
                     }
                     snapshot.data_paths.push(path);
@@ -1442,7 +1534,9 @@ impl Mib {
                 _ => {}
             }
         }
-        snapshot.data_paths.retain(|path| path.pbit_mask | path.downstream_pbits != 0);
+        snapshot.data_paths.retain(|path| path.downstream_pbits != 0 ||
+            (if path.vlan_profiles[2].is_none() { path.pbit_mask & !path.vlan_exclude != 0 }
+             else { path.pbit_mask != 0 && path.vlan_exclude != 255 }));
         snapshot.data_paths.sort_by_key(|path| {
             (
                 path.multicast,
@@ -1588,6 +1682,36 @@ fn omci_text(value: &[u8]) -> String {
         .position(|byte| *byte == 0 || *byte == 0xff)
         .unwrap_or(value.len());
     String::from_utf8_lossy(&value[..end]).trim_end().to_owned()
+}
+
+fn valid_extended_vlan_row(row: &[u8]) -> bool {
+    if row.len() != 16 { return false; }
+    if row[8..].iter().all(|byte| *byte == 0xff) { return true; }
+    let word = |offset| u32::from_be_bytes(row[offset..offset + 4].try_into().unwrap());
+    let input = if row[4] >> 4 == 15 { 0 } else if row[0] >> 4 == 15 { 1 } else { 2 };
+    if input == 0 && row[0] >> 4 != 15 { return false; }
+    if word(4) & 15 > 5 || (word(4) >> 4) & 255 > 2 { return false; }
+    for i in 0..input {
+        let filter = word(if input == 1 { 4 } else { i * 4 });
+        let priority = filter >> 28;
+        let vid = (filter >> 15) & 8191;
+        let tpid = (filter >> 12) & 7;
+        if (priority > 8 && priority != 14) || vid == 4095 || vid > 4096 || (tpid != 0 && tpid < 4) { return false; }
+    }
+    let remove = row[8] >> 6;
+    if remove == 3 { return true; }
+    if remove as usize > input || (row[9] & 15 != 15 && row[13] & 15 == 15) { return false; }
+    for offset in [8, 12] {
+        let treatment = word(offset);
+        let priority = (treatment >> 16) & 15;
+        if priority == 15 { continue; }
+        let vid = (treatment >> 3) & 8191;
+        let tpid = treatment & 7;
+        if priority > 10 || vid == 4095 || vid > 4097 || tpid == 5
+            || (input == 0 && (priority == 8 || vid == 4096 || tpid == 0 || tpid == 2))
+            || (input < 2 && (priority == 9 || vid == 4097 || tpid == 1 || tpid == 3)) { return false; }
+    }
+    true
 }
 
 fn collect_extended_vlan_ids(row: &[u8], output: &mut BTreeSet<u16>) {

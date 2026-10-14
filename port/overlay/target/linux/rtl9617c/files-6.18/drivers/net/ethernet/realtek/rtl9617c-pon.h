@@ -109,6 +109,8 @@ struct rtl9617c_pon {
 	bool omci_master_key_valid;
 	u64 xgpon_key_reports, xgpon_key_tk4, xgpon_key_tk5;
 	struct rtl_itu_path_state __rcu *itu_paths;
+	void *itu_upload;
+	size_t itu_upload_size, itu_upload_received;
 	bool itu_paths_ready;
 	int itu_paths_error;
 	u64 itu_path_epoch;
@@ -142,6 +144,7 @@ void rtl_pon_xgpon_key_irq(struct rtl9617c_pon *pon, u32 interrupts, u32 control
 ssize_t rtl_pon_omci_master_key(struct rtl9617c_pon *pon, const char *buf, size_t count);
 ssize_t rtl_pon_omci_broadcast_key(struct rtl9617c_pon *pon, const char *buf, size_t count);
 ssize_t rtl_pon_itu_paths_write(struct rtl9617c_pon *pon, const char *buf, size_t count);
+ssize_t rtl_pon_itu_paths_upload(struct rtl9617c_pon *pon, const char *buf, loff_t offset, size_t count);
 ssize_t rtl_pon_itu_paths_state(struct rtl9617c_pon *pon, char *buf);
 void rtl_pon_itu_carrier(struct rtl9617c_pon *pon);
 void rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *pon);

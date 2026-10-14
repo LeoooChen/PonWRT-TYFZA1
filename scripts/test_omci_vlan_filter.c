@@ -39,13 +39,13 @@ int main(void)
   request(a,4,47,0x400,body,14);
   memset(body,0,sizeof(body));be16(body,(5<<13)|(1<<12)|100);body[24]=operation;body[25]=1;
   request(a,4,84,0x400,body,26);
-  int length=tyfza1_omci_paths(a,wire);assert(length>=4 && le16(wire)==2);
-  paths.count=le16(wire+2);assert(length==4+(int)paths.count*RTL_ITU_PATH_WIRE_BYTES);
+  int length=tyfza1_omci_paths(a,wire);assert(length>=12 && le16(wire)==3);
+  paths.count=le16(wire+2);assert(length==12+(int)paths.count*RTL_ITU_PATH_WIRE_BYTES);
   for(unsigned int i=0;i<paths.count;i++) {
-   const uint8_t *p=wire+4+i*RTL_ITU_PATH_WIRE_BYTES;
+   const uint8_t *p=wire+12+i*RTL_ITU_PATH_WIRE_BYTES;
    paths.path[i]=(struct rtl_itu_path){.alloc_id=le16(p),.gem_id=le16(p+2),.vlan=le16(p+4),
     .pbits=p[6],.multicast=p[7],.queue=p[8],.encrypted=p[9],
-    .tcont=le16(p+10),.downstream_pbits=p[12],.index=8};
+    .tcont=le16(p+10),.downstream_pbits=p[12],.vlan_exclude=p[23],.index=8};
   }
   for(unsigned int v=0;v<4;v++)for(unsigned int p=0;p<8;p++)for(unsigned int d=0;d<2;d++) {
    unsigned int vlan=vids[v];int tagged=vlan!=65535,allowed=0;

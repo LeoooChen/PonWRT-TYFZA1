@@ -37,6 +37,10 @@ typedef uint8_t u8;typedef uint16_t u16,__be16;typedef uint32_t u32;typedef uint
 #define ETH_ALEN 6
 #define ETH_HLEN 14
 #define ETH_P_PPP_SES 0x8864
+#define ETH_P_IP 0x0800
+#define ETH_P_IPV6 0x86dd
+#define ETH_P_8021Q 0x8100
+#define ETH_P_8021AD 0x88a8
 #define PPP_IP 0x21
 #define PPP_IPV6 0x57
 #define VLAN_VID_MASK 4095
@@ -206,6 +210,6 @@ int main(void){
 functions = ''.join(function(name) for name in ['fe_bridge_physical','fe_bridge_frame','fe_bridge_wire','fe_bridge_capture','fe_bridge_forwarded','fe_bridge_ports','fe_bridge_learn','fe_bridge_work'])
 with tempfile.TemporaryDirectory(dir=root/'artifacts',prefix='bridge-learning-') as directory:
     directory=Path(directory)
-    (directory/'bridge.c').write_text(common+structs+backend+functions+test)
-    subprocess.run(['cc','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-fsanitize=address,undefined','-I'+str(drivers),'-I'+str(root/'port/overlay/target/linux/rtl9617c/files-6.18/include'),str(directory/'bridge.c'),'-o',str(directory/'bridge')],check=True)
+    (directory/'bridge.c').write_text(common+structs+backend+(drivers/'rtl9617c-fe-vlan.h').read_text()+functions+test)
+    subprocess.run(['cc','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-Wno-unused-function','-fsanitize=address,undefined','-I'+str(drivers),'-I'+str(root/'port/overlay/target/linux/rtl9617c/files-6.18/include'),str(directory/'bridge.c'),'-o',str(directory/'bridge')],check=True)
     subprocess.run([str(directory/'bridge')],check=True)

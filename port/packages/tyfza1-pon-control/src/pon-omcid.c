@@ -19,16 +19,21 @@
 #include "pon-omci.h"
 
 #define PON_SYSFS "/sys/bus/platform/devices/4f5500000.pon/"
-#define PATH_BYTES (4 + 248 * 13)
+#define PATH_BYTES (12 + 248 * 50 + 248 * 5 * (32 + 32 * 16))
 
 static int put_file(const char *path, const void *data, size_t length)
 {
 	int fd = open(path, O_WRONLY | O_CLOEXEC), result;
 	ssize_t written;
+	size_t offset = 0;
 
 	if (fd < 0) return -errno;
-	written = write(fd, data, length);
-	result = written < 0 ? -errno : written == (ssize_t)length ? 0 : -EIO;
+	result = 0;
+	while (offset < length) {
+		written = write(fd, (const uint8_t *)data + offset, length - offset);
+		if (written <= 0) { result = written < 0 ? -errno : -EIO; break; }
+		offset += written;
+	}
 	close(fd);
 	return result;
 }
@@ -93,7 +98,8 @@ int main(void)
 	struct omci_identity identity = {};
 	struct omci_agent *agent;
 	struct sockaddr_ll address = {.sll_family = AF_PACKET, .sll_protocol = htons(ETH_P_ALL)};
-	uint8_t input[2048], output[2048], paths[PATH_BYTES], applied[PATH_BYTES], key[16];
+	uint8_t input[2048], output[2048], key[16];
+	static uint8_t paths[PATH_BYTES], applied[PATH_BYTES];
 	unsigned long long session = 0, previous_session = 0, received = 0, transmitted = 0, invalid = 0;
 	int fd, enabled = 1, applied_length = 0, result, path_error = 0;
 	struct pollfd pollfd;
@@ -121,8 +127,14 @@ int main(void)
 			previous_session = session;
 		}
 		length = tyfza1_omci_paths(agent, paths);
-		if (length >= 4 && (length != applied_length || memcmp(paths, applied, length) ||
-		    (length > 4 && !ready))) {
+		if (length < 0) {
+			/* A rejected graph must not leave its previous business mapping active. */
+			static const uint8_t empty[12] = {3, 0, 0, 0, 0, 0, 0, 0, 12};
+			result = applied_length ? put_file(PON_SYSFS "itu_paths", empty, sizeof(empty)) : 0;
+			if (!result) applied_length = 0;
+			path_error = result ? result : length;
+		} else if (length >= 12 && (length != applied_length || memcmp(paths, applied, length) ||
+		    ((paths[2] || paths[3]) && !ready))) {
 			result = put_file(PON_SYSFS "itu_paths", paths, length);
 			path_error = result;
 			if (!result) { memcpy(applied, paths, length); applied_length = length; }
@@ -131,7 +143,7 @@ int main(void)
 		FILE *status = fopen("/var/run/pon-omci", "w");
 		if (status) {
 			fprintf(status, "rx=%llu tx=%llu invalid=%llu paths=%u error=%d\n",
-				received, transmitted, invalid, applied_length > 4 ? (applied_length - 4) / 13 : 0, path_error);
+				received, transmitted, invalid, applied_length >= 12 ? applied[2] | (unsigned int)applied[3] << 8 : 0, path_error);
 			fclose(status);
 		}
 		result = poll(&pollfd, 1, 1000);

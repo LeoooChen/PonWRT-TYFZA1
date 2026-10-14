@@ -58,20 +58,20 @@ int main(void)
   unsigned int upstream = direction & 1 ? mask & (mapper == 2 ? 1 : 255) : 0;
   unsigned int downstream = direction & 2 ? mask : 0;
   if (!(upstream | downstream)) {
-   assert(length == 4);
+   assert(length == 12);
    tyfza1_omci_free(agent);
    continue;
   }
-  if (length != 17) fprintf(stderr, "direction=%u mapper=%u filtered=%u paths_bytes=%d\n",
+  if (length != 12 + RTL_ITU_PATH_WIRE_BYTES) fprintf(stderr, "direction=%u mapper=%u filtered=%u paths_bytes=%d\n",
                            direction, mapper, filtered, length);
-  assert(length == 17);
+  assert(length == 12 + RTL_ITU_PATH_WIRE_BYTES);
   struct rtl_itu_paths paths = {.count = 1};
   struct rtl_itu_path *path = &paths.path[0];
-  *path = (struct rtl_itu_path){.alloc_id = le16(wire + 4), .gem_id = le16(wire + 6),
-   .vlan = le16(wire + 8), .pbits = wire[10], .multicast = wire[11],
-   .queue = wire[12], .encrypted = wire[13], .tcont = le16(wire + 14),
-   .downstream_pbits = wire[16], .index = 8};
-  assert(path->pbits == upstream);
+  *path = (struct rtl_itu_path){.alloc_id = le16(wire + 12), .gem_id = le16(wire + 14),
+   .vlan = le16(wire + 16), .pbits = wire[18], .multicast = wire[19],
+   .queue = wire[20], .encrypted = wire[21], .tcont = le16(wire + 22),
+   .downstream_pbits = wire[24], .vlan_exclude = wire[35], .index = 8};
+  assert((path->pbits & ~path->vlan_exclude) == upstream);
   assert(path->downstream_pbits == downstream);
   assert(path->tcont == (direction & 1 ? 1 : 0));
   assert(path->alloc_id == (direction & 1 ? 1063 : 65535));

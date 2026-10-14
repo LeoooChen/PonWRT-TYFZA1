@@ -606,8 +606,7 @@ static BIN_ATTR(xgpon_identity, 0200, NULL, xgpon_identity_write, 0);
 static ssize_t itu_paths_write(struct file *file, struct kobject *kobj,
 	const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
 {
-	if (offset) return -EINVAL;
-	return rtl_pon_itu_paths_write(dev_get_drvdata(kobj_to_dev(kobj)), buf, count);
+	return rtl_pon_itu_paths_upload(dev_get_drvdata(kobj_to_dev(kobj)), buf, offset, count);
 }
 static BIN_ATTR(itu_paths, 0200, NULL, itu_paths_write, 0);
 

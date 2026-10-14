@@ -433,7 +433,9 @@ int main(void)
 '''
 
 parts = [common, re.search(r'struct rtl_fe_rule \{.*?\n\};', native, re.S)[0]]
-parts += [function(native,n) for n in ('fe_vlan_tpid','fe_vlan_match','fe_parse_bridge','fe_parse')]
+parts += [function(native,n) for n in ('fe_vlan_tpid','fe_vlan_match')]
+parts += [(drivers / 'rtl9617c-fe-vlan.h').read_text()]
+parts += [function(native,n) for n in ('fe_parse_bridge','fe_parse')]
 for name in ('flow_action_entry_next','flow_offload_mangle','flow_offload_ipv4_snat',
              'flow_offload_l4proto','flow_offload_port_snat'):
     parts.append(function(upstream, name))

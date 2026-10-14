@@ -12,6 +12,16 @@ pub const DATA_PATH_VLAN_ANY: u16 = u16::MAX;
 pub const DATA_PATH_VLAN_UNTAGGED: u16 = u16::MAX - 1;
 pub const DATA_PATH_VLAN_TAGGED: u16 = u16::MAX - 2;
 
+#[derive(Clone, Debug)]
+pub struct VlanProfile {
+    pub entity_id: u16,
+    pub input_tpid: u16,
+    pub output_tpid: u16,
+    pub downstream_mode: u8,
+    pub dscp: [u8; 24],
+    pub rows: Vec<[u8; 16]>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DataPathCandidate {
     pub alloc_id: u16,
@@ -22,6 +32,12 @@ pub struct DataPathCandidate {
     pub downstream_pbits: u8,
     /// A Class 281 GEM carries downstream multicast traffic.
     pub multicast: bool,
+    /// VEIP, UNI bridge port, ANI bridge port, mapper, and GEM IWTP, in wire order.
+    pub vlan_profiles: [Option<u16>; 5],
+    pub vlan_exclude: u8,
+    pub unmarked_mode: u8,
+    pub default_priority: u8,
+    pub mapper_dscp: [u8; 24],
 }
 
 #[derive(Clone, Debug, Default)]
@@ -47,6 +63,7 @@ pub struct ProvisioningSnapshot {
     /// Key indexes with at least one Class 332 attribute 11 broadcast key fragment.
     pub broadcast_key_indexes: BTreeSet<u8>,
     pub data_paths: Vec<DataPathCandidate>,
+    pub vlan_profiles: Vec<VlanProfile>,
 }
 
 #[derive(Clone, Debug)]

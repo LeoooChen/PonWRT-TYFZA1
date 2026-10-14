@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""Use production snapshot parsing/upload code with OLT-generated wire fixtures."""
+from pathlib import Path
+import re
+import subprocess
+import tempfile
+
+root = Path(__file__).resolve().parents[1]
+drivers = root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek'
+source = (drivers / 'rtl9617c-pon-path.c').read_text()
+
+def function(name):
+    start = re.search(r'^ssize_t ' + name + r'\(', source, re.M).start()
+    end = source.index('{', start) + 1
+    depth = 1
+    while depth:
+        depth += (source[end] == '{') - (source[end] == '}')
+        end += 1
+    return source[start:end] + '\n'
+
+fixture = r'''
+#include <assert.h>
+#include <errno.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+typedef uint8_t u8;
+#define BIT(n) (1U<<(n))
+#define GFP_KERNEL 0
+#define RTL_PON_GPON 0
+#define mutex_lock(p) ((void)(p))
+#define mutex_unlock(p) ((void)(p))
+#define lockdep_is_held(p) 1
+#define rcu_dereference_protected(p,c) (p)
+#define rcu_access_pointer(p) (p)
+#define rcu_replace_pointer(p,v,c) ({__typeof__(p) old=(p);(p)=(v);old;})
+#define kvfree_rcu(p,m) free(p)
+#define kvfree(p) free(p)
+#define kvmalloc(n,g) malloc(n)
+#define kvzalloc(n,g) calloc(1,n)
+#define netif_carrier_ok(d) 1
+#define netif_running(d) 1
+#define netif_tx_disable(d) ((void)(d))
+#define netif_tx_wake_all_queues(d) ((void)(d))
+static unsigned int get_unaligned_le16(const void *p){const u8 *b=p;return b[0]|b[1]<<8;}
+static unsigned int get_unaligned_le32(const void *p){const u8 *b=p;return b[0]|b[1]<<8|b[2]<<16|(unsigned)b[3]<<24;}
+#include "rtl9617c-pon-path.h"
+struct net_device {int unused;};
+struct rtl_itu_path_state {int rcu;struct rtl_itu_paths paths;};
+struct rtl9617c_pon {
+ int mode,puc_configured,pdc_configured,control_lock,lock,itu_paths_ready,itu_paths_error;
+ unsigned long long itu_path_epoch;
+ struct net_device *omci_device,*data_devices[1];void *ni_dev;
+ struct rtl_itu_path_state *itu_paths;
+ void *itu_upload;size_t itu_upload_size,itu_upload_received;
+};
+static unsigned int programs;
+static bool rtl_pon_mode_is_epon(int mode){return mode==4;}
+static int path_program(struct rtl9617c_pon *pon,const struct rtl_itu_paths *paths){
+ (void)pon;assert(paths->count<=248);programs++;return 0;}
+static int rtl9617c_ni_itu_paths(void *ni,struct net_device *dev,const struct rtl_itu_paths *paths){
+ (void)ni;(void)dev;(void)paths;return 0;}
+static void rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *pon){pon->itu_paths_ready=false;pon->itu_path_epoch++;}
+static void rtl_pon_itu_carrier(struct rtl9617c_pon *pon){(void)pon;}
+'''
+cases = r'''
+static unsigned char *load(const char *name,size_t *length){
+ FILE *f=fopen(name,"rb");assert(f);assert(!fseek(f,0,SEEK_END));long n=ftell(f);assert(n>0);
+ unsigned char *p=malloc(n);assert(p);rewind(f);assert(fread(p,1,n,f)==(size_t)n);fclose(f);*length=n;return p;
+}
+int main(int argc,char **argv){
+ assert(argc==4);size_t small_size,large_size,mapped_size;
+ unsigned char *small=load(argv[1],&small_size),*large=load(argv[2],&large_size);
+ struct net_device dev={};struct rtl9617c_pon pon={.puc_configured=1,.pdc_configured=1,.data_devices={&dev}};
+ assert(rtl_pon_itu_paths_upload(&pon,(void *)small,0,small_size)==(ssize_t)small_size);
+ assert(programs==1 && pon.itu_paths_ready && pon.itu_paths->paths.profile_count==2);
+ const struct rtl_itu_paths *paths=&pon.itu_paths->paths;
+ struct rtl_evto_packet before={.protocol=0x0800},wire,after;
+ const struct rtl_itu_path *path=rtl_itu_path_transmit_vlan(paths,&before,&wire);
+ assert(path && path->gem_id==4000 && path->vlan==100 && wire.count==1);
+ assert(wire.tag[0].tpid==0x8100 && wire.tag[0].tci==(5<<13|200));
+ assert(rtl_itu_path_receive_vlan(paths,path->index,&wire,&after) && after.count==0);
+ struct rtl_itu_path_state *old=pon.itu_paths;
+ assert(large_size>4096);
+ assert(rtl_pon_itu_paths_upload(&pon,(void *)large,0,4096)==4096);
+ assert(pon.itu_paths==old && programs==1); /* No partial graph publication. */
+ assert(rtl_pon_itu_paths_upload(&pon,(void *)(large+4096),4096,large_size-4096)==(ssize_t)(large_size-4096));
+ assert(programs==2 && pon.itu_paths->paths.count==8 && pon.itu_paths->paths.profile_count==8);
+ for(unsigned int i=0;i<8;i++)assert(pon.itu_paths->paths.profile[i].count==32);
+ old=pon.itu_paths;
+ for(size_t at=0;at<large_size;){size_t n=large_size-at<4096?large_size-at:4096;
+  assert(rtl_pon_itu_paths_upload(&pon,(void *)(large+at),at,n)==(ssize_t)n);at+=n;}
+ assert(pon.itu_paths==old && programs==2); /* Unchanged rules retain live flows. */
+ unsigned char empty[12]={3,0,0,0,0,0,0,0,12};
+ assert(rtl_pon_itu_paths_upload(&pon,(void *)empty,0,sizeof(empty))==12);
+ assert(!pon.itu_paths_ready && pon.itu_paths->paths.count==0 && programs==3);
+ unsigned char *mapped=load(argv[3],&mapped_size);
+ assert(rtl_pon_itu_paths_upload(&pon,(void *)mapped,0,mapped_size)==(ssize_t)mapped_size);
+ paths=&pon.itu_paths->paths;
+ before=(struct rtl_evto_packet){.protocol=0x0800};
+ path=rtl_itu_path_transmit_vlan(paths,&before,&wire);
+ assert(path && path->gem_id==4000 && path->pbits==1 && wire.tag[0].tci==(1<<13|200));
+ assert(rtl_itu_path_receive_vlan(paths,path->index,&wire,&after) && !after.count);
+ free(mapped);
+ free(pon.itu_paths);free(pon.itu_upload);free(small);free(large);
+ puts("Production EVTO snapshot/upload: real OLT graph, UNI/ANI order, two-page atomic commit, unchanged-flow retention and reset passed");
+}
+'''
+with tempfile.TemporaryDirectory(prefix='tyf-evto-upload-') as directory:
+    work = Path(directory)
+    (work / 'test.c').write_text(fixture + function('rtl_pon_itu_paths_write') +
+                               function('rtl_pon_itu_paths_upload') + cases)
+    subprocess.run(['cc', '-O1', '-g', '-Wall', '-Wextra', '-Werror', '-Wno-sign-compare',
+                    '-fsanitize=address,undefined', '-I', str(drivers), str(work / 'test.c'),
+                    '-o', str(work / 'test')], check=True)
+    subprocess.run([str(work / 'test'), str(root / 'artifacts/goal-evto/veip-ani.bin'),
+                    str(root / 'artifacts/goal-evto/large-profile.bin'),
+                    str(root / 'artifacts/goal-evto/mapper-stage.bin')], check=True)

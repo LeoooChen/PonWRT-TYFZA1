@@ -567,6 +567,7 @@ static int fe_vlan_match(const struct flow_match_vlan *match,struct rtl_fe_vlan 
  *vlan=(struct rtl_fe_vlan){.vid=match->key->vlan_id,.tpid=tpid};
  return 0;
 }
+#include "rtl9617c-fe-vlan.h"
 
 static int fe_parse_bridge(struct rtl_fe_port *port,struct flow_rule *rule,struct rtl_fe_rule *data)
 {
@@ -829,6 +830,11 @@ static int fe_parse(struct rtl_fe_port *port,struct flow_cls_offload *cls,struct
  memcpy(data->action.vlan,output_vlan,sizeof(output_vlan));
  data->ethernet_bytes=ETH_HLEN+VLAN_HLEN*output_vlan_count+(data->egress_pppoe?8:0);
 itu_paths:
+ if(port->fe->itu_paths) {
+  bool mapped=port->fe->itu_paths->profile_count!=0;
+  for(i=0;!mapped && i<(int)port->fe->itu_paths->count;i++)mapped=port->fe->itu_paths->path[i].unmarked_mode!=0;
+  if(mapped)return fe_itu_rule(data);
+ }
  if(port->netdev==port->fe->itu_netdev) {
   const struct rtl_itu_path *path=rtl_itu_path_downstream(port->fe->itu_paths,
    data->vlan_count?data->vlan[0].vid:65535,255);
@@ -1316,12 +1322,13 @@ int rtl_fe_flush_port(struct rtl_fe *fe,struct net_device *netdev)
 }
 int rtl_fe_set_itu_paths(struct rtl_fe *fe,struct net_device *netdev,const struct rtl_itu_paths *paths)
 {
- struct rtl_itu_paths *copy=paths?kmemdup(paths,sizeof(*paths),GFP_KERNEL):NULL;
+ struct rtl_itu_paths *copy=paths?kvmalloc(rtl_itu_paths_bytes(paths),GFP_KERNEL):NULL;
  struct rtl_fe_flow *flow,*next;
  struct rtl_fe_port *port;
  int ret=0;
 
  if(paths && !copy)return -ENOMEM;
+ if(copy)memcpy(copy,paths,rtl_itu_paths_bytes(paths));
  mutex_lock(&fe->lock);
  port=fe_port(fe,netdev);
  list_for_each_entry_safe(flow,next,&fe->flows,list)
@@ -1329,12 +1336,12 @@ int rtl_fe_set_itu_paths(struct rtl_fe *fe,struct net_device *netdev,const struc
    ret=fe_delete(fe,flow);
    if(ret)goto unlock;
   }
- kfree(fe->itu_paths);
+ kvfree(fe->itu_paths);
  fe->itu_paths=copy;copy=NULL;
  fe->itu_netdev=paths?netdev:NULL;
 unlock:
  mutex_unlock(&fe->lock);
- kfree(copy);
+ kvfree(copy);
  return ret;
 }
 int rtl_fe_enable(struct rtl_fe *fe)
@@ -1394,7 +1401,7 @@ void rtl_fe_free(struct rtl_fe *fe)
  list_for_each_entry(port,&fe->ports,list)fe_wifi_forget_port(fe,port);
  list_for_each_entry_safe(port,next,&fe->ports,list){list_del(&port->list);kfree(port);}
  dma_free_coherent(fe->device,RTL_FE_MEMORY_BYTES,fe->memory,fe->dma);
- kfree(fe->itu_paths);
+ kvfree(fe->itu_paths);
  kfree(fe);
 }
 ssize_t rtl_fe_state(struct rtl_fe *fe,char *buffer)
