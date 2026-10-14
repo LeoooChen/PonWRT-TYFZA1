@@ -648,6 +648,12 @@ static irqreturn_t rtl_ax_rx_interrupt(int irq, void *context)
 		io->write32(io->ctx, 0x10b4, pending);
 	if (halt) {
 		rx->halt_error = io->read32(io->ctx, 0x016c);
+		/* Preserve the first hardware cause before later H2C timeouts. */
+		dev_err(&rx->pdev->dev,
+			"firmware halt=%08x DMAC_error=%08x host_dispatcher=%08x WDE_error=%08x PLE_error=%08x TX0=%08x HIQ=%08x\n",
+			rx->halt_error, io->read32(io->ctx, 0x8524), io->read32(io->ctx, 0x8808),
+			io->read32(io->ctx, 0x8c3c), io->read32(io->ctx, 0x903c),
+			io->read32(io->ctx, 0x1058), io->read32(io->ctx, 0x107c));
 		io->write32(io->ctx, 0x01a4, halt);
 	}
 	if (pending & (BIT(20) | BIT(19)))
