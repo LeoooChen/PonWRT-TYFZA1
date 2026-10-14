@@ -11,6 +11,7 @@
 static unsigned int packets=8,rate_mbps=100;
 module_param(packets,uint,0600);
 module_param(rate_mbps,uint,0600);
+MODULE_PARM_DESC(rate_mbps,"Ethernet wire rate including FCS, preamble and inter-frame gap");
 static int __init send_init(void)
 {
  struct net_device *lan=dev_get_by_name(&init_net,"eth3");
@@ -70,8 +71,8 @@ static int __init send_init(void)
   dma_wmb();writel(end,vp+0x18);writel(1,vp+0x68);
   ret=readl_poll_timeout(vp+0x1c,status,(status&63)==end,1,100000);if(ret)break;
   done+=n;
-  /* Rate includes the 1514-byte Ethernet frame, not preamble/FCS/IFG. */
-  u64 due=started+div_u64((u64)done*1514*8*1000,rate_mbps);
+  /* 1514-byte frame + FCS4 + preamble/SFD8 + IFG12. */
+  u64 due=started+div_u64((u64)done*1538*8*1000,rate_mbps);
   u64 now=ktime_get_ns();
   if(due>now+1000){
    unsigned int wait=div_u64(due-now,1000);
@@ -80,8 +81,9 @@ static int __init send_init(void)
  }
  elapsed=ktime_get_ns()-started;
  writel(0,vp);
- pr_info("PON_SIM HP11 VP11 dma=%pad source=7 connector=25 sent=%u requested=%u read=%u ret=%d target_Mbps=%u elapsed_ns=%llu offered_bps=%llu\n",
+ pr_info("PON_SIM HP11 VP11 dma=%pad source=7 connector=25 sent=%u requested=%u read=%u ret=%d target_wire_Mbps=%u elapsed_ns=%llu offered_wire_bps=%llu offered_frame_bps=%llu\n",
   &address,done,packets,readl(vp+0x1c)&63,ret,rate_mbps,elapsed,
+  div64_u64((u64)done*1538*8*NSEC_PER_SEC,elapsed),
   div64_u64((u64)done*1514*8*NSEC_PER_SEC,elapsed));
 restore:
  writel(0,vp);writel(saved[1],vp+8);writel(saved[2],vp+12);
