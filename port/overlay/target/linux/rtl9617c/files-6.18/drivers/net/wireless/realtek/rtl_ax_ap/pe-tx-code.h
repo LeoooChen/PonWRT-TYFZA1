@@ -1482,7 +1482,7 @@ static const u32 pe_tx_program[] = {
 0x03f0080b,
 0x31e80800,
 0x000e5300,
-0x31ad0800,
+0x31ad1800,
 0x3c0e7f00,
 0x02ee7024,
 0x00010c40,

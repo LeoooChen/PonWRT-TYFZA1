@@ -135,6 +135,8 @@ struct rtl_ax_ap {
 	struct ieee80211_vif *ap_vif;
 	struct wiphy_work beacon_work;
 	struct wiphy_work offload_work;
+	struct wiphy_work ra_update_work;
+	DECLARE_BITMAP(ra_pending, 128);
 	bool peer_authorized[128];
 	u64 offload_started;
 	int offload_result;
@@ -178,6 +180,8 @@ struct rtl_ax_ap {
 	bool ra_registered[128];
 	u8 ra_config[128][16], ra_feedback[128][8];
 	u64 ra_reports[128];
+	u64 ra_updates[128];
+	int ra_update_error[128];
 	u8 ra_txstats[128][32];
 	u64 ra_txstats_reports[128];
 	u8 ra_rssi[128][3];
@@ -563,7 +567,8 @@ static int rtl_ax_station_connected_table(struct rtl_ax_ap *radio, unsigned int 
 	rtl_ax_station_cmac_connected(cmac, macid, radio->chip == RTL_AX_8852C, 0);
 	if (sta->deflink.he_cap.has_he)
 		rtl_ax_station_cmac_he(cmac, rtl_ax_he_padding(sta->deflink.he_cap.he_cap_elem.phy_cap_info,
-			sta->deflink.he_cap.ppe_thres, min_t(unsigned int, sta->deflink.rx_nss, 2)));
+			sta->deflink.he_cap.ppe_thres, min_t(unsigned int,
+			sta->deflink.smps_mode == IEEE80211_SMPS_STATIC ? 1 : sta->deflink.rx_nss, 2)));
 	return rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 2, cmac, sizeof(cmac), true);
 }
 
@@ -2310,10 +2315,10 @@ static ssize_t radio_ra_show(struct device *dev,
 		const u8 *r = radio->ra_feedback[i];
 		if (!radio->ra_registered[i] && !radio->ra_reports[i]) continue;
 		bytes += sysfs_emit_at(buffer, bytes,
-			"MACID=%u registered=%u reports=%llu retry_ratio=%u rate=%u mode=%u GI=%u BW=%u MU=%u H2C=%16phN C2H=%8phN\n",
+			"MACID=%u registered=%u reports=%llu retry_ratio=%u rate=%u mode=%u GI=%u BW=%u MU=%u H2C=%16phN C2H=%8phN updates=%llu update_error=%d\n",
 			i, radio->ra_registered[i], radio->ra_reports[i], r[2], r[4] & 127,
 			r[5] & 3, (r[5] >> 2) & 7, (r[5] >> 5) & 3, r[4] >> 7,
-			radio->ra_config[i], r);
+			radio->ra_config[i], r, radio->ra_updates[i], radio->ra_update_error[i]);
 		bytes += sysfs_emit_at(buffer, bytes, "RSSI_MACID=%u samples=%llu avg_U8_1=%u paths_U8_1=%u,%u\n",
 			i, radio->ra_rssi_samples[i], radio->ra_rssi[i][0], radio->ra_rssi[i][1], radio->ra_rssi[i][2]);
 		if (radio->ra_txstats_reports[i]) {

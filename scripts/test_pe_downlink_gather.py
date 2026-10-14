@@ -14,7 +14,7 @@ directory = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'artifacts/pe-rad
 binary = (directory / 'pe-tx.bin').read_bytes()
 
 
-def case(lengths, cap, from_epp=False):
+def case(lengths, cap, from_epp=False, hw_rts=False):
     base, mb, pages, headers, payload, ring, bar, ni, reports = (
         0x04000000, 0x04002000, 0x05100000, 0x05200000, 0x06000000,
         0x05000000, 0x12000000, 0x10000000, 0x06200000)
@@ -34,7 +34,7 @@ def case(lengths, cap, from_epp=False):
                          (30, len(lengths)), (38, len(lengths)), (116, 0x6380),
                          (117, 6), (140, mb | 0xa0000000)]:
         put(mb + index * 4, value)
-    peer = [0, 0, 26 << 16, 0x100 | 2 << 16,
+    peer = [0, 0, 26 << 16, 0x100 | 2 << 16 | (1 << 22 if hw_rts else 0),
             1 << 24 | 1 << 18 | 1 << 16, 7 << 16 | 32, 0, 0]
     u.mem_write(base + 0xd020, struct.pack('<8I', *peer))
     put(base + 0xe204, cap << 18)
@@ -90,6 +90,7 @@ def case(lengths, cap, from_epp=False):
     for slot in range(len(submits)):
         page = bytes(u.mem_read(pages + (256 + member) * 128, 128))
         count = struct.unpack_from('<I', page, 4)[0] >> 26
+        assert bool(struct.unpack_from('<I', page, 32)[0] & (1 << 12)) == hw_rts
         expected = bytes.fromhex('88420000') + dst + ap
         expected += (ap if count > 1 else frames[member][6:12]) + struct.pack('<H', slot << 4)
         expected += bytes([128 if count > 1 else 0, 0])
@@ -139,12 +140,13 @@ def case(lengths, cap, from_epp=False):
     for n, frame in enumerate(frames):
         assert bytes(u.mem_read(payload + n * 2048 + 62, len(frame) - 14)) == frame[14:]
         assert get(base + 0xc400 + n * 8) == 0
-    return {'lengths': lengths, 'cap': cap, 'MPDUs': len(submits), 'from_EPP': from_epp}
+    return {'lengths': lengths, 'cap': cap, 'MPDUs': len(submits), 'from_EPP': from_epp, 'HW_RTS': hw_rts}
 
 
 rows = [case([64 + (n + pad) % 4 for n in range(count)], 7935)
         for count in range(2, 9) for pad in range(4)]
 rows += [case([1500] * 8, 7935), case([1500] * 8, 3839)]
 rows += [case([1514] * 8, 7935, True), case([64, 65, 66, 67], 7935, True)]
+rows += [case([1514] * 4, 7935, True, True)]
 print(json.dumps({'cases': rows, 'exact_headers_payload_padding_DMA': True,
                   'ownership_until_RPQ_and_EQ_credit': True}, indent=2))

@@ -4,6 +4,24 @@
 
 struct rtl_ax_phy_signal { u8 macid, rssi[3]; };
 
+static inline void rtl_ax_ra_limit(u8 command[16], u8 bandwidth, u8 nss, bool update)
+{
+	u64 mask = get_unaligned_le64(command + 4);
+	nss = nss < (command[3] & 7) + 1 ? nss : (command[3] & 7) + 1;
+	if (nss == 1) mask &= BIT_ULL(63) | ((1ULL << 24) - 1);
+	/* VHT MCS9 at20MHz is invalid for either of this board's two NSS. */
+	if ((command[0] & 0x3f) == 0x14 && !bandwidth)
+		mask &= ~(BIT_ULL(21) | BIT_ULL(33));
+	command[0] = (command[0] & 0x3f) | bandwidth << 6;
+	command[3] = (command[3] & ~7U) | (nss - 1);
+	if (update) {
+		/* Actual rtw_halbb_raupdate clears UpdateAll and sets BW/NSS/mask. */
+		command[2] &= ~BIT(4);
+		command[3] = (command[3] & ~BIT(7)) | BIT(6);
+	}
+	put_unaligned_le64(mask, command + 4);
+}
+
 static inline int rtl_ax_ppdu_signal(const u8 *data, unsigned int bytes,
 	struct rtl_ax_phy_signal signal[8])
 {

@@ -131,7 +131,7 @@ static void rtl_ax_tx_wd(u8 *out, unsigned int bytes,
 	rtl_ax_store32(out + 12, (sequence & 0xfff) | (aggregate ? BIT(12) : 0));
 	/* Actual C/XB DATA-WD@2525ac: GI[27:25], rate[24:16], fixed-rate[31]. */
 	rtl_ax_store32(out + 28, BIT(31) | (bandwidth & 3) << 28 | (gi & 7) << 25 | (rate & 0x1ff) << 16);
-	rtl_ax_store32(out + 32, BIT(9) | BIT(10));
+	rtl_ax_store32(out + 32, BIT(9) | BIT(10) | (rate & BIT(22) ? BIT(12) : 0));
 	rtl_ax_store32(out + 36, (multicast ? BIT(11) : 0) | (aggregate ? (aggregate - 1) & 0xff : 0));
 	rtl_ax_store32(out + 40, aggregate ? (density & 7) << 18 : 0);
 }
@@ -503,6 +503,8 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		goto unmap;
 	}
 	page = tx->pages + id * RTL_AX_TX_WP_BYTES;
+	if (encap || ieee80211_is_data(header->frame_control))
+		rate |= tx->peer_rates[macid] & BIT(22);
 	if (tx->pe_active) {
 		u32 *request = tx->pe.memory + 0x4000 + tx->pe_producer * 128;
 		unsigned int segments = slot.mapping ? slot.mapping->dma_count : 1;
@@ -529,7 +531,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		request[2] = packet_bytes | header_bytes << 16 | segments << 24;
 		tx->pe_ethernet += encap;
 		request[3] = rate | gi << 12 | bandwidth << 16;
-		if (encap) request[3] |= tx->peer_rates[macid] & BIT(21);
+		if (encap) request[3] |= tx->peer_rates[macid] & (BIT(21) | BIT(22));
 		if (encap && (get_unaligned_le32(tx->pe.memory + 0xe200 + macid * 4) & BIT(17)))
 			request[3] |= BIT(20);
 		request[4] = request_flags; request[5] = aggregate | density << 8 | key;
