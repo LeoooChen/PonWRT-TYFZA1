@@ -31,6 +31,7 @@ def profile(directory):
     put(MAILBOX + 114 * 4, 0x7060)
     put(MAILBOX + 115 * 4, 0x7160)
     put(MAILBOX + 167 * 4, 12)
+    put(NI + 0x659c, 1 << 24)
     put(BASE + 0x11a00 + 2 * 4, 1)
     put(BASE + 0xe200 + 2 * 4, 3839 << 18 | 1 << 17)
     put(BASE + 0x12000 + 2 * 8 * 4, 64)
@@ -106,7 +107,9 @@ def profile(directory):
             put(BASE + 0xc404 + owner * 8, 0)
         put(MAILBOX + 30 * 4, 0)
         held = []
-    return dict(binary=str(directory / 'pe-tx.bin'), rounds=rounds)
+    empty, empty_work = call('ni_select')
+    assert empty == 0 and empty_work['waiting_reads'] == 0, empty_work
+    return dict(binary=str(directory / 'pe-tx.bin'), rounds=rounds, empty_queue=empty_work)
 
 
 print(json.dumps(dict(scope='Actual linked ni_ingest/ni_select: six frames on one TID, cursor after an earlier pair, one delayed completion pair. No DDR latency, radio, PCIe or throughput model.',
