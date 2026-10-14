@@ -93,15 +93,40 @@ static unsigned int paths_configured(unsigned long long *session)
 	return ready;
 }
 
+struct omci_business {
+	uint8_t applied[PATH_BYTES];
+	int length, error;
+};
+
+static int apply_paths(void *context, const uint8_t *paths, size_t length)
+{
+	struct omci_business *business = context;
+	unsigned long long session;
+	unsigned int ready = paths_configured(&session);
+	int result = 0;
+
+	if (length != (size_t)business->length || memcmp(paths, business->applied, length) ||
+	    ((paths[2] || paths[3]) && !ready)) {
+		result = put_file(PON_SYSFS "itu_paths", paths, length);
+		if (!result) {
+			memcpy(business->applied, paths, length);
+			business->length = length;
+		} else if (result != -EAGAIN) fprintf(stderr, "OMCI business mapping: %s\n", strerror(-result));
+	}
+	business->error = result;
+	return result;
+}
+
 int main(void)
 {
 	struct omci_identity identity = {};
 	struct omci_agent *agent;
 	struct sockaddr_ll address = {.sll_family = AF_PACKET, .sll_protocol = htons(ETH_P_ALL)};
 	uint8_t input[2048], output[2048], key[16];
-	static uint8_t paths[PATH_BYTES], applied[PATH_BYTES];
+	static uint8_t paths[PATH_BYTES];
+	static struct omci_business business;
 	unsigned long long session = 0, previous_session = 0, received = 0, transmitted = 0, invalid = 0;
-	int fd, enabled = 1, applied_length = 0, result, path_error = 0;
+	int fd, enabled = 1, result;
 	struct pollfd pollfd;
 
 	openlog("pon-omcid", LOG_PID, LOG_DAEMON);
@@ -119,7 +144,7 @@ int main(void)
 	setsockopt(fd, SOL_PACKET, PACKET_IGNORE_OUTGOING, &enabled, sizeof(enabled));
 	pollfd = (struct pollfd){.fd = fd, .events = POLLIN};
 	for (;;) {
-		unsigned int ready = paths_configured(&session);
+		paths_configured(&session);
 		int length;
 
 		if (session != previous_session) {
@@ -130,20 +155,14 @@ int main(void)
 		if (length < 0) {
 			/* A rejected graph must not leave its previous business mapping active. */
 			static const uint8_t empty[12] = {3, 0, 0, 0, 0, 0, 0, 0, 12};
-			result = applied_length ? put_file(PON_SYSFS "itu_paths", empty, sizeof(empty)) : 0;
-			if (!result) applied_length = 0;
-			path_error = result ? result : length;
-		} else if (length >= 12 && (length != applied_length || memcmp(paths, applied, length) ||
-		    ((paths[2] || paths[3]) && !ready))) {
-			result = put_file(PON_SYSFS "itu_paths", paths, length);
-			path_error = result;
-			if (!result) { memcpy(applied, paths, length); applied_length = length; }
-			else if (result != -EAGAIN) fprintf(stderr, "OMCI business mapping: %s\n", strerror(-result));
-		}
+			result = business.length ? apply_paths(&business, empty, sizeof(empty)) : 0;
+			if (!result) business.length = 0;
+			business.error = result ? result : length;
+		} else if (length >= 12) apply_paths(&business, paths, length);
 		FILE *status = fopen("/var/run/pon-omci", "w");
 		if (status) {
 			fprintf(status, "rx=%llu tx=%llu invalid=%llu paths=%u error=%d\n",
-				received, transmitted, invalid, applied_length >= 12 ? applied[2] | (unsigned int)applied[3] << 8 : 0, path_error);
+				received, transmitted, invalid, business.length >= 12 ? business.applied[2] | (unsigned int)business.applied[3] << 8 : 0, business.error);
 			fclose(status);
 		}
 		result = poll(&pollfd, 1, 1000);
@@ -160,7 +179,9 @@ int main(void)
 		if (security_set) clock_gettime(CLOCK_MONOTONIC, &security_received);
 		if (tyfza1_omci_broadcast(agent, input, length, broadcast))
 			backend_result = put_file(PON_SYSFS "omci_broadcast", broadcast, sizeof(broadcast));
-		length = tyfza1_omci_dispatch(agent, input, length, output, backend_result);
+		length = tyfza1_omci_dispatch_apply(agent, input, length, output, &backend_result,
+			apply_paths, &business);
+		if (backend_result < 0) business.error = backend_result;
 		if (length < 0) { invalid++; continue; }
 		result = send(fd, output, length, 0);
 		int send_error = result < 0 ? errno : 0;

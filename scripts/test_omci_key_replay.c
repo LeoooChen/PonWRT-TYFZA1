@@ -8,6 +8,12 @@
 
 static unsigned int key_writes;
 
+static int apply_paths(void *context, const uint8_t *paths, size_t length)
+{
+	(void)context; (void)paths; (void)length;
+	return 0;
+}
+
 static int handle(struct omci_agent *agent, const uint8_t *frame, unsigned int length,
 	uint8_t *reply, int backend_result)
 {
@@ -16,7 +22,8 @@ static int handle(struct omci_agent *agent, const uint8_t *frame, unsigned int l
 		assert(row[0] == 0 && row[1] == 0x40);
 		key_writes++;
 	}
-	return tyfza1_omci_dispatch(agent, frame, length, reply, backend_result);
+	return tyfza1_omci_dispatch_apply(agent, frame, length, reply, &backend_result,
+		apply_paths, NULL);
 }
 
 int main(void)

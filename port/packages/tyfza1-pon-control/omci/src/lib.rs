@@ -116,6 +116,54 @@ pub unsafe extern "C" fn tyfza1_omci_dispatch(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn tyfza1_omci_dispatch_apply(
+    agent: &mut Agent, data: *const u8, length: usize, output: *mut u8, backend_result: &mut i32,
+    apply: unsafe extern "C" fn(*mut std::ffi::c_void, *const u8, usize) -> i32,
+    context: *mut std::ffi::c_void,
+) -> i32 {
+    let frame = slice::from_raw_parts(data, length);
+    let request = match Request::parse(frame) {
+        Ok(request) => request,
+        Err(_) => return -74,
+    };
+    if *backend_result < 0 || agent.cache.iter().any(|(key, _)| key == frame)
+        || !matches!(request.action, protocol::ACTION_CREATE | protocol::ACTION_DELETE |
+            protocol::ACTION_SET | protocol::ACTION_SET_TABLE | protocol::ACTION_MIB_RESET) {
+        return tyfza1_omci_dispatch(agent, data, length, output, *backend_result);
+    }
+    let mut candidate = agent.mib.clone();
+    let response = candidate.dispatch(&request);
+    if response.result() == Some(protocol::RESULT_SUCCESS) {
+        *backend_result = match paths_bytes(&candidate) {
+            Ok(paths) => if paths_bytes(&agent.mib).ok().as_deref() == Some(paths.as_slice()) {
+                0
+            } else {
+                apply(context, paths.as_ptr(), paths.len())
+            },
+            Err(error) => error,
+        };
+        if *backend_result < 0 {
+            let response = Response::new(&request, 1);
+            let bytes = response.as_bytes();
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), output, bytes.len());
+            return bytes.len() as i32;
+        }
+        // Commit the MIB, reply cache and notifications only after hardware accepts it.
+        agent.mib = candidate;
+    }
+    // Dispatch against the committed MIB would execute the mutation twice.
+    if request.action == protocol::ACTION_MIB_RESET {
+        agent.cache.clear();
+        agent.notifications.clear();
+    }
+    if agent.cache.len() == 32 { agent.cache.pop_front(); }
+    agent.cache.push_back((frame.to_vec(), response.clone()));
+    let bytes = response.as_bytes();
+    std::ptr::copy_nonoverlapping(bytes.as_ptr(), output, bytes.len());
+    bytes.len() as i32
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn tyfza1_omci_session_key(agent: &mut Agent, output: *mut u8) -> i32 {
     match agent.mib.take_pending_master_session_key() {
         Some(key) => { std::ptr::copy_nonoverlapping(key.as_ptr(), output, 16); 1 }
@@ -147,13 +195,22 @@ pub unsafe extern "C" fn tyfza1_omci_notification(agent: &mut Agent, output: *mu
 
 #[no_mangle]
 pub unsafe extern "C" fn tyfza1_omci_paths(agent: &Agent, output: *mut u8) -> i32 {
-    let snapshot = agent.mib.provisioning_snapshot();
+    let bytes = match paths_bytes(&agent.mib) {
+        Ok(bytes) => bytes,
+        Err(error) => return error,
+    };
+    std::ptr::copy_nonoverlapping(bytes.as_ptr(), output, bytes.len());
+    bytes.len() as i32
+}
+
+fn paths_bytes(mib: &Mib) -> Result<Vec<u8>, i32> {
+    let snapshot = mib.provisioning_snapshot();
     let paths = snapshot.data_paths;
-    if paths.len() > 248 { return -28; }
+    if paths.len() > 248 { return Err(-28); }
     let profiles: Vec<_> = snapshot.vlan_profiles.into_iter().filter(|profile|
         paths.iter().any(|path| path.vlan_profiles.contains(&Some(profile.entity_id)))).collect();
-    if profiles.iter().any(|profile| profile.rows.len() > 32) { return -28; }
-    let graph = agent.mib.data_path_graph();
+    if profiles.iter().any(|profile| profile.rows.len() > 32) { return Err(-28); }
+    let graph = mib.data_path_graph();
     let mut bytes = Vec::with_capacity(12 + paths.len() * 50 + profiles.len() * 544);
     bytes.extend_from_slice(&3u16.to_le_bytes());
     bytes.extend_from_slice(&(paths.len() as u16).to_le_bytes());
@@ -176,7 +233,7 @@ pub unsafe extern "C" fn tyfza1_omci_paths(agent: &Agent, output: *mut u8) -> i3
             }
             if let Some(value) = attr(10) { encrypted = u8::from(value[0] == 1); }
         }
-        if !path.multicast && path.pbit_mask != 0 && tcont == 0 { return -22; }
+        if !path.multicast && path.pbit_mask != 0 && tcont == 0 { return Err(-22); }
         bytes.extend_from_slice(&path.alloc_id.to_le_bytes());
         bytes.extend_from_slice(&path.gem_id.to_le_bytes());
         bytes.extend_from_slice(&path.vlan_id.to_le_bytes());
@@ -207,6 +264,5 @@ pub unsafe extern "C" fn tyfza1_omci_paths(agent: &Agent, output: *mut u8) -> i3
     }
     let length = bytes.len() as u32;
     bytes[8..12].copy_from_slice(&length.to_le_bytes());
-    std::ptr::copy_nonoverlapping(bytes.as_ptr(), output, bytes.len());
-    bytes.len() as i32
+    Ok(bytes)
 }
