@@ -203,6 +203,7 @@ int rtl_qm_rx_alloc(struct device *dev, struct rtl_qm_rx *rx)
 				rtl_qm_wifi_chunk_bytes(chunk), &rx->wifi_dma[pool][chunk], GFP_KERNEL);
 			if (!rx->wifi_memory[pool][chunk]) {
 				rtl_qm_rx_free(dev, rx);
+				rx->memory = NULL;
 				return -ENOMEM;
 			}
 		}

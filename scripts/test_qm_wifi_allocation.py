@@ -90,7 +90,7 @@ int main(void) {
  rtl_qm_rx_free(&dev,&rx);assert(!live);
  for(reject=1;reject<=9;reject++) {
   calls=0;memset(&rx,0,sizeof(rx));memset(records,0,sizeof(records));
-  assert(rtl_qm_rx_alloc(&dev,&rx)==-ENOMEM && !live);
+  assert(rtl_qm_rx_alloc(&dev,&rx)==-ENOMEM && !live && !rx.memory);
  }
  puts("QM: all2492 buffers per radio published across separate DMA chunks; 4MiB allocation limit and partial-allocation cleanup passed");
 }
