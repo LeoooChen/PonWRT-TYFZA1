@@ -157,7 +157,7 @@ pub unsafe extern "C" fn tyfza1_omci_paths(agent: &Agent, output: *mut u8) -> i3
         if let Some(ctp) = graph.entities.iter().find(|e| e.class_id == schema::CLASS_GEM_PORT_NETWORK_CTP
             && e.attributes.iter().any(|a| a.index == 1 && a.value == path.gem_id.to_be_bytes())) {
             let attr = |index| ctp.attributes.iter().find(|a| a.index == index).map(|a| a.value.as_slice());
-            if let Some(value) = attr(2) {
+            if let Some(value) = attr(2).filter(|_| path.alloc_id != u16::MAX) {
                 let entity = u16::from_be_bytes([value[0], value[1]]);
                 if entity >= 0x8000 && entity < 0x801f { tcont = entity - 0x8000 + 1; }
             }
@@ -167,7 +167,7 @@ pub unsafe extern "C" fn tyfza1_omci_paths(agent: &Agent, output: *mut u8) -> i3
             }
             if let Some(value) = attr(10) { encrypted = u8::from(value[0] == 1); }
         }
-        if !path.multicast && tcont == 0 { return -22; }
+        if !path.multicast && path.pbit_mask != 0 && tcont == 0 { return -22; }
         bytes.extend_from_slice(&path.alloc_id.to_le_bytes());
         bytes.extend_from_slice(&path.gem_id.to_le_bytes());
         bytes.extend_from_slice(&path.vlan_id.to_le_bytes());

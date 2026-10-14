@@ -104,9 +104,11 @@ static int path_program(struct rtl9617c_pon *pon, const struct rtl_itu_paths *pa
 	}
 	for (i = 0; i < paths->count; i++) {
 		const struct rtl_itu_path *path = &paths->path[i];
+		bool upstream = !path->multicast && path->tcont;
+		bool downstream = path->downstream_pbits;
 
 		index = path->index;
-		if (!path->multicast && !(active & BIT(path->tcont))) {
+		if (upstream && !(active & BIT(path->tcont))) {
 			if (gpon) {
 				pon->itu_alloc_ids[path->tcont] = path->alloc_id;
 				pon->itu_alloc_valid |= BIT(path->tcont);
@@ -123,16 +125,16 @@ static int path_program(struct rtl9617c_pon *pon, const struct rtl_itu_paths *pa
 		if (gpon) {
 			/* GTC keeps PLOAM's AES decision in the hardware table. */
 			__set_bit(path->gem_id, pon->itu_gpon_gems);
-			ret = rtl_gpon_downstream_gem_set(&io, path->gem_id, index, true, false, false);
+			ret = rtl_gpon_downstream_gem_set(&io, path->gem_id, index, downstream, false, false);
 			if (ret) return ret;
-			if (!path->multicast) {
+			if (upstream) {
 				ret = rtl_gpon_upstream_gem_set(&io, index, path->gem_id);
 				if (ret) return ret;
 			}
 		} else {
-			rtl_xgpon_downstream_gem_set(&io, index, path->gem_id, true, path->multicast);
+			rtl_xgpon_downstream_gem_set(&io, index, path->gem_id, downstream, path->multicast);
 			ret = rtl_xgpon_upstream_gem_set(&io, index, path->gem_id,
-				!path->multicast, path->encrypted, path->multicast);
+				upstream, path->encrypted, path->multicast);
 			if (ret) return ret;
 		}
 		/* Original GEM add uses its internal index as disabled-policer metadata. */
@@ -171,8 +173,9 @@ ssize_t rtl_pon_itu_paths_write(struct rtl9617c_pon *pon, const char *buf, size_
 		path->tcont = get_unaligned_le16(record + 10);
 		path->downstream_pbits = record[12];
 		if ((path->vlan < RTL_ITU_VLAN_TAGGED && path->vlan > 4094) || path->multicast > 1 ||
-		    path->encrypted > 1 || path->queue > 7 || (!path->multicast &&
-		    (!(path->pbits | path->downstream_pbits) || !path->tcont || path->tcont > 31 || path->alloc_id > 16383))) {
+		    path->encrypted > 1 || path->queue > 7 || !(path->pbits | path->downstream_pbits) ||
+		    (!path->multicast && ((path->pbits && !path->tcont) || path->tcont > 31 ||
+		    (path->tcont ? path->alloc_id > 16383 : path->alloc_id != 65535)))) {
 			ret = -EINVAL; goto free;
 		}
 		path->index = 8 + unique;
@@ -201,7 +204,7 @@ ssize_t rtl_pon_itu_paths_write(struct rtl9617c_pon *pon, const char *buf, size_
 	if (entries && !netif_carrier_ok(pon->omci_device)) { ret = -EAGAIN; goto unlock; }
 	for (i = 0; i < entries; i++)
 		if (pon->mode == RTL_PON_GPON && (state->paths.path[i].gem_id > 4095 ||
-		    (!state->paths.path[i].multicast && state->paths.path[i].alloc_id > 4095))) {
+		    (state->paths.path[i].tcont && state->paths.path[i].alloc_id > 4095))) {
 			ret = -EINVAL; goto unlock;
 		}
 	old = rcu_dereference_protected(pon->itu_paths, lockdep_is_held(&pon->lock));

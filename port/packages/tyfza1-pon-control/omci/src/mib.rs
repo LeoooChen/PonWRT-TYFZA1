@@ -1189,16 +1189,21 @@ impl Mib {
             if let Some(gem_id) = gem_id {
                 gem_id_by_entity.insert(entity_id, gem_id);
             }
-            if let (Some(gem_id), Some(tcont), Some(3)) = (gem_id, tcont, direction) {
-                if let Some(&alloc_id) = tcont_alloc.get(&tcont) {
+            if let (Some(gem_id), Some(direction @ 1..=3)) = (gem_id, direction) {
+                let alloc_id = if direction & 1 != 0 {
+                    tcont.and_then(|id| tcont_alloc.get(&id).copied())
+                } else {
+                    Some(u16::MAX)
+                };
+                if let Some(alloc_id) = alloc_id {
                     unicast_by_entity.insert(
                         entity_id,
                         DataPathCandidate {
                             alloc_id,
                             gem_id,
                             vlan_id: DATA_PATH_VLAN_ANY,
-                            pbit_mask: 0,
-                            downstream_pbits: u8::MAX,
+                            pbit_mask: if direction & 1 != 0 { u8::MAX } else { 0 },
+                            downstream_pbits: if direction & 2 != 0 { u8::MAX } else { 0 },
                             multicast: false,
                         },
                     );
@@ -1263,8 +1268,12 @@ impl Mib {
                 if let Some(path) = unicast_by_entity.get(&ctp_entity) {
                     let mapped = mapper_paths
                         .entry((mapper_id, path.gem_id))
-                        .or_insert_with(|| path.clone());
-                    mapped.pbit_mask |= 1 << pbit;
+                        .or_insert_with(|| {
+                            let mut mapped = path.clone();
+                            mapped.pbit_mask = 0;
+                            mapped
+                        });
+                    mapped.pbit_mask |= path.pbit_mask & (1 << pbit);
                 }
             }
         }
@@ -1302,11 +1311,7 @@ impl Mib {
                     .and_then(|entity| entity.attributes.get(&1))
                     .and_then(|attr| be_u16(&attr.value))
                     .and_then(|ctp_entity| unicast_by_entity.get(&ctp_entity))
-                    .map(|path| {
-                        let mut path = path.clone();
-                        path.pbit_mask = u8::MAX;
-                        path
-                    })
+                    .cloned()
                     .into_iter()
                     .collect::<Vec<_>>(),
                 Some(6) => multicast_by_iwtp
@@ -1387,7 +1392,7 @@ impl Mib {
                     }
                     if matches!(mode, 4 | 5 | 7 | 8) {
                         path.pbit_mask &= 1 << ((tci >> 13) & 7);
-                        path.downstream_pbits = 1 << ((tci >> 13) & 7);
+                        path.downstream_pbits &= 1 << ((tci >> 13) & 7);
                     }
                     snapshot.data_paths.push(path);
                 }
@@ -1437,6 +1442,7 @@ impl Mib {
                 _ => {}
             }
         }
+        snapshot.data_paths.retain(|path| path.pbit_mask | path.downstream_pbits != 0);
         snapshot.data_paths.sort_by_key(|path| {
             (
                 path.multicast,
