@@ -34,7 +34,7 @@ def profile(directory):
     put(BASE + 0x11a00 + 2 * 4, 1)
     put(BASE + 0xe200 + 2 * 4, 3839 << 18 | 1 << 17)
     put(BASE + 0x12000 + 2 * 8 * 4, 64)
-    mac = bytes.fromhex('067afb78b287')
+    mac = bytes.fromhex('02000000004e')
     u.mem_write(BASE + 0xe400 + 2 * 8, mac)
     u.mem_write(BASE + 0xd000 + 2 * 32, struct.pack('<8I',
                 0, 0, 26 << 16, 0x00020100, 2 << 24 | 1 << 18 | 1 << 16,
@@ -79,7 +79,7 @@ def profile(directory):
     rounds, held = [], []
     for batch in range(3):
         for n in range(2):
-            frame = mac + bytes.fromhex('0050c20102000800') + bytes(1500)
+            frame = mac + bytes.fromhex('0200000000650800') + bytes(1500)
             address = PAYLOAD + n * 2048
             u.mem_write(address, bytes(32) + struct.pack('>II', 0x80000000, (1514 + 8) << 15) + bytes(8) + frame)
             u.mem_write(BASE + 0x18000 + (batch * 2 + n) * 8,
