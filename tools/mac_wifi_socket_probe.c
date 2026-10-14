@@ -83,17 +83,23 @@ int main(int argc, char **argv)
 {
 	struct direction paths[2] = {{.input = "en5", .output = "en0"}, {.input = "en0", .output = "en5"}};
 	pthread_t receiver[2];
-	unsigned int rate, count, i, failed = 0;
+	unsigned int rate, count, i, failed = 0, active = 3;
 	double seconds, started;
 	unsigned char packet[1472];
 
-	if (argc != 3) { fprintf(stderr, "usage: mac_wifi_socket_probe wire_Mbps seconds\n"); return 1; }
+	if (argc == 4) {
+		if (!strcmp(argv[3], "down")) active = 1;
+		else if (!strcmp(argv[3], "up")) active = 2;
+		else if (strcmp(argv[3], "duplex")) return 1;
+	}
+	if (argc != 3 && argc != 4) { fprintf(stderr, "usage: mac_wifi_socket_probe wire_Mbps seconds [down|up|duplex]\n"); return 1; }
 	rate = strtoul(argv[1], NULL, 10); seconds = atof(argv[2]);
 	count = rate * 1000000.0 * seconds / (1538 * 8);
 	memcpy(packet, "TYFUDP01", 8);
 	for (i = 12; i < sizeof(packet); i++) packet[i] = i * 31 + 7;
 	for (i = 0; i < 2; i++) {
 		struct direction *path = &paths[i];
+		if (!(active & (1U << i))) continue;
 		path->count = count;
 		path->seen = calloc(count, 1);
 		path->send_fd = socket_on(path->input, 55000 + i * 2);
@@ -111,6 +117,7 @@ int main(int argc, char **argv)
 		memcpy(packet + 8, &wire_sequence, 4);
 		for (i = 0; i < 2; i++) {
 			struct direction *path = &paths[i];
+			if (!(active & (1U << i))) continue;
 			if (sendto(path->send_fd, packet, sizeof(packet), 0,
 			    (void *)&path->destination, sizeof(path->destination)) != sizeof(packet)) {
 				path->send_errors++; path->send_errno = errno;
@@ -123,6 +130,7 @@ int main(int argc, char **argv)
 	for (i = 0; i < 2; i++) { paths[i].finished = now(); atomic_store(&paths[i].sending, 0); }
 	for (i = 0; i < 2; i++) {
 		struct direction *path = &paths[i];
+		if (!(active & (1U << i))) continue;
 		pthread_join(receiver[i], NULL);
 		printf("{\"source\":\"%s\",\"receive\":\"%s\",\"sent\":%u,\"received\":%u,"
 		       "\"unique\":%u,\"missing\":%u,\"duplicates\":%u,\"payload_errors\":%u,"
