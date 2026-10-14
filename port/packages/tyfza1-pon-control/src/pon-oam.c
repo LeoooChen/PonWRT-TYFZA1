@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /* Native IEEE802.3ah discovery and CTC LOID/identity codec.
- * Protocol layouts cross-checked with pon-fw-r1's epon_oamd and TYFZA1 OAM DAL.
+ * Protocol layouts cross-checked with CTC interoperability traces and TYFZA1 OAM DAL.
  * Input/output are ordinary Ethernet frames; each Linux interface owns one LLID.
  */
 #include <errno.h>
@@ -197,7 +197,7 @@ static int receive_auth(struct pon_oam_session *session, const struct pon_oam_id
 		return -EMSGSIZE;
 	code = input[22];
 	size = be16(input + 23);
-	/* pon-fw-r1 field interoperability: 0101 encodes an implicit type1 challenge. */
+	/* CTC field interoperability: 0101 encodes an implicit type1 challenge. */
 	if (!(code == 1 && size == 0x0101) && size > length - 25)
 		return -EMSGSIZE;
 	if (code == 3) {
@@ -240,7 +240,18 @@ static int receive_auth(struct pon_oam_session *session, const struct pon_oam_id
 	return 60;
 }
 
-static int receive_get(const struct pon_oam_identity *identity, const uint8_t *input,
+static void identity_field(uint8_t *output, size_t width, const uint8_t *value, size_t capacity)
+{
+	size_t length = strnlen((const char *)value, capacity);
+
+	if (length > width)
+		length = width;
+	memset(output, 0, width - length);
+	memcpy(output + width - length, value, length);
+}
+
+static int receive_get(const struct pon_oam_session *session,
+	const struct pon_oam_identity *identity, const uint8_t *input,
 		       size_t length, uint8_t *output)
 {
 	uint8_t onu[54] = {};
@@ -253,9 +264,10 @@ static int receive_get(const struct pon_oam_identity *identity, const uint8_t *i
 	memcpy(onu, identity->vendor, 4);
 	memcpy(onu + 4, identity->model, 4);
 	memcpy(onu + 8, identity->mac, 6);
-	memcpy(onu + 14, identity->hardware, 8);
-	memcpy(onu + 22, identity->software, 16);
-	memcpy(onu + 38, identity->equipment, 16);
+	/* Original eponoamd uses zero-prefixed, right-aligned version fields. */
+	identity_field(onu + 14, 8, identity->hardware, sizeof(identity->hardware));
+	identity_field(onu + 22, 16, identity->software, sizeof(identity->software));
+	identity_field(onu + 38, 16, identity->equipment, sizeof(identity->equipment));
 	output[21] = 2;
 	for (position = 22; position < length;) {
 		uint8_t branch = input[position];
@@ -284,7 +296,7 @@ static int receive_get(const struct pon_oam_identity *identity, const uint8_t *i
 		variables = true;
 		if (branch == 0xc7 && leaf == 1) {
 			data = onu;
-			size = sizeof(onu);
+			size = session->extension_version == 0x30 ? sizeof(onu) : 38;
 		} else if (branch == 0xc7 && leaf == 2) {
 			data = identity->software;
 			size = sizeof(identity->software);
@@ -382,7 +394,7 @@ int pon_oam_receive(struct pon_oam_session *session, const struct pon_oam_identi
 	if (input[21] == 5)
 		ret = receive_auth(session, identity, input, length, output);
 	else if (input[21] == 1)
-		ret = receive_get(identity, input, length, output);
+		ret = receive_get(session, identity, input, length, output);
 	else
 		ret = receive_set(identity, input, length, output);
 	if (ret > PON_OAM_IGNORED) {

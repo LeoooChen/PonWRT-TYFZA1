@@ -1,6 +1,6 @@
 --- a/drivers/net/ethernet/realtek/Kconfig
 +++ b/drivers/net/ethernet/realtek/Kconfig
-@@ -1,5 +1,17 @@
+@@ -1,5 +1,19 @@
  # SPDX-License-Identifier: GPL-2.0-only
  
 +config RTL9617C_BOSA
@@ -12,6 +12,8 @@
 +	tristate "RTL9617C native PON MAC platform"
 +	depends on OF && ARCH_RTL9617C && RTL9617C_XRAM_ETH && RTL9617C_BOSA
 +	select FW_LOADER
++	select CRYPTO_CMAC
++	select CRYPTO_LIB_AES
 +	help
 +	  Native Taurus SerDes, optical front-end, EPON MAC and PON networking.
 +
@@ -24,7 +26,7 @@
  # SPDX-License-Identifier: GPL-2.0-only
 +obj-$(CONFIG_RTL9617C_BOSA) += rtl9617c-bosa.o
 +obj-$(CONFIG_RTL9617C_PON) += rtl9617c-pon-core.o
-+rtl9617c-pon-core-y := rtl9617c-pon.o rtl9617c-pon-serdes.o rtl9617c-pon-epon.o rtl9617c-pon-mpcp.o rtl9617c-pon-pdc.o rtl9617c-pon-puc.o rtl9617c-pon-oam.o
++rtl9617c-pon-core-y := rtl9617c-pon.o rtl9617c-pon-serdes.o rtl9617c-pon-epon.o rtl9617c-pon-mpcp.o rtl9617c-pon-pdc.o rtl9617c-pon-puc.o rtl9617c-pon-oam.o rtl9617c-pon-itu.o rtl9617c-pon-gpon.o rtl9617c-pon-omci.o rtl9617c-pon-xgpon.o rtl9617c-pon-path.o
  obj-$(CONFIG_RTL9617C_XRAM_ETH) += rtl9617c-eth.o
  rtl9617c-eth-y := rtl9617c-xram.o rtl9617c-dma.o rtl9617c-qm.o
  #

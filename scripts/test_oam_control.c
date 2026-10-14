@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
-/* Wire vectors normalized from pon-fw-r1's CTC/802.3ah tests to plain Ethernet. */
+/* CTC/802.3ah interoperability wire vectors normalized to plain Ethernet. */
 #include <assert.h>
 #include <errno.h>
 #include <stdio.h>
@@ -160,15 +160,25 @@ int main(void)
 	assert(session.auth == PON_AUTH_REJECTED && session.auth_failure == 7);
 	assert(session.auth_successes == 1 && session.auth_failures == 1);
 	/* Version parameters reach the actual C7 identity and firmware Get responses. */
+	session.extension_version = 0x30;
 	message(frame, get, sizeof(get));
 	length = pon_oam_receive(&session, &identity, frame, 60, reply);
 	assert(length == 100 && reply[21] == 2 && reply[25] == 54);
 	assert(!memcmp(reply + 26, "TESTFZA1", 8));
 	assert(!memcmp(reply + 34, identity.mac, 6));
 	assert(!memcmp(reply + 40, identity.hardware, 8));
-	assert(!memcmp(reply + 48, identity.software, 16));
-	assert(!memcmp(reply + 64, identity.equipment, 16));
+	assert(!memcmp(reply + 48, "\0\0\0\0\0SW-test-456", 16));
+	assert(!memcmp(reply + 64, "\0\0\0\0\0\0\0\0\0\0TYFZA1", 16));
 	assert(reply[83] == 16 && !memcmp(reply + 84, identity.software, 16));
+	/* Original CTC2.0/2.1 ONU SN has 38 bytes; CTC3.0 adds equipment ID. */
+	for (unsigned int version = 0x20; version <= 0x21; version++) {
+		session.extension_version = version;
+		length = pon_oam_receive(&session, &identity, frame, 60, reply);
+		assert(length == 84 && reply[25] == 38);
+		assert(reply[64] == 0xc7 && reply[65] == 0 && reply[66] == 2 && reply[67] == 16);
+		assert(!memcmp(reply + 68, identity.software, 16));
+	}
+	session.extension_version = 0x30;
 	/* CTC 00:0d:b6 uses the same typed authentication payload. */
 	message(frame, challenge, sizeof(challenge));
 	memcpy(frame + 18, "\0\x0d\xb6", 3);

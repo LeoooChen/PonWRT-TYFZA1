@@ -1,0 +1,51 @@
+{
+  "finding": "Final RX handoff cleared every processed slot, including NI tail payloads not yet eligible for reuse; stop errors were not propagated to DMA allocation release.",
+  "changes": [
+    "Validate NI consumption and ARM completion before returning outstanding RXBD slots.",
+    "Recycle held buffers only at the original two-descriptor release distance; replace a final NI-tail RXBD while preserving its original payload.",
+    "Advance the returned cursor as each slot is handed back and preserve tail records through subsequent resume.",
+    "Propagate RX/NI/PE stop results through TX release and PCI teardown; detach ARM work and interrupt callbacks when DMA release cannot complete."
+  ],
+  "handoff": {
+    "scope": "Actual current and baseline ARM stop/start functions with DMA/IRQ and empty exception-drain callbacks. No physical DMA timing or hardware teardown test.",
+    "results": [
+      {
+        "version": "before",
+        "mixed_ARM_safe_NI_and_two_tail_slots": true,
+        "NI_tail_payload_preserved": false,
+        "unconsumed_NI_keeps_ownership": false,
+        "retained_payloads_survive_following_resume": false,
+        "RXBD_255_to_0_wrap": true
+      },
+      {
+        "version": "after",
+        "mixed_ARM_safe_NI_and_two_tail_slots": true,
+        "NI_tail_payload_preserved": true,
+        "unconsumed_NI_keeps_ownership": true,
+        "retained_payloads_survive_following_resume": true,
+        "RXBD_255_to_0_wrap": true
+      }
+    ]
+  },
+  "release_boundary": {
+    "actual_TX_release_executed": true,
+    "NI_busy_preserves_DMA": true,
+    "PE_stop_timeout_preserves_DMA": true,
+    "ARM_callbacks_removed_on_each_exit": true,
+    "successful_drain_releases_allocations": true,
+    "scope": "Current TX release function with controlled NI/PE completion and DMA/IRQ callbacks; not a hardware teardown test."
+  },
+  "module": {
+    "module": "artifacts/pe-stop66/radio/rtl_ax_ap.ko",
+    "embedded_PE_bytes": 16208,
+    "matches_owner64": true
+  },
+  "build": "passed; logs/pe-stop66-module-build-final.txt",
+  "stock_research": "analysis/private/ni-queue-release66-stock.asm: board ca_ni_cleanup_tx_dma_lso frees allocation arrays, not proof of per-VP pipeline drain. Vendor ca_ni_reset_tx_ring resets software cursors; global engine completion remains a separate requirement.",
+  "scope": "Actual baseline/current ARM handoff and TX release with controlled DMA/IRQ callbacks. Native radio module with current PE compiled; no hardware command, load or flash.",
+  "remaining": [
+    "Live verification of local VP disable/base-reload versus outstanding NI payload reads before successful module unload.",
+    "When hardware drain fails, owned allocations are retained; recovery/reclamation of that retained state has not been implemented or proved.",
+    "A/B 121 versus30 RP report register/cadence and maximum throughput; sustained high-rate upload/download and physical PCIe refill visibility."
+  ]
+}

@@ -16,7 +16,7 @@
   "netdev": "eth0",
   "bridge": "br-lan",
   "device_ip": "192.168.1.1",
-  "host_ip_for_static_tests": "192.168.1.170",
+  "host_ip_for_static_tests": "192.0.2.51",
   "mtu_sweep": [
     {
       "icmp_payload": 1,
@@ -165,8 +165,8 @@
     "cpu_online": "0-3",
     "watchdog": "active",
     "dhcp": {
-      "client_mac": "00:e0:4c:16:74:b0",
-      "address": "192.168.1.172",
+      "client_mac": "02:00:00:00:00:25",
+      "address": "192.0.2.52",
       "server": "192.168.1.1",
       "confirmed_in_device_lease_and_mac_dhcp_ack": true
     },
@@ -207,7 +207,7 @@
     "cpu_online": "0-3",
     "watchdog": "active",
     "xram_rx_mode_register": "0x00004000",
-    "dhcp_address": "192.168.1.172",
+    "dhcp_address": "192.0.2.52",
     "luci_login_post_http": 302,
     "luci_overview_http": 200,
     "ipv6_link_local_ping": {
@@ -217,7 +217,7 @@
     },
     "ipv6_neighbor_discovery": true,
     "network_after_cleanup": {
-      "mac_address_via_dhcp": "192.168.1.172",
+      "mac_address_via_dhcp": "192.0.2.52",
       "static_alias_removed": true,
       "temporary_route_removed": true,
       "authenticated_luci_http": 200,

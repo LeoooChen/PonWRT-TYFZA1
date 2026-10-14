@@ -1,0 +1,204 @@
+{
+  "finding": "PE returned wireless RX payloads at the NI read cursor instead of retaining the last two consumed descriptors, as the actual stock completion path does.",
+  "implementation": {
+    "physical_RXBD_slots": 256,
+    "payload_buffers": 258,
+    "extra_bytes_per_radio": 24576,
+    "descriptor_owner": "RXQ descriptors are coherent allocations for the PE, as existing shared TX descriptors are; payload buffers remain PCI-device allocations.",
+    "fast_path": "PE points NI directly into the original decrypted payload, replaces the RXBD with a free buffer, and recycles the old buffer only after end+2 read sequence.",
+    "host_handoff": "ARM uses the RXBD DMA address instead of slot*12288; startup rebuilds the map and finds the two buffer IDs outside the RXBD ring.",
+    "sequence_math": "Continuous sequence distance modulo31 bits; 64-descriptor ring and 2^30/2^31 wrap checked.",
+    "PE_firmware_bytes": 16208,
+    "firmware_window_bytes": 16384,
+    "downlink_fix_preserved": "RP completion-report batch30, timeout255; PE scheduling cursor allocation retained."
+  },
+  "stock_completion": {
+    "scope": "Complete original AArch64 ca_dma_tx_complete_easy with a controlled read-pointer callback and skb-release observer; no hardware DMA.",
+    "nonwrapped_two_consumed_tail_descriptors_retained": true,
+    "records": [
+      {
+        "finished": 0,
+        "hardware_read": 2,
+        "released_indices": [],
+        "next_finished": 0
+      },
+      {
+        "finished": 0,
+        "hardware_read": 3,
+        "released_indices": [
+          0
+        ],
+        "next_finished": 1
+      },
+      {
+        "finished": 0,
+        "hardware_read": 4,
+        "released_indices": [
+          0,
+          1
+        ],
+        "next_finished": 2
+      },
+      {
+        "finished": 60,
+        "hardware_read": 2,
+        "released_indices": [
+          60,
+          61,
+          62,
+          63
+        ],
+        "next_finished": 0
+      }
+    ]
+  },
+  "MIPS_rotation": {
+    "scope": "Actual linked pe_rxq and buffer-ownership helpers. Models delayed NI payload references and PCIe buffer overwrite, not bus timings.",
+    "baseline_returns_NI_retained_payloads_to_PCIe": true,
+    "cases": [
+      {
+        "end_sequence": 2,
+        "RXBD_returns_with_replacements": true,
+        "original_payloads_held_until_two_more_descriptors": true,
+        "idle_management_RXBD_lap": 256,
+        "replacement_addresses_unique": true,
+        "next_frame_offloads_from_replacement_without_ARM": true
+      },
+      {
+        "end_sequence": 64,
+        "RXBD_returns_with_replacements": true,
+        "original_payloads_held_until_two_more_descriptors": true,
+        "idle_management_RXBD_lap": 256,
+        "replacement_addresses_unique": true,
+        "next_frame_offloads_from_replacement_without_ARM": true
+      },
+      {
+        "end_sequence": 1073741824,
+        "RXBD_returns_with_replacements": true,
+        "original_payloads_held_until_two_more_descriptors": true,
+        "idle_management_RXBD_lap": 256,
+        "replacement_addresses_unique": true,
+        "next_frame_offloads_from_replacement_without_ARM": true
+      },
+      {
+        "end_sequence": 0,
+        "RXBD_returns_with_replacements": true,
+        "original_payloads_held_until_two_more_descriptors": true,
+        "idle_management_RXBD_lap": 256,
+        "replacement_addresses_unique": true,
+        "next_frame_offloads_from_replacement_without_ARM": true
+      },
+      {
+        "end_sequence": 1,
+        "RXBD_returns_with_replacements": true,
+        "original_payloads_held_until_two_more_descriptors": true,
+        "idle_management_RXBD_lap": 256,
+        "replacement_addresses_unique": true,
+        "next_frame_offloads_from_replacement_without_ARM": true
+      }
+    ]
+  },
+  "ARM_handoff": {
+    "current_ARM_handoff_executed": true,
+    "original_and_rotated_addresses": true,
+    "all_256_slot_addresses_and_two_unused_buffers_match": true,
+    "RX_tag_and_consumer_preserved": true,
+    "scope": "Current handoff function with DMA/IRQ callbacks; no hardware execution."
+  },
+  "uplink_protocol_paths": {
+    "scope": "Actual linked rx_uplink; synthetic already-decrypted RX WD/data; verifies NI descriptor, interface identity, PN/SN and Ethernet bytes, not radio/ASIC timing.",
+    "before": [
+      {
+        "slot": 0,
+        "NI_VP": 9,
+        "ipv6": false,
+        "UDP_payload_bytes": 0,
+        "PE_to_NI": false,
+        "exact_ethernet": false,
+        "ARM_handoff": "required"
+      },
+      {
+        "slot": 1,
+        "NI_VP": 10,
+        "ipv6": false,
+        "UDP_payload_bytes": 0,
+        "PE_to_NI": false,
+        "exact_ethernet": false,
+        "ARM_handoff": "required"
+      }
+    ],
+    "after": [
+      {
+        "slot": 0,
+        "NI_VP": 9,
+        "ipv6": false,
+        "UDP_payload_bytes": 0,
+        "PE_to_NI": true,
+        "exact_ethernet": true,
+        "ARM_handoff": false
+      },
+      {
+        "slot": 0,
+        "NI_VP": 9,
+        "ipv6": false,
+        "UDP_payload_bytes": 1472,
+        "PE_to_NI": true,
+        "exact_ethernet": true,
+        "ARM_handoff": false
+      },
+      {
+        "slot": 0,
+        "NI_VP": 9,
+        "ipv6": true,
+        "UDP_payload_bytes": 1452,
+        "PE_to_NI": true,
+        "exact_ethernet": true,
+        "ARM_handoff": false
+      },
+      {
+        "slot": 1,
+        "NI_VP": 10,
+        "ipv6": false,
+        "UDP_payload_bytes": 0,
+        "PE_to_NI": true,
+        "exact_ethernet": true,
+        "ARM_handoff": false
+      },
+      {
+        "slot": 1,
+        "NI_VP": 10,
+        "ipv6": false,
+        "UDP_payload_bytes": 1472,
+        "PE_to_NI": true,
+        "exact_ethernet": true,
+        "ARM_handoff": false
+      },
+      {
+        "slot": 1,
+        "NI_VP": 10,
+        "ipv6": true,
+        "UDP_payload_bytes": 1452,
+        "PE_to_NI": true,
+        "exact_ethernet": true,
+        "ARM_handoff": false
+      }
+    ]
+  },
+  "module": {
+    "module": "artifacts/pe-owner64/radio/rtl_ax_ap.ko",
+    "PE_bytes": 16208,
+    "embedded_PE_matches": true,
+    "vermagic": [
+      "vermagic=6.18.55 SMP mod_unload aarch64"
+    ]
+  },
+  "module_build": "passed with resolved external symbols; logs/pe-owner64-module-build.txt",
+  "scope": "Offline original AArch64 completion plus native linked MIPS and actual ARM handoff. No modem connection, load/flash or physical timing/throughput claim.",
+  "remaining_live_checks": [
+    "RP batch register and 166Mbps plateau before/after",
+    "RXBD refill visibility across PE and PCIe; decrypted upstream payload under sustained load",
+    "NI stop/reset with a retained tail and subsequent restart; physical pipeline shutdown is not established by read/write cursor equality alone"
+  ],
+  "runtime_observation": "radio_rx adds prefetch_held/free_replacements and states read_pointer as the completion basis; observe_wifi_offload captures them.",
+  "changed_area": "PE, native radio RX and Wi-Fi observer only; frontend files belong to the other AI."
+}

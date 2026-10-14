@@ -25,7 +25,7 @@ int rtl_pon_pdc_refresh(struct rtl9617c_pon *pon)
 	int ret;
 
 	lockdep_assert_held(&pon->lock);
-	if (!pon->pdc_configured)
+	if (!pon->pdc_configured || !rtl_pon_mode_is_epon(pon->mode))
 		return 0;
 	for (index = 0; index < 64; index++) {
 		u32 source = rtl_pon_data_source(index, readl(pon->mac + 0x64 + index * 4));
@@ -48,6 +48,30 @@ int rtl_pon_pdc_refresh(struct rtl9617c_pon *pon)
 	return 0;
 }
 
+static int rtl_pdc_itu_configure(struct rtl9617c_pon *pon)
+{
+	unsigned int index;
+	int ret;
+
+	/* ITU slots0..7 are OMCC; all remaining selectors are internal GEM indices. */
+	for (index = 0; index < 256; index++) {
+		u32 word = (16 << 3) | (7 << 9) | BIT(15);
+		u32 pol_id = index < 8 ? index + 128 : index - 8;
+
+		if (index < 8)
+			word |= BIT(31) | 6;
+		writel(word, pon->mac + PDC_DATA0);
+		writel(pol_id << 4, pon->mac + PDC_DATA1);
+		ret = rtl_pdc_access(pon, index, true);
+		if (ret)
+			return ret;
+	}
+	rtl_pon_update(pon->mac + PDC_CTRL, GENMASK(25, 16) | GENMASK(2, 0),
+		BIT(1) | (7 << 16) | (16 << 19) | BIT(25));
+	rtl_pon_update(pon->mac + PDC_COUNTER, GENMASK(2, 0), 0);
+	return 0;
+}
+
 int rtl_pon_pdc_configure_locked(struct rtl9617c_pon *pon)
 {
 	unsigned int index;
@@ -60,6 +84,11 @@ int rtl_pon_pdc_configure_locked(struct rtl9617c_pon *pon)
 		goto unlock;
 	}
 	pon->pdc_configured = false;
+	if (!rtl_pon_mode_is_epon(pon->mode)) {
+		ret = rtl_pdc_itu_configure(pon);
+		pon->pdc_configured = !ret;
+		goto unlock;
+	}
 	/* CRC stays on the wire only; PDC inserts its original 16-byte control header. */
 	rtl_pon_update(pon->mac + PDC_CTRL, GENMASK(2, 0) | GENMASK(25, 16), 7);
 	for (index = 0; index < 256; index++) {
@@ -97,8 +126,8 @@ int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon,bool enable)
 
  lockdep_assert_held(&pon->control_lock);
  mutex_lock(&pon->lock);
- if(enable && (!rtl_pon_mode_is_epon(pon->mode) || !pon->pdc_configured ||
-               !pon->puc_configured || !pon->traffic_enabled)) {
+ if(enable && (!pon->pdc_configured || !pon->puc_configured ||
+               (rtl_pon_mode_is_epon(pon->mode) && !pon->traffic_enabled))) {
   ret=-EAGAIN;
   goto unlock;
  }
@@ -107,7 +136,7 @@ int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon,bool enable)
   if(ret)goto unlock;
  }
  /* OAM/control maps retain CPU16 and their original header container. */
- if(pon->pdc_configured)
+ if(pon->pdc_configured && rtl_pon_mode_is_epon(pon->mode))
   for(entry=0;entry<64;entry++)
    for(bank=0;bank<2;bank++) {
     writel(((enable?24:16)<<3)|(7<<9)|(enable?0:BIT(15)),pon->mac+PDC_DATA0);
@@ -115,6 +144,18 @@ int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon,bool enable)
     ret=rtl_pdc_access(pon,entry|(bank<<7),true);
     if(ret)goto unlock;
    }
+ if(pon->pdc_configured && !rtl_pon_mode_is_epon(pon->mode))
+  for(entry=8;entry<256;entry++) {
+   u32 data;
+   /* ITU selectors0..7 retain OMCI CPU containers; data follows the GEM map. */
+   ret=rtl_pdc_access(pon,entry,false);
+   if(ret)goto unlock;
+   data=readl(pon->mac+PDC_DATA0);
+   writel((data&~((63U<<3)|BIT(15)))|((enable?24:16)<<3)|
+    (enable?0:BIT(15)),pon->mac+PDC_DATA0);
+   ret=rtl_pdc_access(pon,entry,true);
+   if(ret)goto unlock;
+  }
  pon->fe_enabled=enable;
  if(!enable)ret=rtl9617c_ni_fe_disable(pon->ni_dev);
 unlock:
@@ -136,7 +177,7 @@ ssize_t rtl_pon_pdc_state(struct rtl9617c_pon *pon, char *buf)
 		if (ret)
 			return ret;
 		length += scnprintf(buf + length, PAGE_SIZE - length,
-			"index=%u data=%08x/%08x destination=%u source=%u bypass=%u cos=%u llid=%u\n",
+			"index=%u data=%08x/%08x destination=%u source=%u bypass=%u cos=%u pol_id=%u\n",
 			sample[i], readl(pon->mac + PDC_DATA0), readl(pon->mac + PDC_DATA1),
 			(unsigned int)FIELD_GET(GENMASK(8, 3), readl(pon->mac + PDC_DATA0)),
 			(unsigned int)FIELD_GET(GENMASK(14, 9), readl(pon->mac + PDC_DATA0)),

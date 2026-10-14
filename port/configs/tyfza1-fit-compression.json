@@ -1,0 +1,22 @@
+{
+  "images": [
+    {
+      "name": "kernel",
+      "lzma_alone": {
+        "lc": 3,
+        "lp": 0,
+        "pb": 2,
+        "dictionary_bytes": 8388608
+      }
+    },
+    {
+      "name": "fdt-dts",
+      "lzma_alone": {
+        "lc": 3,
+        "lp": 0,
+        "pb": 2,
+        "dictionary_bytes": 8388608
+      }
+    }
+  ]
+}

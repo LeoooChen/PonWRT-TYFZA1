@@ -1,14 +1,37 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include "rtl9617c-tyfza1-dma-tx.dts"
+#include <dt-bindings/gpio/gpio.h>
 
 / { model = "Tianyi TYFZA1 (native NI/DMA bring-up)"; };
 
 &{/soc/ethernet@4f4300000} {
 	reg = <4 0xf4300000 0 0x10000>, <0 0xf4500000 0 0x2000>,
 	      <4 0xf7001000 0 0x1000>, <4 0xf432d000 0 0x1000>,
-	      <4 0xf4320098 0 4>;
-	reg-names = "ni", "xram", "dma-lso", "qm-axi-reorder", "block-reset";
+	      <4 0xf4320098 0 4>, <4 0xf4320000 0 0x300>,
+	      <4 0xf433b000 0 0x1000>, <0 0xf432036c 0 4>,
+	      <0 0xf4600000 0 0x1000>;
+	reg-names = "ni", "xram", "dma-lso", "qm-axi-reorder", "block-reset",
+		    "sgmii-global", "sgmii-analog", "sgmii-power", "sgmii-serdes";
 	realtek,qm-rx;
-	realtek,lan-phys = <&phy0 &phy1 &phy2 &phy3>;
+	realtek,lan-phys = <&phy0 &phy1 &phy2 &phy3 &phy4>;
 	interrupts = <GIC_SPI 84 IRQ_TYPE_LEVEL_HIGH>;
+};
+
+&mdio {
+	external-phy-enable-gpios = <&gpio0 14 GPIO_ACTIVE_HIGH>;
+	phy4: ethernet-phy@7 {
+		compatible = "ethernet-phy-ieee802.3-c45";
+		reg = <7>;
+		realtek,hsgmii;
+	};
+};
+
+&{/soc} {
+	gpio0: gpio@4f43292c0 {
+		compatible = "realtek,rtl9617c-gpio";
+		reg = <4 0xf43292c0 0 0xb4>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		gpio-ranges = <&pinctrl 0 0 160>;
+	};
 };

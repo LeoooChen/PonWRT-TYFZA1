@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise production EIF ownership past64 flows and last-owner retry."""
+"""Exercise64 forwarding interfaces with32 independent TYFZA1 counters."""
 from pathlib import Path
 import hashlib
 import json
@@ -24,10 +24,11 @@ common = r'''
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#define FE_COUNTERS 64
+#define FE_INTERFACES 64
+#define FE_COUNTERS 32
 #define BIT(n) (1U<<(n))
-struct rtl_fe_interface {unsigned int users,saved,source_mac;bool counted;};
-struct rtl_fe_flow {unsigned int source_mac,counter;bool counted,interface_owned;};
+struct rtl_fe_interface {unsigned int users,saved,source_mac,pppoe;bool counted;};
+struct rtl_fe_flow {unsigned int source_mac,counter,pppoe;bool counted,interface_owned;};
 struct rtl_fe {unsigned long counters[1];struct rtl_fe_interface interfaces[64];
  unsigned int table[64],data;bool fail_read,fail_write;};
 static unsigned int find_first_zero_bit(unsigned long *bits,unsigned int size){
@@ -56,14 +57,18 @@ int main(void){
  for(unsigned int i=0;i<64;i++)fe.table[i]=0x50000000+i;
  for(unsigned int i=0;i<4096;i++) {
   flows[i].source_mac=i%15;
+  flows[i].pppoe=3U|((i%2?1234U:3456U)<<2);
   assert(!fe_interface_get(&fe,&flows[i]));
   assert(fe.interfaces[flows[i].counter].source_mac==i%15);
-  assert(flows[i].counted==(i<64));
-  assert(fe.table[flows[i].counter]==(BIT(18)|((i%15+1)<<19)));
+  assert(fe.interfaces[flows[i].counter].pppoe==flows[i].pppoe);
+  assert(flows[i].counted==(i<32));
+  assert(fe.table[flows[i].counter]==(BIT(18)|((i%15+1)<<19)|flows[i].pppoe));
  }
+ struct rtl_fe_flow other_session={.source_mac=0,.pppoe=3U|(65534U<<2)};
+ assert(fe_interface_get(&fe,&other_session)==-ENOSPC && !other_session.interface_owned);
  for(unsigned int i=0;i<64;i++)assert(!fe_interface_put(&fe,&flows[i]));
  /* Reusing an EIF for exact counting must not restore it while shared flows remain. */
- struct rtl_fe_flow replacement={.source_mac=0};
+ struct rtl_fe_flow replacement={.source_mac=0,.pppoe=3U|(3456U<<2)};
  assert(!fe_interface_get(&fe,&replacement) && replacement.counted);
  assert(!fe_interface_put(&fe,&replacement));
  for(unsigned int i=64;i<4096;i++)assert(!fe_interface_put(&fe,&flows[i]));
@@ -77,7 +82,7 @@ int main(void){
  assert(fe_interface_put(&fe,&failed)==-ETIMEDOUT && fe.interfaces[failed.counter].users==1);
  assert(!fe_interface_put(&fe,&failed) && !fe.counters[0]);
  free(flows);
- puts("Native EIF:4096 flows/15 MACs,64 exact MIB owners,shared lifetime,counter reuse and restore retry passed");
+ puts("Native EIF:4096 flows/15 MACs/two PPPoE sessions,64 interfaces/32 exact MIB owners,session isolation and shared lifetime passed");
 }
 '''
 with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='fe-interface-') as work:
@@ -88,7 +93,8 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='fe-interface-')
     subprocess.run([str(binary)], check=True)
 (root / 'logs/fe-interface-capacity.json').write_text(json.dumps({
     'production_source_sha256': hashlib.sha256(native.encode()).hexdigest(),
-    'flows': 4096, 'source_MACs': 15, 'exact_MIB_owners': 64,
+    'flows': 4096, 'source_MACs': 15, 'forwarding_interfaces': 64, 'exact_MIB_owners': 32,
+    'PPPoE_sessions_isolated_with_identical_source_MAC': True,
     'shared_interface_refcounts_and_last_owner_restore': True,
     'counter_reassignment_without_cross_flow_accounting': True,
     'failed_register_restore_retains_owner_until_retry': True,

@@ -13,14 +13,6 @@
 };
 
 &{/soc} {
-	gpio0: gpio@4f43292c0 {
-		compatible = "realtek,rtl9617c-gpio";
-		reg = <4 0xf43292c0 0 0xb4>;
-		gpio-controller;
-		#gpio-cells = <2>;
-		gpio-ranges = <&pinctrl 0 0 160>;
-	};
-
 	ne_irq: interrupt-controller@f4320164 {
 		compatible = "realtek,rtl9617c-per-ictl", "cortina,per-ictl";
 		reg = <0 0xf4320164 0 0x10>;

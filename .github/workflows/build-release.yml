@@ -1,0 +1,97 @@
+name: Build TYFZA1 firmware
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag for build output
+        required: true
+        default: v0.1.0-alpha
+
+permissions:
+  contents: write
+
+concurrency:
+  group: firmware-${{ inputs.release_tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang-18 llvm-18 lld-18 flex bison gawk \
+            gettext git libncurses-dev libssl-dev python3 python3-setuptools rsync unzip \
+            zlib1g-dev file wget curl device-tree-compiler u-boot-tools swig \
+            libelf-dev python3-pyelftools python3-dev libfuse-dev pkgconf
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+      - name: Obtain locked OpenWrt source
+        run: sh port/scripts/prepare.sh sources/openwrt
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: sources/openwrt/dl
+          key: openwrt-downloads-${{ runner.os }}-${{ hashFiles('port/sources.lock.json', 'configs/feeds.conf') }}
+      - name: Obtain common runtime inputs and signing key
+        env:
+          FIT_SIGNING_KEY: ${{ secrets.TYFZA1_FIT_SIGNING_KEY }}
+        run: |
+          mkdir -p artifacts/runtime-inputs artifacts/signing
+          gh release download v0.1.0-alpha --repo LeoooChen/PonWRT-TYFZA1 \
+            --pattern tyfza1-runtime-inputs-v1.tar.gz --dir artifacts
+          tar -xzf artifacts/tyfza1-runtime-inputs-v1.tar.gz -C artifacts/runtime-inputs
+          umask 077
+          if [ -n "$FIT_SIGNING_KEY" ]; then
+            printf '%s\n' "$FIT_SIGNING_KEY" > artifacts/signing/dev.key
+          else
+            curl --fail --location --retry 3 --connect-timeout 15 --max-time 60 \
+              https://raw.githubusercontent.com/jameywine/GPL-for-GP3000/5090fbcb6ba743dd7b1314811ef557bad0460147/bootloader/Verified_Boot/verifed_key_06-04-2020/dev.key \
+              --output artifacts/signing/dev.key
+            echo 'bea80932793531fe263f62bf4de3ee95754ea7b9766eda23a418c22f06ce127f  artifacts/signing/dev.key' | sha256sum -c -
+          fi
+          openssl req -new -x509 -key artifacts/signing/dev.key \
+            -out artifacts/signing/dev.crt -subj /CN=TYFZA1-FIT -days 3650
+      - name: Build OpenWrt and native PE
+        shell: bash
+        env:
+          TYFZA1_RUNTIME_INPUTS: ${{ github.workspace }}/artifacts/runtime-inputs
+          TYFZA1_SIGNING_KEYS: ${{ github.workspace }}/artifacts/signing
+        run: |
+          export PATH="/usr/lib/llvm-18/bin:$PATH"
+          sh port/scripts/build.sh sources/openwrt "$(nproc)" 2>&1 | tee artifacts/build.log
+      - name: Package sysupgrade and factory telnet installer
+        run: |
+          sh scripts/package_release.sh sources/openwrt artifacts/release
+          git archive --format=tar.gz --prefix=PonWRT-TYFZA1/ HEAD \
+            > artifacts/release/PonWRT-TYFZA1-source.tar.gz
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: firmware-and-build-log
+          path: |
+            artifacts/release/
+            artifacts/build.log
+          retention-days: 14
+      - name: Publish alpha release
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TAG" --prerelease --draft \
+              --notes "TYFZA1 原生 OpenWrt。功能进度与安装方法见仓库 README。"
+          fi
+          gh release upload "$RELEASE_TAG" artifacts/release/sysupgrade.bin \
+            artifacts/release/tyfza1-telnet-install.tar.gz artifacts/release/SHA256SUMS \
+            artifacts/release/COPYING artifacts/release/PonWRT-TYFZA1-source.tar.gz \
+            --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease

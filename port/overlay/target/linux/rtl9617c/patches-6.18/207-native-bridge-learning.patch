@@ -1,0 +1,86 @@
+--- a/include/linux/skbuff.h
++++ b/include/linux/skbuff.h
+@@ -4920,6 +4920,9 @@
+ 
+ #ifdef CONFIG_SKB_EXTENSIONS
+ enum skb_ext_id {
++#ifdef CONFIG_ARCH_RTL9617C
++	SKB_EXT_RTL9617C_BRIDGE,
++#endif
+ #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
+ 	SKB_EXT_BRIDGE_NF,
+ #endif
+--- a/net/core/skbuff.c
++++ b/net/core/skbuff.c
+@@ -35,6 +35,9 @@
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ 
+ #include <linux/module.h>
++#ifdef CONFIG_ARCH_RTL9617C
++#include <linux/rtl9617c-bridge.h>
++#endif
+ #include <linux/types.h>
+ #include <linux/kernel.h>
+ #include <linux/mm.h>
+@@ -5102,6 +5105,9 @@
+ #define SKB_EXT_CHUNKSIZEOF(x)	(ALIGN((sizeof(x)), SKB_EXT_ALIGN_VALUE) / SKB_EXT_ALIGN_VALUE)
+ 
+ static const u8 skb_ext_type_len[] = {
++#ifdef CONFIG_ARCH_RTL9617C
++	[SKB_EXT_RTL9617C_BRIDGE] = SKB_EXT_CHUNKSIZEOF(struct rtl9617c_bridge_frame),
++#endif
+ #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
+ 	[SKB_EXT_BRIDGE_NF] = SKB_EXT_CHUNKSIZEOF(struct nf_bridge_info),
+ #endif
+--- a/include/linux/if_bridge.h
++++ b/include/linux/if_bridge.h
+@@ -178,6 +178,8 @@
+ 				    const unsigned char *addr,
+ 				    __u16 vid);
+ void br_fdb_clear_offload(const struct net_device *dev, u16 vid);
++void br_fdb_refresh_offload(const struct net_device *dev, const unsigned char *addr,
++			    u16 vid, bool source);
+ bool br_port_flag_is_set(const struct net_device *dev, unsigned long flag);
+ u8 br_port_get_stp_state(const struct net_device *dev);
+ clock_t br_get_ageing_time(const struct net_device *br_dev);
+--- a/net/bridge/br_fdb.c
++++ b/net/bridge/br_fdb.c
+@@ -259,6 +259,28 @@
+ 	return dev;
+ }
+ EXPORT_SYMBOL_GPL(br_fdb_find_port);
++
++/* A hardware hit has the same ageing effect as a packet seen by the bridge. */
++void br_fdb_refresh_offload(const struct net_device *dev, const unsigned char *addr,
++                            u16 vid, bool source)
++{
++	const struct net_bridge_port *port;
++	struct net_bridge_fdb_entry *fdb;
++
++	ASSERT_RTNL();
++	rcu_read_lock();
++	port = br_port_get_rcu(dev);
++	if (port) {
++		fdb = br_fdb_find_rcu(port->br, addr, vid);
++		if (fdb && READ_ONCE(fdb->dst) == port) {
++			WRITE_ONCE(fdb->used, jiffies);
++			if (source)
++				WRITE_ONCE(fdb->updated, jiffies);
++		}
++	}
++	rcu_read_unlock();
++}
++EXPORT_SYMBOL_GPL(br_fdb_refresh_offload);
+ 
+ struct net_bridge_fdb_entry *br_fdb_find_rcu(struct net_bridge *br,
+ 					     const unsigned char *addr,
+--- a/drivers/net/ethernet/realtek/Kconfig
++++ b/drivers/net/ethernet/realtek/Kconfig
+@@ -20,6 +20,7 @@
+ 	select CRC32
+ 	select NETFILTER
+ 	select NETFILTER_INGRESS
++	select SKB_EXTENSIONS
+ 	select NET_CLS_ACT
+ 	help
+ 	  Single-port management Ethernet through the Taurus XRAM packet path.

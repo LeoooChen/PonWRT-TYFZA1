@@ -38,20 +38,24 @@ static inline int rtl_fe_mask_read(const struct rtl_dq_io *io, unsigned int inde
  return 0;
 }
 
-/* SWO command completion uses bit0; the provider's indirect callback must
- * wait for that bit, while ordinary table accesses complete on bit31. */
+/* TYFZA1 SWO reads its mask from profile0/tuple0; word32 only reads back the
+ * supplied pointer. Select the requested mask for the transaction and restore
+ * it before returning. The owner serializes SWO with profile/table updates.
+ * SWO completion uses bit0, while ordinary accesses complete on bit31. */
 static inline int rtl_fe_crc_hardware(const struct rtl_dq_io *io,
  const unsigned int header[RTL_FE_HEADER_WORDS], unsigned int mask,
  unsigned int *crc32, unsigned short *crc16)
 {
- unsigned int i;
+ unsigned int i, tuple=io->read(io->context,0x3704);
  int ret;
 
  io->write(io->context, 0x38d8, 0);
  for (i = 0; i < RTL_FE_HEADER_WORDS; i++)
   io->write(io->context, 0x38dc, header[i]);
  io->write(io->context, 0x38dc, mask);
+ io->write(io->context,0x3704,(tuple&~63U)|(mask&63U));
  ret = io->indirect(io->context, 0x38e0, 1);
+ io->write(io->context,0x3704,tuple);
  if (ret)
   return ret;
  io->write(io->context, 0x38d8, 33);

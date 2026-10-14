@@ -24,8 +24,8 @@
     "protocol": "dhcp",
     "device": "pon-data0",
     "VLAN": "untagged",
-    "IPv4": "192.168.71.28/24",
-    "gateway": "192.168.71.1",
+    "IPv4": "192.0.2.53/24",
+    "gateway": "192.0.2.94",
     "lease_seconds": 86400
   },
   "connectivity": {

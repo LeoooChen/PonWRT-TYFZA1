@@ -31,6 +31,12 @@ static inline void rtl_ax_port0_field(const struct rtl_ax_io *io,
 		io->write32(io->ctx, reg, next);
 }
 
+static inline void rtl_ax_port0_color(const struct rtl_ax_io *io, unsigned int color)
+{
+	/* Original set_role_bss_clr@22ec08: SCC band0/port0 uses bits5:0. */
+	rtl_ax_port0_field(io, 0xc6a0, 0x3f, color);
+}
+
 static inline int rtl_ax_port0_start(const struct rtl_ax_io *io,
 	struct rtl_ax_port0 *port, void *ctx, int (*drop_mbid)(void *, unsigned int),
 	unsigned int interval, unsigned int dtim)
@@ -56,7 +62,7 @@ static inline int rtl_ax_port0_start(const struct rtl_ax_io *io,
 	rtl_ax_port0_field(io, 0xc400, 0x12000, 0x12000);
 	rtl_ax_port0_field(io, 0xc400, 0x10, 0);
 	rtl_ax_port0_field(io, 0xc400, 8, 0);
-	rtl_ax_port0_field(io, 0xc400, 0x1000, 0x1000);
+	rtl_ax_port0_field(io, 0xc400, 0x1000, 0);
 	rtl_ax_port0_field(io, 0xc414, 0xffff, interval);
 	rtl_ax_port0_field(io, 0xc6a0, 0x3f, 0);
 	rtl_ax_update16(io, 0xc412, 0xff00, 1U << 8);

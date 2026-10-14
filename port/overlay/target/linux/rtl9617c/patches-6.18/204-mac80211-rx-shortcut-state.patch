@@ -1,0 +1,129 @@
+--- a/net/mac80211/rx.c
++++ b/net/mac80211/rx.c
+@@ -4128,6 +4128,16 @@
+ 		CALL_RXH(ieee80211_rx_h_uapsd_and_pspoll);
+ 		CALL_RXH(ieee80211_rx_h_sta_process);
+ 		CALL_RXH(ieee80211_rx_h_decrypt);
++		if (rx->sta && rx->key && rx->key->conf.cipher == WLAN_CIPHER_SUITE_CCMP) {
++			struct ieee80211_hdr *accepted = (void *)rx->skb->data;
++			if (ieee80211_is_data_qos(accepted->frame_control) &&
++			    !ieee80211_has_morefrags(accepted->frame_control) &&
++			    !(accepted->seq_ctrl & cpu_to_le16(IEEE80211_SCTL_FRAG))) {
++				rx->key->rx_shortcut_next_seq[rx->security_idx] =
++					((le16_to_cpu(accepted->seq_ctrl) >> 4) + 1) & 4095;
++				rx->key->rx_shortcut_valid_tids |= BIT(rx->security_idx);
++			}
++		}
+ 		CALL_RXH(ieee80211_rx_h_defragment);
+ 		CALL_RXH(ieee80211_rx_h_michael_mic_verify);
+ 		/* must be after MMIC verify so header is counted in MPDU mic */
+@@ -4363,6 +4373,82 @@
+ 	rcu_read_unlock();
+ }
+ EXPORT_SYMBOL(ieee80211_mark_rx_ba_filtered_frames);
++
++bool ieee80211_rx_shortcut_snapshot(struct ieee80211_sta *pubsta,
++				   struct ieee80211_key_conf *keyconf, u8 tid,
++				   u16 *next_seq, u8 pn[6])
++{
++	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
++	struct ieee80211_key *key = container_of(keyconf, struct ieee80211_key, conf);
++	struct ieee80211_local *local = sta->sdata->local;
++	struct tid_ampdu_rx *ba;
++	bool ready = false;
++
++	spin_lock_bh(&local->rx_path_lock);
++	if (keyconf->cipher != WLAN_CIPHER_SUITE_CCMP || key->sta != sta ||
++	    !test_sta_flag(sta, WLAN_STA_AUTHORIZED) ||
++	    !(key->rx_shortcut_valid_tids & BIT(tid)))
++		goto out;
++	ba = rcu_dereference(sta->ampdu_mlme.tid_rx[tid]);
++	if (ba) {
++		spin_lock_bh(&ba->reorder_lock);
++		ready = !ba->stored_mpdu_num &&
++			ba->head_seq_num == key->rx_shortcut_next_seq[tid];
++		if (ready) *next_seq = ba->head_seq_num;
++		spin_unlock_bh(&ba->reorder_lock);
++	} else {
++		*next_seq = key->rx_shortcut_next_seq[tid];
++		ready = true;
++	}
++	if (ready) memcpy(pn, key->u.ccmp.rx_pn[tid], 6);
++out:
++	spin_unlock_bh(&local->rx_path_lock);
++	return ready;
++}
++EXPORT_SYMBOL_GPL(ieee80211_rx_shortcut_snapshot);
++
++void ieee80211_rx_shortcut_sync(struct ieee80211_sta *pubsta,
++			       struct ieee80211_key_conf *keyconf, u8 tid,
++			       u16 next_seq, const u8 pn[6], u16 received)
++{
++	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
++	struct ieee80211_key *key = container_of(keyconf, struct ieee80211_key, conf);
++	struct ieee80211_local *local = sta->sdata->local;
++
++	spin_lock_bh(&local->rx_path_lock);
++	if (keyconf->cipher == WLAN_CIPHER_SUITE_CCMP && key->sta == sta) {
++		if (memcmp(pn, key->u.ccmp.rx_pn[tid], 6) > 0)
++			memcpy(key->u.ccmp.rx_pn[tid], pn, 6);
++		sta->last_seq_ctrl[tid] = cpu_to_le16(((next_seq - 1) & 4095) << 4);
++		key->rx_shortcut_next_seq[tid] = next_seq;
++		key->rx_shortcut_valid_tids |= BIT(tid);
++	}
++	spin_unlock_bh(&local->rx_path_lock);
++	ieee80211_mark_rx_ba_filtered_frames(pubsta, tid, next_seq, 0, received);
++}
++EXPORT_SYMBOL_GPL(ieee80211_rx_shortcut_sync);
++
++void ieee80211_rx_shortcut_account(struct ieee80211_sta *pubsta, u8 tid,
++				  u32 mpdus, u32 msdus, u32 bytes)
++{
++	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
++	struct ieee80211_local *local = sta->sdata->local;
++	struct ieee80211_sta_rx_stats *stats = &sta->deflink.rx_stats;
++	struct tid_ampdu_rx *ba;
++
++	spin_lock_bh(&local->rx_path_lock);
++	stats->last_rx = jiffies;
++	stats->fragments += mpdus;
++	stats->packets += mpdus;
++	u64_stats_update_begin(&stats->syncp);
++	stats->bytes += bytes;
++	stats->msdu[tid] += msdus;
++	u64_stats_update_end(&stats->syncp);
++	ba = rcu_dereference(sta->ampdu_mlme.tid_rx[tid]);
++	if (ba && ba->timeout) WRITE_ONCE(ba->last_rx, jiffies);
++	spin_unlock_bh(&local->rx_path_lock);
++}
++EXPORT_SYMBOL_GPL(ieee80211_rx_shortcut_account);
+ 
+ /* main receive path */
+ 
+--- a/net/mac80211/key.h
++++ b/net/mac80211/key.h
+@@ -65,6 +65,8 @@
+ 
+ 	/* protected by key mutex */
+ 	unsigned int flags;
++	u16 rx_shortcut_next_seq[IEEE80211_NUM_TIDS];
++	u16 rx_shortcut_valid_tids;
+ 
+ 	union {
+ 		struct {
+--- a/include/net/mac80211.h
++++ b/include/net/mac80211.h
+@@ -6893,6 +6893,13 @@
+ void ieee80211_stop_rx_ba_session(struct ieee80211_vif *vif, u16 ba_rx_bitmap,
+ 				  const u8 *addr);
+ 
++bool ieee80211_rx_shortcut_snapshot(struct ieee80211_sta *sta,
++ struct ieee80211_key_conf *key, u8 tid, u16 *next_seq, u8 pn[6]);
++void ieee80211_rx_shortcut_sync(struct ieee80211_sta *sta,
++ struct ieee80211_key_conf *key, u8 tid, u16 next_seq, const u8 pn[6], u16 received);
++void ieee80211_rx_shortcut_account(struct ieee80211_sta *sta, u8 tid,
++ u32 mpdus, u32 msdus, u32 bytes);
++
+ /**
+  * ieee80211_mark_rx_ba_filtered_frames - move RX BA window and mark filtered
+  * @pubsta: station struct

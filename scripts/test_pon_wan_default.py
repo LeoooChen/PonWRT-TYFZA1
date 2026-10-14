@@ -32,10 +32,19 @@ with tempfile.TemporaryDirectory(prefix='pon-wan-test-', dir=root / 'artifacts')
         return subprocess.check_output(cli + ['get', key], text=True).strip()
     assert get('network.wan.device') == 'pon-data0' and get('network.wan.proto') == 'dhcp'
     assert get('network.lan.ipaddr') == '192.168.1.1'
+    assert get('network.wan6.device') == '@wan'
+    assert get('network.wan6.proto') == 'dhcpv6'
+    assert get('network.wan.ipv6') == '1'
     subprocess.run(cli + ['set', 'network.wan.device=pon-data0.100'], check=True)
     subprocess.run(cli + ['commit', 'network'], check=True)
     subprocess.run(['sh', '-c', 'PATH=' + shlex.quote(str(directory)) + ':"$PATH" sh ' + shlex.quote(str(script))], check=True)
     assert get('network.wan.device') == 'pon-data0.100'
+    subprocess.run(cli + ['set', 'network.wan.proto=pppoe'], check=True)
+    subprocess.run(cli + ['set', 'network.wan.ipv6=0'], check=True)
+    subprocess.run(cli + ['commit', 'network'], check=True)
+    subprocess.run(['sh', str(script)], env={'PATH':str(directory)+':/usr/bin:/bin'}, check=True)
+    assert get('network.wan.ipv6') == '0'
+    assert get('network.wan6.device') == '@wan'
 (root / 'logs/pon-wan-default-test.json').write_text(json.dumps({'actual_uci':True,
     'DHCP_device':'pon-data0','existing_WAN_preserved':True,'LAN_preserved':True,'hardware_verified':False},indent=2)+'\n')
 print('Actual PON WAN defaults: fresh DHCP binding, LAN preserved and existing WAN untouched passed')

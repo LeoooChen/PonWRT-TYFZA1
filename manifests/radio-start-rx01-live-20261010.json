@@ -23,7 +23,7 @@
     ],
     "PHY_bitmap_in_this_FIT": true,
     "AP_available": false,
-    "XEPON_DHCP": "192.168.71.28/24",
+    "XEPON_DHCP": "192.0.2.53/24",
     "public_ping": "2/2",
     "kernel_sha256": "f5b82e8f9a61e1f631244db23e59b63d83d703fb7308ee44741cf3f29b3a19db",
     "DTB_sha256": "ed3a18f2b09dbec988883e9a36b47efdae819c82db47864deb3ad1e4eecd23ac",

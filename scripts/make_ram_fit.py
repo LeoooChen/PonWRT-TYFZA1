@@ -22,7 +22,7 @@ load=0x200000; fdt_load=0x2000000
 if image[56:60]!=b'ARM\x64': raise ValueError('Expected ARM64 Image')
 image_size=struct.unpack_from('<Q',image,16)[0]
 if load+max(len(image),image_size)>fdt_load: raise ValueError('Kernel overlaps DTB load region')
-contract=json.loads((p/'evidence/rtl-research/data/receipts/tyfza1-boot-compression.json').read_text())
+contract=json.loads((p/'port/configs/tyfza1-fit-compression.json').read_text())
 old={x['name']:x for x in contract['images']}
 def compress(data,params):
     return lzma.compress(data,format=lzma.FORMAT_ALONE,filters=[{'id':lzma.FILTER_LZMA1,'dict_size':params['dictionary_bytes'],'lc':params['lc'],'lp':params['lp'],'pb':params['pb']}])
@@ -34,6 +34,6 @@ its=make_its(load,load,fdt_load,signed=True)
 (o/'image.its').write_text(its)
 r=subprocess.run(['mkimage','-f','image.its','-k',str(args.keys.resolve()),'image.itb'],cwd=o,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=True)
 (o/'mkimage.log').write_text(r.stdout)
-receipt={'kernel_version':args.kernel_version,'cpus':args.cpus,'kernel_load':hex(load),'fdt_load':hex(fdt_load),'image_sha256':hashlib.sha256(image).hexdigest(),'dtb_sha256':hashlib.sha256(dtb).hexdigest(),'fit_sha256':hashlib.sha256((o/'image.itb').read_bytes()).hexdigest(),'fit_bytes':(o/'image.itb').stat().st_size}
+receipt={'kernel_version':args.kernel_version,'cpus':args.cpus,'kernel_load':hex(load),'fdt_load':hex(fdt_load),'kernel_compression':'lzma','image_bytes':len(image),'image_sha256':hashlib.sha256(image).hexdigest(),'dtb_sha256':hashlib.sha256(dtb).hexdigest(),'fit_sha256':hashlib.sha256((o/'image.itb').read_bytes()).hexdigest(),'fit_bytes':(o/'image.itb').stat().st_size}
 (o/'manifest.json').write_text(json.dumps(receipt,indent=2)+'\n')
 print(json.dumps(receipt,indent=2))

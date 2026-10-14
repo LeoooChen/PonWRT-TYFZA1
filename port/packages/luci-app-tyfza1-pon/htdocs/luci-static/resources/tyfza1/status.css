@@ -1,0 +1,61 @@
+.tyf-dashboard {
+	--tyf-accent: #087e8b;
+	--tyf-border: var(--border-color-medium, #d8e1e4);
+	--tyf-muted: var(--text-color-medium, #5d6c75);
+	color: var(--text-color-high, #24353e);
+}
+.tyf-dashboard .tyf-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+	gap: 16px;
+	margin: 16px 0;
+}
+.tyf-dashboard .tyf-ports { grid-template-columns: repeat(auto-fit, minmax(min(100%, 205px), 1fr)); }
+.tyf-dashboard .tyf-page-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
+.tyf-dashboard .tyf-page-header h2 { margin: 0; }
+.tyf-dashboard .tyf-refresh-controls { display: flex; gap: 8px; }
+.tyf-dashboard .tyf-refresh-controls button { min-height: 36px; min-width: 88px; white-space: nowrap; }
+.tyf-dashboard .tyf-refresh-controls [aria-disabled="true"] { cursor: progress; opacity: .65; }
+.tyf-dashboard .tyf-updated.tyf-note { display: block; margin: 0; font-variant-numeric: tabular-nums; }
+.tyf-overview > .tyf-dashboard > [data-key="refresh"] { display: none; }
+.tyf-dashboard .tyf-card {
+	min-width: 0;
+	padding: 18px;
+	border: 1px solid var(--tyf-border);
+	border-top: 3px solid var(--tyf-accent);
+	border-radius: 7px;
+	background: linear-gradient(135deg, var(--background-color-low, #f5fafb), var(--background-color-high, #fff) 55%);
+}
+.tyf-dashboard .tyf-card-head { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.tyf-dashboard .tyf-card-head h3 { font-size: 16px; line-height: 1.5; margin: 0; overflow-wrap: anywhere; }
+.tyf-dashboard .tyf-wifi-title { display: flex; flex-direction: column; gap: 4px; }
+.tyf-dashboard .tyf-band { color: var(--tyf-accent); font-size: 13px; }
+.tyf-dashboard .tyf-badge { display: inline-block; border-radius: 4px; padding: 3px 8px; font-size: 12px; line-height: 1.5; font-weight: 600; }
+.tyf-dashboard .tyf-good { color: #126343; background: #e2f3e9; }
+.tyf-dashboard .tyf-warn { color: #805308; background: #fff2d4; }
+.tyf-dashboard .tyf-danger { color: #a32936; background: #fce9ec; }
+.tyf-dashboard .tyf-muted { color: #53616a; background: #eaf0f2; }
+.tyf-dashboard .tyf-facts { display: grid; grid-template-columns: minmax(88px, 1fr) minmax(0, 1.5fr); gap: 10px 14px; margin: 0; font-size: 13px; }
+.tyf-dashboard .tyf-facts dt { font-weight: normal; color: var(--tyf-muted); }
+.tyf-dashboard .tyf-facts dd { margin: 0; overflow-wrap: anywhere; }
+.tyf-dashboard .tyf-card .tyf-facts + a { display: inline-block; margin-top: 12px; }
+.tyf-dashboard .tyf-port-details { margin-top: 12px; border-top: 1px solid var(--tyf-border); }
+.tyf-dashboard .tyf-port-details summary { cursor: pointer; padding: 10px 0; font-size: 13px; }
+.tyf-dashboard .tyf-note { color: var(--tyf-muted); font-size: 13px; line-height: 1.7; margin: 12px 0; }
+.tyf-dashboard .tyf-section-title { margin-top: 24px; }
+.tyf-dashboard .tyf-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+.tyf-dashboard .tyf-actions a { padding: 8px 14px; border: 1px solid var(--tyf-border); border-radius: 4px; background: var(--background-color-high, #fff); }
+.tyf-dashboard .tyf-diagnostics { margin: 16px 0; border: 1px solid var(--tyf-border); padding: 14px; border-radius: 5px; }
+.tyf-dashboard .tyf-diagnostics summary { cursor: pointer; font-weight: 600; }
+.tyf-dashboard .tyf-diagnostics pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; margin-top: 12px; }
+.tyf-dashboard a:focus-visible, .tyf-dashboard summary:focus-visible, .tyf-dashboard button:focus-visible { outline: 2px solid var(--tyf-accent); outline-offset: 3px; }
+@media (max-width: 480px) {
+	.tyf-dashboard .tyf-card { padding: 14px; }
+	.tyf-dashboard .tyf-facts { grid-template-columns: 100px minmax(0, 1fr); }
+	.tyf-dashboard .tyf-refresh-controls { width: 100%; }
+	.tyf-dashboard .tyf-refresh-controls button { flex: 1; min-height: 44px; }
+	.tyf-dashboard .tyf-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.tyf-dashboard .tyf-actions a { box-sizing: border-box; display: flex; align-items: center; justify-content: center; min-height: 44px; }
+	.tyf-dashboard .tyf-port-details summary { box-sizing: border-box; min-height: 44px; }
+	.tyf-dashboard .tyf-card .tyf-facts + a { display: flex; align-items: center; min-height: 44px; margin-top: 4px; }
+}

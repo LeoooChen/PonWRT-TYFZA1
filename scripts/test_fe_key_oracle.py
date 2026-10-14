@@ -126,6 +126,10 @@ for i in range(160):
                   inner_vid=(4095-i*4095//159) if count==2 else 0,
                   inner_tpid_enc=1+(i%2) if count==2 else 0)
     cases.append(tagged)
+for id in range(1, 61):
+    wireless = dict(cases[0], lspid=18, orig_lspid=18,
+                    mdata=0x123456789abc0000 | id)
+    cases.append(wireless)
 with tempfile.TemporaryDirectory(prefix="fe-key-", dir=root / "artifacts") as temporary:
     temporary = Path(temporary)
     source = temporary / "key.c"
@@ -144,12 +148,15 @@ with tempfile.TemporaryDirectory(prefix="fe-key-", dir=root / "artifacts") as te
             set_value(original_key, *key_layout[name], value)
         native_key = (ctypes.c_uint * 23)()
         for index, name in enumerate(fields):
-            native.set(native_key, index, 0 if name == "table_id" else case.get(name, 0))
+            value = case.get('mdata', 0) & 255 if name == 'mdata_byte' else case.get(name, 0)
+            native.set(native_key, index, 0 if name == "table_id" else value)
         emulator.mem_write(scratch, bytes(original_key))
         case_mask = bytearray(mask)
         if 'vlan_cnt' in case:
             for name in ('vlan_cnt','top_vid','top_tpid_enc','inner_vid','inner_tpid_enc'):
                 set_value(case_mask,*mask_layout[name],0)
+        if 'mdata' in case:
+            set_value(case_mask, *mask_layout['mdata'], 0xffffffffffffff00)
         emulator.mem_write(scratch + 0x1000, bytes(case_mask))
         emulator.mem_write(scratch + 0x2000, bytes(32))
         for register, value in ((UC_ARM64_REG_X0, scratch), (UC_ARM64_REG_X1, scratch + 0x1000),
@@ -168,7 +175,8 @@ with tempfile.TemporaryDirectory(prefix="fe-key-", dir=root / "artifacts") as te
 
 record = {"stock_module_sha256": hashlib.sha256(stock.read_bytes()).hexdigest(),
           "native_header_sha256": hashlib.sha256(header.read_bytes()).hexdigest(),
-          "vectors": len(cases), "VLAN_QinQ_vectors":160,"key_bytes": key_size, "mask_bytes": mask_size,
+          "vectors": len(cases), "VLAN_QinQ_vectors":160,"wifi_metadata_vectors":60,
+          "key_bytes": key_size, "mask_bytes": mask_size,
           "actual_stock_masked_key_and_CRC16_CRC32_match": True,
           "protocols": ["IPv4 TCP", "IPv4 UDP"], "LLIDs": 32, "profiles": 4,
           "tuple_rotation_mode": "neutral", "hardware_access": False}

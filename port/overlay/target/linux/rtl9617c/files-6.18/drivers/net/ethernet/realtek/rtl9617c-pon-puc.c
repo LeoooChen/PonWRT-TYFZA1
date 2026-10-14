@@ -7,6 +7,7 @@
 #include "rtl9617c-pon.h"
 #include "rtl9617c-ni.h"
 #include "rtl9617c-pon-queue.h"
+#include "rtl9617c-pon-itu-puc.h"
 
 #define PVT_ACCESS 0x8000
 #define PVT_DATA0 0x8014
@@ -66,12 +67,12 @@ static int rtl_puc_port(struct rtl9617c_pon *pon, unsigned int port,
 	return rtl_puc_access(pon, PVT_ACCESS, port, true);
 }
 
-static int rtl_puc_token_buckets(struct rtl9617c_pon *pon)
+static int rtl_puc_token_buckets(struct rtl9617c_pon *pon, unsigned int first)
 {
 	unsigned int queue;
 	int ret;
 
-	for (queue = 0; queue < 256; queue++) {
+	for (queue = first; queue < 256; queue++) {
 		/* CIR disabled; PIR unlimited, as stock EPON initialization. */
 		writel(0, pon->mac + CIR_DATA0);
 		writel(2 << 6, pon->mac + CIR_DATA1);
@@ -110,6 +111,53 @@ static int rtl_puc_bp_access(void *context, unsigned int reg, unsigned int value
 	return readl_poll_timeout(pon->mac + reg, status, !(status & BIT(31)), 1, 100000);
 }
 
+static int rtl_puc_itu_configure(struct rtl9617c_pon *pon, const struct rtl_dq_io *io)
+{
+	u32 status;
+	unsigned int index;
+	int ret;
+
+	ret = rtl9617c_ni_report_configure(pon->ni_dev, 100,
+		pon->mode == RTL_PON_GPON ? 220 : 1024);
+	if (ret)
+		return ret;
+	rtl_pon_update(pon->control, BIT(8), BIT(8));
+	udelay(500);
+	ret = readl_poll_timeout(pon->mac + BM_STATUS, status, status & BIT(0), 1, 100000);
+	if (ret)
+		return ret;
+	ret = readl_poll_timeout(pon->mac + PUC_STATUS, status, status & BIT(31), 1, 100000);
+	if (ret)
+		return ret;
+	writel(0, pon->mac + PUC_IE);
+	rtl_pon_update(pon->mac + PUC_CONFIG, GENMASK(1, 0) | GENMASK(18, 16) | BIT(30),
+		2 | BIT(30));
+	writel(0x7a0, pon->mac + LIMIT_A);
+	writel(0x3b0, pon->mac + LIMIT_A + 4);
+	writel(0x200, pon->mac + LIMIT_A + 8);
+	for (index = 0; index < 16; index++)
+		writel(0x55555555, pon->mac + LIMIT_SELECT + index * 4);
+	ret = rtl_itu_puc_queues(io);
+	if (ret)
+		return ret;
+	if (pon->mode == RTL_PON_GPON)
+		rtl_gpon_puc_profile(io);
+	else
+		rtl_xgpon_puc_profile(io);
+	rtl_pon_update(pon->mac + BACKPRESSURE, BIT(0) | BIT(4) | GENMASK(30, 16),
+		BIT(0) | (0x100 << 16));
+	rtl_pon_update(pon->mac + CONTROL, BIT(30) | BIT(26), BIT(30));
+	rtl_pon_update(pon->mac + CONTROL1, GENMASK(14, 0), 20 | (20 << 5) | (20 << 10));
+	rtl_pon_update(pon->mac + CONTROL2, BIT(26) | GENMASK(4, 0), BIT(26) | 20);
+	/* Hardware initialization owns OMCC queues0..7; leave their buckets intact. */
+	ret = rtl_puc_token_buckets(pon, 8);
+	if (ret)
+		return ret;
+	rtl_pon_update(pon->mac + AGGREGATE0, GENMASK(25, 0), 0);
+	rtl_pon_update(pon->mac + AGGREGATE1, GENMASK(11, 0), 0);
+	return 0;
+}
+
 int rtl_pon_puc_configure_locked(struct rtl9617c_pon *pon)
 {
 	u32 status;
@@ -125,6 +173,11 @@ int rtl_pon_puc_configure_locked(struct rtl9617c_pon *pon)
 		goto unlock;
 	}
 	pon->puc_configured = false;
+	if (!rtl_pon_mode_is_epon(pon->mode)) {
+		ret = rtl_puc_itu_configure(pon, &bp);
+		pon->puc_configured = !ret;
+		goto unlock;
+	}
 	ret = rtl9617c_ni_report_configure(pon->ni_dev,
 		pon->mode == RTL_PON_EPON_BI10G ? 100 : 82, 220);
 	if (ret)
@@ -184,7 +237,7 @@ int rtl_pon_puc_configure_locked(struct rtl9617c_pon *pon)
 	rtl_pon_update(pon->mac + CONTROL, BIT(30) | BIT(26), BIT(30));
 	rtl_pon_update(pon->mac + CONTROL1, GENMASK(14, 0), 20 | (20 << 5) | (20 << 10));
 	rtl_pon_update(pon->mac + CONTROL2, BIT(26) | GENMASK(4, 0), BIT(26) | 20);
-	ret = rtl_puc_token_buckets(pon);
+	ret = rtl_puc_token_buckets(pon, 0);
 	if (ret)
 		goto unlock;
 	ret = rtl_pon_queue_backpressure(&bp);

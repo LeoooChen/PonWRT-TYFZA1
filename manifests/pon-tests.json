@@ -235,7 +235,7 @@
     "RX_dropped": 0,
     "luci_login_http": 302,
     "luci_overview_http": 200,
-    "DHCP_address": "192.168.1.170",
+    "DHCP_address": "192.0.2.51",
     "luci_after_DHCP_http": 200
   },
   "identity_import": {
@@ -617,7 +617,7 @@
       ],
       "DHCP": {
         "interface": "Mac en5",
-        "address": "192.168.1.170",
+        "address": "192.0.2.51",
         "server": "192.168.1.1",
         "ACK": true,
         "log": "logs/puc02-main-dhcp.txt"

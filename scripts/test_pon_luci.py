@@ -34,6 +34,9 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
         p = d / "sys/class/net/eth0/statistics" / name
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("0\n")
+    for name, value in (('ifindex', '2'), ('carrier', '1'), ('speed', '1000'),
+                        ('duplex', 'full'), ('address', '02:00:00:00:00:01')):
+        (d / 'sys/class/net/eth0' / name).write_text(value + '\n')
     (d / 'proc').mkdir()
     (d / 'proc/uptime').write_text('100.00 150.00\n')
     process = d / 'proc/123/stat'
@@ -58,6 +61,19 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
     assert observed['fe']['enabled'] == '1' and observed['fe']['flows'] == '2'
     assert observed['oam_ports'][0]['live'] is True, observed['oam_ports']
     assert observed['oam_ports'][0]['auth_state'] == 'accepted'
+    assert observed['ports'][0]['present'] is True
+    assert observed['ports'][0]['carrier'] == '1'
+    assert observed['ports'][0]['speed'] == '1000'
+    assert observed['ports'][0]['statistics']['rx_errors'] == '0'
+    assert observed['ports'][1]['present'] is False
+    assert observed['ports'][1]['carrier'] is None
+    assert observed['ports'][1]['statistics']['rx_bytes'] is None
+    malformed = marker.with_name('llid-1.json')
+    for invalid in ('{', 'null', '[]', '{"pid":"../1"}'):
+        malformed.write_text(invalid)
+        result = json.loads(subprocess.check_output([str(ucode), str(program)], text=True))
+        assert len(result['oam_ports']) == 1
+    malformed.unlink()
     process.write_text('123 (another-process) ' + ' '.join(['S'] + ['0'] * 18 + ['654321'] + ['0'] * 30) + '\n')
     stale = json.loads(subprocess.check_output([str(ucode), str(program)], text=True))
     assert stale['oam_ports'][0]['live'] is False

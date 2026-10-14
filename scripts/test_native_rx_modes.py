@@ -53,6 +53,7 @@ common = r'''
 #include <sys/types.h>
 #include "rtl9617c-qm-refill.h"
 #include "rtl9617c-qm-deepq.h"
+#include "rtl9617c-wifi-format.h"
 typedef uint32_t u32;
 typedef uint16_t u16;
 typedef uint8_t u8;
@@ -64,6 +65,8 @@ typedef unsigned long dma_addr_t;
 #define FIELD_GET(mask,v) (((v) & (mask)) >> __builtin_ctz(mask))
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 #define READ_ONCE(x) (x)
+typedef uint64_t u64;
+static uint64_t ktime_get_ns(void){return 100;}
 #define lower_32_bits(x) ((u32)(x))
 #define NAPI_POLL_WEIGHT 64
 #define ETH_HLEN 14
@@ -75,12 +78,26 @@ typedef unsigned long dma_addr_t;
 #define rcu_read_lock() ((void)0)
 #define rcu_read_unlock() ((void)0)
 #define rcu_dereference(x) (x)
-struct net_device { struct {unsigned long rx_errors,rx_dropped,rx_packets,rx_bytes;} stats; };
+struct net_device { bool down; struct {unsigned long rx_errors,rx_dropped,rx_packets,rx_bytes;} stats; };
 struct napi_struct {struct net_device *dev;};
-struct sk_buff {unsigned char *data; unsigned int protocol;};
+struct sk_buff {unsigned char *data; unsigned int protocol,priority; struct net_device *dev;};
 struct rtl9617c_ni_endpoint {
     void (*receive)(struct rtl9617c_ni_endpoint *,struct napi_struct *,struct sk_buff *,unsigned int);
 };
+struct rtl9617c_ni_wifi_endpoint {struct net_device *netdev;void (*receive)(struct rtl9617c_ni_wifi_endpoint *,struct sk_buff *,bool);};
+#define DMA_FROM_DEVICE 2
+struct device;
+static unsigned int synced_cpu[512],synced_device[512];
+static void dma_sync_single_for_cpu(struct device *dev,dma_addr_t address,unsigned int bytes,int direction) {
+    (void)dev;assert(bytes==2048 && direction==DMA_FROM_DEVICE);
+    unsigned int index=(address-0x10002000U)/2048;
+    assert(index<512 && !synced_cpu[index]);synced_cpu[index]=1;synced_device[index]=0;
+}
+static void dma_sync_single_for_device(struct device *dev,dma_addr_t address,unsigned int bytes,int direction) {
+    (void)dev;assert(bytes==2048 && direction==DMA_FROM_DEVICE);
+    unsigned int index=(address-0x10002000U)/2048;
+    assert(index<512 && synced_cpu[index]);synced_cpu[index]=0;synced_device[index]=1;
+}
 static unsigned int delivered, returned, owned[512], expected_source;
 static unsigned char *registers;
 static u32 readl(const void *address) {u32 value; memcpy(&value,address,4); return value;}
@@ -89,6 +106,7 @@ static void writel(u32 value,void *address) {
     if (offset==0x636c) {
         unsigned int buffer=((value & 0xffffff80U)-0x10002000U)/2048;
         assert(buffer<512 && !owned[buffer]);
+        assert(synced_device[buffer] && !synced_cpu[buffer]);
         assert((value & 15)==4+buffer/256);
         owned[buffer]=1; returned++;
     }
@@ -115,7 +133,7 @@ static void napi_gro_receive(struct napi_struct *napi,struct sk_buff *skb) {
     (void)napi;delivered++;dev_kfree_skb_any(skb);
 }
 static unsigned int eth_type_trans(struct sk_buff *skb,struct net_device *dev) {(void)skb;(void)dev;return 0;}
-static int netif_running(struct net_device *dev) {(void)dev;return 1;}
+static int netif_running(struct net_device *dev) {return !dev->down;}
 static int scnprintf(char *buf,size_t size,const char *fmt,...) {
     va_list ap; va_start(ap,fmt);int length=vsnprintf(buf,size,fmt,ap);va_end(ap);return length;
 }
@@ -131,9 +149,13 @@ static void check(unsigned int packets,int budget,bool blocked,int flow) {
     struct net_device dev={}; struct napi_struct napi={&dev}; struct rtl_qm_rx rx={};
     unsigned int count=0;
     struct rtl9617c_ni_endpoint endpoint={pon_receive};
+#if HAS_LAN_PORTS
+    rx.lan[0]=&dev;
+#endif
     if(flow>=0){rx.pon=&endpoint;expected_source=7|((unsigned int)flow<<8);}
     registers=calloc(1,0x10000);rx.ni=registers;
-    rx.memory=calloc(1,RTL_QM_MEMORY_BYTES);rx.memory_dma=0x10000000;
+    rx.memory=calloc(1,RTL_QM_MEMORY_BYTES);rx.memory_dma=0x10000000;rx.ring_memory=rx.memory;
+    memset(synced_cpu,0,sizeof(synced_cpu));memset(synced_device,0,sizeof(synced_device));
     memset(owned,0,sizeof(owned));delivered=returned=0;
     store(registers+0x6338,blocked?0:1);store(registers+0x633c,blocked?0:1);
     store(registers+0x6368,blocked?0:BIT(31));
@@ -163,12 +185,50 @@ static void check(unsigned int packets,int budget,bool blocked,int flow) {
 #endif
     free(rx.memory);free(registers);
 }
+static bool expected_wifi_forwarded;
+static void wifi_receive(struct rtl9617c_ni_wifi_endpoint *endpoint,struct sk_buff *skb,bool forwarded) {
+    assert(skb->dev==endpoint->netdev && forwarded==expected_wifi_forwarded);
+    for(unsigned int i=0;i<60;i++)assert(skb->data[i]==(unsigned char)(i^0x5a));
+    delivered++;dev_kfree_skb_any(skb);
+}
+static void check_wifi(unsigned int epp_id,unsigned int source,unsigned int metadata,bool attached,bool down,bool expected) {
+    struct net_device dev={},wifi={.down=down};struct napi_struct napi={&dev};struct rtl_qm_rx rx={};
+    struct rtl9617c_ni_wifi_endpoint endpoint={&wifi,wifi_receive};
+    registers=calloc(1,0x10000);rx.ni=registers;
+    rx.memory=calloc(1,RTL_QM_MEMORY_BYTES);rx.memory_dma=0x10000000;rx.ring_memory=rx.memory;
+    memset(synced_cpu,0,sizeof(synced_cpu));memset(synced_device,0,sizeof(synced_device));
+    memset(owned,0,sizeof(owned));delivered=returned=0;
+    store(registers+0x6338,1);store(registers+0x6368,BIT(31));
+    store(registers+0x7000,8);
+    unsigned int offset=8192;
+    store(rx.memory,(rx.memory_dma+offset)|BIT(4)|BIT(6)|4);
+    store(rx.memory+4,(epp_id<<14)|76);
+    store(rx.memory+offset+32,__builtin_bswap32(BIT(31)));
+    store(rx.memory+offset+36,__builtin_bswap32((68U<<15)|(source<<9)));
+    store(rx.memory+offset+44,__builtin_bswap32(metadata));
+    for(unsigned int i=0;i<60;i++)((unsigned char *)rx.memory)[offset+48+i]=i^0x5a;
+    if(attached)rx.wifi[2]=&endpoint;
+    expected_wifi_forwarded=!!epp_id;
+    assert(rtl_qm_rx_poll(&rx,&napi,64)==1);
+    assert(delivered==expected && returned==1 && !rx.refill.pending);
+    if(!expected)assert(dev.stats.rx_errors+dev.stats.rx_dropped==1);
+    free(rx.memory);free(registers);
+}
 int main(void) {
     check(65,65,false,-1);check(65,256,true,-1);
     check(129,256,false,-1);check(256,256,true,-1);
     check(512,512,true,-1);check(512,1024,false,-1);check(129,64,true,-1);
     check(65,65,false,13);check(65,256,true,31);
-    puts("Actual QM RX: 65/129/256/512 packets, budget64..1024 and blocked-pool recovery passed");
+    check_wifi(2,18,0xf02,true,false,true);
+    check_wifi(2,7,0xf02,true,false,true);
+    check_wifi(0,18,0x302,true,false,true);
+    check_wifi(0,18,0x202,true,false,true);
+    check_wifi(0,18,0xf02,true,false,false);
+    check_wifi(0,18,0x33d,true,false,false);
+    check_wifi(2,18,0xf02,false,false,false);
+    check_wifi(2,18,0xf02,true,true,false);
+    check_wifi(61,18,0xf3d,true,false,false);
+    puts("Actual QM RX: full rings/backpressure; Wi-Fi hit/miss direction, payload, source7/18, retired/down/reserved IDs passed");
 }
 '''
 
@@ -207,7 +267,7 @@ epon_model = r'''
 #include <pthread.h>
 #include "rtl9617c-pon-mode.h"
 struct mutex {pthread_mutex_t native;bool held;};
-struct net_device {};
+struct net_device {bool down;};
 struct rtl9617c_pon {
 	struct mutex lock,control_lock;enum rtl_pon_mode mode;
     bool serdes_configured,mac_prepared,pdc_configured,puc_configured,traffic_enabled,fe_enabled;
@@ -250,7 +310,7 @@ static int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon,bool enable) {
     assert(pon->control_lock.held && !pon->lock.held);pon->fe_enabled=enable;return 0;
 }
 static void rtl_pon_oam_carrier(struct rtl9617c_pon *pon) {assert(pon->lock.held);}
-static int netif_running(struct net_device *dev) {(void)dev;return 1;}
+static int netif_running(struct net_device *dev) {return !dev->down;}
 '''
 epon_test = r'''
 int main(void) {
@@ -303,7 +363,8 @@ with tempfile.TemporaryDirectory(prefix='native-rx-tests-', dir=root / 'artifact
             functions = function(qm, 'rtl_qm_try_push' if 'static int rtl_qm_try_push' in qm else 'rtl_qm_push')
             if case == 'qm':
                 source = common + constants + '\n' + rx_structure + '\n' + functions + function(qm, 'rtl_qm_rx_poll')
-                source += '\n#define HAS_REFILL ' + str(int('struct rtl_qm_refill refill;' in qh)) + '\n' + rx_test
+                source += '\n#define HAS_REFILL ' + str(int('struct rtl_qm_refill refill;' in qh)) + '\n'
+                source += '#define HAS_LAN_PORTS ' + str(int('lan[4]' in qh)) + '\n' + rx_test
             else:
                 visibility = function(xram, 'rtl_native_visible') if 'static umode_t rtl_native_visible' in xram else 'static umode_t rtl_native_visible(struct kobject *kobj,struct attribute *attr,int index) {(void)kobj;(void)index;return attr->mode;}\n'
                 model, main = diagnostics_model.split('int main(void)', 1)

@@ -98,14 +98,14 @@
   },
   "hardware_static_packet": {
     "scope": "NI DMA injection through internal L3PID25/PDPID13, Hash profile0, packet editor, CPU16 capture",
-    "five_tuple": "10.23.42.1:53000 -> 192.168.1.1:18082 UDP",
+    "five_tuple": "192.0.2.105:53000 -> 192.168.1.1:18082 UDP",
     "Hash_index": 1280,
     "CRC32": "ceb0f986",
     "CRC16": "5141",
     "result": [
       {
-        "DA": "027766554433",
-        "SA": "026655443322",
+        "DA": "020000000060",
+        "SA": "02000000005f",
         "TTL": 63,
         "source_IP": "198.51.100.1",
         "source_port": 62000,
@@ -114,8 +114,8 @@
         "payload_intact": true
       }
     ],
-    "source_MAC": "02:66:55:44:33:22",
-    "destination_MAC": "02:77:66:55:44:33",
+    "source_MAC": "02:00:00:00:00:28",
+    "destination_MAC": "02:00:00:00:00:29",
     "source_CAM_index": 14,
     "egress_interface_index": 31,
     "FDB_index": 3056,
@@ -273,8 +273,8 @@
         "source": "2001:db8:0:1::2",
         "destination": "2001:db8:0:2::2",
         "hop_limit": 63,
-        "MAC_source": "02:66:55:44:33:22",
-        "MAC_destination": "02:77:66:55:44:33",
+        "MAC_source": "02:00:00:00:00:28",
+        "MAC_destination": "02:00:00:00:00:29",
         "UDP_checksum_valid": true,
         "payload_valid": true
       }

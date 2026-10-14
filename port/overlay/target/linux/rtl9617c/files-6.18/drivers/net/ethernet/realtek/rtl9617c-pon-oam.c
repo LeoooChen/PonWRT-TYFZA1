@@ -8,6 +8,7 @@
 #include "rtl9617c-pon.h"
 #include "rtl9617c-ni.h"
 #include "rtl9617c-pon-oam-format.h"
+#include "rtl9617c-pon-omci-format.h"
 
 struct rtl_oam_port {
 	struct rtl9617c_pon *pon;
@@ -97,6 +98,8 @@ static netdev_tx_t rtl_data_transmit(struct sk_buff *skb, struct net_device *dev
 			      (16 << 9) | BIT(29),
 	};
 
+	if (!rtl_pon_mode_is_epon(READ_ONCE(pon->mode)))
+		return rtl_pon_itu_data_transmit(pon, skb, dev);
 	if (!netif_carrier_ok(dev) || skb->len < ETH_HLEN || skb->len > 1522) {
 		dev->stats.tx_dropped++;
 		dev_kfree_skb_any(skb);
@@ -145,6 +148,13 @@ static void rtl_oam_receive(struct rtl9617c_ni_endpoint *endpoint, struct napi_s
 	struct net_device *drop_owner = endpoint->netdev;
 	unsigned int llid, offset, flow = source >> 8;
 
+	if (!rtl_pon_mode_is_epon(READ_ONCE(pon->mode))) {
+		if (rtl_omci_receive_offset(skb->data, skb->len))
+			rtl_pon_omci_receive(pon, napi, skb, source);
+		else
+			rtl_pon_itu_data_receive(pon, napi, skb, source);
+		return;
+	}
 	source &= 255;
 	/* PDC preserves the physical PON source. Its disabled-policer POL_ID
 	 * tags normal Ethernet frames with their LLID. OAM keeps its container. */
@@ -192,6 +202,9 @@ static void rtl_oam_wake(struct rtl9617c_ni_endpoint *endpoint)
 	struct rtl9617c_pon *pon = container_of(endpoint, struct rtl9617c_pon, oam_endpoint);
 	unsigned int i;
 
+	if (pon->omci_device && netif_running(pon->omci_device) &&
+	    netif_queue_stopped(pon->omci_device))
+		netif_wake_queue(pon->omci_device);
 	for (i = 0; i < 32; i++) {
 		struct net_device *dev = rcu_dereference(pon->oam_devices[i]);
 
@@ -395,5 +408,6 @@ free:
 void rtl_pon_oam_remove(struct rtl9617c_pon *pon)
 {
 	rtl9617c_ni_pon_detach(pon->ni_dev);
+	rtl_pon_itu_paths_remove(pon);
 	rtl_pon_oam_resize(pon, 0);
 }

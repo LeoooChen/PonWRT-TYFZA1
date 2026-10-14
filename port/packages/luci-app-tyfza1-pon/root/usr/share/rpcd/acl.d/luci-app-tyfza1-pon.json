@@ -2,8 +2,14 @@
   "luci-app-tyfza1-pon": {
     "description": "Configure TYFZA1 PON identity and read native PON status",
     "read": {
-      "ubus": { "luci.tyfza1-pon": ["status"] },
-      "uci": ["pon", "firewall"]
+      "ubus": {
+        "luci.tyfza1-pon": ["status"],
+        "luci-rpc": ["getBoardJSON", "getHostHints", "getNetworkDevices", "getWirelessDevices"],
+        "network": ["get_proto_handlers"],
+        "network.device": ["status"],
+        "network.interface": ["dump"]
+      },
+      "uci": ["pon", "firewall", "network", "wireless", "luci"]
     },
     "write": {
       "uci": ["pon", "firewall"]

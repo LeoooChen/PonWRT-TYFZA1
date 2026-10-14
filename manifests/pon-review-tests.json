@@ -20,7 +20,7 @@
   },
   "C_tests": "ASan/UBSan passed: codec and driver backoff/refill implementation",
   "daemon_payload_integration": {
-    "binary": "/home/leo/PonWRT-TYFZA1/artifacts/review-fixes/payload-pon-oamd",
+    "binary": "/path/to/PonWRT-TYFZA1/artifacts/review-fixes/payload-pon-oamd",
     "runtime": "AArch64 OpenWrt GCC14.4/musl",
     "network": "isolated veth namespace",
     "passed": [

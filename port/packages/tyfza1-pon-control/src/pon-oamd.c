@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include "pon-oam.h"
 #include "pon-backend.h"
+#include "pon-config.h"
 
 static volatile sig_atomic_t running = 1;
 
@@ -41,10 +42,10 @@ static uint64_t monotonic_ms(void)
 	return (uint64_t)time.tv_sec * 1000 + time.tv_nsec / 1000000;
 }
 
-static int option_copy(struct uci_context *context, struct uci_section *section,
+static int option_copy(struct pon_config *config,
 		       const char *key, uint8_t *destination, size_t capacity)
 {
-	const char *value = uci_lookup_option_string(context, section, key);
+	const char *value = pon_config_option(config, key);
 
 	if (!value)
 		return 0;
@@ -56,20 +57,12 @@ static int option_copy(struct uci_context *context, struct uci_section *section,
 
 static int identity_load(const char *directory, struct pon_oam_identity *identity)
 {
-	struct uci_context *context = uci_alloc_context();
-	struct uci_package *package;
-	struct uci_section *section;
-	int ret = -ENOENT;
+	struct pon_config config = {};
+	int ret = pon_config_load(&config, directory);
 
-	if (!context)
-		return -ENOMEM;
-	uci_set_confdir(context, directory);
-	if (uci_load(context, "pon", &package) != UCI_OK)
+	if (ret)
 		goto done;
-	section = uci_lookup_section(context, package, "pon");
-	if (!section)
-		goto done;
-#define COPY_OPTION(key, member) do { ret = option_copy(context, section, key, identity->member, sizeof(identity->member)); if (ret) goto done; } while (0)
+#define COPY_OPTION(key, member) do { ret = option_copy(&config, key, identity->member, sizeof(identity->member)); if (ret) goto done; } while (0)
 	COPY_OPTION("loid", loid);
 	COPY_OPTION("loid_password", password);
 	COPY_OPTION("vendor_id", vendor);
@@ -80,7 +73,7 @@ static int identity_load(const char *directory, struct pon_oam_identity *identit
 #undef COPY_OPTION
 	identity->loid_configured = identity->loid[0] != 0;
 done:
-	uci_free_context(context);
+	uci_free_context(config.context);
 	return ret;
 }
 

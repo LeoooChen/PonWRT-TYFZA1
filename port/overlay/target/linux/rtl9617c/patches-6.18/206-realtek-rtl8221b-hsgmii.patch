@@ -1,0 +1,22 @@
+--- a/drivers/net/phy/realtek/realtek_main.c
++++ b/drivers/net/phy/realtek/realtek_main.c
+@@ -132,6 +132,7 @@
+ #define RTL822X_VND1_SERDES_OPTION_MODE_MASK		GENMASK(5, 0)
+ #define RTL822X_VND1_SERDES_OPTION_MODE_2500BASEX_SGMII		0
+ #define RTL822X_VND1_SERDES_OPTION_MODE_2500BASEX		2
++#define RTL822X_VND1_SERDES_OPTION_MODE_HSGMII_SGMII		1
+ 
+ #define RTL822X_VND1_SERDES_CTRL3			0x7580
+ #define RTL822X_VND1_SERDES_CTRL3_MODE_MASK		GENMASK(5, 0)
+@@ -1991,7 +1992,10 @@
+ 		return 0;
+ 
+ 	/* determine SerDes option mode */
+-	if (has_2500 && (!has_sgmii || !phydev->is_c45)) {
++	if (of_property_read_bool(phydev->mdio.dev.of_node, "realtek,hsgmii")) {
++		mode = RTL822X_VND1_SERDES_OPTION_MODE_HSGMII_SGMII;
++		phydev->rate_matching = RATE_MATCH_NONE;
++	} else if (has_2500 && (!has_sgmii || !phydev->is_c45)) {
+ 		mode = RTL822X_VND1_SERDES_OPTION_MODE_2500BASEX;
+ 		phydev->rate_matching = RATE_MATCH_PAUSE;
+ 	} else {

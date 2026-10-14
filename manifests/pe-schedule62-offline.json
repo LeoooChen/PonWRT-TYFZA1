@@ -1,0 +1,252 @@
+{
+  "scope": "Actual linked ni_ingest/ni_select: six frames on one TID, cursor after an earlier pair, one delayed completion pair. No DDR latency, radio, PCIe or throughput model.",
+  "before": {
+    "binary": "artifacts/pe-schedule62-baseline/pe-tx.bin",
+    "rounds": [
+      {
+        "ingest": [
+          {
+            "instructions": 372,
+            "DDR_reads": 57,
+            "DDR_writes": 28,
+            "NI_MMIO_reads": 8,
+            "waiting_reads": 1,
+            "waiting_slots": 1
+          },
+          {
+            "instructions": 386,
+            "DDR_reads": 59,
+            "DDR_writes": 29,
+            "NI_MMIO_reads": 8,
+            "waiting_reads": 2,
+            "waiting_slots": 2
+          }
+        ],
+        "select": {
+          "instructions": 1744,
+          "DDR_reads": 336,
+          "DDR_writes": 61,
+          "NI_MMIO_reads": 0,
+          "waiting_reads": 144,
+          "waiting_slots": 128
+        },
+        "allocated_ids": [
+          0,
+          1
+        ],
+        "previous_inflight_ids": [],
+        "frames": 2
+      },
+      {
+        "ingest": [
+          {
+            "instructions": 388,
+            "DDR_reads": 59,
+            "DDR_writes": 28,
+            "NI_MMIO_reads": 8,
+            "waiting_reads": 1,
+            "waiting_slots": 1
+          },
+          {
+            "instructions": 402,
+            "DDR_reads": 61,
+            "DDR_writes": 29,
+            "NI_MMIO_reads": 8,
+            "waiting_reads": 2,
+            "waiting_slots": 2
+          }
+        ],
+        "select": {
+          "instructions": 347,
+          "DDR_reads": 81,
+          "DDR_writes": 61,
+          "NI_MMIO_reads": 0,
+          "waiting_reads": 16,
+          "waiting_slots": 3
+        },
+        "allocated_ids": [
+          2,
+          3
+        ],
+        "previous_inflight_ids": [
+          0,
+          1
+        ],
+        "frames": 2
+      },
+      {
+        "ingest": [
+          {
+            "instructions": 372,
+            "DDR_reads": 57,
+            "DDR_writes": 28,
+            "NI_MMIO_reads": 8,
+            "waiting_reads": 1,
+            "waiting_slots": 1
+          },
+          {
+            "instructions": 386,
+            "DDR_reads": 59,
+            "DDR_writes": 29,
+            "NI_MMIO_reads": 8,
+            "waiting_reads": 2,
+            "waiting_slots": 2
+          }
+        ],
+        "select": {
+          "instructions": 1711,
+          "DDR_reads": 329,
+          "DDR_writes": 61,
+          "NI_MMIO_reads": 0,
+          "waiting_reads": 140,
+          "waiting_slots": 127
+        },
+        "allocated_ids": [
+          0,
+          1
+        ],
+        "previous_inflight_ids": [],
+        "frames": 2
+      }
+    ]
+  },
+  "after": {
+    "binary": "artifacts/pe-schedule62/pe-tx.bin",
+    "rounds": [
+      {
+        "ingest": [
+          {
+            "instructions": 382,
+            "DDR_reads": 58,
+            "DDR_writes": 28,
+            "NI_MMIO_reads": 8,
+            "waiting_reads": 1,
+            "waiting_slots": 1
+          },
+          {
+            "instructions": 398,
+            "DDR_reads": 61,
+            "DDR_writes": 28,
+            "NI_MMIO_reads": 8,
+            "waiting_reads": 2,
+            "waiting_slots": 2
+          }
+        ],
+        "select": {
+          "instructions": 336,
+          "DDR_reads": 79,
+          "DDR_writes": 61,
+          "NI_MMIO_reads": 0,
+          "waiting_reads": 15,
+          "waiting_slots": 2
+        },
+        "allocated_ids": [
+          1,
+          2
+        ],
+        "previous_inflight_ids": [],
+        "frames": 2
+      },
+      {
+        "ingest": [
+          {
+            "instructions": 393,
+            "DDR_reads": 60,
+            "DDR_writes": 28,
+            "NI_MMIO_reads": 8,
+            "waiting_reads": 1,
+            "waiting_slots": 1
+          },
+          {
+            "instructions": 409,
+            "DDR_reads": 63,
+            "DDR_writes": 28,
+            "NI_MMIO_reads": 8,
+            "waiting_reads": 2,
+            "waiting_slots": 2
+          }
+        ],
+        "select": {
+          "instructions": 347,
+          "DDR_reads": 81,
+          "DDR_writes": 61,
+          "NI_MMIO_reads": 0,
+          "waiting_reads": 16,
+          "waiting_slots": 3
+        },
+        "allocated_ids": [
+          3,
+          4
+        ],
+        "previous_inflight_ids": [
+          1,
+          2
+        ],
+        "frames": 2
+      },
+      {
+        "ingest": [
+          {
+            "instructions": 382,
+            "DDR_reads": 58,
+            "DDR_writes": 28,
+            "NI_MMIO_reads": 8,
+            "waiting_reads": 1,
+            "waiting_slots": 1
+          },
+          {
+            "instructions": 398,
+            "DDR_reads": 61,
+            "DDR_writes": 28,
+            "NI_MMIO_reads": 8,
+            "waiting_reads": 2,
+            "waiting_slots": 2
+          }
+        ],
+        "select": {
+          "instructions": 336,
+          "DDR_reads": 79,
+          "DDR_writes": 61,
+          "NI_MMIO_reads": 0,
+          "waiting_reads": 15,
+          "waiting_slots": 2
+        },
+        "allocated_ids": [
+          4,
+          5
+        ],
+        "previous_inflight_ids": [],
+        "frames": 2
+      }
+    ]
+  },
+  "conclusion": {
+    "confirmed_source_defect": "Allocator restarts at ID0 while selector resumes at its cursor; prompt reuse causes a full uncached waiting-table scan.",
+    "fix": "Start the existing bounded free-slot search at the selector cursor; owner checks and per-TID FIFO remain unchanged.",
+    "instructions_before_after": [
+      2502,
+      1116
+    ],
+    "DDR_reads_before_after": [
+      452,
+      198
+    ],
+    "pending_pair_not_reused": true,
+    "same_gathered_addresses_lengths": true,
+    "bytes": 16336,
+    "hardware_limit": 16384,
+    "flashed": false,
+    "throughput_effect": "Unmeasured; cannot conclude this accounts for the entire 166Mbps limit.",
+    "driver_object_compile": "passed",
+    "scope_of_instruction_counts": "The same two-frame ingestion/selection path, not the entire PE loop or all traffic patterns."
+  },
+  "sleep_admission": {
+    "configured_pool_buffers": 512,
+    "reserved_payload_buffers": 4,
+    "available": 508,
+    "EQ_profile_free_threshold": 12,
+    "admission_until_threshold_without_recycling": 496,
+    "observed_final_first_missing_sequence": 496,
+    "mechanism": "PE retains sleeping-peer frames; outstanding buffers hit L3TE admission threshold before the station wakes. Separate from sustained awake load limit."
+  }
+}

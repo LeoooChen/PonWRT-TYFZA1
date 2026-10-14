@@ -1,0 +1,304 @@
+{
+  "recorded_at": "2026-10-10T19:44:33.716119+08:00",
+  "phase": "native Wi-Fi NI lookup entry; real AP traffic not enabled",
+  "inputs": {
+    "comparison": "logs/wireless-study-wifi-fe-20261010.json",
+    "files": 700,
+    "bytes": 83671070,
+    "added": 0,
+    "changed": 0,
+    "removed": 0,
+    "focused_documents_read": [
+      "02-stock-datapath.md",
+      "03-descriptor-abi.md",
+      "04-metadata-pipeline.md",
+      "11-live-readonly-and-rx-contract.md",
+      "14-pcie-dma-address-contract.md",
+      "16-netdev-sta-and-ne-invalidation.md"
+    ]
+  },
+  "implementation": {
+    "dedicated_lookup_descriptor": [
+      "a5003c03",
+      "a5003c05"
+    ],
+    "NI_owned_copy": true,
+    "IPPB18_saved_mapped_restored": true,
+    "wifi_metadata_key_low8_bit": 614,
+    "wifi_metadata_mask_low8_bit": 135,
+    "metadata_profile_activated": false,
+    "wifi_netdev_ID_registration": false,
+    "wifi_QM_dispatch_connected": false,
+    "real_wifi_hardware_NAT_verified": false
+  },
+  "live": {
+    "eight_packet_sequences_verified": [
+      {
+        "uptime": 36217.458642,
+        "sequences": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "epp_words": [
+          [
+            "03415854",
+            "0000004c"
+          ],
+          [
+            "03404054",
+            "0000004c"
+          ],
+          [
+            "03462054",
+            "0000004c"
+          ],
+          [
+            "0345b054",
+            "0000004c"
+          ],
+          [
+            "0344e854",
+            "0000004c"
+          ],
+          [
+            "03423054",
+            "0000004c"
+          ],
+          [
+            "03444054",
+            "0000004c"
+          ],
+          [
+            "03420054",
+            "0000004c"
+          ]
+        ],
+        "cpu_metadata": [
+          [
+            "000b0000",
+            "00000301"
+          ],
+          [
+            "000b0000",
+            "00000302"
+          ],
+          [
+            "000b0000",
+            "00000301"
+          ],
+          [
+            "000b0000",
+            "00000302"
+          ],
+          [
+            "000b0000",
+            "00000301"
+          ],
+          [
+            "000b0000",
+            "00000302"
+          ],
+          [
+            "000b0000",
+            "00000301"
+          ],
+          [
+            "000b0000",
+            "00000302"
+          ]
+        ]
+      }
+    ],
+    "earlier_whole_ring_snapshot_counts_invalid": true,
+    "not_a_throughput_or_loss_test": true,
+    "swo_metadata_test": {
+      "status": "FAIL_UNRESOLVED",
+      "cases": 60,
+      "failures": 60,
+      "mask_readback_verified": true,
+      "input_ID1_ID2_readback_verified": true,
+      "expected_CRC32": [
+        "189355ff",
+        "ee745766"
+      ],
+      "actual_CRC32": [
+        "b68ea0e5",
+        "b68ea0e5"
+      ],
+      "capture": "logs/wifi-ni-final-probe-20261010.txt"
+    },
+    "restored": {
+      "mask62": true,
+      "IPPB18": true,
+      "VP9_disabled": true
+    },
+    "final_FE": "available=1 enabled=1 prepared=1 error=0 flows=12 hash_entries=65536 counter_slots=64 counted_flows=12 activity_flows=0 installs=4071 deletes=4059 rejected=48",
+    "four_LAN_RAM_fix_still_loaded": true,
+    "AP2_ifindex": 59,
+    "AP5_ifindex": 60,
+    "AP2_channel_width": "6/HT20",
+    "AP5_channel_width": "44/VHT80",
+    "rebooted": false,
+    "NAND_written": false
+  },
+  "host_tests": {
+    "wifi-ni-contract": {
+      "source_sha256": "a72b9104269dfefd3949d7a514b813569a6a148d3e4e4ca2ebbacb9fee1eee0b",
+      "format_sha256": "abb9f7381f955490225733d14bbb4b8654828aa7e84a7930d9131082baa6e198",
+      "epp_cases": 1048576,
+      "sanitizers": [
+        "ASan",
+        "UBSan"
+      ],
+      "hardware_access": false,
+      "stock_instruction_cases": 300,
+      "stock_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+      "stock_fragment_sha256": "2c4d9a023ddcb32413602dd2e8168d8e244c4c7ba3e4dc15ea19bccab26f4fc3"
+    },
+    "fe-four-lan-lifecycle": {
+      "production_source_sha256": "f6186bafc88d38f8081c8b5c71975e961b213303d63b9e616bfd0c021b2706c9",
+      "LAN_ports": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "exact_enable_disable_cycles": 3,
+      "failed_prepare_admits_no_LAN": true,
+      "physical_LSPID_preserved": true,
+      "post_PE_LAN_output": "NI demux3 to L2TM; upper selectors preserved",
+      "sanitizers": [
+        "ASan",
+        "UBSan"
+      ],
+      "hardware_verified_by_this_test": false
+    },
+    "native-rx-mode-tests": {
+      "tests": [
+        {
+          "case": "qm",
+          "passed": true,
+          "output": "Actual QM RX: 65/129/256/512 packets, budget64..1024 and blocked-pool recovery passed"
+        },
+        {
+          "case": "diagnostics",
+          "passed": true,
+          "output": "Actual sysfs visibility/show: XRAM and DMA-TX hide QM-only attributes; QM mode reads pool normally"
+        },
+        {
+          "case": "epon",
+          "passed": true,
+          "output": "Actual EPON prepare/traffic: three modes, concurrent GPON-family switch and fresh ONU mode passed"
+        }
+      ],
+      "production_source_sha256": {
+        "rtl9617c-qm.c": "5dee6ef35d57dd85499a8d48b29a0a6e5d9bbed82dec93a869131f514eddd7e9",
+        "rtl9617c-qm.h": "d20cecf9a5c4e8c69aed3e29109b563545c51a9e729cb352564ebcfdc1adae7e",
+        "rtl9617c-xram.c": "b0cca70eb7b3de21d34a9b74b5ac2be5f65fd9bc3879834797918e5e4632a06d",
+        "rtl9617c-pon-epon.c": "b8a5f02d45571c049fc25aa692ded1af71a3302f0a038fb36edddb375529ab91"
+      },
+      "sanitizers": [
+        "ASan",
+        "UBSan"
+      ],
+      "MMIO": "modeled; no hardware access"
+    },
+    "fe-key-oracle": {
+      "stock_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+      "native_header_sha256": "84f917a2ba459b8031b513e12f12c8178d2260c8852c1285e6dfca141448fffa",
+      "vectors": 380,
+      "VLAN_QinQ_vectors": 160,
+      "wifi_metadata_vectors": 60,
+      "key_bytes": 92,
+      "mask_bytes": 28,
+      "actual_stock_masked_key_and_CRC16_CRC32_match": true,
+      "protocols": [
+        "IPv4 TCP",
+        "IPv4 UDP"
+      ],
+      "LLIDs": 32,
+      "profiles": 4,
+      "tuple_rotation_mode": "neutral",
+      "hardware_access": false
+    },
+    "fe-action-oracle": {
+      "scope": "actual stock ARM64 conversion emulated offline; no original module loaded",
+      "native_header_sha256": "84f917a2ba459b8031b513e12f12c8178d2260c8852c1285e6dfca141448fffa",
+      "stock_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+      "GPL_layout_sha256": "c010db3ede906c81eb82ea203b652ffae1b3f4dabbaea5201e4658d5dff846a9",
+      "action_groups": [
+        18,
+        20
+      ],
+      "action_bits": 224,
+      "slot_bytes": 32,
+      "fields": 67,
+      "vectors": 330,
+      "all_match_stock_machine_code": true,
+      "hardware_forwarding_verified": false
+    }
+  },
+  "build": {
+    "service": "ponwrt-tyfza1-lan-20261010-192644.service",
+    "state": "exited",
+    "exit_code": 0,
+    "artifact": "artifacts/full-pon-wifi-ni01-6.18.55",
+    "fit_sha256": "9a11e33ba7a6f2e9198a11a3874282db1b7e0a612330133db86fc3f0392df607",
+    "native_code": {
+      "fit_sha256": "9a11e33ba7a6f2e9198a11a3874282db1b7e0a612330133db86fc3f0392df607",
+      "native_wifi_ni_code_verified": [
+        {
+          "function": "rtl_dma_tx_wifi",
+          "kernel_offset": 5365284,
+          "bytes": 444,
+          "sha256": "46846b3e602b8f6f0181929df5f0bbb58174c41eb81c827e539bb8d550e5ee1b"
+        },
+        {
+          "function": "rtl9617c_ni_wifi_lookup",
+          "kernel_offset": 5355040,
+          "bytes": 136,
+          "sha256": "2309c21cc59948e9a3c6b4c9719475c212aace1f9f78c75abc35e4d01cd1055c"
+        },
+        {
+          "function": "fe_prepare",
+          "kernel_offset": 5384128,
+          "bytes": 1984,
+          "sha256": "559aabefed57a9c2b603bfd2946b9c10586580bee26fdffabaee10c7921ddbfe"
+        },
+        {
+          "function": "fe_restore",
+          "kernel_offset": 5378592,
+          "bytes": 620,
+          "sha256": "eeedee6c53e7808c96b1ce188427831e32da26a09eac40527514068f1b1c002e"
+        },
+        {
+          "function": "rtl_fe_enable",
+          "kernel_offset": 5387308,
+          "bytes": 204,
+          "sha256": "6157334d7990a6c0eaa9c8588a95cb0eb618c267ccdd06c90a27efb835871876"
+        }
+      ],
+      "booted_on_device": false
+    },
+    "booted": false
+  },
+  "files": {
+    "docs/wifi-ne-bringup.md": "c2187320c557ae0d60ea6d685107b81456cbe4b18c32ae34461193bc5f01d33e",
+    "tools/live_wifi_lookup_probe.c": "9d79ec9d5129f2d6fd865c95a08e49d8f44025316df0e14d13da3a67286eae23",
+    "scripts/test_wifi_ni_contract.py": "4982a127f1717a7ef2a2c38bf362f75318098c1c00152c0d80cdb253800ff404",
+    "scripts/build_wifi_lookup_probe.sh": "85cf7d5d21e1db13b0939e6ec23e74946be80374c1962d245cb6e866041eb5d7",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-wifi-format.h": "abb9f7381f955490225733d14bbb4b8654828aa7e84a7930d9131082baa6e198",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-dma.c": "a72b9104269dfefd3949d7a514b813569a6a148d3e4e4ca2ebbacb9fee1eee0b",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-dma.h": "5f59d089be6a94eb8ec055aac008a25afd76a7eadce6b549610c035107fb8723",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-ni.h": "7a6ca37829707642fb915b61cddc5640890f8fd233a264e3befea8b7a27d7625",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-xram.c": "b0cca70eb7b3de21d34a9b74b5ac2be5f65fd9bc3879834797918e5e4632a06d",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe.c": "f6186bafc88d38f8081c8b5c71975e961b213303d63b9e616bfd0c021b2706c9",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-format.h": "84f917a2ba459b8031b513e12f12c8178d2260c8852c1285e6dfca141448fffa"
+  }
+}

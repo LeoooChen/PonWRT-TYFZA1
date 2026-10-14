@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
-"""Verify PON components and private configuration in a built TYFZA1 payload."""
+"""Verify PON components and public configuration in a built TYFZA1 payload."""
 import argparse
 import hashlib
 import json
 from pathlib import Path
 import tarfile
 import posixpath
-import tempfile
 from fit_payload import embedded_rootfs, fit_images
-from uci_config import validate
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
@@ -29,7 +27,7 @@ external_dtb = args.payload / 'firmware/openwrt-rtl9617c-generic-tianyi_tyfza1-p
 assert actual['fdt'] == external_dtb.read_bytes(), 'Final FIT DTB does not match firmware directory'
 embedded, initramfs_start, initramfs_end = embedded_rootfs(kernel)
 archive = args.payload / "firmware/openwrt-rtl9617c-generic-tianyi_tyfza1-rootfs.tar.gz"
-files = ["etc/init.d/pon", "etc/config/pon", "lib/firmware/realtek/rtl9617c/bosa-calibration.bin",
+files = ["etc/init.d/pon", "etc/config/pon", "usr/share/tyfza1/factory.uc",
          "usr/share/rpcd/ucode/luci.tyfza1-pon", "usr/share/rpcd/acl.d/luci-app-tyfza1-pon.json",
          "usr/share/luci/menu.d/luci-app-tyfza1-pon.json", "www/luci-static/resources/view/network/tyfza1-pon.js"]
 files.append("usr/sbin/pon-oamd")
@@ -51,20 +49,14 @@ with tarfile.open(archive) as tar:
             def destination(link):
                 return posixpath.normpath(posixpath.join(posixpath.dirname(name), link.split('\0', 1)[0])).lstrip('/')
             assert name in embedded and destination(embedded[name]['data'].decode()) == destination(member.linkname), name
-    calibration = embedded[files[2]]['data']
-    assert calibration == (root / "analysis/private/live-files/var/config/rtkbosa_k.bin").read_bytes()
-    auth = json.loads((root / "analysis/private/pon-auth.json").read_text())
-    config = embedded['etc/config/pon']['data'].decode()
-    with tempfile.TemporaryDirectory(prefix='fit-uci-', dir=root / 'artifacts') as temporary:
-        candidate = Path(temporary) / 'pon'
-        candidate.touch(mode=0o600)
-        candidate.write_text(config)
-        validate(candidate, {'loid': auth['loid'], 'loid_password': auth['password'],
-                             'wan_protocol': auth['network_protocol']})
-    assert "option wan_protocol 'dhcp'" in config
-    assert members["etc/config/pon"].mode & 0o777 == 0o600
+    config = embedded['etc/config/pon']['data']
+    assert config == (root / 'port/overlay/target/linux/rtl9617c/base-files/etc/config/pon').read_bytes()
+    assert 'lib/firmware/realtek/rtl9617c/bosa-calibration.bin' not in embedded
+    assert members['etc/config/pon'].mode & 0o777 == 0o600
+    assert members['etc/rc.d/S09tyfza1-factory'].issym()
+    assert not any(name.startswith('etc/dropbear/dropbear_') for name in embedded)
     runtime = json.loads((root / 'artifacts/pon-runtime-manifest.json').read_text())
-    assert hashlib.sha256(config.encode()).hexdigest() == runtime['identity']['uci_sha256']
+    assert runtime['embedded_subscriber_identity'] is False
     for profile in runtime['profiles'].values():
         blob = embedded['lib/firmware/realtek/rtl9617c/' + profile['firmware']]['data']
         assert hashlib.sha256(blob).hexdigest() == profile['firmware_sha256']
@@ -84,8 +76,8 @@ for marker in (b'silence_scope=shared-engine', b'refill_pending=%u', b'refill_re
     assert marker in kernel, marker
 record = {"payload": str(args.payload.relative_to(root)) if args.payload.is_absolute() else str(args.payload),
           "build_unit": args.build_unit, "required_files": checks,
-          "calibration_matches_original": True, "six_protocol_profiles": True,
-          "private_identity_injected": True, "identity_file_mode": "0600", "WAN_protocol": "dhcp",
+          "per_device_calibration_loaded_at_boot": True, "six_protocol_profiles": True,
+          "private_identity_injected": False, "identity_file_mode": "0600", "WAN_protocol": "dhcp",
           "runtime_matches_current_preparation": True,
           "corrected_NACK_and_refill_in_kernel": True,
           "verification_entry": "final FIT selected configuration",

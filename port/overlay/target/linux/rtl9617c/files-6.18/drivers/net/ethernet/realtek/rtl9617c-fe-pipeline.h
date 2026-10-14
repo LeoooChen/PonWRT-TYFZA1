@@ -3,6 +3,53 @@
 #define RTL9617C_FE_PIPELINE_H
 #include "rtl9617c-fe-table.h"
 
+struct rtl_fe_cam_protocol {
+ unsigned int saved[5];
+ unsigned char bank,index;
+ unsigned char created;
+};
+
+/* Factory aal_cam_init installs EtherType8864 and PPP21/57. Parser keys use
+ * the actual CAM index plus one, independently of the packet editor's values. */
+static inline int rtl_fe_cam_protocol_get(const struct rtl_dq_io *io,
+ struct rtl_fe_cam_protocol *binding,unsigned int bank,unsigned int protocol)
+{
+ unsigned int count=bank==2?63:15,index,word,words[5],free_index=count;
+ unsigned int width=bank==2?5:3;
+ int ret;
+
+ binding->bank=bank;binding->created=0;
+ for(index=0;index<count;index++) {
+  ret=io->indirect(io->context,0x3200,0x80000000U|(bank<<16)|index);
+  if(ret)return ret;
+  for(word=0;word<width;word++)words[word]=io->read(io->context,0x3214-word*4);
+  if(words[0]&(1U<<16)) {
+   if((words[0]&65535)==protocol){binding->index=index;return index+1;}
+  } else if(free_index==count) {
+   free_index=index;
+   for(word=0;word<width;word++)binding->saved[word]=words[word];
+  }
+ }
+ if(free_index==count)return -ENOSPC;
+ binding->index=free_index;binding->created=1;
+ for(word=0;word<width;word++)io->write(io->context,0x3214-word*4,word?0:protocol|(1U<<16));
+ ret=io->indirect(io->context,0x3200,0xc0000000U|(bank<<16)|free_index);
+ if(ret)return ret;
+ return free_index+1;
+}
+
+static inline int rtl_fe_cam_protocol_put(const struct rtl_dq_io *io,struct rtl_fe_cam_protocol *binding)
+{
+ unsigned int word;
+ int ret;
+
+ if(!binding->created)return 0;
+ for(word=0;word<(binding->bank==2?5U:3U);word++)io->write(io->context,0x3214-word*4,binding->saved[word]);
+ ret=io->indirect(io->context,0x3200,0xc0000000U|(binding->bank<<16)|binding->index);
+ if(!ret)binding->created=0;
+ return ret;
+}
+
 /* Classifier mode0, default result: select main Hash profile while leaving
  * destination and bytes to the matched action. Source can be kept or set
  * explicitly for a controlled pipeline test. Format from aal_l3_cls.h. */

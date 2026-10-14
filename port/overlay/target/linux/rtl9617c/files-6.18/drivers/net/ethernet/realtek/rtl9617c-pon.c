@@ -127,6 +127,8 @@ static ssize_t bosa_store(struct device *dev, struct device_attribute *attr,
 	if (!prepare)
 		return -EINVAL;
 	mutex_lock(&pon->control_lock);
+	rtl_pon_gpon_stop_locked(pon);
+	rtl_pon_xgpon_stop_locked(pon);
 	rtl_pon_epon_traffic_locked(pon, false);
 	rtl_pon_mpcp_stop_locked(pon);
 	ret = rtl9617c_bosa_prepare(pon->bosa_dev);
@@ -190,7 +192,7 @@ static ssize_t mac_show(struct device *dev, struct device_attribute *attr, char 
 	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
 	ssize_t size;
 	mutex_lock(&pon->lock);
-	size = rtl_pon_epon_state(pon, buf);
+	size = rtl_pon_mode_is_epon(pon->mode) ? rtl_pon_epon_state(pon, buf) : rtl_pon_itu_state(pon, buf);
 	mutex_unlock(&pon->lock);
 	return size;
 }
@@ -205,10 +207,60 @@ static ssize_t mac_store(struct device *dev, struct device_attribute *attr,
 		return ret;
 	if (!prepare)
 		return -EINVAL;
-	ret = rtl_pon_epon_prepare(pon);
+	mutex_lock(&pon->control_lock);
+	if (rtl_pon_mode_is_epon(pon->mode))
+		ret = rtl_pon_epon_prepare_locked(pon);
+	else if (pon->mode == RTL_PON_GPON)
+		ret = rtl_pon_gpon_prepare_locked(pon);
+	else
+		ret = rtl_pon_xgpon_prepare_locked(pon);
+	mutex_unlock(&pon->control_lock);
 	return ret ? ret : count;
 }
 static DEVICE_ATTR_RW(mac);
+
+static ssize_t activation_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	ssize_t size;
+
+	mutex_lock(&pon->lock);
+	if (pon->mode == RTL_PON_XGPON || pon->mode == RTL_PON_XGSPON) {
+		size = sysfs_emit(buf, "enabled=%u omcc=%u omcc_onu_id=%u omcc_gem=%u error=%d irq_count=%llu last_irq=%08x key_ready=%u key_state=%u active_key=%u key_reports=%llu tk4=%llu tk5=%llu recovering=%u last_events=%08x deactivations=%llu\n",
+			pon->xgpon_enabled, pon->xgpon_omcc_ready, pon->xgpon_omcc_id,
+			pon->xgpon_omcc_id, pon->xgpon_activation_error, pon->xgpon_irq_count,
+			pon->xgpon_last_irq, pon->xgpon_key_ready, pon->xgpon_key_state,
+			pon->xgpon_active_key + 1, pon->xgpon_key_reports, pon->xgpon_key_tk4,
+			pon->xgpon_key_tk5, pon->xgpon_recover, pon->xgpon_last_transitions,
+			pon->xgpon_deactivations);
+		mutex_unlock(&pon->lock);
+		return size;
+	}
+	size = sysfs_emit(buf,
+		"enabled=%u omcc=%u omcc_onu_id=%u omcc_gem=%u ds_fec=%u error=%d irq_count=%llu last_irq=%08x key_switches=%llu\n",
+		pon->gpon_enabled, pon->gpon_omcc_ready, pon->gpon_omcc_onu_id,
+		pon->gpon_omcc_gem, pon->gpon_ds_fec, pon->gpon_activation_error,
+		pon->gpon_irq_count, pon->gpon_last_irq, pon->gpon_key_switches);
+	mutex_unlock(&pon->lock);
+	return size;
+}
+
+static ssize_t activation_store(struct device *dev, struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	bool enable;
+	int ret = kstrtobool(buf, &enable);
+
+	if (ret)
+		return ret;
+	mutex_lock(&pon->control_lock);
+	ret = pon->mode == RTL_PON_GPON ? rtl_pon_gpon_activation_locked(pon, enable) :
+		rtl_pon_xgpon_activation_locked(pon, enable);
+	mutex_unlock(&pon->control_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_RW(activation);
 
 static unsigned int rtl_fec_read(void *context, unsigned int reg)
 {
@@ -504,14 +556,124 @@ static ssize_t fe_store(struct device *device,struct device_attribute *attribute
 }
 static DEVICE_ATTR_RW(fe);
 
+static ssize_t ploam_read(struct file *file, struct kobject *kobj,
+			 const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
+{
+	if (offset)
+		return 0;
+	return rtl_pon_ploam_receive(dev_get_drvdata(kobj_to_dev(kobj)), buf, count);
+}
+
+static ssize_t ploam_write(struct file *file, struct kobject *kobj,
+			  const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
+{
+	if (offset)
+		return -EINVAL;
+	return rtl_pon_ploam_transmit(dev_get_drvdata(kobj_to_dev(kobj)), buf, count, false);
+}
+static BIN_ATTR_ADMIN_RW(ploam, 0);
+
+static ssize_t ploam_default_write(struct file *file, struct kobject *kobj,
+				   const struct bin_attribute *attr, char *buf,
+				   loff_t offset, size_t count)
+{
+	if (offset)
+		return -EINVAL;
+	return rtl_pon_ploam_transmit(dev_get_drvdata(kobj_to_dev(kobj)), buf, count, true);
+}
+static BIN_ATTR(ploam_default, 0200, NULL, ploam_default_write, 0);
+
+static ssize_t gpon_identity_write(struct file *file, struct kobject *kobj,
+				   const struct bin_attribute *attr, char *buf,
+				   loff_t offset, size_t count)
+{
+	if (offset)
+		return -EINVAL;
+	return rtl_pon_gpon_identity(dev_get_drvdata(kobj_to_dev(kobj)), buf, count);
+}
+static BIN_ATTR(gpon_identity, 0200, NULL, gpon_identity_write, 0);
+
+static ssize_t xgpon_identity_write(struct file *file, struct kobject *kobj,
+				    const struct bin_attribute *attr, char *buf,
+				    loff_t offset, size_t count)
+{
+	if (offset)
+		return -EINVAL;
+	return rtl_pon_xgpon_identity(dev_get_drvdata(kobj_to_dev(kobj)), buf, count);
+}
+static BIN_ATTR(xgpon_identity, 0200, NULL, xgpon_identity_write, 0);
+
+static ssize_t itu_paths_write(struct file *file, struct kobject *kobj,
+	const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
+{
+	if (offset) return -EINVAL;
+	return rtl_pon_itu_paths_write(dev_get_drvdata(kobj_to_dev(kobj)), buf, count);
+}
+static BIN_ATTR(itu_paths, 0200, NULL, itu_paths_write, 0);
+
+static ssize_t omci_broadcast_write(struct file *file, struct kobject *kobj,
+	const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
+{
+	if (offset) return -EINVAL;
+	return rtl_pon_omci_broadcast_key(dev_get_drvdata(kobj_to_dev(kobj)), buf, count);
+}
+static BIN_ATTR(omci_broadcast, 0200, NULL, omci_broadcast_write, 0);
+
+static ssize_t data_path_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	ssize_t length;
+
+	mutex_lock(&pon->lock);
+	length = rtl_pon_itu_paths_state(pon, buf);
+	mutex_unlock(&pon->lock);
+	return length;
+}
+static DEVICE_ATTR_RO(data_path);
+
+static ssize_t active_serial_number_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	const u8 *serial;
+	ssize_t length;
+
+	mutex_lock(&pon->lock);
+	serial = pon->mode == RTL_PON_GPON ? pon->gpon_serial : pon->xgpon_serial;
+	length = sysfs_emit(buf, "%*phN\n", 8, serial);
+	mutex_unlock(&pon->lock);
+	return length;
+}
+static DEVICE_ATTR_RO(active_serial_number);
+
+static ssize_t omci_msk_store(struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	return rtl_pon_omci_master_key(dev_get_drvdata(dev), buf, count);
+}
+static DEVICE_ATTR_WO(omci_msk);
+
+static const struct bin_attribute *const rtl9617c_pon_bin_attrs[] = {
+	&bin_attr_ploam,
+	&bin_attr_ploam_default,
+	&bin_attr_gpon_identity,
+	&bin_attr_xgpon_identity,
+	&bin_attr_itu_paths,
+	&bin_attr_omci_broadcast,
+	NULL,
+};
+
 static struct attribute *rtl9617c_pon_attrs[] = {
  &dev_attr_fe.attr,
+	&dev_attr_data_path.attr,
+	&dev_attr_active_serial_number.attr,
+	&dev_attr_omci_msk.attr,
 	&dev_attr_state.attr,
 	&dev_attr_bosa.attr,
 	&dev_attr_serdes.attr,
 	&dev_attr_serdes_registers.attr,
 	&dev_attr_optical.attr,
 	&dev_attr_mac.attr,
+	&dev_attr_activation.attr,
 	&dev_attr_fec.attr,
 	&dev_attr_onu_mac.attr,
 	&dev_attr_llid_count.attr,
@@ -522,12 +684,17 @@ static struct attribute *rtl9617c_pon_attrs[] = {
 	&dev_attr_traffic.attr,
 	NULL,
 };
-ATTRIBUTE_GROUPS(rtl9617c_pon);
+static const struct attribute_group rtl9617c_pon_group = {
+	.attrs = rtl9617c_pon_attrs,
+	.bin_attrs = rtl9617c_pon_bin_attrs,
+};
+__ATTRIBUTE_GROUPS(rtl9617c_pon);
 
 static int rtl9617c_pon_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct rtl9617c_pon *pon;
+	int ret;
 
 	pon = devm_kzalloc(dev, sizeof(*pon), GFP_KERNEL);
 	if (!pon)
@@ -626,7 +793,13 @@ static int rtl9617c_pon_probe(struct platform_device *pdev)
 	}
 	platform_set_drvdata(pdev, pon);
 	dev_info(dev, "native PON MAC binding: global control=%08x\n", readl(pon->control));
-	return rtl_pon_oam_init(pon);
+	ret = rtl_pon_oam_init(pon);
+	if (ret)
+		return ret;
+	ret = rtl_pon_omci_init(pon);
+	if (ret)
+		rtl_pon_oam_remove(pon);
+	return ret;
 }
 
 static void rtl9617c_pon_remove(struct platform_device *pdev)
@@ -634,14 +807,17 @@ static void rtl9617c_pon_remove(struct platform_device *pdev)
 	struct rtl9617c_pon *pon = platform_get_drvdata(pdev);
 
 	mutex_lock(&pon->control_lock);
+	rtl_pon_gpon_stop_locked(pon);
+	rtl_pon_xgpon_stop_locked(pon);
 	rtl_pon_epon_traffic_locked(pon, false);
 	rtl_pon_mpcp_stop_locked(pon);
-	rtl_pon_serdes_stop_work(pon);
 	writel(0, pon->top_irq + 4);
 	writel(0, pon->optical_irq + 4);
 	synchronize_irq(pon->mpcp_irq);
-	rtl_pon_oam_remove(pon);
 	mutex_unlock(&pon->control_lock);
+	rtl_pon_serdes_stop_work(pon);
+	rtl_pon_oam_remove(pon);
+	rtl_pon_omci_remove(pon);
 }
 
 static const struct of_device_id rtl9617c_pon_of_match[] = {

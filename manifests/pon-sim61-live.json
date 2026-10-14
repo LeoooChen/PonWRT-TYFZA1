@@ -1,0 +1,814 @@
+{
+  "firmware": "ubi60",
+  "scope": "CPU NI LAN connector25 injection with logical PON source7/POL_ID0; actual FE NAT and physical Wi-Fi/LAN output. Physical PON PCS/FEC/DBA are not driven by these probes.",
+  "rows": [
+    {
+      "experiment": "pon-load61-100",
+      "client": {
+        "interface": "en0",
+        "expected": 40000,
+        "received": 39765,
+        "unique": 39765,
+        "missing": 235,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "UDP_payload_bytes": 58534080,
+        "receiver_window_seconds": 14.097095,
+        "active_packet_seconds": 4.767109,
+        "UDP_payload_Mbps": 98.23,
+        "missing_ranges": [
+          [
+            497,
+            731
+          ]
+        ]
+      },
+      "arm_average_busy_pct_intervals": [
+        1.699,
+        0.98,
+        0.98,
+        1.471,
+        1.225,
+        0.49,
+        0.735
+      ],
+      "generator_ticks": [
+        [
+          "0",
+          "0"
+        ],
+        [
+          "0",
+          "0"
+        ],
+        [
+          "0",
+          "1"
+        ],
+        [
+          "0",
+          "2"
+        ],
+        [
+          "0",
+          "3"
+        ]
+      ],
+      "L3TE_tail_drop_delta": 235,
+      "FE_packets_delta": 40000,
+      "PE_NI_sent_delta": 39765,
+      "generator": "[ 6259.808131] PON_SIM HP11 VP11 dma=0x0000000006180000 source=7 connector=25 sent=40000 requested=40000 read=48 ret=0 target_Mbps=100 elapsed_ns=4844826202 offered_bps=99999459"
+    },
+    {
+      "experiment": "pon-bp61-100",
+      "client": {
+        "interface": "en0",
+        "expected": 40000,
+        "received": 39703,
+        "unique": 39703,
+        "missing": 297,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "UDP_payload_bytes": 58442816,
+        "receiver_window_seconds": 14.024813,
+        "active_packet_seconds": 4.761736,
+        "UDP_payload_Mbps": 98.187,
+        "missing_ranges": [
+          [
+            496,
+            792
+          ]
+        ]
+      },
+      "arm_average_busy_pct_intervals": [
+        1.214,
+        1.225,
+        1.225,
+        0.735,
+        2.206,
+        0.735,
+        0.735
+      ],
+      "generator_ticks": [
+        [
+          "0",
+          "0"
+        ],
+        [
+          "0",
+          "0"
+        ],
+        [
+          "0",
+          "1"
+        ],
+        [
+          "0",
+          "2"
+        ],
+        [
+          "0",
+          "3"
+        ]
+      ],
+      "L3TE_tail_drop_delta": 297,
+      "FE_packets_delta": 40000,
+      "PE_NI_sent_delta": 39703,
+      "generator": "[18306.833817] PON_SIM HP11 VP11 dma=0x0000000006320000 source=7 connector=25 sent=40000 requested=40000 read=48 ret=0 target_Mbps=100 elapsed_ns=4844825675 offered_bps=99999470"
+    },
+    {
+      "experiment": "pon-load61-300",
+      "client": {
+        "interface": "en0",
+        "expected": 120000,
+        "received": 67951,
+        "unique": 67951,
+        "missing": 52049,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "UDP_payload_bytes": 100023872,
+        "receiver_window_seconds": 14.070543,
+        "active_packet_seconds": 4.82242,
+        "UDP_payload_Mbps": 165.931,
+        "missing_ranges": [
+          [
+            496,
+            1463
+          ],
+          [
+            1588,
+            1646
+          ],
+          [
+            1771,
+            1890
+          ],
+          [
+            2015,
+            2073
+          ],
+          [
+            2198,
+            2317
+          ],
+          [
+            2442,
+            2500
+          ],
+          [
+            2625,
+            2744
+          ],
+          [
+            2869,
+            2988
+          ],
+          [
+            3113,
+            3171
+          ],
+          [
+            3296,
+            3415
+          ],
+          [
+            3540,
+            3598
+          ],
+          [
+            3723,
+            3842
+          ],
+          [
+            3968,
+            4086
+          ],
+          [
+            4210,
+            4269
+          ],
+          [
+            4394,
+            4513
+          ],
+          [
+            4638,
+            4696
+          ]
+        ]
+      },
+      "arm_average_busy_pct_intervals": [
+        1.961,
+        0.98,
+        1.961,
+        1.214,
+        2.211,
+        1.471,
+        0.248
+      ],
+      "generator_ticks": [
+        [
+          "0",
+          "0"
+        ],
+        [
+          "0",
+          "3"
+        ],
+        [
+          "0",
+          "5"
+        ],
+        [
+          "0",
+          "8"
+        ],
+        [
+          "0",
+          "11"
+        ]
+      ],
+      "L3TE_tail_drop_delta": 52049,
+      "FE_packets_delta": 120000,
+      "PE_NI_sent_delta": 67952,
+      "generator": "[18483.309566] PON_SIM HP11 VP11 dma=0x0000000006320000 source=7 connector=25 sent=120000 requested=120000 read=48 ret=0 target_Mbps=300 elapsed_ns=4844824556 offered_bps=299998479"
+    },
+    {
+      "experiment": "pon-load61-600",
+      "client": {
+        "interface": "en0",
+        "expected": 240000,
+        "received": 68350,
+        "unique": 68350,
+        "missing": 171650,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "UDP_payload_bytes": 100611200,
+        "receiver_window_seconds": 14.114933,
+        "active_packet_seconds": 4.847101,
+        "UDP_payload_Mbps": 166.056,
+        "missing_ranges": [
+          [
+            497,
+            1463
+          ],
+          [
+            1587,
+            1890
+          ],
+          [
+            2015,
+            2317
+          ],
+          [
+            2442,
+            2744
+          ],
+          [
+            2869,
+            3171
+          ],
+          [
+            3296,
+            3659
+          ],
+          [
+            3784,
+            4086
+          ],
+          [
+            4211,
+            4513
+          ],
+          [
+            4638,
+            4940
+          ],
+          [
+            5065,
+            5367
+          ],
+          [
+            5492,
+            5794
+          ],
+          [
+            5919,
+            6221
+          ],
+          [
+            6346,
+            6648
+          ],
+          [
+            6700,
+            6700
+          ],
+          [
+            6704,
+            6707
+          ],
+          [
+            6709,
+            6709
+          ]
+        ]
+      },
+      "arm_average_busy_pct_intervals": [
+        1.716,
+        1.961,
+        0.98,
+        1.961,
+        1.471,
+        0.49,
+        0.735
+      ],
+      "generator_ticks": [
+        [
+          "0",
+          "0"
+        ],
+        [
+          "0",
+          "5"
+        ],
+        [
+          "0",
+          "10"
+        ],
+        [
+          "0",
+          "15"
+        ],
+        [
+          "0",
+          "20"
+        ]
+      ],
+      "L3TE_tail_drop_delta": 171659,
+      "FE_packets_delta": 240000,
+      "PE_NI_sent_delta": 68352,
+      "generator": "[18534.223705] PON_SIM HP11 VP11 dma=0x0000000006360000 source=7 connector=25 sent=240000 requested=240000 read=48 ret=0 target_Mbps=600 elapsed_ns=4844824786 offered_bps=599996930"
+    },
+    {
+      "experiment": "pon-load61-1000",
+      "client": {
+        "interface": "en0",
+        "expected": 400000,
+        "received": 67667,
+        "unique": 67667,
+        "missing": 332333,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "UDP_payload_bytes": 99605824,
+        "receiver_window_seconds": 14.115428,
+        "active_packet_seconds": 4.821825,
+        "UDP_payload_Mbps": 165.258,
+        "missing_ranges": [
+          [
+            496,
+            4391
+          ],
+          [
+            4516,
+            5123
+          ],
+          [
+            5248,
+            5855
+          ],
+          [
+            5980,
+            6587
+          ],
+          [
+            6712,
+            7319
+          ],
+          [
+            7444,
+            8051
+          ],
+          [
+            8176,
+            8783
+          ],
+          [
+            8908,
+            9515
+          ],
+          [
+            9640,
+            10186
+          ],
+          [
+            10207,
+            10210
+          ],
+          [
+            10212,
+            10213
+          ],
+          [
+            10215,
+            10217
+          ],
+          [
+            10219,
+            10220
+          ],
+          [
+            10222,
+            10222
+          ],
+          [
+            10224,
+            10225
+          ],
+          [
+            10227,
+            10229
+          ]
+        ]
+      },
+      "arm_average_busy_pct_intervals": [
+        2.206,
+        2.941,
+        1.225,
+        1.961,
+        1.966,
+        1.225,
+        0.98
+      ],
+      "generator_ticks": [
+        [
+          "0",
+          "0"
+        ],
+        [
+          "0",
+          "8"
+        ],
+        [
+          "0",
+          "16"
+        ],
+        [
+          "0",
+          "24"
+        ],
+        [
+          "0",
+          "32"
+        ]
+      ],
+      "L3TE_tail_drop_delta": 332219,
+      "FE_packets_delta": 400000,
+      "PE_NI_sent_delta": 67672,
+      "generator": "[18586.014493] PON_SIM HP11 VP11 dma=0x0000000006360000 source=7 connector=25 sent=400000 requested=400000 read=48 ret=0 target_Mbps=1000 elapsed_ns=4844824735 offered_bps=999994894"
+    },
+    {
+      "experiment": "pon-wired61-900",
+      "client": {
+        "interface": "en5",
+        "expected": 360000,
+        "received": 359936,
+        "unique": 359936,
+        "missing": 64,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "UDP_payload_bytes": 529825792,
+        "receiver_window_seconds": 14.09657,
+        "active_packet_seconds": 4.843779,
+        "UDP_payload_Mbps": 875.062,
+        "missing_ranges": [
+          [
+            294,
+            300
+          ],
+          [
+            340,
+            358
+          ],
+          [
+            413,
+            419
+          ],
+          [
+            455,
+            463
+          ],
+          [
+            480,
+            487
+          ],
+          [
+            779,
+            792
+          ]
+        ]
+      },
+      "arm_average_busy_pct_intervals": [
+        2.427,
+        2.451,
+        1.716,
+        2.451,
+        1.474,
+        0.49,
+        0.49
+      ],
+      "generator_ticks": [
+        [
+          "0",
+          "0"
+        ],
+        [
+          "0",
+          "7"
+        ],
+        [
+          "0",
+          "14"
+        ],
+        [
+          "0",
+          "21"
+        ],
+        [
+          "0",
+          "28"
+        ]
+      ],
+      "L3TE_tail_drop_delta": 0,
+      "FE_packets_delta": 360000,
+      "PE_NI_sent_delta": 0,
+      "generator": "[18726.884600] PON_SIM HP11 VP11 dma=0x0000000006820000 source=7 connector=25 sent=360000 requested=360000 read=48 ret=0 target_Mbps=900 elapsed_ns=4844824424 offered_bps=899995462"
+    },
+    {
+      "experiment": "pon-wired61-1000",
+      "client": {
+        "interface": "en5",
+        "expected": 400000,
+        "received": 393504,
+        "unique": 393504,
+        "missing": 6496,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "UDP_payload_bytes": 579237888,
+        "receiver_window_seconds": 14.061257,
+        "active_packet_seconds": 4.845447,
+        "UDP_payload_Mbps": 956.342,
+        "missing_ranges": [
+          [
+            276,
+            282
+          ],
+          [
+            328,
+            342
+          ],
+          [
+            374,
+            380
+          ],
+          [
+            413,
+            426
+          ],
+          [
+            463,
+            484
+          ],
+          [
+            520,
+            536
+          ],
+          [
+            596,
+            606
+          ],
+          [
+            685,
+            695
+          ],
+          [
+            762,
+            770
+          ],
+          [
+            7319,
+            7319
+          ],
+          [
+            7380,
+            7380
+          ],
+          [
+            7441,
+            7441
+          ],
+          [
+            7502,
+            7502
+          ],
+          [
+            7563,
+            7563
+          ],
+          [
+            7683,
+            7683
+          ],
+          [
+            7685,
+            7685
+          ]
+        ]
+      },
+      "arm_average_busy_pct_intervals": [
+        2.206,
+        2.451,
+        1.961,
+        2.451,
+        1.716,
+        0.735,
+        0.735
+      ],
+      "generator_ticks": [
+        [
+          "0",
+          "0"
+        ],
+        [
+          "0",
+          "7"
+        ],
+        [
+          "0",
+          "15"
+        ],
+        [
+          "0",
+          "23"
+        ],
+        [
+          "0",
+          "31"
+        ]
+      ],
+      "L3TE_tail_drop_delta": 0,
+      "FE_packets_delta": 399819,
+      "PE_NI_sent_delta": 5,
+      "generator": "[18676.133629] PON_SIM HP11 VP11 dma=0x0000000006360000 source=7 connector=25 sent=400000 requested=400000 read=48 ret=0 target_Mbps=1000 elapsed_ns=4844825157 offered_bps=999994807"
+    }
+  ],
+  "wifi_drop_location": "L3TE admission tail drop. Earlier high-rate runs sampled the TE baseline after starting injection, so the first milliseconds are omitted. The final run records a pre-injection baseline and reconciles all 400000 packets exactly.",
+  "uplink_attempt": "Direct diagnostic TC bind on existing ap5 rejected EBUSY. Controlled Linux NAT hairpin obtained OFFLOAD without HW_OFFLOAD and no hardware rows; not a successful hardware uplink experiment. Rules removed.",
+  "VP_backpressure_attempt": "Enabling VP11 TE/L2TE DMA backpressure bits8/9 did not eliminate initial sleep-to-wake tail drop.",
+  "final_preinjection_baseline": {
+    "client": {
+      "interface": "en0",
+      "expected": 400000,
+      "received": 66464,
+      "unique": 66464,
+      "missing": 333536,
+      "duplicates": 0,
+      "payload_errors": 0,
+      "unexpected_sequences": 0,
+      "UDP_payload_bytes": 97835008,
+      "receiver_window_seconds": 14.082739,
+      "active_packet_seconds": 4.722861,
+      "UDP_payload_Mbps": 165.722,
+      "missing_ranges": [
+        [
+          496,
+          12809
+        ],
+        [
+          12934,
+          13541
+        ],
+        [
+          13666,
+          14273
+        ],
+        [
+          14398,
+          15005
+        ],
+        [
+          15130,
+          15737
+        ],
+        [
+          15862,
+          16469
+        ],
+        [
+          16594,
+          17140
+        ],
+        [
+          17161,
+          17163
+        ],
+        [
+          17165,
+          17165
+        ],
+        [
+          17168,
+          17172
+        ],
+        [
+          17174,
+          17175
+        ],
+        [
+          17178,
+          17182
+        ],
+        [
+          17184,
+          17184
+        ],
+        [
+          17187,
+          17190
+        ],
+        [
+          17192,
+          17194
+        ],
+        [
+          17196,
+          17196
+        ]
+      ]
+    },
+    "L3TE_tail_drop_delta": 333536,
+    "PE_NI_sent_delta": 66464,
+    "balance": 400000,
+    "ARM_physical_RXQ_before_after": [
+      "rxq=1060 rpq=16 rx_malformed=2 rx_tag_pending=0 rx_unhandled=12 irq=1066 rdu=0 halt=0x00000000",
+      "rxq=1060 rpq=16 rx_malformed=2 rx_tag_pending=0 rx_unhandled=12 irq=1066 rdu=0 halt=0x00000000"
+    ],
+    "FE_counter_scope": "No counted IFID available in final run; exact per-flow FE bytes unavailable. Hash activity plus PE delivery/TE loss provide the path evidence. Earlier runs had exact IFID31 FE stats."
+  },
+  "normal_internet_after_cleanup": {
+    "download": {
+      "direction": "download",
+      "IP_BOUND_IF": 14,
+      "local": "192.0.2.55",
+      "remote": "202.38.95.110",
+      "bytes": 8388608,
+      "seconds": 0.970337,
+      "Mbps": 69.16,
+      "http_code": 206,
+      "curl_result": 0,
+      "started_monotonic": 171374.342997,
+      "finished_monotonic": 171375.314469
+    },
+    "upload": {
+      "direction": "upload",
+      "IP_BOUND_IF": 14,
+      "local": "192.0.2.55",
+      "remote": "202.119.32.33",
+      "bytes": 8388608,
+      "seconds": 5.268429,
+      "Mbps": 12.738,
+      "http_code": 200,
+      "curl_result": 0,
+      "started_monotonic": 171375.374481,
+      "finished_monotonic": 171380.643018
+    },
+    "download64": {
+      "direction": "download",
+      "IP_BOUND_IF": 14,
+      "local": "192.0.2.55",
+      "remote": "202.38.95.110",
+      "bytes": 67108864,
+      "seconds": 5.819743,
+      "Mbps": 92.25,
+      "http_code": 206,
+      "curl_result": 0,
+      "started_monotonic": 171435.196419,
+      "finished_monotonic": 171441.016267
+    },
+    "both_connections_hardware_offload": true
+  },
+  "production_change": {
+    "file": "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-qm.c",
+    "change": "Expose real L3TE control/packet/tail-drop fields in qm_state",
+    "kernel_object_compile": "passed",
+    "flashed": false
+  },
+  "cleanup_log": "logs/pon-sim61-cleanup.txt"
+}

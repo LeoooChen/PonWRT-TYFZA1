@@ -1,7 +1,10 @@
 evidence/
 artifacts/
 logs/
-analysis/private/
+docs/
+**/README*
+!/README.md
+analysis/
 __pycache__/
 *.pyc
 .venv/

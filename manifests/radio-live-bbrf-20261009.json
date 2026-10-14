@@ -116,7 +116,7 @@
   ],
   "PON": {
     "mode": "epon-d10g",
-    "DHCP": "192.168.71.28/24",
+    "DHCP": "192.0.2.53/24",
     "public_ping": "2/2"
   },
   "last_verified_native_live_module": {
@@ -165,7 +165,7 @@
     ],
     "actual_receive_evidence": "manifests/radio-native-tssi-builtin-20261010.json",
     "AP_available": false,
-    "XEPON_DHCP": "192.168.71.28/24"
+    "XEPON_DHCP": "192.0.2.53/24"
   },
   "previous_on_board": {
     "FIT": "artifacts/full-pon-radio-mac80211-rx02-signeddb-6.18.55/ram-pcie/image.itb",
@@ -194,7 +194,7 @@
     "DACK_all_four_paths_done": true,
     "signed_regdb_in_actual_boot_FIT": true,
     "AP_available": false,
-    "XEPON_DHCP": "192.168.71.28/24",
+    "XEPON_DHCP": "192.0.2.53/24",
     "public_ping": "2/2",
     "log": "logs/radio-mac80211-signeddb02-20261010.txt",
     "receive_evidence": "manifests/radio-mac80211-signeddb02-live-20261010.json"

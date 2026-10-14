@@ -122,11 +122,13 @@ static void rtl_pon_serdes_work(struct work_struct *work)
 void rtl_pon_serdes_init_work(struct rtl9617c_pon *pon)
 {
 	INIT_DELAYED_WORK(&pon->serdes_work, rtl_pon_serdes_work);
+	INIT_DELAYED_WORK(&pon->xgpon_recovery_work, rtl_pon_xgpon_recovery);
 }
 
 void rtl_pon_serdes_stop_work(struct rtl9617c_pon *pon)
 {
 	cancel_delayed_work_sync(&pon->serdes_work);
+	cancel_delayed_work_sync(&pon->xgpon_recovery_work);
 }
 
 int rtl_pon_serdes_configure_locked(struct rtl9617c_pon *pon, enum rtl_pon_mode mode)
@@ -143,6 +145,8 @@ int rtl_pon_serdes_configure_locked(struct rtl9617c_pon *pon, enum rtl_pon_mode 
 	ret = rtl_pon_profile_validate(fw);
 	if (ret)
 		goto release;
+	rtl_pon_gpon_stop_locked(pon);
+	rtl_pon_xgpon_stop_locked(pon);
 	rtl_pon_mpcp_stop_locked(pon);
 	rtl_pon_epon_traffic_locked(pon, false);
 	cancel_delayed_work_sync(&pon->serdes_work);
@@ -153,13 +157,15 @@ int rtl_pon_serdes_configure_locked(struct rtl9617c_pon *pon, enum rtl_pon_mode 
 	pon->mac_prepared = false;
 	pon->puc_configured = false;
 	pon->pdc_configured = false;
+	pon->xgpon_pending_valid = false;
 	pon->mode = mode;
 	rtl_pon_update(pon->optical_control, BIT(30), pon->los_invert << 30);
 	rtl_pon_update(pon->control, BIT(0), epon ? BIT(0) : 0);
 	if (epon)
 		rtl_pon_update(pon->epon_control, GENMASK(17, 16), configuration->epon_onu_mode << 16);
 	else
-		rtl_pon_update(pon->gpon_control, BIT(8) | BIT(9), mode == RTL_PON_XGSPON ? BIT(8) | BIT(9) : 0);
+		rtl_pon_update(pon->gpon_control, BIT(8) | BIT(9),
+			mode == RTL_PON_GPON ? 0 : BIT(9) | (mode == RTL_PON_XGSPON ? BIT(8) : 0));
 	rtl_pon_update(pon->serdes_init, PSDS_POWER, 0);
 	msleep(1);
 	rtl_pon_update(pon->control, PSDS_CSR_RESET_N, 0);

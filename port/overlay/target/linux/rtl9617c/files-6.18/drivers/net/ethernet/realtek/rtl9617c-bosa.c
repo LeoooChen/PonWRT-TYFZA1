@@ -125,7 +125,14 @@ static int rtl_bosa_configure(struct rtl_bosa *bosa)
 		ret = request_firmware_direct(&calibration, "realtek/rtl9617c/bosa-calibration.bin", &bosa->client->dev);
 		if (ret)
 			goto restore;
-		ret = calibration->size == 1024 ? rtl_bosa_calibrate(&io, calibration->data, bosa->model) : -EINVAL;
+		/* The original sequence reads offsets through 0x3ff; preserve any file suffix. */
+		if (calibration->size < 1024) {
+			dev_err(&bosa->client->dev, "BOSA calibration has %zu bytes; register sequence needs 1024\n",
+				calibration->size);
+			ret = -EMSGSIZE;
+		} else {
+			ret = rtl_bosa_calibrate(&io, calibration->data, bosa->model);
+		}
 		release_firmware(calibration);
 		if (ret)
 			goto restore;

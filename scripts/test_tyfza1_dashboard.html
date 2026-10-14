@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TYFZA1 dashboard regression test</title>
+<link rel="stylesheet" href="../sources/openwrt/feeds/luci/themes/luci-theme-bootstrap/htdocs/luci-static/bootstrap/cascade.css">
+<style>body { padding: 20px; } #result { white-space: pre-wrap; } #preview { width: 100%; max-width: 1200px; margin: auto; }</style>
+<pre id="result">Running UI checks with synthetic data...</pre>
+<main id="preview"></main>
+<script>
+// Serve the repository on localhost and open /scripts/test_tyfza1_dashboard.html.
+// Only the production renderers run; no device RPC or configuration writes occur.
+'use strict';
+const resource = '../port/packages/luci-app-tyfza1-pon/htdocs/luci-static/resources/';
+const checks = [];
+function assert(condition, message) {
+	if (!condition) throw new Error(message);
+	checks.push(message);
+}
+function E(tag, attrs, children) {
+	const node = document.createElement(tag);
+	for (const [key, value] of Object.entries(attrs || {})) {
+		if (typeof value === 'function') node.addEventListener(key, value);
+		else if (value != null && value !== false) node.setAttribute(key, String(value));
+	}
+	for (const child of (Array.isArray(children) ? children.flat(Infinity) : [children]))
+		if (child != null) node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+	return node;
+}
+const L = { resource: p => resource + p, url: (...p) => '/' + p.join('/') };
+const baseclass = { extend: object => object };
+async function load(file, context) {
+	const source = await (await fetch(resource + file)).text();
+	return new Function(...Object.keys(context), source)(...Object.values(context));
+}
+function iface(name, address) {
+	return { getName: () => name, getIPAddrs: () => address ? [address] : [], getIP6Addrs: () => [],
+		getGatewayAddr: () => name === 'wan' ? '198.51.100.1' : null, getGateway6Addr: () => null,
+		getDNSAddrs: () => name === 'wan' ? ['192.0.2.53'] : [], getDNS6Addrs: () => [] };
+}
+function wifi(name, frequency, band, disabled = false) {
+	return { getName: () => name, getActiveSSID: () => 'TYFZA1-LAB', isDisabled: () => disabled,
+		isUp: () => !disabled, getFrequency: () => frequency, ubus: () => band,
+		getChannel: () => band === '2g' ? 1 : 36, getActiveEncryption: () => 'WPA2 PSK (CCMP)',
+		getWifiDeviceName: () => name };
+}
+async function run() {
+	const status = await load('tyfza1/status.js', { baseclass, rpc: { declare: () => () => Promise.resolve({}) }, network: {}, L, E });
+	const pon = { serdes: { mode: 'epon-d10g', configured: '1', rx_los: '0' }, mac: { prepared: '1' },
+		mpcp: { enabled: '1', registered: '00000001' }, optical: { tx_fault: '0' },
+		oam_ports: [{ live: true, registered: true, auth_state: 'accepted', discovery_stable: true }],
+		fe: { available: '1', enabled: '1', flows: '24', installs: '30', deletes: '6' },
+		ports: ['eth0', 'eth1', 'eth2', 'eth3', 'pon-data0'].map((device, i) => ({ device, present: true,
+			carrier: i === 1 || i === 3 ? '0' : '1', speed: i === 4 ? '-1' : '1000', duplex: 'full',
+			statistics: { rx_bytes: '1048576', tx_bytes: '4096', rx_errors: '0', tx_errors: '0' } })) };
+	const net = { networks: [iface('lan', '192.0.2.1/24'), iface('wan', '198.51.100.2/24'), iface('wan6'), iface('loopback')],
+		runtime: [{ interface: 'lan', up: true, proto: 'static', l3_device: 'br-lan' },
+			{ interface: 'wan', up: true, proto: 'dhcp', l3_device: 'pon-data0' },
+			{ interface: 'wan6', up: true, proto: 'dhcpv6', l3_device: 'pon-data0' }],
+		wifis: [wifi('radio0', '2.412', '2g'), wifi('radio1', '5.180', '5g')] };
+	const data = [{ data: pon }, net];
+	let poll, loads = 0;
+	const fetchStatus = () => { loads++; return Promise.resolve(data); };
+	status.load = fetchStatus;
+	const view = await load('view/status/tyfza1.js', { view: baseclass, poll: { add: f => { poll = f; } }, status, L, E });
+	document.getElementById('preview').append(view.render(data));
+	const panel = document.querySelector('#preview .tyf-dashboard > .tyf-dashboard');
+	const select = key => panel.querySelector('[data-key="' + key + '"]');
+	assert(!status.ponCard(pon, false).querySelector('a'), 'PON settings card has no self-navigation');
+	assert(!!status.ponCard(pon).querySelector('a'), 'Overview retains PON settings link');
+	assert(!!document.querySelector('nav a[href="/admin/network/dhcp"]') && !!document.querySelector('nav a[href="/admin/network/dns"]'), 'DHCP and DNS have separate destinations');
+	assert(select('uplinks').contains(select('interface:wan')) && !select('uplinks').contains(select('interface:lan')), 'WAN appears beside PON; LAN remains below');
+	assert(select('wireless').compareDocumentPosition(select('ports')) & Node.DOCUMENT_POSITION_FOLLOWING, 'Wireless appears before port details');
+	assert(select('ports').compareDocumentPosition(select('forwarding')) & Node.DOCUMENT_POSITION_FOLLOWING, 'Hardware counters appear below ports');
+	assert(select('wifi:radio0').querySelector('h3').textContent.includes('2.4 GHz') && select('wifi:radio1').querySelector('h3').textContent.includes('5 GHz'), 'Same SSID is distinguished by band');
+	assert(status.wifiCards([wifi('disabled', null, '5g', true)]).textContent.includes('5 GHz'), 'Disabled radio retains its configured band');
+	const port = select('port:eth0'), details = port.querySelector('details');
+	assert(!details.open && details.textContent.includes('累计收 / 发'), 'Port counters start collapsed');
+	details.open = true;
+	const link = select('interface:wan').querySelector('a');
+	link.focus();
+	const walker = document.createTreeWalker(select('interface:wan'), NodeFilter.SHOW_TEXT);
+	let text;
+	while (walker.nextNode()) if (walker.currentNode.nodeValue === '198.51.100.2/24') text = walker.currentNode;
+	const range = document.createRange();
+	range.selectNodeContents(text);
+	getSelection().removeAllRanges(); getSelection().addRange(range);
+	pon.fe.flows = '25'; pon.ports[0].statistics.rx_bytes = '2097152';
+	await poll();
+	assert(select('port:eth0') === port && port.querySelector('details') === details && details.open, 'Poll preserves port nodes and expanded details');
+	assert(select('interface:wan').querySelector('a') === link && document.activeElement === link, 'Poll preserves the focused link');
+	assert(getSelection().toString() === '198.51.100.2/24' && text.isConnected, 'Poll preserves IP text selection');
+	assert(port.textContent.includes('2.0 MiB') && select('offload').textContent.includes('25'), 'Poll updates counters in place');
+	net.networks.push(iface('internet', '203.0.113.2/24'));
+	net.runtime.push({ interface: 'internet', up: true, proto: 'dhcp', route: [{ target: '0.0.0.0', mask: 0 }] });
+	await poll();
+	assert(!!select('interface:internet') && select('uplinks').contains(select('interface:internet')), 'New custom default-route uplink is added');
+	assert(select('interface:wan').querySelector('a') === link && details.open, 'Adding an interface preserves existing controls');
+	net.networks.pop(); net.runtime.pop(); pon.ports[0].carrier = '0';
+	await poll();
+	assert(!select('interface:internet') && port.querySelector('.tyf-badge').classList.contains('tyf-muted'), 'Removed interface disappears and link status updates');
+	status.update(panel, status.renderOverview([{ error: 'PON unavailable' }, net]));
+	assert(!select('pon') && !!select('interface:wan'), 'PON error leaves network controls available');
+	assert(document.activeElement === link && getSelection().toString() === '198.51.100.2/24', 'Removing a failed card preserves focus and selection in other cards');
+	status.update(panel, status.renderOverview(data));
+	assert(!!select('pon') && !!select('port:eth0'), 'PON cards recover after a failed poll');
+	const pauseButton = document.querySelector('.tyf-pause');
+	const refreshButton = document.querySelector('.tyf-refresh');
+	const timestamp = document.querySelector('.tyf-updated');
+	const flushEvents = () => new Promise(resolve => setTimeout(resolve, 0));
+	assert(timestamp.textContent.includes('更新于'), 'Overview displays its last complete update time');
+	pauseButton.click();
+	let previousLoads = loads;
+	await poll();
+	assert(loads === previousLoads && pauseButton.getAttribute('aria-pressed') === 'true', 'Pause stops polling requests');
+	assert(timestamp.textContent.includes('已暂停'), 'Pause state is visible beside the update time');
+	refreshButton.click();
+	await flushEvents();
+	assert(loads === previousLoads + 1 && pauseButton.getAttribute('aria-pressed') === 'true', 'Manual refresh works while automatic refresh remains paused');
+	let complete;
+	status.load = () => { loads++; return new Promise(resolve => { complete = resolve; }); };
+	previousLoads = loads;
+	refreshButton.focus();
+	refreshButton.click();
+	await flushEvents();
+	refreshButton.click();
+	pauseButton.click();
+	const running = poll();
+	await flushEvents();
+	assert(loads === previousLoads + 1 && refreshButton.getAttribute('aria-disabled') === 'true', 'Manual and automatic refresh share one in-flight request');
+	complete(data);
+	await running;
+	assert(refreshButton.getAttribute('aria-disabled') === 'false' && document.activeElement === refreshButton, 'Completing refresh restores the button without losing keyboard focus');
+	const lastTime = timestamp.textContent;
+	status.load = () => Promise.reject(new Error('Offline fixture'));
+	await poll();
+	const error = document.querySelector('.tyf-overview > [role="status"]');
+	assert(!error.hidden && timestamp.textContent === lastTime && !!select('pon'), 'Failed refresh retains the last data and timestamp with an error');
+	status.load = fetchStatus;
+	await poll();
+	assert(error.hidden && refreshButton.getAttribute('aria-disabled') === 'false', 'Refreshing recovers normally after a request error');
+	window.testResult = { passed: checks.length, checks };
+	document.getElementById('result').textContent = checks.length + ' UI checks passed';
+}
+run().catch(error => {
+	window.testResult = { passed: checks.length, error: error.stack, checks };
+	document.getElementById('result').textContent = error.stack;
+});
+</script>
+</html>

@@ -12,7 +12,7 @@
   "RX_errors": 0,
   "environment_readbacks_match": 36,
   "AP_available": false,
-  "XEPON_DHCP": "192.168.71.28/24",
+  "XEPON_DHCP": "192.0.2.53/24",
   "public_ping": "2/2",
   "frame_confirmation_from_prior_live_native_code": "manifests/radio-first-80211-20261010.json"
 }

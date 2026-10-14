@@ -9,6 +9,7 @@
 #include <linux/bitfield.h>
 #include <linux/delay.h>
 #include <linux/io.h>
+#include <linux/gpio/consumer.h>
 #include <linux/iopoll.h>
 #include <linux/module.h>
 #include <linux/of_mdio.h>
@@ -147,6 +148,14 @@ static int rtl_mdio_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct rtl9617c_mdio *mdio;
 	struct mii_bus *bus;
+	struct gpio_desc *external;
+
+	/* Actual rtl8221b.ko releases GPIO14 high before probing MDIO address7. */
+	external = devm_gpiod_get_optional(dev, "external-phy-enable", GPIOD_OUT_HIGH);
+	if (IS_ERR(external))
+		return PTR_ERR(external);
+	if (external)
+		msleep(300);
 
 	bus = devm_mdiobus_alloc_size(dev, sizeof(*mdio));
 	if (!bus)

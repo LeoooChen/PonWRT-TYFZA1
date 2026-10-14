@@ -1,0 +1,32 @@
+--- a/include/linux/skbuff.h
++++ b/include/linux/skbuff.h
+@@ -1026,6 +1026,9 @@ struct sk_buff {
+ #ifdef CONFIG_SKB_DECRYPTED
+ 	__u8			decrypted:1;
+ #endif
++#ifdef CONFIG_ARCH_RTL9617C
++	__u8			rtl9617c_wifi_miss:1;
++#endif
+ 	__u8			slow_gro:1;
+ #if IS_ENABLED(CONFIG_IP_SCTP)
+ 	__u8			csum_not_inet:1;
+--- a/drivers/net/ethernet/realtek/Makefile
++++ b/drivers/net/ethernet/realtek/Makefile
+@@ -5,5 +5,5 @@
+ obj-$(CONFIG_RTL9617C_XRAM_ETH) += rtl9617c-eth.o
+-rtl9617c-eth-y := rtl9617c-xram.o rtl9617c-dma.o rtl9617c-qm.o rtl9617c-fe.o
++rtl9617c-eth-y := rtl9617c-xram.o rtl9617c-dma.o rtl9617c-qm.o rtl9617c-fe.o rtl9617c-wifi.o
+ #
+ # Makefile for the Realtek network device drivers.
+ #
+--- a/drivers/net/ethernet/realtek/Kconfig
++++ b/drivers/net/ethernet/realtek/Kconfig
+@@ -16,6 +16,8 @@ config RTL9617C_XRAM_ETH
+ 	tristate "RTL9617C management XRAM Ethernet"
+ 	depends on OF && ARCH_RTL9617C && PHYLIB
+ 	select CRC32
++	select NETFILTER
++	select NETFILTER_INGRESS
+ 	select NET_CLS_ACT
+ 	help
+ 	  Single-port management Ethernet through the Taurus XRAM packet path.

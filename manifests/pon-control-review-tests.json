@@ -105,7 +105,7 @@
     }
   ],
   "OAM_actual_process": {
-    "binary": "/home/leo/PonWRT-TYFZA1/artifacts/review-fixes/final-fit-pon-oamd",
+    "binary": "/path/to/PonWRT-TYFZA1/artifacts/review-fixes/final-fit-pon-oamd",
     "runtime": "AArch64 OpenWrt GCC14.4/musl",
     "network": "isolated veth namespace",
     "passed": [

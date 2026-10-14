@@ -1,0 +1,127 @@
+{
+  "date": "2026-10-13",
+  "candidate": "artifacts/ubi-install59",
+  "boot": "factory U-Boot signed FIT -> ubi_k1/ubi_r1 -> squashfs + ID11 UBIFS",
+  "installation": "factory telnet using UBI tools; no UART commands",
+  "sysupgrade": "standard sysupgrade, hardware enabled, configuration retained",
+  "cold_boot": "relay power off/on; no TFTP or UART commands",
+  "mac_default_interface": "en5",
+  "mac_lan_address": "192.0.2.52",
+  "mac_wifi5g_address": "192.0.2.55",
+  "mac_wifi5g_station": "02:00:00:00:00:26",
+  "limitations": [
+    "This acceptance uses the actual EPON-D10G DHCP uplink.",
+    "Gigabit simulated PON traffic and long-duration stability are not established by these runs."
+  ],
+  "5g": {
+    "download": {
+      "direction": "download",
+      "IP_BOUND_IF": 14,
+      "local": "192.0.2.55",
+      "remote": "202.38.95.110",
+      "bytes": 67108864,
+      "seconds": 5.839026,
+      "Mbps": 91.945,
+      "http_code": 206,
+      "curl_result": 0,
+      "started_monotonic": 148130.612326,
+      "finished_monotonic": 148136.451343
+    },
+    "upload": {
+      "direction": "upload",
+      "IP_BOUND_IF": 14,
+      "local": "192.0.2.55",
+      "remote": "202.119.32.33",
+      "bytes": 16777216,
+      "seconds": 9.797781,
+      "Mbps": 13.699,
+      "http_code": 200,
+      "curl_result": 0,
+      "started_monotonic": 148130.612356,
+      "finished_monotonic": 148140.410044
+    },
+    "hardware_flows_log": "logs/ubi59-cold-bidir-flows.txt",
+    "arm_data_bytes": [
+      48483,
+      82143
+    ],
+    "physical_arm_rxq_rpq": [
+      "rxq=1509 rpq=11"
+    ],
+    "final_ni": "PE_NI_sent=55116 recycled=55116 pending=0 RPQ_reports=32904 failed=0 PS_releases=0 PS_EOSP=0 invalid_EPP=0 retired_EPP=0",
+    "qm_no_buffer_samples": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "cpu_first_samples": 10,
+    "cpu_four_core_busy_percent": 2.228
+  },
+  "2g": {
+    "download": {
+      "direction": "download",
+      "IP_BOUND_IF": 14,
+      "local": "192.0.2.56",
+      "remote": "202.38.95.110",
+      "bytes": 16777216,
+      "seconds": 2.259423,
+      "Mbps": 59.404,
+      "http_code": 206,
+      "curl_result": 0,
+      "started_monotonic": 148327.850659,
+      "finished_monotonic": 148330.110128
+    },
+    "upload": {
+      "direction": "upload",
+      "IP_BOUND_IF": 14,
+      "local": "192.0.2.56",
+      "remote": "202.119.32.33",
+      "bytes": 8388608,
+      "seconds": 6.792704,
+      "Mbps": 9.88,
+      "http_code": 200,
+      "curl_result": 0,
+      "started_monotonic": 148327.850705,
+      "finished_monotonic": 148334.643344
+    },
+    "hardware_flows_log": "logs/ubi59-cold-2g-real-flows.txt",
+    "arm_data_bytes": [
+      27315,
+      306697
+    ],
+    "physical_arm_rxq_rpq": [
+      "rxq=15026 rpq=64"
+    ],
+    "final_ni": "PE_NI_sent=14989 recycled=14989 pending=0 RPQ_reports=8595 failed=0 PS_releases=0 PS_EOSP=0 invalid_EPP=0 retired_EPP=0",
+    "qm_no_buffer_samples": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "cpu_first_samples": 10,
+    "cpu_four_core_busy_percent": 1.44
+  },
+  "hardware_counter_scope": "Some Wi-Fi flow slots showed identical cumulative IFID MIB values. Per-flow rates are not derived from those values; acceptance uses exact HW_OFFLOAD connections, active hash ages, and separate PE/NI producer/completion counts."
+}

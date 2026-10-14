@@ -16,5 +16,9 @@ mkdir -p "$TREE/package/luci-app-tyfza1-pon"
 cp -a "$PORT/packages/luci-app-tyfza1-pon/." "$TREE/package/luci-app-tyfza1-pon/"
 mkdir -p "$TREE/package/tyfza1-pon-control"
 cp -a "$PORT/packages/tyfza1-pon-control/." "$TREE/package/tyfza1-pon-control/"
-cp "$PORT/configs/tyfza1-boot.config" "$TREE/.config"
+if [ -n "${TYFZA1_CONFIG:-}" ]; then
+    cp "$TYFZA1_CONFIG" "$TREE/.config"
+elif [ ! -s "$TREE/.config" ]; then
+    cp "$PORT/configs/tyfza1-boot.config" "$TREE/.config"
+fi
 echo "Applied RTL9617C overlay to $TREE at $PIN"

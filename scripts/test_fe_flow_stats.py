@@ -54,6 +54,10 @@ int main(void){
  cls.stats.bytes=cls.stats.packets=0;
  assert(!fe_stats(&fe,&flow,&cls));
  assert(cls.stats.bytes==285 && cls.stats.packets==5); /* Output QinQ header excluded. */
+ flow.ethernet_bytes=26;flow.packets=0;flow.bytes=0;fe.bytes=415;
+ cls.stats.bytes=cls.stats.packets=0;
+ assert(!fe_stats(&fe,&flow,&cls));
+ assert(cls.stats.bytes==285 && cls.stats.packets==5); /* PPPoE plus one VLAN excluded. */
  flow.published=false;assert(fe_stats(&fe,&flow,&cls)==-ENOENT);
  puts("Native FE stats:wire355 bytes/five packets ->IP285 bytes;idle lastused unchanged;packet counter wrap passed");
 }

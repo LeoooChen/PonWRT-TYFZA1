@@ -20,19 +20,23 @@
 #include <linux/phy.h>
 #include <linux/platform_device.h>
 #include <linux/rcupdate.h>
+#include <linux/rtnetlink.h>
 #include <linux/unaligned.h>
 
 #include "rtl9617c-xram-format.h"
 #include "rtl9617c-dma.h"
 #include "rtl9617c-qm.h"
 #include "rtl9617c-ni.h"
+#include <linux/rtl9617c-wifi.h>
 #include "rtl9617c-fe.h"
+#include "rtl9617c-sgmii.h"
 
 #define GLB_STATIC 0xa01c
 #define PORT_TO_CPU GENMASK(3, 0)
 #define MAC_ADDR0 0xa024
 #define MAC_ADDR1 0xa028
 #define PORT_STATIC 0xa5c0
+#define PORT_GLB 0xa5c4
 #define PORT_RX 0xa5c8
 #define PORT_TX 0xa5d4
 #define PORT_STRIDE 0x90
@@ -62,10 +66,12 @@ struct rtl_xram {
 	 * initial per-port member and use the same NI/DMA/QM owner. */
 	struct rtl_lan lan;
 	struct net_device *netdev;
-	struct net_device *ports[4];
+	struct net_device *ports[5];
 	unsigned int registered_ports;
 	void __iomem *ni;
 	void __iomem *xram;
+	void __iomem *sgmii_global, *sgmii_analog;
+	unsigned int sgmii_speed;
 	struct napi_struct napi;
 	struct hrtimer timer;
 	spinlock_t tx_lock;
@@ -83,6 +89,7 @@ struct rtl_xram {
 	bool irq_requested;
 	unsigned int engine_users;
 	struct rtl_fe *fe;
+	bool removing;
 };
 
 static struct rtl_xram *rtl_shared(struct net_device *dev)
@@ -96,6 +103,12 @@ int rtl9617c_ni_fe_add_port(struct device *dev,struct net_device *netdev,unsigne
  return rtl_fe_add_port(priv->fe,netdev,7,32+llid,llid);
 }
 EXPORT_SYMBOL_GPL(rtl9617c_ni_fe_add_port);
+int rtl9617c_ni_itu_paths(struct device *dev, struct net_device *netdev, const struct rtl_itu_paths *paths)
+{
+ struct rtl_xram *priv=netdev_priv(dev_get_drvdata(dev));
+ return rtl_fe_set_itu_paths(priv->fe,netdev,paths);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_itu_paths);
 void rtl9617c_ni_fe_remove_port(struct device *dev,struct net_device *netdev)
 {
  struct rtl_xram *priv=netdev_priv(dev_get_drvdata(dev));
@@ -170,6 +183,21 @@ static void rtl_mac_address(struct rtl_xram *priv)
 
 static void rtl_adjust_link(struct net_device *dev)
 {
+	struct rtl_lan *lan = netdev_priv(dev);
+	struct phy_device *phy = dev->phydev;
+
+	if (phy->link) {
+		/* Taurus aal_mode_sync selects GMII/MII and negotiated duplex. */
+		rtl_update(lan->shared, PORT_STATIC + lan->port * PORT_STRIDE,
+			   GENMASK(3, 0), phy->speed >= SPEED_1000 ? 0 : 1);
+		rtl_update(lan->shared, PORT_GLB + lan->port * PORT_STRIDE,
+			   BIT(0) | BIT(1), (phy->speed == SPEED_10 ? BIT(0) : 0) |
+			   (phy->duplex == DUPLEX_HALF ? BIT(1) : 0));
+		if (lan->port == 4 && lan->shared->sgmii_speed != phy->speed) {
+			rtl_sgmii_link(lan->shared->sgmii_global, lan->shared->sgmii_analog, phy->speed);
+			lan->shared->sgmii_speed = phy->speed;
+		}
+	}
 	phy_print_status(dev->phydev);
 }
 
@@ -366,6 +394,10 @@ static int rtl_engine_start(struct rtl_xram *priv)
 		/* The bootloader's XRAM path leaves the normal LAN scheduler off. */
 		rtl_update(priv, 0x2208, BIT(30) | BIT(31), BIT(31));
 		writel(0x08008021, priv->ni + 0x2210);
+		/* Port15 uses scheduler instance14. Leaving it stopped
+		 * holds VOQ120..127 buffers until every LAN/PON data path runs out. */
+		rtl_update(priv, 0x2304 + 12 * 14, 0xff, 0xff);
+		rtl_update(priv, 0x2300, BIT(31) | BIT(15), BIT(31) | BIT(15));
 		for (port = 0; port < ARRAY_SIZE(priv->ports); port++)
 			if (priv->ports[port]) {
 				rtl_update(priv, 0x2300, BIT(31) | BIT(port), BIT(31) | BIT(port));
@@ -465,6 +497,8 @@ static int rtl_open(struct net_device *dev)
 
 	if (ret)
 		return ret;
+	/* Stock aal_set_active_port releases this port's interface and RX/TX resets. */
+	rtl_update(priv, 0xa008, BIT(lan->port) | BIT(lan->port + 6) | BIT(lan->port + 12), 0);
 	rtl_update(priv, PORT_STATIC + lan->port * PORT_STRIDE,
 		   GENMASK(31, 24), (u32)dev->dev_addr[5] << 24);
 	rtl_update(priv, PORT_RX + lan->port * PORT_STRIDE, BIT(0), BIT(0));
@@ -549,6 +583,107 @@ netdev_tx_t rtl9617c_ni_transmit(struct device *dev, struct net_device *owner,
 }
 EXPORT_SYMBOL_GPL(rtl9617c_ni_transmit);
 
+int rtl9617c_ni_wifi_lookup(struct device *dev, struct sk_buff *skb, unsigned int id)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	unsigned long flags;
+	int ret;
+
+	spin_lock_irqsave(&priv->tx_lock, flags);
+	ret = rtl_dma_tx_wifi(&priv->dma, priv->netdev, skb, id);
+	spin_unlock_irqrestore(&priv->tx_lock, flags);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_wifi_lookup);
+
+int rtl9617c_ni_wifi_attach(struct device *dev, struct rtl9617c_ni_wifi_endpoint *endpoint)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	unsigned int id;
+	int ret;
+
+	ASSERT_RTNL();
+	if (!priv->dma_tx || !priv->qm_rx || !priv->fe) return -EOPNOTSUPP;
+	for (id = 1; id <= RTL_WIFI_ID_MAX; id++)
+		if (!rcu_access_pointer(priv->qm.wifi[id])) break;
+	if (id > RTL_WIFI_ID_MAX) return -ENOSPC;
+	ret = rtl_engine_get(priv);
+	if (ret) return ret;
+	ret = rtl_fe_add_wifi_port(priv->fe, endpoint->netdev, id);
+	if (ret) { rtl_engine_put(priv); return ret; }
+	dev_hold(endpoint->netdev);
+	rcu_assign_pointer(priv->qm.wifi[id], endpoint);
+	return id;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_wifi_attach);
+
+int rtl9617c_ni_wifi_id(struct device *dev, struct net_device *netdev)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	unsigned int id;
+	int ret = -ENODEV;
+	rcu_read_lock();
+	for (id = 1; id <= RTL_WIFI_ID_MAX; id++) {
+		struct rtl9617c_ni_wifi_endpoint *endpoint = rcu_dereference(priv->qm.wifi[id]);
+		if (endpoint && endpoint->netdev == netdev) { ret = id; break; }
+	}
+	rcu_read_unlock();
+	return ret;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_wifi_id);
+
+int rtl9617c_ni_wifi_detach(struct device *dev, unsigned int id)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	struct rtl9617c_ni_wifi_endpoint *endpoint = rcu_access_pointer(priv->qm.wifi[id]);
+	u32 status;
+	unsigned long flags;
+	int ret;
+
+	ASSERT_RTNL();
+	/* The caller has removed its ingress hook. Withdraw rules, drain copied
+	 * NI submissions and old EPPs, then release the ID and netdev reference. */
+	/* Keep the flow-block owner across NETDEV_DOWN/UP; UNREGISTER retires it. */
+	ret = rtl_fe_flush_port(priv->fe, endpoint->netdev);
+	if (ret && !priv->removing) return ret;
+	spin_lock_irqsave(&priv->tx_lock, flags);
+	ret = readl_poll_timeout_atomic(priv->dma.registers + 0x100 + priv->dma.vp * 0xa0 + 0x1c,
+		status, (status & 63) == priv->dma.write, 1, 100000);
+	spin_unlock_irqrestore(&priv->tx_lock, flags);
+	/* A busy shared queue retains this identity. Removing the NI supplier
+	 * releases all identities together; none can be reassigned afterward. */
+	if (ret && !priv->removing) return ret;
+	usleep_range(1000, 2000);
+	napi_disable(&priv->napi);
+	local_bh_disable();
+	rtl_qm_rx_poll(&priv->qm, &priv->napi, 1024);
+	local_bh_enable();
+	rcu_assign_pointer(priv->qm.wifi[id], NULL);
+	napi_enable(&priv->napi);
+	/* An IRQ during napi_disable can mask RX without scheduling a poll. */
+	napi_schedule(&priv->napi);
+	synchronize_net();
+	dev_put(endpoint->netdev);
+	rtl_engine_put(priv);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_wifi_detach);
+
+bool rtl9617c_ni_wifi_enabled(struct device *dev)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	return rtl_fe_enabled(priv->fe);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_wifi_enabled);
+
+int rtl9617c_ni_wifi_peer_route(struct device *dev, struct net_device *netdev,
+	const u8 *address, unsigned int destination)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	return rtl_fe_wifi_peer_route(priv->fe, netdev, address, destination);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_wifi_peer_route);
+
 int rtl9617c_ni_oam_configure(struct device *dev)
 {
 	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
@@ -592,9 +727,13 @@ static void rtl_unregister_extra_lans(struct rtl_xram *priv)
 
 	for (port = 1; port < ARRAY_SIZE(priv->ports); port++) {
 		struct net_device *dev = priv->ports[port];
+		unsigned long flags;
 
 		if (!dev)
 			continue;
+		spin_lock_irqsave(&priv->tx_lock, flags);
+		priv->ports[port] = NULL;
+		spin_unlock_irqrestore(&priv->tx_lock, flags);
 		rcu_assign_pointer(priv->qm.lan[port], NULL);
 		if (priv->registered_ports & BIT(port))
 			unregister_netdev(dev);
@@ -603,7 +742,6 @@ static void rtl_unregister_extra_lans(struct rtl_xram *priv)
 		if (dev->phydev)
 			phy_disconnect(dev->phydev);
 		free_netdev(dev);
-		priv->ports[port] = NULL;
 		priv->registered_ports &= ~BIT(port);
 	}
 }
@@ -622,6 +760,43 @@ static int rtl_register_extra_lans(struct rtl_xram *priv, struct device *parent)
 		u8 mac[ETH_ALEN];
 
 		phy = of_parse_phandle(parent->of_node, "realtek,lan-phys", port);
+		if (!phy)
+			continue;
+		if (port == 4) {
+			struct phy_device *external = of_phy_find_device(phy);
+			struct resource *global, *power;
+			void __iomem *power_reg, *serdes;
+
+			/* This board variant has port4 only when the external PHY responds. */
+			if (!external) {
+				of_node_put(phy);
+				continue;
+			}
+			put_device(&external->mdio.dev);
+			/* Global reset/control words are shared with NI and PCIe providers. */
+			global = platform_get_resource_byname(to_platform_device(parent), IORESOURCE_MEM, "sgmii-global");
+			priv->sgmii_global = devm_ioremap(parent, global->start, resource_size(global));
+			priv->sgmii_analog = devm_platform_ioremap_resource_byname(to_platform_device(parent), "sgmii-analog");
+			if (!priv->sgmii_global || IS_ERR(priv->sgmii_analog)) {
+				of_node_put(phy);
+				ret = !priv->sgmii_global ? -ENOMEM : PTR_ERR(priv->sgmii_analog);
+				goto unwind;
+			}
+			power = platform_get_resource_byname(to_platform_device(parent), IORESOURCE_MEM, "sgmii-power");
+			power_reg = devm_ioremap(parent, power->start, resource_size(power));
+			serdes = devm_platform_ioremap_resource_byname(to_platform_device(parent), "sgmii-serdes");
+			if (!power_reg || IS_ERR(serdes)) {
+				of_node_put(phy);
+				ret = !power_reg ? -ENOMEM : PTR_ERR(serdes);
+				goto unwind;
+			}
+			/* Actual rtk_taurus_phy_power_config, lane7 table and SGMII tail. */
+			writel((readl(priv->sgmii_global + 0xc4) | BIT(25)) & ~BIT(26), priv->sgmii_global + 0xc4);
+			writel((readl(power_reg) | 0xc0080000U) & ~0x6020U, power_reg);
+			writel(0x5359, serdes + 0x1c);
+			writel(0x30, priv->sgmii_global + 0xd0);
+			writel(0x34200248, priv->sgmii_global + 0xd4);
+		}
 		dev = alloc_etherdev(sizeof(*lan));
 		if (!dev) {
 			of_node_put(phy);
@@ -638,7 +813,8 @@ static int rtl_register_extra_lans(struct rtl_xram *priv, struct device *parent)
 		ether_addr_copy(mac, priv->netdev->dev_addr);
 		mac[5] += port;
 		eth_hw_addr_set(dev, mac);
-		if (!of_phy_connect(dev, phy, rtl_adjust_link, 0, PHY_INTERFACE_MODE_GMII)) {
+		if (!of_phy_connect(dev, phy, rtl_adjust_link, 0,
+			port == 4 ? PHY_INTERFACE_MODE_SGMII : PHY_INTERFACE_MODE_GMII)) {
 			of_node_put(phy);
 			ret = -EPROBE_DEFER;
 			goto unwind;
@@ -680,6 +856,35 @@ static ssize_t dma_state_show(struct device *dev, struct device_attribute *attr,
 	return priv->dma_tx ? rtl_dma_tx_state(&priv->dma, buf) : sysfs_emit(buf, "XRAM TX\n");
 }
 static DEVICE_ATTR_RO(dma_state);
+
+static ssize_t datapath_profile_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+
+	return sysfs_emit(buf, "enabled=%u host_RX_poll_ns=%llu host_RX_polls=%llu "
+		"WiFi_forwarded_packets=%llu WiFi_miss_packets=%llu WiFi_RX_copy_bytes=%llu "
+		"WiFi_RX_copy_ns=%llu WiFi_dispatch_ns=%llu "
+		"WiFi_lookup_packets=%llu WiFi_TX_copy_bytes=%llu WiFi_TX_prepare_ns=%llu\n",
+		priv->qm.profile, priv->qm.host_poll_ns, priv->qm.host_polls,
+		priv->qm.wifi_forwarded, priv->qm.wifi_missed, priv->qm.wifi_copy_bytes,
+		priv->qm.wifi_copy_ns, priv->qm.wifi_dispatch_ns,
+		priv->dma.wifi_packets, priv->dma.wifi_copy_bytes, priv->dma.wifi_prepare_ns);
+}
+
+static ssize_t datapath_profile_store(struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	bool enabled;
+	int ret = kstrtobool(buf, &enabled);
+
+	if (ret)
+		return ret;
+	WRITE_ONCE(priv->qm.profile, enabled);
+	WRITE_ONCE(priv->dma.profile, enabled);
+	return count;
+}
+static DEVICE_ATTR_RW(datapath_profile);
 
 static ssize_t pipeline_state_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -821,6 +1026,7 @@ static DEVICE_ATTR_RW(rx_bypass);
 static struct attribute *rtl_native_attrs[] = {
 	&dev_attr_xram_state.attr,
 	&dev_attr_dma_state.attr,
+	&dev_attr_datapath_profile.attr,
 	&dev_attr_pipeline_state.attr,
 	&dev_attr_qm_state.attr,
 	&dev_attr_qm_trace.attr,
@@ -958,6 +1164,10 @@ static int rtl_probe(struct platform_device *pdev)
 	ret = sysfs_create_groups(&dev->kobj, rtl_native_groups);
 	if (ret)
 		goto unregister_netdev;
+	if (priv->qm_rx && priv->dma_tx) {
+		ret = rtl_wifi_start(dev);
+		if (ret) { sysfs_remove_groups(&dev->kobj, rtl_native_groups); goto unregister_netdev; }
+	}
 	dev_info(dev, "%s: port %u %s, PHY %08x, MAC %pM\n",
 		 netdev->name, priv->port, priv->qm_rx ? "native NI/DMA" : "management XRAM",
 		 netdev->phydev->phy_id, netdev->dev_addr);
@@ -988,6 +1198,8 @@ static void rtl_remove(struct platform_device *pdev)
 	struct net_device *dev = platform_get_drvdata(pdev);
 	struct rtl_xram *priv = netdev_priv(dev);
 
+	priv->removing = true;
+	if (priv->qm_rx && priv->dma_tx) rtl_wifi_stop();
 	sysfs_remove_groups(&pdev->dev.kobj, rtl_native_groups);
 	rtl_unregister_extra_lans(priv);
 	rcu_assign_pointer(priv->qm.lan[priv->port], NULL);

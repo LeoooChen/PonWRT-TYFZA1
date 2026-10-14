@@ -90,7 +90,7 @@
     "mode": "epon-d10g",
     "single_LLID": true,
     "MPCP_LOID_FEC_DHCP": true,
-    "IPv4": "192.168.71.28/24",
+    "IPv4": "192.0.2.53/24",
     "public_ping_5_of_5": true,
     "HTTPS_cert_verified": true,
     "HTTPS_bytes": 9097,

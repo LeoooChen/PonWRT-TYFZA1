@@ -8,7 +8,7 @@
     "descriptor_word1": "0x61000002 | ((frame_len+16)<<8)",
     "L2TM_scheduler_enabled": true,
     "NI_management_port_mux": 15,
-    "wire_evidence": "00:50:c2:01:02:03 -> ff:ff:ff:ff:ff:ff ARP who-has192.168.1.170, captured on Mac en5",
+    "wire_evidence": "02:00:00:00:00:2f -> ff:ff:ff:ff:ff:ff ARP who-has192.0.2.51, captured on Mac en5",
     "complete_bidirectional": true
   },
   "receive": {
@@ -566,7 +566,7 @@
     "IRQ_GIC116_count": 52291,
     "dhcp": {
       "host_interface": "en5",
-      "host_address": "192.168.1.170",
+      "host_address": "192.0.2.51",
       "server": "192.168.1.1",
       "ack_verified": true,
       "authenticated_luci_after_dhcp_http": 200

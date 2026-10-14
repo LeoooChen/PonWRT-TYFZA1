@@ -1,0 +1,28 @@
+{
+  "finding": "Restarting RX ownership discarded NI tail ownership and assigned its retained payloads to the replacement free pool; resetting queue read counters also left retained end sequences in the old epoch.",
+  "changes": [
+    "Initialize the replacement pool once per RX object and preserve held payload records across ARM/PE ownership changes.",
+    "Rebase each retained end sequence by its distance from the old NI read cursor before publishing the rebuilt queue counters."
+  ],
+  "validation": {
+    "current_ARM_handoff_executed": true,
+    "original_and_rotated_addresses": true,
+    "all_256_slot_addresses_and_two_unused_buffers_match": true,
+    "RX_tag_and_consumer_preserved": true,
+    "retained_tail_survives_resume": true,
+    "held_sequence_rebased_with_original_distance": true,
+    "scope": "Current handoff and queue-sequence initializer with DMA/IRQ callbacks; no hardware execution."
+  },
+  "module": {
+    "module": "artifacts/pe-handoff65/radio/rtl_ax_ap.ko",
+    "PE_bytes": 16208,
+    "matches_owner64": true
+  },
+  "build": "passed; logs/pe-handoff65-module-build.txt",
+  "scope": "Actual current ARM handoff and counter-start function executed with DMA/IRQ callbacks. Native module compiled; no modem operation or whole image build.",
+  "remaining": [
+    "Stopping before every processed RX slot has been returned still needs a tail-aware final handoff.",
+    "Physical NI stop/reset must be checked with its retained tail and live PCIe DMA; read/write equality alone is not a physical pipeline-drain proof.",
+    "166Mbps corrected throughput and sustained bidirectional performance still require hardware."
+  ]
+}

@@ -188,10 +188,16 @@ static irqreturn_t rtl_mpcp_irq_thread(int irq, void *data)
 		if (rtl_pon_mode_is_epon(pon->mode))
 			rtl_pon_oam_carrier(pon);
 	}
-	if ((pending & BIT(0)) && rtl_pon_mode_is_epon(pon->mode)) {
-		pon->mpcp_irq_count++;
-		rtl_mpcp_refresh(pon);
-		writel(BIT(3), pon->mac + GLB_IRQ);
+	if (pending & BIT(0)) {
+		if (rtl_pon_mode_is_epon(pon->mode)) {
+			pon->mpcp_irq_count++;
+			rtl_mpcp_refresh(pon);
+			writel(BIT(3), pon->mac + GLB_IRQ);
+		} else if (pon->mode == RTL_PON_GPON) {
+			rtl_pon_gpon_irq(pon);
+		} else {
+			rtl_pon_xgpon_irq(pon);
+		}
 	}
 	writel(pending & PON_TOP_EVENTS, pon->top_irq);
 	mutex_unlock(&pon->lock);

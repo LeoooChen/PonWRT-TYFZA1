@@ -1,0 +1,357 @@
+{
+  "finding": "RP report batching threshold exceeds PE in-flight WP capacity under two-frame A-MSDU",
+  "evidence_scope": "Shipped ubi60 radio extracted from rootfs contains 121/255 config; current source and original set_host_rpr agree on field semantics. Hardware register was not captured during high-load runs.",
+  "budget": {
+    "PE_payload_owners": 124,
+    "MSDU_per_MPDU": 2,
+    "maximum_report_entries_before_recycle": 62,
+    "stock_aggregation_threshold": 121,
+    "new_mainline_threshold": 30,
+    "timeout_code_unchanged": 255
+  },
+  "live_history": [
+    {
+      "offered_Mbps": 300,
+      "payload_Mbps": 165.931,
+      "RP_reports_per_sample": [
+        6882,
+        7254,
+        7192,
+        7192,
+        5456,
+        0,
+        0
+      ],
+      "reports_mod_62": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "early_accepted_runs": [
+        124,
+        124,
+        124,
+        124,
+        124,
+        124,
+        124,
+        124,
+        124,
+        124,
+        124,
+        125,
+        123,
+        124,
+        124
+      ],
+      "early_cycle_ms_inferred_from_sequence_rate": [
+        7.38832,
+        9.851093333333333,
+        7.38832,
+        9.851093333333333,
+        7.38832,
+        9.851093333333333,
+        9.851093333333333
+      ]
+    },
+    {
+      "offered_Mbps": 600,
+      "payload_Mbps": 166.056,
+      "RP_reports_per_sample": [
+        7130,
+        7192,
+        7192,
+        7192,
+        5469,
+        1,
+        1
+      ],
+      "reports_mod_62": [
+        0,
+        0,
+        0,
+        0,
+        13,
+        1,
+        1
+      ],
+      "early_accepted_runs": [
+        123,
+        124,
+        124,
+        124,
+        124,
+        124,
+        124,
+        124,
+        124,
+        124,
+        124,
+        124,
+        51,
+        3,
+        1
+      ],
+      "early_cycle_ms_inferred_from_sequence_rate": [
+        8.639893333333333,
+        8.619706666666668,
+        8.619706666666668,
+        8.619706666666668,
+        9.851093333333333,
+        8.619706666666668,
+        8.619706666666668
+      ]
+    },
+    {
+      "offered_Mbps": 1000,
+      "payload_Mbps": 165.258,
+      "RP_reports_per_sample": [
+        6944,
+        7192,
+        7050,
+        7192,
+        5456,
+        2,
+        2
+      ],
+      "reports_mod_62": [
+        0,
+        0,
+        44,
+        0,
+        0,
+        2,
+        2
+      ],
+      "early_accepted_runs": [
+        124,
+        124,
+        124,
+        124,
+        124,
+        124,
+        124,
+        124,
+        20,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "early_cycle_ms_inferred_from_sequence_rate": [
+        8.865984,
+        8.865984,
+        8.865984,
+        8.865984,
+        8.865984,
+        8.865984,
+        8.865984
+      ]
+    }
+  ],
+  "replay": {
+    "scope": "Current PE ingest/select/RPQ/recycle compiled together for MIPS with a callable wrapper. Immediate wireless completion and count/timer report triggers are modeled; no PHY, cache, main-loop timing or throughput simulation.",
+    "stock_batch": {
+      "report_batch": 121,
+      "before_timer": {
+        "sent": 124,
+        "pending": 124,
+        "MPDU": 62,
+        "reports": 0,
+        "pending_reports": 62,
+        "returned": 0
+      },
+      "report_packets": [
+        62,
+        62
+      ],
+      "after_timer_sent": 248,
+      "after_timer_returned": 248,
+      "exact_payload_order": true
+    },
+    "mainline_batch": {
+      "report_batch": 30,
+      "before_timer": {
+        "sent": 248,
+        "pending": 8,
+        "MPDU": 124,
+        "reports": 120,
+        "pending_reports": 4,
+        "returned": 240
+      },
+      "report_packets": [
+        30,
+        30,
+        30,
+        30,
+        4
+      ],
+      "after_timer_sent": 248,
+      "after_timer_returned": 248,
+      "exact_payload_order": true
+    }
+  },
+  "stock_config_check": {
+    "scope": "Actual stock AArch64 set_host_rpr with explicit MMIO callbacks; native init compiled from its header. Two report sizes, not a radio test.",
+    "stock": [
+      {
+        "aggregate": 121,
+        "register_9414": "0xa5ff5a79",
+        "writes": [
+          [
+            37896,
+            16384
+          ],
+          [
+            37904,
+            252116993
+          ],
+          [
+            37908,
+            2784975481
+          ]
+        ],
+        "repeated_call_no_write": true
+      },
+      {
+        "aggregate": 30,
+        "register_9414": "0xa5ff5a1e",
+        "writes": [
+          [
+            37896,
+            16384
+          ],
+          [
+            37904,
+            252116993
+          ],
+          [
+            37908,
+            2784975390
+          ]
+        ],
+        "repeated_call_no_write": true
+      }
+    ],
+    "native_register_9414": "0xa5ff5a1e"
+  },
+  "uplink": {
+    "scope": "Actual linked rx_uplink; synthetic already-decrypted RX WD/data; verifies NI descriptor, interface identity, PN/SN and Ethernet bytes, not radio/ASIC timing.",
+    "before": [
+      {
+        "slot": 0,
+        "NI_VP": 9,
+        "ipv6": false,
+        "UDP_payload_bytes": 0,
+        "PE_to_NI": false,
+        "exact_ethernet": false,
+        "ARM_handoff": "required"
+      },
+      {
+        "slot": 1,
+        "NI_VP": 10,
+        "ipv6": false,
+        "UDP_payload_bytes": 0,
+        "PE_to_NI": false,
+        "exact_ethernet": false,
+        "ARM_handoff": "required"
+      }
+    ],
+    "after": [
+      {
+        "slot": 0,
+        "NI_VP": 9,
+        "ipv6": false,
+        "UDP_payload_bytes": 0,
+        "PE_to_NI": true,
+        "exact_ethernet": true,
+        "ARM_handoff": false
+      },
+      {
+        "slot": 0,
+        "NI_VP": 9,
+        "ipv6": false,
+        "UDP_payload_bytes": 1472,
+        "PE_to_NI": true,
+        "exact_ethernet": true,
+        "ARM_handoff": false
+      },
+      {
+        "slot": 0,
+        "NI_VP": 9,
+        "ipv6": true,
+        "UDP_payload_bytes": 1452,
+        "PE_to_NI": true,
+        "exact_ethernet": true,
+        "ARM_handoff": false
+      },
+      {
+        "slot": 1,
+        "NI_VP": 10,
+        "ipv6": false,
+        "UDP_payload_bytes": 0,
+        "PE_to_NI": true,
+        "exact_ethernet": true,
+        "ARM_handoff": false
+      },
+      {
+        "slot": 1,
+        "NI_VP": 10,
+        "ipv6": false,
+        "UDP_payload_bytes": 1472,
+        "PE_to_NI": true,
+        "exact_ethernet": true,
+        "ARM_handoff": false
+      },
+      {
+        "slot": 1,
+        "NI_VP": 10,
+        "ipv6": true,
+        "UDP_payload_bytes": 1452,
+        "PE_to_NI": true,
+        "exact_ethernet": true,
+        "ARM_handoff": false
+      }
+    ]
+  },
+  "changes": [
+    "RP report count threshold 121 -> 30, matching mainline rtw89",
+    "Expose report aggregation and timeout code in radio_tx",
+    "Keep full WP ID when displaying PE WD (256..383 are not ARM slots0..127)",
+    "Allow valid standalone small IPv4 UDP to enter PE -> NI instead of ARM exception path"
+  ],
+  "deployment": "Not loaded or flashed; modem unavailable at workplace",
+  "remaining": [
+    "Live register/cadence A/B needed to measure the corrected maximum throughput; no physical timer unit assumed",
+    "PON optical PCS/FEC/DBA not exercised by CPU injection",
+    "Uplink NI read-pointer versus last two prefetched payloads remains an ownership question; not changed without a verified completion contract",
+    "Full high-rate uplink remains unmeasured"
+  ],
+  "not_changed": [
+    "Frontend/OpenWrt UI files",
+    "Mac network configuration",
+    "PE DMA payload ownership rules",
+    "CCMP PN/SN and authorization rules",
+    "A-MSDU minimum subframe size or padding"
+  ],
+  "module_build": {
+    "result": "passed",
+    "module": "artifacts/pe-credit63/radio/rtl_ax_ap.ko",
+    "log": "logs/pe-credit63-module-build.txt",
+    "payload": {
+      "embedded_PE_bytes": 16336,
+      "matches_current_PE": true,
+      "module": "artifacts/pe-credit63/radio/rtl_ax_ap.ko",
+      "vermagic": [
+        "vermagic=6.18.55 SMP mod_unload aarch64"
+      ]
+    },
+    "whole_firmware_built": false
+  },
+  "observability": "radio_tx reports actual0x9414; full PE WP ID selects the correct WD page; observer retains PE MPDU and ARM exception byte counters",
+  "primary_diagnosis": "Count-triggered report release is unreachable with the paired PE WP budget, forcing timeout-driven recycle. Existing burst/counter cadence matches; live A/B is still required for the resulting throughput."
+}

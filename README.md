@@ -1,30 +1,96 @@
 # PonWRT-TYFZA1
 
-TYFZA1 / RTL9617CVW 的原生 OpenWrt 主线移植项目。
+感谢 [PonWrt](https://github.com/pbs05/ponwrt) 在 PON 与 OpenWrt 整合、原厂身份和校准保留、硬件转发及排障思路上提供的参考。本项目针对天翼 TYFZA1 / Realtek RTL9617CVW 独立适配，OMCI 协议引擎使用其 GPL 源码；硬件配置以本机原厂实现为依据。
 
-2026-10-07：实机已启动原生 Linux 6.18.55 / OpenWrt initramfs。四核、UART RX/TX、PSCI、GICv3、timer、procd/ubus 与 watchdog 正常；原生 SPI NAND/MTD 和 UBI 读取通过。11 个原厂 UBI 卷全部识别，boot、static_conf 和 ubi_k0 的完整读回 SHA256 与本机原厂备份一致。
+**版本：0.2.0-alpha** · OpenWrt · Linux 6.18.55 · 四核 Cortex-A55
 
-LAN 首轮：原生 XRAM 管理通路已提供 eth0/br-lan，1Gbps 协商、1000 个满 MTU 包与 1MiB 双向 TCP 哈希校验通过。完整 main（r0-79bc56c）已在实机通过 DHCP、LuCI登录和IPv6邻居发现/ping，最终 RAM 载荷保存于 artifacts/full-lan-luci-multicast-6.18.55/。
+## 功能与进度
 
-NI/DMA 已在实机实现 Linux DMA API 发送、L3QM/EPP64 中断接收与软件转发。TQM 复位和 EPP 满环处理已修正；100000 个带序号 UDP 包零丢失/重复/错包，16MiB 双向 TCP cmp0，完整主线接收约417Mbps、发送约294Mbps，DHCP和LuCI正常。最新验证镜像为 artifacts/full-ni-pon-base-6.18.55/ram-pon/image.itb。当前验证日志及各单项对照见 docs/ni-dma-bringup.md 和 manifests/ni-tests.json。
+| 功能 | 状态 |
+| --- | --- |
+| 系统启动、NAND/UBI、watchdog | 已实测 |
+| 原厂 telnet 安装、sysupgrade、断电启动 | 已实测 |
+| 四 LAN 网桥 | 已接入；四口逐口完整测试待完成 |
+| 2.5G 网口 | 驱动已接入，链路与硬件转发待测试 |
+| 双频 WiFi、WPA2、HT/VHT80、Wi-Fi 6 | HT/VHT 已实测；HE 协商与发包参数已接入，兼容性待测试 |
+| IPv4 路由/NAT、WiFi 双向硬件加速 | 双频上下行硬件路径已实测；持续高负载丢包待优化 |
+| EPON（1G/1G） | 独立 MAC/PCS/FEC、MPCP 和 CTC OAM 已接入；业务与硬件转发待测试 |
+| 10G-EPON 非对称（10G/1G） | 注册、CTC OAM、LOID、FEC、DHCP 和双向硬件路径已实测；PPPoE、桥接待测试 |
+| 10G-EPON 对称（10G/10G） | 独立 MAC/PCS/FEC、MPCP 和 CTC OAM 已接入；业务与硬件转发待测试 |
+| GPON | GTC 激活、PLOAM、OMCI 和 GEM/T-CONT 业务映射已接入；OLT 互通与硬件转发待测试 |
+| XG-PON | 非对称 XGTC 激活、PLOAM、OMCI 和业务映射已接入；OLT 互通与硬件转发待测试 |
+| XGS-PON | 对称 XGTC 激活、PLOAM、OMCI 和业务映射已接入；OLT 互通与硬件转发待测试 |
+| PPPoE | 已接入 OpenWrt 原生配置；拨号、业务与硬件转发待测试 |
+| 桥接 | 已接入 Linux 网桥自动学习、VLAN/QinQ 和二层硬件转发；实机待测试 |
+| IPv6 | 已加入 DHCPv6、RA 和原生页面；公网、前缀下发与硬件转发待测试 |
+| VLAN/QinQ、多 LLID、多业务 | 待测试 |
+| 冷启动、WiFi 停启、防火墙重载 | 0.1 系列已实测；本版本待测试 |
 
-当前开发顺序：EPON有线硬件转发 → Wi-Fi → 原生OpenWrt UBI安装/升级/恢复。GPON族按用户要求暂缓。无线资料完整文档阅读与实施顺序见docs/wifi-port-order.md；每个新阶段先核对用户资料目录的增量。
+支持手动选择 PON 模式。认证参数均可留空；MAC、SN 和厂商标识留空时使用本机原厂身份。镜像的身份和光学/射频校准从当前设备的原厂分区读取。
 
-当前主线基线：OpenWrt `79bc56cb7483bc716da07c369530b792631904b4`，Linux `6.18.55`。本机原厂 DTB 与资料库原生代码采用的 TYFZA1 DTB SHA256 相同。
+## 下载与刷入
 
-- `port/overlay/target/linux/rtl9617c/`：新增 target、板级 DTS 和原生驱动。
-- `scripts/`：RAM FIT 构建、启动内核构建、TTL 控制和 TFTP。
-- `manifests/`：固定源码、板级参数和实机结果。
-- `docs/bringup.md`：启动记录和可复用操作。
-- `sources/openwrt/`：固定提交的主线源码；`sources/ponwrt-reference/`：Airoha 协议层参考。
-- `evidence/`：本机原厂备份和完整 SDK 研究资料；`artifacts/`：载荷与构建目录；`logs/`：原始串口/构建/传输日志。后三者留在 Ubuntu，不进入 Git。
+在 [Releases](https://github.com/LeoooChen/PonWRT-TYFZA1/releases) 下载 `tyfza1-telnet-install.tar.gz` 或 `sysupgrade.bin`。
 
-工作目录：Ubuntu `/home/leo/PonWRT-TYFZA1`。Mac 可查看 `~/OrbStack/ubuntu2404/home/leo/PonWRT-TYFZA1`。
+### 原厂系统安装
 
-PON原生SerDes、gearbox、MAC/PCS/FEC已完成实机初始化，三个时钟就绪、关键参数读回匹配、统计RAM初始化完成。最新完整主线镜像通过UCI pon与S25pon自动执行；MPCP/LLID控制、原机ONU身份导入及PDC映射已进入原生驱动，后续接通PUC上行队列、OAM和PON业务接口。详细记录见 docs/pon-bringup.md。
+启用原厂 telnet，接好 LAN 网线并登录光猫。在电脑的安装包目录运行：
 
-2026-10-09：XEPON的MPCP注册、CTC OAM认证、FEC、WAN DHCP和LAN↔PON业务已实机通过；IPv4 TCP/UDP动态硬件NAT、cache自动分配/删除及原厂64K Hash/48字节槽诊断通过。新源码补齐VLAN/QinQ及共享出口接口，完整镜像artifacts/full-pon-wired-vlan01-6.18.55构建/载荷校验通过，新功能待设备重新连接后板测。当前Wi-Fi从板级PCIe与芯片身份开始，尚未声明无线可用。
+```sh
+python3 -m http.server 8000
+```
 
-2026-10-10：双频HT/VHT Wi-Fi已可用并接入原生UCI/netifd/wpad。四LAN的硬件入口、真实来源保留与NAT后出口修复已进入正式驱动；LAN3实测下载94.4Mbps、上传主体绕过CPU，完整四口镜像已构建/核验。保留当前Wi-Fi供GPT通信，没有为新镜像重启设备。其他三口逐口插线验收仍待完成，详见[四LAN修复记录](docs/lan-hardware-fix-20261010.md)。
+在光猫 telnet 中执行，将 `LAN_SERVER` 替换为电脑的 LAN 地址：
 
-2026-10-10：原生双频AP、WPA2、HT/WMM/BA已实机可用，5GHz进一步接入VHT80/两空间流，终端双向链路866.7Mbps，用户业务实测100Mbps下载/20Mbps上传，达到宽带上限；2.4GHz HT20此前约60Mbps下载。HE速率控制、无线NE卸载与正式UBI安装仍待完成。详见docs/wifi-wideband-bringup.md。
+```sh
+mkdir -p /tmp/tyfza1-install
+wget -O /tmp/tyfza1-install.tar.gz http://LAN_SERVER:8000/tyfza1-telnet-install.tar.gz
+tar -xzf /tmp/tyfza1-install.tar.gz -C /tmp/tyfza1-install
+cd /tmp/tyfza1-install
+sh ./install.sh
+```
+
+安装脚本更新原厂已有的 UBI 固件槽，保留原厂身份和校准，完成后自动重启。
+
+### OpenWrt 升级
+
+通过 **系统 → 备份与更新** 上传 `sysupgrade.bin`，或执行：
+
+```sh
+sysupgrade /tmp/sysupgrade.bin
+```
+
+默认保留配置；`sysupgrade -n` 恢复默认配置。
+
+## 配置
+
+通过 LAN 打开 `http://192.168.1.1/`，设置管理密码。
+
+- **网络 → PON 管理**：选择线路协议，填写运营商要求的 LOID、密码、SN、ONU MAC 等可选参数；OMCI 增强认证 PSK 仅在线路需要时填写。
+- **网络 → 接口 → WAN**：使用 OpenWrt 原生 DHCP/PPPoE、VLAN 和 IPv6 设置。默认业务设备为 `pon-data0`，VLAN 使用 `pon-data0.VID`。
+- **网络 → 无线**：设置名称、密码和国家/地区，然后启用无线。
+
+## Fork 云端编译
+
+1. 点击仓库右上角 **Fork**，然后进入自己的仓库。
+2. 打开 **Actions**，启用工作流。
+3. 选择 **Build TYFZA1 firmware → Run workflow**，选择分支并填写 `release_tag`；自定义软件包时，将配置提交到仓库，在 `config_file` 填写配置文件路径。
+4. 编译成功后，在自己仓库的 **Releases** 下载固件，或在本次 Actions 运行的 **Artifacts** 中下载 `firmware-and-build-log`。
+
+密钥和编译所需附件会自动获取，无需配置 Secrets。
+
+本地运行 `sh port/scripts/sync-overlay.sh sources/openwrt` 后，在 OpenWrt 目录执行 `make menuconfig` 选择软件包，再运行 `sh port/scripts/build.sh sources/openwrt 4`。后续构建保留 `.config`；也可通过 `TYFZA1_CONFIG=/配置文件路径` 指定配置。
+
+镜像按所选软件包压缩生成，沿用原厂 UBI 卷大小：
+
+| 内容 | 大小上限 |
+| --- | --- |
+| `kernel.itb` | 6,291,456 字节（6 MiB，原厂 U-Boot 读取长度） |
+| `rootfs.squashfs` | 33,648,640 字节（约 32.09 MiB，原厂 rootfs 卷容量） |
+| 可写 `rootfs_data` | 16 MiB，UBIFS 可用空间扣除文件系统开销 |
+
+`sysupgrade.bin` 和安装包中的内核、rootfs 分别写入对应卷。编译时检查镜像上限；安装和升级时读取设备实际卷容量，超出容量会报错。
+
+## 协议
+
+源代码采用 [GNU GPL v2](COPYING)。第三方组件和原厂设备微码保留各自授权。

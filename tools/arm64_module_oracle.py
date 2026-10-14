@@ -11,10 +11,11 @@ from unicorn.arm64_const import UC_ARM64_REG_X0, UC_ARM64_REG_X1, UC_ARM64_REG_X
 
 
 class ModuleOracle:
-    def __init__(self, module, names, handler):
+    def __init__(self, module, names, handler, external_symbols=None):
         self.uc = Uc(UC_ARCH_ARM64, UC_MODE_ARM)
         self.sections, self.symbols, self.functions, self.hooks = {}, {}, {}, {}
         self.trampoline, self.scratch = 0x4000000, 0x5000000
+        self.callback_index = 0
         self.uc.mem_map(self.trampoline, 0x10000)
         self.uc.mem_map(self.scratch, 0x10000)
         base = 0x1000000
@@ -35,6 +36,14 @@ class ModuleOracle:
                     self.symbols[symbol.name] = (self.sections[symbol['st_shndx']] + symbol['st_value'], symbol['st_size'])
             selected = [symbols.get_symbol_by_name(name)[0] for name in names]
             self.functions = {name: self.symbols[name][0] for name in names}
+            # Local BL instructions can resolve inside .text without a relocation.
+            # Route unselected callees through the same explicit IO callback.
+            for symbol in symbols.iter_symbols():
+                if symbol['st_info']['type'] != 'STT_FUNC' or symbol['st_shndx'] not in self.sections:
+                    continue
+                address = self.sections[symbol['st_shndx']] + symbol['st_value']
+                if address not in self.functions.values():
+                    self.hooks[address] = symbol.name
             for relsection in elf.iter_sections():
                 if relsection['sh_type'] != 'SHT_RELA' or relsection['sh_info'] not in self.sections:
                     continue
@@ -52,6 +61,8 @@ class ModuleOracle:
                         value = self.callback(symbol.name)
                     elif symbol['st_shndx'] in self.sections:
                         value = self.sections[symbol['st_shndx']] + symbol['st_value'] + rel['r_addend']
+                    elif symbol.name in (external_symbols or {}):
+                        value = external_symbols[symbol.name] + rel['r_addend']
                     elif not is_code:
                         continue
                     else:
@@ -83,7 +94,8 @@ class ModuleOracle:
         self.uc.hook_add(UC_HOOK_CODE, hook)
 
     def callback(self, name):
-        address = self.trampoline + len(self.hooks) * 16
+        address = self.trampoline + self.callback_index * 16
+        self.callback_index += 1
         self.hooks[address] = name
         return address
 

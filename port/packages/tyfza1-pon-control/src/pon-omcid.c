@@ -1,0 +1,185 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* OMCI transport and UCI identity for the native RTL9617C ITU backend. */
+#include <arpa/inet.h>
+#include <errno.h>
+#include <ctype.h>
+#include <fcntl.h>
+#include <linux/if_packet.h>
+#include <net/ethernet.h>
+#include <net/if.h>
+#include <poll.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <syslog.h>
+#include <time.h>
+#include <unistd.h>
+#include "pon-config.h"
+#include "pon-omci.h"
+
+#define PON_SYSFS "/sys/bus/platform/devices/4f5500000.pon/"
+#define PATH_BYTES (4 + 248 * 13)
+
+static int put_file(const char *path, const void *data, size_t length)
+{
+	int fd = open(path, O_WRONLY | O_CLOEXEC), result;
+	ssize_t written;
+
+	if (fd < 0) return -errno;
+	written = write(fd, data, length);
+	result = written < 0 ? -errno : written == (ssize_t)length ? 0 : -EIO;
+	close(fd);
+	return result;
+}
+
+static void identity_field(struct pon_config *config, const char *name, const char *default_value,
+	uint8_t *output, size_t width)
+{
+	const char *value = pon_config_option(config, name);
+
+	if (!value || !value[0]) value = default_value;
+	memcpy(output, value, strnlen(value, width));
+}
+
+static int load_identity(struct omci_identity *identity)
+{
+	struct pon_config config = {};
+	FILE *serial;
+	unsigned int i;
+	int result = pon_config_load(&config, "/etc/config");
+
+	if (result) goto out;
+	serial = fopen(PON_SYSFS "active_serial_number", "r");
+	if (!serial) { result = -errno; goto out; }
+	for (i = 0; i < 8; i++)
+		if (fscanf(serial, "%2hhx", &identity->serial[i]) != 1) { result = -EINVAL; break; }
+	fclose(serial);
+	identity_field(&config, "equipment_id", "TYFZA1", identity->equipment, sizeof(identity->equipment));
+	identity_field(&config, "hardware_version", "RTL9617C", identity->hardware, sizeof(identity->hardware));
+	identity_field(&config, "software_version", "0.2.0-alpha", identity->software, sizeof(identity->software));
+	identity_field(&config, "loid", "", identity->loid, sizeof(identity->loid));
+	identity_field(&config, "loid_password", "", identity->password, sizeof(identity->password));
+	identity_field(&config, "operator_id", "CTC", identity->operator_id, sizeof(identity->operator_id));
+	const char *psk = pon_config_option(&config, "omci_psk");
+	if (psk && psk[0]) {
+		if (strlen(psk) != 32) { result = -EINVAL; goto out; }
+		for (i = 0; i < 32; i++) if (!isxdigit((unsigned char)psk[i])) { result = -EINVAL; goto out; }
+		for (i = 0; i < 16; i++)
+			if (sscanf(psk + i * 2, "%2hhx", &identity->psk[i]) != 1) { result = -EINVAL; goto out; }
+		identity->has_psk = 1;
+	}
+out:
+	uci_free_context(config.context);
+	return result;
+}
+
+static unsigned int paths_configured(unsigned long long *session)
+{
+	FILE *status = fopen(PON_SYSFS "data_path", "r");
+	unsigned int ready = 0, count;
+	unsigned long long epoch;
+	int error;
+
+	if (!status) return 0;
+	if (fscanf(status, "configured=%u error=%d epoch=%llu paths=%u session=%llu",
+	    &ready, &error, &epoch, &count, session) != 5) ready = 0;
+	fclose(status);
+	return ready;
+}
+
+int main(void)
+{
+	struct omci_identity identity = {};
+	struct omci_agent *agent;
+	struct sockaddr_ll address = {.sll_family = AF_PACKET, .sll_protocol = htons(ETH_P_ALL)};
+	uint8_t input[2048], output[2048], paths[PATH_BYTES], applied[PATH_BYTES], key[16];
+	unsigned long long session = 0, previous_session = 0, received = 0, transmitted = 0, invalid = 0;
+	int fd, enabled = 1, applied_length = 0, result, path_error = 0;
+	struct pollfd pollfd;
+
+	openlog("pon-omcid", LOG_PID, LOG_DAEMON);
+	result = load_identity(&identity);
+	if (result) { fprintf(stderr, "OMCI identity: %s\n", strerror(-result)); return 1; }
+	agent = tyfza1_omci_new(&identity);
+	memset(&identity, 0, sizeof(identity));
+	fd = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_ALL));
+	if (fd < 0) { perror("OMCI socket"); tyfza1_omci_free(agent); return 1; }
+	address.sll_ifindex = if_nametoindex("pon-omci");
+	if (!address.sll_ifindex) { perror("pon-omci"); close(fd); tyfza1_omci_free(agent); return 1; }
+	if (bind(fd, (struct sockaddr *)&address, sizeof(address))) {
+		perror("OMCI bind"); close(fd); tyfza1_omci_free(agent); return 1;
+	}
+	setsockopt(fd, SOL_PACKET, PACKET_IGNORE_OUTGOING, &enabled, sizeof(enabled));
+	pollfd = (struct pollfd){.fd = fd, .events = POLLIN};
+	for (;;) {
+		unsigned int ready = paths_configured(&session);
+		int length;
+
+		if (session != previous_session) {
+			tyfza1_omci_epoch(agent);
+			previous_session = session;
+		}
+		length = tyfza1_omci_paths(agent, paths);
+		if (length >= 4 && (length != applied_length || memcmp(paths, applied, length) ||
+		    (length > 4 && !ready))) {
+			result = put_file(PON_SYSFS "itu_paths", paths, length);
+			path_error = result;
+			if (!result) { memcpy(applied, paths, length); applied_length = length; }
+			else if (result != -EAGAIN) fprintf(stderr, "OMCI business mapping: %s\n", strerror(-result));
+		}
+		FILE *status = fopen("/var/run/pon-omci", "w");
+		if (status) {
+			fprintf(status, "rx=%llu tx=%llu invalid=%llu paths=%u error=%d\n",
+				received, transmitted, invalid, applied_length > 4 ? (applied_length - 4) / 13 : 0, path_error);
+			fclose(status);
+		}
+		result = poll(&pollfd, 1, 1000);
+		if (result < 0) { if (errno == EINTR) continue; break; }
+		if (!result) continue;
+		length = recv(fd, input, sizeof(input), 0);
+		if (length < 0) { if (errno == EINTR || errno == ENETDOWN) continue; break; }
+		received++;
+		uint8_t broadcast[18];
+		bool security_set = length >= 12 && (input[2] & 31) == 8 && input[4] == 1 && input[5] == 0x4c;
+		unsigned int mask_offset = input[3] == 0x0b ? 10 : 8;
+		struct timespec security_received, security_replied;
+		int backend_result = 0;
+		if (security_set) clock_gettime(CLOCK_MONOTONIC, &security_received);
+		if (tyfza1_omci_broadcast(input, length, broadcast))
+			backend_result = put_file(PON_SYSFS "omci_broadcast", broadcast, sizeof(broadcast));
+		length = tyfza1_omci_dispatch(agent, input, length, output, backend_result);
+		if (length < 0) { invalid++; continue; }
+		result = send(fd, output, length, 0);
+		int send_error = result < 0 ? errno : 0;
+		if (security_set) {
+			clock_gettime(CLOCK_MONOTONIC, &security_replied);
+			syslog(LOG_INFO, "Class332 SET rx=%lld.%09ld tx=%lld.%09ld tid=%02x%02x mask=%02x%02x backend=%d response=%u sent=%d",
+				(long long)security_received.tv_sec, security_received.tv_nsec,
+				(long long)security_replied.tv_sec, security_replied.tv_nsec,
+				input[0], input[1], input[mask_offset], input[mask_offset + 1],
+				backend_result, output[output[3] == 0x0b ? 10 : 8], send_error ? -send_error : result);
+		}
+		if (result < 0) { if (send_error == ENETDOWN) continue; break; }
+		transmitted++;
+		/* The response uses the current IK; a completed Class332 exchange installs the next MSK. */
+		if (tyfza1_omci_session_key(agent, key)) {
+			char text[33];
+			for (unsigned int i = 0; i < 16; i++) snprintf(text + i * 2, 3, "%02x", key[i]);
+			result = put_file(PON_SYSFS "omci_msk", text, 32);
+			clock_gettime(CLOCK_MONOTONIC, &security_replied);
+			syslog(LOG_INFO, "Class332 MSK time=%lld.%09ld result=%d",
+				(long long)security_replied.tv_sec, security_replied.tv_nsec, result);
+			tyfza1_omci_key_complete(agent, !result);
+			memset(key, 0, sizeof(key));
+		}
+		while ((length = tyfza1_omci_notification(agent, output)) > 0) {
+			if (send(fd, output, length, 0) < 0) break;
+			transmitted++;
+		}
+	}
+	perror("OMCI transport");
+	close(fd);
+	tyfza1_omci_free(agent);
+	return 1;
+}

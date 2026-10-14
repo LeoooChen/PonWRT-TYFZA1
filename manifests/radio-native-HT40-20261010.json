@@ -13,7 +13,7 @@
     "MAC_band": 0,
     "RF_band": 1,
     "PHY_primary_index": 2,
-    "password": "88888888"
+    "password": "<REDACTED-key>"
   },
   "user_speed_Mbps": {
     "download": 100,

@@ -50,7 +50,7 @@
     "hardware_enabled_download": {
       "direction": "download",
       "IP_BOUND_IF": 28,
-      "local": "192.168.1.172",
+      "local": "192.0.2.52",
       "remote": "202.38.95.110",
       "bytes": 4227072,
       "seconds": 25.033763,
@@ -61,7 +61,7 @@
     "hardware_disabled_download": {
       "direction": "download",
       "IP_BOUND_IF": 28,
-      "local": "192.168.1.172",
+      "local": "192.0.2.52",
       "remote": "202.38.95.110",
       "bytes": 104857600,
       "seconds": 9.60927,
@@ -74,7 +74,7 @@
     "download": {
       "direction": "download",
       "IP_BOUND_IF": 28,
-      "local": "192.168.1.172",
+      "local": "192.0.2.52",
       "remote": "202.38.95.110",
       "bytes": 104857600,
       "seconds": 9.162278,
@@ -87,7 +87,7 @@
     "upload": {
       "direction": "upload",
       "IP_BOUND_IF": 28,
-      "local": "192.168.1.172",
+      "local": "192.0.2.52",
       "remote": "202.119.32.33",
       "bytes": 16777216,
       "seconds": 13.018318,
@@ -116,13 +116,13 @@
       },
       "MAC_pairs": [
         {
-          "destination": "00:50:c2:01:02:00",
-          "source": "00:e0:4c:16:74:b0",
+          "destination": "02:00:00:00:00:2d",
+          "source": "02:00:00:00:00:25",
           "packets": 8
         },
         {
-          "destination": "00:e0:4c:16:74:b0",
-          "source": "00:50:c2:01:02:00",
+          "destination": "02:00:00:00:00:25",
+          "source": "02:00:00:00:00:2d",
           "packets": 4
         }
       ]
@@ -144,13 +144,13 @@
       },
       "MAC_pairs": [
         {
-          "destination": "7c:c9:26:ef:07:c9",
-          "source": "98:1e:89:61:68:d0",
+          "destination": "02:00:00:00:00:2e",
+          "source": "02:00:00:00:00:06",
           "packets": 8
         },
         {
-          "destination": "98:1e:89:61:68:d0",
-          "source": "7c:c9:26:ef:07:c9",
+          "destination": "02:00:00:00:00:06",
+          "source": "02:00:00:00:00:2e",
           "packets": 4
         }
       ]
@@ -172,13 +172,13 @@
       },
       "MAC_pairs": [
         {
-          "destination": "00:50:c2:01:02:00",
-          "source": "00:e0:4c:16:74:b0",
+          "destination": "02:00:00:00:00:2d",
+          "source": "02:00:00:00:00:25",
           "packets": 76449
         },
         {
-          "destination": "00:e0:4c:16:74:b0",
-          "source": "00:50:c2:01:02:00",
+          "destination": "02:00:00:00:00:25",
+          "source": "02:00:00:00:00:2d",
           "packets": 82889
         }
       ]
@@ -329,7 +329,7 @@
       "result": {
         "direction": "upload",
         "IP_BOUND_IF": 28,
-        "local": "192.168.1.172",
+        "local": "192.0.2.52",
         "remote": "202.119.32.33",
         "bytes": 16777216,
         "seconds": 8.624531,
@@ -345,7 +345,7 @@
       "result": {
         "direction": "upload",
         "IP_BOUND_IF": 28,
-        "local": "192.168.1.172",
+        "local": "192.0.2.52",
         "remote": "202.119.32.33",
         "bytes": 16777216,
         "seconds": 10.697394,
@@ -361,7 +361,7 @@
       "result": {
         "direction": "upload",
         "IP_BOUND_IF": 28,
-        "local": "192.168.1.172",
+        "local": "192.0.2.52",
         "remote": "202.120.182.167",
         "bytes": 130878,
         "seconds": 0.042039,
@@ -377,7 +377,7 @@
       "result": {
         "direction": "upload",
         "IP_BOUND_IF": 28,
-        "local": "192.168.1.172",
+        "local": "192.0.2.52",
         "remote": "202.120.182.167",
         "bytes": 130879,
         "seconds": 0.035071,

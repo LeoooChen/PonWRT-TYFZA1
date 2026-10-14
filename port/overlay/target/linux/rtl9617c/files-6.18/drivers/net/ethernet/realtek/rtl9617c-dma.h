@@ -16,6 +16,8 @@ struct rtl_dma_descriptor {
 };
 
 struct rtl_dma_tx {
+	bool profile;
+	u64 wifi_packets, wifi_copy_bytes, wifi_prepare_ns;
 	void __iomem *registers;
 	struct rtl_dma_descriptor *descriptors;
 	dma_addr_t memory_dma;
@@ -41,6 +43,8 @@ void rtl_dma_tx_free(struct device *dev, struct rtl_dma_tx *tx);
 void rtl_dma_tx_complete(struct rtl_dma_tx *tx, struct net_device *dev);
 netdev_tx_t rtl_dma_tx_frame(struct rtl_dma_tx *tx, struct sk_buff *skb,
 			   struct net_device *dev, const struct rtl9617c_ni_frame *frame);
+int rtl_dma_tx_wifi(struct rtl_dma_tx *tx, struct net_device *dev,
+		    struct sk_buff *skb, unsigned int id);
 void rtl_dma_tx_forget(struct rtl_dma_tx *tx, struct net_device *dev);
 static inline bool rtl_dma_tx_available(struct rtl_dma_tx *tx)
 {

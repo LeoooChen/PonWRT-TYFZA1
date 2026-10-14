@@ -44,7 +44,7 @@
       "pcap_sha256": "79a8f3a552363d276183bf3731b5f998c9649e477dc315b6bd25467004d54fca"
     }
   },
-  "XEPON_DHCP": "192.168.71.28/24",
+  "XEPON_DHCP": "192.0.2.53/24",
   "public_ping": "2/2",
   "AP_available": false,
   "log": "logs/radio-dual-builtin-20261010.txt"

@@ -1,0 +1,7 @@
+Protocol and MIB engine: https://github.com/pbs05/openwrt-pon-userspace
+Commit: cce9d756742487b378749c606b30e13ee9b0f093
+Source: airoha-pon-daemons/src/src/omci/{mib,protocol,provisioning,schema,security}.rs and src/wire.rs
+License: GPL-2.0-only
+RTL9617C integration and capability changes: PonWRT-TYFZA1 contributors
+Applied lessons: HGU VEIP ownership, Class332 nonce/key-name ordering, OLT VLAN/p-bit selectors, key-ring direction and unchanged-table flow retention.
+RTL9617C register behavior is derived from this board's original ca-ne.ko and Realtek GPL sources.

@@ -1,0 +1,137 @@
+--- a/include/net/netfilter/nf_flow_table.h
++++ b/include/net/netfilter/nf_flow_table.h
+@@ -25,6 +25,7 @@
+ 	struct flow_dissector_key_basic			basic;
+ 	struct flow_dissector_key_vlan			vlan;
+ 	struct flow_dissector_key_vlan			cvlan;
++	struct flow_dissector_key_pppoe			pppoe;
+ 	union {
+ 		struct flow_dissector_key_ipv4_addrs	ipv4;
+ 		struct flow_dissector_key_ipv6_addrs	ipv6;
+--- a/include/net/flow_offload.h
++++ b/include/net/flow_offload.h
+@@ -326,6 +326,7 @@
+ 		} gate;
+ 		struct {				/* FLOW_ACTION_PPPOE_PUSH */
+ 			u16		sid;
++			u16		mtu;
+ 		} pppoe;
+ 	};
+ 	struct flow_action_cookie *user_cookie; /* user defined action cookie */
+--- a/net/netfilter/nf_flow_table_offload.c
++++ b/net/netfilter/nf_flow_table_offload.c
+@@ -4,6 +4,7 @@
+ #include <linux/netfilter.h>
+ #include <linux/rhashtable.h>
+ #include <linux/netdevice.h>
++#include <linux/ppp_defs.h>
+ #include <linux/tc_act/tc_csum.h>
+ #include <net/flow_offload.h>
+ #include <net/netfilter/nf_flow_table.h>
+@@ -97,6 +98,7 @@
+ 	struct nf_flow_key *key = &match->key;
+ 	struct ip_tunnel_info *tun_info;
+ 	bool vlan_encap = false;
++	int i;
+ 
+ 	NF_FLOW_DISSECTOR(match, FLOW_DISSECTOR_KEY_META, meta);
+ 	NF_FLOW_DISSECTOR(match, FLOW_DISSECTOR_KEY_CONTROL, control);
+@@ -124,6 +126,7 @@
+ 		nf_flow_rule_vlan_match(&key->vlan, &mask->vlan,
+ 					tuple->encap[0].id,
+ 					tuple->encap[0].proto);
++		match->dissector.used_keys |= BIT_ULL(FLOW_DISSECTOR_KEY_VLAN);
+ 		vlan_encap = true;
+ 	}
+ 
+@@ -135,12 +138,14 @@
+ 			nf_flow_rule_vlan_match(&key->cvlan, &mask->cvlan,
+ 						tuple->encap[1].id,
+ 						tuple->encap[1].proto);
++			match->dissector.used_keys |= BIT_ULL(FLOW_DISSECTOR_KEY_CVLAN);
+ 		} else {
+ 			NF_FLOW_DISSECTOR(match, FLOW_DISSECTOR_KEY_VLAN,
+ 					  vlan);
+ 			nf_flow_rule_vlan_match(&key->vlan, &mask->vlan,
+ 						tuple->encap[1].id,
+ 						tuple->encap[1].proto);
++			match->dissector.used_keys |= BIT_ULL(FLOW_DISSECTOR_KEY_VLAN);
+ 		}
+ 	}
+ 
+@@ -163,6 +168,21 @@
+ 		break;
+ 	default:
+ 		return -EOPNOTSUPP;
++	}
++	/* Keep the physical ingress plus the PPPoE session in hardware rules. */
++	for (i = 0; i < tuple->encap_num; i++) {
++		if (tuple->encap[i].proto != htons(ETH_P_PPP_SES))
++			continue;
++		NF_FLOW_DISSECTOR(match, FLOW_DISSECTOR_KEY_PPPOE, pppoe);
++		key->pppoe.session_id = htons(tuple->encap[i].id);
++		key->pppoe.ppp_proto = htons(tuple->l3proto == AF_INET ?
++					    PPP_IP : PPP_IPV6);
++		key->pppoe.type = htons(ETH_P_PPP_SES);
++		mask->pppoe.session_id = 0xffff;
++		mask->pppoe.ppp_proto = 0xffff;
++		mask->pppoe.type = 0xffff;
++		key->basic.n_proto = htons(ETH_P_PPP_SES);
++		match->dissector.used_keys |= BIT_ULL(FLOW_DISSECTOR_KEY_PPPOE);
+ 	}
+ 	mask->control.addr_type = 0xffff;
+ 	match->dissector.used_keys |= BIT_ULL(key->control.addr_type);
+@@ -726,6 +746,7 @@
+ 		case htons(ETH_P_PPP_SES):
+ 			entry->id = FLOW_ACTION_PPPOE_PUSH;
+ 			entry->pppoe.sid = other_tuple->encap[i].id;
++			entry->pppoe.mtu = tuple->mtu;
+ 			break;
+ 		case htons(ETH_P_8021Q):
+ 			entry->id = FLOW_ACTION_VLAN_PUSH;
+--- a/net/netfilter/nf_flow_table_core.c
++++ b/net/netfilter/nf_flow_table_core.c
+@@ -722,6 +722,21 @@
+ }
+ EXPORT_SYMBOL_GPL(nf_flow_table_init);
+ 
++static bool nf_flow_tuple_uses_dev(const struct flow_offload_tuple *tuple,
++				   const struct net_device *dev)
++{
++	switch (tuple->xmit_type) {
++	case FLOW_OFFLOAD_XMIT_NEIGH:
++	case FLOW_OFFLOAD_XMIT_XFRM:
++		return tuple->dst_cache->dev == dev;
++	case FLOW_OFFLOAD_XMIT_DIRECT:
++		return tuple->out.ifidx == dev->ifindex ||
++		       tuple->out.hw_ifidx == dev->ifindex;
++	default:
++		return false;
++	}
++}
++
+ static void nf_flow_table_do_cleanup(struct nf_flowtable *flow_table,
+ 				     struct flow_offload *flow, void *data)
+ {
+@@ -734,7 +749,10 @@
+ 
+ 	if (net_eq(nf_ct_net(flow->ct), dev_net(dev)) &&
+ 	    (flow->tuplehash[0].tuple.iifidx == dev->ifindex ||
+-	     flow->tuplehash[1].tuple.iifidx == dev->ifindex))
++	     flow->tuplehash[1].tuple.iifidx == dev->ifindex ||
++	     (flow->type == NF_FLOW_OFFLOAD_ROUTE &&
++	      (nf_flow_tuple_uses_dev(&flow->tuplehash[0].tuple, dev) ||
++	       nf_flow_tuple_uses_dev(&flow->tuplehash[1].tuple, dev)))))
+ 		flow_offload_teardown(flow);
+ }
+ 
+@@ -823,7 +841,8 @@
+ {
+ 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
+ 
+-	if (event != NETDEV_DOWN)
++	if (event != NETDEV_DOWN && event != NETDEV_CHANGEMTU &&
++	    (event != NETDEV_CHANGE || netif_carrier_ok(dev)))
+ 		return NOTIFY_DONE;
+ 
+ 	nf_flow_table_cleanup(dev);

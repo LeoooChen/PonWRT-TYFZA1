@@ -1,0 +1,22 @@
+--- a/net/mac80211/tx.c
++++ b/net/mac80211/tx.c
+@@ -4650,6 +4650,7 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
+ {
+ 	struct ieee80211_tx_info *info;
+ 	struct ieee80211_local *local = sdata->local;
++	struct ieee80211_supported_band *sband;
+ 	struct tid_ampdu_tx *tid_tx;
+ 	struct sk_buff *seg, *next;
+ 	unsigned int skbs = 0, len = 0;
+@@ -4702,6 +4703,11 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
+ 		sdata = container_of(sdata->bss,
+ 				     struct ieee80211_sub_if_data, u.ap);
+ 
++	sband = ieee80211_get_sband(sdata);
++	if (unlikely(!sband))
++		goto out_free;
++	info->band = sband->band;
++
+ 	info->flags |= IEEE80211_TX_CTL_HW_80211_ENCAP;
+ 	info->control.vif = &sdata->vif;
+ 

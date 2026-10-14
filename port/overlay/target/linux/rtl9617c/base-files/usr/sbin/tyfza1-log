@@ -1,0 +1,28 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+set -eu
+umask 077
+
+output=${1:-/tmp/tyfza1-logs.tar.gz}
+work=$(mktemp -d /tmp/tyfza1-logs.XXXXXX)
+trap 'rm -rf "$work"' EXIT
+
+logread > "$work/system-current.log"
+dmesg > "$work/kernel-current.log"
+[ ! -f /tmp/log/tyfza1-boot.log ] || cp /tmp/log/tyfza1-boot.log "$work/boot-kernel.log"
+[ ! -f /tmp/log/tyfza1-factory.log ] || cp /tmp/log/tyfza1-factory.log "$work/factory-import.log"
+log_file=$(uci -q get 'system.@system[0].log_file' || :)
+if [ -n "$log_file" ]; then
+	[ ! -f "$log_file.old" ] || cp "$log_file.old" "$work/system-previous.log"
+	[ ! -f "$log_file" ] || cp "$log_file" "$work/system-saved.log"
+fi
+{
+	cat /etc/openwrt_release
+	uname -a
+	printf 'boot_id='
+	cat /proc/sys/kernel/random/boot_id
+	printf 'uptime='
+	cat /proc/uptime
+} > "$work/boot-info.txt"
+tar -czf "$output" -C "$work" .
+printf '%s\n' "$output"

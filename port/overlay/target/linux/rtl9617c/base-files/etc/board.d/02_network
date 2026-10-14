@@ -1,0 +1,9 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+. /lib/functions/uci-defaults.sh
+
+board_config_update
+lan_ports="eth0 eth1 eth2 eth3"
+[ -e /sys/class/net/eth4 ] && lan_ports="$lan_ports eth4"
+ucidef_set_interfaces_lan_wan "$lan_ports" "pon-data0"
+board_config_flush

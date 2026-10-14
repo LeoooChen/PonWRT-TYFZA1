@@ -24,7 +24,7 @@
   "DPK_original_RFE54_bypass_both_chips": true,
   "C_calibration_record": "logs/radio-c-tssi-builtin-calibration.log",
   "XEPON_mode": "epon-d10g",
-  "WAN_DHCP": "192.168.71.28",
+  "WAN_DHCP": "192.0.2.53",
   "public_ping_received_transmitted": [
     2,
     2

@@ -3,21 +3,19 @@
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 import tarfile
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from radio_inputs import NativeRadioFormat
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('output', type=Path)
-parser.add_argument('--study', type=Path)
+parser.add_argument('--study', type=Path, default=os.environ.get('TYFZA1_WIFI_STUDY'))
 parser.add_argument('--manifest', type=Path, default=root / 'artifacts/wifi-runtime-manifest.json')
 parser.add_argument('--openwrt-tree', type=Path, default=root / 'sources/openwrt')
-parser.add_argument('--hardware-settings', type=Path,
-                    default=root / 'evidence/pre-disassembly/backups/2026-10-07/working-dhcp/current-hs.xml')
 args = parser.parse_args()
 if args.study is None:
     args.study = root / json.loads((root / 'manifests/wireless-study-current.json').read_text())['snapshot']
@@ -65,7 +63,6 @@ try:
                              'firmware_cut': image.cut, 'version': list(image.version),
                              'download_header_bytes': len(header), 'section_packet_bytes': 2020})
     parameters = []
-    calibration = []
     # NCTL constants from this board's host ELF are device microprogram
     # input data. The native loader never loads the original host module.
     sys.path.insert(0, str(root / 'analysis/python-deps'))
@@ -89,67 +86,10 @@ try:
             nctl.append({'path': str(relative), 'bytes': len(data), 'pairs': item['pairs'],
                          'sha256': item['sha256'], 'source_symbol': item['symbol'],
                          'source_host_sha256': nctl_inputs['stock_module_sha256']})
-    hs_data = args.hardware_settings.read_bytes()
-    hs = {item.attrib['Name']: item.attrib['Value']
-          for item in ET.fromstring(hs_data).iter('Value')}
-    gain_keys = ('HW_RX_GAINGAP_2G_CCK_AB', 'HW_RX_GAINGAP_2G_OFDM_AB',
-                 'HW_RX_GAINGAP_5GL_AB', 'HW_RX_GAINGAP_5GM_AB', 'HW_RX_GAINGAP_5GH_AB')
     for family, band, fem in (('rtl8852ce', '5GHz', 'RTK66587_BPF'), ('rtl8192xbe', '2.4GHz', 'RTK66287')):
-        wlan = 0 if family == 'rtl8852ce' else 1
-        # Actual original normal gain calls query the flash shadow,not the
-        # physicalOTP. Preserve the board's exported2G/5G gain/TSSI inputs.
-        data = bytearray(b'TYFC0003')
-        data.extend(int(hs[key]) for key in gain_keys)
-        data.extend(int(hs[f'HW_THERMAL_{path}_WLAN{wlan}']) for path in ('A', 'B'))
-        data.append(int(hs[f'HW_XCAP_WLAN{wlan}_AX']))
-        for prefix, count in (('HW_2G_CCK_TSSI_', 6), ('HW_2G_BW40_1S_TSSI_', 5),
-                              ('HW_5G_BW40_1S_TSSI_', 14)):
-            for path in ('A', 'B'):
-                values = bytes(int(value, 16) for value in hs[prefix + path].split(','))
-                if len(values) != count:
-                    raise ValueError(f'Unexpected original calibration length: {prefix}{path}')
-                data.extend(values)
-        wlan_address = bytes.fromhex(hs['WLAN_MAC_ADDR'])
-        if len(wlan_address) != 6 or wlan_address[0] & 1:
-            raise ValueError('Original HS WLAN_MAC_ADDR is not a unicast MAC address')
-        data.extend(wlan_address)
-        slope = {}
-        for kind in ('GAIN', 'CW'):
-            for band_name, count in (('2G_CCK', 6), ('2G', 5), ('5G', 14)):
-                for path in ('A', 'B'):
-                    key = f'HW_{band_name}_TSSI_{kind}_DIFF_{path}'
-                    values = bytes(int(value, 16) for value in hs[key].split(','))
-                    if len(values) != count:
-                        raise ValueError(f'Unexpected original calibration length: {key}')
-                    slope[(kind, band_name, path)] = values
-            for path in ('A', 'B'):
-                data.extend(slope[(kind, '2G_CCK', path)])
-            for path in ('A', 'B'):
-                data.extend(slope[(kind, '2G', path)] + slope[(kind, '5G', path)])
-        # The actual board ELF's rtw_flash_get_info@26c4 accepts IDs <=550.
-        # C RFE54 asks for BW20/80/160 IDs551..634; those calls leave the
-        # output byte untouched. A starts with zero; B retains A's final
-        # 5G slope-CW byte. BW40 is the zero baseline. Preserve that actual
-        # board input, rather than substituting another SDK's flash table.
-        bw_seed = (0, slope[('CW', '5G', 'A')][-1])
-        for path in range(2):
-            for width in range(4):
-                data.extend(bytes([0 if width == 1 else bw_seed[path]]) * 14)
-        relative = Path('lib/firmware/realtek/tyfza1') / family / 'flash-calibration.bin'
-        destination = args.output / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(data)
-        calibration.append({'path': str(relative), 'bytes': len(data),
-                            'sha256': hashlib.sha256(data).hexdigest(),
-                            'hardware_settings_sha256': hashlib.sha256(hs_data).hexdigest(),
-                            'wlan': wlan, 'source': 'original HS flash gain,thermal,xtal,TSSI and WLAN_MAC_ADDR fields',
-                            'native_container': 'TYFC0003',
-                            'C_BW_input': {'source': 'actual host ELF flash API ID range and retained flash_tmp byte',
-                                           'unsupported_original_query_IDs': [551, 634],
-                                           'BW20_80_160_seed_A_B': list(bw_seed),
-                                           'BW40_baseline': 0},
-                            'slope_gain_CW_source': 'original HS TSSI GAIN_DIFF and CW_DIFF arrays',
-                            'physical_OTP_is_separate': True})
+        # Per-unit HS data is loaded from ubi_Config on the device at boot.
+        stale = args.output / 'lib/firmware/realtek/tyfza1' / family / 'flash-calibration.bin'
+        stale.unlink(missing_ok=True)
         for stage, subdirectory in (('base', Path()), ('FEM-extension', Path(fem))):
             relative = Path('realtek/tyfza1') / family / 'RFE54' / subdirectory
             source = args.study / 'evidence/stock/radio-parameters' / family / 'RFE54' / subdirectory
@@ -219,9 +159,10 @@ try:
                        'source': 'original TXPWR_TrackTSSI.txt 5G A/B +/- groups 0,1,2',
                        'sha256': hashlib.sha256(data).hexdigest(),
                        'selected_FEM_sha256': hashlib.sha256(source.read_bytes()).hexdigest()})
-    report = {'study': str(args.study.relative_to(root)), 'native_format_header_sha256':
+    report = {'study': str(args.study), 'native_format_header_sha256':
               hashlib.sha256((root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/fw.h').read_bytes()).hexdigest(),
-              'firmware': firmware, 'parameters': parameters, 'calibration': calibration, 'NCTL': nctl,
+              'firmware': firmware, 'parameters': parameters, 'calibration': [],
+              'calibration_source': 'device ubi0:ubi_Config, generated before kmodloader', 'NCTL': nctl,
               'regulatory_database': regulatory,
               'RF_load_order': ['base', 'FEM-extension'],
               'RF_tables_applied_by_driver': False, 'radio_driver_available': False}

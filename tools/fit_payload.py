@@ -5,6 +5,7 @@ from pathlib import Path
 import stat
 import subprocess
 import tempfile
+import zlib
 
 PROJECT = Path(__file__).resolve().parents[1]
 
@@ -99,6 +100,24 @@ def embedded_rootfs(image):
         if 'etc/config/pon' in files and 'sbin/procd' in files:
             roots.append((files, position, end))
         position = end
+    position = 0
+    while True:
+        position = image.find(b'\x1f\x8b\x08', position)
+        if position < 0:
+            break
+        try:
+            decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+            data = decoder.decompress(image[position:], 64 * 1024 * 1024)
+            if not decoder.eof:
+                raise ValueError('Incomplete or oversized gzip initramfs')
+            files, end = newc(data, 0)
+        except (ValueError, UnicodeDecodeError, zlib.error):
+            position += 3
+            continue
+        packed_end = len(image) - len(decoder.unused_data)
+        if 'etc/config/pon' in files and 'sbin/procd' in files:
+            roots.append((files, position, packed_end))
+        position = packed_end
     if len(roots) != 1:
         raise ValueError(f'Expected one actual PON initramfs, found {len(roots)}')
     return roots[0]

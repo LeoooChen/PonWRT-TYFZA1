@@ -12,8 +12,14 @@
 
 struct rtl_ax_station {
 	u8 macid;
-	u8 tx_aggregation[IEEE80211_NUM_TIDS];
 };
+
+static inline void rtl_ax_station_drop(u8 out[24], unsigned int macid, unsigned int ac)
+{
+	/* Original h2c_pkt_drop; both board radios use SCC band0/port0. */
+	memset(out, 0, 24);
+	rtl_ax_store32(out, ac | macid << 8);
+}
 
 /* Actual C/XB ops+0x118 selects the chip-specific CCTL V1 encoder.
  * rtw_hal_add_sta_entry sets host antenna fields, but this encoder does
@@ -51,6 +57,41 @@ static inline void rtl_ax_station_cmac_connected(unsigned char out[68],
 		rtl_ax_store32(out + 16, (aggregate - 1) & 0xfe);
 		rtl_ax_store32(out + 48, 0x3ff);
 	}
+}
+
+static inline u8 rtl_ax_he_padding(const u8 *phy, const u8 *ppe, unsigned int nss)
+{
+	u8 ru_mask, padding = 0x55;
+	unsigned int stream, bw, position = 7;
+
+	if (!(phy[6] & IEEE80211_HE_PHY_CAP6_PPE_THRESHOLD_PRESENT))
+		return (phy[9] >> IEEE80211_HE_PHY_CAP9_NOMINAL_PKT_PADDING_POS) * 0x55;
+	ru_mask = (ppe[0] >> 3) & 15;
+	/* Original PPE parser stores zero for omitted RUs; CCTL maps it to 8us. */
+	for (stream = 0; stream <= (ppe[0] & 7); stream++)
+		for (bw = 0; bw < 4; bw++) {
+			unsigned int shift, value, pad;
+
+			if (!(ru_mask & BIT(bw))) continue;
+			shift = position & 7;
+			value = ppe[position / 8] >> shift;
+			if (shift > 2) value |= ppe[position / 8 + 1] << (8 - shift);
+			position += 6;
+			if (stream + 1 != nss) continue;
+			pad = ((value >> 3) & 7) != 7 ? 1 : (value & 7) != 7 ? 2 : 0;
+			padding = (padding & ~(3U << (bw * 2))) | pad << (bw * 2);
+		}
+	if ((ru_mask & 12) == 4)
+		padding = (padding & 63) | ((padding >> 4) & 3) << 6;
+	return padding;
+}
+
+static inline void rtl_ax_station_cmac_he(u8 out[68], u8 padding)
+{
+	/* Original CCTL V1: HE BSR format in word6, four padding fields in word7. */
+	rtl_ax_store32(out + 24, rtl_ax_ap_read32(out + 24) | BIT(13));
+	rtl_ax_store32(out + 56, rtl_ax_ap_read32(out + 56) | BIT(13));
+	rtl_ax_store32(out + 28, (rtl_ax_ap_read32(out + 28) & ~0xffU) | padding);
 }
 
 static inline void rtl_ax_peer_cam(unsigned char out[60], unsigned int macid,

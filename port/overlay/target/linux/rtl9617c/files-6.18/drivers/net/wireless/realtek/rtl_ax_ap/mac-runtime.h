@@ -410,9 +410,9 @@ static inline void rtl_ax_mac_trx_registers(const struct rtl_ax_io *io)
 	/* mac_err_imr_ctrl(1),SCC has no CMAC1. */
 	io->write32(io->ctx, 0x8520, 0xffffffff);
 	io->write32(io->ctx, 0xc160, 0xffffffff);
-	/* set_host_rpr: PCIe SCC's POH profile chooses path0 and enables all
-	 * four WP report outcomes. Original AP override caps aggregation121;
-	 * default timer isff. Preserve its skip-write-if-unchanged behavior. */
+	/* set_host_rpr: PCIe SCC's POH profile enables all four WP outcomes.
+	 * Eight-MSDU aggregates reduce 124 BIDs to 15 WPs. Report after 12
+	 * WPs so recycling starts before the BID pool fills. */
 	value = io->read32(io->ctx, 0x9408);
 	next = value & ~3U;
 	if (value != next)
@@ -422,7 +422,7 @@ static inline void rtl_ax_mac_trx_registers(const struct rtl_ax_io *io)
 	if (value != next)
 		io->write32(io->ctx, 0x9410, next);
 	value = io->read32(io->ctx, 0x9414);
-	next = (value & 0xff00ff00) | 0x00ff0079;
+	next = (value & 0xff00ff00) | 0x00ff000c;
 	if (value != next)
 		io->write32(io->ctx, 0x9414, next);
 	/* set_l2_status changes a host state byte,not a hardware register.

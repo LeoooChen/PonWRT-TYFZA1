@@ -48,20 +48,32 @@ static bool test_bit(unsigned int bit,unsigned long *words){return (words[bit/64
 static bool ether_addr_equal(const u8 *a,const u8 *b){return !memcmp(a,b,6);}
 struct rtl_fe;
 struct net_device {};
-struct rtl_fe_port {struct list_head list;struct rtl_fe *fe;struct net_device *netdev;unsigned int source,destination,llid;bool retired;};
+struct rtl_fe_port {struct list_head list;struct rtl_fe *fe;struct net_device *netdev;unsigned int source,destination,llid,bindings;bool retired;};
 struct rtl_fe_mac {unsigned int users,saved[5];u8 address[6];};
-struct rtl_fe_interface {unsigned int users,saved,source_mac;bool counted;};
+struct rtl_fe_interface {unsigned int users,saved,source_mac,pppoe;bool counted;};
+struct rtl_fe_mtu {unsigned int users,size,saved;};
+struct work_struct {int unused;};
+struct delayed_work {struct work_struct work;unsigned int queued;};
+#define to_delayed_work(w) container_of(w,struct delayed_work,work)
 struct rtl_fe {
  struct list_head flows,ports;
  void *memory;
  struct rtl_fe_mac source_macs[15];
  struct rtl_fe_interface interfaces[64];
+ struct rtl_fe_mtu mtus[16];
  unsigned long hashes[RTL_FE_HASH_ENTRIES/64],counters[1];
  u64 deletes;
  unsigned int registers[0x4000/4],ages[RTL_FE_HASH_ENTRIES/32][4],cam[5];
  unsigned int deletes_FDB,restores_CAM,restores_IF,cache_invalidates;
  bool fail_CAM;
+ struct delayed_work cleanup_work;
+ int lock;
 };
+#define system_wq 0
+#define HZ 100
+static void mod_delayed_work(int queue,struct delayed_work *work,unsigned int delay){assert(queue==0 && delay==HZ);work->queued++;}
+static void mutex_lock(int *lock){assert(!*lock);*lock=1;}
+static void mutex_unlock(int *lock){assert(*lock);*lock=0;}
 static unsigned int fe_read(void *context,unsigned int reg){return ((struct rtl_fe *)context)->registers[reg/4];}
 static void fe_write(void *context,unsigned int reg,unsigned int value){((struct rtl_fe *)context)->registers[reg/4]=value;}
 static int fe_access(void *context,unsigned int reg,unsigned int value){
@@ -97,6 +109,10 @@ int main(void){
   .destination={2,0x77,0x66,0x55,0x44,0x33}};
  a->input=port;
  *b=*a;b->hash_index=65344;b->counter=30;b->crc16=0xff4b;
+ fe_write(&fe,0x3520,0x23451234);
+ assert(!fe_mtu_get(&fe,a,1492) && !fe_mtu_get(&fe,b,1492));
+ assert(a->mtu_index==b->mtu_index && fe.mtus[0].users==2);
+ assert(fe_read(&fe,0x3520)==0x234505d4);
  fe.interfaces[31]=(struct rtl_fe_interface){.users=1,.counted=true};
  fe.interfaces[30]=(struct rtl_fe_interface){.users=1,.counted=true};
  list_add_tail(&a->list,&fe.flows);list_add_tail(&b->list,&fe.flows);
@@ -115,18 +131,23 @@ int main(void){
  assert(!b->published && !b->destination_owned && b->source_owned && b->interface_owned);
  assert(test_bit(65344,fe.hashes) && test_bit(30,fe.counters));
  assert(!((u32 *)fe.memory)[65344]);
- assert(!fe_delete(&fe,b));
+ port->bindings=1;
+ assert(b->deleting && fe.cleanup_work.queued==1);
+ fe_cleanup_work(&fe.cleanup_work.work);
+ fe_collect_ports(&fe);assert(fe.ports.next==&port->list);
+ port->bindings=0;
  fe_collect_ports(&fe);assert(fe.ports.next==&fe.ports);
  assert(fe.source_macs[0].users==0 && fe.deletes_FDB==1 && fe.restores_CAM==1);
  assert(fe.cache_invalidates==2 && fe.restores_IF==2 && fe.deletes==2);
  for(unsigned int i=0;i<5;i++)assert(fe.cam[i]==0x51000000+i);
  assert(fe.flows.next==&fe.flows && !test_bit(65344,fe.hashes) && !test_bit(30,fe.counters));
  free(fe.memory);
+ assert(!fe.mtus[0].users && fe_read(&fe,0x3520)==0x23451234);
  puts("Native FE teardown:shared FDB/source MAC,last-owner restore,failed CAM retry and DMA/hash/counter ownership passed");
 }
 '''
 parts = [common,re.search(r'struct rtl_fe_flow \{.*?\n\};',native,re.S)[0]]
-parts += [function(n) for n in ('fe_collect_ports','fe_source_put','fe_interface_put','fe_destination_put','fe_delete')]
+parts += [function(n) for n in ('fe_collect_ports','fe_source_put','fe_interface_put','fe_mtu_get','fe_mtu_put','fe_destination_put','fe_delete','fe_cleanup_work')]
 parts.append(test)
 with tempfile.TemporaryDirectory(dir=root/'artifacts',prefix='fe-release-') as work:
     source=Path(work)/'release.c';binary=Path(work)/'release'

@@ -53,5 +53,5 @@
   "initialization_log": "logs/radio-native-tssi-builtin-20261010.txt",
   "capture_direction": "in only; unfiltered earlier files include local outgoing IPv6 and are not used for acceptance",
   "AP_transmit_association_complete": false,
-  "XEPON": "epon-d10g DHCP 192.168.71.28 public ping2/2"
+  "XEPON": "epon-d10g DHCP 192.0.2.53 public ping2/2"
 }

@@ -39,8 +39,8 @@
   "pon": {
     "mode": "epon-d10g",
     "LLID0_registered": true,
-    "DHCP_ipv4": "192.168.71.28/24",
-    "gateway": "192.168.71.1",
+    "DHCP_ipv4": "192.0.2.53/24",
+    "gateway": "192.0.2.94",
     "gateway_ping": "3/3",
     "public_ping": "observed replies to1.1.1.1"
   },

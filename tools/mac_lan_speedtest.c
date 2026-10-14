@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Bind the Darwin TCP socket to en5 and fix real DNS addresses.
+/* Bind the Darwin TCP socket to the selected test interface and fix real DNS.
  * Run via an independent LaunchAgent: an application Network Extension can
  * otherwise divert a Codex child even when its socket is bound to en5.
  * Usage: mac_lan_speedtest host IPv4 path download|upload [range|file] */
@@ -24,7 +24,7 @@ static int bind_lan(void *data, curl_socket_t socket, curlsocktype purpose)
 {
     unsigned int index = *(unsigned int *)data;
     if (setsockopt(socket, IPPROTO_IP, IP_BOUND_IF, &index, sizeof(index))) {
-        perror("IP_BOUND_IF en5");
+        perror("IP_BOUND_IF");
         return CURL_SOCKOPT_ERROR;
     }
     return CURL_SOCKOPT_OK;
@@ -35,7 +35,9 @@ static size_t discard(void *data, size_t size, size_t count, void *context)
 }
 int main(int argc, char **argv)
 {
-    unsigned int index = if_nametoindex("en5");
+    const char *interface = getenv("TYFZA1_TEST_INTERFACE");
+    if (!interface) interface = "en5";
+    unsigned int index = if_nametoindex(interface);
     char url[512], resolve[256], error[CURL_ERROR_SIZE] = {};
     struct curl_slist *dns = NULL, *headers = NULL;
     CURL *curl;
@@ -57,7 +59,7 @@ int main(int argc, char **argv)
     dns = curl_slist_append(dns, resolve);
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "curl/8.7.1");
-    curl_easy_setopt(curl, CURLOPT_INTERFACE, "en5");
+    curl_easy_setopt(curl, CURLOPT_INTERFACE, interface);
     curl_easy_setopt(curl, CURLOPT_RESOLVE, dns);
     curl_easy_setopt(curl, CURLOPT_PROXY, "");
     curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);

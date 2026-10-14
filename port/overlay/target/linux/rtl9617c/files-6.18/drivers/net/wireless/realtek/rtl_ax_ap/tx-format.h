@@ -9,6 +9,8 @@
 #define RTL_AX_TX_WP_SEQUENCE_BYTES 8
 #define RTL_AX_TX_WP_ADDRESS_BYTES 6
 #define RTL_AX_TX_WP_FRAGMENT_BYTES 2047
+#define RTL_AX_TX_WP_BYTES 128
+#define RTL_AX_TX_WP_ADDRESS_MAX ((RTL_AX_TX_WP_BYTES - 56 - RTL_AX_TX_WP_SEQUENCE_BYTES) / RTL_AX_TX_WP_ADDRESS_BYTES)
 
 static inline unsigned int rtl_ax_tx_dma_channel(unsigned int category, unsigned int mac_band)
 {
@@ -37,7 +39,7 @@ static inline void rtl_ax_tx_wp_address(u8 *out, u32 dma_address, unsigned int b
 	rtl_ax_store32(out + 2, dma_address);
 }
 
-static inline unsigned int rtl_ax_tx_wp_addresses(u8 *out, u32 dma_address, unsigned int bytes)
+static inline unsigned int rtl_ax_tx_wp_addresses(u8 *out, u32 dma_address, unsigned int bytes, bool last)
 {
 	unsigned int count = 0;
 
@@ -45,7 +47,7 @@ static inline unsigned int rtl_ax_tx_wp_addresses(u8 *out, u32 dma_address, unsi
 	while (bytes) {
 		unsigned int fragment = min(bytes, (unsigned int)RTL_AX_TX_WP_FRAGMENT_BYTES);
 
-		rtl_ax_tx_wp_address(out, dma_address, fragment, bytes == fragment);
+		rtl_ax_tx_wp_address(out, dma_address, fragment, last && bytes == fragment);
 		out += RTL_AX_TX_WP_ADDRESS_BYTES;
 		dma_address += fragment;
 		bytes -= fragment;

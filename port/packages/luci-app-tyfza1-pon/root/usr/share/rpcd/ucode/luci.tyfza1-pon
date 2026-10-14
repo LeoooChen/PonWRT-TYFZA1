@@ -3,6 +3,27 @@
 'use strict';
 import { readfile } from 'fs';
 
+function read_value(path) {
+	let text = readfile(path);
+	return text == null ? null : trim(text);
+}
+
+function network_ports() {
+	let ports = [];
+	for (let name in ['eth0', 'eth1', 'eth2', 'eth3', 'eth4', 'pon-data0']) {
+		let path = '/sys/class/net/' + name + '/';
+		let port = { device: name, present: read_value(path + 'ifindex') != null };
+		for (let key in ['carrier', 'operstate', 'speed', 'duplex', 'address', 'mtu'])
+			port[key] = read_value(path + key);
+		port.statistics = {};
+		for (let key in ['rx_bytes', 'tx_bytes', 'rx_packets', 'tx_packets',
+			'rx_errors', 'tx_errors', 'rx_dropped', 'tx_dropped'])
+			port.statistics[key] = read_value(path + 'statistics/' + key);
+		push(ports, port);
+	}
+	return ports;
+}
+
 function fields(text) {
 	if (text == null)
 		return null;
@@ -23,11 +44,16 @@ function oam_ports() {
 		let text = readfile('/var/run/pon-oam/llid-' + llid + '.json');
 		if (text == null)
 			continue;
-		let status = json(text);
+		let status;
+		try { status = json(text); }
+		catch (e) { continue; }
+		if (type(status) != 'object' || type(status.pid) != 'int' || status.pid <= 0)
+			continue;
+		status.llid_index = llid;
 		let process = readfile('/proc/' + status.pid + '/stat');
 		let end = process != null ? index(process, ') ') : -1;
 		let state = end >= 0 ? split(substr(process, end + 2), ' ') : [];
-		status.live = length(state) > 19 && state[0] != 'Z' && state[0] != 'X' &&
+		status.live = type(status.updated_ms) == 'int' && length(state) > 19 && state[0] != 'Z' && state[0] != 'X' &&
 			state[19] == status.process_start && now_ms >= status.updated_ms && now_ms - status.updated_ms < 5000;
 		if (!status.live) {
 			status.registered = false;
@@ -44,6 +70,10 @@ const methods = {
 		call: function() {
 			const device = '/sys/bus/platform/devices/4f5500000.pon/';
 			return {
+				service: fields(readfile('/var/run/pon-service')),
+				activation: fields(readfile(device + 'activation')),
+				data_path: fields(readfile(device + 'data_path')),
+				omci: fields(readfile('/var/run/pon-omci')),
 				state: fields(readfile(device + 'state')),
 				serdes: fields(readfile(device + 'serdes')),
 				bosa: fields(readfile(device + 'bosa')),
@@ -52,6 +82,7 @@ const methods = {
 				traffic: fields(readfile(device + 'traffic')),
 				fe: fields(readfile(device + 'fe')),
 				optical: fields(readfile(device + 'optical')),
+				fec: fields(readfile(device + 'fec')),
 				puc: readfile(device + 'puc'),
 				pdc: readfile(device + 'pdc'),
 				llids: readfile(device + 'llid_table'),
@@ -61,6 +92,7 @@ const methods = {
 				lan_rx_errors: trim(readfile('/sys/class/net/eth0/statistics/rx_errors')),
 				lan_rx_dropped: trim(readfile('/sys/class/net/eth0/statistics/rx_dropped')),
 				oam_ports: oam_ports(),
+				ports: network_ports(),
 				queried_at: time()
 			};
 		}

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 config RTL_AX_AP
-	bool "TYFZA1 RTL8852C/RTL8192XB native AP backend"
-	depends on PCI && ARCH_RTL9617C && MAC80211
+	tristate "TYFZA1 RTL8852C/RTL8192XB native AP backend"
+	depends on PCI && ARCH_RTL9617C && MAC80211 && RTL9617C_XRAM_ETH
 	select FW_LOADER
 	help
 	  Native PCI endpoint identity, AP power, calibration and channel12 WCPU

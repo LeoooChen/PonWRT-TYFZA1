@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: GPL-2.0-only
+#include "rtl9617c-tyfza1-pcie.dts"
+
+/ { model = "Tianyi TYFZA1 (RTL9617C UBI)"; };
+
+&qspi {
+	flash@0 {
+		/delete-property/ read-only;
+		partitions {
+			partition@280000 { /delete-property/ read-only; };
+			partition@2c0000 { /delete-property/ read-only; };
+			partition@340000 { /delete-property/ read-only; };
+		};
+	};
+};

@@ -31,11 +31,6 @@
 #define EXT_ENABLE	BIT(31)
 #define MAX_DATA	2048
 
-static bool allow_writes;
-module_param(allow_writes, bool, 0400);
-MODULE_PARM_DESC(allow_writes,
-	"Allow NAND program/erase (default off; requires verified ECC and recovery)");
-
 struct rtl_qspi {
 	void __iomem *base;
 };
@@ -64,29 +59,6 @@ static bool rtl_qspi_supports_op(struct spi_mem *mem, const struct spi_mem_op *o
 	    (op->addr.nbytes && op->addr.nbytes != 3 && op->addr.nbytes != 4)))
 		return false;
 	return spi_mem_default_supports_op(mem, op);
-}
-
-static bool rtl_qspi_readonly_op(const struct spi_mem_op *op)
-{
-	// Permit SPI-NAND reads, reset and volatile feature setup; refuse WREN,
-	// program-load, program-execute, erase and any unknown vendor command.
-	switch (op->cmd.opcode) {
-	case 0x9f: // READ_ID
-	case 0x0f: // GET_FEATURE
-	case 0x03: // READ_CACHE
-	case 0x0b: // READ_CACHE_FAST
-		return op->data.dir == SPI_MEM_DATA_IN;
-	case 0x13: // PAGE_READ, into volatile chip cache
-		return op->addr.nbytes == 3 && !op->data.nbytes;
-	case 0xff: // RESET
-		return !op->addr.nbytes && !op->data.nbytes;
-	case 0x1f: // SET_FEATURE: protection, configuration, target configuration
-		return op->addr.nbytes == 1 && op->data.nbytes == 1 &&
-		       op->data.dir == SPI_MEM_DATA_OUT &&
-		       (op->addr.val == 0xa0 || op->addr.val == 0xb0 || op->addr.val == 0xd0);
-	default:
-		return false;
-	}
 }
 
 static int rtl_qspi_data(struct rtl_qspi *qspi, const struct spi_mem_op *op)
@@ -148,8 +120,6 @@ static int rtl_qspi_exec_op(struct spi_mem *mem, const struct spi_mem_op *op)
 	u32 type;
 	int ret;
 
-	if (!allow_writes && !rtl_qspi_readonly_op(op))
-		return -EROFS;
 	if (op->data.nbytes)
 		return rtl_qspi_data(qspi, op);
 	type = readl(qspi->base + TYPE) & ~TYPE_ADDR_MASK;
@@ -201,8 +171,7 @@ static int rtl_qspi_probe(struct platform_device *pdev)
 	ctlr->dev.of_node = pdev->dev.of_node;
 	// Do not invent/program QSPI frequency, pinmux, reset or ECC. The NAND
 	// core selects JEDEC geometry and chip-specific on-die ECC support.
-	dev_info(&pdev->dev, "native PIO; NAND array writes %s\n",
-		 allow_writes ? "enabled" : "blocked");
+	dev_info(&pdev->dev, "native SPI-mem PIO\n");
 	return devm_spi_register_controller(&pdev->dev, ctlr);
 }
 

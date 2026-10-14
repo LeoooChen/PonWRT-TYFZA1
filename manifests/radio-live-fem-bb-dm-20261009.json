@@ -25,7 +25,7 @@
     ],
     "actual_receive_evidence": "manifests/radio-native-tssi-builtin-20261010.json",
     "AP_available": false,
-    "XEPON_DHCP": "192.168.71.28/24"
+    "XEPON_DHCP": "192.0.2.53/24"
   },
   "radios": [
     {
@@ -203,7 +203,7 @@
     "DACK_all_four_paths_done": true,
     "signed_regdb_in_actual_boot_FIT": true,
     "AP_available": false,
-    "XEPON_DHCP": "192.168.71.28/24",
+    "XEPON_DHCP": "192.0.2.53/24",
     "public_ping": "2/2",
     "log": "logs/radio-mac80211-signeddb02-20261010.txt",
     "receive_evidence": "manifests/radio-mac80211-signeddb02-live-20261010.json"
