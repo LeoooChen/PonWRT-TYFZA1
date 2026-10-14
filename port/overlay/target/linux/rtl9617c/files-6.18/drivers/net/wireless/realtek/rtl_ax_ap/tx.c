@@ -122,9 +122,9 @@ static void rtl_ax_tx_wd(u8 *out, unsigned int bytes,
 	 * MAC band0,port0,MACID0,raw header,fixed rate,WD-info56.
 	 * Original hw-info checksum default0; no private host ABI remains. */
 	memset(out, 0, 56);
-	/* Actual PHL fill_mdata@1955e8 supplies wp_offset56 and
-	 * wd_page_size=wdinfo_en before the MAC descriptor constructor. */
-	rtl_ax_store32(out, BIT(7) | ((56U & 31) << 24) | channel << 16 | BIT(22) | ((header_bytes / 2) & 31) << 11 |
+	/* WP_OFFSET reserves inserted headers in8-byte units, not WD bytes.
+	 * Native raw WLAN frames need no reservation until hardware adds IV. */
+	rtl_ax_store32(out, BIT(7) | channel << 16 | BIT(22) | ((header_bytes / 2) & 31) << 11 |
 		(no_ack ? BIT(31) : 0));
 	rtl_ax_store32(out + 4, (addresses & 63) << 26);
 	rtl_ax_store32(out + 8, macid << 24 | qsel << 17 | (tid_ind ? BIT(23) : 0) | (bytes & 0x3fff));
@@ -572,6 +572,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		info->flags & IEEE80211_TX_CTL_NO_ACK, is_multicast_ether_addr(header->addr1),
 		rtl_ax_tx_channels[ring], qsel, tid_indicators[tid], macid, aggregate, density);
 	if (info->control.hw_key) {
+		rtl_ax_store32(page, rtl_ax_ap_read32(page) | BIT(24));
 		if ((info->control.hw_key->flags & IEEE80211_KEY_FLAG_PAIRWISE) &&
 		    (encap || ieee80211_is_data(header->frame_control))) {
 			rtl_ax_store32(page, rtl_ax_ap_read32(page) | BIT(6));

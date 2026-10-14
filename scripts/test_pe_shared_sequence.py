@@ -10,6 +10,22 @@ sys.path.insert(0, str(root / 'analysis/python-deps'))
 from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN
 from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_SP, UC_MIPS_REG_PC
 
+sys.path.insert(0, str(root / 'tools'))
+from arm64_module_oracle import ModuleOracle
+
+oracle = ModuleOracle(root / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko',
+                      ['mac_get_wp_offset_8852c', 'mac_get_wp_offset_8192xb'], lambda name, args: 0)
+offsets = {}
+for crypto in (0, 15, 16):
+    # Native constructs WLAN headers and software A-MSDU. Only CCMP IV is inserted.
+    oracle.uc.mem_write(oracle.scratch + 64, struct.pack('<3I', 8 if crypto else 2, 1, 1))
+    for chip in ('8852c', '8192xb'):
+        assert not oracle.call('mac_get_wp_offset_' + chip, oracle.scratch,
+                               oracle.scratch + 64, oracle.scratch + 128)
+        offset = oracle.unpack(oracle.scratch + 128, 'H')[0]
+        assert offset == bool(crypto)
+        offsets[crypto] = offset
+
 directory = Path(sys.argv[1])
 u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
 base, mailbox, pages, headers, payload, ring, bar = (
@@ -41,11 +57,12 @@ pc = 0xbfc00400
 u.reg_write(UC_MIPS_REG_A0, mailbox | 0xa0000000)
 u.reg_write(UC_MIPS_REG_SP, (base + 0x1fff0) | 0xa0000000)
 rows = []
-for number, (encap, tid, scatter) in enumerate([(True, 0, False), (False, 0, False),
-                                               (True, 0, True), (False, 1, True),
-                                               (False, 0, True)]):
+for number, (encap, tid, scatter, crypto) in enumerate([
+        (True, 0, False, 0), (False, 0, False, 0), (True, 0, True, 0),
+        (False, 1, True, 0), (False, 0, True, 0),
+        (True, 0, False, 15), (False, 0, True, 16)]):
     body = bytes.fromhex('aaaa030000000800') + bytes(range(80))
-    header = bytes.fromhex('88020000') + client + ap + source + struct.pack('<H', 777 << 4) + bytes([tid, 0])
+    header = bytes([0x88, 0x42 if crypto else 2, 0, 0]) + client + ap + source + struct.pack('<H', 777 << 4) + bytes([tid, 0])
     frame = client + source + bytes.fromhex('0800') + body[8:] if encap else header + body
     parts = [frame[:40], frame[40:]] if scatter else [frame]
     request = [0] * 32
@@ -54,6 +71,8 @@ for number, (encap, tid, scatter) in enumerate([(True, 0, False), (False, 0, Fal
     request[2] = (26 + len(body)) | 26 << 16 | len(parts) << 24
     request[3] = 4
     request[4] = 1 << 24 | (1 << 18 if encap else 1 << 22) | tid
+    if crypto:
+        request[4] |= 1 << crypto
     if not encap and '--legacy' in sys.argv:
         request[4] = 1 << 24 | 777
     request[5] = 64
@@ -66,6 +85,7 @@ for number, (encap, tid, scatter) in enumerate([(True, 0, False), (False, 0, Fal
     u.emu_start(pc, 0xbfc03ffc, count=50000)
     pc = u.reg_read(UC_MIPS_REG_PC)
     page = bytes(u.mem_read(pages + number * 128, 128))
+    assert (struct.unpack_from('<I', page, 0)[0] >> 24) & 31 == offsets[crypto]
     count = struct.unpack_from('<I', page, 4)[0] >> 26
     sequence = sequences[tid]
     sequences[tid] = (sequence + 1) & 4095
@@ -78,6 +98,7 @@ for number, (encap, tid, scatter) in enumerate([(True, 0, False), (False, 0, Fal
     assert gathered == expected, (number, gathered.hex(), expected.hex())
     for index, part in enumerate(parts):
         assert bytes(u.mem_read(payload + index * 0x4000, len(part))) == part
-    rows.append({'Ethernet': encap, 'TID': tid, 'scatter': scatter, 'sequence': sequence})
+    rows.append({'Ethernet': encap, 'TID': tid, 'scatter': scatter, 'sequence': sequence,
+                 'CCMP_PN': crypto, 'WP_offset_8byte_units': offsets[crypto]})
 print(json.dumps({'shared_sequence_wrap_and_TID_isolation': rows,
                   'headers_WD_payload_exact': True, 'source_DMA_untouched': True}, indent=2))

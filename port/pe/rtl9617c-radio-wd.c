@@ -475,11 +475,12 @@ void pe_main(volatile u32 *control)
 				used += 6; count++; address += length; bytes -= length;
 			}
 		}
-		u32 dw0 = BIT(7) | 24U << 24 | channels[ring] << 16 | BIT(22) |
+		u32 dw0 = BIT(7) | channels[ring] << 16 | BIT(22) |
 			(((packet >> 16) & 63) / 2) << 11 | ((flags & BIT(13)) ? BIT(31) : 0);
 		u32 dw1 = count << 26, dw4 = 0, dw5 = 0;
 		u32 dw10 = aggregate ? ((aggregation >> 8) & 7) << 18 : 0;
 		if (flags & (BIT(15) | BIT(16))) {
+			dw0 |= 1U << 24; /* Eight-byte CCMP IV inserted by the chip. */
 			dw1 |= 6 | ((aggregation >> 24) & 3) << 4;
 			dw10 |= BIT(8) | ((aggregation >> 16) & 127);
 			if (flags & BIT(16)) dw0 |= BIT(6);
