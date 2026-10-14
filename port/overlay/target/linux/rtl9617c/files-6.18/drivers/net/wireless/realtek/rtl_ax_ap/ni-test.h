@@ -4,7 +4,7 @@
 
 #define RING 0x18000
 #define RING_BYTES 4096
-#define BUFFER_COUNT 512
+#define BUFFER_COUNT RTL9617C_WIFI_BUFFERS
 #define EPP_CONSUMERS 0x11c00
 #define PACKETS 8192
 #define TEST_FRAME_BYTES 1500
@@ -266,7 +266,7 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 	pr_info("native PE packet pre EQ%u=%08x/%08x EPP%u=%u/%u base=%08x VP%u=%08x/%u/%u\n",
 		tx->ni.eq, readl(tx->ni.regs + tx->ni.registers[0]), readl(tx->ni.regs + tx->ni.registers[0] + 4), tx->ni.cpu * 8, readl(tx->ni.regs + tx->ni.registers[11]), readl(tx->ni.regs + (0x7000 + tx->ni.cpu * 32)),
 		readl(tx->ni.regs + tx->ni.registers[12]), tx->ni.vp_index, readl(tx->ni.vp), readl(tx->ni.vp + 0x1c), readl(tx->ni.vp + 0x18));
-	if (!(readl(tx->ni.regs + tx->ni.registers[0]) & 1) || readl(tx->ni.regs + tx->ni.registers[0] + 4) != (BUFFER_COUNT << 16 | (1536 + tx->pe.slot * BUFFER_COUNT)) ||
+	if (!(readl(tx->ni.regs + tx->ni.registers[0]) & 1) || readl(tx->ni.regs + tx->ni.registers[0] + 4) != (BUFFER_COUNT << 16 | (RTL9617C_WIFI_BID_START + tx->pe.slot * BUFFER_COUNT)) ||
 	    readl(tx->ni.regs + tx->ni.registers[11]) != readl(tx->ni.regs + (0x7000 + tx->ni.cpu * 32)) ||
 	    readl(tx->ni.vp) || readl(tx->ni.vp + 0x1c) != readl(tx->ni.vp + 0x18)) return -EBUSY;
 	for (i = 0; i < 14; i++) tx->ni.saved[i] = readl(tx->ni.regs + tx->ni.registers[i]);
