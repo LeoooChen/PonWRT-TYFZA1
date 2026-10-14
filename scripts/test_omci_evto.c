@@ -117,5 +117,19 @@ int main(int argc,char **argv)
  assert(!request(a,8,130,0x400,body,26));
  assert(tyfza1_omci_paths(a,wire)==length && wire[36]==1 && wire[38+17]==5<<3);
  tyfza1_omci_free(a);
+ /* G.988 9.3.10 TP type7 connects a mapper directly to the VEIP. */
+ a=agent();path(a,0);
+ assert(!request(a,6,84,0x300,body,0));
+ assert(!request(a,6,47,0x300,body,0));
+ memset(body,0,sizeof(body));be16(body,0x0a01);
+ for(unsigned int i=0;i<8;i++)be16(body+2+i*2,i==5?0x200:0xffff);
+ body[18]=1;body[19]=5;body[20]=7;
+ assert(!request(a,4,130,0x400,body,21));
+ profile(a,65535,10,0x0a01);assert(!row(a,65535,65535,100));
+ profile(a,0x501,1,0x400);
+ length=tyfza1_omci_paths(a,wire);
+ assert(length>12 && le16(wire+2)==1 && wire[18]==(1U<<5) && wire[36]==2 && wire[37]==5);
+ assert(le16(wire+25)==1 && le16(wire+31)==0);
+ tyfza1_omci_free(a);
  puts("OMCI EVTO: autonomous defaults, VEIP/IWTP binding, ME FFFF, 32-row limit and multi-page snapshot passed");
 }

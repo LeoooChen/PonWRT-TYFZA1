@@ -1358,6 +1358,16 @@ impl Mib {
                     mapped.pbit_mask |= path.pbit_mask & (1 << pbit);
                 }
             }
+            if mapper.attributes[&13].value[0] == 7
+                && be_u16(&mapper.attributes[&1].value) == Some(VEIP_ENTITY) {
+                snapshot.data_paths.extend(mapper_paths.iter()
+                    .filter(|((id, _, _), _)| *id == mapper_id)
+                    .map(|(_, path)| {
+                        let mut direct = path.clone();
+                        direct.vlan_profiles[0] = profile(CLASS_VEIP, VEIP_ENTITY);
+                        direct
+                    }));
+            }
         }
 
         /*
