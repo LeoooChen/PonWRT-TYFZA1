@@ -207,6 +207,15 @@ int rtl_qm_rx_alloc(struct device *dev, struct rtl_qm_rx *rx)
 				return -ENOMEM;
 			}
 		}
+	for (unsigned int pool = 0; pool < RTL_QM_PE_POOLS; pool++) {
+		rx->wifi_epp[pool] = dma_alloc_coherent(dev, 8 * RTL9617C_WIFI_EPP_BYTES,
+			&rx->wifi_epp_dma[pool], GFP_KERNEL);
+		if (!rx->wifi_epp[pool]) {
+			rtl_qm_rx_free(dev, rx);
+			rx->memory = NULL;
+			return -ENOMEM;
+		}
+	}
 	return 0;
 free_payload:
 	dma_free_noncoherent(dev, RTL_QM_MEMORY_BYTES, rx->memory, rx->memory_dma, DMA_FROM_DEVICE);
@@ -426,6 +435,19 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 			if (ret)
 				return ret;
 		}
+	/* A sleeping radio can retain every buffer in one COS. Its EPP ring
+	 * must hold at least the per-port admission limit without a false wrap. */
+	for (unsigned int pool = 0; pool < RTL_QM_PE_POOLS; pool++) {
+		unsigned int cpu = 3 - pool, profile = 7 - pool;
+		memset(rx->wifi_epp[pool], 0, 8 * RTL9617C_WIFI_EPP_BYTES);
+		writel((RTL9617C_WIFI_EPP_BYTES / 16) << 8 | 0xf2, ni + 0x657c + profile * 4);
+		for (i = 0; i < 8; i++) {
+			writel(rx->wifi_epp_dma[pool] + i * RTL9617C_WIFI_EPP_BYTES,
+				ni + EPP_BASE + cpu * 32 + i * 4);
+			writel(readl(ni + EPP_WRITE + cpu * 32 + i * 4),
+				ni + EPP_READ + cpu * 32 + i * 4);
+		}
+	}
 	ret = rtl_qm_cpu_credits(rx);
 	if (ret)
 		return ret;
@@ -476,6 +498,10 @@ void rtl_qm_rx_stop(struct rtl_qm_rx *rx)
 
 void rtl_qm_rx_free(struct device *dev, struct rtl_qm_rx *rx)
 {
+	for (unsigned int pool = 0; pool < RTL_QM_PE_POOLS; pool++)
+		if (rx->wifi_epp[pool])
+			dma_free_coherent(dev, 8 * RTL9617C_WIFI_EPP_BYTES,
+				rx->wifi_epp[pool], rx->wifi_epp_dma[pool]);
 	for (unsigned int pool = 0; pool < RTL_QM_PE_POOLS; pool++)
 		for (unsigned int chunk = 0; chunk < RTL_QM_PE_CHUNKS; chunk++)
 			if (rx->wifi_memory[pool][chunk])

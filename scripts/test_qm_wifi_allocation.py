@@ -27,6 +27,7 @@ fixture = r'''
 #define RTL_QM_PE_BUFFERS 2496
 #define RTL_QM_PE_CHUNK_BUFFERS 1024
 #define RTL_QM_PE_CHUNKS 3
+#define RTL9617C_WIFI_EPP_BYTES 32768
 #define RTL_QM_PE_EQ 6
 #define RTL_QM_BUFFER_BYTES 2048
 #define RTL_DQ_MEMORY_BYTES (1024*2048)
@@ -38,12 +39,20 @@ fixture = r'''
 #define DMA_FROM_DEVICE 0
 #define min_t(type,a,b) ((type)(a)<(type)(b)?(type)(a):(type)(b))
 typedef uint64_t dma_addr_t;
+typedef uint32_t u32;
+#define EPP_BASE 0x7200
+#define EPP_WRITE 0x7000
+#define EPP_READ 0x7100
+static unsigned char ni[65536];
+static void writel(u32 value,void *p){memcpy(p,&value,4);}
+static u32 readl(const void *p){u32 value;memcpy(&value,p,4);return value;}
 struct device { int unused; };
 struct rtl_qm_rx {
  struct device *device;
  void *memory,*ring_memory,*deepq_memory;
  dma_addr_t memory_dma,ring_dma,deepq_dma;
  void *wifi_memory[2][3];dma_addr_t wifi_dma[2][3];
+ void *wifi_epp[2];dma_addr_t wifi_epp_dma[2];
 };
 static struct {void *memory;dma_addr_t dma;unsigned int bytes;} records[16];
 static unsigned int calls,live,reject,published;
@@ -84,11 +93,17 @@ void rtl_qm_rx_free(struct device *,struct rtl_qm_rx *);
 test = r'''
 int main(void) {
  struct device dev={};struct rtl_qm_rx rx={};
- assert(!rtl_qm_rx_alloc(&dev,&rx));assert(live==9);
+ assert(!rtl_qm_rx_alloc(&dev,&rx));assert(live==11);
  assert(!publish(&rx) && published==2*2492);
+ for(unsigned int p=0;p<2;p++) {
+  assert(2492 < RTL9617C_WIFI_EPP_BYTES/8);
+  assert(readl(ni+0x657c+(7-p)*4)==((RTL9617C_WIFI_EPP_BYTES/16)<<8|0xf2));
+  for(unsigned int c=0;c<8;c++)
+   assert(readl(ni+EPP_BASE+(3-p)*32+c*4)==rx.wifi_epp_dma[p]+c*RTL9617C_WIFI_EPP_BYTES);
+ }
  for(unsigned int p=0;p<2;p++)for(unsigned int i=0;i<2492;i++)assert(seen[p][i]);
  rtl_qm_rx_free(&dev,&rx);assert(!live);
- for(reject=1;reject<=9;reject++) {
+ for(reject=1;reject<=11;reject++) {
   calls=0;memset(&rx,0,sizeof(rx));memset(records,0,sizeof(records));
   assert(rtl_qm_rx_alloc(&dev,&rx)==-ENOMEM && !live && !rx.memory);
  }

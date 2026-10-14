@@ -30,6 +30,7 @@ def profile(directory):
     put(MAILBOX + 112 * 4, 1)
     put(MAILBOX + 114 * 4, 0x7060)
     put(MAILBOX + 115 * 4, 0x7160)
+    put(MAILBOX + 167 * 4, 4096)
     put(BASE + 0x11a00 + 2 * 4, 1)
     put(BASE + 0xe200 + 2 * 4, 3839 << 18 | 1 << 17)
     put(BASE + 0x12000 + 2 * 8 * 4, 64)

@@ -8,7 +8,6 @@
 #define NI_TID_PENDING 0x14200
 #define NI_TID_HEAD 0x15000
 #define NI_TID_TAIL 0x16000
-#define NI_EPP_BYTES 4096
 #define NI_EPP_CONSUMERS 0x11c00
 
 static void __attribute__((noinline)) ni_peer_event(volatile u32 *mailbox, u8 *memory, u32 macid)
@@ -35,9 +34,10 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 	if (available & 0x02) cos++;
 	volatile u32 *consumers = (void *)(memory + NI_EPP_CONSUMERS);
 	u32 consumer = consumers[cos];
-	if ((ni[mailbox[114] / 4 + cos] & (NI_EPP_BYTES - 1)) == consumer) return 0;
+	u32 ring_bytes = mailbox[167];
+	if ((ni[mailbox[114] / 4 + cos] & (ring_bytes - 1)) == consumer) return 0;
 	sync();
-	const u32 *entry = uncached(mailbox[25] + cos * NI_EPP_BYTES + consumer);
+	const u32 *entry = uncached(mailbox[25] + cos * ring_bytes + consumer);
 	if ((*(volatile u32 *)entry & 0x50) != 0x50) return 0;
 	u32 buffer = entry[0] & 0xffffff80, header, length = ni_length(entry, buffer, &header);
 	u8 *ethernet = uncached(buffer + 32 + header);
@@ -86,7 +86,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		memory[NI_TID_PENDING + macid * 8 + waiting[3]]++;
 		ni_peer_event(mailbox, memory, macid);
 	}
-	consumer = (consumer + 8) & (NI_EPP_BYTES - 1);
+	consumer = (consumer + 8) & (ring_bytes - 1);
 	consumers[cos] = consumer;
 	mailbox[26] = consumers[0];
 	sync(); ni[mailbox[115] / 4 + cos] = consumer;

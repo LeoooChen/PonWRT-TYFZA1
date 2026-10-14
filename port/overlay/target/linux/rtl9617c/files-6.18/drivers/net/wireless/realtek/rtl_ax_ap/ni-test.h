@@ -2,8 +2,7 @@
 /* Per-radio NI VP/EPP/EQ state, consumed by the shared PE1 executor. */
 #include <linux/etherdevice.h>
 
-#define RING 0x18000
-#define RING_BYTES 4096
+#define RING_BYTES RTL9617C_WIFI_EPP_BYTES
 #define BUFFER_COUNT RTL9617C_WIFI_BUFFERS
 #define EPP_CONSUMERS 0x11c00
 #define PACKETS 8192
@@ -295,7 +294,6 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 		tx->ni.epp_bases[i] = readl(tx->ni.regs + tx->ni.registers[12] + i * 4);
 		tx->ni.epp_eq[i] = readl(tx->ni.regs + tx->ni.registers[10] + i * 4);
 		writel(tx->ni.profile, tx->ni.regs + tx->ni.registers[10] + i * 4);
-		writel(tx->pe.dma + RING + i * RING_BYTES, tx->ni.regs + tx->ni.registers[12] + i * 4);
 		writel(readl(tx->ni.regs + (0x7000 + tx->ni.cpu * 32) + i * 4), tx->ni.regs + tx->ni.registers[11] + i * 4);
 		put_unaligned_le32(readl(tx->ni.regs + tx->ni.registers[11] + i * 4), tx->pe.memory + EPP_CONSUMERS + i * 4);
 	}
@@ -303,7 +301,8 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 	put_unaligned_le32(0x7100 + tx->ni.cpu * 32, tx->pe.memory + PE_PROBE_MAILBOX + 460);
 	put_unaligned_le32(0x6368 + tx->ni.cpu * 8, tx->pe.memory + PE_PROBE_MAILBOX + 464);
 	put_unaligned_le32(tx->ni.eq, tx->pe.memory + PE_PROBE_MAILBOX + 468);
-	put_unaligned_le32(tx->pe.dma + RING, tx->pe.memory + PE_PROBE_MAILBOX + 100);
+	put_unaligned_le32(RING_BYTES, tx->pe.memory + PE_PROBE_MAILBOX + 668);
+	put_unaligned_le32(readl(tx->ni.regs + tx->ni.registers[12]), tx->pe.memory + PE_PROBE_MAILBOX + 100);
 	put_unaligned_le32(readl(tx->ni.regs + tx->ni.registers[11]), tx->pe.memory + PE_PROBE_MAILBOX + 104);
 	put_unaligned_le32(macid, tx->pe.memory + PE_PROBE_MAILBOX + 108);
 	ret = attr_write(tx, tx->ni.eq, attr); if (ret) return ret;

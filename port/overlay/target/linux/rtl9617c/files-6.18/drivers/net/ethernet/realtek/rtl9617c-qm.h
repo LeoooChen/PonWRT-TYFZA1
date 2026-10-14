@@ -36,6 +36,8 @@ struct rtl_qm_rx {
 	dma_addr_t deepq_dma;
 	void *wifi_memory[RTL_QM_PE_POOLS][RTL_QM_PE_CHUNKS];
 	dma_addr_t wifi_dma[RTL_QM_PE_POOLS][RTL_QM_PE_CHUNKS];
+	void *wifi_epp[RTL_QM_PE_POOLS];
+	dma_addr_t wifi_epp_dma[RTL_QM_PE_POOLS];
 	bool deepq_configured;
 	unsigned int read[RTL_QM_VOQS];
 	u32 last_address;
