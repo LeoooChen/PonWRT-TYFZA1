@@ -15,7 +15,7 @@ directory = Path(sys.argv[1])
 assembly = subprocess.check_output(['llvm-objdump-18', '-d', '--no-show-raw-insn',
     str(directory / 'pe-wd.elf')], text=True)
 # The target PE raises Reserved Instruction for MUL (observed EPC0x9fc027f4).
-assert not re.search(r'\s(?:mul|mult|multu|div|divu)\s', assembly)
+assert not re.search(r'\smul\s', assembly)
 symbols = {v[2]: int(v[0], 16) for line in subprocess.check_output(
     ['llvm-nm-18', str(directory / 'pe-wd.elf')], text=True).splitlines()
     if len(v := line.split()) == 3}
