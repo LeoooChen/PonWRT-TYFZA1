@@ -59,7 +59,9 @@ async function main() {
 	assert.equal(status.ponState({ ...online, oam_ports: [{ live: false, auth_state: 'accepted' }] }).tone, 'warn');
 	assert.equal(status.ponState({ ...online, oam_ports: [{ live: true, registered: true, auth_state: 'rejected' }] }).tone, 'danger');
 	for (const mode of ['gpon', 'xgpon', 'xgspon']) {
-		assert.equal(status.ponState({ serdes: { mode, configured: '1' }, mac: { prepared: '1', activation: 'O5' }, mpcp: { enabled: '0' } }).text, '已激活 · O5');
+		const active = { serdes: { mode, configured: '1' }, mac: { prepared: '1', activation: 'O5' }, mpcp: { enabled: '0' } };
+		assert.equal(status.ponState(active).tone, 'warn');
+		assert.equal(status.ponState({ ...active, data_path: { configured: '1' } }).tone, 'good');
 		assert.equal(status.ponState({ serdes: { mode, configured: '1' }, mac: { activation: 'O4' } }).tone, 'warn');
 	}
 	assert.equal(status.bytes(null), '—');
