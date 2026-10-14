@@ -48,7 +48,7 @@ def case(lengths, cap, from_epp=False):
         put(mb + 25 * 4, base + 0x18000)
         put(mb + 114 * 4, 0x7060)
         put(mb + 115 * 4, 0x7160)
-        put(mb + 167 * 4, 4096)
+        put(mb + 167 * 4, 12)
         put(mb + 30 * 4, 0)
         put(mb + 38 * 4, 0)
         put(base + 0x11804, 0)

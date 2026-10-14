@@ -34,10 +34,10 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 	if (available & 0x02) cos++;
 	volatile u32 *consumers = (void *)(memory + NI_EPP_CONSUMERS);
 	u32 consumer = consumers[cos];
-	u32 ring_bytes = mailbox[167];
+	u32 ring_shift = mailbox[167], ring_bytes = 1U << ring_shift;
 	if ((ni[mailbox[114] / 4 + cos] & (ring_bytes - 1)) == consumer) return 0;
 	sync();
-	const u32 *entry = uncached(mailbox[25] + cos * ring_bytes + consumer);
+	const u32 *entry = uncached(mailbox[25] + (cos << ring_shift) + consumer);
 	if ((*(volatile u32 *)entry & 0x50) != 0x50) return 0;
 	u32 buffer = entry[0] & 0xffffff80, header, length = ni_length(entry, buffer, &header);
 	u8 *ethernet = uncached(buffer + 32 + header);

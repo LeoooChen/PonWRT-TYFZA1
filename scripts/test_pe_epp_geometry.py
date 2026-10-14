@@ -4,6 +4,7 @@ from pathlib import Path
 import struct
 import subprocess
 import sys
+import re
 
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / 'analysis/python-deps'))
@@ -11,6 +12,10 @@ from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN
 from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_SP, UC_MIPS_REG_RA
 
 directory = Path(sys.argv[1])
+assembly = subprocess.check_output(['llvm-objdump-18', '-d', '--no-show-raw-insn',
+    str(directory / 'pe-wd.elf')], text=True)
+# The target PE raises Reserved Instruction for MUL (observed EPC0x9fc027f4).
+assert not re.search(r'\s(?:mul|mult|multu|div|divu)\s', assembly)
 symbols = {v[2]: int(v[0], 16) for line in subprocess.check_output(
     ['llvm-nm-18', str(directory / 'pe-wd.elf')], text=True).splitlines()
     if len(v := line.split()) == 3}
@@ -26,7 +31,7 @@ def get(address): return struct.unpack('<I', u.mem_read(address, 4))[0]
 put(mailbox + 25 * 4, epp)
 put(mailbox + 114 * 4, 0x7060)
 put(mailbox + 115 * 4, 0x7160)
-put(mailbox + 167 * 4, 32768)
+put(mailbox + 167 * 4, 15)
 destination = bytes.fromhex('020000000002')
 u.mem_write(base + 0xe408, destination)
 put(base + 0x11a04, 1)

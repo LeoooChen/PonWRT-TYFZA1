@@ -301,7 +301,7 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 	put_unaligned_le32(0x7100 + tx->ni.cpu * 32, tx->pe.memory + PE_PROBE_MAILBOX + 460);
 	put_unaligned_le32(0x6368 + tx->ni.cpu * 8, tx->pe.memory + PE_PROBE_MAILBOX + 464);
 	put_unaligned_le32(tx->ni.eq, tx->pe.memory + PE_PROBE_MAILBOX + 468);
-	put_unaligned_le32(RING_BYTES, tx->pe.memory + PE_PROBE_MAILBOX + 668);
+	put_unaligned_le32(RTL9617C_WIFI_EPP_SHIFT, tx->pe.memory + PE_PROBE_MAILBOX + 668);
 	put_unaligned_le32(readl(tx->ni.regs + tx->ni.registers[12]), tx->pe.memory + PE_PROBE_MAILBOX + 100);
 	put_unaligned_le32(readl(tx->ni.regs + tx->ni.registers[11]), tx->pe.memory + PE_PROBE_MAILBOX + 104);
 	put_unaligned_le32(macid, tx->pe.memory + PE_PROBE_MAILBOX + 108);
