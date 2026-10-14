@@ -25,6 +25,7 @@ void rtl_ax_rx_uplink_disable(struct rtl_ax_rx *rx, unsigned int macid);
 void rtl_ax_rx_uplink_retire(struct rtl_ax_rx *rx, unsigned int macid);
 void rtl_ax_rx_open(struct rtl_ax_rx *rx);
 void rtl_ax_rx_close(struct rtl_ax_rx *rx);
+void rtl_ax_rx_log_stall(struct rtl_ax_rx *rx);
 void rtl_ax_rx_release_interrupts(struct rtl_ax_rx *rx);
 void rtl_ax_rx_free(struct rtl_ax_rx *rx);
 int rtl_ax_rx_status(struct rtl_ax_rx *rx, char *out, size_t capacity);

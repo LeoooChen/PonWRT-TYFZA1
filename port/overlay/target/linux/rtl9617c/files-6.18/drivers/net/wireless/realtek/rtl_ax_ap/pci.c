@@ -525,6 +525,7 @@ static int rtl_ax_command_flags(struct rtl_ax_ap *radio, unsigned int buffer_cla
 			rtl_ax_read32(radio, 0xc164), rtl_ax_read32(radio, 0x10bc),
 			rtl_ax_read32(radio, 0x8c34), rtl_ax_read32(radio, 0x9034),
 			rtl_ax_read32(radio, 0x1700), rtl_ax_read8(radio, RTL_AX_WCPU_CONTROL));
+		rtl_ax_rx_log_stall(radio->rx);
 	}
 unlock:
 	mutex_unlock(&radio->command_mutex);

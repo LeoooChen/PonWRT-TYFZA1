@@ -664,6 +664,27 @@ static irqreturn_t rtl_ax_rx_interrupt(int irq, void *context)
 	return IRQ_HANDLED;
 }
 
+void rtl_ax_rx_log_stall(struct rtl_ax_rx *rx)
+{
+	const struct rtl_ax_io *io = rx->io;
+
+	dev_err(&rx->pdev->dev,
+		"RX state running=%u PE_owned=%u IRQ=%d interrupts=%llu work=%x IMR=%08x ISR=%08x indication=%08x/%08x\n",
+		rx->running, rx->rpq_owned, rx->irq, rx->interrupts, work_busy(&rx->work.work),
+		io->read32(io->ctx, 0x10b0), io->read32(io->ctx, 0x10b4),
+		io->read32(io->ctx, 0x30b0), io->read32(io->ctx, 0x30b4));
+	for (unsigned int n = 0; n < 2; n++) {
+		struct rtl_ax_rx_queue *q = &rx->queues[n];
+		u8 *buffer = q->buffers + rtl_ax_rx_buffer_offset(q, q->consumer);
+
+		dev_err(&rx->pdev->dev,
+			"RX queue=%u consumer=%u tag=%u packets=%llu tag_pending=%llu malformed=%llu next_info=%08x next_WD=%08x\n",
+			n, q->consumer, q->tag, q->packets, q->tag_pending, q->malformed,
+			le32_to_cpu(READ_ONCE(*(__le32 *)buffer)),
+			le32_to_cpu(READ_ONCE(*(__le32 *)(buffer + 4))));
+	}
+}
+
 void rtl_ax_rx_open(struct rtl_ax_rx *rx)
 {
 	const struct rtl_ax_io *io = rx->io;
