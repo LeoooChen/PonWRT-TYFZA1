@@ -21,6 +21,7 @@ struct direction {
 	struct sockaddr_in destination;
 	unsigned int count, sent, received, unique, duplicate, bad, send_errors;
 	int send_errno;
+	unsigned int last_sequence, duplicate_sequence[16], duplicate_previous[16];
 	unsigned char *seen;
 	atomic_int sending;
 	double finished;
@@ -72,9 +73,16 @@ static void *receive(void *argument)
 		path->bad += bad || sequence >= path->count;
 		path->received++;
 		if (sequence < path->count) {
-			if (path->seen[sequence]) path->duplicate++;
+			if (path->seen[sequence]) {
+				if (path->duplicate < 16) {
+					path->duplicate_sequence[path->duplicate] = sequence;
+					path->duplicate_previous[path->duplicate] = path->last_sequence;
+				}
+				path->duplicate++;
+			}
 			else { path->seen[sequence] = 1; path->unique++; }
 		}
+		path->last_sequence = sequence;
 		last = now();
 	}
 	return NULL;
@@ -134,10 +142,14 @@ int main(int argc, char **argv)
 		pthread_join(receiver[i], NULL);
 		printf("{\"source\":\"%s\",\"receive\":\"%s\",\"sent\":%u,\"received\":%u,"
 		       "\"unique\":%u,\"missing\":%u,\"duplicates\":%u,\"payload_errors\":%u,"
-		       "\"send_errors\":%u,\"send_errno\":%d,\"seconds\":%.6f,\"UDP_payload_Mbps\":%.3f}\n",
+		       "\"send_errors\":%u,\"send_errno\":%d,\"seconds\":%.6f,\"UDP_payload_Mbps\":%.3f,\"duplicate_examples\":[",
 		       path->input, path->output, path->sent, path->received, path->unique, path->sent - path->unique,
 		       path->duplicate, path->bad, path->send_errors, path->send_errno, path->finished - started,
 		       path->unique * 1472.0 * 8 / (path->finished - started) / 1000000);
+		for (unsigned int j = 0; j < path->duplicate && j < 16; j++)
+			printf("%s{\"sequence\":%u,\"previous\":%u}", j ? "," : "",
+				path->duplicate_sequence[j], path->duplicate_previous[j]);
+		puts("]}");
 		failed |= path->sent != count || path->unique != count || path->duplicate || path->bad || path->send_errors;
 		close(path->send_fd); close(path->receive_fd); free(path->seen);
 	}
