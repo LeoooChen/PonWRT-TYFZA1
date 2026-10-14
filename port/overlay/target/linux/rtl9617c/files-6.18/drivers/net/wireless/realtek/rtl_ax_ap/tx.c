@@ -779,21 +779,20 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 	return 0;
 }
 
-static bool rtl_ax_tx_pe_pending(struct rtl_ax_tx *tx, unsigned int macid, unsigned int key, bool by_key)
+static bool rtl_ax_tx_pe_pending(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid,
+	unsigned int key, bool by_key)
 {
-	unsigned int i, selected;
+	unsigned int i;
 
 	if (!tx->pe_active) return false;
-	selected = get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 108);
-	if (rtl_ax_tx_ni_buffered(tx, selected)) {
-		u32 keyinfo = get_unaligned_le32(tx->pe.memory + 0xd000 + selected * 32 + 20);
-		if (by_key ? ((keyinfo >> 16) & 127) == key : selected == macid) return true;
-	}
+	/* NI_WAIT retains the TID after submission, until RPQ releases the BID. */
 	for (i = 0; i < 128; i++) {
 		void *owner = tx->pe.memory + 0xc400 + i * 8;
 		u32 meta = get_unaligned_le32(owner + 4);
 		if (!get_unaligned_le32(owner) || (meta & BIT(31))) continue;
-		if (by_key ? ((meta >> 17) & 127) == key : ((meta >> 8) & 127) == macid) return true;
+		if (by_key ? ((meta >> 17) & 127) == key :
+		    ((meta >> 8) & 127) == macid && (tid == IEEE80211_NUM_TIDS ||
+		    (get_unaligned_le32(tx->pe.memory + 0x11000 + i * 16 + 12) & 7) == tid)) return true;
 	}
 	return false;
 }
@@ -811,7 +810,7 @@ static bool rtl_ax_tx_key_pending(struct rtl_ax_tx *tx, unsigned int index)
 			break;
 		}
 	spin_unlock_irqrestore(&tx->lock, flags);
-	return pending || rtl_ax_tx_pe_pending(tx, 0, index, true);
+	return pending || rtl_ax_tx_pe_pending(tx, 0, IEEE80211_NUM_TIDS, index, true);
 }
 
 int rtl_ax_tx_flush_key(struct rtl_ax_tx *tx, unsigned int index)
@@ -836,7 +835,7 @@ bool rtl_ax_tx_station_pending(struct rtl_ax_tx *tx, unsigned int macid, unsigne
 			break;
 		}
 	spin_unlock_irqrestore(&tx->lock, flags);
-	return pending || ((tid == 0 || tid == IEEE80211_NUM_TIDS) && rtl_ax_tx_pe_pending(tx, macid, 0, false));
+	return pending || rtl_ax_tx_pe_pending(tx, macid, tid, 0, false);
 }
 
 int rtl_ax_tx_wait_station(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid)
