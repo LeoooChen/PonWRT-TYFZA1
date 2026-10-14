@@ -22,7 +22,7 @@ struct direction {
 	unsigned int count, sent, received, unique, duplicate, bad, send_errors;
 	int send_errno;
 	unsigned int last_sequence, duplicate_sequence[16], duplicate_previous[16];
-	unsigned char *seen;
+	unsigned char *seen, *emitted;
 	atomic_int sending;
 	double finished;
 	const char *input, *output;
@@ -110,6 +110,7 @@ int main(int argc, char **argv)
 		if (!(active & (1U << i))) continue;
 		path->count = count;
 		path->seen = calloc(count, 1);
+		path->emitted = calloc(count, 1);
 		path->send_fd = socket_on(path->input, 55000 + i * 2);
 		fcntl(path->send_fd, F_SETFL, fcntl(path->send_fd, F_GETFL) | O_NONBLOCK);
 		path->receive_fd = socket_on(path->output, 55001 + i * 2);
@@ -130,7 +131,7 @@ int main(int argc, char **argv)
 			    (void *)&path->destination, sizeof(path->destination)) != sizeof(packet)) {
 				path->send_errors++; path->send_errno = errno;
 			}
-			else path->sent++;
+			else { path->emitted[sequence] = 1; path->sent++; }
 		}
 		double due = started + (sequence + 1) * 1538.0 * 8 / (rate * 1000000.0);
 		while (now() < due) {}
@@ -149,9 +150,13 @@ int main(int argc, char **argv)
 		for (unsigned int j = 0; j < path->duplicate && j < 16; j++)
 			printf("%s{\"sequence\":%u,\"previous\":%u}", j ? "," : "",
 				path->duplicate_sequence[j], path->duplicate_previous[j]);
+		printf("],\"missing_examples\":[");
+		for (unsigned int j = 0, examples = 0; j < path->count && examples < 16; j++)
+			if (path->emitted[j] && !path->seen[j])
+				printf("%s%u", examples++ ? "," : "", j);
 		puts("]}");
 		failed |= path->sent != count || path->unique != count || path->duplicate || path->bad || path->send_errors;
-		close(path->send_fd); close(path->receive_fd); free(path->seen);
+		close(path->send_fd); close(path->receive_fd); free(path->seen); free(path->emitted);
 	}
 	return failed ? 2 : 0;
 }
