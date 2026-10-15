@@ -140,3 +140,39 @@ registration, actual cross-family switching, injected hardware cleanup failure
 and sustained hardware-forwarding throughput remain outside this live result.
 Raw records are in the Mac workspace `现场记录/20261016-pon-family/` and their
 hashes are in `manifests/pon-family-live.json`.
+
+## OMCI snapshot crossing a protocol/session boundary
+
+A further defect was reproduced in the actual ITU upload/commit functions:
+begin a multi-page GPON business snapshot, upload its first4096 bytes, advance
+the line session while switching to XG-PON, then finish the upload after the
+new line is provisionable. The old code accepts the remaining668 bytes and
+programs the GPON-era graph through the current XGTC path. The same issue
+exists after a same-protocol line restart, and between detaching a complete
+upload buffer and acquiring the commit locks. Checking only the current mode
+and OMCI carrier cannot establish which session supplied that graph.
+
+The upload now captures the existing `itu_line_epoch` on its first chunk.
+The commit receives that captured value and compares it under the state and
+control locks, before changing the live graph, NI policy or hardware mappings.
+A different epoch returns `-ESTALE`. A fresh upload in the new session remains
+valid. The version4 wire format, native GPON/XGTC mapping functions and OMCI
+rules are unchanged.
+
+The board's original `dal_rt_rtl8277c_gpon_tcont_set@0x1db60` was executed for
+modes3,4,5: mode3 calls `aal_gpon_tcont_set`; modes4/5 call
+`aal_xgpon_bwmp_tcont_set`. This confirms current-mode dispatch, with initialized
+T-CONT state supplied and AAL bodies modeled. It does not simulate this
+project's sysfs upload timing; the epoch binding fixes that native integration
+bug. Record: `logs/stock-pon-family-paths.json`.
+
+The focused upload test uses the real six-mode definitions and production
+functions, covering partial and already detached stale snapshots, empty stale
+snapshots, same-protocol restart and fresh-session reapplication. The actual
+Rust OMCI FFI/kernel commit check passes with the current crate. An isolated
+ARM64 PON module build passes. The updated RAM module is named
+`rtl9617c-pon-session-live`; EPON re-registers, LOID authentication succeeds,
+DHCP/default route return and public ping receives3/3. The rollback script
+now targets that module. No flash or optical mode switch was performed;
+the GPON/XG-PON race remains a directed replay rather than a physical OLT test.
+Source/module hashes and raw evidence are in `manifests/pon-session-upload.json`.

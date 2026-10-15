@@ -33,13 +33,13 @@ def function(name):
 cases = r'''
 #include "pon-omci.h"
 static struct net_device dev;
-static struct rtl9617c_pon pon={.puc_configured=1,.pdc_configured=1,.data_devices={&dev}};
+static struct rtl9617c_pon pon={.mode=RTL_PON_GPON,.puc_configured=1,.pdc_configured=1,.data_devices={&dev}};
 static unsigned char frame[44],reply[2048];
 static unsigned int transaction;
 static void be16(unsigned char *p,unsigned int value){p[0]=value>>8;p[1]=value;}
 static int apply(void *context,const unsigned char *paths,size_t length){
  (void)context;assert(reply[8]==0xa5);
- int ret=rtl_pon_itu_paths_write(&pon,(const char*)paths,length);
+ int ret=rtl_pon_itu_paths_write(&pon,(const char*)paths,length,pon.itu_line_epoch);
  return ret<0?ret:0;
 }
 static unsigned int dispatch(struct omci_agent *agent,int *error){

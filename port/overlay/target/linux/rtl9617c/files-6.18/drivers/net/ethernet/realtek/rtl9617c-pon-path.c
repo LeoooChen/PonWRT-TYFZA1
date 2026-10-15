@@ -150,7 +150,7 @@ static int path_program(struct rtl9617c_pon *pon, const struct rtl_itu_paths *pa
 	return 0;
 }
 
-ssize_t rtl_pon_itu_paths_write(struct rtl9617c_pon *pon, const char *buf, size_t count)
+ssize_t rtl_pon_itu_paths_write(struct rtl9617c_pon *pon, const char *buf, size_t count, u64 session)
 {
 	struct rtl_itu_path_state *state, *old;
 	struct net_device *dev;
@@ -253,6 +253,9 @@ ssize_t rtl_pon_itu_paths_write(struct rtl9617c_pon *pon, const char *buf, size_
 
 	mutex_lock(&pon->control_lock);
 	mutex_lock(&pon->lock);
+	if (session != pon->itu_line_epoch) {
+		ret = -ESTALE; goto unlock;
+	}
 	if (rtl_pon_mode_is_epon(pon->mode) || !pon->puc_configured || !pon->pdc_configured) {
 		ret = -EOPNOTSUPP; goto unlock;
 	}
@@ -298,6 +301,7 @@ ssize_t rtl_pon_itu_paths_upload(struct rtl9617c_pon *pon, const char *buf, loff
 {
 	void *complete = NULL;
 	size_t bytes = 0;
+	u64 session = 0;
 	int ret = 0;
 	mutex_lock(&pon->control_lock);
 	if (!offset) {
@@ -309,6 +313,7 @@ ssize_t rtl_pon_itu_paths_upload(struct rtl9617c_pon *pon, const char *buf, loff
 		pon->itu_upload_received = 0;
 		pon->itu_upload_size = bytes;
 		if (!pon->itu_upload) { ret = -ENOMEM; goto unlock; }
+		pon->itu_upload_epoch = READ_ONCE(pon->itu_line_epoch);
 	}
 	if (!pon->itu_upload || offset != pon->itu_upload_received ||
 	    count > pon->itu_upload_size - pon->itu_upload_received) { ret = -EINVAL; goto unlock; }
@@ -316,12 +321,13 @@ ssize_t rtl_pon_itu_paths_upload(struct rtl9617c_pon *pon, const char *buf, loff
 	pon->itu_upload_received += count;
 	if (pon->itu_upload_received == pon->itu_upload_size) {
 		complete = pon->itu_upload; bytes = pon->itu_upload_size;
+		session = pon->itu_upload_epoch;
 		pon->itu_upload = NULL;
 	}
 unlock:
 	mutex_unlock(&pon->control_lock);
 	if (complete) {
-		ret = rtl_pon_itu_paths_write(pon, complete, bytes);
+		ret = rtl_pon_itu_paths_write(pon, complete, bytes, session);
 		kvfree(complete);
 	}
 	return ret < 0 ? ret : count;

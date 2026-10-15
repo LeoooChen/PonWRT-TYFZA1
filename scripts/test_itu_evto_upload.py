@@ -28,10 +28,11 @@ fixture = r'''
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
-typedef uint8_t u8;
+#include "rtl9617c-pon-mode.h"
+typedef uint8_t u8;typedef uint64_t u64;
+#define READ_ONCE(v) (v)
 #define BIT(n) (1U<<(n))
 #define GFP_KERNEL 0
-#define RTL_PON_GPON 0
 #define mutex_lock(p) ((void)(p))
 #define mutex_unlock(p) ((void)(p))
 #define lockdep_is_held(p) 1
@@ -53,13 +54,12 @@ struct net_device {int unused;};
 struct rtl_itu_path_state {int rcu;struct rtl_itu_paths paths;};
 struct rtl9617c_pon {
  int mode,puc_configured,pdc_configured,control_lock,lock,itu_paths_ready,itu_paths_error;
- unsigned long long itu_path_epoch;
+ unsigned long long itu_path_epoch,itu_line_epoch,itu_upload_epoch;
  struct net_device *omci_device,*data_devices[1];void *ni_dev;
  struct rtl_itu_path_state *itu_paths;
  void *itu_upload;size_t itu_upload_size,itu_upload_received;
 };
 static unsigned int programs;
-static bool rtl_pon_mode_is_epon(int mode){return mode==4;}
 static int path_program(struct rtl9617c_pon *pon,const struct rtl_itu_paths *paths){
  (void)pon;assert(paths->count<=248);programs++;return 0;}
 static int rtl9617c_ni_itu_paths(void *ni,struct net_device *dev,const struct rtl_itu_paths *paths){
@@ -75,7 +75,7 @@ static unsigned char *load(const char *name,size_t *length){
 int main(int argc,char **argv){
  assert(argc==4 || argc==5);size_t small_size,large_size,mapped_size;
  unsigned char *small=load(argv[1],&small_size),*large=load(argv[2],&large_size);
- struct net_device dev={};struct rtl9617c_pon pon={.puc_configured=1,.pdc_configured=1,.data_devices={&dev}};
+ struct net_device dev={};struct rtl9617c_pon pon={.mode=RTL_PON_GPON,.puc_configured=1,.pdc_configured=1,.data_devices={&dev}};
  assert(rtl_pon_itu_paths_upload(&pon,(void *)small,0,small_size)==(ssize_t)small_size);
  assert(programs==1 && pon.itu_paths_ready && pon.itu_paths->paths.profile_count==2);
  const struct rtl_itu_paths *paths=&pon.itu_paths->paths;
@@ -138,9 +138,29 @@ int main(int argc,char **argv){
   assert(paths->weights[2][0]==9 && paths->weights[2][1]==9);
   free(queue);
  }
+ /* A partial GPON snapshot must not program the later XG-PON session. */
+ before_programs=programs;old=pon.itu_paths;pon.itu_line_epoch=17;
+ assert(rtl_pon_itu_paths_upload(&pon,(void*)large,0,4096)==4096);
+ pon.mode=RTL_PON_XGPON;pon.itu_line_epoch++;pon.itu_paths_ready=false;
+ assert(rtl_pon_itu_paths_upload(&pon,(void*)(large+4096),4096,large_size-4096)==-ESTALE);
+ assert(programs==before_programs && pon.itu_paths==old && !pon.itu_paths_ready);
+ /* Also cover an epoch change after upload detaches a complete buffer,
+  * before the commit takes its state lock, including an empty snapshot. */
+ assert(rtl_pon_itu_paths_write(&pon,(void*)large,large_size,17)==-ESTALE);
+ assert(rtl_pon_itu_paths_write(&pon,(void*)empty,sizeof(empty),17)==-ESTALE);
+ assert(programs==before_programs && pon.itu_paths==old);
+ for(size_t at=0;at<large_size;){size_t n=large_size-at<4096?large_size-at:4096;
+  assert(rtl_pon_itu_paths_upload(&pon,(void*)(large+at),at,n)==(ssize_t)n);at+=n;}
+ assert(programs==before_programs+1 && pon.itu_paths_ready);
+ /* Same-protocol LOS/recovery advances the line epoch as well. */
+ before_programs=programs;
+ assert(rtl_pon_itu_paths_upload(&pon,(void*)large,0,4096)==4096);
+ pon.itu_line_epoch++;
+ assert(rtl_pon_itu_paths_upload(&pon,(void*)(large+4096),4096,large_size-4096)==-ESTALE);
+ assert(programs==before_programs);
  free(mapped);
  free(pon.itu_paths);free(pon.itu_upload);free(small);free(large);
- puts("Production ITU upload: OLT graph, atomic snapshots, v4 scheduler updates and invalid-weight rejection passed");
+ puts("Production ITU upload: OLT graph, atomic snapshots, scheduler updates; stale cross-family/recovery epochs rejected before hardware; fresh session reapplies");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='tyf-evto-upload-') as directory:

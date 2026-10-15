@@ -1,0 +1,127 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "19c21a2",
+  "bug": "An ITU snapshot begun on an older line session can be committed after protocol switch or reactivation",
+  "fix": "Capture itu_line_epoch at upload start; compare captured session while holding commit/state locks before any live graph or hardware change",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-path.c": "93f561714bb1037377c9396c97c26f2f88fe7bd074082e956507ca803d2f7edb",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.h": "55694172596fc7f071ccf91dcb2cb46c5cb693b31f16e26cec339cf06f0ae6e7",
+    "scripts/test_itu_evto_upload.py": "65cdac0b3944ca0f611386e9068f2d78c061eecad40f31cb1268c16d2d943f7c",
+    "scripts/test_omci_kernel_commit.py": "4d85527ad1bbdfcccf9f58a5d8693a2b7113f460e831f6240748345a7fc43614",
+    "tools/trace_stock_pon_family_paths.py": "da33962b311066181417357da677ece0ce5ebaddedc9100e4fa97b2b38396794",
+    "docs/pon-family-audit.md": "fb46f644d2b7c335e700cc6137f59e2492d92c234307818d0b3f2ed1aba9c386"
+  },
+  "before": {
+    "source_commit": "19c21a2",
+    "snapshot_bytes": 4764,
+    "first_chunk_bytes": 4096,
+    "GPON_to_XGPON_old_tail_result": 668,
+    "programming_calls": 1,
+    "configured": true,
+    "record": "artifacts/pon-session-upload-20261016/before.log",
+    "scope": "Actual production C functions, modeled line change/carrier/hardware callbacks; no RF or OLT execution"
+  },
+  "after": {
+    "tail_result": -116,
+    "errno": "ESTALE",
+    "programming_calls": 0,
+    "configured": false,
+    "cross_family_partial_snapshot": true,
+    "detached_snapshot_commit": true,
+    "empty_stale_snapshot": true,
+    "same_protocol_line_epoch_change": true,
+    "fresh_session_reapplies": true,
+    "actual_Rust_FFI_kernel_commit_passed": true
+  },
+  "factory": {
+    "factory_module_sha256": "2360c7dbf93157cb3ab212c733e76a513c34015bc466f192dd19e4ae87eb0311",
+    "actual_function": "dal_rt_rtl8277c_gpon_tcont_set@0x1db60",
+    "scope": "Original current-mode dispatch and table publication; initialized T-CONT state supplied, AAL hardware bodies modeled; no optical execution or native upload scheduling simulation.",
+    "records": [
+      {
+        "mode": 3,
+        "return": 0,
+        "calls": [
+          {
+            "function": "aal_gpon_tcont_set",
+            "arguments": [
+              0,
+              0,
+              1063,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "mode": 4,
+        "return": 0,
+        "calls": [
+          {
+            "function": "aal_xgpon_bwmp_tcont_set",
+            "arguments": [
+              0,
+              0,
+              1,
+              7
+            ]
+          }
+        ]
+      },
+      {
+        "mode": 5,
+        "return": 0,
+        "calls": [
+          {
+            "function": "aal_xgpon_bwmp_tcont_set",
+            "arguments": [
+              0,
+              0,
+              1,
+              7
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "module": {
+    "path": "artifacts/pon-session-upload-20261016/kernel/rtl_pon_session_live.ko",
+    "sha256": "0e2505e42c2ab8072cca2f11996e34e21dc4a4049fcf006417796ef960d4724e",
+    "deployed_sha256": "0e2505e42c2ab8072cca2f11996e34e21dc4a4049fcf006417796ef960d4724e",
+    "kernel": "6.18.55",
+    "driver": "rtl9617c-pon-session-live",
+    "source_delta": "distinct platform driver name only"
+  },
+  "live": {
+    "mode": "epon-d10g",
+    "service_exit": 0,
+    "registered_LLID0": true,
+    "LOID_authentication": "accepted",
+    "DHCP_and_default_route_restored": true,
+    "public_ping": {
+      "sent": 3,
+      "received": 3
+    },
+    "RAM_only": true,
+    "saved_PON_UCI_unchanged": true,
+    "restore_script": "/tmp/restore-pon.sh"
+  },
+  "limits": [
+    "No live GPON-family OLT or cross-family optical switch",
+    "Directed replay provides the stale-commit evidence; EPON live test covers unaffected runtime registration/business",
+    "No full firmware build or full test suite",
+    "Version4 wire format unchanged; this change binds one upload to its start session"
+  ],
+  "record_sha256": {
+    "artifacts/pon-session-upload-20261016/before.log": "67468d41873adecb2b640614c4b69bba243a5e4c6e6b080de2d05782d69b7ce8",
+    "artifacts/pon-session-upload-20261016/upload-check.log": "fa831115ce7ff02d955fcd78a05ea329872359e05ad69b461dabe81554217889",
+    "artifacts/pon-session-upload-20261016/omci-kernel-check.log": "69f1894a1ea51601ae4ff94f31621167f3d5ff5259281543e747d8a9e5846419",
+    "artifacts/pon-session-upload-20261016/stock-family-paths.log": "25b904a64da8b9d201fe888b29236377b17c0b0970622f0169335ea50a5fbc19",
+    "artifacts/pon-session-upload-20261016/build.log": "9803f9d381b7614d6ea1a2a5ccee4c64c7d45272d4578b52ae11acfd7945d93f"
+  },
+  "live_record_sha256": {
+    "restore-pon.sh": "2a57330bdc7df6ba61586978be9a3aa299ec4c8420ea1ff57b557be383826822",
+    "live-after.txt": "b9b105cbd6eccbc8ae88832c1ec6214a6d49398e9886167401b47a5fa80c9eb5"
+  }
+}
