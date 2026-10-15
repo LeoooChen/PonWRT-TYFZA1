@@ -70,7 +70,7 @@ static int path_program(struct rtl9617c_pon *pon, const struct rtl_itu_paths *pa
 	int ret;
 
 	for (index = 1; index < 32; index++) {
-		ret = rtl_itu_puc_tcont(&io, index, 0);
+		ret = rtl_itu_puc_schedule(&io, index, 0, (const u8[8]){});
 		if (ret) return ret;
 		if (gpon) {
 			if (!(pon->itu_alloc_valid & BIT(index))) continue;
@@ -119,7 +119,7 @@ static int path_program(struct rtl9617c_pon *pon, const struct rtl_itu_paths *pa
 				ret = rtl_xgpon_tcont_set(&io, path->tcont, path->alloc_id, true, true);
 			}
 			if (ret) return ret;
-			ret = rtl_itu_puc_tcont(&io, path->tcont, 255);
+			ret = rtl_itu_puc_schedule(&io, path->tcont, 255, paths->weights[path->tcont]);
 			if (ret) return ret;
 			queues[path->tcont / 4] |= 255U << ((path->tcont % 4) * 8);
 			active |= BIT(path->tcont);
@@ -154,14 +154,15 @@ ssize_t rtl_pon_itu_paths_write(struct rtl9617c_pon *pon, const char *buf, size_
 {
 	struct rtl_itu_path_state *state, *old;
 	struct net_device *dev;
-	unsigned int i, j, entries, profiles, unique = 0, cursor;
+	unsigned int i, j, entries, profiles, schedules, schedule_mask = 0, unique = 0, cursor;
 	int ret = 0;
 
-	if (count < 12 || get_unaligned_le16(buf) != 3 || get_unaligned_le32(buf + 8) != count) return -EINVAL;
+	if (count < 12 || get_unaligned_le16(buf) != 4 || get_unaligned_le32(buf + 8) != count) return -EINVAL;
 	entries = get_unaligned_le16(buf + 2);
 	profiles = get_unaligned_le16(buf + 4);
+	schedules = get_unaligned_le16(buf + 6);
 	cursor = 12 + entries * RTL_ITU_PATH_WIRE_BYTES;
-	if (entries > RTL_ITU_PATH_MAX || profiles > entries * RTL_EVTO_STAGES || cursor > count) return -EMSGSIZE;
+	if (entries > RTL_ITU_PATH_MAX || profiles > entries * RTL_EVTO_STAGES || schedules > 31 || cursor > count) return -EMSGSIZE;
 	state = kvzalloc(sizeof(*state) + profiles * sizeof(struct rtl_evto_profile), GFP_KERNEL);
 	if (!state) return -ENOMEM;
 	state->paths.count = entries;
@@ -229,7 +230,27 @@ ssize_t rtl_pon_itu_paths_write(struct rtl9617c_pon *pon, const char *buf, size_
 		if (!rtl_evto_valid(profile)) { ret = -EINVAL; goto free; }
 		cursor += 32 + profile->count * 16;
 	}
-	if (cursor != count) { ret = -EMSGSIZE; goto free; }
+	if (count - cursor != schedules * RTL_ITU_SCHEDULE_WIRE_BYTES) { ret = -EMSGSIZE; goto free; }
+	for (i = 0; i < schedules; i++) {
+		const u8 *record = (const u8 *)buf + cursor + i * RTL_ITU_SCHEDULE_WIRE_BYTES;
+		unsigned int tcont = get_unaligned_le16(record), used = 0;
+		bool strict = false;
+
+		if (!tcont || tcont > 31 || get_unaligned_le16(record + 2) ||
+		    (schedule_mask & BIT(tcont))) { ret = -EINVAL; goto free; }
+		for (j = 0; j < entries; j++)
+			if (state->paths.path[j].tcont == tcont && !state->paths.path[j].multicast)
+				used = 1;
+		if (!used || !!record[4] != !!record[5]) { ret = -EINVAL; goto free; }
+		/* Stock PUC programming keeps WRR below SP and couples queue0/1. */
+		for (j = 0; j < 8; j++) {
+			if (!record[4 + j]) strict = true;
+			else if (strict) { ret = -EINVAL; goto free; }
+		}
+		memcpy(state->paths.weights[tcont], record + 4, 8);
+		schedule_mask |= BIT(tcont);
+	}
+
 	mutex_lock(&pon->control_lock);
 	mutex_lock(&pon->lock);
 	if (rtl_pon_mode_is_epon(pon->mode) || !pon->puc_configured || !pon->pdc_configured) {
@@ -280,7 +301,7 @@ ssize_t rtl_pon_itu_paths_upload(struct rtl9617c_pon *pon, const char *buf, loff
 	int ret = 0;
 	mutex_lock(&pon->control_lock);
 	if (!offset) {
-		if (count < 12 || get_unaligned_le16(buf) != 3) { ret = -EINVAL; goto unlock; }
+		if (count < 12 || get_unaligned_le16(buf) != 4) { ret = -EINVAL; goto unlock; }
 		bytes = get_unaligned_le32(buf + 8);
 		if (bytes < 12 || bytes > RTL_ITU_CONFIG_WIRE_MAX) { ret = -EMSGSIZE; goto unlock; }
 		kvfree(pon->itu_upload);

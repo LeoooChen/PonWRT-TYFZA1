@@ -228,6 +228,8 @@ pub struct Mib {
     autonomous_defaults: BTreeMap<(u16, u16), ManagedEntity>,
     known_classes: BTreeSet<u16>,
     olt_created: BTreeSet<(u16, u16)>,
+    configured_priority_queues: BTreeSet<u16>,
+    gem_queue_bindings: BTreeMap<u16, (u16, u16)>,
     dynamic_classes: BTreeSet<u16>,
     table_snapshot: Option<TableSnapshot>,
     upload_snapshot: Vec<UploadRecord>,
@@ -265,6 +267,8 @@ impl Mib {
             autonomous_defaults: BTreeMap::new(),
             known_classes: BTreeSet::new(),
             olt_created: BTreeSet::new(),
+            configured_priority_queues: BTreeSet::new(),
+            gem_queue_bindings: BTreeMap::new(),
             dynamic_classes: BTreeSet::new(),
             table_snapshot: None,
             upload_snapshot: Vec::new(),
@@ -825,6 +829,9 @@ impl Mib {
                 attribute.value = value;
             }
         }
+        if request.class_id == CLASS_PRIORITY_QUEUE && request.entity_id & 0x8000 != 0 {
+            self.configured_priority_queues.insert(request.entity_id);
+        }
         self.increment_mib_sync();
         Response::set_success(request)
     }
@@ -1119,6 +1126,8 @@ impl Mib {
             self.entities.insert((CLASS_CTC_LOID_AUTH, 0), entity);
         }
         self.olt_created.clear();
+        self.configured_priority_queues.clear();
+        self.gem_queue_bindings.clear();
         self.table_snapshot = None;
         self.upload_snapshot.clear();
         self.pending_master_session_key = None;
@@ -1633,9 +1642,59 @@ impl Mib {
         snapshot
     }
 
+    pub fn update_queue_bindings(&mut self, request: &Request<'_>) -> Result<(), i32> {
+        let owner = |id| -> Result<u16, i32> {
+            let queue = self.entities.get(&(CLASS_PRIORITY_QUEUE, id)).ok_or(-22)?;
+            let related = &queue.attributes[&6].value;
+            let port = u16::from_be_bytes([related[0], related[1]]);
+            let scheduler_id = be_u16(&queue.attributes[&7].value).unwrap();
+            if let Some(scheduler) = self.entities.get(&(CLASS_TRAFFIC_SCHEDULER, scheduler_id)) {
+                if scheduler.attributes[&3].value[0] == 2 {
+                    return Ok(be_u16(&scheduler.attributes[&1].value).unwrap());
+                }
+            }
+            Ok(port)
+        };
+        // A live queue Set updates every flow using that queue. A later CTP Set
+        // establishes its own T-CONT again, as in the original cfgGemFlow path.
+        for (_, (queue, port)) in &mut self.gem_queue_bindings {
+            if (request.class_id == CLASS_PRIORITY_QUEUE && request.entity_id == *queue)
+                || (request.class_id == CLASS_TRAFFIC_SCHEDULER
+                    && self.entities[&(CLASS_PRIORITY_QUEUE, *queue)].attributes[&7].value
+                        == request.entity_id.to_be_bytes()) {
+                *port = owner(*queue)?;
+            }
+        }
+        let mut desired = BTreeMap::new();
+        for path in self.provisioning_snapshot().data_paths {
+            if path.multicast || path.pbit_mask == 0 { continue; }
+            if let Some((&(_, id), ctp)) = self.entities.iter().find(|(&(class, _), entity)|
+                class == CLASS_GEM_PORT_NETWORK_CTP && be_u16(&entity.attributes[&1].value) == Some(path.gem_id)) {
+                desired.insert(id, (be_u16(&ctp.attributes[&4].value).unwrap(),
+                                    be_u16(&ctp.attributes[&2].value).unwrap()));
+            }
+        }
+        self.gem_queue_bindings.retain(|id, _| desired.contains_key(id));
+        for (id, (requested, port)) in desired {
+            if self.gem_queue_bindings.contains_key(&id)
+                && !(request.class_id == CLASS_GEM_PORT_NETWORK_CTP && request.entity_id == id) {
+                continue;
+            }
+            let queue = if owner(requested)? == port { requested } else {
+                // Original 0x1e8b8..0x1e8ec selects the first active queue on
+                // the CTP T-CONT; with no match it retains the requested queue.
+                self.configured_priority_queues.iter().copied()
+                    .find(|&queue| owner(queue) == Ok(port)).unwrap_or(requested)
+            };
+            self.gem_queue_bindings.insert(id, (queue, port));
+            self.configured_priority_queues.insert(queue);
+        }
+        Ok(())
+    }
+
     /// Export OMCI entities that determine GEM classification in MIB wire byte order.
     pub fn data_path_graph(&self) -> DataPathGraph {
-        const GRAPH_CLASSES: [u16; 10] = [
+        const GRAPH_CLASSES: [u16; 13] = [
             CLASS_MAC_BRIDGE_PORT_CONFIG_DATA,
             CLASS_VLAN_TAGGING_FILTER,
             CLASS_IEEE_8021P_MAPPER,
@@ -1646,10 +1705,15 @@ impl Mib {
             CLASS_MULTICAST_SUBSCRIBER_CONFIG,
             CLASS_GEM_PORT_NETWORK_CTP,
             CLASS_TRAFFIC_DESCRIPTOR,
+            CLASS_PRIORITY_QUEUE,
+            CLASS_TRAFFIC_SCHEDULER,
+            CLASS_TCONT,
         ];
 
         let mut graph = DataPathGraph {
             candidates: self.provisioning_snapshot().data_paths,
+            configured_queues: self.configured_priority_queues.clone(),
+            gem_queue_bindings: self.gem_queue_bindings.clone(),
             entities: Vec::new(),
         };
         for (&(class_id, entity_id), entity) in &self.entities {
@@ -1773,6 +1837,8 @@ mod tests {
             autonomous_defaults: BTreeMap::new(),
             known_classes: BTreeSet::new(),
             olt_created: BTreeSet::new(),
+            configured_priority_queues: BTreeSet::new(),
+            gem_queue_bindings: BTreeMap::new(),
             dynamic_classes: BTreeSet::new(),
             table_snapshot: None,
             upload_snapshot: Vec::new(),

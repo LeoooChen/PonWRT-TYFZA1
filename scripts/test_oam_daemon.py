@@ -87,7 +87,7 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
         sock.send(ethernet(challenge, code=0xfe, flags=0x50))
         auth = receive(sock, 0xfe)
         assert auth[18:26] == b'\x11\x11\x11\x05\x02\x00\x25\x01'
-        assert auth[26:50] == b'0012345678'.ljust(24, b'\0')
+        assert auth[26:50] == b'0012345678'.rjust(24, b'\0')
         assert auth[50:62] == bytes(12)
         tests.append('actual process sends 24-byte LOID and blank 12-byte password')
         sock.send(ethernet(b'\x11\x11\x11\x05\x03\0\0', code=0xfe, flags=0x50))

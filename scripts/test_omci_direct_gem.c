@@ -39,7 +39,7 @@ int main(void)
    memset(body,0,sizeof(body));be16(body,100);body[24]=4;body[25]=1;
    request(agent,4,84,0x400,body,26);
   }
-  assert(tyfza1_omci_paths(agent,wire)==12+RTL_ITU_PATH_WIRE_BYTES && le16(wire)==3);
+  assert(tyfza1_omci_paths(agent,wire)==12+RTL_ITU_PATH_WIRE_BYTES && le16(wire)==4);
   paths.path[0]=(struct rtl_itu_path){.alloc_id=le16(wire+12),.gem_id=le16(wire+14),
    .vlan=le16(wire+16),.pbits=wire[18],.multicast=wire[19],.queue=wire[20],
    .encrypted=wire[21],.tcont=le16(wire+22),.downstream_pbits=wire[24],.vlan_exclude=wire[35],.index=8};

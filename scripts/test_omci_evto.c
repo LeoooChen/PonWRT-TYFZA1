@@ -67,7 +67,7 @@ int main(int argc,char **argv)
  profile(a,0x501,5,0x200);
  assert(!row(a,65535,65535,100));assert(!row(a,0x501,100,200));
  int length=tyfza1_omci_paths(a,wire);
- assert(length>12 && le16(wire)==3 && le16(wire+2)==1 && le16(wire+4)==2);
+ assert(length>12 && le16(wire)==4 && le16(wire+2)==1 && le16(wire+4)==2);
  assert(le16(wire+12+13)==1 && le16(wire+12+21)==0);
  memcpy(before,wire,length);
  uint8_t invalid_mode[3]={8,0,9};

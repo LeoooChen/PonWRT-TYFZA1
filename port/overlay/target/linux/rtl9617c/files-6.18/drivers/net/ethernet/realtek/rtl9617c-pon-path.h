@@ -5,8 +5,10 @@
 
 #define RTL_ITU_PATH_MAX 248
 #define RTL_ITU_PATH_WIRE_BYTES 50
+#define RTL_ITU_SCHEDULE_WIRE_BYTES 12
 #define RTL_ITU_CONFIG_WIRE_MAX (12 + RTL_ITU_PATH_MAX * RTL_ITU_PATH_WIRE_BYTES + \
-	RTL_ITU_PATH_MAX * RTL_EVTO_STAGES * (32 + RTL_EVTO_ROWS * 16))
+	RTL_ITU_PATH_MAX * RTL_EVTO_STAGES * (32 + RTL_EVTO_ROWS * 16) + \
+	31 * RTL_ITU_SCHEDULE_WIRE_BYTES)
 #define RTL_ITU_VLAN_TAGGED 65533U
 #define RTL_ITU_VLAN_UNTAGGED 65534U
 #define RTL_ITU_VLAN_ANY 65535U
@@ -22,6 +24,7 @@ struct rtl_itu_paths {
 	unsigned int count, profile_count;
 	unsigned long long generation;
 	struct rtl_itu_path path[RTL_ITU_PATH_MAX];
+	unsigned char weights[32][8];
 	struct rtl_evto_profile profile[];
 };
 

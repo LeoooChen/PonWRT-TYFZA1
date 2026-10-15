@@ -4,8 +4,8 @@
 
 #include "rtl9617c-pon-queue.h"
 
-static inline int rtl_itu_puc_tcont(const struct rtl_dq_io *io,
-				  unsigned int index, unsigned int enabled)
+static inline int rtl_itu_puc_tcont_weights(const struct rtl_dq_io *io,
+		unsigned int index, unsigned int enabled, const unsigned char weights[8])
 {
 	unsigned int data[5] = {0}, cos;
 	unsigned long long field;
@@ -18,11 +18,45 @@ static inline int rtl_itu_puc_tcont(const struct rtl_dq_io *io,
 		if (bit % 32 > 23)
 			data[bit / 32 + 1] |= field >> (32 - bit % 32);
 	}
+	if (weights) {
+		data[2] |= (unsigned int)weights[0] << 16 | (unsigned int)weights[1] << 24;
+		for (cos = 2; cos < 6; cos++)
+			data[3] |= (unsigned int)weights[cos] << ((cos - 2) * 8);
+		data[4] = weights[6] | (unsigned int)weights[7] << 8;
+	}
 	/* A valid T-CONT entry can contain disabled business queues. */
 	data[2] |= 1U << 12;
 	for (cos = 0; cos < 5; cos++)
 		io->write(io->context, 0x8014 - cos * 4, data[cos]);
 	return io->indirect(io->context, 0x8000, 0xc0000000U | index);
+}
+
+static inline int rtl_itu_puc_tcont(const struct rtl_dq_io *io,
+				  unsigned int index, unsigned int enabled)
+{
+	return rtl_itu_puc_tcont_weights(io, index, enabled, 0);
+}
+
+/* TYFZA1 ponmac_queue_add updates both the PVT weight and its VSTBL credit. */
+static inline int rtl_itu_puc_schedule(const struct rtl_dq_io *io,
+		unsigned int index, unsigned int enabled, const unsigned char weights[8])
+{
+	unsigned int data[5] = {0}, cos, shift = 7 + (io->read(io->context, 0x8048) & 3);
+	int ret = rtl_itu_puc_tcont_weights(io, index, enabled, weights);
+
+	if (ret)
+		return ret;
+	for (cos = 0; cos < 8; cos++) {
+		unsigned int bit = cos * 20;
+		unsigned long long credit = (unsigned int)weights[cos] << shift;
+
+		data[bit / 32] |= credit << (bit % 32);
+		if (bit % 32 > 12)
+			data[bit / 32 + 1] |= credit >> (32 - bit % 32);
+	}
+	for (cos = 0; cos < 5; cos++)
+		io->write(io->context, 0x8074 - cos * 4, data[cos]);
+	return io->indirect(io->context, 0x8060, 0xc0000000U | index);
 }
 
 static inline void rtl_gpon_puc_profile(const struct rtl_dq_io *io)

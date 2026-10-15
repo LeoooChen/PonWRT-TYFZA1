@@ -5,7 +5,7 @@
 //! `mib` stores OLT-provisioned managed entities. This snapshot forms the
 //! boundary between the MIB and the RTL9617C business-path backend.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Match any VLAN; the adjacent values distinguish tagged and untagged frames.
 pub const DATA_PATH_VLAN_ANY: u16 = u16::MAX;
@@ -88,6 +88,8 @@ pub struct DataPathEntity {
 
 #[derive(Clone, Debug, Default)]
 pub struct DataPathGraph {
+    pub configured_queues: BTreeSet<u16>,
+    pub gem_queue_bindings: BTreeMap<u16, (u16, u16)>,
     pub candidates: Vec<DataPathCandidate>,
     pub entities: Vec<DataPathEntity>,
 }

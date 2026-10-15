@@ -427,14 +427,23 @@ void rtl_ax_tx_ps_release(struct rtl_ax_tx *tx, struct ieee80211_sta *sta,
 	unsigned int macid, u16 tids, bool uapsd, bool more_data)
 {
 	u32 *ps;
-	if (!rtl_ax_tx_ni_buffered(tx, macid)) {
+	bool queued = false;
+
+	/* ARM in-flight TIDs are announced too, but cannot consume a NI grant. */
+	if (rtl_ax_tx_ni_buffered(tx, macid))
+		for (unsigned int tid = 0; tid < 8; tid++)
+			if ((tids & BIT(tid)) && get_unaligned_le32(tx->pe.memory +
+			    0x13000 + (macid * 8 + tid) * 4)) {
+				queued = true;
+				break;
+			}
+	if (!queued) {
 		ieee80211_sta_eosp(sta);
 		return;
 	}
 	ps = tx->pe.memory + 0xe800 + macid * 16;
-	/* One frame ends this service period; the next poll grants a new one. */
-	for (unsigned int tid = 0; tid < 8; tid++)
-		ieee80211_sta_set_buffered(sta, tid, get_unaligned_le32(tx->pe.memory + 0x13000 + (macid * 8 + tid) * 4) > ((tids & BIT(tid)) ? 1 : 0));
+	/* Keep TIM tied to pending ownership until RPQ. Clearing it at grant
+	 * loses a new arrival while the PE pending mask remains nonzero. */
 	put_unaligned_le32(uapsd | more_data << 1 | (u32)tids << 16, ps + 3);
 	dma_wmb();
 	put_unaligned_le32(get_unaligned_le32(ps + 1) + 1, ps + 1);

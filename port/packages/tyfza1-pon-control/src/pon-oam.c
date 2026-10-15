@@ -186,6 +186,16 @@ static int receive_information(struct pon_oam_session *session, const uint8_t *i
 	return 0;
 }
 
+static void identity_field(uint8_t *output, size_t width, const uint8_t *value, size_t capacity)
+{
+	size_t length = strnlen((const char *)value, capacity);
+
+	if (length > width)
+		length = width;
+	memset(output, 0, width - length);
+	memcpy(output + width - length, value, length);
+}
+
 static int receive_auth(struct pon_oam_session *session, const struct pon_oam_identity *identity,
 			const uint8_t *input, size_t length, uint8_t *output)
 {
@@ -230,24 +240,14 @@ static int receive_auth(struct pon_oam_session *session, const struct pon_oam_id
 			return -ENOENT;
 		set_be16(output + 23, 37);
 		output[25] = 1;
-		memcpy(output + 26, identity->loid, 24);
-		memcpy(output + 50, identity->password, 12);
+		identity_field(output + 26, 24, identity->loid, sizeof(identity->loid));
+		identity_field(output + 50, 12, identity->password, sizeof(identity->password));
 		return 62;
 	}
 	set_be16(output + 23, 2);
 	output[25] = 2;
-	output[26] = auth_type;
+	output[26] = 1; /* Request the LOID type supported by this ONU. */
 	return 60;
-}
-
-static void identity_field(uint8_t *output, size_t width, const uint8_t *value, size_t capacity)
-{
-	size_t length = strnlen((const char *)value, capacity);
-
-	if (length > width)
-		length = width;
-	memset(output, 0, width - length);
-	memcpy(output + width - length, value, length);
 }
 
 static int receive_get(const struct pon_oam_session *session,

@@ -29,6 +29,9 @@ static inline void rtl_gpon_mac_parameters(const struct rtl_dq_io *io)
 	io->write(io->context, 0x6118, 0x12100900);
 	io->write(io->context, 0x6000,
 		  (io->read(io->context, 0x6000) & ~0x3fff0000U) | 0x3fff0000U);
+	/* TYFZA1 __gpon_datapath_init programs the upstream frame variation. */
+	io->write(io->context, 0x600c,
+		  (io->read(io->context, 0x600c) & ~0x1ffU) | 64U);
 }
 
 static inline void rtl_gpon_active(const struct rtl_dq_io *io, int enabled)

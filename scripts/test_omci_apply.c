@@ -21,7 +21,7 @@ static int apply(void *context, const uint8_t *paths, size_t length)
 	struct backend *b = context;
 	/* The backend runs before the successful reply is made visible to transport. */
 	assert(b->reply[b->result_offset] == 0xa5);
-	assert(length >= 12 && le16(paths) == 3);
+	assert(length >= 12 && le16(paths) == 4);
 	b->calls++;
 	if (b->fail) return b->fail;
 	b->count = le16(paths + 2);

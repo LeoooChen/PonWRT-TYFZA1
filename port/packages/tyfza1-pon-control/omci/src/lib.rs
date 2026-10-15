@@ -10,7 +10,7 @@ mod schema;
 mod security;
 mod wire;
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::slice;
 use config::IdentityConfig;
 use mib::Mib;
@@ -101,7 +101,23 @@ pub unsafe extern "C" fn tyfza1_omci_dispatch(
     let response = if let Some((_, response)) = agent.cache.iter().find(|(key, _)| key == data) {
         response.clone()
     } else {
-        let response = agent.mib.dispatch(&request);
+        let response = if matches!(request.action, protocol::ACTION_CREATE | protocol::ACTION_DELETE |
+            protocol::ACTION_SET | protocol::ACTION_SET_TABLE | protocol::ACTION_MIB_RESET) {
+            let mut candidate = agent.mib.clone();
+            let response = candidate.dispatch(&request);
+            if response.result() == Some(protocol::RESULT_SUCCESS) {
+                if candidate.update_queue_bindings(&request).is_err() || paths_bytes(&candidate).is_err() {
+                    let response = Response::new(&request, 1);
+                    let bytes = response.as_bytes();
+                    std::ptr::copy_nonoverlapping(bytes.as_ptr(), output, bytes.len());
+                    return bytes.len() as i32;
+                }
+                agent.mib = candidate;
+            }
+            response
+        } else {
+            agent.mib.dispatch(&request)
+        };
         if request.action == protocol::ACTION_MIB_RESET {
             agent.cache.clear();
             agent.notifications.clear();
@@ -134,12 +150,8 @@ pub unsafe extern "C" fn tyfza1_omci_dispatch_apply(
     let mut candidate = agent.mib.clone();
     let response = candidate.dispatch(&request);
     if response.result() == Some(protocol::RESULT_SUCCESS) {
-        *backend_result = match paths_bytes(&candidate) {
-            Ok(paths) => if paths_bytes(&agent.mib).ok().as_deref() == Some(paths.as_slice()) {
-                0
-            } else {
-                apply(context, paths.as_ptr(), paths.len())
-            },
+        *backend_result = match candidate.update_queue_bindings(&request).and_then(|_| paths_bytes(&candidate)) {
+            Ok(paths) => apply(context, paths.as_ptr(), paths.len()),
             Err(error) => error,
         };
         if *backend_result < 0 {
@@ -211,30 +223,91 @@ fn paths_bytes(mib: &Mib) -> Result<Vec<u8>, i32> {
         paths.iter().any(|path| path.vlan_profiles.contains(&Some(profile.entity_id)))).collect();
     if profiles.iter().any(|profile| profile.rows.len() > 32) { return Err(-28); }
     let graph = mib.data_path_graph();
-    let mut bytes = Vec::with_capacity(12 + paths.len() * 50 + profiles.len() * 544);
-    bytes.extend_from_slice(&3u16.to_le_bytes());
+    let entity = |class, id| graph.entities.iter().find(|e| e.class_id == class && e.entity_id == id);
+    fn attribute(e: &provisioning::DataPathEntity, index: u8) -> Option<&[u8]> {
+        e.attributes.iter().find(|a| a.index == index).map(|a| a.value.as_slice())
+    }
+    let word = |e: &provisioning::DataPathEntity, index| attribute(e, index)
+        .map(|value| u16::from_be_bytes([value[0], value[1]]));
+    let ctp = |gem: u16| graph.entities.iter().find(|e| e.class_id == schema::CLASS_GEM_PORT_NETWORK_CTP
+        && word(e, 1) == Some(gem));
+    let mut active = BTreeSet::new();
+    for &binding in graph.gem_queue_bindings.values() { active.insert(binding); }
+    for &id in &graph.configured_queues {
+        if graph.gem_queue_bindings.values().any(|binding| binding.0 == id) { continue; }
+        let queue = entity(schema::CLASS_PRIORITY_QUEUE, id).ok_or(-22)?;
+        let related = attribute(queue, 6).ok_or(-22)?;
+        active.insert((id, u16::from_be_bytes([related[0], related[1]])));
+    }
+    // The original wrapper activates only queues referenced by GEMs or explicitly set by the OLT.
+    let mut groups = BTreeMap::<u16, Vec<(u16, u16, u8)>>::new();
+    for (id, owner) in active {
+        let queue = entity(schema::CLASS_PRIORITY_QUEUE, id).ok_or(-22)?;
+        let related = attribute(queue, 6).ok_or(-22)?;
+        let priority = u16::from_be_bytes([related[2], related[3]]);
+        let scheduler = word(queue, 7).ok_or(-22)?;
+        let policy = if scheduler & 0x8000 != 0 {
+            let scheduler = entity(schema::CLASS_TRAFFIC_SCHEDULER, scheduler).ok_or(-22)?;
+            attribute(scheduler, 3).ok_or(-22)?[0]
+        } else {
+            attribute(entity(schema::CLASS_TCONT, owner).ok_or(-22)?, 3).ok_or(-22)?[0]
+        };
+        if !(0x8000..0x801f).contains(&owner) { return Err(-22); }
+        let weight = if policy == 2 {
+            let weight = attribute(queue, 8).ok_or(-22)?[0];
+            if weight == 0 { return Err(-22); }
+            weight
+        } else { 0 };
+        groups.entry(owner).or_default().push((id, priority, weight));
+    }
+    let mut mapping = BTreeMap::<(u16, u16), u8>::new();
+    let mut weights = BTreeMap::<u16, [u8; 8]>::new();
+    for (owner, mut queues) in groups {
+        // libomci_mib.so:0x19aa8: WRR first; SP priority descending; equal SP priority by ME ID.
+        queues.sort_by(|a, b| match (a.2 != 0, b.2 != 0) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            (false, false) => b.1.cmp(&a.1).then(a.0.cmp(&b.0)),
+            (true, true) => std::cmp::Ordering::Equal,
+        });
+        let weighted = queues.iter().filter(|queue| queue.2 != 0).count();
+        // PVT queues 0 and 1 share their SP/WRR selection; reserve an unused WRR partner.
+        let partner = usize::from(weighted == 1);
+        if queues.len() + partner > 8 { return Err(-28); }
+        let mut table = [0; 8];
+        for (rank, (id, _, weight)) in queues.into_iter().enumerate() {
+            let slot = rank + if rank >= weighted { partner } else { 0 };
+            mapping.insert((id, owner), slot as u8);
+            table[slot] = weight;
+        }
+        if partner != 0 { table[1] = table[0]; }
+        weights.insert(owner, table);
+    }
+    let mut active_tconts = BTreeSet::new();
+    let mut bytes = Vec::with_capacity(12 + paths.len() * 50 + profiles.len() * 544 + 31 * 12);
+    bytes.extend_from_slice(&4u16.to_le_bytes());
     bytes.extend_from_slice(&(paths.len() as u16).to_le_bytes());
     bytes.extend_from_slice(&(profiles.len() as u16).to_le_bytes());
     bytes.extend_from_slice(&[0; 6]);
     for path in paths {
+        let mut alloc_id = path.alloc_id;
         let mut tcont = 0;
         let mut queue = 0;
         let mut encrypted = 0;
-        if let Some(ctp) = graph.entities.iter().find(|e| e.class_id == schema::CLASS_GEM_PORT_NETWORK_CTP
-            && e.attributes.iter().any(|a| a.index == 1 && a.value == path.gem_id.to_be_bytes())) {
-            let attr = |index| ctp.attributes.iter().find(|a| a.index == index).map(|a| a.value.as_slice());
-            if let Some(value) = attr(2).filter(|_| path.alloc_id != u16::MAX) {
-                let entity = u16::from_be_bytes([value[0], value[1]]);
-                if entity >= 0x8000 && entity < 0x801f { tcont = entity - 0x8000 + 1; }
+        if let Some(ctp) = ctp(path.gem_id) {
+            if !path.multicast && path.pbit_mask != 0 {
+                let binding = graph.gem_queue_bindings[&ctp.entity_id];
+                let owner = binding.1;
+                let slot = mapping[&binding];
+                alloc_id = word(entity(schema::CLASS_TCONT, owner).ok_or(-22)?, 1).ok_or(-22)?;
+                if alloc_id == u16::MAX { return Err(-22); }
+                tcont = owner - 0x8000 + 1;
+                queue = slot;
+                active_tconts.insert(owner);
             }
-            if let Some(value) = attr(4) {
-                let entity = u16::from_be_bytes([value[0], value[1]]);
-                queue = (7 - (entity & 7)) as u8;
-            }
-            if let Some(value) = attr(10) { encrypted = u8::from(value[0] == 1); }
+            if let Some(value) = attribute(ctp, 10) { encrypted = u8::from(value[0] == 1); }
         }
-        if !path.multicast && path.pbit_mask != 0 && tcont == 0 { return Err(-22); }
-        bytes.extend_from_slice(&path.alloc_id.to_le_bytes());
+        bytes.extend_from_slice(&alloc_id.to_le_bytes());
         bytes.extend_from_slice(&path.gem_id.to_le_bytes());
         bytes.extend_from_slice(&path.vlan_id.to_le_bytes());
         bytes.push(path.pbit_mask);
@@ -262,6 +335,16 @@ fn paths_bytes(mib: &Mib) -> Result<Vec<u8>, i32> {
         bytes.extend_from_slice(&profile.dscp);
         for row in profile.rows { bytes.extend_from_slice(&row); }
     }
+    let mut schedulers = 0u16;
+    for owner in active_tconts {
+        let table = weights[&owner];
+        if table == [0; 8] { continue; }
+        bytes.extend_from_slice(&(owner - 0x8000 + 1).to_le_bytes());
+        bytes.extend_from_slice(&[0; 2]);
+        bytes.extend_from_slice(&table);
+        schedulers += 1;
+    }
+    bytes[6..8].copy_from_slice(&schedulers.to_le_bytes());
     let length = bytes.len() as u32;
     bytes[8..12].copy_from_slice(&length.to_le_bytes());
     Ok(bytes)

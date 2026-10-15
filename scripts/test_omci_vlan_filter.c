@@ -39,7 +39,7 @@ int main(void)
   request(a,4,47,0x400,body,14);
   memset(body,0,sizeof(body));be16(body,(5<<13)|(1<<12)|100);body[24]=operation;body[25]=1;
   request(a,4,84,0x400,body,26);
-  int length=tyfza1_omci_paths(a,wire);assert(length>=12 && le16(wire)==3);
+  int length=tyfza1_omci_paths(a,wire);assert(length>=12 && le16(wire)==4);
   paths.count=le16(wire+2);assert(length==12+(int)paths.count*RTL_ITU_PATH_WIRE_BYTES);
   for(unsigned int i=0;i<paths.count;i++) {
    const uint8_t *p=wire+12+i*RTL_ITU_PATH_WIRE_BYTES;

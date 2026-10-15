@@ -1,0 +1,75 @@
+{
+  "date": "2026-10-15",
+  "base_revision": "65685a0e5fb3a2e4e5277cb0586327c6f468f735",
+  "scope": "Offline root-cause fixes based on TYFZA1 factory implementation; no device, full firmware build or full test suite used.",
+  "fixes": [
+    {
+      "area": "GPON",
+      "change": "Program upstream frame variation 64 at 0x600c[8:0].",
+      "factory": "ca-ne.ko::__gpon_datapath_init / aal_gpon_us_frm_ctrl_set",
+      "validation": "tools/trace_stock_itu_io.py passed"
+    },
+    {
+      "area": "CTC OAM",
+      "change": "Right-align LOID/password with leading zeros and request LOID type 1 in unsupported-auth NAK.",
+      "factory": "eponoamd:0x4164fc / 0x416670",
+      "validation": "tools/trace_stock_oam_auth.py: five factory byte comparisons; C codec ASan/UBSan passed"
+    },
+    {
+      "area": "OMCI provisioning",
+      "change": "Apply RelatedPort, effective GEM/T-CONT binding, queue priority and WRR weight through snapshot v4; update PVT and VSTBL; preserve committed MIB on failure; same-value new SET checks backend.",
+      "factory": "libomci_mib.so:0x19aa8 / 0x1c3c8 / 0x1e8b8, pf_rt_SetPriQueue, dal_rtl8277c_ponmac_queue_add, aal_puc_port_voq_map_set / aal_puc_port_voq_sche_info_tbl_set",
+      "validation": "Factory queue sorting/handoff and PVT/VSTBL comparisons passed; test_omci_queues.c, test_omci_kernel_commit.py, test_itu_evto_upload.py and existing OMCI apply/EVTO checks passed"
+    },
+    {
+      "area": "Wi-Fi power save",
+      "change": "Keep TIM until pending ownership completes; end an empty requested-TID service period without issuing an unconsumable NI grant.",
+      "factory": "stop_sta_xmit:0xe7264 and existing PE queued/in-flight ownership contract",
+      "validation": "Old production functions reproduce failures; test_wifi_ps_pending.py and test_wifi_ps_release.py passed"
+    }
+  ],
+  "compile": {
+    "result": "passed",
+    "targets": [
+      "pon-oamd (ARM64 musl)",
+      "pon-omcid and OMCI Rust static library (ARM64 musl)",
+      "rtl9617c-pon-gpon.o",
+      "rtl9617c-pon-xgpon.o",
+      "rtl9617c-pon-itu.o",
+      "rtl9617c-pon-path.o",
+      "rtl9617c-fe.o",
+      "rtl9617c-xram.o",
+      "rtl_ax_ap/tx.o"
+    ],
+    "logs": [
+      "logs/root-cause-20261015-kernel-build.txt",
+      "logs/root-cause-20261015-scheduler-build.txt",
+      "logs/root-cause-20261015-wifi-build.txt",
+      "logs/root-cause-20261015-omci-build.txt",
+      "logs/root-cause-20261015-upload.txt"
+    ]
+  },
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-gpon-hw.h": "631fc16f2456b3eab95bea95667ef3ae503e574df58adf8e266036ad1988b0d5",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-itu-puc.h": "859e725ed71e65c9bb60cb4acf8f0d5d7ca761a90c929555f73ce24decf6e8f8",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-path.c": "aec6cf3f7226c629d22784ce9a917693c3175845814cff7b7e8b934a17fffb35",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-path.h": "4e1c12cd68d40e0ee4221d6c4f9818f50ed6d9dcff991dae352eddee5f9370f7",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx.c": "afc646117d6d0ae7c861aa1b70199aa103684df50b85384fb6b92b70497bada8",
+    "port/packages/tyfza1-pon-control/omci/src/lib.rs": "b5c6ba296f68a859c17c3ef3a6a11508cc8af43823e07c499da6106934bb682d",
+    "port/packages/tyfza1-pon-control/omci/src/mib.rs": "2c1cfdc87c55274c742725bb77838741c01fd55a75a2eb56848b253c9d187389",
+    "port/packages/tyfza1-pon-control/omci/src/provisioning.rs": "9610c9796f9a2cc8ebc4742cbf5a75b57d03de17737cd63a52841de20995910a",
+    "port/packages/tyfza1-pon-control/src/pon-oam.c": "ccb2d079a0fa37eb47db8436b6a48c1ddcbd5f7f43f13b0f17d73a694a341356",
+    "port/packages/tyfza1-pon-control/src/pon-omcid.c": "0b7216309ca5834ab00d29de0f3ef6a8a49205ba15b4d7922d29621a02f22ca7"
+  },
+  "output_sha256": {
+    "artifacts/root-cause-20261015/pon-oamd": "482fdb671946472438b0d5f4955e83774c232c618514ec6e342f375a3faf4668",
+    "artifacts/root-cause-20261015/pon-omcid": "8084413bb0e5581b49c3bcfca8fc10851ccac90c7880e1a9b3653e21abce9c2f"
+  },
+  "open_findings": [
+    "Class 332 factory module mib_EnhancedSecCtl.so was located and initial oracle output collected, but handshake/KDF/activation lifecycle audit is unfinished. The XGTC SMA bit and non-XGTC MSK success path remain identified implementation gaps, not fixed in this commit.",
+    "TX A-MSDU-in-A-MPDU negotiation is not yet propagated from mac80211 params->amsdu to the PE aggregation decision. Factory OnAction_back evidence was located; implementation is unfinished.",
+    "CTC VLAN business Set remains unsupported (0x87).",
+    "Cached successful OMCI retransmissions retain the existing callback-skipping behavior; the recovery fix covers new transactions with unchanged MIB values.",
+    "Offline comparisons do not prove complete OLT interoperability or elimination of every sustained high-load Wi-Fi loss."
+  ]
+}

@@ -19,7 +19,7 @@
 #include "pon-omci.h"
 
 #define PON_SYSFS "/sys/bus/platform/devices/4f5500000.pon/"
-#define PATH_BYTES (12 + 248 * 50 + 248 * 5 * (32 + 32 * 16))
+#define PATH_BYTES (12 + 248 * 50 + 248 * 5 * (32 + 32 * 16) + 31 * 12)
 
 static int put_file(const char *path, const void *data, size_t length)
 {
@@ -201,7 +201,7 @@ int main(void)
 		length = tyfza1_omci_paths(agent, paths);
 		if (length < 0) {
 			/* A rejected graph must not leave its previous business mapping active. */
-			static const uint8_t empty[12] = {3, 0, 0, 0, 0, 0, 0, 0, 12};
+			static const uint8_t empty[12] = {4, 0, 0, 0, 0, 0, 0, 0, 12};
 			result = business.length ? apply_paths(&business, empty, sizeof(empty)) : 0;
 			if (!result) business.length = 0;
 			business.error = result ? result : length;

@@ -18,7 +18,7 @@ names = ['aal_gpon_vendor_id_set', 'aal_gpon_vssn_set', 'aal_gpon_passwd_set',
          'aal_gpon_aes_key_set',
          'aal_gpon_send_ploam_us', 'aal_ploam_txbuf_data_set', 'aal_ploam_rxbuf_get',
          'aal_ploam_txbuf_ctrl_set', '__xgpon_ploam_isr',
-         'aal_gpon_ds_frame_thrsd_set', 'aal_gpon_tcont_set',
+         'aal_gpon_ds_frame_thrsd_set', 'aal_gpon_us_frm_ctrl_set', 'aal_gpon_tcont_set',
          'aal_gpon_ds_gem_port_set', 'aal_gpon_us_gem_port_set',
          'aal_xgpon_bwmp_tcont_set', 'aal_xgpon_dsfp_xgem_set',
          'aal_xgpon_usbg_xgem_cfg_set']
@@ -181,10 +181,13 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='itu-contract-')
     assert oracle.call('aal_gpon_passwd_set', 0, oracle.scratch) == 0
     native.identity(ctypes.byref(io), serial, password)
     assert writes == stock_writes, ('identity', writes, stock_writes)
-    initialise({0x6000: 0x3a983352})
+    initialise({0x6000: 0x3a983352, 0x600c: 0xa501017f})
     oracle.uc.mem_write(oracle.scratch, struct.pack('<7I', 0, 0, 0, 0, 0x3fff, 0, 0))
     assert oracle.call('aal_gpon_mac_onu_cfg_set', 0) == 0
     assert oracle.call('aal_gpon_ds_frame_thrsd_set', 0, 16, oracle.scratch) == 0
+    # TYFZA1 __gpon_datapath_init passes mask2 and frame_var64.
+    oracle.uc.mem_write(oracle.scratch, struct.pack('<2I', 0, 64))
+    assert oracle.call('aal_gpon_us_frm_ctrl_set', 0, 2, oracle.scratch) == 0
     native.parameters(ctypes.byref(io))
     assert writes == stock_writes, ('MAC parameters', writes, stock_writes)
     initialise({0x6114: 0x00460060})

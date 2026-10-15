@@ -79,7 +79,8 @@ int main(void)
 	message(frame, challenge, sizeof(challenge));
 	assert(pon_oam_receive(&session, &identity, frame, 60, reply) == 62);
 	assert(!memcmp(reply + 18, auth_response, sizeof(auth_response)));
-	assert(!memcmp(reply + 26, identity.loid, 24));
+	assert(!memcmp(reply + 26, (uint8_t[14]){}, 14));
+	assert(!memcmp(reply + 40, identity.loid, 10));
 	for (unsigned int i = 50; i < 62; i++) assert(reply[i] == 0);
 	assert(session.auth == PON_AUTH_CHALLENGE);
 	message(frame, accepted, sizeof(accepted));
@@ -186,12 +187,13 @@ int main(void)
 	assert(!memcmp(reply + 18, frame + 18, 3));
 	frame[23] = 1; frame[24] = 1;
 	assert(pon_oam_receive(&session, &identity, frame, 60, reply) == 62);
-	assert(!memcmp(reply + 26, identity.loid, 24));
+	assert(!memcmp(reply + 26, (uint8_t[14]){}, 14));
+	assert(!memcmp(reply + 40, identity.loid, 10));
 	frame[23] = 0; frame[24] = 1;
 	/* Unsupported authentication type gets a typed NAK without identity bytes. */
 	frame[25] = 2;
 	assert(pon_oam_receive(&session, &identity, frame, 60, reply) == 60);
-	assert(reply[24] == 2 && reply[25] == 2 && reply[26] == 2);
+	assert(reply[24] == 2 && reply[25] == 2 && reply[26] == 1);
 	for (unsigned int i = 27; i < 60; i++) assert(reply[i] == 0);
 	/* Protocol truncation never accepts an auth result or overreads a TLV. */
 	frame[23] = 0xff; frame[24] = 0xff;
