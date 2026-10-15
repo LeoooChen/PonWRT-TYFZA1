@@ -40,11 +40,16 @@ struct rtl9617c_pon {
  u8 xgpon_serial[8];struct net_device *omci_device;struct work xgpon_recovery_work;
 };
 static unsigned int invalidated;
-static unsigned int readl(const void *p){return *(const unsigned int*)p;}
+static bool expect_key_reset;
+static unsigned int *mmio;
+static unsigned int readl(const void *p){unsigned int v=*(const unsigned int*)p;return p==mmio+0x4618/4?v&~BIT(31):v;}
 static void writel(unsigned int v,void *p){*(unsigned int*)p=v;}
 static void rtl_pon_update(void *p,unsigned int mask,unsigned int v){writel((readl(p)&~mask)|v,p);}
 static unsigned int get_unaligned_be16(const void *p){const u8 *b=p;return b[0]<<8|b[1];}
-static int rtl_pon_xgpon_omci_key(struct rtl9617c_pon *p,const u8 *tag){(void)p;(void)tag;return 0;}
+static int rtl_pon_xgpon_omci_key(struct rtl9617c_pon *p,const u8 *tag){
+ if(expect_key_reset){assert(!p->xgpon_key_ready && !p->omci_master_key_valid && !p->xgpon_omcc_ready && tag[0]==0x42);expect_key_reset=false;}
+ p->xgpon_key_ready=true;return 0;
+}
 static int rtl_pon_xgpon_ack_update(struct rtl9617c_pon *p){(void)p;return 0;}
 static void rtl_pon_xgpon_key_irq(struct rtl9617c_pon *p,u32 a,u32 b){(void)p;(void)a;(void)b;}
 static void netif_carrier_on(struct net_device *d){d->carrier=true;}
@@ -60,6 +65,7 @@ int main(void){
  for(int mode=RTL_PON_XGPON;mode<=RTL_PON_XGSPON;mode++)
  for(unsigned int state=3;state<=4;state++){
   u32 regs[0xc000/4]={},sds=1U<<4;struct net_device omci={.carrier=true};
+  mmio=regs;
   struct rtl9617c_pon pon={.lock=1,.mode=mode,.mac=(void*)regs,.serdes_init=&sds,
    .omci_device=&omci,.xgpon_enabled=true,.xgpon_omcc_ready=true,.xgpon_key_ready=true,
    .omci_master_key_valid=true,.itu_paths_ready=true,.fe_enabled=true,.xgpon_last_state=3,
@@ -80,7 +86,42 @@ int main(void){
    assert(omci.carrier && !pon.xgpon_recover && !pon.itu_line_epoch);
   }
  }
- puts("Actual XGTC IRQ: O6 grace and already-recovered O5 preserve ACTP/SDS/keys/FE; O6->O5 restores OMCI without a new line epoch");
+ for(int mode=RTL_PON_XGPON;mode<=RTL_PON_XGSPON;mode++){
+  u32 regs[0xc000/4]={},sds=BIT(4);struct net_device omci={};u8 packet[48]={};
+  struct rtl9617c_pon pon={.lock=1,.mode=mode,.mac=(void*)regs,.serdes_init=&sds,
+   .omci_device=&omci,.xgpon_enabled=true,.xgpon_key_ready=true,.fe_enabled=true,
+   .xgpon_last_state=1,.xgpon_serial={'T','E','S','T',1,2,3,4}};
+  mmio=regs;packet[2]=3;packet[5]=17;memcpy(packet+6,pon.xgpon_serial,8);
+  for(unsigned int i=0;i<48;i+=4)regs[(0x4b80+i)/4]=(u32)packet[i]<<24|(u32)packet[i+1]<<16|(u32)packet[i+2]<<8|packet[i+3];
+  regs[0x4b28/4]=BIT(31);regs[0x4d30/4]=2;
+  regs[0x4d28/4]=regs[0x4d2c/4]=BIT(12);
+  rtl_pon_xgpon_irq(&pon);
+  printf("mode=%d Assign-ONU-ID in O4: OMCC=%u carrier=%u\n",mode,pon.xgpon_omcc_ready,omci.carrier);
+  assert(pon.xgpon_omcc_ready && pon.xgpon_omcc_id==17 && !omci.carrier);
+  regs[0x4d30/4]=3;regs[0x4d28/4]=regs[0x4d2c/4]=BIT(17);
+  rtl_pon_xgpon_irq(&pon);
+  assert(omci.carrier && pon.xgpon_omcc_ready && !pon.itu_line_epoch);
+ }
+ for(int mode=RTL_PON_XGPON;mode<=RTL_PON_XGSPON;mode++)
+ for(unsigned int state=2;state<=3;state++){
+  u32 regs[0xc000/4]={},sds=BIT(4);struct net_device omci={.carrier=true};u8 frames[2][48]={};
+  struct rtl9617c_pon pon={.lock=1,.mode=mode,.mac=(void*)regs,.serdes_init=&sds,
+   .omci_device=&omci,.xgpon_enabled=true,.xgpon_key_ready=true,.xgpon_omcc_ready=true,
+   .omci_master_key_valid=true,.itu_paths_ready=true,.fe_enabled=true,.xgpon_last_state=3,
+   .xgpon_key_valid=3,.xgpon_key_state=4,.xgpon_omcc_id=77,.xgpon_serial={'T','E','S','T',1,2,3,4}};
+  mmio=regs;frames[0][2]=1;frames[0][25]=0x42;
+  frames[1][2]=3;frames[1][5]=17;memcpy(frames[1]+6,pon.xgpon_serial,8);
+  for(unsigned int b=0;b<2;b++)for(unsigned int i=0;i<48;i+=4)
+   regs[(0x4b80+b*48+i)/4]=(u32)frames[b][i]<<24|(u32)frames[b][i+1]<<16|(u32)frames[b][i+2]<<8|frames[b][i+3];
+  regs[0x4b28/4]=BIT(31)|BIT(30);regs[0x4b2c/4]=BIT(31);
+  regs[0x4d30/4]=state;regs[0x4d28/4]=regs[0x4d2c/4]=BIT(11)|BIT(12);
+  expect_key_reset=true;invalidated=0;rtl_pon_xgpon_irq(&pon);
+  assert(!expect_key_reset && pon.itu_line_epoch==1 && invalidated==1 && !pon.itu_paths_ready);
+  assert(pon.xgpon_key_ready && pon.xgpon_omcc_ready && pon.xgpon_omcc_id==17);
+  assert(!pon.omci_master_key_valid && !pon.xgpon_key_valid && !pon.xgpon_key_state);
+  assert(omci.carrier==(state==3) && !pon.xgpon_recover);
+ }
+ puts("Actual XGTC IRQ: O6 grace, Assign-ONU-ID O4->O5, and coalesced deactivation/new burst profile/identity preserve the correct session configuration");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='xgtc-o6-',dir=root/'artifacts') as temp:

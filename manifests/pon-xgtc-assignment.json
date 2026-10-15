@@ -1,0 +1,327 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "ae5fd84",
+  "problem": "OMCC readiness was cleared after successful Assign-ONU-ID during O4, preventing OMCI on the later O5 transition; late old-session cleanup could erase new identity/key state in a coalesced IRQ",
+  "fix": "Retain configured OMCC until session termination; clear old channel/key/business state before new PLOAM dispatch and separate carrier from configuration readiness",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-xgpon.c": "116ada80cbf2a76143d6dccd0eb1f9607c4b0efc099924f576fb1975b08c2da5",
+    "scripts/test_xgpon_o6.py": "41641de63a9f4f3550175ee75e225d4aa2fdde069a911f4fd3dcea0c08651f27",
+    "tools/trace_stock_xgpon_assignment.py": "f48eaeb06cc5d2618d98ece0cd7af7b773fc954f1aeaa1717e533d5d15e28654",
+    "docs/pon-xgtc-o6.md": "fe801f127cdba9075bbf8a6d99e2a57972b1c804b64e759213ac00eb4bc10d3d"
+  },
+  "factory": {
+    "factory_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+    "actual_function": "ploam_ngpon2_proc_assign_onuid@0xe6c10",
+    "scope": "Original PLOAM serial/ONU-ID logic with8-queue capability and ACTP O4 fixture. T-CONT getter, XGEM setters and NGPON channel callback modeled. Mapping dispatch does not wait for O5; no optical registration simulated.",
+    "records": [
+      {
+        "mode": 4,
+        "ACTP_fixture_state": 2,
+        "return": 0,
+        "saved_ONU_ID": 17,
+        "mapping_calls": [
+          {
+            "function": "aal_xgpon_usbg_xgem_cfg_set",
+            "index": 1,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_dsfp_xgem_set",
+            "index": 1,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_usbg_xgem_cfg_set",
+            "index": 2,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_dsfp_xgem_set",
+            "index": 2,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_usbg_xgem_cfg_set",
+            "index": 3,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_dsfp_xgem_set",
+            "index": 3,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_usbg_xgem_cfg_set",
+            "index": 4,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_dsfp_xgem_set",
+            "index": 4,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_usbg_xgem_cfg_set",
+            "index": 5,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_dsfp_xgem_set",
+            "index": 5,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_usbg_xgem_cfg_set",
+            "index": 6,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_dsfp_xgem_set",
+            "index": 6,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_usbg_xgem_cfg_set",
+            "index": 7,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_dsfp_xgem_set",
+            "index": 7,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          }
+        ]
+      },
+      {
+        "mode": 5,
+        "ACTP_fixture_state": 2,
+        "return": 0,
+        "saved_ONU_ID": 17,
+        "mapping_calls": [
+          {
+            "function": "aal_xgpon_usbg_xgem_cfg_set",
+            "index": 1,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_dsfp_xgem_set",
+            "index": 1,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_usbg_xgem_cfg_set",
+            "index": 2,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_dsfp_xgem_set",
+            "index": 2,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_usbg_xgem_cfg_set",
+            "index": 3,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_dsfp_xgem_set",
+            "index": 3,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_usbg_xgem_cfg_set",
+            "index": 4,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_dsfp_xgem_set",
+            "index": 4,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_usbg_xgem_cfg_set",
+            "index": 5,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_dsfp_xgem_set",
+            "index": 5,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_usbg_xgem_cfg_set",
+            "index": 6,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_dsfp_xgem_set",
+            "index": 6,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_usbg_xgem_cfg_set",
+            "index": 7,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          },
+          {
+            "function": "aal_xgpon_dsfp_xgem_set",
+            "index": 7,
+            "row": [
+              17,
+              1,
+              0
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "before": {
+    "record": "artifacts/pon-full-recovery-20261016/assign-o4-before.log",
+    "OMCC_configured_after_O4_assignment": false,
+    "carrier": false
+  },
+  "after": {
+    "record": "artifacts/pon-full-recovery-20261016/assign-o4-after.log",
+    "modes": [
+      4,
+      5
+    ],
+    "O4_assignment_retains_channel_with_carrier_down": true,
+    "later_O5_enables_OMCI": true,
+    "coalesced_deactivation_BurstProfile_Assign_in_O4_or_O5": true,
+    "old_business_MSK_data_keys_invalidated_once": true,
+    "new_channel_integrity_key_retained": true,
+    "O6_and_resynchronized_O5_preserved": true,
+    "production_full_IRQ_and_RX_table_helpers_execute": true,
+    "MMIO_completion_key_derivation_NI_netdev_work_boundaries_modeled": true
+  },
+  "module": {
+    "path": "artifacts/pon-omcc-20261016/kernel/rtl_pon_omcc_live.ko",
+    "sha256": "221757291de3ee73c69ed11caf3743a3efa8620d3869be514c45d4b189a1d22a",
+    "kernel": "6.18.55",
+    "source_delta": "distinct platform driver name only",
+    "deployed": false
+  },
+  "limits": [
+    "No physical XG-PON/XGS-PON OLT activation test",
+    "Not all coalesced key-exchange interrupt combinations are covered",
+    "Full timeout/drain recovery and FE intent loss during failed full-rebuild retries remain open",
+    "No full firmware build or full test suite"
+  ],
+  "live_device": "EPON remains on previously verified rtl9617c-pon-fe-family-live RAM driver",
+  "record_sha256": {
+    "artifacts/pon-full-recovery-20261016/assign-o4-before.log": "0d4b8b6c04c44863e1a45aaa6540811925cda3c14badcf3cd7ad736b2a46c3ec",
+    "artifacts/pon-full-recovery-20261016/assign-o4-after.log": "953f9e9f6d6c46338aa417289a7b3a60dc48eef58fd5094770e63ed06df7f0a6",
+    "artifacts/pon-full-recovery-20261016/stock-assign-onuid.log": "4a7141b91f961b5b0ee71356345194dd4ca7a640bb005feaa9c1ade46297aa5c",
+    "artifacts/pon-omcc-20261016/build.log": "265b86fb08c148df8630d15d6a10917df871fd8ac8e9548bdbbe504ccefdb380"
+  }
+}

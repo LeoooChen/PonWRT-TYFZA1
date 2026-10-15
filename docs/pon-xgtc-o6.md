@@ -41,3 +41,35 @@ EPON service remain running. Physical XG-PON/XGS-PON short-loss, timeout and
 re-registration tests still require an appropriate OLT.
 
 Sources, module and replay hashes: `manifests/pon-xgtc-o6.json`.
+
+## Assign-ONU-ID before O5
+
+The same production IRQ reproducer exposed a first-activation failure: after
+an Assign-ONU-ID PLOAM in hardware O4, the code programmed OMCC XGEMs1..7 but
+cleared `xgpon_omcc_ready` because the line had not reached O5. The later O5
+interrupt had no second assignment to restore that flag, so OMCI stayed down.
+
+The board's original `ploam_ngpon2_proc_assign_onuid@0xe6c10` was executed with
+the matching synthetic serial, ONU-ID17 and8-queue capability. It saved that
+ONU-ID and issued upstream/downstream mappings for indices1..7 without an O5
+gate. T-CONT lookup, mapping setters and the NGPON channel callback are modeled;
+the original parser/serial comparison/dispatch executes. Record:
+`logs/stock-xgpon-assignment.json`.
+
+OMCC readiness now represents a configured channel, while OMCI carrier remains
+gated by O5 and the integrity key. Cached channel/key/business state is cleared
+on actual session termination, deregistration, Disable-SN or Deactivate-ONU-ID,
+before processing PLOAM buffers captured by that IRQ. This also handles a
+coalesced deactivation plus new burst profile and assignment: the old MSK,
+data keys and business paths are invalidated first; the new channel/IK survive.
+The hardware ACTP state is captured with the interrupt snapshot, rather than
+after processing its packets.
+
+Directed execution covers O4 assignment followed by O5 and coalesced new
+identity in both O4/O5 for XG-PON/XGS-PON, retaining the O6 vectors. It executes
+the production packet-buffer/table helpers; indirect completion, crypto key
+derivation, NI invalidation, carrier and scheduling are modeled. It does not
+cover every key-exchange interrupt or a physical OLT. The isolated ARM64 PON
+module compiles. It was not deployed to the connected EPON line, whose verified
+RAM module remains running. Full timeout/FIFO recovery and its FE restore
+defect remain open. Evidence: `manifests/pon-xgtc-assignment.json`.

@@ -187,6 +187,7 @@ void rtl_pon_xgpon_irq(struct rtl9617c_pon *pon)
 	plmp = readl(pon->mac + 0x4aa4) & readl(pon->mac + 0x4aa8);
 	key_control = readl(pon->mac + 0x4ab8);
 	transitions = readl(pon->mac + 0x4d28) & readl(pon->mac + 0x4d2c);
+	state = readl(pon->mac + 0x4d30) & 7;
 	writel(act, pon->mac + 0x4d1c);
 	writel(plmp, pon->mac + 0x4aa4);
 	writel(transitions, pon->mac + 0x4d28);
@@ -198,6 +199,22 @@ void rtl_pon_xgpon_irq(struct rtl9617c_pon *pon)
 		pon->xgpon_last_transitions = transitions;
 	if (transitions & BIT(11))
 		pon->xgpon_deactivations++;
+	if (((pon->xgpon_last_state == 3 || pon->xgpon_last_state == 4) && state != 3 && state != 4) ||
+	    (transitions & (BIT(1) | BIT(10) | BIT(11)))) {
+		pon->itu_line_epoch++;
+		pon->xgpon_omcc_ready = false;
+		if (pon->itu_paths_ready)
+			rtl_pon_itu_paths_invalidate(pon, pon->mode);
+		pon->omci_master_key_valid = false;
+		pon->xgpon_key_valid = 0;
+		pon->xgpon_key_state = 0;
+		spin_lock_bh(&pon->omci_key_lock);
+		pon->xgpon_key_ready = false;
+		spin_unlock_bh(&pon->omci_key_lock);
+		rtl_pon_update(pon->mac + 0x4e00, BIT(6), BIT(6));
+		rtl_pon_update(pon->mac + 0x4124, 3, 0);
+		rtl_pon_update(pon->mac + 0x4128, 3, 0);
+	}
 	status[0] = readl(pon->mac + 0x4b28);
 	status[1] = readl(pon->mac + 0x4b2c);
 	count = rtl_xgpon_ploam_order(status[0], status[1], order);
@@ -239,21 +256,6 @@ void rtl_pon_xgpon_irq(struct rtl9617c_pon *pon)
 	}
 	if (plmp & (BIT(5) | BIT(6) | BIT(7)))
 		rtl_pon_xgpon_key_irq(pon, plmp, key_control);
-	state = readl(pon->mac + 0x4d30) & 7;
-	if ((pon->xgpon_last_state == 3 || pon->xgpon_last_state == 4) && state != 3 && state != 4) {
-		pon->itu_line_epoch++;
-		pon->omci_master_key_valid = false;
-		pon->xgpon_key_valid = 0;
-		pon->xgpon_key_state = 0;
-		spin_lock_bh(&pon->omci_key_lock);
-		pon->xgpon_key_ready = false;
-		spin_unlock_bh(&pon->omci_key_lock);
-		rtl_pon_update(pon->mac + 0x4e00, BIT(6), BIT(6));
-		rtl_pon_update(pon->mac + 0x4124, 3, 0);
-		rtl_pon_update(pon->mac + 0x4128, 3, 0);
-	}
-	if (state != 3 && state != 4)
-		pon->xgpon_omcc_ready = false;
 	if (pon->xgpon_omcc_ready && state == 3 && pon->xgpon_key_ready)
 		netif_carrier_on(pon->omci_device);
 	else
