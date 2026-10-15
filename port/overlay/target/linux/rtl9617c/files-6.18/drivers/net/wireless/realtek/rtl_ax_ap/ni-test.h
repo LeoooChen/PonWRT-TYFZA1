@@ -5,6 +5,7 @@
 #define RING_BYTES RTL9617C_WIFI_EPP_BYTES
 #define BUFFER_COUNT RTL9617C_WIFI_BUFFERS
 #define EPP_CONSUMERS 0x11c00
+#define EPP_RETIRE_TARGETS 0x19400
 #define PACKETS 8192
 #define TEST_FRAME_BYTES 1500
 static DEFINE_MUTEX(ni_test_lock);
@@ -286,6 +287,7 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 	memset(tx->pe.memory + 0x19000, 0, 0x400);
 	memset(tx->pe.memory + 0x18000, 0, 0x1000);
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 680);
+	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 684);
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 152);
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 224);
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 228);
@@ -501,10 +503,26 @@ int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned 
 	return ret ? ret : 1;
 }
 
+static void ni_peer_fence(struct rtl_ax_tx *tx)
+{
+	u32 mask = 0;
+
+	/* FE withdrawal is complete and PE is paused. Fence the existing entries;
+	 * other stations may keep appending after these producer positions. */
+	for (unsigned int cos = 0; cos < 8; cos++) {
+		u32 producer = readl(tx->ni.regs + 0x7000 + tx->ni.cpu * 32 + cos * 4) & (RING_BYTES - 1);
+		put_unaligned_le32(producer, tx->pe.memory + EPP_RETIRE_TARGETS + cos * 4);
+		if (producer != get_unaligned_le32(tx->pe.memory + EPP_CONSUMERS + cos * 4)) mask |= BIT(cos);
+	}
+	dma_wmb();
+	put_unaligned_le32(mask, tx->pe.memory + PE_PROBE_MAILBOX + 684);
+}
+
 static bool ni_peer_idle(struct rtl_ax_tx *tx, unsigned int macid)
 {
 	unsigned int i;
-	if (!ni_epps_empty(tx)) return false;
+	if (get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 684)) return false;
+	dma_rmb();
 	if (get_unaligned_le32(tx->pe.memory + 0x11800 + macid * 4)) return false;
 	for (i = 0; i < 128; i++)
 		if (get_unaligned_le32(tx->pe.memory + 0xc400 + i * 8) &&
@@ -534,6 +552,7 @@ int rtl_ax_tx_ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid)
 	ret = readl_poll_timeout(tx->ni.vp + 0x1c, status,
 		(status & 63) == (readl(tx->ni.vp + 0x18) & 63), 10, 100000);
 	if (!ret) rtl_ax_rx_uplink_retire(tx->rx, macid);
+	ni_peer_fence(tx);
 	put_unaligned_le32(macid, tx->pe.memory + PE_PROBE_MAILBOX + 248);
 	dma_wmb();
 	rtl_ax_tx_open(tx);

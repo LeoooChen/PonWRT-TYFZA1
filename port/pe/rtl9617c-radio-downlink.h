@@ -12,6 +12,7 @@
 #define NI_TID_HEAD 0x15000
 #define NI_TID_TAIL 0x16000
 #define NI_EPP_CONSUMERS 0x11c00
+#define NI_EPP_RETIRE_TARGETS 0x19400
 
 static void __attribute__((noinline)) ni_peer_event(volatile u32 *mailbox, u8 *memory, u32 macid)
 {
@@ -85,6 +86,10 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 	consumer = (consumer + 8) & (ring_bytes - 1);
 	consumers[cos] = consumer; mailbox[26] = consumers[0];
 	sync(); ni[mailbox[115] / 4 + cos] = consumer;
+	if ((mailbox[171] & BIT(cos)) && consumer == *(u32 *)(memory + NI_EPP_RETIRE_TARGETS + cos * 4)) {
+		sync();
+		mailbox[171] &= ~BIT(cos);
+	}
 	return 1;
 }
 

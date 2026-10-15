@@ -44,6 +44,7 @@ static int rtl_ax_tx_pause(struct rtl_ax_tx *tx) {(void)tx;return 0;}
 static u32 readl(void *p) {(void)p;return 0;}
 static void rtl_ax_rx_uplink_retire(struct rtl_ax_rx *rx,unsigned id) {(void)rx;(void)id;}
 static void rtl_ax_tx_open(struct rtl_ax_tx *tx) {(void)tx;}
+static void ni_peer_fence(struct rtl_ax_tx *tx) {(void)tx;assert(false);}
 static int rtl_ax_mac_drop_peer(void *pdev,unsigned id) {(void)pdev;(void)id;assert(false);return 0;}
 static bool ni_peer_idle(struct rtl_ax_tx *tx,unsigned id) {(void)tx;(void)id;return true;}
 static void ni_test_buffered(struct rtl_ax_tx *tx,unsigned id,bool set) {(void)tx;(void)id;(void)set;}

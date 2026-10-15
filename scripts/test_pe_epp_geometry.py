@@ -23,7 +23,7 @@ base, ni, epp, packet = 0x04000000, 0x10000000, 0x07000000, 0x06000000
 mailbox = base + 0x2000
 u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
 for address, size in [(0x1fc00000, 0x4000), (base, 0x20000), (ni, 0x10000),
-                       (epp, 8 * 32768), (packet, 0x1000)]:
+                       (epp, 8 * 32768), (packet, 0x2000)]:
     u.mem_map(address, size)
 u.mem_write(0x1fc00000, (directory / 'pe-tx.bin').read_bytes())
 def put(address, value): u.mem_write(address, struct.pack('<I', value))
@@ -63,3 +63,33 @@ for cos in range(8):
         assert get(base + 0x11804) == 1
         assert get(mailbox + 40 * 4) == 0
 print('Linked PE EPP: all8 COS, pending beyond512 entries, separate ring DMA and32768-byte wrap passed')
+
+# A retirement fence ends at the captured producer, even if new data follows it.
+for cos in range(8):
+    u.mem_write(base, bytes(0x20000))
+    put(mailbox + 25 * 4, epp)
+    put(mailbox + 114 * 4, 0x7060)
+    put(mailbox + 115 * 4, 0x7160)
+    put(mailbox + 167 * 4, 15)
+    u.mem_write(base + 0xe408, destination)
+    put(base + 0x11a04, 1)
+    put(base + 0x11c00 + cos * 4, 32760)
+    put(base + 0x19400 + cos * 4, 8)
+    other = 1 << ((cos + 1) & 7)
+    put(mailbox + 171 * 4, (1 << cos) | other)
+    put(ni + 0x659c, 1 << (24 + cos))
+    put(ni + 0x7060 + cos * 4, 16)
+    for index, consumer in enumerate((32760, 0, 8)):
+        buffer = packet + index * 2048
+        u.mem_write(buffer + 32, struct.pack('>II', 1 << 31, 68 << 15) + bytes(8))
+        u.mem_write(buffer + 48, destination + bytes.fromhex('0200000000010800') + bytes(46))
+        u.mem_write(epp + cos * 32768 + consumer, struct.pack('<II', buffer | 0x50, 76))
+        u.reg_write(UC_MIPS_REG_A0, mailbox | 0xa0000000)
+        u.reg_write(UC_MIPS_REG_A1, base | 0xa0000000)
+        u.reg_write(UC_MIPS_REG_SP, (base + 0x1fff0) | 0xa0000000)
+        u.reg_write(UC_MIPS_REG_RA, 0x9fc03ff0)
+        u.emu_start(symbols['ni_ingest'], 0x9fc03ff0, count=10000)
+        assert get(mailbox + 171 * 4) == ((1 << cos) | other if index == 0 else other)
+        assert get(base + 0x11804) == index + 1
+        assert get(base + 0x11c00 + cos * 4) == (consumer + 8) % 32768
+print('Linked PE retirement fence: all8 COS before/at/after a wrapped cutoff; later arrivals and other COS do not reset completion')

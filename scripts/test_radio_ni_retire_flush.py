@@ -30,9 +30,13 @@ typedef uint8_t u8;
 typedef uint32_t u32;
 #define BIT(n) (1U << (n))
 #define PE_PROBE_MAILBOX 0x2000
+#define RING_BYTES 32768
+#define EPP_CONSUMERS 0x11c00
+#define EPP_RETIRE_TARGETS 0x19400
 #define READ_ONCE(v) (v)
 #define WRITE_ONCE(v,x) ((v)=(x))
 #define dma_wmb() ((void)0)
+#define dma_rmb() ((void)0)
 #define mutex_lock(p) ((void)(p))
 #define mutex_unlock(p) ((void)(p))
 #define RTL_AX_H2C_CMD 0
@@ -47,14 +51,15 @@ struct rtl_ax_tx {
  struct pci_dev *pdev;
  struct rtl_ax_rx *rx;
  struct {void *memory;} pe;
- struct {bool active,route_peers[128];void *vp;struct net_device *route_dev;
+ struct {bool active,route_peers[128];void *vp,*regs;struct net_device *route_dev;
   unsigned route_macid,route_tim[128];int ps_work,cpu;} ni;
 };
 struct rtl_ax_ap {struct rtl_ax_tx *tx;};
 static struct rtl_ax_tx *current;
 static unsigned drop_mask[128],pending[128],withdrawn[128],drop_calls;
 static int ni_test_lock,fail_drop,fail_withdraw;
-static bool withhold_rpq;
+static bool withhold_rpq,withhold_fence;
+static u32 registers[0x10000/4];
 static u32 get_unaligned_le32(const void *p) {u32 v;memcpy(&v,p,4);return v;}
 static void put_unaligned_le32(u32 v,void *p) {memcpy(p,&v,4);}
 static void *pci_get_drvdata(struct pci_dev *p) {return p->radio;}
@@ -66,6 +71,12 @@ static int rtl_ax_command(struct rtl_ax_ap *r,unsigned q,unsigned cat,unsigned c
  assert(!get_unaligned_le32(current->pe.memory+0x11a00+id*4));
  assert(get_unaligned_le32(current->pe.memory+0x20f8)==1 || get_unaligned_le32(current->pe.memory+0x20f8)==128);
  assert(!current->paused);
+ if(current->ni.route_peers[2]) {
+  assert(get_unaligned_le32(current->pe.memory+0x22ac)==0x81);
+  assert(get_unaligned_le32(current->pe.memory+EPP_RETIRE_TARGETS)==24);
+  assert(get_unaligned_le32(current->pe.memory+EPP_RETIRE_TARGETS+28)==8);
+  registers[0x7060/4]=1024;registers[0x707c/4]=512;
+ }
  drop_calls++;
  if(fail_drop) return -EIO;
  drop_mask[id]|=BIT(ac);return 0;
@@ -77,6 +88,11 @@ static void tick(void) {
   total+=pending[id];
  }
  put_unaligned_le32(total,current->pe.memory+0x2078);
+ if(drop_mask[1]==15 && !withhold_fence) put_unaligned_le32(0,current->pe.memory+0x22ac);
+ for(unsigned id=1;id<128;id++) {
+  put_unaligned_le32(pending[id]?0x06000000:0,current->pe.memory+0xc400+(id-1)*8);
+  put_unaligned_le32(id<<8,current->pe.memory+0xc404+(id-1)*8);
+ }
 }
 #define read_poll_timeout(op,val,cond,delay,timeout,sleep,args...) ({ \
  (void)(delay);(void)(timeout);(void)(sleep);tick();val=op(args);(cond)?0:-ETIMEDOUT;})
@@ -96,9 +112,8 @@ static int rtl9617c_wifi_peer_route(struct net_device *dev,void *mac,unsigned ro
 static int uplink_release(struct rtl_ax_tx *tx) {(void)tx;return 0;}
 static int rtl_ax_tx_pause(struct rtl_ax_tx *tx) {tx->paused=true;return 0;}
 static void rtl_ax_tx_open(struct rtl_ax_tx *tx) {tx->paused=false;}
-static bool ni_epps_empty(struct rtl_ax_tx *tx) {(void)tx;return true;}
-static bool ni_peer_idle(struct rtl_ax_tx *tx,unsigned id) {(void)tx;return !pending[id];}
-static u32 readl(void *p) {(void)p;return 0;}
+static bool ni_epps_empty(struct rtl_ax_tx *tx) {return !tx->ni.route_peers[2];}
+static u32 readl(void *p) {return get_unaligned_le32(p);}
 static void ni_test_buffered(struct rtl_ax_tx *tx,unsigned id,unsigned mask) {(void)tx;(void)id;(void)mask;}
 static void cancel_work_sync(void *p) {(void)p;}
 static void dev_put(struct net_device *dev) {(void)dev;}
@@ -111,14 +126,20 @@ int rtl_ax_mac_drop_peer(struct pci_dev *pdev,unsigned macid);
 
 test = r'''
 int main(void) {
- for(unsigned other=0;other<2;other++) for(unsigned failure=0;failure<4;failure++) {
+ for(unsigned other=0;other<2;other++) for(unsigned failure=0;failure<4+other;failure++) {
   u8 memory[0x20000]={0};struct rtl_ax_rx rx={0};
   struct net_device dev={0};struct pci_dev pdev={0};
   struct rtl_ax_tx tx={.pe_active=true,.pe={memory},.pdev=&pdev,.rx=&rx};
   struct rtl_ax_ap radio={.tx=&tx};pdev.radio=&radio;current=&tx;
   memset(pending,0,sizeof(pending));memset(drop_mask,0,sizeof(drop_mask));memset(withdrawn,0,sizeof(withdrawn));
-  drop_calls=0;fail_drop=failure==1;withhold_rpq=failure==2;fail_withdraw=failure==3;
+  drop_calls=0;fail_drop=failure==1;withhold_rpq=failure==2;fail_withdraw=failure==3;withhold_fence=failure==4;
   tx.ni.active=true;tx.ni.route_dev=&dev;tx.ni.route_macid=1;
+  tx.ni.regs=registers;tx.ni.vp=registers;tx.ni.cpu=3;
+  memset(registers,0,sizeof(registers));
+  if(other) {
+   registers[0x7060/4]=24;registers[0x707c/4]=8;
+   put_unaligned_le32(32760,memory+EPP_CONSUMERS+28);
+  }
   tx.ni.route_peers[1]=tx.peer_offloaded[1]=rx.enabled[1]=true;
   tx.ni.route_peers[2]=other;rx.enabled[2]=other;
   memory[0xe408]=1;memory[0xe410]=2;
@@ -129,14 +150,14 @@ int main(void) {
    assert(ret==0 && drop_calls==4 && pending[1]==0);
    assert(!tx.ni.route_peers[1] && !tx.peer_offloaded[1]);
   } else {
-   assert(ret==(failure==2?-ETIMEDOUT:-EIO) && pending[1]==5);
+   assert(ret==((failure==2 || failure==4)?-ETIMEDOUT:-EIO) && pending[1]==(failure==4?0:5));
    assert(tx.ni.route_peers[1] && tx.peer_offloaded[1]);
    assert(drop_calls==(failure==3?0:failure==1?1:4));
   }
   assert(!get_unaligned_le32(memory+0x11a04) && !rx.enabled[1]);
   assert(get_unaligned_le32(memory+0x11a08)==other && rx.enabled[2]==other && !drop_mask[2]);
  }
- puts("NI retirement: drop sleeping hardware WPs before RPQ wait; failed commands or missing RPQ retain ownership; other peer untouched");
+ puts("NI retirement: captured EPP cutoff and RPQ must finish; later peer traffic does not block; failed commands and missing completion retain ownership");
 }
 '''
 
@@ -146,7 +167,8 @@ drop = function(pci, 'rtl_ax_mac_drop_peer') if 'int rtl_ax_mac_drop_peer(' in p
 with tempfile.TemporaryDirectory(prefix='ni-retire-flush-') as directory:
     source, binary = Path(directory) / 'test.c', Path(directory) / 'test'
     source.write_text(common + function((driver / 'role.h').read_text(), 'rtl_ax_station_drop') + drop +
-                      function(ni, 'rtl_ax_tx_ni_route') + function(ni, 'rtl_ax_tx_ni_retire_peer') + test)
+                      function(ni, 'rtl_ax_tx_ni_route') + function(ni, 'ni_peer_fence') + function(ni, 'ni_peer_idle') +
+                      function(ni, 'rtl_ax_tx_ni_retire_peer') + test)
     subprocess.run(['cc', '-std=gnu11', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function',
                     '-fsanitize=address,undefined', str(source), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True, timeout=10)
