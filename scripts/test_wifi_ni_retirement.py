@@ -26,7 +26,7 @@ typedef uint32_t u32;
 #define read_poll_timeout(op,val,cond,delay,timeout,sleep,args...) ({(void)(delay);(void)(timeout);(void)(sleep);(val)=op(args);(cond)?0:-ETIMEDOUT;})
 #define readl_poll_timeout(address,val,cond,delay,timeout) ({(void)(address);(void)(delay);(void)(timeout);(val)=0;(cond)?0:-ETIMEDOUT;})
 struct rtl_ax_rx { bool enabled[128]; };
-struct rtl_ax_tx {struct {void *memory;}pe;struct {bool route_peers[128];void *route_dev,*vp;unsigned route_tim[128];}ni;bool peer_offloaded[128];struct rtl_ax_rx *rx;};
+struct rtl_ax_tx {struct {void *memory;}pe;struct {bool route_peers[128];void *route_dev,*vp;unsigned route_tim[128];}ni;bool peer_offloaded[128];struct rtl_ax_rx *rx;void *pdev;};
 static unsigned calls;
 static int ni_test_lock;
 static u32 get_unaligned_le32(void *p) {u32 v;memcpy(&v,p,4);return v;}
@@ -44,6 +44,7 @@ static int rtl_ax_tx_pause(struct rtl_ax_tx *tx) {(void)tx;return 0;}
 static u32 readl(void *p) {(void)p;return 0;}
 static void rtl_ax_rx_uplink_retire(struct rtl_ax_rx *rx,unsigned id) {(void)rx;(void)id;}
 static void rtl_ax_tx_open(struct rtl_ax_tx *tx) {(void)tx;}
+static int rtl_ax_mac_drop_peer(void *pdev,unsigned id) {(void)pdev;(void)id;assert(false);return 0;}
 static bool ni_peer_idle(struct rtl_ax_tx *tx,unsigned id) {(void)tx;(void)id;return true;}
 static void ni_test_buffered(struct rtl_ax_tx *tx,unsigned id,bool set) {(void)tx;(void)id;(void)set;}
 '''

@@ -544,6 +544,20 @@ static int rtl_ax_command(struct rtl_ax_ap *radio, unsigned int buffer_class,
 				    data, bytes, false, done_ack);
 }
 
+int rtl_ax_mac_drop_peer(struct pci_dev *pdev, unsigned int macid)
+{
+	struct rtl_ax_ap *radio = pci_get_drvdata(pdev);
+	u8 drop[24];
+	int ret;
+
+	for (unsigned int ac = 0; ac < 4; ac++) {
+		rtl_ax_station_drop(drop, macid, ac);
+		ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 9, 27, drop, sizeof(drop), false);
+		if (ret) return ret;
+	}
+	return 0;
+}
+
 static int rtl_ax_station_tables(struct rtl_ax_ap *radio, unsigned int macid)
 {
 	u8 cmac[68], dmac[68] = {};

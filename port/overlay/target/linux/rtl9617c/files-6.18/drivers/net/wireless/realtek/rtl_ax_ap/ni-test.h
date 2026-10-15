@@ -396,13 +396,25 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 		if (ret) goto unlock;
 		for (i = 1; i < 128; i++) {
 			if (!tx->ni.route_peers[i]) continue;
+			put_unaligned_le32(0, tx->pe.memory + 0x11a00 + i * 4);
+			dma_wmb();
+			rtl_ax_rx_uplink_disable(tx->rx, i);
 			ret = rtl9617c_wifi_peer_route(tx->ni.route_dev, tx->pe.memory + 0xe400 + i * 8, false);
 			if (ret) goto unlock;
 		}
 		/* FE no longer submits this peer. Return its queued, unsent BIDs even
 		 * when the disconnected STA remains asleep; submitted WPs await RPQ. */
+		ret = rtl_ax_tx_pause(tx);
+		if (ret) goto unlock;
 		put_unaligned_le32(128, tx->pe.memory + PE_PROBE_MAILBOX + 248);
 		dma_wmb();
+		rtl_ax_tx_open(tx);
+		/* Sleeping MAC queues retain submitted WPs until PKT_DROP releases them. */
+		for (i = 1; i < 128; i++) {
+			if (!tx->ni.route_peers[i]) continue;
+			ret = rtl_ax_mac_drop_peer(tx->pdev, i);
+			if (ret) goto unlock;
+		}
 		ret = read_poll_timeout(get_unaligned_le32, status,
 			!status && !get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 152) && ni_epps_empty(tx),
 			100, 2000000, false, tx->pe.memory + PE_PROBE_MAILBOX + 120);
@@ -525,6 +537,9 @@ int rtl_ax_tx_ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid)
 	put_unaligned_le32(macid, tx->pe.memory + PE_PROBE_MAILBOX + 248);
 	dma_wmb();
 	rtl_ax_tx_open(tx);
+	if (ret) goto unlock;
+	/* PE admission is closed and its last submission has finished; flush before waiting for RPQ. */
+	ret = rtl_ax_mac_drop_peer(tx->pdev, macid);
 	if (ret) goto unlock;
 	ret = read_poll_timeout(ni_peer_idle, status, status, 100, 2000000, false, tx, macid);
 	if (ret) goto unlock;
