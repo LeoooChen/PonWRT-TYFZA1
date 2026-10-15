@@ -365,6 +365,9 @@ int main(void)
     paths.path[0].downstream_pbits=1;
     memset(&parsed,0,sizeof(parsed));
     assert(fe_parse(direction?&pp:&lp,&cls,&parsed)==-EOPNOTSUPP);
+    paths.count=0;
+    memset(&parsed,0,sizeof(parsed));
+    assert(fe_parse(direction?&pp:&lp,&cls,&parsed)==-EOPNOTSUPP);
     fe.itu_netdev=NULL;fe.itu_paths=NULL;
     memset(&parsed,0,sizeof(parsed));
     assert(!fe_parse(direction?&pp:&lp,&cls,&parsed));

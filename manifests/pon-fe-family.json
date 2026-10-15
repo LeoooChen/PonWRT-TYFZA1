@@ -1,0 +1,83 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "c45f9bd",
+  "bug": "ITU business invalidation sent NULL to NI, also dropping FE ITU family identity and allowing EPON flow interpretation",
+  "fix": "Retain the ITU interface using an empty graph; explicitly switch FE family identity with the SerDes destination mode",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-gpon.c": "771918abefb4b6e0737856586d202d7bd4de075732c69809e08c49fb5309fad0",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-xgpon.c": "2a8d19cbd370ab609989ca38cfa355d1e79c3b7cb87e7fb240012096c3bed501",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-path.c": "d60adffb6f79025b2fb1c300746c30210c2ff1b3aa55f0426790ce2a540371be",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-serdes.c": "533ef1e7f8884bb49cf20f918657fc52984d1328051b51f6f862a7f4e79bbeeb",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.h": "93fe1e70aac6d039b58f6d0c12325f25ec71acb22caf36bdb3526c6c652b63ab",
+    "scripts/test_pon_fe_family.py": "b6b938d02742a9d302a6b66f8a8f2114f049a7407fa9c8d11dd25c6b12816a8c",
+    "scripts/test_fe_flow_parser.py": "3e94cf2c181ee94d4204d195332f65a93fce0a5ca162d426109878247909baaa",
+    "scripts/test_itu_evto_upload.py": "5685e4b3ae127dc0be07d56dc18dedf3a0e9ad4ae8ddb60c4279a41383c8645d",
+    "scripts/test_pon_transactions.py": "6edcae3325ffc53761da84f8f6e7bb0ea4fa2c7b6d7d9d6f775d7dc94edfbf09",
+    "docs/pon-family-audit.md": "9fa77e9b28ddcd064daf10a717f02149829e160af683283fecf859f1374a2963"
+  },
+  "before": {
+    "record": "artifacts/pon-fe-family-20261016/before.log",
+    "mode": 3,
+    "FE_retains_ITU": false,
+    "paths": null,
+    "scope": "Actual PON invalidation and FE replacement functions; no installed flows, allocation/netdev callbacks modeled"
+  },
+  "checks": {
+    "three_ITU_modes_retain_empty_graph": true,
+    "fresh_GEM_mapping_accepted": true,
+    "EPON_transition_releases_ITU_identity": true,
+    "actual_FE_parser_empty_ITU_both_directions_rejected": true,
+    "EPON_rules_accepted": true,
+    "NI_policy_failure_retains_mode_and_error": true,
+    "actual_upload_and_OMCI_commit_checks_passed": true,
+    "isolated_ARM64_PON_module_build": true
+  },
+  "factory_basis": {
+    "mode_dispatch": "logs/stock-pon-mode-dispatch.json",
+    "TCONT_dispatch": "logs/stock-pon-family-paths.json",
+    "TCONT_scope": "Original mode3 uses GPON setter, modes4/5 use XGTC setter; AAL bodies modeled",
+    "native_policy_lifetime_bug": true,
+    "hardware_register_encodings_changed": false
+  },
+  "module": {
+    "path": "artifacts/pon-fe-family-20261016/kernel/rtl_pon_fe_family_live.ko",
+    "sha256": "3911e77ea884f631c5cbab3a9894f073de408cbf17835c3929e36990defdc80a",
+    "kernel": "6.18.55",
+    "driver": "rtl9617c-pon-fe-family-live",
+    "source_delta": "distinct platform driver name only"
+  },
+  "live": {
+    "mode": "epon-d10g",
+    "RAM_update_exit": 0,
+    "MPCP_LLID0_registered": true,
+    "LOID_authentication": "accepted",
+    "DHCP_and_default_route_restored": true,
+    "FE_enabled": true,
+    "public_ping": {
+      "sent": 3,
+      "received": 3
+    },
+    "RAM_only": true,
+    "saved_PON_UCI_unchanged": true,
+    "restore": "sh /tmp/restore-pon.sh"
+  },
+  "limitations": [
+    "No GPON-family OLT or optical mode switch",
+    "No physical GPON loss/recovery verification",
+    "No full test suite or full firmware build",
+    "Directed callback/flow-parser checks establish policy identity, not physical throughput"
+  ],
+  "record_sha256": {
+    "artifacts/pon-fe-family-20261016/before.log": "662b3aa9c6a2b0e1aabf8edeb8ad8b46ae59f48d8e3d45d8098c50f58acb816c",
+    "artifacts/pon-fe-family-20261016/after.log": "3dc1f302b9383b9a3ab897016cd2e1f2eca15258789caff2bb5eb8afd3ad01c5",
+    "artifacts/pon-fe-family-20261016/flow-parser.log": "833b56c5a409883b7d04597ddc7f5173d297239e6bed0e550545a1b14f7c245e",
+    "artifacts/pon-fe-family-20261016/transactions.log": "d6500c1dba435f8d4c40afb000e9060575fd614f37e2554805bc25b7872d70e4",
+    "artifacts/pon-fe-family-20261016/upload.log": "fa831115ce7ff02d955fcd78a05ea329872359e05ad69b461dabe81554217889",
+    "artifacts/pon-fe-family-20261016/omci-kernel.log": "69f1894a1ea51601ae4ff94f31621167f3d5ff5259281543e747d8a9e5846419",
+    "artifacts/pon-fe-family-20261016/build.log": "708c7561737f4810538e1b2390f0dd7d96eb8fc31ba28be2af467a142f18ba76"
+  },
+  "live_record_sha256": {
+    "restore-pon.sh": "cca0c38798b2409d053abac93659c33af77b1bec179cf8d2d9b67e21eff085d1",
+    "live-after.txt": "233af4f61dc35e021b944f63d6ef19d5b671ffdd833383f09bb6bb17aba97126"
+  }
+}

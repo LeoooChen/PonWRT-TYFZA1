@@ -64,7 +64,7 @@ static int path_program(struct rtl9617c_pon *pon,const struct rtl_itu_paths *pat
  (void)pon;assert(paths->count<=248);programs++;return 0;}
 static int rtl9617c_ni_itu_paths(void *ni,struct net_device *dev,const struct rtl_itu_paths *paths){
  (void)ni;(void)dev;(void)paths;return 0;}
-static void rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *pon){pon->itu_paths_ready=false;pon->itu_path_epoch++;}
+static int rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *pon, enum rtl_pon_mode mode){(void)mode;pon->itu_paths_ready=false;pon->itu_path_epoch++;return 0;}
 static void rtl_pon_itu_carrier(struct rtl9617c_pon *pon){(void)pon;}
 '''
 cases = r'''

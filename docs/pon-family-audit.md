@@ -176,3 +176,42 @@ DHCP/default route return and public ping receives3/3. The rollback script
 now targets that module. No flash or optical mode switch was performed;
 the GPON/XG-PON race remains a directed replay rather than a physical OLT test.
 Source/module hashes and raw evidence are in `manifests/pon-session-upload.json`.
+
+## FE family identity while ITU business is unavailable
+
+The actual `rtl_pon_itu_paths_invalidate` and `rtl_fe_set_itu_paths` functions
+reproduced another family mix: invalidating a GPON line sentNULL to NI, which
+cleared both its business graph and `itu_netdev`. The FE parser then treated
+`pon-data0` as an ordinary EPON port. This can happen during initial ITU setup,
+line loss or a failed mapping replacement; the selected PON mode remains ITU.
+
+Invalidation now supplies an empty ITU graph while that family is selected.
+The FE retains the ITU interface identity and cannot select a GEM/T-CONT from
+that empty graph. SerDes changes explicitly select the destination family's
+policy after stopping the old line and before programming the new mode:
+an EPON destination releases ITU identity, while an ITU destination reserves it
+with no business rules. NI-policy failure returns its original error and keeps
+the old mode selected. No FE/NI binary interface or hardware mapping encoding
+was changed; this uses the existing empty-graph semantics.
+
+The board's original mode dispatch is the authority for separating LLID from
+GEM/T-CONT programming (`stock-pon-mode-dispatch.json` and
+`stock-pon-family-paths.json`). The defect is in the native driver's lifetime
+of that family identity, not a new original-register discrepancy. PUC queue
+maps and the GPON/XGTC fragmentation profiles were not changed in this fix.
+
+The focused reproducer executes the actual invalidation and FE replacement
+functions with no installed flows, modeled allocation/netdev operations and
+the real mode definitions. It failed before the fix with
+`mode=3 FE_retains_ITU=0 paths=null`. Afterward all three ITU modes retain an
+empty graph, fresh GEM mapping is accepted, and an EPON transition clears the
+ITU identity. The actual flow parser rejects an empty ITU graph in both
+directions and continues to accept the corresponding EPON rules. The existing
+OMCI commit/upload checks, mode-change error/concurrency check and isolated
+ARM64 module build pass. These checks do not demonstrate optical traffic.
+
+The RAM driver is now `rtl9617c-pon-fe-family-live`; rollback remains
+`sh /tmp/restore-pon.sh`. EPON registration, OAM/LOID, DHCP/default route and
+public ping were checked after replacement; no flash or optical mode switch
+was performed. GPON-family loss/recovery still requires a matching live OLT.
+Evidence and hashes are in `manifests/pon-fe-family.json`.

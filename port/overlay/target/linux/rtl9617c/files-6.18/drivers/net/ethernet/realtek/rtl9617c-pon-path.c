@@ -48,17 +48,22 @@ void rtl_pon_itu_carrier(struct rtl9617c_pon *pon)
 	rcu_read_unlock();
 }
 
-void rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *pon)
+int rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *pon, enum rtl_pon_mode mode)
 {
+	static const struct rtl_itu_paths empty;
 	struct net_device *dev = rcu_access_pointer(pon->data_devices[0]);
+	int ret = 0;
 
 	lockdep_assert_held(&pon->lock);
 	pon->itu_paths_ready = false;
 	pon->itu_path_epoch++;
 	if (dev) {
 		netif_carrier_off(dev);
-		pon->itu_paths_error = rtl9617c_ni_itu_paths(pon->ni_dev, dev, NULL);
+		ret = rtl9617c_ni_itu_paths(pon->ni_dev, dev,
+			rtl_pon_mode_is_epon(mode) ? NULL : &empty);
+		pon->itu_paths_error = ret;
 	}
+	return ret;
 }
 
 static int path_program(struct rtl9617c_pon *pon, const struct rtl_itu_paths *paths)
@@ -272,7 +277,7 @@ ssize_t rtl_pon_itu_paths_write(struct rtl9617c_pon *pon, const char *buf, size_
 		goto unlock;
 	dev = rcu_access_pointer(pon->data_devices[0]);
 	netif_tx_disable(dev);
-	rtl_pon_itu_paths_invalidate(pon);
+	rtl_pon_itu_paths_invalidate(pon, pon->mode);
 	ret = pon->itu_paths_error;
 	if (ret) goto wake;
 	ret = path_program(pon, &state->paths);

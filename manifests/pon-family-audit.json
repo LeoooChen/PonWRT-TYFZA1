@@ -163,7 +163,7 @@
     "scripts/test_pon_fe_stop.py": "1670c910b2567ac0399425a53c0707bb3acb45f4112809a11b134c9a215be34e",
     "scripts/test_native_rx_modes.py": "745555d104f7eb4408041402586d3ed8936d4275caa0ef474570c8c1f23cabd2",
     "tools/trace_stock_pon_modes.py": "2bf0a3fa57aa44ca713cf086ed0bd67e6d9e82aa5cd0bb1cb38aba0915f4ea12",
-    "docs/pon-family-audit.md": "fb46f644d2b7c335e700cc6137f59e2492d92c234307818d0b3f2ed1aba9c386",
+    "docs/pon-family-audit.md": "9fa77e9b28ddcd064daf10a717f02149829e160af683283fecf859f1374a2963",
     "port/packages/tyfza1-pon-control/src/pon-identity.c": "f4b504e5967357151a839fc49209a153e242c698cb550144f5420d444a0b3e4c"
   },
   "module_sha256": "53dfa17471c89b0984d21412fb9b8c062b5adfc4be8e58e14cf818594d02b0fe",
@@ -193,5 +193,6 @@
     "artifacts/pon-family-audit/after-epon-dispatch.log": "c2abe3be5482aa212fad9075db05d7b69d63fd2b0b8185ba642d03250d5c86ce"
   },
   "live_followup": "manifests/pon-family-live.json",
-  "session_upload_followup": "manifests/pon-session-upload.json"
+  "session_upload_followup": "manifests/pon-session-upload.json",
+  "FE_family_followup": "manifests/pon-fe-family.json"
 }

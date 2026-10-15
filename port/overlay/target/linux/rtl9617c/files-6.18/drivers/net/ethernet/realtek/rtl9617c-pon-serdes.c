@@ -146,6 +146,11 @@ int rtl_pon_serdes_configure_locked(struct rtl9617c_pon *pon, enum rtl_pon_mode 
 	if (ret)
 		goto release;
 	ret = rtl_pon_stop_locked(pon);
+	if (!ret) {
+		mutex_lock(&pon->lock);
+		ret = rtl_pon_itu_paths_invalidate(pon, mode);
+		mutex_unlock(&pon->lock);
+	}
 	if (ret) {
 		mutex_lock(&pon->lock);
 		pon->serdes_error = ret;

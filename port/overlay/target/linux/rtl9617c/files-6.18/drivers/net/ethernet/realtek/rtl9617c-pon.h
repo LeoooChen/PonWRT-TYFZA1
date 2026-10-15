@@ -148,7 +148,7 @@ ssize_t rtl_pon_itu_paths_write(struct rtl9617c_pon *pon, const char *buf, size_
 ssize_t rtl_pon_itu_paths_upload(struct rtl9617c_pon *pon, const char *buf, loff_t offset, size_t count);
 ssize_t rtl_pon_itu_paths_state(struct rtl9617c_pon *pon, char *buf);
 void rtl_pon_itu_carrier(struct rtl9617c_pon *pon);
-void rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *pon);
+int rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *pon, enum rtl_pon_mode mode);
 void rtl_pon_itu_paths_remove(struct rtl9617c_pon *pon);
 netdev_tx_t rtl_pon_itu_data_transmit(struct rtl9617c_pon *pon, struct sk_buff *skb, struct net_device *dev);
 void rtl_pon_itu_data_receive(struct rtl9617c_pon *pon, struct napi_struct *napi,

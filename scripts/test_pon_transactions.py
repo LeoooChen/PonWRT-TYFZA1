@@ -65,13 +65,14 @@ struct rtl9617c_pon {
     struct mutex lock,control_lock;enum rtl_pon_mode mode;
     void *mac,*control,*epon_control,*gpon_control,*serdes_init,*optical_control,*top_irq,*dev;
     bool mpcp_enabled,mpcp_configured,mac_prepared,traffic_enabled,serdes_configured,gearbox_ready,rx_synced,puc_configured,pdc_configured,fe_enabled,xgpon_pending_valid;
-    u32 registered,waiting,serdes_status;int sync_result,serdes_error,mpcp_irq,cleanup_error;
+    u32 registered,waiting,serdes_status;int sync_result,serdes_error,mpcp_irq,cleanup_error,policy_error;
     int *tx_disable;
     unsigned int llid_count,los_invert,profile_rows;u8 onu_mac[6];
     struct rtl_mpcp_backoff backoff;struct delayed_work mpcp_work,serdes_work;
 };
 static struct rtl9617c_pon *current;
 int rtl_pon_stop_locked(struct rtl9617c_pon *pon);
+static int rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *pon,enum rtl_pon_mode mode){(void)mode;assert(pon->lock.held);return pon->policy_error;}
 static int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon,bool enable) {
     lockdep_assert_held(&pon->control_lock);
     if(pon->cleanup_error)return pon->cleanup_error;
@@ -153,6 +154,9 @@ int main(void) {
     pon.mode=RTL_PON_XGSPON;pon.fe_enabled=true;pon.cleanup_error=-EIO;
     assert(rtl_pon_serdes_configure(&pon,RTL_PON_EPON_D10G)==-EIO);
     assert(pon.mode==RTL_PON_XGSPON && pon.fe_enabled && disabled && pon.serdes_error==-EIO);
+    pon.cleanup_error=0;pon.policy_error=-ENOMEM;
+    assert(rtl_pon_serdes_configure(&pon,RTL_PON_EPON_D10G)==-ENOMEM);
+    assert(pon.mode==RTL_PON_XGSPON && !pon.fe_enabled && pon.serdes_error==-ENOMEM);
     puts("Actual SerDes/MPCP transaction: concurrent restart blocked, all GPON-family results idle, state workers finish during cancel");
     pthread_mutex_destroy(&pon.lock.native);pthread_mutex_destroy(&pon.control_lock.native);
 }

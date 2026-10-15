@@ -109,7 +109,7 @@ void rtl_pon_xgpon_stop_locked(struct rtl9617c_pon *pon)
 	if (pon->mode == RTL_PON_XGPON || pon->mode == RTL_PON_XGSPON) {
 		pon->xgpon_recover = false;
 		cancel_delayed_work(&pon->xgpon_recovery_work);
-		rtl_pon_itu_paths_invalidate(pon);
+		rtl_pon_itu_paths_invalidate(pon, pon->mode);
 		pon->xgpon_enabled = false;
 		pon->itu_line_epoch++;
 		pon->xgpon_omcc_ready = false;
@@ -259,12 +259,12 @@ void rtl_pon_xgpon_irq(struct rtl9617c_pon *pon)
 	else
 		netif_carrier_off(pon->omci_device);
 	if (!netif_carrier_ok(pon->omci_device) && pon->itu_paths_ready)
-		rtl_pon_itu_paths_invalidate(pon);
+		rtl_pon_itu_paths_invalidate(pon, pon->mode);
 	rtl_pon_itu_carrier(pon);
 	if (transitions & BIT(6)) {
 		/* Original LODS handler waits for optical RX, then resets SDS before MAC. */
 		netif_carrier_off(pon->omci_device);
-		rtl_pon_itu_paths_invalidate(pon);
+		rtl_pon_itu_paths_invalidate(pon, pon->mode);
 		rtl_xgpon_active(&io, false, pon->mode == RTL_PON_XGSPON);
 		rtl_pon_update(pon->serdes_init, BIT(4), 0);
 		pon->xgpon_recover = true;
