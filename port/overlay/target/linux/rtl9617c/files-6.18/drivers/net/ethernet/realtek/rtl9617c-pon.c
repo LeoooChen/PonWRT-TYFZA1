@@ -101,7 +101,8 @@ int rtl_pon_pdc_configure(struct rtl9617c_pon *pon)
 	int ret;
 
 	mutex_lock(&pon->control_lock);
-	ret = rtl_pon_pdc_configure_locked(pon);
+	ret = pon->gpon_drain.phase || pon->xgpon_recovery_phase ? -EBUSY :
+		rtl_pon_pdc_configure_locked(pon);
 	mutex_unlock(&pon->control_lock);
 	return ret;
 }
@@ -111,7 +112,8 @@ int rtl_pon_puc_configure(struct rtl9617c_pon *pon)
 	int ret;
 
 	mutex_lock(&pon->control_lock);
-	ret = rtl_pon_puc_configure_locked(pon);
+	ret = pon->gpon_drain.phase || pon->xgpon_recovery_phase ? -EBUSY :
+		rtl_pon_puc_configure_locked(pon);
 	mutex_unlock(&pon->control_lock);
 	return ret;
 }
@@ -266,10 +268,10 @@ static ssize_t activation_show(struct device *dev, struct device_attribute *attr
 		return size;
 	}
 	size = sysfs_emit(buf,
-		"enabled=%u omcc=%u omcc_onu_id=%u omcc_gem=%u ds_fec=%u error=%d irq_count=%llu last_irq=%08x key_switches=%llu\n",
+		"enabled=%u omcc=%u omcc_onu_id=%u omcc_gem=%u ds_fec=%u error=%d irq_count=%llu last_irq=%08x key_switches=%llu recovering=%u\n",
 		pon->gpon_enabled, pon->gpon_omcc_ready, pon->gpon_omcc_onu_id,
 		pon->gpon_omcc_gem, pon->gpon_ds_fec, pon->gpon_activation_error,
-		pon->gpon_irq_count, pon->gpon_last_irq, pon->gpon_key_switches);
+		pon->gpon_irq_count, pon->gpon_last_irq, pon->gpon_key_switches, pon->gpon_recover);
 	mutex_unlock(&pon->lock);
 	return size;
 }

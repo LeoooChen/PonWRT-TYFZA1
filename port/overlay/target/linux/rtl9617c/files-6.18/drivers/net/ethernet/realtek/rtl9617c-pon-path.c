@@ -261,6 +261,9 @@ ssize_t rtl_pon_itu_paths_write(struct rtl9617c_pon *pon, const char *buf, size_
 	if (session != pon->itu_line_epoch) {
 		ret = -ESTALE; goto unlock;
 	}
+	if (pon->gpon_drain.phase || pon->xgpon_recovery_phase) {
+		ret = -EBUSY; goto unlock;
+	}
 	if (rtl_pon_mode_is_epon(pon->mode) || !pon->puc_configured || !pon->pdc_configured) {
 		ret = -EOPNOTSUPP; goto unlock;
 	}

@@ -18,6 +18,23 @@ struct rtl_itu_path_state {
 	struct rtl_itu_paths paths;
 };
 
+enum rtl_gpon_drain_phase {
+	RTL_GPON_DRAIN_IDLE, RTL_GPON_DRAIN_PORT, RTL_GPON_DRAIN_ALLOC,
+	RTL_GPON_DRAIN_PROBE, RTL_GPON_DRAIN_PROBE_WAIT, RTL_GPON_DRAIN_QUEUE,
+	RTL_GPON_DRAIN_MAP, RTL_GPON_DRAIN_GTC, RTL_GPON_DRAIN_FLUSH,
+	RTL_GPON_DRAIN_FLUSH_WAIT, RTL_GPON_DRAIN_RESTORE, RTL_GPON_DRAIN_PORT_RESTORE,
+	RTL_GPON_DRAIN_RESET,
+};
+
+struct rtl_gpon_drain {
+	enum rtl_gpon_drain_phase phase;
+	unsigned int port, queue, probe;
+	u32 config, drop, gtc, valid[8], pvt[5], limit;
+	u32 bytes[8], packets[8], alloc_word;
+	u16 alloc_id;
+	bool alloc_saved;
+};
+
 struct rtl9617c_pon {
 	struct device *dev;
 	struct device *ni_dev;
@@ -33,11 +50,14 @@ struct rtl9617c_pon {
 	void __iomem *optical_irq;
 	void __iomem *top_irq;
 	struct mutex lock;
-	/* Control transactions precede state lock. Work/IRQ threads use only lock;
-	 * cancel_delayed_work_sync must run without holding that state lock. */
+	/* Control and recovery transactions precede the state lock. Synchronous
+	 * recovery-work cancellation runs without either lock held. */
 	struct mutex control_lock;
 	struct delayed_work serdes_work;
 	struct delayed_work mpcp_work;
+	struct delayed_work gpon_recovery_work;
+	bool gpon_recover;
+	struct rtl_gpon_drain gpon_drain;
 	struct delayed_work xgpon_recovery_work;
 	bool xgpon_recover;
 	/* 0 idle, 1 capture PUC, 2 flush/reset, 3 restore saved PUC. */
@@ -160,6 +180,7 @@ void rtl_pon_itu_data_receive(struct rtl9617c_pon *pon, struct napi_struct *napi
 int rtl_pon_gpon_activation_locked(struct rtl9617c_pon *pon, bool enable);
 void rtl_pon_gpon_stop_locked(struct rtl9617c_pon *pon);
 void rtl_pon_gpon_irq(struct rtl9617c_pon *pon);
+void rtl_pon_gpon_recovery(struct work_struct *work);
 int rtl_pon_omci_init(struct rtl9617c_pon *pon);
 void rtl_pon_omci_remove(struct rtl9617c_pon *pon);
 void rtl_pon_omci_receive(struct rtl9617c_pon *pon, struct napi_struct *napi,

@@ -46,7 +46,7 @@ struct rtl9617c_pon {
  bool mpcp_enabled, fe_enabled, tx_disabled;
  unsigned int llid_count;
  unsigned char gpon_serial[8], xgpon_serial[8];
- unsigned int gpon_enabled, gpon_omcc_ready, gpon_omcc_onu_id, gpon_omcc_gem, gpon_ds_fec;
+ unsigned int gpon_enabled, gpon_omcc_ready, gpon_omcc_onu_id, gpon_omcc_gem, gpon_ds_fec, gpon_recover;
  int gpon_activation_error;
  unsigned int gpon_last_irq;
  unsigned long long gpon_irq_count, gpon_key_switches;

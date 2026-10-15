@@ -53,6 +53,7 @@ static unsigned int get_unaligned_le32(const void *p){const u8 *b=p;return b[0]|
 struct net_device {int unused;};
 struct rtl_itu_path_state {int rcu;struct rtl_itu_paths paths;};
 struct rtl9617c_pon {
+ struct {unsigned int phase;} gpon_drain;unsigned int xgpon_recovery_phase;
  int mode,puc_configured,pdc_configured,control_lock,lock,itu_paths_ready,itu_paths_error;
  unsigned long long itu_path_epoch,itu_line_epoch,itu_upload_epoch;
  struct net_device *omci_device,*data_devices[1];void *ni_dev;
@@ -76,6 +77,12 @@ int main(int argc,char **argv){
  assert(argc==4 || argc==5);size_t small_size,large_size,mapped_size;
  unsigned char *small=load(argv[1],&small_size),*large=load(argv[2],&large_size);
  struct net_device dev={};struct rtl9617c_pon pon={.mode=RTL_PON_GPON,.puc_configured=1,.pdc_configured=1,.data_devices={&dev}};
+ pon.gpon_drain.phase=1;
+ assert(rtl_pon_itu_paths_upload(&pon,(void *)small,0,small_size)==-EBUSY && !programs && !pon.itu_paths);
+ pon.gpon_drain.phase=0;pon.xgpon_recovery_phase=1;
+ unsigned char pending_empty[12]={4,0,0,0,0,0,0,0,12};
+ assert(rtl_pon_itu_paths_upload(&pon,(void *)pending_empty,0,sizeof(pending_empty))==-EBUSY && !programs);
+ pon.xgpon_recovery_phase=0;
  assert(rtl_pon_itu_paths_upload(&pon,(void *)small,0,small_size)==(ssize_t)small_size);
  assert(programs==1 && pon.itu_paths_ready && pon.itu_paths->paths.profile_count==2);
  const struct rtl_itu_paths *paths=&pon.itu_paths->paths;

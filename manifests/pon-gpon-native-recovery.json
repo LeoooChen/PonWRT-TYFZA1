@@ -1,0 +1,74 @@
+{
+  "base_commit": "046836e30a16991ebcfe290b5ffffeeb9b0864f9",
+  "purpose": "Implement the board-specific GPON timeout drain with retained transaction ownership and honest flush failure reporting",
+  "authority": {
+    "module": "analysis/private/live-files/lib/modules/5.10.70/extra/ca-ne.ko",
+    "sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+    "factory_trace": "manifests/pon-gpon-drain-evidence.json",
+    "stop_abort": "aal_gpon_deinit@0xfb300 resets PON control94 and GPON control7c; native interrupted-stop resets its owned PUC/PDC/GTC and invalidates configuration"
+  },
+  "behavior": [
+    "O5/O6 exit schedules GPON-only drain and masks GPON events until tables are released; O6 grace remains intact",
+    "Empty/complete/partial queues use original PVT/Alloc-ID/valid/PUC/GTC mechanisms; only the partial queue needs a64-byte probe with fully initialized data",
+    "Flush timeout or nonzero final queue counters preserve the current transaction and return real errors; retry does not resubmit an already issued flush",
+    "Public PUC/PDC and OMCI table commits cannot overwrite GPON or XGTC recovery-owned state; recovery-internal XGTC PUC initialization remains available",
+    "Explicit stop cancels queued or active recovery and resets interrupted PUC/GTC state, requiring fresh configuration",
+    "GPON activation reports recovering plus actual error; new activation during recovery returnsEBUSY"
+  ],
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-gpon.c": "839ec2ff25f7cc6c488a560649cad4c65f7ebc497a1fa49daee82ff07de6e39f",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-path.c": "067db020a0c1acba9d0a356450164c553527153cc54c59076fbbd9d2f5172a23",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-serdes.c": "9a027dbee1b40d087561521c146a2e5cce9d6202a02bbb107797e4620261f5af",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.c": "1d282f191caaa589446936b354e48301fc7a0e050788119d56364a7b738cdf61",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.h": "7f637c5c77f2de6b91a2f9d00126381b726f433efd44c21564e07c24efaf6674",
+    "scripts/test_gpon_queue_recovery.py": "f6b6dd9be1685bfb5c31e397874bad0f7a99096f4ca0076c10eac1ddc34428a5",
+    "scripts/test_gpon_o6.py": "28f2c3c6a3fb315770b61d408ff1454c0c2befd7c2d013c40e708f92ec69467e",
+    "scripts/test_itu_evto_upload.py": "68701329044425860908aa0efc34fdf2c674fd052fc6d197f2741c971d22a8b9",
+    "scripts/test_pon_family_control.py": "27a5d9abb71d06e30db07f1f3ab8c92225813870c33bb17fbd54ea5c50423f6e",
+    "docs/pon-gpon-native-recovery.md": "773cfafbdbd63ae1cfe68d6b20157d180a5c38e5edd509d6efea047771545999",
+    "docs/pon-gpon-drain-evidence.md": "26b56d5cde37c83b838917c81f38c575f78cef026a650f551e6adfcfa0153777"
+  },
+  "validation": {
+    "production_driven": "Actual GPON worker/helpers, stop, activation and public PUC/PDC entries extracted into a compiled MMIO/NI boundary model; ASan/UBSan passed for7 cases including busy probe, stuck flush, nonempty completion, resumed completion and explicit stop before/after work starts",
+    "other_directed": "Actual GPON IRQ grace/expiry and pending-event retention; real binary ITU uploads reject recovery-owned commits including empty snapshots; existing family isolation and XGTC recovery checks passed",
+    "arm64": "12 current PON translation units and NI xram object compiled, relocatable partial link resolves GPON recovery and NI gate; input/object hashes recorded",
+    "model_boundaries": [
+      "MMIO indirect completion and counters",
+      "NI probe acceptance and counter arrival",
+      "Locks, delays, GPIO and NI invalidation",
+      "Factory temporary-PVT global buffer-policy tuning"
+    ],
+    "factory_policy_difference": "Native temporary PVT updates preserve the established global buffer policy and restore existing field owners; global buffer-policy recalculation is not replayed as a hardware-verified operation",
+    "full_firmware_build": false,
+    "full_test_suite": false,
+    "deployed": false,
+    "physical_gpon_olt_verified": false,
+    "remaining_hardware_checks": [
+      "Actual GPON FIFO completion and partial-packet probe behavior",
+      "IRQ replay after GPON recovery unmasks the source",
+      "GPON OLT registration and business recovery timing"
+    ]
+  },
+  "live_baseline": {
+    "driver": "rtl9617c-pon-fe-family-live",
+    "mode": "EPON D10G",
+    "registered_llids": "00000001",
+    "signal_loss": 0,
+    "FE_enabled": true,
+    "public_ping_received": 2,
+    "public_ping_sent": 2,
+    "scope": "Previously deployed RAM module; does not validate this new GPON implementation"
+  },
+  "evidence_sha256": {
+    "artifacts/pon-gpon-native-recovery-20261016/test_gpon_queue_recovery.py.log": "7a04db36188160da5ec6751c3b2692fc1bb3fa1f6eb4a296d11421ed59cb8582",
+    "artifacts/pon-gpon-native-recovery-20261016/test_gpon_o6.py.log": "d5108067d97b20b1b9752555565a4b76ab49d1cc053972f31d2d74e37fd8b99e",
+    "artifacts/pon-gpon-native-recovery-20261016/test_itu_evto_upload.py.log": "fa831115ce7ff02d955fcd78a05ea329872359e05ad69b461dabe81554217889",
+    "artifacts/pon-gpon-native-recovery-20261016/test_pon_family_control.py.log": "96079f74cac5bf40b786c680356f30f85d2d0048f5ff86c8765ef2117a14f259",
+    "artifacts/pon-gpon-native-recovery-20261016/xgtc-recovery-regression.log": "11626c03fb1dd82cc1cdad6df9fe769b9529abba016644874503cfc0c6af39c2",
+    "artifacts/pon-gpon-native-recovery-20261016/arm64-build.log": "248c4d518ed1b40a7b8516208e22b86864cb817bfdd8b2d83fc3d6ecbc10f0a5",
+    "artifacts/pon-gpon-native-recovery-20261016/compiled-inputs.json": "ae0eb9e4e71ec61380a10e8871b5fb291478c984da10ab6b162d271e41f98e6c",
+    "artifacts/pon-gpon-native-recovery-20261016/pon-ni-interface-check.o": "416ed1474e632998b80834f0d65885505728dceab2dfa8c787612746535d23e3",
+    "logs/stock-gpon-queue-recovery.json": "2f84ea52168deccd0fccc03af5b808633c6483bafb7aaa84010026af3b2f6d50",
+    "manifests/pon-gpon-drain-evidence.json": "b3bbfb5276806e20f06eeecf23586f8390e1cca4d60d3d034d726124948d6d53"
+  }
+}

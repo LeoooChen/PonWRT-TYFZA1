@@ -34,9 +34,11 @@ typedef uint8_t u8;typedef uint32_t u32;typedef uint64_t u64;
 #define readl_poll_timeout(p,v,c,d,t) ({v=readl(p);(c)?0:-110;})
 struct device {int kobj;};
 struct net_device {bool carrier;};
+struct work {unsigned int pending;};
 struct rtl9617c_pon {
  int lock;enum rtl_pon_mode mode;unsigned char *mac;struct device *dev;
- struct net_device *omci_device;void *tx_disable;
+ struct net_device *omci_device;void *tx_disable,*top_irq;struct work gpon_recovery_work;
+ bool gpon_recover;
  bool gpon_enabled,gpon_ds_fec,gpon_omcc_ready,itu_paths_ready;
  unsigned int gpon_last_state,gpon_omcc_onu_id,gpon_omcc_gem;
  u32 gpon_last_irq;u64 gpon_irq_count,gpon_key_switches,itu_line_epoch;
@@ -45,6 +47,8 @@ struct rtl9617c_pon {
 static unsigned int invalidated;
 static u32 readl(const void *p){return *(const u32*)p;}
 static void writel(u32 v,void *p){*(u32*)p=v;}
+static void rtl_pon_update(void *p,u32 mask,u32 value){writel((readl(p)&~mask)|value,p);}
+static void schedule_delayed_work(struct work *w,unsigned int delay){assert(!delay);w->pending++;}
 static void get_random_bytes(void *p,unsigned int n){memset(p,1,n);}
 static void memzero_explicit(void *p,unsigned int n){memset(p,0,n);}
 static void netif_carrier_on(struct net_device *p){p->carrier=true;}
@@ -58,9 +62,9 @@ static int rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *p,enum rtl_pon_mode
 '''
 cases = r'''
 int main(void){
- u32 regs[0xc000/4]={};struct net_device omci={.carrier=true};struct device dev={};int gpio=0;
+ u32 regs[0xc000/4]={},top[2]={0,1};struct net_device omci={.carrier=true};struct device dev={};int gpio=0;
  struct rtl9617c_pon pon={.lock=1,.mode=RTL_PON_GPON,.mac=(void*)regs,.dev=&dev,
-  .omci_device=&omci,.tx_disable=&gpio,.gpon_enabled=true,.gpon_omcc_ready=true,
+  .omci_device=&omci,.tx_disable=&gpio,.top_irq=top,.gpon_enabled=true,.gpon_omcc_ready=true,
   .gpon_omcc_onu_id=17,.gpon_last_state=4,.itu_paths_ready=true};
  regs[0x608c/4]=regs[0x6090/4]=BIT(31);regs[0x60bc/4]=(5U<<16)|17;
  rtl_pon_gpon_irq(&pon);
@@ -74,6 +78,10 @@ int main(void){
  pon.itu_paths_ready=true;pon.gpon_omcc_ready=true;regs[0x60bc/4]=(1U<<16)|255;
  rtl_pon_gpon_irq(&pon);
  assert(!omci.carrier && !pon.itu_paths_ready && invalidated==2 && pon.itu_line_epoch==1);
+ assert(pon.gpon_recover && pon.gpon_recovery_work.pending==1 && !(top[1]&1));
+ regs[0x608c/4]=BIT(30);regs[0x60bc/4]=(4U<<16)|18;
+ rtl_pon_gpon_irq(&pon);
+ assert(regs[0x608c/4]==BIT(30) && pon.itu_line_epoch==1 && !omci.carrier);
  puts("Actual GPON IRQ: O5/O6 preserves business configuration; missing OMCC and O6 expiry invalidate it");
 }
 '''
