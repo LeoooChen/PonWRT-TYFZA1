@@ -1,0 +1,115 @@
+{
+  "base_commit": "60df87ae1ee3d64687b371f8ad01da579a28817c",
+  "purpose": "Verify that cumulative PON family/NI/FE changes link into a full ARM64 kernel and that an independent initramfs actually contains current PON userspace and startup scripts",
+  "source_bindings": {
+    "kernel_overlay_file_count": 120,
+    "kernel_overlay_source_hashes_record": "artifacts/pon-kernel-integration-20261016/source-sync.json",
+    "package_input_file_count": 24,
+    "prepared_C_Rust_and_metadata_count": 21,
+    "package_input_hashes_record": "artifacts/pon-kernel-integration-20261016/current-package-inputs.json"
+  },
+  "found_and_corrected_build_inputs": [
+    "Existing kernel build tree still had the old FE rollback implementation; restored current tracked overlay input",
+    "Existing rootfs still had pre-family-isolation startup/import files and package0.2.0-r1; independent rootfs now uses the signed current0.3.1_alpha package and current platform files"
+  ],
+  "verification": {
+    "full_vmlinux_link": true,
+    "MODPOST_passed": true,
+    "compiler_warning_count": 0,
+    "kernel_config_unchanged": true,
+    "current_symbols": {
+      "rtl_pon_gpon_recovery": "0xffffffc08054a00c",
+      "rtl_pon_xgpon_recovery": "0xffffffc08054da08",
+      "rtl9617c_ni_pon_gate": "0xffffffc080553a90",
+      "rtl_fe_enable": "0xffffffc080562f80",
+      "rtl_fe_disable": "0xffffffc080563060",
+      "rtl_pon_itu_paths_upload": "0xffffffc080551ed0"
+    },
+    "current_PON_package_built": true,
+    "apk_signature_verified": true,
+    "apk_trust_source_sha256": "0908d2660327778facf831e5500ff64bc09ebdfab9331edb3747cd75d9c42cae",
+    "apk_install": "Offline add into an independent rootfs, scripts disabled; no untrusted-signature override used",
+    "final_Image_embedded_initramfs_matches_ELF_and_CPIO": true,
+    "final_Image_PON_payloads": {
+      "usr/sbin/pon-omcid": {
+        "sha256": "0deee97f83dbcbaec8cd633ca1af9088e2ed6b9e189cb835c1f0fc9eed0cb562",
+        "bytes": 424275
+      },
+      "usr/sbin/pon-identity": {
+        "sha256": "bb9255d2bb6da0aa59276f382acea64de76d988bc07e906ef5d2a305fe199c6c",
+        "bytes": 8155
+      },
+      "usr/sbin/pon-oamd": {
+        "sha256": "c8858190c967ff4ec82f7d8d1871d2dd267d46f1294a300dc552ec805b54d927",
+        "bytes": 20489
+      },
+      "usr/share/tyfza1/factory.uc": {
+        "sha256": "6edcb637dc92e14766afe4f487f0ad59df4b8f892f0e3274f5d195d73d08cd6f",
+        "bytes": 5259
+      },
+      "etc/init.d/pon": {
+        "sha256": "676409d2d5a8f94c9001b678d26086ac6963482d6dd94c6d06328ed65d9a534c",
+        "bytes": 4871
+      },
+      "etc/init.d/tyfza1-factory": {
+        "sha256": "d0ada44f439a9c29b61a0bcb9701e10d3ac8f8b84aef175f6913e88e75f72092",
+        "bytes": 1246
+      }
+    },
+    "installed_PON_package_version": "0.3.1_alpha",
+    "scope": "Kernel and one PON package build, final payload inspection; no full package/firmware build, full test suite, deployment or optical operation"
+  },
+  "artifacts": {
+    "artifacts/pon-kernel-integration-20261016/pon-current-initramfs-Image": {
+      "sha256": "cdd92eb5263ca51852e8e6b6b995786e840962e9d538a8ab27331bf9b8840210",
+      "bytes": 19458056
+    },
+    "artifacts/pon-kernel-integration-20261016/vmlinux-current-pon": {
+      "sha256": "ba2ba9f7630cac1646f40829ede0c0b048c85194ac8aad475c93fb9a47d2570b",
+      "bytes": 78308752
+    },
+    "artifacts/pon-kernel-integration-20261016/initramfs-current-pon.cpio": {
+      "sha256": "2d57c13d5fa6c48592c9b4cc3909204eb4e2efc16c5f5fd39d2e4b578d7c4b4f",
+      "bytes": 18564096
+    },
+    "artifacts/pon-kernel-integration-20261016/tyfza1-pon-control-0.3.1_alpha.apk": {
+      "sha256": "46c7f275f1c096f85521c651cdf2507b258d0f190135239891f31ecc51503d00",
+      "bytes": 228417
+    }
+  },
+  "historical_runtime_kernel_preserved": {
+    "vmlinux": "d14551408e840e59257b1aceeefeee4596a6c876814a6cd6e8c46e9dabc03716",
+    "arch/arm64/boot/Image": "d709267607b15bd62a617db73024aeff365d77b15d5cff3cb85c43859cadf354",
+    ".config": "7d78acc10d3a78b2bc56a546a89fd38d00a0e965abc9ab015027cd73e353673e",
+    "Module.symvers": "b176faed3b14be17534dd836ad7a6d895dc3df96c4e3e8dba4fc26efa25c0b29"
+  },
+  "limitations": [
+    "Built Image is not yet a board-DTB/signed-FIT boot bundle and was not booted or flashed",
+    "Base userspace and radio modules are inherited from the historical rootfs; radio-module compilation and Wi-Fi behavior were not tested",
+    "Real EPON/GPON/XG-PON/XGS-PON registration and recovery are not established by this build",
+    "FIFO/shared-NI-DMA completion remains unverified"
+  ],
+  "deployed": false,
+  "flash_written": false,
+  "published": false,
+  "full_test_suite": false,
+  "documentation_sha256": {
+    "docs/pon-kernel-integration.md": "e229ece7d0781417323effae44a0200b1d72aa94a993684220f93db91a6218da"
+  },
+  "evidence_sha256": {
+    "artifacts/pon-kernel-integration-20261016/vmlinux-build.log": "478ee6c3740bc388f5fcbdcdcb8a0126bef474c6534b453c765a1ef7b29f990c",
+    "artifacts/pon-kernel-integration-20261016/build-command.json": "66dbf4ef4491899b0446c055f4f4ee3ddc3ce2283993920da85f71d53416cbfd",
+    "artifacts/pon-kernel-integration-20261016/source-sync.json": "d10ef314f15ca48b558a33b08447396bbf2af1d5fa4834eff104f6f9cf9082eb",
+    "artifacts/pon-kernel-integration-20261016/resolved-symbols.txt": "5298e89a3079e7ee59f0e54c884ecc1bf753b147760993c1a1c400fcb53eb4ee",
+    "artifacts/pon-kernel-integration-20261016/pon-package-build.log": "c5147a3a4927a5e5667755325ea611539c9f461e38ed5ebb5f3b4a4298e579e7",
+    "artifacts/pon-kernel-integration-20261016/package-build-command.json": "b981987e27ecbfdf9d138d89acc4055ba76fadc3e4bf0160e2717278f5dced37",
+    "artifacts/pon-kernel-integration-20261016/package-source-sync.json": "cf6423df9fdd4c375d8ed729767f93ad94e943025d51147c0cdce7482cb1370c",
+    "artifacts/pon-kernel-integration-20261016/current-package-inputs.json": "e4a27ead4af3d24e51f39eb670ce27a3b2365fa4ee375d939b6c441b8a140a9a",
+    "artifacts/pon-kernel-integration-20261016/rootfs-pon-package-install.log": "8a1411e7385580bae1d51199cc4f6407deeaa782c24e10898fe190beb30461e2",
+    "artifacts/pon-kernel-integration-20261016/current-initramfs-build.log": "874982212aa8a893bbcd94c9e62b7f56ca30e7a961f42a060fce1d1027c0d839",
+    "artifacts/pon-kernel-integration-20261016/current-initramfs-build-command.json": "8dfa579cb26037c76178cf9c8886cac439d63a281a821855925024886525d8e6",
+    "artifacts/pon-kernel-integration-20261016/current-initramfs-products.json": "331cb1a78bf06c0a2046205494d5d40954a96d86fbdfe686b195c658d0e653e7",
+    "artifacts/pon-kernel-integration-20261016/integrated-payload-verification.json": "7965b7b1150d8d9ca4e20ac5e88503dae1dbb86436c60aa3a33ee3fd8d831f14",
+    "artifacts/pon-kernel-integration-20261016/initramfs-source-status.json": "da5333be65de60da4fab3c0a46edac43b94e003acb51793367793b859f420bc4"
+  }
+}
