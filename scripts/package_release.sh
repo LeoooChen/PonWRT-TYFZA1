@@ -8,9 +8,11 @@ OUT=${2:?Usage: package_release.sh openwrt-tree output-directory}
 mkdir -p "$OUT"
 OUT=$(realpath "$OUT")
 BIN=$TREE/bin/targets/rtl9617c/generic
-cp "$BIN/openwrt-rtl9617c-generic-tianyi_tyfza1-kernel.itb" "$OUT/kernel.itb"
-cp "$BIN/openwrt-rtl9617c-generic-tianyi_tyfza1-squashfs-rootfs.squashfs" "$OUT/rootfs.squashfs"
-cp "$BIN/openwrt-rtl9617c-generic-tianyi_tyfza1-squashfs-sysupgrade.bin" "$OUT/sysupgrade.bin"
+PREFIX=$(make --no-print-directory -s -C "$TREE/target/linux/rtl9617c/image" \
+    TOPDIR="$TREE" val.IMG_PREFIX)-tianyi_tyfza1
+cp "$BIN/$PREFIX-kernel.itb" "$OUT/kernel.itb"
+cp "$BIN/$PREFIX-squashfs-rootfs.squashfs" "$OUT/rootfs.squashfs"
+cp "$BIN/$PREFIX-squashfs-sysupgrade.bin" "$OUT/sysupgrade.bin"
 cp "$PROJECT/scripts/install_ubi_telnet.sh" "$OUT/install.sh"
 cp "$PROJECT/port/overlay/target/linux/rtl9617c/base-files/etc/fw_env.config" "$OUT/fw_env.config"
 

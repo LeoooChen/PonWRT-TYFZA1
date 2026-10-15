@@ -5,7 +5,7 @@ export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 TREE=${1:?Usage: prepare.sh /path/to/new-or-matching/openwrt-checkout}
 PIN=79bc56cb7483bc716da07c369530b792631904b4
 PROXY=${TYFZA1_PROXY:-${http_proxy:-}}
-if [ ! -e "$TREE" ]; then
+if [ ! -e "$TREE/.git" ]; then
     git init "$TREE"
     git -C "$TREE" remote add origin https://github.com/openwrt/openwrt.git
     git -C "$TREE" -c http.proxy="$PROXY" fetch --depth=1 origin "$PIN"

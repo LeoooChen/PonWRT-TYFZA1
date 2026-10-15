@@ -11,17 +11,18 @@ test "$(git -C "$TREE" rev-parse HEAD)" = "$PIN" || {
     exit 1
 }
 mkdir -p "$TREE/target/linux/rtl9617c"
-cp -a "$PORT/overlay/target/linux/rtl9617c/." "$TREE/target/linux/rtl9617c/"
+rsync -a --delete "$PORT/overlay/target/linux/rtl9617c/" "$TREE/target/linux/rtl9617c/"
 mkdir -p "$TREE/package/luci-app-tyfza1-pon"
-# Remove the retired overview views from incremental build trees.
-rm -f "$TREE/package/luci-app-tyfza1-pon/htdocs/luci-static/resources/view/status/tyfza1.js" \
-    "$TREE/package/luci-app-tyfza1-pon/htdocs/luci-static/resources/view/status/include/05_tyfza1.js"
-cp -a "$PORT/packages/luci-app-tyfza1-pon/." "$TREE/package/luci-app-tyfza1-pon/"
+rsync -a --delete "$PORT/packages/luci-app-tyfza1-pon/" "$TREE/package/luci-app-tyfza1-pon/"
 mkdir -p "$TREE/package/tyfza1-pon-control"
-cp -a "$PORT/packages/tyfza1-pon-control/." "$TREE/package/tyfza1-pon-control/"
+rsync -a --delete "$PORT/packages/tyfza1-pon-control/" "$TREE/package/tyfza1-pon-control/"
 if [ -n "${TYFZA1_CONFIG:-}" ]; then
     cp "$TYFZA1_CONFIG" "$TREE/.config"
 elif [ ! -s "$TREE/.config" ]; then
     cp "$PORT/configs/tyfza1-boot.config" "$TREE/.config"
 fi
+VERSION=$(cat "$PORT/../VERSION")
+# Keep package choices, but always identify firmware by the project version.
+sed -i '/^CONFIG_VERSIONOPT=/d; /^# CONFIG_VERSIONOPT is not set$/d; /^CONFIG_VERSION_NUMBER=/d' "$TREE/.config"
+printf 'CONFIG_VERSIONOPT=y\nCONFIG_VERSION_NUMBER="%s"\n' "$VERSION" >> "$TREE/.config"
 echo "Applied RTL9617C overlay to $TREE at $PIN"

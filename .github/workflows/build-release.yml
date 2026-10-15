@@ -103,13 +103,13 @@ jobs:
             artifacts/release/
             artifacts/build.log
           retention-days: 14
-      - name: Publish alpha release
+      - name: Publish release
         run: |
           if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
               --target "$(git rev-parse HEAD)" \
               --title "$RELEASE_TAG" --prerelease --draft \
-              --notes "TYFZA1 原生 OpenWrt。功能进度与安装方法见仓库 README。"
+              --notes-file RELEASE_NOTES.md
           fi
           gh release upload "$RELEASE_TAG" artifacts/release/sysupgrade.bin \
             artifacts/release/tyfza1-telnet-install.tar.gz artifacts/release/SHA256SUMS \
