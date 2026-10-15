@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Correlate NI tail drops with the original MAC HESU counter and BB TX state.
  * mac_get_tx_cnt selects CAE0[3:0]; halbb_chk_tx_idle_8852c selects BB20f0=30002.
+ * Original get_macid_pause reads 9EB0/C2C0 bitmaps for MACID0..31.
  */
 #include <linux/module.h>
 #include <linux/debugfs.h>
@@ -21,8 +22,9 @@ struct sample {
 	u64 us;
 	u32 asleep, pending, queued, epp, drops;
 	u32 tx_index, rpq_index, reports, tx_state, he_count;
+	u32 mac_pause, mac_sleep, peer_rate;
 };
-static struct sample rows[8192], previous;
+static struct sample rows[16384], previous;
 static unsigned int count;
 static u64 started, last;
 static struct hrtimer timer;
@@ -51,7 +53,11 @@ static enum hrtimer_restart sample_tick(struct hrtimer *timer)
 	s.reports = shared(0x2000 + 75 * 4);
 	s.tx_state = readl(bar + 0x11730) & 63;
 	s.he_count = readl(bar + 0xcae0) >> 16;
+	s.mac_pause = (readl(bar + 0x9eb0 + (macid / 32) * 4) >> (macid & 31)) & 1;
+	s.mac_sleep = (readl(bar + 0xc2c0 + (macid / 32) * 4) >> (macid & 31)) & 1;
+	s.peer_rate = shared(0xd000 + macid * 32 + 12);
 	if (count < ARRAY_SIZE(rows) && (!count || s.asleep != previous.asleep ||
+	    s.mac_pause != previous.mac_pause || s.mac_sleep != previous.mac_sleep ||
 	    s.drops != previous.drops || s.us - last >= 10000)) {
 		rows[count] = s;
 		smp_store_release(&count, count + 1);
@@ -64,13 +70,14 @@ static enum hrtimer_restart sample_tick(struct hrtimer *timer)
 static int trace_show(struct seq_file *file, void *unused)
 {
 	unsigned int total = smp_load_acquire(&count);
-	seq_printf(file, "ring_bytes=%u HESU counter saturates at65535; PHY_state0 means TX idle\n", ring_mask + 1);
-	seq_puts(file, "us asleep PE_owned peer_queued EPP_queued L3TE_drops TX0 RPQ reports PHY_state HE_TX_count\n");
+	seq_printf(file, "ring_bytes=%u HESU counter is16bit; PHY_state0 means TX idle\n", ring_mask + 1);
+	seq_puts(file, "us asleep PE_owned peer_queued EPP_queued L3TE_drops TX0 RPQ reports PHY_state HE_TX_count MAC_pause MAC_sleep peer_rate\n");
 	for (unsigned int i = 0; i < total; i++) {
 		const struct sample *s = &rows[i];
-		seq_printf(file, "%llu %u %u %u %u %u %08x %08x %u %u %u\n",
+		seq_printf(file, "%llu %u %u %u %u %u %08x %08x %u %u %u %u %u %08x\n",
 			s->us, s->asleep, s->pending, s->queued, s->epp, s->drops,
-			s->tx_index, s->rpq_index, s->reports, s->tx_state, s->he_count);
+			s->tx_index, s->rpq_index, s->reports, s->tx_state, s->he_count,
+			s->mac_pause, s->mac_sleep, s->peer_rate);
 	}
 	return 0;
 }
