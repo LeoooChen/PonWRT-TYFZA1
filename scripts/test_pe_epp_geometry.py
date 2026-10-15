@@ -42,6 +42,9 @@ for cos in range(8):
         u.mem_write(base + 0xc400, bytes(128 * 8))
         u.mem_write(base + 0x11000, bytes(0xc00))
         u.mem_write(base + 0x13000, bytes(0x4000))
+        u.mem_write(base + 0x17400, bytes(0x400))
+        u.mem_write(base + 0x18000, bytes(0x1000))
+        put(mailbox + 170 * 4, 0)
         put(base + 0x11a04, 1)
         put(mailbox + 30 * 4, 0)
         put(mailbox + 47 * 4, 0)
@@ -56,6 +59,7 @@ for cos in range(8):
         u.emu_start(symbols['ni_ingest'], 0x9fc03ff0, count=10000)
         assert get(base + 0x11c00 + cos * 4) == (consumer + 8) % 32768
         assert get(ni + 0x7160 + cos * 4) == (consumer + 8) % 32768
-        assert get(mailbox + 30 * 4) == 1
+        assert get(mailbox + 30 * 4) == 0
+        assert get(base + 0x11804) == 1
         assert get(mailbox + 40 * 4) == 0
 print('Linked PE EPP: all8 COS, pending beyond512 entries, separate ring DMA and32768-byte wrap passed')

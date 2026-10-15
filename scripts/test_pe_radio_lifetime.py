@@ -51,6 +51,11 @@ int main(void){
  assert(rtl_ax_tx_key_pending(&tx,42) && !rtl_ax_tx_key_pending(&tx,43));
  put(memory+0xc404,BIT(31)|(7<<8)|(42<<17));
  assert(!rtl_ax_tx_station_pending(&tx,7,16) && !rtl_ax_tx_key_pending(&tx,42));
+ /* Waiting BIDs have no hardware owner; they still block a TID reset. */
+ put(memory+0x13000+(7*8+3)*4,300);
+ assert(rtl_ax_tx_station_pending(&tx,7,3) && rtl_ax_tx_station_pending(&tx,7,16));
+ assert(!rtl_ax_tx_station_pending(&tx,7,2) && !rtl_ax_tx_station_pending(&tx,8,16));
+ put(memory+0x13000+(7*8+3)*4,0);
  /* Every supported TID owns queued/submitted PE frames until its RPQ. */
  for(unsigned int tid=0;tid<8;tid++) {
   put(memory+0xc404,(7<<8)|(42<<17));put(memory+0x1100c,tid);

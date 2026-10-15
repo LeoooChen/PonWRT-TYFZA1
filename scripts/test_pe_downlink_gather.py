@@ -22,7 +22,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False):
     for at, size in [(0x1fc00000, 0x4000), (base, 0x20000), (pages, 0xc000),
                      (headers, 0xc000), (payload, 0x10000), (ring, 0x4000),
                      (bar, 0x10000), (ni, 0x10000), (reports, 0x1000),
-                     (0x10020000, 0x1000)]:
+                     (0x10020000, 0x1000), (0x10030000, 0x1000)]:
         u.mem_map(at, size)
     u.mem_write(0x1fc00000, binary)
     put = lambda at, value: u.mem_write(at, struct.pack('<I', value))
@@ -31,7 +31,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False):
     u.mem_write(mb + 64, ap)
     for index, value in [(0, 0x50455744), (2, bar | 0xa0000000), (3, 1),
                          (11, ring), (12, pages), (14, headers), (24, 1),
-                         (30, len(lengths)), (38, len(lengths)), (116, 0x6380),
+                         (30, 0), (38, len(lengths)), (116, 0x6380),
                          (117, 6), (140, mb | 0xa0000000)]:
         put(mb + index * 4, value)
     peer = [0, 0, 26 << 16, 0x100 | 2 << 16 | (1 << 22 if hw_rts else 0),
@@ -41,11 +41,14 @@ def case(lengths, cap, from_epp=False, hw_rts=False):
     put(base + 0x11a04, 1)
     put(base + 0x11804, len(lengths))
     put(base + 0x13020, len(lengths))
-    u.mem_write(base + 0x14208, bytes([len(lengths)]))
-    put(base + 0x15020, 1)
-    put(base + 0x16020, len(lengths))
+    put(base + 0x18020, len(lengths))
+    put(base + 0x15020, payload)
+    put(base + 0x16020, payload + (len(lengths) - 1) * 2048)
+    put(mb + 170 * 4, 2)
+    put(base + 0x17404, 2)
+    put(base + 0x17604, 2)
     if from_epp:
-        put(mb + 25 * 4, base + 0x18000)
+        put(mb + 25 * 4, 0x10030000)
         put(mb + 114 * 4, 0x7060)
         put(mb + 115 * 4, 0x7160)
         put(mb + 167 * 4, 12)
@@ -55,7 +58,8 @@ def case(lengths, cap, from_epp=False, hw_rts=False):
         put(base + 0x13020, 0)
         put(base + 0x15020, 0)
         put(base + 0x16020, 0)
-        u.mem_write(base + 0x14208, b'\x00')
+        put(base + 0x18020, 0)
+        put(mb + 170 * 4, 0)
         u.mem_write(base + 0xe408, dst)
         put(ni + 0x659c, 1 << 24)
         put(ni + 0x7060, len(lengths) * 8)
@@ -68,12 +72,10 @@ def case(lengths, cap, from_epp=False, hw_rts=False):
         u.mem_write(at + 48, frame)
         if from_epp:
             u.mem_write(at + 32, struct.pack('>II', 1 << 31, (length + 8) << 15) + bytes(8))
-            u.mem_write(base + 0x18000 + n * 8, struct.pack('<II', at | 0x50, length + 16))
+            u.mem_write(0x10030000 + n * 8, struct.pack('<II', at | 0x50, length + 16))
         else:
-            put(base + 0xc400 + n * 8, at)
-            put(base + 0xc404 + n * 8, 1 << 8 | 7 << 17 | 1 << 15)
-            u.mem_write(base + 0x11000 + n * 16,
-                        struct.pack('<4I', at + 48, length, 1, (n + 2) << 8 if n + 1 < len(lengths) else 0))
+            u.mem_write(at, struct.pack('<4I', at + 48, length, 1,
+                        at + 2048 if n + 1 < len(lengths) else 0))
     submits, returns = [], []
     u.hook_add(UC_HOOK_MEM_WRITE, lambda uc, access, at, size, value, data:
                submits.append(value), begin=bar + 0x1058, end=bar + 0x1059)
@@ -84,7 +86,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False):
     u.emu_start(0xbfc00400, 0xbfc03ffc, count=100000)
     assert get(mb + 28 * 4) == len(lengths) and get(mb + 38 * 4) == 0
     assert get(mb + 30 * 4) == len(lengths) and not returns
-    assert bytes(u.mem_read(base + 0x14208, 1)) == bytes([len(lengths)])
+    assert get(base + 0x18020) == len(lengths)
     member = 0
     all_ids = []
     for slot in range(len(submits)):
@@ -136,7 +138,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False):
     u.emu_start(u.reg_read(UC_MIPS_REG_PC), 0xbfc03ffc, count=100000)
     assert returns == [payload + n * 2048 | 6 for n in range(len(lengths))]
     assert get(mb + 30 * 4) == 0 and get(mb + 29 * 4) == len(lengths)
-    assert bytes(u.mem_read(base + 0x14208, 1)) == b'\x00'
+    assert get(base + 0x18020) == 0
     for n, frame in enumerate(frames):
         assert bytes(u.mem_read(payload + n * 2048 + 62, len(frame) - 14)) == frame[14:]
         assert get(base + 0xc400 + n * 8) == 0

@@ -369,7 +369,7 @@ void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos)
 		memset(tx->pe.memory + 0x12000 + macid * 8 * 4, 0, 32);
 		memset(tx->pe.memory + 0xe400 + macid * 8, 0, 8);
 		memset(tx->pe.memory + 0xe800 + macid * 16, 0, 16);
-		memset(tx->pe.memory + 0x14200 + macid * 8, 0, 8);
+		memset(tx->pe.memory + 0x18000 + macid * 32, 0, 32);
 		put_unaligned_le32(0, tx->pe.memory + 0xe200 + macid * 4);
 	}
 }
@@ -788,6 +788,10 @@ static bool rtl_ax_tx_pe_pending(struct rtl_ax_tx *tx, unsigned int macid, unsig
 	unsigned int i;
 
 	if (!tx->pe_active) return false;
+	if (!by_key)
+		for (i = 0; i < 8; i++)
+			if ((tid == IEEE80211_NUM_TIDS || tid == i) &&
+			    get_unaligned_le32(tx->pe.memory + 0x13000 + (macid * 8 + i) * 4)) return true;
 	/* NI_WAIT retains the TID after submission, until RPQ releases the BID. */
 	for (i = 0; i < 128; i++) {
 		void *owner = tx->pe.memory + 0xc400 + i * 8;

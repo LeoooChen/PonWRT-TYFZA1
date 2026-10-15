@@ -61,7 +61,7 @@ static void ni_route_ps(struct work_struct *work)
 		if (READ_ONCE(tx->peer_asleep[macid])) {
 			mask = pending[macid];
 			for (tid = 0; tid < 8; tid++)
-				if (tx->pe_active && READ_ONCE(*(u8 *)(tx->pe.memory + 0x14200 + macid * 8 + tid))) mask |= BIT(tid);
+				if (tx->pe_active && get_unaligned_le32(tx->pe.memory + 0x18000 + (macid * 8 + tid) * 4)) mask |= BIT(tid);
 		}
 		if (mask != READ_ONCE(tx->ni.route_tim[macid])) {
 			ni_test_buffered(tx, macid, mask);
@@ -216,6 +216,7 @@ static int ni_test_release(struct rtl_ax_tx *tx)
 		writel(readl(tx->ni.regs + 0x6108) & ~BIT(tx->ni.cpu), tx->ni.regs + 0x6108);
 		readl(tx->ni.regs + 0x6108);
 		if (!ni_epps_empty(tx)) return -EBUSY;
+		if (get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 152)) return -EBUSY;
 	}
 	if (tx->ni.vp_active) {
 		writel(0, tx->ni.vp);
@@ -282,6 +283,9 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 	tx->ni.active = true;
 	memset(tx->pe.memory + 0x11000, 0, 0xc00);
 	memset(tx->pe.memory + 0x13000, 0, 0x4000);
+	memset(tx->pe.memory + 0x17400, 0, 0x400);
+	memset(tx->pe.memory + 0x18000, 0, 0x1000);
+	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 680);
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 152);
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 224);
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 228);
@@ -355,6 +359,18 @@ static int ni_test_remove(struct rtl_ax_tx *tx)
 		readl_poll_timeout(tx->ni.regs + (0x6368 + tx->ni.cpu * 8), status, status & BIT(31), 1, 100000);
 		writel(address | tx->ni.eq, tx->ni.regs + (0x636c + tx->ni.cpu * 8));
 	}
+	/* Queued BIDs have no WP owner yet; their links remain in BID headroom. */
+	for (i = 0; i < 128 * 8; i++) {
+		u32 address = get_unaligned_le32(tx->pe.memory + 0x15000 + i * 4);
+		while (address) {
+			u32 next;
+			dma_sync_single_for_cpu(tx->dma_device, address, 16, DMA_FROM_DEVICE);
+			next = get_unaligned_le32(phys_to_virt(address + 12)) & ~127U;
+			readl_poll_timeout(tx->ni.regs + (0x6368 + tx->ni.cpu * 8), status, status & BIT(31), 1, 100000);
+			writel(address | tx->ni.eq, tx->ni.regs + (0x636c + tx->ni.cpu * 8));
+			address = next;
+		}
+	}
 	ni_restore_registers(tx);
 	if (tx->ni.route_dev) { dev_put(tx->ni.route_dev); tx->ni.route_dev = NULL; }
 	if (tx->ni.uplink_memory) dma_free_coherent(tx->dma_device, 512, tx->ni.uplink_memory, tx->ni.uplink_dma);
@@ -388,7 +404,7 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 		put_unaligned_le32(128, tx->pe.memory + PE_PROBE_MAILBOX + 248);
 		dma_wmb();
 		ret = read_poll_timeout(get_unaligned_le32, status,
-			!status && ni_epps_empty(tx),
+			!status && !get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 152) && ni_epps_empty(tx),
 			100, 2000000, false, tx->pe.memory + PE_PROBE_MAILBOX + 120);
 		if (ret) goto unlock;
 		for (i = 1; i < 128; i++) {
@@ -477,6 +493,7 @@ static bool ni_peer_idle(struct rtl_ax_tx *tx, unsigned int macid)
 {
 	unsigned int i;
 	if (!ni_epps_empty(tx)) return false;
+	if (get_unaligned_le32(tx->pe.memory + 0x11800 + macid * 4)) return false;
 	for (i = 0; i < 128; i++)
 		if (get_unaligned_le32(tx->pe.memory + 0xc400 + i * 8) &&
 		    ((get_unaligned_le32(tx->pe.memory + 0xc404 + i * 8) >> 8) & 127) == macid)

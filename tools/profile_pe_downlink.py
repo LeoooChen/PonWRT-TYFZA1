@@ -8,7 +8,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'analysis/python-deps'))
 from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN
-from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE
+from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_READ
 from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2
 from unicorn.mips_const import UC_MIPS_REG_RA, UC_MIPS_REG_SP, UC_MIPS_REG_V0
 
@@ -21,12 +21,12 @@ def profile(directory):
     entries = subprocess.check_output(['llvm-nm-18', str(directory / 'pe-wd.elf')], text=True)
     symbols = {p[2]: int(p[0], 16) for line in entries.splitlines() if len(p := line.split()) == 3}
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-    for address, size in [(0x1fc00000, 0x4000), (BASE, 0x20000), (NI, 0x10000), (PAYLOAD, 0x10000)]:
+    for address, size in [(0x1fc00000, 0x4000), (BASE, 0x20000), (NI, 0x10000), (PAYLOAD, 0x10000), (0x07000000, 0x1000)]:
         u.mem_map(address, size)
     u.mem_write(0x1fc00000, (directory / 'pe-tx.bin').read_bytes())
     put = lambda address, value: u.mem_write(address, struct.pack('<I', value))
     get = lambda address: struct.unpack('<I', u.mem_read(address, 4))[0]
-    put(MAILBOX + 25 * 4, BASE + 0x18000)
+    put(MAILBOX + 25 * 4, 0x07000000)
     put(MAILBOX + 112 * 4, 1)
     put(MAILBOX + 114 * 4, 0x7060)
     put(MAILBOX + 115 * 4, 0x7160)
@@ -52,25 +52,20 @@ def profile(directory):
         if NI <= address < NI + 0x10000:
             work['NI_MMIO_reads'] += 1
 
-    def write(uc, access, address, size, value, data):
-        if BASE <= (address & 0x1fffffff) < BASE + 0x20000:
-            work['DDR_writes'] += 1
-
     def instruction(uc, address, size, data):
         work['instructions'] += 1
 
     u.hook_add(UC_HOOK_MEM_READ, read)
-    u.hook_add(UC_HOOK_MEM_WRITE, write)
     u.hook_add(UC_HOOK_CODE, instruction)
 
     def call(name):
         nonlocal work
-        work = dict(instructions=0, DDR_reads=0, DDR_writes=0, NI_MMIO_reads=0,
+        work = dict(instructions=0, DDR_reads=0, NI_MMIO_reads=0,
                     waiting_reads=0, waiting_slots=set())
         u.reg_write(UC_MIPS_REG_A0, MAILBOX | 0xa0000000)
         u.reg_write(UC_MIPS_REG_A1, BASE | 0xa0000000)
         u.reg_write(UC_MIPS_REG_A2, REQUEST | 0xa0000000)
-        u.reg_write(UC_MIPS_REG_SP, (BASE + 0x17ff0) | 0xa0000000)
+        u.reg_write(UC_MIPS_REG_SP, (BASE + 0x1fff0) | 0xa0000000)
         u.reg_write(UC_MIPS_REG_RA, 0x9fc01ff0)
         u.emu_start(symbols[name], 0x9fc01ff0, count=100000)
         result = u.reg_read(UC_MIPS_REG_V0)
@@ -81,9 +76,9 @@ def profile(directory):
     for batch in range(3):
         for n in range(2):
             frame = mac + bytes.fromhex('0200000000650800') + bytes(1500)
-            address = PAYLOAD + n * 2048
+            address = PAYLOAD + (batch * 2 + n) * 2048
             u.mem_write(address, bytes(32) + struct.pack('>II', 0x80000000, (1514 + 8) << 15) + bytes(8) + frame)
-            u.mem_write(BASE + 0x18000 + (batch * 2 + n) * 8,
+            u.mem_write(0x07000000 + (batch * 2 + n) * 8,
                         struct.pack('<II', address | 0x50, 1530 | 1 << 14))
         put(NI + 0x7060, (batch + 1) * 16)
         ingest = [call('ni_ingest'), call('ni_ingest')]
@@ -91,7 +86,8 @@ def profile(directory):
         # The real main loop ignores ni_ingest's return, so LLVM elides it.
         assert get(NI + 0x7160) == (batch + 1) * 16 and frames == 2
         request = struct.unpack('<12I', u.mem_read(REQUEST, 48))
-        assert request[8:12] == (PAYLOAD + 48, 1514, PAYLOAD + 2048 + 48, 1514)
+        assert request[8:12] == (PAYLOAD + batch * 4096 + 48, 1514,
+                                 PAYLOAD + batch * 4096 + 2048 + 48, 1514)
         first = request[0] - 256
         second = get(BASE + 0xc404 + first * 8) >> 24 & 127
         assert first != second and not set([first, second]).intersection(held)

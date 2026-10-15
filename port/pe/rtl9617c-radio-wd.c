@@ -209,7 +209,7 @@ static void ni_recycle(volatile u32 *mailbox, u8 *memory)
 		u32 macid = (owners[id * 2 + 1] >> 8) & 127;
 		if (macid) {
 			u32 tid = *(u32 *)(memory + NI_WAIT + id * 16 + 12) & 7;
-			memory[NI_TID_PENDING + macid * 8 + tid]--;
+			(*(u32 *)(memory + NI_TID_PENDING + (macid * 8 + tid) * 4))--;
 			ni_peer_event(mailbox, memory, macid);
 		}
 #endif
