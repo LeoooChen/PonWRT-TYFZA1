@@ -1,0 +1,47 @@
+{
+  "base_commit": "5f22db145c0613acabd8383a491a69fe98bbd146",
+  "problem": "GPON readback verification treated PLOAM-owned enable/AES as software-owned fields and returned EIO despite successful software mapping",
+  "factory": {
+    "ca-ne.ko": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+    "ca-rtk.ko": "2360c7dbf93157cb3ab212c733e76a513c34015bc466f192dd19e4ae87eb0311"
+  },
+  "authority": [
+    "ca-ne:aal_gpon_tcont_set@0xf7b60 checks index and OMCI enable",
+    "ca-ne:aal_gpon_ds_gem_port_set@0xf80c0 checks index and valid",
+    "ca-rtk:dal_rt_rtl8277c_gpon_dsFlow_set@0x1e950 uses GPON sw_aes0 and XGTC-specific setter for modes4/5"
+  ],
+  "change": "Verify fields controlled by the caller; include PLOAM/AES only with explicit software control. Existing MMIO request sequence retained.",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-gpon-hw.h": "f0917f5014761cd8e5842753b3411b6e1bb60bdfeed31029fc7305cb84fe1493",
+    "scripts/test_itu_gem_direction.py": "c1bc15851be73bfe88d0e4632e472845efd356d51ed260dd35106adb7049f765",
+    "tools/trace_stock_gpon_ownership.py": "2debb72853fb3733b5f6f4aebda926f667b304d1a986516b2ac7945086d936f5",
+    "docs/pon-gpon-table-ownership.md": "213dc97d94127a0c30e1bd47e14b3dd0a3e3cbd00811340c98918ce863ec36e2"
+  },
+  "validation": {
+    "before": "Both T-CONT and GEM: actual factory setter returned0; previous native helper returned-EIO when a hardware-managed field remained set and software control was0.",
+    "after": "8 original/native comparisons passed with identical return, table and MMIO writes.4 native negative controls still return-EIO for corrupted software-owned fields.",
+    "production_path": "Actual path_program executes with modeled indirect tables retaining PLOAM GPON AES through setup and direction replacement; XGTC directions remain correct.",
+    "model_boundaries": [
+      "Indirect table completion",
+      "GPON bit16 write ownership",
+      "Original lock/log callbacks"
+    ],
+    "arm64": "Three affected current production translation units compiled; source/object SHA256 in compiled-inputs.json",
+    "physical_gpon_validation": false,
+    "deployment": false,
+    "full_test_suite": false,
+    "full_firmware_build": false
+  },
+  "evidence_sha256": {
+    "artifacts/pon-gpon-session-20261016/aal_gpon_tcont_set.asm": "1bd1313cae824f6a4740a2da616b3923fd6cefb8a6963a6e8958423215c5a08e",
+    "artifacts/pon-gpon-session-20261016/aal_gpon_ds_gem_port_set.asm": "55b8e5f57fbfe8f258ab44476b0d817f5efc74aa51cbe1712bb82d70d28db7f1",
+    "artifacts/pon-gpon-session-20261016/dal_rt_rtl8277c_gpon_dsFlow_set.asm": "31fe0293cc1d41b7dfdfb4d9b24b11c27542462c79ad9d0325021e799d78927b",
+    "artifacts/pon-gpon-session-20261016/ownership-before.json": "851ca8f28c016bf22d97c168a6e1295d63506acfa77cdcc7b38267dda6913cb0",
+    "artifacts/pon-gpon-session-20261016/ownership-before.log": "ba6fc7b91fee9fe3893e654568c7d8bb92986a82d71b130d5d0e6d0223ee7da9",
+    "artifacts/pon-gpon-session-20261016/ownership-after.log": "c97096bfcc4e666ecf6034d4517e589623e2ca8f6e378c1e7c97c8529b3e163b",
+    "artifacts/pon-gpon-session-20261016/gem-direction-after.log": "0ac40ed1a9e042702edb980f38ca1973f7fd2e7357c3f350125391fcf51b9560",
+    "artifacts/pon-gpon-session-20261016/arm64-build.log": "969f4dca7bee4cf067e2a81581a9ffda2586b2e4aa44661eff09d66cc32d6aa5",
+    "artifacts/pon-gpon-session-20261016/compiled-inputs.json": "5c68de230737075371c886b071cd9e726bc2be4284514e64cea3c2a83c49d3f3",
+    "logs/stock-gpon-table-ownership.json": "d15a847ee33548c2a51fb23794bc8c2a2691b4ca897a049efb8016a3f67ea577"
+  }
+}

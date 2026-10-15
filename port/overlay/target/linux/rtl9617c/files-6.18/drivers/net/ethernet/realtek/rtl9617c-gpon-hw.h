@@ -101,7 +101,7 @@ static inline int rtl_gpon_tcont_set(const struct rtl_dq_io *io,
 				    int ploam, int omci, int software_ploam)
 {
 	unsigned int command = 0x80000000U | (software_ploam ? 1U << 16 : 0) | alloc_id;
-	unsigned int word;
+	unsigned int word, owned = software_ploam ? 127U : 126U;
 	int ret = io->indirect(io->context, 0x612c, command);
 
 	if (ret)
@@ -116,7 +116,8 @@ static inline int rtl_gpon_tcont_set(const struct rtl_dq_io *io,
 	ret = io->indirect(io->context, 0x612c, command);
 	if (ret)
 		return ret;
-	return (io->read(io->context, 0x6130) & 127U) == (word & 127U) ? 0 : -EIO;
+	/* With sw_plm_en=0, PLOAM owns ploam_en independently of this write. */
+	return (io->read(io->context, 0x6130) & owned) == (word & owned) ? 0 : -EIO;
 }
 
 static inline int rtl_gpon_downstream_gem_set(const struct rtl_dq_io *io,
@@ -124,7 +125,7 @@ static inline int rtl_gpon_downstream_gem_set(const struct rtl_dq_io *io,
 					    int valid, int encrypted, int software_aes)
 {
 	unsigned int command = 0x80000000U | (software_aes ? 1U << 16 : 0) | gem_id;
-	unsigned int word;
+	unsigned int word, owned = software_aes ? 0x7fbU : 0x7f9U;
 	int ret = io->indirect(io->context, 0x6134, command);
 
 	if (ret)
@@ -138,7 +139,8 @@ static inline int rtl_gpon_downstream_gem_set(const struct rtl_dq_io *io,
 	ret = io->indirect(io->context, 0x6134, command);
 	if (ret)
 		return ret;
-	return (io->read(io->context, 0x6138) & 0x7fbU) == (word & 0x7fbU) ? 0 : -EIO;
+	/* GPON PLOAM owns AES when sw_aes=0; OMCI still owns index and vld. */
+	return (io->read(io->context, 0x6138) & owned) == (word & owned) ? 0 : -EIO;
 }
 
 static inline int rtl_gpon_upstream_gem_set(const struct rtl_dq_io *io,

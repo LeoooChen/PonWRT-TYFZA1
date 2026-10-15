@@ -60,7 +60,12 @@ static int path_access(void *context,unsigned int reg,unsigned int command) {
  case 0x4618: table=upstream;data=0x461c;break;
  }
  if(table) {
-  if(command&BIT(30))table[index]=registers[data/4];
+  if(command&BIT(30)) {
+   unsigned int value=registers[data/4];
+   /* sw_aes=0 leaves the PLOAM AES decision in the GPON table. */
+   if(reg==0x6134 && !(command&BIT(16)))value=(value&~2U)|(table[index]&2U);
+   table[index]=value;
+  }
   else registers[data/4]=table[index];
  }
  return 0;
@@ -75,6 +80,7 @@ int main(void) {
  for(unsigned int direction=1;direction<=3;direction++) {
   memset(registers,0,sizeof(registers));memset(upstream,0,sizeof(upstream));
   memset(downstream,0,sizeof(downstream));memset(tcont,0,sizeof(tcont));
+  if(gpon)downstream[4000]=2;
   struct rtl9617c_pon pon={.mac=(void *)registers,.mode=gpon?RTL_PON_GPON:1};
   struct rtl_itu_paths paths={.count=1,.path={{.gem_id=4000,.index=8,
    .alloc_id=direction&1?1063:65535,.tcont=direction&1?1:0,
@@ -83,6 +89,7 @@ int main(void) {
   if(gpon) {
    assert((upstream[8]==4000)==!!(direction&1));
    assert((downstream[4000]&1)==!!(direction&2));
+   assert(downstream[4000]&2);
    assert((tcont[1]&3)==(direction&1?3U:0U));
   } else {
    assert(!!(upstream[8]&BIT(16))==!!(direction&1));
@@ -97,9 +104,10 @@ int main(void) {
    assert(gpon?upstream[8]==0:!(upstream[8]&BIT(16)));
    assert(!(registers[0x81bc/4]&0xff00));
    assert(gpon?!(tcont[1]&3):!(tcont[1]&BIT(24)));
+   if(gpon)assert(downstream[4000]&2);
   }
  }
- puts("GTC/XGTC GEM directions: real table IO, downstream-only without T-CONT, and live direction replacement passed");
+ puts("GTC/XGTC GEM directions: production table IO, PLOAM-owned GPON AES retained, downstream-only without T-CONT, and live direction replacement passed");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='tyfza1-gem-direction-') as directory:
