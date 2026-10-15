@@ -19,13 +19,11 @@ if [ -z "${TYFZA1_RUNTIME_INPUTS:-}" ]; then
         --stock "${TYFZA1_STOCK_INPUTS:-$PROJECT/analysis/private/live-files}" \
         --check-inputs-only
 fi
-if [ ! -e "$TREE/package/feeds/packages/cgi-io" ] || [ ! -e "$TREE/package/feeds/luci/luci" ]; then
-    sh "$PROJECT/scripts/prepare_luci_feeds.sh" "$TREE"
-fi
 PE_RADIO_CFLAGS=-DPE_UPLINK sh "$PROJECT/scripts/build_pe_radio_wd.sh" "$PROJECT/artifacts/pe-radio-production"
 cp "$PROJECT/artifacts/pe-radio-production/pe-tx-code.h" \
     "$PORT/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-tx-code.h"
 sh "$PORT/scripts/sync-overlay.sh" "$TREE"
+sh "$PROJECT/scripts/prepare_luci_feeds.sh" "$TREE"
 cd "$TREE"
 REGDB_PATCHED=0
 if ! grep -Fq 'regulatory.db.p7s' package/firmware/wireless-regdb/Makefile; then
