@@ -126,6 +126,11 @@ static int rtl_gpon_drain_run(struct rtl9617c_pon *pon)
 			writel(0, pon->mac + 0x81bc - i * 4);
 		udelay(250);
 		drain->port = 0;
+		drain->phase = RTL_GPON_DRAIN_INVALIDATE;
+		break;
+	case RTL_GPON_DRAIN_INVALIDATE:
+		ret = rtl_pon_itu_paths_invalidate(pon, pon->mode);
+		if (ret) return ret;
 		drain->phase = RTL_GPON_DRAIN_PORT;
 		break;
 	case RTL_GPON_DRAIN_PORT:
@@ -244,9 +249,62 @@ static int rtl_gpon_drain_run(struct rtl9617c_pon *pon)
 		for (unsigned int i = 0; i < 8; i++)
 			writel(drain->valid[i], pon->mac + 0x81bc - i * 4);
 		rtl_pon_update(pon->mac + 0x808c, BIT(30), drain->config);
-		drain->phase = RTL_GPON_DRAIN_IDLE;
+		drain->phase = RTL_GPON_DRAIN_OMCC;
+		return 0;
+	case RTL_GPON_DRAIN_OMCC:
 		return 0;
 	}
+}
+
+static int rtl_gpon_omcc_assign(struct rtl9617c_pon *pon, unsigned int id)
+{
+	const struct rtl_dq_io io = {pon, rtl_gpon_read, rtl_gpon_write, rtl_gpon_indirect};
+	int ret;
+
+	if (pon->gpon_omcc_onu_id != id) {
+		pon->gpon_omcc_ready = false;
+		if (pon->gpon_omcc_onu_id != 255) {
+			ret = rtl_gpon_tcont_set(&io, pon->gpon_omcc_onu_id, 0, false, false, false);
+			if (ret) return ret;
+		}
+	}
+	ret = rtl_gpon_tcont_set(&io, id, 0, true, true, false);
+	if (!ret) pon->gpon_omcc_onu_id = id;
+	return ret;
+}
+
+static int rtl_gpon_omcc_map(struct rtl9617c_pon *pon, unsigned int gem)
+{
+	const struct rtl_dq_io io = {pon, rtl_gpon_read, rtl_gpon_write, rtl_gpon_indirect};
+	int ret;
+
+	pon->gpon_omcc_ready = false;
+	for (unsigned int index = 0; index < 8; index++) {
+		ret = rtl_gpon_upstream_gem_set(&io, index, gem);
+		if (ret) return ret;
+	}
+	pon->gpon_omcc_gem = gem;
+	pon->gpon_omcc_ready = true;
+	return 0;
+}
+
+static int rtl_gpon_omcc_restore(struct rtl9617c_pon *pon)
+{
+	u32 status, onu, port;
+	int ret;
+
+	pon->gpon_omcc_ready = false;
+	/* A timed-out OMCC command still owns its window even if ACTP has moved. */
+	ret = readl_poll_timeout(pon->mac + 0x612c, status, !(status & BIT(31)), 1, 100000);
+	if (ret) return ret;
+	ret = readl_poll_timeout(pon->mac + 0x6170, status, !(status & BIT(31)), 1, 100000);
+	if (ret) return ret;
+	onu = readl(pon->mac + 0x60bc);
+	port = readl(pon->mac + 0x60c8);
+	if (((onu >> 16) & 7) != 4 || (onu & 255) == 255 || !(port & BIT(12)))
+		return 0;
+	ret = rtl_gpon_omcc_assign(pon, onu & 255);
+	return ret ? ret : rtl_gpon_omcc_map(pon, port & 4095);
 }
 
 ssize_t rtl_pon_gpon_identity(struct rtl9617c_pon *pon, const char *buf, size_t count)
@@ -414,8 +472,9 @@ void rtl_pon_gpon_irq(struct rtl9617c_pon *pon)
 	const struct rtl_dq_io io = {pon, rtl_gpon_read, rtl_gpon_write, rtl_gpon_indirect};
 	u32 flags = readl(pon->mac + 0x608c) & readl(pon->mac + 0x6090);
 	u32 onu = readl(pon->mac + 0x60bc);
-	unsigned int state = (onu >> 16) & 7, id = onu & 255, index;
+	unsigned int state = (onu >> 16) & 7, id = onu & 255;
 	u32 port = readl(pon->mac + 0x60c8);
+	bool was_active, new_session, restart;
 	int ret = 0;
 
 	lockdep_assert_held(&pon->lock);
@@ -427,6 +486,18 @@ void rtl_pon_gpon_irq(struct rtl9617c_pon *pon)
 	pon->gpon_irq_count++;
 	if (!pon->gpon_enabled)
 		return;
+	was_active = pon->gpon_last_state == 4 || pon->gpon_last_state == 5;
+	new_session = was_active && (flags & BIT(30)) && id != 255 &&
+		pon->gpon_omcc_onu_id != 255 &&
+		(id != pon->gpon_omcc_onu_id || (flags & BIT(31)));
+	restart = new_session || (was_active && state != 4 && state != 5);
+	if (restart) {
+		pon->itu_line_epoch++;
+		pon->gpon_omcc_ready = false;
+		netif_carrier_off(pon->omci_device);
+		if (pon->itu_paths_ready)
+			rtl_pon_itu_paths_invalidate(pon, pon->mode);
+	}
 	if (flags & BIT(14))
 		pon->gpon_ds_fec = true;
 	if (flags & BIT(15))
@@ -439,47 +510,34 @@ void rtl_pon_gpon_irq(struct rtl9617c_pon *pon)
 		memzero_explicit(key, sizeof(key));
 		pon->gpon_key_switches++;
 	}
-	if ((flags & BIT(30)) && id != 255) {
-		if (pon->gpon_omcc_onu_id != 255 && pon->gpon_omcc_onu_id != id) {
-			ret = rtl_gpon_tcont_set(&io, pon->gpon_omcc_onu_id, 0, false, false, false);
-			if (ret)
-				goto status;
-			pon->gpon_omcc_ready = false;
-		}
-		ret = rtl_gpon_tcont_set(&io, id, 0, true, true, false);
+	if (!restart && id != 255 && ((flags & BIT(30)) ||
+	    (state == 4 && (flags & (BIT(17) | BIT(31))) &&
+	     (!pon->gpon_omcc_ready || pon->gpon_omcc_onu_id != id)))) {
+		ret = rtl_gpon_omcc_assign(pon, id);
 		if (ret)
 			goto status;
-		pon->gpon_omcc_onu_id = id;
 	}
-	if ((flags & (BIT(17) | BIT(31))) && state == 4 && (port & BIT(12)) &&
+	if (!restart && (flags & (BIT(17) | BIT(31))) && state == 4 && (port & BIT(12)) &&
 	    pon->gpon_omcc_onu_id == id &&
 	    (!pon->gpon_omcc_ready || pon->gpon_omcc_gem != (port & 4095))) {
-		pon->gpon_omcc_ready = false;
-		for (index = 0; index < 8; index++) {
-			ret = rtl_gpon_upstream_gem_set(&io, index, port & 4095);
-			if (ret)
-				goto status;
-		}
-		pon->gpon_omcc_gem = port & 4095;
-		pon->gpon_omcc_ready = true;
+		ret = rtl_gpon_omcc_map(pon, port & 4095);
 	}
 status:
 	if (state != 4 && state != 5)
 		pon->gpon_omcc_ready = false;
 	if (ret || (flags & (BIT(17) | BIT(30) | BIT(31))))
 		pon->gpon_activation_error = ret;
-	if (pon->gpon_omcc_ready && state == 4 && !pon->gpon_activation_error)
+	if (restart) {
+		pon->gpon_recover = true;
+		rtl_pon_update(pon->top_irq + 4, BIT(0), 0);
+		schedule_delayed_work(&pon->gpon_recovery_work, 0);
+	}
+	if (!pon->gpon_recover && pon->gpon_omcc_ready && state == 4 && !pon->gpon_activation_error)
 		netif_carrier_on(pon->omci_device);
 	else
 		netif_carrier_off(pon->omci_device);
 	if (state == 6 || pon->gpon_last_state == 6)
 		gpiod_set_value_cansleep(pon->tx_disable, state == 6);
-	if ((pon->gpon_last_state == 4 || pon->gpon_last_state == 5) && state != 4 && state != 5) {
-		pon->itu_line_epoch++;
-		pon->gpon_recover = true;
-		rtl_pon_update(pon->top_irq + 4, BIT(0), 0);
-		schedule_delayed_work(&pon->gpon_recovery_work, 0);
-	}
 	/* O6 pauses carrier while retaining the established business mapping. */
 	if (pon->itu_paths_ready && (!pon->gpon_omcc_ready || pon->gpon_activation_error ||
 	    (state != 4 && state != 5)))
@@ -507,14 +565,24 @@ void rtl_pon_gpon_recovery(struct work_struct *work)
 	mutex_lock(&pon->lock);
 	if (!pon->gpon_recover)
 		goto unlock;
-	ret = pon->gpon_drain.phase ? 0 : rtl_pon_itu_paths_invalidate(pon, pon->mode);
+	ret = rtl_gpon_drain_run(pon);
 	if (!ret)
-		ret = rtl_gpon_drain_run(pon);
+		ret = rtl_gpon_omcc_restore(pon);
 	pon->gpon_activation_error = ret;
 	if (ret) {
 		schedule_delayed_work(&pon->gpon_recovery_work, HZ);
 	} else {
+		u32 onu = readl(pon->mac + 0x60bc), port = readl(pon->mac + 0x60c8);
+
+		pon->gpon_drain.phase = RTL_GPON_DRAIN_IDLE;
 		pon->gpon_recover = false;
+		if (pon->gpon_omcc_ready && ((onu >> 16) & 7) == 4 &&
+		    (onu & 255) == pon->gpon_omcc_onu_id && (port & BIT(12)) &&
+		    (port & 4095) == pon->gpon_omcc_gem)
+			netif_carrier_on(pon->omci_device);
+		else
+			netif_carrier_off(pon->omci_device);
+		rtl_pon_itu_carrier(pon);
 		rtl_pon_update(pon->top_irq + 4, BIT(0), BIT(0));
 	}
 unlock:

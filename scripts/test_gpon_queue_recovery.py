@@ -52,13 +52,13 @@ struct rtl9617c_pon {
  unsigned char *mac;void *control,*gpon_control,*top_irq,*ni_dev,*tx_disable,*serdes_init;
  struct net_device *omci_device;struct work_struct gpon_recovery_work;
  bool gpon_recover,gpon_enabled,gpon_omcc_ready,mac_prepared,puc_configured,pdc_configured,fe_enabled;
- unsigned int gpon_omcc_onu_id,itu_alloc_valid;u16 itu_alloc_ids[32];u64 itu_line_epoch;
+ unsigned int gpon_omcc_onu_id,gpon_omcc_gem,itu_alloc_valid;u16 itu_alloc_ids[32];u64 itu_line_epoch;
  int gpon_activation_error;struct rtl_gpon_drain gpon_drain;unsigned int xgpon_recovery_phase;
 };
-static u32 regs[0xc000/4],pvt[32][5],alloc_table[4096],bytes[256],packets[256];
+static u32 regs[0xc000/4],pvt[32][5],alloc_table[4096],gem_table[256],bytes[256],packets[256];
 static u32 top[2],control,gpon_control;
 static unsigned int probes,flushes,gtc_flushes,resets,allocations,frees,public_inits;
-static bool busy_flush,retain_packets,probe_busy;
+static bool busy_flush,retain_packets,probe_busy,busy_omcc,busy_invalidate;
 static void mutex_lock(int *p){assert(!*p);*p=1;}
 static void mutex_unlock(int *p){assert(*p);*p=0;}
 static void msleep(unsigned int n){assert(n==1);}
@@ -82,6 +82,11 @@ static void writel(u32 value,void *p){
   if(value&BIT(30))alloc_table[index]=(regs[0x6130/4]&~1U)|(alloc_table[index]&1U);
   else regs[0x6130/4]=alloc_table[index];
   *(u32*)p=value&~BIT(31);
+ }else if(reg==0x6170 && (value&BIT(31))){
+  unsigned int index=value&255;
+  if(busy_omcc)return;
+  if(value&BIT(30))gem_table[index]=regs[0x6174/4];else regs[0x6174/4]=gem_table[index];
+  *(u32*)p=value&~BIT(31);
  }else if(reg==0x802c && (value&BIT(31))){
   unsigned int index=value&255;
   regs[0x8034/4]=bytes[index]|((packets[index]&2047)<<21);regs[0x8030/4]=packets[index]>>11;
@@ -94,9 +99,11 @@ static void writel(u32 value,void *p){
 }
 static void rtl_pon_update(void *p,u32 mask,u32 value){writel((readl(p)&~mask)|value,p);}
 static void netif_carrier_off(struct net_device *p){p->carrier=false;}
+static void netif_carrier_on(struct net_device *p){p->carrier=true;}
+static void rtl_pon_itu_carrier(struct rtl9617c_pon *p){assert(p->lock);}
 static bool netif_running(struct net_device *p){(void)p;return true;}
 static void gpiod_set_value_cansleep(void *p,int value){*(int*)p=value;}
-static int rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *p,enum rtl_pon_mode mode){assert(p->lock && p->mode==mode);return 0;}
+static int rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *p,enum rtl_pon_mode mode){assert(p->lock && p->mode==mode);if(busy_invalidate){assert(!regs[0x81bc/4]);return -EIO;}return 0;}
 static int rtl_pon_puc_configure_locked(struct rtl9617c_pon *p){assert(p->control_lock);public_inits++;return 0;}
 static int rtl_pon_pdc_configure_locked(struct rtl9617c_pon *p){assert(p->control_lock);public_inits++;return 0;}
 static struct sk_buff *alloc_skb(unsigned int n,int flags){assert(n==64 && !flags);allocations++;return calloc(1,sizeof(struct sk_buff));}
@@ -114,16 +121,17 @@ static int rtl9617c_ni_transmit(void *ni,struct net_device *dev,struct sk_buff *
 '''
 cases = r'''
 int main(void){
- for(unsigned int test=0;test<7;test++){
+ for(unsigned int test=0;test<9;test++){
   memset(regs,0,sizeof(regs));memset(pvt,0,sizeof(pvt));memset(alloc_table,0,sizeof(alloc_table));
-  memset(bytes,0,sizeof(bytes));memset(packets,0,sizeof(packets));
+  memset(bytes,0,sizeof(bytes));memset(packets,0,sizeof(packets));memset(gem_table,0,sizeof(gem_table));
   probes=flushes=gtc_flushes=resets=allocations=frees=public_inits=0;
-  busy_flush=test==3||test==5;retain_packets=test==4;probe_busy=test==2;
+  busy_flush=test==3||test==5;retain_packets=test==4;probe_busy=test==2;busy_omcc=test==7;busy_invalidate=test==8;
   top[0]=top[1]=0;control=0x30e;gpon_control=3;int gpio=0;struct net_device omci={};
   struct rtl9617c_pon pon={.mode=RTL_PON_GPON,.mac=(void*)regs,.control=&control,.gpon_control=&gpon_control,
    .top_irq=top,.tx_disable=&gpio,.omci_device=&omci,.gpon_recover=true,.gpon_enabled=true,
    .mac_prepared=true,.puc_configured=true,.pdc_configured=true,.fe_enabled=true,.gpon_omcc_onu_id=17,.itu_alloc_valid=2};
   pon.itu_alloc_ids[1]=1063;alloc_table[17]=3;alloc_table[1063]=7;
+  if(test==1||test==7){regs[0x60bc/4]=(4U<<16)|18;regs[0x60c8/4]=BIT(12)|3333;alloc_table[18]=1;}
   regs[0x808c/4]=0x20030002;regs[0x80e0/4]=0x12000006;regs[0x61c4/4]=0x05020000;regs[0x6114/4]=0x460062;
   regs[0x81bc/4]=65535;for(unsigned int i=0;i<16;i++)regs[(0x8090+i*4)/4]=0x55555555;
   for(unsigned int port=0;port<32;port++){
@@ -143,7 +151,19 @@ int main(void){
    continue;
   }
   rtl_pon_gpon_recovery(&pon.gpon_recovery_work);
-  if(test>=2){
+  if(test==8){
+   assert(pon.gpon_recover && pon.gpon_drain.phase==RTL_GPON_DRAIN_INVALIDATE && pon.gpon_activation_error==-EIO);
+   assert(!top[1] && !regs[0x81bc/4] && !resets && !gtc_flushes && !flushes && pon.gpon_drain.valid[0]==65535);
+   assert(rtl_pon_puc_configure(&pon)==-EBUSY && rtl_pon_pdc_configure(&pon)==-EBUSY && !public_inits);
+   busy_invalidate=false;rtl_pon_gpon_recovery(&pon.gpon_recovery_work);
+  }else if(test==7){
+   assert(pon.gpon_recover && pon.gpon_drain.phase==RTL_GPON_DRAIN_OMCC && pon.gpon_activation_error==-ETIMEDOUT);
+   assert(!top[1] && !omci.carrier && resets==1 && gtc_flushes==32 && flushes==1 && regs[0x81bc/4]==65535);
+   assert(rtl_pon_puc_configure(&pon)==-EBUSY && rtl_pon_pdc_configure(&pon)==-EBUSY && !public_inits);
+   busy_omcc=false;regs[0x6170/4]&=~BIT(31);
+   rtl_pon_gpon_recovery(&pon.gpon_recovery_work);
+   assert(resets==1 && gtc_flushes==32 && flushes==1); /* No second drain. */
+  }else if(test>=2){
    assert(pon.gpon_recover && pon.gpon_drain.phase && !top[1] && !resets);
    assert(pon.gpon_activation_error==(test==2?-EAGAIN:test==4?-EIO:-ETIMEDOUT));
    assert(!regs[0x81bc/4] && (regs[0x808c/4]&BIT(30)));
@@ -163,7 +183,11 @@ int main(void){
   }
   assert(!pon.gpon_recover && !pon.gpon_drain.phase && !pon.gpon_activation_error && top[1]==1);
   assert(resets==1 && gtc_flushes==32 && flushes==(test?1U:0U) && probes==(test==2?1U:0U));
-  assert(!memcmp(pvt,saved_pvt,sizeof(pvt)) && alloc_table[17]==3 && alloc_table[1063]==7);
+  assert(!memcmp(pvt,saved_pvt,sizeof(pvt)) && alloc_table[17]==((test==1||test==7)?1U:3U) && alloc_table[1063]==7);
+  if(test==1||test==7){
+   assert(pon.gpon_omcc_ready && pon.gpon_omcc_onu_id==18 && pon.gpon_omcc_gem==3333 && alloc_table[18]==3 && omci.carrier);
+   for(unsigned int i=0;i<8;i++)assert(gem_table[i]==3333);
+  }
   assert(regs[0x808c/4]==0x20030002 && regs[0x80e0/4]==0x12000006 && regs[0x61c4/4]==0x05020000 && regs[0x6114/4]==0x460062);
   assert(regs[0x81bc/4]==65535);for(unsigned int i=1;i<8;i++)assert(!regs[(0x81bc-i*4)/4]);
   for(unsigned int i=0;i<16;i++)assert(regs[(0x8090+i*4)/4]==0x55555555);
@@ -172,11 +196,12 @@ int main(void){
   pon.mode=RTL_PON_XGPON;pon.xgpon_recovery_phase=3;
   assert(rtl_pon_puc_configure(&pon)==-EBUSY && rtl_pon_pdc_configure(&pon)==-EBUSY && public_inits==2);
  }
- puts("Production GPON drain: empty/complete/partial queues, probe busy, flush timeout/nonempty completion, retained retry, explicit stop before/after work starts, public PUC/PDC/activation ownership; ASan/UBSan passed");
+ puts("Production GPON drain: queue/probe/NI failure ownership; current O5 identity restored without another IRQ; OMCC timeout retries bindings without a second drain; ASan/UBSan passed");
 }
 '''
 names = ('rtl_gpon_read', 'rtl_gpon_write', 'rtl_gpon_indirect', 'rtl_gpon_drain_map',
          'rtl_gpon_drain_alloc', 'rtl_gpon_drain_count', 'rtl_gpon_drain_probe', 'rtl_gpon_drain_run',
+         'rtl_gpon_omcc_assign', 'rtl_gpon_omcc_map', 'rtl_gpon_omcc_restore',
          'rtl_pon_gpon_stop_locked', 'rtl_pon_gpon_activation_locked', 'rtl_pon_gpon_recovery')
 other = (drivers / 'rtl9617c-pon.c').read_text()
 with tempfile.TemporaryDirectory(prefix='gpon-drain-', dir=root / 'artifacts') as directory:

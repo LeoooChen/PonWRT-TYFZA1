@@ -1,0 +1,240 @@
+{
+  "base_commit": "292c38e28aa2cf8fbece2100c3a1d193923047de",
+  "purpose": "End the old GPON session before rebinding coalesced assignment/state events and restore the current OMCC after its queues are drained",
+  "factory": {
+    "module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+    "actual_function": "__intr_handler@0xfb990",
+    "cases": [
+      {
+        "previous": 4,
+        "sampled_state": 4,
+        "flags": "0xc0000000",
+        "onu_id": 18,
+        "reset_calls": 1,
+        "link": 0,
+        "modeled_calls": [
+          {
+            "function": "aal_gpon_omcc_tcont_enable",
+            "arguments": [
+              0,
+              18,
+              18,
+              0
+            ]
+          },
+          {
+            "function": "ca_event_send",
+            "arguments": [
+              0,
+              17,
+              83951284,
+              8
+            ],
+            "payload": [
+              65543,
+              0
+            ]
+          },
+          {
+            "function": "ca_event_send",
+            "arguments": [
+              0,
+              6,
+              83951304,
+              16
+            ],
+            "payload": [
+              65543,
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "function": "aal_gpon_datapath_reset",
+            "arguments": [
+              0,
+              6,
+              83951304,
+              16
+            ]
+          },
+          {
+            "function": "ca_event_send",
+            "arguments": [
+              0,
+              21,
+              83951320,
+              16
+            ],
+            "payload": [
+              65543,
+              4,
+              4,
+              14
+            ]
+          }
+        ]
+      },
+      {
+        "previous": 4,
+        "sampled_state": 4,
+        "flags": "0xc0000000",
+        "onu_id": 17,
+        "reset_calls": 1,
+        "link": 0,
+        "modeled_calls": [
+          {
+            "function": "aal_gpon_omcc_tcont_enable",
+            "arguments": [
+              0,
+              17,
+              17,
+              0
+            ]
+          },
+          {
+            "function": "ca_event_send",
+            "arguments": [
+              0,
+              17,
+              83951284,
+              8
+            ],
+            "payload": [
+              65543,
+              0
+            ]
+          },
+          {
+            "function": "ca_event_send",
+            "arguments": [
+              0,
+              6,
+              83951304,
+              16
+            ],
+            "payload": [
+              65543,
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "function": "aal_gpon_datapath_reset",
+            "arguments": [
+              0,
+              6,
+              83951304,
+              16
+            ]
+          },
+          {
+            "function": "ca_event_send",
+            "arguments": [
+              0,
+              21,
+              83951320,
+              16
+            ],
+            "payload": [
+              65543,
+              4,
+              4,
+              14
+            ]
+          }
+        ]
+      },
+      {
+        "previous": 5,
+        "sampled_state": 4,
+        "flags": "0x80000000",
+        "onu_id": 17,
+        "reset_calls": 0,
+        "link": 1,
+        "modeled_calls": [
+          {
+            "function": "ca_event_send",
+            "arguments": [
+              0,
+              21,
+              83951320,
+              16
+            ],
+            "payload": [
+              65543,
+              4,
+              5,
+              10
+            ]
+          }
+        ]
+      },
+      {
+        "previous": 4,
+        "sampled_state": 4,
+        "flags": "0x40000000",
+        "onu_id": 17,
+        "reset_calls": 0,
+        "link": 1,
+        "modeled_calls": [
+          {
+            "function": "aal_gpon_omcc_tcont_enable",
+            "arguments": [
+              0,
+              17,
+              17,
+              0
+            ]
+          }
+        ]
+      }
+    ],
+    "scope": "Actual GPON IRQ control flow. Cached state supplied; OMCC T-CONT enable, datapath reset, events and logging bodies modeled. No optical or FIFO proof."
+  },
+  "fixes": [
+    "Known active identity plus new assignment/combined state event advances the line epoch and invalidates business before new bindings; cached O5 alone no longer preserves the old session",
+    "Assignment bindings wait for queue drain; a separate OMCC completion phase rereads actual O5/ONU-ID/port and restores T-CONT0 and all8 reserved upstream GEMs",
+    "A delayed O5 event can complete binding after its earlier assignment was consumed; initial assignment, plain repeats and ordinary O6 return keep their meanings",
+    "OMCC timeout retains its busy window and retries only binding, without repeating drain/reset",
+    "PUC admission is frozen before the worker waits for NI cleanup; failed NI cleanup preserves the original snapshot and keeps public configuration blocked"
+  ],
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-gpon.c": "9b0cd5753a3dc5865639faf919857cdc20f8d44810b465287809b471d21161d1",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.h": "f9541b36611955408254b01828d2096311e4210feb0d4455e0fac48561ee5b3e",
+    "scripts/test_gpon_o6.py": "8e7fa9f78e857f3c07e0d2f1cd7bf5393f6c94cafa439547918b104a38d8058e",
+    "scripts/test_gpon_queue_recovery.py": "d5b13d54f4fb24532ae17729a24f902bb825f212b43814b30200ac0eb7f23b4f",
+    "tools/trace_stock_gpon_identity.py": "0b8e244db5107666055d2804e2eabd6c5d343eb42e8a04322a2771a829fa5983",
+    "docs/pon-gpon-native-recovery.md": "2e8555db75c1bab2dd228ad58c61155cac05a386e915415fe19d0be7049ba0d6"
+  },
+  "validation": {
+    "before": "Actual native IRQ with modeled tables fails teardown-before-binding assertion for merged O5 assignment/state events",
+    "after_irq": "Actual native IRQ: different/same-ID coalesced events, retained pending events during recovery, O6 grace/expiry, initial/repeated assignments and delayed O5; ASan/UBSan passed",
+    "after_recovery": "Actual production worker/helpers/public controls in9 cases: queue/probe/stop ownership plus current-O5 OMCC restore without a new IRQ, OMCC timeout without a second drain, and NI cleanup failure after admission freeze; ASan/UBSan passed",
+    "arm64": "12 current PON objects plus NI object partially linked; current source/object hashes recorded",
+    "model_boundaries": [
+      "Factory OMCC setter and datapath reset bodies, event/log callbacks",
+      "Native MMIO completion, queue counters, NI/GPIO/locking/delays"
+    ],
+    "deployed": false,
+    "physical_gpon_olt_verified": false,
+    "full_tests": false,
+    "full_firmware_build": false,
+    "unverified": [
+      "Real OLT coalescing and pending-IRQ delivery",
+      "Actual FIFO/probe timing and complete business resumption"
+    ]
+  },
+  "evidence_sha256": {
+    "artifacts/pon-gpon-identity-20261016/stock-identity.log": "c28e6ab0aeb2ec12d13e9908aae2973bcfe7bccdce44678d10135b578f1ee10e",
+    "artifacts/pon-gpon-identity-20261016/native-identity-before.log": "991f17b2942990e1e7d2e1dba8e07e76d2be8f36e4a668cf146d8b0445ec3f92",
+    "artifacts/pon-gpon-identity-20261016/test_gpon_o6.py.log": "eeb51f40183bd5f4922dcc1cf47426181b752c4b286b4466a0aac72e916e031e",
+    "artifacts/pon-gpon-identity-20261016/test_gpon_queue_recovery.py.log": "317caebd250e0539d0a989565b825eeb1abd9429fe063425bb9cadd7ff951b0a",
+    "artifacts/pon-gpon-identity-20261016/arm64-build.log": "246ee1e362ad30ae028ff5e989633f759ca26fe7167f0e08cbdf2b7b89ee470d",
+    "artifacts/pon-gpon-identity-20261016/compiled-inputs.json": "99e500934639cf4f05b1b48ad7adf029d8911874e148bfc6c68ae1eab0fc38c3",
+    "artifacts/pon-gpon-identity-20261016/pon-ni-interface-check.o": "59aca090e91bc43081f3094d92e97e90ee89f0677a8ba4be981d2079e896277a",
+    "logs/stock-gpon-coalesced-identity.json": "7021364ec215dc05c32dcf6a3aae58901b5b2902bda12d007a01932cc3c180c5"
+  }
+}
