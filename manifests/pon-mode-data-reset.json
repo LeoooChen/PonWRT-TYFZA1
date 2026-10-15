@@ -1,0 +1,50 @@
+{
+  "base_commit": "6ba459f653d7be41136e63a855bdb0d8aeda7b49",
+  "problem": "Mode handoff cleared PUC/PDC configured flags without necessarily resetting those hardware blocks; EPON/GPON prepare could retain the asserted enable bits from the old family",
+  "factory_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+  "actual_factory_functions": [
+    "aal_pon_deinit",
+    "aal_epon_deinit",
+    "aal_gpon_deinit",
+    "aal_xgpon_deinit",
+    "aal_psds_deinit"
+  ],
+  "change": "After successful old forwarding cleanup and periodic-work cancellation, reset only the shared PUC/PDC blocks under the control/state locks and retain the original100ms handoff delay before changing mode. New-family MAC preparation releases the blocks.",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-serdes.c": "c7781b6206d7a6284b29620c3d1de79baaf8f9492e0e8046509d60cdde6d944d",
+    "scripts/test_pon_transactions.py": "6379d0b7ac809b4fa3c1f0db7706b052acba5ee5739a48f66f4cee396c8d7bb0",
+    "tools/trace_stock_pon_data_reset.py": "c411ee482eadf057d65474c614fb830237f7c04686005fc9eb557a18c97c9e4a",
+    "docs/pon-mode-data-reset.md": "0a000a177710f20c7d00a89304690cf175184a533ff7cec6f4f7b60c34a1a658"
+  },
+  "validation": {
+    "factory": "Actual deinitialization instructions for6 modes set PON control0, reset selected MAC, retain inactive MAC and delay100ms; deeper protocol/IRQ/OS teardown bodies modeled",
+    "before": "Production mode transaction retains seeded old PUC/PDC state and fails the reset assertion",
+    "after": "Production EPON->GPON/XG/XGS and GPON->EPON transactions reset the modeled old data state; cleanup failures leave hardware and mode intact; controlled concurrent MPCP startup and late-ITU-sync checks pass with ASan/UBSan",
+    "arm64": "Affected current SerDes object compiled; source/object hashes recorded",
+    "model_boundaries": [
+      "Data state cleared by modeled reset semantics",
+      "Factory IRQ/FSM/MPCP/crypto teardown bodies, OS functions and delays",
+      "Native MMIO, firmware, callback and scheduler boundaries"
+    ],
+    "deployed": false,
+    "physical_itu_olt_verified": false,
+    "full_tests": false,
+    "full_firmware_build": false,
+    "unverified": [
+      "Physical reset/FIFO effects on the board",
+      "Already-submitted shared NI DMA descriptor drain across a family switch"
+    ]
+  },
+  "DMA_findings": "NI DMA shared by LAN/PON; rtl_dma_tx_forget removes netdev references only. This change does not reset the shared DMA or claim all descriptors have completed.",
+  "evidence_sha256": {
+    "artifacts/pon-mode-drain-20261016/stock-data-reset.log": "e7c0f27dcc04b8645060f4f5f143ac4edc893f2f204955ec69d485e153cc1a5d",
+    "artifacts/pon-mode-drain-20261016/native-before.log": "9274e7463cf972da8bdf47b2bcb480d3d34a35112a7a3c30d5235cf1ef942a3d",
+    "artifacts/pon-mode-drain-20261016/native-after.log": "dbcf5fa7368add2d6ff09aebc598e49c02c33298159dfe36fea8f6e3065787c5",
+    "artifacts/pon-mode-drain-20261016/arm64-build.log": "d893a4c56e024104e3754ea6b1b529c1b6aaddc776df6aa7b83294915db4d34e",
+    "artifacts/pon-mode-drain-20261016/compiled-inputs.json": "3767f1bcc24874681873f5f70eb47e099882b7b2aff8f7963b519e12a7519468",
+    "artifacts/pon-mode-drain-20261016/aal_epon_deinit.asm": "ccd2248c0e5f0406d3593e075771481085dfdaa13c46392b0af359e92418a4a0",
+    "artifacts/pon-mode-drain-20261016/aal_xgpon_deinit.asm": "dea249a627b5aa18a8806cf31713ecc371da1b372a8c6a28750d4bfd43492a6a",
+    "artifacts/pon-mode-drain-20261016/aal_psds_deinit.asm": "5b9488fcaa3ecd85ba51a6ea70ca60c683ca3bac432a5d808d9edf64a20b0e4f",
+    "logs/stock-pon-data-reset.json": "57e29fae7b1774b71392756230fb9ea70e4dbe0d697490c6fb18ae6347d7ea96"
+  }
+}

@@ -171,6 +171,9 @@ int rtl_pon_serdes_configure_locked(struct rtl9617c_pon *pon, enum rtl_pon_mode 
 	pon->puc_configured = false;
 	pon->pdc_configured = false;
 	pon->xgpon_pending_valid = false;
+	/* Original family deinit resets both data blocks before the new mode. */
+	rtl_pon_update(pon->control, BIT(8) | BIT(9), 0);
+	msleep(100);
 	pon->mode = mode;
 	rtl_pon_update(pon->optical_control, BIT(30), pon->los_invert << 30);
 	rtl_pon_update(pon->control, BIT(0), epon ? BIT(0) : 0);

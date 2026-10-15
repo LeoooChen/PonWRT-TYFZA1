@@ -82,6 +82,8 @@ static void gpiod_set_value_cansleep(int *gpio,int value) {*gpio=value;}
 static void rtl_pon_gpon_stop_locked(struct rtl9617c_pon *pon) {(void)pon;}
 static void rtl_pon_xgpon_stop_locked(struct rtl9617c_pon *pon) {(void)pon;}
 static unsigned int canceled;
+static unsigned int data_resets;
+static u32 stale_puc,stale_pdc;
 static void *state_reader(void *unused) {
     (void)unused;mutex_lock(&current->lock);mutex_unlock(&current->lock);return NULL;
 }
@@ -97,7 +99,14 @@ static void schedule_delayed_work(struct delayed_work *work,unsigned int delay) 
 #define udelay(us) ((void)0)
 #define dev_info(...) ((void)0)
 static u32 readl(const void *p) {u32 value;memcpy(&value,p,4);return value;}
-static void writel(u32 value,void *p) {memcpy(p,&value,4);}
+static void writel(u32 value,void *p) {
+    if(current && p==current->control) {
+        u32 previous=readl(p);
+        if((previous&BIT(8)) && !(value&BIT(8))) {stale_puc=0;data_resets++;}
+        if((previous&BIT(9)) && !(value&BIT(9)))stale_pdc=0;
+    }
+    memcpy(p,&value,4);
+}
 static void rtl_pon_update(void *p,u32 mask,u32 value) {writel((readl(p)&~mask)|(value&mask),p);}
 #define readl_poll_timeout(addr,status,condition,delay,timeout) ({(status)=readl(addr);(condition)?0:-ETIMEDOUT;})
 static int is_valid_ether_addr(const u8 *mac) {return !(mac[0]&1) && memcmp(mac,"\0\0\0\0\0\0",6);}
@@ -143,21 +152,31 @@ int main(void) {
     for(unsigned int mode=RTL_PON_GPON;mode<RTL_PON_MODE_COUNT;mode++) {
         pon.mode=RTL_PON_EPON_D10G;pon.mac_prepared=true;pon.mpcp_enabled=pon.mpcp_configured=true;
         pon.mpcp_work.pending=true;pon.fe_enabled=true;top[1]=1;window=attempted=finished=false;
+        control=0x30f;stale_puc=0xdeadbeef;stale_pdc=0xcafebabe;
         assert(pthread_create(&starter,NULL,concurrent_start,&pon)==0);
         assert(rtl_pon_serdes_configure(&pon,mode)==0);
         assert(pthread_join(starter,NULL)==0);
         assert(start_result<0 && pon.mode==(enum rtl_pon_mode)mode && !pon.mpcp_enabled && !pon.mpcp_configured);
         assert(!pon.mpcp_work.pending && !(top[1]&1) && pon.serdes_work.pending && !pon.fe_enabled);
         assert(!pon.control_lock.held && !pon.lock.held);
+        assert(!stale_puc && !stale_pdc && !(control&(BIT(8)|BIT(9))));
     }
+    assert(data_resets==3);
     assert(canceled==6);
+    pon.mode=RTL_PON_GPON;control=0x30e;stale_puc=1;stale_pdc=2;
+    assert(!rtl_pon_serdes_configure(&pon,RTL_PON_EPON_D10G));
+    assert(pon.mode==RTL_PON_EPON_D10G && !stale_puc && !stale_pdc &&
+           !(control&(BIT(8)|BIT(9))) && data_resets==4);
     pon.mode=RTL_PON_XGSPON;pon.fe_enabled=true;pon.cleanup_error=-EIO;
+    control=0x30e;stale_puc=0x1234;stale_pdc=0x5678;
     assert(rtl_pon_serdes_configure(&pon,RTL_PON_EPON_D10G)==-EIO);
     assert(pon.mode==RTL_PON_XGSPON && pon.fe_enabled && disabled && pon.serdes_error==-EIO);
+    assert(stale_puc==0x1234 && stale_pdc==0x5678 && control==0x30e && data_resets==4);
     pon.cleanup_error=0;pon.policy_error=-ENOMEM;
     assert(rtl_pon_serdes_configure(&pon,RTL_PON_EPON_D10G)==-ENOMEM);
     assert(pon.mode==RTL_PON_XGSPON && !pon.fe_enabled && pon.serdes_error==-ENOMEM);
-    puts("Actual SerDes/MPCP transaction: concurrent restart blocked, all GPON-family results idle, state workers finish during cancel");
+    assert(stale_puc==0x1234 && stale_pdc==0x5678 && control==0x30e && data_resets==4);
+    puts("Actual SerDes/MPCP transaction: concurrent restart blocked; old PUC/PDC reset before mode handoff; failed FE/NI cleanup preserves old mode and hardware ownership");
     pthread_mutex_destroy(&pon.lock.native);pthread_mutex_destroy(&pon.control_lock.native);
 }
 '''
