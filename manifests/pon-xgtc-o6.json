@@ -1,0 +1,97 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "fd5c0b0",
+  "scope": "Preserve XG-PON/XGS-PON O6 grace and already-resynchronized O5 when an IRQ includes loss_sync",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-xgpon.c": "3e637195b4d650feccb89e9b02a900987b6aa0807bdfd04c207752d1d7a86b31",
+    "scripts/test_xgpon_o6.py": "ea9aef2e99c4167ab6877d2fc05b02034d5d9f9c4f55321c4bf7cff62866254d",
+    "tools/trace_stock_xgpon_o6.py": "17cf64e81ee73c23b45078b6556ec3ad867fef8203796f32386bbd4b9c06d54a",
+    "docs/pon-xgtc-o6.md": "f35b345c8221e40a5fe598b62bd9f0409d1f3fa2954006650ac63d7cee629375"
+  },
+  "factory": {
+    "factory_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+    "actual_functions": [
+      "aal_xgpn_act_fsm_lods_common_handler@0x115e50",
+      "aal_xgpn_act_fsm_s_o6_e_dsync_change@0x114950"
+    ],
+    "scope": "Original compiled-default reset policy and handler instructions. Mode getter/logging modeled; no optical timing or OLT emulation. No hardware-reset/timer callee was accepted by the model.",
+    "records": [
+      {
+        "mode": 4,
+        "original_reset_at_lods": 0,
+        "LODS_software_state": 10,
+        "resynchronized_software_state": 8,
+        "PON_MMIO_writes": [],
+        "modeled_log_calls": [
+          "ca_printf",
+          "cap_log_msg"
+        ]
+      },
+      {
+        "mode": 5,
+        "original_reset_at_lods": 0,
+        "LODS_software_state": 10,
+        "resynchronized_software_state": 8,
+        "PON_MMIO_writes": [],
+        "modeled_log_calls": [
+          "ca_printf",
+          "cap_log_msg"
+        ]
+      }
+    ]
+  },
+  "before": {
+    "production_revision": "fd5c0b0",
+    "record": "artifacts/pon-recovery-policy-20261016/o6-before.log",
+    "ACTP_state": 3,
+    "scheduled_rebuild": true,
+    "ACTP_enable": 0,
+    "SDS_burst_enable": 0
+  },
+  "after": {
+    "record": "artifacts/pon-recovery-policy-20261016/o6-after.log",
+    "actual_full_IRQ_executed": true,
+    "modes": [
+      4,
+      5
+    ],
+    "hardware_states": [
+      3,
+      4
+    ],
+    "coalesced_loss_and_resynchronization": true,
+    "O6_to_O5_returns_OMCI_carrier": true,
+    "ACTP_SDS_keys_FE_preserved": true,
+    "line_epoch_unchanged": true,
+    "MMIO_NI_netdev_work_boundaries_modeled": true,
+    "PLOAM_or_key_exchange_packets_in_vectors": false
+  },
+  "module": {
+    "path": "artifacts/pon-o6-20261016/kernel/rtl_pon_o6_live.ko",
+    "sha256": "19a069840c626af9b6ff215b60669579abb042a024885dde403a1e6d0c20080b",
+    "kernel": "6.18.55",
+    "source_delta": "distinct platform driver name only",
+    "deployed": false
+  },
+  "live_device": {
+    "left_on_driver": "rtl9617c-pon-fe-family-live",
+    "mode": "epon-d10g",
+    "PON_not_restarted_for_this_change": true
+  },
+  "remaining": [
+    "Reconcile recovery outside O5/O6 with original default0 FIFO/PUC drain behavior",
+    "Existing full-rebuild retry can lose FE restore intent; separate fe_requested candidate not applied",
+    "No physical XG-PON/XGS-PON short-loss/timeout test without appropriate OLT"
+  ],
+  "validation_limits": {
+    "full_firmware_build": false,
+    "full_test_suite": false,
+    "physical_XGTC_O6_proved": false
+  },
+  "record_sha256": {
+    "artifacts/pon-recovery-policy-20261016/o6-before.log": "c618de412d5d719f2c162407d147ee376138bfc0a862cec1a5b07c75d988428f",
+    "artifacts/pon-recovery-policy-20261016/o6-after.log": "7c489c3a5ff5af86ac274d20a5c6441d16eb12113893c89bcd5ec7faffffc7a9",
+    "artifacts/pon-recovery-policy-20261016/stock-o6.log": "e976e30c2bfd27877a3212dcf5dd5d679505b338623dfa0c2dd910bdc641197a",
+    "artifacts/pon-o6-20261016/build.log": "558828040b1f264d61903097b96cc9c570b42862b255c7a5e20e07c65d90140c"
+  }
+}

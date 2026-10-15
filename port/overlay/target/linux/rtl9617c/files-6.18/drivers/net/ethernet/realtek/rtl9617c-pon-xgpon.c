@@ -261,8 +261,9 @@ void rtl_pon_xgpon_irq(struct rtl9617c_pon *pon)
 	if (!netif_carrier_ok(pon->omci_device) && pon->itu_paths_ready)
 		rtl_pon_itu_paths_invalidate(pon, pon->mode);
 	rtl_pon_itu_carrier(pon);
-	if (transitions & BIT(6)) {
-		/* Original LODS handler waits for optical RX, then resets SDS before MAC. */
+	if ((transitions & BIT(6)) && state != 3 && state != 4) {
+		/* O5/O6 retain ACTP and keys; only a line outside that grace
+		 * interval enters the existing SDS/MAC rebuild path. */
 		netif_carrier_off(pon->omci_device);
 		rtl_pon_itu_paths_invalidate(pon, pon->mode);
 		rtl_xgpon_active(&io, false, pon->mode == RTL_PON_XGSPON);
