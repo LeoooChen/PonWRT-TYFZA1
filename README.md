@@ -2,7 +2,7 @@
 
 感谢 [PonWrt](https://github.com/pbs05/ponwrt) 在 PON 与 OpenWrt 整合、原厂身份和校准保留、硬件转发及排障思路上提供的参考。本项目针对天翼 TYFZA1 / Realtek RTL9617CVW 独立适配，OMCI 协议引擎使用其 GPL 源码；硬件配置以本机原厂实现为依据。
 
-**版本：0.2.1** · OpenWrt · Linux 6.18.55 · 四核 Cortex-A55
+**版本：0.3.0-alpha** · OpenWrt · Linux 6.18.55 · 四核 Cortex-A55
 
 本次更新见 [更新日志](RELEASE_NOTES.md)。
 
@@ -12,7 +12,7 @@
 | --- | --- |
 | 系统启动、NAND/UBI、watchdog | 已实测 |
 | 原厂 telnet 安装、sysupgrade、断电启动 | 已实测 |
-| 四 LAN 网桥 | 已接入；四口逐口完整测试待完成 |
+| 四 LAN 网桥 | 已接入；四口逐口待测试 |
 | 2.5G 网口 | 驱动已接入，链路与硬件转发待测试 |
 | 双频 WiFi、WPA2、HT/VHT80、Wi-Fi 6 | HT/VHT 已实测；HE 协商与发包参数已接入，兼容性待测试 |
 | IPv4 路由/NAT、WiFi 双向硬件加速 | 双频上下行硬件路径已实测；持续高负载丢包待优化 |
@@ -26,7 +26,7 @@
 | 桥接 | 已接入 Linux 网桥自动学习、VLAN/QinQ 和二层硬件转发；实机待测试 |
 | IPv6 | 已加入 DHCPv6、RA 和原生页面；公网、前缀下发与硬件转发待测试 |
 | VLAN/QinQ、多 LLID、多业务 | 待测试 |
-| 冷启动、WiFi 停启、防火墙重载 | 0.1 系列已实测；本版本待测试 |
+| 冷启动、WiFi 停启、防火墙重载 | 待测试 |
 
 支持手动选择 PON 模式。认证参数均可留空；MAC、SN 和厂商标识留空时使用本机原厂身份。镜像的身份和光学/射频校准从当前设备的原厂分区读取。
 
