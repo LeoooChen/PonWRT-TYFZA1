@@ -62,13 +62,13 @@ static int rtl_ax_channel_power(const struct rtl_ax_limits *limits,
 }
 '''
 for file, names in [('power-tables.c', ('rtl_ax_half_dbm', 'rtl_ax_power_apply')),
-                    ('channel.h', ('rtl_ax_channel_field', 'rtl_ax_channel_primary_index', 'rtl_ax_c_adc', 'rtl_ax_c_rf_5g')),
+                    ('channel.h', ('rtl_ax_channel_field', 'rtl_ax_channel_primary_index', 'rtl_ax_channel_txsc', 'rtl_ax_c_adc', 'rtl_ax_c_rf_5g')),
                     ('tx.c', ('rtl_ax_tx_wd',))]:
     source += ''.join(function(file, name) for name in names)
 source += r'''
 int main(int argc,char **argv){
  unsigned int width=atoi(argv[1]),primary=atoi(argv[2]),center=atoi(argv[3]);
- unsigned int bw=width==80?2:width==40;
+ unsigned int bw=width==160?3:width==80?2:width==40;
  if(argc==7){u8 wd[56];rtl_ax_tx_wd(wd,1536,1,atoi(argv[4]),atoi(argv[5]),bw,7,26,false,false,0,0,false,1,atoi(argv[6]),atoi(argv[6])?4:0);fwrite(wd,1,56,stdout);return 0;}
  struct rtl_ax_power_inputs inputs={};struct rtl_ax_power_hardware state={};struct rtl_ax_channel channel={};
  if(rtl_ax_power_apply(&io,RTL_AX_8852C,&inputs,1,primary,center,bw,"WW",100,&state))return 1;
@@ -90,8 +90,8 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='radio-wideband-
                     '-I' + str(driver), str(program), '-o', str(binary)], check=True)
     bandwidth = json.loads((root / 'manifests/radio-stock-bandwidth.json').read_text())['records']
     rf = json.loads((root / 'manifests/radio-stock-RF-bandwidth.json').read_text())['records']
-    for width in (20, 40, 80):
-        center = {20: 36, 40: 38, 80: 42}[width]
+    for width in (20, 40, 80, 160):
+        center = {20: 36, 40: 38, 80: 42, 160: 50}[width]
         primary = center if width == 20 else center - width // 10 + 2
         data = subprocess.check_output([str(binary), str(width), str(primary), str(center)])
         expected = json.loads((root / f'manifests/radio-stock-power-contract-{width}.json').read_text())['records']
@@ -109,17 +109,23 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='radio-wideband-
             value = struct.unpack_from('<I', data, 144 + (address | 0x10000))[0]
             assert (value & mask) >> shift == int(w['value'], 16), (width, w)
         vectors += 1
-    for width in (20, 40, 80):
+    for width in (20, 40, 80, 160):
         rows = json.loads((root / f'manifests/radio-stock-VHT{width}-WD.json').read_text())['records']
         for r in rows:
             data = subprocess.check_output([str(binary), str(width), '36', '42', str(r['rate']),
                                             str(r['GI']), str(r['maximum_aggregation'])])
             assert list(struct.unpack('<14I', data)) == [int(w, 16) for w in r['WD_words']], r
             wd_vectors += 1
+    rows = json.loads((root / 'manifests/radio-stock-HE160-WD.json').read_text())['records']
+    for r in rows:
+        data = subprocess.check_output([str(binary), '160', '36', '50', str(r['rate']),
+                                        str(r['GI']), str(r['maximum_aggregation'])])
+        assert list(struct.unpack('<14I', data)) == [int(w, 16) for w in r['WD_words']], r
+    he_vectors = len(rows)
 report = {'scope': __doc__, 'native_source_hashes': {
     f: hashlib.sha256((driver / f).read_bytes()).hexdigest() for f in ('channel.h', 'power-tables.c', 'tx.c')},
-    'C_20_40_80_signed_TPU_RF18_ADC_vectors': vectors,
-    'VHT_20_40_80_WD_vectors': wd_vectors,
+    'C_20_40_80_160_signed_TPU_RF18_ADC_vectors': vectors,
+    'VHT_20_40_80_160_WD_vectors': wd_vectors, 'HE160_WD_vectors': he_vectors,
     'hardware_IO_and_power_query_only_mocked': True, 'hardware_test': False}
 (root / 'manifests/radio-wideband-contract-test.json').write_text(json.dumps(report, indent=2) + '\n')
 print(json.dumps(report, indent=2))

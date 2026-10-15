@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Execute actual C/XB DATA descriptors for HT/VHT rates, bandwidth and GI."""
+"""Execute actual C/XB DATA descriptors for HT/VHT/HE rates, bandwidth and GI."""
 from pathlib import Path
 import hashlib
 import argparse
@@ -9,13 +9,13 @@ from arm64_module_oracle import ModuleOracle
 
 root = Path(__file__).resolve().parents[1]
 parser=argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--width',type=int,choices=(20,40,80),default=20)
-parser.add_argument('--mode',choices=('HT','VHT'),default='HT')
+parser.add_argument('--width',type=int,choices=(20,40,80,160),default=20)
+parser.add_argument('--mode',choices=('HT','VHT','HE'),default='HT')
 parser.add_argument('--output',type=Path,default=root/'manifests/radio-stock-HT-WD.json')
 options=parser.parse_args()
-chips = ('8852c',) if options.mode == 'VHT' or options.width == 80 else ('8852c', '8192xb')
+chips = ('8852c',) if options.mode != 'HT' or options.width >= 80 else ('8852c', '8192xb')
 rates = [(mcs, mcs // 8 + 1, 0x80 + mcs) for mcs in range(16)] if options.mode == 'HT' else [
-    (mcs, nss, 0x100 + (nss - 1) * 16 + mcs) for nss in (1, 2) for mcs in range(10)]
+    (mcs, nss, (0x180 if options.mode == 'HE' else 0x100) + (nss - 1) * 16 + mcs) for nss in (1, 2) for mcs in range(12 if options.mode == 'HE' else 10)]
 module = root / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
 names = ['_phl_fill_tx_meta_data'] + [base + '_' + chip for chip in ('8852c', '8192xb')
                                     for base in ('txdes_proc_data', 'mac_txdesc_len')]
@@ -60,6 +60,8 @@ for chip in chips:
             oracle.uc.mem_write(request + 108, b'\x01')
             oracle.call('_phl_fill_tx_meta_data', request, 1536)
             oracle.uc.mem_write(metadata, bytes(oracle.uc.mem_read(request + 32, 96)))
+            # Native raw WLAN has no inserted-header reservation (WP_OFFSET).
+            oracle.uc.mem_write(metadata + 21, b'\0')
             oracle.uc.mem_write(output, bytes(128))
             size = oracle.call('mac_txdesc_len_' + chip, adapter, metadata)
             assert size == 56

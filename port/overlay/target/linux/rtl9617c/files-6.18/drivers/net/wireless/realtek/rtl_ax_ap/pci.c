@@ -129,7 +129,7 @@ struct rtl_ax_ap {
 	struct ieee80211_hw *hw;
 	struct ieee80211_supported_band band;
 	struct ieee80211_sband_iftype_data he_band;
-	struct ieee80211_channel channels[13];
+	struct ieee80211_channel channels[28];
 	struct ieee80211_rate rates[12];
 	bool monitor_started;
 	struct ieee80211_vif *ap_vif;
@@ -614,12 +614,13 @@ static int rtl_ax_bb_channel_notify_locked(struct rtl_ax_ap *radio)
 		radio->channel.primary << 16 | radio->channel.center << 24);
 	rtl_ax_store32(information + 4, radio->channel.bandwidth);
 	rtl_ax_store32(information + 12, 1);
-	if (radio->channel.bandwidth)
+	if (radio->channel.bandwidth) {
+		unsigned int txsc = rtl_ax_channel_txsc(radio->channel.primary,
+			radio->channel.center, radio->channel.bandwidth);
+
 		rtl_ax_store32(information + 16,
-			rtl_ax_channel_primary_index(radio->channel.primary,
-				radio->channel.center, radio->channel.bandwidth) |
-			(radio->channel.bandwidth == 2 ?
-				(radio->channel.primary > radio->channel.center ? 9 : 10) << 8 : 0));
+			(txsc & 15) | ((txsc >> 4) & 15) << 8 | (txsc >> 8) << 16);
+	}
 	return rtl_ax_bb_info_locked(radio, information);
 }
 
@@ -1624,6 +1625,8 @@ static int rtl_ax_receive_configure(struct rtl_ax_ap *radio, unsigned int primar
 	ret = radio->chip == RTL_AX_8852C ?
 		rtl_ax_c_receive_channel(&radio->io, &radio->phy, &radio->bb_dm, primary, channel, bandwidth, &radio->channel) :
 		rtl_ax_xb_receive_channel20(&radio->io, &radio->phy, &radio->bb_dm, channel, &radio->channel);
+	if (!ret && radio->chip == RTL_AX_8852C)
+		rtl_ax_c_dig_bandwidth(&radio->io, &radio->dig, bandwidth);
 	if (!ret)
 		ret = rtl_ax_power_apply(&radio->io, radio->chip, &radio->power_inputs,
 			radio->channel.band, primary, channel, bandwidth, radio->power_country,
@@ -1659,7 +1662,7 @@ static int rtl_ax_receive_configure(struct rtl_ax_ap *radio, unsigned int primar
 		if (radio->chip == RTL_AX_8192XB)
 			rtl_ax_xb_tssi_de(&radio->io, &radio->flash_calibration, &radio->trim, channel, &radio->tssi_de);
 		else
-			rtl_ax_c_tssi_de20(&radio->io, &radio->flash_calibration, &radio->trim, channel, &radio->tssi_de);
+			rtl_ax_c_tssi_de20(&radio->io, &radio->flash_calibration, &radio->trim, channel, bandwidth, &radio->tssi_de);
 	}
 	if (!ret) {
 		/* Actual RFE54: C bypass check@32b3e8 (>50), XB@3523ec

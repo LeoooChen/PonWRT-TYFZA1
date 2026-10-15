@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-15",
+  "base_commit": "1cc810d4364f1fe3fd3a4c380c19781f24684ef4",
+  "hardware": "TYFZA1 5GHz RTL8852C, RFE54, CV1, SCC/non-DBCC",
+  "scope": "Native contiguous 160MHz channel and data path, offline implementation; no hardware or released image update.",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/channel.h": "8986f70b0048ef9bb4f5c3e97b50fe18cfc6973caf8b5d54c78eb7805e774db1",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/c-iqk.h": "915c2b98e36f14827e54dc436bb18da440b66802bc925e00e301613869973b03",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/dig.h": "812e4b225e5d9088d2bb7fbde4d853c2b10736e745b45a69d21b80b19643af58",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/monitor.h": "f09fb0c69092454af979b1dab878815f221e2fb439209e5cf0a8476362aaab30",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pci.c": "ec848408e1a42f7928652afd2b7022d8a35ee3ca19a22eb2fd67f5557e8be6e4",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/power-tables.c": "aa1bb2f71eb268ea2ff56b9c7815512d6f610c1262685df17d00dce8fa7522ef",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tssi-de.h": "2e9ef46c20223661d363a7d74c51eabd97446da9513ebf3ead0f16ee6104f2b0"
+  },
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "contracts": [
+    "MAC/BB primary20/40/80 selectors and BBinfo notification",
+    "160MHz ADC and RF18/RXBB LUT",
+    "IQK RX clock selector3 and bandwidth-dependent commands",
+    "TSSI BB1a8 signed ADC corrections for narrower transmissions",
+    "160MHz ordinary/RU TPU tables",
+    "bandwidth-dependent packet detection lower bound",
+    "28 factory 5GHz channel entries",
+    "HE160 MCS and VHT160 SGI peer selection",
+    "VHT/HE WD and existing two-bit PE bandwidth field"
+  ],
+  "validation": {
+    "channel_tssi_and_peer": "scripts/test_radio_160.py passed; full result in manifests/radio-160-channel-tssi-contract.json",
+    "wideband": "scripts/test_radio_wideband.py passed: four widths, 240 VHT WD, 72 HE160 WD",
+    "PE": "scripts/test_pe_downlink_gather.py artifacts/radio-160 --160 passed: actual embedded MIPS instructions, VHT160/HE160 EPP->WD->payload/RPQ/EQ",
+    "TSSI_program": "160MHz/channel50 fixed initialization output equals existing board 20MHz fixed program; independent current-width DE correction was implemented and tested",
+    "compile": "ARM64 OpenWrt musl external radio module passed; only pre-existing missing MODULE_DESCRIPTION modpost warning",
+    "hardware": false,
+    "full_firmware_build": false,
+    "full_test_suite": false
+  },
+  "artifact": {
+    "path": "artifacts/radio-160/rtl_ax_ap_160.ko",
+    "sha256": "c75ce5812128f5e279f9b2c27453f5e168f300191e0892db73683ee273c0b24f"
+  },
+  "limitations": [
+    "DFS radar/CAC runtime remains unimplemented; DFS 160MHz AP channel blocks remain unavailable. Country rules still apply.",
+    "No air-interface negotiation, throughput or stability measurement without a device.",
+    "Published 0.3.1-alpha image is unchanged; this is a source change and development module.",
+    "80+80MHz is not supported."
+  ]
+}

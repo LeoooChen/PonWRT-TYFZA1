@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Execute original C IQK/RX-clock/ADC branches for 20/40/80MHz."""
+"""Execute original C IQK/RX-clock/ADC branches for 20/40/80/160MHz."""
 from pathlib import Path
 import hashlib,json,struct
 from arm64_module_oracle import ModuleOracle
@@ -34,7 +34,7 @@ oracle.word(rf,phl);oracle.word(rf+8,common);oracle.word(common+1888,hal);oracle
 oracle.word(bb,phl);oracle.uc.mem_write(bb+3092,struct.pack('<I',8))
 oracle.uc.mem_write(phl+0x58fa,b'\x36')
 records=[]
-for bandwidth in (0,1,2):
+for bandwidth in (0,1,2,3):
     for path in (0,1):
         oracle.uc.mem_write(rf+0x4968+60+path,bytes([bandwidth]))
         oracle.uc.mem_write(rf+0x4968+52+path,b'\x01')

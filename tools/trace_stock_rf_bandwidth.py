@@ -28,7 +28,7 @@ def callback(name,args):
 oracle=ModuleOracle(module,names,callback)
 oracle.uc.mem_map(rf,0x100000);oracle.uc.mem_map(hal,0x10000)
 records=[]
-for width,bw,center in [(20,0,36),(40,1,38),(80,2,42)]:
+for width,bw,center in [(20,0,36),(40,1,38),(80,2,42),(160,3,50)]:
     oracle.uc.mem_write(rf,bytes(0x100000))
     oracle.word(rf+8,hal);oracle.uc.mem_write(rf+16,struct.pack('<I',8))
     oracle.uc.mem_write(rf+68,b'\xff\xff')  # cached RXBB initially unset

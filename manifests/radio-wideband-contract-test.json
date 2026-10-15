@@ -1,12 +1,13 @@
 {
   "scope": "Compare native bandwidth/RF/TPU/WD output with the original ELF traces.\n\nCompile the production function bodies unchanged. Only hardware IO and the\npower-query boundary are replaced; signed values come from the same contract\nused while executing the original constructors in Unicorn.\n",
   "native_source_hashes": {
-    "channel.h": "614b52d8837e2410c4453dd234f7950184052c7aa82f9ba2db822e41d87bd14b",
-    "power-tables.c": "64759bfc268cc7d38993ed0653c85d9dab726dda7f4240f155390bf4849d83dd",
-    "tx.c": "cc85f8ae780a01be30baf58799a2f8cdb628b5fb1b244477c7303bd62dbd9d86"
+    "channel.h": "8986f70b0048ef9bb4f5c3e97b50fe18cfc6973caf8b5d54c78eb7805e774db1",
+    "power-tables.c": "aa1bb2f71eb268ea2ff56b9c7815512d6f610c1262685df17d00dce8fa7522ef",
+    "tx.c": "afc646117d6d0ae7c861aa1b70199aa103684df50b85384fb6b92b70497bada8"
   },
-  "C_20_40_80_signed_TPU_RF18_ADC_vectors": 3,
-  "VHT_20_40_80_WD_vectors": 180,
+  "C_20_40_80_160_signed_TPU_RF18_ADC_vectors": 4,
+  "VHT_20_40_80_160_WD_vectors": 240,
+  "HE160_WD_vectors": 72,
   "hardware_IO_and_power_query_only_mocked": true,
   "hardware_test": false
 }

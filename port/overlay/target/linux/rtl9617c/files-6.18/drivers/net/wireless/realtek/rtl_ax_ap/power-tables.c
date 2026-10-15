@@ -283,7 +283,43 @@ int rtl_ax_power_apply(const struct rtl_ax_io *io, unsigned int chip,
 	memset(state->limit20, 0, sizeof(state->limit20));
 	memset(state->ru20, 0, sizeof(state->ru20));
 	for (nss = 0; nss < 2; nss++) {
-		if (bandwidth == 2) {
+		if (bandwidth == 3) {
+			/* C160 TPU: primary OFDM, eight HE20, four HE40,
+			 * two HE80, HE160 and the two special HE40 minima. */
+			static const u8 offsets[] = { 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34 };
+			static const s8 channels[] = { 0, -14, -10, -6, -2, 2, 6, 10, 14, -12, -4, 4, 12, -8, 8, 0 };
+
+			for (bf = 0; bf < 2; bf++) {
+				s8 half40[4];
+
+				for (i = 0; i < ARRAY_SIZE(offsets); i++) {
+					struct rtl_ax_limit_key key = { .band = band,
+						.channel = i ? channel + channels[i] : primary,
+						.ntx = nss, .bf = bf,
+						.bandwidth = i == 15 ? 3 : i >= 13 ? 2 : i >= 9 ? 1 : 0,
+						.rate = i ? 4 : 1 };
+					int value, ret = rtl_ax_channel_power(limits, &key, regulation, &value);
+
+					if (ret)
+						return ret;
+					state->limit20[nss * 40 + offsets[i] + bf] = rtl_ax_half_dbm(value, max_dbm);
+					if (i >= 9 && i <= 12)
+						half40[i - 9] = min(value, max_dbm * 4) / 2;
+				}
+				state->limit20[nss * 40 + 36 + bf] = min(half40[1], half40[2]) & 0x7f;
+				for (i = 0; i < 2; i++) {
+					struct rtl_ax_limit_key key = { .band = band,
+						.channel = channel + (i ? 8 : -8), .ntx = nss,
+						.bf = bf, .bandwidth = 1, .rate = 4 };
+					int value, ret = rtl_ax_channel_power(limits, &key, regulation, &value);
+
+					if (ret)
+						return ret;
+					half40[i] = min(value, max_dbm * 4) / 2;
+				}
+				state->limit20[nss * 40 + 38 + bf] = min(half40[0], half40[1]) & 0x7f;
+			}
+		} else if (bandwidth == 2) {
 			/* Actual C80 constructor: OFDM primary20, four HE20,
 			 * two HE40, HE80 and signed minimum of both HE40 limits. */
 			static const u8 offsets[] = { 4, 6, 8, 10, 12, 22, 24, 30 };

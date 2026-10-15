@@ -286,8 +286,8 @@ static inline int rtl_ax_c_iqk_rx5(const struct rtl_ax_io *io, unsigned int path
 
 	rtl_ax_channel_field(io, 0x20fc, 0xffff0000, path ? 0x202 : 0x101);
 	rtl_ax_channel_field(io, control, BIT(13), 1);
-	rtl_ax_c_iqk_rxclock(io, path, state->bandwidth == 2 ? 2 : 1);
-	rtl_ax_channel_field(io, control, 0x60000000, state->bandwidth == 2 ? 1 : 0);
+	rtl_ax_c_iqk_rxclock(io, path, state->bandwidth >= 2 ? state->bandwidth : 1);
+	rtl_ax_channel_field(io, control, 0x60000000, state->bandwidth >= 2 ? state->bandwidth - 1 : 0);
 	C_IQK_RF(0x8f, 0x1000, 1);
 	rtl_ax_channel_field(io, 0x12b8 + path * 0x2000, BIT(30), 1);
 	rtl_ax_channel_field(io, 0x30c, 0xff000000, 15);

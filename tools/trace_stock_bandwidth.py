@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract actual C/XB 20/40/80 MHz BB/ADC operations before extending the port."""
+"""Extract actual C/XB 20/40/80/160 MHz BB/ADC operations before extending the port."""
 from pathlib import Path
 import hashlib
 import json
@@ -60,13 +60,13 @@ oracle.uc.mem_write(phl + 0x58fa, b'\x36')  # actual RFE54
 records = []
 for chip in ('8852c', '8192xb'):
     oracle.uc.mem_write(bb+3092,struct.pack('<I',8 if chip=='8852c' else 32))
-    for width, enum, indices in [(20, 0, [0]), (40, 1, [1, 2]), (80, 2, [1, 2, 3, 4])]:
-        if chip == '8192xb' and width == 80:
+    for width, enum, indices in [(20, 0, [0]), (40, 1, [1, 2]), (80, 2, [1, 2, 3, 4]), (160, 3, list(range(1, 9)))]:
+        if chip == '8192xb' and width >= 80:
             # 2.4GHz board radio operates with 20/40MHz channels.
             continue
         for primary_index in indices:
-            center = (36 if width == 20 else 38 if width == 40 else 42) if chip == '8852c' else 6
-            primary = center if width == 20 else center + (2 if primary_index == 1 else -2) if width == 40 else center + {1:2,2:-2,3:6,4:-6}[primary_index]
+            center = (36 if width == 20 else 38 if width == 40 else 42 if width == 80 else 50) if chip == '8852c' else 6
+            primary = center if width == 20 else center + (2 if primary_index == 1 else -2) if width == 40 else center + (2 * primary_index if primary_index & 1 else -2 * (primary_index - 1))
             writes.clear(); registers.clear()
             status = oracle.call('halbb_ctrl_bw_' + chip, bb, primary_index, enum, 0)
             assert status == 1, (chip, width, primary_index, status)

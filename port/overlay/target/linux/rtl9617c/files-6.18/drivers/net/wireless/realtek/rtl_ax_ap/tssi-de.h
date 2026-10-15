@@ -161,16 +161,23 @@ static inline void rtl_ax_c_tssi_slope(const struct rtl_ax_io *io,
 
 static inline void rtl_ax_c_tssi_de20(const struct rtl_ax_io *io,
 	const struct rtl_ax_board_cal *cal, const struct rtl_ax_trim *trim,
-	unsigned int center, struct rtl_ax_tssi_de *state)
+	unsigned int center, unsigned int bandwidth, struct rtl_ax_tssi_de *state)
 {
 	static const u16 addr[] = { 0x5858, 0x5860, 0x5838, 0x5840, 0x5848, 0x5850, 0x5828, 0x5830 };
 	static const u8 order[] = { 0, 1, 2, 6, 7, 3, 4, 5 };
 	static const u8 width[] = { 0, 0, 0, 1, 2, 3, 0, 0 };
 	unsigned int path, i;
+	s8 adc[3] = {};
 
 	/* Actual set_efuse_to_de_C@33607c normal SCC: CCK then MCS20
-	 * (including legacy20),40,80,160, perpath A then B. Native channel
-	 * operation is20MHz, so RFE>=50's current-BW160 ADC WA is inactive. */
+	 * (including legacy20),40,80,160, perpath A then B. RFE54 at160MHz
+	 * adds the signed ADC corrections from BB1a8 to20/40/80 only. */
+	if (bandwidth == 3) {
+		u32 value = io->read32(io->ctx, 0x101a8);
+
+		for (i = 0; i < ARRAY_SIZE(adc); i++)
+			adc[i] = value >> (i * 8);
+	}
 	state->center = center;
 	state->cck_group = rtl_ax_tssi_cck_group(center);
 	state->ofdm_group = rtl_ax_tssi_ofdm_group(center);
@@ -186,7 +193,8 @@ static inline void rtl_ax_c_tssi_de20(const struct rtl_ax_io *io,
 			unsigned int slot = order[i];
 			u32 address = addr[slot] + path * 0x2000;
 			u16 value = (slot < 2 ? state->cck[path] :
-				state->ofdm[path] + state->bw_diff[path][width[slot]]) & 1023;
+				state->ofdm[path] + state->bw_diff[path][width[slot]] +
+				(width[slot] < 3 ? adc[width[slot]] : 0)) & 1023;
 
 			rtl_ax_channel_field(io, address, 0x003ff000, value);
 			state->expected[path][slot] = value;

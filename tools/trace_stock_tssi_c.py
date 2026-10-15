@@ -14,8 +14,9 @@ from unicorn.arm64_const import UC_ARM64_REG_X4
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('output', nargs='?', type=Path, default=root / 'manifests/radio-stock-C-TSSI-program.json')
-parser.add_argument('--width', type=int, choices=(20, 40, 80), default=20)
+parser.add_argument('--width', type=int, choices=(20, 40, 80, 160), default=20)
 parser.add_argument('--channel', type=int, default=36)
+parser.add_argument('--calibration', type=Path, default=root / 'sources/openwrt/files/lib/firmware/realtek/tyfza1/rtl8852ce/flash-calibration.bin')
 options = parser.parse_args()
 module = root / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
 steps = ['halrf_tssi_disable_8852c', '_halrf_tssi_set_sys_8852c',
@@ -68,7 +69,7 @@ oracle.uc.mem_write(hal + 4, struct.pack('<I', 1))
 oracle.uc.mem_write(hal + 892, struct.pack('<I', 1))
 oracle.uc.mem_write(hal + 896, struct.pack('<I', options.width.bit_length() - 5))
 oracle.uc.mem_write(hal + 905, bytes([options.channel]))
-calibration = (root / 'sources/openwrt/files/lib/firmware/realtek/tyfza1/rtl8852ce/flash-calibration.bin').read_bytes()
+calibration = options.calibration.read_bytes()
 tracking = root / 'evidence/wireless-study-20261009-104746/evidence/stock/radio-parameters/rtl8852ce/RFE54/RTK66587_BPF/TXPWR_TrackTSSI.txt'
 for path, path_name in enumerate(('A', 'B')):
     for direction, sign in enumerate(('+', '-')):

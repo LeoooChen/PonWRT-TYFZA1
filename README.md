@@ -14,7 +14,7 @@
 | 原厂 telnet 安装、sysupgrade、断电启动 | 已实测 |
 | 四 LAN 网桥 | 已接入；四口逐口待测试 |
 | 2.5G 网口 | 驱动已接入，链路与硬件转发待测试 |
-| 双频 WiFi、WPA2、HT/VHT80、Wi-Fi 6 | HT/VHT 已实测；HE 协商与发包参数已接入，兼容性待测试 |
+| 双频 WiFi、WPA2、HT/VHT、Wi-Fi 6 | HT/VHT80 已实测；源码已接入 160 MHz，尚未上机，DFS 信道仍受限，见[适配记录](docs/wifi-160mhz.md) |
 | IPv4 路由/NAT、WiFi 双向硬件加速 | 双频上下行硬件路径已实测；持续高负载丢包待优化 |
 | EPON（1G/1G） | 独立 MAC/PCS/FEC、MPCP 和 CTC OAM 已接入；业务与硬件转发待测试 |
 | 10G-EPON 非对称（10G/1G） | 注册、CTC OAM、LOID、FEC、DHCP 和双向硬件路径已实测；PPPoE、桥接待测试 |

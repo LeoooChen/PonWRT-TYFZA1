@@ -21,6 +21,25 @@ struct rtl_ax_dig {
 	u8 pd_requested, ofdm_encoded, cck_encoded, bandwidth;
 };
 
+/* Original set_pd_lower_bound_C@2e1658 adds 3 dB per bandwidth step.
+ * Above102 the original disables the lower bound instead of wrapping it. */
+static inline void rtl_ax_c_dig_bandwidth(const struct rtl_ax_io *io,
+	struct rtl_ax_dig *dig, unsigned int bandwidth)
+{
+	unsigned int adjusted = (dig->pd_requested + 7 + bandwidth * 3 + 1) & ~1U;
+
+	dig->bandwidth = bandwidth;
+	if (!dig->pd_requested || adjusted > 102) {
+		rtl_ax_update32(io, 0x1481c, RTL_AX_BIT(29), 0);
+		return;
+	}
+	if (adjusted < 40)
+		adjusted = 40;
+	dig->ofdm_encoded = (102 - adjusted) / 2;
+	rtl_ax_update32(io, 0x1481c, 0x7c0, dig->ofdm_encoded << 6);
+	rtl_ax_update32(io, 0x1481c, 0, RTL_AX_BIT(29));
+}
+
 static inline void rtl_ax_dig_initialize(const struct rtl_ax_io *io,
 					 struct rtl_ax_dig *dig)
 {

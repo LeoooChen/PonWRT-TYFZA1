@@ -14,13 +14,13 @@ from arm64_module_oracle import ModuleOracle
 from unicorn.arm64_const import UC_ARM64_REG_X4, UC_ARM64_REG_X5, UC_ARM64_REG_X6, UC_ARM64_REG_X7
 root=Path(__file__).resolve().parents[1]
 parser=argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--width',type=int,choices=(20,40,80),default=20)
+parser.add_argument('--width',type=int,choices=(20,40,80,160),default=20)
 parser.add_argument('--output',type=Path,default=root/'manifests/radio-stock-power-registers.json')
 parser.add_argument('--contract-values',action='store_true',help='Stable signed query values for native/ELF comparison')
 args=parser.parse_args()
 contract_values=args.contract_values
 module=root/'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
-chips=('8852c',) if args.width==80 else ('8852c','8192xb')
+chips=('8852c',) if args.width>=80 else ('8852c','8192xb')
 names=['halrf_set_power_by_rate_to_struct_'+c for c in chips]
 names += [f'halrf_get_power_limit_to_struct_{args.width}m_'+c for c in chips]
 names += [f'halrf_get_power_limit_ru_to_struct_{args.width}m_'+c for c in chips]
@@ -60,7 +60,7 @@ oracle.uc.mem_write(hal+905,b'\x24')
 records=[]
 for chip in chips:
     oracle.word(adapter+88,oracle.symbols['mac'+chip+'_hw_info'][0])
-    center=(36 if args.width==20 else 38 if args.width==40 else 42) if chip=='8852c' else 6
+    center=(36 if args.width==20 else 38 if args.width==40 else 42 if args.width==80 else 50) if chip=='8852c' else 6
     oracle.uc.mem_write(hal+904,bytes([center if args.width==20 else center-args.width//10+2,center]))
     for kind in ('rate','limit','ru'):
         queries.clear();writes.clear();oracle.uc.mem_write(hal+920,bytes(180))

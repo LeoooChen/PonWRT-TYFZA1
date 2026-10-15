@@ -20,6 +20,7 @@ static int rtl_ax_monitor_start(struct ieee80211_hw *hw)
 	mutex_lock(&radio->command_mutex);
 	ret = rtl_ax_receive_configure(radio, hw->conf.chandef.chan->hw_value,
 		ieee80211_frequency_to_channel(hw->conf.chandef.center_freq1),
+		hw->conf.chandef.width == NL80211_CHAN_WIDTH_160 ? 3 :
 		hw->conf.chandef.width == NL80211_CHAN_WIDTH_80 ? 2 :
 		hw->conf.chandef.width == NL80211_CHAN_WIDTH_40);
 	if (ret) {
@@ -78,12 +79,14 @@ static int rtl_ax_monitor_config(struct ieee80211_hw *hw, int radio_idx, u32 cha
 	}
 	if (hw->conf.chandef.width != NL80211_CHAN_WIDTH_20 &&
 	    !(radio->chip == RTL_AX_8852C &&
-	      (hw->conf.chandef.width == NL80211_CHAN_WIDTH_40 || hw->conf.chandef.width == NL80211_CHAN_WIDTH_80)) &&
+	      (hw->conf.chandef.width == NL80211_CHAN_WIDTH_40 || hw->conf.chandef.width == NL80211_CHAN_WIDTH_80 ||
+	       hw->conf.chandef.width == NL80211_CHAN_WIDTH_160)) &&
 	    hw->conf.chandef.width != NL80211_CHAN_WIDTH_20_NOHT)
 		return -EOPNOTSUPP;
 	mutex_lock(&radio->command_mutex);
 	ret = rtl_ax_receive_configure(radio, hw->conf.chandef.chan->hw_value,
 		ieee80211_frequency_to_channel(hw->conf.chandef.center_freq1),
+		hw->conf.chandef.width == NL80211_CHAN_WIDTH_160 ? 3 :
 		hw->conf.chandef.width == NL80211_CHAN_WIDTH_80 ? 2 :
 		hw->conf.chandef.width == NL80211_CHAN_WIDTH_40);
 	mutex_unlock(&radio->command_mutex);
@@ -468,7 +471,8 @@ static bool rtl_ax_ra_peer(struct rtl_ax_ap *radio, struct ieee80211_sta *sta,
 	u8 bandwidth = min_t(unsigned int, radio->channel.bandwidth, link->bandwidth);
 	u8 nss = min_t(unsigned int, link->rx_nss, 2);
 	u16 ht = link->ht_cap.mcs.rx_mask[0] | link->ht_cap.mcs.rx_mask[1] << 8;
-	bool sgi = bandwidth == 2 ? link->vht_cap.cap & IEEE80211_VHT_CAP_SHORT_GI_80 :
+	bool sgi = bandwidth == 3 ? link->vht_cap.cap & IEEE80211_VHT_CAP_SHORT_GI_160 :
+		bandwidth == 2 ? link->vht_cap.cap & IEEE80211_VHT_CAP_SHORT_GI_80 :
 		link->ht_cap.cap & (bandwidth ? IEEE80211_HT_CAP_SGI_40 : IEEE80211_HT_CAP_SGI_20);
 
 	if (link->smps_mode == IEEE80211_SMPS_STATIC) nss = 1;
@@ -477,7 +481,8 @@ static bool rtl_ax_ra_peer(struct rtl_ax_ap *radio, struct ieee80211_sta *sta,
 	if (link->he_cap.has_he) {
 		const struct ieee80211_sta_he_cap *he = &link->he_cap;
 		rtl_ax_ra_he(command, id, link->supp_rates[radio->band.band] << (band5g ? 4 : 0),
-			le16_to_cpu(he->he_mcs_nss_supp.rx_mcs_80), he->he_cap_elem.phy_cap_info[1],
+			le16_to_cpu(bandwidth == 3 ? he->he_mcs_nss_supp.rx_mcs_160 :
+			he->he_mcs_nss_supp.rx_mcs_80), he->he_cap_elem.phy_cap_info[1],
 			he->he_cap_elem.phy_cap_info[7], band5g, bandwidth);
 		*rate = 0x180 | (he->he_cap_elem.phy_cap_info[1] &
 			IEEE80211_HE_PHY_CAP1_LDPC_CODING_IN_PAYLOAD ? BIT(21) : 0);
@@ -724,7 +729,8 @@ static void rtl_ax_monitor_tx(struct ieee80211_hw *hw,
 			rate = 0x100 + (ieee80211_rate_get_vht_nss(selected) - 1) * 16 +
 				ieee80211_rate_get_vht_mcs(selected);
 			gi = !!(selected->flags & IEEE80211_TX_RC_SHORT_GI);
-			bandwidth = selected->flags & IEEE80211_TX_RC_80_MHZ_WIDTH ? 2 :
+			bandwidth = selected->flags & IEEE80211_TX_RC_160_MHZ_WIDTH ? 3 :
+				selected->flags & IEEE80211_TX_RC_80_MHZ_WIDTH ? 2 :
 				!!(selected->flags & IEEE80211_TX_RC_40_MHZ_WIDTH);
 		} else if (selected->flags & IEEE80211_TX_RC_MCS) {
 			rate = 0x80 + selected->idx;
@@ -1229,9 +1235,15 @@ static void rtl_ax_regulatory_notify(struct wiphy *wiphy, struct regulatory_requ
 static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 {
 	static const u16 rates[] = { 10, 20, 55, 110, 60, 90, 120, 180, 240, 360, 480, 540 };
+	/* Exact rtw_5ghz_a_channels entries; cfg80211 applies the country rules. */
+	static const u8 channels_5g[] = {
+		36, 40, 44, 48, 52, 56, 60, 64,
+		100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144,
+		149, 153, 157, 161, 165, 169, 173, 177,
+	};
 	struct ieee80211_hw *hw;
 	unsigned int i, first_rate = radio->chip == RTL_AX_8852C ? 4 : 0;
-	unsigned int channels = radio->chip == RTL_AX_8852C ? 4 : 13;
+	unsigned int channels = radio->chip == RTL_AX_8852C ? ARRAY_SIZE(channels_5g) : 13;
 	enum nl80211_band band = radio->chip == RTL_AX_8852C ? NL80211_BAND_5GHZ : NL80211_BAND_2GHZ;
 	int ret;
 
@@ -1269,7 +1281,7 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	hw->wiphy->available_antennas_rx = 3;
 	for (i = 0; i < channels; i++) {
 		radio->channels[i].band = band;
-		radio->channels[i].hw_value = band == NL80211_BAND_5GHZ ? 36 + i * 4 : i + 1;
+		radio->channels[i].hw_value = band == NL80211_BAND_5GHZ ? channels_5g[i] : i + 1;
 		radio->channels[i].center_freq = ieee80211_channel_to_frequency(radio->channels[i].hw_value, band);
 	}
 	for (i = first_rate; i < ARRAY_SIZE(rates); i++) {
@@ -1294,13 +1306,14 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 		radio->band.ht_cap.mcs.rx_highest = cpu_to_le16(300);
 		radio->band.vht_cap.vht_supported = true;
 		/* Original VHT defaults: max MPDU code1, A-MPDU exponent7. */
-		radio->band.vht_cap.cap = IEEE80211_VHT_CAP_SHORT_GI_80 | IEEE80211_VHT_CAP_MAX_MPDU_LENGTH_7991 |
+		radio->band.vht_cap.cap = IEEE80211_VHT_CAP_SUPP_CHAN_WIDTH_160MHZ |
+			IEEE80211_VHT_CAP_SHORT_GI_160 | IEEE80211_VHT_CAP_SHORT_GI_80 | IEEE80211_VHT_CAP_MAX_MPDU_LENGTH_7991 |
 			(IEEE80211_VHT_MAX_AMPDU_1024K << IEEE80211_VHT_CAP_MAX_A_MPDU_LENGTH_EXPONENT_SHIFT);
 		/* Two streams MCS0..9; all higher NSS are unsupported. */
 		radio->band.vht_cap.vht_mcs.rx_mcs_map = cpu_to_le16(0xfffa);
 		radio->band.vht_cap.vht_mcs.tx_mcs_map = cpu_to_le16(0xfffa);
-		radio->band.vht_cap.vht_mcs.rx_highest = cpu_to_le16(867);
-		radio->band.vht_cap.vht_mcs.tx_highest = cpu_to_le16(867);
+		radio->band.vht_cap.vht_mcs.rx_highest = cpu_to_le16(1734);
+		radio->band.vht_cap.vht_mcs.tx_highest = cpu_to_le16(1734);
 	}
 	radio->he_band.types_mask = BIT(NL80211_IFTYPE_AP);
 	radio->he_band.he_cap.has_he = true;
@@ -1309,14 +1322,15 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	radio->he_band.he_cap.he_cap_elem.mac_cap_info[3] = IEEE80211_HE_MAC_CAP3_MAX_AMPDU_LEN_EXP_EXT_2;
 	radio->he_band.he_cap.he_cap_elem.mac_cap_info[4] = IEEE80211_HE_MAC_CAP4_AMSDU_IN_AMPDU;
 	radio->he_band.he_cap.he_cap_elem.phy_cap_info[0] = band == NL80211_BAND_5GHZ ?
-		IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_80MHZ_IN_5G : 0;
+		(IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_80MHZ_IN_5G |
+		 IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G) : 0;
 	radio->he_band.he_cap.he_cap_elem.phy_cap_info[1] = IEEE80211_HE_PHY_CAP1_LDPC_CODING_IN_PAYLOAD |
 		IEEE80211_HE_PHY_CAP1_HE_LTF_AND_GI_FOR_HE_PPDUS_0_8US;
 	radio->he_band.he_cap.he_cap_elem.phy_cap_info[7] = IEEE80211_HE_PHY_CAP7_HE_SU_MU_PPDU_4XLTF_AND_08_US_GI;
 	radio->he_band.he_cap.he_mcs_nss_supp.rx_mcs_80 = cpu_to_le16(0xfffa);
 	radio->he_band.he_cap.he_mcs_nss_supp.tx_mcs_80 = cpu_to_le16(0xfffa);
-	radio->he_band.he_cap.he_mcs_nss_supp.rx_mcs_160 = cpu_to_le16(0xffff);
-	radio->he_band.he_cap.he_mcs_nss_supp.tx_mcs_160 = cpu_to_le16(0xffff);
+	radio->he_band.he_cap.he_mcs_nss_supp.rx_mcs_160 = cpu_to_le16(band == NL80211_BAND_5GHZ ? 0xfffa : 0xffff);
+	radio->he_band.he_cap.he_mcs_nss_supp.tx_mcs_160 = cpu_to_le16(band == NL80211_BAND_5GHZ ? 0xfffa : 0xffff);
 	radio->he_band.he_cap.he_mcs_nss_supp.rx_mcs_80p80 = cpu_to_le16(0xffff);
 	radio->he_band.he_cap.he_mcs_nss_supp.tx_mcs_80p80 = cpu_to_le16(0xffff);
 	_ieee80211_set_sband_iftype_data(&radio->band, &radio->he_band, 1);
