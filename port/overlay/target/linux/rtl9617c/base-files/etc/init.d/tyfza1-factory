@@ -5,7 +5,16 @@ START=09
 
 start() {
 	local source=/tmp/tyfza1-factory-source
-	local device
+	local runtime=/tmp/tyfza1-factory
+	local device calibration
+
+	# Invalidate the previous import before attempting to access the factory volume.
+	rm -rf "$runtime"
+	for calibration in rtl9617c/bosa-calibration.bin \
+		tyfza1/rtl8852ce/flash-calibration.bin tyfza1/rtl8192xbe/flash-calibration.bin; do
+		mkdir -p "/lib/firmware/realtek/${calibration%/*}" || return $?
+		ln -sfn "$runtime/$calibration" "/lib/firmware/realtek/$calibration" || return $?
+	done
 	if [ ! -d /sys/class/ubi/ubi0 ]; then
 		for device in /sys/class/mtd/mtd*/name; do
 			[ "$(cat "$device")" = ubi_device ] || continue

@@ -30,7 +30,7 @@ for chain in ('A', 'B'):
         for band, count in (('2G_CCK', 6), ('2G', 5), ('5G', 14)):
             fields[f'HW_{band}_TSSI_{kind}_DIFF_{chain}'] = ','.join(f'{n + 2:02x}' for n in range(count))
 
-def invoke(script, case, values, bosa, identity=True):
+def invoke(script, case, values, bosa, identity=True, reset=True):
     (source / 'config_hs.xml').write_text('<Config>\n' + '\n'.join(
         f'<Value Name="{key}" Value="{value}"/>' for key, value in values.items()) + '\n</Config>\n')
     config = source / 'config.xml'
@@ -45,13 +45,13 @@ def invoke(script, case, values, bosa, identity=True):
     else:
         optical.write_bytes(bosa)
     destination = runtime / 'output' / case
-    if destination.exists():
+    if reset and destination.exists():
         shutil.rmtree(destination)
     destination.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(['sudo', '-n', 'chroot', f'--userspec={os.getuid()}:{os.getgid()}',
         str(runtime), '/usr/bin/ucode', '/' + script, '/input', '/output/' + case],
         text=True, capture_output=True)
-    radios = [destination / f'lib/firmware/realtek/tyfza1/{name}/flash-calibration.bin'
+    radios = [destination / f'tmp/tyfza1-factory/tyfza1/{name}/flash-calibration.bin'
               for name in ('rtl8852ce', 'rtl8192xbe')]
     data = [path.read_bytes() if path.exists() else None for path in radios]
     return result, data, destination
@@ -61,19 +61,16 @@ normal, expected, _ = invoke('factory.uc', 'normal', fields, valid_bosa)
 assert normal.returncode == 0, normal.stderr
 assert all(value and len(value) == 284 and value[:8] == b'TYFC0003' for value in expected)
 assert expected[0] != expected[1]  # Each radio retains its own thermal/crystal inputs.
-if (runtime / 'factory-before.uc').exists():
-    before, data, _ = invoke('factory-before.uc', 'before-normal', fields, valid_bosa)
-    assert before.returncode == 0 and data == expected
-    before, data, _ = invoke('factory-before.uc', 'before-short-bosa', fields, b'bad')
-    assert before.returncode != 0 and data == [None, None]
-    print('Before fix: short BOSA prevents both radio calibrations; reproduced')
-
 for case, bosa, identity in (('short-bosa', b'bad', True), ('extended-bosa', valid_bosa + b'original suffix', True),
                              ('missing-bosa', None, True), ('missing-pon-config', valid_bosa, False)):
     result, data, destination = invoke('factory.uc', case, fields, bosa, identity)
-    assert result.returncode == (0 if bosa is not None and identity else 1) and data == expected, (case, result.stderr)
-    if bosa is not None:
-        assert (destination / 'lib/firmware/realtek/rtl9617c/bosa-calibration.bin').read_bytes() == bosa
+    valid_optical = bosa is not None and len(bosa) >= 1024
+    assert result.returncode == (0 if valid_optical and identity else 1) and data == expected, (case, result.stderr)
+    optical = destination / 'tmp/tyfza1-factory/rtl9617c/bosa-calibration.bin'
+    if valid_optical:
+        assert optical.read_bytes() == bosa
+    else:
+        assert not optical.exists()
     assert not list(destination.rglob('*.new'))
     print(f'{case}: both original-format radio calibrations generated')
 
@@ -81,8 +78,54 @@ modified = dict(fields)
 del modified['HW_THERMAL_A_WLAN0']
 result, data, destination = invoke('factory.uc', 'radio0-field-missing', modified, valid_bosa)
 assert result.returncode != 0 and data == [None, expected[1]]
-assert (destination / 'lib/firmware/realtek/rtl9617c/bosa-calibration.bin').read_bytes() == valid_bosa
+assert (destination / 'tmp/tyfza1-factory/rtl9617c/bosa-calibration.bin').read_bytes() == valid_bosa
 assert (destination / 'var/run/tyfza1-factory/pon_factory').exists()
 print('radio0-field-missing: other radio, optical calibration and PON identity imported')
 
-print('Factory importer: valid bytes unchanged, independent radio/optical/PON imports passed')
+for failed_bosa in (None, b'bad'):
+    invoke('factory.uc', 'repeat-import', fields, valid_bosa)
+    result, data, destination = invoke('factory.uc', 'repeat-import', modified, failed_bosa, reset=False)
+    assert result.returncode != 0 and data == [None, expected[1]]
+    assert not (destination / 'tmp/tyfza1-factory/rtl9617c/bosa-calibration.bin').exists()
+print('Repeated import: missing/short optical data and invalid radio data revoke the old calibration')
+
+# Run the production boot service with an isolated root and modeled UBI mounts.
+service = runtime / 'etc/init.d/tyfza1-factory'
+service.parent.mkdir(parents=True, exist_ok=True)
+shutil.copy2(project / 'port/overlay/target/linux/rtl9617c/base-files/etc/init.d/tyfza1-factory', service)
+importer = runtime / 'usr/share/tyfza1/factory.uc'
+importer.parent.mkdir(parents=True, exist_ok=True)
+shutil.copy2(project / 'port/packages/tyfza1-pon-control/files/factory.uc', importer)
+importer.chmod(0o755)
+(runtime / 'sys/class/ubi/ubi0').mkdir(parents=True, exist_ok=True)
+(runtime / 'dev').mkdir(exist_ok=True)
+invoke('factory.uc', 'boot-input', fields, valid_bosa)
+calibrations = ['rtl9617c/bosa-calibration.bin'] + [
+    f'tyfza1/{name}/flash-calibration.bin' for name in ('rtl8852ce', 'rtl8192xbe')]
+for calibration in calibrations:
+    link = runtime / 'lib/firmware/realtek' / calibration
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.unlink(missing_ok=True)
+    link.write_bytes(b'old persistent calibration')
+
+def boot(mount_ok):
+    script = ('. /etc/init.d/tyfza1-factory\n'
+              'mount() { ' + ('cp /input/* "$6"/;' if mount_ok else 'return 5;') + ' }\n'
+              'umount() { :; }\nstart\n')
+    return subprocess.run(['sudo', '-n', 'chroot', f'--userspec={os.getuid()}:{os.getgid()}',
+                           str(runtime), '/bin/sh', '-c', script], text=True, capture_output=True)
+
+result = boot(True)
+assert result.returncode == 0, (result.stdout, result.stderr)
+for calibration, data in zip(calibrations, [valid_bosa] + expected):
+    link = runtime / 'lib/firmware/realtek' / calibration
+    assert link.is_symlink() and os.readlink(link) == '/tmp/tyfza1-factory/' + calibration
+    assert (runtime / 'tmp/tyfza1-factory' / calibration).read_bytes() == data
+result = boot(False)
+assert result.returncode == 5, (result.stdout, result.stderr)
+for calibration in calibrations:
+    result = subprocess.run(['sudo', '-n', 'chroot', f'--userspec={os.getuid()}:{os.getgid()}',
+        str(runtime), '/bin/cat', '/lib/firmware/realtek/' + calibration], capture_output=True)
+    assert result.returncode != 0 and not result.stdout
+print('Boot service: persistent copies migrated to tmpfs links; mount failure makes every calibration unavailable')
+print('Factory importer: original bytes, subsystem isolation and stale calibration removal passed')

@@ -1,7 +1,7 @@
 #!/usr/bin/ucode
 // SPDX-License-Identifier: GPL-2.0-or-later
 'use strict';
-import { readfile, writefile, mkdir, chmod, rename } from 'fs';
+import { readfile, writefile, mkdir, chmod, rename, unlink } from 'fs';
 
 const source = ARGV[0];
 const output = ARGV[1];
@@ -44,12 +44,15 @@ function mac(text) {
 }
 
 function import_optical() {
+	unlink(output + '/tmp/tyfza1-factory/rtl9617c/bosa-calibration.bin');
 	const calibration = readfile(source + '/rtkbosa_k.bin');
 	if (calibration == null) die('Cannot read factory BOSA calibration');
-	save('lib/firmware/realtek/rtl9617c/bosa-calibration.bin', calibration);
+	if (length(calibration) < 1024) die('BOSA calibration needs at least 1024 bytes');
+	save('tmp/tyfza1-factory/rtl9617c/bosa-calibration.bin', calibration);
 }
 
 function import_radio(radio) {
+	unlink(output + '/tmp/tyfza1-factory/tyfza1/' + radio[0] + '/flash-calibration.bin');
 	let data = 'TYFC0003';
 	for (let key in ['HW_RX_GAINGAP_2G_CCK_AB', 'HW_RX_GAINGAP_2G_OFDM_AB',
 		'HW_RX_GAINGAP_5GL_AB', 'HW_RX_GAINGAP_5GM_AB', 'HW_RX_GAINGAP_5GH_AB'])
@@ -70,7 +73,7 @@ function import_radio(radio) {
 	for (let seed in [0, int(slope[length(slope) - 1], 16)])
 		for (let width = 0; width < 4; width++)
 			for (let i = 0; i < 14; i++) data += chr(width == 1 ? 0 : seed);
-	save('lib/firmware/realtek/tyfza1/' + radio[0] + '/flash-calibration.bin', data);
+	save('tmp/tyfza1-factory/tyfza1/' + radio[0] + '/flash-calibration.bin', data);
 }
 
 function import_identity() {
