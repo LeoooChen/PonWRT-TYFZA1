@@ -283,7 +283,7 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 	tx->ni.active = true;
 	memset(tx->pe.memory + 0x11000, 0, 0xc00);
 	memset(tx->pe.memory + 0x13000, 0, 0x4000);
-	memset(tx->pe.memory + 0x17400, 0, 0x400);
+	memset(tx->pe.memory + 0x19000, 0, 0x400);
 	memset(tx->pe.memory + 0x18000, 0, 0x1000);
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 680);
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 152);

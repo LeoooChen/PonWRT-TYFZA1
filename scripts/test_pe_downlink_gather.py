@@ -45,8 +45,8 @@ def case(lengths, cap, from_epp=False, hw_rts=False):
     put(base + 0x15020, payload)
     put(base + 0x16020, payload + (len(lengths) - 1) * 2048)
     put(mb + 170 * 4, 2)
-    put(base + 0x17404, 2)
-    put(base + 0x17604, 2)
+    put(base + 0x19004, 2)
+    put(base + 0x19204, 2)
     if from_epp:
         put(mb + 25 * 4, 0x10030000)
         put(mb + 114 * 4, 0x7060)

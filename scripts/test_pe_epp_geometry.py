@@ -42,7 +42,7 @@ for cos in range(8):
         u.mem_write(base + 0xc400, bytes(128 * 8))
         u.mem_write(base + 0x11000, bytes(0xc00))
         u.mem_write(base + 0x13000, bytes(0x4000))
-        u.mem_write(base + 0x17400, bytes(0x400))
+        u.mem_write(base + 0x19000, bytes(0x400))
         u.mem_write(base + 0x18000, bytes(0x1000))
         put(mailbox + 170 * 4, 0)
         put(base + 0x11a04, 1)

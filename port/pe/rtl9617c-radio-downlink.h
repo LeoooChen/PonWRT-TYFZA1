@@ -6,8 +6,9 @@
 #define NI_TID_QUEUED 0x13000
 #define NI_TIM_MASK 0x14000
 #define NI_TID_PENDING 0x18000
-#define NI_PEER_NEXT 0x17400
-#define NI_PEER_PREV 0x17600
+/* RX owns 0x17400..0x1781f for its buffer map, spares and held NI tail. */
+#define NI_PEER_NEXT 0x19000
+#define NI_PEER_PREV 0x19200
 #define NI_TID_HEAD 0x15000
 #define NI_TID_TAIL 0x16000
 #define NI_EPP_CONSUMERS 0x11c00
