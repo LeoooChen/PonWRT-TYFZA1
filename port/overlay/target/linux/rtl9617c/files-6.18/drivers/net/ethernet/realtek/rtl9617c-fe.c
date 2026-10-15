@@ -1344,6 +1344,25 @@ unlock:
  kvfree(copy);
  return ret;
 }
+static int fe_disable_locked(struct rtl_fe *fe)
+{
+ struct rtl_fe_flow *flow,*next;
+ unsigned int i;
+ int ret=0;
+
+ fe->enabled=false;
+ if(fe->prepared) {
+  for(i=0;i<FE_LAN_PORTS;i++)fe_write(fe,FE_LAN_RX_CTRL(i),fe->lan_saved[i]);
+  usleep_range(1000,2000);
+  list_for_each_entry_safe(flow,next,&fe->flows,list) {
+   ret=fe_delete(fe,flow);
+   if(ret)return ret;
+  }
+  ret=fe_restore(fe);
+ }
+ fe_collect_ports(fe);
+ return ret;
+}
 int rtl_fe_enable(struct rtl_fe *fe)
 {
  unsigned int i;
@@ -1352,6 +1371,11 @@ int rtl_fe_enable(struct rtl_fe *fe)
  if(!fe)return -EOPNOTSUPP;
  mutex_lock(&fe->lock);
  if(fe->enabled){ret=0;goto unlock;}
+ /* An unfinished rollback still owns the original register snapshot. */
+ if(fe->prepared) {
+  ret=fe_disable_locked(fe);
+  if(ret)goto unlock;
+ }
  ret=fe_prepare(fe);
  if(ret){fe_restore(fe);goto unlock;}
  /* The DMA tables, miss actions and port maps exist before admitting LAN. */
@@ -1365,24 +1389,11 @@ unlock:
 }
 int rtl_fe_disable(struct rtl_fe *fe)
 {
- struct rtl_fe_flow *flow,*next;
- unsigned int i;
- int ret=0;
+ int ret;
 
  if(!fe)return 0;
  mutex_lock(&fe->lock);
- fe->enabled=false;
- if(fe->prepared) {
-  for(i=0;i<FE_LAN_PORTS;i++)fe_write(fe,FE_LAN_RX_CTRL(i),fe->lan_saved[i]);
-  usleep_range(1000,2000);
-  list_for_each_entry_safe(flow,next,&fe->flows,list) {
-   ret=fe_delete(fe,flow);
-   if(ret)goto unlock;
-  }
-  ret=fe_restore(fe);
- }
- fe_collect_ports(fe);
-unlock:
+ ret=fe_disable_locked(fe);
  fe->error=ret;
  mutex_unlock(&fe->lock);
  return ret;

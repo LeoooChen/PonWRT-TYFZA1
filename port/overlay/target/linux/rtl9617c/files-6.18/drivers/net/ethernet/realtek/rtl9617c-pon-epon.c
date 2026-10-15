@@ -140,15 +140,15 @@ int rtl_pon_epon_traffic_locked(struct rtl9617c_pon *pon, bool enable)
 	int ret = 0;
 
 	lockdep_assert_held(&pon->control_lock);
-	if(!enable && pon->fe_enabled) {
-		ret=rtl_pon_fe_configure_locked(pon,false);
-		if(ret)return ret;
-	}
-	if (!enable)
+	if (!enable) {
 		gpiod_set_value_cansleep(pon->tx_disable, 1);
+		if (pon->fe_enabled)
+			ret = rtl_pon_fe_configure_locked(pon, false);
+	}
 	mutex_lock(&pon->lock);
 	if (!rtl_pon_mode_is_epon(pon->mode)) {
-		ret = enable ? -EOPNOTSUPP : 0;
+		if (enable)
+			ret = -EOPNOTSUPP;
 		goto unlock;
 	}
 	if (enable && (!pon->puc_configured || !pon->pdc_configured ||

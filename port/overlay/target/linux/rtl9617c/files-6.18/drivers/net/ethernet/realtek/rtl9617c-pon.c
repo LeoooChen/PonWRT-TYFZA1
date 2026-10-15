@@ -801,20 +801,30 @@ static int rtl9617c_pon_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static void rtl9617c_pon_remove(struct platform_device *pdev)
+static void rtl9617c_pon_shutdown(struct platform_device *pdev)
 {
 	struct rtl9617c_pon *pon = platform_get_drvdata(pdev);
+	int ret;
 
 	mutex_lock(&pon->control_lock);
 	rtl_pon_gpon_stop_locked(pon);
 	rtl_pon_xgpon_stop_locked(pon);
-	rtl_pon_epon_traffic_locked(pon, false);
+	ret = rtl_pon_epon_traffic_locked(pon, false);
+	if (ret)
+		dev_err(pon->dev, "PON forwarding cleanup failed during shutdown: %d\n", ret);
 	rtl_pon_mpcp_stop_locked(pon);
 	writel(0, pon->top_irq + 4);
 	writel(0, pon->optical_irq + 4);
 	synchronize_irq(pon->mpcp_irq);
 	mutex_unlock(&pon->control_lock);
 	rtl_pon_serdes_stop_work(pon);
+}
+
+static void rtl9617c_pon_remove(struct platform_device *pdev)
+{
+	struct rtl9617c_pon *pon = platform_get_drvdata(pdev);
+
+	rtl9617c_pon_shutdown(pdev);
 	rtl_pon_oam_remove(pon);
 	rtl_pon_omci_remove(pon);
 }
@@ -828,6 +838,7 @@ MODULE_DEVICE_TABLE(of, rtl9617c_pon_of_match);
 static struct platform_driver rtl9617c_pon_driver = {
 	.probe = rtl9617c_pon_probe,
 	.remove = rtl9617c_pon_remove,
+	.shutdown = rtl9617c_pon_shutdown,
 	.driver = {
 		.name = "rtl9617c-pon",
 		.of_match_table = rtl9617c_pon_of_match,

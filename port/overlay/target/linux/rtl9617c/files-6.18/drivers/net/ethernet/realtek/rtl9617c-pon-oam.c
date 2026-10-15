@@ -401,6 +401,8 @@ int rtl_pon_oam_init(struct rtl9617c_pon *pon)
 	return 0;
 free:
 	rcu_assign_pointer(pon->oam_devices[0], NULL);
+	/* Optical IRQ readers remain active independently of NI attachment. */
+	synchronize_net();
 	rtl_oam_free(dev);
 	return ret;
 }

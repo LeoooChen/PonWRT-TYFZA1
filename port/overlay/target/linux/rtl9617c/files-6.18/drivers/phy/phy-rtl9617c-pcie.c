@@ -20,6 +20,7 @@ struct rtl_pcie_controls {
 	void __iomem *core_reset, *phy_reset, *phy_control, *power;
 	struct regmap *global_config;
 	spinlock_t lock;
+	u32 powered_lanes;
 	struct reset_controller_dev reset;
 	struct clk_hw_onecell_data *clocks;
 	struct phy *phys[4];
@@ -95,14 +96,24 @@ static int rtl_pcie_lane_power(struct phy *phy, bool enabled)
 	unsigned int id = lane->id;
 	u32 supply = BIT(7 + id) | BIT(20 + id * 2) | BIT(21 + id * 2);
 	u32 isolation = BIT(id);
+	u32 analog = BIT(16 + id / 2), value;
+	unsigned long flags;
 
-	/* Each pair shares its analog supply; lane1 follows lane0 as on stock. */
-	if (!(id & 1))
-		supply |= BIT(16 + id / 2);
-	if (!id && enabled)
-		rtl_pcie_update(controls, controls->phy_control, BIT(27), 0);
-	rtl_pcie_update(controls, controls->power, supply | isolation,
-			 enabled ? supply : isolation);
+	/* S0/S1 ISO_ANA_B belongs to both lanes, not to the lane0 consumer. */
+	spin_lock_irqsave(&controls->lock, flags);
+	if (enabled) {
+		controls->powered_lanes |= BIT(id);
+		if (id < 2)
+			writel(readl(controls->phy_control) & ~BIT(27), controls->phy_control);
+	} else {
+		controls->powered_lanes &= ~BIT(id);
+	}
+	value = readl(controls->power) & ~(supply | isolation | analog);
+	value |= enabled ? supply : isolation;
+	if (controls->powered_lanes & (3U << (id & ~1U)))
+		value |= analog;
+	writel(value, controls->power);
+	spin_unlock_irqrestore(&controls->lock, flags);
 	return 0;
 }
 static int rtl_pcie_lane_on(struct phy *phy)

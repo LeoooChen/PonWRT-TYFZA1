@@ -59,7 +59,7 @@ struct rtl_fe {
  unsigned int reg[0x10000/4],mask[8],cls[2][7],map[256];
  struct rtl_fe_cam_protocol protocol_cam[3];unsigned char ppp_protocol_ids[2];
  unsigned int cam[9][64][5];
- unsigned int admission_writes,cache_ready,fail_mask;
+ unsigned int admission_writes,cache_ready,fail_mask,fail_mask_writes;
 };
 static unsigned int fe_read(void *ctx,unsigned int reg){struct rtl_fe *f=ctx;assert(reg<0x10000);return f->reg[reg/4];}
 static void fe_write(void *ctx,unsigned int reg,unsigned int value){
@@ -84,6 +84,7 @@ static int fe_access(void *ctx,unsigned int reg,unsigned int value){
   else f->reg[(0x3214-i*4)/4]=f->cam[bank][index][i];
  } else if(reg==0x3910){
   if(f->fail_mask){f->fail_mask=0;return -ETIMEDOUT;}
+  if((value&BIT(30)) && f->fail_mask_writes){f->fail_mask_writes--;return -ETIMEDOUT;}
   unsigned int bank=(value>>6)&1;
   unsigned int slot=value&63;
   unsigned int *selected=slot==63?f->mask:slot==62?f->wifi_mask:f->bridge_mask[61-slot];
@@ -157,14 +158,34 @@ int main(void){
  for(unsigned int i=0;i<3;i++)assert(!f.protocol_cam[i].created);
  assert(!rtl_fe_disable(&f));
  assert(f.cam[2][11][0]==0x18864 && f.cam[8][5][0]==0x10021 && f.cam[8][9][0]==0x10057);
+ /* Fail a table write during prepare and again during its rollback. */
+ f.fail_mask_writes=2;
+ assert(rtl_fe_enable(&f)==-ETIMEDOUT && !f.enabled && f.prepared);
+ f.fail_mask_writes=1;
+ assert(rtl_fe_enable(&f)==-ETIMEDOUT && !f.enabled && f.prepared);
+ assert(!memcmp(f.saved,old_regs,ARRAY_SIZE(fe_registers)*sizeof(old_regs[0])));
+ assert(!rtl_fe_enable(&f) && f.enabled);
+ assert(!rtl_fe_disable(&f) && !f.prepared);
+ for(unsigned int i=0;i<ARRAY_SIZE(fe_registers);i++)assert(fe_read(&f,fe_registers[i])==old_regs[i]);
+ /* A failed normal disable has the same unfinished ownership. */
+ assert(!rtl_fe_enable(&f));
+ f.fail_mask_writes=1;
+ assert(rtl_fe_disable(&f)==-ETIMEDOUT && !f.enabled && f.prepared);
+ assert(!rtl_fe_enable(&f));
+ assert(!rtl_fe_disable(&f));
+ for(unsigned int i=0;i<ARRAY_SIZE(fe_registers);i++)assert(fe_read(&f,fe_registers[i])==old_regs[i]);
  puts("Five-LAN FE:ordered admission,physical source preservation,direct L2TM output,three exact restore cycles and failed preparation passed");
+ puts("FE rollback: failed prepare/disable preserves original snapshots across re-enable and repeated rollback failure");
 }
 '''
+functions = ['fe_prepare', 'fe_restore']
+if re.search(r'^static int fe_disable_locked\(', source, re.M):
+    functions.append('fe_disable_locked')
+functions += ['rtl_fe_enable', 'rtl_fe_disable']
 with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='fe-lan-lifecycle-') as work:
     path = Path(work) / 'test.c'
     binary = Path(work) / 'test'
-    path.write_text(common + registers + '\n' + '\n'.join(function(n) for n in
-        ['fe_prepare', 'fe_restore', 'rtl_fe_enable', 'rtl_fe_disable']) + test)
+    path.write_text(common + registers + '\n' + '\n'.join(function(n) for n in functions) + test)
     subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-g', '-fsanitize=address,undefined',
         '-I', str(drivers), str(path), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
@@ -172,6 +193,7 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='fe-lan-lifecycl
     'production_source_sha256': hashlib.sha256(source.encode()).hexdigest(),
     'LAN_ports': [0, 1, 2, 3, 4], 'exact_enable_disable_cycles': 3,
     'failed_prepare_admits_no_LAN': True, 'physical_LSPID_preserved': True,
+    'failed_rollback_preserves_original_snapshot_on_reenable': True,
     'post_PE_LAN_output': 'NI demux3 to L2TM; upper selectors preserved',
     'sanitizers': ['ASan', 'UBSan'], 'hardware_verified_by_this_test': False,
 }, indent=2) + '\n')
