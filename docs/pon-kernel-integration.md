@@ -29,3 +29,27 @@ MODPOST通过，无编译警告；GPON/XGTC恢复、NI gate、FE启停及业务�
 OLT重连或Wi-Fi高速流量结果。当前实机也未因此换成这份内核。
 
 详细输入、产物SHA256和日志见 `manifests/pon-kernel-integration.json`。
+
+## 2026-10-16：签名 RAM 引导与 EPON 实机复测
+
+上述尚未引导的状态是集成构建时的边界；随后已用 PON/NI 专用 DTB 封装
+签名 FIT，并从 TFTP 加载到 RAM，引导了同一份新版内核和 initramfs。实际
+U-Boot 验证配置、内核和 DTB 的 SHA256/RSA2048 签名，通过后运行内核。
+
+打包时发现 RAM FIT 仍被错误地套用 NAND kernel volume 容量限制。现将该
+限制限定于 ubi 模式；RAM 模式继续按已有内存布局、加载地址及预留区检查。
+11,527,632 字节 FIT 已完成签名校验、破坏签名拒绝检查、TFTP CRC 对照及
+实际引导，不需要为这个单行修复另做全量构建或全量测试。
+
+新内核 EPON-D10G 的 LLID0 注册、OAM 认证 accepted、WAN DHCP 和公网
+ping 均成功。执行一次 PON 服务重启后再次注册并认证，服务和 FE 错误码
+均为0；随后两次公网 ping 均收到。没有可用 GPON/XG/XGS OLT，不能把
+EPON 成功外推到 ITU 制式。Mac 绑定有线接口的 HTTPS 探测连接超时，且
+该探测读取了不存在的 FE sysfs 文件，因此不作为转发性能通过依据。
+
+本次未执行固件刷写、saveenv 或 UBI 写入命令，未修改保存的 PON 配置。
+必须说明：原厂 U-Boot 在正常重启中自行保存冗余 NAND 环境，串口已观察
+到擦写；因此不能声称整个设备完全没有发生 flash 写入。
+
+RAM DTB 不含 PCIe 无线节点，本轮不验证 Wi-Fi。实机结果与产物哈希见
+`manifests/pon-ram-live.json`；历史构建清单保持原有时间点的状态。

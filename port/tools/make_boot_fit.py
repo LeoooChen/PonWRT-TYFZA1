@@ -279,7 +279,7 @@ def build(image, dtb, output, mode, rootfs=None, key_dir=None, key_dtb=None):
                            stdin=subprocess.DEVNULL, capture_output=True, text=True)
     (output / 'mkimage.log').write_text(built.stdout + built.stderr)
     fit = output / 'image.itb'
-    if fit.stat().st_size > min(by_name[n]['reserved_bytes'] for n in ('ubi_k0', 'ubi_k1')):
+    if mode == 'ubi' and fit.stat().st_size > min(by_name[n]['reserved_bytes'] for n in ('ubi_k0', 'ubi_k1')):
         raise ValueError('FIT exceeds the actual kernel volume capacity, not an environment size guess')
     if key_dir is not None:
         checked = verify_configuration_signature(fit, key_dtb, checker)

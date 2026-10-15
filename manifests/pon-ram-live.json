@@ -1,0 +1,68 @@
+{
+  "date": "2026-10-16",
+  "source_commit": "95625a8",
+  "boot": "TFTP to RAM0x5000000; source FIT script; no persistent firmware installation",
+  "fit": {
+    "mode": "ram",
+    "openwrt_commit": "79bc56cb7483bc716da07c369530b792631904b4",
+    "kernel": {
+      "bytes": 19458056,
+      "image_size": 19791872,
+      "text_offset": 0,
+      "flags": 10,
+      "sha256": "cdd92eb5263ca51852e8e6b6b995786e840962e9d538a8ab27331bf9b8840210"
+    },
+    "dtb_sha256": "a2c0a673e8e89712f753bfa9424a8db31dcbe2df3ba0c6e96e578d19496d541b",
+    "fit_sha256": "1c172092bdda842a9ee3bcce61755bb6d86c9f820cbdfd02341ef64ab9c09df4",
+    "signature": "RSA2048 image/configuration signatures verified against supplied bootloader DTB",
+    "signature_verified": true,
+    "payload_signatures_verified": true,
+    "corrupted_configuration_signature_rejected": true,
+    "host_only_legacy_key_label_compatibility": true,
+    "key_dtb_sha256": "d72ae016b8a7438852ac0a94ef632b34d0b1981386ddfbad1202a1a6dee9a04e",
+    "verity": null,
+    "rootfs_sha256": null,
+    "live_load_addresses_verified": false,
+    "hardware_boot_tested": false,
+    "persistent_installation_approved": false
+  },
+  "hardware_boot_tested": true,
+  "kernel": "6.18.55 #2 SMP Fri Oct16 05:44:25 CST2026",
+  "boot_addresses": {
+    "fit": "0x5000000",
+    "kernel": "0x200000",
+    "dtb": "0x1800000"
+  },
+  "fit_bytes": 11527632,
+  "tftp_crc32": "27e94481",
+  "PON": {
+    "mode": "epon-d10g",
+    "LLID0_registered": true,
+    "OAM_authentication": "accepted",
+    "DHCP_address": "192.168.71.28",
+    "service_restart_exit": 0,
+    "restart_reauthentication": true,
+    "service_error": 0,
+    "stage": "offload",
+    "FE_error": 0,
+    "FE_enabled": true,
+    "public_ping_after_restart": {
+      "transmitted": 2,
+      "received": 2
+    }
+  },
+  "limitations": [
+    "No GPON/XG-PON/XGS-PON OLT registration test",
+    "No PCIe or radio devices in the PON-only DTB",
+    "No routed TCP throughput claim: Mac-bound HTTPS connection timed out; attempted FE snapshot used a nonexistent sysfs filename",
+    "The vendor bootloader automatically saved redundant NAND environment during reboot; no saveenv, firmware flash or UBI write command was issued"
+  ],
+  "saved_configuration_modified": false,
+  "firmware_flashing_performed": false,
+  "full_test_suite": false,
+  "records": {
+    "artifacts/pon-kernel-integration-20261016/ram-boot/signed-ram-fit/manifest.json": "981b095631837ff09de4b217b2538d1a48ca4aa3ffd9d902b29b6cd2fddfd2e2",
+    "artifacts/pon-kernel-integration-20261016/ram-boot/signed-ram-fit/signature-check.log": "b197ccdd99c5441624b81a5d3a340d043ffdd0da41f87d1edc25d37c0de26a0d",
+    "artifacts/pon-kernel-integration-20261016/ram-boot/ram-restart-current-state.txt": "44b3ef8d3eaccd14eac163b16d3ab261efafba72251a9e2089e8d47e9de86c72"
+  }
+}

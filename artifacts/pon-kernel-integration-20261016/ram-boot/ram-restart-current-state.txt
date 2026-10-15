@@ -1,0 +1,16 @@
+5847.30 23349.46
+enabled=1 error=0
+stage=offload error=0
+family=epon control=0000030f serdes_reset_n=1 register_reset_n=1 epon_status=00000022 signal_loss=0 pcs10g_sync=1 pcs1g_sync=0 registered_llids=00000001
+available=1 enabled=1 prepared=1 error=0 flows=2 hash_entries=65536 counter_slots=32 counted_flows=2 activity_flows=0 installs=86 deletes=84 rejected=0 bridge_rules=0 learned_bridge_rules=0
+{"pid":3605,"process_start":"20294","updated_ms":5846593,"llid_index":0,"link_error":0,"registered":true,"generation":2,"discovery_stable":true,"extension_selected":true,"loid_configured":true,"auth_state":"accepted","auth_failure":0,"auth_challenges":1,"auth_results":1,"auth_successes":1,"auth_failures":0,"last_auth_result_ms":204450,"rx_frames":6166,"tx_frames":8038,"send_errors":0,"receive_errors":0}
+7: pon-data0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP qlen 1000
+    inet 192.168.71.28/24 brd 192.168.71.255 scope global pon-data0
+       valid_lft forever preferred_lft forever
+PING 223.5.5.5 (223.5.5.5): 56 data bytes
+64 bytes from 223.5.5.5: seq=0 ttl=52 time=9.343 ms
+64 bytes from 223.5.5.5: seq=1 ttl=52 time=9.398 ms
+
+--- 223.5.5.5 ping statistics ---
+2 packets transmitted, 2 packets received, 0% packet loss
+round-trip min/avg/max = 9.343/9.370/9.398 ms
