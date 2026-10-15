@@ -11,6 +11,7 @@
 #include "rtl9617c-pon-mode.h"
 #include "rtl9617c-mpcp-backoff.h"
 #include "rtl9617c-pon-path.h"
+#include "rtl9617c-xgtc-recovery.h"
 
 struct rtl_itu_path_state {
 	struct rcu_head rcu;
@@ -39,6 +40,9 @@ struct rtl9617c_pon {
 	struct delayed_work mpcp_work;
 	struct delayed_work xgpon_recovery_work;
 	bool xgpon_recover;
+	/* 0 idle, 1 capture PUC, 2 flush/reset, 3 restore saved PUC. */
+	u8 xgpon_recovery_phase;
+	struct rtl_xgtc_puc_saved xgpon_puc_saved;
 	enum rtl_pon_mode mode;
 	unsigned int burst_polarity;
 	unsigned int los_invert;

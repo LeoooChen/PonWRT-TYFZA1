@@ -1,0 +1,63 @@
+{
+  "base_commit": "67804db32c748106117df28d5f5d6b33919fff2d",
+  "purpose": "Restore XGTC T-CONT/PUC queues after leaving O5/O6 without rebuilding SerDes or replacing FE policy",
+  "authority": {
+    "module": "analysis/private/live-files/lib/modules/5.10.70/extra/ca-ne.ko",
+    "sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+    "functions": [
+      "aal_xgpon_flush_tcont_puc",
+      "__xgpon_cfg_record_save.constprop.0",
+      "__xgpon_disable.constprop.0",
+      "__xgpon_cfg_record_recover.constprop.0",
+      "aal_xgpon_backup_puc",
+      "aal_xgpon_reset_puc",
+      "aal_xgpon_restore_puc",
+      "aal_xgpon_tcont_flush",
+      "aal_xgpon_clk_seq_reset_and_clear_rxtx_tuning"
+    ],
+    "default_reset_at_lods": 0
+  },
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-ni.h": "4da03a270a565bdf9cf6ba8ed3c838a7edd7fbc7349f217b861516b1fdec1dbc",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-xram.c": "e8ea42bf73c7d3dfb2b81694562efcf56860a5372ca93e0986fd2ab29acea42e",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.h": "bf92445510134c619b7aa58117ac9a1d2d3747682f33031ae477701c3be18771",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-xgpon.c": "9c1aa2c5ef62e7dabb7e66438022c95db306914f3252796c9c4790fbd0f1d61a",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-xgtc-recovery.h": "aecddec9da61740ab11d010cae43dc20825ef250289b1a9356dedc1b0db2615e",
+    "scripts/test_xgtc_queue_recovery.py": "dd575273a82aead5266e1aa22da4da842d60eac1a35fa4a3280b76b46a350b28",
+    "scripts/test_xgpon_o6.py": "0ab8c61e93a50a90ffeebd1fb7206a175de52d474bef8cf64c840d83cde9230a",
+    "tools/trace_stock_xgtc_queue_recovery.py": "fc6ec1abbe03ddc58deda946963210fe8c657e21cefefee89608cbc31fe6c311",
+    "docs/pon-xgtc-queue-recovery.md": "0081e914e0f6098bf813c6a8f8a350cbd877fb26afdcce990a7a852c3812a6a5"
+  },
+  "validation": {
+    "factory_instruction_execution": "NI8..23 gate, MAC/SDS save-disable-restore, actual32 T-CONT requests and orchestration. PUC backup/reset/restore bodies, flush completion and OS boundaries modeled.",
+    "factory_masks": "Executed scalar and CIR/PIR getter/setter roundtrips. Limit14 writable bits established from actual setter disassembly; its uninitialized upper stack bits are not reproduced.",
+    "native_directed": "Actual production worker, NI gate and PUC helpers with MMIO/indirect completion/PUC initialization model, ASan and UBSan: both XG modes,32 flushes, restore timeout retains snapshot, retry preserves explicit FE disable, original admission mask restored, save failure plus manual stop releases NI, stale queued O5 work canceled.",
+    "irq_directed": "Actual IRQ with modeled platform boundaries: O6 grace, O4 assignment, coalesced old teardown plus new identity, startup loss avoids drain; O6 timeout schedules immediate drain and qualified sync restart.",
+    "arm64": "Current12 PON objects and NI xram object compiled; relocatable partial link resolves rtl9617c_ni_pon_gate. Does not establish full vmlinux or firmware link.",
+    "full_firmware_build": false,
+    "full_test_suite": false,
+    "new_recovery_deployed": false,
+    "unverified": [
+      "Physical XG-PON/XGS-PON OLT activation and recovery",
+      "Actual FIFO drain and indirect-operation completion timing",
+      "Hardware recovery retry following a real timeout"
+    ]
+  },
+  "deployment": {
+    "requires": "Kernel containing the new NI gate export alongside this PON implementation; no ABI fallback for the currently running NI kernel",
+    "live_unchanged": "rtl9617c-pon-fe-family-live RAM module through fd5c0b0; EPON D10G registered LLID0, signal_loss=0, FE enabled, pon-data0 DHCP192.168.71.28, public ping2/2",
+    "flash_written": false
+  },
+  "evidence_sha256": {
+    "artifacts/pon-full-recovery-20261016/native-recovery.log": "11626c03fb1dd82cc1cdad6df9fe769b9529abba016644874503cfc0c6af39c2",
+    "artifacts/pon-full-recovery-20261016/irq-regression.log": "990f04c8b4be96b2d627be0ba7458cef6b07a437995ce488effa8b49a01f7dec",
+    "artifacts/pon-full-recovery-20261016/stock-recovery.log": "8492c6e01f9deb083b425c8ab3e432cc049a8f1f765cc6b03333f562c4e1457e",
+    "artifacts/pon-full-recovery-20261016/scalar-masks.json": "7dbef8f9683b61320c1135c37ec4ce04f252952d940b2ca1e9dd5f0e0672f45f",
+    "artifacts/pon-full-recovery-20261016/bucket-masks.json": "f56035f797b6785918e9df7efb1afdd21ad051a955d490fffd26f82438860c2b",
+    "artifacts/pon-full-recovery-20261016/clock-restart.json": "1f1b76c919c84ef540d58040e3e430d16e31f06f37ac887bdf87a707d03ecef6",
+    "artifacts/pon-full-recovery-20261016/arm64-pon-link.log": "05ab11a2ec791fb6f67b224ae3a538eeed96dd4fbcdd8aef73011277b9654103",
+    "artifacts/pon-full-recovery-20261016/compiled-source-sha256.json": "c1bb0e0d9a61c5d3ce4854ae5c67870b6382ad8a56b121ce2de921590f54946f",
+    "artifacts/pon-full-recovery-20261016/pon-ni-interface-check.o": "3530159266e326e7e2b5399942e132c47c006c1b12f32e162d058a85964156ec",
+    "logs/stock-xgtc-queue-recovery.json": "460d3b892d043fd7716c4f79dbd5e2ef3d976dbc6985ab0dabbdb7d67b9e45f8"
+  }
+}

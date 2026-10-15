@@ -161,6 +161,22 @@ u32 rtl9617c_ni_report_state(struct device *dev)
 }
 EXPORT_SYMBOL_GPL(rtl9617c_ni_report_state);
 
+/* Original aal_l3_tm_es_ni_port_ena_set: PON ports8..23 use bits0..15. */
+u32 rtl9617c_ni_pon_gate(struct device *dev, u32 enabled)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	unsigned long flags;
+	u32 saved;
+
+	spin_lock_irqsave(&priv->tx_lock, flags);
+	saved = readl(priv->ni + 0x610c);
+	writel((saved & ~0xffffU) | (enabled & 0xffffU), priv->ni + 0x610c);
+	readl(priv->ni + 0x610c);
+	spin_unlock_irqrestore(&priv->tx_lock, flags);
+	return saved & 0xffffU;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_pon_gate);
+
 static unsigned int rtl_pointer(struct rtl_xram *priv, unsigned int reg)
 {
 	return readl(priv->ni + reg) & POINTER_MASK;

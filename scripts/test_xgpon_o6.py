@@ -20,6 +20,7 @@ model=r'''
 #include <stdio.h>
 #include "rtl9617c-pon-mode.h"
 #include "rtl9617c-xgpon-hw.h"
+#include "rtl9617c-xgtc-recovery.h"
 typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u64;
 #define BIT(n) (1U<<(n))
 #define GENMASK(h,l) ((~0U>>(31-(h)))&(~0U<<(l)))
@@ -57,7 +58,7 @@ static void netif_carrier_off(struct net_device *d){d->carrier=false;}
 static bool netif_carrier_ok(struct net_device *d){return d->carrier;}
 static int rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *p,enum rtl_pon_mode mode){assert(p->lock && p->mode==mode);p->itu_paths_ready=false;invalidated++;return 0;}
 static void rtl_pon_itu_carrier(struct rtl9617c_pon *p){(void)p;}
-static void schedule_delayed_work(struct work *w,unsigned int delay){assert(delay==HZ);w->pending++;}
+static void schedule_delayed_work(struct work *w,unsigned int delay){assert(delay==0);w->pending++;}
 '''
 cases=r'''
 int main(void){
@@ -119,9 +120,22 @@ int main(void){
   assert(!expect_key_reset && pon.itu_line_epoch==1 && invalidated==1 && !pon.itu_paths_ready);
   assert(pon.xgpon_key_ready && pon.xgpon_omcc_ready && pon.xgpon_omcc_id==17);
   assert(!pon.omci_master_key_valid && !pon.xgpon_key_valid && !pon.xgpon_key_state);
-  assert(omci.carrier==(state==3) && !pon.xgpon_recover);
+  assert(omci.carrier==(state==3) && pon.xgpon_recover==(state==2));
  }
- puts("Actual XGTC IRQ: O6 grace, Assign-ONU-ID O4->O5, and coalesced deactivation/new burst profile/identity preserve the correct session configuration");
+ for(int mode=RTL_PON_XGPON;mode<=RTL_PON_XGSPON;mode++){
+  u32 regs[0xc000/4]={},sds=BIT(4);struct net_device omci={};
+  struct rtl9617c_pon pon={.lock=1,.mode=mode,.mac=(void*)regs,.serdes_init=&sds,.omci_device=&omci,.xgpon_enabled=true};
+  mmio=regs;regs[0x4004/4]=mode==RTL_PON_XGPON?1:2;
+  regs[0x4d28/4]=regs[0x4d2c/4]=BIT(6);regs[0x4d30/4]=1;
+  rtl_pon_xgpon_irq(&pon);
+  assert(!pon.xgpon_recover && !pon.xgpon_recovery_work.pending);
+  pon.xgpon_last_state=4;regs[0x4d28/4]=regs[0x4d2c/4]=BIT(23);regs[0x4d30/4]=BIT(4);
+  rtl_pon_xgpon_irq(&pon);
+  assert(pon.xgpon_recover && pon.xgpon_recovery_work.pending==1 && pon.itu_line_epoch==1);
+  assert(regs[0x4004/4]==(mode==RTL_PON_XGPON?1U:2U) && sds==BIT(4));
+  assert((regs[0x4d30/4]&(3U<<16))==BIT(16));
+ }
+ puts("Actual XGTC IRQ: O6 grace/assignment/coalesced new identity; startup loss does not drain, O6 timeout schedules immediate queue recovery and qualified clock restart");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='xgtc-o6-',dir=root/'artifacts') as temp:
