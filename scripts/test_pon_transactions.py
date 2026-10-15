@@ -13,7 +13,7 @@ relative = Path('port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ether
 headers = root / relative
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--revision')
-parser.add_argument('--case', choices=('transactions', 'address'), action='append')
+parser.add_argument('--case', choices=('transactions', 'address', 'serdes-sync'), action='append')
 args = parser.parse_args()
 
 
@@ -162,6 +162,37 @@ int main(void) {
 }
 '''
 
+sync_model = r'''
+#include <stddef.h>
+struct work_struct {int unused;};
+#define to_delayed_work(p) ((struct delayed_work *)(p))
+#define container_of(p,t,m) ((t *)((char *)(p)-offsetof(t,m)))
+'''
+sync_test = r'''
+int main(void) {
+ starter=pthread_self();
+ for(unsigned int mode=0;mode<RTL_PON_MODE_COUNT;mode++) {
+  u32 mac[0xc000/4]={},epon=0xa5a50001;
+  struct rtl9617c_pon pon={.mode=mode,.mac=mac,.epon_control=&epon,.serdes_configured=true,.sync_result=-ETIMEDOUT};
+  pthread_mutex_init(&pon.lock.native,NULL);current=&pon;
+  mac[PSDS_STATUS/4]=PSDS_SYNC_GOAL|BIT(0);
+  rtl_pon_serdes_work((struct work_struct *)&pon.serdes_work);
+  assert(!pon.rx_synced && pon.sync_result==-ENOLINK && epon==0xa5a50001);
+  mac[PSDS_STATUS/4]=PSDS_SYNC_GOAL&~BIT(12);
+  rtl_pon_serdes_work((struct work_struct *)&pon.serdes_work);
+  assert(!pon.rx_synced && pon.sync_result==-ENOLINK && epon==0xa5a50001);
+  mac[PSDS_STATUS/4]=PSDS_SYNC_GOAL;
+  rtl_pon_serdes_work((struct work_struct *)&pon.serdes_work);
+  assert(pon.rx_synced && !pon.sync_result && pon.serdes_work.pending);
+  assert(epon==(rtl_pon_mode_is_epon(mode)?0xa5a50001U:0xa5a50000U));
+  rtl_pon_serdes_work((struct work_struct *)&pon.serdes_work);
+  assert(epon==(rtl_pon_mode_is_epon(mode)?0xa5a50001U:0xa5a50000U) && !pon.lock.held);
+  pthread_mutex_destroy(&pon.lock.native);
+ }
+ puts("Actual SerDes worker: late ITU synchronization completes EPON CSR reset; LOS/missing clocks and all EPON modes preserve their ownership");
+}
+'''
+
 address_model = r'''
 #define ETH_ALEN 6
 #define NET_ADDR_SET 3
@@ -243,6 +274,9 @@ with tempfile.TemporaryDirectory(prefix='control-tests-', dir=root / 'artifacts'
                     definitions += function(controller, 'rtl_pon_stop_locked')
                 definitions += function(controller, 'rtl_pon_mpcp_configure') + function(controller, 'rtl_pon_serdes_configure')
             source = common + constants + '\n' + definitions + transaction_test
+        elif case == 'serdes-sync':
+            constants = '\n'.join(re.findall(r'^#define .*$', serdes, re.M))
+            source = common + sync_model + constants + '\n' + function(serdes, 'rtl_pon_serdes_work') + sync_test
         else:
             if not args.revision:
                 assert '.ndo_set_mac_address =' not in oam.split('static const struct net_device_ops rtl_oam_ops = {')[1].split('};',1)[0]

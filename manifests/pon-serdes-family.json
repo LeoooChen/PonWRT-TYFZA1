@@ -1,0 +1,81 @@
+{
+  "base_commit": "6afa274d51f934b75e6992c9df8ec9d63422dd0b",
+  "problem": "ITU startup under LOS leaves EPON CSR temporarily released; later periodic synchronization previously failed to perform the same reset handoff as initially successful startup",
+  "factory_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+  "actual_factory_functions": [
+    "__pon_mode_to_sds_mode.isra.0",
+    "__psds_mode_init",
+    "__psds_sync",
+    "aal_psds_out_of_reset"
+  ],
+  "mode_conversion": [
+    {
+      "mode": "epon",
+      "PON": 0,
+      "SDS": 6,
+      "mode_register": "0x40c"
+    },
+    {
+      "mode": "epon-d10g",
+      "PON": 1,
+      "SDS": 4,
+      "mode_register": "0x44c"
+    },
+    {
+      "mode": "epon-bi10g",
+      "PON": 2,
+      "SDS": 0,
+      "mode_register": "0x46c"
+    },
+    {
+      "mode": "gpon",
+      "PON": 3,
+      "SDS": 3,
+      "mode_register": "0x408"
+    },
+    {
+      "mode": "xgpon",
+      "PON": 4,
+      "SDS": 2,
+      "mode_register": "0x448"
+    },
+    {
+      "mode": "xgspon",
+      "PON": 5,
+      "SDS": 1,
+      "mode_register": "0x428"
+    }
+  ],
+  "change": "On a newly synchronized ITU SerDes worker transition, clear only GLOBAL_EPON_CNTL bit0. Preserve the original six-mode sync predicate and EPON register ownership.",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-serdes.c": "2d5b249533b5448d6f1a7455a9db2203e617fc5947834defde7fa299c62e9de0",
+    "scripts/test_pon_transactions.py": "9af558fe51e14f0afcb35d06af274b9998b54cd56750f92fdfb16de1b8b9cb13",
+    "tools/trace_stock_pon_serdes.py": "ea167c97f2e902fee8074376af59fd6f5cc57b181b61b48321f5a38cd4f6bfc8",
+    "docs/pon-serdes-family.md": "ece1ff38dad03af11001039fcb19e0994a4312dfc36416f57c2473f3538b871f"
+  },
+  "validation": {
+    "factory": "18 actual-instruction cases confirm all6 mapped modes require9c00, mode register values match current mode configuration, and only synchronized ITU out-of-reset paths clear EPON CSRbit0",
+    "native_before": "Production worker fails the late-ITU-CSR-reset assertion",
+    "native_after": "Production worker tested across6 modes, LOS, missing clock, successful delayed sync and repeat; preserved other CSR bits; ASan/UBSan passed",
+    "arm64": "Changed SerDes translation unit compiled with current source SHA and object SHA recorded",
+    "model_boundaries": [
+      "Factory profile-file load returns0 and burst-polarity body, logs/delays modeled",
+      "Native MMIO, schedule, lock and logging boundaries"
+    ],
+    "deployed": false,
+    "physical_itu_olt_verified": false,
+    "full_tests": false,
+    "full_firmware_build": false
+  },
+  "evidence_sha256": {
+    "artifacts/pon-serdes-family-20261016/stock-serdes.log": "45e125d5a5a8735e8279c6b30636fcbcf6002e33eaca79278c4efa561e064266",
+    "artifacts/pon-serdes-family-20261016/native-before.log": "9590b05a8034bffe50ac8b172f20c95d42335cdb94e8b92e40421654c20e452b",
+    "artifacts/pon-serdes-family-20261016/native-after.log": "7a7fcd4c5c311fed0e0934e1864f27bbc3c6fff3739fb1615dd60a560eade5c8",
+    "artifacts/pon-serdes-family-20261016/arm64-build.log": "d893a4c56e024104e3754ea6b1b529c1b6aaddc776df6aa7b83294915db4d34e",
+    "artifacts/pon-serdes-family-20261016/compiled-inputs.json": "b369b3ccde8a0560f678350f26a31797aa35a31b46a3004c20ea4627f5067eb8",
+    "artifacts/pon-serdes-family-20261016/__psds_sync.asm": "87d147c90868e93ab72125b0392ddcafb0c60dbb19b0fd2a42e1e3693ce082f4",
+    "artifacts/pon-serdes-family-20261016/aal_psds_out_of_reset.asm": "ec39c9e9566b58b8deb7bc3aa26b0bd8f02f9a9f3ea9a0d4db88c6accfc2ae92",
+    "artifacts/pon-serdes-family-20261016/__pon_mode_to_sds_mode.isra.0.asm": "0b5fa61c1c22e4cde257c572d17265ab45021d5d5c1ca32f41492438e5686228",
+    "logs/stock-pon-serdes-family.json": "826ba4ff64c3e269fe6a0bcbf66322b7051dd916fccd039d05bc8227ba2e803c"
+  }
+}

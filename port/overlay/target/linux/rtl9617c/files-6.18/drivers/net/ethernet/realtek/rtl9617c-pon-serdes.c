@@ -106,6 +106,9 @@ static void rtl_pon_serdes_work(struct work_struct *work)
 	mutex_lock(&pon->lock);
 	pon->serdes_status = readl(pon->mac + PSDS_STATUS);
 	if ((pon->serdes_status & PSDS_SYNC_MASK) == PSDS_SYNC_GOAL) {
+		/* Complete the original ITU handoff when initial LOS delayed sync. */
+		if (!rtl_pon_mode_is_epon(pon->mode) && !pon->rx_synced)
+			rtl_pon_update(pon->epon_control, BIT(0), 0);
 		if (!pon->rx_synced)
 			dev_info(pon->dev, "%s SerDes RX clocks synchronized\n", rtl_pon_mode_name(pon->mode));
 		pon->sync_result = 0;
