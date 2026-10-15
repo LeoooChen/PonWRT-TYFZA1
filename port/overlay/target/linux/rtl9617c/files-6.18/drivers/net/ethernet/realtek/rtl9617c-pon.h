@@ -164,7 +164,7 @@ ssize_t rtl_pon_ploam_transmit(struct rtl9617c_pon *pon, const char *buf, size_t
 			     bool default_key);
 int rtl_pon_epon_traffic(struct rtl9617c_pon *pon, bool enable);
 int rtl_pon_mpcp_init(struct rtl9617c_pon *pon, int irq);
-void rtl_pon_mpcp_stop(struct rtl9617c_pon *pon);
+int rtl_pon_mpcp_stop(struct rtl9617c_pon *pon);
 int rtl_pon_mpcp_configure(struct rtl9617c_pon *pon);
 ssize_t rtl_pon_mpcp_state(struct rtl9617c_pon *pon, char *buf);
 ssize_t rtl_pon_llid_table(struct rtl9617c_pon *pon, char *buf);
@@ -183,6 +183,7 @@ int rtl_pon_oam_resize(struct rtl9617c_pon *pon, unsigned int count);
 void rtl_pon_oam_address(struct rtl9617c_pon *pon);
 
 /* Internal control steps: caller owns control_lock, never acquire it again. */
+int rtl_pon_stop_locked(struct rtl9617c_pon *pon);
 int rtl_pon_serdes_configure_locked(struct rtl9617c_pon *pon, enum rtl_pon_mode mode);
 int rtl_pon_epon_prepare_locked(struct rtl9617c_pon *pon);
 int rtl_pon_epon_traffic_locked(struct rtl9617c_pon *pon, bool enable);

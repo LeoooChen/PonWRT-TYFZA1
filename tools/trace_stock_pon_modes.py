@@ -11,6 +11,7 @@ allowed = {
     'ca_spin_lock_init', 'aal_psds_init', 'aal_epon_init', 'aal_gpon_init',
     'aal_xgpon_init', 'aal_pon_mac_max_frame_size_set', '__pon_mac_intr_enable',
     'aal_pon_intr_init', 'aal_pon_opt_rogue_thresh_set', 'ca_printf',
+    'aal_epon_deinit', 'aal_gpon_deinit', 'aal_xgpon_deinit',
 }
 
 
@@ -24,14 +25,21 @@ def callback(name, args):
 
 oracle = ModuleOracle(
     root / 'analysis/private/live-files/lib/modules/5.10.70/extra/ca-ne.ko',
-    ['aal_pon_init'], callback)
+    ['aal_pon_init', 'aal_pon_deinit'], callback)
 records = []
+stops = []
 for mode, name in enumerate(('epon', 'epon-d10g', 'epon-bi10g', 'gpon', 'xgpon', 'xgspon')):
     calls.clear()
     result = oracle.call('aal_pon_init', 0, mode)
     records.append({'mode': name, 'factory_mode': mode, 'return': result,
                     'calls': list(calls)})
     print(name, result, ' -> '.join(item['function'] for item in calls))
+    calls.clear()
+    result = oracle.call('aal_pon_deinit', 0, mode)
+    expected = 'aal_epon_deinit' if mode < 3 else 'aal_gpon_deinit' if mode == 3 else 'aal_xgpon_deinit'
+    assert result == 0 and [item['function'] for item in calls] == [expected]
+    stops.append({'mode': name, 'factory_mode': mode, 'return': result,
+                  'calls': list(calls)})
 state_getters = ModuleOracle(
     root / 'analysis/private/live-files/lib/modules/5.10.70/extra/ca-ne.ko',
     ['aal_gpon_onu_state_get', 'aal_xgpon_actp_status_get'], callback)
@@ -59,5 +67,5 @@ for family, offset, labels in (
 (root / 'logs/stock-pon-mode-dispatch.json').write_text(json.dumps({
     'scope': __doc__, 'dependency_calls_stubbed_success': True,
     'register_sequences_and_optical_operation_verified': False,
-    'records': records, 'original_state_getters': states,
+    'records': records, 'deinitialization': stops, 'original_state_getters': states,
 }, indent=2) + '\n')

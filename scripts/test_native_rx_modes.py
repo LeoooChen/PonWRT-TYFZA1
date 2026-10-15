@@ -306,6 +306,7 @@ static void rtl_pon_update(void *reg,u32 mask,u32 value) {writel((readl(reg)&~ma
 #define dev_info(...) ((void)0)
 static void rtl_pon_mpcp_stop(struct rtl9617c_pon *pon) {(void)pon;}
 static void rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon) {assert(pon->control_lock.held);}
+static int rtl_pon_stop_locked(struct rtl9617c_pon *pon) {assert(pon->control_lock.held && rtl_pon_mode_is_epon(pon->mode));return 0;}
 static int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon,bool enable) {
     assert(pon->control_lock.held && !pon->lock.held);pon->fe_enabled=enable;return 0;
 }
@@ -335,7 +336,7 @@ int main(void) {
         pon.mode=RTL_PON_EPON_D10G;switch_to=mode;
         assert(rtl_pon_epon_traffic(&pon,true)==-EOPNOTSUPP && !io_writes && !pon.lock.held);
         pon.mode=RTL_PON_EPON_D10G;switch_to=mode;
-        assert(rtl_pon_epon_traffic(&pon,false)==0 && !io_writes && !pon.lock.held);
+        assert(rtl_pon_epon_traffic(&pon,false)==-EOPNOTSUPP && !io_writes && !pon.lock.held);
     }
     pon.mode=RTL_PON_EPON_1G;switch_to=RTL_PON_EPON_BI10G;
     assert(rtl_pon_epon_prepare(&pon)==0 && ((epon>>16)&3)==3);

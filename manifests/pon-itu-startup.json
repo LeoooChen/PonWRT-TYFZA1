@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-16",
+  "baseline_commit": "86c060ccd675b52a4ddb93cf5e0696be1dfc160e",
+  "factory_before": "missing EPON table prevents ITU identity output; artifacts/pon-startup-o4/factory-before.log",
+  "service_before": {
+    "exit": 1,
+    "failed_operation": "onu_mac",
+    "stderr_file": "artifacts/pon-startup-o4/service-before.log"
+  },
+  "validation": {
+    "actual_ucode_importer": true,
+    "actual_arm64_identity_binary": true,
+    "actual_busybox_startup_script": true,
+    "driver_interfaces_modeled": true,
+    "ip_and_procd_modeled": true,
+    "focused_regression_passed": true,
+    "shell_syntax_passed": true,
+    "identity_compile_flags": [
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-Os"
+    ],
+    "full_build_run": false,
+    "hardware_changed": false,
+    "reporter_O5_verified": false
+  },
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/base-files/etc/init.d/pon": "676409d2d5a8f94c9001b678d26086ac6963482d6dd94c6d06328ed65d9a534c",
+    "port/packages/tyfza1-pon-control/files/factory.uc": "6edcb637dc92e14766afe4f487f0ad59df4b8f892f0e3274f5d195d73d08cd6f",
+    "port/packages/tyfza1-pon-control/src/pon-identity.c": "f4b504e5967357151a839fc49209a153e242c698cb550144f5420d444a0b3e4c",
+    "scripts/test_pon_itu_startup.py": "b3f192c323a15aa28f25f38e728b339a7fed358fcb15729295d90bedd72f5c12"
+  },
+  "identity_binary_sha256": "78b012c50f557099d3e3cd4480f1dca37203d3e7d6ade43b10ce0d1065523627",
+  "family_lifecycle_audit": "manifests/pon-family-audit.json"
+}

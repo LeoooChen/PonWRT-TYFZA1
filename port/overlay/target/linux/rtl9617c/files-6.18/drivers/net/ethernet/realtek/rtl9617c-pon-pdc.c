@@ -134,6 +134,7 @@ int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon,bool enable)
  if(enable) {
   ret=rtl9617c_ni_fe_enable(pon->ni_dev);
   if(ret)goto unlock;
+  pon->fe_enabled=true;
  }
  /* OAM/control maps retain CPU16 and their original header container. */
  if(pon->pdc_configured && rtl_pon_mode_is_epon(pon->mode))
@@ -156,8 +157,11 @@ int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon,bool enable)
    ret=rtl_pdc_access(pon,entry,true);
    if(ret)goto unlock;
   }
+ if(!enable) {
+  ret=rtl9617c_ni_fe_disable(pon->ni_dev);
+  if(ret)goto unlock;
+ }
  pon->fe_enabled=enable;
- if(!enable)ret=rtl9617c_ni_fe_disable(pon->ni_dev);
 unlock:
  mutex_unlock(&pon->lock);
  return ret;

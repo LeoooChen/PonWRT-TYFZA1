@@ -1,0 +1,195 @@
+{
+  "date": "2026-10-16",
+  "original_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+  "original_evidence": {
+    "function": "aal_pon_mac_enable_set",
+    "modes": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "callees_modeled": true,
+    "record": "artifacts/pon-family-audit/stock-enable.json",
+    "deinitialization": {
+      "function": "aal_pon_deinit@0xcd870",
+      "actual_instructions": true,
+      "callees_modeled": true,
+      "record": "logs/stock-pon-mode-dispatch.json",
+      "sha256": "32db88f3ce41943ac9ea86e7d284091954bc27b2602355c9c78252717efa4ada",
+      "records": [
+        {
+          "mode": "epon",
+          "factory_mode": 0,
+          "return": 0,
+          "calls": [
+            {
+              "function": "aal_epon_deinit",
+              "args": [
+                0,
+                0,
+                0,
+                12288
+              ]
+            }
+          ]
+        },
+        {
+          "mode": "epon-d10g",
+          "factory_mode": 1,
+          "return": 0,
+          "calls": [
+            {
+              "function": "aal_epon_deinit",
+              "args": [
+                0,
+                0,
+                1,
+                12288
+              ]
+            }
+          ]
+        },
+        {
+          "mode": "epon-bi10g",
+          "factory_mode": 2,
+          "return": 0,
+          "calls": [
+            {
+              "function": "aal_epon_deinit",
+              "args": [
+                0,
+                0,
+                2,
+                12288
+              ]
+            }
+          ]
+        },
+        {
+          "mode": "gpon",
+          "factory_mode": 3,
+          "return": 0,
+          "calls": [
+            {
+              "function": "aal_gpon_deinit",
+              "args": [
+                0,
+                3,
+                65535,
+                12288
+              ]
+            }
+          ]
+        },
+        {
+          "mode": "xgpon",
+          "factory_mode": 4,
+          "return": 0,
+          "calls": [
+            {
+              "function": "aal_xgpon_deinit",
+              "args": [
+                0,
+                4,
+                65535,
+                12288
+              ]
+            }
+          ]
+        },
+        {
+          "mode": "xgspon",
+          "factory_mode": 5,
+          "return": 0,
+          "calls": [
+            {
+              "function": "aal_xgpon_deinit",
+              "args": [
+                0,
+                5,
+                65535,
+                12288
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "confirmed_fixes": [
+    "missing GPON_SN discards valid EPON identity",
+    "public EPON stop and LLID controls affect ITU state",
+    "EPON exposes cached GPON activation error",
+    "Internal BOSA/SerDes/MAC/shutdown now stop only the selected family",
+    "SerDes retains the old mode and the actual error after failed FE cleanup",
+    "MPCP no longer silently tears down global FE inside a wrong-family stop",
+    "PON FE ownership survives failed NI teardown until cleanup succeeds"
+  ],
+  "checks": {
+    "control_before": "artifacts/pon-family-audit/before-control.log",
+    "itu_stop_before": "artifacts/pon-family-audit/before-itu-stop.log",
+    "factory_before": "artifacts/pon-family-audit/before-factory-no-itu.log",
+    "control_after": "artifacts/pon-family-audit/after-control.log",
+    "startup_stop_after": "artifacts/pon-family-audit/after-startup-stop.log",
+    "kernel_compile": "artifacts/pon-family-audit/kernel-build.log",
+    "all_focused_checks_passed": true,
+    "kernel_build_matches_current_PON_source": true,
+    "lifecycle_before": "artifacts/pon-family-audit/before-lifecycle.log",
+    "lifecycle_before_expected_failure": "pre-change SerDes incorrectly succeeds when NI/FE cleanup fails",
+    "lifecycle_after": "artifacts/pon-family-audit/after-lifecycle.log",
+    "family_shutdown_after": "artifacts/pon-family-audit/after-shutdown.log",
+    "FE_ownership_after": "artifacts/pon-family-audit/after-fe-stop.log",
+    "EPON_dispatch_after": "artifacts/pon-family-audit/after-epon-dispatch.log",
+    "FE_ownership_scope": "NI cleanup failure and PDC setup failure after NI enable; all six PON modes; actual PON function with modeled NI/PDC callbacks"
+  },
+  "source_sha256": {
+    "port/packages/tyfza1-pon-control/files/factory.uc": "6edcb637dc92e14766afe4f487f0ad59df4b8f892f0e3274f5d195d73d08cd6f",
+    "port/overlay/target/linux/rtl9617c/base-files/etc/init.d/pon": "676409d2d5a8f94c9001b678d26086ac6963482d6dd94c6d06328ed65d9a534c",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.c": "d821a9748629b3e22986f024ade2663853bfbd6e6d71c7d9c94c3f83afd846e8",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.h": "ec4dbfbbc9d92d28fd8aafe9953ed34c74feaf81498339f070c8400d9a5a0358",
+    "scripts/test_pon_family_control.py": "00f71529100a92ff2c7929dc910b20b41e52feff1dd415af70feb756892f16e8",
+    "scripts/test_pon_itu_startup.py": "b3f192c323a15aa28f25f38e728b339a7fed358fcb15729295d90bedd72f5c12",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-epon.c": "fe8913f5c8f59e6ae354b6cba885228218dfde932e1e5ac3eb91921542098594",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-gpon.c": "ca101aa13c0f0f3d3ceab64f6cdb75da66de5a0d94acf49b4fc00102b2598774",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-xgpon.c": "614fe2d2bd20d6293210193d85dbfbac1a0e6b70c5d431ed55f4d6c5082dea94",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-mpcp.c": "ccc86fcc10bea870f715b2318264e34679f08a21dabab3e732711e3233568b9a",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-serdes.c": "d82bf5abdab855c7b94507739f86428f4a54775becb459bad962bdf5dd4dd2c0",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-pdc.c": "94849b6f3af4f4f150936b05569a286ec8b6253629124e209885be88ba541cad",
+    "scripts/test_pon_shutdown.py": "dabf0efe0d112f3460f1a707ae224fd24b5a66842ab1fb2f23030f462ed1f4c9",
+    "scripts/test_pon_transactions.py": "b496a8e4f27f247fa693dcd4b4d3959e17e0dcee3a07a2a723c11d6ebcdadd38",
+    "scripts/test_pon_fe_stop.py": "1670c910b2567ac0399425a53c0707bb3acb45f4112809a11b134c9a215be34e",
+    "scripts/test_native_rx_modes.py": "745555d104f7eb4408041402586d3ed8936d4275caa0ef474570c8c1f23cabd2",
+    "tools/trace_stock_pon_modes.py": "2bf0a3fa57aa44ca713cf086ed0bd67e6d9e82aa5cd0bb1cb38aba0915f4ea12",
+    "docs/pon-family-audit.md": "3df81c8d4cf3cbe3dd3efbec94da27da36309eca3b98bca037db0265b41e025d",
+    "port/packages/tyfza1-pon-control/src/pon-identity.c": "f4b504e5967357151a839fc49209a153e242c698cb550144f5420d444a0b3e4c"
+  },
+  "module_sha256": "53dfa17471c89b0984d21412fb9b8c062b5adfc4be8e58e14cf818594d02b0fe",
+  "modpost_warning": "missing MODULE_DESCRIPTION() in pon_family_check.o",
+  "limits": {
+    "driver_operations_modeled": true,
+    "full_firmware_build": false,
+    "live_O5_validated": false,
+    "PON_hardware_modified": false,
+    "live_PON_kernel_replaced": false,
+    "live_optical_mode_switched": false,
+    "live_GPON_family_O5_validated": false,
+    "existing_EPON_device": "Registered EPON D10G read-only snapshot: Mac workspace 现场记录/20261016-pon-family/live-existing-driver.txt"
+  },
+  "identity_binary_sha256": "78b012c50f557099d3e3cd4480f1dca37203d3e7d6ade43b10ce0d1065523627",
+  "record_sha256": {
+    "artifacts/pon-family-audit/before-control.log": "23a8ef84b69c6e74e1a6eb839f6da98f582d5cadbd0ec689b9342ddc2bfdb54b",
+    "artifacts/pon-family-audit/before-itu-stop.log": "204bd89c3067576e76859c63b595cbb4b71b2e7fa32cd78d7da6ea91b9a70b5b",
+    "artifacts/pon-family-audit/before-factory-no-itu.log": "8cad3da87f6836274a452ab15c0e8100cb85b4da6cf8d11853bf7fe8f5575e66",
+    "artifacts/pon-family-audit/after-control.log": "96079f74cac5bf40b786c680356f30f85d2d0048f5ff86c8765ef2117a14f259",
+    "artifacts/pon-family-audit/after-startup-stop.log": "f41bc1c739653dc58160c8369c0f09a7337d39d611fcbfed58e31731feb54134",
+    "artifacts/pon-family-audit/kernel-build.log": "00a2875f74ed05e4264f0f964fa8d3ffec5f429e938a102a65035f1215a8971c",
+    "artifacts/pon-family-audit/before-lifecycle.log": "46804d1fe774653128bf1514b933fa84365e76b11fb67952e74aaf5649f5dac9",
+    "artifacts/pon-family-audit/after-lifecycle.log": "d6500c1dba435f8d4c40afb000e9060575fd614f37e2554805bc25b7872d70e4",
+    "artifacts/pon-family-audit/after-shutdown.log": "292b60e3e5e47a5922ba67766550fe213d4fe9049bd5e4b3702d87894e5ed9d2",
+    "artifacts/pon-family-audit/after-fe-stop.log": "c3bbc7af3a7015ce64a6aed01fac36e265a7e928abc0db42ae1f42fb3c54334f",
+    "artifacts/pon-family-audit/after-epon-dispatch.log": "c2abe3be5482aa212fad9075db05d7b69d63fd2b0b8185ba642d03250d5c86ce"
+  }
+}

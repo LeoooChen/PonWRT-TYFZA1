@@ -76,16 +76,10 @@ function import_radio(radio) {
 	save('tmp/tyfza1-factory/tyfza1/' + radio[0] + '/flash-calibration.bin', data);
 }
 
+let failed = false;
+
 function import_identity() {
-const start = index(cs, '<chain chainName="EPON_LLID_TBL">');
-if (start < 0) die('Missing factory EPON LLID identity');
-const remainder = substr(cs, start);
-const llid = substr(remainder, 0, index(remainder, '</chain>'));
 const identity = {
-	onu_mac: mac(field(llid, 'macAddr')),
-	serial_number: field(hs, 'GPON_SN'),
-	vendor_id: field(hs, 'PON_VENDOR_ID'),
-	oam_model: field(hs, 'EPON_ONU_MODEL'),
 	loid: optional_field(cs, 'LOID'),
 	loid_password: optional_field(cs, 'LOID_PASSWD'),
 	ploam_password: optional_field(cs, 'GPON_PLOAM_PASSWD'),
@@ -94,6 +88,27 @@ const identity = {
 	equipment_id: optional_field(hs, 'GPON_ONU_MODEL'),
 	software_version: optional_field(cs, 'OMCI_SW_VER1')
 };
+try {
+	identity.serial_number = field(hs, 'GPON_SN');
+} catch (e) {
+	warn('Factory ITU identity: ' + e.message + '\n');
+	failed = true;
+}
+try {
+	const start = index(cs, '<chain chainName="EPON_LLID_TBL">');
+	if (start < 0) die('Missing factory EPON LLID identity');
+	const remainder = substr(cs, start);
+	const llid = substr(remainder, 0, index(remainder, '</chain>'));
+	const epon = {
+		onu_mac: mac(field(llid, 'macAddr')),
+		vendor_id: field(hs, 'PON_VENDOR_ID'),
+		oam_model: field(hs, 'EPON_ONU_MODEL')
+	};
+	for (let key, value in epon) identity[key] = value;
+} catch (e) {
+	warn('Factory EPON identity: ' + e.message + '\n');
+	failed = true;
+}
 let config = "config pon 'pon'\n";
 for (let key, value in identity)
 	config += sprintf("\toption %s '%s'\n", key, replace(value, /'/g, "'\\''"));
@@ -102,7 +117,6 @@ chmod(output + '/var/run/tyfza1-factory', 0700);
 chmod(output + '/var/run/tyfza1-factory/pon_factory', 0600);
 }
 
-let failed = false;
 // Each subsystem consumes its own original factory data.
 for (let radio in [ ['rtl8852ce', 0], ['rtl8192xbe', 1] ]) {
 	try {

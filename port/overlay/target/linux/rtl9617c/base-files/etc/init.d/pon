@@ -18,9 +18,17 @@ offload() {
 }
 
 start_service() {
-	configure_link
+	pon_stage=device
+	configure_link 2>/var/run/pon-service-error
 	local result=$?
-	printf 'error=%s\n' "$result" >> /var/run/pon-service
+	printf 'stage=%s error=%s\n' "$pon_stage" "$result" >> /var/run/pon-service
+	if [ "$result" != 0 ]; then
+		logger -t pon "Initialization failed at $pon_stage (exit $result)"
+	fi
+	if [ -s /var/run/pon-service-error ]; then
+		logger -t pon < /var/run/pon-service-error
+		cat /var/run/pon-service-error >&2
+	fi
 	return "$result"
 }
 
@@ -35,23 +43,37 @@ configure_link() {
 	printf 'enabled=%s error=0\n' "$enabled" > /var/run/pon-service
 	[ "$enabled" = 1 ] || return 0
 	config_get mode pon mode epon-d10g
+	pon_stage=bosa
 	printf '1\n' > "$device/bosa" || return $?
+	pon_stage=serdes
 	printf '%s\n' "$mode" > "$device/serdes" || return $?
+	pon_stage=onu_mac
 	config_get onu_mac pon onu_mac
 	[ -n "$onu_mac" ] || onu_mac=$(uci -q -c /var/run/tyfza1-factory get pon_factory.pon.onu_mac)
-	printf '%s\n' "$onu_mac" > "$device/onu_mac" || return $?
+	if [ "$mode" != gpon ] && [ "$mode" != xgpon ] && [ "$mode" != xgspon ] ||
+	   [ -n "$onu_mac" ]; then
+		printf '%s\n' "$onu_mac" > "$device/onu_mac" || return $?
+	fi
 	if [ "$mode" = gpon ] || [ "$mode" = xgpon ] || [ "$mode" = xgspon ]; then
+		pon_stage=identity
 		if [ "$mode" = gpon ]; then
 			/usr/sbin/pon-identity "$device/gpon_identity" || return $?
 		else
 			/usr/sbin/pon-identity "$device/xgpon_identity" || return $?
 		fi
+		pon_stage=mac
 		printf '1\n' > "$device/mac" || return $?
+		pon_stage=puc
 		printf '1\n' > "$device/puc" || return $?
+		pon_stage=pdc
 		printf '1\n' > "$device/pdc" || return $?
+		pon_stage=omci_interface
 		ip link set pon-omci up || return $?
+		pon_stage=data_interface
 		ip link set pon-data0 up || return $?
+		pon_stage=activation
 		printf '1\n' > "$device/activation" || return $?
+		pon_stage=omci_daemon
 		procd_open_instance omci
 		procd_set_param command /usr/sbin/pon-omcid
 		procd_set_param respawn 3600 5 3
@@ -59,14 +81,20 @@ configure_link() {
 		procd_set_param stdout 1
 		procd_set_param stderr 1
 		procd_close_instance
+		pon_stage=offload
 		offload
 		return $?
 	fi
+	pon_stage=llid_count
 	config_get llids pon llid_count 1
 	printf '%s\n' "$llids" > "$device/llid_count" || return $?
+	pon_stage=mac
 	printf '1\n' > "$device/mac" || return $?
+	pon_stage=puc
 	printf '1\n' > "$device/puc" || return $?
+	pon_stage=pdc
 	printf '1\n' > "$device/pdc" || return $?
+	pon_stage=epon_interfaces
 	i=0
 	while [ "$i" -lt "$llids" ]; do
 		printf '1\n' > "/proc/sys/net/ipv6/conf/pon-oam$i/disable_ipv6"
@@ -74,8 +102,11 @@ configure_link() {
 		ip link set "pon-data$i" up || return $?
 		i=$((i + 1))
 	done
+	pon_stage=traffic
 	printf '1\n' > "$device/traffic" || return $?
+	pon_stage=mpcp
 	printf '1\n' > "$device/mpcp" || return $?
+	pon_stage=oam_daemon
 	i=0
 	while [ "$i" -lt "$llids" ]; do
 		procd_open_instance "oam-$i"
@@ -87,27 +118,39 @@ configure_link() {
 		procd_close_instance
 		i=$((i + 1))
 	done
+	pon_stage=offload
 	offload
 }
 
 stop_service() {
 	local device=/sys/bus/platform/devices/4f5500000.pon
-	local interface
-	if [ -w "$device/activation" ]; then
-		printf '0\n' > "$device/activation"
-		ip link set pon-omci down
-	fi
-	if [ -w "$device/traffic" ]; then
-		printf '0\n' > "$device/traffic"
+	local interface mode rest result=0
+
+	[ -r "$device/serdes" ] || return 0
+	read -r mode rest < "$device/serdes"
+	case "$mode" in
+	mode=gpon|mode=xgpon|mode=xgspon)
+		printf '0\n' > "$device/activation" || result=$?
+		printf '0\n' > "$device/fe" || result=$?
+		ip link set pon-omci down || result=$?
+		;;
+	mode=epon|mode=epon-d10g|mode=epon-bi10g)
+		printf '0\n' > "$device/traffic" || result=$?
+		printf '0\n' > "$device/mpcp" || result=$?
 		for interface in /sys/class/net/pon-oam*; do
-			[ -d "$interface" ] && ip link set "${interface##*/}" down
+			if [ -d "$interface" ]; then
+				ip link set "${interface##*/}" down || result=$?
+			fi
 		done
-		for interface in /sys/class/net/pon-data*; do
-			[ -d "$interface" ] && ip link set "${interface##*/}" down
-		done
-	fi
-	[ -w "$device/mpcp" ] && printf '0\n' > "$device/mpcp"
-	printf 'enabled=0 error=0\n' > /var/run/pon-service
+		;;
+	esac
+	for interface in /sys/class/net/pon-data*; do
+		if [ -d "$interface" ]; then
+			ip link set "${interface##*/}" down || result=$?
+		fi
+	done
+	printf 'enabled=0 stage=stop error=%s\n' "$result" > /var/run/pon-service
+	return "$result"
 }
 
 reload_service() {

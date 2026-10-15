@@ -64,15 +64,22 @@ struct delayed_work {bool pending;};
 struct rtl9617c_pon {
     struct mutex lock,control_lock;enum rtl_pon_mode mode;
     void *mac,*control,*epon_control,*gpon_control,*serdes_init,*optical_control,*top_irq,*dev;
-    bool mpcp_enabled,mpcp_configured,mac_prepared,traffic_enabled,serdes_configured,gearbox_ready,rx_synced,puc_configured,pdc_configured,fe_enabled;
-    u32 registered,waiting,serdes_status;int sync_result,serdes_error,mpcp_irq;
+    bool mpcp_enabled,mpcp_configured,mac_prepared,traffic_enabled,serdes_configured,gearbox_ready,rx_synced,puc_configured,pdc_configured,fe_enabled,xgpon_pending_valid;
+    u32 registered,waiting,serdes_status;int sync_result,serdes_error,mpcp_irq,cleanup_error;
+    int *tx_disable;
     unsigned int llid_count,los_invert,profile_rows;u8 onu_mac[6];
     struct rtl_mpcp_backoff backoff;struct delayed_work mpcp_work,serdes_work;
 };
 static struct rtl9617c_pon *current;
+int rtl_pon_stop_locked(struct rtl9617c_pon *pon);
 static int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon,bool enable) {
-    lockdep_assert_held(&pon->control_lock);pon->fe_enabled=enable;return 0;
+    lockdep_assert_held(&pon->control_lock);
+    if(pon->cleanup_error)return pon->cleanup_error;
+    pon->fe_enabled=enable;return 0;
 }
+static void gpiod_set_value_cansleep(int *gpio,int value) {*gpio=value;}
+static void rtl_pon_gpon_stop_locked(struct rtl9617c_pon *pon) {(void)pon;}
+static void rtl_pon_xgpon_stop_locked(struct rtl9617c_pon *pon) {(void)pon;}
 static unsigned int canceled;
 static void *state_reader(void *unused) {
     (void)unused;mutex_lock(&current->lock);mutex_unlock(&current->lock);return NULL;
@@ -107,11 +114,12 @@ static int rtl_pon_burst_polarity(struct rtl9617c_pon *pon,unsigned int page) {(
 static void rtl_pon_gearbox_release(struct rtl9617c_pon *pon) {pon->gearbox_ready=true;}
 static int rtl_pon_epon_traffic_locked(struct rtl9617c_pon *pon,bool enable) {
     assert(!enable);pon->traffic_enabled=false;
+    int ret=pon->fe_enabled?rtl_pon_fe_configure_locked(pon,false):0;
     /* Cut exactly after stop, while another thread tries public MPCP start. */
     pthread_mutex_lock(&gate);window=true;pthread_cond_broadcast(&changed);
     while(!attempted) pthread_cond_wait(&changed,&gate);
     if (!pon->control_lock.held) while(!finished) pthread_cond_wait(&changed,&gate);
-    pthread_mutex_unlock(&gate);return 0;
+    pthread_mutex_unlock(&gate);return ret;
 }
 static int rtl_pon_epon_traffic(struct rtl9617c_pon *pon,bool enable) {return rtl_pon_epon_traffic_locked(pon,enable);}
 '''
@@ -125,10 +133,10 @@ static void *concurrent_start(void *arg) {
     pthread_mutex_lock(&gate);finished=true;pthread_cond_broadcast(&changed);pthread_mutex_unlock(&gate);return NULL;
 }
 int main(void) {
-    u32 mac[0xc000/4]={},top[2]={},control=0,epon=0,gpon=0,serdes=0,optical=0;
+    u32 mac[0xc000/4]={},top[2]={},control=0,epon=0,gpon=0,serdes=0,optical=0;int disabled=0;
     struct rtl9617c_pon pon={.mode=RTL_PON_EPON_D10G,.mac=mac,.top_irq=top,
         .control=&control,.epon_control=&epon,.gpon_control=&gpon,.serdes_init=&serdes,.optical_control=&optical,
-        .llid_count=1,.mac_prepared=true,.serdes_configured=true,.onu_mac={2,1,2,3,4,5}};
+        .llid_count=1,.mac_prepared=true,.serdes_configured=true,.onu_mac={2,1,2,3,4,5},.tx_disable=&disabled};
     current=&pon;assert(pthread_mutex_init(&pon.lock.native,NULL)==0);assert(pthread_mutex_init(&pon.control_lock.native,NULL)==0);
     mac[PSDS_STATUS/4]=PSDS_SYNC_GOAL;
     for(unsigned int mode=RTL_PON_GPON;mode<RTL_PON_MODE_COUNT;mode++) {
@@ -142,6 +150,9 @@ int main(void) {
         assert(!pon.control_lock.held && !pon.lock.held);
     }
     assert(canceled==6);
+    pon.mode=RTL_PON_XGSPON;pon.fe_enabled=true;pon.cleanup_error=-EIO;
+    assert(rtl_pon_serdes_configure(&pon,RTL_PON_EPON_D10G)==-EIO);
+    assert(pon.mode==RTL_PON_XGSPON && pon.fe_enabled && disabled && pon.serdes_error==-EIO);
     puts("Actual SerDes/MPCP transaction: concurrent restart blocked, all GPON-family results idle, state workers finish during cancel");
     pthread_mutex_destroy(&pon.lock.native);pthread_mutex_destroy(&pon.control_lock.native);
 }
@@ -224,6 +235,8 @@ with tempfile.TemporaryDirectory(prefix='control-tests-', dir=root / 'artifacts'
             definitions += function(mpcp, 'rtl_pon_mpcp_stop' + locked) + function(mpcp, 'rtl_pon_mpcp_configure' + locked)
             definitions += function(serdes, 'rtl_pon_serdes_configure' + locked)
             if locked:
+                if 'int rtl_pon_stop_locked' in controller:
+                    definitions += function(controller, 'rtl_pon_stop_locked')
                 definitions += function(controller, 'rtl_pon_mpcp_configure') + function(controller, 'rtl_pon_serdes_configure')
             source = common + constants + '\n' + definitions + transaction_test
         else:

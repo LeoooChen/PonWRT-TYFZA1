@@ -58,9 +58,9 @@ static void rtl_pon_oam_carrier(struct rtl9617c_pon *pon) { pon->carrier_updates
 static struct rtl9617c_pon *platform_get_drvdata(struct platform_device *pdev) {return pdev->pon;}
 static void writel(unsigned int value, void *reg) {*(unsigned int *)reg = value;}
 static void rtl_pon_gpon_stop_locked(struct rtl9617c_pon *pon)
-{ assert(pon->control_lock); pon->gpon_stops++; }
+{ assert(pon->control_lock && pon->mode==RTL_PON_GPON); pon->gpon_stops++; }
 static void rtl_pon_xgpon_stop_locked(struct rtl9617c_pon *pon)
-{ assert(pon->control_lock); pon->xgpon_stops++; }
+{ assert(pon->control_lock && pon->mode>=RTL_PON_XGPON); pon->xgpon_stops++; }
 static void rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon)
 { assert(pon->control_lock && *pon->tx_disable); pon->mpcp_stops++; }
 static void synchronize_irq(int irq)
@@ -106,7 +106,10 @@ int main(void)
   shutting_down = &pon; irq_syncs = 0;
   rtl9617c_pon_shutdown(&pdev);
   assert(disabled && !top[1] && !optical[1] && irq_syncs == 1);
-  assert(pon.gpon_stops == 1 && pon.xgpon_stops == 1 && pon.mpcp_stops == 1);
+  assert(pon.gpon_stops == (mode==RTL_PON_GPON));
+  assert(pon.xgpon_stops == (mode>=RTL_PON_XGPON));
+  assert(pon.mpcp_stops == (mode<RTL_PON_GPON));
+  assert(pon.cleanup_calls == 1);
   assert(pon.work_stops == 1 && pon.errors == 1 && !pon.removed && !pon.control_lock);
   if (mode == RTL_PON_EPON_D10G) {
    rtl9617c_pon_remove(&pdev);
@@ -119,6 +122,7 @@ int main(void)
 with tempfile.TemporaryDirectory(prefix='pon-shutdown-', dir=root / 'artifacts') as directory:
     work = Path(directory)
     (work / 'test.c').write_text(fixture + defines + '\n' + function(epon, 'rtl_pon_epon_traffic_locked') +
+                               function(platform, 'rtl_pon_stop_locked') +
                                function(platform, 'rtl9617c_pon_shutdown') +
                                function(platform, 'rtl9617c_pon_remove') + test)
     subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',

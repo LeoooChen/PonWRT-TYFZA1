@@ -50,7 +50,7 @@ int main(int argc, char **argv)
 	struct pon_config config = {};
 	const char *serial, *password, *mode;
 	uint8_t identity[44] = {};
-	int fd, result = 1;
+	int fd, error, result = 1;
 	size_t length;
 	size_t password_size = 10;
 
@@ -58,8 +58,11 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Usage: pon-identity /sys/.../gpon_identity or xgpon_identity\n");
 		return 2;
 	}
-	if (pon_config_load(&config, "/etc/config"))
+	error = pon_config_load(&config, "/etc/config");
+	if (error) {
+		fprintf(stderr, "PON configuration load: %s\n", strerror(-error));
 		goto out;
+	}
 	serial = pon_config_option(&config, "serial_number");
 	mode = pon_config_option(&config, "mode");
 	if (mode && (!strcmp(mode, "xgpon") || !strcmp(mode, "xgspon"))) {

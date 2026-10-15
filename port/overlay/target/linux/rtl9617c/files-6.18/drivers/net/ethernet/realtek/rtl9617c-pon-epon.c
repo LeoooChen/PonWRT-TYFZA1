@@ -69,13 +69,13 @@ int rtl_pon_epon_prepare_locked(struct rtl9617c_pon *pon)
 	int ret;
 
 	lockdep_assert_held(&pon->control_lock);
-	gpiod_set_value_cansleep(pon->tx_disable, 1);
-	rtl_pon_mpcp_stop_locked(pon);
+	if (!rtl_pon_mode_is_epon(pon->mode))
+		return -EOPNOTSUPP;
+	ret = rtl_pon_stop_locked(pon);
 	mutex_lock(&pon->lock);
-	if (!rtl_pon_mode_is_epon(pon->mode)) {
-		ret = -EOPNOTSUPP;
+	pon->mac_prepared = false;
+	if (ret)
 		goto unlock;
-	}
 	onu_mode = rtl_pon_modes[pon->mode].epon_onu_mode;
 	if (!pon->serdes_configured) {
 		ret = -EAGAIN;
@@ -146,11 +146,6 @@ int rtl_pon_epon_traffic_locked(struct rtl9617c_pon *pon, bool enable)
 			ret = rtl_pon_fe_configure_locked(pon, false);
 	}
 	mutex_lock(&pon->lock);
-	if (!rtl_pon_mode_is_epon(pon->mode)) {
-		if (enable)
-			ret = -EOPNOTSUPP;
-		goto unlock;
-	}
 	if (enable && (!pon->puc_configured || !pon->pdc_configured ||
 		       !netif_running(pon->oam_endpoint.netdev))) {
 		ret = -EAGAIN;
