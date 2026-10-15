@@ -58,6 +58,7 @@ struct rtl_ax_rx {
 	u32 irq_mask;
 	const struct rtl_ax_io *io;
 	struct rtl_ax_rx_queue queues[2];
+	u32 dfs_epoch[4];
 	rtl_ax_rx_handler handler;
 	void *handler_ctx;
 	struct delayed_work work;
@@ -246,6 +247,37 @@ unlock:
 	mutex_unlock(&rx->uplink_lock);
 }
 
+/* RX work, PE and PCI DMA are paused. Mark each ring's old prefix, using
+ * the PE scan cursor rather than the RXBD return cursor for owned queues. */
+void rtl_ax_rx_dfs_epoch(struct rtl_ax_rx *rx)
+{
+	unsigned int number;
+
+	for (number = 0; number < 2; number++) {
+		unsigned int consumer = rx->queues[number].consumer;
+		unsigned int producer = (rx->io->read32(rx->io->ctx, 0x1218 + number * 4) >> 16) & 0x3ff;
+
+		if (rx->rpq_owned)
+			consumer = get_unaligned_le32(rx->rpq_memory + 0x2000 + (number ? 280 : 324));
+		rx->dfs_epoch[number] = producer | (consumer != producer ? 256 : 0);
+		if (rx->rpq_owned) {
+			u8 *mailbox = rx->rpq_memory + 0x2000;
+			unsigned int read = get_unaligned_le32(mailbox + (number ? 296 : 380));
+			unsigned int write = get_unaligned_le32(mailbox + (number ? 292 : 376));
+
+			put_unaligned_le32(rx->dfs_epoch[number], mailbox + (RTL_AX_PE_DFS_EPOCH + number) * 4);
+			rx->dfs_epoch[2 + number] = write | (read != write ? 256 : 0);
+		}
+	}
+	dma_wmb();
+}
+
+static int rtl_ax_rx_dispatch(struct rtl_ax_rx *rx, bool old, const struct rtl_ax_rx_packet *packet)
+{
+	if (packet->type == 8 && old) return 0;
+	return rx->handler(rx->handler_ctx, packet);
+}
+
 static bool rtl_ax_rx_drain(struct rtl_ax_rx *rx, unsigned int number)
 {
 	struct rtl_ax_rx_queue *queue = &rx->queues[number];
@@ -256,6 +288,7 @@ static bool rtl_ax_rx_drain(struct rtl_ax_rx *rx, unsigned int number)
 	for (count = 0; count < 128; count++) {
 		struct rtl_ax_rx_packet packet = {};
 		unsigned int expected = rtl_ax_rx_next_tag(queue->tag), attempt, info;
+		bool old;
 		u8 *buffer;
 		int ret;
 
@@ -282,6 +315,7 @@ static bool rtl_ax_rx_drain(struct rtl_ax_rx *rx, unsigned int number)
 			return true;
 		}
 		dma_rmb();
+		old = rtl_ax_rx_epoch_old(&rx->dfs_epoch[number], queue->consumer);
 		ret = rtl_ax_receive_packet(buffer, queue->buffer_bytes, &packet);
 		queue->tag = expected;
 		if (ret)
@@ -339,7 +373,7 @@ data_observed:
 				if ((fc & 0x00ff) == 0x0080 && packet.bytes >= 36)
 					queue->beacons++;
 			}
-			ret = rx->handler(rx->handler_ctx, &packet);
+			ret = rtl_ax_rx_dispatch(rx, old, &packet);
 			if (ret == -EOPNOTSUPP)
 				queue->unhandled++;
 			else if (ret)
@@ -366,9 +400,10 @@ static void rtl_ax_rx_pe_drain(struct rtl_ax_rx *rx)
 
 	while (budget-- && consumer != get_unaligned_le32(mailbox + 292)) {
 		struct rtl_ax_rx_packet packet = {.pe_completed = true};
+		bool old = rtl_ax_rx_epoch_old(&rx->dfs_epoch[3], consumer);
 		dma_rmb();
-		if (!rtl_ax_receive_packet(rx->pe_forward + consumer * 512, 512, &packet))
-			rx->handler(rx->handler_ctx, &packet);
+		if (!rtl_ax_receive_packet(rx->pe_forward + consumer * RTL_AX_RPQ_BUFFER_BYTES, RTL_AX_RPQ_BUFFER_BYTES, &packet))
+			rtl_ax_rx_dispatch(rx, old, &packet);
 		consumer = (consumer + 1) & 255;
 		dma_wmb();
 		put_unaligned_le32(consumer, mailbox + 296);
@@ -384,6 +419,7 @@ static void rtl_ax_rx_pe_rxq_drain(struct rtl_ax_rx *rx)
 
 	while (budget-- && consumer != get_unaligned_le32(mailbox + 376)) {
 		struct rtl_ax_rx_packet packet = {};
+		bool old = rtl_ax_rx_epoch_old(&rx->dfs_epoch[2], consumer);
 		u32 slot;
 		dma_addr_t dma;
 		u8 *buffer;
@@ -404,7 +440,7 @@ static void rtl_ax_rx_pe_rxq_drain(struct rtl_ax_rx *rx)
 				rx->pe_rx_data_bytes += packet.bytes;
 				rx->pe_rx_pm_data += !!(packet.payload[1] & 0x10);
 			}
-			rx->handler(rx->handler_ctx, &packet);
+			rtl_ax_rx_dispatch(rx, old, &packet);
 			rtl_ax_rx_uplink_seed(rx, &packet);
 			rx->pe_rx_delivered++;
 		} else rx->pe_rx_malformed++;
@@ -440,10 +476,14 @@ void rtl_ax_rx_pe_rpq_start(struct rtl_ax_rx *rx, void *memory)
 	cancel_delayed_work_sync(&rx->work);
 	/* Transfer the current consumer/tag, including any not-yet-ready DMA.
 	 * The PE run loop waits for tags; enabling offload need not drain them. */
-	dma_sync_single_for_device(rx->pe_device, rx->queues[1].buffer_dma, SZ_128K, DMA_BIDIRECTIONAL);
+	dma_sync_single_for_device(rx->pe_device, rx->queues[1].buffer_dma, RTL_AX_RX_ENTRIES * RTL_AX_RPQ_BUFFER_BYTES, DMA_BIDIRECTIONAL);
 	dma_sync_single_for_device(rx->pe_device, rx->queues[0].buffer_dma,
 		(RTL_AX_RX_ENTRIES + RTL_AX_RX_SPARES) * RTL_AX_RXQ_BUFFER_BYTES, DMA_BIDIRECTIONAL);
 	rx->rpq_memory = memory;
+	for (i = 0; i < 2; i++) {
+		put_unaligned_le32(rx->dfs_epoch[i], mailbox + (RTL_AX_PE_DFS_EPOCH + i) * 4);
+		rx->dfs_epoch[2 + i] = 0;
+	}
 	for (i = 0; i < RTL_AX_RX_ENTRIES; i++) {
 		u32 id = rtl_ax_rx_buffer_offset(&rx->queues[0], i) / RTL_AX_RXQ_BUFFER_BYTES;
 		put_unaligned_le32(id, memory + 0x17400 + i * 4);
@@ -569,12 +609,14 @@ int rtl_ax_rx_pe_rpq_stop(struct rtl_ax_rx *rx)
 		dma_wmb();
 		rx->io->write16(rx->io->ctx, 0x1218, consumed);
 	}
-	dma_sync_single_for_cpu(rx->pe_device, rx->queues[1].buffer_dma, SZ_128K, DMA_BIDIRECTIONAL);
+	dma_sync_single_for_cpu(rx->pe_device, rx->queues[1].buffer_dma, RTL_AX_RX_ENTRIES * RTL_AX_RPQ_BUFFER_BYTES, DMA_BIDIRECTIONAL);
 	rx->queues[1].consumer = get_unaligned_le32(mailbox + 280);
 	rx->queues[1].tag = get_unaligned_le32(mailbox + 284);
 	put_unaligned_le32(0, mailbox + 272);
 	put_unaligned_le32(0, mailbox + 320);
 	dma_wmb();
+	for (unsigned int i = 0; i < 2; i++)
+		rx->dfs_epoch[i] = get_unaligned_le32(mailbox + (RTL_AX_PE_DFS_EPOCH + i) * 4);
 	rx->rpq_memory = NULL;
 	rx->uplink_wifi_id = 0;
 	put_unaligned_le32(0, mailbox + 424);
@@ -748,7 +790,7 @@ void rtl_ax_rx_free(struct rtl_ax_rx *rx)
 					  queue->descriptors, queue->descriptor_dma);
 	}
 	if (rx->uplink_states) dma_free_coherent(rx->pe_device, SZ_128K, rx->uplink_states, rx->uplink_states_dma);
-	if (rx->pe_forward) dma_free_coherent(rx->pe_device, SZ_128K, rx->pe_forward, rx->pe_forward_dma);
+	if (rx->pe_forward) dma_free_coherent(rx->pe_device, RTL_AX_RX_ENTRIES * RTL_AX_RPQ_BUFFER_BYTES, rx->pe_forward, rx->pe_forward_dma);
 	put_device(rx->pe_device);
 	kfree(rx);
 }
@@ -798,7 +840,7 @@ struct rtl_ax_rx *rtl_ax_rx_prepare(struct pci_dev *pdev, const struct rtl_ax_io
 	rx->uplink_states = dma_alloc_coherent(rpq_device, SZ_128K, &rx->uplink_states_dma, GFP_KERNEL);
 	if (!rx->uplink_states) { ret = -ENOMEM; goto free; }
 	memset(rx->uplink_states, 0, SZ_128K);
-	rx->pe_forward = dma_alloc_coherent(rpq_device, SZ_128K, &rx->pe_forward_dma, GFP_KERNEL);
+	rx->pe_forward = dma_alloc_coherent(rpq_device, RTL_AX_RX_ENTRIES * RTL_AX_RPQ_BUFFER_BYTES, &rx->pe_forward_dma, GFP_KERNEL);
 	if (!rx->pe_forward) { ret = -ENOMEM; goto free; }
 	dma_wmb();
 	ret = rtl_ax_rx_configure(io, lower_32_bits(rx->queues[0].descriptor_dma),

@@ -3,6 +3,8 @@
 #define RTL_AX_AP_DFS_H
 #include <linux/types.h>
 #include <linux/string.h>
+#include <linux/unaligned.h>
+#include "power.h"
 
 /* Original TYFZA1 Gen1 report units:PW200ns,PRI25us. Its older PPB
  * thresholds differ from the newer GPL SDK's Gen1 and Gen2 profiles. */
@@ -20,6 +22,11 @@ struct rtl_ax_dfs {
 	u8 adaptive_initial_count, adaptive_add_count, adaptive_count_threshold;
 	u16 idle_period_threshold, false_alarm_threshold, max_pulse_width;
 	bool initialized, dynamic_setting, in_cac, first_dynamic, dynamic_reset;
+	bool enabled, hardware_enabled, detected, two_segments, bypass_segment0, w53, chirp_started[2];
+	u8 primary, bandwidth, long_count[2];
+	u32 chirp_start[2];
+	u64 reports, pulses_seen, events, malformed, dropped;
+	int error;
 };
 
 static inline void rtl_ax_dfs_region(struct rtl_ax_dfs *dfs, u8 region)
@@ -78,5 +85,224 @@ static inline void rtl_ax_dfs_initialize(struct rtl_ax_dfs *dfs, unsigned int re
 	dfs->first_dynamic = true;
 	dfs->dynamic_reset = true;
 	dfs->initialized = true;
+}
+
+/* MKK W53/W56 tables from TYFZA1 rgn_dmn_cnfg_by_ch@29e5fc. */
+static inline void rtl_ax_dfs_channel(struct rtl_ax_dfs *dfs,
+	unsigned int region, unsigned int primary, unsigned int bandwidth)
+{
+	static const struct rtl_ax_dfs_profile w53 = {
+		{2,2,100,100,150,150,150,150}, {25,75,550,550,160,160,160,160},
+		{40,25,3,3,2,2,2,2}, {200,200,200,200,36,43,44,54},
+		{10,15,16,16,16,16,16,16}, false,
+	};
+	static const struct rtl_ax_dfs_profile w56 = {
+		{2,5,10,5,30,55,250,5}, {3,5,11,25,50,100,500,5},
+		{55,57,80,6,8,8,40,13}, {56,58,160,10,20,20,80,14},
+		{18,18,10,23,16,12,15,18}, true,
+	};
+
+	rtl_ax_dfs_region(dfs, region);
+	dfs->w53 = false;
+	if (region == 2) {
+		bool low = primary >= 52 && primary <= 64;
+
+		if (bandwidth == 3 && primary >= 36 && primary <= 48)
+			low = true;
+		dfs->profile = low ? w53 : w56;
+		dfs->w53 = low;
+	}
+	dfs->primary = primary;
+	dfs->bandwidth = bandwidth;
+	dfs->two_segments = bandwidth == 3;
+	dfs->bypass_segment0 = dfs->two_segments && region != 1 && primary <= 64;
+	memset(dfs->long_count, 0, sizeof(dfs->long_count));
+	memset(dfs->chirp_started, 0, sizeof(dfs->chirp_started));
+	dfs->detected = false;
+}
+
+/* cfg_dfs@229864 and en_bbrpt@2296f4: MACband0, report threshold61,
+ * timeout80ms, DLE selector0. BB CLIENT radar enable isBB0 bit31. */
+static inline int rtl_ax_dfs_hardware(const struct rtl_ax_io *io, bool enable)
+{
+	unsigned int value, saved;
+	int ret;
+
+	rtl_ax_update32(io, 0x8404, 0, RTL_AX_BIT(17));
+	rtl_ax_update32(io, 0x8400, 0, RTL_AX_BIT(17));
+	if (enable)
+		io->write32(io->ctx, 0x9630, 0x0d41);
+	else {
+		saved = io->read8(io->ctx, 0x9630);
+		io->write8(io->ctx, 0x9630, saved | RTL_AX_BIT(4));
+		ret = io->poll32(io->ctx, 0x9630, RTL_AX_BIT(5), RTL_AX_BIT(5), 1, 3000, &value);
+		if (ret) return ret;
+		/* The original saves only the low byte before the stop request. */
+		io->write8(io->ctx, 0x9630, saved & ~RTL_AX_BIT(0));
+	}
+	rtl_ax_update32(io, 0x10000, RTL_AX_BIT(31), enable ? RTL_AX_BIT(31) : 0);
+	return 0;
+}
+
+struct rtl_ax_dfs_pulse { u16 width; u8 interval, sequence, segment; bool chirp; };
+
+/* MAC DFS reports have an8-byte drop-count header and8 bytes per pulse.
+ * In TW mode a zero segment0 width selects the independent segment1 record. */
+static inline struct rtl_ax_dfs_pulse rtl_ax_dfs_pulse(const u8 *data, bool two)
+{
+	u64 word = get_unaligned_le64(data);
+	struct rtl_ax_dfs_pulse pulse = {
+		.width = (word >> 28) & 1023,
+		.interval = ((word >> 24) & 15) << 4 | ((word >> 20) & 15),
+		.sequence = (word >> 56) & 127,
+		.chirp = !!(word & BIT_ULL(19)),
+	};
+
+	if (two && !pulse.width) {
+		pulse.segment = 1;
+		pulse.width = (word >> 9) & 1023;
+		pulse.interval = (word >> 1) & 255;
+		pulse.sequence = (word >> 49) & 127;
+		pulse.chirp = word & 1;
+	}
+	return pulse;
+}
+
+struct rtl_ax_dfs_range { u16 low, high; };
+struct rtl_ax_dfs_segment {
+	u8 count[8], chirps;
+	struct rtl_ax_dfs_range width[8], interval[8], chirp_width, long_width;
+	u16 maximum;
+	bool sequence_error;
+};
+
+static inline void rtl_ax_dfs_range_add(struct rtl_ax_dfs_range *range, u16 value)
+{
+	if (value < range->low) range->low = value;
+	if (value > range->high) range->high = value;
+}
+static inline u16 rtl_ax_dfs_range_diff(const struct rtl_ax_dfs_range *range)
+{
+	return range->high - range->low;
+}
+
+/* Native pulse classification, preserving the factory's per-report window,
+ * per-segment sequence handling, tolerance factors and12-second long pulse window. */
+static inline bool rtl_ax_dfs_detect(struct rtl_ax_dfs *dfs, const u8 *data,
+	unsigned int count, u32 seconds)
+{
+	struct rtl_ax_dfs_segment segment[2] = {};
+	const struct rtl_ax_dfs_profile *profile = &dfs->profile;
+	u8 previous[2] = {}, seen = 0, previous_segment = 0, history = 0;
+	u8 saved_long[2] = {dfs->long_count[0], dfs->long_count[1]};
+	unsigned int i, j, kept = 0;
+	bool detected = false;
+
+	for (i = 0; i < 2; i++) {
+		segment[i].chirp_width.low = segment[i].long_width.low = 65535;
+		for (j = 0; j < 8; j++)
+			segment[i].width[j].low = segment[i].interval[j].low = 65535;
+	}
+	/* Sequence inspection precedes the PRI mask and segment0 bypass. */
+	for (i = 0; i < count; i++) {
+		struct rtl_ax_dfs_pulse p = rtl_ax_dfs_pulse(data + i * 8, dfs->two_segments);
+		unsigned int part = p.segment;
+		int delta = (int)p.sequence - previous[part];
+
+		if (i && (seen & (1U << part)) && part == previous_segment &&
+		    (previous[part] == 127 ? p.sequence != 0 : delta > 1 || delta < -1))
+			segment[part].sequence_error = true;
+		previous[part] = p.sequence;
+		previous_segment = part;
+		seen |= 1U << part;
+		if ((!part && dfs->bypass_segment0) || p.interval < dfs->pri_mask)
+			continue;
+		kept++;
+	}
+	if (kept < dfs->false_report_threshold && !(profile->long_pulse && kept))
+		return false;
+	kept = 0;
+	for (i = 0; i < count; i++) {
+		struct rtl_ax_dfs_pulse p = rtl_ax_dfs_pulse(data + i * 8, dfs->two_segments);
+		unsigned int part = p.segment;
+		struct rtl_ax_dfs_segment *s = &segment[part];
+		bool first = !kept || !(history & (1U << part));
+
+		if ((!part && dfs->bypass_segment0) || p.interval < dfs->pri_mask)
+			continue;
+		kept++;
+		history |= 1U << part;
+		if (p.width > s->maximum) s->maximum = p.width;
+		if (profile->long_pulse) {
+			if (seconds - dfs->chirp_start[part] > 11) {
+				dfs->chirp_started[part] = false;
+				dfs->chirp_start[part] = 0;
+				dfs->long_count[part] = 0;
+			}
+			if (p.chirp && !dfs->chirp_started[part]) {
+				dfs->chirp_start[part] = seconds;
+				dfs->chirp_started[part] = true;
+			}
+		}
+		if (p.chirp) {
+			s->chirps++;
+			rtl_ax_dfs_range_add(&s->chirp_width, p.width);
+		}
+		for (j = 0; j < 8; j++) {
+			int low = profile->pw_min[j] * (8 - dfs->pw_factor) / 8;
+			unsigned int high = profile->pw_max[j] * (8 + dfs->pw_factor) / 8;
+			unsigned int pri_low = profile->pri_min[j] * (8 - dfs->pri_factor) / 8;
+			unsigned int pri_high = profile->pri_max[j] * (8 + dfs->pri_factor) / 8;
+
+			if (low > (int)profile->pw_min[j] - 1) low = (int)profile->pw_min[j] - 1;
+			if (high < profile->pw_max[j] + 1U) high = profile->pw_max[j] + 1U;
+			if (pri_high > 220) pri_high = 220;
+			if (p.width < (u8)low || p.width > high) continue;
+			if (j == 6 && profile->long_pulse) {
+				if (p.chirp && (first ? p.interval != 0 :
+				    p.interval >= pri_low && p.interval <= pri_high)) {
+					dfs->long_count[part]++;
+					rtl_ax_dfs_range_add(&s->long_width, p.width);
+				}
+			} else if (p.interval >= pri_low && p.interval <= pri_high &&
+				   p.chirp == ((dfs->region == 3 && j == 3) || (dfs->w53 && j >= 2))) {
+				s->count[j]++;
+				rtl_ax_dfs_range_add(&s->width[j], p.width);
+				if (!(dfs->region == 3 && (j == 4 || j == 5)) && !first)
+					rtl_ax_dfs_range_add(&s->interval[j], p.interval);
+			}
+		}
+	}
+	for (i = 0; i < (dfs->two_segments ? 2U : 1U); i++) {
+		struct rtl_ax_dfs_segment *s = &segment[i];
+		bool hit = false;
+		bool masked = count - kept > dfs->fake_radar_threshold &&
+			!(dfs->region == 3 && dfs->primary == 60 && !dfs->bandwidth);
+
+		if (profile->long_pulse) {
+			if (rtl_ax_dfs_range_diff(&s->long_width) > dfs->long_chirp_diff ||
+			    rtl_ax_dfs_range_diff(&s->chirp_width) > dfs->long_chirp_diff ||
+			    s->maximum > dfs->max_pulse_width || s->chirps > 4)
+				dfs->long_count[i] = 0;
+			if ((int)dfs->long_count[i] - saved_long[i] <= 1)
+				dfs->long_count[i] = saved_long[i];
+			if (masked) dfs->long_count[i] = 0;
+		}
+		for (j = 0; j < 8; j++) {
+			unsigned int required = profile->pulses[j] * dfs->ppb_parameter / 8;
+
+			if (j == 6 && profile->long_pulse) {
+				if (dfs->long_count[i] >= required) hit = true;
+			} else if (s->count[j] >= required)
+				hit = rtl_ax_dfs_range_diff(&s->width[j]) <= dfs->pw_diff &&
+					rtl_ax_dfs_range_diff(&s->interval[j]) <= dfs->pri_diff;
+		}
+		if (masked || s->maximum > dfs->max_pulse_width ||
+		    rtl_ax_dfs_range_diff(&s->chirp_width) > dfs->long_chirp_diff ||
+		    (dfs->bandwidth <= 2 && s->sequence_error)) hit = false;
+		if (hit) dfs->long_count[i] = 0;
+		detected |= hit;
+	}
+	return detected;
 }
 #endif

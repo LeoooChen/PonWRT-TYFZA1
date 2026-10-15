@@ -81,7 +81,7 @@ struct rtl_ax_tx {
 	DECLARE_BITMAP(pending, RTL_AX_TX_ENTRIES);
 	unsigned int producer[RTL_AX_TX_RINGS];
 	u64 submitted_ring[RTL_AX_TX_RINGS], completed_ring[RTL_AX_TX_RINGS];
-	bool running, paused;
+	bool running, paused, dfs_blocked;
 	bool checksum_enabled;
 	bool queues_stopped;
 	unsigned int occupied;
@@ -253,7 +253,8 @@ int rtl_ax_tx_pause(struct rtl_ax_tx *tx)
 		dma_wmb();
 	}
 	if (!tx->paused) {
-		tx->scheduler_saved = io->read32(io->ctx, 0xc398) & 0x3ffff;
+		if (!tx->dfs_blocked)
+			tx->scheduler_saved = io->read32(io->ctx, 0xc398) & 0x3ffff;
 		tx->paused = true;
 	}
 	/* Actual set_hw_sch_tx_en C/XB writes C398, 18 queue bits.
@@ -277,6 +278,21 @@ int rtl_ax_tx_pause(struct rtl_ax_tx *tx)
 	return -ETIMEDOUT;
 }
 
+/* DFS pauses the same18 hardware queues as RFK, without waiting for
+ * RPQ inside the RX worker. A later RFK/open must retain the DFS block. */
+void rtl_ax_tx_dfs_block(struct rtl_ax_tx *tx, bool blocked)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&tx->lock, flags);
+	if (blocked && !tx->dfs_blocked && !tx->paused)
+		tx->scheduler_saved = tx->io->read32(tx->io->ctx, 0xc398) & 0x3ffff;
+	tx->dfs_blocked = blocked;
+	rtl_ax_update32(tx->io, 0xc398, 0x3ffff,
+		blocked || tx->paused ? 0 : tx->scheduler_saved | BIT(8));
+	spin_unlock_irqrestore(&tx->lock, flags);
+}
+
 void rtl_ax_tx_open(struct rtl_ax_tx *tx)
 {
 	const struct rtl_ax_io *io = tx->io;
@@ -284,7 +300,7 @@ void rtl_ax_tx_open(struct rtl_ax_tx *tx)
 
 	spin_lock_irqsave(&tx->lock, flags);
 	tx->checksum_enabled = !!(io->read32(io->ctx, 0x8830) & BIT(0));
-	rtl_ax_update32(io, 0xc398, 0x3ffff, tx->scheduler_saved | BIT(8));
+	rtl_ax_update32(io, 0xc398, 0x3ffff, tx->dfs_blocked ? 0 : tx->scheduler_saved | BIT(8));
 	rtl_ax_update32(io, 0x1010, RTL_AX_TX_STOP_MASK | BIT(19), 0);
 	tx->paused = false;
 	tx->running = true;
@@ -497,7 +513,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	addresses = ret;
 	header = (void *)skb->data;
 	spin_lock_irqsave(&tx->lock, flags);
-	if (!tx->running) {
+	if (!tx->running || tx->dfs_blocked) {
 		tx->stopped++;
 		ret = -ENETDOWN;
 		goto unmap;

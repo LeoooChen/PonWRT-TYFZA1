@@ -12,17 +12,93 @@ static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw)
 	return *(struct rtl_ax_ap **)hw->priv;
 }
 
+/* Single PHY/channel: channel contexts carry the AP's full chandef and radar
+ * requirement. A radar-only change must reach hardware even at the same RF. */
+static int rtl_ax_chandef_locked(struct rtl_ax_ap *radio, const struct cfg80211_chan_def *def)
+{
+	unsigned int bandwidth;
+
+	switch (def->width) {
+	case NL80211_CHAN_WIDTH_20_NOHT:
+	case NL80211_CHAN_WIDTH_20: bandwidth = 0; break;
+	case NL80211_CHAN_WIDTH_40: bandwidth = 1; break;
+	case NL80211_CHAN_WIDTH_80: bandwidth = 2; break;
+	case NL80211_CHAN_WIDTH_160: bandwidth = 3; break;
+	default: return -EOPNOTSUPP;
+	}
+	if (radio->chip != RTL_AX_8852C && bandwidth) return -EOPNOTSUPP;
+	return rtl_ax_receive_configure(radio, def->chan->hw_value,
+		ieee80211_frequency_to_channel(def->center_freq1), bandwidth);
+}
+
+static int rtl_ax_add_chanctx(struct ieee80211_hw *hw, struct ieee80211_chanctx_conf *ctx)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	int ret;
+
+	mutex_lock(&radio->command_mutex);
+	radio->radar_required = ctx->radar_enabled;
+	ret = rtl_ax_chandef_locked(radio, &ctx->def);
+	if (!ret) radio->chanctx = ctx;
+	else radio->radar_required = false;
+	mutex_unlock(&radio->command_mutex);
+	return ret;
+}
+
+static void rtl_ax_change_chanctx(struct ieee80211_hw *hw, struct ieee80211_chanctx_conf *ctx, u32 changed)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	int ret;
+
+	mutex_lock(&radio->command_mutex);
+	radio->radar_required = ctx->radar_enabled;
+	ret = rtl_ax_chandef_locked(radio, &ctx->def);
+	mutex_unlock(&radio->command_mutex);
+	if (ret) dev_err(&radio->pdev->dev, "channel/radar update failed: %d\n", ret);
+}
+
+static void rtl_ax_remove_chanctx(struct ieee80211_hw *hw, struct ieee80211_chanctx_conf *ctx)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	unsigned long flags;
+	int ret;
+
+	mutex_lock(&radio->command_mutex);
+	spin_lock_irqsave(&radio->command_lock, flags);
+	radio->dfs.enabled = false;
+	spin_unlock_irqrestore(&radio->command_lock, flags);
+	ret = rtl_ax_tx_pause(radio->tx);
+	rtl_ax_rx_close(radio->rx);
+	if (!ret) ret = rtl_ax_dfs_stop_locked(radio);
+	radio->dfs.error = ret;
+	radio->dfs.in_cac = false;
+	radio->radar_required = false;
+	radio->chanctx = NULL;
+	/* Stay paused on the old RF channel until its replacement is configured. */
+	rtl_ax_rx_open(radio->rx);
+	mutex_unlock(&radio->command_mutex);
+	if (ret) dev_err(&radio->pdev->dev, "channel/radar stop failed: %d\n", ret);
+}
+
+static int rtl_ax_assign_chanctx(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+	struct ieee80211_bss_conf *conf, struct ieee80211_chanctx_conf *ctx)
+{
+	/* The single context was programmed by add_chanctx. */
+	return 0;
+}
+
+static void rtl_ax_unassign_chanctx(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+	struct ieee80211_bss_conf *conf, struct ieee80211_chanctx_conf *ctx)
+{
+}
+
 static int rtl_ax_monitor_start(struct ieee80211_hw *hw)
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
 	int ret;
 
 	mutex_lock(&radio->command_mutex);
-	ret = rtl_ax_receive_configure(radio, hw->conf.chandef.chan->hw_value,
-		ieee80211_frequency_to_channel(hw->conf.chandef.center_freq1),
-		hw->conf.chandef.width == NL80211_CHAN_WIDTH_160 ? 3 :
-		hw->conf.chandef.width == NL80211_CHAN_WIDTH_80 ? 2 :
-		hw->conf.chandef.width == NL80211_CHAN_WIDTH_40);
+	ret = rtl_ax_chandef_locked(radio, radio->chanctx ? &radio->chanctx->def : &hw->conf.chandef);
 	if (ret) {
 		mutex_unlock(&radio->command_mutex);
 		return ret;
@@ -43,18 +119,29 @@ static int rtl_ax_monitor_start(struct ieee80211_hw *hw)
 static void rtl_ax_monitor_stop(struct ieee80211_hw *hw, bool suspend)
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	unsigned long flags;
+	int ret;
 
 	wiphy_delayed_work_cancel(hw->wiphy, &radio->cleanup_work);
 	wiphy_delayed_work_cancel(hw->wiphy, &radio->ra_work);
 	wiphy_work_cancel(hw->wiphy, &radio->ra_update_work);
 	mutex_lock(&radio->command_mutex);
+	spin_lock_irqsave(&radio->command_lock, flags);
+	radio->dfs.enabled = false;
+	spin_unlock_irqrestore(&radio->command_lock, flags);
 	WRITE_ONCE(radio->monitor_started, false);
 	rtl_ax_update32(&radio->io, 0xce40, BIT(0), 0);
 	tasklet_kill(&radio->tx_tasklet);
 	rtl_ax_update32(&radio->io, 0xc400, BIT(12), 0);
 	radio->beacon_enabled = false;
-	rtl_ax_tx_pause(radio->tx);
+	ret = rtl_ax_tx_pause(radio->tx);
+	if (ret) dev_err(&radio->pdev->dev, "TX pause on radio stop failed: %d\n", ret);
 	rtl_ax_rx_close(radio->rx);
+	radio->dfs.error = rtl_ax_dfs_stop_locked(radio);
+	if (radio->dfs.error)
+		dev_err(&radio->pdev->dev, "radar stop failed: %d\n", radio->dfs.error);
+	if (ret) radio->dfs.error = ret;
+	radio->dfs.in_cac = false;
 	mutex_unlock(&radio->command_mutex);
 }
 
@@ -65,7 +152,7 @@ static int rtl_ax_monitor_config(struct ieee80211_hw *hw, int radio_idx, u32 cha
 
 	if (changed & IEEE80211_CONF_CHANGE_POWER)
 		radio->requested_tx_dbm = hw->conf.power_level;
-	if (!(changed & IEEE80211_CONF_CHANGE_CHANNEL)) {
+	if (!(changed & IEEE80211_CONF_CHANGE_CHANNEL) || radio->chanctx) {
 		if ((changed & IEEE80211_CONF_CHANGE_POWER) && radio->channel.configured) {
 			mutex_lock(&radio->command_mutex);
 			ret = rtl_ax_power_apply(&radio->io, radio->chip, &radio->power_inputs,
@@ -77,18 +164,8 @@ static int rtl_ax_monitor_config(struct ieee80211_hw *hw, int radio_idx, u32 cha
 		}
 		return 0;
 	}
-	if (hw->conf.chandef.width != NL80211_CHAN_WIDTH_20 &&
-	    !(radio->chip == RTL_AX_8852C &&
-	      (hw->conf.chandef.width == NL80211_CHAN_WIDTH_40 || hw->conf.chandef.width == NL80211_CHAN_WIDTH_80 ||
-	       hw->conf.chandef.width == NL80211_CHAN_WIDTH_160)) &&
-	    hw->conf.chandef.width != NL80211_CHAN_WIDTH_20_NOHT)
-		return -EOPNOTSUPP;
 	mutex_lock(&radio->command_mutex);
-	ret = rtl_ax_receive_configure(radio, hw->conf.chandef.chan->hw_value,
-		ieee80211_frequency_to_channel(hw->conf.chandef.center_freq1),
-		hw->conf.chandef.width == NL80211_CHAN_WIDTH_160 ? 3 :
-		hw->conf.chandef.width == NL80211_CHAN_WIDTH_80 ? 2 :
-		hw->conf.chandef.width == NL80211_CHAN_WIDTH_40);
+	ret = rtl_ax_chandef_locked(radio, &hw->conf.chandef);
 	mutex_unlock(&radio->command_mutex);
 	return ret;
 }
@@ -139,8 +216,12 @@ static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	struct ieee80211_bss_conf *conf)
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	unsigned long flags;
 	int ret;
 
+	if (radio->radar_required &&
+	    (radio->dfs.error || !radio->dfs.enabled || radio->dfs.detected))
+		return radio->dfs.error ? radio->dfs.error : -EBUSY;
 	ret = rtl_ax_self_role_prepare(radio, vif->addr, conf->beacon_int, conf->dtim_period);
 	if (!ret && radio->security_roles[0].valid) {
 		u8 dctl[68];
@@ -157,10 +238,19 @@ static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	}
 	rtl_ax_port0_color(&radio->io, conf->he_bss_color.enabled ? conf->he_bss_color.color : 0);
 	rtl_ax_receive_mode(&radio->io, 4);
-	rtl_ax_update32(&radio->io, 0xc400, BIT(12), BIT(12));
-	WRITE_ONCE(radio->ap_started, true);
-	radio->beacon_enabled = true;
-	return 0;
+	/* RX radar can arrive while the firmware commands above are waiting. */
+	spin_lock_irqsave(&radio->command_lock, flags);
+	if (radio->radar_required && radio->dfs.detected) ret = -EBUSY;
+	else {
+		radio->dfs.in_cac = false;
+		rtl_ax_tx_dfs_block(radio->tx, false);
+		rtl_ax_update32(&radio->io, 0xc400, BIT(12), BIT(12));
+		WRITE_ONCE(radio->ap_started, true);
+		radio->beacon_enabled = true;
+	}
+	spin_unlock_irqrestore(&radio->command_lock, flags);
+	radio->ap_result = ret;
+	return ret;
 }
 
 static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
@@ -208,10 +298,17 @@ static void rtl_ax_ap_stop(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	struct ieee80211_bss_conf *conf)
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	unsigned long flags;
 
+	spin_lock_irqsave(&radio->command_lock, flags);
 	rtl_ax_update32(&radio->io, 0xc400, BIT(12), 0);
 	radio->beacon_enabled = false;
 	WRITE_ONCE(radio->ap_started, false);
+	if (radio->dfs.enabled) {
+		radio->dfs.in_cac = true;
+		rtl_ax_tx_dfs_block(radio->tx, true);
+	}
+	spin_unlock_irqrestore(&radio->command_lock, flags);
 	wiphy_work_cancel(hw->wiphy, &radio->offload_work);
 	wiphy_work_cancel(hw->wiphy, &radio->beacon_work);
 	wiphy_work_cancel(hw->wiphy, &radio->ra_update_work);
@@ -271,8 +368,14 @@ static void rtl_ax_ap_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 			dev_err(&radio->pdev->dev, "beacon template update failed: %d\n", radio->ap_result);
 	}
 	if (changed & BSS_CHANGED_BEACON_ENABLED) {
-		rtl_ax_update32(&radio->io, 0xc400, BIT(12), conf->enable_beacon ? BIT(12) : 0);
-		radio->beacon_enabled = conf->enable_beacon;
+		unsigned long flags;
+		bool enable;
+
+		spin_lock_irqsave(&radio->command_lock, flags);
+		enable = conf->enable_beacon && !radio->dfs.in_cac && !radio->dfs.detected && !radio->dfs.error;
+		rtl_ax_update32(&radio->io, 0xc400, BIT(12), enable ? BIT(12) : 0);
+		radio->beacon_enabled = enable;
+		spin_unlock_irqrestore(&radio->command_lock, flags);
 	}
 }
 
@@ -1111,9 +1214,11 @@ static const struct ieee80211_ops rtl_ax_monitor_ops = {
 	.get_key_seq = rtl_ax_get_key_seq,
 	.set_tim = rtl_ax_set_tim,
 	.configure_filter = rtl_ax_monitor_filter,
-	.add_chanctx = ieee80211_emulate_add_chanctx,
-	.remove_chanctx = ieee80211_emulate_remove_chanctx,
-	.change_chanctx = ieee80211_emulate_change_chanctx,
+	.add_chanctx = rtl_ax_add_chanctx,
+	.remove_chanctx = rtl_ax_remove_chanctx,
+	.change_chanctx = rtl_ax_change_chanctx,
+	.assign_vif_chanctx = rtl_ax_assign_chanctx,
+	.unassign_vif_chanctx = rtl_ax_unassign_chanctx,
 };
 
 static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
@@ -1221,6 +1326,17 @@ static void rtl_ax_regulatory_notify(struct wiphy *wiphy, struct regulatory_requ
 	mutex_lock(&radio->command_mutex);
 	radio->power_country[0] = request->alpha2[0];
 	radio->power_country[1] = request->alpha2[1];
+	switch (request->dfs_region) {
+	case NL80211_DFS_FCC: radio->dfs_domain = 1; break;
+	case NL80211_DFS_JP: radio->dfs_domain = 2; break;
+	case NL80211_DFS_ETSI: radio->dfs_domain = 3; break;
+	default: radio->dfs_domain = 0; break;
+	}
+	if (radio->radar_required) {
+		ret = rtl_ax_receive_configure(radio, radio->channel.primary,
+			radio->channel.center, radio->channel.bandwidth);
+		if (ret) dev_err(&radio->pdev->dev, "country radar update failed: %d\n", ret);
+	}
 	if (radio->channel.configured) {
 		ret = rtl_ax_power_apply(&radio->io, radio->chip, &radio->power_inputs,
 			radio->channel.band, radio->channel.primary, radio->channel.center,
@@ -1234,6 +1350,16 @@ static void rtl_ax_regulatory_notify(struct wiphy *wiphy, struct regulatory_requ
 
 static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 {
+	static const struct ieee80211_iface_limit ap_limit = {
+		.max = 1, .types = BIT(NL80211_IFTYPE_AP),
+	};
+	static const struct ieee80211_iface_combination dfs_combination = {
+		.limits = &ap_limit, .n_limits = 1, .max_interfaces = 1,
+		.num_different_channels = 1,
+		.radar_detect_widths = BIT(NL80211_CHAN_WIDTH_20_NOHT) | BIT(NL80211_CHAN_WIDTH_20) |
+			BIT(NL80211_CHAN_WIDTH_40) | BIT(NL80211_CHAN_WIDTH_80) | BIT(NL80211_CHAN_WIDTH_160),
+		.radar_detect_regions = BIT(NL80211_DFS_FCC) | BIT(NL80211_DFS_ETSI) | BIT(NL80211_DFS_JP),
+	};
 	static const u16 rates[] = { 10, 20, 55, 110, 60, 90, 120, 180, 240, 360, 480, 540 };
 	/* Exact rtw_5ghz_a_channels entries; cfg80211 applies the country rules. */
 	static const u8 channels_5g[] = {
@@ -1278,6 +1404,10 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	hw->max_tx_aggregation_subframes = 64;
 	hw->max_rx_aggregation_subframes = 64;
 	hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_MONITOR) | BIT(NL80211_IFTYPE_AP);
+	if (radio->chip == RTL_AX_8852C) {
+		hw->wiphy->iface_combinations = &dfs_combination;
+		hw->wiphy->n_iface_combinations = 1;
+	}
 	hw->wiphy->available_antennas_rx = 3;
 	for (i = 0; i < channels; i++) {
 		radio->channels[i].band = band;

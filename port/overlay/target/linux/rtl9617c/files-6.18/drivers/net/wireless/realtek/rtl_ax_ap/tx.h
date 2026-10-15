@@ -23,6 +23,7 @@ int rtl_ax_tx_uplink(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned i
 int rtl_ax_tx_free(struct rtl_ax_tx *tx, struct ieee80211_hw *hw);
 int rtl_ax_tx_pause(struct rtl_ax_tx *tx);
 void rtl_ax_tx_open(struct rtl_ax_tx *tx);
+void rtl_ax_tx_dfs_block(struct rtl_ax_tx *tx, bool blocked);
 int rtl_ax_tx_flush_key(struct rtl_ax_tx *tx, unsigned int index);
 bool rtl_ax_tx_station_pending(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid);
 int rtl_ax_tx_wait_station(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid);

@@ -222,7 +222,9 @@ static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mail
 	u32 tag = mailbox[82] == 8191 ? 1 : mailbox[82] + 1;
 	if (((info >> 16) & 8191) != tag) return;
 	sync();
-	u32 owner = rx_uplink(mailbox, buffer, buffer_dma);
+	u32 old = rtl_ax_rx_epoch_old(&mailbox[RTL_AX_PE_DFS_EPOCH], scan);
+	u32 owner = old && ((*(u32 *)(buffer + 4) >> 24) & 15) == 8 ?
+		RX_ARM_DONE : rx_uplink(mailbox, buffer, buffer_dma);
 	if (owner) status[scan] = owner;
 	else {
 		u32 producer = mailbox[94];

@@ -7,6 +7,7 @@ LINKER=${TYFZA1_PE_LINKER:-ld.lld-18}
 mkdir -p "$OUT"
 clang-18 --target=mipsel-none-elf -march=mips32 -msoft-float -mno-abicalls -fno-pic -G0 \
     -ffreestanding -fno-builtin -fno-stack-protector -O2 ${PE_RADIO_CFLAGS:-} -Wall -Wextra -Werror \
+    -I "$P/port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap" \
     -c "$P/port/pe/rtl9617c-radio-wd.c" -o "$OUT/pe-wd.o"
 clang-18 --target=mipsel-none-elf -march=mips32 -msoft-float -mno-abicalls -fno-pic -G0 \
     -c "$P/port/pe/rtl9617c-radio-wd-entry.S" -o "$OUT/pe-entry.o"

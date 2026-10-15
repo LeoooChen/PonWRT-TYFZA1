@@ -3,12 +3,7 @@
 #ifndef RTL_AX_AP_RECEIVE_H
 #define RTL_AX_AP_RECEIVE_H
 #include "transport.h"
-
-#define RTL_AX_RX_ENTRIES 256
-/* Full MPDU11966 plus RXBD/WD/shift/driver-info fits12288;14-bit BD size.
- * RPQ121 four-byte reports plus RXBD/short WD fit512. */
-#define RTL_AX_RXQ_BUFFER_BYTES 12288
-#define RTL_AX_RPQ_BUFFER_BYTES 512
+#include "rx-geometry.h"
 
 struct rtl_ax_rx_packet {
 	const unsigned char *descriptor, *driver_info, *payload;

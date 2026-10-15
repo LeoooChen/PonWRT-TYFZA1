@@ -7,6 +7,7 @@ struct packed_word { u32 value; } __attribute__((packed));
 #define BIT(n) (1U << (n))
 #define REQUEST_BASE 0x4000
 #define MAILBOX_OFFSET 0x2000
+#include "rx-geometry.h"
 
 static inline void sync(void) { __asm__ volatile("sync" ::: "memory"); }
 static inline void *uncached(u32 address) { return (void *)(address | 0xa0000000U); }
@@ -105,7 +106,7 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 	u32 consumer = mailbox[70], producer = mailbox[73];
 	if (((bar[0x121c / 4] >> 16) & 1023) == consumer ||
 	    ((producer + 1) & 255) == mailbox[74]) return;
-	volatile u32 *buffer = uncached(mailbox[68] + consumer * 512);
+	volatile u32 *buffer = uncached(mailbox[68] + consumer * RTL_AX_RPQ_BUFFER_BYTES);
 	u32 info = buffer[0], tag = mailbox[71] == 8191 ? 1 : mailbox[71] + 1;
 	if (((info >> 16) & 8191) != tag) return;
 	sync();
@@ -113,11 +114,13 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 	u32 offset = 4 + (wd & BIT(31) ? 32 : 16) + ((wd >> 14) & 3) * 2 + ((wd >> 28) & 7) * 16;
 	if ((wd & BIT(23)) && type != 1) offset += 4;
 	u32 written = info & 0x3fff, forwarded = 0;
-	u8 *out = uncached(mailbox[72] + producer * 512);
-	if ((info & 0xc000) != 0xc000 || written > 512 || offset > written || bytes > written - offset) {
+	u32 old = rtl_ax_rx_epoch_old(&mailbox[RTL_AX_PE_DFS_EPOCH + 1], consumer);
+	u8 *out = uncached(mailbox[72] + producer * RTL_AX_RPQ_BUFFER_BYTES);
+	if ((info & 0xc000) != 0xc000 || written > RTL_AX_RPQ_BUFFER_BYTES || offset > written || bytes > written - offset) {
 		mailbox[77]++;
 	} else {
-		if (type != 7) { header_copy(out, (const u8 *)buffer, written); forwarded = bytes; }
+		if (type == 8 && old) { /* Old channel's radar report. */ }
+		else if (type != 7) { header_copy(out, (const u8 *)buffer, written); forwarded = bytes; }
 		else for (u32 i = 0; i + 4 <= bytes; i += 4) {
 			u32 report = ((const struct packed_word *)((u8 *)buffer + offset + i))->value;
 			u32 id = (report >> 16) & 4095, status = (report >> 13) & 7;

@@ -21,7 +21,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100):
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
     for at, size in [(0x1fc00000, 0x4000), (base, 0x20000), (pages, 0xc000),
                      (headers, 0xc000), (payload, 0x10000), (ring, 0x4000),
-                     (bar, 0x10000), (ni, 0x10000), (reports, 0x1000),
+                     (bar, 0x10000), (ni, 0x10000), (reports, 0x80000),
                      (0x10020000, 0x1000), (0x10030000, 0x1000)]:
         u.mem_map(at, size)
     u.mem_write(0x1fc00000, binary)
@@ -127,11 +127,11 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100):
         member += count
     assert member == len(lengths)
     put(mb + 68 * 4, reports)
-    put(mb + 72 * 4, reports + 512)
+    put(mb + 72 * 4, reports + 0x40000)
     for slot, ids in enumerate(all_ids):
-        put(reports + slot * 512, 24 | 0xc000 | (slot + 1) << 16)
-        put(reports + slot * 512 + 4, 7 << 24 | 4)
-        put(reports + slot * 512 + 20, (256 + ids[0]) << 16 | 1)
+        put(reports + slot * 1024, 24 | 0xc000 | (slot + 1) << 16)
+        put(reports + slot * 1024 + 4, 7 << 24 | 4)
+        put(reports + slot * 1024 + 20, (256 + ids[0]) << 16 | 1)
     put(bar + 0x121c, len(all_ids) << 16)
     u.emu_start(u.reg_read(UC_MIPS_REG_PC), 0xbfc03ffc, count=100000)
     assert get(mb + 45 * 4) == len(lengths) and not returns

@@ -16,6 +16,11 @@
 - `halrf_tssi_set_efuse_to_de_8852c`：RFE54 在 160 MHz 读取 BB1a8 的三个有符号 ADC 修正，加入 20/40/80 MHz 的 DE；160 MHz DE 不加该修正。其余 TSSI 固定初始化程序与原厂 20 MHz 提取结果一致。
 - `halbb_set_pd_lower_bound_8852c`：频道切换时更新带宽相关检测门限；超出原厂可表示范围时按原厂关闭该门限。
 - VHT/HE 能力、VHT160 短 GI、客户端独立 HE160 MCS 表以及普通 TX 的 160 MHz 标志已接通。RX、RA 反馈和 PE 的现有带宽字段本来就能表示值 3。
+- `cfg_dfs`、`en_bbrpt`、`halbb_radar_detect_enable/disable`：MAC band0 报告阈值61、80ms 超时，以及 CLIENT BB0 bit31 雷达开关；停止报告的硬件超时直接返回错误。
+- `mac_parse_dfs`、`halbb_radar_info_processing/seq_inspctn/ptrn_cmprn/chrp_mntr/radar_detect`：8字节头、8字节脉冲、FCC/ETSI/KCC、MKK W53/W56、160MHz 双段、序号和长脉冲累积，均使用本机原厂参数和判定行为。采用 `dfs_init` 初始阈值；原厂环境 watchdog 的自适应噪声抑制尚未接入。
+- 原生单频道上下文处理同频点雷达开关变化。监管域自动映射 FCC/ETSI/JP；不明监管域不能开启检测，`dfs_region=1..4` 保留明确覆盖入口。
+- CAC 的时长、结束、雷达事件及 NOP 由当前 Linux6.18/mac80211/cfg80211 管理。CAC 期间关闭18个 MAC 调度队列，AP 启动才解除；雷达命中立即重新关闭调度和 beacon，并通知 mac80211。RFK 恢复、BSS beacon 更新和调试入口均不能解除该状态。
+- 原厂61脉冲报告加 RXBD/WD 为516字节，原512字节 RPQ 无法容纳。ARM、PE、转发环统一改为1KiB槽。换频道前暂停 PE、等待 DMA 空闲，给物理 RXQ/RPQ 和两个 ARM 转发环记录旧数据边界；只丢弃旧频道雷达报告，边界随所有权交接保留。
 
 离线验证已经通过：
 
@@ -23,9 +28,13 @@
 - `python3 scripts/test_radio_wideband.py`：20/40/80/160 MHz 的功率、RF18、ADC 对照；240 个 VHT 和 72 个 HE160 WD 对照。WD 提取明确使用原生裸 WLAN 的零 WP_OFFSET 输入，不再沿用旧 PHL 预留值。
 - `python3 scripts/test_pe_downlink_gather.py artifacts/radio-160 --160`：执行本次模块内嵌的实际 MIPS PE 程序，VHT160/HE160 的 EPP、WD、载荷及 RPQ/EQ 所有权通过。
 - `bash scripts/build_live_radio.sh "$PWD/artifacts/radio-160" rtl_ax_ap_160`：ARM64/musl 模块编译通过。产物是开发模块，不是新发布固件。
+- `python3 scripts/test_radio_dfs.py`：执行本机原厂 ARM64 判定函数，459组脉冲/序号/双段/长脉冲窗口对照通过；MAC/BB 开关写序列相同；真实原生函数的 CAC/AP 发射控制、RFK 交叠和启动期间雷达命中边界通过。
+- `python3 scripts/test_pe_rpq_firmware.py artifacts/radio-160-dfs/pe-tx.bin`：执行当前生产 MIPS PE 程序，516字节报告完整转发，RXQ/RPQ 旧报告丢弃和新报告保留通过。
+- `python3 scripts/test_pe_downlink_gather.py artifacts/radio-160-dfs --160`：更新 RPQ 槽位后，VHT160/HE160 下行载荷和 RPQ/EQ 所有权通过。
+- `bash scripts/build_live_radio.sh "$PWD/artifacts/radio-160-dfs" rtl_ax_ap_160_dfs`：包含本次 DFS/CAC 接线和生产 PE 程序的 ARM64/musl 开发模块编译通过。
 
 硬件 IO、校准查询和完成状态在离线执行中由模型提供；以上不证明空口协商、实际吞吐或长期稳定性。当前没有实机。
 
-**仍有明确的使用限制：现有 DFS 只有初始化参数，雷达检测、报告和 CAC 运行链尚未接入。需要 DFS 的 160 MHz 信道块仍不可用于 AP；只有实际监管域允许的非 DFS 完整信道块才可能启用。不得绕过 cfg80211 或伪造 CAC 成功。** 因此本次完成的是 160 MHz 射频与数据通道接入，不等于所有地区、信道的 160 MHz AP 已完整可用。
+DFS/CAC 运行链现已接入；需要 DFS 的160MHz信道块按真实监管规则和 CAC 流程使用，没有放宽国家规则或伪造 CAC 成功。空口雷达响应、无线协商、吞吐及长期稳定性仍需实机验证；离线结果也不等同于 DFS 认证。
 
-机器可读结果见 `manifests/radio-160-channel-tssi-contract.json`、`manifests/radio-wideband-contract-test.json`；原厂调用的完整输出保存在同目录的 `radio-stock-*160*` 及扩展后的带宽、RF、校准清单。
+机器可读结果见 `manifests/radio-160-channel-tssi-contract.json`、`manifests/radio-wideband-contract-test.json`、`manifests/radio-dfs-contract.json`；原厂调用的完整输出保存在同目录的 `radio-stock-*160*` 及扩展后的带宽、RF、校准清单。

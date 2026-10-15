@@ -1,16 +1,26 @@
 {
   "date": "2026-10-15",
-  "base_commit": "1cc810d4364f1fe3fd3a4c380c19781f24684ef4",
+  "base_commit": "a69b6fd33bae71bf6d329f71052828e859606e4b",
   "hardware": "TYFZA1 5GHz RTL8852C, RFE54, CV1, SCC/non-DBCC",
-  "scope": "Native contiguous 160MHz channel and data path, offline implementation; no hardware or released image update.",
+  "scope": "Native contiguous 160MHz radio/data path and factory-derived DFS reports with mac80211 CAC lifecycle; offline implementation, no released image update.",
   "source_sha256": {
     "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/channel.h": "8986f70b0048ef9bb4f5c3e97b50fe18cfc6973caf8b5d54c78eb7805e774db1",
     "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/c-iqk.h": "915c2b98e36f14827e54dc436bb18da440b66802bc925e00e301613869973b03",
     "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/dig.h": "812e4b225e5d9088d2bb7fbde4d853c2b10736e745b45a69d21b80b19643af58",
-    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/monitor.h": "f09fb0c69092454af979b1dab878815f221e2fb439209e5cf0a8476362aaab30",
-    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pci.c": "ec848408e1a42f7928652afd2b7022d8a35ee3ca19a22eb2fd67f5557e8be6e4",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/monitor.h": "33fde5793da87305b56667a5f6c947bf95d281072fba7357eb0f0e19b0d119cc",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pci.c": "05c2ba4c2c80dafc18997d6e4ac32ed88aa4e2b9e26bd6a834a2cac1f8ef6202",
     "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/power-tables.c": "aa1bb2f71eb268ea2ff56b9c7815512d6f610c1262685df17d00dce8fa7522ef",
-    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tssi-de.h": "2e9ef46c20223661d363a7d74c51eabd97446da9513ebf3ead0f16ee6104f2b0"
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tssi-de.h": "2e9ef46c20223661d363a7d74c51eabd97446da9513ebf3ead0f16ee6104f2b0",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/dfs.h": "b8edbd09b832fc7b58e79b82bd7b698fef55b63d24cdbb0dab05bdac00e7894f",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx-geometry.h": "b5b9356e743c648b4e50215b6db6133431883034db3b2833fc2531229fb80fbf",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/receive.h": "31b1755a1e54e201f9f8326f752cf4d6bb4f75d1de13b3f4fd99b04ad3edaec0",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx.c": "7b96e4b61e80226c95e45ead892b2d5aa535edf08c456f4ecacc67562ea6fc9c",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx.h": "b1fc59d2dc40486684bb8dd3f531962af4c851153130b28bd8fe294506f3c34d",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx.c": "23c2070c8f0e610a73c920efae68097371a8a961250aa9a18028c53f00b07f5f",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx.h": "ab7aa9ab87e249f96ed356aab1bb7bbba0e298e5a31da99ae3a133ac7639ebcd",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-tx-code.h": "79b1fd592e4478e87d83afd44175e9197f5e16ca97eae165ee041748e707a5b9",
+    "port/pe/rtl9617c-radio-wd.c": "cfc61544b0949e5acd39a7eb53b1327f2a586d02cba40b98191dbe5b2aae6cf7",
+    "port/pe/rtl9617c-radio-uplink.h": "79f2bcfeaba4c3a45adbd78c615b38e8d9fb48a7e28fe7c27701531858061bb4"
   },
   "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
   "contracts": [
@@ -22,26 +32,57 @@
     "bandwidth-dependent packet detection lower bound",
     "28 factory 5GHz channel entries",
     "HE160 MCS and VHT160 SGI peer selection",
-    "VHT/HE WD and existing two-bit PE bandwidth field"
+    "VHT/HE WD and existing two-bit PE bandwidth field",
+    "Factory MAC DFS report engine and BB radar enable/disable",
+    "FCC/ETSI/KCC and MKK W53/W56 pulse classification, 160MHz segments",
+    "mac80211 CAC and radar events with hardware TX/beacon control",
+    "1KiB RPQ and PE report slots, old-channel report ownership boundaries"
   ],
   "validation": {
     "channel_tssi_and_peer": "scripts/test_radio_160.py passed; full result in manifests/radio-160-channel-tssi-contract.json",
     "wideband": "scripts/test_radio_wideband.py passed: four widths, 240 VHT WD, 72 HE160 WD",
-    "PE": "scripts/test_pe_downlink_gather.py artifacts/radio-160 --160 passed: actual embedded MIPS instructions, VHT160/HE160 EPP->WD->payload/RPQ/EQ",
+    "PE": "scripts/test_pe_downlink_gather.py artifacts/radio-160-dfs --160 passed: actual production MIPS, VHT160/HE160 payload/RPQ/EQ",
     "TSSI_program": "160MHz/channel50 fixed initialization output equals existing board 20MHz fixed program; independent current-width DE correction was implemented and tested",
-    "compile": "ARM64 OpenWrt musl external radio module passed; only pre-existing missing MODULE_DESCRIPTION modpost warning",
+    "compile": "ARM64 OpenWrt musl external module passed; pre-existing MODULE_DESCRIPTION modpost warning only",
     "hardware": false,
     "full_firmware_build": false,
-    "full_test_suite": false
+    "full_test_suite": false,
+    "DFS": "scripts/test_radio_dfs.py passed:459 vectors against actual factory ARM64 functions; MAC/BB writes and native TX/CAC/AP boundaries passed",
+    "PE_reports": "scripts/test_pe_rpq_firmware.py artifacts/radio-160-dfs/pe-tx.bin passed: actual production PE, full61-pulse report, old/new RXQ/RPQ reports",
+    "PE_reports_detail": {
+      "linked_MIPS_C_firmware": true,
+      "NI_MPDU": 1024,
+      "BID_returns": 2048,
+      "ARM_reports_forwarded": 256,
+      "EOSP_reports_forwarded": 64,
+      "C2H_shift_and_MAC_info_preserved": true,
+      "RPQ_and_handoff_wrap": true,
+      "tag_8191_to_1": true,
+      "no_BID_return_without_EQ_credit": true,
+      "no_ARM_per_NI_completion": true,
+      "handoff_full_holds_RPQ": true,
+      "paused_PE_does_not_consume": true,
+      "factory_DFS_61_pulses_preserved": true,
+      "old_DFS_discarded_on_RXQ_and_RPQ": true,
+      "new_DFS_preserved": true,
+      "hardware_test": false
+    },
+    "DFS_detail": "manifests/radio-dfs-contract.json"
   },
   "artifact": {
-    "path": "artifacts/radio-160/rtl_ax_ap_160.ko",
-    "sha256": "c75ce5812128f5e279f9b2c27453f5e168f300191e0892db73683ee273c0b24f"
+    "path": "artifacts/radio-160-dfs/rtl_ax_ap_160_dfs.ko",
+    "sha256": "c1c160a1d60267658745736f6d59144afa8b8838b6b981cecf44d38404fd8c0e"
   },
   "limitations": [
-    "DFS radar/CAC runtime remains unimplemented; DFS 160MHz AP channel blocks remain unavailable. Country rules still apply.",
+    "Pulse classifier uses exact factory dfs_init defaults; environment-watchdog adaptive noise suppression is not implemented.",
     "No air-interface negotiation, throughput or stability measurement without a device.",
     "Published 0.3.1-alpha image is unchanged; this is a source change and development module.",
     "80+80MHz is not supported."
-  ]
+  ],
+  "PE_program": {
+    "path": "artifacts/radio-160-dfs/pe-tx.bin",
+    "sha256": "37052ceb95bef44d40036b88695797c017a8948960a009df95424b6a647b202e",
+    "bytes": 15968,
+    "embedded_program_matches": true
+  }
 }

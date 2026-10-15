@@ -1,0 +1,23 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "classifier_vectors": 459,
+  "classification": "actual relocated ARM64 factory functions",
+  "profiles": [
+    "FCC",
+    "MKK W53",
+    "MKK W56",
+    "ETSI",
+    "KCC"
+  ],
+  "hardware": "MAC/BB enable/disable writes equal factory cfg_dfs and radar_detect_enable/disable",
+  "boundaries": [
+    "RFK/DFS queue ownership",
+    "report engine timeout propagates",
+    "ring epoch wrap and expiry",
+    "CAC keeps hardware TX blocked",
+    "AP start releases TX",
+    "radar during AP commands prevents start"
+  ],
+  "hardware_device": false,
+  "full_test_suite": false
+}
