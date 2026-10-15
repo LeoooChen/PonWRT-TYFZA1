@@ -1,0 +1,53 @@
+{
+  "base_commit": "286d59c9e5dbc55b241e3064fc67e2dcf57bde0d",
+  "problems": [
+    "EPON OAM entry opened in ITU and its TX path submitted valid OAM even with carrier down or the selected family changed",
+    "XGTC activation could overwrite recovery-owned state and clear the actual recovery error while its worker still held a saved MAC/PUC snapshot"
+  ],
+  "changes": [
+    "Reject control OAM open outside EPON before NI open/configure; require EPON/current carrier for TX; retain BUSY skb ownership",
+    "Reject XG-PON/XGS-PON reactivation under control/state lock while recovery is pending; preserve actual error/NI admission/MAC/OMCC/snapshot",
+    "Keep the common NI OAM/OMCI physical control-port setup and the ITU business-interface open path"
+  ],
+  "factory_authority": {
+    "module_sha256": "2360c7dbf93157cb3ab212c733e76a513c34015bc466f192dd19e4ae87eb0311",
+    "actual_function": "dal_rt_rtl8277c_epon_oam_tx@0x22230",
+    "scope": "Actual original framing/Header A and unconditional TX entry under six CA_PON_MODE values; allocator, memcpy, MPCP offset and NI submission modeled. This helper itself does not enforce family or carrier eligibility; no optical traffic.",
+    "native_difference": "Original low-level OAM helper submits under all6 CA_PON_MODE values; native multi-protocol netdev eligibility is corrected explicitly rather than claiming an original per-call check"
+  },
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-oam.c": "a9af75cda378a91b9f65490c0d17e87620ed000ecfc5943653d8767574c8ab29",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-xgpon.c": "3f5156531abb0d7a2b8c4b6c0f60a7c7665f34738c79c1e7893d6078a774d360",
+    "scripts/test_pon_oam_family.py": "0b4f8d0028541be751fcfb9d47e613ce8d66266f53cf25fd492147ebca544371",
+    "scripts/test_xgtc_queue_recovery.py": "ab29517150016a77138a809ab094ff0d969280d56142f8c130bedab2df447ba2",
+    "tools/trace_stock_oam_tx_family.py": "9803c9548f75913db37abe001d5aec43b0f6984272a68c51a5148100be127a45",
+    "docs/pon-control-entry.md": "2a1ec292a5f388c7440a3a1de7c4f18eda7f7e16894f18c82c990b24fc56f450"
+  },
+  "validation": {
+    "before": "Actual OAM TX violates carrier-gating assertion; actual XGTC activation violates pending-recovery EBUSY assertion",
+    "after": "Production OAM open/TX across6 modes, carrier down, BUSY packet retry after family change, ITU data open and packet ownership; actual XGTC activation before/within/after queue recovery with saved state/error verification; ASan/UBSan passed",
+    "arm64": "Both changed translation units compiled with current source/object hashes",
+    "model_boundaries": [
+      "Factory allocator/memcpy/MPCP-offset/NI submission",
+      "Native NI, MMIO table completion, locks, scheduling and delays"
+    ],
+    "deployed": false,
+    "physical_itu_olt_verified": false,
+    "full_tests": false,
+    "full_firmware_build": false,
+    "unverified": [
+      "Physical completion of already submitted DMA descriptors during a simultaneous family change",
+      "Real ITU OLT recovery and traffic behavior"
+    ]
+  },
+  "evidence_sha256": {
+    "artifacts/pon-control-entry-20261016/test_pon_oam_family.py-before.log": "1ed0e367d1c2cf7ffcda5a796f3c9ac5d55fdc4be4a67149c02624aa69395669",
+    "artifacts/pon-control-entry-20261016/test_xgtc_queue_recovery.py-before.log": "55e566c2297b78413fd6822b3325e625830d8a1b538be2b08a5bf2f98adba917",
+    "artifacts/pon-control-entry-20261016/test_pon_oam_family.py-after.log": "9c3e78bb56aad7b6c5514a04bcc460f207b27bfe1e9e0417e6e7d2c77189707f",
+    "artifacts/pon-control-entry-20261016/test_xgtc_queue_recovery.py-after.log": "4795ec289affed9c80f0c7a38039fcecc57d2e3826a1a48acb388b78fea9ddd9",
+    "artifacts/pon-control-entry-20261016/stock-oam.log": "1a12412df9a52ab54027456abb10dd9640cfc1fbd17fd024b387f351ac0173dd",
+    "artifacts/pon-control-entry-20261016/arm64-build.log": "8fce62a5010028f1b8dcc980d4566c1a421c2e4ab858727e72c6dcea239ba404",
+    "artifacts/pon-control-entry-20261016/compiled-inputs.json": "1742b45963865095c544ddf8513a7ff1f2d5e89de5c4be5b80670b718a0e676f",
+    "logs/stock-oam-tx-family.json": "3838346809c36d9fdf752f60286c413d2141f2040b5c5b4f2ec8f2b14387d36e"
+  }
+}

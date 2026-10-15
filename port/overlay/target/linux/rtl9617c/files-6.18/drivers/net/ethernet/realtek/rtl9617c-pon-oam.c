@@ -41,7 +41,12 @@ static struct rtl9617c_pon *rtl_oam_pon(struct net_device *dev)
 static int rtl_oam_open(struct net_device *dev)
 {
 	struct rtl9617c_pon *pon = rtl_oam_pon(dev);
-	int ret = rtl9617c_ni_open(pon->ni_dev);
+	int ret;
+
+	if (((struct rtl_oam_port *)netdev_priv(dev))->control &&
+	    !rtl_pon_mode_is_epon(READ_ONCE(pon->mode)))
+		return -EOPNOTSUPP;
+	ret = rtl9617c_ni_open(pon->ni_dev);
 
 	if (ret)
 		return ret;
@@ -76,7 +81,8 @@ static netdev_tx_t rtl_oam_transmit(struct sk_buff *skb, struct net_device *dev)
 		.prefix_length = RTL_OAM_PREFIX_BYTES,
 	};
 
-	if (skb->len < sizeof(ethernet) || skb->len > 1522 ||
+	if (!rtl_pon_mode_is_epon(READ_ONCE(pon->mode)) || !netif_carrier_ok(dev) ||
+	    skb->len < sizeof(ethernet) || skb->len > 1522 ||
 	    skb_copy_bits(skb, 0, ethernet, sizeof(ethernet)) ||
 	    !rtl_oam_is_frame(ethernet, sizeof(ethernet))) {
 		dev->stats.tx_dropped++;

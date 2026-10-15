@@ -31,7 +31,7 @@ typedef uint32_t u32;
 struct work_struct {unsigned int pending;};
 struct device {void *data;};
 struct rtl_xram {int tx_lock;void *ni;};
-struct rtl9617c_pon {int lock,control_lock;enum rtl_pon_mode mode;bool xgpon_recover,fe_enabled;unsigned char xgpon_recovery_phase;int xgpon_activation_error;unsigned char *mac;void *serdes_init,*control;struct device *ni_dev;struct rtl_xgtc_puc_saved xgpon_puc_saved;struct work_struct xgpon_recovery_work;bool xgpon_enabled,xgpon_omcc_ready,omci_master_key_valid,xgpon_key_ready;unsigned long long itu_line_epoch;unsigned int xgpon_key_valid,xgpon_key_state;int omci_key_lock,mpcp_irq;void *tx_disable,*top_irq,*omci_device;};
+struct rtl9617c_pon {int lock,control_lock;enum rtl_pon_mode mode;bool xgpon_recover,fe_enabled;unsigned char xgpon_recovery_phase;int xgpon_activation_error;unsigned char *mac;void *serdes_init,*control;struct device *ni_dev;struct rtl_xgtc_puc_saved xgpon_puc_saved;struct work_struct xgpon_recovery_work;bool xgpon_enabled,xgpon_omcc_ready,omci_master_key_valid,xgpon_key_ready,mac_prepared,puc_configured,pdc_configured;unsigned long long itu_line_epoch;unsigned int xgpon_key_valid,xgpon_key_state,xgpon_last_state;int omci_key_lock,mpcp_irq;void *tx_disable,*top_irq,*omci_device;};
 #define netdev_priv(p) (p)
 #define dev_get_drvdata(d) ((d)->data)
 #define spin_lock_irqsave(p,f) do{assert(!*(p));*(p)=1;(f)=0;}while(0)
@@ -48,6 +48,7 @@ static void cancel_delayed_work(struct work_struct *w){w->pending=0;}
 static void synchronize_irq(int irq){(void)irq;}
 static int rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *p,enum rtl_pon_mode mode){assert(p->lock && p->mode==mode);return 0;}
 static void netif_carrier_off(void *dev){(void)dev;}
+static bool netif_running(void *dev){(void)dev;return true;}
 static void gpiod_set_value_cansleep(void *gpio,int value){*(int*)gpio=value;}
 static void mutex_lock(int *p){assert(!*p);*p=1;}
 static void mutex_unlock(int *p){assert(*p);*p=0;}
@@ -87,6 +88,12 @@ int main(void){
   control=BIT(8)|0x30e;sds=BIT(4)|3;ni[0x610c/4]=0xa5c36db5;
   struct rtl_xram engine={.ni=ni};struct device dev={&engine};
   struct rtl9617c_pon pon={.mode=mode,.mac=(void*)regs,.control=&control,.serdes_init=&sds,.ni_dev=&dev,.xgpon_recover=true,.fe_enabled=true};
+  int gpio=0;u32 top[2]={0,1};pon.tx_disable=&gpio;pon.top_irq=top;
+  pon.mac_prepared=pon.puc_configured=pon.pdc_configured=true;
+  mutex_lock(&pon.control_lock);
+  assert(rtl_pon_xgpon_activation_locked(&pon,true)==-EBUSY);
+  mutex_unlock(&pon.control_lock);
+  assert(!pon.xgpon_enabled && !pon.xgpon_omcc_ready && !regs[0x4004/4]);
   regs[0x4004/4]=mode==RTL_PON_XGPON?0x41:0x82;regs[0x4600/4]=BIT(2)|0x7800;
   regs[0x4d0c/4]=0x12345;regs[0x4d10/4]=0x6789a;regs[0x4d30/4]=1;
   for(unsigned int i=0;i<5;i++)regs[rtl_xgtc_control_regs[i]/4]=0xa59c1234+i;
@@ -111,6 +118,10 @@ int main(void){
   assert(initializations==1 && flushes==32 && (ni[0x610c/4]&65535)==0 && !(regs[0x4004/4]&3));
   assert(pon.fe_enabled);
   struct rtl_xgtc_puc_saved snapshot=pon.xgpon_puc_saved;
+  unsigned int pending=pon.xgpon_recovery_work.pending;
+  mutex_lock(&pon.control_lock);assert(rtl_pon_xgpon_activation_locked(&pon,true)==-EBUSY);mutex_unlock(&pon.control_lock);
+  assert(pon.xgpon_activation_error==-ETIMEDOUT && pon.xgpon_recovery_work.pending==pending &&
+         !(regs[0x4004/4]&3) && !(ni[0x610c/4]&65535));
   pon.fe_enabled=false;fail_access=0;regs[0x8000/4]&=~BIT(31);
   rtl_pon_xgpon_recovery(&pon.xgpon_recovery_work);
   assert(!pon.xgpon_recover && !pon.xgpon_activation_error && !pon.xgpon_recovery_phase);
@@ -130,6 +141,8 @@ int main(void){
    assert((tables[4][i][0]&~255U)==0x8000e000);
   }
   for(unsigned int i=0;i<8;i++)assert(regs[(0x81bc-i*4)/4]==snapshot.valid[i]);
+  mutex_lock(&pon.control_lock);assert(!rtl_pon_xgpon_activation_locked(&pon,true));mutex_unlock(&pon.control_lock);
+  assert(pon.xgpon_enabled && !pon.xgpon_omcc_ready && (regs[0x4004/4]&3)==(mode==RTL_PON_XGPON?1U:2U));
   const struct rtl_dq_io io={&pon,rtl_xgpon_read,rtl_xgpon_write,rtl_xgpon_indirect};
   for(unsigned int state=0;state<7;state++)for(unsigned int sub=0;sub<2;sub++){
    u32 value=0xa5030000|state|sub<<4;regs[0x4d30/4]=value;
@@ -144,16 +157,15 @@ int main(void){
   rtl_pon_xgpon_recovery(&pon.xgpon_recovery_work);
   assert(pon.xgpon_recovery_phase==1 && pon.xgpon_activation_error==-ETIMEDOUT);
   assert(pon.xgpon_puc_saved.mac==snapshot.mac && !(ni[0x610c/4]&65535));
-  int gpio=0;u32 top[2]={0,1};pon.tx_disable=&gpio;pon.top_irq=top;
   mutex_lock(&pon.control_lock);rtl_pon_xgpon_stop_locked(&pon);mutex_unlock(&pon.control_lock);
   assert(!pon.xgpon_recovery_phase && !pon.xgpon_recover && gpio==1 && ni[0x610c/4]==0xa5c36db5);
   assert(!pon.lock && !pon.control_lock && !engine.tx_lock);
  }
- puts("Actual XGTC worker/NI gate/PUC helpers:32 T-CONT flushes, configuration-only restore, retained snapshot across timeout, preserved admission mask and explicit FE disable; no SerDes or FE rebuild callback exists");
+ puts("Actual XGTC recovery/activation: queued or partial recovery rejects activation without altering errors/tables; completed recovery permits activation;32 T-CONT flushes and retained snapshot/NI/FE ownership passed");
 }
 '''
 src=(drivers/'rtl9617c-pon-xgpon.c').read_text()
-text=model+function((drivers/'rtl9617c-xram.c').read_text(),'rtl9617c_ni_pon_gate')+''.join(function(src,n) for n in ('rtl_xgpon_read','rtl_xgpon_write','rtl_xgpon_indirect','rtl_pon_xgpon_stop_locked','rtl_pon_xgpon_recovery'))+cases
+text=model+function((drivers/'rtl9617c-xram.c').read_text(),'rtl9617c_ni_pon_gate')+''.join(function(src,n) for n in ('rtl_xgpon_read','rtl_xgpon_write','rtl_xgpon_indirect','rtl_pon_xgpon_stop_locked','rtl_pon_xgpon_activation_locked','rtl_pon_xgpon_recovery'))+cases
 with tempfile.TemporaryDirectory(prefix='xgtc-queue-recovery-',dir=root/'artifacts') as temp:
  work=Path(temp);c=work/'test.c';binary=work/'test';c.write_text(text)
  subprocess.run(['cc','-O1','-g','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-fno-sanitize-recover=all','-I',str(drivers),str(c),'-o',str(binary)],check=True)

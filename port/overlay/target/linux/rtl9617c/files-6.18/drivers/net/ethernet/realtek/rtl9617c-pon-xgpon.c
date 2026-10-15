@@ -155,6 +155,10 @@ int rtl_pon_xgpon_activation_locked(struct rtl9617c_pon *pon, bool enable)
 		ret = -EOPNOTSUPP;
 		goto unlock;
 	}
+	if (pon->xgpon_recover) {
+		ret = -EBUSY;
+		goto unlock;
+	}
 	if (!pon->mac_prepared || !pon->puc_configured || !pon->pdc_configured ||
 	    !netif_running(pon->omci_device)) {
 		ret = -EAGAIN;
