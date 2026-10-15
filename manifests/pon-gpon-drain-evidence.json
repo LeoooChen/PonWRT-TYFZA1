@@ -1,0 +1,113 @@
+{
+  "base_commit": "6e2e023228d36bc1b1ebd3c8d0f9d7153f1dce1b",
+  "purpose": "Establish the board-specific GPON datapath drain required for native recovery; distinguish it from XGTC and expose the original timeout-success path",
+  "factory_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+  "actual_functions": [
+    "aal_gpon_datapath_reset",
+    "aal_puc_cfg_get",
+    "aal_puc_cfg_set",
+    "aal_puc_voq_valid_get",
+    "aal_puc_voq_valid_set",
+    "aal_puc_voq_drop_get",
+    "aal_puc_voq_drop_set",
+    "aal_puc_voq_flush_by_idx",
+    "aal_puc_voq_flush_get",
+    "aal_puc_voq_flush_set",
+    "aal_puc_port_voq_map_get",
+    "aal_puc_port_voq_map_get.part.0",
+    "aal_puc_port_voq_map_set",
+    "aal_puc_voq_map_cfg_get",
+    "aal_puc_voq_total_queue_len_mem_get",
+    "aal_gpon_tcont_set",
+    "aal_gpon_mac_ctrl_set"
+  ],
+  "compiled_topology": {
+    "tcont_count": 32,
+    "queues_per_tcont": 8
+  },
+  "cases": [
+    {
+      "case": "empty",
+      "factory_result": 0,
+      "probe_count": 0,
+      "flush_commands": [],
+      "remaining_queues": {}
+    },
+    {
+      "case": "complete",
+      "factory_result": 0,
+      "probe_count": 0,
+      "flush_commands": [
+        "0x8001010b"
+      ],
+      "remaining_queues": {
+        "11": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "case": "partial",
+      "factory_result": 0,
+      "probe_count": 1,
+      "flush_commands": [
+        "0x8001010b"
+      ],
+      "remaining_queues": {
+        "11": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "case": "flush-timeout",
+      "factory_result": 0,
+      "probe_count": 0,
+      "flush_commands": [
+        "0x8001010b"
+      ],
+      "remaining_queues": {
+        "11": [
+          160,
+          2
+        ]
+      }
+    }
+  ],
+  "source_sha256": {
+    "tools/trace_stock_gpon_queue_recovery.py": "e7c1d4664135ea4ef5f7e0bd4144224bc58d463addedc9272f1d63eae4ac3c3e",
+    "docs/pon-gpon-drain-evidence.md": "789e90f548aef99072f25817e43f6b550c1edd695f35f630c3e853059bc64e45"
+  },
+  "inspected_native_source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-gpon.c": "65eb66d4f9242260f333320e5ce0e01327ad09ec8f09be93adf1d9a2773b0369",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.h": "bf92445510134c619b7aa58117ac9a1d2d3747682f33031ae477701c3be18771",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-serdes.c": "533ef1e7f8884bb49cf20f918657fc52984d1328051b51f6f862a7f4e79bbeeb"
+  },
+  "findings": [
+    "Current native GPON IRQ has session invalidation but lacks the original software PUC/GTC drain path",
+    "Only the byte-nonzero/complete-packet-zero case submits a64-byte NI probe",
+    "Actual original requests and setters restore PVT, Alloc-ID, queue-valid, limit selection and configuration under successful modeled completion",
+    "With the flush request modeled permanently busy, the original returns0 and restores admission while modeled queue contents remain"
+  ],
+  "native_recovery_implemented": false,
+  "deployed": false,
+  "physical_olt_verified": false,
+  "model_boundaries": [
+    "Indirect table contents/completion and counters",
+    "NI probe submission completion",
+    "Temporary PVT global buffer-policy tuning",
+    "Mode getter, allocator, delays, locks and logging"
+  ],
+  "evidence_sha256": {
+    "artifacts/pon-gpon-recovery-20261016/stock-full-drain.log": "26330b6a94c39114fc7381cb958ae1664b394a46cddb344213a4f10a2c813025",
+    "artifacts/pon-gpon-recovery-20261016/aal_gpon_datapath_reset.asm": "5cc245cadb81836f743001da85c6fa03928114950a6bdf62917f3424407aabaf",
+    "artifacts/pon-gpon-recovery-20261016/aal_puc_voq_flush_by_idx.asm": "a858c4a54087406bd978b2532b0cdb91d6f7a03ffcbf0a7619b1e935993d0d67",
+    "artifacts/pon-gpon-recovery-20261016/aal_puc_voq_drop_set.asm": "61de48ab66d8e4668dea7d12a1a5f9ab604c8cf6562faffcb259d4f4363e2b3c",
+    "artifacts/pon-gpon-recovery-20261016/aal_gpon_mac_ctrl_set.asm": "d1b1e04aeadcc3c16e038a2bff413d52dba50319dd134cc8a285c9b9e2aec0f9",
+    "artifacts/pon-gpon-recovery-20261016/aal_puc_voq_total_queue_len_mem_get.asm": "5966fc0b4710a9f1086435abb37caaf0b8c4d434e72cf5248924370856bc1d30",
+    "artifacts/pon-gpon-recovery-20261016/aal_puc_voq_flush_set.asm": "ae99f535bc901b33ea00d8b4cfd5a84b84f50bb2ef9f7a954dc372b69d249aaa",
+    "logs/stock-gpon-queue-recovery.json": "2f84ea52168deccd0fccc03af5b808633c6483bafb7aaa84010026af3b2f6d50"
+  }
+}
