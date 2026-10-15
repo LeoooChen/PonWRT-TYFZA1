@@ -1,0 +1,381 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "e98acab",
+  "scope": "Factory-derived ARM exception pipeline and control-frame ordering; remaining duplex loss unresolved",
+  "source_sha256": {
+    "port/pe/rtl9617c-radio-uplink.h": "eb1bc0149ffe705b8e6dfc4b80c54309072b83f4dffa3ae433e9d81f22e3eb17",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx.c": "f57dd05d282502135d4371423d9df1a7ddc9aef229417563dcb5d7af693053b8",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx-geometry.h": "14d0ebd4c827bff1c0651b2ab859e7f7fb58e73467a15be3f155cd2fcc4ee96a",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-tx-code.h": "0a6c1f4a07a564c98686b199591918b0926fc085626dc2128ef0f331099e73f3",
+    "scripts/test_pe_rxq_backpressure.py": "18567ff1f4aa193f147a6c3693c98b285f49be74c46c15741487c47695c7f30e",
+    "docs/wifi-rx-arm-pipeline-20261016.md": "b0c82af2a5d959b204e3a70d26084e223e44aad1a7f865552e6c7225c7395d53"
+  },
+  "module": {
+    "path": "artifacts/rx-ctrl-barrier-20261015/radio/rtl_ax_ap_rx_ctrl.ko",
+    "sha256": "92b301dc316f8c7417d1636342f822d27396217a9b64c8fc7ad4d799cd3c595a"
+  },
+  "PE": {
+    "path": "artifacts/rx-ctrl-barrier-20261015/pe/pe-tx.bin",
+    "sha256": "7dc7c049f227100be2c7cd0cdc57916d05986e772e5af5e8267028e08db61e5c",
+    "bytes": 16040
+  },
+  "factory_control": {
+    "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+    "actual_function": "validate_recv_ctrl_frame@0xb8acc",
+    "scope": "Execute original ARM64 control validation. Station lookup, time, BAR/PS-Poll handler bodies modeled. No RF timing simulation.",
+    "results": [
+      {
+        "subtype": "BAR",
+        "return": 0,
+        "calls": [
+          "_rtw_memcmp",
+          "rtw_get_stainfo",
+          "_rtw_get_current_time",
+          "rtw_process_bar_frame"
+        ],
+        "state_handlers": [
+          "rtw_process_bar_frame"
+        ]
+      },
+      {
+        "subtype": "PS-Poll",
+        "return": 0,
+        "calls": [
+          "_rtw_memcmp",
+          "rtw_get_stainfo",
+          "_rtw_get_current_time",
+          "rtw_proccess_pspoll"
+        ],
+        "state_handlers": [
+          "rtw_proccess_pspoll"
+        ]
+      },
+      {
+        "subtype": "RTS",
+        "return": 0,
+        "calls": [
+          "_rtw_memcmp",
+          "rtw_get_stainfo",
+          "_rtw_get_current_time"
+        ],
+        "state_handlers": []
+      },
+      {
+        "subtype": "CTS",
+        "return": 0,
+        "calls": [
+          "_rtw_memcmp",
+          "rtw_get_stainfo",
+          "_rtw_get_current_time"
+        ],
+        "state_handlers": []
+      },
+      {
+        "subtype": "ACK",
+        "return": 0,
+        "calls": [
+          "_rtw_memcmp",
+          "rtw_get_stainfo",
+          "_rtw_get_current_time"
+        ],
+        "state_handlers": []
+      },
+      {
+        "subtype": "BA",
+        "return": 0,
+        "calls": [
+          "_rtw_memcmp",
+          "rtw_get_stainfo",
+          "_rtw_get_current_time"
+        ],
+        "state_handlers": []
+      }
+    ]
+  },
+  "checks": {
+    "scope": "Actual linked production PE; modeled PCIe, ARM acknowledgement, NI consumption and W1C. No RF throughput simulation.",
+    "PE_sha256": "7dc7c049f227100be2c7cd0cdc57916d05986e772e5af5e8267028e08db61e5c",
+    "ARM_blocked_capture_and_refill_packets": 255,
+    "busy_ring_full_payload_preserved": true,
+    "ordered_ARM_delivery": 256,
+    "additional_wrap_packets": 513,
+    "all_514_buffers_have_one_owner": true,
+    "permuted_noncontiguous_DMA_table_all_buffers": true,
+    "PN_SN_no_overtake": true,
+    "stateless_reports_pipeline_without_PN_SN_barrier": true,
+    "WLAN_exception_still_blocks_overtake": true,
+    "WLAN_exceptions_pipeline_to_ordered_ARM_queue": true,
+    "PE_fast_path_resumes_only_after_ARM_batch_completes": true,
+    "BAR_PS_Poll_preserve_barrier_RTS_CTS_ACK_BA_do_not_stall_data": true,
+    "NI_last_two_payloads_retained": true,
+    "NI_end_bit30_and_31bit_wrap": true,
+    "RXQ_RPQ_RDU_counted_with_W1C": true
+  },
+  "live": {
+    "batch-300-duplex-1": {
+      "results": [
+        {
+          "source": "en5",
+          "receive": "en0",
+          "sent": 146284,
+          "received": 140502,
+          "unique": 140502,
+          "missing": 5782,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 9,
+          "send_errno": 35,
+          "seconds": 5.999964,
+          "UDP_payload_Mbps": 275.76
+        },
+        {
+          "source": "en0",
+          "receive": "en5",
+          "sent": 146280,
+          "received": 124969,
+          "unique": 124969,
+          "missing": 21311,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 13,
+          "send_errno": 35,
+          "seconds": 5.999964,
+          "UDP_payload_Mbps": 245.274
+        }
+      ],
+      "timing": {
+        "rate_Mbps_each": 300,
+        "seconds_requested": 6.0,
+        "mode": "duplex",
+        "start_monotonic": 162619.859354833,
+        "end_monotonic": 162626.948904083,
+        "probe_exit": 2,
+        "sampler": "read-only; PE owns RDU W1C",
+        "sampler_exit": 0
+      },
+      "raw_files_sha256": {
+        "batch-300-duplex-1-before.txt": "2cf0486bf7581000f07ce3c2cdc12f213f54a7e8bbedd9ed065f225d504d9277",
+        "batch-300-duplex-1-en5-after.txt": "20fa7b9418436c17ebe377d0aced24fabc99876d185b09d553595f1023b4450b",
+        "batch-300-duplex-1-after.txt": "e87ca5941e3723efb4a4e81560b57fcaf01dee72d6c94dc23bd73e9bbbf36e6e",
+        "batch-300-duplex-1-en5-before.txt": "ab387cd4d5d3706be4e8673e85bd3b9da12097b81741290865990e5be80bc624",
+        "batch-300-duplex-1-result.txt": "73972295b49f38fcf4de5b1c4bea2ca94cbe720ab5bd1fef7e038b463ec3a908",
+        "batch-300-duplex-1-en0-before.txt": "16b21dc9a60d966332c57ff52f9c56238aa15d29505d655a76f385b09171a8b2",
+        "batch-300-duplex-1-udp-after.txt": "423f0dcf61d4ed99186c2251e0351d2b000d5a89dbf337f634549d8f7dbd448c",
+        "batch-300-duplex-1-registers.txt": "c105ef885f3a05693af679fadbe236520e7cc844247999d288a0bd4612dbbda4",
+        "batch-300-duplex-1-udp-before.txt": "9bb40471d6c97da1e4d1f3ed3a00068e9bc0814ed3bb783fcaec9f7e4f88bb8b",
+        "batch-300-duplex-1-sampler-errors.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "batch-300-duplex-1-en0-after.txt": "7b4de354305e4858f7ab6a77a418027f98ed191bf2b580569f0885a9ece35c5c"
+      }
+    },
+    "ctrl-300-duplex-1": {
+      "results": [
+        {
+          "source": "en5",
+          "receive": "en0",
+          "sent": 146280,
+          "received": 146278,
+          "unique": 146278,
+          "missing": 2,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 13,
+          "send_errno": 35,
+          "seconds": 5.999964,
+          "UDP_payload_Mbps": 287.097
+        },
+        {
+          "source": "en0",
+          "receive": "en5",
+          "sent": 146271,
+          "received": 146264,
+          "unique": 146264,
+          "missing": 7,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 22,
+          "send_errno": 35,
+          "seconds": 5.999964,
+          "UDP_payload_Mbps": 287.069
+        }
+      ],
+      "timing": {
+        "rate_Mbps_each": 300,
+        "seconds_requested": 6.0,
+        "mode": "duplex",
+        "start_monotonic": 163111.520020958,
+        "end_monotonic": 163118.538627458,
+        "probe_exit": 2,
+        "sampler": "read-only; PE owns RDU W1C",
+        "sampler_exit": 0
+      },
+      "raw_files_sha256": {
+        "ctrl-300-duplex-1-en5-after.txt": "0b1d11a370f18e16c350475bb82bc2be1e88ec4a782e897d0c5f7b862b4fe977",
+        "ctrl-300-duplex-1-en5-before.txt": "66f5b3459b9f382a125275f3869313e4c327770b6b360bbed5abc1a88cdf588c",
+        "ctrl-300-duplex-1-en0-before.txt": "d451730711f2cddf3e7e39fe7c53e25999dc8bf65254b392c962497b773d4d0b",
+        "ctrl-300-duplex-1-after.txt": "051f08847447cf827f7c4bcec2691474d4564cada30d759167d62696b4166a4b",
+        "ctrl-300-duplex-1-udp-after.txt": "a3a62ba08795e58dc081c9898e8127e4a8e41a083cfbcb7ccc80749aea38deff",
+        "ctrl-300-duplex-1-registers.txt": "b9728be3927510dcf78fbcc11533c383c43a67be3e2088f1507557af59faa95a",
+        "ctrl-300-duplex-1-before.txt": "8a0613f44ce353b8a09d58a4a292272cb1f9746ff543751bf36e91efc7003b7b",
+        "ctrl-300-duplex-1-result.txt": "02a57c9b3343c2c1feec7e94a918dbcfcaf3c2496da45180b424697f42295646",
+        "ctrl-300-duplex-1-udp-before.txt": "59ee3d9b1cce6c23c9af72fec299e25f2702adf85ab3e2b05c4598cf7bfca226",
+        "ctrl-300-duplex-1-sampler-errors.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ctrl-300-duplex-1-en0-after.txt": "e9a8d653b0fa982b04d88b0575368cf402e5bcb7bd952557bebe64b6a927453a"
+      }
+    },
+    "ctrl-300-duplex-2": {
+      "results": [
+        {
+          "source": "en5",
+          "receive": "en0",
+          "sent": 146274,
+          "received": 146274,
+          "unique": 146274,
+          "missing": 0,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 19,
+          "send_errno": 35,
+          "seconds": 5.999967,
+          "UDP_payload_Mbps": 287.089
+        },
+        {
+          "source": "en0",
+          "receive": "en5",
+          "sent": 146269,
+          "received": 146241,
+          "unique": 146241,
+          "missing": 28,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 24,
+          "send_errno": 35,
+          "seconds": 5.999967,
+          "UDP_payload_Mbps": 287.024
+        }
+      ],
+      "timing": {
+        "rate_Mbps_each": 300,
+        "seconds_requested": 6.0,
+        "mode": "duplex",
+        "start_monotonic": 163153.363392708,
+        "end_monotonic": 163160.383486125,
+        "probe_exit": 2,
+        "sampler": "read-only; PE owns RDU W1C",
+        "sampler_exit": 0
+      },
+      "raw_files_sha256": {
+        "ctrl-300-duplex-2-result.txt": "4c980a3eab7259d93d6caf32d08a857c6d0fd78a7a78ad94a198b7d25176daa3",
+        "ctrl-300-duplex-2-en5-after.txt": "1099afdeddbf178b7a8ed9c6e35a8eb34b89b5ee97dbf190488710a74d860e2b",
+        "ctrl-300-duplex-2-en5-before.txt": "a249c17ab2699518d89ff91b4ae78bba252fbe7d0b8fb8d1720556dcca518772",
+        "ctrl-300-duplex-2-before.txt": "6cd2d30e759d8f1ea0ee9588c9b76d6da28e9f5bab027c72c75d68a5161d1188",
+        "ctrl-300-duplex-2-udp-after.txt": "40900dc484a9618bac769f88b742525c197aa273f3649e4a32936be86b6352c3",
+        "ctrl-300-duplex-2-en0-before.txt": "71afb6d8da4ba4a08250d518a36ce3ef3c69d89483313b32327ef75875827280",
+        "ctrl-300-duplex-2-after.txt": "9e0976d892fd349ca76d900714f8e85e8c3265f73b0182c9133d3a5af14ff4e0",
+        "ctrl-300-duplex-2-udp-before.txt": "9b3c5fd469f876d3fd5f98f9d456ca6de90ffacc312fdb5d596db639808ddda1",
+        "ctrl-300-duplex-2-registers.txt": "4f72af9ae74ded87d70cdce471b96de04f3169fdbba71beef029d931f6fc181b",
+        "ctrl-300-duplex-2-en0-after.txt": "c89ad620fbcee7cb60bef28e6fa55140ec4ee8e8ff82db0a3c5295f5121fb562",
+        "ctrl-300-duplex-2-sampler-errors.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "ctrl-drop-300-duplex-valid": {
+      "results": [
+        {
+          "source": "en5",
+          "receive": "en0",
+          "sent": 146282,
+          "received": 146280,
+          "unique": 146280,
+          "missing": 2,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 11,
+          "send_errno": 35,
+          "seconds": 5.999964,
+          "UDP_payload_Mbps": 287.101
+        },
+        {
+          "source": "en0",
+          "receive": "en5",
+          "sent": 146278,
+          "received": 146232,
+          "unique": 146232,
+          "missing": 46,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 15,
+          "send_errno": 35,
+          "seconds": 5.999964,
+          "UDP_payload_Mbps": 287.006
+        }
+      ],
+      "timing": {
+        "rate_Mbps_each": 300,
+        "seconds_requested": 6.0,
+        "mode": "duplex",
+        "start_monotonic": 163865.812344833,
+        "end_monotonic": 163872.840949083,
+        "probe_exit": 2,
+        "sampler": "read-only; PE owns RDU W1C",
+        "sampler_exit": 0
+      },
+      "raw_files_sha256": {
+        "ctrl-drop-300-duplex-valid-en5-after.txt": "6a0b06755884cc98926b15f0033ab99d5936dd50251370779a48a70692f0a185",
+        "ctrl-drop-300-duplex-valid-udp-before.txt": "1f9cc1f875dc60039cb0aaaa761383075726fcce8302e11c3e846b71027ef2c6",
+        "ctrl-drop-300-duplex-valid-before.txt": "1a91a308f21e6fbe6195b8ff988e1adfeb1726b649778a18e7856a81b98660f5",
+        "ctrl-drop-300-duplex-valid-result.txt": "fe83fd61570eb1c66c193863532afe5c0f205b7c77743efb4e8a3aa5b3ba8e0d",
+        "ctrl-drop-300-duplex-valid-udp-after.txt": "bba5797b4b7556d1c14e66bc6a4afbce31b1107a01ed084ce9c10d6164b8ba8d",
+        "ctrl-drop-300-duplex-valid-sampler-errors.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ctrl-drop-300-duplex-valid-registers.txt": "103f87b818b94fdc6ac8051ba133c59024962bb5833f65881b038e5a25282c46",
+        "ctrl-drop-300-duplex-valid-en0-before.txt": "64dd36e06197c2516667b73cfb3d215cee4583cfdca3a89115e6ad8b411fe0e4",
+        "ctrl-drop-300-duplex-valid-en5-before.txt": "925be606588fe8f3b2f8c2b7c228d359f528a8e273becbf4d8c98afb9691c531",
+        "ctrl-drop-300-duplex-valid-en0-after.txt": "990414896a30a96d4d366d4bbf545dfe4bfa16cd2a6b1869f6135c23ebf1e351",
+        "ctrl-drop-300-duplex-valid-after.txt": "53ccdbb958cc33fd52570c0b1141c580bda09811c6f144da77edd3863c0c24a4"
+      }
+    },
+    "ctrl-final-300-duplex": {
+      "results": [
+        {
+          "source": "en5",
+          "receive": "en0",
+          "sent": 146268,
+          "received": 40392,
+          "unique": 40392,
+          "missing": 105876,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 25,
+          "send_errno": 35,
+          "seconds": 5.999964,
+          "UDP_payload_Mbps": 79.277
+        },
+        {
+          "source": "en0",
+          "receive": "en5",
+          "sent": 146268,
+          "received": 146268,
+          "unique": 146268,
+          "missing": 0,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 25,
+          "send_errno": 35,
+          "seconds": 5.999964,
+          "UDP_payload_Mbps": 287.077
+        }
+      ],
+      "timing": {
+        "rate_Mbps_each": 300,
+        "seconds_requested": 6.0,
+        "mode": "duplex",
+        "start_monotonic": 164590.020509291,
+        "end_monotonic": 164597.041977041,
+        "probe_exit": 2,
+        "sampler": "read-only; PE owns RDU W1C",
+        "sampler_exit": 0
+      },
+      "outcome": "large downlink backlog and tail drops; candidate not accepted",
+      "flow_counter_limits": "both flow MIB readings zero despite delivered packets; unsuitable for this run attribution"
+    }
+  },
+  "status": "suspended_by_user; unstable candidate saved on wip/wifi-rx-arm-pipeline-20261016; main source and live radio reverted to e98acab"
+}
