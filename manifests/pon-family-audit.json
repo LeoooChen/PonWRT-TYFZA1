@@ -163,7 +163,7 @@
     "scripts/test_pon_fe_stop.py": "1670c910b2567ac0399425a53c0707bb3acb45f4112809a11b134c9a215be34e",
     "scripts/test_native_rx_modes.py": "745555d104f7eb4408041402586d3ed8936d4275caa0ef474570c8c1f23cabd2",
     "tools/trace_stock_pon_modes.py": "2bf0a3fa57aa44ca713cf086ed0bd67e6d9e82aa5cd0bb1cb38aba0915f4ea12",
-    "docs/pon-family-audit.md": "3df81c8d4cf3cbe3dd3efbec94da27da36309eca3b98bca037db0265b41e025d",
+    "docs/pon-family-audit.md": "397e791da4ea70756668665298ed540a702319f77fb7ab151180d6502ff3bbf0",
     "port/packages/tyfza1-pon-control/src/pon-identity.c": "f4b504e5967357151a839fc49209a153e242c698cb550144f5420d444a0b3e4c"
   },
   "module_sha256": "53dfa17471c89b0984d21412fb9b8c062b5adfc4be8e58e14cf818594d02b0fe",
@@ -172,8 +172,8 @@
     "driver_operations_modeled": true,
     "full_firmware_build": false,
     "live_O5_validated": false,
-    "PON_hardware_modified": false,
-    "live_PON_kernel_replaced": false,
+    "PON_hardware_modified": true,
+    "live_PON_kernel_replaced": true,
     "live_optical_mode_switched": false,
     "live_GPON_family_O5_validated": false,
     "existing_EPON_device": "Registered EPON D10G read-only snapshot: Mac workspace 现场记录/20261016-pon-family/live-existing-driver.txt"
@@ -191,5 +191,6 @@
     "artifacts/pon-family-audit/after-shutdown.log": "292b60e3e5e47a5922ba67766550fe213d4fe9049bd5e4b3702d87894e5ed9d2",
     "artifacts/pon-family-audit/after-fe-stop.log": "c3bbc7af3a7015ce64a6aed01fac36e265a7e928abc0db42ae1f42fb3c54334f",
     "artifacts/pon-family-audit/after-epon-dispatch.log": "c2abe3be5482aa212fad9075db05d7b69d63fd2b0b8185ba642d03250d5c86ce"
-  }
+  },
+  "live_followup": "manifests/pon-family-live.json"
 }

@@ -1,0 +1,96 @@
+{
+  "source_commit": "b41a1b8",
+  "scope": "RAM PON module; production sources with only a distinct platform driver name",
+  "driver_name": "rtl9617c-pon-family-live",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.c": "d821a9748629b3e22986f024ade2663853bfbd6e6d71c7d9c94c3f83afd846e8",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.h": "ec4dbfbbc9d92d28fd8aafe9953ed34c74feaf81498339f070c8400d9a5a0358",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-serdes.c": "d82bf5abdab855c7b94507739f86428f4a54775becb459bad962bdf5dd4dd2c0",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-epon.c": "fe8913f5c8f59e6ae354b6cba885228218dfde932e1e5ac3eb91921542098594",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-mpcp.c": "ccc86fcc10bea870f715b2318264e34679f08a21dabab3e732711e3233568b9a",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-pdc.c": "94849b6f3af4f4f150936b05569a286ec8b6253629124e209885be88ba541cad",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-puc.c": "c1c29b779d684608510aa3675cd0f872233dd226e0c00da08370b814fecfb3ee",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-oam-format.h": "0c619deb3d185dbd5888f84fb57fad51752bf155c8f5719fa30bb6b66d18b3c9",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-oam.c": "716819144a2f072906c7e12041631b8457c46ba20a325113042f083a6331dcf3",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-mode.h": "cfa99fc01a012fcfeed34b817db5cd6b961b8d84f29c6e171ecff200bb6d39db",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-queue.h": "2bc1bed1de5525c660f4646d6719567b2dfbcb73c721fa75388b38b736f90077",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-data.h": "5168583279209fb9ff86801d5fc9bbd7afb86b3fbf5d70c4077c6861540a53e0",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-fec.h": "dea71e80e9129fabfa8ae62c1e4657f7471873dea00115c222edccaebc3804e4",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-itu.c": "a8065b981eb261a093a3a134d5d9923170824f6643edc84c1497abc844fe43a7",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-gpon.c": "ca101aa13c0f0f3d3ceab64f6cdb75da66de5a0d94acf49b4fc00102b2598774",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-itu-puc.h": "859e725ed71e65c9bb60cb4acf8f0d5d7ca761a90c929555f73ce24decf6e8f8",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-omci-format.h": "908de8dec6fe0e12335acfd3ee9df6c6817ff815eac995a0333a87397cc2dc3b",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-omci.c": "8ae85ba3e4e6d4d3d4a948664ba14cb92dadd2706d9d9b30997b1eabe51eff63",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-xgpon.c": "614fe2d2bd20d6293210193d85dbfbac1a0e6b70c5d431ed55f4d6c5082dea94",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-path.h": "4e1c12cd68d40e0ee4221d6c4f9818f50ed6d9dcff991dae352eddee5f9370f7",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-path.c": "aec6cf3f7226c629d22784ce9a917693c3175845814cff7b7e8b934a17fffb35",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-vlan.h": "5be50429c984759e504b33f94dd931de5298427d32136eaaa4c744216a5c6502",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-vlan-skb.h": "e07a6d3edf9862cdaef8b80f8b3d596848d1640e5b0d11b16a3ec97a9b508949"
+  },
+  "date": "2026-10-16",
+  "module": {
+    "path": "artifacts/pon-family-live-20261016/kernel/rtl_pon_family_live.ko",
+    "sha256": "0ae8f4be481cabd5ea5144749ce4a33c29b7d9033409a3e2bca8b9ba0d304dca"
+  },
+  "kernel": "6.18.55",
+  "saved_PON_configuration_changed": false,
+  "flash_written": false,
+  "optical_mode_changed": false,
+  "service": "production init script bind-mounted from /tmp/pon-service-new",
+  "live_driver": "rtl9617c-pon-family-live",
+  "left_running": true,
+  "restore_script_on_modem": "/tmp/restore-pon.sh",
+  "boot_behavior": "RAM module and service bind mount disappear on reboot",
+  "kernel_interface_checks": {
+    "seven_key_NI_BOSA_addresses_match_local_vmlinux": true,
+    "kernel_build_NI_headers_match_overlay": true,
+    "complete_DWARF_NI_layout_available": false,
+    "whole_vmlinux_identity_confirmed": false,
+    "kernel_notes_match": false,
+    "actual_probe_and_EPON_transport_tested": true
+  },
+  "live_checks": {
+    "MPCP_LLID0_registered": true,
+    "OAM_discovery_stable": true,
+    "LOID_authentication": "accepted",
+    "DHCP_and_default_route_restored": true,
+    "gateway_ping": {
+      "sent": 3,
+      "received": 3
+    },
+    "public_ping": {
+      "sent": 3,
+      "received": 3
+    },
+    "service_stop_start": {
+      "stop_exit": 0,
+      "start_exit": 0,
+      "MPCP_TX_FE_disabled_on_stop": true,
+      "re_registered_and_authenticated": true,
+      "public_ping": {
+        "sent": 3,
+        "received": 3
+      }
+    },
+    "EPON_rejects_ITU_activation_stop_without_changing_registration_TX_FE": true,
+    "EPON_ITU_status_reads": "unsupported; RPC activation null",
+    "service_state": "enabled=1 stage=offload error=0"
+  },
+  "limitations": [
+    "no GPON-family OLT available; no GPON/XG-PON/XGS-PON registration verified",
+    "no live optical protocol switch",
+    "cleanup failures tested in directed callbacks only",
+    "no sustained hardware-forwarding throughput measurement"
+  ],
+  "records": {
+    "luci-after.json": "90945bff078bdbf29ad920da37607a84acfd3db93292eb09495070bf9f6e6526",
+    "restore-pon.sh": "0938fcde3061e2bf8302f8ea866f437341d8fc878c58573c5597843074f3162a",
+    "live-existing-driver.txt": "80b347fd3f4b1c8b486fc66e868c13cfb76e7673df7f9912a8d8933d25202791",
+    "epon-reject-itu-stop.txt": "9398e247e999a357407ee3ce29752616e800e729ea6f987df4c45ee14e188a42",
+    "new-driver-epon.txt": "9793409633da1fdb58619d248245e7135ffef26e216e351ef212dbbbce8b2d79",
+    "kernel-and-final.txt": "2f2351b60e4a68cb99482065c54fb6bbf26c95d46fffacbf207ea1acc47c552a",
+    "service-stop-start.txt": "a1a1ecb5e9cb49de9c0b9a5ecf7ff8aeb79cc1d739727bb3c355afc9a51eff0e",
+    "after-service-restart.txt": "85b029a36a30e605e030b51ce926f243bf2a199ff492cdf4c75916c9f4bebfec"
+  },
+  "documentation_sha256": "397e791da4ea70756668665298ed540a702319f77fb7ab151180d6502ff3bbf0"
+}

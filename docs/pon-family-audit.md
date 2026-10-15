@@ -96,8 +96,47 @@ joins work after an FE error. The actual FE function retains ownership on NI
 failure and releases it after successful cleanup. EPON preparation/traffic,
 the importer/service regression and the isolated ARM64 PON module build pass.
 
-This session read the connected EPON device's state; it remains registered.
-No PON kernel replacement, PON restart, optical mode switch or flash was
-performed. GPON/XG-PON/XGS-PON OLT registration is therefore unverified.
-Updated sources, module hash and focused results are recorded in
-`manifests/pon-family-audit.json`.
+At this commit's offline checkpoint the connected device had only been read;
+no PON replacement or restart had yet been performed. The following live
+follow-up supersedes that deployment limit. Updated sources, module hash and
+focused results are recorded in `manifests/pon-family-audit.json`.
+
+## RAM EPON regression
+
+The production PON sources from `b41a1b8` were built as
+`artifacts/pon-family-live-20261016/kernel/rtl_pon_family_live.ko`. Only the
+platform driver name changes to `rtl9617c-pon-family-live` for replacing the
+built-in binding. Module SHA256:
+`0ae8f4be481cabd5ea5144749ce4a33c29b7d9033409a3e2bca8b9ba0d304dca`.
+The service script is bind-mounted from `/tmp`; flash and saved PON UCI settings
+were not changed. `/tmp/restore-pon.sh` can stop the RAM service, unbind/unload
+the candidate, rebind the built-in driver, unmount the temporary service and
+start the original service. A reboot also removes this RAM deployment.
+
+The running kernel and candidate use 6.18.55. Seven key NI/BOSA symbol
+addresses match the local vmlinux, and the NI/frame headers in its build tree
+match the overlay. Reduced kernel debug data did not provide complete NI
+structure types for a DWARF layout comparison; kernel notes differ, so this is
+not a claim that the entire local vmlinux equals the running kernel. Loading,
+probing and the following actual transport operations succeeded.
+
+- Stop old service, unbind old PON, bind the new module, start new service:
+  BOSA/SerDes/MAC/PUC/PDC complete with error0. MPCP re-registers LLID0;
+  OAM discovery completes, LOID authentication is accepted, and DHCP reacquires
+  the WAN lease and default route.
+- Gateway and public-IP ping each receive3/3 replies. A subsequent new-service
+  stop/start returns0, disables MPCP/optical TX and clears FE flows during stop,
+  then re-registers/re-authenticates and restores WAN; public ping receives3/3.
+- In active EPON, reading `activation` and `active_serial_number` returns
+  unsupported. Writing0 to `activation` fails without changing MPCP
+  registration, optical TX-enable or FE-enable state. LuCI RPC reports
+  `activation:null`, actual EPON state and service `stage=offload error=0`.
+
+The device is left on the new RAM PON driver and temporary service, using its
+original EPON D10G mode and identity. Wi-Fi remains on its earlier independent
+RX refill module; the suspended Wi-Fi pipeline experiment was not reintroduced.
+No optical protocol change or flash was performed. GPON/XG-PON/XGS-PON OLT
+registration, actual cross-family switching, injected hardware cleanup failure
+and sustained hardware-forwarding throughput remain outside this live result.
+Raw records are in the Mac workspace `现场记录/20261016-pon-family/` and their
+hashes are in `manifests/pon-family-live.json`.
