@@ -19,7 +19,8 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
         "bosa": "configured=0 model=205 eeprom=0 writes=599 error=-6 identity=47/39/37\n",
         "traffic": "enabled=1 rx=0 tx=0 carrier=0\n",
         "mpcp": "registered=00000000 attempts=0\n",
-        "fe": "available=1 enabled=1 prepared=1 error=0 flows=2 counter_slots=64 installs=8 deletes=6\n"
+        "fe": "available=1 enabled=1 prepared=1 error=0 flows=2 counter_slots=64 installs=8 deletes=6\n",
+        "data_path": "configured=1 error=0 epoch=1 paths=2 session=1 profiles=0\ngem=100 index=0 vlan=100\ngem=200 index=1 vlan=200\n"
     }
     for name, value in samples.items():
         (device / name).write_text(value)
@@ -46,6 +47,11 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
     marker.parent.mkdir(parents=True)
     marker.write_text(json.dumps({'pid':123, 'process_start':'123456', 'updated_ms':99500,
                                  'registered':True, 'discovery_stable':True, 'auth_state':'accepted'}))
+    omci_process = d / 'proc/124/stat'
+    omci_process.parent.mkdir()
+    omci_process.write_text('124 (pon-omcid) ' + ' '.join(['S'] + ['0'] * 18 + ['123457'] + ['0'] * 30) + '\n')
+    omci_marker = d / 'var/run/pon-omci'
+    omci_marker.write_text('pid=124 process_start=123457 updated_ms=99500 rx=12 tx=9 invalid=0 paths=2 error=-22\n')
     program = d / "status.uc"
     program.write_text("const FIXTURE = " + json.dumps(str(d)) + ";\n" +
                        source.replace("return { 'luci.tyfza1-pon': methods };",
@@ -61,6 +67,27 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
     assert observed['fe']['enabled'] == '1' and observed['fe']['flows'] == '2'
     assert observed['oam_ports'][0]['live'] is True, observed['oam_ports']
     assert observed['oam_ports'][0]['auth_state'] == 'accepted'
+    assert observed['omci']['live'] is True and observed['omci']['error'] == '-22'
+    assert observed['data_path']['paths'] == '2' and 'gem' not in observed['data_path']
+    assert observed['data_path_raw'] == samples['data_path']
+    omci_marker.write_text(omci_marker.read_text().replace('updated_ms=99500', 'updated_ms=100009'))
+    current = json.loads(subprocess.check_output([str(ucode), str(program)], text=True))
+    assert current['omci']['live'] is True
+    omci_marker.write_text(omci_marker.read_text().replace('updated_ms=100009', 'updated_ms=100010'))
+    future = json.loads(subprocess.check_output([str(ucode), str(program)], text=True))
+    assert future['omci']['live'] is False
+    omci_marker.write_text(omci_marker.read_text().replace('updated_ms=100010', 'updated_ms=99500'))
+    (d / 'proc/uptime').write_text('106.00 150.00\n')
+    expired = json.loads(subprocess.check_output([str(ucode), str(program)], text=True))
+    assert expired['omci']['live'] is False and expired['omci']['error'] == '-22'
+    (d / 'proc/uptime').write_text('100.00 150.00\n')
+    omci_process.write_text(omci_process.read_text().replace('123457', '654321'))
+    reused = json.loads(subprocess.check_output([str(ucode), str(program)], text=True))
+    assert reused['omci']['live'] is False
+    omci_process.unlink()
+    stopped = json.loads(subprocess.check_output([str(ucode), str(program)], text=True))
+    assert stopped['omci']['live'] is False
+    omci_marker.unlink()
     assert observed['ports'][0]['present'] is True
     assert observed['ports'][0]['carrier'] == '1'
     assert observed['ports'][0]['speed'] == '1000'
@@ -87,8 +114,9 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
     assert absent["bosa"] is None and absent["traffic"] is None
     assert absent['fe'] is None
     assert absent['oam_ports'] == []
+    assert absent['omci'] is None and absent['data_path_raw'] is None
 (root / "logs/pon-luci-status-test.json").write_text(json.dumps({"actual_rpcd_source_executed": True,
     "observed_zero_and_error_fields_preserved": True, "missing_device_is_null": True,
     "OAM_live_process_identity_checked": True, "stale_auth_result_hidden": True,
     "LuCI_hardware_UI_verified": False}, indent=2) + "\n")
-print("rpcd status parsing: observed zeros/errors, live OAM identity and stale auth cases passed")
+print("rpcd status: OAM/OMCI process identity and freshness, missing status and complete multi-GEM diagnostics passed")

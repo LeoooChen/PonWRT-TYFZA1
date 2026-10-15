@@ -13,6 +13,9 @@ test "$(git -C "$TREE" rev-parse HEAD)" = "$PIN" || {
 mkdir -p "$TREE/target/linux/rtl9617c"
 cp -a "$PORT/overlay/target/linux/rtl9617c/." "$TREE/target/linux/rtl9617c/"
 mkdir -p "$TREE/package/luci-app-tyfza1-pon"
+# Remove the retired overview views from incremental build trees.
+rm -f "$TREE/package/luci-app-tyfza1-pon/htdocs/luci-static/resources/view/status/tyfza1.js" \
+    "$TREE/package/luci-app-tyfza1-pon/htdocs/luci-static/resources/view/status/include/05_tyfza1.js"
 cp -a "$PORT/packages/luci-app-tyfza1-pon/." "$TREE/package/luci-app-tyfza1-pon/"
 mkdir -p "$TREE/package/tyfza1-pon-control"
 cp -a "$PORT/packages/tyfza1-pon-control/." "$TREE/package/tyfza1-pon-control/"

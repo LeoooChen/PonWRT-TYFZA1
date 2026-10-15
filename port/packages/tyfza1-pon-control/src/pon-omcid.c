@@ -98,6 +98,50 @@ struct omci_business {
 	int length, error;
 };
 
+static int read_starttime(char output[32])
+{
+	char data[1024], *position, *token, *save = NULL;
+	unsigned int field = 3;
+	FILE *stream = fopen("/proc/self/stat", "r");
+
+	if (!stream) return -errno;
+	position = fgets(data, sizeof(data), stream) ? strrchr(data, ')') : NULL;
+	fclose(stream);
+	if (!position) return -EINVAL;
+	for (token = strtok_r(position + 1, " \n", &save); token;
+	     token = strtok_r(NULL, " \n", &save), field++) {
+		if (field == 22) {
+			snprintf(output, 32, "%s", token);
+			return 0;
+		}
+	}
+	return -EINVAL;
+}
+
+static int publish_status(const char *path, const char *starttime,
+	unsigned long long received, unsigned long long transmitted, unsigned long long invalid,
+	const struct omci_business *business)
+{
+	struct timespec now;
+	char temporary[512];
+	FILE *stream;
+	int error = 0;
+
+	clock_gettime(CLOCK_BOOTTIME, &now);
+	snprintf(temporary, sizeof(temporary), "%s.%ld", path, (long)getpid());
+	stream = fopen(temporary, "w");
+	if (!stream) return -errno;
+	if (fprintf(stream, "pid=%ld process_start=%s updated_ms=%llu rx=%llu tx=%llu invalid=%llu paths=%u error=%d\n",
+	    (long)getpid(), starttime, (unsigned long long)now.tv_sec * 1000 + now.tv_nsec / 1000000,
+	    received, transmitted, invalid,
+	    business->length >= 12 ? business->applied[2] | (unsigned int)business->applied[3] << 8 : 0,
+	    business->error) < 0) error = errno;
+	if (fclose(stream) && !error) error = errno;
+	if (!error && rename(temporary, path)) error = errno;
+	if (error) unlink(temporary);
+	return -error;
+}
+
 static int apply_paths(void *context, const uint8_t *paths, size_t length)
 {
 	struct omci_business *business = context;
@@ -128,8 +172,11 @@ int main(void)
 	unsigned long long session = 0, previous_session = 0, received = 0, transmitted = 0, invalid = 0;
 	int fd, enabled = 1, result;
 	struct pollfd pollfd;
+	char starttime[32];
 
 	openlog("pon-omcid", LOG_PID, LOG_DAEMON);
+	result = read_starttime(starttime);
+	if (result) { fprintf(stderr, "OMCI process identity: %s\n", strerror(-result)); return 1; }
 	result = load_identity(&identity);
 	if (result) { fprintf(stderr, "OMCI identity: %s\n", strerror(-result)); return 1; }
 	agent = tyfza1_omci_new(&identity);
@@ -159,12 +206,8 @@ int main(void)
 			if (!result) business.length = 0;
 			business.error = result ? result : length;
 		} else if (length >= 12) apply_paths(&business, paths, length);
-		FILE *status = fopen("/var/run/pon-omci", "w");
-		if (status) {
-			fprintf(status, "rx=%llu tx=%llu invalid=%llu paths=%u error=%d\n",
-				received, transmitted, invalid, business.length >= 12 ? business.applied[2] | (unsigned int)business.applied[3] << 8 : 0, business.error);
-			fclose(status);
-		}
+		result = publish_status("/var/run/pon-omci", starttime, received, transmitted, invalid, &business);
+		if (result) syslog(LOG_ERR, "OMCI status publish failed: %s", strerror(-result));
 		result = poll(&pollfd, 1, 1000);
 		if (result < 0) { if (errno == EINTR) continue; break; }
 		if (!result) continue;
@@ -214,5 +257,6 @@ int main(void)
 	perror("OMCI transport");
 	close(fd);
 	tyfza1_omci_free(agent);
+	unlink("/var/run/pon-omci");
 	return 1;
 }

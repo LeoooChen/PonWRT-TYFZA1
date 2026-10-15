@@ -36,10 +36,30 @@ function fields(text) {
 	return result;
 }
 
-function oam_ports() {
+function status_live(status, now_ms) {
+	if (type(status.pid) != 'int' || status.pid <= 0 || type(status.updated_ms) != 'int')
+		return false;
+	// /proc/uptime is truncated to centiseconds; compare at the same resolution.
+	let updated_ms = status.updated_ms - status.updated_ms % 10;
+	let process = readfile('/proc/' + status.pid + '/stat');
+	let end = process != null ? index(process, ') ') : -1;
+	let state = end >= 0 ? split(substr(process, end + 2), ' ') : [];
+	return length(state) > 19 && state[0] != 'Z' && state[0] != 'X' &&
+		state[19] == status.process_start && now_ms >= updated_ms && now_ms - updated_ms < 5000;
+}
+
+function omci_status(now_ms) {
+	let status = fields(readfile('/var/run/pon-omci'));
+	if (status == null)
+		return null;
+	status.pid = +status.pid;
+	status.updated_ms = +status.updated_ms;
+	status.live = status_live(status, now_ms);
+	return status;
+}
+
+function oam_ports(now_ms) {
 	let ports = [];
-	const uptime = split(trim(readfile('/proc/uptime')), ' ');
-	const now_ms = +uptime[0] * 1000;
 	for (let llid = 0; llid < 32; llid++) {
 		let text = readfile('/var/run/pon-oam/llid-' + llid + '.json');
 		if (text == null)
@@ -50,11 +70,7 @@ function oam_ports() {
 		if (type(status) != 'object' || type(status.pid) != 'int' || status.pid <= 0)
 			continue;
 		status.llid_index = llid;
-		let process = readfile('/proc/' + status.pid + '/stat');
-		let end = process != null ? index(process, ') ') : -1;
-		let state = end >= 0 ? split(substr(process, end + 2), ' ') : [];
-		status.live = type(status.updated_ms) == 'int' && length(state) > 19 && state[0] != 'Z' && state[0] != 'X' &&
-			state[19] == status.process_start && now_ms >= status.updated_ms && now_ms - status.updated_ms < 5000;
+		status.live = status_live(status, now_ms);
 		if (!status.live) {
 			status.registered = false;
 			status.auth_state = null;
@@ -69,11 +85,14 @@ const methods = {
 	status: {
 		call: function() {
 			const device = '/sys/bus/platform/devices/4f5500000.pon/';
+			const now_ms = +split(trim(readfile('/proc/uptime')), ' ')[0] * 1000;
+			const data_path = readfile(device + 'data_path');
 			return {
 				service: fields(readfile('/var/run/pon-service')),
 				activation: fields(readfile(device + 'activation')),
-				data_path: fields(readfile(device + 'data_path')),
-				omci: fields(readfile('/var/run/pon-omci')),
+				data_path: fields(data_path == null ? null : split(data_path, '\n')[0]),
+				data_path_raw: data_path,
+				omci: omci_status(now_ms),
 				state: fields(readfile(device + 'state')),
 				serdes: fields(readfile(device + 'serdes')),
 				bosa: fields(readfile(device + 'bosa')),
@@ -91,7 +110,7 @@ const methods = {
 				wan_tx_packets: trim(readfile('/sys/class/net/pon-data0/statistics/tx_packets')),
 				lan_rx_errors: trim(readfile('/sys/class/net/eth0/statistics/rx_errors')),
 				lan_rx_dropped: trim(readfile('/sys/class/net/eth0/statistics/rx_dropped')),
-				oam_ports: oam_ports(),
+				oam_ports: oam_ports(now_ms),
 				ports: network_ports(),
 				queried_at: time()
 			};
