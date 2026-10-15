@@ -160,7 +160,17 @@ assert bytes(u.mem_read(forward + slot * 1024, len(raw))) == raw
 
 # The other physical queue sends radar reports through its ARM slow ring.
 # An old report returns its RXBD; the first report on the new channel is kept.
-put(mailbox + 320, payload)
+rx_addresses = 0x06600000
+u.mem_map(rx_addresses, 4096)
+for id, offset in enumerate((0, 1, 3, 2)):
+    put(rx_addresses + id * 4, payload + offset * 12288)
+put(mailbox + 320, rx_addresses)
+rxbd = 0x06500000
+u.mem_map(rxbd, 4096)
+put(mailbox + 134 * 4, rxbd)
+put(mailbox + 177 * 4, 2)
+put(base + 0x1a400, 2)
+put(base + 0x1a404, 3)
 put(base + 0x17400, 0)
 put(base + 0x17404, 1)
 put(mailbox + 172 * 4, 1 | 256)

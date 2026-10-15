@@ -1,52 +1,59 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-#define RX_STATUS 0xf000
-#define RX_SLOW_RING 0xf400
+#define RX_STATUS RTL_AX_RX_WORK_STATUS
+#define RX_SLOW_RING RTL_AX_RX_ARM_RING
 #define RX_PEER_CONFIG 0x10000
 #define RX_ARM_DONE BIT(30)
 #define RX_NI_PENDING BIT(31)
-#define RX_BUFFER_MAP 0x17400
-#define RX_BUFFER_FREE 0x17800
-#define RX_BUFFER_HELD 0x17810
 
-static u32 rx_buffer(u8 *memory, u32 slot)
+static u32 rx_buffer_dma(volatile u32 *mailbox, u32 id)
 {
-	return *(u32 *)(memory + RX_BUFFER_MAP + slot * 4);
+	const u32 *addresses = uncached(mailbox[80]);
+	return addresses[id];
+}
+
+static void rx_idle_put(volatile u32 *mailbox, u8 *memory, u32 id)
+{
+	*(volatile u32 *)uncached(rx_buffer_dma(mailbox, id)) = 0;
+	*(u32 *)(memory + RTL_AX_RX_IDLE_IDS + mailbox[RTL_AX_RX_IDLE_COUNT] * 4) = id;
+	mailbox[RTL_AX_RX_IDLE_COUNT]++;
 }
 
 static void __attribute__((noinline)) rx_buffer_recycle(volatile u32 *mailbox, u8 *memory)
 {
-	u32 *free = (void *)(memory + RX_BUFFER_FREE);
-	u32 *held = (void *)(memory + RX_BUFFER_HELD);
+	u32 *held = (void *)(memory + RTL_AX_RX_NI_TAIL);
 	for (u32 i = 0; i < 2; i++) {
 		if (!held[i * 2]) continue;
 		/* Stock NI completion retains the last two consumed descriptors. */
 		if ((int)((mailbox[91] - held[i * 2 + 1] - 2) << 1) < 0) continue;
-		u32 id = held[i * 2] - 1;
-		*(volatile u32 *)uncached(mailbox[80] + id * 12288) = 0;
-		free[free[0] ? 1 : 0] = id + 1;
+		rx_idle_put(mailbox, memory, held[i * 2] - 1);
 		held[i * 2] = 0;
 	}
 }
 
-static u32 __attribute__((noinline)) rx_buffer_return(volatile u32 *mailbox, u8 *memory, u32 slot, u32 end)
+static void __attribute__((noinline)) rx_work_recycle(volatile u32 *mailbox, u8 *memory)
 {
-	u32 id = rx_buffer(memory, slot);
-	if ((int)((mailbox[91] - end - 2) << 1) >= 0) {
-		*(volatile u32 *)uncached(mailbox[80] + id * 12288) = 0;
-		return 1;
+	u32 read = mailbox[RTL_AX_RX_WORK_READ];
+	while (read != mailbox[RTL_AX_RX_WORK_PROCESS]) {
+		u32 *status = (void *)(memory + RX_STATUS + read * 4);
+		u32 owner = *status;
+		u32 id = *(u32 *)(memory + RTL_AX_RX_WORK_IDS + read * 4) & ~RTL_AX_RX_WORK_OLD;
+		if (owner & RX_NI_PENDING) {
+			u32 end = owner & ~RX_NI_PENDING;
+			if ((int)((mailbox[91] - end) << 1) < 0) break;
+			if ((int)((mailbox[91] - end - 2) << 1) < 0) {
+				u32 *held = (void *)(memory + RTL_AX_RX_NI_TAIL);
+				u32 index = held[0] ? 1 : 0;
+				held[index * 2] = id + 1;
+				held[index * 2 + 1] = end;
+			} else rx_idle_put(mailbox, memory, id);
+		} else {
+			if (!(owner & RX_ARM_DONE)) break;
+			rx_idle_put(mailbox, memory, id);
+		}
+		*status = 0;
+		read = (read + 1) & 255;
 	}
-	u32 *free = (void *)(memory + RX_BUFFER_FREE);
-	u32 *held = (void *)(memory + RX_BUFFER_HELD);
-	u32 available = free[0] ? 0 : 1;
-	if (!free[available]) return 0;
-	u32 index = held[0] ? 1 : 0, replacement = free[available] - 1;
-	held[index * 2] = id + 1;
-	held[index * 2 + 1] = end;
-	free[available] = 0;
-	*(u32 *)(memory + RX_BUFFER_MAP + slot * 4) = replacement;
-	volatile u32 *descriptor = uncached(mailbox[134] + slot * 8);
-	descriptor[1] = mailbox[80] + replacement * 12288;
-	return 1;
+	mailbox[RTL_AX_RX_WORK_READ] = read;
 }
 
 static u32 rx_frame(volatile u32 *mailbox, u8 *buffer, u8 **frame, u32 *length, u32 *station)
@@ -107,7 +114,6 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_protocol(const u8 *llc)
 static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(volatile u32 *mailbox, u8 *buffer, u32 buffer_dma)
 {
 	if (!mailbox[88] || !mailbox[93]) return 0;
-	if (mailbox[94] != mailbox[95]) { mailbox[120]++; return 0; }
 	u8 *frame; u32 length, macid;
 	u32 header = rx_frame(mailbox, buffer, &frame, &length, &macid);
 	if (!header) { mailbox[107]++; return 0; }
@@ -186,57 +192,63 @@ static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mail
 {
 	if (!mailbox[80]) return;
 	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
-	volatile u32 *status = (void *)(memory + RX_STATUS);
+	volatile u32 *bar = (void *)mailbox[2];
+	u32 rdu = bar[0x10b4 / 4] & (BIT(19) | BIT(20));
+	if (rdu) {
+		mailbox[RTL_AX_RX_RDU] += !!(rdu & BIT(19));
+		mailbox[RTL_AX_RPQ_RDU] += !!(rdu & BIT(20));
+		bar[0x10b4 / 4] = rdu;
+	}
 	if (mailbox[88]) {
 		volatile u32 *vp = (void *)mailbox[88];
 		mailbox[91] += ((vp[0x1c / 4] & 63) - (mailbox[91] & 63)) & 63;
 	}
 	rx_buffer_recycle(mailbox, memory);
-	volatile u32 *bar = (void *)mailbox[2];
-	u32 returned = mailbox[83], scan = mailbox[81];
-	while (returned != scan) {
-		u32 owner = status[returned];
-		/* NI carries a 31-bit sequence: its bit30 is not an ARM release. */
-		if (owner & RX_NI_PENDING) {
-			if ((int)((mailbox[91] - (owner & ~RX_NI_PENDING)) << 1) < 0) break;
-			if (!rx_buffer_return(mailbox, memory, returned, owner & ~RX_NI_PENDING)) break;
-		} else {
-			if (!(owner & RX_ARM_DONE)) break;
-			*(volatile u32 *)uncached(mailbox[80] + rx_buffer(memory, returned) * 12288) = 0;
+	rx_work_recycle(mailbox, memory);
+	u32 *work = (void *)(memory + RTL_AX_RX_WORK_IDS);
+	u32 slot = mailbox[81], write = mailbox[RTL_AX_RX_WORK_WRITE];
+	u32 next = (write + 1) & 255;
+	if (next != mailbox[RTL_AX_RX_WORK_READ] &&
+	    ((bar[0x1218 / 4] >> 16) & 1023) != slot) {
+		u32 *map = (void *)(memory + RTL_AX_RX_SLOT_MAP);
+		u32 id = map[slot];
+		u32 info = *(volatile u32 *)uncached(rx_buffer_dma(mailbox, id));
+		u32 tag = mailbox[82] == 8191 ? 1 : mailbox[82] + 1;
+		if (((info >> 16) & 8191) == tag) {
+			sync();
+			work[write] = id | (rtl_ax_rx_epoch_old(&mailbox[RTL_AX_PE_DFS_EPOCH], slot) ? RTL_AX_RX_WORK_OLD : 0);
+			u32 count = mailbox[RTL_AX_RX_IDLE_COUNT] - 1;
+			u32 replacement = *(u32 *)(memory + RTL_AX_RX_IDLE_IDS + count * 4);
+			mailbox[RTL_AX_RX_IDLE_COUNT] = count;
+			map[slot] = replacement;
+			volatile u32 *descriptor = uncached(mailbox[134] + slot * 8);
+			descriptor[1] = rx_buffer_dma(mailbox, replacement);
+			sync();
+			mailbox[RTL_AX_RX_WORK_WRITE] = next;
+			mailbox[82] = tag;
+			mailbox[86]++;
+			mailbox[81] = mailbox[83] = (slot + 1) & 255;
+			sync();
+			*(volatile u16 *)((u8 *)bar + 0x1218) = mailbox[81];
 		}
-		status[returned] = 0;
-		returned = (returned + 1) & 255;
 	}
-	if (returned != mailbox[83]) {
-		mailbox[83] = returned;
-		sync();
-		*(volatile u16 *)((u8 *)bar + 0x1218) = returned;
-	}
-	/* ARM must publish exception PN/SN/PS state before the next RX frame.
-	 * Wait here instead of sending the rest of that burst through ARM. */
+	/* Preserve PN/SN ordering without withholding physical RXBD credits. */
 	if (mailbox[94] != mailbox[95]) return;
-	if (((bar[0x1218 / 4] >> 16) & 1023) == scan) return;
-	u32 buffer_dma = mailbox[80] + rx_buffer(memory, scan) * 12288;
+	u32 read = mailbox[RTL_AX_RX_WORK_PROCESS];
+	if (read == mailbox[RTL_AX_RX_WORK_WRITE]) return;
+	u32 item = work[read], id = item & ~RTL_AX_RX_WORK_OLD;
+	u32 buffer_dma = rx_buffer_dma(mailbox, id);
 	u8 *buffer = uncached(buffer_dma);
-	u32 info = *(volatile u32 *)buffer;
-	u32 tag = mailbox[82] == 8191 ? 1 : mailbox[82] + 1;
-	if (((info >> 16) & 8191) != tag) return;
-	sync();
-	u32 old = rtl_ax_rx_epoch_old(&mailbox[RTL_AX_PE_DFS_EPOCH], scan);
-	u32 owner = old && ((*(u32 *)(buffer + 4) >> 24) & 15) == 8 ?
+	u32 owner = (item & RTL_AX_RX_WORK_OLD) && ((*(u32 *)(buffer + 4) >> 24) & 15) == 8 ?
 		RX_ARM_DONE : rx_uplink(mailbox, buffer, buffer_dma);
-	if (owner) status[scan] = owner;
-	else {
+	*(u32 *)(memory + RX_STATUS + read * 4) = owner;
+	if (!owner) {
 		u32 producer = mailbox[94];
-		if (((producer + 1) & 255) == mailbox[95]) return;
-		status[scan] = 0;
-		*(u32 *)(memory + RX_SLOW_RING + producer * 4) = scan;
+		*(u32 *)(memory + RX_SLOW_RING + producer * 4) = read;
 		sync();
 		mailbox[94] = (producer + 1) & 255;
 		if (producer == mailbox[95]) pe_event(mailbox);
 	}
-	mailbox[82] = tag;
-	mailbox[86]++;
 	sync();
-	mailbox[81] = (scan + 1) & 255;
+	mailbox[RTL_AX_RX_WORK_PROCESS] = (read + 1) & 255;
 }

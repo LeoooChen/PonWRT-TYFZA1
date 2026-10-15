@@ -159,7 +159,7 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 	mailbox[71] = tag;
 	sync();
 	*(volatile u16 *)((u8 *)bar + 0x121c) = mailbox[70];
-	bar[0x10b4 / 4] = BIT(2) | BIT(20);
+	bar[0x10b4 / 4] = BIT(2);
 }
 
 #ifdef PE_UPLINK
@@ -269,9 +269,9 @@ void pe_main(volatile u32 *control)
 		pe_rpq(mailbox, memory);
 		/* Drain a short RX burst before servicing downlink and RPQ again. */
 		for (u32 budget = 0; budget < 16; budget++) {
-			u32 before = mailbox[81];
+			u32 before = mailbox[81] | mailbox[RTL_AX_RX_WORK_PROCESS] << 8;
 			pe_rxq(mailbox);
-			if (mailbox[81] == before || mailbox[94] != mailbox[95]) break;
+			if ((mailbox[81] | mailbox[RTL_AX_RX_WORK_PROCESS] << 8) == before) break;
 		}
 		if (mailbox[30]) ni_recycle(mailbox, memory);
 		if (mailbox[78] && !mailbox[30]) { mailbox[78] = 0; pe_event(mailbox); }

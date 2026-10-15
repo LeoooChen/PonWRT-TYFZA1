@@ -1,0 +1,117 @@
+{
+  "date": "2026-10-15",
+  "base_commit": "8c883b4759cb02bb3271e6785d807cce7a3c65ae",
+  "scope": "Independent RXQ DMA buffers, RX refill/lifecycle and PE RDU accounting; offline verification only; PON files untouched",
+  "source_sha256": {
+    "port/pe/rtl9617c-radio-uplink.h": "a5fd8d7c5a86c726d173f8e1e4041e7efff7d7506a40d974b18279ce84d5dfc9",
+    "port/pe/rtl9617c-radio-downlink.h": "a852e663505c198767b70e4bacf7a34a9ae9afbc061b0919c1b7cd8cd60630dc",
+    "port/pe/rtl9617c-radio-wd.c": "0fb2d14353bab03b65d18cc46662cde1964b72220a97d2da42328bab601f747c",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx.c": "7d10765d6e45583041f7167c77e3e70a0fceba7229b09c13617391c1dd7fd629",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx-geometry.h": "95fabda8868a3bc47245587287da13f86e606a98d0bdb49ab3d3e2271de3e592",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-tx-code.h": "60f59d3488bfaf0b626fef7252e5871c894153490a18fc451fc8079e9bb30736",
+    "scripts/test_pe_rxq_backpressure.py": "823530509c6f292f7669a5b4b4ce4d5600ae3f45015b5e69c0756ba7940db64e",
+    "scripts/test_rx_pool_handoff.py": "c5d78c450959c7c3c29663c3f85c5da52b819996d3a86d6f28c786d2840bf2bf",
+    "scripts/test_pe_rpq_firmware.py": "0c0f0273bcce5aa45919bc3c85170193fa1cb32739d2ca8b9bcf40b55a9edd93",
+    "scripts/test_rx_dma_alloc.py": "d3af00f36993eeecae8c0115b92235fd6523f26d2a0cfb929612aa0f51eebefa",
+    "docs/wifi-rx-refill-rewrite-20261015.md": "2b700d90dac537276417b613901c92ca26dc4683693b1c0b2b26870715a8962c"
+  },
+  "module": {
+    "path": "artifacts/rx-refill-rewrite-20261015/radio-individual/rtl_ax_ap_rx_pool.ko",
+    "frozen_path": "artifacts/rx-refill-rewrite-20261015/frozen-879d0cda/rtl_ax_ap_rx_pool.ko",
+    "sha256": "879d0cdae546604c267b10e809ec5b47dd94d81b4d40368f62196b65eb298391",
+    "kernel": "6.18.55",
+    "driver_name": "rtl_ax_ap_rx_pool"
+  },
+  "PE": {
+    "path": "artifacts/rx-refill-rewrite-20261015/pe-individual/pe-tx.bin",
+    "sha256": "bebfe3ea51d9433595f39987b4c138cc356e2cd91fa8ced33fdc1ebb5b8dfe38",
+    "bytes": 15868,
+    "exact_module_payload": true,
+    "mailbox80": "DMA address of514-entry little-endian DMA32 address table"
+  },
+  "memory": {
+    "RXBD_slots": 256,
+    "work_capacity": 255,
+    "payload_buffers": 514,
+    "payload_buffer_bytes": 12288,
+    "RXQ_largest_DMA_allocation_bytes": 12288,
+    "RX_queues_largest_DMA_allocation_bytes": 262144,
+    "DMA_address_table_bytes": 2056,
+    "payload_page_block_bytes_each_on_4K_kernel": 16384
+  },
+  "checks": {
+    "allocation": {
+      "scope": "Actual production allocation/free functions with a4MiB limit and permuted per-payload DMA addresses; no physical allocator or hardware execution.",
+      "individual_RXQ_payload_allocations": 514,
+      "payload_allocation_bytes": 12288,
+      "largest_DMA_allocation_bytes": 262144,
+      "RXBD_and_PE_address_table_match": true,
+      "partial_failure_cases": 7,
+      "allocated_buffers_freed_exactly_once": true,
+      "sanitizers": [
+        "ASan",
+        "UBSan"
+      ],
+      "no_large_contiguous_pool_or_fallback": true
+    },
+    "pe": {
+      "scope": "Actual linked production PE; modeled PCIe, ARM acknowledgement, NI consumption and W1C. No RF throughput simulation.",
+      "PE_sha256": "bebfe3ea51d9433595f39987b4c138cc356e2cd91fa8ced33fdc1ebb5b8dfe38",
+      "ARM_blocked_capture_and_refill_packets": 255,
+      "busy_ring_full_payload_preserved": true,
+      "ordered_ARM_delivery": 256,
+      "additional_wrap_packets": 513,
+      "all_514_buffers_have_one_owner": true,
+      "permuted_noncontiguous_DMA_table_all_buffers": true,
+      "PN_SN_no_overtake": true,
+      "NI_last_two_payloads_retained": true,
+      "NI_end_bit30_and_31bit_wrap": true,
+      "RXQ_RPQ_RDU_counted_with_W1C": true
+    },
+    "handoff": {
+      "scope": "Actual ARM pool start/stop, dispatch and RDU functions with DMA/IRQ/upper-stack callbacks; no hardware execution.",
+      "unconsumed_NI_preserves_ownership": true,
+      "queued_old_DFS_discarded_new_DFS_delivered": true,
+      "DFS_epoch_marks_pending_work_across_wrap": true,
+      "NI_tail_retained_across_restart_and_epoch_rebase": true,
+      "physical_RX_cursor_not_software_work_cursor": true,
+      "noncontiguous_DMA_and_CPU_payload_addresses": true,
+      "RDU_persists_across_handoff": true,
+      "RDU_32bit_wrap_accumulates_once": true
+    },
+    "rpq": {
+      "linked_MIPS_C_firmware": true,
+      "NI_MPDU": 1024,
+      "BID_returns": 2048,
+      "ARM_reports_forwarded": 256,
+      "EOSP_reports_forwarded": 64,
+      "C2H_shift_and_MAC_info_preserved": true,
+      "RPQ_and_handoff_wrap": true,
+      "tag_8191_to_1": true,
+      "no_BID_return_without_EQ_credit": true,
+      "no_ARM_per_NI_completion": true,
+      "handoff_full_holds_RPQ": true,
+      "paused_PE_does_not_consume": true,
+      "factory_DFS_61_pulses_preserved": true,
+      "old_DFS_discarded_on_RXQ_and_RPQ": true,
+      "new_DFS_preserved": true,
+      "hardware_test": false
+    }
+  },
+  "supersedes": {
+    "module_sha256": "b543f8ff9071f6390d47ef6eb70127b70328da826a84d2d29a26990d5b6b7b07",
+    "reason": "live probe failed:6MiB contiguous DMA allocation needs order11 above kernel MAX_PAGE_ORDER10",
+    "live_console": "\u73b0\u573a\u8bb0\u5f55/20261015-160mhz-live/console-rx-pool.log"
+  },
+  "stock_allocation_evidence": "\u73b0\u573a\u8bb0\u5f55/20261015-160mhz-live/stock-rx-allocation.json",
+  "compile": {
+    "passed": true,
+    "warning": "pre-existing missing MODULE_DESCRIPTION modpost warning",
+    "source_snapshot_matches": true
+  },
+  "limits": [
+    "No device operation or deployment performed by this chat",
+    "Allocator, PCIe, ARM, NI and W1C timing modeled",
+    "This candidate has not proved successful live probe or packet-loss improvement"
+  ]
+}
