@@ -1,0 +1,10 @@
+{
+  "actual_patched_mac80211_functions": true,
+  "unchanged_channel_radar_enable": true,
+  "unchanged_channel_radar_disable": true,
+  "unchanged_radar_does_not_retune": true,
+  "driver_error_propagated": true,
+  "channel_and_radar_change_combined": true,
+  "software_scan_emulation_preserved": true,
+  "patch_sha256": "58f0aa195c7d5e52a2177347517c08ca5e9b6af6a11de399d5b1828b9d445612"
+}

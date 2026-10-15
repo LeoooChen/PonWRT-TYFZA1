@@ -105,7 +105,6 @@ struct rtl_ax_ap {
 	struct rtl_ax_dfs dfs;
 	u8 dfs_domain;
 	bool radar_required;
-	struct ieee80211_chanctx_conf *chanctx;
 	struct rtl_ax_dig dig;
 	struct rtl_ax_cfo cfo;
 	struct rtl_ax_environment environment;
@@ -1696,8 +1695,7 @@ static int rtl_ax_receive_configure(struct rtl_ax_ap *radio, unsigned int primar
 		if (radio->monitor_started) rtl_ax_tx_open(radio->tx);
 		return 0;
 	}
-	/* mac80211 has already updated ctx->def when change_chanctx runs.
-	 * Stop classifying the old RF before waiting for PE/TX to become idle. */
+	/* Stop classifying the old RF before waiting for PE/TX to become idle. */
 	spin_lock_irqsave(&radio->command_lock, flags);
 	radio->dfs.enabled = false;
 	spin_unlock_irqrestore(&radio->command_lock, flags);

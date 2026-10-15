@@ -12,8 +12,8 @@ static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw)
 	return *(struct rtl_ax_ap **)hw->priv;
 }
 
-/* Single PHY/channel: channel contexts carry the AP's full chandef and radar
- * requirement. A radar-only change must reach hardware even at the same RF. */
+/* The simulated single-channel interface keeps mac80211 software scanning.
+ * Patch208 also notifies config when only radar_enabled changes. */
 static int rtl_ax_chandef_locked(struct rtl_ax_ap *radio, const struct cfg80211_chan_def *def)
 {
 	unsigned int bandwidth;
@@ -31,74 +31,14 @@ static int rtl_ax_chandef_locked(struct rtl_ax_ap *radio, const struct cfg80211_
 		ieee80211_frequency_to_channel(def->center_freq1), bandwidth);
 }
 
-static int rtl_ax_add_chanctx(struct ieee80211_hw *hw, struct ieee80211_chanctx_conf *ctx)
-{
-	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
-	int ret;
-
-	mutex_lock(&radio->command_mutex);
-	radio->radar_required = ctx->radar_enabled;
-	ret = rtl_ax_chandef_locked(radio, &ctx->def);
-	if (!ret) radio->chanctx = ctx;
-	else radio->radar_required = false;
-	mutex_unlock(&radio->command_mutex);
-	return ret;
-}
-
-static void rtl_ax_change_chanctx(struct ieee80211_hw *hw, struct ieee80211_chanctx_conf *ctx, u32 changed)
-{
-	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
-	int ret;
-
-	mutex_lock(&radio->command_mutex);
-	radio->radar_required = ctx->radar_enabled;
-	ret = rtl_ax_chandef_locked(radio, &ctx->def);
-	mutex_unlock(&radio->command_mutex);
-	if (ret) dev_err(&radio->pdev->dev, "channel/radar update failed: %d\n", ret);
-}
-
-static void rtl_ax_remove_chanctx(struct ieee80211_hw *hw, struct ieee80211_chanctx_conf *ctx)
-{
-	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
-	unsigned long flags;
-	int ret;
-
-	mutex_lock(&radio->command_mutex);
-	spin_lock_irqsave(&radio->command_lock, flags);
-	radio->dfs.enabled = false;
-	spin_unlock_irqrestore(&radio->command_lock, flags);
-	ret = rtl_ax_tx_pause(radio->tx);
-	rtl_ax_rx_close(radio->rx);
-	if (!ret) ret = rtl_ax_dfs_stop_locked(radio);
-	radio->dfs.error = ret;
-	radio->dfs.in_cac = false;
-	radio->radar_required = false;
-	radio->chanctx = NULL;
-	/* Stay paused on the old RF channel until its replacement is configured. */
-	rtl_ax_rx_open(radio->rx);
-	mutex_unlock(&radio->command_mutex);
-	if (ret) dev_err(&radio->pdev->dev, "channel/radar stop failed: %d\n", ret);
-}
-
-static int rtl_ax_assign_chanctx(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
-	struct ieee80211_bss_conf *conf, struct ieee80211_chanctx_conf *ctx)
-{
-	/* The single context was programmed by add_chanctx. */
-	return 0;
-}
-
-static void rtl_ax_unassign_chanctx(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
-	struct ieee80211_bss_conf *conf, struct ieee80211_chanctx_conf *ctx)
-{
-}
-
 static int rtl_ax_monitor_start(struct ieee80211_hw *hw)
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
 	int ret;
 
 	mutex_lock(&radio->command_mutex);
-	ret = rtl_ax_chandef_locked(radio, radio->chanctx ? &radio->chanctx->def : &hw->conf.chandef);
+	radio->radar_required = hw->conf.radar_enabled;
+	ret = rtl_ax_chandef_locked(radio, &hw->conf.chandef);
 	if (ret) {
 		mutex_unlock(&radio->command_mutex);
 		return ret;
@@ -152,7 +92,7 @@ static int rtl_ax_monitor_config(struct ieee80211_hw *hw, int radio_idx, u32 cha
 
 	if (changed & IEEE80211_CONF_CHANGE_POWER)
 		radio->requested_tx_dbm = hw->conf.power_level;
-	if (!(changed & IEEE80211_CONF_CHANGE_CHANNEL) || radio->chanctx) {
+	if (!(changed & IEEE80211_CONF_CHANGE_CHANNEL)) {
 		if ((changed & IEEE80211_CONF_CHANGE_POWER) && radio->channel.configured) {
 			mutex_lock(&radio->command_mutex);
 			ret = rtl_ax_power_apply(&radio->io, radio->chip, &radio->power_inputs,
@@ -165,6 +105,7 @@ static int rtl_ax_monitor_config(struct ieee80211_hw *hw, int radio_idx, u32 cha
 		return 0;
 	}
 	mutex_lock(&radio->command_mutex);
+	radio->radar_required = hw->conf.radar_enabled;
 	ret = rtl_ax_chandef_locked(radio, &hw->conf.chandef);
 	mutex_unlock(&radio->command_mutex);
 	return ret;
@@ -1214,11 +1155,9 @@ static const struct ieee80211_ops rtl_ax_monitor_ops = {
 	.get_key_seq = rtl_ax_get_key_seq,
 	.set_tim = rtl_ax_set_tim,
 	.configure_filter = rtl_ax_monitor_filter,
-	.add_chanctx = rtl_ax_add_chanctx,
-	.remove_chanctx = rtl_ax_remove_chanctx,
-	.change_chanctx = rtl_ax_change_chanctx,
-	.assign_vif_chanctx = rtl_ax_assign_chanctx,
-	.unassign_vif_chanctx = rtl_ax_unassign_chanctx,
+	.add_chanctx = ieee80211_emulate_add_chanctx,
+	.remove_chanctx = ieee80211_emulate_remove_chanctx,
+	.change_chanctx = ieee80211_emulate_change_chanctx,
 };
 
 static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,

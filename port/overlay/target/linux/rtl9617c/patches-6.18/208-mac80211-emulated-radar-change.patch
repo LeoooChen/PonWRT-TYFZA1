@@ -1,0 +1,80 @@
+--- a/net/mac80211/main.c
++++ b/net/mac80211/main.c
+@@ -225,14 +225,19 @@
+ 
+ /* for scanning, offchannel and chanctx emulation only */
+ static int _ieee80211_hw_conf_chan(struct ieee80211_local *local,
+-				   struct ieee80211_chanctx_conf *ctx)
+-{
+-	u32 changed;
++				   struct ieee80211_chanctx_conf *ctx,
++				   bool radar_enabled)
++{
++	u32 changed = 0;
++
++	if (local->hw.conf.radar_enabled != radar_enabled)
++		changed = IEEE80211_CONF_CHANGE_CHANNEL;
++	local->hw.conf.radar_enabled = radar_enabled;
+ 
+ 	if (!local->open_count)
+ 		return 0;
+ 
+-	changed = ieee80211_calc_hw_conf_chan(local, ctx);
++	changed |= ieee80211_calc_hw_conf_chan(local, ctx);
+ 	if (!changed)
+ 		return 0;
+ 
+@@ -247,7 +252,8 @@
+ 				       struct ieee80211_chanctx,
+ 				       list);
+ 
+-	return _ieee80211_hw_conf_chan(local, ctx ? &ctx->conf : NULL);
++	return _ieee80211_hw_conf_chan(local, ctx ? &ctx->conf : NULL,
++				    local->hw.conf.radar_enabled);
+ }
+ 
+ void ieee80211_hw_conf_init(struct ieee80211_local *local)
+@@ -278,9 +284,7 @@
+ {
+ 	struct ieee80211_local *local = hw_to_local(hw);
+ 
+-	local->hw.conf.radar_enabled = ctx->radar_enabled;
+-
+-	return _ieee80211_hw_conf_chan(local, ctx);
++	return _ieee80211_hw_conf_chan(local, ctx, ctx->radar_enabled);
+ }
+ EXPORT_SYMBOL(ieee80211_emulate_add_chanctx);
+ 
+@@ -289,9 +293,7 @@
+ {
+ 	struct ieee80211_local *local = hw_to_local(hw);
+ 
+-	local->hw.conf.radar_enabled = false;
+-
+-	_ieee80211_hw_conf_chan(local, NULL);
++	_ieee80211_hw_conf_chan(local, NULL, false);
+ }
+ EXPORT_SYMBOL(ieee80211_emulate_remove_chanctx);
+ 
+@@ -301,9 +303,7 @@
+ {
+ 	struct ieee80211_local *local = hw_to_local(hw);
+ 
+-	local->hw.conf.radar_enabled = ctx->radar_enabled;
+-
+-	_ieee80211_hw_conf_chan(local, ctx);
++	_ieee80211_hw_conf_chan(local, ctx, ctx->radar_enabled);
+ }
+ EXPORT_SYMBOL(ieee80211_emulate_change_chanctx);
+ 
+@@ -317,8 +317,8 @@
+ 	if (n_vifs <= 0)
+ 		return -EINVAL;
+ 
+-	local->hw.conf.radar_enabled = vifs[0].new_ctx->radar_enabled;
+-	_ieee80211_hw_conf_chan(local, vifs[0].new_ctx);
++	_ieee80211_hw_conf_chan(local, vifs[0].new_ctx,
++				    vifs[0].new_ctx->radar_enabled);
+ 
+ 	return 0;
+ }

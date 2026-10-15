@@ -1,0 +1,60 @@
+{
+  "date": "2026-10-15",
+  "device": "TYFZA1 RTL8852C RFE54 CV1",
+  "scope": "RAM-only radio and mac80211 replacement; no flash image update",
+  "radio_module": {
+    "path": "artifacts/radio-160-dfs-live2/rtl_ax_ap_160_dfs.ko",
+    "sha256": "1053d5d83e60392dd6cd90aaaac588358abe3cf9a4ec0313d6dbec6997638516"
+  },
+  "mac80211_module": {
+    "path": "artifacts/radio-160-dfs-live2/mac80211.ko",
+    "sha256": "16c84383199c5781c5d26205a55e4aa75a535647800f177341c46e8ef3436ce3",
+    "patch": "port/overlay/target/linux/rtl9617c/patches-6.18/208-mac80211-emulated-radar-change.patch",
+    "regression_check": "scripts/test_mac80211_radar.py"
+  },
+  "failures_fixed_during_bringup": [
+    "Native chanctx start dereferenced an unavailable chandef and caused a kernel panic",
+    "Native chanctx disabled mac80211 software scanning, preventing hostapd HT neighbor scan",
+    "Emulated radar-only changes did not reach driver config on an unchanged channel"
+  ],
+  "live_160": {
+    "country": "CN",
+    "primary": 44,
+    "center": 50,
+    "center_MHz": 5250,
+    "width_MHz": 160,
+    "IQK_ready": true,
+    "CAC_seconds_requested": 60,
+    "CAC_completed": true,
+    "TX_and_beacon_blocked_during_CAC": true,
+    "client_associated_HE160_2SS": true,
+    "maximum_observed_TX_PHY_Mbps": 2401.9,
+    "radar_report_parser_errors": 0
+  },
+  "throughput_boundary": {
+    "600_Mbps_down_5s": {
+      "accepted_sends": 243788,
+      "unique_received": 243788,
+      "missing": 0,
+      "send_EAGAIN": 35,
+      "UDP_payload_Mbps": 574.17
+    },
+    "300_Mbps_each_direction_6s_baseline": {
+      "down_missing": 446,
+      "up_missing": 3880,
+      "Mac_send_queue_drop_delta": 3824,
+      "NI_tail_drop_delta": 442,
+      "new_RXQ_RDU_samples": 199,
+      "RXQ_backlog255_samples": 170,
+      "note": "Interface/device counters include background traffic; RDU sample counts are not lost-packet counts."
+    },
+    "all_high_load_loss_fixed": false
+  },
+  "evidence_directory": "workspace/现场记录/20261015-160mhz-live",
+  "limitations": [
+    "No radar generator or regulatory certification test",
+    "No long-term stability result",
+    "Factory adaptive environment-noise suppression remains unimplemented",
+    "Duplex loss requires the independent RX refill/lifecycle fix and further live verification"
+  ]
+}

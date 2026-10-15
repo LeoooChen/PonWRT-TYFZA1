@@ -1,4 +1,4 @@
-# TYFZA1 5 GHz 160 MHz：源码接入与离线验证
+# TYFZA1 5 GHz 160 MHz：源码接入与验证
 
 2026-10-15，基于本机原厂 `rtk_wifi6.ko`，SHA256 为
 `745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e`。
@@ -18,7 +18,7 @@
 - VHT/HE 能力、VHT160 短 GI、客户端独立 HE160 MCS 表以及普通 TX 的 160 MHz 标志已接通。RX、RA 反馈和 PE 的现有带宽字段本来就能表示值 3。
 - `cfg_dfs`、`en_bbrpt`、`halbb_radar_detect_enable/disable`：MAC band0 报告阈值61、80ms 超时，以及 CLIENT BB0 bit31 雷达开关；停止报告的硬件超时直接返回错误。
 - `mac_parse_dfs`、`halbb_radar_info_processing/seq_inspctn/ptrn_cmprn/chrp_mntr/radar_detect`：8字节头、8字节脉冲、FCC/ETSI/KCC、MKK W53/W56、160MHz 双段、序号和长脉冲累积，均使用本机原厂参数和判定行为。采用 `dfs_init` 初始阈值；原厂环境 watchdog 的自适应噪声抑制尚未接入。
-- 原生单频道上下文处理同频点雷达开关变化。监管域自动映射 FCC/ETSI/JP；不明监管域不能开启检测，`dfs_region=1..4` 保留明确覆盖入口。
+- 保留 mac80211 模拟单频道上下文和软件扫描。补丁208确保同频点仅变更雷达开关时也调用驱动配置。监管域自动映射 FCC/ETSI/JP；不明监管域不能开启检测，`dfs_region=1..4` 保留明确覆盖入口。
 - CAC 的时长、结束、雷达事件及 NOP 由当前 Linux6.18/mac80211/cfg80211 管理。CAC 期间关闭18个 MAC 调度队列，AP 启动才解除；雷达命中立即重新关闭调度和 beacon，并通知 mac80211。RFK 恢复、BSS beacon 更新和调试入口均不能解除该状态。
 - 原厂61脉冲报告加 RXBD/WD 为516字节，原512字节 RPQ 无法容纳。ARM、PE、转发环统一改为1KiB槽。换频道前暂停 PE、等待 DMA 空闲，给物理 RXQ/RPQ 和两个 ARM 转发环记录旧数据边界；只丢弃旧频道雷达报告，边界随所有权交接保留。
 
@@ -33,8 +33,16 @@
 - `python3 scripts/test_pe_downlink_gather.py artifacts/radio-160-dfs --160`：更新 RPQ 槽位后，VHT160/HE160 下行载荷和 RPQ/EQ 所有权通过。
 - `bash scripts/build_live_radio.sh "$PWD/artifacts/radio-160-dfs" rtl_ax_ap_160_dfs`：包含本次 DFS/CAC 接线和生产 PE 程序的 ARM64/musl 开发模块编译通过。
 
-硬件 IO、校准查询和完成状态在离线执行中由模型提供；以上不证明空口协商、实际吞吐或长期稳定性。当前没有实机。
+硬件 IO、校准查询和完成状态在上述离线执行中由模型提供；它们不证明空口协商、实际吞吐或长期稳定性。
 
-DFS/CAC 运行链现已接入；需要 DFS 的160MHz信道块按真实监管规则和 CAC 流程使用，没有放宽国家规则或伪造 CAC 成功。空口雷达响应、无线协商、吞吐及长期稳定性仍需实机验证；离线结果也不等同于 DFS 认证。
+2026-10-15 实机接入：
+
+- 首次上机抓到原生 chanctx 方案在 `.start` 读取未提供的 chandef，导致内核空指针；修正启动顺序后，又证实该接口路径不提供 mac80211 软件扫描，hostapd 邻居扫描因此失败。最终恢复模拟接口，并用补丁208修正雷达状态通知，保留真实扫描流程。
+- 中国监管域下 HE160、主信道44、中心信道50（5250MHz）成功配置，RF/BB、IQK读回一致。hostapd 真实执行60秒 CAC，再进入 AP-ENABLED；CAC期间调度及beacon关闭，检测报告持续输入。
+- Mac 客户端实际协商 HE160/2SS，下行 PHY 反馈达到2401.9Mbit/s，上行反馈也包含160MHz。PHY速率不等同于吞吐。
+- 600Mbit/s目标线速、5秒单向下行，243788个已成功发送包全部收到，UDP净载荷约574.17Mbit/s；发送端另有35次EAGAIN，单独记为测试未完全通过。双向每方向300Mbit/s仍可复现丢包，不能宣称高速丢包已修复。
+- 配套开发模块为 `artifacts/radio-160-dfs-live2/rtl_ax_ap_160_dfs.ko` 和同目录 `mac80211.ko`，两者共同用于本次实机验证；补丁208须随固件构建应用。固件闪存未改写。
+
+DFS/CAC 按真实监管规则运行，没有放宽国家规则或伪造 CAC 成功。未使用雷达发生器验证空口雷达响应；上述结果不等同于 DFS 认证或长期稳定性验证。原始现场记录保存在工作区 `现场记录/20261015-160mhz-live`，模块和结果摘要见 `manifests/radio-160-live.json`。
 
 机器可读结果见 `manifests/radio-160-channel-tssi-contract.json`、`manifests/radio-wideband-contract-test.json`、`manifests/radio-dfs-contract.json`；原厂调用的完整输出保存在同目录的 `radio-stock-*160*` 及扩展后的带宽、RF、校准清单。
