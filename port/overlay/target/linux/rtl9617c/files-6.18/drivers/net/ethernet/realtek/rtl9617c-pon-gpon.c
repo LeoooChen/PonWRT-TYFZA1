@@ -236,7 +236,9 @@ status:
 		gpiod_set_value_cansleep(pon->tx_disable, state == 6);
 	if ((pon->gpon_last_state == 4 || pon->gpon_last_state == 5) && state != 4 && state != 5)
 		pon->itu_line_epoch++;
-	if (!netif_carrier_ok(pon->omci_device) && pon->itu_paths_ready)
+	/* O6 pauses carrier while retaining the established business mapping. */
+	if (pon->itu_paths_ready && (!pon->gpon_omcc_ready || pon->gpon_activation_error ||
+	    (state != 4 && state != 5)))
 		rtl_pon_itu_paths_invalidate(pon, pon->mode);
 	rtl_pon_itu_carrier(pon);
 	if (state != pon->gpon_last_state) {

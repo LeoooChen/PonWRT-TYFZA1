@@ -1,0 +1,44 @@
+{
+  "base_commit": "520447ea4a1c6478d23f243a5a1b2fa8cfc3e105",
+  "problem": "ITU IRQs destroyed an established business graph solely because OMCI carrier paused during O6 grace, forcing daemon reprogramming after O5 return",
+  "factory_module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+  "factory_authority": [
+    "GPON __intr_handler@0xfb990: actual O5->O6 and O6->O5 preserve link/drain state and avoid link-down/reset; O6->O2 clears it and calls datapath reset",
+    "XGTC aal_xgpn_act_fsm_lods_common_handler@0x115e50 and aal_xgpn_act_fsm_s_o6_e_dsync_change@0x114950: compiled-default reset_at_lods0, original instructions issue no PON MMIO writes"
+  ],
+  "change": "Preserve the completed NI business graph in valid O6 sessions using GPON hardware states4/5 and XGTC3/4. Missing OMCC, missing XGTC keys, GPON activation errors and leaving O5/O6 still invalidate business.",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-gpon.c": "65eb66d4f9242260f333320e5ce0e01327ad09ec8f09be93adf1d9a2773b0369",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-xgpon.c": "53d093af3aa0d06c31a6ef4e07d09baf7943198b11369452d26fe4a6a23bf2ca",
+    "scripts/test_gpon_o6.py": "5887c5804fff5aea9fc5e784f9bb453067dcc817308fbd9c005212a487de4f76",
+    "scripts/test_xgpon_o6.py": "c8d8f847a6f355f71682c0aa611a1901c2f7f46b9a85fe354e9537f4ab80a528",
+    "tools/trace_stock_gpon_o6.py": "bd200c9b4438bd057c982e2a7415ba4a1107c41bcdbb3503faea7ea9d9a33348",
+    "docs/pon-itu-o6-business.md": "8ff565f6e3cff746ba48cd1f6023fb8c0e22043cc5008a7adbfcd3c22d627785"
+  },
+  "validation": {
+    "before": "Both production GPON and XGTC IRQ reproducers fail because O6 invalidates business state.",
+    "after": "GPON and both XGTC modes retain business across O6/O5 without changing the line epoch. Missing OMCC/keys and O6 expiry invalidate. Existing XGTC O4/merged-deactivation/startup-loss checks pass.",
+    "models": [
+      "Factory lock/log/event boundaries and GPON datapath-reset body",
+      "Native MMIO, indirect completion, carrier, GPIO and NI-invalidation boundaries"
+    ],
+    "arm64": "Two changed current production objects compiled; source and object hashes in compiled-inputs.json",
+    "physical_olt_verified": false,
+    "deployed": false,
+    "full_tests": false,
+    "full_firmware_build": false
+  },
+  "evidence_sha256": {
+    "artifacts/pon-itu-grace-20261016/stock-gpon.log": "7ecbf8aff5cde6e396fe982b70b2ac9815e055fab59c171a656ae97dd9861b03",
+    "artifacts/pon-itu-grace-20261016/stock-xgtc.log": "e976e30c2bfd27877a3212dcf5dd5d679505b338623dfa0c2dd910bdc641197a",
+    "artifacts/pon-itu-grace-20261016/test_gpon_o6.py-before.log": "73aee7cad4e94329bf4c662483eea5bb8ff99d7f2c51b9bf66fada89caa950b1",
+    "artifacts/pon-itu-grace-20261016/test_xgpon_o6.py-before.log": "0d4d51b53df9b811ce326c15abf11c2b1a1f6d9b5fe567e7ec903a5a960925bd",
+    "artifacts/pon-itu-grace-20261016/test_gpon_o6.py-after.log": "d5108067d97b20b1b9752555565a4b76ab49d1cc053972f31d2d74e37fd8b99e",
+    "artifacts/pon-itu-grace-20261016/test_xgpon_o6.py-after.log": "990f04c8b4be96b2d627be0ba7458cef6b07a437995ce488effa8b49a01f7dec",
+    "artifacts/pon-itu-grace-20261016/arm64-build.log": "2c83e81e930fa11a5695e81de0b0d3e13a8558e0ce81b84f482e83718f2646a7",
+    "artifacts/pon-itu-grace-20261016/compiled-inputs.json": "63d8093acf1ba37065d384b6307029524ca557d4407b46a7c411b5dd9ff0a820",
+    "logs/stock-gpon-o6.json": "f220a1c55320eeba4ab80301807c6456a2d1d3f852c9d16af94b0393cec2a845",
+    "logs/stock-xgpon-o6.json": "e976e30c2bfd27877a3212dcf5dd5d679505b338623dfa0c2dd910bdc641197a",
+    "artifacts/pon-gpon-session-20261016/__intr_handler.asm": "e5d3d9583063a568e79224d847eddb648716c131b92e7b624edd4b0cb3566ea6"
+  }
+}

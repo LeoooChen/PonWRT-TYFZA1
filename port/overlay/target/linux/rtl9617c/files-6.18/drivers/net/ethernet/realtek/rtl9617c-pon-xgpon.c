@@ -268,7 +268,9 @@ void rtl_pon_xgpon_irq(struct rtl9617c_pon *pon)
 		netif_carrier_on(pon->omci_device);
 	else
 		netif_carrier_off(pon->omci_device);
-	if (!netif_carrier_ok(pon->omci_device) && pon->itu_paths_ready)
+	/* O6 retains business state together with the OMCC and session keys. */
+	if (pon->itu_paths_ready && (!pon->xgpon_omcc_ready || !pon->xgpon_key_ready ||
+	    (state != 3 && state != 4)))
 		rtl_pon_itu_paths_invalidate(pon, pon->mode);
 	rtl_pon_itu_carrier(pon);
 	if (was_active && state != 3 && state != 4) {

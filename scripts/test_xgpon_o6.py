@@ -55,7 +55,6 @@ static int rtl_pon_xgpon_ack_update(struct rtl9617c_pon *p){(void)p;return 0;}
 static void rtl_pon_xgpon_key_irq(struct rtl9617c_pon *p,u32 a,u32 b){(void)p;(void)a;(void)b;}
 static void netif_carrier_on(struct net_device *d){d->carrier=true;}
 static void netif_carrier_off(struct net_device *d){d->carrier=false;}
-static bool netif_carrier_ok(struct net_device *d){return d->carrier;}
 static int rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *p,enum rtl_pon_mode mode){assert(p->lock && p->mode==mode);p->itu_paths_ready=false;invalidated++;return 0;}
 static void rtl_pon_itu_carrier(struct rtl9617c_pon *p){(void)p;}
 static void schedule_delayed_work(struct work *w,unsigned int delay){assert(delay==0);w->pending++;}
@@ -80,11 +79,14 @@ int main(void){
   assert(regs[0x4004/4]==(mode==RTL_PON_XGSPON?2U:1U) && sds==BIT(4));
   assert(pon.xgpon_key_ready && pon.xgpon_omcc_ready && pon.omci_master_key_valid);
   assert(pon.fe_enabled && !pon.itu_line_epoch);
-  assert(omci.carrier==(state==3) && invalidated==(state==4));
+  assert(omci.carrier==(state==3) && !invalidated && pon.itu_paths_ready);
   if(state==4){
    regs[0x4d28/4]=regs[0x4d2c/4]=BIT(27);regs[0x4d30/4]=3;
    rtl_pon_xgpon_irq(&pon);
-   assert(omci.carrier && !pon.xgpon_recover && !pon.itu_line_epoch);
+   assert(omci.carrier && pon.itu_paths_ready && !pon.xgpon_recover && !pon.itu_line_epoch);
+   pon.xgpon_key_ready=false;regs[0x4d30/4]=4;pon.itu_paths_ready=true;
+   rtl_pon_xgpon_irq(&pon);
+   assert(!omci.carrier && !pon.itu_paths_ready && invalidated==1);
   }
  }
  for(int mode=RTL_PON_XGPON;mode<=RTL_PON_XGSPON;mode++){
