@@ -688,6 +688,9 @@ static int rtl_ax_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 			wiphy_delayed_work_queue(hw->wiphy, &radio->cleanup_work, HZ);
 		return 0;
 	case IEEE80211_AMPDU_RX_START:
+		/* Stock BA replacement revokes its cached reorder state before reuse. */
+		ret = rtl_ax_tx_ni_retire_peer(radio->tx, station->macid);
+		if (ret) return ret;
 		for (i = 0; i < ARRAY_SIZE(radio->rx_ba); i++)
 			if (radio->rx_ba[i].valid && radio->rx_ba[i].macid == station->macid &&
 			    radio->rx_ba[i].tid == params->tid)

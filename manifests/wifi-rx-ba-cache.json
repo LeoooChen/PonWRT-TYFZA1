@@ -1,0 +1,58 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "43a8a4c2d825762bea3f2b1952b0764a0f0cbb89",
+  "scope": "Revoke withdrawn peer RX sequence cache before BA window reuse",
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "REA_evidence_index": "artifacts/wifi-rx-ba-cache-20261016/rea-index.json",
+  "finding": "RX BA start did not withdraw an active PE receive path; a previously withdrawn peer enable reused valid per-TID SN cache across a software-window change",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx.c": "7a102cdbe82ae9fa63b6d0614cdb1a34c3a525820038c504dd5685679f8b02e2",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/monitor.h": "839636eede2b402ab27ba9f32a51550f0dfc42d83547cb1cb968f27d19f4ea6a",
+    "tools/check_stock_rx_ba_cache.py": "eab58800f2dd731ffb89b6ce123d55739f959e27bb2998e97af532d71c56552f",
+    "tools/check_rx_ba_reenable.py": "3da90bf8995f4b8018508b3cb8dcae914afdf1d800dc60963491b586f316e0f5",
+    "scripts/test_rx_ba_admission.py": "e63a713e959e0a5fcd7789ccb394ad7675df7da5baff0f2423f6ced1c3d7b3f0"
+  },
+  "evidence_sha256": {
+    "artifacts/wifi-rx-ba-cache-20261016/stock-cache-lifetime.json": "d2243f91b643c5fdce863aacc63bda6ae7b38e6af965e2c184f4df2f8f5f3b31",
+    "artifacts/wifi-rx-ba-cache-20261016/rea-index.json": "55298fc8d596fec461733607a447efd0b896115209401584416afa7b6e66fd80",
+    "artifacts/wifi-rx-ba-cache-20261016/before.json": "b9951041dff2eeb9f2977adf88e47e7689c7c2fba705856e146f4a5049de9e35",
+    "artifacts/wifi-rx-ba-cache-20261016/after.json": "294733220f2cedabe3c8894a48696d1853efb57555394bc39819c47bd8f9d5d4",
+    "artifacts/wifi-rx-ba-cache-20261016/admission-before.txt": "fc9bea7255b43ca24711f525ab507a63509880564bc701097655cae5b852b151",
+    "artifacts/wifi-rx-ba-cache-20261016/admission-after.txt": "5cf04d7a0aac0222875187d8ab182adef6ef82bb9600bd24d1f6050353f552ea",
+    "artifacts/wifi-rx-ba-cache-20261016/pool-handoff.txt": "3ddad37c8392a7cd11dca103f47de59212100e17d1a0994af0a76adfe302025f",
+    "artifacts/wifi-rx-ba-cache-20261016/retire.txt": "d6c36b0406a6a07f56c78826a315e9d7f846412f0064267579aa04f30fe88925",
+    "artifacts/wifi-rx-ba-cache-20261016/module-build.log": "c15f5dca90d1bffd8d8bde3e0d21113662129fcdc22cbbc1365f1c95ecb8ea59"
+  },
+  "module": {
+    "path": "artifacts/wifi-rx-ba-cache-20261016/radio/rtl_ax_ap_ba_epoch.ko",
+    "sha256": "be5ffc9525c4d8a4c2329d6d279889480e605076307be37e95bb973c1c9db412",
+    "PE_sha256": "c0fc07b456054928c531b5261a795177df0640a630e3adf8a25a55cad422f720",
+    "embedded_PE_matches_previous_tested_binary": true,
+    "prepared_wireless_source_matches": true,
+    "kernel": "6.18.55",
+    "warning": "existing missing MODULE_DESCRIPTION"
+  },
+  "checks": {
+    "original_cache_revoked_before_reorder_free": true,
+    "stale_cache_NI_submission_before": 1,
+    "stale_cache_NI_submission_after": 0,
+    "ARM_delivery_after": 1,
+    "RX_BA_start_withdrawal_failure_prevents_hardware_update": true,
+    "PN_counters_guard_preserved": true,
+    "active_peer_and_other_peer_preserved": true,
+    "pool_handoff_and_retirement_pass": true
+  },
+  "documentation": {
+    "path": "docs/wifi-rx-ba-cache-20261016.md",
+    "sha256": "cb60790299bde8f3472bc97cd5a37dc722399ebfd9113e086e9232bcba70b195"
+  },
+  "hardware_tested": false,
+  "PON_changes_included": false,
+  "full_test_suite": false,
+  "rate_or_capacity_changed": false,
+  "limitations": [
+    "The new software BA head is a declared scenario input, not a full mac80211 reorder emulation",
+    "Native C and linked PE execute with modeled OS locks, PCIe/NI and HAL boundaries",
+    "No proof this mechanism caused a particular previous live missing sequence"
+  ]
+}

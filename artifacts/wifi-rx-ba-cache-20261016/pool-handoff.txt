@@ -1,0 +1,11 @@
+{
+  "scope": "Actual ARM pool start/stop, dispatch and RDU functions with DMA/IRQ/upper-stack callbacks; no hardware execution.",
+  "unconsumed_NI_preserves_ownership": true,
+  "queued_old_DFS_discarded_new_DFS_delivered": true,
+  "DFS_epoch_marks_pending_work_across_wrap": true,
+  "NI_tail_retained_across_restart_and_epoch_rebase": true,
+  "physical_RX_cursor_not_software_work_cursor": true,
+  "noncontiguous_DMA_and_CPU_payload_addresses": true,
+  "RDU_persists_across_handoff": true,
+  "RDU_32bit_wrap_accumulates_once": true
+}

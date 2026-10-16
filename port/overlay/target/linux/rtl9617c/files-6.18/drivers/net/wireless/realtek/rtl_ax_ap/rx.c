@@ -141,6 +141,12 @@ void rtl_ax_rx_uplink_enable(struct rtl_ax_rx *rx, unsigned int macid)
 {
 	mutex_lock(&rx->uplink_lock);
 	if (rx->keys[macid] && rx->uplink_wifi_id) {
+		/* A withdrawn peer may have changed its BA window while ARM owned RX. */
+		if (!(get_unaligned_le32(rx->uplink_states + 0x10000 + macid * 4) & BIT(31))) {
+			for (unsigned int tid = 0; tid < 16; tid++)
+				put_unaligned_le32(0, rx->uplink_states + (macid * 16 + tid) * 32);
+			rx->uplink_pending_tids[macid] = 0;
+		}
 		dma_wmb();
 		put_unaligned_le32(BIT(31) | rx->uplink_wifi_id << 8 | rx->keys[macid]->keyidx |
 			(u32)rx->uplink_trigger_tids[macid] << 16,

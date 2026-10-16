@@ -1,0 +1,37 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "actual_functions": [
+    "rtw_phl_start_rx_ba_session",
+    "rtw_phl_stop_rx_ba_session"
+  ],
+  "replace": [
+    {
+      "call": "rtw_hal_stop_ba_session"
+    },
+    {
+      "call": "rtw_hal_start_ba_session"
+    },
+    {
+      "call": "phl_tid_ampdu_rx_alloc"
+    },
+    {
+      "call": "phl_tid_ampdu_rx_free",
+      "freed": "0x6030000",
+      "cached_reorder": "0x0",
+      "cached_MACID": 256
+    }
+  ],
+  "stop": [
+    {
+      "call": "rtw_hal_stop_ba_session"
+    },
+    {
+      "call": "phl_tid_ampdu_rx_free",
+      "freed": "0x6040000",
+      "cached_reorder": "0x0",
+      "cached_MACID": 256
+    }
+  ],
+  "cache_invalidated_before_old_reorder_release": true,
+  "scope": "Actual stock BA pointer/cache invalidation and release-order instructions; HAL BA commands, allocation/free and bottom-half primitives are explicit callbacks. No RF or firmware state simulation."
+}

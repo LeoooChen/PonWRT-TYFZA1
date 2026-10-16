@@ -1,0 +1,12 @@
+{
+  "ARM_source_sha256": "7a102cdbe82ae9fa63b6d0614cdb1a34c3a525820038c504dd5685679f8b02e2",
+  "PE_sha256": "c0fc07b456054928c531b5261a795177df0640a630e3adf8a25a55cad422f720",
+  "old_cached_next_SN": 291,
+  "new_BA_head_SN": 288,
+  "stale_cache_forwarded_into_NI": 0,
+  "current_window_ARM_deliveries": 1,
+  "RX_counters_and_PN_preserved": true,
+  "active_peer_repeated_enable_preserves_live_SN": true,
+  "other_peer_preserved": true,
+  "scope": "Actual native enable C and linked PE. New BA head is the declared software-window scenario; mac80211 reorder itself is not emulated. PCIe/NI and OS locks are modeled; no hardware packet-loss claim."
+}

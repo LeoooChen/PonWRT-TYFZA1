@@ -1,0 +1,54 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "records": [
+    {
+      "evidence_id": "ev_e4a1fca9efb2a6bcf18b9971db7eb2e157ba720590a88172693e48c255eda8d8",
+      "function": "phl_rx_reorder",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "ghidra_entry": "0x237c94",
+      "ELF_section": ".text",
+      "ELF_symbol_offset": "0x137c58",
+      "function_bytes_sha256": "00e40d18a0a11859e6f270ecccb3b2045ab71cb77a199fb3532b55eb8ff5b033",
+      "raw_record_mac_path": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/rea-analysis-20261016/rea/ghidra-wifi-reorder-lifetime/001-analyze_function.json",
+      "raw_record_sha256": "5bf3588314147a754688392c52a444a465e0dde27ba2a39bf5143f20427be076",
+      "scope": "Static Ghidra analysis; not execution evidence"
+    },
+    {
+      "evidence_id": "ev_80aa0611110bcbe44e925fed8eefcfc99d86f771dc817f69f9b0cc59c631489f",
+      "function": "rtw_phl_start_rx_ba_session",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "ghidra_entry": "0x239028",
+      "ELF_section": ".text",
+      "ELF_symbol_offset": "0x138fec",
+      "function_bytes_sha256": "8a8bcd9776ccf1cb9d8b335f80f820b92efac06ab58b9d3ec766956cf5c72a7a",
+      "raw_record_mac_path": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/rea-analysis-20261016/rea/ghidra-wifi-reorder-lifetime/002-analyze_function.json",
+      "raw_record_sha256": "1bfd52307dca6f7eba576a7c83b825d10fde0d64c3878a750e0e88899fd81f9c",
+      "scope": "Static Ghidra analysis; not execution evidence"
+    },
+    {
+      "evidence_id": "ev_1a896e3bd70061e849e741a25fbbc67004a713821e480b4d846f9858d60ca68b",
+      "function": "rtw_phl_stop_rx_ba_session",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "ghidra_entry": "0x238a3c",
+      "ELF_section": ".text",
+      "ELF_symbol_offset": "0x138a00",
+      "function_bytes_sha256": "92c4de8cb25f610969674a46acc206550b79a27a4a5bf16d21c989cd96627f02",
+      "raw_record_mac_path": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/rea-analysis-20261016/rea/ghidra-wifi-reorder-lifetime/003-analyze_function.json",
+      "raw_record_sha256": "456ba9ac3667add6eec5e924b83e2c12e5d24a90f16f954f9f76e964ae82aca7",
+      "scope": "Static Ghidra analysis; not execution evidence"
+    }
+  ],
+  "session": "completed and closed; snapshot saved"
+}
