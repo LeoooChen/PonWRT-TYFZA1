@@ -201,7 +201,7 @@ python3 -m http.server 8888
 sysupgrade /tmp/sysupgrade.bin
 ```
 
-默认保留配置，`sysupgrade -n` 可恢复默认配置。
+默认保留配置；使用 `sysupgrade -n /tmp/sysupgrade.bin` 升级时不保留现有配置。
 
 <details>
 <summary><strong>切回保留的原厂系统</strong></summary>
