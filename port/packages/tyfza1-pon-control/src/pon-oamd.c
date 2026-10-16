@@ -189,7 +189,7 @@ static void read_starttime(char output[32])
 static int publish_status(const char *path, const struct pon_oam_session *session,
 			 unsigned int llid, int link_error, bool online, unsigned int send_errors,
 			 unsigned int receive_errors, bool loid_configured, uint64_t auth_result_ms,
-			 const char *starttime, int alarm_error)
+			 const char *starttime, int alarm_error, int pm_error)
 {
 	static const char *auth[] = {"waiting", "challenge", "accepted", "rejected"};
 	char temporary[544];
@@ -206,13 +206,13 @@ static int publish_status(const char *path, const struct pon_oam_session *sessio
 		"\"extension_selected\":%s,\"loid_configured\":%s,\"auth_state\":\"%s\","
 		"\"auth_failure\":%u,\"auth_challenges\":%u,\"auth_results\":%u,\"auth_successes\":%u,"
 		"\"auth_failures\":%u,\"last_auth_result_ms\":%llu,\"rx_frames\":%u,\"tx_frames\":%u,"
-		"\"send_errors\":%u,\"receive_errors\":%u,\"alarm_error\":%d}\n",
+		"\"send_errors\":%u,\"receive_errors\":%u,\"alarm_error\":%d,\"pm_error\":%d}\n",
 		(long)getpid(), starttime, (unsigned long long)monotonic_ms(), llid, link_error,
 		online ? "true" : "false", session->generation, session->local_echoed ? "true" : "false",
 		session->extension_selected ? "true" : "false", loid_configured ? "true" : "false",
 		auth[session->auth], session->auth_failure, session->auth_challenges, session->auth_results,
 		session->auth_successes, session->auth_failures, (unsigned long long)auth_result_ms,
-		session->rx_frames, session->tx_frames, send_errors, receive_errors, alarm_error);
+		session->rx_frames, session->tx_frames, send_errors, receive_errors, alarm_error, pm_error);
 	if (fclose(stream) || ret < 0) {
 		unlink(temporary);
 		return -EIO;
@@ -355,7 +355,7 @@ int main(int argc, char **argv)
 		}
 		if (now >= next_status) {
 			ret = publish_status(state_path, &session, llid, link_error, online, send_errors,
-				receive_errors, identity.loid_configured, auth_result_ms, starttime, backend.alarm_error);
+				receive_errors, identity.loid_configured, auth_result_ms, starttime, backend.alarm_error, backend.pm_error);
 			if (ret)
 				syslog(LOG_ERR, "LLID%u status publish failed: %s", llid, strerror(-ret));
 			next_status = now + 1000;

@@ -86,6 +86,8 @@ struct rtl9617c_pon {
 	unsigned long epon_health_at;
 	u32 epon_sync_failures;
 	u64 epon_rx_resets, epon_link_events;
+	unsigned long long epon_mib_total[42];
+	u64 epon_mib_generation;
 	bool pdc_configured;
 	int pdc_error;
 	bool puc_configured;
@@ -222,6 +224,7 @@ int rtl_pon_epon_prepare_locked(struct rtl9617c_pon *pon);
 int rtl_pon_epon_traffic_locked(struct rtl9617c_pon *pon, bool enable);
 int rtl_pon_epon_key(struct rtl9617c_pon *pon, const u8 *data, size_t count);
 int rtl_pon_epon_crypto_forget(struct rtl9617c_pon *pon, u32 lost);
+int rtl_pon_epon_pm(struct rtl9617c_pon *pon, unsigned long long counters[37]);
 int rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon);
 int rtl_pon_mpcp_configure_locked(struct rtl9617c_pon *pon);
 int rtl_pon_pdc_configure_locked(struct rtl9617c_pon *pon);

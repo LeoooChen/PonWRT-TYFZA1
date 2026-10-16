@@ -103,6 +103,55 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
         assert versions[48:64] == b'SOFTWARE-2'.rjust(16, b'\0')
         assert versions[83:87] == b'\x03\x00\x03\x01'
         tests.append('ONU SN carries UCI software identity; FirmwareVer carries three release octets')
+        pm_file = temporary / 'pm_counters'
+        pm_object = bytes.fromhex('37000404 00000000')
+
+        def mib_record(generation, base):
+            records = [struct.pack('!38Q', generation, *[base + i for i in range(37)])]
+            records += [struct.pack('!38Q', 0, *[2000 + port * 100 + i for i in range(37)]) for port in range(4)]
+            pm_file.write_bytes(b''.join(records))
+
+        def pm_get(leaf):
+            variable = bytes([0xc7, 0, leaf])
+            sock.send(ethernet(b'\x11\x11\x11\x01' + pm_object + variable + b'\0', code=0xfe, flags=0x50))
+            frame = receive(sock, 0xfe)
+            assert frame[22:30] == pm_object
+            position, value = 30, b''
+            while frame[position:position + 3] == variable:
+                width = frame[position + 3]
+                if width & 0x80:
+                    return width
+                width = width or 128
+                value += frame[position + 4:position + 4 + width]
+                position += 4 + width
+            return value
+
+        def pm_set(leaf, value):
+            payload = b'\x11\x11\x11\x03' + pm_object + bytes([0xc7, 0, leaf, len(value)]) + value + b'\0'
+            sock.send(ethernet(payload, code=0xfe, flags=0x50))
+            assert receive(sock, 0xfe)[30:34] == bytes([0xc7, 0, leaf, 0x80])
+
+        mib_record(1, 1000)
+        assert pm_get(0xb2) == struct.pack('!37Q', *range(1000, 1037))
+        tests.append('PM Current Get sends all37 hardware counters through three CTC variable segments')
+        pm_set(0xb2, b'\0')
+        assert pm_get(0xb2) == bytes(296)
+        pm_set(0xb1, struct.pack('!HI', 2, 2))
+        assert pm_get(0xb1) == struct.pack('!HI', 2, 2)
+        mib_record(1, 1017)
+        time.sleep(2.1)
+        assert pm_get(0xb3) == struct.pack('!37Q', *([17] * 37))
+        assert pm_get(0xb2) == bytes(296)
+        tests.append('PM enable/period/current reset produces measured period history without clearing lifetime MIB')
+        pm_set(0xb1, struct.pack('!HI', 1, 900))
+        mib_record(2, 10)
+        assert pm_get(0xb2) == bytes(296) and pm_get(0xb3) == bytes(296)
+        tests.append('PON MIB reset generation discards obsolete baseline and history rather than underflowing counters')
+        pm_file.unlink()
+        assert pm_get(0xb2) == 0x87
+        status(state_file, lambda s: s['pm_error'] < 0)
+        tests.append('failed hardware PM read remains an error response and visible status')
+        mib_record(3, 10)
         transceiver = temporary / 'transceiver'
 
         def sensor(rx):

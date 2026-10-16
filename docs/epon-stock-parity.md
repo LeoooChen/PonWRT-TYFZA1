@@ -4,6 +4,8 @@
 `/home/leo/PonWRT-TYFZA1-epon-parity`，基线为 `1cc4824`。
 未把修改写回其他 AI 正在使用的主工作区；内核使用独立 reflink 副本完成链接。
 
+最新收尾状态见文末“2026-10-16 收尾与续作入口”；前文保留首批基线记录。
+
 ## 结论
 
 **EPON 族尚未完整实现原厂全部功能，本次提交也不宣称完成全部遗漏。**
@@ -162,12 +164,12 @@ REA 6.5.0 / Ghidra 12.1.2 通过既有本地 stdio 批处理运行。
 | extended_default | c7/0046 | aFastLeaveAbility | not_ported |
 | extended_default | c7/0047 | aFastLeaveAdminState | not_ported |
 | extended_default | c7/006b | POTSStatus | not_ported |
-| extended_default | c7/0081 | AlarmAdminState | not_ported |
-| extended_default | c7/0082 | AlarmThreshold | not_ported |
+| extended_default | c7/0081 | AlarmAdminState | partially_implemented_offline |
+| extended_default | c7/0082 | AlarmThreshold | partially_implemented_offline |
 | extended_default | c7/00a1 | ONUTxPowerSupplyControl | not_ported |
-| extended_default | c7/00b1 | performanceMonitoringStatus | not_ported |
-| extended_default | c7/00b2 | performanceMonitoringDataCurrent | not_ported |
-| extended_default | c7/00b3 | performanceMonitoringDataHistory | not_ported |
+| extended_default | c7/00b1 | performanceMonitoringStatus | implemented_offline |
+| extended_default | c7/00b2 | performanceMonitoringDataCurrent | implemented_offline |
+| extended_default | c7/00b3 | performanceMonitoringDataHistory | implemented_offline |
 | extended_default | c7/801f | configVlanOfTr069Wan | not_ported |
 | extended_default | c7/c001 | oltLocationConfig | not_ported |
 | extended_flag_0x20000000 | c7/0001 | ONU SN | implemented_offline |
@@ -207,14 +209,14 @@ REA 6.5.0 / Ghidra 12.1.2 通过既有本地 stdio 批处理运行。
 | extended_flag_0x20000000 | c7/0046 | aFastLeaveAbility | not_ported |
 | extended_flag_0x20000000 | c7/0047 | aFastLeaveAdminState | not_ported |
 | extended_flag_0x20000000 | c7/006b | POTSStatus | not_ported |
-| extended_flag_0x20000000 | c7/0081 | AlarmAdminState | not_ported |
-| extended_flag_0x20000000 | c7/0082 | AlarmThreshold | not_ported |
+| extended_flag_0x20000000 | c7/0081 | AlarmAdminState | partially_implemented_offline |
+| extended_flag_0x20000000 | c7/0082 | AlarmThreshold | partially_implemented_offline |
 | extended_flag_0x20000000 | c7/00a1 | ONUTxPowerSupplyControl | not_ported |
 | extended_flag_0x20000000 | c7/00a3 | RMS Global Parameter Config1 | not_ported |
 | extended_flag_0x20000000 | c7/00a4 | RMS Global Parameter Config2 | not_ported |
-| extended_flag_0x20000000 | c7/00b1 | performanceMonitoringStatus | not_ported |
-| extended_flag_0x20000000 | c7/00b2 | performanceMonitoringDataCurrent | not_ported |
-| extended_flag_0x20000000 | c7/00b3 | performanceMonitoringDataHistory | not_ported |
+| extended_flag_0x20000000 | c7/00b1 | performanceMonitoringStatus | implemented_offline |
+| extended_flag_0x20000000 | c7/00b2 | performanceMonitoringDataCurrent | implemented_offline |
+| extended_flag_0x20000000 | c7/00b3 | performanceMonitoringDataHistory | implemented_offline |
 | extended_flag_0x20000000 | c7/7003 | Optical Transceiver Information | not_ported |
 | extended_flag_0x20000000 | c7/801f | configVlanOfTr069Wan | not_ported |
 | extended_flag_0x20000000 | c7/c001 | oltLocationConfig | not_ported |
@@ -240,3 +242,41 @@ BOSA采样与端口carrier来自现有原生接口；counter类告警仍等待�
 `alarm_error`显示真实错误。守护进程19项ARM64/musl集成检查通过，包含
 实际OAM阈值设置/查询、code1触发/清除上报、FF状态查询、滞回与读取失败。
 证据：`manifests/epon-optical-alarms.json`。未进行物理传感器/OLT验证。
+
+
+## 2026-10-16 收尾与续作入口
+
+用户要求：完成当前性能统计后收尾，以后继续；不扩大现有遗漏清单。
+独立工作区 `/home/leo/PonWRT-TYFZA1-epon-parity`，分支
+`codex/epon-parity-20261016`。保留本地提交，不自动合入其他AI的主工作区，
+未推送、未刷机、未替换光猫运行程序。
+
+当前告警与性能统计工作已完成以下实现：
+
+- `pon-alarm.c`：20个光学告警/预警、四UNI LOS、使能/阈值、滞回及事件
+  通知。触发/清除阈值分别返回，原厂重复触发阈值的bug已复现并修正。
+- `rtl9617c-mib.h`：按原机AAL实际MMIO顺序读取NI和EPON MAC硬件计数，
+  包括真实FE绕CPU流量。没有用CPU netdev软件收包计数替代。
+- NI和EPON每秒扩展窄计数，独立于OAM客户查询；64位字节计数保持原宽度。
+  独立MIB锁串行访问共享NI间接窗口，设备移除前取消采样work。
+- PON的304字节内部PM记录为64位MIB复位generation加37个64位值；CTC
+  B1为状态/周期，B2/B3为296字节当前/上一周期数据，使用128/128/40分段。
+  NI/PON方向按原厂CTC编码定义映射；原厂DAL遗漏的实际RX/TX字段从已
+  确认的MIB字段读取。硬件无对应计数的槽保持原厂定义的0，未虚构指标。
+- PM周期/历史/复位由原生用户态拥有；复位只更新该客户端的基线和历史，
+  不清除其他使用者共享的硬件计数。PON MIB重置更换generation并重建基线，
+  避免把MAC复位误判为计数回卷。周期0按原厂一秒时钟处理。
+- 读取失败返回真实错误，不生成成功数据；`pm_error`/`alarm_error`可观察。
+
+验证：实际原厂AAL与生产helper的NI/PON访问和值对照、32位回卷与超时传播
+通过；原厂光学告警判定/编码对照通过；最终ARM64/musl实际守护进程23项
+隔离网络检查通过，覆盖37槽分段、周期历史、复位、MIBgeneration及读取失败。
+独立Linux6.18.55完整vmlinux链接通过且无编译/链接警告，51个本次驱动
+源码与独立编译输入逐字节一致。完整证据见
+`manifests/epon-hardware-pm.json`、`manifests/epon-optical-alarms.json`。
+这些证据不等于实际OLT/光链路验收，也不等于整个EPON移植已经完成。
+
+下次从现有清单继续：计数类告警使用已接通的硬件PM数据；然后是SLA/DBA与
+Holdover、VLAN/组播、限速/环路、远程升级/重启/发光控制及已列明的信息项。
+不要重新扩大排查范围；不要把原厂无动作ACK或只保存变量当作已实现。
+继续在当前独立分支上做，合入主线前检查其他AI对同一文件的后续修改。

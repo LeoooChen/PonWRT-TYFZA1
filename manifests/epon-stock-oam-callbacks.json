@@ -532,7 +532,8 @@
       "getter": null,
       "setter": "0x424cd8",
       "name": "AlarmAdminState",
-      "native_status": "not_ported"
+      "native_status": "partially_implemented_offline",
+      "native_scope": "20 optical alarms/warnings and4UNI LOS; counter/other alarm IDs pending"
     },
     {
       "table": "extended_default",
@@ -544,7 +545,8 @@
       "getter": "0x424ef8",
       "setter": "0x425054",
       "name": "AlarmThreshold",
-      "native_status": "not_ported"
+      "native_status": "partially_implemented_offline",
+      "native_scope": "20 optical alarms/warnings and4UNI LOS; counter/other alarm IDs pending"
     },
     {
       "table": "extended_default",
@@ -568,7 +570,7 @@
       "getter": "0x425a94",
       "setter": "0x425c3c",
       "name": "performanceMonitoringStatus",
-      "native_status": "not_ported"
+      "native_status": "implemented_offline"
     },
     {
       "table": "extended_default",
@@ -580,7 +582,7 @@
       "getter": "0x425dd4",
       "setter": "0x426ac4",
       "name": "performanceMonitoringDataCurrent",
-      "native_status": "not_ported"
+      "native_status": "implemented_offline"
     },
     {
       "table": "extended_default",
@@ -592,7 +594,7 @@
       "getter": "0x426bc0",
       "setter": null,
       "name": "performanceMonitoringDataHistory",
-      "native_status": "not_ported"
+      "native_status": "implemented_offline"
     },
     {
       "table": "extended_default",
@@ -1075,7 +1077,8 @@
       "getter": null,
       "setter": "0x424cd8",
       "name": "AlarmAdminState",
-      "native_status": "not_ported"
+      "native_status": "partially_implemented_offline",
+      "native_scope": "20 optical alarms/warnings and4UNI LOS; counter/other alarm IDs pending"
     },
     {
       "table": "extended_flag_0x20000000",
@@ -1087,7 +1090,8 @@
       "getter": "0x424ef8",
       "setter": "0x425054",
       "name": "AlarmThreshold",
-      "native_status": "not_ported"
+      "native_status": "partially_implemented_offline",
+      "native_scope": "20 optical alarms/warnings and4UNI LOS; counter/other alarm IDs pending"
     },
     {
       "table": "extended_flag_0x20000000",
@@ -1137,7 +1141,7 @@
       "getter": "0x425a94",
       "setter": "0x425c3c",
       "name": "performanceMonitoringStatus",
-      "native_status": "not_ported"
+      "native_status": "implemented_offline"
     },
     {
       "table": "extended_flag_0x20000000",
@@ -1149,7 +1153,7 @@
       "getter": "0x425dd4",
       "setter": "0x426ac4",
       "name": "performanceMonitoringDataCurrent",
-      "native_status": "not_ported"
+      "native_status": "implemented_offline"
     },
     {
       "table": "extended_flag_0x20000000",
@@ -1161,7 +1165,7 @@
       "getter": "0x426bc0",
       "setter": null,
       "name": "performanceMonitoringDataHistory",
-      "native_status": "not_ported"
+      "native_status": "implemented_offline"
     },
     {
       "table": "extended_flag_0x20000000",
@@ -1239,10 +1243,11 @@
   ],
   "unique_callback_count": 88,
   "complete": false,
-  "native_implemented_entries": 26,
+  "native_implemented_entries": 32,
   "extra_native": [
     "CTC opcode9 churning key exchange:1G3 bytes/XG9 bytes",
     "registration-epoch binding",
     "PCS link interrupts and RX/coresec recovery"
-  ]
+  ],
+  "native_partial_entries": 4
 }

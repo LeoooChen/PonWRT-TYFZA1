@@ -35,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix="epon-native-", dir=root / "artifacts") 
     directory = Path(directory)
     (directory / "native.c").write_text(wrapper)
     subprocess.run(["cc", "-Wall", "-Wextra", "-Werror", "-shared", "-fPIC", "-I" + str(source),
-        str(directory / "native.c"), str(source / "pon-backend.c"), str(source / "pon-alarm.c"),
+        str(directory / "native.c"), str(source / "pon-backend.c"), str(source / "pon-alarm.c"), str(source / "pon-pm.c"),
         "-o", str(directory / "native.so")], check=True)
     library = ctypes.CDLL(str(directory / "native.so"))
     native = library.native

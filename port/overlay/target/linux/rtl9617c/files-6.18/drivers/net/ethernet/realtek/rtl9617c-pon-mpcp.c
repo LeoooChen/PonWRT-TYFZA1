@@ -197,11 +197,16 @@ static void rtl_mpcp_work(struct work_struct *work)
 	u32 status;
 	bool synced;
 	unsigned int mac;
+	unsigned long long counters[37];
+	int mib_error;
 
 	mutex_lock(&pon->lock);
 	if (!pon->mpcp_enabled)
 		goto unlock;
 	rtl_mpcp_refresh(pon);
+	mib_error = rtl_pon_epon_pm(pon, counters);
+	if (mib_error)
+		dev_err_ratelimited(pon->dev, "EPON MIB read failed: %d\n", mib_error);
 	if (time_after_eq(jiffies, pon->epon_health_at)) {
 		u32 epon = readl(pon->mac + 0x10);
 		bool failure = pon->mode != RTL_PON_EPON_1G &&

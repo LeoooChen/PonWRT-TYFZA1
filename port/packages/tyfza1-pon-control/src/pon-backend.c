@@ -10,6 +10,7 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/random.h>
+#include <time.h>
 #include <unistd.h>
 #include "pon-backend.h"
 
@@ -23,6 +24,14 @@ static void put32(uint8_t *value, uint32_t number)
 {
 	number = htonl(number);
 	memcpy(value, &number, sizeof(number));
+}
+
+static uint64_t monotonic_ms(void)
+{
+	struct timespec time;
+
+	clock_gettime(CLOCK_MONOTONIC, &time);
+	return (uint64_t)time.tv_sec * 1000 + time.tv_nsec / 1000000;
 }
 
 static int port_number(const struct pon_oam_request *request)
@@ -308,6 +317,20 @@ static int parameter_get(void *context, const struct pon_oam_request *request,
 
 	uint8_t branch = request->branch;
 	uint16_t leaf = request->leaf;
+	if (branch == 0xc7 && leaf >= 0xb1 && leaf <= 0xb3) {
+		int port = pon_pm_object(request);
+		int ret;
+
+		if (port < 0)
+			return port;
+		if (leaf != 0xb1) {
+			ret = pon_pm_sample(&backend->pm[port], backend->device, port, monotonic_ms());
+			backend->pm_error = ret;
+			if (ret)
+				return ret;
+		}
+		return pon_pm_get(&backend->pm[port], leaf, value);
+	}
 	if (branch == 0xc7 && leaf == 0x82)
 		return pon_alarm_variable(&backend->alarms, request, NULL, 0, value);
 	if (branch == 0xc7 && leaf == 5)
@@ -339,6 +362,19 @@ static uint8_t parameter_set(void *context, const struct pon_oam_request *reques
 
 	uint8_t branch = request->branch;
 	uint16_t leaf = request->leaf;
+	if (branch == 0xc7 && (leaf == 0xb1 || leaf == 0xb2)) {
+		int port = pon_pm_object(request);
+		uint64_t now = monotonic_ms();
+
+		if (port < 0)
+			return 0x86;
+		ret = pon_pm_sample(&backend->pm[port], backend->device, port, now);
+		backend->pm_error = ret;
+		if (ret)
+			return 0x87;
+		ret = pon_pm_set(&backend->pm[port], leaf, value, size, now);
+		return !ret ? 0x80 : 0x86;
+	}
 	if (branch == 0xc7 && (leaf == 0x81 || leaf == 0x82)) {
 		ret = pon_alarm_variable(&backend->alarms, request, value, size, NULL);
 		return !ret ? 0x80 : ret == -EINVAL ? 0x86 : 0x87;
@@ -426,6 +462,12 @@ static int alarms_poll(void *context, unsigned int generation,
 	unsigned int i;
 
 	backend->alarm_error = 0;
+	backend->pm_error = 0;
+	for (i = 0; i < PON_PM_PORTS; i++) {
+		ret = pon_pm_sample(&backend->pm[i], backend->device, i, monotonic_ms());
+		if (ret && !backend->pm_error)
+			backend->pm_error = ret;
+	}
 	for (i = 0; i < PON_ALARM_COUNT; i++)
 		backend->alarms.entries[i].sampled = false;
 	for (i = 0; i < PON_ALARM_OPTICAL_COUNT; i++)
@@ -482,6 +524,7 @@ int pon_backend_init(struct pon_backend *backend, const char *mpcp_path)
 	memcpy(backend->device, mpcp_path, size);
 	backend->device[size] = 0;
 	pon_alarm_init(&backend->alarms);
+	pon_pm_init(backend->pm);
 	return 0;
 }
 

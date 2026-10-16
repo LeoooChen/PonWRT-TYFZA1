@@ -14,6 +14,7 @@
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/rtnetlink.h>
+#include <linux/unaligned.h>
 #include "rtl9617c-pon.h"
 #include "rtl9617c-bosa.h"
 #include "rtl9617c-pon-fec.h"
@@ -687,6 +688,31 @@ static ssize_t epon_key_write(struct file *file, struct kobject *kobj,
 }
 static BIN_ATTR(epon_key, 0200, NULL, epon_key_write, 0);
 
+#define RTL_PON_PM_RECORD_BYTES (8 + 37 * 8)
+static ssize_t pm_counters_read(struct file *file, struct kobject *kobj,
+	const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(kobj_to_dev(kobj));
+	unsigned long long counters[37];
+	unsigned int port = offset / RTL_PON_PM_RECORD_BYTES;
+	int ret;
+
+	if (port >= 5 || offset % RTL_PON_PM_RECORD_BYTES || count < RTL_PON_PM_RECORD_BYTES)
+		return -EINVAL;
+	mutex_lock(&pon->control_lock);
+	mutex_lock(&pon->lock);
+	ret = port ? rtl9617c_ni_pm_read(pon->ni_dev, 4 - port, counters) : rtl_pon_epon_pm(pon, counters);
+	if (!ret) {
+		put_unaligned_be64(port ? 0 : pon->epon_mib_generation, buf);
+		for (unsigned int i = 0; i < 37; i++)
+			put_unaligned_be64(counters[i], buf + 8 + i * 8);
+	}
+	mutex_unlock(&pon->lock);
+	mutex_unlock(&pon->control_lock);
+	return ret ?: RTL_PON_PM_RECORD_BYTES;
+}
+static BIN_ATTR(pm_counters, 0400, pm_counters_read, NULL, 5 * RTL_PON_PM_RECORD_BYTES);
+
 static ssize_t data_path_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
@@ -732,6 +758,7 @@ static const struct bin_attribute *const rtl9617c_pon_bin_attrs[] = {
 	&bin_attr_itu_paths,
 	&bin_attr_omci_broadcast,
 	&bin_attr_epon_key,
+	&bin_attr_pm_counters,
 	NULL,
 };
 

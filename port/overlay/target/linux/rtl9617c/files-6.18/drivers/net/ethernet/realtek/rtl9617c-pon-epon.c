@@ -7,6 +7,7 @@
 #include <linux/unaligned.h>
 #include "rtl9617c-pon.h"
 #include "rtl9617c-epon-crypto.h"
+#include "rtl9617c-mib.h"
 
 #define EPON_STATIC 0x0014
 #define EPON_FEC_XG 0x0024
@@ -53,6 +54,23 @@ static int rtl_crypto_indirect(void *context, unsigned int reg, unsigned int val
 
 	writel(value, pon->mac + reg);
 	return readl_poll_timeout(pon->mac + reg, status, !(status & busy), 1, 100000);
+}
+
+int rtl_pon_epon_pm(struct rtl9617c_pon *pon, unsigned long long counters[37])
+{
+	const struct rtl_dq_io io = {pon, rtl_crypto_read, rtl_crypto_write, rtl_crypto_indirect};
+	unsigned int raw[RTL_EPON_MIB_COUNTERS];
+	int ret;
+
+	lockdep_assert_held(&pon->lock);
+	if (!rtl_pon_mode_is_epon(pon->mode))
+		return -EOPNOTSUPP;
+	if (!pon->mac_prepared)
+		return -EAGAIN;
+	ret = rtl_epon_mib_read(&io, raw);
+	if (!ret)
+		rtl_epon_mib_pm(pon->epon_mib_total, raw, counters);
+	return ret;
 }
 
 int rtl_pon_epon_crypto_forget(struct rtl9617c_pon *pon, u32 lost)
@@ -235,6 +253,8 @@ int rtl_pon_epon_prepare_locked(struct rtl9617c_pon *pon)
 	ret = readl_poll_timeout(pon->mac + MIB_STATUS, status, status & BIT(0), 1, 100000);
 	if (ret)
 		goto unlock;
+	memset(pon->epon_mib_total, 0, sizeof(pon->epon_mib_total));
+	pon->epon_mib_generation++;
 	rtl_pon_update(pon->mac + RX_MPCP_MIB, BIT(17), BIT(17));
 	rtl_pon_update(pon->mac + TX_MPCP_MIB, BIT(17), BIT(17));
 	rtl_epon_fec_configure(pon);
