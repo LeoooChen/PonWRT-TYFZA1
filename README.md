@@ -50,7 +50,7 @@ PonWRT-TYFZA1 是面向天翼 TYFZA1 光猫的 OpenWrt 适配项目。设备采�
 telnet 192.168.1.1
 ```
 
-按帖子中的原厂默认配置，用户名、密码均为 `telnetadmin`。登录后执行 `su`，再次输入密码 `telnetadmin`，取得 root 权限。若已修改原厂地址或密码，使用实际配置。
+原厂 Telnet 默认用户名和密码均为 `telnetadmin`。登录后执行 `su`，再次输入密码 `telnetadmin`，取得 root 权限。若已修改原厂地址或密码，使用实际配置。
 
 刷入前备份原厂数据，刷写期间保持供电。接下来任选一种方式传入安装包。
 
