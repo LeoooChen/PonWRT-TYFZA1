@@ -1,0 +1,478 @@
+{
+  "scope": "Preserve existing analysis at the user-requested pause; no additional audit or driver behavior change.",
+  "records": [
+    {
+      "raw_member": "ghidra-wifi-ack-icv-policy/001-analyze_function.json",
+      "raw_sha256": "6275b071e997bb6051304cf78f694176ed1f82161b7a0aab5b02ab90cc29c333",
+      "evidence_id": "ev_0b9238b49478035814db63626a90a0b793876416e224b9c1ffe6c796c0d68038",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "txsc_amsdu_enqueue_tcp_ack",
+      "parameters": {
+        "procedure": "txsc_amsdu_enqueue_tcp_ack"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-ack-icv-policy/002-analyze_function.json",
+      "raw_sha256": "7b144e8df0d8d34dec9670b5924c79c1d402feae195515d0fd24702683fd50be",
+      "evidence_id": "ev_c5546b80eeaf84d7376e47c4ca5c0e76860894841b784daab68c96a6d820a2e9",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "tcp_ack_merge",
+      "parameters": {
+        "procedure": "tcp_ack_merge"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-ack-icv-policy/003-analyze_function.json",
+      "raw_sha256": "b8731ec82226aa55f796de13f7747220750741128856b95672f6153034912b53",
+      "evidence_id": "ev_1a97d9005d5d0da3dd8e8aec01d49d8be5409c1e57314221d1fdc8f3293f97af",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "_count_icv_error",
+      "parameters": {
+        "procedure": "_count_icv_error"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-ack-icv-policy/004-analyze_function.json",
+      "raw_sha256": "9ceedd326114a277c06ae7c15dbd0cae90fadebbc9b216efbb781f9d1ea6e31b",
+      "evidence_id": "ev_efc8878ec04d78759eadbcee86b7906ccea3eb9a3bf6cfd321d4b114c2502fe2",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "_check_sta_continuous_icverr",
+      "parameters": {
+        "procedure": "_check_sta_continuous_icverr"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-ack-icv-policy/005-analyze_function.json",
+      "raw_sha256": "7e93d42966fb067ba602b7c5d89ba61e4d155a535beb3b939cb36b2be93543c9",
+      "evidence_id": "ev_b076bb1a54b998a7d4db4a6f42401dd8eedb199236e49044df0be93b50954d48",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "rtw_switch_wmm_mode",
+      "parameters": {
+        "procedure": "rtw_switch_wmm_mode"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-ack-icv-policy/006-analyze_function.json",
+      "raw_sha256": "dfc5c55b3f62dd276540695785a2c5bcea9788d89d47d313d0151ea9c98448a7",
+      "evidence_id": "ev_557146e049ccf9f053af3fbd1f8b48dea6c782e9b0684606ef314d8fcd75e516",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "rtw_hal_final_cap_decision",
+      "parameters": {
+        "procedure": "rtw_hal_final_cap_decision"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-ack-icv-policy/007-analyze_function.json",
+      "raw_sha256": "a3cc96ba14b41aab5e9701f52957aefc65329f3885ecb00c3089b4a81e4df7b7",
+      "evidence_id": "ev_661f5588124bb9b04f405b5f27eaa0a028f8e47ffad422fd075ee594ee5fa598",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "phl_wow_mdl_init",
+      "parameters": {
+        "procedure": "phl_wow_mdl_init"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-ack-icv-policy/008-analyze_function.json",
+      "raw_sha256": "da34ff3274007f4b95f605ba1f6c6f11cefd316e0dab6bc2d85e4994bc0a2de3",
+      "evidence_id": "ev_9fb3890ea3bbc4220555c1a42fdc5169d68d2879b4cf0c5643c606c9d4861fb8",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "rtw_hal_mac_coex_init",
+      "parameters": {
+        "procedure": "rtw_hal_mac_coex_init"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-scheduler/001-analyze_function.json",
+      "raw_sha256": "467ce9970fec89e0fd2b0e1f7a9f756fb40a8a345f0a03d7364ef756e6d47abf",
+      "evidence_id": "ev_056b0e5e65898a75d5f3b3982ee1f476a1781552017fb107dffb7b5d02b9ba53",
+      "operation": "analyze_function",
+      "subject_sha256": "67e7b3220be1a9a7d788a2b36716534bfc3cf357314b8a0dbd243deb31a3b418",
+      "procedure": "wifitimer_set_property",
+      "parameters": {
+        "procedure": "wifitimer_set_property"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-scheduler/002-analyze_function.json",
+      "raw_sha256": "84aaabe3dd96e558a2ba2c3d8bcf61f3b4c3a3af88e7cd8f95446e96c970f6e4",
+      "evidence_id": "ev_f255500be69f837949fd637f0a33da56a325ccf590a3affc641787e6507ab029",
+      "operation": "analyze_function",
+      "subject_sha256": "67e7b3220be1a9a7d788a2b36716534bfc3cf357314b8a0dbd243deb31a3b418",
+      "procedure": "wifitimer_update_entry",
+      "parameters": {
+        "procedure": "wifitimer_update_entry"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-scheduler/003-analyze_function.json",
+      "raw_sha256": "2d8ad1f56e64f86c29169cdfbeeca60ddab70190a3e44ad7704e55de5fb60b72",
+      "evidence_id": "ev_458f48e69de2a673b263f41fd9038b6502fae89bca4912e5cc8cad3358567aa8",
+      "operation": "analyze_function",
+      "subject_sha256": "67e7b3220be1a9a7d788a2b36716534bfc3cf357314b8a0dbd243deb31a3b418",
+      "procedure": "wifitimer1_update",
+      "parameters": {
+        "procedure": "wifitimer1_update"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-scheduler-apply/001-analyze_function.json",
+      "raw_sha256": "968374b046b25ae5c839aa41468c9e75e3ad25e4205bb865a1bfe702b4e723ab",
+      "evidence_id": "ev_fec95edbd653fd46b1fcbb52953b1abad68b7de1dbb9976890fc4d3b8ce20c2d",
+      "operation": "analyze_function",
+      "subject_sha256": "67e7b3220be1a9a7d788a2b36716534bfc3cf357314b8a0dbd243deb31a3b418",
+      "procedure": "wifitimer_set_property_update",
+      "parameters": {
+        "procedure": "wifitimer_set_property_update"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-scheduler-apply/002-analyze_function.json",
+      "raw_sha256": "b13726f2f3b4919daa7843e8d20735436630ca820cb54cfb0d9ff0bd81566482",
+      "evidence_id": "ev_4f201bb47eb02d571adcc2e2e1aca74c1b556729aa0e94645fd641002888784b",
+      "operation": "analyze_function",
+      "subject_sha256": "67e7b3220be1a9a7d788a2b36716534bfc3cf357314b8a0dbd243deb31a3b418",
+      "procedure": "wifitimer1_set_property_update",
+      "parameters": {
+        "procedure": "wifitimer1_set_property_update"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-scheduler-apply/003-analyze_function.json",
+      "raw_sha256": "44a53de65c00197e8ccf9b910dbc545e1cd2bc8496a9a673c62a431b56aa70f2",
+      "evidence_id": "ev_ad39a2f139476db9c63d39e4ee007d75da5b687f9aadc33e34b884ef2fd48742",
+      "operation": "analyze_function",
+      "subject_sha256": "67e7b3220be1a9a7d788a2b36716534bfc3cf357314b8a0dbd243deb31a3b418",
+      "procedure": "WiFiBandSteering_set_property_update",
+      "parameters": {
+        "procedure": "WiFiBandSteering_set_property_update"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-apply-dispatch/001-analyze_function.json",
+      "raw_sha256": "8c9bd1251999299df91d515b184b58b801e95ee9b84fb21f8d526e045c51d8f2",
+      "evidence_id": "ev_ad75cb6c026acb2fc0a7de456aa649917834464c8360594be6a612b5c234b2cb",
+      "operation": "analyze_function",
+      "subject_sha256": "67e7b3220be1a9a7d788a2b36716534bfc3cf357314b8a0dbd243deb31a3b418",
+      "procedure": "dbus_mib_update_cfg",
+      "parameters": {
+        "procedure": "dbus_mib_update_cfg"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-apply-consumer/001-xrefs.json",
+      "raw_sha256": "46626736e2aeef31c5723ab7a84f1bcc77e9f627cd25ba409f369e62a39f93dc",
+      "evidence_id": "ev_4ec9fef66aa63e19e8c7120e2d390887d45504bb02fe3c5c76ea6468e7fcec90",
+      "operation": "xrefs",
+      "subject_sha256": "67e7b3220be1a9a7d788a2b36716534bfc3cf357314b8a0dbd243deb31a3b418",
+      "procedure": null,
+      "parameters": {
+        "address": "0x521e40"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-timer-resolve/001-resolve_containing_procedure.json",
+      "raw_sha256": "21ba6f9c1cafb6c03d513fc097eb8da21cd72becad756d407087e90e11941f6b",
+      "evidence_id": "ev_dc05a0da6309d96bb25df6098a8003dd6de8dc403acffdf76fde58e131ea3e4d",
+      "operation": "resolve_containing_procedure",
+      "subject_sha256": "67e7b3220be1a9a7d788a2b36716534bfc3cf357314b8a0dbd243deb31a3b418",
+      "procedure": "FUN_00491258",
+      "parameters": {
+        "address": "0x4912b8"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-timer-resolve/002-resolve_containing_procedure.json",
+      "raw_sha256": "48b3677df865117d7a5a670da85c650c22ee402cd79cb63438251a1e526a732c",
+      "evidence_id": "ev_d5ba23cfc4530d3a19567ea4fd575ffa2f1646d92133b3746e922b00bbdfea3d",
+      "operation": "resolve_containing_procedure",
+      "subject_sha256": "67e7b3220be1a9a7d788a2b36716534bfc3cf357314b8a0dbd243deb31a3b418",
+      "procedure": "FUN_00491258",
+      "parameters": {
+        "address": "0x492c40"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-timer-resolve/003-resolve_containing_procedure.json",
+      "raw_sha256": "55d6222e52f898890f02ece35075cd3fcceaf7ba513d7279c860a38437e312ee",
+      "evidence_id": "ev_accc4302218075ff2921e4e2b3a803027821b30b8893ab6e03e29e9e07d885af",
+      "operation": "resolve_containing_procedure",
+      "subject_sha256": "67e7b3220be1a9a7d788a2b36716534bfc3cf357314b8a0dbd243deb31a3b418",
+      "procedure": "dbus_mib_update_cfg",
+      "parameters": {
+        "address": "0x493050"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-timer-consumer-body/001-retained-record.json",
+      "raw_sha256": "e99b73eba24f7c47add14509883f704b6189b23c4efc1ba25cdf91e4a48798da",
+      "evidence_id": "ev_858f3050661d49996a51bdf5b62d2bc3e9b4124153bb5db5c3e4a33d5f812cbb",
+      "operation": "analyze_function",
+      "subject_sha256": "67e7b3220be1a9a7d788a2b36716534bfc3cf357314b8a0dbd243deb31a3b418",
+      "procedure": "FUN_00491258",
+      "parameters": {
+        "procedure": "0x491258"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-edcca-runtime/001-analyze_function.json",
+      "raw_sha256": "2a9885bb1abd93fadef0718dc4556671f41cbaca99157bdd96d3aa11230b4b9a",
+      "evidence_id": "ev_758050adcec58738fb1d306eda1e5d5b63f1d938c39de8940bb07a2be9814634",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "halbb_edcca_thre_transfer_rssi",
+      "parameters": {
+        "procedure": "halbb_edcca_thre_transfer_rssi"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-edcca-runtime/002-analyze_function.json",
+      "raw_sha256": "6b204028491de89a1836070e0691a774c39957cdabc7100bf24c19cced10b494",
+      "evidence_id": "ev_990e01ba86fd42ef8ce1014ece08d6e8a611fe0e03b34cf11b774082179375d6",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "halbb_set_edcca_thre",
+      "parameters": {
+        "procedure": "halbb_set_edcca_thre"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-edcca-runtime/003-analyze_function.json",
+      "raw_sha256": "610cae53167a7daccba915019d363d24e6514c02a0dd61cb27c85ed39ab01056",
+      "evidence_id": "ev_3977bdaf40975a06a97d71a7652c664232cec6ba6a931b6527abf99dab0c3c3b",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "halbb_set_collision_th",
+      "parameters": {
+        "procedure": "halbb_set_collision_th"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-edcca-runtime/004-analyze_function.json",
+      "raw_sha256": "f7e17285107a4a0214b817ab6de9ccba3d87d6696322ab10cf6ceab6eee5a48b",
+      "evidence_id": "ev_8934394d5f5ca4c28eb2428559f2a0bb3fadb3e7199715e7ab67a3c9d4cac1fe",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "halbb_edcca_init",
+      "parameters": {
+        "procedure": "halbb_edcca_init"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-edcca-runtime/005-analyze_function.json",
+      "raw_sha256": "ffa163b7e2a313fe7f6467a24937a73e6b7179bc63592d21cce4fbe7eb894b9e",
+      "evidence_id": "ev_b80e333ff39f92504ebd2713fbb7cbcfb2ca24300aea20817a266c69ea2886c9",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "halbb_edcca_event_nofity",
+      "parameters": {
+        "procedure": "halbb_edcca_event_nofity"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-edcca-runtime/006-analyze_function.json",
+      "raw_sha256": "52b76eff3a99ebdd1d4a9eea7108cba06342aed4c46415c8c64e7f416cf5c6ad",
+      "evidence_id": "ev_b5399d64fd54209abc1a91c7459cb756b21b61eb4f8a212da1e757ab0c9fee72",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "halbb_cr_cfg_edcca_init",
+      "parameters": {
+        "procedure": "halbb_cr_cfg_edcca_init"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-rssi-runtime/001-analyze_function.json",
+      "raw_sha256": "7d5865b2aa32a6787f04a8dbe2eb3d2b222b75d39e1afb39c4dba4579671f2f6",
+      "evidence_id": "ev_640a50a53fca544fb49625ec6f2c334b9a3be37400c7254509af0045090aed21",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "halbb_rssi_cal",
+      "parameters": {
+        "procedure": "halbb_rssi_cal"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-rssi-runtime/002-analyze_function.json",
+      "raw_sha256": "b45ec9d5a302fe9acc54bb2cb3012ed6519c364e0df4e02f76e270f198875feb",
+      "evidence_id": "ev_ff670d83f3fda719e168ad3efeab6f64845e136b2260ae82f529d996a39cf796",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "halbb_rx_pkt_su_rssi_statistic",
+      "parameters": {
+        "procedure": "halbb_rx_pkt_su_rssi_statistic"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-rssi-runtime/003-analyze_function.json",
+      "raw_sha256": "c2cdc6e4d4a8fdcdd408cd536e5d03c443ceb610858ecd249a95b194d838b399",
+      "evidence_id": "ev_d41c656afcd924bc2254840df56a49b49c473b337812d317af4b51a8e4484f3b",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "halbb_get_rssi_min",
+      "parameters": {
+        "procedure": "halbb_get_rssi_min"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-rssi-runtime/004-analyze_function.json",
+      "raw_sha256": "dbe3d4ddd6c2e0c6da3bd2587f0e5bb8f53b9a02b06768d97d8187d469f4581c",
+      "evidence_id": "ev_6e4befd518a5d27a5889c628b900835574640d69f8e0b2eebfbaa6127d65dca1",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "halbb_cmn_rpt",
+      "parameters": {
+        "procedure": "halbb_cmn_rpt"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-rssi-runtime/005-analyze_function.json",
+      "raw_sha256": "11f43f8b0a194105b1d2eae755247487e9f804b9f3fa93c76883b3fcd28722b1",
+      "evidence_id": "ev_1fe1e802599c5c295ad4d9080d8c398a8845ecfc13ff177d4af21ecf8ebef4a6",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "halbb_physts_fd_rpl_2_rssi_cvrt",
+      "parameters": {
+        "procedure": "halbb_physts_fd_rpl_2_rssi_cvrt"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-rssi-runtime/006-analyze_function.json",
+      "raw_sha256": "f47ecf096e239bdfcacf6bd9b1f62ddeef5f2f924c581d8fe5ef58246bd47a47",
+      "evidence_id": "ev_f206f15b962c17a6dbc302e9ebc73563d19dca3f44965f957ae9aa9c26cc2db8",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "halbb_ra_rssi_setting_watchdog",
+      "parameters": {
+        "procedure": "halbb_ra_rssi_setting_watchdog"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-rssi-runtime/007-analyze_function.json",
+      "raw_sha256": "134701ec60b887787782a97042f2466f26957d2dcecdfb2464324d795bfdc676",
+      "evidence_id": "ev_652340497b01c2c26b231c8b6d423af43742a0d49d8c3526012866615ac122d9",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "halbb_cmn_info_self_reset",
+      "parameters": {
+        "procedure": "halbb_cmn_info_self_reset"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-rssi-station/001-analyze_function.json",
+      "raw_sha256": "295c49f4f925a0a01aa192ed583e2eaeb76fdf61c6391b2b60033771c648fe49",
+      "evidence_id": "ev_b282204b67dbd29c3d4250376db40aca320d5b4051d0024b90feebc889a7ee4b",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "halbb_rx_pkt_su_store_in_sta_info",
+      "parameters": {
+        "procedure": "halbb_rx_pkt_su_store_in_sta_info"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-ppdu-inputs/001-analyze_function.json",
+      "raw_sha256": "41ad86d0e0b72006b7a2c265fcef65bc30bf62d14f6b90a233bcca3b2518a4d8",
+      "evidence_id": "ev_1491910092d5801103b834cddee897c3fad939a0d7ff51a92f43062091322db4",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "phl_parse_rx_ppdu_stats",
+      "parameters": {
+        "procedure": "phl_parse_rx_ppdu_stats"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-ppdu-inputs/002-analyze_function.json",
+      "raw_sha256": "b379ee1dcc30aec858424d7b530ae8e6aa6dc29b4bb5695b5843d41cc1581c7a",
+      "evidence_id": "ev_99d498171350400a8bf922a9cf3f1043b00c34eb2eeb6fbda412bf29f4ff9f1f",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "rtw_hal_bb_parse_phy_sts",
+      "parameters": {
+        "procedure": "rtw_hal_bb_parse_phy_sts"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-ppdu-inputs/003-analyze_function.json",
+      "raw_sha256": "e0a9beee8d0a0acb6109da86cb6bd90503d4bd4690098e8891ed6e2883302fd7",
+      "evidence_id": "ev_7c758b0f2989f962998ddabbe50e9183f494af3586fd70f06d77c0ade1c25580",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "rtw_hal_mac_ax_parse_ppdu_sts",
+      "parameters": {
+        "procedure": "rtw_hal_mac_ax_parse_ppdu_sts"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-ppdu-inputs/004-analyze_function.json",
+      "raw_sha256": "ff7c32aa87a6aea3613d7e7074e4224f22a06aef53c53629720f17616e41a949",
+      "evidence_id": "ev_135b5bbb0ef97fa65eb05f1b41aad2d4714c698370a7804972eeb8802c50c2e0",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "mac_parse_ppdu",
+      "parameters": {
+        "procedure": "mac_parse_ppdu"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-power-mode-gates/001-analyze_function.json",
+      "raw_sha256": "337d2d37ed3edf955615aedb8a00d569627db8744ffe92368903ed9e2a9c82b8",
+      "evidence_id": "ev_1a06685f33d4a2a99b192ed5981cdeb7fe22600b68940526f08f01cf3a994dff",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "rtw_suspend_common",
+      "parameters": {
+        "procedure": "rtw_suspend_common"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-power-mode-gates/002-analyze_function.json",
+      "raw_sha256": "2403788978f41d0a32b63d2958cfeca85aab00dbc6ef7cc263ef6c28b33711f4",
+      "evidence_id": "ev_1cdaf495526c1a05d298e752cfacffc9042c8c55ed36252f927dd376b37809e3",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "rtw_resume_common",
+      "parameters": {
+        "procedure": "rtw_resume_common"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-power-mode-gates/003-analyze_function.json",
+      "raw_sha256": "4e3f7cc944c466841468ea19a7b348795281d3f83fa530ee4445bad3d448b9f1",
+      "evidence_id": "ev_479a6a18d2803b7201acba162144290cd7a88e4af258af47310e630180193a4e",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "rtw_hal_mac_dbcc_cfg",
+      "parameters": {
+        "procedure": "rtw_hal_mac_dbcc_cfg"
+      }
+    },
+    {
+      "raw_member": "ghidra-wifi-power-mode-gates/004-analyze_function.json",
+      "raw_sha256": "f9d77f4984e04b12d98777fcfce4e0b31650d26941d094e025f66476669b62bf",
+      "evidence_id": "ev_e05f4f21a18929daa0238daeb58f43822847e71dccfeb051b7b1489946a54e85",
+      "operation": "analyze_function",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "procedure": "rtw_hal_mac_dbcc_pre_cfg",
+      "parameters": {
+        "procedure": "rtw_hal_mac_dbcc_pre_cfg"
+      }
+    }
+  ],
+  "recovered_transport_errors": [
+    {
+      "raw_member": "ghidra-wifi-timer-consumer-body/001-analyze_function.json",
+      "raw_sha256": "82c51aec13fd25b6438e56ad95cec769bb8621448063169dad8a0db2ddde171c",
+      "note": "Complete analysis exceeded transport budget; full Evidence recovered from saved snapshot and retained separately."
+    }
+  ],
+  "limitations": [
+    "Analysis is static and partially uses recovered decompiler types.",
+    "These records are inputs for unimplemented frozen items, not proof of implementation."
+  ]
+}

@@ -1,0 +1,1362 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "functions": [
+    "halbb_edcca",
+    "halbb_edcca_abort",
+    "halbb_edcca_init",
+    "halbb_edcca_thre_calc",
+    "halbb_edcca_thre_transfer_rssi",
+    "halbb_set_edcca_thre",
+    "halbb_set_collision_th",
+    "halbb_set_collision_thre",
+    "halbb_cr_cfg_edcca_init"
+  ],
+  "cases": [
+    {
+      "inputs": {
+        "name": "C_normal_unlinked",
+        "chip": "8852c",
+        "band": 1,
+        "mode": 0,
+        "linked": 0,
+        "rssi": 0
+      },
+      "low": 241,
+      "high": 249,
+      "difference": 8,
+      "collision": 31,
+      "power_offset": 18,
+      "writes": [
+        {
+          "address": "0x4840",
+          "mask": "0xff00",
+          "value": 249,
+          "before": "0xabcdf012",
+          "after": "0xabcdf912"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff",
+          "value": 249,
+          "before": "0xabcdf912",
+          "after": "0xabcdf9f9"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff000000",
+          "value": 249,
+          "before": "0xabcdf9f9",
+          "after": "0xf9cdf9f9"
+        },
+        {
+          "address": "0x4848",
+          "mask": "0x1f000",
+          "value": 8,
+          "before": "0x240000",
+          "after": "0x248000"
+        },
+        {
+          "address": "0xc70",
+          "mask": "0xf800",
+          "value": 31,
+          "before": "0x69bfe60",
+          "after": "0x69bfe60"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x1f",
+          "value": 31,
+          "before": "0x13579bdf",
+          "after": "0x13579bdf"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x3e0",
+          "value": 31,
+          "before": "0x13579bdf",
+          "after": "0x13579bff"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x7c00",
+          "value": 31,
+          "before": "0x13579bff",
+          "after": "0x1357ffff"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0xf8000",
+          "value": 31,
+          "before": "0x1357ffff",
+          "after": "0x135fffff"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x1f00000",
+          "value": 31,
+          "before": "0x135fffff",
+          "after": "0x13ffffff"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x3e000000",
+          "value": 31,
+          "before": "0x13ffffff",
+          "after": "0x3fffffff"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x1f",
+          "value": 31,
+          "before": "0x2468ace0",
+          "after": "0x2468acff"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x3e0",
+          "value": 31,
+          "before": "0x2468acff",
+          "after": "0x2468afff"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x7c00",
+          "value": 31,
+          "before": "0x2468afff",
+          "after": "0x2468ffff"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0xf8000",
+          "value": 31,
+          "before": "0x2468ffff",
+          "after": "0x246fffff"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x1f00000",
+          "value": 31,
+          "before": "0x246fffff",
+          "after": "0x25ffffff"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x3e000000",
+          "value": 31,
+          "before": "0x25ffffff",
+          "after": "0x3fffffff"
+        },
+        {
+          "address": "0xc7c",
+          "mask": "0x1f",
+          "value": 31,
+          "before": "0x55555555",
+          "after": "0x5555555f"
+        }
+      ]
+    },
+    {
+      "inputs": {
+        "name": "C_normal_linked_weak",
+        "chip": "8852c",
+        "band": 1,
+        "mode": 0,
+        "linked": 1,
+        "rssi": 80
+      },
+      "low": 58,
+      "high": 66,
+      "difference": 8,
+      "collision": 20,
+      "power_offset": 18,
+      "writes": [
+        {
+          "address": "0x4840",
+          "mask": "0xff00",
+          "value": 66,
+          "before": "0xabcdf012",
+          "after": "0xabcd4212"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff",
+          "value": 66,
+          "before": "0xabcd4212",
+          "after": "0xabcd4242"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff000000",
+          "value": 66,
+          "before": "0xabcd4242",
+          "after": "0x42cd4242"
+        },
+        {
+          "address": "0x4848",
+          "mask": "0x1f000",
+          "value": 8,
+          "before": "0x240000",
+          "after": "0x248000"
+        },
+        {
+          "address": "0xc70",
+          "mask": "0xf800",
+          "value": 20,
+          "before": "0x69bfe60",
+          "after": "0x69ba660"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x1f",
+          "value": 20,
+          "before": "0x13579bdf",
+          "after": "0x13579bd4"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x3e0",
+          "value": 20,
+          "before": "0x13579bd4",
+          "after": "0x13579a94"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x7c00",
+          "value": 20,
+          "before": "0x13579a94",
+          "after": "0x1357d294"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0xf8000",
+          "value": 20,
+          "before": "0x1357d294",
+          "after": "0x135a5294"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x1f00000",
+          "value": 20,
+          "before": "0x135a5294",
+          "after": "0x134a5294"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x3e000000",
+          "value": 20,
+          "before": "0x134a5294",
+          "after": "0x294a5294"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x1f",
+          "value": 20,
+          "before": "0x2468ace0",
+          "after": "0x2468acf4"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x3e0",
+          "value": 20,
+          "before": "0x2468acf4",
+          "after": "0x2468ae94"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x7c00",
+          "value": 20,
+          "before": "0x2468ae94",
+          "after": "0x2468d294"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0xf8000",
+          "value": 20,
+          "before": "0x2468d294",
+          "after": "0x246a5294"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x1f00000",
+          "value": 20,
+          "before": "0x246a5294",
+          "after": "0x254a5294"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x3e000000",
+          "value": 20,
+          "before": "0x254a5294",
+          "after": "0x294a5294"
+        },
+        {
+          "address": "0xc7c",
+          "mask": "0x1f",
+          "value": 20,
+          "before": "0x55555555",
+          "after": "0x55555554"
+        }
+      ]
+    },
+    {
+      "inputs": {
+        "name": "C_normal_linked_strong",
+        "chip": "8852c",
+        "band": 1,
+        "mode": 0,
+        "linked": 1,
+        "rssi": 180
+      },
+      "low": 97,
+      "high": 105,
+      "difference": 8,
+      "collision": 0,
+      "power_offset": 18,
+      "writes": [
+        {
+          "address": "0x4840",
+          "mask": "0xff00",
+          "value": 105,
+          "before": "0xabcdf012",
+          "after": "0xabcd6912"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff",
+          "value": 105,
+          "before": "0xabcd6912",
+          "after": "0xabcd6969"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff000000",
+          "value": 105,
+          "before": "0xabcd6969",
+          "after": "0x69cd6969"
+        },
+        {
+          "address": "0x4848",
+          "mask": "0x1f000",
+          "value": 8,
+          "before": "0x240000",
+          "after": "0x248000"
+        },
+        {
+          "address": "0xc70",
+          "mask": "0xf800",
+          "value": 0,
+          "before": "0x69bfe60",
+          "after": "0x69b0660"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x13579bdf",
+          "after": "0x13579bc0"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x3e0",
+          "value": 0,
+          "before": "0x13579bc0",
+          "after": "0x13579800"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x7c00",
+          "value": 0,
+          "before": "0x13579800",
+          "after": "0x13578000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0xf8000",
+          "value": 0,
+          "before": "0x13578000",
+          "after": "0x13500000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x1f00000",
+          "value": 0,
+          "before": "0x13500000",
+          "after": "0x12000000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x3e000000",
+          "value": 0,
+          "before": "0x12000000",
+          "after": "0x0"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x2468ace0",
+          "after": "0x2468ace0"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x3e0",
+          "value": 0,
+          "before": "0x2468ace0",
+          "after": "0x2468ac00"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x7c00",
+          "value": 0,
+          "before": "0x2468ac00",
+          "after": "0x24688000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0xf8000",
+          "value": 0,
+          "before": "0x24688000",
+          "after": "0x24600000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x1f00000",
+          "value": 0,
+          "before": "0x24600000",
+          "after": "0x24000000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x3e000000",
+          "value": 0,
+          "before": "0x24000000",
+          "after": "0x0"
+        },
+        {
+          "address": "0xc7c",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x55555555",
+          "after": "0x55555540"
+        }
+      ]
+    },
+    {
+      "inputs": {
+        "name": "C_adaptivity_5G",
+        "chip": "8852c",
+        "band": 1,
+        "mode": 1,
+        "linked": 1,
+        "rssi": 120
+      },
+      "low": 58,
+      "high": 65,
+      "difference": 7,
+      "collision": 0,
+      "power_offset": 18,
+      "writes": [
+        {
+          "address": "0x4840",
+          "mask": "0xff00",
+          "value": 65,
+          "before": "0xabcdf012",
+          "after": "0xabcd4112"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff",
+          "value": 65,
+          "before": "0xabcd4112",
+          "after": "0xabcd4141"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff000000",
+          "value": 65,
+          "before": "0xabcd4141",
+          "after": "0x41cd4141"
+        },
+        {
+          "address": "0x4848",
+          "mask": "0x1f000",
+          "value": 7,
+          "before": "0x240000",
+          "after": "0x247000"
+        },
+        {
+          "address": "0xc70",
+          "mask": "0xf800",
+          "value": 0,
+          "before": "0x69bfe60",
+          "after": "0x69b0660"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x13579bdf",
+          "after": "0x13579bc0"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x3e0",
+          "value": 0,
+          "before": "0x13579bc0",
+          "after": "0x13579800"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x7c00",
+          "value": 0,
+          "before": "0x13579800",
+          "after": "0x13578000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0xf8000",
+          "value": 0,
+          "before": "0x13578000",
+          "after": "0x13500000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x1f00000",
+          "value": 0,
+          "before": "0x13500000",
+          "after": "0x12000000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x3e000000",
+          "value": 0,
+          "before": "0x12000000",
+          "after": "0x0"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x2468ace0",
+          "after": "0x2468ace0"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x3e0",
+          "value": 0,
+          "before": "0x2468ace0",
+          "after": "0x2468ac00"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x7c00",
+          "value": 0,
+          "before": "0x2468ac00",
+          "after": "0x24688000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0xf8000",
+          "value": 0,
+          "before": "0x24688000",
+          "after": "0x24600000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x1f00000",
+          "value": 0,
+          "before": "0x24600000",
+          "after": "0x24000000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x3e000000",
+          "value": 0,
+          "before": "0x24000000",
+          "after": "0x0"
+        },
+        {
+          "address": "0xc7c",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x55555555",
+          "after": "0x55555540"
+        }
+      ]
+    },
+    {
+      "inputs": {
+        "name": "XB_adaptivity_2G",
+        "chip": "8192xb",
+        "band": 0,
+        "mode": 1,
+        "linked": 1,
+        "rssi": 120
+      },
+      "low": 56,
+      "high": 63,
+      "difference": 7,
+      "collision": 0,
+      "power_offset": 18,
+      "writes": [
+        {
+          "address": "0x4840",
+          "mask": "0xff00",
+          "value": 63,
+          "before": "0xabcdf012",
+          "after": "0xabcd3f12"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff",
+          "value": 63,
+          "before": "0xabcd3f12",
+          "after": "0xabcd3f3f"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff000000",
+          "value": 63,
+          "before": "0xabcd3f3f",
+          "after": "0x3fcd3f3f"
+        },
+        {
+          "address": "0x4848",
+          "mask": "0x1f000",
+          "value": 7,
+          "before": "0x240000",
+          "after": "0x247000"
+        },
+        {
+          "address": "0xc70",
+          "mask": "0xf800",
+          "value": 0,
+          "before": "0x69bfe60",
+          "after": "0x69b0660"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x13579bdf",
+          "after": "0x13579bc0"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x3e0",
+          "value": 0,
+          "before": "0x13579bc0",
+          "after": "0x13579800"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x7c00",
+          "value": 0,
+          "before": "0x13579800",
+          "after": "0x13578000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0xf8000",
+          "value": 0,
+          "before": "0x13578000",
+          "after": "0x13500000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x1f00000",
+          "value": 0,
+          "before": "0x13500000",
+          "after": "0x12000000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x3e000000",
+          "value": 0,
+          "before": "0x12000000",
+          "after": "0x0"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x2468ace0",
+          "after": "0x2468ace0"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x3e0",
+          "value": 0,
+          "before": "0x2468ace0",
+          "after": "0x2468ac00"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x7c00",
+          "value": 0,
+          "before": "0x2468ac00",
+          "after": "0x24688000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0xf8000",
+          "value": 0,
+          "before": "0x24688000",
+          "after": "0x24600000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x1f00000",
+          "value": 0,
+          "before": "0x24600000",
+          "after": "0x24000000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x3e000000",
+          "value": 0,
+          "before": "0x24000000",
+          "after": "0x0"
+        },
+        {
+          "address": "0xc7c",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x55555555",
+          "after": "0x55555540"
+        }
+      ]
+    },
+    {
+      "inputs": {
+        "name": "XB_carrier_sense",
+        "chip": "8192xb",
+        "band": 0,
+        "mode": 2,
+        "linked": 1,
+        "rssi": 120
+      },
+      "low": 68,
+      "high": 75,
+      "difference": 7,
+      "collision": 0,
+      "power_offset": 18,
+      "writes": [
+        {
+          "address": "0x4840",
+          "mask": "0xff00",
+          "value": 75,
+          "before": "0xabcdf012",
+          "after": "0xabcd4b12"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff",
+          "value": 75,
+          "before": "0xabcd4b12",
+          "after": "0xabcd4b4b"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff000000",
+          "value": 75,
+          "before": "0xabcd4b4b",
+          "after": "0x4bcd4b4b"
+        },
+        {
+          "address": "0x4848",
+          "mask": "0x1f000",
+          "value": 7,
+          "before": "0x240000",
+          "after": "0x247000"
+        },
+        {
+          "address": "0xc70",
+          "mask": "0xf800",
+          "value": 0,
+          "before": "0x69bfe60",
+          "after": "0x69b0660"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x13579bdf",
+          "after": "0x13579bc0"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x3e0",
+          "value": 0,
+          "before": "0x13579bc0",
+          "after": "0x13579800"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x7c00",
+          "value": 0,
+          "before": "0x13579800",
+          "after": "0x13578000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0xf8000",
+          "value": 0,
+          "before": "0x13578000",
+          "after": "0x13500000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x1f00000",
+          "value": 0,
+          "before": "0x13500000",
+          "after": "0x12000000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x3e000000",
+          "value": 0,
+          "before": "0x12000000",
+          "after": "0x0"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x2468ace0",
+          "after": "0x2468ace0"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x3e0",
+          "value": 0,
+          "before": "0x2468ace0",
+          "after": "0x2468ac00"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x7c00",
+          "value": 0,
+          "before": "0x2468ac00",
+          "after": "0x24688000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0xf8000",
+          "value": 0,
+          "before": "0x24688000",
+          "after": "0x24600000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x1f00000",
+          "value": 0,
+          "before": "0x24600000",
+          "after": "0x24000000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x3e000000",
+          "value": 0,
+          "before": "0x24000000",
+          "after": "0x0"
+        },
+        {
+          "address": "0xc7c",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x55555555",
+          "after": "0x55555540"
+        }
+      ]
+    },
+    {
+      "inputs": {
+        "name": "C_mode3_6G_40",
+        "chip": "8852c",
+        "band": 2,
+        "mode": 3,
+        "linked": 1,
+        "rssi": 120,
+        "bandwidth": 1
+      },
+      "low": 46,
+      "high": 53,
+      "difference": 7,
+      "collision": 0,
+      "power_offset": 18,
+      "writes": [
+        {
+          "address": "0x4840",
+          "mask": "0xff00",
+          "value": 53,
+          "before": "0xabcdf012",
+          "after": "0xabcd3512"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff",
+          "value": 53,
+          "before": "0xabcd3512",
+          "after": "0xabcd3535"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff000000",
+          "value": 53,
+          "before": "0xabcd3535",
+          "after": "0x35cd3535"
+        },
+        {
+          "address": "0x4848",
+          "mask": "0x1f000",
+          "value": 7,
+          "before": "0x240000",
+          "after": "0x247000"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff0000",
+          "value": 53,
+          "before": "0x35cd3535",
+          "after": "0x35353535"
+        },
+        {
+          "address": "0xc70",
+          "mask": "0xf800",
+          "value": 0,
+          "before": "0x69bfe60",
+          "after": "0x69b0660"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x13579bdf",
+          "after": "0x13579bc0"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x3e0",
+          "value": 0,
+          "before": "0x13579bc0",
+          "after": "0x13579800"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x7c00",
+          "value": 0,
+          "before": "0x13579800",
+          "after": "0x13578000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0xf8000",
+          "value": 0,
+          "before": "0x13578000",
+          "after": "0x13500000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x1f00000",
+          "value": 0,
+          "before": "0x13500000",
+          "after": "0x12000000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x3e000000",
+          "value": 0,
+          "before": "0x12000000",
+          "after": "0x0"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x2468ace0",
+          "after": "0x2468ace0"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x3e0",
+          "value": 0,
+          "before": "0x2468ace0",
+          "after": "0x2468ac00"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x7c00",
+          "value": 0,
+          "before": "0x2468ac00",
+          "after": "0x24688000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0xf8000",
+          "value": 0,
+          "before": "0x24688000",
+          "after": "0x24600000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x1f00000",
+          "value": 0,
+          "before": "0x24600000",
+          "after": "0x24000000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x3e000000",
+          "value": 0,
+          "before": "0x24000000",
+          "after": "0x0"
+        },
+        {
+          "address": "0xc7c",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x55555555",
+          "after": "0x55555540"
+        }
+      ]
+    },
+    {
+      "inputs": {
+        "name": "C_mode3_6G_160",
+        "chip": "8852c",
+        "band": 2,
+        "mode": 3,
+        "linked": 1,
+        "rssi": 120,
+        "bandwidth": 3
+      },
+      "low": 39,
+      "high": 46,
+      "difference": 7,
+      "collision": 0,
+      "power_offset": 18,
+      "writes": [
+        {
+          "address": "0x4840",
+          "mask": "0xff00",
+          "value": 46,
+          "before": "0xabcdf012",
+          "after": "0xabcd2e12"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff",
+          "value": 46,
+          "before": "0xabcd2e12",
+          "after": "0xabcd2e2e"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff000000",
+          "value": 46,
+          "before": "0xabcd2e2e",
+          "after": "0x2ecd2e2e"
+        },
+        {
+          "address": "0x4848",
+          "mask": "0x1f000",
+          "value": 7,
+          "before": "0x240000",
+          "after": "0x247000"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff0000",
+          "value": 46,
+          "before": "0x2ecd2e2e",
+          "after": "0x2e2e2e2e"
+        },
+        {
+          "address": "0xc70",
+          "mask": "0xf800",
+          "value": 0,
+          "before": "0x69bfe60",
+          "after": "0x69b0660"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x13579bdf",
+          "after": "0x13579bc0"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x3e0",
+          "value": 0,
+          "before": "0x13579bc0",
+          "after": "0x13579800"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x7c00",
+          "value": 0,
+          "before": "0x13579800",
+          "after": "0x13578000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0xf8000",
+          "value": 0,
+          "before": "0x13578000",
+          "after": "0x13500000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x1f00000",
+          "value": 0,
+          "before": "0x13500000",
+          "after": "0x12000000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x3e000000",
+          "value": 0,
+          "before": "0x12000000",
+          "after": "0x0"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x2468ace0",
+          "after": "0x2468ace0"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x3e0",
+          "value": 0,
+          "before": "0x2468ace0",
+          "after": "0x2468ac00"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x7c00",
+          "value": 0,
+          "before": "0x2468ac00",
+          "after": "0x24688000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0xf8000",
+          "value": 0,
+          "before": "0x24688000",
+          "after": "0x24600000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x1f00000",
+          "value": 0,
+          "before": "0x24600000",
+          "after": "0x24000000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x3e000000",
+          "value": 0,
+          "before": "0x24000000",
+          "after": "0x0"
+        },
+        {
+          "address": "0xc7c",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x55555555",
+          "after": "0x55555540"
+        }
+      ]
+    },
+    {
+      "inputs": {
+        "name": "C_mode3_domain2",
+        "chip": "8852c",
+        "band": 2,
+        "mode": 3,
+        "linked": 1,
+        "rssi": 120,
+        "domain": 2
+      },
+      "low": 68,
+      "high": 75,
+      "difference": 7,
+      "collision": 0,
+      "power_offset": 18,
+      "writes": [
+        {
+          "address": "0x4840",
+          "mask": "0xff00",
+          "value": 75,
+          "before": "0xabcdf012",
+          "after": "0xabcd4b12"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff",
+          "value": 75,
+          "before": "0xabcd4b12",
+          "after": "0xabcd4b4b"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff000000",
+          "value": 75,
+          "before": "0xabcd4b4b",
+          "after": "0x4bcd4b4b"
+        },
+        {
+          "address": "0x4848",
+          "mask": "0x1f000",
+          "value": 7,
+          "before": "0x240000",
+          "after": "0x247000"
+        },
+        {
+          "address": "0x4840",
+          "mask": "0xff0000",
+          "value": 75,
+          "before": "0x4bcd4b4b",
+          "after": "0x4b4b4b4b"
+        },
+        {
+          "address": "0xc70",
+          "mask": "0xf800",
+          "value": 0,
+          "before": "0x69bfe60",
+          "after": "0x69b0660"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x13579bdf",
+          "after": "0x13579bc0"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x3e0",
+          "value": 0,
+          "before": "0x13579bc0",
+          "after": "0x13579800"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x7c00",
+          "value": 0,
+          "before": "0x13579800",
+          "after": "0x13578000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0xf8000",
+          "value": 0,
+          "before": "0x13578000",
+          "after": "0x13500000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x1f00000",
+          "value": 0,
+          "before": "0x13500000",
+          "after": "0x12000000"
+        },
+        {
+          "address": "0xc74",
+          "mask": "0x3e000000",
+          "value": 0,
+          "before": "0x12000000",
+          "after": "0x0"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x2468ace0",
+          "after": "0x2468ace0"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x3e0",
+          "value": 0,
+          "before": "0x2468ace0",
+          "after": "0x2468ac00"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x7c00",
+          "value": 0,
+          "before": "0x2468ac00",
+          "after": "0x24688000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0xf8000",
+          "value": 0,
+          "before": "0x24688000",
+          "after": "0x24600000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x1f00000",
+          "value": 0,
+          "before": "0x24600000",
+          "after": "0x24000000"
+        },
+        {
+          "address": "0xc78",
+          "mask": "0x3e000000",
+          "value": 0,
+          "before": "0x24000000",
+          "after": "0x0"
+        },
+        {
+          "address": "0xc7c",
+          "mask": "0x1f",
+          "value": 0,
+          "before": "0x55555555",
+          "after": "0x55555540"
+        }
+      ]
+    },
+    {
+      "inputs": {
+        "name": "C_paused",
+        "chip": "8852c",
+        "band": 1,
+        "mode": 1,
+        "linked": 1,
+        "rssi": 120,
+        "paused": 1
+      },
+      "low": 249,
+      "high": 249,
+      "difference": 0,
+      "collision": 0,
+      "power_offset": 18,
+      "writes": []
+    },
+    {
+      "inputs": {
+        "name": "XB_ability_disabled",
+        "chip": "8192xb",
+        "band": 0,
+        "mode": 0,
+        "linked": 1,
+        "rssi": 120,
+        "disabled": 1
+      },
+      "low": 249,
+      "high": 249,
+      "difference": 0,
+      "collision": 0,
+      "power_offset": 18,
+      "writes": []
+    }
+  ],
+  "scope": "Original ARM64 policy, CR mapping and all threshold/collision setters execute. Register IO is modeled; report collection/logging are callbacks. The synthetic 6GHz cases identify generic policy branches, not TYFZA1 6GHz support. No real RF, regulatory validation or throughput claim."
+}
