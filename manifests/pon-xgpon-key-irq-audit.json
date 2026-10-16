@@ -1,0 +1,43 @@
+{
+  "base_commit": "f07ed6f89cea5a13ce77d1ba1113516b3ad3bd12",
+  "purpose": "Audit native Key-Control processing against the actual shipped PLOAM ISR, rather than infer behavior only from the deferred key state machine.",
+  "primary_evidence": {
+    "module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+    "rea": "Local rea-agents6.5.0 / Ghidra12.1.2",
+    "archive": "artifacts/xgpon-key-exchange-rea-20261016/rea/index.json",
+    "functions": [
+      "__xgpon_ploam_isr",
+      "__send_key_report_msg_isr",
+      "ca_generate_new_kek_and_kek_name",
+      "aal_xgpon_dsfp_xgem_key_ctrl_set",
+      "aal_xgpon_usbg_aes_uni_key_idx_set",
+      "xgpon_aes_ploam_ack_mic_update"
+    ]
+  },
+  "verification": {
+    "command": "python3 artifacts/xgpon-key-exchange-rea-20261016/probe.py",
+    "result": "artifacts/xgpon-key-exchange-rea-20261016/comparison.json",
+    "cases": "Slots1/2, new-key request followed by confirmation for each slot. All four complete40-byte reports and final downstream validity, upstream AES control and key selection match.",
+    "scope": "Actual stock key ISR, key generation, key validity/switch setters and report sender versus native key IRQ. Synthetic ONU-ID/KEK/RNG, real OpenSSL AES/CMAC. MMIO, packet consumption, queues, locks and ACK cryptography modeled; no software tasklet/FSM or optical execution.",
+    "compiler": "Host C compiler with real OpenSSL AES-128-ECB/CMAC; no ARM64 rebuild because production code was not changed."
+  },
+  "findings": [
+    "Native new-key generation, wrapped key/key-name selection, ONU-ID byte order, sequence/flag/index/fragment fields and AES switch ordering match the shipped ISR for the replayed cases.",
+    "The deferred original state machine mainly records protocol state; its absence of direct MMIO is not evidence that the original skips key installation or report transmission.",
+    "Original periodic PLOAM watchdog invokes a MAC reset if its TX ready flag remains stuck. This was not copied as a timeout workaround; no hardware cause for a stuck native sender was established."
+  ],
+  "open_questions": [
+    "The relationship between changed PON-TAG and a previously installed Class332 MSK remains unresolved at the complete hardware/software lifecycle level. No speculative MSK policy change made.",
+    "Replayed key protocol success does not locate the peer business-mapping -110 or explain the approximately50-second O5 restart."
+  ],
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-omci.c": "a9e52ddddccbb2721bd14702e4989c57c8554ab68634f2fce856f88e3c4cdbf1",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-xgpon-hw.h": "be0444ab90741ae1047e1a2653bdd7c702748fbcf018a2b662e615445cbede54",
+    "tools/trace_stock_xgpon_session_keys.py": "b22f795a42e51ba1f62869c1ccc9bb9a69934f33d6240cb710b2ccf41e468593"
+  },
+  "limits": [
+    "Four deterministic offline key protocol cases only. Tasklet/FSM scheduling, physical interrupts, packet grant timing and optical registration are not tested.",
+    "No production driver changes, full test suite, firmware build, device changes, commit or push in this audit.",
+    "Goal remains active."
+  ]
+}

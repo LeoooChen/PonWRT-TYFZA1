@@ -1,0 +1,68 @@
+{
+  "base_commit": "43a8a4c2d825762bea3f2b1952b0764a0f0cbb89",
+  "purpose": "Complete XGTC activation CDR/gearbox/PHY initialization and restore MAC-before-laser ordering.",
+  "primary_evidence": {
+    "module": "ca-ne.ko",
+    "sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+    "functions": [
+      "aal_pon_mac_enable_set",
+      "aal_psds_reset",
+      "aal_psds_burst_enable",
+      "aal_psds_gbox_ctrl_get",
+      "aal_xgpon_xgpn_glb_ctrl_set"
+    ],
+    "rea_archive": "artifacts/xgpon-activation-rea-20261016/rea/index.json",
+    "tooling": "rea-agents6.5.0 with local Ghidra12.1.2"
+  },
+  "defects": [
+    "Native activation omitted the original post-burst four-step CDR reset, gearbox pulse and PHY initialization request. Earlier parameter loading is a separate sequence.",
+    "Native activation released TX_DISABLE before setting MAC active; original enable releases it after MAC enable and a1ms wait."
+  ],
+  "fix": [
+    "Preserve other bits of SerDes0x400 and apply0x80/0xd0/0x70/0 with1ms intervals and10ms settle; pulse gearbox reset1ms/100ms and request PHY initialization.",
+    "Retain original PRBS bypass predicate.",
+    "Restart after burst enable, sample ACTP after restart, enable MAC, wait1ms, then release TX_DISABLE.",
+    "Propagate indirect-access failure through activation and SerDes error state; disable burst, retain TX_DISABLE and drop OMCI carrier.",
+    "Retain startup with absent light: publish the bounded original RX-init wait as sync_result; carrier remains controlled by line state."
+  ],
+  "verification": {
+    "before": "artifacts/xgpon-activation-rea-20261016/before-activation.json",
+    "after": "artifacts/xgpon-activation-rea-20261016/after-activation.json",
+    "replay_command": "python3 tools/trace_stock_xgpon_activation.py",
+    "compared": "Four stock/native write-and-delay traces: XG-PON/XGS-PON with normal and PRBS fixtures. Native indirect failure and LOS status checked separately.",
+    "scope": "Actual original MAC enable/reset/burst/gearbox/global setters and native activation/reset. MMIO, indirect completion, delays, GPIO, locks and netdev state are modeled. Compare write ordering and requested waits, not elapsed silicon timing or optical registration.",
+    "recovery_integration_command": "python3 scripts/test_xgtc_queue_recovery.py",
+    "recovery_integration_log": "artifacts/xgpon-activation-rea-20261016/recovery-integration.log",
+    "build": "artifacts/xgpon-activation-rea-20261016/object-build.json",
+    "partial_link_resolved": [
+      "0000000000000228 T rtl_pon_serdes_restart_locked"
+    ],
+    "compiler_diagnostics": [],
+    "objects_sha256": {
+      "rtl9617c-pon-serdes.o": "f6182ed2f5d2944edd14a61b4735b12881ddcc3a250608e8e7c06029f9b68961",
+      "rtl9617c-pon-xgpon.o": "08e35df0e0c5829e35ddaef1978558cebd6b7a205ec5c4b4b5f158cfb177e75d",
+      "activation-linked.o": "129c5fe3fc1d22350da0ed375d32369254e794203d7f5a86d2974fb5d3ec115d"
+    },
+    "shared_build_sources_or_objects_replaced": false,
+    "full_kernel_or_firmware_build": false,
+    "git_diff_check": true
+  },
+  "additional_research": {
+    "TCONT_initialization": "REA __gpon_common_init is GPON-specific; no evidence established that this setup belongs in XGTC T-CONT0.",
+    "upstream_scheduler": "REA aal_puc_port_voq_map_set selects the same ITU branch for modes3..6 and includes the existing queue0/1 weight coupling. No new mode-specific mismatch established.",
+    "original_watchdog": "Additional heuristic full-reset paths in the original state timer were not transplanted."
+  },
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-serdes.c": "d0c1ca1f5d559cd3d0033942b403d91b136fe508e3fdba0944d4b1f01d37443d",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-xgpon.c": "0b147acda9896c047f16252729a34915ce2ccf9cf1beb6ae568736f8c6729049",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.h": "856562284d965f82b84654a93057e304a4c065401ba449186b37b857a102bba3",
+    "scripts/test_xgtc_queue_recovery.py": "118a1821e76858dd9af60733ca65019c3b4fdec524fbceafb87cf51c410ad85a",
+    "tools/trace_stock_xgpon_activation.py": "37ff4183098e9ca3bf56f63ab99848dcdfc99c6a11434bc0ed67d1fb08431497"
+  },
+  "limits": [
+    "MMIO, waits and GPIO are modeled; no physical PON/OLT or clock-settling validation.",
+    "This does not establish the cause of peer -110 or approximately50-second ACTP reset.",
+    "Two targeted scripts and two ARM64 objects with partial link; no full test suite or kernel link.",
+    "No deployment, commit or push."
+  ]
+}

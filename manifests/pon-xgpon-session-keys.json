@@ -1,0 +1,67 @@
+{
+  "base_commit": "7e91b3307cbd58b62e074165dae6f87b5fa08b72",
+  "purpose": "Complete XGTC session data-key installation when KEK changes, following the board original generators revealed by REA.",
+  "tooling": {
+    "rea": "rea-agents6.5.0",
+    "provider": "Ghidra12.1.2",
+    "analysis": "Local static decompilation, no target execution, external upload or global configuration changes"
+  },
+  "primary_evidence": {
+    "modules": {
+      "ca-ne.ko": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+      "ca-rtk.ko": "2360c7dbf93157cb3ab212c733e76a513c34015bc466f192dd19e4ae87eb0311"
+    },
+    "functions": [
+      "xgpn_aes_key_generate@0xe45a0",
+      "xgpn_aes_key_generate_by_msk@0xe41f0",
+      "ca_generate_def_kek_and_kek_name@0xe3b10",
+      "ca_generate_new_kek_and_kek_name@0xe3d30",
+      "dal_rt_rtl8277c_gpon_msk_set@0x20950"
+    ],
+    "rea_archive": "artifacts/xgpon-session-keys-rea-20261016/rea/index.json"
+  },
+  "root_cause": "Native session derivation updated KEK, OMCI IK and PLOAM IK but did not generate/install the two default data-key slots or replace their encrypted-key/key-name caches. After a previous Key-Control exchange, changing PON-TAG or MSK left cache contents generated under the preceding KEK; a subsequent confirmation could use the stale key-name cache. The original two session generators both call ca_generate_def_kek_and_kek_name after deriving KEK.",
+  "fix": [
+    "Share the existing data-key generation/install operation between session initialization and Key-Control new-key requests.",
+    "Install both slots and replace their report caches before marking the new session ready.",
+    "Software slot validity tracks successful installation; downstream hardware validity still changes on a new-key request, so preparing defaults does not activate downstream keys prematurely.",
+    "Same-TAG fast path, Key-Control validation and original error propagation remain in effect."
+  ],
+  "verification": {
+    "test_command": "python3 tools/trace_stock_xgpon_session_keys.py",
+    "before": "artifacts/xgpon-session-keys-rea-20261016/before-keys.json",
+    "after": "artifacts/xgpon-session-keys-rea-20261016/after-keys.json",
+    "scenarios": [
+      "first PON-TAG",
+      "changed PON-TAG after seeded prior exchange",
+      "new MSK after seeded prior exchange",
+      "unchanged TAG does not regenerate keys",
+      "production Key-Control request and confirmation use the current slot"
+    ],
+    "scope": "Actual stock key generators and native session-key function. Fixed synthetic RNG, generic OLT, synthetic registration/SN/TAG/MSK, real OpenSSL AES/CMAC; MMIO, locks and ACK update modeled. No live keys or optical execution.",
+    "crypto": "Real OpenSSL AES-128-ECB and AES-CMAC at the cryptographic boundaries for both original instruction replay and native code; deterministic synthetic RNG.",
+    "after_comparison": "KEK, PLOAM IK, OMCI IK, both encrypted keys, both key names and two data-key hardware slots match the original generator in all three derivation cases.",
+    "build": "artifacts/xgpon-session-keys-rea-20261016/object-build.json",
+    "arm64_object_sha256": "dd9c168eef216071738e6fbb2d38d30a5f6a94931639993a4073783a68be4d8e",
+    "compiler_diagnostics": [],
+    "shared_build_outputs_changed": false,
+    "git_diff_check": true
+  },
+  "reviewed_without_changes": [
+    "MSK/SK/IK register addresses and big-endian word packing match original setters.",
+    "No-message ACK body and MIC register packing match the original ACK path.",
+    "The original upstream GEM setter clears the global AES bit after its last encrypted user; no functional failure from the native owner policy was established here."
+  ],
+  "open_difference": "Original MAC enable performs aal_psds_reset immediately before activation. Native initialization performs an earlier SerDes configuration/gearbox release. This turn does not establish equivalence or a failure from this ordering difference and does not alter it.",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-omci.c": "7b19c9cf6e911a606469c9c67c927a4644da5cb3ff75809f75112494e1f56983",
+    "tools/trace_stock_xgpon_session_keys.py": "b22f795a42e51ba1f62869c1ccc9bb9a69934f33d6240cb710b2ccf41e468593"
+  },
+  "limits": [
+    "Generic OLT fixture only; no CALIX-specific serial conversion exercised.",
+    "MMIO, RNG, locks and ACK update are modeled; no physical registration, key switching timing or encrypted traffic validation.",
+    "This finding does not establish the cause of the peer reported -110 or approximately50-second ACTP reset.",
+    "One targeted replay script and one ARM64 object build; no full tests, kernel link or full firmware build.",
+    "No deployment, commit or push."
+  ]
+}

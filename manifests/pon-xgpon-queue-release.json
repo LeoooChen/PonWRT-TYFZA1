@@ -1,0 +1,49 @@
+{
+  "base_commit": "1cc4824d3316851ef18b1eb8fe0079154192589c",
+  "purpose": "Release queue activity when its last GEM binding disappears, so replacing a business path does not consume stale queue capacity.",
+  "primary_evidence": {
+    "module_sha256": "674925056eb098d096661e278b173feb07141a8aa5d37889439dc76ebf894608",
+    "rea": "Local rea-agents6.5.0 / Ghidra12.1.2",
+    "functions": [
+      "libomci_mib.so:omci_wrapper_cfgGemFlow@0x1e6a0, post-delete block0x1ed70..0x1ed90",
+      "libomci_mib.so:omci_DeletePriQByTcontId@0x1a048",
+      "libomci_mib.so:queue deletion helper@0x19ee0"
+    ],
+    "archive": "artifacts/xgpon-queue-release-rea-20261016/rea/index.json",
+    "stock_replay": "artifacts/xgpon-queue-release-rea-20261016/stock-omci-queue-release.json",
+    "disassembly": "artifacts/xgpon-queue-release-rea-20261016/stock-release-disassembly.txt"
+  },
+  "root_cause": "Native update_queue_bindings removed deleted GEMs from gem_queue_bindings but retained their previously selected queues in configured_priority_queues. paths_bytes then counted these unreferenced old queues as active alongside replacements. A target T-CONT could be reported full despite a GEM having just been deleted.",
+  "concrete_reproduction": "Create8 GEM paths using8 queues on one T-CONT, delete one GEM CTP, assign a fresh queue ME to that T-CONT, then add its replacement GEM. Old code rejects the fresh queue SET with OMCI response1/backend-28 before the hardware apply callback; after the fix the SET and replacement GEM succeed and8 paths exist again.",
+  "fix": [
+    "Capture the previously referenced queue IDs before updating GEM bindings.",
+    "Remove a previously referenced queue from the active set only when no GEM binding still references it.",
+    "Keep queues explicitly configured without any prior GEM reference; keep shared queues until their last GEM reference disappears."
+  ],
+  "verification": {
+    "stock_command": "python3 tools/trace_stock_omci_queue_release.py",
+    "stock_cases": "Remaining references0 clears queue ownership and scheduling metadata; remaining references1 preserves the queue row.",
+    "stock_scope": "Actual shipped post-delete reference test and metadata writes with synthetic queue rows. Successful preceding ioctl and queue deletion are preconditions, not executed; no physical PUC proof.",
+    "native_test": "scripts/test_omci_queues.c linked to the freshly built production Rust static library",
+    "before": "artifacts/xgpon-queue-release-rea-20261016/before-test.log",
+    "after": "artifacts/xgpon-queue-release-rea-20261016/after-test.log",
+    "native_scope": "Real OMCI CREATE/SET/DELETE through production Rust FFI, queue-binding lifecycle and snapshot exporter. Hardware apply callback models acceptance and existing error cases. Added capacity-reuse case plus existing queue remap/rollback cases; no full tests.",
+    "host_build": "artifacts/xgpon-queue-release-rea-20261016/after-build.log",
+    "arm64_build": "artifacts/xgpon-queue-release-rea-20261016/arm64-build.log",
+    "library_sha256": "7c8cb9d149dd1abe75981e6d24da64ebb38f3afbcf9964a04beaf52ae3b91b62",
+    "compiler_diagnostics": [],
+    "build_scope": "Offline locked Cargo build of changed OMCI library only, including cortex-a55 aarch64-unknown-linux-musl static library; isolated output directory.",
+    "git_diff_check": true
+  },
+  "source_sha256": {
+    "port/packages/tyfza1-pon-control/omci/src/mib.rs": "9c1f4750f1f26977f0e9132b3cc731df654141e8a96c7650d8c4709bda569398",
+    "scripts/test_omci_queues.c": "26df1d7343c2d3eeab0e65e018516ecb90884b6af97a0b7d7c29e6fa615051fa",
+    "tools/trace_stock_omci_queue_release.py": "36ee8c65243b71c0222fe61a081d48c22700b5760bfc4388cc1df4d9e612e901"
+  },
+  "limits": [
+    "The reproduced failure is a false-ENOSPC (-28) from software queue accounting. It is not proof of the peer -110 hardware timeout cause or the approximately50-second ACTP restart.",
+    "Original deletion can also clean other unused queues through feature-dependent paths. This change fixes retention of formerly referenced queues; complete feature-hook lifecycle equivalence is not claimed.",
+    "No optical XGPON test, full suite, firmware build, deployment, commit or push.",
+    "Goal remains active."
+  ]
+}

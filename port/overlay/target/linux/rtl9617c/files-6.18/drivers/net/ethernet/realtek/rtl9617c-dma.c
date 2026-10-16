@@ -165,7 +165,9 @@ netdev_tx_t rtl_dma_tx_frame(struct rtl_dma_tx *tx, struct sk_buff *skb,
 	put_unaligned_le32(0, tx->memory + offset);
 	put_unaligned_le32(length, tx->memory + offset + 4);
 	put_unaligned_le32(high, tx->memory + offset + 8);
-	put_unaligned_le32((length << 15) | low, tx->memory + offset + 12);
+	if (!(low & GENMASK(28, 15)))
+		low |= length << 15;
+	put_unaligned_le32(low, tx->memory + offset + 12);
 	if (prefix)
 		memcpy(tx->memory + offset + 16, frame->prefix, prefix);
 	skb_copy_bits(skb, 0, tx->memory + offset + 16 + prefix, skb->len);

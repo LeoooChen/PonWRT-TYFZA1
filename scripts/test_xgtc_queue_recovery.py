@@ -24,6 +24,10 @@ typedef uint32_t u32;
 #define BIT(n) (1U<<(n))
 #define GENMASK(h,l) ((~0U>>(31-(h)))&(~0U<<(l)))
 #define HZ 100
+#define jiffies 0UL
+#define system_wq 0
+#define msecs_to_jiffies(n) ((n)/10)
+#define mod_delayed_work(q,w,t) ((void)(q),assert((t)==10),(w)->pending++)
 #define lockdep_assert_held(p) assert(*(p))
 #define readl_poll_timeout(p,v,c,d,t) ({v=readl(p);(c)?0:-ETIMEDOUT;})
 #define to_delayed_work(w) (w)
@@ -31,7 +35,7 @@ typedef uint32_t u32;
 struct work_struct {unsigned int pending;};
 struct device {void *data;};
 struct rtl_xram {int tx_lock;void *ni;};
-struct rtl9617c_pon {int lock,control_lock;enum rtl_pon_mode mode;bool xgpon_recover,fe_enabled;unsigned char xgpon_recovery_phase;int xgpon_activation_error;unsigned char *mac;void *serdes_init,*control;struct device *ni_dev;struct rtl_xgtc_puc_saved xgpon_puc_saved;struct work_struct xgpon_recovery_work;bool xgpon_enabled,xgpon_omcc_ready,omci_master_key_valid,xgpon_key_ready,mac_prepared,puc_configured,pdc_configured;unsigned long long itu_line_epoch;unsigned int xgpon_key_valid,xgpon_key_state,xgpon_last_state;int omci_key_lock,mpcp_irq;void *tx_disable,*top_irq,*omci_device;};
+struct rtl9617c_pon {int lock,control_lock;enum rtl_pon_mode mode;bool xgpon_recover,fe_enabled;unsigned char xgpon_recovery_phase;int xgpon_activation_error,serdes_error;unsigned char *mac;void *serdes_init,*control;struct device *ni_dev;struct rtl_xgtc_puc_saved xgpon_puc_saved;struct work_struct xgpon_recovery_work;bool xgpon_enabled,xgpon_omcc_ready,omci_master_key_valid,xgpon_key_ready,mac_prepared,puc_configured,pdc_configured;unsigned long long itu_line_epoch;unsigned int xgpon_key_valid,xgpon_key_state,xgpon_last_state;int omci_key_lock,mpcp_irq;void *tx_disable,*top_irq,*omci_device;bool xgpon_restore_pending,xgpon_watchdog_armed,xgpon_rogue_pending;unsigned int xgpon_health_state;unsigned long xgpon_health_at;struct work_struct xgpon_health_work;};
 #define netdev_priv(p) (p)
 #define dev_get_drvdata(d) ((d)->data)
 #define spin_lock_irqsave(p,f) do{assert(!*(p));*(p)=1;(f)=0;}while(0)
@@ -46,6 +50,7 @@ static unsigned int flushes,initializations,accesses,fail_access;
 #define spin_unlock_bh(p) ((void)(p))
 static void cancel_delayed_work(struct work_struct *w){w->pending=0;}
 static void synchronize_irq(int irq){(void)irq;}
+static void rtl_pon_dying_gasp_stop(struct rtl9617c_pon *p){(void)p;}
 static int rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *p,enum rtl_pon_mode mode){assert(p->lock && p->mode==mode);return 0;}
 static void netif_carrier_off(void *dev){(void)dev;}
 static bool netif_running(void *dev){(void)dev;return true;}
@@ -53,7 +58,9 @@ static void gpiod_set_value_cansleep(void *gpio,int value){*(int*)gpio=value;}
 static void mutex_lock(int *p){assert(!*p);*p=1;}
 static void mutex_unlock(int *p){assert(*p);*p=0;}
 static void udelay(unsigned int n){assert(n==500);}
-static void msleep(unsigned int n){assert(n==5);}
+static void msleep(unsigned int n){assert(n==1 || n==5);}
+/* The separate activation replay executes the actual CDR/gearbox sequence. */
+static int rtl_pon_serdes_restart_locked(struct rtl9617c_pon *p){assert(p->control_lock && p->lock);return 0;}
 static u32 readl(const void *p){return *(const u32*)p;}
 static void writel(u32 value,void *p){
  *(u32*)p=value;
@@ -112,7 +119,7 @@ int main(void){
   flushes=initializations=accesses=0;
   /* Fail the first indirect command of restore, after the original snapshot
    * and PUC initialization. The subsequent attempt must use that snapshot. */
-  fail_access=32+256*3+1;
+  fail_access=32+256*2+192+1;
   rtl_pon_xgpon_recovery(&pon.xgpon_recovery_work);
   assert(pon.xgpon_recover && pon.xgpon_activation_error==-ETIMEDOUT && pon.xgpon_recovery_phase==3);
   assert(initializations==1 && flushes==32 && (ni[0x610c/4]&65535)==0 && !(regs[0x4004/4]&3));
@@ -137,7 +144,7 @@ int main(void){
   for(unsigned int i=0;i<256;i++){
    assert(tables[2][i][0]==snapshot.cir[i][0] && (tables[2][i][1]&0x7fffffff)==snapshot.cir[i][1]);
    assert(tables[3][i][0]==snapshot.pir[i][0] && (tables[3][i][1]&0x7fffffff)==snapshot.pir[i][1]);
-   assert((tables[4][i][0]&255)==(snapshot.backpressure[i]&255));
+   assert((tables[4][i][0]&255)==(i<192?(snapshot.backpressure[i]&255):0));
    assert((tables[4][i][0]&~255U)==0x8000e000);
   }
   for(unsigned int i=0;i<8;i++)assert(regs[(0x81bc-i*4)/4]==snapshot.valid[i]);

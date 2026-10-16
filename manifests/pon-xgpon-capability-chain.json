@@ -1,0 +1,38 @@
+{
+  "base_commit": "efc3789ad25fd6ce9178c42d9b6e18c36995acd3",
+  "purpose": "Resolve the apparent capability layout discrepancy with a coherent original-image OMCI ioctl/platform/DAL chain.",
+  "primary_evidence": {
+    "rea": "Local rea-agents6.5.0 / Ghidra12.1.2",
+    "archive": "artifacts/xgpon-capability-chain-rea-20261016/rea/index.json",
+    "extraction": "artifacts/xgpon-mib-capability-rea-20261016/extraction.json",
+    "lower_module_versions": "artifacts/xgpon-mib-capability-rea-20261016/lower-module-identity.json",
+    "capacity_replay": "artifacts/xgpon-mib-capability-rea-20261016/schedule-capacity-replay.json"
+  },
+  "findings": [
+    "The original image and live-files OMCI kernel modules are different builds. Same-image pf_rt_GetDevCapabilities has a128-byte capability layout, while the live-files build has a larger layout with3-byte per-port entries. Comparing the latter with the older user library produces a false layout discrepancy.",
+    "Same-image OMCI_Init calls omci_wrapper_getDevCapabilities for128 bytes. Original omcidrv_ioctl forwards the capability pointer to pf_GetDevCapabilities, without an invented field conversion.",
+    "Original platform_db_init populates capacity cache from rt_gpon_scheInfo_get; pf_rt_GetDevCapabilities reads those cache fields. Same-image actual DAL getter returns the four32-bit words31,8,248,248.",
+    "Native31 business T-CONTs and248 GEM entries match the proven stock schedule capacity. No evidence warrants reducing or increasing these capacities.",
+    "The priority-queue number advertised by ONU2-G can pass through feature hooks and MIB construction. The native280 total queue count is not declared equivalent to the stock248 schedule queue word by this audit.",
+    "The separately replayed live-files DAL getter returns the same31,8,248,248 values. Version coherence corrects the capability-structure interpretation without changing the proven lower schedule capacity."
+  ],
+  "verification": {
+    "command": "Execute original dal_rt_rtl8277c_gpon_scheInfo_get via ModuleOracle with gpon_init1, compare four returned32-bit words with31,8,248,248",
+    "result": "All four original words observed as expected; no child callbacks or simulated MMIO required.",
+    "production_changes": false,
+    "tests": "Two actual DAL getter replays only; no suite or firmware build."
+  },
+  "limits": [
+    "Static original initialization and one actual getter replay do not establish live stock feature hook values or a live MIB upload.",
+    "An initial REA open failed before the extracted DAL input existed; the terminal failure is archived. After extraction a separate ready plan succeeded.",
+    "No proof of the reported business-mapping -110 location or approximately50-second reset cause.",
+    "Goal remains active."
+  ],
+  "queue_review": "REA original omci_wrapper_setPriQueue and comparator inspected. Comparator places WRR before SP, sorts SP priority descending and uses ME index for equal SP priorities, consistent with the native ordering. This is not a complete queue mutation equivalence proof.",
+  "evidence_sha256": {
+    "artifacts/xgpon-mib-capability-rea-20261016/extraction.json": "5ed0e39616a26a3446a1a96bbd1690870578db13c943ce85a4be74a2015129ac",
+    "artifacts/xgpon-mib-capability-rea-20261016/lower-module-identity.json": "4a22713dc3abe3f1ca287615ad075d52197556129e75e06b9ee603267bb2f237",
+    "artifacts/xgpon-mib-capability-rea-20261016/schedule-capacity-replay.json": "19f4708e1b6cad78908f431f0a37ca68637efd92a7e6be22a310fe152dba73fc",
+    "artifacts/xgpon-capability-chain-rea-20261016/rea/index.json": "448c12fd000da8b9901c44bc7208f9757b90180c4bca94c79c3b8dc2c35ece33"
+  }
+}

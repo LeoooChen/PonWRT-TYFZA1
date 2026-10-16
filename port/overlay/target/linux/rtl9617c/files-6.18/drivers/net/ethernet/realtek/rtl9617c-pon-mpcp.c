@@ -187,6 +187,8 @@ static irqreturn_t rtl_mpcp_irq_thread(int irq, void *data)
 		writel(optical, pon->optical_irq);
 		if (rtl_pon_mode_is_epon(pon->mode))
 			rtl_pon_oam_carrier(pon);
+		else if (pon->mode == RTL_PON_XGPON || pon->mode == RTL_PON_XGSPON)
+			rtl_pon_xgpon_optical_irq(pon, optical);
 	}
 	if (pending & BIT(0)) {
 		if (rtl_pon_mode_is_epon(pon->mode)) {

@@ -1,0 +1,52 @@
+{
+  "base_commit": "efc3789ad25fd6ce9178c42d9b6e18c36995acd3",
+  "purpose": "Select an equivalent target T-CONT queue during GEM rebinding, matching the original scheduling policy and SP priority or WRR weight.",
+  "primary_evidence": {
+    "module_sha256": "674925056eb098d096661e278b173feb07141a8aa5d37889439dc76ebf894608",
+    "rea": "Local rea-agents6.5.0 / Ghidra12.1.2",
+    "functions": [
+      "libomci_mib.so:omci_wrapper_cfgGemFlow@0x1e6a0",
+      "libomci_mib.so:omci_wrapper_setPriQueue@0x1de18",
+      "libomci_mib.so:omci_IsWrrPolicy@0x1999c"
+    ],
+    "actual_scan": "0x1e8a8..0x1e8ec with branch loop at0x1eaac",
+    "archive": "artifacts/xgpon-queue-fallback-rea-20261016/rea/index.json",
+    "stock_selection": "artifacts/xgpon-queue-fallback-rea-20261016/stock-selection.json",
+    "disassembly": "artifacts/xgpon-queue-fallback-rea-20261016/stock-scan-disassembly.txt"
+  },
+  "root_cause": "When the requested GEM queue owner differs from the CTP target T-CONT, native update_queue_bindings chose the first configured queue on the target T-CONT. The shipped original scans for the same scheduling-policy flag and the same saved SP priority or WRR weight, retaining the requested queue if no equivalent exists. Choosing a different queue can merge independently scheduled GEMs or give a GEM the wrong priority/weight.",
+  "concrete_example": "Requested SP queue0 has priority5 on T-CONT0. Target T-CONT1 has queue1 priority6 and queue2 priority5. Old native chose queue1; original chooses queue2. For target priorities6/4 with no equivalent, original retains queue0; old native still chose queue1.",
+  "fix": [
+    "Resolve each queue scheduling policy from its referenced scheduler or RelatedPort T-CONT.",
+    "Require policy equality and matching SP priority or WRR weight during the existing target-owner fallback scan.",
+    "Retain the requested queue when no equivalent target queue exists, following the original scan.",
+    "Correct the pre-existing regression assertion that expected different-priority queues to be interchangeable."
+  ],
+  "verification": {
+    "stock_command": "python3 tools/trace_stock_omci_queue_fallback.py",
+    "stock_cases": "Actual original scan: SP skips different priority; SP skips WRR with same numeric value; WRR skips different weight; no match retains requested queue.",
+    "stock_scope": "Actual shipped scan and ME-ID selection instructions with synthetic active queue rows. No function callbacks or reimplemented scan; MIB construction, ioctl, queue programming and optics outside scope.",
+    "before": "artifacts/xgpon-queue-fallback-rea-20261016/before-test.log",
+    "before_result": "New SP fallback regression failed on the production pre-fix Rust library because GEM0 shared the wrong queue with GEM1. The first failure aborts the test; no claim that all cases ran before the fix.",
+    "after": "artifacts/xgpon-queue-fallback-rea-20261016/after-test.log",
+    "after_result": "Existing OMCI queue FFI regression passes, including four added scenarios: SP/WRR with an equivalent target queue and with no equivalent. Existing remap, weight, backend-error rollback and invalid-pointer checks also pass.",
+    "native_scope": "Real baseline OMCI requests through the production Rust FFI and snapshot exporter; apply callback captures the actual payload and models hardware success/failure. Does not program the physical PUC or simulate OLT timing.",
+    "host_build": "artifacts/xgpon-queue-fallback-rea-20261016/after-build.log",
+    "arm64_build": "artifacts/xgpon-queue-fallback-rea-20261016/arm64-build.log",
+    "library_sha256": "082d290df641312c86c6c1da39ba1bb5409cb36e3606e059ba100e933ad2b0bd",
+    "build_scope": "Offline locked Cargo builds of the OMCI static library only, including cortex-a55 aarch64-unknown-linux-musl target. Isolated target directory; no full firmware build or test suite.",
+    "compiler_diagnostics": [],
+    "git_diff_check": true
+  },
+  "source_sha256": {
+    "port/packages/tyfza1-pon-control/omci/src/mib.rs": "70f39e1823d8bdab708751c3dc1c80af0ba3a29fc46d06105a691757db9af74c",
+    "scripts/test_omci_queues.c": "3db18b3cf2a3e1b1de64087eba08b0b3aba9fc881aa681c7720b07c2e910b5c8",
+    "tools/trace_stock_omci_queue_fallback.py": "50b67686cd6a2d7a7776029b1aafcb9f37eb67b018930626c245d4f863db9493"
+  },
+  "limits": [
+    "Queue-selection defect is reproduced and corrected offline. It does not establish the cause of the reported -110 table timeout or approximately50-second ACTP reset.",
+    "The queue matching comparison uses MIB policy/priority/weight; complete equivalence of all original queue database lifecycle states is not claimed.",
+    "No physical XGPON OLT test, firmware deployment, commit or push.",
+    "Goal remains active."
+  ]
+}

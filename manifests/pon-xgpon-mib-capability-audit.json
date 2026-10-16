@@ -1,0 +1,70 @@
+{
+  "base_commit": "f07ed6f89cea5a13ce77d1ba1113516b3ad3bd12",
+  "status": "investigating",
+  "purpose": "Recover the real TYFZA1 OMCI MIB plugins and follow capability population instead of relying on empty partial-extraction placeholders or plugin defaults.",
+  "primary_evidence": {
+    "extraction": "artifacts/xgpon-mib-capability-rea-20261016/extraction.json",
+    "rea": "Local rea-agents6.5.0 / Ghidra12.1.2",
+    "archive": "artifacts/xgpon-mib-capability-rea-20261016/rea/index.json",
+    "files": [
+      {
+        "path": "lib/libomci_mib.so",
+        "bytes": 254656,
+        "sha256": "674925056eb098d096661e278b173feb07141a8aa5d37889439dc76ebf894608",
+        "diagnostics": ""
+      },
+      {
+        "path": "lib/omci/mib_Ont2g.so",
+        "bytes": 28272,
+        "sha256": "2adec94eab3b6695aad1695de817d698a8e29017065b531bae1d060820b51fec",
+        "diagnostics": ""
+      },
+      {
+        "path": "lib/omci/mib_Tcont.so",
+        "bytes": 28064,
+        "sha256": "bc33ed935f70fb80f80b8b1843b722b00e86b13a1d0e47db9c5cb994f5a04039",
+        "diagnostics": ""
+      },
+      {
+        "path": "lib/omci/mib_PriQ.so",
+        "bytes": 32768,
+        "sha256": "6b62a24ec72aab2ae770b56ccea59a19efc452e777cef772a75c3707d0a92471",
+        "diagnostics": ""
+      },
+      {
+        "path": "lib/omci/mib_Scheduler.so",
+        "bytes": 27976,
+        "sha256": "b474f312a24d60a08da19a53a535305e287e55ec5db10e9acf0eb2d69f0c3792",
+        "diagnostics": ""
+      },
+      {
+        "path": "bin/omci_app",
+        "bytes": 139248,
+        "sha256": "0d4868e0a5977376453a1bb6e155a2f10b74f3e153d3daf685683703c8087ca5",
+        "diagnostics": ""
+      }
+    ]
+  },
+  "findings": [
+    "The original ubi_r0 volume has a .ubifs filename but contains SquashFS. unsquashfs -cat recovered only the named ELF files, without extracting the full filesystem. The freshly extracted libomci_mib.so hash matches the original selected sample.",
+    "MIB_Table_Init symbol ambiguity was resolved at exact entry0x10e3c8. The loader discovers /lib/omci plugins and calls their mibTable_init functions; recovered plugins provide the actual ONU2-G, T-CONT, priority queue and scheduler definitions.",
+    "omci_app FUN_0040e2fc initializes MIB defaults and then fills ONU2-G queue/scheduler/GEM counts from gInfo fields at0x442ab8/0x442ab0/0x442ab4. omci_mib_cfg_setup_me performs the same overrides for configured MEs.",
+    "OMCI_Init reads device capabilities through omci_wrapper_getDevCapabilities into gInfo+0x98 before MIB construction. Plugin default capability constants therefore do not establish the actual values advertised to an OLT.",
+    "TcontDrvCfg distinguishes XGTC14-bit Alloc-ID range from GPON12-bit range; recovered code does not justify narrowing the native XGTC range."
+  ],
+  "open_questions": [
+    "Complete the driver capability transport/structure interpretation and runtime input values before comparing final counts with the native31 business T-CONTs,280 priority queues and248 GEM capacity.",
+    "The available static data does not establish whether a capacity discrepancy exists on the peer OLT path; no speculative capacity reduction or QoS flag copy was made."
+  ],
+  "analysis_limits": [
+    "One attempted decompile address0x14cfd8 was not a mapped code location; its explicit tool error is preserved. The valid exact entry and MIB plugin analyses succeeded.",
+    "These are shipped binary analyses and extraction checks, not a running stock OMCI MIB capture.",
+    "No production source change or hardware correctness claim follows solely from these recovered defaults."
+  ],
+  "goal_status": "active",
+  "followup": {
+    "manifest": "manifests/pon-xgpon-capability-chain.json",
+    "version_correction": "The earlier pf_rt_GetDevCapabilities analysis used the live-files module whereas omci_app/libomci_mib came from the older ubi_r0 image. Capability structures differ. The later same-image chain corrects this comparison; no native source change was made from the mixed-version inference.",
+    "schedule_capacity_verified": "Same-image actual dal_rt_rtl8277c_gpon_scheInfo_get returns31,8,248,248; native business T-CONT and GEM capacities agree. Final OMCI queue count and feature overrides remain a separate question."
+  }
+}

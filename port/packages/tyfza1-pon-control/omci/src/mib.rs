@@ -1643,6 +1643,21 @@ impl Mib {
     }
 
     pub fn update_queue_bindings(&mut self, request: &Request<'_>) -> Result<(), i32> {
+        let previous_queues: BTreeSet<_> = self.gem_queue_bindings.values()
+            .map(|&(queue, _)| queue).collect();
+        let scheduling = |id| -> Result<(bool, u16), i32> {
+            let queue = self.entities.get(&(CLASS_PRIORITY_QUEUE, id)).ok_or(-22)?;
+            let related = &queue.attributes[&6].value;
+            let scheduler = be_u16(&queue.attributes[&7].value).unwrap();
+            let policy_entity = if scheduler & 0x8000 != 0 {
+                (CLASS_TRAFFIC_SCHEDULER, scheduler)
+            } else {
+                (CLASS_TCONT, be_u16(related).unwrap())
+            };
+            let wrr = self.entities.get(&policy_entity).ok_or(-22)?.attributes[&3].value[0] == 2;
+            Ok((wrr, if wrr { u16::from(queue.attributes[&8].value[0]) }
+                else { be_u16(&related[2..]).unwrap() }))
+        };
         let owner = |id| -> Result<u16, i32> {
             let queue = self.entities.get(&(CLASS_PRIORITY_QUEUE, id)).ok_or(-22)?;
             let related = &queue.attributes[&6].value;
@@ -1681,13 +1696,20 @@ impl Mib {
                 continue;
             }
             let queue = if owner(requested)? == port { requested } else {
-                // Original 0x1e8b8..0x1e8ec selects the first active queue on
-                // the CTP T-CONT; with no match it retains the requested queue.
+                // Original fallback requires the same policy and SP priority or WRR weight.
+                let requested_scheduling = scheduling(requested)?;
                 self.configured_priority_queues.iter().copied()
-                    .find(|&queue| owner(queue) == Ok(port)).unwrap_or(requested)
+                    .find(|&queue| owner(queue) == Ok(port)
+                        && scheduling(queue) == Ok(requested_scheduling)).unwrap_or(requested)
             };
             self.gem_queue_bindings.insert(id, (queue, port));
             self.configured_priority_queues.insert(queue);
+        }
+        // The last GEM reference releases its queue from the active hardware set.
+        for queue in previous_queues {
+            if !self.gem_queue_bindings.values().any(|&(current, _)| current == queue) {
+                self.configured_priority_queues.remove(&queue);
+            }
         }
         Ok(())
     }

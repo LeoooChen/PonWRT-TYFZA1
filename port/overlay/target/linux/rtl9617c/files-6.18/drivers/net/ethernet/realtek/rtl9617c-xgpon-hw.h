@@ -140,7 +140,8 @@ static inline void rtl_xgpon_mac_parameters(const struct rtl_dq_io *io, int symm
 	io->write(io->context, 0x4d28, 0x0fffffff);
 	io->write(io->context, 0x4600,
 		  (io->read(io->context, 0x4600) & ~0xff0000c0U) | 0x04000040U);
-	io->write(io->context, 0x4628, io->read(io->context, 0x4628) & ~3U);
+	/* Stock PLOAMU queue config selects no_empty bit0 and mode bit31. */
+	io->write(io->context, 0x4628, io->read(io->context, 0x4628) & ~0x80000001U);
 	io->write(io->context, 0x410c, io->read(io->context, 0x410c) | 6U);
 }
 
@@ -157,6 +158,22 @@ static inline int rtl_xgpon_tcont_set(const struct rtl_dq_io *io,
 	word = (io->read(io->context, 0x483c) & ~0x11003fffU) |
 	       (alloc_id & 0x3fffU) | (ploam ? 1U << 28 : 0) | (omci ? 1U << 24 : 0);
 	io->write(io->context, 0x483c, word);
+	return io->indirect(io->context, 0x4838, 0xc0000000U | index);
+}
+
+/* Stock OMCI deletion leaves a PLOAM-enabled allocation under line control. */
+static inline int rtl_xgpon_tcont_release(const struct rtl_dq_io *io, unsigned int index)
+{
+	unsigned int word;
+	int ret = io->indirect(io->context, 0x4838, 0x80000000U | index);
+
+	if (ret)
+		return ret;
+	word = io->read(io->context, 0x483c);
+	if (word & (1U << 28))
+		return 0;
+	io->write(io->context, 0x483c, (word & ~0x01003fffU) |
+		(RTL_XGPON_ALLOC_ID_INVALID & 0x3fffU));
 	return io->indirect(io->context, 0x4838, 0xc0000000U | index);
 }
 
@@ -187,6 +204,42 @@ static inline int rtl_xgpon_upstream_gem_set(const struct rtl_dq_io *io,
 	       (multicast ? 1U << 18 : 0);
 	io->write(io->context, 0x461c, word);
 	return io->indirect(io->context, 0x4618, 0xc0000000U | index);
+}
+
+/* DSFP OMCC-AES change mirrors the transmit mode into all eight OMCC GEMs.
+ * Read the live mode so a MAC reset cannot leave a separate toggle stale. */
+static inline int rtl_xgpon_omcc_aes_toggle(const struct rtl_dq_io *io)
+{
+	unsigned int encrypted, word;
+	int ret = io->indirect(io->context, 0x4618, 0x80000000U);
+
+	if (ret)
+		return ret;
+	encrypted = (io->read(io->context, 0x461c) ^ (1U << 17)) & (1U << 17);
+	for (unsigned int i = 0; i < 8; i++) {
+		if (i) {
+			ret = io->indirect(io->context, 0x4618, 0x80000000U | i);
+			if (ret)
+				return ret;
+		}
+		word = (io->read(io->context, 0x461c) & ~(1U << 17)) | encrypted;
+		io->write(io->context, 0x461c, word);
+		ret = io->indirect(io->context, 0x4618, 0xc0000000U | i);
+		if (ret)
+			return ret;
+	}
+	if (!encrypted) {
+		/* Original setter releases AES only after its last enabled GEM exits. */
+		for (unsigned int i = 8; i < 256; i++) {
+			ret = io->indirect(io->context, 0x4618, 0x80000000U | i);
+			if (ret)
+				return ret;
+			if ((io->read(io->context, 0x461c) & (3U << 16)) == (3U << 16))
+				return 0;
+		}
+		io->write(io->context, 0x4600, io->read(io->context, 0x4600) & ~(1U << 7));
+	}
+	return 0;
 }
 
 /* TURN selects the older ready buffer; silicon authenticates before PKT_RDY. */

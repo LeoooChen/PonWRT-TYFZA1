@@ -87,5 +87,17 @@ with tempfile.TemporaryDirectory(prefix='xgtc-init-',dir=root/'artifacts') as wo
   registers=[0x4004,0x4108,0x4110,0x4e00,0x4e04,0x4a04,0x4a00,0x4a08,0x4a60,0x4808,0x4804,0x480c,0x4d00,0x4d08,0x4d0c,0x4d10,0x4d14,0x4d18,0x4d04,0x4d30,0x4d2c,0x4d28,0x4600,0x4628,0x4a10,0x4a14]+list(range(0x4a34,0x4a58,4))
   for reg in registers:assert mem[reg]==original[reg],(mode,hex(reg),hex(mem[reg]),hex(original[reg]))
   comparisons.append({'mode':mode,'identity_and_36byte_registration_match':True,'DSFP_PLOAM_BWMP_ACTP_USBG_registers_match':True,'register_count':len(registers)})
+ # Exercise both configured fields, including a mode bit hidden by reset defaults.
+ queue_seed=0x80000002
+ o.uc.mem_write(0x6004628,struct.pack('<I',queue_seed))
+ assert o.call('__xgpon_usbg_init.constprop.0',0)==0
+ stock_queue=struct.unpack('<I',o.uc.mem_read(0x6004628,4))[0]
+ mem.clear();mem.update(defaults);mem[0x4628]=queue_seed
+ native.configure(ctypes.byref(io),1,b'TEST\x12\x34\x56\x78',bytes(range(36)))
+ queue_record={'initial':queue_seed,'stock':stock_queue,'native':mem[0x4628],
+  'scope':'Original USBG initializer and setters versus native MAC parameters; MMIO and locks modeled, no physical queue operation.'}
+ (root/'logs/stock-xgpon-ploamu-queue.json').write_text(json.dumps(queue_record,indent=2)+'\n')
+ print('PLOAMU queue initial=%08x stock=%08x native=%08x'%(queue_seed,stock_queue,mem[0x4628]),flush=True)
+ assert mem[0x4628]==stock_queue==2
  (root/'logs/itu51-native-xgtc-init-contract.json').write_text(json.dumps({'hardware_test':False,'register_read_defaults_modelled':True,'comparisons':comparisons},indent=2)+'\n')
  print('Native XG-PON/XGS-PON identity and block initialization match board original functions')

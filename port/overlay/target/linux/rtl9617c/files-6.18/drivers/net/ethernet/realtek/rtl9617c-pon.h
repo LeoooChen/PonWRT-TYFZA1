@@ -18,6 +18,8 @@ struct rtl_itu_path_state {
 	struct rtl_itu_paths paths;
 };
 
+struct platform_device;
+
 enum rtl_gpon_drain_phase {
 	RTL_GPON_DRAIN_IDLE, RTL_GPON_DRAIN_INVALIDATE, RTL_GPON_DRAIN_PORT, RTL_GPON_DRAIN_ALLOC,
 	RTL_GPON_DRAIN_PROBE, RTL_GPON_DRAIN_PROBE_WAIT, RTL_GPON_DRAIN_QUEUE,
@@ -59,7 +61,24 @@ struct rtl9617c_pon {
 	bool gpon_recover;
 	struct rtl_gpon_drain gpon_drain;
 	struct delayed_work xgpon_recovery_work;
+	struct delayed_work xgpon_health_work;
 	bool xgpon_recover;
+	bool xgpon_watchdog_armed, xgpon_restore_pending;
+	bool xgpon_rogue_pending;
+	u32 xgpon_rogue_last_ms, xgpon_rogue_count[2];
+	unsigned long xgpon_health_at, xgpon_restore_at;
+	u32 xgpon_health_state, xgpon_health_grants, xgpon_health_matches, xgpon_health_no_grants;
+	u64 xgpon_mac_resets, xgpon_health_fec, xgpon_health_sn;
+	u32 xgpon_reset_reason;
+	/* OMCI-owned allocations survive hardware resets, like stock tmp_alloc_id_cfg. */
+	u32 xgpon_restore_tcont[32];
+	void __iomem *dying_gasp;
+	int dying_gasp_irq, dying_gasp_error;
+	bool dying_gasp_registered, dying_gasp_sent;
+	spinlock_t dying_gasp_lock;
+	struct sk_buff *dying_gasp_packet;
+	u8 dying_gasp_prefix[16];
+	u64 dying_gasp_tx;
 	/* 0 idle, 1 capture PUC, 2 flush/reset, 3 restore saved PUC. */
 	u8 xgpon_recovery_phase;
 	struct rtl_xgtc_puc_saved xgpon_puc_saved;
@@ -146,6 +165,7 @@ struct rtl9617c_pon {
 };
 
 void rtl_pon_update(void __iomem *reg, u32 mask, u32 value);
+int rtl_pon_serdes_restart_locked(struct rtl9617c_pon *pon);
 int rtl_pon_serdes_configure(struct rtl9617c_pon *pon, enum rtl_pon_mode mode);
 void rtl_pon_serdes_init_work(struct rtl9617c_pon *pon);
 void rtl_pon_serdes_stop_work(struct rtl9617c_pon *pon);
@@ -163,6 +183,8 @@ int rtl_pon_xgpon_activation_locked(struct rtl9617c_pon *pon, bool enable);
 void rtl_pon_xgpon_stop_locked(struct rtl9617c_pon *pon);
 void rtl_pon_xgpon_irq(struct rtl9617c_pon *pon);
 void rtl_pon_xgpon_recovery(struct work_struct *work);
+void rtl_pon_xgpon_health(struct work_struct *work);
+void rtl_pon_xgpon_optical_irq(struct rtl9617c_pon *pon, u32 events);
 int rtl_pon_xgpon_omci_key(struct rtl9617c_pon *pon, const u8 tag[8]);
 int rtl_pon_xgpon_ack_update(struct rtl9617c_pon *pon);
 void rtl_pon_xgpon_key_irq(struct rtl9617c_pon *pon, u32 interrupts, u32 control);
@@ -183,6 +205,9 @@ void rtl_pon_gpon_irq(struct rtl9617c_pon *pon);
 void rtl_pon_gpon_recovery(struct work_struct *work);
 int rtl_pon_omci_init(struct rtl9617c_pon *pon);
 void rtl_pon_omci_remove(struct rtl9617c_pon *pon);
+int rtl_pon_dying_gasp_init(struct rtl9617c_pon *pon, struct platform_device *pdev);
+void rtl_pon_dying_gasp_prepare(struct rtl9617c_pon *pon);
+void rtl_pon_dying_gasp_stop(struct rtl9617c_pon *pon);
 void rtl_pon_omci_receive(struct rtl9617c_pon *pon, struct napi_struct *napi,
 			  struct sk_buff *skb, unsigned int source);
 ssize_t rtl_pon_ploam_receive(struct rtl9617c_pon *pon, char *buf, size_t count);

@@ -7,7 +7,7 @@
 struct rtl_xgtc_puc_saved {
 	unsigned int ni_enable, mac, burst, laser, to1, to2;
 	unsigned int control[5], limit_select[16], limit[3], valid[8];
-	unsigned int pvt[32][5], cir[256][2], pir[256][2], backpressure[256];
+	unsigned int pvt[32][5], cir[256][2], pir[256][2], backpressure[192];
 };
 
 static const unsigned int rtl_xgtc_control_regs[5] = {0x813c, 0x8140, 0x8144, 0x8050, 0x808c};
@@ -56,7 +56,7 @@ static inline int rtl_xgtc_puc_save(const struct rtl_dq_io *io, struct rtl_xgtc_
 	for (unsigned int i = 0; i < 256; i++) {
 		ret = rtl_xgtc_table_read(io, 0x81c4, 0x81cc, i, saved->cir[i], 2);
 		if (!ret) ret = rtl_xgtc_table_read(io, 0x81ec, 0x81f4, i, saved->pir[i], 2);
-		if (!ret) ret = rtl_xgtc_table_read(io, 0x80e8, 0x80ec, i, &saved->backpressure[i], 1);
+		if (!ret && i < 192) ret = rtl_xgtc_table_read(io, 0x80e8, 0x80ec, i, &saved->backpressure[i], 1);
 		if (ret) return ret;
 	}
 	return 0;
@@ -93,7 +93,7 @@ static inline int rtl_xgtc_puc_restore(const struct rtl_dq_io *io, const struct 
 	for (unsigned int i = 0; i < 256; i++) {
 		ret = rtl_xgtc_table_restore(io, 0x81c4, 0x81cc, i, saved->cir[i], bucket_mask, 2);
 		if (!ret) ret = rtl_xgtc_table_restore(io, 0x81ec, 0x81f4, i, saved->pir[i], bucket_mask, 2);
-		if (!ret) ret = rtl_xgtc_table_restore(io, 0x80e8, 0x80ec, i, &saved->backpressure[i], &bp_mask, 1);
+		if (!ret && i < 192) ret = rtl_xgtc_table_restore(io, 0x80e8, 0x80ec, i, &saved->backpressure[i], &bp_mask, 1);
 		if (ret) return ret;
 	}
 	for (unsigned int i = 0; i < 16; i++) io->write(io->context, 0x8090 + i * 4, saved->limit_select[i]);

@@ -5,6 +5,8 @@
 #include <linux/unaligned.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
+#include <linux/interrupt.h>
+#include <linux/platform_device.h>
 #include <linux/random.h>
 #include <crypto/aes.h>
 #include <crypto/hash.h>
@@ -34,6 +36,32 @@ static int rtl_omci_cmac(void *context, const u8 *key, const u8 *data, unsigned 
 	return ret;
 }
 
+static int rtl_xgpon_generate_data_key(struct rtl9617c_pon *pon, unsigned int index)
+{
+	const struct rtl_dq_io io = {pon, key_read, key_write, NULL};
+	static const u8 name_suffix[16] = "3141592653589793";
+	struct crypto_aes_ctx aes;
+	u8 key[16], name[32];
+	int ret;
+
+	get_random_bytes(key, 16);
+	ret = aes_expandkey(&aes, pon->xgpon_kek, 16);
+	if (ret) goto out;
+	aes_encrypt(&aes, pon->xgpon_encrypted_key[index], key);
+	memcpy(name, key, 16);
+	memcpy(name + 16, name_suffix, 16);
+	ret = rtl_omci_cmac(pon->omci_kdf, pon->xgpon_kek, name, 32, pon->xgpon_key_name[index]);
+	if (!ret) {
+		rtl_xgpon_data_key(&io, index, key);
+		pon->xgpon_key_valid |= BIT(index);
+	}
+out:
+	memzero_explicit(key, sizeof(key));
+	memzero_explicit(name, sizeof(name));
+	memzero_explicit(&aes, sizeof(aes));
+	return ret;
+}
+
 int rtl_pon_xgpon_ack_update(struct rtl9617c_pon *pon)
 {
 	const struct rtl_dq_io io = {pon, key_read, key_write, NULL};
@@ -55,6 +83,7 @@ int rtl_pon_xgpon_omci_key(struct rtl9617c_pon *pon, const u8 tag[8])
 
 	lockdep_assert_held(&pon->lock);
 	if (pon->xgpon_key_ready && !memcmp(pon->xgpon_tag, tag, 8)) return 0;
+	rtl_pon_dying_gasp_stop(pon);
 	spin_lock_bh(&pon->omci_key_lock);
 	pon->xgpon_key_ready = false;
 	spin_unlock_bh(&pon->omci_key_lock);
@@ -77,6 +106,12 @@ int rtl_pon_xgpon_omci_key(struct rtl9617c_pon *pon, const u8 tag[8])
 			ret = rtl_pon_xgpon_ack_update(pon);
 	}
 	if (!ret) {
+		/* Stock session derivation installs both slots under the new KEK. */
+		pon->xgpon_key_valid = 0;
+		ret = rtl_xgpon_generate_data_key(pon, 0);
+		if (!ret) ret = rtl_xgpon_generate_data_key(pon, 1);
+	}
+	if (!ret) {
 		spin_lock_bh(&pon->omci_key_lock);
 		ret = crypto_shash_setkey(pon->omci_cmac, key, 16);
 		pon->xgpon_key_ready = !ret;
@@ -86,6 +121,8 @@ int rtl_pon_xgpon_omci_key(struct rtl9617c_pon *pon, const u8 tag[8])
 	memzero_explicit(key, sizeof(key));
 	memzero_explicit(session, sizeof(session));
 	memzero_explicit(integrity, sizeof(integrity));
+	if (!ret)
+		rtl_pon_dying_gasp_prepare(pon);
 	return ret;
 }
 
@@ -118,9 +155,7 @@ ssize_t rtl_pon_omci_master_key(struct rtl9617c_pon *pon, const char *buf, size_
 void rtl_pon_xgpon_key_irq(struct rtl9617c_pon *pon, u32 interrupts, u32 control)
 {
 	const struct rtl_dq_io io = {pon, key_read, key_write, NULL};
-	static const u8 name_suffix[16] = "3141592653589793"; /* Original ca_generate_kek_name constant. */
-	u8 message[40] = {}, key[16], name[32];
-	struct crypto_aes_ctx aes;
+	u8 message[40] = {};
 	u32 status;
 	unsigned int flag = (control >> 8) & 255, index = (control >> 16) & 255;
 	int ret = 0;
@@ -130,16 +165,9 @@ void rtl_pon_xgpon_key_irq(struct rtl9617c_pon *pon, u32 interrupts, u32 control
 		if (!pon->xgpon_key_ready || index < 1 || index > 2 || flag > 1) { ret = -EPROTO; goto error; }
 		index--;
 		if (!flag) {
-			get_random_bytes(key, 16);
-			ret = aes_expandkey(&aes, pon->xgpon_kek, 16);
+			ret = rtl_xgpon_generate_data_key(pon, index);
 			if (ret) goto error;
-			aes_encrypt(&aes, pon->xgpon_encrypted_key[index], key);
-			memcpy(name, key, 16); memcpy(name + 16, name_suffix, 16);
-			ret = rtl_omci_cmac(pon->omci_kdf, pon->xgpon_kek, name, 32, pon->xgpon_key_name[index]);
-			if (ret) goto error;
-			rtl_xgpon_data_key(&io, index, key);
 			rtl_pon_update(pon->mac + 0x4124, BIT(index), BIT(index));
-			pon->xgpon_key_valid |= BIT(index);
 			if (pon->xgpon_key_state != 4 || pon->xgpon_active_key != index)
 				pon->xgpon_key_state = 2;
 		} else {
@@ -163,9 +191,6 @@ error:
 	}
 	if (interrupts & BIT(6)) pon->xgpon_key_tk5++;
 	if (ret) pon->xgpon_activation_error = ret;
-	memzero_explicit(key, sizeof(key));
-	memzero_explicit(name, sizeof(name));
-	memzero_explicit(&aes, sizeof(aes));
 }
 
 ssize_t rtl_pon_omci_broadcast_key(struct rtl9617c_pon *pon, const char *buf, size_t count)
@@ -222,6 +247,117 @@ static int rtl_omci_mic(struct rtl9617c_pon *pon, u8 direction, const u8 *data, 
 	return ret;
 }
 
+void rtl_pon_dying_gasp_stop(struct rtl9617c_pon *pon)
+{
+	struct sk_buff *packet;
+	unsigned long flags;
+
+	if (!pon->dying_gasp_registered)
+		return;
+	writel(0, pon->dying_gasp + 4);
+	synchronize_irq(pon->dying_gasp_irq);
+	spin_lock_irqsave(&pon->dying_gasp_lock, flags);
+	packet = pon->dying_gasp_packet;
+	pon->dying_gasp_packet = NULL;
+	pon->dying_gasp_sent = false;
+	spin_unlock_irqrestore(&pon->dying_gasp_lock, flags);
+	dev_kfree_skb_any(packet);
+}
+
+void rtl_pon_dying_gasp_prepare(struct rtl9617c_pon *pon)
+{
+	/* Exact aal_gpon_dg_pdu body; the running session supplies its four-byte MIC. */
+	static const u8 body[44] = {[2] = 0x10, [3] = 0x0a, [4] = 1,
+		[8] = 1, [39] = 1, [43] = 0x28};
+	struct sk_buff *packet;
+	unsigned long flags;
+	int ret;
+
+	lockdep_assert_held(&pon->lock);
+	if (!pon->dying_gasp_registered || !netif_running(pon->omci_device) ||
+	    !pon->xgpon_omcc_ready || !pon->xgpon_key_ready ||
+	    (readl(pon->mac + 0x4d30) & 7) != 3)
+		return;
+	spin_lock_irqsave(&pon->dying_gasp_lock, flags);
+	if (pon->dying_gasp_packet || pon->dying_gasp_sent) {
+		spin_unlock_irqrestore(&pon->dying_gasp_lock, flags);
+		return;
+	}
+	spin_unlock_irqrestore(&pon->dying_gasp_lock, flags);
+	packet = alloc_skb(48, GFP_KERNEL);
+	if (!packet) {
+		ret = -ENOMEM;
+		goto error;
+	}
+	skb_put_data(packet, body, sizeof(body));
+	ret = rtl_omci_mic(pon, 2, body, sizeof(body), skb_put(packet, 4));
+	if (ret) {
+		dev_kfree_skb_any(packet);
+		goto error;
+	}
+	packet->dev = pon->omci_device;
+	spin_lock_irqsave(&pon->dying_gasp_lock, flags);
+	rtl_omci_prefix(pon->dying_gasp_prefix, 48, 0);
+	pon->dying_gasp_packet = packet;
+	pon->dying_gasp_error = 0;
+	writel(0x105, pon->dying_gasp);
+	writel(1, pon->dying_gasp + 4);
+	spin_unlock_irqrestore(&pon->dying_gasp_lock, flags);
+	return;
+error:
+	pon->dying_gasp_error = ret;
+	dev_err(pon->dev, "XGTC Dying Gasp preparation failed: %d\n", ret);
+}
+
+static irqreturn_t rtl_pon_dying_gasp_irq(int irq, void *data)
+{
+	struct rtl9617c_pon *pon = data;
+	struct sk_buff *packet;
+	unsigned long flags;
+	netdev_tx_t ret;
+	const struct rtl9617c_ni_frame frame = {
+		.header_high = BIT(13),
+		.header_low = 7 | (15 << 3) | (17 << 9) | BIT(29) | (64 << 15),
+		.prefix = pon->dying_gasp_prefix, .prefix_length = 16, .raw_payload = true,
+	};
+
+	writel(0, pon->dying_gasp + 4);
+	spin_lock_irqsave(&pon->dying_gasp_lock, flags);
+	packet = pon->dying_gasp_packet;
+	pon->dying_gasp_packet = NULL;
+	pon->dying_gasp_sent = true;
+	if (packet) {
+		ret = rtl9617c_ni_transmit(pon->ni_dev, pon->omci_device, packet, &frame);
+		if (ret == NETDEV_TX_BUSY) {
+			dev_kfree_skb_any(packet);
+			pon->dying_gasp_error = -EBUSY;
+		} else {
+			pon->dying_gasp_tx++;
+		}
+	}
+	spin_unlock_irqrestore(&pon->dying_gasp_lock, flags);
+	return IRQ_HANDLED;
+}
+
+int rtl_pon_dying_gasp_init(struct rtl9617c_pon *pon, struct platform_device *pdev)
+{
+	int ret;
+
+	spin_lock_init(&pon->dying_gasp_lock);
+	pon->dying_gasp = devm_platform_ioremap_resource_byname(pdev, "dying-gasp");
+	if (IS_ERR(pon->dying_gasp))
+		return PTR_ERR(pon->dying_gasp);
+	pon->dying_gasp_irq = platform_get_irq_byname(pdev, "dying-gasp");
+	if (pon->dying_gasp_irq < 0)
+		return pon->dying_gasp_irq;
+	writel(0, pon->dying_gasp + 4);
+	ret = devm_request_irq(pon->dev, pon->dying_gasp_irq, rtl_pon_dying_gasp_irq,
+		0, "rtl9617c-pon-dying-gasp", pon);
+	if (!ret)
+		pon->dying_gasp_registered = true;
+	return ret;
+}
+
 static int rtl_omci_open(struct net_device *dev)
 {
 	struct rtl9617c_pon *pon = *(struct rtl9617c_pon **)netdev_priv(dev);
@@ -231,8 +367,12 @@ static int rtl_omci_open(struct net_device *dev)
 		ret = rtl9617c_ni_oam_configure(pon->ni_dev);
 		if (ret) rtl9617c_ni_close(pon->ni_dev, dev);
 	}
-	if (!ret)
+	if (!ret) {
+		mutex_lock(&pon->lock);
+		rtl_pon_dying_gasp_prepare(pon);
+		mutex_unlock(&pon->lock);
 		netif_start_queue(dev);
+	}
 	return ret;
 }
 
@@ -241,7 +381,10 @@ static int rtl_omci_stop(struct net_device *dev)
 	struct rtl9617c_pon *pon = *(struct rtl9617c_pon **)netdev_priv(dev);
 
 	netif_stop_queue(dev);
+	mutex_lock(&pon->lock);
+	rtl_pon_dying_gasp_stop(pon);
 	rtl9617c_ni_close(pon->ni_dev, dev);
+	mutex_unlock(&pon->lock);
 	return 0;
 }
 
@@ -280,6 +423,7 @@ static netdev_tx_t rtl_omci_transmit(struct sk_buff *skb, struct net_device *dev
 	if (padding)
 		memset(skb_put(packet, padding), 0, padding);
 	rtl_omci_prefix(prefix, wire, packet->data[0]);
+	frame.header_low |= (wire + RTL_OMCI_PREFIX_BYTES) << 15;
 	ret = rtl9617c_ni_transmit(pon->ni_dev, dev, packet, &frame);
 	if (ret == NETDEV_TX_BUSY) {
 		dev_kfree_skb_any(packet);
@@ -392,6 +536,7 @@ free_netdev:
 
 void rtl_pon_omci_remove(struct rtl9617c_pon *pon)
 {
+	rtl_pon_dying_gasp_stop(pon);
 	unregister_netdev(pon->omci_device);
 	free_netdev(pon->omci_device);
 	pon->omci_device = NULL;

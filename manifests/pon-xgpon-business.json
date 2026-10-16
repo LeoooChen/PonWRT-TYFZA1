@@ -1,0 +1,67 @@
+{
+  "base_commit": "a22f454f825dfa6a49f89c417c3121a456ba880b",
+  "purpose": "Correct the native XGTC OMCI business T-CONT release path using this TYFZA1 board original DAL/AAL, not loss-sync recovery or another board SDK.",
+  "primary_evidence": {
+    "module_sha256": {
+      "ca-ne.ko": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+      "ca-rtk.ko": "2360c7dbf93157cb3ab212c733e76a513c34015bc466f192dd19e4ae87eb0311"
+    },
+    "actual_functions": [
+      "ca-rtk.ko:dal_rt_rtl8277c_gpon_tcont_set@0x1db60",
+      "ca-rtk.ko:dal_rt_rtl8277c_gpon_tcont_del@0x1de70",
+      "ca-ne.ko:aal_xgpon_bwmp_tcont_set@0x104be0"
+    ],
+    "business_delete": "1ms burst wait, AAL mask3 (Alloc-ID and OMCI enable); no global flush. A PLOAM-enabled entry is retained without a hardware write; otherwise invalidate Alloc-ID and clear OMCI enable.",
+    "record": "logs/stock-xgpon-business.json"
+  },
+  "fixed": [
+    "Remove the unwarranted 0x4004 T-CONT flush and completion wait from all OMCI business table submissions, including the initial empty table.",
+    "Separate OMCI release from full initialization: respect PLOAM ownership instead of clearing the PLOAM enable bit.",
+    "Use usleep_range(1000,1100) for the factory burst wait, avoiding HZ=100 msleep rounding.",
+    "Report indirect table address, command and status on an actual timeout; continue returning the original error."
+  ],
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-path.c": "bed26b6c4c2a299402c3545f7c33672a1c514e86aca2805e3a2bdc78a81a34a8",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-xgpon-hw.h": "20a06b0ce84d8ea610fe6f5ab4c0e960598ad5416ea06c8a335277c91e50b9d7",
+    "scripts/test_itu_gem_direction.py": "394b1983ff71a3253d5c776f49b3adc5b65f35408449120aa20cfd831164e438",
+    "tools/trace_stock_xgpon_business.py": "fb6fb063b49cccd4f53952b64c5f7615204b726832aea7cb04952ea5dd151e2b"
+  },
+  "verification": {
+    "before_fix": "Saved production path_program with modeled non-completing flush returns -110 for an empty XGTC snapshot and writes command0x81000000 to0x4004. This demonstrates the erroneous dependency, not the peer hardware exact timeout location.",
+    "stock_native": "Four release comparisons (XG-PON/XGS-PON, PLOAM off/on) match table values and MMIO writes. Actual stock DAL and AAL instructions executed; indirect completion, locks and delays modeled.",
+    "production_path": "Existing GEM-direction regression extended for empty/add/replace, PLOAM release ownership, OMCC retention, unchanged0x4004 and real error propagation. GPON checks remain included because the function is shared.",
+    "test_commands": [
+      "python3 tools/trace_stock_xgpon_business.py",
+      "python3 scripts/test_itu_gem_direction.py"
+    ],
+    "test_log": "artifacts/xgpon-business-20261016/targeted-tests.log",
+    "arm64_objects": {
+      "rtl9617c-pon-itu.o": "7ee41369f4861dcb90c8be1817141b60a95de4a65f0ed22d67136f8e581ae5eb",
+      "rtl9617c-pon-omci.o": "3f879d127781c1ce2f100dc0690094318f9b2ccf8d8e810d16243bd9c7feca00",
+      "rtl9617c-pon-path.o": "21636da665fdba0efb952e98de6f81bd2bd8852d6022a4f36587fd1d97902185",
+      "rtl9617c-pon-xgpon.o": "4e8e27d336c41d70e9173d02790e2667a697e8f3fab306d3d52c86c098205f61"
+    },
+    "build_record": "artifacts/xgpon-business-20261016/object-build.json",
+    "compiler_diagnostics": [],
+    "build_isolation": "Current overlay sources/headers compiled with existing Kbuild flags into isolated outputs. Shared OpenWrt build sources and objects were not replaced.",
+    "objects_only_no_kernel_link": true,
+    "git_diff_check": true
+  },
+  "oam_configuration": "The existing XGPON startup branch starts pon-omcid and does not consume config oam line0_oam; adding the supplied5585F section does not affect this mapping path.",
+  "unchanged": [
+    "XGTC loss-sync recovery flush",
+    "SN/MAC provisioning",
+    "EPON/OAM startup",
+    "Wi-Fi and hardware acceleration",
+    "Concurrent user files and OpenWrt submodule changes"
+  ],
+  "not_verified": [
+    "Which register produced the peer reported -110",
+    "Physical XG-PON/XGS-PON provisioning and business traffic",
+    "Cause or elimination of the approximately50-second ACTP reset",
+    "Whether SN, MAC, or another OLT provisioning condition explains un-cloned O5 failure"
+  ],
+  "no_full_tests_or_firmware_build": true,
+  "deployed": false,
+  "committed_or_pushed": false
+}

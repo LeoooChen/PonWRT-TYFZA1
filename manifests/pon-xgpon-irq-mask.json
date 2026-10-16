@@ -1,0 +1,54 @@
+{
+  "base_commit": "f76526915677c83a131bdd3633dab3570a4ad65b",
+  "purpose": "Complete the final XGTC ACTP transition interrupt mask so O6 resynchronization can restore the OMCI carrier.",
+  "primary_evidence": {
+    "module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+    "functions": [
+      "ca-ne.ko:aal_xgpon_intr_init@0x111260",
+      "ca-ne.ko:aal_xgpon_intr_clr",
+      "ca-ne.ko:__xgpon_actp_isr",
+      "ca-ne.ko:aal_xgpn_act_intr_handler",
+      "ca-ne.ko:aal_xgpn_act_fsm_s_o6_e_dsync_change"
+    ],
+    "rea": "Local rea-agents6.5.0 / Ghidra12.1.2",
+    "archive": "artifacts/xgpon-irq-mask-rea-20261016/rea/index.json",
+    "disassembly": "artifacts/xgpon-irq-mask-rea-20261016/stock-irq-mask-disassembly.txt"
+  },
+  "root_cause": "Both stock and native ACTP setup initially program 0x07a3dfff at PON+0x4d2c. Stock final interrupt initialization overwrites it with 0x0fffffff; native activation omitted that step. The initial mask excludes transition bit27. Following O5 loss, native IRQ turns OMCI carrier off; a lone O6 resynchronization event is then masked, leaving carrier off until another event causes a status refresh.",
+  "fix": "Write 0x0fffffff to PON+0x4d2c during final activation IRQ setup, before enabling parent ACTP and global IRQs. Preserve the earlier ACTP-stage mask and existing state/key/path handling.",
+  "verification": {
+    "stock_command": "python3 tools/trace_stock_xgpon_irq_enable.py",
+    "stock_trace": "logs/stock-xgpon-irq-enable.json",
+    "stock_scope": "Executes actual original aal_xgpon_intr_init and aal_xgpon_intr_clr for modes4/5 with initial ACTP mask seeded. Register writes are observed; tasklet/queue allocation, locks and logging are modeled. No physical IRQ delivery.",
+    "native_command": "python3 scripts/test_xgpon_o6.py",
+    "before": "artifacts/xgpon-irq-mask-rea-20261016/before-test.log",
+    "after": "artifacts/xgpon-irq-mask-rea-20261016/after-test.log",
+    "before_result": "XGPON mode4: configured mask07a3dfff, O6 resync carrier0; expected carrier assertion fails. First failing mode aborts execution.",
+    "after_result": "XGPON mode4 and XGSPON mode5: configured mask0fffffff, O6 resync carrier1; existing O6/assignment/coalesced identity/timeout scenarios also pass under ASan and UBSan.",
+    "native_scope": "Runs extracted production ACTP parameter setup, activation and IRQ functions. New regression dispatches transitions only when programmed child/parent/global masks permit. MMIO, carrier, locks, timing, SerDes restart, key calls and work scheduling are modeled.",
+    "fixture_repair": "Initial fixture compilation required errno.h after extracting the activation function; that compile error was corrected before obtaining the failing functional baseline. Original diagnostic retained in fixture-compile-error.log.",
+    "build": "artifacts/xgpon-irq-mask-rea-20261016/object-build.json",
+    "objects_sha256": {
+      "rtl9617c-pon-xgpon.o": "87e41fcc295b1410eb24f7eb1fb09778f841ea715ebf3bef0f8aa8f311c66c7d"
+    },
+    "compiler_diagnostics": [],
+    "shared_build_sources_or_objects_changed": false
+  },
+  "additional_research": {
+    "old_key_retirement": "Original __xgpon_key_valid_set is a no-op and TK5 timeout does not delete hardware keys. No evidence justifies adding speculative old-key retirement.",
+    "queue_capacity": "Original PUC/VOQ and OMCI allocation paths reviewed. BP mapping alone does not prove upper T-CONTs unusable; no artificial T-CONT capacity restriction added.",
+    "mib_limit": "REA decompilation of the stripped libomci_mib MIB_Table_Init remained an explicit tool error. Empty casefold input placeholders were not treated as binaries.",
+    "identity": "Default public PON config has no universal SN or MAC. Per-unit factory import reads GPON_SN and first EPON_LLID_TBL macAddr, with nonempty user UCI options taking precedence. Native XG serial is written to PLOAM registers4a10/4a14; onu_mac supplies Ethernet interface addresses, not the XG PLOAM identity."
+  },
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-xgpon.c": "16e14dbe59ff50a7c095f845d2f87a92cd078a3ca4394b79c1603daaa335b737",
+    "scripts/test_xgpon_o6.py": "0298fc0c9b19b5a9b41d58d839ed0e905cc4566c92bb0bc2e660a281975d4895",
+    "tools/trace_stock_xgpon_irq_enable.py": "f1d95d20fa3e7f0200a0ba479428ee90a0f5ccb81872f61023b3c3ebd32aafb1"
+  },
+  "limits": [
+    "No XGPON OLT capture or optical test; hardware event timing and physical resynchronization are not established by the register model.",
+    "This defect is proven in initialization and offline recovery behavior; it does not prove the reported -110 business timeout or approximately50-second ACTP3-to0 restart shares this cause.",
+    "Only affected ARM64 object compiled; no full firmware build, full test suite, deployment, commit or push.",
+    "Goal remains active: whole-path XGPON registration and business correctness remain unproven."
+  ]
+}

@@ -30,10 +30,11 @@
 		tx-disable-gpios = <&gpio0 15 GPIO_ACTIVE_HIGH>;
 		reg = <4 0xf5500000 0 0xc000>, <4 0xf4320094 0 4>,
 		      <4 0xf4320074 0 4>, <4 0xf432022c 0 4>,
-		      <4 0xf4320080 0 4>, <4 0xf4320090 0 4>, <4 0xf4320180 0 8>, <4 0xf432007c 0 4>;
-		reg-names = "mac", "control", "epon-control", "serdes-init", "optical-control", "optical-status", "top-irq", "gpon-control";
-		interrupt-parent = <&ne_irq>;
-		interrupts = <5>;
+		      <4 0xf4320080 0 8>, <4 0xf4320090 0 4>, <4 0xf4320180 0 8>, <4 0xf432007c 0 4>,
+		      <4 0xf4329440 0 0x10>;
+		reg-names = "mac", "control", "epon-control", "serdes-init", "optical-control", "optical-status", "top-irq", "gpon-control", "dying-gasp";
+		interrupts-extended = <&ne_irq 5>, <&per_ictl 24>;
+		interrupt-names = "pon", "dying-gasp";
 		realtek,burst-polarity = <0>;
 		realtek,los-invert = <0>;
 	};

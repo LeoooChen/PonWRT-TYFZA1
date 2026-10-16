@@ -1,0 +1,76 @@
+{
+  "base_commit": "1cc4824d3316851ef18b1eb8fe0079154192589c",
+  "purpose": "Audit missing PON driver functions, excluding OMCI Class/MIB work delegated by the user to another worktree.",
+  "status": "eight_confirmed_driver_gaps_implemented_pending_hardware",
+  "document": "docs/pon-driver-function-gaps.md",
+  "archive": "artifacts/xgpon-driver-gaps-rea-20261016/rea/index.json",
+  "module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+  "confirmed_gaps": [
+    "Full MAC warm reset and configuration restoration",
+    "Periodic O1/O23/O5 hardware health checks",
+    "PLOAM TX stuck watchdog and MAC recovery",
+    "Deferred business VOQ restoration after MAC reset",
+    "Dying Gasp precomputed PDU/MIC, peripheral configuration and per_ictl IRQ24 transmit path",
+    "ACTP O7/O23 laser TX-disable GPIO control",
+    "DSFP OMCC AES interrupt and upstream management GEM mode synchronization",
+    "Optical rogue thresholds, rearm and timed force-O7 handling in XG modes"
+  ],
+  "implementation_order": "MAC warm-reset foundation, health/watchdog, deferred VOQ/T-CONT handoff, Dying Gasp, ACTP laser gating. All six are implemented in this working tree. Second batch adds DSFP OMCC AES and XG optical rogue handling.",
+  "scope_limits": [
+    "OMCI Class/MIB sources are outside this requested implementation scope. Read-only OMCI evidence gathered before that exclusion is retained without assigning its work here.",
+    "Targeted source execution, related-object cross compilation and common PON DTB only. No full suite, firmware build, deployment, commit or push.",
+    "No proof yet linking these omissions to peer -110 or approximately50-second reset.",
+    "These eight confirmed XG driver omissions are implemented. This is not an assertion that every original PON function has been audited."
+  ],
+  "additional_correction": "PUC reset snapshot restores192 backpressure rows as original backup_puc/restore_puc, not256; the lower AAL accepts256 and no invalid-address claim is made.",
+  "stock_defaults": "artifacts/xgpon-driver-gaps-rea-20261016/stock-defaults-and-pdu.json",
+  "verification": {
+    "objects": "artifacts/xgpon-driver-gaps-rea-20261016/object-build.json",
+    "device_tree": "artifacts/xgpon-driver-gaps-rea-20261016/dtc-check.log",
+    "warm_recovery": "scripts/check_xgpon_warm_recovery.py",
+    "mac_snapshot": "scripts/check_xgpon_mac_snapshot.c",
+    "dying_gasp": "scripts/check_xgpon_dying_gasp.py",
+    "stock_health": "tools/trace_stock_xgpon_health.py",
+    "affected_paths": [
+      "scripts/test_xgpon_o6.py",
+      "scripts/test_xgtc_queue_recovery.py",
+      "scripts/test_itu_gem_direction.py"
+    ],
+    "partial_link": "artifacts/xgpon-driver-gaps-rea-20261016/partial-link-check.log",
+    "stock_omcc_aes": "tools/trace_stock_xgpon_omcc_aes.py",
+    "stock_rogue": "tools/trace_stock_xgpon_rogue.py"
+  },
+  "reviewed_files_sha256": {
+    "docs/pon-driver-function-gaps.md": "b929533eec0ba3ad3f1799ff384aa014912a0e38d570dcc4e764b588f6016048",
+    "scripts/check_xgpon_mac_snapshot.c": "07849c9ff027fc7a8bfad7ad5db9c6ca60862fa872f80df16caa70d2198422d2",
+    "scripts/check_xgpon_warm_recovery.py": "575de056ea676df7601f085274bec03a383c73ff87c1de09f2a23e405ceffd91",
+    "scripts/check_xgpon_dying_gasp.py": "ec0d45c804d5c13acfbc562af00ed08a6d7a55123bfdee7ee4edb0e7207d9e57",
+    "scripts/test_xgpon_o6.py": "f6103f01832372a9c23654a322905b2f92f8a0cbe554769403444a3b23216f17",
+    "scripts/test_xgtc_queue_recovery.py": "59678ee5228fd59dd4f0d25b40538cbe81408be933310abc2ebac21295fa0422",
+    "scripts/test_itu_gem_direction.py": "0b29b8d8863ec5b2b3325cb94677b006c4cf8fa8e8891938e6eb50f13a22d4e4",
+    "port/overlay/target/linux/rtl9617c/dts/rtl9617c-tyfza1-pon-status.dts": "b92f88a9c97cb639a2419ed3d3e620a4fc255b253a8145a6b0ba1c2654f8140f",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.h": "fd7da951988238ec960595136f7312812797b3c941565b0ff4ce8c2d07326acc",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-xgtc-recovery.h": "c85ed87969fe152a167b758e4ad9f3296739fa8a8b3d711373172433ec8bc6c2",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-xgpon-reset.h": "518792bf3b4fcec03279fc0474f583bfe186d59f0e7a4b973b22a85b80a1d3b0",
+    "tools/trace_stock_xgpon_omcc_aes.py": "c8a06835bd45b817a61c9cc7a57ecd8d615d384afa5c53e39d1f7e96c48af430",
+    "tools/trace_stock_xgpon_rogue.py": "79617bfa013c7292d1bc31cbc36c87d93dd2c2aa334d4ac2e1e60b342f466c4c",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-xgpon-hw.h": "6f4d5a3c880a8dcbaaae0f28375bd5fb760b92cd1ad55a9041479e1fb3b76694",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-mpcp.c": "852b5c0b666b9c7c9650343bed10d47bc4b11152e885b8583e351e36dc15025d"
+  },
+  "observed_head_after_parallel_wifi_work": "99a41ad335283a911da402a6d60d32537e278c13",
+  "bosa_startup_audit": {
+    "rea_batch": "ghidra-bosa-runtime-entry-audit",
+    "startup_script_sha256": "0ea7a2ea13bae1fe910c21fc5c37b8a6790185adaf7da104d2e3ffc8bde0c939",
+    "finding": "The stock -c startup branch completes initialization and returns; no permanent compensation worker is established by this examined branch. Other CLI calibration commands are not normal startup."
+  },
+  "final_integration_correction": {
+    "problem": "A second MAC reset before O5 overwrote OMCI allocations from a hardware table already cleared by the first reset.",
+    "factory_basis": [
+      "aal_xgpon_bwmp_tcont_set_isr maintains tmp_alloc_id_cfg at configuration writes",
+      "aal_xgpon_restore_tcont restores from that software-owned configuration"
+    ],
+    "implementation": "Successful XG business configurations always update allocation ownership, deletion clears it, and cold initialization resets it; MAC snapshots do not replace it.",
+    "before": "artifacts/xgpon-driver-gaps-rea-20261016/repeated-reset-before-fix.log",
+    "after": "artifacts/xgpon-driver-gaps-rea-20261016/warm-recovery-check.log"
+  }
+}

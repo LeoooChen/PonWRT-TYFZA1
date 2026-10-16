@@ -9,7 +9,7 @@
 
 static uint8_t frame[44], reply[2048], applied[65536];
 static unsigned int transaction, calls;
-static int fail, applied_length;
+static int fail, applied_length, backend_error;
 static void be16(uint8_t *p, unsigned int value) { p[0] = value >> 8; p[1] = value; }
 static unsigned int le16(const uint8_t *p) { return p[0] | p[1] << 8; }
 static int apply(void *context, const uint8_t *paths, size_t length)
@@ -30,6 +30,7 @@ static unsigned int request(struct omci_agent *agent, unsigned int action, unsig
  memcpy(frame + 8, body, length);
  int error = 0;
  assert(tyfza1_omci_dispatch_apply(agent, frame, sizeof(frame), reply, &error, apply, NULL) == 44);
+ backend_error = error;
  return reply[8];
 }
 static unsigned int set(struct omci_agent *agent, unsigned int cls, unsigned int entity,
@@ -53,8 +54,61 @@ static void path(struct omci_agent *agent, unsigned int n)
  memset(body, 0, sizeof(body)); be16(body, 1); body[2] = n + 1; body[3] = 5; be16(body + 4, 0x200 + n);
  assert(!request(agent, 4, 47, 0x300 + n, body, 14));
 }
+static void fallback(void)
+{
+ for (unsigned int wrr = 0; wrr < 2; wrr++)
+ for (unsigned int matching = 0; matching < 2; matching++) {
+  struct omci_identity identity = {.serial = {84, 69, 83, 84, 1, 2, 3, 4}};
+  struct omci_agent *agent = tyfza1_omci_new(&identity);
+  uint8_t value[4];
+  be16(value, 1063); assert(!set(agent, 262, 0x8000, 1, value, 2));
+  be16(value, 2000); assert(!set(agent, 262, 0x8001, 1, value, 2));
+  path(agent, 0); path(agent, 1); path(agent, 2);
+  if (wrr) {
+   value[0] = 2;
+   assert(!set(agent, 262, 0x8000, 3, value, 1));
+   assert(!set(agent, 262, 0x8001, 3, value, 1));
+   value[0] = 9; assert(!set(agent, 277, 0x8000, 8, value, 1));
+   value[0] = 7; assert(!set(agent, 277, 0x8001, 8, value, 1));
+   value[0] = matching ? 9 : 4; assert(!set(agent, 277, 0x8002, 8, value, 1));
+  }
+  be16(value, 0x8001); be16(value + 2, 6);
+  assert(!set(agent, 277, 0x8001, 6, value, 4));
+  be16(value + 2, matching ? 5 : 4);
+  assert(!set(agent, 277, 0x8002, 6, value, 4));
+  be16(value, 0x8000); be16(value + 2, 5);
+  assert(!set(agent, 277, 0x8000, 6, value, 4));
+  be16(value, 0x8001); assert(!set(agent, 268, 0x100, 2, value, 2));
+  assert(applied[20] != applied[70]);
+  assert((applied[20] == applied[120]) == matching);
+  tyfza1_omci_free(agent);
+ }
+ puts("GEM fallback: SP priority and WRR weight select an equivalent target queue; no equivalent retains a distinct queue");
+}
+static void release(void)
+{
+ struct omci_identity identity = {.serial = {84, 69, 83, 84, 1, 2, 3, 4}};
+ struct omci_agent *agent = tyfza1_omci_new(&identity);
+ uint8_t value[4];
+ be16(value, 1063); assert(!set(agent, 262, 0x8000, 1, value, 2));
+ for (unsigned int n = 0; n < 8; n++) path(agent, n);
+ assert(le16(applied + 2) == 8);
+ assert(!request(agent, 6, 268, 0x100, value, 0));
+ assert(le16(applied + 2) == 7);
+ be16(value, 0x8000); be16(value + 2, 7);
+ unsigned int result = set(agent, 277, 0x8008, 6, value, 4);
+ printf("Replacement queue SET: response=%u backend=%d\n", result, backend_error);
+ fflush(stdout);
+ assert(!result);
+ path(agent, 8);
+ assert(le16(applied + 2) == 8);
+ tyfza1_omci_free(agent);
+ puts("GEM deletion releases its last queue reference before a replacement uses the eighth slot");
+}
 int main(int argc, char **argv)
 {
+ fallback();
+ release();
  struct omci_identity identity = {.serial = {84, 69, 83, 84, 1, 2, 3, 4}};
  struct omci_agent *agent = tyfza1_omci_new(&identity);
  uint8_t value[4], before[65536];
@@ -69,9 +123,9 @@ int main(int argc, char **argv)
  be16(value, 0x8001);
  assert(!set(agent, 277, 0x8000, 6, value, 4));
  assert(le16(applied + 12) == 2000 && le16(applied + 22) == 2 && applied[20] == 0);
- /* A later CTP T-CONT Set selects the existing queue on its target port. */
+ /* A different-priority target queue cannot replace the requested queue. */
  be16(value, 0x8000); assert(!set(agent, 268, 0x100, 2, value, 2));
- assert(le16(applied + 12) == 1063 && le16(applied + 22) == 1 && applied[20] == applied[70]);
+ assert(le16(applied + 12) == 1063 && le16(applied + 22) == 1 && applied[20] != applied[70]);
  be16(value, 0x8001); assert(!set(agent, 268, 0x100, 2, value, 2));
  assert(le16(applied + 12) == 2000 && le16(applied + 22) == 2);
  value[0] = 2; assert(!set(agent, 278, 0x8001, 3, value, 1));

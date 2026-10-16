@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /* ITU business configuration follows original ca_gpon_port_{tcont_set,gem_port_add}. */
+#include <linux/delay.h>
 #include <linux/etherdevice.h>
 #include <linux/if_vlan.h>
 #include <linux/io.h>
@@ -28,9 +29,14 @@ static int path_access(void *context, unsigned int address, unsigned int value)
 {
 	struct rtl9617c_pon *pon = context;
 	u32 status;
+	int ret;
 
 	writel(value, pon->mac + address);
-	return readl_poll_timeout(pon->mac + address, status, !(status & BIT(31)), 1, 100000);
+	ret = readl_poll_timeout(pon->mac + address, status, !(status & BIT(31)), 1, 100000);
+	if (ret)
+		dev_err(pon->dev, "ITU table timeout reg=%04x command=%08x status=%08x\n",
+			address, value, status);
+	return ret;
 }
 
 void rtl_pon_itu_carrier(struct rtl9617c_pon *pon)
@@ -40,7 +46,7 @@ void rtl_pon_itu_carrier(struct rtl9617c_pon *pon)
 	rcu_read_lock();
 	dev = rcu_dereference(pon->data_devices[0]);
 	if (dev) {
-		if (pon->itu_paths_ready && netif_carrier_ok(pon->omci_device))
+		if (pon->itu_paths_ready && netif_carrier_ok(pon->omci_device) && !pon->xgpon_restore_pending)
 			netif_carrier_on(dev);
 		else
 			netif_carrier_off(dev);
@@ -69,7 +75,7 @@ int rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *pon, enum rtl_pon_mode mod
 static int path_program(struct rtl9617c_pon *pon, const struct rtl_itu_paths *paths)
 {
 	const struct rtl_dq_io io = {pon, path_read, path_write, path_access};
-	u32 queues[8] = {255}, active = 0;
+	u32 queues[8] = {255}, active = 0, alloc[32] = {};
 	unsigned int i, index;
 	bool gpon = pon->mode == RTL_PON_GPON;
 	int ret;
@@ -82,15 +88,13 @@ static int path_program(struct rtl9617c_pon *pon, const struct rtl_itu_paths *pa
 			ret = rtl_gpon_tcont_set(&io, pon->itu_alloc_ids[index], 0, false, false, true);
 			if (ret) return ret;
 			pon->itu_alloc_valid &= ~BIT(index);
-		} else {
-			u32 status;
-
-			/* Original T-CONT removal flushes USBG before releasing Alloc-ID. */
-			rtl_pon_update(pon->mac + 0x4004, GENMASK(28, 24) | GENMASK(11, 8) | BIT(31),
-				(index << 24) | BIT(31));
-			ret = readl_poll_timeout(pon->mac + 0x4004, status, !(status & BIT(31)), 1, 100000);
-			if (ret) return ret;
-			ret = rtl_xgpon_tcont_set(&io, index, RTL_XGPON_ALLOC_ID_INVALID, false, false);
+		}
+	}
+	if (!gpon) {
+		/* All business queues are stopped; one stock burst interval covers them. */
+		usleep_range(1000, 1100);
+		for (index = 1; index < 32; index++) {
+			ret = rtl_xgpon_tcont_release(&io, index);
 			if (ret) return ret;
 		}
 	}
@@ -128,6 +132,7 @@ static int path_program(struct rtl9617c_pon *pon, const struct rtl_itu_paths *pa
 			if (ret) return ret;
 			queues[path->tcont / 4] |= 255U << ((path->tcont % 4) * 8);
 			active |= BIT(path->tcont);
+			alloc[path->tcont] = path->alloc_id | BIT(24);
 		}
 		if (gpon) {
 			/* GTC keeps PLOAM's AES decision in the hardware table. */
@@ -151,7 +156,16 @@ static int path_program(struct rtl9617c_pon *pon, const struct rtl_itu_paths *pa
 		ret = path_access(pon, 0x9020, 0xc0000000U | index);
 		if (ret) return ret;
 	}
-	for (i = 0; i < 8; i++) writel(queues[i], pon->mac + 0x81bc - i * 4);
+	for (i = 0; i < 8; i++) {
+		if (!gpon && pon->xgpon_restore_pending) {
+			pon->xgpon_puc_saved.valid[i] = queues[i];
+			writel(i ? 0 : queues[i] & 255, pon->mac + 0x81bc - i * 4);
+		} else {
+			writel(queues[i], pon->mac + 0x81bc - i * 4);
+		}
+	}
+	if (!gpon)
+		memcpy(pon->xgpon_restore_tcont, alloc, sizeof(alloc));
 	return 0;
 }
 

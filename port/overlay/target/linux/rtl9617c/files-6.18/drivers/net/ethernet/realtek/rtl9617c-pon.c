@@ -207,10 +207,12 @@ static ssize_t optical_show(struct device *dev, struct device_attribute *attr, c
 {
 	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
 	u32 status = readl(pon->optical_status);
-	return sysfs_emit(buf, "control=%08x status=%08x rx_los=%u module_absent=%u tx_signal_detect=%u tx_fault=%u tx_disabled=%u irq_count=%u last_irq=%08x\n",
+	return sysfs_emit(buf, "control=%08x status=%08x rx_los=%u module_absent=%u tx_signal_detect=%u tx_fault=%u tx_disabled=%u irq_count=%u last_irq=%08x xgpon_rogue_at0=%u xgpon_rogue_at1=%u xgpon_rogue_pending=%u\n",
 		readl(pon->optical_control), status, !!(status & BIT(3)), !!(status & BIT(2)),
 		!!(status & BIT(1)), !!(status & BIT(0)), gpiod_get_value_cansleep(pon->tx_disable),
-		pon->optical_irq_count, pon->last_optical_irq);
+		pon->optical_irq_count, pon->last_optical_irq,
+		READ_ONCE(pon->xgpon_rogue_count[0]), READ_ONCE(pon->xgpon_rogue_count[1]),
+		READ_ONCE(pon->xgpon_rogue_pending));
 }
 static DEVICE_ATTR_RO(optical);
 
@@ -257,13 +259,16 @@ static ssize_t activation_show(struct device *dev, struct device_attribute *attr
 		return -EOPNOTSUPP;
 	}
 	if (pon->mode == RTL_PON_XGPON || pon->mode == RTL_PON_XGSPON) {
-		size = sysfs_emit(buf, "enabled=%u omcc=%u omcc_onu_id=%u omcc_gem=%u error=%d irq_count=%llu last_irq=%08x key_ready=%u key_state=%u active_key=%u key_reports=%llu tk4=%llu tk5=%llu recovering=%u last_events=%08x deactivations=%llu\n",
+		size = sysfs_emit(buf, "enabled=%u omcc=%u omcc_onu_id=%u omcc_gem=%u error=%d irq_count=%llu last_irq=%08x key_ready=%u key_state=%u active_key=%u key_reports=%llu tk4=%llu tk5=%llu recovering=%u last_events=%08x deactivations=%llu mac_resets=%llu reset_reason=%u health_matches=%u restore_pending=%u dying_gasp_ready=%u dying_gasp_tx=%llu dying_gasp_error=%d\n",
 			pon->xgpon_enabled, pon->xgpon_omcc_ready, pon->xgpon_omcc_id,
 			pon->xgpon_omcc_id, pon->xgpon_activation_error, pon->xgpon_irq_count,
 			pon->xgpon_last_irq, pon->xgpon_key_ready, pon->xgpon_key_state,
 			pon->xgpon_active_key + 1, pon->xgpon_key_reports, pon->xgpon_key_tk4,
 			pon->xgpon_key_tk5, pon->xgpon_recover, pon->xgpon_last_transitions,
-			pon->xgpon_deactivations);
+			pon->xgpon_deactivations, pon->xgpon_mac_resets, pon->xgpon_reset_reason,
+			pon->xgpon_health_matches, pon->xgpon_restore_pending,
+			!!READ_ONCE(pon->dying_gasp_packet), READ_ONCE(pon->dying_gasp_tx),
+			READ_ONCE(pon->dying_gasp_error));
 		mutex_unlock(&pon->lock);
 		return size;
 	}
@@ -844,8 +849,15 @@ static int rtl9617c_pon_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 	ret = rtl_pon_omci_init(pon);
-	if (ret)
+	if (ret) {
 		rtl_pon_oam_remove(pon);
+		return ret;
+	}
+	ret = rtl_pon_dying_gasp_init(pon, pdev);
+	if (ret) {
+		rtl_pon_omci_remove(pon);
+		rtl_pon_oam_remove(pon);
+	}
 	return ret;
 }
 

@@ -15,6 +15,7 @@ struct rtl9617c_ni_endpoint {
 
 struct rtl9617c_ni_frame {
 	u32 header_high;
+	/* pkt_size may give the valid length when the DMA payload includes padding. */
 	u32 header_low;
 	const u8 *prefix;
 	unsigned int prefix_length;

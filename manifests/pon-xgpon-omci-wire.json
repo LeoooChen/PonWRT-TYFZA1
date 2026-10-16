@@ -1,0 +1,72 @@
+{
+  "base_commit": "6b8cf590068dca2959e8b2afe50896ed5a3b0eb5",
+  "purpose": "Preserve the unpadded valid Header A length for short extended OMCI while retaining the padded DMA buffer span.",
+  "primary_evidence": {
+    "modules_sha256": {
+      "ca-ne.ko": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+      "ca-rtk.ko": "2360c7dbf93157cb3ab212c733e76a513c34015bc466f192dd19e4ae87eb0311"
+    },
+    "functions": [
+      "ca-rtk.ko:dal_rt_rtl8277c_gpon_omci_tx@0x1d620",
+      "ca-ne.ko:__rtk_ni_start_xmit@0xa6b90"
+    ],
+    "rea": "Local rea-agents6.5.0 / Ghidra12.1.2",
+    "archive": "artifacts/xgpon-omci-wire-rea-20261016/rea/index.json"
+  },
+  "root_cause": "OMCI producer pads short wire messages to48 bytes before NI submission. Native DMA unconditionally used this padded skb length plus16-byte internal container as Header A pkt_size. Original DAL supplies wire length plus16 in Header A, even when skb is padded to64 bytes; actual __rtk_ni_start_xmit copies the supplied Header A unchanged.",
+  "examples": [
+    {
+      "extended_content_bytes": 0,
+      "wire_bytes_including_MIC": 14,
+      "internal_container_bytes": 16,
+      "original_and_fixed_Header_A_length": 30,
+      "previous_native_Header_A_length": 64,
+      "padded_DMA_payload_bytes": 64
+    },
+    {
+      "extended_content_bytes": 32,
+      "wire_bytes_including_MIC": 46,
+      "original_and_fixed_Header_A_length": 62,
+      "previous_native_Header_A_length": 64,
+      "padded_DMA_payload_bytes": 64
+    }
+  ],
+  "fix": [
+    "OMCI sets the actual Header A pkt_size independently of its padded skb length.",
+    "DMA honors a supplied Header A pkt_size; callers without one retain automatic length calculation.",
+    "DMA-LSO packet size, descriptor buffer length and zero padding retain the padded span; frame structure layout and public symbol signatures are unchanged."
+  ],
+  "verification": {
+    "command": "python3 tools/trace_stock_xgpon_omci_tx.py",
+    "before": "artifacts/xgpon-omci-wire-rea-20261016/before-wire.json",
+    "after": "artifacts/xgpon-omci-wire-rea-20261016/after-wire.json",
+    "cases": "Two XG modes, baseline plus extended content0/32/34/76 bytes. Four before-fix header mismatches; all10 after-fix headers match. Internal prefix, body, modeled MIC and DMA spans match in every case.",
+    "other_NI_traffic": "Three direct production-DMA default-length checks: Ethernet minimum padding, Ethernet plus container and raw plus container.",
+    "scope": "Actual original DAL OMCI TX and native OMCI producer plus DMA TX function. Allocator, MIC bytes, NI completion and submission, locks, MMIO and skb primitives are modeled. REA __rtk_ni_start_xmit separately shows the supplied Header A is copied unchanged. No optical transmission or cryptographic correctness claim.",
+    "build": "artifacts/xgpon-omci-wire-rea-20261016/object-build.json",
+    "objects_sha256": {
+      "rtl9617c-dma.o": "9b93bee32ff7844b63d09dc4e7910cc3cf904344377d138ef122351f473d09de",
+      "rtl9617c-pon-omci.o": "9347ecb665082e1656b62719a93b08cae99bbdda3f0c8f18ad66d62a2369f195"
+    },
+    "compiler_diagnostics": [],
+    "shared_build_sources_or_objects_changed": false,
+    "git_diff_check": true
+  },
+  "additional_research": {
+    "Alloc_ID": "REA original default Assign-Alloc-ID parser records scope; its extra software T-CONT adjustment is controlled by an activation-debug bit. No evidence supports adding that debug override to native normal activation.",
+    "ONU_ID": "REA original Assign-ONU-ID reads the hardware-owned T-CONT0 and programs XGEM1..7; it does not manually overwrite T-CONT0 in this handler. No speculative T-CONT0 setter added.",
+    "MIC": "Original OMCI MIC input is direction byte followed by OMCI body, consistent with native direction/body framing."
+  },
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-dma.c": "a78d56461aa0dd225be37ca41d053ddc7ed8e69e8006bfb34aef43d8d3c04d61",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-ni.h": "7e14eefecef4117473a5e1fa3a9b787b9f137b08ae42fc1e7be0c3eeb79b71cc",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-omci.c": "a9e52ddddccbb2721bd14702e4989c57c8554ab68634f2fce856f88e3c4cdbf1",
+    "tools/trace_stock_xgpon_omci_tx.py": "2360e6e519811a93ccf8f45e0e30a1ebccc5b61dedc48b47f98323e6e396ad1a"
+  },
+  "limits": [
+    "MIC bytes and NI submission/completion are modeled in the transport replay; this turn does not validate cryptographic correctness or physical transmission.",
+    "No XGPON OLT traffic or proof that this defect caused the peer approximately50-second reset or reported -110.",
+    "Two changed ARM64 objects compiled, no full kernel link, firmware build, full tests, deployment, commit or push.",
+    "Goal remains active: whole-path XGPON correctness and physical registration/business behavior are not established by this scoped correction."
+  ]
+}

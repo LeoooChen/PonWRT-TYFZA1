@@ -1,0 +1,64 @@
+{
+  "base_commit": "7e91b3307cbd58b62e074165dae6f87b5fa08b72",
+  "purpose": "Restore the original XGTC full-initialization reset intervals found with REA/Ghidra, without changing loss-sync recovery or business commit timeouts.",
+  "tooling": {
+    "rea_package": "rea-agents",
+    "rea_version": "6.5.0",
+    "project": "morluto/rea",
+    "provider": "Ghidra12.1.2",
+    "mode": "Local static analysis; existing isolated installation, no global configuration changes or remote artifact upload"
+  },
+  "original": {
+    "module": "ca-ne.ko",
+    "sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+    "full_init": "aal_xgpon_init (.text+0x10d430)",
+    "warm_reset": "aal_xgpon_reset (.text+0x10cdf0)",
+    "note": "REA loaded analysis addresses are not physical MMIO addresses or ELF section offsets."
+  },
+  "defect": "The native full-initialization sequence used three1ms waits where this board original aal_xgpon_init calls ca_mdelay(100) after reset assertion, reset release and final mode selection. The separate original warm-reset routine has1ms waits but is a different sequence.",
+  "fix": "Change only the three full-init waits to msleep(100), retaining the original register values and order. Do not increase polling timeouts, add retries, change identity, or introduce a vendor ABI.",
+  "evidence": {
+    "rea_archive": "artifacts/xgpon-reset-rea-20261016/rea/index.json",
+    "primary_bytecode_replay": "tools/trace_stock_xgpon_reset.py",
+    "before": "artifacts/xgpon-reset-rea-20261016/before-timing.json",
+    "after": "artifacts/xgpon-reset-rea-20261016/after-timing.json",
+    "event_format": "[0, global_offset, value] or [1, 0, requested_delay_ms]"
+  },
+  "verification": {
+    "modes": [
+      "XG-PON",
+      "XGS-PON"
+    ],
+    "before_requested_waits_ms": [
+      1,
+      1,
+      1
+    ],
+    "stock_and_after_requested_waits_ms": [
+      100,
+      100,
+      100
+    ],
+    "full_recorded_reset_write_wait_sequence_equal": true,
+    "test_command": "python3 tools/trace_stock_xgpon_reset.py",
+    "build": "artifacts/xgpon-reset-rea-20261016/object-build.json",
+    "arm64_object_sha256": "4d8ce2a85477d1b505e2c58ffcbbe5d9c192a96f5f2bd9026a1b3f4be342ea87",
+    "compiler_diagnostics": [],
+    "scope": "Actual original aal_xgpon_init instructions and native prepare function. Original child initializers, native stop and indirect table completion are modeled. Compare reset ordering and requested waits, not elapsed silicon timing or optical operation."
+  },
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-xgpon.c": "ec7c0217be8495a31d953719d6d305bdb647ceb71dd2c6eead8fb53166f199f8",
+    "tools/trace_stock_xgpon_reset.py": "f45f01de2debe1f7e81546d1b7151386cb114d39bee696f1ad26daf5ace13599"
+  },
+  "reviewed_without_changes": [
+    "Default T-CONT/PUC recovery orchestration",
+    "MAC/SDS/laser/TO1/TO2 save-disable-restore",
+    "Qualified ACTP clock restart"
+  ],
+  "limits": [
+    "This restores the board original timing contract; the minimum silicon settling time was not measured.",
+    "No evidence yet ties the original1ms waits to the peer reported -110 or50-second ACTP cycle.",
+    "Only targeted instruction/model replay and one ARM64 object build; no full tests, kernel link or firmware build.",
+    "No device connection, deployment, commit or push in this change."
+  ]
+}

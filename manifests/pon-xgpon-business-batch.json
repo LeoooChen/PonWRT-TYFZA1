@@ -1,0 +1,36 @@
+{
+  "base_commit": "52afb80538e987c5d5afda5def078e060b5c803f",
+  "purpose": "Remove repeated burst waits from the XGTC business snapshot transaction without shortening the factory-required interval.",
+  "origin": "The preceding uncommitted business-release fix in this chat placed a1ms burst wait inside the31-entry T-CONT loop. This was an introduced latency defect, not an observed hardware timing measurement.",
+  "root_cause": "path_program runs under pon->lock; the threaded PON IRQ needs the same lock. Waiting once for each of31 entries adds at least31ms of requested sleep and delays processing PLOAM/key-control events.",
+  "change": "Stop all31 business PUC schedulers first, then wait once for1000..1100us before releasing XGTC T-CONT entries. T-CONT0/OMCC and the GPON sequence are unchanged.",
+  "timing_basis": "This board ca-rtk.ko dal_rt_rtl8277c_gpon_tcont_del calls ca_mdelay(1) before allocation release. Once every business scheduler has stopped, one subsequent full burst interval satisfies the same ordering for all entries. This is native batching of that dependency, not copied vendor orchestration.",
+  "requested_sleep_lower_bound_us": {
+    "before": 31000,
+    "after": 1000
+  },
+  "verification": {
+    "regression": "Existing production-path harness checks that all31 scheduler commands precede the single XGTC wait. The previous code failed this assertion; the changed code passes empty/add/replace, ownership, OMCC and timeout-propagation cases.",
+    "test": "python3 scripts/test_itu_gem_direction.py",
+    "before_log": "artifacts/xgpon-business-batch-20261016/before-test.log",
+    "after_log": "artifacts/xgpon-business-batch-20261016/after-test.log",
+    "arm64_build": "artifacts/xgpon-business-batch-20261016/object-build.json",
+    "object_sha256": "512406ff995403806a3cde9671faf5106ce0bdc8d1913712b8ad39718be8e631",
+    "compiler_diagnostics": "",
+    "scope": "One regression script and one changed ARM64 object. MMIO, sleeps and indirect completion are modeled; no optical timing or complete kernel link. Shared build inputs/objects unchanged."
+  },
+  "rejected_candidates": {
+    "repeated_new_key_generation": "Actual __xgpon_ploam_isr calls ca_generate_new_kek_and_kek_name for each repeated new-key request too; no speculative retransmission cache added.",
+    "deactivation_cleanup": "Actual aal_xgpn_act_fsm_s_o51_e_deactiveonuid_change dispatches table cleanup for mode6 (NGPON2), not modes4/5; no NGPON2-specific cleanup copied into XG-PON/XGS-PON.",
+    "evidence": "artifacts/xgpon-business-batch-20261016/audit-boundaries.json"
+  },
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-path.c": "637678cbd49b02c7d56c0d644bcc82f5c08147cfc0b65e0c97794516b44da64f",
+    "scripts/test_itu_gem_direction.py": "3d39e529f70cb45a4833d7f3d9edfdd7da54805bc60719bdd05855aa37a97fae"
+  },
+  "limits": [
+    "No proof this latency defect caused the peer50-second ACTP cycle",
+    "No physical XGPON/OLT test",
+    "No full tests, firmware build, deployment, commit or push"
+  ]
+}

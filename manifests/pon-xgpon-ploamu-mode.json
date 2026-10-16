@@ -1,0 +1,48 @@
+{
+  "base_commit": "f76526915677c83a131bdd3633dab3570a4ad65b",
+  "purpose": "Correct the PLOAMU queue register field mask in native XGTC MAC preparation.",
+  "primary_evidence": {
+    "module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+    "rea": "Local rea-agents6.5.0 / Ghidra12.1.2",
+    "functions": [
+      "ca-ne.ko:__xgpon_usbg_init.constprop.0@0x10b890",
+      "ca-ne.ko:aal_xgpon_usbg_ploamu_queue_cfg_set@0x103a60"
+    ],
+    "observation": "USBG initializer calls the PLOAMU queue setter with config selection3 and both values0. Setter applies the two config selections to hardware bit0 and bit31, preserving bits1..30. ARM64 bfi at0x103af8 confirms the second field is bit31.",
+    "archive": "artifacts/xgpon-ploamu-mode-rea-20261016/rea/index.json",
+    "disassembly": "artifacts/xgpon-ploamu-mode-rea-20261016/stock-ploamu-queue-disassembly.txt"
+  },
+  "root_cause": "Native MAC preparation translated the two adjacent configuration-selection bits into adjacent hardware bits via &~3U. Hardware fields are not adjacent: &~0x80000001U is required. The old code left bit31 unchanged and unnecessarily cleared bit1.",
+  "fix": "Use the actual hardware mask for PON+0x4628; keep the rest of the initialization unchanged.",
+  "verification": {
+    "command": "python3 tools/trace_stock_xgtc_init.py",
+    "before": "artifacts/xgpon-ploamu-mode-rea-20261016/before-test.log",
+    "after": "artifacts/xgpon-ploamu-mode-rea-20261016/after-test.log",
+    "initial_register": "0x80000002",
+    "original_result": "0x00000002",
+    "before_native_result": "0x80000000",
+    "after_native_result": "0x00000002",
+    "scope": "Actual stock USBG initializer and global/PLOAMU queue setters versus native rtl_xgpon_mac_parameters. One deliberately nondefault register seed exposes both field errors; existing XG-PON/XGS-PON reset-default block initialization checks also pass. Locks, MMIO and other OS dependencies are modeled.",
+    "reset_default_limitation": "The reference reset default for this register is0. The old code matches stock for that default; this replay does not show a physical cold-boot failure or prove that bit31 was nonzero on the peer ONU.",
+    "build": "artifacts/xgpon-ploamu-mode-rea-20261016/object-build.json",
+    "object_sha256": "e795ae4a5c357f69630166481e8b014cf45486ab22a735e73396998d508743ee",
+    "compiler_diagnostics": [],
+    "shared_build_sources_or_objects_changed": false
+  },
+  "additional_research": {
+    "indirect_commands": "REA actual upstream XGEM and PDC setters use bit31 completion and bit30 write commands, consistent with native table commands. Downstream XGEM fields and indices also agree. No speculative poll-mask change or larger timeout added.",
+    "error_propagation": "Original setters can print a timeout and return success; native continues propagating -ETIMEDOUT. Vendor error suppression was not adopted.",
+    "initialization_orchestration": "REA full aal_xgpon_init and datapath orchestration inspected to check phase coverage. No additional hardware dependency was established by call-order differences alone."
+  },
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-xgpon-hw.h": "be0444ab90741ae1047e1a2653bdd7c702748fbcf018a2b662e615445cbede54",
+    "tools/trace_stock_xgtc_init.py": "406aa905a66102defcf4c5bd70912af544eb5554f060097d77810010189d7a7c",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-xgpon.c": "16e14dbe59ff50a7c095f845d2f87a92cd078a3ca4394b79c1603daaa335b737"
+  },
+  "limits": [
+    "No physical PLOAMU queue or XGPON OLT test; bit31 runtime state on the peer is unknown.",
+    "This field-mask defect does not establish the cause of the reported -110 business mapping timeout or approximately50-second ACTP restart.",
+    "Only initialization replay and affected ARM64 object compiled; no full tests, full firmware build, deployment, commit or push.",
+    "Goal remains active; complete XGPON registration and business traffic remain unproven."
+  ]
+}
