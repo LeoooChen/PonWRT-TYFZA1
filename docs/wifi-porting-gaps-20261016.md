@@ -27,7 +27,7 @@
 
 下列数量只是清单分类，不是完成率；一项不对应一个函数，也不能把不同硬件条件加总为“必移植功能数”。
 
-已有 15 项、部分 30 项、未提供 15 项、缺失 11 项、不列为缺口 5 项、条件缺口 17 项、待判定 11 项、Linux接管 8 项。
+已有 15 项、部分 31 项、未提供 15 项、缺失 11 项、不列为缺口 7 项、条件缺口 17 项、待判定 8 项、Linux接管 8 项。
 
 ## 启动与固件
 
@@ -54,7 +54,7 @@
 |B02|多AP/VAP与独立BSSID/port资源|缺失|每颗只有一个ap_vif，第二AP返回EBUSY；原厂有虚拟接口和多接口组合，模块virtual_iface_num初值8。|
 |B03|STA客户端、连接、重连与STA漫游|未提供|原厂wiphy声明STA且注册连接/断开；项目只声明AP/monitor，没有STA固件/角色完整链。|
 |B04|IBSS/ad-hoc|未提供|原厂公开声明并注册，项目未声明或实现。|
-|B05|P2P、Mesh、NAN前端模式|待判定|项目未提供。原厂有相关底层/历史符号，但公开wiphy模式掩码0x0e未声明这些模式；不能据此声称原机具备完整功能而漏移植。|
+|B05|P2P、802.11s Mesh、NAN前端模式|不列为缺口|项目未提供这些模式；原厂wiphy同样未声明，OnAction_p2p直接return 1、Mesh plink handler直接return 10。原厂只见协议片段/低层API，不能记成漏掉完整模式。EasyMesh MultiAP控制与802.11s是不同功能，见I04。|
 |B06|A4/WDS、回程与四地址快路|部分|原厂公开设置A4能力且有地址学习；项目加速模板主要为三地址，未建立完整A4回程/学习生命周期。Linux四地址能力及慢路需独立核实。|
 |B07|MCC、同芯片多信道并发|条件缺口|只有单信道模拟chanctx；原厂底层存在MCC。本机公开角色组合和实际启用条件不能由底层表单独确定。|
 |B08|DBCC与双PHY资源切换|待判定|项目每芯片按SCC/PHY0实现；原厂有DBCC测试/控制符号，本板是否需要启用尚无依据。双独立无线芯片不等于DBCC。|
@@ -72,7 +72,7 @@
 |编号|功能|状态|实际覆盖/遗漏及条件|
 |---|---|---|---|
 |C01|beacon、DTIM/TIM、组播缓存|已有|已有Linux模板及固件beacon、TIM/DTIM基本路径；多port、CSA等另列。|
-|C02|ERP/HT保护、短前导码、RTS/CTS|部分|缺ERP_CTS/HT保护/短前导码更新与逐包RTS/CTS标志消费、RTS阈值接口；启动硬件RTS、fallback与动态SMPS位已存在。|
+|C02|ERP/HT保护、短前导码、RTS/CTS|部分|缺ERP_CTS/HT保护/短前导码更新与逐包RTS/CTS标志消费、RTS阈值接口；启动硬件RTS、fallback与动态SMPS位已存在。原厂cfg80211 set_wiphy_params也只打印并返回成功，应对齐真实VCS/硬件行为，不能照搬这个空接口。|
 |C03|软件发送控制帧|部分|TX入口只接management/data；软件请求的BAR等control帧没有完整提交路径。硬件自动ACK/BA不等于软件控制帧已接入；原厂与Linux分工不同。|
 |C04|管理帧TX/RX、认证/关联与探测|Linux接管|基础管理帧传输已有，协议状态由Linux/wpad处理；不重复移植原厂MLME状态机。|
 |C05|RX过滤、monitor过滤需求|部分|接受部分FIF请求，但写回主要按AP/monitor两种mode，未逐请求落实全部过滤语义。|
@@ -137,7 +137,7 @@
 |编号|功能|状态|实际覆盖/遗漏及条件|
 |---|---|---|---|
 |G01|CCMP-128硬件key/PN/CAM及密钥生命周期|已有|已有实现及本地修复；未宣称所有重键交错已实机验收。|
-|G02|其余cipher硬件卸载|部分|硬件只接CCMP；原厂公开11种cipher不等于每种均硬件执行，原厂实际硬件集合尚需逐cipher核对。Linux软件处理另列。|
+|G02|其余cipher硬件卸载|部分|硬件仅CCMP。已追原厂AP key路径：WEP/TKIP/CCMP/GCMP及256位数据key有分类、设置STA算法并调用set-key链；BIP家族存在不同软件/硬件分工，不能把公开11种cipher全当硬件。精确CAM映射仍待逐算法确认。|
 |G03|WPA2/WPA3/SAE、OWE、802.1X、PMF|Linux接管|full wpad及Linux提供协议/所列软件cipher；不把非CCMP硬件未接当成安全协议整体缺失，也不替代端到端验收。|
 |G04|802.11r/k/v、PMKSA、WNM/MBO/RRM|Linux接管|AP侧通用软件原语由Linux/wpad提供；STA角色未提供，survey/每帧信号限制与完整steering策略尚未解决。|
 |G05|数据TX/RX、A-MPDU/A-MSDU与BA|部分|已有基础聚合、BA、PN和所有权机制；RX硬件BA资源、原厂动态聚合/低速聚合策略未完整覆盖。|
@@ -162,7 +162,7 @@
 |H05|TSO/GSO、checksum partial与分段快路|部分|已有部分checksum/SG；NI入口将GSO、CHECKSUM_PARTIAL保留Linux，不是全量硬件分段/校验卸载。|
 |H06|组播/广播、复制与mc2u硬件快路|部分|目前主要走Linux，未提供完整原厂组播策略的硬件路径；不能据此认定组播完全不可用。|
 |H07|VLAN、PPPoE、IPv6及协议例外覆盖|部分|部分普通TCP/UDP、VLAN/PPPoE路径已有；上行PE只接直接TCP/UDP及IPv4无options等格式，扩展头/其他类型仍需Linux。|
-|H08|AP隔离、ACL、VLAN/flow规则一致性|待判定|必须沿规则安装与命中检查，不能用慢路策略存在证明快路已保留全部语义。本轮不改动共享NI/PON工作区。|
+|H08|AP隔离、ACL、VLAN/flow规则一致性|部分|已有Linux桥POST_ROUTING放行后学习、FDB/STP/port检查及switchdev/netdev变化刷新，不能误报为完全没有策略接入。但学习key主要按MAC/VLAN/EtherType，尚未证明任意L3/L4 ACL及动态配置都等效；需保留精确规则范围。|
 |H09|PS、密钥、BA、速率变化跨ARM/PE同步|部分|部分同步及既有修复已有；新增OMI/BF/TWT/VAP等没有对应模板/资源状态传播，不能只补一端。|
 |H10|WFO/VIRT/其他板型PE镜像|不列为缺口|本机原厂明确关闭RTK_WFO、WFO_VIRT和FC_WIFI_AMSDU_OFFLOAD_BY_PE；不能将别板镜像算作本板必移植功能。|
 
@@ -255,11 +255,13 @@
 |编号|功能|状态|实际覆盖/遗漏及条件|
 |---|---|---|---|
 |C11|RRSR/basic response rate动态控制|待判定|原厂有可调/动态RRSR控制；项目beacon基本速率已有，但缺BSS基本速率到完整响应速率策略的可核实映射，不能凭固定初始化掩码认定全覆盖。|
-|G15|动态HFC/WMM资源再分配|待判定|项目主要静态HFC资源；原厂wmm_dm控制与动态EDCA不应混为一项。资源再分配的实际消费者/本机门控尚未确认，不以名字推断一定存在遗漏算法。|
+|G15|WMM与HFC概念核对|不列为缺口|原厂wmm_dm setter调用rtw_switch_wmm_mode，其直接调用是EDCA读写；已归入G08。不能把此开关再推断成一套独立HFC资源再分配算法并重复报漏；其他HFC运行分支不由这个名字证明。|
 |I11|按周期/星期/SSID掩码的无线定时开关|待判定|原厂有两套时间/星期/SSIDMask配置接口；项目未提供相应管理。已反编译的wifitimer_time只解析HH:MM，定时执行消费者尚未确立，不能宣称原机活动调度算法已完整验证。|
 |I12|信道质量采集、评分、背景噪声与遥测|部分|原厂管理接口含ChannelCollection/评分/扫描完成时刻/背景噪声与质量采集；项目有部分统计，缺运行survey、评分采集和相应管理流程。|
 |I13|同SSID协调、设备踢除及带宽策略管理|部分|Linux可配置同SSID、踢站和通用QoS；未移植原厂SetSameSSID/CancelSameSSID及整套运营商协调流程，不能把协议原语缺失与管理流程缺失混为一项。|
 
 原厂无线管理样本来自完整Linux解包归档（归档内驱动散列与冻结模块相同）。Mac早期`rootfs-partial-casefold`中的同名零字节占位文件未用作行为依据；本轮重新按精确成员名读取完整tar成员，并保存[管理输入与接口](../artifacts/wifi-coverage-audit-20261016/management-inputs.json)。
 
-本轮REA保存75条成功函数记录：驱动68条，管理库/程序7条。另保留一次函数名同时命中PLT与函数体的失败查询；已用明确函数体地址修正，错误记录没有计入成功分析。
+本轮REA保存83条成功函数记录：驱动76条，管理库/程序7条。另保留一次函数名同时命中PLT与函数体的失败查询；已用明确函数体地址修正，错误记录没有计入成功分析。
+
+第二次复核追加原厂空接口与WMM/crypto证据；桥策略核对的源码范围和散列见[policy-source.json](../artifacts/wifi-coverage-audit-20261016/policy-source.json)。它确认已有的学习/失效机制，不冒充完成任意ACL等效性的验证。

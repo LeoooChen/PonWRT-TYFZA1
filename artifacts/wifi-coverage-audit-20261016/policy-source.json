@@ -1,0 +1,19 @@
+{
+  "scope": "Read-only Wi-Fi acceleration policy audit; no NI/PON source edits",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-bridge.h": "69734a58bb911733c85f999a338620d786036f924f81a856bccee3e8c6b7434d",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-wifi.c": "6fc31fcf59f0ac2c7189e754c6c977a9c9931b701310f4d2c6d9fd8b575e6dcc"
+  },
+  "observations": [
+    "Bridge rules are learned from Linux BR_POST_ROUTING, after bridge policy decisions.",
+    "FDB/STP/port validation and generic netdev/switchdev flush notifications exist.",
+    "Bridge learn rule key uses Ethernet MAC/VLAN/EtherType; this does not establish arbitrary L3/L4 policy equivalence."
+  ],
+  "functions": [
+    "fe_bridge_forwarded",
+    "fe_bridge_ports",
+    "fe_bridge_learn",
+    "fe_bridge_netdev_event",
+    "fe_bridge_switch_event"
+  ]
+}

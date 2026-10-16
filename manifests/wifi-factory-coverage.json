@@ -21,12 +21,12 @@
   },
   "feature_status_counts": {
     "已有": 15,
-    "部分": 30,
+    "部分": 31,
     "未提供": 15,
     "缺失": 11,
-    "不列为缺口": 5,
+    "不列为缺口": 7,
     "条件缺口": 17,
-    "待判定": 11,
+    "待判定": 8,
     "Linux接管": 8
   },
   "features": [
@@ -606,8 +606,8 @@
     {
       "id": "B05",
       "domain": "模式与信道",
-      "feature": "P2P、Mesh、NAN前端模式",
-      "status": "待判定",
+      "feature": "P2P、802.11s Mesh、NAN前端模式",
+      "status": "不列为缺口",
       "factory_symbol_query": "OnAction_p2p",
       "factory_symbol_match_count": 1,
       "factory_symbol_examples": [
@@ -619,8 +619,10 @@
         }
       ],
       "native_evidence": "D/monitor.h:1394",
-      "finding": "项目未提供。原厂有相关底层/历史符号，但公开wiphy模式掩码0x0e未声明这些模式；不能据此声称原机具备完整功能而漏移植。",
-      "rea_evidence_ids": [],
+      "finding": "项目未提供这些模式；原厂wiphy同样未声明，OnAction_p2p直接return 1、Mesh plink handler直接return 10。原厂只见协议片段/低层API，不能记成漏掉完整模式。EasyMesh MultiAP控制与802.11s是不同功能，见I04。",
+      "rea_evidence_ids": [
+        "ev_df59a99e10048e1c8ca345ff09119317cba21d9b3f6d4f65f856a5c7152fed36"
+      ],
       "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
     },
     {
@@ -1073,7 +1075,7 @@
         }
       ],
       "native_evidence": "D/monitor.h:287、tx.c:123；PE TXWD",
-      "finding": "缺ERP_CTS/HT保护/短前导码更新与逐包RTS/CTS标志消费、RTS阈值接口；启动硬件RTS、fallback与动态SMPS位已存在。",
+      "finding": "缺ERP_CTS/HT保护/短前导码更新与逐包RTS/CTS标志消费、RTS阈值接口；启动硬件RTS、fallback与动态SMPS位已存在。原厂cfg80211 set_wiphy_params也只打印并返回成功，应对齐真实VCS/硬件行为，不能照搬这个空接口。",
       "rea_evidence_ids": [
         "ev_59224173979d08a8d87120d6d96f939d7cd3935ec25d2097e890255592e4401a"
       ],
@@ -2323,7 +2325,7 @@
         }
       ],
       "native_evidence": "D/monitor.h:875",
-      "finding": "硬件只接CCMP；原厂公开11种cipher不等于每种均硬件执行，原厂实际硬件集合尚需逐cipher核对。Linux软件处理另列。",
+      "finding": "硬件仅CCMP。已追原厂AP key路径：WEP/TKIP/CCMP/GCMP及256位数据key有分类、设置STA算法并调用set-key链；BIP家族存在不同软件/硬件分工，不能把公开11种cipher全当硬件。精确CAM映射仍待逐算法确认。",
       "rea_evidence_ids": [],
       "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
     },
@@ -2344,7 +2346,9 @@
       ],
       "native_evidence": "wpad-mbedtls、Linux mac80211/key.c",
       "finding": "full wpad及Linux提供协议/所列软件cipher；不把非CCMP硬件未接当成安全协议整体缺失，也不替代端到端验收。",
-      "rea_evidence_ids": [],
+      "rea_evidence_ids": [
+        "ev_8f4b6d17a6095ad0bc8defd5b7a06c989315548e2f5f7157ca060e580e1f39ac"
+      ],
       "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
     },
     {
@@ -2801,7 +2805,7 @@
       "id": "H08",
       "domain": "硬件加速",
       "feature": "AP隔离、ACL、VLAN/flow规则一致性",
-      "status": "待判定",
+      "status": "部分",
       "factory_symbol_query": "cfg80211_rtw_change_bss",
       "factory_symbol_match_count": 1,
       "factory_symbol_examples": [
@@ -2813,7 +2817,7 @@
         }
       ],
       "native_evidence": "Linux bridge/flowtable及NI/FE无线接口",
-      "finding": "必须沿规则安装与命中检查，不能用慢路策略存在证明快路已保留全部语义。本轮不改动共享NI/PON工作区。",
+      "finding": "已有Linux桥POST_ROUTING放行后学习、FDB/STP/port检查及switchdev/netdev变化刷新，不能误报为完全没有策略接入。但学习key主要按MAC/VLAN/EtherType，尚未证明任意L3/L4 ACL及动态配置都等效；需保留精确规则范围。",
       "rea_evidence_ids": [
         "ev_5583878314e2b18103513d146aee1413f5d1fbc6ba837aed4b76311f21ddb4be"
       ],
@@ -3326,14 +3330,16 @@
       ],
       "native_evidence": "D/monitor.h、mac-runtime.h",
       "finding": "原厂有可调/动态RRSR控制；项目beacon基本速率已有，但缺BSS基本速率到完整响应速率策略的可核实映射，不能凭固定初始化掩码认定全覆盖。",
-      "rea_evidence_ids": [],
+      "rea_evidence_ids": [
+        "ev_4a94e066f95e44d39476d905abd93128af936e215fa2bc9521da07e657afd1e1"
+      ],
       "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
     },
     {
       "id": "G15",
       "domain": "安全与数据通路",
-      "feature": "动态HFC/WMM资源再分配",
-      "status": "待判定",
+      "feature": "WMM与HFC概念核对",
+      "status": "不列为缺口",
       "factory_symbol_query": "proc_set_wmm_dm",
       "factory_symbol_match_count": 1,
       "factory_symbol_examples": [
@@ -3345,8 +3351,10 @@
         }
       ],
       "native_evidence": "D/mac-runtime.h、pci.c",
-      "finding": "项目主要静态HFC资源；原厂wmm_dm控制与动态EDCA不应混为一项。资源再分配的实际消费者/本机门控尚未确认，不以名字推断一定存在遗漏算法。",
-      "rea_evidence_ids": [],
+      "finding": "原厂wmm_dm setter调用rtw_switch_wmm_mode，其直接调用是EDCA读写；已归入G08。不能把此开关再推断成一套独立HFC资源再分配算法并重复报漏；其他HFC运行分支不由这个名字证明。",
+      "rea_evidence_ids": [
+        "ev_3aec0d94c6d768acfcf2c3295abafb90c14a0971a96bf22b6f3ad16161141b28"
+      ],
       "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
     },
     {
@@ -3771,8 +3779,8 @@
   "factory_control_map": "artifacts/wifi-coverage-audit-20261016/factory-control-map.json",
   "factory_cfg80211_callback_count": 39,
   "management_manifest": "artifacts/wifi-coverage-audit-20261016/management-inputs.json",
-  "analyzed_function_records": 75,
-  "factory_module_function_records": 68,
+  "analyzed_function_records": 83,
+  "factory_module_function_records": 76,
   "hardware_tested": false,
   "production_code_changed": false
 }

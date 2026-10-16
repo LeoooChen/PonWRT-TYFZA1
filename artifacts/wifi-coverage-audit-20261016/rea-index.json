@@ -1,6 +1,6 @@
 {
   "primary_factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
-  "successful_function_records": 75,
+  "successful_function_records": 83,
   "address_mapping": "Only primary module: Ghidra address = .text offset + 0x10003c. Management ELF records retain provider addresses without applying this offset.",
   "full_inline_records": "rea-full-records.tar.gz",
   "recovered_errors": [
@@ -1122,6 +1122,126 @@
       "evidence_id": "ev_b07b81688158d6c81e20ea2b7a879cf83e52da31a2d77157dc635fd9147168a7",
       "raw_member": "ghidra-wifi-management-timer-body/001-analyze_function.json",
       "raw_sha256": "474c005f401334ff728d44f599971933483baf0a6eae43543d04c89cc07f33da",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4"
+    },
+    {
+      "function": "OnAction_p2p",
+      "ghidra_address": "0x18a820",
+      "text_offset": "0x8a7e4",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_df59a99e10048e1c8ca345ff09119317cba21d9b3f6d4f65f856a5c7152fed36",
+      "raw_member": "ghidra-wifi-remaining-controls/001-analyze_function.json",
+      "raw_sha256": "1dc3c0536cd98c8a8668150c07d9fb4cf0229f1f5ae29e1cf0e90d2511db654c",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4"
+    },
+    {
+      "function": "rtw_mesh_set_plink_state_cmd_hdl",
+      "ghidra_address": "0x151ed8",
+      "text_offset": "0x51e9c",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_acc31fc30e5346b2541dfbe6abd2d3b86255e7b88c8700c947884a881798c993",
+      "raw_member": "ghidra-wifi-remaining-controls/002-analyze_function.json",
+      "raw_sha256": "07f5bb4f82b6fcc5de4411a460cdb4b2dc94a557e99ba743eeb37b09af6bc07c",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4"
+    },
+    {
+      "function": "proc_set_wmm_dm",
+      "ghidra_address": "0x135060",
+      "text_offset": "0x35024",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_3aec0d94c6d768acfcf2c3295abafb90c14a0971a96bf22b6f3ad16161141b28",
+      "raw_member": "ghidra-wifi-remaining-controls/003-analyze_function.json",
+      "raw_sha256": "a8ac847883d57c84831bc417894ff0b7698e76fad1ca685bc8d3664355c00413",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4"
+    },
+    {
+      "function": "proc_set_dyn_rrsr",
+      "ghidra_address": "0x17678c",
+      "text_offset": "0x76750",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_4a94e066f95e44d39476d905abd93128af936e215fa2bc9521da07e657afd1e1",
+      "raw_member": "ghidra-wifi-remaining-controls/004-analyze_function.json",
+      "raw_sha256": "29418305c52dc5f37e4dfa7d7b30032b97b6e1c06facae0bed91b0e8f99b4bd8",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4"
+    },
+    {
+      "function": "cfg80211_rtw_set_wiphy_params",
+      "ghidra_address": "0x11f60c",
+      "text_offset": "0x1f5d0",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_110db442b3f0c449c2eec2a23152f47982a773544437ce1b61a89cc81e203393",
+      "raw_member": "ghidra-wifi-remaining-controls/005-analyze_function.json",
+      "raw_sha256": "3ce3ecf9ec4b6ca3d53dd442df52a793174ce4eff54600638d7226f49588fb9d",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4"
+    },
+    {
+      "function": "cfg80211_rtw_add_key",
+      "ghidra_address": "0x126dd8",
+      "text_offset": "0x26d9c",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_8f4b6d17a6095ad0bc8defd5b7a06c989315548e2f5f7157ca060e580e1f39ac",
+      "raw_member": "ghidra-wifi-remaining-controls/006-analyze_function.json",
+      "raw_sha256": "119a3bcd927854b90599181e6e1f10e0d60c0d57ed0fe197babd0fdb2757153c",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4"
+    },
+    {
+      "function": "txsc_prepare_sc_entry",
+      "ghidra_address": "0x1efb38",
+      "text_offset": "0xefafc",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_5dde4a7246c98167149eec82c851f948ed1a556eeb04aba48eb66271382af53f",
+      "raw_member": "ghidra-wifi-remaining-controls/007-analyze_function.json",
+      "raw_sha256": "a404b776945761469e73f992a82db418d50cc4e440424f27225f754389e6169e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4"
+    },
+    {
+      "function": "rtw_ap_set_pairwise_key",
+      "ghidra_address": "0x1d30b8",
+      "text_offset": "0xd307c",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_3874a9e890c2a1ebb0cb3b0e494c43654272a07d76861df6bce50dbea90af4dd",
+      "raw_member": "ghidra-wifi-remaining-controls/008-analyze_function.json",
+      "raw_sha256": "fe07f206d6587f08efcc375ad3d10748deaba6e37981af0b56bfaa97fd2f4af0",
       "provider": {
         "id": "ghidra",
         "name": "Ghidra",
