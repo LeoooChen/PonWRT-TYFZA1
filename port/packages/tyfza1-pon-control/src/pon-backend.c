@@ -463,13 +463,22 @@ static int alarms_poll(void *context, unsigned int generation,
 
 	backend->alarm_error = 0;
 	backend->pm_error = 0;
+	for (i = 0; i < PON_ALARM_COUNT; i++)
+		backend->alarms.entries[i].sampled = false;
 	for (i = 0; i < PON_PM_PORTS; i++) {
 		ret = pon_pm_sample(&backend->pm[i], backend->device, i, monotonic_ms());
 		if (ret && !backend->pm_error)
 			backend->pm_error = ret;
+		if (i == 0) {
+			if (!ret) {
+				pon_alarm_pm_sample(&backend->alarms, &backend->pm[0]);
+			} else {
+				for (unsigned int alarm = 0; alarm < PON_ALARM_PON_COUNTER_COUNT; alarm++)
+					if (backend->alarms.entries[PON_ALARM_PON_COUNTER_BASE + alarm].value.enabled)
+						backend->alarm_error = ret;
+			}
+		}
 	}
-	for (i = 0; i < PON_ALARM_COUNT; i++)
-		backend->alarms.entries[i].sampled = false;
 	for (i = 0; i < PON_ALARM_OPTICAL_COUNT; i++)
 		optical |= backend->alarms.entries[i].value.enabled != 0;
 	if (optical) {
@@ -499,6 +508,31 @@ static int alarms_poll(void *context, unsigned int generation,
 				backend->alarm_error = ret;
 		} else {
 			pon_alarm_sample(entry, value[0]);
+		}
+	}
+	for (i = 0; i < PON_ALARM_PORT_COUNT; i++) {
+		struct pon_alarm_entry *entries = &backend->alarms.entries[PON_ALARM_LINK_COUNTER_BASE + i * 2];
+		unsigned long long changes;
+		char path[64];
+		FILE *file;
+
+		if (!entries[0].value.enabled && !entries[1].value.enabled)
+			continue;
+		/* Native counterpart to stock0x42b788's per-port changes counter.
+		 * A genuine count of1 is valid, not an error sentinel. */
+		snprintf(path, sizeof(path), "/sys/class/net/eth%u/carrier_changes", 3 - i);
+		file = fopen(path, "r");
+		if (!file) {
+			ret = -errno;
+		} else {
+			ret = fscanf(file, "%llu", &changes) == 1 ? 0 : -EIO;
+			fclose(file);
+		}
+		if (ret) {
+			if (!backend->alarm_error)
+				backend->alarm_error = ret;
+		} else {
+			pon_alarm_link_sample(&backend->alarms, i, changes);
 		}
 	}
 	return pon_alarm_pending(&backend->alarms, generation, events, capacity);

@@ -64,7 +64,8 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
                     ['ip', 'link', 'add', 'pon-oam0', 'type', 'veth', 'peer', 'name', 'olt'],
                     ['ip', 'link', 'set', 'pon-oam0', 'address', '02:11:22:33:44:55'],
                     ['ip', 'link', 'set', 'olt', 'address', '02:10:20:30:40:50'],
-                    ['ip', 'link', 'set', 'pon-oam0', 'up'], ['ip', 'link', 'set', 'olt', 'up']):
+                    ['ip', 'link', 'set', 'pon-oam0', 'up'], ['ip', 'link', 'set', 'olt', 'up'],
+                    ['ip', 'link', 'add', 'eth3', 'type', 'veth', 'peer', 'name', 'uni-peer']):
         subprocess.run(command, check=True)
     sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(0x8809))
     sock.bind(('olt', 0))
@@ -205,6 +206,59 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
         sock.send(ethernet(alarm_disable, code=0xfe, flags=0x50))
         assert receive(sock, 0xfe)[22:26] == b'\xc7\x00\x81\x80'
         transceiver.unlink()
+
+        def counter_config(object, id, trigger, clear, enabled):
+            payload = b'\x11\x11\x11\x03' + object + b'\xc7\x00\x82\x0a' + struct.pack('!HII', id, trigger, clear) + b'\0'
+            sock.send(ethernet(payload, code=0xfe, flags=0x50))
+            assert receive(sock, 0xfe)[22 + len(object):26 + len(object)] == b'\xc7\x00\x82\x80'
+            payload = b'\x11\x11\x11\x03' + object + b'\xc7\x00\x81\x06' + struct.pack('!HI', id, 2 if enabled else 1) + b'\0'
+            sock.send(ethernet(payload, code=0xfe, flags=0x50))
+            assert receive(sock, 0xfe)[22 + len(object):26 + len(object)] == b'\xc7\x00\x81\x80'
+
+        def crc_record(generation, value):
+            counters = [0] * 37
+            counters[10] = value
+            records = pm_file.read_bytes()
+            pm_file.write_bytes(struct.pack('!38Q', generation, *counters) + records[304:])
+
+        crc_record(4, 0x8000000001)
+        counter_config(pm_object, 0x117, 100, 90, True)
+        alarm = receive(sock, 1)
+        assert alarm[20:22] == b'\xfe\x18'
+        assert alarm[25:44] == struct.pack('!HIHHBQ', 4, 0, 0x117, 0, 0, 0x8000000001)
+        tests.append('hardware CRC counter produces a24-byte event TLV with an uncorrupted64-bit cumulative value')
+        pm_set(0xb2, b'\0')
+        assert pm_get(0xb2) == bytes(296)
+        try:
+            receive(sock, 1, timeout=1.2)
+            raise RuntimeError('PM baseline reset fabricated a counter recovery')
+        except AssertionError:
+            pass
+        crc_record(5, 89)
+        clear = receive(sock, 1)
+        assert clear[25:44] == struct.pack('!HIHHBQ', 4, 0, 0x117, 0, 1, 89)
+        tests.append('PM baseline reset preserves cumulative alarm state; actual hardware generation reset allows recovery')
+        records = pm_file.read_bytes()
+        pm_file.unlink()
+        sock.send(ethernet(event_get, code=0xfe, flags=0x50))
+        receive(sock, 0xfe)
+        status(state_file, lambda s: s['alarm_error'] < 0 and s['pm_error'] < 0)
+        try:
+            receive(sock, 1, timeout=1.2)
+            raise RuntimeError('failed hardware read fabricated a counter event')
+        except AssertionError:
+            pass
+        pm_file.write_bytes(records)
+        counter_config(pm_object, 0x117, 100, 90, False)
+        tests.append('failed hardware counter read remains visible and suppresses stale notifications')
+        uni_object = bytes.fromhex('37000104 01000001')
+        changes = int(Path('/sys/class/net/eth3/carrier_changes').read_text())
+        assert changes == 1
+        counter_config(uni_object, 0x316, 0, 0, True)
+        alarm = receive(sock, 1)
+        assert alarm[25:44] == struct.pack('!HIHHBQ', 1, 0x01000001, 0x316, 0, 0, changes)
+        counter_config(uni_object, 0x316, 0, 0, False)
+        tests.append('CTC UNI1 link-change alarm reads eth3 native carrier_changes and treats a genuine count of1 as valid')
         set_request = bytes.fromhex('11111103 37000104 01000007 c700250102 3600010103 c700130200e3 00')
         set_response = bytes.fromhex('11111104 37000104 01000007 c7002587 3600010103 c7001387 00')
         sock.send(ethernet(set_request, code=0xfe, flags=0x50))

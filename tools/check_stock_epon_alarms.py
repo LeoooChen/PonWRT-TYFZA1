@@ -31,6 +31,9 @@ with args.stock.open("rb") as stream:
         if segment["p_type"] == "PT_LOAD":
             uc.mem_write(segment["p_vaddr"], segment.data())
 registers = (UC_ARM64_REG_X0, UC_ARM64_REG_X1, UC_ARM64_REG_X2, UC_ARM64_REG_X3, UC_ARM64_REG_X4)
+stat_values = {}
+stat_queries = []
+link_changes = 0
 
 
 def hook(uc, address, size, context):
@@ -56,10 +59,18 @@ def hook(uc, address, size, context):
             value = math.log10(value) if value > 0 else -math.inf
             uc.reg_write(UC_ARM64_REG_D0, struct.unpack("<Q", struct.pack("<d", value))[0])
             result = 0
+        elif name == "rt_stat_port_get":
+            stat_queries.append(b)
+            uc.mem_write(c, struct.pack("<Q", stat_values.get(b, 0)))
+            result = 0
         else:
             raise AssertionError(name)
     elif address == 0x40e57c:  # logging only
         result = 0
+    elif address == 0x410cb8:  # factory CTC logical-to-physical UNI mapping
+        result = 3 - a
+    elif address == 0x42b788:  # per-port changes read; actual predicate still executes
+        result = link_changes
     elif address == 0x42c5a4:  # configured threshold lookup for the Get encoder
         uc.mem_write(c, struct.pack("<I", 100))
         uc.mem_write(d, struct.pack("<I", 90))
@@ -79,7 +90,7 @@ with args.stock.open("rb") as stream:
     plt = elf.get_section_by_name(".plt")["sh_addr"]
     for index, relocation in enumerate(relocations.iter_relocations()):
         name = symbols.get_symbol(relocation["r_info_sym"]).name
-        if name in ("htons", "ntohs", "htonl", "ntohl", "malloc", "free", "__log10"):
+        if name in ("htons", "ntohs", "htonl", "ntohl", "malloc", "free", "__log10", "rt_stat_port_get"):
             calls[plt + 32 + index * 16] = name
 uc.hook_add(UC_HOOK_CODE, hook)
 
@@ -148,6 +159,38 @@ int delivery(void)
     if (pon_alarm_pending(&table,1,events,2)) return 5; /* failed sample cannot report stale data */
     return 0;
 }
+int counter(unsigned int threshold, unsigned int clear, unsigned int active,
+            unsigned long long raw, unsigned char *info)
+{
+    struct pon_alarm_entry entry={.value={.object_type=4,.id=0x117,.enabled=1,.threshold=threshold,
+        .clear_threshold=clear,.active=active,.info_length=8}};
+    pon_alarm_counter_sample(&entry,raw);
+    memcpy(info,entry.value.info,8);
+    return entry.value.active;
+}
+int pm_counter(unsigned int id, const unsigned long long *values, unsigned char *info)
+{
+    struct pon_alarm_table table;
+    struct pon_pm_port port={0};
+    struct pon_oam_alarm alarm={.object_type=4,.id=id,.enabled=1};
+    int ret;
+    pon_alarm_init(&table);
+    ret=pon_alarm_access(&table,&alarm,PON_ALARM_STATUS_SET);
+    if (ret) return ret;
+    alarm.threshold=alarm.clear_threshold=0;
+    pon_alarm_access(&table,&alarm,PON_ALARM_THRESHOLD_SET);
+    for (unsigned int i=0;i<PON_PM_COUNTERS;i++) {
+        port.baseline[i]=values[i]-1;
+        port.current[i]=1;
+    }
+    pon_alarm_pm_sample(&table,&port);
+    for (unsigned int i=0;i<PON_ALARM_COUNT;i++)
+        if (table.entries[i].value.id==id) {
+            memcpy(info,table.entries[i].value.info,8);
+            return table.entries[i].value.active;
+        }
+    return -1;
+}
 '''
 records = []
 with tempfile.TemporaryDirectory(prefix="epon-alarms-", dir=root / "artifacts") as directory:
@@ -159,6 +202,8 @@ with tempfile.TemporaryDirectory(prefix="epon-alarms-", dir=root / "artifacts") 
     native = ctypes.CDLL(str(directory / "native.so"))
     assert native.delivery() == 0
     native.wire.argtypes = [ctypes.c_uint] * 4 + [ctypes.c_char_p, ctypes.c_uint, ctypes.c_void_p]
+    native.counter.argtypes = [ctypes.c_uint] * 3 + [ctypes.c_ulonglong, ctypes.c_void_p]
+    native.pm_counter.argtypes = [ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
     for id in range(0x101, 0x115):
         field = (id - 0x101) % 10 // 2
         address = (0x42a678, 0x42a678, 0x42a8c4, 0x42ab0c, 0x42ad90)[field]
@@ -183,7 +228,77 @@ with tempfile.TemporaryDirectory(prefix="epon-alarms-", dir=root / "artifacts") 
             active = original
             states.append(active)
         records.append({"id": hex(id), "matches_actual_hysteresis": True, "states": states})
-    for object, instance, id, info in ((4, 0, 0x101, b"\0\0\0\x65"), (1, 0x01000004, 0x302, b"")):
+    states = []
+    active = 0
+    for raw in (90, 100, 101, 95, 90, 89, 0x100000001):
+        alarm = bytearray(36)
+        struct.pack_into("<HH", alarm, 0, 4, 0x117)
+        alarm[16] = active
+        struct.pack_into("<II", alarm, 20, 100, 90)
+        uc.mem_write(0x5000000, bytes(alarm))
+        uc.mem_write(0x5001000, bytes(4))
+        call(0x42b1b4, 0x5000000, 0x5001000, raw)
+        original = struct.unpack("<I", uc.mem_read(0x5001000, 4))[0]
+        info = ctypes.create_string_buffer(8)
+        assert native.counter(100, 90, active, raw, info) == original
+        if active != original:
+            assert info.raw == bytes(uc.mem_read(0x500001c, 8)) == struct.pack("!Q", raw)
+        active = original
+        states.append(active)
+    # Original signed word concatenation corrupts the event when the swapped
+    # high word has bit31 set. Encode the actual64-bit value without that cast.
+    raw = 0x8000000001
+    uc.mem_write(0x5000000, bytes(alarm))
+    call(0x42b1b4, 0x5000000, 0x5001000, raw)
+    info = ctypes.create_string_buffer(8)
+    assert native.counter(100, 90, 0, raw, info) == 1
+    assert info.raw == struct.pack("!Q", raw)
+    assert bytes(uc.mem_read(0x500001c, 8)) != info.raw
+    records.append({"counter_hysteresis_matches_stock": True, "states": states,
+                    "stock_signed_word_event_corruption_reproduced_and_fixed": True})
+    values = (ctypes.c_ulonglong * 37)(*[10000 + 103 * i for i in range(37)])
+    stat_values.update({0x23: values[10], 0x39: values[12], 0x3b: values[14],
+                        0x2b: values[13], 0x2c: values[15]})
+    supported = (0x117, 0x119, 0x11b, 0x11a, 0x11c, 0x123, 0x124,
+                 0x127, 0x129, 0x12b, 0x12a, 0x12c, 0x133, 0x134)
+    for id in supported:
+        stat_queries.clear()
+        uc.mem_write(0x5002000, bytes(8))
+        address = 0x411e9c if id in (0x123, 0x124, 0x133, 0x134) else 0x412058 if id & 1 else 0x412224
+        call(address, id, 7, 0x5002000)
+        original = struct.unpack("<Q", uc.mem_read(0x5002000, 8))[0]
+        assert uc.reg_read(UC_ARM64_REG_X0) == 0
+        info = ctypes.create_string_buffer(8)
+        assert native.pm_counter(id, values, info) == 1
+        assert info.raw == struct.pack("!Q", original), (hex(id), stat_queries)
+        records.append({"id": hex(id), "stock_stat_selectors": stat_queries.copy(),
+                        "native_lifetime_hardware_mapping_matches": True})
+    for id in set(range(0x115, 0x135)) - set(supported):
+        assert native.pm_counter(id, values, ctypes.create_string_buffer(8)) < 0
+    # Stock sends UNI IDs into PON-only selectors. Retain them as unsupported
+    # until a correct ID-to-counter mapping is established, rather than guess.
+    for id in (0x307, 0x309, 0x30b, 0x30d, 0x30f, 0x311, 0x313):
+        stat_queries.clear()
+        call(0x412058, id, 3, 0x5002000)
+        assert uc.reg_read(UC_ARM64_REG_X0) == 1 and not stat_queries
+    records.append({"stock_uni_ids_rejected_by_pon_selector_reproduced": True,
+                    "unestablished_mappings_remain_unsupported": True})
+    alarm = bytearray(36)
+    struct.pack_into("<HH", alarm, 0, 1, 0x316)
+    struct.pack_into("<I", alarm, 12, 0x01000001)
+    link_changes = 1
+    uc.mem_write(0x5000000, bytes(alarm))
+    call(0x42b840, 0x5000000, 0x5001000)
+    assert uc.reg_read(UC_ARM64_REG_X0) == 1
+    info = ctypes.create_string_buffer(8)
+    assert native.counter(0, 0, 0, 1, info) == 1 and info.raw == struct.pack("!Q", 1)
+    link_changes = 2
+    call(0x42b840, 0x5000000, 0x5001000)
+    assert uc.reg_read(UC_ARM64_REG_X0) == 0
+    assert bytes(uc.mem_read(0x500001c, 8)) == struct.pack("!Q", 2)
+    records.append({"stock_link_count1_error_sentinel_reproduced_and_fixed": True})
+    for object, instance, id, info in ((4, 0, 0x101, b"\0\0\0\x65"), (1, 0x01000004, 0x302, b""),
+                                      (4, 0, 0x117, struct.pack("!Q", 0x8000000001))):
         event = bytearray(40)
         struct.pack_into("<H", event, 0, object)
         struct.pack_into("<I", event, 4, instance)
@@ -211,6 +326,6 @@ with tempfile.TemporaryDirectory(prefix="epon-alarms-", dir=root / "artifacts") 
                     "native_returns_configured_clear_threshold": True, "failed_send_stays_pending": True,
                     "failed_sample_does_not_report_stale_data": True})
 args.output.write_text(json.dumps({"stock_sha256": hashlib.sha256(args.stock.read_bytes()).hexdigest(),
-    "scope": "Actual optical alarm predicates and event/Get encoders; libc/logging and threshold lookup modeled; no physical sensor or OLT test",
+    "scope": "Actual optical/counter predicates, counter selectors and event/Get encoders; libc/logging, stat values and threshold lookup modeled; no physical sensor or OLT test",
     "records": records}, indent=2) + "\n")
-print("CTC alarms:20 stock hysteresis predicates/event TLVs match; real clear-threshold value replaces the reproduced stock bug")
+print("CTC alarms: optical/counter hysteresis,14 hardware mappings and event TLVs checked; stock threshold/64-bit encoding bugs reproduced and fixed")

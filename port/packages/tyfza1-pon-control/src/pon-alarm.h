@@ -2,10 +2,14 @@
 #ifndef TYFZA1_PON_ALARM_H
 #define TYFZA1_PON_ALARM_H
 #include "pon-oam.h"
+#include "pon-pm.h"
 
 #define PON_ALARM_OPTICAL_COUNT 20
 #define PON_ALARM_PORT_COUNT 4
-#define PON_ALARM_COUNT (PON_ALARM_OPTICAL_COUNT + PON_ALARM_PORT_COUNT)
+#define PON_ALARM_PON_COUNTER_BASE (PON_ALARM_OPTICAL_COUNT + PON_ALARM_PORT_COUNT)
+#define PON_ALARM_PON_COUNTER_COUNT 14
+#define PON_ALARM_LINK_COUNTER_BASE (PON_ALARM_PON_COUNTER_BASE + PON_ALARM_PON_COUNTER_COUNT)
+#define PON_ALARM_COUNT (PON_ALARM_LINK_COUNTER_BASE + PON_ALARM_PORT_COUNT * 2)
 
 struct pon_alarm_entry {
 	struct pon_oam_alarm value;
@@ -24,6 +28,9 @@ int pon_alarm_access(struct pon_alarm_table *table, struct pon_oam_alarm *alarm,
 int pon_alarm_variable(struct pon_alarm_table *table, const struct pon_oam_request *request,
 	const uint8_t *input, size_t size, uint8_t *output);
 void pon_alarm_sample(struct pon_alarm_entry *entry, uint16_t raw);
+void pon_alarm_counter_sample(struct pon_alarm_entry *entry, uint64_t counter);
+void pon_alarm_pm_sample(struct pon_alarm_table *table, const struct pon_pm_port *port);
+void pon_alarm_link_sample(struct pon_alarm_table *table, unsigned int port, uint64_t changes);
 size_t pon_alarm_pending(struct pon_alarm_table *table, unsigned int generation,
 	struct pon_oam_alarm *events, size_t capacity);
 void pon_alarm_reported(struct pon_alarm_table *table, const struct pon_oam_alarm *events, size_t count);

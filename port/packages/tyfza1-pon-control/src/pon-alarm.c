@@ -25,6 +25,10 @@ static void put32(uint8_t *value, uint32_t number)
 
 void pon_alarm_init(struct pon_alarm_table *table)
 {
+	/* Exact selectors in stock0x412058/0x412224 and totals in0x411e9c.
+	 * Drop/discard/fragment/jabber IDs without an established physical
+	 * counter are deliberately absent, rather than backed by DAL zeros. */
+	static const uint16_t counter_ids[] = {0x117, 0x119, 0x11b, 0x11a, 0x11c, 0x123, 0x124};
 	unsigned int i;
 
 	memset(table, 0, sizeof(*table));
@@ -44,6 +48,23 @@ void pon_alarm_init(struct pon_alarm_table *table)
 		alarm->object_type = 1;
 		alarm->instance = 0x01000001 + i;
 		alarm->id = 0x302; /* UNI loss of signal. */
+	}
+	for (i = 0; i < PON_ALARM_PON_COUNTER_COUNT; i++) {
+		struct pon_oam_alarm *alarm = &table->entries[PON_ALARM_PON_COUNTER_BASE + i].value;
+
+		alarm->object_type = 4;
+		alarm->id = counter_ids[i % 7] + (i >= 7 ? 0x10 : 0);
+		alarm->info_length = 8;
+		alarm->threshold = alarm->clear_threshold = UINT32_MAX;
+	}
+	for (i = 0; i < PON_ALARM_PORT_COUNT * 2; i++) {
+		struct pon_oam_alarm *alarm = &table->entries[PON_ALARM_LINK_COUNTER_BASE + i].value;
+
+		alarm->object_type = 1;
+		alarm->instance = 0x01000001 + i / 2;
+		alarm->id = i & 1 ? 0x327 : 0x316;
+		alarm->info_length = 8;
+		alarm->threshold = alarm->clear_threshold = UINT32_MAX;
 	}
 }
 
@@ -181,6 +202,46 @@ void pon_alarm_sample(struct pon_alarm_entry *entry, uint16_t raw)
 	if (active != alarm->active && alarm->info_length)
 		put32(alarm->info, raw);
 	alarm->active = active;
+}
+
+void pon_alarm_counter_sample(struct pon_alarm_entry *entry, uint64_t counter)
+{
+	struct pon_oam_alarm *alarm = &entry->value;
+	bool active;
+
+	if (!alarm->enabled)
+		return;
+	entry->sampled = true;
+	/* Stock0x42b1b4: cumulative hardware value, not a PM interval delta.
+	 * Equality retains the previous state on both sides of the hysteresis. */
+	active = alarm->active ? counter >= alarm->clear_threshold : counter > alarm->threshold;
+	if (active != alarm->active) {
+		put32(alarm->info, counter >> 32);
+		put32(alarm->info + 4, counter);
+	}
+	alarm->active = active;
+}
+
+void pon_alarm_pm_sample(struct pon_alarm_table *table, const struct pon_pm_port *port)
+{
+	static const unsigned int fields[] = {10, 12, 14, 13, 15};
+	uint64_t values[7];
+	unsigned int i;
+
+	/* PM's baseline plus current reconstructs the sampled lifetime value,
+	 * including immediately after an OLT reset or a period rollover. */
+	for (i = 0; i < 5; i++)
+		values[i] = port->baseline[fields[i]] + port->current[fields[i]];
+	values[5] = values[0] + values[1] + values[2];
+	values[6] = values[3] + values[4];
+	for (i = 0; i < PON_ALARM_PON_COUNTER_COUNT; i++)
+		pon_alarm_counter_sample(&table->entries[PON_ALARM_PON_COUNTER_BASE + i], values[i % 7]);
+}
+
+void pon_alarm_link_sample(struct pon_alarm_table *table, unsigned int port, uint64_t changes)
+{
+	for (unsigned int i = 0; i < 2; i++)
+		pon_alarm_counter_sample(&table->entries[PON_ALARM_LINK_COUNTER_BASE + port * 2 + i], changes);
 }
 
 size_t pon_alarm_pending(struct pon_alarm_table *table, unsigned int generation,
