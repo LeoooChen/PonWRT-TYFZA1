@@ -1,0 +1,1 @@
+NI release retains in-flight or partially recycled WPs; teardown follows only after their last BID returns

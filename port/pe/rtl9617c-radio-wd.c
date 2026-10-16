@@ -106,8 +106,7 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 	if (!mailbox[68]) return;
 	volatile u32 *bar = (void *)mailbox[2];
 	u32 consumer = mailbox[70], producer = mailbox[73];
-	if (((bar[0x121c / 4] >> 16) & 1023) == consumer ||
-	    ((producer + 1) & 255) == mailbox[74]) return;
+	if (((bar[0x121c / 4] >> 16) & 1023) == consumer) return;
 	volatile u32 *buffer = uncached(mailbox[68] + consumer * RTL_AX_RPQ_BUFFER_BYTES);
 	u32 info = buffer[0], tag = mailbox[71] == 8191 ? 1 : mailbox[71] + 1;
 	if (((info >> 16) & 8191) != tag) return;
@@ -121,6 +120,21 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 	if ((info & 0xc000) != 0xc000 || written > RTL_AX_RPQ_BUFFER_BYTES || offset > written || bytes > written - offset) {
 		mailbox[77]++;
 	} else {
+		/* Stock dispatch recycles WPs separately from ordinary RX delivery.
+		 * Reserve ARM space only for reports that actually need it. Check
+		 * the whole packet before completing any WP in a mixed report. */
+		if (((producer + 1) & 255) == mailbox[74] && !(type == 8 && old)) {
+			if (type != 7) return;
+			for (u32 i = 0; i + 4 <= bytes; i += 4) {
+				u32 report = ((const struct packed_word *)((u8 *)buffer + offset + i))->value;
+				u32 id = (report >> 16) & 4095;
+				if (id < 256 || id >= 384) return;
+				volatile u32 *owner = (void *)(memory + 0xc400 + (id - 256) * 8);
+				u32 details = owner[1];
+				if (owner[0] && !(details & BIT(31)) &&
+				    ((details >> 8) & 127) == (report & 127) && (details & BIT(16))) return;
+			}
+		}
 		if (type == 8 && old) { /* Old channel's radar report. */ }
 		else if (type != 7) { header_copy(out, (const u8 *)buffer, written); forwarded = bytes; }
 		else for (u32 i = 0; i + 4 <= bytes; i += 4) {

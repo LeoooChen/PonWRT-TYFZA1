@@ -1,0 +1,20 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "actual_functions": [
+    "phl_rx_pcie@0x197454",
+    "_phl_rx_handle_wp_report@0x197328"
+  ],
+  "ordinary_RX_idle_buffers": 0,
+  "WP_report_dispatched_and_payload_recycled": true,
+  "calls": [
+    "_phl_indic_new_rxpkt",
+    "rtw_hal_rx_res_query",
+    "phl_get_single_rx",
+    "rtw_hal_handle_wp_rpt",
+    "phl_rx_wp_report_record_sts",
+    "phl_recycle_payload",
+    "phl_recycle_rx_buf",
+    "_phl_refill_rxbd"
+  ],
+  "scope": "Actual dispatch and WP loop. Hardware resource query, single RX fetch, report decoder and release/refill callees are modeled. Proves dispatch separation, not radio timing or a factory ARM-to-PE FIFO implementation."
+}

@@ -218,6 +218,8 @@ static int ni_test_release(struct rtl_ax_tx *tx)
 		readl(tx->ni.regs + 0x6108);
 		if (!ni_epps_empty(tx)) return -EBUSY;
 		if (get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 152)) return -EBUSY;
+		/* Empty EPPs do not account for WPs awaiting RPQ or EQ return. */
+		if (get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 120)) return -EBUSY;
 	}
 	if (tx->ni.vp_active) {
 		writel(0, tx->ni.vp);

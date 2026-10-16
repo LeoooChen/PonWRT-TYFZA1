@@ -1,0 +1,1 @@
+Forced NI teardown: complete aggregate and queued BID chains; EQ timeout retains the remaining head; retry never reads or returns reused BIDs

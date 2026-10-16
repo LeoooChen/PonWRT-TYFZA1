@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "a22f454f825dfa6a49f89c417c3121a456ba880b",
+  "scope": "WP-only RPQ progress under ARM backlog; retain in-flight WPs at normal NI release",
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "sources": {
+    "port/pe/rtl9617c-radio-wd.c": "431e53836d64e9f28d108a5a1d4f898bc2238692f81fe15dade2e55ff98609ae",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/ni-test.h": "5c74efec50ca7be47dc33a84c32e64a13d732482769093438b9014cea85581f3",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-tx-code.h": "16e5294b5b94bb2346189d7d84e4be4b6de30c1cd4cdc06d3935da26a45e0ffa"
+  },
+  "module": {
+    "path": "artifacts/wifi-rpq-progress-20261016/radio/rtl_ax_ap_rpq_progress.ko",
+    "sha256": "b313a5013e8f9f284136d2be8d82391587cc5e41dd34fc10cf8de0c1836a2d9c",
+    "PE_sha256": "c97d7fcf972a7c38ee54a156c0a6274e23fd80972d5c1c06b39909235a3584fb",
+    "embedded_PE_matches": true,
+    "wireless_prepared_inputs_match": true,
+    "kernel": "6.18.55",
+    "build_warning": "existing missing MODULE_DESCRIPTION"
+  },
+  "evidence": {
+    "artifacts/wifi-rpq-progress-20261016/stock-dispatch.json": "4dab3aa13d571b6649c7a4ceb6652781ea46f4f59881f24b84bd905552811f55",
+    "artifacts/wifi-rpq-progress-20261016/stock-reset.txt": "81889c11fcf12299618824e982509a31733eb762046b3c85ad1b70cdc04a6c1d",
+    "artifacts/wifi-rpq-progress-20261016/before.json": "9179a3cd7771dd97fdd617a14b96b012b29acd62c8bf4db4f9ae33bd61a3f333",
+    "artifacts/wifi-rpq-progress-20261016/after.json": "242d4e8b61102d815d5a4c136642a59e6a9c3953f07f4b2b1b3dbb2cd01f20aa",
+    "artifacts/wifi-rpq-progress-20261016/rpq-completion.json": "571463d9378c8d1352de259800f97f04bdbf447f1bab60c58c2d073dd0afce38",
+    "artifacts/wifi-rpq-progress-20261016/release-before.txt": "2bb8d0e746c48f8097fa45ad6b887bd4be3c071e4b6496fdeebe57e631b87a68",
+    "artifacts/wifi-rpq-progress-20261016/release-after.txt": "a2f0deca27db0a12c1505dc19dda17e6d4a130c702bf1f4cc5d15264832f1585",
+    "artifacts/wifi-rpq-progress-20261016/partial-BID-teardown.txt": "7553aae30962eef883a3ba23f520bba2a8a08a4b6e710708205d719e176d9aa9",
+    "artifacts/wifi-rpq-progress-20261016/module-build.log": "88ded0fa261fd44548bef222e0222d0b75fffe12c881c77ef94de433da72ca09",
+    "artifacts/wifi-rpq-progress-20261016/pe-build.log": "c9f30a53b8ab563eead0464985a96c5dc8722b9b3cd6d1e784000f2b57e7d1dd"
+  },
+  "documentation": {
+    "path": "docs/wifi-rpq-progress-20261016.md",
+    "sha256": "062cc5764f1fa61724333e363df16eaed7e658f07742a9e27c7e4bd11554e156"
+  },
+  "hardware_tested": false,
+  "full_test_suite": false,
+  "rate_or_capacity_changed": false,
+  "PON_changes_included": false
+}

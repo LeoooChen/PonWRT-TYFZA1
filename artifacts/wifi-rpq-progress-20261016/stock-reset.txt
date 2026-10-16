@@ -1,0 +1,20 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "actual_function": "phl_trx_reset_pcie@0x196698",
+  "occupied_WPs_released_before_TXBD_reset": [
+    17,
+    1023
+  ],
+  "calls": [
+    "rtw_release_busy_wd_page",
+    "rtw_release_pending_wd_page",
+    "phl_recycle_payload",
+    "phl_recycle_payload",
+    "rtw_hal_get_halcom",
+    "_rtw_memset",
+    "phl_release_busy_h2c_pkt",
+    "phl_dump_h2c_pool_stats",
+    "phl_reset_tx_stats"
+  ],
+  "scope": "Actual TX reset WP-table walk and ordering. Payload release, HAL, WD/H2C release and memset are explicit callbacks; not a DMA quiescence test."
+}
