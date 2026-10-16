@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "f07ed6f89cea5a13ce77d1ba1113516b3ad3bd12",
+  "scope": "Stop mac80211 dequeue and finish in-flight callbacks before closing native TX admission",
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx.c": "260d14c08417b360296efc9b4dde34a00373975d448ea3396e52d83023abdad6",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx.h": "93d7b143b2c1de11ccf11f37059fd8fa917b42ca9320c8592a346dd0237fe4f1",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/monitor.h": "b4fa82b206022d3ca2abb169372dfeed0ba7596f8e043c88edf710d9464ef84f",
+    "scripts/test_radio_pause_queue.py": "d03eced9c24e137a55f2896a796e81de93ae5ec826189cac60ff215a16162c92",
+    "scripts/test_radio_dfs.py": "f4531938200b5834fece97b3c1f118824c7ae9e3af9732544d436212df63f5c1",
+    "tools/check_stock_software_pause.py": "6c537e984ac68815ce6dfd886a094fe9e2c5eb52ef9e6a3072f25d849fe1495a"
+  },
+  "evidence_sha256": {
+    "artifacts/wifi-pause-queue-20261016/before.json": "c19d1dece5f558a1aaae5c2bc6b544895fff7f417837564e18c0bafe62fe9c9c",
+    "artifacts/wifi-pause-queue-20261016/after.json": "73364fb2cbd3e6ec79754adfbf5505365509107c70bb494778daede1a65794e9",
+    "artifacts/wifi-pause-queue-20261016/stock.json": "9c5d0321cf126461f8a6df7e335a2b2a070caef3d9a54c838f8a95bcba099eee",
+    "artifacts/wifi-pause-queue-20261016/rea-index.json": "ba105c3d51a89b0cb1905d87062a052087054a643fd555a99d32ec48605b21a7",
+    "artifacts/wifi-pause-queue-20261016/DFS-lifecycle.txt": "5f1b9ebaec7191dc53663a05a8618e768d52104312ea1d9efe190e0d4c141030",
+    "artifacts/wifi-pause-queue-20261016/module-build.log": "a84b8bfe107323a1e19e8d34334853c683ee13fa9894ec578ba699c7783e132b"
+  },
+  "documentation": {
+    "path": "docs/wifi-pause-queue-20261016.md",
+    "sha256": "e33f43d503e5c14ff4eab61e0011e2156f08b1d55eee8a696ef76d50a8b5e460"
+  },
+  "module": {
+    "path": "artifacts/wifi-pause-queue-20261016/radio/rtl_ax_ap_pause_queue.ko",
+    "sha256": "5e32016859944ec50ed123065db536b54429ffcb12cf0318818ef6e5343cafee",
+    "prepared_wireless_source_matches": true,
+    "PE_header_unchanged": true,
+    "kernel": "6.18.55",
+    "warning": "existing missing MODULE_DESCRIPTION"
+  },
+  "checks": {
+    "native_old_pause_dequeued_and_dropped": 32,
+    "native_new_pause_retained": 32,
+    "native_new_pause_drop_count": 0,
+    "already_dequeued_callback_finishes_before_admission_close": true,
+    "completion_during_grace_cannot_reopen_queues": true,
+    "credit_stop_survives_resume_until_normal_threshold": true,
+    "pause_error_retains_queue_and_propagates": true,
+    "unbound_hw_never_called_for_queue_operations": true,
+    "ASan_UBSan_targeted_queue_case": true,
+    "existing_DFS_pause_CAC_lifecycle_only": true
+  },
+  "hardware_tested": false,
+  "full_test_suite": false,
+  "PON_changes_included": false,
+  "rate_or_capacity_changed": false,
+  "limitations": [
+    "Queue, submit/free and grace-period callbacks are explicit model boundaries; not a real kernel concurrency or RF test",
+    "Factory software-pause request/wait executes with software-processor callbacks and does not execute original skb queues",
+    "No proof the prior live 600Mbps missing packets coincided with TX pause",
+    "The DFS classifier matrix was not executed and its historical manifest was not rewritten"
+  ]
+}

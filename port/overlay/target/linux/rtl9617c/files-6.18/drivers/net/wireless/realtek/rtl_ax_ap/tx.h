@@ -17,6 +17,7 @@ extern bool rtl_ax_datapath_profile;
 struct rtl_ax_tx *rtl_ax_tx_prepare(struct pci_dev *pdev, const struct rtl_ax_io *io);
 struct device *rtl_ax_tx_dma_device(struct rtl_ax_tx *tx);
 void rtl_ax_tx_bind_rx(struct rtl_ax_tx *tx, struct rtl_ax_rx *rx);
+void rtl_ax_tx_bind_hw(struct rtl_ax_tx *tx, struct ieee80211_hw *hw);
 void rtl_ax_tx_bind_ready(struct rtl_ax_tx *tx, void (*ready)(void *), void *context);
 int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned int macid);
 int rtl_ax_tx_uplink(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned int macid, unsigned int wifi_id);

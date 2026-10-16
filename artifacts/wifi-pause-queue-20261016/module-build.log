@@ -1,0 +1,17 @@
+make: Entering directory '/Users/leo/OrbStack/ubuntu2404/home/leo/PonWRT-TYFZA1/sources/openwrt/build_dir/target-aarch64_cortex-a55_musl/linux-rtl9617c_generic/linux-6.18.55'
+make[1]: Entering directory '/home/leo/PonWRT-TYFZA1/artifacts/wifi-pause-queue-20261016/radio'
+  CC [M]  pci.o
+  CC [M]  phy.o
+  CC [M]  rx.o
+  CC [M]  tx.o
+  CC [M]  power-tables.o
+  CC [M]  limits.o
+  LD [M]  rtl_ax_ap_pause_queue.o
+  MODPOST Module.symvers
+WARNING: modpost: missing MODULE_DESCRIPTION() in rtl_ax_ap_pause_queue.o
+  CC [M]  rtl_ax_ap_pause_queue.mod.o
+  CC [M]  .module-common.o
+  LD [M]  rtl_ax_ap_pause_queue.ko
+make[1]: Leaving directory '/home/leo/PonWRT-TYFZA1/artifacts/wifi-pause-queue-20261016/radio'
+make: Leaving directory '/Users/leo/OrbStack/ubuntu2404/home/leo/PonWRT-TYFZA1/sources/openwrt/build_dir/target-aarch64_cortex-a55_musl/linux-rtl9617c_generic/linux-6.18.55'
+5e32016859944ec50ed123065db536b54429ffcb12cf0318818ef6e5343cafee  /home/leo/PonWRT-TYFZA1/artifacts/wifi-pause-queue-20261016/radio/rtl_ax_ap_pause_queue.ko

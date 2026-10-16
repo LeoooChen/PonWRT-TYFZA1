@@ -114,6 +114,8 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u6
 #define RTL_AX_TX_STOP_MASK 0xfff00
 #define RTL_AX_TX_ENTRIES 256
 #define ieee80211_wake_queues(hw) ((void)(hw))
+#define ieee80211_stop_queues(hw) ((void)(hw))
+#define synchronize_net() ((void)0)
 #define read_poll_timeout(op,value,condition,delay,timeout,pre,arg) \
     ((value)=op(arg),(condition)?0:-ETIMEDOUT)
 static u32 get_unaligned_le32(const void *p){u32 v;memcpy(&v,p,4);return v;}
@@ -143,7 +145,7 @@ unsigned hardware(unsigned enabled,u32 *out){
  assert(!rtl_ax_dfs_hardware(&io,enabled));memcpy(out,trace,used*8);return used;
 }
 struct rtl_ax_tx {
- const struct rtl_ax_io *io;int lock;bool running,paused,dfs_blocked,checksum_enabled,queues_stopped,pe_active;
+ const struct rtl_ax_io *io;int lock;bool running,paused,dfs_blocked,checksum_enabled,queues_stopped,queues_paused,pe_active;
  u32 scheduler_saved,pe_producer,pe_command,occupied,queue_wakes;
  struct {u8 *memory;}pe;void *hw;
 };

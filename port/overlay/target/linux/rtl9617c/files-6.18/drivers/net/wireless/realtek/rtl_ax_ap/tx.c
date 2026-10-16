@@ -83,7 +83,7 @@ struct rtl_ax_tx {
 	u64 submitted_ring[RTL_AX_TX_RINGS], completed_ring[RTL_AX_TX_RINGS];
 	bool running, paused, dfs_blocked;
 	bool checksum_enabled;
-	bool queues_stopped;
+	bool queues_stopped, queues_paused;
 	unsigned int occupied;
 	u64 queue_stops, queue_wakes;
 	u64 ampdu_submitted, ampdu_completed;
@@ -97,6 +97,14 @@ struct rtl_ax_tx {
 
 struct device *rtl_ax_tx_dma_device(struct rtl_ax_tx *tx) { return tx->dma_device; }
 void rtl_ax_tx_bind_rx(struct rtl_ax_tx *tx, struct rtl_ax_rx *rx) { tx->rx = rx; }
+void rtl_ax_tx_bind_hw(struct rtl_ax_tx *tx, struct ieee80211_hw *hw)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&tx->lock, flags);
+	tx->hw = hw;
+	spin_unlock_irqrestore(&tx->lock, flags);
+}
 void rtl_ax_tx_bind_ready(struct rtl_ax_tx *tx, void (*ready)(void *), void *context)
 {
 	tx->peer_ready = ready;
@@ -232,10 +240,18 @@ release:
 int rtl_ax_tx_pause(struct rtl_ax_tx *tx)
 {
 	const struct rtl_ax_io *io = tx->io;
+	struct ieee80211_hw *hw;
 	unsigned long flags;
 	unsigned int i;
 	u32 pe_command = 0;
 
+	spin_lock_irqsave(&tx->lock, flags);
+	tx->queues_paused = true;
+	hw = tx->hw;
+	if (hw) ieee80211_stop_queues(hw);
+	spin_unlock_irqrestore(&tx->lock, flags);
+	/* Finish dequeued TX callbacks before closing admission to the PE. */
+	if (hw) synchronize_net();
 	spin_lock_irqsave(&tx->lock, flags);
 	tx->running = false;
 	spin_unlock_irqrestore(&tx->lock, flags);
@@ -304,6 +320,7 @@ void rtl_ax_tx_open(struct rtl_ax_tx *tx)
 	rtl_ax_update32(io, 0x1010, RTL_AX_TX_STOP_MASK | BIT(19), 0);
 	tx->paused = false;
 	tx->running = true;
+	tx->queues_paused = false;
 	if (tx->pe_active) {
 		tx->pe_command += 2;
 		put_unaligned_le32(tx->pe_command | 1, tx->pe.memory + PE_PROBE_MAILBOX + 12);
@@ -313,8 +330,9 @@ void rtl_ax_tx_open(struct rtl_ax_tx *tx)
 	    (tx->pe_active && get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 96) ? 48 : RTL_AX_TX_ENTRIES / 2)) {
 		tx->queues_stopped = false;
 		tx->queue_wakes++;
-		ieee80211_wake_queues(tx->hw);
 	}
+	if (tx->hw && !tx->queues_stopped)
+		ieee80211_wake_queues(tx->hw);
 	spin_unlock_irqrestore(&tx->lock, flags);
 }
 
@@ -626,7 +644,6 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	slot.key_index = info->control.hw_key ? info->control.hw_key->hw_key_idx : 0;
 	tx->slots[id] = slot;
 	__set_bit(id, tx->pending);
-	tx->hw = hw;
 	tx->occupied++;
 	if (!tx->pe_active)
 		rtl_ax_txbd(tx->ring + (ring * RTL_AX_TX_ENTRIES + tx->producer[ring]) * 8,
@@ -759,7 +776,7 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 		tx->completed_ring[ring]++;
 		tx->status_count[status]++;
 		tx->polluted += !!(report & BIT(31));
-		if (tx->queues_stopped && tx->running && tx->occupied <=
+		if (tx->queues_stopped && tx->running && !tx->queues_paused && tx->hw && tx->occupied <=
 		    (tx->pe_active && get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 96) ? 48 : RTL_AX_TX_ENTRIES / 2)) {
 			tx->queues_stopped = false;
 			tx->queue_wakes++;

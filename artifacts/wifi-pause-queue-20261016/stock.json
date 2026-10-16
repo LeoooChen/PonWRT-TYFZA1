@@ -1,0 +1,19 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "actual_functions": [
+    "_phl_sw_tx_pause",
+    "_phl_sw_tx_resume"
+  ],
+  "pause_calls": [
+    "request_software_pause",
+    "notify_TX_processor",
+    "query_pause_done",
+    "wait_1ms_boundary",
+    "query_pause_done"
+  ],
+  "resume_calls": [
+    "resume_software_TX",
+    "notify_TX_processor"
+  ],
+  "scope": "Actual ARM64 request/wait/owner-mask/resume instructions. Software TX processor callbacks, owner-ID mapping and wait are explicit boundaries. Does not execute original skb queues, firmware or RF, and does not equate RF scheduler pause with software pause."
+}

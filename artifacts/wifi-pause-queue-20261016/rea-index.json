@@ -1,0 +1,221 @@
+{
+  "address_note": "Ghidra addresses = ELF .text offsets + 0x10003c",
+  "functions": [
+    {
+      "evidence_id": "ev_dd687ec94527b469030238195aadef7a9d2124910b8239fa85aa9aa6bc88e818",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x233f90",
+        "name": "_phl_sw_tx_pause",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x233f90",
+              "end": "0x234207"
+            }
+          ],
+          "total_bytes": 632,
+          "span_bytes": 632,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined _phl_sw_tx_pause()",
+        "locals": [
+          {
+            "description": "undefined8 local_10 @ Stack[-0x10]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_20 @ Stack[-0x20]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_30 @ Stack[-0x30]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_40 @ Stack[-0x40]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_50 @ Stack[-0x50]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nuint _phl_sw_tx_pause(long param_1,long param_2,char param_3)\n\n{\n  char cVar1;\n  uint uVar2;\n  int iVar3;\n  long lVar4;\n  uint uVar5;\n  \n  lVar4 = *(long *)(param_1 + 0x5d28);\n  uVar2 = _phl_get_ctrl_mdl(*(undefined4 *)(param_2 + 4));\n  if (*(int *)(param_1 + 0x5498) == 3) {\n    if (((phl_log_components >> 2 & 1) != 0) && (3 < phl_log_level)) {\n      printk(\"PHL: [DATA_CTRL] SW tx has been paused by module(0x%x)\\n\",\n             *(undefined4 *)(param_1 + 0x54b4));\n    }\n    uVar2 = uVar2 | *(uint *)(param_1 + 0x54b4);\n    *(uint *)(param_1 + 0x54b4) = uVar2;\n    uVar5 = phl_log_components & 4;\n    if (((phl_log_components >> 2 & 1) != 0) && (uVar5 = 0, 3 < phl_log_level)) {\n      printk(\"PHL: [DATA_CTRL] Update pause sw tx id(0x%x) by module(%d)\\n\",uVar2,\n             *(undefined4 *)(param_2 + 4));\n    }\n  }\n  else if (*(int *)(param_1 + 0x5498) == 2) {\n    if (((phl_log_components >> 2 & 1) != 0) && (3 < phl_log_level)) {\n      printk(\"PHL: [DATA_CTRL] SW tx has been requested to pause by module(0x%x)\\n\",\n             *(undefined4 *)(param_1 + 0x54b4));\n    }\n    uVar2 = uVar2 | *(uint *)(param_1 + 0x54b4);\n    *(uint *)(param_1 + 0x54b4) = uVar2;\n    uVar5 = phl_log_components & 4;\n    if (((phl_log_components >> 2 & 1) != 0) && (uVar5 = 0, 3 < phl_log_level)) {\n      printk(\"PHL: [DATA_CTRL] Update pause sw tx id(0x%x) by module(%d)\\n\",uVar2,\n             *(undefined4 *)(param_2 + 4));\n    }\n  }\n  else {\n    (**(code **)(lVar4 + 0x68))(param_1);\n    iVar3 = rtw_phl_tx_req_notify(param_1);\n    if (iVar3 == 0) {\n      iVar3 = 100;\n      do {\n        cVar1 = (**(code **)(lVar4 + 0x78))(param_1);\n        if (cVar1 != '\\0') {\n          *(uint *)(param_1 + 0x54b4) = *(uint *)(param_1 + 0x54b4) | uVar2;\n          if (param_3 == '\\0') {\n            return 0;\n          }\n          if ((phl_log_components >> 2 & 1) != 0) {\n            if (phl_log_level < 3) {\n              return 0;\n            }\n            printk(\"PHL: [DATA_CTRL] Pause Tx with reset is not supported now! requested by module(%d)\\n\"\n                   ,*(undefined4 *)(param_2 + 4));\n            return 0;\n          }\n          return phl_log_components & 4;\n        }\n        rtw_msleep_os(1);\n        iVar3 = iVar3 + -1;\n      } while (iVar3 != 0);\n      *(uint *)(param_1 + 0x54b4) = *(uint *)(param_1 + 0x54b4) | uVar2;\n      uVar5 = 7;\n      if (((phl_log_components >> 2 & 1) != 0) && (1 < phl_log_level)) {\n        printk(\"PHL: [DATA_CTRL] Module(%d) polling sw tx pause timeout (%d ms)!\\n\",\n               *(undefined4 *)(param_2 + 4),100);\n      }\n    }\n    else {\n      uVar5 = 1;\n      if (((phl_log_components >> 2 & 1) != 0) && (2 < phl_log_level)) {\n        printk(\"PHL: [DATA_CTRL] Schedule sw tx process fail!\\n\");\n      }\n    }\n  }\n  return uVar5;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-software-pause/001-analyze_function.json",
+      "original_result_sha256": "99742de3ebe66ac76ebeaf73b22e271ebadd8758b736c24e19a2ddad8b7fcf83"
+    },
+    {
+      "evidence_id": "ev_b2a8fb6f217f1f34c98c5e87c820ad17c33cf148b301c995d99555d948804825",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x233e88",
+        "name": "_phl_sw_tx_resume",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x233e88",
+              "end": "0x233f6f"
+            }
+          ],
+          "total_bytes": 232,
+          "span_bytes": 232,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined _phl_sw_tx_resume()",
+        "locals": [
+          {
+            "description": "undefined8 local_10 @ Stack[-0x10]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_20 @ Stack[-0x20]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_30 @ Stack[-0x30]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nuint _phl_sw_tx_resume(long param_1,long param_2)\n\n{\n  uint uVar1;\n  uint uVar2;\n  long lVar3;\n  \n  lVar3 = *(long *)(param_1 + 0x5d28);\n  uVar2 = _phl_get_ctrl_mdl(*(undefined4 *)(param_2 + 4));\n  uVar1 = *(uint *)(param_1 + 0x54b4);\n  if ((uVar2 & (uVar1 ^ 0xffffffff)) == 0) {\n    uVar1 = uVar1 & (uVar2 ^ 0xffffffff);\n    *(uint *)(param_1 + 0x54b4) = uVar1;\n    if (uVar1 == 0) {\n      (**(code **)(lVar3 + 0x60))(param_1,1);\n      uVar2 = rtw_phl_tx_req_notify(param_1);\n    }\n    else {\n      uVar2 = phl_log_components & 1;\n      if (((phl_log_components & 1) != 0) && (uVar2 = 0, 2 < phl_log_level)) {\n        printk(\"PHL: WARN [DATA_CTRL] sw tx is still paused by tx pause id = 0x%x\\n\");\n      }\n    }\n  }\n  else {\n    uVar2 = phl_log_components & 1;\n    if ((phl_log_components & 1) == 0) {\n      uVar2 = 1;\n    }\n    else if (2 < phl_log_level) {\n      printk(\"PHL: WARN [DATA_CTRL] module %d resume sw tx fail, sw tx is paused by module 0x%x\\n\",\n             *(undefined4 *)(param_2 + 4),uVar1);\n    }\n  }\n  return uVar2;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-software-pause/002-analyze_function.json",
+      "original_result_sha256": "2d0da8864a2ee22921c90d5999eb03b53102af43e2d507ca4b910480af0d736a"
+    },
+    {
+      "evidence_id": "ev_32bf489832a6813a2cf1501360b17cfb6902094ea0f3712467c2df1d666e2cf9",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x3f87d0",
+        "name": "halrf_tmac_tx_pause",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x3f87d0",
+              "end": "0x3f8853"
+            }
+          ],
+          "total_bytes": 132,
+          "span_bytes": 132,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined halrf_tmac_tx_pause()",
+        "locals": [
+          {
+            "description": "undefined8 local_10 @ Stack[-0x10]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_20 @ Stack[-0x20]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_30 @ Stack[-0x30]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nvoid halrf_tmac_tx_pause(long param_1,ulong param_2,char param_3)\n\n{\n  undefined *puVar1;\n  \n  rtw_hal_tx_pause(*(undefined8 *)(param_1 + 8),param_2,param_3,2);\n  if ((*(uint *)(param_1 + 0x34) >> 9 & 1) != 0) {\n    puVar1 = &DAT_005d8740;\n    if (param_3 == '\\0') {\n      puVar1 = &DAT_005d8748;\n    }\n    printk(\"[RF][RFK] Band%d Tx Pause %s!!\\n\",param_2 & 0xffffffff,puVar1);\n  }\n  if (param_3 != '\\0') {\n    halrf_wait_rx_mode(param_1,0);\n  }\n  return;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-software-pause/003-analyze_function.json",
+      "original_result_sha256": "799094d06e45e505ba6048f302f39786a9ccf28761feb2e8a223f65befb7f23d"
+    },
+    {
+      "evidence_id": "ev_4d3b7728fc36d43d854cd39b64622281ba8fdf0fd8b5f077780054d32112f7e6",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x2b0c98",
+        "name": "rtw_hal_tx_pause",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x2b0c98",
+              "end": "0x2b0e9f"
+            }
+          ],
+          "total_bytes": 520,
+          "span_bytes": 520,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined rtw_hal_tx_pause()",
+        "locals": [
+          {
+            "description": "undefined8 local_10 @ Stack[-0x10]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_20 @ Stack[-0x20]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_30 @ Stack[-0x30]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_40 @ Stack[-0x40]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nuint rtw_hal_tx_pause(long param_1,uint param_2,char param_3,uint param_4)\n\n{\n  undefined *puVar1;\n  uint uVar2;\n  ulong uVar3;\n  ushort uVar4;\n  ulong uVar5;\n  ulong uVar6;\n  \n  param_2 = param_2 & 0xff;\n  uVar6 = (ulong)param_2;\n  uVar5 = (ulong)param_4;\n  if (param_3 == '\\0') {\n    *(undefined2 *)(param_1 + ((long)(int)param_2 * 0xac + (ulong)param_4 + 0x228) * 2 + 0x18) = 0;\n  }\n  else if (param_4 == 5) {\n    *(undefined2 *)(param_1 + (long)(int)param_2 * 0x158 + 0x472) = 0xefff;\n  }\n  else {\n    if (param_4 < 6) {\n      if (param_4 == 0) {\n        *(undefined2 *)(param_1 + (long)(int)param_2 * 0x158 + 0x468) = 0xfeff;\n        goto LAB_002b0db4;\n      }\n      uVar2 = param_4 - 2;\n    }\n    else {\n      if (param_4 == 6) {\n        *(undefined2 *)(param_1 + (long)(int)param_2 * 0x158 + 0x474) = 0xeeff;\n        goto LAB_002b0db4;\n      }\n      uVar2 = param_4 - 7;\n    }\n    if (2 < uVar2) {\n      uVar2 = phl_log_components & 1;\n      if ((phl_log_components & 1) == 0) {\n        return 1;\n      }\n      if (phl_log_level < 2) {\n        return uVar2;\n      }\n      printk(\"PHL: ERROR Unknow pause reason:%d\\n\",uVar5);\n      return uVar2;\n    }\n    *(undefined2 *)(param_1 + ((long)(int)param_2 * 0xac + uVar5 + 0x228) * 2 + 0x18) = 0xffff;\n  }\nLAB_002b0db4:\n  uVar4 = 0;\n  uVar3 = 0;\n  do {\n    uVar4 = *(ushort *)(param_1 + uVar3 * 2 + uVar6 * 0x158 + 0x468) | uVar4;\n    uVar2 = (int)uVar3 + 1;\n    uVar3 = (ulong)uVar2;\n  } while (uVar2 < 10 && uVar4 != 0xffff);\n  if (((phl_log_components & 1) != 0) && (3 < phl_log_level)) {\n    puVar1 = &DAT_005801f8;\n    if (param_3 == '\\0') {\n      puVar1 = &DAT_00581e60;\n    }\n    printk(\"PHL: TX %sPause - Reason(%d) for band-%u, final tx_cfg(0x%04x)\\n\",puVar1,uVar5,uVar6,\n           ~uVar4);\n  }\n  uVar2 = rtw_hal_mac_set_sch_tx_en(param_1,uVar6,~uVar4,0xffffffff);\n  if ((uVar2 == 0) && (param_3 != '\\0' && param_4 == 2)) {\n    uVar2 = rtw_hal_mac_tx_idle_poll(param_1,uVar6);\n  }\n  return uVar2;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-software-pause/004-analyze_function.json",
+      "original_result_sha256": "7144ea22c0ec8d0ea13dfc9dee92671ca0ef782c3500f72e6c9d7cae53d06f17"
+    }
+  ]
+}

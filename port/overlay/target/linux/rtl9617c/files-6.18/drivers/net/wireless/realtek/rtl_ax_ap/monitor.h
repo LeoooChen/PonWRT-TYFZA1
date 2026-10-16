@@ -1455,6 +1455,7 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	_ieee80211_set_sband_iftype_data(&radio->band, &radio->he_band, 1);
 	hw->wiphy->bands[band] = &radio->band;
 	radio->hw = hw;
+	rtl_ax_tx_bind_hw(radio->tx, hw);
 	spin_lock_init(&radio->pn_lock);
 	wiphy_work_init(&radio->beacon_work, rtl_ax_tim_work);
 	wiphy_work_init(&radio->offload_work, rtl_ax_offload_work);
@@ -1465,6 +1466,7 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	wiphy_delayed_work_init(&radio->ra_work, rtl_ax_ra_work);
 	ret = ieee80211_register_hw(hw);
 	if (ret) {
+		rtl_ax_tx_bind_hw(radio->tx, NULL);
 		radio->hw = NULL;
 		ieee80211_free_hw(hw);
 	}
@@ -1478,6 +1480,7 @@ static void rtl_ax_monitor_unregister(struct rtl_ax_ap *radio)
 	WRITE_ONCE(radio->monitor_started, false);
 	ieee80211_unregister_hw(radio->hw);
 	tasklet_kill(&radio->tx_tasklet);
+	rtl_ax_tx_bind_hw(radio->tx, NULL);
 }
 
 static void rtl_ax_monitor_free(struct rtl_ax_ap *radio)
