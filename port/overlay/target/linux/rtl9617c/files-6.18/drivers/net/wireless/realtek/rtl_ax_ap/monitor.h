@@ -364,6 +364,7 @@ static int rtl_ax_station_release(struct rtl_ax_ap *radio, unsigned int macid)
 	struct rtl_ax_security_role empty = {};
 	struct rtl_ax_security_role *keys = &radio->security_roles[macid];
 	unsigned int i;
+	bool unlink = false;
 	int ret;
 
 	ret = rtl_ax_tx_ni_retire_peer(radio->tx, macid);
@@ -371,11 +372,18 @@ static int rtl_ax_station_release(struct rtl_ax_ap *radio, unsigned int macid)
 	ret = rtl_ax_drop_station(radio, macid, IEEE80211_NUM_TIDS);
 	if (ret)
 		return ret;
-	if (keys->valid) {
+	for (i = 0; i < RTL_AX_SECURITY_ENTRIES; i++)
+		if (radio->security_unlink[i] == macid + 1)
+			unlink = true;
+	if (keys->valid || unlink) {
 		rtl_ax_security_dctl(dctl, macid, &empty);
 		ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 9, dctl, sizeof(dctl), true);
 		if (ret)
 			return ret;
+		/* A later cleanup must not rewrite a released or reused MACID. */
+		for (i = 0; i < RTL_AX_SECURITY_ENTRIES; i++)
+			if (radio->security_unlink[i] == macid + 1)
+				radio->security_unlink[i] = 0;
 		for (i = 0; i < ARRAY_SIZE(keys->cam); i++)
 			if (keys->valid & BIT(i)) {
 				rtl_ax_security_cam(security, keys->cam[i], NULL);
@@ -448,9 +456,27 @@ static bool rtl_ax_security_cleanup(struct rtl_ax_ap *radio)
 {
 	unsigned int index;
 	bool retry = false;
-	u8 cam[24];
+	u8 cam[24], dctl[68];
 
 	for_each_set_bit(index, radio->security_deleting, RTL_AX_SECURITY_ENTRIES) {
+		if (radio->security_unlink[index]) {
+			unsigned int macid = radio->security_unlink[index] - 1;
+
+			if ((macid && rtl_ax_tx_ni_retire_peer(radio->tx, macid)) ||
+			    rtl_ax_tx_flush_key(radio->tx, index)) {
+				retry = true;
+				continue;
+			}
+			/* Use the current desired role, including keys installed since the failure. */
+			rtl_ax_security_dctl(dctl, macid, &radio->security_roles[macid]);
+			if (rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 9, dctl, sizeof(dctl), true)) {
+				retry = true;
+				continue;
+			}
+			radio->security_unlink[index] = 0;
+			if (macid && (radio->security_roles[macid].valid & 3))
+				rtl_ax_offload_ready(radio);
+		}
 		rtl_ax_security_cam(cam, index, NULL);
 		if (rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 10, 1, cam, sizeof(cam), true)) {
 			retry = true;
@@ -855,10 +881,22 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 
 	if (key->cipher != WLAN_CIPHER_SUITE_CCMP)
 		return -EOPNOTSUPP;
+	if (cmd == DISABLE_KEY) {
+		index = key->hw_key_idx;
+		role.valid &= ~BIT(slot);
+		role.keyid[slot] = 0;
+		role.cam[slot] = 0;
+		radio->security_roles[macid] = role;
+		__set_bit(index, radio->security_deleting);
+		radio->security_unlink[index] = macid + 1;
+	}
 	if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) {
 		ret = rtl_ax_tx_ni_retire_peer(radio->tx, macid);
 		if (cmd == DISABLE_KEY) rtl_ax_rx_key(radio->rx, macid, NULL);
-		if (ret) return ret;
+		if (ret) {
+			if (cmd == SET_KEY) return ret;
+			goto done;
+		}
 	}
 	if (cmd == SET_KEY) {
 		index = find_first_zero_bit(radio->security_ids, RTL_AX_SECURITY_ENTRIES);
@@ -875,13 +913,9 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE)
 			role.tx_keyid = key->keyidx;
 	} else {
-		index = key->hw_key_idx;
 		ret = rtl_ax_tx_flush_key(radio->tx, index);
 		if (ret)
 			goto done;
-		role.valid &= ~BIT(slot);
-		role.keyid[slot] = 0;
-		role.cam[slot] = 0;
 	}
 	rtl_ax_security_dctl(dctl, macid, &role);
 	if (cmd == SET_KEY && (key->flags & IEEE80211_KEY_FLAG_PAIRWISE)) {
@@ -903,7 +937,7 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) rtl_ax_rx_key(radio->rx, macid, key);
 		radio->keys_installed++;
 	} else {
-		__set_bit(index, radio->security_deleting);
+		radio->security_unlink[index] = 0;
 		rtl_ax_security_cam(cam, index, NULL);
 		ret = rtl_ax_command_flags(radio, RTL_AX_H2C_CMD, 1, 10, 1,
 			cam, sizeof(cam), false, true);

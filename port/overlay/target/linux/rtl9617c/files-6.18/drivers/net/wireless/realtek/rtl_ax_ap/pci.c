@@ -156,6 +156,7 @@ struct rtl_ax_ap {
 	u64 station_added, station_removed;
 	DECLARE_BITMAP(security_ids, RTL_AX_SECURITY_ENTRIES);
 	DECLARE_BITMAP(security_deleting, RTL_AX_SECURITY_ENTRIES);
+	u8 security_unlink[RTL_AX_SECURITY_ENTRIES]; /* Pending DMAC unlink: MACID + 1. */
 	struct rtl_ax_security_role security_roles[128];
 	u64 keys_installed, keys_removed, rx_decrypted;
 	int key_result;

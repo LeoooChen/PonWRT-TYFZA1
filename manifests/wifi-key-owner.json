@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "6b8cf590068dca2959e8b2afe50896ed5a3b0eb5",
+  "scope": "Complete failed key deletion without releasing CAM while DMAC or TX still references it",
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "REA_evidence_index": "artifacts/wifi-key-owner-20261016/rea-index.json",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/monitor.h": "40ea14cb3a13b493b5dc13cd45e58695cc2a9f4d40774880acfc5445747d51bb",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pci.c": "877387ca07ae8f5f5ab77e438eb6706858bad95cc4b043d5e33d2c0e7c465e7f",
+    "scripts/test_radio_key_cleanup.py": "f991bf70661b77f0d4f2f3053306fcbf0ca3a14ea0c6e1e8aac059fe265a5ef1",
+    "tools/check_stock_key_release.py": "00a12c57e2a13cc275f82843854405a550b7f811044fa1f65396dab099886ab1"
+  },
+  "evidence_sha256": {
+    "artifacts/wifi-key-owner-20261016/before.json": "2b64df03f7a5b0fb11d69b460a1f9c97c62dbc69b5dac1067da53f9c1ea3445e",
+    "artifacts/wifi-key-owner-20261016/after.json": "054a64e63934dd298e0970f70e75eae34f9d8d616ecad2c35aa93625c16b392c",
+    "artifacts/wifi-key-owner-20261016/stock-release.json": "2610e3e99a333343317316873f920382cc870c03be0d59dd86d75f6544470adc",
+    "artifacts/wifi-key-owner-20261016/native-cleanup.txt": "a99c94d4cbd68eaf1607fbb0734c382eee60941078cbe76911050ab2b89b451e",
+    "artifacts/wifi-key-owner-20261016/rea-index.json": "354f9b75bd6e2b69d77bba45cc5079bfb07320572ac4ceb9f1449ef0164f4610",
+    "artifacts/wifi-key-owner-20261016/module-build.log": "992a5df765f4cbe347e099dfdc2e899e0a91968efd30a4150cf1581aca21b949"
+  },
+  "documentation": {
+    "path": "docs/wifi-key-owner-20261016.md",
+    "sha256": "4e7c2989c67de9a4d4eddf1f573ad69cf353e2e0387dc3e57fc90362f7d153fc"
+  },
+  "module": {
+    "path": "artifacts/wifi-key-owner-20261016/radio/rtl_ax_ap_key_owner.ko",
+    "sha256": "a2c30bd3e9a9ee64bfd712a38281e0392fd0395660419cf90ca7bbd399e10ea2",
+    "prepared_wireless_source_matches": true,
+    "PE_header_unchanged_since_ba_epoch": true,
+    "kernel": "6.18.55",
+    "warning": "existing missing MODULE_DESCRIPTION"
+  },
+  "checks": {
+    "old_DMAC_timeout_leaves_CAM_without_retry": true,
+    "failed_retirement_drain_unlink_and_CAM_retried": true,
+    "CAM_not_freed_while_referenced": true,
+    "new_PTK_GTK_and_reused_MACID_preserved": true,
+    "ASan_UBSan": true,
+    "replacement_PTK_offload_readmission_queued": true
+  },
+  "hardware_tested": false,
+  "full_test_suite": false,
+  "PON_changes_included": false,
+  "rate_or_capacity_changed": false,
+  "limitations": [
+    "H2C hardware effects and OS boundaries are explicitly modeled in native C verification",
+    "No evidence these key-command failures occurred in the previous live UDP run",
+    "SET_KEY failure recovery and old-key PN switching remain under investigation; no speculative fix included"
+  ]
+}

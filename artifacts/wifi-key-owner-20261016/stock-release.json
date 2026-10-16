@@ -1,0 +1,38 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "actual_functions": [
+    "mac_sta_del_key_8852c",
+    "m_security_cam_hal_8852c"
+  ],
+  "cases": [
+    {
+      "failed_boundary": "DMAC",
+      "result": 49,
+      "CAM_owner_retained": true,
+      "calls": [
+        "delete_key_from_dmac_tbl_8852c"
+      ]
+    },
+    {
+      "failed_boundary": "CAM",
+      "result": 49,
+      "CAM_owner_retained": true,
+      "calls": [
+        "delete_key_from_dmac_tbl_8852c",
+        "fill_sec_cam_info_8852c",
+        "mac_upd_sec_infotbl_8852c"
+      ]
+    },
+    {
+      "failed_boundary": null,
+      "result": 0,
+      "CAM_owner_retained": false,
+      "calls": [
+        "delete_key_from_dmac_tbl_8852c",
+        "fill_sec_cam_info_8852c",
+        "mac_upd_sec_infotbl_8852c"
+      ]
+    }
+  ],
+  "scope": "Actual original ARM64 call order and CAM-owner writes; DMAC removal, security payload packing and CAM command submission are explicit callbacks. This does not execute firmware or RF."
+}

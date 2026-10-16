@@ -1,0 +1,493 @@
+{
+  "note": "Ghidra addresses differ from ELF .text offsets by 0x10003c; generic MAC and C-specific paths are distinguished by their symbol names.",
+  "functions": [
+    {
+      "evidence_id": "ev_0bbb14e8d29d0f182ac5ef2d9ac1ea7acde694db11bbb3b8c2248dbdc6d736f0",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x336854",
+        "name": "mac_sta_add_key",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x336854",
+              "end": "0x3369f7"
+            }
+          ],
+          "total_bytes": 420,
+          "span_bytes": 420,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined mac_sta_add_key()",
+        "locals": [
+          {
+            "description": "undefined8 local_10 @ Stack[-0x10]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_20 @ Stack[-0x20]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_21 @ Stack[-0x21]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_40 @ Stack[-0x40]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_50 @ Stack[-0x50]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_60 @ Stack[-0x60]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_70 @ Stack[-0x70]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_8 @ Stack[-0x8]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_80 @ Stack[-0x80]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nchar mac_sta_add_key(undefined8 param_1,uint *param_2,undefined1 param_3,undefined1 param_4,\n                    undefined1 param_5)\n\n{\n  char cVar1;\n  long lVar2;\n  undefined1 local_21;\n  undefined8 local_20;\n  undefined8 uStack_18;\n  undefined8 local_10;\n  long local_8;\n  \n  lVar2 = sp_el0;\n  local_8 = *(long *)(lVar2 + 0x430);\n  local_21 = 0;\n  local_20 = 0;\n  uStack_18 = 0;\n  local_10 = 0;\n  cVar1 = '9';\n  if ((*param_2 >> 0x18 & 0xf) < 0xb) {\n    lVar2 = mac_role_srch(param_1,param_3);\n    if (lVar2 == 0) {\n      cVar1 = '=';\n    }\n    else {\n      if (*(char *)((long)param_2 + 1) == -0x10) {\n        local_21 = (undefined1)*param_2;\n      }\n      else {\n        cVar1 = decide_sec_cam_index(param_1,&local_21);\n        if (cVar1 != '\\0') goto LAB_00336930;\n      }\n      *(undefined1 *)param_2 = local_21;\n      *(undefined1 *)((long)param_2 + 1) = 0;\n      *(undefined1 *)((long)param_2 + 2) = 0x20;\n      *(ushort *)(lVar2 + 0x65) =\n           *(ushort *)(lVar2 + 0x65) & 0xff00 |\n           *(ushort *)(lVar2 + 0x65) & 0x7f | (ushort)((*param_2 & 0xe000000) == 0x4000000) << 7;\n      cVar1 = insert_key_to_addr_cam(param_1,lVar2,param_5,param_4,(char)*param_2);\n      if (cVar1 == '\\0') {\n        fill_sec_cam_info(param_1,param_2,&local_20,0);\n        cVar1 = mac_upd_sec_infotbl(param_1,&local_20);\n        if (cVar1 == '\\0') {\n          m_security_cam_hal(param_1,param_2,param_3,param_4,param_5,local_21,0);\n        }\n      }\n    }\n  }\nLAB_00336930:\n  lVar2 = sp_el0;\n  if (local_8 != *(long *)(lVar2 + 0x430)) {\n                    /* WARNING: Subroutine does not return */\n    __stack_chk_fail();\n  }\n  return cVar1;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-key-ownership/001-analyze_function.json",
+      "original_result_sha256": "68db723ace420608b0bcc32881867310eedddbc21369bcedf7d9ff42d07ec752"
+    },
+    {
+      "evidence_id": "ev_5926ca40ba26ed3c6427cb2f44db8407e4dc727496cb5be978524418b38eb14c",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x335ee8",
+        "name": "decide_sec_cam_index",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x335ee8",
+              "end": "0x336063"
+            }
+          ],
+          "total_bytes": 380,
+          "span_bytes": 380,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined decide_sec_cam_index()",
+        "locals": [
+          {
+            "description": "undefined8 local_10 @ Stack[-0x10]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_20 @ Stack[-0x20]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_30 @ Stack[-0x30]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_40 @ Stack[-0x40]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_50 @ Stack[-0x50]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nundefined1 decide_sec_cam_index(long param_1,undefined1 *param_2)\n\n{\n  byte bVar1;\n  char cVar2;\n  long lVar3;\n  undefined8 uVar4;\n  undefined1 *puVar5;\n  uint uVar6;\n  long lVar7;\n  int iVar8;\n  \n  lVar7 = *(long *)(param_1 + 0x58);\n  if (*(long *)(lVar7 + 0x60) == 0) {\n    lVar3 = (**(code **)(*(long *)(param_1 + 0x18) + 0x50))(*(undefined8 *)(param_1 + 8),0x408);\n    *(long *)(lVar7 + 0x60) = lVar3;\n    if (lVar3 == 0) {\n      return 9;\n    }\n    iVar8 = 0;\n    do {\n      lVar3 = *(long *)(lVar7 + 0x60);\n      uVar4 = (**(code **)(*(long *)(param_1 + 0x18) + 0x50))(*(undefined8 *)(param_1 + 8),0x10);\n      *(undefined8 *)(lVar3 + (long)iVar8 * 8) = uVar4;\n      lVar3 = *(long *)(*(long *)(lVar7 + 0x60) + (long)iVar8 * 8);\n      if (lVar3 == 0) {\n        return 9;\n      }\n      uVar4 = (**(code **)(*(long *)(param_1 + 0x18) + 0x50))(*(undefined8 *)(param_1 + 8),0x14);\n      *(undefined8 *)(lVar3 + 8) = uVar4;\n      puVar5 = *(undefined1 **)(*(long *)(lVar7 + 0x60) + (long)iVar8 * 8);\n      if (*(long *)(puVar5 + 8) == 0) {\n        return 9;\n      }\n      *puVar5 = 0;\n      lVar3 = (long)iVar8;\n      *(undefined1 *)(*(long *)(*(long *)(lVar7 + 0x60) + lVar3 * 8) + 1) = 0;\n      *(undefined1 *)(*(long *)(*(long *)(lVar7 + 0x60) + lVar3 * 8) + 2) = 0;\n      *(undefined1 *)(*(long *)(*(long *)(lVar7 + 0x60) + lVar3 * 8) + 3) = 0;\n      iVar8 = iVar8 + 1;\n    } while (iVar8 != 0x80);\n    *(undefined1 *)(*(long *)(lVar7 + 0x60) + 0x400) = 0;\n  }\n  lVar7 = *(long *)(lVar7 + 0x60);\n  uVar6 = (uint)*(byte *)(lVar7 + 0x400);\n  cVar2 = -0x80;\n  do {\n    if (**(char **)(lVar7 + (long)(int)uVar6 * 8) == '\\0') {\n      iVar8 = -(uVar6 + 1);\n      bVar1 = (byte)(uVar6 + 1) & 0x7f;\n      if (-1 < iVar8) {\n        bVar1 = -((byte)iVar8 & 0x7f);\n      }\n      *(byte *)(lVar7 + 0x400) = bVar1;\n      *param_2 = (char)uVar6;\n      return 0;\n    }\n    uVar6 = uVar6 + 1 & 0x7f;\n    cVar2 = cVar2 + -1;\n  } while (cVar2 != '\\0');\n  return 0x3b;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-key-ownership/002-analyze_function.json",
+      "original_result_sha256": "35d00f82e65705a3e89668385466915e232f269e6324c44cc28b001179a4fe6f"
+    },
+    {
+      "evidence_id": "ev_9942d62666d2ed136084f42b6244f980ac8878a95a6c7fe8fe1bda15e9d8fb53",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x20df58",
+        "name": "rtw_hw_add_key",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x20df58",
+              "end": "0x20e173"
+            }
+          ],
+          "total_bytes": 540,
+          "span_bytes": 540,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined rtw_hw_add_key()",
+        "locals": [
+          {
+            "description": "undefined8 local_20 @ Stack[-0x20]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_30 @ Stack[-0x30]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_40 @ Stack[-0x40]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_50 @ Stack[-0x50]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_60 @ Stack[-0x60]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_70 @ Stack[-0x70]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_8 @ Stack[-0x8]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_9 @ Stack[-0x9]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined4 local_d @ Stack[-0xd]:4",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_e @ Stack[-0xe]:1",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nvoid rtw_hw_add_key(long param_1,long *param_2,undefined1 param_3,undefined4 param_4,\n                   undefined1 param_5,undefined8 param_6,undefined4 param_7,undefined4 param_8)\n\n{\n  undefined4 uVar1;\n  undefined4 uVar2;\n  int iVar3;\n  long lVar4;\n  byte local_e;\n  undefined4 local_d;\n  undefined1 local_9;\n  long local_8;\n  \n  lVar4 = sp_el0;\n  local_8 = *(long *)(lVar4 + 0x430);\n  local_d = 0;\n  local_9 = 0;\n  lVar4 = *(long *)(*(long *)(param_1 + 0xc0) + 0x11c0);\n  if (lVar4 == 0) {\n    iVar3 = -1;\n    goto LAB_0020e098;\n  }\n  local_e = 0;\n  uVar1 = rtw_sec_algo_drv2phl(*(undefined4 *)(param_1 + 0x81d4),*(long *)(param_1 + 0xc0),0);\n  uVar2 = rtw_sec_algo_drv2phl(*(undefined4 *)(param_1 + 0x82bc));\n  local_e = rtw_phl_trans_sec_mode(uVar1,uVar2);\n  if (rtw_drv_log_level < 4) {\n    if (*(byte *)(*param_2 + 0xa6d) != local_e) {\nLAB_0020e008:\n      rtw_phl_cmd_change_stainfo(lVar4,*param_2,3,&local_e,1,param_7,param_8);\n    }\n  }\n  else {\n    printk(\"%s%sRTW: After phl trans_sec_mode = %d\\n\",&DAT_00558fc8,&DAT_00558fc8);\n    if (*(byte *)(*param_2 + 0xa6d) != local_e) {\n      if (3 < rtw_drv_log_level) {\n        printk(\"%s%sRTW: %s: original sec_mode =%d update sec mode to %d.\\n\",&DAT_00558fc8,\n               &DAT_00558fc8,\"rtw_hw_chk_sec_mode\");\n      }\n      goto LAB_0020e008;\n    }\n    if (3 < rtw_drv_log_level) {\n      printk(\"%s%sRTW: %s: sec mode remains the same. skip update.\\n\",&DAT_00558fc8,&DAT_00558fc8,\n             \"rtw_hw_chk_sec_mode\");\n    }\n  }\n  uVar2 = local_d;\n  local_d = CONCAT31(local_d._1_3_,param_3);\n  uVar1 = local_d;\n  local_d._3_1_ = SUB41(uVar2,3);\n  local_d._0_3_ = CONCAT12(param_5,(short)uVar1);\n  _sec_algo_drv2phl(param_4,(long)&local_d + 1,(long)&local_d + 3);\n  rtw_phl_cmd_del_key(lVar4,*param_2,&local_d,param_7,param_8);\n  _rtw_update_key_installed(param_2,param_3,param_5,1);\n  iVar3 = rtw_phl_cmd_add_key(lVar4,*param_2,&local_d,param_6,param_7,param_8);\n  iVar3 = -(uint)(iVar3 != 0);\nLAB_0020e098:\n  lVar4 = sp_el0;\n  if (local_8 == *(long *)(lVar4 + 0x430)) {\n    return;\n  }\n                    /* WARNING: Subroutine does not return */\n  __stack_chk_fail(iVar3);\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-key-ownership/003-analyze_function.json",
+      "original_result_sha256": "405cffb5ee8b213abff91248807e2808910eb06cec7af5e548405c00418f8985"
+    },
+    {
+      "evidence_id": "ev_5d51b8fad292522e36c0c062e6e27e107e94268c2352b302ac5a4854ad953cd8",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x35107c",
+        "name": "mac_sta_add_key_8852c",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x35107c",
+              "end": "0x351217"
+            }
+          ],
+          "total_bytes": 412,
+          "span_bytes": 412,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined mac_sta_add_key_8852c()",
+        "locals": [
+          {
+            "description": "undefined8 local_10 @ Stack[-0x10]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_20 @ Stack[-0x20]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_21 @ Stack[-0x21]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_40 @ Stack[-0x40]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_50 @ Stack[-0x50]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_60 @ Stack[-0x60]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_70 @ Stack[-0x70]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_8 @ Stack[-0x8]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_80 @ Stack[-0x80]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nuint mac_sta_add_key_8852c\n               (long param_1,uint *param_2,uint param_3,undefined1 param_4,undefined1 param_5)\n\n{\n  byte bVar1;\n  uint uVar2;\n  long lVar3;\n  undefined1 local_21;\n  undefined8 local_20;\n  undefined8 uStack_18;\n  undefined8 local_10;\n  long local_8;\n  \n  lVar3 = sp_el0;\n  local_8 = *(long *)(lVar3 + 0x430);\n  local_21 = 0;\n  local_20 = 0;\n  uStack_18 = 0;\n  local_10 = 0;\n  uVar2 = 0x39;\n  if ((*param_2 >> 0x18 & 0xf) < 0xb) {\n    param_3 = param_3 & 0xff;\n    lVar3 = *(long *)(*(long *)(param_1 + 0x58) + 0x70);\n    if (lVar3 == 0) {\n      uVar2 = 0xff;\n    }\n    else {\n      if (*(char *)((long)param_2 + 1) == -0x10) {\n        local_21 = (undefined1)*param_2;\n      }\n      else {\n        bVar1 = decide_sec_cam_index_8852c(param_1,&local_21);\n        uVar2 = (uint)bVar1;\n        if (bVar1 != 0) goto LAB_00351150;\n      }\n      *(undefined1 *)param_2 = local_21;\n      *(undefined1 *)((long)param_2 + 1) = 0;\n      *(undefined1 *)((long)param_2 + 2) = 0x14;\n      *(bool *)(*(long *)(lVar3 + (long)(int)param_3 * 8) + 9) = (*param_2 & 0xe000000) == 0x4000000\n      ;\n      uVar2 = insert_key_to_dmac_tbl_8852c(param_1,param_3,param_5,param_4,(char)*param_2);\n      if (uVar2 == 0) {\n        fill_sec_cam_info_8852c(param_1,param_2,&local_20,0);\n        bVar1 = mac_upd_sec_infotbl_8852c(param_1,&local_20);\n        uVar2 = (uint)bVar1;\n        if (bVar1 == 0) {\n          m_security_cam_hal_8852c(param_1,param_2,param_3,param_4,param_5,local_21,0);\n        }\n      }\n    }\n  }\nLAB_00351150:\n  lVar3 = sp_el0;\n  if (local_8 != *(long *)(lVar3 + 0x430)) {\n                    /* WARNING: Subroutine does not return */\n    __stack_chk_fail();\n  }\n  return uVar2;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-key-ownership-c/001-analyze_function.json",
+      "original_result_sha256": "743b8de507a4338282a7f7eaf3db0a746dea34927771e92c837216af2d85f19e"
+    },
+    {
+      "evidence_id": "ev_519b641d25cafc130e8c9c737592a93cad40a6f95a36c5912db44100b1ae9198",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x350f8c",
+        "name": "mac_sta_del_key_8852c",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x350f8c",
+              "end": "0x35107b"
+            }
+          ],
+          "total_bytes": 240,
+          "span_bytes": 240,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined mac_sta_del_key_8852c()",
+        "locals": [
+          {
+            "description": "undefined8 local_10 @ Stack[-0x10]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_20 @ Stack[-0x20]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_32 @ Stack[-0x32]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_33 @ Stack[-0x33]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_34 @ Stack[-0x34]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_35 @ Stack[-0x35]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_50 @ Stack[-0x50]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_60 @ Stack[-0x60]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_70 @ Stack[-0x70]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_8 @ Stack[-0x8]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_80 @ Stack[-0x80]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nuint mac_sta_del_key_8852c\n               (undefined8 param_1,undefined1 param_2,undefined1 param_3,undefined1 param_4)\n\n{\n  long lVar1;\n  byte bVar2;\n  uint uVar3;\n  undefined1 local_35;\n  undefined1 local_34;\n  undefined1 local_33;\n  undefined1 local_32;\n  undefined8 local_20;\n  undefined8 uStack_18;\n  undefined8 local_10;\n  long local_8;\n  \n  lVar1 = sp_el0;\n  local_8 = *(long *)(lVar1 + 0x430);\n  local_35 = 0;\n  local_20 = 0;\n  uStack_18 = 0;\n  local_10 = 0;\n  uVar3 = delete_key_from_dmac_tbl_8852c(param_1,param_2,param_4,param_3,&local_35);\n  if (uVar3 == 0) {\n    local_34 = local_35;\n    local_33 = 0;\n    local_32 = 0x14;\n    fill_sec_cam_info_8852c(param_1,&local_34,&local_20,1);\n    bVar2 = mac_upd_sec_infotbl_8852c(param_1,&local_20);\n    uVar3 = (uint)bVar2;\n    if (bVar2 == 0) {\n      m_security_cam_hal_8852c(param_1,0,param_2,param_3,param_4,local_35,1);\n    }\n  }\n  lVar1 = sp_el0;\n  if (local_8 == *(long *)(lVar1 + 0x430)) {\n    return uVar3;\n  }\n                    /* WARNING: Subroutine does not return */\n  __stack_chk_fail();\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-key-ownership-c/002-analyze_function.json",
+      "original_result_sha256": "8a44c021feb18702eba259ee7b7be983a4a7b841ee65b96ee3682cc4a7c433bc"
+    },
+    {
+      "evidence_id": "ev_1aad132bab4f369c578f86fe643d44d8c65951af2aedd971173172d4147454e3",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x350bd0",
+        "name": "m_security_cam_hal_8852c",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x350bd0",
+              "end": "0x350e0b"
+            }
+          ],
+          "total_bytes": 572,
+          "span_bytes": 572,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined m_security_cam_hal_8852c()",
+        "locals": []
+      },
+      "pseudocode": "\nundefined8\nm_security_cam_hal_8852c\n          (long param_1,uint *param_2,undefined1 param_3,undefined1 param_4,undefined1 param_5,\n          uint param_6,char param_7)\n\n{\n  uint uVar1;\n  byte bVar2;\n  long lVar3;\n  undefined1 *puVar4;\n  ulong uVar5;\n  ulong uVar6;\n  undefined1 *puVar7;\n  \n  param_6 = param_6 & 0xff;\n  lVar3 = *(long *)(*(long *)(param_1 + 0x58) + 0x60);\n  if ((lVar3 != 0) && (param_6 >> 7 == 0)) {\n    puVar4 = *(undefined1 **)(lVar3 + (long)(int)param_6 * 8);\n    if (param_7 == '\\x01') {\n      *puVar4 = 0;\n      puVar4[1] = 0;\n      puVar4[2] = 0;\n      puVar4[3] = 0;\n      *(byte *)(*(long *)(puVar4 + 8) + 3) = *(byte *)(*(long *)(puVar4 + 8) + 3) & 0xf0;\n      *(byte *)(*(long *)(puVar4 + 8) + 3) = *(byte *)(*(long *)(puVar4 + 8) + 3) & 0xef;\n      *(byte *)(*(long *)(puVar4 + 8) + 3) = *(byte *)(*(long *)(puVar4 + 8) + 3) & 0xdf;\n      *(undefined4 *)(*(long *)(puVar4 + 8) + 4) = 0;\n      *(undefined4 *)(*(long *)(puVar4 + 8) + 8) = 0;\n      *(undefined4 *)(*(long *)(puVar4 + 8) + 0xc) = 0;\n    }\n    else if (param_7 == '\\x02') {\n      lVar3 = *(long *)(*(long *)(param_1 + 0x58) + 0x68);\n      if (lVar3 != 0) {\n        puVar7 = *(undefined1 **)(lVar3 + (long)(int)param_6 * 8);\n        *puVar7 = *puVar4;\n        puVar7[1] = puVar4[1];\n        puVar7[2] = puVar4[2];\n        puVar7[3] = puVar4[3];\n        *(byte *)(*(long *)(puVar7 + 8) + 3) =\n             *(byte *)(*(long *)(puVar7 + 8) + 3) & 0xf0 |\n             (byte)((uint)**(undefined4 **)(puVar4 + 8) >> 0x18) & 0xf;\n        bVar2 = *(byte *)(*(long *)(puVar7 + 8) + 3);\n        *(byte *)(*(long *)(puVar7 + 8) + 3) =\n             bVar2 & 0xe0 | bVar2 & 0xf | (byte)((**(uint **)(puVar4 + 8) >> 0x1c & 1) << 4);\n        bVar2 = *(byte *)(*(long *)(puVar7 + 8) + 3);\n        *(byte *)(*(long *)(puVar7 + 8) + 3) =\n             bVar2 & 0xc0 | bVar2 & 0x1f | (byte)((**(uint **)(puVar4 + 8) >> 0x1d & 1) << 5);\n        uVar5 = 0;\n        do {\n          uVar6 = -(uVar5 >> 0x1f) & 0xfffffffc00000000 | uVar5 << 2;\n          *(undefined4 *)(*(long *)(puVar7 + 8) + uVar6 + 4) =\n               *(undefined4 *)(*(long *)(puVar4 + 8) + uVar6 + 4);\n          uVar1 = (int)uVar5 + 1;\n          uVar5 = (ulong)uVar1;\n        } while (uVar1 != 4);\n      }\n    }\n    else if (param_2 == (uint *)0x0) {\n      *puVar4 = 1;\n      puVar4[1] = param_3;\n      puVar4[2] = param_4;\n      puVar4[3] = param_5;\n      *(byte *)(*(long *)(puVar4 + 8) + 3) = *(byte *)(*(long *)(puVar4 + 8) + 3) & 0xf0;\n      *(byte *)(*(long *)(puVar4 + 8) + 3) = *(byte *)(*(long *)(puVar4 + 8) + 3) & 0xef;\n      *(byte *)(*(long *)(puVar4 + 8) + 3) = *(byte *)(*(long *)(puVar4 + 8) + 3) & 0xdf;\n      *(undefined4 *)(*(long *)(puVar4 + 8) + 4) = 0;\n      *(undefined4 *)(*(long *)(puVar4 + 8) + 8) = 0;\n      *(undefined4 *)(*(long *)(puVar4 + 8) + 0xc) = 0;\n      *(undefined4 *)(*(long *)(puVar4 + 8) + 0x10) = 0;\n    }\n    else {\n      *puVar4 = 1;\n      puVar4[1] = param_3;\n      puVar4[2] = param_4;\n      puVar4[3] = param_5;\n      *(byte *)(*(long *)(puVar4 + 8) + 3) =\n           *(byte *)(*(long *)(puVar4 + 8) + 3) & 0xf0 | (byte)(*param_2 >> 0x18) & 0xf;\n      bVar2 = *(byte *)(*(long *)(puVar4 + 8) + 3);\n      *(byte *)(*(long *)(puVar4 + 8) + 3) =\n           bVar2 & 0xe0 | bVar2 & 0xf | (byte)((*param_2 >> 0x1c & 1) << 4);\n      bVar2 = *(byte *)(*(long *)(puVar4 + 8) + 3);\n      *(byte *)(*(long *)(puVar4 + 8) + 3) =\n           bVar2 & 0xc0 | bVar2 & 0x1f | (byte)((*param_2 >> 0x1d & 1) << 5);\n      lVar3 = 0;\n      do {\n        *(uint *)(*(long *)(puVar4 + 8) + (long)(int)lVar3 * 4 + 4) = param_2[lVar3 + 1];\n        lVar3 = lVar3 + 1;\n      } while (lVar3 != 4);\n    }\n  }\n  return 0;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-key-ownership-c/003-analyze_function.json",
+      "original_result_sha256": "9ecfb8a8b92cfce62e489c5a2a80debccc8120f1149d02e629738e9b2ea32836"
+    },
+    {
+      "evidence_id": "ev_b81ebeb5ae6ba6c3ba282bfeb140a5bce5fe7f9a01850a5fbed2a0a96d169bb3",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x336218",
+        "name": "insert_key_to_addr_cam",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x336218",
+              "end": "0x3363cf"
+            }
+          ],
+          "total_bytes": 440,
+          "span_bytes": 440,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined insert_key_to_addr_cam()",
+        "locals": [
+          {
+            "description": "undefined8 local_20 @ Stack[-0x20]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_30 @ Stack[-0x30]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_40 @ Stack[-0x40]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_50 @ Stack[-0x50]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_60 @ Stack[-0x60]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_70 @ Stack[-0x70]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_8 @ Stack[-0x8]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_9 @ Stack[-0x9]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined4 local_d @ Stack[-0xd]:4",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined2 local_f @ Stack[-0xf]:2",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nuint insert_key_to_addr_cam\n               (long param_1,long param_2,undefined1 param_3,undefined1 param_4,undefined1 param_5)\n\n{\n  byte bVar1;\n  long lVar2;\n  uint uVar3;\n  uint uVar4;\n  int iVar5;\n  byte *pbVar6;\n  byte *pbVar7;\n  ulong uVar8;\n  uint uVar9;\n  byte local_f [7];\n  long local_8;\n  \n  lVar2 = sp_el0;\n  local_8 = *(long *)(lVar2 + 0x430);\n  local_f[0] = 0;\n  local_f[1] = 0;\n  local_f[2] = 0;\n  local_f[3] = 0;\n  local_f[4] = 0;\n  local_f[5] = 0;\n  local_f[6] = 0;\n  bVar1 = *(byte *)(param_2 + 0x6e);\n  uVar9 = (uint)bVar1;\n  uVar8 = *(ulong *)(param_2 + 0x60) >> 0x30 & 3;\n  uVar3 = decide_key_index(uVar8,param_3);\n  uVar3 = uVar3 & 0xff;\n  if (uVar3 != 0x39) {\n    pbVar6 = local_f;\n    do {\n      pbVar7 = pbVar6 + 1;\n      *pbVar6 = (byte)uVar9 & 1;\n      uVar9 = uVar9 >> 1;\n      pbVar6 = pbVar7;\n    } while (pbVar7 != (byte *)&local_8);\n    uVar9 = uVar3;\n    if (uVar3 < 7) {\n      do {\n        if (local_f[(int)uVar9] != 1) {\n          uVar4 = check_key_index(uVar8,param_3,uVar9 & 0xff);\n          uVar3 = uVar4 & 0xff;\n          if ((uVar4 & 0xff) == 0) {\n            *(undefined1 *)(param_2 + (int)uVar9 + 0x67) = param_4;\n            *(byte *)(param_2 + 0x6e) = bVar1 | (byte)(1L << ((ulong)uVar9 & 0x3f));\n            *(undefined1 *)(param_2 + (int)uVar9 + 0x6f) = param_5;\n            iVar5 = mac_upd_addr_cam(param_1,param_2 + 0x10);\n            if (iVar5 == 0x31) {\n              (**(code **)(*(long *)(param_1 + 0x18) + 0xb0))\n                        (*(undefined8 *)(param_1 + 8),2,\"[ERR]: BSSID CAM full\\n\");\n              uVar3 = 0x31;\n            }\n          }\n          else {\n            (**(code **)(*(long *)(param_1 + 0x18) + 0xb0))\n                      (*(undefined8 *)(param_1 + 8),5,\"check addr key index full\\n\");\n            uVar3 = 0x3c;\n          }\n          goto LAB_003362ec;\n        }\n        uVar9 = uVar9 + 1;\n      } while ((uVar9 & 0xff) < 7);\n      uVar3 = 0x3c;\n    }\n    else {\n      uVar3 = 0x3c;\n    }\n  }\nLAB_003362ec:\n  lVar2 = sp_el0;\n  if (local_8 == *(long *)(lVar2 + 0x430)) {\n    return uVar3;\n  }\n                    /* WARNING: Subroutine does not return */\n  __stack_chk_fail();\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-key-ownership-c/004-analyze_function.json",
+      "original_result_sha256": "0a0cc91c58a9b7e1a0328cef476d2c7d6ebb076aee9a532556a2a3d71d2d3d68"
+    }
+  ]
+}
