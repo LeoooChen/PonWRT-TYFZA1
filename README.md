@@ -52,24 +52,28 @@ telnet 192.168.1.1
 
 原厂 Telnet 默认用户名和密码均为 `telnetadmin`。登录后执行 `su`，再次输入密码 `telnetadmin`，取得 root 权限。若已修改原厂地址或密码，使用实际配置。
 
-刷入前备份原厂数据，刷写期间保持供电。接下来任选一种方式传入安装包。
+刷入前备份原厂数据，刷写期间保持供电。接下来任选一种方式安装。
 
-### 2. 传入安装包
+### 2. 安装固件
 
 **方式一：U 盘**
 
-将 `tyfza1-telnet-install.tar.gz` 原样复制到 U 盘根目录，插入光猫 USB 接口。在光猫 Telnet 中查看挂载位置和安装包：
+将 `tyfza1-telnet-install.tar.gz` 原样复制到 U 盘根目录，插入光猫 USB 接口。在光猫 Telnet 中**整段复制并运行**以下命令，即可自动查找安装包并安装：
 
 ```sh
-cat /proc/mounts | grep '/mnt/usb'
-ls -l /mnt/usb*/tyfza1-telnet-install.tar.gz
-```
-
-以下以 `/mnt/usb1_2` 为例，替换成上一步显示的实际目录，解压到内存：
-
-```sh
-mkdir -p /tmp/tyfza1-install
-tar -xzf /mnt/usb1_2/tyfza1-telnet-install.tar.gz -C /tmp/tyfza1-install
+(
+    set -eu
+    set -- /mnt/usb*/tyfza1-telnet-install.tar.gz
+    [ -f "$1" ] || { echo "未找到安装包，请确认文件已放入 U 盘根目录，且 U 盘已插好并挂载。"; exit 1; }
+    [ "$#" -eq 1 ] || { echo "找到多个安装包，请只保留一个存有安装包的 U 盘后重试。"; exit 1; }
+    echo "找到安装包：$1"
+    install_dir=/tmp/tyfza1-install.$$
+    mkdir "$install_dir"
+    trap 'rm -rf "$install_dir"' EXIT
+    tar -xzf "$1" -C "$install_dir"
+    cd "$install_dir"
+    sh ./install.sh
+)
 ```
 
 <details>
@@ -84,20 +88,19 @@ python3 -m http.server 8888
 在光猫 Telnet 中执行，将 `PC_IP` 替换为电脑的局域网 IP：
 
 ```sh
-mkdir -p /tmp/tyfza1-install
-wget -O /tmp/tyfza1-install.tar.gz http://PC_IP:8888/tyfza1-telnet-install.tar.gz &&
-tar -xzf /tmp/tyfza1-install.tar.gz -C /tmp/tyfza1-install
+(
+    set -eu
+    install_dir=/tmp/tyfza1-install.$$
+    mkdir "$install_dir"
+    trap 'rm -rf "$install_dir"' EXIT
+    wget -O "$install_dir/package.tar.gz" http://PC_IP:8888/tyfza1-telnet-install.tar.gz
+    tar -xzf "$install_dir/package.tar.gz" -C "$install_dir"
+    cd "$install_dir"
+    sh ./install.sh
+)
 ```
 
 </details>
-
-### 3. 执行安装
-
-确认解压成功，在光猫 Telnet 中执行：
-
-```sh
-cd /tmp/tyfza1-install && sh ./install.sh
-```
 
 脚本将固件写入原厂非活动系统槽，完成后自动重启。通过 LAN 打开 **[192.168.1.1](http://192.168.1.1/)**，进入 OpenWrt 管理页面。
 
