@@ -1,0 +1,17 @@
+{
+  "functional_items": 112,
+  "factory_functions": 9740,
+  "callback_tables": 70,
+  "module_parameters": 121,
+  "MIB_fields": 170,
+  "cfg80211_callbacks": 39,
+  "REA_successful_records": 75,
+  "recovered_ambiguous_request": 1,
+  "source_hashes_checked": 56,
+  "independent_prior_MAC_PCIE_tables_match": true,
+  "original_ARM64_dispatch_and_gate_check": "passed",
+  "hardware_tested": false,
+  "production_code_changed": false,
+  "full_test_suite": false,
+  "full_firmware_build": false
+}

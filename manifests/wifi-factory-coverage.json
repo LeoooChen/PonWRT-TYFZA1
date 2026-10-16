@@ -1,0 +1,3778 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "1cc4824d3316851ef18b1eb8fe0079154192589c",
+  "scope": "All Wi-Fi-related functionality: factory-first omission audit; no priority filter based on UDP loss",
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "inventory_counts": {
+    "functions": 9740,
+    "callback_tables": 70,
+    "module_parameters": 121,
+    "legacy_mib_fields": 170
+  },
+  "status_definitions": {
+    "已有": "存在所列原生实现，不代表全部配置或硬件验收完成",
+    "缺失": "已核对的有效原厂/必要Linux集成链在项目中缺少实现",
+    "部分": "有基础实现，但列出的分支、输入或控制闭环未完整覆盖",
+    "条件缺口": "原厂存在有条件实现，项目无等价链；本机门控必须保留",
+    "未提供": "项目明确不提供该能力；原厂条件/公开接口见该行，不自动视为当前默认故障",
+    "Linux接管": "由当前Linux/wpad提供软件职责，不应重复搬原厂协议状态机",
+    "不列为缺口": "原厂空实现、本机bypass/关闭或缺本板需求证据，不能虚构移植任务",
+    "待判定": "证据不足，未当作已完成，也未武断当成必须移植的活动功能"
+  },
+  "feature_status_counts": {
+    "已有": 15,
+    "部分": 30,
+    "未提供": 15,
+    "缺失": 11,
+    "不列为缺口": 5,
+    "条件缺口": 17,
+    "待判定": 11,
+    "Linux接管": 8
+  },
+  "features": [
+    {
+      "id": "A01",
+      "domain": "启动与固件",
+      "feature": "芯片/CV/ADIE、MAC与flash/OTP输入",
+      "status": "已有",
+      "factory_symbol_query": "read_efuse",
+      "factory_symbol_match_count": 3,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_read_efuse_plus",
+          "section": ".text",
+          "offset": "0x205970",
+          "bytes": 368
+        },
+        {
+          "name": "mac_read_efuse",
+          "section": ".text",
+          "offset": "0x20578c",
+          "bytes": 484
+        },
+        {
+          "name": "rtw_hal_mac_read_efuse_bt_hidden",
+          "section": ".text",
+          "offset": "0x1b55fc",
+          "bytes": 128
+        }
+      ],
+      "native_evidence": "D/pci.c、board-cal.h、phy.c",
+      "finding": "已有板级识别、校准输入和独立无线MAC；不把原厂全部私有输入接口视作必须兼容的ABI。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "A02",
+      "domain": "启动与固件",
+      "feature": "MAC/BB/RF/FEM参数、功率表导入",
+      "status": "已有",
+      "factory_symbol_query": "halrf_config",
+      "factory_symbol_match_count": 50,
+      "factory_symbol_examples": [
+        {
+          "name": "halrf_config_8192xb_nctl_reg",
+          "section": ".text",
+          "offset": "0x33ffb0",
+          "bytes": 312
+        },
+        {
+          "name": "halrf_config_power_limit_ru",
+          "section": ".text",
+          "offset": "0x303210",
+          "bytes": 92
+        },
+        {
+          "name": "halrf_config_store_power_limit_ru",
+          "section": ".text",
+          "offset": "0x303018",
+          "bytes": 96
+        },
+        {
+          "name": "halrf_config_8192xb_store_power_by_rate",
+          "section": ".text",
+          "offset": "0x340bb8",
+          "bytes": 284
+        },
+        {
+          "name": "halrf_config_8852c_write_radio_b_reg_to_fw",
+          "section": ".text",
+          "offset": "0x310584",
+          "bytes": 332
+        },
+        {
+          "name": "halrf_config_8192xb_store_pwr_track",
+          "section": ".text",
+          "offset": "0x341268",
+          "bytes": 532
+        },
+        {
+          "name": "halrf_config_8852c_store_power_limit",
+          "section": ".text",
+          "offset": "0x311460",
+          "bytes": 728
+        },
+        {
+          "name": "halrf_config_8852c_radio_a_reg",
+          "section": ".text",
+          "offset": "0x310c4c",
+          "bytes": 892
+        }
+      ],
+      "native_evidence": "D/pci.c、power-tables.c、limits.c",
+      "finding": "已有本机表及RFE54校准数据；仍需逐配置核对，不等于全部运行期策略完成。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "A03",
+      "domain": "启动与固件",
+      "feature": "WCPU固件装载及CPU/内存启动",
+      "status": "已有",
+      "factory_symbol_query": "mac_fwdl",
+      "factory_symbol_match_count": 2,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_fwdl",
+          "section": ".text",
+          "offset": "0x210f2c",
+          "bytes": 1152
+        },
+        {
+          "name": "rtw_hal_mac_fwdl",
+          "section": ".text",
+          "offset": "0x1ab9ac",
+          "bytes": 140
+        }
+      ],
+      "native_evidence": "D/download.h、fw.h、pci.c",
+      "finding": "已有AP固件、DLE/HFC与命令启动；NIC/WoW用途不由AP镜像完成度代替。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "A04",
+      "domain": "启动与固件",
+      "feature": "PCIe DMA、HFC、TX/RX/RPQ环",
+      "status": "已有",
+      "factory_symbol_query": "pcie_init",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "pcie_init",
+          "section": ".text",
+          "offset": "0x24a3f8",
+          "bytes": 628
+        }
+      ],
+      "native_evidence": "D/tx.c、rx.c、mac-runtime.h",
+      "finding": "已有原厂格式和当前PE分工；已有定点修复不代表所有硬件情形均实测。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "A05",
+      "domain": "启动与固件",
+      "feature": "FW能力/公共命令及C2H全分派",
+      "status": "部分",
+      "factory_symbol_query": "mac_process_c2h",
+      "factory_symbol_match_count": 2,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_process_c2h",
+          "section": ".text",
+          "offset": "0x20d294",
+          "bytes": 368
+        },
+        {
+          "name": "rtw_hal_mac_process_c2h",
+          "section": ".text",
+          "offset": "0x1b3f88",
+          "bytes": 268
+        }
+      ],
+      "native_evidence": "D/pci.c:410",
+      "finding": "只处理命令ACK、beacon统计、RA反馈/TX统计及既有RX报告；原厂TWT、MCC、扫描、CSA、CSI、WPS等事件未建立完整分派。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "A06",
+      "domain": "启动与固件",
+      "feature": "固件日志、状态转储与遥测",
+      "status": "未提供",
+      "factory_symbol_query": "fw_status_.*handler",
+      "factory_symbol_match_count": 10,
+      "factory_symbol_examples": [
+        {
+          "name": "fw_status_meminfo_slow_handler",
+          "section": ".text",
+          "offset": "0x1f9be0",
+          "bytes": 304
+        },
+        {
+          "name": "fw_status_isrinfo_handler",
+          "section": ".text",
+          "offset": "0x1f9dd0",
+          "bytes": 484
+        },
+        {
+          "name": "fw_status_meminfo_fast_handler",
+          "section": ".text",
+          "offset": "0x1f9ab0",
+          "bytes": 304
+        },
+        {
+          "name": "fw_status_h2c_c2hinfo_handler",
+          "section": ".text",
+          "offset": "0x1f9d70",
+          "bytes": 96
+        },
+        {
+          "name": "fw_status_heap_detail_handler",
+          "section": ".text",
+          "offset": "0x2001f8",
+          "bytes": 1136
+        },
+        {
+          "name": "fw_status_chsw_handler",
+          "section": ".text",
+          "offset": "0x1f9fb4",
+          "bytes": 152
+        },
+        {
+          "name": "fw_status_heapinfo_handler",
+          "section": ".text",
+          "offset": "0x1f96c0",
+          "bytes": 1008
+        },
+        {
+          "name": "fw_status_taskinfo_handler",
+          "section": ".text",
+          "offset": "0x1f9434",
+          "bytes": 252
+        }
+      ],
+      "native_evidence": "D/pci.c",
+      "finding": "有命令和拒绝报告摘要，未提供原厂FW日志配置、任务/堆/ISR等状态处理链；这是诊断能力差异。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "A07",
+      "domain": "启动与固件",
+      "feature": "SER事件、L0/L1/L2恢复与状态重建",
+      "status": "缺失",
+      "factory_symbol_query": "_phl_ser_mdl_msg_hdlr",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "_phl_ser_mdl_msg_hdlr",
+          "section": ".text",
+          "offset": "0x18af90",
+          "bytes": 184
+        }
+      ],
+      "native_evidence": "D/pci.c、tx.c、rx.c",
+      "finding": "原厂注册ser_ops并处理事件；项目没有对应恢复状态机、固件/环及站点密钥恢复闭环。",
+      "rea_evidence_ids": [
+        "ev_8e554539ce26351bef663cd0ff49c8b76e942db55d7c1a3179943137acf867d9"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "A08",
+      "domain": "启动与固件",
+      "feature": "旧sreset与PCIe统计watchdog",
+      "status": "不列为缺口",
+      "factory_symbol_query": "watchdog",
+      "factory_symbol_match_count": 44,
+      "factory_symbol_examples": [
+        {
+          "name": "_phl_watchdog_done",
+          "section": ".text",
+          "offset": "0x18e4dc",
+          "bytes": 76
+        },
+        {
+          "name": "_phl_watchdog_timer_expired",
+          "section": ".text",
+          "offset": "0x18e528",
+          "bytes": 320
+        },
+        {
+          "name": "rtw_core_watchdog_sw_hdlr",
+          "section": ".text",
+          "offset": "0x8a2b4",
+          "bytes": 312
+        },
+        {
+          "name": "rtw_hal_simple_watchdog",
+          "section": ".text",
+          "offset": "0x1c5c38",
+          "bytes": 100
+        },
+        {
+          "name": "halbb_ra_rssi_setting_watchdog",
+          "section": ".text",
+          "offset": "0x2ccfd0",
+          "bytes": 1000
+        },
+        {
+          "name": "halbb_watchdog_normal",
+          "section": ".text",
+          "offset": "0x285a74",
+          "bytes": 220
+        },
+        {
+          "name": "rtw_phl_watchdog_start",
+          "section": ".text",
+          "offset": "0x18e720",
+          "bytes": 140
+        },
+        {
+          "name": "halbb_physts_watchdog",
+          "section": ".text",
+          "offset": "0x2c60dc",
+          "bytes": 196
+        }
+      ],
+      "native_evidence": "D/monitor.h、pci.c",
+      "finding": "原厂sreset_reset直接return，phl_tx_watchdog_pcie主要打印/转储统计；不能把这两者算成漏移植的自动恢复。真实SER另列A07。",
+      "rea_evidence_ids": [
+        "ev_314fe60180178081a8c5ca2132c7fcb96a2e393545a884ecf28d8051de3c32d7",
+        "ev_2cf2b6877996f6d1d6ee94218623eb81661d7e2610fe8dd24f4e0c698894d784",
+        "ev_6632d8d4571c26b9ad4e7cddf137920970e78da32d3cb6bc859e49126f7f4ca9",
+        "ev_e9b9cacf0408c5aa97359e1d1be5a4698431089534209c6111374d738e734053",
+        "ev_65ba860bd6c261debdad7291e0854b7d9c36f9d372e4e7414e6856228d45e496",
+        "ev_3908db6c05a0fdb6fe70b054f41b846bfd02a8f1595de32e2fda2fd5d04f882a",
+        "ev_0e87cb994c7bca29cd1059011d76e38d6216aaa87a53c1710a7abd4b16a8a30e"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "A09",
+      "domain": "启动与固件",
+      "feature": "系统suspend/resume",
+      "status": "缺失",
+      "factory_symbol_query": "rtw_pci_(suspend|resume)",
+      "factory_symbol_match_count": 2,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_pci_suspend",
+          "section": ".text",
+          "offset": "0x3adc8",
+          "bytes": 224
+        },
+        {
+          "name": "rtw_pci_resume",
+          "section": ".text",
+          "offset": "0x3b370",
+          "bytes": 268
+        }
+      ],
+      "native_evidence": "D/pci.c:2809",
+      "finding": "原厂PCI驱动注册挂起/恢复并保存/重建状态；项目pci_driver无PM入口。",
+      "rea_evidence_ids": [
+        "ev_87cd1e99253ea033e0bc928b3096d9021213ca21bb336147d6ddc13a2762995f",
+        "ev_4de8aaabf2163d201a528a282a6a5badb505296df70ddd9be8409eb0894ffc3a"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "A10",
+      "domain": "启动与固件",
+      "feature": "ASPM/LTR与动态PCIe电源策略",
+      "status": "条件缺口",
+      "factory_symbol_query": "ltr_set_pcie",
+      "factory_symbol_match_count": 4,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_hal_mac_ltr_set_pcie",
+          "section": ".text",
+          "offset": "0x1a8f28",
+          "bytes": 356
+        },
+        {
+          "name": "_hal_ltr_set_pcie_8192xbe",
+          "section": ".text",
+          "offset": "0x281358",
+          "bytes": 128
+        },
+        {
+          "name": "ltr_set_pcie",
+          "section": ".text",
+          "offset": "0x248f8c",
+          "bytes": 184
+        },
+        {
+          "name": "_hal_ltr_set_pcie_8852ce",
+          "section": ".text",
+          "offset": "0x27a8b0",
+          "bytes": 128
+        }
+      ],
+      "native_evidence": "D/pci.c、power.h",
+      "finding": "未提供原厂可选动态策略；原厂模块ASPM初值为0，不能说正常默认路径必然少了一次动态调节。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "A11",
+      "domain": "启动与固件",
+      "feature": "IPS/LPS/低功耗无线角色",
+      "status": "未提供",
+      "factory_symbol_query": "mac_cfg_(ips|lps)",
+      "factory_symbol_match_count": 2,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_cfg_ips",
+          "section": ".text",
+          "offset": "0x22b5cc",
+          "bytes": 308
+        },
+        {
+          "name": "mac_cfg_lps",
+          "section": ".text",
+          "offset": "0x22aacc",
+          "bytes": 980
+        }
+      ],
+      "native_evidence": "D/monitor.h、pci.c",
+      "finding": "没有完整设备低功耗生命周期；AP端客户端PS是另一项，不能因有PS队列就宣称IPS/LPS完成。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "A12",
+      "domain": "启动与固件",
+      "feature": "WoW、GTK/ARP/ND/NLO代理唤醒",
+      "status": "待判定",
+      "factory_symbol_query": "mac_cfg_(wow|gtk_ofld|arp_ofld|ndp_ofld|nlo)",
+      "factory_symbol_match_count": 8,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_cfg_gtk_ofld",
+          "section": ".text",
+          "offset": "0x2416d0",
+          "bytes": 512
+        },
+        {
+          "name": "mac_cfg_wow_sleep",
+          "section": ".text",
+          "offset": "0x242228",
+          "bytes": 1208
+        },
+        {
+          "name": "mac_cfg_arp_ofld",
+          "section": ".text",
+          "offset": "0x2418d0",
+          "bytes": 384
+        },
+        {
+          "name": "mac_cfg_nlo",
+          "section": ".text",
+          "offset": "0x241de0",
+          "bytes": 476
+        },
+        {
+          "name": "mac_cfg_ndp_ofld",
+          "section": ".text",
+          "offset": "0x241a50",
+          "bytes": 452
+        },
+        {
+          "name": "mac_cfg_wow_auto_test",
+          "section": ".text",
+          "offset": "0x243090",
+          "bytes": 340
+        },
+        {
+          "name": "mac_cfg_wow_wake",
+          "section": ".text",
+          "offset": "0x240e34",
+          "bytes": 1544
+        },
+        {
+          "name": "mac_cfg_wowcam_upd",
+          "section": ".text",
+          "offset": "0x241fd0",
+          "bytes": 532
+        }
+      ],
+      "native_evidence": "D/pci.c",
+      "finding": "项目未提供；原厂有下级实现，但公开wowlan_stub只含ANY标志，扩展能力的本机最终配置尚未确认。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "B01",
+      "domain": "模式与信道",
+      "feature": "单AP、monitor与基本接口生命周期",
+      "status": "已有",
+      "factory_symbol_query": "cfg80211_rtw_(start_ap|stop_ap)",
+      "factory_symbol_match_count": 2,
+      "factory_symbol_examples": [
+        {
+          "name": "cfg80211_rtw_stop_ap",
+          "section": ".text",
+          "offset": "0x21f3c",
+          "bytes": 116
+        },
+        {
+          "name": "cfg80211_rtw_start_ap",
+          "section": ".text",
+          "offset": "0x26a98",
+          "bytes": 772
+        }
+      ],
+      "native_evidence": "D/monitor.h:114",
+      "finding": "单AP+monitor已有；不能把一个可运行AP当成所有接口类型已移植。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "B02",
+      "domain": "模式与信道",
+      "feature": "多AP/VAP与独立BSSID/port资源",
+      "status": "缺失",
+      "factory_symbol_query": "cfg80211_rtw_add_virtual_intf",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "cfg80211_rtw_add_virtual_intf",
+          "section": ".text",
+          "offset": "0x23530",
+          "bytes": 1168
+        }
+      ],
+      "native_evidence": "D/monitor.h:114、1340",
+      "finding": "每颗只有一个ap_vif，第二AP返回EBUSY；原厂有虚拟接口和多接口组合，模块virtual_iface_num初值8。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "B03",
+      "domain": "模式与信道",
+      "feature": "STA客户端、连接、重连与STA漫游",
+      "status": "未提供",
+      "factory_symbol_query": "cfg80211_rtw_(connect|disconnect)",
+      "factory_symbol_match_count": 2,
+      "factory_symbol_examples": [
+        {
+          "name": "cfg80211_rtw_disconnect",
+          "section": ".text",
+          "offset": "0x21994",
+          "bytes": 192
+        },
+        {
+          "name": "cfg80211_rtw_connect",
+          "section": ".text",
+          "offset": "0x25254",
+          "bytes": 4268
+        }
+      ],
+      "native_evidence": "D/monitor.h:1394",
+      "finding": "原厂wiphy声明STA且注册连接/断开；项目只声明AP/monitor，没有STA固件/角色完整链。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "B04",
+      "domain": "模式与信道",
+      "feature": "IBSS/ad-hoc",
+      "status": "未提供",
+      "factory_symbol_query": "cfg80211_rtw_(join_ibss|leave_ibss)",
+      "factory_symbol_match_count": 2,
+      "factory_symbol_examples": [
+        {
+          "name": "cfg80211_rtw_leave_ibss",
+          "section": ".text",
+          "offset": "0x2136c",
+          "bytes": 212
+        },
+        {
+          "name": "cfg80211_rtw_join_ibss",
+          "section": ".text",
+          "offset": "0x21694",
+          "bytes": 564
+        }
+      ],
+      "native_evidence": "D/monitor.h:1394",
+      "finding": "原厂公开声明并注册，项目未声明或实现。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "B05",
+      "domain": "模式与信道",
+      "feature": "P2P、Mesh、NAN前端模式",
+      "status": "待判定",
+      "factory_symbol_query": "OnAction_p2p",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "OnAction_p2p",
+          "section": ".text",
+          "offset": "0x8a7e4",
+          "bytes": 8
+        }
+      ],
+      "native_evidence": "D/monitor.h:1394",
+      "finding": "项目未提供。原厂有相关底层/历史符号，但公开wiphy模式掩码0x0e未声明这些模式；不能据此声称原机具备完整功能而漏移植。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "B06",
+      "domain": "模式与信道",
+      "feature": "A4/WDS、回程与四地址快路",
+      "status": "部分",
+      "factory_symbol_query": "core_a4",
+      "factory_symbol_match_count": 23,
+      "factory_symbol_examples": [
+        {
+          "name": "core_a4_gptr_table_hash",
+          "section": ".text",
+          "offset": "0xc17d4",
+          "bytes": 104
+        },
+        {
+          "name": "core_a4_gptr_free_rcu",
+          "section": ".text",
+          "offset": "0xc1864",
+          "bytes": 88
+        },
+        {
+          "name": "core_a4_gptr_rht_free",
+          "section": ".text",
+          "offset": "0xc18bc",
+          "bytes": 32
+        },
+        {
+          "name": "core_a4_gptr_lookup",
+          "section": ".text",
+          "offset": "0xc18dc",
+          "bytes": 380
+        },
+        {
+          "name": "__core_a4_gptr_del",
+          "section": ".text",
+          "offset": "0xc1a58",
+          "bytes": 716
+        },
+        {
+          "name": "core_a4_gptr_tbl_init",
+          "section": ".text",
+          "offset": "0xc35e0",
+          "bytes": 100
+        },
+        {
+          "name": "core_a4_init",
+          "section": ".text",
+          "offset": "0xc3920",
+          "bytes": 132
+        },
+        {
+          "name": "core_a4_upt_sta_list",
+          "section": ".text",
+          "offset": "0xc2218",
+          "bytes": 416
+        }
+      ],
+      "native_evidence": "D/monitor.h、tx.c；PE uplink/downlink",
+      "finding": "原厂公开设置A4能力且有地址学习；项目加速模板主要为三地址，未建立完整A4回程/学习生命周期。Linux四地址能力及慢路需独立核实。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "B07",
+      "domain": "模式与信道",
+      "feature": "MCC、同芯片多信道并发",
+      "status": "条件缺口",
+      "factory_symbol_query": "mac_(start|add)_mcc",
+      "factory_symbol_match_count": 4,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_hal_mac_start_mcc",
+          "section": ".text",
+          "offset": "0x1b62d4",
+          "bytes": 492
+        },
+        {
+          "name": "mac_add_mcc",
+          "section": ".text",
+          "offset": "0x2230f8",
+          "bytes": 700
+        },
+        {
+          "name": "mac_start_mcc",
+          "section": ".text",
+          "offset": "0x2233b4",
+          "bytes": 576
+        },
+        {
+          "name": "rtw_hal_mac_add_mcc",
+          "section": ".text",
+          "offset": "0x1b613c",
+          "bytes": 408
+        }
+      ],
+      "native_evidence": "D/monitor.h:1344",
+      "finding": "只有单信道模拟chanctx；原厂底层存在MCC。本机公开角色组合和实际启用条件不能由底层表单独确定。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "B08",
+      "domain": "模式与信道",
+      "feature": "DBCC与双PHY资源切换",
+      "status": "待判定",
+      "factory_symbol_query": "dbcc",
+      "factory_symbol_match_count": 40,
+      "factory_symbol_examples": [
+        {
+          "name": "dbcc_tx_tmac",
+          "section": ".text",
+          "offset": "0x1a78ac",
+          "bytes": 304
+        },
+        {
+          "name": "dbcc_chk_notify_done",
+          "section": ".text",
+          "offset": "0x1ed958",
+          "bytes": 144
+        },
+        {
+          "name": "dbcc_hci_ctrl_pcie",
+          "section": ".text",
+          "offset": "0x24b0c4",
+          "bytes": 820
+        },
+        {
+          "name": "rtw_hal_bb_ctrl_dbcc",
+          "section": ".text",
+          "offset": "0x1b7e08",
+          "bytes": 8
+        },
+        {
+          "name": "mac_dbcc_cfg",
+          "section": ".text",
+          "offset": "0x1eeb84",
+          "bytes": 284
+        },
+        {
+          "name": "halrf_set_dbcc",
+          "section": ".text",
+          "offset": "0x2f701c",
+          "bytes": 48
+        },
+        {
+          "name": "halbb_ctrl_dbcc_8852c",
+          "section": ".text",
+          "offset": "0x2e5fe0",
+          "bytes": 100
+        },
+        {
+          "name": "halbb_ctrl_dbcc",
+          "section": ".text",
+          "offset": "0x2877dc",
+          "bytes": 40
+        }
+      ],
+      "native_evidence": "D/pci.c、monitor.h",
+      "finding": "项目每芯片按SCC/PHY0实现；原厂有DBCC测试/控制符号，本板是否需要启用尚无依据。双独立无线芯片不等于DBCC。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "B09",
+      "domain": "模式与信道",
+      "feature": "软件扫描和扫描驻留/回家策略",
+      "status": "部分",
+      "factory_symbol_query": "cfg80211_rtw_scan",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "cfg80211_rtw_scan",
+          "section": ".text",
+          "offset": "0x29f50",
+          "bytes": 1396
+        }
+      ],
+      "native_evidence": "D/monitor.h:17",
+      "finding": "依赖mac80211软件扫描；没有对应原厂细分scan_backop/离家预算策略。本机AP离信道扫描的完整行为未实测。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "B10",
+      "domain": "模式与信道",
+      "feature": "固件扫描/快速换信道offload",
+      "status": "条件缺口",
+      "factory_symbol_query": "mac_(scanofld|fast_ch_sw|ch_switch_ofld)",
+      "factory_symbol_match_count": 9,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_scanofld_ch_list_clear",
+          "section": ".text",
+          "offset": "0x214fc8",
+          "bytes": 176
+        },
+        {
+          "name": "mac_fast_ch_sw",
+          "section": ".text",
+          "offset": "0x24525c",
+          "bytes": 524
+        },
+        {
+          "name": "mac_ch_switch_ofld",
+          "section": ".text",
+          "offset": "0x2168c4",
+          "bytes": 296
+        },
+        {
+          "name": "mac_fast_ch_sw_done",
+          "section": ".text",
+          "offset": "0x245468",
+          "bytes": 20
+        },
+        {
+          "name": "mac_scanofld_hst_ctrl",
+          "section": ".text",
+          "offset": "0x2163f4",
+          "bytes": 284
+        },
+        {
+          "name": "mac_scanofld_reset_state",
+          "section": ".text",
+          "offset": "0x215078",
+          "bytes": 164
+        },
+        {
+          "name": "mac_scanofld_fw_busy",
+          "section": ".text",
+          "offset": "0x2163cc",
+          "bytes": 20
+        },
+        {
+          "name": "mac_scanofld_chlist_busy",
+          "section": ".text",
+          "offset": "0x2163e0",
+          "bytes": 20
+        }
+      ],
+      "native_evidence": "D/monitor.h、pci.c",
+      "finding": "未接原厂FW扫描与换信道完成事件；软件扫描不是功能完全缺失，但硬件offload尚未提供。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "B11",
+      "domain": "模式与信道",
+      "feature": "ACS/DACS、survey忙时/噪声报告",
+      "status": "缺失",
+      "factory_symbol_query": "cfg80211_rtw_dump_survey",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "cfg80211_rtw_dump_survey",
+          "section": ".text",
+          "offset": "0x2055c",
+          "bytes": 496
+        }
+      ],
+      "native_evidence": "D/monitor.h:1183",
+      "finding": "原厂真实读取ACS信道表、CLM和noise；项目无get_survey及运行环境结果链，不能宣称自动选频已完整可用。",
+      "rea_evidence_ids": [
+        "ev_1565adfb9d703e427f86710862d16c8c64fcb37289c46394a7e927a37d430067"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "B12",
+      "domain": "模式与信道",
+      "feature": "CSA/eCSA公告、beacon倒数及完成",
+      "status": "部分",
+      "factory_symbol_query": "rtw_ap_inform_ch_switch",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_ap_inform_ch_switch",
+          "section": ".text",
+          "offset": "0xd6014",
+          "bytes": 548
+        }
+      ],
+      "native_evidence": "get_bcn_csa_event；D/monitor.h、pci.c",
+      "finding": "有普通换信道和beacon替换；没有LinuxCSA倒数更新/完成通知及原厂对应事件闭环，不能等同于无缝CSA。",
+      "rea_evidence_ids": [
+        "ev_a1229cff1c1b4c8db24c5ec109a3b592afefa105d9bb173c219dba94545ce6e4"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "B13",
+      "domain": "模式与信道",
+      "feature": "2.4GHz 40MHz",
+      "status": "未提供",
+      "factory_symbol_query": "core_mib_use40M",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "core_mib_use40M",
+          "section": ".text",
+          "offset": "0x117720",
+          "bytes": 108
+        }
+      ],
+      "native_evidence": "D/monitor.h:29",
+      "finding": "明确拒绝XB非20MHz，未声明40MHz；原厂保留该带宽配置及能力构造路径。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "B14",
+      "domain": "模式与信道",
+      "feature": "5GHz 20/40/80/160MHz",
+      "status": "已有",
+      "factory_symbol_query": "rtw_cfg80211_init_wiphy_band",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_cfg80211_init_wiphy_band",
+          "section": ".text",
+          "offset": "0x265bc",
+          "bytes": 824
+        }
+      ],
+      "native_evidence": "D/monitor.h:17、pci.c、channel.h",
+      "finding": "已接带宽、中心信道、校准、功率与HE/VHT声明；不是本次新发现的漏项。",
+      "rea_evidence_ids": [
+        "ev_7616d050e3f605b5e729889b1b5001d0a7d0ad7a48da082f9e883e39b9ea0b6e"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "B15",
+      "domain": "模式与信道",
+      "feature": "80+80、6GHz、4SS、EHT/320MHz",
+      "status": "不列为缺口",
+      "factory_symbol_query": "rtw_cfg80211_init_wiphy_band",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_cfg80211_init_wiphy_band",
+          "section": ".text",
+          "offset": "0x265bc",
+          "bytes": 824
+        }
+      ],
+      "native_evidence": "D/monitor.h",
+      "finding": "项目未提供；尚无本板应提供这些能力的原厂证据，通用SDK的4SS参数不能当作本机要求。",
+      "rea_evidence_ids": [
+        "ev_7616d050e3f605b5e729889b1b5001d0a7d0ad7a48da082f9e883e39b9ea0b6e"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "B16",
+      "domain": "模式与信道",
+      "feature": "国家域、DFS/CAC、非占用期与功率",
+      "status": "部分",
+      "factory_symbol_query": "rtw_dfs",
+      "factory_symbol_match_count": 18,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_dfs_rd_disable",
+          "section": ".text",
+          "offset": "0xbf8ac",
+          "bytes": 336
+        },
+        {
+          "name": "rtw_dfs_rd_enable",
+          "section": ".text",
+          "offset": "0xc002c",
+          "bytes": 456
+        },
+        {
+          "name": "rtw_dfs_ch_switch_hdl",
+          "section": ".text",
+          "offset": "0x5b5ec",
+          "bytes": 972
+        },
+        {
+          "name": "rtw_dfs_get_region_domain",
+          "section": ".text",
+          "offset": "0x10f2c0",
+          "bytes": 124
+        },
+        {
+          "name": "rtw_dfs_hal_radar_detect_polling_int_ms",
+          "section": ".text",
+          "offset": "0x10f02c",
+          "bytes": 8
+        },
+        {
+          "name": "rtw_dfs_rd_timer_hdl",
+          "section": ".text",
+          "offset": "0xc1548",
+          "bytes": 36
+        },
+        {
+          "name": "rtw_dfs_hal_radar_detect_enable",
+          "section": ".text",
+          "offset": "0x10ef98",
+          "bytes": 104
+        },
+        {
+          "name": "rtw_dfs_rd_hdl",
+          "section": ".text",
+          "offset": "0xc0f9c",
+          "bytes": 1184
+        }
+      ],
+      "native_evidence": "D/dfs.h、limits.c、monitor.h",
+      "finding": "已有regdb、雷达/CAC/TX门控和功率路径；原厂DFS动态参数、自动选频/CSA联动及各国家配置的完整覆盖仍不足。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "C01",
+      "domain": "MAC与协议控制",
+      "feature": "beacon、DTIM/TIM、组播缓存",
+      "status": "已有",
+      "factory_symbol_query": "mac_send_bcn_h2c",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_send_bcn_h2c",
+          "section": ".text",
+          "offset": "0x20d668",
+          "bytes": 676
+        }
+      ],
+      "native_evidence": "D/beacon.h、port0.h、monitor.h",
+      "finding": "已有Linux模板及固件beacon、TIM/DTIM基本路径；多port、CSA等另列。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "C02",
+      "domain": "MAC与协议控制",
+      "feature": "ERP/HT保护、短前导码、RTS/CTS",
+      "status": "部分",
+      "factory_symbol_query": "update_attrib_vcs_info",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "update_attrib_vcs_info",
+          "section": ".text",
+          "offset": "0xdcfc4",
+          "bytes": 392
+        }
+      ],
+      "native_evidence": "D/monitor.h:287、tx.c:123；PE TXWD",
+      "finding": "缺ERP_CTS/HT保护/短前导码更新与逐包RTS/CTS标志消费、RTS阈值接口；启动硬件RTS、fallback与动态SMPS位已存在。",
+      "rea_evidence_ids": [
+        "ev_59224173979d08a8d87120d6d96f939d7cd3935ec25d2097e890255592e4401a"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "C03",
+      "domain": "MAC与协议控制",
+      "feature": "软件发送控制帧",
+      "status": "部分",
+      "factory_symbol_query": "OnAction_back",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "OnAction_back",
+          "section": ".text",
+          "offset": "0x8af08",
+          "bytes": 1052
+        }
+      ],
+      "native_evidence": "D/monitor.h:792",
+      "finding": "TX入口只接management/data；软件请求的BAR等control帧没有完整提交路径。硬件自动ACK/BA不等于软件控制帧已接入；原厂与Linux分工不同。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "C04",
+      "domain": "MAC与协议控制",
+      "feature": "管理帧TX/RX、认证/关联与探测",
+      "status": "Linux接管",
+      "factory_symbol_query": "cfg80211_rtw_mgmt_tx",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "cfg80211_rtw_mgmt_tx",
+          "section": ".text",
+          "offset": "0x20adc",
+          "bytes": 2192
+        }
+      ],
+      "native_evidence": "D/monitor.h、Linux mac80211、wpad",
+      "finding": "基础管理帧传输已有，协议状态由Linux/wpad处理；不重复移植原厂MLME状态机。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "C05",
+      "domain": "MAC与协议控制",
+      "feature": "RX过滤、monitor过滤需求",
+      "status": "部分",
+      "factory_symbol_query": "mac_set_rx_fltr_opt",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_set_rx_fltr_opt",
+          "section": ".text",
+          "offset": "0x2300e4",
+          "bytes": 472
+        }
+      ],
+      "native_evidence": "D/monitor.h:778",
+      "finding": "接受部分FIF请求，但写回主要按AP/monitor两种mode，未逐请求落实全部过滤语义。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "C06",
+      "domain": "MAC与协议控制",
+      "feature": "每帧RSSI/链信号、TSF、AMPDU及HE/RU元数据",
+      "status": "部分",
+      "factory_symbol_query": "halbb_physts",
+      "factory_symbol_match_count": 53,
+      "factory_symbol_examples": [
+        {
+          "name": "halbb_physts_cvrt_2_mp",
+          "section": ".text",
+          "offset": "0x2c1d8c",
+          "bytes": 28
+        },
+        {
+          "name": "halbb_physts_ie_bitmap_get",
+          "section": ".text",
+          "offset": "0x2c304c",
+          "bytes": 64
+        },
+        {
+          "name": "halbb_physts_ie_06",
+          "section": ".text",
+          "offset": "0x2c38e4",
+          "bytes": 176
+        },
+        {
+          "name": "halbb_physts_ie_08",
+          "section": ".text",
+          "offset": "0x2c3a44",
+          "bytes": 832
+        },
+        {
+          "name": "halbb_physts_ie_02",
+          "section": ".text",
+          "offset": "0x2c343c",
+          "bytes": 500
+        },
+        {
+          "name": "halbb_physts_ie_30",
+          "section": ".text",
+          "offset": "0x2c4fb4",
+          "bytes": 8
+        },
+        {
+          "name": "halbb_physts_brk_fail_pkt_rpt_8192xb",
+          "section": ".text",
+          "offset": "0x2f1fbc",
+          "bytes": 40
+        },
+        {
+          "name": "halbb_physts_ie_04_07",
+          "section": ".text",
+          "offset": "0x2c3734",
+          "bytes": 256
+        }
+      ],
+      "native_evidence": "D/monitor.h:1213、rate.h",
+      "finding": "RX仅填基础rate/BW/GI且设置NO_SIGNAL_VAL；PPDU只用于采样RSSI，未完整关联每帧元数据、聚合引用或HE/RU报告。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "C07",
+      "domain": "MAC与协议控制",
+      "feature": "客户端PS、PS-Poll、U-APSD/EOSP",
+      "status": "已有",
+      "factory_symbol_query": "rtw_ps_annc",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_ps_annc",
+          "section": ".text",
+          "offset": "0x9f16c",
+          "bytes": 184
+        }
+      ],
+      "native_evidence": "D/monitor.h、tx.c；PE downlink",
+      "finding": "已有睡眠通知、缓存释放、TIM/EOSP路径；未声称全部交错已实机回归。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "C08",
+      "domain": "MAC与协议控制",
+      "feature": "客户端强制唤醒/省电策略控制",
+      "status": "条件缺口",
+      "factory_symbol_query": "core_mib_force_sta_wake",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "core_mib_force_sta_wake",
+          "section": ".text",
+          "offset": "0x118bd0",
+          "bytes": 64
+        }
+      ],
+      "native_evidence": "D/monitor.h、tx.c",
+      "finding": "没有原厂force_sta_wake等专门控制；现有正常PS机制不能代替这个可选策略，也不应未经条件确认强开。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "C09",
+      "domain": "MAC与协议控制",
+      "feature": "AP隔离、ACL、隐藏SSID、广播转单播",
+      "status": "Linux接管",
+      "factory_symbol_query": "cfg80211_rtw_(set_mac_acl|change_bss)",
+      "factory_symbol_match_count": 2,
+      "factory_symbol_examples": [
+        {
+          "name": "cfg80211_rtw_change_bss",
+          "section": ".text",
+          "offset": "0x1f7e0",
+          "bytes": 156
+        },
+        {
+          "name": "cfg80211_rtw_set_mac_acl",
+          "section": ".text",
+          "offset": "0x20988",
+          "bytes": 340
+        }
+      ],
+      "native_evidence": "wpad、mac80211/bridge；D/monitor.h",
+      "finding": "基本策略由hostapd/Linux提供；NI/FE绕行时是否保留隔离/VLAN/ACL须作为加速规则单独审计。",
+      "rea_evidence_ids": [
+        "ev_5583878314e2b18103513d146aee1413f5d1fbc6ba837aed4b76311f21ddb4be"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "C10",
+      "domain": "MAC与协议控制",
+      "feature": "TSF读写/同步与多port定时API",
+      "status": "部分",
+      "factory_symbol_query": "mac_tsf_sync",
+      "factory_symbol_match_count": 2,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_tsf_sync",
+          "section": ".text",
+          "offset": "0x228ef0",
+          "bytes": 540
+        },
+        {
+          "name": "rtw_hal_mac_tsf_sync",
+          "section": ".text",
+          "offset": "0x1b5840",
+          "bytes": 152
+        }
+      ],
+      "native_evidence": "D/port0.h、monitor.h",
+      "finding": "port0定时初始化已有；无通用get/set/reset_tsf或多port同步接口，不能宣称原厂全部时钟控制已移植。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "D01",
+      "domain": "无线能力",
+      "feature": "HT/VHT/HE基础MCS、NSS、GI与PPE",
+      "status": "部分",
+      "factory_symbol_query": "rtw_build_he_phy_caps",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_build_he_phy_caps",
+          "section": ".text",
+          "offset": "0xaee90",
+          "bytes": 1204
+        }
+      ],
+      "native_evidence": "D/monitor.h:1409、role.h、rate.h",
+      "finding": "基础2SS及HE160/PPE已有；原厂条件化能力集合更大，不能笼统写为Wi-Fi6所有功能已完成。",
+      "rea_evidence_ids": [
+        "ev_a12ad7b275c1cfbd476ac52e1d80fb6e80e7ab88464c3305da39a292c4703dbd"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "D02",
+      "domain": "无线能力",
+      "feature": "HT/VHT LDPC",
+      "status": "未提供",
+      "factory_symbol_query": "rtw_cfg80211_init_ht_capab",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_cfg80211_init_ht_capab",
+          "section": ".text",
+          "offset": "0x22d6c",
+          "bytes": 760
+        }
+      ],
+      "native_evidence": "D/monitor.h:1409",
+      "finding": "当前HT/VHT声明未含对应RX LDPC能力；HE LDPC有实现，不能将HE覆盖扩展到所有模式。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "D03",
+      "domain": "无线能力",
+      "feature": "STBC与DCM/ER/其他HE条件能力",
+      "status": "条件缺口",
+      "factory_symbol_query": "rtw_build_he_phy_caps",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_build_he_phy_caps",
+          "section": ".text",
+          "offset": "0xaee90",
+          "bytes": 1204
+        }
+      ],
+      "native_evidence": "D/monitor.h:1409",
+      "finding": "未提供完整对应能力和参数贯通。原厂HE构造明确不宣告RX STBC，不能把全部STBC都算成原厂开启而项目关闭；其他位取决于本机最终proto cap。",
+      "rea_evidence_ids": [
+        "ev_a12ad7b275c1cfbd476ac52e1d80fb6e80e7ab88464c3305da39a292c4703dbd"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "D04",
+      "domain": "无线能力",
+      "feature": "HE OMI/A-Control变化",
+      "status": "未提供",
+      "factory_symbol_query": "process_a_control_subfield",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "process_a_control_subfield",
+          "section": ".text",
+          "offset": "0xb768c",
+          "bytes": 1392
+        }
+      ],
+      "native_evidence": "D/monitor.h、rx.c；docs/wifi-rea-rx-20261016.md",
+      "finding": "原厂解析OM并暂停/释放/更新/恢复站点；项目未声明OMI，也无该控制链。HTC_HE声明不等于OMI。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "D05",
+      "domain": "无线能力",
+      "feature": "VHT Operating Mode、SMPS动态能力更新",
+      "status": "Linux接管",
+      "factory_symbol_query": "OnAction_vht",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "OnAction_vht",
+          "section": ".text",
+          "offset": "0x8b444",
+          "bytes": 208
+        }
+      ],
+      "native_evidence": "Linux mac80211/rx.c；D/monitor.h:1067",
+      "finding": "Linux处理VHT OM/HT SMPS并回调BW/NSS/SMPS更新；原生已接link_sta_rc_update，不能误报为完全没有动态能力处理。",
+      "rea_evidence_ids": [
+        "ev_9fbd24fb548e3d59063f464340473093be9f16351f24a99a7600af5c21b673fb"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "D06",
+      "domain": "无线能力",
+      "feature": "SU beamformer/beamformee、CSI、sounding",
+      "status": "未提供",
+      "factory_symbol_query": "rtw_hal_update_sta_entry",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_hal_update_sta_entry",
+          "section": ".text",
+          "offset": "0x1c9478",
+          "bytes": 1156
+        }
+      ],
+      "native_evidence": "D/monitor.h:1425、pci.c",
+      "finding": "原厂关联按双方能力配置BF与CSI；项目无对应声明、角色/sounding/报告链。原机实际默认开关仍需区分。",
+      "rea_evidence_ids": [
+        "ev_c3eaf4025e3d8e675046111b38405e72f469fda2aee481e2b17870e04892c817"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "D07",
+      "domain": "无线能力",
+      "feature": "MU-MIMO分组、CSI与调度",
+      "status": "未提供",
+      "factory_symbol_query": "mac_set_mu_table",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_set_mu_table",
+          "section": ".text",
+          "offset": "0x2379ec",
+          "bytes": 132
+        }
+      ],
+      "native_evidence": "D/pci.c:54、monitor.h",
+      "finding": "txbf_mu只参与固件调度选择，缺完整能力、分组和sounding控制，不能据参数名宣称已支持。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "D08",
+      "domain": "无线能力",
+      "feature": "DL/UL OFDMA、RU分配、触发/BSR",
+      "status": "未提供",
+      "factory_symbol_query": "mac_ss_ul_grp_upd",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_ss_ul_grp_upd",
+          "section": ".text",
+          "offset": "0x23cfc0",
+          "bytes": 240
+        }
+      ],
+      "native_evidence": "D/pci.c:54、monitor.h、role.h",
+      "finding": "ofdma参数和部分BSR格式存在，缺能力协商、RU/STA组控制和完整触发调度/状态处理。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "D09",
+      "domain": "无线能力",
+      "feature": "MU-EDCA与HE调度参数一致性",
+      "status": "部分",
+      "factory_symbol_query": "rtw_build_mu_edca_ie",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_build_mu_edca_ie",
+          "section": ".text",
+          "offset": "0xb0a14",
+          "bytes": 352
+        }
+      ],
+      "native_evidence": "wpad；D/monitor.h",
+      "finding": "Linux可生成beacon IE；项目未建立对应硬件MU调度链。不能仅因无HE_MUEDCA handler就断言AP的IE完全不存在。",
+      "rea_evidence_ids": [
+        "ev_31222080b81a364005d9e7511ac451e4b6299dcf2989a6419d837cc58a940522"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "D10",
+      "domain": "无线能力",
+      "feature": "TWT responder/requester及会话资源",
+      "status": "未提供",
+      "factory_symbol_query": "rtw_core_twt_on_setup_ap",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_core_twt_on_setup_ap",
+          "section": ".text",
+          "offset": "0xfd6d0",
+          "bytes": 1564
+        }
+      ],
+      "native_evidence": "D/monitor.h、pci.c",
+      "finding": "原厂AP setup有能力校验、配置分配、响应、UL参数、STA绑定；项目无TWT声明、会话/命令/C2H与PS联动。",
+      "rea_evidence_ids": [
+        "ev_590b0fe441988a88f4dc069e7eaa84f05c5bec1d01e72e5dfe779aa034497afd"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "D11",
+      "domain": "无线能力",
+      "feature": "Spatial reuse/OBSS-PD、two-NAV动态更新",
+      "status": "条件缺口",
+      "factory_symbol_query": "mac_sr_update",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_sr_update",
+          "section": ".text",
+          "offset": "0x244d40",
+          "bytes": 452
+        }
+      ],
+      "native_evidence": "D/mac-runtime.h、monitor.h",
+      "finding": "初始化有静态two-NAV/SR设置；无完整动态配置链。原厂启动清SR_EN，不把默认关闭直接算故障。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "E01",
+      "domain": "BB运行管理",
+      "feature": "公共连接/流量/RSSI状态与周期账本",
+      "status": "缺失",
+      "factory_symbol_query": "halbb_cmn_info_self_update",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "halbb_cmn_info_self_update",
+          "section": ".text",
+          "offset": "0x285434",
+          "bytes": 1480
+        }
+      ],
+      "native_evidence": "D/pci.c、monitor.h:1079",
+      "finding": "原厂按连接变化、站点流量、RSSI等更新；项目没有等价完整公共状态循环。",
+      "rea_evidence_ids": [
+        "ev_c70d234adc4e06562f890501d234ad50cd64c1511bbcaf6cdc626b3a304c8469"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "E02",
+      "domain": "BB运行管理",
+      "feature": "完整PHY status消费及周期统计",
+      "status": "部分",
+      "factory_symbol_query": "halbb_physts_watchdog",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "halbb_physts_watchdog",
+          "section": ".text",
+          "offset": "0x2c60dc",
+          "bytes": 196
+        }
+      ],
+      "native_evidence": "D/rate.h、pci.c:379",
+      "finding": "主要取RSSI；未完整消费原厂PHY IE、统计、CFO/噪声/分集等算法样本。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "E03",
+      "domain": "BB运行管理",
+      "feature": "PMAC计数/CRC/CCA统计采样与重置",
+      "status": "部分",
+      "factory_symbol_query": "halbb_pmac_statistics",
+      "factory_symbol_match_count": 3,
+      "factory_symbol_examples": [
+        {
+          "name": "halbb_pmac_statistics_ex",
+          "section": ".text",
+          "offset": "0x2d158c",
+          "bytes": 192
+        },
+        {
+          "name": "halbb_pmac_statistics",
+          "section": ".text",
+          "offset": "0x2d1544",
+          "bytes": 72
+        },
+        {
+          "name": "halbb_pmac_statistics_io_en",
+          "section": ".text",
+          "offset": "0x2d0d3c",
+          "bytes": 292
+        }
+      ],
+      "native_evidence": "D/bb-dm.h、pci.c",
+      "finding": "有统计选择器初始化及软件计数，缺原厂周期读取/计算/重置；这些数据也是ACS/DM依赖。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "E04",
+      "domain": "BB运行管理",
+      "feature": "DIG增益、FAHM、动态PD门限",
+      "status": "缺失",
+      "factory_symbol_query": "halbb_dig",
+      "factory_symbol_match_count": 32,
+      "factory_symbol_examples": [
+        {
+          "name": "halbb_dig_igi_ofst_by_env",
+          "section": ".text",
+          "offset": "0x2d5798",
+          "bytes": 176
+        },
+        {
+          "name": "halbb_dig_op_unit_para_reset_l",
+          "section": ".text",
+          "offset": "0x2d66a4",
+          "bytes": 72
+        },
+        {
+          "name": "halbb_dig_para_update",
+          "section": ".text",
+          "offset": "0x2d6534",
+          "bytes": 256
+        },
+        {
+          "name": "halbb_dig_op_unit_para_reset_h",
+          "section": ".text",
+          "offset": "0x2d6658",
+          "bytes": 76
+        },
+        {
+          "name": "halbb_dig_para_reset",
+          "section": ".text",
+          "offset": "0x2d672c",
+          "bytes": 96
+        },
+        {
+          "name": "halbb_dig_timer_init",
+          "section": ".text",
+          "offset": "0x2d7220",
+          "bytes": 120
+        },
+        {
+          "name": "halbb_dig_recorder_reset",
+          "section": ".text",
+          "offset": "0x2d4cdc",
+          "bytes": 80
+        },
+        {
+          "name": "halbb_digital_cfo_comp_init",
+          "section": ".text",
+          "offset": "0x28e03c",
+          "bytes": 132
+        }
+      ],
+      "native_evidence": "D/dig.h",
+      "finding": "仅初始化与C带宽重编码；两颗原厂能力bit11均开，缺连接变化、FA样本/阻尼、增益计算和写回。",
+      "rea_evidence_ids": [
+        "ev_0006528b4de28d92c672c7f1c36432a93045bdf083884ae4b43b5dac6122d43e",
+        "ev_dff8b502cea9b89cd183342da5fc74d8545498320af8b8525df84259b93e6529"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "E05",
+      "domain": "BB运行管理",
+      "feature": "NHM/CLM/IFS/FAHM环境测量闭环",
+      "status": "缺失",
+      "factory_symbol_query": "halbb_env_mntr",
+      "factory_symbol_match_count": 21,
+      "factory_symbol_examples": [
+        {
+          "name": "halbb_env_mntr_fw_ctrl",
+          "section": ".text",
+          "offset": "0x2aca6c",
+          "bytes": 192
+        },
+        {
+          "name": "halbb_env_mntr_cmn_log",
+          "section": ".text",
+          "offset": "0x2ab8b4",
+          "bytes": 1576
+        },
+        {
+          "name": "halbb_env_mntr_init",
+          "section": ".text",
+          "offset": "0x2acfa0",
+          "bytes": 124
+        },
+        {
+          "name": "halbb_env_mntr_dbg_trigger",
+          "section": ".text",
+          "offset": "0x2ade58",
+          "bytes": 396
+        },
+        {
+          "name": "halbb_env_mntr_log_cnsl",
+          "section": ".text",
+          "offset": "0x2db48c",
+          "bytes": 2144
+        },
+        {
+          "name": "halbb_env_mntr_get_802_11_k_rsni",
+          "section": ".text",
+          "offset": "0x2ae5cc",
+          "bytes": 160
+        },
+        {
+          "name": "halbb_env_mntr_dbg_show_rpt",
+          "section": ".text",
+          "offset": "0x2ad01c",
+          "bytes": 2492
+        },
+        {
+          "name": "halbb_env_mntr_result",
+          "section": ".text",
+          "offset": "0x2ac75c",
+          "bytes": 784
+        }
+      ],
+      "native_evidence": "D/environment.h",
+      "finding": "只有初始化；缺占用仲裁、读取结果、重新触发及周期状态。不能与DIG各加独立定时器争用FAHM。",
+      "rea_evidence_ids": [
+        "ev_e2fe77c2bcae8e9a8db2bc787f7267bd3e66fcbfeb66771a44fbf2ed6b9f4573"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "E06",
+      "domain": "BB运行管理",
+      "feature": "EDCCA/碰撞门限运行策略",
+      "status": "条件缺口",
+      "factory_symbol_query": "halbb_edcca_thre_calc",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "halbb_edcca_thre_calc",
+          "section": ".text",
+          "offset": "0x2a3a60",
+          "bytes": 372
+        }
+      ],
+      "native_evidence": "D/bb-dm.h",
+      "finding": "原厂bit4/mode控制且normal mode有专门分支；项目仅初值，缺完整运行处理。不能把所有mode视作同一算法。",
+      "rea_evidence_ids": [
+        "ev_eb5246a2d5969c0cc7e5ae38166c95238ddfc383c0734f66a46914f99f75de7e"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "E07",
+      "domain": "BB运行管理",
+      "feature": "CFO普通/加速跟踪、数字补偿",
+      "status": "条件缺口",
+      "factory_symbol_query": "halbb_cfo_dm",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "halbb_cfo_dm",
+          "section": ".text",
+          "offset": "0x28f3d0",
+          "bytes": 924
+        }
+      ],
+      "native_evidence": "D/cfo.h",
+      "finding": "只初始化；共享晶振关闭tracking bit6，独立晶振条件下缺样本、控制和写回。原机is_indiv_xtal最终值未知。",
+      "rea_evidence_ids": [
+        "ev_2db61215863ff97bdb434a73c316dacd7a8f8c9d912e229b4a62a37c04bd2ee1"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "E08",
+      "domain": "BB运行管理",
+      "feature": "按站点动态功率DTP",
+      "status": "条件缺口",
+      "factory_symbol_query": "halbb_pwr_ctrl",
+      "factory_symbol_match_count": 12,
+      "factory_symbol_examples": [
+        {
+          "name": "halbb_pwr_ctrl_th_in_noise_cfg",
+          "section": ".text",
+          "offset": "0x2c777c",
+          "bytes": 24
+        },
+        {
+          "name": "halbb_pwr_ctrl_per_sta",
+          "section": ".text",
+          "offset": "0x2c7468",
+          "bytes": 412
+        },
+        {
+          "name": "halbb_pwr_ctrl_en",
+          "section": ".text",
+          "offset": "0x2c6f00",
+          "bytes": 368
+        },
+        {
+          "name": "halbb_pwr_ctrl_th",
+          "section": ".text",
+          "offset": "0x2c7070",
+          "bytes": 180
+        },
+        {
+          "name": "halbb_pwr_ctrl_dbg",
+          "section": ".text",
+          "offset": "0x2c7854",
+          "bytes": 1404
+        },
+        {
+          "name": "halbb_pwr_ctrl_ability_get",
+          "section": ".text",
+          "offset": "0x2c7628",
+          "bytes": 12
+        },
+        {
+          "name": "halbb_pwr_ctrl_para_init",
+          "section": ".text",
+          "offset": "0x2c76fc",
+          "bytes": 80
+        },
+        {
+          "name": "halbb_pwr_ctrl_ability_set",
+          "section": ".text",
+          "offset": "0x2c7604",
+          "bytes": 36
+        }
+      ],
+      "native_evidence": "D/bb-dm.h、pci.c",
+      "finding": "有静态功率/初值，无原厂每STA周期控制；原厂能力bit7及平台0x109例外必须保留条件。",
+      "rea_evidence_ids": [
+        "ev_a1bf7e8aae910cef5d11cea286477740aa5addaafe1918d644f5ac4e3ab63352"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "E09",
+      "domain": "BB运行管理",
+      "feature": "Path diversity、每STA发射路径选择",
+      "status": "条件缺口",
+      "factory_symbol_query": "halbb_path_diversity",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "halbb_path_diversity",
+          "section": ".text",
+          "offset": "0x2da194",
+          "bytes": 1092
+        }
+      ],
+      "native_evidence": "D/trx-paths.h、monitor.h",
+      "finding": "仅固定TRX初始化；原厂C能力bit12及路径模式、站点样本等门控，XB默认掩码不含bit12。",
+      "rea_evidence_ids": [
+        "ev_6e80d68bfed799db2f5470f37a56b119baa7b43c3d2ca8d9227a55b28b0c0a5b"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "E10",
+      "domain": "BB运行管理",
+      "feature": "Antenna diversity、EVM/RSSI训练",
+      "status": "条件缺口",
+      "factory_symbol_query": "halbb_antenna_diversity",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "halbb_antenna_diversity",
+          "section": ".text",
+          "offset": "0x2d3820",
+          "bytes": 476
+        }
+      ],
+      "native_evidence": "D/bb-dm.h、trx-paths.h",
+      "finding": "有开关影响supportability，未实现训练/样本/切换运行链；RFE54还要求原厂配置启用，不能默认强开。",
+      "rea_evidence_ids": [
+        "ev_fa0b42823c34970ef66e8d0340299fdd49fbaa8fceeb0a1e4dcc87432682c8fb"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "E11",
+      "domain": "BB运行管理",
+      "feature": "C芯片周期硬件设置/BTG策略",
+      "status": "条件缺口",
+      "factory_symbol_query": "halbb_ic_hw_setting_8852c",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "halbb_ic_hw_setting_8852c",
+          "section": ".text",
+          "offset": "0x2e152c",
+          "bytes": 300
+        }
+      ],
+      "native_evidence": "D/bb-dm.h、pci.c",
+      "finding": "原厂会按band/链接/RSSI改4aa4；项目只启动写表，没有等价周期更新。本机运行条件须核实。",
+      "rea_evidence_ids": [
+        "ev_5c5e59055502897f91720cfa2226665559bc56f74d33ea5635ba26b22fc51082"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "E12",
+      "domain": "BB运行管理",
+      "feature": "DCR/动态CSI响应与环境检查",
+      "status": "条件缺口",
+      "factory_symbol_query": "halbb_dcr_env_det",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "halbb_dcr_env_det",
+          "section": ".text",
+          "offset": "0x2d982c",
+          "bytes": 248
+        }
+      ],
+      "native_evidence": "D/bb-dm.h、pci.c",
+      "finding": "有初始化，无对应环境检测；原厂env_det仅平台0x409等条件执行。dyn_csi_rsp_main直接调用根未确立，不能把全部相关符号算活动链。",
+      "rea_evidence_ids": [
+        "ev_a67f70164ed8645cbb8409011b07dc89db2433189df430fa63b32e8e98c6a849"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "E13",
+      "domain": "BB运行管理",
+      "feature": "RA主机周期mask/噪声/GI-LTF策略",
+      "status": "缺失",
+      "factory_symbol_query": "halbb_ra_update_mask_watchdog",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "halbb_ra_update_mask_watchdog",
+          "section": ".text",
+          "offset": "0x2cc528",
+          "bytes": 732
+        }
+      ],
+      "native_evidence": "D/monitor.h:1079、rate.h",
+      "finding": "原厂按RSSI、NHM/noisy、NSS等重算RAMASK并发H2C；项目周期主要发RSSI，能力变化才重注册，不是完整主机RA watchdog。",
+      "rea_evidence_ids": [
+        "ev_0e87cb994c7bca29cd1059011d76e38d6216aaa87a53c1710a7abd4b16a8a30e"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "E14",
+      "domain": "BB运行管理",
+      "feature": "固件RA注册、反馈和基础RSSI上报",
+      "status": "已有",
+      "factory_symbol_query": "rtw_hal_bb_ra_register",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_hal_bb_ra_register",
+          "section": ".text",
+          "offset": "0x1b822c",
+          "bytes": 68
+        }
+      ],
+      "native_evidence": "D/monitor.h、pci.c:448",
+      "finding": "基础固件速率控制已存在；不能因缺主机watchdog而写成完全没有RA。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "F01",
+      "domain": "RF与校准",
+      "feature": "RCK/DACK、IQK/GAPK、RXDCK启动/换信道",
+      "status": "已有",
+      "factory_symbol_query": "halrf_iqk",
+      "factory_symbol_match_count": 61,
+      "factory_symbol_examples": [
+        {
+          "name": "_halrf_iqk_info",
+          "section": ".text",
+          "offset": "0x2f8fa8",
+          "bytes": 1412
+        },
+        {
+          "name": "halrf_iqk_reload_8852c",
+          "section": ".text",
+          "offset": "0x317b18",
+          "bytes": 136
+        },
+        {
+          "name": "halrf_iqk_sram_enable",
+          "section": ".text",
+          "offset": "0x30afbc",
+          "bytes": 56
+        },
+        {
+          "name": "halrf_iqk_tx_bypass_8192xb",
+          "section": ".text",
+          "offset": "0x3444f4",
+          "bytes": 120
+        },
+        {
+          "name": "halrf_iqk_cfir_enable_8192xb",
+          "section": ".text",
+          "offset": "0x344674",
+          "bytes": 16
+        },
+        {
+          "name": "halrf_iqk_init",
+          "section": ".text",
+          "offset": "0x30a8e8",
+          "bytes": 52
+        },
+        {
+          "name": "halrf_iqk_tx_bypass",
+          "section": ".text",
+          "offset": "0x30ae44",
+          "bytes": 56
+        },
+        {
+          "name": "halrf_iqk_dbcc_8192xb",
+          "section": ".text",
+          "offset": "0x344434",
+          "bytes": 4
+        }
+      ],
+      "native_evidence": "D/rf-start.h、dack.h、c-iqk.h、xb-iqk.h、rxdck.h",
+      "finding": "本机路径和已有原厂证据均有；不把周期任务缺失反推启动校准也没移植。",
+      "rea_evidence_ids": [
+        "ev_af53e8c87694f70d86ba07b5f44a6cbd4ca1d44e95111d935e9da8e497f7474d",
+        "ev_fbf357bd9763b2444cad2bc9ea9ae569053d03274c7e600737172a4f101386b8"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "F02",
+      "domain": "RF与校准",
+      "feature": "硬件TSSI跟踪、热表、DE与功率参考",
+      "status": "已有",
+      "factory_symbol_query": "halrf_tssi_tracking",
+      "factory_symbol_match_count": 2,
+      "factory_symbol_examples": [
+        {
+          "name": "halrf_tssi_tracking",
+          "section": ".text",
+          "offset": "0x2f5e70",
+          "bytes": 108
+        },
+        {
+          "name": "halrf_tssi_tracking_clean",
+          "section": ".text",
+          "offset": "0x2f5edc",
+          "bytes": 108
+        }
+      ],
+      "native_evidence": "D/c-tssi.h、xb-tssi.h、tssi-de.h、ref-power.h",
+      "finding": "已有硬件自动跟踪和flash/table输入；本版原厂主机tssi_tracking仅做watchdog状态切换，没有可照搬的调节主体。",
+      "rea_evidence_ids": [
+        "ev_a593ad2327e1f4d4a1fcec139949cc9c25e725618bc7be111c0b659be435be9c"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "F03",
+      "domain": "RF与校准",
+      "feature": "RF温度采样与周期状态",
+      "status": "缺失",
+      "factory_symbol_query": "halrf_watchdog",
+      "factory_symbol_match_count": 2,
+      "factory_symbol_examples": [
+        {
+          "name": "halrf_watchdog_stop",
+          "section": ".text",
+          "offset": "0x2f8aa4",
+          "bytes": 48
+        },
+        {
+          "name": "halrf_watchdog",
+          "section": ".text",
+          "offset": "0x2f7194",
+          "bytes": 112
+        }
+      ],
+      "native_evidence": "D/pci.c、monitor.h",
+      "finding": "无原厂等价周期thermal A/B及下级dispatch账本；不能据此把每个下级都列为有实际算法。",
+      "rea_evidence_ids": [
+        "ev_6632d8d4571c26b9ad4e7cddf137920970e78da32d3cb6bc859e49126f7f4ca9"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "F04",
+      "domain": "RF与校准",
+      "feature": "C温漂触发RXDCK",
+      "status": "条件缺口",
+      "factory_symbol_query": "halrf_rxdck_track_8852c",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "halrf_rxdck_track_8852c",
+          "section": ".text",
+          "offset": "0x30ca68",
+          "bytes": 476
+        }
+      ],
+      "native_evidence": "D/c-rxdck.h、pci.c",
+      "finding": "原厂支持位、busy、初始化/模式门控后比较温度差约12并触发；项目有换信道RXDCK但无温漂闭环。",
+      "rea_evidence_ids": [
+        "ev_209f41b86f6b7ccc16376414055c65f9d6f5798cb12aa7489d332e93260ee44a"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "F05",
+      "domain": "RF与校准",
+      "feature": "C周期IQK tracking",
+      "status": "不列为缺口",
+      "factory_symbol_query": "halrf_iqk_track_8852c",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "halrf_iqk_track_8852c",
+          "section": ".text",
+          "offset": "0x31b304",
+          "bytes": 4
+        }
+      ],
+      "native_evidence": "D/c-iqk.h",
+      "finding": "原厂下级函数为直接return；不能仅凭上层dispatch把周期IQK算法算成漏移植。",
+      "rea_evidence_ids": [
+        "ev_fbf357bd9763b2444cad2bc9ea9ae569053d03274c7e600737172a4f101386b8"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "F06",
+      "domain": "RF与校准",
+      "feature": "LCK温漂跟踪",
+      "status": "条件缺口",
+      "factory_symbol_query": "halrf_lck_tracking",
+      "factory_symbol_match_count": 3,
+      "factory_symbol_examples": [
+        {
+          "name": "halrf_lck_tracking_8852c",
+          "section": ".text",
+          "offset": "0x30e4b0",
+          "bytes": 232
+        },
+        {
+          "name": "halrf_lck_tracking",
+          "section": ".text",
+          "offset": "0x2f5a1c",
+          "bytes": 108
+        },
+        {
+          "name": "halrf_lck_tracking_8192xb",
+          "section": ".text",
+          "offset": "0x33d69c",
+          "bytes": 232
+        }
+      ],
+      "native_evidence": "D/rf-start.h、pci.c",
+      "finding": "原厂两颗LCK下级确有温漂比较：首次参考温度为空或最大差值达到8时触发LCK；项目缺对应周期链。最终enable/busy门控仍须沿原厂保留。",
+      "rea_evidence_ids": [
+        "ev_7e31d08a745fb2c8a4ebd1d5f5c3ead459c754755949c880aec1cdf8053b8721",
+        "ev_bfb52dcd71c1fac1619cfb74e964b1300cafa752885045d14342fdf24ea02e1b",
+        "ev_accd304856bee48ae5569faf007e86e5dc6f9ae4a6b376cef77aade5b0bf2908"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "F07",
+      "domain": "RF与校准",
+      "feature": "XB OP5K温漂跟踪",
+      "status": "条件缺口",
+      "factory_symbol_query": "halrf_op5k_tracking_8192xb",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "halrf_op5k_tracking_8192xb",
+          "section": ".text",
+          "offset": "0x33f3b0",
+          "bytes": 1036
+        }
+      ],
+      "native_evidence": "D/xb-channel.h、pci.c",
+      "finding": "缺周期采样和触发/恢复；原厂CV非CAV、set-channel检查、能力bit20等条件后处理，不能无条件启用。",
+      "rea_evidence_ids": [
+        "ev_73c6e7228b11b85db5db6177b53f5cd566140fb0a5bbdbcefc464dd04bf6f2ee"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "F08",
+      "domain": "RF与校准",
+      "feature": "RFE54 DPK",
+      "status": "不列为缺口",
+      "factory_symbol_query": "halrf_dpk_tracking",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "halrf_dpk_tracking",
+          "section": ".text",
+          "offset": "0x2f5d98",
+          "bytes": 216
+        }
+      ],
+      "native_evidence": "manifests/radio-stock-RFE54-DPK-bypass.json",
+      "finding": "本板原厂按RFE54走bypass；不为补齐符号强开DPK。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "F09",
+      "domain": "RF与校准",
+      "feature": "RFK开始/结束、TX暂停及恢复协同",
+      "status": "部分",
+      "factory_symbol_query": "halrf_watchdog_stop",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "halrf_watchdog_stop",
+          "section": ".text",
+          "offset": "0x2f8aa4",
+          "bytes": 48
+        }
+      ],
+      "native_evidence": "D/pci.c、tx.c",
+      "finding": "启动/换信道已有协同；新增运行期RFK还没有完整状态机，需与固件/PE/站点生命周期一起设计。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "F10",
+      "domain": "RF与校准",
+      "feature": "工厂写OTP/efuse、晶振/PHY配置工具",
+      "status": "未提供",
+      "factory_symbol_query": "mac_pg_efuse",
+      "factory_symbol_match_count": 3,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_pg_efuse_by_map_bt",
+          "section": ".text",
+          "offset": "0x2079bc",
+          "bytes": 624
+        },
+        {
+          "name": "mac_pg_efuse_by_map",
+          "section": ".text",
+          "offset": "0x207120",
+          "bytes": 1144
+        },
+        {
+          "name": "mac_pg_efuse_by_map_plus",
+          "section": ".text",
+          "offset": "0x207598",
+          "bytes": 1060
+        }
+      ],
+      "native_evidence": "D/phy.c、board-cal.h",
+      "finding": "已有只读输入和正常校准；未提供工厂烧录/MP私有控制。属于维护能力，不应在正常启动写OTP补齐。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "G01",
+      "domain": "安全与数据通路",
+      "feature": "CCMP-128硬件key/PN/CAM及密钥生命周期",
+      "status": "已有",
+      "factory_symbol_query": "mac_sta_add_key",
+      "factory_symbol_match_count": 3,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_sta_add_key_8192xb",
+          "section": ".text",
+          "offset": "0x267070",
+          "bytes": 412
+        },
+        {
+          "name": "mac_sta_add_key_8852c",
+          "section": ".text",
+          "offset": "0x251040",
+          "bytes": 412
+        },
+        {
+          "name": "mac_sta_add_key",
+          "section": ".text",
+          "offset": "0x236818",
+          "bytes": 420
+        }
+      ],
+      "native_evidence": "D/security.h、monitor.h；PE",
+      "finding": "已有实现及本地修复；未宣称所有重键交错已实机验收。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "G02",
+      "domain": "安全与数据通路",
+      "feature": "其余cipher硬件卸载",
+      "status": "部分",
+      "factory_symbol_query": "mac_sta_hw_security_support",
+      "factory_symbol_match_count": 3,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_sta_hw_security_support_8852c",
+          "section": ".text",
+          "offset": "0x25152c",
+          "bytes": 336
+        },
+        {
+          "name": "mac_sta_hw_security_support",
+          "section": ".text",
+          "offset": "0x236d0c",
+          "bytes": 336
+        },
+        {
+          "name": "mac_sta_hw_security_support_8192xb",
+          "section": ".text",
+          "offset": "0x26755c",
+          "bytes": 336
+        }
+      ],
+      "native_evidence": "D/monitor.h:875",
+      "finding": "硬件只接CCMP；原厂公开11种cipher不等于每种均硬件执行，原厂实际硬件集合尚需逐cipher核对。Linux软件处理另列。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "G03",
+      "domain": "安全与数据通路",
+      "feature": "WPA2/WPA3/SAE、OWE、802.1X、PMF",
+      "status": "Linux接管",
+      "factory_symbol_query": "cfg80211_rtw_add_key",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "cfg80211_rtw_add_key",
+          "section": ".text",
+          "offset": "0x26d9c",
+          "bytes": 6360
+        }
+      ],
+      "native_evidence": "wpad-mbedtls、Linux mac80211/key.c",
+      "finding": "full wpad及Linux提供协议/所列软件cipher；不把非CCMP硬件未接当成安全协议整体缺失，也不替代端到端验收。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "G04",
+      "domain": "安全与数据通路",
+      "feature": "802.11r/k/v、PMKSA、WNM/MBO/RRM",
+      "status": "Linux接管",
+      "factory_symbol_query": "cfg80211_rtw_update_ft_ies",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "cfg80211_rtw_update_ft_ies",
+          "section": ".text",
+          "offset": "0x23cb8",
+          "bytes": 588
+        }
+      ],
+      "native_evidence": "wpad构建Makefile、mac80211；D/monitor.h",
+      "finding": "AP侧通用软件原语由Linux/wpad提供；STA角色未提供，survey/每帧信号限制与完整steering策略尚未解决。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "G05",
+      "domain": "安全与数据通路",
+      "feature": "数据TX/RX、A-MPDU/A-MSDU与BA",
+      "status": "部分",
+      "factory_symbol_query": "rtw_hal_cfg_tx_ampdu",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_hal_cfg_tx_ampdu",
+          "section": ".text",
+          "offset": "0x1c9d50",
+          "bytes": 184
+        }
+      ],
+      "native_evidence": "D/tx.c、rx.c、monitor.h；PE",
+      "finding": "已有基础聚合、BA、PN和所有权机制；RX硬件BA资源、原厂动态聚合/低速聚合策略未完整覆盖。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "G06",
+      "domain": "安全与数据通路",
+      "feature": "软件重排、BAR、重组/碎片处理",
+      "status": "Linux接管",
+      "factory_symbol_query": "rtw_process_bar_frame",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_process_bar_frame",
+          "section": ".text",
+          "offset": "0xab158",
+          "bytes": 104
+        }
+      ],
+      "native_evidence": "Linux mac80211、D/rx.c；PE uplink",
+      "finding": "Linux处理完整异常路径，PE维持快路状态；快路例外不等于这些协议功能全部没实现，软件控制帧TX缺口另列。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "G07",
+      "domain": "安全与数据通路",
+      "feature": "WMM/EDCA基本四队列配置",
+      "status": "已有",
+      "factory_symbol_query": "rtw_hal_mac_set_edca",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_hal_mac_set_edca",
+          "section": ".text",
+          "offset": "0x1b1e04",
+          "bytes": 212
+        }
+      ],
+      "native_evidence": "D/monitor.h:257",
+      "finding": "已有conf_tx及slot更新；动态资源再分配与固定EDCA是不同功能。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "G08",
+      "domain": "安全与数据通路",
+      "feature": "动态EDCA与按站点A-MSDU策略",
+      "status": "缺失",
+      "factory_symbol_query": "sta_dynamic_control|throughput_dynamic_control",
+      "factory_symbol_match_count": 2,
+      "factory_symbol_examples": [
+        {
+          "name": "throughput_dynamic_control",
+          "section": ".text",
+          "offset": "0xcfc4c",
+          "bytes": 1056
+        },
+        {
+          "name": "sta_dynamic_control",
+          "section": ".text",
+          "offset": "0xcf800",
+          "bytes": 1100
+        }
+      ],
+      "native_evidence": "D/mac-runtime.h、monitor.h",
+      "finding": "原厂iface周期调用站点/流量动态控制，按流量方向、速率等选择A-MSDU参数并改EDCA；项目只有conf_tx与现有聚合，没有等价闭环。数值策略须由实际指令核对，不能复制Ghidra误识别为字符串的参数。",
+      "rea_evidence_ids": [
+        "ev_c7dccc263cba8f043de1d604bbe35b32411c595068d2406150d47f10a0b6191c",
+        "ev_2d0bf7dfad46440126446bdd32f5b03bd232932430d71a3e178aada9d5d47d4c"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "G09",
+      "domain": "安全与数据通路",
+      "feature": "手动速率mask、GI/NSS/路径与legacy限制",
+      "status": "部分",
+      "factory_symbol_query": "core_mib_fix_rate",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "core_mib_fix_rate",
+          "section": ".text",
+          "offset": "0x118f88",
+          "bytes": 532
+        }
+      ],
+      "native_evidence": "D/monitor.h:1009、rate.h、trx-paths.h",
+      "finding": "关联能力/SMPS会更新；未提供完整用户掩码到固件RA和PE模板的控制链。固定TRX/硬件RA不能代表原厂所有手动策略。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "G10",
+      "domain": "安全与数据通路",
+      "feature": "重试/lifetime/队列limit/优先级控制",
+      "status": "部分",
+      "factory_symbol_query": "core_mib_tx_retry_limit",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "core_mib_tx_retry_limit",
+          "section": ".text",
+          "offset": "0x118488",
+          "bytes": 252
+        }
+      ],
+      "native_evidence": "D/role.h、tx.c；PE downlink",
+      "finding": "有固定CCTL/队列参数；原厂可调策略未逐项接入。默认配置是否等效需核对，不能从MIB初值直接推断CCTL最终值。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "G11",
+      "domain": "安全与数据通路",
+      "feature": "Airtime公平、时分模式和统计反馈",
+      "status": "部分",
+      "factory_symbol_query": "core_mib_tx_mode",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "core_mib_tx_mode",
+          "section": ".text",
+          "offset": "0x118950",
+          "bytes": 160
+        }
+      ],
+      "native_evidence": "Linux mac80211 TXQ；D/monitor.h、tx.c",
+      "finding": "有Linux队列调度，但无完整PPDU airtime反馈和原厂tx_mode控制链；不能将软件公平排队等同全部硬件时分策略。",
+      "rea_evidence_ids": [
+        "ev_b8d6063cfe2dc282e92dc041b56253b8886192fb7aa506731a75559daea09d14"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "G12",
+      "domain": "安全与数据通路",
+      "feature": "无线带宽限额、DSCP与租户QoS策略",
+      "status": "Linux接管",
+      "factory_symbol_query": "core_mib_multiap",
+      "factory_symbol_match_count": 5,
+      "factory_symbol_examples": [
+        {
+          "name": "core_mib_multiap_ext_cmd",
+          "section": ".text",
+          "offset": "0x116cbc",
+          "bytes": 120
+        },
+        {
+          "name": "core_mib_multiap_change_channel",
+          "section": ".text",
+          "offset": "0x117e90",
+          "bytes": 428
+        },
+        {
+          "name": "core_mib_multiap_max_device_reached",
+          "section": ".text",
+          "offset": "0x117d10",
+          "bytes": 100
+        },
+        {
+          "name": "core_mib_multiap_monitor_mode_disable",
+          "section": ".text",
+          "offset": "0x116c80",
+          "bytes": 60
+        },
+        {
+          "name": "core_mib_multiap_bss_type",
+          "section": ".text",
+          "offset": "0x116d34",
+          "bytes": 412
+        }
+      ],
+      "native_evidence": "Linux bridge/tc/nftables、wpad",
+      "finding": "通用策略可由Linux提供；没有移植运营商专用MIB/DSCP和整套Mesh租户控制，实际配置及加速规则等效性待核对。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "G13",
+      "domain": "安全与数据通路",
+      "feature": "PFD timer/TX report与延迟发送策略",
+      "status": "待判定",
+      "factory_symbol_query": "core_mib_en_timer_pfd",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "core_mib_en_timer_pfd",
+          "section": ".text",
+          "offset": "0x117470",
+          "bytes": 116
+        }
+      ],
+      "native_evidence": "D/pci.c、tx.c",
+      "finding": "原厂setter确实写公共控制字段；项目无同名完整功能，实际PFD消费者/固件行为与defer策略仍未核实，不能仅据缩写命名算法。",
+      "rea_evidence_ids": [
+        "ev_a9cff3f6b6d5159c37eef7f2db31a2df4be85f200f3e6e582b2f4bb2a3aa97d8"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "G14",
+      "domain": "安全与数据通路",
+      "feature": "TCP ACK抑制、kick ICV与私有优化",
+      "status": "待判定",
+      "factory_symbol_query": "core_mib",
+      "factory_symbol_match_count": 57,
+      "factory_symbol_examples": [
+        {
+          "name": "core_mib_a4_enable",
+          "section": ".text",
+          "offset": "0x116ba0",
+          "bytes": 224
+        },
+        {
+          "name": "core_mib_version",
+          "section": ".text",
+          "offset": "0x116b44",
+          "bytes": 92
+        },
+        {
+          "name": "core_mib_hiddenAP",
+          "section": ".text",
+          "offset": "0x1189f0",
+          "bytes": 164
+        },
+        {
+          "name": "core_mib_aclnum",
+          "section": ".text",
+          "offset": "0x116b18",
+          "bytes": 4
+        },
+        {
+          "name": "core_mib_aclmode",
+          "section": ".text",
+          "offset": "0x1188dc",
+          "bytes": 116
+        },
+        {
+          "name": "core_mib_auto_rate",
+          "section": ".text",
+          "offset": "0x116f2c",
+          "bytes": 120
+        },
+        {
+          "name": "core_mib_manual_edca",
+          "section": ".text",
+          "offset": "0x11965c",
+          "bytes": 432
+        },
+        {
+          "name": "core_mib_su_trig_enable",
+          "section": ".text",
+          "offset": "0x1173fc",
+          "bytes": 116
+        }
+      ],
+      "native_evidence": "Linux、D/tx.c/rx.c",
+      "finding": "原厂MIB有tcp_ack_drop_dup/kick_icverr等，项目未提供原厂策略接口；未证实本机启用及语义，不移植可能改变报文语义的优化来冒充功能补齐。",
+      "rea_evidence_ids": [
+        "ev_a9cff3f6b6d5159c37eef7f2db31a2df4be85f200f3e6e582b2f4bb2a3aa97d8",
+        "ev_ee80a8e436034f08a9fb84ab14e70066274ce43797e8d12d13dc2a3b880b9fbe",
+        "ev_9ab299fbb0afe387bde1152304549f937c6de4087df705056e8f9e8406016a67",
+        "ev_b8d6063cfe2dc282e92dc041b56253b8886192fb7aa506731a75559daea09d14"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "H01",
+      "domain": "硬件加速",
+      "feature": "PE下行桥接/转发、聚合与完成回收",
+      "status": "部分",
+      "factory_symbol_query": "rtw_xmit_entry",
+      "factory_symbol_match_count": 2,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_xmit_entry",
+          "section": ".text",
+          "offset": "0x1c9f0",
+          "bytes": 112
+        },
+        {
+          "name": "_rtw_xmit_entry",
+          "section": ".text",
+          "offset": "0x1baec",
+          "bytes": 444
+        }
+      ],
+      "native_evidence": "D/tx.c；PE downlink",
+      "finding": "已有多peer/TID队列、BID/WP回收；准入依赖TID0 BA和一个基准模板，未完成每TID/每角色独立准入配置。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "H02",
+      "domain": "硬件加速",
+      "feature": "PE上行快路及异常交接",
+      "status": "部分",
+      "factory_symbol_query": "core_rxsc_apply_shortcut",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "core_rxsc_apply_shortcut",
+          "section": ".text",
+          "offset": "0xbe830",
+          "bytes": 1416
+        }
+      ],
+      "native_evidence": "D/rx.c；PE uplink",
+      "finding": "仅已授权CCMP、顺序SN/PN及特定三地址TCP/UDP格式快路；异常交Linux，未覆盖全部合法报文的硬件转发。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "H03",
+      "domain": "硬件加速",
+      "feature": "802.11/Ethernet头转换与HW sequence",
+      "status": "已有",
+      "factory_symbol_query": "mac_hdr_conv_en",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_hdr_conv_en",
+          "section": ".text",
+          "offset": "0x2198d8",
+          "bytes": 312
+        }
+      ],
+      "native_evidence": "D/tx.c；PE WD/uplink",
+      "finding": "TX已用硬件封装，RX使用PE/软件处理；实现分工不同，不因缺同名原厂函数就判功能缺失。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "H04",
+      "domain": "硬件加速",
+      "feature": "MAC硬件A-MSDU搜索/切分与聚合offload",
+      "status": "条件缺口",
+      "factory_symbol_query": "mac_enable_hwamsdu",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_enable_hwamsdu",
+          "section": ".text",
+          "offset": "0x220c40",
+          "bytes": 260
+        }
+      ],
+      "native_evidence": "D/tx.c；PE downlink",
+      "finding": "当前由PE聚合、完整路径拆分，未接全部MAC硬件HWAMSDU控制。本机原厂PE WFO关闭，不代表MAC HWAMSDU一概启用或关闭。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "H05",
+      "domain": "硬件加速",
+      "feature": "TSO/GSO、checksum partial与分段快路",
+      "status": "部分",
+      "factory_symbol_query": "mac_tcpip_chksum_ofd",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_tcpip_chksum_ofd",
+          "section": ".text",
+          "offset": "0x23e4c0",
+          "bytes": 216
+        }
+      ],
+      "native_evidence": "rtl9617c-wifi.c；D/tx.c",
+      "finding": "已有部分checksum/SG；NI入口将GSO、CHECKSUM_PARTIAL保留Linux，不是全量硬件分段/校验卸载。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "H06",
+      "domain": "硬件加速",
+      "feature": "组播/广播、复制与mc2u硬件快路",
+      "status": "部分",
+      "factory_symbol_query": "rtw_process_u2mc",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_process_u2mc",
+          "section": ".text",
+          "offset": "0x1e0a0",
+          "bytes": 492
+        }
+      ],
+      "native_evidence": "rtl9617c-wifi.c；PE uplink/downlink",
+      "finding": "目前主要走Linux，未提供完整原厂组播策略的硬件路径；不能据此认定组播完全不可用。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "H07",
+      "domain": "硬件加速",
+      "feature": "VLAN、PPPoE、IPv6及协议例外覆盖",
+      "status": "部分",
+      "factory_symbol_query": "rtw_pkt_eth_parser",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_pkt_eth_parser",
+          "section": ".text",
+          "offset": "0x100e54",
+          "bytes": 176
+        }
+      ],
+      "native_evidence": "rtl9617c-wifi.c、wifi-format.h；PE",
+      "finding": "部分普通TCP/UDP、VLAN/PPPoE路径已有；上行PE只接直接TCP/UDP及IPv4无options等格式，扩展头/其他类型仍需Linux。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "H08",
+      "domain": "硬件加速",
+      "feature": "AP隔离、ACL、VLAN/flow规则一致性",
+      "status": "待判定",
+      "factory_symbol_query": "cfg80211_rtw_change_bss",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "cfg80211_rtw_change_bss",
+          "section": ".text",
+          "offset": "0x1f7e0",
+          "bytes": 156
+        }
+      ],
+      "native_evidence": "Linux bridge/flowtable及NI/FE无线接口",
+      "finding": "必须沿规则安装与命中检查，不能用慢路策略存在证明快路已保留全部语义。本轮不改动共享NI/PON工作区。",
+      "rea_evidence_ids": [
+        "ev_5583878314e2b18103513d146aee1413f5d1fbc6ba837aed4b76311f21ddb4be"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "H09",
+      "domain": "硬件加速",
+      "feature": "PS、密钥、BA、速率变化跨ARM/PE同步",
+      "status": "部分",
+      "factory_symbol_query": "process_a_control_subfield",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "process_a_control_subfield",
+          "section": ".text",
+          "offset": "0xb768c",
+          "bytes": 1392
+        }
+      ],
+      "native_evidence": "D/tx.c、rx.c、monitor.h；PE",
+      "finding": "部分同步及既有修复已有；新增OMI/BF/TWT/VAP等没有对应模板/资源状态传播，不能只补一端。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "H10",
+      "domain": "硬件加速",
+      "feature": "WFO/VIRT/其他板型PE镜像",
+      "status": "不列为缺口",
+      "factory_symbol_query": "mac_enable_hwamsdu",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_enable_hwamsdu",
+          "section": ".text",
+          "offset": "0x220c40",
+          "bytes": 260
+        }
+      ],
+      "native_evidence": "stock-kernel.config",
+      "finding": "本机原厂明确关闭RTK_WFO、WFO_VIRT和FC_WIFI_AMSDU_OFFLOAD_BY_PE；不能将别板镜像算作本板必移植功能。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "I01",
+      "domain": "板级管理与诊断",
+      "feature": "UCI/netifd/wpad/LuCI基本无线管理",
+      "status": "已有",
+      "factory_symbol_query": "cfg80211_rtw_start_ap",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "cfg80211_rtw_start_ap",
+          "section": ".text",
+          "offset": "0x26a98",
+          "bytes": 772
+        }
+      ],
+      "native_evidence": "port/configs/tyfza1-boot.config、wifi-openwrt-management.md",
+      "finding": "已选full wpad、wifi-scripts、iw、regdb与LuCI；无需兼容原厂私有ioctl才算有管理功能。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "I02",
+      "domain": "板级管理与诊断",
+      "feature": "WPS协议/软件PBC",
+      "status": "Linux接管",
+      "factory_symbol_query": "rtw_hw_wps_pbc",
+      "factory_symbol_match_count": 0,
+      "factory_symbol_examples": [],
+      "native_evidence": "wpad full构建配置",
+      "finding": "WPS软件组件已编译；硬件按钮/LED事件尚未接入，不能把二者混为一项。此seed是模块参数，不以函数匹配作启用证明。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior.",
+      "factory_parameter": {
+        "name": "rtw_hw_wps_pbc",
+        "type": "int",
+        "initial_bytes_hex": "00000000",
+        "compiled_initial_value": 0
+      }
+    },
+    {
+      "id": "I03",
+      "domain": "板级管理与诊断",
+      "feature": "WPS按钮、无线开关、LED/rfkill板级接入",
+      "status": "缺失",
+      "factory_symbol_query": "mac_cfg_wps",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_cfg_wps",
+          "section": ".text",
+          "offset": "0x2185b4",
+          "bytes": 452
+        }
+      ],
+      "native_evidence": "port DTS/base-files、D/pci.c",
+      "finding": "未找到gpio-keys/gpio-leds/WPS/rfkill绑定和事件映射；原厂有WPS/LED事件入口，具体板级引脚仍需按原厂DTB/硬件核对。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "I04",
+      "domain": "板级管理与诊断",
+      "feature": "Band steering、EasyMesh控制与回程策略",
+      "status": "未提供",
+      "factory_symbol_query": "core_mib_multiap",
+      "factory_symbol_match_count": 5,
+      "factory_symbol_examples": [
+        {
+          "name": "core_mib_multiap_ext_cmd",
+          "section": ".text",
+          "offset": "0x116cbc",
+          "bytes": 120
+        },
+        {
+          "name": "core_mib_multiap_change_channel",
+          "section": ".text",
+          "offset": "0x117e90",
+          "bytes": 428
+        },
+        {
+          "name": "core_mib_multiap_max_device_reached",
+          "section": ".text",
+          "offset": "0x117d10",
+          "bytes": 100
+        },
+        {
+          "name": "core_mib_multiap_monitor_mode_disable",
+          "section": ".text",
+          "offset": "0x116c80",
+          "bytes": 60
+        },
+        {
+          "name": "core_mib_multiap_bss_type",
+          "section": ".text",
+          "offset": "0x116d34",
+          "bytes": 412
+        }
+      ],
+      "native_evidence": "port/configs、wpad/netifd",
+      "finding": "原厂DBus BandSteering对象确实注册且有RSSI/信道占用/STA负载阈值接口；项目有通用软件原语，但未提供整套策略管理程序。不能把对象注册等同于算法在本机实际启用。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "I05",
+      "domain": "板级管理与诊断",
+      "feature": "最低RSSI准入、未关联站点测量",
+      "status": "部分",
+      "factory_symbol_query": "core_mib",
+      "factory_symbol_match_count": 57,
+      "factory_symbol_examples": [
+        {
+          "name": "core_mib_a4_enable",
+          "section": ".text",
+          "offset": "0x116ba0",
+          "bytes": 224
+        },
+        {
+          "name": "core_mib_version",
+          "section": ".text",
+          "offset": "0x116b44",
+          "bytes": 92
+        },
+        {
+          "name": "core_mib_hiddenAP",
+          "section": ".text",
+          "offset": "0x1189f0",
+          "bytes": 164
+        },
+        {
+          "name": "core_mib_aclnum",
+          "section": ".text",
+          "offset": "0x116b18",
+          "bytes": 4
+        },
+        {
+          "name": "core_mib_aclmode",
+          "section": ".text",
+          "offset": "0x1188dc",
+          "bytes": 116
+        },
+        {
+          "name": "core_mib_auto_rate",
+          "section": ".text",
+          "offset": "0x116f2c",
+          "bytes": 120
+        },
+        {
+          "name": "core_mib_manual_edca",
+          "section": ".text",
+          "offset": "0x11965c",
+          "bytes": 432
+        },
+        {
+          "name": "core_mib_su_trig_enable",
+          "section": ".text",
+          "offset": "0x1173fc",
+          "bytes": 116
+        }
+      ],
+      "native_evidence": "D/monitor.h:1213、pci.c:379",
+      "finding": "原厂MIB有assoc RSSI/未关联测量策略；当前每帧NO_SIGNAL_VAL，不能宣称hostapd准入/测量已获得等价信号输入。",
+      "rea_evidence_ids": [
+        "ev_a9cff3f6b6d5159c37eef7f2db31a2df4be85f200f3e6e582b2f4bb2a3aa97d8",
+        "ev_ee80a8e436034f08a9fb84ab14e70066274ce43797e8d12d13dc2a3b880b9fbe",
+        "ev_9ab299fbb0afe387bde1152304549f937c6de4087df705056e8f9e8406016a67",
+        "ev_b8d6063cfe2dc282e92dc041b56253b8886192fb7aa506731a75559daea09d14"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "I06",
+      "domain": "板级管理与诊断",
+      "feature": "OMCI/TR-069/DBus无线管理桥接",
+      "status": "待判定",
+      "factory_symbol_query": "rtw_ioctl",
+      "factory_symbol_match_count": 27,
+      "factory_symbol_examples": [
+        {
+          "name": "_rtw_ioctl_wext_private",
+          "section": ".text",
+          "offset": "0x1186c",
+          "bytes": 2312
+        },
+        {
+          "name": "rtw_ioctl_send_disassoc",
+          "section": ".text",
+          "offset": "0x49940",
+          "bytes": 676
+        },
+        {
+          "name": "rtw_ioctl_get_sta_mac_by_index",
+          "section": ".text",
+          "offset": "0x4b1bc",
+          "bytes": 600
+        },
+        {
+          "name": "rtw_ioctl_efuse_get",
+          "section": ".text",
+          "offset": "0x48250",
+          "bytes": 2304
+        },
+        {
+          "name": "rtw_ioctl_efuse_file_mask_load",
+          "section": ".text",
+          "offset": "0x49034",
+          "bytes": 536
+        },
+        {
+          "name": "rtw_ioctl_efuse_file_map_load",
+          "section": ".text",
+          "offset": "0x48e14",
+          "bytes": 544
+        },
+        {
+          "name": "rtw_ioctl_unassoc_sta_metric_get",
+          "section": ".text",
+          "offset": "0x49868",
+          "bytes": 124
+        },
+        {
+          "name": "rtw_ioctl_send_disassoc_vxd",
+          "section": ".text",
+          "offset": "0x49be4",
+          "bytes": 28
+        }
+      ],
+      "native_evidence": "原厂mib_Pptp80211Uni.so与DBus XML；当前ubus/PON控制",
+      "finding": "原厂DBus无线对象确有注册。Pptp80211Uni模块也注册数据表，但本轮驱动配置handler仅处理ARC定时，并未发现直接配置无线；不能仅按库名声称OLT原厂能完整控制Wi-Fi。项目缺该管理桥/模型，需继续区分Linux功能与运营商接口。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "I07",
+      "domain": "板级管理与诊断",
+      "feature": "MP/PMAC/PLCP/环回与认证测试模式",
+      "status": "未提供",
+      "factory_symbol_query": "rtw_mp",
+      "factory_symbol_match_count": 125,
+      "factory_symbol_examples": [
+        {
+          "name": "rtw_mp_update_trxsc",
+          "section": ".text",
+          "offset": "0x3cb70",
+          "bytes": 392
+        },
+        {
+          "name": "rtw_mp_cmd_hdl",
+          "section": ".text",
+          "offset": "0x53384",
+          "bytes": 312
+        },
+        {
+          "name": "rtw_mp_singlecarrier_tx",
+          "section": ".text",
+          "offset": "0x1249f8",
+          "bytes": 60
+        },
+        {
+          "name": "rtw_mp_rate_parse",
+          "section": ".text",
+          "offset": "0x12983c",
+          "bytes": 4704
+        },
+        {
+          "name": "rtw_mp_psd",
+          "section": ".text",
+          "offset": "0x412dc",
+          "bytes": 204
+        },
+        {
+          "name": "rtw_mp_reset_phy_count",
+          "section": ".text",
+          "offset": "0x127d74",
+          "bytes": 96
+        },
+        {
+          "name": "rtw_mp_tx_plcp_tx_user",
+          "section": ".text",
+          "offset": "0x44450",
+          "bytes": 1560
+        },
+        {
+          "name": "rtw_mp_hwrate2mptrate",
+          "section": ".text",
+          "offset": "0x1253f0",
+          "bytes": 776
+        }
+      ],
+      "native_evidence": "D/monitor.h、pci.c",
+      "finding": "正常AP和现有诊断计数不能代替原厂厂测模式；若后续需要，须按本机实际测试实现重新设计。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "I08",
+      "domain": "板级管理与诊断",
+      "feature": "LA/PSD、CSI sensing和采样导出",
+      "status": "未提供",
+      "factory_symbol_query": "mac_cfg_sensing_csi",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_cfg_sensing_csi",
+          "section": ".text",
+          "offset": "0x216eb4",
+          "bytes": 1216
+        }
+      ],
+      "native_evidence": "D/bb-dm.h、pci.c",
+      "finding": "有部分LA/PSD初始化；没有完整触发/报告/导出与sensing控制接口。初始化标记不代表工具功能已提供。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "I09",
+      "domain": "板级管理与诊断",
+      "feature": "私有WEXT/proc/MIB/ethtool控制面",
+      "status": "部分",
+      "factory_symbol_query": "rtw_ioctl",
+      "factory_symbol_match_count": 27,
+      "factory_symbol_examples": [
+        {
+          "name": "_rtw_ioctl_wext_private",
+          "section": ".text",
+          "offset": "0x1186c",
+          "bytes": 2312
+        },
+        {
+          "name": "rtw_ioctl_send_disassoc",
+          "section": ".text",
+          "offset": "0x49940",
+          "bytes": 676
+        },
+        {
+          "name": "rtw_ioctl_get_sta_mac_by_index",
+          "section": ".text",
+          "offset": "0x4b1bc",
+          "bytes": 600
+        },
+        {
+          "name": "rtw_ioctl_efuse_get",
+          "section": ".text",
+          "offset": "0x48250",
+          "bytes": 2304
+        },
+        {
+          "name": "rtw_ioctl_efuse_file_mask_load",
+          "section": ".text",
+          "offset": "0x49034",
+          "bytes": 536
+        },
+        {
+          "name": "rtw_ioctl_efuse_file_map_load",
+          "section": ".text",
+          "offset": "0x48e14",
+          "bytes": 544
+        },
+        {
+          "name": "rtw_ioctl_unassoc_sta_metric_get",
+          "section": ".text",
+          "offset": "0x49868",
+          "bytes": 124
+        },
+        {
+          "name": "rtw_ioctl_send_disassoc_vxd",
+          "section": ".text",
+          "offset": "0x49be4",
+          "bytes": 28
+        }
+      ],
+      "native_evidence": "D/pci.c sysfs、Linux nl80211/ubus",
+      "finding": "保留了部分新诊断接口与Linux通用控制；原厂私有接口不要求原样兼容，但其背后的有效功能须逐项映射，完整原始目录随本报告保留。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "I10",
+      "domain": "板级管理与诊断",
+      "feature": "BT共存、USB专用选项及其他芯片通用项",
+      "status": "待判定",
+      "factory_symbol_query": "mac_coex_init",
+      "factory_symbol_match_count": 3,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_coex_init_8852c",
+          "section": ".text",
+          "offset": "0x25481c",
+          "bytes": 320
+        },
+        {
+          "name": "mac_coex_init_8192xb",
+          "section": ".text",
+          "offset": "0x26af38",
+          "bytes": 320
+        },
+        {
+          "name": "rtw_hal_mac_coex_init",
+          "section": ".text",
+          "offset": "0x1a99fc",
+          "bytes": 92
+        }
+      ],
+      "native_evidence": "D/pci.c、stock inventory",
+      "finding": "C的BTG运行寄存器策略另列；本板没有据此确立完整BT功能需求，USB切换/其他芯片选项不能直接记为PCIe本板漏移植。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "C11",
+      "domain": "MAC与协议控制",
+      "feature": "RRSR/basic response rate动态控制",
+      "status": "待判定",
+      "factory_symbol_query": ".*rrsr.*",
+      "factory_symbol_match_count": 10,
+      "factory_symbol_examples": [
+        {
+          "name": "mac_set_rrsr_cfg_8192xb",
+          "section": ".text",
+          "offset": "0x26a838",
+          "bytes": 360
+        },
+        {
+          "name": "mac_set_cts_rrsr_cfg_8852c",
+          "section": ".text",
+          "offset": "0x24f3fc",
+          "bytes": 200
+        },
+        {
+          "name": "mac_get_rrsr_cfg_8852c",
+          "section": ".text",
+          "offset": "0x24f09c",
+          "bytes": 316
+        },
+        {
+          "name": "proc_set_dyn_rrsr",
+          "section": ".text",
+          "offset": "0x76750",
+          "bytes": 260
+        },
+        {
+          "name": "mac_set_rrsr_cfg_8852c",
+          "section": ".text",
+          "offset": "0x24f1d8",
+          "bytes": 360
+        },
+        {
+          "name": "mac_get_rrsr_cfg_8192xb",
+          "section": ".text",
+          "offset": "0x26a6fc",
+          "bytes": 316
+        },
+        {
+          "name": "proc_get_dyn_rrsr",
+          "section": ".text",
+          "offset": "0x76854",
+          "bytes": 180
+        },
+        {
+          "name": "mac_set_cts_rrsr_cfg_8192xb",
+          "section": ".text",
+          "offset": "0x26aa5c",
+          "bytes": 200
+        }
+      ],
+      "native_evidence": "D/monitor.h、mac-runtime.h",
+      "finding": "原厂有可调/动态RRSR控制；项目beacon基本速率已有，但缺BSS基本速率到完整响应速率策略的可核实映射，不能凭固定初始化掩码认定全覆盖。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "G15",
+      "domain": "安全与数据通路",
+      "feature": "动态HFC/WMM资源再分配",
+      "status": "待判定",
+      "factory_symbol_query": "proc_set_wmm_dm",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "proc_set_wmm_dm",
+          "section": ".text",
+          "offset": "0x35024",
+          "bytes": 340
+        }
+      ],
+      "native_evidence": "D/mac-runtime.h、pci.c",
+      "finding": "项目主要静态HFC资源；原厂wmm_dm控制与动态EDCA不应混为一项。资源再分配的实际消费者/本机门控尚未确认，不以名字推断一定存在遗漏算法。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "I11",
+      "domain": "板级管理与诊断",
+      "feature": "按周期/星期/SSID掩码的无线定时开关",
+      "status": "待判定",
+      "factory_symbol_query": "wifitimer_time",
+      "factory_symbol_match_count": 0,
+      "factory_symbol_examples": [],
+      "native_evidence": "libdbusproxy.so、WiFiTimer/WiFiTimer1.xml；port配置",
+      "finding": "原厂有两套时间/星期/SSIDMask配置接口；项目未提供相应管理。已反编译的wifitimer_time只解析HH:MM，定时执行消费者尚未确立，不能宣称原机活动调度算法已完整验证。",
+      "rea_evidence_ids": [
+        "ev_b07b81688158d6c81e20ea2b7a879cf83e52da31a2d77157dc635fd9147168a7"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior.",
+      "factory_additional_subject_sha256": "ead672a2c97644ac901ee538a818f0988a810cf56e3ad0c16ffddeced8ab0bc9"
+    },
+    {
+      "id": "I12",
+      "domain": "板级管理与诊断",
+      "feature": "信道质量采集、评分、背景噪声与遥测",
+      "status": "部分",
+      "factory_symbol_query": "cfg80211_rtw_dump_survey",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "cfg80211_rtw_dump_survey",
+          "section": ".text",
+          "offset": "0x2055c",
+          "bytes": 496
+        }
+      ],
+      "native_evidence": "WiFiInfo.xml；D/monitor.h、pci.c",
+      "finding": "原厂管理接口含ChannelCollection/评分/扫描完成时刻/背景噪声与质量采集；项目有部分统计，缺运行survey、评分采集和相应管理流程。",
+      "rea_evidence_ids": [
+        "ev_1565adfb9d703e427f86710862d16c8c64fcb37289c46394a7e927a37d430067"
+      ],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    },
+    {
+      "id": "I13",
+      "domain": "板级管理与诊断",
+      "feature": "同SSID协调、设备踢除及带宽策略管理",
+      "status": "部分",
+      "factory_symbol_query": "cfg80211_rtw_del_station",
+      "factory_symbol_match_count": 1,
+      "factory_symbol_examples": [
+        {
+          "name": "cfg80211_rtw_del_station",
+          "section": ".text",
+          "offset": "0x23f04",
+          "bytes": 1760
+        }
+      ],
+      "native_evidence": "WiFiInfo/WLANConfiguration.xml；wpad/UCI",
+      "finding": "Linux可配置同SSID、踢站和通用QoS；未移植原厂SetSameSSID/CancelSameSSID及整套运营商协调流程，不能把协议原语缺失与管理流程缺失混为一项。",
+      "rea_evidence_ids": [],
+      "symbol_match_interpretation": "Index only; individual findings state the observed call/registration/gate/native behavior."
+    }
+  ],
+  "limitations": [
+    "Function/parameter/table presence alone is not proof of runtime enablement or semantic equivalence.",
+    "This is a functional static inventory, not a claim that all 9740 function bodies were decompiled.",
+    "Unresolved and conditional rows remain explicit; none are counted as fully ported.",
+    "No live hardware, full test suite, full firmware build, production driver changes or PON edits."
+  ],
+  "factory_cfg80211_mapping": [
+    {
+      "factory_function": "cfg80211_rtw_add_virtual_intf",
+      "factory_slot": "0x18",
+      "feature_ids": [
+        "B01",
+        "B02",
+        "B03",
+        "B04"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_del_virtual_intf",
+      "factory_slot": "0x20",
+      "feature_ids": [
+        "B01",
+        "B02"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_change_iface",
+      "factory_slot": "0x28",
+      "feature_ids": [
+        "B01",
+        "B03",
+        "B04"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_add_key",
+      "factory_slot": "0x30",
+      "feature_ids": [
+        "G01",
+        "G02",
+        "G03"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_get_key",
+      "factory_slot": "0x38",
+      "feature_ids": [
+        "G01",
+        "G03"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_del_key",
+      "factory_slot": "0x40",
+      "feature_ids": [
+        "G01",
+        "G03"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_set_default_key",
+      "factory_slot": "0x48",
+      "feature_ids": [
+        "G01",
+        "G03"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_set_default_mgmt_key",
+      "factory_slot": "0x50",
+      "feature_ids": [
+        "G03"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_start_ap",
+      "factory_slot": "0x60",
+      "feature_ids": [
+        "B01",
+        "C01"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_change_beacon",
+      "factory_slot": "0x68",
+      "feature_ids": [
+        "C01",
+        "B12"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_stop_ap",
+      "factory_slot": "0x70",
+      "feature_ids": [
+        "B01",
+        "C01"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_add_station",
+      "factory_slot": "0x78",
+      "feature_ids": [
+        "C04",
+        "G05"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_del_station",
+      "factory_slot": "0x80",
+      "feature_ids": [
+        "C04",
+        "G01",
+        "G05"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_change_station",
+      "factory_slot": "0x88",
+      "feature_ids": [
+        "C04",
+        "G01",
+        "G05",
+        "D05"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_get_station",
+      "factory_slot": "0x90",
+      "feature_ids": [
+        "C06",
+        "E14"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_dump_station",
+      "factory_slot": "0x98",
+      "feature_ids": [
+        "C06",
+        "E14"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_change_bss",
+      "factory_slot": "0x108",
+      "feature_ids": [
+        "C09"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_set_txq_params",
+      "factory_slot": "0x110",
+      "feature_ids": [
+        "G07"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_set_monitor_channel",
+      "factory_slot": "0x120",
+      "feature_ids": [
+        "B01",
+        "B13",
+        "B14"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_scan",
+      "factory_slot": "0x128",
+      "feature_ids": [
+        "B09",
+        "B10",
+        "B11"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_connect",
+      "factory_slot": "0x158",
+      "feature_ids": [
+        "B03"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_disconnect",
+      "factory_slot": "0x168",
+      "feature_ids": [
+        "B03"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_join_ibss",
+      "factory_slot": "0x170",
+      "feature_ids": [
+        "B04"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_leave_ibss",
+      "factory_slot": "0x178",
+      "feature_ids": [
+        "B04"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_set_wiphy_params",
+      "factory_slot": "0x188",
+      "feature_ids": [
+        "C02",
+        "G06",
+        "G10"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_set_txpower",
+      "factory_slot": "0x190",
+      "feature_ids": [
+        "B16",
+        "F02"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_get_txpower",
+      "factory_slot": "0x198",
+      "feature_ids": [
+        "B16",
+        "F02"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_dump_survey",
+      "factory_slot": "0x1b8",
+      "feature_ids": [
+        "B11"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_set_pmksa",
+      "factory_slot": "0x1c0",
+      "feature_ids": [
+        "G03",
+        "G04"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_del_pmksa",
+      "factory_slot": "0x1c8",
+      "feature_ids": [
+        "G03",
+        "G04"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_flush_pmksa",
+      "factory_slot": "0x1d0",
+      "feature_ids": [
+        "G03",
+        "G04"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_mgmt_tx",
+      "factory_slot": "0x1e8",
+      "feature_ids": [
+        "C04",
+        "C03"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_set_power_mgmt",
+      "factory_slot": "0x1f8",
+      "feature_ids": [
+        "A11",
+        "B03"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_update_mgmt_frame_registrations",
+      "factory_slot": "0x218",
+      "feature_ids": [
+        "C04",
+        "C05"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_probe_client",
+      "factory_slot": "0x258",
+      "feature_ids": [
+        "C04"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_get_channel",
+      "factory_slot": "0x268",
+      "feature_ids": [
+        "B13",
+        "B14"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_set_mac_acl",
+      "factory_slot": "0x280",
+      "feature_ids": [
+        "C09",
+        "H08"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_update_ft_ies",
+      "factory_slot": "0x298",
+      "feature_ids": [
+        "G04",
+        "B03"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    },
+    {
+      "factory_function": "cfg80211_rtw_external_auth",
+      "factory_slot": "0x338",
+      "feature_ids": [
+        "G03",
+        "B03"
+      ],
+      "note": "Mapped through current Linux mac80211 as applicable; driver entry names need not match."
+    }
+  ],
+  "factory_control_map": "artifacts/wifi-coverage-audit-20261016/factory-control-map.json",
+  "factory_cfg80211_callback_count": 39,
+  "management_manifest": "artifacts/wifi-coverage-audit-20261016/management-inputs.json",
+  "analyzed_function_records": 75,
+  "factory_module_function_records": 68,
+  "hardware_tested": false,
+  "production_code_changed": false
+}

@@ -1,0 +1,182 @@
+{
+  "base_commit": "1cc4824d3316851ef18b1eb8fe0079154192589c",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/bb-dm.h": "e43d51398e53f2aa6794ef387b3574eb837f4b9dc79b007fc3040857b6888638",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/beacon.h": "cad9397694360fdde40dfe6acc30b4b9cfb425906b97643c98728e9f6d0c985d",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/board-cal.h": "694baa8ff00d3089fa2592a1c043dd53b808572e40ad3062fefb40eb7d3c5e6f",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/c-gapk.h": "9ac61baf6b26add36d052618350f7fb7ef61c67a8570e0e360e8c88b282361ab",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/c-iqk.h": "915c2b98e36f14827e54dc436bb18da440b66802bc925e00e301613869973b03",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/c-rxdck.h": "4a3c20a93933de216b87601c5bc6be125400c534a529c3d2389f2a90e17de8f8",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/c-tssi-program.h": "2fcc99bec68990d6fb38f1438d912e562efe7f1992bc86be5d186b3981da33a7",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/c-tssi.h": "41f51738872ecb3c3411ce7f7a22aef13ee0c4746c6a758274198aa3c1f831a1",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/cfo.h": "fb176537873bc993711a3e8304b935a0d486ad1dabe03af27702b8764ee48470",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/channel.h": "8986f70b0048ef9bb4f5c3e97b50fe18cfc6973caf8b5d54c78eb7805e774db1",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/dack.h": "753c0de2e3674546c99f6a4af295243ad906f1029fc91e0d6bb5818b26590ac4",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/dfs.h": "b8edbd09b832fc7b58e79b82bd7b698fef55b63d24cdbb0dab05bdac00e7894f",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/dig.h": "812e4b225e5d9088d2bb7fbde4d853c2b10736e745b45a69d21b80b19643af58",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/download.h": "23afbe9d675553d09b5ea36e8b0bb570222320fecfa9254fd2e0f3b5149d7b74",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/environment.h": "78f193d80e9d90749dfe9bf376a49d2a5347528ec0bdcd85be59de40e14e240c",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/fw.h": "e43f809542391a28b75d28234611a2e275919af0e381bbae6b8db99f82b788ab",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/gapk.h": "fdba5bf81c617049441356008540faeefb7e9c6cd4ccac8d181d3b24e8949c0a",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/limits.c": "b8e0a14062b5902a4737b6353272d1347a36b20c57f8a05acde11d6608140dcd",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/limits.h": "d7683ab36b70f02c2b801b310d18f916f18e7f0b9d72471fc2a829512b5bfc38",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/mac-runtime.h": "435c5ea12a1700ebd72ba896e9bb010bc2c8dac5dcc67ef3aa4ca8726bb325fd",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/monitor.h": "b4fa82b206022d3ca2abb169372dfeed0ba7596f8e043c88edf710d9464ef84f",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/ni-state.h": "80edeaa0e0df7aa0d1a1676de2482df26f5c24489c14198091b48a67a4764b06",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/ni-test.h": "5c74efec50ca7be47dc33a84c32e64a13d732482769093438b9014cea85581f3",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pci.c": "7191ca562676d91bf6b28ad4593333490f2294db5872f2420d00b37022acaabd",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-event.h": "c7e1ab53cb0d20d5a3bc6d34c6a55d3bf964917f2d82a8f784ac7193207dbe17",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-tx-code.h": "06adedd2040bd6c40e9342161b0fc0c90168bcab8b624970c55c918e9129a920",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe_probe.h": "5990bb1cf64dc2b7160192e4b76d80e06fe208000cd629156ec4fd0af090d817",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/phy.c": "df590a93c443a944f4abc2673457eee1c82b5ab88ee008c16091399590eb108d",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/phy.h": "cda518c8cf7193dc65843d48385e7b899090267a29a0f3a5cc6e7744d622ad73",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/port0.h": "30d4f481a1ab5a98c03f890d44c85d50c120ab0a993647c31a7ee904f59fed80",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/power-tables.c": "aa1bb2f71eb268ea2ff56b9c7815512d6f610c1262685df17d00dce8fa7522ef",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/power-tables.h": "3bf7d181df0ef6b3a49e2a510e03f81be4a376cc1660a8f14bfade6208bfc3b1",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/power.h": "9eed8c5d6f1373e008dc7d06622c4c3c9ba109b05456e13cc2d9198c2dcc6814",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rate.h": "baf35f2042c403d7ef577185211d09b56b0e60483319e24bbe6fc8a250a5cdaf",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/receive.h": "31b1755a1e54e201f9f8326f752cf4d6bb4f75d1de13b3f4fd99b04ad3edaec0",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/ref-power.h": "7834c4af0bdc0630487acb24dfadbf017709c856fa161e8bde9940f226d511ce",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rf-start.h": "85f78506e7df1bf4092e080074e7f8470efc5007f3dc891598614a17fd101093",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/role.h": "198bb0f14c6f939db8025d2341afd0a2e40ae54c38ec549261eaf0a72dcd9e4f",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx-geometry.h": "81acb1f545f18145bf3532bcec7f0c6c1e1ca10e64bde15fc650a86343f24798",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx-pipeline.h": "e4b9350b7c1b0d606de0c58cd84fc26b2662aeb8a7bf69e4ca0899c9e32d8831",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx.c": "82a3d707819908b43714a436944bda3bf8c3ef1ce1e2df9a498a65b429b9fba3",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx.h": "b1fc59d2dc40486684bb8dd3f531962af4c851153130b28bd8fe294506f3c34d",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rxdck.h": "dd5980a811651c1f62acca37b0ad211aa85f24b8d7b49393dd1e48dd711b63c3",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/security.h": "74ffa9222d2b41a0cb7b3d6dde925b638a57c822b386936e391258095d8427fb",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/transport.h": "6d58cf8d0770630e2c214f018feeced9317a020716673ca5b40f8281afc2502a",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/trim.h": "6d4639e47e88788e91679d411de12c905a562cbbcadef112b96225db8470bcc7",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/trx-paths.h": "49a8f81a2ad023ac5c0ad5de2678be962bc1dbedeaca2b9040353b9362c16acd",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tssi-de.h": "2e9ef46c20223661d363a7d74c51eabd97446da9513ebf3ead0f16ee6104f2b0",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx-format.h": "bc8612868e07b8240ea728b816bc0c351d904f6089cbe6d7e0b4c3013e963993",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx-shape.h": "066b752ba2e50174691204365b8a9ee26f56363f555e75f50e3f4709f598fc04",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx.c": "9b73053f56036f974f15afb057328ba275e3ba52eb87e9bb684da9176b8c3f64",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx.h": "93d7b143b2c1de11ccf11f37059fd8fa917b42ca9320c8592a346dd0237fe4f1",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/xb-channel.h": "0b83227427453003aca2f7ce9f2e3de972b044ab756cc03176e5efe32ad9d56f",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/xb-iqk.h": "7ad84da5a4baa05e6be08e2ba98a4060192d0c560e18e30e284ec935f4890bb7",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/xb-tssi-program.h": "1b01ce4a1d392b380b7d73abf2624ff72d848054ac62bd460d5e373616ab62a5",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/xb-tssi.h": "2a5e4863fbc094ba1ab2c0efc53739365c3d5f55dc30bb360663a6768fb62ea8"
+  },
+  "ieee80211_ops": [
+    [
+      "tx",
+      "rtl_ax_monitor_tx"
+    ],
+    [
+      "wake_tx_queue",
+      "rtl_ax_wake_tx_queue"
+    ],
+    [
+      "net_setup_tc",
+      "rtl_ax_net_setup_tc"
+    ],
+    [
+      "net_fill_forward_path",
+      "rtl_ax_net_fill_forward_path"
+    ],
+    [
+      "start",
+      "rtl_ax_monitor_start"
+    ],
+    [
+      "stop",
+      "rtl_ax_monitor_stop"
+    ],
+    [
+      "config",
+      "rtl_ax_monitor_config"
+    ],
+    [
+      "add_interface",
+      "rtl_ax_monitor_add_interface"
+    ],
+    [
+      "remove_interface",
+      "rtl_ax_monitor_remove_interface"
+    ],
+    [
+      "start_ap",
+      "rtl_ax_ap_start"
+    ],
+    [
+      "stop_ap",
+      "rtl_ax_ap_stop"
+    ],
+    [
+      "bss_info_changed",
+      "rtl_ax_ap_changed"
+    ],
+    [
+      "conf_tx",
+      "rtl_ax_ap_conf_tx"
+    ],
+    [
+      "ampdu_action",
+      "rtl_ax_ampdu_action"
+    ],
+    [
+      "sta_state",
+      "rtl_ax_sta_state"
+    ],
+    [
+      "sta_notify",
+      "rtl_ax_sta_notify"
+    ],
+    [
+      "release_buffered_frames",
+      "rtl_ax_release_buffered"
+    ],
+    [
+      "sta_rate_tbl_update",
+      "rtl_ax_sta_rate_update"
+    ],
+    [
+      "link_sta_rc_update",
+      "rtl_ax_link_sta_rc_update"
+    ],
+    [
+      "sta_statistics",
+      "rtl_ax_sta_statistics"
+    ],
+    [
+      "set_key",
+      "rtl_ax_set_key"
+    ],
+    [
+      "get_key_seq",
+      "rtl_ax_get_key_seq"
+    ],
+    [
+      "set_tim",
+      "rtl_ax_set_tim"
+    ],
+    [
+      "configure_filter",
+      "rtl_ax_monitor_filter"
+    ],
+    [
+      "add_chanctx",
+      "ieee80211_emulate_add_chanctx"
+    ],
+    [
+      "remove_chanctx",
+      "ieee80211_emulate_remove_chanctx"
+    ],
+    [
+      "change_chanctx",
+      "ieee80211_emulate_change_chanctx"
+    ]
+  ],
+  "hardware_flags": [
+    "RX_INCLUDES_FCS",
+    "AMPDU_AGGREGATION",
+    "SUPPORTS_AMSDU_IN_AMPDU",
+    "TX_STATUS_NO_AMPDU_LEN",
+    "SUPPORT_FAST_XMIT",
+    "SUPPORTS_TX_ENCAP_OFFLOAD",
+    "TX_AMSDU",
+    "TX_FRAG_LIST"
+  ],
+  "note": "Source inventory at audit time; flags/callback presence does not prove all semantics. NI/PON files were read only and are not claimed clean or modified by this audit."
+}

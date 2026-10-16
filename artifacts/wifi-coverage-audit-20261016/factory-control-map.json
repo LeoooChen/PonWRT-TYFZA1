@@ -1,0 +1,1622 @@
+{
+  "scope": "All 170 original MIB field names assigned to functional audit domains; this is not proof each control is equivalent or every consumer has been analyzed.",
+  "controls": [
+    {
+      "name": "rtw_mib_version",
+      "factory_offset": "0x0",
+      "feature_ids": [
+        "I09"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "rtw_mib_size",
+      "factory_offset": "0x40",
+      "feature_ids": [
+        "I09"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ampdu",
+      "factory_offset": "0x80",
+      "feature_ids": [
+        "G05",
+        "G08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "disable_protection",
+      "factory_offset": "0xc0",
+      "feature_ids": [
+        "C02"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "func_off",
+      "factory_offset": "0x100",
+      "feature_ids": [
+        "B01"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "aggregation",
+      "factory_offset": "0x140",
+      "feature_ids": [
+        "G05",
+        "G08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "iapp_enable",
+      "factory_offset": "0x180",
+      "feature_ids": [
+        "I09"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "coexist",
+      "factory_offset": "0x1c0",
+      "feature_ids": [
+        "B13"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "fw_tx",
+      "factory_offset": "0x200",
+      "feature_ids": [
+        "D08",
+        "A03"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "twt_enable",
+      "factory_offset": "0x240",
+      "feature_ids": [
+        "D10"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "twt_dbgmode",
+      "factory_offset": "0x280",
+      "feature_ids": [
+        "D10"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "a4_enable",
+      "factory_offset": "0x2c0",
+      "feature_ids": [
+        "B06"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "multiap_monitor_mode_disable",
+      "factory_offset": "0x300",
+      "feature_ids": [
+        "I04",
+        "H08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "multiap_bss_type",
+      "factory_offset": "0x340",
+      "feature_ids": [
+        "I04",
+        "H08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "multiap_profile",
+      "factory_offset": "0x380",
+      "feature_ids": [
+        "I04",
+        "H08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "multiap_max_device_reached",
+      "factory_offset": "0x3c0",
+      "feature_ids": [
+        "I04",
+        "H08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "multiap_steering_policy",
+      "factory_offset": "0x400",
+      "feature_ids": [
+        "I04",
+        "H08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "multiap_rcpi_steering_th",
+      "factory_offset": "0x440",
+      "feature_ids": [
+        "I04",
+        "H08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "multiap_change_channel",
+      "factory_offset": "0x480",
+      "feature_ids": [
+        "I04",
+        "H08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "multiap_dfs_ap_mib_channel",
+      "factory_offset": "0x4c0",
+      "feature_ids": [
+        "I04",
+        "H08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "multiap_ext_cmd",
+      "factory_offset": "0x500",
+      "feature_ids": [
+        "I04",
+        "H08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "multiap_report_fail_assoc",
+      "factory_offset": "0x540",
+      "feature_ids": [
+        "I04",
+        "H08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "multiap_vlan_enable",
+      "factory_offset": "0x580",
+      "feature_ids": [
+        "I04",
+        "H08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "multiap_vlan_id",
+      "factory_offset": "0x5c0",
+      "feature_ids": [
+        "I04",
+        "H08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "multiap_controller_bh_rssi",
+      "factory_offset": "0x600",
+      "feature_ids": [
+        "I04",
+        "H08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "multiap_unassoc_rssi_offset",
+      "factory_offset": "0x640",
+      "feature_ids": [
+        "I04",
+        "H08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "max_tx_power",
+      "factory_offset": "0x680",
+      "feature_ids": [
+        "B16",
+        "F02"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "tx_mode",
+      "factory_offset": "0x6c0",
+      "feature_ids": [
+        "G11"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txforce",
+      "factory_offset": "0x700",
+      "feature_ids": [
+        "G09"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "gbwcmode",
+      "factory_offset": "0x740",
+      "feature_ids": [
+        "G12"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "gbwcthrd_tx",
+      "factory_offset": "0x780",
+      "feature_ids": [
+        "G12"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "gbwcthrd_rx",
+      "factory_offset": "0x7c0",
+      "feature_ids": [
+        "G12"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "telco_selected",
+      "factory_offset": "0x800",
+      "feature_ids": [
+        "I06"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "regdomain",
+      "factory_offset": "0x840",
+      "feature_ids": [
+        "B16"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "dfs_regions",
+      "factory_offset": "0x880",
+      "feature_ids": [
+        "B16"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "led_type",
+      "factory_offset": "0x8c0",
+      "feature_ids": [
+        "I03"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "lifetime",
+      "factory_offset": "0x900",
+      "feature_ids": [
+        "G10"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "tdma_off_thre",
+      "factory_offset": "0x940",
+      "feature_ids": [
+        "G11"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "tx_retry_limit",
+      "factory_offset": "0x980",
+      "feature_ids": [
+        "G10"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "manual_priority",
+      "factory_offset": "0x9c0",
+      "feature_ids": [
+        "G10"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "opmode",
+      "factory_offset": "0xa00",
+      "feature_ids": [
+        "B01",
+        "B03",
+        "B04"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "autorate",
+      "factory_offset": "0xa40",
+      "feature_ids": [
+        "G09"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "fixrate",
+      "factory_offset": "0xa80",
+      "feature_ids": [
+        "G09"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "deny_legacy",
+      "factory_offset": "0xac0",
+      "feature_ids": [
+        "G09"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "lgyEncRstrct",
+      "factory_offset": "0xb00",
+      "feature_ids": [
+        "G03"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "cts2self",
+      "factory_offset": "0xb40",
+      "feature_ids": [
+        "C02"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "rtscts",
+      "factory_offset": "0xb80",
+      "feature_ids": [
+        "C02"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "amsdu",
+      "factory_offset": "0xbc0",
+      "feature_ids": [
+        "G05",
+        "G08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "low_rate_agg_auto",
+      "factory_offset": "0xc00",
+      "feature_ids": [
+        "G05",
+        "G08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "crossband_enable",
+      "factory_offset": "0xc40",
+      "feature_ids": [
+        "B03",
+        "G04",
+        "I04"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "monitor_sta_enabled",
+      "factory_offset": "0xc80",
+      "feature_ids": [
+        "I05"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txbf",
+      "factory_offset": "0xcc0",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txbfer",
+      "factory_offset": "0xd00",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txbfee",
+      "factory_offset": "0xd40",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txbf_state",
+      "factory_offset": "0xd80",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txbf_apply",
+      "factory_offset": "0xdc0",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txbf_mu",
+      "factory_offset": "0xe00",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txbf_mu_state",
+      "factory_offset": "0xe40",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txbf_mu_apply",
+      "factory_offset": "0xe80",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txbf_period",
+      "factory_offset": "0xec0",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txbf_mu_2ss",
+      "factory_offset": "0xf00",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txbf_mu_1ss",
+      "factory_offset": "0xf40",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txbf_tp_limit",
+      "factory_offset": "0xf80",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txbf_mu_amsdu",
+      "factory_offset": "0xfc0",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txbf_csi_rate",
+      "factory_offset": "0x1000",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txbf_force_regrp",
+      "factory_offset": "0x1040",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txbf_offload",
+      "factory_offset": "0x1080",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txbf_auto_snd",
+      "factory_offset": "0x10c0",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txbf_period_fw",
+      "factory_offset": "0x1100",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "roaming_switch",
+      "factory_offset": "0x1140",
+      "feature_ids": [
+        "B03",
+        "G04",
+        "I04"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "roaming_qos",
+      "factory_offset": "0x1180",
+      "feature_ids": [
+        "B03",
+        "G04",
+        "I04"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "fail_ratio",
+      "factory_offset": "0x11c0",
+      "feature_ids": [
+        "B03",
+        "G04",
+        "I04"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "retry_ratio",
+      "factory_offset": "0x1200",
+      "feature_ids": [
+        "B03",
+        "G04",
+        "I04"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "RSSIThreshold",
+      "factory_offset": "0x1240",
+      "feature_ids": [
+        "B03",
+        "G04",
+        "I04"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "dfgw_mac",
+      "factory_offset": "0x1280",
+      "feature_ids": [
+        "B03",
+        "G04",
+        "I04"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "roaming_enable",
+      "factory_offset": "0x12c0",
+      "feature_ids": [
+        "B03",
+        "G04",
+        "I04"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "roaming_start_time",
+      "factory_offset": "0x1300",
+      "feature_ids": [
+        "B03",
+        "G04",
+        "I04"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "roaming_rssi_th1",
+      "factory_offset": "0x1340",
+      "feature_ids": [
+        "B03",
+        "G04",
+        "I04"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "roaming_rssi_th2",
+      "factory_offset": "0x1380",
+      "feature_ids": [
+        "B03",
+        "G04",
+        "I04"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "roaming_wait_time",
+      "factory_offset": "0x13c0",
+      "feature_ids": [
+        "B03",
+        "G04",
+        "I04"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "tpc_tx_power",
+      "factory_offset": "0x1400",
+      "feature_ids": [
+        "B16",
+        "F02"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "band",
+      "factory_offset": "0x1440",
+      "feature_ids": [
+        "B13",
+        "B14"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ssid",
+      "factory_offset": "0x1480",
+      "feature_ids": [
+        "C01",
+        "C04"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "authtype",
+      "factory_offset": "0x14c0",
+      "feature_ids": [
+        "G03"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "encmode",
+      "factory_offset": "0x1500",
+      "feature_ids": [
+        "G03"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "channel",
+      "factory_offset": "0x1540",
+      "feature_ids": [
+        "B13",
+        "B14"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "use40M",
+      "factory_offset": "0x1580",
+      "feature_ids": [
+        "B13",
+        "B14"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "2ndchoffset",
+      "factory_offset": "0x15c0",
+      "feature_ids": [
+        "B13",
+        "B14"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "rssi_dump",
+      "factory_offset": "0x1600",
+      "feature_ids": [
+        "I09"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "totaltp",
+      "factory_offset": "0x1640",
+      "feature_ids": [
+        "I09"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "defertx",
+      "factory_offset": "0x1680",
+      "feature_ids": [
+        "G13"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "defertxcnt",
+      "factory_offset": "0x16c0",
+      "feature_ids": [
+        "G13"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "defertxtp",
+      "factory_offset": "0x1700",
+      "feature_ids": [
+        "G13"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "defertxto",
+      "factory_offset": "0x1740",
+      "feature_ids": [
+        "G13"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ofdma_enable",
+      "factory_offset": "0x1780",
+      "feature_ids": [
+        "D08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "edcca_mode",
+      "factory_offset": "0x17c0",
+      "feature_ids": [
+        "E06"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "bfrp_mode",
+      "factory_offset": "0x1800",
+      "feature_ids": [
+        "D06",
+        "D07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "su_trig_enable",
+      "factory_offset": "0x1840",
+      "feature_ids": [
+        "D08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "en_timer_pfd",
+      "factory_offset": "0x1880",
+      "feature_ids": [
+        "G13"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "en_txrpt_pfd",
+      "factory_offset": "0x18c0",
+      "feature_ids": [
+        "G13"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "set_timer_period",
+      "factory_offset": "0x1900",
+      "feature_ids": [
+        "G13"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "timer_period",
+      "factory_offset": "0x1940",
+      "feature_ids": [
+        "G13"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "timer_clr_period",
+      "factory_offset": "0x1980",
+      "feature_ids": [
+        "G13"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "guest_access",
+      "factory_offset": "0x19c0",
+      "feature_ids": [
+        "C09",
+        "H08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "block_relay",
+      "factory_offset": "0x1a00",
+      "feature_ids": [
+        "C09",
+        "H08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "mc2u_disable",
+      "factory_offset": "0x1a40",
+      "feature_ids": [
+        "H06"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "disable_dfs",
+      "factory_offset": "0x1a80",
+      "feature_ids": [
+        "B16"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "dfs_bypass_cac",
+      "factory_offset": "0x1ac0",
+      "feature_ids": [
+        "B16"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "dfs_bypass_cac_to",
+      "factory_offset": "0x1b00",
+      "feature_ids": [
+        "B16"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "powerpercent",
+      "factory_offset": "0x1b40",
+      "feature_ids": [
+        "B16",
+        "F02"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "power_ref",
+      "factory_offset": "0x1b80",
+      "feature_ids": [
+        "B16",
+        "F02"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "power_limit",
+      "factory_offset": "0x1bc0",
+      "feature_ids": [
+        "B16",
+        "F02"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "aclmode",
+      "factory_offset": "0x1c00",
+      "feature_ids": [
+        "C09",
+        "H08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "aclnum",
+      "factory_offset": "0x1c40",
+      "feature_ids": [
+        "C09",
+        "H08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "scan_backop",
+      "factory_offset": "0x1c80",
+      "feature_ids": [
+        "B09"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "scan_backop_div",
+      "factory_offset": "0x1cc0",
+      "feature_ids": [
+        "B09"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "scan_backop_dur",
+      "factory_offset": "0x1d00",
+      "feature_ids": [
+        "B09"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "bssid",
+      "factory_offset": "0x1d40",
+      "feature_ids": [
+        "B09"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "connect_ssid",
+      "factory_offset": "0x1d80",
+      "feature_ids": [
+        "B09"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "connect_ssid_len",
+      "factory_offset": "0x1dc0",
+      "feature_ids": [
+        "B09"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "connect_ch",
+      "factory_offset": "0x1e00",
+      "feature_ids": [
+        "B09"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "agg_num_buf",
+      "factory_offset": "0x1e40",
+      "feature_ids": [
+        "G05",
+        "G08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ldpc",
+      "factory_offset": "0x1e80",
+      "feature_ids": [
+        "D02",
+        "D01"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "stbc",
+      "factory_offset": "0x1ec0",
+      "feature_ids": [
+        "D03"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "acs",
+      "factory_offset": "0x1f00",
+      "feature_ids": [
+        "B11"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "autoch_1611_enable",
+      "factory_offset": "0x1f40",
+      "feature_ids": [
+        "B11"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "autoch_3664157_enable",
+      "factory_offset": "0x1f80",
+      "feature_ids": [
+        "B11"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "psk_enable",
+      "factory_offset": "0x1fc0",
+      "feature_ids": [
+        "G03"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "wpa_cipher",
+      "factory_offset": "0x2000",
+      "feature_ids": [
+        "G03"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "wpa2_cipher",
+      "factory_offset": "0x2040",
+      "feature_ids": [
+        "G03"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "dacs",
+      "factory_offset": "0x2080",
+      "feature_ids": [
+        "B11"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "amsdu_pps",
+      "factory_offset": "0x20c0",
+      "feature_ids": [
+        "G05",
+        "G08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "fw_ext",
+      "factory_offset": "0x2100",
+      "feature_ids": [
+        "A03",
+        "A05"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "sta_asoc_rssi_th",
+      "factory_offset": "0x2140",
+      "feature_ids": [
+        "I05"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "hiddenAP",
+      "factory_offset": "0x2180",
+      "feature_ids": [
+        "C01",
+        "C04"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "force_fw_tx",
+      "factory_offset": "0x21c0",
+      "feature_ids": [
+        "D08",
+        "A03"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "rssi_ru_dump",
+      "factory_offset": "0x2200",
+      "feature_ids": [
+        "I08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "mc2u_flood_ctrl",
+      "factory_offset": "0x2240",
+      "feature_ids": [
+        "H06"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "mc2u_ipv6_logo",
+      "factory_offset": "0x2280",
+      "feature_ids": [
+        "H06"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ctc_dscp",
+      "factory_offset": "0x22c0",
+      "feature_ids": [
+        "G12"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "manual_edca",
+      "factory_offset": "0x2300",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ap_bkq_aifsn",
+      "factory_offset": "0x2340",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ap_bkq_cwmin",
+      "factory_offset": "0x2380",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ap_bkq_cwmax",
+      "factory_offset": "0x23c0",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ap_bkq_txoplimit",
+      "factory_offset": "0x2400",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ap_beq_aifsn",
+      "factory_offset": "0x2440",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ap_beq_cwmin",
+      "factory_offset": "0x2480",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ap_beq_cwmax",
+      "factory_offset": "0x24c0",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ap_beq_txoplimit",
+      "factory_offset": "0x2500",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ap_viq_aifsn",
+      "factory_offset": "0x2540",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ap_viq_cwmin",
+      "factory_offset": "0x2580",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ap_viq_cwmax",
+      "factory_offset": "0x25c0",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ap_viq_txoplimit",
+      "factory_offset": "0x2600",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ap_voq_aifsn",
+      "factory_offset": "0x2640",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ap_voq_cwmin",
+      "factory_offset": "0x2680",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ap_voq_cwmax",
+      "factory_offset": "0x26c0",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "ap_voq_txoplimit",
+      "factory_offset": "0x2700",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "txq_limit",
+      "factory_offset": "0x2740",
+      "feature_ids": [
+        "G10"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "qos_enable",
+      "factory_offset": "0x2780",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "force_qos",
+      "factory_offset": "0x27c0",
+      "feature_ids": [
+        "G07"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "bcnint",
+      "factory_offset": "0x2800",
+      "feature_ids": [
+        "C01",
+        "C04"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "tcp_ack_drop_dup",
+      "factory_offset": "0x2840",
+      "feature_ids": [
+        "G14"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "kick_icverr",
+      "factory_offset": "0x2880",
+      "feature_ids": [
+        "G14"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "trx_path",
+      "factory_offset": "0x28c0",
+      "feature_ids": [
+        "G09"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "delay_measure",
+      "factory_offset": "0x2900",
+      "feature_ids": [
+        "I09"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "antdiv",
+      "factory_offset": "0x2940",
+      "feature_ids": [
+        "E10"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "rx_reorder_disable",
+      "factory_offset": "0x2980",
+      "feature_ids": [
+        "G06"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "bcn_ignore_edcca",
+      "factory_offset": "0x29c0",
+      "feature_ids": [
+        "C01",
+        "E06"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "force_sta_wake",
+      "factory_offset": "0x2a00",
+      "feature_ids": [
+        "C08"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    },
+    {
+      "name": "far_sta_inc_pwr",
+      "factory_offset": "0x2a40",
+      "feature_ids": [
+        "E08",
+        "F02"
+      ],
+      "consumer_fully_verified": false,
+      "note": "Functional responsibility index only; original control consumer and final runtime gate are not inferred from this name."
+    }
+  ]
+}

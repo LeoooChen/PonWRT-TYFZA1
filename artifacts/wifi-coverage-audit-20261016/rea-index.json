@@ -1,0 +1,1133 @@
+{
+  "primary_factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "successful_function_records": 75,
+  "address_mapping": "Only primary module: Ghidra address = .text offset + 0x10003c. Management ELF records retain provider addresses without applying this offset.",
+  "full_inline_records": "rea-full-records.tar.gz",
+  "recovered_errors": [
+    {
+      "raw_member": "ghidra-wifi-management-timer/001-analyze_function.json",
+      "raw_sha256": "9521dfef1b7a704b9171dd705be87b48a59e58a460966ddff30f1f0f4e489042",
+      "reason": "Ambiguous wifitimer_time thunk/body; recovered using exact body address 0x16beac in ghidra-wifi-management-timer-body."
+    }
+  ],
+  "records": [
+    {
+      "function": "rtw_hal_watchdog",
+      "ghidra_address": "0x2c5bbc",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_314fe60180178081a8c5ca2132c7fcb96a2e393545a884ecf28d8051de3c32d7",
+      "raw_member": "ghidra-wifi-coverage-audit/001-analyze_function.json",
+      "raw_sha256": "be95541919af29d3af5bd0b65f52893bf40eca89a3186f97a21026a02c8de7f3",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x1c5b80"
+    },
+    {
+      "function": "halbb_watchdog_normal",
+      "ghidra_address": "0x385ab0",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_2cf2b6877996f6d1d6ee94218623eb81661d7e2610fe8dd24f4e0c698894d784",
+      "raw_member": "ghidra-wifi-coverage-audit/002-analyze_function.json",
+      "raw_sha256": "ae11a0fe75e3b5ad50a6f4e7f00bf65490f078987a23fdf64a1de4d379cbdd4a",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x285a74"
+    },
+    {
+      "function": "halrf_watchdog",
+      "ghidra_address": "0x3f71d0",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_6632d8d4571c26b9ad4e7cddf137920970e78da32d3cb6bc859e49126f7f4ca9",
+      "raw_member": "ghidra-wifi-coverage-audit/003-analyze_function.json",
+      "raw_sha256": "d295840ff1f657369f46c25665d8ef1cbff24d66d9b6696433f169de8739a9e0",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2f7194"
+    },
+    {
+      "function": "halbb_cfo_watchdog",
+      "ghidra_address": "0x38fb80",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_e9b9cacf0408c5aa97359e1d1be5a4698431089534209c6111374d738e734053",
+      "raw_member": "ghidra-wifi-coverage-audit/004-analyze_function.json",
+      "raw_sha256": "0ec73b5b1b369d56362bb65e973d2af9dced7fa43edb84851b0d0a0877ffa7b4",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x28fb44"
+    },
+    {
+      "function": "halbb_dig",
+      "ghidra_address": "0x3d6ef0",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_0006528b4de28d92c672c7f1c36432a93045bdf083884ae4b43b5dac6122d43e",
+      "raw_member": "ghidra-wifi-coverage-audit/005-analyze_function.json",
+      "raw_sha256": "6d570c8b6d7f4a991d09caf6dc59e4f3178cf3128ace8d2c4cef7eb81bc2dffb",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2d6eb4"
+    },
+    {
+      "function": "rtw_hal_update_sta_entry",
+      "ghidra_address": "0x2c94b4",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_c3eaf4025e3d8e675046111b38405e72f469fda2aee481e2b17870e04892c817",
+      "raw_member": "ghidra-wifi-coverage-audit/006-analyze_function.json",
+      "raw_sha256": "11c18a0dcc777ebf395dbc86c0555864c4b1262912fb25062fa41de4acc46484",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x1c9478"
+    },
+    {
+      "function": "update_attrib_vcs_info",
+      "ghidra_address": "0x1dd000",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_59224173979d08a8d87120d6d96f939d7cd3935ec25d2097e890255592e4401a",
+      "raw_member": "ghidra-wifi-coverage-audit/007-analyze_function.json",
+      "raw_sha256": "2bf8384db33d00ac797c595e10b70d864316d413d185b013633eb489f6468158",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0xdcfc4"
+    },
+    {
+      "function": "VCS_update",
+      "ghidra_address": "0x1a8630",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_bcf091ea9ffd86bf58d784e9524a587f049ba6035a98dcbb4c0254492b0c7270",
+      "raw_member": "ghidra-wifi-coverage-audit/008-analyze_function.json",
+      "raw_sha256": "c8c8e6162de4bee314c58852c649d9ceffccbf544df0430ed6a75a5443d77ee0",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0xa85f4"
+    },
+    {
+      "function": "halbb_supportability_default",
+      "ghidra_address": "0x3b0418",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_6b7ce1d2a1e1d85ed4b22c7aad31439d7c035296637c2a10634be5dab4d54904",
+      "raw_member": "ghidra-wifi-coverage-gates/001-analyze_function.json",
+      "raw_sha256": "b45a14dc0b6a1b89969cdefa645fa145c028bce399d705cce91e9e5981f6ca7a",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2b03dc"
+    },
+    {
+      "function": "halbb_dig_abort",
+      "ghidra_address": "0x3d6854",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_dff8b502cea9b89cd183342da5fc74d8545498320af8b8525df84259b93e6529",
+      "raw_member": "ghidra-wifi-coverage-gates/002-analyze_function.json",
+      "raw_sha256": "09be5b8846d53643d52d31984bc3343b7101eedcf95f69ff92ad31e3d0ad91fd",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2d6818"
+    },
+    {
+      "function": "halbb_cfo_dm",
+      "ghidra_address": "0x38f40c",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_2db61215863ff97bdb434a73c316dacd7a8f8c9d912e229b4a62a37c04bd2ee1",
+      "raw_member": "ghidra-wifi-coverage-gates/003-analyze_function.json",
+      "raw_sha256": "d07f2da1154c3a8d600241198429f05a6e45759aef7eed0134cf6d0de7f87c86",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x28f3d0"
+    },
+    {
+      "function": "halbb_cfo_trk_abort",
+      "ghidra_address": "0x38f164",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_abf971576e81486b426ad25ac075cfeafa5479a589e5340872ca059034d91075",
+      "raw_member": "ghidra-wifi-coverage-gates/004-analyze_function.json",
+      "raw_sha256": "584088bf27d9d733d5b6badb8f1cf4ec82eb5d528e86ff6a31bd6f90e80fedf0",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x28f128"
+    },
+    {
+      "function": "halbb_cfo_acc_mode_en",
+      "ghidra_address": "0x38f88c",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_ba2ddc7a92cfb2f9f7fcaa33468e9f8d95c7fafe9db3b555f9f3456a84a5d366",
+      "raw_member": "ghidra-wifi-coverage-gates/005-analyze_function.json",
+      "raw_sha256": "a6c29b25d583e92e7bee8beef6055cffe193e6c5520d7b99cae308598994bfdb",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x28f850"
+    },
+    {
+      "function": "halbb_env_mntr",
+      "ghidra_address": "0x3acd4c",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_e2fe77c2bcae8e9a8db2bc787f7267bd3e66fcbfeb66771a44fbf2ed6b9f4573",
+      "raw_member": "ghidra-wifi-coverage-gates/006-analyze_function.json",
+      "raw_sha256": "b6f1a74153c7914bc7d7a512a7219e361f5c7ecf793e3e502c45f5bac8935a9c",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2acd10"
+    },
+    {
+      "function": "halbb_cmn_info_self_update",
+      "ghidra_address": "0x385470",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_c70d234adc4e06562f890501d234ad50cd64c1511bbcaf6cdc626b3a304c8469",
+      "raw_member": "ghidra-wifi-coverage-gates/007-analyze_function.json",
+      "raw_sha256": "1a91688bb477d1cd09669447ca417f84f54e15e095126307aaba72e3d5791267",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x285434"
+    },
+    {
+      "function": "halbb_edcca",
+      "ghidra_address": "0x3a446c",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_abefcc61e7981fc91a172e600278ce97079a4a1290aa7c2c2296d7248f0125b3",
+      "raw_member": "ghidra-wifi-coverage-gates/008-analyze_function.json",
+      "raw_sha256": "1da7d2e68cbd3d8abe8aac05808320685476536e81d05e6fdc3a0ce5165d4d10",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2a4430"
+    },
+    {
+      "function": "halbb_ic_hw_setting",
+      "ghidra_address": "0x387ff4",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_31061529091b0f65c40a2da9d35bed5aec06baf4ab5827b0685005b9033b22a5",
+      "raw_member": "ghidra-wifi-full-features/001-analyze_function.json",
+      "raw_sha256": "d6cfbf5274aeff76a1943671d026eb4a7407cbd91a73735f0e9fde987bd8c4fe",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x287fb8"
+    },
+    {
+      "function": "halbb_pwr_ctrl",
+      "ghidra_address": "0x3c7670",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_a1bf7e8aae910cef5d11cea286477740aa5addaafe1918d644f5ac4e3ab63352",
+      "raw_member": "ghidra-wifi-full-features/002-analyze_function.json",
+      "raw_sha256": "8c6b5b06f1a6434663dcc970d019f7fbcb15ccb98571712224fd9de6277fa8ef",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2c7634"
+    },
+    {
+      "function": "halbb_antenna_diversity",
+      "ghidra_address": "0x3d385c",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_fa0b42823c34970ef66e8d0340299fdd49fbaa8fceeb0a1e4dcc87432682c8fb",
+      "raw_member": "ghidra-wifi-full-features/003-analyze_function.json",
+      "raw_sha256": "363c21be4522db877c00913b1d757336ac99fdf7794c59fe36b98b09dede1396",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2d3820"
+    },
+    {
+      "function": "halbb_path_diversity",
+      "ghidra_address": "0x3da1d0",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_6e80d68bfed799db2f5470f37a56b119baa7b43c3d2ca8d9227a55b28b0c0a5b",
+      "raw_member": "ghidra-wifi-full-features/004-analyze_function.json",
+      "raw_sha256": "66904f666a210637bec5749d78ffd5486700f42a0814093a151f91cde1420c55",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2da194"
+    },
+    {
+      "function": "halbb_dyn_csi_rsp_main",
+      "ghidra_address": "0x3d9580",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_09d7d9a3f1972f3082d5edf6729956321c0c5c4621d8b4d0465299a8bc39bf3b",
+      "raw_member": "ghidra-wifi-full-features/005-analyze_function.json",
+      "raw_sha256": "aca84c2c6e6f3980113eb5a23bd4e456a4f1fe567055bfc60475e091f673eba9",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2d9544"
+    },
+    {
+      "function": "halrf_rfability_init",
+      "ghidra_address": "0x403adc",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_9abd3c15fdf793430fbae739c9ed62d6492e7105463ceea5e0838249ece4fc67",
+      "raw_member": "ghidra-wifi-full-features/006-analyze_function.json",
+      "raw_sha256": "60f722ff6ebdcae73a44e42e797447af00ac3e7558cc31d77ba86a38fb211355",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x303aa0"
+    },
+    {
+      "function": "halrf_iqk_tracking",
+      "ghidra_address": "0x3f7164",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_af53e8c87694f70d86ba07b5f44a6cbd4ca1d44e95111d935e9da8e497f7474d",
+      "raw_member": "ghidra-wifi-full-features/007-analyze_function.json",
+      "raw_sha256": "6b60e8604f830554eb0c5b04ba159ab77b7bfb7cf2f70c0401b7d27bd3c7655d",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2f7128"
+    },
+    {
+      "function": "halrf_rx_dck_tracking",
+      "ghidra_address": "0x3f5820",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_7fff7c89c9651939744b141eb4ed8528b128b9d9947acf62ddd8f41415a4296a",
+      "raw_member": "ghidra-wifi-full-features/008-analyze_function.json",
+      "raw_sha256": "613f4e22545f34f3c7ba79014f44eac5b81c7100572bf6675548edbd2fd4a6e4",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2f57e4"
+    },
+    {
+      "function": "halrf_tssi_tracking",
+      "ghidra_address": "0x3f5eac",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_a593ad2327e1f4d4a1fcec139949cc9c25e725618bc7be111c0b659be435be9c",
+      "raw_member": "ghidra-wifi-full-features/009-analyze_function.json",
+      "raw_sha256": "17d0a955e37cded5b0944dcce77f91333b688324bb28bd731faaf9d91666abb1",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2f5e70"
+    },
+    {
+      "function": "halrf_op5k_tracking",
+      "ghidra_address": "0x3f5b18",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_c9349746ea066e048c1c6e2550b4a5d46a3f05b825b4a3691a68ed21add2822c",
+      "raw_member": "ghidra-wifi-full-features/010-analyze_function.json",
+      "raw_sha256": "2b056e3310658c697fa4f3e4c7b797b5410a3db097a083d27cd0c98fbf4dd825",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2f5adc"
+    },
+    {
+      "function": "cfg80211_rtw_dump_survey",
+      "ghidra_address": "0x120598",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_1565adfb9d703e427f86710862d16c8c64fcb37289c46394a7e927a37d430067",
+      "raw_member": "ghidra-wifi-full-features/011-analyze_function.json",
+      "raw_sha256": "7469a0085b649c1e43b8f8ffbab1bdf4b8b18b0ab7da005a909f1c7b04ae5d44",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2055c"
+    },
+    {
+      "function": "OnAction_he",
+      "ghidra_address": "0x18b3e0",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_5f56ee897d3ab3fea9ed81af00cdf8d13bab62919d3164f93f8c12f94aee1084",
+      "raw_member": "ghidra-wifi-full-features/012-analyze_function.json",
+      "raw_sha256": "cdfb0c03137b153b3a82e8e2cd1efae204d3c8a9a69c28bb760ea39c1201d360",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x8b3a4"
+    },
+    {
+      "function": "OnAction_protected_he",
+      "ghidra_address": "0x18a818",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_38b0cfe4794010f4a6468be77c3eec5a7dee25d98e59c76b8c724098ba51c446",
+      "raw_member": "ghidra-wifi-full-features/013-analyze_function.json",
+      "raw_sha256": "f3b6e1d4345a62ae8240ce359708c5fc4fdaf18f666a24654891103900d51b49",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x8a7dc"
+    },
+    {
+      "function": "rtw_build_he_phy_caps",
+      "ghidra_address": "0x1aeecc",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_a12ad7b275c1cfbd476ac52e1d80fb6e80e7ab88464c3305da39a292c4703dbd",
+      "raw_member": "ghidra-wifi-full-features/014-analyze_function.json",
+      "raw_sha256": "2da22de866396b0005eb24a4531cf809de5066800a5920ec719f569a060faf31",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0xaee90"
+    },
+    {
+      "function": "rtw_build_he_mac_caps",
+      "ghidra_address": "0x1aed64",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_aa55e825c3871744dfe15658de3d0bb60fe9daa6690a8d723c94b89190ec22f6",
+      "raw_member": "ghidra-wifi-full-features/015-analyze_function.json",
+      "raw_sha256": "95db80e513b4a14ce305a8e19c19137da0d72289680224e014a7d5fa9b69a40d",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0xaed28"
+    },
+    {
+      "function": "rtw_build_mu_edca_ie",
+      "ghidra_address": "0x1b0a50",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_31222080b81a364005d9e7511ac451e4b6299dcf2989a6419d837cc58a940522",
+      "raw_member": "ghidra-wifi-full-features/016-analyze_function.json",
+      "raw_sha256": "752c09a147aad54c68f2575442c1707c63d3ea06a9ac95c333a7d0302770686c",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0xb0a14"
+    },
+    {
+      "function": "_phl_ser_mdl_msg_hdlr",
+      "ghidra_address": "0x28afcc",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_8e554539ce26351bef663cd0ff49c8b76e942db55d7c1a3179943137acf867d9",
+      "raw_member": "ghidra-wifi-full-features/017-analyze_function.json",
+      "raw_sha256": "399461ca50a3f09da454e08b787c9c363af9bd93cd19ec2d28a0ebaaa73c97c2",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x18af90"
+    },
+    {
+      "function": "rtw_cfg80211_init_he_capab",
+      "ghidra_address": "0x1230a0",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_81421320648edad89801161b162a4d827c060cbed17e8a17002480c54ffe6d4b",
+      "raw_member": "ghidra-wifi-full-features/018-analyze_function.json",
+      "raw_sha256": "ea55dcb2c79af5614093cc7211d476b53311a578ac8b08161c664bfe2ab99e58",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x23064"
+    },
+    {
+      "function": "cfg80211_rtw_change_bss",
+      "ghidra_address": "0x11f81c",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_5583878314e2b18103513d146aee1413f5d1fbc6ba837aed4b76311f21ddb4be",
+      "raw_member": "ghidra-wifi-full-features/019-analyze_function.json",
+      "raw_sha256": "40f5461700a081ac65a12168162e4730c165033daa77e7140b9518529cefbd44",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x1f7e0"
+    },
+    {
+      "function": "mac_watchdog",
+      "ghidra_address": "0x31fefc",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_65ba860bd6c261debdad7291e0854b7d9c36f9d372e4e7414e6856228d45e496",
+      "raw_member": "ghidra-wifi-full-features/020-analyze_function.json",
+      "raw_sha256": "56a382ecbce9c4c9e9b4557202ed21f831b15c5e8e0a6479d92e3934a8e1c4f5",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x21fec0"
+    },
+    {
+      "function": "OnAction_vht",
+      "ghidra_address": "0x18b480",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_9fbd24fb548e3d59063f464340473093be9f16351f24a99a7600af5c21b673fb",
+      "raw_member": "ghidra-wifi-full-features/021-analyze_function.json",
+      "raw_sha256": "4160b64b0376b7bd3b0fd117f105517d09d9cb9468eba04432d9e345af95da16",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x8b444"
+    },
+    {
+      "function": "rtw_hal_update_cctrl_tbl",
+      "ghidra_address": "0x2c80d0",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_518cfa1c3b9076d91f84ea27034df9453dd3022983f4dca9597c5f9ecd6c21b2",
+      "raw_member": "ghidra-wifi-full-features/022-analyze_function.json",
+      "raw_sha256": "afae7dccd6763d7bf54320f5889bc31ab1d319b21a91983eb78621bbdc7a006e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x1c8094"
+    },
+    {
+      "function": "rtw_cfg80211_init_wiphy_band",
+      "ghidra_address": "0x1265f8",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_7616d050e3f605b5e729889b1b5001d0a7d0ad7a48da082f9e883e39b9ea0b6e",
+      "raw_member": "ghidra-wifi-full-features/023-analyze_function.json",
+      "raw_sha256": "ff9e74b7c9beda886629163f042a4fbc422fdfdaa3528373258a759ee2837ac1",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x265bc"
+    },
+    {
+      "function": "rtw_core_twt_on_setup_ap",
+      "ghidra_address": "0x1fd70c",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_590b0fe441988a88f4dc069e7eaa84f05c5bec1d01e72e5dfe779aa034497afd",
+      "raw_member": "ghidra-wifi-full-features/024-analyze_function.json",
+      "raw_sha256": "00b066487649ef8517a875873dee8a6d3d909ee9acc2948d8d6321236ae0fb94",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0xfd6d0"
+    },
+    {
+      "function": "rtw_wiphy_alloc",
+      "ghidra_address": "0x12c418",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_af291b083c34f99efe77f4ae09767b4294579e6ce224ecb9dab41fd2064e46e4",
+      "raw_member": "ghidra-wifi-coverage-final-gates/001-analyze_function.json",
+      "raw_sha256": "d67745d30d8483b05502366747e4101f7951e6dc7b2f2452a24d1fdcff43efef",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2c3dc"
+    },
+    {
+      "function": "rtw_pci_suspend",
+      "ghidra_address": "0x13ae04",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_87cd1e99253ea033e0bc928b3096d9021213ca21bb336147d6ddc13a2762995f",
+      "raw_member": "ghidra-wifi-coverage-final-gates/002-analyze_function.json",
+      "raw_sha256": "607b7576861f07a85b2980242b253c391ed14a8335d35a6a3fca42f05c31ef67",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x3adc8"
+    },
+    {
+      "function": "rtw_pci_resume",
+      "ghidra_address": "0x13b3ac",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_4de8aaabf2163d201a528a282a6a5badb505296df70ddd9be8409eb0894ffc3a",
+      "raw_member": "ghidra-wifi-coverage-final-gates/003-analyze_function.json",
+      "raw_sha256": "21ac928c3d142520e6143d06327ebd23d98292975f32b9b573e4d6e982729158",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x3b370"
+    },
+    {
+      "function": "halbb_ic_hw_setting_8852c",
+      "ghidra_address": "0x3e1568",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_5c5e59055502897f91720cfa2226665559bc56f74d33ea5635ba26b22fc51082",
+      "raw_member": "ghidra-wifi-coverage-final-gates/004-analyze_function.json",
+      "raw_sha256": "9a177de83d0e48cd702e67ea9c71b72c118221aa29bbd74069bd9302735da56b",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2e152c"
+    },
+    {
+      "function": "halbb_ic_hw_setting_8192xb",
+      "ghidra_address": "0x3ec074",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_1ed0674ed972e4dd3f602d5d75d1b96a38712a0d8e5136804793fea45e809fde",
+      "raw_member": "ghidra-wifi-coverage-final-gates/005-analyze_function.json",
+      "raw_sha256": "7a3c97157364624c6ded11a5e6b9fac1e21ca8abdfd88ca09e00e5e6bdaab2ef",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2ec038"
+    },
+    {
+      "function": "halbb_edcca_abort",
+      "ghidra_address": "0x3a3758",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_e9f63e1477ce5e0ecc3347a06ed5a72a9bc649d7bea6ea1cbc080738582e2822",
+      "raw_member": "ghidra-wifi-coverage-final-gates/006-analyze_function.json",
+      "raw_sha256": "61800fcc3b9a846237e8e18abb2c85d3cbb5fbd8581c2add19f8ff836848a477",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2a371c"
+    },
+    {
+      "function": "halbb_edcca_thre_calc",
+      "ghidra_address": "0x3a3a9c",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_eb5246a2d5969c0cc7e5ae38166c95238ddfc383c0734f66a46914f99f75de7e",
+      "raw_member": "ghidra-wifi-coverage-final-gates/007-analyze_function.json",
+      "raw_sha256": "cba5b473ca6822d2947296822d52aa373ae8d3e92a4e2c27d17c001fef5ebfdb",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2a3a60"
+    },
+    {
+      "function": "halbb_dcr_env_det",
+      "ghidra_address": "0x3d9868",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_a67f70164ed8645cbb8409011b07dc89db2433189df430fa63b32e8e98c6a849",
+      "raw_member": "ghidra-wifi-coverage-final-gates/008-analyze_function.json",
+      "raw_sha256": "66085d21ee0fdc556cbd442cc1c43f276430ad5193d5ab210b2a1a77937ff3c9",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2d982c"
+    },
+    {
+      "function": "halrf_lck_tracking",
+      "ghidra_address": "0x3f5a58",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_7e31d08a745fb2c8a4ebd1d5f5c3ead459c754755949c880aec1cdf8053b8721",
+      "raw_member": "ghidra-wifi-coverage-final-gates/009-analyze_function.json",
+      "raw_sha256": "0bb5a82bd5f8215c877a9019c70c37a66d02c5073b5f437730edc5847649cadd",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2f5a1c"
+    },
+    {
+      "function": "halrf_iqk_track_8852c",
+      "ghidra_address": "0x41b340",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_fbf357bd9763b2444cad2bc9ea9ae569053d03274c7e600737172a4f101386b8",
+      "raw_member": "ghidra-wifi-coverage-final-gates/010-analyze_function.json",
+      "raw_sha256": "5891430e5ade5d45776a4fb36b0b1bbc7f82d940bf5b486005036f0c203cf9d9",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x31b304"
+    },
+    {
+      "function": "halrf_rxdck_track_8852c",
+      "ghidra_address": "0x40caa4",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_209f41b86f6b7ccc16376414055c65f9d6f5798cb12aa7489d332e93260ee44a",
+      "raw_member": "ghidra-wifi-coverage-final-gates/011-analyze_function.json",
+      "raw_sha256": "40895661d6fbf6e1a75bf5891d524026c54a508fe322341494324151837d9aa2",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x30ca68"
+    },
+    {
+      "function": "halrf_op5k_tracking_8192xb",
+      "ghidra_address": "0x43f3ec",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_73c6e7228b11b85db5db6177b53f5cd566140fb0a5bbdbcefc464dd04bf6f2ee",
+      "raw_member": "ghidra-wifi-coverage-final-gates/012-analyze_function.json",
+      "raw_sha256": "8c82a94da8df7a06582fff6928f24b90cfdf49a179d9c380f48aff5afa1f1269",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x33f3b0"
+    },
+    {
+      "function": "core_mib_en_timer_pfd",
+      "ghidra_address": "0x2174ac",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_a9cff3f6b6d5159c37eef7f2db31a2df4be85f200f3e6e582b2f4bb2a3aa97d8",
+      "raw_member": "ghidra-wifi-coverage-final-gates/013-analyze_function.json",
+      "raw_sha256": "63efeec38b68a7772e079e7a52798a6ba248754bf57291b636a1eeaf03dcdf09",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x117470"
+    },
+    {
+      "function": "core_mib_en_txrpt_pfd",
+      "ghidra_address": "0x217520",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_ee80a8e436034f08a9fb84ab14e70066274ce43797e8d12d13dc2a3b880b9fbe",
+      "raw_member": "ghidra-wifi-coverage-final-gates/014-analyze_function.json",
+      "raw_sha256": "c11ccc01d787c76e786bb1fdbbd5a56302816b54a271da999966a0b998193213",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x1174e4"
+    },
+    {
+      "function": "core_mib_su_trig_enable",
+      "ghidra_address": "0x217438",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_9ab299fbb0afe387bde1152304549f937c6de4087df705056e8f9e8406016a67",
+      "raw_member": "ghidra-wifi-coverage-final-gates/015-analyze_function.json",
+      "raw_sha256": "727c35ba55d6769f9031c232bee002f70e54d7d00040cda0442fbbdade5c92dc",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x1173fc"
+    },
+    {
+      "function": "core_mib_tx_mode",
+      "ghidra_address": "0x21898c",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_b8d6063cfe2dc282e92dc041b56253b8886192fb7aa506731a75559daea09d14",
+      "raw_member": "ghidra-wifi-coverage-final-gates/016-analyze_function.json",
+      "raw_sha256": "707f0ef71e37e678642356447252bf76815e4893681519a5f92b6acc0604bd88",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x118950"
+    },
+    {
+      "function": "rtw_ap_inform_ch_switch",
+      "ghidra_address": "0x1d6050",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_a1229cff1c1b4c8db24c5ec109a3b592afefa105d9bb173c219dba94545ce6e4",
+      "raw_member": "ghidra-wifi-coverage-final-gates/017-analyze_function.json",
+      "raw_sha256": "20455c446c735446c1fd8a4194043181d36b0f33571397a1ac14c95bd1072907",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0xd6014"
+    },
+    {
+      "function": "get_bcn_csa_event",
+      "ghidra_address": "0x30b670",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_3b981386bf6e90c523911b06cd75fd6209256178d6b858dcf2a1d5d0165d626d",
+      "raw_member": "ghidra-wifi-coverage-final-gates/018-analyze_function.json",
+      "raw_sha256": "04b7c591f452d293fed82beeeb086b0b82c171204353f455b5c9ceb2107edb95",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x20b634"
+    },
+    {
+      "function": "phl_tx_watchdog_pcie",
+      "ghidra_address": "0x292738",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_3908db6c05a0fdb6fe70b054f41b846bfd02a8f1595de32e2fda2fd5d04f882a",
+      "raw_member": "ghidra-wifi-coverage-final-gates/019-analyze_function.json",
+      "raw_sha256": "ec0cc9f29a69db9519336addb3eca4ac0a78221c89e3573df2cf66f9f8d6f97a",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x1926fc"
+    },
+    {
+      "function": "halbb_ra_update_mask_watchdog",
+      "ghidra_address": "0x3cc564",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_0e87cb994c7bca29cd1059011d76e38d6216aaa87a53c1710a7abd4b16a8a30e",
+      "raw_member": "ghidra-wifi-coverage-final-gates/020-analyze_function.json",
+      "raw_sha256": "941e21884155bf93f2b013d080d9c5da0abe3ea18301dd70a4e51b3669671d52",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x2cc528"
+    },
+    {
+      "function": "halrf_lck_tracking_8852c",
+      "ghidra_address": "0x40e4ec",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_bfb52dcd71c1fac1619cfb74e964b1300cafa752885045d14342fdf24ea02e1b",
+      "raw_member": "ghidra-wifi-control-consumers/001-analyze_function.json",
+      "raw_sha256": "610ee6ff3b63fd8e30c015423d6fcc721a559c84f4d93e49fd9fb982de8753ab",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x30e4b0"
+    },
+    {
+      "function": "halrf_lck_tracking_8192xb",
+      "ghidra_address": "0x43d6d8",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_accd304856bee48ae5569faf007e86e5dc6f9ae4a6b376cef77aade5b0bf2908",
+      "raw_member": "ghidra-wifi-control-consumers/002-analyze_function.json",
+      "raw_sha256": "eef2f16c9411a9f3c83805c7aa06db2dabe63bde444528674e8724d74319c78c",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x33d69c"
+    },
+    {
+      "function": "sta_dynamic_control",
+      "ghidra_address": "0x1cf83c",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_c7dccc263cba8f043de1d604bbe35b32411c595068d2406150d47f10a0b6191c",
+      "raw_member": "ghidra-wifi-control-consumers/003-analyze_function.json",
+      "raw_sha256": "00492fa0ce4ebe7ed7b88d7147ae20d2d815b1275c760321f5e441ae13f323c9",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0xcf800"
+    },
+    {
+      "function": "throughput_dynamic_control",
+      "ghidra_address": "0x1cfc88",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_2d0bf7dfad46440126446bdd32f5b03bd232932430d71a3e178aada9d5d47d4c",
+      "raw_member": "ghidra-wifi-control-consumers/004-analyze_function.json",
+      "raw_sha256": "d2bc7054a38fd82dca57aedaa3e466cbccf1bb01099f3205086f54961d735dd3",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0xcfc4c"
+    },
+    {
+      "function": "rtw_iface_dynamic_chk_wk_hdl",
+      "ghidra_address": "0x165830",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_33eb2c59482b79824192b626a49cb6a6c5892e39fa18fa018773aa8bf0db5373",
+      "raw_member": "ghidra-wifi-control-consumers/005-analyze_function.json",
+      "raw_sha256": "0e22200f7054f38d24f257496e3c5166cbbe049f04cbbb722f39063b6f52eba6",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x657f4"
+    },
+    {
+      "function": "txdefer_timer_handler",
+      "ghidra_address": "0x1e6804",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_c7b6519ab658d7886a81b2eece035115ae65c0e48b06a3cce06d2a7f7786fc1d",
+      "raw_member": "ghidra-wifi-control-consumers/006-analyze_function.json",
+      "raw_sha256": "488af3224e65b17523ebb20b7283e4714f9413712d456f54323457e97ae11a27",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0xe67c8"
+    },
+    {
+      "function": "rtw_iface_dynamic_check_handlder",
+      "ghidra_address": "0x18a1a4",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_1f041456838679a3d24470dd609fd158188d64bd19a0755f8261982d3c93d57f",
+      "raw_member": "ghidra-wifi-control-consumers/007-analyze_function.json",
+      "raw_sha256": "a3a7f3bda8df28c70152c980ea07e1e8e461b46df06627a4ab850852cdb77631",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0x8a168"
+    },
+    {
+      "function": "sreset_reset",
+      "ghidra_address": "0x1f40f8",
+      "subject_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "evidence_id": "ev_f326b4861ef63316df95da8fad30b3f9c8288cea8eca389aa39bbaad4a1d58fb",
+      "raw_member": "ghidra-wifi-control-consumers/008-analyze_function.json",
+      "raw_sha256": "ad8d4c4b50c5ee162edf6e4c1d4d7edfbd3bc123bd33c7d3dc40896502e5d4de",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "text_offset": "0xf40bc"
+    },
+    {
+      "function": "mibTable_init",
+      "ghidra_address": "0x10322c",
+      "subject_sha256": "75663394c85fe9405c666c04946b2a59078405ae8d74e8f62b88521ef4d0f88c",
+      "evidence_id": "ev_5fca8e23e154758295f51823547a0ce59b58227c5afe6afb3efdfdf41c203a4b",
+      "raw_member": "ghidra-wifi-management/001-analyze_function.json",
+      "raw_sha256": "4a632e146a7463e29822ba23bbf27e57ef2668cc001406b2eed65950e63d9c42",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4"
+    },
+    {
+      "function": "pptp_80211_uni_drv_cfg_handler",
+      "ghidra_address": "0x103108",
+      "subject_sha256": "75663394c85fe9405c666c04946b2a59078405ae8d74e8f62b88521ef4d0f88c",
+      "evidence_id": "ev_bb1537a92a2bbac66aa4d40e2c7a94f2805aac87b5053a0308e426c14b778ef7",
+      "raw_member": "ghidra-wifi-management/002-analyze_function.json",
+      "raw_sha256": "c9ce42c90dd927cd6f80d287a3f3cb2eab99f21cb78eee9438473e7f6f2c06dc",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4"
+    },
+    {
+      "function": "main",
+      "ghidra_address": "0x400f3c",
+      "subject_sha256": "3996a82e7662b3f003c04694248a7f4628d342613fcf277137a515d13cc80e99",
+      "evidence_id": "ev_9f704bbf2388bdf643b722b35a5c53e0918a1dc1ac49895ebd6ffdf3860b84b2",
+      "raw_member": "ghidra-wifi-management/005-analyze_function.json",
+      "raw_sha256": "268570f77cefdc42ee440e4e8ea9e133bda49186767a116fa3a4d41c3b546971",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4"
+    },
+    {
+      "function": "wifitimer_entry_get",
+      "ghidra_address": "0x16c804",
+      "subject_sha256": "ead672a2c97644ac901ee538a818f0988a810cf56e3ad0c16ffddeced8ab0bc9",
+      "evidence_id": "ev_cdd7d53ccb3fdbac2021114bfc6c37245f5efb623bbffa43f5401714bea1c35e",
+      "raw_member": "ghidra-wifi-management-timer/002-analyze_function.json",
+      "raw_sha256": "8860f3dcd41ee2ace499ffd3196256b97ea2efe0eab5743919b4b92efe717873",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4"
+    },
+    {
+      "function": "WiFiBandSteering_on_bus_acquired",
+      "ghidra_address": "0x1778cc",
+      "subject_sha256": "ead672a2c97644ac901ee538a818f0988a810cf56e3ad0c16ffddeced8ab0bc9",
+      "evidence_id": "ev_6805de69f93e08fc49f7e150dcce282c2999a6813d4d0b86f1244e229dc250a5",
+      "raw_member": "ghidra-wifi-management-timer/003-analyze_function.json",
+      "raw_sha256": "c8eb6ecf5162caf7e9b823d41dab641f6ed03a676b58f73929c0e680b6c2561a",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4"
+    },
+    {
+      "function": "WLANConfiguration_on_bus_acquired",
+      "ghidra_address": "0x176620",
+      "subject_sha256": "ead672a2c97644ac901ee538a818f0988a810cf56e3ad0c16ffddeced8ab0bc9",
+      "evidence_id": "ev_85afb02739a737cc6d59fa2890188864ca52b398688a3c9c8cf0b0fc951e3e87",
+      "raw_member": "ghidra-wifi-management-timer/004-analyze_function.json",
+      "raw_sha256": "7744ce81bfee4bfadbc81e53a0fd50cce573301ec825e83a43c71a3a971c24f7",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4"
+    },
+    {
+      "function": "wifitimer_time",
+      "ghidra_address": "0x16beac",
+      "subject_sha256": "ead672a2c97644ac901ee538a818f0988a810cf56e3ad0c16ffddeced8ab0bc9",
+      "evidence_id": "ev_b07b81688158d6c81e20ea2b7a879cf83e52da31a2d77157dc635fd9147168a7",
+      "raw_member": "ghidra-wifi-management-timer-body/001-analyze_function.json",
+      "raw_sha256": "474c005f401334ff728d44f599971933483baf0a6eae43543d04c89cc07f33da",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4"
+    }
+  ]
+}

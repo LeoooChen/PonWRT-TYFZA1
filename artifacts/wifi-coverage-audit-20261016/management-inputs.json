@@ -1,0 +1,686 @@
+{
+  "source_archive_sha256": "30911567f0633f600d07fa5f5b04f37ac30b115a3f95c228561a5ff15fc8adc9",
+  "artifacts": [
+    {
+      "path": "bin/config_wlan",
+      "bytes": 10408,
+      "sha256": "3996a82e7662b3f003c04694248a7f4628d342613fcf277137a515d13cc80e99"
+    },
+    {
+      "path": "bin/smart_wlanapp",
+      "bytes": 18904,
+      "sha256": "85cfa6f106eb59a85ed977d0500be8865c95ff172d6b7e174575ff4f03288004"
+    },
+    {
+      "path": "bin/wlan_apply",
+      "bytes": 6264,
+      "sha256": "ea9860f386bf746f0e8993b8d8d8b7dcf07204de3cdedf20df5251e0ab323fc0"
+    },
+    {
+      "path": "bin/wlan_manager",
+      "bytes": 39240,
+      "sha256": "61dca5428190318d7ee84a42a7a0a05ce370a04a3d17cd4506c5b2da38fcfa2c"
+    },
+    {
+      "path": "etc/dbusxml/Mesh.xml",
+      "bytes": 367,
+      "sha256": "ed4921839396bf169b81e31c0aea171b1d8fb57c3307b02a283392811d184d64"
+    },
+    {
+      "path": "etc/dbusxml/WLANConfiguration.xml",
+      "bytes": 2014,
+      "sha256": "0b8b0b56c79fb8e9e650650debdbe04ae08fd864c9759b61e05bf1016e986048"
+    },
+    {
+      "path": "etc/dbusxml/WPS.xml",
+      "bytes": 497,
+      "sha256": "a2e677579aee2ca6b8e5c09ed30df0e7f0d822f540bdabb75e8750e558f4ccf4"
+    },
+    {
+      "path": "etc/dbusxml/WiFiBandSteering.xml",
+      "bytes": 642,
+      "sha256": "0b64f42fe7dd1401de9c4d6eb996693aa6c232b9eda27fc2fc3e7187a110dd3f"
+    },
+    {
+      "path": "etc/dbusxml/WiFiInfo.xml",
+      "bytes": 2827,
+      "sha256": "82a1c04753358071741ab1fbeefe934dec87cd5134a843d938d266e3734b98e3"
+    },
+    {
+      "path": "etc/dbusxml/WiFiTimer.xml",
+      "bytes": 398,
+      "sha256": "ef810a89d9d3ee1fce5c8d5aeab3e3eaaf3dada5fddadba1fe01c0135a3174d6"
+    },
+    {
+      "path": "etc/dbusxml/WiFiTimer1.xml",
+      "bytes": 392,
+      "sha256": "cd9eb8166f65e33f54c57056547f9807d217f2c8e46707381bfa7e4831bf0c3f"
+    },
+    {
+      "path": "lib/omci/mib_Pptp80211Uni.so",
+      "bytes": 28384,
+      "sha256": "75663394c85fe9405c666c04946b2a59078405ae8d74e8f62b88521ef4d0f88c"
+    },
+    {
+      "path": "lib/libdbusproxy.so",
+      "bytes": 855224,
+      "sha256": "ead672a2c97644ac901ee538a818f0988a810cf56e3ad0c16ffddeced8ab0bc9"
+    }
+  ],
+  "archive_contains_primary_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "interfaces": [
+    {
+      "path": "WiFiTimer.xml",
+      "interface": [
+        "com.ctc.igd1.WiFiTimer"
+      ],
+      "members": [
+        {
+          "kind": "property",
+          "name": "StartTime",
+          "type": "s",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "EndTime",
+          "type": "s",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "ControlCycle",
+          "type": "s",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "Enable",
+          "type": "b",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "SSIDMask",
+          "type": "u",
+          "access": "readwrite"
+        }
+      ]
+    },
+    {
+      "path": "WiFiBandSteering.xml",
+      "interface": [
+        "com.ctc.igd1.WiFiBandSteering"
+      ],
+      "members": [
+        {
+          "kind": "property",
+          "name": "Enable",
+          "type": "b",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "Capability",
+          "type": "b",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "RSSIThreshold",
+          "type": "i",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "RSSIThreshold5G",
+          "type": "i",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "ChannelUtilization5G",
+          "type": "u",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "ChannelUtilizationThreshold5G",
+          "type": "u",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "STALoadThreshold2G",
+          "type": "u",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "SteeringDetectInterval",
+          "type": "u",
+          "access": "readwrite"
+        }
+      ]
+    },
+    {
+      "path": "WiFiInfo.xml",
+      "interface": [
+        "com.ctc.igd1.WiFiInfo"
+      ],
+      "members": [
+        {
+          "kind": "method",
+          "name": "KickOutDevice",
+          "type": null,
+          "access": null
+        },
+        {
+          "kind": "method",
+          "name": "SetSameSSID",
+          "type": null,
+          "access": null
+        },
+        {
+          "kind": "method",
+          "name": "CancelSameSSID",
+          "type": null,
+          "access": null
+        },
+        {
+          "kind": "method",
+          "name": "ChannelSwitch",
+          "type": null,
+          "access": null
+        },
+        {
+          "kind": "method",
+          "name": "ChannelCollection",
+          "type": null,
+          "access": null
+        },
+        {
+          "kind": "method",
+          "name": "ChannelCollectionRequest",
+          "type": null,
+          "access": null
+        },
+        {
+          "kind": "property",
+          "name": "Enable2G",
+          "type": "b",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "Enable5G",
+          "type": "b",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "WiFiMode",
+          "type": "s",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "SupportedBeaconType",
+          "type": "s",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "MAPAgent",
+          "type": "y",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "DualBand",
+          "type": "b",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "SameSSIDStatus",
+          "type": "b",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "RxBytes",
+          "type": "t",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "RxPkts",
+          "type": "t",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "RxErrorPkts",
+          "type": "t",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "RxDropPkts",
+          "type": "t",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "TxBytes",
+          "type": "t",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "TxPkts",
+          "type": "t",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "TxErrorPkts",
+          "type": "t",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "TxDropPkts",
+          "type": "t",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "RatePriority",
+          "type": "b",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "RatePriority5G",
+          "type": "b",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "ChannelScanStatus",
+          "type": "y",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "ChannelScanFinishTime",
+          "type": "s",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "ChannelScanScore",
+          "type": "as",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "ChannelScanStatus5G",
+          "type": "y",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "ChannelScanFinishTime5G",
+          "type": "s",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "ChannelScanScore5G",
+          "type": "as",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "BgNoise2G",
+          "type": "n",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "BgNoise5G",
+          "type": "n",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "EnWifiQualityCollection",
+          "type": "u",
+          "access": "readwrite"
+        }
+      ]
+    },
+    {
+      "path": "WPS.xml",
+      "interface": [
+        "com.ctc.igd1.WPS"
+      ],
+      "members": [
+        {
+          "kind": "method",
+          "name": "SetWPS",
+          "type": null,
+          "access": null
+        },
+        {
+          "kind": "property",
+          "name": "Enable",
+          "type": "b",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "WPSStatus",
+          "type": "y",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "DevInfo",
+          "type": "as",
+          "access": "read"
+        }
+      ]
+    },
+    {
+      "path": "WLANConfiguration.xml",
+      "interface": [
+        "com.ctc.igd1.WLANConfiguration"
+      ],
+      "members": [
+        {
+          "kind": "property",
+          "name": "SSID",
+          "type": "s",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "Enable",
+          "type": "b",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "Channel",
+          "type": "u",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "ChannelInUse",
+          "type": "u",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "BeaconType",
+          "type": "s",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "Standard",
+          "type": "s",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "WEPEncryptionLevel",
+          "type": "s",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "BasicAuthenticationMode",
+          "type": "s",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "WPAEncryptionModes",
+          "type": "s",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "SSIDHide",
+          "type": "b",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "RFBand",
+          "type": "u",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "ChannelWidth",
+          "type": "u",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "GuardInterval",
+          "type": "u",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "RetryTimeout",
+          "type": "u",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "Powerlevel",
+          "type": "u",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "PowerValue",
+          "type": "u",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "PWD",
+          "type": "s",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "RxBytes",
+          "type": "t",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "RxPkts",
+          "type": "t",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "RxErrorPkts",
+          "type": "t",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "RxDropPkts",
+          "type": "t",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "TxBytes",
+          "type": "t",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "TxPkts",
+          "type": "t",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "TxErrorPkts",
+          "type": "t",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "TxDropPkts",
+          "type": "t",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "SSIDAlias",
+          "type": "s",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "Owner",
+          "type": "s",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "Service",
+          "type": "s",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "MACAccessMode",
+          "type": "u",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "AccessRule",
+          "type": "u",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "AllowedIPPort",
+          "type": "s",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "USBandwidth",
+          "type": "u",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "DSBandwidth",
+          "type": "u",
+          "access": "readwrite"
+        }
+      ]
+    },
+    {
+      "path": "Mesh.xml",
+      "interface": [
+        "com.ctc.igd1.Mesh"
+      ],
+      "members": [
+        {
+          "kind": "property",
+          "name": "enable",
+          "type": "b",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "status",
+          "type": "s",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "wirelessctrl",
+          "type": "b",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "almac",
+          "type": "s",
+          "access": "read"
+        },
+        {
+          "kind": "property",
+          "name": "onlinetime",
+          "type": "u",
+          "access": "read"
+        }
+      ]
+    },
+    {
+      "path": "WiFiTimer1.xml",
+      "interface": [
+        "com.ctc.igd1.WiFiTimer1"
+      ],
+      "members": [
+        {
+          "kind": "property",
+          "name": "WeekDay",
+          "type": "as",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "Time",
+          "type": "s",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "Active",
+          "type": "s",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "Enable",
+          "type": "b",
+          "access": "readwrite"
+        },
+        {
+          "kind": "property",
+          "name": "SSIDMask",
+          "type": "u",
+          "access": "readwrite"
+        }
+      ]
+    }
+  ],
+  "observations": [
+    "DBus BandSteering and WLANConfiguration registration was decompiled.",
+    "OMCI 802.11 UNI driver config handler only reaches ARC handling in the selected branch, not radio programming.",
+    "wifitimer_time is a time-string parser; its name alone does not establish a running scheduler."
+  ]
+}

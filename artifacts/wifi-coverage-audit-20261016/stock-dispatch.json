@@ -1,0 +1,152 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "traces": [
+    {
+      "function": "rtw_hal_watchdog",
+      "inputs": {},
+      "calls": [
+        "rtw_hal_bb_watchdog",
+        "rtw_hal_rf_watchdog"
+      ]
+    },
+    {
+      "function": "halbb_cmn_info_self_init",
+      "inputs": {
+        "chip": "8852c"
+      },
+      "calls": [
+        "halbb_edcca_dev_hw_cap",
+        "halbb_cmn_info_self_reset"
+      ]
+    },
+    {
+      "function": "halbb_cmn_info_self_init",
+      "inputs": {
+        "chip": "8192xb"
+      },
+      "calls": [
+        "halbb_edcca_dev_hw_cap",
+        "halbb_cmn_info_self_reset"
+      ]
+    },
+    {
+      "function": "halbb_watchdog_normal",
+      "inputs": {
+        "advanced_DM_byte": 0
+      },
+      "calls": [
+        "halbb_cmn_info_self_update",
+        "halbb_ic_hw_setting",
+        "halbb_env_mntr",
+        "halbb_dig",
+        "halbb_pmac_statistics",
+        "halbb_basic_dbg_message",
+        "halbb_physts_watchdog",
+        "halbb_reset"
+      ]
+    },
+    {
+      "function": "halbb_watchdog_normal",
+      "inputs": {
+        "advanced_DM_byte": 1
+      },
+      "calls": [
+        "halbb_cmn_info_self_update",
+        "halbb_ic_hw_setting",
+        "halbb_env_mntr",
+        "halbb_dig",
+        "halbb_pmac_statistics",
+        "halbb_basic_dbg_message",
+        "halbb_physts_watchdog",
+        "halbb_edcca",
+        "halbb_dfs",
+        "halbb_cfo_acc_mode_en",
+        "halbb_cfo_dm",
+        "halbb_ra_watchdog",
+        "halbb_pwr_ctrl",
+        "halbb_la_re_trig_watchdog",
+        "halbb_antenna_diversity",
+        "halbb_path_diversity",
+        "halbb_mccdm_switch",
+        "halbb_reset"
+      ]
+    },
+    {
+      "function": "halrf_watchdog",
+      "inputs": {},
+      "calls": [
+        "halrf_get_thermal",
+        "halrf_get_thermal",
+        "halrf_tssi_ant_open",
+        "halrf_tssi_tracking",
+        "halrf_dpk_tracking",
+        "halrf_iqk_tracking",
+        "halrf_lck_tracking",
+        "halrf_rx_dck_tracking",
+        "halrf_op5k_tracking"
+      ]
+    },
+    {
+      "function": "halbb_cfo_watchdog",
+      "inputs": {
+        "acceleration_mode_callback_result": 0
+      },
+      "calls": [
+        "halbb_cfo_acc_mode_en",
+        "halbb_cfo_dm"
+      ]
+    },
+    {
+      "function": "halbb_cfo_watchdog",
+      "inputs": {
+        "acceleration_mode_callback_result": 1
+      },
+      "calls": [
+        "halbb_cfo_acc_mode_en"
+      ]
+    }
+  ],
+  "capabilities": [
+    {
+      "chip": "8852c",
+      "RFE": 54,
+      "antenna_diversity": 0,
+      "independent_xtal": 0,
+      "supportability": "0x38ba",
+      "DIG_aborts": false,
+      "CFO_aborts": true,
+      "advanced_DM_default": 1
+    },
+    {
+      "chip": "8852c",
+      "RFE": 54,
+      "antenna_diversity": 0,
+      "independent_xtal": 1,
+      "supportability": "0x38fa",
+      "DIG_aborts": false,
+      "CFO_aborts": false,
+      "advanced_DM_default": 1
+    },
+    {
+      "chip": "8192xb",
+      "RFE": 54,
+      "antenna_diversity": 0,
+      "independent_xtal": 0,
+      "supportability": "0x8bb",
+      "DIG_aborts": false,
+      "CFO_aborts": true,
+      "advanced_DM_default": 1
+    },
+    {
+      "chip": "8192xb",
+      "RFE": 54,
+      "antenna_diversity": 0,
+      "independent_xtal": 1,
+      "supportability": "0x8fb",
+      "DIG_aborts": false,
+      "CFO_aborts": false,
+      "advanced_DM_default": 1
+    }
+  ],
+  "scope": "Actual ARM64 initialization, capability/abort and dispatch functions. Unselected callees are explicit callbacks: this proves host dispatch and CFO non-acceleration routing, not that each algorithm is enabled on this board or that RF registers changed. No hardware, interrupt, firmware scheduler or throughput is executed."
+}
