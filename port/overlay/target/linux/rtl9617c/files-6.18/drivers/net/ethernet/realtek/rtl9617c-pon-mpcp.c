@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /* Native MPCP control, LLID access and events; GPL aal_mpcp.c reference. */
 #include <linux/bitfield.h>
+#include <linux/delay.h>
 #include <linux/etherdevice.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
@@ -36,6 +37,43 @@
 #define MPCP_EVENT_MASK (BIT(0) | BIT(1) | BIT(2) | BIT(3) | BIT(6) | BIT(14))
 #define OPT_EVENT_MASK (BIT(0) | BIT(1) | BIT(2) | BIT(8) | BIT(9))
 #define PON_TOP_EVENTS (BIT(0) | BIT(3))
+#define EPON_GLOBAL_EVENTS (BIT(0) | BIT(1) | BIT(3))
+
+static void rtl_epon_link_events(struct rtl9617c_pon *pon)
+{
+	u32 pending = readl(pon->mac + GLB_IRQ) & readl(pon->mac + GLB_IE);
+
+	if (pending & BIT(0)) {
+		u32 flags = readl(pon->mac + 0x1a0) & readl(pon->mac + 0x1a4);
+
+		if (flags & BIT(6)) {
+			pon->epon_link_events++;
+			rtl_pon_oam_carrier(pon);
+		}
+		writel(flags, pon->mac + 0x1a0);
+	}
+	if (pending & BIT(1)) {
+		u32 summary = readl(pon->mac + 0x1c0) & readl(pon->mac + 0x1c4);
+
+		if (summary & BIT(9)) {
+			u32 flags = readl(pon->mac + 0x1370) & readl(pon->mac + 0x1374);
+
+			if (flags & GENMASK(18, 17)) {
+				pon->epon_link_events++;
+				/* Actual stock link-down handler pulses CORESEC RX reset. */
+				if ((flags & BIT(17)) && !(readl(pon->mac + 0x13d0) & 1)) {
+					rtl_pon_update(pon->mac + 0x14c0, BIT(7), BIT(7));
+					usleep_range(1000, 2000);
+					rtl_pon_update(pon->mac + 0x14c0, BIT(7), 0);
+				}
+				rtl_pon_oam_carrier(pon);
+			}
+			writel(flags, pon->mac + 0x1370);
+		}
+		writel(summary, pon->mac + 0x1c0);
+	}
+	writel(pending & (BIT(0) | BIT(1)), pon->mac + GLB_IRQ);
+}
 
 static u32 rtl_pon_llid_mask(struct rtl9617c_pon *pon)
 {
@@ -83,7 +121,12 @@ static void rtl_mpcp_registration_event(struct rtl9617c_pon *pon, u32 registered
 {
 	char value[48];
 	char *env[] = {"PON_EVENT=registration", value, NULL};
+	unsigned int channel;
 
+	pon->epon_epoch++;
+	for (channel = 0; channel < 32; channel++)
+		if ((registered ^ pon->registered) & BIT(channel))
+			pon->epon_llid_epoch[channel] = pon->epon_epoch;
 	snprintf(value, sizeof(value), "PON_REGISTERED=%08x", registered);
 	pon->registration_events++;
 	kobject_uevent_env(&pon->dev->kobj, KOBJ_CHANGE, env);
@@ -112,6 +155,11 @@ static void rtl_mpcp_refresh(struct rtl9617c_pon *pon)
 	const struct rtl_mpcp_io io = {pon, rtl_mpcp_read, rtl_mpcp_write};
 
 	pon->last_mpcp_irq = flags;
+	if ((flags & BIT(3)) && pon->mode != RTL_PON_EPON_1G && pon->epon_crypto_llids) {
+		/* aal_epon_mpcp_gate_timeout_handler resets the active RX core. */
+		rtl_pon_update(pon->mac + 0x14c0, BIT(7), BIT(7));
+		rtl_pon_update(pon->mac + 0x14c0, BIT(7), 0);
+	}
 	if (rtl_mpcp_backoff_event(&pon->backoff, &io, flags, jiffies,
 				   msecs_to_jiffies(60000)) && pon->llid_count == 1)
 		rtl_mpcp_remove_mac(pon, 0);
@@ -132,6 +180,9 @@ static void rtl_mpcp_refresh(struct rtl9617c_pon *pon)
 			if (lost & BIT(i))
 				rtl_mpcp_remove_mac(pon, i);
 	}
+	if ((pon->epon_crypto_llids & ~registered) &&
+	    rtl_pon_epon_crypto_forget(pon, pon->epon_crypto_llids & ~registered))
+		dev_err_ratelimited(pon->dev, "EPON decryption cleanup failed: %d\n", pon->epon_crypto_error);
 	if (registered != pon->registered)
 		rtl_mpcp_registration_event(pon, registered);
 	pon->registered = registered;
@@ -151,6 +202,23 @@ static void rtl_mpcp_work(struct work_struct *work)
 	if (!pon->mpcp_enabled)
 		goto unlock;
 	rtl_mpcp_refresh(pon);
+	if (time_after_eq(jiffies, pon->epon_health_at)) {
+		u32 epon = readl(pon->mac + 0x10);
+		bool failure = pon->mode != RTL_PON_EPON_1G &&
+			!(readl(pon->mac + 0xa060) & BIT(0)) &&
+			FIELD_GET(GENMASK(5, 4), epon) > 1 && (epon & BIT(1)) &&
+			!(readl(pon->mac + 0x2120) & 0xffff);
+
+		pon->epon_sync_failures = failure ? pon->epon_sync_failures + 1 : 0;
+		if (pon->epon_sync_failures == 5) {
+			rtl_pon_update(pon->mac + 0x137c, BIT(15), BIT(15));
+			usleep_range(1000, 2000);
+			rtl_pon_update(pon->mac + 0x137c, BIT(15), 0);
+			pon->epon_sync_failures = 0;
+			pon->epon_rx_resets++;
+		}
+		pon->epon_health_at = jiffies + msecs_to_jiffies(3000);
+	}
 	status = readl(pon->mac + 0x10);
 	synced = !(status & BIT(0)) &&
 		 !!(status & (pon->mode == RTL_PON_EPON_1G ? BIT(2) : BIT(1)));
@@ -191,6 +259,7 @@ static irqreturn_t rtl_mpcp_irq_thread(int irq, void *data)
 	if (pending & BIT(0)) {
 		if (rtl_pon_mode_is_epon(pon->mode)) {
 			pon->mpcp_irq_count++;
+			rtl_epon_link_events(pon);
 			rtl_mpcp_refresh(pon);
 			writel(BIT(3), pon->mac + GLB_IRQ);
 		} else if (pon->mode == RTL_PON_GPON) {
@@ -222,35 +291,49 @@ int rtl_pon_mpcp_init(struct rtl9617c_pon *pon, int irq)
 					 IRQF_ONESHOT, "rtl9617c-mpcp", pon);
 }
 
-void rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon)
+int rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon)
 {
+	unsigned int channel;
+	int ret;
+
 	lockdep_assert_held(&pon->control_lock);
 	cancel_delayed_work_sync(&pon->mpcp_work);
 	mutex_lock(&pon->lock);
+	if (pon->mpcp_enabled) {
+		pon->epon_epoch++;
+		for (channel = 0; channel < 32; channel++)
+			pon->epon_llid_epoch[channel] = pon->epon_epoch;
+	}
 	pon->mpcp_enabled = false;
 	pon->backoff.active = 0;
 	if (!rtl_pon_mode_is_epon(pon->mode)) {
 		mutex_unlock(&pon->lock);
-		return;
+		return 0;
 	}
 	rtl_pon_update(pon->top_irq + 4, BIT(0), 0);
 	writel(0, pon->mac + MPCP_IE);
-	rtl_pon_update(pon->mac + GLB_IE, BIT(3), 0);
+	writel(0, pon->mac + 0x1a4);
+	writel(0, pon->mac + 0x1c4);
+	writel(0, pon->mac + 0x1374);
+	rtl_pon_update(pon->mac + GLB_IE, EPON_GLOBAL_EVENTS, 0);
 	rtl_pon_update(pon->mac + MPCP_CFG, BIT(31), 0);
 	rtl_pon_update(pon->mac + MPCP_START, BIT(0), 0);
 	writel(rtl_pon_llid_mask(pon), pon->mac + OFFLINE);
 	pon->waiting = 0;
 	pon->registered = readl(pon->mac + REGISTER_STATUS) & rtl_pon_llid_mask(pon);
 	pon->mpcp_configured = false;
+	ret = rtl_pon_epon_crypto_forget(pon, pon->epon_crypto_llids);
 	rtl_pon_oam_carrier(pon);
 	mutex_unlock(&pon->lock);
 	/* Finish queued IRQ threads before changing modes or freeing the OAM netdev. */
 	synchronize_irq(pon->mpcp_irq);
+	return ret;
 }
 
 int rtl_pon_mpcp_configure_locked(struct rtl9617c_pon *pon)
 {
 	u32 sync;
+	unsigned int channel;
 	int ret = 0;
 
 	lockdep_assert_held(&pon->control_lock);
@@ -263,6 +346,14 @@ int rtl_pon_mpcp_configure_locked(struct rtl9617c_pon *pon)
 		ret = -EAGAIN;
 		goto unlock;
 	}
+	if (pon->mpcp_enabled)
+		goto unlock;
+	ret = rtl_pon_epon_crypto_forget(pon, pon->epon_crypto_llids);
+	if (ret)
+		goto unlock;
+	pon->epon_epoch++;
+	for (channel = 0; channel < 32; channel++)
+		pon->epon_llid_epoch[channel] = pon->epon_epoch;
 	/* MPCP identity is the LLID0 MAC stored in this board's original MIB. */
 	rtl_pon_update(pon->mac + MAC_HIGH, GENMASK(15, 0), get_unaligned_be16(pon->onu_mac));
 	writel(get_unaligned_be32(pon->onu_mac + 2), pon->mac + MAC_LOW);
@@ -290,9 +381,17 @@ int rtl_pon_mpcp_configure_locked(struct rtl9617c_pon *pon)
 	pon->waiting = rtl_pon_llid_mask(pon) & ~pon->registered;
 	pon->mpcp_configured = true;
 	pon->mpcp_enabled = true;
+	pon->epon_health_at = jiffies + msecs_to_jiffies(3000);
+	pon->epon_sync_failures = 0;
 	writel(MPCP_EVENT_MASK, pon->mac + MPCP_IRQ);
 	writel(MPCP_EVENT_MASK, pon->mac + MPCP_IE);
-	rtl_pon_update(pon->mac + GLB_IE, BIT(3), BIT(3));
+	writel(BIT(6), pon->mac + 0x1a0);
+	writel(BIT(9), pon->mac + 0x1c0);
+	writel(GENMASK(18, 17), pon->mac + 0x1370);
+	writel(BIT(6), pon->mac + 0x1a4);
+	writel(BIT(9), pon->mac + 0x1c4);
+	writel(GENMASK(18, 17), pon->mac + 0x1374);
+	rtl_pon_update(pon->mac + GLB_IE, EPON_GLOBAL_EVENTS, EPON_GLOBAL_EVENTS);
 	rtl_pon_update(pon->top_irq + 4, PON_TOP_EVENTS, PON_TOP_EVENTS);
 	schedule_delayed_work(&pon->mpcp_work, HZ);
 	dev_info(pon->dev, "native MPCP configured: ONU %pM, %u LLIDs\n", pon->onu_mac, pon->llid_count);
@@ -303,8 +402,9 @@ unlock:
 
 ssize_t rtl_pon_mpcp_state(struct rtl9617c_pon *pon, char *buf)
 {
-	return sysfs_emit(buf,
-		"configured=%u enabled=%u mac=%pM llids=%u registered=%08x waiting=%08x attempts=%u events=%u irq_count=%u frames=%u cfg0=%08x cfg=%08x sync=%08x timers=%08x register_timeout=%08x laser_time=%08x mapping=%08x init=%08x start=%08x register_flag=%u nacks=%u silence_scope=shared-engine silence_ms=%u\n",
+	unsigned int channel;
+	ssize_t length = sysfs_emit(buf,
+		"configured=%u enabled=%u mac=%pM llids=%u registered=%08x waiting=%08x attempts=%u events=%u irq_count=%u frames=%u cfg0=%08x cfg=%08x sync=%08x timers=%08x register_timeout=%08x laser_time=%08x mapping=%08x init=%08x start=%08x register_flag=%u nacks=%u silence_scope=shared-engine silence_ms=%u epochs=",
 		pon->mpcp_configured, pon->mpcp_enabled, pon->onu_mac, pon->llid_count,
 		pon->registered, pon->waiting, pon->registration_attempts, pon->registration_events,
 		pon->mpcp_irq_count, pon->register_frames, readl(pon->mac + MPCP_CFG0),
@@ -315,6 +415,9 @@ ssize_t rtl_pon_mpcp_state(struct rtl9617c_pon *pon, char *buf)
 		pon->backoff.register_flag, pon->backoff.nacks,
 		pon->backoff.active && time_before(jiffies, pon->backoff.until) ?
 		jiffies_to_msecs(pon->backoff.until - jiffies) : 0);
+	for (channel = 0; channel < 32; channel++)
+		length += sysfs_emit_at(buf, length, "%s%016llx", channel ? "," : "", pon->epon_llid_epoch[channel]);
+	return length + sysfs_emit_at(buf, length, "\n");
 }
 
 ssize_t rtl_pon_llid_table(struct rtl9617c_pon *pon, char *buf)

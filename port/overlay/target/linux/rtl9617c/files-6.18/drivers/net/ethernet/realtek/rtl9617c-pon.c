@@ -28,8 +28,12 @@ int rtl_pon_stop_locked(struct rtl9617c_pon *pon)
 
 	lockdep_assert_held(&pon->control_lock);
 	if (rtl_pon_mode_is_epon(pon->mode)) {
+		int stopped;
+
 		ret = rtl_pon_epon_traffic_locked(pon, false);
-		rtl_pon_mpcp_stop_locked(pon);
+		stopped = rtl_pon_mpcp_stop_locked(pon);
+		if (!ret)
+			ret = stopped;
 	} else {
 		gpiod_set_value_cansleep(pon->tx_disable, 1);
 		ret = pon->fe_enabled ? rtl_pon_fe_configure_locked(pon, false) : 0;
@@ -78,8 +82,12 @@ int rtl_pon_mpcp_stop(struct rtl9617c_pon *pon)
 
 	mutex_lock(&pon->control_lock);
 	if (rtl_pon_mode_is_epon(pon->mode)) {
+		int stopped;
+
 		ret = pon->fe_enabled ? rtl_pon_fe_configure_locked(pon, false) : 0;
-		rtl_pon_mpcp_stop_locked(pon);
+		stopped = rtl_pon_mpcp_stop_locked(pon);
+		if (!ret)
+			ret = stopped;
 	} else
 		ret = -EOPNOTSUPP;
 	mutex_unlock(&pon->control_lock);
@@ -213,6 +221,14 @@ static ssize_t optical_show(struct device *dev, struct device_attribute *attr, c
 		pon->optical_irq_count, pon->last_optical_irq);
 }
 static DEVICE_ATTR_RO(optical);
+
+static ssize_t transceiver_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+
+	return rtl9617c_bosa_diagnostics(pon->bosa_dev, buf);
+}
+static DEVICE_ATTR_RO(transceiver);
 
 static ssize_t mac_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -662,6 +678,15 @@ static ssize_t omci_broadcast_write(struct file *file, struct kobject *kobj,
 }
 static BIN_ATTR(omci_broadcast, 0200, NULL, omci_broadcast_write, 0);
 
+static ssize_t epon_key_write(struct file *file, struct kobject *kobj,
+	const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
+{
+	if (offset)
+		return -EINVAL;
+	return rtl_pon_epon_key(dev_get_drvdata(kobj_to_dev(kobj)), buf, count) ?: count;
+}
+static BIN_ATTR(epon_key, 0200, NULL, epon_key_write, 0);
+
 static ssize_t data_path_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
@@ -706,6 +731,7 @@ static const struct bin_attribute *const rtl9617c_pon_bin_attrs[] = {
 	&bin_attr_xgpon_identity,
 	&bin_attr_itu_paths,
 	&bin_attr_omci_broadcast,
+	&bin_attr_epon_key,
 	NULL,
 };
 
@@ -716,6 +742,7 @@ static struct attribute *rtl9617c_pon_attrs[] = {
 	&dev_attr_omci_msk.attr,
 	&dev_attr_state.attr,
 	&dev_attr_bosa.attr,
+	&dev_attr_transceiver.attr,
 	&dev_attr_serdes.attr,
 	&dev_attr_serdes_registers.attr,
 	&dev_attr_optical.attr,

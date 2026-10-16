@@ -66,11 +66,18 @@ struct rtl9617c_pon {
     void *mac,*control,*epon_control,*gpon_control,*serdes_init,*optical_control,*top_irq,*dev;
     bool mpcp_enabled,mpcp_configured,mac_prepared,traffic_enabled,serdes_configured,gearbox_ready,rx_synced,puc_configured,pdc_configured,fe_enabled,xgpon_pending_valid;
     u32 registered,waiting,serdes_status;int sync_result,serdes_error,mpcp_irq,cleanup_error,policy_error;
+    uint64_t epon_epoch,epon_llid_epoch[32];
+    u32 epon_crypto_llids,epon_sync_failures;
+    unsigned long epon_health_at;
     int *tx_disable;
     unsigned int llid_count,los_invert,profile_rows;u8 onu_mac[6];
     struct rtl_mpcp_backoff backoff;struct delayed_work mpcp_work,serdes_work;
 };
 static struct rtl9617c_pon *current;
+static unsigned long jiffies;
+#define msecs_to_jiffies(ms) (ms)
+static int rtl_pon_epon_crypto_forget(struct rtl9617c_pon *pon,u32 mask)
+{pon->epon_crypto_llids &= ~mask;return 0;}
 int rtl_pon_stop_locked(struct rtl9617c_pon *pon);
 static int rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *pon,enum rtl_pon_mode mode){(void)mode;assert(pon->lock.held);return pon->policy_error;}
 static int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon,bool enable) {
@@ -285,7 +292,7 @@ with tempfile.TemporaryDirectory(prefix='control-tests-', dir=root / 'artifacts'
         if case == 'transactions':
             constants = '\n'.join(re.findall(r'^#define .*$', serdes + '\n' + mpcp, re.M))
             definitions = function(mpcp, 'rtl_pon_llid_mask')
-            locked = '_locked' if 'void rtl_pon_mpcp_stop_locked' in mpcp else ''
+            locked = '_locked' if 'rtl_pon_mpcp_stop_locked(' in mpcp else ''
             definitions += function(mpcp, 'rtl_pon_mpcp_stop' + locked) + function(mpcp, 'rtl_pon_mpcp_configure' + locked)
             definitions += function(serdes, 'rtl_pon_serdes_configure' + locked)
             if locked:

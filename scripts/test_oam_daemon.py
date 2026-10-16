@@ -14,9 +14,10 @@ import time
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--binary', type=Path, default=root / 'artifacts/oam-control/pon-oamd')
+parser.add_argument('--openwrt', type=Path, default=root / 'sources/openwrt')
 args = parser.parse_args()
-toolchain = root / 'sources/openwrt/staging_dir/toolchain-aarch64_cortex-a55_gcc-14.4.0_musl'
-libraries = root / 'sources/openwrt/staging_dir/target-aarch64_cortex-a55_musl/usr/lib'
+toolchain = args.openwrt / 'staging_dir/toolchain-aarch64_cortex-a55_gcc-14.4.0_musl'
+libraries = args.openwrt / 'staging_dir/target-aarch64_cortex-a55_musl/usr/lib'
 loader = toolchain / 'lib/libc.so'
 peer_mac = bytes.fromhex('021020304050')
 tests = []
@@ -55,7 +56,7 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
     config.mkdir()
     (config / 'pon').write_text("config pon 'pon'\n option loid '0012345678'\n option loid_password ''\n option vendor_id 'TEST'\n option oam_model 'FZA1'\n option equipment_id 'TYFZA1'\n option hardware_version 'HARDWARE-1'\n option software_version 'SOFTWARE-2'\n")
     mpcp = temporary / 'mpcp'
-    mpcp.write_text('configured=1 enabled=1 registered=00000000\n')
+    mpcp.write_text('configured=1 enabled=1 registered=00000000 epochs=0000000000000001\n')
     state = temporary / 'state'
     state.mkdir()
     state_file = state / 'llid-0.json'
@@ -74,7 +75,7 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
         waiting = status(state_file, lambda s: not s['registered'])
         assert not select.select([sock], [], [], 1.2)[0]
         tests.append('unregistered process sends no OAM')
-        mpcp.write_text('configured=1 enabled=1 registered=00000001\n')
+        mpcp.write_text('configured=1 enabled=1 registered=00000001 epochs=0000000000000001\n')
         info = receive(sock, 0)
         local = info[20:34]
         peer_local = b'\x01\x00\x07\x06\x14\x05\xee\x00\x0d\xb6\x01\x02\x03\x04'
@@ -99,9 +100,9 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
         versions = receive(sock, 0xfe)
         assert versions[21] == 2 and versions[26:34] == b'TESTFZA1'
         assert versions[40:48] == b'HARDWARE'
-        assert versions[48:64] == b'SOFTWARE-2'.ljust(16, b'\0')
-        assert versions[84:100] == b'SOFTWARE-2'.ljust(16, b'\0')
-        tests.append('UCI hardware/software versions enter live Get replies')
+        assert versions[48:64] == b'SOFTWARE-2'.rjust(16, b'\0')
+        assert versions[83:87] == b'\x03\x00\x03\x01'
+        tests.append('ONU SN carries UCI software identity; FirmwareVer carries three release octets')
         set_request = bytes.fromhex('11111103 37000104 01000007 c700250102 3600010103 c700130200e3 00')
         set_response = bytes.fromhex('11111104 37000104 01000007 c7002587 3600010103 c7001387 00')
         sock.send(ethernet(set_request, code=0xfe, flags=0x50))
@@ -126,12 +127,12 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
         rejected = status(state_file, lambda s: s['auth_state'] == 'rejected')
         assert rejected['auth_failure'] == 7 and rejected['auth_failures'] == 1
         tests.append('reauthentication clears success and records rejection')
-        mpcp.write_text('configured=1 enabled=1 registered=00000000\n')
+        mpcp.write_text('configured=1 enabled=1 registered=00000000 epochs=0000000000000001\n')
         reset = status(state_file, lambda s: not s['registered'])
         assert reset['auth_state'] == 'waiting' and reset['auth_results'] == 2
         assert not reset['discovery_stable']
         tests.append('MPCP loss resets current auth and retains result history')
-        mpcp.write_text('configured=1 enabled=1 registered=00000001\n')
+        mpcp.write_text('configured=1 enabled=1 registered=00000001 epochs=0000000000000001\n')
         fresh = receive(sock, 0)
         assert fresh[20:34] != local
         fresh_info = b'\x01\x10' + peer_local + b'\x02\x10' + fresh[20:34] + b'\xfe\x07\x11\x11\x11\x01\x30\0\0'
@@ -139,8 +140,22 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
         status(state_file, lambda s: s['discovery_stable'])
         sock.send(ethernet(b'\x11\x11\x11\x05\x03\0\0', code=0xfe, flags=0x50))
         status(state_file, lambda s: s['auth_state'] == 'accepted')
+        before_epoch = status(state_file, lambda s: s['discovery_stable'])
+        mpcp.write_text('configured=1 enabled=1 registered=00000001 epochs=0000000000000002\n')
+        changed_epoch = status(state_file, lambda s: s['generation'] == before_epoch['generation'] + 1)
+        assert changed_epoch['registered'] and not changed_epoch['discovery_stable']
+        assert changed_epoch['auth_state'] == 'waiting'
+        fresh = receive(sock, 0)
+        while int.from_bytes(fresh[21:23], 'big') != (changed_epoch['generation'] & 0xffff):
+            fresh = receive(sock, 0)
+        fresh_info = b'\x01\x10' + peer_local + b'\x02\x10' + fresh[20:34] + b'\0\0'
+        sock.send(ethernet(fresh_info, flags=16))
+        status(state_file, lambda s: s['discovery_stable'])
+        sock.send(ethernet(b'\x11\x11\x11\x05\x03\0\0', code=0xfe, flags=0x50))
+        status(state_file, lambda s: s['auth_state'] == 'accepted')
+        tests.append('a registration epoch change invalidates auth even when the sampled bitmap stays registered')
         timed_out = status(state_file, lambda s: not s['discovery_stable'] and s['auth_state'] == 'waiting', timeout=7)
-        assert timed_out['auth_successes'] == 2 and timed_out['registered']
+        assert timed_out['auth_successes'] == 3 and timed_out['registered']
         tests.append('OAM peer timeout revokes current auth while MPCP remains registered')
         # Establish another accepted session, then keep feeding invalid or
         # unhandled traffic past the five-second liveness deadline.
@@ -161,7 +176,7 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
             time.sleep(.7)
         expired = status(state_file, lambda s: s['auth_state'] == 'waiting' and not s['discovery_stable'])
         assert expired['registered'] and expired['generation'] == live['generation'] + 1
-        assert expired['auth_successes'] == 3
+        assert expired['auth_successes'] == 4
         tests.append('truncated, unsupported-code and unknown-OUI traffic cannot extend an accepted session')
         duplicate = subprocess.run([str(loader), '--library-path', str(libraries) + ':' + str(toolchain / 'lib'),
             str(args.binary), '--config-dir', str(config), '--mpcp-status', str(mpcp), '--state-dir', str(state)],

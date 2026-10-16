@@ -14,6 +14,16 @@ enum pon_oam_receive_result {
 	PON_OAM_HANDLED,
 };
 
+struct pon_oam_request {
+	uint8_t version;
+	uint8_t branch;
+	uint16_t leaf;
+	const uint8_t *object;
+	size_t object_size;
+	const uint8_t *parameters;
+	size_t parameter_size;
+};
+
 struct pon_oam_identity {
 	uint8_t mac[6];
 	uint8_t loid[24];
@@ -23,12 +33,14 @@ struct pon_oam_identity {
 	uint8_t equipment[20];
 	uint8_t hardware[16];
 	uint8_t software[16];
+	uint8_t firmware[3];
 	bool loid_configured;
 	void *backend_context;
-	int (*get_parameter)(void *context, uint8_t branch, uint16_t leaf,
-		const uint8_t *object, size_t object_size, uint8_t *value, size_t capacity);
-	uint8_t (*set_parameter)(void *context, uint8_t branch, uint16_t leaf,
-		const uint8_t *object, size_t object_size, const uint8_t *value, size_t size);
+	int (*get_parameter)(void *context, const struct pon_oam_request *request,
+		uint8_t *value, size_t capacity);
+	uint8_t (*set_parameter)(void *context, const struct pon_oam_request *request,
+		const uint8_t *value, size_t size);
+	int (*churning_key)(void *context, uint8_t index, uint8_t key[9], size_t length);
 };
 
 enum pon_oam_auth {
@@ -49,6 +61,9 @@ struct pon_oam_session {
 	bool local_echoed;
 	bool extension_selected;
 	bool extension_advertised;
+	uint8_t key[9];
+	uint8_t key_length;
+	uint8_t key_index;
 	enum pon_oam_auth auth;
 	uint8_t auth_failure;
 	unsigned int generation;

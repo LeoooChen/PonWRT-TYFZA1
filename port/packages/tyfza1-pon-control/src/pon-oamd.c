@@ -26,6 +26,10 @@
 #include "pon-backend.h"
 #include "pon-config.h"
 
+#ifndef PON_FIRMWARE_VERSION
+#error PON_FIRMWARE_VERSION must identify the built firmware
+#endif
+
 static volatile sig_atomic_t running = 1;
 
 static void stop(int signal_number)
@@ -59,9 +63,18 @@ static int identity_load(const char *directory, struct pon_oam_identity *identit
 {
 	struct pon_config config = {};
 	int ret = pon_config_load(&config, directory);
+	unsigned int major, minor, patch;
 
 	if (ret)
 		goto done;
+	if (sscanf(PON_FIRMWARE_VERSION, "%u.%u.%u", &major, &minor, &patch) != 3 ||
+	    major > 255 || minor > 255 || patch > 255) {
+		ret = -EINVAL;
+		goto done;
+	}
+	identity->firmware[0] = major;
+	identity->firmware[1] = minor;
+	identity->firmware[2] = patch;
 #define COPY_OPTION(key, member) do { ret = option_copy(&config, key, identity->member, sizeof(identity->member)); if (ret) goto done; } while (0)
 	COPY_OPTION("loid", loid);
 	COPY_OPTION("loid_password", password);
@@ -77,11 +90,11 @@ done:
 	return ret;
 }
 
-static int registered(const char *path, unsigned int llid, bool *online)
+static int registered(const char *path, unsigned int llid, bool *online, uint64_t *epoch)
 {
-	char data[1024], *token, *save = NULL;
+	char data[2048], *token, *save = NULL;
 	unsigned int bitmap = 0;
-	bool enabled = false, have_bitmap = false;
+	bool enabled = false, have_bitmap = false, have_epoch = false;
 	FILE *stream = fopen(path, "r");
 
 	if (!stream)
@@ -101,9 +114,27 @@ static int registered(const char *path, unsigned int llid, bool *online)
 			have_bitmap = !*end;
 		} else if (!strcmp(token, "enabled=1")) {
 			enabled = true;
+		} else if (!strncmp(token, "epochs=", 7)) {
+			char *entry = token + 7, *end;
+			unsigned int index;
+
+			for (index = 0; index <= llid; index++) {
+				uint64_t value = strtoull(entry, &end, 16);
+
+				if (entry == end || (*end && *end != ','))
+					break;
+				if (index == llid) {
+					*epoch = value;
+					have_epoch = true;
+					break;
+				}
+				if (*end != ',')
+					break;
+				entry = end + 1;
+			}
 		}
 	}
-	if (!have_bitmap)
+	if (!have_bitmap || !have_epoch)
 		return -EPROTO;
 	*online = enabled && (bitmap & (1U << llid));
 	return 0;
@@ -209,6 +240,7 @@ int main(int argc, char **argv)
 	char state_path[512], lock_path[512], starttime[32] = {};
 	uint64_t next_information = 0, next_status = 0, auth_result_ms = 0;
 	uint64_t last_received = 0;
+	uint64_t line_epoch = 0;
 	static const struct option options[] = {
 		{"interface", required_argument, NULL, 'i'},
 		{"llid-index", required_argument, NULL, 'n'},
@@ -234,6 +266,7 @@ int main(int argc, char **argv)
 		return 2;
 	if (pon_backend_init(&backend, mpcp))
 		return 2;
+	backend.llid = llid;
 	pon_backend_bind(&identity, &backend);
 	ret = identity_load(configuration, &identity);
 	if (ret) {
@@ -275,15 +308,18 @@ int main(int argc, char **argv)
 		fd_set readable;
 		bool now_online = false;
 		uint64_t now = monotonic_ms();
-		int link_error = registered(mpcp, llid, &now_online);
+		uint64_t epoch = 0;
+		int link_error = registered(mpcp, llid, &now_online, &epoch);
 
 		if (link_error)
 			now_online = false;
-		if (now_online != online) {
+		if (now_online != online || epoch != line_epoch) {
 			pon_oam_reset(&session);
 			session_valid = false;
 			last_received = 0;
 			online = now_online;
+			line_epoch = epoch;
+			backend.epoch = epoch;
 			next_information = now;
 			syslog(LOG_INFO, "LLID%u MPCP registered=%u generation=%u", llid, online, session.generation);
 		}

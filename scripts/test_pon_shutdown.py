@@ -61,8 +61,8 @@ static void rtl_pon_gpon_stop_locked(struct rtl9617c_pon *pon)
 { assert(pon->control_lock && pon->mode==RTL_PON_GPON); pon->gpon_stops++; }
 static void rtl_pon_xgpon_stop_locked(struct rtl9617c_pon *pon)
 { assert(pon->control_lock && pon->mode>=RTL_PON_XGPON); pon->xgpon_stops++; }
-static void rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon)
-{ assert(pon->control_lock && *pon->tx_disable); pon->mpcp_stops++; }
+static int rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon)
+{ assert(pon->control_lock && *pon->tx_disable); pon->mpcp_stops++; return 0; }
 static void synchronize_irq(int irq)
 {
  assert(irq == 24 && shutting_down->control_lock);

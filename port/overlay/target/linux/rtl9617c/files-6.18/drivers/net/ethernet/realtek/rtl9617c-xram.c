@@ -10,6 +10,7 @@
 #include <linux/crc32.h>
 #include <linux/delay.h>
 #include <linux/etherdevice.h>
+#include <linux/ethtool.h>
 #include <linux/hrtimer.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
@@ -737,6 +738,13 @@ static const struct net_device_ops rtl_netdev_ops = {
 	.ndo_validate_addr = eth_validate_addr,
 };
 
+static const struct ethtool_ops rtl_ethtool_ops = {
+	.get_link = ethtool_op_get_link,
+	.get_link_ksettings = phy_ethtool_get_link_ksettings,
+	.set_link_ksettings = phy_ethtool_set_link_ksettings,
+	.nway_reset = phy_ethtool_nway_reset,
+};
+
 static void rtl_unregister_extra_lans(struct rtl_xram *priv)
 {
 	unsigned int port;
@@ -825,6 +833,7 @@ static int rtl_register_extra_lans(struct rtl_xram *priv, struct device *parent)
 		lan->shared = priv;
 		lan->port = port;
 		dev->netdev_ops = &rtl_netdev_ops;
+		dev->ethtool_ops = &rtl_ethtool_ops;
 		dev->max_mtu = ETH_DATA_LEN;
 		ether_addr_copy(mac, priv->netdev->dev_addr);
 		mac[5] += port;
@@ -1111,6 +1120,7 @@ static int rtl_probe(struct platform_device *pdev)
 	mac[5] = readl(priv->ni + PORT_STATIC + priv->port * PORT_STRIDE) >> 24;
 	eth_hw_addr_set(netdev, mac);
 	netdev->netdev_ops = &rtl_netdev_ops;
+	netdev->ethtool_ops = &rtl_ethtool_ops;
 	netdev->max_mtu = ETH_DATA_LEN;
 	spin_lock_init(&priv->tx_lock);
 	spin_lock_init(&priv->rx_lock);
