@@ -52,9 +52,96 @@ telnet 192.168.1.1
 
 原厂 Telnet 默认用户名和密码均为 `telnetadmin`。登录后执行 `su`，再次输入密码 `telnetadmin`，取得 root 权限。若已修改原厂地址或密码，使用实际配置。
 
-刷入前备份原厂数据，刷写期间保持供电。接下来任选一种方式安装。
+刷写期间保持供电，首次安装前先完成下面的原厂备份。
 
-### 2. 安装固件
+### 2. 备份原厂分区
+
+准备一个至少有 **1 GiB 可用空间**的 U 盘，插入光猫。保持设备空闲，在已取得 root 权限的 Telnet 中整段复制运行以下命令，自动将全部物理 NAND 分区、UBI 逻辑卷和配置导出到 U 盘：
+
+<details>
+<summary><strong>展开一键备份命令</strong></summary>
+
+```sh
+(
+    set -eu
+    umask 077
+    [ "$(id -u)" -eq 0 ] || { echo "请先执行 su 取得 root 权限。"; exit 1; }
+    for tool in nanddump saveconfig md5sum; do
+        which "$tool" >/dev/null || { echo "缺少备份工具：$tool"; exit 1; }
+    done
+    usb=
+    while read -r source target rest; do
+        case "$target" in
+            /mnt/usb*)
+                [ -z "$usb" ] || { echo "检测到多个 U 盘分区，请只保留一个后重试。"; exit 1; }
+                usb=$target ;;
+        esac
+    done < /proc/mounts
+    [ -n "$usb" ] || { echo "未找到已挂载的 U 盘，请插好后重试。"; exit 1; }
+    free_kb=$(df -Pk "$usb" | awk 'END {print $4}')
+    [ "$free_kb" -ge 1048576 ] || { echo "U 盘可用空间不足 1 GiB。"; exit 1; }
+    backup="$usb/TYFZA1-backup-$(date +%Y%m%d-%H%M%S)-$$"
+    mkdir "$backup"
+    cd "$backup"
+    check_size() {
+        [ "$(wc -c < "$1")" -eq "$2" ] || { echo "备份文件长度异常：$1，备份未完成。"; exit 1; }
+    }
+    cat /proc/mtd > partitions.txt
+    cat /proc/mounts > mounts.txt
+    cat /proc/cmdline > cmdline.txt
+    uname -a > system.txt
+    printf 'device\tsize\twritesize\toobsize\toffset\tname\n' > nand-layout.txt
+    count=0
+    for mtd in /sys/class/mtd/mtd[0-9]*; do
+        [ -f "$mtd/type" ] || continue
+        case "$(cat "$mtd/type")" in nand|mlc-nand) ;; *) continue ;; esac
+        device=${mtd##*/}
+        size=$(cat "$mtd/size")
+        page=$(cat "$mtd/writesize")
+        oob=$(cat "$mtd/oobsize")
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$device" "$size" "$page" "$oob" "$(cat "$mtd/offset")" "$(cat "$mtd/name")" >> nand-layout.txt
+        echo "正在备份 $device（$(cat "$mtd/name")）……"
+        failed=$(cat "$mtd/ecc_failures")
+        nanddump --omitoob --bb=dumpbad -f "$device.bin" "/dev/$device" 2> "$device-ecc.log"
+        check_size "$device.bin" "$size"
+        [ "$(cat "$mtd/ecc_failures")" -eq "$failed" ] || { echo "$device 出现不可校正的 ECC 错误，备份未完成。"; exit 1; }
+        nanddump -n -o --bb=dumpbad -f "$device.raw" "/dev/$device" 2> "$device-raw.log"
+        check_size "$device.raw" "$((size / page * (page + oob)))"
+        count=$((count + 1))
+    done
+    [ "$count" -gt 0 ] || { echo "未找到物理 NAND 分区，备份未完成。"; exit 1; }
+    printf 'device\tsize\tname\n' > ubi-layout.txt
+    count=0
+    for volume in /sys/class/ubi/ubi[0-9]*_[0-9]*; do
+        [ -f "$volume/name" ] || continue
+        device=${volume##*/}
+        size=$(cat "$volume/data_bytes")
+        printf '%s\t%s\t%s\n' "$device" "$size" "$(cat "$volume/name")" >> ubi-layout.txt
+        echo "正在备份 $device（$(cat "$volume/name")）……"
+        dd if="/dev/$device" of="$device.bin" bs=2048 2> "$device.log"
+        check_size "$device.bin" "$size"
+        count=$((count + 1))
+    done
+    [ "$count" -gt 0 ] || { echo "未找到 UBI 卷，备份未完成。"; exit 1; }
+    saveconfig -f config-cs.xml cs
+    saveconfig -f config-hs.xml hs
+    [ -s config-cs.xml ] && [ -s config-hs.xml ]
+    sync
+    md5sum ./*.bin ./*.raw ./*.xml ./*.txt ./*.log > MD5SUMS
+    md5sum -c MD5SUMS
+    touch BACKUP_COMPLETE
+    sync
+    echo "备份完成：$backup，请将整个目录复制到电脑保存。"
+)
+```
+
+</details>
+
+出现“备份完成”且目录中有 `BACKUP_COMPLETE` 即表示导出、长度检查和 MD5 校验已通过。`.bin` 保存 ECC 校正后的分区数据及 UBI 卷，`.raw` 保存 NAND 主数据和 OOB。备份包含本机账号、身份和校准信息，请妥善保管。
+
+此方法备份系统暴露的全部分区；包含未分区区域的整片 NAND 镜像，需要通过串口/U-Boot 读取。
+
+### 3. 安装固件
 
 **方式一：U 盘**
 
