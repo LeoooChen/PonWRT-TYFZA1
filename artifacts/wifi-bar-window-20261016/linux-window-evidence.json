@@ -1,0 +1,19 @@
+{
+  "kernel": "6.18.55",
+  "path": "net/mac80211/rx.c",
+  "sha256": "9f95c6111410c03aedf4ed8a81252ee10e9e93b4f0625968ee8811e4635fa406",
+  "excerpts": [
+    {
+      "first_line": 3265,
+      "excerpt": "\tif (ieee80211_is_back_req(bar->frame_control)) {\n\t\tstruct {\n\t\t\t__le16 control, start_seq_num;\n\t\t} __packed bar_data;\n\t\tstruct ieee80211_event event = {\n\t\t\t.type = BAR_RX_EVENT,\n\t\t};\n\n\t\tif (!rx->sta)\n\t\t\treturn RX_DROP;\n\n\t\tif (skb_copy_bits(skb, offsetof(struct ieee80211_bar, control),\n\t\t\t\t  &bar_data, sizeof(bar_data)))\n\t\t\treturn RX_DROP;\n\n\t\ttid = le16_to_cpu(bar_data.control) >> 12;\n\n\t\tif (!test_bit(tid, rx->sta->ampdu_mlme.agg_session_valid) &&\n\t\t    !test_and_set_bit(tid, rx->sta->ampdu_mlme.unexpected_agg))\n\t\t\tieee80211_send_delba(rx->sdata, rx->sta->sta.addr, tid,\n\t\t\t\t\t     WLAN_BACK_RECIPIENT,\n\t\t\t\t\t     WLAN_REASON_QSTA_REQUIRE_SETUP);\n\n\t\ttid_agg_rx = rcu_dereference(rx->sta->ampdu_mlme.tid_rx[tid]);\n\t\tif (!tid_agg_rx)\n\t\t\treturn RX_DROP;\n\n\t\tstart_seq_num = le16_to_cpu(bar_data.start_seq_num) >> 4;\n\t\tevent.u.ba.tid = tid;\n\t\tevent.u.ba.ssn = start_seq_num;\n\t\tevent.u.ba.sta = &rx->sta->sta;\n\n\t\t/* reset session timer */\n\t\tif (tid_agg_rx->timeout)\n\t\t\tmod_timer(&tid_agg_rx->session_timer,\n\t\t\t\t  TU_TO_EXP_TIME(tid_agg_rx->timeout));\n\n\t\tspin_lock(&tid_agg_rx->reorder_lock);\n\t\t/* release stored frames up to start of BAR */\n\t\tieee80211_release_reorder_frames(rx->sdata, tid_agg_rx,\n\t\t\t\t\t\t start_seq_num, frames);\n\t\tspin_unlock(&tid_agg_rx->reorder_lock);\n\n\t\tdrv_event_callback(rx->local, rx->sdata, &event);\n\n\t\tkfree_skb(skb);\n\t\treturn RX_QUEUED;\n\t}\n"
+    },
+    {
+      "first_line": 1304,
+      "excerpt": "\t/* frame with out of date sequence number */\n\tif (ieee80211_sn_less(mpdu_seq_num, head_seq_num)) {\n\t\tdev_kfree_skb(skb);\n\t\tgoto out;\n\t}\n"
+    },
+    {
+      "first_line": 4392,
+      "excerpt": "\tba = rcu_dereference(sta->ampdu_mlme.tid_rx[tid]);\n\tif (ba) {\n\t\tspin_lock_bh(&ba->reorder_lock);\n\t\tready = !ba->stored_mpdu_num &&\n\t\t\tba->head_seq_num == key->rx_shortcut_next_seq[tid];\n\t\tif (ready) *next_seq = ba->head_seq_num;\n\t\tspin_unlock_bh(&ba->reorder_lock);\n\t} else {\n\t\t*next_seq = key->rx_shortcut_next_seq[tid];\n\t\tready = true;\n\t}\n\tif (ready) memcpy(pn, key->u.ccmp.rx_pn[tid], 6);"
+    }
+  ]
+}

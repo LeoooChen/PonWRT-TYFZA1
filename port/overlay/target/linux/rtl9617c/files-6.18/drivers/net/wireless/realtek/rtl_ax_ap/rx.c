@@ -253,14 +253,19 @@ static void rtl_ax_rx_uplink_seed(struct rtl_ax_rx *rx, const struct rtl_ax_rx_p
 	unsigned int macid, tid;
 	u16 fc;
 
-	if (!rx->uplink_wifi_id || packet->type || packet->bytes < 54) return;
+	if (!rx->uplink_wifi_id || packet->type || packet->bytes < 24) return;
 	fc = get_unaligned_le16(frame);
-	if ((fc & 0x47ff) != 0x4188 || frame[22] & 15) return;
+	if ((fc & 0x00fc) == 0x0084) {
+		/* BAR can advance the BA head without accepting a new data frame. */
+		tid = frame[17] >> 4;
+	} else {
+		if (packet->bytes < 54 || (fc & 0x47ff) != 0x4188 || frame[22] & 15) return;
+		tid = frame[24] & 15;
+	}
 	mutex_lock(&rx->uplink_lock);
 	for (macid = 1; macid < 128; macid++)
 		if (rx->keys[macid] && !memcmp(frame + 10, memory + 0xe400 + macid * 8, 6)) break;
 	if (macid == 128) goto unlock;
-	tid = frame[24] & 15;
 	rx->uplink_pending_tids[macid] |= BIT(tid);
 	local_bh_disable(); rcu_read_lock();
 	sta = ieee80211_find_sta_by_ifaddr(rx->hw, frame + 10, NULL);

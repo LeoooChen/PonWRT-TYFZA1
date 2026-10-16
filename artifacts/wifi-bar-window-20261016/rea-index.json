@@ -1,0 +1,304 @@
+{
+  "address_note": "Ghidra addresses = ELF .text offsets + 0x10003c",
+  "functions": [
+    {
+      "evidence_id": "ev_4fb0cbfde71348efabd368bbefbccb385a3e08b4a1ed009f2d34f041ab0dc2e6",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x1ab194",
+        "name": "rtw_process_bar_frame",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x1ab194",
+              "end": "0x1ab1fb"
+            }
+          ],
+          "total_bytes": 104,
+          "span_bytes": 104,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined rtw_process_bar_frame()",
+        "locals": [
+          {
+            "description": "undefined8 local_10 @ Stack[-0x10]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_20 @ Stack[-0x20]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nvoid rtw_process_bar_frame(long param_1,long param_2)\n\n{\n  ushort uVar1;\n  undefined8 *puVar2;\n  long lVar3;\n  \n  lVar3 = *(long *)(param_2 + 0x128);\n  puVar2 = (undefined8 *)rtw_get_stainfo(param_1 + 0x6318,lVar3 + 10);\n  if (puVar2 != (undefined8 *)0x0) {\n    uVar1 = *(ushort *)(lVar3 + 0x10);\n    *(ushort *)((long)puVar2 + (ulong)(uVar1 >> 0xc) * 0x70 + 0x5892) =\n         *(ushort *)(lVar3 + 0x12) >> 4;\n    rtw_phl_rx_bar(*(undefined8 *)(*(long *)(param_1 + 0xc0) + 0x11c0),*puVar2,uVar1 >> 0xc);\n  }\n  return;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-bar-window/001-analyze_function.json",
+      "original_result_sha256": "b642df1b4eacae01b94f5a8db735e358fccf614e31b76dd9ad3b105754108ad7"
+    },
+    {
+      "evidence_id": "ev_be5fb4496fcd23260ab2cef13aea6f3c6149cddaeca6a1a0e8ec349d67491c0d",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x23799c",
+        "name": "rtw_phl_rx_bar",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x23799c",
+              "end": "0x237c93"
+            }
+          ],
+          "total_bytes": 760,
+          "span_bytes": 760,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined rtw_phl_rx_bar()",
+        "locals": [
+          {
+            "description": "undefined8 local_10 @ Stack[-0x10]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_18 @ Stack[-0x18]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_30 @ Stack[-0x30]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_40 @ Stack[-0x40]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_50 @ Stack[-0x50]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_60 @ Stack[-0x60]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_8 @ Stack[-0x8]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\n/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */\n\nvoid rtw_phl_rx_bar(undefined8 param_1,long param_2,byte param_3,short param_4)\n\n{\n  int *piVar1;\n  int iVar2;\n  ushort uVar3;\n  ushort uVar4;\n  char cVar5;\n  bool bVar6;\n  uint uVar7;\n  ulong uVar8;\n  long lVar9;\n  ulong unaff_x30;\n  undefined8 **local_18;\n  undefined8 **local_10;\n  long local_8;\n  \n  lVar9 = sp_el0;\n  local_8 = *(long *)(lVar9 + 0x430);\n  if (param_3 < 8) {\n    local_18 = &local_18;\n    lVar9 = sp_el0;\n    *(int *)(lVar9 + 0x10) = *(int *)(lVar9 + 0x10) + 0x200;\n    piVar1 = (int *)(param_2 + 0x968);\n    Hint_Prefetch(piVar1,2,0,1);\n    do {\n      iVar2 = *piVar1;\n      if (iVar2 != 0) break;\n      cVar5 = '\\x01';\n      bVar6 = (bool)ExclusiveMonitorPass(piVar1,0x10);\n      if (bVar6) {\n        *piVar1 = 1;\n        cVar5 = ExclusiveMonitorsStatus();\n      }\n    } while (cVar5 != '\\0');\n    local_10 = local_18;\n    if (iVar2 != 0) {\n      queued_spin_lock_slowpath();\n    }\n    lVar9 = *(long *)(param_2 + (ulong)param_3 * 8 + 0x928);\n    if (lVar9 == 0) {\n      *(undefined4 *)(param_2 + 0x968) = 0;\n      if ((unaff_x30 >> 0x37 & 1) == 0) {\n        uVar8 = unaff_x30 &\n                (-1L << (_vabits_actual & 0x3f) & 0x7fffffffffffffU ^ 0xffffffffffffffff);\n      }\n      else {\n        uVar8 = unaff_x30 | -1L << (_vabits_actual & 0x3f);\n      }\n      __local_bh_enable_ip(uVar8,0x200);\n      if (((phl_log_components >> 1 & 1) != 0) && (1 < phl_log_level)) {\n        printk(\"PHL: BAR for non-existing TID %d\\n\",param_3);\n      }\n    }\n    else if ((param_4 - *(short *)(lVar9 + 0x20) & 0xfffU) < 0x801) {\n      if (((phl_log_components >> 1 & 1) != 0) && (3 < phl_log_level)) {\n        printk(\"PHL: BAR: TID %d Seq 0x%03x head 0x%03x\\n\",param_3,param_4);\n      }\n      uVar3 = *(ushort *)(lVar9 + 0x20);\n      uVar4 = uVar3 - param_4;\n      while ((0x800 < (uVar4 & 0xfff) && (*(short *)(lVar9 + 0x22) != 0))) {\n        uVar4 = *(ushort *)(lVar9 + 0x26);\n        uVar7 = 0;\n        if (uVar4 != 0) {\n          uVar7 = (uint)uVar3 / (uint)uVar4;\n        }\n        phl_release_reorder_frame(param_1,lVar9,(uint)uVar3 - uVar7 * uVar4 & 0xffff,&local_18);\n        uVar3 = *(ushort *)(lVar9 + 0x20);\n        uVar4 = uVar3 - param_4;\n      }\n      *(short *)(lVar9 + 0x20) = param_4;\n      *(undefined4 *)(param_2 + 0x968) = 0;\n      if ((unaff_x30 >> 0x37 & 1) == 0) {\n        uVar8 = unaff_x30 &\n                (-1L << (_vabits_actual & 0x3f) & 0x7fffffffffffffU ^ 0xffffffffffffffff);\n      }\n      else {\n        uVar8 = unaff_x30 | -1L << (_vabits_actual & 0x3f);\n      }\n      __local_bh_enable_ip(uVar8,0x200);\n      phl_handle_rx_frame_list(param_1,&local_18);\n    }\n    else {\n      *(undefined4 *)(param_2 + 0x968) = 0;\n      if ((unaff_x30 >> 0x37 & 1) == 0) {\n        uVar8 = unaff_x30 &\n                (-1L << (_vabits_actual & 0x3f) & 0x7fffffffffffffU ^ 0xffffffffffffffff);\n      }\n      else {\n        uVar8 = unaff_x30 | -1L << (_vabits_actual & 0x3f);\n      }\n      __local_bh_enable_ip(uVar8,0x200);\n      if (((phl_log_components >> 1 & 1) != 0) && (1 < phl_log_level)) {\n        printk(\"PHL: BAR Seq 0x%03x preceding head 0x%03x\\n\",param_4,*(undefined2 *)(lVar9 + 0x20));\n      }\n    }\n  }\n  lVar9 = sp_el0;\n  if (local_8 != *(long *)(lVar9 + 0x430)) {\n                    /* WARNING: Subroutine does not return */\n    __stack_chk_fail();\n  }\n  return;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-bar-window/002-analyze_function.json",
+      "original_result_sha256": "8c26c3e9b0ec3e836129252f3c6dedf08fac0b5de2ec3209cc835836336dac92"
+    },
+    {
+      "evidence_id": "ev_57b446fd3416c856a41854fbc432e6f410c2b289b157a85c9e5edadd5d0e3206",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x237c94",
+        "name": "phl_rx_reorder",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x237c94",
+              "end": "0x238633"
+            }
+          ],
+          "total_bytes": 2464,
+          "span_bytes": 2464,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined phl_rx_reorder()",
+        "locals": [
+          {
+            "description": "undefined8 local_10 @ Stack[-0x10]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_18 @ Stack[-0x18]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_30 @ Stack[-0x30]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined4 local_4 @ Stack[-0x4]:4",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_40 @ Stack[-0x40]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_50 @ Stack[-0x50]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_60 @ Stack[-0x60]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_70 @ Stack[-0x70]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_80 @ Stack[-0x80]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\n/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */\n\nundefined4 phl_rx_reorder(long param_1,long *param_2,long param_3)\n\n{\n  int *piVar1;\n  int *piVar2;\n  uint uVar3;\n  int iVar4;\n  ushort uVar5;\n  ushort uVar6;\n  ushort uVar7;\n  char cVar8;\n  bool bVar9;\n  uint uVar10;\n  undefined4 uVar11;\n  long *plVar12;\n  long lVar13;\n  ulong uVar14;\n  long lVar15;\n  long lVar16;\n  uint uVar17;\n  long lVar18;\n  long unaff_x28;\n  ulong uVar19;\n  ulong unaff_x30;\n  \n  uVar10 = (uint)*(byte *)((long)param_2 + 0x67);\n  lVar18 = *(long *)(param_1 + 0x5d28);\n  lVar16 = 0;\n  if ((*(char *)((long)param_2 + 0x75) != '\\0') &&\n     (lVar16 = rtw_phl_get_stainfo_by_macid(param_1,*(undefined2 *)((long)param_2 + 0x72)),\n     lVar16 != 0)) {\n    unaff_x28 = lVar16 + 0x40;\n    *(undefined2 *)(lVar16 + 0x40) = *(undefined2 *)((long)param_2 + 0x72);\n    *(int *)(lVar16 + 0x850) = *(int *)(lVar16 + 0x850) + 1;\n    if (*(char *)((long)param_2 + 0x3b) == '\\n') {\n      *(int *)(lVar16 + 0x880) = *(int *)(lVar16 + 0x880) + 1;\n    }\n  }\n  if ((*(char *)(*(long *)(param_1 + 0x1228) + 0x64f0) != '\\0') &&\n     (uVar5 = (short)param_2[0x15] - 4, *(ushort *)(param_2 + 0x15) = uVar5, uVar5 < 5)) {\n    if (((phl_log_components & 1) != 0) && (1 < phl_log_level)) {\n      printk(\"PHL: ERROR %s, pkt_list[0].length(%d) too short\\n\",\"phl_rx_reorder\");\n    }\n    goto LAB_00237dc0;\n  }\n  lVar15 = *(long *)(param_1 + 0x1228);\n  if (*(char *)(lVar15 + 0x7fcc) != '\\0') goto LAB_00237cf8;\n  uVar5 = *(ushort *)((long)param_2 + 0x6c);\n  lVar13 = sp_el0;\n  *(int *)(lVar13 + 0x10) = *(int *)(lVar13 + 0x10) + 0x200;\n  piVar1 = (int *)(lVar15 + 0x7f10);\n  Hint_Prefetch(piVar1,2,0,1);\n  do {\n    iVar4 = *piVar1;\n    if (iVar4 != 0) break;\n    cVar8 = '\\x01';\n    bVar9 = (bool)ExclusiveMonitorPass(piVar1,0x10);\n    if (bVar9) {\n      *piVar1 = 1;\n      cVar8 = ExclusiveMonitorsStatus();\n    }\n  } while (cVar8 != '\\0');\n  if (iVar4 != 0) {\n    queued_spin_lock_slowpath(piVar1);\n  }\n  if ((*(int *)(lVar15 + 0x7ef0) == 0x100) || (lVar13 = *(long *)(lVar15 + 0x7f08), lVar13 == 0)) {\n    bVar9 = false;\n    if (*(char *)((long)param_2 + 0x4f) != '\\0') {\n      *(int *)(lVar15 + 0x7fac) = *(int *)(lVar15 + 0x7fac) + 1;\n      bVar9 = false;\n    }\n  }\n  else {\n    if (*(char *)((long)param_2 + 0x82) == '\\0') {\n      if ((*(int *)(lVar15 + 0x7efc) + 1U & 0xfff) == (uint)*(ushort *)((long)param_2 + 0x6c)) {\n        *(uint *)(lVar15 + 0x7efc) = (uint)*(ushort *)((long)param_2 + 0x6c);\n        goto LAB_00237f4c;\n      }\n      if (((phl_log_components & 1) != 0) && (1 < phl_log_level)) {\n        printk(\"PHL: ERROR [%s]RXSC: cached_r is not NULL! (is_match_seq:%d)\\n\",\n               \"_phl_rxsc_cache_check\",0);\n      }\n      *(undefined4 *)(lVar15 + 0x7ef0) = 0x100;\n      *(undefined8 *)(lVar15 + 0x7f08) = 0;\n      bVar9 = false;\n    }\n    else {\nLAB_00237f4c:\n      *(ushort *)(lVar13 + 0x20) = *(short *)(lVar13 + 0x20) + 1U & 0xfff;\n      param_2[0x11] = *(long *)(*(long *)(lVar13 + 0x18) + 0x10);\n      uVar6 = *(ushort *)(lVar13 + 0x26);\n      uVar17 = 0;\n      if (uVar6 != 0) {\n        uVar17 = (uint)uVar5 / (uint)uVar6;\n      }\n      *(ushort *)(*(long *)(lVar13 + 0x10) + ((ulong)((uint)uVar5 - uVar17 * uVar6) & 0xffff) * 2) =\n           uVar5;\n      bVar9 = true;\n    }\n    *(int *)(lVar15 + 0x7fb0) = *(int *)(lVar15 + 0x7fb0) + 1;\n  }\n  *piVar1 = 0;\n  if ((unaff_x30 >> 0x37 & 1) == 0) {\n    uVar14 = unaff_x30 & (-1L << (_vabits_actual & 0x3f) & 0x7fffffffffffffU ^ 0xffffffffffffffff);\n  }\n  else {\n    uVar14 = unaff_x30 | -1L << (_vabits_actual & 0x3f);\n  }\n  __local_bh_enable_ip(uVar14,0x200);\n  if (bVar9) goto LAB_00237cf8;\n  if (*(int *)(*(long *)(param_1 + 0x1228) + 0x320c) - 0xbU < 10) {\n    if (*(char *)((long)param_2 + 0x55) != '\\0') {\nLAB_00237dc0:\n      *(int *)(*(long *)(param_1 + 0x1228) + 0x7f78) =\n           *(int *)(*(long *)(param_1 + 0x1228) + 0x7f78) + 1;\n      rtw_phl_count_tid_drop(*(undefined8 *)(param_1 + 0x1228),param_2);\n      (**(code **)(lVar18 + 0x98))(param_1,param_2);\n      return 1;\n    }\n    goto LAB_00237cf8;\n  }\n  if (*(char *)((long)param_2 + 0x55) != '\\0') {\n    if ((lVar16 != 0) &&\n       (*(int *)(unaff_x28 + 0x814) = *(int *)(unaff_x28 + 0x814) + 1,\n       *(char *)((long)param_2 + 0x3b) == '\\n')) {\n      *(int *)(unaff_x28 + 0x8c4) = *(int *)(unaff_x28 + 0x8c4) + 1;\n    }\n    goto LAB_00237dc0;\n  }\n  if ((((*(uint *)(param_2 + 0xc) & 0xffff00) != 0) || (*(char *)((long)param_2 + 0x66) == '\\0')) ||\n     (*(char *)((long)param_2 + 0x6a) != '\\0')) goto LAB_00237cf8;\n  if ((*(char *)((long)param_2 + 100) != '\\0') || (*(char *)((long)param_2 + 0x6e) != '\\0')) {\n    if (((phl_log_components >> 1 & 1) != 0) && (1 < phl_log_level)) {\n      printk(\"PHL: Receive QoS Data with more_frag=%u, frag_num=%u\\n\",*(char *)((long)param_2 + 100)\n             ,*(undefined1 *)((long)param_2 + 0x6e));\n    }\n    goto LAB_00237cf8;\n  }\n  if (*(char *)((long)param_2 + 0x75) != '\\0') {\n    lVar16 = rtw_phl_get_stainfo_by_macid(param_1,*(undefined2 *)((long)param_2 + 0x72));\n  }\n  if (lVar16 == 0) {\n    if (((phl_log_components >> 1 & 1) != 0) && (2 < phl_log_level)) {\n      printk(\"PHL: %s(): stainfo not found, cam=%u, macid=%u\\n\",\"phl_rx_reorder\",(char)param_2[0xe],\n             *(undefined2 *)((long)param_2 + 0x72));\n    }\n    goto LAB_00237cf8;\n  }\n  param_2[0x12] = lVar16;\n  param_2[0x11] = *(long *)(lVar16 + 0x10);\n  rtw_hal_set_sta_rx_sts(lVar16,0,param_2 + 5);\n  if (7 < uVar10) {\n    if (((phl_log_components >> 1 & 1) != 0) && (1 < phl_log_level)) {\n      printk(\"PHL: Fail: tid (%u) index out of range (%u)\\n\",uVar10,8);\n    }\n    goto LAB_00237cf8;\n  }\n  lVar18 = sp_el0;\n  *(int *)(lVar18 + 0x10) = *(int *)(lVar18 + 0x10) + 0x200;\n  piVar1 = (int *)(lVar16 + 0x968);\n  Hint_Prefetch(piVar1,2,0,1);\n  do {\n    iVar4 = *piVar1;\n    if (iVar4 != 0) break;\n    cVar8 = '\\x01';\n    bVar9 = (bool)ExclusiveMonitorPass(piVar1,0x10);\n    if (bVar9) {\n      *piVar1 = 1;\n      cVar8 = ExclusiveMonitorsStatus();\n    }\n  } while (cVar8 != '\\0');\n  if (iVar4 != 0) {\n    queued_spin_lock_slowpath(piVar1);\n  }\n  plVar12 = *(long **)(lVar16 + (ulong)uVar10 * 8 + 0x928);\n  if (plVar12 == (long *)0x0) {\n    *piVar1 = 0;\n    if ((unaff_x30 >> 0x37 & 1) == 0) {\n      uVar14 = unaff_x30 & (-1L << (_vabits_actual & 0x3f) & 0x7fffffffffffffU ^ 0xffffffffffffffff)\n      ;\n    }\n    else {\n      uVar14 = unaff_x30 | -1L << (_vabits_actual & 0x3f);\n    }\n    __local_bh_enable_ip(uVar14,0x200);\n    goto LAB_00237cf8;\n  }\n  uVar5 = *(ushort *)((long)param_2 + 0x6c);\n  lVar16 = *(long *)(param_1 + 0x5d28);\n  lVar18 = *(long *)(param_1 + 0x1228);\n  uVar6 = *(ushort *)(plVar12 + 4);\n  uVar10 = (uint)uVar6;\n  uVar17 = (uint)uVar5;\n  if ((*(byte *)((long)plVar12 + 0x2a) & 1) == 0) {\n    if ((uVar17 - uVar10 & 0xfff) < 0x801) {\n      *(byte *)((long)plVar12 + 0x2a) = *(byte *)((long)plVar12 + 0x2a) | 1;\nLAB_00238130:\n      if ((uVar17 - (*(ushort *)((long)plVar12 + 0x26) + uVar10) & 0xfff) < 0x801) {\n        uVar3 = (uVar17 - *(ushort *)((long)plVar12 + 0x26)) + 1 & 0xfff;\n        uVar10 = uVar10 - uVar3;\n        while ((0x800 < (uVar10 & 0xfff) && (*(short *)((long)plVar12 + 0x22) != 0))) {\n          uVar7 = *(ushort *)((long)plVar12 + 0x26);\n          uVar10 = 0;\n          if (uVar7 != 0) {\n            uVar10 = (uint)uVar6 / (uint)uVar7;\n          }\n          phl_release_reorder_frame(param_1,plVar12,(uint)uVar6 - uVar10 * uVar7 & 0xffff,param_3);\n          uVar6 = *(ushort *)(plVar12 + 4);\n          uVar10 = uVar6 - uVar3;\n        }\n        *(short *)(plVar12 + 4) = (short)uVar3;\n      }\n      uVar6 = *(ushort *)((long)plVar12 + 0x26);\n      uVar10 = 0;\n      if (uVar6 != 0) {\n        uVar10 = uVar17 / uVar6;\n      }\n      uVar14 = (ulong)(uVar17 - uVar10 * uVar6);\n      uVar19 = uVar14 & 0xffff;\n      if (*(long *)(*plVar12 + uVar19 * 8) != 0) {\n        if (((phl_log_components >> 1 & 1) != 0) && (3 < phl_log_level)) {\n          printk(\"PHL: Rx drop: old seq 0x%03x head 0x%03x\\n\",*(undefined2 *)((long)param_2 + 0x6c),\n                 (short)plVar12[4]);\n        }\n        *(int *)(lVar18 + 0x7f78) = *(int *)(lVar18 + 0x7f78) + 1;\n        *(int *)(lVar18 + 0x7f80) = *(int *)(lVar18 + 0x7f80) + 1;\n        rtw_phl_count_tid_drop(*(undefined8 *)(param_1 + 0x1228),param_2);\n        (**(code **)(lVar16 + 0x98))(param_1,param_2);\nLAB_002381bc:\n        *piVar1 = 0;\n        if ((unaff_x30 >> 0x37 & 1) == 0) {\n          uVar14 = unaff_x30 &\n                   (-1L << (_vabits_actual & 0x3f) & 0x7fffffffffffffU ^ 0xffffffffffffffff);\n        }\n        else {\n          uVar14 = unaff_x30 | -1L << (_vabits_actual & 0x3f);\n        }\n        __local_bh_enable_ip(uVar14,0x200);\n        return 0;\n      }\n      if ((uVar17 != *(ushort *)(plVar12 + 4)) || (*(short *)((long)plVar12 + 0x22) != 0)) {\n        *(long **)(*plVar12 + (uVar14 & 0xffff) * 8) = param_2;\n        lVar16 = plVar12[1];\n        _rtw_get_current_time();\n        uVar11 = _rtw_systime_to_ms();\n        *(undefined4 *)(lVar16 + uVar19 * 4) = uVar11;\n        *(ushort *)(plVar12[2] + uVar19 * 2) = uVar5;\n        *(short *)((long)plVar12 + 0x22) = *(short *)((long)plVar12 + 0x22) + 1;\n        phl_reorder_release(param_1,plVar12,param_3);\n        *(int *)(lVar18 + 0x7f5c) = *(int *)(lVar18 + 0x7f5c) + 1;\n        goto LAB_002381bc;\n      }\n      *(ushort *)(plVar12 + 4) = *(ushort *)(plVar12 + 4) + 1 & 0xfff;\n      *(ushort *)(plVar12[2] + uVar19 * 2) = uVar5;\n      lVar18 = *(long *)(param_1 + 0x1228);\n      lVar16 = sp_el0;\n      *(int *)(lVar16 + 0x10) = *(int *)(lVar16 + 0x10) + 0x200;\n      piVar2 = (int *)(lVar18 + 0x7f10);\n      Hint_Prefetch(piVar2,2,0,1);\n      do {\n        iVar4 = *piVar2;\n        if (iVar4 != 0) break;\n        cVar8 = '\\x01';\n        bVar9 = (bool)ExclusiveMonitorPass(piVar2,0x10);\n        if (bVar9) {\n          *piVar2 = 1;\n          cVar8 = ExclusiveMonitorsStatus();\n        }\n      } while (cVar8 != '\\0');\n      if (iVar4 != 0) {\n        queued_spin_lock_slowpath(piVar2);\n      }\n      *(uint *)(lVar18 + 0x7ef0) = (uint)*(ushort *)((long)param_2 + 0x72);\n      *(uint *)(lVar18 + 0x7ef4) = (uint)*(byte *)((long)param_2 + 0x67);\n      *(uint *)(lVar18 + 0x7ef8) = (uint)*(byte *)((long)param_2 + 0x3c);\n      *(uint *)(lVar18 + 0x7efc) = (uint)*(ushort *)((long)param_2 + 0x6c);\n      *(long **)(lVar18 + 0x7f08) = plVar12;\n      *piVar2 = 0;\n      if ((unaff_x30 >> 0x37 & 1) == 0) {\n        uVar14 = unaff_x30 &\n                 (-1L << (_vabits_actual & 0x3f) & 0x7fffffffffffffU ^ 0xffffffffffffffff);\n      }\n      else {\n        uVar14 = unaff_x30 | -1L << (_vabits_actual & 0x3f);\n      }\n      __local_bh_enable_ip(uVar14,0x200);\n      *(int *)(*(long *)(param_1 + 0x1228) + 0x7fb4) =\n           *(int *)(*(long *)(param_1 + 0x1228) + 0x7fb4) + 1;\n    }\n  }\n  else {\n    if ((uVar17 - uVar10 & 0xfff) < 0x801) goto LAB_00238130;\n    if (((phl_log_components >> 1 & 1) != 0) && (3 < phl_log_level)) {\n      printk(\"PHL: Rx drop: old seq 0x%03x head 0x%03x\\n\",uVar5);\n    }\n    uVar6 = *(ushort *)((long)plVar12 + 0x26);\n    uVar10 = 0;\n    if (uVar6 != 0) {\n      uVar10 = uVar17 / uVar6;\n    }\n    lVar15 = ((ulong)(uVar17 - uVar10 * uVar6) & 0xffff) * 2;\n    if (*(ushort *)(plVar12[2] + lVar15) == uVar17) {\n      *(int *)(lVar18 + 0x7f78) = *(int *)(lVar18 + 0x7f78) + 1;\n      *(int *)(lVar18 + 0x7f7c) = *(int *)(lVar18 + 0x7f7c) + 1;\n      rtw_phl_count_tid_drop(*(undefined8 *)(param_1 + 0x1228),param_2);\n      (**(code **)(lVar16 + 0x98))(param_1,param_2);\n      goto LAB_002381bc;\n    }\n    *(ushort *)(plVar12[2] + lVar15) = uVar5;\n    *(int *)(lVar18 + 0x7f84) = *(int *)(lVar18 + 0x7f84) + 1;\n  }\n  *piVar1 = 0;\n  if ((unaff_x30 >> 0x37 & 1) == 0) {\n    uVar14 = unaff_x30 & (-1L << (_vabits_actual & 0x3f) & 0x7fffffffffffffU ^ 0xffffffffffffffff);\n  }\n  else {\n    uVar14 = unaff_x30 | -1L << (_vabits_actual & 0x3f);\n  }\n  __local_bh_enable_ip(uVar14,0x200);\nLAB_00237cf8:\n  *(int *)(*(long *)(param_1 + 0x1228) + 0x7f58) =\n       *(int *)(*(long *)(param_1 + 0x1228) + 0x7f58) + 1;\n  plVar12 = *(long **)(param_3 + 8);\n  *(long **)(param_3 + 8) = param_2;\n  *param_2 = param_3;\n  param_2[1] = (long)plVar12;\n  *plVar12 = (long)param_2;\n  return 0;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-bar-window/003-analyze_function.json",
+      "original_result_sha256": "a8972c383fa136b54cf0266cd9c481264d8e0510da73d6abce91b306ccd7f59e"
+    },
+    {
+      "evidence_id": "ev_4c60826c0399c76176f92c429c295a27ae0be27608e54fd3b288dac70d75877d",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x28eb40",
+        "name": "phl_rx_handle_normal",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x28eb40",
+              "end": "0x28ec8b"
+            }
+          ],
+          "total_bytes": 332,
+          "span_bytes": 332,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined phl_rx_handle_normal()",
+        "locals": [
+          {
+            "description": "undefined8 local_10 @ Stack[-0x10]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_18 @ Stack[-0x18]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_30 @ Stack[-0x30]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_40 @ Stack[-0x40]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_8 @ Stack[-0x8]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nvoid phl_rx_handle_normal(long param_1,long param_2)\n\n{\n  long lVar1;\n  int iVar2;\n  undefined8 ***local_18;\n  undefined8 ***local_10;\n  long local_8;\n  \n  lVar1 = sp_el0;\n  local_8 = *(long *)(lVar1 + 0x430);\n  if (((phl_log_components & 1) != 0) && (4 < phl_log_level)) {\n    printk(\"PHL: Enter with 0x%08X %s\\n\",1,\"phl_rx_handle_normal\");\n  }\n  local_18 = &local_18;\n  if (*(ushort *)(param_2 + 0x40) < 0x1bc) {\n    lVar1 = *(long *)(param_1 + 0x1228) + (ulong)*(ushort *)(param_2 + 0x40) * 4;\n    *(int *)(lVar1 + 0x5c44) = *(int *)(lVar1 + 0x5c44) + 1;\n  }\n  local_10 = local_18;\n  iVar2 = phl_rx_reorder(param_1,param_2,&local_18);\n  if (iVar2 == 0) {\n    phl_handle_rx_frame_list(param_1,&local_18);\n  }\n  else if (((phl_log_components >> 1 & 1) != 0) && (2 < phl_log_level)) {\n    printk(\"PHL: [WARNING]handle normal rx error (0x%08X)!\\n\",iVar2);\n  }\n  if (((phl_log_components & 1) != 0) && (4 < phl_log_level)) {\n    printk(\"PHL: Leave with 0x%08X %s\\n\",iVar2,\"phl_rx_handle_normal\");\n  }\n  lVar1 = sp_el0;\n  if (local_8 == *(long *)(lVar1 + 0x430)) {\n    return;\n  }\n                    /* WARNING: Subroutine does not return */\n  __stack_chk_fail();\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-bar-ingress/001-analyze_function.json",
+      "original_result_sha256": "957e6154466fcc800d4a8f106974de937115219829f6a5d4067b5ddf3b3c6076"
+    },
+    {
+      "evidence_id": "ev_a1271ce28ff44d1ce9d56ba9033bc92b2518cea383f441a65b03ced74b01e2a6",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x1b8b08",
+        "name": "validate_recv_ctrl_frame",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x1b8b08",
+              "end": "0x1b8cab"
+            }
+          ],
+          "total_bytes": 420,
+          "span_bytes": 420,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined validate_recv_ctrl_frame()",
+        "locals": [
+          {
+            "description": "undefined8 local_10 @ Stack[-0x10]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_20 @ Stack[-0x20]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_30 @ Stack[-0x30]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nundefined8 validate_recv_ctrl_frame(long param_1,long param_2)\n\n{\n  int iVar1;\n  long lVar2;\n  undefined8 uVar3;\n  ushort *puVar4;\n  \n  puVar4 = *(ushort **)(param_2 + 0x128);\n  if (*(char *)(param_1 + 0x24c28) == '\\0') {\n    if ((*puVar4 & 0xc) != 4) {\n      return 0;\n    }\n  }\n  else {\n    rtw_wifi_rx_prepare_pkt_trace(param_1);\n    rtw_trace_packet(&DAT_0054b650,param_1,param_2 + 0xd0,\"validate_recv_ctrl_frame\",0x7ce);\n    if ((*puVar4 & 0xc) != 4) {\n      if (*(char *)(param_1 + 0x24c28) == '\\0') {\n        return 0;\n      }\n      rtw_trace_packet(&DAT_0054b650,param_1,param_2 + 0xd0,\"validate_recv_ctrl_frame\",0x7d7);\n      return 0;\n    }\n  }\n  iVar1 = _rtw_memcmp(puVar4 + 2,param_1 + 0xf,6);\n  if (iVar1 == 0) {\n    if (*(char *)(param_1 + 0x24c28) != '\\0') {\n      rtw_trace_packet(&DAT_0054b650,param_1,param_2 + 0xd0,\"validate_recv_ctrl_frame\",0x7e3);\n    }\n  }\n  else {\n    lVar2 = rtw_get_stainfo(param_1 + 0x6318,puVar4 + 5);\n    if (lVar2 == 0) {\n      if (*(char *)(param_1 + 0x24c28) != '\\0') {\n        rtw_trace_packet(&DAT_0054b650,param_1,param_2 + 0xd0,\"validate_recv_ctrl_frame\",0x7ef);\n      }\n    }\n    else {\n      uVar3 = _rtw_get_current_time();\n      *(undefined8 *)(lVar2 + 0x4d68) = uVar3;\n      *(long *)(lVar2 + 0x4da0) = *(long *)(lVar2 + 0x4da0) + 1;\n      if ((*puVar4 & 0xfc) == 0x84) {\n        rtw_process_bar_frame(param_1,param_2);\n      }\n      else if ((*puVar4 & 0xfc) == 0xa4) {\n        rtw_proccess_pspoll(param_1,param_2,lVar2);\n      }\n    }\n  }\n  return 0;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-bar-ingress/002-analyze_function.json",
+      "original_result_sha256": "8df3393565edf8ad31b55893337975862f08d20b7d6a3c00a7df1024496a596e"
+    }
+  ]
+}

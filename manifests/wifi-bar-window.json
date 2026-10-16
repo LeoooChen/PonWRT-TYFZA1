@@ -1,0 +1,52 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "f76526915677c83a131bdd3633dab3570a4ad65b",
+  "scope": "Refresh or invalidate the target PE RX TID cache after ARM processes BAR, before releasing the ARM barrier",
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx.c": "82a3d707819908b43714a436944bda3bf8c3ef1ce1e2df9a498a65b429b9fba3",
+    "tools/check_rx_bar_cache.py": "b8ae48e17667e3aa96f1c95677733a04f8309380de35c24accd14de608eda377",
+    "tools/check_stock_bar_window.py": "4e48fab35c08cc7474e93982f6bcc8678aad5cd558eaa0456b0a14a63f16f49d"
+  },
+  "evidence_sha256": {
+    "artifacts/wifi-bar-window-20261016/before.json": "2bafc3168796d77288fd759386b7fdb77b0e7af65b8a9dced0f78fbc864911d4",
+    "artifacts/wifi-bar-window-20261016/after.json": "a38b660bd3760273bf16f8a56b5edd8adad9c1508ca9410144c4a27a6e46f3db",
+    "artifacts/wifi-bar-window-20261016/stock-window.json": "f9ddcaaeef33e61872bf20baea4f9dbbf4f0bcd1a6712a4b8ab928a8616562bb",
+    "artifacts/wifi-bar-window-20261016/rea-index.json": "fcd57cd9f4025abcaf8d705ddfa46230685e52ed503ccece520a7d0ebdc94588",
+    "artifacts/wifi-bar-window-20261016/linux-window-evidence.json": "7f6aa1ddf963f05ea43d1f2983b9a84fd81643893a76d0b1101b56064079e500",
+    "artifacts/wifi-bar-window-20261016/module-build.log": "d7ee1879a4ea86d501b53b766a3450ee58ceec94b063c4f7a23919eff9f87709"
+  },
+  "documentation": {
+    "path": "docs/wifi-bar-window-20261016.md",
+    "sha256": "9faee5b4ac6791719e3c66616c97d219543b25ff442f4ead1fa5186c3e97b738"
+  },
+  "module": {
+    "path": "artifacts/wifi-bar-window-20261016/radio/rtl_ax_ap_bar_window.ko",
+    "sha256": "e39b2498cee56e8015a2ef157bc4c08b6ae62951f1394671ec65f39f48571e88",
+    "prepared_wireless_source_matches": true,
+    "PE_header_unchanged": true,
+    "PE_sha256": "c0fc07b456054928c531b5261a795177df0640a630e3adf8a25a55cad422f720",
+    "kernel": "6.18.55",
+    "warning": "existing missing MODULE_DESCRIPTION"
+  },
+  "checks": {
+    "BAR_target_TID3_refresh": true,
+    "sequence_wrap": true,
+    "BAR_without_window_advance_preserves_fast_path": true,
+    "old_window_frame_uses_ARM_after_fix": true,
+    "accepted_current_window_frame_reenables_PE": true,
+    "PN_counters_guard_other_TIDs_and_peers_preserved": true,
+    "factory_normal_ingress_cache_clearing_executed": true
+  },
+  "hardware_tested": false,
+  "full_test_suite": false,
+  "PON_changes_included": false,
+  "rate_or_capacity_changed": false,
+  "limitations": [
+    "Linux release and snapshot execute against an empty reorder queue; locks, lookup and hardware boundaries are modeled",
+    "PE resumption uses a declared accepted ARM frame snapshot; full mac80211 BAR/decrypt processing is not executed",
+    "Factory direct BAR call with retained cache is a boundary scenario, not proof of a factory end-to-end bug",
+    "Factory ingress control SN0 is declared metadata, not a captured live BAR descriptor",
+    "No causal proof for the previous live duplex UDP missing packets"
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "native_source_sha256": "7a102cdbe82ae9fa63b6d0614cdb1a34c3a525820038c504dd5685679f8b02e2",
+  "Linux_rx_source_sha256": "9f95c6111410c03aedf4ed8a81252ee10e9e93b4f0625968ee8811e4635fa406",
+  "PE_sha256": "c0fc07b456054928c531b5261a795177df0640a630e3adf8a25a55cad422f720",
+  "cases": [
+    {
+      "TID": 3,
+      "old_next_SN": 291,
+      "BAR_SSN": 294,
+      "actual_Linux_head": 294,
+      "old_window_frame_forwarded": true,
+      "old_window_frame_queued_to_ARM": false,
+      "current_window_PE_resumes_after_accepted_ARM_frame": null
+    },
+    {
+      "TID": 0,
+      "old_next_SN": 4094,
+      "BAR_SSN": 2,
+      "actual_Linux_head": 2,
+      "old_window_frame_forwarded": true,
+      "old_window_frame_queued_to_ARM": false,
+      "current_window_PE_resumes_after_accepted_ARM_frame": null
+    },
+    {
+      "TID": 0,
+      "old_next_SN": 291,
+      "BAR_SSN": 291,
+      "actual_Linux_head": 291,
+      "old_window_frame_forwarded": true,
+      "old_window_frame_queued_to_ARM": false,
+      "current_window_PE_resumes_after_accepted_ARM_frame": null
+    },
+    {
+      "TID": 0,
+      "old_next_SN": 291,
+      "BAR_SSN": 290,
+      "actual_Linux_head": 291,
+      "old_window_frame_forwarded": true,
+      "old_window_frame_queued_to_ARM": false,
+      "current_window_PE_resumes_after_accepted_ARM_frame": null
+    }
+  ],
+  "PN_counters_guard_other_TIDs_and_other_peers_preserved": true,
+  "scope": "Actual Linux empty-slot BAR release and shortcut snapshot, native publish/seed, and linked PE. Reorder storage is empty; locks, lookup, PCIe, NI and ARM acknowledgement are modeled. Resumption uses a declared accepted ARM frame snapshot. Full mac80211 BAR/decrypt processing and RF are not emulated."
+}

@@ -1,0 +1,44 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "actual_functions": [
+    "rtw_phl_rx_bar@0x137960",
+    "phl_rx_reorder@0x137c58",
+    "phl_rx_handle_normal@0x18eb04"
+  ],
+  "cases": [
+    {
+      "old_head": 291,
+      "BAR_SSN": 294,
+      "head_after": 294
+    },
+    {
+      "old_head": 4094,
+      "BAR_SSN": 2,
+      "head_after": 2
+    },
+    {
+      "old_head": 291,
+      "BAR_SSN": 291,
+      "head_after": 291
+    },
+    {
+      "old_head": 291,
+      "BAR_SSN": 290,
+      "head_after": 291
+    }
+  ],
+  "empty_frame_lists_dispatched": 5,
+  "retained_cache_function_scenario": {
+    "BAR_head": 294,
+    "incoming_old_SN": 291,
+    "head_after": 295,
+    "old_frame_linked_for_indication": true
+  },
+  "normal_ingress_scenario": {
+    "control_metadata_SN": 0,
+    "cached_last_SN": 290,
+    "cached_reorder_cleared_before_upper_handoff": true,
+    "BAR_head": 294
+  },
+  "scope": "Actual ARM64 BAR and normal/cached reorder branches. Retained-cache direct-call scenario is not a claim of a factory end-to-end bug. Control metadata is declared input; bottom-half, station lookup and list dispatch are callbacks. No firmware or RF."
+}
