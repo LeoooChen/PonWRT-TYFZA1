@@ -183,6 +183,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				}
 			}
 			ni_peer_event(mailbox, memory, macid);
+			if (retired && mailbox[78]) pe_event(mailbox);
 			if (!retired) {
 				(*(u32 *)(memory + 0x17000 + macid * 4)) += frames;
 				(*(u32 *)(memory + 0x17200 + macid * 4)) |= BIT(tid);

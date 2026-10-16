@@ -1,0 +1,30 @@
+{
+  "PE_sha256": "d9dc097ef699c89ef98734da430e93e30ca29ff186620104d00ec7712d2847bd",
+  "cases": [
+    {
+      "case": "RPQ-with-other-peer",
+      "event_requests": 1,
+      "unrelated_peer_still_owns_WP": true,
+      "host_waiter_count_after": 1
+    },
+    {
+      "case": "retired-queue-with-other-peer",
+      "event_requests": 1,
+      "unrelated_peer_still_owns_WP": true,
+      "host_waiter_count_after": 1
+    },
+    {
+      "case": "last-WP",
+      "event_requests": 1,
+      "unrelated_peer_still_owns_WP": false,
+      "host_waiter_count_after": 2
+    },
+    {
+      "case": "RPQ-no-waiter",
+      "event_requests": 0,
+      "unrelated_peer_still_owns_WP": true,
+      "host_waiter_count_after": 0
+    }
+  ],
+  "scope": "Actual linked pe_main, RPQ and NI selection/recycling. EQ blocked for partial-completion cases; PCIe/NI registers are modeled. Checks event requests, not interrupt delivery or elapsed time."
+}

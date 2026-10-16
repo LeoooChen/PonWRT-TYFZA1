@@ -830,7 +830,7 @@ static bool rtl_ax_tx_pe_pending(struct rtl_ax_tx *tx, unsigned int macid, unsig
 		for (i = 0; i < 8; i++)
 			if ((tid == IEEE80211_NUM_TIDS || tid == i) &&
 			    get_unaligned_le32(tx->pe.memory + 0x13000 + (macid * 8 + i) * 4)) return true;
-	/* NI_WAIT retains the TID after submission, until RPQ releases the BID. */
+	/* NI_WAIT retains the submitted TID; RPQ done ends the MAC/key wait. */
 	for (i = 0; i < 128; i++) {
 		void *owner = tx->pe.memory + 0xc400 + i * 8;
 		u32 meta = get_unaligned_le32(owner + 4);
@@ -858,12 +858,29 @@ static bool rtl_ax_tx_key_pending(struct rtl_ax_tx *tx, unsigned int index)
 	return pending || rtl_ax_tx_pe_pending(tx, 0, IEEE80211_NUM_TIDS, index, true);
 }
 
+static void rtl_ax_tx_waiters(struct rtl_ax_tx *tx, int delta)
+{
+	unsigned long flags;
+	void *count;
+
+	if (!tx->pe_active) return;
+	count = tx->pe.memory + PE_PROBE_MAILBOX + 312;
+	spin_lock_irqsave(&tx->lock, flags);
+	put_unaligned_le32(get_unaligned_le32(count) + delta, count);
+	dma_wmb();
+	spin_unlock_irqrestore(&tx->lock, flags);
+}
+
 int rtl_ax_tx_flush_key(struct rtl_ax_tx *tx, unsigned int index)
 {
-	if (tx->pe_active) { put_unaligned_le32(1, tx->pe.memory + PE_PROBE_MAILBOX + 312); dma_wmb(); }
+	int ret;
+
+	rtl_ax_tx_waiters(tx, 1);
 	/* RPQ completion relinquishes the key before its CAM slot is reused. */
-	return wait_event_timeout(tx->key_flush_wait, !rtl_ax_tx_key_pending(tx, index),
+	ret = wait_event_timeout(tx->key_flush_wait, !rtl_ax_tx_key_pending(tx, index),
 		msecs_to_jiffies(1000)) ? 0 : -ETIMEDOUT;
+	rtl_ax_tx_waiters(tx, -1);
+	return ret;
 }
 
 bool rtl_ax_tx_station_pending(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid)
@@ -885,9 +902,13 @@ bool rtl_ax_tx_station_pending(struct rtl_ax_tx *tx, unsigned int macid, unsigne
 
 int rtl_ax_tx_wait_station(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid)
 {
-	if (tx->pe_active) { put_unaligned_le32(1, tx->pe.memory + PE_PROBE_MAILBOX + 312); dma_wmb(); }
-	return wait_event_timeout(tx->key_flush_wait, !rtl_ax_tx_station_pending(tx, macid, tid),
+	int ret;
+
+	rtl_ax_tx_waiters(tx, 1);
+	ret = wait_event_timeout(tx->key_flush_wait, !rtl_ax_tx_station_pending(tx, macid, tid),
 		msecs_to_jiffies(1000)) ? 0 : -ETIMEDOUT;
+	rtl_ax_tx_waiters(tx, -1);
+	return ret;
 }
 
 int rtl_ax_tx_free(struct rtl_ax_tx *tx, struct ieee80211_hw *hw)

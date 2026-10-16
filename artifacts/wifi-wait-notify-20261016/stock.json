@@ -1,0 +1,9 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "actual_function": "rtw_os_pkt_complete@0x16980",
+  "calls": [
+    "wake_packet_net_queue",
+    "free_completed_packet"
+  ],
+  "scope": "Actual original packet completion branch with uncongested-local-queue input. Net-queue wake and skb free are callbacks; no global WP-zero premise is supplied, and no full scheduler or IRQ timing is executed."
+}

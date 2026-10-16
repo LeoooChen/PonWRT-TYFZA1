@@ -114,7 +114,7 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 	u32 wd = buffer[1], type = (wd >> 24) & 15, bytes = wd & 0x3fff;
 	u32 offset = 4 + (wd & BIT(31) ? 32 : 16) + ((wd >> 14) & 3) * 2 + ((wd >> 28) & 7) * 16;
 	if ((wd & BIT(23)) && type != 1) offset += 4;
-	u32 written = info & 0x3fff, forwarded = 0;
+	u32 written = info & 0x3fff, forwarded = 0, completed = mailbox[75];
 	u32 old = rtl_ax_rx_epoch_old(&mailbox[RTL_AX_PE_DFS_EPOCH + 1], consumer);
 	u8 *out = uncached(mailbox[72] + producer * RTL_AX_RPQ_BUFFER_BYTES);
 	if ((info & 0xc000) != 0xc000 || written > RTL_AX_RPQ_BUFFER_BYTES || offset > written || bytes > written - offset) {
@@ -171,6 +171,8 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 	sync();
 	*(volatile u16 *)((u8 *)bar + 0x121c) = mailbox[70];
 	bar[0x10b4 / 4] = BIT(2);
+	/* A peer/key waiter needs its completion even while other peers keep TX busy. */
+	if (mailbox[78] && mailbox[75] != completed) pe_event(mailbox);
 }
 
 #ifdef PE_UPLINK
@@ -295,7 +297,6 @@ void pe_main(volatile u32 *control)
 			if ((mailbox[81] | mailbox[RTL_AX_RX_WORK_PROCESS] << 8) == before) break;
 		}
 		if (mailbox[30]) ni_recycle(mailbox, memory);
-		if (mailbox[78] && !mailbox[30]) { mailbox[78] = 0; pe_event(mailbox); }
 		sync();
 		const u32 *request = (void *)(memory + REQUEST_BASE + consumer * 128);
 		if (consumer == mailbox[8]) {
@@ -333,6 +334,7 @@ void pe_main(volatile u32 *control)
 				else mailbox[40]++;
 				mailbox[26] = (mailbox[26] + 8) & 1023;
 				sync(); ni[0x7160 / 4] = mailbox[26];
+				if (mailbox[78]) pe_event(mailbox);
 				continue;
 			}
 			const u32 *peer = (void *)(memory + 0xd000 + mailbox[27] * 32);

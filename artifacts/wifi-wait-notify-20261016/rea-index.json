@@ -1,0 +1,201 @@
+{
+  "address_note": "Ghidra addresses = ELF .text offsets + 0x10003c",
+  "functions": [
+    {
+      "evidence_id": "ev_a70404b550761159f85bebd23324715ac48e6fc34c964babcdb508efa8d1a64d",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x1e937c",
+        "name": "rtw_core_tx_recycle",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x1e937c",
+              "end": "0x1e94bf"
+            }
+          ],
+          "total_bytes": 324,
+          "span_bytes": 324,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined rtw_core_tx_recycle()",
+        "locals": [
+          {
+            "description": "undefined8 local_10 @ Stack[-0x10]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_20 @ Stack[-0x20]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_30 @ Stack[-0x30]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nundefined8 rtw_core_tx_recycle(long param_1,long param_2)\n\n{\n  undefined8 uVar1;\n  long lVar2;\n  long lVar3;\n  \n  lVar2 = *(long *)(param_2 + 0x10);\n  if (lVar2 == 0) {\n    uVar1 = 1;\n    if (1 < rtw_drv_log_level) {\n      printk(\"%s%sRTW: ERROR NULL txreq!\\n\",&DAT_0054f9a0,&DAT_0054f9a0);\n      uVar1 = 1;\n    }\n  }\n  else if (*(int *)(param_2 + 0x18) == 2) {\n    lVar3 = *(long *)(lVar2 + 0x80);\n    lVar2 = *(long *)(param_1 + 0x110) + (ulong)*(byte *)(param_2 + 0x78) * 4;\n    *(uint *)(lVar2 + 0x2485bc) = *(int *)(lVar2 + 0x2485bc) + (uint)*(byte *)(param_2 + 0x79);\n    if (*(char *)(lVar3 + 0x24bd8) != '\\0') {\n      _core_add_record(lVar3,8,param_2);\n    }\n    rtw_core_upd_lmt_txreq_stats(lVar3,param_2,0);\n    rtw_core_upd_txreq_ts(lVar3,param_2,0);\n    txsc_free_txreq(lVar3,param_2);\n    uVar1 = 0;\n  }\n  else {\n    lVar3 = *(long *)(lVar2 + 0x150);\n    if (*(char *)(lVar3 + 0x24bd8) != '\\0') {\n      _core_add_record(lVar3,8,param_2);\n    }\n    core_recycle_txreq_phyaddr(lVar3,param_2);\n    rtw_core_upd_lmt_txreq_stats(lVar3,param_2,lVar2);\n    rtw_core_upd_txreq_ts(lVar3,param_2,lVar2);\n    core_tx_free_xmitframe(lVar3,lVar2);\n    uVar1 = 0;\n  }\n  return uVar1;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-completion-notify/001-analyze_function.json",
+      "original_result_sha256": "4ff1ef4ed94d08a0875fc3ecfd0082ddc2c5f8bb8208427dd806edcd6bab8888"
+    },
+    {
+      "evidence_id": "ev_502bf75c4995a82cba46d866b5bc82584791649559969da6a03411ea1c2ff926",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x1169bc",
+        "name": "rtw_os_pkt_complete",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x1169bc",
+              "end": "0x116a3f"
+            }
+          ],
+          "total_bytes": 132,
+          "span_bytes": 132,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined rtw_os_pkt_complete()",
+        "locals": [
+          {
+            "description": "undefined8 local_10 @ Stack[-0x10]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_20 @ Stack[-0x20]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nvoid rtw_os_pkt_complete(long param_1,long param_2)\n\n{\n  if (param_2 != 0) {\n    if ((*(char *)(param_1 + 0x9492) == '\\0') ||\n       (*(int *)(*(long *)(param_1 + 0x5700) + (ulong)*(ushort *)(param_2 + 0x7c) * 0x10 + 8) <\n        0x666)) {\n      netif_tx_wake_queue(*(long *)(*(long *)(param_1 + 0xb4a8) + 0x380) +\n                          (ulong)*(ushort *)(param_2 + 0x7c) * 0x140);\n    }\n    dbg_rtw_skb_free(param_2,2,\"rtw_os_pkt_complete\",0x197);\n    return;\n  }\n  return;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-completion-notify/002-analyze_function.json",
+      "original_result_sha256": "70b9178a6cf0bc170ca7b54cacba8a7b76a8b0c421b52b4a78d9aadc4c82d931"
+    },
+    {
+      "evidence_id": "ev_08fa0cc642a072363c2a961b29f6a9321e26a619d645f4cbd22f99557094422f",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x2332e4",
+        "name": "rtw_phl_tx_req_notify",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x2332e4",
+              "end": "0x233303"
+            }
+          ],
+          "total_bytes": 32,
+          "span_bytes": 32,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined rtw_phl_tx_req_notify()",
+        "locals": [
+          {
+            "description": "undefined8 local_10 @ Stack[-0x10]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nvoid rtw_phl_tx_req_notify(long param_1)\n\n{\n  phl_schedule_handler(*(undefined8 *)(param_1 + 0x1228),param_1 + 0x1230);\n  return;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-completion-notify/003-analyze_function.json",
+      "original_result_sha256": "68ce957f4ea774dcae1e11abe2f48d01a0847ac32e06b8cdcc08fa606d640473"
+    },
+    {
+      "evidence_id": "ev_9e5279178937dd8ef06b1e3897eacd726ba6341516655d24b6a6de46e34d1ac3",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x295ea4",
+        "name": "_phl_wp_rpt_statistics",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x295ea4",
+              "end": "0x29608f"
+            }
+          ],
+          "total_bytes": 492,
+          "span_bytes": 492,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined _phl_wp_rpt_statistics()",
+        "locals": [
+          {
+            "description": "undefined8 local_10 @ Stack[-0x10]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_20 @ Stack[-0x20]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_30 @ Stack[-0x30]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_40 @ Stack[-0x40]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nvoid _phl_wp_rpt_statistics(long param_1,uint param_2,undefined2 param_3,byte param_4,long param_5)\n\n{\n  uint uVar1;\n  uint uVar2;\n  uint uVar3;\n  long lVar4;\n  long lVar5;\n  ulong uVar6;\n  \n  uVar6 = (ulong)(param_2 & 0xff);\n  lVar4 = rtw_hal_get_halcom(*(undefined8 *)(param_1 + 0x5de0));\n  _rtw_get_current_time();\n  uVar3 = _rtw_systime_to_ms();\n  lVar4 = *(long *)(lVar4 + 0x738);\n  if (((phl_log_components >> 2 & 1) != 0) && (4 < phl_log_level)) {\n    printk(\"PHL: recycle tx req(%p) in ch(%d) with wp_seq(0x%x) and wifi seq(%d)!\\n\",param_5,uVar6,\n           param_3,(uint)*(undefined8 *)(param_5 + 0x30) >> 0x10 & 0xfff);\n  }\n  uVar1 = *(uint *)(param_5 + 0x60);\n  uVar2 = ~uVar1;\n  if (uVar1 <= uVar3) {\n    uVar2 = -uVar1;\n  }\n  if (uVar2 + uVar3 < 0x3e9) {\n    if (param_4 == 0) {\n      lVar4 = lVar4 + uVar6 * 0x30;\n      *(int *)(lVar4 + 4) = *(int *)(lVar4 + 4) + 1;\n      return;\n    }\n    if (param_4 == 1) {\n      lVar5 = lVar4 + uVar6 * 0x30;\n      *(int *)(lVar5 + 0xc) = *(int *)(lVar5 + 0xc) + 1;\n      goto LAB_00295f84;\n    }\n    if (param_4 == 2) {\n      lVar5 = lVar4 + uVar6 * 0x30;\n      *(int *)(lVar5 + 0x10) = *(int *)(lVar5 + 0x10) + 1;\n      goto LAB_00295f84;\n    }\n    if (param_4 == 3) {\n      lVar5 = lVar4 + uVar6 * 0x30;\n      *(int *)(lVar5 + 0x14) = *(int *)(lVar5 + 0x14) + 1;\n      goto LAB_00295f84;\n    }\n  }\n  else {\n    if (param_4 == 0) {\n      lVar4 = lVar4 + uVar6 * 0x30;\n      *(int *)(lVar4 + 0x20) = *(int *)(lVar4 + 0x20) + 1;\n      return;\n    }\n    if (param_4 == 1) {\n      lVar5 = lVar4 + uVar6 * 0x30;\n      *(int *)(lVar5 + 0x24) = *(int *)(lVar5 + 0x24) + 1;\n      goto LAB_00295f84;\n    }\n    if (param_4 == 2) {\n      lVar5 = lVar4 + uVar6 * 0x30;\n      *(int *)(lVar5 + 0x28) = *(int *)(lVar5 + 0x28) + 1;\n      goto LAB_00295f84;\n    }\n    if (param_4 == 3) {\n      lVar5 = lVar4 + uVar6 * 0x30;\n      *(int *)(lVar5 + 0x2c) = *(int *)(lVar5 + 0x2c) + 1;\n      goto LAB_00295f84;\n    }\n  }\n  if ((param_4 & 0xfb) == 0) {\n    return;\n  }\nLAB_00295f84:\n  lVar4 = lVar4 + uVar6 * 0x30;\n  *(int *)(lVar4 + 8) = *(int *)(lVar4 + 8) + 1;\n  return;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-completion-notify/004-analyze_function.json",
+      "original_result_sha256": "7d7739dc3fffa5dfa8926f4a9255e9fdbc52a029e35d1eb4ea52dc311e78ccfc"
+    }
+  ]
+}

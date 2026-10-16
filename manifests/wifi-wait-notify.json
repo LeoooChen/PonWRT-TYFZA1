@@ -1,0 +1,60 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "efc3789ad25fd6ce9178c42d9b6e18c36995acd3",
+  "scope": "Notify per-peer/TID/key waiters on relevant PE progress instead of global WP zero; keep subscriptions owned by ARM",
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "source_sha256": {
+    "port/pe/rtl9617c-radio-wd.c": "69645f7170a9dc95d30f8de86185b899b8f98d547c826038b94507e038a8b4e5",
+    "port/pe/rtl9617c-radio-downlink.h": "e2eafdbbf7ffea71cffb928da612fc85078eaccf060fad8a099f56966aa72f5f",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx.c": "9b73053f56036f974f15afb057328ba275e3ba52eb87e9bb684da9176b8c3f64",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-tx-code.h": "06adedd2040bd6c40e9342161b0fc0c90168bcab8b624970c55c918e9129a920",
+    "scripts/test_radio_pe_waiters.py": "4c9214fc94a1f4a2dbefe6b487f018b861640465d2ed139b21034ecbed4db252",
+    "tools/check_pe_wait_notify.py": "24e03b69ab315a8be095225bebfeb2e24bbb81c3a1825b3381bea7e27baf5636",
+    "tools/check_stock_completion_wake.py": "b4f99379349eed6fa108aca350003523c9560b427260567b2845b1380fd66050"
+  },
+  "evidence_sha256": {
+    "artifacts/wifi-wait-notify-20261016/PE-before.json": "3dc02d6300b27e2db80fbcca2b609423b4cca1df059ea573151c356e4029667b",
+    "artifacts/wifi-wait-notify-20261016/PE-after.json": "ae6a05f9ef107faf7e173dddd2260506883b2f42308b6af86dd636dacfa4e522",
+    "artifacts/wifi-wait-notify-20261016/ARM-before.json": "02430f18a77df5ccb5b1704287e8d7a0fefe3452ce32ce3afcbc8110c6d5f4d4",
+    "artifacts/wifi-wait-notify-20261016/ARM-after.json": "a3b854150c52bb81118aca6b7e5d6e630a5d43bccec8a558fc651be6025dc422",
+    "artifacts/wifi-wait-notify-20261016/stock.json": "977723d848291ff46d9c9ffa52fe98cf81a7f81bae5d6003a43965900acbae4d",
+    "artifacts/wifi-wait-notify-20261016/RPQ-forwarding.json": "b215566ab53279cf313defd8f0b8cbaa1b78af3166306f5164c20f44cbc96441",
+    "artifacts/wifi-wait-notify-20261016/rea-index.json": "e2e1d2e8bde91678b1a837aa46551faf639bed0be2eb7c379991268c8c1a8b03",
+    "artifacts/wifi-wait-notify-20261016/module-build.log": "f89d8d37e73da9c481747d52e0fb80334ad2b6b7bdf0c2eb4a50c8d3d93735b9"
+  },
+  "documentation": {
+    "path": "docs/wifi-wait-notify-20261016.md",
+    "sha256": "7fae966b4e21d9e55d8272c38f8b5c4124f18191e38324cd24659942ced399a6"
+  },
+  "module": {
+    "path": "artifacts/wifi-wait-notify-20261016/radio/rtl_ax_ap_wait_notify.ko",
+    "sha256": "d19fd735130b2a48cc46c58682c5f5dcdb4caea212c39544eb2da60f0e30eaca",
+    "prepared_wireless_source_matches": true,
+    "embedded_PE_matches_linked_binary": true,
+    "PE_sha256": "d9dc097ef699c89ef98734da430e93e30ca29ff186620104d00ec7712d2847bd",
+    "PE_bytes": 15896,
+    "kernel": "6.18.55",
+    "warning": "existing missing MODULE_DESCRIPTION"
+  },
+  "checks": {
+    "RPQ_notifies_while_other_peer_still_owns_WP": true,
+    "retired_queue_notifies_while_other_peer_still_owns_WP": true,
+    "no_waiter_means_no_extra_pure_NI_event": true,
+    "PE_does_not_clear_host_waiter_count": true,
+    "concurrent_station_and_key_wait_count_2_1_0": true,
+    "timeout_releases_subscription_and_preserves_error": true,
+    "ASan_UBSan_host_wait_case": true,
+    "existing_RPQ_mixed_EOSP_C2H_full_ARM_and_old_DFS_cases": true
+  },
+  "hardware_tested": false,
+  "full_test_suite": false,
+  "PON_changes_included": false,
+  "rate_capacity_or_timeout_changed": false,
+  "limitations": [
+    "PE verification checks event requests with modeled PCIe/NI registers; it does not execute the real event interrupt",
+    "Host waits use POSIX condition variables and modeled device state updates; the host and PE cases are separate",
+    "No real elapsed-time or RF throughput claim",
+    "Original completion oracle exercises one uncongested-local-queue branch, not every vendor scheduling condition",
+    "No attribution of the previous single-peer live UDP loss"
+  ]
+}

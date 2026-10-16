@@ -1,0 +1,31 @@
+{
+  "PE_sha256": "d9dc097ef699c89ef98734da430e93e30ca29ff186620104d00ec7712d2847bd",
+  "cases": [
+    {
+      "report": "PE-only",
+      "consumed_while_ARM_full": true,
+      "completion_processed_once": true
+    },
+    {
+      "report": "mixed",
+      "consumed_while_ARM_full": false,
+      "completion_processed_once": true
+    },
+    {
+      "report": "EOSP",
+      "consumed_while_ARM_full": false,
+      "completion_processed_once": true
+    },
+    {
+      "report": "C2H",
+      "consumed_while_ARM_full": false,
+      "completion_processed_once": false
+    },
+    {
+      "report": "old-DFS",
+      "consumed_while_ARM_full": true,
+      "completion_processed_once": false
+    }
+  ],
+  "scope": "Actual linked pe_rpq/ni_recycle; synthetic full ARM ring and RPQ/EQ inputs. No timing or hardware throughput model."
+}
