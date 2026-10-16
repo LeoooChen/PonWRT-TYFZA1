@@ -16,6 +16,6 @@ mkdir -p "$OUT"
 OUT=$(realpath "$OUT")
 SOURCE=$PORT/packages/tyfza1-pon-control/src
 PON_VERSION=$(cat "$PROJECT/VERSION")
-"$CC" -Wall -Wextra -Werror -O2 -DPON_FIRMWARE_VERSION="\"$PON_VERSION\"" -I"$STAGING_DIR/usr/include" "$SOURCE/pon-oamd.c" "$SOURCE/pon-oam.c" "$SOURCE/pon-backend.c" -L"$STAGING_DIR/usr/lib" -luci -o "$OUT/pon-oamd"
+"$CC" -Wall -Wextra -Werror -O2 -DPON_FIRMWARE_VERSION="\"$PON_VERSION\"" -I"$STAGING_DIR/usr/include" "$SOURCE/pon-oamd.c" "$SOURCE/pon-oam.c" "$SOURCE/pon-backend.c" "$SOURCE/pon-alarm.c" -L"$STAGING_DIR/usr/lib" -luci -o "$OUT/pon-oamd"
 sudo -n unshare --net python3 "$PROJECT/scripts/test_oam_daemon.py" --binary "$OUT/pon-oamd" --openwrt "$TREE"
 sha256sum "$OUT/pon-oamd" > "$OUT/SHA256SUMS"

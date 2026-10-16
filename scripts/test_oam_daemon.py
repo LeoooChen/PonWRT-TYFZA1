@@ -103,6 +103,59 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
         assert versions[48:64] == b'SOFTWARE-2'.rjust(16, b'\0')
         assert versions[83:87] == b'\x03\x00\x03\x01'
         tests.append('ONU SN carries UCI software identity; FirmwareVer carries three release octets')
+        transceiver = temporary / 'transceiver'
+
+        def sensor(rx):
+            transceiver.write_text(f'temperature_raw=256 voltage_raw=33000 bias_raw=1000 tx_power_raw=1000 rx_power_raw={rx}\n')
+
+        sensor(101)
+        threshold = b'\x11\x11\x11\x03\xc7\x00\x82\x0a\x01\x01' + struct.pack('!II', 100, 90) + b'\0'
+        sock.send(ethernet(threshold, code=0xfe, flags=0x50))
+        assert receive(sock, 0xfe)[22:26] == b'\xc7\x00\x82\x80'
+        sock.send(ethernet(b'\x11\x11\x11\x01\xc7\x00\x82\x02\x01\x01\0', code=0xfe, flags=0x50))
+        thresholds = receive(sock, 0xfe)
+        assert thresholds[26:36] == b'\x01\x01' + struct.pack('!II', 100, 90)
+        tests.append('AlarmThreshold Get returns distinct configured trigger/clear thresholds')
+        alarm_enable = b'\x11\x11\x11\x03\xc7\x00\x81\x06\x01\x01' + struct.pack('!I', 2) + b'\0'
+        sock.send(ethernet(alarm_enable, code=0xfe, flags=0x50))
+        assert receive(sock, 0xfe)[22:26] == b'\xc7\x00\x81\x80'
+        alarm = receive(sock, 1)
+        assert alarm[18:22] == b'\0\0\xfe\x14' and alarm[22:25] == b'\x11\x11\x11'
+        assert alarm[25:40] == struct.pack('!HIHHBI', 4, 0, 0x101, 0, 0, 101)
+        tests.append('enabled optical threshold produces actual code1/CTC alarm notification')
+        event_get = b'\x11\x11\x11\xff\x01\x00\x01' + struct.pack('!HIH', 4, 0, 0x101)
+        sock.send(ethernet(event_get, code=0xfe, flags=0x50))
+        event_status = receive(sock, 0xfe)
+        assert event_status[21:25] == b'\xff\x03\x00\x01'
+        assert event_status[25:37] == struct.pack('!HIHI', 4, 0, 0x101, 1)
+        tests.append('CTC event Status Get returns the configured alarm enable state')
+        sensor(95)
+        try:
+            receive(sock, 1, timeout=1.2)
+            raise RuntimeError('alarm cleared inside hysteresis band')
+        except AssertionError:
+            pass
+        sock.send(ethernet(event_get, code=0xfe, flags=0x50))
+        receive(sock, 0xfe)
+        transceiver.unlink()
+        status(state_file, lambda s: s['alarm_error'] < 0)
+        try:
+            receive(sock, 1, timeout=1.2)
+            raise RuntimeError('sensor failure fabricated an alarm event')
+        except AssertionError:
+            pass
+        tests.append('hysteresis retains state; a failed sensor read publishes error without false event')
+        sensor(89)
+        sock.send(ethernet(event_get, code=0xfe, flags=0x50))
+        receive(sock, 0xfe)
+        clear = receive(sock, 1)
+        assert clear[18:20] == b'\x00\x01'
+        assert clear[25:40] == struct.pack('!HIHHBI', 4, 0, 0x101, 0, 1, 89)
+        tests.append('crossing clear threshold emits recovery notification with next event sequence')
+        alarm_disable = alarm_enable[:-5] + struct.pack('!I', 1) + b'\0'
+        sock.send(ethernet(alarm_disable, code=0xfe, flags=0x50))
+        assert receive(sock, 0xfe)[22:26] == b'\xc7\x00\x81\x80'
+        transceiver.unlink()
         set_request = bytes.fromhex('11111103 37000104 01000007 c700250102 3600010103 c700130200e3 00')
         set_response = bytes.fromhex('11111104 37000104 01000007 c7002587 3600010103 c7001387 00')
         sock.send(ethernet(set_request, code=0xfe, flags=0x50))

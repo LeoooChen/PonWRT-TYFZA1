@@ -23,6 +23,19 @@ static void set_be16(uint8_t *data, uint16_t value)
 	data[1] = value;
 }
 
+static uint32_t be32(const uint8_t *data)
+{
+	return (uint32_t)data[0] << 24 | (uint32_t)data[1] << 16 | (uint32_t)data[2] << 8 | data[3];
+}
+
+static void set_be32(uint8_t *data, uint32_t value)
+{
+	data[0] = value >> 24;
+	data[1] = value >> 16;
+	data[2] = value >> 8;
+	data[3] = value;
+}
+
 static bool ctc_oui(const uint8_t *oui)
 {
 	return !memcmp(oui, "\x11\x11\x11", 3) || !memcmp(oui, "\x00\x0d\xb6", 3);
@@ -36,6 +49,7 @@ void pon_oam_reset(struct pon_oam_session *session)
 	session->extension_selected = false;
 	session->extension_advertised = false;
 	session->extension_version = 0;
+	session->event_sequence = 0;
 	memset(session->key, 0, sizeof(session->key));
 	session->key_length = 0;
 	memset(session->extension_oui, 0, sizeof(session->extension_oui));
@@ -410,6 +424,117 @@ static int receive_churning(struct pon_oam_session *session, const struct pon_oa
 	return 60;
 }
 
+static int receive_events(const struct pon_oam_identity *identity, const uint8_t *input,
+	size_t length, uint8_t *output)
+{
+	enum pon_oam_alarm_operation operation;
+	size_t input_width, output_width, offset = 25, position = 25;
+	uint16_t count;
+
+	if (length < 25)
+		return -EMSGSIZE;
+	switch (input[22]) {
+	case 1:
+		operation = PON_ALARM_STATUS_GET;
+		input_width = 8;
+		output_width = 12;
+		break;
+	case 2:
+		operation = PON_ALARM_STATUS_SET;
+		input_width = output_width = 12;
+		break;
+	case 4:
+		operation = PON_ALARM_THRESHOLD_GET;
+		input_width = 8;
+		output_width = 16;
+		break;
+	case 5:
+		operation = PON_ALARM_THRESHOLD_SET;
+		input_width = output_width = 16;
+		break;
+	default:
+		return PON_OAM_IGNORED;
+	}
+	count = be16(input + 23);
+	if (count > 64 || 25 + count * input_width > length ||
+	    25 + count * output_width > PON_OAM_FRAME_MAX)
+		return -EMSGSIZE;
+	if (!identity->alarm)
+		return -EOPNOTSUPP;
+	output[21] = 0xff;
+	output[22] = operation <= PON_ALARM_STATUS_SET ? 3 : 6;
+	set_be16(output + 23, count);
+	for (unsigned int i = 0; i < count; i++) {
+		struct pon_oam_alarm alarm = {
+			.object_type = be16(input + position),
+			.instance = be32(input + position + 2),
+			.id = be16(input + position + 6),
+		};
+		int ret;
+
+		if (operation == PON_ALARM_STATUS_SET)
+			alarm.enabled = be32(input + position + 8);
+		else if (operation == PON_ALARM_THRESHOLD_SET) {
+			alarm.threshold = be32(input + position + 8);
+			alarm.clear_threshold = be32(input + position + 12);
+		}
+		ret = identity->alarm(identity->backend_context, &alarm, operation);
+		if (ret)
+			return ret;
+		memcpy(output + offset, input + position, 8);
+		if (output_width == 12)
+			set_be32(output + offset + 8, alarm.enabled);
+		else {
+			set_be32(output + offset + 8, alarm.threshold);
+			set_be32(output + offset + 12, alarm.clear_threshold);
+		}
+		position += input_width;
+		offset += output_width;
+	}
+	return count ? (offset < 60 ? 60 : offset) : PON_OAM_IGNORED;
+}
+
+int pon_oam_events(struct pon_oam_session *session, const struct pon_oam_identity *identity,
+	struct pon_oam_alarm events[PON_OAM_ALARM_BATCH], size_t *count,
+	uint8_t output[PON_OAM_FRAME_MAX])
+{
+	size_t offset = 20;
+	int ret;
+
+	*count = 0;
+	if (!session->local_echoed || !session->extension_selected || !identity->alarms_poll)
+		return 0;
+	ret = identity->alarms_poll(identity->backend_context, session->generation, events, PON_OAM_ALARM_BATCH);
+	if (ret <= 0)
+		return ret;
+	*count = ret;
+	ethernet_header(session, identity, output, 1);
+	set_be16(output + 18, session->event_sequence);
+	for (size_t i = 0; i < *count; i++) {
+		const struct pon_oam_alarm *alarm = &events[i];
+
+		output[offset] = 0xfe;
+		output[offset + 1] = 16 + alarm->info_length;
+		memcpy(output + offset + 2, session->extension_oui, 3);
+		set_be16(output + offset + 5, alarm->object_type);
+		set_be32(output + offset + 7, alarm->instance);
+		set_be16(output + offset + 11, alarm->id);
+		/* The board uses inverted state before CTC-C5 (0xc5). */
+		output[offset + 15] = session->extension_version == 0xc5 ? alarm->active : !alarm->active;
+		memcpy(output + offset + 16, alarm->info, alarm->info_length);
+		offset += 16 + alarm->info_length;
+	}
+	return offset < 60 ? 60 : offset;
+}
+
+void pon_oam_events_sent(struct pon_oam_session *session, const struct pon_oam_identity *identity,
+	const struct pon_oam_alarm *events, size_t count)
+{
+	identity->alarms_sent(identity->backend_context, events, count);
+	session->event_sequence++;
+	session->tx_frames++;
+}
+
 int pon_oam_receive(struct pon_oam_session *session, const struct pon_oam_identity *identity,
 		    const uint8_t *input, size_t length, uint8_t output[PON_OAM_FRAME_MAX])
 {
@@ -427,7 +552,7 @@ int pon_oam_receive(struct pon_oam_session *session, const struct pon_oam_identi
 	if (length < 22)
 		return -EMSGSIZE;
 	if (!ctc_oui(input + 18) ||
-	    (input[21] != 1 && input[21] != 3 && input[21] != 5 && input[21] != 9))
+	    (input[21] != 1 && input[21] != 3 && input[21] != 5 && input[21] != 9 && input[21] != 0xff))
 		return PON_OAM_IGNORED;
 	if (!session->local_echoed)
 		return -EAGAIN;
@@ -437,6 +562,8 @@ int pon_oam_receive(struct pon_oam_session *session, const struct pon_oam_identi
 		ret = receive_auth(session, identity, input, length, output);
 	else if (input[21] == 9)
 		ret = receive_churning(session, identity, input, length, output);
+	else if (input[21] == 0xff)
+		ret = receive_events(identity, input, length, output);
 	else if (input[21] == 1)
 		ret = receive_variables(session, identity, input, length, output, false);
 	else

@@ -1,0 +1,297 @@
+{
+  "complete": false,
+  "scope": "CTC optical0x0101..0x0114 and UNI LOS0x0302; counter alarms remain pending hardware PM",
+  "rea": [
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "000-open_binary.json",
+      "sha256": "8c2d67e4615114ce33a0965a2dd717ca448e9191a8fdb1482df82cd6675f5828",
+      "evidence_id": null,
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "001-procedure_pseudo_code.json",
+      "sha256": "28a452c86a9bbb864aca1352e3b6841115dc53933208119cb243e392f69fdcd1",
+      "evidence_id": "ev_bc23ec4d72f6c7ac603e85a101e5f2b70e0159365df99ae3d40dab044a100506",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "002-procedure_pseudo_code.json",
+      "sha256": "2b6db972060ac82be50c92d1bf68c47a45be8fcb5a537732cdd62129cdae41dc",
+      "evidence_id": "ev_3ee16b6410dec9f4f9d6046f6709e058c9489a4469f4918ffc9884607c80b20a",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "003-procedure_pseudo_code.json",
+      "sha256": "b2b9a9cd813cfa66e61d96777482e53d4d77fc8e0365db05d392be2b05d4c59c",
+      "evidence_id": "ev_79fc31fb98f0aeed13048e90951b6865cfde98f5d1a3c0a1a53bfaa445233878",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "004-procedure_pseudo_code.json",
+      "sha256": "8de3e319afb696b5ca94a7ffb66cc3b7567a740fa5001b4f43d03becf22eda2f",
+      "evidence_id": "ev_c61816b6055e88ab6bfc89697af2e672e4bb2d55524cdf87076f3babab6648df",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "005-procedure_pseudo_code.json",
+      "sha256": "24b707b2951955a1d6db43b309e4fd41b9bfc4721ceb977034cc2b4dfe201c84",
+      "evidence_id": "ev_3d15b2fb6a28df0b901e957977ee9129370d5308916bd87a9769b70dbc3d4a23",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "006-procedure_pseudo_code.json",
+      "sha256": "3fc3099f61057e290d5b262904d023913867b17e1713e3e0389edfd84dc829b6",
+      "evidence_id": "ev_590febcecaac50d57b7a6aca7e0aaafbae336193e14185e5fa8b4e19bffb0a1c",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "007-procedure_pseudo_code.json",
+      "sha256": "adefa45090dc42eff607104be87eac0c09d31bf00f5f29c0b4040cbe21f78e08",
+      "evidence_id": "ev_a1093e441c9b7ad045e20c8b75122d0c6e3dc8f110fed4783927c13135f097d7",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "008-procedure_pseudo_code.json",
+      "sha256": "15feb444268cebb1cd636f947b8558d5ec87c29273c6fc9161a95b62de0d7d6b",
+      "evidence_id": "ev_6f54e0568171ce839f1d7a88343100f14be72b50a42d38e9f06d02d2b3ccc0bd",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "009-procedure_pseudo_code.json",
+      "sha256": "9cf9d037dc5b7c8ba562a25d4f9d78ce12a621e2002ca7e0b74353b1cc1c057a",
+      "evidence_id": "ev_d7f9cc4573ad88c588eeb94b90b1f49e07ffe64af4a5b20dcc6a640d7633fbf2",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "010-procedure_pseudo_code.json",
+      "sha256": "7beecb85a9a5805011a3f9a202bc23a9effa40705a782749191c780c383e0867",
+      "evidence_id": "ev_655a2f827dfb9a86dd7770e3cfcc7aa090bdbebd0acf42e46f881697b2fc3e93",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "011-procedure_pseudo_code.json",
+      "sha256": "c121a9581e9ad3acf18038a22acc11df74dc4372a4aa0d2cab09a20e4965f32b",
+      "evidence_id": "ev_b708d06d5868ec082b21a3bf3a20b58d1fc4347622859a902e112c2bf140bba3",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "012-procedure_pseudo_code.json",
+      "sha256": "b2763ef70849b7d175ee8390223f49b1f76bfc9b2a5c8a03eb6913bb66a9720c",
+      "evidence_id": "ev_37efb14ac13458c49d495979973703dfce0ba38cba6d3b6ff56cd36788055fdd",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "013-procedure_pseudo_code.json",
+      "sha256": "fe848a6ce47bdb81c2240f32a1b6411e7f94bf1efd16932f2e6b536059735ad6",
+      "evidence_id": "ev_794e6215a910d7f5c14a8ee1f67ab0ed398ccb5cdd68359e56383dc44bf9d437",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "014-procedure_pseudo_code.json",
+      "sha256": "317402b25259c4d4e4bebaacd27a834cc48fdf72a55ae0753f9e6b077a5db62e",
+      "evidence_id": "ev_3385a34915fcf3bfc2879309533c49528a8988fc8aba903fcd3c528c41b5d5d3",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "015-procedure_pseudo_code.json",
+      "sha256": "8333d06d8ce95db66fbfe511f661b8aa138a36bb80f7f4ebf16df49c6c81a971",
+      "evidence_id": "ev_999fdc71450e642bdc4f32a6eed65cc5742a1dcffd7d105d46a635f7ba5da4ec",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "016-procedure_pseudo_code.json",
+      "sha256": "22e92fb829c2de982cc850658a836b65332edf70f425434d5fa6b054b872505d",
+      "evidence_id": "ev_7eb34cee6a2019a6b253f32d1364edb58a8a2ff098a25b1f1999ac944a80092b",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "017-procedure_pseudo_code.json",
+      "sha256": "0d7144ae1410c555e574e85fd538daef5c7838a5f549f7935ea707b167310fbf",
+      "evidence_id": "ev_cc861401567751eb807e31a0a19314081695bc2bfc29d644c3ab1225d6c57481",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "018-procedure_pseudo_code.json",
+      "sha256": "52206584bd8d4c3cb82f3d29f11748ad65329533f1a3f35cb1afc5ace4c04544",
+      "evidence_id": "ev_962652b238d022dc30e2a9328e554e21472296445fbc77c0e09d87dd403f93da",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "019-procedure_pseudo_code.json",
+      "sha256": "22d6dbd042457e1cf8caf51250bb8892a6b74c1779593c92a47115da9db06522",
+      "evidence_id": "ev_89fb50acf78f59069f804a445bd9843642c260deabb0b3b36be4e5a8c351acbc",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "020-procedure_pseudo_code.json",
+      "sha256": "6d554831e4eef5d8980c496a853c65564a79d94c2fdb2da61b59b7b5ae049e1a",
+      "evidence_id": "ev_09c16c9507181cb0f97981e98b3d7712a5df7a636ad859af81a014f72f3f49b5",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "021-procedure_pseudo_code.json",
+      "sha256": "93f61ea859bfbc7a659c650335051c225080573940695e18ed730f4710b12bd1",
+      "evidence_id": "ev_d31bcaf7714c046a9d6dc64fe5e1a246fa1f81fc773a8061e9dfd0ef298dc56f",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "022-procedure_pseudo_code.json",
+      "sha256": "c7da6df9988739fac04f99cc65e4119d3552e11e38ece16071c1c57061ef9563",
+      "evidence_id": "ev_212627f1e2d0829d5074ca70a4f6a040eadb07ec3c269c4e317818cb329be390",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "023-procedure_pseudo_code.json",
+      "sha256": "e13bdbd7a6300ab16b4821693471b674e9110ad598eba7e4e5733dc87c1be2fd",
+      "evidence_id": "ev_ce9d3e6c5ba973e81a17bd9329515cab42879f17aeabbf36fce17dc28e474e0f",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "024-procedure_pseudo_code.json",
+      "sha256": "252a5ed40e199fb752b7f4eb3edd177903c1a6f678d273869d3875a6a383b5e3",
+      "evidence_id": "ev_a8a6e8247e5de4dcaa19e6c82ac026a8417c1444c57868b23b75d772322b6c4c",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "025-procedure_pseudo_code.json",
+      "sha256": "944f9b600b02cf24f8ef9305254168590270d70574d3abc8766ab16cc1628d10",
+      "evidence_id": "ev_4aaf107bb31abe00173d918da51f8588650ddd495632c4d08e02d48faa4ea307",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "026-procedure_pseudo_code.json",
+      "sha256": "5e37f351a4bd4ef37588347cf0b6208ac6db160ddcd2bba7462254f4ce562730",
+      "evidence_id": "ev_9a10f61334e78c8b361cb3e46ccb20db63beb9f902dd2e58357c5817c8d7d384",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "027-procedure_pseudo_code.json",
+      "sha256": "10163a5dea0ee053f85ac03c9c6f28a85539b50b96033b3d8669c7173317b10f",
+      "evidence_id": "ev_e48a8e1bfe42225afa2e328315cbb305a44f6fa9510cae4e9be5aea0e4493951",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "028-procedure_pseudo_code.json",
+      "sha256": "88dc55958b634322771229c67d0c5b6a9f5fc91739b30a588cc194dab183b1c2",
+      "evidence_id": "ev_e1db7a068776b95c1c1ab44578967c45253e557ede7589c9ce7a48bc10b36a24",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "029-procedure_pseudo_code.json",
+      "sha256": "a9e2517e1d825bd02579367be3c90215db8aac45db751b9dd6865b1647377d2f",
+      "evidence_id": "ev_a599e12fd2dfc4fca78da165bf457115b969f61f534a59ea0fde371c6859e54f",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "030-procedure_pseudo_code.json",
+      "sha256": "57d76ebc3164e8d8a61b8c90bb9a37110b11700fce4050e23fa6c18d94b0305c",
+      "evidence_id": "ev_24f6c2b0b31e655d65c492d3670b1929aef65e5d2d2fcfb17095add0873147cf",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "031-procedure_pseudo_code.json",
+      "sha256": "04571738684ecbbb430318240f8b0a5b9cc45ccda117a9a5aa55726d4c95b972",
+      "evidence_id": "ev_2230907e2c9ae6e5c2c435ea5eb8c2d3fc8002deaa4793fc3edf6b78e981b999",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "032-procedure_pseudo_code.json",
+      "sha256": "87bcf264bd5452efea4d7a52abdfa83aa352404e7a87fe52eb191ed0fb7dadf8",
+      "evidence_id": "ev_1ff8d8bc8047ccceb10cc5afe54f00300656dd5919c8508345129cef5a8dfd36",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-runtime-20261016",
+      "file": "033-close_binary.json",
+      "sha256": "4ebc377c4c04ca2a51e69772bb439bab842607e7975135c9f6864a14daf2ba03",
+      "evidence_id": null,
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-wire-20261016",
+      "file": "000-open_binary.json",
+      "sha256": "8c2d67e4615114ce33a0965a2dd717ca448e9191a8fdb1482df82cd6675f5828",
+      "evidence_id": null,
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-wire-20261016",
+      "file": "001-procedure_pseudo_code.json",
+      "sha256": "5c63e5e77eb6150fc3b6de18aa121c87bfd6daeaf7c31b225ebf1c166fd00dcb",
+      "evidence_id": "ev_787dbc0298a39f049cfef87e2775395f38444d91dc51b1841e2517baca63cfab",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-wire-20261016",
+      "file": "002-procedure_pseudo_code.json",
+      "sha256": "944f9b600b02cf24f8ef9305254168590270d70574d3abc8766ab16cc1628d10",
+      "evidence_id": "ev_4aaf107bb31abe00173d918da51f8588650ddd495632c4d08e02d48faa4ea307",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-wire-20261016",
+      "file": "003-procedure_pseudo_code.json",
+      "sha256": "d53a7d601c8426fdeba47b533890838cb38ff3c3b16033265cdc48cca35525d4",
+      "evidence_id": "ev_5f2fa16a24815eec2d72a2d5e27c9de6d45b760d49077683e8ccfa72a5fec82b",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-alarm-wire-20261016",
+      "file": "004-close_binary.json",
+      "sha256": "7cd8a6c1673fcd1252bebdf38f2fea80249cfc9e6460cca34ba2b0b9e801b779",
+      "evidence_id": null,
+      "error": false
+    }
+  ],
+  "source_sha256": {
+    "pon-backend.c": "c15fd80efcd18b129e434a390ccf78a619cc46fe93704477027bc7dbb84f7730",
+    "pon-backend.h": "71a7706440e350ad54923f8e325149b89719b71aca92631c5fc320d9e0195a3e",
+    "pon-config.h": "9113d656308569e83b10e6fdb8d5dd94f24808a7e75bce03ae1c29ca8f9e3754",
+    "pon-identity.c": "f4b504e5967357151a839fc49209a153e242c698cb550144f5420d444a0b3e4c",
+    "pon-oam.c": "e702a4efcb13ce1443ca9676fb0ca4a4ecbf37318379b98c77a250a7250867a8",
+    "pon-oam.h": "8c1b970c1ad230bc60b8e7b90b26f422a883f202452ac71bbf60b6efc986d4ea",
+    "pon-oamd.c": "f8dbdc1364162cb99c4e43e09cf757e0e2abbc8c19485a06d7c92f449643cd0c",
+    "pon-omci.h": "5003d56b213ccb7e01d44e946459e58f3508200e7bfb70532e83a095e71fad17",
+    "pon-omcid.c": "0b7216309ca5834ab00d29de0f3ef6a8a49205ba15b4d7922d29621a02f22ca7",
+    "pon-alarm.h": "d5a40eb59169fa63dda4f92c498bcb307a8cd34438e1412e60ccc57be683bcda",
+    "pon-alarm.c": "e122745d52eee59c305dbe4d8ff0e5e4aba1f5a6f70ae9caeb38689a5c119733"
+  },
+  "evidence": {
+    "logs/epon-alarm-stock-contract.json": "22ad4aa3ab67a3f07452d621db582ecd3923ee8e33a826c5340adc6a4c07a91f",
+    "logs/oam-daemon-netns-test.json": "5df764231ec4d553abff18f74655ea01f10d8b5d62cbd84f12f3c8224788fe83",
+    "artifacts/epon-parity/alarm-userspace-02/pon-oamd": "938566d439450f4ebdb2642ed523dd0c5e5405f5cefcdf99bace133f1974d4f0"
+  }
+}

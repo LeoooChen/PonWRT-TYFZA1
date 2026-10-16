@@ -221,3 +221,22 @@ REA 6.5.0 / Ghidra 12.1.2 通过既有本地 stdio 批处理运行。
 | extended_actions | c9/0001 | Reset ONU | not_ported |
 | extended_actions | c9/0002 | Sleep Control | not_ported |
 | extended_actions | c9/0048 | acFastLeaveAdminControl | not_ported |
+
+
+## 后续：光学与 UNI LOS 告警
+
+新增 `pon-alarm.c` 原生后端：CTC C7/0081设置、C7/0082带参数查询/阈值设置、
+opcodeFF状态/阈值Get/Set、code1事件通知及序号。实际消费者包括20个
+0x0101..0x0114光学告警/预警与四个UNI的0x0302 LOS。
+BOSA采样与端口carrier来自现有原生接口；counter类告警仍等待硬件PM，
+不能据此把全部告警标为完成。
+
+原厂 ARM64 函数的20个滞回条件及事件TLV已逐项执行对照。新实现用精确
+原始值比较替代单调的光功率log10、偏置/电压单位换算，保留严格不等式和
+滞回边界；温度按有符号16位原始值比较。复现了原厂0x424ef8把触发阈值
+写两遍的问题，新后端正确返回实际clearThreshold。
+
+发送失败不会把事件标为已经上报；采样失败不发送旧采样的待定事件，
+`alarm_error`显示真实错误。守护进程19项ARM64/musl集成检查通过，包含
+实际OAM阈值设置/查询、code1触发/清除上报、FF状态查询、滞回与读取失败。
+证据：`manifests/epon-optical-alarms.json`。未进行物理传感器/OLT验证。

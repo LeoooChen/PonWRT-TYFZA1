@@ -308,6 +308,8 @@ static int parameter_get(void *context, const struct pon_oam_request *request,
 
 	uint8_t branch = request->branch;
 	uint16_t leaf = request->leaf;
+	if (branch == 0xc7 && leaf == 0x82)
+		return pon_alarm_variable(&backend->alarms, request, NULL, 0, value);
 	if (branch == 0xc7 && leaf == 5)
 		return transceiver_get(backend, value);
 	if (branch == 0xc7 && (leaf == 4 || leaf == 7 || leaf == 0xc))
@@ -337,6 +339,10 @@ static uint8_t parameter_set(void *context, const struct pon_oam_request *reques
 
 	uint8_t branch = request->branch;
 	uint16_t leaf = request->leaf;
+	if (branch == 0xc7 && (leaf == 0x81 || leaf == 0x82)) {
+		ret = pon_alarm_variable(&backend->alarms, request, value, size, NULL);
+		return !ret ? 0x80 : ret == -EINVAL ? 0x86 : 0x87;
+	}
 	if (branch == 9 && (leaf == 5 || leaf == 0xb || leaf == 0xc))
 		return port_set(request, value, size);
 	if (branch == 0xc7 && leaf == 0x12)
@@ -403,6 +409,66 @@ static int churning_key(void *context, uint8_t index, uint8_t key[9], size_t len
 	return ret ? ret : (int)width;
 }
 
+static int alarm_access(void *context, struct pon_oam_alarm *alarm, enum pon_oam_alarm_operation operation)
+{
+	struct pon_backend *backend = context;
+
+	return pon_alarm_access(&backend->alarms, alarm, operation);
+}
+
+static int alarms_poll(void *context, unsigned int generation,
+	struct pon_oam_alarm *events, size_t capacity)
+{
+	struct pon_backend *backend = context;
+	uint8_t diagnostics[10], value[4];
+	bool optical = false;
+	int ret;
+	unsigned int i;
+
+	backend->alarm_error = 0;
+	for (i = 0; i < PON_ALARM_COUNT; i++)
+		backend->alarms.entries[i].sampled = false;
+	for (i = 0; i < PON_ALARM_OPTICAL_COUNT; i++)
+		optical |= backend->alarms.entries[i].value.enabled != 0;
+	if (optical) {
+		ret = transceiver_get(backend, diagnostics);
+		if (ret < 0)
+			backend->alarm_error = ret;
+		else
+			for (i = 0; i < PON_ALARM_OPTICAL_COUNT; i++) {
+				unsigned int field = 4 - (i % 10) / 2;
+				uint16_t raw = (uint16_t)diagnostics[field * 2] << 8 | diagnostics[field * 2 + 1];
+
+				pon_alarm_sample(&backend->alarms.entries[i], raw);
+			}
+	}
+	for (i = 0; i < PON_ALARM_PORT_COUNT; i++) {
+		struct pon_alarm_entry *entry = &backend->alarms.entries[PON_ALARM_OPTICAL_COUNT + i];
+		uint8_t object[] = {0x37, 0, 1, 4, 1, 0, 0, i + 1};
+		struct pon_oam_request request = {
+			.branch = 0xc7, .leaf = 0x11, .object = object, .object_size = sizeof(object),
+		};
+
+		if (!entry->value.enabled)
+			continue;
+		ret = port_get(&request, value);
+		if (ret < 0) {
+			if (!backend->alarm_error)
+				backend->alarm_error = ret;
+		} else {
+			pon_alarm_sample(entry, value[0]);
+		}
+	}
+	return pon_alarm_pending(&backend->alarms, generation, events, capacity);
+}
+
+static void alarms_sent(void *context, const struct pon_oam_alarm *events, size_t count)
+{
+	struct pon_backend *backend = context;
+
+	pon_alarm_reported(&backend->alarms, events, count);
+}
+
 int pon_backend_init(struct pon_backend *backend, const char *mpcp_path)
 {
 	const char *slash = strrchr(mpcp_path, '/');
@@ -415,6 +481,7 @@ int pon_backend_init(struct pon_backend *backend, const char *mpcp_path)
 		return -ENAMETOOLONG;
 	memcpy(backend->device, mpcp_path, size);
 	backend->device[size] = 0;
+	pon_alarm_init(&backend->alarms);
 	return 0;
 }
 
@@ -424,4 +491,7 @@ void pon_backend_bind(struct pon_oam_identity *identity, struct pon_backend *bac
 	identity->get_parameter = parameter_get;
 	identity->set_parameter = parameter_set;
 	identity->churning_key = churning_key;
+	identity->alarm = alarm_access;
+	identity->alarms_poll = alarms_poll;
+	identity->alarms_sent = alarms_sent;
 }

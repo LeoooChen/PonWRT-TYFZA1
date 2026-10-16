@@ -28,7 +28,7 @@ define Build/Compile
 		RUSTFLAGS="-C target-cpu=cortex-a55" $(TYFZA1_CARGO) build --release --locked --target aarch64-unknown-linux-musl
 	$(TARGET_CC) $(TARGET_CPPFLAGS) $(TARGET_CFLAGS) -Wall -Wextra -Werror \
 		-DPON_FIRMWARE_VERSION='"$(PKG_VERSION)"' \
-		$(PKG_BUILD_DIR)/pon-oamd.c $(PKG_BUILD_DIR)/pon-oam.c $(PKG_BUILD_DIR)/pon-backend.c \
+		$(PKG_BUILD_DIR)/pon-oamd.c $(PKG_BUILD_DIR)/pon-oam.c $(PKG_BUILD_DIR)/pon-backend.c $(PKG_BUILD_DIR)/pon-alarm.c \
 		$(TARGET_LDFLAGS) -luci -o $(PKG_BUILD_DIR)/pon-oamd
 	$(TARGET_CC) $(TARGET_CPPFLAGS) $(TARGET_CFLAGS) -Wall -Wextra -Werror \
 		$(PKG_BUILD_DIR)/pon-identity.c $(TARGET_LDFLAGS) -luci -o $(PKG_BUILD_DIR)/pon-identity
