@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=tyfza1-pon-control
-PKG_VERSION:=0.3.1_alpha
+PKG_VERSION:=0.4.0_alpha
 PKG_RELEASE:=
 PKG_LICENSE:=GPL-2.0-or-later
 
