@@ -1,0 +1,159 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "records": [
+    {
+      "function": "halrf_lck_trigger",
+      "text_offset": "0x2f59dc",
+      "ghidra_address": "0x3f5a18",
+      "evidence_id": "ev_e5f613fd2ad58de33db37806a21a2c648671c92e4f751b05525e7a856428581f",
+      "raw_member": "001-analyze_function.json",
+      "raw_sha256": "20d1f09f33f92a319b120dd65ea58d4c17780a4c5b4252af832ab0729ea071fa",
+      "pseudocode": "\nvoid halrf_lck_trigger(long param_1)\n\n{\n  if ((*(uint *)(param_1 + 0x24) >> 2 & 1) != 0) {\n    if (*(int *)(param_1 + 0x10) == 8) {\n      halrf_lck_8852c();\n    }\n    else if (*(int *)(param_1 + 0x10) == 0x20) {\n      halrf_lck_8192xb();\n    }\n    return;\n  }\n  return;\n}\n\n",
+      "limitations": [
+        "The session serves operations only after Ghidra reports default auto-analysis complete; incomplete analysis does not expose partial results.",
+        "The imported Program and temporary project are ephemeral and deleted on close. Annotation operations edit session database metadata; original executable bytes are never written.",
+        "Cancelling an active Ghidra request terminates its ephemeral database and discards session annotations. The selected target remains open; the next provider query imports the original artifact again.",
+        "Default-space addresses use lowercase 0x-prefixed hexadecimal; other address spaces use <percent-encoded-space>:0x<hex>.",
+        "References cover the complete Ghidra function-body AddressSet and exact entry. Dossier incoming edges omit sources owned by that function; procedure_references also retains those internal edges.",
+        "The dossier combines Ghidra FunctionManager, Listing, ReferenceManager, BasicBlockModel, and decompiler observations; provider-specific pseudocode and assembly are not cross-provider text invariants.",
+        "Resolved reference metadata identifies computed, indirect, external, call, jump, and data edges; unresolved targetless flows remain unknown, and function classifications distinguish thunks and externals.",
+        "Synthetic Ghidra entry-point references without actionable memory sources are omitted.",
+        "The Java bridge serializes one function request per Program and lets each decompilation run until it completes or the caller cancels.",
+        "macOS sessions require a matching executable Ghidra native decompiler; REA checks for it but does not build native components or change Gatekeeper quarantine state.",
+        "This session uses Ghidra 12.1.2. The bridge is verified against 12.1.4; other 12.1.x builds are accepted and the observed version is reported."
+      ]
+    },
+    {
+      "function": "halrf_lck_8852c",
+      "text_offset": "0x30e248",
+      "ghidra_address": "0x40e284",
+      "evidence_id": "ev_dcac2d0bc0d68e4de26d389102b0de514212654c6db3fe199ed6a07feba9952c",
+      "raw_member": "002-analyze_function.json",
+      "raw_sha256": "3126feed45e995b94512785d2a2b1ff2e4363b0715ab7cbcf794f5198ee4726f",
+      "pseudocode": "\nvoid halrf_lck_8852c(long param_1)\n\n{\n  undefined4 uVar1;\n  undefined4 uVar2;\n  undefined4 uVar3;\n  int iVar4;\n  \n  if (*(char *)(*(long *)(param_1 + 8) + 0x62c) == '\\0') {\n    if ((*(uint *)(param_1 + 0x34) >> 2 & 1) != 0) {\n      printk(\"[RF][LCK]DO LCK\\n\");\n    }\n    uVar1 = rtw_hal_read_rf_reg(*(undefined8 *)(param_1 + 8),0,0,0xfffff);\n    uVar2 = rtw_hal_read_rf_reg(*(undefined8 *)(param_1 + 8),1,0,0xfffff);\n    uVar3 = rtw_hal_read_rf_reg(*(undefined8 *)(param_1 + 8),0,0x18,0xfffff);\n    halrf_wrf(param_1,0,0,0xf0000,3);\n    halrf_wrf(param_1,1,0,0xf0000,3);\n    halrf_wrf(param_1,0,5,0xfffff,0);\n    halrf_wrf(param_1,1,5,0xfffff,0);\n    halrf_set_ch_lck_8852c(param_1,0,uVar3);\n    halrf_wrf(param_1,0,0,0xfffff,uVar1);\n    halrf_wrf(param_1,1,0,0xfffff,uVar2);\n    halrf_wrf(param_1,0,5,0xfffff,1);\n    halrf_wrf(param_1,1,5,0xfffff);\n  }\n  else {\n    if ((*(uint *)(param_1 + 0x34) >> 2 & 1) != 0) {\n      printk(\"[RF][LCK]DO DBCC LCK\\n\");\n    }\n    iVar4 = 0;\n    do {\n      uVar1 = rtw_hal_read_rf_reg(*(undefined8 *)(param_1 + 8),0,0,0xfffff);\n      uVar2 = rtw_hal_read_rf_reg(*(undefined8 *)(param_1 + 8),iVar4,0x18,0xfffff);\n      halrf_wrf(param_1,iVar4,0,0xf0000,3);\n      halrf_wrf(param_1,iVar4,5,0xfffff,0);\n      halrf_set_ch_lck_8852c(param_1,iVar4,uVar2);\n      halrf_wrf(param_1,iVar4,0,0xfffff,uVar1);\n      halrf_wrf(param_1,iVar4,5,0xfffff,1);\n      iVar4 = iVar4 + 1;\n    } while (iVar4 != 2);\n  }\n  *(undefined1 *)(param_1 + 0x4d) = *(undefined1 *)(param_1 + 0x4b);\n  *(undefined1 *)(param_1 + 0x4e) = *(undefined1 *)(param_1 + 0x4c);\n  return;\n}\n\n",
+      "limitations": [
+        "The session serves operations only after Ghidra reports default auto-analysis complete; incomplete analysis does not expose partial results.",
+        "The imported Program and temporary project are ephemeral and deleted on close. Annotation operations edit session database metadata; original executable bytes are never written.",
+        "Cancelling an active Ghidra request terminates its ephemeral database and discards session annotations. The selected target remains open; the next provider query imports the original artifact again.",
+        "Default-space addresses use lowercase 0x-prefixed hexadecimal; other address spaces use <percent-encoded-space>:0x<hex>.",
+        "References cover the complete Ghidra function-body AddressSet and exact entry. Dossier incoming edges omit sources owned by that function; procedure_references also retains those internal edges.",
+        "The dossier combines Ghidra FunctionManager, Listing, ReferenceManager, BasicBlockModel, and decompiler observations; provider-specific pseudocode and assembly are not cross-provider text invariants.",
+        "Resolved reference metadata identifies computed, indirect, external, call, jump, and data edges; unresolved targetless flows remain unknown, and function classifications distinguish thunks and externals.",
+        "Synthetic Ghidra entry-point references without actionable memory sources are omitted.",
+        "The Java bridge serializes one function request per Program and lets each decompilation run until it completes or the caller cancels.",
+        "macOS sessions require a matching executable Ghidra native decompiler; REA checks for it but does not build native components or change Gatekeeper quarantine state.",
+        "This session uses Ghidra 12.1.2. The bridge is verified against 12.1.4; other 12.1.x builds are accepted and the observed version is reported."
+      ]
+    },
+    {
+      "function": "halrf_lck_8192xb",
+      "text_offset": "0x33d500",
+      "ghidra_address": "0x43d53c",
+      "evidence_id": "ev_cdfa6829685472d867e53b6ca448e7db43a8e30f6db98e64cb963ac4f73103f9",
+      "raw_member": "003-analyze_function.json",
+      "raw_sha256": "48d5d86e5d09ac7be0cfa7e6d06547f145601568dcc110cd3202140c3e0fda30",
+      "pseudocode": "\nvoid halrf_lck_8192xb(long param_1)\n\n{\n  undefined4 uVar1;\n  undefined4 uVar2;\n  undefined4 uVar3;\n  undefined4 uVar4;\n  undefined4 uVar5;\n  \n  if ((*(uint *)(param_1 + 0x34) >> 2 & 1) != 0) {\n    printk(\"[RF][LCK]DO LCK\\n\");\n  }\n  uVar1 = rtw_hal_read_rf_reg(*(undefined8 *)(param_1 + 8),0,5,0xfffff);\n  uVar2 = rtw_hal_read_rf_reg(*(undefined8 *)(param_1 + 8),1,5,0xfffff);\n  uVar3 = rtw_hal_read_rf_reg(*(undefined8 *)(param_1 + 8),0,0,0xfffff);\n  uVar4 = rtw_hal_read_rf_reg(*(undefined8 *)(param_1 + 8),1,0,0xfffff);\n  uVar5 = rtw_hal_read_rf_reg(*(undefined8 *)(param_1 + 8),0,0x18,0xfffff);\n  halrf_wrf(param_1,0,0,0xf0000,3);\n  halrf_wrf(param_1,1,0,0xf0000,3);\n  halrf_wrf(param_1,0,5,0xfffff,0);\n  halrf_wrf(param_1,1,5,0xfffff,0);\n  halrf_set_ch_lck_8192xb(param_1,0,uVar5);\n  halrf_wrf(param_1,0,0,0xfffff,uVar3);\n  halrf_wrf(param_1,1,0,0xfffff,uVar4);\n  halrf_wrf(param_1,0,5,0xfffff,uVar1);\n  halrf_wrf(param_1,1,5,0xfffff,uVar2);\n  *(undefined1 *)(param_1 + 0x4d) = *(undefined1 *)(param_1 + 0x4b);\n  *(undefined1 *)(param_1 + 0x4e) = *(undefined1 *)(param_1 + 0x4c);\n  return;\n}\n\n",
+      "limitations": [
+        "The session serves operations only after Ghidra reports default auto-analysis complete; incomplete analysis does not expose partial results.",
+        "The imported Program and temporary project are ephemeral and deleted on close. Annotation operations edit session database metadata; original executable bytes are never written.",
+        "Cancelling an active Ghidra request terminates its ephemeral database and discards session annotations. The selected target remains open; the next provider query imports the original artifact again.",
+        "Default-space addresses use lowercase 0x-prefixed hexadecimal; other address spaces use <percent-encoded-space>:0x<hex>.",
+        "References cover the complete Ghidra function-body AddressSet and exact entry. Dossier incoming edges omit sources owned by that function; procedure_references also retains those internal edges.",
+        "The dossier combines Ghidra FunctionManager, Listing, ReferenceManager, BasicBlockModel, and decompiler observations; provider-specific pseudocode and assembly are not cross-provider text invariants.",
+        "Resolved reference metadata identifies computed, indirect, external, call, jump, and data edges; unresolved targetless flows remain unknown, and function classifications distinguish thunks and externals.",
+        "Synthetic Ghidra entry-point references without actionable memory sources are omitted.",
+        "The Java bridge serializes one function request per Program and lets each decompilation run until it completes or the caller cancels.",
+        "macOS sessions require a matching executable Ghidra native decompiler; REA checks for it but does not build native components or change Gatekeeper quarantine state.",
+        "This session uses Ghidra 12.1.2. The bridge is verified against 12.1.4; other 12.1.x builds are accepted and the observed version is reported."
+      ]
+    },
+    {
+      "function": "halrf_get_thermal",
+      "text_offset": "0x2f6aa0",
+      "ghidra_address": "0x3f6adc",
+      "evidence_id": "ev_eef7efb9989f7035eeb6a619f939e32adbb018f19085a993ed13ff5e4854b835",
+      "raw_member": "004-analyze_function.json",
+      "raw_sha256": "fad67cf06e578bc47ee77f1b6598256cda891cdd8edfb5d546833058dc2bc102",
+      "pseudocode": "\nundefined1 halrf_get_thermal(long param_1,undefined1 param_2)\n\n{\n  undefined1 uVar1;\n  \n  if (*(int *)(param_1 + 0x10) == 8) {\n    uVar1 = halrf_get_thermal_8852c(param_1,param_2);\n  }\n  else {\n    uVar1 = 0;\n    if (*(int *)(param_1 + 0x10) == 0x20) {\n      uVar1 = halrf_get_thermal_8192xb(param_1);\n    }\n  }\n  return uVar1;\n}\n\n",
+      "limitations": [
+        "The session serves operations only after Ghidra reports default auto-analysis complete; incomplete analysis does not expose partial results.",
+        "The imported Program and temporary project are ephemeral and deleted on close. Annotation operations edit session database metadata; original executable bytes are never written.",
+        "Cancelling an active Ghidra request terminates its ephemeral database and discards session annotations. The selected target remains open; the next provider query imports the original artifact again.",
+        "Default-space addresses use lowercase 0x-prefixed hexadecimal; other address spaces use <percent-encoded-space>:0x<hex>.",
+        "References cover the complete Ghidra function-body AddressSet and exact entry. Dossier incoming edges omit sources owned by that function; procedure_references also retains those internal edges.",
+        "The dossier combines Ghidra FunctionManager, Listing, ReferenceManager, BasicBlockModel, and decompiler observations; provider-specific pseudocode and assembly are not cross-provider text invariants.",
+        "Resolved reference metadata identifies computed, indirect, external, call, jump, and data edges; unresolved targetless flows remain unknown, and function classifications distinguish thunks and externals.",
+        "Synthetic Ghidra entry-point references without actionable memory sources are omitted.",
+        "The Java bridge serializes one function request per Program and lets each decompilation run until it completes or the caller cancels.",
+        "macOS sessions require a matching executable Ghidra native decompiler; REA checks for it but does not build native components or change Gatekeeper quarantine state.",
+        "This session uses Ghidra 12.1.2. The bridge is verified against 12.1.4; other 12.1.x builds are accepted and the observed version is reported."
+      ]
+    },
+    {
+      "function": "halrf_get_thermal_8852c",
+      "text_offset": "0x30e790",
+      "ghidra_address": "0x40e7cc",
+      "evidence_id": "ev_6721fd07b8d4c1d53438962274a04df23b6c51ec21ee86c7f6357afc154d7bab",
+      "raw_member": "005-analyze_function.json",
+      "raw_sha256": "6c640709c359fd06b097f33b5aca409e5223dc332164778a72ca3b2dd0eca115",
+      "pseudocode": "\nvoid halrf_get_thermal_8852c(long param_1,ulong param_2)\n\n{\n  ulong uVar1;\n  \n  uVar1 = param_2 & 0xffffffff;\n  halrf_wrf(param_1,param_2,0x42,0x80000,1);\n  halrf_wrf(param_1,uVar1,0x42,0x80000,0);\n  halrf_wrf(param_1,uVar1,0x42,0x80000,1);\n  halrf_delay_us(param_1,200);\n  rtw_hal_read_rf_reg(*(undefined8 *)(param_1 + 8),uVar1,0x42,0x7e);\n  return;\n}\n\n",
+      "limitations": [
+        "The session serves operations only after Ghidra reports default auto-analysis complete; incomplete analysis does not expose partial results.",
+        "The imported Program and temporary project are ephemeral and deleted on close. Annotation operations edit session database metadata; original executable bytes are never written.",
+        "Cancelling an active Ghidra request terminates its ephemeral database and discards session annotations. The selected target remains open; the next provider query imports the original artifact again.",
+        "Default-space addresses use lowercase 0x-prefixed hexadecimal; other address spaces use <percent-encoded-space>:0x<hex>.",
+        "References cover the complete Ghidra function-body AddressSet and exact entry. Dossier incoming edges omit sources owned by that function; procedure_references also retains those internal edges.",
+        "The dossier combines Ghidra FunctionManager, Listing, ReferenceManager, BasicBlockModel, and decompiler observations; provider-specific pseudocode and assembly are not cross-provider text invariants.",
+        "Resolved reference metadata identifies computed, indirect, external, call, jump, and data edges; unresolved targetless flows remain unknown, and function classifications distinguish thunks and externals.",
+        "Synthetic Ghidra entry-point references without actionable memory sources are omitted.",
+        "The Java bridge serializes one function request per Program and lets each decompilation run until it completes or the caller cancels.",
+        "macOS sessions require a matching executable Ghidra native decompiler; REA checks for it but does not build native components or change Gatekeeper quarantine state.",
+        "This session uses Ghidra 12.1.2. The bridge is verified against 12.1.4; other 12.1.x builds are accepted and the observed version is reported."
+      ]
+    },
+    {
+      "function": "halrf_get_thermal_8192xb",
+      "text_offset": "0x33d7a4",
+      "ghidra_address": "0x43d7e0",
+      "evidence_id": "ev_17b9074b66c0f43a0d40ce0c4eadfeda127ef41b8e7cab2e5d9e3e5f110143ff",
+      "raw_member": "006-analyze_function.json",
+      "raw_sha256": "466824e2211d1673b65c7806464e52b3a8eed14f5f7d03fb5ea88fa5dea60b86",
+      "pseudocode": "\nvoid halrf_get_thermal_8192xb(long param_1,ulong param_2)\n\n{\n  ulong uVar1;\n  \n  uVar1 = param_2 & 0xffffffff;\n  halrf_wrf(param_1,param_2,0x42,0x80000,1);\n  halrf_wrf(param_1,uVar1,0x42,0x80000,0);\n  halrf_wrf(param_1,uVar1,0x42,0x80000,1);\n  halrf_delay_us(param_1,200);\n  rtw_hal_read_rf_reg(*(undefined8 *)(param_1 + 8),uVar1,0x42,0x7e);\n  return;\n}\n\n",
+      "limitations": [
+        "The session serves operations only after Ghidra reports default auto-analysis complete; incomplete analysis does not expose partial results.",
+        "The imported Program and temporary project are ephemeral and deleted on close. Annotation operations edit session database metadata; original executable bytes are never written.",
+        "Cancelling an active Ghidra request terminates its ephemeral database and discards session annotations. The selected target remains open; the next provider query imports the original artifact again.",
+        "Default-space addresses use lowercase 0x-prefixed hexadecimal; other address spaces use <percent-encoded-space>:0x<hex>.",
+        "References cover the complete Ghidra function-body AddressSet and exact entry. Dossier incoming edges omit sources owned by that function; procedure_references also retains those internal edges.",
+        "The dossier combines Ghidra FunctionManager, Listing, ReferenceManager, BasicBlockModel, and decompiler observations; provider-specific pseudocode and assembly are not cross-provider text invariants.",
+        "Resolved reference metadata identifies computed, indirect, external, call, jump, and data edges; unresolved targetless flows remain unknown, and function classifications distinguish thunks and externals.",
+        "Synthetic Ghidra entry-point references without actionable memory sources are omitted.",
+        "The Java bridge serializes one function request per Program and lets each decompilation run until it completes or the caller cancels.",
+        "macOS sessions require a matching executable Ghidra native decompiler; REA checks for it but does not build native components or change Gatekeeper quarantine state.",
+        "This session uses Ghidra 12.1.2. The bridge is verified against 12.1.4; other 12.1.x builds are accepted and the observed version is reported."
+      ]
+    },
+    {
+      "function": "halrf_set_final_rfability",
+      "text_offset": "0x303b2c",
+      "ghidra_address": "0x403b68",
+      "evidence_id": "ev_279b1c4dec8f0514c3f4aeffbcb081e93e43dc8621a326c1825ee764ab412330",
+      "raw_member": "007-analyze_function.json",
+      "raw_sha256": "1b08686a1c1160ebb310c34eafdc12c27f8707978540bfbba0ba47f16b24308e",
+      "pseudocode": "\nvoid halrf_set_final_rfability(long *param_1)\n\n{\n  *(uint *)((long)param_1 + 0x24) = *(uint *)(*param_1 + 0x594c) & *(uint *)(param_1 + 5);\n  if ((*(uint *)((long)param_1 + 0x34) >> 10 & 1) == 0) {\n    return;\n  }\n  printk(\"[RF]IC = ((0x%x)), mp=%d,  RF_Supportability Init = ((0x%x))\\n\",(int)param_1[2],\n         *(undefined4 *)(*param_1 + 0x320c));\n  return;\n}\n\n",
+      "limitations": [
+        "The session serves operations only after Ghidra reports default auto-analysis complete; incomplete analysis does not expose partial results.",
+        "The imported Program and temporary project are ephemeral and deleted on close. Annotation operations edit session database metadata; original executable bytes are never written.",
+        "Cancelling an active Ghidra request terminates its ephemeral database and discards session annotations. The selected target remains open; the next provider query imports the original artifact again.",
+        "Default-space addresses use lowercase 0x-prefixed hexadecimal; other address spaces use <percent-encoded-space>:0x<hex>.",
+        "References cover the complete Ghidra function-body AddressSet and exact entry. Dossier incoming edges omit sources owned by that function; procedure_references also retains those internal edges.",
+        "The dossier combines Ghidra FunctionManager, Listing, ReferenceManager, BasicBlockModel, and decompiler observations; provider-specific pseudocode and assembly are not cross-provider text invariants.",
+        "Resolved reference metadata identifies computed, indirect, external, call, jump, and data edges; unresolved targetless flows remain unknown, and function classifications distinguish thunks and externals.",
+        "Synthetic Ghidra entry-point references without actionable memory sources are omitted.",
+        "The Java bridge serializes one function request per Program and lets each decompilation run until it completes or the caller cancels.",
+        "macOS sessions require a matching executable Ghidra native decompiler; REA checks for it but does not build native components or change Gatekeeper quarantine state.",
+        "This session uses Ghidra 12.1.2. The bridge is verified against 12.1.4; other 12.1.x builds are accepted and the observed version is reported."
+      ]
+    }
+  ]
+}

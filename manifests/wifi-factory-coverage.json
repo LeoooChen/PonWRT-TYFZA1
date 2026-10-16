@@ -3782,5 +3782,16 @@
   "analyzed_function_records": 83,
   "factory_module_function_records": 76,
   "hardware_tested": false,
-  "production_code_changed": false
+  "production_code_changed": false,
+  "implementation_updates": [
+    {
+      "feature_ids": [
+        "F03",
+        "F06"
+      ],
+      "scope": "Periodic thermal A/B and SCC LCK implemented; remaining RF watchdog algorithms pending",
+      "manifest": "manifests/wifi-rf-runtime.json",
+      "hardware_tested": false
+    }
+  ]
 }

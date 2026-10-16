@@ -37,6 +37,7 @@
 #include "trx-paths.h"
 #include "xb-channel.h"
 #include "rf-start.h"
+#include "rf-runtime.h"
 #include "dack.h"
 #include "rxdck.h"
 #include "c-rxdck.h"
@@ -113,6 +114,7 @@ struct rtl_ax_ap {
 	u8 rfk_notification[24];
 	u64 rfk_notifications;
 	struct rtl_ax_rf_start rf_start;
+	struct rtl_ax_rf_runtime rf_runtime;
 	struct rtl_ax_dack dack;
 	struct rtl_ax_rxdck rxdck;
 	u8 rxdck_channel;
@@ -152,6 +154,7 @@ struct rtl_ax_ap {
 	struct { u8 address[6], aggregation[IEEE80211_NUM_TIDS]; u16 stopping, flushing; } tx_ba[128];
 	struct wiphy_delayed_work cleanup_work;
 	struct wiphy_delayed_work ra_work;
+	struct wiphy_delayed_work dm_work;
 	bool ra_sampling;
 	u64 station_added, station_removed;
 	DECLARE_BITMAP(security_ids, RTL_AX_SECURITY_ENTRIES);
@@ -1839,6 +1842,23 @@ static ssize_t radio_rf_start_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_rf_start);
 
+static ssize_t radio_rf_runtime_show(struct device *dev,
+	struct device_attribute *attr, char *buffer)
+{
+	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
+	struct rtl_ax_rf_runtime *state = &radio->rf_runtime;
+	ssize_t length;
+
+	mutex_lock(&radio->command_mutex);
+	length = sysfs_emit(buffer, "periods=%u thermal=%u,%u LCK_thermal=%u,%u "
+		"LCK_runs=%u LCK_timeouts=%u result=%d\n", state->periods,
+		state->thermal[0], state->thermal[1], state->lck_thermal[0], state->lck_thermal[1],
+		state->lck_runs, state->lck_timeouts, state->result);
+	mutex_unlock(&radio->command_mutex);
+	return length;
+}
+static DEVICE_ATTR_RO(radio_rf_runtime);
+
 static ssize_t radio_dack_show(struct device *dev,
 	struct device_attribute *attr, char *buffer)
 {
@@ -2556,6 +2576,7 @@ static struct attribute *rtl_ax_attrs[] = {
 	&dev_attr_radio_physts.attr, &dev_attr_radio_txdiff.attr, &dev_attr_radio_phy_stats.attr,
 	&dev_attr_radio_signal.attr, &dev_attr_radio_filter.attr, &dev_attr_radio_dfs.attr,
 	&dev_attr_radio_dig.attr, &dev_attr_radio_cfo.attr, &dev_attr_radio_environment.attr,
+	&dev_attr_radio_rf_runtime.attr,
 	&dev_attr_radio_rx_pipeline.attr, &dev_attr_radio_channel.attr, &dev_attr_radio_rx_mode.attr,
 	&dev_attr_radio_rf_start.attr, &dev_attr_radio_dack.attr, &dev_attr_radio_dac.attr,
 	&dev_attr_radio_mac80211.attr, &dev_attr_radio_rx_dck.attr, &dev_attr_radio_trim.attr,

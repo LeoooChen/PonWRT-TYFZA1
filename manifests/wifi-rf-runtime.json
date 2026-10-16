@@ -1,0 +1,41 @@
+{
+  "base_commit": "99a41ad",
+  "scope": "Frozen Wi-Fi omission list F03/F06: periodic thermal meter and SCC LCK; other RF algorithms remain pending",
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rf-runtime.h": "d32d05e639cdc7d3702e46de187dacbba52a42a5a362f9e16b35d9fd85ee612e",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pci.c": "26896693cb8f8ba174ca1660cb7aaf19b7aa8ebf15c6462ae220d3fc60200b26",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/monitor.h": "d538dac580eb14cbe582d18ef69696526974de3bae6857eca73dd75a16c87c8e",
+    "tools/check_radio_rf_runtime.py": "a34b8dbdc961a0676183866dca3725618f7e5ef3fd05c87c7f6260275773aa5d",
+    "docs/wifi-rf-runtime-20261016.md": "010ff21abe554d2e19655ca82fd45121a752032cf25e782322c70927b52d5492"
+  },
+  "evidence_sha256": {
+    "artifacts/wifi-bb-runtime-20261016/rf-lck-check.json": "b6f27c195959565cc35a238d0c4b38f40455cdfe6016cc1d395eb3e0b852724f",
+    "artifacts/wifi-bb-runtime-20261016/rea-lck-index.json": "da39545f9e390718b40065c2b34cfbd7674fc78e1e30e744f8515915c2055098",
+    "artifacts/wifi-bb-runtime-20261016/rea-lck.tar.gz": "3e4d49eb01c125557773aa692f04b21abe34c7f69b019f48f8b8c593ab003939",
+    "artifacts/wifi-bb-runtime-20261016/module-build.log": "325e49dd4f0c92f9ff5718a10763250a9974f0b13fd585d3da7d7b978b4ad006"
+  },
+  "module": {
+    "path": "artifacts/wifi-bb-runtime-20261016/radio/rtl_ax_ap_rf_runtime.ko",
+    "sha256": "920dc9d733a36c9740882ccf9ab319e13dbbfdba5c03ab6415117ca6070e14ea",
+    "wireless_sources_match_build": true,
+    "source_file_count": 57,
+    "build_PCI_driver_name": "rtl_ax_ap_rf_runtime",
+    "kernel": "6.18.55"
+  },
+  "checks": {
+    "actual_original_ARM64_vs_compiled_native_C": 10,
+    "RF_IO_error_restoration": true,
+    "module_build": true,
+    "full_test_suite": false,
+    "hardware_tested": false,
+    "full_firmware_build": false
+  },
+  "behavior_adjustment": "LCK timeout is returned and does not advance the last successful thermal baseline",
+  "limitations": [
+    "RF bus and delays are modeled",
+    "Wiphy start/stop serialization checked against Linux source, not hardware timing",
+    "SCC only; DBCC remains unprovided",
+    "No claim that remaining frozen Wi-Fi omissions are implemented"
+  ]
+}

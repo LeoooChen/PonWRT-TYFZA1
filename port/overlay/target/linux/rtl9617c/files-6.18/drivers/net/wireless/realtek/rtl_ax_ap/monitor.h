@@ -53,6 +53,7 @@ static int rtl_ax_monitor_start(struct ieee80211_hw *hw)
 	mutex_unlock(&radio->command_mutex);
 	wiphy_delayed_work_queue(hw->wiphy, &radio->cleanup_work, 0);
 	wiphy_delayed_work_queue(hw->wiphy, &radio->ra_work, HZ);
+	wiphy_delayed_work_queue(hw->wiphy, &radio->dm_work, 2 * HZ);
 	return 0;
 }
 
@@ -64,6 +65,7 @@ static void rtl_ax_monitor_stop(struct ieee80211_hw *hw, bool suspend)
 
 	wiphy_delayed_work_cancel(hw->wiphy, &radio->cleanup_work);
 	wiphy_delayed_work_cancel(hw->wiphy, &radio->ra_work);
+	wiphy_delayed_work_cancel(hw->wiphy, &radio->dm_work);
 	wiphy_work_cancel(hw->wiphy, &radio->ra_update_work);
 	mutex_lock(&radio->command_mutex);
 	spin_lock_irqsave(&radio->command_lock, flags);
@@ -1076,6 +1078,22 @@ static void rtl_ax_link_sta_rc_update(struct ieee80211_hw *hw, struct ieee80211_
 	wiphy_work_queue(hw->wiphy, &radio->ra_update_work);
 }
 
+static void rtl_ax_dm_work(struct wiphy *wiphy, struct wiphy_work *work)
+{
+	struct rtl_ax_ap *radio = container_of(work, struct rtl_ax_ap, dm_work.work);
+
+	if (!radio->monitor_started) return;
+	/* Wiphy work shares start/stop/STA serialization; command_mutex
+	 * also excludes sysfs/channel RFK while the meter and LCK use RF IO. */
+	mutex_lock(&radio->command_mutex);
+	radio->rf_runtime.result = rtl_ax_rf_runtime_update(&radio->io,
+		radio->chip, &radio->rf_runtime);
+	if (radio->rf_runtime.result)
+		dev_err(&radio->pdev->dev, "RF watchdog failed: %d\n", radio->rf_runtime.result);
+	mutex_unlock(&radio->command_mutex);
+	wiphy_delayed_work_queue(wiphy, &radio->dm_work, 2 * HZ);
+}
+
 static void rtl_ax_ra_work(struct wiphy *wiphy, struct wiphy_work *work)
 {
 	struct rtl_ax_ap *radio = container_of(work, struct rtl_ax_ap, ra_work.work);
@@ -1464,6 +1482,7 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	tasklet_setup(&radio->tx_tasklet, rtl_ax_tx_queues);
 	wiphy_delayed_work_init(&radio->cleanup_work, rtl_ax_cleanup_work);
 	wiphy_delayed_work_init(&radio->ra_work, rtl_ax_ra_work);
+	wiphy_delayed_work_init(&radio->dm_work, rtl_ax_dm_work);
 	ret = ieee80211_register_hw(hw);
 	if (ret) {
 		rtl_ax_tx_bind_hw(radio->tx, NULL);

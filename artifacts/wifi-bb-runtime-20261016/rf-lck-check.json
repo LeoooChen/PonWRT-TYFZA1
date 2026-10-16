@@ -1,0 +1,158 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "native_header_sha256": "d32d05e639cdc7d3702e46de187dacbba52a42a5a362f9e16b35d9fd85ee612e",
+  "cases": [
+    {
+      "chip": "8852c",
+      "case": "first",
+      "result": 0,
+      "matched_RF_operations": 31,
+      "trace_sha256": "a35abd47d118717f0180383c81542ef350dbc6b47c321dd6ff3c87eb957c3bcb",
+      "native_baseline": [
+        31,
+        34
+      ],
+      "stock_baseline": [
+        31,
+        34
+      ]
+    },
+    {
+      "chip": "8852c",
+      "case": "delta7",
+      "result": 0,
+      "matched_RF_operations": 10,
+      "trace_sha256": "89ae64111b50e9f0b587566746f25644678097074acf78f4e5d1f14b157b98a9",
+      "native_baseline": [
+        31,
+        34
+      ],
+      "stock_baseline": [
+        31,
+        34
+      ]
+    },
+    {
+      "chip": "8852c",
+      "case": "pathA_delta8",
+      "result": 0,
+      "matched_RF_operations": 25,
+      "trace_sha256": "95dc31619628a94b94057e21df31a9b80f31d2b6819a55a5cfdce54ab0cf8cdd",
+      "native_baseline": [
+        39,
+        34
+      ],
+      "stock_baseline": [
+        39,
+        34
+      ]
+    },
+    {
+      "chip": "8852c",
+      "case": "pathB_cools8",
+      "result": 0,
+      "matched_RF_operations": 25,
+      "trace_sha256": "95dc31619628a94b94057e21df31a9b80f31d2b6819a55a5cfdce54ab0cf8cdd",
+      "native_baseline": [
+        31,
+        26
+      ],
+      "stock_baseline": [
+        31,
+        26
+      ]
+    },
+    {
+      "chip": "8852c",
+      "case": "timeout",
+      "result": -110,
+      "matched_RF_operations": 2024,
+      "trace_sha256": "6a49d563c5dfcb7f360a1e68eaf99f00117c512143050c0c24c2f28daac39b82",
+      "native_baseline": [
+        31,
+        34
+      ],
+      "stock_baseline": [
+        39,
+        34
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "case": "first",
+      "result": 0,
+      "matched_RF_operations": 33,
+      "trace_sha256": "680f35bc09005ad13e98f9b9818f7708fe6f0affa0eba9a663aa1498fafe2f20",
+      "native_baseline": [
+        31,
+        34
+      ],
+      "stock_baseline": [
+        31,
+        34
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "case": "delta7",
+      "result": 0,
+      "matched_RF_operations": 10,
+      "trace_sha256": "89ae64111b50e9f0b587566746f25644678097074acf78f4e5d1f14b157b98a9",
+      "native_baseline": [
+        31,
+        34
+      ],
+      "stock_baseline": [
+        31,
+        34
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "case": "pathA_delta8",
+      "result": 0,
+      "matched_RF_operations": 27,
+      "trace_sha256": "d9d01f38ccc7eae633251fa34ad2f09ba73f8aa3236fb38963797a1a20aebc60",
+      "native_baseline": [
+        39,
+        34
+      ],
+      "stock_baseline": [
+        39,
+        34
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "case": "pathB_cools8",
+      "result": 0,
+      "matched_RF_operations": 27,
+      "trace_sha256": "d9d01f38ccc7eae633251fa34ad2f09ba73f8aa3236fb38963797a1a20aebc60",
+      "native_baseline": [
+        31,
+        26
+      ],
+      "stock_baseline": [
+        31,
+        26
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "case": "timeout",
+      "result": -110,
+      "matched_RF_operations": 2026,
+      "trace_sha256": "cbcf3fd5aef6c783f53c125d7dbc0debe4b378f8bd99bb9f5ea661b3f97e3d86",
+      "native_baseline": [
+        31,
+        34
+      ],
+      "stock_baseline": [
+        39,
+        34
+      ]
+    }
+  ],
+  "RF_IO_error_restores_operational_state": true,
+  "scope": "Actual factory ARM64 functions versus compiled production native header. RF register IO and delays are modeled. Factory poll timeout is deliberately changed to return ETIMEDOUT and retain the last successful baseline. No RF calibration, IRQ, Linux scheduling or hardware throughput is measured."
+}
