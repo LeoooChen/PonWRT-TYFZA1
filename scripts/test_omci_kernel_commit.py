@@ -37,6 +37,7 @@ static struct rtl9617c_pon pon={.mode=RTL_PON_GPON,.puc_configured=1,.pdc_config
 static unsigned char frame[44],reply[2048];
 static unsigned int transaction;
 static void be16(unsigned char *p,unsigned int value){p[0]=value>>8;p[1]=value;}
+static void be32(unsigned char *p,unsigned int value){p[0]=value>>24;p[1]=value>>16;p[2]=value>>8;p[3]=value;}
 static int apply(void *context,const unsigned char *paths,size_t length){
  (void)context;assert(reply[8]==0xa5);
  int ret=rtl_pon_itu_paths_write(&pon,(const char*)paths,length,pon.itu_line_epoch);
@@ -74,6 +75,17 @@ static void filter(struct omci_agent *agent,unsigned int n){
  static const unsigned int vids[]={46,41,45};
  unsigned char body[26]={};be16(body,vids[n]);body[24]=4;body[25]=1;
  assert(!request(agent,4,84,0x300+n,body,sizeof(body)));
+}
+static void gem_filter(struct omci_agent *agent,unsigned int n,unsigned int vid){
+ unsigned char body[18]={5};be16(body+1,0x200+n);
+ assert(!request(agent,4,171,0x500+n,body,3));
+ /* Drop unmatched single-tagged frames at the GEM IWTP, then add its VID. */
+ be16(body,0x0400);be32(body+2,0xf8000000);be32(body+6,0xe8000000);
+ be32(body+10,0xc00f0000);be32(body+14,0x000f0000);
+ assert(!request(agent,8,171,0x500+n,body,sizeof(body)));
+ be32(body+6,0x80004000|(vid<<15));
+ be32(body+10,0x400f0000);be32(body+14,0x80000|((vid+100)<<3)|4);
+ assert(!request(agent,8,171,0x500+n,body,sizeof(body)));
 }
 int main(void){
  for(unsigned int mode=RTL_PON_GPON;mode<=RTL_PON_XGSPON;mode++) {
@@ -130,9 +142,22 @@ int main(void){
  assert(!set(agent,277,0x8000,8,value,1));
  assert(pon.itu_paths_ready && programs==previous+2);
  assert(pon.itu_paths->paths.weights[1][0]==1 && pon.itu_paths->paths.weights[1][1]==1);
+ /* GEM-associated EVTO can distinguish paths without an ANI VLAN filter. */
+ gem_filter(agent,1,41);gem_filter(agent,2,45);
+ assert(!request(agent,6,84,0x301,value,0));
+ assert(!request(agent,6,84,0x302,value,0));
+ for(unsigned int n=1;n<3;n++)for(unsigned int protocol=0x8863;protocol<=0x8864;protocol++) {
+  struct rtl_evto_packet input={.count=1,.protocol=protocol,.tag={{0x8100,vids[n]}}},output,received;
+  const struct rtl_itu_path *path=rtl_itu_path_transmit_vlan(&pon.itu_paths->paths,&input,&output);
+  assert(path && path->gem_id==4000+n && output.count==1 && output.tag[0].tci==vids[n]+100);
+  assert(rtl_itu_path_receive_vlan(&pon.itu_paths->paths,path->index,&output,&received)==path);
+  assert(received.count==1 && received.tag[0].tci==vids[n]);
+ }
+ struct rtl_evto_packet denied={.count=1,.protocol=0x8863,.tag={{0x8100,99}}},discard;
+ assert(!rtl_itu_path_transmit_vlan(&pon.itu_paths->paths,&denied,&discard));
  tyfza1_omci_free(agent);free(pon.itu_paths);
  }
- puts("Real OMCI FFI/kernel commit: ANI ports before VLAN filters accepted; ambiguous forwarding blocked; three PPPoE VLAN classifiers and hardware-failure retry passed");
+ puts("Real OMCI FFI/kernel commit: ANI ports before VLAN filters, ambiguous forwarding, PPPoE GEM/IWTP tag rules and hardware-failure retry passed");
 }
 '''
 library = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('/tmp/tyfza1-omci-queue-target/release/libtyfza1_omci.a')

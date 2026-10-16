@@ -73,10 +73,16 @@ static inline const struct rtl_itu_path *rtl_itu_path_transmit_vlan(const struct
 		if (!packet.count && path->unmarked_mode)
 			packet.priority = path->unmarked_mode == 1 ? rtl_itu_dscp_priority(path->mapper_dscp, packet.dscp) : path->default_priority;
 		if (!(path->pbits & (1U << packet.priority))) continue;
-		if (!selected || rank > best) { selected = path; *output = packet; best = rank; conflict = 0; }
-		else if (rank == best && selected->index != path->index) conflict = 1;
+		if (rank < best) continue;
+		if (rank > best) { selected = 0; best = rank; conflict = 0; }
+		/* Mapper/IWTP rules can reject a candidate or change its wire tags. */
+		if (!rtl_itu_path_vlan(paths, path, &packet, 3, RTL_EVTO_STAGES, 0)) continue;
+		if (!selected) { selected = path; *output = packet; }
+		else if (selected->index != path->index || packet.count != output->count ||
+			packet.priority != output->priority || memcmp(packet.tag, output->tag,
+				packet.count * sizeof(packet.tag[0]))) conflict = 1;
 	}
-	return selected && !conflict && rtl_itu_path_vlan(paths, selected, output, 3, RTL_EVTO_STAGES, 0) ? selected : 0;
+	return conflict ? 0 : selected;
 }
 
 static inline const struct rtl_itu_path *rtl_itu_path_receive_vlan(const struct rtl_itu_paths *paths,

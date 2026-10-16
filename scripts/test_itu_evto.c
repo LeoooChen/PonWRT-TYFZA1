@@ -125,5 +125,29 @@ int main(void)
 	packet.dscp = 0; assert(rtl_itu_path_transmit_vlan(paths, &packet, &output)->gem_id == 4001);
 	packet.count = 1; packet.tag[0] = (struct rtl_evto_tag){0x8100, 100};
 	assert(rtl_itu_path_transmit_vlan(paths, &packet, &output)->gem_id == 4000); free(paths);
+	/* A GEM-level drop on a specific VID must not escape through a wildcard. */
+	paths = calloc(1, sizeof(*paths) + 2 * sizeof(paths->profile[0])); assert(paths);
+	paths->count = paths->profile_count = 2;
+	for (unsigned int i = 0; i < 2; i++) {
+		paths->path[i] = (struct rtl_itu_path){.index = 8 + i, .pbits = 255,
+			.vlan = i ? RTL_ITU_VLAN_ANY : 100};
+		memset(paths->path[i].vlan_profile, 255, sizeof(paths->path[i].vlan_profile));
+	}
+	paths->profile[0] = profile(absent, any, 3, none, none);
+	paths->path[0].vlan_profile[4] = 0;
+	for (unsigned int order = 0; order < 2; order++) {
+		assert(!rtl_itu_path_transmit_vlan(paths, &packet, &output));
+		struct rtl_itu_path swap = paths->path[0];paths->path[0] = paths->path[1];paths->path[1] = swap;
+	}
+	/* Equal GEM indices do not make different wire tag treatments equivalent. */
+	paths->path[0].vlan = paths->path[1].vlan = RTL_ITU_VLAN_ANY;
+	paths->path[1].index = paths->path[0].index;
+	paths->profile[0] = profile(absent, filter(8, 100, 4), 1, none, treatment(8, 200, 4));
+	paths->profile[1] = profile(absent, filter(8, 100, 4), 1, none, treatment(8, 300, 4));
+	paths->path[1].vlan_profile[4] = 1;
+	assert(!rtl_itu_path_transmit_vlan(paths, &packet, &output));
+	paths->profile[1] = paths->profile[0];
+	assert(rtl_itu_path_transmit_vlan(paths, &packet, &output)); tag(&output, 0, 0x8100, 200, 0);
+	free(paths);
 	puts("EVTO packet rules: stock cases, inverse modes0..8, DSCP, EAPOL and default precedence passed");
 }
