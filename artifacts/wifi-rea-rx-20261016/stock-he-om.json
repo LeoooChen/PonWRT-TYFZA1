@@ -1,0 +1,67 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "actual_functions": [
+    "process_a_control_subfield@0xb768c",
+    "rtw_build_he_mac_caps"
+  ],
+  "rows": [
+    {
+      "case": "unchanged",
+      "A_control": "0x1647",
+      "result_rx_NSS": 2,
+      "result_tx_NSS": 2,
+      "bandwidth_code": 3,
+      "calls": []
+    },
+    {
+      "case": "to_80_1SS",
+      "A_control": "0x407",
+      "result_rx_NSS": 1,
+      "result_tx_NSS": 1,
+      "bandwidth_code": 2,
+      "calls": [
+        {
+          "call": "rtw_phl_cmd_set_macid_pause",
+          "operation": 1
+        },
+        {
+          "call": "rtw_phl_cmd_set_macid_pkt_drop",
+          "operation": 0
+        },
+        {
+          "call": "rtw_phl_cmd_set_macid_pkt_drop",
+          "operation": 1
+        },
+        {
+          "call": "rtw_phl_cmd_change_stainfo",
+          "operation": 2
+        },
+        {
+          "call": "rtw_phl_cmd_set_macid_pause",
+          "operation": 0
+        }
+      ]
+    },
+    {
+      "case": "over_local_NSS",
+      "A_control": "0x487",
+      "result_rx_NSS": 2,
+      "result_tx_NSS": 2,
+      "bandwidth_code": 3,
+      "calls": []
+    }
+  ],
+  "capability": [
+    {
+      "input_OM_support": false,
+      "HE_MAC_caps": "010000100000",
+      "OMI_bit": false
+    },
+    {
+      "input_OM_support": true,
+      "HE_MAC_caps": "010000120000",
+      "OMI_bit": true
+    }
+  ],
+  "scope": "Original parser, state writes, validation and command-selection branches executed. Station lookup, memory copy and PHL command/MMIO callees supplied; no actual firmware commands or RF. REA call evidence ties the parser to stock RX shortcut. Current native AP does not advertise OMI support; this is not proof a legal OMI exchange or a live loss cause occurred."
+}

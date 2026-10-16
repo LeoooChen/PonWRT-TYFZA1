@@ -1,0 +1,167 @@
+{
+  "REA_package": "rea-agents6.5.0",
+  "factory_input_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "records": [
+    {
+      "evidence_id": "ev_9883a1a7f3200ac1e1ec41997c2b0fc172a0843c41427f2f70346d2aaf2591ae",
+      "operation": "analyze_function",
+      "function": "core_rxsc_apply_check",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "target_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "ghidra_entry": "0x1be6c4",
+      "ELF_section": ".text",
+      "ELF_symbol_offset": "0xbe688",
+      "function_bytes": 424,
+      "function_bytes_sha256": "aeed42984ff35eb27f382b023648ec43ecc71023394ef7875bc23128a78ae88d",
+      "raw_record_mac_path": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/rea-analysis-20261016/rea/ghidra-wifi-rx-state/001-analyze_function.json",
+      "raw_record_sha256": "cee6148b56f2c7d24d790f0544f67bc4c3d262bc800a63d86cbc74c01044e7f0",
+      "provenance": "Ghidra static function analysis; raw result retained locally. It is not execution evidence."
+    },
+    {
+      "evidence_id": "ev_189dbe899b27b1e30f10f4b0626f5a02cf96ad1cc0399df8302322ffa38573d0",
+      "operation": "analyze_function",
+      "function": "core_rxsc_apply_shortcut",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "target_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "ghidra_entry": "0x1be86c",
+      "ELF_section": ".text",
+      "ELF_symbol_offset": "0xbe830",
+      "function_bytes": 1416,
+      "function_bytes_sha256": "40a7bb1056351ce24fd82490b4b3c0986246e079575b3ca15b21c387c4c9f3f0",
+      "raw_record_mac_path": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/rea-analysis-20261016/rea/ghidra-wifi-rx-state/002-analyze_function.json",
+      "raw_record_sha256": "324890c7bc09d78acb19496ac9bc9991a65ea2497f8c33acefae9c87e233be35",
+      "provenance": "Ghidra static function analysis; raw result retained locally. It is not execution evidence."
+    },
+    {
+      "evidence_id": "ev_60929a1a67640da8fc09c084cf7f1c5f4f5e55b3de33a379f01f0dae5bf4d4e5",
+      "operation": "analyze_function",
+      "function": "recv_decache",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "target_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "ghidra_entry": "0x1b7528",
+      "ELF_section": ".text",
+      "ELF_symbol_offset": "0xb74ec",
+      "function_bytes": 296,
+      "function_bytes_sha256": "6ad93225cc1f552fb5627b45b0b49c7821755d28b67dc2175830c810472c0c42",
+      "raw_record_mac_path": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/rea-analysis-20261016/rea/ghidra-wifi-rx-state/003-analyze_function.json",
+      "raw_record_sha256": "0c32953df30a2696c6946905e476971344c4b13b4a4fa1d0b85852f27dfac418",
+      "provenance": "Ghidra static function analysis; raw result retained locally. It is not execution evidence."
+    },
+    {
+      "evidence_id": "ev_2dbe21c642e7ac1226dcb4f63f700c77c8aaf21bd9bd989127ff825e19fc2545",
+      "operation": "analyze_function",
+      "function": "recv_ucast_pn_decache",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "target_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "ghidra_entry": "0x1b73c0",
+      "ELF_section": ".text",
+      "ELF_symbol_offset": "0xb7384",
+      "function_bytes": 172,
+      "function_bytes_sha256": "2f104c9256e34d8cf9f066582befdbda6dcaf6ea04a165d99dd90fb93ae4c582",
+      "raw_record_mac_path": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/rea-analysis-20261016/rea/ghidra-wifi-rx-state/004-analyze_function.json",
+      "raw_record_sha256": "3620d93e3a1ee39b83ec166919ece1064c8925aeab8c8e6e07c7f82dc1f0d645",
+      "provenance": "Ghidra static function analysis; raw result retained locally. It is not execution evidence."
+    },
+    {
+      "evidence_id": "ev_f77009397a16e0ec4b806ce037acdde0d70347cbad0a7cbf6e400ae9bc7b11e6",
+      "operation": "analyze_function",
+      "function": "validate_recv_data_frame",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "target_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "ghidra_entry": "0x1b8cac",
+      "ELF_section": ".text",
+      "ELF_symbol_offset": "0xb8c70",
+      "function_bytes": 1416,
+      "function_bytes_sha256": "a13cf8bc48a3a8d0af76131b155ef307b9fa40aac1121a6b4a469221de8393ad",
+      "raw_record_mac_path": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/rea-analysis-20261016/rea/ghidra-wifi-rx-state/005-analyze_function.json",
+      "raw_record_sha256": "2be0444f24bb096f87cde1cb7892078504000b41add83915812d9feb26c1be2b",
+      "provenance": "Ghidra static function analysis; raw result retained locally. It is not execution evidence."
+    },
+    {
+      "evidence_id": "ev_e8e022a9ab8af5e6915243ecdcbe6381b6e8ddc4e8b424a2894cd349cf14f3e3",
+      "operation": "analyze_function",
+      "function": "process_a_control_subfield",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "target_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "ghidra_entry": "0x1b76c8",
+      "ELF_section": ".text",
+      "ELF_symbol_offset": "0xb768c",
+      "function_bytes": 1392,
+      "function_bytes_sha256": "8c1caba83939337a9a73683f7b339195cb2571c2fac000a7401e1f9917efc578",
+      "raw_record_mac_path": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/rea-analysis-20261016/rea/ghidra-wifi-a-control/001-analyze_function.json",
+      "raw_record_sha256": "671cfca92bbacea527fbfd90831c549813316c4b71830b62d74993ea045078f9",
+      "provenance": "Ghidra static function analysis; raw result retained locally. It is not execution evidence."
+    },
+    {
+      "evidence_id": "ev_22d789acb16be3fdea0db3f663f11d5da15474e479939071262bd8840217a88d",
+      "operation": "analyze_function",
+      "function": "core_rxsc_get_entry",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "target_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "ghidra_entry": "0x1be01c",
+      "ELF_section": ".text",
+      "ELF_symbol_offset": "0xbdfe0",
+      "function_bytes": 1704,
+      "function_bytes_sha256": "6ce57dea2be5c8211a790d8c1d44bdbe0c5cf8557f2dbaeda825c2c43219c7bf",
+      "raw_record_mac_path": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/rea-analysis-20261016/rea/ghidra-wifi-a-control/002-analyze_function.json",
+      "raw_record_sha256": "49d0f2eb1abecc209277808c30c903a79c9466bb1a07ccb450def7102771a391",
+      "provenance": "Ghidra static function analysis; raw result retained locally. It is not execution evidence."
+    },
+    {
+      "evidence_id": "ev_1a5ae2b7ea07ca622a0f7aa3bee9fed658b02bff78ecda949337b3cbe0c2bf5a",
+      "operation": "analyze_function",
+      "function": "rtw_build_he_mac_caps",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "analysis_profile_digest": "018052730a1ef463e7c1e71a10b3fcec878e93843e4d106f4d1fa9bdff859af4",
+      "target_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "ghidra_entry": "0x1aed64",
+      "ELF_section": ".text",
+      "ELF_symbol_offset": "0xaed28",
+      "function_bytes": 360,
+      "function_bytes_sha256": "03938ce463b4b2c27df293b7b5e7811b9346f571128d9add1e6592e91c180745",
+      "raw_record_mac_path": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/rea-analysis-20261016/rea/ghidra-wifi-a-control/003-analyze_function.json",
+      "raw_record_sha256": "27f82ce3fe1977d60e75b2af105cf319a6bd1c7a56db47c3f04bf3a4acecc682",
+      "provenance": "Ghidra static function analysis; raw result retained locally. It is not execution evidence."
+    }
+  ],
+  "session_completion": "Both MCP plans completed and closed with snapshots. Original module bytes were not changed. Ghidra program addresses and ELF section offsets are separate coordinates."
+}

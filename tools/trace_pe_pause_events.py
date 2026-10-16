@@ -55,6 +55,7 @@ run()
 assert get(A + 4 * 4) == 2
 paused_writes = list(writes)
 assert all(v['A_pause_ack'] == 2 for v in paused_writes)
+pending_at_pause = get(A + 67 * 4) != get(A + 69 * 4)
 writes.clear()
 # The second, running radio must still be able to notify ARM.
 put(B + 67 * 4, 1)
@@ -65,13 +66,15 @@ writes.clear()
 # Model the existing IRQ handler's acknowledgements, then resume radio A.
 for mb in (A, B): put(mb + 66 * 4, get(mb + 69 * 4))
 put(A + 3 * 4, 3)
-put(A + 67 * 4, get(A + 67 * 4) + 1)
+if not pending_at_pause:
+    put(A + 67 * 4, get(A + 67 * 4) + 1)
 run()
 assert len(writes) == 5 and get(A + 69 * 4) == get(A + 67 * 4)
 print(json.dumps({'PE_sha256': hashlib.sha256(binary).hexdigest(),
                   'timer_writes_after_pause_ack': paused_writes,
                   'running_second_radio_can_notify': len(other_radio_writes) == 5,
                   'resume_delivers_notification': len(writes) == 5,
+                  'pending_at_pause_delivered_without_new_event': pending_at_pause and len(writes) == 5,
                   'scope': 'Actual linked shared PE dispatcher and timer writes. IRQ acknowledgements '
                            'are modeled; no physical IRQ latency, resource-release interleaving '
                            'or hardware test. Timer writes alone do not prove a bug.'}, indent=2))

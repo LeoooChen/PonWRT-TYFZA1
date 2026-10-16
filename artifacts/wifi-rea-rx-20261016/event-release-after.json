@@ -1,0 +1,15 @@
+{
+  "PE_sha256": "c0fc07b456054928c531b5261a795177df0640a630e3adf8a25a55cad422f720",
+  "ARM_source_sha256": "c7e1ab53cb0d20d5a3bc6d34c6a55d3bf964917f2d82a8f784ac7193207dbe17",
+  "actual_native_event_release_executed": true,
+  "saved_timer_state_satisfies_prepare_idle_check": true,
+  "timer_pointer_reads_after_pause_ack": 0,
+  "PE_writes_after_ARM_freed_IRQ_restored_and_unmapped_timer": [],
+  "restored_timer_values": {
+    "0": 7,
+    "4": 0,
+    "12": 0,
+    "16": 0
+  },
+  "scope": "Actual linked MIPS PE and extracted native ARM release C compiled for the host. The interleaving, IRQ synchronization and physical MMIO storage are modeled; no actual IRQ, memory-ordering latency or device test."
+}

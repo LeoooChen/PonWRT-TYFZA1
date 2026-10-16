@@ -1,0 +1,20 @@
+{
+  "linked_MIPS_C_firmware": true,
+  "NI_MPDU": 1024,
+  "BID_returns": 2048,
+  "ARM_reports_forwarded": 256,
+  "EOSP_reports_forwarded": 64,
+  "C2H_shift_and_MAC_info_preserved": true,
+  "RPQ_and_handoff_wrap": true,
+  "tag_8191_to_1": true,
+  "no_BID_return_without_EQ_credit": true,
+  "one_WP_per_aggregate": true,
+  "partial_EQ_resume_without_duplicate_BID": true,
+  "no_ARM_per_NI_completion": true,
+  "handoff_full_holds_RPQ": true,
+  "paused_PE_does_not_consume": true,
+  "factory_DFS_61_pulses_preserved": true,
+  "old_DFS_discarded_on_RXQ_and_RPQ": true,
+  "new_DFS_preserved": true,
+  "hardware_test": false
+}

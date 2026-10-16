@@ -1,0 +1,8 @@
+{
+  "PE_sha256": "c0fc07b456054928c531b5261a795177df0640a630e3adf8a25a55cad422f720",
+  "timer_writes_after_pause_ack": [],
+  "running_second_radio_can_notify": true,
+  "resume_delivers_notification": true,
+  "pending_at_pause_delivered_without_new_event": true,
+  "scope": "Actual linked shared PE dispatcher and timer writes. IRQ acknowledgements are modeled; no physical IRQ latency, resource-release interleaving or hardware test. Timer writes alone do not prove a bug."
+}

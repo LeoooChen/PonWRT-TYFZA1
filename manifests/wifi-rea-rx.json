@@ -1,0 +1,62 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "7e91b3307cbd58b62e074165dae6f87b5fa08b72",
+  "scope": "REA-assisted factory RX investigation and native PE event resource handoff repair",
+  "factory_input_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "REA_records": "artifacts/wifi-rea-rx-20261016/rea-function-index.json",
+  "finding": "Pause was acknowledged before a subsequent timer-pointer load and timer writes; native ARM release could restore/free the timer before those writes completed.",
+  "repair": "Paused context synchronizes before acknowledgement and performs no event flush; pending generation stays available for resume.",
+  "verification": {
+    "before_actual_native_release_followed_by_PE_writes": 5,
+    "after_native_release_followed_by_PE_writes": 0,
+    "other_radio_notification_continues": true,
+    "pending_notification_survives_pause": true,
+    "actual_RPQ_MPDU_count": 1024,
+    "actual_BID_returns": 2048,
+    "module_build": "passed with existing missing MODULE_DESCRIPTION warning",
+    "embedded_PE_matches": true,
+    "prepared_wireless_inputs_match_current": true,
+    "modeled_saved_timer_passes_production_prepare_idle_check": true
+  },
+  "module": {
+    "path": "artifacts/wifi-rea-rx-20261016/radio/rtl_ax_ap_event_fence.ko",
+    "sha256": "1b38a708f43587e38fad484da8e6278a08b28997e019df0be0ad76e59b18f464",
+    "PE_sha256": "c0fc07b456054928c531b5261a795177df0640a630e3adf8a25a55cad422f720",
+    "PE_bytes": 15864,
+    "kernel": "6.18.55"
+  },
+  "source_sha256": {
+    "port/pe/rtl9617c-radio-wd.c": "e3d5244b27efd3af32e96aef014b03a60709bd03b3cc2cc802894cb8b7b588af",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-tx-code.h": "452313e639731cc8682026632161741c7965d6f2d32a9d83ce0f323472410c76",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-event.h": "c7e1ab53cb0d20d5a3bc6d34c6a55d3bf964917f2d82a8f784ac7193207dbe17",
+    "tools/check_pe_event_release.py": "cb5a01a9c5a3d2e3c2a237d9a2b0a45ba96774254542e492577049afe0cca49d",
+    "tools/check_stock_he_om.py": "4a6cc93fa8f1e785fd576cfe091d22684c28d3416d03cd3c93e4d4f3a9d8f8e0",
+    "tools/trace_pe_pause_events.py": "41b908b36d0260ab322798f348ad1f83eaa2e376a902a218510b4ceb47ab350c"
+  },
+  "evidence_sha256": {
+    "artifacts/wifi-rea-rx-20261016/rea-function-index.json": "538e540280bbfefb34423a53d261c588d0b929edcd546e5d3e7d707a2877721a",
+    "artifacts/wifi-rea-rx-20261016/stock-he-om.json": "6a20d349d5543d5dd55f03cae56406feca6f995dd86bb3951a41257feecfc4f0",
+    "artifacts/wifi-rea-rx-20261016/event-release-before.json": "0821067798c52fe876c696a43955477e9d44080441c406cecf4ac04bd9e19f24",
+    "artifacts/wifi-rea-rx-20261016/event-release-after.json": "66f8082157083ffa0deaeb3baa4604ba849c18a31bb7849e8deeb9ca0ff08537",
+    "artifacts/wifi-rea-rx-20261016/pause-two-radios.json": "f3097e422fe6b5efa0f3c724e2ade79e9a86f2269a1e3c10fd2bd7f8b90eebaa",
+    "artifacts/wifi-rea-rx-20261016/rpq-completion.json": "571463d9378c8d1352de259800f97f04bdbf447f1bab60c58c2d073dd0afce38",
+    "artifacts/wifi-rea-rx-20261016/pe-build.log": "c9f30a53b8ab563eead0464985a96c5dc8722b9b3cd6d1e784000f2b57e7d1dd",
+    "artifacts/wifi-rea-rx-20261016/module-build.log": "03f3170b7beb0ee24c1a157429bdc68d5b618698290dfabd91790edd27663290"
+  },
+  "documentation": {
+    "path": "docs/wifi-rea-rx-20261016.md",
+    "sha256": "867fc654adc32eceb16c23acdcb391e27180bde945ea200acd728e28a907878c"
+  },
+  "remaining": {
+    "OMI_feature_gap": "Factory OM behavior confirmed for the selected inputs. Native AP does not advertise OMI; no captured OMI loss trigger; complete feature not implemented here.",
+    "live_duplex_loss": "unresolved; this firmware has not been tested on hardware"
+  },
+  "hardware_tested": false,
+  "PON_changed_by_this_work": false,
+  "full_test_suite": false,
+  "flash_or_push": false,
+  "limits": [
+    "REA observations are static analysis; selected stock functions separately executed with PHL/HAL/OS callbacks",
+    "PE and native C release execute with modeled interleaving, IRQ/MMIO and memory; no actual hardware concurrency or bus ordering measurement"
+  ]
+}

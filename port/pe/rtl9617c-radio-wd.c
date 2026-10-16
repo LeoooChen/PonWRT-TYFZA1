@@ -279,9 +279,14 @@ void pe_main(volatile u32 *control)
 		volatile u32 *ni = (void *)0xb0000000;
 		volatile u32 *owners = (void *)(memory + 0xc400);
 #endif
+		if (!(command & 1)) {
+			/* ARM may release the event timer as soon as pause is acknowledged. */
+			sync();
+			mailbox[4] = command;
+			continue;
+		}
 		mailbox[4] = command;
 		pe_event_flush(mailbox);
-		if (!(command & 1)) continue;
 		pe_rpq(mailbox, memory);
 		/* Drain a short RX burst before servicing downlink and RPQ again. */
 		for (u32 budget = 0; budget < 16; budget++) {

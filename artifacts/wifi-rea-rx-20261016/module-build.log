@@ -1,0 +1,17 @@
+make: Entering directory '/home/leo/PonWRT-TYFZA1/sources/openwrt/build_dir/target-aarch64_cortex-a55_musl/linux-rtl9617c_generic/linux-6.18.55'
+make[1]: Entering directory '/home/leo/PonWRT-TYFZA1/artifacts/wifi-rea-rx-20261016/radio'
+  CC [M]  pci.o
+  CC [M]  phy.o
+  CC [M]  rx.o
+  CC [M]  tx.o
+  CC [M]  power-tables.o
+  CC [M]  limits.o
+  LD [M]  rtl_ax_ap_event_fence.o
+  MODPOST Module.symvers
+WARNING: modpost: missing MODULE_DESCRIPTION() in rtl_ax_ap_event_fence.o
+  CC [M]  rtl_ax_ap_event_fence.mod.o
+  CC [M]  .module-common.o
+  LD [M]  rtl_ax_ap_event_fence.ko
+make[1]: Leaving directory '/home/leo/PonWRT-TYFZA1/artifacts/wifi-rea-rx-20261016/radio'
+make: Leaving directory '/home/leo/PonWRT-TYFZA1/sources/openwrt/build_dir/target-aarch64_cortex-a55_musl/linux-rtl9617c_generic/linux-6.18.55'
+1b38a708f43587e38fad484da8e6278a08b28997e019df0be0ad76e59b18f464  /home/leo/PonWRT-TYFZA1/artifacts/wifi-rea-rx-20261016/radio/rtl_ax_ap_event_fence.ko
