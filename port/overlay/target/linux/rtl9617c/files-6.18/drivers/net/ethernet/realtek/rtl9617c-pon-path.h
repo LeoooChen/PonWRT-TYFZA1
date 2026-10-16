@@ -104,6 +104,7 @@ static inline const struct rtl_itu_path *rtl_itu_path_select(const struct rtl_it
 {
 	const struct rtl_itu_path *selected = 0;
 	unsigned int i, best = 0;
+	int conflict = 0;
 
 	for (i = 0; i < paths->count; i++) {
 		const struct rtl_itu_path *path = &paths->path[i];
@@ -116,9 +117,10 @@ static inline const struct rtl_itu_path *rtl_itu_path_select(const struct rtl_it
 		if (!selected || rank > best) {
 			selected = path;
 			best = rank;
-		}
+			conflict = 0;
+		} else if (rank == best && selected->index != path->index) conflict = 1;
 	}
-	return selected;
+	return conflict ? 0 : selected;
 }
 
 /* A Linux flowtable rule matches VID but carries no Ethernet PCP match. */

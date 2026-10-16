@@ -71,31 +71,58 @@ static unsigned int bridge(struct omci_agent *agent,unsigned int n){
  return request(agent,4,47,0x300+n,body,sizeof(body));
 }
 static void filter(struct omci_agent *agent,unsigned int n){
- unsigned char body[26]={};be16(body,100+n);body[24]=4;body[25]=1;
+ static const unsigned int vids[]={46,41,45};
+ unsigned char body[26]={};be16(body,vids[n]);body[24]=4;body[25]=1;
  assert(!request(agent,4,84,0x300+n,body,sizeof(body)));
 }
 int main(void){
+ for(unsigned int mode=RTL_PON_GPON;mode<=RTL_PON_XGSPON;mode++) {
+ pon=(struct rtl9617c_pon){.mode=mode,.puc_configured=1,.pdc_configured=1,.data_devices={&dev}};
  struct omci_identity identity={.serial={'T','E','S','T',1,2,3,4}};
  struct omci_agent *agent=tyfza1_omci_new(&identity);
- unsigned char value[4],failed[44],paths[65536];
+ unsigned char value[4],paths[65536];
  be16(value,1063);assert(!set(agent,262,0x8000,1,value,2));
  gem(agent,0);assert(!bridge(agent,0));
  assert(pon.itu_paths_ready && pon.itu_paths->paths.count==1);
- struct rtl_itu_path_state *old=pon.itu_paths;
- unsigned int previous=programs;
- gem(agent,1);
- assert(bridge(agent,1)==1);memcpy(failed,frame,sizeof(failed));
- assert(pon.itu_paths==old && pon.itu_paths_ready && programs==previous);
- assert(tyfza1_omci_paths(agent,paths)==62);
- filter(agent,0);filter(agent,1);
- memcpy(frame,failed,sizeof(frame));int error=0;
- assert(!dispatch(agent,&error) && !error);
- assert(pon.itu_paths_ready && pon.itu_paths->paths.count==2);
- assert(pon.itu_paths->paths.path[0].vlan==100 && pon.itu_paths->paths.path[1].vlan==101);
+ /* OLTs may create all ANI ports before attaching their VLAN filters. */
+ for(unsigned int n=1;n<3;n++) {
+  gem(agent,n);assert(!bridge(agent,n));
+  assert(pon.itu_paths_ready && pon.itu_paths->paths.count==n+1);
+  struct rtl_evto_packet input={.count=1,.protocol=0x8863,.tag={{0x8100,41}}},output;
+  assert(!rtl_itu_path_transmit_vlan(&pon.itu_paths->paths,&input,&output));
+  assert(!rtl_itu_path_select(&pon.itu_paths->paths,41,0));
+  assert(!rtl_itu_path_flow(&pon.itu_paths->paths,41));
+  assert(!rtl_itu_path_downstream(&pon.itu_paths->paths,41,255));
+ }
+ assert(tyfza1_omci_paths(agent,paths)==12+3*RTL_ITU_PATH_WIRE_BYTES);
+ filter(agent,0);
+ assert(rtl_itu_path_flow(&pon.itu_paths->paths,46)->gem_id==4000);
+ assert(!rtl_itu_path_flow(&pon.itu_paths->paths,41));
+ filter(agent,1);filter(agent,2);
+ assert(pon.itu_paths_ready && pon.itu_paths->paths.count==3);
+ const unsigned int vids[]={46,41,45};
+ for(unsigned int n=0;n<3;n++)for(unsigned int p=0;p<8;p++) {
+  struct rtl_evto_packet input={.count=1,.protocol=0x8863,.priority=p,
+   .tag={{0x8100,(p<<13)|vids[n]}}},output,received;
+  const struct rtl_itu_path *path=rtl_itu_path_transmit_vlan(&pon.itu_paths->paths,&input,&output);
+  assert(path && path->gem_id==4000+n && output.count==1 && output.tag[0].tci==input.tag[0].tci);
+  assert(rtl_itu_path_flow(&pon.itu_paths->paths,vids[n])==path);
+  assert(rtl_itu_path_downstream(&pon.itu_paths->paths,vids[n],255)==path);
+  assert(rtl_itu_path_receive_vlan(&pon.itu_paths->paths,path->index,&output,&received)==path);
+  assert(received.count==1 && received.tag[0].tci==input.tag[0].tci);
+ }
+ assert(!rtl_itu_path_flow(&pon.itu_paths->paths,50));
+ /* Relaxing classifier overlap must not relax T-CONT hardware consistency. */
+ int length=tyfza1_omci_paths(agent,paths);assert(length>12);
+ struct rtl_itu_path_state *consistent=pon.itu_paths;
+ paths[12+RTL_ITU_PATH_WIRE_BYTES]^=1;
+ assert(rtl_pon_itu_paths_write(&pon,(const char*)paths,length,pon.itu_line_epoch)==-EINVAL);
+ assert(pon.itu_paths==consistent && pon.itu_paths_ready);
  value[0]=2;assert(!set(agent,278,0x8000,3,value,1));
  be16(value,0x8000);assert(!set(agent,277,0x8000,7,value,2));
  assert(pon.itu_paths->paths.weights[1][0]==1 && pon.itu_paths->paths.weights[1][1]==1);
- old=pon.itu_paths;previous=programs;
+ struct rtl_itu_path_state *old=pon.itu_paths;
+ unsigned int previous=programs;
  program_error=-ETIMEDOUT;value[0]=9;
  assert(set(agent,277,0x8000,8,value,1)==1);
  assert(!pon.itu_paths_ready && pon.itu_paths==old && programs==previous+1);
@@ -104,7 +131,8 @@ int main(void){
  assert(pon.itu_paths_ready && programs==previous+2);
  assert(pon.itu_paths->paths.weights[1][0]==1 && pon.itu_paths->paths.weights[1][1]==1);
  tyfza1_omci_free(agent);free(pon.itu_paths);
- puts("Real OMCI FFI/kernel commit: conflicting intermediate GEM rejected before ACK, filter then retry succeeds, failed hardware commit is reapplied by same-value SET");
+ }
+ puts("Real OMCI FFI/kernel commit: ANI ports before VLAN filters accepted; ambiguous forwarding blocked; three PPPoE VLAN classifiers and hardware-failure retry passed");
 }
 '''
 library = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('/tmp/tyfza1-omci-queue-target/release/libtyfza1_omci.a')
@@ -112,6 +140,7 @@ with tempfile.TemporaryDirectory(prefix='tyf-omci-kernel-') as directory:
     work = Path(directory)
     (work / 'test.c').write_text(fixture + function('rtl_pon_itu_paths_write') + cases)
     subprocess.run(['cc', '-O1', '-g', '-Wall', '-Wextra', '-Werror', '-Wno-sign-compare',
+                    '-fsanitize=address,undefined',
                     '-I' + str(drivers), '-I' + str(root / 'port/packages/tyfza1-pon-control/src'),
                     str(work / 'test.c'), str(library), '-lpthread', '-lm', '-ldl',
                     '-o', str(work / 'test')], check=True)

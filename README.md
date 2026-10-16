@@ -2,7 +2,7 @@
 
 感谢 [PonWrt](https://github.com/pbs05/ponwrt) 在 PON 与 OpenWrt 整合、原厂身份和校准保留、硬件转发及排障思路上提供的参考。本项目针对天翼 TYFZA1 / Realtek RTL9617CVW 独立适配，OMCI 协议引擎使用其 GPL 源码；硬件配置以本机原厂实现为依据。
 
-**版本：0.4.0-alpha** · OpenWrt · Linux 6.18.55 · 四核 Cortex-A55
+**版本：0.4.1-alpha** · OpenWrt · Linux 6.18.55 · 四核 Cortex-A55
 
 本次更新见 [更新日志](RELEASE_NOTES.md)。
 

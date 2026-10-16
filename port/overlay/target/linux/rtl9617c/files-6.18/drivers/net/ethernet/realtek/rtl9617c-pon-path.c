@@ -216,14 +216,12 @@ ssize_t rtl_pon_itu_paths_write(struct rtl9617c_pon *pon, const char *buf, size_
 		for (j = 0; j < i; j++) {
 			const struct rtl_itu_path *previous = &state->paths.path[j];
 
+			/* OLTs can create ANI ports before their VLAN filters. Keep
+			 * ambiguous paths; software and offload selectors fail closed. */
 			if (!path->multicast && !previous->multicast &&
-			    ((path->tcont == previous->tcont && path->alloc_id != previous->alloc_id) ||
-			    (path->vlan_profile[0] == RTL_EVTO_NONE && path->vlan_profile[1] == RTL_EVTO_NONE &&
-			     path->vlan_profile[2] == RTL_EVTO_NONE && previous->vlan_profile[0] == RTL_EVTO_NONE &&
-			     previous->vlan_profile[1] == RTL_EVTO_NONE && previous->vlan_profile[2] == RTL_EVTO_NONE &&
-			     path->vlan == previous->vlan && (path->pbits & previous->pbits &
-			     ~path->vlan_exclude & ~previous->vlan_exclude) &&
-			    path->gem_id != previous->gem_id))) { ret = -EINVAL; goto free; }
+			    path->tcont == previous->tcont && path->alloc_id != previous->alloc_id) {
+				ret = -EINVAL; goto free;
+			}
 			if (previous->gem_id == path->gem_id) {
 				if (previous->tcont != path->tcont || previous->queue != path->queue ||
 				    previous->multicast != path->multicast || previous->encrypted != path->encrypted) {

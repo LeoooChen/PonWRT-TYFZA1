@@ -74,6 +74,26 @@ int main(void) {
  assert(installed==2); /* Queued old configuration must not seed a new cache. */
  lan.state=0;fe_bridge_work(&bridge.work.work);
  assert(deleted==2 && !net.references);free(fe.itu_paths);
+ /* Accepted intermediate OMCI graphs must not install ambiguous FE rules. */
+ struct rtl_itu_paths pending={.count=2,.path={
+  {.vlan=RTL_ITU_VLAN_ANY,.pbits=255,.downstream_pbits=255,.index=8,.tcont=1},
+  {.vlan=RTL_ITU_VLAN_ANY,.pbits=255,.downstream_pbits=255,.index=9,.tcont=1}}};
+ for(unsigned int n=0;n<2;n++)for(unsigned int s=0;s<RTL_EVTO_STAGES;s++)
+  pending.path[n].vlan_profile[s]=RTL_EVTO_NONE;
+ fe.itu_paths=&pending;
+ routed=(struct rtl_fe_rule){.input=&lp,.output=&pp,.key={.protocol=17},
+  .action={.vlan_count=1,.vlan={{.vid=41,.tpid=1}}}};
+ assert(fe_itu_rule(&routed)==-EOPNOTSUPP);
+ routed=(struct rtl_fe_rule){.input=&pp,.output=&lp,.key={.protocol=17},
+  .vlan_count=1,.vlan={{.vid=41,.tpid=1}}};
+ assert(fe_itu_rule(&routed)==-EOPNOTSUPP);
+ pending.path[0].vlan=41;pending.path[1].vlan=46;
+ routed=(struct rtl_fe_rule){.input=&lp,.output=&pp,.key={.protocol=17},
+  .action={.vlan_count=1,.vlan={{.vid=41,.tpid=1}}}};
+ assert(!fe_itu_rule(&routed) && routed.action.gem_index==8);
+ routed=(struct rtl_fe_rule){.input=&pp,.output=&lp,.key={.protocol=17},
+  .vlan_count=1,.vlan={{.vid=41,.tpid=1}}};
+ assert(!fe_itu_rule(&routed) && routed.key.llid==8);
  puts("EVTO FE: routed upstream editor words, both learned bridge directions, original wire GEM/TCI and configuration generation passed");
 }
 '''

@@ -1,0 +1,20 @@
+Subject: [PATCH] ACS: reach the BSS fallback when survey is unsupported
+
+The native RTL_AX_AP driver supports mac80211 software scans but has no
+get_survey callback. Do not abort before the existing BSS-based ACS fallback
+can inspect the scan results. Keep other survey errors fatal.
+
+--- a/src/ap/acs.c
++++ b/src/ap/acs.c
+@@ -1367,7 +1367,10 @@ static void acs_scan_complete(struct hostapd_iface *iface)
+ 		   iface->conf->acs_num_scans);
+ 
+ 	err = hostapd_drv_get_survey(iface->bss[0], 0);
+-	if (err) {
++	if (err == -EOPNOTSUPP) {
++		wpa_printf(MSG_INFO,
++			   "ACS: Survey unavailable, using BSS-based fallback");
++	} else if (err) {
+ 		wpa_printf(MSG_ERROR, "ACS: Failed to get survey data");
+ 		goto fail;
+ 	}

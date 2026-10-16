@@ -1,0 +1,15 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+. /lib/functions.sh
+
+[ -f /etc/config/wireless ] || exit 0
+
+set_default_country() {
+	local country
+	config_get country "$1" country
+	[ -n "$country" ] || uci set "wireless.$1.country=CN"
+}
+
+config_load wireless
+config_foreach set_default_country wifi-device
+uci commit wireless

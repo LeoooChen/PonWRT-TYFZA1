@@ -82,5 +82,18 @@ int main(void)
  paths.count=2;paths.path[1]=paths.path[0];paths.path[1].index=9;paths.path[1].pbits=254;
  assert(rtl_itu_path_select(&paths,100,5)==&paths.path[1]);
  assert(!rtl_itu_path_downstream(&paths,100,255));
+ /* Unfiltered ANI ports may coexist while the OLT builds the MIB. */
+ paths=(struct rtl_itu_paths){.count=3,.path={
+  {.vlan=RTL_ITU_VLAN_ANY,.pbits=255,.index=8},
+  {.vlan=RTL_ITU_VLAN_ANY,.pbits=255,.index=9},
+  {.vlan=46,.pbits=255,.index=10}}};
+ for(unsigned int order=0;order<2;order++) {
+  assert(!rtl_itu_path_select(&paths,41,0));
+  assert(!rtl_itu_path_flow(&paths,41));
+  assert(rtl_itu_path_flow(&paths,46)->index==10);
+  struct rtl_itu_path swap=paths.path[0];paths.path[0]=paths.path[2];paths.path[2]=swap;
+ }
+ paths.path[1].index=8; /* Duplicate policies on the same GEM are unambiguous. */
+ assert(rtl_itu_path_flow(&paths,41)->index==8);
  puts("OMCI VLAN filters: 34 factory modes, both directions, tagged/untagged, VID/PCP, DEI preservation and GEM selection passed");
 }

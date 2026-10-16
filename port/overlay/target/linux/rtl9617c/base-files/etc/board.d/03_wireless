@@ -1,0 +1,7 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+. /lib/functions/uci-defaults.sh
+
+board_config_update
+ucidef_set_country "CN"
+board_config_flush
