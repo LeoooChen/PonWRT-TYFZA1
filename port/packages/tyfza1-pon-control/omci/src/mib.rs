@@ -1853,6 +1853,24 @@ fn collect_multicast_acl_vlan_id(row: &[u8], output: &mut BTreeSet<u16>) {
 mod tests {
     use super::*;
 
+    impl Default for IdentityConfig {
+        fn default() -> Self {
+            Self {
+                omcc_version: 0xb0,
+                disable_enhanced_security: false,
+                vendor_id: b"TEST".to_vec(),
+                equipment_id: Vec::new(),
+                hardware_version: Vec::new(),
+                software_version: Vec::new(),
+                loid: Vec::new(),
+                loid_password: Vec::new(),
+                operator_id: Vec::new(),
+                serial_number: b"TEST1234".to_vec(),
+                psk: None,
+            }
+        }
+    }
+
     fn empty_mib() -> Mib {
         Mib {
             entities: BTreeMap::new(),
@@ -2155,6 +2173,7 @@ mod tests {
             CLASS_MAC_BRIDGE_PORT_CONFIG_DATA,
             0x320,
             ManagedEntity::default()
+                .read_write(1, 1u16.to_be_bytes().to_vec())
                 .read_write(3, vec![6])
                 .read_write(4, 0x220u16.to_be_bytes().to_vec()),
         );
@@ -2178,6 +2197,11 @@ mod tests {
                 pbit_mask: u8::MAX,
                 downstream_pbits: u8::MAX,
                 multicast: true,
+                vlan_profiles: [None; 5],
+                vlan_exclude: 0,
+                unmarked_mode: 0,
+                default_priority: 0,
+                mapper_dscp: [0; 24],
             }, DataPathCandidate {
                 alloc_id: u16::MAX,
                 gem_id: 4000,
@@ -2185,6 +2209,11 @@ mod tests {
                 pbit_mask: u8::MAX,
                 downstream_pbits: u8::MAX,
                 multicast: true,
+                vlan_profiles: [None; 5],
+                vlan_exclude: 0,
+                unmarked_mode: 0,
+                default_priority: 0,
+                mapper_dscp: [0; 24],
             }]
         );
         let snapshot = mib.provisioning_snapshot();

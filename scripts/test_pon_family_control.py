@@ -54,6 +54,11 @@ struct rtl9617c_pon {
  unsigned int xgpon_active_key, xgpon_recover, xgpon_last_transitions, xgpon_last_irq;
  int xgpon_activation_error;
  unsigned long long xgpon_irq_count, xgpon_key_reports, xgpon_key_tk4, xgpon_key_tk5, xgpon_deactivations;
+ unsigned long long xgpon_mac_resets, dying_gasp_tx;
+ unsigned int xgpon_reset_reason, xgpon_health_matches;
+ bool xgpon_restore_pending;
+ void *dying_gasp_packet;
+ int dying_gasp_error;
 };
 struct device {struct rtl9617c_pon *pon;};
 static struct rtl9617c_pon *dev_get_drvdata(struct device *dev) {return dev->pon;}
