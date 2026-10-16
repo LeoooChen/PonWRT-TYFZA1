@@ -1,0 +1,74 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "actual_functions": [
+    "phl_req_tx_stop_pcie",
+    "phl_req_rx_stop_pcie",
+    "_phl_tx_callback_pcie",
+    "_phl_rx_callback_pcie",
+    "phl_datapath_chk_trx_pause",
+    "phl_is_tx_sw_pause_pcie",
+    "phl_is_rx_sw_pause_pcie"
+  ],
+  "RX_stop_query_requires_processing_idle": true,
+  "rows": [
+    {
+      "direction": "tx",
+      "request_state": 2,
+      "acknowledged_state": 3,
+      "stop_callback": [
+        {
+          "call": "phl_check_xmit_ring_resource",
+          "TX_state": 2,
+          "RX_state": 0
+        },
+        {
+          "call": "tx_service",
+          "TX_state": 2,
+          "RX_state": 0
+        },
+        {
+          "call": "phl_free_deferred_tx_ring",
+          "TX_state": 3,
+          "RX_state": 0
+        }
+      ],
+      "already_stopped_callback": [
+        {
+          "call": "phl_free_deferred_tx_ring",
+          "TX_state": 3,
+          "RX_state": 0
+        }
+      ]
+    },
+    {
+      "direction": "rx",
+      "request_state": 2,
+      "acknowledged_state": 3,
+      "stop_callback": [
+        {
+          "call": "phl_check_recv_ring_resource",
+          "TX_state": 3,
+          "RX_state": 2
+        },
+        {
+          "call": "rx_service",
+          "TX_state": 3,
+          "RX_state": 2
+        },
+        {
+          "call": "rtw_hal_restore_rx_interrupt",
+          "TX_state": 3,
+          "RX_state": 3
+        }
+      ],
+      "already_stopped_callback": [
+        {
+          "call": "rtw_hal_restore_rx_interrupt",
+          "TX_state": 3,
+          "RX_state": 3
+        }
+      ]
+    }
+  ],
+  "scope": "Actual stop-state stores, callback branch/ack ordering and pause queries. Resource checks, service bodies, deferred free, RX-interrupt restore and RX-idle result are explicit callbacks. No physical interrupt or PE-timer equivalence claim."
+}

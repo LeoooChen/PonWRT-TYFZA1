@@ -1,0 +1,38 @@
+{
+  "PE_sha256": "c97d7fcf972a7c38ee54a156c0a6274e23fd80972d5c1c06b39909235a3584fb",
+  "timer_writes_after_pause_ack": [
+    {
+      "offset": 4,
+      "value": 0,
+      "A_pause_ack": 2,
+      "B_ack": 0
+    },
+    {
+      "offset": 0,
+      "value": 1,
+      "A_pause_ack": 2,
+      "B_ack": 0
+    },
+    {
+      "offset": 32,
+      "value": 16,
+      "A_pause_ack": 2,
+      "B_ack": 0
+    },
+    {
+      "offset": 12,
+      "value": 1,
+      "A_pause_ack": 2,
+      "B_ack": 0
+    },
+    {
+      "offset": 4,
+      "value": 128,
+      "A_pause_ack": 2,
+      "B_ack": 0
+    }
+  ],
+  "running_second_radio_can_notify": true,
+  "resume_delivers_notification": true,
+  "scope": "Actual linked shared PE dispatcher and timer writes. IRQ acknowledgements are modeled; no physical IRQ latency, resource-release interleaving or hardware test. Timer writes alone do not prove a bug."
+}

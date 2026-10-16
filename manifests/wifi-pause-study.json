@@ -1,0 +1,24 @@
+{
+  "date": "2026-10-16",
+  "source_commit": "52afb80538e987c5d5afda5def078e060b5c803f",
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "source_and_evidence_sha256": {
+    "tools/check_stock_sw_pause.py": "44fd2c7070f70d6085954197ce539622acc76ef3860f1c981a94a24080552728",
+    "tools/trace_pe_pause_events.py": "396bd6d601bb0f58ffd181b50d57547a994a62b795b983b10cad48d602539cee",
+    "docs/wifi-pause-study-20261016.md": "5716a7900b5b574591f95930aa180ce4f579f8d564400d2b20ec64e564bed7ff",
+    "artifacts/wifi-pause-events-20261016/stock-sw-pause.json": "1a1bd6d44c26e203f2a26b1170450f5207adc331b3a5c0967bec8116360a3b7e",
+    "artifacts/wifi-pause-events-20261016/native-timer-trace.json": "301c792548b9ee5125b00ff091dce0ec579bbfb80f53f599420273c1eadfd979"
+  },
+  "native_PE_sha256": "c97d7fcf972a7c38ee54a156c0a6274e23fd80972d5c1c06b39909235a3584fb",
+  "findings": {
+    "stock_callback_marks_stopped_after_last_service": true,
+    "stock_RX_stopped_callback_still_restores_interrupt": true,
+    "stock_RX_pause_query_also_checks_idle": true,
+    "native_paused_context_timer_writes_observed": 5,
+    "native_timer_release_race_proven": false
+  },
+  "production_code_changed": false,
+  "PON_changed": false,
+  "hardware_tested": false,
+  "limitation": "Modeled OS/HAL/service callbacks and IRQ acknowledgement; no resource-release interleaving or hardware timing verification."
+}
