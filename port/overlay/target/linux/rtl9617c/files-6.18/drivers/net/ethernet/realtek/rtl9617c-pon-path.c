@@ -381,7 +381,9 @@ netdev_tx_t rtl_pon_itu_data_transmit(struct rtl9617c_pon *pon, struct sk_buff *
 	const struct rtl_itu_path *path;
 	struct rtl9617c_ni_frame frame = {.header_high = BIT(30), .header_low = (16 << 9) | BIT(29)};
 	struct rtl_evto_packet input, output;
+	struct sk_buff *wire = skb;
 	unsigned int wire_tags;
+	netdev_tx_t ret;
 	bool found = false;
 
 	if (!netif_carrier_ok(dev)) goto drop;
@@ -390,16 +392,32 @@ netdev_tx_t rtl_pon_itu_data_transmit(struct rtl9617c_pon *pon, struct sk_buff *
 	if (!state || !READ_ONCE(pon->itu_paths_ready) || rtl_evto_skb_read(&state->paths, skb, &input, &wire_tags))
 		goto unlock;
 	path = rtl_itu_path_transmit_vlan(&state->paths, &input, &output);
+	if (!path) goto unlock;
+	/* DMA BUSY leaves the original packet queued for a fresh GEM lookup. */
+	if (skb_vlan_tag_present(skb) || input.count != output.count ||
+	    skb->priority != output.priority ||
+	    memcmp(input.tag, output.tag, input.count * sizeof(input.tag[0]))) {
+		wire = skb_clone(skb, GFP_ATOMIC);
+		if (!wire) goto unlock;
+	}
 	/* A NI BID holds2048 bytes, including32 bytes prefix and16 bytes HEADER_A. */
-	if (path && !rtl_evto_skb_write(skb, &input, &output, wire_tags) && skb->len <= 2000) {
+	if (!rtl_evto_skb_write(wire, &input, &output, wire_tags) && wire->len <= 2000) {
 		frame.header_high |= (u32)path->index << 18;
 		frame.header_low |= path->queue | ((32 + path->tcont) << 3);
 		found = true;
 	}
 unlock:
 	rcu_read_unlock();
-	if (!found) goto drop;
-	return rtl9617c_ni_transmit(pon->ni_dev, dev, skb, &frame);
+	if (!found) {
+		if (wire && wire != skb) dev_kfree_skb_any(wire);
+		goto drop;
+	}
+	ret = rtl9617c_ni_transmit(pon->ni_dev, dev, wire, &frame);
+	if (wire != skb) {
+		if (ret == NETDEV_TX_BUSY) dev_kfree_skb_any(wire);
+		else dev_consume_skb_any(skb);
+	}
+	return ret;
 drop:
 	dev->stats.tx_dropped++;
 	dev_kfree_skb_any(skb);

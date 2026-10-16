@@ -1,3 +1,7 @@
+## 0.4.2-alpha
+
+- 修复 PON 上行繁忙时的 VLAN 处理及 PPPoE 重试异常。
+
 ## 0.4.1-alpha
 
 - 修复 PON 多业务及 VLAN 处理异常
