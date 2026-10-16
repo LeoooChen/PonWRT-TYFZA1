@@ -1,0 +1,61 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "actual_functions": [
+    "upt_dctl_secinfo_entry_8852c",
+    "rtw_hal_set_dctrl_tbl_seciv"
+  ],
+  "cases": [
+    {
+      "call": "mac_upd_dctl_info_8852c",
+      "PN_data": [
+        0,
+        0
+      ],
+      "PN_mask": [
+        0,
+        0
+      ],
+      "key_selection_mask": [
+        820736,
+        65535,
+        0,
+        0
+      ]
+    },
+    {
+      "call": "mac_upd_dctl_info_8852c",
+      "PN_data": [
+        2596012032,
+        305419896
+      ],
+      "PN_mask": [
+        4294901760,
+        4294967295
+      ],
+      "key_selection_mask": [
+        820736,
+        65535,
+        0,
+        0
+      ]
+    },
+    {
+      "call": "rtw_hal_dmc_tbl_cfg",
+      "PN_data": [
+        2596012032,
+        305419896
+      ],
+      "PN_mask": [
+        4294901760,
+        4294967295
+      ],
+      "key_selection_mask": [
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "scope": "Actual ARM64 field and mask packing. DMAC command/configuration calls are explicit callbacks; no firmware, TX draining or RF execution."
+}

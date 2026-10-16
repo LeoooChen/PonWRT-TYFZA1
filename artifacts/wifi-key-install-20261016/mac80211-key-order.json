@@ -1,0 +1,25 @@
+{
+  "kernel": "6.18.55",
+  "native_driver_defines_set_key": true,
+  "native_driver_advertises_EXT_KEY_ID": false,
+  "sources": [
+    {
+      "kernel_relative_path": "net/mac80211/key.c",
+      "sha256": "338f6cdfa4398ea3d2ec30a4fd78f6eb0101fed2f9f7f3905c2553f7a951ab2e",
+      "first_line": 503,
+      "excerpt": "if (old) {\n\t\tif (old->flags & KEY_FLAG_UPLOADED_TO_HARDWARE) {\n\t\t\tieee80211_key_disable_hw_accel(old);\n\n\t\t\tif (new)\n\t\t\t\tret = ieee80211_key_enable_hw_accel(new);\n\t\t}\n\t} else {\n\t\tif (!new->local->wowlan) {\n\t\t\tret = ieee80211_key_enable_hw_accel(new);\n\t\t} else if (link_id < 0 || !sdata->vif.active_links ||\n\t\t\t BIT(link_id) & sdata->vif.active_links) {\n\t\t\tnew->flags |= KEY_FLAG_UPLOADED_TO_HARDWARE;\n\t\t\tif (!(new->conf.flags & (IEEE80211_KEY_FLAG_GENERATE_MMIC |\n\t\t\t\t\t\t IEEE80211_KEY_FLAG_PUT_MIC_SPACE |\n\t\t\t\t\t\t IEEE80211_KEY_FLAG_RESERVE_TAILROOM)))\n\t\t\t\tdecrease_tailroom_need_count(sdata, 1);\n\t\t}\n\t}\n\n\t"
+    },
+    {
+      "kernel_relative_path": "net/wireless/util.c",
+      "sha256": "5b909099044ed61134f435c827a23470771631c5217f55ab255614fb9d0e3cd1",
+      "first_line": 306,
+      "excerpt": "case WLAN_CIPHER_SUITE_CCMP:\n\tcase WLAN_CIPHER_SUITE_CCMP_256:\n\tcase WLAN_CIPHER_SUITE_GCMP:\n\tcase WLAN_CIPHER_SUITE_GCMP_256:\n\t\t/* IEEE802.11-2016 allows only 0 and - when supporting\n\t\t * Extended Key ID - 1 as index for pairwise keys.\n\t\t * @NL80211_KEY_NO_TX is only allowed for pairwise keys when\n\t\t * the driver supports Extended Key ID.\n\t\t * @NL80211_KEY_SET_TX can't be set when installing and\n\t\t * validating a key.\n\t\t */\n\t\tif ((params->mode == NL80211_KEY_NO_TX && !pairwise) ||\n\t\t    params->mode == NL80211_KEY_SET_TX)\n\t\t\treturn -EINVAL;\n\t\tif (wiphy_ext_feature_isset(&rdev->wiphy,\n\t\t\t\t\t    NL80211_EXT_FEATURE_EXT_KEY_ID)) {\n\t\t\tif (pairwise && (key_idx < 0 || key_idx > 1))\n\t\t\t\treturn -EINVAL;\n\t\t} else if (pairwise && key_idx) {\n\t\t\treturn -EINVAL;\n\t\t}\n\t\tbreak;\n\t"
+    },
+    {
+      "kernel_relative_path": "net/mac80211/main.c",
+      "sha256": "6a4acd379db5911bc0d8fc7d43b7fa4cf4e5a61d82f126f61296444d9200e98c",
+      "first_line": 1397,
+      "excerpt": "if (!local->ops->set_key) {\n\t\twiphy_ext_feature_set(local->hw.wiphy,\n\t\t\t\t      NL80211_EXT_FEATURE_CAN_REPLACE_PTK0);\n\t\twiphy_ext_feature_set(local->hw.wiphy,\n\t\t\t\t      NL80211_EXT_FEATURE_EXT_KEY_ID);\n\t}\n"
+    }
+  ]
+}

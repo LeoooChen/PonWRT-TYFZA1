@@ -1,0 +1,21 @@
+{
+  "command": "python3 scripts/test_radio_key_cleanup.py",
+  "exit_code": 0,
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/monitor.h": "74fba300a9fe2ac1078b2947d22d885d1f9e0303b556e81d2c0da25dc869f715",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pci.c": "7191ca562676d91bf6b28ad4593333490f2294db5872f2420d00b37022acaabd",
+    "scripts/test_radio_key_cleanup.py": "c5dacbb50d97f6364ae10195c0389cbfb8750fa9023fb004e3908af722c1b738"
+  },
+  "sanitizers": [
+    "address",
+    "undefined"
+  ],
+  "verified": [
+    "CAM/DMAC applied and unapplied timeout outcomes",
+    "CAM stays allocated until hardware references and entry are cleared",
+    "Cleanup retry retains allocation on error",
+    "New PTK/GTK and current hardware PN survive cleanup",
+    "Aborted installation is counted separately from committed key deletion",
+    "Existing deletion, MACID127 encoding and station reuse cases"
+  ]
+}

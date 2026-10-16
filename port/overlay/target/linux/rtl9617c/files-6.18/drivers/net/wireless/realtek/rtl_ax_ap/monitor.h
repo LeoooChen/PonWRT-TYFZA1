@@ -484,7 +484,12 @@ static bool rtl_ax_security_cleanup(struct rtl_ax_ap *radio)
 		}
 		__clear_bit(index, radio->security_deleting);
 		__clear_bit(index, radio->security_ids);
-		radio->keys_removed++;
+		if (test_bit(index, radio->security_aborting)) {
+			__clear_bit(index, radio->security_aborting);
+			radio->keys_aborted++;
+		} else {
+			radio->keys_removed++;
+		}
 	}
 	return retry;
 }
@@ -902,6 +907,10 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		index = find_first_zero_bit(radio->security_ids, RTL_AX_SECURITY_ENTRIES);
 		if (index == RTL_AX_SECURITY_ENTRIES)
 			return -ENOSPC;
+		/* A timeout can follow a completed CAM write. Hold ownership until cleanup. */
+		__set_bit(index, radio->security_ids);
+		__set_bit(index, radio->security_deleting);
+		__set_bit(index, radio->security_aborting);
 		rtl_ax_security_cam(cam, index, key->key);
 		ret = rtl_ax_command_flags(radio, RTL_AX_H2C_CMD, 1, 10, 1,
 			cam, sizeof(cam), false, true);
@@ -925,13 +934,17 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		rtl_ax_store32(dctl + 36, 0xffff0000);
 		rtl_ax_store32(dctl + 40, 0xffffffff);
 	}
+	if (cmd == SET_KEY)
+		radio->security_unlink[index] = macid + 1;
 	ret = rtl_ax_command_flags(radio, RTL_AX_H2C_DATA, 1, 5, 9,
 		dctl, sizeof(dctl), false, true);
 	if (ret)
 		goto done;
 	radio->security_roles[macid] = role;
 	if (cmd == SET_KEY) {
-		__set_bit(index, radio->security_ids);
+		__clear_bit(index, radio->security_deleting);
+		__clear_bit(index, radio->security_aborting);
+		radio->security_unlink[index] = 0;
 		key->hw_key_idx = index;
 		key->flags |= IEEE80211_KEY_FLAG_SW_MGMT_TX;
 		if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) rtl_ax_rx_key(radio->rx, macid, key);
@@ -1493,7 +1506,7 @@ static ssize_t radio_mac80211_show(struct device *dev,
 	return sysfs_emit(buffer, "registered=%u receive_active=%u handed_to_mac80211=%llu "
 		"TX_unimplemented=%llu AP_started=%u AP_result=%d station_added=%llu station_removed=%llu "
 		"RX_BA_started=%llu RX_BA_stopped=%llu RX_BA_result=%d "
-		"keys_installed=%llu keys_removed=%llu keys_active=%u key_result=%d RX_decrypted=%llu "
+		"keys_installed=%llu keys_removed=%llu keys_aborted=%llu keys_active=%u key_result=%d RX_decrypted=%llu "
 		"TIM_requests=%llu TIM_updates=%llu "
 		"profile=%u RX_copy_bytes=%llu RX_prepare_ns=%llu RX_mac80211_ns=%llu "
 		"retired_MACIDs=%u RX_BA_active=%u RX_BA_deleting=%u TX_BA_stopping=%u "
@@ -1501,7 +1514,7 @@ static ssize_t radio_mac80211_show(struct device *dev,
 		!!radio->hw, radio->monitor_started, radio->mac80211_packets, radio->tx_unimplemented,
 		radio->ap_started, radio->ap_result, radio->station_added, radio->station_removed,
 		radio->rx_ba_started, radio->rx_ba_stopped, radio->rx_ba_result,
-		radio->keys_installed, radio->keys_removed,
+		radio->keys_installed, radio->keys_removed, radio->keys_aborted,
 		bitmap_weight(radio->security_ids, RTL_AX_SECURITY_ENTRIES), radio->key_result, radio->rx_decrypted,
 		radio->tim_requests, radio->tim_updates,
 		rtl_ax_datapath_profile, radio->rx_copy_bytes, radio->rx_prepare_ns, radio->rx_mac80211_ns,

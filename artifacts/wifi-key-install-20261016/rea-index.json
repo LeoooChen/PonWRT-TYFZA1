@@ -1,0 +1,435 @@
+{
+  "address_note": "Ghidra addresses = ELF .text offsets + 0x10003c",
+  "functions": [
+    {
+      "evidence_id": "ev_0f2c27ce14c858c41d9f328bd32759726071573ae2b316ed9d11c0643479fa94",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x2aa750",
+        "name": "rtw_hal_mac_add_key",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x2aa750",
+              "end": "0x2aa8bf"
+            }
+          ],
+          "total_bytes": 368,
+          "span_bytes": 368,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined rtw_hal_mac_add_key()",
+        "locals": [
+          {
+            "description": "undefined1 local_19 @ Stack[-0x19]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_1a @ Stack[-0x1a]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_1b @ Stack[-0x1b]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_30 @ Stack[-0x30]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_40 @ Stack[-0x40]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_50 @ Stack[-0x50]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_60 @ Stack[-0x60]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_8 @ Stack[-0x8]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nvoid rtw_hal_mac_add_key(long param_1,undefined1 param_2,byte param_3,byte param_4,byte param_5,\n                        undefined1 param_6,undefined1 param_7,undefined8 param_8)\n\n{\n  uint uVar1;\n  long lVar2;\n  ulong uVar3;\n  long *plVar4;\n  undefined1 uStack_1c;\n  undefined1 local_1b;\n  undefined1 local_1a;\n  byte local_19;\n  undefined1 auStack_18 [16];\n  long local_8;\n  \n  lVar2 = sp_el0;\n  local_8 = *(long *)(lVar2 + 0x430);\n  plVar4 = *(long **)(param_1 + 0x148);\n  local_19 = local_19 & 0xc0 | param_3 & 0xf | (param_4 & 1) << 4 | (param_5 & 1) << 5;\n  local_1a = 0x14;\n  local_1b = 0;\n  _rtw_memset(auStack_18,0,0x10);\n  if (param_3 == 2) {\n    _rtw_memcpy(auStack_18,param_8,0xd);\n  }\n  else if (param_3 < 3) {\n    if (param_3 == 1) {\n      _rtw_memcpy(auStack_18,param_8,5);\n    }\n  }\n  else if ((byte)(param_3 - 3) < 8) {\n    _rtw_memcpy(auStack_18,param_8,0x10);\n  }\n  uVar3 = (**(code **)(*plVar4 + 0x1a8))(plVar4,&uStack_1c,param_2,param_6,param_7);\n  if ((int)uVar3 != 0) {\n    uVar1 = phl_log_components & 1;\n    if ((phl_log_components & 1) == 0) {\n      uVar3 = 1;\n    }\n    else if (phl_log_level < 2) {\n      uVar3 = (ulong)uVar1;\n    }\n    else {\n      printk(\"PHL: ERROR %s : mac status %d.\\n\",\"rtw_hal_mac_add_key\",uVar3 & 0xffffffff);\n      uVar3 = (ulong)uVar1;\n    }\n  }\n  lVar2 = sp_el0;\n  if (local_8 == *(long *)(lVar2 + 0x430)) {\n    return;\n  }\n                    /* WARNING: Subroutine does not return */\n  __stack_chk_fail(uVar3);\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-key-pn-switch/001-analyze_function.json",
+      "original_result_sha256": "bf447efbc6d63f876ee5b2536410042c87ad9759058c81461292d830d24c8591"
+    },
+    {
+      "evidence_id": "ev_0cdb4396353f92cf9cf3dd9bd651a8d265384678a16c97269fe534782a28efb9",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x2c91e8",
+        "name": "rtw_hal_set_dctrl_tbl_seciv",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x2c91e8",
+              "end": "0x2c926f"
+            }
+          ],
+          "total_bytes": 136,
+          "span_bytes": 136,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined rtw_hal_set_dctrl_tbl_seciv()",
+        "locals": [
+          {
+            "description": "undefined8 local_18 @ Stack[-0x18]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_28 @ Stack[-0x28]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_38 @ Stack[-0x38]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_48 @ Stack[-0x48]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_60 @ Stack[-0x60]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_8 @ Stack[-0x8]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nvoid rtw_hal_set_dctrl_tbl_seciv(undefined8 param_1,long param_2,long param_3)\n\n{\n  long lVar1;\n  undefined8 uVar2;\n  long local_48 [9];\n  \n  lVar1 = sp_el0;\n  local_48[8] = *(long *)(lVar1 + 0x430);\n  local_48[0] = 0;\n  local_48[1] = 0;\n  local_48[2] = 0;\n  local_48[3] = 0;\n  local_48[4] = 0;\n  local_48[5] = 0;\n  local_48[6] = 0;\n  local_48[7] = 0;\n  uVar2 = 1;\n  if (param_2 != 0) {\n    local_48[0] = param_3 << 0x10;\n    local_48[4] = 0xffffffffffff0000;\n    uVar2 = rtw_hal_dmc_tbl_cfg(param_1,local_48,local_48 + 4,*(undefined2 *)(param_2 + 0x1c));\n  }\n  lVar1 = sp_el0;\n  if (local_48[8] == *(long *)(lVar1 + 0x430)) {\n    return;\n  }\n                    /* WARNING: Subroutine does not return */\n  __stack_chk_fail(uVar2);\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-key-pn-switch/002-analyze_function.json",
+      "original_result_sha256": "b3bf1b39efafedf459a0fc0ec0f82eb2b73770feaeb3b4e2e43e989cc094933b"
+    },
+    {
+      "evidence_id": "ev_ec51f2d99a442e86779a82ce45ef3f5249e350d9977d4ec397c7df9a2f89e1fb",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x34ffc8",
+        "name": "upt_dctl_secinfo_entry_8852c",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x34ffc8",
+              "end": "0x350277"
+            }
+          ],
+          "total_bytes": 688,
+          "span_bytes": 688,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined upt_dctl_secinfo_entry_8852c()",
+        "locals": [
+          {
+            "description": "undefined1 local_10 @ Stack[-0x10]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_18 @ Stack[-0x18]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_28 @ Stack[-0x28]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_2d @ Stack[-0x2d]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_2e @ Stack[-0x2e]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_2f @ Stack[-0x2f]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_30 @ Stack[-0x30]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_38 @ Stack[-0x38]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_48 @ Stack[-0x48]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_60 @ Stack[-0x60]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_8 @ Stack[-0x8]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_d @ Stack[-0xd]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_e @ Stack[-0xe]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_f @ Stack[-0xf]:1",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nvoid upt_dctl_secinfo_entry_8852c(long param_1,uint param_2,byte param_3,char param_4)\n\n{\n  uint uVar1;\n  undefined1 uVar2;\n  undefined8 uVar3;\n  long lVar4;\n  undefined2 *puVar5;\n  long local_48 [2];\n  uint6 local_38;\n  undefined1 uStack_33;\n  undefined1 uStack_32;\n  undefined1 uStack_31;\n  ulong local_30;\n  undefined8 local_28;\n  undefined8 uStack_20;\n  undefined8 local_18;\n  undefined8 local_10;\n  long local_8;\n  \n  lVar4 = sp_el0;\n  local_8 = *(long *)(lVar4 + 0x430);\n  local_48[0] = 0;\n  local_48[1] = 0;\n  _local_38 = 0;\n  local_30 = 0;\n  local_28 = 0;\n  uStack_20 = 0;\n  local_18 = 0;\n  local_10 = 0;\n  lVar4 = *(long *)(*(long *)(param_1 + 0x58) + 0x70);\n  if (lVar4 == 0) {\n    uVar3 = 0xff;\n  }\n  else {\n    puVar5 = *(undefined2 **)(lVar4 + (long)(int)(param_2 & 0xff) * 8);\n    uVar2 = *(undefined1 *)(puVar5 + 5);\n    uVar1 = (*(byte *)(puVar5 + 4) & 3) << 9 | (*(byte *)((long)puVar5 + 9) & 1) << 0xf;\n    _local_38 = (ulong)CONCAT14(uVar2,uVar1);\n    local_18 = 0xff00008600;\n    if (param_3 == 4) {\n      _local_38 = (ulong)CONCAT14(uVar2,uVar1 | (*(byte *)((long)puVar5 + 0xf) & 3) << 0x1a);\n      local_30 = (ulong)*(byte *)(puVar5 + 0xb) << 8;\n      local_18 = 0xff0c008600;\n      local_10 = 0xff00;\n    }\n    else if (param_3 < 5) {\n      if (param_3 == 2) {\n        _local_38 = (uint7)CONCAT14(uVar2,uVar1 | (*(byte *)((long)puVar5 + 0xd) & 3) << 0x16);\n        _local_38 = CONCAT17(*(undefined1 *)(puVar5 + 10),_local_38);\n        local_18 = 0xff0000ff00c08600;\n      }\n      else if (param_3 < 3) {\n        if (param_3 == 0) {\n          local_38 = CONCAT15(*(undefined1 *)(puVar5 + 9),\n                              CONCAT14(uVar2,uVar1 | (*(byte *)((long)puVar5 + 0xb) & 3) << 0x12));\n          _local_38 = (ulong)local_38;\n          local_18 = 0xffff000c8600;\n        }\n        else if (param_3 == 1) {\n          local_38 = (uint6)CONCAT14(uVar2,uVar1 | (*(byte *)(puVar5 + 6) & 3) << 0x14);\n          _local_38 = CONCAT16(*(undefined1 *)((long)puVar5 + 0x13),local_38);\n          _local_38 = (ulong)_local_38;\n          local_18 = 0xff00ff00308600;\n        }\n      }\n      else {\n        _local_38 = (ulong)CONCAT14(uVar2,uVar1 | (*(byte *)(puVar5 + 7) & 3) << 0x18);\n        local_30 = (ulong)*(byte *)((long)puVar5 + 0x15);\n        local_18 = 0xff03008600;\n        local_10 = 0xff;\n      }\n    }\n    else if (param_3 == 6) {\n      _local_38 = (ulong)CONCAT14(uVar2,uVar1 | (uint)*(byte *)((long)puVar5 + 0x11) << 0x1e);\n      local_30 = (ulong)*(byte *)(puVar5 + 0xc) << 0x18;\n      local_18 = 0xffc0008600;\n      local_10 = 0xff000000;\n    }\n    else if (param_3 == 7) {\n      local_18 = 0xfffffffffffc8600;\n      local_10 = 0xffffffff;\n    }\n    else if (param_3 == 5) {\n      _local_38 = (ulong)CONCAT14(uVar2,uVar1 | (*(byte *)(puVar5 + 8) & 3) << 0x1c);\n      local_30 = (ulong)*(byte *)((long)puVar5 + 0x17) << 0x10;\n      local_18 = 0xff30008600;\n      local_10 = 0xff0000;\n    }\n    if (param_4 == '\\x01') {\n      local_48[0] = (ulong)CONCAT42(*(undefined4 *)(puVar5 + 2),*puVar5) << 0x10;\n      local_28 = 0xffffffffffff0000;\n    }\n    uVar3 = mac_upd_dctl_info_8852c(param_1,local_48,&local_28,param_2 & 0xff,1);\n  }\n  lVar4 = sp_el0;\n  if (local_8 == *(long *)(lVar4 + 0x430)) {\n    return;\n  }\n                    /* WARNING: Subroutine does not return */\n  __stack_chk_fail(uVar3);\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-key-pn-switch/003-analyze_function.json",
+      "original_result_sha256": "d9f7f6e7307b2715163cb307c76dcdc0401610cf6db352478d2079d52f99aa33"
+    },
+    {
+      "evidence_id": "ev_ccf386dc9c502a01f4bcf2e1728559d969c262218da579fe7ad89b936fbef449",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x3509e4",
+        "name": "insert_key_to_dmac_tbl_8852c",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x3509e4",
+              "end": "0x350bcf"
+            }
+          ],
+          "total_bytes": 492,
+          "span_bytes": 492,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined insert_key_to_dmac_tbl_8852c()",
+        "locals": [
+          {
+            "description": "undefined8 local_20 @ Stack[-0x20]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_30 @ Stack[-0x30]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_40 @ Stack[-0x40]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_50 @ Stack[-0x50]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_60 @ Stack[-0x60]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_70 @ Stack[-0x70]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_8 @ Stack[-0x8]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_9 @ Stack[-0x9]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined4 local_d @ Stack[-0xd]:4",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined2 local_f @ Stack[-0xf]:2",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nvoid insert_key_to_dmac_tbl_8852c\n               (long param_1,uint param_2,char param_3,undefined1 param_4,undefined1 param_5)\n\n{\n  byte bVar1;\n  char cVar2;\n  uint uVar3;\n  long lVar4;\n  undefined8 uVar5;\n  byte *pbVar6;\n  byte *pbVar7;\n  long lVar8;\n  ulong uVar9;\n  uint uVar10;\n  byte local_f [7];\n  long local_8;\n  \n  param_2 = param_2 & 0xff;\n  lVar8 = sp_el0;\n  local_8 = *(long *)(lVar8 + 0x430);\n  local_f[0] = 0;\n  local_f[1] = 0;\n  local_f[2] = 0;\n  local_f[3] = 0;\n  local_f[4] = 0;\n  local_f[5] = 0;\n  local_f[6] = 0;\n  lVar8 = *(long *)(*(long *)(param_1 + 0x58) + 0x70);\n  if (lVar8 == 0) {\n    uVar5 = 0xff;\n  }\n  else {\n    lVar4 = mac_role_srch(param_1,param_2);\n    if (lVar4 == 0) {\n      uVar5 = 0x3d;\n    }\n    else {\n      lVar8 = *(long *)(lVar8 + (long)(int)param_2 * 8);\n      bVar1 = *(byte *)(lVar8 + 10);\n      uVar10 = (uint)bVar1;\n      uVar9 = *(ulong *)(lVar4 + 0x60) >> 0x30 & 3;\n      uVar3 = decide_key_index_8852c(uVar9,param_3);\n      uVar3 = uVar3 & 0xff;\n      if (uVar3 == 0x39) {\n        uVar5 = 0x39;\n      }\n      else {\n        pbVar6 = local_f;\n        do {\n          pbVar7 = pbVar6 + 1;\n          *pbVar6 = (byte)uVar10 & 1;\n          uVar10 = uVar10 >> 1;\n          pbVar6 = pbVar7;\n        } while (pbVar7 != (byte *)&local_8);\n        if (uVar3 < 7) {\n          do {\n            if (local_f[(int)uVar3] != 1) {\n              cVar2 = check_key_index_8852c(uVar9,param_3,uVar3 & 0xff);\n              if (cVar2 == '\\0') {\n                *(byte *)(lVar8 + 10) = bVar1 | (byte)(1L << ((ulong)uVar3 & 0x3f));\n                *(undefined1 *)(lVar8 + (int)uVar3 + 0xb) = param_4;\n                *(undefined1 *)(lVar8 + (int)uVar3 + 0x12) = param_5;\n                if (param_3 == '\\0') {\n                  *(undefined1 *)(lVar8 + 8) = param_4;\n                }\n                uVar5 = upt_dctl_secinfo_entry_8852c(param_1,param_2,uVar3 & 0xff,0);\n              }\n              else {\n                (**(code **)(*(long *)(param_1 + 0x18) + 0xb0))\n                          (*(undefined8 *)(param_1 + 8),5,\"check addr key index full\\n\");\n                uVar5 = 0x3c;\n              }\n              goto LAB_00350adc;\n            }\n            uVar3 = uVar3 + 1;\n          } while ((uVar3 & 0xff) < 7);\n          uVar5 = 0x3c;\n        }\n        else {\n          uVar5 = 0x3c;\n        }\n      }\n    }\n  }\nLAB_00350adc:\n  lVar8 = sp_el0;\n  if (local_8 != *(long *)(lVar8 + 0x430)) {\n                    /* WARNING: Subroutine does not return */\n    __stack_chk_fail(uVar5);\n  }\n  return;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-key-pn-switch/004-analyze_function.json",
+      "original_result_sha256": "c26949ec6f6c1064d8cae421c577bbc224f2dd214795af629560dbeb8474a7fc"
+    },
+    {
+      "evidence_id": "ev_3a88ffea245746a5308738ee3b0197ea29f7b13c58baa8a0f858e420449305e7",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x350834",
+        "name": "delete_key_from_dmac_tbl_8852c",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x350834",
+              "end": "0x3509e3"
+            }
+          ],
+          "total_bytes": 432,
+          "span_bytes": 432,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined delete_key_from_dmac_tbl_8852c()",
+        "locals": [
+          {
+            "description": "undefined8 local_20 @ Stack[-0x20]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_30 @ Stack[-0x30]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_40 @ Stack[-0x40]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_50 @ Stack[-0x50]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_60 @ Stack[-0x60]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_8 @ Stack[-0x8]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined1 local_9 @ Stack[-0x9]:1",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined4 local_d @ Stack[-0xd]:4",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined2 local_f @ Stack[-0xf]:2",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nvoid delete_key_from_dmac_tbl_8852c\n               (long param_1,uint param_2,char param_3,char param_4,undefined1 *param_5)\n\n{\n  uint uVar1;\n  long lVar2;\n  byte *pbVar3;\n  byte *pbVar4;\n  undefined8 uVar5;\n  long lVar6;\n  uint uVar7;\n  byte local_f [7];\n  long local_8;\n  \n  param_2 = param_2 & 0xff;\n  lVar6 = sp_el0;\n  local_8 = *(long *)(lVar6 + 0x430);\n  local_f[0] = 0;\n  local_f[1] = 0;\n  local_f[2] = 0;\n  local_f[3] = 0;\n  local_f[4] = 0;\n  local_f[5] = 0;\n  local_f[6] = 0;\n  lVar6 = *(long *)(*(long *)(param_1 + 0x58) + 0x70);\n  if (lVar6 == 0) {\n    uVar5 = 0xff;\n  }\n  else {\n    lVar2 = mac_role_srch(param_1,param_2);\n    if (lVar2 == 0) {\n      uVar5 = 0x3d;\n    }\n    else {\n      lVar6 = *(long *)(lVar6 + (long)(int)param_2 * 8);\n      uVar7 = (uint)*(byte *)(lVar6 + 10);\n      uVar1 = decide_key_index_8852c(*(ulong *)(lVar2 + 0x60) >> 0x30 & 3,param_3);\n      uVar1 = uVar1 & 0xff;\n      if (uVar1 == 0x39) {\n        uVar5 = 0x39;\n      }\n      else {\n        pbVar3 = local_f;\n        do {\n          pbVar4 = pbVar3 + 1;\n          *pbVar3 = (byte)uVar7 & 1;\n          uVar7 = uVar7 >> 1;\n          pbVar3 = pbVar4;\n        } while (pbVar4 != (byte *)&local_8);\n        if (uVar1 < 7) {\n          do {\n            if ((*(char *)(lVar6 + (int)uVar1 + 0xb) == param_4) && (local_f[(int)uVar1] == 1)) {\n              lVar2 = lVar6 + (int)uVar1;\n              *param_5 = *(undefined1 *)(lVar2 + 0x12);\n              *(byte *)(lVar6 + 10) =\n                   *(byte *)(lVar6 + 10) & ((byte)(1L << ((ulong)uVar1 & 0x3f)) ^ 0xff);\n              *(undefined1 *)(lVar2 + 0xb) = 0;\n              *(undefined1 *)(lVar2 + 0x12) = 0;\n              if ((param_3 == '\\0') && (*(char *)(lVar6 + 8) == param_4)) {\n                *(undefined1 *)(lVar6 + 8) = 0;\n              }\n              uVar5 = upt_dctl_secinfo_entry_8852c(param_1,param_2,uVar1 & 0xff,0);\n              goto LAB_00350980;\n            }\n            uVar1 = uVar1 + 1;\n          } while ((uVar1 & 0xff) < 7);\n          uVar5 = 0x3a;\n        }\n        else {\n          uVar5 = 0x3a;\n        }\n      }\n    }\n  }\nLAB_00350980:\n  lVar6 = sp_el0;\n  if (local_8 != *(long *)(lVar6 + 0x430)) {\n                    /* WARNING: Subroutine does not return */\n    __stack_chk_fail(uVar5);\n  }\n  return;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-key-pn-switch/005-analyze_function.json",
+      "original_result_sha256": "197fc0c744350c3d16d1f5d27cb7676b811a9ae4a9e9777c6bb9da5b2845bb7c"
+    },
+    {
+      "evidence_id": "ev_438214cb27d2cc9c44b21e0e8967ab0bfc06b31155efbd1d37ae329e02648ba2",
+      "factory_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "provider": {
+        "id": "ghidra",
+        "name": "Ghidra",
+        "version": "12.1.2"
+      },
+      "procedure": {
+        "address": "0x242794",
+        "name": "rtw_phl_cmd_set_sta_seciv",
+        "classification": {
+          "external": false,
+          "thunk": false,
+          "thunk_target": null,
+          "provenance": "ghidra-function-manager"
+        },
+        "body": {
+          "available": true,
+          "provenance": "ghidra-function-body-address-set",
+          "ranges": [
+            {
+              "start": "0x242794",
+              "end": "0x242833"
+            }
+          ],
+          "total_bytes": 160,
+          "span_bytes": 160,
+          "non_contiguous": false,
+          "contains_entry": true
+        },
+        "signature": "undefined rtw_phl_cmd_set_sta_seciv()",
+        "locals": [
+          {
+            "description": "undefined8 local_10 @ Stack[-0x10]:8",
+            "provenance": "ghidra-function-database"
+          },
+          {
+            "description": "undefined8 local_20 @ Stack[-0x20]:8",
+            "provenance": "ghidra-function-database"
+          }
+        ]
+      },
+      "pseudocode": "\nuint rtw_phl_cmd_set_sta_seciv\n               (undefined8 param_1,long param_2,long param_3,undefined8 param_4,undefined4 param_5,\n               undefined4 param_6)\n\n{\n  int iVar1;\n  uint uVar2;\n  \n  uVar2 = 1;\n  if (param_3 != 0) {\n    *(undefined8 *)(param_3 + 0xa70) = param_4;\n    iVar1 = phl_cmd_enqueue(param_1,*(undefined1 *)(param_2 + 0x22),0x8d,param_3,0,0,param_5,param_6\n                           );\n    uVar2 = 0;\n    if (iVar1 != 0 && iVar1 != 0xb) {\n      uVar2 = phl_log_components & 1;\n      if ((phl_log_components & 1) == 0) {\n        uVar2 = 1;\n      }\n      else if (1 < phl_log_level) {\n        printk(\"PHL: ERROR %s : cmd fail (0x%x)!\\n\",\"rtw_phl_cmd_set_sta_seciv\",iVar1);\n      }\n    }\n  }\n  return uVar2;\n}\n\n",
+      "original_result_path": "rea/ghidra-wifi-key-pn-switch/006-analyze_function.json",
+      "original_result_sha256": "89d53e7515349f86f6f03e22b78e18680312c8f654b136dbeaf92eea0db66b6b"
+    }
+  ]
+}

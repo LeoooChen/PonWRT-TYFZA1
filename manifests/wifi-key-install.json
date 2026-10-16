@@ -1,0 +1,54 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "8b1da7575263e039cf4f310a5f1643c77ef87e31",
+  "scope": "Hold security CAM ownership from installation attempt through acknowledged commit or completed cleanup",
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "finding": "An applied DMAC update followed by ACK timeout left CAM unallocated in software; another peer could overwrite the referenced CAM",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/monitor.h": "74fba300a9fe2ac1078b2947d22d885d1f9e0303b556e81d2c0da25dc869f715",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pci.c": "7191ca562676d91bf6b28ad4593333490f2294db5872f2420d00b37022acaabd",
+    "scripts/test_radio_key_cleanup.py": "c5dacbb50d97f6364ae10195c0389cbfb8750fa9023fb004e3908af722c1b738",
+    "tools/check_stock_key_pn.py": "ad073feb7d6935658799fa9925c5de7534da29daecf848a4c81f6ad814a05808"
+  },
+  "evidence_sha256": {
+    "artifacts/wifi-key-install-20261016/before.json": "3e80568aeb01ba83e6eff528033d4ed32e1aa2169796b02f8cf39db3452973fa",
+    "artifacts/wifi-key-install-20261016/after.json": "f7f40be4bf5c42d101e93fc8d391b63bbfff11369db941cc79f5a686a5fb001c",
+    "artifacts/wifi-key-install-20261016/stock-PN.json": "0ba19c7eb4e0c98aaadb939d17c1320a22249f6c64b6b84e17694e8f34d1e427",
+    "artifacts/wifi-key-install-20261016/rea-index.json": "9ffe30efa0987babd84e49a2068c7bf44fb6abd39137e41cf71c4e5728456c0b",
+    "artifacts/wifi-key-install-20261016/mac80211-key-order.json": "d913c636ce2d69adf24c22d71d4b3be5c6bfb40a95b74b9da7750f83653bafbd",
+    "artifacts/wifi-key-install-20261016/native-check.json": "3be1c581101c104ff2252c05fbd94e951888b87befb3ee9de7796f50ea8d1f67",
+    "artifacts/wifi-key-install-20261016/module-build.log": "d9101fafbc072001101975280c698dda595422e2b4779be8ff13b387ca3ddb77"
+  },
+  "documentation_sha256": {
+    "docs/wifi-key-install-20261016.md": "a0de61a2ecc28c857feb373899cab381694deb477785af439da48aa712f7f850",
+    "docs/wifi-key-owner-20261016.md": "bd80d02a729e6bff2c33af630d3c86130a51f7551c8bc4a58a68f58092859c9c"
+  },
+  "module": {
+    "path": "artifacts/wifi-key-install-20261016/radio/rtl_ax_ap_key_install.ko",
+    "sha256": "8d48fe67ea76f997deae3310df99b9cc5b42a956c69f5f2ed1a9067ac2c4369a",
+    "prepared_wireless_source_matches": true,
+    "PE_header_unchanged": true,
+    "kernel": "6.18.55",
+    "warning": "existing missing MODULE_DESCRIPTION"
+  },
+  "checks": {
+    "original_key_selection_update_leaves_PN_untouched": true,
+    "current_mac80211_ordinary_rekey_deletes_old_key_before_install": true,
+    "failed_CAM_owned_until_cleanup": true,
+    "foreign_peer_key_alias_before": true,
+    "foreign_peer_key_alias_after": false,
+    "later_PTK_GTK_and_hardware_PN_preserved": true,
+    "abort_count_separate_from_successful_key_deletion": true,
+    "ASan_UBSan_targeted_cases": true
+  },
+  "hardware_tested": false,
+  "full_test_suite": false,
+  "PON_changes_included": false,
+  "rate_or_capacity_changed": false,
+  "limitations": [
+    "Hardware command completion effects are explicitly modeled at native C H2C boundaries",
+    "Factory ARM64 oracle executes packing instructions with command callbacks, not firmware or RF",
+    "No evidence the prior live UDP missing sequences were caused by a key installation timeout",
+    "Extended Key ID capability and multi-PTK handoff are not added by this change"
+  ]
+}

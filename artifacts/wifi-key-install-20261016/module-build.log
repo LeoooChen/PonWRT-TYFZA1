@@ -1,0 +1,17 @@
+make: Entering directory '/home/leo/PonWRT-TYFZA1/sources/openwrt/build_dir/target-aarch64_cortex-a55_musl/linux-rtl9617c_generic/linux-6.18.55'
+make[1]: Entering directory '/home/leo/PonWRT-TYFZA1/artifacts/wifi-key-install-20261016/radio'
+  CC [M]  pci.o
+  CC [M]  phy.o
+  CC [M]  rx.o
+  CC [M]  tx.o
+  CC [M]  power-tables.o
+  CC [M]  limits.o
+  LD [M]  rtl_ax_ap_key_install.o
+  MODPOST Module.symvers
+WARNING: modpost: missing MODULE_DESCRIPTION() in rtl_ax_ap_key_install.o
+  CC [M]  rtl_ax_ap_key_install.mod.o
+  CC [M]  .module-common.o
+  LD [M]  rtl_ax_ap_key_install.ko
+make[1]: Leaving directory '/home/leo/PonWRT-TYFZA1/artifacts/wifi-key-install-20261016/radio'
+make: Leaving directory '/home/leo/PonWRT-TYFZA1/sources/openwrt/build_dir/target-aarch64_cortex-a55_musl/linux-rtl9617c_generic/linux-6.18.55'
+8d48fe67ea76f997deae3310df99b9cc5b42a956c69f5f2ed1a9067ac2c4369a  /home/leo/PonWRT-TYFZA1/artifacts/wifi-key-install-20261016/radio/rtl_ax_ap_key_install.ko
