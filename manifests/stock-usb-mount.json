@@ -1,0 +1,117 @@
+{
+  "netlink_sha256": "69cc9268543718d375ff70a049ce9fd83a655e3708201b680a18ccc0e3305fda",
+  "source": "own-device ubi0_4-ubi_r0.bin",
+  "path_function": "0x403670",
+  "mount_function": "0x402120",
+  "paths": [
+    {
+      "device": "sda",
+      "mountpoint": "/mnt/usb1_1",
+      "result": 0
+    },
+    {
+      "device": "sda1",
+      "mountpoint": "/mnt/usb1_2",
+      "result": 0
+    },
+    {
+      "device": "sda2",
+      "mountpoint": "/mnt/usb1_3",
+      "result": 0
+    },
+    {
+      "device": "sdb1",
+      "mountpoint": "/mnt/usb2_2",
+      "result": 0
+    }
+  ],
+  "mounts": [
+    {
+      "filesystem": "FAT",
+      "commands": [
+        {
+          "mkdir": "/mnt/usb1_2",
+          "mode": "0o755"
+        },
+        {
+          "program": "/bin/dosfsck",
+          "argv": [
+            "-a",
+            "/dev/sda1"
+          ]
+        },
+        {
+          "program": "/bin/mount",
+          "argv": [
+            "-t",
+            "vfat",
+            "-o",
+            "noatime,utf8=1,codepage=936,umask=0",
+            "/dev/sda1",
+            "/mnt/usb1_2"
+          ]
+        }
+      ]
+    },
+    {
+      "filesystem": "NTFS",
+      "commands": [
+        {
+          "mkdir": "/mnt/usb1_2",
+          "mode": "0o755"
+        },
+        {
+          "program": "/bin/ntfs-3g",
+          "cgroup": "memory/nas",
+          "argv": [
+            "-o",
+            "noatime,big_writes,umask=0",
+            "/dev/sda1",
+            "/mnt/usb1_2"
+          ]
+        }
+      ]
+    },
+    {
+      "filesystem": "exFAT",
+      "commands": [
+        {
+          "mkdir": "/mnt/usb1_2",
+          "mode": "0o755"
+        },
+        {
+          "program": "/bin/mount.exfat",
+          "cgroup": "memory/nas",
+          "argv": [
+            "-o",
+            "umask=0",
+            "/dev/sda1",
+            "/mnt/usb1_2"
+          ]
+        }
+      ]
+    }
+  ],
+  "scope": "Actual original instructions; libc and command execution modeled; no USB hardware accessed",
+  "rootfs_sha256": "a7fd3ed3a1a28c2334cfb5d0d033fc22c5a81a3c8f805db029faa02a3ae0d233",
+  "recognition": {
+    "hotplug": "etc/init.d/rc2 sets /sbin/mdev; mdev -s",
+    "mdev_rule": "sd[a-z][0-9]? 0:0 0660 */bin/netlink",
+    "environment": [
+      "DEVPATH",
+      "ACTION"
+    ],
+    "filesystem_probe": "/bin/blkid2 /dev/%s -s TYPE > /tmp/%s",
+    "fat_tokens": [
+      "FAT",
+      "fat"
+    ],
+    "mount_path_formula": "/mnt/usb{device[2]-96}_{strtoul(device[3:])+1}"
+  },
+  "caveats": [
+    "No physical USB insertion performed",
+    "dosfsck referenced but absent from backed-up rootfs; mount still called after its return",
+    "Mount names depend on Linux sd device enumeration, not a confirmed physical USB port number",
+    "Tutorial requires observed mount and file before installation"
+  ]
+}
