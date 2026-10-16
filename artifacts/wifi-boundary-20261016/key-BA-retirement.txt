@@ -1,0 +1,1 @@
+NI retirement: captured EPP cutoff and RPQ must finish; later peer traffic does not block; failed commands and missing completion retain ownership

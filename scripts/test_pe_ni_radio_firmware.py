@@ -8,28 +8,16 @@ import sys
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / 'analysis/python-deps'))
 from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_MEM_WRITE
-from unicorn.mips_const import UC_MIPS_REG_PC
+from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_SP, UC_MIPS_REG_PC
 
 binary = (Path(sys.argv[1]) if len(sys.argv) > 1 else root / 'artifacts/live-radio-pe-ni/pe-tx.bin').read_bytes()
-words = list(struct.unpack('<%dI' % (len(binary) // 4), binary))
-# Unicorn models MIPS32, not the 77C's CP3 instruction-memory controller.
-cp3_words = [i for i, word in enumerate(words) if word in (0x4c880000, 0x4c880800, 0x4cc80000, 0x4cc81000)]
-assert len(cp3_words) in (0, 2, 4)
-for i in cp3_words: words[i] = 0
-for i, word in enumerate(words):
-    if word == 0x4c084000: words[i] = 0x24080000
 base, mailbox, ring, pages, headers, payload, bar, ni = (0x04000000, 0x04002000,
     0x05000000, 0x05100000, 0x05200000, 0x06000000, 0x12000000, 0x10000000)
-for index, value in ((0, (mailbox | 0xa0000000) >> 16), (1, mailbox & 65535),
-                     (2, (base | 0xa0000000) >> 16),
-                     (0x380 // 4, (mailbox | 0xa0000000) >> 16),
-                     (0x384 // 4, mailbox & 65535)):
-    words[index] |= value
 u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-for at, size in ((0x1fc00000, 16384), (base, 65536), (ring, 16384), (pages, 49152),
+for at, size in ((0x1fc00000, 16384), (base, 131072), (ring, 16384), (pages, 49152),
                  (headers, 49152), (payload, 65536), (bar, 65536), (ni, 65536)):
     u.mem_map(at, size)
-u.mem_write(0x1fc00000, struct.pack('<%dI' % len(words), *words))
+u.mem_write(0x1fc00000, binary)
 u.mem_map(0x10020000, 4096)
 u.mem_map(0x10029000, 4096)
 
@@ -39,7 +27,8 @@ def get(at): return struct.unpack('<I', u.mem_read(at, 4))[0]
 
 
 for index, value in ((2, 0xb2000000), (11, ring), (12, pages), (14, headers),
-                     (24, 1), (25, base + 0xc000), (27, 1), (3, 1)):
+                     (24, 1), (25, base + 0xc000), (27, 1), (3, 1),
+                     (116, 0x6380), (117, 6), (140, mailbox | 0xa0000000)):
     put(mailbox + index * 4, value)
 ap = bytes.fromhex('020000000001')
 u.mem_write(mailbox + 64, ap)
@@ -58,7 +47,11 @@ u.hook_add(UC_HOOK_MEM_WRITE, lambda uc, access, at, size, value, data:
            timer_events.append(value), begin=0x100290b4, end=0x100290b7)
 u.hook_add(UC_HOOK_MEM_WRITE, lambda uc, access, at, size, value, data:
            timer_loads.append(value), begin=0x100290d0, end=0x100290d3)
-pc = 0xbfc00000
+# Enter the linked C firmware with the same control/context layout as ARM.
+# This does not execute or patch the chip's CP3/cache bootstrap.
+u.reg_write(UC_MIPS_REG_A0, mailbox | 0xa0000000)
+u.reg_write(UC_MIPS_REG_SP, (base + 0x1fff0) | 0xa0000000)
+pc = 0xbfc00400
 completion_producer = 0
 
 
@@ -175,7 +168,7 @@ for padding in range(4):
     sequence = get(base + 0x3000 + 8 * 4)
     run()
     assert get(mailbox + 112) == old_sent + 2 and get(mailbox + 224) == old_mpdu + 1
-    assert get(mailbox + 228) == padding + 1 and get(mailbox + 120) == 2
+    assert get(mailbox + 228) == padding + 1 and get(mailbox + 120) == 1
     page = bytes(u.mem_read(pages + 256 * 128, 128))
     count = struct.unpack_from('<I', page, 4)[0] >> 26
     assert count == 2
@@ -191,12 +184,12 @@ for padding in range(4):
         expected += frame[:12] + struct.pack('>H', len(frame) - 6) + bytes.fromhex('aaaa030000000800') + frame[14:]
     assert gathered == expected
     assert struct.unpack_from('<I', page, 8)[0] & 0x3fff == len(gathered)
-    assert get(base + 0xc404) & (1 << 15) == 0 and get(base + 0xc404) >> 24 == 1
-    assert get(base + 0xc40c) & (1 << 15)
+    assert get(base + 0xc404) & (1 << 15) and get(base + 0xc408) == 0
+    assert get(payload) == payload + 2048 and get(payload + 2048) == 0
     for n, frame in enumerate(frames):
         assert bytes(u.mem_read(payload + n * 2048 + 62, len(frame) - 14)) == frame[14:]
-        put(base + 0xc800 + completion_producer * 4, n)
-        completion_producer = (completion_producer + 1) & 127
+    put(base + 0xc800 + completion_producer * 4, 0)
+    completion_producer = (completion_producer + 1) & 127
     put(mailbox + 180, completion_producer)
     run()
     assert get(mailbox + 120) == 0 and returns[-2:] == [payload | 6, payload + 2048 | 6]
@@ -207,13 +200,13 @@ for n, frame in enumerate(frames):
                 struct.pack('<II', payload + n * 2048 | 0x50, len(frame) + 16 | 1 << 14))
 put(ni + 0x7060, 15 * 8)
 run()
-assert get(mailbox + 224) == 513 and get(mailbox + 120) == 2
+assert get(mailbox + 224) == 513 and get(mailbox + 120) == 1
 assert get(base + 0xe000) & (1 << 20) and not get(base + 0xe000) & (1 << 19)
 assert not get(pages + 256 * 128 + 28) & (1 << 31)
-assert get(pages + 256 * 128 + 32) == (1 << 9) | (1 << 10)
-for n in range(2):
-    put(base + 0xc800 + completion_producer * 4, n)
-    completion_producer = (completion_producer + 1) & 127
+# Actual factory DATA builder: firmware RA clears the disable-fallback bits.
+assert get(pages + 256 * 128 + 32) == 0
+put(base + 0xc800 + completion_producer * 4, 0)
+completion_producer = (completion_producer + 1) & 127
 put(mailbox + 180, completion_producer)
 run()
 assert get(mailbox + 120) == 0
@@ -240,7 +233,7 @@ record = dict(linked_MIPS_C_firmware=True, NI_packets=512, full_and_compact_EPP=
               firmware_RA_clears_fixed_rate_and_skips_host_probes=True,
               retired_sleeping_peer_returns_EPP_without_wireless_TX=True,
               PE_timer_event_only_on_buffered_state_changes=True,
-              CP3_instruction_memory_not_emulated=bool(cp3_words),
+              CP3_instruction_memory_not_emulated=True,
               two_frame_AMSDU_padding_vectors=4, AMSDU_headers_payload_and_DMA_bounds_exact=True,
               NI_prefixes_reused_without_payload_copy=True,
               AMSDU_buffers_retained_until_RPQ=True,

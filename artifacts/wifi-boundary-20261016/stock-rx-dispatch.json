@@ -1,0 +1,42 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "actual_functions": [
+    "hal_handle_rx_buffer_8852c@0x2797b4",
+    "hal_parsing_rx_wd_8852c@0x278118"
+  ],
+  "scope": "Original dispatch/parser instructions. Report parsing callees are mocked; does not prove asynchronous PE scheduling or physical packet-loss cause.",
+  "results": [
+    {
+      "RX_WD_type": 0,
+      "original_rx_type": 0,
+      "calls": [
+        "_rtw_memcpy",
+        "hal_rx_ppdu_sts_normal_data"
+      ]
+    },
+    {
+      "RX_WD_type": 1,
+      "original_rx_type": 1,
+      "calls": [
+        "rtw_hal_mac_ax_parse_ppdu_sts"
+      ]
+    },
+    {
+      "RX_WD_type": 8,
+      "original_rx_type": 5,
+      "calls": [
+        "rtw_hal_mac_parse_dfs",
+        "rtw_hal_bb_radar_detect"
+      ]
+    },
+    {
+      "RX_WD_type": 10,
+      "original_rx_type": 6,
+      "calls": [
+        "memset",
+        "rtw_hal_mac_parse_c2h",
+        "hal_c2h_post_process"
+      ]
+    }
+  ]
+}

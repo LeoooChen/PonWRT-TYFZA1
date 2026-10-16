@@ -16,6 +16,7 @@
 #define RTL_AX_RX_IDLE_COUNT 177
 #define RTL_AX_RX_RDU 178
 #define RTL_AX_RPQ_RDU 179
+#define RTL_AX_RX_ARM_BARRIER 180
 #define RTL_AX_RX_WORK_OLD (1U << 31)
 /* Full MPDU11966 plus RXBD/WD/shift/driver-info fits12288. */
 #define RTL_AX_RXQ_BUFFER_BYTES 12288

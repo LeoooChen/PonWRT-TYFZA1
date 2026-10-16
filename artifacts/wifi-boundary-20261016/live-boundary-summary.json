@@ -1,0 +1,266 @@
+{
+  "date": "2026-10-16",
+  "scope": "Earlier live RAM measurements; sender accepted packets and full missing-sequence sets kept locally. Device/interface counters include background traffic and are not per-sequence attribution. No WP-rewrite live result exists.",
+  "rows": [
+    {
+      "record": "pool-baseline-300-duplex",
+      "WP_rewrite_installed": false,
+      "RX_barrier_candidate": false,
+      "results": [
+        {
+          "source": "en5",
+          "receive": "en0",
+          "sent": 146275,
+          "received": 146275,
+          "unique": 146275,
+          "missing": 0,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 18,
+          "send_errno": 35,
+          "seconds": 5.999964,
+          "UDP_payload_Mbps": 287.091
+        },
+        {
+          "source": "en0",
+          "receive": "en5",
+          "sent": 146256,
+          "received": 146256,
+          "unique": 146256,
+          "missing": 0,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 37,
+          "send_errno": 35,
+          "seconds": 5.999964,
+          "UDP_payload_Mbps": 287.053
+        }
+      ],
+      "counter_deltas": {
+        "PE_RXQ_RDU": 4528,
+        "PE_RPQ_RDU": 0,
+        "l3te_tail_drop": 0,
+        "RPQ_reports": 53212,
+        "failed": 0,
+        "en0_queue_drops": 0,
+        "en5_queue_drops": 0
+      },
+      "raw_sha256": {
+        "pool-baseline-300-duplex-udp-after.txt": "e3fab74c7a94a3e692a587eb0dffc1c02ad4c0a1be0c56802bd53883d37e869e",
+        "pool-baseline-300-duplex-en0-before.txt": "b0e5f22741c5f16dd3a00d7c4d0f51f0f2326f37e3e57f3fdb61c5247cf71427",
+        "pool-baseline-300-duplex-en5-after.txt": "cf1c7feb3b09b907c107e611a945609b79d58482a25ed1928886fce2867c5181",
+        "pool-baseline-300-duplex-en5-before.txt": "be5f86f888b1b76bd7f32ebb9bf6a689fdb503dbf617c9b6158081ab391f228e",
+        "pool-baseline-300-duplex-en0-after.txt": "dce87b343dc7df60dfd4bb21e210c235fea8a703648ea112a60f2877170a8783",
+        "pool-baseline-300-duplex-result.txt": "190869f1f069946eb0e5d358f16c8ea6b22cd9c02918b269c2a6e8472a28f09d",
+        "pool-baseline-300-duplex-udp-before.txt": "c131ee4353ac0e8ac03ed8549745d6c6dbfe9fa63b3098edaed7b7d6e2a39f73",
+        "pool-baseline-300-duplex-before.txt": "79ccd266655ce2c4ad0c3372f6781de1969d51c338002469b36ea9af5969e775",
+        "pool-baseline-300-duplex-after.txt": "dd90938236201352dc1e093b11b905bc51d043c703fb98b1cbd2f98557df019c"
+      }
+    },
+    {
+      "record": "pool-baseline-600-duplex",
+      "WP_rewrite_installed": false,
+      "RX_barrier_candidate": false,
+      "results": [
+        {
+          "source": "en5",
+          "receive": "en0",
+          "sent": 292546,
+          "received": 134952,
+          "unique": 134952,
+          "missing": 157594,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 41,
+          "send_errno": 35,
+          "seconds": 5.999985,
+          "UDP_payload_Mbps": 264.866
+        },
+        {
+          "source": "en0",
+          "receive": "en5",
+          "sent": 290641,
+          "received": 225324,
+          "unique": 225324,
+          "missing": 65317,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 1946,
+          "send_errno": 55,
+          "seconds": 5.999985,
+          "UDP_payload_Mbps": 442.237
+        }
+      ],
+      "counter_deltas": {
+        "PE_RXQ_RDU": 5699,
+        "PE_RPQ_RDU": 0,
+        "l3te_tail_drop": 157420,
+        "RPQ_reports": 27146,
+        "failed": 0,
+        "en0_queue_drops": 63775,
+        "en5_queue_drops": 0
+      },
+      "raw_sha256": {
+        "pool-baseline-600-duplex-udp-before.txt": "b3dca87fb6051aa53db805504a1cff40a8c95a225bac0a43d1384e66bf0d2781",
+        "pool-baseline-600-duplex-en5-after.txt": "9a18e20f2fae72a192710389b20eeac6788f1ed79e600e7a8c46b1374b80b521",
+        "pool-baseline-600-duplex-udp-after.txt": "972e952e52e87cd47d7e7054fbe30bd643427bc4a0f85e6bd6c0eed236421058",
+        "pool-baseline-600-duplex-result.txt": "1046c918975439f3c3d2f5e5bb2813b20792557f83e086af13c17313bfdc50e9",
+        "pool-baseline-600-duplex-after.txt": "1cd9278f3d28f67c622fe1cfcb4084ff372498162816b61c03beda3fabaa44a9",
+        "pool-baseline-600-duplex-before.txt": "a0af43277c5ca21914e23828d5ba04734fec835ebc7a160e1671177c41fe1d55",
+        "pool-baseline-600-duplex-en0-before.txt": "e3ce1b981f53db5796c515bc10a392e0f479b9c2f384d5f90e3f1be926eb853f",
+        "pool-baseline-600-duplex-en0-after.txt": "0261869320ea7ada6c960b9c41c9b946a559839195e05d18bb5b61584cf06d23",
+        "pool-baseline-600-duplex-en5-before.txt": "4da4017005c344a800a3868236a6387bc314761f06d128df1537a962e33b2037"
+      }
+    },
+    {
+      "record": "pool-600-duplex-timeline",
+      "WP_rewrite_installed": false,
+      "RX_barrier_candidate": false,
+      "results": [
+        {
+          "source": "en5",
+          "receive": "en0",
+          "sent": 292542,
+          "received": 119318,
+          "unique": 119318,
+          "missing": 173224,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 44,
+          "send_errno": 35,
+          "seconds": 6.000011,
+          "UDP_payload_Mbps": 234.181
+        },
+        {
+          "source": "en0",
+          "receive": "en5",
+          "sent": 289579,
+          "received": 205872,
+          "unique": 205872,
+          "missing": 83707,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 3007,
+          "send_errno": 55,
+          "seconds": 6.000011,
+          "UDP_payload_Mbps": 404.057
+        }
+      ],
+      "counter_deltas": {
+        "PE_RXQ_RDU": 12255,
+        "PE_RPQ_RDU": 0,
+        "l3te_tail_drop": 172989,
+        "RPQ_reports": 24051,
+        "failed": 0,
+        "en0_queue_drops": 81984,
+        "en5_queue_drops": 0
+      },
+      "raw_sha256": {
+        "pool-600-duplex-timeline-en5-after.txt": "9b9f6e52247b42e12fb07258529bf3ee52784e55d182ee9fbdcf91dff9c4d41b",
+        "pool-600-duplex-timeline-before.txt": "519fcb1b1c132796b31ce501f25df71915ac93bc4d2d68f3be9db73b479745d9",
+        "pool-600-duplex-timeline-after.txt": "4e3275c1f37f3f2fb5d4713e9cdc3b2efae5144315b0ab12b3abee63bb483bc1",
+        "pool-600-duplex-timeline-en0-before.txt": "8d8550ee13a3a08ff6e9fca988db3d7cd6d55194241f6be551752e53bfb96e39",
+        "pool-600-duplex-timeline-en5-before.txt": "69de0e7b1bd0f3df63fa00cbe12036a4c57ced85ffa8ab64f4c1522e56379586",
+        "pool-600-duplex-timeline-udp-after.txt": "321f356fe549269e4ac269ea343fc8aea1de99631dd531483c646fea50f5b814",
+        "pool-600-duplex-timeline-result.txt": "9c2d1655592e0550a2674ef4889b1fad6cd84e1c16ddca80f5c28b7e044bd256",
+        "pool-600-duplex-timeline-en5-ifstats-before.txt": "3cf204e0a2228bf1bc04a7d8b190301f0a21c87fd547f1ae767fb4d946f2e223",
+        "pool-600-duplex-timeline-registers.txt": "a9036aa68624730b50ebfea9f2c69d0d5fd7559b7024c819ff15183478a57693",
+        "pool-600-duplex-timeline-udp-before.txt": "f2a007c34af3c830a91ae3bb2059973ce3c3046b6c2a4225b60da4a179ac0128",
+        "pool-600-duplex-timeline-en0-ifstats-before.txt": "06a29aca49d491bf2d44b2b93f675e7d9342273d113075f8919df25866c90917",
+        "pool-600-duplex-timeline-en5-ifstats-after.txt": "24a7b4c88f471acbb99df3557f158a41246132d68f0a4bd4a769160366ca4aca",
+        "pool-600-duplex-timeline-en0-after.txt": "e0942732caab5f3aacd195051bcd1a2e37c32860bbe8494bc0bf45297cf25594",
+        "pool-600-duplex-timeline-en0-ifstats-after.txt": "5e3d31607ffdc95fdb91eb7983633d1cf8b6e5eb40712a5bcaa4eeb4b554f786"
+      }
+    },
+    {
+      "record": "pool-600-down",
+      "WP_rewrite_installed": false,
+      "RX_barrier_candidate": false,
+      "results": [
+        {
+          "source": "en5",
+          "receive": "en0",
+          "sent": 292562,
+          "received": 284774,
+          "unique": 284774,
+          "missing": 7788,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 25,
+          "send_errno": 35,
+          "seconds": 5.999985,
+          "UDP_payload_Mbps": 558.918
+        }
+      ],
+      "counter_deltas": {
+        "PE_RXQ_RDU": 0,
+        "PE_RPQ_RDU": 0,
+        "l3te_tail_drop": 7816,
+        "RPQ_reports": 57066,
+        "failed": 0
+      },
+      "raw_sha256": {
+        "pool-600-down-after.txt": "0286aec7f673afad16f4ed001bc02b6423fcd793ac8e00b4bdc28c94b42e7853",
+        "pool-600-down-before.txt": "515f3b8f0af010269319feb6211d0f48baf5dd09b28a167a28e869be5c95facf",
+        "pool-600-down-result.txt": "a893d21178d35c62afd97d431515db9c30c00344a42500783a9b61e947cdcb06"
+      }
+    },
+    {
+      "record": "barrier-600-duplex",
+      "WP_rewrite_installed": false,
+      "RX_barrier_candidate": true,
+      "results": [
+        {
+          "source": "en5",
+          "receive": "en0",
+          "sent": 292546,
+          "received": 128760,
+          "unique": 128760,
+          "missing": 163786,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 41,
+          "send_errno": 35,
+          "seconds": 5.999985,
+          "UDP_payload_Mbps": 252.714
+        },
+        {
+          "source": "en0",
+          "receive": "en5",
+          "sent": 290540,
+          "received": 212122,
+          "unique": 212122,
+          "missing": 78418,
+          "duplicates": 0,
+          "payload_errors": 0,
+          "send_errors": 2047,
+          "send_errno": 55,
+          "seconds": 5.999985,
+          "UDP_payload_Mbps": 416.326
+        }
+      ],
+      "counter_deltas": {
+        "PE_RXQ_RDU": 10172,
+        "PE_RPQ_RDU": 0,
+        "l3te_tail_drop": 163216,
+        "RPQ_reports": 25972,
+        "failed": 0,
+        "en0_queue_drops": 74498,
+        "en5_queue_drops": 0
+      },
+      "raw_sha256": {
+        "barrier-600-duplex-sampler-errors.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "barrier-600-duplex-udp-after.txt": "69921d8dfcc68152725a4d2fa10e81d0347a1002ccd1074ed3b13e1f67b1eabc",
+        "barrier-600-duplex-after.txt": "8e3ab1a85677488e2ae1d7d710ac9a77acba04d9af505dc3282a62342f83ad16",
+        "barrier-600-duplex-en5-after.txt": "ff8f0fa2eb5c54a587035151e7fec5b608f67ff3a3a71cef19d674e63dbe772c",
+        "barrier-600-duplex-en5-before.txt": "3706d2e61f3e5586df9c26f089a5ad7276efd9882685e0fcc29ec36baef8216a",
+        "barrier-600-duplex-en0-before.txt": "1d6e9d9b097890215ab6cafcd82f36edc1fb1a42644bea45dac6d6816c7d0f06",
+        "barrier-600-duplex-udp-before.txt": "7f4a166fcd5eb841ad80b54bd4d400bed39afc4ae2ea556372f7a3a83fbe2c31",
+        "barrier-600-duplex-en0-after.txt": "b1346164b489929c1b70606d0c61f4ea79b5fdc95cde71954aa55b1b0e8b571d",
+        "barrier-600-duplex-result.txt": "1de499af465ad54018627dfd3baa43c378e774e0b3f54c1e26726c916ab377c1",
+        "barrier-600-duplex-before.txt": "b9068fd68ddbaf7c6520c44fa3b6628faedcc4e55fb1a5d67367cdc5de792629",
+        "barrier-600-duplex-registers.txt": "a82c4661e387202d44488fdd7c1103b2dc6570d6fc8589d06f63f3807f415be5"
+      }
+    }
+  ]
+}

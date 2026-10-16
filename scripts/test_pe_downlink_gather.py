@@ -85,12 +85,12 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100):
     u.reg_write(UC_MIPS_REG_SP, (base + 0x1fff0) | 0xa0000000)
     u.emu_start(0xbfc00400, 0xbfc03ffc, count=100000)
     assert get(mb + 28 * 4) == len(lengths) and get(mb + 38 * 4) == 0
-    assert get(mb + 30 * 4) == len(lengths) and not returns
+    assert get(mb + 30 * 4) == len(submits) and not returns
     assert get(base + 0x18020) == len(lengths)
     member = 0
     all_ids = []
     for slot in range(len(submits)):
-        page = bytes(u.mem_read(pages + (256 + member) * 128, 128))
+        page = bytes(u.mem_read(pages + (256 + slot) * 128, 128))
         count = struct.unpack_from('<I', page, 4)[0] >> 26
         assert bool(struct.unpack_from('<I', page, 32)[0] & (1 << 12)) == hw_rts
         assert struct.unpack_from('<I', page, 28)[0] >> 28 & 3 == bandwidth
@@ -117,12 +117,11 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100):
         assert gathered == expected, (lengths, count, len(gathered), len(expected))
         assert struct.unpack_from('<I', page, 8)[0] & 0x3fff == len(gathered)
         assert len(gathered) - 26 <= cap or count == 1
-        chain = member
+        chain = get(base + 0xc400 + slot * 8)
         for n in range(count):
-            assert chain == member + n
-            details = get(base + 0xc404 + chain * 8)
-            assert bool(details & (1 << 15)) == (n + 1 == count)
-            chain = (details >> 24) & 127
+            assert chain == payload + (member + n) * 2048
+            chain = get(chain)
+        assert chain == 0
         all_ids.append(ids)
         member += count
     assert member == len(lengths)
@@ -131,10 +130,10 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100):
     for slot, ids in enumerate(all_ids):
         put(reports + slot * 1024, 24 | 0xc000 | (slot + 1) << 16)
         put(reports + slot * 1024 + 4, 7 << 24 | 4)
-        put(reports + slot * 1024 + 20, (256 + ids[0]) << 16 | 1)
+        put(reports + slot * 1024 + 20, (256 + slot) << 16 | 1)
     put(bar + 0x121c, len(all_ids) << 16)
     u.emu_start(u.reg_read(UC_MIPS_REG_PC), 0xbfc03ffc, count=100000)
-    assert get(mb + 45 * 4) == len(lengths) and not returns
+    assert get(mb + 45 * 4) == len(submits) and not returns
     put(ni + 0x6340, 0x8000007c)
     put(ni + 0x6380, 0x80000000)
     u.emu_start(u.reg_read(UC_MIPS_REG_PC), 0xbfc03ffc, count=100000)
@@ -156,4 +155,5 @@ else:
     rows += [case([1514] * 8, 7935, True), case([64, 65, 66, 67], 7935, True)]
     rows += [case([1514] * 4, 7935, True, True)]
 print(json.dumps({'cases': rows, 'exact_headers_payload_padding_DMA': True,
+                  'one_WP_per_aggregate': True,
                   'ownership_until_RPQ_and_EQ_credit': True}, indent=2))

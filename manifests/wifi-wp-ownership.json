@@ -1,0 +1,185 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "ef8d7fb96d50fc4e9c9f71a84f2a4d15b79b3e39",
+  "scope": "Correct native MPDU/WP ownership, BID completion/teardown and receive-state barriers using this board factory implementation",
+  "factory_module": {
+    "path": "evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko",
+    "sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+    "original_release_functions": [
+      "phl_recycle_payload@0x196314",
+      "txsc_free_txreq@0xec818",
+      "txsc_recycle_txreq_phyaddr@0xec478"
+    ],
+    "actual_calls": "Stock aggregate DMA/SKB-release loops and WP counter/slot release. Core dispatch bound directly to stock aggregate release. HAL/station/OS/DMA/list primitives modeled."
+  },
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/bb-dm.h": "e43d51398e53f2aa6794ef387b3574eb837f4b9dc79b007fc3040857b6888638",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/beacon.h": "cad9397694360fdde40dfe6acc30b4b9cfb425906b97643c98728e9f6d0c985d",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/board-cal.h": "694baa8ff00d3089fa2592a1c043dd53b808572e40ad3062fefb40eb7d3c5e6f",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/c-gapk.h": "9ac61baf6b26add36d052618350f7fb7ef61c67a8570e0e360e8c88b282361ab",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/c-iqk.h": "915c2b98e36f14827e54dc436bb18da440b66802bc925e00e301613869973b03",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/c-rxdck.h": "4a3c20a93933de216b87601c5bc6be125400c534a529c3d2389f2a90e17de8f8",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/c-tssi-program.h": "2fcc99bec68990d6fb38f1438d912e562efe7f1992bc86be5d186b3981da33a7",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/c-tssi.h": "41f51738872ecb3c3411ce7f7a22aef13ee0c4746c6a758274198aa3c1f831a1",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/cfo.h": "fb176537873bc993711a3e8304b935a0d486ad1dabe03af27702b8764ee48470",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/channel.h": "8986f70b0048ef9bb4f5c3e97b50fe18cfc6973caf8b5d54c78eb7805e774db1",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/dack.h": "753c0de2e3674546c99f6a4af295243ad906f1029fc91e0d6bb5818b26590ac4",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/dfs.h": "b8edbd09b832fc7b58e79b82bd7b698fef55b63d24cdbb0dab05bdac00e7894f",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/dig.h": "812e4b225e5d9088d2bb7fbde4d853c2b10736e745b45a69d21b80b19643af58",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/download.h": "23afbe9d675553d09b5ea36e8b0bb570222320fecfa9254fd2e0f3b5149d7b74",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/environment.h": "78f193d80e9d90749dfe9bf376a49d2a5347528ec0bdcd85be59de40e14e240c",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/fw.h": "e43f809542391a28b75d28234611a2e275919af0e381bbae6b8db99f82b788ab",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/gapk.h": "fdba5bf81c617049441356008540faeefb7e9c6cd4ccac8d181d3b24e8949c0a",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/limits.c": "b8e0a14062b5902a4737b6353272d1347a36b20c57f8a05acde11d6608140dcd",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/limits.h": "d7683ab36b70f02c2b801b310d18f916f18e7f0b9d72471fc2a829512b5bfc38",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/mac-runtime.h": "435c5ea12a1700ebd72ba896e9bb010bc2c8dac5dcc67ef3aa4ca8726bb325fd",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/monitor.h": "4fa2c3e618e558114980f3950d001e2a622e58f84f55bdede974f3f718052dea",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/ni-state.h": "80edeaa0e0df7aa0d1a1676de2482df26f5c24489c14198091b48a67a4764b06",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/ni-test.h": "93410f597ef336400b4c3085b3e773fd6660ce9d4fbf0bb4fb2c2987287d9c55",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pci.c": "bd7e938561f984a47a73c1ec63396f8a1f0c16904af9dcd7edcf023ff9cd8bf0",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-event.h": "c7e1ab53cb0d20d5a3bc6d34c6a55d3bf964917f2d82a8f784ac7193207dbe17",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-tx-code.h": "61915b36f3a9fc1720613fd4632d3e31aba5d9d4b284b3c7848f14a23f42def2",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe_probe.h": "5990bb1cf64dc2b7160192e4b76d80e06fe208000cd629156ec4fd0af090d817",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/phy.c": "df590a93c443a944f4abc2673457eee1c82b5ab88ee008c16091399590eb108d",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/phy.h": "cda518c8cf7193dc65843d48385e7b899090267a29a0f3a5cc6e7744d622ad73",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/port0.h": "30d4f481a1ab5a98c03f890d44c85d50c120ab0a993647c31a7ee904f59fed80",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/power-tables.c": "aa1bb2f71eb268ea2ff56b9c7815512d6f610c1262685df17d00dce8fa7522ef",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/power-tables.h": "3bf7d181df0ef6b3a49e2a510e03f81be4a376cc1660a8f14bfade6208bfc3b1",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/power.h": "9eed8c5d6f1373e008dc7d06622c4c3c9ba109b05456e13cc2d9198c2dcc6814",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rate.h": "baf35f2042c403d7ef577185211d09b56b0e60483319e24bbe6fc8a250a5cdaf",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/receive.h": "31b1755a1e54e201f9f8326f752cf4d6bb4f75d1de13b3f4fd99b04ad3edaec0",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/ref-power.h": "7834c4af0bdc0630487acb24dfadbf017709c856fa161e8bde9940f226d511ce",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rf-start.h": "85f78506e7df1bf4092e080074e7f8470efc5007f3dc891598614a17fd101093",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/role.h": "198bb0f14c6f939db8025d2341afd0a2e40ae54c38ec549261eaf0a72dcd9e4f",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx-geometry.h": "81acb1f545f18145bf3532bcec7f0c6c1e1ca10e64bde15fc650a86343f24798",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx-pipeline.h": "e4b9350b7c1b0d606de0c58cd84fc26b2662aeb8a7bf69e4ca0899c9e32d8831",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx.c": "eee9d99913971c2b000de1d30a85dce8974c7955e8e64b7987814e27ab246573",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx.h": "b1fc59d2dc40486684bb8dd3f531962af4c851153130b28bd8fe294506f3c34d",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rxdck.h": "dd5980a811651c1f62acca37b0ad211aa85f24b8d7b49393dd1e48dd711b63c3",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/security.h": "74ffa9222d2b41a0cb7b3d6dde925b638a57c822b386936e391258095d8427fb",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/transport.h": "6d58cf8d0770630e2c214f018feeced9317a020716673ca5b40f8281afc2502a",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/trim.h": "6d4639e47e88788e91679d411de12c905a562cbbcadef112b96225db8470bcc7",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/trx-paths.h": "49a8f81a2ad023ac5c0ad5de2678be962bc1dbedeaca2b9040353b9362c16acd",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tssi-de.h": "2e9ef46c20223661d363a7d74c51eabd97446da9513ebf3ead0f16ee6104f2b0",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx-format.h": "bc8612868e07b8240ea728b816bc0c351d904f6089cbe6d7e0b4c3013e963993",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx-shape.h": "066b752ba2e50174691204365b8a9ee26f56363f555e75f50e3f4709f598fc04",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx.c": "3285db64d479a7360278a89a9d0d37962e8a1051e94ddf2f494da6cd9ae1ef37",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx.h": "ab7aa9ab87e249f96ed356aab1bb7bbba0e298e5a31da99ae3a133ac7639ebcd",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/xb-channel.h": "0b83227427453003aca2f7ce9f2e3de972b044ab756cc03176e5efe32ad9d56f",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/xb-iqk.h": "7ad84da5a4baa05e6be08e2ba98a4060192d0c560e18e30e284ec935f4890bb7",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/xb-tssi-program.h": "1b01ce4a1d392b380b7d73abf2624ff72d848054ac62bd460d5e373616ab62a5",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/xb-tssi.h": "2a5e4863fbc094ba1ab2c0efc53739365c3d5f55dc30bb360663a6768fb62ea8",
+    "port/pe/rtl9617c-radio-downlink.h": "df2661f7993e7ffc7de998103f8052e91ac37b38363a89add025abe48b7c2441",
+    "port/pe/rtl9617c-radio-uplink.h": "91b7d137af6ee52aabfc321becc190ec78459eb5bd57088f185c4e9ab5dacac7",
+    "port/pe/rtl9617c-radio-wd.c": "606e885de0e50e8bd54b114aa5fec784b25a2d6492289a993cb72fcb748dc5a7"
+  },
+  "artifact": {
+    "module": "artifacts/wifi-boundary-20261016/radio-wp/rtl_ax_ap_wp_owner.ko",
+    "module_sha256": "12c94be704e606bc5082ba80a371d8729e7f2007bf66cc3372091d4f2cee4831",
+    "PE": "artifacts/wifi-boundary-20261016/pe-wp/pe-tx.bin",
+    "PE_sha256": "04c74d47b9b393816733ff002491a5dbf90095d1f28634e01d83da18e5b20873",
+    "PE_bytes": 15864,
+    "module_embedded_PE_matches_tested": true,
+    "prepared_module_inputs_match_current_sources": true,
+    "kernel": "6.18.55",
+    "module_build": "passed, symbol resolution successful; existing missing MODULE_DESCRIPTION warning"
+  },
+  "verification": {
+    "factory_single_WP_releases_1_5_8_MSDUs": true,
+    "production_before_and_after_credit_counterexample": [
+      {
+        "MSDU_bytes": 1514,
+        "MSDUs_per_MPDU": 5,
+        "before": {
+          "PE_sha256": "bebfe3ea51d9433595f39987b4c138cc356e2cd91fa8ced33fdc1ebb5b8dfe38",
+          "EPP_ingested": 1024,
+          "selected_MSDUs": 124,
+          "actual_MPDU_WP_IDs": 25,
+          "occupied_owner_slots": 124,
+          "admission_counter": 124,
+          "queued_MSDUs": 900
+        },
+        "after": {
+          "PE_sha256": "04c74d47b9b393816733ff002491a5dbf90095d1f28634e01d83da18e5b20873",
+          "EPP_ingested": 1024,
+          "selected_MSDUs": 620,
+          "actual_MPDU_WP_IDs": 124,
+          "occupied_owner_slots": 124,
+          "admission_counter": 124,
+          "queued_MSDUs": 404
+        }
+      },
+      {
+        "MSDU_bytes": 64,
+        "MSDUs_per_MPDU": 8,
+        "before": {
+          "PE_sha256": "bebfe3ea51d9433595f39987b4c138cc356e2cd91fa8ced33fdc1ebb5b8dfe38",
+          "EPP_ingested": 1024,
+          "selected_MSDUs": 124,
+          "actual_MPDU_WP_IDs": 16,
+          "occupied_owner_slots": 124,
+          "admission_counter": 124,
+          "queued_MSDUs": 900
+        },
+        "after": {
+          "PE_sha256": "04c74d47b9b393816733ff002491a5dbf90095d1f28634e01d83da18e5b20873",
+          "EPP_ingested": 1024,
+          "selected_MSDUs": 992,
+          "actual_MPDU_WP_IDs": 124,
+          "occupied_owner_slots": 124,
+          "admission_counter": 124,
+          "queued_MSDUs": 32
+        }
+      }
+    ],
+    "actual_gather_payload_DMA_bounds": true,
+    "partial_EQ_resume_without_duplicate_BID": true,
+    "forced_teardown_EQ_failure_retains_remaining_chain": true,
+    "key_BA_retirement_preserved": true,
+    "RX_514_buffer_ownership_and_PN_SN_barriers": true,
+    "normal_ARM_RX_downlink_branch": true
+  },
+  "counter_units": {
+    "mailbox_28_sent": "MSDU/BID",
+    "mailbox_29_recycled": "MSDU/BID",
+    "mailbox_30_pending": "MPDU/WP"
+  },
+  "not_changed": [
+    "saved radio configuration",
+    "160MHz implementation",
+    "PHY rates",
+    "BID pool/queue capacities",
+    "124-WP admission limit",
+    "RPQ reporting thresholds"
+  ],
+  "limits": [
+    "No WP-rewrite hardware test: user left the device",
+    "Earlier RX-barrier-only hardware candidate still showed 600Mbps duplex loss",
+    "Device-wide NI/RDU/Mac queue counters are not missing-sequence attribution",
+    "No full test suite, full firmware build, flash operation, publishing or push in this turn"
+  ],
+  "live_device_changed_this_turn": false,
+  "hardware_loss_fixed_claimed": false,
+  "evidence_sha256": {
+    "artifacts/wifi-boundary-20261016/stock-WP-aggregate-release.json": "60276a2613fed932de7c589822ef626a587e9c4dc1455a7f1964942218cb93c8",
+    "artifacts/wifi-boundary-20261016/stock-fallback-fields.json": "0534fca05b2bf0af432c2e3651cb86a55208f7285347c749330ba98f65f7edf1",
+    "artifacts/wifi-boundary-20261016/stock-rx-control.json": "c7e6f3aa9f2c07753da08c43c02e4be3ae96ab86b65bf8afa4df8888fdb05bb6",
+    "artifacts/wifi-boundary-20261016/stock-rx-dispatch.json": "4ab77a73b9aefbcac1e74b27993a551f0b55a00fefd09e42b8f50d81b2d49039",
+    "artifacts/wifi-boundary-20261016/WP-credit-production-before.json": "29adc6dabcf94ff3ae6938154c1d20839da39dd0a1982befddac53490395ac0c",
+    "artifacts/wifi-boundary-20261016/gather.json": "e780dd820f1d629ab36aec0213418f26270d77970cc6af72c32d03bc707085ca",
+    "artifacts/wifi-boundary-20261016/rpq-wp.json": "571463d9378c8d1352de259800f97f04bdbf447f1bab60c58c2d073dd0afce38",
+    "artifacts/wifi-boundary-20261016/ARM-BID-teardown.txt": "7553aae30962eef883a3ba23f520bba2a8a08a4b6e710708205d719e176d9aa9",
+    "artifacts/wifi-boundary-20261016/key-BA-retirement.txt": "d6c36b0406a6a07f56c78826a315e9d7f846412f0064267579aa04f30fe88925",
+    "artifacts/wifi-boundary-20261016/RX-order-with-WP.json": "5288d9abe65b428aa75c9aacac086731f684068210f6ecd65f924d224731af9b",
+    "artifacts/wifi-boundary-20261016/host-rx-WP.txt": "8e8bbc37d41ed30832aa886294370b8e9bdc7033901160f9ef0098cc7ecfbc09",
+    "artifacts/wifi-boundary-20261016/live-boundary-summary.json": "b9b0cf9c683a8c62e7e6ed754de7fdb0b15f0348570d66cd12ac73edde97fc45",
+    "artifacts/wifi-boundary-20261016/pe-wp-build.log": "c9f30a53b8ab563eead0464985a96c5dc8722b9b3cd6d1e784000f2b57e7d1dd",
+    "artifacts/wifi-boundary-20261016/WP-module-build.log": "6425fdae15c24bc8fcd21266cb9ed7a8e70133c987e9d83bd778476f59e99063",
+    "artifacts/wifi-boundary-20261016/pe-host-rx-wp-build.log": "b23fe5f50ea1e625e47c16663da7a2c37f949529ca1568623ae2c038538de80e",
+    "artifacts/wifi-boundary-20261016/arm-WP-lifetime.txt": "501e357faf2c38b7c63a7d277b57453ccca6ae65a53c627d9876a939c6fec689"
+  },
+  "documentation": {
+    "path": "docs/wifi-wp-ownership-20261016.md",
+    "sha256": "4ea711d95eaaf8e4499ee4d6e8ce78ed6c811fe7dbeb4c9e6d2824aa38a45f5b"
+  }
+}

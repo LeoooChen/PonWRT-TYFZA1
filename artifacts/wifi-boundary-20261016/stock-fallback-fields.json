@@ -1,0 +1,21 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "actual_functions": [
+    "_phl_fill_tx_meta_data",
+    "mac_txdesc_len_8852c",
+    "txdes_proc_data_8852c"
+  ],
+  "rows": [
+    {
+      "fixed_rate": false,
+      "DW7": "0x40000",
+      "DW8": "0x0"
+    },
+    {
+      "fixed_rate": true,
+      "DW7": "0x80040000",
+      "DW8": "0x600"
+    }
+  ],
+  "scope": "Original PHL metadata and DATA WD builders; explicit IO callbacks, no RF test."
+}

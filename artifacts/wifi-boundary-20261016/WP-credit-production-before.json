@@ -1,0 +1,49 @@
+{
+  "scope": "Execute linked ni_ingest/ni_select. Same1024 BID queue and124 WP limit; actual MTU and maximum gather vectors, no RPQ completion, RF timing or throughput model.",
+  "cases": [
+    {
+      "MSDU_bytes": 1514,
+      "MSDUs_per_MPDU": 5,
+      "before": {
+        "PE_sha256": "bebfe3ea51d9433595f39987b4c138cc356e2cd91fa8ced33fdc1ebb5b8dfe38",
+        "EPP_ingested": 1024,
+        "selected_MSDUs": 124,
+        "actual_MPDU_WP_IDs": 25,
+        "occupied_owner_slots": 124,
+        "admission_counter": 124,
+        "queued_MSDUs": 900
+      },
+      "after": {
+        "PE_sha256": "04c74d47b9b393816733ff002491a5dbf90095d1f28634e01d83da18e5b20873",
+        "EPP_ingested": 1024,
+        "selected_MSDUs": 620,
+        "actual_MPDU_WP_IDs": 124,
+        "occupied_owner_slots": 124,
+        "admission_counter": 124,
+        "queued_MSDUs": 404
+      }
+    },
+    {
+      "MSDU_bytes": 64,
+      "MSDUs_per_MPDU": 8,
+      "before": {
+        "PE_sha256": "bebfe3ea51d9433595f39987b4c138cc356e2cd91fa8ced33fdc1ebb5b8dfe38",
+        "EPP_ingested": 1024,
+        "selected_MSDUs": 124,
+        "actual_MPDU_WP_IDs": 16,
+        "occupied_owner_slots": 124,
+        "admission_counter": 124,
+        "queued_MSDUs": 900
+      },
+      "after": {
+        "PE_sha256": "04c74d47b9b393816733ff002491a5dbf90095d1f28634e01d83da18e5b20873",
+        "EPP_ingested": 1024,
+        "selected_MSDUs": 992,
+        "actual_MPDU_WP_IDs": 124,
+        "occupied_owner_slots": 124,
+        "admission_counter": 124,
+        "queued_MSDUs": 32
+      }
+    }
+  ]
+}

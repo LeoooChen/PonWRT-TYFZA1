@@ -1,0 +1,134 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "actual_functions": [
+    "phl_recycle_payload@0x196314",
+    "txsc_free_txreq@0xec818",
+    "txsc_recycle_txreq_phyaddr@0xec478"
+  ],
+  "scope": "Actual aggregate DMA-unmap/SKB-release loops and WP lookup/release/counters. The core callback is bound directly to stock txsc_free_txreq; HAL/station lookup, DMA/OS free and idle-list insertion are modeled. No RF timing or throughput claim.",
+  "results": [
+    {
+      "MSDUs": 1,
+      "DMA_unmaps": [
+        {
+          "dma": "0x8000000",
+          "bytes": 1500,
+          "direction": 1
+        }
+      ],
+      "completed_SKBS": [
+        "0x61b0000"
+      ],
+      "batch_return": [
+        "0x6180000"
+      ],
+      "WP_slot_cleared": true,
+      "outstanding_WP_delta": -1,
+      "successful_MSDU_delta": 1
+    },
+    {
+      "MSDUs": 5,
+      "DMA_unmaps": [
+        {
+          "dma": "0x8000000",
+          "bytes": 1500,
+          "direction": 1
+        },
+        {
+          "dma": "0x8001000",
+          "bytes": 1500,
+          "direction": 1
+        },
+        {
+          "dma": "0x8002000",
+          "bytes": 1500,
+          "direction": 1
+        },
+        {
+          "dma": "0x8003000",
+          "bytes": 1500,
+          "direction": 1
+        },
+        {
+          "dma": "0x8004000",
+          "bytes": 1500,
+          "direction": 1
+        }
+      ],
+      "completed_SKBS": [
+        "0x61b0000",
+        "0x61b0100",
+        "0x61b0200",
+        "0x61b0300",
+        "0x61b0400"
+      ],
+      "batch_return": [
+        "0x6180000"
+      ],
+      "WP_slot_cleared": true,
+      "outstanding_WP_delta": -1,
+      "successful_MSDU_delta": 5
+    },
+    {
+      "MSDUs": 8,
+      "DMA_unmaps": [
+        {
+          "dma": "0x8000000",
+          "bytes": 1500,
+          "direction": 1
+        },
+        {
+          "dma": "0x8001000",
+          "bytes": 1500,
+          "direction": 1
+        },
+        {
+          "dma": "0x8002000",
+          "bytes": 1500,
+          "direction": 1
+        },
+        {
+          "dma": "0x8003000",
+          "bytes": 1500,
+          "direction": 1
+        },
+        {
+          "dma": "0x8004000",
+          "bytes": 1500,
+          "direction": 1
+        },
+        {
+          "dma": "0x8005000",
+          "bytes": 1500,
+          "direction": 1
+        },
+        {
+          "dma": "0x8006000",
+          "bytes": 1500,
+          "direction": 1
+        },
+        {
+          "dma": "0x8007000",
+          "bytes": 1500,
+          "direction": 1
+        }
+      ],
+      "completed_SKBS": [
+        "0x61b0000",
+        "0x61b0100",
+        "0x61b0200",
+        "0x61b0300",
+        "0x61b0400",
+        "0x61b0500",
+        "0x61b0600",
+        "0x61b0700"
+      ],
+      "batch_return": [
+        "0x6180000"
+      ],
+      "WP_slot_cleared": true,
+      "outstanding_WP_delta": -1,
+      "successful_MSDU_delta": 8
+    }
+  ]
+}

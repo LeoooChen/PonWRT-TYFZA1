@@ -1,0 +1,16 @@
+{
+  "scope": "Actual linked production PE; modeled PCIe, ARM acknowledgement, NI consumption and W1C. No RF throughput simulation.",
+  "PE_sha256": "04c74d47b9b393816733ff002491a5dbf90095d1f28634e01d83da18e5b20873",
+  "ARM_blocked_capture_and_refill_packets": 255,
+  "busy_ring_full_payload_preserved": true,
+  "ordered_ARM_delivery": 256,
+  "additional_wrap_packets": 513,
+  "all_514_buffers_have_one_owner": true,
+  "permuted_noncontiguous_DMA_table_all_buffers": true,
+  "PN_SN_no_overtake": true,
+  "stateless_reports_and_RTS_CTS_ACK_BA_do_not_block_data": true,
+  "BAR_PS_Poll_wait_without_forcing_later_data_to_ARM": true,
+  "NI_last_two_payloads_retained": true,
+  "NI_end_bit30_and_31bit_wrap": true,
+  "RXQ_RPQ_RDU_counted_with_W1C": true
+}

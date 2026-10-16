@@ -1,0 +1,17 @@
+make: Entering directory '/home/leo/PonWRT-TYFZA1/sources/openwrt/build_dir/target-aarch64_cortex-a55_musl/linux-rtl9617c_generic/linux-6.18.55'
+make[1]: Entering directory '/home/leo/PonWRT-TYFZA1/artifacts/wifi-boundary-20261016/radio-wp'
+  CC [M]  pci.o
+  CC [M]  phy.o
+  CC [M]  rx.o
+  CC [M]  tx.o
+  CC [M]  power-tables.o
+  CC [M]  limits.o
+  LD [M]  rtl_ax_ap_wp_owner.o
+  MODPOST Module.symvers
+WARNING: modpost: missing MODULE_DESCRIPTION() in rtl_ax_ap_wp_owner.o
+  CC [M]  rtl_ax_ap_wp_owner.mod.o
+  CC [M]  .module-common.o
+  LD [M]  rtl_ax_ap_wp_owner.ko
+make[1]: Leaving directory '/home/leo/PonWRT-TYFZA1/artifacts/wifi-boundary-20261016/radio-wp'
+make: Leaving directory '/home/leo/PonWRT-TYFZA1/sources/openwrt/build_dir/target-aarch64_cortex-a55_musl/linux-rtl9617c_generic/linux-6.18.55'
+12c94be704e606bc5082ba80a371d8729e7f2007bf66cc3372091d4f2cee4831  /home/leo/PonWRT-TYFZA1/artifacts/wifi-boundary-20261016/radio-wp/rtl_ax_ap_wp_owner.ko

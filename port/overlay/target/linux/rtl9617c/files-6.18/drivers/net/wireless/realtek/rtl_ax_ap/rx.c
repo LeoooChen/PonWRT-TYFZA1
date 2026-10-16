@@ -559,6 +559,7 @@ void rtl_ax_rx_pe_rpq_start(struct rtl_ax_rx *rx, void *memory)
 	memset(rx->uplink_seen, 0, sizeof(rx->uplink_seen));
 	put_unaligned_le32(0, mailbox + 376);
 	put_unaligned_le32(0, mailbox + 380);
+	put_unaligned_le32(0, mailbox + RTL_AX_RX_ARM_BARRIER * 4);
 	put_unaligned_le32(rx->queues[1].consumer, mailbox + 280);
 	put_unaligned_le32(rx->queues[1].tag, mailbox + 284);
 	put_unaligned_le32(rx->pe_forward_dma, mailbox + 288);

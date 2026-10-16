@@ -672,15 +672,11 @@ static void rtl_ax_tx_pe_complete(struct rtl_ax_tx *tx, unsigned int id, unsigne
 {
 	unsigned int member = id - 256;
 
-	for (;;) {
-		void *entry = tx->pe.memory + 0xc400 + member * 8;
-		u32 details = get_unaligned_le32(entry + 4);
-		put_unaligned_le32(details | BIT(31) | status, entry + 4);
-		put_unaligned_le32(member, tx->pe.memory + 0xc800 + tx->ni_rpq_producer * 4);
-		tx->ni_rpq_producer = (tx->ni_rpq_producer + 1) & 127;
-		if (details & BIT(15)) break;
-		member = (details >> 24) & 127;
-	}
+	void *entry = tx->pe.memory + 0xc400 + member * 8;
+	u32 details = get_unaligned_le32(entry + 4);
+	put_unaligned_le32(details | BIT(31) | status, entry + 4);
+	put_unaligned_le32(member, tx->pe.memory + 0xc800 + tx->ni_rpq_producer * 4);
+	tx->ni_rpq_producer = (tx->ni_rpq_producer + 1) & 127;
 	dma_wmb();
 	put_unaligned_le32(tx->ni_rpq_producer, tx->pe.memory + PE_PROBE_MAILBOX + 180);
 }

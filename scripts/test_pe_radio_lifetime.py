@@ -69,14 +69,14 @@ int main(void){
  tx.pending[0]=true;tx.slots[0].macid=8;tx.slots[0].tid=3;
  tx.slots[0].encrypted=true;tx.slots[0].key_index=43;
  assert(rtl_ax_tx_station_pending(&tx,8,3) && rtl_ax_tx_key_pending(&tx,43));
- put(memory+0xc400,0x06000000);put(memory+0xc404,(1<<24)|(7<<8)|(42<<17));
- put(memory+0xc408,0x06000800);put(memory+0xc40c,BIT(15)|(7<<8)|(42<<17));
+ put(memory+0xc400,0x06000000);put(memory+0xc404,BIT(15)|(7<<8)|(42<<17));
+ put(memory+0xc408,0);put(memory+0xc40c,0);
  tx.ni_rpq_producer=127;
  rtl_ax_tx_pe_complete(&tx,256,0);
- assert(tx.ni_rpq_producer==1 && get_unaligned_le32(memory+0x20b4)==1);
- assert(get_unaligned_le32(memory+0xc800+127*4)==0 && get_unaligned_le32(memory+0xc800)==1);
+ assert(tx.ni_rpq_producer==0 && get_unaligned_le32(memory+0x20b4)==0);
+ assert(get_unaligned_le32(memory+0xc800+127*4)==0);
  assert(get_unaligned_le32(memory+0xc404)&BIT(31));
- assert(get_unaligned_le32(memory+0xc40c)&BIT(31));
+ assert(get_unaligned_le32(memory+0xc40c)==0);
  assert(!rtl_ax_tx_station_pending(&tx,7,16) && !rtl_ax_tx_key_pending(&tx,42));
  puts("PE lifetime: all eight TIDs retain BA/MACID/key ownership until RPQ; unrelated TIDs and completed frames do not block");
 }

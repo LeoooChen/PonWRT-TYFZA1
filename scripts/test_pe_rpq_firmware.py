@@ -31,8 +31,12 @@ for index, value in ((0, 0x50455744), (2, bar | 0xa0000000), (3, 1),
 put(ni + 0x6340, 0x8000007c)
 put(ni + 0x6380, 0x80000000)
 returns = []
-u.hook_add(UC_HOOK_MEM_WRITE, lambda uc, access, at, size, value, context:
-           returns.append(value), begin=ni + 0x6384, end=ni + 0x6387)
+stop_after = None
+def eq_return(uc, access, at, size, value, context):
+    returns.append(value)
+    if len(returns) == stop_after:
+        put(ni + 0x6340, 0)
+u.hook_add(UC_HOOK_MEM_WRITE, eq_return, begin=ni + 0x6384, end=ni + 0x6387)
 u.reg_write(UC_MIPS_REG_A0, mailbox | 0xa0000000)
 u.reg_write(UC_MIPS_REG_SP, (base + 0x1fff0) | 0xa0000000)
 pc = 0xbfc00400
@@ -80,9 +84,9 @@ for batch in range(64):
         if n == 0:
             meta |= 1 << 16
         put(base + 0xc400 + member * 8, payload + member * 128)
-        put(base + 0xc404 + member * 8, meta | (member + 1) << 24)
-        put(base + 0xc408 + member * 8, payload + (member + 1) * 128)
-        put(base + 0xc40c + member * 8, meta | 1 << 15)
+        put(base + 0xc404 + member * 8, meta | 1 << 15)
+        put(payload + member * 128, payload + (member + 1) * 128)
+        put(payload + (member + 1) * 128, 0)
         status, polluted = (n + batch) & 7, (n + batch) & 1
         report = 1 | status << 13 | (256 + member) << 16 | polluted << 31
         reports.append(report)
@@ -95,7 +99,7 @@ for batch in range(64):
             report = 2 | (batch * 16 + n & 255) << 16 | 0x12 << 8
             reports.append(report)
             expected.append(report)
-    put(mailbox + 120, 32)
+    put(mailbox + 120, 16)
     put(ni + 0x6340, 0)
     raw, offset = packet(struct.pack('<%dI' % len(reports), *reports))
     old_returns = len(returns)
@@ -103,7 +107,7 @@ for batch in range(64):
     assert get(mailbox + 280) == (rpq_consumer + 1) & 255
     assert get(mailbox + 284) == tag
     assert get(mailbox + 300) == ni_reports and get(mailbox + 304) == failed
-    assert get(mailbox + 120) == 32 and len(returns) == old_returns
+    assert get(mailbox + 120) == 16 and len(returns) == old_returns
     slot = (batch + 255) & 255
     out = bytes(u.mem_read(forward + slot * 1024, offset + len(expected) * 4))
     assert out[:4] == raw[:4]
@@ -111,6 +115,16 @@ for batch in range(64):
     assert out[offset:] == struct.pack('<%dI' % len(expected), *expected)
     put(mailbox + 296, (slot + 1) & 255)
     put(ni + 0x6340, 0x8000007c)
+    if batch == 0:
+        stop_after = old_returns + 1
+        run()
+        assert returns[old_returns:] == buffers[:1]
+        assert get(mailbox + 120) == 16
+        assert get(base + 0xc400) == payload + 128
+        # The returned first BID may already be reused by NI.
+        put(payload, 0xdeadbeef)
+        stop_after = None
+        put(ni + 0x6340, 0x8000007c)
     run()
     assert get(mailbox + 120) == 0 and returns[old_returns:] == buffers
     rpq_consumer = (rpq_consumer + 1) & 255
@@ -190,6 +204,7 @@ result = dict(linked_MIPS_C_firmware=True, NI_MPDU=1024, BID_returns=2048,
               ARM_reports_forwarded=256, EOSP_reports_forwarded=64,
               C2H_shift_and_MAC_info_preserved=True, RPQ_and_handoff_wrap=True,
               tag_8191_to_1=True, no_BID_return_without_EQ_credit=True,
+              one_WP_per_aggregate=True, partial_EQ_resume_without_duplicate_BID=True,
               no_ARM_per_NI_completion=True, handoff_full_holds_RPQ=True,
               paused_PE_does_not_consume=True, factory_DFS_61_pulses_preserved=True,
               old_DFS_discarded_on_RXQ_and_RPQ=True, new_DFS_preserved=True, hardware_test=False)

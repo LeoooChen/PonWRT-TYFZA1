@@ -25,7 +25,7 @@ class Machine:
   def step(uc,at,size,data):
    if self.pending_w1c is not None:
     self.isr&=~self.pending_w1c;self.put(BAR+0x10b4,self.isr);self.pending_w1c=None
-  self.u.hook_add(UC_HOOK_MEM_WRITE,write);self.u.hook_add(UC_HOOK_CODE,step)
+  self.u.hook_add(UC_HOOK_MEM_WRITE,write,begin=BAR+0x10b4,end=BAR+0x10b7);self.u.hook_add(UC_HOOK_CODE,step)
  def payload_dma(self,id):return RX+((id*73)%514)*16384
  def put(self,a,v):self.u.mem_write(a,struct.pack('<I',v))
  def get(self,a):return struct.unpack('<I',self.u.mem_read(a,4))[0]
@@ -93,6 +93,28 @@ def data_frame(seq,pn):
 n.arrive();n.call();n.arrive(data_frame(0x123,2),True);n.call()
 assert n.get(ST+1024)==1<<31|0x123 and n.get(MB+90*4)==0
 n.arm_ack();n.call();assert n.get(MB+90*4)==1 and n.get(ST+1024)==1<<31|0x124
+# Stateless reports/control frames can remain on ARM while data advances.
+for kind in (1,8,10,0xb4,0xc4,0xd4,0x94):
+ z=Machine();z.u.mem_write(MB+64,ap);z.u.mem_write(B+0xe410,peer)
+ z.put(B+0x11a08,1);z.put(ST+0x10008,1<<31|1<<8);z.put(ST+1024,1<<31|0x123)
+ for j,v in ((88,VP|0xa0000000),(89,NI),(93,1),(106,ST)):z.put(MB+j*4,v)
+ frame=bytes([kind,0])+bytes(30) if kind>=0x80 else bytes(32)
+ at,_=z.arrive(frame)
+ if kind<0x80:z.put(at+4,32|1<<31|kind<<24)
+ z.call();assert z.get(MB+94*4)==1 and z.get(MB+95*4)==0
+ z.arrive(data_frame(0x123,2),True);z.call()
+ assert z.get(MB+90*4)==1 and z.get(ST+1024)==1<<31|0x124
+ assert z.get(MB+94*4)==1 and z.get(MB+95*4)==0
+ z.inventory();z.arm_ack();z.call();z.inventory()
+# BAR and PS-Poll retain the barrier and keep later data off ARM until ack.
+for fc in (0x84,0xa4):
+ z=Machine();z.u.mem_write(MB+64,ap);z.u.mem_write(B+0xe410,peer)
+ z.put(B+0x11a08,1);z.put(ST+0x10008,1<<31|1<<8);z.put(ST+1024,1<<31|0x123)
+ for j,v in ((88,VP|0xa0000000),(89,NI),(93,1),(106,ST)):z.put(MB+j*4,v)
+ z.arrive(bytes([fc,0])+bytes(30));z.call();z.arrive(data_frame(0x123,2),True);z.call()
+ assert z.get(MB+90*4)==0 and z.get(MB+94*4)==1 and z.get(MB+175*4)==1
+ z.arm_ack();z.call();assert z.get(MB+90*4)==1;z.inventory()
+
 first=n.get(NI);payload=bytes(n.u.mem_read(first,60))
 assert payload[:14]==dst+peer+bytes.fromhex('0800')
 for seq,pn in ((0x124,3),(0x125,4)):n.arrive(data_frame(seq,pn),True);n.call()
@@ -117,4 +139,4 @@ for start in (0x3ffffffe,0x7ffffffe):
 print(json.dumps({'scope':'Actual linked production PE; modeled PCIe, ARM acknowledgement, NI consumption and W1C. No RF throughput simulation.',
  'PE_sha256':hashlib.sha256(binary).hexdigest(),'ARM_blocked_capture_and_refill_packets':255,'busy_ring_full_payload_preserved':True,
  'ordered_ARM_delivery':len(seen),'additional_wrap_packets':513,'all_514_buffers_have_one_owner':True,'permuted_noncontiguous_DMA_table_all_buffers':True,
- 'PN_SN_no_overtake':True,'NI_last_two_payloads_retained':True,'NI_end_bit30_and_31bit_wrap':True,'RXQ_RPQ_RDU_counted_with_W1C':True},indent=2))
+ 'PN_SN_no_overtake':True,'stateless_reports_and_RTS_CTS_ACK_BA_do_not_block_data':True,'BAR_PS_Poll_wait_without_forcing_later_data_to_ARM':True,'NI_last_two_payloads_retained':True,'NI_end_bit30_and_31bit_wrap':True,'RXQ_RPQ_RDU_counted_with_W1C':True},indent=2))

@@ -232,21 +232,34 @@ static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mail
 			*(volatile u16 *)((u8 *)bar + 0x1218) = mailbox[81];
 		}
 	}
-	/* Preserve PN/SN ordering without withholding physical RXBD credits. */
-	if (mailbox[94] != mailbox[95]) return;
+	/* Only receive-state handlers serialize subsequent WLAN data. Factory
+	 * paths separate reports; native PHY/DFS/C2H and ordinary control
+	 * handlers do not update receive PN/SN or PS. */
+	if (mailbox[94] == mailbox[95]) mailbox[RTL_AX_RX_ARM_BARRIER] = 0;
+	if (mailbox[RTL_AX_RX_ARM_BARRIER]) return;
 	u32 read = mailbox[RTL_AX_RX_WORK_PROCESS];
 	if (read == mailbox[RTL_AX_RX_WORK_WRITE]) return;
 	u32 item = work[read], id = item & ~RTL_AX_RX_WORK_OLD;
 	u32 buffer_dma = rx_buffer_dma(mailbox, id);
 	u8 *buffer = uncached(buffer_dma);
-	u32 owner = (item & RTL_AX_RX_WORK_OLD) && ((*(u32 *)(buffer + 4) >> 24) & 15) == 8 ?
+	u32 wd = *(u32 *)(buffer + 4), type = (wd >> 24) & 15;
+	u32 stateful = type != 1 && type != 8 && type != 10;
+	if (!type) {
+		u32 offset = 4 + (wd & BIT(31) ? 32 : 16) + ((wd >> 14) & 3) * 2 +
+			((wd >> 28) & 7) * 16 + (wd & BIT(23) ? 4 : 0);
+		u32 fc = buffer[offset] & 0xfc;
+		if (fc == 0xb4 || fc == 0xc4 || fc == 0xd4 || fc == 0x94) stateful = 0;
+	}
+	u32 owner = (item & RTL_AX_RX_WORK_OLD) && type == 8 ?
 		RX_ARM_DONE : rx_uplink(mailbox, buffer, buffer_dma);
 	*(u32 *)(memory + RX_STATUS + read * 4) = owner;
 	if (!owner) {
 		u32 producer = mailbox[94];
+		if (((producer + 1) & 255) == mailbox[95]) return;
 		*(u32 *)(memory + RX_SLOW_RING + producer * 4) = read;
 		sync();
 		mailbox[94] = (producer + 1) & 255;
+		if (stateful) mailbox[RTL_AX_RX_ARM_BARRIER] = 1;
 		if (producer == mailbox[95]) pe_event(mailbox);
 	}
 	sync();

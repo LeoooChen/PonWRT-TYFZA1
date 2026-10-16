@@ -1,0 +1,509 @@
+{
+  "cases": [
+    {
+      "lengths": [
+        64,
+        65
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        65,
+        66
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        66,
+        67
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        67,
+        64
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        64,
+        65,
+        66
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        65,
+        66,
+        67
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        66,
+        67,
+        64
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        67,
+        64,
+        65
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        64,
+        65,
+        66,
+        67
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        65,
+        66,
+        67,
+        64
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        66,
+        67,
+        64,
+        65
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        67,
+        64,
+        65,
+        66
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        64,
+        65,
+        66,
+        67,
+        64
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        65,
+        66,
+        67,
+        64,
+        65
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        66,
+        67,
+        64,
+        65,
+        66
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        67,
+        64,
+        65,
+        66,
+        67
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        64,
+        65,
+        66,
+        67,
+        64,
+        65
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        65,
+        66,
+        67,
+        64,
+        65,
+        66
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        66,
+        67,
+        64,
+        65,
+        66,
+        67
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        67,
+        64,
+        65,
+        66,
+        67,
+        64
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        64,
+        65,
+        66,
+        67,
+        64,
+        65,
+        66
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        65,
+        66,
+        67,
+        64,
+        65,
+        66,
+        67
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        66,
+        67,
+        64,
+        65,
+        66,
+        67,
+        64
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        67,
+        64,
+        65,
+        66,
+        67,
+        64,
+        65
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        64,
+        65,
+        66,
+        67,
+        64,
+        65,
+        66,
+        67
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        65,
+        66,
+        67,
+        64,
+        65,
+        66,
+        67,
+        64
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        66,
+        67,
+        64,
+        65,
+        66,
+        67,
+        64,
+        65
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        67,
+        64,
+        65,
+        66,
+        67,
+        64,
+        65,
+        66
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        1500,
+        1500,
+        1500,
+        1500,
+        1500,
+        1500,
+        1500,
+        1500
+      ],
+      "cap": 7935,
+      "MPDUs": 2,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        1500,
+        1500,
+        1500,
+        1500,
+        1500,
+        1500,
+        1500,
+        1500
+      ],
+      "cap": 3839,
+      "MPDUs": 4,
+      "from_EPP": false,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        1514,
+        1514,
+        1514,
+        1514,
+        1514,
+        1514,
+        1514,
+        1514
+      ],
+      "cap": 7935,
+      "MPDUs": 2,
+      "from_EPP": true,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        64,
+        65,
+        66,
+        67
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": true,
+      "HW_RTS": false,
+      "bandwidth": 2,
+      "rate": 256
+    },
+    {
+      "lengths": [
+        1514,
+        1514,
+        1514,
+        1514
+      ],
+      "cap": 7935,
+      "MPDUs": 1,
+      "from_EPP": true,
+      "HW_RTS": true,
+      "bandwidth": 2,
+      "rate": 256
+    }
+  ],
+  "exact_headers_payload_padding_DMA": true,
+  "one_WP_per_aggregate": true,
+  "ownership_until_RPQ_and_EQ_credit": true
+}

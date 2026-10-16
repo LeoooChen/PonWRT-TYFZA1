@@ -1,0 +1,1 @@
+PE lifetime: all eight TIDs retain BA/MACID/key ownership until RPQ; unrelated TIDs and completed frames do not block

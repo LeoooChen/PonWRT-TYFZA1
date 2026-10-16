@@ -1,0 +1,73 @@
+{
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "actual_function": "validate_recv_ctrl_frame@0xb8acc",
+  "scope": "Execute original ARM64 control validation. Station lookup, time, BAR/PS-Poll handler bodies modeled. No RF timing simulation.",
+  "results": [
+    {
+      "subtype": "BAR",
+      "return": 0,
+      "calls": [
+        "_rtw_memcmp",
+        "rtw_get_stainfo",
+        "_rtw_get_current_time",
+        "rtw_process_bar_frame"
+      ],
+      "state_handlers": [
+        "rtw_process_bar_frame"
+      ]
+    },
+    {
+      "subtype": "PS-Poll",
+      "return": 0,
+      "calls": [
+        "_rtw_memcmp",
+        "rtw_get_stainfo",
+        "_rtw_get_current_time",
+        "rtw_proccess_pspoll"
+      ],
+      "state_handlers": [
+        "rtw_proccess_pspoll"
+      ]
+    },
+    {
+      "subtype": "RTS",
+      "return": 0,
+      "calls": [
+        "_rtw_memcmp",
+        "rtw_get_stainfo",
+        "_rtw_get_current_time"
+      ],
+      "state_handlers": []
+    },
+    {
+      "subtype": "CTS",
+      "return": 0,
+      "calls": [
+        "_rtw_memcmp",
+        "rtw_get_stainfo",
+        "_rtw_get_current_time"
+      ],
+      "state_handlers": []
+    },
+    {
+      "subtype": "ACK",
+      "return": 0,
+      "calls": [
+        "_rtw_memcmp",
+        "rtw_get_stainfo",
+        "_rtw_get_current_time"
+      ],
+      "state_handlers": []
+    },
+    {
+      "subtype": "BA",
+      "return": 0,
+      "calls": [
+        "_rtw_memcmp",
+        "rtw_get_stainfo",
+        "_rtw_get_current_time"
+      ],
+      "state_handlers": []
+    }
+  ]
+}

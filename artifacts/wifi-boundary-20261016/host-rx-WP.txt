@@ -1,0 +1,1 @@
+Linked PE NI-to-radio firmware: 512 exact frames, EPP/PCIe wraps, and RPQ/credit-gated buffer ownership passed
