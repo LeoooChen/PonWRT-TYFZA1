@@ -30,7 +30,8 @@ define Device/tianyi_tyfza1
   DEVICE_DTS := rtl9617c-tyfza1 rtl9617c-tyfza1-nand-readonly rtl9617c-tyfza1-stock-ubi-readonly rtl9617c-tyfza1-mdio rtl9617c-tyfza1-xram-lan rtl9617c-tyfza1-dma-tx rtl9617c-tyfza1-ni rtl9617c-tyfza1-pon-status rtl9617c-tyfza1-pcie rtl9617c-tyfza1-ubi
   DEVICE_DTS_DIR := ../dts
   DEVICE_PACKAGES := kmod-rtl-ax-ap tyfza1-pon-control luci-app-tyfza1-pon \
-	ubi-utils nand-utils uboot-envtools iw wpad-mbedtls wifi-scripts wireless-regdb
+	ubi-utils nand-utils uboot-envtools iw wpad-mbedtls wifi-scripts wireless-regdb \
+	kmod-gpio-button-hotplug kmod-usb-ledtrig-usbport
   KERNEL := kernel-bin | tyfza1-ubi-fit
   KERNEL_INITRAMFS := kernel-bin
   KERNEL_SUFFIX := -kernel.itb

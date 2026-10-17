@@ -10,6 +10,7 @@ struct omci_identity {
 	uint8_t psk[16], has_psk;
 };
 struct omci_agent;
+uint8_t tyfza1_omci_led_auth(const struct omci_agent *agent);
 struct omci_agent *tyfza1_omci_new(const struct omci_identity *identity);
 void tyfza1_omci_free(struct omci_agent *agent);
 int tyfza1_omci_dispatch(struct omci_agent *agent, const uint8_t *data, size_t length, uint8_t *output, int backend_result);

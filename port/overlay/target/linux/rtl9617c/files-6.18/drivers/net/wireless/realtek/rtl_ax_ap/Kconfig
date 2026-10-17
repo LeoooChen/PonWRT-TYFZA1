@@ -3,6 +3,8 @@ config RTL_AX_AP
 	tristate "TYFZA1 RTL8852C/RTL8192XB native AP backend"
 	depends on PCI && ARCH_RTL9617C && MAC80211 && RTL9617C_XRAM_ETH
 	select FW_LOADER
+	select LEDS_TYFZA1
+	select MAC80211_LEDS
 	help
 	  Native PCI endpoint identity, AP power, calibration and channel12 WCPU
 	  firmware download for both TYFZA1 radios. Native mac80211 monitor RX

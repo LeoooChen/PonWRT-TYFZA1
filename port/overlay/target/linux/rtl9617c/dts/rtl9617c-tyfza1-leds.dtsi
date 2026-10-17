@@ -1,0 +1,39 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Stock boot selects conf-1/fdt@1: f85b7a420a14fa31ece8a1e6f7e426f2a464587cf8ad19ce88932a4b7903d050.
+#include <dt-bindings/input/input.h>
+/ {
+	aliases {
+		led-boot = &led_power;
+		led-failsafe = &led_power;
+		led-running = &led_power;
+		led-upgrade = &led_power;
+		led-wps = &led_wps;
+	};
+
+	leds {
+		compatible = "tianyi,tyfza1-leds";
+		internet { label = "LED_PPP_G"; gpios = <&gpio0 2 GPIO_ACTIVE_LOW>; };
+		los { label = "LED_LOS"; gpios = <&gpio0 10 GPIO_ACTIVE_LOW>; };
+		usb0 { label = "LED_USB0"; gpios = <&gpio0 7 GPIO_ACTIVE_HIGH>; };
+		pon { label = "LED_PON"; gpios = <&gpio0 9 GPIO_ACTIVE_LOW>; };
+		led_power: power { label = "LED_PWR_G"; gpios = <&gpio0 11 GPIO_ACTIVE_HIGH>; default-state = "on"; };
+		phone { label = "LED_FXS"; gpios = <&gpio0 12 GPIO_ACTIVE_HIGH>; };
+		lan0 { label = "LED_EPHY0"; gpios = <&gpio0 4 GPIO_ACTIVE_LOW>; };
+		lan1 { label = "LED_EPHY1"; gpios = <&gpio0 3 GPIO_ACTIVE_LOW>; };
+		lan2 { label = "LED_EPHY2"; gpios = <&gpio0 1 GPIO_ACTIVE_LOW>; };
+		lan3 { label = "LED_EPHY3"; gpios = <&gpio0 0 GPIO_ACTIVE_LOW>; };
+		usb1 { label = "LED_USB1"; gpios = <&gpio0 6 GPIO_ACTIVE_LOW>; };
+		led_wps: wps { label = "LED_WPS_G"; gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>; };
+	};
+
+	led-button {
+		compatible = "gpio-keys-polled";
+		poll-interval = <20>;
+		lights-toggle {
+			label = "lights_toggle";
+			linux,code = <KEY_LIGHTS_TOGGLE>;
+			gpios = <&gpio0 67 GPIO_ACTIVE_LOW>;
+			debounce-interval = <60>;
+		};
+	};
+};

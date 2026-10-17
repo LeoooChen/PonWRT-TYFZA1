@@ -31,6 +31,7 @@ pub struct Identity {
 
 pub struct Agent {
     mib: Mib,
+    led_auth: u8,
     cache: VecDeque<(Vec<u8>, Response)>,
     notifications: VecDeque<Vec<u8>>,
 }
@@ -52,6 +53,7 @@ pub unsafe extern "C" fn tyfza1_omci_new(identity: &Identity) -> *mut Agent {
     };
     Box::into_raw(Box::new(Agent {
         mib: Mib::from_identity(&identity),
+        led_auth: 0,
         cache: VecDeque::new(),
         notifications: VecDeque::new(),
     }))
@@ -64,9 +66,22 @@ pub unsafe extern "C" fn tyfza1_omci_free(agent: *mut Agent) {
 
 #[no_mangle]
 pub extern "C" fn tyfza1_omci_epoch(agent: &mut Agent) {
+    agent.led_auth = 0;
     agent.cache.clear();
     agent.notifications.clear();
     agent.mib.reset_security_session();
+}
+
+#[no_mangle]
+pub extern "C" fn tyfza1_omci_led_auth(agent: &Agent) -> u8 {
+    agent.led_auth
+}
+
+fn update_led_auth(agent: &mut Agent, request: &Request<'_>) {
+    if request.action == protocol::ACTION_SET && request.class_id == schema::CLASS_CTC_LOID_AUTH
+        && request.entity_id == 0 && request.attribute_mask & 0x1000 != 0 {
+        agent.led_auth = agent.mib.loid_auth_status();
+    }
 }
 
 #[no_mangle]
@@ -113,6 +128,7 @@ pub unsafe extern "C" fn tyfza1_omci_dispatch(
                     return bytes.len() as i32;
                 }
                 agent.mib = candidate;
+                update_led_auth(agent, &request);
             }
             response
         } else {
@@ -162,6 +178,7 @@ pub unsafe extern "C" fn tyfza1_omci_dispatch_apply(
         }
         // Commit the MIB, reply cache and notifications only after hardware accepts it.
         agent.mib = candidate;
+        update_led_auth(agent, &request);
     }
     // Dispatch against the committed MIB would execute the mutation twice.
     if request.action == protocol::ACTION_MIB_RESET {

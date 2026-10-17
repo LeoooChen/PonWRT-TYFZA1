@@ -1,0 +1,15 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+[ "$INTERFACE" = wan ] || exit 0
+led=/sys/class/leds/LED_PPP_G
+case "$ACTION" in
+	ifup)
+		echo netdev > "$led/trigger"
+		printf '%s\n' "$DEVICE" > "$led/device_name"
+		echo 1 > "$led/link"
+		;;
+	ifdown)
+		echo none > "$led/trigger"
+		echo 0 > "$led/brightness"
+		;;
+esac

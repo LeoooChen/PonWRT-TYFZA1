@@ -1,0 +1,43 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+. /lib/functions.sh
+
+match_led() {
+	local sysfs
+	config_get sysfs "$1" sysfs
+	[ "$sysfs" != "$2" ] || found=1
+}
+
+has_led() {
+	found=0
+	config_foreach match_led led "$1"
+	[ "$found" = 1 ]
+}
+
+config_load system
+# config_generate skips LED defaults when sysupgrade preserves system config.
+for port in 0 1 2 3; do
+	has_led "LED_EPHY$port" && continue
+	section="led_lan$port"
+	uci -q get "system.$section" >/dev/null && continue
+	uci set "system.$section=led"
+	uci set "system.$section.name=LAN$((port + 1))"
+	uci set "system.$section.sysfs=LED_EPHY$port"
+	uci set "system.$section.trigger=netdev"
+	uci set "system.$section.dev=eth$port"
+	uci set "system.$section.mode=link tx rx"
+done
+if ! has_led LED_USB0 && ! uci -q get system.led_usb >/dev/null; then
+	uci set system.led_usb=led
+	uci set system.led_usb.name=USB
+	uci set system.led_usb.sysfs=LED_USB0
+	uci set system.led_usb.trigger=usbport
+	uci add_list system.led_usb.port=usb1-port1
+	uci add_list system.led_usb.port=usb2-port1
+fi
+if ! uci -q get system.led_control >/dev/null; then
+	uci set system.led_control=led_control
+	uci set system.led_control.mode=2
+fi
+uci commit system
+exit 0

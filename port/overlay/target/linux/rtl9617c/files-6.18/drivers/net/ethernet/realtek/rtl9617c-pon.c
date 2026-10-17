@@ -137,6 +137,31 @@ static ssize_t state_show(struct device *dev, struct device_attribute *attr, cha
 }
 static DEVICE_ATTR_RO(state);
 
+static ssize_t led_state_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	unsigned int enabled, state = 0;
+	ssize_t size;
+
+	mutex_lock(&pon->lock);
+	if (rtl_pon_mode_is_epon(pon->mode)) {
+		enabled = pon->mpcp_enabled;
+	} else if (pon->mode == RTL_PON_GPON) {
+		enabled = pon->gpon_enabled;
+		state = (readl(pon->mac + 0x60bc) >> 16) & 7;
+	} else {
+		enabled = pon->xgpon_enabled;
+		state = readl(pon->mac + 0x4d30) & 7;
+	}
+	/* One snapshot prevents a mode switch from mixing EPON and ITU registers. */
+	size = sysfs_emit(buf, "mode=%s enabled=%u los=%u state=%u registered=%u session=%llu\n",
+		rtl_pon_mode_name(pon->mode), enabled, !!(readl(pon->optical_status) & BIT(3)),
+		state, !!(pon->registered & 1), pon->itu_line_epoch);
+	mutex_unlock(&pon->lock);
+	return size;
+}
+static DEVICE_ATTR_RO(led_state);
+
 static ssize_t bosa_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
@@ -720,6 +745,7 @@ static struct attribute *rtl9617c_pon_attrs[] = {
 	&dev_attr_active_serial_number.attr,
 	&dev_attr_omci_msk.attr,
 	&dev_attr_state.attr,
+	&dev_attr_led_state.attr,
 	&dev_attr_bosa.attr,
 	&dev_attr_serdes.attr,
 	&dev_attr_serdes_registers.attr,

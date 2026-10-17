@@ -11,9 +11,11 @@
 #include <linux/mutex.h>
 #include <linux/pci.h>
 #include <linux/spinlock.h>
+#include <linux/tyfza1-led.h>
 #include <net/mac80211.h>
 #include "fw.h"
 #include "power.h"
+#include "led.h"
 #include "download.h"
 #include "transport.h"
 #include "role.h"
@@ -89,6 +91,8 @@ MODULE_PARM_DESC(hw_rts_length, "Original hardware RTS length threshold in bytes
 MODULE_PARM_DESC(dfs_region, "Original DFS region0=regulatory domain,1=FCC,2=MKK,3=ETSI,4=KCC");
 
 struct rtl_ax_ap {
+	struct tyfza1_led led;
+	bool led_registered;
 	struct pci_dev *pdev;
 	void __iomem *bar;
 	struct rtl_ax_io io;
@@ -2588,10 +2592,21 @@ static const struct attribute_group rtl_ax_group = {
 };
 static const struct attribute_group *rtl_ax_groups[] = { &rtl_ax_group, NULL };
 
+static void rtl_ax_led_set(struct tyfza1_led *led, bool on)
+{
+	struct rtl_ax_ap *radio = container_of(led, struct rtl_ax_ap, led);
+
+	rtl_ax_led_output(&radio->io, on);
+}
+
 static void rtl_ax_stop(struct rtl_ax_ap *radio)
 {
 	int ret;
 
+	if (radio->led_registered) {
+		tyfza1_led_unregister(&radio->led);
+		radio->led_registered = false;
+	}
 	if (!radio->powered)
 		return;
 	pci_clear_master(radio->pdev);
@@ -2745,6 +2760,18 @@ static int rtl_ax_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	ret = rtl_ax_monitor_register(radio);
 	if (ret)
 		goto stop;
+	rtl_ax_led_init(&radio->io);
+	radio->led.output = rtl_ax_led_set;
+	radio->led.cdev.name = radio->chip == RTL_AX_8852C ? "LED_WLAN_5G" : "LED_WLAN_2G";
+	radio->led.cdev.default_trigger = ieee80211_get_radio_led_name(radio->hw);
+	ret = tyfza1_led_register(&pdev->dev, &radio->led, NULL);
+	if (ret) {
+		rtl_ax_monitor_unregister(radio);
+		rtl_ax_stop(radio);
+		rtl_ax_monitor_free(radio);
+		return dev_err_probe(&pdev->dev, ret, "radio LED registration failed\n");
+	}
+	radio->led_registered = true;
 	dev_info(&pdev->dev,
 		 "native AP backend chip=0x%02x cv=%u factory=%c adie=0x%04x; %s WCPU ready; packets=%u bytes=%u\n",
 		 radio->chip, radio->identity.cv, radio->identity.factory,

@@ -1,0 +1,35 @@
+#!/bin/sh /etc/rc.common
+# SPDX-License-Identifier: GPL-2.0-only
+START=96
+USE_PROCD=1
+
+start_service() {
+	local mode
+	config_load system
+	config_get mode led_control mode 2
+	printf '%s\n' "$mode" > /sys/devices/platform/leds/mode || return $?
+	procd_open_instance
+	procd_set_param command /usr/bin/ucode /usr/share/tyfza1/leds.uc
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_close_instance
+}
+
+service_triggers() {
+	procd_add_reload_trigger system
+}
+
+reload_service() {
+	local mode
+	config_load system
+	config_get mode led_control mode 2
+	printf '%s\n' "$mode" > /sys/devices/platform/leds/mode
+}
+
+stop_service() {
+	local name
+	for name in LED_PON LED_LOS; do
+		printf 'none\n' > "/sys/class/leds/$name/trigger"
+		printf '0\n' > "/sys/class/leds/$name/brightness"
+	done
+}

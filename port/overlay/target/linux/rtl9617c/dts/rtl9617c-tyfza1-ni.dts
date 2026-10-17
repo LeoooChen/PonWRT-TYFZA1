@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include "rtl9617c-tyfza1-dma-tx.dts"
 #include <dt-bindings/gpio/gpio.h>
+#include "rtl9617c-tyfza1-leds.dtsi"
 
 / { model = "Tianyi TYFZA1 (native NI/DMA bring-up)"; };
 

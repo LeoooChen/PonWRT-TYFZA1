@@ -1,0 +1,10 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+. /lib/functions/uci-defaults.sh
+
+board_config_update
+for port in 0 1 2 3; do
+	ucidef_set_led_netdev "lan$port" "LAN$((port + 1))" "LED_EPHY$port" "eth$port"
+done
+ucidef_set_led_usbport "usb" "USB" "LED_USB0" "usb1-port1" "usb2-port1"
+board_config_flush

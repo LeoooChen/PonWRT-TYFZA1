@@ -1157,6 +1157,10 @@ impl Mib {
         }
     }
 
+    pub fn loid_auth_status(&self) -> u8 {
+        self.entities[&(CLASS_CTC_LOID_AUTH, 0)].attributes[&4].value[0]
+    }
+
     pub fn provisioning_snapshot(&self) -> ProvisioningSnapshot {
         let mut snapshot = ProvisioningSnapshot::default();
         if self.entities.get(&(CLASS_VEIP, VEIP_ENTITY))

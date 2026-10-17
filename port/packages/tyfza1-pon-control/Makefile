@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=tyfza1-pon-control
-PKG_VERSION:=0.4.2_alpha
+PKG_VERSION:=0.5.0_alpha
 PKG_RELEASE:=
 PKG_LICENSE:=GPL-2.0-or-later
 
@@ -43,6 +43,7 @@ define Package/tyfza1-pon-control/install
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/pon-omcid $(1)/usr/sbin/pon-omcid
 	$(INSTALL_DIR) $(1)/usr/share/tyfza1
 	$(INSTALL_BIN) ./files/factory.uc $(1)/usr/share/tyfza1/factory.uc
+	$(INSTALL_BIN) ./files/leds.uc $(1)/usr/share/tyfza1/leds.uc
 	$(INSTALL_DATA) ./omci/UPSTREAM $(1)/usr/share/tyfza1/omci-UPSTREAM
 endef
 

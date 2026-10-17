@@ -62,7 +62,7 @@ static int load_identity(struct omci_identity *identity)
 	fclose(serial);
 	identity_field(&config, "equipment_id", "TYFZA1", identity->equipment, sizeof(identity->equipment));
 	identity_field(&config, "hardware_version", "RTL9617C", identity->hardware, sizeof(identity->hardware));
-	identity_field(&config, "software_version", "0.4.2-alpha", identity->software, sizeof(identity->software));
+	identity_field(&config, "software_version", "0.5.0-alpha", identity->software, sizeof(identity->software));
 	identity_field(&config, "loid", "", identity->loid, sizeof(identity->loid));
 	identity_field(&config, "loid_password", "", identity->password, sizeof(identity->password));
 	identity_field(&config, "operator_id", "CTC", identity->operator_id, sizeof(identity->operator_id));
@@ -120,7 +120,7 @@ static int read_starttime(char output[32])
 
 static int publish_status(const char *path, const char *starttime,
 	unsigned long long received, unsigned long long transmitted, unsigned long long invalid,
-	const struct omci_business *business)
+	const struct omci_business *business, unsigned long long session, unsigned int auth)
 {
 	struct timespec now;
 	char temporary[512];
@@ -131,11 +131,11 @@ static int publish_status(const char *path, const char *starttime,
 	snprintf(temporary, sizeof(temporary), "%s.%ld", path, (long)getpid());
 	stream = fopen(temporary, "w");
 	if (!stream) return -errno;
-	if (fprintf(stream, "pid=%ld process_start=%s updated_ms=%llu rx=%llu tx=%llu invalid=%llu paths=%u error=%d\n",
+	if (fprintf(stream, "pid=%ld process_start=%s updated_ms=%llu rx=%llu tx=%llu invalid=%llu paths=%u error=%d session=%llu auth=%u\n",
 	    (long)getpid(), starttime, (unsigned long long)now.tv_sec * 1000 + now.tv_nsec / 1000000,
 	    received, transmitted, invalid,
 	    business->length >= 12 ? business->applied[2] | (unsigned int)business->applied[3] << 8 : 0,
-	    business->error) < 0) error = errno;
+	    business->error, session, auth) < 0) error = errno;
 	if (fclose(stream) && !error) error = errno;
 	if (!error && rename(temporary, path)) error = errno;
 	if (error) unlink(temporary);
@@ -206,7 +206,8 @@ int main(void)
 			if (!result) business.length = 0;
 			business.error = result ? result : length;
 		} else if (length >= 12) apply_paths(&business, paths, length);
-		result = publish_status("/var/run/pon-omci", starttime, received, transmitted, invalid, &business);
+		result = publish_status("/var/run/pon-omci", starttime, received, transmitted, invalid,
+			&business, session, tyfza1_omci_led_auth(agent));
 		if (result) syslog(LOG_ERR, "OMCI status publish failed: %s", strerror(-result));
 		result = poll(&pollfd, 1, 1000);
 		if (result < 0) { if (errno == EINTR) continue; break; }
