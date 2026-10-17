@@ -101,7 +101,7 @@ static const unsigned int fe_registers[] = {
  0x3278,0x327c,0x3280,
  0x3500,0x3504,0x351c,
  0x3940,0x3944,0x3948,0x3c80,
- 0x3508,0x30cc,
+ 0x3508,0x30cc,0x30a4,
 };
 struct rtl_fe {
  struct device *device;
@@ -275,6 +275,7 @@ static int fe_prepare(struct rtl_fe *fe)
  if(ret)return ret;
  fe_write(fe,0x3500,0x11); /* Session version/type1, code0. */
  fe_write(fe,0x3504,PPP_IP|PPP_IPV6<<16);
+ fe_write(fe,0x30a4,fe_read(fe,0x30a4)|BIT(31)); /* PON stream from HeaderA into HeaderI. */
  fe_write(fe,0x351c,(fe_read(fe,0x351c)&~(0x3fU<<4|0x3fU<<16|7U<<24))|BIT(31)|BIT(12)|32U<<4|16U<<16);
  /* TX MIB differences use unsigned wrap, including the32-bit packet count. */
  fe_write(fe,0x3508,fe_read(fe,0x3508)|0x1f00);

@@ -84,6 +84,7 @@ static void fe_write(void *ctx,unsigned int reg,unsigned int value){
   assert(f->reg[0x351c/4]&BIT(12)); /* PE pads shortened Ethernet frames. */
   assert((f->reg[0x3508/4]&0x1f00)==0x1f00); /* TX MIB deltas require wrap mode. */
   assert((f->reg[0x30cc/4]&0xfff)==0xf21); /* TTL exceptions retain the original packet. */
+  assert(f->reg[0x30a4/4]==0x8001b000U); /* Preserve the active PON stream before admission. */
   assert((f->reg[0xa1e0/4]&1023)==1023 && (f->reg[0x3400/4]&BIT(19)));
   assert(!(f->cls[1028][6]&BIT(16)));f->admission_writes++;
  }
@@ -133,6 +134,7 @@ int main(void){
  struct rtl_fe f={.dma=0x03800000,.wifi_ippb=0xa5000004};unsigned int lan[5],old_regs[64],old_mask[8],old_cls[1040][7],old_map[256],old_demux,old_wifi_mask[8];
  unsigned int old_bridge_mask[6][8];
  for(unsigned int i=0;i<0x10000/4;i++)f.reg[i]=0x80000000U+i;
+ f.reg[0x30a4/4]=0x0001b000U;
  for(unsigned int i=0;i<5;i++)f.reg[(0xa5f8+i*0x90)/4]=lan[i]=0x18100400U|(i<<24);
  for(unsigned int i=0;i<8;i++){f.mask[i]=old_mask[i]=0x55000000+i;f.wifi_mask[i]=old_wifi_mask[i]=0xaa550000+i;}
  for(unsigned int s=0;s<6;s++)for(unsigned int i=0;i<8;i++)
@@ -164,6 +166,7 @@ int main(void){
   assert(fe_read(&f,0xa1e0)==(old_demux|0x3ff));
   unsigned int writes=f.admission_writes;assert(!rtl_fe_enable(&f) && f.admission_writes==writes);
   assert(!rtl_fe_disable(&f) && !f.enabled && !f.prepared);
+  assert(fe_read(&f,0x30a4)==0x0001b000U);
   assert(f.wifi_ippb==0xa5000004);
   for(unsigned int i=0;i<5;i++)assert(fe_read(&f,0xa5f8+i*0x90)==lan[i]);
   for(unsigned int i=0;i<ARRAY_SIZE(fe_registers);i++)assert(fe_read(&f,fe_registers[i])==old_regs[i]);
@@ -220,6 +223,7 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='fe-lan-lifecycl
     'LAN_ports': [0, 1, 2, 3, 4], 'exact_enable_disable_cycles': 3,
     'failed_prepare_admits_no_LAN': True,
     'GEM_gate_opens_after_CLS_defaults_LPB_cache_and_closes_before_restore': True,
+    'PON_stream_identity_enabled_before_admission_and_restored': True,
     'both_CLS_defaults_supply_CPU16': True, 'physical_LSPID_preserved': True,
     'failed_rollback_preserves_original_snapshot_on_reenable': True,
     'post_PE_LAN_output': 'NI demux3 to L2TM; upper selectors preserved',
