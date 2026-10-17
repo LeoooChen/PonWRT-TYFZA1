@@ -34,6 +34,10 @@ jobs:
           fetch-depth: 0
       - name: Check release source
         run: |
+          case "$RELEASE_TAG" in
+            v*) ;;
+            *) echo "::error::Release tag must start with v (for example, v0.6.0-alpha)."; exit 1 ;;
+          esac
           git check-ref-format "refs/tags/$RELEASE_TAG"
           if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
             tag_commit=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
@@ -120,4 +124,5 @@ jobs:
             artifacts/release/COPYING artifacts/release/PonWRT-TYFZA1-source.tar.gz \
             --repo "$GITHUB_REPOSITORY" --clobber
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease \
+            --title "$RELEASE_TAG" \
             --notes-file "$RUNNER_TEMP/release-notes.md"

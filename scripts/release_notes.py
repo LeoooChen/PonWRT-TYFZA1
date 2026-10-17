@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def extract_notes(text, tag):
-    version = tag.removeprefix('v')
+    version = 'v' + tag.removeprefix('v')
     lines = text.splitlines(keepends=True)
     headings = [i for i, line in enumerate(lines) if line.startswith('## ')]
     matches = [i for i in headings if lines[i][3:].strip() == version]

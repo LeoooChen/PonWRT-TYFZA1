@@ -11,16 +11,16 @@ from release_notes import extract_notes
 PROJECT = Path(__file__).resolve().parents[1]
 NOTES = """# Changelog
 
-## 0.6.0-alpha
+## v0.6.0-alpha
 
 ### Tested
 - Current result.
 
-## 0.5.0-alpha
+## v0.5.0-alpha
 
 - Previous change.
 
-## 0.4.0-alpha
+## v0.4.0-alpha
 
 - Oldest change."""
 
@@ -34,7 +34,7 @@ class ReleaseNotesTest(unittest.TestCase):
         ):
             for tag in (version, 'v' + version):
                 with self.subTest(tag=tag):
-                    self.assertEqual(extract_notes(NOTES, tag), f'## {version}\n\n{content}\n')
+                    self.assertEqual(extract_notes(NOTES, tag), f'## v{version}\n\n{content}\n')
 
     def test_missing_or_partial_version(self):
         for tag in ('v0.7.0-alpha', 'v0.6.0', ''):
@@ -42,19 +42,24 @@ class ReleaseNotesTest(unittest.TestCase):
                 extract_notes(NOTES, tag)
 
     def test_empty_section(self):
-        for notes in ('## 0.6.0-alpha\n\n', '## 0.6.0-alpha\n\n## 0.5.0-alpha\n- Older.'):
+        for notes in ('## v0.6.0-alpha\n\n', '## v0.6.0-alpha\n\n## v0.5.0-alpha\n- Older.'):
             with self.subTest(notes=notes), self.assertRaises(ValueError):
                 extract_notes(notes, 'v0.6.0-alpha')
 
     def test_duplicate_version(self):
         with self.assertRaises(ValueError):
-            extract_notes(NOTES + '\n\n## 0.6.0-alpha\n- Duplicate.', 'v0.6.0-alpha')
+            extract_notes(NOTES + '\n\n## v0.6.0-alpha\n- Duplicate.', 'v0.6.0-alpha')
+
+    def test_unprefixed_heading_is_rejected(self):
+        with self.assertRaises(ValueError):
+            extract_notes('## 0.6.0-alpha\n\n- Missing prefix.', 'v0.6.0-alpha')
 
     def test_repository_versions(self):
         notes = (PROJECT / 'RELEASE_NOTES.md').read_text(encoding='utf-8')
         for heading in (line for line in notes.splitlines() if line.startswith('## ')):
             with self.subTest(heading=heading):
-                body = extract_notes(notes, 'v' + heading[3:])
+                self.assertTrue(heading.startswith('## v'))
+                body = extract_notes(notes, heading[3:])
                 self.assertEqual([line for line in body.splitlines() if line.startswith('## ')], [heading])
 
     def test_cli(self):
