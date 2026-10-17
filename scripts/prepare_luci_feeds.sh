@@ -36,3 +36,6 @@ printf '%s\n' "$PACKAGES" | xargs ./scripts/feeds install cgi-io luasrcdiet luci
 # Existing build trees retain .config; select the new default there as well.
 sed -i '/^CONFIG_PACKAGE_luci-theme-argon=/d; /^# CONFIG_PACKAGE_luci-theme-argon is not set$/d; /^CONFIG_PACKAGE_luci-i18n-argon-config-zh-cn=/d; /^# CONFIG_PACKAGE_luci-i18n-argon-config-zh-cn is not set$/d' .config
 printf '%s\n' 'CONFIG_PACKAGE_luci-theme-argon=y' 'CONFIG_PACKAGE_luci-i18n-argon-config-zh-cn=y' >> .config
+# Each LuCI app owns its translation catalog; base and theme catalogs do not cover it.
+sed -i '/^CONFIG_LUCI_LANG_zh_Hans=/d; /^# CONFIG_LUCI_LANG_zh_Hans is not set$/d' .config
+printf '%s\n' 'CONFIG_LUCI_LANG_zh_Hans=y' >> .config

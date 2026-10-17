@@ -14,6 +14,7 @@ assert defaults.stat().st_mode & 0o111
 assert json.loads((root / "port/sources.lock.json").read_text())["luci_theme_argon"]["commit"] == "539e3e1db56b2348c3655615540e45638b797c73"
 assert "src-git argon " not in (root / "configs/feeds.conf").read_text()
 assert "+luci-i18n-argon-config-zh-cn" in (package / "Makefile").read_text()
+assert "CONFIG_LUCI_LANG_zh_Hans=y" in (root / "port/configs/tyfza1-boot.config").read_text()
 
 with tempfile.TemporaryDirectory() as directory:
     work = Path(directory)
@@ -75,12 +76,14 @@ else: sys.exit(2)
     feed_tool = tree / "scripts/feeds"
     feed_tool.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> feed-calls\n')
     feed_tool.chmod(0o755)
-    (tree / ".config").write_text("CONFIG_PACKAGE_luci=y\nCONFIG_PACKAGE_keep_me=y\n# CONFIG_PACKAGE_luci-theme-argon is not set\n")
+    (tree / ".config").write_text("CONFIG_PACKAGE_luci=y\nCONFIG_PACKAGE_keep_me=y\n# CONFIG_PACKAGE_luci-theme-argon is not set\n# CONFIG_LUCI_LANG_zh_Hans is not set\n")
     for _ in range(2):
         subprocess.run(["sh", str(project / "scripts/prepare_luci_feeds.sh"), str(tree)], check=True)
     config = (tree / ".config").read_text()
     assert config.count("CONFIG_PACKAGE_luci-theme-argon=y") == 1
     assert config.count("CONFIG_PACKAGE_luci-i18n-argon-config-zh-cn=y") == 1
+    assert config.count("CONFIG_LUCI_LANG_zh_Hans=y") == 1
+    assert "# CONFIG_LUCI_LANG_zh_Hans is not set" not in config
     assert "CONFIG_PACKAGE_keep_me=y" in config
     assert "update packages luci\n" in (tree / "feed-calls").read_text()
     assert (tree / "package/luci-theme-argon").is_symlink()
