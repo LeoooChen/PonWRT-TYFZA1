@@ -4,6 +4,7 @@
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
+#include <linux/jiffies.h>
 #include <linux/unaligned.h>
 #include "rtl9617c-pon.h"
 #include "rtl9617c-epon-crypto.h"
@@ -32,6 +33,78 @@
 #define PUC_BTC 0x8050
 #define PUC_REPORT 0x8054
 #define EPON_FRAME_LIMIT 1700
+
+static int rtl_epon_tx_apply(struct rtl9617c_pon *pon)
+{
+	bool disabled = pon->epon_tx_action || !pon->traffic_enabled;
+	int state;
+
+	gpiod_set_value_cansleep(pon->tx_disable, disabled);
+	state = gpiod_get_value_cansleep(pon->tx_disable);
+	pon->epon_tx_error = state < 0 ? state : state == disabled ? 0 : -EIO;
+	return pon->epon_tx_error;
+}
+
+static void rtl_epon_tx_work(struct work_struct *work)
+{
+	struct rtl9617c_pon *pon = container_of(to_delayed_work(work), struct rtl9617c_pon, epon_tx_work);
+
+	mutex_lock(&pon->lock);
+	if (pon->epon_tx_action && pon->epon_tx_action != 0xffff) {
+		unsigned long now = jiffies;
+
+		if (time_before(now, pon->epon_tx_until)) {
+			mod_delayed_work(system_wq, &pon->epon_tx_work, pon->epon_tx_until - now);
+		} else {
+			pon->epon_tx_action = 0;
+			if (rtl_epon_tx_apply(pon))
+				dev_err(pon->dev, "EPON timed TX restore failed: %d\n", pon->epon_tx_error);
+		}
+	}
+	mutex_unlock(&pon->lock);
+}
+
+void rtl_pon_epon_tx_init(struct rtl9617c_pon *pon)
+{
+	INIT_DELAYED_WORK(&pon->epon_tx_work, rtl_epon_tx_work);
+}
+
+int rtl_pon_epon_tx_control(struct rtl9617c_pon *pon, const u8 *data, size_t count)
+{
+	unsigned int channel, action;
+	int ret;
+
+	if (count != 11)
+		return -EINVAL;
+	channel = data[0];
+	action = get_unaligned_be16(data + 9);
+	mutex_lock(&pon->control_lock);
+	mutex_lock(&pon->lock);
+	if (!rtl_pon_mode_is_epon(pon->mode))
+		ret = -EOPNOTSUPP;
+	else if (channel >= pon->llid_count)
+		ret = -EINVAL;
+	else if (!pon->mpcp_enabled || !(pon->registered & BIT(channel)))
+		ret = -EAGAIN;
+	else if (get_unaligned_be64(data + 1) != pon->epon_llid_epoch[channel])
+		ret = -ESTALE;
+	else {
+		/* Stock actions: 0 resumes, 0xffff inhibits indefinitely, otherwise
+		 * inhibit for N seconds. The shared timer always follows the latest
+		 * command, including when an older worker is already waiting. */
+		pon->epon_tx_action = action;
+		ret = rtl_epon_tx_apply(pon);
+		if (action && action != 0xffff) {
+			pon->epon_tx_until = jiffies + msecs_to_jiffies(action * 1000);
+			mod_delayed_work(system_wq, &pon->epon_tx_work, msecs_to_jiffies(action * 1000));
+		} else {
+			cancel_delayed_work(&pon->epon_tx_work);
+		}
+	}
+	mutex_unlock(&pon->lock);
+	mutex_unlock(&pon->control_lock);
+	return ret;
+}
 
 static unsigned int rtl_crypto_read(void *context, unsigned int reg)
 {
@@ -282,7 +355,10 @@ int rtl_pon_epon_traffic_locked(struct rtl9617c_pon *pon, bool enable)
 
 	lockdep_assert_held(&pon->control_lock);
 	if (!enable) {
+		mutex_lock(&pon->lock);
+		pon->traffic_enabled = false;
 		gpiod_set_value_cansleep(pon->tx_disable, 1);
+		mutex_unlock(&pon->lock);
 		if (pon->fe_enabled)
 			ret = rtl_pon_fe_configure_locked(pon, false);
 	}
@@ -301,7 +377,8 @@ int rtl_pon_epon_traffic_locked(struct rtl9617c_pon *pon, bool enable)
 	rtl_pon_update(pon->mac + TX_1G, BIT(0),
 		enable && pon->mode != RTL_PON_EPON_BI10G ? BIT(0) : 0);
 	pon->traffic_enabled = enable;
-	gpiod_set_value_cansleep(pon->tx_disable, !enable);
+	if (rtl_epon_tx_apply(pon) && !ret)
+		ret = pon->epon_tx_error;
 	rtl_pon_oam_carrier(pon);
 unlock:
 	mutex_unlock(&pon->lock);
@@ -311,12 +388,13 @@ unlock:
 ssize_t rtl_pon_epon_state(struct rtl9617c_pon *pon, char *buf)
 {
 	return sysfs_emit(buf,
-		"prepared=%u error=%d epon_control=%08x rx_xg=%08x tx_xg=%08x rx_1g=%08x tx_1g=%08x pcs_rx=%08x pcs_tx=%08x xg_fec=%08x fec_1g=%08x drop=%08x mib_ctrl=%08x mib_status=%08x rtt_rx=%08x rtt_tx=%08x crypto_llids=%08x crypto_error=%d rx_resets=%llu link_events=%llu\n",
+		"prepared=%u error=%d epon_control=%08x rx_xg=%08x tx_xg=%08x rx_1g=%08x tx_1g=%08x pcs_rx=%08x pcs_tx=%08x xg_fec=%08x fec_1g=%08x drop=%08x mib_ctrl=%08x mib_status=%08x rtt_rx=%08x rtt_tx=%08x crypto_llids=%08x crypto_error=%d rx_resets=%llu link_events=%llu tx_control_action=%u tx_control_error=%d\n",
 		pon->mac_prepared, pon->mac_error, readl(pon->epon_control),
 		readl(pon->mac + RX_XG), readl(pon->mac + TX_XG), readl(pon->mac + RX_1G),
 		readl(pon->mac + TX_1G), readl(pon->mac + PCS_RX), readl(pon->mac + PCS_TX),
 		readl(pon->mac + EPON_FEC_XG), readl(pon->mac + FEC_1G), readl(pon->mac + RX_DROP),
 		readl(pon->mac + MIB_CTRL), readl(pon->mac + MIB_STATUS),
 		readl(pon->mac + RTT_RX), readl(pon->mac + RTT_TX),
-		pon->epon_crypto_llids, pon->epon_crypto_error, pon->epon_rx_resets, pon->epon_link_events);
+		pon->epon_crypto_llids, pon->epon_crypto_error, pon->epon_rx_resets, pon->epon_link_events,
+		pon->epon_tx_action, pon->epon_tx_error);
 }

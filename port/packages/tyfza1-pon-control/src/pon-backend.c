@@ -5,6 +5,7 @@
 #include <linux/ethtool.h>
 #include <linux/sockios.h>
 #include <net/if.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -263,7 +264,7 @@ static int capabilities_get(struct pon_backend *backend, uint16_t leaf, uint8_t 
 		if (fields != 1)
 			return -EIO;
 		value[0] = 1; /* IPv6 aware. */
-		value[1] = 0; /* Optical power supply control is not implemented. */
+		value[1] = 1; /* Native TX-disable GPIO control, including timed restore. */
 		value[2] = llids;
 		return 3;
 	}
@@ -309,6 +310,58 @@ static int capabilities_get(struct pon_backend *backend, uint16_t leaf, uint8_t 
 	return 40;
 }
 
+static int holdover_get(struct pon_backend *backend, uint8_t *value)
+{
+	uint8_t raw[4];
+	char path[544];
+	FILE *file;
+	int ret;
+
+	snprintf(path, sizeof(path), "%s/epon_holdover", backend->device);
+	file = fopen(path, "rb");
+	if (!file)
+		return -errno;
+	ret = fseek(file, backend->llid * sizeof(raw), SEEK_SET);
+	if (!ret)
+		ret = fread(raw, 1, sizeof(raw), file) == sizeof(raw) ? 0 : -EIO;
+	fclose(file);
+	if (ret)
+		return ret;
+	put32(value, ((unsigned int)raw[0] << 8 | raw[1]) + 1);
+	put32(value + 4, (unsigned int)raw[2] << 8 | raw[3]);
+	return 8;
+}
+
+static int holdover_set(struct pon_backend *backend, const uint8_t *value, size_t size)
+{
+	uint8_t raw[12];
+	uint32_t state, duration;
+	char path[544];
+	FILE *file;
+	int ret;
+
+	if (size != 8)
+		return -EINVAL;
+	state = get32(value);
+	duration = get32(value + 4);
+	if ((state != 1 && state != 2) || duration > 65535)
+		return -EINVAL;
+	raw[0] = backend->llid;
+	for (unsigned int byte = 0; byte < 8; byte++)
+		raw[1 + byte] = backend->epoch >> (56 - byte * 8);
+	raw[9] = state - 1;
+	raw[10] = duration >> 8;
+	raw[11] = duration;
+	snprintf(path, sizeof(path), "%s/epon_holdover", backend->device);
+	file = fopen(path, "wb");
+	if (!file)
+		return -errno;
+	ret = fwrite(raw, 1, sizeof(raw), file) == sizeof(raw) ? 0 : -EIO;
+	if (fclose(file) && !ret)
+		ret = -errno;
+	return ret;
+}
+
 static int parameter_get(void *context, const struct pon_oam_request *request,
 	uint8_t *value, size_t capacity)
 {
@@ -317,6 +370,8 @@ static int parameter_get(void *context, const struct pon_oam_request *request,
 
 	uint8_t branch = request->branch;
 	uint16_t leaf = request->leaf;
+	if (branch == 0xc7 && leaf == 8)
+		return holdover_get(backend, value);
 	if (branch == 0xc7 && leaf >= 0xb1 && leaf <= 0xb3) {
 		int port = pon_pm_object(request);
 		int ret;
@@ -352,6 +407,56 @@ static int parameter_get(void *context, const struct pon_oam_request *request,
 	return 4;
 }
 
+static int tx_power_set(struct pon_backend *backend, const uint8_t *value, size_t size)
+{
+	static const uint8_t broadcast[6] = {255, 255, 255, 255, 255, 255};
+	const uint8_t *mac;
+	uint32_t action;
+	uint8_t command[11];
+	char path[544];
+	FILE *file;
+	int ret;
+
+	/* Actual stock CTC formats: legacy u32 action + MAC, or u16 action +
+	 * MAC + u32 optical interface. This board has only optical interface 0. */
+	if (size == 10) {
+		action = get32(value);
+		mac = value + 4;
+	} else if (size == 12) {
+		action = (unsigned int)value[0] << 8 | value[1];
+		mac = value + 2;
+		if (get32(value + 8))
+			return -EINVAL;
+	} else {
+		return -EINVAL;
+	}
+	if (action > 65535 || (memcmp(mac, backend->mac, 6) && memcmp(mac, broadcast, 6)))
+		return -EINVAL;
+	command[0] = backend->llid;
+	for (unsigned int byte = 0; byte < 8; byte++)
+		command[1 + byte] = backend->epoch >> (56 - byte * 8);
+	command[9] = action >> 8;
+	command[10] = action;
+	snprintf(path, sizeof(path), "%s/epon_tx_control", backend->device);
+	file = fopen(path, "wb");
+	if (!file)
+		return -errno;
+	ret = fwrite(command, 1, sizeof(command), file) == sizeof(command) ? 0 : -EIO;
+	if (fclose(file) && !ret)
+		ret = -errno;
+	return ret;
+}
+
+void pon_backend_tick(struct pon_backend *backend, uint64_t now)
+{
+	if (backend->reboot_at && now >= backend->reboot_at) {
+		backend->reboot_at = 0;
+		/* OpenWrt procd handles SIGTERM as an orderly reboot, including
+		 * service shutdown and filesystem unmount; never force reboot(2). */
+		backend->management_error = kill(1, SIGTERM) ? -errno : 0;
+	}
+}
+
 static uint8_t parameter_set(void *context, const struct pon_oam_request *request,
 	const uint8_t *value, size_t size)
 {
@@ -362,6 +467,23 @@ static uint8_t parameter_set(void *context, const struct pon_oam_request *reques
 
 	uint8_t branch = request->branch;
 	uint16_t leaf = request->leaf;
+	if (branch == 0xc9 && leaf == 1) {
+		if (size)
+			return 0x86;
+		if (!backend->reboot_at)
+			backend->reboot_at = monotonic_ms() + 3000;
+		return 0x80;
+	}
+	if (branch == 0xc7 && leaf == 0xa1) {
+		ret = tx_power_set(backend, value, size);
+		backend->management_error = ret;
+		return !ret ? 0x80 : ret == -EINVAL ? 0x86 : 0x87;
+	}
+	if (branch == 0xc7 && leaf == 8) {
+		ret = holdover_set(backend, value, size);
+		backend->management_error = ret;
+		return !ret ? 0x80 : ret == -EINVAL ? 0x86 : 0x87;
+	}
 	if (branch == 0xc7 && (leaf == 0xb1 || leaf == 0xb2)) {
 		int port = pon_pm_object(request);
 		uint64_t now = monotonic_ms();
@@ -564,6 +686,7 @@ int pon_backend_init(struct pon_backend *backend, const char *mpcp_path)
 
 void pon_backend_bind(struct pon_oam_identity *identity, struct pon_backend *backend)
 {
+	memcpy(backend->mac, identity->mac, sizeof(backend->mac));
 	identity->backend_context = backend;
 	identity->get_parameter = parameter_get;
 	identity->set_parameter = parameter_set;

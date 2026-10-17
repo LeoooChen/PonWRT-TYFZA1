@@ -139,7 +139,7 @@ REA 6.5.0 / Ghidra 12.1.2 通过既有本地 stdio 批处理运行。
 | extended_default | c7/0005 | OpticalTransceiverDiagnosis | implemented_offline |
 | extended_default | c7/0006 | Sevice SLA | not_ported |
 | extended_default | c7/0007 | ONU Capabilities-2 | implemented_offline |
-| extended_default | c7/0008 | HoldoverConfig | not_ported |
+| extended_default | c7/0008 | HoldoverConfig | implemented_offline |
 | extended_default | c7/0009 | MxUMngGlobalParameter | not_ported |
 | extended_default | c7/000a | MxUMngSNMPParameter | not_ported |
 | extended_default | c7/000b | Active PON_IFAdminstate | not_ported |
@@ -168,7 +168,7 @@ REA 6.5.0 / Ghidra 12.1.2 通过既有本地 stdio 批处理运行。
 | extended_default | c7/006b | POTSStatus | not_ported |
 | extended_default | c7/0081 | AlarmAdminState | partially_implemented_offline |
 | extended_default | c7/0082 | AlarmThreshold | partially_implemented_offline |
-| extended_default | c7/00a1 | ONUTxPowerSupplyControl | not_ported |
+| extended_default | c7/00a1 | ONUTxPowerSupplyControl | implemented_offline |
 | extended_default | c7/00b1 | performanceMonitoringStatus | implemented_offline |
 | extended_default | c7/00b2 | performanceMonitoringDataCurrent | implemented_offline |
 | extended_default | c7/00b3 | performanceMonitoringDataHistory | implemented_offline |
@@ -181,7 +181,7 @@ REA 6.5.0 / Ghidra 12.1.2 通过既有本地 stdio 批处理运行。
 | extended_flag_0x20000000 | c7/0005 | OpticalTransceiverDiagnosis | implemented_offline |
 | extended_flag_0x20000000 | c7/0006 | Sevice SLA | not_ported |
 | extended_flag_0x20000000 | c7/0007 | ONU Capabilities-2 | implemented_offline |
-| extended_flag_0x20000000 | c7/0008 | HoldoverConfig | not_ported |
+| extended_flag_0x20000000 | c7/0008 | HoldoverConfig | implemented_offline |
 | extended_flag_0x20000000 | c7/0009 | MxUMngGlobalParameter | not_ported |
 | extended_flag_0x20000000 | c7/000a | MxUMngSNMPParameter | not_ported |
 | extended_flag_0x20000000 | c7/000b | Active PON_IFAdminstate | not_ported |
@@ -213,7 +213,7 @@ REA 6.5.0 / Ghidra 12.1.2 通过既有本地 stdio 批处理运行。
 | extended_flag_0x20000000 | c7/006b | POTSStatus | not_ported |
 | extended_flag_0x20000000 | c7/0081 | AlarmAdminState | partially_implemented_offline |
 | extended_flag_0x20000000 | c7/0082 | AlarmThreshold | partially_implemented_offline |
-| extended_flag_0x20000000 | c7/00a1 | ONUTxPowerSupplyControl | not_ported |
+| extended_flag_0x20000000 | c7/00a1 | ONUTxPowerSupplyControl | implemented_offline |
 | extended_flag_0x20000000 | c7/00a3 | RMS Global Parameter Config1 | not_ported |
 | extended_flag_0x20000000 | c7/00a4 | RMS Global Parameter Config2 | not_ported |
 | extended_flag_0x20000000 | c7/00b1 | performanceMonitoringStatus | implemented_offline |
@@ -222,7 +222,7 @@ REA 6.5.0 / Ghidra 12.1.2 通过既有本地 stdio 批处理运行。
 | extended_flag_0x20000000 | c7/7003 | Optical Transceiver Information | not_ported |
 | extended_flag_0x20000000 | c7/801f | configVlanOfTr069Wan | not_ported |
 | extended_flag_0x20000000 | c7/c001 | oltLocationConfig | not_ported |
-| extended_actions | c9/0001 | Reset ONU | not_ported |
+| extended_actions | c9/0001 | Reset ONU | implemented_offline |
 | extended_actions | c9/0002 | Sleep Control | not_ported |
 | extended_actions | c9/0048 | acFastLeaveAdminControl | not_ported |
 
@@ -326,3 +326,46 @@ PM基线复位不伪恢复、真实硬件复位恢复、读取失败及原生UNI
 证据：`manifests/epon-counter-alarms.json`。
 
 下一步仍按原清单处理SLA/DBA与Holdover；未解决的计数映射保留在本节。
+
+
+## 2026-10-17 独立续作：Holdover、发光控制与有序重启
+
+仍在 `codex/epon-parity-20261016`，基线 `5fd16ff`。用户中途要求停止子代理，
+本节代码及验证由主代理单独完成，未改动其他工作树。
+
+- Holdover C7/0008：原厂 `0x41f5bc/0x41f6ac` 为8字节网络序状态/毫秒。
+  `0x409324` 的实际默认值为启用、200ms。事件链为
+  `ca_rtk_epon_port_intr` → `0x40cb28` → `0x4069dc` 的事件4/7；
+  事件4启动保持计时，事件7取消；`0x404454` 到期发送事件6，
+  `0x4066e4/0x411270` 清理OAM并注销LLID。新实现直接使用内核延时工作，
+  保存实际仍注册的链路状态，按每LLID期限注销；及时恢复则取消。
+  真实硬件注册丢失仍立即撤销epoch/密钥，绝不把旧密钥留给新注册会话。
+  用户态在真实holdover期间暂停普通5秒OAM超时，恢复后重新给予收包时间。
+- 注销MMIO来自实际 `dal_rt_rtl8277c_raw_epon_mpcp_registration_set` /
+  `aal_mpcp_llid_cfg_set`，即每MAC的0x20e0 offline位；重新注册前清除此位。
+  同时修复原驱动 `rtl_mpcp_remove_mac` 忽略间接表操作失败的问题：失败保留
+  cleanup位并报告，未完成LLID/密钥清理的槽不能发起新注册，不假装成功。
+- 发光控制C7/00a1：按原厂 `0x4251fc` 支持10/12字节格式和本ONU/广播MAC，
+  action=0恢复、65535持续禁用，其余值按秒定时恢复；本机只接受光接口0。
+  `0x41109c` 证实真实消费者是TX-disable GPIO。新消费者由内核拥有，
+  不依赖OAM进程在失光期间存活；新命令替换旧期限，旧工作不会提前恢复，
+  业务已停止时不会重新发光。GPIO读回错误真实传播，能力3同步声明支持。
+- Reset ONU C9/0001：按 `0x428708` 的3秒延时接受动作，但不阻塞OAM接收
+  或直接强制reboot；先允许发送响应，到期向OpenWrt procd发送SIGTERM，
+  走原生服务停止/卸载流程。已核对工程固定版本procd的 `signal.c`。
+  信号失败记录 `management_error`，无无限重试或成功伪装。
+
+修正而未照搬的原厂问题：Holdover/TX旧格式的32位参数截断16位改为明确
+拒绝越界；Holdover启用且时间0不再把计时器解除而无限保持，而是立即到期；
+原厂TX GPIO wrapper无条件返回成功改为读回及错误传播。配置和密钥一样
+绑定真实LLID epoch，无旧ABI猜测兼容。
+
+验证仅包含 `tools/check_epon_management.py` 的定向生产函数/后端检查、
+受影响的停止与 `test_pon_transactions.py --case transactions`，以及四个
+受影响ARM64驱动对象和实际musl `pon-oamd` 编译，均通过且编译无警告。
+重启测试截获kill调用，未向真实PID1发送信号。没有全量测试、完整内核链接、
+刷机、真实断光或OLT验收。模型中的寄存器完成和GPIO读回不是物理验证。
+证据索引：`manifests/epon-management-20261017.json`。
+
+后续仍须处理SLA/DBA、VLAN/组播、限速/环路、升级与其他原清单遗漏；
+本节不宣称EPON功能全部完成。

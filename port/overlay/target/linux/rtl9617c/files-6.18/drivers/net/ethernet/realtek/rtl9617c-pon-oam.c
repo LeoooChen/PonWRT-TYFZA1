@@ -234,7 +234,8 @@ void rtl_pon_oam_carrier(struct rtl9617c_pon *pon)
 		struct net_device *dev = rcu_dereference(pon->oam_devices[i]);
 
 		if (dev) {
-			if (pon->traffic_enabled && pon->mpcp_enabled && synced && (pon->registered & BIT(i)))
+			if (pon->traffic_enabled && pon->mpcp_enabled &&
+			    (synced || (pon->epon_holdover_active & BIT(i))) && (pon->registered & BIT(i)))
 				netif_carrier_on(dev);
 			else
 				netif_carrier_off(dev);
@@ -242,7 +243,8 @@ void rtl_pon_oam_carrier(struct rtl9617c_pon *pon)
 		dev = rcu_dereference(pon->data_devices[i]);
 		if (dev) {
 			if (pon->traffic_enabled && pon->mpcp_enabled && pon->pdc_configured &&
-			    pon->puc_configured && synced && (pon->registered & BIT(i)))
+			    pon->puc_configured && (synced || (pon->epon_holdover_active & BIT(i))) &&
+			    (pon->registered & BIT(i)))
 				netif_carrier_on(dev);
 			else
 				netif_carrier_off(dev);

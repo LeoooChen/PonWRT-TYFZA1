@@ -68,10 +68,12 @@ struct rtl9617c_pon {
     u32 registered,waiting,serdes_status;int sync_result,serdes_error,mpcp_irq,cleanup_error,policy_error;
     uint64_t epon_epoch,epon_llid_epoch[32];
     u32 epon_crypto_llids,epon_sync_failures;
+    u32 epon_holdover_active,epon_holdover_pending;
+    unsigned int epon_tx_action;
     unsigned long epon_health_at;
     int *tx_disable;
     unsigned int llid_count,los_invert,profile_rows;u8 onu_mac[6];
-    struct rtl_mpcp_backoff backoff;struct delayed_work mpcp_work,serdes_work;
+    struct rtl_mpcp_backoff backoff;struct delayed_work mpcp_work,serdes_work,epon_tx_work,epon_holdover_work;
 };
 static struct rtl9617c_pon *current;
 static unsigned long jiffies;
@@ -169,7 +171,7 @@ int main(void) {
         assert(!stale_puc && !stale_pdc && !(control&(BIT(8)|BIT(9))));
     }
     assert(data_resets==3);
-    assert(canceled==6);
+    assert(canceled==12); /* SerDes, MPCP, TX restore and holdover per mode. */
     pon.mode=RTL_PON_GPON;control=0x30e;stale_puc=1;stale_pdc=2;
     assert(!rtl_pon_serdes_configure(&pon,RTL_PON_EPON_D10G));
     assert(pon.mode==RTL_PON_EPON_D10G && !stale_puc && !stale_pdc &&

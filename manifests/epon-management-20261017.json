@@ -1,0 +1,235 @@
+{
+  "date": "2026-10-17",
+  "baseline": "5fd16ff",
+  "scope": [
+    "CTC Holdover",
+    "CTC TX power supply control",
+    "CTC Reset ONU",
+    "LLID cleanup error propagation"
+  ],
+  "validation": "directed native tests; ARM64 musl daemon and four affected kernel objects only",
+  "hardware_validated": false,
+  "rea_evidence": [
+    {
+      "batch": "ghidra-epon-deregister-20261017-root",
+      "file": "001-procedure_pseudo_code.json",
+      "procedure": "dal_rt_rtl8277c_raw_epon_mpcp_registration_set",
+      "subject_sha256": "2360c7dbf93157cb3ab212c733e76a513c34015bc466f192dd19e4ae87eb0311",
+      "sha256": "05824784944c58babe08a6d0bfabe5c7cfa12db62653b3a70ffefc727b60e1f4"
+    },
+    {
+      "batch": "ghidra-epon-deregister-aal-20261017-root",
+      "file": "001-procedure_pseudo_code.json",
+      "procedure": "aal_mpcp_llid_cfg_set",
+      "subject_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+      "sha256": "3e8f662b61ccd660ac1701f00a9d7de237423331762e2c4b855d25115925959a"
+    },
+    {
+      "batch": "ghidra-epon-deregister-aal-20261017-root",
+      "file": "002-procedure_pseudo_code.json",
+      "procedure": "aal_mpcp_reg_llid_del",
+      "subject_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+      "sha256": "ac0ab1ab1a6fd7019a8600241c6f6e876fdccb739cb29a0b4fe2fb34d15d220f"
+    },
+    {
+      "batch": "ghidra-epon-deregister-aal-20261017-root",
+      "file": "003-procedure_pseudo_code.json",
+      "procedure": "aal_mpcp_reg_llid_add",
+      "subject_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+      "sha256": "699e19fa6c41dc73bb5b85c62e395a2705c9bb5f68a303f1ec77913a2fff4d6f"
+    },
+    {
+      "batch": "ghidra-epon-holdover-consumer-20261017-root",
+      "file": "001-procedure_pseudo_code.json",
+      "procedure": "0x406d18",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "c051ebc747cf5e68285ec15a6a29475225751efb0f0e666faa8258e90356b78d"
+    },
+    {
+      "batch": "ghidra-epon-holdover-consumer-20261017-root",
+      "file": "002-procedure_pseudo_code.json",
+      "procedure": "0x406fe0",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "e7366ffd940d0fb44964dbe4fce8a7f1c7022187e3cfed26d5e389e61082abdb"
+    },
+    {
+      "batch": "ghidra-epon-holdover-consumer-20261017-root",
+      "file": "003-procedure_pseudo_code.json",
+      "procedure": "0x407144",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "5b87763b48a212f2e1d385a4316a27f45b69d67e825056f95211163ac791030c"
+    },
+    {
+      "batch": "ghidra-epon-holdover-consumer-20261017-root",
+      "file": "004-procedure_pseudo_code.json",
+      "procedure": "0x4074d4",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "bb2773825e8df2d76af046ad3abfa846229ddda56a6b16bbe678072d150f7490"
+    },
+    {
+      "batch": "ghidra-epon-holdover-consumer-20261017-root",
+      "file": "005-procedure_pseudo_code.json",
+      "procedure": "0x407c70",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "9c1512ae570ecb8b365ea1aca76df3a102a11eac270ed7b6f7f52055b717fdb3"
+    },
+    {
+      "batch": "ghidra-epon-holdover-consumer-20261017-root",
+      "file": "006-procedure_pseudo_code.json",
+      "procedure": "0x408248",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "77f619be336b54c86423a0871b33952642354489102f192a34680277262a4c35"
+    },
+    {
+      "batch": "ghidra-epon-holdover-consumer-20261017-root",
+      "file": "007-procedure_pseudo_code.json",
+      "procedure": "0x4132f4",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "712863d1493a4d2e54bc1d95c2162b5dc43eb733336acee062e0c863fc55179d"
+    },
+    {
+      "batch": "ghidra-epon-holdover-effects-20261017-root",
+      "file": "001-procedure_pseudo_code.json",
+      "procedure": "0x404838",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "1990aac370097f9c93ffa1c9c1887d489eeb28df506db9dc23de30b60010dc5f"
+    },
+    {
+      "batch": "ghidra-epon-holdover-effects-20261017-root",
+      "file": "002-procedure_pseudo_code.json",
+      "procedure": "0x4066e4",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "7a750a2a1c2f4485aad2369e4c5750c512d54e6e187812b63a073d740d498021"
+    },
+    {
+      "batch": "ghidra-epon-holdover-effects-20261017-root",
+      "file": "003-procedure_pseudo_code.json",
+      "procedure": "0x405388",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "c5f466719c80301e2347cba9d01dde3d02423458771ace79bb7de0008d8e00f9"
+    },
+    {
+      "batch": "ghidra-epon-holdover-effects-20261017-root",
+      "file": "004-procedure_pseudo_code.json",
+      "procedure": "0x40682c",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "98b4871e248fe93047d3f348288a9fcbe906a48810889b10328cf3c5c73bf11c"
+    },
+    {
+      "batch": "ghidra-epon-holdover-effects-20261017-root",
+      "file": "005-procedure_pseudo_code.json",
+      "procedure": "0x40cb28",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "8d2a18f085d57ddfe421a947401ffbb5f17664b758da743b0f4f509d151ed187"
+    },
+    {
+      "batch": "ghidra-epon-holdover-effects-20261017-root",
+      "file": "006-procedure_pseudo_code.json",
+      "procedure": "0x409324",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "b46027c92f55022465499dafa40046c0d4d47f43f1a5e9e369c7bb120ecdc4f1"
+    },
+    {
+      "batch": "ghidra-epon-holdover-effects-20261017-root",
+      "file": "007-procedure_pseudo_code.json",
+      "procedure": "0x404614",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "f69189a46068ee5438ee89e19c3a9efec760feb989a79828c4eaedf7cb9d790c"
+    },
+    {
+      "batch": "ghidra-epon-holdover-effects-20261017-root",
+      "file": "008-procedure_pseudo_code.json",
+      "procedure": "0x4116c8",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "544e8b11a4774e2e987f5d82815a4242816c31fdd6a29e5cd3d8baecca3464a3"
+    },
+    {
+      "batch": "ghidra-epon-lifecycle-20261017-root",
+      "file": "003-procedure_pseudo_code.json",
+      "procedure": "0x4042b8",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "467d752cb001a1ab77b63e72cee564aa8cf1a18afb80c75ccfb8ca9ecacc63c2"
+    },
+    {
+      "batch": "ghidra-epon-lifecycle-20261017-root",
+      "file": "004-procedure_pseudo_code.json",
+      "procedure": "0x404344",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "2794e04f9e9c54a2ae9e50aca13aa9d3780d891eca99abf095a01a101c93d7bd"
+    },
+    {
+      "batch": "ghidra-epon-line-events-20261017-root",
+      "file": "001-procedure_pseudo_code.json",
+      "procedure": "0x41109c",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "034b2fe19b6ad4055c411728c6d551438422bfbfe7423d71b881dfbf2a5a8897"
+    },
+    {
+      "batch": "ghidra-epon-line-events-20261017-root",
+      "file": "002-procedure_pseudo_code.json",
+      "procedure": "0x411270",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "028fce13401dd9b8076fedd6fbec133a6b70ac39a505f0d663ddb451aaa3835f"
+    },
+    {
+      "batch": "ghidra-epon-line-events-20261017-root",
+      "file": "003-procedure_pseudo_code.json",
+      "procedure": "0x404454",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "5c2c7d80bfb8a9f29c2b10ba91baa52aca31177d7fb3a6f6a642efad8f5bafd0"
+    },
+    {
+      "batch": "ghidra-epon-line-events-20261017-root",
+      "file": "004-procedure_pseudo_code.json",
+      "procedure": "0x410ed8",
+      "subject_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+      "sha256": "af049e6e06221475140af462061d0d992437a9a25151254e99505f1d6b49ca1d"
+    },
+    {
+      "batch": "ghidra-epon-line-events-20261017-root",
+      "file": "008-procedure_pseudo_code.json",
+      "procedure": "ca_rtk_epon_oam_handle_event.part.0",
+      "subject_sha256": "a39b98d40f0ff26d9002e4b1588fe7f51ba19f4ec639ac3fd393006ddd9d68b6",
+      "sha256": "8bc0223f754403866674f2be4cc65dc5b63354f0f8bb59039cfe831adb9c9c3a"
+    },
+    {
+      "batch": "ghidra-epon-management-dal-20261017-root",
+      "file": "001-procedure_pseudo_code.json",
+      "procedure": "ca_rtk_epon_port_intr",
+      "subject_sha256": "a39b98d40f0ff26d9002e4b1588fe7f51ba19f4ec639ac3fd393006ddd9d68b6",
+      "sha256": "218fdd7bea07640ddc04bb69f93eebb26d73e2fedf0be7fc14478a29f69d204c"
+    },
+    {
+      "batch": "ghidra-epon-management-dal-20261017-root",
+      "file": "002-procedure_pseudo_code.json",
+      "procedure": "ca_rtk_epon_reg_intr",
+      "subject_sha256": "a39b98d40f0ff26d9002e4b1588fe7f51ba19f4ec639ac3fd393006ddd9d68b6",
+      "sha256": "71e16e5b2b011962409261326f776bae425d0ef70fb89ce657427d44422b5020"
+    },
+    {
+      "batch": "ghidra-epon-management-dal-20261017-root",
+      "file": "005-procedure_pseudo_code.json",
+      "procedure": "dal_rt_rtl8277c_epon_llid_entry_set",
+      "subject_sha256": "2360c7dbf93157cb3ab212c733e76a513c34015bc466f192dd19e4ae87eb0311",
+      "sha256": "141cfd3f95653f2e20d776f222975908934a9dc1f0d751baaf1c068dc3489136"
+    }
+  ],
+  "sha256": {
+    "logs/epon-management-checks.txt": "8f9f573b672b15596ea340605bc4428621dd2075bdd03458296fb1cf4ec1bed0",
+    "logs/epon-management-objects.txt": "a8c6a2601cf318727861358785662383e09b3b51b333531207968c3101b74f28",
+    "artifacts/epon-management/pon-oamd": "26dbb33dd213cc2db9e6065375763833ea4c898b70a7a972c14992d0718be66c",
+    "docs/epon-stock-parity.md": "ed5d389a9541e9b8c893d8416aa424568f75a4a3d308c226fe3a69e57dba4c09",
+    "manifests/epon-stock-oam-callbacks.json": "d0cb53f537835fc983235df387b15785cce013e1f333d70e8601ca36484b0d1f",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-epon.c": "4caa77e125c911ad4d2d6bcb39f98e5428be76d9fd6a1bc4cf424aef4e19921c",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-mpcp.c": "d425a1bb76f5169d21f6f459469e2b4cd1804e3a6a637c2a591fc430165a5787",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-oam.c": "c416eddba07e45e39a706fcb30cc05ed885c0a6d0b54cb535c8ce152732dc962",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.c": "5648eb0254b15e120e652851e2e83f11a2afe5e0ebe39477c366bfa39e66179b",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.h": "83156a6b712637632d98d38ea3694e298cea1b33ad520c732841cc1a80a2c5b4",
+    "port/packages/tyfza1-pon-control/src/pon-backend.c": "c1d6cd8a128caf78b53004621e4a28877a823a8c4311c404bb173947e59c4fa5",
+    "port/packages/tyfza1-pon-control/src/pon-backend.h": "8a2aa5e0f30199f617eed1fbc005c638137a856d65539bd6266a4fbefeb1cb5d",
+    "port/packages/tyfza1-pon-control/src/pon-oamd.c": "b0e4aad67ba9c95ecbf3875b0141a2e84a08658d34e2a71efb9612e5b738afa8",
+    "scripts/test_pon_shutdown.py": "fde6784f6b08b487142453cde1e4a7f928a56c4ba322fd8b90e4145c86d37699",
+    "scripts/test_pon_transactions.py": "a3f93bf3ff3fb5a9c1318a7ae4370d5529165b9ee940d7a99b09763a5e110627",
+    "tools/check_epon_management.py": "69c88cfaec7c31c674556329f90d787596d20579d414e1e32212656c5dd1ef68"
+  }
+}

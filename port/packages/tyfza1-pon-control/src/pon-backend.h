@@ -8,6 +8,9 @@ struct pon_backend {
 	char device[512];
 	unsigned int llid;
 	uint64_t epoch;
+	uint8_t mac[6];
+	uint64_t reboot_at;
+	int management_error;
 	struct pon_alarm_table alarms;
 	int alarm_error;
 	struct pon_pm_port pm[PON_PM_PORTS];
@@ -15,4 +18,5 @@ struct pon_backend {
 };
 int pon_backend_init(struct pon_backend *backend, const char *mpcp_path);
 void pon_backend_bind(struct pon_oam_identity *identity, struct pon_backend *backend);
+void pon_backend_tick(struct pon_backend *backend, uint64_t now);
 #endif

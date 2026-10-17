@@ -206,7 +206,7 @@
       "getter": "0x41f5bc",
       "setter": "0x41f6ac",
       "name": "HoldoverConfig",
-      "native_status": "not_ported"
+      "native_status": "implemented_offline"
     },
     {
       "table": "extended_default",
@@ -558,7 +558,7 @@
       "getter": null,
       "setter": "0x4251fc",
       "name": "ONUTxPowerSupplyControl",
-      "native_status": "not_ported"
+      "native_status": "implemented_offline"
     },
     {
       "table": "extended_default",
@@ -714,7 +714,7 @@
       "getter": "0x41f5bc",
       "setter": "0x41f6ac",
       "name": "HoldoverConfig",
-      "native_status": "not_ported"
+      "native_status": "implemented_offline"
     },
     {
       "table": "extended_flag_0x20000000",
@@ -1103,7 +1103,7 @@
       "getter": null,
       "setter": "0x4251fc",
       "name": "ONUTxPowerSupplyControl",
-      "native_status": "not_ported"
+      "native_status": "implemented_offline"
     },
     {
       "table": "extended_flag_0x20000000",
@@ -1213,7 +1213,7 @@
       "getter": null,
       "setter": "0x428708",
       "name": "Reset ONU",
-      "native_status": "not_ported"
+      "native_status": "implemented_offline"
     },
     {
       "table": "extended_actions",
@@ -1243,7 +1243,7 @@
   ],
   "unique_callback_count": 88,
   "complete": false,
-  "native_implemented_entries": 32,
+  "native_implemented_entries": 37,
   "extra_native": [
     "CTC opcode9 churning key exchange:1G3 bytes/XG9 bytes",
     "registration-epoch binding",

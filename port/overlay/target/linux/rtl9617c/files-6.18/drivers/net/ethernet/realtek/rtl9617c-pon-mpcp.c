@@ -48,7 +48,6 @@ static void rtl_epon_link_events(struct rtl9617c_pon *pon)
 
 		if (flags & BIT(6)) {
 			pon->epon_link_events++;
-			rtl_pon_oam_carrier(pon);
 		}
 		writel(flags, pon->mac + 0x1a0);
 	}
@@ -66,7 +65,6 @@ static void rtl_epon_link_events(struct rtl9617c_pon *pon)
 					usleep_range(1000, 2000);
 					rtl_pon_update(pon->mac + 0x14c0, BIT(7), 0);
 				}
-				rtl_pon_oam_carrier(pon);
 			}
 			writel(flags, pon->mac + 0x1370);
 		}
@@ -104,17 +102,22 @@ int rtl_pon_llid_update(struct rtl9617c_pon *pon, bool add, unsigned int index,
 	return -EIO;
 }
 
-static void rtl_mpcp_remove_mac(struct rtl9617c_pon *pon, unsigned int mac)
+static int rtl_mpcp_remove_mac(struct rtl9617c_pon *pon, unsigned int mac)
 {
 	unsigned int i;
+	int ret;
 
 	for (i = 0; i < 64; i++) {
 		u32 entry = readl(pon->mac + LLID_TABLE + i * 4);
 		if ((entry & BIT(23)) && !(entry & BIT(22)) &&
-		    FIELD_GET(GENMASK(28, 24), entry) == mac)
-			rtl_pon_llid_update(pon, false, FIELD_GET(GENMASK(21, 16), entry),
-					    mac, entry & 0xffff, false);
+		    FIELD_GET(GENMASK(28, 24), entry) == mac) {
+			ret = rtl_pon_llid_update(pon, false, FIELD_GET(GENMASK(21, 16), entry),
+				mac, entry & 0xffff, false);
+			if (ret)
+				return ret;
+		}
 	}
+	return 0;
 }
 
 static void rtl_mpcp_registration_event(struct rtl9617c_pon *pon, u32 registered)
@@ -147,6 +150,61 @@ static void rtl_mpcp_write(void *context, unsigned int reg, unsigned int value)
 	writel(value, pon->mac + reg);
 }
 
+static u32 rtl_mpcp_holdover(struct rtl9617c_pon *pon, u32 registered)
+{
+	u32 status = readl(pon->mac + 0x10);
+	bool synced = !(status & BIT(0)) &&
+		(status & (pon->mode == RTL_PON_EPON_1G ? BIT(2) : BIT(1)));
+	unsigned long delay = MAX_JIFFY_OFFSET;
+	unsigned long now = jiffies;
+	unsigned int channel;
+	int error = 0;
+
+	pon->epon_holdover_active = 0;
+	pon->epon_holdover_pending &= registered;
+	if (synced || !pon->mpcp_enabled) {
+		pon->epon_holdover_pending = 0;
+		cancel_delayed_work(&pon->epon_holdover_work);
+		return registered;
+	}
+	for (channel = 0; channel < pon->llid_count; channel++) {
+		unsigned long until;
+		int ret;
+
+		if (!(registered & BIT(channel)))
+			continue;
+		if (!(pon->epon_holdover_pending & BIT(channel))) {
+			pon->epon_holdover_start[channel] = now;
+			pon->epon_holdover_pending |= BIT(channel);
+		}
+		until = pon->epon_holdover_start[channel];
+		if (pon->epon_holdover_enabled & BIT(channel))
+			until += msecs_to_jiffies(pon->epon_holdover_ms[channel]);
+		if (time_before(now, until)) {
+			pon->epon_holdover_active |= BIT(channel);
+			delay = min(delay, until - now);
+			continue;
+		}
+		/* Stock Holdover expiry reaches llid_entry_set(enable=0), whose
+		 * AAL asserts this per-MAC offline bit before deleting the LLID. */
+		rtl_pon_update(pon->mac + OFFLINE, BIT(channel), BIT(channel));
+		ret = readl_poll_timeout(pon->mac + REGISTER_STATUS, status,
+			!(status & BIT(channel)), 1, 10000);
+		if (ret) {
+			error = ret;
+			dev_err_ratelimited(pon->dev, "EPON holdover LLID%u offline failed: %d\n", channel, ret);
+			delay = min(delay, (unsigned long)HZ);
+		} else {
+			registered &= ~BIT(channel);
+			pon->epon_holdover_pending &= ~BIT(channel);
+		}
+	}
+	if (pon->epon_holdover_pending)
+		mod_delayed_work(system_wq, &pon->epon_holdover_work, delay);
+	pon->epon_holdover_error = error;
+	return registered;
+}
+
 static void rtl_mpcp_refresh(struct rtl9617c_pon *pon)
 {
 	u32 flags = readl(pon->mac + MPCP_IRQ) & MPCP_EVENT_MASK;
@@ -162,7 +220,7 @@ static void rtl_mpcp_refresh(struct rtl9617c_pon *pon)
 	}
 	if (rtl_mpcp_backoff_event(&pon->backoff, &io, flags, jiffies,
 				   msecs_to_jiffies(60000)) && pon->llid_count == 1)
-		rtl_mpcp_remove_mac(pon, 0);
+		pon->epon_llid_cleanup |= BIT(0);
 	if (flags & BIT(1)) {
 		for (i = 0; i < 64; i++) {
 			u32 frame = readl(pon->mac + REGISTER_FRAME);
@@ -174,11 +232,21 @@ static void rtl_mpcp_refresh(struct rtl9617c_pon *pon)
 	if (flags)
 		writel(flags, pon->mac + MPCP_IRQ);
 	registered = readl(pon->mac + REGISTER_STATUS) & rtl_pon_llid_mask(pon);
-	if (pon->registered & ~registered) {
-		u32 lost = pon->registered & ~registered;
-		for (i = 0; i < pon->llid_count; i++)
-			if (lost & BIT(i))
-				rtl_mpcp_remove_mac(pon, i);
+	registered = rtl_mpcp_holdover(pon, registered);
+	pon->epon_llid_cleanup |= pon->registered & ~registered;
+	pon->epon_llid_cleanup_error = 0;
+	for (i = 0; i < pon->llid_count; i++) {
+		int ret;
+
+		if (!(pon->epon_llid_cleanup & BIT(i)))
+			continue;
+		ret = rtl_mpcp_remove_mac(pon, i);
+		if (ret) {
+			pon->epon_llid_cleanup_error = ret;
+			dev_err_ratelimited(pon->dev, "EPON LLID%u table cleanup failed: %d\n", i, ret);
+		} else {
+			pon->epon_llid_cleanup &= ~BIT(i);
+		}
 	}
 	if ((pon->epon_crypto_llids & ~registered) &&
 	    rtl_pon_epon_crypto_forget(pon, pon->epon_crypto_llids & ~registered))
@@ -189,6 +257,48 @@ static void rtl_mpcp_refresh(struct rtl9617c_pon *pon)
 	pon->waiting = rtl_pon_llid_mask(pon) & ~registered;
 	rtl_pon_pdc_refresh(pon);
 	rtl_pon_oam_carrier(pon);
+}
+
+static void rtl_mpcp_holdover_work(struct work_struct *work)
+{
+	struct rtl9617c_pon *pon = container_of(to_delayed_work(work), struct rtl9617c_pon, epon_holdover_work);
+
+	mutex_lock(&pon->lock);
+	if (pon->mpcp_enabled)
+		rtl_mpcp_refresh(pon);
+	mutex_unlock(&pon->lock);
+}
+
+int rtl_pon_epon_holdover_set(struct rtl9617c_pon *pon, const u8 *data, size_t count)
+{
+	unsigned int channel;
+	int ret = 0;
+
+	if (count != 12 || data[9] > 1)
+		return -EINVAL;
+	channel = data[0];
+	mutex_lock(&pon->control_lock);
+	mutex_lock(&pon->lock);
+	if (!rtl_pon_mode_is_epon(pon->mode))
+		ret = -EOPNOTSUPP;
+	else if (channel >= pon->llid_count)
+		ret = -EINVAL;
+	else if (!pon->mpcp_enabled || !(pon->registered & BIT(channel)))
+		ret = -EAGAIN;
+	else if (get_unaligned_be64(data + 1) != pon->epon_llid_epoch[channel])
+		ret = -ESTALE;
+	else {
+		pon->epon_holdover_enabled &= ~BIT(channel);
+		if (data[9])
+			pon->epon_holdover_enabled |= BIT(channel);
+		pon->epon_holdover_ms[channel] = get_unaligned_be16(data + 10);
+		pon->epon_holdover_error = 0;
+		rtl_mpcp_refresh(pon);
+		ret = pon->epon_holdover_error;
+	}
+	mutex_unlock(&pon->lock);
+	mutex_unlock(&pon->control_lock);
+	return ret;
 }
 
 static void rtl_mpcp_work(struct work_struct *work)
@@ -231,6 +341,9 @@ static void rtl_mpcp_work(struct work_struct *work)
 		for (mac = 0; mac < pon->llid_count; mac++) {
 			if (!(pon->waiting & BIT(mac)))
 				continue;
+			if ((pon->epon_llid_cleanup | pon->epon_crypto_llids) & BIT(mac))
+				continue;
+			rtl_pon_update(pon->mac + OFFLINE, BIT(mac), 0);
 			rtl_pon_update(pon->mac + MPCP_INIT, GENMASK(13, 8) | GENMASK(4, 0),
 					   (mac << 8) | mac);
 			rtl_pon_update(pon->mac + MPCP_START, BIT(0), BIT(0));
@@ -259,7 +372,7 @@ static irqreturn_t rtl_mpcp_irq_thread(int irq, void *data)
 		pon->optical_irq_count++;
 		writel(optical, pon->optical_irq);
 		if (rtl_pon_mode_is_epon(pon->mode))
-			rtl_pon_oam_carrier(pon);
+			rtl_mpcp_refresh(pon);
 	}
 	if (pending & BIT(0)) {
 		if (rtl_pon_mode_is_epon(pon->mode)) {
@@ -282,7 +395,12 @@ int rtl_pon_mpcp_init(struct rtl9617c_pon *pon, int irq)
 {
 	pon->mpcp_irq = irq;
 	pon->llid_count = 1;
+	pon->epon_holdover_enabled = U32_MAX;
+	for (unsigned int channel = 0; channel < 32; channel++)
+		pon->epon_holdover_ms[channel] = 200;
 	INIT_DELAYED_WORK(&pon->mpcp_work, rtl_mpcp_work);
+	INIT_DELAYED_WORK(&pon->epon_holdover_work, rtl_mpcp_holdover_work);
+	rtl_pon_epon_tx_init(pon);
 	/* This controller owns the PON bank. Remove inherited optical enables and
 	 * acknowledge their leaf events before request_irq unmasks its parent. */
 	writel(0, pon->top_irq + 4);
@@ -303,16 +421,21 @@ int rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon)
 
 	lockdep_assert_held(&pon->control_lock);
 	cancel_delayed_work_sync(&pon->mpcp_work);
+	cancel_delayed_work_sync(&pon->epon_tx_work);
 	mutex_lock(&pon->lock);
+	pon->epon_tx_action = 0;
 	if (pon->mpcp_enabled) {
 		pon->epon_epoch++;
 		for (channel = 0; channel < 32; channel++)
 			pon->epon_llid_epoch[channel] = pon->epon_epoch;
 	}
 	pon->mpcp_enabled = false;
+	pon->epon_holdover_active = 0;
+	pon->epon_holdover_pending = 0;
 	pon->backoff.active = 0;
 	if (!rtl_pon_mode_is_epon(pon->mode)) {
 		mutex_unlock(&pon->lock);
+		cancel_delayed_work_sync(&pon->epon_holdover_work);
 		return 0;
 	}
 	rtl_pon_update(pon->top_irq + 4, BIT(0), 0);
@@ -330,6 +453,7 @@ int rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon)
 	ret = rtl_pon_epon_crypto_forget(pon, pon->epon_crypto_llids);
 	rtl_pon_oam_carrier(pon);
 	mutex_unlock(&pon->lock);
+	cancel_delayed_work_sync(&pon->epon_holdover_work);
 	/* Finish queued IRQ threads before changing modes or freeing the OAM netdev. */
 	synchronize_irq(pon->mpcp_irq);
 	return ret;
@@ -422,7 +546,10 @@ ssize_t rtl_pon_mpcp_state(struct rtl9617c_pon *pon, char *buf)
 		jiffies_to_msecs(pon->backoff.until - jiffies) : 0);
 	for (channel = 0; channel < 32; channel++)
 		length += sysfs_emit_at(buf, length, "%s%016llx", channel ? "," : "", pon->epon_llid_epoch[channel]);
-	return length + sysfs_emit_at(buf, length, "\n");
+	return length + sysfs_emit_at(buf, length,
+		" holdover=%08x holdover_error=%d llid_cleanup=%08x llid_cleanup_error=%d\n",
+		pon->epon_holdover_active, pon->epon_holdover_error,
+		pon->epon_llid_cleanup, pon->epon_llid_cleanup_error);
 }
 
 ssize_t rtl_pon_llid_table(struct rtl9617c_pon *pon, char *buf)
