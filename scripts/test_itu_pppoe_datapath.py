@@ -64,7 +64,11 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef int netdev_
 #define cpu_to_le32(x) (x)
 #include "rtl9617c-pon-path.h"
 struct sk_buff {u8 memory[4096],*data;unsigned len,priority,protocol,vlan_proto,vlan_tci;bool tagged;};
-struct net_device {bool carrier,running,stopped;struct {unsigned tx_dropped,rx_dropped,rx_packets,rx_bytes;}stats;};
+struct net_device {bool carrier,running,stopped,bridge_port;struct net_device *upper;unsigned vlan_proto,vlan_id;struct {unsigned tx_dropped,rx_dropped,rx_packets,rx_bytes;}stats;};
+static bool netif_is_bridge_port(struct net_device*d){return d->bridge_port;}
+static struct net_device *__vlan_find_dev_deep_rcu(struct net_device*d,unsigned proto,unsigned vid){
+ return d->upper && d->upper->vlan_proto==proto && d->upper->vlan_id==vid?d->upper:NULL;
+}
 struct napi_struct {unsigned unused;};
 struct rtl9617c_ni_frame {u32 header_high,header_low;const u8 *prefix;unsigned prefix_length;bool raw_payload;};
 struct rtl9617c_bridge_tag {u16 tci,tpid;};
@@ -123,6 +127,7 @@ model += r'''
 static netdev_tx_t rtl9617c_ni_transmit(void*d,struct net_device*n,struct sk_buff*s,const struct rtl9617c_ni_frame*f){(void)d;return rtl_dma_tx_frame(&dma,s,n,f);}
 '''
 model += re.sub(r'^#include .*$', '', (drivers / 'rtl9617c-pon-vlan-skb.h').read_text(), flags=re.M)
+model += function('rtl9617c-pon-path.c', 'rtl_pon_itu_service_entry')
 model += function('rtl9617c-pon-path.c', 'rtl_pon_itu_data_transmit')
 model += function('rtl9617c-pon-path.c', 'rtl_pon_itu_data_receive')
 model += r'''
@@ -208,6 +213,36 @@ int main(int argc,char**argv){
  assert(rtl_pon_itu_data_transmit(&pon,packet(46,false,9),&dev)==NETDEV_TX_OK);
  assert(dma.write==1 && dev.stats.tx_dropped==1);
  puts("UNI untagged-to-VLAN46: plain PADI and untagged PADO pass; pretagged PADI is rejected by the OLT rule");
+ /* The OLT's default UNI rules discard tagged frames. A local VLAN WAN is
+  * already on the service side; ANI/IWTP edits still apply in both directions. */
+ u32 defaults[3][4]={{0xe8000000,0xe8000000,0xc00f0000,0x000f0000},
+  {0xf8000000,0xe8000000,0xc00f0000,0x000f0000},
+  {0xf8000000,0xf8000000,0x000f0000,0x000f0000}};
+ p->profile_count=2;p->profile[0].count=3;
+ for(unsigned r=0;r<3;r++)for(unsigned i=0;i<4;i++)for(unsigned b=0;b<4;b++)
+  p->profile[0].row[r][i*4+b]=defaults[r][i]>>(24-b*8);
+ assert(rtl_evto_valid(&p->profile[0]));
+ p->path[0].vlan_profile[4]=1;profile(&p->profile[1],46,146);
+ struct net_device vlan={.vlan_proto=htons(0x8100),.vlan_id=46};dev.upper=&vlan;
+ for(unsigned metadata=0;metadata<2;metadata++){
+  unsigned tx_drops=dev.stats.tx_dropped,rx_drops=dev.stats.rx_dropped,before=delivered;
+  dma.read=dma.write=0;
+  assert(rtl_pon_itu_data_transmit(&pon,packet(46,metadata,9),&dev)==NETDEV_TX_OK);
+  payload=dma.memory+64*sizeof(struct rtl_dma_descriptor)+16;
+  assert(dma.write==1 && get_unaligned_be16(payload+14)==146 && dev.stats.tx_dropped==tx_drops);
+  rtl_pon_itu_data_receive(&pon,&napi,packet(146,metadata,7),7|(8<<8));
+  assert(delivered==before+1 && received_length==44 && get_unaligned_be16(received+14)==46 && dev.stats.rx_dropped==rx_drops);
+ }
+ p->profile[0].downstream=8;
+ for(unsigned role=0;role<3;role++){
+  vlan.bridge_port=role==0;dev.bridge_port=role==1;vlan.vlan_id=role==2?47:46;
+  unsigned tx_drops=dev.stats.tx_dropped,rx_drops=dev.stats.rx_dropped,before=delivered;
+  dma.read=dma.write=0;
+  assert(rtl_pon_itu_data_transmit(&pon,packet(46,false,9),&dev)==NETDEV_TX_OK);
+  rtl_pon_itu_data_receive(&pon,&napi,packet(146,false,7),7|(8<<8));
+  assert(!dma.write && dev.stats.tx_dropped==tx_drops+1 && dev.stats.rx_dropped==rx_drops+1 && delivered==before);
+ }
+ puts("Local VLAN service: UNI tagged-drop bypassed, IWTP rewrite preserved; bridge ports and unconfigured VIDs retain UNI policy");
  free(dma.memory);free(dma.registers);free(state);
  puts(retry?"PADI DMA BUSY retry preserves original SKB and single VLAN edit; PADO return passed":"PADI VLAN46/GEM1033/TCONT1/queue0 -> DMA bytes; PADO GEM8 -> VLAN46; inline/metadata and IWTP rewrite passed");
 }

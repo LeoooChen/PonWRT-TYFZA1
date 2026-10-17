@@ -66,7 +66,7 @@ static inline const struct rtl_itu_path *rtl_itu_path_transmit_vlan(const struct
 		const struct rtl_itu_path *path = &paths->path[i];
 		struct rtl_evto_packet packet = *input;
 		unsigned int rank = path->vlan < RTL_ITU_VLAN_TAGGED ? 4 : path->vlan == RTL_ITU_VLAN_ANY ? 0 : 2;
-		if (path->multicast || !rtl_itu_path_vlan(paths, path, &packet, 0, 2, 0) ||
+		if (path->multicast || !rtl_itu_path_vlan(paths, path, &packet, input->service_entry ? 2 : 0, 2, 0) ||
 		    (path->vlan_exclude & (1U << packet.priority)) ||
 		    !rtl_itu_path_matches(path, packet.count ? packet.tag[0].tci & 4095 : RTL_ITU_VLAN_ANY)) continue;
 		if (!rtl_itu_path_vlan(paths, path, &packet, 2, 3, 0)) continue;
@@ -96,7 +96,7 @@ static inline const struct rtl_itu_path *rtl_itu_path_receive_vlan(const struct 
 		    !rtl_itu_path_vlan(paths, path, &packet, 2, RTL_EVTO_STAGES, 1) ||
 		    !(path->downstream_pbits & (1U << packet.priority)) ||
 		    !rtl_itu_path_matches(path, packet.count ? packet.tag[0].tci & 4095 : RTL_ITU_VLAN_ANY) ||
-		    !rtl_itu_path_vlan(paths, path, &packet, 0, 2, 1)) continue;
+		    !rtl_itu_path_vlan(paths, path, &packet, input->service_entry ? 2 : 0, 2, 1)) continue;
 		if (selected && (selected->index != path->index || packet.count != output->count)) return 0;
 		if (selected) for (unsigned int n = 0; n < packet.count; n++)
 			if (packet.tag[n].tci != output->tag[n].tci || packet.tag[n].tpid != output->tag[n].tpid) return 0;

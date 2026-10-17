@@ -151,7 +151,7 @@ static int fe_evto_downstream(struct rtl_fe_rule *data,const struct rtl_evto_pac
       ((v>>(i*4))&7)<<13|((v>>(i*4+3))&1)<<12;
      candidate.priority=candidate.tag[0].tci>>13;
     }
-    if(image && (!rtl_itu_path_vlan(paths,path,&candidate,0,2,0) ||
+    if(image && (!rtl_itu_path_vlan(paths,path,&candidate,logical->service_entry?2:0,2,0) ||
                  !rtl_itu_path_vlan(paths,path,&candidate,2,RTL_EVTO_STAGES,0)))continue;
     for(unsigned int a=0;a<(candidate.count?type_count:1U);a++)
      for(unsigned int b=0;b<(candidate.count==2?type_count:1U);b++) {
@@ -191,6 +191,7 @@ static int fe_itu_rule(struct rtl_fe_rule *data)
                        data->ipv6?ETH_P_IPV6:ETH_P_IP;
  if(data->input->netdev==fe->itu_netdev) {
   fe_evto_packet(&packet,data->vlan,data->vlan_count,protocol);
+  packet.service_entry=!data->bridge && packet.count;
   if(!data->bridge && data->key.protocol==IPPROTO_UDP) {
    unsigned int a=data->key.source_port,b=data->key.destination_port;
    if(!data->ipv6&&(a==67||a==68)&&(b==67||b==68))packet.criteria=1;
@@ -207,6 +208,7 @@ static int fe_itu_rule(struct rtl_fe_rule *data)
   protocol=data->egress_pppoe?ETH_P_PPP_SES:data->bridge?data->ethernet_protocol:
            data->ipv6?ETH_P_IPV6:ETH_P_IP;
   fe_evto_packet(&packet,data->action.vlan,data->action.vlan_count,protocol);
+  packet.service_entry=!data->bridge && packet.count;
   if(!data->bridge && data->key.protocol==IPPROTO_UDP) {
    unsigned int a=data->key.source_port,b=data->key.destination_port;
    if(data->action.translate) {

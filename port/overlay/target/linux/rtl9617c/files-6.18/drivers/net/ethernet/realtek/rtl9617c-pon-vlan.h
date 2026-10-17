@@ -13,6 +13,7 @@
 struct rtl_evto_tag { unsigned short tpid, tci; };
 struct rtl_evto_packet {
 	unsigned int count, protocol, dscp, criteria, priority;
+	unsigned int service_entry; /* A local VLAN service starts after UNI policy. */
 	struct rtl_evto_tag tag[RTL_EVTO_TAGS];
 };
 struct rtl_evto_profile {

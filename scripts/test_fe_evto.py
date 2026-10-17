@@ -96,6 +96,28 @@ int main(void) {
  routed=(struct rtl_fe_rule){.input=&pp,.output=&lp,.key={.protocol=17},
   .vlan_count=1,.vlan={{.vid=41,.tpid=1}}};
  assert(!fe_itu_rule(&routed) && routed.key.llid==8);
+ struct rtl_itu_paths *service=calloc(1,sizeof(*service)+sizeof(service->profile[0]));assert(service);
+ service->count=service->profile_count=1;
+ service->path[0]=(struct rtl_itu_path){.vlan=41,.pbits=255,.downstream_pbits=255,.index=8,.tcont=1,.queue=3};
+ for(unsigned s=0;s<RTL_EVTO_STAGES;s++)service->path[0].vlan_profile[s]=RTL_EVTO_NONE;
+ service->path[0].vlan_profile[0]=0;
+ service->profile[0]=(struct rtl_evto_profile){.input_tpid=0x8100,.output_tpid=0x8100,.downstream=8,.count=3};
+ unsigned int defaults[3][4]={{0xe8000000,0xe8000000,0xc00f0000,0x000f0000},
+  {0xf8000000,0xe8000000,0xc00f0000,0x000f0000},
+  {0xf8000000,0xf8000000,0x000f0000,0x000f0000}};
+ for(unsigned r=0;r<3;r++)for(unsigned i=0;i<4;i++)for(unsigned b=0;b<4;b++)
+  service->profile[0].row[r][i*4+b]=defaults[r][i]>>(24-b*8);
+ fe.itu_paths=service;
+ routed=(struct rtl_fe_rule){.input=&lp,.output=&pp,.key={.protocol=6},.egress_pppoe=3,
+  .action={.vlan_set=1,.vlan_count=1,.vlan={{.vid=41,.tpid=1}}}};
+ assert(!fe_itu_rule(&routed) && routed.action.gem_index==8 && routed.action.vlan[0].vid==41);
+ routed.bridge=true;assert(fe_itu_rule(&routed)==-EOPNOTSUPP);
+ routed=(struct rtl_fe_rule){.input=&pp,.output=&lp,.key={.protocol=6},.pppoe_input=true,
+  .vlan_count=1,.vlan={{.vid=41,.tpid=1}}};
+ assert(!fe_itu_rule(&routed) && routed.key.llid==8 && routed.vlan[0].vid==41);
+ routed.bridge=true;assert(fe_itu_rule(&routed)==-EOPNOTSUPP);
+ free(service);
+ puts("Local VLAN WAN: both routed hardware directions start after UNI; tagged bridge traffic still rejected by OLT policy");
  puts("EVTO FE: routed upstream editor words, both learned bridge directions, original wire GEM/TCI and configuration generation passed");
 }
 '''
