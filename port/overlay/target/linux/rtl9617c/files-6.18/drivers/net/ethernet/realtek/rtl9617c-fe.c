@@ -438,7 +438,8 @@ static int fe_interface_get(struct rtl_fe *fe,struct rtl_fe_flow *flow)
  interface->users++;
  flow->interface_owned=true;
  if(interface->users==1) {
-  fe_write(fe,0x3004,BIT(18)|((flow->source_mac+1)<<19)|flow->pppoe);
+  /* Exclude Ethernet padding from the PPPoE payload length (SDK EIF bit23). */
+  fe_write(fe,0x3004,BIT(23)|BIT(18)|((flow->source_mac+1)<<19)|flow->pppoe);
   return fe_access(fe,0x3000,BIT(31)|BIT(30)|index);
  }
  return 0;

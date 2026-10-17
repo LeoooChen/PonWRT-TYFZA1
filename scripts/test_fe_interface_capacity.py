@@ -27,6 +27,13 @@ common = r'''
 #define FE_INTERFACES 64
 #define FE_COUNTERS 32
 #define BIT(n) (1U<<(n))
+/* aal-77c/include/aal_l3_if.h: fe_l3e_if_tbl_entry_t, SDK field order. */
+union sdk_eif {
+ unsigned int word;
+ struct {unsigned int pppoe_set:1,pppoe_vld:1,pppoe_session_id:16,
+  mac_sa_vld:1,mac_sa_an_sel:4,pppoe_len_control:1,reserved:8;} fields;
+};
+_Static_assert(sizeof(union sdk_eif)==4,"SDK EIF row width");
 struct rtl_fe_interface {unsigned int users,saved,source_mac,pppoe;bool counted;};
 struct rtl_fe_flow {unsigned int source_mac,counter,pppoe;bool counted,interface_owned;};
 struct rtl_fe {unsigned long counters[1];struct rtl_fe_interface interfaces[64];
@@ -62,7 +69,11 @@ int main(void){
   assert(fe.interfaces[flows[i].counter].source_mac==i%15);
   assert(fe.interfaces[flows[i].counter].pppoe==flows[i].pppoe);
   assert(flows[i].counted==(i<32));
-  assert(fe.table[flows[i].counter]==(BIT(18)|((i%15+1)<<19)|flows[i].pppoe));
+  union sdk_eif row={.word=fe.table[flows[i].counter]};
+  assert(row.fields.pppoe_set==1 && row.fields.pppoe_vld==1);
+  assert(row.fields.pppoe_session_id==(i%2?1234U:3456U));
+  assert(row.fields.mac_sa_vld==1 && row.fields.mac_sa_an_sel==i%15+1);
+  assert(row.fields.pppoe_len_control==1 && !row.fields.reserved);
  }
  struct rtl_fe_flow other_session={.source_mac=0,.pppoe=3U|(65534U<<2)};
  assert(fe_interface_get(&fe,&other_session)==-ENOSPC && !other_session.interface_owned);
@@ -81,6 +92,16 @@ int main(void){
  fe.fail_write=true;
  assert(fe_interface_put(&fe,&failed)==-ETIMEDOUT && fe.interfaces[failed.counter].users==1);
  assert(!fe_interface_put(&fe,&failed) && !fe.counters[0]);
+ /* Native REMOVE/KEEP rows use the same padding policy without changing SID. */
+ for(unsigned int pppoe=0;pppoe<=1;pppoe++) {
+  struct rtl_fe_flow plain={.source_mac=14,.pppoe=pppoe};
+  assert(!fe_interface_get(&fe,&plain));
+  union sdk_eif row={.word=fe.table[plain.counter]};
+  assert(row.fields.pppoe_set==pppoe && !row.fields.pppoe_vld);
+  assert(!row.fields.pppoe_session_id && row.fields.pppoe_len_control==1);
+  assert(row.fields.mac_sa_vld==1 && row.fields.mac_sa_an_sel==15);
+  assert(!fe_interface_put(&fe,&plain) && fe.table[0]==0x50000000);
+ }
  free(flows);
  puts("Native EIF:4096 flows/15 MACs/two PPPoE sessions,64 interfaces/32 exact MIB owners,session isolation and shared lifetime passed");
 }
@@ -95,6 +116,7 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='fe-interface-')
     'production_source_sha256': hashlib.sha256(native.encode()).hexdigest(),
     'flows': 4096, 'source_MACs': 15, 'forwarding_interfaces': 64, 'exact_MIB_owners': 32,
     'PPPoE_sessions_isolated_with_identical_source_MAC': True,
+    'SDK_EIF_fields_and_exclude_padding_policy': True,
     'shared_interface_refcounts_and_last_owner_restore': True,
     'counter_reassignment_without_cross_flow_accounting': True,
     'failed_register_restore_retains_owner_until_retry': True,
