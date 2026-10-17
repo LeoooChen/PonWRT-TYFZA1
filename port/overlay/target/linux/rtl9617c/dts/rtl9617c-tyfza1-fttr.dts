@@ -8,5 +8,10 @@
 		reg = <15>;
 		#address-cells = <1>;
 		#size-cells = <0>;
+
+		fttr_bosa: optical@68 {
+			compatible = "semtech,tyfza1-gn25l99";
+			reg = <0x68>;
+		};
 	};
 };

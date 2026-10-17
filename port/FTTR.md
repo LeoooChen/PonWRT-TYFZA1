@@ -32,6 +32,15 @@ It does not use the names of the original libraries as a capability probe.
   Register errors and busy/completion timeouts are returned to the caller.
   The helper also matches the original word access, but the adapter advertises
   byte-data only until the physical word byte order is verified.
+* GN25L99 calibration client for the confirmed 9690 sample. It reads this unit's
+  retained `rtkoltbosa_k.bin` through the existing read-only factory import.
+  The 661-byte file has a big-endian length, XOR checksum, type 10 and optical
+  address byte. The exact original 128 writes use bytes `1c..9b`.
+  A root write of `1` to the client's `calibration` attribute applies it;
+  the result includes the real register-60 calibrated marker and write count.
+  The original function at `40aa24` only prints a checksum error and still
+  programs all registers. Native calibration stops before IO on this error.
+  The FPGA unit's optical client stays disabled until its actual model is known.
 * PG2L100H FPGA Manager: PROGB/INITB/DONE handshake, original SPI payload,
   and real SPI error propagation. Firmware is loaded explicitly through the
   SPI device's root-writable `firmware` sysfs attribute. The name is relative
@@ -70,6 +79,8 @@ FPGA unit, load its retained image by writing its firmware-relative filename
 to `/sys/bus/spi/devices/<device>/firmware`. Only after successful loading,
 bind the previously failed MiniOLT MDIO device through the standard driver's
 `bind` attribute. Automatic factory import and sequencing remain pending.
+  Optical calibration import now runs independently of upstream BOSA import;
+  absent downstream data removes any previous runtime copy.
 
 Original hashes and detailed results are emitted under `artifacts/fttr/`.
 Original binaries and the kernel build tree are read from the private evidence
@@ -79,7 +90,8 @@ and copied build tree, not modified in the main checkout.
 
 1. FPGA board startup: import its own retained bitstream, load it before
    binding the MiniOLT transport, and initialize the original post-load registers.
-2. GN25L99 identification, local calibration and actual optical readiness.
+2. Optical identification for the other sample, plus real GN25L99 calibration
+   and optical readiness verification. The native sequence is implemented.
 3. P6 SerDes/MAC bring-up, dedicated native RX/TX endpoint and control frames.
 4. OLT-side discovery/registration, authentication, OMCI, T-CONT/GEM/DBA and
    VLAN/service provisioning. Current upstream ONU OMCI is a different role.

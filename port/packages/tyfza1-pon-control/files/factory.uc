@@ -51,6 +51,13 @@ function import_optical() {
 	save('tmp/tyfza1-factory/rtl9617c/bosa-calibration.bin', calibration);
 }
 
+function import_fttr_optical() {
+	unlink(output + '/tmp/tyfza1-factory/rtl9617c/fttr-bosa-calibration.bin');
+	const downstream = readfile(source + '/rtkoltbosa_k.bin');
+	if (downstream != null)
+		save('tmp/tyfza1-factory/rtl9617c/fttr-bosa-calibration.bin', downstream);
+}
+
 function import_radio(radio) {
 	unlink(output + '/tmp/tyfza1-factory/tyfza1/' + radio[0] + '/flash-calibration.bin');
 	let data = 'TYFC0003';
@@ -148,6 +155,12 @@ try {
 	print('Loaded factory PON identity\n');
 } catch (e) {
 	warn('Factory PON identity: ' + e.message + '\n');
+	failed = true;
+}
+try {
+	import_fttr_optical();
+} catch (e) {
+	warn('Factory FTTR optical: ' + e.message + '\n');
 	failed = true;
 }
 exit(failed ? 1 : 0);

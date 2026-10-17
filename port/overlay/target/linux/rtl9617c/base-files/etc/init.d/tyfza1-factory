@@ -11,6 +11,7 @@ start() {
 	# Invalidate the previous import before attempting to access the factory volume.
 	rm -rf "$runtime"
 	for calibration in rtl9617c/bosa-calibration.bin \
+		rtl9617c/fttr-bosa-calibration.bin \
 		tyfza1/rtl8852ce/flash-calibration.bin tyfza1/rtl8192xbe/flash-calibration.bin; do
 		mkdir -p "/lib/firmware/realtek/${calibration%/*}" || return $?
 		ln -sfn "$runtime/$calibration" "/lib/firmware/realtek/$calibration" || return $?
