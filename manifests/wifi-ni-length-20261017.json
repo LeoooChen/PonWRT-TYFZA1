@@ -1,0 +1,93 @@
+{
+  "baseline_commit": "124850c124872e9f78ccd922427b879094eb18fd",
+  "finding": "Incorrect ETH_ZLEN padding forced short A-MSDU ACK/UDP packets onto ARM; factory Wi-Fi NI uses actual length with minimum34.",
+  "root_cause_530Mbps_confirmed": false,
+  "live_throughput_tested": false,
+  "device_access": false,
+  "network_changes": false,
+  "full_tests": false,
+  "parallel_changes_untouched": true,
+  "original_wifi_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "original_ni_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+  "counterevidence": "Historical Mac pure ACKs had TCP options and did not meet the short-A-MSDU condition; no attribution of the observed Mac/UDP throughput plateau.",
+  "build": {
+    "scope": "Only tx.o rebuilt against an isolated copy of the previously compiled radio sources; parallel monitor/PCI/XB changes not rebuilt or modified.",
+    "PE_bytes": 15904,
+    "PE_sha256": "23285a90d2fb7149a17f987d1f3107de4581a79a279c122f0a47d6e9952dbe4a",
+    "embedded_PE_matches": true
+  },
+  "files": [
+    {
+      "path": "port/pe/rtl9617c-radio-uplink.h",
+      "sha256": "ff770cf753c6f81b56c3bc1caee798865313320605bd7a0d961f210083bc9c8f"
+    },
+    {
+      "path": "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-tx-code.h",
+      "sha256": "4e0a9c922f7b520f9a99b0bac5cff0d7aa0d99974c89417c3d95a7be3882235b"
+    },
+    {
+      "path": "tools/check_pe_amsdu_short.py",
+      "sha256": "2ec20f92f68e0efa4f6fdd76834f29f70dacb46e43fa8dd10c75ada1855338b8"
+    },
+    {
+      "path": "tools/check_pe_uplink_small_udp.py",
+      "sha256": "3f8f0a847ee5686753150b2aebcebb3e8956b9e76c293f5c80f73ab09d4cbe0c"
+    },
+    {
+      "path": "docs/wifi-ni-length-20261017.md",
+      "sha256": "cbfd2742cdb4bf7659f1718a52138dd08b73c6960abd83044dbc87c663fd5de5"
+    },
+    {
+      "path": "artifacts/wifi-ni-length-20261017/before/pe-tx.bin",
+      "sha256": "1a06aa123d5b14dd27877cc16e4c1acf333f3c68cdede2d8439d261fa5afa4b4"
+    },
+    {
+      "path": "artifacts/wifi-ni-length-20261017/after/pe-tx.bin",
+      "sha256": "23285a90d2fb7149a17f987d1f3107de4581a79a279c122f0a47d6e9952dbe4a"
+    },
+    {
+      "path": "artifacts/wifi-ni-length-20261017/stock-ni.py",
+      "sha256": "8666e51c468290911898824a1c7e0b805e2096f8ae9a770faefc361b6104dde0"
+    },
+    {
+      "path": "artifacts/wifi-ni-length-20261017/stock-ni.json",
+      "sha256": "f4b2a4254ee8c96bd4b6cd0e80b6b31dd8a6abf570895471ca1040a5854be941"
+    },
+    {
+      "path": "artifacts/wifi-ni-length-20261017/stock-amsdu.py",
+      "sha256": "dc195ce5a49f5cd2db2a9978885762327b1cd2ded9619d098c724e59df5b0dac"
+    },
+    {
+      "path": "artifacts/wifi-ni-length-20261017/stock-amsdu.json",
+      "sha256": "d584ca52243c098287077c5c46942796ab351939d56b45bb68ae23409ad692d1"
+    },
+    {
+      "path": "artifacts/wifi-ni-length-20261017/stock-amsdu.txt",
+      "sha256": "c62db487c88abf01c046e815c6e99ec9003fc1780dd51501fe4e064807902c50"
+    },
+    {
+      "path": "artifacts/wifi-ni-length-20261017/stock-msdu.txt",
+      "sha256": "6be99baf81bbf0b955a829f56ab2927820f13d898870844db3eed6a7b0d62c23"
+    },
+    {
+      "path": "artifacts/wifi-ni-length-20261017/pe-amsdu.json",
+      "sha256": "1268edc5b598eb8427a1c7aa6f26e2a0b3ea829e6ad093582423c8bdb22c37c4"
+    },
+    {
+      "path": "artifacts/wifi-ni-length-20261017/pe-standalone.json",
+      "sha256": "d64bc52f50a2eb49f8bb6dd86e79e9fb766b16a3cdf1f490487b304813f5f66f"
+    },
+    {
+      "path": "artifacts/wifi-ni-length-20261017/historical-acks.json",
+      "sha256": "869e05de04e2eab61489c620466d01bd362d1c9357d74968357330956762dcc9"
+    },
+    {
+      "path": "artifacts/wifi-ni-length-20261017/tx-build.log",
+      "sha256": "7c19b60789f3fb633e07beffdb29202b2f4de59c06ede735d6bbdde0a4b95207"
+    },
+    {
+      "path": "artifacts/wifi-ni-length-20261017/tx-build.json",
+      "sha256": "453b4142bfe7b0b2b67470263c148b625dc1fa85adee995a429be059b168b590"
+    }
+  ]
+}

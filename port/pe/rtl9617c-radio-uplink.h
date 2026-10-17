@@ -133,8 +133,7 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(volatile u32 *ma
 	if (pn_high < state[2] || (pn_high == state[2] && pn_low <= state[1])) { mailbox[110]++; return 0; }
 	u32 body = length - header - 20, offset = 0, frames = 1;
 	if (!amsdu) {
-		/* LLC + IPv4 + UDP is 36 bytes; standalone RX buffers have room
-		 * for the Ethernet minimum-frame padding applied below. */
+		/* LLC + IPv4 + UDP is 36 bytes, producing a 42-byte NI frame. */
 		if (body < 36 || !rx_protocol(data) || (frame[16] & 1) || body + 6 > 2048) return 0;
 	} else {
 		frames = 0;
@@ -142,7 +141,7 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(volatile u32 *ma
 			if (body - offset < 14) return 0;
 			u8 *sub = data + offset;
 			u32 bytes = (u32)sub[12] << 8 | sub[13];
-			if (bytes < 54 || bytes + 6 > 2048 || bytes > body - offset - 14 || (sub[0] & 1) || !rx_protocol(sub + 14)) return 0;
+			if (bytes < 36 || bytes + 6 > 2048 || bytes > body - offset - 14 || (sub[0] & 1) || !rx_protocol(sub + 14)) return 0;
 			if (!mac_equal(sub + 6, frame + 10)) return 0;
 			frames++;
 			offset += bytes + 14;
@@ -170,7 +169,8 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(volatile u32 *ma
 			ethernet = data - 6; bytes = body + 6;
 		}
 		header_copy(ethernet, addresses, 12);
-		if (bytes < 60) { for (u32 i = bytes; i < 60; i++) ethernet[i] = 0; bytes = 60; }
+		/* Stock Wi-Fi lookup maps the actual length (minimum 34), not
+		 * ETH_ZLEN. Padding here would overwrite the next A-MSDU header. */
 		u32 *descriptor = uncached(mailbox[89] + ((write + n) & 63) * 8);
 		descriptor[0] = buffer_dma + (u32)(ethernet - buffer);
 		descriptor[1] = 0xa5000001U | bytes << 8 | ((config >> 8) & 63) << 1;

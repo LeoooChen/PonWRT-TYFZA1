@@ -79,7 +79,6 @@ def case(directory, slot, ipv6, payload_bytes, fe_ready=True):
     if result:
         addr, info = get(descriptors), get(descriptors + 4)
         expected = dst + peer + ethertype + network
-        expected += bytes(max(0, 60 - len(expected)))
         assert result == 0x80000001 and get(vp + 0x18) == 1
         assert info == 0xa5000001 | len(expected) << 8 | (slot + 1) << 1
         assert bytes(u.mem_read(addr, len(expected))) == expected
