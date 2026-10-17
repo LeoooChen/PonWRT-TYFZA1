@@ -239,6 +239,8 @@ SSH 登录 OpenWrt 后执行以下命令。它会根据当前系统槽选择另�
 | **网络 → 无线** | 设置 SSID、密码并启用无线；使用 160 MHz 时等待 DFS/CAC 完成 |
 | **网络 → 防火墙** | 配置软件流量卸载和硬件流量卸载 |
 
+5GHz 主信道36搭配160MHz会覆盖36–64，其中52–64需要 DFS；在中国监管域下首次启用通常需完成60秒 CAC，期间不广播 SSID，随后才启用 AP。主信道36搭配80MHz不覆盖这些 DFS 子信道，无需这段 CAC。可在系统日志查看 `DFS-CAC-START`、`DFS-CAC-COMPLETED` 和 `AP-ENABLED`；若 CAC 失败或出现 `country radar update failed`，应按错误排查，不能只继续等待。
+
 物理网口为 `lan1`–`lan5`（`lan5` 为 2.5G 网口），PON 业务口为 `pon0`。
 保留配置升级会自动迁移原有网络、防火墙、LED 和 SQM 配置中的设备引用，包括 VLAN 子设备。
 

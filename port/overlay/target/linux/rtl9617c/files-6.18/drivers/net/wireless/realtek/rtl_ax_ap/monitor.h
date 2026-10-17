@@ -84,6 +84,7 @@ static void rtl_ax_monitor_stop(struct ieee80211_hw *hw, bool suspend)
 		dev_err(&radio->pdev->dev, "radar stop failed: %d\n", radio->dfs.error);
 	if (ret) radio->dfs.error = ret;
 	radio->dfs.in_cac = false;
+	radio->radar_required = false;
 	mutex_unlock(&radio->command_mutex);
 }
 
@@ -1339,10 +1340,17 @@ static void rtl_ax_regulatory_notify(struct wiphy *wiphy, struct regulatory_requ
 	case NL80211_DFS_ETSI: radio->dfs_domain = 3; break;
 	default: radio->dfs_domain = 0; break;
 	}
-	if (radio->radar_required) {
+	/* A country hint also arrives while stopped or after a failed .start.
+	 * Cache its domain, but only an active interface owns detector setup. */
+	if (radio->monitor_started && radio->radar_required) {
 		ret = rtl_ax_receive_configure(radio, radio->channel.primary,
 			radio->channel.center, radio->channel.bandwidth);
-		if (ret) dev_err(&radio->pdev->dev, "country radar update failed: %d\n", ret);
+		if (ret)
+			dev_err(&radio->pdev->dev,
+				"country radar update failed: %d country=%c%c dfs_region=%u primary=%u center=%u width=%uMHz\n",
+				ret, request->alpha2[0], request->alpha2[1],
+				request->dfs_region, radio->channel.primary,
+				radio->channel.center, 20U << radio->channel.bandwidth);
 	}
 	if (radio->channel.configured) {
 		ret = rtl_ax_power_apply(&radio->io, radio->chip, &radio->power_inputs,
