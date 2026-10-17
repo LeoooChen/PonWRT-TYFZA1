@@ -229,6 +229,26 @@ It does not use the names of the original libraries as a capability probe.
   writes/cleanup to the new peer.
   Its output distinguishes absent/present/verified/unknown object states; GEM
   `configured` means these MEs were verified, not that bridge/Internet works.
+* Native GAL/association profiles and basic Ethernet/VEIP UNI attachment.
+  GAL defaults follow actual `plr_gponrm_gal_add`: instance1, maximum payload
+  1600. Shared/per-UNI bridge attributes follow their separate original
+  producers, and the optional initial Mapper follows its original empty
+  pointer/unmarked-frame values. Requested bridge/Mapper instances remain
+  explicit inputs. `fttrctl profiles` performs these profile transactions.
+  `fttrctl uni` first queries the real Ethernet or VEIP entity, then creates
+  the original bridge port, the Ethernet-only VLAN filter, and extended VLAN
+  association. Ethernet uses TP type1 and ordinal+1; VEIP uses type11 and
+  ordinal+9. Their original Create masks, span selection and association
+  types stay distinct. Both use the original TPID8100/default DSCP Set.
+  The existing GEM lifecycle is now shared in `omci-objects.c`, with explicit
+  prerequisite bits and separate Create/Set attribute groups. Each group is
+  read back independently. This also fixes original Get content parsing that
+  accepts success after its 25-byte limit prevents decoding the 28-byte
+  TPID/DSCP group. Native checks all 28 bytes. Independent GAL/bridge reuse
+  does not acquire a false linear dependency; GEM and UNI retain their real
+  prerequisite checks and cleanup ownership. These commands prepare base
+  entities; Mapper binding, ANI-side attachment and VLAN operation rules
+  still need the complete service policy.
 
 ## Validation
 
@@ -387,6 +407,20 @@ Existing MIB/ME checks pass with the updated command linked. The actual
 OpenWrt musl prepare/compile/install stage is `package-root-gem/`, with output
 in `package-stage-gem.log`. This is no optical or firmware acceptance claim.
 
+`scripts/test_fttr_association.py` executes the original GAL, shared/per-UNI
+bridge, Mapper and Ethernet/VEIP producers/wrappers/encoders. Their mutation
+frames match native constructors, including Ethernet-only filtering and both
+extended VLAN Set sequences. It checks independent profile reuse, both
+Create/Set readback groups and a mismatch in the last DSCP byte, and reproduces
+the original false successful Get with an undecoded DSCP field.
+`association-comparison.json` records the exact scope. The focused GEM check
+passes through the shared resource engine (`gem-objects-comparison.json`).
+The existing AF_PACKET/veth command check also covers profiles, Ethernet,
+VEIP and a nonexistent UNI that produces no writes
+(`controller-association-comparison.json`). MIB/ME checks pass with all new
+command sources linked. The isolated real musl package stage is
+`package-root-association/`, with `package-stage-association.log` output.
+
 The executable links with the project's actual OpenWrt GCC 14.4.0/musl
 toolchain as `artifacts/fttr/fttrctl-musl`. The optional userspace and kernel
 package definitions parse successfully with the pinned OpenWrt make includes.
@@ -480,6 +514,8 @@ fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> mib <hardware-ID> fttr0
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> get <hardware-ID> <class> <instance> <mask> fttr0
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> tcont <hardware-ID> <slot:1..7> <instance> <fixed> <assured> <maximum> fttr0
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> gem <hardware-ID> <ordinal:1..60> <tcont-instance> <queue-instance> <association:0|1> <profile-instance> <gal-instance> fttr0
+fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> profiles <hardware-ID> <bridge-instance> <per-UNI:0|1> <mapper-enabled:0|1> <mapper-instance> fttr0
+fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> uni <hardware-ID> <kind:0=Ethernet,2=VEIP> <UNI-instance> <bridge-instance> <port-instance> <ordinal> fttr0
 ```
 
 `status` emits raw hardware state and the registration bit for all 64 slots.
@@ -522,6 +558,17 @@ not clear those records or claim removal. The resident controller still owns
 its lease during normal operation; this command uses separately prepared
 development hardware. GAL/profile creation, VLAN/UNI flow installation and
 automatic service policy are not performed by this command.
+
+`profiles` creates/reuses the original GAL and selected bridge profile, with
+an optional initial Mapper. For the original shared default, select bridge
+instance`0x8080`, per-UNI`0`; the per-UNI template uses the real selected UNI
+instance and per-UNI`1`. A Mapper starts with all nine TP pointers`ffff` and
+unmarked-frame option1; binding its P-bit pointers to GEM IWs is later work.
+`uni` takes the real physical/VEIP ME, selected bridge/port ME and zero-based
+ordinal. It prepares the original base attachment, TPIDs and default DSCP map.
+The commands report `profiles_state` / `uni_state` with the same observed
+states, serial and primary/cleanup errors as GEM. A `configured` result applies
+to these selected entities, not a complete service or operational UNI.
 
 Original hashes and detailed results are emitted under `artifacts/fttr/`.
 Original binaries and the kernel build tree are read from the private evidence
@@ -596,8 +643,10 @@ the failures/unconfirmed resources and stops further dependency deletion.
    implemented, including a native entity/attribute model from original wire
    layouts. Authentication policy, capability-based service decisions and
    automatic provisioning are not. Explicit T-CONT binding/readback/local DBA
-   and native GEM CTP/IW lifecycle/readback/cleanup are implemented. GAL,
-   association-profile and VLAN/UNI flow configuration remain work.
+   and native GEM CTP/IW lifecycle/readback/cleanup are implemented. Native GAL,
+   bridge/initial Mapper and basic Ethernet/VEIP attachment are implemented.
+   Mapper binding, ANI/GEM-side bridge ports, VLAN operation rules and complete
+   service orchestration remain work.
    Current upstream ONU OMCI is a different role.
 5. Original subordinate gateway configuration, Wi-Fi synchronization,
    multicast, reboot/upgrade and roaming coordination, using the connected

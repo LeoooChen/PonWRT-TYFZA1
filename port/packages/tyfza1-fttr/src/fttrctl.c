@@ -14,6 +14,7 @@
 #include "omci-mib.h"
 #include "omci-me.h"
 #include "omci-gem.h"
+#include "omci-association.h"
 #include "omci-socket.h"
 
 static void hex(const uint8_t *data, size_t length)
@@ -233,27 +234,68 @@ static int create_gem(int directory, unsigned int id, const uint16_t fields[6], 
 	if (ret)
 		return ret;
 	fttr_gem_job_start(&job, id, &session.transaction, &config, before.serial);
-	ret = fttr_gem_execute(&session, &job, directory, &before);
+	ret = fttr_objects_execute(&session, &job.transaction, directory, &before);
 	close(session.fd);
-	result = fttr_gem_job_dump(&job, stdout);
+	result = fttr_objects_job_dump(&job.transaction, stdout, "gem_state");
+	return ret ? ret : result;
+}
+
+static int associate(int directory, unsigned int id, const uint16_t *fields, bool profiles, const char *interface)
+{
+	struct fttr_onu_state before;
+	struct fttr_omci_session session;
+	struct fttr_association_job job;
+	int result, ret = open_session(directory, id, interface, &session, &before);
+
+	if (ret)
+		return ret;
+	if (profiles) {
+		struct fttr_profiles_config config = {
+			.bridge = fields[0], .per_uni = fields[1], .use_mapper = fields[2], .mapper = fields[3],
+		};
+
+		fttr_profiles_job_start(&job, id, &session.transaction, &config, before.serial);
+	} else {
+		struct fttr_uni_config config = {
+			.veip = fields[0] == 2, .uni = fields[1], .bridge = fields[2],
+			.entity = fields[3], .ordinal = fields[4],
+		};
+		struct fttr_me_job probe;
+
+		fttr_me_job_start(&probe, id, &session.transaction, FTTR_ME_GET,
+			config.veip ? 329 : 11, config.uni, config.veip ? 0x8000 : 0x0800, NULL, 0);
+		ret = fttr_me_exchange(&session, &probe);
+		if (ret) {
+			if (probe.replied)
+				fprintf(stderr, "FTTR UNI %u probe: result=%u error=%d\n", config.uni, probe.result, ret);
+			close(session.fd);
+			return ret;
+		}
+		fttr_uni_job_start(&job, id, &session.transaction, &config, before.serial);
+	}
+	ret = fttr_objects_execute(&session, &job.transaction, directory, &before);
+	close(session.fd);
+	result = fttr_objects_job_dump(&job.transaction, stdout, profiles ? "profiles_state" : "uni_state");
 	return ret ? ret : result;
 }
 
 int main(int argc, char **argv)
 {
-	bool mib, wait, query, binding, gem;
+	bool mib, wait, query, binding, gem, profiles, uni;
 	int directory, ret;
 
 	if (argc < 3 || (strcmp(argv[2], "status") && strcmp(argv[2], "mib") &&
 	    strcmp(argv[2], "wait-link") && strcmp(argv[2], "get") && strcmp(argv[2], "tcont") &&
-	    strcmp(argv[2], "gem"))) {
+	    strcmp(argv[2], "gem") && strcmp(argv[2], "profiles") && strcmp(argv[2], "uni"))) {
 		fprintf(stderr, "Usage: %s <miniolt-sysfs-directory> status\n"
 			"       %s <miniolt-sysfs-directory> mib <hardware-ID> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> get <hardware-ID> <class> <instance> <mask> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> tcont <hardware-ID> <slot:1..7> <instance> <fixed> <assured> <maximum> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> gem <hardware-ID> <ordinal:1..60> <tcont-instance> <queue-instance> <association:0|1> <profile-instance> <gal-instance> [interface=fttr0]\n"
+			"       %s <miniolt-sysfs-directory> profiles <hardware-ID> <bridge-instance> <per-UNI:0|1> <mapper-enabled:0|1> <mapper-instance> [interface=fttr0]\n"
+			"       %s <miniolt-sysfs-directory> uni <hardware-ID> <kind:0=Ethernet,2=VEIP> <UNI-instance> <bridge-instance> <port-instance> <ordinal> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> wait-link <NI-sysfs-directory>\n",
-			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
+			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
 		return 2;
 	}
 	mib = !strcmp(argv[2], "mib");
@@ -261,16 +303,19 @@ int main(int argc, char **argv)
 	query = !strcmp(argv[2], "get");
 	binding = !strcmp(argv[2], "tcont");
 	gem = !strcmp(argv[2], "gem");
+	profiles = !strcmp(argv[2], "profiles");
+	uni = !strcmp(argv[2], "uni");
 	if ((mib && argc != 4 && argc != 5) || (query && argc != 7 && argc != 8) ||
 	    (binding && argc != 9 && argc != 10) || (gem && argc != 10 && argc != 11) ||
-	    (wait && argc != 4) || (!mib && !wait && !query && !binding && !gem && argc != 3))
+	    (profiles && argc != 8 && argc != 9) || (uni && argc != 9 && argc != 10) ||
+	    (wait && argc != 4) || (!mib && !wait && !query && !binding && !gem && !profiles && !uni && argc != 3))
 		return 2;
 	directory = open(argv[1], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (directory < 0) {
 		perror(argv[1]);
 		return 1;
 	}
-	if (mib || query || binding || gem) {
+	if (mib || query || binding || gem || profiles || uni) {
 		char *end;
 		unsigned long id;
 
@@ -280,24 +325,30 @@ int main(int argc, char **argv)
 			close(directory);
 			return 2;
 		}
-		if (query || binding || gem) {
+		if (query || binding || gem || profiles || uni) {
 			uint16_t fields[6];
 			unsigned int i;
 
-			for (i = 0; i < (gem ? 6U : binding ? 5U : 3U); i++) {
+			for (i = 0; i < (gem ? 6U : profiles ? 4U : (binding || uni) ? 5U : 3U); i++) {
 				unsigned long value;
 
 				errno = 0;
 				value = strtoul(argv[4 + i], &end, 0);
 				if (errno || !*argv[4 + i] || *end || value > UINT16_MAX ||
 				    (query && i == 2 && !value) || (binding && i == 0 && (!value || value > 7)) ||
-				    (gem && ((i == 0 && (!value || value > 60)) || (i == 3 && value > 1)))) {
+				    (gem && ((i == 0 && (!value || value > 60)) || (i == 3 && value > 1))) ||
+				    (profiles && (i == 1 || i == 2) && value > 1) ||
+				    (uni && ((i == 0 && value != 0 && value != 2) ||
+				             (i == 4 && value > (fields[0] == 2 ? 246U : 254U))))) {
 					close(directory);
 					return 2;
 				}
 				fields[i] = value;
 			}
-			if (gem)
+			if (profiles || uni)
+				ret = associate(directory, id, fields, profiles,
+					profiles ? (argc == 9 ? argv[8] : "fttr0") : (argc == 10 ? argv[9] : "fttr0"));
+			else if (gem)
 				ret = create_gem(directory, id, fields, argc == 11 ? argv[10] : "fttr0");
 			else if (binding)
 				ret = bind_tcont(directory, id, fields, argc == 10 ? argv[9] : "fttr0");

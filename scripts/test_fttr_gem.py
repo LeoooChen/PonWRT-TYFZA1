@@ -73,14 +73,22 @@ class Me(C.Structure):
               ('result',C.c_ubyte),('request',C.c_ubyte*44),('reply',C.c_ubyte*44)]
 
 
+class Values(C.Structure):
+    _fields_=[('mask',C.c_ushort),('size',C.c_ubyte),('value',C.c_ubyte*29)]
+
+
 class Object(C.Structure):
-    _fields_=[('class_id',C.c_ushort),('instance',C.c_ushort),('mask',C.c_ushort),('size',C.c_ubyte),
-              ('value',C.c_ubyte*20),('presence',C.c_int),('touched',C.c_bool)]
+    _fields_=[('class_id',C.c_ushort),('instance',C.c_ushort),('create',Values),('set',Values),
+              ('dependencies',C.c_uint),('presence',C.c_int),('touched',C.c_bool)]
+
+
+class ObjectsJob(C.Structure):
+    _fields_=[('me',Me),('failure',Me),('cleanup_failure',Me),('objects',C.POINTER(Object)),('serial',C.c_ubyte*8),
+              ('phase',C.c_int),('count',C.c_int),('index',C.c_int),('group',C.c_int),('error',C.c_int),('cleanup_error',C.c_int)]
 
 
 class Job(C.Structure):
-    _fields_=[('me',Me),('failure',Me),('cleanup_failure',Me),('objects',Object*3),('serial',C.c_ubyte*8),
-              ('phase',C.c_int),('count',C.c_int),('index',C.c_int),('error',C.c_int),('cleanup_error',C.c_int)]
+    _fields_=[('transaction',ObjectsJob),('objects',Object*3)]
 
 
 class Link(C.Structure):
@@ -98,16 +106,16 @@ def main():
     with tempfile.TemporaryDirectory() as directory:
         work=Path(directory);source=root/'port/packages/tyfza1-fttr/src'
         subprocess.run(['cc','-O2','-std=c11','-Wall','-Wextra','-Werror','-shared','-fPIC','-o',str(work/'gem.so')]+
-            [str(source/n) for n in ('omci-gem.c','omci-me.c','omci-wire.c','omci-socket.c','miniolt.c')],check=True)
+            [str(source/n) for n in ('omci-gem.c','omci-objects.c','omci-me.c','omci-wire.c','omci-socket.c','miniolt.c')],check=True)
         lib=C.CDLL(str(work/'gem.so'))
         lib.fttr_gem_job_start.argtypes=[C.POINTER(Job),C.c_ushort,C.POINTER(C.c_ushort),C.POINTER(Config),C.c_char_p]
-        lib.fttr_gem_job_update.argtypes=[C.POINTER(Job),C.POINTER(C.c_ushort)]
-        lib.fttr_gem_job_release.argtypes=lib.fttr_gem_job_update.argtypes
+        lib.fttr_objects_job_update.argtypes=[C.POINTER(ObjectsJob),C.POINTER(C.c_ushort)]
+        lib.fttr_objects_job_release.argtypes=lib.fttr_objects_job_update.argtypes
         lib.fttr_me_job_send.argtypes=[C.POINTER(Me),C.c_int,C.POINTER(Link),C.c_int64]
         lib.fttr_me_job_timeout.argtypes=lib.fttr_me_job_send.argtypes
         lib.fttr_me_job_reply.argtypes=[C.POINTER(Me),C.POINTER(Message)]
         lib.fttr_omci_receive.argtypes=[C.c_int,C.c_ushort,C.c_void_p,C.c_size_t,C.POINTER(Message)]
-        lib.fttr_gem_job_dump.argtypes=[C.POINTER(Job),C.c_void_p]
+        lib.fttr_objects_job_dump.argtypes=[C.POINTER(ObjectsJob),C.c_void_p,C.c_char_p]
         lib.fttr_miniolt_gem_id.argtypes=[C.c_uint,C.c_uint];lib.fttr_miniolt_gem_id.restype=C.c_ushort
         link=Link((C.c_ubyte*6)(*HOST),(C.c_ubyte*6)(*OLT),0x8888,False)
         serial=bytes.fromhex('5445535401234567')
@@ -123,35 +131,35 @@ def main():
             try:
                 while action==1:
                     assert len(sent)<40
-                    assert lib.fttr_me_job_send(C.byref(job.me),client.fileno(),C.byref(link),now)==0
-                    assert lib.fttr_gem_job_update(C.byref(job),C.byref(counter))==0
+                    assert lib.fttr_me_job_send(C.byref(job.transaction.me),client.fileno(),C.byref(link),now)==0
+                    assert lib.fttr_objects_job_update(C.byref(job.transaction),C.byref(counter))==0
                     frame=server.recv(2048);body=frame[16:60];sent.append(body)
                     assert frame[:16]==OLT+HOST+bytes.fromhex('88880005')
                     transaction,opcode,device,c,instance=struct.unpack('>HBBHH',body[:8]);key=c,instance
-                    definition=next(x for x in job.objects[:job.count] if (x.class_id,x.instance)==key)
-                    expected=bytes(definition.value[:definition.size]);status=0
+                    definition=next(x for x in job.objects[:job.transaction.count] if (x.class_id,x.instance)==key)
+                    expected=bytes(definition.create.value[:definition.create.size]);status=0
                     if opcode==0x44:
                         if fault=='create-and-delete-reject' and c==266:status=2
                         else:objects[key]=body[8:8+len(expected)]
                         if fault=='lost-create-reply' and c==268:
                             for deadline in (now+2000,now+4000):
-                                assert lib.fttr_me_job_timeout(C.byref(job.me),client.fileno(),C.byref(link),deadline)==0
+                                assert lib.fttr_me_job_timeout(C.byref(job.transaction.me),client.fileno(),C.byref(link),deadline)==0
                                 assert server.recv(2048)==frame
-                            assert lib.fttr_me_job_timeout(C.byref(job.me),client.fileno(),C.byref(link),now+6000)==-errno.ETIMEDOUT
-                            action=lib.fttr_gem_job_update(C.byref(job),C.byref(counter));now+=6000;continue
+                            assert lib.fttr_me_job_timeout(C.byref(job.transaction.me),client.fileno(),C.byref(link),now+6000)==-errno.ETIMEDOUT
+                            action=lib.fttr_objects_job_update(C.byref(job.transaction),C.byref(counter));now+=6000;continue
                     elif opcode==0x46:
                         if fault=='create-and-delete-reject' and c==268:status=7
                         elif fault!='false-delete-success':objects.pop(key,None)
                     else:
-                        assert opcode==0x49 and body[8:10]==struct.pack('>H',definition.mask)
+                        assert opcode==0x49 and body[8:10]==struct.pack('>H',definition.create.mask)
                         if key not in objects:status=5
                     content=bytes([status])
                     if opcode==0x49 and not status:content+=body[8:10]+objects[key]
                     server.send(stock.frame(transaction,(opcode & 0x1f)|0x20,content,class_id=c,instance=instance))
                     buffer=C.create_string_buffer(1996);message=Message()
                     assert lib.fttr_omci_receive(client.fileno(),0x8888,buffer,len(buffer),C.byref(message))==0
-                    assert lib.fttr_me_job_reply(C.byref(job.me),C.byref(message))!=0
-                    action=lib.fttr_gem_job_update(C.byref(job),C.byref(counter));now+=1
+                    assert lib.fttr_me_job_reply(C.byref(job.transaction.me),C.byref(message))!=0
+                    action=lib.fttr_objects_job_update(C.byref(job.transaction),C.byref(counter));now+=1
                 return action,sent
             finally:client.close();server.close()
 
@@ -160,10 +168,10 @@ def main():
             ret,original=stock.producer(config,release=True);assert ret==0
             job,counter=start(config);objects={}
             result,frames=drive(job,counter,objects)
-            assert result==2 and job.phase==6 and not job.error and all(o.touched for o in job.objects[:job.count])
-            action=lib.fttr_gem_job_release(C.byref(job),C.byref(counter))
+            assert result==2 and job.transaction.phase==7 and not job.transaction.error and all(o.touched for o in job.objects[:job.transaction.count])
+            action=lib.fttr_objects_job_release(C.byref(job.transaction),C.byref(counter))
             result,cleanup=drive(job,counter,objects,action=action)
-            assert result==2 and job.phase==7 and not objects and not any(o.touched for o in job.objects[:job.count])
+            assert result==2 and job.transaction.phase==8 and not objects and not any(o.touched for o in job.objects[:job.transaction.count])
             actual=[x[2:] for x in frames+cleanup if x[2] in (0x44,0x46)]
             assert actual==[x[2:] for x in original], ([x.hex() for x in actual],[x[2:].hex() for x in original])
 
@@ -172,37 +180,37 @@ def main():
         assert ret==55 and stock.released and original[-2][2]==original[-1][2]==0x46
         job,counter=start(config);objects={}
         result,frames=drive(job,counter,objects,'create-and-delete-reject')
-        assert result==-errno.EREMOTEIO and job.error==job.cleanup_error==-errno.EREMOTEIO
-        assert job.failure.result==2 and job.cleanup_failure.result==7
+        assert result==-errno.EREMOTEIO and job.transaction.error==job.transaction.cleanup_error==-errno.EREMOTEIO
+        assert job.transaction.failure.result==2 and job.transaction.cleanup_failure.result==7
         assert job.objects[0].touched and job.objects[1].touched and not job.objects[2].touched
         assert (280,0x1110) in objects and (268,0x117) in objects
         assert [struct.unpack('>H',x[4:6])[0] for x in frames if x[2]==0x46]==[268]
 
         job,counter=start(config)
-        descriptor=job.objects[0];objects={(280,0x1110):bytes(descriptor.value[:descriptor.size])}
+        descriptor=job.objects[0];objects={(280,0x1110):bytes(descriptor.create.value[:descriptor.create.size])}
         result,frames=drive(job,counter,objects)
         assert result==2 and not job.objects[0].touched
-        result,cleanup=drive(job,counter,objects,action=lib.fttr_gem_job_release(C.byref(job),C.byref(counter)))
+        result,cleanup=drive(job,counter,objects,action=lib.fttr_objects_job_release(C.byref(job.transaction),C.byref(counter)))
         assert result==2 and set(objects)=={(280,0x1110)}
 
         job,counter=start(config)
-        iw=job.objects[2];objects={(266,0x117):bytes(iw.value[:iw.size])}
+        iw=job.objects[2];objects={(266,0x117):bytes(iw.create.value[:iw.create.size])}
         result,frames=drive(job,counter,objects)
         assert result==-errno.EUCLEAN and all(x[2]==0x49 for x in frames)
 
         config.descriptor=0;job,counter=start(config);objects={}
         result,frames=drive(job,counter,objects,'lost-create-reply')
-        assert result==-errno.ETIMEDOUT and not objects and not any(o.touched for o in job.objects[:job.count])
-        assert job.failure.attempts==3 and not job.failure.replied
+        assert result==-errno.ETIMEDOUT and not objects and not any(o.touched for o in job.objects[:job.transaction.count])
+        assert job.transaction.failure.attempts==3 and not job.transaction.failure.replied
 
         job,counter=start(config);objects={};assert drive(job,counter,objects)[0]==2
-        result,frames=drive(job,counter,objects,'false-delete-success',lib.fttr_gem_job_release(C.byref(job),C.byref(counter)))
-        assert result==-errno.EUCLEAN and job.cleanup_error==-errno.EUCLEAN
-        assert set(objects)=={(268,0x117),(266,0x117)} and all(o.touched for o in job.objects[:job.count])
+        result,frames=drive(job,counter,objects,'false-delete-success',lib.fttr_objects_job_release(C.byref(job.transaction),C.byref(counter)))
+        assert result==-errno.EUCLEAN and job.transaction.cleanup_error==-errno.EUCLEAN
+        assert set(objects)=={(268,0x117),(266,0x117)} and all(o.touched for o in job.objects[:job.transaction.count])
         libc=C.CDLL(None);libc.fopen.argtypes=[C.c_char_p,C.c_char_p];libc.fopen.restype=C.c_void_p
         libc.fclose.argtypes=[C.c_void_p];path=work/'state.json'
         file=libc.fopen(str(path).encode(),b'w')
-        assert lib.fttr_gem_job_dump(C.byref(job),file)==0 and libc.fclose(file)==0
+        assert lib.fttr_objects_job_dump(C.byref(job.transaction),file,b'gem_state')==0 and libc.fclose(file)==0
         state=json.loads(path.read_text());assert state['cleanup_failure']['error']==-errno.EUCLEAN
         assert state['serial']==serial.hex() and state['objects'][0]['touched']
 

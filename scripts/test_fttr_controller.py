@@ -293,6 +293,65 @@ def main():
                 finally:
                     if query.poll() is None:
                         query.terminate();query.communicate(timeout=3)
+            for name in ('profiles','uni','veip','uni-missing'):
+                is_profiles=name=='profiles';is_veip=name=='veip';missing=name=='uni-missing'
+                uni_id=0x108 if missing else 0x107
+                if is_profiles:
+                    definitions={(272,1):{0x8000:bytes.fromhex('0640')},
+                        (45,0x8080):{0xff80:bytes.fromhex('010101ffff0f0005000f000000')},
+                        (130,0x42):{0xffc0:b'\xff'*18+b'\x01'}}
+                    command=['profiles','7','0x8080','0','1','0x42','ftr-host']
+                else:
+                    definitions={(47,0x321):{0xfc00 if is_veip else 0xfe00:
+                        bytes.fromhex('80800b0b010700000001' if is_veip else '8080030101070000000101')},
+                        (171,0x321):{0x8200:bytes([10 if is_veip else 2])+bytes.fromhex('0107'),
+                                    0x3100:bytes.fromhex('81008100')+bytes(24)}}
+                    if not is_veip:definitions[84,0x321]={0x4000:b'\0'}
+                    command=['uni','7','2' if is_veip else '0',hex(uni_id),'0x8080','0x321','2','ftr-host']
+                pool,operations={},[]
+                query=subprocess.Popen([str(args.control.resolve()),str(miniolt)]+command,
+                    stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                try:
+                    deadline=time.monotonic()+4
+                    while query.poll() is None:
+                        assert time.monotonic()<deadline
+                        if not select.select([peer],[],[],0.05)[0]:continue
+                        frame,address=peer.recvfrom(2048)
+                        if address[2]==socket.PACKET_OUTGOING:continue
+                        tci,op,device,c,instance=struct.unpack('>HBBHH',frame[16:24]);key=c,instance
+                        operations.append((op,c));status=0;data=b''
+                        if c in (11,329):
+                            assert not is_profiles and op==0x49 and instance==uni_id
+                            status=5 if missing else 0;data=frame[24:26]+b'\0'
+                        else:
+                            assert key in definitions
+                            groups=definitions[key]
+                            if op==0x44:
+                                mask=next(iter(groups));value=groups[mask]
+                                assert frame[24:24+len(value)]==value
+                                pool[key]={mask:value}
+                            elif op==0x48:
+                                mask=struct.unpack('>H',frame[24:26])[0];value=groups[mask]
+                                assert frame[26:26+len(value)]==value
+                                pool[key][mask]=value
+                            else:
+                                assert op==0x49
+                                mask=struct.unpack('>H',frame[24:26])[0]
+                                if key not in pool:status=5
+                                else:data=frame[24:26]+pool[key].get(mask,bytes(len(groups[mask])))
+                        peer.send(response(7,tci,(op & 0x1f)|0x20,bytes([status])+data,class_id=c,instance=instance))
+                    output,error=query.communicate(timeout=3)
+                    if missing:
+                        assert query.returncode==1 and not output and operations==[(0x49,11)] and 'result=5' in error
+                    else:
+                        row=json.loads(output)
+                        assert query.returncode==0 and row['phase']=='configured',(name,row,error)
+                        assert row['event']==('profiles_state' if is_profiles else 'uni_state')
+                        assert all(x['state']=='verified' for x in row['objects'])
+                        if not is_profiles:assert (0x48,171) in operations and 0x3100 in pool[171,0x321]
+                finally:
+                    if query.poll() is None:
+                        query.terminate();query.communicate(timeout=3)
         finally:
             if process.poll() is None:
                 process.terminate()
@@ -308,6 +367,7 @@ def main():
         'tcont_grant_failure_keeps_remote_state_explicit':True,'already_bound_tcont_skips_set':True,
         'gem_cli_configured_and_verified':True,'gem_cli_retains_failed_cleanup':True,
         'gem_replacement_stops_retransmission_writes_and_cleanup_to_new_peer':True,
+        'profiles_and_ethernet_VEIP_cli_match_original':True,'UNI_existence_probe_precedes_writes':True,
         'malformed_frame_reported_without_master_exit':True,'offline_releases_grant_and_inventory':True,
         'replaced_onu_reinventoried':True,'old_transaction_reply_ignored':True,'sigterm_closes_hardware_and_netdev':True,
         'optical_hardware_verified':False},indent=2)+'\n')
