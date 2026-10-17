@@ -99,6 +99,7 @@ struct rtl9617c_pon {
 	int epon_holdover_error;
 	u32 epon_llid_cleanup;
 	int epon_llid_cleanup_error;
+	u8 epon_sla[8][88], epon_sla_length[8];
 	bool pdc_configured;
 	int pdc_error;
 	bool puc_configured;
@@ -239,6 +240,7 @@ int rtl_pon_epon_pm(struct rtl9617c_pon *pon, unsigned long long counters[37]);
 void rtl_pon_epon_tx_init(struct rtl9617c_pon *pon);
 int rtl_pon_epon_tx_control(struct rtl9617c_pon *pon, const u8 *data, size_t count);
 int rtl_pon_epon_holdover_set(struct rtl9617c_pon *pon, const u8 *data, size_t count);
+int rtl_pon_epon_sla_set(struct rtl9617c_pon *pon, const u8 *data, size_t count);
 int rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon);
 int rtl_pon_mpcp_configure_locked(struct rtl9617c_pon *pon);
 int rtl_pon_pdc_configure_locked(struct rtl9617c_pon *pon);

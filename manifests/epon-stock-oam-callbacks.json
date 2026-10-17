@@ -182,7 +182,8 @@
       "getter": "0x41f088",
       "setter": "0x41f0f4",
       "name": "Sevice SLA",
-      "native_status": "not_ported"
+      "native_status": "partially_implemented_offline",
+      "native_scope": "SP/WRR and CIR/PIR in 8-queue PUC mode, LLID0..7; other SLA/REPORT semantics pending"
     },
     {
       "table": "extended_default",
@@ -690,7 +691,8 @@
       "getter": "0x41f088",
       "setter": "0x41f0f4",
       "name": "Sevice SLA",
-      "native_status": "not_ported"
+      "native_status": "partially_implemented_offline",
+      "native_scope": "SP/WRR and CIR/PIR in 8-queue PUC mode, LLID0..7; other SLA/REPORT semantics pending"
     },
     {
       "table": "extended_flag_0x20000000",
@@ -1249,5 +1251,5 @@
     "registration-epoch binding",
     "PCS link interrupts and RX/coresec recovery"
   ],
-  "native_partial_entries": 4
+  "native_partial_entries": 6
 }

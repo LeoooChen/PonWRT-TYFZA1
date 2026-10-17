@@ -310,6 +310,52 @@ static int capabilities_get(struct pon_backend *backend, uint16_t leaf, uint8_t 
 	return 40;
 }
 
+static int sla_get(struct pon_backend *backend, uint8_t *value)
+{
+	uint8_t raw[89];
+	char path[544];
+	FILE *file;
+	int ret;
+
+	snprintf(path, sizeof(path), "%s/epon_sla", backend->device);
+	file = fopen(path, "rb");
+	if (!file)
+		return -errno;
+	ret = fseek(file, backend->llid * sizeof(raw), SEEK_SET);
+	if (!ret)
+		ret = fread(raw, 1, sizeof(raw), file) == sizeof(raw) ? 0 : -EIO;
+	fclose(file);
+	if (ret)
+		return ret;
+	if (!raw[0] || raw[0] > 88)
+		return -EPROTO;
+	memcpy(value, raw + 1, raw[0]);
+	return raw[0];
+}
+
+static int sla_set(struct pon_backend *backend, const uint8_t *value, size_t size)
+{
+	uint8_t raw[97];
+	char path[544];
+	FILE *file;
+	int ret;
+
+	if (!size || size > 88)
+		return -EINVAL;
+	raw[0] = backend->llid;
+	for (unsigned int byte = 0; byte < 8; byte++)
+		raw[1 + byte] = backend->epoch >> (56 - byte * 8);
+	memcpy(raw + 9, value, size);
+	snprintf(path, sizeof(path), "%s/epon_sla", backend->device);
+	file = fopen(path, "wb");
+	if (!file)
+		return -errno;
+	ret = fwrite(raw, 1, size + 9, file) == size + 9 ? 0 : -EIO;
+	if (fclose(file) && !ret)
+		ret = -errno;
+	return ret;
+}
+
 static int holdover_get(struct pon_backend *backend, uint8_t *value)
 {
 	uint8_t raw[4];
@@ -370,6 +416,8 @@ static int parameter_get(void *context, const struct pon_oam_request *request,
 
 	uint8_t branch = request->branch;
 	uint16_t leaf = request->leaf;
+	if (branch == 0xc7 && leaf == 6)
+		return sla_get(backend, value);
 	if (branch == 0xc7 && leaf == 8)
 		return holdover_get(backend, value);
 	if (branch == 0xc7 && leaf >= 0xb1 && leaf <= 0xb3) {
@@ -481,6 +529,11 @@ static uint8_t parameter_set(void *context, const struct pon_oam_request *reques
 	}
 	if (branch == 0xc7 && leaf == 8) {
 		ret = holdover_set(backend, value, size);
+		backend->management_error = ret;
+		return !ret ? 0x80 : ret == -EINVAL ? 0x86 : 0x87;
+	}
+	if (branch == 0xc7 && leaf == 6) {
+		ret = sla_set(backend, value, size);
 		backend->management_error = ret;
 		return !ret ? 0x80 : ret == -EINVAL ? 0x86 : 0x87;
 	}

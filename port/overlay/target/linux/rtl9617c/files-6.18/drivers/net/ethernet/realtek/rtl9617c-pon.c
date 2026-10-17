@@ -728,6 +728,40 @@ static ssize_t epon_holdover_write(struct file *file, struct kobject *kobj,
 }
 static BIN_ATTR(epon_holdover, 0600, epon_holdover_read, epon_holdover_write, 128);
 
+static ssize_t epon_sla_read(struct file *file, struct kobject *kobj,
+	const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(kobj_to_dev(kobj));
+	unsigned int channel = offset / 89;
+	int ret = 89;
+
+	if (offset % 89 || channel >= 8 || count < 89)
+		return -EINVAL;
+	mutex_lock(&pon->lock);
+	if (!rtl_pon_mode_is_epon(pon->mode))
+		ret = -EOPNOTSUPP;
+	else if (channel >= pon->llid_count)
+		ret = -EINVAL;
+	else if (!pon->puc_configured || !pon->epon_sla_length[channel])
+		ret = -EAGAIN;
+	else {
+		memset(buf, 0, 89);
+		buf[0] = pon->epon_sla_length[channel];
+		memcpy(buf + 1, pon->epon_sla[channel], buf[0]);
+	}
+	mutex_unlock(&pon->lock);
+	return ret;
+}
+
+static ssize_t epon_sla_write(struct file *file, struct kobject *kobj,
+	const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
+{
+	if (offset)
+		return -EINVAL;
+	return rtl_pon_epon_sla_set(dev_get_drvdata(kobj_to_dev(kobj)), buf, count) ?: count;
+}
+static BIN_ATTR(epon_sla, 0600, epon_sla_read, epon_sla_write, 8 * 89);
+
 #define RTL_PON_PM_RECORD_BYTES (8 + 37 * 8)
 static ssize_t pm_counters_read(struct file *file, struct kobject *kobj,
 	const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
@@ -800,6 +834,7 @@ static const struct bin_attribute *const rtl9617c_pon_bin_attrs[] = {
 	&bin_attr_epon_key,
 	&bin_attr_epon_tx_control,
 	&bin_attr_epon_holdover,
+	&bin_attr_epon_sla,
 	&bin_attr_pm_counters,
 	NULL,
 };

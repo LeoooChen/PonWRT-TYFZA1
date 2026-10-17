@@ -149,6 +149,15 @@ int main(int argc,char **argv) {
  f=fopen(path,"wb");assert(fwrite("\0\0\0\0\0\1\0\310",1,8,f)==8);fclose(f);
  assert(id.get_parameter(&b,&r,out,sizeof(out))==8 && !memcmp(out,hold,8));
  hold[5]=1;assert(id.set_parameter(&b,&r,hold,8)==0x86);
+ r.leaf=6;unsigned char sla[18]={1,1,0,0,0,0,0,1,0,0,0,0,0,0,100,3,232,5};
+ assert(id.set_parameter(&b,&r,sla,sizeof(sla))==0x80);
+ snprintf(path,sizeof(path),"%s/epon_sla",b.device);
+ unsigned char record[89]={18};memcpy(record+1,sla,sizeof(sla));
+ f=fopen(path,"rb");assert(fread(v,1,9,f)==9);fclose(f);
+ assert(v[0]==1 && !memcmp(v+1,"\1\2\3\4\5\6\7\10",8));
+ f=fopen(path,"wb");assert(!fseek(f,89,SEEK_SET));assert(fwrite(record,1,89,f)==89);fclose(f);
+ unsigned char sla_out[88];assert(id.get_parameter(&b,&r,sla_out,sizeof(sla_out))==18);
+ assert(!memcmp(sla_out,sla,sizeof(sla)));
  r.branch=0xc9;r.leaf=1;assert(id.set_parameter(&b,&r,NULL,0)==0x80);
  uint64_t deadline=b.reboot_at;
  pon_backend_tick(&b,deadline-1);assert(!reboots);

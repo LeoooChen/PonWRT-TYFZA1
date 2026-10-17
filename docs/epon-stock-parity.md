@@ -137,7 +137,7 @@ REA 6.5.0 / Ghidra 12.1.2 通过既有本地 stdio 批处理运行。
 | extended_default | c7/0003 | Chipset ID | not_ported |
 | extended_default | c7/0004 | ONU Capabilities-1 | implemented_offline |
 | extended_default | c7/0005 | OpticalTransceiverDiagnosis | implemented_offline |
-| extended_default | c7/0006 | Sevice SLA | not_ported |
+| extended_default | c7/0006 | Sevice SLA | partially_implemented_offline |
 | extended_default | c7/0007 | ONU Capabilities-2 | implemented_offline |
 | extended_default | c7/0008 | HoldoverConfig | implemented_offline |
 | extended_default | c7/0009 | MxUMngGlobalParameter | not_ported |
@@ -179,7 +179,7 @@ REA 6.5.0 / Ghidra 12.1.2 通过既有本地 stdio 批处理运行。
 | extended_flag_0x20000000 | c7/0003 | Chipset ID | not_ported |
 | extended_flag_0x20000000 | c7/0004 | ONU Capabilities-1 | implemented_offline |
 | extended_flag_0x20000000 | c7/0005 | OpticalTransceiverDiagnosis | implemented_offline |
-| extended_flag_0x20000000 | c7/0006 | Sevice SLA | not_ported |
+| extended_flag_0x20000000 | c7/0006 | Sevice SLA | partially_implemented_offline |
 | extended_flag_0x20000000 | c7/0007 | ONU Capabilities-2 | implemented_offline |
 | extended_flag_0x20000000 | c7/0008 | HoldoverConfig | implemented_offline |
 | extended_flag_0x20000000 | c7/0009 | MxUMngGlobalParameter | not_ported |
@@ -369,3 +369,48 @@ PM基线复位不伪恢复、真实硬件复位恢复、读取失败及原生UNI
 
 后续仍须处理SLA/DBA、VLAN/组播、限速/环路、升级与其他原清单遗漏；
 本节不宣称EPON功能全部完成。
+
+
+## 2026-10-17 续作：Service SLA 的实际队列消费者
+
+在 `9d19bbf` 之后继续。C7/0006 已接通原生 PUC 队列消费者，不再只是
+返回不支持。范围为原厂8路LLID、每路8队列配置下的SP/WRR和CIR/PIR；
+整个SLA/DBA仍标为部分实现，未把没有后端的字段当成有效调度功能。
+
+原厂证据链：`0x41f088/0x41f0f4` → `0x4113ec/0x411724` →
+`librtk.so:rt_epon_ponQueue_set` 的setsockopt 0x3b78 → 原厂内核
+`rt_epon_ponQueue_set` → `dal_rtl8277c_ponmac_queue_add` → PUC AAL。
+此前私有目录中已有的stock-kernel.elf是2024-10-16内核，不能套用地址；
+本轮从权威 `kernel-uncompressed.bin` 重新提取2024-12-02内核符号，
+确认实际入口为 `0xffffffc0105ba690`，没有用旧内核推断当前实现。
+
+实际新增：
+
+- 长度为1的关闭格式，或8字节头加每项10字节的1..8队列格式。严格匹配
+  声明数量与真实长度，16位值按网络序解码。按原厂消费顺序对应队列0..N-1。
+- 每个CIR/PIR原始值按原厂内核乘8，再依DAL拆为rate/500、rate%500；
+  burst按真实指令的25000/50000/500000边界选择5/10/100/1000。
+  PVT权重、VSTBL信用、每队列CIR/PIR、valid位均实际写表；保留硬件桶模式。
+- 更新前只暂停对应LLID队列，并清理其在途队列；每个被清理队列实际检查
+  PUC长度，等待flush完成后再次核对。失败保留错误且不会发布成功的SLA缓存。
+  其他LLID的valid位及临时使用的drop/limit寄存器均保留。
+- 关闭恢复全部8队列SP、CIR关闭及PIR不限速，修复原厂仅恢复前7队列导致
+  第8队列旧策略残留的问题。配置绑定当前LLID epoch；完整PUC重建重置视图。
+
+没有照搬的原厂问题：`0x411724`读取16位字段时遗漏ntohs；允许scheme2
+却只执行0/1/3分支，scheme2使用未初始化配置而scheme3不可达；原厂内核
+WRR分支把请求的weight丢成0；队列操作返回值只记录而上层始终成功。
+新实现当前只接受有明确语义的SP=0、WRR=1，WRR权重必须1..100，
+不猜测scheme2/3，也不隐式转换成另一调度模式。
+
+剩余限制：头内high-priority/cycle以及每项前5字节目前只是原厂可回读元数据，
+本机已确认的原厂队列后台也未使用这些字段；没有声称实现其附加调度语义。
+原厂 `dal_rtl8277c_epon_mpcp_queue_threshold_set` 实際只把输入8字节清零，
+不写REPORT寄存器；其成功返回不代表功能实现，REPORT阈值/周期后台仍未完成。
+4队列VOQ模式和LLID8及以上未开放SLA写入，不把32槽普通注册等同完整QoS支持。
+
+定向验证：实际原厂DAL/AAL执行与生产bucket helper逐字段比对通过，覆盖
+速率分段边界与不限速；原生SP/WRR、队列清理、关闭恢复及失败不重新启用队列
+通过；后端长值/LLID/epoch封装与Get回读通过。musl守护进程、PON控制器和PUC
+两个ARM64对象编译通过且无警告。没有全量测试、完整固件编译或光路实测。
+见 `manifests/epon-sla-20261017.json`。
