@@ -5,7 +5,7 @@ LUCI_DEPENDS:=+luci-base +luci-theme-argon +luci-i18n-argon-config-zh-cn +luci-m
 LUCI_EXTRA_DEPENDS:=tyfza1-pon-control (>=0.7.0_alpha)
 LUCI_PKGARCH:=all
 PKG_VERSION:=0.7.0_alpha
-PKG_RELEASE:=1
+PKG_RELEASE:=
 PKG_LICENSE:=GPL-2.0-or-later
 # CSSTidy 1.3 predates CSS variables and responsive grid expressions.
 CONFIG_LUCI_CSSTIDY:=

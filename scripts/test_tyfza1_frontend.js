@@ -72,6 +72,9 @@ function text(node) {
 	return node && typeof node === 'object' ? node.textContent ?? text(node.children) : node == null ? '' : String(node);
 }
 async function main() {
+	const cssRevision = require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(resources, 'tyfza1/status.css'))).digest('hex').slice(0, 12);
+	assert.equal(status.style().attrs.href, '/luci-static/resources/tyfza1/status.css?v=' + cssRevision,
+		'CSS changes must change the URL so browser caches cannot retain an older ONU layout');
 	assert.match(text(status.card('card', null, [E('p', {}, 'first child'), E('p', {}, 'second child')])), /first child.*second child/);
 	const menu = JSON.parse(fs.readFileSync(path.join(resources, '../../../root/usr/share/luci/menu.d/luci-app-tyfza1-pon.json')));
 	assert.equal(Object.keys(menu).filter(key => key.startsWith('admin/onu/')).length, 7);
