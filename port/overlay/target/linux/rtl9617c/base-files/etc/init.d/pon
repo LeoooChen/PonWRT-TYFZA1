@@ -70,7 +70,7 @@ configure_link() {
 		pon_stage=omci_interface
 		ip link set pon-omci up || return $?
 		pon_stage=data_interface
-		ip link set pon-data0 up || return $?
+		ip link set pon0 up || return $?
 		pon_stage=activation
 		printf '1\n' > "$device/activation" || return $?
 		pon_stage=omci_daemon
@@ -99,7 +99,7 @@ configure_link() {
 	while [ "$i" -lt "$llids" ]; do
 		printf '1\n' > "/proc/sys/net/ipv6/conf/pon-oam$i/disable_ipv6"
 		ip link set "pon-oam$i" up || return $?
-		ip link set "pon-data$i" up || return $?
+		ip link set "pon$i" up || return $?
 		i=$((i + 1))
 	done
 	pon_stage=traffic
@@ -144,7 +144,7 @@ stop_service() {
 		done
 		;;
 	esac
-	for interface in /sys/class/net/pon-data*; do
+	for interface in /sys/class/net/pon[0-9]*; do
 		if [ -d "$interface" ]; then
 			ip link set "${interface##*/}" down || result=$?
 		fi

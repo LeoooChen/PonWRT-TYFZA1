@@ -63,7 +63,7 @@ static int __init sim_init(void)
   .binder_type=FLOW_BLOCK_BINDER_TYPE_CLSACT_INGRESS,.net=&init_net,.block=&block};
  u8 ethernet[12];
  int ret;
- lan=dev_get_by_name(&init_net,"eth3");radio=dev_get_by_name(&init_net,"ap5");
+ lan=dev_get_by_name(&init_net,"lan4");radio=dev_get_by_name(&init_net,"ap5");
  bridge=dev_get_by_name(&init_net,"br-lan");
  if(!lan || !radio)return -ENODEV;
  sim=alloc_netdev(0,"ponsim%d",NET_NAME_UNKNOWN,ether_setup);

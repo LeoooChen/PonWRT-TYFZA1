@@ -50,13 +50,13 @@ async function run() {
 		mpcp: { enabled: '1', registered: '00000001' }, optical: { tx_fault: '0' },
 		oam_ports: [{ live: true, registered: true, auth_state: 'accepted', discovery_stable: true }],
 		fe: { available: '1', enabled: '1', flows: '24', installs: '30', deletes: '6' },
-		ports: ['eth0', 'eth1', 'eth2', 'eth3', 'pon-data0'].map((device, i) => ({ device, present: true,
+		ports: ['lan1', 'lan2', 'lan3', 'lan4', 'lan5', 'pon0'].map((device, i) => ({ device, present: true,
 			carrier: i === 1 || i === 3 ? '0' : '1', speed: i === 4 ? '-1' : '1000', duplex: 'full',
 			statistics: { rx_bytes: '1048576', tx_bytes: '4096', rx_errors: '0', tx_errors: '0' } })) };
 	const net = { networks: [iface('lan', '192.0.2.1/24'), iface('wan', '198.51.100.2/24'), iface('wan6'), iface('loopback')],
 		runtime: [{ interface: 'lan', up: true, proto: 'static', l3_device: 'br-lan' },
-			{ interface: 'wan', up: true, proto: 'dhcp', l3_device: 'pon-data0' },
-			{ interface: 'wan6', up: true, proto: 'dhcpv6', l3_device: 'pon-data0' }],
+			{ interface: 'wan', up: true, proto: 'dhcp', l3_device: 'pon0' },
+			{ interface: 'wan6', up: true, proto: 'dhcpv6', l3_device: 'pon0' }],
 		wifis: [wifi('radio0', '2.412', '2g'), wifi('radio1', '5.180', '5g')] };
 	const data = [{ data: pon }, net];
 	let poll, loads = 0;
@@ -74,7 +74,7 @@ async function run() {
 	assert(select('ports').compareDocumentPosition(select('forwarding')) & Node.DOCUMENT_POSITION_FOLLOWING, 'Hardware counters appear below ports');
 	assert(select('wifi:radio0').querySelector('h3').textContent.includes('2.4 GHz') && select('wifi:radio1').querySelector('h3').textContent.includes('5 GHz'), 'Same SSID is distinguished by band');
 	assert(status.wifiCards([wifi('disabled', null, '5g', true)]).textContent.includes('5 GHz'), 'Disabled radio retains its configured band');
-	const port = select('port:eth0'), details = port.querySelector('details');
+	const port = select('port:lan1'), details = port.querySelector('details');
 	assert(!details.open && details.textContent.includes('累计收 / 发'), 'Port counters start collapsed');
 	details.open = true;
 	const link = select('interface:wan').querySelector('a');
@@ -87,7 +87,7 @@ async function run() {
 	getSelection().removeAllRanges(); getSelection().addRange(range);
 	pon.fe.flows = '25'; pon.ports[0].statistics.rx_bytes = '2097152';
 	await poll();
-	assert(select('port:eth0') === port && port.querySelector('details') === details && details.open, 'Poll preserves port nodes and expanded details');
+	assert(select('port:lan1') === port && port.querySelector('details') === details && details.open, 'Poll preserves port nodes and expanded details');
 	assert(select('interface:wan').querySelector('a') === link && document.activeElement === link, 'Poll preserves the focused link');
 	assert(getSelection().toString() === '198.51.100.2/24' && text.isConnected, 'Poll preserves IP text selection');
 	assert(port.textContent.includes('2.0 MiB') && select('offload').textContent.includes('25'), 'Poll updates counters in place');
@@ -103,7 +103,7 @@ async function run() {
 	assert(!select('pon') && !!select('interface:wan'), 'PON error leaves network controls available');
 	assert(document.activeElement === link && getSelection().toString() === '198.51.100.2/24', 'Removing a failed card preserves focus and selection in other cards');
 	status.update(panel, status.renderOverview(data));
-	assert(!!select('pon') && !!select('port:eth0'), 'PON cards recover after a failed poll');
+	assert(!!select('pon') && !!select('port:lan1'), 'PON cards recover after a failed poll');
 	const pauseButton = document.querySelector('.tyf-pause');
 	const refreshButton = document.querySelector('.tyf-refresh');
 	const timestamp = document.querySelector('.tyf-updated');

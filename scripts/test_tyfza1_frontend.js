@@ -36,7 +36,7 @@ let polling;
 const view = load(path.join(resources, 'view/network/tyfza1-pon.js'), {
 	view: baseclass, form, poll: { add: f => { polling = f; } }, uci, status, L, E
 });
-function config(device = 'pon-data0', protocol = 'dhcp') {
+function config(device = 'pon0', protocol = 'dhcp') {
 	uci.state = { values: {
 		pon: { pon: { '.type': 'pon', mode: 'epon-d10g', enabled: '1', loid: 'lab-only' } },
 		network: { wan: { '.type': 'interface', device, proto: protocol },
@@ -140,7 +140,7 @@ async function main() {
 	status.callStatus = callStatus;
 	options.llid_count.write('pon', '08');
 	assert.equal(uci.get('pon', 'pon', 'llid_count'), '8');
-	for (const device of ['br-wan', 'pon-data0.100.200', 'custom-vlan', 'eth3']) {
+	for (const device of ['br-wan', 'pon0.100.200', 'custom-vlan', 'lan4']) {
 		config(device, 'static');
 		await render();
 		assert.equal(options._wan_vlan, undefined);

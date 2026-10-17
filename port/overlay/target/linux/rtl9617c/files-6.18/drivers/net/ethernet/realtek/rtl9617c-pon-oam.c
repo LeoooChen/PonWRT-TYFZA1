@@ -293,7 +293,7 @@ static struct net_device *rtl_oam_allocate(struct rtl9617c_pon *pon, unsigned in
 	port->llid = index;
 	port->control = control;
 	SET_NETDEV_DEV(dev, pon->dev);
-	snprintf(dev->name, sizeof(dev->name), control ? "pon-oam%u" : "pon-data%u", index);
+	snprintf(dev->name, sizeof(dev->name), control ? "pon-oam%u" : "pon%u", index);
 	dev->netdev_ops = control ? &rtl_oam_ops : &rtl_data_ops;
 	dev->sysfs_groups[0] = &rtl_oam_group;
 	dev->max_mtu = ETH_DATA_LEN;

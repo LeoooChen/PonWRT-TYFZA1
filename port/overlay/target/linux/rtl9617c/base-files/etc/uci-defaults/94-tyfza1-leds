@@ -24,7 +24,7 @@ for port in 0 1 2 3; do
 	uci set "system.$section.name=LAN$((port + 1))"
 	uci set "system.$section.sysfs=LED_EPHY$port"
 	uci set "system.$section.trigger=netdev"
-	uci set "system.$section.dev=eth$port"
+	uci set "system.$section.dev=lan$((port + 1))"
 	uci set "system.$section.mode=link tx rx"
 done
 if ! has_led LED_USB0 && ! uci -q get system.led_usb >/dev/null; then

@@ -160,7 +160,7 @@ for family, mode in (('epon', 'gpon'), ('gpon', 'epon-d10g')):
             path.write_text('1\n')
         else:
             path.mkdir()
-    for interface in ('pon-oam0', 'pon-data0'):
+    for interface in ('pon-oam0', 'pon0'):
         (runtime / 'sys/class/net' / interface).mkdir(parents=True, exist_ok=True)
     (runtime / 'tmp/stop-interfaces').write_text('')
     stop = launcher.replace('ip() { :; }', 'ip() { echo "$*" >> /tmp/stop-interfaces; }')
@@ -168,7 +168,7 @@ for family, mode in (('epon', 'gpon'), ('gpon', 'epon-d10g')):
     assert result.returncode == 0 and not result.stderr, (family, result)
     assert all((device / name).read_text() == '0\n' for name in owned)
     interfaces = (runtime / 'tmp/stop-interfaces').read_text()
-    assert 'pon-data0 down' in interfaces
+    assert 'pon0 down' in interfaces
     assert ('pon-omci down' in interfaces) == (family == 'gpon')
     assert ('pon-oam0 down' in interfaces) == (family == 'epon')
 print('Family switch: stop follows the live driver family, with separate OAM/OMCI control')

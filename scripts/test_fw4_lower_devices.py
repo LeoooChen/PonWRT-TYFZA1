@@ -35,19 +35,19 @@ with tempfile.TemporaryDirectory(prefix='fw4-lower-devices-', dir=root / 'artifa
 
     # The explicit netifd VLAN classes all recurse; leaf/tunnel devices do not.
     status = {
-        'pon-data0.41': {'type': 'VLAN'},
+        'pon0.41': {'type': 'VLAN'},
         'lan-q': {'type': '8021q'},
         'lan-ad': {'type': '8021ad'},
         'br-test': {'type': 'bridge'},
         'legacy-vlan': {'type': 'Network device', 'devtype': 'vlan'},
         'legacy-br': {'type': 'Network device', 'devtype': 'bridge'},
-        'eth2': {'type': 'Network device', 'devtype': 'dsa'},
+        'lan3': {'type': 'Network device', 'devtype': 'dsa'},
         'pppoe-test': {'type': 'tunnel', 'devtype': 'ppp'},
         'unknown': {},
     }
     lowers = {
-        'pon-data0.41': ['pon-data0'], 'lan-q': ['eth3'], 'lan-ad': ['lan-q'],
-        'br-test': ['lan-ad', 'eth4'], 'legacy-vlan': ['eth5'],
+        'pon0.41': ['pon0'], 'lan-q': ['lan4'], 'lan-ad': ['lan-q'],
+        'br-test': ['lan-ad', 'lan5'], 'legacy-vlan': ['eth5'],
         'legacy-br': ['eth6'], 'pppoe-test': ['eth7'], 'unknown': ['eth8'],
     }
     for device in status.keys() | {d for values in lowers.values() for d in values}:
@@ -74,7 +74,7 @@ with tempfile.TemporaryDirectory(prefix='fw4-lower-devices-', dir=root / 'artifa
     flowtable = re.search(r'flowtable ft \{(.*?)\n\t\}', result.stdout, re.S)[1]
     devices = re.search(r'devices = \{ (.*?) \};', flowtable)[1]
     actual = re.findall(r'"([^"]+)"', devices)
-    expected = ['eth2', 'eth3', 'eth4', 'eth5', 'eth6', 'pon-data0', 'pppoe-test', 'unknown']
+    expected = sorted(['lan3', 'lan4', 'lan5', 'eth5', 'eth6', 'pon0', 'pppoe-test', 'unknown'])
     assert actual == expected, (actual, expected, result.stderr)
     assert 'flags offload;' in flowtable
     print('firewall4: full ruleset resolves native/8021q/8021ad VLAN, nested/legacy bridge, PPP and unknown leaves')

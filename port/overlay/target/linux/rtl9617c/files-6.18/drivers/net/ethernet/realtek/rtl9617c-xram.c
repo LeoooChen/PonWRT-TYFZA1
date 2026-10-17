@@ -813,6 +813,7 @@ static int rtl_register_extra_lans(struct rtl_xram *priv, struct device *parent)
 		}
 		priv->ports[port] = dev;
 		SET_NETDEV_DEV(dev, parent);
+		snprintf(dev->name, sizeof(dev->name), "lan%u", port + 1);
 		lan = netdev_priv(dev);
 		lan->shared = priv;
 		lan->port = port;
@@ -1095,6 +1096,7 @@ static int rtl_probe(struct platform_device *pdev)
 	if (ret)
 		goto free_netdev;
 	priv->lan.port = priv->port;
+	snprintf(netdev->name, sizeof(netdev->name), "lan%u", priv->port + 1);
 	priv->ports[priv->port] = netdev;
 	rcu_assign_pointer(priv->qm.lan[priv->port], netdev);
 	value = readl(priv->ni + MAC_ADDR0);

@@ -65,14 +65,14 @@ with tarfile.open(archive) as tar:
     service = embedded['etc/init.d/pon']['data'].decode()
     assert service.index('> "$device/bosa"') < service.index('> "$device/serdes"')
     assert '/usr/sbin/pon-oamd --interface' in service
-    assert 'ip link set "pon-data$i" up' in service
+    assert 'ip link set "pon$i" up' in service
     defaults = embedded['etc/uci-defaults/90-tyfza1-pon-wan']['data'].decode()
-    assert "network.wan.device='pon-data0'" in defaults and "network.wan.proto='dhcp'" in defaults
+    assert "network.wan.device='pon0'" in defaults and "network.wan.proto='dhcp'" in defaults
     assert members["etc/rc.d/S25pon"].issym()
     acl = json.loads(tar.extractfile(members[files[4]]).read())
     assert "status" in acl["luci-app-tyfza1-pon"]["read"]["ubus"]["luci.tyfza1-pon"]
 for marker in (b'silence_scope=shared-engine', b'refill_pending=%u', b'refill_retries=%u',
-               b'pon-data%u', b'buffers_per_pool=%u', b'pon_deepq'):
+               b'pon%u', b'buffers_per_pool=%u', b'pon_deepq'):
     assert marker in kernel, marker
 record = {"payload": str(args.payload.relative_to(root)) if args.payload.is_absolute() else str(args.payload),
           "build_unit": args.build_unit, "required_files": checks,

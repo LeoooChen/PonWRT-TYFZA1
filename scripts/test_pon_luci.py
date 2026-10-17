@@ -28,16 +28,16 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
     deepq.parent.mkdir(parents=True)
     deepq.write_text('configured=1 buffers_per_pool=512 map=0000000a\n')
     for name, value in (('rx_packets', '0'), ('tx_packets', '17')):
-        counter = d / 'sys/class/net/pon-data0/statistics' / name
+        counter = d / 'sys/class/net/pon0/statistics' / name
         counter.parent.mkdir(parents=True, exist_ok=True)
         counter.write_text(value + '\n')
     for name in ("rx_errors", "rx_dropped"):
-        p = d / "sys/class/net/eth0/statistics" / name
+        p = d / "sys/class/net/lan1/statistics" / name
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("0\n")
     for name, value in (('ifindex', '2'), ('carrier', '1'), ('speed', '1000'),
                         ('duplex', 'full'), ('address', '02:00:00:00:00:01')):
-        (d / 'sys/class/net/eth0' / name).write_text(value + '\n')
+        (d / 'sys/class/net/lan1' / name).write_text(value + '\n')
     (d / 'proc').mkdir()
     (d / 'proc/uptime').write_text('100.00 150.00\n')
     process = d / 'proc/123/stat'
@@ -57,6 +57,7 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
                        source.replace("return { 'luci.tyfza1-pon': methods };",
                                       "print(sprintf('%J', methods.status.call()));"))
     observed = json.loads(subprocess.check_output([str(ucode), str(program)], text=True))
+    assert [p['device'] for p in observed['ports']] == ['lan1', 'lan2', 'lan3', 'lan4', 'lan5', 'pon0']
     assert observed["serdes"]["rx_los"] == "1"
     assert observed["mpcp"]["registered"] == "00000000"
     assert observed["traffic"]["rx"] == "0"

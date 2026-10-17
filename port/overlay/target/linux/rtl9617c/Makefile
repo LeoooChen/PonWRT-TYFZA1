@@ -15,7 +15,7 @@ DEVICE_TYPE:=router
 
 include $(INCLUDE_DIR)/target.mk
 
-DEFAULT_PACKAGES += ubi-utils nand-utils
+DEFAULT_PACKAGES += ubi-utils nand-utils ucode-mod-uci
 
 define Target/Description
   Native RTL9617C support. TYFZA1 serial bring-up; hardware validation pending.

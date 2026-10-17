@@ -10,7 +10,7 @@ function read_value(path) {
 
 function network_ports() {
 	let ports = [];
-	for (let name in ['eth0', 'eth1', 'eth2', 'eth3', 'eth4', 'pon-data0']) {
+	for (let name in ['lan1', 'lan2', 'lan3', 'lan4', 'lan5', 'pon0']) {
 		let path = '/sys/class/net/' + name + '/';
 		let port = { device: name, present: read_value(path + 'ifindex') != null };
 		for (let key in ['carrier', 'operstate', 'speed', 'duplex', 'address', 'mtu'])
@@ -106,10 +106,10 @@ const methods = {
 				pdc: readfile(device + 'pdc'),
 				llids: readfile(device + 'llid_table'),
 				deepq: fields(readfile('/sys/bus/platform/devices/4f4300000.ethernet/pon_deepq')),
-				wan_rx_packets: trim(readfile('/sys/class/net/pon-data0/statistics/rx_packets')),
-				wan_tx_packets: trim(readfile('/sys/class/net/pon-data0/statistics/tx_packets')),
-				lan_rx_errors: trim(readfile('/sys/class/net/eth0/statistics/rx_errors')),
-				lan_rx_dropped: trim(readfile('/sys/class/net/eth0/statistics/rx_dropped')),
+				wan_rx_packets: trim(readfile('/sys/class/net/pon0/statistics/rx_packets')),
+				wan_tx_packets: trim(readfile('/sys/class/net/pon0/statistics/tx_packets')),
+				lan_rx_errors: trim(readfile('/sys/class/net/lan1/statistics/rx_errors')),
+				lan_rx_dropped: trim(readfile('/sys/class/net/lan1/statistics/rx_dropped')),
 				oam_ports: oam_ports(now_ms),
 				ports: network_ports(),
 				queried_at: time()

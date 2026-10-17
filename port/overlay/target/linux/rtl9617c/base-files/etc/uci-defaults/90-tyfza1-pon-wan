@@ -1,17 +1,16 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-only
-[ -e /sys/class/net/pon-data0/llid_index ] || exit 0
-# All four copper interfaces are LAN. config_generate's generic eth1 WAN
-# choice must be replaced by the native PON business interface.
-case "$(uci -q get network.wan.device)" in
-	''|eth1)
+[ -e /sys/class/net/pon0/llid_index ] || exit 0
+# Bind an unconfigured WAN to PON; preserve explicitly configured devices.
+case "$(uci -q get network.wan.device || uci -q get network.wan.ifname)" in
+	'')
 		uci set network.wan='interface'
-		uci set network.wan.device='pon-data0'
+		uci set network.wan.device='pon0'
 		[ -n "$(uci -q get network.wan.proto)" ] || uci set network.wan.proto='dhcp'
 		;;
 esac
-case "$(uci -q get network.wan6.device)" in
-	''|pon-data0)
+case "$(uci -q get network.wan6.device || uci -q get network.wan6.ifname)" in
+	''|pon0)
 		uci set network.wan6='interface'
 		uci set network.wan6.device='@wan'
 		uci set network.wan6.proto='dhcpv6'

@@ -6,13 +6,13 @@ set -eu
 SAMPLES=${1:-15}
 RADIO=${2:-0000:01:00.0}
 AP=${3:-ap5}
-NI=/sys/class/net/eth3/device
+NI=/sys/class/net/lan4/device
 PCI=/sys/bus/pci/devices/$RADIO
 uname -r
 iw dev "$AP" station dump
 cat /tmp/dhcp.leases
 cat "$PCI/radio_state"
-cat /sys/class/net/pon-data0/device/fe
+cat /sys/class/net/pon0/device/fe
 cat "$PCI/radio_tx"
 cat "$PCI/radio_rx"
 for COUNTER in $(seq 1 "$SAMPLES"); do
@@ -27,4 +27,4 @@ for COUNTER in $(seq 1 "$SAMPLES"); do
 done
 cat "$PCI/radio_tx"
 cat "$PCI/radio_rx"
-cat /sys/class/net/pon-data0/device/fe
+cat /sys/class/net/pon0/device/fe

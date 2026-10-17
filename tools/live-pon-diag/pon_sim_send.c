@@ -14,7 +14,7 @@ module_param(rate_mbps,uint,0600);
 MODULE_PARM_DESC(rate_mbps,"Ethernet wire rate including FCS, preamble and inter-frame gap");
 static int __init send_init(void)
 {
- struct net_device *lan=dev_get_by_name(&init_net,"eth3");
+ struct net_device *lan=dev_get_by_name(&init_net,"lan4");
  void __iomem *dma,*vp;
  void *memory;
  dma_addr_t address;
