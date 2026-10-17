@@ -1,0 +1,14 @@
+From: TYFZA1 native port
+Subject: [PATCH] Re-resolve flowtable devices on the explicit netifd topology update. No timers or unconditional boot reload.
+
+--- a/root/etc/hotplug.d/iface/20-firewall
++++ b/root/etc/hotplug.d/iface/20-firewall
+@@ -7,7 +7,7 @@
+ }
+ 
+ [ "$ACTION" = ifup -o "$ACTION" = ifupdate ] || exit 0
+-[ "$ACTION" = ifupdate -a -z "$IFUPDATE_ADDRESSES" -a -z "$IFUPDATE_DATA" ] && exit 0
++[ "$ACTION" = ifupdate -a -z "$IFUPDATE_ADDRESSES" -a -z "$IFUPDATE_DATA" -a -z "$IFUPDATE_TOPOLOGY" ] && exit 0
+ 
+ /etc/init.d/firewall enabled || exit 0
+ 

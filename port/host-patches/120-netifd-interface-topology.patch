@@ -1,0 +1,82 @@
+From: TYFZA1 native port
+Subject: [PATCH] Notify policy consumers when an up interface changes bridge members. Keep update reasons across serialized hotplug events.
+
+--- a/interface.h
++++ b/interface.h
+@@ -56,6 +56,7 @@
+ 	IUF_ROUTE	= (1 << 1),
+ 	IUF_PREFIX	= (1 << 2),
+ 	IUF_DATA	= (1 << 3),
++	IUF_TOPOLOGY	= (1 << 4),
+ };
+ 
+ struct interface_error {
+@@ -105,6 +106,7 @@
+ 	struct vlist_node node;
+ 	struct list_head hotplug_list;
+ 	enum interface_event hotplug_ev;
++	enum interface_update_flags hotplug_updated;
+ 
+ 	const char *name;
+ 	const char *device;
+--- a/interface.c
++++ b/interface.c
+@@ -518,6 +518,10 @@
+ 	case DEV_EVENT_TOPO_CHANGE:
+ 		if (iface->renew)
+ 			interface_proto_event(iface->proto, PROTO_CMD_RENEW, false);
++		if (iface->state == IFS_UP) {
++			iface->updated = IUF_TOPOLOGY;
++			interface_event(iface, IFEV_UPDATE);
++		}
+ 		return;
+ 	default:
+ 		break;
+--- a/interface-event.c
++++ b/interface-event.c
+@@ -74,6 +74,8 @@
+ 			setenv("IFUPDATE_PREFIXES", "1", 1);
+ 		if (updated & IUF_DATA)
+ 			setenv("IFUPDATE_DATA", "1", 1);
++		if (updated & IUF_TOPOLOGY)
++			setenv("IFUPDATE_TOPOLOGY", "1", 1);
+ 	}
+ 
+ 	argv[0] = hotplug_cmd_path;
+@@ -87,19 +89,22 @@
+ call_hotplug(void)
+ {
+ 	const char *device = NULL;
++	enum interface_update_flags updated;
+ 	if (list_empty(&pending))
+ 		return;
+ 
+ 	current = list_first_entry(&pending, struct interface, hotplug_list);
+ 	current_ev = current->hotplug_ev;
+ 	list_del_init(&current->hotplug_list);
++	updated = current->hotplug_updated;
++	current->hotplug_updated = 0;
+ 
+ 	if ((current_ev == IFEV_UP || current_ev == IFEV_UPDATE) && current->l3_dev.dev)
+ 		device = current->l3_dev.dev->ifname;
+ 
+ 	D(SYSTEM, "Call hotplug handler for interface '%s', event '%s' (%s)",
+ 	current->name, eventnames[current_ev], device ? device : "none");
+-	run_cmd(current->name, device, current_ev, current->updated);
++	run_cmd(current->name, device, current_ev, updated);
+ }
+ 
+ static void
+@@ -131,6 +136,12 @@
+ 	/* no hotplug.d calls for link up */
+ 	if (ev == IFEV_LINK_UP)
+ 		return;
++
++	/* Preserve all causes while hotplug serializes/coalesces notifications. */
++	if (ev == IFEV_UP || ev == IFEV_UPDATE)
++		iface->hotplug_updated |= iface->updated;
++	else
++		iface->hotplug_updated = 0;
+ 
+ 	if (current == iface) {
+ 		/* an event for iface is being processed */

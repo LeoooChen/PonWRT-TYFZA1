@@ -1,0 +1,81 @@
+{
+  "baseline_commit": "961b754",
+  "finding": "Late bridge membership is not propagated to firewall4, leaving its physical flowtable devices stale.",
+  "root_cause_530Mbps_confirmed": false,
+  "live_throughput_tested": false,
+  "network_switched": false,
+  "flashed": false,
+  "full_tests": false,
+  "validation": [
+    "pinned archives apply without fuzz",
+    "four actual netifd callback/hotplug scenarios with serialized updates",
+    "three complete fw4 ruleset renders",
+    "two ARM64/musl production objects compiled",
+    "shell syntax and scoped diff checks"
+  ],
+  "evidence_boundary": "Peer zero-PE/missing-AP observations were not captured during a 530Mbps load; the station sampler contains only idle/low-rate traffic.",
+  "original_fc_sha256": "6f46a646c14129505b5d77cd17b10ec8956eea047ba49844609d3e52e78793d4",
+  "original_kernel_config_sha256": "d5505ae8a2cd756a13d80897d2f1a213b0b73a9badcd83e2cd0922a2914db7f9",
+  "uart": {
+    "port": "/dev/cu.usbserial-1120",
+    "RX_from_modem": false,
+    "input_hex": "150d",
+    "power_or_reset": false,
+    "closed": true,
+    "log": "logs/serial-20261017-200809.events.jsonl"
+  },
+  "files": [
+    {
+      "path": "port/host-patches/120-netifd-interface-topology.patch",
+      "sha256": "49c718a0c12e23626d376d6c24f412f0b5dc1b77561a9b1c437a0ef319191ebc"
+    },
+    {
+      "path": "port/host-patches/121-firewall4-interface-topology.patch",
+      "sha256": "79d2caab96e56023116b3c6e1acc565bd44cb7efdba89467615bc6ddcf2f07ae"
+    },
+    {
+      "path": "port/scripts/sync-overlay.sh",
+      "sha256": "68dc803175c19d3b8d7f15cb3d82d431f64dab29c7f55e01685ac8ed3c59b7b6"
+    },
+    {
+      "path": "scripts/test_fw4_topology_events.py",
+      "sha256": "63c0e39087853cc3d93863b20e7a8f7dcd5a2e23a0fc5c0532e3b783efb0c9f7"
+    },
+    {
+      "path": "docs/wifi-flowtable-topology-20261017.md",
+      "sha256": "60c83dc331f71ada2338f0402fc980169bec8dbb79a7b1e420a42482f313d007"
+    },
+    {
+      "path": "artifacts/wifi-topology-20261017/events-reproduction.json",
+      "sha256": "2972401235ddc1b043a29aade8d5835015326d3bd9da05852a31e034eb1f1805"
+    },
+    {
+      "path": "artifacts/wifi-topology-20261017/fw4-devices.json",
+      "sha256": "4446110e91f1b68a8a491792a67afcbf57c3c02b9adea7d27c6d66365e862fe5"
+    },
+    {
+      "path": "artifacts/wifi-topology-20261017/netifd-compile.log",
+      "sha256": "2a0e213318c7a1bb03a2f5a8d5d8b93faf1d03460262ead61a622282c407c857"
+    },
+    {
+      "path": "artifacts/wifi-topology-20261017/peer-sample-summary.json",
+      "sha256": "f03cf100d26372205e5917d9b4c1ebdc3d36694a1cf27c3ef01f386ed7051bff"
+    },
+    {
+      "path": "artifacts/wifi-topology-20261017/render-devices.py",
+      "sha256": "58ae015f9f485d83658969103c957f21b85659de2fa51867913b28cce7711a0d"
+    },
+    {
+      "path": "artifacts/wifi-topology-20261017/after/netifd/interface.h",
+      "sha256": "074ba06af7ee584b6078c5543e0e5e82ce3df600476d1bbc4a7c683934f0173f"
+    },
+    {
+      "path": "artifacts/wifi-topology-20261017/after/netifd/interface.c",
+      "sha256": "db13ea08633c4cbff403b9c714eaa8a547cb17dc4697ec6e8052d4cf552ac8e4"
+    },
+    {
+      "path": "artifacts/wifi-topology-20261017/after/netifd/interface-event.c",
+      "sha256": "4a9730dfa5f536ab5b575b85ebbfa6ef0aa4d665f3fdcb9b4065544c703bf1b0"
+    }
+  ]
+}

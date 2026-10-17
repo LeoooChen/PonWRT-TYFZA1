@@ -22,6 +22,11 @@ cp "$PORT/host-patches/471-hostapd-acs-no-survey.patch" \
 mkdir -p "$TREE/package/network/config/firewall4/patches"
 cp "$PORT/host-patches/120-firewall4-netifd-lower-devices.patch" \
     "$TREE/package/network/config/firewall4/patches/120-firewall4-netifd-lower-devices.patch"
+cp "$PORT/host-patches/121-firewall4-interface-topology.patch" \
+    "$TREE/package/network/config/firewall4/patches/121-firewall4-interface-topology.patch"
+mkdir -p "$TREE/package/network/config/netifd/patches"
+cp "$PORT/host-patches/120-netifd-interface-topology.patch" \
+    "$TREE/package/network/config/netifd/patches/120-netifd-interface-topology.patch"
 if [ -n "${TYFZA1_CONFIG:-}" ]; then
     cp "$TYFZA1_CONFIG" "$TREE/.config"
 elif [ ! -s "$TREE/.config" ]; then
