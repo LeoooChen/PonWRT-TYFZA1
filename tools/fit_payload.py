@@ -14,9 +14,9 @@ def property_value(fit, node, name, kind='s'):
     return subprocess.check_output(['fdtget', '-t', kind, str(fit), node, name], text=True).split()
 
 
-def fit_images(fit):
+def fit_images(fit, configuration=None):
     fit = Path(fit)
-    config = property_value(fit, '/configurations', 'default')[0]
+    config = configuration or property_value(fit, '/configurations', 'default')[0]
     names = subprocess.check_output(['fdtget', '-l', str(fit), '/images'], text=True).split()
     result = {}
     with tempfile.TemporaryDirectory(prefix='fit-read-', dir=PROJECT / 'artifacts') as temporary:

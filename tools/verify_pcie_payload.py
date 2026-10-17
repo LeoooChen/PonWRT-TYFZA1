@@ -14,11 +14,16 @@ args = parser.parse_args()
 fit_path = args.payload / 'ram-pcie/image.itb'
 manifest = json.loads((args.payload / 'ram-pcie/manifest.json').read_text())
 assert hashlib.sha256(fit_path.read_bytes()).hexdigest() == manifest['fit_sha256']
-actual = fit_images(fit_path)
-assert actual['fdt'] == (args.payload / 'firmware/openwrt-rtl9617c-generic-tianyi_tyfza1-pcie.dtb').read_bytes()
-assert actual['kernel'] == next((args.payload / 'firmware').glob('*initramfs-Image')).read_bytes()
 stock = (root / 'evidence/wireless-study-20261008/evidence/stock/live-fit.dtb').read_bytes()
+boards = [('conf-1', '', 'dtb_sha256'), ('conf-0', '-2p5g', 'dtb_2p5g_sha256')] if 'dtb_2p5g_sha256' in manifest else [(None, '', 'dtb_sha256')]
+checked = []
+for config, suffix, digest in boards:
+    actual = fit_images(fit_path, config)
+    assert actual['fdt'] == (args.payload / f'firmware/openwrt-rtl9617c-generic-tianyi_tyfza1-pcie{suffix}.dtb').read_bytes()
+    assert hashlib.sha256(actual['fdt']).hexdigest() == manifest[digest]
+    assert actual['kernel'] == next((args.payload / 'firmware').glob('*initramfs-Image')).read_bytes()
+    checked.append({'configuration': config, 'reset_and_resources': verify(stock, actual['fdt'])})
 report = {'FIT_sha256': manifest['fit_sha256'], 'selected_kernel_and_DTB_match_firmware': True,
-          'reset_and_resources': verify(stock, actual['fdt']), 'hardware_verified': False}
+          'boards': checked, 'hardware_verified': False}
 (args.payload / 'pcie-payload-verification.json').write_text(json.dumps(report, indent=2) + '\n')
 print(json.dumps(report, indent=2))

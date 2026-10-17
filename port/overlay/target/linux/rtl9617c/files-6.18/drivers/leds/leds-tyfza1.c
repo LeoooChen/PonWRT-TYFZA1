@@ -18,23 +18,24 @@ static DEFINE_MUTEX(tyfza1_led_lock);
 static LIST_HEAD(tyfza1_led_list);
 static unsigned int tyfza1_led_mode = 2;
 
-static void tyfza1_led_output(struct tyfza1_led *led)
+static int tyfza1_led_output(struct tyfza1_led *led)
 {
 	unsigned int mode = tyfza1_led_mode;
 
-	led->output(led, mode == 2 ? led->requested : mode);
+	return led->output(led, mode == 2 ? led->requested : mode);
 }
 
 static int tyfza1_led_set(struct led_classdev *cdev, enum led_brightness value)
 {
 	struct tyfza1_led *led = container_of(cdev, struct tyfza1_led, cdev);
+	int ret;
 
 	mutex_lock(&tyfza1_led_lock);
 	/* Overrides affect physical output, not the evolving automatic state. */
-	led->requested = value != LED_OFF;
-	tyfza1_led_output(led);
+	led->requested = value;
+	ret = tyfza1_led_output(led);
 	mutex_unlock(&tyfza1_led_lock);
-	return 0;
+	return ret;
 }
 
 int tyfza1_led_register(struct device *dev, struct tyfza1_led *led,
@@ -42,26 +43,32 @@ int tyfza1_led_register(struct device *dev, struct tyfza1_led *led,
 {
 	int ret;
 
-	led->cdev.max_brightness = 1;
 	led->cdev.brightness = led->requested;
 	led->cdev.brightness_set_blocking = tyfza1_led_set;
 	ret = led_classdev_register_ext(dev, &led->cdev, init);
 	if (ret)
 		return ret;
 	mutex_lock(&tyfza1_led_lock);
-	list_add_tail(&led->node, &tyfza1_led_list);
-	tyfza1_led_output(led);
+	ret = tyfza1_led_output(led);
+	if (!ret)
+		list_add_tail(&led->node, &tyfza1_led_list);
 	mutex_unlock(&tyfza1_led_lock);
-	return 0;
+	if (ret)
+		led_classdev_unregister(&led->cdev);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(tyfza1_led_register);
 
 void tyfza1_led_unregister(struct tyfza1_led *led)
 {
+	int ret;
+
 	led_classdev_unregister(&led->cdev);
 	mutex_lock(&tyfza1_led_lock);
 	list_del(&led->node);
-	led->output(led, false);
+	ret = led->output(led, 0);
+	if (ret)
+		pr_err("TYFZA1 LED %s: shutdown failed: %d\n", led->cdev.name, ret);
 	mutex_unlock(&tyfza1_led_lock);
 }
 EXPORT_SYMBOL_GPL(tyfza1_led_unregister);
@@ -76,6 +83,7 @@ static ssize_t mode_store(struct device *dev, struct device_attribute *attr,
 {
 	struct tyfza1_led *led;
 	unsigned int mode;
+	int error = 0;
 	int ret = kstrtouint(buf, 0, &mode);
 
 	if (ret)
@@ -84,9 +92,16 @@ static ssize_t mode_store(struct device *dev, struct device_attribute *attr,
 		return -EINVAL;
 	mutex_lock(&tyfza1_led_lock);
 	tyfza1_led_mode = mode;
-	list_for_each_entry(led, &tyfza1_led_list, node)
-		tyfza1_led_output(led);
+	list_for_each_entry(led, &tyfza1_led_list, node) {
+		ret = tyfza1_led_output(led);
+		if (ret) {
+			dev_err(led->cdev.dev, "mode %u failed: %d\n", mode, ret);
+			error = ret;
+		}
+	}
 	mutex_unlock(&tyfza1_led_lock);
+	if (error)
+		return error;
 	return count;
 }
 static DEVICE_ATTR_RW(mode);
@@ -97,11 +112,11 @@ static struct attribute *tyfza1_led_attrs[] = {
 };
 ATTRIBUTE_GROUPS(tyfza1_led);
 
-static void tyfza1_gpio_output(struct tyfza1_led *led, bool value)
+static int tyfza1_gpio_output(struct tyfza1_led *led, unsigned int value)
 {
 	struct tyfza1_gpio_led *gpio = container_of(led, struct tyfza1_gpio_led, led);
 
-	gpiod_set_value_cansleep(gpio->gpio, value);
+	return gpiod_set_value_cansleep(gpio->gpio, value);
 }
 
 static void tyfza1_gpio_unregister(void *data)
@@ -124,6 +139,7 @@ static int tyfza1_led_probe(struct platform_device *pdev)
 		if (!gpio)
 			return -ENOMEM;
 		led = &gpio->led;
+		led->cdev.max_brightness = 1;
 		led->output = tyfza1_gpio_output;
 		gpio->gpio = devm_fwnode_gpiod_get(dev, child, NULL, GPIOD_ASIS, NULL);
 		if (IS_ERR(gpio->gpio))

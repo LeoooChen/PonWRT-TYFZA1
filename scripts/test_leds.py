@@ -37,14 +37,15 @@ fixture = r'''
 #define container_of(p,t,f) ((t *)((char *)(p)-offsetof(t,f)))
 enum led_brightness {LED_OFF, LED_ON};
 struct device {}; struct device_attribute {}; struct led_classdev {};
-struct tyfza1_led {struct led_classdev cdev; bool requested; void (*output)(struct tyfza1_led *,bool);};
+struct tyfza1_led {struct led_classdev cdev; unsigned int requested; int (*output)(struct tyfza1_led *,unsigned int);};
 static unsigned int tyfza1_led_mode=2; static int tyfza1_led_lock;
 static struct tyfza1_led leds[2]; static bool physical[2];
 #define list_for_each_entry(p,h,n) for(p=leds;p<leds+2;p++)
+#define dev_err(...) ((void)0)
 static void mutex_lock(int *v){assert(!*v);*v=1;}
 static void mutex_unlock(int *v){assert(*v);*v=0;}
 static int kstrtouint(const char *s,int base,unsigned int *v){*v=strtoul(s,NULL,base);return 0;}
-static void output(struct tyfza1_led *led,bool on){assert(tyfza1_led_lock);physical[led-leds]=on;}
+static int output(struct tyfza1_led *led,unsigned int on){assert(tyfza1_led_lock);physical[led-leds]=on;return 0;}
 static unsigned char regs[0x300];
 static unsigned char read8(void *c,unsigned int r){(void)c;return regs[r];}
 static unsigned short read16(void *c,unsigned int r){(void)c;return regs[r]|regs[r+1]<<8;}

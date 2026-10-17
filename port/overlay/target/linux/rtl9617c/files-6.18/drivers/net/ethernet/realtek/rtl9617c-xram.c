@@ -10,6 +10,7 @@
 #include <linux/crc32.h>
 #include <linux/delay.h>
 #include <linux/etherdevice.h>
+#include <linux/ethtool.h>
 #include <linux/hrtimer.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
@@ -23,6 +24,7 @@
 #include <linux/rcupdate.h>
 #include <linux/rtnetlink.h>
 #include <linux/unaligned.h>
+#include <linux/tyfza1-led.h>
 
 #include "rtl9617c-xram-format.h"
 #include "rtl9617c-dma.h"
@@ -72,6 +74,8 @@ struct rtl_xram {
 	void __iomem *xram;
 	struct phy *sgmii;
 	unsigned int sgmii_speed;
+	struct tyfza1_led phy_led;
+	bool phy_led_registered;
 	struct napi_struct napi;
 	struct hrtimer timer;
 	spinlock_t tx_lock;
@@ -210,7 +214,13 @@ static void rtl_adjust_link(struct net_device *dev)
 			   BIT(0) | BIT(1), (phy->speed == SPEED_10 ? BIT(0) : 0) |
 			   (phy->duplex == DUPLEX_HALF ? BIT(1) : 0));
 		if (lan->port == 4 && lan->shared->sgmii_speed != phy->speed) {
-			phy_set_speed(lan->shared->sgmii, phy->speed);
+			int ret = phy_set_speed(lan->shared->sgmii, phy->speed);
+
+			if (ret) {
+				netdev_err(dev, "S3 speed %d failed: %d\n", phy->speed, ret);
+				phy_error(phy);
+				return;
+			}
 			lan->shared->sgmii_speed = phy->speed;
 		}
 	}
@@ -735,7 +745,23 @@ static const struct net_device_ops rtl_netdev_ops = {
 	.ndo_set_rx_mode = rtl_rx_mode,
 	.ndo_set_mac_address = eth_mac_addr,
 	.ndo_validate_addr = eth_validate_addr,
+	.ndo_eth_ioctl = phy_do_ioctl_running,
 };
+
+static const struct ethtool_ops rtl_ethtool_ops = {
+	.get_link = ethtool_op_get_link,
+	.get_link_ksettings = phy_ethtool_get_link_ksettings,
+	.set_link_ksettings = phy_ethtool_set_link_ksettings,
+	.nway_reset = phy_ethtool_nway_reset,
+};
+
+static int rtl_phy_led_output(struct tyfza1_led *led, unsigned int value)
+{
+	struct rtl_xram *priv = container_of(led, struct rtl_xram, phy_led);
+	/* Original LED0: 0=off, 1=on, 2=PHY link/activity (LCR7 bits0/4). */
+	return phy_modify_mmd(priv->ports[4]->phydev, MDIO_MMD_VEND2,
+			      0xd044, 0x11, value == 2 ? 0x10 : value);
+}
 
 static void rtl_unregister_extra_lans(struct rtl_xram *priv)
 {
@@ -747,6 +773,10 @@ static void rtl_unregister_extra_lans(struct rtl_xram *priv)
 
 		if (!dev)
 			continue;
+		if (port == 4 && priv->phy_led_registered) {
+			tyfza1_led_unregister(&priv->phy_led);
+			priv->phy_led_registered = false;
+		}
 		spin_lock_irqsave(&priv->tx_lock, flags);
 		priv->ports[port] = NULL;
 		spin_unlock_irqrestore(&priv->tx_lock, flags);
@@ -776,6 +806,7 @@ static int rtl_register_extra_lans(struct rtl_xram *priv, struct device *parent)
 		return 0;
 	for (port = 1; port < ARRAY_SIZE(priv->ports); port++) {
 		struct device_node *phy;
+		struct phy_device *phydev;
 		struct net_device *dev;
 		struct rtl_lan *lan;
 		u8 mac[ETH_ALEN];
@@ -784,13 +815,6 @@ static int rtl_register_extra_lans(struct rtl_xram *priv, struct device *parent)
 		if (!phy)
 			continue;
 		if (port == 4) {
-			struct phy_device *external = of_phy_find_device(phy);
-			/* Boards without RTL8221B retain the four internal LAN ports. */
-			if (!external) {
-				of_node_put(phy);
-				continue;
-			}
-			put_device(&external->mdio.dev);
 			priv->sgmii = devm_phy_get(parent, "sgmii");
 			if (IS_ERR(priv->sgmii)) {
 				of_node_put(phy);
@@ -818,17 +842,26 @@ static int rtl_register_extra_lans(struct rtl_xram *priv, struct device *parent)
 		lan->shared = priv;
 		lan->port = port;
 		dev->netdev_ops = &rtl_netdev_ops;
+		dev->ethtool_ops = &rtl_ethtool_ops;
 		dev->max_mtu = ETH_DATA_LEN;
 		ether_addr_copy(mac, priv->netdev->dev_addr);
 		mac[5] += port;
 		eth_hw_addr_set(dev, mac);
-		if (!of_phy_connect(dev, phy, rtl_adjust_link, 0,
-			port == 4 ? PHY_INTERFACE_MODE_SGMII : PHY_INTERFACE_MODE_GMII)) {
+		phydev = of_phy_find_device(phy);
+		if (!phydev) {
 			of_node_put(phy);
-			ret = -EPROBE_DEFER;
+			ret = dev_err_probe(parent, -ENODEV,
+					    "LAN port %u PHY missing from MDIO\n", port);
 			goto unwind;
 		}
+		ret = phy_connect_direct(dev, phydev, rtl_adjust_link,
+			port == 4 ? PHY_INTERFACE_MODE_SGMII : PHY_INTERFACE_MODE_GMII);
+		put_device(&phydev->mdio.dev);
 		of_node_put(phy);
+		if (ret) {
+			dev_err_probe(parent, ret, "LAN port %u PHY initialization failed\n", port);
+			goto unwind;
+		}
 		ret = rtl_fe_add_port(priv->fe, dev, port, port, 0);
 		if (ret)
 			goto unwind;
@@ -837,6 +870,19 @@ static int rtl_register_extra_lans(struct rtl_xram *priv, struct device *parent)
 		if (ret)
 			goto unwind;
 		priv->registered_ports |= BIT(port);
+		if (port == 4) {
+			ret = phy_write_mmd(dev->phydev, MDIO_MMD_VEND2, 0xd032, 0x00a7);
+			if (ret)
+				goto unwind;
+			priv->phy_led.output = rtl_phy_led_output;
+			priv->phy_led.requested = 2;
+			priv->phy_led.cdev.name = "LED_8221B_P4_0";
+			priv->phy_led.cdev.max_brightness = 2;
+			ret = tyfza1_led_register(parent, &priv->phy_led, NULL);
+			if (ret)
+				goto unwind;
+			priv->phy_led_registered = true;
+		}
 		dev_info(parent, "%s: LAN port %u shared native NI/DMA, PHY %08x, MAC %pM\n",
 			 dev->name, port, dev->phydev->phy_id, dev->dev_addr);
 	}
@@ -1105,6 +1151,7 @@ static int rtl_probe(struct platform_device *pdev)
 	mac[5] = readl(priv->ni + PORT_STATIC + priv->port * PORT_STRIDE) >> 24;
 	eth_hw_addr_set(netdev, mac);
 	netdev->netdev_ops = &rtl_netdev_ops;
+	netdev->ethtool_ops = &rtl_ethtool_ops;
 	netdev->max_mtu = ETH_DATA_LEN;
 	spin_lock_init(&priv->tx_lock);
 	spin_lock_init(&priv->rx_lock);

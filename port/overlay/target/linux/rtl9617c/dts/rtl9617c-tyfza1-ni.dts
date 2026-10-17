@@ -16,15 +16,6 @@
 	interrupts = <GIC_SPI 84 IRQ_TYPE_LEVEL_HIGH>;
 };
 
-&mdio {
-	external-phy-enable-gpios = <&gpio0 14 GPIO_ACTIVE_HIGH>;
-	phy4: ethernet-phy@7 {
-		compatible = "ethernet-phy-ieee802.3-c45";
-		reg = <7>;
-		realtek,hsgmii;
-	};
-};
-
 &{/soc} {
 	gpio0: gpio@4f43292c0 {
 		compatible = "realtek,rtl9617c-gpio";

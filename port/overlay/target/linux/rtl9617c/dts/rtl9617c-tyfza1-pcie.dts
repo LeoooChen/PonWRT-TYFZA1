@@ -4,12 +4,6 @@
 
 / { model = "Tianyi TYFZA1 (native PON/PCIe bring-up)"; };
 
-&ni0 {
- realtek,lan-phys = <&phy0 &phy1 &phy2 &phy3 &phy4>;
- phys = <&pcie_controls 5>;
- phy-names = "sgmii";
-};
-
 &{/soc} {
  pcie_controls: pcie-controls@f4320098 {
   compatible = "realtek,rtl9617c-pcie-controls";

@@ -19,7 +19,7 @@ set -- "$BIN"/*-initramfs-Image
 .venv/bin/python scripts/make_ram_fit.py "$1" "$BIN/openwrt-rtl9617c-generic-tianyi_tyfza1-ni.dtb" "$OUT/ram-ni" --keys "$P/evidence/rtl-workspace/private/tyfza1-build-keys" --kernel-version "$KERNEL_VERSION" --cpus 4
 .venv/bin/python scripts/make_ram_fit.py "$1" "$BIN/openwrt-rtl9617c-generic-tianyi_tyfza1-pon-status.dtb" "$OUT/ram-pon" --keys "$P/evidence/rtl-workspace/private/tyfza1-build-keys" --kernel-version "$KERNEL_VERSION" --cpus 4
 python3 tools/verify_pcie_dtb.py "$P/evidence/wireless-study-20261008/evidence/stock/live-fit.dtb" "$BIN/openwrt-rtl9617c-generic-tianyi_tyfza1-pcie.dtb" --output "$OUT/pcie-dtb-verification.json"
-.venv/bin/python scripts/make_ram_fit.py "$1" "$BIN/openwrt-rtl9617c-generic-tianyi_tyfza1-pcie.dtb" "$OUT/ram-pcie" --keys "$P/evidence/rtl-workspace/private/tyfza1-build-keys" --kernel-version "$KERNEL_VERSION" --cpus 4
+.venv/bin/python scripts/make_ram_fit.py "$1" "$BIN/openwrt-rtl9617c-generic-tianyi_tyfza1-pcie.dtb" "$OUT/ram-pcie" --dtb-2p5g "$BIN/openwrt-rtl9617c-generic-tianyi_tyfza1-pcie-2p5g.dtb" --keys "$P/evidence/rtl-workspace/private/tyfza1-build-keys" --kernel-version "$KERNEL_VERSION" --cpus 4
 python3 tools/verify_pcie_payload.py "$OUT"
 KERNEL_DIRECTORY=$(python3 port/tools/project_paths.py --kernel-directory "$P/sources/openwrt")
 cp "$(dirname "$KERNEL_DIRECTORY")/vmlinux-initramfs.debug" "$OUT/vmlinux-initramfs.debug"

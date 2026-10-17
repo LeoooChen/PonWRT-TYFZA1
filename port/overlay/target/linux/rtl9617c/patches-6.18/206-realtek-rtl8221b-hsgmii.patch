@@ -20,3 +20,45 @@
  		mode = RTL822X_VND1_SERDES_OPTION_MODE_2500BASEX;
  		phydev->rate_matching = RATE_MATCH_PAUSE;
  	} else {
+@@ -2004,7 +2008,7 @@
+ 	 */
+ 
+ 	if (!gen1) {
+-		ret = phy_write_mmd(phydev, MDIO_MMD_VEND1, 0x75f3, 0);
++		ret = phy_clear_bits_mmd(phydev, MDIO_MMD_VEND1, 0x75f3, BIT(0));
+ 		if (ret < 0)
+ 			return ret;
+ 	}
+@@ -2020,7 +2024,9 @@
+ 	if (ret < 0)
+ 		return ret;
+ 
+-	ret = phy_write_mmd(phydev, MDIO_MMD_VEND1, 0x6f10, 0xd455);
++	ret = phy_write_mmd(phydev, MDIO_MMD_VEND1, 0x6f10,
++			    mode == RTL822X_VND1_SERDES_OPTION_MODE_HSGMII_SGMII ?
++			    0xd433 : 0xd455);
+ 	if (ret < 0)
+ 		return ret;
+ 
+@@ -2032,6 +2038,21 @@
+ 	if (ret < 0)
+ 		return ret;
+ 
++	if (mode == RTL822X_VND1_SERDES_OPTION_MODE_HSGMII_SGMII) {
++		int val, release;
++
++		/* Stock Rtl8221_serdes_option_set latches the new mode at link down. */
++		ret = phy_set_bits_mmd(phydev, MDIO_MMD_VEND2, 0xa400, BIT(14));
++		if (ret < 0)
++			return ret;
++		ret = phy_read_mmd_poll_timeout(phydev, MDIO_MMD_VEND2, 0xa434,
++					       val, val & BIT(2), 100000, 10000000, false);
++		release = phy_clear_bits_mmd(phydev, MDIO_MMD_VEND2, 0xa400, BIT(14));
++		if (release < 0)
++			return release;
++		if (ret < 0)
++			return ret;
++	}
+ 	return 0;
+ }
+ 

@@ -8,8 +8,8 @@
 struct tyfza1_led {
 	struct led_classdev cdev;
 	struct list_head node;
-	void (*output)(struct tyfza1_led *led, bool value);
-	bool requested;
+	int (*output)(struct tyfza1_led *led, unsigned int value);
+	unsigned int requested;
 };
 
 int tyfza1_led_register(struct device *dev, struct tyfza1_led *led,

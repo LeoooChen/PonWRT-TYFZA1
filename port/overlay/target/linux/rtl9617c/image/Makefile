@@ -7,6 +7,7 @@ TYFZA1_SIGNING_KEYS ?= $(TYFZA1_PROJECT)/evidence/rtl-workspace/private/tyfza1-b
 define Build/tyfza1-ubi-fit
 	python3 $(TYFZA1_PROJECT)/scripts/make_ubi_fit.py \
 		$@ $(KDIR)/image-rtl9617c-tyfza1-ubi.dtb $@.fit \
+		--dtb-2p5g $(KDIR)/image-rtl9617c-tyfza1-ubi-2p5g.dtb \
 		--keys $(TYFZA1_SIGNING_KEYS)
 	$(CP) $@.fit/image.itb $@
 endef
@@ -27,7 +28,8 @@ define Device/tianyi_tyfza1
   DEVICE_VENDOR := Tianyi
   DEVICE_MODEL := TYFZA1
   DEVICE_VARIANT := native bring-up
-  DEVICE_DTS := rtl9617c-tyfza1 rtl9617c-tyfza1-nand-readonly rtl9617c-tyfza1-stock-ubi-readonly rtl9617c-tyfza1-mdio rtl9617c-tyfza1-xram-lan rtl9617c-tyfza1-dma-tx rtl9617c-tyfza1-ni rtl9617c-tyfza1-pon-status rtl9617c-tyfza1-pcie rtl9617c-tyfza1-ubi
+  SUPPORTED_DEVICES += tianyi,tyfza1-2p5g
+  DEVICE_DTS := rtl9617c-tyfza1 rtl9617c-tyfza1-nand-readonly rtl9617c-tyfza1-stock-ubi-readonly rtl9617c-tyfza1-mdio rtl9617c-tyfza1-xram-lan rtl9617c-tyfza1-dma-tx rtl9617c-tyfza1-ni rtl9617c-tyfza1-pon-status rtl9617c-tyfza1-pcie rtl9617c-tyfza1-pcie-2p5g rtl9617c-tyfza1-ubi rtl9617c-tyfza1-ubi-2p5g
   DEVICE_DTS_DIR := ../dts
   DEVICE_PACKAGES := kmod-rtl-ax-ap tyfza1-pon-control luci-app-tyfza1-pon \
 	ubi-utils nand-utils uboot-envtools iw wpad-mbedtls wifi-scripts wireless-regdb \
@@ -43,7 +45,7 @@ define Device/tianyi_tyfza1
   IMAGES := rootfs.squashfs sysupgrade.bin
   IMAGE/rootfs.squashfs := append-rootfs | tyfza1-rootfs-size
   IMAGE/sysupgrade.bin := tyfza1-rootfs-size | sysupgrade-tar | append-metadata
-  ARTIFACTS := board.dtb nand-readonly.dtb stock-ubi-readonly.dtb mdio-probe.dtb xram-lan.dtb dma-tx.dtb ni.dtb pon-status.dtb pcie.dtb ubi.dtb
+  ARTIFACTS := board.dtb nand-readonly.dtb stock-ubi-readonly.dtb mdio-probe.dtb xram-lan.dtb dma-tx.dtb ni.dtb pon-status.dtb pcie.dtb pcie-2p5g.dtb ubi.dtb ubi-2p5g.dtb
   ARTIFACT/board.dtb := tyfza1-dtb rtl9617c-tyfza1
   ARTIFACT/nand-readonly.dtb := tyfza1-dtb rtl9617c-tyfza1-nand-readonly
   ARTIFACT/stock-ubi-readonly.dtb := tyfza1-dtb rtl9617c-tyfza1-stock-ubi-readonly
@@ -53,7 +55,9 @@ define Device/tianyi_tyfza1
   ARTIFACT/ni.dtb := tyfza1-dtb rtl9617c-tyfza1-ni
   ARTIFACT/pon-status.dtb := tyfza1-dtb rtl9617c-tyfza1-pon-status
   ARTIFACT/pcie.dtb := tyfza1-dtb rtl9617c-tyfza1-pcie
+  ARTIFACT/pcie-2p5g.dtb := tyfza1-dtb rtl9617c-tyfza1-pcie-2p5g
   ARTIFACT/ubi.dtb := tyfza1-dtb rtl9617c-tyfza1-ubi
+  ARTIFACT/ubi-2p5g.dtb := tyfza1-dtb rtl9617c-tyfza1-ubi-2p5g
 endef
 TARGET_DEVICES += tianyi_tyfza1
 

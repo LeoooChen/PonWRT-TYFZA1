@@ -2592,11 +2592,12 @@ static const struct attribute_group rtl_ax_group = {
 };
 static const struct attribute_group *rtl_ax_groups[] = { &rtl_ax_group, NULL };
 
-static void rtl_ax_led_set(struct tyfza1_led *led, bool on)
+static int rtl_ax_led_set(struct tyfza1_led *led, unsigned int on)
 {
 	struct rtl_ax_ap *radio = container_of(led, struct rtl_ax_ap, led);
 
 	rtl_ax_led_output(&radio->io, on);
+	return 0;
 }
 
 static void rtl_ax_stop(struct rtl_ax_ap *radio)
@@ -2762,6 +2763,7 @@ static int rtl_ax_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto stop;
 	rtl_ax_led_init(&radio->io);
 	radio->led.output = rtl_ax_led_set;
+	radio->led.cdev.max_brightness = 1;
 	radio->led.cdev.name = radio->chip == RTL_AX_8852C ? "LED_WLAN_5G" : "LED_WLAN_2G";
 	radio->led.cdev.default_trigger = ieee80211_get_radio_led_name(radio->hw);
 	ret = tyfza1_led_register(&pdev->dev, &radio->led, NULL);

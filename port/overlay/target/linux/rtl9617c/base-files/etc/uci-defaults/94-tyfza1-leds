@@ -1,6 +1,20 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-only
 . /lib/functions.sh
+. /lib/functions/system.sh
+
+case "$(board_name)" in
+	tianyi,tyfza1-2p5g) usb_led=LED_USB1 ;;
+	*) usb_led=LED_USB0 ;;
+esac
+
+migrate_usb_led() {
+	local sysfs
+	config_get sysfs "$1" sysfs
+	case "$usb_led:$sysfs" in
+		LED_USB1:LED_USB0) uci set "system.$1.sysfs=LED_USB1" ;;
+	esac
+}
 
 match_led() {
 	local sysfs
@@ -15,6 +29,8 @@ has_led() {
 }
 
 config_load system
+config_foreach migrate_usb_led led
+config_load system
 # config_generate skips LED defaults when sysupgrade preserves system config.
 for port in 0 1 2 3; do
 	has_led "LED_EPHY$port" && continue
@@ -27,10 +43,10 @@ for port in 0 1 2 3; do
 	uci set "system.$section.dev=lan$((port + 1))"
 	uci set "system.$section.mode=link tx rx"
 done
-if ! has_led LED_USB0 && ! uci -q get system.led_usb >/dev/null; then
+if ! has_led "$usb_led" && ! uci -q get system.led_usb >/dev/null; then
 	uci set system.led_usb=led
 	uci set system.led_usb.name=USB
-	uci set system.led_usb.sysfs=LED_USB0
+	uci set "system.led_usb.sysfs=$usb_led"
 	uci set system.led_usb.trigger=usbport
 	uci add_list system.led_usb.port=usb1-port1
 	uci add_list system.led_usb.port=usb2-port1

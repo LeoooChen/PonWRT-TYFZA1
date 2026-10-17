@@ -65,13 +65,30 @@ def compress(data, parameters):
     }])
 
 
-def make_its(load, entry, fdt_load, signed=False):
+def board_boot_command():
+    # OEM get_gpio_val/match_gpio_conf: straps 000 -> conf-0, 001 -> conf-1.
+    return '''setenv tyfza1_board 0
+if gpio input 113; then true; else setexpr tyfza1_board ${tyfza1_board} + 4; fi
+if gpio input 112; then true; else setexpr tyfza1_board ${tyfza1_board} + 2; fi
+if gpio input 111; then true; else setexpr tyfza1_board ${tyfza1_board} + 1; fi
+if test "${tyfza1_board}" = "0"; then
+    bootm ${unzip_src}#conf-0
+elif test "${tyfza1_board}" = "1"; then
+    bootm ${unzip_src}#conf-1
+else
+    echo "Unsupported TYFZA1 board strap: ${tyfza1_board}"
+    exit 1
+fi
+'''
+
+
+def make_its(load, entry, fdt_load, signed=False, board_variants=False):
     signature = ('signature { algo = "sha256,rsa2048"; key-name-hint = "dev"; };'
                  if signed else '')
     config_signature = ('signature { algo = "sha256,rsa2048"; key-name-hint = "dev"; '
                         'sign-images = "fdt", "kernel", "script"; };' if signed else '')
     label = 'SIGNED' if signed else 'UNSIGNED'
-    return f'''/dts-v1/;
+    its = f'''/dts-v1/;
 / {{
     description = "TYFZA1 native {label} boot-contract candidate";
     #address-cells = <1>;
@@ -104,6 +121,22 @@ def make_its(load, entry, fdt_load, signed=False):
     }};
 }};
 '''
+    if board_variants:
+        fdt = f'''        fdt-2p5g {{
+            data = /incbin/("fdt-2p5g.lzma");
+            type = "flat_dt"; arch = "arm64";
+            compression = "lzma"; load = <{fdt_load:#x}>;
+            hash {{ algo = "sha256"; }};
+            {signature}
+        }};
+'''
+        its = its.replace('        script {', fdt + '        script {')
+        its = its.replace('default = "conf-dts";', 'default = "conf-0";')
+        its = its.replace('        conf-dts {',
+            '        conf-0 { compatible = "realtek,taurus"; kernel = "kernel"; '
+            'fdt = "fdt-2p5g"; script = "script"; ' + config_signature + ' };\n'
+            '        conf-1 {')
+    return its
 
 
 def make_verity(source, output):

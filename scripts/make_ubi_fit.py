@@ -8,13 +8,14 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / 'port/tools'))
-from make_boot_fit import compress, make_its
+from make_boot_fit import board_boot_command, compress, make_its
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('image', type=Path)
 parser.add_argument('dtb', type=Path)
 parser.add_argument('output', type=Path)
 parser.add_argument('--keys', type=Path, required=True)
+parser.add_argument('--dtb-2p5g', type=Path, required=True)
 args = parser.parse_args()
 out = args.output.resolve()
 out.mkdir(parents=True, exist_ok=True)
@@ -23,6 +24,7 @@ parameters = {item['name']: item['lzma_alone'] for item in contract['images']
               if item['name'] in ('kernel', 'fdt-dts')}
 (out / 'kernel.lzma').write_bytes(compress(args.image.read_bytes(), parameters['kernel']))
 (out / 'fdt.lzma').write_bytes(compress(args.dtb.read_bytes(), parameters['fdt-dts']))
+(out / 'fdt-2p5g.lzma').write_bytes(compress(args.dtb_2p5g.read_bytes(), parameters['fdt-dts']))
 (out / 'boot.cmd').write_text('''if test "${root_mtd}" = "31:12"; then
     setenv tyfza1_slot 1
     setenv tyfza1_root ubi_r1
@@ -33,14 +35,15 @@ else
     setenv tyfza1_block /dev/ubiblock0_4
 fi
 setenv bootargs "earlycon console=ttyS0,115200n8 clk_ignore_unused maxcpus=4 ubi.mtd=ubi_device ubi.block=0,${tyfza1_root} root=${tyfza1_block} rootfstype=squashfs ro tyfza1.slot=${tyfza1_slot}"
-bootm ${unzip_src}
-''')
-(out / 'image.its').write_text(make_its(0x200000, 0x200000, 0x2000000, signed=True))
+''' + board_boot_command())
+(out / 'image.its').write_text(make_its(0x200000, 0x200000, 0x2000000,
+                                      signed=True, board_variants=True))
 # OpenWrt's staging mkimage has TOOLS_LIBCRYPTO disabled. Use the signer
 # already used for successful RAM boots, rather than emitting empty nodes.
 subprocess.run(['/usr/bin/mkimage', '-f', 'image.its', '-k', str(args.keys.resolve()), 'image.itb'], cwd=out, check=True, stdout=subprocess.DEVNULL)
 for node in ('/images/kernel/signature', '/images/fdt-dts/signature',
-             '/images/script/signature', '/configurations/conf-dts/signature'):
+             '/images/fdt-2p5g/signature', '/images/script/signature',
+             '/configurations/conf-0/signature', '/configurations/conf-1/signature'):
     subprocess.run(['fdtget', '-t', 'bx', 'image.itb', node, 'value'],
                    cwd=out, check=True, stdout=subprocess.DEVNULL)
 size = (out / 'image.itb').stat().st_size

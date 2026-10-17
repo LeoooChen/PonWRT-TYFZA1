@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Original conf-0/fdt@0, verified against the 2.5G board's running FDT.
+/ {
+	model = "Tianyi TYFZA1 (RTL9617C, 2.5G LAN)";
+	compatible = "tianyi,tyfza1-2p5g", "tianyi,tyfza1", "realtek,rtl9617c";
+
+	leds {
+		/delete-node/ usb0;
+		internet { gpios = <&gpio0 71 GPIO_ACTIVE_LOW>; };
+		power { gpios = <&gpio0 70 GPIO_ACTIVE_LOW>; };
+		phone { gpios = <&gpio0 139 GPIO_ACTIVE_LOW>; };
+		lan0 { gpios = <&gpio0 11 GPIO_ACTIVE_HIGH>; };
+		lan1 { gpios = <&gpio0 12 GPIO_ACTIVE_HIGH>; };
+		lan2 { gpios = <&gpio0 3 GPIO_ACTIVE_LOW>; };
+		lan3 { gpios = <&gpio0 4 GPIO_ACTIVE_LOW>; };
+		usb1 { gpios = <&gpio0 2 GPIO_ACTIVE_LOW>; };
+		wps { gpios = <&gpio0 140 GPIO_ACTIVE_HIGH>; };
+	};
+
+	led-button {
+		lights-toggle { gpios = <&gpio0 66 GPIO_ACTIVE_LOW>; };
+	};
+};
+
+&ni0 {
+	realtek,lan-phys = <&phy0 &phy1 &phy2 &phy3 &phy4>;
+	phys = <&pcie_controls 5>;
+	phy-names = "sgmii";
+};
+
+&mdio {
+	// Bus reset runs before reading the external PHY's Clause45 ID.
+	reset-gpios = <&gpio0 128 GPIO_ACTIVE_LOW>;
+	reset-delay-us = <30000>;
+	reset-post-delay-us = <300000>;
+	phy4: ethernet-phy@7 {
+		compatible = "ethernet-phy-ieee802.3-c45";
+		reg = <7>;
+		realtek,hsgmii;
+	};
+};
