@@ -1,0 +1,21 @@
+--- a/drivers/phy/Kconfig
++++ b/drivers/phy/Kconfig
+@@ -1,4 +1,10 @@
+ # SPDX-License-Identifier: GPL-2.0-only
++
++config PHY_RTL9617C_USB
++	bool "RTL9617C native USB PHY"
++	depends on OF && ARCH_RTL9617C && PHY_RTL9617C_PCIE && GPIOLIB
++	select GENERIC_PHY
++
+ 
+ config PHY_RTL9617C_PCIE
+ 	bool "Realtek RTL9617C PCIe controls"
+--- a/drivers/phy/Makefile
++++ b/drivers/phy/Makefile
+@@ -1,4 +1,5 @@
+ # SPDX-License-Identifier: GPL-2.0
++obj-$(CONFIG_PHY_RTL9617C_USB) += phy-rtl9617c-usb.o
+ obj-$(CONFIG_PHY_RTL9617C_PCIE) += phy-rtl9617c-pcie.o
+ #
+ # Makefile for the phy drivers.

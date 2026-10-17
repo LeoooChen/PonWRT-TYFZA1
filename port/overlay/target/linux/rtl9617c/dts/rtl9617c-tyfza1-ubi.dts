@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include "rtl9617c-tyfza1-pcie.dts"
+#include "rtl9617c-tyfza1-usb.dtsi"
 
 / { model = "Tianyi TYFZA1 (RTL9617C UBI)"; };
 

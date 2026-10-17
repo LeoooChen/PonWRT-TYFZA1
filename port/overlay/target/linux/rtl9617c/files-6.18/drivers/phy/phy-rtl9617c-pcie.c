@@ -2,6 +2,7 @@
 /* Native Taurus PCIe clock/reset/PHY providers. Register behavior from
  * GPL-for-GP3000 phy-rtk-taurus.c and this board's original device tree. */
 #include <linux/clk-provider.h>
+#include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/mfd/syscon.h>
@@ -10,6 +11,7 @@
 #include <linux/platform_device.h>
 #include <linux/reset-controller.h>
 #include <linux/regmap.h>
+#include "../net/ethernet/realtek/rtl9617c-sgmii.h"
 
 struct rtl_pcie_controls;
 struct rtl_pcie_lane {
@@ -17,14 +19,15 @@ struct rtl_pcie_lane {
 	unsigned int id;
 };
 struct rtl_pcie_controls {
-	void __iomem *core_reset, *phy_reset, *phy_control, *power;
+	void __iomem *core_reset, *phy_reset, *phy_control, *power, *usb_reset;
+	void __iomem *sgmii_analog, *sgmii_serdes;
 	struct regmap *global_config;
 	spinlock_t lock;
 	u32 powered_lanes;
 	struct reset_controller_dev reset;
 	struct clk_hw_onecell_data *clocks;
-	struct phy *phys[4];
-	struct rtl_pcie_lane lanes[4];
+	struct phy *phys[6];
+	struct rtl_pcie_lane lanes[6];
 };
 struct rtl_pcie_gate {
 	struct clk_hw hw;
@@ -73,6 +76,14 @@ static int rtl_pcie_reset_set(struct reset_controller_dev *reset,
 	void __iomem *reg = id < 2 ? controls->core_reset : controls->phy_reset;
 	u32 mask = BIT(id < 2 ? 6 + id : id - 2);
 
+	if (id == 4) {
+		reg = controls->core_reset;
+		mask = BIT(13);
+	} else if (id == 5) {
+		reg = controls->usb_reset;
+		mask = BIT(5);
+	}
+
 	rtl_pcie_update(controls, reg, mask, asserted ? mask : 0);
 	return 0;
 }
@@ -101,6 +112,37 @@ static int rtl_pcie_lane_power(struct phy *phy, bool enabled)
 
 	/* S0/S1 ISO_ANA_B belongs to both lanes, not to the lane0 consumer. */
 	spin_lock_irqsave(&controls->lock, flags);
+	if (id == 5) {
+		value = readl(controls->phy_control);
+		if (enabled)
+			value = (value | BIT(25)) & ~BIT(26);
+		writel(value, controls->phy_control);
+		value = readl(controls->power);
+		value = enabled ? (value | 0xc0080000) & ~0x6020 :
+			(value & ~0xc0080000) | 0x6020;
+		writel(value, controls->power);
+		if (enabled) {
+			writel(0x5359, controls->sgmii_serdes + 0x1c);
+			writel(0x30, controls->phy_control + 0x0c);
+			writel(0x34200248, controls->phy_control + 0x10);
+		}
+		spin_unlock_irqrestore(&controls->lock, flags);
+		return 0;
+	}
+	/* Stock PHY5 is the USB S2 lane. Share the PCIe register lock so
+	 * USB initialization cannot overwrite another lane's power bits. */
+	if (id == 4) {
+		value = readl(controls->phy_control);
+		if (enabled)
+			value = (value | 0x00180000) & ~0x00600000;
+		writel(value, controls->phy_control);
+		value = readl(controls->power);
+		value = enabled ? (value | 0x30040800) & ~0x1010 :
+			(value & ~0x30040800) | 0x1010;
+		writel(value, controls->power);
+		spin_unlock_irqrestore(&controls->lock, flags);
+		return 0;
+	}
 	if (enabled) {
 		controls->powered_lanes |= BIT(id);
 		if (id < 2)
@@ -124,9 +166,24 @@ static int rtl_pcie_lane_off(struct phy *phy)
 {
 	return rtl_pcie_lane_power(phy, false);
 }
+static int rtl_pcie_lane_speed(struct phy *phy, int speed)
+{
+	struct rtl_pcie_lane *lane = phy_get_drvdata(phy);
+	struct rtl_pcie_controls *controls = lane->controls;
+	unsigned long flags;
+
+	if (lane->id != 5 || (speed != 10 && speed != 100 && speed != 1000 && speed != 2500))
+		return -EINVAL;
+	spin_lock_irqsave(&controls->lock, flags);
+	rtl_sgmii_link(controls->phy_control, controls->phy_reset,
+		controls->phy_control + 0x10, controls->sgmii_analog, speed);
+	spin_unlock_irqrestore(&controls->lock, flags);
+	return 0;
+}
 static const struct phy_ops rtl_pcie_phy_ops = {
 	.power_on = rtl_pcie_lane_on,
 	.power_off = rtl_pcie_lane_off,
+	.set_speed = rtl_pcie_lane_speed,
 	.owner = THIS_MODULE,
 };
 static struct phy *rtl_pcie_phy_xlate(struct device *dev, const struct of_phandle_args *args)
@@ -154,6 +211,9 @@ static int rtl_pcie_controls_probe(struct platform_device *pdev)
 	controls->phy_reset = devm_platform_ioremap_resource_byname(pdev, "phy-reset");
 	if (IS_ERR(controls->phy_reset))
 		return PTR_ERR(controls->phy_reset);
+	controls->usb_reset = devm_platform_ioremap_resource_byname(pdev, "usb-reset");
+	if (IS_ERR(controls->usb_reset))
+		return PTR_ERR(controls->usb_reset);
 	controls->global_config = syscon_regmap_lookup_by_phandle(dev->of_node, "realtek,global-config");
 	if (IS_ERR(controls->global_config))
 		return PTR_ERR(controls->global_config);
@@ -163,6 +223,12 @@ static int rtl_pcie_controls_probe(struct platform_device *pdev)
 	controls->power = devm_platform_ioremap_resource_byname(pdev, "power");
 	if (IS_ERR(controls->power))
 		return PTR_ERR(controls->power);
+	controls->sgmii_analog = devm_platform_ioremap_resource_byname(pdev, "sgmii-analog");
+	if (IS_ERR(controls->sgmii_analog))
+		return PTR_ERR(controls->sgmii_analog);
+	controls->sgmii_serdes = devm_platform_ioremap_resource_byname(pdev, "sgmii-serdes");
+	if (IS_ERR(controls->sgmii_serdes))
+		return PTR_ERR(controls->sgmii_serdes);
 	spin_lock_init(&controls->lock);
 	platform_set_drvdata(pdev, controls);
 	controls->clocks = devm_kzalloc(dev, struct_size(controls->clocks, hws, 2), GFP_KERNEL);
@@ -193,7 +259,7 @@ static int rtl_pcie_controls_probe(struct platform_device *pdev)
 	controls->reset.owner = THIS_MODULE;
 	controls->reset.ops = &rtl_pcie_reset_ops;
 	controls->reset.of_node = dev->of_node;
-	controls->reset.nr_resets = 4; /* core0,core1,DPHY0,DPHY1 */
+	controls->reset.nr_resets = 6; /* PCIe core/DPHY pairs, USB core/USB2 port1 */
 	ret = devm_reset_controller_register(dev, &controls->reset);
 	if (ret)
 		return ret;

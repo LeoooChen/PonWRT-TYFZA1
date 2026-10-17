@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// USB wiring and calibration from TYFZA1 stock conf-1/fdt@1.
+&{/soc} {
+	usbphy: usb-phy@f432b020 {
+		compatible = "realtek,rtl9617c-usb-phy";
+		reg = <0 0xf432b020 0 0x18>, <0 0xf432b000 0 0x20>,
+		      <0 0xf432b04c 0 0x10>, <0 0xf4337000 0 0x1000>,
+		      <0 0xf432c500 0 0x1c>;
+		reg-names = "usb2", "usb3", "extension", "serdes", "atu";
+		#phy-cells = <0>;
+		phys = <&pcie_controls 4>;
+		phy-names = "lane";
+		resets = <&pcie_controls 4>, <&pcie_controls 5>;
+		reset-names = "core", "port1";
+		vbus-gpios = <&gpio0 100 GPIO_ACTIVE_HIGH>;
+		realtek,usb2-addresses = [e0 e2 e4 e7 f4 e7 f4 e0 e0 e0];
+		realtek,usb2-values-a = [1f f9 68 71 db 44 bb 25 21 25];
+		realtek,usb3-addresses-a = [01 04 05 08 09 0a 0b 0d 0e 20 21 22 23 27 2b 33];
+		realtek,usb3-values-a = /bits/ 16 <0xaccc 0x7000 0x6313 0x30d1 0x424c 0xa610 0xb905 0xef2e 0x1000 0x705e 0xf8e8 0x0003 0x0b66 0x0241 0x0038 0x0001>;
+		realtek,usb2-values-b = [1f f9 6b 71 db 43 bb 26 22 26];
+		realtek,usb3-addresses-b = [01 04 05 08 09 0a 0b 0d 0e 20 21 22 23 27 2b 33 09 09 09];
+		realtek,usb3-values-b = /bits/ 16 <0xaccc 0x7000 0x6313 0x30d1 0x424c 0xc610 0xa905 0xef2e 0x1000 0x705e 0xf8e8 0x0003 0x0b66 0x0241 0x0038 0x0001 0x424c 0x404c 0x424c>;
+	};
+
+	usb: usb@f0200000 {
+		compatible = "generic-xhci";
+		reg = <0 0xf0200000 0 0x80000>;
+		interrupts = <GIC_SPI 66 IRQ_TYPE_LEVEL_HIGH>;
+		phys = <&usbphy>;
+		phy-names = "usb";
+	};
+};

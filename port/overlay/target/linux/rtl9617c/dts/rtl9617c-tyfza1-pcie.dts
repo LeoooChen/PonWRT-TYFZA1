@@ -4,12 +4,20 @@
 
 / { model = "Tianyi TYFZA1 (native PON/PCIe bring-up)"; };
 
+&ni0 {
+ realtek,lan-phys = <&phy0 &phy1 &phy2 &phy3 &phy4>;
+ phys = <&pcie_controls 5>;
+ phy-names = "sgmii";
+};
+
 &{/soc} {
  pcie_controls: pcie-controls@f4320098 {
   compatible = "realtek,rtl9617c-pcie-controls";
   reg = <0 0xf4320098 0 4>, <0 0xf43200a0 0 4>,
-        <0 0xf43200c4 0 4>, <0 0xf432036c 0 4>;
-  reg-names = "core-reset", "phy-reset", "phy-control", "power";
+        <0 0xf43200c4 0 0x14>, <0 0xf432036c 0 4>, <0 0xf432009c 0 4>,
+        <4 0xf433b000 0 0x1000>, <0 0xf4600000 0 0x1000>;
+  reg-names = "core-reset", "phy-reset", "phy-control", "power", "usb-reset",
+              "sgmii-analog", "sgmii-serdes";
   realtek,global-config = <&global_config>;
   #clock-cells = <1>;
   #reset-cells = <1>;

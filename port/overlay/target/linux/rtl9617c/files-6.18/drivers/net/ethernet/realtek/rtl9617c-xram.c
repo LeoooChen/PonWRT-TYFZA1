@@ -18,6 +18,7 @@
 #include <linux/of_mdio.h>
 #include <linux/of_net.h>
 #include <linux/phy.h>
+#include <linux/phy/phy.h>
 #include <linux/platform_device.h>
 #include <linux/rcupdate.h>
 #include <linux/rtnetlink.h>
@@ -29,7 +30,6 @@
 #include "rtl9617c-ni.h"
 #include <linux/rtl9617c-wifi.h>
 #include "rtl9617c-fe.h"
-#include "rtl9617c-sgmii.h"
 
 #define GLB_STATIC 0xa01c
 #define PORT_TO_CPU GENMASK(3, 0)
@@ -70,7 +70,7 @@ struct rtl_xram {
 	unsigned int registered_ports;
 	void __iomem *ni;
 	void __iomem *xram;
-	void __iomem *sgmii_global, *sgmii_analog;
+	struct phy *sgmii;
 	unsigned int sgmii_speed;
 	struct napi_struct napi;
 	struct hrtimer timer;
@@ -210,7 +210,7 @@ static void rtl_adjust_link(struct net_device *dev)
 			   BIT(0) | BIT(1), (phy->speed == SPEED_10 ? BIT(0) : 0) |
 			   (phy->duplex == DUPLEX_HALF ? BIT(1) : 0));
 		if (lan->port == 4 && lan->shared->sgmii_speed != phy->speed) {
-			rtl_sgmii_link(lan->shared->sgmii_global, lan->shared->sgmii_analog, phy->speed);
+			phy_set_speed(lan->shared->sgmii, phy->speed);
 			lan->shared->sgmii_speed = phy->speed;
 		}
 	}
@@ -762,6 +762,11 @@ static void rtl_unregister_extra_lans(struct rtl_xram *priv)
 	}
 }
 
+static void rtl_sgmii_power_off(void *data)
+{
+	phy_power_off(data);
+}
+
 static int rtl_register_extra_lans(struct rtl_xram *priv, struct device *parent)
 {
 	unsigned int port;
@@ -780,38 +785,25 @@ static int rtl_register_extra_lans(struct rtl_xram *priv, struct device *parent)
 			continue;
 		if (port == 4) {
 			struct phy_device *external = of_phy_find_device(phy);
-			struct resource *global, *power;
-			void __iomem *power_reg, *serdes;
-
-			/* This board variant has port4 only when the external PHY responds. */
+			/* Boards without RTL8221B retain the four internal LAN ports. */
 			if (!external) {
 				of_node_put(phy);
 				continue;
 			}
 			put_device(&external->mdio.dev);
-			/* Global reset/control words are shared with NI and PCIe providers. */
-			global = platform_get_resource_byname(to_platform_device(parent), IORESOURCE_MEM, "sgmii-global");
-			priv->sgmii_global = devm_ioremap(parent, global->start, resource_size(global));
-			priv->sgmii_analog = devm_platform_ioremap_resource_byname(to_platform_device(parent), "sgmii-analog");
-			if (!priv->sgmii_global || IS_ERR(priv->sgmii_analog)) {
+			priv->sgmii = devm_phy_get(parent, "sgmii");
+			if (IS_ERR(priv->sgmii)) {
 				of_node_put(phy);
-				ret = !priv->sgmii_global ? -ENOMEM : PTR_ERR(priv->sgmii_analog);
+				ret = PTR_ERR(priv->sgmii);
 				goto unwind;
 			}
-			power = platform_get_resource_byname(to_platform_device(parent), IORESOURCE_MEM, "sgmii-power");
-			power_reg = devm_ioremap(parent, power->start, resource_size(power));
-			serdes = devm_platform_ioremap_resource_byname(to_platform_device(parent), "sgmii-serdes");
-			if (!power_reg || IS_ERR(serdes)) {
+			ret = phy_power_on(priv->sgmii);
+			if (!ret)
+				ret = devm_add_action_or_reset(parent, rtl_sgmii_power_off, priv->sgmii);
+			if (ret) {
 				of_node_put(phy);
-				ret = !power_reg ? -ENOMEM : PTR_ERR(serdes);
 				goto unwind;
 			}
-			/* Actual rtk_taurus_phy_power_config, lane7 table and SGMII tail. */
-			writel((readl(priv->sgmii_global + 0xc4) | BIT(25)) & ~BIT(26), priv->sgmii_global + 0xc4);
-			writel((readl(power_reg) | 0xc0080000U) & ~0x6020U, power_reg);
-			writel(0x5359, serdes + 0x1c);
-			writel(0x30, priv->sgmii_global + 0xd0);
-			writel(0x34200248, priv->sgmii_global + 0xd4);
 		}
 		dev = alloc_etherdev(sizeof(*lan));
 		if (!dev) {
