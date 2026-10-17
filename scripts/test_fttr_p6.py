@@ -38,10 +38,7 @@ typedef uint32_t u32; typedef uint16_t u16; typedef uint8_t u8;
 #define GENMASK(h,l) ((~0U >> (31-(h))) & (~0U << (l)))
 struct device { int unused; }; struct reset_control { int unused; };
 struct firmware { size_t size; const u8 *data; };
-struct rtl_fttr_p6 {
- struct device *dev; void *ni,*qx; struct reset_control *reset;
- unsigned int mode; bool nway,configured; int error;
-};
+#include "rtl9617c-fttr-p6.h"
 unsigned int events[2048][3],count;
 static u32 ni[0x4000], qx[64], glb[64];
 static struct firmware profile;
@@ -113,7 +110,8 @@ def main():
     parser.add_argument('--profiles', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    text = (root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fttr-p6.c').read_text()
+    headers = root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek'
+    text = (headers / 'rtl9617c-fttr-p6.c').read_text()
     names = ['p6_update', 'p6_ind_read', 'p6_ind_write', 'p6_profile_validate',
         'p6_profile_load', 'p6_mac_configure', 'rtl_fttr_p6_stop', 'rtl_fttr_p6_link',
         'rtl_fttr_p6_configure']
@@ -121,7 +119,7 @@ def main():
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory)
         (path / 'native.c').write_text(shim + '\n'.join(function(text, n) for n in names) + wrapper)
-        subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-shared', '-fPIC',
+        subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-shared', '-fPIC', '-I', str(headers),
                         str(path / 'native.c'), '-o', str(path / 'native.so')], check=True)
         library = ctypes.CDLL(str(path / 'native.so'))
         library.set_profile.argtypes = [ctypes.c_char_p, ctypes.c_uint]

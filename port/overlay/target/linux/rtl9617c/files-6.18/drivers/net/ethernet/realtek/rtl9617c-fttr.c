@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Native TYFZA1 MiniOLT control transport, derived from stock machine code. */
 #include <linux/delay.h>
+#include <linux/etherdevice.h>
 #include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/mdio.h>
@@ -12,6 +13,7 @@
 
 #include "rtl9617c-fttr-mdio.h"
 #include "rtl9617c-fttr-i2c.h"
+#include "rtl9617c-fttr-omci.h"
 #include "rtl9617c-fttr-serdes.h"
 
 struct rtl_fttr {
@@ -140,6 +142,35 @@ static ssize_t version_show(struct device *dev, struct device_attribute *attr, c
 }
 static DEVICE_ATTR_RO(version);
 
+static ssize_t omci_link_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	struct rtl_fttr_omci_link link;
+	int ret;
+
+	mutex_lock(&fttr->control_lock);
+	ret = rtl_fttr_omci_link_read(&fttr->reg_io, &link);
+	mutex_unlock(&fttr->control_lock);
+	return ret ? ret : sysfs_emit(buf, "host=%pM olt=%pM ethertype=%04x downstream_length=%u\n",
+		link.host, link.olt, link.ethertype, link.downstream_length);
+}
+
+static ssize_t omci_link_store(struct device *dev, struct device_attribute *attr,
+			       const char *buf, size_t count)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	u8 host[ETH_ALEN];
+	int ret;
+
+	if (!mac_pton(buf, host) || !is_valid_ether_addr(host))
+		return -EINVAL;
+	mutex_lock(&fttr->control_lock);
+	ret = rtl_fttr_omci_init(&fttr->reg_io, host);
+	mutex_unlock(&fttr->control_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_RW(omci_link);
+
 static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
 			   const char *buf, size_t count)
 {
@@ -253,6 +284,7 @@ static struct attribute *rtl_fttr_attrs[] = {
 	&dev_attr_reset.attr,
 	&dev_attr_host_serdes.attr,
 	&dev_attr_pon_serdes.attr,
+	&dev_attr_omci_link.attr,
 	NULL,
 };
 

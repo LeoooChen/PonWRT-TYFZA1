@@ -64,8 +64,6 @@ static ssize_t calibration_show(struct device *dev, struct device_attribute *att
 	mutex_lock(&bosa->lock);
 	marker = i2c_smbus_read_byte_data(bosa->client, 0x60);
 	if (marker < 0) {
-		bosa->configured = false;
-		bosa->error = marker;
 		size = marker;
 	} else {
 		bosa->configured &= marker == 0xb0;

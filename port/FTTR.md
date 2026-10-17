@@ -74,6 +74,25 @@ It does not use the names of the original libraries as a capability probe.
   A shared control mutex serializes the SerDes window and optical transactions.
   GN25L99 status rereads its real calibrated marker so a lost marker cannot
   retain a cached configured state.
+* Native OMCI control-frame foundation for the confirmed ASIC path:
+  host-MAC programming, the original default EtherType transition
+  `88a8 -> 8888`, global `40029=c140` and PLOAM registration bit3 in `4000c`.
+  `omci_link` reads the actual host/OLT MACs, EtherType and downstream format.
+  The portable controller sources encode the two original downstream formats,
+  CRC, and baseline/extended upstream messages. They fix the original extended
+  receive branch which only logs and loops without passing the message upward.
+  The original upstream software-CRC policy (check ONU ID zero) is retained;
+  there is no evidence here to replace other ONUs' receive policy.
+  AF_PACKET uses a nonblocking socket bound to the dedicated interface and
+  ignores its own outgoing frames. These sources are not yet an installed
+  daemon or a complete OLT state machine.
+* `fttr0` MTU 1982, with a 1996-byte Ethernet frame budget. This fits the
+  existing 2048-byte QM buffers with 32-byte headroom, a full 16-byte header
+  and a possible 4-byte FCS. The MAC threshold is 2000; the shared NI maximum
+  is raised to 2000 only when it is smaller. Both fields come from actual
+  original `aal_ni_xge_mac_frame_len_set` / `aal_ni_pkt_len_set` execution.
+  Ordinary 1500-byte configuration would reject long OMCI frames in AF_PACKET.
+  Larger frames remain outside this buffer design and return a length error.
 
 ## Validation
 
@@ -107,7 +126,7 @@ old data when the downstream file disappears. No private payload is committed.
 
 `scripts/test_fttr_p6.py` executes the original mode, indirect-access, profile
 loader, MAC and NWAY functions. Both modes are compared with zero and all-one
-initial register contents (354/356 configuration writes per case). The native
+initial register contents (355..358 configuration writes per case). The native
 startup additionally quiesces P6 before reset; original diagnostic read-address
 commands are excluded from comparison because the new clock check does not
 read unused diagnostic fields. GPIO/clock timing is modeled, not measured.
@@ -128,6 +147,15 @@ limits are 101 reads for bits25/24 and 501 for bits23/22; other modes and WTG
 use 2001. This is a finite hardware wait, not a startup retry loop.
 `peer-serdes-comparison.json` records results. Updated FTTR/BOSA objects and
 both development DTs compile; physical GPIO/optical timing remains unmeasured.
+
+`scripts/test_fttr_omci_wire.py` compares the original caller/relay hardware
+configuration writes, actual MAC/format readback, and six complete encoded
+frames (baseline, short/long extended, both downstream formats). The longest
+frame is 1996 bytes. It reproduces the original extended-message RX drop and
+checks native decoding, truncated frames and the original CRC policy.
+The ARM64 OMCI wire/socket objects compile and form `libfttr-omci.a` in the
+isolated artifacts directory. `omci-wire-comparison.json` records the results;
+the socket transport has not exchanged real device traffic.
 
 To load a development image, first merge `port/configs/tyfza1-fttr.config` into
 its kernel configuration, then select the matching development DT. On the
@@ -157,6 +185,15 @@ sequence is: write `1` to `reset`, apply GN25L99 calibration, write `9 1` to
 original explicit modes 1/2/3. The attributes show actual PLL lock bits and
 the last configuration error. They do not report ONU registration or service
 readiness. The FPGA backend does not expose these ASIC controls.
+
+After this sequence, write `fttr0`'s actual unicast MAC address to the ASIC
+MDIO device's `omci_link` attribute and read it back. The attribute reports
+the hardware envelope configuration; the controller uses the reported
+EtherType, MAC pair and downstream-length flag. `omci-wire.c` and
+`omci-socket.c` under `port/packages/tyfza1-fttr/src/` supply the native frame
+and socket interfaces. Automatic service installation, discovery and OMCI
+transactions are still pending. Keep `fttr0` MTU at 1982 when using long control
+frames; the current transport rejects Ethernet frames over 1996 bytes.
 
 Original hashes and detailed results are emitted under `artifacts/fttr/`.
 Original binaries and the kernel build tree are read from the private evidence
@@ -189,9 +226,11 @@ the peer MiniOLT's separate WTG/PON initialization is also implemented.
    and optical readiness verification. The native sequence is implemented.
 3. Real P6/FTTR frame verification. Native SoC P6, ASIC peer WTG/PON SerDes,
    and the dedicated RX/TX endpoint are implemented; full startup orchestration
-   and the original OLT packet/registration configuration remain pending.
+   and OLT registration configuration remain pending.
 4. OLT-side discovery/registration, authentication, OMCI, T-CONT/GEM/DBA and
-   VLAN/service provisioning. Current upstream ONU OMCI is a different role.
+   VLAN/service provisioning. The native MiniOLT OMCI framing/transport
+   foundation is implemented; transactions, capability/MIB discovery and
+   provisioning are not. Current upstream ONU OMCI is a different role.
 5. Original subordinate gateway configuration, Wi-Fi synchronization,
    multicast, reboot/upgrade and roaming coordination, using the connected
    ONU's actual capabilities rather than assuming one fixed subordinate model.

@@ -164,6 +164,12 @@ int rtl_fttr_p6_configure(struct rtl_fttr_p6 *p6, unsigned int mode, bool nway)
 	p6_ind_write(p6, 2, nway ? value | BIT(8) : value & ~BIT(8));
 	value = p6_ind_read(p6, 0xf1);
 	p6_ind_write(p6, 0xf1, nway ? value & ~0xf : value | 0xf);
+	/* Original aal_ni_{xge_mac_frame_len,pkt_len}_set register fields. */
+	p6_update(p6->ni, 0xb230, 0xffff, RTL_FTTR_FRAME_BYTES + 4);
+	if ((readl(p6->ni + 0xa034) & 0x3fff) < RTL_FTTR_FRAME_BYTES + 4) {
+		p6_update(p6->ni, 0xa034, 0x3fff, RTL_FTTR_FRAME_BYTES + 4);
+		msleep(1);
+	}
 	p6->mode = mode;
 	p6->nway = nway;
 	p6->configured = true;

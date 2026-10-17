@@ -31,7 +31,8 @@ def trace(module, original, mode, nway, seed):
 
     selected = ['aal_sds_mode_set', '__p6_mac_1g_config', '__p6_mac_10g_config',
         '__p6_serdes_ind_read', '__p6_serdes_ind_write', '__p6_sds_status_get',
-        '__p6_prof_load_from_file', 'aal_sds_nway_set']
+        '__p6_prof_load_from_file', 'aal_sds_nway_set', 'aal_ni_xge_mac_frame_len_set',
+        'aal_ni_pkt_len_set']
     oracle = ModuleOracle(module, selected, callback)
     for index, name in enumerate(['g_glb_reg_iobase', 'g_ne_qx_reg_iobase', 'g_ne_reg_iobase']):
         address = 0x6000000 + index * 0x10000
@@ -49,4 +50,9 @@ def trace(module, original, mode, nway, seed):
     assert oracle.call('aal_sds_mode_set', 0, 6, 4 if mode == 9 else 1,
                        5 if mode == 9 else 3, instruction_budget=300000) == 0
     assert oracle.call('aal_sds_nway_set', 0, 6, int(not nway)) == 0
+    data = oracle.scratch + 0x600
+    oracle.uc.mem_write(data, struct.pack('<HHI', 0, 2000, 0))
+    assert oracle.call('aal_ni_xge_mac_frame_len_set', 0, 0, 2, data) == 0
+    if (seed & 0x3fff) < 2000:
+        assert oracle.call('aal_ni_pkt_len_set', 0, 2, data) == 0
     return records, source

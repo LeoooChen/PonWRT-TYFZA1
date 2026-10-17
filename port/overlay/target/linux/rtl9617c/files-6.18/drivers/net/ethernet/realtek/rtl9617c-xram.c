@@ -720,7 +720,8 @@ static int rtl_register_fttr(struct rtl_xram *priv)
 	SET_NETDEV_DEV(dev, priv->p6.dev);
 	strscpy(dev->name, "fttr0", sizeof(dev->name));
 	dev->netdev_ops = &rtl_fttr_netdev_ops;
-	dev->max_mtu = ETH_DATA_LEN;
+	dev->mtu = RTL_FTTR_FRAME_BYTES - ETH_HLEN;
+	dev->max_mtu = dev->mtu;
 	eth_hw_addr_set(dev, priv->netdev->dev_addr);
 	netif_carrier_off(dev);
 	ret = register_netdev(dev);
