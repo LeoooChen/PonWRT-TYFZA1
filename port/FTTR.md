@@ -189,8 +189,8 @@ It does not use the names of the original libraries as a capability probe.
   Get success also requires the returned attribute mask to match the request.
   A received reply is not itself a successful operation. Asynchronous job
   methods use the same original two-second/three-attempt policy; the synchronous
-  exchange is used by `fttrctl get`. Create/Set/Delete are library primitives
-  for the pending service planner, not an automatic provisioning sequence.
+  exchange is used by `fttrctl get`. Native GEM jobs now use Create/Get/Delete;
+  automatic service planning remains pending.
   Explicit Get shares the MiniOLT lease/management grant with explicit MIB
   collection and verifies the same registered serial before publishing a reply.
 * Explicit native T-CONT binding through `fttrctl tcont`. The operator selects
@@ -204,6 +204,31 @@ It does not use the names of the original libraries as a capability probe.
   remote verification, `alloc_verified=true` and a failed `grant` phase keep
   that partial state visible; this is not an atomic transaction or service-ready
   state. The existing device lease prevents concurrent resident-controller work.
+* Native GEM resource lifecycle. The original optional class280 descriptor,
+  class268 CTP and class266 IW TP wire layouts/masks/creation order are rewritten
+  as a small asynchronous job over the native ME transaction engine. Planned
+  instances are queried first: code5 from the original result table means
+  absent, while existing instances are reused only when all selected values
+  match. An existing dependent with an absent planned prerequisite is reported
+  as inconsistent before writes. New instances are read back after Create.
+  The existing peer's real T-CONT, queue, association/profile and GAL pointers
+  are inputs; no subordinate model or default ME instance is invented.
+  `fttrctl gem` exposes the descriptor-free original unicast sequence, using
+  the original ASIC GEM Port-ID allocator. Descriptor support is present in
+  the job API for the pending QoS/service planner.
+  A failed Create/verification cleans up only instances whose Create was sent
+  after observing absence. Unknown outcomes are queried before deletion;
+  every successful Delete is checked by Get for actual absence. Cleanup stops
+  at its first failed/unconfirmed deletion, retains the touched objects and
+  keeps both the initial failure and cleanup failure, including raw replies.
+  This fixes the original `dfe98` path that discarded tracking despite Delete
+  failures and continued deleting dependencies. The release API removes only
+  resources created by that job; reused resources retain their state.
+  The explicit command checks the same registered serial before each request,
+  including retransmissions, and at completion. Replacement stops further
+  writes/cleanup to the new peer.
+  Its output distinguishes absent/present/verified/unknown object states; GEM
+  `configured` means these MEs were verified, not that bridge/Internet works.
 
 ## Validation
 
@@ -346,6 +371,22 @@ and `controller-tcont-comparison.json`. The actual OpenWrt package recipes
 compile/install into `package-root-tcont/`; `package-stage-tcont.log` records
 the isolated build. No firmware or unrelated test suite was run.
 
+`scripts/test_fttr_gem.py` executes the original unicast producers/wrappers
+and Create/Delete builders. Both association branches and the optional
+descriptor match native wire bytes. It reproduces original ignored Delete
+failure and verifies native retained ownership/initial error/cleanup error,
+stopped dependency deletion, preservation of a reused descriptor, rejection
+of an inconsistent existing dependency, cleanup after a lost Create reply,
+and detection of a false successful Delete. ID generation also matches actual
+original allocator execution. `gem-comparison.json` records this scope.
+The existing AF_PACKET/veth check runs the real GEM executable through
+creation/readback, rejected cleanup and replacement while Create is waiting
+for a reply; the new peer receives no retransmission, subsequent Create or
+cleanup (`controller-gem-comparison.json`).
+Existing MIB/ME checks pass with the updated command linked. The actual
+OpenWrt musl prepare/compile/install stage is `package-root-gem/`, with output
+in `package-stage-gem.log`. This is no optical or firmware acceptance claim.
+
 The executable links with the project's actual OpenWrt GCC 14.4.0/musl
 toolchain as `artifacts/fttr/fttrctl-musl`. The optional userspace and kernel
 package definitions parse successfully with the pinned OpenWrt make includes.
@@ -438,6 +479,7 @@ fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> status
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> mib <hardware-ID> fttr0
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> get <hardware-ID> <class> <instance> <mask> fttr0
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> tcont <hardware-ID> <slot:1..7> <instance> <fixed> <assured> <maximum> fttr0
+fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> gem <hardware-ID> <ordinal:1..60> <tcont-instance> <queue-instance> <association:0|1> <profile-instance> <gal-instance> fttr0
 ```
 
 `status` emits raw hardware state and the registration bit for all 64 slots.
@@ -467,6 +509,19 @@ attribute's hardware grant units, not kbit/s. It emits `tcont_binding` with
 the last observed remote assignment, whether a remote write was sent,
 whether assignment/serial were verified and the failed/completed phase.
 It does not create GEM/bridge/VLAN entities or imply an Internet service.
+
+`gem` is a development write operation for the original unicast CTP/IW pair.
+It generates Port-ID/ME instance `256 + hardware-ID + (ordinal-1)*64` and
+rejects values above the original4090 limit. The remaining arguments select
+the real prerequisite MEs; the original association flag0 produces option5,
+and flag1 produces option1. Both target instances must be absent or match
+the requested configuration. It emits `gem_state` with the captured serial,
+actual observed states, whether each new Create was transmitted (`touched`),
+and separate original/cleanup errors and raw replies. Failed cleanup does
+not clear those records or claim removal. The resident controller still owns
+its lease during normal operation; this command uses separately prepared
+development hardware. GAL/profile creation, VLAN/UNI flow installation and
+automatic service policy are not performed by this command.
 
 Original hashes and detailed results are emitted under `artifacts/fttr/`.
 Original binaries and the kernel build tree are read from the private evidence
@@ -522,8 +577,8 @@ to confirm their wire bytes. These are producer inputs, not proof that every
 subordinate supports either association. GAL/bridge/mapper creation and actual
 capability-based pointer selection still have to precede this sequence.
 The original failure cleanup at `dfe98` ignores Delete failures before clearing
-its bookkeeping; the native GEM lifecycle must preserve such failures and
-unconfirmed remote state instead of copying that behavior.
+its bookkeeping. This failure was reproduced; native GEM cleanup preserves
+the failures/unconfirmed resources and stops further dependency deletion.
 
 ## Remaining work toward working FTTR
 
@@ -541,7 +596,9 @@ unconfirmed remote state instead of copying that behavior.
    implemented, including a native entity/attribute model from original wire
    layouts. Authentication policy, capability-based service decisions and
    automatic provisioning are not. Explicit T-CONT binding/readback/local DBA
-   is implemented. Current upstream ONU OMCI is a different role.
+   and native GEM CTP/IW lifecycle/readback/cleanup are implemented. GAL,
+   association-profile and VLAN/UNI flow configuration remain work.
+   Current upstream ONU OMCI is a different role.
 5. Original subordinate gateway configuration, Wi-Fi synchronization,
    multicast, reboot/upgrade and roaming coordination, using the connected
    ONU's actual capabilities rather than assuming one fixed subordinate model.

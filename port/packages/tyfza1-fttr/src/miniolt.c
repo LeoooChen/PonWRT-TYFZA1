@@ -55,6 +55,11 @@ uint16_t fttr_miniolt_alloc_id(unsigned int id, unsigned int slot)
 	return 256 + id * 8 + slot;
 }
 
+uint16_t fttr_miniolt_gem_id(unsigned int id, unsigned int ordinal)
+{
+	return 256 + id + (ordinal - 1) * 64;
+}
+
 int fttr_miniolt_tcont(int directory, unsigned int id, unsigned int slot,
 		       unsigned int fixed, unsigned int assured, unsigned int maximum)
 {
@@ -96,6 +101,19 @@ int fttr_miniolt_one(int directory, unsigned int id, struct fttr_onu_state *onu)
 	onu->upstream = read_le32(data + 4);
 	onu->eqd = read_le32(data + 8);
 	memcpy(onu->serial, data + 12, 8);
+	return 0;
+}
+
+int fttr_miniolt_same(int directory, unsigned int id, const struct fttr_onu_state *expected)
+{
+	struct fttr_onu_state current;
+	int ret = fttr_miniolt_one(directory, id, &current);
+
+	if (ret)
+		return ret;
+	if (!(current.downstream & (1U << 18)) || (current.downstream & (1U << 16)) ||
+	    memcmp(expected->serial, current.serial, sizeof(expected->serial)))
+		return -ESTALE;
 	return 0;
 }
 

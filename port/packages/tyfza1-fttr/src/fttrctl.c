@@ -13,6 +13,7 @@
 #include "miniolt.h"
 #include "omci-mib.h"
 #include "omci-me.h"
+#include "omci-gem.h"
 #include "omci-socket.h"
 
 static void hex(const uint8_t *data, size_t length)
@@ -89,19 +90,6 @@ static int open_session(int directory, unsigned int id, const char *interface,
 	return 0;
 }
 
-static int same_onu(int directory, unsigned int id, const struct fttr_onu_state *before)
-{
-	struct fttr_onu_state current;
-	int ret = fttr_miniolt_one(directory, id, &current);
-
-	if (ret)
-		return ret;
-	if (!(current.downstream & (1U << 18)) || (current.downstream & (1U << 16)) ||
-	    memcmp(before->serial, current.serial, sizeof(before->serial)))
-		return -ESTALE;
-	return 0;
-}
-
 static int scan(int directory, unsigned int id, const char *interface)
 {
 	struct fttr_onu_state before;
@@ -118,7 +106,7 @@ static int scan(int directory, unsigned int id, const char *interface)
 	close(session.fd);
 	if (ret)
 		return ret;
-	ret = same_onu(directory, id, &before);
+	ret = fttr_miniolt_same(directory, id, &before);
 	if (ret)
 		return ret;
 	printf("{\"event\":\"mib_complete\",\"id\":%u,\"commands\":%u}\n", id, commands);
@@ -140,7 +128,7 @@ static int get(int directory, unsigned int id, const uint16_t fields[3], const c
 		ret = fttr_me_exchange(&session, &job);
 	close(session.fd);
 	if (job.replied) {
-		result = same_onu(directory, id, &before);
+		result = fttr_miniolt_same(directory, id, &before);
 		if (result)
 			return result;
 		printf("{\"event\":\"me_reply\",\"id\":%u,\"class\":%u,\"instance\":%u,"
@@ -181,7 +169,7 @@ static int bind_tcont(int directory, unsigned int id, const uint16_t fields[5], 
 	previous = observed = (uint16_t)job.reply[11] << 8 | job.reply[12];
 	read = true;
 	phase = "identity";
-	ret = same_onu(directory, id, &before);
+	ret = fttr_miniolt_same(directory, id, &before);
 	if (ret)
 		goto out;
 	if (previous != alloc) {
@@ -200,7 +188,7 @@ static int bind_tcont(int directory, unsigned int id, const uint16_t fields[5], 
 			goto out;
 		}
 		phase = "identity";
-		ret = same_onu(directory, id, &before);
+		ret = fttr_miniolt_same(directory, id, &before);
 		if (ret)
 			goto out;
 	}
@@ -228,35 +216,61 @@ out:
 	return ferror(stdout) ? -EIO : ret;
 }
 
+static int create_gem(int directory, unsigned int id, const uint16_t fields[6], const char *interface)
+{
+	struct fttr_gem_config config = {
+		.entity = fttr_miniolt_gem_id(id, fields[0]), .tcont = fields[1], .queue = fields[2],
+		.bridge = fields[3], .profile = fields[4], .gal = fields[5],
+	};
+	struct fttr_onu_state before;
+	struct fttr_omci_session session;
+	struct fttr_gem_job job;
+	int result, ret;
+
+	if (config.entity > 4090)
+		return -ERANGE;
+	ret = open_session(directory, id, interface, &session, &before);
+	if (ret)
+		return ret;
+	fttr_gem_job_start(&job, id, &session.transaction, &config, before.serial);
+	ret = fttr_gem_execute(&session, &job, directory, &before);
+	close(session.fd);
+	result = fttr_gem_job_dump(&job, stdout);
+	return ret ? ret : result;
+}
+
 int main(int argc, char **argv)
 {
-	bool mib, wait, query, binding;
+	bool mib, wait, query, binding, gem;
 	int directory, ret;
 
 	if (argc < 3 || (strcmp(argv[2], "status") && strcmp(argv[2], "mib") &&
-	    strcmp(argv[2], "wait-link") && strcmp(argv[2], "get") && strcmp(argv[2], "tcont"))) {
+	    strcmp(argv[2], "wait-link") && strcmp(argv[2], "get") && strcmp(argv[2], "tcont") &&
+	    strcmp(argv[2], "gem"))) {
 		fprintf(stderr, "Usage: %s <miniolt-sysfs-directory> status\n"
 			"       %s <miniolt-sysfs-directory> mib <hardware-ID> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> get <hardware-ID> <class> <instance> <mask> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> tcont <hardware-ID> <slot:1..7> <instance> <fixed> <assured> <maximum> [interface=fttr0]\n"
+			"       %s <miniolt-sysfs-directory> gem <hardware-ID> <ordinal:1..60> <tcont-instance> <queue-instance> <association:0|1> <profile-instance> <gal-instance> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> wait-link <NI-sysfs-directory>\n",
-			argv[0], argv[0], argv[0], argv[0], argv[0]);
+			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
 		return 2;
 	}
 	mib = !strcmp(argv[2], "mib");
 	wait = !strcmp(argv[2], "wait-link");
 	query = !strcmp(argv[2], "get");
 	binding = !strcmp(argv[2], "tcont");
+	gem = !strcmp(argv[2], "gem");
 	if ((mib && argc != 4 && argc != 5) || (query && argc != 7 && argc != 8) ||
-	    (binding && argc != 9 && argc != 10) || (wait && argc != 4) ||
-	    (!mib && !wait && !query && !binding && argc != 3))
+	    (binding && argc != 9 && argc != 10) || (gem && argc != 10 && argc != 11) ||
+	    (wait && argc != 4) || (!mib && !wait && !query && !binding && !gem && argc != 3))
 		return 2;
 	directory = open(argv[1], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (directory < 0) {
 		perror(argv[1]);
 		return 1;
 	}
-	if (mib || query || binding) {
+	if (mib || query || binding || gem) {
 		char *end;
 		unsigned long id;
 
@@ -266,23 +280,26 @@ int main(int argc, char **argv)
 			close(directory);
 			return 2;
 		}
-		if (query || binding) {
-			uint16_t fields[5];
+		if (query || binding || gem) {
+			uint16_t fields[6];
 			unsigned int i;
 
-			for (i = 0; i < (binding ? 5U : 3U); i++) {
+			for (i = 0; i < (gem ? 6U : binding ? 5U : 3U); i++) {
 				unsigned long value;
 
 				errno = 0;
 				value = strtoul(argv[4 + i], &end, 0);
 				if (errno || !*argv[4 + i] || *end || value > UINT16_MAX ||
-				    (query && i == 2 && !value) || (binding && i == 0 && (!value || value > 7))) {
+				    (query && i == 2 && !value) || (binding && i == 0 && (!value || value > 7)) ||
+				    (gem && ((i == 0 && (!value || value > 60)) || (i == 3 && value > 1)))) {
 					close(directory);
 					return 2;
 				}
 				fields[i] = value;
 			}
-			if (binding)
+			if (gem)
+				ret = create_gem(directory, id, fields, argc == 11 ? argv[10] : "fttr0");
+			else if (binding)
 				ret = bind_tcont(directory, id, fields, argc == 10 ? argv[9] : "fttr0");
 			else
 				ret = get(directory, id, fields, argc == 8 ? argv[7] : "fttr0");

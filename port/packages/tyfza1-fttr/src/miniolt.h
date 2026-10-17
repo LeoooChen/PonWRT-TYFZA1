@@ -15,8 +15,10 @@ int fttr_miniolt_table(int directory, struct fttr_onu_state table[FTTR_ONUS]);
 int fttr_miniolt_link(int directory, struct fttr_omci_link *link);
 int fttr_miniolt_links_ready(int directory, int ni);
 int fttr_miniolt_one(int directory, unsigned int id, struct fttr_onu_state *onu);
+int fttr_miniolt_same(int directory, unsigned int id, const struct fttr_onu_state *expected);
 int fttr_miniolt_management(int directory, unsigned int id, bool enable);
 uint16_t fttr_miniolt_alloc_id(unsigned int id, unsigned int slot);
+uint16_t fttr_miniolt_gem_id(unsigned int id, unsigned int ordinal);
 int fttr_miniolt_tcont(int directory, unsigned int id, unsigned int slot,
 		       unsigned int fixed, unsigned int assured, unsigned int maximum);
 int fttr_miniolt_tx_disable(int directory);

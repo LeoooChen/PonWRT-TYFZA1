@@ -196,6 +196,59 @@ def main():
                 finally:
                     if query.poll() is None:
                         query.terminate();query.communicate(timeout=3)
+            for case in ('configured','cleanup-reject','gem-replaced'):
+                objects,operations={},[]
+                expected_serial=serial.hex()
+                values={268:bytes.fromhex('010780070381020000000000000000'),
+                        266:bytes.fromhex('010701123400002345')}
+                masks={268:0xfac0,266:0xf200}
+                query=subprocess.Popen([str(args.control.resolve()),str(miniolt),'gem','7','1',
+                    '0x8007','0x8102','1','0x1234','0x2345','ftr-host'],
+                    stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                try:
+                    deadline=time.monotonic()+4
+                    while query.poll() is None:
+                        assert time.monotonic()<deadline
+                        if not select.select([peer],[],[],0.05)[0]:continue
+                        frame,address=peer.recvfrom(2048)
+                        if address[2]==socket.PACKET_OUTGOING:continue
+                        transaction,opcode,device,c,instance=struct.unpack('>HBBHH',frame[16:24])
+                        assert frame[14:16]==b'\0\7' and device==10 and instance==263 and c in values
+                        operations.append((opcode,c));result=0
+                        if opcode==0x49:
+                            assert frame[24:26]==struct.pack('>H',masks[c])
+                            if c not in objects:result=5
+                        elif opcode==0x44:
+                            assert frame[24:24+len(values[c])]==values[c]
+                            if case=='cleanup-reject' and c==266:result=2
+                            else:objects[c]=values[c]
+                            if case=='gem-replaced' and c==268:
+                                serial=bytes.fromhex('544553540000000a');tables()
+                                continue  # No ACK; replacement must stop even the retransmission.
+                        else:
+                            assert opcode==0x46
+                            if case=='cleanup-reject':result=7
+                            else:objects.pop(c,None)
+                        content=bytes([result])
+                        if opcode==0x49 and not result:content+=struct.pack('>H',masks[c])+objects[c]
+                        peer.send(response(7,transaction,(opcode & 0x1f)|0x20,content,class_id=c,instance=instance))
+                    output,error=query.communicate(timeout=3);row=json.loads(output)
+                    assert row['serial']==expected_serial,(case,row,error)
+                    if case=='configured':
+                        assert query.returncode==0 and row['phase']=='configured' and set(objects)=={268,266}
+                        assert all(x['state']=='verified' and x['touched'] for x in row['objects'])
+                    elif case=='cleanup-reject':
+                        assert query.returncode==1 and row['failure']['error']==row['cleanup_failure']['error']==-121
+                        assert row['objects'][0]['touched'] and not row['objects'][1]['touched']
+                        assert [c for op,c in operations if op==0x46]==[268]
+                    else:
+                        assert query.returncode==1 and row['failure']['error']==-116
+                        assert (0x44,266) not in operations and not any(op==0x46 for op,c in operations)
+                        assert operations.count((0x44,268))==1
+                        assert row['objects'][0]['touched'] and set(objects)=={268}
+                finally:
+                    if query.poll() is None:
+                        query.terminate();query.communicate(timeout=3)
             for case in ('bound','rejected','mismatch','grant-error','already','replaced'):
                 grant=miniolt/'tcont'
                 if case=='grant-error':
@@ -253,10 +306,12 @@ def main():
         'real_cli_get_and_onu_rejection':True,
         'tcont_binding_verified_before_grant':True,'tcont_mismatch_rejection_and_replacement_stop_grant':True,
         'tcont_grant_failure_keeps_remote_state_explicit':True,'already_bound_tcont_skips_set':True,
+        'gem_cli_configured_and_verified':True,'gem_cli_retains_failed_cleanup':True,
+        'gem_replacement_stops_retransmission_writes_and_cleanup_to_new_peer':True,
         'malformed_frame_reported_without_master_exit':True,'offline_releases_grant_and_inventory':True,
         'replaced_onu_reinventoried':True,'old_transaction_reply_ignored':True,'sigterm_closes_hardware_and_netdev':True,
         'optical_hardware_verified':False},indent=2)+'\n')
-    print('Controller: packet exchange, model replacement, SIGTERM and real CLI Get/rejection passed')
+    print('Controller: packet exchange, model replacement, SIGTERM and real CLI Get/T-CONT/GEM passed')
 
 
 if __name__ == '__main__':main()
