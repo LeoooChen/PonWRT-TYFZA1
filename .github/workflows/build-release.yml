@@ -43,6 +43,10 @@ jobs:
               exit 1
             fi
           fi
+      - name: Prepare release notes
+        run: |
+          python3 scripts/test_release_notes.py
+          python3 scripts/release_notes.py "$RELEASE_TAG" > "$RUNNER_TEMP/release-notes.md"
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -109,10 +113,11 @@ jobs:
             gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
               --target "$(git rev-parse HEAD)" \
               --title "$RELEASE_TAG" --prerelease --draft \
-              --notes-file RELEASE_NOTES.md
+              --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
           gh release upload "$RELEASE_TAG" artifacts/release/sysupgrade.bin \
             artifacts/release/tyfza1-telnet-install.tar.gz artifacts/release/SHA256SUMS \
             artifacts/release/COPYING artifacts/release/PonWRT-TYFZA1-source.tar.gz \
             --repo "$GITHUB_REPOSITORY" --clobber
-          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
