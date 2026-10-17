@@ -19,6 +19,9 @@ rsync -a --delete "$PORT/packages/tyfza1-pon-control/" "$TREE/package/tyfza1-pon
 # hostapd patches apply to its unpacked source, not the OpenWrt tree root.
 cp "$PORT/host-patches/471-hostapd-acs-no-survey.patch" \
     "$TREE/package/network/services/hostapd/patches/471-hostapd-acs-no-survey.patch"
+mkdir -p "$TREE/package/network/config/firewall4/patches"
+cp "$PORT/host-patches/120-firewall4-netifd-lower-devices.patch" \
+    "$TREE/package/network/config/firewall4/patches/120-firewall4-netifd-lower-devices.patch"
 if [ -n "${TYFZA1_CONFIG:-}" ]; then
     cp "$TYFZA1_CONFIG" "$TREE/.config"
 elif [ ! -s "$TREE/.config" ]; then

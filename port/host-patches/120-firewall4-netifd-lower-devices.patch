@@ -1,0 +1,21 @@
+From: TYFZA1 native port
+Subject: [PATCH] firewall4: resolve VLAN lowers from netifd device types
+
+netifd reports its device class as type (VLAN, 8021q, 8021ad or bridge).
+The optional sysfs devtype is absent for some VLAN interfaces. Fall back to
+the netifd class while retaining the existing devtype behavior.
+
+--- a/root/usr/share/ucode/fw4.uc
++++ b/root/usr/share/ucode/fw4.uc
+@@ -428,8 +428,10 @@ function resolve_lower_devices(devstatus, devname) {
+ 	let devs = [];
+ 
+ 	if (dir) {
+-		switch (devstatus[devname]?.devtype) {
++		switch (lc(devstatus[devname]?.devtype ?? devstatus[devname]?.type)) {
+ 		case 'vlan':
++		case '8021q':
++		case '8021ad':
+ 		case 'bridge':
+ 			let e;
+ 
