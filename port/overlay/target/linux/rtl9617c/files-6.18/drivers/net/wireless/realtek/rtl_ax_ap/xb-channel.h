@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* TYFZA1 XB 2.4GHz/20MHz, hardwareCV1 and original cc/f9 ADC trim. */
+/* TYFZA1 XB 2.4GHz/20/40MHz, hardwareCV1 and original cc/f9 ADC trim. */
 #ifndef RTL_AX_AP_XB_CHANNEL_H
 #define RTL_AX_AP_XB_CHANNEL_H
 #include "channel.h"
@@ -87,9 +87,10 @@ static inline void rtl_ax_xb_gain_cal2g(const struct rtl_ax_io *io,
 	}
 }
 
-static inline void rtl_ax_xb_bb2g20(const struct rtl_ax_io *io,
+static inline void rtl_ax_xb_bb2g(const struct rtl_ax_io *io,
 	const struct rtl_ax_phy_inputs *phy, const struct rtl_ax_bb_dm *dm,
-	unsigned int center, struct rtl_ax_channel *channel)
+	unsigned int primary, unsigned int center, unsigned int bandwidth,
+	struct rtl_ax_channel *channel)
 {
 	static const u32 barker[14] = { 0x1fe4f, 0x1ff5e, 0x2006c, 0x2017b, 0x2028a, 0x20399, 0x204a8,
 		0x205b6, 0x206c5, 0x207d4, 0x208e3, 0x209f2, 0x20b00, 0x20d8a };
@@ -101,10 +102,11 @@ static inline void rtl_ax_xb_bb2g20(const struct rtl_ax_io *io,
 		{ 0x3b13ff, 0x1c42de, 0xfdb0ad, 0xf60f6e, 0xfd8f92, 0x02d011, 0x01c02c, 0xfff00a },
 	};
 	unsigned int i, path, frequency = center == 14 ? 2484 : 2407 + center * 5;
+	unsigned int index = rtl_ax_channel_primary_index(primary, center, bandwidth);
 
 	/* Exact ctrl_bw_ch@2f35fc: SCO CCK → channel → bandwidth → enable. */
-	rtl_ax_channel_field(io, 0x4a1c, 0x7ffff, barker[center - 1]);
-	rtl_ax_channel_field(io, 0x4a20, 0x7ffff, sco[center - 1]);
+	rtl_ax_channel_field(io, 0x4a1c, 0x7ffff, barker[primary - 1]);
+	rtl_ax_channel_field(io, 0x4a20, 0x7ffff, sco[primary - 1]);
 	rtl_ax_channel_field(io, 0x4738, BIT(17), 1);
 	rtl_ax_channel_field(io, 0x4aa4, BIT(17), 1);
 	rtl_ax_channel_field(io, 0x4e30, 0x1fff, frequency);
@@ -114,13 +116,13 @@ static inline void rtl_ax_xb_bb2g20(const struct rtl_ax_io *io,
 	rtl_ax_xb_gain2g(io, &phy->gain[RTL_AX_PHY_FEM]);
 	rtl_ax_xb_gain_cal2g(io, phy, dm, channel);
 	rtl_ax_channel_field(io, 0x0734, 0xff0000, center);
-	rtl_ax_channel_field(io, 0x4974, 0xc0000000, 0);
+	rtl_ax_channel_field(io, 0x4974, 0xc0000000, bandwidth);
 	rtl_ax_channel_field(io, 0x4978, 0x3000, 0);
-	rtl_ax_channel_field(io, 0x4978, 0x0f00, 0);
-	rtl_ax_channel_field(io, 0x4c00, BIT(4), 0);
-	rtl_ax_channel_field(io, 0x4cc4, BIT(4), 0);
-	rtl_ax_channel_field(io, 0x4e30, BIT(26), 0);
-	rtl_ax_channel_field(io, 0x4424, BIT(2), 0);
+	rtl_ax_channel_field(io, 0x4978, 0x0f00, index);
+	rtl_ax_channel_field(io, 0x4c00, BIT(4), bandwidth);
+	rtl_ax_channel_field(io, 0x4cc4, BIT(4), bandwidth);
+	rtl_ax_channel_field(io, 0x4e30, BIT(26), bandwidth);
+	rtl_ax_channel_field(io, 0x4424, BIT(2), bandwidth);
 	rtl_ax_channel_field(io, 0x4ab0, BIT(0), 1);
 	for (path = 0; path < 2; path++) {
 		unsigned int base = path ? 0xc100 : 0xc000;
@@ -140,23 +142,22 @@ static inline void rtl_ax_xb_bb2g20(const struct rtl_ax_io *io,
 		rtl_ax_channel_field(io, 0xc000, BIT(18), 0);
 		rtl_ax_channel_field(io, base + 0xec, 0x6000, 2);
 	}
-	rtl_ax_channel_field(io, 0x0c9c, 0xff000, 255);
+	rtl_ax_channel_field(io, 0x0c9c, 0xff000, bandwidth ? 0 : 255);
 	rtl_ax_channel_field(io, 0x0ca0, 0xff000, 0);
 	rtl_ax_channel_field(io, 0x0700, BIT(5), 1);
 	rtl_ax_channel_field(io, 0x2320, BIT(0), 0);
 	rtl_ax_channel_field(io, 0x0c80, BIT(31), 0);
-	/* RFE54 skips loop_filter's RFE11..20 exemption; BW20 selects2. */
-	rtl_ax_channel_field(io, 0x440c, 0xf8000, 2);
-	rtl_ax_channel_field(io, 0x4df4, 31, 2);
-	rtl_ax_channel_field(io, 0x4404, 0xf8000, 2);
-	rtl_ax_channel_field(io, 0x4da0, 0x3e000000, 2);
+	/* Original loop_filter: RFE54 uses 2 at 20MHz, 12 at 40MHz. */
+	rtl_ax_channel_field(io, 0x440c, 0xf8000, bandwidth ? 12 : 2);
+	rtl_ax_channel_field(io, 0x4df4, 31, bandwidth ? 12 : 2);
+	rtl_ax_channel_field(io, 0x4404, 0xf8000, bandwidth ? 12 : 2);
+	rtl_ax_channel_field(io, 0x4da0, 0x3e000000, bandwidth ? 12 : 2);
 	/* Actual BAND2G condition at2f3694 reaches2f3954:spur disabled. */
 	rtl_ax_channel_field(io, 0x4c14, BIT(12), 0);
 	rtl_ax_channel_field(io, 0x4cd8, BIT(12), 0);
 	rtl_ax_channel_field(io, 0x42c4, BIT(23), 0);
-	rtl_ax_channel_field(io, 0x4c4c, BIT(12), 0);
-	rtl_ax_channel_field(io, 0x4d10, BIT(12), 0);
-	rtl_ax_channel_field(io, 0x4450, BIT(24), 0);
+	/* ctrl_bw_ch_XB@2f3820 forwards the primary channel, just like C. */
+	rtl_ax_c_5m_mask(io, primary, bandwidth);
 	rtl_ax_channel_field(io, 0x58dc, 0xc0000000, 1);
 	rtl_ax_channel_field(io, 0x58dc, 0xc0000000, 3);
 	rtl_ax_channel_field(io, 0x78dc, 0xc0000000, 1);
@@ -171,8 +172,8 @@ static inline void rtl_ax_xb_bb2g20(const struct rtl_ax_io *io,
 	rtl_ax_channel_field(io, 0x0704, BIT(1), 1);
 }
 
-static inline int rtl_ax_xb_rf2g20(const struct rtl_ax_io *io,
-	unsigned int center, struct rtl_ax_channel *channel)
+static inline int rtl_ax_xb_rf2g(const struct rtl_ax_io *io,
+	unsigned int center, unsigned int bandwidth, struct rtl_ax_channel *channel)
 {
 	static const u32 addresses[2] = { 0x18, 0x10018 };
 	u32 value, be = center <= 4 ? 0xa0 : center <= 10 ? 0x800a2 : center <= 13 ? 0x800a4 : 0xa5;
@@ -217,7 +218,7 @@ static inline int rtl_ax_xb_rf2g20(const struct rtl_ax_io *io,
 			ret = rtl_ax_phy_rf_read(io, path, addresses[bank], &value);
 			if (ret)
 				return ret;
-			value = (value & ~0xc00) | 0xc00;
+			value = (value & ~0xc00) | (bandwidth ? 0x800 : 0xc00);
 			ret = rtl_ax_phy_rf_write_masked(io, path, addresses[bank], 0xfffff, value);
 			if (ret)
 				return ret;
@@ -226,25 +227,27 @@ static inline int rtl_ax_xb_rf2g20(const struct rtl_ax_io *io,
 	return 0;
 }
 
-static inline int rtl_ax_xb_receive_channel20(const struct rtl_ax_io *io,
+static inline int rtl_ax_xb_receive_channel(const struct rtl_ax_io *io,
 	const struct rtl_ax_phy_inputs *phy, const struct rtl_ax_bb_dm *dm,
-	unsigned int center, struct rtl_ax_channel *channel)
+	unsigned int primary, unsigned int center, unsigned int bandwidth,
+	struct rtl_ax_channel *channel)
 {
 	int ret;
 
-	if (center < 1 || center > 14)
+	if (primary < 1 || primary > 14 || center < 1 || center > 14 || bandwidth > 1)
 		return -EINVAL;
-	/* cfg_mac_bw@21d980,BAND2G/PHY0/BW20:clear bits0/1/4. */
-	rtl_ax_update8(io, 0xc010, 3, 0);
+	/* Original cfg_mac_bw: BAND2G, PHY0, matching primary20 TX selector. */
+	rtl_ax_update8(io, 0xc010, 3, bandwidth);
 	rtl_ax_update8(io, 0xc628, 0x13, 0x10);
-	io->write32(io->ctx, 0xc088, 0);
-	rtl_ax_xb_bb2g20(io, phy, dm, center, channel);
-	ret = rtl_ax_xb_rf2g20(io, center, channel);
+	io->write32(io->ctx, 0xc088, rtl_ax_channel_txsc(primary, center, bandwidth));
+	rtl_ax_xb_bb2g(io, phy, dm, primary, center, bandwidth, channel);
+	ret = rtl_ax_xb_rf2g(io, center, bandwidth, channel);
 	if (ret)
 		return ret;
 	channel->band = 0;
-	channel->primary = channel->center = center;
-	channel->bandwidth = 0;
+	channel->primary = primary;
+	channel->center = center;
+	channel->bandwidth = bandwidth;
 	channel->configured = true;
 	return 0;
 }

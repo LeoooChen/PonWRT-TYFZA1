@@ -6,4 +6,9 @@ board_config_update
 lan_ports="lan1 lan2 lan3 lan4"
 [ -e /sys/class/net/lan5 ] && lan_ports="$lan_ports lan5"
 ucidef_set_interfaces_lan_wan "$lan_ports" "pon0"
+if [ -f /tmp/tyfza1-factory/lan_mac ]; then
+	read -r address < /tmp/tyfza1-factory/lan_mac
+	ucidef_set_interface_macaddr lan "$address"
+	ucidef_set_label_macaddr "$address"
+fi
 board_config_flush

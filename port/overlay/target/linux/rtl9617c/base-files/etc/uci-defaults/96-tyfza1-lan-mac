@@ -1,0 +1,20 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+# Pin the bridge identity on upgrades; preserve explicit user MAC overrides.
+. /lib/functions.sh
+
+device_mac() {
+	local name
+	config_get name "$1" name
+	[ "$name" = "$lan_device" ] && config_get override "$1" macaddr
+}
+
+[ -f /tmp/tyfza1-factory/lan_mac ] || exit 1
+[ -z "$(uci -q get network.lan.macaddr)" ] || exit 0
+config_load network
+config_get lan_device lan device br-lan
+config_foreach device_mac device
+[ -z "$override" ] || exit 0
+read -r address < /tmp/tyfza1-factory/lan_mac
+uci set "network.lan.macaddr=$address"
+uci commit network

@@ -3,7 +3,7 @@
 #define RTL_AX_AP_XB_IQK_H
 #include "channel.h"
 
-/* Actual TYFZA1 XB host IQK, normal SCC/2G/20MHz, hardwareCV1.
+/* Actual TYFZA1 XB host IQK, normal SCC/2G/20/40MHz, hardwareCV1.
  * rf_iqk_hwspec_XB@.data196b30; generic doiQK@30a91c;
  * chip callbacks3429e4/344204/344144/342cf0/343e44/343f3c. */
 static const u32 rtl_ax_xb_iqk_bb_regs[] = {
@@ -14,7 +14,7 @@ static const u32 rtl_ax_xb_iqk_rf_regs[] = { 0xdc, 0xef, 0xde, 0, 0x1e, 5, 0x100
 
 struct rtl_ax_xb_iqk {
 	bool ready, shot_fail[2][16], lok_range_fail[2], tx_fail[2], rx_fail[2];
-	u8 channel, times, thermal[2];
+	u8 channel, bandwidth, times, thermal[2];
 	u32 failures, lok_idac[2], lok_vbuffer[2], tx_result[2], rx_result[2];
 	u32 iqc_enable[2], nb_tx[2], nb_rx[2], status;
 	u32 bb_saved[2][11], bb_restored[2][11], rf_saved[2][7], rf_restored[2][7];
@@ -202,7 +202,7 @@ static inline int rtl_ax_xb_iqk_txk(const struct rtl_ax_io *io, unsigned int pat
 		rtl_ax_channel_field(io, 0x8154 + path * 0x100, 4, 0);
 		rtl_ax_channel_field(io, 0x8154 + path * 0x100, 3, group);
 		rtl_ax_channel_field(io, 0x8010, 255, 0);
-		state->tx_fail[path] |= rtl_ax_xb_iqk_shot(io, path, 0x808, false, state);
+		state->tx_fail[path] |= rtl_ax_xb_iqk_shot(io, path, 0x808 + (state->bandwidth << 8), false, state);
 		rtl_ax_channel_field(io, 0x9fe0, BIT(8 + group + path * 4), state->shot_fail[path][3 + group]);
 	}
 	state->nb_tx[path] = state->tx_fail[path] ? 0x40000002 : 0x40000000;
@@ -265,7 +265,7 @@ static inline int rtl_ax_xb_iqk_rxk(const struct rtl_ax_io *io, unsigned int pat
 		rtl_ax_channel_field(io, 0x802c, 0x0fff0000, 0x11);
 		rtl_ax_xb_iqk_shot(io, path, 0x708, true, state);
 		io->delay_us(io->ctx, 10);
-		state->rx_fail[path] |= rtl_ax_xb_iqk_shot(io, path, 0xc08, true, state);
+		state->rx_fail[path] |= rtl_ax_xb_iqk_shot(io, path, 0xc08 + (state->bandwidth << 8), true, state);
 		rtl_ax_channel_field(io, 0x9fe0, BIT(16 + group + path * 4), state->shot_fail[path][8 + group * 2]);
 	}
 	if (path) {
@@ -321,8 +321,8 @@ static inline int rtl_ax_xb_iqk_restore(const struct rtl_ax_io *io, unsigned int
 	return result ? result : ret;
 }
 
-static inline int rtl_ax_xb_iqk_start20(const struct rtl_ax_io *io, unsigned int center,
-	struct rtl_ax_xb_iqk *state)
+static inline int rtl_ax_xb_iqk_start(const struct rtl_ax_io *io, unsigned int center,
+	unsigned int bandwidth, struct rtl_ax_xb_iqk *state)
 {
 	unsigned int path, i;
 	u32 value;
@@ -330,18 +330,19 @@ static inline int rtl_ax_xb_iqk_start20(const struct rtl_ax_io *io, unsigned int
 
 	state->ready = false;
 	state->channel = center;
+	state->bandwidth = bandwidth;
 	memset(state->shots, 0, sizeof(state->shots));
 	memset(state->observations, 0, sizeof(state->observations));
 	memset(state->first_status, 0, sizeof(state->first_status));
 	memset(state->second_status, 0, sizeof(state->second_status));
 	io->write32(io->ctx, 0x19fe0, 0); /* iqk_init_XB@3448c4 every trigger. */
 	for (path = 0; path < 2; path++) {
-		/* Original get_ch_info metadata; normal SCC/2G/20MHz. */
+		/* Original get_ch_info metadata; normal SCC/2G. */
 		ret = rtl_ax_phy_rf_read(io, path, 0x18, &value);
 		if (ret) return ret;
 		rtl_ax_channel_field(io, 0x9fe0, 0xff000000, 6);
 		rtl_ax_channel_field(io, 0x9fe4, 0xfU << (path * 16), 0);
-		rtl_ax_channel_field(io, 0x9fe4, 0xf0U << (path * 16), 0);
+		rtl_ax_channel_field(io, 0x9fe4, 0xf0U << (path * 16), bandwidth);
 		rtl_ax_channel_field(io, 0x9fe4, 0xff00U << (path * 16), center);
 		rtl_ax_channel_field(io, 0x9fe8, 255, 10);
 		for (i = 0; i < ARRAY_SIZE(rtl_ax_xb_iqk_bb_regs); i++)

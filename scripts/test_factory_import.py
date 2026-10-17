@@ -15,7 +15,7 @@ runtime = args.runtime.resolve()
 shutil.copy2(project / 'port/packages/tyfza1-pon-control/files/factory.uc', runtime / 'factory.uc')
 source = runtime / 'input'
 source.mkdir(exist_ok=True)
-fields = {'WLAN_MAC_ADDR': '021122334455', 'GPON_SN': 'TEST12345678',
+fields = {'ELAN_MAC_ADDR': '0011223344ff', 'WLAN_MAC_ADDR': '00e04c000001', 'GPON_SN': 'TEST12345678',
           'PON_VENDOR_ID': 'TEST', 'EPON_ONU_MODEL': 'TYFZA1'}
 for band in ('2G_CCK', '2G_OFDM', '5GL', '5GM', '5GH'):
     fields['HW_RX_GAINGAP_' + band + '_AB'] = '3'
@@ -57,10 +57,13 @@ def invoke(script, case, values, bosa, identity=True, reset=True):
     return result, data, destination
 
 valid_bosa = bytes(range(256)) * 4
-normal, expected, _ = invoke('factory.uc', 'normal', fields, valid_bosa)
+normal, expected, destination = invoke('factory.uc', 'normal', fields, valid_bosa)
 assert normal.returncode == 0, normal.stderr
 assert all(value and len(value) == 284 and value[:8] == b'TYFC0003' for value in expected)
 assert expected[0] != expected[1]  # Each radio retains its own thermal/crystal inputs.
+assert expected[0][66:72] == bytes.fromhex('001122334501')
+assert expected[1][66:72] == bytes.fromhex('001122334500')
+assert (destination / 'tmp/tyfza1-factory/lan_mac').read_text() == '00:11:22:33:44:ff\n'
 for case, bosa, identity in (('short-bosa', b'bad', True), ('extended-bosa', valid_bosa + b'original suffix', True),
                              ('missing-bosa', None, True), ('missing-pon-config', valid_bosa, False)):
     result, data, destination = invoke('factory.uc', case, fields, bosa, identity)
@@ -98,6 +101,8 @@ importer.parent.mkdir(parents=True, exist_ok=True)
 shutil.copy2(project / 'port/packages/tyfza1-pon-control/files/factory.uc', importer)
 importer.chmod(0o755)
 (runtime / 'sys/class/ubi/ubi0').mkdir(parents=True, exist_ok=True)
+for port in range(1, 6):
+    (runtime / f'sys/class/net/lan{port}').mkdir(parents=True, exist_ok=True)
 (runtime / 'dev').mkdir(exist_ok=True)
 invoke('factory.uc', 'boot-input', fields, valid_bosa)
 calibrations = ['rtl9617c/bosa-calibration.bin'] + [
@@ -111,12 +116,16 @@ for calibration in calibrations:
 def boot(mount_ok):
     script = ('. /etc/init.d/tyfza1-factory\n'
               'mount() { ' + ('cp /input/* "$6"/;' if mount_ok else 'return 5;') + ' }\n'
-              'umount() { :; }\nstart\n')
+              'umount() { :; }\n'
+              'ip() { echo "$*" >> /tmp/factory-lan-mac.log; }\n'
+              ': > /tmp/factory-lan-mac.log\nstart\n')
     return subprocess.run(['sudo', '-n', 'chroot', f'--userspec={os.getuid()}:{os.getgid()}',
                            str(runtime), '/bin/sh', '-c', script], text=True, capture_output=True)
 
 result = boot(True)
 assert result.returncode == 0, (result.stdout, result.stderr)
+assert (runtime / 'tmp/factory-lan-mac.log').read_text().splitlines() == [
+    f'link set dev lan{port} address 00:11:22:33:44:ff' for port in range(1, 6)]
 for calibration, data in zip(calibrations, [valid_bosa] + expected):
     link = runtime / 'lib/firmware/realtek' / calibration
     assert link.is_symlink() and os.readlink(link) == '/tmp/tyfza1-factory/' + calibration

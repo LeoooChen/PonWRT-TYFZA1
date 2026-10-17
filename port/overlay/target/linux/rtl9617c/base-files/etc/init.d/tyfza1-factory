@@ -6,7 +6,7 @@ START=09
 start() {
 	local source=/tmp/tyfza1-factory-source
 	local runtime=/tmp/tyfza1-factory
-	local device calibration
+	local device calibration address
 
 	# Invalidate the previous import before attempting to access the factory volume.
 	rm -rf "$runtime"
@@ -32,5 +32,14 @@ start() {
 		printf 'tyfza1-factory: %s\n' "$line" > /dev/kmsg
 	done < /tmp/log/tyfza1-factory.log
 	umount "$source"
+	# NI registers belong to the preceding boot, not to the factory identity.
+	# Like stock, all LAN switch ports share ELAN; netifd applies user overrides later.
+	if [ -f "$runtime/lan_mac" ]; then
+		read -r address < "$runtime/lan_mac"
+		for device in /sys/class/net/lan[1-5]; do
+			[ -e "$device" ] || continue
+			ip link set dev "${device##*/}" address "$address" || return $?
+		done
+	fi
 	return "$result"
 }

@@ -61,7 +61,10 @@ function import_radio(radio) {
 	data += chr(int(field(hs, 'HW_XCAP_WLAN' + radio[1] + '_AX')));
 	for (let band in ['2G_CCK', '2G_BW40_1S', '5G_BW40_1S'])
 		for (let path in ['A', 'B']) data += hexbytes(field(hs, 'HW_' + band + '_TSSI_' + path));
-	const address = mac(field(hs, 'WLAN_MAC_ADDR'));
+	// Stock setup_mac_addr: ELAN base +1 for wlan1 (2G), +2 for wlan0 (5G).
+	// Use full-address addition so the last octet carries instead of wrapping.
+	const base = replace(mac(field(hs, 'ELAN_MAC_ADDR')), /:/g, '');
+	const address = mac(sprintf('%012x', int(base, 16) + 2 - radio[1]));
 	data += hexbytes(replace(address, /:/g, ','));
 	for (let kind in ['GAIN', 'CW']) {
 		for (let path in ['A', 'B']) data += hexbytes(field(hs, 'HW_2G_CCK_TSSI_' + kind + '_DIFF_' + path));
@@ -118,6 +121,12 @@ chmod(output + '/var/run/tyfza1-factory/pon_factory', 0600);
 }
 
 // Each subsystem consumes its own original factory data.
+try {
+	save('tmp/tyfza1-factory/lan_mac', mac(field(hs, 'ELAN_MAC_ADDR')) + '\n');
+} catch (e) {
+	warn('Factory LAN identity: ' + e.message + '\n');
+	failed = true;
+}
 for (let radio in [ ['rtl8852ce', 0], ['rtl8192xbe', 1] ]) {
 	try {
 		import_radio(radio);

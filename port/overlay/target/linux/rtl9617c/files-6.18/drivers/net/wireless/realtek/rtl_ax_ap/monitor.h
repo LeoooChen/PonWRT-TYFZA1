@@ -26,7 +26,7 @@ static int rtl_ax_chandef_locked(struct rtl_ax_ap *radio, const struct cfg80211_
 	case NL80211_CHAN_WIDTH_160: bandwidth = 3; break;
 	default: return -EOPNOTSUPP;
 	}
-	if (radio->chip != RTL_AX_8852C && bandwidth) return -EOPNOTSUPP;
+	if (radio->chip != RTL_AX_8852C && bandwidth > 1) return -EOPNOTSUPP;
 	return rtl_ax_receive_configure(radio, def->chan->hw_value,
 		ieee80211_frequency_to_channel(def->center_freq1), bandwidth);
 }
@@ -1386,11 +1386,6 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	*(struct rtl_ax_ap **)hw->priv = radio;
 	SET_IEEE80211_DEV(hw, &radio->pdev->dev);
 	SET_IEEE80211_PERM_ADDR(hw, radio->flash_calibration.wlan_address);
-	/* Both radios share one factory WLAN base; give 5 GHz its own local address. */
-	if (radio->chip == RTL_AX_8852C) {
-		hw->wiphy->perm_addr[0] |= 2;
-		hw->wiphy->perm_addr[5] += 3;
-	}
 	hw->queues = 4;
 	hw->max_rates = 1;
 	hw->max_report_rates = 1;
@@ -1399,6 +1394,8 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	hw->wiphy->reg_notifier = rtl_ax_regulatory_notify;
 	hw->sta_data_size = sizeof(struct rtl_ax_station);
 	ieee80211_hw_set(hw, RX_INCLUDES_FCS);
+	/* mac80211 handles BIP and SW_MGMT_TX; RX retains the CCMP IV/MIC. */
+	ieee80211_hw_set(hw, MFP_CAPABLE);
 	ieee80211_hw_set(hw, AMPDU_AGGREGATION);
 	ieee80211_hw_set(hw, SUPPORTS_AMSDU_IN_AMPDU);
 	/* RPQ releases individual MPDUs without the transmitted PPDU length. */
@@ -1429,18 +1426,16 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	radio->band.n_channels = channels;
 	radio->band.bitrates = radio->rates;
 	radio->band.n_bitrates = ARRAY_SIZE(rates) - first_rate;
-	/* Board 2T2R is configured by the original normal-mode TRX tail.
-	 * Publish the implemented 20MHz HT TX/RX path; BA/AMPDU follows separately. */
+	/* Both board radios implement the original 2T2R HT20/40 channel path. */
 	radio->band.ht_cap.ht_supported = true;
-	radio->band.ht_cap.cap = IEEE80211_HT_CAP_SGI_20 | IEEE80211_HT_CAP_MAX_AMSDU;
+	radio->band.ht_cap.cap = IEEE80211_HT_CAP_SGI_20 | IEEE80211_HT_CAP_MAX_AMSDU |
+		IEEE80211_HT_CAP_SUP_WIDTH_20_40 | IEEE80211_HT_CAP_SGI_40;
 	radio->band.ht_cap.ampdu_factor = IEEE80211_HT_MAX_AMPDU_64K;
 	radio->band.ht_cap.mcs.rx_mask[0] = 0xff;
 	radio->band.ht_cap.mcs.rx_mask[1] = 0xff;
-	radio->band.ht_cap.mcs.rx_highest = cpu_to_le16(144);
+	radio->band.ht_cap.mcs.rx_highest = cpu_to_le16(300);
 	radio->band.ht_cap.mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
 	if (radio->chip == RTL_AX_8852C) {
-		radio->band.ht_cap.cap |= IEEE80211_HT_CAP_SUP_WIDTH_20_40 | IEEE80211_HT_CAP_SGI_40;
-		radio->band.ht_cap.mcs.rx_highest = cpu_to_le16(300);
 		radio->band.vht_cap.vht_supported = true;
 		/* Original VHT defaults: max MPDU code1, A-MPDU exponent7. */
 		radio->band.vht_cap.cap = IEEE80211_VHT_CAP_SUPP_CHAN_WIDTH_160MHZ |
@@ -1460,7 +1455,8 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	radio->he_band.he_cap.he_cap_elem.mac_cap_info[4] = IEEE80211_HE_MAC_CAP4_AMSDU_IN_AMPDU;
 	radio->he_band.he_cap.he_cap_elem.phy_cap_info[0] = band == NL80211_BAND_5GHZ ?
 		(IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_80MHZ_IN_5G |
-		 IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G) : 0;
+		 IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G) :
+		IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_IN_2G;
 	radio->he_band.he_cap.he_cap_elem.phy_cap_info[1] = IEEE80211_HE_PHY_CAP1_LDPC_CODING_IN_PAYLOAD |
 		IEEE80211_HE_PHY_CAP1_HE_LTF_AND_GI_FOR_HE_PPDUS_0_8US;
 	radio->he_band.he_cap.he_cap_elem.phy_cap_info[7] = IEEE80211_HE_PHY_CAP7_HE_SU_MU_PPDU_4XLTF_AND_08_US_GI;
