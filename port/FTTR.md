@@ -85,8 +85,8 @@ It does not use the names of the original libraries as a capability probe.
   there is no evidence here to replace other ONUs' receive policy.
   AF_PACKET uses a nonblocking socket bound to the dedicated interface and
   ignores its own outgoing frames. The optional `tyfza1-fttr` package installs
-  native `fttrctl` and `fttrd` executables. Automatic MIB inventory is implemented;
-  authentication and service provisioning remain pending.
+  native `fttrctl` and `fttrd` executables. Automatic MIB inventory and explicit
+  policy-driven service provisioning are implemented; authentication remains work.
 * `fttr0` MTU 1982, with a 1996-byte Ethernet frame budget. This fits the
   existing 2048-byte QM buffers with 32-byte headroom, a full 16-byte header
   and a possible 4-byte FCS. The MAC threshold is 2000; the shared NI maximum
@@ -149,7 +149,7 @@ It does not use the names of the original libraries as a capability probe.
   larger intermediate value. Disconnect/block releases the two grant words.
   Both the resident controller and explicit MIB command prepare management
   bandwidth before transmitting OMCI.
-* Resident native controller with one independent asynchronous MIB job per
+* Resident native controller with independent asynchronous MIB/service jobs per
   hardware ONU slot. It polls original registration state every two seconds,
   notices serial changes, allocates management bandwidth, and collects MIB
   records. A peer timeout or invalid matching reply fails that peer; other
@@ -166,6 +166,17 @@ It does not use the names of the original libraries as a capability probe.
   and teardown; a normal replacement waits for its predecessor to release it.
   SIGTERM disables TX, closes the netdev and stops P6. The separate shell
   hardware sequencer has been removed.
+  After inventory, an explicit matching service policy starts the same native
+  service graph used by the CLI. Object/Set/readback, VLAN table reads/writes
+  and failure restoration advance as asynchronous steps through one dispatcher;
+  no per-ONU code waits on a private receive loop. Replies route by ONU and TCI,
+  including matching malformed replies. Each pending transaction retains its
+  own deadline/retries and fresh serial checks. A stalled or failed service
+  does not stop other ONU jobs. Cancellation during cleanup preserves the
+  original child-transaction error and the separate cleanup failure.
+  Registered peers without a policy remain in `inventory`; selected peers
+  progress through `provision`, `configured` or `service-failed`. `configured`
+  verifies the selected resources, not optical/data forwarding.
 * Native per-ONU MIB entity model. Wire widths for 57 unambiguous original
   classes come from `plr_gponomci_medetail_get`; native storage keeps wire
   bytes and actual instance IDs, without the original packed RAM ABI.
@@ -247,7 +258,7 @@ It does not use the names of the original libraries as a capability probe.
   TPID/DSCP group. Native checks all 28 bytes. Independent GAL/bridge reuse
   does not acquire a false linear dependency; GEM and UNI retain their real
   prerequisite checks and cleanup ownership. These commands prepare base
-  entities; resident automatic service provisioning remains work.
+  entities; the resident policy-driven service graph is described below.
 * Native ANI/GEM-side bridge-port attachment and VLAN filtering. The selected
   port/bridge/TP IDs follow actual original producer `d8320`: mask`fc00`,
   TP type5 for direct GEM IW or type3 for Mapper, priority0 and path-cost1.
@@ -315,8 +326,29 @@ It does not use the names of the original libraries as a capability probe.
   VLAN/grant restoration stops dependent cleanup and retains the ownership/
   error records. `configured` describes these verified remote/local resources;
   it does not assert data forwarding, authentication or optical acceptance.
-  The resident daemon still performs inventory only; automatic provisioning,
-  service persistence/reconciliation and cross-service policy remain work.
+  The resident daemon now runs this graph asynchronously when an explicit
+  policy matches. Durable ownership recovery and cross-service policy remain work.
+* Resident service policies and runtime journals. `/etc/tyfza1-fttr.services`
+  is a preserved package configuration file, loaded by the procd command.
+  An exact vendor-first serial matches before the wildcard. A policy names an
+  Ethernet/VEIP type and zero-based ordinal; the actual UNI entity comes from
+  that registration's sorted MIB. Duplicate/invalid policy rows fail before
+  hardware startup. The shipped file contains comments only, so it does not
+  invent a VLAN/UNI/network policy for an unknown subordinate.
+  `onu-<ID>.service` is atomically replaced with mode0600 and contains selected
+  configuration, complete object recipes/ownership/prior values, pending wire
+  exchanges and VLAN table snapshots. It is saved before new OMCI sends and
+  after processing their outcomes. Disconnect/replacement stops old remote
+  requests, clears and reads back the old policy's local DBA slot, then retains
+  that generation as `.service-old`. Registration restarts inventory and
+  policy selection. A warm controller restart rescans and reuses actual
+  matching MEs; previous-process journals are archived before new work, so
+  they cannot appear as a current configured result in inventory-only mode.
+  These are runtime records in `/var/run`, not a durable write-ahead recovery
+  log. The controller does not yet replay prior ownership after a crash or
+  power loss. It also does not yet monitor MIB data-sync/reset events: a
+  same-serial reboot whose registration transition is missed by polling needs
+  reconciliation work. Those cases are not reported as verified recovery.
 
 ## Validation
 
@@ -544,6 +576,27 @@ isolated6.18.55 module build against the retained real export table
 (`modules-service.log`, with the existing stripped-description warnings).
 These checks do not exercise optical traffic or the ASIC data-forwarding path.
 
+`scripts/test_fttr_autoprovision.py` runs the actual resident daemon with two
+independent peers over AF_PACKET/veth. Original ARM64 attribute descriptors and
+ONU Get/Get Next replies supply protocol evidence; peer MIB storage and the
+synchronous DBA sysfs boundary are modeled. A withheld T-CONT response on one
+ONU does not block the other service. Exact/wildcard policies select distinct
+actual Ethernet/VEIP instances. Serial replacement during an ordinary Set and
+during failed-GEM cleanup stops old transmissions, withdraws local bandwidth,
+retains the original/cleanup errors and provisions the new registration.
+Warm restart without hardware bootstrap and an observed same-serial link
+disconnect/reconnect reuse actual remote MEs. Duplicate policies fail before
+hardware changes. Omitting policies preserves inventory-only operation and
+archives stale current journals. Mode0600 journal snapshots and SIGTERM
+hardware shutdown are checked. Taking the shared packet endpoint down while
+a service awaits a reply also confirms controller failure and TX shutdown
+(`autoprovision-comparison.json`). The prior
+focused service/VLAN checks pass through the asynchronous engines
+(`service-async-comparison.json`, `vlan-async-comparison.json`). Actual musl
+package prepare/compile/install passes in `package-root-autoprovision/`
+(`package-stage-autoprovision.log`), including the policy conffile and procd
+argument. No full firmware build or full test suite is used here.
+
 The executable links with the project's actual OpenWrt GCC 14.4.0/musl
 toolchain as `artifacts/fttr/fttrctl-musl`. The optional userspace and kernel
 package definitions parse successfully with the pinned OpenWrt make includes.
@@ -630,8 +683,25 @@ The procd `tyfza1-fttr` init script uses START=26 and honors its enable flag.
 It locates the bound MiniOLT/GN25L99 child and passes the retained modes to
 `fttrd`. The daemon performs bootstrap under its own device lease and then
 manages registered ONUs. `/etc/init.d/tyfza1-fttr start` / `stop` controls this
-instance; SIGTERM also handles a stop requested during bootstrap. Authentication
-and service provisioning remain separate work. FPGA startup is still incomplete.
+instance; SIGTERM also handles a stop requested during bootstrap. The procd
+command loads `/etc/tyfza1-fttr.services`; authentication and FPGA startup remain work.
+
+Service policy rows have nine fields:
+
+```
+serial-or-* kind UNI-ordinal slot priority VID-or-none fixed assured maximum
+```
+
+The serial is16 hexadecimal digits in the hardware inventory's vendor-first
+order. Kind0 selects Ethernet; kind2 selects VEIP. Ordinals are zero-based
+within that actual MIB class. Slot1..7, priority0..7, VID0..4094/`none` and
+hardware grant units have the same meanings as `fttrctl service`. There is
+one policy per exact serial and at most one wildcard; exact matches win.
+An ordinal not present on the actual peer produces `service-failed` without
+configuration writes. Edit the policy file and restart this development
+service to load changes. A direct daemon launch can use
+`--services <policy-file>` after its existing positional arguments; omitting
+the option performs inventory only. No active policy ships by default.
 
 After the development hardware sequence and actual `fttr0` setup, use:
 
@@ -655,13 +725,14 @@ fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> service <hardware-ID> <UNI-ki
 grant and reads the actual OMCI envelope,
 and streams JSON records. An error exits nonzero without a `mib_complete`
 record. This is an explicit MIB inventory operation; authentication policy,
-capability decisions and automatic service/roaming management remain work.
+broader capability decisions and roaming management remain work.
 The resident controller holds this lease while running; inspect its completed
 `onu-<ID>.mib` files and `status.json` during normal service. Raw attribute words
 and hardware-registration flags are distinct from its MIB state. Failed scans
 leave `.failed` diagnostics and are retried only after an actual registration/
-serial transition or an explicit service restart. No data service is reported
-ready by this controller yet.
+serial transition or an explicit service restart. `status.json` also reports
+the loaded policy count and each peer's service configuration/cleanup status.
+No operational data-forwarding claim follows from MIB or configuration status.
 
 `get` accepts decimal or `0x` hexadecimal class/instance/mask values (the
 hardware ID remains decimal). It prints `me_reply` with the original result
@@ -810,15 +881,18 @@ the failures/unconfirmed resources and stops further dependency deletion.
    VLAN/service provisioning. The native MiniOLT OMCI framing/transport
    foundation, management grants and automatic baseline MIB inventory are
    implemented, including a native entity/attribute model from original wire
-   layouts. Authentication policy, capability-based service decisions and
-   automatic provisioning are not. Explicit T-CONT binding/readback/local DBA
+   layouts. Authentication policy and broader capability-based service decisions
+   remain work. Explicit T-CONT binding/readback/local DBA
    and native GEM CTP/IW lifecycle/readback/cleanup are implemented. Native GAL,
    bridge/initial Mapper and basic Ethernet/VEIP attachment are implemented.
    Mapper binding and ANI/GEM-side bridge ports/VLAN filtering are implemented.
    UNI VLAN operation rules, table readback and exact prior-rule restoration
    are implemented. Explicit fresh-MIB selection, direct-bridge service
    orchestration and local DBA readback/restoration are implemented. Resident
-   automatic provisioning and service persistence/reconciliation remain work.
+   provisioning from explicit policies and asynchronous per-ONU dispatch are
+   implemented, with runtime journals and observed disconnect/replacement
+   handling. Durable ownership recovery, MIB-reset detection/reconciliation,
+   default policy import and multiple services per ONU remain work.
    Current upstream ONU OMCI is a different role.
 5. Original subordinate gateway configuration, Wi-Fi synchronization,
    multicast, reboot/upgrade and roaming coordination, using the connected

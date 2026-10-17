@@ -202,112 +202,187 @@ static int verify(const struct fttr_vlan_table *before, const struct fttr_vlan_t
 	return 0;
 }
 
-static int set_row(struct fttr_omci_session *session, uint16_t instance, const uint8_t row[16],
-		   int directory, const struct fttr_onu_state *identity, struct fttr_me_job *me)
+static int begin_read(struct fttr_vlan_change *change, uint16_t *counter, bool before)
 {
-	fttr_me_job_start(me, session->onu, &session->transaction, FTTR_ME_SET, 171, instance, 0x0400, row, 16);
-	return fttr_me_exchange_same(session, me, directory, identity);
+	struct fttr_vlan_read_job *job = before ? &change->before : &change->after;
+
+	free(job->table.data);
+	fttr_vlan_read_start(job, change->onu, counter, change->instance);
+	return 1;
+}
+
+static int set_row(struct fttr_vlan_change *change, uint16_t *counter, const uint8_t row[16])
+{
+	fttr_me_job_start(&change->me, change->onu, counter, FTTR_ME_SET, 171,
+		change->instance, 0x0400, row, 16);
+	return 1;
+}
+
+struct fttr_me_job *fttr_vlan_change_pending(struct fttr_vlan_change *change)
+{
+	switch (change->stage) {
+	case FTTR_VLAN_READ: return &change->before.me;
+	case FTTR_VLAN_SET:
+	case FTTR_VLAN_RESTORE: return &change->me;
+	case FTTR_VLAN_VERIFY:
+	case FTTR_VLAN_RESTORE_READ:
+	case FTTR_VLAN_RESTORE_VERIFY: return &change->after.me;
+	default: return NULL;
+	}
+}
+
+void fttr_vlan_change_start(struct fttr_vlan_change *change, uint16_t onu,
+		uint16_t *counter, uint16_t instance, const struct fttr_vlan_plan *plan)
+{
+	memset(change, 0, sizeof(*change));
+	change->onu = onu;
+	change->instance = instance;
+	change->plan = *plan;
+	change->phase = "read";
+	begin_read(change, counter, true);
+}
+
+static int failed_change(struct fttr_vlan_change *change, uint16_t *counter,
+			 int error, const struct fttr_me_job *me)
+{
+	change->error = error;
+	change->failure = *me;
+	if (!change->sent) {
+		change->stage = FTTR_VLAN_FAILED;
+		return error;
+	}
+	change->stage = FTTR_VLAN_RESTORE_READ;
+	return begin_read(change, counter, false);
+}
+
+static int failed_restore(struct fttr_vlan_change *change, int error, const struct fttr_me_job *me)
+{
+	change->cleanup_error = error;
+	change->cleanup_failure = *me;
+	change->stage = FTTR_VLAN_FAILED;
+	return change->error ? change->error : error;
+}
+
+static int next_set(struct fttr_vlan_change *change, uint16_t *counter)
+{
+	for (; change->index < change->plan.count; change->index++)
+		if (!matches(find(&change->before.table, change->plan.rows[change->index]),
+			     change->plan.rows[change->index]))
+			return set_row(change, counter, change->plan.rows[change->index]);
+	change->stage = FTTR_VLAN_VERIFY;
+	change->phase = "verify";
+	return begin_read(change, counter, false);
+}
+
+static int next_restore(struct fttr_vlan_change *change, uint16_t *counter)
+{
+	uint8_t row[16];
+
+	for (; change->index >= 0; change->index--) {
+		const uint8_t *previous;
+
+		if (!(change->sent & (1U << change->index)))
+			continue;
+		previous = find(&change->before.table, change->plan.rows[change->index]);
+		if (previous)
+			memcpy(row, previous, 16);
+		else {
+			memcpy(row, change->plan.rows[change->index], 8);
+			memset(row + 8, 0xff, 8);
+		}
+		if (matches(find(&change->after.table, row), row))
+			continue;
+		change->after.table.complete = false;
+		return set_row(change, counter, row);
+	}
+	change->stage = FTTR_VLAN_RESTORE_VERIFY;
+	return begin_read(change, counter, false);
+}
+
+int fttr_vlan_change_update(struct fttr_vlan_change *change, uint16_t *counter)
+{
+	struct fttr_vlan_table *before = &change->before.table, *after = &change->after.table;
+	struct fttr_vlan_read_job *read;
+	struct fttr_me_job *me;
+	uint32_t offset;
+	int i, count, ret;
+
+	if (change->stage == FTTR_VLAN_DONE)
+		return change->error ? change->error : 2;
+	if (change->stage == FTTR_VLAN_FAILED)
+		return change->error ? change->error : change->cleanup_error;
+	me = fttr_vlan_change_pending(change);
+	if (change->stage == FTTR_VLAN_SET && me->attempts)
+		change->sent |= 1U << change->index;
+	if (me->state == FTTR_ME_WAIT)
+		return me->attempts ? 0 : 1;
+	if (change->stage == FTTR_VLAN_SET || change->stage == FTTR_VLAN_RESTORE) {
+		if (me->error)
+			return change->stage == FTTR_VLAN_SET ?
+				failed_change(change, counter, me->error, me) : failed_restore(change, me->error, me);
+		if (change->stage == FTTR_VLAN_SET) {
+			change->index++;
+			return next_set(change, counter);
+		}
+		change->index--;
+		return next_restore(change, counter);
+	}
+	read = change->stage == FTTR_VLAN_READ ? &change->before : &change->after;
+	ret = fttr_vlan_read_update(read, counter);
+	if (ret == 1)
+		return read->me.attempts ? 0 : 1;
+	if (ret < 0)
+		return change->stage == FTTR_VLAN_READ || change->stage == FTTR_VLAN_VERIFY ?
+			failed_change(change, counter, ret, &read->me) : failed_restore(change, ret, &read->me);
+	switch (change->stage) {
+	case FTTR_VLAN_READ:
+		for (offset = 0; offset < before->length; offset += 16)
+			if (find(before, before->data + offset) != before->data + offset)
+				return failed_change(change, counter, -EUCLEAN, &read->me);
+		count = before->length / 16;
+		for (i = 0; i < change->plan.count; i++) {
+			bool exists = find(before, change->plan.rows[i]) != NULL;
+
+			count += deletion(change->plan.rows[i]) ? -(int)exists : !exists;
+		}
+		if (count > before->capacity)
+			return failed_change(change, counter, -ENOSPC, &read->me);
+		change->phase = "set";
+		change->stage = FTTR_VLAN_SET;
+		return next_set(change, counter);
+	case FTTR_VLAN_VERIFY:
+		ret = verify(before, after, &change->plan);
+		if (ret)
+			return failed_change(change, counter, ret, &read->me);
+		change->verified = true;
+		change->phase = "configured";
+		change->stage = FTTR_VLAN_DONE;
+		return 2;
+	case FTTR_VLAN_RESTORE_READ:
+		change->stage = FTTR_VLAN_RESTORE;
+		change->index = change->plan.count - 1;
+		return next_restore(change, counter);
+	case FTTR_VLAN_RESTORE_VERIFY:
+		ret = verify(before, after, &(struct fttr_vlan_plan){ 0 });
+		if (ret)
+			return failed_restore(change, ret, &read->me);
+		change->restored = true;
+		change->stage = FTTR_VLAN_DONE;
+		if (!change->error)
+			change->phase = "released";
+		return change->error ? change->error : 2;
+	default: return 0;
+	}
 }
 
 int fttr_vlan_apply(struct fttr_omci_session *session, uint16_t instance,
 		   const struct fttr_vlan_plan *plan, int directory,
 		   const struct fttr_onu_state *identity, struct fttr_vlan_change *change)
 {
-	struct fttr_vlan_table *before = &change->before.table, *after = &change->after.table;
-	struct fttr_vlan_plan restore = { 0 };
-	uint32_t offset;
-	int i, count, ret;
+	int ret;
 
-	memset(change, 0, sizeof(*change));
-	change->phase = "read";
-	ret = fttr_vlan_read(session, instance, directory, identity, &change->before);
-	if (ret) {
-		change->failure = change->before.me;
-		goto failed;
-	}
-	/* Duplicate keys make replacement/rollback ambiguous. Retain the actual table. */
-	for (offset = 0; offset < before->length; offset += 16)
-		if (find(before, before->data + offset) != before->data + offset) {
-			ret = -EUCLEAN;
-			goto failed;
-		}
-	count = before->length / 16;
-	for (i = 0; i < plan->count; i++) {
-		bool exists = find(before, plan->rows[i]) != NULL;
-
-		count += deletion(plan->rows[i]) ? -(int)exists : !exists;
-	}
-	if (count > before->capacity) {
-		ret = -ENOSPC;
-		goto failed;
-	}
-	change->phase = "set";
-	for (i = 0; i < plan->count; i++) {
-		const uint8_t *row = plan->rows[i];
-
-		if (matches(find(before, row), row))
-			continue;
-		ret = set_row(session, instance, row, directory, identity, &change->me);
-		if (change->me.attempts)
-			change->sent |= 1U << i;
-		if (ret) {
-			change->failure = change->me;
-			goto failed;
-		}
-	}
-	change->phase = "verify";
-	ret = fttr_vlan_read(session, instance, directory, identity, &change->after);
-	if (!ret)
-		ret = verify(before, after, plan);
-	if (ret) {
-		change->failure = change->after.me;
-		goto failed;
-	}
-	change->phase = "configured";
-	change->verified = true;
-	return 0;
-
-failed:
-	change->error = ret;
-	if (!change->sent)
-		return ret;
-	/* Re-read the real table before deciding which prior rows need restoration. */
-	free(after->data);
-	change->cleanup_error = fttr_vlan_read(session, instance, directory, identity, &change->after);
-	if (change->cleanup_error) {
-		change->cleanup_failure = change->after.me;
-		return ret;
-	}
-	for (i = plan->count - 1; i >= 0; i--) {
-		uint8_t *row;
-		const uint8_t *previous;
-
-		if (!(change->sent & (1U << i)))
-			continue;
-		row = restore.rows[restore.count++];
-		previous = find(before, plan->rows[i]);
-		if (previous)
-			memcpy(row, previous, 16);
-		else {
-			memcpy(row, plan->rows[i], 8);
-			memset(row + 8, 0xff, 8);
-		}
-		if (matches(find(after, row), row))
-			continue;
-		after->complete = false;
-		change->cleanup_error = set_row(session, instance, row, directory, identity, &change->me);
-		if (change->cleanup_error) {
-			change->cleanup_failure = change->me;
-			return ret;
-		}
-	}
-	free(after->data);
-	change->cleanup_error = fttr_vlan_read(session, instance, directory, identity, &change->after);
-	if (!change->cleanup_error)
-		change->cleanup_error = verify(before, after, &(struct fttr_vlan_plan){ 0 });
-	if (change->cleanup_error)
-		change->cleanup_failure = change->after.me;
-	else
-		change->restored = true;
-	return ret;
+	fttr_vlan_change_start(change, session->onu, &session->transaction, instance, plan);
+	while ((ret = fttr_vlan_change_update(change, &session->transaction)) == 1)
+		fttr_me_exchange_same(session, fttr_vlan_change_pending(change), directory, identity);
+	return ret < 0 ? ret : 0;
 }

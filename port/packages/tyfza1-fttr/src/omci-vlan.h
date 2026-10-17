@@ -44,8 +44,18 @@ struct fttr_vlan_change {
 	int error, cleanup_error;
 	uint8_t sent;
 	bool verified, restored;
+	struct fttr_vlan_plan plan;
+	enum { FTTR_VLAN_READ, FTTR_VLAN_SET, FTTR_VLAN_VERIFY, FTTR_VLAN_RESTORE_READ,
+		FTTR_VLAN_RESTORE, FTTR_VLAN_RESTORE_VERIFY, FTTR_VLAN_DONE, FTTR_VLAN_FAILED } stage;
+	uint16_t onu, instance;
+	int index;
 };
 
+void fttr_vlan_change_start(struct fttr_vlan_change *change, uint16_t onu,
+		uint16_t *counter, uint16_t instance, const struct fttr_vlan_plan *plan);
+/* Zero waits, one requests IO, two completes, negative fails. */
+int fttr_vlan_change_update(struct fttr_vlan_change *change, uint16_t *counter);
+struct fttr_me_job *fttr_vlan_change_pending(struct fttr_vlan_change *change);
 int fttr_vlan_apply(struct fttr_omci_session *session, uint16_t instance,
 		   const struct fttr_vlan_plan *plan, int directory,
 		   const struct fttr_onu_state *identity, struct fttr_vlan_change *change);

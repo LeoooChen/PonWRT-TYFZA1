@@ -1,0 +1,10 @@
+# TYFZA1 native FTTR service policies, loaded at controller startup.
+# One service per ONU. Exact serial matches take precedence over '*'.
+# No active rows means inventory only. Select network policy explicitly.
+#
+# serial: 16 hexadecimal digits in vendor-first wire order, or *
+# kind: 0=Ethernet, 2=VEIP; ordinal: zero-based within that actual MIB class
+# slot: 1..7; priority: 0..7; VID: 0..4094, or none for transparent mode
+# fixed/assured/maximum: hardware grant units, as in fttrctl service
+#
+# serial            kind ordinal slot priority VID  fixed assured maximum

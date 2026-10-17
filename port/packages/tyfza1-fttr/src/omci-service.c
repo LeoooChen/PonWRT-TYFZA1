@@ -200,97 +200,196 @@ static bool grant_equal(const struct fttr_tcont_grant *a, const struct fttr_tcon
 	return a->fixed == b->fixed && a->limits == b->limits;
 }
 
-static int grant_write(struct fttr_omci_session *session, struct fttr_service_job *job,
-		       int directory, const struct fttr_onu_state *identity,
+static int grant_write(struct fttr_service_job *job, int directory,
+		       const struct fttr_onu_state *identity,
 		       const struct fttr_tcont_grant *value, bool *sent)
 {
-	int ret = fttr_miniolt_same(directory, session->onu, identity);
+	unsigned int onu = job->transaction.me.onu;
+	int ret = fttr_miniolt_same(directory, onu, identity);
 
 	if (!ret) {
 		if (sent)
 			*sent = true;
-		ret = fttr_miniolt_tcont(directory, session->onu, job->config.slot,
+		ret = fttr_miniolt_tcont(directory, onu, job->config.slot,
 			value->fixed, value->limits >> 16, value->limits & 0xffff);
 	}
 	if (!ret)
-		ret = fttr_miniolt_tcont_read(directory, session->onu, job->config.slot, &job->observed);
+		ret = fttr_miniolt_tcont_read(directory, onu, job->config.slot, &job->observed);
 	if (!ret && !grant_equal(value, &job->observed))
 		ret = -EUCLEAN;
 	if (!ret)
-		ret = fttr_miniolt_same(directory, session->onu, identity);
+		ret = fttr_miniolt_same(directory, onu, identity);
 	return ret;
+}
+
+struct fttr_me_job *fttr_service_pending(struct fttr_service_job *job)
+{
+	if (job->stage == FTTR_SERVICE_OBJECTS || job->stage == FTTR_SERVICE_RELEASE)
+		return &job->transaction.me;
+	if (job->stage == FTTR_SERVICE_VLAN)
+		return fttr_vlan_change_pending(&job->vlan);
+	return NULL;
+}
+
+void fttr_service_cancel(struct fttr_service_job *job, int error)
+{
+	struct fttr_me_job *me = fttr_service_pending(job);
+	int original = job->error;
+
+	if (!original && (job->stage == FTTR_SERVICE_OBJECTS || job->stage == FTTR_SERVICE_RELEASE))
+		original = job->transaction.error;
+	if (!original && job->stage == FTTR_SERVICE_VLAN)
+		original = job->vlan.error;
+
+	if (me) {
+		me->state = FTTR_ME_FAILED;
+		me->error = error;
+		if (job->stage == FTTR_SERVICE_OBJECTS || job->stage == FTTR_SERVICE_RELEASE) {
+			if (job->transaction.error || job->stage == FTTR_SERVICE_RELEASE) {
+				job->transaction.cleanup_error = error;
+				job->transaction.cleanup_failure = *me;
+			} else {
+				job->transaction.error = error;
+				job->transaction.failure = *me;
+			}
+			job->transaction.phase = FTTR_OBJECT_FAILED;
+		} else {
+			if (job->vlan.error) {
+				job->vlan.cleanup_error = error;
+				job->vlan.cleanup_failure = *me;
+			} else {
+				job->vlan.error = error;
+				job->vlan.failure = *me;
+			}
+			job->vlan.stage = FTTR_VLAN_FAILED;
+		}
+	}
+	if (original && me)
+		job->cleanup_error = error;
+	job->error = original ? original : error;
+	job->stage = FTTR_SERVICE_FAILED;
+	job->configured = false;
+	job->grant_verified = false;
+	job->vlan.verified = false;
+	job->vlan.after.table.complete = false;
+}
+
+static int service_failed(struct fttr_service_job *job, int error)
+{
+	job->stage = FTTR_SERVICE_FAILED;
+	job->error = error;
+	return error;
+}
+
+static int release_objects(struct fttr_service_job *job, uint16_t *counter,
+			   int directory, const struct fttr_onu_state *identity, int error)
+{
+	int ret;
+
+	job->error = error;
+	job->grant_verified = false;
+	if (job->grant_sent) {
+		job->cleanup_error = grant_write(job, directory, identity, &job->previous, NULL);
+		if (job->cleanup_error)
+			return service_failed(job, error);
+		job->grant_restored = true;
+	}
+	job->stage = FTTR_SERVICE_RELEASE;
+	ret = fttr_objects_job_release(&job->transaction, counter);
+	if (ret == FTTR_OBJECT_REQUEST)
+		return 1;
+	return service_failed(job, error);
+}
+
+int fttr_service_update(struct fttr_service_job *job, uint16_t *counter,
+			int directory, const struct fttr_onu_state *identity)
+{
+	struct fttr_tcont_grant desired = { .fixed = job->config.fixed,
+		.limits = (uint32_t)job->config.assured << 16 | job->config.maximum };
+	struct fttr_vlan_plan plan;
+	unsigned int onu = job->transaction.me.onu;
+	int ret;
+
+	switch (job->stage) {
+	case FTTR_SERVICE_READY: return 2;
+	case FTTR_SERVICE_FAILED: return job->error;
+	case FTTR_SERVICE_START:
+		job->phase = "grant-read";
+		ret = fttr_miniolt_tcont_read(directory, onu, job->config.slot, &job->previous);
+		if (ret)
+			return service_failed(job, ret);
+		job->observed = job->previous;
+		if (job->previous.fixed > 0xffff)
+			return service_failed(job, -EUCLEAN);
+		if ((job->previous.fixed || job->previous.limits) &&
+		    job->previous_alloc != fttr_miniolt_alloc_id(onu, job->config.slot))
+			return service_failed(job, -EBUSY);
+		job->phase = "objects";
+		job->stage = FTTR_SERVICE_OBJECTS;
+		return 1;
+	case FTTR_SERVICE_OBJECTS:
+	case FTTR_SERVICE_RELEASE:
+		ret = fttr_objects_job_update(&job->transaction, counter);
+		if (ret < 0) {
+			job->cleanup_error = job->transaction.cleanup_error;
+			return service_failed(job, job->error ? job->error : ret);
+		}
+		if (ret != FTTR_OBJECT_COMPLETE)
+			return ret;
+		if (job->stage == FTTR_SERVICE_RELEASE)
+			return service_failed(job, job->error);
+		job->phase = "grant";
+		if (!grant_equal(&job->previous, &desired)) {
+			ret = grant_write(job, directory, identity, &desired, &job->grant_sent);
+			if (ret)
+				return release_objects(job, counter, directory, identity, ret);
+		}
+		job->grant_verified = true;
+		job->phase = "vlan";
+		if (job->config.tagged) {
+			struct fttr_vlan_plan untagged;
+
+			/* Original access mode1 b4c10. */
+			fttr_vlan_plan_build(&plan, FTTR_VLAN_DISCARD_TAGGED, 0, 0, 0, false);
+			fttr_vlan_plan_build(&untagged, FTTR_VLAN_TAG_UNTAGGED,
+				0, job->config.vid, job->config.priority, false);
+			memcpy(plan.rows[plan.count++], untagged.rows[0], 16);
+		} else {
+			/* Original transparent mode4 b5704. */
+			fttr_vlan_plan_build(&plan, FTTR_VLAN_FORWARD_ALL, 0, 0, 0, false);
+		}
+		fttr_vlan_change_start(&job->vlan, onu, counter, job->uni_port, &plan);
+		job->stage = FTTR_SERVICE_VLAN;
+		return 1;
+	case FTTR_SERVICE_VLAN:
+		ret = fttr_vlan_change_update(&job->vlan, counter);
+		if (ret < 0) {
+			if (job->vlan.cleanup_error) {
+				job->cleanup_error = job->vlan.cleanup_error;
+				if (ret == -ESTALE || job->cleanup_error == -ESTALE)
+					job->grant_verified = false;
+				return service_failed(job, ret);
+			}
+			return release_objects(job, counter, directory, identity, ret);
+		}
+		if (ret != 2)
+			return ret;
+		job->configured = true;
+		job->phase = "configured";
+		job->stage = FTTR_SERVICE_READY;
+		return 2;
+	}
+	return 0;
 }
 
 int fttr_service_execute(struct fttr_omci_session *session, struct fttr_service_job *job,
 			 int directory, const struct fttr_onu_state *identity)
 {
-	struct fttr_tcont_grant desired = { .fixed = job->config.fixed,
-		.limits = (uint32_t)job->config.assured << 16 | job->config.maximum };
-	struct fttr_vlan_plan plan;
 	int ret;
 
-	job->phase = "grant-read";
-	ret = fttr_miniolt_tcont_read(directory, session->onu, job->config.slot, &job->previous);
-	if (ret)
-		return job->error = ret;
-	job->observed = job->previous;
-	if (job->previous.fixed > 0xffff)
-		return job->error = -EUCLEAN;
-	if ((job->previous.fixed || job->previous.limits) &&
-	    job->previous_alloc != fttr_miniolt_alloc_id(session->onu, job->config.slot))
-		return job->error = -EBUSY;
-	job->phase = "objects";
-	ret = fttr_objects_execute(session, &job->transaction, directory, identity);
-	if (ret) {
-		job->cleanup_error = job->transaction.cleanup_error;
-		return job->error = ret;
-	}
-	job->phase = "grant";
-	if (!grant_equal(&job->previous, &desired)) {
-		ret = grant_write(session, job, directory, identity, &desired, &job->grant_sent);
-		if (ret)
-			goto failed;
-	}
-	job->grant_verified = true;
-	job->phase = "vlan";
-	if (job->config.tagged) {
-		struct fttr_vlan_plan untagged;
-
-		/* Original UNI mode1 b4c10: discard tagged, then tag untagged. */
-		fttr_vlan_plan_build(&plan, FTTR_VLAN_DISCARD_TAGGED, 0, 0, 0, false);
-		fttr_vlan_plan_build(&untagged, FTTR_VLAN_TAG_UNTAGGED,
-			0, job->config.vid, job->config.priority, false);
-		memcpy(plan.rows[plan.count++], untagged.rows[0], 16);
-	} else {
-		/* Original transparent mode4 b5704. */
-		fttr_vlan_plan_build(&plan, FTTR_VLAN_FORWARD_ALL, 0, 0, 0, false);
-	}
-	ret = fttr_vlan_apply(session, job->uni_port, &plan, directory, identity, &job->vlan);
-	if (ret) {
-		if (job->vlan.cleanup_error) {
-			job->cleanup_error = job->vlan.cleanup_error;
-			if (ret == -ESTALE || job->cleanup_error == -ESTALE)
-				job->grant_verified = false;
-			return job->error = ret;
-		}
-		goto failed;
-	}
-	job->configured = true;
-	job->phase = "configured";
-	return 0;
-
-failed:
-	job->error = ret;
-	job->grant_verified = false;
-	if (job->grant_sent) {
-		job->cleanup_error = grant_write(session, job, directory, identity, &job->previous, NULL);
-		if (job->cleanup_error)
-			return ret;
-		job->grant_restored = true;
-	}
-	fttr_objects_job_release(&job->transaction, &session->transaction);
-	job->cleanup_error = fttr_objects_execute(session, &job->transaction, directory, identity);
-	return ret;
+	while ((ret = fttr_service_update(job, &session->transaction, directory, identity)) == 1)
+		fttr_me_exchange_same(session, fttr_service_pending(job), directory, identity);
+	return ret < 0 ? ret : 0;
 }
 
 int fttr_service_dump(const struct fttr_service_job *job, FILE *file)
@@ -302,11 +401,12 @@ int fttr_service_dump(const struct fttr_service_job *job, FILE *file)
 		fprintf(file, "%02x", job->transaction.serial[i]);
 	fprintf(file, "\",\"phase\":\"%s\",\"error\":%d,\"cleanup_error\":%d,"
 		"\"configured\":%s,\"tcont\":%u,\"queue\":%u,\"gem\":%u,\"uni_port\":%u,\"ani_port\":%u,"
-		"\"grant_sent\":%s,\"grant_verified\":%s,\"grant_restored\":%s,"
+		"\"grant_sent\":%s,\"grant_verified\":%s,\"grant_restored\":%s,\"grant_withdrawn\":%s,"
 		"\"previous_grant\":[%u,%u],\"observed_grant\":[%u,%u],\"vlan_error\":%d,\"vlan_cleanup_error\":%d}\n",
 		job->phase, job->error, job->cleanup_error, job->configured ? "true" : "false", job->tcont, job->queue,
 		job->gem, job->uni_port, job->ani_port, job->grant_sent ? "true" : "false",
 		job->grant_verified ? "true" : "false", job->grant_restored ? "true" : "false",
+		job->grant_withdrawn ? "true" : "false",
 		job->previous.fixed, job->previous.limits, job->observed.fixed, job->observed.limits,
 		job->vlan.error, job->vlan.cleanup_error);
 	return ferror(file) ? -EIO : 0;

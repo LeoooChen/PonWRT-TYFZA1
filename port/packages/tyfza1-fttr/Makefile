@@ -38,7 +38,10 @@ define Build/Compile
 		-o $(PKG_BUILD_DIR)/fttrd $(PKG_BUILD_DIR)/fttrd.c \
 		$(PKG_BUILD_DIR)/miniolt.c $(PKG_BUILD_DIR)/omci-wire.c \
 		$(PKG_BUILD_DIR)/omci-socket.c $(PKG_BUILD_DIR)/omci-mib.c \
-		$(PKG_BUILD_DIR)/omci-model.c $(TARGET_LDFLAGS)
+		$(PKG_BUILD_DIR)/omci-model.c $(PKG_BUILD_DIR)/omci-me.c \
+		$(PKG_BUILD_DIR)/omci-objects.c $(PKG_BUILD_DIR)/omci-gem.c \
+		$(PKG_BUILD_DIR)/omci-association.c $(PKG_BUILD_DIR)/omci-vlan.c \
+		$(PKG_BUILD_DIR)/omci-service.c $(TARGET_LDFLAGS)
 endef
 
 define Package/tyfza1-fttr/install
@@ -47,7 +50,12 @@ define Package/tyfza1-fttr/install
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/fttrd $(1)/usr/sbin/fttrd
 	$(INSTALL_DIR) $(1)/etc/init.d $(1)/lib/firmware/realtek/rtl9617c
 	$(INSTALL_BIN) ./files/tyfza1-fttr.init $(1)/etc/init.d/tyfza1-fttr
+	$(INSTALL_DATA) ./files/tyfza1-fttr.services $(1)/etc/tyfza1-fttr.services
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/firmware/*.bin $(1)/lib/firmware/realtek/rtl9617c/
+endef
+
+define Package/tyfza1-fttr/conffiles
+/etc/tyfza1-fttr.services
 endef
 
 $(eval $(call BuildPackage,tyfza1-fttr))

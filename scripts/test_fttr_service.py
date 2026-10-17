@@ -21,6 +21,41 @@ from test_fttr_controller import HOST, OLT
 from test_fttr_vlan import Slave, master_rules
 
 
+SYSFS_WRITE_SHIM = '''#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <unistd.h>
+ssize_t write(int fd,const void *buf,size_t size) {
+ static unsigned int calls;
+ char link[64],path[512];
+ snprintf(link,sizeof(link),"/proc/self/fd/%d",fd);
+ ssize_t n=readlink(link,path,sizeof(path)-1);
+ if(n>6) {
+  path[n]=0;
+  if(!strcmp(path+n-6,"/tcont")) {
+   unsigned int id,slot,f,a,m;
+   sscanf(buf,"%u %u %u %u %u",&id,&slot,&f,&a,&m);
+   const char *mode=getenv("FTTR_SERVICE_CASE");
+   if((strcmp(mode,"grant-false-success") || calls) &&
+      (strcmp(mode,"grant-restore-false") || !calls)) {
+    strcpy(path+n-6,"/tcont_state");
+    int state=open(path,O_WRONLY);
+    uint32_t words[2]={f,a<<16|m};
+    pwrite(state,words,8,(id*8+slot)*8);close(state);
+   }
+   calls++;
+  }
+ }
+ ssize_t (*real_write)(int,const void *,size_t)=dlsym(RTLD_NEXT,"write");
+ return real_write(fd,buf,size);
+}
+'''
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--master', type=Path, required=True)
@@ -79,39 +114,7 @@ def main():
         # Real sysfs store completes the hardware write before returning. Model
         # that synchronous boundary, which a FIFO notification alone cannot do.
         shim = device/'sysfs.c'
-        shim.write_text('''#define _GNU_SOURCE
-#include <dlfcn.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
-#include <unistd.h>
-ssize_t write(int fd,const void *buf,size_t size) {
- static unsigned int calls;
- char link[64],path[512];
- snprintf(link,sizeof(link),"/proc/self/fd/%d",fd);
- ssize_t n=readlink(link,path,sizeof(path)-1);
- if(n>6) {
-  path[n]=0;
-  if(!strcmp(path+n-6,"/tcont")) {
-   unsigned int id,slot,f,a,m;
-   sscanf(buf,"%u %u %u %u %u",&id,&slot,&f,&a,&m);
-   const char *mode=getenv("FTTR_SERVICE_CASE");
-   if((strcmp(mode,"grant-false-success") || calls) &&
-      (strcmp(mode,"grant-restore-false") || !calls)) {
-    strcpy(path+n-6,"/tcont_state");
-    int state=open(path,O_WRONLY);
-    uint32_t words[2]={f,a<<16|m};
-    pwrite(state,words,8,(id*8+slot)*8);close(state);
-   }
-   calls++;
-  }
- }
- ssize_t (*real_write)(int,const void *,size_t)=dlsym(RTLD_NEXT,"write");
- return real_write(fd,buf,size);
-}
-''')
+        shim.write_text(SYSFS_WRITE_SHIM)
         subprocess.run(['cc','-shared','-fPIC','-Wall','-Wextra','-Werror','-o',str(device/'sysfs.so'),str(shim),'-ldl'],check=True)
         device.joinpath('omci_link').write_text('host=02:03:04:05:06:07 olt=0a:0b:0c:0d:0e:0f ethertype=8888 downstream_length=0\n')
         device.joinpath('management_grant').write_text('')
