@@ -114,6 +114,10 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_protocol(const u8 *llc)
 static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(volatile u32 *mailbox, u8 *buffer, u32 buffer_dma)
 {
 	if (!mailbox[88] || !mailbox[93]) return 0;
+	/* With FE off, Linux owns TCP/UDP too; leave the original MPDU intact. */
+	volatile u32 *ni = (void *)0xb0000000;
+	if ((ni[0x2300 / 4] & (BIT(31) | BIT(13))) != (BIT(31) | BIT(13)) ||
+	    !(ni[0x38c4 / 4] & BIT(31))) return 0;
 	u8 *frame; u32 length, macid;
 	u32 header = rx_frame(mailbox, buffer, &frame, &length, &macid);
 	if (!header) { mailbox[107]++; return 0; }

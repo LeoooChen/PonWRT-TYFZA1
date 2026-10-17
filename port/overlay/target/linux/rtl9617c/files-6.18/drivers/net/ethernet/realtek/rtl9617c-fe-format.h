@@ -443,6 +443,8 @@ static inline void rtl_fe_ipv4_mask(unsigned int words[RTL_FE_MASK_WORDS])
  words[6] = (words[6] & ~0x01000000U) | 0x00000000U; /* lspid */
  words[6] = (words[6] & ~0x00000200U) | 0x00000000U; /* pol_id */
  words[6] = (words[6] & ~0x04000000U) | 0x00000000U; /* ctrl_set_id */
+ /* Distinguish templates even when their selected packet fields coincide. */
+ rtl_fe_bits_set(words,217,1,0); /* hkey_id */
 }
 static inline void rtl_fe_ipv6_mask(unsigned int words[RTL_FE_MASK_WORDS])
 {
@@ -477,6 +479,7 @@ static inline void rtl_fe_bridge_mask(unsigned int words[RTL_FE_MASK_WORDS])
  rtl_fe_bits_set(words,120,6,0); /* complete destination MAC */
  rtl_fe_bits_set(words,201,1,0); /* disabled-policer LLID/GEM metadata */
  rtl_fe_bits_set(words,216,1,0); /* logical source */
+ rtl_fe_bits_set(words,217,1,0); /* hash template identity */
 }
 
 static inline void rtl_fe_bridge_key(unsigned int words[RTL_FE_KEY_WORDS],

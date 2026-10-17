@@ -13,7 +13,8 @@ IDS,IDLE,MAP,STATUS,TAIL=0x1a000,0x1a400,0x17400,0xf000,0x17810
 class Machine:
  def __init__(self):
   self.u=Uc(UC_ARCH_MIPS,UC_MODE_MIPS32|UC_MODE_LITTLE_ENDIAN)
-  for a,n in ((0x1fc00000,0x10000),(B,0x20000),(BAR,0x10000),(RX,514*16384),(BD,4096),(ST,0x20000),(VP,4096),(NI,4096),(TABLE,4096)):self.u.mem_map(a,n)
+  for a,n in ((0x1fc00000,0x10000),(B,0x20000),(BAR,0x10000),(RX,514*16384),(BD,4096),(ST,0x20000),(VP,4096),(NI,4096),(TABLE,4096),(0x10000000,0x10000)):self.u.mem_map(a,n)
+  self.put(0x10002300,(1<<31)|(1<<13));self.put(0x100038c4,0xa0000000)
   self.u.mem_write(0x1fc00000,binary);self.tag=8190;self.slot=254;self.pending_w1c=None;self.isr=0;self.acks=[]
   for i,v in ((2,BAR|0xa0000000),(80,TABLE),(81,254),(82,8190),(83,254),(134,BD),(177,258)):self.put(MB+i*4,v)
   for i in range(514):self.put(TABLE+i*4,self.payload_dma(i))

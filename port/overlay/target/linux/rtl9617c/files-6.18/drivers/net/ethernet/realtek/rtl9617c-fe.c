@@ -15,6 +15,7 @@
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/module.h>
+#include <linux/platform_device.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/unaligned.h>
@@ -99,6 +100,8 @@ static const unsigned int fe_registers[] = {
  0x2300,0x23a0,0x23a4,0xa1e0,
  0x3278,0x327c,0x3280,
  0x3500,0x3504,0x351c,
+ 0x3940,0x3944,0x3948,0x3c80,
+ 0x3508,0x30cc,
 };
 struct rtl_fe {
  struct device *device;
@@ -269,7 +272,12 @@ static int fe_prepare(struct rtl_fe *fe)
  if(ret)return ret;
  fe_write(fe,0x3500,0x11); /* Session version/type1, code0. */
  fe_write(fe,0x3504,PPP_IP|PPP_IPV6<<16);
- fe_write(fe,0x351c,(fe_read(fe,0x351c)&~(0x3fU<<16|7U<<24))|BIT(31)|16U<<16);
+ fe_write(fe,0x351c,(fe_read(fe,0x351c)&~(0x3fU<<16|7U<<24))|BIT(31)|BIT(12)|16U<<16);
+ /* TX MIB differences use unsigned wrap, including the32-bit packet count. */
+ fe_write(fe,0x3508,fe_read(fe,0x3508)|0x1f00);
+ /* Linux must generate TTL/Hop-Limit errors from the original ingress
+  * packet; override an accelerated WAN action's deep-Q flag as well. */
+ fe_write(fe,0x30cc,(fe_read(fe,0x30cc)&~0xfffU)|0xf21);
  for(i=0;i<2;i++) {
   rtl_fe_classify_hash(cls,0,i?7:0);
   /* LAN0..4 share a connector, but CPU misses and flow keys must retain
@@ -931,7 +939,6 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
  if(data.vlan_exact && data.pppoe_input)rtl_fe_bits_set(words,400,4,data.ppp_protocol_slot);
  rtl_fe_key_set(words,RTL_FE_KEY_ORIG_LSPID,0);
  rtl_fe_key_set(words,RTL_FE_KEY_CTRL_SET_ID,0);
- rtl_fe_key_set(words,RTL_FE_KEY_HKEY_ID,0);
  rtl_fe_key_set(words,RTL_FE_KEY_TABLE_ID,0);
  rtl_fe_key_set(words,RTL_FE_KEY_MDATA_BYTE,port->wifi_id);
  rtl_fe_key_crc(words,&crc32,&crc16);
@@ -1177,9 +1184,12 @@ DEFINE_SHOW_ATTRIBUTE(fe_counters);
 
 struct rtl_fe *rtl_fe_allocate(struct device *device,void __iomem *registers)
 {
- struct rtl_fe *fe=kzalloc(sizeof(*fe),GFP_KERNEL);
+ void __iomem *reo=devm_platform_ioremap_resource_byname(to_platform_device(device),"l3fe-axi-reorder");
+ struct rtl_fe *fe;
  unsigned int *defaults,i;
 
+ if(IS_ERR(reo))return ERR_CAST(reo);
+ fe=kzalloc(sizeof(*fe),GFP_KERNEL);
  if(!fe)return ERR_PTR(-ENOMEM);
  fe->device=device;fe->registers=registers;
  mutex_init(&fe->lock);
@@ -1201,6 +1211,14 @@ struct rtl_fe *rtl_fe_allocate(struct device *device,void __iomem *registers)
   kfree(fe);
   return ERR_PTR(ret);
  }
+ /* aal_l3fe_axi_reo_init: Hash uses instance1. ID15 avoids the stock
+  * main-Hash hang; default actions must remain in DMA memory as well. */
+ writel(15,reo+0x80);
+ writel(BIT(31)|8,reo+0x84);
+ writel(BIT(28),reo+0x88);
+ writel(BIT(28),reo+0x8c);
+ writel(BIT(31)|9,reo+0x90);
+ readl(reo+0x90);
  return fe;
 }
 int rtl_fe_add_port(struct rtl_fe *fe,struct net_device *netdev,unsigned int source,

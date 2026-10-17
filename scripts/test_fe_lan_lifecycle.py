@@ -68,6 +68,16 @@ static void fe_write(void *ctx,unsigned int reg,unsigned int value){
  if(reg>=0xa5f8 && reg<=0xa838 && !((reg-0xa5f8)%0x90) && ((value>>16)&63)==25){
   /* Admission follows table bases, cache setup and five output selectors. */
   assert(f->prepared && f->cache_ready && f->reg[0x383c/4]==0x03800000);
+  /* Vendor Hash AXI errata must be applied before admitting any LAN. */
+  assert((f->reg[0x3944/4]&0x80000001U)==0x80000001U);
+  assert(f->reg[0x3948/4]&1U);
+  assert((f->reg[0x3c80/4]&255)==255);
+  assert((f->reg[0x3940/4]&0xffff)==0xd0d0); /* Failed checks bypass the hit action. */
+  assert(!(f->mask[6]&BIT(25)) && !(f->wifi_mask[6]&BIT(25)));
+  for(unsigned int i=0;i<6;i++)assert(!(f->bridge_mask[i][6]&BIT(25)));
+  assert(f->reg[0x351c/4]&BIT(12)); /* PE pads shortened Ethernet frames. */
+  assert((f->reg[0x3508/4]&0x1f00)==0x1f00); /* TX MIB deltas require wrap mode. */
+  assert((f->reg[0x30cc/4]&0xfff)==0xf21); /* TTL exceptions retain the original packet. */
   assert((f->reg[0xa1e0/4]&1023)==1023 && (f->reg[0x3400/4]&BIT(19)));
   assert(!(f->cls[0][6]&BIT(16)));f->admission_writes++;
  }

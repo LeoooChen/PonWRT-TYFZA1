@@ -95,11 +95,17 @@ static inline void rtl_fe_dma_tables(const struct rtl_dq_io *io,
  io->write(io->context, 0x3854, 1);
  io->write(io->context, 0x38a0, (1 << 18) | (1 << 16) | (3 << 8) | 4);
 }
-/* Stock cache initialization and FC lifetime management:stage3 allocation
- * with replacement, full cache age units, and no main aging countdown.
- * The owner saves/restores all five configuration registers. */
+/* Stock Hash AXI errata and cache initialization precede LAN admission.
+ * aal_hash_hw_patch_set enables the stage1 request and ID1 limit controls
+ * to avoid AXI deadlock; bit31 also enables its CRC offload correction.
+ * Stock read/write outstanding limits are both15; keep other AXIM2 bits. */
 static inline void rtl_fe_cache_start(const struct rtl_dq_io *io)
 {
+ io->write(io->context,0x3944,io->read(io->context,0x3944)|0x80000001U);
+ io->write(io->context,0x3948,io->read(io->context,0x3948)|1U);
+ io->write(io->context,0x3c80,io->read(io->context,0x3c80)|255U);
+ /* A template mismatch must return to Linux without applying the hit action. */
+ io->write(io->context,0x3940,(io->read(io->context,0x3940)&~0xffffU)|0xd0d0);
  io->write(io->context,0x3924,0);
  io->write(io->context,0x38b8,0xffffffffU);
  io->write(io->context,0x38bc,0xffffffffU);

@@ -37,7 +37,7 @@ def packet(ipv6, payload_bytes):
     return bytes.fromhex('86dd' if ipv6 else '0800'), header + udp
 
 
-def case(directory, slot, ipv6, payload_bytes):
+def case(directory, slot, ipv6, payload_bytes, fe_ready=True):
     directory = Path(directory)
     symbols = subprocess.check_output(['llvm-nm-18', str(directory / 'pe-wd.elf')], text=True)
     entry = next(int(s.split()[0], 16) for s in symbols.splitlines() if s.endswith(' rx_uplink'))
@@ -45,11 +45,14 @@ def case(directory, slot, ipv6, payload_bytes):
     mb, vp = base + 0x2000, 0x13001100 + (9 + slot) * 0xa0
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
     for at, size in [(0x1fc00000, 0x4000), (base, 0x20000), (states, 0x20000),
-                     (buf, 0x4000), (descriptors, 0x1000), (0x13000000, 0x2000)]:
+                     (buf, 0x4000), (descriptors, 0x1000), (0x13000000, 0x2000),
+                     (0x10000000, 0x10000)]:
         u.mem_map(at, size)
     u.mem_write(0x1fc00000, (directory / 'pe-tx.bin').read_bytes())
     put = lambda at, value: u.mem_write(at, struct.pack('<I', value))
     get = lambda at: struct.unpack('<I', u.mem_read(at, 4))[0]
+    put(0x10002300, (1 << 31 | 1 << 13) if fe_ready else 1 << 31)
+    put(0x100038c4, 0xa0000000 if fe_ready else 0)
     peer, ap, dst = bytes.fromhex('067afb78b287'), bytes.fromhex('02e04c076805'), bytes.fromhex('0050c2010200')
     u.mem_write(mb + 64, ap)
     u.mem_write(base + 0xe410, peer)
@@ -85,13 +88,16 @@ def case(directory, slot, ipv6, payload_bytes):
         assert get(mb + 94 * 4) == 0
     else:
         assert get(vp + 0x18) == 0 and bytes(u.mem_read(buf, len(raw))) == bytes(raw)
+        assert get(states + 2 * 512) == 1 << 31 | 0x123
+        assert get(states + 2 * 512 + 4) == 0
     return dict(slot=slot, NI_VP=9 + slot, ipv6=ipv6, UDP_payload_bytes=payload_bytes,
                 PE_to_NI=bool(result), exact_ethernet=bool(result), ARM_handoff=False if result else 'required')
 
 
-before = [case(sys.argv[1], slot, False, 0) for slot in range(2)]
-after = [case(sys.argv[2], slot, ipv6, size) for slot in range(2)
-         for ipv6, size in [(False, 0), (False, 1472), (True, 1452)]]
-assert not any(row['PE_to_NI'] for row in before)
-assert all(row['PE_to_NI'] for row in after)
-print(json.dumps(dict(scope='Actual linked rx_uplink; synthetic already-decrypted RX WD/data; verifies NI descriptor, interface identity, PN/SN and Ethernet bytes, not radio/ASIC timing.', before=before, after=after), indent=2))
+if __name__ == '__main__':
+    before = [case(sys.argv[1], slot, False, 0) for slot in range(2)]
+    after = [case(sys.argv[2], slot, ipv6, size) for slot in range(2)
+             for ipv6, size in [(False, 0), (False, 1472), (True, 1452)]]
+    assert not any(row['PE_to_NI'] for row in before)
+    assert all(row['PE_to_NI'] for row in after)
+    print(json.dumps(dict(scope='Actual linked rx_uplink; synthetic already-decrypted RX WD/data; verifies NI descriptor, interface identity, PN/SN and Ethernet bytes, not radio/ASIC timing.', before=before, after=after), indent=2))
