@@ -71,7 +71,17 @@ addends, which the original sloader uses for its GPIO helpers.
 
 The validation outputs are `mdio-comparison.json`, `optical-comparison.json`,
 `fpga-comparison.json`, `kernel-objects.log`, `fttr-asic.dtb`, and `fttr-2p5g.dtb`
-under `artifacts/fttr/`. The two FTTR sources compile for ARM64 Linux 6.18.55.
+under `artifacts/fttr/`. The FTTR control, FPGA and GN25L99 sources compile for
+ARM64 Linux 6.18.55; both development DTs compile without warnings.
+
+`scripts/test_fttr_bosa.py` executes the original stripped GN25L99 initializer
+and compares its 128 writes for the local file and an independent byte pattern.
+It reproduces the original checksum bug, and verifies that native calibration
+rejects corrupt data before IO and stops on a real write error.
+`bosa-comparison.json` contains hashes and results. `factory-comparison.json`
+records actual OpenWrt ucode execution in an isolated root: exact downstream
+file import, independent import during an upstream error, and revocation of
+old data when the downstream file disappears. No private payload is committed.
 
 To load a development image, first merge `port/configs/tyfza1-fttr.config` into
 its kernel configuration, then select the matching development DT. On the
@@ -85,6 +95,24 @@ bind the previously failed MiniOLT MDIO device through the standard driver's
 Original hashes and detailed results are emitted under `artifacts/fttr/`.
 Original binaries and the kernel build tree are read from the private evidence
 and copied build tree, not modified in the main checkout.
+
+## P6 evidence for the next implementation
+
+The four-GbE unit's retained `config_hs.xml` selects external SerDes mode 9
+and NWAY 1. The FPGA startup script forces mode 5. Executing the original DAL
+conversion gives mode 5 -> `aal_sds_mode_set(0,6,1,3)` (HSGMII 2.5G), and
+mode 9 -> `aal_sds_mode_set(0,6,4,5)` (USXGMII 10G). NWAY 1 converts to the
+three arguments `aal_sds_nway_set(0,6,0)`; the original meanings are inverted
+between those API layers. Conversion output is in `analysis/fttr/p6-dal-conversion.json`.
+
+Offline execution of `aal_sds_mode_set` with the original MAC and indirect
+SerDes helpers confirms the P6 QX block, shared reset bit31 and NI MAC at
+`b200..b2a8`. NI traffic gates are at `2300` bit6 and `6108` bit14, and drain
+is `a1f4` bit20. These are different from the existing S3/copper PHY path.
+The original 10G MAC threshold is `0xa0e`, and its additional reset/PCS pulses
+are present in machine code; the older related SDK source is insufficient.
+The profile function's failure must stop initialization instead of following
+the original print-and-continue behavior. P6 driver integration is still pending.
 
 ## Remaining work toward working FTTR
 
