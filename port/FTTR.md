@@ -93,6 +93,16 @@ It does not use the names of the original libraries as a capability probe.
   original `aal_ni_xge_mac_frame_len_set` / `aal_ni_pkt_len_set` execution.
   Ordinary 1500-byte configuration would reject long OMCI frames in AF_PACKET.
   Larger frames remain outside this buffer design and return a length error.
+* ASIC ONU table/control primitives: all 64 hardware slots report raw downstream
+  state (`40401 + 2*ID`), upstream state (`40803 + 4*ID`), EqD and the original
+  vendor-first serial bytes. The registration flag is downstream bit18 from
+  original `ONU_Online`; it is not a claim that OMCI/service provisioning passed.
+  Native block control changes only downstream bit16. Its lifetime belongs to
+  the controller instead of copying the original unconditional 15-second clear.
+  PLOAM mailbox `40007..4000a` preserves the original word/trigger order and
+  explicit repeat count. Real transport errors stop before further writes.
+  The original wait rejects a ready mailbox on its 2000th read; native accepts
+  that final ready read and returns `-ETIMEDOUT` only if all 2000 reads are busy.
 
 ## Validation
 
@@ -157,6 +167,13 @@ The ARM64 OMCI wire/socket objects compile and form `libfttr-omci.a` in the
 isolated artifacts directory. `omci-wire-comparison.json` records the results;
 the socket transport has not exchanged real device traffic.
 
+`scripts/test_fttr_onu.py` compares nine original/native cases: identities at
+hardware IDs 0/5/63, block/allow updates with zero/all-one seeds, and PLOAM
+mailbox sends with one/three repetitions. It also reproduces the original
+final-poll bug and checks real register errors and a continuously busy mailbox.
+`onu-comparison.json` records results; the updated control object compiles for
+ARM64. No ONU hardware status has been read from a live device by this branch.
+
 To load a development image, first merge `port/configs/tyfza1-fttr.config` into
 its kernel configuration, then select the matching development DT. On the
 FPGA unit, load its retained image by writing its firmware-relative filename
@@ -194,6 +211,15 @@ EtherType, MAC pair and downstream-length flag. `omci-wire.c` and
 and socket interfaces. Automatic service installation, discovery and OMCI
 transactions are still pending. Keep `fttr0` MTU at 1982 when using long control
 frames; the current transport rejects Ethernet frames over 1996 bytes.
+
+The ASIC `onu_table` attribute emits 64 rows with columns
+`hardware-ID downstream-word upstream-word EqD serial-hex` (raw hexadecimal
+words, decimal zero-based IDs). `onu_block` accepts `<ID> <0|1>`;
+`ploam` accepts `<repeat:1..3> <word0-hex> <word1-hex> <word2-hex>`.
+`tx_enable` accepts a boolean and uses the original register-20 polarity:
+enabled writes 0, disabled writes 1. This is an explicit command, not an
+optical-power or laser-readiness measurement. Initialization still leaves
+TX disabled until the controller completes its startup sequence.
 
 Original hashes and detailed results are emitted under `artifacts/fttr/`.
 Original binaries and the kernel build tree are read from the private evidence

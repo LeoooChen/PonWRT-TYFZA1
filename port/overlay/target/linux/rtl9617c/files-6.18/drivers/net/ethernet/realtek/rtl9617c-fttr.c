@@ -14,6 +14,7 @@
 #include "rtl9617c-fttr-mdio.h"
 #include "rtl9617c-fttr-i2c.h"
 #include "rtl9617c-fttr-omci.h"
+#include "rtl9617c-fttr-onu.h"
 #include "rtl9617c-fttr-serdes.h"
 
 struct rtl_fttr {
@@ -171,6 +172,78 @@ static ssize_t omci_link_store(struct device *dev, struct device_attribute *attr
 }
 static DEVICE_ATTR_RW(omci_link);
 
+static ssize_t onu_table_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	struct rtl_fttr_onu onu;
+	unsigned int id;
+	ssize_t size = 0;
+	int ret;
+
+	mutex_lock(&fttr->control_lock);
+	for (id = 0; id < RTL_FTTR_ONUS; id++) {
+		ret = rtl_fttr_onu_read(&fttr->reg_io, id, &onu);
+		if (ret) {
+			size = ret;
+			break;
+		}
+		size += sysfs_emit_at(buf, size, "%u %08x %08x %08x %8phN\n",
+			id, onu.downstream, onu.upstream, onu.eqd, onu.serial);
+	}
+	mutex_unlock(&fttr->control_lock);
+	return size;
+}
+static DEVICE_ATTR_RO(onu_table);
+
+static ssize_t onu_block_store(struct device *dev, struct device_attribute *attr,
+			       const char *buf, size_t count)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	unsigned int id, blocked;
+	int ret;
+
+	if (sscanf(buf, "%u %u", &id, &blocked) != 2 || id >= RTL_FTTR_ONUS || blocked > 1)
+		return -EINVAL;
+	mutex_lock(&fttr->control_lock);
+	ret = rtl_fttr_onu_block(&fttr->reg_io, id, blocked);
+	mutex_unlock(&fttr->control_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_WO(onu_block);
+
+static ssize_t ploam_store(struct device *dev, struct device_attribute *attr,
+			   const char *buf, size_t count)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	unsigned int repeat, words[3];
+	int ret;
+
+	if (sscanf(buf, "%u %x %x %x", &repeat, &words[0], &words[1], &words[2]) != 4 ||
+	    !repeat || repeat > 3)
+		return -EINVAL;
+	mutex_lock(&fttr->control_lock);
+	ret = rtl_fttr_ploam_send(&fttr->reg_io, words, repeat);
+	mutex_unlock(&fttr->control_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_WO(ploam);
+
+static ssize_t tx_enable_store(struct device *dev, struct device_attribute *attr,
+			       const char *buf, size_t count)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	bool enabled;
+	int ret = kstrtobool(buf, &enabled);
+
+	if (ret)
+		return ret;
+	mutex_lock(&fttr->control_lock);
+	ret = regmap_write(fttr->map, 0x20, !enabled);
+	mutex_unlock(&fttr->control_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_WO(tx_enable);
+
 static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
 			   const char *buf, size_t count)
 {
@@ -285,6 +358,10 @@ static struct attribute *rtl_fttr_attrs[] = {
 	&dev_attr_host_serdes.attr,
 	&dev_attr_pon_serdes.attr,
 	&dev_attr_omci_link.attr,
+	&dev_attr_onu_table.attr,
+	&dev_attr_onu_block.attr,
+	&dev_attr_ploam.attr,
+	&dev_attr_tx_enable.attr,
 	NULL,
 };
 
