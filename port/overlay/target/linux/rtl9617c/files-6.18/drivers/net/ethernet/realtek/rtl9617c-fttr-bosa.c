@@ -59,10 +59,19 @@ static ssize_t calibration_show(struct device *dev, struct device_attribute *att
 {
 	struct rtl_fttr_bosa *bosa = dev_get_drvdata(dev);
 	ssize_t size;
+	int marker;
 
 	mutex_lock(&bosa->lock);
-	size = sysfs_emit(buf, "configured=%u model=GN25L99 writes=%u error=%d\n",
-			  bosa->configured, bosa->writes, bosa->error);
+	marker = i2c_smbus_read_byte_data(bosa->client, 0x60);
+	if (marker < 0) {
+		bosa->configured = false;
+		bosa->error = marker;
+		size = marker;
+	} else {
+		bosa->configured &= marker == 0xb0;
+		size = sysfs_emit(buf, "configured=%u model=GN25L99 marker=%02x writes=%u error=%d\n",
+			bosa->configured, marker, bosa->writes, bosa->error);
+	}
 	mutex_unlock(&bosa->lock);
 	return size;
 }

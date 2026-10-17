@@ -3,6 +3,10 @@
 #include "rtl9617c-tyfza1-fttr.dts"
 #include "rtl9617c-tyfza1-2p5g.dtsi"
 
+&miniolt {
+	/delete-property/ reset-gpios;
+};
+
 // This unit's optical model is not present in the saved runtime log.
 &fttr_bosa {
 	status = "disabled";

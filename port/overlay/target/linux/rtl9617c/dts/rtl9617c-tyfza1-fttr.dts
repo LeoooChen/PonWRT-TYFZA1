@@ -17,6 +17,7 @@
 	miniolt: olt@f {
 		compatible = "realtek,tyfza1-miniolt";
 		reg = <15>;
+		reset-gpios = <&gpio0 138 GPIO_ACTIVE_LOW>;
 		#address-cells = <1>;
 		#size-cells = <0>;
 

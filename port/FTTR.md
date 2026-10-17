@@ -64,6 +64,16 @@ It does not use the names of the original libraries as a capability probe.
   A delayed worker reads the real link state; close cancels it, retires DMA
   ownership and detaches RX before freeing the device. FE/PE offload for this
   interface is pending; the interface currently uses the kernel data path.
+* ASIC9690 peer WTG HSGMII/USXGMII and all three original PON SerDes modes.
+  These are separate from the SoC P6 initialization. Original field updates,
+  analog writes, soft reset/OTP/pause settings, and mode-2 upstream settings
+  retain their order. Hardware lock failures now return `-ETIMEDOUT` rather
+  than the original print-and-continue success. MDIO errors stop the sequence.
+  The ASIC-only physical reset uses GPIO138 and the original IO-mux sequence;
+  the FPGA DT removes this GPIO property because its loader owns PROGB138.
+  A shared control mutex serializes the SerDes window and optical transactions.
+  GN25L99 status rereads its real calibrated marker so a lost marker cannot
+  retain a cached configured state.
 
 ## Validation
 
@@ -108,6 +118,17 @@ FTTR source6, upstream7/LLIDs, and absent/unknown endpoints. Updated NI/QM/P6
 and reset-provider objects compile for ARM64, and the NI components partially
 link into `artifacts/fttr/rtl9617c-eth-linked.o`; both development DTs compile.
 
+`scripts/test_fttr_peer_serdes.py` executes original `libasicdrv.so` field and
+indirect-access helpers, intercepting only raw register IO and external calls.
+Its 14 comparisons cover both host modes/NWAY values and all three PON modes,
+with zero/all-one register seeds. Every register read/write and requested
+delay matches. Focused fault checks reproduce the original false-success
+timeouts and verify native stop/error propagation. The original mode-3 poll
+limits are 101 reads for bits25/24 and 501 for bits23/22; other modes and WTG
+use 2001. This is a finite hardware wait, not a startup retry loop.
+`peer-serdes-comparison.json` records results. Updated FTTR/BOSA objects and
+both development DTs compile; physical GPIO/optical timing remains unmeasured.
+
 To load a development image, first merge `port/configs/tyfza1-fttr.config` into
 its kernel configuration, then select the matching development DT. On the
 FPGA unit, load its retained image by writing its firmware-relative filename
@@ -127,6 +148,15 @@ confirmed 9690 sample, or `5 <original-nway>` for the FPGA sample. `0 0` stops
 P6. The attribute reports configured mode, physical clock and actual error.
 After successful P6 configuration, `fttr0` can be opened as an Ethernet device.
 These are development controls; automatic full FTTR startup is still pending.
+
+On the confirmed ASIC sample, the MiniOLT MDIO device additionally exposes
+root-writable `reset`, `host_serdes` and `pon_serdes`. The original ordered
+sequence is: write `1` to `reset`, apply GN25L99 calibration, write `9 1` to
+`host_serdes`, configure NI `fttr_link` with `9 1`, then write `3` to
+`pon_serdes`. Host mode 5 accepts the matching NWAY setting; PON accepts the
+original explicit modes 1/2/3. The attributes show actual PLL lock bits and
+the last configuration error. They do not report ONU registration or service
+readiness. The FPGA backend does not expose these ASIC controls.
 
 Original hashes and detailed results are emitted under `artifacts/fttr/`.
 Original binaries and the kernel build tree are read from the private evidence
@@ -149,7 +179,7 @@ The original 10G MAC threshold is `0xa0e`, and its additional reset/PCS pulses
 are present in machine code; the older related SDK source is insufficient.
 The profile function's failure now stops initialization instead of following
 the original print-and-continue behavior. The SoC P6 integration is implemented;
-the peer MiniOLT's WTG/PON SerDes still requires its own initialization.
+the peer MiniOLT's separate WTG/PON initialization is also implemented.
 
 ## Remaining work toward working FTTR
 
@@ -157,8 +187,9 @@ the peer MiniOLT's WTG/PON SerDes still requires its own initialization.
    binding the MiniOLT transport, and initialize the original post-load registers.
 2. Optical identification for the other sample, plus real GN25L99 calibration
    and optical readiness verification. The native sequence is implemented.
-3. Peer MiniOLT WTG/PON SerDes startup and real P6/FTTR frame verification.
-   The native SoC P6 configuration and dedicated RX/TX endpoint are implemented.
+3. Real P6/FTTR frame verification. Native SoC P6, ASIC peer WTG/PON SerDes,
+   and the dedicated RX/TX endpoint are implemented; full startup orchestration
+   and the original OLT packet/registration configuration remain pending.
 4. OLT-side discovery/registration, authentication, OMCI, T-CONT/GEM/DBA and
    VLAN/service provisioning. Current upstream ONU OMCI is a different role.
 5. Original subordinate gateway configuration, Wi-Fi synchronization,

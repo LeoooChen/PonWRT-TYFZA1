@@ -3,12 +3,7 @@
 #ifndef RTL9617C_FTTR_I2C_H
 #define RTL9617C_FTTR_I2C_H
 
-struct rtl_fttr_reg_io {
-	void *context;
-	int (*read)(void *context, unsigned int reg, unsigned int *value);
-	int (*write)(void *context, unsigned int reg, unsigned int value);
-	void (*delay)(void *context, unsigned int usec);
-};
+#include "rtl9617c-fttr-reg.h"
 
 static inline int rtl_fttr_i2c_wait(const struct rtl_fttr_reg_io *io,
 				  unsigned int reg, unsigned int mask)

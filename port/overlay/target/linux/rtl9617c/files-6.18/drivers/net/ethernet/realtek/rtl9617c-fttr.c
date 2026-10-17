@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Native TYFZA1 MiniOLT control transport, derived from stock machine code. */
 #include <linux/delay.h>
+#include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/mdio.h>
 #include <linux/module.h>
@@ -11,14 +12,20 @@
 
 #include "rtl9617c-fttr-mdio.h"
 #include "rtl9617c-fttr-i2c.h"
+#include "rtl9617c-fttr-serdes.h"
 
 struct rtl_fttr {
 	struct mdio_device *mdio;
 	struct regmap *map;
 	struct rtl_fttr_mdio_io io;
-	struct rtl_fttr_reg_io optical_io;
+	struct rtl_fttr_reg_io reg_io;
 	struct i2c_adapter optical;
+	struct gpio_desc *reset;
+	struct mutex control_lock;
 	enum rtl_fttr_backend backend;
+	unsigned int host_mode, pon_mode;
+	bool host_nway;
+	int host_error, pon_error;
 };
 
 static int rtl_fttr_mdio_read(void *context, unsigned int reg)
@@ -72,12 +79,12 @@ static const struct regmap_config rtl_fttr_regmap_config = {
 	.cache_type = REGCACHE_NONE,
 };
 
-static int rtl_fttr_optical_read(void *context, unsigned int reg, unsigned int *value)
+static int rtl_fttr_reg_read(void *context, unsigned int reg, unsigned int *value)
 {
 	return regmap_read(context, reg, value);
 }
 
-static int rtl_fttr_optical_write(void *context, unsigned int reg, unsigned int value)
+static int rtl_fttr_reg_write(void *context, unsigned int reg, unsigned int value)
 {
 	return regmap_write(context, reg, value);
 }
@@ -96,7 +103,9 @@ static s32 rtl_fttr_smbus_xfer(struct i2c_adapter *adapter, u16 addr,
 	if (size != I2C_SMBUS_BYTE_DATA)
 		return -EOPNOTSUPP;
 	value = read ? 0 : data->byte;
-	ret = rtl_fttr_i2c_xfer(&fttr->optical_io, addr, command, &value, 0, read);
+	mutex_lock(&fttr->control_lock);
+	ret = rtl_fttr_i2c_xfer(&fttr->reg_io, addr, command, &value, 0, read);
+	mutex_unlock(&fttr->control_lock);
 	if (!ret && read)
 		data->byte = value;
 	return ret;
@@ -131,12 +140,136 @@ static ssize_t version_show(struct device *dev, struct device_attribute *attr, c
 }
 static DEVICE_ATTR_RO(version);
 
+static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
+			   const char *buf, size_t count)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	int ret;
+
+	if (!sysfs_streq(buf, "1"))
+		return -EINVAL;
+	mutex_lock(&fttr->control_lock);
+	fttr->host_mode = 0;
+	fttr->pon_mode = 0;
+	ret = regmap_write(fttr->map, 0x20, 1);
+	if (ret)
+		goto out;
+	ret = gpiod_direction_output(fttr->reset, 1);
+	if (ret)
+		goto out;
+	usleep_range(1000, 1050);
+	gpiod_set_value_cansleep(fttr->reset, 0);
+	msleep(500);
+	ret = regmap_write(fttr->map, 0x20, 1);
+	if (!ret)
+		ret = rtl_fttr_asic_mux(&fttr->reg_io);
+out:
+	fttr->host_error = ret;
+	fttr->pon_error = ret;
+	mutex_unlock(&fttr->control_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_WO(reset);
+
+static ssize_t host_serdes_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	unsigned int status;
+	int ret;
+
+	mutex_lock(&fttr->control_lock);
+	ret = regmap_read(fttr->map, 0xc08008, &status);
+	if (!ret)
+		ret = sysfs_emit(buf, "mode=%u nway=%u pll=%u error=%d\n",
+			fttr->host_mode, fttr->host_nway, !!(status & BIT(6)), fttr->host_error);
+	mutex_unlock(&fttr->control_lock);
+	return ret;
+}
+
+static ssize_t host_serdes_store(struct device *dev, struct device_attribute *attr,
+				 const char *buf, size_t count)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	unsigned int mode, nway;
+	int ret;
+
+	if (sscanf(buf, "%u %u", &mode, &nway) != 2 ||
+	    (mode != 5 && mode != 9) || nway > 1)
+		return -EINVAL;
+	mutex_lock(&fttr->control_lock);
+	fttr->host_mode = 0;
+	fttr->pon_mode = 0;
+	ret = rtl_fttr_wtg_configure(&fttr->reg_io, mode, nway);
+	fttr->host_error = ret;
+	if (!ret) {
+		fttr->host_mode = mode;
+		fttr->host_nway = nway;
+	}
+	mutex_unlock(&fttr->control_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_RW(host_serdes);
+
+static ssize_t pon_serdes_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	unsigned int status;
+	int ret;
+
+	mutex_lock(&fttr->control_lock);
+	ret = regmap_read(fttr->map, 0xc0c5c0, &status);
+	if (!ret)
+		ret = sysfs_emit(buf, "mode=%u locks=%x error=%d\n",
+			fttr->pon_mode, (status >> 22) & 0xf, fttr->pon_error);
+	mutex_unlock(&fttr->control_lock);
+	return ret;
+}
+
+static ssize_t pon_serdes_store(struct device *dev, struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	unsigned int mode;
+	int ret = kstrtouint(buf, 0, &mode);
+
+	if (ret)
+		return ret;
+	if (mode < 1 || mode > 3)
+		return -EINVAL;
+	mutex_lock(&fttr->control_lock);
+	fttr->pon_mode = 0;
+	ret = rtl_fttr_pon_configure(&fttr->reg_io, mode);
+	fttr->pon_error = ret;
+	if (!ret)
+		fttr->pon_mode = mode;
+	mutex_unlock(&fttr->control_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_RW(pon_serdes);
+
 static struct attribute *rtl_fttr_attrs[] = {
 	&dev_attr_backend.attr,
 	&dev_attr_version.attr,
+	&dev_attr_reset.attr,
+	&dev_attr_host_serdes.attr,
+	&dev_attr_pon_serdes.attr,
 	NULL,
 };
-ATTRIBUTE_GROUPS(rtl_fttr);
+
+static umode_t rtl_fttr_attr_visible(struct kobject *kobj, struct attribute *attr, int n)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(kobj_to_dev(kobj));
+
+	if (n >= 2 && fttr->backend != RTL_FTTR_ASIC9690)
+		return 0;
+	return attr->mode;
+}
+
+static const struct attribute_group rtl_fttr_group = {
+	.attrs = rtl_fttr_attrs,
+	.is_visible = rtl_fttr_attr_visible,
+};
+__ATTRIBUTE_GROUPS(rtl_fttr);
 
 static int rtl_fttr_probe(struct mdio_device *mdio)
 {
@@ -148,6 +281,7 @@ static int rtl_fttr_probe(struct mdio_device *mdio)
 	if (!fttr)
 		return -ENOMEM;
 	fttr->mdio = mdio;
+	mutex_init(&fttr->control_lock);
 	fttr->io = (struct rtl_fttr_mdio_io) {
 		.context = mdio,
 		.read = rtl_fttr_mdio_read,
@@ -163,11 +297,16 @@ static int rtl_fttr_probe(struct mdio_device *mdio)
 				    &rtl_fttr_regmap_config);
 	if (IS_ERR(fttr->map))
 		return PTR_ERR(fttr->map);
+	if (fttr->backend == RTL_FTTR_ASIC9690) {
+		fttr->reset = devm_gpiod_get(dev, "reset", GPIOD_ASIS);
+		if (IS_ERR(fttr->reset))
+			return dev_err_probe(dev, PTR_ERR(fttr->reset), "MiniOLT reset GPIO\n");
+	}
 	dev_set_drvdata(dev, fttr);
-	fttr->optical_io = (struct rtl_fttr_reg_io) {
+	fttr->reg_io = (struct rtl_fttr_reg_io) {
 		.context = fttr->map,
-		.read = rtl_fttr_optical_read,
-		.write = rtl_fttr_optical_write,
+		.read = rtl_fttr_reg_read,
+		.write = rtl_fttr_reg_write,
 		.delay = rtl_fttr_delay,
 	};
 	fttr->optical.owner = THIS_MODULE;
