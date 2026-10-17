@@ -87,10 +87,17 @@ def main():
                 if opcode == 0x4d:
                     if epoch == 2:
                         peer.send(old_reply)  # prior registration's response must be ignored
-                    peer.send(response(onu,transaction,0x2d,b'\0\1'))
+                    peer.send(response(onu,transaction,0x2d,b'\0\3' if epoch == 1 else b'\0\1'))
                 else:
-                    assert opcode == 0x4e and body[8:10] == b'\0\0'
-                    payload = struct.pack('>HHH',256 if epoch == 1 else 262,0x8000+epoch,0xc000)+bytes([epoch])*26
+                    assert opcode == 0x4e
+                    sequence = struct.unpack('>H',body[8:10])[0]
+                    if epoch == 1:
+                        c,instance,mask,attributes = [(256,0x8001,0xc000,bytes([1])*18),
+                            (256,0x8001,0x2000,serial),(65000,1,0x8000,b'\x42')][sequence]
+                    else:
+                        assert sequence == 0
+                        c,instance,mask,attributes = 262,0x8002,0xc000,bytes([2])*3
+                    payload = struct.pack('>HHH',c,instance,mask)+attributes.ljust(26,b'\0')
                     packet = response(onu,transaction,0x2e,payload)
                     if epoch == 1:old_reply = packet
                     peer.send(packet)
@@ -124,10 +131,14 @@ def main():
         try:
             until(lambda s: s.get('onus') and s['onus'][5]['phase']=='failed' and s['onus'][7]['phase']=='inventory')
             first = status()
-            assert first['onus'][5]['error'] == -71 and first['onus'][7]['records'] == 1
+            assert first['onus'][5]['error'] == -71 and first['onus'][7]['records'] == 3
+            assert first['onus'][7]['entities'] == 2 and first['onus'][7]['unparsed_records'] == 1
             assert store.joinpath('onu-7.mib').is_file() and not store.joinpath('onu-5.mib').exists()
             first_dump = [json.loads(x) for x in store.joinpath('onu-7.mib').read_text().splitlines()]
             assert first_dump[0]['serial'] == serial.hex() and first_dump[1]['class'] == 256
+            entity = next(x for x in first_dump if x['event']=='mib_entity' and x['class']==256)
+            assert entity['instance']==0x8001 and entity['present_mask']==0xe000
+            assert entity['attributes'][-1]=={'mask':0x2000,'value':serial.hex()}
             # A malformed frame is visible without taking the healthy ONU down.
             peer.send(HOST+OLT+bytes.fromhex('88880005'))
             until(lambda s:s.get('rx_errors')==1)
@@ -136,12 +147,15 @@ def main():
             tables()
             until(lambda s:s.get('onus') and s['onus'][7]['phase']=='absent' and (7,0) in grants)
             assert not store.joinpath('onu-7.mib').exists()
+            assert status()['onus'][7]['entities']==0
             serial = bytes.fromhex('5445535400000008')
             online,epoch = True,2
             tables()
             until(lambda s:s.get('onus') and s['onus'][7]['phase']=='inventory' and s['onus'][7]['mib_serial']==serial.hex())
             second_dump = [json.loads(x) for x in store.joinpath('onu-7.mib').read_text().splitlines()]
             assert second_dump[0]['serial']==serial.hex() and second_dump[1]['class']==262
+            assert status()['onus'][7]['entities']==1 and status()['onus'][7]['unparsed_records']==0
+            assert [x['class'] for x in second_dump if x['event']=='mib_entity']==[262]
             assert len([r for r in requests if r[0]==5])==1
             assert grants.count((7,1))==2 and (5,1) in grants
             process.send_signal(signal.SIGTERM)
@@ -164,6 +178,7 @@ def main():
     args.output.parent.mkdir(parents=True,exist_ok=True)
     args.output.write_text(json.dumps({'transport':'real AF_PACKET over veth in private network namespace',
         'modeled_hardware':'sysfs state and grant attributes only','independent_onu_failure':True,
+        'split_entity_records_merged':True,'unknown_layout_explicit':True,'old_model_revoked_on_replacement':True,
         'malformed_frame_reported_without_master_exit':True,'offline_releases_grant_and_inventory':True,
         'replaced_onu_reinventoried':True,'old_transaction_reply_ignored':True,'sigterm_closes_hardware_and_netdev':True,
         'optical_hardware_verified':False},indent=2)+'\n')

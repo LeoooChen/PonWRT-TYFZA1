@@ -166,6 +166,21 @@ It does not use the names of the original libraries as a capability probe.
   and teardown; a normal replacement waits for its predecessor to release it.
   SIGTERM disables TX, closes the netdev and stops P6. The separate shell
   hardware sequencer has been removed.
+* Native per-ONU MIB entity model. Wire widths for 57 unambiguous original
+  classes come from `plr_gponomci_medetail_get`; native storage keeps wire
+  bytes and actual instance IDs, without the original packed RAM ABI.
+  Split records for one class/instance merge by attribute mask. Missing
+  attributes stay absent. Unknown classes/masks remain in the raw inventory
+  and increment `unparsed_records`; they do not acquire invented values.
+  Original class53 has two descriptors for mask0400 and no mask0200, so its
+  voice layout stays explicitly opaque instead of guessing a correction.
+  The original content parser ignores failed attribute parsing and returns
+  success even for a 27-byte selection in a 26-byte baseline record, or an
+  entirely missing 30-byte attribute. Native rejects such selections with
+  `-EMSGSIZE`, fails that inventory and never publishes an incomplete value.
+  Completed `.mib` files append merged `mib_entity` entries and a `mib_model`
+  summary before `mib_complete`; status reports entity/unparsed-record counts.
+  Disconnect, replacement and failed inventory clear the corresponding model.
 
 ## Validation
 
@@ -278,6 +293,16 @@ complete the new scan. SIGTERM closes the namespace-local netdev and writes
 TX/P6 stop commands. Results are in `controller-comparison.json`.
 Neither namespace check connects to an optical device.
 
+`scripts/test_fttr_model.py` compares the native width table with the actual
+original descriptors, then executes seven original parser cases covering ONU
+identity, ONU2-G, T-CONT, queue, VEIP and private Wi-Fi attributes. It verifies
+split-record merging, opaque records, both original false-success cases and
+native rejection without changing previously collected values. Results are
+in `model-comparison.json`. The existing two-peer controller check now also
+exchanges split/unknown records and confirms the merged model is revoked on
+replacement (`controller-model-comparison.json`). The updated daemon compiles
+with host warnings-as-errors and the project's actual OpenWrt musl toolchain.
+
 The executable links with the project's actual OpenWrt GCC 14.4.0/musl
 toolchain as `artifacts/fttr/fttrctl-musl`. The optional userspace and kernel
 package definitions parse successfully with the pinned OpenWrt make includes.
@@ -375,7 +400,7 @@ fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> mib <hardware-ID> fttr0
 grant and reads the actual OMCI envelope,
 and streams JSON records. An error exits nonzero without a `mib_complete`
 record. This is an explicit MIB inventory operation; authentication policy,
-attribute interpretation and automatic service/roaming management remain work.
+capability decisions and automatic service/roaming management remain work.
 The resident controller holds this lease while running; inspect its completed
 `onu-<ID>.mib` files and `status.json` during normal service. Raw attribute words
 and hardware-registration flags are distinct from its MIB state. Failed scans
@@ -419,8 +444,9 @@ the peer MiniOLT's separate WTG/PON initialization is also implemented.
 4. OLT-side discovery/registration, authentication, OMCI, T-CONT/GEM/DBA and
    VLAN/service provisioning. The native MiniOLT OMCI framing/transport
    foundation, management grants and automatic baseline MIB inventory are
-   implemented. Authentication policy, MIB interpretation and provisioning
-   are not. Current upstream ONU OMCI is a different role.
+   implemented, including a native entity/attribute model from original wire
+   layouts. Authentication policy, capability-based service decisions and
+   provisioning are not. Current upstream ONU OMCI is a different role.
 5. Original subordinate gateway configuration, Wi-Fi synchronization,
    multicast, reboot/upgrade and roaming coordination, using the connected
    ONU's actual capabilities rather than assuming one fixed subordinate model.

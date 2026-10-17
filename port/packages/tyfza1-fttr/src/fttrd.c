@@ -18,6 +18,7 @@
 
 #include "miniolt.h"
 #include "omci-mib.h"
+#include "omci-model.h"
 #include "omci-socket.h"
 
 enum onu_phase { ONU_ABSENT, ONU_BLOCKED, ONU_MIB, ONU_INVENTORY, ONU_FAILED };
@@ -25,6 +26,7 @@ enum onu_phase { ONU_ABSENT, ONU_BLOCKED, ONU_MIB, ONU_INVENTORY, ONU_FAILED };
 struct onu {
 	struct fttr_onu_state hardware;
 	struct fttr_mib_job job;
+	struct fttr_mib_model model;
 	enum onu_phase phase;
 	uint8_t identity[8];
 	bool grant;
@@ -103,9 +105,11 @@ static int publish(struct controller *c, const char *state, int error)
 			struct onu *u = &c->onu[id];
 
 			fprintf(file, "%s{\"id\":%u,\"hardware_registered\":%s,\"phase\":\"%s\","
-				"\"error\":%d,\"records\":%u,\"commands\":%u,\"serial\":\"",
+				"\"error\":%d,\"records\":%u,\"commands\":%u,\"entities\":%u,"
+				"\"unparsed_records\":%u,\"serial\":\"",
 				id ? "," : "", id, u->hardware.downstream & (1U << 18) ? "true" : "false",
-				phases[u->phase], u->job.error, u->job.sequence, u->job.commands);
+				phases[u->phase], u->job.error, u->job.sequence, u->job.commands,
+				u->model.count, u->model.unparsed_records);
 			hex(file, u->hardware.serial, 8);
 			fputs("\",\"mib_serial\":\"", file);
 			hex(file, u->identity, 8);
@@ -143,6 +147,7 @@ static int cancel(struct controller *c, unsigned int id)
 		u->grant = false;
 	}
 	memset(&u->job, 0, sizeof(u->job));
+	fttr_mib_model_clear(&u->model);
 	return 0;
 }
 
@@ -154,6 +159,7 @@ static int failed(struct controller *c, unsigned int id, int error)
 	u->phase = ONU_FAILED;
 	u->job.step = FTTR_MIB_FAILED;
 	u->job.error = error;
+	fttr_mib_model_clear(&u->model);
 	fprintf(stderr, "FTTR ONU %u MIB failed: %s (%d)\n", id, strerror(-error), error);
 	if (u->dump) {
 		fprintf(u->dump, "{\"event\":\"mib_error\",\"error\":%d}\n", error);
@@ -253,6 +259,9 @@ static int complete(struct controller *c, unsigned int id)
 	if (!(current.downstream & (1U << 18)) || (current.downstream & (1U << 16)) ||
 	    memcmp(current.serial, u->identity, 8))
 		return failed(c, id, -ESTALE);
+	ret = fttr_mib_model_dump(&u->model, u->dump);
+	if (ret)
+		return ret;
 	fprintf(u->dump, "{\"event\":\"mib_complete\",\"commands\":%u}\n", u->job.commands);
 	ret = fclose(u->dump);
 	u->dump = NULL;
@@ -307,12 +316,21 @@ static int receive_message(struct controller *c)
 	if (!ret)
 		return 0;
 	if (ret & FTTR_MIB_RECORD) {
+		int result;
+
 		fprintf(u->dump, "{\"event\":\"mib_record\",\"sequence\":%u,\"class\":%u,"
 			"\"instance\":%u,\"mask\":%u,\"attributes\":\"", sequence, record.class_id, record.instance, record.mask);
 		hex(u->dump, record.attributes, sizeof(record.attributes));
 		fputs("\"}\n", u->dump);
 		if (ferror(u->dump))
 			return -EIO;
+		result = fttr_mib_model_add(&u->model, &record);
+		if (result == -EMSGSIZE) {
+			result = failed(c, message.onu, result);
+			return result ? result : publish(c, "running", 0);
+		}
+		if (result < 0)
+			return result;
 	}
 	if (ret & FTTR_MIB_COMPLETE) {
 		ret = complete(c, message.onu);
@@ -525,9 +543,11 @@ int main(int argc, char **argv)
 out:
 	if (stopping && ret == -EINTR)
 		ret = 0;
-	for (id = 0; id < FTTR_ONUS; id++)
+	for (id = 0; id < FTTR_ONUS; id++) {
 		if (c.onu[id].dump && fclose(c.onu[id].dump) && !ret)
 			ret = -errno;
+		fttr_mib_model_clear(&c.onu[id].model);
+	}
 	if (owned) {
 		result = shutdown_hardware(&c);
 		if (!ret)
