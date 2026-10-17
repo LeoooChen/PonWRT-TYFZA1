@@ -56,9 +56,12 @@ int fttr_omci_receive(int fd, uint16_t ethertype, uint8_t *frame, size_t capacit
 {
 	ssize_t size = recv(fd, frame, capacity, MSG_TRUNC);
 
+	*message = (struct fttr_omci_message) { .onu = UINT16_MAX };
 	if (size < 0)
 		return -errno;
-	if ((size_t)size > capacity)
+	if ((size_t)size > capacity) {
+		fttr_omci_unpack(frame, capacity, ethertype, message);
 		return -EMSGSIZE;
+	}
 	return fttr_omci_unpack(frame, size, ethertype, message);
 }

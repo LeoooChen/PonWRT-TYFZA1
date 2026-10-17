@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""Run the real controller over veth in a private network namespace; no optical IO."""
+import argparse
+import fcntl
+import json
+import os
+from pathlib import Path
+import select
+import signal
+import socket
+import struct
+import subprocess
+import tempfile
+import time
+
+HOST, OLT = bytes.fromhex('020304050607'), bytes.fromhex('0a0b0c0d0e0f')
+
+
+def crc(data):
+    value = 0xffffffff
+    for byte in data:
+        value ^= byte << 24
+        for _ in range(8):
+            value = ((value << 1) ^ (0x04c11db7 if value & 0x80000000 else 0)) & 0xffffffff
+    return value ^ 0xffffffff
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--daemon', required=True, type=Path)
+    parser.add_argument('--output', required=True, type=Path)
+    args = parser.parse_args()
+    # The caller must create this process's private namespace with unshare -n.
+    assert {x['ifname'] for x in json.loads(subprocess.check_output(['ip','-j','link','show'],text=True))} == {'lo'}
+    subprocess.run(['ip','link','add','ftr-host','type','veth','peer','name','ftr-peer'],check=True)
+    for interface, mac in [('ftr-host','02:03:04:05:06:07'),('ftr-peer','0a:0b:0c:0d:0e:0f')]:
+        subprocess.run(['ip','link','set','dev',interface,'address',mac,'mtu','1982','up'],check=True)
+    peer = socket.socket(socket.AF_PACKET,socket.SOCK_RAW,socket.htons(0x8888))
+    peer.bind(('ftr-peer',0x8888))
+    peer.setblocking(False)
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        miniolt, ni, store = [root/name for name in ('miniolt','ni','state')]
+        for p in (miniolt,ni,store):p.mkdir(mode=0o700)
+        miniolt.joinpath('omci_link').write_text('host=02:03:04:05:06:07 olt=0a:0b:0c:0d:0e:0f ethertype=8888 downstream_length=0\n')
+        miniolt.joinpath('host_serdes').write_text('mode=9 nway=1 pll=1 error=0 link=1\n')
+        ni.joinpath('fttr_link').write_text('configured=1 mode=9 nway=1 clock=1 error=0 link=1\n')
+        miniolt.joinpath('tx_enable').write_text('1\n')
+        os.mkfifo(miniolt/'management_grant')
+        grants_fd = os.open(miniolt/'management_grant',os.O_RDWR|os.O_NONBLOCK)
+        grants, requests, old_reply = [], [], None
+        grant_buffer = b''
+        serial = bytes.fromhex('5445535400000007')
+        online = True
+        epoch = 1
+
+        def tables():
+            rows, binary = [], b''
+            for id in range(64):
+                active = id == 5 or (id == 7 and online)
+                sn = bytes.fromhex('5445535400000005') if id == 5 else serial if id == 7 else bytes(8)
+                downstream = (1 << 18) if active else 0
+                rows.append(f'{id} {downstream:08x} 00000001 0000002a {sn.hex()}\n')
+                binary += struct.pack('<III8s',downstream,1,42,sn)
+            for name,data in [('onu_state',binary),('onu_table',''.join(rows).encode())]:
+                miniolt.joinpath(name+'.new').write_bytes(data)
+                os.replace(miniolt/(name+'.new'),miniolt/name)
+
+        def response(onu, transaction, opcode, content, class_id=2):
+            body = (struct.pack('>HBBHH',transaction,opcode,10,class_id,0)+content).ljust(40,b'\0')+b'\0\0\0\x28'
+            return HOST+OLT+struct.pack('>HH',0x8888,onu)+body+struct.pack('>I',crc(body))
+
+        def handle(frame):
+            nonlocal old_reply
+            assert frame[:14] == OLT+HOST+b'\x88\x88'
+            onu = struct.unpack('>H',frame[14:16])[0]
+            body = frame[16:60]
+            transaction, opcode = struct.unpack('>HB',body[:3])
+            assert 0x8001 <= transaction <= 0xffff and body[3:8] == b'\x0a\0\2\0\0'
+            assert body[40:44] == b'\0\0\0\x28'
+            requests.append((onu,opcode,transaction,epoch))
+            if onu == 5:
+                assert opcode == 0x4d
+                peer.send(response(onu,transaction,0x2d,b'\0\1',class_id=3))
+            else:
+                assert onu == 7
+                if opcode == 0x4d:
+                    if epoch == 2:
+                        peer.send(old_reply)  # prior registration's response must be ignored
+                    peer.send(response(onu,transaction,0x2d,b'\0\1'))
+                else:
+                    assert opcode == 0x4e and body[8:10] == b'\0\0'
+                    payload = struct.pack('>HHH',256 if epoch == 1 else 262,0x8000+epoch,0xc000)+bytes([epoch])*26
+                    packet = response(onu,transaction,0x2e,payload)
+                    if epoch == 1:old_reply = packet
+                    peer.send(packet)
+
+        def status():
+            try:return json.loads(store.joinpath('status.json').read_text())
+            except FileNotFoundError:return {}
+
+        def until(predicate, seconds=5):
+            nonlocal grant_buffer
+            deadline = time.monotonic()+seconds
+            while time.monotonic() < deadline:
+                if process.poll() is not None:
+                    raise AssertionError(('controller exited',process.communicate()[1]))
+                ready,_,_ = select.select([peer,grants_fd],[],[],0.02)
+                for source in ready:
+                    if source == grants_fd:
+                        grant_buffer += os.read(grants_fd,4096)
+                        while b'\n' in grant_buffer:
+                            line,grant_buffer = grant_buffer.split(b'\n',1)
+                            grants.append(tuple(map(int,line.split())))
+                    else:
+                        frame,address = peer.recvfrom(2048)
+                        if address[2] != socket.PACKET_OUTGOING:handle(frame)
+                if predicate(status()):return
+            raise AssertionError(('controller state timeout',status(),grants,requests))
+
+        tables()
+        process = subprocess.Popen([str(args.daemon.resolve()),str(miniolt),str(ni),str(store),'ftr-host'],
+                                   stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
+        try:
+            until(lambda s: s.get('onus') and s['onus'][5]['phase']=='failed' and s['onus'][7]['phase']=='inventory')
+            first = status()
+            assert first['onus'][5]['error'] == -71 and first['onus'][7]['records'] == 1
+            assert store.joinpath('onu-7.mib').is_file() and not store.joinpath('onu-5.mib').exists()
+            first_dump = [json.loads(x) for x in store.joinpath('onu-7.mib').read_text().splitlines()]
+            assert first_dump[0]['serial'] == serial.hex() and first_dump[1]['class'] == 256
+            # A malformed frame is visible without taking the healthy ONU down.
+            peer.send(HOST+OLT+bytes.fromhex('88880005'))
+            until(lambda s:s.get('rx_errors')==1)
+            assert status()['state']=='running'
+            online = False
+            tables()
+            until(lambda s:s.get('onus') and s['onus'][7]['phase']=='absent' and (7,0) in grants)
+            assert not store.joinpath('onu-7.mib').exists()
+            serial = bytes.fromhex('5445535400000008')
+            online,epoch = True,2
+            tables()
+            until(lambda s:s.get('onus') and s['onus'][7]['phase']=='inventory' and s['onus'][7]['mib_serial']==serial.hex())
+            second_dump = [json.loads(x) for x in store.joinpath('onu-7.mib').read_text().splitlines()]
+            assert second_dump[0]['serial']==serial.hex() and second_dump[1]['class']==262
+            assert len([r for r in requests if r[0]==5])==1
+            assert grants.count((7,1))==2 and (5,1) in grants
+            process.send_signal(signal.SIGTERM)
+            _,errors = process.communicate(timeout=10)
+            assert process.returncode == 0,errors
+            assert status()['state']=='stopped' and status()['pid']==0
+            assert miniolt.joinpath('tx_enable').read_text()=='0\n'
+            assert ni.joinpath('fttr_link').read_text().startswith('0 0\n')
+            flags=json.loads(subprocess.check_output(['ip','-j','link','show','dev','ftr-host'],text=True))[0]['flags']
+            assert 'UP' not in flags
+            fd=os.open(miniolt,os.O_RDONLY|os.O_DIRECTORY)
+            fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            os.close(fd)
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                process.communicate(timeout=10)
+            os.close(grants_fd)
+    peer.close()
+    args.output.parent.mkdir(parents=True,exist_ok=True)
+    args.output.write_text(json.dumps({'transport':'real AF_PACKET over veth in private network namespace',
+        'modeled_hardware':'sysfs state and grant attributes only','independent_onu_failure':True,
+        'malformed_frame_reported_without_master_exit':True,'offline_releases_grant_and_inventory':True,
+        'replaced_onu_reinventoried':True,'old_transaction_reply_ignored':True,'sigterm_closes_hardware_and_netdev':True,
+        'optical_hardware_verified':False},indent=2)+'\n')
+    print('Controller: real packet exchange, independent ONU error, replacement/cleanup and SIGTERM passed')
+
+
+if __name__ == '__main__':main()

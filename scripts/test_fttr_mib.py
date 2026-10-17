@@ -88,6 +88,11 @@ def main():
         library.fttr_mib_record_decode.argtypes = [ctypes.c_char_p, ctypes.POINTER(Record)]
         library.fttr_mib_scan.argtypes = [ctypes.POINTER(Session), ctypes.POINTER(ctypes.c_ushort), record_fn, ctypes.c_void_p]
         library.fttr_miniolt_link.argtypes = [ctypes.c_int, ctypes.POINTER(Link)]
+        library.fttr_miniolt_management.argtypes = [ctypes.c_int,ctypes.c_uint,ctypes.c_bool]
+        class Hardware(ctypes.Structure):
+            _fields_=[('downstream',ctypes.c_uint),('upstream',ctypes.c_uint),
+                      ('eqd',ctypes.c_uint),('serial',ctypes.c_ubyte*8)]
+        library.fttr_miniolt_one.argtypes = [ctypes.c_int,ctypes.c_uint,ctypes.POINTER(Hardware)]
         for next, sequence in ((False, 0), (True, 0), (True, 257)):
             body = ctypes.create_string_buffer(44)
             library.fttr_mib_request(0x8123, next, sequence, body)
@@ -167,6 +172,9 @@ def main():
             f'{id} {0x40000 if id == 5 else 0:08x} 12345678 0000002a 5445535401234567\n'
             for id in range(64)))
         fixture.joinpath('omci_link').write_text('host=02:03:04:05:06:07 olt=0a:0b:0c:0d:0e:0f ethertype=8888 downstream_length=1\n')
+        fixture.joinpath('management_grant').write_text('')
+        fixture.joinpath('onu_state').write_bytes(b''.join(struct.pack('<III8s',
+            0x40000 if id==5 else 0,0x12345678,42,bytes.fromhex('5445535401234567')) for id in range(64)))
         result = subprocess.run([str(path / 'fttrctl'), str(fixture), 'status'], capture_output=True, text=True, check=True)
         records = [json.loads(line) for line in result.stdout.splitlines()]
         assert len(records) == 64 and [r['id'] for r in records if r['hardware_registered']] == [5]
@@ -174,6 +182,12 @@ def main():
         fd = os.open(fixture, os.O_RDONLY | os.O_DIRECTORY)
         link = Link()
         assert library.fttr_miniolt_link(fd, ctypes.byref(link)) == 0
+        hardware=Hardware()
+        assert library.fttr_miniolt_one(fd,5,ctypes.byref(hardware))==0
+        assert hardware.downstream==0x40000 and hardware.upstream==0x12345678 and hardware.eqd==42
+        assert bytes(hardware.serial)==bytes.fromhex('5445535401234567')
+        assert library.fttr_miniolt_management(fd,5,True)==0
+        assert fixture.joinpath('management_grant').read_text()=='5 1\n'
         os.close(fd)
         assert bytes(link.host_mac) == HOST and bytes(link.olt_mac) == OLT and link.downstream_length
         fixture.joinpath('onu_table').unlink()

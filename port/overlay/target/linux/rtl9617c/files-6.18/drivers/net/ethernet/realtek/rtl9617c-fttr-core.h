@@ -95,4 +95,19 @@ static inline int rtl_fttr_tcont_program(const struct rtl_fttr_reg_io *io,
 	return ret ? ret : io->write(io->context, base, assured << 16 | maximum);
 }
 
+/* Original registration callback: SetOnuTcontDba(ONU, 0, 0, 3840, 3840). */
+static inline int rtl_fttr_management_grant(const struct rtl_fttr_reg_io *io,
+					  unsigned int id, bool enable)
+{
+	unsigned int base = 0x41000 + id * 32;
+	int ret = io->write(io->context, base, enable ? 0x1003e : 0);
+
+	if (ret)
+		return ret;
+	ret = io->write(io->context, base + 1, 0);
+	if (ret || !enable)
+		return ret;
+	return io->write(io->context, base, 0x3c003c);
+}
+
 #endif

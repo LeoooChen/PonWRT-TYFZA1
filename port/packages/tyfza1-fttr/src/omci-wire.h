@@ -23,7 +23,7 @@ struct fttr_omci_message {
 uint32_t fttr_omci_crc(const uint8_t *data, size_t length);
 int fttr_omci_pack(const struct fttr_omci_link *link, uint16_t onu,
 		   const uint8_t *body, size_t length, uint8_t *frame, size_t capacity);
-/* Upstream uses the 16-byte envelope even when downstream_length is set. */
+/* Upstream uses 16 bytes. On a payload error, available ONU/TCI metadata is retained. */
 int fttr_omci_unpack(const uint8_t *frame, size_t length, uint16_t ethertype,
 		     struct fttr_omci_message *message);
 

@@ -10,6 +10,7 @@
 #include <linux/of.h>
 #include <linux/phy.h>
 #include <linux/regmap.h>
+#include <linux/unaligned.h>
 
 #include "rtl9617c-fttr-mdio.h"
 #include "rtl9617c-fttr-core.h"
@@ -220,6 +221,47 @@ static ssize_t tcont_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_WO(tcont);
 
+static ssize_t management_grant_store(struct device *dev, struct device_attribute *attr,
+				     const char *buf, size_t count)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	unsigned int id, enable;
+	int ret;
+
+	if (sscanf(buf, "%u %u", &id, &enable) != 2 || id >= RTL_FTTR_ONUS || enable > 1)
+		return -EINVAL;
+	mutex_lock(&fttr->control_lock);
+	ret = rtl_fttr_management_grant(&fttr->reg_io, id, enable);
+	mutex_unlock(&fttr->control_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_WO(management_grant);
+
+/* Fixed 20-byte records: three LE32 state words followed by eight serial bytes. */
+static ssize_t onu_state_read(struct file *file, struct kobject *kobj,
+		const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(kobj_to_dev(kobj));
+	struct rtl_fttr_onu onu;
+	int ret;
+
+	if (offset % 20 || count < 20)
+		return -EINVAL;
+	if (offset >= RTL_FTTR_ONUS * 20)
+		return 0;
+	mutex_lock(&fttr->control_lock);
+	ret = rtl_fttr_onu_read(&fttr->reg_io, offset / 20, &onu);
+	mutex_unlock(&fttr->control_lock);
+	if (ret)
+		return ret;
+	put_unaligned_le32(onu.downstream, buf);
+	put_unaligned_le32(onu.upstream, buf + 4);
+	put_unaligned_le32(onu.eqd, buf + 8);
+	memcpy(buf + 12, onu.serial, 8);
+	return 20;
+}
+static BIN_ATTR_RO(onu_state, RTL_FTTR_ONUS * 20);
+
 static ssize_t onu_table_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct rtl_fttr *fttr = dev_get_drvdata(dev);
@@ -415,6 +457,7 @@ static struct attribute *rtl_fttr_attrs[] = {
 	&dev_attr_core_init.attr,
 	&dev_attr_dba.attr,
 	&dev_attr_tcont.attr,
+	&dev_attr_management_grant.attr,
 	NULL,
 };
 
@@ -427,9 +470,23 @@ static umode_t rtl_fttr_attr_visible(struct kobject *kobj, struct attribute *att
 	return attr->mode;
 }
 
+static umode_t rtl_fttr_bin_visible(struct kobject *kobj, const struct bin_attribute *attr, int n)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(kobj_to_dev(kobj));
+
+	return fttr->backend == RTL_FTTR_ASIC9690 ? attr->attr.mode : 0;
+}
+
+static const struct bin_attribute * const rtl_fttr_bin_attrs[] = {
+	&bin_attr_onu_state,
+	NULL,
+};
+
 static const struct attribute_group rtl_fttr_group = {
 	.attrs = rtl_fttr_attrs,
 	.is_visible = rtl_fttr_attr_visible,
+	.bin_attrs = rtl_fttr_bin_attrs,
+	.is_bin_visible = rtl_fttr_bin_visible,
 };
 __ATTRIBUTE_GROUPS(rtl_fttr);
 

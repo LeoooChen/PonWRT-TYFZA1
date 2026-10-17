@@ -85,7 +85,8 @@ It does not use the names of the original libraries as a capability probe.
   there is no evidence here to replace other ONUs' receive policy.
   AF_PACKET uses a nonblocking socket bound to the dedicated interface and
   ignores its own outgoing frames. The optional `tyfza1-fttr` package installs
-  the native `fttrctl` executable; automatic OLT management is still pending.
+  native `fttrctl` and `fttrd` executables. Automatic MIB inventory is implemented;
+  authentication and service provisioning remain pending.
 * `fttr0` MTU 1982, with a 1996-byte Ethernet frame budget. This fits the
   existing 2048-byte QM buffers with 32-byte headroom, a full 16-byte header
   and a possible 4-byte FCS. The MAC threshold is 2000; the shared NI maximum
@@ -141,6 +142,30 @@ It does not use the names of the original libraries as a capability probe.
   hardware registration flag and serial before/after the scan, and reports
   completion only after every command succeeds for that same ONU. It does not
   reset the MIB or provision a service.
+* Original management-grant policy: the registration callback's default
+  `SetOnuTcontDba(ONU,0,0,3840,3840)` programs T-CONT 0 at 3840 kbit/s
+  (hardware grant 60). Native writes the exact temporary `1003e`, fixed-zero
+  and final `3c003c` sequence; it does not use the generic profile setter's
+  larger intermediate value. Disconnect/block releases the two grant words.
+  Both the resident controller and explicit MIB command prepare management
+  bandwidth before transmitting OMCI.
+* Resident native controller with one independent asynchronous MIB job per
+  hardware ONU slot. It polls original registration state every two seconds,
+  notices serial changes, allocates management bandwidth, and collects MIB
+  records. A peer timeout or invalid matching reply fails that peer; other
+  jobs continue. Shared transport/register IO failures stop the controller.
+  Wire-format errors are counted/logged and attributed to a job when its
+  ONU/transaction fields are available. No repeated full initialization or
+  blanket peer rescan is used after failure.
+  Completed MIB files are published only after a fresh single-slot hardware
+  read confirms the same registered, unblocked serial. Disconnect/replacement
+  removes the active inventory. State and records live in the root-only
+  `/var/run/tyfza1-fttr/` directory. `inventory` means MIB collection completed;
+  it does not mean an ONU service has been provisioned.
+  The procd instance owns the device lock throughout bootstrap, management
+  and teardown; a normal replacement waits for its predecessor to release it.
+  SIGTERM disables TX, closes the netdev and stops P6. The separate shell
+  hardware sequencer has been removed.
 
 ## Validation
 
@@ -219,6 +244,10 @@ an invalid matching response, and verifies the three real timeout attempts.
 The CLI is executed against a temporary 64-row kernel-attribute fixture,
 including missing-attribute failure. This does not simulate optical ranging.
 Results are in `mib-comparison.json`.
+The synchronous CLI now drives the same asynchronous job engine as the
+controller. The original request/parser comparisons and timeout checks still
+pass. Binary single-slot state decoding and management-command formatting are
+also exercised against the kernel attribute ABI.
 
 `scripts/test_fttr_core.py` executes original core/DBA/profile functions and
 the mode-specific PCS branch in `onuinfo` (`41906c..419324`) with explicit
@@ -229,17 +258,25 @@ The check also covers original global DBA writes, profile addresses at IDs
 the scope. Updated P6 checks require two reads at the correct selector and
 reject the other mode's status bit. ARM64 NI/control objects compile and the
 control modules link against the same-version real kernel export table.
+Management-grant writes at hardware slots 0/5/63 additionally match actual
+original `SetOnuTcontDba` execution with the original startup defaults.
 
-`scripts/test_fttr_startup.py` runs the real factory importer against a temporary
-copy of the retained config and verifies the four startup fields plus removal
-of a stale runtime file when the fields disappear. It executes the actual
-hardware-start script and native `wait-link` command against temporary files
-with modeled hardware status. Command order, single initialization, successful
-start/stop, PCS timeout, lost calibration marker, TX remaining disabled on
-failure and command locking are checked. The one netdev-address input path
-is redirected to the fixture; no real network/device commands are issued.
-Results are in `startup-comparison.json`. Hardware electrical behavior remains
-unverified.
+`scripts/test_fttr_startup.py` runs the real factory importer on a temporary
+copy of retained config, then executes the native controller's bootstrap in
+a private network namespace. A test-only preload models sysfs write/show
+callbacks; netdev MAC/MTU/flag ioctls operate on real namespace-local veth.
+The check covers original command order, PCS timeout, lost calibration marker,
+core-write failure, stop during initialization and replacement waiting for the
+previous controller's lock. `startup-comparison.json` records the scope.
+
+`scripts/test_fttr_controller.py` runs the real daemon over AF_PACKET/veth in
+another private network namespace, with only the hardware attributes modeled.
+Two ONU jobs progress independently, an invalid matching peer response is
+reported, malformed frames are counted, disconnect revokes its inventory/grant,
+and a changed serial triggers a fresh scan. A prior transaction's reply cannot
+complete the new scan. SIGTERM closes the namespace-local netdev and writes
+TX/P6 stop commands. Results are in `controller-comparison.json`.
+Neither namespace check connects to an optical device.
 
 The executable links with the project's actual OpenWrt GCC 14.4.0/musl
 toolchain as `artifacts/fttr/fttrctl-musl`. The optional userspace and kernel
@@ -251,8 +288,8 @@ existing modpost description warnings; both sources contain their description.
 This checks module dependencies, not a rebuilt firmware's ABI or live loading.
 The real OpenWrt package prepare/compile/install recipes also run in an isolated
 stage with the project's musl toolchain and original SerDes source directory.
-`package-root/` contains the executable, hardware helper, init script and both
-generated profile files; `package-stage.log` records the recipe output.
+`package-root-controller/` contains both executables, init script and generated
+profiles; `package-stage-controller.log` records the recipe output.
 
 To load a development image, first merge `port/configs/tyfza1-fttr.config` into
 its kernel configuration, then select the matching development DT. On the
@@ -304,6 +341,11 @@ TX disabled until the controller completes its startup sequence.
 accepts `1` for the original global grants, and `tcont` accepts
 `<hardware-ID> <slot:0..7> <fixed> <assured> <maximum>` in original hardware
 grant units. These low-level controls do not allocate a subordinate's OMCI MEs.
+`management_grant` accepts `<hardware-ID> <0|1>` for the original default
+management profile/release. `onu_state` is a fixed-record binary read interface:
+`pread(20, hardware-ID*20)` returns LE32 downstream/upstream/EqD followed by
+eight vendor-first serial bytes. It avoids rescanning all slots when validating
+one completed inventory. The text `onu_table` remains available for inspection.
 
 `port/configs/tyfza1-fttr-packages.config` is the optional OpenWrt package
 selection fragment. `sync-overlay.sh` copies the package, and the target's
@@ -314,12 +356,12 @@ their FPGA loader package/startup is still pending.
 
 The retained settings are independently imported into
 `/tmp/tyfza1-factory/fttr_startup`; credentials are not part of this file.
-The `tyfza1-fttr` init script uses START=26 and honors its enable flag.
-It locates the bound MiniOLT and its own GN25L99 child, then invokes
-`fttr-hardware`. Manual hardware control is available through
-`/etc/init.d/tyfza1-fttr start` / `stop`. This starts the ASIC hardware path;
-automatic ONU authentication/management grants/service provisioning remains
-separate work. The FPGA hardware startup path is still incomplete.
+The procd `tyfza1-fttr` init script uses START=26 and honors its enable flag.
+It locates the bound MiniOLT/GN25L99 child and passes the retained modes to
+`fttrd`. The daemon performs bootstrap under its own device lease and then
+manages registered ONUs. `/etc/init.d/tyfza1-fttr start` / `stop` controls this
+instance; SIGTERM also handles a stop requested during bootstrap. Authentication
+and service provisioning remain separate work. FPGA startup is still incomplete.
 
 After the development hardware sequence and actual `fttr0` setup, use:
 
@@ -329,14 +371,17 @@ fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> mib <hardware-ID> fttr0
 ```
 
 `status` emits raw hardware state and the registration bit for all 64 slots.
-`mib` takes an exclusive device-directory lock, reads the actual OMCI envelope,
+`mib` takes an exclusive device-directory lock, prepares the original management
+grant and reads the actual OMCI envelope,
 and streams JSON records. An error exits nonzero without a `mib_complete`
 record. This is an explicit MIB inventory operation; authentication policy,
 attribute interpretation and automatic service/roaming management remain work.
-The command does not assign management-bandwidth profiles. Original evidence
-for the registration policy includes `onuinfo`'s default T-CONT profile setup
-at `419a30` and its status callback's `SetOnuTcontDba` call at `415f7c`; that
-policy still needs a native implementation before automatic MIB/service startup.
+The resident controller holds this lease while running; inspect its completed
+`onu-<ID>.mib` files and `status.json` during normal service. Raw attribute words
+and hardware-registration flags are distinct from its MIB state. Failed scans
+leave `.failed` diagnostics and are retried only after an actual registration/
+serial transition or an explicit service restart. No data service is reported
+ready by this controller yet.
 
 Original hashes and detailed results are emitted under `artifacts/fttr/`.
 Original binaries and the kernel build tree are read from the private evidence
@@ -369,12 +414,13 @@ the peer MiniOLT's separate WTG/PON initialization is also implemented.
    and optical readiness verification. The native sequence is implemented.
 3. Real P6/FTTR frame verification. Native SoC P6, ASIC peer WTG/PON SerDes,
    the dedicated RX/TX endpoint, core/DBA and ASIC hardware startup orchestration
-   are implemented. OLT registration configuration remains pending.
+   are implemented. Real ONU-management and service traffic still require
+   hardware acceptance.
 4. OLT-side discovery/registration, authentication, OMCI, T-CONT/GEM/DBA and
    VLAN/service provisioning. The native MiniOLT OMCI framing/transport
-   foundation and baseline MIB inventory transactions are implemented. Automatic
-   registration/authentication policy, MIB interpretation and provisioning are
-   not. Current upstream ONU OMCI is a different role.
+   foundation, management grants and automatic baseline MIB inventory are
+   implemented. Authentication policy, MIB interpretation and provisioning
+   are not. Current upstream ONU OMCI is a different role.
 5. Original subordinate gateway configuration, Wi-Fi synchronization,
    multicast, reboot/upgrade and roaming coordination, using the connected
    ONU's actual capabilities rather than assuming one fixed subordinate model.

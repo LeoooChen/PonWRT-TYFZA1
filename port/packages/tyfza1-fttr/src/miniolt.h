@@ -14,5 +14,12 @@ struct fttr_onu_state {
 int fttr_miniolt_table(int directory, struct fttr_onu_state table[FTTR_ONUS]);
 int fttr_miniolt_link(int directory, struct fttr_omci_link *link);
 int fttr_miniolt_links_ready(int directory, int ni);
+int fttr_miniolt_one(int directory, unsigned int id, struct fttr_onu_state *onu);
+int fttr_miniolt_management(int directory, unsigned int id, bool enable);
+int fttr_miniolt_tx_disable(int directory);
+int fttr_miniolt_p6_stop(int ni);
+int fttr_miniolt_command(int directory, const char *name, const char *value);
+int fttr_miniolt_wait_links(int directory, int ni);
+int fttr_miniolt_calibrated(int optical);
 
 #endif

@@ -97,11 +97,16 @@ int fttr_omci_unpack(const uint8_t *frame, size_t length, uint16_t ethertype,
 	const uint8_t *body;
 	int size;
 
-	if (length < 20)
+	*message = (struct fttr_omci_message) { .onu = UINT16_MAX };
+	if (length < 16)
 		return -EMSGSIZE;
 	if (read_be16(frame + 12) != ethertype)
 		return -EPROTO;
+	message->onu = read_be16(frame + 14);
+	if (length < 20)
+		return -EMSGSIZE;
 	body = frame + 16;
+	message->body = body;
 	size = omci_body_length(body, length - 20);
 	if (size < 0)
 		return size;
@@ -109,8 +114,6 @@ int fttr_omci_unpack(const uint8_t *frame, size_t length, uint16_t ethertype,
 	if (!read_be16(frame + 14) &&
 	    read_be32(body + size) != fttr_omci_crc(body, size))
 		return -EBADMSG;
-	message->onu = read_be16(frame + 14);
-	message->body = body;
 	message->length = size;
 	return 0;
 }

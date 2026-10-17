@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 START=26
 STOP=89
+USE_PROCD=1
 
 miniolt_device() {
 	local candidate
@@ -14,23 +15,24 @@ miniolt_device() {
 	return 1
 }
 
-start() {
+start_service() {
 	local enabled mode nway pon miniolt optical
 	read -r enabled mode nway pon < /tmp/tyfza1-factory/fttr_startup || return $?
 	[ "$enabled" = 1 ] || return 0
 	miniolt_device || return $?
+	mkdir -p /var/run/tyfza1-fttr || return $?
+	chmod 0700 /var/run/tyfza1-fttr || return $?
 	for optical in "$miniolt"/i2c-*/*-0068; do
 		[ -w "$optical/calibration" ] || continue
-		/usr/sbin/fttr-hardware start "$miniolt" /sys/class/net/fttr0/device \
-			"$optical" "$mode" "$nway" "$pon"
-		return $?
+		procd_open_instance
+		procd_set_param command /usr/sbin/fttrd "$miniolt" /sys/class/net/fttr0/device \
+			/var/run/tyfza1-fttr fttr0 "$optical" "$mode" "$nway" "$pon"
+		procd_set_param term_timeout 10
+		procd_set_param stdout 1
+		procd_set_param stderr 1
+		procd_close_instance
+		return 0
 	done
 	echo 'FTTR: downstream optical calibration client is not bound' >&2
 	return 1
-}
-
-stop() {
-	local miniolt
-	miniolt_device || return $?
-	/usr/sbin/fttr-hardware stop "$miniolt" /sys/class/net/fttr0/device
 }

@@ -136,6 +136,9 @@ int tcont(const struct rtl_fttr_reg_io *io,unsigned int id,unsigned int tc,unsig
 int link(const struct rtl_fttr_reg_io *io,unsigned int mode,unsigned int *ready) {
  return rtl_fttr_wtg_link(io,mode,ready);
 }
+int management(const struct rtl_fttr_reg_io *io,unsigned int id,int enable) {
+ return rtl_fttr_management_grant(io,id,enable);
+}
 ''')
         headers = root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek'
         subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-shared', '-fPIC',
@@ -184,6 +187,25 @@ int link(const struct rtl_fttr_reg_io *io,unsigned int mode,unsigned int *ready)
             assert library.tcont(ctypes.byref(io), id, tc, fixed, assured, maximum) == 0
             assert actual.events == expected.events
             cases.append({'operation':'tcont','id':id,'slot':tc,'stock_native_match':True})
+        for id in (0,5,63):
+            expected, actual = Registers(), Registers()
+            expected.values.update({0x40020:0x26260a0a,0x40021:19440,0x40002:0x22})
+            oracle = stock(args.stock, expected)
+            base = oracle.symbols['OltSetting']
+            oracle.uc.mem_write(base,struct.pack('<IIIIIII',19440,10,10,38,38,0,60))
+            for slot in range(64):
+                oracle.uc.mem_write(base+slot*136+41,b'\x02')
+                for tc in range(8):
+                    oracle.uc.mem_write(base+slot*136+80+tc*12,struct.pack('<III',0,
+                        3840 if tc==0 else 0,3840 if tc==0 else 19440*64))
+            assert oracle.call('SetOnuTcontDba',id+1,0,0,3840,3840)==0
+            io=native_io(actual)
+            assert library.management(ctypes.byref(io),id,1)==0
+            assert writes(actual)==writes(expected)
+            actual.events.clear()
+            assert library.management(ctypes.byref(io),id,0)==0
+            assert actual.events==[['write',0x41000+id*32,0],['write',0x41001+id*32,0]]
+            cases.append({'operation':'management_grant','id':id,'original_callback_writes_match':True})
         for mode, page, reg, bit, wrong in [(5,1,30,4,12),(9,5,0,12,4)]:
             for pcs, ready in [(1 << bit,True),(1 << wrong,False)]:
                 result, queries = caller_link(args.caller, mode, pcs)

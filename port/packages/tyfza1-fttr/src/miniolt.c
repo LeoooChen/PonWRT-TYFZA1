@@ -4,6 +4,8 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include <stdio.h>
+#include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "miniolt.h"
@@ -23,6 +25,63 @@ static FILE *attribute(int directory, const char *name)
 		errno = error;
 	}
 	return file;
+}
+
+int fttr_miniolt_command(int directory, const char *name, const char *value)
+{
+	int fd = openat(directory, name, O_WRONLY | O_CLOEXEC);
+	ssize_t size;
+	int ret;
+
+	if (fd < 0)
+		return -errno;
+	size = write(fd, value, strlen(value));
+	ret = size < 0 ? -errno : (size_t)size == strlen(value) ? 0 : -EIO;
+	close(fd);
+	return ret;
+}
+
+int fttr_miniolt_management(int directory, unsigned int id, bool enable)
+{
+	char value[16];
+
+	snprintf(value, sizeof(value), "%u %u\n", id, enable);
+	return fttr_miniolt_command(directory, "management_grant", value);
+}
+
+int fttr_miniolt_tx_disable(int directory)
+{
+	return fttr_miniolt_command(directory, "tx_enable", "0\n");
+}
+
+int fttr_miniolt_p6_stop(int ni)
+{
+	return fttr_miniolt_command(ni, "fttr_link", "0 0\n");
+}
+
+static uint32_t read_le32(const uint8_t *p)
+{
+	return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
+}
+
+int fttr_miniolt_one(int directory, unsigned int id, struct fttr_onu_state *onu)
+{
+	uint8_t data[20];
+	int fd = openat(directory, "onu_state", O_RDONLY | O_CLOEXEC), ret;
+	ssize_t size;
+
+	if (fd < 0)
+		return -errno;
+	size = pread(fd, data, sizeof(data), id * sizeof(data));
+	ret = size < 0 ? -errno : size == sizeof(data) ? 0 : -EPROTO;
+	close(fd);
+	if (ret)
+		return ret;
+	onu->downstream = read_le32(data);
+	onu->upstream = read_le32(data + 4);
+	onu->eqd = read_le32(data + 8);
+	memcpy(onu->serial, data + 12, 8);
+	return 0;
 }
 
 int fttr_miniolt_table(int directory, struct fttr_onu_state table[FTTR_ONUS])
@@ -93,4 +152,51 @@ int fttr_miniolt_links_ready(int directory, int ni)
 	ret = fields == 3 ? error : ferror(file) ? -errno : -EPROTO;
 	fclose(file);
 	return ret ? ret : !!(peer_clock && peer_link && host_clock && host_link);
+}
+
+static int64_t monotonic_ms(void)
+{
+	struct timespec now;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	return (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
+}
+
+int fttr_miniolt_wait_links(int directory, int ni)
+{
+	const struct timespec settle = { .tv_nsec = 500000000 };
+	const struct timespec interval = { .tv_nsec = 20000000 };
+	int64_t deadline = monotonic_ms() + 700;
+	int ret;
+
+	if (nanosleep(&settle, NULL))
+		return -errno;
+	for (;;) {
+		ret = fttr_miniolt_links_ready(directory, ni);
+		if (ret < 0)
+			return ret;
+		if (ret)
+			return 0;
+		if (monotonic_ms() >= deadline)
+			return -ETIMEDOUT;
+		if (nanosleep(&interval, NULL))
+			return -errno;
+	}
+}
+
+int fttr_miniolt_calibrated(int optical)
+{
+	FILE *file = attribute(optical, "calibration");
+	unsigned int configured, marker, writes;
+	int error, fields, ret;
+
+	if (!file)
+		return -errno;
+	fields = fscanf(file, "configured=%u model=GN25L99 marker=%x writes=%u error=%d",
+		&configured, &marker, &writes, &error);
+	ret = fields == 4 ? error : ferror(file) ? -errno : -EPROTO;
+	fclose(file);
+	if (ret)
+		return ret;
+	return configured && marker == 0xb0 && writes == 128 ? 0 : -EIO;
 }
