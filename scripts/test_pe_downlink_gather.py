@@ -78,7 +78,8 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
                         at + 2048 if n + 1 < len(lengths) else 0))
     submits, returns = [], []
     u.hook_add(UC_HOOK_MEM_WRITE, lambda uc, access, at, size, value, data:
-               submits.append(value), begin=bar + 0x1058, end=bar + 0x1059)
+               submits.extend(range(submits[-1] + 1 if submits else 1, value + 1)),
+               begin=bar + 0x1058, end=bar + 0x1059)
     u.hook_add(UC_HOOK_MEM_WRITE, lambda uc, access, at, size, value, data:
                returns.append(value), begin=ni + 0x6384, end=ni + 0x6387)
     u.reg_write(UC_MIPS_REG_A0, mb | 0xa0000000)

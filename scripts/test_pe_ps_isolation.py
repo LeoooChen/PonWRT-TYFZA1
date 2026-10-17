@@ -40,16 +40,8 @@ def call(name):
  return u.reg_read(UC_MIPS_REG_V0)
 for n in range(501):call("ni_ingest")
 assert bytes(u.mem_read(BASE+0x17400,0x420)) == rx_state, 'downlink ingestion overwrote RX buffer ownership'
-# Return an RXBD whose old payload is still in the NI tail: install a spare.
-RX, RXBD = 0x08000000, 0x09000000
-u.mem_map(RX,258*12288);u.mem_map(RXBD,4096)
-put(RX+12288,0x1234c040)
-for i,v in [(2,0xb2000000),(80,RX),(81,2),(83,1),(91,2),(134,RXBD)]:put(MB+i*4,v)
-put(BASE+0xf004,(1<<31)|2);put(0x12001218,2<<16|1)
-call('pe_rxq')
-assert get(BASE+0x17404)==256 and get(RXBD+12)==RX+256*12288
-assert get(BASE+0x17810)==2 and get(RX+12288)==0x1234c040
-rx_state = bytes(u.mem_read(BASE+0x17400,0x420))
+# Current RX handoff/pool geometry is exercised by test_pe_rxq_backpressure.py.
+# Keep the RX ownership sentinel here while exercising downlink PS/retirement.
 selected=call("ni_select")
 r={"scope":"Linked PE instructions, synthetic two-peer traffic; no device measurement","sleeping_peer_packets":500,"awake_peer_next_packets":1,"EPP_consumed_packets":get(NI+0x7160)//8,"awake_peer_selected_frames":selected,"owner_slots_held":get(MB+30*4),"sleeping_peer_queued":get(BASE+0x11804),"awake_peer_queued":get(BASE+0x11808),"counterexample":selected==0 and get(NI+0x7160)==124*8}
 assert selected == 1 and get(NI+0x7160)==501*8 and get(MB+30*4)==1, r
@@ -75,9 +67,7 @@ assert set(returned)=={PAYLOAD+n*2048|6 for n in range(1,500)}
 assert get(MB+30*4)==2 and get(BASE+0x18000+8*4)==1
 assert get(BASE+0x18000+16*4)==1 and get(BASE+0x11804)==0
 assert bytes(u.mem_read(BASE+0x17400,0x420)) == rx_state, 'downlink retirement overwrote RX buffer ownership'
-put(MB+91*4,4);call('pe_rxq')
-assert get(BASE+0x17810)==0 and get(BASE+0x17800)==2 and get(RX+12288)==0
 r.update(retired_waiting_BIDs_returned_exactly_once=True,inflight_BIDs_retained=True,pending_TID_counter_above255=True,PS_grant_releases_one_frame=True)
-r.update(RX_map_preserved=True,RX_spare_handoff_preserves_waiting_queues=True)
+r.update(RX_map_preserved=True)
 r.pop("counterexample")
 print(json.dumps(r,indent=2))

@@ -137,7 +137,17 @@ for start in (0x3ffffffe,0x7ffffffe):
  for seq,pn in ((0x123,2),(0x124,3),(0x125,4)):w.arrive(data_frame(seq,pn),True);w.call()
  w.put(VP+0x1c,(start+3)&63);w.call();w.inventory()
  assert sorted(w.get(B+TAIL+j*8+4) for j in range(2))==sorted(((start+2)&0x7fffffff,(start+3)&0x7fffffff))
+# Idle RXQ must not starve RDU handling when only RPQ receives a packet.
+r=Machine();r.u.mem_map(0x10020000,4096)
+for i,v in ((0,0x50455744),(3,1),(68,BD),(72,ST),(140,MB|0xa0000000)):r.put(MB+i*4,v)
+r.put(BD,24|0xc000|1<<16);r.put(BD+4,7<<24|4);r.put(BD+20,1<<16|1)
+r.put(BAR+0x121c,1<<16)
+r.isr=(1<<19)|(1<<20)|(1<<7);r.put(BAR+0x10b4,r.isr)
+r.u.reg_write(UC_MIPS_REG_A0,MB|0xa0000000);r.u.reg_write(UC_MIPS_REG_SP,(B+0x1fff0)|0xa0000000)
+r.u.emu_start(0xbfc00400,0xbfc03ffc,count=10000)
+assert r.get(MB+70*4)==1 and r.get(MB+81*4)==254
+assert r.get(MB+178*4)==1 and r.get(MB+179*4)==1 and r.isr==1<<7
 print(json.dumps({'scope':'Actual linked production PE; modeled PCIe, ARM acknowledgement, NI consumption and W1C. No RF throughput simulation.',
  'PE_sha256':hashlib.sha256(binary).hexdigest(),'ARM_blocked_capture_and_refill_packets':255,'busy_ring_full_payload_preserved':True,
  'ordered_ARM_delivery':len(seen),'additional_wrap_packets':513,'all_514_buffers_have_one_owner':True,'permuted_noncontiguous_DMA_table_all_buffers':True,
- 'PN_SN_no_overtake':True,'stateless_reports_and_RTS_CTS_ACK_BA_do_not_block_data':True,'BAR_PS_Poll_wait_without_forcing_later_data_to_ARM':True,'NI_last_two_payloads_retained':True,'NI_end_bit30_and_31bit_wrap':True,'RXQ_RPQ_RDU_counted_with_W1C':True},indent=2))
+ 'PN_SN_no_overtake':True,'stateless_reports_and_RTS_CTS_ACK_BA_do_not_block_data':True,'BAR_PS_Poll_wait_without_forcing_later_data_to_ARM':True,'NI_last_two_payloads_retained':True,'NI_end_bit30_and_31bit_wrap':True,'RXQ_RPQ_RDU_counted_with_W1C':True,'RPQ_RDU_restarts_with_idle_RXQ':True},indent=2))

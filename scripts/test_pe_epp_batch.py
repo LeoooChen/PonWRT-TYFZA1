@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""Execute bounded EPP batches across COS, TID groups, wrap and a retire cutoff."""
+from pathlib import Path
+import sys,struct,subprocess,json
+ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/"analysis/python-deps"))
+from unicorn import UC_HOOK_MEM_WRITE, Uc,UC_ARCH_MIPS,UC_MODE_MIPS32,UC_MODE_LITTLE_ENDIAN
+from unicorn.mips_const import UC_MIPS_REG_A0,UC_MIPS_REG_A1,UC_MIPS_REG_SP,UC_MIPS_REG_RA
+p=Path(sys.argv[1])
+symbols={x[2]:int(x[0],16) for l in subprocess.check_output(["llvm-nm-18",str(p/"pe-wd.elf")],text=True).splitlines() if len(x:=l.split())==3}
+u=Uc(UC_ARCH_MIPS,UC_MODE_MIPS32|UC_MODE_LITTLE_ENDIAN)
+BASE,MB,NI,PAYLOAD,EPP=0x04000000,0x04002000,0x10000000,0x06000000,0x05000000
+for a,n in [(0x1fc00000,0x4000),(BASE,0x20000),(NI,0x10000),(PAYLOAD,0x200000),(0x12000000,0x10000),(EPP,0x80000),(0x10020000,0x1000)]:u.mem_map(a,n)
+u.mem_write(0x1fc00000,(p/"pe-tx.bin").read_bytes())
+def put(a,v):u.mem_write(a,struct.pack("<I",v))
+def get(a):return struct.unpack("<I",u.mem_read(a,4))[0]
+for i,v in [(25,EPP),(114,0x7060),(115,0x7160),(167,15)]:put(MB+i*4,v)
+put(NI+0x659c,1<<24)
+mac=[bytes.fromhex("020000000001"),bytes.fromhex("020000000002")]
+for peer in [1,2]:
+ put(BASE+0x11a00+peer*4,1)
+ u.mem_write(BASE+0xe400+peer*8,mac[peer-1])
+def call(name):
+ u.reg_write(UC_MIPS_REG_A0,MB|0xa0000000);u.reg_write(UC_MIPS_REG_A1,BASE|0xa0000000)
+ u.reg_write(UC_MIPS_REG_SP,(BASE+0x1fff0)|0xa0000000);u.reg_write(UC_MIPS_REG_RA,0x9fc01ff0)
+ u.emu_start(symbols[name],0x9fc01ff0,count=100000)
+
+# Wrapped EPP batch: consecutive groups, interleaved peers/TIDs and compact EPP.
+rows=[(1,0),(1,0),(2,3),(1,0),(2,3),(2,3),(1,7),(1,7),(2,0)]
+start=32752
+for n,(peer,tid) in enumerate(rows):
+ at=PAYLOAD+n*2048
+ frame=mac[peer-1]+bytes.fromhex("0200000000030800")+bytes(50)
+ u.mem_write(at+32,struct.pack(">II",0x80000000,(len(frame)+8)<<15|tid)+bytes(8)+frame)
+ u.mem_write(EPP+((start+n*8)&32767),struct.pack("<II",at|0x50,1<<14|len(frame)+16))
+put(BASE+0x11c00,start);put(NI+0x7060,(start+len(rows)*8)&32767)
+put(MB+171*4,1);put(BASE+0x19400,(start+3*8)&32767)
+writes=[]
+u.hook_add(UC_HOOK_MEM_WRITE,lambda uc,access,at,size,value,data:writes.append((at,value)))
+call("ni_ingest")
+assert get(NI+0x7160)==48 and get(MB+171*4)==0
+assert next(i for i,(at,v) in enumerate(writes) if at==NI+0x7160)<next(i for i,(at,v) in enumerate(writes) if at==MB+171*4)
+assert get(MB+38*4)==8 and get(BASE+0x11804)==5 and get(BASE+0x11808)==3
+call("ni_ingest")
+for peer,tid in set(rows):
+ queue=peer*8+tid
+ expected=[PAYLOAD+n*2048 for n,p in enumerate(rows) if p==(peer,tid)]
+ assert get(BASE+0x13000+queue*4)==len(expected)
+ assert get(BASE+0x18000+queue*4)==len(expected)
+ node=get(BASE+0x15000+queue*4);seen=[]
+ while node:
+  seen.append(node);link=get(node+12);assert link&7==tid;node=link&~127
+ assert seen==expected
+ assert get(BASE+0x16000+queue*4)==expected[-1]
+# COS selection and an invalid next entry must not publish an unconsumed BID.
+put(NI+0x659c,0x81<<24);put(NI+0x707c,8)
+at=PAYLOAD+10*2048
+u.mem_write(at+32,struct.pack(">II",0x80000000,72<<15|2)+bytes(8)+mac[1]+bytes.fromhex("0200000000030800")+bytes(50))
+u.mem_write(EPP+(7<<15),struct.pack("<II",at|0x50,80))
+call("ni_ingest"); assert get(NI+0x717c)==8
+put(NI+0x707c,16)
+call("ni_ingest"); assert get(NI+0x717c)==8
+print(json.dumps(dict(batch_budget=8,wrapped_ring=True,mixed_peer_TID_FIFO=True,compact_EPP=True,retire_fence_after_queue_and_consumer=True,COS_priority=True,invalid_entry_not_consumed=True)))
