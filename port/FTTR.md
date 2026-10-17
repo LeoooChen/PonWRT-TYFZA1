@@ -181,6 +181,18 @@ It does not use the names of the original libraries as a capability probe.
   Completed `.mib` files append merged `mib_entity` entries and a `mib_model`
   summary before `mib_complete`; status reports entity/unparsed-record counts.
   Disconnect, replacement and failed inventory clear the corresponding model.
+* Native baseline managed-entity transactions: Create/Delete/Set/Get request
+  bodies follow original `libponrelay` builders. Callers supply wire values;
+  the original packed RAM structures are not used. Each job validates the
+  ONU, transaction, opcode, class and instance, preserves the complete reply
+  and actual ONU result byte, and treats nonzero results as `-EREMOTEIO`.
+  Get success also requires the returned attribute mask to match the request.
+  A received reply is not itself a successful operation. Asynchronous job
+  methods use the same original two-second/three-attempt policy; the synchronous
+  exchange is used by `fttrctl get`. Create/Set/Delete are library primitives
+  for the pending service planner, not an automatic provisioning sequence.
+  Explicit Get shares the MiniOLT lease/management grant with explicit MIB
+  collection and verifies the same registered serial before publishing a reply.
 
 ## Validation
 
@@ -303,6 +315,16 @@ exchanges split/unknown records and confirms the merged model is revoked on
 replacement (`controller-model-comparison.json`). The updated daemon compiles
 with host warnings-as-errors and the project's actual OpenWrt musl toolchain.
 
+The focused MIB check additionally compares GEM Create/Delete/Get and T-CONT
+Set requests with actual original builders, and checks managed-entity reply
+results, Get-mask mismatch and retransmission deadlines (`mib-me-comparison.json`).
+The existing private-network-namespace controller check also runs the real
+`fttrctl get` executable after releasing the controller lease. Both a successful
+Get and an ONU rejection retain their raw replies and return the correct process
+status (`controller-me-comparison.json`). The project's actual OpenWrt package
+prepare/compile/install recipes pass in the isolated `package-root-me/` stage;
+`package-stage-me.log` records them. No full firmware build was performed.
+
 The executable links with the project's actual OpenWrt GCC 14.4.0/musl
 toolchain as `artifacts/fttr/fttrctl-musl`. The optional userspace and kernel
 package definitions parse successfully with the pinned OpenWrt make includes.
@@ -393,6 +415,7 @@ After the development hardware sequence and actual `fttr0` setup, use:
 ```
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> status
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> mib <hardware-ID> fttr0
+fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> get <hardware-ID> <class> <instance> <mask> fttr0
 ```
 
 `status` emits raw hardware state and the registration bit for all 64 slots.
@@ -407,6 +430,13 @@ and hardware-registration flags are distinct from its MIB state. Failed scans
 leave `.failed` diagnostics and are retried only after an actual registration/
 serial transition or an explicit service restart. No data service is reported
 ready by this controller yet.
+
+`get` accepts decimal or `0x` hexadecimal class/instance/mask values (the
+hardware ID remains decimal). It prints `me_reply` with the original result
+byte, native error and complete 44-byte baseline reply, only after confirming
+the same registered serial. A nonzero ONU result exits nonzero. An active
+controller owns the device lease, so explicit MIB/Get are separate development
+operations performed after stopping that controller; they do not bypass it.
 
 Original hashes and detailed results are emitted under `artifacts/fttr/`.
 Original binaries and the kernel build tree are read from the private evidence

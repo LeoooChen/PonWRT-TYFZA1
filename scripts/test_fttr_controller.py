@@ -28,6 +28,7 @@ def crc(data):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--daemon', required=True, type=Path)
+    parser.add_argument('--control', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args()
     # The caller must create this process's private namespace with unshare -n.
@@ -66,8 +67,8 @@ def main():
                 miniolt.joinpath(name+'.new').write_bytes(data)
                 os.replace(miniolt/(name+'.new'),miniolt/name)
 
-        def response(onu, transaction, opcode, content, class_id=2):
-            body = (struct.pack('>HBBHH',transaction,opcode,10,class_id,0)+content).ljust(40,b'\0')+b'\0\0\0\x28'
+        def response(onu, transaction, opcode, content, class_id=2, instance=0):
+            body = (struct.pack('>HBBHH',transaction,opcode,10,class_id,instance)+content).ljust(40,b'\0')+b'\0\0\0\x28'
             return HOST+OLT+struct.pack('>HH',0x8888,onu)+body+struct.pack('>I',crc(body))
 
         def handle(frame):
@@ -169,6 +170,32 @@ def main():
             fd=os.open(miniolt,os.O_RDONLY|os.O_DIRECTORY)
             fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
             os.close(fd)
+            # Exercise the installed command's read-only Get over the same real
+            # packet transport after the controller releases the device lease.
+            subprocess.run(['ip','link','set','dev','ftr-host','up'],check=True)
+            for result in (0,6):
+                query=subprocess.Popen([str(args.control.resolve()),str(miniolt),'get','7','268',
+                    '0x8007','0xc000','ftr-host'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                try:
+                    deadline=time.monotonic()+4
+                    while True:
+                        assert time.monotonic()<deadline and query.poll() is None
+                        if not select.select([peer],[],[],0.05)[0]:continue
+                        frame,address=peer.recvfrom(2048)
+                        if address[2]==socket.PACKET_OUTGOING:continue
+                        transaction=struct.unpack('>H',frame[16:18])[0]
+                        assert frame[14:16]==b'\0\7' and frame[18:26]==bytes.fromhex('490a010c8007c000')
+                        peer.send(response(7,transaction,0x29,bytes([result])+bytes.fromhex('c00001178007'),
+                                           class_id=268,instance=0x8007))
+                        break
+                    output,error=query.communicate(timeout=3)
+                    row=json.loads(output)
+                    assert query.returncode==(1 if result else 0),(output,error)
+                    assert row['event']=='me_reply' and row['result']==result
+                    assert row['error']==(-121 if result else 0) and bytes.fromhex(row['body'])[8]==result
+                finally:
+                    if query.poll() is None:
+                        query.terminate();query.communicate(timeout=3)
         finally:
             if process.poll() is None:
                 process.terminate()
@@ -179,10 +206,11 @@ def main():
     args.output.write_text(json.dumps({'transport':'real AF_PACKET over veth in private network namespace',
         'modeled_hardware':'sysfs state and grant attributes only','independent_onu_failure':True,
         'split_entity_records_merged':True,'unknown_layout_explicit':True,'old_model_revoked_on_replacement':True,
+        'real_cli_get_and_onu_rejection':True,
         'malformed_frame_reported_without_master_exit':True,'offline_releases_grant_and_inventory':True,
         'replaced_onu_reinventoried':True,'old_transaction_reply_ignored':True,'sigterm_closes_hardware_and_netdev':True,
         'optical_hardware_verified':False},indent=2)+'\n')
-    print('Controller: real packet exchange, independent ONU error, replacement/cleanup and SIGTERM passed')
+    print('Controller: packet exchange, model replacement, SIGTERM and real CLI Get/rejection passed')
 
 
 if __name__ == '__main__':main()

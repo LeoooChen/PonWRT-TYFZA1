@@ -26,6 +26,8 @@ class Stock:
         self.oracle = ElfOracle(binary, self.handler, ('plr_gponomci_me_high_prio_tx',))
         self.oracle.symbols['stock_upload_build'] = 0x667dc
         self.oracle.symbols['stock_next_build'] = 0x66b50
+        self.oracle.symbols.update(stock_set=0x64f8c, stock_create=0x6535c,
+                                   stock_get=0x65ce0, stock_delete=0x659c0)
         self.data = self.oracle.scratch + 0x2000
         assert self.oracle.call('plr_omci_sw_crc32_table_init') == 0
 
@@ -48,8 +50,18 @@ class Stock:
                                 transaction, 2, self.data) == 0x80000000
         return self.body
 
-    def frame(self, transaction, opcode, content, onu=5, class_id=2):
-        body = struct.pack('>HBBHH', transaction, opcode, 10, class_id, 0) + content
+    def me_request(self, operation, class_id, instance, mask, ram):
+        action, name = {0x44: (3, 'stock_create'), 0x46: (4, 'stock_delete'),
+                        0x48: (1, 'stock_set'), 0x49: (2, 'stock_get')}[operation]
+        data = struct.pack('<IIHHHH', 0, action, mask, instance, mask, mask) + ram
+        self.oracle.uc.mem_write(self.data, data)
+        args = [0x8123, class_id, self.data]
+        args += [instance] if operation == 0x46 else [self.data + 10, len(ram) + 6]
+        assert self.oracle.call(name, *args) == 0x80000000
+        return self.body
+
+    def frame(self, transaction, opcode, content, onu=5, class_id=2, instance=0):
+        body = struct.pack('>HBBHH', transaction, opcode, 10, class_id, instance) + content
         body = body.ljust(40, b'\0') + b'\0\0\0\x28'
         self.oracle.uc.mem_write(self.data, body)
         crc = self.oracle.call('plr_omci_crc32_get', self.data, 44)
@@ -79,7 +91,7 @@ def main():
     stock = Stock(args.stock)
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory)
-        sources = [source / n for n in ('miniolt.c', 'omci-wire.c', 'omci-socket.c', 'omci-mib.c')]
+        sources = [source / n for n in ('miniolt.c', 'omci-wire.c', 'omci-socket.c', 'omci-mib.c', 'omci-me.c')]
         flags = ['cc', '-O2', '-std=c11', '-Wall', '-Wextra', '-Werror']
         subprocess.run(flags + ['-shared', '-fPIC', '-o', str(path / 'native.so')] + list(map(str, sources)), check=True)
         subprocess.run(flags + ['-o', str(path / 'fttrctl'), str(source / 'fttrctl.c')] + list(map(str, sources)), check=True)
@@ -165,6 +177,61 @@ def main():
         assert ret == -errno.ETIMEDOUT and len(sent) == 3 and not entries
         assert sent[0] == sent[1] == sent[2]
 
+        class MeJob(ctypes.Structure):
+            _fields_ = [('state',ctypes.c_int),('onu',ctypes.c_ushort),('transaction',ctypes.c_ushort),
+                        ('mask',ctypes.c_ushort),('attempts',ctypes.c_uint),('deadline',ctypes.c_int64),
+                        ('error',ctypes.c_int),('replied',ctypes.c_bool),('result',ctypes.c_ubyte),
+                        ('request',ctypes.c_ubyte*44),('reply',ctypes.c_ubyte*44)]
+
+        class Message(ctypes.Structure):
+            _fields_ = [('onu',ctypes.c_ushort),('body',ctypes.c_void_p),('length',ctypes.c_size_t)]
+
+        library.fttr_me_job_start.argtypes = [ctypes.POINTER(MeJob),ctypes.c_ushort,
+            ctypes.POINTER(ctypes.c_ushort),ctypes.c_int,ctypes.c_ushort,ctypes.c_ushort,
+            ctypes.c_ushort,ctypes.c_char_p,ctypes.c_size_t]
+        library.fttr_me_job_reply.argtypes = [ctypes.POINTER(MeJob),ctypes.POINTER(Message)]
+        library.fttr_me_job_send.argtypes = [ctypes.POINTER(MeJob),ctypes.c_int,ctypes.POINTER(Link),ctypes.c_int64]
+        library.fttr_me_job_timeout.argtypes = library.fttr_me_job_send.argtypes
+        me_cases = [(0x44,268,0xfa80,struct.pack('>HHBHHHH',0x117,0x8007,3,0x8001,0xffff,0x102,0xffff),
+                     struct.pack('<HHBHHBHBHB',0x117,0x8007,3,0x8001,0xffff,0,0x102,0,0xffff,0)),
+                    (0x48,262,0x8000,b'\x01\x23',b'\x23\x01'+bytes(5)),
+                    (0x49,268,0xc000,b'',bytes(16)),(0x46,268,0,b'',b'')]
+        for operation,c,mask,wire,ram in me_cases:
+            job,counter = MeJob(),ctypes.c_ushort(0x8122)
+            assert library.fttr_me_job_start(ctypes.byref(job),5,ctypes.byref(counter),
+                operation,c,0x8007,mask,wire,len(wire))==0
+            assert bytes(job.request)==stock.me_request(operation,c,0x8007,mask,ram)
+            response = stock.frame(0x8123,(operation & 0x1f)|0x20,
+                b'\0'+(struct.pack('>H',mask)+b'\x01\x17\x80\x07' if operation==0x49 else b''),
+                class_id=c,instance=0x8007)[16:60]
+            body = ctypes.create_string_buffer(response)
+            message = Message(6,ctypes.addressof(body),44)
+            assert library.fttr_me_job_reply(ctypes.byref(job),ctypes.byref(message))==0
+            message.onu=5
+            assert library.fttr_me_job_reply(ctypes.byref(job),ctypes.byref(message))==1
+            assert job.state==1 and job.replied and not job.result and bytes(job.reply)==response
+        for status,mask,expected in [(6,0xc000,-errno.EREMOTEIO),(0,0x8000,-errno.EPROTO)]:
+            job,counter = MeJob(),ctypes.c_ushort(0x8122)
+            library.fttr_me_job_start(ctypes.byref(job),5,ctypes.byref(counter),0x49,268,0x8007,0xc000,None,0)
+            response=stock.frame(0x8123,0x29,bytes([status])+struct.pack('>H',mask),
+                                 class_id=268,instance=0x8007)[16:60]
+            body=ctypes.create_string_buffer(response)
+            message=Message(5,ctypes.addressof(body),44)
+            assert library.fttr_me_job_reply(ctypes.byref(job),ctypes.byref(message))==expected
+            assert job.state==2 and job.result==status and bytes(job.reply)==response
+        job,counter = MeJob(),ctypes.c_ushort(0xffff)
+        assert library.fttr_me_job_start(ctypes.byref(job),5,ctypes.byref(counter),
+            0x49,268,0x8007,0xc000,None,0)==0 and job.transaction==0x8001
+        client,server=socket.socketpair(socket.AF_UNIX,socket.SOCK_DGRAM)
+        link=Link((ctypes.c_ubyte*6)(*HOST),(ctypes.c_ubyte*6)(*OLT),0x8888,False)
+        assert library.fttr_me_job_send(ctypes.byref(job),client.fileno(),ctypes.byref(link),1000)==0
+        first=server.recv(2048)
+        for now in (3000,5000):
+            assert library.fttr_me_job_timeout(ctypes.byref(job),client.fileno(),ctypes.byref(link),now)==0
+            assert server.recv(2048)==first
+        assert library.fttr_me_job_timeout(ctypes.byref(job),client.fileno(),ctypes.byref(link),7000)==-errno.ETIMEDOUT
+        client.close();server.close()
+
         # Exercise the actual executable against the kernel attribute ABI only.
         fixture = path / 'device'
         fixture.mkdir()
@@ -200,9 +267,11 @@ def main():
         'socket_mib_records': 2, 'unrelated_replies_do_not_complete_transaction': True,
         'transaction_wrap': 'ffff -> 8001', 'timeout_attempts': 3, 'timeout_seconds_per_attempt': 2,
         'matching_bad_response_errors': True, 'real_cli_attribute_rows': 64,
+        'original_me_request_comparisons':len(me_cases),'me_rejection_retains_raw_result':True,
+        'me_get_mask_mismatch_is_error':True,'me_retransmission_deadline_verified':True,
         'missing_attribute_is_error': True, 'scope': 'original code and local datagram peer; no live MiniOLT',
         'hardware_verified': False}, indent=2) + '\n')
-    print('MIB: original request/parser comparisons and native socket scan passed; timeout/error paths passed')
+    print('MIB/ME: original builders/parsers, native scan and transaction result/deadline checks passed')
 
 
 if __name__ == '__main__':

@@ -12,6 +12,7 @@
 
 #include "miniolt.h"
 #include "omci-mib.h"
+#include "omci-me.h"
 #include "omci-socket.h"
 
 static void hex(const uint8_t *data, size_t length)
@@ -54,38 +55,62 @@ static int status(int directory)
 	return ferror(stdout) ? -EIO : 0;
 }
 
-static int scan(int directory, unsigned int id, const char *interface)
+static int open_session(int directory, unsigned int id, const char *interface,
+			struct fttr_omci_session *session, struct fttr_onu_state *before)
 {
-	struct fttr_onu_state table[FTTR_ONUS], before;
-	struct fttr_omci_session session = { .onu = id };
-	uint16_t commands, seed;
+	uint16_t seed;
 	int ret;
 
 	if (flock(directory, LOCK_EX | LOCK_NB))
 		return -errno;
-	ret = fttr_miniolt_table(directory, table);
+	ret = fttr_miniolt_one(directory, id, before);
 	if (ret)
 		return ret;
-	before = table[id];
-	if (!(before.downstream & (1U << 18)))
+	if (!(before->downstream & (1U << 18)))
 		return -ENOLINK;
-	if (before.downstream & (1U << 16))
+	if (before->downstream & (1U << 16))
 		return -EACCES;
-	ret = fttr_miniolt_link(directory, &session.link);
+	ret = fttr_miniolt_link(directory, &session->link);
 	if (ret)
 		return ret;
 	ret = getrandom(&seed, sizeof(seed), 0);
 	if (ret < 0)
 		return -errno;
-	session.transaction = seed | 0x8000;
-	session.fd = fttr_omci_open(interface, session.link.ethertype);
-	if (session.fd < 0)
-		return session.fd;
+	session->onu = id;
+	session->transaction = seed | 0x8000;
+	session->fd = fttr_omci_open(interface, session->link.ethertype);
+	if (session->fd < 0)
+		return session->fd;
 	ret = fttr_miniolt_management(directory, id, true);
 	if (ret) {
-		close(session.fd);
+		close(session->fd);
 		return ret;
 	}
+	return 0;
+}
+
+static int same_onu(int directory, unsigned int id, const struct fttr_onu_state *before)
+{
+	struct fttr_onu_state current;
+	int ret = fttr_miniolt_one(directory, id, &current);
+
+	if (ret)
+		return ret;
+	if (!(current.downstream & (1U << 18)) || (current.downstream & (1U << 16)) ||
+	    memcmp(before->serial, current.serial, sizeof(before->serial)))
+		return -ESTALE;
+	return 0;
+}
+
+static int scan(int directory, unsigned int id, const char *interface)
+{
+	struct fttr_onu_state before;
+	struct fttr_omci_session session;
+	uint16_t commands;
+	int ret = open_session(directory, id, interface, &session, &before);
+
+	if (ret)
+		return ret;
 	printf("{\"event\":\"mib_start\",\"id\":%u,\"serial\":\"", id);
 	hex(before.serial, sizeof(before.serial));
 	puts("\"}");
@@ -93,38 +118,66 @@ static int scan(int directory, unsigned int id, const char *interface)
 	close(session.fd);
 	if (ret)
 		return ret;
-	ret = fttr_miniolt_one(directory, id, &table[id]);
+	ret = same_onu(directory, id, &before);
 	if (ret)
 		return ret;
-	if (!(table[id].downstream & (1U << 18)) || (table[id].downstream & (1U << 16)) ||
-	    memcmp(before.serial, table[id].serial, sizeof(before.serial)))
-		return -ESTALE;
 	printf("{\"event\":\"mib_complete\",\"id\":%u,\"commands\":%u}\n", id, commands);
 	return ferror(stdout) ? -EIO : 0;
 }
 
+static int get(int directory, unsigned int id, const uint16_t fields[3], const char *interface)
+{
+	struct fttr_onu_state before;
+	struct fttr_omci_session session;
+	struct fttr_me_job job;
+	int result, ret = open_session(directory, id, interface, &session, &before);
+
+	if (ret)
+		return ret;
+	ret = fttr_me_job_start(&job, id, &session.transaction, FTTR_ME_GET,
+				fields[0], fields[1], fields[2], NULL, 0);
+	if (!ret)
+		ret = fttr_me_exchange(&session, &job);
+	close(session.fd);
+	if (job.replied) {
+		result = same_onu(directory, id, &before);
+		if (result)
+			return result;
+		printf("{\"event\":\"me_reply\",\"id\":%u,\"class\":%u,\"instance\":%u,"
+		       "\"mask\":%u,\"result\":%u,\"error\":%d,\"body\":\"",
+		       id, fields[0], fields[1], fields[2], job.result, ret);
+		hex(job.reply, sizeof(job.reply));
+		puts("\"}");
+	}
+	return ferror(stdout) ? -EIO : ret;
+}
+
 int main(int argc, char **argv)
 {
-	bool mib, wait;
+	bool mib, wait, query;
 	int directory, ret;
 
-	if (argc < 3 || (strcmp(argv[2], "status") && strcmp(argv[2], "mib") && strcmp(argv[2], "wait-link"))) {
+	if (argc < 3 || (strcmp(argv[2], "status") && strcmp(argv[2], "mib") &&
+	    strcmp(argv[2], "wait-link") && strcmp(argv[2], "get"))) {
 		fprintf(stderr, "Usage: %s <miniolt-sysfs-directory> status\n"
 			"       %s <miniolt-sysfs-directory> mib <hardware-ID> [interface=fttr0]\n"
+			"       %s <miniolt-sysfs-directory> get <hardware-ID> <class> <instance> <mask> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> wait-link <NI-sysfs-directory>\n",
-			argv[0], argv[0], argv[0]);
+			argv[0], argv[0], argv[0], argv[0]);
 		return 2;
 	}
 	mib = !strcmp(argv[2], "mib");
 	wait = !strcmp(argv[2], "wait-link");
-	if ((mib && argc != 4 && argc != 5) || (wait && argc != 4) || (!mib && !wait && argc != 3))
+	query = !strcmp(argv[2], "get");
+	if ((mib && argc != 4 && argc != 5) || (query && argc != 7 && argc != 8) ||
+	    (wait && argc != 4) || (!mib && !wait && !query && argc != 3))
 		return 2;
 	directory = open(argv[1], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (directory < 0) {
 		perror(argv[1]);
 		return 1;
 	}
-	if (mib) {
+	if (mib || query) {
 		char *end;
 		unsigned long id;
 
@@ -134,7 +187,25 @@ int main(int argc, char **argv)
 			close(directory);
 			return 2;
 		}
-		ret = scan(directory, id, argc == 5 ? argv[4] : "fttr0");
+		if (query) {
+			uint16_t fields[3];
+			unsigned int i;
+
+			for (i = 0; i < 3; i++) {
+				unsigned long value;
+
+				errno = 0;
+				value = strtoul(argv[4 + i], &end, 0);
+				if (errno || !*argv[4 + i] || *end || value > UINT16_MAX || (i == 2 && !value)) {
+					close(directory);
+					return 2;
+				}
+				fields[i] = value;
+			}
+			ret = get(directory, id, fields, argc == 8 ? argv[7] : "fttr0");
+		} else {
+			ret = scan(directory, id, argc == 5 ? argv[4] : "fttr0");
+		}
 	} else if (wait) {
 		int ni = open(argv[3], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 
