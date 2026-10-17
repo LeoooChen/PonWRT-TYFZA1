@@ -88,13 +88,15 @@ int run(unsigned int mode,int nway,unsigned int seed,int no_file,int no_clock,in
  configured=p6.configured;
  return ret;
 }
-int link_status(int configured,int clock,unsigned int pcs) {
- struct rtl_fttr_p6 p6={.ni=ni,.qx=qx,.configured=configured};
+int link_status(unsigned int mode,int configured,int clock,unsigned int pcs) {
+ struct rtl_fttr_p6 p6={.ni=ni,.qx=qx,.mode=mode,.configured=configured};
+ count=0;
  qx[0x58/4]=clock ? BIT(13) : 0;
  /* Model the status read independently of the configuration input seed. */
  qx[0x54/4]=pcs;
  return rtl_fttr_p6_link(&p6);
 }
+unsigned int link_register(void) { return qx[0x4c/4]&0xffff; }
 '''
 
 
@@ -152,9 +154,13 @@ def main():
         bad = b'broken'
         library.set_profile(bad,len(bad))
         assert library.run(9, True, 0, 0, 0, 0) == -22
-        for configured, clock, pcs, expected in [(1,1,0x110,1),(1,1,0x100,0),
-                                                 (1,0,0x110,0),(0,1,0x110,0)]:
-            assert library.link_status(configured,clock,pcs) == expected
+        for mode, good, wrong, reg in [(5,0x10,0x1000,0x3e),(9,0x1000,0x10,0xa0)]:
+            for configured, clock, pcs, expected in [(1,1,good,1),(1,1,wrong,0),
+                                                     (1,0,good,0),(0,1,good,0)]:
+                assert library.link_status(mode,configured,clock,pcs) == expected
+                if configured and clock:
+                    assert library.link_register() == reg
+                    assert ctypes.c_uint.in_dll(library,'count').value == 2
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps({'stock_sha256': hashlib.sha256(args.stock.read_bytes()).hexdigest(),
         'cases': cases, 'missing_or_invalid_profile_stops': True, 'clock_failure_stops_before_mac': True,

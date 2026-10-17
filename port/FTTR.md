@@ -103,6 +103,22 @@ It does not use the names of the original libraries as a capability probe.
   explicit repeat count. Real transport errors stop before further writes.
   The original wait rejects a ready mailbox on its 2000th read; native accepts
   that final ready read and returns `-ETIMEDOUT` only if all 2000 reads are busy.
+* ASIC core initialization follows the original `UMM1001M_regInit` IO order,
+  including its register reads, table clearing and final interrupt acknowledgement.
+  The original initializer clears DBA words `41000..410ff`, covering eight ONU
+  slots. The original profile API and MDIO engine address `41000..417ff` for
+  64 ONUs x eight T-CONTs x four words. Native initialization clears that whole
+  supported bank. The other original table boundaries, including `43ffe`, stay
+  as implemented by the original initializer. Global DBA grants use original
+  values 19440/38/38/10/10; individual T-CONT writes retain the original
+  intermediate word and fixed/assured/maximum programming order.
+* Corrected mode-specific PCS status: mode5 HSGMII uses page1/reg30 bit4;
+  mode9 USXGMII uses page5/reg0 bit12. Both host P6 and peer WTG retain the
+  original two status reads. The earlier implementation read page1/reg30 for
+  both modes, which was incorrect for USXGMII. These selectors/branches were
+  verified by executing the actual `onuinfo` caller, rather than its generic
+  SDK diagnostic function. P6 and peer sysfs status now expose their real link
+  bits for startup sequencing.
 * Native baseline MIB Upload / Upload Next transactions. Requests and class,
   instance, mask and command-count fields follow original builder/parser
   execution. High-priority transaction IDs use `8001..ffff`; three attempts
@@ -192,6 +208,16 @@ an invalid matching response, and verifies the three real timeout attempts.
 The CLI is executed against a temporary 64-row kernel-attribute fixture,
 including missing-attribute failure. This does not simulate optical ranging.
 Results are in `mib-comparison.json`.
+
+`scripts/test_fttr_core.py` executes original core/DBA/profile functions and
+the mode-specific PCS branch in `onuinfo` (`41906c..419324`) with explicit
+mode/status inputs. Core IO matches with zero/all-one register seeds, with
+1792 additional zero writes extending the DBA clear to all 64 supported slots.
+The check also covers original global DBA writes, profile addresses at IDs
+0/5/63, peer indirect IO and transport failures. `core-comparison.json` records
+the scope. Updated P6 checks require two reads at the correct selector and
+reject the other mode's status bit. ARM64 NI/control objects compile and the
+control modules link against the same-version real kernel export table.
 
 The executable links with the project's actual OpenWrt GCC 14.4.0/musl
 toolchain as `artifacts/fttr/fttrctl-musl`. The optional userspace and kernel

@@ -1235,9 +1235,9 @@ static ssize_t fttr_link_show(struct device *dev, struct device_attribute *attr,
 	ssize_t size;
 
 	rtnl_lock();
-	size = sysfs_emit(buf, "configured=%u mode=%u nway=%u clock=%u error=%d\n",
+	size = sysfs_emit(buf, "configured=%u mode=%u nway=%u clock=%u error=%d link=%u\n",
 			  p6->configured, p6->mode, p6->nway,
-			  !!(readl(p6->qx + 0x58) & BIT(13)), p6->error);
+			  !!(readl(p6->qx + 0x58) & BIT(13)), p6->error, rtl_fttr_p6_link(p6));
 	rtnl_unlock();
 	return size;
 }

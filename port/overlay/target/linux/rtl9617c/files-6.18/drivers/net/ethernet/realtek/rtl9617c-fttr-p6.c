@@ -110,9 +110,14 @@ void rtl_fttr_p6_stop(struct rtl_fttr_p6 *p6)
 
 bool rtl_fttr_p6_link(struct rtl_fttr_p6 *p6)
 {
-	/* Original __p6_sds_status_get: ck_rdy=QX58[13], link_ok=page1/reg30[4]. */
-	return p6->configured && (readl(p6->qx + 0x58) & BIT(13)) &&
-		(p6_ind_read(p6, 0x3e) & BIT(4));
+	unsigned int reg = p6->mode == 5 ? 0x3e : 0xa0;
+	unsigned int mask = p6->mode == 5 ? BIT(4) : BIT(12);
+
+	/* Original onuinfo checks page1/reg30 for mode5, page5/reg0 for mode9. */
+	if (!p6->configured || !(readl(p6->qx + 0x58) & BIT(13)))
+		return false;
+	p6_ind_read(p6, reg);
+	return !!(p6_ind_read(p6, reg) & mask);
 }
 
 int rtl_fttr_p6_configure(struct rtl_fttr_p6 *p6, unsigned int mode, bool nway)

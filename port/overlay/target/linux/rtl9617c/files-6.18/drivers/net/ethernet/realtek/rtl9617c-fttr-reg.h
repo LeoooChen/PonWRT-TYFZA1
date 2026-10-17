@@ -9,4 +9,14 @@ struct rtl_fttr_reg_io {
 	void (*delay)(void *context, unsigned int usec);
 };
 
+/* Original FPGA_reg_writeMasked writes even when the masked value is unchanged. */
+static inline int rtl_fttr_masked_write(const struct rtl_fttr_reg_io *io,
+		unsigned int reg, unsigned int mask, unsigned int value)
+{
+	unsigned int old;
+	int ret = io->read(io->context, reg, &old);
+
+	return ret ? ret : io->write(io->context, reg, (old & ~mask) | (value & mask));
+}
+
 #endif

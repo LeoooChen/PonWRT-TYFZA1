@@ -38,16 +38,6 @@ static inline int rtl_fttr_fields(const struct rtl_fttr_reg_io *io,
 	return 0;
 }
 
-/* FPGA_reg_writeMasked always writes, even if the masked value is unchanged. */
-static inline int rtl_fttr_masked_write(const struct rtl_fttr_reg_io *io,
-		unsigned int reg, unsigned int mask, unsigned int value)
-{
-	unsigned int old;
-	int ret = io->read(io->context, reg, &old);
-
-	return ret ? ret : io->write(io->context, reg, (old & ~mask) | (value & mask));
-}
-
 static inline int rtl_fttr_pll_wait(const struct rtl_fttr_reg_io *io,
 		unsigned int reg, unsigned int bit, unsigned int delay, unsigned int attempts)
 {
@@ -144,6 +134,24 @@ static inline int rtl_fttr_wtg_configure(const struct rtl_fttr_reg_io *io,
 	}
 	FTTR_SERDES_FIELD(0xc080f8, 3, 3, 1);
 	FTTR_SERDES_FIELD(0xc080f8, 1, 1, 1);
+	return 0;
+}
+
+static inline int rtl_fttr_wtg_link(const struct rtl_fttr_reg_io *io,
+				   unsigned int mode, unsigned int *link)
+{
+	unsigned int address = mode == 5 ? (1 << 21) | (30 << 16) : 5 << 21;
+	unsigned int value, i;
+	int ret;
+
+	for (i = 0; i < 2; i++) {
+		FTTR_SERDES_WRITE(0xc09000, address);
+		FTTR_SERDES_WRITE(0xc09004, 2);
+		ret = io->read(io->context, 0xc09000, &value);
+		if (ret)
+			return ret;
+	}
+	*link = !!(value & (mode == 5 ? BIT(4) : BIT(12)));
 	return 0;
 }
 

@@ -12,6 +12,7 @@
 #include <linux/regmap.h>
 
 #include "rtl9617c-fttr-mdio.h"
+#include "rtl9617c-fttr-core.h"
 #include "rtl9617c-fttr-i2c.h"
 #include "rtl9617c-fttr-omci.h"
 #include "rtl9617c-fttr-onu.h"
@@ -172,6 +173,53 @@ static ssize_t omci_link_store(struct device *dev, struct device_attribute *attr
 }
 static DEVICE_ATTR_RW(omci_link);
 
+static ssize_t core_init_store(struct device *dev, struct device_attribute *attr,
+			      const char *buf, size_t count)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	int ret;
+
+	if (!sysfs_streq(buf, "1"))
+		return -EINVAL;
+	mutex_lock(&fttr->control_lock);
+	ret = rtl_fttr_core_init(&fttr->reg_io);
+	mutex_unlock(&fttr->control_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_WO(core_init);
+
+static ssize_t dba_store(struct device *dev, struct device_attribute *attr,
+			 const char *buf, size_t count)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	int ret;
+
+	if (!sysfs_streq(buf, "1"))
+		return -EINVAL;
+	mutex_lock(&fttr->control_lock);
+	ret = rtl_fttr_dba_defaults(&fttr->reg_io);
+	mutex_unlock(&fttr->control_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_WO(dba);
+
+static ssize_t tcont_store(struct device *dev, struct device_attribute *attr,
+			   const char *buf, size_t count)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	unsigned int id, tcont, fixed, assured, maximum;
+	int ret;
+
+	if (sscanf(buf, "%u %u %u %u %u", &id, &tcont, &fixed, &assured, &maximum) != 5 ||
+	    id >= RTL_FTTR_ONUS || tcont > 7 || fixed > 0xffff || assured > 0xffff || maximum > 0xffff)
+		return -EINVAL;
+	mutex_lock(&fttr->control_lock);
+	ret = rtl_fttr_tcont_program(&fttr->reg_io, id, tcont, fixed, assured, maximum);
+	mutex_unlock(&fttr->control_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_WO(tcont);
+
 static ssize_t onu_table_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct rtl_fttr *fttr = dev_get_drvdata(dev);
@@ -278,14 +326,16 @@ static DEVICE_ATTR_WO(reset);
 static ssize_t host_serdes_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct rtl_fttr *fttr = dev_get_drvdata(dev);
-	unsigned int status;
+	unsigned int status, link = 0;
 	int ret;
 
 	mutex_lock(&fttr->control_lock);
 	ret = regmap_read(fttr->map, 0xc08008, &status);
+	if (!ret && fttr->host_mode)
+		ret = rtl_fttr_wtg_link(&fttr->reg_io, fttr->host_mode, &link);
 	if (!ret)
-		ret = sysfs_emit(buf, "mode=%u nway=%u pll=%u error=%d\n",
-			fttr->host_mode, fttr->host_nway, !!(status & BIT(6)), fttr->host_error);
+		ret = sysfs_emit(buf, "mode=%u nway=%u pll=%u error=%d link=%u\n",
+			fttr->host_mode, fttr->host_nway, !!(status & BIT(6)), fttr->host_error, link);
 	mutex_unlock(&fttr->control_lock);
 	return ret;
 }
@@ -362,6 +412,9 @@ static struct attribute *rtl_fttr_attrs[] = {
 	&dev_attr_onu_block.attr,
 	&dev_attr_ploam.attr,
 	&dev_attr_tx_enable.attr,
+	&dev_attr_core_init.attr,
+	&dev_attr_dba.attr,
+	&dev_attr_tcont.attr,
 	NULL,
 };
 
@@ -410,6 +463,9 @@ static int rtl_fttr_probe(struct mdio_device *mdio)
 		fttr->reset = devm_gpiod_get(dev, "reset", GPIOD_ASIS);
 		if (IS_ERR(fttr->reset))
 			return dev_err_probe(dev, PTR_ERR(fttr->reset), "MiniOLT reset GPIO\n");
+		ret = regmap_write(fttr->map, 0x20, 1);
+		if (ret)
+			return dev_err_probe(dev, ret, "MiniOLT initial TX disable failed\n");
 	}
 	dev_set_drvdata(dev, fttr);
 	fttr->reg_io = (struct rtl_fttr_reg_io) {
@@ -427,6 +483,20 @@ static int rtl_fttr_probe(struct mdio_device *mdio)
 	return devm_i2c_add_adapter(dev, &fttr->optical);
 }
 
+static void rtl_fttr_remove(struct mdio_device *mdio)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(&mdio->dev);
+	int ret;
+
+	if (fttr->backend != RTL_FTTR_ASIC9690)
+		return;
+	mutex_lock(&fttr->control_lock);
+	ret = regmap_write(fttr->map, 0x20, 1);
+	mutex_unlock(&fttr->control_lock);
+	if (ret)
+		dev_err(&mdio->dev, "MiniOLT TX disable on removal failed: %d\n", ret);
+}
+
 static const struct of_device_id rtl_fttr_match[] = {
 	{ .compatible = "realtek,tyfza1-miniolt" },
 	{ }
@@ -435,6 +505,7 @@ MODULE_DEVICE_TABLE(of, rtl_fttr_match);
 
 static struct mdio_driver rtl_fttr_driver = {
 	.probe = rtl_fttr_probe,
+	.remove = rtl_fttr_remove,
 	.mdiodrv.driver = {
 		.name = "tyfza1-miniolt",
 		.of_match_table = rtl_fttr_match,
