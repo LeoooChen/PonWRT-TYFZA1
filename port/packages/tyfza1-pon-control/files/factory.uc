@@ -58,6 +58,19 @@ function import_fttr_optical() {
 		save('tmp/tyfza1-factory/rtl9617c/fttr-bosa-calibration.bin', downstream);
 }
 
+function import_fttr_startup() {
+	unlink(output + '/tmp/tyfza1-factory/fttr_startup');
+	const enabled = optional_field(cs, 'FTTR_MASTER_PON_ENABLE');
+	if (enabled == '') return;
+	const mode = field(hs, 'EXTERNAL_VIRTUAL_RGMII_PORT_SERDES_MODE');
+	const nway = field(hs, 'EXTERNAL_VIRTUAL_RGMII_PORT_SERDES_NWAY');
+	const pon = field(cs, 'FTTR_MASTER_OLT_PON_SERDES_MODE');
+	if ((enabled != '0' && enabled != '1') || (mode != '5' && mode != '9') ||
+	    (nway != '0' && nway != '1') || (pon != '1' && pon != '2' && pon != '3'))
+		die('Unsupported factory FTTR startup modes');
+	save('tmp/tyfza1-factory/fttr_startup', enabled + ' ' + mode + ' ' + nway + ' ' + pon + '\n');
+}
+
 function import_radio(radio) {
 	unlink(output + '/tmp/tyfza1-factory/tyfza1/' + radio[0] + '/flash-calibration.bin');
 	let data = 'TYFC0003';
@@ -161,6 +174,12 @@ try {
 	import_fttr_optical();
 } catch (e) {
 	warn('Factory FTTR optical: ' + e.message + '\n');
+	failed = true;
+}
+try {
+	import_fttr_startup();
+} catch (e) {
+	warn('Factory FTTR startup: ' + e.message + '\n');
 	failed = true;
 }
 exit(failed ? 1 : 0);

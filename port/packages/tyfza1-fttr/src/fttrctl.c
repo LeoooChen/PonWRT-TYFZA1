@@ -8,6 +8,7 @@
 #include <string.h>
 #include <sys/file.h>
 #include <sys/random.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "miniolt.h"
@@ -96,19 +97,52 @@ static int scan(int directory, unsigned int id, const char *interface)
 	return ferror(stdout) ? -EIO : 0;
 }
 
+static int64_t monotonic_ms(void)
+{
+	struct timespec now;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	return (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
+}
+
+static int wait_link(int directory, int ni)
+{
+	const struct timespec settle = { .tv_nsec = 500000000 };
+	const struct timespec interval = { .tv_nsec = 20000000 };
+	/* Original caller waits 500 ms, then 200 ms after its extra initialization. */
+	int64_t deadline = monotonic_ms() + 700;
+	int ret;
+
+	if (nanosleep(&settle, NULL))
+		return -errno;
+	for (;;) {
+		ret = fttr_miniolt_links_ready(directory, ni);
+		if (ret < 0)
+			return ret;
+		if (ret)
+			return 0;
+		if (monotonic_ms() >= deadline)
+			return -ETIMEDOUT;
+		if (nanosleep(&interval, NULL))
+			return -errno;
+	}
+}
+
 int main(int argc, char **argv)
 {
-	bool mib;
+	bool mib, wait;
 	int directory, ret;
 
-	if (argc < 3 || (strcmp(argv[2], "status") && strcmp(argv[2], "mib"))) {
+	if (argc < 3 || (strcmp(argv[2], "status") && strcmp(argv[2], "mib") && strcmp(argv[2], "wait-link"))) {
 		fprintf(stderr, "Usage: %s <miniolt-sysfs-directory> status\n"
-			"       %s <miniolt-sysfs-directory> mib <hardware-ID> [interface=fttr0]\n",
-			argv[0], argv[0]);
+			"       %s <miniolt-sysfs-directory> mib <hardware-ID> [interface=fttr0]\n"
+			"       %s <miniolt-sysfs-directory> wait-link <NI-sysfs-directory>\n",
+			argv[0], argv[0], argv[0]);
 		return 2;
 	}
 	mib = !strcmp(argv[2], "mib");
-	if ((mib && argc != 4 && argc != 5) || (!mib && argc != 3))
+	wait = !strcmp(argv[2], "wait-link");
+	if ((mib && argc != 4 && argc != 5) || (wait && argc != 4) || (!mib && !wait && argc != 3))
 		return 2;
 	directory = open(argv[1], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (directory < 0) {
@@ -126,6 +160,15 @@ int main(int argc, char **argv)
 			return 2;
 		}
 		ret = scan(directory, id, argc == 5 ? argv[4] : "fttr0");
+	} else if (wait) {
+		int ni = open(argv[3], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+
+		if (ni < 0) {
+			ret = -errno;
+		} else {
+			ret = wait_link(directory, ni);
+			close(ni);
+		}
 	} else {
 		ret = status(directory);
 	}

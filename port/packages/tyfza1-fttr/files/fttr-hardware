@@ -1,0 +1,59 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+set -eu
+
+action=${1:?Usage: fttr-hardware start|stop MiniOLT-directory NI-directory [optical-directory host-mode nway pon-mode]}
+miniolt=${2:?Missing MiniOLT directory}
+ni=${3:?Missing NI directory}
+exec 9< "$miniolt"
+flock -n 9 || { echo 'FTTR MiniOLT is busy' >&2; exit 1; }
+
+read -r backend < "$miniolt/backend"
+if [ "$backend" != asic9690 ]; then
+	echo "FTTR hardware startup requires the implemented ASIC9690 path: $backend" >&2
+	exit 1
+fi
+
+case "$action" in
+stop)
+	printf '0\n' > "$miniolt/tx_enable"
+	ip link set dev fttr0 down
+	printf '0 0\n' > "$ni/fttr_link"
+	;;
+start)
+	optical=${4:?Missing optical directory}
+	mode=${5:?Missing host mode}
+	nway=${6:?Missing NWAY setting}
+	pon=${7:?Missing PON mode}
+	case "$mode:$nway:$pon" in [59]:[01]:[123]) ;; *) echo 'Unsupported FTTR startup modes' >&2; exit 1;; esac
+	echo 'FTTR hardware: disable TX and close P6'
+	printf '0\n' > "$miniolt/tx_enable"
+	ip link set dev fttr0 down
+	printf '0 0\n' > "$ni/fttr_link"
+	echo 'FTTR hardware: reset MiniOLT'
+	printf '1\n' > "$miniolt/reset"
+	echo 'FTTR hardware: apply this unit optical calibration'
+	printf '1\n' > "$optical/calibration"
+	echo 'FTTR hardware: configure peer WTG, host P6 and PON SerDes'
+	printf '%s %s\n' "$mode" "$nway" > "$miniolt/host_serdes"
+	printf '%s %s\n' "$mode" "$nway" > "$ni/fttr_link"
+	printf '%s\n' "$pon" > "$miniolt/pon_serdes"
+	echo 'FTTR hardware: wait for both host and peer PCS links'
+	fttrctl "$miniolt" wait-link "$ni"
+	echo 'FTTR hardware: initialize core tables, OMCI and DBA'
+	printf '1\n' > "$miniolt/core_init"
+	read -r address < /sys/class/net/fttr0/address
+	printf '%s\n' "$address" > "$miniolt/omci_link"
+	printf '1\n' > "$miniolt/dba"
+	calibration=$(cat "$optical/calibration")
+	if [ "$calibration" != 'configured=1 model=GN25L99 marker=b0 writes=128 error=0' ]; then
+		printf 'FTTR optical calibration is not ready: %s\n' "$calibration" >&2
+		exit 1
+	fi
+	ip link set dev fttr0 mtu 1982 up
+	echo 'FTTR hardware: enable optical TX'
+	printf '1\n' > "$miniolt/tx_enable"
+	echo 'FTTR hardware startup complete; ONU service provisioning is separate'
+	;;
+*) echo "Unknown FTTR hardware action: $action" >&2; exit 2;;
+esac

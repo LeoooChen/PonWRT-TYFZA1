@@ -13,5 +13,6 @@ struct fttr_onu_state {
 
 int fttr_miniolt_table(int directory, struct fttr_onu_state table[FTTR_ONUS]);
 int fttr_miniolt_link(int directory, struct fttr_omci_link *link);
+int fttr_miniolt_links_ready(int directory, int ni);
 
 #endif

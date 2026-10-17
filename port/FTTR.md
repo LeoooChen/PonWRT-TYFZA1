@@ -119,6 +119,17 @@ It does not use the names of the original libraries as a capability probe.
   verified by executing the actual `onuinfo` caller, rather than its generic
   SDK diagnostic function. P6 and peer sysfs status now expose their real link
   bits for startup sequencing.
+* Native ASIC hardware startup/stop service, ordered after factory import.
+  It consumes the unit's retained enable flag, external SerDes/NWAY and OLT
+  PON SerDes modes. No missing-mode default is invented. Startup disables TX,
+  closes P6, resets the MiniOLT, applies GN25L99 calibration, configures peer,
+  host and PON SerDes, waits for both PCS links, initializes core/OMCI/DBA,
+  verifies the current calibration marker, opens `fttr0`, and enables TX last.
+  The original 500 ms settle plus 200 ms additional link budget is retained;
+  native waits for status without repeating initialization. Stop disables TX
+  before closing the interface/P6. The control driver's probe/removal also
+  put ASIC TX into the disabled state. A device-directory lock serializes
+  startup/stop with explicit MIB operations.
 * Native baseline MIB Upload / Upload Next transactions. Requests and class,
   instance, mask and command-count fields follow original builder/parser
   execution. High-priority transaction IDs use `8001..ffff`; three attempts
@@ -219,6 +230,17 @@ the scope. Updated P6 checks require two reads at the correct selector and
 reject the other mode's status bit. ARM64 NI/control objects compile and the
 control modules link against the same-version real kernel export table.
 
+`scripts/test_fttr_startup.py` runs the real factory importer against a temporary
+copy of the retained config and verifies the four startup fields plus removal
+of a stale runtime file when the fields disappear. It executes the actual
+hardware-start script and native `wait-link` command against temporary files
+with modeled hardware status. Command order, single initialization, successful
+start/stop, PCS timeout, lost calibration marker, TX remaining disabled on
+failure and command locking are checked. The one netdev-address input path
+is redirected to the fixture; no real network/device commands are issued.
+Results are in `startup-comparison.json`. Hardware electrical behavior remains
+unverified.
+
 The executable links with the project's actual OpenWrt GCC 14.4.0/musl
 toolchain as `artifacts/fttr/fttrctl-musl`. The optional userspace and kernel
 package definitions parse successfully with the pinned OpenWrt make includes.
@@ -227,6 +249,10 @@ existing same-version 6.18.55 kernel's real export table, without unresolved
 symbols. `CONFIG_MODULE_STRIPPED=y` removes descriptions and produces the
 existing modpost description warnings; both sources contain their description.
 This checks module dependencies, not a rebuilt firmware's ABI or live loading.
+The real OpenWrt package prepare/compile/install recipes also run in an isolated
+stage with the project's musl toolchain and original SerDes source directory.
+`package-root/` contains the executable, hardware helper, init script and both
+generated profile files; `package-stage.log` records the recipe output.
 
 To load a development image, first merge `port/configs/tyfza1-fttr.config` into
 its kernel configuration, then select the matching development DT. On the
@@ -237,33 +263,33 @@ bind the previously failed MiniOLT MDIO device through the standard driver's
   Optical calibration import now runs independently of upstream BOSA import;
   absent downstream data removes any previous runtime copy.
 
-Generate the two development P6 firmware files with
-`tools/prepare_fttr_serdes.py <original-rootfs>/etc/serdes <output>` and copy the
-resulting `.bin` files into the development root's `/lib/firmware/realtek/rtl9617c/`.
+When building the optional package, set `TYFZA1_PROJECT` to this worktree and
+`TYFZA1_FTTR_SERDES_SOURCE` to the matching original root's `/etc/serdes`.
+Its prepare/install recipes convert and include both development P6 profiles.
 The converter follows the confirmed revision-C file selection and preserves
-all original row values/delays. The original profile payloads stay outside Git.
+all original row values/delays. Original profile payloads stay outside Git.
+The standalone converter remains `tools/prepare_fttr_serdes.py`.
 The NI platform device's `fttr_link` sysfs attribute accepts `9 1` for the
 confirmed 9690 sample, or `5 <original-nway>` for the FPGA sample. `0 0` stops
 P6. The attribute reports configured mode, physical clock and actual error.
 After successful P6 configuration, `fttr0` can be opened as an Ethernet device.
-These are development controls; automatic full FTTR startup is still pending.
+These remain development controls; the packaged hardware service uses them.
 
 On the confirmed ASIC sample, the MiniOLT MDIO device additionally exposes
 root-writable `reset`, `host_serdes` and `pon_serdes`. The original ordered
-sequence is: write `1` to `reset`, apply GN25L99 calibration, write `9 1` to
-`host_serdes`, configure NI `fttr_link` with `9 1`, then write `3` to
-`pon_serdes`. Host mode 5 accepts the matching NWAY setting; PON accepts the
-original explicit modes 1/2/3. The attributes show actual PLL lock bits and
-the last configuration error. They do not report ONU registration or service
-readiness. The FPGA backend does not expose these ASIC controls.
+SerDes inputs are: `9 1` for `host_serdes`/NI `fttr_link`, and `3` for
+`pon_serdes`, as selected by the retained sample config. Host mode 5 accepts
+the matching NWAY setting; PON accepts original modes 1/2/3. Status shows
+actual clock/PLL and mode-specific PCS bits plus the last configuration error.
+These are hardware states, not ONU/service readiness. The FPGA backend does
+not expose these ASIC controls.
 
 After this sequence, write `fttr0`'s actual unicast MAC address to the ASIC
 MDIO device's `omci_link` attribute and read it back. The attribute reports
 the hardware envelope configuration; the controller uses the reported
 EtherType, MAC pair and downstream-length flag. `omci-wire.c` and
 `omci-socket.c` under `port/packages/tyfza1-fttr/src/` supply the native frame
-and socket interfaces. Automatic startup and service provisioning are still
-pending. Keep `fttr0` MTU at 1982 when using long control
+and socket interfaces. Keep `fttr0` MTU at 1982 when using long control
 frames; the current transport rejects Ethernet frames over 1996 bytes.
 
 The ASIC `onu_table` attribute emits 64 rows with columns
@@ -274,6 +300,10 @@ words, decimal zero-based IDs). `onu_block` accepts `<ID> <0|1>`;
 enabled writes 0, disabled writes 1. This is an explicit command, not an
 optical-power or laser-readiness measurement. Initialization still leaves
 TX disabled until the controller completes its startup sequence.
+`core_init` accepts `1` for the ASIC register/table initialization, `dba`
+accepts `1` for the original global grants, and `tcont` accepts
+`<hardware-ID> <slot:0..7> <fixed> <assured> <maximum>` in original hardware
+grant units. These low-level controls do not allocate a subordinate's OMCI MEs.
 
 `port/configs/tyfza1-fttr-packages.config` is the optional OpenWrt package
 selection fragment. `sync-overlay.sh` copies the package, and the target's
@@ -281,6 +311,15 @@ selection fragment. `sync-overlay.sh` copies the package, and the target's
 package selection and production FIT DT selection stay unchanged. The image
 recipe now also offers `fttr-asic.dtb` / `fttr-2p5g.dtb` development artifacts;
 their FPGA loader package/startup is still pending.
+
+The retained settings are independently imported into
+`/tmp/tyfza1-factory/fttr_startup`; credentials are not part of this file.
+The `tyfza1-fttr` init script uses START=26 and honors its enable flag.
+It locates the bound MiniOLT and its own GN25L99 child, then invokes
+`fttr-hardware`. Manual hardware control is available through
+`/etc/init.d/tyfza1-fttr start` / `stop`. This starts the ASIC hardware path;
+automatic ONU authentication/management grants/service provisioning remains
+separate work. The FPGA hardware startup path is still incomplete.
 
 After the development hardware sequence and actual `fttr0` setup, use:
 
@@ -294,6 +333,10 @@ fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> mib <hardware-ID> fttr0
 and streams JSON records. An error exits nonzero without a `mib_complete`
 record. This is an explicit MIB inventory operation; authentication policy,
 attribute interpretation and automatic service/roaming management remain work.
+The command does not assign management-bandwidth profiles. Original evidence
+for the registration policy includes `onuinfo`'s default T-CONT profile setup
+at `419a30` and its status callback's `SetOnuTcontDba` call at `415f7c`; that
+policy still needs a native implementation before automatic MIB/service startup.
 
 Original hashes and detailed results are emitted under `artifacts/fttr/`.
 Original binaries and the kernel build tree are read from the private evidence
@@ -325,8 +368,8 @@ the peer MiniOLT's separate WTG/PON initialization is also implemented.
 2. Optical identification for the other sample, plus real GN25L99 calibration
    and optical readiness verification. The native sequence is implemented.
 3. Real P6/FTTR frame verification. Native SoC P6, ASIC peer WTG/PON SerDes,
-   and the dedicated RX/TX endpoint are implemented; full startup orchestration
-   and OLT registration configuration remain pending.
+   the dedicated RX/TX endpoint, core/DBA and ASIC hardware startup orchestration
+   are implemented. OLT registration configuration remains pending.
 4. OLT-side discovery/registration, authentication, OMCI, T-CONT/GEM/DBA and
    VLAN/service provisioning. The native MiniOLT OMCI framing/transport
    foundation and baseline MIB inventory transactions are implemented. Automatic

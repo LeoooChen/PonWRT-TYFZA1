@@ -71,3 +71,26 @@ int fttr_miniolt_link(int directory, struct fttr_omci_link *link)
 	fclose(file);
 	return ret;
 }
+
+int fttr_miniolt_links_ready(int directory, int ni)
+{
+	FILE *file = attribute(directory, "host_serdes");
+	unsigned int peer_clock, peer_link, host_clock, host_link;
+	int error, fields, ret;
+
+	if (!file)
+		return -errno;
+	fields = fscanf(file, "mode=%*u nway=%*u pll=%u error=%d link=%u", &peer_clock, &error, &peer_link);
+	ret = fields == 3 ? error : ferror(file) ? -errno : -EPROTO;
+	fclose(file);
+	if (ret)
+		return ret;
+	file = attribute(ni, "fttr_link");
+	if (!file)
+		return -errno;
+	fields = fscanf(file, "configured=%*u mode=%*u nway=%*u clock=%u error=%d link=%u",
+			&host_clock, &error, &host_link);
+	ret = fields == 3 ? error : ferror(file) ? -errno : -EPROTO;
+	fclose(file);
+	return ret ? ret : !!(peer_clock && peer_link && host_clock && host_link);
+}

@@ -1,0 +1,36 @@
+#!/bin/sh /etc/rc.common
+# SPDX-License-Identifier: GPL-2.0-only
+START=26
+STOP=89
+
+miniolt_device() {
+	local candidate
+	for candidate in /sys/bus/mdio_bus/devices/*; do
+		[ -r "$candidate/backend" ] || continue
+		miniolt=$candidate
+		return 0
+	done
+	echo 'FTTR: native MiniOLT device is not bound' >&2
+	return 1
+}
+
+start() {
+	local enabled mode nway pon miniolt optical
+	read -r enabled mode nway pon < /tmp/tyfza1-factory/fttr_startup || return $?
+	[ "$enabled" = 1 ] || return 0
+	miniolt_device || return $?
+	for optical in "$miniolt"/i2c-*/*-0068; do
+		[ -w "$optical/calibration" ] || continue
+		/usr/sbin/fttr-hardware start "$miniolt" /sys/class/net/fttr0/device \
+			"$optical" "$mode" "$nway" "$pon"
+		return $?
+	done
+	echo 'FTTR: downstream optical calibration client is not bound' >&2
+	return 1
+}
+
+stop() {
+	local miniolt
+	miniolt_device || return $?
+	/usr/sbin/fttr-hardware stop "$miniolt" /sys/class/net/fttr0/device
+}

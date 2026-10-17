@@ -7,16 +7,22 @@ PKG_LICENSE:=GPL-2.0-only
 
 include $(INCLUDE_DIR)/package.mk
 
+TYFZA1_PROJECT ?= $(abspath $(TOPDIR)/../..)
+
 define Package/tyfza1-fttr
   SECTION:=net
   CATEGORY:=Network
   TITLE:=TYFZA1 native FTTR control
-  DEPENDS:=@TARGET_rtl9617c +kmod-tyfza1-fttr
+  DEPENDS:=@TARGET_rtl9617c +kmod-tyfza1-fttr +tyfza1-pon-control +ip-tiny +flock
 endef
 
 define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) ./src/* $(PKG_BUILD_DIR)/
+	@test -n "$(TYFZA1_FTTR_SERDES_SOURCE)" || { \
+		echo "Set TYFZA1_FTTR_SERDES_SOURCE to this firmware's original /etc/serdes directory" >&2; exit 1; }
+	python3 $(TYFZA1_PROJECT)/tools/prepare_fttr_serdes.py \
+		"$(TYFZA1_FTTR_SERDES_SOURCE)" $(PKG_BUILD_DIR)/firmware
 endef
 
 define Build/Compile
@@ -29,6 +35,10 @@ endef
 define Package/tyfza1-fttr/install
 	$(INSTALL_DIR) $(1)/usr/sbin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/fttrctl $(1)/usr/sbin/fttrctl
+	$(INSTALL_BIN) ./files/fttr-hardware $(1)/usr/sbin/fttr-hardware
+	$(INSTALL_DIR) $(1)/etc/init.d $(1)/lib/firmware/realtek/rtl9617c
+	$(INSTALL_BIN) ./files/tyfza1-fttr.init $(1)/etc/init.d/tyfza1-fttr
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/firmware/*.bin $(1)/lib/firmware/realtek/rtl9617c/
 endef
 
 $(eval $(call BuildPackage,tyfza1-fttr))
