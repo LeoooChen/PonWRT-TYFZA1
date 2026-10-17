@@ -10,14 +10,18 @@ var modes = {
 
 function value(v) { return v == null || v === '' ? '—' : String(v); }
 function flag(v) { return v === '1' || v === 1 || v === true; }
-function badge(text, tone) { return E('span', { class: 'tyf-badge tyf-' + (tone || 'muted') }, text); }
+function badge(text, tone) { return E('span', { class: 'tyf-badge tyf-' + (tone || 'muted') }, [text]); }
 function rows(items) {
 	return E('dl', { class: 'tyf-facts' }, items.reduce(function(nodes, item) {
-		return nodes.concat([E('dt', {}, item[0]), E('dd', {}, item[1] == null ? '—' : item[1])]);
+		return nodes.concat([E('dt', {}, [item[0]]), E('dd', {}, [item[1] == null ? '—' : item[1]])]);
 	}, []));
 }
 function card(title, state, content) {
-	return E('section', { class: 'tyf-card' }, [E('div', { class: 'tyf-card-head' }, [E('h3', {}, title), state]), content]);
+	return E('section', { class: 'tyf-card' }, [E('div', { class: 'tyf-card-head' }, [E('h3', {}, [title]), state])].concat(content == null ? [] : content));
+}
+function omciLive(data) {
+	var omci = data.omci, path = data.data_path || {};
+	return !!(omci && omci.live && (omci.session == null || path.session == null || String(omci.session) === String(path.session)));
 }
 function ponState(data) {
 	var serdes = data.serdes || {}, mac = data.mac || {}, mpcp = data.mpcp || {};
@@ -38,12 +42,14 @@ function ponState(data) {
 		return { text: '未启用', tone: 'muted' };
 	if (/^(gpon|xgpon|xgspon)$/.test(serdes.mode)) {
 		var businessError = ['data_path', 'omci'].find(function(name) {
-			return data[name] && (name !== 'omci' || data.omci.live) && data[name].error != null && +data[name].error !== 0;
+			return data[name] && (name !== 'omci' || omciLive(data)) && data[name].error != null && +data[name].error !== 0;
 		});
 		if (businessError)
 			return { text: '业务配置异常', tone: 'danger', help: businessError + ' 错误码：' + data[businessError].error + '。请查看高级诊断。' };
-		if (!data.omci || !data.omci.live)
+		if (!omciLive(data))
 			return { text: 'OMCI 状态不可用', tone: 'danger', help: '未取得存活控制进程的最新状态；历史数据保留在高级诊断中，请检查系统日志。' };
+		if (+data.omci.auth > 1)
+			return { text: '认证未通过', tone: 'danger', help: 'OLT 返回 LOID 认证状态码：' + data.omci.auth + '。请核对运营商认证参数。' };
 		return mac.activation === 'O5' && flag(mac.prepared)
 			? flag((data.data_path || {}).configured)
 				? { text: '已激活 · 业务已配置', tone: 'good' }
@@ -89,7 +95,7 @@ function offloadCard(data) {
 
 return baseclass.extend({
 	modes: modes, value: value, badge: badge, rows: rows, card: card,
-	ponState: ponState, ponCard: ponCard, offloadCard: offloadCard,
+	omciLive: omciLive, ponState: ponState, ponCard: ponCard, offloadCard: offloadCard,
 	style: function() { return E('link', { rel: 'stylesheet', href: L.resource('tyfza1/status.css') }); },
 	callStatus: callStatus
 });

@@ -88,6 +88,10 @@ const methods = {
 			const now_ms = +split(trim(readfile('/proc/uptime')), ' ')[0] * 1000;
 			const data_path = readfile(device + 'data_path');
 			return {
+				identity: {
+					onu_mac: read_value(device + 'onu_mac'),
+					serial_number: read_value(device + 'active_serial_number')
+				},
 				service: fields(readfile('/var/run/pon-service')),
 				activation: fields(readfile(device + 'activation')),
 				data_path: fields(data_path == null ? null : split(data_path, '\n')[0]),

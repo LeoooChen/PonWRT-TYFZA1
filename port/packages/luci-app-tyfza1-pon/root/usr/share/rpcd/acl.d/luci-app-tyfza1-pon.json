@@ -4,6 +4,7 @@
     "read": {
       "ubus": {
         "luci.tyfza1-pon": ["status"],
+        "system": ["board"],
         "luci-rpc": ["getBoardJSON", "getHostHints", "getNetworkDevices", "getWirelessDevices"],
         "network": ["get_proto_handlers"],
         "network.device": ["status"],
@@ -12,7 +13,7 @@
       "uci": ["pon", "firewall", "network", "wireless", "luci"]
     },
     "write": {
-      "uci": ["pon", "firewall"]
+      "uci": ["pon", "firewall", "network"]
     }
   }
 }

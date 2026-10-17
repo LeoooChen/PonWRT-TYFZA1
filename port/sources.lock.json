@@ -30,5 +30,9 @@
   "uboot_tools": {
     "version": "2026.07",
     "sha256": "78e8bfc382fe388f9b55aa1daf8c563522a037779b5d4c349d1415e381f1243e"
+  },
+  "luci_theme_argon": {
+    "url": "https://github.com/jerrykuku/luci-theme-argon.git",
+    "commit": "539e3e1db56b2348c3655615540e45638b797c73"
   }
 }

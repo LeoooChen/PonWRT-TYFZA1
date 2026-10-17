@@ -1,0 +1,11 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+[ "$(uci -q get luci.main.tyfza1_argon_migrated)" = 1 ] && exit 0
+[ -f /www/luci-static/argon/css/cascade.css ] || exit 1
+uci batch <<'EOF'
+set luci.themes.Argon='/luci-static/argon'
+set luci.main.mediaurlbase='/luci-static/argon'
+set luci.main.tyfza1_argon_migrated='1'
+commit luci
+EOF

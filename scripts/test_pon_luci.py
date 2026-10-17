@@ -14,6 +14,8 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
     device = d / "sys/bus/platform/devices/4f5500000.pon"
     device.mkdir(parents=True)
     samples = {
+        "onu_mac": "02:00:00:00:00:01\n",
+        "active_serial_number": "414243441234abcd\n",
         "state": "family=epon signal_loss=1 pcs10g_sync=0 pcs1g_sync=0 registered_llids=00000000\n",
         "serdes": "mode=epon-d10g configured=1 error=0 rx_los=1\n",
         "bosa": "configured=0 model=205 eeprom=0 writes=599 error=-6 identity=47/39/37\n",
@@ -57,6 +59,7 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
                        source.replace("return { 'luci.tyfza1-pon': methods };",
                                       "print(sprintf('%J', methods.status.call()));"))
     observed = json.loads(subprocess.check_output([str(ucode), str(program)], text=True))
+    assert observed['identity'] == {'onu_mac': '02:00:00:00:00:01', 'serial_number': '414243441234abcd'}
     assert [p['device'] for p in observed['ports']] == ['lan1', 'lan2', 'lan3', 'lan4', 'lan5', 'pon0']
     assert observed["serdes"]["rx_los"] == "1"
     assert observed["mpcp"]["registered"] == "00000000"
@@ -116,6 +119,7 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
     assert absent['fe'] is None
     assert absent['oam_ports'] == []
     assert absent['omci'] is None and absent['data_path_raw'] is None
+    assert absent['identity'] == {'onu_mac': None, 'serial_number': None}
 (root / "logs/pon-luci-status-test.json").write_text(json.dumps({"actual_rpcd_source_executed": True,
     "observed_zero_and_error_fields_preserved": True, "missing_device_is_null": True,
     "OAM_live_process_identity_checked": True, "stale_auth_result_hidden": True,

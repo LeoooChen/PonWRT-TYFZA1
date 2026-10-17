@@ -31,6 +31,12 @@ if ! grep -Fq 'regulatory.db.p7s' package/firmware/wireless-regdb/Makefile; then
     REGDB_PATCHED=1
 fi
 make defconfig
+for package in luci-app-tyfza1-pon luci-theme-argon luci-i18n-argon-config-zh-cn; do
+    grep -qx "CONFIG_PACKAGE_$package=y" .config || {
+        echo "Required ONU UI package missing after defconfig: $package" >&2
+        exit 1
+    }
+done
 if [ "$REGDB_PATCHED" = 1 ]; then
     make package/firmware/wireless-regdb/clean
 fi
