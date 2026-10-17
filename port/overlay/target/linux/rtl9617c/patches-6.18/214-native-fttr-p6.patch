@@ -1,0 +1,15 @@
+--- a/drivers/net/ethernet/realtek/Makefile
++++ b/drivers/net/ethernet/realtek/Makefile
+@@ -7,3 +7,3 @@
+ obj-$(CONFIG_RTL9617C_XRAM_ETH) += rtl9617c-eth.o
+-rtl9617c-eth-y := rtl9617c-xram.o rtl9617c-dma.o rtl9617c-qm.o rtl9617c-fe.o rtl9617c-wifi.o
++rtl9617c-eth-y := rtl9617c-xram.o rtl9617c-dma.o rtl9617c-qm.o rtl9617c-fe.o rtl9617c-wifi.o rtl9617c-fttr-p6.o
+ #
+--- a/drivers/net/ethernet/realtek/Kconfig
++++ b/drivers/net/ethernet/realtek/Kconfig
+@@ -26,4 +26,5 @@
+ 	depends on OF && ARCH_RTL9617C && PHYLIB
+ 	select CRC32
++	select FW_LOADER
+ 	select NETFILTER
+ 	select NETFILTER_INGRESS

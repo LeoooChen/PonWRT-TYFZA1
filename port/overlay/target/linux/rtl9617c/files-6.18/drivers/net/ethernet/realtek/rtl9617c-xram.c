@@ -25,6 +25,7 @@
 #include <linux/rtnetlink.h>
 #include <linux/unaligned.h>
 #include <linux/tyfza1-led.h>
+#include <linux/workqueue.h>
 
 #include "rtl9617c-xram-format.h"
 #include "rtl9617c-dma.h"
@@ -32,6 +33,7 @@
 #include "rtl9617c-ni.h"
 #include <linux/rtl9617c-wifi.h>
 #include "rtl9617c-fe.h"
+#include "rtl9617c-fttr-p6.h"
 
 #define GLB_STATIC 0xa01c
 #define PORT_TO_CPU GENMASK(3, 0)
@@ -61,6 +63,12 @@ struct rtl_xram;
 struct rtl_lan {
 	struct rtl_xram *shared;
 	unsigned int port;
+};
+
+struct rtl_fttr_port {
+	struct rtl9617c_ni_endpoint endpoint;
+	struct rtl_xram *shared;
+	struct delayed_work link_work;
 };
 
 struct rtl_xram {
@@ -93,6 +101,8 @@ struct rtl_xram {
 	bool irq_requested;
 	unsigned int engine_users;
 	struct rtl_fe *fe;
+	struct rtl_fttr_p6 p6;
+	struct net_device *fttr;
 	bool removing;
 };
 
@@ -327,6 +337,9 @@ static enum hrtimer_restart rtl_timer(struct hrtimer *timer)
 		endpoint = rcu_dereference(priv->qm.pon);
 		if (endpoint && rtl_dma_tx_available(&priv->dma))
 			endpoint->wake(endpoint);
+		endpoint = rcu_dereference(priv->qm.fttr);
+		if (endpoint && rtl_dma_tx_available(&priv->dma))
+			endpoint->wake(endpoint);
 		rcu_read_unlock();
 		if (rtl_dma_tx_available(&priv->dma)) {
 			unsigned int port;
@@ -429,6 +442,10 @@ static int rtl_engine_start(struct rtl_xram *priv)
 				rtl_update(priv, 0x2300, BIT(31) | BIT(port), BIT(31) | BIT(port));
 				rtl_update(priv, 0x2304 + 12 * port, 0xff, 0xff);
 			}
+		if (priv->fttr) {
+			rtl_update(priv, 0x2304 + 12 * 6, 0xff, 0xff);
+			rtl_update(priv, 0x2300, BIT(6), priv->p6.configured ? BIT(6) : 0);
+		}
 		ret = rtl_dma_tx_start(&priv->dma);
 		if (ret)
 			return ret;
@@ -594,6 +611,138 @@ void rtl9617c_ni_close(struct device *dev, struct net_device *owner)
 	rtl_engine_put(priv);
 }
 EXPORT_SYMBOL_GPL(rtl9617c_ni_close);
+
+static void rtl_fttr_link_work(struct work_struct *work)
+{
+	struct rtl_fttr_port *port = container_of(to_delayed_work(work),
+						struct rtl_fttr_port, link_work);
+	struct net_device *dev = port->endpoint.netdev;
+
+	if (rtnl_trylock()) {
+		if (rtl_fttr_p6_link(&port->shared->p6))
+			netif_carrier_on(dev);
+		else
+			netif_carrier_off(dev);
+		rtnl_unlock();
+	}
+	if (netif_running(dev))
+		schedule_delayed_work(&port->link_work, HZ);
+}
+
+static int rtl_fttr_open(struct net_device *dev)
+{
+	struct rtl_fttr_port *port = netdev_priv(dev);
+	int ret;
+
+	if (!port->shared->p6.configured)
+		return -ENETDOWN;
+	ret = rtl_engine_get(port->shared);
+	if (ret)
+		return ret;
+	netif_start_queue(dev);
+	schedule_delayed_work(&port->link_work, 0);
+	return 0;
+}
+
+static int rtl_fttr_stop(struct net_device *dev)
+{
+	struct rtl_fttr_port *port = netdev_priv(dev);
+
+	netif_stop_queue(dev);
+	cancel_delayed_work_sync(&port->link_work);
+	netif_carrier_off(dev);
+	rtl9617c_ni_close(port->shared->p6.dev, dev);
+	return 0;
+}
+
+static netdev_tx_t rtl_fttr_xmit(struct sk_buff *skb, struct net_device *dev)
+{
+	struct rtl_fttr_port *port = netdev_priv(dev);
+	const struct rtl9617c_ni_frame frame = {
+		.header_high = BIT(13),
+		.header_low = (16 << 9) | (6 << 3) | BIT(29),
+	};
+
+	return rtl9617c_ni_transmit(port->shared->p6.dev, dev, skb, &frame);
+}
+
+static void rtl_fttr_receive(struct rtl9617c_ni_endpoint *endpoint, struct napi_struct *napi,
+			     struct sk_buff *skb, unsigned int source)
+{
+	struct rtl_fttr_port *port = container_of(endpoint, struct rtl_fttr_port, endpoint);
+	struct net_device *dev = endpoint->netdev;
+
+	if (!netif_running(dev) || !READ_ONCE(port->shared->p6.configured) || skb->len < ETH_HLEN) {
+		dev->stats.rx_dropped++;
+		dev_kfree_skb_any(skb);
+		return;
+	}
+	dev->stats.rx_packets++;
+	dev->stats.rx_bytes += skb->len;
+	skb->protocol = eth_type_trans(skb, dev);
+	napi_gro_receive(napi, skb);
+}
+
+static void rtl_fttr_wake(struct rtl9617c_ni_endpoint *endpoint)
+{
+	struct rtl_fttr_port *port = container_of(endpoint, struct rtl_fttr_port, endpoint);
+
+	if (READ_ONCE(port->shared->p6.configured) && netif_running(endpoint->netdev) &&
+	    netif_queue_stopped(endpoint->netdev))
+		netif_wake_queue(endpoint->netdev);
+}
+
+static const struct net_device_ops rtl_fttr_netdev_ops = {
+	.ndo_open = rtl_fttr_open,
+	.ndo_stop = rtl_fttr_stop,
+	.ndo_start_xmit = rtl_fttr_xmit,
+	.ndo_set_mac_address = eth_mac_addr,
+	.ndo_validate_addr = eth_validate_addr,
+};
+
+static int rtl_register_fttr(struct rtl_xram *priv)
+{
+	struct net_device *dev;
+	struct rtl_fttr_port *port;
+	int ret;
+
+	if (!priv->p6.qx)
+		return 0;
+	dev = alloc_etherdev(sizeof(*port));
+	if (!dev)
+		return -ENOMEM;
+	port = netdev_priv(dev);
+	port->shared = priv;
+	port->endpoint = (struct rtl9617c_ni_endpoint) {
+		.netdev = dev, .receive = rtl_fttr_receive, .wake = rtl_fttr_wake,
+	};
+	INIT_DELAYED_WORK(&port->link_work, rtl_fttr_link_work);
+	SET_NETDEV_DEV(dev, priv->p6.dev);
+	strscpy(dev->name, "fttr0", sizeof(dev->name));
+	dev->netdev_ops = &rtl_fttr_netdev_ops;
+	dev->max_mtu = ETH_DATA_LEN;
+	eth_hw_addr_set(dev, priv->netdev->dev_addr);
+	netif_carrier_off(dev);
+	ret = register_netdev(dev);
+	if (ret) {
+		free_netdev(dev);
+		return ret;
+	}
+	priv->fttr = dev;
+	rcu_assign_pointer(priv->qm.fttr, &port->endpoint);
+	return 0;
+}
+
+static void rtl_unregister_fttr(struct rtl_xram *priv)
+{
+	if (!priv->fttr)
+		return;
+	unregister_netdev(priv->fttr);
+	rcu_assign_pointer(priv->qm.fttr, NULL);
+	synchronize_net();
+	free_netdev(priv->fttr);
+	priv->fttr = NULL;
+}
 
 netdev_tx_t rtl9617c_ni_transmit(struct device *dev, struct net_device *owner,
 			       struct sk_buff *skb, const struct rtl9617c_ni_frame *frame)
@@ -1078,6 +1227,50 @@ static ssize_t rx_bypass_store(struct device *dev, struct device_attribute *attr
 }
 static DEVICE_ATTR_RW(rx_bypass);
 
+static ssize_t fttr_link_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	struct rtl_fttr_p6 *p6 = &priv->p6;
+	ssize_t size;
+
+	rtnl_lock();
+	size = sysfs_emit(buf, "configured=%u mode=%u nway=%u clock=%u error=%d\n",
+			  p6->configured, p6->mode, p6->nway,
+			  !!(readl(p6->qx + 0x58) & BIT(13)), p6->error);
+	rtnl_unlock();
+	return size;
+}
+
+static ssize_t fttr_link_store(struct device *dev, struct device_attribute *attr,
+			       const char *buf, size_t count)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	unsigned int mode, nway;
+	int ret;
+
+	if (sscanf(buf, "%u %u", &mode, &nway) != 2 || nway > 1)
+		return -EINVAL;
+	if (mode && mode != 5 && mode != 9)
+		return -EOPNOTSUPP;
+	rtnl_lock();
+	if (priv->fttr && netif_running(priv->fttr)) {
+		netif_tx_disable(priv->fttr);
+		netif_carrier_off(priv->fttr);
+	}
+	if (!mode) {
+		rtl_fttr_p6_stop(&priv->p6);
+		priv->p6.error = 0;
+		ret = 0;
+	} else {
+		ret = rtl_fttr_p6_configure(&priv->p6, mode, nway);
+	}
+	if (priv->fttr && netif_running(priv->fttr) && !ret && mode)
+		netif_wake_queue(priv->fttr);
+	rtnl_unlock();
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_RW(fttr_link);
+
 static struct attribute *rtl_native_attrs[] = {
 	&dev_attr_xram_state.attr,
 	&dev_attr_dma_state.attr,
@@ -1091,12 +1284,15 @@ static struct attribute *rtl_native_attrs[] = {
 	&dev_attr_qm_es.attr,
 	&dev_attr_qm_buffer.attr,
 	&dev_attr_rx_bypass.attr,
+	&dev_attr_fttr_link.attr,
 	NULL,
 };
 static umode_t rtl_native_visible(struct kobject *kobj, struct attribute *attr, int index)
 {
 	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(kobj_to_dev(kobj)));
 
+	if (attr == &dev_attr_fttr_link.attr && !priv->p6.qx)
+		return 0;
 	if (!priv->qm_rx &&
 	    (attr == &dev_attr_qm_pool.attr || attr == &dev_attr_pon_deepq.attr || attr == &dev_attr_qm_trace.attr ||
 	     attr == &dev_attr_qm_wait.attr || attr == &dev_attr_qm_es.attr ||
@@ -1138,6 +1334,9 @@ static int rtl_probe(struct platform_device *pdev)
 		ret = IS_ERR(priv->ni) ? PTR_ERR(priv->ni) : PTR_ERR(priv->xram);
 		goto free_netdev;
 	}
+	ret = rtl_fttr_p6_init(pdev, &priv->p6, priv->ni);
+	if (ret)
+		goto free_netdev;
 	ret = of_property_read_u32(dev->of_node, "realtek,port", &priv->port);
 	if (ret)
 		goto free_netdev;
@@ -1218,6 +1417,9 @@ static int rtl_probe(struct platform_device *pdev)
 	if (ret)
 		goto unregister_netdev;
 	platform_set_drvdata(pdev, netdev);
+	ret = rtl_register_fttr(priv);
+	if (ret)
+		goto unregister_netdev;
 	ret = sysfs_create_groups(&dev->kobj, rtl_native_groups);
 	if (ret)
 		goto unregister_netdev;
@@ -1231,6 +1433,7 @@ static int rtl_probe(struct platform_device *pdev)
 	return 0;
 
 unregister_netdev:
+	rtl_unregister_fttr(priv);
 	rtl_unregister_extra_lans(priv);
 	unregister_netdev(netdev);
 free_dma:
@@ -1258,6 +1461,12 @@ static void rtl_remove(struct platform_device *pdev)
 	priv->removing = true;
 	if (priv->qm_rx && priv->dma_tx) rtl_wifi_stop();
 	sysfs_remove_groups(&pdev->dev.kobj, rtl_native_groups);
+	rtl_unregister_fttr(priv);
+	if (priv->p6.qx) {
+		rtnl_lock();
+		rtl_fttr_p6_stop(&priv->p6);
+		rtnl_unlock();
+	}
 	rtl_unregister_extra_lans(priv);
 	rcu_assign_pointer(priv->qm.lan[priv->port], NULL);
 	unregister_netdev(dev);

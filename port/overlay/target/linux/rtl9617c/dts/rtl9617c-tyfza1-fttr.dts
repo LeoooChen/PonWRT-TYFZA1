@@ -2,6 +2,17 @@
 // FTTR development image: 20261007 unit, original chip ID 0x9690.
 #include "rtl9617c-tyfza1-pcie.dts"
 
+&ni0 {
+	reg = <4 0xf4300000 0 0x10000>, <0 0xf4500000 0 0x2000>,
+	      <4 0xf7001000 0 0x1000>, <4 0xf432d000 0 0x1000>,
+	      <4 0xf4320098 0 4>, <4 0xf432f000 0 0x1000>,
+	      <0 0xf550d000 0 0x100>;
+	reg-names = "ni", "xram", "dma-lso", "qm-axi-reorder", "block-reset",
+		    "l3fe-axi-reorder", "fttr-p6";
+	resets = <&pcie_controls 6>;
+	reset-names = "fttr-p6";
+};
+
 &mdio {
 	miniolt: olt@f {
 		compatible = "realtek,tyfza1-miniolt";

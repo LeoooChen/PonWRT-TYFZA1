@@ -82,6 +82,9 @@ static int rtl_pcie_reset_set(struct reset_controller_dev *reset,
 	} else if (id == 5) {
 		reg = controls->usb_reset;
 		mask = BIT(5);
+	} else if (id == 6) {
+		reg = controls->core_reset;
+		mask = BIT(31);
 	}
 
 	rtl_pcie_update(controls, reg, mask, asserted ? mask : 0);
@@ -259,7 +262,7 @@ static int rtl_pcie_controls_probe(struct platform_device *pdev)
 	controls->reset.owner = THIS_MODULE;
 	controls->reset.ops = &rtl_pcie_reset_ops;
 	controls->reset.of_node = dev->of_node;
-	controls->reset.nr_resets = 6; /* PCIe core/DPHY pairs, USB core/USB2 port1 */
+	controls->reset.nr_resets = 7; /* PCIe, USB and the separate P6/QX reset */
 	ret = devm_reset_controller_register(dev, &controls->reset);
 	if (ret)
 		return ret;

@@ -48,6 +48,7 @@ struct rtl_qm_rx {
 	struct net_device __rcu *lan[5];
 	struct rtl_qm_refill refill;
 	struct rtl9617c_ni_endpoint __rcu *pon;
+	struct rtl9617c_ni_endpoint __rcu *fttr;
 	struct rtl9617c_ni_wifi_endpoint __rcu *wifi[RTL_WIFI_ID_MAX + 1];
 	bool profile;
 	u64 host_poll_ns, host_polls, wifi_forwarded, wifi_missed, wifi_copy_bytes;

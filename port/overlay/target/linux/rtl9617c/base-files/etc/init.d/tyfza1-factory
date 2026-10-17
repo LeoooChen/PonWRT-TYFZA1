@@ -37,7 +37,7 @@ start() {
 	# Like stock, all LAN switch ports share ELAN; netifd applies user overrides later.
 	if [ -f "$runtime/lan_mac" ]; then
 		read -r address < "$runtime/lan_mac"
-		for device in /sys/class/net/lan[1-5]; do
+		for device in /sys/class/net/lan[1-5] /sys/class/net/fttr0; do
 			[ -e "$device" ] || continue
 			ip link set dev "${device##*/}" address "$address" || return $?
 		done

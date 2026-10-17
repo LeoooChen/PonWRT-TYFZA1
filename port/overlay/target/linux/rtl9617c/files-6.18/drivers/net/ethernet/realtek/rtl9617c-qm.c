@@ -463,6 +463,11 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	ret = rtl_qm_pon_destination_map(rx);
 	if (ret)
 		return ret;
+	if (rcu_access_pointer(rx->fttr)) {
+		ret = rtl_qm_ingress(rx, 6);
+		if (ret)
+			return ret;
+	}
 	/* The vendor credit table marks counter MSBs valid during initialization. */
 	for (i = 0; i < 16; i++) {
 		writel(0x8e308000, ni + 0x2db8);
@@ -618,8 +623,9 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				struct rtl9617c_ni_endpoint *endpoint;
 
 				rcu_read_lock();
-				endpoint = rcu_dereference(rx->pon);
-				if (endpoint && (source == 7 || source >= 32))
+				endpoint = source == 6 ? rcu_dereference(rx->fttr) :
+					(source == 7 || source >= 32) ? rcu_dereference(rx->pon) : NULL;
+				if (endpoint)
 					endpoint->receive(endpoint, napi, skb, source |
 						(FIELD_GET(GENMASK(26, 18), h0) << 8));
 				else {

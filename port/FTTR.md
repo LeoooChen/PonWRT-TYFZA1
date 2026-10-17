@@ -52,6 +52,18 @@ It does not use the names of the original libraries as a capability probe.
   100 MHz controller clock, IRQ29, GPIO13/14 inputs, GPIO105 high, and
   PROGB138/INITB136/DONE137. Handshake inputs use physical levels, avoiding
   the original DT flags/raw-GPIO double inversion trap.
+* Native P6/QX mode 5 (HSGMII 2.5G) and mode 9 (USXGMII 10G) startup,
+  including per-board SerDes profile writes, clock readiness, the exact MAC
+  FIFO/reset/PCS sequence, and NWAY. Reset bit31 shares the existing provider's
+  register lock with PCIe/USB. Parameters failing to load or clock/reset errors
+  stop initialization and leave the P6 traffic gates closed.
+* Dedicated `fttr0` Ethernet netdev on the shared NI/DMA/QM engine. P6 source6
+  has its own ingress table setup and RX endpoint, and TX uses destination6.
+  Source7 and logical LLIDs keep using the upstream ONU endpoint. CPU-facing
+  carrier uses the original P6 clock/link bits, not the optical ONU count.
+  A delayed worker reads the real link state; close cancels it, retires DMA
+  ownership and detaches RX before freeing the device. FE/PE offload for this
+  interface is pending; the interface currently uses the kernel data path.
 
 ## Validation
 
@@ -83,6 +95,19 @@ records actual OpenWrt ucode execution in an isolated root: exact downstream
 file import, independent import during an upstream error, and revocation of
 old data when the downstream file disappears. No private payload is committed.
 
+`scripts/test_fttr_p6.py` executes the original mode, indirect-access, profile
+loader, MAC and NWAY functions. Both modes are compared with zero and all-one
+initial register contents (354/356 configuration writes per case). The native
+startup additionally quiesces P6 before reset; original diagnostic read-address
+commands are excluded from comparison because the new clock check does not
+read unused diagnostic fields. GPIO/clock timing is modeled, not measured.
+The same focused check verifies missing/bad profiles, reset error, clock failure
+and actual link-bit conditions. Results are in `p6-comparison.json`.
+`scripts/test_fttr_dispatch.py` executes the production QM dispatch branch:
+FTTR source6, upstream7/LLIDs, and absent/unknown endpoints. Updated NI/QM/P6
+and reset-provider objects compile for ARM64, and the NI components partially
+link into `artifacts/fttr/rtl9617c-eth-linked.o`; both development DTs compile.
+
 To load a development image, first merge `port/configs/tyfza1-fttr.config` into
 its kernel configuration, then select the matching development DT. On the
 FPGA unit, load its retained image by writing its firmware-relative filename
@@ -91,6 +116,17 @@ bind the previously failed MiniOLT MDIO device through the standard driver's
 `bind` attribute. Automatic factory import and sequencing remain pending.
   Optical calibration import now runs independently of upstream BOSA import;
   absent downstream data removes any previous runtime copy.
+
+Generate the two development P6 firmware files with
+`tools/prepare_fttr_serdes.py <original-rootfs>/etc/serdes <output>` and copy the
+resulting `.bin` files into the development root's `/lib/firmware/realtek/rtl9617c/`.
+The converter follows the confirmed revision-C file selection and preserves
+all original row values/delays. The original profile payloads stay outside Git.
+The NI platform device's `fttr_link` sysfs attribute accepts `9 1` for the
+confirmed 9690 sample, or `5 <original-nway>` for the FPGA sample. `0 0` stops
+P6. The attribute reports configured mode, physical clock and actual error.
+After successful P6 configuration, `fttr0` can be opened as an Ethernet device.
+These are development controls; automatic full FTTR startup is still pending.
 
 Original hashes and detailed results are emitted under `artifacts/fttr/`.
 Original binaries and the kernel build tree are read from the private evidence
@@ -111,8 +147,9 @@ SerDes helpers confirms the P6 QX block, shared reset bit31 and NI MAC at
 is `a1f4` bit20. These are different from the existing S3/copper PHY path.
 The original 10G MAC threshold is `0xa0e`, and its additional reset/PCS pulses
 are present in machine code; the older related SDK source is insufficient.
-The profile function's failure must stop initialization instead of following
-the original print-and-continue behavior. P6 driver integration is still pending.
+The profile function's failure now stops initialization instead of following
+the original print-and-continue behavior. The SoC P6 integration is implemented;
+the peer MiniOLT's WTG/PON SerDes still requires its own initialization.
 
 ## Remaining work toward working FTTR
 
@@ -120,13 +157,15 @@ the original print-and-continue behavior. P6 driver integration is still pending
    binding the MiniOLT transport, and initialize the original post-load registers.
 2. Optical identification for the other sample, plus real GN25L99 calibration
    and optical readiness verification. The native sequence is implemented.
-3. P6 SerDes/MAC bring-up, dedicated native RX/TX endpoint and control frames.
+3. Peer MiniOLT WTG/PON SerDes startup and real P6/FTTR frame verification.
+   The native SoC P6 configuration and dedicated RX/TX endpoint are implemented.
 4. OLT-side discovery/registration, authentication, OMCI, T-CONT/GEM/DBA and
    VLAN/service provisioning. Current upstream ONU OMCI is a different role.
 5. Original subordinate gateway configuration, Wi-Fi synchronization,
-   multicast, reboot/upgrade and roaming coordination.
+   multicast, reboot/upgrade and roaming coordination, using the connected
+   ONU's actual capabilities rather than assuming one fixed subordinate model.
 6. FE/PE acceleration and stale-flow invalidation, then hardware acceptance
-   with the original paired subordinate gateway.
+   with real downstream gateways and a recorded interoperability scope.
 
 No optical startup, ONU registration, service traffic or hardware acceleration
 has been verified for this branch. No placeholder online state is exposed.
