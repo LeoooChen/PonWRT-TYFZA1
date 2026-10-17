@@ -1,0 +1,20 @@
+--- a/drivers/fpga/Kconfig
++++ b/drivers/fpga/Kconfig
+@@ -3,4 +3,10 @@
+ # FPGA framework configuration
++config FPGA_MGR_TYFZA1_PG2L100H
++	tristate "TYFZA1 PG2L100H serial FPGA manager"
++	depends on FPGA && SPI && GPIOLIB && OF
++	help
++	  Native serial configuration for the TYFZA1 downstream OLT FPGA.
++
+ #
+ 
+ menuconfig FPGA
+--- a/drivers/fpga/Makefile
++++ b/drivers/fpga/Makefile
+@@ -1,3 +1,4 @@
+ # SPDX-License-Identifier: GPL-2.0
++obj-$(CONFIG_FPGA_MGR_TYFZA1_PG2L100H) += tyfza1-pg2l100h.o
+ #
+ # Makefile for the fpga framework and fpga manager drivers.

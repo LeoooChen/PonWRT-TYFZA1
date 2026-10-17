@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// FPGA hardware from 20261017 running FDT; bind MiniOLT after loading its image.
+#include "rtl9617c-tyfza1-fttr.dts"
+#include "rtl9617c-tyfza1-2p5g.dtsi"
+
+&pinctrl {
+	fttr_spi_pins: fttr-spi {
+		data-signals {
+			pins = "GPIO_006", "GPIO_007", "PMUX_105";
+			function = "multi-fn";
+		};
+	};
+};
+
+/ {
+	fttr_spi_clk: fttr-spi-clock {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <100000000>;
+	};
+};
+
+&{/soc} {
+	spi@f4329600 {
+		compatible = "snps,dw-apb-ssi";
+		reg = <0 0xf4329600 0 0x60>;
+		interrupts = <GIC_SPI 29 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&fttr_spi_clk>;
+		num-cs = <1>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&fttr_spi_pins>;
+
+		fpga@0 {
+			compatible = "pango,tyfza1-pg2l100h";
+			reg = <0>;
+			spi-max-frequency = <4000000>;
+			cs-input-gpios = <&gpio0 13 GPIO_ACTIVE_HIGH>;
+			rxd-input-gpios = <&gpio0 14 GPIO_ACTIVE_HIGH>;
+			reserved-gpios = <&gpio0 105 GPIO_ACTIVE_HIGH>;
+			progb-gpios = <&gpio0 138 GPIO_ACTIVE_LOW>;
+			initb-gpios = <&gpio0 136 GPIO_ACTIVE_HIGH>;
+			done-gpios = <&gpio0 137 GPIO_ACTIVE_HIGH>;
+		};
+	};
+};

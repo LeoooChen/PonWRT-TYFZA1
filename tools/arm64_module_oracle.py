@@ -57,7 +57,10 @@ class ModuleOracle:
                     kind = rel['r_info_type']
                     if not is_code and kind != 257:
                         continue
-                    if kind == 283 and symbol.name not in names:
+                    # Section-relative BL relocations must retain their addend:
+                    # the destination's existing local-function hook handles it.
+                    if (kind == 283 and symbol.name not in names and
+                            symbol['st_info']['type'] != 'STT_SECTION'):
                         value = self.callback(symbol.name)
                     elif symbol['st_shndx'] in self.sections:
                         value = self.sections[symbol['st_shndx']] + symbol['st_value'] + rel['r_addend']

@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// FTTR development image: 20261007 unit, original chip ID 0x9690.
+#include "rtl9617c-tyfza1-pcie.dts"
+
+&mdio {
+	miniolt: olt@f {
+		compatible = "realtek,tyfza1-miniolt";
+		reg = <15>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+	};
+};
