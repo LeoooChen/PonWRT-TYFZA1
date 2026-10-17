@@ -352,6 +352,79 @@ def main():
                 finally:
                     if query.poll() is None:
                         query.terminate();query.communicate(timeout=3)
+            for name in ('ani','ani-mapper','ani-open','mapper','mapper-clear','mapper-reject','mapper-restore-fail','mapper-replaced'):
+                mapping=name.startswith('mapper');use_mapper=name=='ani-mapper';open_filter=name=='ani-open'
+                previous=bytes.fromhex('0117')*8 if name=='mapper-clear' else b'\xff'*16
+                desired=b'\xff'*16 if name=='mapper-clear' else bytes.fromhex('0117')*8
+                current=previous;expected_serial=serial.hex();operations=[]
+                if mapping:
+                    command=['mapper','7','0x42','0xff','0xffff' if name=='mapper-clear' else '0x117','ftr-host']
+                else:
+                    command=['ani','7','0x322','0x8080','17','1' if use_mapper else '0',
+                        '0x42' if use_mapper else '0x117','none' if open_filter else '100,200','ftr-host']
+                    definitions={(47,0x322):{0xfc00:bytes.fromhex('808011')+bytes([3 if use_mapper else 5])+
+                        bytes.fromhex('0042' if use_mapper else '0117')+bytes.fromhex('00000001')},
+                        (84,0x322):{0x4000:b'\0'} if open_filter else
+                            {0xe000:bytes.fromhex('006400c8')+bytes(20)+bytes.fromhex('1002')}}
+                pool={}
+                query=subprocess.Popen([str(args.control.resolve()),str(miniolt)]+command,
+                    stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                try:
+                    deadline=time.monotonic()+4
+                    while query.poll() is None:
+                        assert time.monotonic()<deadline
+                        if not select.select([peer],[],[],0.05)[0]:continue
+                        frame,address=peer.recvfrom(2048)
+                        if address[2]==socket.PACKET_OUTGOING:continue
+                        tci,op,device,c,instance=struct.unpack('>HBBHH',frame[16:24]);key=c,instance
+                        operations.append((op,c));status=0;data=b''
+                        if c==266 or (not mapping and c==130):
+                            assert op==0x49 and frame[24:26]==bytes.fromhex('8000')
+                            data=frame[24:26]+bytes.fromhex('ffff' if c==130 else '0117')
+                        elif mapping:
+                            assert key==(130,0x42) and frame[24:26]==bytes.fromhex('7f80')
+                            if op==0x49:data=frame[24:26]+current
+                            else:
+                                assert op==0x48
+                                value=frame[26:42]
+                                if value==desired:
+                                    current=value
+                                    if name in ('mapper-reject','mapper-restore-fail'):status=2
+                                    if name=='mapper-replaced':
+                                        serial=bytes.fromhex('544553540000000b');tables();continue
+                                else:
+                                    assert value==previous
+                                    if name=='mapper-restore-fail':status=6
+                                    else:current=value
+                        else:
+                            assert key in definitions
+                            mask,value=next(iter(definitions[key].items()))
+                            if op==0x44:
+                                assert frame[24:24+len(value)]==value;pool[key]=value
+                            else:
+                                assert op==0x49 and frame[24:26]==struct.pack('>H',mask)
+                                if key not in pool:status=5
+                                else:data=frame[24:26]+pool[key]
+                        peer.send(response(7,tci,(op & 0x1f)|0x20,bytes([status])+data,class_id=c,instance=instance))
+                    output,error=query.communicate(timeout=3);row=json.loads(output)
+                    assert row['serial']==expected_serial
+                    if name in ('mapper-reject','mapper-restore-fail'):
+                        assert query.returncode==1 and row['failure']['error']==-121
+                        obj=row['objects'][0];assert obj['previous']==previous.hex() and obj['operation']=='update'
+                        if name=='mapper-reject':
+                            assert obj['state']=='restored' and not obj['touched'] and current==previous
+                        else:
+                            assert obj['touched'] and row['cleanup_failure']['error']==-121 and current==desired
+                    elif name=='mapper-replaced':
+                        assert query.returncode==1 and row['failure']['error']==-116
+                        assert operations.count((0x48,130))==1 and row['objects'][0]['touched']
+                    else:
+                        assert query.returncode==0 and row['phase']=='configured',(name,row,error)
+                        assert all(x['state']=='verified' for x in row['objects'])
+                        if mapping:assert current==desired and row['objects'][0]['previous']==previous.hex()
+                finally:
+                    if query.poll() is None:
+                        query.terminate();query.communicate(timeout=3)
         finally:
             if process.poll() is None:
                 process.terminate()
@@ -368,6 +441,9 @@ def main():
         'gem_cli_configured_and_verified':True,'gem_cli_retains_failed_cleanup':True,
         'gem_replacement_stops_retransmission_writes_and_cleanup_to_new_peer':True,
         'profiles_and_ethernet_VEIP_cli_match_original':True,'UNI_existence_probe_precedes_writes':True,
+        'ANI_direct_mapper_transparent_and_VLAN_list_cli_verified':True,
+        'Mapper_update_clear_restore_and_restore_failure_cli_verified':True,
+        'Mapper_replacement_stops_retransmission_and_restore_to_new_peer':True,
         'malformed_frame_reported_without_master_exit':True,'offline_releases_grant_and_inventory':True,
         'replaced_onu_reinventoried':True,'old_transaction_reply_ignored':True,'sigterm_closes_hardware_and_netdev':True,
         'optical_hardware_verified':False},indent=2)+'\n')

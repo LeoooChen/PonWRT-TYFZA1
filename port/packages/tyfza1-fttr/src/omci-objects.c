@@ -16,21 +16,28 @@ static int request(struct fttr_objects_job *job, uint16_t *counter, enum fttr_me
 	struct fttr_omci_object *object = &job->objects[job->index];
 	const struct fttr_omci_values *values = job->group ? &object->set : &object->create;
 	bool write = operation == FTTR_ME_CREATE || operation == FTTR_ME_SET;
+	const uint8_t *data = job->phase == FTTR_OBJECT_RESTORE ? object->previous : values->value;
 
 	/* Constructors split attributes into groups within the baseline budgets. */
 	fttr_me_job_start(&job->me, job->me.onu, counter, operation, object->class_id,
-			 object->instance, values->mask, write ? values->value : NULL,
+			 object->instance, values->mask, write ? data : NULL,
 			 write ? values->size : 0);
 	return FTTR_OBJECT_REQUEST;
 }
 
-static int next_create(struct fttr_objects_job *job, uint16_t *counter)
+static int next_apply(struct fttr_objects_job *job, uint16_t *counter)
 {
 	while (job->index < job->count) {
 		if (job->objects[job->index].presence == FTTR_OBJECT_ABSENT) {
 			job->phase = FTTR_OBJECT_CREATE;
 			job->group = 0;
 			return request(job, counter, FTTR_ME_CREATE);
+		}
+		if (job->objects[job->index].update_only &&
+		    job->objects[job->index].presence == FTTR_OBJECT_PRESENT) {
+			job->phase = FTTR_OBJECT_CONFIGURE;
+			job->group = 0;
+			return request(job, counter, FTTR_ME_SET);
 		}
 		job->index++;
 	}
@@ -46,6 +53,12 @@ static int next_cleanup(struct fttr_objects_job *job, uint16_t *counter)
 		if (object->touched) {
 			bool unknown = object->presence == FTTR_OBJECT_UNKNOWN;
 
+			if (object->update_only) {
+				object->presence = FTTR_OBJECT_UNKNOWN;
+				job->phase = FTTR_OBJECT_RESTORE;
+				job->group = 0;
+				return request(job, counter, FTTR_ME_SET);
+			}
 			job->phase = unknown ? FTTR_OBJECT_CLEANUP_PROBE : FTTR_OBJECT_DELETE;
 			job->group = 0;
 			return request(job, counter, unknown ? FTTR_ME_GET : FTTR_ME_DELETE);
@@ -85,6 +98,7 @@ void fttr_objects_job_start(struct fttr_objects_job *job, uint16_t onu, uint16_t
 	for (i = 0; i < count; i++) {
 		objects[i].presence = FTTR_OBJECT_UNKNOWN;
 		objects[i].touched = false;
+		objects[i].have_previous = false;
 	}
 	request(job, counter, FTTR_ME_GET);
 }
@@ -103,7 +117,8 @@ int fttr_objects_job_update(struct fttr_objects_job *job, uint16_t *counter)
 		return job->error ? job->error : job->cleanup_error;
 	object = &job->objects[job->index];
 	values = job->group ? &object->set : &object->create;
-	if (job->phase == FTTR_OBJECT_CREATE && job->me.attempts) {
+	if ((job->phase == FTTR_OBJECT_CREATE ||
+	     (job->phase == FTTR_OBJECT_CONFIGURE && object->update_only)) && job->me.attempts) {
 		object->touched = true;
 		object->presence = FTTR_OBJECT_UNKNOWN;
 	}
@@ -111,19 +126,26 @@ int fttr_objects_job_update(struct fttr_objects_job *job, uint16_t *counter)
 		return 0;
 	switch (job->phase) {
 	case FTTR_OBJECT_CHECK:
-		if (absent) {
+		if (absent && !object->update_only) {
 			object->presence = FTTR_OBJECT_ABSENT;
 		} else {
 			if (error)
 				return failure(job, counter, error);
 			object->presence = FTTR_OBJECT_PRESENT;
-			if (memcmp(job->me.reply + 11, values->value, values->size))
+			if (object->update_only) {
+				memcpy(object->previous, job->me.reply + 11, values->size);
+				object->have_previous = true;
+				if (!memcmp(object->previous, values->value, values->size))
+					object->presence = FTTR_OBJECT_VERIFIED;
+			} else if (memcmp(job->me.reply + 11, values->value, values->size)) {
 				return failure(job, counter, -EEXIST);
-			if (!job->group && object->set.mask) {
+			}
+			if (!object->update_only && !job->group && object->set.mask) {
 				job->group = 1;
 				return request(job, counter, FTTR_ME_GET);
 			}
-			object->presence = FTTR_OBJECT_VERIFIED;
+			if (!object->update_only)
+				object->presence = FTTR_OBJECT_VERIFIED;
 		}
 		job->group = 0;
 		if (++job->index < job->count)
@@ -136,7 +158,7 @@ int fttr_objects_job_update(struct fttr_objects_job *job, uint16_t *counter)
 				    job->objects[i].presence == FTTR_OBJECT_ABSENT)
 					return failure(job, counter, -EUCLEAN);
 		job->index = 0;
-		return next_create(job, counter);
+		return next_apply(job, counter);
 	case FTTR_OBJECT_CREATE:
 		if (error)
 			return failure(job, counter, error);
@@ -151,6 +173,7 @@ int fttr_objects_job_update(struct fttr_objects_job *job, uint16_t *counter)
 	case FTTR_OBJECT_CONFIGURE:
 		if (error)
 			return failure(job, counter, error);
+		object->presence = FTTR_OBJECT_PRESENT;
 		job->phase = FTTR_OBJECT_VERIFY;
 		job->group = 0;
 		return request(job, counter, FTTR_ME_GET);
@@ -166,7 +189,7 @@ int fttr_objects_job_update(struct fttr_objects_job *job, uint16_t *counter)
 		}
 		object->presence = FTTR_OBJECT_VERIFIED;
 		job->index++;
-		return next_create(job, counter);
+		return next_apply(job, counter);
 	case FTTR_OBJECT_CLEANUP_PROBE:
 	case FTTR_OBJECT_DELETE_VERIFY:
 		if (absent) {
@@ -188,6 +211,21 @@ int fttr_objects_job_update(struct fttr_objects_job *job, uint16_t *counter)
 			return cleanup_failure(job, error);
 		job->phase = FTTR_OBJECT_DELETE_VERIFY;
 		return request(job, counter, FTTR_ME_GET);
+	case FTTR_OBJECT_RESTORE:
+		if (error)
+			return cleanup_failure(job, error);
+		job->phase = FTTR_OBJECT_RESTORE_VERIFY;
+		return request(job, counter, FTTR_ME_GET);
+	case FTTR_OBJECT_RESTORE_VERIFY:
+		if (error)
+			return cleanup_failure(job, error);
+		object->presence = FTTR_OBJECT_PRESENT;
+		if (memcmp(job->me.reply + 11, object->previous, object->create.size))
+			return cleanup_failure(job, -EUCLEAN);
+		object->presence = FTTR_OBJECT_RESTORED;
+		object->touched = false;
+		job->index--;
+		return next_cleanup(job, counter);
 	default:
 		return 0;
 	}
@@ -223,8 +261,8 @@ static void dump_error(FILE *file, const char *name, int error, const struct ftt
 int fttr_objects_job_dump(const struct fttr_objects_job *job, FILE *file, const char *event)
 {
 	static const char * const phases[] = { "check", "create", "configure", "verify", "cleanup-probe",
-		"delete", "delete-verify", "configured", "released", "failed" };
-	static const char * const states[] = { "unknown", "absent", "present", "verified" };
+		"delete", "delete-verify", "restore", "restore-verify", "configured", "released", "failed" };
+	static const char * const states[] = { "unknown", "absent", "present", "verified", "restored" };
 	int i;
 
 	fprintf(file, "{\"event\":\"%s\",\"id\":%u,\"serial\":\"", event, job->me.onu);
@@ -234,9 +272,18 @@ int fttr_objects_job_dump(const struct fttr_objects_job *job, FILE *file, const 
 	for (i = 0; i < job->count; i++) {
 		const struct fttr_omci_object *object = &job->objects[i];
 
-		fprintf(file, "%s{\"class\":%u,\"instance\":%u,\"state\":\"%s\",\"touched\":%s}",
-			i ? "," : "", object->class_id, object->instance, states[object->presence],
-			object->touched ? "true" : "false");
+		fprintf(file, "%s{\"class\":%u,\"instance\":%u,\"operation\":\"%s\",\"state\":\"%s\",\"touched\":%s",
+			i ? "," : "", object->class_id, object->instance,
+			object->update_only ? "update" : "create", states[object->presence], object->touched ? "true" : "false");
+		if (object->have_previous) {
+			unsigned int n;
+
+			fputs(",\"previous\":\"", file);
+			for (n = 0; n < object->create.size; n++)
+				fprintf(file, "%02x", object->previous[n]);
+			fputc('"', file);
+		}
+		fputc('}', file);
 	}
 	fputc(']', file);
 	dump_error(file, "failure", job->error, &job->failure);
@@ -255,7 +302,7 @@ static int64_t now_ms(void)
 
 static int identity_failure(struct fttr_objects_job *job, int error)
 {
-	if (job->error || (job->phase >= FTTR_OBJECT_CLEANUP_PROBE && job->phase <= FTTR_OBJECT_DELETE_VERIFY) ||
+	if (job->error || (job->phase >= FTTR_OBJECT_CLEANUP_PROBE && job->phase <= FTTR_OBJECT_RESTORE_VERIFY) ||
 	    job->phase == FTTR_OBJECT_RELEASED)
 		return cleanup_failure(job, error);
 	job->error = error;

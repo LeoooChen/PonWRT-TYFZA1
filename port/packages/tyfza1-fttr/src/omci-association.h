@@ -14,6 +14,17 @@ struct fttr_uni_config {
 	bool veip;
 };
 
+struct fttr_ani_config {
+	uint16_t entity, bridge, pointer, vlans[12];
+	uint8_t port, count; /* Selected port number and at most 12 VLAN entries. */
+	bool mapper;
+};
+
+struct fttr_mapper_config {
+	uint16_t entity, interworking[8];
+	uint8_t priorities;
+};
+
 struct fttr_association_job {
 	struct fttr_objects_job transaction;
 	struct fttr_omci_object objects[3];
@@ -23,5 +34,9 @@ void fttr_profiles_job_start(struct fttr_association_job *job, uint16_t onu, uin
 		const struct fttr_profiles_config *config, const uint8_t serial[8]);
 void fttr_uni_job_start(struct fttr_association_job *job, uint16_t onu, uint16_t *counter,
 		const struct fttr_uni_config *config, const uint8_t serial[8]);
+void fttr_ani_job_start(struct fttr_association_job *job, uint16_t onu, uint16_t *counter,
+		const struct fttr_ani_config *config, const uint8_t serial[8]);
+void fttr_mapper_job_start(struct fttr_association_job *job, uint16_t onu, uint16_t *counter,
+		const struct fttr_mapper_config *config, const uint8_t serial[8]);
 
 #endif

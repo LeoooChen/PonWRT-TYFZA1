@@ -247,8 +247,29 @@ It does not use the names of the original libraries as a capability probe.
   TPID/DSCP group. Native checks all 28 bytes. Independent GAL/bridge reuse
   does not acquire a false linear dependency; GEM and UNI retain their real
   prerequisite checks and cleanup ownership. These commands prepare base
-  entities; Mapper binding, ANI-side attachment and VLAN operation rules
-  still need the complete service policy.
+  entities; complete service orchestration and UNI VLAN operation rules
+  remain work.
+* Native ANI/GEM-side bridge-port attachment and VLAN filtering. The selected
+  port/bridge/TP IDs follow actual original producer `d8320`: mask`fc00`,
+  TP type5 for direct GEM IW or type3 for Mapper, priority0 and path-cost1.
+  Empty VLAN selection uses the original forward-operation0/mask`4000`.
+  Nonempty selection uses the twelve-slot VLAN list, forward-operation16
+  and the selected count, mask`e000`; entries are big-endian exactly like
+  the original custom VLAN encoder. Native verifies all 26 selected bytes.
+  `fttrctl ani` selects real prerequisite objects and an explicit VID list.
+* Native updates of existing Mapper P-bit pointers. Original producer
+  `d78d0` maps priorities0..7 to masks`4000..0080`; native supports partial
+  or full selection and the same wire order. Explicit `ffff` clearing uses
+  the original low-level Set encoder and original Mapper null-pointer value,
+  without overloading a value as the high-level API's no-change selector.
+  The shared job engine now handles explicit update-only objects: read and
+  retain the actual selected prior bytes, Set only when needed, then Get
+  to verify. Failed updates/readback restore and verify those exact prior
+  bytes. Release also restores changed attributes. Unknown/failed restoration
+  retains the mutation, prior bytes, primary error and cleanup error; no
+  Create/Delete substitutes for an existing-object update. `fttrctl mapper`
+  maps selected priorities to a real GEM IW, or explicitly clears them.
+  Its serial checks cover ordinary writes, restoration and retransmission.
 
 ## Validation
 
@@ -416,10 +437,24 @@ the original false successful Get with an undecoded DSCP field.
 `association-comparison.json` records the exact scope. The focused GEM check
 passes through the shared resource engine (`gem-objects-comparison.json`).
 The existing AF_PACKET/veth command check also covers profiles, Ethernet,
-VEIP and a nonexistent UNI that produces no writes
+VEIP and a nonexistent UNI that produces no ONU configuration writes
 (`controller-association-comparison.json`). MIB/ME checks pass with all new
 command sources linked. The isolated real musl package stage is
 `package-root-association/`, with `package-stage-association.log` output.
+
+The same focused association check now executes actual original ANI direct/
+Mapper producers with zero/two VLANs, the high-level Mapper mask producer,
+and the low-level explicit-clear encoder. Native mutation frames match.
+It also verifies previous-value retention, no-op reuse, successful restoration
+on failed readback/release and an explicitly rejected restoration
+(`ani-mapper-comparison.json`). Existing GEM and association checks pass
+through the extended engine. The actual AF_PACKET/veth command check covers
+transparent/list ANI, both TP types, Mapper binding/clearing, rejected Set,
+rejected restoration and replacement while Set awaits a reply. It confirms
+there is no retransmission or restoration to the replacement peer
+(`controller-forwarding-comparison.json`). MIB/ME checks and the isolated
+real musl package build/install pass (`package-root-forwarding/`,
+`package-stage-forwarding.log`). These checks do not exercise optical traffic.
 
 The executable links with the project's actual OpenWrt GCC 14.4.0/musl
 toolchain as `artifacts/fttr/fttrctl-musl`. The optional userspace and kernel
@@ -516,6 +551,8 @@ fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> tcont <hardware-ID> <slot:1..
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> gem <hardware-ID> <ordinal:1..60> <tcont-instance> <queue-instance> <association:0|1> <profile-instance> <gal-instance> fttr0
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> profiles <hardware-ID> <bridge-instance> <per-UNI:0|1> <mapper-enabled:0|1> <mapper-instance> fttr0
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> uni <hardware-ID> <kind:0=Ethernet,2=VEIP> <UNI-instance> <bridge-instance> <port-instance> <ordinal> fttr0
+fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> ani <hardware-ID> <port-instance> <bridge-instance> <port-number> <mapper:0|1> <TP-instance> <VID-list|none> fttr0
+fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> mapper <hardware-ID> <mapper-instance> <P-bit-mask> <GEM-IW-instance|0xffff> fttr0
 ```
 
 `status` emits raw hardware state and the registration bit for all 64 slots.
@@ -563,12 +600,26 @@ automatic service policy are not performed by this command.
 an optional initial Mapper. For the original shared default, select bridge
 instance`0x8080`, per-UNI`0`; the per-UNI template uses the real selected UNI
 instance and per-UNI`1`. A Mapper starts with all nine TP pointers`ffff` and
-unmarked-frame option1; binding its P-bit pointers to GEM IWs is later work.
+unmarked-frame option1. Use the explicit Mapper step to bind its P-bit
+pointers after the selected GEM IW exists.
 `uni` takes the real physical/VEIP ME, selected bridge/port ME and zero-based
 ordinal. It prepares the original base attachment, TPIDs and default DSCP map.
 The commands report `profiles_state` / `uni_state` with the same observed
 states, serial and primary/cleanup errors as GEM. A `configured` result applies
 to these selected entities, not a complete service or operational UNI.
+
+`ani` configures the selected ANI/GEM-side bridge-port and filter. Port
+numbers are1..255. The TP is a real GEM IW when mapper0, or a real Mapper
+when mapper1; its existence is queried before business configuration writes.
+VIDs are an explicit comma-separated list (up to12 entries, decimal or hex),
+or `none` for the original unfiltered operation. It reports `ani_state`.
+`mapper` uses an eight-bit P-bit selection: bit0 selects priority0 and bit7
+priority7. Selected entries point to the supplied real GEM IW; `0xffff`
+explicitly clears them. It reports `mapper_state`, `operation=update`, prior
+wire bytes and actual verified/restored/unknown state. An unchanged mapping
+causes no Set. Restoration failures remain distinct from the first failure.
+These are development operations; authentication and automatic service policy
+remain separate work.
 
 Original hashes and detailed results are emitted under `artifacts/fttr/`.
 Original binaries and the kernel build tree are read from the private evidence
@@ -645,8 +696,8 @@ the failures/unconfirmed resources and stops further dependency deletion.
    automatic provisioning are not. Explicit T-CONT binding/readback/local DBA
    and native GEM CTP/IW lifecycle/readback/cleanup are implemented. Native GAL,
    bridge/initial Mapper and basic Ethernet/VEIP attachment are implemented.
-   Mapper binding, ANI/GEM-side bridge ports, VLAN operation rules and complete
-   service orchestration remain work.
+   Mapper binding and ANI/GEM-side bridge ports/VLAN filtering are implemented.
+   UNI VLAN operation rules and complete service orchestration remain work.
    Current upstream ONU OMCI is a different role.
 5. Original subordinate gateway configuration, Wi-Fi synchronization,
    multicast, reboot/upgrade and roaming coordination, using the connected

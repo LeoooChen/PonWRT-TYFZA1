@@ -13,15 +13,18 @@ struct fttr_omci_values {
 
 struct fttr_omci_object {
 	uint16_t class_id, instance;
+	/* For update-only objects, create holds the selected desired attributes. */
 	struct fttr_omci_values create, set;
 	uint32_t dependencies; /* Earlier prerequisites in this fixed plan. */
-	enum { FTTR_OBJECT_UNKNOWN, FTTR_OBJECT_ABSENT, FTTR_OBJECT_PRESENT, FTTR_OBJECT_VERIFIED } presence;
-	bool touched;
+	enum { FTTR_OBJECT_UNKNOWN, FTTR_OBJECT_ABSENT, FTTR_OBJECT_PRESENT, FTTR_OBJECT_VERIFIED, FTTR_OBJECT_RESTORED } presence;
+	bool touched, update_only, have_previous;
+	uint8_t previous[29];
 };
 
 enum fttr_objects_phase {
 	FTTR_OBJECT_CHECK, FTTR_OBJECT_CREATE, FTTR_OBJECT_CONFIGURE, FTTR_OBJECT_VERIFY,
 	FTTR_OBJECT_CLEANUP_PROBE, FTTR_OBJECT_DELETE, FTTR_OBJECT_DELETE_VERIFY,
+	FTTR_OBJECT_RESTORE, FTTR_OBJECT_RESTORE_VERIFY,
 	FTTR_OBJECT_CONFIGURED, FTTR_OBJECT_RELEASED, FTTR_OBJECT_FAILED
 };
 enum fttr_objects_action { FTTR_OBJECT_REQUEST = 1, FTTR_OBJECT_COMPLETE = 2 };
@@ -38,7 +41,7 @@ struct fttr_objects_job {
 void fttr_objects_job_start(struct fttr_objects_job *job, uint16_t onu, uint16_t *counter,
 		struct fttr_omci_object *objects, int count, const uint8_t serial[8]);
 int fttr_objects_job_update(struct fttr_objects_job *job, uint16_t *counter);
-/* Release created resources while preserving objects reused from the initial state. */
+/* Remove created resources and restore changed attributes; preserve untouched objects. */
 int fttr_objects_job_release(struct fttr_objects_job *job, uint16_t *counter);
 int fttr_objects_job_dump(const struct fttr_objects_job *job, FILE *file, const char *event);
 int fttr_objects_execute(struct fttr_omci_session *session, struct fttr_objects_job *job,

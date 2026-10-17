@@ -87,3 +87,58 @@ void fttr_uni_job_start(struct fttr_association_job *job, uint16_t onu, uint16_t
 	object->dependencies = 1;
 	fttr_objects_job_start(&job->transaction, onu, counter, job->objects, count, serial);
 }
+
+void fttr_ani_job_start(struct fttr_association_job *job, uint16_t onu, uint16_t *counter,
+		const struct fttr_ani_config *config, const uint8_t serial[8])
+{
+	struct fttr_omci_object *object;
+	unsigned int i;
+
+	memset(job, 0, sizeof(*job));
+	object = &job->objects[0];
+	object->class_id = 47;
+	object->instance = config->entity;
+	object->create.mask = 0xfc00;
+	object->create.size = 10;
+	be16(object->create.value, config->bridge);
+	object->create.value[2] = config->port;
+	object->create.value[3] = config->mapper ? 3 : 5;
+	be16(object->create.value + 4, config->pointer);
+	be16(object->create.value + 8, 1);
+	object = &job->objects[1];
+	object->class_id = 84;
+	object->instance = config->entity;
+	object->dependencies = 1;
+	if (config->count) {
+		object->create.mask = 0xe000;
+		object->create.size = 26;
+		for (i = 0; i < config->count; i++)
+			be16(object->create.value + i * 2, config->vlans[i]);
+		object->create.value[24] = 16;
+		object->create.value[25] = config->count;
+	} else {
+		object->create.mask = 0x4000;
+		object->create.size = 1;
+	}
+	fttr_objects_job_start(&job->transaction, onu, counter, job->objects, 2, serial);
+}
+
+void fttr_mapper_job_start(struct fttr_association_job *job, uint16_t onu, uint16_t *counter,
+		const struct fttr_mapper_config *config, const uint8_t serial[8])
+{
+	struct fttr_omci_object *object;
+	unsigned int i;
+
+	memset(job, 0, sizeof(*job));
+	object = &job->objects[0];
+	object->class_id = 130;
+	object->instance = config->entity;
+	object->update_only = true;
+	for (i = 0; i < 8; i++)
+		if (config->priorities & (1U << i)) {
+			object->create.mask |= 0x4000U >> i;
+			be16(object->create.value + object->create.size, config->interworking[i]);
+			object->create.size += 2;
+		}
+	fttr_objects_job_start(&job->transaction, onu, counter, job->objects, 1, serial);
+}

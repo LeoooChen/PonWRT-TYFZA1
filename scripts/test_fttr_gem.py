@@ -79,7 +79,8 @@ class Values(C.Structure):
 
 class Object(C.Structure):
     _fields_=[('class_id',C.c_ushort),('instance',C.c_ushort),('create',Values),('set',Values),
-              ('dependencies',C.c_uint),('presence',C.c_int),('touched',C.c_bool)]
+              ('dependencies',C.c_uint),('presence',C.c_int),('touched',C.c_bool),
+              ('update_only',C.c_bool),('have_previous',C.c_bool),('previous',C.c_ubyte*29)]
 
 
 class ObjectsJob(C.Structure):
@@ -168,10 +169,10 @@ def main():
             ret,original=stock.producer(config,release=True);assert ret==0
             job,counter=start(config);objects={}
             result,frames=drive(job,counter,objects)
-            assert result==2 and job.transaction.phase==7 and not job.transaction.error and all(o.touched for o in job.objects[:job.transaction.count])
+            assert result==2 and job.transaction.phase==9 and not job.transaction.error and all(o.touched for o in job.objects[:job.transaction.count])
             action=lib.fttr_objects_job_release(C.byref(job.transaction),C.byref(counter))
             result,cleanup=drive(job,counter,objects,action=action)
-            assert result==2 and job.transaction.phase==8 and not objects and not any(o.touched for o in job.objects[:job.transaction.count])
+            assert result==2 and job.transaction.phase==10 and not objects and not any(o.touched for o in job.objects[:job.transaction.count])
             actual=[x[2:] for x in frames+cleanup if x[2] in (0x44,0x46)]
             assert actual==[x[2:] for x in original], ([x.hex() for x in actual],[x[2:].hex() for x in original])
 

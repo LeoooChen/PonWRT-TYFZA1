@@ -240,6 +240,19 @@ static int create_gem(int directory, unsigned int id, const uint16_t fields[6], 
 	return ret ? ret : result;
 }
 
+static int probe(struct fttr_omci_session *session, uint16_t class_id, uint16_t instance, uint16_t mask)
+{
+	struct fttr_me_job job;
+	int ret;
+
+	fttr_me_job_start(&job, session->onu, &session->transaction, FTTR_ME_GET,
+			class_id, instance, mask, NULL, 0);
+	ret = fttr_me_exchange(session, &job);
+	if (ret && job.replied)
+		fprintf(stderr, "FTTR ME %u/%u probe: result=%u error=%d\n", class_id, instance, job.result, ret);
+	return ret;
+}
+
 static int associate(int directory, unsigned int id, const uint16_t *fields, bool profiles, const char *interface)
 {
 	struct fttr_onu_state before;
@@ -260,14 +273,8 @@ static int associate(int directory, unsigned int id, const uint16_t *fields, boo
 			.veip = fields[0] == 2, .uni = fields[1], .bridge = fields[2],
 			.entity = fields[3], .ordinal = fields[4],
 		};
-		struct fttr_me_job probe;
-
-		fttr_me_job_start(&probe, id, &session.transaction, FTTR_ME_GET,
-			config.veip ? 329 : 11, config.uni, config.veip ? 0x8000 : 0x0800, NULL, 0);
-		ret = fttr_me_exchange(&session, &probe);
+		ret = probe(&session, config.veip ? 329 : 11, config.uni, config.veip ? 0x8000 : 0x0800);
 		if (ret) {
-			if (probe.replied)
-				fprintf(stderr, "FTTR UNI %u probe: result=%u error=%d\n", config.uni, probe.result, ret);
 			close(session.fd);
 			return ret;
 		}
@@ -279,14 +286,78 @@ static int associate(int directory, unsigned int id, const uint16_t *fields, boo
 	return ret ? ret : result;
 }
 
+static int forwarding(int directory, unsigned int id, const uint16_t *fields,
+		      bool mapper, const char *vlans, const char *interface)
+{
+	struct fttr_ani_config ani = { 0 };
+	struct fttr_mapper_config mapping = { 0 };
+	struct fttr_onu_state before;
+	struct fttr_omci_session session;
+	struct fttr_association_job job;
+	unsigned int i;
+	int result, ret;
+
+	if (mapper) {
+		mapping.entity = fields[0];
+		mapping.priorities = fields[1];
+		for (i = 0; i < 8; i++)
+			mapping.interworking[i] = fields[2];
+	} else {
+		ani.entity = fields[0];
+		ani.bridge = fields[1];
+		ani.port = fields[2];
+		ani.mapper = fields[3];
+		ani.pointer = fields[4];
+		if (strcmp(vlans, "none")) {
+			const char *cursor = vlans;
+			char *end;
+
+			for (;;) {
+				unsigned long vid;
+
+				if (ani.count == 12)
+					return -E2BIG;
+				errno = 0;
+				vid = strtoul(cursor, &end, 0);
+				if (errno || end == cursor || vid > 4094 || (*end && *end != ','))
+					return -EINVAL;
+				ani.vlans[ani.count++] = vid;
+				if (!*end)
+					break;
+				cursor = end + 1;
+			}
+		}
+	}
+	ret = open_session(directory, id, interface, &session, &before);
+	if (ret)
+		return ret;
+	if (!mapper || fields[2] != 0xffff) {
+		ret = probe(&session, !mapper && ani.mapper ? 130 : 266,
+			mapper ? fields[2] : ani.pointer, 0x8000);
+		if (ret) {
+			close(session.fd);
+			return ret;
+		}
+	}
+	if (mapper)
+		fttr_mapper_job_start(&job, id, &session.transaction, &mapping, before.serial);
+	else
+		fttr_ani_job_start(&job, id, &session.transaction, &ani, before.serial);
+	ret = fttr_objects_execute(&session, &job.transaction, directory, &before);
+	close(session.fd);
+	result = fttr_objects_job_dump(&job.transaction, stdout, mapper ? "mapper_state" : "ani_state");
+	return ret ? ret : result;
+}
+
 int main(int argc, char **argv)
 {
-	bool mib, wait, query, binding, gem, profiles, uni;
+	bool mib, wait, query, binding, gem, profiles, uni, ani, mapper;
 	int directory, ret;
 
 	if (argc < 3 || (strcmp(argv[2], "status") && strcmp(argv[2], "mib") &&
 	    strcmp(argv[2], "wait-link") && strcmp(argv[2], "get") && strcmp(argv[2], "tcont") &&
-	    strcmp(argv[2], "gem") && strcmp(argv[2], "profiles") && strcmp(argv[2], "uni"))) {
+	    strcmp(argv[2], "gem") && strcmp(argv[2], "profiles") && strcmp(argv[2], "uni") &&
+	    strcmp(argv[2], "ani") && strcmp(argv[2], "mapper"))) {
 		fprintf(stderr, "Usage: %s <miniolt-sysfs-directory> status\n"
 			"       %s <miniolt-sysfs-directory> mib <hardware-ID> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> get <hardware-ID> <class> <instance> <mask> [interface=fttr0]\n"
@@ -294,8 +365,10 @@ int main(int argc, char **argv)
 			"       %s <miniolt-sysfs-directory> gem <hardware-ID> <ordinal:1..60> <tcont-instance> <queue-instance> <association:0|1> <profile-instance> <gal-instance> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> profiles <hardware-ID> <bridge-instance> <per-UNI:0|1> <mapper-enabled:0|1> <mapper-instance> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> uni <hardware-ID> <kind:0=Ethernet,2=VEIP> <UNI-instance> <bridge-instance> <port-instance> <ordinal> [interface=fttr0]\n"
+			"       %s <miniolt-sysfs-directory> ani <hardware-ID> <port-instance> <bridge-instance> <port-number> <mapper:0|1> <TP-instance> <VID-list|none> [interface=fttr0]\n"
+			"       %s <miniolt-sysfs-directory> mapper <hardware-ID> <mapper-instance> <P-bit-mask> <GEM-IW-instance|0xffff> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> wait-link <NI-sysfs-directory>\n",
-			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
+			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
 		return 2;
 	}
 	mib = !strcmp(argv[2], "mib");
@@ -305,17 +378,20 @@ int main(int argc, char **argv)
 	gem = !strcmp(argv[2], "gem");
 	profiles = !strcmp(argv[2], "profiles");
 	uni = !strcmp(argv[2], "uni");
+	ani = !strcmp(argv[2], "ani");
+	mapper = !strcmp(argv[2], "mapper");
 	if ((mib && argc != 4 && argc != 5) || (query && argc != 7 && argc != 8) ||
 	    (binding && argc != 9 && argc != 10) || (gem && argc != 10 && argc != 11) ||
 	    (profiles && argc != 8 && argc != 9) || (uni && argc != 9 && argc != 10) ||
-	    (wait && argc != 4) || (!mib && !wait && !query && !binding && !gem && !profiles && !uni && argc != 3))
+	    (ani && argc != 10 && argc != 11) || (mapper && argc != 7 && argc != 8) ||
+	    (wait && argc != 4) || (!mib && !wait && !query && !binding && !gem && !profiles && !uni && !ani && !mapper && argc != 3))
 		return 2;
 	directory = open(argv[1], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (directory < 0) {
 		perror(argv[1]);
 		return 1;
 	}
-	if (mib || query || binding || gem || profiles || uni) {
+	if (mib || query || binding || gem || profiles || uni || ani || mapper) {
 		char *end;
 		unsigned long id;
 
@@ -325,11 +401,11 @@ int main(int argc, char **argv)
 			close(directory);
 			return 2;
 		}
-		if (query || binding || gem || profiles || uni) {
+		if (query || binding || gem || profiles || uni || ani || mapper) {
 			uint16_t fields[6];
 			unsigned int i;
 
-			for (i = 0; i < (gem ? 6U : profiles ? 4U : (binding || uni) ? 5U : 3U); i++) {
+			for (i = 0; i < (gem ? 6U : profiles ? 4U : (binding || uni || ani) ? 5U : 3U); i++) {
 				unsigned long value;
 
 				errno = 0;
@@ -338,6 +414,8 @@ int main(int argc, char **argv)
 				    (query && i == 2 && !value) || (binding && i == 0 && (!value || value > 7)) ||
 				    (gem && ((i == 0 && (!value || value > 60)) || (i == 3 && value > 1))) ||
 				    (profiles && (i == 1 || i == 2) && value > 1) ||
+				    (ani && ((i == 2 && (!value || value > 255)) || (i == 3 && value > 1))) ||
+				    (mapper && i == 1 && (!value || value > 255)) ||
 				    (uni && ((i == 0 && value != 0 && value != 2) ||
 				             (i == 4 && value > (fields[0] == 2 ? 246U : 254U))))) {
 					close(directory);
@@ -345,7 +423,10 @@ int main(int argc, char **argv)
 				}
 				fields[i] = value;
 			}
-			if (profiles || uni)
+			if (ani || mapper)
+				ret = forwarding(directory, id, fields, mapper, ani ? argv[9] : NULL,
+					ani ? (argc == 11 ? argv[10] : "fttr0") : (argc == 8 ? argv[7] : "fttr0"));
+			else if (profiles || uni)
 				ret = associate(directory, id, fields, profiles,
 					profiles ? (argc == 9 ? argv[8] : "fttr0") : (argc == 10 ? argv[9] : "fttr0"));
 			else if (gem)
