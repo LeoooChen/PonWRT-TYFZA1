@@ -50,9 +50,9 @@ static inline int rtl_fe_cam_protocol_put(const struct rtl_dq_io *io,struct rtl_
  return ret;
 }
 
-/* Classifier mode0, default result: select main Hash profile while leaving
- * destination and bytes to the matched action. Source can be kept or set
- * explicitly for a controlled pipeline test. Format from aal_l3_cls.h. */
+/* Classifier mode0 selects the Hash profile and supplies CPU16 on a miss.
+ * A hit may replace its destination. Source can be kept or set explicitly.
+ * Format from aal_l3_cls.h. */
 static inline void rtl_fe_classify_hash(unsigned int words[7],unsigned int profile,unsigned int source)
 {
  unsigned int i;
@@ -61,7 +61,11 @@ static inline void rtl_fe_classify_hash(unsigned int words[7],unsigned int profi
  rtl_fe_bits_set(words,204,4,profile); /* t2_ctrl */
  rtl_fe_bits_set(words,186,1,1); /* stage2_ctrl_vld */
  rtl_fe_bits_set(words,187,1,0); /* stage2_ctrl */
+ /* CLS supplies the CPU destination; a Hash hit may replace it. */
+ rtl_fe_bits_set(words,154,1,1); /* dpid_vld */
+ rtl_fe_bits_set(words,155,1,1); /* dpid_pri */
  rtl_fe_bits_set(words,156,1,1); /* permit */
+ rtl_fe_bits_set(words,158,10,16); /* CPU0, matching the native RX pool. */
  rtl_fe_bits_set(words,208,1,1); /* lspid_vld */
  rtl_fe_bits_set(words,209,6,source); /* lspid */
 }

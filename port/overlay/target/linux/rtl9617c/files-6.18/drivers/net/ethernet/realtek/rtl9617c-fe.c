@@ -226,6 +226,8 @@ static int fe_prepare(struct rtl_fe *fe)
   }
  }
  fe->prepared=true;
+ /* Keep GEM rewriting disabled until its classifier/default chain is ready. */
+ fe_write(fe,0x351c,fe_read(fe,0x351c)&~BIT(10));
  /* The inherited IPPB maps source18 to port4. Preserve the Wi-Fi descriptor's
   * logical source before STG0; per-interface identity remains in metadata. */
  fe_write(fe,0x11e0,(fe->wifi_ippb_saved&~63U)|RTL_WIFI_SOURCE);
@@ -273,7 +275,7 @@ static int fe_prepare(struct rtl_fe *fe)
  if(ret)return ret;
  fe_write(fe,0x3500,0x11); /* Session version/type1, code0. */
  fe_write(fe,0x3504,PPP_IP|PPP_IPV6<<16);
- fe_write(fe,0x351c,(fe_read(fe,0x351c)&~(0x3fU<<16|7U<<24))|BIT(31)|BIT(12)|16U<<16);
+ fe_write(fe,0x351c,(fe_read(fe,0x351c)&~(0x3fU<<4|0x3fU<<16|7U<<24))|BIT(31)|BIT(12)|32U<<4|16U<<16);
  /* TX MIB differences use unsigned wrap, including the32-bit packet count. */
  fe_write(fe,0x3508,fe_read(fe,0x3508)|0x1f00);
  /* Linux must generate TTL/Hop-Limit errors from the original ingress
@@ -284,10 +286,10 @@ static int fe_prepare(struct rtl_fe *fe)
   /* LAN0..4 share a connector, but CPU misses and flow keys must retain
    * the real ingress port. PON keeps its logical source7. */
   if(!i)rtl_fe_bits_set(cls,208,1,0);
-  ret=rtl_fe_classifier_write(&io,1024+4*i,cls);
+  ret=rtl_fe_classifier_write(&io,1024+4*(i?0:1),cls);
   if(ret)return ret;
   rtl_fe_ingress_lpb(lpb,i?7:0,16);
-  rtl_fe_bits_set(lpb,42,4,i);
+  rtl_fe_bits_set(lpb,42,4,i?0:1); /* Native WAN0/LAN1 selectors. */
   for(side=0;side<3;side++)fe_write(fe,0x3414+i*12+side*4,lpb[side]);
   for(side=0;side<4;side++) {
    fe_write(fe,0x1658,i?12:13);
@@ -326,6 +328,7 @@ static int fe_prepare(struct rtl_fe *fe)
   * NI demux3 enters L2TM directly; only LAN0..4's selectors change. */
  fe_write(fe,0xa1e0,fe_read(fe,0xa1e0)|0x3ff);
  rtl_fe_cache_start(&io);
+ fe_write(fe,0x351c,fe_read(fe,0x351c)|BIT(10));
  return 0;
 }
 static int fe_restore(struct rtl_fe *fe)
@@ -335,6 +338,7 @@ static int fe_restore(struct rtl_fe *fe)
  int ret;
 
  if(!fe->prepared)return 0;
+ fe_write(fe,0x351c,fe_read(fe,0x351c)&~BIT(10));
  fe_write(fe,0x11e0,fe->wifi_ippb_saved);
  ret=fe_access(fe,0x11dc,BIT(31)|BIT(30)|RTL_WIFI_SOURCE);
  if(ret)return ret;
@@ -856,7 +860,7 @@ itu_paths:
    data->action.vlan_count?data->action.vlan[0].vid:65535);
   if(!path)return -EOPNOTSUPP;
   data->action.destination=32+path->tcont;
-  data->action.deep_queue=0;
+  data->action.deep_queue=1;
   data->action.cos=path->queue;
   data->action.gem_set=1;data->action.gem_index=path->index;
  }
@@ -1141,6 +1145,7 @@ static int fe_counters_show(struct seq_file *file,void *unused)
  struct rtl_dq_io io=fe_io(fe);
  struct rtl_fe_flow *flow;
  unsigned int words[7],age,interface,destination;
+ const __le32 *action;
  int ret;
 
  mutex_lock(&fe->lock);
@@ -1151,8 +1156,10 @@ static int fe_counters_show(struct seq_file *file,void *unused)
   if(!ret && flow->interface_owned)ret=fe_access(fe,0x3000,BIT(31)|flow->counter);
   if(ret){seq_printf(file,"%u error=%d\n",flow->hash_index,ret);continue;}
   interface=flow->interface_owned?fe_read(fe,0x3004):0;
-  destination=le32_to_cpu(((__le32 *)(fe->memory+RTL_FE_ACTION_OFFSET+
-                                      flow->hash_index*RTL_FE_ACTION_BYTES))[0])>>8&1023;
+  action=fe->memory+RTL_FE_ACTION_OFFSET+flow->hash_index*RTL_FE_ACTION_BYTES;
+  destination=le32_to_cpu(action[0])>>8&1023;
+  if((le32_to_cpu(action[0])&BIT(18)) && (le32_to_cpu(action[3])&BIT(6)))
+   destination=32+((le32_to_cpu(action[3])>>10)&31);
   seq_printf(file,"%u %s %s %u %u %u %u %u ",flow->hash_index,
              flow->input->netdev->name,flow->output->netdev->name,
              flow->ingress_pol,destination,flow->ingress_session,flow->pppoe>>2,age);

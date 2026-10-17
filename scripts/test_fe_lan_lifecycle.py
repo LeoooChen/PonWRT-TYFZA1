@@ -64,7 +64,13 @@ struct rtl_fe {
 static unsigned int fe_read(void *ctx,unsigned int reg){struct rtl_fe *f=ctx;assert(reg<0x10000);return f->reg[reg/4];}
 static void fe_write(void *ctx,unsigned int reg,unsigned int value){
  struct rtl_fe *f=ctx;assert(reg<0x10000);
- if(reg==0x38c4 && value==0xa0000000)f->cache_ready=1;
+ if(reg==0x38c4)f->cache_ready=value==0xa0000000;
+ if(reg==0x351c && (value&BIT(10)) && ((value>>4)&63)==32) {
+  assert(f->cache_ready && f->reg[0x3860/4]==0x020d0000);
+  assert(((f->reg[0x3418/4]>>10)&15)==1 && ((f->reg[0x3424/4]>>10)&15)==0);
+  assert(((f->cls[1024][4]>>26)&7)==7 && ((f->cls[1028][4]>>26)&7)==7);
+ }
+ if(reg==0x38c4 && value==0)assert(!(f->reg[0x351c/4]&BIT(10)));
  if(reg>=0xa5f8 && reg<=0xa838 && !((reg-0xa5f8)%0x90) && ((value>>16)&63)==25){
   /* Admission follows table bases, cache setup and five output selectors. */
   assert(f->prepared && f->cache_ready && f->reg[0x383c/4]==0x03800000);
@@ -79,7 +85,7 @@ static void fe_write(void *ctx,unsigned int reg,unsigned int value){
   assert((f->reg[0x3508/4]&0x1f00)==0x1f00); /* TX MIB deltas require wrap mode. */
   assert((f->reg[0x30cc/4]&0xfff)==0xf21); /* TTL exceptions retain the original packet. */
   assert((f->reg[0xa1e0/4]&1023)==1023 && (f->reg[0x3400/4]&BIT(19)));
-  assert(!(f->cls[1024][6]&BIT(16)));f->admission_writes++;
+  assert(!(f->cls[1028][6]&BIT(16)));f->admission_writes++;
  }
  f->reg[reg/4]=value;
 }
@@ -102,6 +108,7 @@ static int fe_access(void *ctx,unsigned int reg,unsigned int value){
   else f->reg[(0x3920-i*4)/4]=selected[bank*4+i];
  } else if(reg==0x33b0){
   unsigned int side=value&0x3fff;assert(side<1040);
+  if(value&BIT(30))assert(!(f->reg[0x351c/4]&BIT(10)));
   for(i=0;i<7;i++)if(value&BIT(30))f->cls[side][i]=f->reg[(0x33cc-i*4)/4];
   else f->reg[(0x33cc-i*4)/4]=f->cls[side][i];
  } else if(reg==0x1654){
@@ -136,6 +143,10 @@ int main(void){
  old_demux=fe_read(&f,0xa1e0);
  for(unsigned int cycle=0;cycle<3;cycle++){
   assert(!rtl_fe_enable(&f) && f.enabled && f.prepared);
+  for(unsigned int row=1024;row<=1028;row+=4){
+   assert(((f.cls[row][4]>>26)&7)==7);
+   assert(((f.cls[row][4]>>30)|(f.cls[row][5]<<2))%1024==16);
+  }
   assert(f.wifi_ippb==0xa5000012);
   assert(fe_read(&f,0x3700)==8 && fe_read(&f,0x3704)==63 && fe_read(&f,0x3708)==318);
   assert(fe_read(&f,0x370c)==(61|2U<<8) && fe_read(&f,0x3710)==(60|3U<<8));
@@ -144,7 +155,9 @@ int main(void){
   assert(f.cam[2][0][0]==0x18864 && f.cam[8][0][0]==0x10021 && f.cam[8][1][0]==0x10057);
   for(unsigned int b=0;b<256;b++)assert(((f.wifi_mask[b/32]>>(b%32))&1)==((b>=135 && b<143)?0:((f.mask[b/32]>>(b%32))&1)));
   for(unsigned int i=0;i<5;i++)assert(fe_read(&f,0xa5f8+i*0x90)==((lan[i]&~(63U<<16))|(25U<<16)));
-  assert(!(f.cls[1024][6]&BIT(16)) && (f.cls[1028][6]&BIT(16)) && ((f.cls[1028][6]>>17)&63)==7);
+  assert(!(f.cls[1028][6]&BIT(16)) && (f.cls[1024][6]&BIT(16)) && ((f.cls[1024][6]>>17)&63)==7);
+  assert(((fe_read(&f,0x3418)>>10)&15)==1 && ((fe_read(&f,0x3424)>>10)&15)==0);
+  assert((fe_read(&f,0x351c)&BIT(10)) && ((fe_read(&f,0x351c)>>4)&63)==32);
   /* Profile defaults start at 1024 | (profile << 2); all other rows survive. */
   for(unsigned int row=0;row<1040;row++)
    if(row!=1024 && row!=1028)assert(!memcmp(f.cls[row],old_cls[row],sizeof(old_cls[row])));
@@ -205,7 +218,9 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='fe-lan-lifecycl
 (root / 'logs/fe-five-lan-lifecycle.json').write_text(json.dumps({
     'production_source_sha256': hashlib.sha256(source.encode()).hexdigest(),
     'LAN_ports': [0, 1, 2, 3, 4], 'exact_enable_disable_cycles': 3,
-    'failed_prepare_admits_no_LAN': True, 'physical_LSPID_preserved': True,
+    'failed_prepare_admits_no_LAN': True,
+    'GEM_gate_opens_after_CLS_defaults_LPB_cache_and_closes_before_restore': True,
+    'both_CLS_defaults_supply_CPU16': True, 'physical_LSPID_preserved': True,
     'failed_rollback_preserves_original_snapshot_on_reenable': True,
     'post_PE_LAN_output': 'NI demux3 to L2TM; upper selectors preserved',
     'sanitizers': ['ASan', 'UBSan'], 'hardware_verified_by_this_test': False,

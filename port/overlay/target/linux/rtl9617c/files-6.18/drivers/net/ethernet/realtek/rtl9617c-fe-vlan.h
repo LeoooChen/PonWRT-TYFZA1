@@ -110,7 +110,7 @@ static int fe_evto_upstream(struct rtl_fe_rule *data,struct rtl_evto_packet *log
  if(ret)return ret;
  ret=fe_evto_output(data,&result.output,replace||!result.passthrough);
  if(ret)return ret;
- data->action.destination=32+result.path->tcont;data->action.deep_queue=0;
+ data->action.destination=32+result.path->tcont;data->action.deep_queue=1;
  data->action.cos=result.path->queue;
  data->action.gem_set=1;data->action.gem_index=result.path->index;
  return 0;

@@ -106,7 +106,8 @@ int main(void)
  assert(read_reg(&m,0x38bc)==0xffffffffU && read_reg(&m,0x38c4)==0xa0000000U);
  unsigned int miss[4];rtl_fe_cpu_miss(miss);
  assert(((miss[1]>>22)&3)==3); /* Both keep-original enable/value. */
- assert(((miss[0]>>30)|(miss[1]<<2))%1024==16); /* Miss goes toCPU16. */
+ /* Original 8277C group16+18+19 TRAP fixture; CLS supplies CPU16. */
+ assert(miss[0]==0 && miss[1]==0x00c00000 && miss[2]==0 && miss[3]==0);
  struct {unsigned int before,words[8],after;} guarded={.before=0x12345678,.after=0xabcdef01};
  struct rtl_fe_ipv4_action action={.address=0xc0a8471c,.port=62000,.destination=32,
   .mac_da_index=8191,.ingress_interface=63,.egress_interface=62,.cos=7,.check_mask=63,.translate=1,.deep_queue=1};
@@ -121,6 +122,8 @@ int main(void)
  assert(key.before==0x12345678 && key.after==0xabcdef01);
  unsigned int fib[7],lpb[3],fdb[4];
  rtl_fe_classify_hash(fib,3,7);
+ assert(((fib[4]>>26)&7)==7); /* CPU destination valid/priority/permit. */
+ assert(((fib[4]>>30)|(fib[5]<<2))%1024==16);
  assert((fib[6]&0xff00U)==0x3800U); /* valid+profile3 in bits203..207 */
  assert(((fib[6]>>17)&63)==7 && (fib[6]&(1U<<16)));
  rtl_fe_ingress_lpb(lpb,0,16);

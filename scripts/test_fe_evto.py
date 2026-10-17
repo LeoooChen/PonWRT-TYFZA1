@@ -45,7 +45,9 @@ int main(void) {
  assert(routed.action.vlan_set && routed.action.vlan_count==1 && routed.action.vlan[0].vid==200 &&
         routed.action.vlan[0].priority==5 && routed.action.vlan[0].tpid==1);
  unsigned int words[8];rtl_fe_ipv4_action(words,&routed.action);
- assert((words[0]>>8&1023)==33 && (words[4]>>19&4095)==200 && (words[5]>>2&3)==1 && (words[5]>>7&255)==8);
+ assert((words[0]>>8&1023)==8 && (words[0]&(1U<<18)) && (words[0]&(1U<<7)));
+ assert((words[3]&(1U<<6)) && ((words[3]>>10)&31)==1); /* Native GEM/TCONT mode1. */
+ assert((words[4]>>19&4095)==200 && (words[5]>>2&3)==1 && !(words[5]&(1U<<5)));
  /* A wildcard PCP TC rule cannot collapse both priority5 and other frames:
   * their inverse operations produce different logical VLAN keys. */
  routed=(struct rtl_fe_rule){.input=&pp,.output=&lp,.key={.protocol=17}};

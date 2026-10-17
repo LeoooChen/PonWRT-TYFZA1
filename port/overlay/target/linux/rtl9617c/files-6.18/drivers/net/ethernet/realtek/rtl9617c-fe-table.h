@@ -117,21 +117,14 @@ static inline unsigned int rtl_fe_hash_bucket(unsigned short crc16)
  return crc16&0xffe0U;
 }
 
-/* Group16+18+19 CPU miss action in its128-bit slot. It preserves packet
- * bytes and bypasses later route lookup before entering CPU16. */
+/* Original group16+18+19 trap preserves bytes and the CLS CPU destination. */
 static inline void rtl_fe_cpu_miss(unsigned int words[4])
 {
  unsigned int i;
  for (i = 0; i < 4; i++)
   words[i] = 0;
- rtl_fe_bits_set(words, 22 + 4, 1, 1); /* group18 dpid_vld */
- rtl_fe_bits_set(words, 22 + 5, 1, 1); /* dpid_pri */
- rtl_fe_bits_set(words, 22 + 6, 1, 1); /* permit */
- rtl_fe_bits_set(words, 22 + 8, 10, 16);
  rtl_fe_bits_set(words, 41 + 13, 1, 1); /* keep_orig_pkt_vld */
  rtl_fe_bits_set(words, 41 + 14, 1, 1); /* keep_orig_pkt */
- rtl_fe_bits_set(words, 41 + 35, 4, 15); /* t2_ctrl bypass */
- rtl_fe_bits_set(words, 41 + 34, 1, 1); /* t2_ctrl_vld */
 }
 
 /* Each age row owns32 slots, each four bits. Main indices are linear

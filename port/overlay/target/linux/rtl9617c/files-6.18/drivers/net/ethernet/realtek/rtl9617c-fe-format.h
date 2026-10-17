@@ -221,10 +221,13 @@ static inline void rtl_fe_ipv4_action(unsigned int words[RTL_FE_ACTION_WORDS],
  rtl_fe_action_set(words, RTL_FE_IP_MTU_ENC_VLD1, action->mtu_set);
  rtl_fe_action_set(words, RTL_FE_IP_MTU_ENC1, action->mtu_index);
  if(action->gem_set) {
-  /* Original CN2 mode0: policer is disabled; POL_ID carries the internal GEM. */
-  rtl_fe_action_set(words,RTL_FE_POL_VLD1,1);
-  rtl_fe_action_set(words,RTL_FE_POL_EN1,0);
-  rtl_fe_action_set(words,RTL_FE_POL_ID1,action->gem_index);
+  /* Native 8277C mode1: GEM in MCGID, TCONT in the reused t2 fields. */
+  rtl_fe_action_set(words,RTL_FE_MCGID,action->gem_index);
+  rtl_fe_action_set(words,RTL_FE_MC,1);
+  rtl_fe_action_set(words,RTL_FE_DEEPQ,1);
+  rtl_fe_action_set(words,RTL_FE_POP_L3_VLD1,1);
+  rtl_fe_action_set(words,RTL_FE_T2_CTRL1,action->destination&15);
+  rtl_fe_action_set(words,RTL_FE_LDPID_OFFSET_MSB,(action->destination>>4)&1);
  }
  if(action->vlan_set) {
   rtl_fe_action_set(words,RTL_FE_VLAN_VLD1,1);

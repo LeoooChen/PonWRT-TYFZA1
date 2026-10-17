@@ -357,7 +357,7 @@ int main(void)
     assert(parsed.key.llid==(direction?8:0));
     if(ipv6)assert(parsed.key6.llid==(direction?8:0));
     assert(parsed.action.destination==(direction?0:35));
-    assert(parsed.action.gem_set==!direction && !parsed.action.deep_queue);
+    assert(parsed.action.gem_set==!direction && parsed.action.deep_queue==!direction);
     if(!direction)assert(parsed.action.gem_index==8 && parsed.action.cos==2);
     paths.path[0].pbits=1;
     memset(&parsed,0,sizeof(parsed));
