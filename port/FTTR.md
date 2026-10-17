@@ -247,7 +247,7 @@ It does not use the names of the original libraries as a capability probe.
   TPID/DSCP group. Native checks all 28 bytes. Independent GAL/bridge reuse
   does not acquire a false linear dependency; GEM and UNI retain their real
   prerequisite checks and cleanup ownership. These commands prepare base
-  entities; complete service orchestration remains work.
+  entities; resident automatic service provisioning remains work.
 * Native ANI/GEM-side bridge-port attachment and VLAN filtering. The selected
   port/bridge/TP IDs follow actual original producer `d8320`: mask`fc00`,
   TP type5 for direct GEM IW or type3 for Mapper, priority0 and path-cost1.
@@ -287,6 +287,36 @@ It does not use the names of the original libraries as a capability probe.
   Every request, retry and completion checks the same registered serial;
   replacement stops further transmission and restoration. These explicit
   commands do not activate automatic service provisioning.
+* Native explicit service orchestration (`omci-service.c`, `fttrctl service`).
+  A fresh MIB scan supplies the actual selected Ethernet/VEIP UNI, an
+  unassigned T-CONT and an upstream class277 queue whose Related Port equals
+  `(T-CONT instance << 16) | selected priority`. The queue's entity MSB follows
+  original `plr_gponrm_queue_write`; lookup follows `f55fc` and original caller
+  `aa164..aa1b4`. The original ONU's `mib_Tcont.so` default row selects `00ff`
+  or `ffff` via `gInfo+584`; both actual unassigned forms are recognized.
+  A T-CONT already owning this Alloc-ID is reused; its missing queue never
+  causes duplicate assignment to another T-CONT. Duplicate ownership fails.
+  The selected local slot1..7 generates Alloc-ID and GEM Port-ID with the
+  original allocators. This explicit single-service policy uses GEM ordinal
+  equal to the slot; it does not infer ME IDs from model names or slot numbers.
+  Original shared bridge`8080`, GAL1, direct-bridge GEM IW option1, UNI/ANI
+  bridge ports and filters form one dependency/rollback plan. Existing exact
+  attachments are reused; free port entities are selected within the original
+  allocator's1..2048 range, and bridge port numbers are unique. The physical
+  UNI administrative state is set/read back as0 (ETH mask`0800`, VEIP`8000`),
+  retaining/restoring its prior byte on failure.
+  Local DBA reads expose both actual grant words. The service snapshots the
+  prior grant, refuses an occupied slot without a matching remote Alloc-ID,
+  then programs and reads back the requested grant. It finally applies and
+  verifies the original compound VLAN policy: transparent mode4 (`b5704`), or
+  access mode1 (`b4c10`: discard tagged, then tag untagged). VLAN failure first
+  restores its prior rows; confirmed restoration permits restoring the prior
+  local grant and releasing the objects in reverse dependency order. A failed
+  VLAN/grant restoration stops dependent cleanup and retains the ownership/
+  error records. `configured` describes these verified remote/local resources;
+  it does not assert data forwarding, authentication or optical acceptance.
+  The resident daemon still performs inventory only; automatic provisioning,
+  service persistence/reconciliation and cross-service policy remain work.
 
 ## Validation
 
@@ -494,6 +524,26 @@ interoperability acceptance. The shared MIB/ME check passes with VLAN linked
 passes in `package-root-vlan/` (`package-stage-vlan.log`). No full firmware
 build or full test suite was run for this change.
 
+`scripts/test_fttr_service.py` executes the original high-level access and
+transparent policy producers, original GEM/GAL/bridge/ME builders and the ONU
+T-CONT default initializer. It uses original attribute descriptors and ONU
+table Get/Get Next replies. The actual native command runs over AF_PACKET in
+a private namespace; the peer models MIB storage and the synchronous DBA
+sysfs boundary. Ethernet transparent and VEIP access services configure and
+verify the full graph, local grant, UNI state and VLAN rows. Repeating the
+command with the resulting real MIB causes no configuration writes. Cases
+cover unavailable queues, duplicate Alloc-ID ownership, an existing owner
+without the requested queue, occupied local grant, GEM rejection, failed
+object deletion, false-successful grant writes/restoration, partial VLAN
+failure and rejected VLAN restoration (`service-comparison.json`). The narrow
+core/DBA comparison also checks the actual two-word grant readback
+(`core-grant-readback.json`). Shared MIB/ME checks pass with the service linked
+(`mib-service-comparison.json`). Actual musl package prepare/compile/install
+passes (`package-root-service/`, `package-stage-service.log`), as does the
+isolated6.18.55 module build against the retained real export table
+(`modules-service.log`, with the existing stripped-description warnings).
+These checks do not exercise optical traffic or the ASIC data-forwarding path.
+
 The executable links with the project's actual OpenWrt GCC 14.4.0/musl
 toolchain as `artifacts/fttr/fttrctl-musl`. The optional userspace and kernel
 package definitions parse successfully with the pinned OpenWrt make includes.
@@ -562,6 +612,10 @@ management profile/release. `onu_state` is a fixed-record binary read interface:
 `pread(20, hardware-ID*20)` returns LE32 downstream/upstream/EqD followed by
 eight vendor-first serial bytes. It avoids rescanning all slots when validating
 one completed inventory. The text `onu_table` remains available for inspection.
+`tcont_state` provides eight-byte LE records at `(hardware-ID*8+slot)*8`:
+fixed grant followed by the packed assured/maximum word. Reads hold the same
+control lock as grant programming and access the actual `base+1` and `base`
+registers, not a software copy of a successful write.
 
 `port/configs/tyfza1-fttr-packages.config` is the optional OpenWrt package
 selection fragment. `sync-overlay.sh` copies the package, and the target's
@@ -593,6 +647,7 @@ fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> ani <hardware-ID> <port-insta
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> mapper <hardware-ID> <mapper-instance> <P-bit-mask> <GEM-IW-instance|0xffff> fttr0
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> vlan-table <hardware-ID> <EVTO-instance> fttr0
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> vlan <hardware-ID> <EVTO-instance> <policy:0..5> <input-VID> <output-VID> <priority:0..7> <remove:0|1> fttr0
+fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> service <hardware-ID> <UNI-kind:0|2> <UNI-instance> <slot:1..7> <priority:0..7> <VID|none> <fixed> <assured> <maximum> fttr0
 ```
 
 `status` emits raw hardware state and the registration bit for all 64 slots.
@@ -674,6 +729,16 @@ fields (supply0). VID values used by a policy are0..4094. `remove=1` removes
 only that policy's filter keys. A configured result applies to these selected
 rules, not a complete forwarding path or supported subordinate model.
 
+`service` performs a fresh inventory and selects real T-CONT/queue resources
+for the explicitly selected UNI. Kind0 is Ethernet; kind2 is VEIP. `none`
+selects the original transparent UNI policy; a VID0..4094 selects the original
+access policy with the chosen priority. Bandwidth values are the existing
+hardware grant units, not kbit/s. It emits `service_state`, `service_objects`
+and (when reached) `service_vlan`, retaining the captured serial, actual
+resource IDs, grant observations and primary/cleanup diagnostics. It uses the
+same exclusive device lease as the other development commands. No automatic
+onboarding or running service journal is created by this explicit operation.
+
 Original hashes and detailed results are emitted under `artifacts/fttr/`.
 Original binaries and the kernel build tree are read from the private evidence
 and copied build tree, not modified in the main checkout.
@@ -751,7 +816,9 @@ the failures/unconfirmed resources and stops further dependency deletion.
    bridge/initial Mapper and basic Ethernet/VEIP attachment are implemented.
    Mapper binding and ANI/GEM-side bridge ports/VLAN filtering are implemented.
    UNI VLAN operation rules, table readback and exact prior-rule restoration
-   are implemented. Complete service orchestration remains work.
+   are implemented. Explicit fresh-MIB selection, direct-bridge service
+   orchestration and local DBA readback/restoration are implemented. Resident
+   automatic provisioning and service persistence/reconciliation remain work.
    Current upstream ONU OMCI is a different role.
 5. Original subordinate gateway configuration, Wi-Fi synchronization,
    multicast, reboot/upgrade and roaming coordination, using the connected

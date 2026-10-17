@@ -133,6 +133,9 @@ int dba(const struct rtl_fttr_reg_io *io) {return rtl_fttr_dba_defaults(io);}
 int tcont(const struct rtl_fttr_reg_io *io,unsigned int id,unsigned int tc,unsigned int f,unsigned int a,unsigned int m) {
  return rtl_fttr_tcont_program(io,id,tc,f,a,m);
 }
+int tcont_read(const struct rtl_fttr_reg_io *io,unsigned int id,unsigned int tc,unsigned int *f,unsigned int *limits) {
+ return rtl_fttr_tcont_read(io,id,tc,f,limits);
+}
 int link(const struct rtl_fttr_reg_io *io,unsigned int mode,unsigned int *ready) {
  return rtl_fttr_wtg_link(io,mode,ready);
 }
@@ -186,6 +189,11 @@ int management(const struct rtl_fttr_reg_io *io,unsigned int id,int enable) {
             io = native_io(actual)
             assert library.tcont(ctypes.byref(io), id, tc, fixed, assured, maximum) == 0
             assert actual.events == expected.events
+            f, limits = ctypes.c_uint(), ctypes.c_uint()
+            assert library.tcont_read(ctypes.byref(io), id, tc, ctypes.byref(f), ctypes.byref(limits)) == 0
+            assert (f.value, limits.value) == (fixed, assured << 16 | maximum)
+            base = 0x41000 + id*32 + tc*4
+            assert actual.events[-2:] == [['read',base+1,fixed], ['read',base,assured << 16 | maximum]]
             cases.append({'operation':'tcont','id':id,'slot':tc,'stock_native_match':True})
         for id in (0,5,63):
             expected, actual = Registers(), Registers()

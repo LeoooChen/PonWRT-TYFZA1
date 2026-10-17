@@ -221,6 +221,29 @@ static ssize_t tcont_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_WO(tcont);
 
+/* Eight-byte LE records, indexed by ONU * 8 + T-CONT: fixed, assured|max. */
+static ssize_t tcont_state_read(struct file *file, struct kobject *kobj,
+		const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(kobj_to_dev(kobj));
+	unsigned int index = offset / 8, fixed, limits;
+	int ret;
+
+	if (offset % 8 || count < 8)
+		return -EINVAL;
+	if (index >= RTL_FTTR_ONUS * 8)
+		return 0;
+	mutex_lock(&fttr->control_lock);
+	ret = rtl_fttr_tcont_read(&fttr->reg_io, index / 8, index % 8, &fixed, &limits);
+	mutex_unlock(&fttr->control_lock);
+	if (ret)
+		return ret;
+	put_unaligned_le32(fixed, buf);
+	put_unaligned_le32(limits, buf + 4);
+	return 8;
+}
+static BIN_ATTR_RO(tcont_state, RTL_FTTR_ONUS * 8 * 8);
+
 static ssize_t management_grant_store(struct device *dev, struct device_attribute *attr,
 				     const char *buf, size_t count)
 {
@@ -479,6 +502,7 @@ static umode_t rtl_fttr_bin_visible(struct kobject *kobj, const struct bin_attri
 
 static const struct bin_attribute * const rtl_fttr_bin_attrs[] = {
 	&bin_attr_onu_state,
+	&bin_attr_tcont_state,
 	NULL,
 };
 

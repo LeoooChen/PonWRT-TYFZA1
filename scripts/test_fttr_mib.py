@@ -93,7 +93,7 @@ def main():
     stock = Stock(args.stock)
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory)
-        sources = [source / n for n in ('miniolt.c', 'omci-wire.c', 'omci-socket.c', 'omci-mib.c', 'omci-me.c', 'omci-objects.c', 'omci-gem.c', 'omci-association.c', 'omci-vlan.c')]
+        sources = [source / n for n in ('miniolt.c', 'omci-wire.c', 'omci-socket.c', 'omci-mib.c', 'omci-me.c', 'omci-objects.c', 'omci-gem.c', 'omci-association.c', 'omci-vlan.c', 'omci-model.c', 'omci-service.c')]
         flags = ['cc', '-O2', '-std=c11', '-Wall', '-Wextra', '-Werror']
         subprocess.run(flags + ['-shared', '-fPIC', '-o', str(path / 'native.so')] + list(map(str, sources)), check=True)
         subprocess.run(flags + ['-o', str(path / 'fttrctl'), str(source / 'fttrctl.c')] + list(map(str, sources)), check=True)

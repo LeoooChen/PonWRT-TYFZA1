@@ -16,6 +16,7 @@
 #include "omci-gem.h"
 #include "omci-association.h"
 #include "omci-vlan.h"
+#include "omci-service.h"
 #include "omci-socket.h"
 
 static void hex(const uint8_t *data, size_t length)
@@ -416,16 +417,70 @@ static int vlan_command(int directory, unsigned int id, const uint16_t fields[6]
 	return ferror(stdout) ? -EIO : ret;
 }
 
+static int service_record(void *context, uint16_t sequence, const struct fttr_mib_record *entry)
+{
+	int ret;
+
+	(void)sequence;
+	ret = fttr_mib_model_add(context, entry);
+	return ret < 0 ? ret : 0;
+}
+
+static int service_command(int directory, unsigned int id, const uint16_t fields[8],
+			   bool tagged, const char *interface)
+{
+	struct fttr_service_config config = { .veip = fields[0] == 2, .uni = fields[1],
+		.slot = fields[2], .priority = fields[3], .tagged = tagged, .vid = fields[4],
+		.fixed = fields[5], .assured = fields[6], .maximum = fields[7] };
+	struct fttr_service_job job = { .phase = "inventory" };
+	struct fttr_mib_model model = { 0 };
+	struct fttr_onu_state before;
+	struct fttr_omci_session session;
+	uint16_t commands;
+	int ret = open_session(directory, id, interface, &session, &before);
+
+	if (ret)
+		return ret;
+	job.transaction.me.onu = id;
+	memcpy(job.transaction.serial, before.serial, 8);
+	ret = fttr_mib_scan(&session, &commands, service_record, &model);
+	if (!ret)
+		ret = fttr_miniolt_same(directory, id, &before);
+	if (!ret)
+		ret = fttr_service_start(&job, id, &session.transaction, &model, &config, before.serial);
+	fttr_mib_model_clear(&model);
+	if (!ret)
+		ret = fttr_service_execute(&session, &job, directory, &before);
+	close(session.fd);
+	job.error = ret;
+	fttr_service_dump(&job, stdout);
+	if (job.transaction.count)
+		fttr_objects_job_dump(&job.transaction, stdout, "service_objects");
+	if (job.vlan.before.me.request[2]) {
+		printf("{\"event\":\"service_vlan\",\"id\":%u,\"before\":", id);
+		vlan_table_dump(&job.vlan.before);
+		printf(",\"after\":");
+		vlan_table_dump(&job.vlan.after);
+		printf(",\"failure\":");
+		vlan_failure_dump(&job.vlan.failure);
+		printf(",\"cleanup_failure\":");
+		vlan_failure_dump(&job.vlan.cleanup_failure);
+		puts("}");
+	}
+	fttr_service_clear(&job);
+	return ferror(stdout) ? -EIO : ret;
+}
+
 int main(int argc, char **argv)
 {
-	bool mib, wait, query, binding, gem, profiles, uni, ani, mapper, vlan, vlan_table;
+	bool mib, wait, query, binding, gem, profiles, uni, ani, mapper, vlan, vlan_table, service;
 	int directory, ret;
 
 	if (argc < 3 || (strcmp(argv[2], "status") && strcmp(argv[2], "mib") &&
 	    strcmp(argv[2], "wait-link") && strcmp(argv[2], "get") && strcmp(argv[2], "tcont") &&
 	    strcmp(argv[2], "gem") && strcmp(argv[2], "profiles") && strcmp(argv[2], "uni") &&
 	    strcmp(argv[2], "ani") && strcmp(argv[2], "mapper") && strcmp(argv[2], "vlan") &&
-	    strcmp(argv[2], "vlan-table"))) {
+	    strcmp(argv[2], "vlan-table") && strcmp(argv[2], "service"))) {
 		fprintf(stderr, "Usage: %s <miniolt-sysfs-directory> status\n"
 			"       %s <miniolt-sysfs-directory> mib <hardware-ID> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> get <hardware-ID> <class> <instance> <mask> [interface=fttr0]\n"
@@ -437,8 +492,9 @@ int main(int argc, char **argv)
 			"       %s <miniolt-sysfs-directory> mapper <hardware-ID> <mapper-instance> <P-bit-mask> <GEM-IW-instance|0xffff> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> vlan-table <hardware-ID> <EVTO-instance> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> vlan <hardware-ID> <EVTO-instance> <policy:0..5> <input-VID> <output-VID> <priority:0..7> <remove:0|1> [interface=fttr0]\n"
+			"       %s <miniolt-sysfs-directory> service <hardware-ID> <UNI-kind:0|2> <UNI-instance> <slot:1..7> <priority:0..7> <VID|none> <fixed> <assured> <maximum> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> wait-link <NI-sysfs-directory>\n",
-			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
+			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
 		return 2;
 	}
 	mib = !strcmp(argv[2], "mib");
@@ -452,19 +508,21 @@ int main(int argc, char **argv)
 	mapper = !strcmp(argv[2], "mapper");
 	vlan = !strcmp(argv[2], "vlan");
 	vlan_table = !strcmp(argv[2], "vlan-table");
+	service = !strcmp(argv[2], "service");
 	if ((mib && argc != 4 && argc != 5) || (query && argc != 7 && argc != 8) ||
 	    (binding && argc != 9 && argc != 10) || (gem && argc != 10 && argc != 11) ||
 	    (profiles && argc != 8 && argc != 9) || (uni && argc != 9 && argc != 10) ||
 	    (ani && argc != 10 && argc != 11) || (mapper && argc != 7 && argc != 8) ||
 	    (vlan && argc != 10 && argc != 11) || (vlan_table && argc != 5 && argc != 6) ||
-	    (wait && argc != 4) || (!mib && !wait && !query && !binding && !gem && !profiles && !uni && !ani && !mapper && !vlan && !vlan_table && argc != 3))
+	    (service && argc != 12 && argc != 13) ||
+	    (wait && argc != 4) || (!mib && !wait && !query && !binding && !gem && !profiles && !uni && !ani && !mapper && !vlan && !vlan_table && !service && argc != 3))
 		return 2;
 	directory = open(argv[1], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (directory < 0) {
 		perror(argv[1]);
 		return 1;
 	}
-	if (mib || query || binding || gem || profiles || uni || ani || mapper || vlan || vlan_table) {
+	if (mib || query || binding || gem || profiles || uni || ani || mapper || vlan || vlan_table || service) {
 		char *end;
 		unsigned long id;
 
@@ -474,13 +532,17 @@ int main(int argc, char **argv)
 			close(directory);
 			return 2;
 		}
-		if (query || binding || gem || profiles || uni || ani || mapper || vlan || vlan_table) {
-			uint16_t fields[6];
+		if (query || binding || gem || profiles || uni || ani || mapper || vlan || vlan_table || service) {
+			uint16_t fields[8];
 			unsigned int i;
 
-			for (i = 0; i < (vlan_table ? 1U : (gem || vlan) ? 6U : profiles ? 4U : (binding || uni || ani) ? 5U : 3U); i++) {
+			for (i = 0; i < (service ? 8U : vlan_table ? 1U : (gem || vlan) ? 6U : profiles ? 4U : (binding || uni || ani) ? 5U : 3U); i++) {
 				unsigned long value;
 
+				if (service && i == 4 && !strcmp(argv[8], "none")) {
+					fields[4] = 0;
+					continue;
+				}
 				errno = 0;
 				value = strtoul(argv[4 + i], &end, 0);
 				if (errno || !*argv[4 + i] || *end || value > UINT16_MAX ||
@@ -490,6 +552,8 @@ int main(int argc, char **argv)
 				    (ani && ((i == 2 && (!value || value > 255)) || (i == 3 && value > 1))) ||
 				    (mapper && i == 1 && (!value || value > 255)) ||
 				    (vlan && ((i == 1 && value > 5) || (i == 4 && value > 7) || (i == 5 && value > 1))) ||
+				    (service && ((i == 0 && value != 0 && value != 2) || (i == 2 && (!value || value > 7)) ||
+				                 (i == 3 && value > 7) || (i == 4 && value > 4094))) ||
 				    (uni && ((i == 0 && value != 0 && value != 2) ||
 				             (i == 4 && value > (fields[0] == 2 ? 246U : 254U))))) {
 					close(directory);
@@ -497,7 +561,9 @@ int main(int argc, char **argv)
 				}
 				fields[i] = value;
 			}
-			if (vlan || vlan_table)
+			if (service)
+				ret = service_command(directory, id, fields, strcmp(argv[8], "none"), argc == 13 ? argv[12] : "fttr0");
+			else if (vlan || vlan_table)
 				ret = vlan_command(directory, id, fields, vlan_table,
 					vlan_table ? (argc == 6 ? argv[5] : "fttr0") : (argc == 11 ? argv[10] : "fttr0"));
 			else if (ani || mapper)

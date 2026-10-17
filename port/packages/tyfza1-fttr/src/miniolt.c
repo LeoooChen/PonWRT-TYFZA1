@@ -84,6 +84,25 @@ static uint32_t read_le32(const uint8_t *p)
 	return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
 }
 
+int fttr_miniolt_tcont_read(int directory, unsigned int id, unsigned int slot,
+			   struct fttr_tcont_grant *grant)
+{
+	uint8_t data[8];
+	int fd = openat(directory, "tcont_state", O_RDONLY | O_CLOEXEC), ret;
+	ssize_t size;
+
+	if (fd < 0)
+		return -errno;
+	size = pread(fd, data, sizeof(data), (id * 8 + slot) * sizeof(data));
+	ret = size < 0 ? -errno : size == sizeof(data) ? 0 : -EPROTO;
+	close(fd);
+	if (ret)
+		return ret;
+	grant->fixed = read_le32(data);
+	grant->limits = read_le32(data + 4);
+	return 0;
+}
+
 int fttr_miniolt_one(int directory, unsigned int id, struct fttr_onu_state *onu)
 {
 	uint8_t data[20];

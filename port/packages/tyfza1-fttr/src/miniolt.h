@@ -21,6 +21,9 @@ uint16_t fttr_miniolt_alloc_id(unsigned int id, unsigned int slot);
 uint16_t fttr_miniolt_gem_id(unsigned int id, unsigned int ordinal);
 int fttr_miniolt_tcont(int directory, unsigned int id, unsigned int slot,
 		       unsigned int fixed, unsigned int assured, unsigned int maximum);
+struct fttr_tcont_grant { uint32_t fixed, limits; };
+int fttr_miniolt_tcont_read(int directory, unsigned int id, unsigned int slot,
+			   struct fttr_tcont_grant *grant);
 int fttr_miniolt_tx_disable(int directory);
 int fttr_miniolt_p6_stop(int ni);
 int fttr_miniolt_command(int directory, const char *name, const char *value);
