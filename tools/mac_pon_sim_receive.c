@@ -11,7 +11,7 @@
 #include <string.h>
 #include <unistd.h>
 
-static unsigned char seen[125000];
+static unsigned char seen[1250000];
 static double monotonic(void)
 {
     struct timespec t;

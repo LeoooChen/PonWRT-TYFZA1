@@ -5,6 +5,7 @@
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/ktime.h>
+#include <linux/math64.h>
 #include <linux/unaligned.h>
 #include <net/ip.h>
 #include <net/checksum.h>
@@ -83,8 +84,8 @@ static int __init send_init(void)
  writel(0,vp);
  pr_info("PON_SIM HP11 VP11 dma=%pad source=7 connector=25 sent=%u requested=%u read=%u ret=%d target_wire_Mbps=%u elapsed_ns=%llu offered_wire_bps=%llu offered_frame_bps=%llu\n",
   &address,done,packets,readl(vp+0x1c)&63,ret,rate_mbps,elapsed,
-  div64_u64((u64)done*1538*8*NSEC_PER_SEC,elapsed),
-  div64_u64((u64)done*1514*8*NSEC_PER_SEC,elapsed));
+  mul_u64_u64_div_u64((u64)done*1538*8,NSEC_PER_SEC,elapsed),
+  mul_u64_u64_div_u64((u64)done*1514*8,NSEC_PER_SEC,elapsed));
 restore:
  writel(0,vp);writel(saved[1],vp+8);writel(saved[2],vp+12);
  writel(BIT(31)|BIT(30),vp+4);readl_poll_timeout(vp+4,status,!(status&BIT(31)),1,100000);
