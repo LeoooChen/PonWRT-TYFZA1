@@ -14,7 +14,7 @@ directory = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'artifacts/pe-rad
 binary = (directory / 'pe-tx.bin').read_bytes()
 
 
-def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100):
+def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None):
     base, mb, pages, headers, payload, ring, bar, ni, reports = (
         0x04000000, 0x04002000, 0x05100000, 0x05200000, 0x06000000,
         0x05000000, 0x12000000, 0x10000000, 0x06200000)
@@ -83,6 +83,8 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100):
                returns.append(value), begin=ni + 0x6384, end=ni + 0x6387)
     u.reg_write(UC_MIPS_REG_A0, mb | 0xa0000000)
     u.reg_write(UC_MIPS_REG_SP, (base + 0x1fff0) | 0xa0000000)
+    if observe:
+        observe(u)
     u.emu_start(0xbfc00400, 0xbfc03ffc, count=100000)
     assert get(mb + 28 * 4) == len(lengths) and get(mb + 38 * 4) == 0
     assert get(mb + 30 * 4) == len(submits) and not returns
@@ -146,14 +148,15 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100):
     return {'lengths': lengths, 'cap': cap, 'MPDUs': len(submits), 'from_EPP': from_epp, 'HW_RTS': hw_rts, 'bandwidth': bandwidth, 'rate': rate}
 
 
-if len(sys.argv) > 2 and sys.argv[2] == '--160':
-    rows = [case([1514] * 4, 7935, True, bandwidth=3, rate=rate) for rate in (0x119, 0x19b)]
-else:
-    rows = [case([64 + (n + pad) % 4 for n in range(count)], 7935)
-            for count in range(2, 9) for pad in range(4)]
-    rows += [case([1500] * 8, 7935), case([1500] * 8, 3839)]
-    rows += [case([1514] * 8, 7935, True), case([64, 65, 66, 67], 7935, True)]
-    rows += [case([1514] * 4, 7935, True, True)]
-print(json.dumps({'cases': rows, 'exact_headers_payload_padding_DMA': True,
-                  'one_WP_per_aggregate': True,
-                  'ownership_until_RPQ_and_EQ_credit': True}, indent=2))
+if __name__ == '__main__':
+    if len(sys.argv) > 2 and sys.argv[2] == '--160':
+        rows = [case([1514] * 4, 7935, True, bandwidth=3, rate=rate) for rate in (0x119, 0x19b)]
+    else:
+        rows = [case([64 + (n + pad) % 4 for n in range(count)], 7935)
+                for count in range(2, 9) for pad in range(4)]
+        rows += [case([1500] * 8, 7935), case([1500] * 8, 3839)]
+        rows += [case([1514] * 8, 7935, True), case([64, 65, 66, 67], 7935, True)]
+        rows += [case([1514] * 4, 7935, True, True)]
+    print(json.dumps({'cases': rows, 'exact_headers_payload_padding_DMA': True,
+                      'one_WP_per_aggregate': True,
+                      'ownership_until_RPQ_and_EQ_credit': True}, indent=2))

@@ -393,7 +393,10 @@ void pe_main(volatile u32 *control)
 		u32 segments = packet >> 24, count = 0, used = 64;
 		u32 aggregate = aggregation & 255;
 		if (ni_packet) *(u32 *)(memory + 0xe000 + (id - 256) * 4) = rate;
-		u8 *page = uncached(mailbox[12] + id * 128);
+		/* Construct privately, then publish the final DMA image. Neither the
+		 * descriptor nor an in-place NI header needs a DDR scratch round trip. */
+		u32 page_words[32], header_words[16];
+		u8 *page = (void *)page_words, *header = (void *)header_words;
 		u8 *txbd = uncached(mailbox[11] + (ring * 256 + slot) * 8);
 		u32 sequence = flags & 0xfff;
 
@@ -402,7 +405,6 @@ void pe_main(volatile u32 *control)
 			/* Original normal and shortcut TX share sta->txseq_tid[]. */
 			u32 macid = flags >> 24, tid = flags & 7;
 			u32 header_bytes = (packet >> 16) & 63;
-			u8 *header = uncached(mailbox[14] + id * 128);
 			u32 *sequences = (void *)(memory +
 #ifdef PE_UPLINK
 				0x10000
@@ -422,7 +424,6 @@ void pe_main(volatile u32 *control)
 			u32 macid = flags >> 24, tid = flags & 7;
 			u32 header_bytes = (packet >> 16) & 63;
 			u8 *ethernet = uncached(request[8]);
-			u8 *header = uncached(mailbox[14] + id * 128);
 			u8 *ap_address = (void *)(mailbox + 16);
 			u32 *sequences = (void *)(memory +
 #ifdef PE_UPLINK
@@ -456,7 +457,6 @@ void pe_main(volatile u32 *control)
 			mailbox[21] = request[8];
 		}
 		if (flags & BIT(21)) {
-			u8 *header = uncached(mailbox[14] + id * 128);
 			/* Each BID remains owned until the aggregate's RPQ completion.
 			 * Reuse NI/Ethernet header space; payloads stay in place. */
 			used = 64;
@@ -479,7 +479,7 @@ void pe_main(volatile u32 *control)
 		} else if (ni_packet) {
 			u32 length = ((packet >> 16) & 63) + 8;
 			u32 output = request[8] + 14 - length;
-			header_copy(uncached(output), uncached(mailbox[14] + id * 128), length);
+			header_copy(uncached(output), header, length);
 			used = 64;
 			address(page + used, output, packet & 0x3fff, 1); used += 6;
 			count = 1;
@@ -533,6 +533,11 @@ void pe_main(volatile u32 *control)
 			page[16] = checksum; page[17] = checksum >> 8;
 		}
 		word(page + 56, 0x8000 | id | ((flags & BIT(12)) ? BIT(14) : 0));
+		if (!ni_packet && (flags & (BIT(18) | BIT(22))))
+			header_copy(uncached(mailbox[14] + id * 128), header,
+				((packet >> 16) & 63) + (flags & BIT(18) ? 8 : 0));
+		u32 *published = uncached(mailbox[12] + id * 128);
+		for (u32 i = 0; i < (used + 3) / 4; i++) published[i] = page_words[i];
 		word(txbd, BIT(30) | used); word(txbd + 4, mailbox[12] + id * 128);
 		sync();
 		*(volatile u16 *)(mailbox[2] + indices[ring]) = next;

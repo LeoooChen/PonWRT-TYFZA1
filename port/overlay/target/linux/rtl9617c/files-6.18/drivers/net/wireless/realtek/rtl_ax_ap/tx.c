@@ -997,10 +997,15 @@ int rtl_ax_tx_status(struct rtl_ax_tx *tx, char *out, size_t capacity)
 	if (tx->pe_active && tx->pe_ethernet) {
 		unsigned int id = get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 72) & 4095;
 		length += scnprintf(out + length, capacity - length,
-			"PE_ETH_flags=%08x packet=%08x peer1_QoS=%u header=%34phN\n",
+			"PE_ETH_flags=%08x packet=%08x peer1_QoS=%u",
 			get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 76),
 			get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 80),
-			tx->peer_qos[1], tx->headers + id * 128);
+			tx->peer_qos[1]);
+		if (id < RTL_AX_TX_ENTRIES)
+			length += scnprintf(out + length, capacity - length,
+				" header=%34phN\n", tx->headers + id * 128);
+		else
+			length += scnprintf(out + length, capacity - length, " header=in-place-NI\n");
 		length += scnprintf(out + length, capacity - length,
 			"PE_ETH_DMA=%08x host_DMA=%08x host_Ethernet=%14phN PE_RAM=%pad header_DMA=%pad\n",
 			get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 84),

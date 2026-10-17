@@ -1,0 +1,96 @@
+{
+  "baseline_commit": "eb77212027665d50fcf2ca36f53563b5cb217bfb",
+  "baseline_version": "0.6.0-alpha",
+  "status": "offline candidate; 530 Mbps root cause and throughput improvement not established",
+  "confirmed": "Uncached temporary header construction/readback and redundant WD writes removed from PE TX.",
+  "unchanged": [
+    "PHY/rate/channel/power",
+    "aggregation and WP limits",
+    "queue sizes and report thresholds",
+    "PN/SN and RPQ/EQ ownership",
+    "PE startup/cache/DMEM configuration",
+    "PON/FE and OpenWrt settings"
+  ],
+  "validation": [
+    "three before/after linked-PE TX publications, identical DMA bytes and exact payload/padding/ownership",
+    "two HE/VHT160 gather cases",
+    "seven ARM Ethernet/raw shared sequence and crypto-header cases",
+    "one actual stock cached-WP preparation case",
+    "ARM64 radio module compile and embedded PE equality",
+    "git diff --check"
+  ],
+  "no_live_device_access": true,
+  "no_network_changes": true,
+  "no_flash": true,
+  "no_full_suite": true,
+  "no_full_image_build": true,
+  "module": {
+    "module": "artifacts/wifi-throughput-20261017/radio/rtl_ax_ap_tx_publish.ko",
+    "module_sha256": "c8e3d2bdcc54b6ef9c42232826996bdb5c77507d6f51c3974c325ab7043ba595",
+    "embedded_PE_bytes": 15944,
+    "embedded_PE_sha256": "1a06aa123d5b14dd27877cc16e4c1acf333f3c68cdede2d8439d261fa5afa4b4",
+    "matches_profiled_PE": true
+  },
+  "files": [
+    {
+      "path": "port/pe/rtl9617c-radio-wd.c",
+      "sha256": "ed00cd8b7bf304d14ba0780ef495c7bfd76ac6b71a3992648364afd9210bff1e"
+    },
+    {
+      "path": "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx.c",
+      "sha256": "bebd42ac6bdf32e1141b594c37550f32dfd15f519d4883e1645f573995e01d37"
+    },
+    {
+      "path": "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-tx-code.h",
+      "sha256": "eea8be079fb4351f45d0789fe0c970a79c4610f3e7812a8e88d9c685ddf2bebe"
+    },
+    {
+      "path": "tools/profile_pe_tx_publish.py",
+      "sha256": "d1324434669aa399cceb5e8a6ce9251fcd3de4ac2e6c03e84eb2b97ef176b41c"
+    },
+    {
+      "path": "scripts/test_pe_downlink_gather.py",
+      "sha256": "8e92c966fa84b8ee36d78d9baadaa65ba004a69468fb08bfad11ab1ab722d458"
+    },
+    {
+      "path": "artifacts/wifi-throughput-20261017/before/pe-tx.bin",
+      "sha256": "e6320543afb45e4fe7d64015d9b2ffe3f8ac6ad83c28cf5b95e6b72803519373"
+    },
+    {
+      "path": "artifacts/wifi-throughput-20261017/after/pe-tx.bin",
+      "sha256": "1a06aa123d5b14dd27877cc16e4c1acf333f3c68cdede2d8439d261fa5afa4b4"
+    },
+    {
+      "path": "artifacts/wifi-throughput-20261017/stock-prepare.json",
+      "sha256": "b29c0d008d2c73ce3dd54fb4c23454946fb4dd9f355393a1f239d8d8abcf22cd"
+    },
+    {
+      "path": "artifacts/wifi-throughput-20261017/stock-tx-publish.txt",
+      "sha256": "6d49075522443d60a7abeee0fe40bf31c7f21b2b90304ae7911aab53be924a25"
+    },
+    {
+      "path": "artifacts/wifi-throughput-20261017/tx-publish-profile.json",
+      "sha256": "10d4f7a324c5ab2d872383dd9c01ad103c433aee5e6894374da624ff88f82a8e"
+    },
+    {
+      "path": "artifacts/wifi-throughput-20261017/shared-sequence.json",
+      "sha256": "26e30898a2633b7ccb79b36e21a89305068d632a5791a73ec9d35ac4ec81b03f"
+    },
+    {
+      "path": "artifacts/wifi-throughput-20261017/gather-160.json",
+      "sha256": "761a56ac718676eca68c11630e66a58b0c3f2c6482fa50df3a492da878c85918"
+    },
+    {
+      "path": "artifacts/wifi-throughput-20261017/module-build.log",
+      "sha256": "8a8c5b1084e36b90e9d5be8a47383af102ca2a53ee7539ce65309a907ab77d95"
+    },
+    {
+      "path": "artifacts/wifi-throughput-20261017/module-payload.json",
+      "sha256": "9e767493043db7c407663b7b3b8481b7101cc678b56e74ae8dbbdfa771fac15f"
+    },
+    {
+      "path": "artifacts/wifi-throughput-20261017/check-stock-prepare.py",
+      "sha256": "badb3fbbe691c230e7c1047da4a1b023dd51b14f726941dc56ed379b6a0bb3fc"
+    }
+  ]
+}
