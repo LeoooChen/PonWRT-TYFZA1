@@ -21,7 +21,7 @@ typedef uint64_t u64;typedef uint32_t u32;
 #define ETH_HLEN 14
 #define FLOW_ACTION_HW_STATS_DELAYED 1
 static unsigned long jiffies=100;
-struct rtl_fe {u64 bytes;u32 packets;unsigned int age;};
+struct rtl_fe {u64 bytes;u32 packets,non_uc;unsigned int age;};
 struct rtl_fe_flow {bool published,counted;unsigned int counter,hash_index,ethernet_bytes;u64 bytes;u32 packets;unsigned long lastused;};
 struct flow_cls_offload {struct {u64 bytes,packets;unsigned long lastused;} stats;};
 struct rtl_dq_io {struct rtl_fe *fe;};
@@ -29,7 +29,7 @@ static struct rtl_dq_io fe_io(struct rtl_fe *fe){return (struct rtl_dq_io){fe};}
 static int rtl_fe_main_age_read(struct rtl_dq_io *io,unsigned int index,unsigned int *age){(void)index;*age=io->fe->age;return 0;}
 static int rtl_fe_main_age(struct rtl_dq_io *io,unsigned int index,unsigned int age){(void)index;io->fe->age=age;return 0;}
 static int rtl_fe_tx_counter_read(struct rtl_dq_io *io,unsigned int counter,unsigned int *words){
- assert(counter==31);words[0]=io->fe->bytes;words[1]=io->fe->bytes>>32;words[2]=io->fe->packets;return 0;
+ assert(counter==31);words[0]=io->fe->bytes;words[1]=io->fe->bytes>>32;words[2]=io->fe->packets;words[3]=io->fe->non_uc;return 0;
 }
 #define flow_stats_update(s,b,p,d,u,h) do{assert((d)==0 && (h)==1);(s)->bytes+=(b);(s)->packets+=(p);(s)->lastused=(u);}while(0)
 '''
@@ -58,6 +58,15 @@ int main(void){
  cls.stats.bytes=cls.stats.packets=0;
  assert(!fe_stats(&fe,&flow,&cls));
  assert(cls.stats.bytes==285 && cls.stats.packets==5); /* PPPoE plus one VLAN excluded. */
+ /* MC1 GEM mapping uses the non-UC counter while the wire byte total stays shared. */
+ flow.ethernet_bytes=26;flow.packets=0;flow.bytes=0;fe.packets=0;fe.non_uc=5;fe.bytes=415;
+ cls.stats.bytes=cls.stats.packets=0;
+ assert(!fe_stats(&fe,&flow,&cls));
+ assert(cls.stats.bytes==285 && cls.stats.packets==5);
+ /* Mixed classes and wrap in their combined 32-bit total preserve byte adjustment. */
+ flow.packets=UINT32_MAX-2;flow.bytes=6000;fe.packets=UINT32_MAX;fe.non_uc=3;fe.bytes=6415;
+ assert(!fe_stats(&fe,&flow,&cls));
+ assert(cls.stats.bytes==570 && cls.stats.packets==10);
  flow.published=false;assert(fe_stats(&fe,&flow,&cls)==-ENOENT);
  puts("Native FE stats:wire355 bytes/five packets ->IP285 bytes;idle lastused unchanged;packet counter wrap passed");
 }

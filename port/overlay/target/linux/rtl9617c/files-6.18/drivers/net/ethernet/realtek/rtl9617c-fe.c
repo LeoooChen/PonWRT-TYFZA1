@@ -983,7 +983,7 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
  if(flow->counted) {
   ret=rtl_fe_tx_counter_read(&io,flow->counter,counters);
   if(ret)goto rollback;
-  flow->bytes=(u64)counters[1]<<32|counters[0];flow->packets=counters[2];
+  flow->bytes=(u64)counters[1]<<32|counters[0];flow->packets=counters[2]+counters[3];
  }
  data.action.mac_da_index=flow->destination_index;
  data.action.egress_interface=flow->counter;
@@ -1040,7 +1040,7 @@ static int fe_stats(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct flow_cls_o
  }
  ret=rtl_fe_tx_counter_read(&io,flow->counter,words);
  if(ret)return ret;
- bytes=(u64)words[1]<<32|words[0];packets=words[2];
+ bytes=(u64)words[1]<<32|words[0];packets=words[2]+words[3];
  if(bytes!=flow->bytes || packets!=flow->packets)flow->lastused=jiffies;
  byte_delta=bytes-flow->bytes;packet_delta=packets-flow->packets;
  /* The PE MIB measures the output frame, including its VLAN headers. */
@@ -1176,7 +1176,7 @@ static int fe_counters_show(struct seq_file *file,void *unused)
   ret=rtl_fe_tx_counter_read(&io,flow->counter,words);
   if(ret){seq_printf(file,"error=%d\n",ret);continue;}
   seq_printf(file,"%u %llu %u %llu %u %08x\n",flow->counter,
-             (u64)words[1]<<32|words[0],words[2],
+             (u64)words[1]<<32|words[0],words[2]+words[3],
              (u64)words[5]<<32|words[4],words[6],interface);
  }
  mutex_unlock(&fe->lock);
