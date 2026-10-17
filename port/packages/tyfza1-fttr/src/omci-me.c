@@ -30,8 +30,9 @@ int fttr_me_job_start(struct fttr_me_job *job, uint16_t onu, uint16_t *counter,
 		      enum fttr_me_operation operation, uint16_t class_id, uint16_t instance,
 		      uint16_t mask, const uint8_t *values, size_t size)
 {
-	size_t limit = operation == FTTR_ME_CREATE ? 32 : operation == FTTR_ME_SET ? 30 : 0;
-	size_t offset = operation == FTTR_ME_SET ? 10 : 8;
+	size_t limit = operation == FTTR_ME_CREATE ? 32 : operation == FTTR_ME_SET ? 30 :
+		operation == FTTR_ME_GET_NEXT ? 2 : 0;
+	size_t offset = operation == FTTR_ME_SET || operation == FTTR_ME_GET_NEXT ? 10 : 8;
 
 	memset(job, 0, sizeof(*job));
 	if (size > limit)
@@ -45,7 +46,7 @@ int fttr_me_job_start(struct fttr_me_job *job, uint16_t onu, uint16_t *counter,
 	job->request[3] = 0x0a;
 	write_be16(job->request + 4, class_id);
 	write_be16(job->request + 6, instance);
-	if (operation == FTTR_ME_GET || operation == FTTR_ME_SET)
+	if (operation == FTTR_ME_GET || operation == FTTR_ME_SET || operation == FTTR_ME_GET_NEXT)
 		write_be16(job->request + 8, mask);
 	if (size)
 		memcpy(job->request + offset, values, size);
@@ -87,7 +88,8 @@ int fttr_me_job_reply(struct fttr_me_job *job, const struct fttr_omci_message *m
 	job->result = body[8];
 	if (job->result)
 		return fail(job, -EREMOTEIO);
-	if (job->request[2] == FTTR_ME_GET && read_be16(body + 9) != job->mask)
+	if ((job->request[2] == FTTR_ME_GET || job->request[2] == FTTR_ME_GET_NEXT) &&
+	    read_be16(body + 9) != job->mask)
 		return fail(job, -EPROTO);
 	job->state = FTTR_ME_DONE;
 	return 1;
@@ -101,18 +103,31 @@ static int64_t monotonic_ms(void)
 	return (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
 }
 
-int fttr_me_exchange(struct fttr_omci_session *session, struct fttr_me_job *job)
+static int exchange(struct fttr_omci_session *session, struct fttr_me_job *job,
+		    int directory, const struct fttr_onu_state *identity)
 {
 	struct pollfd descriptor = { .fd = session->fd, .events = POLLIN };
 	struct fttr_omci_message message;
 	uint8_t frame[1996];
 	int64_t now;
-	int ret = fttr_me_job_send(job, session->fd, &session->link, monotonic_ms());
+	int ret;
+
+	if (identity) {
+		ret = fttr_miniolt_same(directory, session->onu, identity);
+		if (ret)
+			return fail(job, ret);
+	}
+	ret = fttr_me_job_send(job, session->fd, &session->link, monotonic_ms());
 
 	if (ret)
 		return ret;
 	for (;;) {
 		now = monotonic_ms();
+		if (identity && now >= job->deadline) {
+			ret = fttr_miniolt_same(directory, session->onu, identity);
+			if (ret)
+				return fail(job, ret);
+		}
 		ret = fttr_me_job_timeout(job, session->fd, &session->link, now);
 		if (ret)
 			return ret;
@@ -129,7 +144,25 @@ int fttr_me_exchange(struct fttr_omci_session *session, struct fttr_me_job *job)
 		if (ret)
 			return fail(job, ret);
 		ret = fttr_me_job_reply(job, &message);
-		if (ret)
+		if (ret) {
+			if (identity) {
+				int same = fttr_miniolt_same(directory, session->onu, identity);
+
+				if (same)
+					return fail(job, same);
+			}
 			return ret < 0 ? ret : 0;
+		}
 	}
+}
+
+int fttr_me_exchange(struct fttr_omci_session *session, struct fttr_me_job *job)
+{
+	return exchange(session, job, -1, NULL);
+}
+
+int fttr_me_exchange_same(struct fttr_omci_session *session, struct fttr_me_job *job,
+			 int directory, const struct fttr_onu_state *identity)
+{
+	return exchange(session, job, directory, identity);
 }

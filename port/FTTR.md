@@ -247,8 +247,7 @@ It does not use the names of the original libraries as a capability probe.
   TPID/DSCP group. Native checks all 28 bytes. Independent GAL/bridge reuse
   does not acquire a false linear dependency; GEM and UNI retain their real
   prerequisite checks and cleanup ownership. These commands prepare base
-  entities; complete service orchestration and UNI VLAN operation rules
-  remain work.
+  entities; complete service orchestration remains work.
 * Native ANI/GEM-side bridge-port attachment and VLAN filtering. The selected
   port/bridge/TP IDs follow actual original producer `d8320`: mask`fc00`,
   TP type5 for direct GEM IW or type3 for Mapper, priority0 and path-cost1.
@@ -270,6 +269,24 @@ It does not use the names of the original libraries as a capability probe.
   Create/Delete substitutes for an existing-object update. `fttrctl mapper`
   maps selected priorities to a real GEM IW, or explicitly clears them.
   Its serial checks cover ordinary writes, restoration and retransmission.
+* Native class171 UNI VLAN rules. Six original producer policies are implemented:
+  discard all, forward all, discard untagged, discard tagged, translate VID,
+  and add a tag to untagged frames. They produce the original one-to-three
+  16-byte rows, with matching filter keys and treatment fields. Explicit
+  removal uses the original eight-byte filter key plus eight `ff` bytes.
+  These are partial table operations; unrelated rules are retained.
+  `omci-vlan.c` first reads the real maximum row count (`4000`) and table byte
+  length (`0400`), then reassembles all baseline Get Next fragments (29 bytes
+  each). A rule may span fragments. Native rejects an invalid table length
+  or a table larger than the ONU's reported capacity before writing anything.
+  Set success is followed by a fresh full-table read and comparison, including
+  the untouched rows. Failed mutation/readback restores the actual prior rows
+  (or removes newly added rows), then verifies the complete original table.
+  It retains separate primary/cleanup replies and errors. Failed restoration
+  invalidates the last snapshot instead of reporting it as current/verified.
+  Every request, retry and completion checks the same registered serial;
+  replacement stops further transmission and restoration. These explicit
+  commands do not activate automatic service provisioning.
 
 ## Validation
 
@@ -456,6 +473,27 @@ there is no retransmission or restoration to the replacement peer
 real musl package build/install pass (`package-root-forwarding/`,
 `package-stage-forwarding.log`). These checks do not exercise optical traffic.
 
+`scripts/test_fttr_vlan.py` executes original master producers `fb9b8`,
+`fbeb0`, `fbbcc`, `fbd08`, `fc20c`, `fc0c0` through the actual Set encoder.
+The delete producers `fc420`, `fc654`, `fc7b0`, `fcad4`, `fc978` confirm deletion
+bytes. All six native policies and VID/priority boundary examples match.
+The same firmware's ONU program `bin/omci_app` supplies the original
+`OMCI_NormalizeMsg`, Get worker `13e00`, Get Next worker `122d4`,
+`OMCI_ResponseMsg` and serializer `beb4`. Only their MIB storage/access API
+is modeled. This confirms the four-byte table length and 29-byte fragments
+using the actual response construction and CRC code, rather than assuming
+that the master library's ordinary Get parser can read a table.
+The native CLI runs over real AF_PACKET/veth in a private namespace against
+these replies. Focused cases cover empty/multiple-fragment reads, add/reuse/
+remove, unchanged unrelated rows, exact prior-row restoration, false successful
+Set, partial Set rejection, failed restoration, invalid/capacity-exceeding
+tables and serial replacement before retransmission. Results are in
+`vlan-comparison.json`; this is offline protocol evidence, not optical/ONU
+interoperability acceptance. The shared MIB/ME check passes with VLAN linked
+(`mib-vlan-comparison.json`). Actual GCC14.4/musl package prepare/compile/install
+passes in `package-root-vlan/` (`package-stage-vlan.log`). No full firmware
+build or full test suite was run for this change.
+
 The executable links with the project's actual OpenWrt GCC 14.4.0/musl
 toolchain as `artifacts/fttr/fttrctl-musl`. The optional userspace and kernel
 package definitions parse successfully with the pinned OpenWrt make includes.
@@ -553,6 +591,8 @@ fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> profiles <hardware-ID> <bridg
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> uni <hardware-ID> <kind:0=Ethernet,2=VEIP> <UNI-instance> <bridge-instance> <port-instance> <ordinal> fttr0
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> ani <hardware-ID> <port-instance> <bridge-instance> <port-number> <mapper:0|1> <TP-instance> <VID-list|none> fttr0
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> mapper <hardware-ID> <mapper-instance> <P-bit-mask> <GEM-IW-instance|0xffff> fttr0
+fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> vlan-table <hardware-ID> <EVTO-instance> fttr0
+fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> vlan <hardware-ID> <EVTO-instance> <policy:0..5> <input-VID> <output-VID> <priority:0..7> <remove:0|1> fttr0
 ```
 
 `status` emits raw hardware state and the registration bit for all 64 slots.
@@ -620,6 +660,19 @@ wire bytes and actual verified/restored/unknown state. An unchanged mapping
 causes no Set. Restoration failures remain distinct from the first failure.
 These are development operations; authentication and automatic service policy
 remain separate work.
+
+`vlan-table` reports the actual class171 table as `vlan_table`, including
+capacity, declared/received byte counts, completeness and the last raw ME
+exchange. `vlan` reports `vlan_state` with the serial, before/last observed
+table, sent-row bitmap, verified/restored flags and separate original/cleanup
+errors and wire replies. A failed rollback leaves the last observed table
+incomplete/currently unverified even if its recorded bytes were read earlier.
+Policies0..5 are respectively discard-all, forward-all, discard-untagged,
+discard-tagged, VID translation and tag-untagged. Translation uses both VIDs;
+tag-untagged uses output VID and priority. Other policies ignore these three
+fields (supply0). VID values used by a policy are0..4094. `remove=1` removes
+only that policy's filter keys. A configured result applies to these selected
+rules, not a complete forwarding path or supported subordinate model.
 
 Original hashes and detailed results are emitted under `artifacts/fttr/`.
 Original binaries and the kernel build tree are read from the private evidence
@@ -697,7 +750,8 @@ the failures/unconfirmed resources and stops further dependency deletion.
    and native GEM CTP/IW lifecycle/readback/cleanup are implemented. Native GAL,
    bridge/initial Mapper and basic Ethernet/VEIP attachment are implemented.
    Mapper binding and ANI/GEM-side bridge ports/VLAN filtering are implemented.
-   UNI VLAN operation rules and complete service orchestration remain work.
+   UNI VLAN operation rules, table readback and exact prior-rule restoration
+   are implemented. Complete service orchestration remains work.
    Current upstream ONU OMCI is a different role.
 5. Original subordinate gateway configuration, Wi-Fi synchronization,
    multicast, reboot/upgrade and roaming coordination, using the connected

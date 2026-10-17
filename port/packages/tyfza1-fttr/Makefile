@@ -31,7 +31,8 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/miniolt.c $(PKG_BUILD_DIR)/omci-wire.c \
 		$(PKG_BUILD_DIR)/omci-socket.c $(PKG_BUILD_DIR)/omci-mib.c \
 		$(PKG_BUILD_DIR)/omci-me.c $(PKG_BUILD_DIR)/omci-objects.c \
-		$(PKG_BUILD_DIR)/omci-gem.c $(PKG_BUILD_DIR)/omci-association.c $(TARGET_LDFLAGS)
+		$(PKG_BUILD_DIR)/omci-gem.c $(PKG_BUILD_DIR)/omci-association.c \
+		$(PKG_BUILD_DIR)/omci-vlan.c $(TARGET_LDFLAGS)
 	$(TARGET_CC) $(TARGET_CPPFLAGS) $(TARGET_CFLAGS) -std=c11 -Wall -Wextra \
 		-o $(PKG_BUILD_DIR)/fttrd $(PKG_BUILD_DIR)/fttrd.c \
 		$(PKG_BUILD_DIR)/miniolt.c $(PKG_BUILD_DIR)/omci-wire.c \
