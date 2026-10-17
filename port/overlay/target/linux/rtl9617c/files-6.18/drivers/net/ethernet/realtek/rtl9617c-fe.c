@@ -215,8 +215,9 @@ static int fe_prepare(struct rtl_fe *fe)
   ret=rtl_fe_mask_read(&io,61-i,fe->bridge_mask_saved[i]);
   if(ret)return ret;
  }
+ /* Default type0 FIB index is 1024 | (profile << 2), not a packed row. */
  for(i=0;i<2;i++) {
-  ret=rtl_fe_classifier_read(&io,1024+i,fe->classifier_saved[i]);
+  ret=rtl_fe_classifier_read(&io,1024+4*i,fe->classifier_saved[i]);
   if(ret)return ret;
   for(side=0;side<4;side++) {
    ret=fe_access(fe,0x1654,BIT(31)|(24+i)|(side<<6));
@@ -283,7 +284,7 @@ static int fe_prepare(struct rtl_fe *fe)
   /* LAN0..4 share a connector, but CPU misses and flow keys must retain
    * the real ingress port. PON keeps its logical source7. */
   if(!i)rtl_fe_bits_set(cls,208,1,0);
-  ret=rtl_fe_classifier_write(&io,1024+i,cls);
+  ret=rtl_fe_classifier_write(&io,1024+4*i,cls);
   if(ret)return ret;
   rtl_fe_ingress_lpb(lpb,i?7:0,16);
   rtl_fe_bits_set(lpb,42,4,i);
@@ -350,7 +351,7 @@ static int fe_restore(struct rtl_fe *fe)
    ret=fe_access(fe,0x1654,BIT(31)|BIT(30)|(24+i)|(side<<6));
    if(ret)return ret;
   }
-  ret=rtl_fe_classifier_write(&io,1024+i,fe->classifier_saved[i]);
+  ret=rtl_fe_classifier_write(&io,1024+4*i,fe->classifier_saved[i]);
   if(ret)return ret;
  }
  ret=rtl_fe_mask_write(&io,63,fe->mask_saved);
