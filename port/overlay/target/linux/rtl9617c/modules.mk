@@ -18,3 +18,16 @@ define KernelPackage/rtl-ax-ap/description
 endef
 
 $(eval $(call KernelPackage,rtl-ax-ap))
+
+define KernelPackage/tyfza1-fttr
+  SUBMENU:=Network Devices
+  TITLE:=TYFZA1 native MiniOLT and optical control
+  DEPENDS:=@TARGET_rtl9617c +kmod-i2c-core
+  KCONFIG:=CONFIG_RTL9617C_FTTR
+  FILES:= \
+	$(LINUX_DIR)/drivers/net/ethernet/realtek/rtl9617c-fttr.ko \
+	$(LINUX_DIR)/drivers/net/ethernet/realtek/rtl9617c-fttr-bosa.ko
+  AUTOLOAD:=$(call AutoProbe,rtl9617c-fttr rtl9617c-fttr-bosa)
+endef
+
+$(eval $(call KernelPackage,tyfza1-fttr))

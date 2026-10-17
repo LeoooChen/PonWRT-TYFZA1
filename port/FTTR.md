@@ -84,8 +84,8 @@ It does not use the names of the original libraries as a capability probe.
   The original upstream software-CRC policy (check ONU ID zero) is retained;
   there is no evidence here to replace other ONUs' receive policy.
   AF_PACKET uses a nonblocking socket bound to the dedicated interface and
-  ignores its own outgoing frames. These sources are not yet an installed
-  daemon or a complete OLT state machine.
+  ignores its own outgoing frames. The optional `tyfza1-fttr` package installs
+  the native `fttrctl` executable; automatic OLT management is still pending.
 * `fttr0` MTU 1982, with a 1996-byte Ethernet frame budget. This fits the
   existing 2048-byte QM buffers with 32-byte headroom, a full 16-byte header
   and a possible 4-byte FCS. The MAC threshold is 2000; the shared NI maximum
@@ -103,6 +103,17 @@ It does not use the names of the original libraries as a capability probe.
   explicit repeat count. Real transport errors stop before further writes.
   The original wait rejects a ready mailbox on its 2000th read; native accepts
   that final ready read and returns `-ETIMEDOUT` only if all 2000 reads are busy.
+* Native baseline MIB Upload / Upload Next transactions. Requests and class,
+  instance, mask and command-count fields follow original builder/parser
+  execution. High-priority transaction IDs use `8001..ffff`; three attempts
+  with two seconds each match the original high-priority send path. Native
+  deadlines use the monotonic clock. Other ONU/transaction replies do not
+  complete the active request, and an invalid matching response returns an
+  error. MIB records retain all 26 attribute bytes without guessing a vendor's
+  schema or silently dropping unknown ME classes. `fttrctl mib` checks the
+  hardware registration flag and serial before/after the scan, and reports
+  completion only after every command succeeds for that same ONU. It does not
+  reset the MIB or provision a service.
 
 ## Validation
 
@@ -174,6 +185,23 @@ final-poll bug and checks real register errors and a continuously busy mailbox.
 `onu-comparison.json` records results; the updated control object compiles for
 ARM64. No ONU hardware status has been read from a live device by this branch.
 
+`scripts/test_fttr_mib.py` executes the original MIB request builders and
+class/instance/mask parsers. Its native local datagram peer exercise completes
+a two-record scan, ignores unrelated replies, crosses `ffff -> 8001`, rejects
+an invalid matching response, and verifies the three real timeout attempts.
+The CLI is executed against a temporary 64-row kernel-attribute fixture,
+including missing-attribute failure. This does not simulate optical ranging.
+Results are in `mib-comparison.json`.
+
+The executable links with the project's actual OpenWrt GCC 14.4.0/musl
+toolchain as `artifacts/fttr/fttrctl-musl`. The optional userspace and kernel
+package definitions parse successfully with the pinned OpenWrt make includes.
+The two control `.ko` files link under `artifacts/fttr/modules/` using the
+existing same-version 6.18.55 kernel's real export table, without unresolved
+symbols. `CONFIG_MODULE_STRIPPED=y` removes descriptions and produces the
+existing modpost description warnings; both sources contain their description.
+This checks module dependencies, not a rebuilt firmware's ABI or live loading.
+
 To load a development image, first merge `port/configs/tyfza1-fttr.config` into
 its kernel configuration, then select the matching development DT. On the
 FPGA unit, load its retained image by writing its firmware-relative filename
@@ -208,8 +236,8 @@ MDIO device's `omci_link` attribute and read it back. The attribute reports
 the hardware envelope configuration; the controller uses the reported
 EtherType, MAC pair and downstream-length flag. `omci-wire.c` and
 `omci-socket.c` under `port/packages/tyfza1-fttr/src/` supply the native frame
-and socket interfaces. Automatic service installation, discovery and OMCI
-transactions are still pending. Keep `fttr0` MTU at 1982 when using long control
+and socket interfaces. Automatic startup and service provisioning are still
+pending. Keep `fttr0` MTU at 1982 when using long control
 frames; the current transport rejects Ethernet frames over 1996 bytes.
 
 The ASIC `onu_table` attribute emits 64 rows with columns
@@ -220,6 +248,26 @@ words, decimal zero-based IDs). `onu_block` accepts `<ID> <0|1>`;
 enabled writes 0, disabled writes 1. This is an explicit command, not an
 optical-power or laser-readiness measurement. Initialization still leaves
 TX disabled until the controller completes its startup sequence.
+
+`port/configs/tyfza1-fttr-packages.config` is the optional OpenWrt package
+selection fragment. `sync-overlay.sh` copies the package, and the target's
+`modules.mk` packages/autoloads the MiniOLT and GN25L99 modules. Production
+package selection and production FIT DT selection stay unchanged. The image
+recipe now also offers `fttr-asic.dtb` / `fttr-2p5g.dtb` development artifacts;
+their FPGA loader package/startup is still pending.
+
+After the development hardware sequence and actual `fttr0` setup, use:
+
+```
+fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> status
+fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> mib <hardware-ID> fttr0
+```
+
+`status` emits raw hardware state and the registration bit for all 64 slots.
+`mib` takes an exclusive device-directory lock, reads the actual OMCI envelope,
+and streams JSON records. An error exits nonzero without a `mib_complete`
+record. This is an explicit MIB inventory operation; authentication policy,
+attribute interpretation and automatic service/roaming management remain work.
 
 Original hashes and detailed results are emitted under `artifacts/fttr/`.
 Original binaries and the kernel build tree are read from the private evidence
@@ -255,8 +303,9 @@ the peer MiniOLT's separate WTG/PON initialization is also implemented.
    and OLT registration configuration remain pending.
 4. OLT-side discovery/registration, authentication, OMCI, T-CONT/GEM/DBA and
    VLAN/service provisioning. The native MiniOLT OMCI framing/transport
-   foundation is implemented; transactions, capability/MIB discovery and
-   provisioning are not. Current upstream ONU OMCI is a different role.
+   foundation and baseline MIB inventory transactions are implemented. Automatic
+   registration/authentication policy, MIB interpretation and provisioning are
+   not. Current upstream ONU OMCI is a different role.
 5. Original subordinate gateway configuration, Wi-Fi synchronization,
    multicast, reboot/upgrade and roaming coordination, using the connected
    ONU's actual capabilities rather than assuming one fixed subordinate model.

@@ -16,6 +16,8 @@ mkdir -p "$TREE/package/luci-app-tyfza1-pon"
 rsync -a --delete "$PORT/packages/luci-app-tyfza1-pon/" "$TREE/package/luci-app-tyfza1-pon/"
 mkdir -p "$TREE/package/tyfza1-pon-control"
 rsync -a --delete "$PORT/packages/tyfza1-pon-control/" "$TREE/package/tyfza1-pon-control/"
+mkdir -p "$TREE/package/tyfza1-fttr"
+rsync -a --delete "$PORT/packages/tyfza1-fttr/" "$TREE/package/tyfza1-fttr/"
 # hostapd patches apply to its unpacked source, not the OpenWrt tree root.
 cp "$PORT/host-patches/471-hostapd-acs-no-survey.patch" \
     "$TREE/package/network/services/hostapd/patches/471-hostapd-acs-no-survey.patch"

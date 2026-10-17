@@ -31,6 +31,7 @@ define Device/tianyi_tyfza1
   SUPPORTED_DEVICES += tianyi,tyfza1-2p5g
   DEVICE_DTS := rtl9617c-tyfza1 rtl9617c-tyfza1-nand-readonly rtl9617c-tyfza1-stock-ubi-readonly rtl9617c-tyfza1-mdio rtl9617c-tyfza1-xram-lan rtl9617c-tyfza1-dma-tx rtl9617c-tyfza1-ni rtl9617c-tyfza1-pon-status rtl9617c-tyfza1-pcie rtl9617c-tyfza1-pcie-2p5g rtl9617c-tyfza1-ubi rtl9617c-tyfza1-ubi-2p5g
   DEVICE_DTS_DIR := ../dts
+  DEVICE_DTS += rtl9617c-tyfza1-fttr rtl9617c-tyfza1-fttr-2p5g
   DEVICE_PACKAGES := kmod-rtl-ax-ap tyfza1-pon-control luci-app-tyfza1-pon \
 	ubi-utils nand-utils uboot-envtools iw wpad-mbedtls wifi-scripts wireless-regdb \
 	kmod-gpio-button-hotplug kmod-usb3 kmod-usb-storage kmod-usb-storage-uas \
@@ -58,6 +59,9 @@ define Device/tianyi_tyfza1
   ARTIFACT/pcie-2p5g.dtb := tyfza1-dtb rtl9617c-tyfza1-pcie-2p5g
   ARTIFACT/ubi.dtb := tyfza1-dtb rtl9617c-tyfza1-ubi
   ARTIFACT/ubi-2p5g.dtb := tyfza1-dtb rtl9617c-tyfza1-ubi-2p5g
+  ARTIFACTS += fttr-asic.dtb fttr-2p5g.dtb
+  ARTIFACT/fttr-asic.dtb := tyfza1-dtb rtl9617c-tyfza1-fttr
+  ARTIFACT/fttr-2p5g.dtb := tyfza1-dtb rtl9617c-tyfza1-fttr-2p5g
 endef
 TARGET_DEVICES += tianyi_tyfza1
 
