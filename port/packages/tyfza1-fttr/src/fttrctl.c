@@ -152,32 +152,111 @@ static int get(int directory, unsigned int id, const uint16_t fields[3], const c
 	return ferror(stdout) ? -EIO : ret;
 }
 
+static int tcont_exchange(struct fttr_omci_session *session, struct fttr_me_job *job,
+			  uint16_t instance, const uint8_t *value)
+{
+	int ret = fttr_me_job_start(job, session->onu, &session->transaction,
+				   value ? FTTR_ME_SET : FTTR_ME_GET, 262, instance, 0x8000,
+				   value, value ? 2 : 0);
+
+	return ret ? ret : fttr_me_exchange(session, job);
+}
+
+static int bind_tcont(int directory, unsigned int id, const uint16_t fields[5], const char *interface)
+{
+	struct fttr_onu_state before;
+	struct fttr_omci_session session;
+	struct fttr_me_job job;
+	uint16_t alloc = fttr_miniolt_alloc_id(id, fields[0]), previous = 0, observed = 0;
+	uint8_t value[2] = { alloc >> 8, alloc };
+	bool read = false, sent = false, verified = false;
+	const char *phase = "read";
+	int ret = open_session(directory, id, interface, &session, &before);
+
+	if (ret)
+		return ret;
+	ret = tcont_exchange(&session, &job, fields[1], NULL);
+	if (ret)
+		goto out;
+	previous = observed = (uint16_t)job.reply[11] << 8 | job.reply[12];
+	read = true;
+	phase = "identity";
+	ret = same_onu(directory, id, &before);
+	if (ret)
+		goto out;
+	if (previous != alloc) {
+		phase = "set";
+		ret = tcont_exchange(&session, &job, fields[1], value);
+		sent = job.attempts != 0;
+		if (ret)
+			goto out;
+		phase = "verify";
+		ret = tcont_exchange(&session, &job, fields[1], NULL);
+		if (ret)
+			goto out;
+		observed = (uint16_t)job.reply[11] << 8 | job.reply[12];
+		if (observed != alloc) {
+			ret = -EUCLEAN;
+			goto out;
+		}
+		phase = "identity";
+		ret = same_onu(directory, id, &before);
+		if (ret)
+			goto out;
+	}
+	verified = true;
+	phase = "grant";
+	ret = fttr_miniolt_tcont(directory, id, fields[0], fields[2], fields[3], fields[4]);
+	if (!ret)
+		phase = "bound";
+out:
+	close(session.fd);
+	printf("{\"event\":\"tcont_binding\",\"id\":%u,\"slot\":%u,\"instance\":%u,"
+	       "\"alloc_id\":%u,\"phase\":\"%s\",\"error\":%d,\"remote_write_sent\":%s,"
+	       "\"alloc_verified\":%s,\"previous_alloc_id\":",
+	       id, fields[0], fields[1], alloc, phase, ret, sent ? "true" : "false", verified ? "true" : "false");
+	if (read)
+		printf("%u,\"last_read_alloc_id\":%u", previous, observed);
+	else
+		fputs("null,\"last_read_alloc_id\":null", stdout);
+	if (job.replied) {
+		printf(",\"result\":%u,\"body\":\"", job.result);
+		hex(job.reply, sizeof(job.reply));
+		fputc('"', stdout);
+	}
+	puts("}");
+	return ferror(stdout) ? -EIO : ret;
+}
+
 int main(int argc, char **argv)
 {
-	bool mib, wait, query;
+	bool mib, wait, query, binding;
 	int directory, ret;
 
 	if (argc < 3 || (strcmp(argv[2], "status") && strcmp(argv[2], "mib") &&
-	    strcmp(argv[2], "wait-link") && strcmp(argv[2], "get"))) {
+	    strcmp(argv[2], "wait-link") && strcmp(argv[2], "get") && strcmp(argv[2], "tcont"))) {
 		fprintf(stderr, "Usage: %s <miniolt-sysfs-directory> status\n"
 			"       %s <miniolt-sysfs-directory> mib <hardware-ID> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> get <hardware-ID> <class> <instance> <mask> [interface=fttr0]\n"
+			"       %s <miniolt-sysfs-directory> tcont <hardware-ID> <slot:1..7> <instance> <fixed> <assured> <maximum> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> wait-link <NI-sysfs-directory>\n",
-			argv[0], argv[0], argv[0], argv[0]);
+			argv[0], argv[0], argv[0], argv[0], argv[0]);
 		return 2;
 	}
 	mib = !strcmp(argv[2], "mib");
 	wait = !strcmp(argv[2], "wait-link");
 	query = !strcmp(argv[2], "get");
+	binding = !strcmp(argv[2], "tcont");
 	if ((mib && argc != 4 && argc != 5) || (query && argc != 7 && argc != 8) ||
-	    (wait && argc != 4) || (!mib && !wait && !query && argc != 3))
+	    (binding && argc != 9 && argc != 10) || (wait && argc != 4) ||
+	    (!mib && !wait && !query && !binding && argc != 3))
 		return 2;
 	directory = open(argv[1], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (directory < 0) {
 		perror(argv[1]);
 		return 1;
 	}
-	if (mib || query) {
+	if (mib || query || binding) {
 		char *end;
 		unsigned long id;
 
@@ -187,22 +266,26 @@ int main(int argc, char **argv)
 			close(directory);
 			return 2;
 		}
-		if (query) {
-			uint16_t fields[3];
+		if (query || binding) {
+			uint16_t fields[5];
 			unsigned int i;
 
-			for (i = 0; i < 3; i++) {
+			for (i = 0; i < (binding ? 5U : 3U); i++) {
 				unsigned long value;
 
 				errno = 0;
 				value = strtoul(argv[4 + i], &end, 0);
-				if (errno || !*argv[4 + i] || *end || value > UINT16_MAX || (i == 2 && !value)) {
+				if (errno || !*argv[4 + i] || *end || value > UINT16_MAX ||
+				    (query && i == 2 && !value) || (binding && i == 0 && (!value || value > 7))) {
 					close(directory);
 					return 2;
 				}
 				fields[i] = value;
 			}
-			ret = get(directory, id, fields, argc == 8 ? argv[7] : "fttr0");
+			if (binding)
+				ret = bind_tcont(directory, id, fields, argc == 10 ? argv[9] : "fttr0");
+			else
+				ret = get(directory, id, fields, argc == 8 ? argv[7] : "fttr0");
 		} else {
 			ret = scan(directory, id, argc == 5 ? argv[4] : "fttr0");
 		}

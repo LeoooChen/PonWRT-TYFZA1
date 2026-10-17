@@ -49,6 +49,21 @@ int fttr_miniolt_management(int directory, unsigned int id, bool enable)
 	return fttr_miniolt_command(directory, "management_grant", value);
 }
 
+uint16_t fttr_miniolt_alloc_id(unsigned int id, unsigned int slot)
+{
+	/* Original ASIC allocator: 257 + (ONU - 1) * 8 + slot - 1. */
+	return 256 + id * 8 + slot;
+}
+
+int fttr_miniolt_tcont(int directory, unsigned int id, unsigned int slot,
+		       unsigned int fixed, unsigned int assured, unsigned int maximum)
+{
+	char value[48];
+
+	snprintf(value, sizeof(value), "%u %u %u %u %u\n", id, slot, fixed, assured, maximum);
+	return fttr_miniolt_command(directory, "tcont", value);
+}
+
 int fttr_miniolt_tx_disable(int directory)
 {
 	return fttr_miniolt_command(directory, "tx_enable", "0\n");

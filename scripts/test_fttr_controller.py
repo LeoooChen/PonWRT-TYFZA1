@@ -196,6 +196,50 @@ def main():
                 finally:
                     if query.poll() is None:
                         query.terminate();query.communicate(timeout=3)
+            for case in ('bound','rejected','mismatch','grant-error','already','replaced'):
+                grant=miniolt/'tcont'
+                if case=='grant-error':
+                    grant.unlink()
+                else:
+                    grant.write_text('')
+                query=subprocess.Popen([str(args.control.resolve()),str(miniolt),'tcont','7','1',
+                    '0x8007','0','60','120','ftr-host'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                try:
+                    operations=[0x49] if case=='already' else [0x49,0x48] if case=='rejected' else [0x49,0x48,0x49]
+                    deadline=time.monotonic()+4
+                    for step,opcode in enumerate(operations):
+                        while True:
+                            assert time.monotonic()<deadline and query.poll() is None
+                            if not select.select([peer],[],[],0.05)[0]:continue
+                            frame,address=peer.recvfrom(2048)
+                            if address[2]!=socket.PACKET_OUTGOING:break
+                        transaction=struct.unpack('>H',frame[16:18])[0]
+                        assert frame[14:16]==b'\0\7' and frame[18:26]==bytes([opcode])+bytes.fromhex('0a010680078000')
+                        assert not grant.exists() or not grant.read_text()
+                        if opcode==0x48:
+                            assert frame[26:28]==bytes.fromhex('0139')
+                            content=bytes([6 if case=='rejected' else 0])
+                        else:
+                            current=313 if case=='already' or (step==2 and case!='mismatch') else 0xffff
+                            content=b'\0\x80\0'+struct.pack('>H',current)
+                            if case=='replaced' and step==2:
+                                serial=bytes.fromhex('5445535400000009');tables()
+                        peer.send(response(7,transaction,(opcode & 0x1f)|0x20,content,class_id=262,instance=0x8007))
+                    output,error=query.communicate(timeout=3)
+                    row=json.loads(output)
+                    expected={'bound':('bound',0),'already':('bound',0),'rejected':('set',-121),
+                              'mismatch':('verify',-117),'grant-error':('grant',-2),'replaced':('identity',-116)}[case]
+                    assert (row['phase'],row['error'])==expected,(case,row,error)
+                    assert query.returncode==(0 if expected[1]==0 else 1)
+                    assert row['alloc_verified']==(case in ('bound','already','grant-error'))
+                    assert row['remote_write_sent']==(case!='already')
+                    if expected[1]==0:
+                        assert grant.read_text()=='7 1 0 60 120\n'
+                    else:
+                        assert not grant.exists() or not grant.read_text()
+                finally:
+                    if query.poll() is None:
+                        query.terminate();query.communicate(timeout=3)
         finally:
             if process.poll() is None:
                 process.terminate()
@@ -207,6 +251,8 @@ def main():
         'modeled_hardware':'sysfs state and grant attributes only','independent_onu_failure':True,
         'split_entity_records_merged':True,'unknown_layout_explicit':True,'old_model_revoked_on_replacement':True,
         'real_cli_get_and_onu_rejection':True,
+        'tcont_binding_verified_before_grant':True,'tcont_mismatch_rejection_and_replacement_stop_grant':True,
+        'tcont_grant_failure_keeps_remote_state_explicit':True,'already_bound_tcont_skips_set':True,
         'malformed_frame_reported_without_master_exit':True,'offline_releases_grant_and_inventory':True,
         'replaced_onu_reinventoried':True,'old_transaction_reply_ignored':True,'sigterm_closes_hardware_and_netdev':True,
         'optical_hardware_verified':False},indent=2)+'\n')

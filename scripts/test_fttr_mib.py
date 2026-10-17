@@ -33,6 +33,8 @@ class Stock:
 
     def handler(self, name, args):
         uc = self.oracle.uc
+        if name == 'stock_alloc_unused':
+            return 0
         if name == 'memset':
             uc.mem_write(args[0], bytes([args[1] & 255]) * args[2])
             return args[0]
@@ -101,6 +103,8 @@ def main():
         library.fttr_mib_scan.argtypes = [ctypes.POINTER(Session), ctypes.POINTER(ctypes.c_ushort), record_fn, ctypes.c_void_p]
         library.fttr_miniolt_link.argtypes = [ctypes.c_int, ctypes.POINTER(Link)]
         library.fttr_miniolt_management.argtypes = [ctypes.c_int,ctypes.c_uint,ctypes.c_bool]
+        library.fttr_miniolt_alloc_id.argtypes = [ctypes.c_uint,ctypes.c_uint]
+        library.fttr_miniolt_alloc_id.restype = ctypes.c_ushort
         class Hardware(ctypes.Structure):
             _fields_=[('downstream',ctypes.c_uint),('upstream',ctypes.c_uint),
                       ('eqd',ctypes.c_uint),('serial',ctypes.c_ubyte*8)]
@@ -232,6 +236,16 @@ def main():
         assert library.fttr_me_job_timeout(ctypes.byref(job),client.fileno(),ctypes.byref(link),7000)==-errno.ETIMEDOUT
         client.close();server.close()
 
+        # Execute the actual allocator with its original constants. Only its
+        # allocation-occupancy predicate is modeled as free; no service runs.
+        o,p=stock.oracle,stock.data
+        assert o.call('plr_gpon_const_val_init')==0
+        assert o.call('plr_gpon_min_allocId_get')==257 and o.call('plr_gpon_max_allocId_get')==767
+        o.hooks[0x914d4]='stock_alloc_unused'
+        for id,slot in [(0,1),(5,3),(63,7)]:
+            assert o.call('plr_ponsrv_alloc_id_get',0,id+1,slot,p)==0
+            assert library.fttr_miniolt_alloc_id(id,slot)==struct.unpack('<H',o.uc.mem_read(p,2))[0]
+
         # Exercise the actual executable against the kernel attribute ABI only.
         fixture = path / 'device'
         fixture.mkdir()
@@ -269,6 +283,7 @@ def main():
         'matching_bad_response_errors': True, 'real_cli_attribute_rows': 64,
         'original_me_request_comparisons':len(me_cases),'me_rejection_retains_raw_result':True,
         'me_get_mask_mismatch_is_error':True,'me_retransmission_deadline_verified':True,
+        'native_alloc_id_matches_original_slots':[0,5,63],
         'missing_attribute_is_error': True, 'scope': 'original code and local datagram peer; no live MiniOLT',
         'hardware_verified': False}, indent=2) + '\n')
     print('MIB/ME: original builders/parsers, native scan and transaction result/deadline checks passed')
