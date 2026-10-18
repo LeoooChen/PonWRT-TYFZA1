@@ -830,7 +830,10 @@ static ssize_t pm_counters_read(struct file *file, struct kobject *kobj,
 		return -EINVAL;
 	mutex_lock(&pon->control_lock);
 	mutex_lock(&pon->lock);
-	ret = port ? rtl9617c_ni_pm_read(pon->ni_dev, 4 - port, counters) : rtl_pon_epon_pm(pon, counters);
+	/* CTC UNI1 is the leftmost jack: NI4 on 2.5G boards, NI3 on 4GE. */
+	ret = port ? rtl9617c_ni_pm_read(pon->ni_dev,
+		port == 1 && of_machine_is_compatible("tianyi,tyfza1-2p5g") ? 4 : 4 - port,
+		counters) : rtl_pon_epon_pm(pon, counters);
 	if (!ret) {
 		put_unaligned_be64(port ? 0 : pon->epon_mib_generation, buf);
 		for (unsigned int i = 0; i < 37; i++)

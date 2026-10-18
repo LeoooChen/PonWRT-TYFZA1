@@ -87,7 +87,7 @@ struct rtl_xram {
 	spinlock_t rx_lock;
 	struct mutex mib_lock;
 	struct delayed_work mib_work;
-	unsigned long long mib_total[4][RTL_NI_MIB_COUNTERS];
+	unsigned long long mib_total[5][RTL_NI_MIB_COUNTERS];
 	bool rx_active;
 	u32 port;
 	bool tx_pending;
@@ -139,7 +139,7 @@ int rtl9617c_ni_pm_read(struct device *dev, unsigned int port, unsigned long lon
 	unsigned long long raw[RTL_NI_MIB_COUNTERS];
 	int ret;
 
-	if (port >= 4)
+	if (port >= ARRAY_SIZE(priv->mib_total))
 		return -EINVAL;
 	mutex_lock(&priv->mib_lock);
 	ret = rtl_ni_mib_read(&io, port, raw);
@@ -157,8 +157,12 @@ static void rtl_mib_work(struct work_struct *work)
 	unsigned int port;
 
 	/* Extend narrow counters independently of OAM/PM enable and client reads. */
-	for (port = 0; port < 4; port++) {
-		int ret = rtl9617c_ni_pm_read(priv->netdev->dev.parent, port, counters);
+	for (port = 0; port < ARRAY_SIZE(priv->ports); port++) {
+		int ret;
+
+		if (!(priv->registered_ports & BIT(port)))
+			continue;
+		ret = rtl9617c_ni_pm_read(priv->netdev->dev.parent, port, counters);
 
 		if (ret)
 			dev_err_ratelimited(priv->netdev->dev.parent, "NI port%u MIB read failed: %d\n", port, ret);

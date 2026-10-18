@@ -69,6 +69,10 @@ jobs:
             zlib1g-dev file wget curl device-tree-compiler u-boot-tools swig \
             libelf-dev python3-pyelftools python3-dev libfuse-dev pkgconf
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+      - name: Verify LAN initialization and port counters
+        run: |
+          python3 scripts/test_lan_probe_isolation.py
+          python3 scripts/test_lan_pm_mapping.py
       - name: Verify storage migration
         run: python3 scripts/test_ubi_storage.py
       - name: Obtain locked OpenWrt source
@@ -110,6 +114,10 @@ jobs:
         run: |
           export PATH="/usr/lib/llvm-18/bin:$PATH"
           sh port/scripts/build.sh sources/openwrt "$(nproc)" 2>&1 | tee artifacts/build.log
+      - name: Verify built board variants
+        run: |
+          kernel=$(python3 port/tools/project_paths.py --kernel-directory sources/openwrt)
+          python3 scripts/test_board_variants.py --kernel "$kernel"
       - name: Package firmware and installer
         run: |
           sh scripts/package_release.sh sources/openwrt artifacts/release

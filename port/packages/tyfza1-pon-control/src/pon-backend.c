@@ -39,7 +39,8 @@ static int port_number(const struct pon_oam_request *request)
 	} else {
 		return -EINVAL;
 	}
-	/* TYFZA1 factory PORT_REMAPPING=03,02,01,00: CTC ports1..4. */
+	/* CTC numbers jacks left-to-right; native lan1..4 run right-to-left.
+	 * NI hardware numbering is handled by the driver, not these netdev IDs. */
 	return port >= 1 && port <= 4 ? 4 - (int)port : -EINVAL;
 }
 

@@ -60,7 +60,7 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
                                       "print(sprintf('%J', methods.status.call()));"))
     observed = json.loads(subprocess.check_output([str(ucode), str(program)], text=True))
     assert observed['identity'] == {'onu_mac': '02:00:00:00:00:01', 'serial_number': '414243441234abcd'}
-    assert [p['device'] for p in observed['ports']] == ['lan1', 'lan2', 'lan3', 'lan4', 'lan5', 'pon0']
+    assert [p['device'] for p in observed['ports']] == ['lan1', 'lan2', 'lan3', 'lan4', 'pon0']
     assert observed["serdes"]["rx_los"] == "1"
     assert observed["mpcp"]["registered"] == "00000000"
     assert observed["traffic"]["rx"] == "0"

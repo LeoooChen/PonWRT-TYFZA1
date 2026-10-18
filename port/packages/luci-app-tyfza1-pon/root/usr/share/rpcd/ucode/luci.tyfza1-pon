@@ -10,7 +10,7 @@ function read_value(path) {
 
 function network_ports() {
 	let ports = [];
-	for (let name in ['lan1', 'lan2', 'lan3', 'lan4', 'lan5', 'pon0']) {
+	for (let name in ['lan1', 'lan2', 'lan3', 'lan4', 'pon0']) {
 		let path = '/sys/class/net/' + name + '/';
 		let port = { device: name, present: read_value(path + 'ifindex') != null };
 		for (let key in ['carrier', 'operstate', 'speed', 'duplex', 'address', 'mtu'])
