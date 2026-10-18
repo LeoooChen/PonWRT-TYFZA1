@@ -52,7 +52,7 @@ def stock_enable():
     return sum(event[1] for event in events if event[0] == 'delay_ms')
 
 
-def stock(revision, version, seed):
+def stock(revision, version, seed, ack=4):
     registers, events = {}, []
 
     def io(name, values):
@@ -68,7 +68,7 @@ def stock(revision, version, seed):
             if (mmd, reg) == (31, 0xb800):
                 value = 0x40 if registers.get((31, 0xb820), 0) & 0x10 else 0
             if (mmd, reg) == (31, 0xa434):
-                value = 4
+                value = ack
             oracle.uc.mem_write(oracle.uc.reg_read(UC_ARM64_REG_X4), struct.pack('<H', value))
             events.append(['r', mmd, reg, value])
             return 1
@@ -112,9 +112,10 @@ struct phy_device {
 static unsigned int revision,version,seed,accesses,fail_at,timeout_reg;
 static bool board;
 static u16 registers[32][65536];
-unsigned int count,errors;
+unsigned int count,errors,warnings;
 unsigned int events[8192][4];
 #define phydev_err(p,...) ((void)(p),errors++)
+#define phydev_warn(p,...) ((void)(p),warnings++)
 static int event(unsigned int kind,unsigned int mmd,unsigned int reg,unsigned int value) {
  events[count][0]=kind;events[count][1]=mmd;events[count][2]=reg;events[count++][3]=value;
  return ++accesses == fail_at ? -EIO : 0;
@@ -129,7 +130,7 @@ static int phy_read_mmd(struct phy_device *p,int mmd,u16 reg) {
   value=registers[31][0xb820]&0x10?0x40:0;
   if(timeout_reg==reg)value^=0x40;
  }
- if(mmd==31 && reg==0xa434)value=timeout_reg==reg?0:4;
+ if(mmd==31 && reg==0xa434)value=timeout_reg==reg?0x5600:4;
  return event('r',mmd,reg,value)<0?-EIO:(int)value;
 }
 static int phy_write_mmd(struct phy_device *p,int mmd,u16 reg,u16 value) {
@@ -178,7 +179,7 @@ int reset(int present,int error) {
 }
 int run(unsigned int rev,unsigned int ver,unsigned int initial,unsigned int fail,unsigned int timeout) {
  struct phy_device phy={.is_c45=true};
- revision=rev;version=ver;seed=initial;accesses=count=errors=0;fail_at=fail;timeout_reg=timeout;
+ revision=rev;version=ver;seed=initial;accesses=count=errors=warnings=0;fail_at=fail;timeout_reg=timeout;
  for(unsigned int m=0;m<32;m++)for(unsigned int r=0;r<65536;r++)registers[m][r]=seed;
  return rtl8221b_tyfza1_config_init(&phy);
 }
@@ -217,9 +218,20 @@ with tempfile.TemporaryDirectory(prefix='rtl8221b-oem-') as directory:
         rows.append({'revision': revision, 'patch_version': version,
                      'seed': hex(seed), 'events_match_OEM': count,
                      'writes': sum(event[0] == 'w' for event in actual)})
-    for register in (0xa420, 0xb800, 0xa434):
+    for register in (0xa420, 0xb800):
         assert native.run(8, 0, 0, 0, register) == -110
         assert ctypes.c_uint.in_dll(native, 'errors').value == 1
+    # The live 2.5G board has a434=0x5600 (ACK clear). Execute the OEM's
+    # timeout branch too: it releases force-down and returns success.
+    timed_out = stock(9, 0, 0, ack=0x5600)
+    assert sum(e[0] == 'r' and e[2] == 0xa434 for e in timed_out) == 100
+    assert timed_out[-1] == ['w', 31, 0xa400, 0]
+    assert native.run(9, 0, 0, 0, 0xa434) == 0
+    assert ctypes.c_uint.in_dll(native, 'warnings').value == 1
+    assert ctypes.c_uint.in_dll(native, 'errors').value == 0
+    # A real MDIO failure while releasing a timed-out request remains fatal.
+    events = ctypes.c_uint.in_dll(native, 'count').value
+    assert native.run(9, 0, 0, events, 0xa434) == -5
     # Bus failures before upload, during patch data, at version commit and at mode latch.
     expected = stock(8, 0, 0)
     for index in (1, 4, 120, len(expected) - 17, len(expected) - 2, len(expected)):
@@ -237,4 +249,5 @@ print(json.dumps({'OEM_module_sha256': hashlib.sha256(args.stock_module.read_byt
     'cases': rows,
     'real_poll_conditions_and_MDIO_errors': 'passed', 'board_and_model_match': 'passed',
     'GPIO14_OEM_lifetime_and_settling': 'passed',
+    'OEM_missing_ACK_releases_request_and_succeeds': True,
     'hardware_validation': False}, indent=2))

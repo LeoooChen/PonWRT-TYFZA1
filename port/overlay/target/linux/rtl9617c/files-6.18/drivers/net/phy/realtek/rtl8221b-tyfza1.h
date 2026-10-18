@@ -176,7 +176,13 @@ static int rtl8221b_hsgmii(struct phy_device *phydev)
 	release = rtl8221b_update(phydev, MDIO_MMD_VEND2, 0xa400, BIT(14), 0);
 	if (release < 0)
 		phydev_err(phydev, "HiSGMII force-down release failed: %d\n", release);
-	/* The OEM returns success on this timeout. A failed latch must fail attach. */
+	/* The OEM also completes this sequence without the force-down ACK.
+	 * In particular, PMA low power can leave a434 bit2 clear. The request
+	 * must still be released before phylib resumes the copper PHY. */
+	if (ret == -ETIMEDOUT) {
+		phydev_warn(phydev, "HiSGMII force-down ACK absent; request released\n");
+		return release;
+	}
 	return ret < 0 ? ret : release;
 }
 

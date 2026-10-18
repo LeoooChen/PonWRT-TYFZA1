@@ -79,6 +79,8 @@ struct rtl_xram {
 	unsigned int sgmii_speed;
 	struct tyfza1_led phy_led;
 	bool phy_led_registered;
+	bool native_groups_created;
+	bool wifi_started;
 	struct napi_struct napi;
 	struct hrtimer timer;
 	spinlock_t tx_lock;
@@ -826,33 +828,30 @@ static int rtl_phy_led_output(struct tyfza1_led *led, unsigned int value)
 			      0xd044, 0x11, value == 2 ? 0x10 : value);
 }
 
-static void rtl_unregister_extra_lans(struct rtl_xram *priv)
+static void rtl_unregister_lan(struct rtl_xram *priv, unsigned int port)
 {
-	unsigned int port;
+	struct net_device *dev = priv->ports[port];
+	unsigned long flags;
 
-	for (port = 1; port < ARRAY_SIZE(priv->ports); port++) {
-		struct net_device *dev = priv->ports[port];
-		unsigned long flags;
-
-		if (!dev)
-			continue;
-		if (port == 4 && priv->phy_led_registered) {
-			tyfza1_led_unregister(&priv->phy_led);
-			priv->phy_led_registered = false;
-		}
-		spin_lock_irqsave(&priv->tx_lock, flags);
-		priv->ports[port] = NULL;
-		spin_unlock_irqrestore(&priv->tx_lock, flags);
-		rcu_assign_pointer(priv->qm.lan[port], NULL);
-		if (priv->registered_ports & BIT(port))
-			unregister_netdev(dev);
-		rtl_fe_remove_port(priv->fe, dev);
-		synchronize_net();
-		if (dev->phydev)
-			phy_disconnect(dev->phydev);
-		free_netdev(dev);
-		priv->registered_ports &= ~BIT(port);
+	if (!dev)
+		return;
+	if (port == 4 && priv->phy_led_registered) {
+		tyfza1_led_unregister(&priv->phy_led);
+		priv->phy_led_registered = false;
 	}
+	spin_lock_irqsave(&priv->tx_lock, flags);
+	priv->ports[port] = NULL;
+	spin_unlock_irqrestore(&priv->tx_lock, flags);
+	rcu_assign_pointer(priv->qm.lan[port], NULL);
+	if (priv->registered_ports & BIT(port))
+		unregister_netdev(dev);
+	rtl_fe_remove_port(priv->fe, dev);
+	synchronize_net();
+	if (dev->phydev)
+		phy_disconnect(dev->phydev);
+	if (dev != priv->netdev)
+		free_netdev(dev);
+	priv->registered_ports &= ~BIT(port);
 }
 
 static void rtl_sgmii_power_off(void *data)
@@ -860,96 +859,108 @@ static void rtl_sgmii_power_off(void *data)
 	phy_power_off(data);
 }
 
-static int rtl_register_extra_lans(struct rtl_xram *priv, struct device *parent)
+static int rtl_register_lan(struct rtl_xram *priv, struct device *parent,
+			    unsigned int port, struct device_node *phy)
 {
+	struct phy_device *phydev;
+	struct net_device *dev = NULL;
+	struct rtl_lan *lan;
+	bool sgmii_powered = false;
+	u8 mac[ETH_ALEN];
+	int ret;
+
+	if (port == 4) {
+		priv->sgmii = devm_phy_get(parent, "sgmii");
+		if (IS_ERR(priv->sgmii)) {
+			ret = PTR_ERR(priv->sgmii);
+			goto put_phy;
+		}
+		ret = phy_power_on(priv->sgmii);
+		if (ret)
+			goto put_phy;
+		ret = devm_add_action_or_reset(parent, rtl_sgmii_power_off, priv->sgmii);
+		if (ret)
+			goto put_phy;
+		sgmii_powered = true;
+	}
+	dev = port == priv->port ? priv->netdev : alloc_etherdev(sizeof(*lan));
+	if (!dev) {
+		ret = -ENOMEM;
+		goto put_phy;
+	}
+	priv->ports[port] = dev;
+	SET_NETDEV_DEV(dev, parent);
+	snprintf(dev->name, sizeof(dev->name), "lan%u", port + 1);
+	lan = netdev_priv(dev);
+	lan->shared = priv;
+	lan->port = port;
+	dev->netdev_ops = &rtl_netdev_ops;
+	dev->ethtool_ops = &rtl_ethtool_ops;
+	dev->max_mtu = ETH_DATA_LEN;
+	ether_addr_copy(mac, priv->netdev->dev_addr);
+	mac[5] += port - priv->port;
+	eth_hw_addr_set(dev, mac);
+	phydev = of_phy_find_device(phy);
+	if (!phydev) {
+		ret = -ENODEV;
+		goto put_phy;
+	}
+	ret = phy_connect_direct(dev, phydev, rtl_adjust_link,
+		port == 4 ? PHY_INTERFACE_MODE_SGMII : PHY_INTERFACE_MODE_GMII);
+	put_device(&phydev->mdio.dev);
+	if (ret)
+		goto put_phy;
+	ret = rtl_fe_add_port(priv->fe, dev, port, port, 0);
+	if (ret)
+		goto put_phy;
+	rcu_assign_pointer(priv->qm.lan[port], dev);
+	ret = register_netdev(dev);
+	if (ret)
+		goto put_phy;
+	priv->registered_ports |= BIT(port);
+	if (port == 4) {
+		priv->phy_led.output = rtl_phy_led_output;
+		priv->phy_led.requested = 2;
+		priv->phy_led.cdev.name = "LED_8221B_P4_0";
+		priv->phy_led.cdev.max_brightness = 2;
+		ret = tyfza1_led_register(parent, &priv->phy_led, NULL);
+		if (ret)
+			dev_warn(parent, "LAN5 LED initialization failed: %d\n", ret);
+		else
+			priv->phy_led_registered = true;
+	}
+	dev_info(parent, "%s: LAN port %u %s, PHY %08x, MAC %pM\n",
+		 dev->name, port, priv->qm_rx ? "native NI/DMA" : "management XRAM",
+		 dev->phydev->phy_id, dev->dev_addr);
+	of_node_put(phy);
+	return 0;
+
+put_phy:
+	of_node_put(phy);
+	if (dev)
+		rtl_unregister_lan(priv, port);
+	if (sgmii_powered)
+		devm_release_action(parent, rtl_sgmii_power_off, priv->sgmii);
+	return ret;
+}
+
+static void rtl_register_lans(struct rtl_xram *priv, struct device *parent)
+{
+	struct device_node *phy;
 	unsigned int port;
 	int ret;
 
-	if (!of_find_property(parent->of_node, "realtek,lan-phys", NULL))
-		return 0;
-	for (port = 1; port < ARRAY_SIZE(priv->ports); port++) {
-		struct device_node *phy;
-		struct phy_device *phydev;
-		struct net_device *dev;
-		struct rtl_lan *lan;
-		u8 mac[ETH_ALEN];
-
-		phy = of_parse_phandle(parent->of_node, "realtek,lan-phys", port);
+	for (port = 0; port < ARRAY_SIZE(priv->ports); port++) {
+		phy = of_parse_phandle(parent->of_node,
+			port == priv->port ? "phy-handle" : "realtek,lan-phys",
+			port == priv->port ? 0 : port);
 		if (!phy)
 			continue;
-		if (port == 4) {
-			priv->sgmii = devm_phy_get(parent, "sgmii");
-			if (IS_ERR(priv->sgmii)) {
-				of_node_put(phy);
-				ret = PTR_ERR(priv->sgmii);
-				goto unwind;
-			}
-			ret = phy_power_on(priv->sgmii);
-			if (!ret)
-				ret = devm_add_action_or_reset(parent, rtl_sgmii_power_off, priv->sgmii);
-			if (ret) {
-				of_node_put(phy);
-				goto unwind;
-			}
-		}
-		dev = alloc_etherdev(sizeof(*lan));
-		if (!dev) {
-			of_node_put(phy);
-			ret = -ENOMEM;
-			goto unwind;
-		}
-		priv->ports[port] = dev;
-		SET_NETDEV_DEV(dev, parent);
-		snprintf(dev->name, sizeof(dev->name), "lan%u", port + 1);
-		lan = netdev_priv(dev);
-		lan->shared = priv;
-		lan->port = port;
-		dev->netdev_ops = &rtl_netdev_ops;
-		dev->ethtool_ops = &rtl_ethtool_ops;
-		dev->max_mtu = ETH_DATA_LEN;
-		ether_addr_copy(mac, priv->netdev->dev_addr);
-		mac[5] += port;
-		eth_hw_addr_set(dev, mac);
-		phydev = of_phy_find_device(phy);
-		if (!phydev) {
-			of_node_put(phy);
-			ret = dev_err_probe(parent, -ENODEV,
-					    "LAN port %u PHY missing from MDIO\n", port);
-			goto unwind;
-		}
-		ret = phy_connect_direct(dev, phydev, rtl_adjust_link,
-			port == 4 ? PHY_INTERFACE_MODE_SGMII : PHY_INTERFACE_MODE_GMII);
-		put_device(&phydev->mdio.dev);
-		of_node_put(phy);
-		if (ret) {
-			dev_err_probe(parent, ret, "LAN port %u PHY initialization failed\n", port);
-			goto unwind;
-		}
-		ret = rtl_fe_add_port(priv->fe, dev, port, port, 0);
+		ret = rtl_register_lan(priv, parent, port, phy);
 		if (ret)
-			goto unwind;
-		rcu_assign_pointer(priv->qm.lan[port], dev);
-		ret = register_netdev(dev);
-		if (ret)
-			goto unwind;
-		priv->registered_ports |= BIT(port);
-		if (port == 4) {
-			priv->phy_led.output = rtl_phy_led_output;
-			priv->phy_led.requested = 2;
-			priv->phy_led.cdev.name = "LED_8221B_P4_0";
-			priv->phy_led.cdev.max_brightness = 2;
-			ret = tyfza1_led_register(parent, &priv->phy_led, NULL);
-			if (ret)
-				goto unwind;
-			priv->phy_led_registered = true;
-		}
-		dev_info(parent, "%s: LAN port %u shared native NI/DMA, PHY %08x, MAC %pM\n",
-			 dev->name, port, dev->phydev->phy_id, dev->dev_addr);
+			dev_err(parent, "LAN%u initialization failed: %d; other ports retained\n",
+				port + 1, ret);
 	}
-	return 0;
-unwind:
-	rtl_unregister_extra_lans(priv);
-	return ret;
 }
 
 static ssize_t xram_state_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -1178,7 +1189,6 @@ static const struct attribute_group *rtl_native_groups[] = {
 static int rtl_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct device_node *phy;
 	struct net_device *netdev;
 	struct rtl_xram *priv;
 	u8 mac[ETH_ALEN];
@@ -1203,8 +1213,6 @@ static int rtl_probe(struct platform_device *pdev)
 		goto free_netdev;
 	priv->lan.port = priv->port;
 	snprintf(netdev->name, sizeof(netdev->name), "lan%u", priv->port + 1);
-	priv->ports[priv->port] = netdev;
-	rcu_assign_pointer(priv->qm.lan[priv->port], netdev);
 	value = readl(priv->ni + MAC_ADDR0);
 	put_unaligned_be32(value, mac);
 	mac[4] = readl(priv->ni + MAC_ADDR1);
@@ -1219,25 +1227,18 @@ static int rtl_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&priv->mib_work, rtl_mib_work);
 	netif_napi_add(netdev, &priv->napi, rtl_poll);
 	hrtimer_setup(&priv->timer, rtl_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	phy = of_parse_phandle(dev->of_node, "phy-handle", 0);
-	if (!of_phy_connect(netdev, phy, rtl_adjust_link, 0, PHY_INTERFACE_MODE_GMII)) {
-		of_node_put(phy);
-		ret = -EPROBE_DEFER;
-		goto del_napi;
-	}
-	of_node_put(phy);
 	priv->dma_tx = of_property_read_bool(dev->of_node, "realtek,dma-tx");
 	if (priv->dma_tx) {
 		priv->dma.registers = devm_platform_ioremap_resource(pdev, 2);
 		if (IS_ERR(priv->dma.registers)) {
 			ret = PTR_ERR(priv->dma.registers);
-			goto disconnect_phy;
+			goto del_napi;
 		}
 		priv->dma.port = priv->port;
 		priv->dma.vp = 8;
 		ret = rtl_dma_tx_alloc(dev, &priv->dma);
 		if (ret)
-			goto disconnect_phy;
+			goto del_napi;
 	}
 	priv->qm_rx = of_property_read_bool(dev->of_node, "realtek,qm-rx");
 	if (priv->qm_rx) {
@@ -1269,33 +1270,24 @@ static int rtl_probe(struct platform_device *pdev)
 	if(priv->qm_rx) {
 		priv->fe=rtl_fe_allocate(dev,priv->ni);
 		if(IS_ERR(priv->fe)){ret=PTR_ERR(priv->fe);priv->fe=NULL;goto free_dma;}
-		ret=rtl_fe_add_port(priv->fe,netdev,priv->port,priv->port,0);
-		if(ret)goto free_dma;
 	}
-	ret = register_netdev(netdev);
-	if (ret)
-		goto free_dma;
-	priv->registered_ports |= BIT(priv->port);
-	ret = rtl_register_extra_lans(priv, dev);
-	if (ret)
-		goto unregister_netdev;
 	platform_set_drvdata(pdev, netdev);
+	rtl_register_lans(priv, dev);
 	ret = sysfs_create_groups(&dev->kobj, rtl_native_groups);
 	if (ret)
-		goto unregister_netdev;
+		dev_warn(dev, "NI diagnostic attributes unavailable: %d\n", ret);
+	else
+		priv->native_groups_created = true;
 	if (priv->qm_rx && priv->dma_tx) {
 		ret = rtl_wifi_start(dev);
-		if (ret) { sysfs_remove_groups(&dev->kobj, rtl_native_groups); goto unregister_netdev; }
+		if (ret)
+			dev_warn(dev, "NI Wi-Fi notifier unavailable: %d; LAN ports retained\n", ret);
+		else
+			priv->wifi_started = true;
 	}
-	dev_info(dev, "%s: port %u %s, PHY %08x, MAC %pM\n",
-		 netdev->name, priv->port, priv->qm_rx ? "native NI/DMA" : "management XRAM",
-		 netdev->phydev->phy_id, netdev->dev_addr);
 	schedule_delayed_work(&priv->mib_work, HZ);
 	return 0;
 
-unregister_netdev:
-	rtl_unregister_extra_lans(priv);
-	unregister_netdev(netdev);
 free_dma:
 	rtl_fe_free(priv->fe);
 	if (priv->irq_requested)
@@ -1304,8 +1296,6 @@ free_dma:
 		rtl_qm_rx_free(dev, &priv->qm);
 	if (priv->dma_tx)
 		rtl_dma_tx_free(dev, &priv->dma);
-disconnect_phy:
-	phy_disconnect(netdev->phydev);
 del_napi:
 	netif_napi_del(&priv->napi);
 free_netdev:
@@ -1317,14 +1307,15 @@ static void rtl_remove(struct platform_device *pdev)
 {
 	struct net_device *dev = platform_get_drvdata(pdev);
 	struct rtl_xram *priv = netdev_priv(dev);
+	unsigned int port;
 
 	cancel_delayed_work_sync(&priv->mib_work);
 	priv->removing = true;
-	if (priv->qm_rx && priv->dma_tx) rtl_wifi_stop();
-	sysfs_remove_groups(&pdev->dev.kobj, rtl_native_groups);
-	rtl_unregister_extra_lans(priv);
-	rcu_assign_pointer(priv->qm.lan[priv->port], NULL);
-	unregister_netdev(dev);
+	if (priv->wifi_started) rtl_wifi_stop();
+	if (priv->native_groups_created)
+		sysfs_remove_groups(&pdev->dev.kobj, rtl_native_groups);
+	for (port = 0; port < ARRAY_SIZE(priv->ports); port++)
+		rtl_unregister_lan(priv, port);
 	synchronize_net();
 	rtl_fe_free(priv->fe);
 	if (priv->irq_requested)
@@ -1333,7 +1324,6 @@ static void rtl_remove(struct platform_device *pdev)
 		rtl_qm_rx_free(&pdev->dev, &priv->qm);
 	if (priv->dma_tx)
 		rtl_dma_tx_free(&pdev->dev, &priv->dma);
-	phy_disconnect(dev->phydev);
 	netif_napi_del(&priv->napi);
 	free_netdev(dev);
 }
