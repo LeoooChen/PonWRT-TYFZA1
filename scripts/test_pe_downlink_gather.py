@@ -43,6 +43,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     put(base + 0x13020, len(lengths))
     put(base + 0x18020, len(lengths))
     put(base + 0x15020, payload)
+    put(base + 0x19604, 1)
     put(base + 0x16020, payload + (len(lengths) - 1) * 2048)
     put(mb + 170 * 4, 2)
     put(base + 0x19004, 2)
@@ -152,6 +153,9 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
 if __name__ == '__main__':
     if len(sys.argv) > 2 and sys.argv[2] == '--160':
         rows = [case([1514] * 4, 7935, True, bandwidth=3, rate=rate) for rate in (0x119, 0x19b)]
+    elif len(sys.argv) > 2 and sys.argv[2] == '--he-large':
+        rows = [case([1514] * 7, cap, True, bandwidth=3, rate=0x19b) for cap in (7935, 10896)]
+        assert [row['MPDUs'] for row in rows] == [2, 1]
     else:
         rows = [case([64 + (n + pad) % 4 for n in range(count)], 7935)
                 for count in range(2, 9) for pad in range(4)]

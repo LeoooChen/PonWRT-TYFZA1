@@ -13,6 +13,7 @@
 #define NI_TID_TAIL 0x16000
 #define NI_EPP_CONSUMERS 0x11c00
 #define NI_EPP_RETIRE_TARGETS 0x19400
+#define NI_TID_ACTIVE 0x19600
 
 static void __attribute__((noinline)) ni_peer_event(volatile u32 *mailbox, u8 *memory, u32 macid)
 {
@@ -46,7 +47,9 @@ static void __attribute__((section(".rxq"), noinline)) ni_enqueue(
 	else *(u32 *)(memory + NI_TID_HEAD + queue * 4) = head;
 	*old_tail = tail;
 	u32 *queued = (void *)(memory + NI_PEER_QUEUED + macid * 4);
-	if (!*queued) ni_peer_add(mailbox, memory, macid);
+	u32 *active = (void *)(memory + NI_TID_ACTIVE + macid * 4);
+	if (!*queued) { ni_peer_add(mailbox, memory, macid); *active = 0; }
+	*active |= BIT(queue & 7);
 	*queued += count; mailbox[38] += count;
 	*(u32 *)(memory + NI_TID_QUEUED + queue * 4) += count;
 	if (macid) *(u32 *)(memory + NI_TID_PENDING + queue * 4) += count;
@@ -136,10 +139,14 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 		volatile u32 *ps = (void *)(memory + 0xe800 + macid * 16);
 		u32 retired = !macid || (mailbox[62] == 128 || mailbox[62] == macid) ||
 			!*(volatile u32 *)(memory + NI_PEER_ROUTE + macid * 4);
-		for (u32 offset = 0; offset < 8; offset++) {
-			u32 tid = (mailbox[112] + offset) & 7;
+		u32 *active = (void *)(memory + NI_TID_ACTIVE + macid * 4), tids = *active;
+		u32 tid = mailbox[112];
+		/* Rotate the active set into the existing round-robin order. */
+		for (tids = (tids >> tid | tids << (8 - tid)) & 255; tids;
+		     tids >>= 1, tid = (tid + 1) & 7) {
+			if (!(tids & 1)) continue;
 			u32 *head = (void *)(memory + NI_TID_HEAD + (macid * 8 + tid) * 4);
-			if (!*head || (!retired && ps[0] && (ps[1] == ps[2] || !((ps[3] >> 16) & BIT(tid))))) continue;
+			if (!retired && ps[0] && (ps[1] == ps[2] || !((ps[3] >> 16) & BIT(tid)))) continue;
 			u32 buffer = *head, *waiting = uncached(buffer);
 			u32 id = ni_owner(mailbox, memory), frames = 1;
 			u32 tail_buffer = buffer;
@@ -190,7 +197,10 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			*(u32 *)uncached(tail_buffer) = 0;
 			*head = waiting[3] & ~127U;
 			mailbox[112] = (tid + 1) & 7;
-			if (!*head) *(u32 *)(memory + NI_TID_TAIL + (macid * 8 + tid) * 4) = 0;
+			if (!*head) {
+				*(u32 *)(memory + NI_TID_TAIL + (macid * 8 + tid) * 4) = 0;
+				*active &= ~BIT(tid);
+			}
 			u32 *queued = (void *)(memory + NI_PEER_QUEUED + macid * 4);
 			/* Admission counts WPs, not the number of gathered MSDUs. */
 			*queued -= frames; mailbox[38] -= frames; mailbox[30]++;

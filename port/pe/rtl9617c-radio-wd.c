@@ -216,29 +216,39 @@ static void ni_recycle(volatile u32 *mailbox, u8 *memory)
 {
 	volatile u32 *ni = (void *)0xb0000000;
 	volatile u32 *owners = (void *)(memory + 0xc400);
+	/* ARM changes the EQ/CPU assignment only while this radio is paused. */
+	u32 eq = mailbox[117];
+	volatile u32 *push = ni + mailbox[116] / 4;
 
 	for (;;) {
 		u32 dropped = mailbox[47], consumer = mailbox[46];
 		if (!dropped && consumer == mailbox[45]) return;
 		sync();
 		u32 id = dropped ? dropped - 1 : *(u32 *)(memory + 0xc800 + consumer * 4);
-		if (!(ni[(0x6328 + mailbox[117] * 4) / 4] & 0x3fff) ||
-		    !(ni[mailbox[116] / 4] & BIT(31))) return;
-		sync();
-		u32 buffer = owners[id * 2];
-		u32 next = *(u32 *)uncached(buffer);
-		ni[mailbox[116] / 4 + 1] = buffer | mailbox[117];
+		u32 buffer = owners[id * 2], returned = 0;
+		/* A WP owns one completed MPDU. Account its BID chain together,
+		 * retaining the unreturned suffix when either hardware credit stalls. */
+		do {
+			if (!(ni[(0x6328 + eq * 4) / 4] & 0x3fff) ||
+			    !(push[0] & BIT(31))) break;
+			sync();
+			u32 next = *(u32 *)uncached(buffer);
+			push[1] = buffer | eq;
+			buffer = next; returned++;
+			sync();
+		} while (buffer);
+		if (!returned) return;
+		owners[id * 2] = buffer;
+		mailbox[29] += returned;
 #ifdef PE_UPLINK
 		u32 macid = (owners[id * 2 + 1] >> 8) & 127;
 		if (macid) {
 			u32 tid = *(u32 *)(memory + NI_WAIT + id * 16 + 12) & 7;
-			(*(u32 *)(memory + NI_TID_PENDING + (macid * 8 + tid) * 4))--;
+			*(u32 *)(memory + NI_TID_PENDING + (macid * 8 + tid) * 4) -= returned;
 			ni_peer_event(mailbox, memory, macid);
 		}
 #endif
-		owners[id * 2] = next;
-		mailbox[29]++;
-		if (next) continue;
+		if (buffer) return;
 		owners[id * 2 + 1] = 0;
 		mailbox[30]--;
 		if (dropped) mailbox[47] = 0;
@@ -445,8 +455,12 @@ void pe_main(volatile u32 *control)
 			if (flags & BIT(18)) {
 				u32 macid = flags >> 24, tid = flags & 7;
 				u32 header_bytes = (packet >> 16) & 63;
-				u8 *ethernet = uncached(request[8]);
-				u8 *ap_address = (void *)(mailbox + 16);
+				const struct packed_word *input = uncached(request[8]);
+				/* Gather addresses once; byte assembly belongs in private DMEM. */
+				u32 ethernet_words[4] = {input[0].value, input[1].value,
+					input[2].value, ((const u8 *)input)[12] | (u32)((const u8 *)input)[13] << 8};
+				u32 ap_words[2] = {mailbox[16], mailbox[17]};
+				u8 *ethernet = (void *)ethernet_words, *ap_address = (void *)ap_words;
 				u32 *sequences = (void *)(memory +
 #ifdef PE_UPLINK
 					0x10000
