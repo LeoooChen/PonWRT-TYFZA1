@@ -34,7 +34,7 @@ define Device/tianyi_tyfza1
   DEVICE_PACKAGES := kmod-rtl-ax-ap tyfza1-pon-control luci-app-tyfza1-pon \
 	ubi-utils nand-utils uboot-envtools iw wpad-mbedtls wifi-scripts wireless-regdb \
 	kmod-gpio-button-hotplug kmod-usb3 kmod-usb-storage kmod-usb-storage-uas \
-	kmod-usb-ledtrig-usbport block-mount kmod-fs-vfat kmod-fs-exfat \
+	kmod-usb-ledtrig-usbport kmod-tyfza1-usb-led block-mount kmod-fs-vfat kmod-fs-exfat \
 	kmod-fs-ntfs3 kmod-fs-ext4 kmod-nls-utf8 kmod-nls-cp437 kmod-nls-iso8859-1
   KERNEL := kernel-bin | tyfza1-ubi-fit
   KERNEL_INITRAMFS := kernel-bin
