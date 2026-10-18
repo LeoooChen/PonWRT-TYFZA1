@@ -6,5 +6,7 @@
 # kind: 0=Ethernet, 2=VEIP; ordinal: zero-based within that actual MIB class
 # slot: 1..7; priority: 0..7; VID: 0..4094, or none for transparent mode
 # fixed/assured/maximum: hardware grant units, as in fttrctl service
+# bridge: existing, up Linux bridge, or - for OMCI provisioning only
+# The controller creates fttr-u<ID> with outer 802.1Q VID=GEM Port-ID.
 #
-# serial            kind ordinal slot priority VID  fixed assured maximum
+# serial            kind ordinal slot priority VID  fixed assured maximum bridge

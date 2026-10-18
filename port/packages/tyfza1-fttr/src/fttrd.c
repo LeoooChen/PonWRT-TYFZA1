@@ -18,6 +18,7 @@
 #include <unistd.h>
 
 #include "miniolt.h"
+#include "fttr-net.h"
 #include "omci-mib.h"
 #include "omci-model.h"
 #include "omci-service.h"
@@ -39,6 +40,7 @@ struct service_policy {
 	struct fttr_service_config config;
 	uint16_t ordinal;
 	uint8_t serial[8];
+	char bridge[IFNAMSIZ];
 	bool wildcard;
 };
 
@@ -50,6 +52,8 @@ struct onu {
 	bool service_started;
 	uint16_t service_ordinal;
 	struct mib_sync sync;
+	struct fttr_net_port port;
+	int datapath_error, datapath_cleanup_error;
 	unsigned int rescans;
 	enum onu_phase phase;
 	uint8_t identity[8];
@@ -60,6 +64,7 @@ struct onu {
 struct controller {
 	int directory, ni, store, socket;
 	struct fttr_omci_link link;
+	struct fttr_net net;
 	const char *interface;
 	uint16_t transaction;
 	int64_t observed_at;
@@ -112,12 +117,12 @@ static int load_policies(struct controller *c, const char *path)
 		return -errno;
 	while (getline(&line, &capacity, file) >= 0) {
 		struct service_policy *policy, *other;
-		char *token[10], *save, *p, *end;
+		char *token[11], *save, *p, *end;
 		unsigned long value[8];
 		unsigned int n = 0, i;
 
 		number++;
-		for (p = strtok_r(line, " \t\r\n", &save); p && n < 10;
+		for (p = strtok_r(line, " \t\r\n", &save); p && n < 11;
 		     p = strtok_r(NULL, " \t\r\n", &save)) {
 			if (*p == '#')
 				break;
@@ -125,7 +130,9 @@ static int load_policies(struct controller *c, const char *path)
 		}
 		if (!n)
 			continue;
-		if (n != 9) { ret = -EINVAL; break; }
+		if (n != 10 || !*token[9] || strlen(token[9]) >= IFNAMSIZ ||
+		    strchr(token[9], '/') || strchr(token[9], ':') || strchr(token[9], '"') ||
+		    strchr(token[9], '\\')) { ret = -EINVAL; break; }
 		for (i = 0; i < 8; i++) {
 			if (i == 4 && !strcmp(token[i + 1], "none")) {
 				value[i] = 0;
@@ -168,6 +175,8 @@ static int load_policies(struct controller *c, const char *path)
 			.fixed = value[5], .assured = value[6], .maximum = value[7]
 		};
 		policy->ordinal = value[1];
+		if (strcmp(token[9], "-"))
+			strcpy(policy->bridge, token[9]);
 		policy->next = c->policies;
 		c->policies = policy;
 		c->policy_count++;
@@ -225,10 +234,12 @@ static int publish(struct controller *c, const char *state, int error)
 			hex(file, u->identity, 8);
 			fprintf(file, "\",\"service_configured\":%s,\"service_cleanup_error\":%d,"
 				"\"mib_sync_valid\":%s,\"mib_sync\":%u,\"mib_sync_observed\":%u,"
-				"\"mib_sync_error\":%d,\"mib_sync_checked_ms\":%" PRId64 ",\"mib_rescans\":%u}",
+				"\"mib_sync_error\":%d,\"mib_sync_checked_ms\":%" PRId64 ",\"mib_rescans\":%u,"
+				"\"datapath_configured\":%s,\"datapath_error\":%d,\"datapath_cleanup_error\":%d}",
 				u->service.configured ? "true" : "false", u->service.cleanup_error,
 				u->sync.valid ? "true" : "false", u->sync.value, u->sync.observed,
-				u->sync.error, u->sync.checked, u->rescans);
+				u->sync.error, u->sync.checked, u->rescans,
+				u->port.configured ? "true" : "false", u->datapath_error, u->datapath_cleanup_error);
 		}
 		fputc(']', file);
 	}
@@ -289,6 +300,11 @@ static int save_service(struct controller *c, unsigned int id)
 	file = fdopen(fd, "w");
 	if (!file) { int ret = -errno; close(fd); return ret; }
 	fttr_service_dump(job, file);
+	fprintf(file, "{\"event\":\"service_datapath\",\"configured\":%s,\"interface\":\"%s\","
+		"\"bridge\":\"%s\",\"ifindex\":%d,\"gem\":%u,\"mtu\":%u,\"error\":%d,\"cleanup_error\":%d}\n",
+		c->onu[id].port.configured ? "true" : "false", c->onu[id].port.name,
+		c->onu[id].port.bridge, c->onu[id].port.index, c->onu[id].port.gem,
+		c->onu[id].port.mtu, c->onu[id].datapath_error, c->onu[id].datapath_cleanup_error);
 	if (job->transaction.count)
 		fttr_objects_job_dump(&job->transaction, file, "service_objects");
 	fprintf(file, "{\"event\":\"service_recipe\",\"kind\":%u,\"uni\":%u,\"uni_ordinal\":%u,\"slot\":%u,"
@@ -481,10 +497,13 @@ static int start_service(struct controller *c, unsigned int id)
 static int withdraw_service(struct controller *c, unsigned int id)
 {
 	struct fttr_service_job *job = &c->onu[id].service;
-	int ret;
+	int ret, cleanup = fttr_net_remove(&c->net, &c->onu[id].port);
+
+	if (cleanup)
+		c->onu[id].datapath_cleanup_error = cleanup;
 
 	if (!job->config.slot || job->grant_withdrawn)
-		return 0;
+		return cleanup;
 	ret = fttr_miniolt_tcont(c->directory, id, job->config.slot, 0, 0, 0);
 	if (!ret)
 		ret = fttr_miniolt_tcont_read(c->directory, id, job->config.slot, &job->observed);
@@ -496,7 +515,7 @@ static int withdraw_service(struct controller *c, unsigned int id)
 		return ret;
 	}
 	job->grant_withdrawn = true;
-	return 0;
+	return cleanup;
 }
 
 static int cancel(struct controller *c, unsigned int id)
@@ -533,6 +552,8 @@ static int cancel(struct controller *c, unsigned int id)
 		memset(&u->service, 0, sizeof(u->service));
 		u->service_started = false;
 	}
+	memset(&u->port, 0, sizeof(u->port));
+	u->datapath_error = u->datapath_cleanup_error = 0;
 	ret = remove_file(c->store, id, "pending");
 	if (ret)
 		return ret;
@@ -764,6 +785,22 @@ static int sync_reply(struct controller *c, unsigned int id)
 	sync->checked = now_ms();
 	sync->due = sync->checked + 2000;
 	u->service.configured = true;
+	{
+		const struct service_policy *policy = matching_policy(c, u->identity);
+
+		if (*policy->bridge) {
+			ret = u->port.configured ? fttr_net_verify(&c->net, &u->port) :
+				fttr_net_create(&c->net, &u->port, id, u->identity, u->service.gem, policy->bridge);
+			if (ret) {
+				u->datapath_error = ret;
+				u->sync.enabled = false;
+				fttr_service_cancel(&u->service, ret);
+				u->phase = ONU_SERVICE_FAILED;
+				ret = withdraw_service(c, id);
+				return ret ? ret : save_service(c, id);
+			}
+		}
+	}
 	u->phase = ONU_CONFIGURED;
 	return save_service(c, id);
 }
@@ -1153,7 +1190,8 @@ static int shutdown_hardware(struct controller *c)
 
 int main(int argc, char **argv)
 {
-	struct controller c = { .directory = -1, .ni = -1, .store = -1, .socket = -1 };
+	struct controller c = { .directory = -1, .ni = -1, .store = -1, .socket = -1,
+		.net = { .fd = -1 } };
 	struct sigaction action = { .sa_handler = stop_signal };
 	bool owned = false;
 	unsigned int id;
@@ -1187,8 +1225,13 @@ int main(int argc, char **argv)
 	if (c.ni < 0) { ret = -errno; goto out; }
 	c.store = open(argv[3], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (c.store < 0) { ret = -errno; goto out; }
+	ret = fttr_net_open(&c.net, c.interface);
+	if (ret)
+		goto out;
 	for (id = 0; id < FTTR_ONUS; id++) {
-		ret = remove_file(c.store, id, "mib");
+		ret = fttr_net_reset(&c.net, id);
+		if (!ret)
+			ret = remove_file(c.store, id, "mib");
 		if (!ret)
 			ret = remove_file(c.store, id, "pending");
 		if (!ret)
@@ -1221,6 +1264,23 @@ int main(int argc, char **argv)
 out:
 	if (stopping && ret == -EINTR)
 		ret = 0;
+	if (owned) {
+		result = shutdown_hardware(&c);
+		if (!ret)
+			ret = result;
+		for (id = 0; id < FTTR_ONUS; id++) {
+			result = fttr_net_remove(&c.net, &c.onu[id].port);
+			if (result)
+				c.onu[id].datapath_cleanup_error = result;
+			if (!ret)
+				ret = result;
+			if (c.store >= 0 && c.onu[id].service_started) {
+				result = save_service(&c, id);
+				if (!ret)
+					ret = result;
+			}
+		}
+	}
 	for (id = 0; id < FTTR_ONUS; id++) {
 		if (c.onu[id].dump && fclose(c.onu[id].dump) && !ret)
 			ret = -errno;
@@ -1233,11 +1293,6 @@ out:
 		free(c.policies);
 		c.policies = next;
 	}
-	if (owned) {
-		result = shutdown_hardware(&c);
-		if (!ret)
-			ret = result;
-	}
 	if (c.store >= 0) {
 		result = publish(&c, ret ? "failed" : "stopped", ret);
 		if (!ret)
@@ -1246,6 +1301,8 @@ out:
 	}
 	if (c.socket >= 0)
 		close(c.socket);
+	if (c.net.fd >= 0)
+		close(c.net.fd);
 	if (c.ni >= 0)
 		close(c.ni);
 	if (c.directory >= 0)

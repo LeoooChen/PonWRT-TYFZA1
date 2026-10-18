@@ -380,6 +380,40 @@ It does not use the names of the original libraries as a capability probe.
   with that same ONU's MIB/service table transactions. Shared IO failures stop
   the controller as before. These checks verify management configuration;
   they do not verify data forwarding or replay ownership after a process crash.
+* Native service data ports (`fttr-net.c`). The retained original
+  `/etc/scripts/onu_setup.sh` action1 receives an outer VID from `onuinfo`,
+  selects that outer TPID/VID on RX and removes one tag, and pushes one tag
+  on TX while preserving customer tags. The four-GbE unit selects TPID`8100`.
+  `onuinfo`'s active-handler block `40754c..407560` stores one-based ONU ID
+  plus255 as that first service's VID; `407724..407770` passes it to the
+  script. This equals the first GEM Port-ID (`256 + zero-based ONU ID`),
+  rather than the script's separately configured physical-interface PVID.
+  Native creates an 802.1Q child `fttr-u<ID>` on `fttr0` with this service's
+  actual GEM ID, then attaches it to the policy's explicit existing/up bridge.
+  The child uses that bridge's MTU; its MTU plus the outer four bytes must fit
+  `fttr0`. Linux materializes this tag for the current FTTR endpoint, which
+  advertises no hardware VLAN TX insertion. Existing bridge VLAN filtering
+  remains the administrator's network policy; transparent customer VLANs
+  require a bridge that admits them.
+  Creation happens only after the remote service graph, local grant, VLAN
+  rules and initial sync/probe have been verified. Periodic sync completion
+  also checks the actual child identity, GEM tag, master, MTU and up flag.
+  A data-port failure is exposed as `service-failed` with `datapath_error`,
+  withdraws its local grant and retains any separate cleanup error. It does
+  not silently become an OMCI-only service or restart unrelated peers.
+  Disconnect, replacement and MIB reconciliation remove the port before
+  withdrawing its grant; kernel bridge removal flushes its learned FDB.
+  Shutdown disables optical/P6 forwarding and removes all owned ports.
+  The creation request marks the device with group`0x46545452`; a subsequent
+  existing-link request applies its ONU serial/GEM alias and bridge. This
+  follows the actual Linux `rtnl_create_link` behavior: it applies GROUP but
+  ignores IFALIAS. Startup deletes prior owned children, including an
+  interrupted down child before alias setup, before any new inventory.
+  Parent/name/kind/group and nonempty alias ownership mismatches are exposed
+  without deleting an unrelated or reassigned device. This handles local
+  port lifecycle; it is not durable recovery of remote ME ownership or FE/PE
+  flow invalidation. `datapath_configured` describes verified kernel setup,
+  not measured optical throughput.
 
 ## Validation
 
@@ -628,6 +662,26 @@ package prepare/compile/install passes in `package-root-autoprovision/`
 (`package-stage-autoprovision.log`), including the policy conffile and procd
 argument. No full firmware build or full test suite is used here.
 
+`scripts/test_fttr_datapath.py` executes the retained SMUX module's actual
+`smuxdev_vlan_push.part.0` and RX `smuxdev_vlan_pop.part.0` instructions,
+modeling only skb pointer helpers and memmove. It also executes the original
+`onuinfo` VID assignment. Actual native rtnetlink-created VLAN/bridge ports
+forward untagged, single-tagged and QinQ frames in both directions over veth;
+the resulting frames match the original bytes. The full1500-byte QinQ
+customer payload case explicitly uses LAN/bridge MTU1508. Unknown GEM tags
+are not delivered to that LAN; ingress frames are not reflected to the ONU.
+Veth RX tag metadata is
+reconstructed through PACKET_AUXDATA before comparison. The check confirms
+learned FDB removal, stale-port cleanup and explicit ownership mismatch
+failure (`datapath-comparison.json`). The resident-controller check now uses
+real VLAN/bridge ports and verifies their create/remove/recreate lifecycle
+across MIB loss, replacement, reconnect and shutdown. A missing requested
+bridge fails that peer and withdraws its grant; an explicit `-` bridge keeps
+OMCI-only provisioning separate (`autoprovision-datapath-comparison.json`).
+The package's actual musl prepare/compile/install passes in
+`package-root-datapath/` (`package-stage-datapath.log`). These are private
+network namespace checks; they do not establish optical or FE/PE acceptance.
+
 The same focused controller check now executes original ONU sync increment
 `11f68`, the ONU Data reset block `eb04..eb30`, and the actual
 `mib_OntData.so` default initializer. It checks0/1/254/255 transitions and
@@ -735,10 +789,10 @@ manages registered ONUs. `/etc/init.d/tyfza1-fttr start` / `stop` controls this
 instance; SIGTERM also handles a stop requested during bootstrap. The procd
 command loads `/etc/tyfza1-fttr.services`; authentication and FPGA startup remain work.
 
-Service policy rows have nine fields:
+Service policy rows have ten fields:
 
 ```
-serial-or-* kind UNI-ordinal slot priority VID-or-none fixed assured maximum
+serial-or-* kind UNI-ordinal slot priority VID-or-none fixed assured maximum bridge-or--
 ```
 
 The serial is16 hexadecimal digits in the hardware inventory's vendor-first
@@ -746,6 +800,11 @@ order. Kind0 selects Ethernet; kind2 selects VEIP. Ordinals are zero-based
 within that actual MIB class. Slot1..7, priority0..7, VID0..4094/`none` and
 hardware grant units have the same meanings as `fttrctl service`. There is
 one policy per exact serial and at most one wildcard; exact matches win.
+The final field names an existing/up Linux bridge (for example `br-lan`), or
+`-` to request only OMCI/local-grant provisioning. The bridge's MTU plus four
+outer tag bytes must fit the FTTR parent. A requested bridge failure is
+reported explicitly, with no data-ready claim. The prior nine-field
+development format is rejected; add the intended bridge or `-` explicitly.
 An ordinal not present on the actual peer produces `service-failed` without
 configuration writes. Edit the policy file and restart this development
 service to load changes. A direct daemon launch can use
@@ -949,7 +1008,10 @@ the failures/unconfirmed resources and stops further dependency deletion.
    implemented, with runtime journals and observed disconnect/replacement
    handling. MIB sync monitoring now also detects/reconciles same-serial MIB
    loss without an observed registration transition. Durable ownership
-   recovery, default policy import and multiple services per ONU remain work.
+   recovery of remote resources, default policy import and multiple services
+   per ONU remain work. Explicit bridge attachment through native per-GEM
+   VLAN ports, their lifecycle and kernel FDB removal are implemented.
+   Hardware offload invalidation remains separate work.
    Current upstream ONU OMCI is a different role.
 5. Original subordinate gateway configuration, Wi-Fi synchronization,
    multicast, reboot/upgrade and roaming coordination, using the connected
