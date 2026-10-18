@@ -1,4 +1,4 @@
-## v0.8.0-alpha
+## v0.8.0-beta
 
 - Wi-Fi 硬件加速下行突破千兆，5 GHz HE160 实测 UDP 吞吐约 1.34 Gbps；优化 PE 批处理与 HE 聚合。
 - 接入 OpenWrt 官方软件源，支持直接 `apk update`、`apk add`，预装 VPN、SQM、代理、多 WAN 等常用插件依赖。

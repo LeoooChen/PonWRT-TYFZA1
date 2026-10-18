@@ -95,6 +95,9 @@ else: sys.exit(2)
     status_source = (luci / "modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js").read_text()
     assert status_source.count("var callHardwareStatus = rpc.declare") == 1
     assert "Realtek/RTL9617C（" in status_source
+    header = (luci / "modules/luci-base/ucode/template/header.ut").read_text()
+    assert header.count("resource_version:") == 1
+    assert "-tyfza1-r1'" in header
     assert "当前功率上限" in (luci / "modules/luci-mod-network/htdocs/luci-static/resources/view/network/wireless.js").read_text()
     config = (tree / ".config").read_text()
     assert config.count("CONFIG_PACKAGE_luci-theme-argon=y") == 1
