@@ -1153,6 +1153,13 @@ DMA/PE producer retirement and MiniOLT buffer retirement still require their
 actual original implementation or further hardware evidence before GEM reuse
 can be declared fully protected.
 
+Further disassembly of the relay's local deactivation helpers shows
+`479d0 -> 4788c`: set bit16 at`40401 + 2 * ONU`, register a timer and send
+a Deactivate PLOAM. The callback at`4775c` checks the software keep-blocked
+flag and clears that hardware bit when permitted. This call chain does not
+probe queue emptiness. It cannot serve as the missing MiniOLT buffer barrier;
+blocking an ONU and proving that its old packets are gone are distinct steps.
+
 ### Shared DMA/AFT reset correction
 
 The original `ca_ni_dma_lso_reset` in `.text.unlikely` (`1ac64`) asserts
@@ -1177,6 +1184,54 @@ for two nonzero control/configuration seeds after disabling submission
 (`dma-aft-reset-comparison.json`). The actual6.18 composite NI driver object
 also compiles/links. Hardware reset effects and end-to-end packet retirement
 remain unverified; this fix supplies the missing original reset sequence.
+
+### Original remote Wi-Fi configuration transaction
+
+`tools/trace_stock_fttr_wifi.py` executes
+`libponrelay.so:plr_gponrm_onu_wifi_set` (`ef5a4`), its real per-class Set
+producers/adapters and baseline encoders. The protocol uses existing
+class`ff69` (Wi-Fi configuration) and`ff6a` (security) with the same supplied
+instance. The radio group is mask`d000` (mode/channel/bandwidth) for original
+mode codes3/4/6/7 and`c000` (mode/channel) otherwise; SSID is a separate
+mask`2000` group. Security code0 sends mask`8000`; codes5/6 send mask`a800`
+(security/authentication/key-index) then four mask`0400/0200/0100/0080`
+26-byte key groups. The other original branch sends mask`8040` (security
+and encryption codes) and mask`4000` (24-byte shared key). SSID-enable and
+radio-enable masks`0020`/`0010` are last. Mode and security values here are
+wire codes, not an asserted mapping to OpenWrt/hostapd settings or a claim
+of Wi-Fi6/WPA3 support by those private classes.
+
+The original input layout has32-byte spacing for the four indexed keys
+(offsets114/146/178/210), while their wire fields are26 bytes. SSID and shared
+key wire fields are24 bytes. The native API accepts an explicit byte length
+and rejects oversized used fields instead of truncating an OpenWrt setting.
+Synthetic names/keys in the retained trace are test data, not device secrets.
+The original master stops when a Set fails, without restoring earlier groups;
+the trace reproduces a third-group failure after the first two Sets.
+
+`omci-wifi.c` now builds these update groups natively and runs them through
+the existing asynchronous ME transaction. It requires the actual MIB's
+existing configuration/security instance, probes every selected attribute
+group before any Set, skips unchanged groups, reads back each write and
+restores touched groups on rejection/readback failure. If restoration fails,
+the first error, cleanup error and unresolved groups remain available. No
+vendor runtime or fixed-model assumption is used. Its diagnostic function
+reports group states and result codes without SSIDs, keys, prior values or
+raw OMCI exchanges. Callers must use it instead of the generic object dump
+when presenting this transaction's diagnostics.
+
+`scripts/test_fttr_wifi.py` verifies native bytes against five original
+radio/security combinations, all-read-before-write ordering, unchanged
+configuration, unsupported/missing entities, field limits, rejected writes,
+wrong readback, restoration and failed restoration. Protocol group replies
+and MIB storage are modeled (`remote-wifi-comparison.json`); the original
+producer trace is`remote-wifi-producer.json`. The musl package compiles and
+stages both tools with the new module (`package-root-remote-wifi/`,
+`package-stage-remote-wifi.log`). This is a configuration transaction module,
+not an enabled daemon/CLI workflow yet. Automatic main/subordinate settings
+mapping, runtime integration, alternative capability branches and actual
+subordinate execution/roaming remain work; a successful modeled transaction
+is not wireless acceptance.
 
 ### Outstanding implementation and acceptance
 
@@ -1214,6 +1269,9 @@ remain unverified; this fix supplies the missing original reset sequence.
 5. Original subordinate gateway configuration, Wi-Fi synchronization,
    multicast, reboot/upgrade and roaming coordination, using the connected
    ONU's actual capabilities rather than assuming one fixed subordinate model.
+   The original ff69/ff6a Wi-Fi update transaction is implemented with
+   preflight/readback/restoration; settings mapping, a runtime caller and
+   actual subordinate capability/behavior verification remain work.
 6. FE/PE acceleration and stale-flow invalidation, then hardware acceptance
    with real downstream gateways and a recorded interoperability scope.
 

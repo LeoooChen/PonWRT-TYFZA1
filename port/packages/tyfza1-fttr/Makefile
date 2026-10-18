@@ -33,7 +33,7 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/omci-me.c $(PKG_BUILD_DIR)/omci-objects.c \
 		$(PKG_BUILD_DIR)/omci-gem.c $(PKG_BUILD_DIR)/omci-association.c \
 		$(PKG_BUILD_DIR)/omci-vlan.c $(PKG_BUILD_DIR)/omci-model.c \
-		$(PKG_BUILD_DIR)/omci-service.c $(TARGET_LDFLAGS)
+		$(PKG_BUILD_DIR)/omci-service.c $(PKG_BUILD_DIR)/omci-wifi.c $(TARGET_LDFLAGS)
 	$(TARGET_CC) $(TARGET_CPPFLAGS) $(TARGET_CFLAGS) -std=c11 -Wall -Wextra \
 		-o $(PKG_BUILD_DIR)/fttrd $(PKG_BUILD_DIR)/fttrd.c \
 		$(PKG_BUILD_DIR)/miniolt.c $(PKG_BUILD_DIR)/omci-wire.c \
@@ -41,7 +41,8 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/omci-model.c $(PKG_BUILD_DIR)/omci-me.c \
 		$(PKG_BUILD_DIR)/omci-objects.c $(PKG_BUILD_DIR)/omci-gem.c \
 		$(PKG_BUILD_DIR)/omci-association.c $(PKG_BUILD_DIR)/omci-vlan.c \
-		$(PKG_BUILD_DIR)/omci-service.c $(PKG_BUILD_DIR)/fttr-net.c $(TARGET_LDFLAGS)
+		$(PKG_BUILD_DIR)/omci-service.c $(PKG_BUILD_DIR)/omci-wifi.c \
+		$(PKG_BUILD_DIR)/fttr-net.c $(TARGET_LDFLAGS)
 endef
 
 define Package/tyfza1-fttr/install
