@@ -1023,6 +1023,25 @@ cannot report failed hardware cleanup to `fttrd`. Admission setup, an
 acknowledged withdrawal operation, and actual P6 traffic verification remain
 required before claiming FTTR hardware acceleration.
 
+`rtl9617c-fttr-cf.h` now implements the native CF slot transaction from those
+actual bytes and register accesses. It selects a currently unused slot,
+retains its exact X/Y/action words, and rejects a preceding live rule that
+could shadow source6. It prepares and reads back the action before publishing
+the source6 key; subsequent CPU16/LAN25 transitions update the owned action.
+Release first invalidates and reads back the live key, then restores and
+checks the original action and both TCAM banks. An indirect-operation error
+or unequal readback is returned; failed restoration retains the slot's owner,
+saved words and distinct original/cleanup errors for an explicit retry.
+
+`scripts/test_fttr_cf.py` compares the actual native header with execution of
+the original FC producer and NI writers. It checks action-before-key ordering,
+CPU16 selection, preservation of the source7 rule and exact prior slot,
+an acknowledged write that did not change hardware, a completion timeout
+after a committed write, failed retirement/retry and a shadowing wildcard.
+Results are in`cf-native-comparison.json`. This is the CF transaction
+foundation; no production caller activates it yet. P6 lifecycle integration,
+FE registration and synchronous withdrawal remain required together.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: import its own retained bitstream, load it before
