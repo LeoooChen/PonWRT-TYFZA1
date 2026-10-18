@@ -15,6 +15,57 @@ static void p6_update(void __iomem *base, unsigned int reg, u32 mask, u32 value)
 	writel((readl(base + reg) & ~mask) | value, base + reg);
 }
 
+/* Caller serializes NI control and stops producers before this queue stage.
+ * ES occupancy does not include DMA prefetch, PE or the peer MiniOLT buffer. */
+int rtl_fttr_p6_flush_queues(struct rtl_fttr_p6 *p6)
+{
+	const u32 fields = GENMASK(10, 8) | BIT(15);
+	u32 saved = readl(p6->ni + 0x234c), value;
+	unsigned int queue;
+	int ret = 0;
+
+	p6->queue_completed = 0;
+	p6->queue_failed = 0xff;
+	p6->queue_error = p6->queue_cleanup_error = 0;
+	p6->queue_status = readl(p6->ni + 0x23d8);
+	if (saved & BIT(15)) {
+		p6->queue_error = -EBUSY;
+		return -EBUSY;
+	}
+	for (queue = 0; queue < 8; queue++) {
+		p6_update(p6->ni, 0x234c, fields, (queue << 8) | BIT(15));
+		value = readl(p6->ni + 0x234c);
+		if ((value & fields) != ((queue << 8) | BIT(15))) {
+			ret = -EIO;
+			break;
+		}
+		ret = readl_poll_timeout(p6->ni + 0x23d8, p6->queue_status,
+			!(p6->queue_status & BIT(16 + queue)), 1, 100000);
+		if (ret)
+			break;
+		p6->queue_completed |= BIT(queue);
+		p6_update(p6->ni, 0x234c, BIT(15), 0);
+		if (readl(p6->ni + 0x234c) & BIT(15)) {
+			ret = -EIO;
+			break;
+		}
+	}
+	if (ret)
+		p6->queue_failed = queue;
+	/* Restore COS and flush enable even on a stuck queue, retaining the
+	 * primary timeout separately from an unsuccessful control restoration. */
+	p6_update(p6->ni, 0x234c, fields, saved & fields);
+	if ((readl(p6->ni + 0x234c) & fields) != (saved & fields))
+		p6->queue_cleanup_error = -EIO;
+	if (!ret) {
+		p6->queue_status = readl(p6->ni + 0x23d8);
+		if (p6->queue_status & GENMASK(23, 16))
+			ret = -EAGAIN;
+	}
+	p6->queue_error = ret;
+	return ret ? ret : p6->queue_cleanup_error;
+}
+
 static u16 p6_ind_read(struct rtl_fttr_p6 *p6, unsigned int reg)
 {
 	p6_update(p6->qx, 0x4c, BIT(31) | BIT(30) | 0xffff, BIT(31) | reg);

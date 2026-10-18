@@ -1101,6 +1101,58 @@ GEM tag; customer QinQ with three total tags continues through Linux. Traffic
 between two ONUs on the same physical P6 also retains the current software
 path. Actual P6 Hash keys/hits, optical traffic and throughput remain unverified.
 
+### P6 ES queue flush and remaining producer barrier
+
+`tools/trace_stock_fttr_queue.py` executes the exact NI module's
+`aal_l2_tm_es_voq_flush_set` (`43220`) together with
+`aal_l2_tm_es_voq_status_get` (`43190`). Physical port6 uses control`234c`:
+bits8..10 select COS0..7 and bit15 starts flushing. Occupancy is at`23d8`
+bits16..23; a set bit is occupied. The original getter inverts that bit.
+Both already-empty and delayed-completion paths confirm the write sequence.
+On a continuously occupied queue, the original flush executes4002 status
+reads, overwrites its local empty result with1, clears flush enable and
+returns0. This false-success path is reproduced with the original instructions
+in`queue-stock-comparison.json`; it cannot be copied as a completion check.
+
+`rtl_fttr_p6_flush_queues` now implements this ES stage natively. Each of
+the eight queues is selected/flushed and its real empty bit polled with a
+100ms limit. An unapplied command returns`-EIO`, a stuck queue returns
+`-ETIMEDOUT`, and a final all-queue observation that has refilled returns
+`-EAGAIN`. The original COS/flush control fields are restored even after
+failure and read back. Completed-per-queue bits, failed queue number, last
+occupancy, primary error and separate restoration error remain in the P6
+state. Existing flush ownership is rejected before writes. These state
+fields record an ES observation; they do not assert that the entire FTTR
+path is empty.
+
+`scripts/test_fttr_queue.py` compares the actual native function's writes
+with original execution, and covers timeout, an unapplied command, failed
+control restoration (including simultaneous timeout), refill and existing
+flush ownership. Poll time and hardware occupancy are modeled; results are
+in`queue-native-comparison.json`. The6.18 composite NI object containing the
+new function compiles and links. No full firmware/test run is used.
+
+The function is deliberately not called from shutdown or per-service reuse
+yet: stopping software submission and clearing Hash/cache do not establish
+that DMA/PE can no longer refill ES. The same original-code trace executes
+`ca_dma_tx_complete_easy` (`a5a10`) and confirms its two-descriptor retention:
+software read0/hardware read2 frees none; hardware read3 frees descriptor0;
+software read62/hardware read2 frees62/63 after wrap. A DMA read/write-pointer
+equality therefore does not, by itself, establish downstream packet retirement.
+Integration requires that producer barrier; the existing synchronous FE/cache
+withdrawal remains in place.
+
+The original MiniOLT diagnostic table at`libasicdrv.so:2a010` (137 entries,
+16-byte rows, selected by`Dump_FTTR_FPGA_AllReg`) names Ethernet/PON buffer
+warnings at`30040..30043`, PON TX error/out/in counters at`30084..30086`, and
+PON RX drop/out/in counters at`30087..30089`. Extracted rows are retained in
+`miniolt-buffer-registers.json`. These are labels and counters, not a proved
+empty-buffer condition or a per-GEM flush protocol. `drv_gpon_ni_deactive`
+and`drv_gpon_onu_clear` in the retained relay are no-op implementations.
+DMA/PE producer retirement and MiniOLT buffer retirement still require their
+actual original implementation or further hardware evidence before GEM reuse
+can be declared fully protected.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: import its own retained bitstream, load it before

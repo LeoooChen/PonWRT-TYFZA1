@@ -17,11 +17,15 @@ struct rtl_fttr_p6 {
 	bool nway;
 	bool configured;
 	int error;
+	u32 queue_status;
+	u8 queue_completed, queue_failed;
+	int queue_error, queue_cleanup_error;
 };
 
 int rtl_fttr_p6_init(struct platform_device *pdev, struct rtl_fttr_p6 *p6, void __iomem *ni);
 int rtl_fttr_p6_configure(struct rtl_fttr_p6 *p6, unsigned int mode, bool nway);
 void rtl_fttr_p6_stop(struct rtl_fttr_p6 *p6);
 bool rtl_fttr_p6_link(struct rtl_fttr_p6 *p6);
+int rtl_fttr_p6_flush_queues(struct rtl_fttr_p6 *p6);
 
 #endif
