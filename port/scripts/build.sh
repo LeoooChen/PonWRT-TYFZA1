@@ -24,11 +24,6 @@ cp "$PROJECT/artifacts/pe-radio-production/pe-tx-code.h" \
     "$PORT/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-tx-code.h"
 sh "$PORT/scripts/sync-overlay.sh" "$TREE"
 sh "$PROJECT/scripts/prepare_luci_feeds.sh" "$TREE"
-for change in "$PORT"/luci-patches/*.patch; do
-    if ! git -C "$TREE/feeds/luci" apply --reverse --check "$change" 2>/dev/null; then
-        git -C "$TREE/feeds/luci" apply "$change"
-    fi
-done
 cd "$TREE"
 REGDB_PATCHED=0
 if ! grep -Fq 'regulatory.db.p7s' package/firmware/wireless-regdb/Makefile; then

@@ -8,18 +8,30 @@
 #include <linux/platform_device.h>
 #include <linux/thermal.h>
 
+#define RTL_TMS_CONTROL_RESET	0x2102011e
+#define RTL_TMS_CONTROL_RUN	0x2102011f
+#define RTL_TMS_CONTROL_MASK	(GENMASK(29, 24) | GENMASK(18, 16) | \
+				 GENMASK(10, 8) | GENMASK(5, 0))
+
+static bool rtl_thermal_ready(void __iomem *sensor)
+{
+	return (readl(sensor) & GENMASK(28, 0)) == 0x07f80000 &&
+		(readl(sensor + 4) & GENMASK(21, 0)) == 0x00374000 &&
+		(readl(sensor + 8) & RTL_TMS_CONTROL_MASK) ==
+		(RTL_TMS_CONTROL_RUN & RTL_TMS_CONTROL_MASK);
+}
+
 static int rtl_thermal_get_temp(struct thermal_zone_device *zone, int *temp)
 {
 	void __iomem *sensor = thermal_zone_device_priv(zone);
-	u32 value = readl(sensor + 0x0c);
-	int integer = FIELD_GET(GENMASK(17, 10), value);
-	int fraction = FIELD_GET(GENMASK(9, 0), value);
+	u32 value;
+	int integer, fraction;
 
-	if ((readl(sensor) & GENMASK(28, 0)) != 0x07f80000 ||
-	    (readl(sensor + 4) & GENMASK(21, 0)) != 0x00374000 ||
-	    (readl(sensor + 8) & (BIT(0) | BIT(3) | BIT(4))) !=
-	    (BIT(0) | BIT(3) | BIT(4)))
+	if (!rtl_thermal_ready(sensor))
 		return -EIO;
+	value = readl(sensor + 0x0c);
+	integer = FIELD_GET(GENMASK(17, 10), value);
+	fraction = FIELD_GET(GENMASK(9, 0), value);
 	/* The stock implementation adds the fractional field in milli-Celsius,
 	 * and uses signed integer minus fraction for negative temperatures. */
 	if (value & BIT(18))
@@ -43,14 +55,15 @@ static int rtl_thermal_probe(struct platform_device *pdev)
 		return PTR_ERR(sensor);
 	writel(0x07f80000, sensor);
 	writel(0x00374000, sensor + 4);
-	writel(0x0101010c, sensor + 8);
-	writel(0x0101011d, sensor + 8);
+	/* Stock cortina_thermal_probe selects this sequence for chip 0x6706
+	 * (the TYFZA1's RTL9617CVW), also shared by its 0x6900 branch. */
+	writel(RTL_TMS_CONTROL_RESET, sensor + 8);
+	writel(RTL_TMS_CONTROL_RUN, sensor + 8);
 	msleep(300);
 	readl(sensor + 8);
 	readl(sensor + 0x0c);
 	readl(sensor + 0x0c);
-	if ((readl(sensor) & GENMASK(28, 0)) != 0x07f80000 ||
-	    (readl(sensor + 4) & GENMASK(21, 0)) != 0x00374000)
+	if (!rtl_thermal_ready(sensor))
 		return -EIO;
 	zone = devm_thermal_of_zone_register(&pdev->dev, 0, sensor, &rtl_thermal_ops);
 	return PTR_ERR_OR_ZERO(zone);

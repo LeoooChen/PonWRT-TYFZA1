@@ -71,14 +71,31 @@ else: sys.exit(2)
     revision = subprocess.check_output(["git", "-C", str(upstream), "rev-parse", "HEAD"], text=True).strip()
     (project / "port").mkdir()
     (project / "port/sources.lock.json").write_text(json.dumps({"luci_theme_argon": {"url": str(upstream), "commit": revision}}))
+    (project / "port/scripts").mkdir()
+    shutil.copy2(root / "port/scripts/apply-luci-patches.sh", project / "port/scripts/apply-luci-patches.sh")
+    shutil.copytree(root / "port/luci-patches", project / "port/luci-patches")
     tree = work / "openwrt"
     (tree / "scripts").mkdir(parents=True)
+    luci = tree / "feeds/luci"
+    luci.mkdir(parents=True)
+    for patch in (root / "port/luci-patches").glob("*.patch"):
+        for line in patch.read_text().splitlines():
+            if line.startswith("--- a/"):
+                name = line[6:]
+                original = subprocess.check_output(["git", "-C", str(root / "sources/openwrt/feeds/luci"), "show", "HEAD:" + name])
+                destination = luci / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(original)
     feed_tool = tree / "scripts/feeds"
     feed_tool.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> feed-calls\n')
     feed_tool.chmod(0o755)
     (tree / ".config").write_text("CONFIG_PACKAGE_luci=y\nCONFIG_PACKAGE_keep_me=y\n# CONFIG_PACKAGE_luci-theme-argon is not set\n# CONFIG_LUCI_LANG_zh_Hans is not set\n")
     for _ in range(2):
         subprocess.run(["sh", str(project / "scripts/prepare_luci_feeds.sh"), str(tree)], check=True)
+    status_source = (luci / "modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js").read_text()
+    assert status_source.count("var callHardwareStatus = rpc.declare") == 1
+    assert "Realtek/RTL9617C（" in status_source
+    assert "当前功率上限" in (luci / "modules/luci-mod-network/htdocs/luci-static/resources/view/network/wireless.js").read_text()
     config = (tree / ".config").read_text()
     assert config.count("CONFIG_PACKAGE_luci-theme-argon=y") == 1
     assert config.count("CONFIG_PACKAGE_luci-i18n-argon-config-zh-cn=y") == 1

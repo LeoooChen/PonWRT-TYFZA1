@@ -12,7 +12,7 @@
 解包后内核 SHA256 `4a43feb73503f3a25d7791a31e618abfdd5114ecbaa2ac0e263b908097980e95`，Linux 5.10.70，2024-12-02 构建。以下地址是该内核恢复符号后的虚拟地址。
 
 - `cortina_get_temp@ffffffc0106b0db0` 从传感器偏移 `0x0c` 读取数据，即物理地址 `0xf4320270`。正温度为 `[17:10] × 1000 + [9:0]`；bit18 为负时，整数先减 256，再乘 1000 并减去小数字段。原生实现保留本机实际算法，不采用外部 6.6 驱动的不同负温度公式，也不臆测小数字段需要除以 1024。
-- `cortina_thermal_probe@ffffffc0106b0e10` 在 `0xf4320264` 起的 16 字节窗口写 A=`0x07f80000`、B=`0x00374000`、C=`0x0101010c` → `0x0101011d`，等待 300 ms 后读取 C、DATA、DATA。本机 `analysis/stock-live.dts` 提供相同 A/B 参数。新驱动使用可睡眠等待和 Linux thermal 接口，并核对 A/B 校准寄存器及 C 的 reset/power/chop 状态；失配返回错误，不把未正确启用的传感器读数显示为温度。
+- `cortina_thermal_probe@ffffffc0106b0e10` 在 `0xf4320264` 起的 16 字节窗口写 A=`0x07f80000`、B=`0x00374000`。**本机芯片 ID 为 `0x6706`，必须选择 C=`0x2102011e` → `0x2102011f` 的专用分支**，等待 300 ms 后读取 C、DATA、DATA。`0x0101010c` → `0x0101011d` 是其他芯片的分支，先前错误使用它导致实机显示约 -50°C。新驱动保留本机分支，用可睡眠等待和 Linux thermal 接口，并核对 A/B 校准及 C 的 ADC 时钟、过采样、供电、reset 等可读字段；失配返回错误。
 - `rtl8277c_cpu_init@ffffffc010471930` 向 `0xf4320204` 写 `0xff000000`，配置切换保护。
 - `rtl8277c_cpu_set_rate@ffffffc010472500` 的硬件次序为：CPU 临时选择 FPLL/F2C → CPLL reset 清零 → 重配 CPLL → mode override → reset 置 1 → 等待 200 µs → 设置 Cortex 分频和 override → CPU 切回 CPLL。
 - `rtl8277c_cpu_strap_speed_table@ffffffc010a32b00` 与 `rtl8277c_pll_param_table@ffffffc010a329d8` 给出下表；已逐项核对新驱动和四核共享 OPP 表。
@@ -49,3 +49,12 @@ Linux `nl80211_send_iface` 在 getter 失败时省略功率属性，仍会成功
 ## 检查边界
 
 本次按要求不编译、不提交、不刷写，不创建 worktree，不改动其他 AI 的 PE 数据通路。检查包括本机原厂频率参数比对、Linux 接口和调用链核对、补丁可应用性、JS/Shell/JSON 检查，以及生产 RPC 和视图的定点解释执行。另复核 CPU 驱动全部 MMIO 写地址仅含 CPLLDIV/CPLL0/CPLLMUX，以及全部八档对非 CPU 分频字段的保留。还执行本机原厂温度 getter 与功率 limit enable 的 ARM64 机器码，I/O 由显式模型提供；核对零值、负温度及控制位保留。RPC 拒绝空白和非法数值，CPU 页面同时检查 userspace 策略、硬件频率与 transition_error。没有将这些检查写成硬件温度精度、射频输出、PON 不掉线或 1200 MHz 稳定性的实测结论。
+
+
+## 2026-10-18 实机问题与修正
+
+`0.8.0-beta` 实机的 `luci.tyfza1-system.status` 与 `/sys/class/thermal/thermal_zone0/temp` 均读到 `-50023`，因此并非 LuCI 加负号或单位换算错误。历史原机启动日志 `logs/network-restore-uart.txt` 明确记录 `RTK_SOC_CHIP_ID = 0x6706`；原机串口历史温度为 42～51°C。执行上述原厂 FIT 中的实际 `cortina_thermal_probe` 机器码，分别给 `RTK_SOC_CHIP_ID` 注入 `0x6706`、`0x6900` 和另一型号，确认前两者选择 `0x2102011e/1f`，另一型号才选择 `0x0101010c/1d`。仅硬件 I/O、内存分配、延时和 thermal 注册由模型提供，没有用模型值宣称修正后的实测温度。
+
+同时实机 `/www/luci-static/resources/view/status/include/10_system.js` 和本地 LuCI feed 均仍为上游脚本，未包含平台/温度改动。原补丁只在 `port/scripts/build.sh` 的完整构建入口应用，直接同步 overlay 后使用 make 的本地构建会遗漏。现在统一由 `port/scripts/apply-luci-patches.sh` 应用，在 feed 更新后及已有 feed 的 overlay 同步阶段调用，并已修正当前本地 feed。重复调用会先检查补丁是否已应用，保留其他改动；失败直接退出。相关测试验证两次准备后平台显示、温度 RPC 和功率上限标签均已进入 feed 且没有重复添加。
+
+本轮未编译或刷写内核，当前运行固件的温度仍需在更换修正内核后验证；不把负读数取绝对值、不添加经验偏移，也不以屏蔽读数代替修正初始化。源码位于本地 main 的后续修复提交；无需更改 PON、PE、Wi-Fi 数据通路。

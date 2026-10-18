@@ -30,6 +30,9 @@ cp "$PORT/host-patches/120-netifd-interface-topology.patch" \
 mkdir -p "$TREE/package/network/utils/iwinfo/patches"
 cp "$PORT/host-patches/130-iwinfo-txpower-unknown.patch" \
     "$TREE/package/network/utils/iwinfo/patches/130-iwinfo-txpower-unknown.patch"
+if [ -d "$TREE/feeds/luci/modules/luci-mod-status" ]; then
+    sh "$PORT/scripts/apply-luci-patches.sh" "$TREE"
+fi
 if [ -n "${TYFZA1_CONFIG:-}" ]; then
     cp "$TYFZA1_CONFIG" "$TREE/.config"
 elif [ ! -s "$TREE/.config" ]; then
