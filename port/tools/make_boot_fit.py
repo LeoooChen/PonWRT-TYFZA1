@@ -66,18 +66,15 @@ def compress(data, parameters):
 
 
 def board_boot_command():
-    # OEM get_gpio_val/match_gpio_conf: straps 000 -> conf-0, 001 -> conf-1.
-    return '''setenv tyfza1_board 0
-if gpio input 113; then true; else setexpr tyfza1_board ${tyfza1_board} + 4; fi
-if gpio input 112; then true; else setexpr tyfza1_board ${tyfza1_board} + 2; fi
-if gpio input 111; then true; else setexpr tyfza1_board ${tyfza1_board} + 1; fi
-if test "${tyfza1_board}" = "0"; then
-    bootm ${unzip_src}#conf-0
-elif test "${tyfza1_board}" = "1"; then
-    bootm ${unzip_src}#conf-1
+    # OEM b1/b2 hand off b_conf; older 2.5G loaders use the FIT default.
+    # Direct RAM boots may not have run the OEM selector yet.
+    return '''if test -z "${b_conf}" && test -n "${conf_match}"; then
+    run conf_match
+fi
+if test -n "${b_conf}"; then
+    bootm ${unzip_src}#${b_conf}
 else
-    echo "Unsupported TYFZA1 board strap: ${tyfza1_board}"
-    exit 1
+    bootm ${unzip_src}
 fi
 '''
 

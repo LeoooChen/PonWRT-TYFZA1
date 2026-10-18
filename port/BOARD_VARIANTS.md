@@ -1,17 +1,28 @@
 # TYFZA1 board variants
 
 The production UBI FIT contains one kernel, one root filesystem, and two signed
-configurations. The boot script follows the OEM `get_gpio_val` strap mapping:
+configurations. The boot script uses the OEM `b_conf` selection. On multi-board
+loaders, the original `b1`/`b2` environment runs `conf_match` before sourcing the
+FIT script, with this `get_gpio_val` strap mapping:
 
 | GPIO113:111 | Configuration | Hardware | Native DT |
 | --- | --- | --- | --- |
 | 000 | conf-0 | Four internal GbE PHYs plus RTL8221B 2.5G | rtl9617c-tyfza1-ubi-2p5g |
 | 001 | conf-1 | Four internal GbE PHYs | rtl9617c-tyfza1-ubi |
 
-Other strap values stop with an explicit error. The script changes only the
-current U-Boot environment in RAM. It does not save the environment. Both
-configurations sign the kernel, their own DT, and the shared boot script.
-The production image supports both OpenWrt board names during sysupgrade.
+The failing older loader has no `gpio` command. The captured 2.5G OEM
+environment has no `conf_match`, and its original FIT script calls
+`bootm ${unzip_src}` without a configuration suffix. The native FIT therefore
+retains `conf-0` (2.5G) as its default. The shared script does not issue
+`gpio` commands or interpret command failures as electrical levels. For manual
+RAM boots with no `b_conf` yet, it runs the OEM `conf_match` only when that
+selector exists, then uses its result exactly as the original FIT script does.
+An unset result uses the FIT default, including for unmatched OEM strap values.
+
+The script changes only the current U-Boot environment in RAM. It does not save
+the environment. Both configurations sign the kernel, their own DT, and the
+shared boot script. The production image supports both OpenWrt board names
+during sysupgrade.
 
 The original boards have different kernel builds, but their `ubi_DTB0` volume
 contents are identical (SHA256
@@ -64,10 +75,13 @@ are reported and enter phylib's error state.
 
 ## Validation and limits
 
-Focused validation is recorded under `artifacts/board-variants-20261017/`:
+Focused validation is recorded under `artifacts/board-variants-20261017/`.
+The OEM boot handoff regression and signed UBI/RAM package checks are recorded
+under `artifacts/boot-selector-fix-20261018/`:
 
 - Both compiled production DTs match every original GPIO LED and button.
-- The exact boot selector executes all eight strap values and selects both FIT DTs.
+- Boot selection covers both OEM configurations, older 2.5G loaders without a
+  GPIO command, and manual RAM boots using the original environment selector.
 - The production signer verifies both configuration signatures; corrupted
   signatures are rejected. Its test payload is deliberately not a bootable kernel.
 - Original new-unit PHY mode values match; MDIO write errors and mode-latch

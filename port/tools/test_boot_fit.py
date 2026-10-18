@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from make_boot_fit import boot_script, compress, make_its, make_verity, verify_configuration_signature
+from make_boot_fit import board_boot_command, boot_script, compress, make_its, make_verity, verify_configuration_signature
 
 VERITY = dict(data_blocks=2, hash_start_block=2, root_hash='a' * 64, salt='b' * 64)
 
@@ -116,6 +116,45 @@ class BootFit(unittest.TestCase):
                            input=source, text=True, check=True, capture_output=True)
             with self.assertRaisesRegex(ValueError, 'Unrecognized legacy key'):
                 verify_configuration_signature(image, image, shutil.which('true'))
+
+
+class BoardBoot(unittest.TestCase):
+    def execute(self, b_conf='', conf_match='', status=0):
+        # Only shell builtins are available: the older OEM loader has no gpio.
+        shim = f'''
+run() {{ eval "${{conf_match}}"; }}
+setenv() {{ export "$1=$2"; }}
+setexpr() {{ export "$1=$(($2 + $4))"; }}
+bootm() {{ printf '%s\\n' "$1"; return {status}; }}
+'''
+        return subprocess.run(['/bin/sh'], input=shim + board_boot_command(),
+                              env={'PATH': '/nonexistent', 'unzip_src': '0x5000000',
+                                   'b_conf': b_conf, 'conf_match': conf_match},
+                              capture_output=True, text=True)
+
+    def test_oem_handoff_and_older_2p5g_loader_without_gpio(self):
+        for configuration in ('', 'conf-0', 'conf-1'):
+            with self.subTest(configuration=configuration):
+                result = self.execute(configuration)
+                suffix = '#' + configuration if configuration else ''
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), '0x5000000' + suffix)
+                self.assertEqual(result.stderr, '')
+
+    def test_manual_ram_boot_runs_oem_selector_when_needed(self):
+        for configuration in ('conf-0', 'conf-1'):
+            with self.subTest(configuration=configuration):
+                result = self.execute(conf_match='setenv b_conf ' + configuration)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), '0x5000000#' + configuration)
+                self.assertEqual(result.stderr, '')
+        result = self.execute('conf-1', 'echo unexpected-board-reread; false')
+        self.assertEqual(result.stdout.strip(), '0x5000000#conf-1')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_bootm_failure_is_returned(self):
+        self.assertEqual(self.execute(status=1).returncode, 1)
+        self.assertEqual(self.execute('missing-configuration', status=1).returncode, 1)
 
 
 if __name__ == '__main__':
