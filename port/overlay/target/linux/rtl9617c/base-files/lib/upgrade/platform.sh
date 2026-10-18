@@ -4,6 +4,7 @@ REQUIRE_IMAGE_METADATA=1
 RAMFS_COPY_BIN='fw_printenv fw_setenv'
 RAMFS_COPY_DATA='/etc/fw_env.config'
 CI_UBIPART=ubi_device
+. /lib/upgrade/tyfza1-storage.sh
 
 tyfza1_volume_fits() {
 	local volume=$(nand_find_volume "$1" "$2")
@@ -24,7 +25,8 @@ tyfza1_check_sizes() {
 		0|1) ;;
 		*) echo "UBI sysupgrade requires a persistent TYFZA1 boot" >&2; return 1 ;;
 	esac
-	tyfza1_volume_fits "$ubidev" "ubi_r$slot" "$1" &&
+	local rootvol=$(nand_find_volume "$ubidev" "ubi_r$slot")
+	tyfza1_plan_storage "$ubidev" "$rootvol" "$1" &&
 		tyfza1_volume_fits "$ubidev" "ubi_k$slot" "$2" 6291456
 }
 
@@ -39,13 +41,17 @@ platform_check_image() {
 
 # Keep the OEM kernel/root volume IDs required by the signed FIT boot script.
 nand_upgrade_prepare_ubi() {
+	[ "$2" = squashfs ] || return 1
 	tyfza1_check_sizes "$1" "$3" || return 1
 	local ubidev=$(nand_find_ubi "$CI_UBIPART")
 	local rootvol=$(nand_find_volume "$ubidev" "$CI_ROOTPART")
 	local datavol=$(nand_find_volume "$ubidev" rootfs_data)
 	nand_remove_ubiblock "$rootvol" || return 1
 	[ -z "$datavol" ] || ubirmvol "/dev/$ubidev" -N rootfs_data || return 1
-	ubimkvol "/dev/$ubidev" -n 11 -N rootfs_data -s 16777216
+	# Clear the old image before shrinking, including on static UBI volumes.
+	ubiupdatevol "/dev/$rootvol" -t || return 1
+	tyfza1_resize_root "$ubidev" "$rootvol" || return 1
+	tyfza1_grow_data "$ubidev"
 }
 
 platform_do_upgrade() {

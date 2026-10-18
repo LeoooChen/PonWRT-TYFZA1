@@ -54,6 +54,7 @@ jobs:
       - name: Prepare release notes
         run: |
           python3 scripts/test_release_notes.py
+          python3 scripts/test_ubi_storage.py
           python3 scripts/release_notes.py "$RELEASE_TAG" > "$RUNNER_TEMP/release-notes.md"
       - name: Install build dependencies
         run: |
@@ -122,7 +123,8 @@ jobs:
             --title "$RELEASE_TAG" --draft \
             --notes-file "$RUNNER_TEMP/release-notes.md"
           gh release upload "$RELEASE_TAG" artifacts/release/sysupgrade.bin \
-            artifacts/release/tyfza1-telnet-install.tar.gz artifacts/release/SHA256SUMS \
+            artifacts/release/tyfza1-telnet-install.tar.gz artifacts/release/tyfza1-sysupgrade.tar.gz \
+            artifacts/release/SHA256SUMS \
             artifacts/release/COPYING artifacts/release/PonWRT-TYFZA1-source.tar.gz \
             --repo "$GITHUB_REPOSITORY"
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false --latest \

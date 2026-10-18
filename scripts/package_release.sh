@@ -14,6 +14,9 @@ cp "$BIN/$PREFIX-kernel.itb" "$OUT/kernel.itb"
 cp "$BIN/$PREFIX-squashfs-rootfs.squashfs" "$OUT/rootfs.squashfs"
 cp "$BIN/$PREFIX-squashfs-sysupgrade.bin" "$OUT/sysupgrade.bin"
 cp "$PROJECT/scripts/install_ubi_telnet.sh" "$OUT/install.sh"
+cp "$PROJECT/scripts/upgrade_ubi.sh" "$OUT/upgrade.sh"
+cp "$PROJECT/port/overlay/target/linux/rtl9617c/base-files/lib/upgrade/platform.sh" "$OUT/"
+cp "$PROJECT/port/overlay/target/linux/rtl9617c/base-files/lib/upgrade/tyfza1-storage.sh" "$OUT/"
 cp "$PROJECT/port/overlay/target/linux/rtl9617c/base-files/etc/fw_env.config" "$OUT/fw_env.config"
 
 VERSION=$(python3 "$PROJECT/port/tools/project_paths.py" --field uboot-version)
@@ -24,6 +27,12 @@ set -- "$TREE"/staging_dir/toolchain-aarch64_cortex-a55_gcc-*_musl/bin/aarch64-o
 CC=$1
 STRIP=${CC%gcc}strip
 export STAGING_DIR=$TREE/staging_dir/target-aarch64_cortex-a55_musl
+# The OEM shell can run this tool without OpenWrt's musl shared libraries.
+set -- "$TREE"/build_dir/target-aarch64_cortex-a55_musl/mtd-utils-*
+MTD=$1
+"$CC" -Os -static -include "$MTD/include/config.h" -I"$MTD/include" \
+    "$MTD/ubi-utils/ubirsvol.c" "$MTD/libmtd.a" "$MTD/libubi.a" -o "$OUT/ubirsvol"
+"$STRIP" "$OUT/ubirsvol"
 make -C "$SOURCE" tools-only_defconfig
 make -C "$SOURCE" -j2 envtools CC="$CC" STRIP="$STRIP" \
     KBUILD_HOSTCFLAGS=-Os KBUILD_HOSTLDFLAGS=-static
@@ -31,6 +40,8 @@ cp "$SOURCE/tools/env/fw_printenv" "$OUT/fw_printenv"
 "$STRIP" "$OUT/fw_printenv"
 cp "$OUT/fw_printenv" "$OUT/fw_setenv"
 tar --owner=0 --group=0 --numeric-owner -czf "$OUT/tyfza1-telnet-install.tar.gz" \
-    -C "$OUT" kernel.itb rootfs.squashfs install.sh fw_env.config fw_printenv fw_setenv
+    -C "$OUT" kernel.itb rootfs.squashfs install.sh tyfza1-storage.sh ubirsvol fw_env.config fw_printenv fw_setenv
+tar --owner=0 --group=0 --numeric-owner -czf "$OUT/tyfza1-sysupgrade.tar.gz" \
+    -C "$OUT" sysupgrade.bin upgrade.sh platform.sh tyfza1-storage.sh
 cp "$PROJECT/COPYING" "$OUT/COPYING"
-(cd "$OUT" && sha256sum sysupgrade.bin tyfza1-telnet-install.tar.gz > SHA256SUMS)
+(cd "$OUT" && sha256sum sysupgrade.bin tyfza1-telnet-install.tar.gz tyfza1-sysupgrade.tar.gz > SHA256SUMS)

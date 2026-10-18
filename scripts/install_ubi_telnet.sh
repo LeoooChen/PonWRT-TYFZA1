@@ -3,6 +3,8 @@
 # Run from the extracted installation bundle in the device's telnet shell.
 set -eu
 cd "${0%/*}"
+export PATH="$PWD:$PATH"
+. ./tyfza1-storage.sh
 
 volume() {
 	for path in /sys/class/ubi/ubi0_*/name; do
@@ -39,18 +41,35 @@ if [ "${1:-install}" = commit ]; then
 	exit
 fi
 
+for tool in ubirsvol ubiupdatevol ubimkvol; do
+	command -v "$tool" >/dev/null || { echo "Missing storage tool: $tool" >&2; exit 1; }
+done
 active=$(./fw_printenv -c ./fw_env.config -n sw_active)
+case "$active" in
+	0|1) ;;
+	*) echo "Invalid active OEM slot: $active" >&2; exit 1 ;;
+esac
 slot=$((1 - active))
 kernel=$(volume "ubi_k$slot")
 rootfs=$(volume "ubi_r$slot")
-image_fits_volume "$rootfs" rootfs.squashfs
 image_fits_volume "$kernel" kernel.itb 6291456
+tyfza1_plan_storage ubi0 "${rootfs##*/}" "$(wc -c < rootfs.squashfs)"
+# A previous installation may already have a smaller root volume. Growing it
+# here must not consume blocks belonging to an existing UBIFS data volume.
+current=$(( $(cat "/sys/class/ubi/${rootfs##*/}/reserved_ebs") * $(cat "/sys/class/ubi/${rootfs##*/}/usable_eb_size") ))
+if [ "$TYFZA1_ROOT_BYTES" -gt "$current" ]; then
+	free=$(( $(cat /sys/class/ubi/ubi0/avail_eraseblocks) * $(cat "/sys/class/ubi/${rootfs##*/}/usable_eb_size") ))
+	[ "$((TYFZA1_ROOT_BYTES - current))" -le "$free" ] || {
+		echo "Use the OpenWrt sysupgrade bundle to resize an existing installation" >&2
+		exit 1
+	}
+	tyfza1_resize_root ubi0 "${rootfs##*/}"
+fi
 echo "Updating existing ubi_k$slot and ubi_r$slot"
 ubiupdatevol "$rootfs" rootfs.squashfs
 ubiupdatevol "$kernel" kernel.itb
-if ! volume rootfs_data >/dev/null; then
-	ubimkvol /dev/ubi0 -n 11 -N rootfs_data -s 16777216
-fi
+tyfza1_resize_root ubi0 "${rootfs##*/}"
+tyfza1_grow_data ubi0
 if [ "${1:-install}" = trial ]; then
 	printf 'sw_tryactive %s\n' "$slot" > /tmp/tyfza1-boot.env
 else
