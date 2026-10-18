@@ -22,6 +22,18 @@ with tempfile.TemporaryDirectory(prefix='tyfza1-apk-config-') as directory:
                 if line.startswith('CONFIG_PACKAGE_')]
     for patch in (root / 'port/host-patches').glob('*.patch'):
         shutil.copyfile(patch, port / 'host-patches' / patch.name)
+    shutil.copyfile(root / 'port/scripts/apply-openwrt-patches.sh',
+                    port / 'scripts/apply-openwrt-patches.sh')
+    shutil.copytree(root / 'port/openwrt-patches', port / 'openwrt-patches')
+    for patch in (port / 'openwrt-patches').glob('*.patch'):
+        for line in patch.read_text().splitlines():
+            if line.startswith('--- a/'):
+                name = line[6:]
+                destination = tree / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                original = subprocess.check_output(['git', '-C', str(root / 'sources/openwrt'),
+                                                    'show', 'HEAD:' + name])
+                destination.write_bytes(original)
     subprocess.run(['git', 'init', '-q', str(tree)], check=True)
     subprocess.run(['git', '-C', str(tree), '-c', 'user.name=Fixture',
                     '-c', 'user.email=fixture@example.invalid', 'commit',

@@ -1,0 +1,21 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+# Pin the image's patched packages by identity, including same-version rebuilds.
+set -eu
+constraints=$(awk '
+BEGIN { RS = ""; FS = "\n" }
+{
+	name = hash = ""
+	for (i = 1; i <= NF; i++) {
+		if ($i ~ /^P:/) name = substr($i, 3)
+		if ($i ~ /^C:/) hash = substr($i, 3)
+	}
+	if (name == "luci-mod-status" || name == "luci-mod-network" ||
+	    name == "libiwinfo20230701" || name == "wifi-scripts") {
+		if (hash == "") exit 1
+		print name "><" hash
+	}
+}' /rom/lib/apk/db/installed)
+set -- $constraints
+[ "$#" -eq 4 ] || { echo "Missing TYFZA1 platform package identities" >&2; exit 1; }
+apk add --no-network "$@"

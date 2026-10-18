@@ -30,7 +30,7 @@
 
 新 CPU 驱动只提供本机 CPU 时钟，不移植原厂整套时钟框架。PE 使用 CPLL 时在任何切频写入之前拒绝请求；正常 FPLL、PE 和 AXI 的控制字段均不写入。CPU 临时源切换必须读回成功才允许复位 CPLL；系数、reset、override 和分频每阶段检查读回，失败时不切回尚未验证的 CPLL。`transition_error` 通过 sysfs 和 RPC 向前端传递，因此即使失败后 FPLL 临时频率恰好等于请求值，也不能显示“已生效”。原厂 OPP 电压字段全部相同，本实现只调频，不添加没有板级依据的调压控制。
 
-原厂频率表遍历缺少边界，`set_rate` 成功返回频率值，部分下级操作结果未检查。原生实现使用有限表查找和明确错误。当前 Linux 6.18.55 的 `drivers/clk/clk.c:clk_change_rate` 不传递 provider 的 `set_rate` 返回值，因此另注册本平台 OPP 时钟回调，以硬件回读核实频率；不依赖返回成功或缓存目标值判定切换完成。
+原厂频率表遍历缺少边界，`set_rate` 成功返回频率值，部分下级操作结果未检查。原生实现使用有限表查找和明确错误。当前 Linux 6.18.55 的 CCF 与 CPUFreq 都会跳过“目标频率相同”的请求。失败后 CPU 可能仍在 FPLL，数值相同不表示完成。OPP 回调直接调用本机串行化时钟操作，取得真实返回值；读回通过 `CLK_GET_RATE_NOCACHE` 刷新，避免 CCF 提前返回。`215-cpufreq-retry-same-target.patch` 只为 RTL9617C 的 cpufreq-dt 设置 `CPUFREQ_NEED_UPDATE_LIMITS`，并使 target-index 层同样遵守该标志。正常处于 CPLL 且频率相符时本机操作不写硬件；停在 FPLL 时会继续完成同目标切换。失败不伪造频率，不为重试故意切到另一个频率。
 
 ## 无线功率路径
 
@@ -58,3 +58,18 @@ Linux `nl80211_send_iface` 在 getter 失败时省略功率属性，仍会成功
 同时实机 `/www/luci-static/resources/view/status/include/10_system.js` 和本地 LuCI feed 均仍为上游脚本，未包含平台/温度改动。原补丁只在 `port/scripts/build.sh` 的完整构建入口应用，直接同步 overlay 后使用 make 的本地构建会遗漏。现在统一由 `port/scripts/apply-luci-patches.sh` 应用，在 feed 更新后及已有 feed 的 overlay 同步阶段调用，并已修正当前本地 feed。重复调用会先检查补丁是否已应用，保留其他改动；失败直接退出。相关测试验证两次准备后平台显示、温度 RPC 和功率上限标签均已进入 feed 且没有重复添加。
 
 本轮未编译或刷写内核，当前运行固件的温度仍需在更换修正内核后验证；不把负读数取绝对值、不添加经验偏移，也不以屏蔽读数代替修正初始化。源码位于本地 main 的后续修复提交；无需更改 PON、PE、Wi-Fi 数据通路。
+
+
+## 新版无线脚本及更新保护
+
+当前默认启用 `CONFIG_WIFI_SCRIPTS_UCODE=y`，运行的无线脚本是 wifi-scripts 的 `files-ucode` 版本。`port/openwrt-patches/100-wifi-ucode-txpower.patch` 修正三处行为：
+
+- 数值 0 是有效的 0 dBm 请求，只有未设置（null）才选择自动。
+- `iw set txpower` 失败后通过 `TXPOWER_FAILED` 停止本次设置，不继续发送 netifd 的无线已启动通知。
+- ucode iwinfo 缺少功率字段时返回 null，命令行显示 unknown；真实 0 dBm 保留。此前 C libiwinfo 的补丁继续生效。
+
+该补丁修改的是 OpenWrt 自带包的文件，不能放到包内 patches 后期待其自动应用（wifi-scripts 的 Build/Prepare 为空）。`sync-overlay.sh` 调用 `apply-openwrt-patches.sh`，直接在包源码中按补丁应用，重复执行不重复改动。此次未运行构建。
+
+`99-tyfza1-platform-packages` 在首次启动及升级固件后，将 `luci-mod-status`、`luci-mod-network`、`libiwinfo20230701`、`wifi-scripts` 绑定到 `/rom/lib/apk/db/installed` 中的固件包身份哈希。这样普通 `apk upgrade` 不会用官方包覆盖定制代码，同版本但内容不同的包也不匹配。其他包不加限制；这四个包随新固件更新。用户主动执行 apk add/del 修改这些 world 约束仍可解除限制，本机制不阻止明确的管理员操作。
+
+定点检查命令：`python3 scripts/test_platform_control_fixes.py`。它解释执行补丁后的真实 ucode 函数，并在临时目录用 APK 求解器检查包身份保护、无保护对照和旧固件约束替换。CPU 部分检查两层同目标条件、OPP 调用路径、串行化和寄存器写入范围；没有编译或声称完成实机故障注入。

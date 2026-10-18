@@ -10,6 +10,7 @@
 #include <linux/io.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/pm_opp.h>
@@ -49,15 +50,15 @@ static const struct rtl_cpu_rate rtl_cpu_rates[] = {
 struct rtl_cpu_clock {
 	struct clk_hw hw;
 	void __iomem *base;
+	struct mutex lock;
 	int transition_error;
 };
 
 #define to_rtl_cpu(clock_hw) container_of(clock_hw, struct rtl_cpu_clock, hw)
 
-static unsigned long rtl_cpu_recalc_rate(struct clk_hw *hw,
-					unsigned long parent_rate)
+static unsigned long rtl_cpu_read_rate(struct rtl_cpu_clock *cpu,
+				      unsigned long parent_rate)
 {
-	struct rtl_cpu_clock *cpu = to_rtl_cpu(hw);
 	u32 divider = readl(cpu->base + CPLLDIV);
 	u32 pll = readl(cpu->base + (divider & CPU_FROM_FPLL ? FPLL0 : CPLL0));
 	unsigned long rate = parent_rate * (FIELD_GET(PLL_DIVN, pll) + 3) /
@@ -69,6 +70,18 @@ static unsigned long rtl_cpu_recalc_rate(struct clk_hw *hw,
 	if (divider & CPU_FROM_FPLL)
 		rate /= max_t(u32, FIELD_GET(F2C_DIV, divider), 1);
 	return rate / max_t(u32, div, 1);
+}
+
+static unsigned long rtl_cpu_recalc_rate(struct clk_hw *hw,
+					unsigned long parent_rate)
+{
+	struct rtl_cpu_clock *cpu = to_rtl_cpu(hw);
+	unsigned long rate;
+
+	mutex_lock(&cpu->lock);
+	rate = rtl_cpu_read_rate(cpu, parent_rate);
+	mutex_unlock(&cpu->lock);
+	return rate;
 }
 
 static int rtl_cpu_determine_rate(struct clk_hw *hw, struct clk_rate_request *req)
@@ -91,63 +104,78 @@ static int rtl_cpu_determine_rate(struct clk_hw *hw, struct clk_rate_request *re
 	return 0;
 }
 
-static int rtl_cpu_set_rate(struct clk_hw *hw, unsigned long rate,
-			    unsigned long parent_rate)
+static int rtl_cpu_program_rate(struct rtl_cpu_clock *cpu, unsigned long rate,
+				unsigned long parent_rate)
 {
-	struct rtl_cpu_clock *cpu = to_rtl_cpu(hw);
 	const struct rtl_cpu_rate *target = NULL;
 	u32 divider, pll;
 	unsigned int i;
 
-	cpu->transition_error = 0;
 	for (i = 0; i < ARRAY_SIZE(rtl_cpu_rates); i++)
 		if (rate == rtl_cpu_rates[i].hz) {
 			target = &rtl_cpu_rates[i];
 			break;
 		}
 	if (!target)
-		return cpu->transition_error = -EINVAL;
+		return -EINVAL;
+	/* Matching Hz on FPLL is an unfinished transition, not a no-op. */
+	if (!(readl(cpu->base + CPLLDIV) & CPU_FROM_FPLL) &&
+	    rtl_cpu_read_rate(cpu, parent_rate) == rate)
+		return 0;
 	/* PE normally uses FPLL. Changing CPLL while PE selects it would
 	 * change the packet engine's clock as well. */
 	if (readl(cpu->base + PEDIV) & BIT(6))
-		return cpu->transition_error = -EBUSY;
+		return -EBUSY;
 	if (!(readl(cpu->base + FPLL0) & PLL_RESET))
-		return cpu->transition_error = -EIO;
+		return -EIO;
 
 	divider = readl(cpu->base + CPLLDIV);
 	writel(divider | CPU_FROM_FPLL, cpu->base + CPLLDIV);
 	/* Never reset the PLL still supplying the CPU. */
 	if (readl(cpu->base + CPLLDIV) != (divider | CPU_FROM_FPLL))
-		return cpu->transition_error = -EIO;
+		return -EIO;
 	pll = readl(cpu->base + CPLL0) & ~PLL_RESET;
 	writel(pll, cpu->base + CPLL0);
 	if (readl(cpu->base + CPLL0) & PLL_RESET)
-		return cpu->transition_error = -EIO;
+		return -EIO;
 	pll &= ~(PLL_DIVN | PLL_PREDIV);
 	pll |= FIELD_PREP(PLL_DIVN, target->divn - 3) |
 		FIELD_PREP(PLL_PREDIV, target->prediv - 2);
 	writel(pll, cpu->base + CPLL0);
 	if ((readl(cpu->base + CPLL0) & (PLL_DIVN | PLL_PREDIV | PLL_RESET)) !=
 	    (pll & (PLL_DIVN | PLL_PREDIV | PLL_RESET)))
-		return cpu->transition_error = -EIO;
+		return -EIO;
 	divider |= CPU_FROM_FPLL | MODE_OVERRIDE;
 	writel(divider, cpu->base + CPLLDIV);
 	if (readl(cpu->base + CPLLDIV) != divider)
-		return cpu->transition_error = -EIO;
+		return -EIO;
 	writel(pll | FIELD_PREP(PLL_RESET, 1), cpu->base + CPLL0);
 	if (FIELD_GET(PLL_RESET, readl(cpu->base + CPLL0)) != 1)
-		return cpu->transition_error = -EIO;
+		return -EIO;
 	udelay(200);
 	divider &= ~GENMASK(5, 0);
 	divider |= FIELD_PREP(CORTEX_DIV, target->divider) | DIV_OVERRIDE;
 	writel(divider, cpu->base + CPLLDIV);
 	if (readl(cpu->base + CPLLDIV) != divider)
-		return cpu->transition_error = -EIO;
+		return -EIO;
 	writel(divider & ~CPU_FROM_FPLL, cpu->base + CPLLDIV);
 	if (readl(cpu->base + CPLLDIV) != (divider & ~CPU_FROM_FPLL) ||
-	    rtl_cpu_recalc_rate(hw, parent_rate) != rate)
-		return cpu->transition_error = -EIO;
+	    rtl_cpu_read_rate(cpu, parent_rate) != rate)
+		return -EIO;
 	return 0;
+}
+
+static int rtl_cpu_set_rate(struct clk_hw *hw, unsigned long rate,
+			   unsigned long parent_rate)
+{
+	struct rtl_cpu_clock *cpu = to_rtl_cpu(hw);
+	int ret;
+
+	mutex_lock(&cpu->lock);
+	ret = rtl_cpu_program_rate(cpu, rate, parent_rate);
+	cpu->transition_error = ret;
+	mutex_unlock(&cpu->lock);
+	return ret;
 }
 
 static const struct clk_ops rtl_cpu_ops = {
@@ -169,19 +197,14 @@ static int rtl_cpu_opp_set_rate(struct device *dev, struct opp_table *table,
 	if (IS_ERR(clk))
 		return PTR_ERR(clk);
 	cpu = to_rtl_cpu(__clk_get_hw(clk));
-	cpu->transition_error = 0;
-	ret = clk_set_rate(clk, rate);
-	/* CCF's clk_change_rate discards the provider's set_rate result.
-	 * Only a hardware readback may confirm a successful OPP transition. */
+	/* OPP owns this transition. CCF skips set_rate when Hz already match,
+	 * even if the CPU is still on FPLL after a failed transition. Use the
+	 * same serialized hardware operation, then refresh CCF's rate cache. */
+	ret = rtl_cpu_set_rate(&cpu->hw, rate, clk_get_rate(clk_get_parent(clk)));
 	hardware_rate = clk_get_rate(clk);
-	if (!ret)
-		ret = cpu->transition_error;
-	if (!ret && (hardware_rate != rate || (readl(cpu->base + CPLLDIV) & CPU_FROM_FPLL)))
-		ret = -EIO;
 	if (ret)
 		dev_err(dev, "CPU clock change failed: %d, request %lu Hz, hardware %lu Hz\n",
 			ret, rate, hardware_rate);
-	cpu->transition_error = ret;
 	clk_put(clk);
 	return ret;
 }
@@ -190,8 +213,12 @@ static ssize_t transition_error_show(struct device *dev,
 				     struct device_attribute *attr, char *buffer)
 {
 	struct rtl_cpu_clock *cpu = dev_get_drvdata(dev);
+	int error;
 
-	return sysfs_emit(buffer, "%d\n", READ_ONCE(cpu->transition_error));
+	mutex_lock(&cpu->lock);
+	error = cpu->transition_error;
+	mutex_unlock(&cpu->lock);
+	return sysfs_emit(buffer, "%d\n", error);
 }
 static DEVICE_ATTR_RO(transition_error);
 
@@ -226,6 +253,7 @@ static int rtl_cpu_probe(struct platform_device *pdev)
 	cpu = devm_kzalloc(dev, sizeof(*cpu), GFP_KERNEL);
 	if (!cpu)
 		return -ENOMEM;
+	mutex_init(&cpu->lock);
 	cpu->base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(cpu->base))
 		return PTR_ERR(cpu->base);

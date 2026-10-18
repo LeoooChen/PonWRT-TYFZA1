@@ -10,6 +10,7 @@ test "$(git -C "$TREE" rev-parse HEAD)" = "$PIN" || {
     echo "OpenWrt HEAD differs from sources.lock.json" >&2
     exit 1
 }
+sh "$PORT/scripts/apply-openwrt-patches.sh" "$TREE"
 mkdir -p "$TREE/target/linux/rtl9617c"
 rsync -a --delete "$PORT/overlay/target/linux/rtl9617c/" "$TREE/target/linux/rtl9617c/"
 mkdir -p "$TREE/package/luci-app-tyfza1-pon"
