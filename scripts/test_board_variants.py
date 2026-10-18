@@ -49,9 +49,9 @@ with tempfile.TemporaryDirectory(prefix='board-variants-') as directory:
         assert cells(native['/led-button/lights-toggle']['gpios'])[1:] == [old_button['native_pin'], old_button['flags']]
         ni = native['/soc/ethernet@4f4300000']
         mdio = next(p for n, p in native.items() if p.get('compatible') == b'realtek,rtl9617c-mdio\0')
-        assert 'external-phy-enable-gpios' not in mdio
         assert len(cells(ni['realtek,lan-phys'])) == (4 if board == 1 else 5)
         if board == 0:
+            assert cells(mdio['external-phy-enable-gpios'])[1:] == [14, 0]
             assert cells(mdio['reset-gpios'])[1:] == [128, 1]
             assert cells(mdio['reset-delay-us']) == [30000]
             assert cells(mdio['reset-post-delay-us']) == [300000]
@@ -60,6 +60,7 @@ with tempfile.TemporaryDirectory(prefix='board-variants-') as directory:
             assert cells(phy['reg']) == [7] and 'realtek,hsgmii' in phy
         else:
             assert 'phys' not in ni and 'reset-gpios' not in mdio
+            assert 'external-phy-enable-gpios' not in mdio
         results.append({'strap': board, 'OEM_LED_GPIOs_and_button_match': True,
                         'LAN_ports': len(cells(ni['realtek,lan-phys']))})
 

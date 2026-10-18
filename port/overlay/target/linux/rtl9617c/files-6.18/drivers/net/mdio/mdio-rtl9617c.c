@@ -9,6 +9,7 @@
  */
 #include <linux/bitfield.h>
 #include <linux/delay.h>
+#include <linux/gpio/consumer.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/module.h>
@@ -143,6 +144,23 @@ static int rtl_mdio_write_c45(struct mii_bus *bus, int phy, int devad, int reg, 
 	return rtl_mdio_c45(bus, phy, devad, reg, value, false);
 }
 
+static int rtl_mdio_reset(struct mii_bus *bus)
+{
+	struct gpio_desc *enable;
+
+	/* The core pulses GPIO128 first, then runs this callback before discovery.
+	 * OEM rtl8221b drives GPIO14 high, releases ownership, and waits 300ms.
+	 * The later FPGA loader is allowed to acquire GPIO14 as its RX input. */
+	enable = gpiod_get_optional(bus->parent, "external-phy-enable", GPIOD_OUT_HIGH);
+	if (IS_ERR(enable))
+		return PTR_ERR(enable);
+	if (enable) {
+		gpiod_put(enable);
+		msleep(300);
+	}
+	return 0;
+}
+
 static int rtl_mdio_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -171,6 +189,7 @@ static int rtl_mdio_probe(struct platform_device *pdev)
 	usleep_range(1000, 2000);
 	bus->name = "RTL9617C MDIO/OCP";
 	bus->parent = dev;
+	bus->reset = rtl_mdio_reset;
 	bus->read = rtl_mdio_read;
 	bus->write = rtl_mdio_write;
 	bus->read_c45 = rtl_mdio_read_c45;

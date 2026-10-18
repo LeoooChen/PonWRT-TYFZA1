@@ -83,7 +83,7 @@ class MdioPort(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         source = DRIVER.read_text()
-        source = source[source.index('#define MDIO_CFG'):source.index('static int rtl_mdio_probe')]
+        source = source[source.index('#define MDIO_CFG'):source.index('static int rtl_mdio_reset')]
         test = Path(cls.tmp.name) / 'mdio.c'
         test.write_text(SHIM + source + TEST)
         cls.binary = Path(cls.tmp.name) / 'mdio-test'

@@ -934,9 +934,6 @@ static int rtl_register_extra_lans(struct rtl_xram *priv, struct device *parent)
 			goto unwind;
 		priv->registered_ports |= BIT(port);
 		if (port == 4) {
-			ret = phy_write_mmd(dev->phydev, MDIO_MMD_VEND2, 0xd032, 0x00a7);
-			if (ret)
-				goto unwind;
 			priv->phy_led.output = rtl_phy_led_output;
 			priv->phy_led.requested = 2;
 			priv->phy_led.cdev.name = "LED_8221B_P4_0";

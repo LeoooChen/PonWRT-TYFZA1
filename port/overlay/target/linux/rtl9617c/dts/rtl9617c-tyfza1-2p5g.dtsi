@@ -29,6 +29,7 @@
 };
 
 &mdio {
+	external-phy-enable-gpios = <&gpio0 14 GPIO_ACTIVE_HIGH>;
 	// Bus reset runs before reading the external PHY's Clause45 ID.
 	reset-gpios = <&gpio0 128 GPIO_ACTIVE_LOW>;
 	reset-delay-us = <30000>;
