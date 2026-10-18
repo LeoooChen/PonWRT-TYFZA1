@@ -639,6 +639,11 @@ static int rtl_fttr_open(struct net_device *dev)
 	ret = rtl_engine_get(port->shared);
 	if (ret)
 		return ret;
+	ret = rtl_fe_fttr_open(port->shared->fe);
+	if (ret) {
+		rtl_engine_put(port->shared);
+		return ret;
+	}
 	netif_start_queue(dev);
 	schedule_delayed_work(&port->link_work, 0);
 	return 0;
@@ -647,12 +652,14 @@ static int rtl_fttr_open(struct net_device *dev)
 static int rtl_fttr_stop(struct net_device *dev)
 {
 	struct rtl_fttr_port *port = netdev_priv(dev);
+	int ret;
 
 	netif_stop_queue(dev);
 	cancel_delayed_work_sync(&port->link_work);
 	netif_carrier_off(dev);
+	ret = rtl_fe_fttr_close(port->shared->fe);
 	rtl9617c_ni_close(port->shared->p6.dev, dev);
-	return 0;
+	return ret;
 }
 
 static netdev_tx_t rtl_fttr_xmit(struct sk_buff *skb, struct net_device *dev)
@@ -692,7 +699,15 @@ static void rtl_fttr_wake(struct rtl9617c_ni_endpoint *endpoint)
 		netif_wake_queue(endpoint->netdev);
 }
 
+static int rtl_fttr_setup_tc(struct net_device *dev, enum tc_setup_type type, void *data)
+{
+	struct rtl_fttr_port *port = netdev_priv(dev);
+
+	return rtl_fe_setup_tc(port->shared->fe, dev, type, data);
+}
+
 static const struct net_device_ops rtl_fttr_netdev_ops = {
+	.ndo_setup_tc = rtl_fttr_setup_tc,
 	.ndo_open = rtl_fttr_open,
 	.ndo_stop = rtl_fttr_stop,
 	.ndo_start_xmit = rtl_fttr_xmit,
@@ -724,8 +739,14 @@ static int rtl_register_fttr(struct rtl_xram *priv)
 	dev->max_mtu = dev->mtu;
 	eth_hw_addr_set(dev, priv->netdev->dev_addr);
 	netif_carrier_off(dev);
+	ret = rtl_fe_add_fttr_port(priv->fe, dev);
+	if (ret) {
+		free_netdev(dev);
+		return ret;
+	}
 	ret = register_netdev(dev);
 	if (ret) {
+		rtl_fe_remove_port(priv->fe, dev);
 		free_netdev(dev);
 		return ret;
 	}
@@ -739,6 +760,7 @@ static void rtl_unregister_fttr(struct rtl_xram *priv)
 	if (!priv->fttr)
 		return;
 	unregister_netdev(priv->fttr);
+	rtl_fe_remove_port(priv->fe, priv->fttr);
 	rcu_assign_pointer(priv->qm.fttr, NULL);
 	synchronize_net();
 	free_netdev(priv->fttr);
@@ -1258,19 +1280,45 @@ static ssize_t fttr_link_store(struct device *dev, struct device_attribute *attr
 		netif_tx_disable(priv->fttr);
 		netif_carrier_off(priv->fttr);
 	}
+	ret = rtl_fe_fttr_set(priv->fe, false);
+	if (ret && mode)
+		goto out;
 	if (!mode) {
 		rtl_fttr_p6_stop(&priv->p6);
-		priv->p6.error = 0;
-		ret = 0;
+		priv->p6.error = ret;
 	} else {
 		ret = rtl_fttr_p6_configure(&priv->p6, mode, nway);
 	}
 	if (priv->fttr && netif_running(priv->fttr) && !ret && mode)
 		netif_wake_queue(priv->fttr);
+out:
 	rtnl_unlock();
 	return ret ? ret : count;
 }
 static DEVICE_ATTR_RW(fttr_link);
+
+static ssize_t fttr_accel_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+
+	return rtl_fe_fttr_state(priv->fe, buf);
+}
+
+static ssize_t fttr_accel_store(struct device *dev, struct device_attribute *attr,
+			      const char *buf, size_t count)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	bool allowed;
+	int ret = kstrtobool(buf, &allowed);
+
+	if (ret)
+		return ret;
+	rtnl_lock();
+	ret = rtl_fe_fttr_set(priv->fe, allowed);
+	rtnl_unlock();
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_RW(fttr_accel);
 
 static struct attribute *rtl_native_attrs[] = {
 	&dev_attr_xram_state.attr,
@@ -1286,13 +1334,14 @@ static struct attribute *rtl_native_attrs[] = {
 	&dev_attr_qm_buffer.attr,
 	&dev_attr_rx_bypass.attr,
 	&dev_attr_fttr_link.attr,
+	&dev_attr_fttr_accel.attr,
 	NULL,
 };
 static umode_t rtl_native_visible(struct kobject *kobj, struct attribute *attr, int index)
 {
 	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(kobj_to_dev(kobj)));
 
-	if (attr == &dev_attr_fttr_link.attr && !priv->p6.qx)
+	if ((attr == &dev_attr_fttr_link.attr || attr == &dev_attr_fttr_accel.attr) && !priv->p6.qx)
 		return 0;
 	if (!priv->qm_rx &&
 	    (attr == &dev_attr_qm_pool.attr || attr == &dev_attr_pon_deepq.attr || attr == &dev_attr_qm_trace.attr ||

@@ -39,6 +39,11 @@ struct rtl_fe_bridge {
 /* There is one NI/FE complex on RTL9617C. Namespace hooks share that owner. */
 static struct rtl_fe_bridge *fe_bridge_owner;
 
+static void fe_bridge_invalidate(struct rtl_fe *fe)
+{
+ atomic_inc(&fe->bridge->epoch);
+}
+
 static struct net_device *fe_bridge_physical(struct net_device *dev,
                                            struct rtl9617c_bridge_frame *frame,u32 priority)
 {

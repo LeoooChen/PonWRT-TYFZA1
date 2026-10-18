@@ -37,7 +37,7 @@ ssize_t write(int fd,const void *buffer,size_t count) {
  name=strrchr(path,'/');name=name ? name+1 : path;
  if(strcmp(name,"tx_enable") && strcmp(name,"reset") && strcmp(name,"calibration") &&
     strcmp(name,"host_serdes") && strcmp(name,"fttr_link") && strcmp(name,"pon_serdes") &&
-    strcmp(name,"core_init") && strcmp(name,"omci_link") && strcmp(name,"dba"))
+    strcmp(name,"core_init") && strcmp(name,"omci_link") && strcmp(name,"dba") && strcmp(name,"fttr_accel"))
   return real_write(fd,buffer,count);
  log=open(getenv("FTTR_TEST_LOG"),O_WRONLY|O_CREAT|O_APPEND,0600);
  real_write(log,name,strlen(name));real_write(log," ",1);real_write(log,buffer,count);close(log);
@@ -112,6 +112,7 @@ def main():
             for name in ('tx_enable','reset','host_serdes','pon_serdes','core_init','omci_link','dba'):
                 miniolt.joinpath(name).write_text('0\n')
             ni.joinpath('fttr_link').write_text('0 0\n');optical.joinpath('calibration').write_text('0\n')
+            ni.joinpath('fttr_accel').write_text('0\n')
             miniolt.joinpath('onu_table').write_text(''.join(f'{i} 00000000 00000000 00000000 0000000000000000\n' for i in range(64)))
             log=case/'commands';log.write_text('')
             env=dict(os.environ,LD_PRELOAD=str(work/'sysfs.so'),FTTR_TEST_ROOT=str(case),
@@ -124,8 +125,8 @@ def main():
             try:
                 if bad=='none':
                     wait(process,lambda:state().get('state')=='running')
-                    expected_commands=['tx_enable 0','fttr_link 0 0','reset 1','calibration 1','host_serdes 9 1',
-                        'fttr_link 9 1','pon_serdes 3','core_init 1','omci_link 02:03:04:05:06:07','dba 1','tx_enable 1']
+                    expected_commands=['fttr_accel 0','tx_enable 0','fttr_link 0 0','reset 1','calibration 1','host_serdes 9 1',
+                        'fttr_link 9 1','pon_serdes 3','core_init 1','omci_link 02:03:04:05:06:07','dba 1','tx_enable 1','fttr_accel 1']
                     assert log.read_text().splitlines()==expected_commands
                     replacement=subprocess.Popen(argv,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
                     try:

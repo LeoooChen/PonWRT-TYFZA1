@@ -24,6 +24,7 @@
 #include <net/pkt_cls.h>
 #include "rtl9617c-fe.h"
 #include "rtl9617c-fe-pipeline.h"
+#include "rtl9617c-fttr-cf.h"
 #include "rtl9617c-wifi-format.h"
 #include "rtl9617c-pon-path.h"
 #include <linux/rtl9617c-bridge.h>
@@ -31,6 +32,7 @@
 struct rtl_fe_bridge;
 static struct rtl_fe_bridge *fe_bridge_start(struct rtl_fe *fe);
 static void fe_bridge_stop(struct rtl_fe_bridge *bridge);
+static void fe_bridge_invalidate(struct rtl_fe *fe);
 
 #define FE_INTERFACES 64
 #define FE_COUNTERS 32
@@ -128,6 +130,10 @@ struct rtl_fe {
  struct rtl_fe_mtu mtus[16];
  struct rtl_itu_paths *itu_paths;
  struct net_device *itu_netdev;
+ struct net_device *fttr_netdev;
+ struct rtl_fttr_cf fttr_cf;
+ bool fttr_live,fttr_requested,fttr_admitted;
+ int fttr_cleanup_error;
  struct rtl_fe_bridge *bridge;
  DECLARE_BITMAP(hashes,RTL_FE_HASH_ENTRIES);
  DECLARE_BITMAP(counters,FE_INTERFACES);
@@ -327,7 +333,7 @@ static int fe_prepare(struct rtl_fe *fe)
  /* The Linux rule already selected the physical LAN output. A second
   * L2 lookup would override it with the indexed DA entry's forwarding port.
   * NI demux3 enters L2TM directly; only LAN0..4's selectors change. */
- fe_write(fe,0xa1e0,fe_read(fe,0xa1e0)|0x3ff);
+ fe_write(fe,0xa1e0,fe_read(fe,0xa1e0)|0x3ff|(fe->fttr_netdev?3U<<12:0));
  rtl_fe_cache_start(&io);
  fe_write(fe,0x351c,fe_read(fe,0x351c)|BIT(10));
  return 0;
@@ -908,6 +914,34 @@ retry:
  mod_delayed_work(system_wq,&fe->cleanup_work,HZ);
  return ret;
 }
+static int fe_fttr_route_locked(struct rtl_fe *fe,bool accelerate)
+{
+ struct rtl_dq_io io=fe_io(fe);
+ unsigned int destination=accelerate && fe->fttr_requested && fe->fttr_live?25:16;
+ int ret;
+
+ fe->fttr_admitted=false;
+ if(!fe->fttr_cf.active)return 0;
+ ret=rtl_fttr_cf_destination(&io,&fe->fttr_cf,destination);
+ if(!ret)fe->fttr_admitted=destination==25;
+ return ret;
+}
+
+static int fe_fttr_quiesce_locked(struct rtl_fe *fe)
+{
+ struct rtl_fe_flow *flow,*next;
+ int ret=fe_fttr_route_locked(fe,false),result;
+
+ fe_bridge_invalidate(fe);
+ list_for_each_entry_safe(flow,next,&fe->flows,list)
+  if(flow->input->netdev==fe->fttr_netdev || flow->output->netdev==fe->fttr_netdev) {
+   result=fe_delete(fe,flow);
+   if(result) {if(!ret)ret=result;break;}
+  }
+ fe->fttr_cleanup_error=ret;
+ return ret;
+}
+
 static void fe_cleanup_work(struct work_struct *work)
 {
  struct rtl_fe *fe=container_of(to_delayed_work(work),struct rtl_fe,cleanup_work);
@@ -929,6 +963,8 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
  int ret;
 
  if(port->retired)return -ENODEV;
+ if((data.input->netdev==fe->fttr_netdev || data.output->netdev==fe->fttr_netdev) &&
+    !fe->fttr_admitted)return -EAGAIN;
  if(!fe->enabled || !netif_running(data.input->netdev) || !netif_running(data.output->netdev) ||
     !netif_carrier_ok(data.input->netdev) || !netif_carrier_ok(data.output->netdev))return -EAGAIN;
  if(fe_flow(fe,cookie))return -EEXIST;
@@ -1247,6 +1283,90 @@ int rtl_fe_add_port(struct rtl_fe *fe,struct net_device *netdev,unsigned int sou
  mutex_unlock(&fe->lock);
  return 0;
 }
+int rtl_fe_add_fttr_port(struct rtl_fe *fe,struct net_device *netdev)
+{
+ int ret;
+
+ if(!fe)return -EOPNOTSUPP;
+ ret=rtl_fe_add_port(fe,netdev,6,6,0);
+ if(ret)return ret;
+ mutex_lock(&fe->lock);
+ fe->fttr_netdev=netdev;
+ mutex_unlock(&fe->lock);
+ return 0;
+}
+
+int rtl_fe_fttr_open(struct rtl_fe *fe)
+{
+ struct rtl_dq_io io;
+ bool claimed=false;
+ int ret;
+
+ if(!fe)return -EOPNOTSUPP;
+ io=fe_io(fe);
+ mutex_lock(&fe->lock);
+ ret=fe_fttr_quiesce_locked(fe);
+ if(!ret)ret=rtl_fttr_cf_release(&io,&fe->fttr_cf);
+ if(!ret) {
+  ret=rtl_fttr_cf_claim(&io,&fe->fttr_cf);
+  claimed=!ret;
+ }
+ if(!ret)ret=rtl_fttr_cf_destination(&io,&fe->fttr_cf,16);
+ if(!ret) {
+  fe->fttr_live=true;
+  ret=fe_fttr_route_locked(fe,fe->enabled);
+ }
+ if(ret) {
+  fe->fttr_live=false;
+  if(claimed)rtl_fttr_cf_release(&io,&fe->fttr_cf);
+ }
+ fe->error=ret;
+ mutex_unlock(&fe->lock);
+ return ret;
+}
+
+int rtl_fe_fttr_close(struct rtl_fe *fe)
+{
+ struct rtl_dq_io io;
+ int ret;
+
+ if(!fe)return 0;
+ io=fe_io(fe);
+ mutex_lock(&fe->lock);
+ fe->fttr_live=false;
+ ret=fe_fttr_quiesce_locked(fe);
+ if(!ret)ret=rtl_fttr_cf_release(&io,&fe->fttr_cf);
+ fe->error=ret;
+ mutex_unlock(&fe->lock);
+ return ret;
+}
+
+int rtl_fe_fttr_set(struct rtl_fe *fe,bool allowed)
+{
+ int ret;
+
+ if(!fe)return -EOPNOTSUPP;
+ mutex_lock(&fe->lock);
+ fe->fttr_requested=allowed;
+ ret=fe_fttr_quiesce_locked(fe);
+ if(!ret && allowed)ret=fe_fttr_route_locked(fe,fe->enabled);
+ fe->error=ret;
+ mutex_unlock(&fe->lock);
+ return ret;
+}
+
+ssize_t rtl_fe_fttr_state(struct rtl_fe *fe,char *buffer)
+{
+ ssize_t size;
+
+ if(!fe)return sysfs_emit(buffer,"available=0\n");
+ mutex_lock(&fe->lock);
+ size=sysfs_emit(buffer,"available=1 requested=%u admitted=%u live=%u owned=%u index=%u destination=%u error=%d cf_error=%d cleanup_error=%d cf_cleanup_error=%d\n",
+  fe->fttr_requested,fe->fttr_admitted,fe->fttr_live,fe->fttr_cf.owned,
+  fe->fttr_cf.index,fe->fttr_cf.destination,fe->error,fe->fttr_cf.error,fe->fttr_cleanup_error,fe->fttr_cf.cleanup_error);
+ mutex_unlock(&fe->lock);
+ return size;
+}
 int rtl_fe_add_wifi_port(struct rtl_fe *fe,struct net_device *netdev,unsigned int id)
 {
  struct rtl_fe_port *port;
@@ -1328,6 +1448,7 @@ void rtl_fe_remove_port(struct rtl_fe *fe,struct net_device *netdev)
    }
   fe_collect_ports(fe);
  }
+ if(fe->fttr_netdev==netdev)fe->fttr_netdev=NULL;
  mutex_unlock(&fe->lock);
 }
 int rtl_fe_flush_port(struct rtl_fe *fe,struct net_device *netdev)
@@ -1379,8 +1500,11 @@ static int fe_disable_locked(struct rtl_fe *fe)
  int ret=0;
 
  fe->enabled=false;
- if(fe->prepared) {
+ if(fe->prepared)
   for(i=0;i<FE_LAN_PORTS;i++)fe_write(fe,FE_LAN_RX_CTRL(i),fe->lan_saved[i]);
+ ret=fe_fttr_quiesce_locked(fe);
+ if(ret)return ret;
+ if(fe->prepared) {
   usleep_range(1000,2000);
   list_for_each_entry_safe(flow,next,&fe->flows,list) {
    ret=fe_delete(fe,flow);
@@ -1406,6 +1530,13 @@ int rtl_fe_enable(struct rtl_fe *fe)
  }
  ret=fe_prepare(fe);
  if(ret){fe_restore(fe);goto unlock;}
+ ret=fe_fttr_route_locked(fe,true);
+ if(ret) {
+  int cleanup=fe_fttr_quiesce_locked(fe);
+  if(!cleanup)cleanup=fe_restore(fe);
+  fe->fttr_cleanup_error=cleanup;
+  goto unlock;
+ }
  /* The DMA tables, miss actions and port maps exist before admitting LAN. */
  for(i=0;i<FE_LAN_PORTS;i++)
   fe_write(fe,FE_LAN_RX_CTRL(i),(fe_read(fe,FE_LAN_RX_CTRL(i))&~(63U<<16))|(25U<<16));
@@ -1430,12 +1561,19 @@ void rtl_fe_free(struct rtl_fe *fe)
 {
  struct rtl_fe_port *port,*next;
  struct rtl_fe_flow *flow,*flow_next;
+ struct rtl_dq_io io;
+ int ret;
 
  if(!fe)return;
+ /* Quiesce still invalidates bridge generations; keep that owner alive. */
+ ret=rtl_fe_disable(fe);
+ if(ret)dev_err(fe->device,"FE withdrawal failed during removal: %d\n",ret);
  fe_bridge_stop(fe->bridge);
  debugfs_remove_recursive(fe->debug);
- rtl_fe_disable(fe);
  cancel_delayed_work_sync(&fe->cleanup_work);
+ io=fe_io(fe);
+ ret=rtl_fttr_cf_release(&io,&fe->fttr_cf);
+ if(ret)dev_err(fe->device,"P6 CF restoration failed during removal: %d\n",ret);
  list_for_each_entry_safe(flow,flow_next,&fe->flows,list){list_del(&flow->list);kfree(flow);}
  list_for_each_entry(port,&fe->ports,list)fe_wifi_forget_port(fe,port);
  list_for_each_entry_safe(port,next,&fe->ports,list){list_del(&port->list);kfree(port);}

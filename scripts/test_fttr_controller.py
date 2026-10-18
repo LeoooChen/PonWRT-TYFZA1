@@ -46,6 +46,7 @@ def main():
         miniolt.joinpath('omci_link').write_text('host=02:03:04:05:06:07 olt=0a:0b:0c:0d:0e:0f ethertype=8888 downstream_length=0\n')
         miniolt.joinpath('host_serdes').write_text('mode=9 nway=1 pll=1 error=0 link=1\n')
         ni.joinpath('fttr_link').write_text('configured=1 mode=9 nway=1 clock=1 error=0 link=1\n')
+        ni.joinpath('fttr_accel').write_text('0\n')
         miniolt.joinpath('tx_enable').write_text('1\n')
         os.mkfifo(miniolt/'management_grant')
         grants_fd = os.open(miniolt/'management_grant',os.O_RDWR|os.O_NONBLOCK)

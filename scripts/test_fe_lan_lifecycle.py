@@ -51,6 +51,8 @@ struct rtl_fe_flow {int unused;};
 static void mutex_lock(struct mutex *m){(void)m;}
 static void mutex_unlock(struct mutex *m){(void)m;}
 struct rtl_fe {
+ void *fttr_netdev;
+ int fttr_cleanup_error;
  struct mutex lock;struct list_head flows;
  uint64_t dma;bool prepared,enabled;int error;
  unsigned int saved[64],lan_saved[5],mask_saved[8],classifier_saved[2][7],map_saved[2][4];
@@ -123,6 +125,9 @@ static int fe_access(void *ctx,unsigned int reg,unsigned int value){
 }
 static struct rtl_dq_io fe_io(struct rtl_fe *f){return (struct rtl_dq_io){f,fe_read,fe_write,fe_access};}
 static void fe_collect_ports(struct rtl_fe *f){(void)f;}
+/* This check models no FTTR endpoint; P6 transactions have their own check. */
+static int fe_fttr_quiesce_locked(struct rtl_fe *f){assert(!f->fttr_netdev);return 0;}
+static int fe_fttr_route_locked(struct rtl_fe *f,bool enable){(void)enable;assert(!f->fttr_netdev);return 0;}
 static int fe_delete(struct rtl_fe *f,struct rtl_fe_flow *p){(void)f;(void)p;assert(0);return 0;}
 static void usleep_range(unsigned int a,unsigned int b){assert(a==1000 && b==2000);}
 '''

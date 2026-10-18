@@ -1014,14 +1014,14 @@ the second bank at entry+512. Action control is`1e14`, with data at
 key before its new action. Native runtime activation must prepare its
 action before publishing the key, with readback and errors retained.
 
-P6 admission and FE port registration are not implemented yet. They must
-be coupled to synchronous service-flow withdrawal before GEM reuse; the
-existing asynchronous bridge worker alone does not provide that barrier.
+P6 admission and FE port registration now use this CF transaction, coupled
+to synchronous FE/cache withdrawal when a service is removed. The existing
+asynchronous bridge worker alone does not provide that barrier.
 In the selected kernel, `__netdev_upper_dev_unlink` ignores the return from
 both PRECHANGEUPPER and CHANGEUPPER notifications, so a notifier rejection
-cannot report failed hardware cleanup to `fttrd`. Admission setup, an
-acknowledged withdrawal operation, and actual P6 traffic verification remain
-required before claiming FTTR hardware acceleration.
+cannot report failed hardware cleanup to `fttrd`; the native NI sysfs
+operation described below returns those failures directly. Actual P6 traffic
+verification remains required before claiming FTTR hardware acceleration.
 
 `rtl9617c-fttr-cf.h` now implements the native CF slot transaction from those
 actual bytes and register accesses. It selects a currently unused slot,
@@ -1038,9 +1038,68 @@ the original FC producer and NI writers. It checks action-before-key ordering,
 CPU16 selection, preservation of the source7 rule and exact prior slot,
 an acknowledged write that did not change hardware, a completion timeout
 after a committed write, failed retirement/retry and a shadowing wildcard.
-Results are in`cf-native-comparison.json`. This is the CF transaction
-foundation; no production caller activates it yet. P6 lifecycle integration,
-FE registration and synchronous withdrawal remain required together.
+Results are in`cf-native-comparison.json`.
+
+### Native P6 FE lifecycle and acknowledged withdrawal
+
+The FTTR parent is now registered with FE as physical source6/destination6,
+separately from upstream source7/LLIDs, and supplies its own TC callback.
+Opening `fttr0` acquires the CF slot and installs the CPU16 action. When FE
+is globally enabled and FTTR admission is requested, its action switches to
+the original LAN connector25. FE setup also changes only P6's NI output
+selector (bits12..13 of`a1e0`) to direct L2TM output; the existing snapshot
+restores it on global FE disable. No invalid LAN MAC selector is used for P6.
+P6 close withdraws its flows and restores the exact prior CF slot. Failed
+cleanup remains owned and visible for retry. Removing the FE owner performs
+withdrawal while its bridge epoch owner still exists, then stops that owner;
+this avoids invalidating an already freed learning context.
+
+The NI device's `fttr_accel` attribute accepts`0` or`1`. A zero first blocks
+new P6 flow installation, switches the live CF action to CPU16 with readback,
+invalidates queued bridge-learning generations, and synchronously deletes
+every existing flow that receives from or sends to P6 through the existing
+Hash age/cache withdrawal transaction. Other physical ports' flows stay
+installed. Existing FTTR ports continue through Linux while admission is
+closed. A one repeats the withdrawal check before permitting admission,
+so an unfinished failed deletion cannot be bypassed by an enable request.
+Global FE enable prepares its tables before P6 admission; an unconfirmed
+P6 rollback retains the prepared snapshot instead of restoring dependent
+tables underneath an unconfirmed route.
+
+`fttr_accel` reads report`requested`, `admitted`, `live`, `owned`, CF index,
+destination, primary FE/CF errors and separate withdrawal/CF restoration
+errors. Requested admission does not enable the global FE owner by itself;
+`admitted=1` also requires that owner and the FTTR parent to be active.
+It describes programmed setup, not measured hits, bandwidth or an optical
+link. Coordination of global FE ownership for standalone FTTR remains work.
+
+The resident controller requires this new NI operation. Startup withdraws
+before deleting prior-process ports. Service replacement/reconciliation
+withdraws while the old VLAN still exists, removes that port/FDB, clears
+and reads back the local grant, then permits learning from current ports.
+On failure it retains the error, does not resume admission, and stops the
+shared TX/netdev/P6 path. Shutdown also withdraws before closing the parent.
+The controller does not treat a missing operation as successful cleanup.
+
+`scripts/test_fttr_fe.py` executes the production P6 control functions with
+modeled indirect hardware and flow deletion. It checks verified admission,
+both-direction P6 withdrawal, an unaffected LAN/PON flow, failure ownership
+and retry. The controller's existing private-namespace check additionally
+records actual VLAN existence at each modeled kernel call and injects a
+withdrawal timeout (`autoprovision-p6-fe-comparison.json`). The startup check
+includes the new operation (`startup-p6-fe-comparison.json`); existing LAN
+FE enable/restore checks still pass. The actual6.18 NI composite driver
+object compiles/links, and the musl package prepare/compile/install passes
+in`package-root-p6-fe/` (`package-stage-p6-fe.log`). No full firmware build
+or full test suite is used.
+
+This implements CF admission and FE/cache lifecycle, not complete physical
+queue retirement. NI/PE and MiniOLT packet-buffer drain/flush before GEM
+reuse still require original-path research and implementation. Existing FE
+parser/editor support is limited to two wire VLAN tags, including the outer
+GEM tag; customer QinQ with three total tags continues through Linux. Traffic
+between two ONUs on the same physical P6 also retains the current software
+path. Actual P6 Hash keys/hits, optical traffic and throughput remain unverified.
 
 ### Outstanding implementation and acceptance
 
@@ -1071,7 +1130,9 @@ FE registration and synchronous withdrawal remain required together.
    recovery of remote resources, default policy import and multiple services
    per ONU remain work. Explicit bridge attachment through native per-GEM
    VLAN ports, their lifecycle and kernel FDB removal are implemented.
-   Hardware offload invalidation remains separate work.
+   Native P6 CF/FE admission and synchronous Hash/cache withdrawal are
+   implemented. Physical queued-packet retirement and hardware acceptance
+   remain work.
    Current upstream ONU OMCI is a different role.
 5. Original subordinate gateway configuration, Wi-Fi synchronization,
    multicast, reboot/upgrade and roaming coordination, using the connected

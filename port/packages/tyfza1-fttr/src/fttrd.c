@@ -497,13 +497,19 @@ static int start_service(struct controller *c, unsigned int id)
 static int withdraw_service(struct controller *c, unsigned int id)
 {
 	struct fttr_service_job *job = &c->onu[id].service;
-	int ret, cleanup = fttr_net_remove(&c->net, &c->onu[id].port);
+	bool paused = c->onu[id].port.index != 0;
+	int ret, cleanup = 0;
 
+	c->onu[id].port.configured = false;
+	if (paused)
+		cleanup = fttr_miniolt_command(c->ni, "fttr_accel", "0\n");
+	if (!cleanup)
+		cleanup = fttr_net_remove(&c->net, &c->onu[id].port);
 	if (cleanup)
 		c->onu[id].datapath_cleanup_error = cleanup;
 
 	if (!job->config.slot || job->grant_withdrawn)
-		return cleanup;
+		goto resume;
 	ret = fttr_miniolt_tcont(c->directory, id, job->config.slot, 0, 0, 0);
 	if (!ret)
 		ret = fttr_miniolt_tcont_read(c->directory, id, job->config.slot, &job->observed);
@@ -515,6 +521,13 @@ static int withdraw_service(struct controller *c, unsigned int id)
 		return ret;
 	}
 	job->grant_withdrawn = true;
+resume:
+	if (!cleanup && paused)
+		cleanup = fttr_miniolt_command(c->ni, "fttr_accel", "1\n");
+	if (cleanup) {
+		c->onu[id].datapath_cleanup_error = cleanup;
+		save_service(c, id);
+	}
 	return cleanup;
 }
 
@@ -1173,6 +1186,13 @@ static int shutdown_hardware(struct controller *c)
 
 	if (ret)
 		fprintf(stderr, "FTTR TX disable failed: %d\n", ret);
+	if (c->ni >= 0) {
+		result = fttr_miniolt_command(c->ni, "fttr_accel", "0\n");
+		if (result)
+			fprintf(stderr, "FTTR accelerator withdrawal failed: %d\n", result);
+		if (!ret)
+			ret = result;
+	}
 	result = interface_state(c, false, 0);
 	if (result)
 		fprintf(stderr, "FTTR netdev close failed: %d\n", result);
@@ -1225,6 +1245,9 @@ int main(int argc, char **argv)
 	if (c.ni < 0) { ret = -errno; goto out; }
 	c.store = open(argv[3], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (c.store < 0) { ret = -errno; goto out; }
+	ret = fttr_miniolt_command(c.ni, "fttr_accel", "0\n");
+	if (ret)
+		goto out;
 	ret = fttr_net_open(&c.net, c.interface);
 	if (ret)
 		goto out;
@@ -1258,6 +1281,9 @@ int main(int argc, char **argv)
 		goto out;
 	if (getrandom(&seed, sizeof(seed), 0) < 0) { ret = -errno; goto out; }
 	c.transaction = seed | 0x8000;
+	ret = fttr_miniolt_command(c.ni, "fttr_accel", "1\n");
+	if (ret)
+		goto out;
 	c.socket = fttr_omci_open(c.interface, c.link.ethertype);
 	if (c.socket < 0) { ret = c.socket; goto out; }
 	ret = run(&c);

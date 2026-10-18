@@ -211,11 +211,27 @@ def main():
         device.joinpath('omci_link').write_text('host=02:03:04:05:06:07 olt=0a:0b:0c:0d:0e:0f ethertype=8888 downstream_length=0\n')
         device.joinpath('host_serdes').write_text('mode=9 nway=1 pll=1 error=0 link=1\n')
         ni.joinpath('fttr_link').write_text('configured=1 mode=9 nway=1 clock=1 error=0 link=1\n')
+        ni.joinpath('fttr_accel').write_text('0\n')
         device.joinpath('tx_enable').write_text('1\n')
         device.joinpath('management_grant').write_text('')
         device.joinpath('tcont_state').write_bytes(bytes(4096))
         os.mkfifo(device/'tcont');grant_fd=os.open(device/'tcont',os.O_RDWR|os.O_NONBLOCK)
-        shim=root/'sysfs.c';shim.write_text(SYSFS_WRITE_SHIM)
+        accel_log,accel_fault=root/'accel.log',root/'accel.fail'
+        accel_log.write_text('')
+        accel_shim = r'''
+  if(n>=11 && !strcmp(path+n-11,"/fttr_accel")) {
+   unsigned int seven=if_nametoindex("fttr-u7"),nine=if_nametoindex("fttr-u9");
+   char row[64];int length=snprintf(row,sizeof(row),"%c %u %u\n",((const char *)buf)[0],seven,nine);
+   ssize_t (*emit)(int,const void *,size_t)=dlsym(RTLD_NEXT,"write");
+   int trace=open(getenv("FTTR_ACCEL_LOG"),O_WRONLY|O_APPEND);
+   emit(trace,row,length);close(trace);
+   if(((const char *)buf)[0]=='0' && seven && !access(getenv("FTTR_ACCEL_FAIL"),F_OK)) {
+    errno=ETIMEDOUT;return -1;
+   }
+  }
+'''
+        shim=root/'sysfs.c';shim.write_text(SYSFS_WRITE_SHIM.replace('#include <fcntl.h>',
+            '#include <fcntl.h>\n#include <errno.h>\n#include <net/if.h>').replace('  path[n]=0;', '  path[n]=0;'+accel_shim))
         subprocess.run(['cc','-shared','-fPIC','-Wall','-Wextra','-Werror','-o',str(root/'sysfs.so'),str(shim),'-ldl'],check=True)
         policy=root/'services'
         subprocess.run(['ip','link','set','dev','fap-host','mtu','1982'],check=True)
@@ -244,6 +260,8 @@ def main():
             assert status()['onus'][id]['datapath_configured']
             assert next(x for x in journal(id) if x['event']=='service_datapath')['ifindex']==port['ifindex']
             return port['ifindex']
+        def accel_events():
+            return [tuple(map(int,line.split())) for line in accel_log.read_text().splitlines()]
         def until(predicate,seconds=8):
             nonlocal grant_buffer
             deadline=time.monotonic()+seconds
@@ -275,7 +293,8 @@ def main():
             return subprocess.Popen([str(args.daemon.resolve()),str(device),str(ni),str(store),'fap-host']+
                 (['--services',str(policy)] if with_policy else []),
                 stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True,
-                env=dict(os.environ,LD_PRELOAD=str(root/'sysfs.so'),FTTR_SERVICE_CASE='normal'))
+                env=dict(os.environ,LD_PRELOAD=str(root/'sysfs.so'),FTTR_SERVICE_CASE='normal',
+                    FTTR_ACCEL_LOG=str(accel_log),FTTR_ACCEL_FAIL=str(accel_fault)))
         process=launch()
         try:
             first=until(lambda s:s.get('onus') and s['onus'][9]['phase']=='configured' and nodes[7].held is not None)
@@ -400,9 +419,13 @@ def main():
                 assert journal(id)[0]['configured'] and journal(id,'service-old')[0]['configured']
             # An observed disconnect/reconnect with the same serial reuses the
             # actual remote MEs, after the local grant has been withdrawn.
+            old_port=datapath(7);event_start=len(accel_events())
             node=nodes.pop(7);before=len(node.operations);hardware()
             until(lambda s:s.get('onus') and s['onus'][7]['phase']=='absent')
             assert 'fttr-u7' not in ports()
+            events=accel_events()[event_start:]
+            assert any(mode==0 and seven==old_port and nine for mode,seven,nine in events)
+            assert any(mode==1 and seven==0 and nine for mode,seven,nine in events)
             assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),(7*8+1)*8)==(0,0)
             nodes[7]=node;hardware()
             until(lambda s:s.get('onus') and s['onus'][7]['phase']=='configured')
@@ -435,6 +458,18 @@ def main():
             process.send_signal(signal.SIGTERM);_,error=process.communicate(timeout=3)
             assert process.returncode==0,error
             policy.write_text(valid_policy)
+            # An unconfirmed hardware cache withdrawal must stop this controller,
+            # retain its error, and never resume acceleration on that teardown.
+            process=launch()
+            until(lambda s:s.get('onus') and all(s['onus'][id]['phase']=='configured' for id in nodes))
+            event_start=len(accel_events());accel_fault.touch()
+            node=nodes.pop(7);hardware()
+            _,error=process.communicate(timeout=5)
+            assert process.returncode==1 and status()['error']==-errno.ETIMEDOUT,error
+            assert status()['onus'][7]['datapath_cleanup_error']==-errno.ETIMEDOUT
+            assert not any(mode==1 for mode,_,_ in accel_events()[event_start:])
+            assert not ports() and device.joinpath('tx_enable').read_text().startswith('0\n')
+            accel_fault.unlink();nodes[7]=node;hardware()
             # A shared AF_PACKET send failure is a controller failure, not a
             # peer timeout that leaves the global controller falsely running.
             nodes[7]=Node(7,'5445535400000077',0x3ff,True,hold=True)
@@ -470,7 +505,8 @@ def main():
         'sync timeout withdraws only the affected local grant; a valid later reply reconciles without re-creating intact MEs',
         'atomic private runtime journals retain recipes/ownership/table snapshots; SIGTERM shuts hardware down',
         'actual GEM VLAN ports are created only after verified service sync, withdrawn on MIB loss/replacement/disconnect, and removed on shutdown',
-        'missing bridge reports a peer datapath failure and withdraws its grant; explicit OMCI-only policy remains distinct'],
+        'missing bridge reports a peer datapath failure and withdraws its grant; explicit OMCI-only policy remains distinct',
+        'acceleration withdrawal occurs with the old VLAN still present, resumes after removal, and an unconfirmed withdrawal stops TX without resuming'],
         'scope':'native daemon over AF_PACKET/veth in a private namespace with original ARM64 schemas and VLAN table replies; peer MIB and synchronous DBA sysfs are modeled; no optical traffic'}
     args.output.write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
 
