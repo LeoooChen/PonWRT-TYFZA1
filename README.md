@@ -265,7 +265,8 @@ apk add htop nano iperf3
 1. **Fork** 本仓库，在 **Actions** 中启用工作流。
 2. 打开 **Build TYFZA1 firmware → Run workflow**，填写 `release_tag`，例如 `v0.8.0-beta`。
 3. 如需自定义软件包，将配置文件提交到仓库，并在 `config_file` 中填写路径。
-4. 构建完成后，从 **Releases** 或本次运行的 **Artifacts → firmware-and-build-log** 下载固件。
+4. 重建已发布版本时勾选 `replace_release`。
+5. 构建完成后，从 **Releases** 或本次运行的 **Artifacts → firmware-and-build-log** 下载固件。
 
 工作流自动下载编译依赖和运行时文件，并准备 FIT 签名材料。
 

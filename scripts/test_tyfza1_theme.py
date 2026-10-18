@@ -97,7 +97,9 @@ else: sys.exit(2)
     assert "Realtek/RTL9617C（" in status_source
     header = (luci / "modules/luci-base/ucode/template/header.ut").read_text()
     assert header.count("resource_version:") == 1
-    assert "-tyfza1-r1'" in header
+    assert "-tyfza1-r2'" in header
+    assert "base_url       : resource" in header
+    assert "-' + pkgs_update_time + '-tyfza1" in header
     assert "当前功率上限" in (luci / "modules/luci-mod-network/htdocs/luci-static/resources/view/network/wireless.js").read_text()
     config = (tree / ".config").read_text()
     assert config.count("CONFIG_PACKAGE_luci-theme-argon=y") == 1

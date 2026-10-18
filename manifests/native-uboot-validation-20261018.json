@@ -2,22 +2,22 @@
   "date": "2026-10-18",
   "board": "4ge",
   "firmware_version": "0.8.0-beta",
-  "firmware_sha256": "e0ad82e6f334c1d4874f0be88ef44d430ac3f23d639fd96b356846d4569b303c",
+  "firmware_sha256": "60f1c0d5d17856f4b80697ebe32499f92b27c2bb1d77d0400c902f49aa0ae8c8",
   "native_boot": {
     "cold_start_from_flash": true,
     "ram_bytes": 536870912,
     "flash_bytes": 268435456,
-    "readback_sha256": "a8d43c69001949aee68a0215e7e204c8ce897e0e2b56f079f6453fdf791e3d07",
+    "readback_sha256": "b341960d8369d2084a30df14d6b76f2741e3e1284a2685522b824813b243af8b",
     "matches_selected_universal_image": true,
     "uboot_version": "1.0"
   },
   "universal_package": {
     "format": "TYFZA1-UBOOT-V1",
     "bytes": 4194320,
-    "sha256": "cd9006a0b2f92b4e8a7831252204534bfb478c8582012d5f21b23ce38c63c683",
+    "sha256": "2da8e236e929411bffb58c63f60d1729e7e6140a3e6965d03abd2c75cd66ed96",
     "variants": {
-      "4ge": "a8d43c69001949aee68a0215e7e204c8ce897e0e2b56f079f6453fdf791e3d07",
-      "2p5g": "ddb68663bc114871535f87d863546560e40b082f14a01329e5008586eab90c0e"
+      "4ge": "b341960d8369d2084a30df14d6b76f2741e3e1284a2685522b824813b243af8b",
+      "2p5g": "a5e98d0527e1dbb6bb488d4f700ecce35b5dca0b2e6d57b5eb6401d8d0905044"
     },
     "selection": "GPIO113:111 strap, followed by local GPT/BL2/BL31 comparison"
   },
@@ -25,7 +25,7 @@
     "baseline_overlay_available_kib": 12516,
     "native_install_data_lebs": 342,
     "native_install_data_bytes": 43425792,
-    "native_install_overlay_available_kib": 35268,
+    "native_install_overlay_available_kib": 35264,
     "sysupgrade_data_lebs": 344,
     "sysupgrade_overlay_available_kib": 35476,
     "random_write_bytes": 25165824,
@@ -38,8 +38,8 @@
   },
   "thermal": {
     "baseline_mC": -50023,
-    "native_firmware_mC": 45308,
-    "after_sysupgrade_mC": 46498,
+    "native_firmware_mC": 45470,
+    "after_sysupgrade_mC": 44632,
     "sysfs_and_rpc_agree": true
   },
   "network": {
@@ -53,7 +53,11 @@
     "Initialize SPI-NAND MTD pointer and physical size before use",
     "Wait for the previous NI TX frame before submitting another frame",
     "Allocate rootfs and writable data during installation and sysupgrade",
-    "Select and verify the matching board loader from one universal package"
+    "Select and verify the matching board loader from one universal package",
+    "Keep exact Ethernet frame length and encode XRAM valid bytes at bits 14:12",
+    "Attach UBI before building the initial recovery backup catalog",
+    "Record and reuse the OpenWrt installation slot during recovery reinstalls",
+    "Set the matching root volume before sourcing uploaded system FIT scripts"
   ],
   "two_p5g_scope": "Image format, signatures, original BL2/BL31/GPT match and production board selector tested; physical board not tested in this session",
   "linux_flasher": {
@@ -62,5 +66,37 @@
     "fip1_then_fip0_readback": true,
     "full_boot_readback_matches_selected_image": true,
     "offline_original_4ge_and_2p5g_checks": true
+  },
+  "browser": {
+    "target": "physical 4ge device at 192.168.0.1",
+    "desktop_homepage_gzip_complete": true,
+    "mobile_viewport_width": 390,
+    "mobile_document_width": 390,
+    "static_conf_download_bytes": 262144,
+    "static_conf_browser_blob_sha256": "3b874d3ba46c638fc3094f8e92fb744ca974893873f8885f54e23760f9b6311b",
+    "static_conf_matches_original_backup": true,
+    "command_console_version": true,
+    "environment_write_read_and_cleanup": true,
+    "universal_update_through_page": true,
+    "beta_system_install_through_page": true,
+    "reinstall_selected_slot": 1,
+    "reboot_button": true,
+    "ram_boot": {
+      "uploaded_fit_booted": true,
+      "kernel_root": "ubi_r1",
+      "version": "0.8.0-beta",
+      "slot": 1
+    },
+    "destructive_operations": "Full restore, MTD faults and system installation run production code with modeled I/O; NAND scrub / full erase not executed on this unit",
+    "restore_start_and_cancel_without_erase": true,
+    "luci_platform_cache": {
+      "browser_cache_enabled": true,
+      "platform_text": "Realtek/RTL9617C\uff0844.3\u00b0C\uff09",
+      "resource_version": "26.280.51432~86d1549-1791376143-tyfza1-r2"
+    }
+  },
+  "release_ci": {
+    "run_url": "https://github.com/LeoooChen/U-Boot-TYFZA1/actions/runs/39115574584",
+    "result": "success"
   }
 }

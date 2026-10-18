@@ -12,6 +12,11 @@ on:
         description: Optional repository path to a custom OpenWrt config
         required: false
         default: ''
+      replace_release:
+        description: Rebuild and replace assets of an existing release
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -27,6 +32,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+      REPLACE_RELEASE: ${{ inputs.replace_release && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -47,8 +53,8 @@ jobs:
               exit 1
             fi
           fi
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::Release $RELEASE_TAG already exists. Use a new tag to preserve the published firmware."
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 && [ "$REPLACE_RELEASE" != true ]; then
+            echo "::error::Release $RELEASE_TAG already exists. Enable replace_release to rebuild this release, or choose a new tag."
             exit 1
           fi
       - name: Prepare release notes
@@ -119,14 +125,16 @@ jobs:
           retention-days: 14
       - name: Publish release
         run: |
-          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
-            --target "$(git rev-parse HEAD)" \
-            --title "$RELEASE_TAG" --draft \
-            --notes-file "$RUNNER_TEMP/release-notes.md"
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --target "$(git rev-parse HEAD)" \
+              --title "$RELEASE_TAG" --draft \
+              --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
           gh release upload "$RELEASE_TAG" artifacts/release/sysupgrade.bin \
             artifacts/release/tyfza1-telnet-install.tar.gz artifacts/release/SHA256SUMS \
             artifacts/release/COPYING artifacts/release/PonWRT-TYFZA1-source.tar.gz \
-            --repo "$GITHUB_REPOSITORY"
+            --repo "$GITHUB_REPOSITORY" --clobber
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false --latest \
             --title "$RELEASE_TAG" \
             --notes-file "$RUNNER_TEMP/release-notes.md"

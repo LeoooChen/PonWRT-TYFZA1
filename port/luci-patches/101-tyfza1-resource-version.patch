@@ -1,9 +1,10 @@
 --- a/modules/luci-base/ucode/template/header.ut
 +++ b/modules/luci-base/ucode/template/header.ut
-@@ -13,5 +13,6 @@
+@@ -13,5 +13,7 @@
  		media          : media,
  		resource       : resource,
-+		resource_version: '{# PKG_VERSION #}-{{ pkgs_update_time }}-tyfza1-r1',
++		base_url       : resource,
++		resource_version: '{# PKG_VERSION #}-' + pkgs_update_time + '-tyfza1-r2',
  		scriptname     : http.getenv("SCRIPT_NAME"),
  		pathinfo       : http.getenv("PATH_INFO"),
  		documentroot   : http.getenv("DOCUMENT_ROOT"),
