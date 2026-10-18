@@ -15,9 +15,11 @@ project = Path(__file__).resolve().parents[1]
 importer = project / 'port/packages/tyfza1-pon-control/files/factory.uc'
 service = project / 'port/overlay/target/linux/rtl9617c/base-files/etc/init.d/pon'
 shutil.copyfile(importer, runtime / 'factory.uc')
+shutil.copyfile(project / 'port/overlay/target/linux/rtl9617c/base-files/etc/uci-defaults/87-tyfza1-pon-mode',
+                runtime / 'pon-mode.sh')
 (runtime / 'pon-service.sh').write_text(service.read_text().replace(
     '/sys/bus/platform/devices/4f5500000.pon', '/device'))
-for directory in ('input', 'output', 'etc/config', 'var/run/tyfza1-factory', 'dev', 'tmp'):
+for directory in ('input', 'output', 'etc/config', 'var/run/tyfza1-factory', 'dev', 'tmp', 'device'):
     (runtime / directory).mkdir(parents=True, exist_ok=True)
 (runtime / 'dev/null').touch()
 (runtime / 'bin/cat').unlink(missing_ok=True)
@@ -33,6 +35,8 @@ def run(*command):
 def import_itu(case, epon):
     source = runtime / 'input'
     (source / 'config_hs.xml').write_text('<Config>'
+        '<Value Name="PON_MODE" Value="1"/><Value Name="PON_SPEED" Value="1"/>'
+        '<Value Name="PON_SUB_MODE" Value="0"/>'
         '<Value Name="GPON_SN" Value="TEST12345678"/>'
         '<Value Name="GPON_ONU_MODEL" Value="TYFZA1"/></Config>\n')
     (source / 'config.xml').write_text('<Config>' + epon +
@@ -46,6 +50,7 @@ def import_itu(case, epon):
     identity = destination / 'var/run/tyfza1-factory/pon_factory'
     text = identity.read_text()
     assert "serial_number 'TEST12345678'" in text and 'option onu_mac' not in text
+    assert "mode 'xgpon'" in text
     shutil.copyfile(identity, runtime / 'var/run/tyfza1-factory/pon_factory')
 
 
@@ -84,8 +89,14 @@ def start(mode='xgpon', custom=''):
     # Any attempted access to the unrelated EPON MAC endpoint must fail.
     if not custom:
         (device / 'onu_mac').mkdir()
-    (runtime / 'etc/config/pon').write_text("config pon 'pon'\n"
-        f"\toption enabled '1'\n\toption mode '{mode}'\n" + custom)
+    initial = (project / 'port/overlay/target/linux/rtl9617c/base-files/etc/config/pon').read_text()
+    if mode is not None:
+        initial += f"\toption mode '{mode}'\n"
+    (runtime / 'etc/config/pon').write_text(initial + custom)
+    result = run('/bin/sh', '/pon-mode.sh')
+    assert result.returncode == 0, result
+    expected = mode or 'xgpon'
+    assert run('/sbin/uci', 'get', 'pon.pon.mode').stdout.strip() == expected
     (runtime / 'tmp/pon-log').write_text('')
     return run('/bin/sh', '-c', launcher)
 
@@ -96,6 +107,8 @@ for case, epon in (
                       '<Value Name="macAddr" Value="000000000000"/></chain>'),
 ):
     import_itu(case, epon)
+    result = start(None)
+    assert result.returncode == 0 and (runtime / 'device/serdes').read_text() == 'xgpon\n', result
     for mode in ('gpon', 'xgpon', 'xgspon'):
         result = start(mode)
         assert result.returncode == 0, (case, mode, result.stderr)
@@ -103,7 +116,7 @@ for case, epon in (
         identity = (runtime / 'device' / attribute).read_bytes()
         assert identity == b'TEST\x12\x34\x56\x78' + b'test-pass'.ljust(length, b'\0')
         assert (runtime / 'device/activation').read_text() == '1\n'
-    print(case + ': original ITU identity reaches GPON/XG-PON/XGS-PON activation')
+    print(case + ': reset installation selects factory XG-PON; explicit GPON/XG-PON/XGS-PON modes reach activation')
 
 # A configured Ethernet MAC remains applied on ITU links.
 result = start(custom="\toption onu_mac '02:11:22:33:44:55'\n")

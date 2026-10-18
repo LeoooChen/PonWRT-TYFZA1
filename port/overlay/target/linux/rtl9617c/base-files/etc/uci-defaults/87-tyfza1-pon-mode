@@ -1,0 +1,6 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+# Initialize reset installations from this unit's OEM protocol; keep user choices.
+[ -z "$(uci -q get pon.pon.mode)" ] || exit 0
+mode=$(uci -c /var/run/tyfza1-factory get pon_factory.pon.mode) || exit 1
+uci set "pon.pon.mode=$mode" && uci commit pon

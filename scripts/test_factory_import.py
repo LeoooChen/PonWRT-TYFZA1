@@ -16,7 +16,7 @@ shutil.copy2(project / 'port/packages/tyfza1-pon-control/files/factory.uc', runt
 source = runtime / 'input'
 source.mkdir(exist_ok=True)
 fields = {'ELAN_MAC_ADDR': '0011223344ff', 'WLAN_MAC_ADDR': '00e04c000001', 'GPON_SN': 'TEST12345678',
-          'PON_VENDOR_ID': 'TEST', 'EPON_ONU_MODEL': 'TYFZA1'}
+          'PON_VENDOR_ID': 'TEST', 'EPON_ONU_MODEL': 'TYFZA1', 'PON_MODE': '2', 'PON_SPEED': '1'}
 for band in ('2G_CCK', '2G_OFDM', '5GL', '5GM', '5GH'):
     fields['HW_RX_GAINGAP_' + band + '_AB'] = '3'
 for radio in (0, 1):
@@ -64,6 +64,15 @@ assert expected[0] != expected[1]  # Each radio retains its own thermal/crystal 
 assert expected[0][66:72] == bytes.fromhex('001122334501')
 assert expected[1][66:72] == bytes.fromhex('001122334500')
 assert (destination / 'tmp/tyfza1-factory/lan_mac').read_text() == '00:11:22:33:44:ff\n'
+for family, speed, mode in (('1', '0', 'gpon'), ('1', '1', 'xgpon'),
+                            ('1', '2', 'xgspon'), ('2', '0', 'epon'),
+                            ('2', '1', 'epon-d10g'), ('2', '2', 'epon-bi10g')):
+    values = dict(fields, PON_MODE=family, PON_SPEED=speed, PON_SUB_MODE='0')
+    result, data, imported = invoke('factory.uc', 'mode-' + mode, values, valid_bosa)
+    assert result.returncode == 0 and data == expected, result.stderr
+    assert f"option mode '{mode}'" in (imported / 'var/run/tyfza1-factory/pon_factory').read_text()
+print('Factory protocol: all six OEM family/speed mappings imported')
+
 for case, bosa, identity in (('short-bosa', b'bad', True), ('extended-bosa', valid_bosa + b'original suffix', True),
                              ('missing-bosa', None, True), ('missing-pon-config', valid_bosa, False)):
     result, data, destination = invoke('factory.uc', case, fields, bosa, identity)
@@ -101,6 +110,9 @@ importer.parent.mkdir(parents=True, exist_ok=True)
 shutil.copy2(project / 'port/packages/tyfza1-pon-control/files/factory.uc', importer)
 importer.chmod(0o755)
 (runtime / 'sys/class/ubi/ubi0').mkdir(parents=True, exist_ok=True)
+pon_mac = runtime / 'sys/bus/platform/devices/4f5500000.pon/data_mac'
+pon_mac.parent.mkdir(parents=True, exist_ok=True)
+pon_mac.write_text('00:00:00:00:00:00\n')
 for port in range(1, 6):
     (runtime / f'sys/class/net/lan{port}').mkdir(parents=True, exist_ok=True)
 (runtime / 'dev').mkdir(exist_ok=True)
@@ -124,6 +136,7 @@ def boot(mount_ok):
 
 result = boot(True)
 assert result.returncode == 0, (result.stdout, result.stderr)
+assert pon_mac.read_text() == '00:11:22:33:44:ff\n'
 assert (runtime / 'tmp/factory-lan-mac.log').read_text().splitlines() == [
     f'link set dev lan{port} address 00:11:22:33:44:ff' for port in range(1, 6)]
 for calibration, data in zip(calibrations, [valid_bosa] + expected):
@@ -132,6 +145,7 @@ for calibration, data in zip(calibrations, [valid_bosa] + expected):
     assert (runtime / 'tmp/tyfza1-factory' / calibration).read_bytes() == data
 result = boot(False)
 assert result.returncode == 5, (result.stdout, result.stderr)
+assert not (runtime / 'var/run/tyfza1-factory/pon_factory').exists()
 for calibration in calibrations:
     result = subprocess.run(['sudo', '-n', 'chroot', f'--userspec={os.getuid()}:{os.getgid()}',
         str(runtime), '/bin/cat', '/lib/firmware/realtek/' + calibration], capture_output=True)

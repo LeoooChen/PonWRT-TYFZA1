@@ -429,6 +429,31 @@ static ssize_t onu_mac_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_RW(onu_mac);
 
+static ssize_t data_mac_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%pM\n", pon->data_mac);
+}
+
+static ssize_t data_mac_store(struct device *dev, struct device_attribute *attr,
+			     const char *buf, size_t count)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+	u8 mac[ETH_ALEN];
+
+	if (!mac_pton(buf, mac) || !is_valid_ether_addr(mac))
+		return -EINVAL;
+	mutex_lock(&pon->control_lock);
+	rtnl_lock();
+	ether_addr_copy(pon->data_mac, mac);
+	rtl_pon_data_address(pon);
+	rtnl_unlock();
+	mutex_unlock(&pon->control_lock);
+	return count;
+}
+static DEVICE_ATTR_RW(data_mac);
+
 static ssize_t llid_count_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
@@ -885,6 +910,7 @@ static struct attribute *rtl9617c_pon_attrs[] = {
 	&dev_attr_activation.attr,
 	&dev_attr_fec.attr,
 	&dev_attr_onu_mac.attr,
+	&dev_attr_data_mac.attr,
 	&dev_attr_llid_count.attr,
 	&dev_attr_mpcp.attr,
 	&dev_attr_llid_table.attr,

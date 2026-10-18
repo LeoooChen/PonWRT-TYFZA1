@@ -92,6 +92,23 @@ const identity = {
 	software_version: optional_field(cs, 'OMCI_SW_VER1')
 };
 try {
+	// Original modutils.sh maps MIB family/speed to the six supported protocols.
+	const family = field(hs, 'PON_MODE');
+	const speed = field(hs, 'PON_SPEED');
+	if (family == '1' && field(hs, 'PON_SUB_MODE') != '0')
+		die('Unsupported factory ITU sub-mode');
+	const modes = {
+		'1:0': 'gpon', '1:1': 'xgpon', '1:2': 'xgspon',
+		'2:0': 'epon', '2:1': 'epon-d10g', '2:2': 'epon-bi10g'
+	};
+	const mode = modes[family + ':' + speed];
+	if (mode == null) die('Unsupported factory PON mode/speed: ' + family + '/' + speed);
+	identity.mode = mode;
+} catch (e) {
+	warn('Factory PON mode: ' + e.message + '\n');
+	failed = true;
+}
+try {
 	identity.serial_number = field(hs, 'GPON_SN');
 } catch (e) {
 	warn('Factory ITU identity: ' + e.message + '\n');

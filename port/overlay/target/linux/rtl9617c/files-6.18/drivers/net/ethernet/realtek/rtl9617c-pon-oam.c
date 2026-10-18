@@ -258,7 +258,7 @@ static void rtl_port_address(struct net_device *dev, const u8 *base, unsigned in
 	u8 mac[ETH_ALEN];
 
 	ether_addr_copy(mac, base);
-	mac[5] += index;
+	eth_addr_add(mac, index);
 	netdev_lock(dev);
 	eth_hw_addr_set(dev, mac);
 	dev->addr_assign_type = NET_ADDR_SET;
@@ -276,9 +276,20 @@ void rtl_pon_oam_address(struct rtl9617c_pon *pon)
 		struct net_device *dev = rtnl_dereference(pon->oam_devices[i]);
 		if (dev)
 			rtl_port_address(dev, pon->onu_mac, i);
-		dev = rtnl_dereference(pon->data_devices[i]);
+	}
+}
+
+void rtl_pon_data_address(struct rtl9617c_pon *pon)
+{
+	unsigned int i;
+
+	ASSERT_RTNL();
+	lockdep_assert_held(&pon->control_lock);
+	for (i = 0; i < 32; i++) {
+		struct net_device *dev = rtnl_dereference(pon->data_devices[i]);
+
 		if (dev && !((struct rtl_oam_port *)netdev_priv(dev))->mac_configured)
-			rtl_port_address(dev, pon->onu_mac, i);
+			rtl_port_address(dev, pon->data_mac, i);
 	}
 }
 
@@ -286,6 +297,7 @@ static struct net_device *rtl_oam_allocate(struct rtl9617c_pon *pon, unsigned in
 {
 	struct net_device *dev = alloc_etherdev(sizeof(struct rtl_oam_port));
 	struct rtl_oam_port *port;
+	const u8 *base = control ? pon->onu_mac : pon->data_mac;
 	u8 mac[ETH_ALEN];
 
 	if (!dev)
@@ -301,13 +313,12 @@ static struct net_device *rtl_oam_allocate(struct rtl9617c_pon *pon, unsigned in
 	dev->max_mtu = ETH_DATA_LEN;
 	if (control)
 		dev->flags |= IFF_NOARP;
-	if (is_valid_ether_addr(pon->onu_mac)) {
-		ether_addr_copy(mac, pon->onu_mac);
-		mac[5] += index;
-		eth_hw_addr_set(dev, mac);
-	} else {
-		eth_hw_addr_random(dev);
-	}
+	/* Factory identity is supplied before netifd. Until then the zero
+	 * address keeps the interface down instead of publishing a random MAC. */
+	ether_addr_copy(mac, base);
+	if (is_valid_ether_addr(base))
+		eth_addr_add(mac, index);
+	eth_hw_addr_set(dev, mac);
 	netif_carrier_off(dev);
 	if(!control && rtl9617c_ni_fe_add_port(pon->ni_dev,dev,index)) {
 		free_netdev(dev);

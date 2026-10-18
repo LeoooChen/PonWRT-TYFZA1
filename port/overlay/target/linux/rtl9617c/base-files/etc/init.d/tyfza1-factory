@@ -9,7 +9,7 @@ start() {
 	local device calibration address
 
 	# Invalidate the previous import before attempting to access the factory volume.
-	rm -rf "$runtime"
+	rm -rf "$runtime" /var/run/tyfza1-factory
 	for calibration in rtl9617c/bosa-calibration.bin \
 		tyfza1/rtl8852ce/flash-calibration.bin tyfza1/rtl8192xbe/flash-calibration.bin; do
 		mkdir -p "/lib/firmware/realtek/${calibration%/*}" || return $?
@@ -40,6 +40,12 @@ start() {
 			[ -e "$device" ] || continue
 			ip link set dev "${device##*/}" address "$address" || return $?
 		done
+	fi
+	# Ethernet identity is independent of EPON registration and PON enablement.
+	# Apply it before netifd creates WAN VLANs or starts DHCP/PPPoE.
+	device=/sys/bus/platform/devices/4f5500000.pon
+	if [ -d "$device" ]; then
+		cat "$runtime/lan_mac" > "$device/data_mac" || return $?
 	fi
 	return "$result"
 }

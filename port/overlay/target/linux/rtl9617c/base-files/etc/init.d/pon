@@ -42,7 +42,9 @@ configure_link() {
 	config_get_bool enabled pon enabled 1
 	printf 'enabled=%s error=0\n' "$enabled" > /var/run/pon-service
 	[ "$enabled" = 1 ] || return 0
-	config_get mode pon mode epon-d10g
+	pon_stage=mode
+	config_get mode pon mode
+	[ -n "$mode" ] || mode=$(uci -c /var/run/tyfza1-factory get pon_factory.pon.mode) || return $?
 	pon_stage=bosa
 	printf '1\n' > "$device/bosa" || return $?
 	pon_stage=serdes

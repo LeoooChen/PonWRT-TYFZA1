@@ -97,6 +97,7 @@ struct rtl9617c_pon {
 	bool mac_prepared;
 	int mac_error;
 	u8 onu_mac[6];
+	u8 data_mac[6];
 	unsigned int llid_count;
 	bool mpcp_configured;
 	bool mpcp_enabled;
@@ -253,6 +254,7 @@ void rtl_pon_oam_remove(struct rtl9617c_pon *pon);
 void rtl_pon_oam_carrier(struct rtl9617c_pon *pon);
 int rtl_pon_oam_resize(struct rtl9617c_pon *pon, unsigned int count);
 void rtl_pon_oam_address(struct rtl9617c_pon *pon);
+void rtl_pon_data_address(struct rtl9617c_pon *pon);
 
 /* Internal control steps: caller owns control_lock, never acquire it again. */
 int rtl_pon_stop_locked(struct rtl9617c_pon *pon);
