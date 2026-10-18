@@ -1153,6 +1153,31 @@ DMA/PE producer retirement and MiniOLT buffer retirement still require their
 actual original implementation or further hardware evidence before GEM reuse
 can be declared fully protected.
 
+### Shared DMA/AFT reset correction
+
+The original `ca_ni_dma_lso_reset` in `.text.unlikely` (`1ac64`) asserts
+DMA control bit8 and AFT control bit31 at DMA base offsets`000` and`f00`,
+then clears DMA reset and AFT reset in that order. Only afterward does it
+rebuild rings, reset pointers and initialize DMA-LSO. Executing the original
+function with those unrelated callees modeled confirms all four MMIO writes.
+The prior native start/stop code reset only the DMA control block, omitting
+the paired AFT reset despite reusing the descriptor/packet storage on startup.
+
+`rtl_dma_tx_reset` now performs both resets. Native start/stop first disables
+the selected VP and DMA submission; it preserves unrelated control bits,
+asserts DMA/AFT reset, keeps the existing10us reset interval, then clears
+DMA/AFT reset and reads back the AFT control register to complete posted IO.
+This corrects the existing shared-engine lifecycle. It does not reset the
+global DMA engine during an individual ONU replacement, and does not claim
+that NI/PE or the MiniOLT's separate buffers have been retired.
+
+`scripts/test_fttr_dma_reset.py` failed against the prior native stop code
+because the two AFT writes were absent. It now matches original execution
+for two nonzero control/configuration seeds after disabling submission
+(`dma-aft-reset-comparison.json`). The actual6.18 composite NI driver object
+also compiles/links. Hardware reset effects and end-to-end packet retirement
+remain unverified; this fix supplies the missing original reset sequence.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: import its own retained bitstream, load it before

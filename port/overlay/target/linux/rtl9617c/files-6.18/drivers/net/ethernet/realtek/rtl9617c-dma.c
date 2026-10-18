@@ -38,11 +38,26 @@
 #define SS_CTRL 0x900
 #define AXI_CONFIG 0xd80
 #define AFT_CTRL 0xf00
+#define AFT_RESET BIT(31)
 #define MEMORY_BYTES (RTL_DMA_COUNT * (sizeof(struct rtl_dma_descriptor) + RTL_DMA_BUFFER_SIZE))
 
 static void __iomem *rtl_dma_vp(struct rtl_dma_tx *tx)
 {
 	return tx->registers + VP_BASE + tx->vp * VP_STRIDE;
+}
+
+/* Stock ca_ni_dma_lso_reset resets both DMA and its AFT packet context.
+ * The shared engine owner has disabled descriptor submission first. */
+static void rtl_dma_tx_reset(struct rtl_dma_tx *tx)
+{
+	void __iomem *base = tx->registers;
+
+	writel(readl(base + CTRL) | CTRL_RESET, base + CTRL);
+	writel(readl(base + AFT_CTRL) | AFT_RESET, base + AFT_CTRL);
+	udelay(10);
+	writel(readl(base + CTRL) & ~CTRL_RESET, base + CTRL);
+	writel(readl(base + AFT_CTRL) & ~AFT_RESET, base + AFT_CTRL);
+	readl(base + AFT_CTRL);
 }
 
 int rtl_dma_tx_alloc(struct device *dev, struct rtl_dma_tx *tx)
@@ -65,10 +80,9 @@ int rtl_dma_tx_start(struct rtl_dma_tx *tx)
 	u32 value;
 	int ret;
 
-	writel(readl(base + CTRL) | CTRL_RESET, base + CTRL);
-	udelay(10);
-	writel(readl(base + CTRL) & ~(CTRL_RESET | CTRL_ENABLE), base + CTRL);
 	writel(0, vp + VP_ENABLE);
+	writel(readl(base + CTRL) & ~CTRL_ENABLE, base + CTRL);
+	rtl_dma_tx_reset(tx);
 	writel(0, vp + VP_IRQ_ENABLE);
 	writel(0, vp + VP_WRITE);
 	memset(tx->memory, 0, MEMORY_BYTES);
@@ -105,9 +119,7 @@ void rtl_dma_tx_stop(struct rtl_dma_tx *tx)
 
 	writel(0, rtl_dma_vp(tx) + VP_ENABLE);
 	writel(readl(base + CTRL) & ~CTRL_ENABLE, base + CTRL);
-	writel(readl(base + CTRL) | CTRL_RESET, base + CTRL);
-	udelay(10);
-	writel(readl(base + CTRL) & ~CTRL_RESET, base + CTRL);
+	rtl_dma_tx_reset(tx);
 }
 
 void rtl_dma_tx_free(struct device *dev, struct rtl_dma_tx *tx)
