@@ -23,7 +23,8 @@
 };
 
 &ni0 {
-	realtek,lan-phys = <&phy0 &phy1 &phy2 &phy3 &phy4>;
+	// Physical jacks use NI ports 0,1,2,4; internal port3 is unwired.
+	realtek,lan-phys = <&phy0 &phy1 &phy2 0 &phy4>;
 	phys = <&pcie_controls 5>;
 	phy-names = "sgmii";
 };

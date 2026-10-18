@@ -5,7 +5,7 @@
 
 case "$(board_name)" in
 	tianyi,tyfza1-2p5g)
-		lan_devs="lan5 lan3 lan2 lan1"
+		lan_devs="lan4 lan3 lan2 lan1"
 		usb_led=LED_USB1
 		;;
 	*)
@@ -53,7 +53,7 @@ for lan in $lan_devs; do
 	has_led "$led" && continue
 	uci -q get "system.$section" >/dev/null && continue
 	uci set "system.$section=led"
-	uci set "system.$section.name=LAN$port"
+	uci set "system.$section.name=LAN${lan#lan}"
 	uci set "system.$section.sysfs=$led"
 	uci set "system.$section.trigger=netdev"
 	uci set "system.$section.dev=$lan"

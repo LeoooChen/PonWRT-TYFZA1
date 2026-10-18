@@ -890,7 +890,7 @@ static int rtl_register_lan(struct rtl_xram *priv, struct device *parent,
 	}
 	priv->ports[port] = dev;
 	SET_NETDEV_DEV(dev, parent);
-	snprintf(dev->name, sizeof(dev->name), "lan%u", port + 1);
+	snprintf(dev->name, sizeof(dev->name), "lan%u", port == 4 ? 4 : port + 1);
 	lan = netdev_priv(dev);
 	lan->shared = priv;
 	lan->port = port;
@@ -925,7 +925,7 @@ static int rtl_register_lan(struct rtl_xram *priv, struct device *parent,
 		priv->phy_led.cdev.max_brightness = 2;
 		ret = tyfza1_led_register(parent, &priv->phy_led, NULL);
 		if (ret)
-			dev_warn(parent, "LAN5 LED initialization failed: %d\n", ret);
+			dev_warn(parent, "LAN4 2.5G LED initialization failed: %d\n", ret);
 		else
 			priv->phy_led_registered = true;
 	}
@@ -959,7 +959,7 @@ static void rtl_register_lans(struct rtl_xram *priv, struct device *parent)
 		ret = rtl_register_lan(priv, parent, port, phy);
 		if (ret)
 			dev_err(parent, "LAN%u initialization failed: %d; other ports retained\n",
-				port + 1, ret);
+				port == 4 ? 4 : port + 1, ret);
 	}
 }
 

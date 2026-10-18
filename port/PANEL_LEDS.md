@@ -10,7 +10,7 @@ FDT, including polarities. Both light buttons and the power/WPS aliases match.
 | Internet | 2 low | 71 low | Follows netifd `wan` up/down; not a reachability test |
 | PON | 9 low | 9 low | Original spec-2 registration/authentication policy |
 | LOS | 10 low | 10 low | Independent 120 ms loss-of-signal phases |
-| EPHY0 | 4 low / lan1 | 11 high / lan5 | Corrected board-specific carrier/activity binding |
+| EPHY0 | 4 low / lan1 | 11 high / lan4 | Corrected board-specific carrier/activity binding |
 | EPHY1 | 3 low / lan2 | 12 high / lan3 | Corrected board-specific carrier/activity binding |
 | EPHY2 | 1 low / lan3 | 3 low / lan2 | Corrected board-specific carrier/activity binding |
 | EPHY3 | 0 low / lan4 | 4 low / lan1 | Corrected board-specific carrier/activity binding |

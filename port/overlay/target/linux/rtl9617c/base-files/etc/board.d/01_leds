@@ -7,7 +7,7 @@ board_config_update
 case "$(board_name)" in
 	tianyi,tyfza1-2p5g)
 		# OEM EPHY0..3 follow hardware ports 4,2,1,0.
-		lan_devs="lan5 lan3 lan2 lan1"
+		lan_devs="lan4 lan3 lan2 lan1"
 		usb_led=LED_USB1
 		;;
 	*)
@@ -17,7 +17,7 @@ case "$(board_name)" in
 esac
 port=0
 for dev in $lan_devs; do
-	ucidef_set_led_netdev "lan$port" "LAN$((port + 1))" "LED_EPHY$port" "$dev"
+	ucidef_set_led_netdev "lan$port" "LAN${dev#lan}" "LED_EPHY$port" "$dev"
 	port=$((port + 1))
 done
 _ucidef_set_led_trigger "usb" "USB" "$usb_led" "tyfza1-usb"

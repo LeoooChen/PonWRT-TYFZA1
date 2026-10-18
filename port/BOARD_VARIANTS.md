@@ -7,7 +7,7 @@ FIT script, with this `get_gpio_val` strap mapping:
 
 | GPIO113:111 | Configuration | Hardware | Native DT |
 | --- | --- | --- | --- |
-| 000 | conf-0 | Four internal GbE PHYs plus RTL8221B 2.5G | rtl9617c-tyfza1-ubi-2p5g |
+| 000 | conf-0 | Three wired GbE PHYs plus RTL8221B 2.5G | rtl9617c-tyfza1-ubi-2p5g |
 | 001 | conf-1 | Four internal GbE PHYs | rtl9617c-tyfza1-ubi |
 
 The failing older loader has no `gpio` command. The captured 2.5G OEM
@@ -77,13 +77,13 @@ The revision-8 patch constants are immutable original register data; the
 native control flow is rewritten. Successful initialization matches all
 1093 OEM MDIO events (1075 writes) in the cold revision-8 case, and all 19
 events in the already-patched and revision9/10 cases. A force-link-down
-timeout now returns an error instead of the OEM's success result; its
-request is still released. See `port/RTL8221B.md`.
+ACK timeout follows the OEM success result after releasing the request;
+actual MDIO and release errors still fail only the affected port. See `port/RTL8221B.md`.
 
 Patch211 allocates private state for the legacy RTL8221B PHY entries before
 their generic config-init callback uses it. The LAN driver exposes standard ethtool
 link-settings/renegotiation and MII ioctls. PHY attach errors retain their actual
-errno, and a missing required PHY does not silently remove lan5. S3 speed errors
+errno, and a missing required PHY does not silently disable the affected port. S3 speed errors
 are reported and enter phylib's error state.
 
 ## Validation and limits
@@ -112,3 +112,15 @@ No physical supply-health claim follows from the register-sequence checks.
 The production image Makefile always passes both DTs to `make_ubi_fit.py`.
 `build_lan_ui.sh` passes both PCIe DTs to the RAM packager. Manual RAM builds
 can use `--dtb-2p5g`; single-DT diagnostic images remain available.
+
+## Physical LAN ports (2026-10-19 correction)
+
+Both enclosures have four Ethernet jacks and a separate gray FXS phone jack.
+The four-GbE board uses NI ports 0,1,2,3. The 2.5G board uses NI ports
+0,1,2,4; internal port3 is unwired. This matches the captured OEM
+`PORT_REMAPPING=04,02,01,00` and the user's physical inspection. The 2.5G
+DT leaves index3 of `realtek,lan-phys` empty, and NI hardware port4 is named
+`lan4`. From the rightmost LAN1 to the leftmost blue LAN4, native names are
+`lan1`, `lan2`, `lan3`, `lan4`; the all-GbE version has the same four names.
+Default network generation no longer depends on successful PHY probing.
+No lan5 configuration migration is installed.

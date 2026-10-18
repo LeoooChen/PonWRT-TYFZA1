@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='led-defaults-') as directory:
             .replace('/lib/functions.sh', str(functions)))
     for board, led in [('tianyi,tyfza1', 'LED_USB0'), ('tianyi,tyfza1-2p5g', 'LED_USB1')]:
         # Captured OEM PORT_REMAPPING=04,02,01,00 and EPHY0..3 -> eth0.2..5.
-        lans = ['lan5', 'lan3', 'lan2', 'lan1'] if board.endswith('-2p5g') else ['lan1', 'lan2', 'lan3', 'lan4']
+        lans = ['lan4', 'lan3', 'lan2', 'lan1'] if board.endswith('-2p5g') else ['lan1', 'lan2', 'lan3', 'lan4']
         system.write_text('board_name() { printf "%s\\n" ' + shlex.quote(board) + '; }\n')
         board_file = work / 'board.json'
         board_file.write_text(json.dumps({'model': {'id': board}}))

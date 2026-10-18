@@ -69,7 +69,7 @@ static void *netdev_priv(struct net_device *d){return &d->lan;}
 static void rtl_adjust_link(struct net_device *d){}
 static struct device_node *of_parse_phandle(struct device_node *n,const char *s,unsigned int i){
  unsigned int p=!strcmp(s,"phy-handle")?0:i;
- if(p>=(unsigned int)board_ports)return NULL;
+ if(p>=(unsigned int)board_ports || (board_ports==5 && p==3))return NULL;
  current_port=p;node_refs++;return &nodes[p];
 }
 static void of_node_put(struct device_node *n){assert(node_refs);node_refs--;}
@@ -137,6 +137,7 @@ int main(void){
   for(int p=0;p<5;p++)nodes[p].port=p;
   rtl_register_lans(&priv,&parent);
   unsigned int expected=(1U<<board_ports)-1;
+  if(board_ports==5)expected&=~BIT(3);
   if(stage>=1 && stage<=3 && board_ports==5)expected&=~BIT(4);
   if(stage>=4 && stage<=8 && !(stage==4 && fail_port==0))expected&=~BIT(fail_port);
   assert(active==expected && priv.registered_ports==expected && fe_ports==expected);
@@ -144,7 +145,11 @@ int main(void){
   for(int p=0;p<board_ports;p++){
    assert(!!priv.ports[p]==!!(expected&BIT(p)));
    assert(priv.qm.lan[p]==priv.ports[p]);
-   if(priv.ports[p])assert(priv.ports[p]->dev_addr[5]==3+p);
+   if(priv.ports[p]){
+    char name[16];snprintf(name,sizeof(name),"lan%u",p==4?4:p+1);
+    assert(!strcmp(priv.ports[p]->name,name));
+    assert(priv.ports[p]->dev_addr[5]==3+p);
+   }
   }
   if(board_ports==5 && !(expected&BIT(4)))assert(!power && !actions);
   if(stage==9)assert(!priv.phy_led_registered);
