@@ -32,8 +32,6 @@ PonWRT-TYFZA1 是面向天翼 TYFZA1 光猫的 OpenWrt 适配项目。设备采�
 
 前往 **[Releases](https://github.com/LeoooChen/PonWRT-TYFZA1/releases)** 下载适用于原生 U-Boot 的固件，版本变化见 [更新日志](RELEASE_NOTES.md)。
 
-**0.8.0-beta 当前暂停提供下载。**
-
 | 文件 | 用途 |
 | --- | --- |
 | `sysupgrade.bin` | 原生 U-Boot 首次安装 / OpenWrt 升级 |
