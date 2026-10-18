@@ -346,9 +346,40 @@ It does not use the names of the original libraries as a capability probe.
   they cannot appear as a current configured result in inventory-only mode.
   These are runtime records in `/var/run`, not a durable write-ahead recovery
   log. The controller does not yet replay prior ownership after a crash or
-  power loss. It also does not yet monitor MIB data-sync/reset events: a
-  same-serial reboot whose registration transition is missed by polling needs
-  reconciliation work. Those cases are not reported as verified recovery.
+  power loss.
+* Native MIB Data Sync monitoring and reconciliation. After the service graph
+  is verified, the controller reads class2/instance0/mask`8000` before reporting
+  `configured`, then samples it every two seconds while that ONU is idle.
+  The observed remote value supplies the baseline; local operation counts are
+  not used to predict it. Original ONU helper `11f68` increments the three-byte
+  ONU Data row and wraps255 to1. The reset path `103a0 -> eaa0` installs the
+  original zero default through `eb04..eb30`. Both paths are exercised with
+  only MIB storage/access modeled. The original Get builder and ONU Get worker
+  confirm the one-byte attribute's actual request/reply format.
+  A changed value invalidates the selected configuration, clears/reads back
+  its local data grant, archives the prior record and starts a fresh MIB scan
+  and policy selection for that same registered serial. It sends no MIB Reset
+  and does not alter the remote Data Sync value. Counter changes are evidence
+  for reconciliation, not a claim that every change is a reboot.
+  An existing configuration can have a zero baseline. When zero remains zero,
+  the controller reads back the selected GEM CTP's complete fourteen-byte
+  attribute group. Matching actual data keeps it configured; an absent or
+  changed CTP triggers reconciliation. This detects MIB loss even when both
+  serial/registration and the zero sync value stay unchanged, while avoiding
+  repeated full scans of an intact zero baseline.
+  Failed probes clear the current configuration/verification flags, withdraw
+  only that ONU's selected local grant and retain the first failing exchange.
+  Subsequent read-only probes wait for an actual valid reply before resuming
+  inventory. If that inventory itself fails, probing/reconciliation continues
+  without claiming success; the failed MIB reply is retained in `.failed`.
+  The same readiness probe also resumes an initially failed inventory when an
+  explicit service policy requests that registered serial.
+  Before a new service job exists, probe records use private atomic `.sync`
+  and `.sync-old` files. An explicit configuration rejection remains a failed
+  service. Unrelated ONU jobs continue throughout. A probe never interleaves
+  with that same ONU's MIB/service table transactions. Shared IO failures stop
+  the controller as before. These checks verify management configuration;
+  they do not verify data forwarding or replay ownership after a process crash.
 
 ## Validation
 
@@ -597,6 +628,24 @@ package prepare/compile/install passes in `package-root-autoprovision/`
 (`package-stage-autoprovision.log`), including the policy conffile and procd
 argument. No full firmware build or full test suite is used here.
 
+The same focused controller check now executes original ONU sync increment
+`11f68`, the ONU Data reset block `eb04..eb30`, and the actual
+`mib_OntData.so` default initializer. It checks0/1/254/255 transitions and
+zero reset. Sync responses run through the original normalizer, Get worker,
+response builder and CRC serializer. With hardware registration and serial
+bytes held unchanged, a peer MIB reset selects newly reported UNI/T-CONT/queue
+instances and reconfigures the service. A forced failed reconciliation reply
+retains its actual body/error and resumes only after a new valid sync reply.
+An intact adopted zero baseline stays configured without repeated scans;
+subsequent zero-to-zero MIB loss is detected by the actual missing CTP. Probe
+timeout withdraws only the affected grant, retains its three-attempt failure,
+and resumes from fresh inventory when replies return, reusing intact remote
+MEs. Initial inventory failure for a requested service is also exercised.
+The other ONU is neither stopped nor rescanned. Results are in
+`autoprovision-sync-comparison.json`. Actual musl package prepare/compile/
+install passes in `package-root-sync/` (`package-stage-sync.log`). No optical
+traffic or full firmware/test build is exercised.
+
 The executable links with the project's actual OpenWrt GCC 14.4.0/musl
 toolchain as `artifacts/fttr/fttrctl-musl`. The optional userspace and kernel
 package definitions parse successfully with the pinned OpenWrt make includes.
@@ -730,8 +779,15 @@ The resident controller holds this lease while running; inspect its completed
 `onu-<ID>.mib` files and `status.json` during normal service. Raw attribute words
 and hardware-registration flags are distinct from its MIB state. Failed scans
 leave `.failed` diagnostics and are retried only after an actual registration/
-serial transition or an explicit service restart. `status.json` also reports
+serial transition or an explicit service restart when no service policy
+requests the peer. For a requested service, failed inventory waits for a valid
+read-only readiness reply before another scan. `status.json` also reports
 the loaded policy count and each peer's service configuration/cleanup status.
+For configured services it also reports the last observed MIB sync baseline,
+value, error, verification time and reconciliation count. `sync` is the
+initial verification phase before `configured`. Runtime object/table records
+retain their last observations; a failed sync/current configuration flag
+does not assert those remote objects still exist.
 No operational data-forwarding claim follows from MIB or configuration status.
 
 `get` accepts decimal or `0x` hexadecimal class/instance/mask values (the
@@ -891,8 +947,9 @@ the failures/unconfirmed resources and stops further dependency deletion.
    orchestration and local DBA readback/restoration are implemented. Resident
    provisioning from explicit policies and asynchronous per-ONU dispatch are
    implemented, with runtime journals and observed disconnect/replacement
-   handling. Durable ownership recovery, MIB-reset detection/reconciliation,
-   default policy import and multiple services per ONU remain work.
+   handling. MIB sync monitoring now also detects/reconciles same-serial MIB
+   loss without an observed registration transition. Durable ownership
+   recovery, default policy import and multiple services per ONU remain work.
    Current upstream ONU OMCI is a different role.
 5. Original subordinate gateway configuration, Wi-Fi synchronization,
    multicast, reboot/upgrade and roaming coordination, using the connected
