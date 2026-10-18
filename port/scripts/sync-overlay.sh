@@ -36,9 +36,18 @@ elif [ ! -s "$TREE/.config" ]; then
     cp "$PORT/configs/tyfza1-boot.config" "$TREE/.config"
 fi
 VERSION=$(cat "$PORT/../VERSION")
-REPOSITORY=${TYFZA1_APK_REPOSITORY:-https://github.com/${GITHUB_REPOSITORY:-LeoooChen/PonWRT-TYFZA1}/releases/download/${RELEASE_TAG:-v$VERSION}}
 # Keep package choices, but always identify firmware by the project version.
 sed -i '/^CONFIG_VERSIONOPT=/d; /^# CONFIG_VERSIONOPT is not set$/d; /^CONFIG_VERSION_NUMBER=/d; /^CONFIG_VERSION_REPO=/d; /^CONFIG_SIGNED_PACKAGES=/d; /^# CONFIG_SIGNED_PACKAGES is not set$/d; /^CONFIG_SIGN_EACH_PACKAGE=/d; /^# CONFIG_SIGN_EACH_PACKAGE is not set$/d' "$TREE/.config"
 printf 'CONFIG_VERSIONOPT=y\nCONFIG_VERSION_NUMBER="%s"\n' "$VERSION" >> "$TREE/.config"
-printf 'CONFIG_VERSION_REPO="%s"\nCONFIG_SIGNED_PACKAGES=y\nCONFIG_SIGN_EACH_PACKAGE=y\n' "$REPOSITORY" >> "$TREE/.config"
+printf 'CONFIG_VERSION_REPO="https://downloads.openwrt.org/snapshots"\nCONFIG_SIGNED_PACKAGES=y\nCONFIG_SIGN_EACH_PACKAGE=y\n' >> "$TREE/.config"
+# Keep the common plugin dependencies in existing and custom build configs.
+while IFS= read -r setting; do
+    case "$setting" in
+        CONFIG_PACKAGE_*=y)
+            option=${setting%%=*}
+            sed -i "/^$option=/d; /^# $option is not set$/d" "$TREE/.config"
+            printf '%s\n' "$setting" >> "$TREE/.config"
+            ;;
+    esac
+done < "$PORT/configs/tyfza1-compat.config"
 echo "Applied RTL9617C overlay to $TREE at $PIN"

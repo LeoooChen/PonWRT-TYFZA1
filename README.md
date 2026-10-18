@@ -20,15 +20,13 @@
 
 ## 关于项目
 
-PonWRT-TYFZA1 是面向天翼 TYFZA1 光猫的 OpenWrt 适配项目。设备采用 Realtek RTL9617CVW 四核 Cortex-A55，固件基于 Linux 6.18.55。
+PonWRT-TYFZA1 是面向天翼 TYFZA1 光猫的 OpenWrt 适配项目。设备采用 Realtek RTL9617C 四核 Cortex-A55，固件基于 Linux 6.18.55。
 
-- **PON 适配**：支持 10G-EPON、XG-PON（EPON、GPON 待测试），提供线路认证和状态管理。
+- **PON 适配**：10G-EPON、XG-PON 线路认证、业务配置和状态管理。
 - **双频无线**：2.4 GHz / 5 GHz、WPA2、Wi-Fi 6 和 160 MHz。
 - **硬件加速**：有线与 Wi-Fi 双向硬件转发，可在 LuCI 中启用流量卸载。
 - **原生体验**：使用 LuCI 管理上网、无线和防火墙，通过 sysupgrade 升级。
 - **原厂数据保留**：启动时自动读取本机身份、光学校准和无线校准，安装时保留另一槽原厂系统及配置卷。
-
-目前已实测非对称 10G-EPON 注册、认证与 DHCP 上网，以及双频 Wi-Fi 和双向硬件路径。当前重点是 XG-PON 运营商互通、PPPoE/桥接及持续高负载优化。
 
 ## 下载固件
 
@@ -51,8 +49,6 @@ telnet 192.168.1.1
 ```
 
 原厂 Telnet 默认用户名和密码均为 `telnetadmin`。登录后执行 `su`，再次输入密码 `telnetadmin`，取得 root 权限。若已修改原厂地址或密码，使用实际配置。
-
-刷写期间保持供电，首次安装前先完成下面的原厂备份。
 
 ### 2. 备份原厂分区
 
@@ -137,9 +133,7 @@ telnet 192.168.1.1
 
 </details>
 
-出现“备份完成”且目录中有 `BACKUP_COMPLETE` 即表示导出、长度检查和 MD5 校验已通过。`.bin` 保存 ECC 校正后的分区数据及 UBI 卷，`.raw` 保存 NAND 主数据和 OOB。备份包含本机账号、身份和校准信息，请妥善保管。
-
-此方法备份系统暴露的全部分区。如需备份整片 NAND（包括未分区区域），请通过串口进入 U-Boot 后读取。
+完成后，备份目录中会生成 `BACKUP_COMPLETE` 和 `MD5SUMS`。`.bin` 保存 ECC 校正后的分区数据及 UBI 卷，`.raw` 保存 NAND 主数据和 OOB，XML 文件保存原厂配置。
 
 ### 3. 安装固件
 
@@ -201,7 +195,7 @@ python3 -m http.server 8888
 sysupgrade /tmp/sysupgrade.bin
 ```
 
-默认保留配置；使用 `sysupgrade -n /tmp/sysupgrade.bin` 升级时不保留现有配置。
+默认保留配置。清空配置升级使用 `sysupgrade -n /tmp/sysupgrade.bin`。
 
 <details>
 <summary><strong>切回保留的原厂系统</strong></summary>
@@ -224,51 +218,53 @@ SSH 登录 OpenWrt 后执行以下命令。它会根据当前系统槽选择另�
 )
 ```
 
-确认没有报错后，重启光猫。
+命令执行成功后，重启光猫。
 
 </details>
 
 ## 开始使用
 
-首次进入管理页面后，先设置管理员密码。首次安装或不保留配置升级时，线路协议按本机原厂配置初始化；保留配置升级沿用用户选择。
+首次进入管理页面后，设置管理员密码。首次安装和清空配置升级时，线路协议从原厂配置初始化；保留配置升级沿用已有设置。
 
 | 入口 | 配置内容 |
 | --- | --- |
 | **网络 → PON 管理** | 按线路选择 PON 模式，填写运营商要求的认证参数；MAC、SN 等身份项留空时使用本机原厂值 |
 | **网络 → 接口 → WAN** | 设置 DHCP 或 PPPoE、上网 VLAN 和 IPv6；默认业务设备为 `pon0`，VLAN 子设备为 `pon0.VID` |
-| **网络 → 无线** | 设置 SSID、密码并启用无线；使用 160 MHz 时等待 DFS/CAC 完成 |
+| **网络 → 无线** | 设置 SSID、密码、信道和带宽，启用无线 |
 | **网络 → 防火墙** | 配置软件流量卸载和硬件流量卸载 |
 
-5GHz 主信道36搭配160MHz会覆盖36–64，其中52–64需要 DFS；在中国监管域下首次启用通常需完成60秒 CAC，期间不广播 SSID，随后才启用 AP。主信道36搭配80MHz不覆盖这些 DFS 子信道，无需这段 CAC。可在系统日志查看 `DFS-CAC-START`、`DFS-CAC-COMPLETED` 和 `AP-ENABLED`；若 CAC 失败或出现 `country radar update failed`，应按错误排查，不能只继续等待。
+使用 DFS 信道时，无线会先完成 CAC 检测，再开始广播 SSID。系统日志中的 `DFS-CAC-START`、`DFS-CAC-COMPLETED` 和 `AP-ENABLED` 分别对应检测开始、检测完成和 AP 启用。
 
-物理网口为 `lan1`–`lan5`（`lan5` 为 2.5G 网口），PON 业务口为 `pon0`。
-PON 业务 MAC 在启动网络服务前从本机原厂 `ELAN_MAC_ADDR` 加载，不依赖 PON 模式或注册状态；自定义业务 MAC 在网络接口中设置。PON 管理中的 ONU MAC 用于 EPON 注册与 OAM，不覆盖业务 MAC。
+有线接口使用 `lan1`、`lan2` 等命名，PON 业务接口为 `pon0`。
+业务 MAC 在启动时从原厂 `ELAN_MAC_ADDR` 读取，自定义值在网络接口中设置。PON 管理中的 ONU MAC 用于 EPON 注册与 OAM。
 保留配置升级会自动迁移原有网络、防火墙、LED 和 SQM 配置中的设备引用，包括 VLAN 子设备。
 
 ## 软件源
 
-包含软件源修复的新固件使用同一 Release 下的签名 APK 仓库，包含本次构建生成的用户态包和 `rtl9617c` 内核包。可在 LuCI 软件包页或通过 `apk update`、`apk add <包名>` 安装仓库中已有的软件包。软件源公钥随固件内置，无需关闭签名校验。
+固件配置了 OpenWrt 官方 snapshot 软件源、公钥和 HTTPS CA 证书。可在 LuCI 软件包页面安装软件，或在终端执行：
 
-已发布的 `v0.7.0-alpha` 镜像仍使用失效的官方快照地址，需要升级到包含修复的新版本。各版本仓库与固件配套保留，工作流不覆盖已有 Release。需要增加可安装的包时，在构建配置中选择 `CONFIG_PACKAGE_<包名>=m`，即可发布到仓库而不预装进固件。
+```sh
+apk update
+apk add htop nano iperf3
+```
+
+常用插件所需的内核模块和运行库随固件预装，涵盖 VPN、SQM、代理、多 WAN 和流量统计。具体项目见[预装依赖清单](port/configs/tyfza1-compat.config)，软件包架构和安装验证见[兼容说明](port/APK_COMPATIBILITY.md)。
 
 ## 自行编译
 
 ### GitHub Actions
 
 1. **Fork** 本仓库，在 **Actions** 中启用工作流。
-2. 打开 **Build TYFZA1 firmware → Run workflow**，填写新的 `release_tag`，例如 `v0.4.1-custom`。
+2. 打开 **Build TYFZA1 firmware → Run workflow**，填写 `release_tag`，例如 `v0.8.0-beta`。
 3. 如需自定义软件包，将配置文件提交到仓库，并在 `config_file` 中填写路径。
 4. 构建完成后，从 **Releases** 或本次运行的 **Artifacts → firmware-and-build-log** 下载固件。
 
-工作流自动获取编译依赖、公共运行时文件和 FIT 签名配置，无需额外设置 Secrets。
-APK 源地址自动使用当前仓库和 `release_tag`，Fork 无需修改源地址。Release 同时上传 `packages.adb`、各个 `.apk` 和 `public-key.pem`。
+工作流自动下载编译依赖和运行时文件，并准备 FIT 签名材料。
 
 <details>
 <summary><strong>本地开发与构建</strong></summary>
 
-使用 Linux 构建环境，安装 LLVM/Clang 18、Rust 1.96.1 及 `aarch64-unknown-linux-musl` 目标。完整依赖和公共构建输入的获取方式见 [构建工作流](.github/workflows/build-release.yml)。
-
-准备好运行时文件与签名目录后，在仓库根目录执行：
+使用 Linux 构建环境，安装 LLVM/Clang 18、Rust 1.96.1 及 `aarch64-unknown-linux-musl` 目标。按[构建工作流](.github/workflows/build-release.yml)中的步骤准备运行时文件和 FIT 签名目录，然后在仓库根目录执行：
 
 ```sh
 sh port/scripts/prepare.sh sources/openwrt
@@ -280,7 +276,7 @@ sh scripts/package_release.sh sources/openwrt artifacts/release
 
 自定义软件包可先运行 `sh port/scripts/sync-overlay.sh sources/openwrt` 和 `sh scripts/prepare_luci_feeds.sh sources/openwrt`，再进入 `sources/openwrt` 执行 `make menuconfig`。后续构建保留 `.config`，也可通过 `TYFZA1_CONFIG` 指定配置文件。
 
-本地构建可用 `TYFZA1_APK_REPOSITORY` 指定自己的仓库根 URL；发布时将 `artifacts/release/apk/` 内的文件放到该 URL 下。签名私钥由 OpenWrt 保存在构建目录的 `private-key.pem`，不属于发布文件；公钥由 `base-files` 自动写入固件的 `/etc/apk/keys/`。
+常用插件的预装依赖配置位于 `port/configs/tyfza1-compat.config`，同步脚本会将其合并入构建配置。
 
 固件沿用原厂 UBI 布局：内核上限 6 MiB，rootfs 上限约 32.09 MiB，可写数据卷 16 MiB。构建脚本自动检查镜像大小。
 
@@ -290,7 +286,7 @@ sh scripts/package_release.sh sources/openwrt artifacts/release
 
 欢迎通过 [Issues](https://github.com/LeoooChen/PonWRT-TYFZA1/issues) 反馈问题、通过 [Pull Requests](https://github.com/LeoooChen/PonWRT-TYFZA1/pulls) 提交改进，也欢迎在 [恩山交流帖](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8493081&page=1) 分享线路测试结果。
 
-反馈时请附固件版本、PON 模式、问题现象和相关日志，分享前隐去宽带账号、LOID、SN 等个人信息。
+提交问题时，请提供固件版本、PON 模式、复现步骤和脱敏后的日志。
 
 ## 致谢与许可
 

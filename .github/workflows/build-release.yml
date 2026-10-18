@@ -36,7 +36,7 @@ jobs:
         run: |
           case "$RELEASE_TAG" in
             v*) ;;
-            *) echo "::error::Release tag must start with v (for example, v0.6.0-alpha)."; exit 1 ;;
+            *) echo "::error::Release tag must start with v (for example, v0.8.0-beta)."; exit 1 ;;
           esac
           git check-ref-format "refs/tags/$RELEASE_TAG"
           if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
@@ -48,7 +48,7 @@ jobs:
             fi
           fi
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::Release $RELEASE_TAG already exists. Use a new tag so installed firmware keeps its matching packages and signing key."
+            echo "::error::Release $RELEASE_TAG already exists. Use a new tag to preserve the published firmware."
             exit 1
           fi
       - name: Prepare release notes
@@ -102,7 +102,7 @@ jobs:
         run: |
           export PATH="/usr/lib/llvm-18/bin:$PATH"
           sh port/scripts/build.sh sources/openwrt "$(nproc)" 2>&1 | tee artifacts/build.log
-      - name: Package firmware, installer and signed APK repository
+      - name: Package firmware and installer
         run: |
           sh scripts/package_release.sh sources/openwrt artifacts/release
           git archive --format=tar.gz --prefix=PonWRT-TYFZA1/ HEAD \
@@ -119,13 +119,12 @@ jobs:
         run: |
           gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
             --target "$(git rev-parse HEAD)" \
-            --title "$RELEASE_TAG" --prerelease --draft \
+            --title "$RELEASE_TAG" --draft \
             --notes-file "$RUNNER_TEMP/release-notes.md"
           gh release upload "$RELEASE_TAG" artifacts/release/sysupgrade.bin \
             artifacts/release/tyfza1-telnet-install.tar.gz artifacts/release/SHA256SUMS \
             artifacts/release/COPYING artifacts/release/PonWRT-TYFZA1-source.tar.gz \
-            artifacts/release/apk/* \
             --repo "$GITHUB_REPOSITORY"
-          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease \
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false --latest \
             --title "$RELEASE_TAG" \
             --notes-file "$RUNNER_TEMP/release-notes.md"

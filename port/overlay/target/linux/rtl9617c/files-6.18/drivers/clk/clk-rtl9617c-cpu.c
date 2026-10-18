@@ -52,7 +52,7 @@ struct rtl_cpu_clock {
 	int transition_error;
 };
 
-#define to_rtl_cpu(hw) container_of(hw, struct rtl_cpu_clock, hw)
+#define to_rtl_cpu(clock_hw) container_of(clock_hw, struct rtl_cpu_clock, hw)
 
 static unsigned long rtl_cpu_recalc_rate(struct clk_hw *hw,
 					unsigned long parent_rate)

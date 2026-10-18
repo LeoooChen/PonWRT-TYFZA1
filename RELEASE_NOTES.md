@@ -1,3 +1,10 @@
+## v0.8.0-beta
+
+- Wi-Fi 硬件加速下行突破千兆，5 GHz HE160 实测 UDP 吞吐约 1.34 Gbps；优化 PE 批处理与 HE 聚合。
+- 接入 OpenWrt 官方软件源，支持直接 `apk update`、`apk add`，预装 VPN、SQM、代理、多 WAN 等常用插件依赖。
+- 新增 CPU 调频、SoC 温度显示和无线功率控制。
+- 修复原厂 PON 协议与业务 MAC 恢复、2.5G PHY 冷初始化、启动板型选择及面板指示灯。
+
 ## v0.7.0-alpha
 
 ### 本版更新

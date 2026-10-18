@@ -62,7 +62,7 @@ static int load_identity(struct omci_identity *identity)
 	fclose(serial);
 	identity_field(&config, "equipment_id", "TYFZA1", identity->equipment, sizeof(identity->equipment));
 	identity_field(&config, "hardware_version", "RTL9617C", identity->hardware, sizeof(identity->hardware));
-	identity_field(&config, "software_version", "0.7.0-alpha", identity->software, sizeof(identity->software));
+	identity_field(&config, "software_version", "0.8.0-beta", identity->software, sizeof(identity->software));
 	identity_field(&config, "loid", "", identity->loid, sizeof(identity->loid));
 	identity_field(&config, "loid_password", "", identity->password, sizeof(identity->password));
 	identity_field(&config, "operator_id", "CTC", identity->operator_id, sizeof(identity->operator_id));

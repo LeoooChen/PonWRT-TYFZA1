@@ -39,6 +39,7 @@ u.mem_write(packet + 32, struct.pack('>II', 1 << 31, 68 << 15) + bytes(8))
 u.mem_write(packet + 48, destination + bytes.fromhex('0200000000010800') + bytes(46))
 for cos in range(8):
     for consumer, producer in [(0, 4096), (4096, 8192), (32760, 0)]:
+        u.mem_write(epp, bytes(8 * 32768))
         u.mem_write(base + 0xc400, bytes(128 * 8))
         u.mem_write(base + 0x11000, bytes(0xc00))
         u.mem_write(base + 0x13000, bytes(0x4000))
@@ -65,7 +66,8 @@ for cos in range(8):
 print('Linked PE EPP: all8 COS, pending beyond512 entries, separate ring DMA and32768-byte wrap passed')
 
 # A retirement fence ends at the captured producer, even if new data follows it.
-for cos in range(8):
+for cos, batched in ((cos, batched) for cos in range(8) for batched in (False, True)):
+    u.mem_write(epp, bytes(8 * 32768))
     u.mem_write(base, bytes(0x20000))
     put(mailbox + 25 * 4, epp)
     put(mailbox + 114 * 4, 0x7060)
@@ -84,6 +86,8 @@ for cos in range(8):
         u.mem_write(buffer + 32, struct.pack('>II', 1 << 31, 68 << 15) + bytes(8))
         u.mem_write(buffer + 48, destination + bytes.fromhex('0200000000010800') + bytes(46))
         u.mem_write(epp + cos * 32768 + consumer, struct.pack('<II', buffer | 0x50, 76))
+        if batched and index < 2:
+            continue
         u.reg_write(UC_MIPS_REG_A0, mailbox | 0xa0000000)
         u.reg_write(UC_MIPS_REG_A1, base | 0xa0000000)
         u.reg_write(UC_MIPS_REG_SP, (base + 0x1fff0) | 0xa0000000)
@@ -92,4 +96,4 @@ for cos in range(8):
         assert get(mailbox + 171 * 4) == ((1 << cos) | other if index == 0 else other)
         assert get(base + 0x11804) == index + 1
         assert get(base + 0x11c00 + cos * 4) == (consumer + 8) % 32768
-print('Linked PE retirement fence: all8 COS before/at/after a wrapped cutoff; later arrivals and other COS do not reset completion')
+print('Linked PE retirement fence: all8 COS, single and batched arrivals across a wrapped cutoff; other COS completion preserved')
