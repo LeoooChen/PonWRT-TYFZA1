@@ -33,7 +33,9 @@ elif [ ! -s "$TREE/.config" ]; then
     cp "$PORT/configs/tyfza1-boot.config" "$TREE/.config"
 fi
 VERSION=$(cat "$PORT/../VERSION")
+REPOSITORY=${TYFZA1_APK_REPOSITORY:-https://github.com/${GITHUB_REPOSITORY:-LeoooChen/PonWRT-TYFZA1}/releases/download/${RELEASE_TAG:-v$VERSION}}
 # Keep package choices, but always identify firmware by the project version.
-sed -i '/^CONFIG_VERSIONOPT=/d; /^# CONFIG_VERSIONOPT is not set$/d; /^CONFIG_VERSION_NUMBER=/d' "$TREE/.config"
+sed -i '/^CONFIG_VERSIONOPT=/d; /^# CONFIG_VERSIONOPT is not set$/d; /^CONFIG_VERSION_NUMBER=/d; /^CONFIG_VERSION_REPO=/d; /^CONFIG_SIGNED_PACKAGES=/d; /^# CONFIG_SIGNED_PACKAGES is not set$/d; /^CONFIG_SIGN_EACH_PACKAGE=/d; /^# CONFIG_SIGN_EACH_PACKAGE is not set$/d' "$TREE/.config"
 printf 'CONFIG_VERSIONOPT=y\nCONFIG_VERSION_NUMBER="%s"\n' "$VERSION" >> "$TREE/.config"
+printf 'CONFIG_VERSION_REPO="%s"\nCONFIG_SIGNED_PACKAGES=y\nCONFIG_SIGN_EACH_PACKAGE=y\n' "$REPOSITORY" >> "$TREE/.config"
 echo "Applied RTL9617C overlay to $TREE at $PIN"

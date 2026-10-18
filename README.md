@@ -244,6 +244,12 @@ SSH 登录 OpenWrt 后执行以下命令。它会根据当前系统槽选择另�
 物理网口为 `lan1`–`lan5`（`lan5` 为 2.5G 网口），PON 业务口为 `pon0`。
 保留配置升级会自动迁移原有网络、防火墙、LED 和 SQM 配置中的设备引用，包括 VLAN 子设备。
 
+## 软件源
+
+包含软件源修复的新固件使用同一 Release 下的签名 APK 仓库，包含本次构建生成的用户态包和 `rtl9617c` 内核包。可在 LuCI 软件包页或通过 `apk update`、`apk add <包名>` 安装仓库中已有的软件包。软件源公钥随固件内置，无需关闭签名校验。
+
+已发布的 `v0.7.0-alpha` 镜像仍使用失效的官方快照地址，需要升级到包含修复的新版本。各版本仓库与固件配套保留，工作流不覆盖已有 Release。需要增加可安装的包时，在构建配置中选择 `CONFIG_PACKAGE_<包名>=m`，即可发布到仓库而不预装进固件。
+
 ## 自行编译
 
 ### GitHub Actions
@@ -254,6 +260,7 @@ SSH 登录 OpenWrt 后执行以下命令。它会根据当前系统槽选择另�
 4. 构建完成后，从 **Releases** 或本次运行的 **Artifacts → firmware-and-build-log** 下载固件。
 
 工作流自动获取编译依赖、公共运行时文件和 FIT 签名配置，无需额外设置 Secrets。
+APK 源地址自动使用当前仓库和 `release_tag`，Fork 无需修改源地址。Release 同时上传 `packages.adb`、各个 `.apk` 和 `public-key.pem`。
 
 <details>
 <summary><strong>本地开发与构建</strong></summary>
@@ -271,6 +278,8 @@ sh scripts/package_release.sh sources/openwrt artifacts/release
 ```
 
 自定义软件包可先运行 `sh port/scripts/sync-overlay.sh sources/openwrt` 和 `sh scripts/prepare_luci_feeds.sh sources/openwrt`，再进入 `sources/openwrt` 执行 `make menuconfig`。后续构建保留 `.config`，也可通过 `TYFZA1_CONFIG` 指定配置文件。
+
+本地构建可用 `TYFZA1_APK_REPOSITORY` 指定自己的仓库根 URL；发布时将 `artifacts/release/apk/` 内的文件放到该 URL 下。签名私钥由 OpenWrt 保存在构建目录的 `private-key.pem`，不属于发布文件；公钥由 `base-files` 自动写入固件的 `/etc/apk/keys/`。
 
 固件沿用原厂 UBI 布局：内核上限 6 MiB，rootfs 上限约 32.09 MiB，可写数据卷 16 MiB。构建脚本自动检查镜像大小。
 

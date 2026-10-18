@@ -47,6 +47,10 @@ jobs:
               exit 1
             fi
           fi
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $RELEASE_TAG already exists. Use a new tag so installed firmware keeps its matching packages and signing key."
+            exit 1
+          fi
       - name: Prepare release notes
         run: |
           python3 scripts/test_release_notes.py
@@ -98,7 +102,7 @@ jobs:
         run: |
           export PATH="/usr/lib/llvm-18/bin:$PATH"
           sh port/scripts/build.sh sources/openwrt "$(nproc)" 2>&1 | tee artifacts/build.log
-      - name: Package sysupgrade and factory telnet installer
+      - name: Package firmware, installer and signed APK repository
         run: |
           sh scripts/package_release.sh sources/openwrt artifacts/release
           git archive --format=tar.gz --prefix=PonWRT-TYFZA1/ HEAD \
@@ -113,16 +117,15 @@ jobs:
           retention-days: 14
       - name: Publish release
         run: |
-          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
-              --target "$(git rev-parse HEAD)" \
-              --title "$RELEASE_TAG" --prerelease --draft \
-              --notes-file "$RUNNER_TEMP/release-notes.md"
-          fi
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --target "$(git rev-parse HEAD)" \
+            --title "$RELEASE_TAG" --prerelease --draft \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
           gh release upload "$RELEASE_TAG" artifacts/release/sysupgrade.bin \
             artifacts/release/tyfza1-telnet-install.tar.gz artifacts/release/SHA256SUMS \
             artifacts/release/COPYING artifacts/release/PonWRT-TYFZA1-source.tar.gz \
-            --repo "$GITHUB_REPOSITORY" --clobber
+            artifacts/release/apk/* \
+            --repo "$GITHUB_REPOSITORY"
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease \
             --title "$RELEASE_TAG" \
             --notes-file "$RUNNER_TEMP/release-notes.md"

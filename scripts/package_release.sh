@@ -33,4 +33,5 @@ cp "$OUT/fw_printenv" "$OUT/fw_setenv"
 tar --owner=0 --group=0 --numeric-owner -czf "$OUT/tyfza1-telnet-install.tar.gz" \
     -C "$OUT" kernel.itb rootfs.squashfs install.sh fw_env.config fw_printenv fw_setenv
 cp "$PROJECT/COPYING" "$OUT/COPYING"
+sh "$PROJECT/scripts/package_apk_repository.sh" "$TREE" "$OUT/apk"
 (cd "$OUT" && sha256sum sysupgrade.bin tyfza1-telnet-install.tar.gz > SHA256SUMS)
