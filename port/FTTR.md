@@ -984,6 +984,47 @@ the failures/unconfirmed resources and stops further dependency deletion.
 
 ## Remaining work toward working FTTR
 
+### P6 FE admission evidence
+
+The exact NI module's `aal_ni_port_rx_ctrl_set` (`9b10`) accepts ports0..5.
+Executing its selector update for port0 writes `a5f8` bits16..21; port6
+returns2 with no MMIO. `aal_ni_xaui_mac_rx_ctrl_set` (`6ca0`) is a no-op that
+returns zero. The ordinary LAN selector address formula is therefore not a
+valid P6 admission implementation (`fe-p6-admission-probe.json`).
+
+`tools/trace_stock_fttr_cf.py` executes the actual
+`fc_8277c.ko:rtk_8277c_cls_init` producer, then passes its240-byte recipes
+through the actual `ca-ne.ko` CF key/action setters and indirect writers.
+Only formatting, spinlocks and indirect-table hardware are modeled. The
+producer deletes CF entries0..15, creates entry0 matching source7/care63
+with forward action3 and destination24, then entry1 matching any source
+with the same action and destination25. The latter is the original LAN
+connector; it includes source6. This identifies the original L2 CF route
+to the L3 classifier, separately from the LAN MAC bypass selector.
+
+Narrowing that original recipe to source6/care63 produces TCAM X words
+`fffffe7f ffffffff ffffffff`, Y words`fffff1bf ffffffff ffffffff` and action
+words`00000000 00001960 00000000`. The instruction trace confirms the key
+port field, valid bits and three-word action format; this narrowed rule is
+a proposed native input, not a rule observed installed on a live unit.
+CF TCAM uses indirect control`1e04`, data registers`1e10/1e0c/1e08`, and
+the second bank at entry+512. Action control is`1e14`, with data at
+`1e20/1e1c/1e18`. The trace and original hashes are retained in
+`cf-p6-producer.json`. It also shows the original add publishes the valid
+key before its new action. Native runtime activation must prepare its
+action before publishing the key, with readback and errors retained.
+
+P6 admission and FE port registration are not implemented yet. They must
+be coupled to synchronous service-flow withdrawal before GEM reuse; the
+existing asynchronous bridge worker alone does not provide that barrier.
+In the selected kernel, `__netdev_upper_dev_unlink` ignores the return from
+both PRECHANGEUPPER and CHANGEUPPER notifications, so a notifier rejection
+cannot report failed hardware cleanup to `fttrd`. Admission setup, an
+acknowledged withdrawal operation, and actual P6 traffic verification remain
+required before claiming FTTR hardware acceleration.
+
+### Outstanding implementation and acceptance
+
 1. FPGA board startup: import its own retained bitstream, load it before
    binding the MiniOLT transport, and initialize the original post-load registers.
 2. Optical identification for the other sample, plus real GN25L99 calibration
