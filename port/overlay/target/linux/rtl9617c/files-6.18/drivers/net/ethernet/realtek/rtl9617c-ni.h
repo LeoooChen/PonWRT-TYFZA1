@@ -57,4 +57,5 @@ int rtl9617c_ni_fe_setup_tc(struct device *dev,struct net_device *netdev,
 int rtl9617c_ni_fe_enable(struct device *dev);
 int rtl9617c_ni_fe_disable(struct device *dev);
 ssize_t rtl9617c_ni_fe_state(struct device *dev,char *buffer);
+int rtl9617c_ni_pm_read(struct device *dev, unsigned int port, unsigned long long counters[37]);
 #endif

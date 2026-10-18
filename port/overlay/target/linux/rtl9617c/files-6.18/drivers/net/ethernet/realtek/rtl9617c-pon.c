@@ -14,6 +14,7 @@
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/rtnetlink.h>
+#include <linux/unaligned.h>
 #include "rtl9617c-pon.h"
 #include "rtl9617c-bosa.h"
 #include "rtl9617c-pon-fec.h"
@@ -28,8 +29,12 @@ int rtl_pon_stop_locked(struct rtl9617c_pon *pon)
 
 	lockdep_assert_held(&pon->control_lock);
 	if (rtl_pon_mode_is_epon(pon->mode)) {
+		int stopped;
+
 		ret = rtl_pon_epon_traffic_locked(pon, false);
-		rtl_pon_mpcp_stop_locked(pon);
+		stopped = rtl_pon_mpcp_stop_locked(pon);
+		if (!ret)
+			ret = stopped;
 	} else {
 		gpiod_set_value_cansleep(pon->tx_disable, 1);
 		ret = pon->fe_enabled ? rtl_pon_fe_configure_locked(pon, false) : 0;
@@ -78,8 +83,12 @@ int rtl_pon_mpcp_stop(struct rtl9617c_pon *pon)
 
 	mutex_lock(&pon->control_lock);
 	if (rtl_pon_mode_is_epon(pon->mode)) {
+		int stopped;
+
 		ret = pon->fe_enabled ? rtl_pon_fe_configure_locked(pon, false) : 0;
-		rtl_pon_mpcp_stop_locked(pon);
+		stopped = rtl_pon_mpcp_stop_locked(pon);
+		if (!ret)
+			ret = stopped;
 	} else
 		ret = -EOPNOTSUPP;
 	mutex_unlock(&pon->control_lock);
@@ -240,6 +249,14 @@ static ssize_t optical_show(struct device *dev, struct device_attribute *attr, c
 		READ_ONCE(pon->xgpon_rogue_pending));
 }
 static DEVICE_ATTR_RO(optical);
+
+static ssize_t transceiver_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
+
+	return rtl9617c_bosa_diagnostics(pon->bosa_dev, buf);
+}
+static DEVICE_ATTR_RO(transceiver);
 
 static ssize_t mac_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -692,6 +709,114 @@ static ssize_t omci_broadcast_write(struct file *file, struct kobject *kobj,
 }
 static BIN_ATTR(omci_broadcast, 0200, NULL, omci_broadcast_write, 0);
 
+static ssize_t epon_key_write(struct file *file, struct kobject *kobj,
+	const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
+{
+	if (offset)
+		return -EINVAL;
+	return rtl_pon_epon_key(dev_get_drvdata(kobj_to_dev(kobj)), buf, count) ?: count;
+}
+static BIN_ATTR(epon_key, 0200, NULL, epon_key_write, 0);
+
+static ssize_t epon_tx_control_write(struct file *file, struct kobject *kobj,
+	const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
+{
+	if (offset)
+		return -EINVAL;
+	return rtl_pon_epon_tx_control(dev_get_drvdata(kobj_to_dev(kobj)), buf, count) ?: count;
+}
+static BIN_ATTR(epon_tx_control, 0200, NULL, epon_tx_control_write, 0);
+
+static ssize_t epon_holdover_read(struct file *file, struct kobject *kobj,
+	const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(kobj_to_dev(kobj));
+	unsigned int channel = offset / 4;
+	int ret = 4;
+
+	if (offset % 4 || channel >= 32 || count < 4)
+		return -EINVAL;
+	mutex_lock(&pon->lock);
+	if (!rtl_pon_mode_is_epon(pon->mode))
+		ret = -EOPNOTSUPP;
+	else if (channel >= pon->llid_count)
+		ret = -EINVAL;
+	else {
+		put_unaligned_be16(!!(pon->epon_holdover_enabled & BIT(channel)), buf);
+		put_unaligned_be16(pon->epon_holdover_ms[channel], buf + 2);
+	}
+	mutex_unlock(&pon->lock);
+	return ret;
+}
+
+static ssize_t epon_holdover_write(struct file *file, struct kobject *kobj,
+	const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
+{
+	if (offset)
+		return -EINVAL;
+	return rtl_pon_epon_holdover_set(dev_get_drvdata(kobj_to_dev(kobj)), buf, count) ?: count;
+}
+static BIN_ATTR(epon_holdover, 0600, epon_holdover_read, epon_holdover_write, 128);
+
+static ssize_t epon_sla_read(struct file *file, struct kobject *kobj,
+	const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(kobj_to_dev(kobj));
+	unsigned int channel = offset / 89;
+	int ret = 89;
+
+	if (offset % 89 || channel >= 8 || count < 89)
+		return -EINVAL;
+	mutex_lock(&pon->lock);
+	if (!rtl_pon_mode_is_epon(pon->mode))
+		ret = -EOPNOTSUPP;
+	else if (channel >= pon->llid_count)
+		ret = -EINVAL;
+	else if (!pon->puc_configured || !pon->epon_sla_length[channel])
+		ret = -EAGAIN;
+	else {
+		memset(buf, 0, 89);
+		buf[0] = pon->epon_sla_length[channel];
+		memcpy(buf + 1, pon->epon_sla[channel], buf[0]);
+	}
+	mutex_unlock(&pon->lock);
+	return ret;
+}
+
+static ssize_t epon_sla_write(struct file *file, struct kobject *kobj,
+	const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
+{
+	if (offset)
+		return -EINVAL;
+	return rtl_pon_epon_sla_set(dev_get_drvdata(kobj_to_dev(kobj)), buf, count) ?: count;
+}
+static BIN_ATTR(epon_sla, 0600, epon_sla_read, epon_sla_write, 8 * 89);
+
+#define RTL_PON_PM_RECORD_BYTES (8 + 37 * 8)
+static ssize_t pm_counters_read(struct file *file, struct kobject *kobj,
+	const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
+{
+	struct rtl9617c_pon *pon = dev_get_drvdata(kobj_to_dev(kobj));
+	unsigned long long counters[37];
+	unsigned int port = offset / RTL_PON_PM_RECORD_BYTES;
+	int ret;
+
+	if (port >= 5 || offset % RTL_PON_PM_RECORD_BYTES || count < RTL_PON_PM_RECORD_BYTES)
+		return -EINVAL;
+	mutex_lock(&pon->control_lock);
+	mutex_lock(&pon->lock);
+	ret = port ? rtl9617c_ni_pm_read(pon->ni_dev, 4 - port, counters) : rtl_pon_epon_pm(pon, counters);
+	if (!ret) {
+		put_unaligned_be64(port ? 0 : pon->epon_mib_generation, buf);
+		for (unsigned int i = 0; i < 37; i++)
+			put_unaligned_be64(counters[i], buf + 8 + i * 8);
+	}
+	mutex_unlock(&pon->lock);
+	mutex_unlock(&pon->control_lock);
+	return ret ?: RTL_PON_PM_RECORD_BYTES;
+}
+static BIN_ATTR(pm_counters, 0400, pm_counters_read, NULL, 5 * RTL_PON_PM_RECORD_BYTES);
+
 static ssize_t data_path_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct rtl9617c_pon *pon = dev_get_drvdata(dev);
@@ -736,6 +861,11 @@ static const struct bin_attribute *const rtl9617c_pon_bin_attrs[] = {
 	&bin_attr_xgpon_identity,
 	&bin_attr_itu_paths,
 	&bin_attr_omci_broadcast,
+	&bin_attr_epon_key,
+	&bin_attr_epon_tx_control,
+	&bin_attr_epon_holdover,
+	&bin_attr_epon_sla,
+	&bin_attr_pm_counters,
 	NULL,
 };
 
@@ -747,6 +877,7 @@ static struct attribute *rtl9617c_pon_attrs[] = {
 	&dev_attr_state.attr,
 	&dev_attr_led_state.attr,
 	&dev_attr_bosa.attr,
+	&dev_attr_transceiver.attr,
 	&dev_attr_serdes.attr,
 	&dev_attr_serdes_registers.attr,
 	&dev_attr_optical.attr,

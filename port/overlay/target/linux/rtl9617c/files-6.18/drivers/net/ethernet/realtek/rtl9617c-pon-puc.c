@@ -4,10 +4,12 @@
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
+#include <linux/unaligned.h>
 #include "rtl9617c-pon.h"
 #include "rtl9617c-ni.h"
 #include "rtl9617c-pon-queue.h"
 #include "rtl9617c-pon-itu-puc.h"
+#include "rtl9617c-epon-sla.h"
 
 #define PVT_ACCESS 0x8000
 #define PVT_DATA0 0x8014
@@ -108,7 +110,44 @@ static int rtl_puc_bp_access(void *context, unsigned int reg, unsigned int value
 	u32 status;
 
 	writel(value, pon->mac + reg);
-	return readl_poll_timeout(pon->mac + reg, status, !(status & BIT(31)), 1, 100000);
+	return readl_poll_timeout(pon->mac + reg, status, !(status & BIT(31)), 1,
+		reg == 0x80dc ? 1000000 : 100000);
+}
+
+int rtl_pon_epon_sla_set(struct rtl9617c_pon *pon, const u8 *data, size_t count)
+{
+	const struct rtl_dq_io io = {pon, rtl_puc_bp_read, rtl_puc_bp_write, rtl_puc_bp_access};
+	unsigned int channel;
+	int ret;
+
+	if (count < 10 || count > 9 + RTL_EPON_SLA_BYTES)
+		return -EINVAL;
+	channel = data[0];
+	ret = rtl_epon_sla_validate(data + 9, count - 9);
+	if (ret)
+		return ret;
+	mutex_lock(&pon->control_lock);
+	mutex_lock(&pon->lock);
+	if (!rtl_pon_mode_is_epon(pon->mode) || readl(pon->mac + VOQ_MODE) != 0)
+		ret = -EOPNOTSUPP;
+	else if (channel >= 8 || channel >= pon->llid_count)
+		ret = -EINVAL;
+	else if (!pon->puc_configured || !pon->mpcp_enabled || !(pon->registered & BIT(channel)))
+		ret = -EAGAIN;
+	else if (get_unaligned_be64(data + 1) != pon->epon_llid_epoch[channel])
+		ret = -ESTALE;
+	else {
+		pon->epon_sla_length[channel] = 0;
+		ret = rtl_epon_sla_apply(&io, channel, data + 9);
+		if (!ret) {
+			memcpy(pon->epon_sla[channel], data + 9, count - 9);
+			pon->epon_sla_length[channel] = count - 9;
+		}
+	}
+	pon->puc_error = ret;
+	mutex_unlock(&pon->lock);
+	mutex_unlock(&pon->control_lock);
+	return ret;
 }
 
 static int rtl_puc_itu_configure(struct rtl9617c_pon *pon, const struct rtl_dq_io *io)
@@ -173,6 +212,7 @@ int rtl_pon_puc_configure_locked(struct rtl9617c_pon *pon)
 		goto unlock;
 	}
 	pon->puc_configured = false;
+	memset(pon->epon_sla_length, 0, sizeof(pon->epon_sla_length));
 	if (!rtl_pon_mode_is_epon(pon->mode)) {
 		ret = rtl_puc_itu_configure(pon, &bp);
 		pon->puc_configured = !ret;
@@ -248,6 +288,10 @@ int rtl_pon_puc_configure_locked(struct rtl9617c_pon *pon)
 	rtl_pon_update(pon->mac + AGGREGATE0, GENMASK(25, 0), 0);
 	rtl_pon_update(pon->mac + AGGREGATE1, GENMASK(11, 0), 0);
 	pon->puc_configured = true;
+	for (i = 0; i < 8; i++) {
+		pon->epon_sla_length[i] = 1;
+		pon->epon_sla[i][0] = 0;
+	}
 	dev_info(pon->dev, "PUC: %u LLID ports, %u queues each, 256 CIR/PIR entries\n", ports, queues);
 unlock:
 	pon->puc_error = ret;

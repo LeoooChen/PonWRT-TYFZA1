@@ -16,6 +16,7 @@
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/of_mdio.h>
 #include <linux/of_net.h>
 #include <linux/phy.h>
@@ -25,6 +26,7 @@
 #include <linux/rtnetlink.h>
 #include <linux/unaligned.h>
 #include <linux/tyfza1-led.h>
+#include <linux/workqueue.h>
 
 #include "rtl9617c-xram-format.h"
 #include "rtl9617c-dma.h"
@@ -32,6 +34,7 @@
 #include "rtl9617c-ni.h"
 #include <linux/rtl9617c-wifi.h>
 #include "rtl9617c-fe.h"
+#include "rtl9617c-mib.h"
 
 #define GLB_STATIC 0xa01c
 #define PORT_TO_CPU GENMASK(3, 0)
@@ -80,6 +83,9 @@ struct rtl_xram {
 	struct hrtimer timer;
 	spinlock_t tx_lock;
 	spinlock_t rx_lock;
+	struct mutex mib_lock;
+	struct delayed_work mib_work;
+	unsigned long long mib_total[4][RTL_NI_MIB_COUNTERS];
 	bool rx_active;
 	u32 port;
 	bool tx_pending;
@@ -99,6 +105,63 @@ struct rtl_xram {
 static struct rtl_xram *rtl_shared(struct net_device *dev)
 {
 	return ((struct rtl_lan *)netdev_priv(dev))->shared;
+}
+
+static unsigned int rtl_mib_read(void *context, unsigned int reg)
+{
+	struct rtl_xram *priv = context;
+
+	return readl(priv->ni + reg);
+}
+
+static void rtl_mib_write(void *context, unsigned int reg, unsigned int value)
+{
+	struct rtl_xram *priv = context;
+
+	writel(value, priv->ni + reg);
+}
+
+static int rtl_mib_indirect(void *context, unsigned int reg, unsigned int command)
+{
+	struct rtl_xram *priv = context;
+	u32 status;
+
+	writel(command, priv->ni + reg);
+	return readl_poll_timeout(priv->ni + reg, status, !(status & BIT(31)), 1, 100000);
+}
+
+int rtl9617c_ni_pm_read(struct device *dev, unsigned int port, unsigned long long counters[37])
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	const struct rtl_dq_io io = {priv, rtl_mib_read, rtl_mib_write, rtl_mib_indirect};
+	unsigned long long raw[RTL_NI_MIB_COUNTERS];
+	int ret;
+
+	if (port >= 4)
+		return -EINVAL;
+	mutex_lock(&priv->mib_lock);
+	ret = rtl_ni_mib_read(&io, port, raw);
+	if (!ret)
+		rtl_ni_mib_pm(priv->mib_total[port], raw, counters);
+	mutex_unlock(&priv->mib_lock);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_pm_read);
+
+static void rtl_mib_work(struct work_struct *work)
+{
+	struct rtl_xram *priv = container_of(to_delayed_work(work), struct rtl_xram, mib_work);
+	unsigned long long counters[37];
+	unsigned int port;
+
+	/* Extend narrow counters independently of OAM/PM enable and client reads. */
+	for (port = 0; port < 4; port++) {
+		int ret = rtl9617c_ni_pm_read(priv->netdev->dev.parent, port, counters);
+
+		if (ret)
+			dev_err_ratelimited(priv->netdev->dev.parent, "NI port%u MIB read failed: %d\n", port, ret);
+	}
+	schedule_delayed_work(&priv->mib_work, HZ);
 }
 
 int rtl9617c_ni_fe_add_port(struct device *dev,struct net_device *netdev,unsigned int llid)
@@ -1155,6 +1218,8 @@ static int rtl_probe(struct platform_device *pdev)
 	netdev->max_mtu = ETH_DATA_LEN;
 	spin_lock_init(&priv->tx_lock);
 	spin_lock_init(&priv->rx_lock);
+	mutex_init(&priv->mib_lock);
+	INIT_DELAYED_WORK(&priv->mib_work, rtl_mib_work);
 	netif_napi_add(netdev, &priv->napi, rtl_poll);
 	hrtimer_setup(&priv->timer, rtl_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	phy = of_parse_phandle(dev->of_node, "phy-handle", 0);
@@ -1228,6 +1293,7 @@ static int rtl_probe(struct platform_device *pdev)
 	dev_info(dev, "%s: port %u %s, PHY %08x, MAC %pM\n",
 		 netdev->name, priv->port, priv->qm_rx ? "native NI/DMA" : "management XRAM",
 		 netdev->phydev->phy_id, netdev->dev_addr);
+	schedule_delayed_work(&priv->mib_work, HZ);
 	return 0;
 
 unregister_netdev:
@@ -1255,6 +1321,7 @@ static void rtl_remove(struct platform_device *pdev)
 	struct net_device *dev = platform_get_drvdata(pdev);
 	struct rtl_xram *priv = netdev_priv(dev);
 
+	cancel_delayed_work_sync(&priv->mib_work);
 	priv->removing = true;
 	if (priv->qm_rx && priv->dma_tx) rtl_wifi_stop();
 	sysfs_remove_groups(&pdev->dev.kobj, rtl_native_groups);

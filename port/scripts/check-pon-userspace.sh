@@ -15,6 +15,10 @@ export STAGING_DIR="$TREE/staging_dir/target-aarch64_cortex-a55_musl"
 mkdir -p "$OUT"
 OUT=$(realpath "$OUT")
 SOURCE=$PORT/packages/tyfza1-pon-control/src
-"$CC" -Wall -Wextra -Werror -O2 -I"$STAGING_DIR/usr/include" "$SOURCE/pon-oamd.c" "$SOURCE/pon-oam.c" "$SOURCE/pon-backend.c" -L"$STAGING_DIR/usr/lib" -luci -o "$OUT/pon-oamd"
-sudo -n unshare --net python3 "$PROJECT/scripts/test_oam_daemon.py" --binary "$OUT/pon-oamd"
+PON_VERSION=$(cat "$PROJECT/VERSION")
+"$CC" -Wall -Wextra -Werror -O2 -DPON_FIRMWARE_VERSION="\"$PON_VERSION\"" -I"$STAGING_DIR/usr/include" "$SOURCE/pon-oamd.c" "$SOURCE/pon-oam.c" "$SOURCE/pon-backend.c" "$SOURCE/pon-alarm.c" "$SOURCE/pon-pm.c" -L"$STAGING_DIR/usr/lib" -luci -o "$OUT/pon-oamd"
+# sysfs must belong to the test network namespace for native UNI counters.
+sudo -n unshare --net --mount --propagation private sh -c \
+	'mount -t sysfs sysfs /sys && exec python3 "$@"' pon-oam-test \
+	"$PROJECT/scripts/test_oam_daemon.py" --binary "$OUT/pon-oamd" --openwrt "$TREE"
 sha256sum "$OUT/pon-oamd" > "$OUT/SHA256SUMS"
