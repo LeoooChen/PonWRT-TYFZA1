@@ -36,7 +36,6 @@ PonWRT-TYFZA1 是面向天翼 TYFZA1 光猫的 OpenWrt 适配项目。设备采�
 | --- | --- |
 | `tyfza1-telnet-install.tar.gz` | 从原厂系统首次安装，U 盘和网络方式通用 |
 | `sysupgrade.bin` | 已安装 OpenWrt 的设备升级 |
-| `tyfza1-sysupgrade.tar.gz` | 从旧版升级并扩展可写空间 |
 | `SHA256SUMS` | 核对下载文件的 SHA-256 |
 
 ## 刷入
@@ -198,15 +197,9 @@ sysupgrade /tmp/sysupgrade.bin
 
 默认保留配置。清空配置升级使用 `sysupgrade -n /tmp/sysupgrade.bin`。
 
-**从原版 0.8.0-beta 及更早版本升级扩容**：将新版 `tyfza1-sysupgrade.tar.gz` 上传到光猫的 `/tmp`，然后执行：
+0.6.0-alpha、0.7.0-alpha 及原版 0.8.0-beta 均可直接使用 `sysupgrade.bin` 升级。首次启动会自动迁移数据、扩容并重启一次，保留配置升级时沿用已有配置。
 
-```sh
-mkdir -p /tmp/tyfza1-upgrade
-tar -xzf /tmp/tyfza1-sysupgrade.tar.gz -C /tmp/tyfza1-upgrade
-sh /tmp/tyfza1-upgrade/upgrade.sh
-```
-
-升级包会更新存储分配脚本，再保留配置升级。首次安装及后续升级按系统镜像实际大小分配 rootfs，其余空闲 UBI 空间用于可写数据卷；当前镜像下约 40 MiB，实际空闲容量取决于坏块、文件系统开销和已安装软件。另一槽原厂系统、原厂应用、framework、身份和校准数据均保留。
+首次安装及后续升级按系统镜像实际大小分配 rootfs，其余空闲 UBI 空间用于可写数据卷；当前镜像下约 41.7 MiB，实际空闲容量取决于坏块、文件系统开销和已安装软件。另一槽原厂系统、原厂应用、framework、身份和校准数据均保留。
 
 <details>
 <summary><strong>切回保留的原厂系统</strong></summary>

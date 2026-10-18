@@ -20,7 +20,7 @@ OEM = [
 ]
 
 MOCK = r'''#!/usr/bin/env python3
-import json, os, pathlib, shutil, sys
+import json, os, pathlib, shutil, struct, sys
 root = pathlib.Path(os.environ['UBI_TEST_ROOT'])
 statefile = root / 'state.json'
 s = json.loads(statefile.read_text())
@@ -46,6 +46,7 @@ if cmd in ('ubirsvol', 'ubirmvol', 'ubimkvol'):
         if cmd == 'ubirmvol':
             s['free'] += v['ebs']
             del s['vols'][ident]
+            shutil.rmtree(root / ('fs' + ident), ignore_errors=True)
         else:
             ebs = (int(a[a.index('-s')+1])+126975)//126976
             assert ebs - v['ebs'] <= s['free']
@@ -62,6 +63,25 @@ elif cmd == 'ubiupdatevol':
     v['used'] = size
 elif cmd == 'fw_printenv':
     print('0')
+elif cmd == 'mount':
+    ident = pathlib.Path(a[-2]).name.split('_')[1]
+    target = pathlib.Path(a[-1])
+    source = root / ('fs' + ident)
+    source.mkdir(exist_ok=True)
+    shutil.copytree(source, target, dirs_exist_ok=True, symlinks=True)
+    s['mounted'] = dict(ident=ident, target=str(target), readonly='ro' in a)
+    if 'max_lebs' not in s['vols'][ident]:
+        s['vols'][ident]['max_lebs'] = s['vols'][ident]['ebs']
+elif cmd == 'umount':
+    mounted = s.pop('mounted')
+    target = pathlib.Path(mounted['target'])
+    if not mounted['readonly']:
+        source = root / ('fs' + mounted['ident'])
+        shutil.rmtree(source)
+        shutil.copytree(target, source, symlinks=True)
+    for p in target.iterdir():
+        if p.is_dir() and not p.is_symlink(): shutil.rmtree(p)
+        else: p.unlink()
 elif cmd not in ('fw_setenv', 'reboot', 'sync', 'remove_block'):
     raise AssertionError(cmd)
 sysdir = root / 'sys'
@@ -72,6 +92,14 @@ for ident, v in s['vols'].items():
     p.mkdir()
     for f, value in [('name', v['name']), ('reserved_ebs', v['ebs']), ('usable_eb_size', 126976)]:
         (p / f).write_text(str(value))
+    header = bytearray(64)
+    if 'squashfs_size' in v:
+        header[:4] = b'hsqs'
+        struct.pack_into('<Q', header, 40, v['squashfs_size'])
+    elif 'max_lebs' in v:
+        struct.pack_into('<I', header, 0, 0x06101831)
+        struct.pack_into('<I', header, 44, v['max_lebs'])
+    (root / 'dev' / ('ubi0_' + ident)).write_bytes(header)
 (sysdir / 'ubi0' / 'avail_eraseblocks').write_text(str(s['free']))
 statefile.write_text(json.dumps(s))
 '''
@@ -83,6 +111,7 @@ class StorageTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         (self.root / 'bin').mkdir()
+        (self.root / 'dev').mkdir()
         (self.root / 'sys/ubi0').mkdir(parents=True)
         # OEM serial log: 1966 good PEBs, 40 bad-block reserves, 143 available.
         self.state = dict(free=143, events=[], vols={
@@ -93,23 +122,27 @@ class StorageTests(unittest.TestCase):
         mock.write_text(MOCK)
         mock.chmod(0o755)
         for command in ['ubirsvol', 'ubirmvol', 'ubimkvol', 'ubiupdatevol',
-                        'fw_printenv', 'fw_setenv', 'reboot', 'sync', 'remove_block']:
+                        'fw_printenv', 'fw_setenv', 'reboot', 'sync', 'remove_block', 'mount', 'umount']:
             (self.root / 'bin' / command).symlink_to(mock)
         self.env = dict(os.environ, UBI_TEST_ROOT=str(self.root),
                         PATH=str(self.root / 'bin') + ':' + os.environ['PATH'])
         busybox = shutil.which('busybox')
         self.shell = [busybox, 'ash'] if busybox else ['/bin/sh']
+        if busybox:
+            (self.root / 'bin/hexdump').symlink_to(busybox)
         self.helper = self.root / 'tyfza1-storage.sh'
         self.helper.write_text(self.rewrite((UPGRADE / 'tyfza1-storage.sh').read_text()))
         self.platform = self.root / 'platform.sh'
         self.platform.write_text(self.rewrite((UPGRADE / 'platform.sh').read_text()))
 
     def rewrite(self, text):
-        text = re.sub(r'(?<![/\w.-])(ubirsvol|ubirmvol|ubimkvol|ubiupdatevol|reboot|sync)(?=\s|$)',
+        text = re.sub(r'(?<![/\w.-])(ubirsvol|ubirmvol|ubimkvol|ubiupdatevol|reboot|sync|mount|umount)(?=\s|$)',
                       lambda m: str(self.root / 'bin' / m[0]), text)
         return (text.replace('/sys/class/ubi', str(self.root / 'sys'))
                 .replace('/lib/upgrade/tyfza1-storage.sh', str(self.root / 'tyfza1-storage.sh'))
                 .replace('/proc/cmdline', str(self.root / 'cmdline'))
+                .replace('/dev/', str(self.root / 'dev') + '/')
+                .replace('/tmp/tyfza1-overlay', str(self.root / 'overlay'))
                 .replace('/tmp/tyfza1-boot.env', str(self.root / 'boot.env')))
 
     def save(self):
@@ -161,6 +194,11 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(self.state['vols']['11']['ebs'], 344)
         self.assertEqual(self.state['free'], 0)
         self.check_oem(7)
+        self.state['vols']['7']['squashfs_size'] = 8066952
+        (self.root / 'cmdline').write_text('tyfza1.slot=1')
+        self.save()
+        self.run_shell('. ./tyfza1-storage.sh; ! tyfza1_boot_storage_plan')
+        self.assertEqual(self.state['events'], [])
 
     def test_beta_16_mib_upgrade_expands_data(self):
         self.state['vols']['11'] = dict(name='rootfs_data', ebs=133, used=1000000)
@@ -227,6 +265,97 @@ class StorageTests(unittest.TestCase):
         self.save()
         self.run_shell('. ./tyfza1-storage.sh; tyfza1_plan_storage ubi0 ubi0_7 8067048; tyfza1_grow_data ubi0')
         self.assertEqual(self.state['vols']['11'], dict(name='rootfs_data', ebs=344, used=10000000))
+
+    def migrate_boot(self, success=True):
+        return self.run_shell('''
+            . ./tyfza1-storage.sh
+            nand_remove_ubiblock() { remove_block "$@"; }
+            tyfza1_migrate_storage
+        ''', success)
+
+    def test_direct_upgrade_from_published_versions_preserves_config(self):
+        for tag, slot in [('v0.6.0-alpha', 0), ('v0.7.0-alpha', 1)]:
+            with self.subTest(tag=tag):
+                rootid = str(4 + slot * 3)
+                self.state['free'] = 143
+                self.state['vols'].pop('11', None)
+                for i in [4, 7]:
+                    self.state['vols'][str(i)] = dict(name=OEM[i][0], ebs=265, used=265 * LEB)
+                self.state['vols'][rootid].update(used=8067072, squashfs_size=8066952, static=True)
+                (self.root / 'cmdline').write_text(f'tyfza1.slot={slot}')
+                old = subprocess.check_output(['git', 'show', tag + ':' + str(UPGRADE.relative_to(PROJECT) / 'platform.sh')],
+                                              cwd=PROJECT, text=True)
+                (self.root / 'old-platform.sh').write_text(self.rewrite(old))
+                self.save()
+                self.run_shell('''
+                    . ./tyfza1-storage.sh
+                    . ./old-platform.sh
+                    nand_find_ubi() { echo ubi0; }
+                    nand_find_volume() { tyfza1_find_volume "$@"; }
+                    nand_remove_ubiblock() { remove_block "$@"; }
+                    CI_ROOTPART=ubi_rSLOT
+                    nand_upgrade_prepare_ubi 8067072 squashfs 4000000
+                '''.replace('SLOT', str(slot)))
+                self.assertEqual(self.state['vols']['11']['ebs'], 133)
+                # nand_restore_config mounts the newly created 16 MiB UBIFS.
+                self.state['vols']['11']['max_lebs'] = 133
+                files = self.root / 'fs11'
+                files.mkdir(exist_ok=True)
+                (files / 'sysupgrade.tgz').write_bytes(b'saved old firmware configuration')
+                (files / 'upper').mkdir(exist_ok=True)
+                (files / 'upper/network').write_text('preserved network settings')
+                self.save()
+                self.migrate_boot()
+                self.assertEqual(self.state['vols'][rootid]['ebs'], 64)
+                self.assertEqual(self.state['vols'][rootid]['used'], 8067072)
+                self.assertEqual(self.state['vols']['11']['ebs'], 344)
+                self.assertEqual(self.state['vols']['11']['max_lebs'], 344)
+                self.assertEqual((files / 'sysupgrade.tgz').read_bytes(), b'saved old firmware configuration')
+                self.assertEqual((files / 'upper/network').read_text(), 'preserved network settings')
+                self.check_oem(int(rootid))
+                self.run_shell('. ./tyfza1-storage.sh; ! tyfza1_boot_storage_plan')
+
+    def test_already_resized_ubi_with_small_ubifs_is_migrated(self):
+        self.state['vols']['7'].update(ebs=64, used=8067072, squashfs_size=8066952)
+        self.state['vols']['11'] = dict(name='rootfs_data', ebs=344, used=0, max_lebs=133)
+        self.state['free'] = 0
+        (self.root / 'cmdline').write_text('tyfza1.slot=1')
+        self.save()
+        self.migrate_boot()
+        self.assertEqual(self.state['vols']['11']['max_lebs'], 344)
+
+    def test_config_backup_failure_keeps_volumes_untouched(self):
+        self.state['vols']['7'].update(used=8067072, squashfs_size=8066952)
+        self.state['vols']['11'] = dict(name='rootfs_data', ebs=133, used=0, max_lebs=133)
+        self.state['free'] -= 133
+        (self.root / 'cmdline').write_text('tyfza1.slot=1')
+        self.env['UBI_TEST_FAIL'] = 'mount'
+        self.save()
+        self.migrate_boot(success=False)
+        self.assertEqual(self.state['vols']['7']['ebs'], 265)
+        self.assertEqual(self.state['vols']['11']['ebs'], 133)
+        self.assertEqual([e[0] for e in self.state['events']], ['mount'])
+
+    def test_preinit_handoff_uses_upgrade_ramfs_before_mount_root(self):
+        self.state['vols']['7'].update(used=8067072, squashfs_size=8066952)
+        self.state['vols']['11'] = dict(name='rootfs_data', ebs=133, used=0, max_lebs=133)
+        self.state['free'] -= 133
+        (self.root / 'cmdline').write_text('tyfza1.slot=1')
+        common = self.root / 'common.sh'
+        ramroot = self.root / 'ramroot'
+        common.write_text(f'''RAM_ROOT={ramroot}
+install_bin() {{ mkdir -p "$RAM_ROOT/sbin"; touch "$RAM_ROOT/sbin/upgraded"; chmod +x "$RAM_ROOT/sbin/upgraded"; }}
+''')
+        hook = self.rewrite((UPGRADE.parent / 'preinit/79_tyfza1_storage').read_text())
+        hook = hook.replace('/lib/upgrade/common.sh', str(common)).replace('/tmp/sysupgrade', str(self.root / 'handoff'))
+        (self.root / 'preinit.sh').write_text(hook)
+        self.save()
+        self.run_shell('boot_hook_add() { :; }; . ./preinit.sh; tyfza1_expand_storage; exit 99')
+        prefix, image, command = (self.root / 'handoff').read_bytes().split(b'\0')
+        self.assertEqual(prefix.decode(), str(ramroot))
+        self.assertEqual(image, b'tyfza1-storage')
+        self.assertIn(b'include /lib/upgrade; tyfza1_migrate_storage', command)
+        self.assertEqual(self.state['events'], [])
 
 
 if __name__ == '__main__':

@@ -54,16 +54,17 @@ jobs:
       - name: Prepare release notes
         run: |
           python3 scripts/test_release_notes.py
-          python3 scripts/test_ubi_storage.py
           python3 scripts/release_notes.py "$RELEASE_TAG" > "$RUNNER_TEMP/release-notes.md"
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential clang-18 llvm-18 lld-18 flex bison gawk \
+          sudo apt-get install -y build-essential busybox clang-18 llvm-18 lld-18 flex bison gawk \
             gettext git libncurses-dev libssl-dev python3 python3-setuptools rsync unzip \
             zlib1g-dev file wget curl device-tree-compiler u-boot-tools swig \
             libelf-dev python3-pyelftools python3-dev libfuse-dev pkgconf
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+      - name: Verify storage migration
+        run: python3 scripts/test_ubi_storage.py
       - name: Obtain locked OpenWrt source
         run: sh port/scripts/prepare.sh sources/openwrt
       - name: Prepare OMCI compiler
@@ -123,8 +124,7 @@ jobs:
             --title "$RELEASE_TAG" --draft \
             --notes-file "$RUNNER_TEMP/release-notes.md"
           gh release upload "$RELEASE_TAG" artifacts/release/sysupgrade.bin \
-            artifacts/release/tyfza1-telnet-install.tar.gz artifacts/release/tyfza1-sysupgrade.tar.gz \
-            artifacts/release/SHA256SUMS \
+            artifacts/release/tyfza1-telnet-install.tar.gz artifacts/release/SHA256SUMS \
             artifacts/release/COPYING artifacts/release/PonWRT-TYFZA1-source.tar.gz \
             --repo "$GITHUB_REPOSITORY"
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false --latest \
