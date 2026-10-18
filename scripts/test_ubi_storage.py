@@ -84,7 +84,8 @@ class StorageTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         (self.root / 'bin').mkdir()
         (self.root / 'sys/ubi0').mkdir(parents=True)
-        self.state = dict(free=170, events=[], vols={
+        # OEM serial log: 1966 good PEBs, 40 bad-block reserves, 143 available.
+        self.state = dict(free=143, events=[], vols={
             str(i): dict(name=name, ebs=ebs, used=ebs * LEB)
             for i, (name, ebs) in enumerate(OEM)
         })
@@ -157,7 +158,7 @@ class StorageTests(unittest.TestCase):
         (self.root / 'install.sh').write_text(self.rewrite((PROJECT / 'scripts/install_ubi_telnet.sh').read_text()))
         self.run_shell('sh ./install.sh')
         self.assertEqual(self.state['vols']['7']['ebs'], 64)
-        self.assertEqual(self.state['vols']['11']['ebs'], 371)
+        self.assertEqual(self.state['vols']['11']['ebs'], 344)
         self.assertEqual(self.state['free'], 0)
         self.check_oem(7)
 
@@ -166,16 +167,16 @@ class StorageTests(unittest.TestCase):
         self.state['free'] -= 133
         self.prepare_upgrade()
         self.assertEqual(self.state['vols']['7']['ebs'], 64)
-        self.assertEqual(self.state['vols']['11']['ebs'], 371)
+        self.assertEqual(self.state['vols']['11']['ebs'], 344)
         self.check_oem(7)
 
     def test_larger_future_image_grows_root_before_writing(self):
         self.state['vols']['4'].update(ebs=64, used=8067048)
-        self.state['vols']['11'] = dict(name='rootfs_data', ebs=371, used=20000000)
+        self.state['vols']['11'] = dict(name='rootfs_data', ebs=344, used=20000000)
         self.state['free'] = 0
         self.prepare_upgrade(size=24000000, slot=0)
         self.assertEqual(self.state['vols']['4']['ebs'], 190)
-        self.assertEqual(self.state['vols']['11']['ebs'], 245)
+        self.assertEqual(self.state['vols']['11']['ebs'], 218)
         self.check_oem(4)
 
     def test_repeated_upgrade_keeps_all_available_space(self):
@@ -222,10 +223,10 @@ class StorageTests(unittest.TestCase):
     def test_installer_data_growth_preserves_existing_ubifs(self):
         self.state['vols']['7'].update(ebs=64, used=8067048)
         self.state['vols']['11'] = dict(name='rootfs_data', ebs=133, used=10000000)
-        self.state['free'] = 238
+        self.state['free'] = 211
         self.save()
         self.run_shell('. ./tyfza1-storage.sh; tyfza1_plan_storage ubi0 ubi0_7 8067048; tyfza1_grow_data ubi0')
-        self.assertEqual(self.state['vols']['11'], dict(name='rootfs_data', ebs=371, used=10000000))
+        self.assertEqual(self.state['vols']['11'], dict(name='rootfs_data', ebs=344, used=10000000))
 
 
 if __name__ == '__main__':
