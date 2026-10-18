@@ -1,0 +1,115 @@
+{
+  "description": "GPIO wiring extracted from OEM FIT fdt@0 (2.5G) and fdt@1 (four-GbE); native pins are bank*32+pin. Only wiring data is retained.",
+  "boards": {
+    "0": {
+      "source_fdt_sha256": "5124f860df3bcd2e20b87d058e19b1ddfdc7a46c9d876663ba9feeff5a0f13ac",
+      "leds": {
+        "LED_PPP_G": [
+          71,
+          1
+        ],
+        "LED_LOS": [
+          10,
+          1
+        ],
+        "LED_PON": [
+          9,
+          1
+        ],
+        "LED_PWR_G": [
+          70,
+          1
+        ],
+        "LED_FXS": [
+          139,
+          1
+        ],
+        "LED_EPHY0": [
+          11,
+          0
+        ],
+        "LED_EPHY1": [
+          12,
+          0
+        ],
+        "LED_EPHY2": [
+          3,
+          1
+        ],
+        "LED_EPHY3": [
+          4,
+          1
+        ],
+        "LED_USB1": [
+          2,
+          1
+        ],
+        "LED_WPS_G": [
+          140,
+          0
+        ]
+      },
+      "lights_toggle": [
+        66,
+        1
+      ]
+    },
+    "1": {
+      "source_fdt_sha256": "f85b7a420a14fa31ece8a1e6f7e426f2a464587cf8ad19ce88932a4b7903d050",
+      "leds": {
+        "LED_PPP_G": [
+          2,
+          1
+        ],
+        "LED_LOS": [
+          10,
+          1
+        ],
+        "LED_USB0": [
+          7,
+          0
+        ],
+        "LED_PON": [
+          9,
+          1
+        ],
+        "LED_PWR_G": [
+          11,
+          0
+        ],
+        "LED_FXS": [
+          12,
+          0
+        ],
+        "LED_EPHY0": [
+          4,
+          1
+        ],
+        "LED_EPHY1": [
+          3,
+          1
+        ],
+        "LED_EPHY2": [
+          1,
+          1
+        ],
+        "LED_EPHY3": [
+          0,
+          1
+        ],
+        "LED_USB1": [
+          6,
+          1
+        ],
+        "LED_WPS_G": [
+          5,
+          0
+        ]
+      },
+      "lights_toggle": [
+        67,
+        1
+      ]
+    }
+  }
+}

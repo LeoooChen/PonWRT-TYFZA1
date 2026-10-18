@@ -10,7 +10,7 @@ import tempfile
 
 root = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(root / 'tools'), str(root / 'port/tools')]
-from stock_dtb import banked_gpio, cells, fdt_nodes, names, phandles
+from stock_dtb import cells, fdt_nodes, names, phandles
 from make_boot_fit import board_boot_command, make_its
 from fit_payload import fit_images
 
@@ -18,12 +18,12 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--kernel', required=True, type=Path)
 args = parser.parse_args()
 dts = root / 'port/overlay/target/linux/rtl9617c/dts'
+baseline = json.loads((root / 'scripts/fixtures/tyfza1-board-gpios.json').read_text())['boards']
 results = []
 with tempfile.TemporaryDirectory(prefix='board-variants-') as directory:
     out = Path(directory)
     for board, suffix in ((1, ''), (0, '-2p5g')):
-        original = fdt_nodes((root / 'artifacts/led-xgpon-root-20261017' /
-                              f'stock-fdt{board}.dtb').read_bytes())
+        original = baseline[str(board)]
         preprocessed = out / f'board{board}.dts'
         blob = out / f'board{board}.dtb'
         subprocess.run(['gcc', '-E', '-P', '-x', 'assembler-with-cpp', '-nostdinc',
@@ -32,21 +32,14 @@ with tempfile.TemporaryDirectory(prefix='board-variants-') as directory:
         subprocess.run(['dtc', '-q', '-I', 'dts', '-O', 'dtb', '-o', str(blob),
                         str(preprocessed)], check=True)
         native = fdt_nodes(blob.read_bytes())
-        old_handles = phandles(original)
-        for node, properties in original.items():
-            if not node.startswith('/rtk_gpio_led/') or 'label' not in properties:
-                continue
-            label = names(properties['label'])[0]
+        for label, expected in original['leds'].items():
             matching = [p for n, p in native.items() if n.startswith('/leds/') and
-                        p.get('label') == properties['label']]
+                        p.get('label') == label.encode() + b'\0']
             assert len(matching) == 1, (board, label)
-            expected = banked_gpio(old_handles, cells(properties['led-gpio']))
-            assert cells(matching[0]['gpios'])[1:] == [expected['native_pin'], expected['flags']], (board, label)
-        old_labels = {p['label'] for n, p in original.items()
-                      if n.startswith('/rtk_gpio_led/') and 'label' in p}
-        assert {p['label'] for n, p in native.items() if n.startswith('/leds/')} == old_labels
-        old_button = banked_gpio(old_handles, cells(original['/gpio-keys/btn_led']['gpios']))
-        assert cells(native['/led-button/lights-toggle']['gpios'])[1:] == [old_button['native_pin'], old_button['flags']]
+            assert cells(matching[0]['gpios'])[1:] == expected, (board, label)
+        assert {names(p['label'])[0] for n, p in native.items()
+                if n.startswith('/leds/')} == set(original['leds'])
+        assert cells(native['/led-button/lights-toggle']['gpios'])[1:] == original['lights_toggle']
         ni = native['/soc/ethernet@4f4300000']
         mdio = next(p for n, p in native.items() if p.get('compatible') == b'realtek,rtl9617c-mdio\0')
         lan_phys = cells(ni['realtek,lan-phys'])
