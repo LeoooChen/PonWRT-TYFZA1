@@ -1,0 +1,58 @@
+{
+  "date": "2026-10-18",
+  "board": "4ge",
+  "firmware_version": "0.8.0-alpha",
+  "firmware_sha256": "65cabaf2eddecc5b27a44cf21eea0b2b844da3c41d8df77f62aac593fd76858a",
+  "native_boot": {
+    "cold_start_from_flash": true,
+    "ram_bytes": 536870912,
+    "flash_bytes": 268435456,
+    "readback_sha256": "ac1b55cf362bfe678a62436dc2b688314f4f7a9434080a4bb0d5d3c3176db001",
+    "matches_selected_universal_image": true
+  },
+  "universal_package": {
+    "format": "TYFZA1-UBOOT-V1",
+    "bytes": 4194320,
+    "sha256": "eb589f4a96879fb8418903f5229fb97d52bae9f6ee0c60004f51aeb6f8e1a1f8",
+    "variants": {
+      "4ge": "ac1b55cf362bfe678a62436dc2b688314f4f7a9434080a4bb0d5d3c3176db001",
+      "2p5g": "3ee6940eba73f0a3278c1fa9c29d9c419233bbddce68997deb4ee68c394c83f8"
+    },
+    "selection": "GPIO113:111 strap, followed by local GPT/BL2/BL31 comparison"
+  },
+  "storage": {
+    "baseline_overlay_available_kib": 12516,
+    "native_install_data_lebs": 342,
+    "native_install_data_bytes": 43425792,
+    "native_install_overlay_available_kib": 35268,
+    "sysupgrade_data_lebs": 344,
+    "sysupgrade_overlay_available_kib": 35476,
+    "random_write_bytes": 25165824,
+    "random_write_sha256": "db6149b61e17d63114d1302698c1c6e02c21bb54007bc32401ebce387fb6d65c"
+  },
+  "sysupgrade": {
+    "standard_command": true,
+    "configuration_preserved": true,
+    "legacy_first_boot_migration": false
+  },
+  "thermal": {
+    "baseline_mC": -50023,
+    "native_firmware_mC": 45308,
+    "after_sysupgrade_mC": 44125,
+    "sysfs_and_rpc_agree": true
+  },
+  "network": {
+    "recovery_http_status_requests": 40,
+    "recovery_upload_bytes": 12042524,
+    "universal_flash_api_code": 0
+  },
+  "fixes": [
+    "Enable Hush for the FIT startup script",
+    "Compile BL33 decoder with strict alignment",
+    "Initialize SPI-NAND MTD pointer and physical size before use",
+    "Wait for the previous NI TX frame before submitting another frame",
+    "Allocate rootfs and writable data during installation and sysupgrade",
+    "Select and verify the matching board loader from one universal package"
+  ],
+  "two_p5g_scope": "Image format, signatures, original BL2/BL31/GPT match and production board selector tested; physical board not tested in this session"
+}

@@ -60,7 +60,7 @@ current=$(( $(cat "/sys/class/ubi/${rootfs##*/}/reserved_ebs") * $(cat "/sys/cla
 if [ "$TYFZA1_ROOT_BYTES" -gt "$current" ]; then
 	free=$(( $(cat /sys/class/ubi/ubi0/avail_eraseblocks) * $(cat "/sys/class/ubi/${rootfs##*/}/usable_eb_size") ))
 	[ "$((TYFZA1_ROOT_BYTES - current))" -le "$free" ] || {
-		echo "Use the OpenWrt sysupgrade bundle to resize an existing installation" >&2
+		echo "Upgrade from OpenWrt to resize an existing installation" >&2
 		exit 1
 	}
 	tyfza1_resize_root ubi0 "${rootfs##*/}"

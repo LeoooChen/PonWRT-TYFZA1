@@ -40,6 +40,12 @@ PonWRT-TYFZA1 是面向天翼 TYFZA1 光猫的 OpenWrt 适配项目。设备采�
 
 ## 刷入
 
+### 从原生 U-Boot 安装
+
+进入 TYFZA1 U-Boot 的 Web recovery，通过 LAN 打开 **[192.168.0.1](http://192.168.0.1/)**，在“刷写系统”中上传 `sysupgrade.bin`。安装器校验并写入镜像、读回确认，再按镜像大小分配系统卷和可写数据卷。安装完成后选择启动系统，通过 **[192.168.1.1](http://192.168.1.1/)** 管理 OpenWrt。
+
+恢复页面安装会初始化 OpenWrt 的可写数据；日常保留配置升级使用下文的 sysupgrade。
+
 ### 1. 开启原厂 Telnet
 
 用网线连接电脑与光猫，打开 [Telnet 开启页面](http://192.168.1.1:8080/CCOM/OpenTelnet.asp)，然后在电脑终端连接：
@@ -197,9 +203,7 @@ sysupgrade /tmp/sysupgrade.bin
 
 默认保留配置。清空配置升级使用 `sysupgrade -n /tmp/sysupgrade.bin`。
 
-0.6.0-alpha、0.7.0-alpha 及原版 0.8.0-beta 均可直接使用 `sysupgrade.bin` 升级。首次启动会自动迁移数据、扩容并重启一次，保留配置升级时沿用已有配置。
-
-首次安装及后续升级按系统镜像实际大小分配 rootfs，其余空闲 UBI 空间用于可写数据卷；当前镜像下约 41.7 MiB，实际空闲容量取决于坏块、文件系统开销和已安装软件。另一槽原厂系统、原厂应用、framework、身份和校准数据均保留。
+首次安装及后续升级按系统镜像实际大小分配 rootfs，其余空闲 UBI 空间用于可写数据卷。全千兆版实机的数据卷约 41 MiB，初装空闲约 34.4 MiB；其余容量用于 UBIFS 元数据、日志和保留空间。原厂应用、framework、身份和校准卷均保留。
 
 <details>
 <summary><strong>切回保留的原厂系统</strong></summary>
@@ -259,7 +263,7 @@ apk add htop nano iperf3
 ### GitHub Actions
 
 1. **Fork** 本仓库，在 **Actions** 中启用工作流。
-2. 打开 **Build TYFZA1 firmware → Run workflow**，填写 `release_tag`，例如 `v0.8.0-beta`。
+2. 打开 **Build TYFZA1 firmware → Run workflow**，填写 `release_tag`，例如 `v0.8.0-alpha`。
 3. 如需自定义软件包，将配置文件提交到仓库，并在 `config_file` 中填写路径。
 4. 构建完成后，从 **Releases** 或本次运行的 **Artifacts → firmware-and-build-log** 下载固件。
 
