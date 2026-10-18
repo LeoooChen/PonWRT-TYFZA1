@@ -1,0 +1,38 @@
+#!/usr/bin/env ucode
+// SPDX-License-Identifier: GPL-2.0-or-later
+'use strict';
+import { readfile, glob } from 'fs';
+
+function number(path) {
+	let value = readfile(path);
+	return value == null || !match(trim(value), /^-?[0-9]+$/) ? null : +trim(value);
+}
+
+return {
+	'luci.tyfza1-system': {
+		status: {
+			call: function() {
+				let temperature = null;
+				for (let path in glob('/sys/class/thermal/thermal_zone*')) {
+					if (trim(readfile(path + '/type')) == 'cpu-thermal') {
+						temperature = number(path + '/temp');
+						break;
+					}
+				}
+				let policy = '/sys/devices/system/cpu/cpufreq/policy0/';
+				let available = readfile(policy + 'scaling_available_frequencies');
+				let governor = readfile(policy + 'scaling_governor');
+				return {
+					temperature_mC: temperature,
+					cpu: {
+						available_khz: available == null || !match(trim(available), /^[0-9]+(\s+[0-9]+)*$/) ? [] :
+							map(split(trim(available), /\s+/), (value) => +value),
+						current_khz: number(policy + 'cpuinfo_cur_freq'),
+						transition_error: number('/sys/bus/platform/devices/f4320200.clock-controller/transition_error'),
+						governor: governor == null ? null : trim(governor)
+					}
+				};
+			}
+		}
+	}
+};

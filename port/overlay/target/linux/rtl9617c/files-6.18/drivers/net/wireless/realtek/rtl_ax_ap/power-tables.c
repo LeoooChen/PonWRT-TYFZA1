@@ -252,6 +252,31 @@ static int rtl_ax_channel_power(const struct rtl_ax_limits *limits,
 	return 0;
 }
 
+int rtl_ax_power_verify(const struct rtl_ax_io *io, struct rtl_ax_power_hardware *state)
+{
+	unsigned int i;
+
+	if (!state->applied)
+		return -EIO;
+	for (i = 0; i < 43; i++) {
+		unsigned int address = i < 11 ? 0xd2c0 + i * 4 : i < 31 ?
+			0xd2ec + (i - 11) * 4 : 0xd33c + (i - 31) * 4;
+
+		if (io->read32(io->ctx, address) != state->readback[i])
+			goto mismatch;
+	}
+	if ((io->read32(io->ctx, 0xd204) & 0x000fffff) != state->offset_mode)
+		goto mismatch;
+	if ((io->read32(io->ctx, 0xd208) & 0x00300000) != 0x00300000 ||
+	    !(io->read32(io->ctx, 0xd21c) & 0x00040000))
+		goto mismatch;
+	return 0;
+
+mismatch:
+	state->applied = false;
+	return -EIO;
+}
+
 int rtl_ax_power_apply(const struct rtl_ax_io *io, unsigned int chip,
 	const struct rtl_ax_power_inputs *inputs, unsigned int band, unsigned int primary, unsigned int channel, unsigned int bandwidth,
 	const char *country, int max_dbm, struct rtl_ax_power_hardware *state)
@@ -262,6 +287,7 @@ int rtl_ax_power_apply(const struct rtl_ax_io *io, unsigned int chip,
 	unsigned int i, nss, bf;
 	u32 offset_mode = 0;
 
+	state->applied = false;
 	for (i = 0; i < limits->regulations; i++)
 		if (!strncmp(limits->regulation[i], country, 2) && !limits->regulation[i][2])
 			regulation = limits->regulation[i];
@@ -391,9 +417,22 @@ int rtl_ax_power_apply(const struct rtl_ax_io *io, unsigned int chip,
 		word = bytes[0] | (u32)bytes[1] << 8 | (u32)bytes[2] << 16 | (u32)bytes[3] << 24;
 		io->write32(io->ctx, address, word);
 		state->readback[i] = io->read32(io->ctx, address);
+		if (state->readback[i] != word)
+			return -EIO;
 	}
 	rtl_ax_update32(io, 0xd204, 0x000fffff, offset_mode);
+	if ((io->read32(io->ctx, 0xd204) & 0x000fffff) != offset_mode)
+		return -EIO;
+	/* Actual mac_write_pwr_limit_en@21e954: limits and RU limits only
+	 * participate in power selection when these SCC MAC0 bits are set. */
+	rtl_ax_update32(io, 0xd208, 0x00300000, 0x00300000);
+	rtl_ax_update32(io, 0xd21c, 0x00040000, 0x00040000);
+	if ((io->read32(io->ctx, 0xd208) & 0x00300000) != 0x00300000 ||
+	    !(io->read32(io->ctx, 0xd21c) & 0x00040000))
+		return -EIO;
 	rtl_ax_tx_shape_zero(io, chip);
+	state->offset_mode = offset_mode;
+	state->limit_dbm = max_dbm;
 	state->applied = true;
 	return 0;
 }

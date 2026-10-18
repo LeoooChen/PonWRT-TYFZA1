@@ -1604,11 +1604,15 @@ static ssize_t radio_power_hardware_show(struct device *dev,
 {
 	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
 	unsigned int i;
-	ssize_t length = sysfs_emit(buffer, "applied=%u bandwidth_MHz=%u units=half-dBm regulation=%s country=%s requested_dBm=%d\n",
-		radio->power_hardware.applied, 20U << radio->power_hardware.bandwidth, radio->power_hardware.regulation,
-		radio->power_country, radio->requested_tx_dbm);
+	ssize_t length;
+	int ret;
 
 	mutex_lock(&radio->command_mutex);
+	ret = rtl_ax_power_verify(&radio->io, &radio->power_hardware);
+	length = sysfs_emit(buffer, "applied=%u bandwidth_MHz=%u units=half-dBm regulation=%s country=%s requested_dBm=%d error=%d\n",
+		radio->power_hardware.applied, 20U << radio->power_hardware.bandwidth, radio->power_hardware.regulation,
+		radio->power_country, radio->requested_tx_dbm, ret);
+
 	for (i = 0; i < 43; i++) {
 		u32 address = i < 11 ? 0xd2c0 + i * 4 : i < 31 ? 0xd2ec + (i - 11) * 4 :
 			0xd33c + (i - 31) * 4;

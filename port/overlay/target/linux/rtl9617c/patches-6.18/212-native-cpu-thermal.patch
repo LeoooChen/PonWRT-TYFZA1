@@ -1,0 +1,46 @@
+--- a/drivers/clk/Kconfig
++++ b/drivers/clk/Kconfig
+@@ -32,6 +32,11 @@
+ 	  this option.
+ 
+ if COMMON_CLK
++
++config CLK_RTL9617C_CPU
++	bool "Realtek RTL9617C CPU clock"
++	depends on ARCH_RTL9617C && OF
++	select PM_OPP
+ 
+ config COMMON_CLK_WM831X
+ 	tristate "Clock driver for WM831x/2x PMICs"
+--- a/drivers/clk/Makefile
++++ b/drivers/clk/Makefile
+@@ -1,4 +1,5 @@
+ # SPDX-License-Identifier: GPL-2.0
++obj-$(CONFIG_CLK_RTL9617C_CPU) += clk-rtl9617c-cpu.o
+ # common clock types
+ obj-$(CONFIG_HAVE_CLK)		+= clk-devres.o clk-bulk.o clkdev.o
+ obj-$(CONFIG_COMMON_CLK)	+= clk.o
+--- a/drivers/thermal/Kconfig
++++ b/drivers/thermal/Kconfig
+@@ -16,6 +16,11 @@
+ 	  If you want this support, you should say Y here.
+ 
+ if THERMAL
++
++config RTL9617C_THERMAL
++	bool "Realtek RTL9617C SoC temperature"
++	depends on ARCH_RTL9617C && OF
++	select THERMAL_OF
+ 
+ config THERMAL_NETLINK
+ 	bool "Thermal netlink management"
+--- a/drivers/thermal/Makefile
++++ b/drivers/thermal/Makefile
+@@ -1,6 +1,7 @@
+ # SPDX-License-Identifier: GPL-2.0
+ #
+ # Makefile for sensor chip drivers.
++obj-$(CONFIG_RTL9617C_THERMAL) += rtl9617c-thermal.o
+ #
+ CFLAGS_thermal_core.o		:= -I$(src)
+ obj-$(CONFIG_THERMAL)		+= thermal_sys.o

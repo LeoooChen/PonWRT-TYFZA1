@@ -91,25 +91,37 @@ static void rtl_ax_monitor_stop(struct ieee80211_hw *hw, bool suspend)
 static int rtl_ax_monitor_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
-	int ret;
+	int ret = 0;
 
+	mutex_lock(&radio->command_mutex);
 	if (changed & IEEE80211_CONF_CHANGE_POWER)
 		radio->requested_tx_dbm = hw->conf.power_level;
-	if (!(changed & IEEE80211_CONF_CHANGE_CHANNEL)) {
-		if ((changed & IEEE80211_CONF_CHANGE_POWER) && radio->channel.configured) {
-			mutex_lock(&radio->command_mutex);
-			ret = rtl_ax_power_apply(&radio->io, radio->chip, &radio->power_inputs,
-				radio->channel.band, radio->channel.primary, radio->channel.center,
-				radio->channel.bandwidth, radio->power_country,
-				radio->requested_tx_dbm, &radio->power_hardware);
-			mutex_unlock(&radio->command_mutex);
-			return ret;
-		}
-		return 0;
+	if (changed & IEEE80211_CONF_CHANGE_CHANNEL) {
+		radio->radar_required = hw->conf.radar_enabled;
+		ret = rtl_ax_chandef_locked(radio, &hw->conf.chandef);
 	}
+	/* Also apply when a channel notification keeps the physical channel
+	 * unchanged, or the user repeats a previously failed power request. */
+	if (!ret && (changed & IEEE80211_CONF_CHANGE_POWER) && radio->channel.configured)
+		ret = rtl_ax_power_apply(&radio->io, radio->chip, &radio->power_inputs,
+			radio->channel.band, radio->channel.primary, radio->channel.center,
+			radio->channel.bandwidth, radio->power_country,
+			radio->requested_tx_dbm, &radio->power_hardware);
+	mutex_unlock(&radio->command_mutex);
+	return ret;
+}
+
+static int rtl_ax_monitor_get_txpower(struct ieee80211_hw *hw,
+	struct ieee80211_vif *vif, unsigned int link_id, int *dbm)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	int ret = 0;
+
 	mutex_lock(&radio->command_mutex);
-	radio->radar_required = hw->conf.radar_enabled;
-	ret = rtl_ax_chandef_locked(radio, &hw->conf.chandef);
+	ret = rtl_ax_power_verify(&radio->io, &radio->power_hardware);
+	if (!ret)
+		/* This is the programmed upper limit, not per-packet RF power. */
+		*dbm = radio->power_hardware.limit_dbm;
 	mutex_unlock(&radio->command_mutex);
 	return ret;
 }
@@ -1209,6 +1221,7 @@ static const struct ieee80211_ops rtl_ax_monitor_ops = {
 	.start = rtl_ax_monitor_start,
 	.stop = rtl_ax_monitor_stop,
 	.config = rtl_ax_monitor_config,
+	.get_txpower = rtl_ax_monitor_get_txpower,
 	.add_interface = rtl_ax_monitor_add_interface,
 	.remove_interface = rtl_ax_monitor_remove_interface,
 	.start_ap = rtl_ax_ap_start,
