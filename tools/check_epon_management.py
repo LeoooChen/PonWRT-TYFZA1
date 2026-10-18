@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused EPON holdover/TX timer and native management checks; never reboot."""
+"""Check retained Holdover/local TX controls and refuse OAM reboot/TX operations."""
 from pathlib import Path
 import re
 import subprocess
@@ -119,13 +119,6 @@ backend_test = r'''
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
-#include <signal.h>
-static int reboots, reboot_error;
-static int test_kill(int pid,int sig) {
- assert(pid==1 && sig==SIGTERM);reboots++;
- if(reboot_error){errno=reboot_error;return -1;}return 0;
-}
-#define kill test_kill
 #include "pon-backend.c"
 int main(int argc,char **argv) {
  (void)argc;
@@ -134,13 +127,8 @@ int main(int argc,char **argv) {
  struct pon_oam_request r={.branch=0xc7,.leaf=0xa1};
  unsigned char power[12]={0,2,2,1,2,3,4,5,0,0,0,0},v[16],out[16];
  snprintf(b.device,sizeof(b.device),"%s",argv[1]);pon_backend_bind(&id,&b);
- assert(id.set_parameter(&b,&r,power,12)==0x80);
- char path[600];snprintf(path,sizeof(path),"%s/epon_tx_control",b.device);
- FILE *f=fopen(path,"rb");assert(fread(v,1,11,f)==11);fclose(f);
- assert(v[0]==1 && !memcmp(v+1,"\1\2\3\4\5\6\7\10",8) && v[9]==0 && v[10]==2);
- power[2]=3;assert(id.set_parameter(&b,&r,power,12)==0x86);
- memset(power+2,255,6);assert(id.set_parameter(&b,&r,power,12)==0x80);
- power[11]=1;assert(id.set_parameter(&b,&r,power,12)==0x86);
+ assert(id.set_parameter(&b,&r,power,12)==0x87);
+ char path[600];FILE *f;
  r.leaf=8;unsigned char hold[]={0,0,0,2,0,0,0,200};
  assert(id.set_parameter(&b,&r,hold,8)==0x80);
  snprintf(path,sizeof(path),"%s/epon_holdover",b.device);
@@ -158,14 +146,8 @@ int main(int argc,char **argv) {
  f=fopen(path,"wb");assert(!fseek(f,89,SEEK_SET));assert(fwrite(record,1,89,f)==89);fclose(f);
  unsigned char sla_out[88];assert(id.get_parameter(&b,&r,sla_out,sizeof(sla_out))==18);
  assert(!memcmp(sla_out,sla,sizeof(sla)));
- r.branch=0xc9;r.leaf=1;assert(id.set_parameter(&b,&r,NULL,0)==0x80);
- uint64_t deadline=b.reboot_at;
- pon_backend_tick(&b,deadline-1);assert(!reboots);
- assert(id.set_parameter(&b,&r,NULL,0)==0x80 && b.reboot_at==deadline);
- reboot_error=EPERM;pon_backend_tick(&b,deadline);
- assert(reboots==1 && b.management_error==-EPERM && !b.reboot_at);
- pon_backend_tick(&b,deadline+1);assert(reboots==1);
- puts("Native CTC TX/holdover wire and delayed procd reboot/error checks passed (kill intercepted)");
+ r.branch=0xc9;r.leaf=1;assert(id.set_parameter(&b,&r,NULL,0)==0x87);
+ puts("Native Holdover/SLA wire retained; OAM transmitter control and reboot refused");
 }
 '''
 
@@ -178,7 +160,7 @@ with tempfile.TemporaryDirectory(prefix="epon-management-", dir=root / "artifact
     production += function(mpcp, "rtl_mpcp_holdover")
     for name, text, extra in (
         ("kernel", model + production + kernel_test, []),
-        ("backend", backend_test, [str(source / "pon-alarm.c"), str(source / "pon-pm.c")]),
+        ("backend", backend_test, []),
     ):
         cfile = tmp / (name + ".c")
         binary = tmp / name

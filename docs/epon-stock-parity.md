@@ -4,7 +4,7 @@
 `/home/leo/PonWRT-TYFZA1-epon-parity`，基线为 `1cc4824`。
 未把修改写回其他 AI 正在使用的主工作区；内核使用独立 reflink 副本完成链接。
 
-最新进度见文末“2026-10-18 主线合并审查”；前文及 manifests 中的
+最新进度见文末“2026-10-18 OpenWrt 管理范围精简”；前文及 manifests 中的
 源码/产物哈希保留对应历史提交的验证记录，不代表合并后源码哈希。
 
 ## 结论
@@ -119,7 +119,9 @@ REA 6.5.0 / Ghidra 12.1.2 通过既有本地 stdio 批处理运行。
 ## 表项清单
 
 `implemented_offline`只表示有原生消费者并完成本文列明的离线验证；
-不代表所有硬件分支均已实测。`not_ported`保留为未完成。
+不代表所有硬件分支均已实测。`not_ported`保留为未完成；
+`removed_by_policy`表示依用户要求取消的 OAM 功能，`read_only_offline`
+表示保留查询、取消写入。前文和历史 manifest 中的旧实现记录不是当前支持声明。
 
 | 表 | Branch/Leaf | 原厂名称 | 本次状态 |
 | --- | --- | --- | --- |
@@ -129,9 +131,9 @@ REA 6.5.0 / Ghidra 12.1.2 通过既有本地 stdio 批处理运行。
 | standard_attributes | 07/0053 | aAutoNegAdvertisedTechnologyAbility | implemented_offline |
 | standard_attributes | 07/0139 | aFECAbility | implemented_offline |
 | standard_attributes | 07/013a | aFECmode | implemented_offline |
-| standard_actions | 09/0005 | acPhyAdminControl | implemented_offline |
-| standard_actions | 09/000b | acAutoNegRestartAutoConfig | implemented_offline |
-| standard_actions | 09/000c | acAutoNegAdminControl | implemented_offline |
+| standard_actions | 09/0005 | acPhyAdminControl | removed_by_policy |
+| standard_actions | 09/000b | acAutoNegRestartAutoConfig | removed_by_policy |
+| standard_actions | 09/000c | acAutoNegAdminControl | removed_by_policy |
 | extended_default | c7/0001 | ONU SN | implemented_offline |
 | extended_default | c7/0002 | FirmwareVer | implemented_offline |
 | extended_default | c7/0003 | Chipset ID | not_ported |
@@ -148,7 +150,7 @@ REA 6.5.0 / Ghidra 12.1.2 通过既有本地 stdio 批处理运行。
 | extended_default | c7/000e | ONU power saving config | not_ported |
 | extended_default | c7/000f | ONU Protection Parameters | not_ported |
 | extended_default | c7/0011 | ethPort State | implemented_offline |
-| extended_default | c7/0012 | ethPort Pause | implemented_offline |
+| extended_default | c7/0012 | ethPort Pause | read_only_offline |
 | extended_default | c7/0013 | ethPortUs Policing | not_ported |
 | extended_default | c7/0014 | voip port | not_ported |
 | extended_default | c7/0016 | EthPortDs RateLimiting | not_ported |
@@ -166,12 +168,12 @@ REA 6.5.0 / Ghidra 12.1.2 通过既有本地 stdio 批处理运行。
 | extended_default | c7/0046 | aFastLeaveAbility | not_ported |
 | extended_default | c7/0047 | aFastLeaveAdminState | not_ported |
 | extended_default | c7/006b | POTSStatus | not_ported |
-| extended_default | c7/0081 | AlarmAdminState | partially_implemented_offline |
-| extended_default | c7/0082 | AlarmThreshold | partially_implemented_offline |
-| extended_default | c7/00a1 | ONUTxPowerSupplyControl | implemented_offline |
-| extended_default | c7/00b1 | performanceMonitoringStatus | implemented_offline |
-| extended_default | c7/00b2 | performanceMonitoringDataCurrent | implemented_offline |
-| extended_default | c7/00b3 | performanceMonitoringDataHistory | implemented_offline |
+| extended_default | c7/0081 | AlarmAdminState | removed_by_policy |
+| extended_default | c7/0082 | AlarmThreshold | removed_by_policy |
+| extended_default | c7/00a1 | ONUTxPowerSupplyControl | removed_by_policy |
+| extended_default | c7/00b1 | performanceMonitoringStatus | removed_by_policy |
+| extended_default | c7/00b2 | performanceMonitoringDataCurrent | removed_by_policy |
+| extended_default | c7/00b3 | performanceMonitoringDataHistory | removed_by_policy |
 | extended_default | c7/801f | configVlanOfTr069Wan | not_ported |
 | extended_default | c7/c001 | oltLocationConfig | not_ported |
 | extended_flag_0x20000000 | c7/0001 | ONU SN | implemented_offline |
@@ -191,7 +193,7 @@ REA 6.5.0 / Ghidra 12.1.2 通过既有本地 stdio 批处理运行。
 | extended_flag_0x20000000 | c7/00a6 | ONU Protection Parameters | not_ported |
 | extended_flag_0x20000000 | c7/000f | Configuration Counter | not_ported |
 | extended_flag_0x20000000 | c7/0011 | ethPort State | implemented_offline |
-| extended_flag_0x20000000 | c7/0012 | ethPort Pause | implemented_offline |
+| extended_flag_0x20000000 | c7/0012 | ethPort Pause | read_only_offline |
 | extended_flag_0x20000000 | c7/0013 | ethPortUs Policing | not_ported |
 | extended_flag_0x20000000 | c7/0014 | voip port | not_ported |
 | extended_flag_0x20000000 | c7/0016 | EthPortDs RateLimiting | not_ported |
@@ -211,18 +213,18 @@ REA 6.5.0 / Ghidra 12.1.2 通过既有本地 stdio 批处理运行。
 | extended_flag_0x20000000 | c7/0046 | aFastLeaveAbility | not_ported |
 | extended_flag_0x20000000 | c7/0047 | aFastLeaveAdminState | not_ported |
 | extended_flag_0x20000000 | c7/006b | POTSStatus | not_ported |
-| extended_flag_0x20000000 | c7/0081 | AlarmAdminState | partially_implemented_offline |
-| extended_flag_0x20000000 | c7/0082 | AlarmThreshold | partially_implemented_offline |
-| extended_flag_0x20000000 | c7/00a1 | ONUTxPowerSupplyControl | implemented_offline |
+| extended_flag_0x20000000 | c7/0081 | AlarmAdminState | removed_by_policy |
+| extended_flag_0x20000000 | c7/0082 | AlarmThreshold | removed_by_policy |
+| extended_flag_0x20000000 | c7/00a1 | ONUTxPowerSupplyControl | removed_by_policy |
 | extended_flag_0x20000000 | c7/00a3 | RMS Global Parameter Config1 | not_ported |
 | extended_flag_0x20000000 | c7/00a4 | RMS Global Parameter Config2 | not_ported |
-| extended_flag_0x20000000 | c7/00b1 | performanceMonitoringStatus | implemented_offline |
-| extended_flag_0x20000000 | c7/00b2 | performanceMonitoringDataCurrent | implemented_offline |
-| extended_flag_0x20000000 | c7/00b3 | performanceMonitoringDataHistory | implemented_offline |
+| extended_flag_0x20000000 | c7/00b1 | performanceMonitoringStatus | removed_by_policy |
+| extended_flag_0x20000000 | c7/00b2 | performanceMonitoringDataCurrent | removed_by_policy |
+| extended_flag_0x20000000 | c7/00b3 | performanceMonitoringDataHistory | removed_by_policy |
 | extended_flag_0x20000000 | c7/7003 | Optical Transceiver Information | not_ported |
 | extended_flag_0x20000000 | c7/801f | configVlanOfTr069Wan | not_ported |
 | extended_flag_0x20000000 | c7/c001 | oltLocationConfig | not_ported |
-| extended_actions | c9/0001 | Reset ONU | implemented_offline |
+| extended_actions | c9/0001 | Reset ONU | removed_by_policy |
 | extended_actions | c9/0002 | Sleep Control | not_ported |
 | extended_actions | c9/0048 | acFastLeaveAdminControl | not_ported |
 
@@ -437,3 +439,37 @@ CTC容器、加密、光学/计数告警、MIB及SLA；原生端口控制、Hold
 合并源码的 PON、EPON、MPCP、OAM、PUC、NI/XRAM、BOSA 七个 ARM64
 驱动对象编译通过。未进行全量测试、完整固件构建、刷机或实际OLT光路验收；
 SLA REPORT、VLAN/组播等原有遗漏不因本次合并而变成已完成。
+
+## 2026-10-18 OpenWrt 管理范围精简
+
+按用户要求，取消对自主使用 OpenWrt 收益较低的远程管理功能：
+
+- OLT 远程重启 ONU（C9/0001）及关闭/恢复光发射（C7/00a1）。
+- OLT 修改 LAN 管理状态、自协商开关/重启及 Pause 广告位
+  （09/0005、09/000b、09/000c、C7/0012 Set）。只读查询继续保留。
+- CTC 告警使能、阈值和状态管理（C7/0081、C7/0082、opcodeFF），
+  以及主动 code1 事件上报和用户态周期采样。
+- CTC PM 状态/周期、当前/历史及复位管理（C7/00b1..00b3）。
+
+删除对应用户态消费者、定时重启和告警/PM 状态，构建不再链接
+`pon-alarm.c`、`pon-pm.c`。被取消的 Set 返回失败，Get 返回不支持，
+opcodeFF 作为未支持操作忽略；保留必要的容器参数解析，以免影响同帧后续
+有效请求。ONU Capabilities-3 同步取消 OAM 光发射控制声明。
+状态 JSON 移除失去消费者的 `alarm_error`、`pm_error`；保留
+`management_error` 供 Holdover/SLA 错误使用，LuCI 无前两字段依赖。
+
+本次不改内核、PHY/netdev 或 Linux 本地管理：光模块诊断、硬件 MIB 累计
+采样和 `pm_counters` 本地读取、注册/LOID、密钥及会话隔离、PCS/GATE
+恢复、Holdover、FEC、LLID 队列 SLA、本地安全停光均保留。
+内核 `epon_tx_control` 仍是本地特权接口，OAM 已不再调用它。
+也不合入独立 EPON-services 分支的 VLAN/限速/组播改动。
+
+验证：先用无副作用测试在旧代码复现远程操作仍被接受，再验证当前代码
+拒绝这些请求且不发起端口写 ioctl、不写控光文件、不发送重启信号。
+ASan/UBSan 下的作用域测试、三种 EPON 模式密钥交换、FEC 及 OAM 控制
+检查通过；实际 Linux 隔离网络中本地端口开关和只读查询通过；
+18 项实际 ARM64/musl 守护进程检查通过，包含拒绝远程动作后的认证存活、
+无延时重启/主动上报、旧参数格式与同帧后续 FEC 查询。
+原厂对照的 CTC 容器、硬件 MIB 和队列 SLA 检查通过，Holdover 和本地
+控光定向检查通过。守护进程交叉编译无警告；没有修改驱动或运行全量测试，
+没有刷机或物理 OLT 验收。证据索引：`manifests/epon-openwrt-scope-20261018.json`。

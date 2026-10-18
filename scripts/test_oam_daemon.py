@@ -105,161 +105,63 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
         release = (root / 'VERSION').read_text().strip().split('-')[0]
         assert versions[83:87] == bytes([3, *map(int, release.split('.'))])
         tests.append('ONU SN carries UCI software identity; FirmwareVer carries three release octets')
-        pm_file = temporary / 'pm_counters'
-        pm_object = bytes.fromhex('37000404 00000000')
-
-        def mib_record(generation, base):
-            records = [struct.pack('!38Q', generation, *[base + i for i in range(37)])]
-            records += [struct.pack('!38Q', 0, *[2000 + port * 100 + i for i in range(37)]) for port in range(4)]
-            pm_file.write_bytes(b''.join(records))
-
-        def pm_get(leaf):
-            variable = bytes([0xc7, 0, leaf])
-            sock.send(ethernet(b'\x11\x11\x11\x01' + pm_object + variable + b'\0', code=0xfe, flags=0x50))
-            frame = receive(sock, 0xfe)
-            assert frame[22:30] == pm_object
-            position, value = 30, b''
-            while frame[position:position + 3] == variable:
-                width = frame[position + 3]
-                if width & 0x80:
-                    return width
-                width = width or 128
-                value += frame[position + 4:position + 4 + width]
-                position += 4 + width
-            return value
-
-        def pm_set(leaf, value):
-            payload = b'\x11\x11\x11\x03' + pm_object + bytes([0xc7, 0, leaf, len(value)]) + value + b'\0'
-            sock.send(ethernet(payload, code=0xfe, flags=0x50))
-            assert receive(sock, 0xfe)[30:34] == bytes([0xc7, 0, leaf, 0x80])
-
-        mib_record(1, 1000)
-        assert pm_get(0xb2) == struct.pack('!37Q', *range(1000, 1037))
-        tests.append('PM Current Get sends all37 hardware counters through three CTC variable segments')
-        pm_set(0xb2, b'\0')
-        assert pm_get(0xb2) == bytes(296)
-        pm_set(0xb1, struct.pack('!HI', 2, 2))
-        assert pm_get(0xb1) == struct.pack('!HI', 2, 2)
-        mib_record(1, 1017)
-        time.sleep(2.1)
-        assert pm_get(0xb3) == struct.pack('!37Q', *([17] * 37))
-        assert pm_get(0xb2) == bytes(296)
-        tests.append('PM enable/period/current reset produces measured period history without clearing lifetime MIB')
-        pm_set(0xb1, struct.pack('!HI', 1, 900))
-        mib_record(2, 10)
-        assert pm_get(0xb2) == bytes(296) and pm_get(0xb3) == bytes(296)
-        tests.append('PON MIB reset generation discards obsolete baseline and history rather than underflowing counters')
-        pm_file.unlink()
-        assert pm_get(0xb2) == 0x87
-        status(state_file, lambda s: s['pm_error'] < 0)
-        tests.append('failed hardware PM read remains an error response and visible status')
-        mib_record(3, 10)
-        transceiver = temporary / 'transceiver'
-
-        def sensor(rx):
-            transceiver.write_text(f'temperature_raw=256 voltage_raw=33000 bias_raw=1000 tx_power_raw=1000 rx_power_raw={rx}\n')
-
-        sensor(101)
-        threshold = b'\x11\x11\x11\x03\xc7\x00\x82\x0a\x01\x01' + struct.pack('!II', 100, 90) + b'\0'
-        sock.send(ethernet(threshold, code=0xfe, flags=0x50))
-        assert receive(sock, 0xfe)[22:26] == b'\xc7\x00\x82\x80'
-        sock.send(ethernet(b'\x11\x11\x11\x01\xc7\x00\x82\x02\x01\x01\0', code=0xfe, flags=0x50))
-        thresholds = receive(sock, 0xfe)
-        assert thresholds[26:36] == b'\x01\x01' + struct.pack('!II', 100, 90)
-        tests.append('AlarmThreshold Get returns distinct configured trigger/clear thresholds')
-        alarm_enable = b'\x11\x11\x11\x03\xc7\x00\x81\x06\x01\x01' + struct.pack('!I', 2) + b'\0'
-        sock.send(ethernet(alarm_enable, code=0xfe, flags=0x50))
-        assert receive(sock, 0xfe)[22:26] == b'\xc7\x00\x81\x80'
-        alarm = receive(sock, 1)
-        assert alarm[18:22] == b'\0\0\xfe\x14' and alarm[22:25] == b'\x11\x11\x11'
-        assert alarm[25:40] == struct.pack('!HIHHBI', 4, 0, 0x101, 0, 0, 101)
-        tests.append('enabled optical threshold produces actual code1/CTC alarm notification')
-        event_get = b'\x11\x11\x11\xff\x01\x00\x01' + struct.pack('!HIH', 4, 0, 0x101)
-        sock.send(ethernet(event_get, code=0xfe, flags=0x50))
-        event_status = receive(sock, 0xfe)
-        assert event_status[21:25] == b'\xff\x03\x00\x01'
-        assert event_status[25:37] == struct.pack('!HIHI', 4, 0, 0x101, 1)
-        tests.append('CTC event Status Get returns the configured alarm enable state')
-        sensor(95)
-        try:
-            receive(sock, 1, timeout=1.2)
-            raise RuntimeError('alarm cleared inside hysteresis band')
-        except AssertionError:
-            pass
-        sock.send(ethernet(event_get, code=0xfe, flags=0x50))
-        receive(sock, 0xfe)
-        transceiver.unlink()
-        status(state_file, lambda s: s['alarm_error'] < 0)
-        try:
-            receive(sock, 1, timeout=1.2)
-            raise RuntimeError('sensor failure fabricated an alarm event')
-        except AssertionError:
-            pass
-        tests.append('hysteresis retains state; a failed sensor read publishes error without false event')
-        sensor(89)
-        sock.send(ethernet(event_get, code=0xfe, flags=0x50))
-        receive(sock, 0xfe)
-        clear = receive(sock, 1)
-        assert clear[18:20] == b'\x00\x01'
-        assert clear[25:40] == struct.pack('!HIHHBI', 4, 0, 0x101, 0, 1, 89)
-        tests.append('crossing clear threshold emits recovery notification with next event sequence')
-        alarm_disable = alarm_enable[:-5] + struct.pack('!I', 1) + b'\0'
-        sock.send(ethernet(alarm_disable, code=0xfe, flags=0x50))
-        assert receive(sock, 0xfe)[22:26] == b'\xc7\x00\x81\x80'
-        transceiver.unlink()
-
-        def counter_config(object, id, trigger, clear, enabled):
-            payload = b'\x11\x11\x11\x03' + object + b'\xc7\x00\x82\x0a' + struct.pack('!HII', id, trigger, clear) + b'\0'
-            sock.send(ethernet(payload, code=0xfe, flags=0x50))
-            assert receive(sock, 0xfe)[22 + len(object):26 + len(object)] == b'\xc7\x00\x82\x80'
-            payload = b'\x11\x11\x11\x03' + object + b'\xc7\x00\x81\x06' + struct.pack('!HI', id, 2 if enabled else 1) + b'\0'
-            sock.send(ethernet(payload, code=0xfe, flags=0x50))
-            assert receive(sock, 0xfe)[22 + len(object):26 + len(object)] == b'\xc7\x00\x81\x80'
-
-        def crc_record(generation, value):
-            counters = [0] * 37
-            counters[10] = value
-            records = pm_file.read_bytes()
-            pm_file.write_bytes(struct.pack('!38Q', generation, *counters) + records[304:])
-
-        crc_record(4, 0x8000000001)
-        counter_config(pm_object, 0x117, 100, 90, True)
-        alarm = receive(sock, 1)
-        assert alarm[20:22] == b'\xfe\x18'
-        assert alarm[25:44] == struct.pack('!HIHHBQ', 4, 0, 0x117, 0, 0, 0x8000000001)
-        tests.append('hardware CRC counter produces a24-byte event TLV with an uncorrupted64-bit cumulative value')
-        pm_set(0xb2, b'\0')
-        assert pm_get(0xb2) == bytes(296)
-        try:
-            receive(sock, 1, timeout=1.2)
-            raise RuntimeError('PM baseline reset fabricated a counter recovery')
-        except AssertionError:
-            pass
-        crc_record(5, 89)
-        clear = receive(sock, 1)
-        assert clear[25:44] == struct.pack('!HIHHBQ', 4, 0, 0x117, 0, 1, 89)
-        tests.append('PM baseline reset preserves cumulative alarm state; actual hardware generation reset allows recovery')
-        records = pm_file.read_bytes()
-        pm_file.unlink()
-        sock.send(ethernet(event_get, code=0xfe, flags=0x50))
-        receive(sock, 0xfe)
-        status(state_file, lambda s: s['alarm_error'] < 0 and s['pm_error'] < 0)
-        try:
-            receive(sock, 1, timeout=1.2)
-            raise RuntimeError('failed hardware read fabricated a counter event')
-        except AssertionError:
-            pass
-        pm_file.write_bytes(records)
-        counter_config(pm_object, 0x117, 100, 90, False)
-        tests.append('failed hardware counter read remains visible and suppresses stale notifications')
         uni_object = bytes.fromhex('37000104 01000001')
-        changes = int(Path('/sys/class/net/lan4/carrier_changes').read_text())
-        assert changes == 1
-        counter_config(uni_object, 0x316, 0, 0, True)
-        alarm = receive(sock, 1)
-        assert alarm[25:44] == struct.pack('!HIHHBQ', 1, 0x01000001, 0x316, 0, 0, changes)
-        counter_config(uni_object, 0x316, 0, 0, False)
-        tests.append('CTC UNI1 link-change alarm reads lan4 native carrier_changes and treats a genuine count of1 as valid')
+        for command in (['ip', 'link', 'set', 'lan4', 'up'], ['ip', 'link', 'set', 'uni-peer', 'up']):
+            subprocess.run(command, check=True)
+        before_flags = json.loads(subprocess.check_output(['ip', '-j', 'link', 'show', 'lan4']))[0]['flags']
+        tx_control = temporary / 'epon_tx_control'
+        tx_control.write_bytes(b'local-owner')
+        blocked = [(0xc9, 1, None), (9, 5, struct.pack('!I', 1)),
+                   (9, 0xb, None), (9, 0xc, struct.pack('!I', 1)), (0xc7, 0x12, b'\1'),
+                   (0xc7, 0xa1, b'\0\2' + bytes.fromhex('021122334455') + bytes(4)),
+                   (0xc7, 0x81, struct.pack('!HI', 0x101, 2)),
+                   (0xc7, 0x82, struct.pack('!HII', 0x101, 100, 90)),
+                   (0xc7, 0xb1, struct.pack('!HI', 2, 900)), (0xc7, 0xb2, b'\0')]
+        for branch, leaf, data in blocked:
+            variable = bytes([branch]) + struct.pack('!H', leaf)
+            payload = b'\x11\x11\x11\x03' + uni_object + variable
+            if data is not None:
+                payload += bytes([len(data)]) + data
+            sock.send(ethernet(payload + b'\0', code=0xfe, flags=0x50))
+            assert receive(sock, 0xfe)[30:34] == variable + b'\x87', (branch, leaf)
+        assert tx_control.read_bytes() == b'local-owner'
+        assert json.loads(subprocess.check_output(['ip', '-j', 'link', 'show', 'lan4']))[0]['flags'] == before_flags
+        tests.append('remote reboot/TX/LAN/alarm/PM Set requests are refused without changing local port or TX controls')
+
+        fec_file = temporary / 'fec'
+        fec_file.write_text('supported=1 upstream=1\n')
+        sock.send(ethernet(b'\x11\x11\x11\x01' + uni_object + bytes.fromhex('c70082020101 070139 00'), code=0xfe, flags=0x50))
+        assert receive(sock, 0xfe)[30:42] == bytes.fromhex('c7008286 0701390400000002')
+        for leaf in (0x81, 0xb1, 0xb2, 0xb3):
+            variable = bytes([0xc7, 0, leaf])
+            sock.send(ethernet(b'\x11\x11\x11\x01' + uni_object + variable + b'\0', code=0xfe, flags=0x50))
+            assert receive(sock, 0xfe)[30:34] == variable + b'\x86'
+        tests.append('removed alarm/PM Gets report unsupported; parameterized Get still preserves the following FEC query')
+
+        (temporary / 'llid_count').write_text('1\n')
+        sock.send(ethernet(b'\x11\x11\x11\x01\xc7\0\x0c\0', code=0xfe, flags=0x50))
+        assert receive(sock, 0xfe)[22:29] == bytes.fromhex('c7000c03010001')
+        (temporary / 'transceiver').write_text('temperature_raw=-256 voltage_raw=33000 bias_raw=1234 tx_power_raw=5678 rx_power_raw=65535\n')
+        sock.send(ethernet(b'\x11\x11\x11\x01\xc7\0\x05\0', code=0xfe, flags=0x50))
+        assert receive(sock, 0xfe)[22:36] == b'\xc7\0\x05\x0a' + struct.pack('!5H', 0xff00, 33000, 1234, 5678, 65535)
+        sock.send(ethernet(b'\x11\x11\x11\x01' + uni_object + b'\x07\0\x25\0', code=0xfe, flags=0x50))
+        assert receive(sock, 0xfe)[30:38] == bytes.fromhex('0700250400000002')
+        tests.append('read-only port state and optical diagnosis remain usable; ONU no longer advertises OAM TX power control')
+
+        # Also cover the alternate alarm opcode and the old delayed-reboot deadline.
+        # check-pon-userspace.sh isolates PID1 to contain any future regression.
+        sock.send(ethernet(b'\x11\x11\x11\xff\x02\0\1' + struct.pack('!HIHI', 4, 0, 0x101, 1), code=0xfe, flags=0x50))
+        until = time.monotonic() + 3.4
+        while time.monotonic() < until:
+            if select.select([sock], [], [], .2)[0]:
+                frame = sock.recv(2048)
+                assert frame[17] not in (1, 0xfe), 'unexpected alarm/management reply'
+                if frame[17] == 0:
+                    sock.send(ethernet(peer_info, flags=16))
+        retained = status(state_file, lambda s: s['auth_state'] == 'accepted')
+        assert process.poll() is None and retained['generation'] == accepted['generation']
+        assert 'alarm_error' not in retained and 'pm_error' not in retained
+        tests.append('no proactive alarm events or delayed reboot; registration/auth stay live after refused management traffic')
         set_request = bytes.fromhex('11111103 37000104 01000007 c700250102 3600010103 c700130200e3 00')
         set_response = bytes.fromhex('11111104 37000104 01000007 c7002587 3600010103 c7001387 00')
         sock.send(ethernet(set_request, code=0xfe, flags=0x50))

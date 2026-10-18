@@ -86,7 +86,8 @@
       "getter": null,
       "setter": "0x41dc48",
       "name": "acPhyAdminControl",
-      "native_status": "implemented_offline"
+      "native_status": "removed_by_policy",
+      "native_scope": "Deliberately excluded from OpenWrt OAM: local administration/diagnostics remain available; remote Set returns failure and remote Get is unsupported"
     },
     {
       "table": "standard_actions",
@@ -98,7 +99,8 @@
       "getter": null,
       "setter": "0x41ddc8",
       "name": "acAutoNegRestartAutoConfig",
-      "native_status": "implemented_offline"
+      "native_status": "removed_by_policy",
+      "native_scope": "Deliberately excluded from OpenWrt OAM: local administration/diagnostics remain available; remote Set returns failure and remote Get is unsupported"
     },
     {
       "table": "standard_actions",
@@ -110,7 +112,8 @@
       "getter": null,
       "setter": "0x41df68",
       "name": "acAutoNegAdminControl",
-      "native_status": "implemented_offline"
+      "native_status": "removed_by_policy",
+      "native_scope": "Deliberately excluded from OpenWrt OAM: local administration/diagnostics remain available; remote Set returns failure and remote Get is unsupported"
     },
     {
       "table": "extended_default",
@@ -256,7 +259,8 @@
       "getter": "0x41fe94",
       "setter": null,
       "name": "ONU Capabilities-3",
-      "native_status": "implemented_offline"
+      "native_status": "implemented_offline",
+      "native_scope": "Current LLID/IPv6 capability data; OAM transmitter-control capability is not advertised"
     },
     {
       "table": "extended_default",
@@ -316,7 +320,8 @@
       "getter": "0x42061c",
       "setter": "0x420760",
       "name": "ethPort Pause",
-      "native_status": "implemented_offline"
+      "native_status": "read_only_offline",
+      "native_scope": "Read current PHY Pause advertisement only; OAM cannot modify local LAN settings"
     },
     {
       "table": "extended_default",
@@ -533,8 +538,8 @@
       "getter": null,
       "setter": "0x424cd8",
       "name": "AlarmAdminState",
-      "native_status": "partially_implemented_offline",
-      "native_scope": "20 optical alarms/warnings and4UNI LOS; counter/other alarm IDs pending"
+      "native_status": "removed_by_policy",
+      "native_scope": "Deliberately excluded from OpenWrt OAM: local administration/diagnostics remain available; remote Set returns failure and remote Get is unsupported"
     },
     {
       "table": "extended_default",
@@ -546,8 +551,8 @@
       "getter": "0x424ef8",
       "setter": "0x425054",
       "name": "AlarmThreshold",
-      "native_status": "partially_implemented_offline",
-      "native_scope": "20 optical alarms/warnings and4UNI LOS; counter/other alarm IDs pending"
+      "native_status": "removed_by_policy",
+      "native_scope": "Deliberately excluded from OpenWrt OAM: local administration/diagnostics remain available; remote Set returns failure and remote Get is unsupported"
     },
     {
       "table": "extended_default",
@@ -559,7 +564,8 @@
       "getter": null,
       "setter": "0x4251fc",
       "name": "ONUTxPowerSupplyControl",
-      "native_status": "implemented_offline"
+      "native_status": "removed_by_policy",
+      "native_scope": "Deliberately excluded from OpenWrt OAM: local administration/diagnostics remain available; remote Set returns failure and remote Get is unsupported"
     },
     {
       "table": "extended_default",
@@ -571,7 +577,8 @@
       "getter": "0x425a94",
       "setter": "0x425c3c",
       "name": "performanceMonitoringStatus",
-      "native_status": "implemented_offline"
+      "native_status": "removed_by_policy",
+      "native_scope": "Deliberately excluded from OpenWrt OAM: local administration/diagnostics remain available; remote Set returns failure and remote Get is unsupported"
     },
     {
       "table": "extended_default",
@@ -583,7 +590,8 @@
       "getter": "0x425dd4",
       "setter": "0x426ac4",
       "name": "performanceMonitoringDataCurrent",
-      "native_status": "implemented_offline"
+      "native_status": "removed_by_policy",
+      "native_scope": "Deliberately excluded from OpenWrt OAM: local administration/diagnostics remain available; remote Set returns failure and remote Get is unsupported"
     },
     {
       "table": "extended_default",
@@ -595,7 +603,8 @@
       "getter": "0x426bc0",
       "setter": null,
       "name": "performanceMonitoringDataHistory",
-      "native_status": "implemented_offline"
+      "native_status": "removed_by_policy",
+      "native_scope": "Deliberately excluded from OpenWrt OAM: local administration/diagnostics remain available; remote Set returns failure and remote Get is unsupported"
     },
     {
       "table": "extended_default",
@@ -765,7 +774,8 @@
       "getter": "0x41fe94",
       "setter": null,
       "name": "ONU Capabilities-3",
-      "native_status": "implemented_offline"
+      "native_status": "implemented_offline",
+      "native_scope": "Current LLID/IPv6 capability data; OAM transmitter-control capability is not advertised"
     },
     {
       "table": "extended_flag_0x20000000",
@@ -837,7 +847,8 @@
       "getter": "0x42061c",
       "setter": "0x420760",
       "name": "ethPort Pause",
-      "native_status": "implemented_offline"
+      "native_status": "read_only_offline",
+      "native_scope": "Read current PHY Pause advertisement only; OAM cannot modify local LAN settings"
     },
     {
       "table": "extended_flag_0x20000000",
@@ -1079,8 +1090,8 @@
       "getter": null,
       "setter": "0x424cd8",
       "name": "AlarmAdminState",
-      "native_status": "partially_implemented_offline",
-      "native_scope": "20 optical alarms/warnings and4UNI LOS; counter/other alarm IDs pending"
+      "native_status": "removed_by_policy",
+      "native_scope": "Deliberately excluded from OpenWrt OAM: local administration/diagnostics remain available; remote Set returns failure and remote Get is unsupported"
     },
     {
       "table": "extended_flag_0x20000000",
@@ -1092,8 +1103,8 @@
       "getter": "0x424ef8",
       "setter": "0x425054",
       "name": "AlarmThreshold",
-      "native_status": "partially_implemented_offline",
-      "native_scope": "20 optical alarms/warnings and4UNI LOS; counter/other alarm IDs pending"
+      "native_status": "removed_by_policy",
+      "native_scope": "Deliberately excluded from OpenWrt OAM: local administration/diagnostics remain available; remote Set returns failure and remote Get is unsupported"
     },
     {
       "table": "extended_flag_0x20000000",
@@ -1105,7 +1116,8 @@
       "getter": null,
       "setter": "0x4251fc",
       "name": "ONUTxPowerSupplyControl",
-      "native_status": "implemented_offline"
+      "native_status": "removed_by_policy",
+      "native_scope": "Deliberately excluded from OpenWrt OAM: local administration/diagnostics remain available; remote Set returns failure and remote Get is unsupported"
     },
     {
       "table": "extended_flag_0x20000000",
@@ -1143,7 +1155,8 @@
       "getter": "0x425a94",
       "setter": "0x425c3c",
       "name": "performanceMonitoringStatus",
-      "native_status": "implemented_offline"
+      "native_status": "removed_by_policy",
+      "native_scope": "Deliberately excluded from OpenWrt OAM: local administration/diagnostics remain available; remote Set returns failure and remote Get is unsupported"
     },
     {
       "table": "extended_flag_0x20000000",
@@ -1155,7 +1168,8 @@
       "getter": "0x425dd4",
       "setter": "0x426ac4",
       "name": "performanceMonitoringDataCurrent",
-      "native_status": "implemented_offline"
+      "native_status": "removed_by_policy",
+      "native_scope": "Deliberately excluded from OpenWrt OAM: local administration/diagnostics remain available; remote Set returns failure and remote Get is unsupported"
     },
     {
       "table": "extended_flag_0x20000000",
@@ -1167,7 +1181,8 @@
       "getter": "0x426bc0",
       "setter": null,
       "name": "performanceMonitoringDataHistory",
-      "native_status": "implemented_offline"
+      "native_status": "removed_by_policy",
+      "native_scope": "Deliberately excluded from OpenWrt OAM: local administration/diagnostics remain available; remote Set returns failure and remote Get is unsupported"
     },
     {
       "table": "extended_flag_0x20000000",
@@ -1215,7 +1230,8 @@
       "getter": null,
       "setter": "0x428708",
       "name": "Reset ONU",
-      "native_status": "implemented_offline"
+      "native_status": "removed_by_policy",
+      "native_scope": "Deliberately excluded from OpenWrt OAM: local administration/diagnostics remain available; remote Set returns failure and remote Get is unsupported"
     },
     {
       "table": "extended_actions",
@@ -1251,5 +1267,6 @@
     "registration-epoch binding",
     "PCS link interrupts and RX/coresec recovery"
   ],
-  "native_partial_entries": 6
+  "native_partial_entries": 6,
+  "native_policy": "OpenWrt local administration: exclude OAM reboot/TX control, LAN writes, alarm/event reporting and CTC PM management; retain authentication, keys, recovery, FEC, SLA and read-only diagnostics"
 }

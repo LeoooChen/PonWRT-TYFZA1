@@ -5,13 +5,11 @@
 #include <linux/ethtool.h>
 #include <linux/sockios.h>
 #include <net/if.h>
-#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/random.h>
-#include <time.h>
 #include <unistd.h>
 #include "pon-backend.h"
 
@@ -25,14 +23,6 @@ static void put32(uint8_t *value, uint32_t number)
 {
 	number = htonl(number);
 	memcpy(value, &number, sizeof(number));
-}
-
-static uint64_t monotonic_ms(void)
-{
-	struct timespec time;
-
-	clock_gettime(CLOCK_MONOTONIC, &time);
-	return (uint64_t)time.tv_sec * 1000 + time.tv_nsec / 1000000;
 }
 
 static int port_number(const struct pon_oam_request *request)
@@ -146,57 +136,6 @@ static int port_get(const struct pon_oam_request *request, uint8_t *value)
 	return -EOPNOTSUPP;
 }
 
-static uint8_t port_set(const struct pon_oam_request *request, const uint8_t *value, size_t size)
-{
-	struct ethtool_cmd settings = {.cmd = ETHTOOL_GSET};
-	struct ethtool_value restart = {.cmd = ETHTOOL_NWAY_RST};
-	struct ifreq interface = {};
-	uint32_t enabled;
-	int port = port_number(request), ret;
-
-	if (port < 0)
-		return 0x86;
-	if (request->branch == 0xc7 && request->leaf == 0x12) {
-		if (size != 1 || value[0] > 1)
-			return 0x86;
-		ret = port_ethtool(port, &settings);
-		if (ret)
-			return 0x87;
-		/* The original setter changes both symmetric/asymmetric PHY
-		 * advertisements, preserving all advertised speed abilities. */
-		settings.advertising &= ~(ADVERTISED_Pause | ADVERTISED_Asym_Pause);
-		if (value[0])
-			settings.advertising |= ADVERTISED_Pause | ADVERTISED_Asym_Pause;
-		settings.cmd = ETHTOOL_SSET;
-		return port_ethtool(port, &settings) ? 0x87 : 0x80;
-	}
-	if (request->leaf == 0xb) {
-		if (size)
-			return 0x86;
-		ret = port_ethtool(port, &settings);
-		if (!ret && settings.autoneg == AUTONEG_ENABLE)
-			ret = port_ethtool(port, &restart);
-		return ret ? 0x87 : 0x80;
-	}
-	if (size != 4 || ((enabled = get32(value)) != 1 && enabled != 2))
-		return 0x86;
-	if (request->leaf == 5) {
-		ret = port_ioctl(port, SIOCGIFFLAGS, &interface);
-		if (ret)
-			return 0x87;
-		interface.ifr_flags = enabled == 2 ? interface.ifr_flags | IFF_UP : interface.ifr_flags & ~IFF_UP;
-		ret = port_ioctl(port, SIOCSIFFLAGS, &interface);
-	} else {
-		ret = port_ethtool(port, &settings);
-		if (ret)
-			return 0x87;
-		settings.cmd = ETHTOOL_SSET;
-		settings.autoneg = enabled == 2 ? AUTONEG_ENABLE : AUTONEG_DISABLE;
-		ret = port_ethtool(port, &settings);
-	}
-	return ret ? 0x87 : 0x80;
-}
-
 static int fec_read(struct pon_backend *backend)
 {
 	char path[544], data[256], *upstream;
@@ -264,7 +203,7 @@ static int capabilities_get(struct pon_backend *backend, uint16_t leaf, uint8_t 
 		if (fields != 1)
 			return -EIO;
 		value[0] = 1; /* IPv6 aware. */
-		value[1] = 1; /* Native TX-disable GPIO control, including timed restore. */
+		value[1] = 0; /* Transmitter control is local-only, not an OAM capability. */
 		value[2] = llids;
 		return 3;
 	}
@@ -420,22 +359,6 @@ static int parameter_get(void *context, const struct pon_oam_request *request,
 		return sla_get(backend, value);
 	if (branch == 0xc7 && leaf == 8)
 		return holdover_get(backend, value);
-	if (branch == 0xc7 && leaf >= 0xb1 && leaf <= 0xb3) {
-		int port = pon_pm_object(request);
-		int ret;
-
-		if (port < 0)
-			return port;
-		if (leaf != 0xb1) {
-			ret = pon_pm_sample(&backend->pm[port], backend->device, port, monotonic_ms());
-			backend->pm_error = ret;
-			if (ret)
-				return ret;
-		}
-		return pon_pm_get(&backend->pm[port], leaf, value);
-	}
-	if (branch == 0xc7 && leaf == 0x82)
-		return pon_alarm_variable(&backend->alarms, request, NULL, 0, value);
 	if (branch == 0xc7 && leaf == 5)
 		return transceiver_get(backend, value);
 	if (branch == 0xc7 && (leaf == 4 || leaf == 7 || leaf == 0xc))
@@ -455,56 +378,6 @@ static int parameter_get(void *context, const struct pon_oam_request *request,
 	return 4;
 }
 
-static int tx_power_set(struct pon_backend *backend, const uint8_t *value, size_t size)
-{
-	static const uint8_t broadcast[6] = {255, 255, 255, 255, 255, 255};
-	const uint8_t *mac;
-	uint32_t action;
-	uint8_t command[11];
-	char path[544];
-	FILE *file;
-	int ret;
-
-	/* Actual stock CTC formats: legacy u32 action + MAC, or u16 action +
-	 * MAC + u32 optical interface. This board has only optical interface 0. */
-	if (size == 10) {
-		action = get32(value);
-		mac = value + 4;
-	} else if (size == 12) {
-		action = (unsigned int)value[0] << 8 | value[1];
-		mac = value + 2;
-		if (get32(value + 8))
-			return -EINVAL;
-	} else {
-		return -EINVAL;
-	}
-	if (action > 65535 || (memcmp(mac, backend->mac, 6) && memcmp(mac, broadcast, 6)))
-		return -EINVAL;
-	command[0] = backend->llid;
-	for (unsigned int byte = 0; byte < 8; byte++)
-		command[1 + byte] = backend->epoch >> (56 - byte * 8);
-	command[9] = action >> 8;
-	command[10] = action;
-	snprintf(path, sizeof(path), "%s/epon_tx_control", backend->device);
-	file = fopen(path, "wb");
-	if (!file)
-		return -errno;
-	ret = fwrite(command, 1, sizeof(command), file) == sizeof(command) ? 0 : -EIO;
-	if (fclose(file) && !ret)
-		ret = -errno;
-	return ret;
-}
-
-void pon_backend_tick(struct pon_backend *backend, uint64_t now)
-{
-	if (backend->reboot_at && now >= backend->reboot_at) {
-		backend->reboot_at = 0;
-		/* OpenWrt procd handles SIGTERM as an orderly reboot, including
-		 * service shutdown and filesystem unmount; never force reboot(2). */
-		backend->management_error = kill(1, SIGTERM) ? -errno : 0;
-	}
-}
-
 static uint8_t parameter_set(void *context, const struct pon_oam_request *request,
 	const uint8_t *value, size_t size)
 {
@@ -515,18 +388,6 @@ static uint8_t parameter_set(void *context, const struct pon_oam_request *reques
 
 	uint8_t branch = request->branch;
 	uint16_t leaf = request->leaf;
-	if (branch == 0xc9 && leaf == 1) {
-		if (size)
-			return 0x86;
-		if (!backend->reboot_at)
-			backend->reboot_at = monotonic_ms() + 3000;
-		return 0x80;
-	}
-	if (branch == 0xc7 && leaf == 0xa1) {
-		ret = tx_power_set(backend, value, size);
-		backend->management_error = ret;
-		return !ret ? 0x80 : ret == -EINVAL ? 0x86 : 0x87;
-	}
 	if (branch == 0xc7 && leaf == 8) {
 		ret = holdover_set(backend, value, size);
 		backend->management_error = ret;
@@ -537,27 +398,6 @@ static uint8_t parameter_set(void *context, const struct pon_oam_request *reques
 		backend->management_error = ret;
 		return !ret ? 0x80 : ret == -EINVAL ? 0x86 : 0x87;
 	}
-	if (branch == 0xc7 && (leaf == 0xb1 || leaf == 0xb2)) {
-		int port = pon_pm_object(request);
-		uint64_t now = monotonic_ms();
-
-		if (port < 0)
-			return 0x86;
-		ret = pon_pm_sample(&backend->pm[port], backend->device, port, now);
-		backend->pm_error = ret;
-		if (ret)
-			return 0x87;
-		ret = pon_pm_set(&backend->pm[port], leaf, value, size, now);
-		return !ret ? 0x80 : 0x86;
-	}
-	if (branch == 0xc7 && (leaf == 0x81 || leaf == 0x82)) {
-		ret = pon_alarm_variable(&backend->alarms, request, value, size, NULL);
-		return !ret ? 0x80 : ret == -EINVAL ? 0x86 : 0x87;
-	}
-	if (branch == 9 && (leaf == 5 || leaf == 0xb || leaf == 0xc))
-		return port_set(request, value, size);
-	if (branch == 0xc7 && leaf == 0x12)
-		return port_set(request, value, size);
 	if (branch != 7 || leaf != 0x13a)
 		return 0x87;
 	if (size != 4 || value[0] || value[1] || value[2] || (value[3] != 2 && value[3] != 3))
@@ -620,106 +460,6 @@ static int churning_key(void *context, uint8_t index, uint8_t key[9], size_t len
 	return ret ? ret : (int)width;
 }
 
-static int alarm_access(void *context, struct pon_oam_alarm *alarm, enum pon_oam_alarm_operation operation)
-{
-	struct pon_backend *backend = context;
-
-	return pon_alarm_access(&backend->alarms, alarm, operation);
-}
-
-static int alarms_poll(void *context, unsigned int generation,
-	struct pon_oam_alarm *events, size_t capacity)
-{
-	struct pon_backend *backend = context;
-	uint8_t diagnostics[10], value[4];
-	bool optical = false;
-	int ret;
-	unsigned int i;
-
-	backend->alarm_error = 0;
-	backend->pm_error = 0;
-	for (i = 0; i < PON_ALARM_COUNT; i++)
-		backend->alarms.entries[i].sampled = false;
-	for (i = 0; i < PON_PM_PORTS; i++) {
-		ret = pon_pm_sample(&backend->pm[i], backend->device, i, monotonic_ms());
-		if (ret && !backend->pm_error)
-			backend->pm_error = ret;
-		if (i == 0) {
-			if (!ret) {
-				pon_alarm_pm_sample(&backend->alarms, &backend->pm[0]);
-			} else {
-				for (unsigned int alarm = 0; alarm < PON_ALARM_PON_COUNTER_COUNT; alarm++)
-					if (backend->alarms.entries[PON_ALARM_PON_COUNTER_BASE + alarm].value.enabled)
-						backend->alarm_error = ret;
-			}
-		}
-	}
-	for (i = 0; i < PON_ALARM_OPTICAL_COUNT; i++)
-		optical |= backend->alarms.entries[i].value.enabled != 0;
-	if (optical) {
-		ret = transceiver_get(backend, diagnostics);
-		if (ret < 0)
-			backend->alarm_error = ret;
-		else
-			for (i = 0; i < PON_ALARM_OPTICAL_COUNT; i++) {
-				unsigned int field = 4 - (i % 10) / 2;
-				uint16_t raw = (uint16_t)diagnostics[field * 2] << 8 | diagnostics[field * 2 + 1];
-
-				pon_alarm_sample(&backend->alarms.entries[i], raw);
-			}
-	}
-	for (i = 0; i < PON_ALARM_PORT_COUNT; i++) {
-		struct pon_alarm_entry *entry = &backend->alarms.entries[PON_ALARM_OPTICAL_COUNT + i];
-		uint8_t object[] = {0x37, 0, 1, 4, 1, 0, 0, i + 1};
-		struct pon_oam_request request = {
-			.branch = 0xc7, .leaf = 0x11, .object = object, .object_size = sizeof(object),
-		};
-
-		if (!entry->value.enabled)
-			continue;
-		ret = port_get(&request, value);
-		if (ret < 0) {
-			if (!backend->alarm_error)
-				backend->alarm_error = ret;
-		} else {
-			pon_alarm_sample(entry, value[0]);
-		}
-	}
-	for (i = 0; i < PON_ALARM_PORT_COUNT; i++) {
-		struct pon_alarm_entry *entries = &backend->alarms.entries[PON_ALARM_LINK_COUNTER_BASE + i * 2];
-		unsigned long long changes;
-		char path[64];
-		FILE *file;
-
-		if (!entries[0].value.enabled && !entries[1].value.enabled)
-			continue;
-		/* Native counterpart to stock0x42b788's per-port changes counter.
-		 * A genuine count of1 is valid, not an error sentinel. */
-		snprintf(path, sizeof(path), "/sys/class/net/lan%u/carrier_changes", 4 - i);
-		file = fopen(path, "r");
-		if (!file) {
-			ret = -errno;
-		} else {
-			ret = fscanf(file, "%llu", &changes) == 1 ? 0 : -EIO;
-			fclose(file);
-		}
-		if (ret) {
-			if (!backend->alarm_error)
-				backend->alarm_error = ret;
-		} else {
-			pon_alarm_link_sample(&backend->alarms, i, changes);
-		}
-	}
-	return pon_alarm_pending(&backend->alarms, generation, events, capacity);
-}
-
-static void alarms_sent(void *context, const struct pon_oam_alarm *events, size_t count)
-{
-	struct pon_backend *backend = context;
-
-	pon_alarm_reported(&backend->alarms, events, count);
-}
-
 int pon_backend_init(struct pon_backend *backend, const char *mpcp_path)
 {
 	const char *slash = strrchr(mpcp_path, '/');
@@ -732,19 +472,13 @@ int pon_backend_init(struct pon_backend *backend, const char *mpcp_path)
 		return -ENAMETOOLONG;
 	memcpy(backend->device, mpcp_path, size);
 	backend->device[size] = 0;
-	pon_alarm_init(&backend->alarms);
-	pon_pm_init(backend->pm);
 	return 0;
 }
 
 void pon_backend_bind(struct pon_oam_identity *identity, struct pon_backend *backend)
 {
-	memcpy(backend->mac, identity->mac, sizeof(backend->mac));
 	identity->backend_context = backend;
 	identity->get_parameter = parameter_get;
 	identity->set_parameter = parameter_set;
 	identity->churning_key = churning_key;
-	identity->alarm = alarm_access;
-	identity->alarms_poll = alarms_poll;
-	identity->alarms_sent = alarms_sent;
 }
