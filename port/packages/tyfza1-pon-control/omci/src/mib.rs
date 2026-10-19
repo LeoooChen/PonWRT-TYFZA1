@@ -470,6 +470,10 @@ impl Mib {
         self.entities.insert((class_id, entity_id), entity);
     }
 
+    pub fn enhanced_security_enabled(&self) -> bool {
+        self.enhanced_security
+    }
+
     pub fn dispatch(&mut self, request: &Request<'_>) -> Response {
         if request.class_id == CLASS_ENHANCED_SECURITY_CONTROL && !self.enhanced_security {
             /* The disabled class is absent from the MIB and the OMCI class table, so it is an unknown ME. */

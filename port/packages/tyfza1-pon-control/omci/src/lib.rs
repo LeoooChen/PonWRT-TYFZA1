@@ -27,6 +27,8 @@ pub struct Identity {
     operator: [u8; 4],
     psk: [u8; 16],
     has_psk: u8,
+    omcc_version: u8,
+    disable_enhanced_security: u8,
 }
 
 pub struct Agent {
@@ -39,8 +41,8 @@ pub struct Agent {
 #[no_mangle]
 pub unsafe extern "C" fn tyfza1_omci_new(identity: &Identity) -> *mut Agent {
     let identity = IdentityConfig {
-        omcc_version: 0xb0,
-        disable_enhanced_security: false,
+        omcc_version: if identity.omcc_version == 0 { 0xb0 } else { identity.omcc_version },
+        disable_enhanced_security: identity.disable_enhanced_security != 0,
         vendor_id: identity.serial[..4].to_vec(),
         equipment_id: identity.equipment.to_vec(),
         hardware_version: identity.hardware.to_vec(),
@@ -90,7 +92,8 @@ pub unsafe extern "C" fn tyfza1_omci_broadcast(agent: &Agent, data: *const u8, l
     // The daemon programs the key before dispatch; a cached reply must also skip that write.
     if agent.cache.iter().any(|(key, _)| key == data) { return 0; }
     let Ok(request) = Request::parse(data) else { return 0; };
-    if request.action == protocol::ACTION_SET && request.class_id == schema::CLASS_ENHANCED_SECURITY_CONTROL
+    if agent.mib.enhanced_security_enabled() && request.action == protocol::ACTION_SET
+        && request.class_id == schema::CLASS_ENHANCED_SECURITY_CONTROL
         && request.entity_id == 0 && request.attribute_mask == 0x0020 && request.content.len() >= 18 {
         std::ptr::copy_nonoverlapping(request.content.as_ptr(), row, 18);
         return 1;

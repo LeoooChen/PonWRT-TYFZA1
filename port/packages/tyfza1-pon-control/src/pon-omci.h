@@ -8,6 +8,7 @@ struct omci_identity {
 	uint8_t serial[8], equipment[20], hardware[14], software[14];
 	uint8_t loid[24], password[12], operator_id[4];
 	uint8_t psk[16], has_psk;
+	uint8_t omcc_version, disable_enhanced_security;
 };
 struct omci_agent;
 uint8_t tyfza1_omci_led_auth(const struct omci_agent *agent);
