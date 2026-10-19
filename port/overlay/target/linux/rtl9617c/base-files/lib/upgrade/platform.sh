@@ -31,7 +31,12 @@ tyfza1_check_sizes() {
 }
 
 platform_check_image() {
-	nand_do_platform_check "$(board_name)" "$1" || return 1
+	case "$(board_name)" in
+		tianyi,tyfza1|tianyi,tyfza1-2p5g) ;;
+		*) echo "Unsupported TYFZA1 board" >&2; return 1 ;;
+	esac
+	# Both FIT configurations share one sysupgrade archive directory.
+	nand_do_platform_check tianyi,tyfza1 "$1" || return 1
 	local board_dir=$(tar tf "$1" | grep -m 1 '^sysupgrade-.*/$')
 	board_dir=${board_dir%/}
 	local root_size=$(tar xOf "$1" "$board_dir/root" | wc -c)

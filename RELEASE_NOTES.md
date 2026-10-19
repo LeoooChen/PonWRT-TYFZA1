@@ -1,5 +1,6 @@
 ## v0.8.1-beta
 
+- 修复 2.5G 版升级时误报 invalid sysupgrade file 的问题。
 - 增加 OMCC 版本选择，支持默认 0xb0 与兼容模式 0x86。
 - 增加独立的 Class 332 增强认证开关，默认保持启用。
 

@@ -77,6 +77,8 @@ jobs:
         run: python3 scripts/test_ubi_storage.py
       - name: Obtain locked OpenWrt source
         run: sh port/scripts/prepare.sh sources/openwrt
+      - name: Verify sysupgrade board identities
+        run: python3 scripts/test_sysupgrade_board.py
       - name: Prepare OMCI compiler
         run: |
           rustup toolchain install 1.96.1 --profile minimal
