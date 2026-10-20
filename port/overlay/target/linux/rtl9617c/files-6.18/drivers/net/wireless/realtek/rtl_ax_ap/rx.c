@@ -79,6 +79,7 @@ struct rtl_ax_rx {
 	struct mutex uplink_lock;
 	struct ieee80211_hw *hw;
 	unsigned int uplink_wifi_id;
+	u32 uplink_forwarded_seen;
 	void *uplink_states;
 	dma_addr_t uplink_states_dma;
 	struct rtl_ax_shortcut_seen uplink_seen[128][16];
@@ -199,9 +200,17 @@ static void rtl_ax_rx_uplink_sync(struct rtl_ax_rx *rx)
 {
 	u8 *memory = rx->rpq_memory;
 	unsigned int macid, tid;
+	u32 forwarded;
+	bool changed;
 
 	if (!rx->uplink_wifi_id) return;
 	mutex_lock(&rx->uplink_lock);
+	/* PE publishes this count after all per-TID PN/SN records. During
+	 * ARM-only reorder recovery none of those records can have changed. */
+	forwarded = get_unaligned_le32(memory + 0x2180);
+	changed = forwarded != rx->uplink_forwarded_seen;
+	if (changed) dma_rmb();
+	rx->uplink_forwarded_seen = forwarded;
 	local_bh_disable(); rcu_read_lock();
 	for (macid = 1; macid < 128; macid++) {
 		struct ieee80211_key_conf *key = rx->keys[macid];
@@ -215,7 +224,7 @@ static void rtl_ax_rx_uplink_sync(struct rtl_ax_rx *rx)
 			u8 pn[6];
 			/* An unchanged publication needs no PN/SN snapshot. Pending
 			 * reorder recovery must still run below, even without new frames. */
-			if (get_unaligned_le32(state + 12) == seen->frames) goto resume;
+			if (!changed || get_unaligned_le32(state + 12) == seen->frames) goto resume;
 			do {
 				guard = get_unaligned_le32(state + 24);
 				dma_rmb();

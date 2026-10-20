@@ -22,7 +22,7 @@ struct ieee80211_key_conf { unsigned id; } keys[2]={{1},{2}};
 struct ieee80211_sta { unsigned id; } stations[2]={{1},{2}};
 struct rtl_ax_shortcut_seen { u32 frames,bytes,msdus; };
 struct rtl_ax_rx {
- void *rpq_memory,*uplink_states,*hw; unsigned uplink_wifi_id;
+ void *rpq_memory,*uplink_states,*hw; unsigned uplink_wifi_id; u32 uplink_forwarded_seen;
  int uplink_lock; struct ieee80211_key_conf *keys[128];
  struct rtl_ax_shortcut_seen uplink_seen[128][16];
  unsigned uplink_pending_tids[128];
@@ -61,11 +61,12 @@ int main(void) {
  rtl_ax_rx_uplink_sync(&rx);
  unsigned inactive_reads=reads;
  assert(!syncs && !accounts && !publishes);
- /* Idle identities need one publication-count load each, not PN/SN payloads. */
- assert(inactive_reads==32);
+ /* One radio count suffices when no TID has published new frames. */
+ assert(inactive_reads==1);
  u32 *s=(void *)((u8 *)rx.uplink_states+(1*16+3)*32);
  s[0]=BIT(31)|123;s[1]=0x3456789a;s[2]=0x1234;s[3]=7;s[4]=7000;s[5]=9;s[6]=2;
  rx.uplink_seen[1][3]=(struct rtl_ax_shortcut_seen){5,5000,6};
+ *(u32 *)((u8 *)rx.rpq_memory+0x2180)=9;
  rtl_ax_rx_uplink_sync(&rx);
  assert(syncs==1 && accounts==1 && last_tid==3 && last_next==123 && last_count==2);
  assert(account_frames==2 && account_msdus==3 && account_bytes==2000);
@@ -77,6 +78,7 @@ int main(void) {
  assert(publishes==1 && !rx.uplink_pending_tids[2] && syncs==1);
  /* A publication after an idle poll is consumed exactly once on the next. */
  s[0]=BIT(31)|124;s[1]++;s[3]++;s[4]+=100;s[5]++;s[6]+=2;
+ *(u32 *)((u8 *)rx.rpq_memory+0x2180)=10;
  rtl_ax_rx_uplink_sync(&rx);rtl_ax_rx_uplink_sync(&rx);
  assert(syncs==2 && accounts==2 && last_next==124 && last_count==1);
  assert(account_frames==1 && account_msdus==1 && account_bytes==100);
