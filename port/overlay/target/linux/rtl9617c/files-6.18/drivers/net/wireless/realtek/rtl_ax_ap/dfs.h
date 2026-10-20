@@ -152,10 +152,10 @@ static inline void rtl_ax_dfs_dynamic(struct rtl_ax_dfs *dfs, u32 throughput,
 		dfs->first_dynamic = false;
 		return;
 	}
-	if (dfs->in_cac) {
-		dfs->aci_high = dfs->bandwidth ? 5 : 12;
-		dfs->aci_low = dfs->bandwidth ? 2 : 9;
-	}
+	/* Default dyn_setting uses these thresholds both during and after CAC.
+	 * Its separate debug-force branch is not the CAC flag. */
+	dfs->aci_high = dfs->bandwidth ? 5 : 12;
+	dfs->aci_low = dfs->bandwidth ? 2 : 9;
 	if (throughput < dfs->throughput_threshold) {
 		dfs->pw_diff = dfs->long_chirp_diff = 18;
 		dfs->pri_diff = 80;
@@ -382,10 +382,29 @@ static inline bool rtl_ax_dfs_detect(struct rtl_ax_dfs *dfs, const u8 *data,
 		if (masked || s->maximum > dfs->max_pulse_width ||
 		    rtl_ax_dfs_range_diff(&s->chirp_width) > dfs->long_chirp_diff ||
 		    (dfs->bandwidth <= 2 && s->sequence_error)) hit = false;
-		if (hit) dfs->long_count[i] = 0;
+		/* Factory adaptive rejection keeps accumulated long-pulse evidence. */
 		if (dfs->adaptive_state) hit = false;
+		if (hit) dfs->long_count[i] = 0;
 		detected |= hit;
 	}
 	return detected;
+}
+/* Reports may contain both80MHz segments. Remove the non-DFS lower80
+ * before classification, so its pulses are not counted as masked/fake pulses
+ * against the still-required upper80. Caller validates the hardware61 limit. */
+static inline bool rtl_ax_dfs_report(struct rtl_ax_dfs *dfs, const u8 *data,
+	unsigned int count, u32 seconds)
+{
+	u8 selected[61 * 8];
+	unsigned int used = 0;
+
+	if (!dfs->two_segments || !dfs->bypass_segment0)
+		return rtl_ax_dfs_detect(dfs, data, count, seconds);
+	for (unsigned int i = 0; i < count; i++)
+		if (rtl_ax_dfs_pulse(data + i * 8, true).segment) {
+			memcpy(selected + used * 8, data + i * 8, 8);
+			used++;
+		}
+	return rtl_ax_dfs_detect(dfs, selected, used, seconds);
 }
 #endif

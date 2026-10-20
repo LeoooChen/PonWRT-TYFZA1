@@ -358,7 +358,7 @@ static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 
 		spin_lock_irqsave(&radio->command_lock, flags);
 		if (dfs->enabled && !dfs->detected) {
-			if (packet->bytes < 8 || (packet->bytes - 8) % 8) {
+			if (packet->bytes < 8 || packet->bytes > 8 + 61 * 8 || (packet->bytes - 8) % 8) {
 				dfs->malformed++;
 				spin_unlock_irqrestore(&radio->command_lock, flags);
 				return -EINVAL;
@@ -366,7 +366,7 @@ static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 			dfs->reports++;
 			dfs->pulses_seen += (packet->bytes - 8) / 8;
 			dfs->dropped += get_unaligned_le16(packet->payload);
-			detected = rtl_ax_dfs_detect(dfs, packet->payload + 8,
+			detected = rtl_ax_dfs_report(dfs, packet->payload + 8,
 				(packet->bytes - 8) / 8, ktime_get_boottime_seconds());
 			if (detected) {
 				dfs->detected = true;
@@ -1711,6 +1711,21 @@ static int rtl_ax_dfs_start_locked(struct rtl_ax_ap *radio)
 		return -EOPNOTSUPP;
 	rtl_ax_dfs_initialize(dfs, region);
 	rtl_ax_dfs_channel(dfs, region, radio->channel.primary, radio->channel.bandwidth);
+	/* TW segment0 is the lower80, including when the primary is in the
+	 * upper80 (factory MKK36..64 policy). Classifier region does not decide
+	 * which frequencies require detection: use the actual channel flags. */
+	if (dfs->two_segments) {
+		bool lower_radar = false;
+
+		for (unsigned int i = 0; i < 4; i++) {
+			unsigned int channel = radio->channel.center - 14 + i * 4;
+			int frequency = ieee80211_channel_to_frequency(channel, NL80211_BAND_5GHZ);
+			struct ieee80211_channel *lower = ieee80211_get_channel(radio->hw->wiphy, frequency);
+
+			lower_radar |= !!(lower->flags & IEEE80211_CHAN_RADAR);
+		}
+		dfs->bypass_segment0 = !lower_radar;
+	}
 	dfs->in_cac = !radio->ap_started;
 	ret = rtl_ax_dfs_hardware(&radio->io, true);
 	if (ret) return ret;

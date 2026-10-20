@@ -1,0 +1,121 @@
+{
+  "status": "HE160 completed normal CAC with radar detection enabled; throughput acceptance remains open",
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "live_root_cause": {
+    "trigger": "FCC classifier region kept segment0 enabled on36..64 HE160 although the actual CN channel flags require DFS only for52..64",
+    "proof": "Captured all23 reports of a failed CAC: native and actual factory ELF both detect the segment0 long-pulse accumulation. Required upper80 input alone produces0 events in both implementations. A physical36/80 report-engine observation also records chirps in the non-DFS low80.",
+    "trigger_snapshot": {
+      "n": 22,
+      "seconds": 13230,
+      "CAC": 1,
+      "pulses": 3,
+      "recorded": 1,
+      "factory": 1,
+      "fixed": 1,
+      "pre": {
+        "region": 1,
+        "primary": 44,
+        "bandwidth": 3,
+        "two_segments": 1,
+        "bypass_segment0": 0,
+        "ppb_parameter": 5,
+        "pw_factor": 1,
+        "pri_factor": 1,
+        "false_report_threshold": 5,
+        "pri_mask": 3,
+        "fake_radar_threshold": 4,
+        "pw_diff": 18,
+        "pri_diff": 1,
+        "long_chirp_diff": 18,
+        "max_pulse_width": 660,
+        "adaptive_state": 0,
+        "adaptive_total": 1,
+        "long_count[0]": 8,
+        "long_count[1]": 0,
+        "chirp_started[0]": 1,
+        "chirp_started[1]": 1,
+        "chirp_start[0]": 13227,
+        "chirp_start[1]": 13217,
+        "enabled": 1,
+        "in_cac": 1
+      },
+      "raw": "000000000000000000005806150000374c000000000040000000980215000038"
+    },
+    "frequency_mapping_reference": "Actual factory halbb_dfs_dyn_setting@2a1ad4..2a1b08 bypasses segment0 for MKK/ETSI primary36..64 including upper-primary52..64, identifying the low80 segment. Preserve pulse decoder and classifier; select frequencies from Linux channel flags.",
+    "change": "At160MHz derive segment0 participation from all four low80 channel flags. Remove non-required low80 records before classification so they cannot mask valid upper80 evidence as fake pulses. Upper80 radar pattern remains detected by focused actual-function/OEM comparison.",
+    "limit": "Does not identify the physical RF source as Wi-Fi or radar; the correction scopes CAC decisions to frequencies marked as requiring detection."
+  },
+  "additional_factory_corrections": [
+    "Apply default ACI5/2 thresholds in and out of CAC; the factory debug-force field is not CAC.",
+    "Retain long-pulse evidence when adaptive state rejects an event; only accepted events clear it."
+  ],
+  "validation": {
+    "contract": {
+      "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "classifier_vectors": 589,
+      "classification": "actual relocated ARM64 factory functions",
+      "dynamic_vectors": 66,
+      "profiles": [
+        "FCC",
+        "MKK W53",
+        "MKK W56",
+        "ETSI",
+        "KCC"
+      ],
+      "hardware": "MAC/BB enable/disable writes equal factory cfg_dfs and radar_detect_enable/disable",
+      "boundaries": [
+        "RFK/DFS queue ownership",
+        "report engine timeout propagates",
+        "ring epoch wrap and expiry",
+        "CAC keeps hardware TX blocked",
+        "AP start releases TX",
+        "radar during AP commands prevents start"
+      ],
+      "hardware_device": false,
+      "full_test_suite": false
+    },
+    "stateful_synthetic_reports": 1152,
+    "stateful_factory_native_events": [
+      20,
+      20
+    ],
+    "full_suite": false,
+    "live_CAC": {
+      "channel": 44,
+      "center": 50,
+      "MHz": 160,
+      "hardware_detector": true,
+      "CAC_complete": true,
+      "reports": 164,
+      "pulses": 1552,
+      "events": 0,
+      "malformed": 0,
+      "report_drops": 0,
+      "evidence": "\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi/dfs-domain-segments-cac-end-console.txt"
+    },
+    "live_retained_replay": {
+      "reports": 256,
+      "CAC_reports": 5,
+      "events": 0,
+      "all_factory_decisions_match": true,
+      "raw_sha256": "93e3b143d3db2f9dbf8a45b846dbc7eb2a2c14c7a78c836dc43de0afdba18622",
+      "limit": "The256-entry ring retained only the final5 CAC reports plus operation reports. Earlier corrected-CAC raw reports were overwritten; console counters prove completion but are not a full raw replay."
+    }
+  },
+  "candidate": {
+    "radio_sha256": "5053c0364cae48b766e6b3e15fa024b3cf0c87351d42dc1ee9575577f1c38919",
+    "flash_written": false,
+    "cached_RX": false,
+    "PE_queue_metadata_experiment": false,
+    "observer_unloaded": true
+  },
+  "evidence_files": {
+    "dfs-cac-fixed-raw.txt": "9bff24a8fdbc0ac35acdf2aada6c659cd247003f9300a02c63e90af5a88d7ead",
+    "dfs-cac-fixed-pulses.json": "77937123553846f927e7ad0871b37b5d8d774d8416a4e8eb417e838222896ad7",
+    "dfs-low80-raw.txt": "499c4692fa80a028f80475f04b3420bb9aa641186b5dec76691326048de18308",
+    "dfs-low80-summary.json": "054521c4bdd6748af9324b7ab0101691f62017ad2720fa33603a871653ce8e6e",
+    "dfs-domain-segments-before.txt": "9ea398765ba8a2a7048139522755abe93272f42215e721eb87ed73012ac8edbb",
+    "dfs-domain-segments-raw.txt": "93e3b143d3db2f9dbf8a45b846dbc7eb2a2c14c7a78c836dc43de0afdba18622",
+    "dfs-domain-segments-after.txt": "934e1f38be6540029436e746ac4d34d75d21dac6c0ce857a14acee19ad9bc7ca"
+  }
+}
