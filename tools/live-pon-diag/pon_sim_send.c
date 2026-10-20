@@ -7,11 +7,13 @@
 #include <linux/ktime.h>
 #include <linux/math64.h>
 #include <linux/unaligned.h>
+#include <linux/sched/cputime.h>
 #include <net/ip.h>
 #include <net/checksum.h>
-static unsigned int packets=8,rate_mbps=100;
+static unsigned int packets=8,rate_mbps=100,session_id=0x1234;
 module_param(packets,uint,0600);
 module_param(rate_mbps,uint,0600);
+module_param(session_id,uint,0600);
 MODULE_PARM_DESC(rate_mbps,"Ethernet wire rate including FCS, preamble and inter-frame gap");
 static int __init send_init(void)
 {
@@ -21,10 +23,12 @@ static int __init send_init(void)
  dma_addr_t address;
  u32 saved[6],status,first;
  u64 started,elapsed;
+ u64 user_start,system_start,user_end,system_end;
  unsigned int done=0;
  int ret=0;
+ task_cputime(current,&user_start,&system_start);
  if(!lan)return -ENODEV;
- if(!packets || !rate_mbps || rate_mbps>1000){dev_put(lan);return -EINVAL;}
+ if(!packets || !rate_mbps){dev_put(lan);return -EINVAL;}
  dma=ioremap(0x4f7001000ULL,0x1000);vp=dma+0x100+11*0xa0;
  if(readl(vp)){ret=-EBUSY;goto unmap;}
  memory=dma_alloc_coherent(lan->dev.parent,128*1024,&address,GFP_KERNEL);
@@ -35,16 +39,18 @@ static int __init send_init(void)
  memset(memory,0,128*1024);
  for(unsigned int i=0;i<64;i++){
   u8 *eth=memory+512+i*1536;
-  struct iphdr *ip=(void *)(eth+14);
-  struct udphdr *udp=(void *)(eth+34);
-  memcpy(eth,"\x00\x50\xc2\x01\x02\x00",6);memcpy(eth+6,"\x02\x55\x46\x50\x4f\x4e",6);
-  put_unaligned_be16(ETH_P_IP,eth+12);
+  struct iphdr *ip=(void *)(eth+22);
+  struct udphdr *udp=(void *)(eth+42);
+  memcpy(eth,"\x98\x1e\x89\x61\x68\xd0",6);memcpy(eth+6,"\x02\x55\x46\x50\x4f\x4e",6);
+  put_unaligned_be16(ETH_P_PPP_SES,eth+12);
+  eth[14]=0x11;eth[15]=0;put_unaligned_be16(session_id,eth+16);
+  put_unaligned_be16(1494,eth+18);put_unaligned_be16(0x21,eth+20);
   ip->version=4;ip->ihl=5;ip->ttl=64;ip->protocol=IPPROTO_UDP;
-  ip->tot_len=htons(1500);ip->saddr=htonl(0xc6120001);ip->daddr=htonl(0xc6120002);
-  ip_send_check(ip);udp->source=htons(55000);udp->dest=htons(55001);udp->len=htons(1480);
-  for(unsigned int byte=56;byte<1514;byte++)eth[byte]=(byte*31+7)&255;
-  memcpy(eth+42,"TYFPON-SIM",10);put_unaligned_be32(i,eth+52);
-  udp->check=csum_tcpudp_magic(ip->saddr,ip->daddr,1480,IPPROTO_UDP,csum_partial(udp,1480,0));
+  ip->tot_len=htons(1492);ip->saddr=htonl(0xc6120001);ip->daddr=htonl(0xc6120002);
+  ip_send_check(ip);udp->source=htons(55000);udp->dest=htons(55001);udp->len=htons(1472);
+  for(unsigned int byte=64;byte<1514;byte++)eth[byte]=(byte*31+7)&255;
+  memcpy(eth+50,"TYFPPP-SIM",10);put_unaligned_be32(i,eth+60);
+  udp->check=csum_tcpudp_magic(ip->saddr,ip->daddr,1472,IPPROTO_UDP,csum_partial(udp,1472,0));
   if(!udp->check)udp->check=CSUM_MANGLED_0;
   put_unaligned_le32((u32)address+512+i*1536,memory+i*8);
   /* CPU injection enters connector25 with PON source7/POL_ID0.
@@ -63,10 +69,10 @@ static int __init send_init(void)
   for(unsigned int i=0;i<n;i++){
    unsigned int slot=(first+done+i)&63;
    u8 *eth=memory+512+slot*1536;
-   struct udphdr *udp=(void *)(eth+34);
-   __be32 previous=get_unaligned((__be32 *)(eth+52));
+   struct udphdr *udp=(void *)(eth+42);
+   __be32 previous=get_unaligned((__be32 *)(eth+60));
    csum_replace4(&udp->check,previous,htonl(done+i));
-   put_unaligned_be32(done+i,eth+52);
+   put_unaligned_be32(done+i,eth+60);
    if(!udp->check)udp->check=CSUM_MANGLED_0;
   }
   dma_wmb();writel(end,vp+0x18);writel(1,vp+0x68);
@@ -82,10 +88,12 @@ static int __init send_init(void)
  }
  elapsed=ktime_get_ns()-started;
  writel(0,vp);
- pr_info("PON_SIM HP11 VP11 dma=%pad source=7 connector=25 sent=%u requested=%u read=%u ret=%d target_wire_Mbps=%u elapsed_ns=%llu offered_wire_bps=%llu offered_frame_bps=%llu\n",
-  &address,done,packets,readl(vp+0x1c)&63,ret,rate_mbps,elapsed,
+ task_cputime(current,&user_end,&system_end);
+ pr_info("PON_SIM HP11 VP11 dma=%pad source=7 connector=25 PPPoE_session=%u sent=%u requested=%u read=%u ret=%d target_wire_Mbps=%u elapsed_ns=%llu offered_wire_bps=%llu offered_frame_bps=%llu\n",
+  &address,session_id,done,packets,readl(vp+0x1c)&63,ret,rate_mbps,elapsed,
   mul_u64_u64_div_u64((u64)done*1538*8,NSEC_PER_SEC,elapsed),
   mul_u64_u64_div_u64((u64)done*1514*8,NSEC_PER_SEC,elapsed));
+ pr_info("PON_SIM generator_raw_cpu_ns=%llu\n",user_end+system_end-user_start-system_start);
 restore:
  writel(0,vp);writel(saved[1],vp+8);writel(saved[2],vp+12);
  writel(BIT(31)|BIT(30),vp+4);readl_poll_timeout(vp+4,status,!(status&BIT(31)),1,100000);
@@ -98,4 +106,4 @@ static void __exit send_exit(void) {}
 module_init(send_init);
 module_exit(send_exit);
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("TYFZA1 PON source tuple NI DMA injection");
+MODULE_DESCRIPTION("TYFZA1 valid PPPoE session-frame NI DMA injection");
