@@ -104,7 +104,7 @@
   },
   "candidate": {
     "radio_sha256": "5053c0364cae48b766e6b3e15fa024b3cf0c87351d42dc1ee9575577f1c38919",
-    "flash_written": false,
+    "flash_written": true,
     "cached_RX": false,
     "PE_queue_metadata_experiment": false,
     "observer_unloaded": true
@@ -117,5 +117,14 @@
     "dfs-domain-segments-before.txt": "9ea398765ba8a2a7048139522755abe93272f42215e721eb87ed73012ac8edbb",
     "dfs-domain-segments-raw.txt": "93e3b143d3db2f9dbf8a45b846dbc7eb2a2c14c7a78c836dc43de0afdba18622",
     "dfs-domain-segments-after.txt": "934e1f38be6540029436e746ac4d34d75d21dac6c0ce857a14acee19ad9bc7ca"
+  },
+  "deployment": {
+    "module": "/lib/modules/6.18.55/rtl_ax_ap.ko",
+    "sha256": "5053c0364cae48b766e6b3e15fa024b3cf0c87351d42dc1ee9575577f1c38919",
+    "original_backup": "/root/tyf-wifi-debug-20261020/rtl_ax_ap-before-cac-domain.ko",
+    "backup_sha256": "7e9c7f3d44214f669248c0f4830e081389961c84aa26c7cabe5071225eddfc72",
+    "readback_verified": true,
+    "source_commit": "7ea9fe0",
+    "scope": "Verified CAC/subband and committed RX sync changes; no cachedRX, PE queue metadata, batching or eager experiments."
   }
 }
