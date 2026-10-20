@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run production PON TX/RX, VLAN helpers and DMA on PPPoE Ethernet bytes.
+"""Run production PON TX/RX, VLAN helpers and DMA on PPPoE/DHCP bytes.
 
 SKB storage, MMIO and NAPI are host models; this is not an optical-line test.
 """
@@ -132,12 +132,28 @@ model += function('rtl9617c-pon-path.c', 'rtl_pon_itu_data_transmit')
 model += function('rtl9617c-pon-path.c', 'rtl_pon_itu_data_receive')
 model += r'''
 static struct sk_buff *packet(unsigned vid,bool metadata,unsigned code){
- struct sk_buff*s=calloc(1,sizeof(*s));assert(s);s->data=s->memory+128;s->len=40;
+ /* Match NET_IP_ALIGN when the fixture carries an IPv4 header. */
+ struct sk_buff*s=calloc(1,sizeof(*s));assert(s);s->data=s->memory+130;s->len=40;
  memset(s->data,0xff,6);s->data[6]=2;s->data[11]=1;s->data[12]=0x88;s->data[13]=0x63;
  s->data[14]=0x11;s->data[15]=code;s->data[19]=20;
  for(unsigned i=20;i<40;i++)s->data[i]=i+73;
  if(vid){if(metadata){s->tagged=true;s->vlan_proto=htons(0x8100);s->vlan_tci=vid;}
  else __vlan_insert_tag(s,htons(0x8100),vid);}
+ return s;
+}
+static struct sk_buff *dhcp_packet(unsigned vid,bool metadata,bool reply){
+ struct sk_buff*s=packet(0,false,0);s->len=342;memset(s->data+12,0,s->len-12);
+ u8*ip=s->data+14,*udp=ip+20,*bootp=udp+8;
+ s->data[12]=8;ip[0]=0x45;ip[2]=1;ip[3]=72;ip[8]=64;ip[9]=17;
+ if(reply){ip[12]=100;ip[13]=67;ip[14]=248;ip[15]=1;s->data[11]=2;}
+ memset(ip+16,255,4);udp[1]=reply?67:68;udp[3]=reply?68:67;udp[4]=1;udp[5]=52;
+ unsigned sum=0;for(unsigned i=0;i<20;i+=2)sum+=get_unaligned_be16(ip+i);
+ while(sum>>16)sum=(sum&65535)+(sum>>16);sum=~sum;ip[10]=sum>>8;ip[11]=sum;
+ bootp[0]=reply?2:1;bootp[1]=1;bootp[2]=6;bootp[7]=1;bootp[28]=2;bootp[33]=1;
+ if(reply){bootp[16]=100;bootp[17]=67;bootp[18]=248;bootp[19]=254;}
+ memcpy(bootp+236,"\x63\x82\x53\x63\x35\x01",6);bootp[242]=reply?2:1;bootp[243]=255;
+ if(metadata){s->tagged=true;s->vlan_proto=htons(0x8100);s->vlan_tci=vid;}
+ else __vlan_insert_tag(s,htons(0x8100),vid);
  return s;
 }
 static void profile(struct rtl_evto_profile*p,unsigned from,unsigned to){
@@ -224,7 +240,8 @@ int main(int argc,char**argv){
  assert(rtl_evto_valid(&p->profile[0]));
  p->path[0].vlan_profile[4]=1;profile(&p->profile[1],46,146);
  struct net_device vlan={.vlan_proto=htons(0x8100),.vlan_id=46};dev.upper=&vlan;
- for(unsigned metadata=0;metadata<2;metadata++){
+ for(unsigned bridged=0;bridged<2;bridged++)for(unsigned metadata=0;metadata<2;metadata++){
+  vlan.bridge_port=bridged;
   unsigned tx_drops=dev.stats.tx_dropped,rx_drops=dev.stats.rx_dropped,before=delivered;
   dma.read=dma.write=0;
   assert(rtl_pon_itu_data_transmit(&pon,packet(46,metadata,9),&dev)==NETDEV_TX_OK);
@@ -234,15 +251,41 @@ int main(int argc,char**argv){
   assert(delivered==before+1 && received_length==44 && get_unaligned_be16(received+14)==46 && dev.stats.rx_dropped==rx_drops);
  }
  p->profile[0].downstream=8;
- for(unsigned role=0;role<3;role++){
-  vlan.bridge_port=role==0;dev.bridge_port=role==1;vlan.vlan_id=role==2?47:46;
+ for(unsigned role=0;role<2;role++){
+  vlan.bridge_port=false;dev.bridge_port=role==0;vlan.vlan_id=role==1?47:46;
   unsigned tx_drops=dev.stats.tx_dropped,rx_drops=dev.stats.rx_dropped,before=delivered;
   dma.read=dma.write=0;
   assert(rtl_pon_itu_data_transmit(&pon,packet(46,false,9),&dev)==NETDEV_TX_OK);
   rtl_pon_itu_data_receive(&pon,&napi,packet(146,false,7),7|(8<<8));
   assert(!dma.write && dev.stats.tx_dropped==tx_drops+1 && dev.stats.rx_dropped==rx_drops+1 && delivered==before);
  }
- puts("Local VLAN service: UNI tagged-drop bypassed, IWTP rewrite preserved; bridge ports and unconfigured VIDs retain UNI policy");
+ puts("Local VLAN service: routed and bridged VLANs bypass UNI tagged-drop, preserve IWTP edits; raw PON bridges and unconfigured VIDs retain UNI policy");
+ /* IPTV reproducer: VLAN48 DHCP uses the same service before/after enslaving. */
+ dev.bridge_port=false;vlan.vlan_id=48;p->path[0].vlan=48;p->path[0].index=10;
+ p->path[0].vlan_profile[4]=RTL_EVTO_NONE;
+ for(unsigned bridged=0;bridged<2;bridged++)for(unsigned metadata=0;metadata<2;metadata++){
+  vlan.bridge_port=bridged;
+  unsigned tx_drops=dev.stats.tx_dropped,rx_drops=dev.stats.rx_dropped,before=delivered;
+  dma.read=dma.write=0;
+  assert(rtl_pon_itu_data_transmit(&pon,dhcp_packet(48,metadata,false),&dev)==NETDEV_TX_OK);
+  payload=dma.memory+64*sizeof(struct rtl_dma_descriptor)+16;
+  assert(dma.write==1 && dev.stats.tx_dropped==tx_drops && readl(payload-8)==(BIT(30)|(10<<18)));
+  assert(get_unaligned_be16(payload+14)==48 && get_unaligned_be16(payload+16)==ETH_P_IP);
+  assert(get_unaligned_be16(payload+38)==68 && get_unaligned_be16(payload+40)==67 && payload[288]==1);
+  rtl_pon_itu_data_receive(&pon,&napi,dhcp_packet(48,metadata,true),7|(10<<8));
+  assert(delivered==before+1 && dev.stats.rx_dropped==rx_drops && received_length==346);
+  assert(get_unaligned_be16(received+14)==48 && get_unaligned_be16(received+16)==ETH_P_IP);
+  assert(get_unaligned_be16(received+38)==67 && get_unaligned_be16(received+40)==68 && received[288]==2);
+ }
+ /* Every configured QinQ layer is required, even when the leaf is bridged. */
+ struct net_device inner={.vlan_proto=htons(0x8100),.vlan_id=900,.bridge_port=true};
+ struct rtl_evto_packet tags={.count=2,.tag={{0x8100,48},{0x8100,900}}};
+ vlan.bridge_port=false;vlan.upper=&inner;
+ assert(rtl_pon_itu_service_entry(&dev,&tags));
+ inner.vlan_id=901;assert(!rtl_pon_itu_service_entry(&dev,&tags));
+ inner.vlan_id=900;inner.vlan_proto=htons(0x88a8);assert(!rtl_pon_itu_service_entry(&dev,&tags));
+ tags.count=0;assert(!rtl_pon_itu_service_entry(&dev,&tags));
+ puts("IPTV VLAN48: DHCP Discover reaches GEM10/DMA and Offer retains VLAN48 on RX, routed/bridged and inline/metadata; QinQ lookup remains exact");
  free(dma.memory);free(dma.registers);free(state);
  puts(retry?"PADI DMA BUSY retry preserves original SKB and single VLAN edit; PADO return passed":"PADI VLAN46/GEM1033/TCONT1/queue0 -> DMA bytes; PADO GEM8 -> VLAN46; inline/metadata and IWTP rewrite passed");
 }
@@ -252,7 +295,7 @@ with tempfile.TemporaryDirectory(prefix='itu-pppoe-') as directory:
     (work / 'test.c').write_text(model)
     subprocess.run(['cc', '-O1', '-g', '-Wall', '-Wextra', '-Werror',
                     '-Wno-unused-function', '-Wno-misleading-indentation',
-                    '-fsanitize=address,undefined', '-I' + str(drivers),
+                    '-fsanitize=address,undefined', '-fno-sanitize-recover=all', '-I' + str(drivers),
                     str(work / 'test.c'), '-o', str(work / 'test')], check=True)
     subprocess.run([str(work / 'test')], check=True)
     subprocess.run([str(work / 'test'), 'retry'], check=True)

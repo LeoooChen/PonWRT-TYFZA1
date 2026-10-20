@@ -380,7 +380,8 @@ static bool rtl_pon_itu_service_entry(struct net_device *dev, const struct rtl_e
 	if (!packet->count || netif_is_bridge_port(dev)) return false;
 	for (unsigned int i = 0; i < packet->count; i++) {
 		dev = __vlan_find_dev_deep_rcu(dev, htons(packet->tag[i].tpid), packet->tag[i].tci & 4095);
-		if (!dev || netif_is_bridge_port(dev)) return false;
+		/* A VLAN bridge member still selects an explicit local service. */
+		if (!dev) return false;
 	}
 	return true;
 }
