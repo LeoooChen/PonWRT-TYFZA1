@@ -446,7 +446,7 @@ void pe_main(volatile u32 *control)
 				);
 				sequence = sequences[macid * 8 + tid];
 				sequences[macid * 8 + tid] = (sequence + 1) & 0xfff;
-				header_copy(header, uncached(request[8]), header_bytes);
+				header_copy(header, uncached(mailbox[14] + id * 128), header_bytes);
 				header[22] = sequence << 4;
 				header[23] = sequence >> 4;
 				address(page + used, mailbox[14] + id * 128, header_bytes, 0);
@@ -455,7 +455,7 @@ void pe_main(volatile u32 *control)
 			if (flags & BIT(18)) {
 				u32 macid = flags >> 24, tid = flags & 7;
 				u32 header_bytes = (packet >> 16) & 63;
-				const struct packed_word *input = uncached(request[8]);
+				const struct packed_word *input = uncached(ni_packet ? request[8] : mailbox[14] + id * 128);
 				/* Gather addresses once; byte assembly belongs in private DMEM. */
 				u32 ethernet_words[4] = {input[0].value, input[1].value,
 					input[2].value, ((const u8 *)input)[12] | (u32)((const u8 *)input)[13] << 8};
@@ -588,6 +588,7 @@ void pe_main(volatile u32 *control)
 				mailbox[9] = consumer;
 			}
 			mailbox[10]++;
+			mailbox[RTL_AX_PE_TX_BYTES] += packet & 0x3fff;
 			mailbox[1]++;
 			mailbox[13] = id;
 		}

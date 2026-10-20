@@ -89,6 +89,7 @@ struct rtl_ax_tx {
 	u64 ampdu_submitted, ampdu_completed;
 	u32 scheduler_saved, last_words[14], last_report, last_sequence;
 	u64 submitted, completed, status_count[8], polluted, unmatched, stopped, full;
+	u32 traffic_bytes;
 	u64 encrypted, hardware_pn;
 	u64 prepare_ns;
 	u64 fast_xmit;
@@ -194,7 +195,7 @@ struct rtl_ax_tx *rtl_ax_tx_prepare(struct pci_dev *pdev, const struct rtl_ax_io
 	{
 		ret = pe_probe_alloc(&tx->pe, pdev->device == 0xc852 ? 0 : 1);
 		if (ret) goto release;
-		/* PCIe snoops ARM caches; PE reads DDR without that snoop path. */
+		/* PE owns shared descriptors/headers; payload DMA belongs to PCIe. */
 		tx->dma_device = &tx->pe.device->dev;
 	}
 	tx->ring = dma_alloc_coherent(tx->dma_device, RTL_AX_TX_RINGS * RTL_AX_TX_ENTRIES * 8, &tx->ring_dma, GFP_KERNEL);
@@ -339,10 +340,10 @@ void rtl_ax_tx_open(struct rtl_ax_tx *tx)
 static void rtl_ax_tx_unmap(struct rtl_ax_tx *tx, const struct rtl_ax_tx_slot *slot)
 {
 	if (slot->mapping) {
-		dma_unmap_sg(tx->dma_device, slot->mapping->sg, slot->mapping->count, DMA_TO_DEVICE);
+		dma_unmap_sg(&tx->pdev->dev, slot->mapping->sg, slot->mapping->count, DMA_TO_DEVICE);
 		kfree(slot->mapping);
 	} else
-		dma_unmap_single(tx->dma_device, slot->dma, slot->bytes, DMA_TO_DEVICE);
+		dma_unmap_single(&tx->pdev->dev, slot->dma, slot->bytes, DMA_TO_DEVICE);
 }
 
 static int rtl_ax_tx_map(struct rtl_ax_tx *tx, struct sk_buff *skb,
@@ -360,7 +361,7 @@ static int rtl_ax_tx_map(struct rtl_ax_tx *tx, struct sk_buff *skb,
 		count = skb_to_sgvec(skb, slot->mapping->sg, 0, skb->len);
 		if (count > 0) {
 			slot->mapping->count = count;
-			slot->mapping->dma_count = dma_map_sg(tx->dma_device, slot->mapping->sg, count, DMA_TO_DEVICE);
+			slot->mapping->dma_count = dma_map_sg(&tx->pdev->dev, slot->mapping->sg, count, DMA_TO_DEVICE);
 			if (!slot->mapping->dma_count) {
 				kfree(slot->mapping);
 				slot->mapping = NULL;
@@ -381,8 +382,8 @@ static int rtl_ax_tx_map(struct rtl_ax_tx *tx, struct sk_buff *skb,
 			return ret;
 		*linearized = true;
 	}
-	slot->dma = dma_map_single(tx->dma_device, skb->data, skb->len, DMA_TO_DEVICE);
-	if (dma_mapping_error(tx->dma_device, slot->dma))
+	slot->dma = dma_map_single(&tx->pdev->dev, skb->data, skb->len, DMA_TO_DEVICE);
+	if (dma_mapping_error(&tx->pdev->dev, slot->dma))
 		return -ENOMEM;
 	return DIV_ROUND_UP(skb->len, RTL_AX_TX_WP_FRAGMENT_BYTES);
 }
@@ -507,6 +508,8 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		!ieee80211_has_morefrags(header->frame_control) && !(le16_to_cpu(header->seq_ctrl) & 15);
 	unsigned int header_bytes = encap ? tx->peer_qos[macid] ? 26 : 24 : ieee80211_hdrlen(header->frame_control);
 	unsigned int packet_bytes = encap ? skb->len + header_bytes + 8 - 14 : skb->len;
+	u8 original_header[36];
+	unsigned int original_header_bytes = encap ? ETH_HLEN : pe_sequence ? header_bytes : 0;
 	u8 *page;
 	int ret;
 	u64 begin = READ_ONCE(rtl_ax_datapath_profile) ? ktime_get_ns() : 0;
@@ -525,6 +528,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		ring = rtl_ax_tx_dma_channel(tid, 0);
 		qsel = ring;
 	}
+	if (original_header_bytes) memcpy(original_header, skb->data, original_header_bytes);
 	ret = rtl_ax_tx_map(tx, skb, &slot, &linearized, encap || pe_sequence);
 	if (ret < 0)
 		return ret;
@@ -555,6 +559,10 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 			!!(info->flags & IEEE80211_TX_CTL_NO_ACK) << 13 |
 			is_multicast_ether_addr(encap ? skb->data : header->addr1) << 14 | tx->checksum_enabled << 17 | macid << 24 | encap << 18;
 		u32 key = 0; u64 pn = 0;
+		/* A PCIe DMA cookie may alias PE MMIO. Publish the header bytes
+		 * into this WP's PE-visible buffer before transferring ownership. */
+		if (original_header_bytes)
+			memcpy(tx->headers + id * 128, original_header, original_header_bytes);
 		if (pe_sequence)
 			request_flags = (request_flags & ~0xfffU) | tid | BIT(22);
 		if (info->control.hw_key) {
@@ -651,6 +659,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	dma_wmb();
 	tx->producer[ring] = next;
 	tx->submitted++;
+	if (!tx->pe_active) tx->traffic_bytes += packet_bytes;
 	tx->linearized_packets += linearized;
 	tx->amsdu_packets += !encap && ieee80211_is_data_qos(header->frame_control) &&
 		(*ieee80211_get_qos_ctl(header) & IEEE80211_QOS_CTL_A_MSDU_PRESENT);
@@ -942,6 +951,12 @@ int rtl_ax_tx_free(struct rtl_ax_tx *tx, struct ieee80211_hw *hw)
 		pe_probe_free(&tx->pe);
 	kfree(tx);
 	return 0;
+}
+
+u32 rtl_ax_tx_traffic_bytes(struct rtl_ax_tx *tx)
+{
+	return tx->pe_active ? get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX +
+		RTL_AX_PE_TX_BYTES * 4) : READ_ONCE(tx->traffic_bytes);
 }
 
 int rtl_ax_tx_status(struct rtl_ax_tx *tx, char *out, size_t capacity)

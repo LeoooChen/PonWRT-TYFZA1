@@ -1,0 +1,46 @@
+{
+  "status": "Root correction deployed. Bandwidth objective remains active and incomplete.",
+  "root_cause": {
+    "observed": "114 of 811 HOST TX records had wrong WLAN DA/SA/EtherType. All 114 payload DMA cookies were in 0x12000000..0x120fffff; the other 697 headers were correct. All 114 transmissions later repeated with correct headers.",
+    "cause": "The PE CPU treated a PCIe DMA cookie as a PE-addressable pointer. PE ATU maps 0x120xxxxx to PCIe1 IO, so dereferencing it reads IO instead of host DDR.",
+    "implementation": "Copy HOST Ethernet/raw-QoS header into the WP-owned PE-shared header buffer before publishing the request. PE reads that staging buffer and treats HOST payload DMA cookies as opaque PCIe addresses. Map/unmap payloads on the consuming PCIe device."
+  },
+  "lifecycle_correction": {
+    "cause": "AP stop paused TX/closed RX before releasing NI route netdev references. unregister_netdevice then waited before tx_free could release the reference.",
+    "implementation": "Withdraw NI route while RX and RPQ are still running, before TX pause and RX teardown.",
+    "verification_limit": "Focused actual-stop-body regression passes. A live unload with active NI forwarding has not yet been reverified."
+  },
+  "validation": {
+    "linked_MIPS_regression": "scripts/test_pe_host_headers.py: actual firmware; observed 0x1203xxxx IO shadow for both Ethernet and raw QoS. Old binary fails; new passes.",
+    "stop_order_regression": "scripts/test_radio_stop_route.py: old fails; corrected source passes.",
+    "post_fix_live_headers": {
+      "records": 137975,
+      "wrong_DA": 0,
+      "wrong_SA": 0,
+      "wrong_EtherType": 0,
+      "wrong_payload_DMA": 0,
+      "TCP_checksum_samples_valid": 8623,
+      "ATU_shadow_payloads_observed": 0,
+      "limit": "Live post-fix allocations did not hit the shadow window. The linked-production-firmware regression covers that window."
+    },
+    "remaining_loss": "Same live trace still had 1893 iperf3 TCP retransmissions and 196.21 Mbps. This correction is not full bandwidth acceptance.",
+    "full_test_suite": false
+  },
+  "deployment": {
+    "radio": "artifacts/own-wifi-20261020/host-header-staging-32/rtl_ax_ap.ko",
+    "radio_sha256": "7e9c7f3d44214f669248c0f4830e081389961c84aa26c7cabe5071225eddfc72",
+    "loaded_build_note_sha256": "a4e78407741befe08130e117917e2aae82fbbc1fa552b8ece6ed4908fb04275e",
+    "PE_DMA_mask_bits": 32,
+    "rejected_candidates": "28-bit PE mask variants 3d4ab66 and d6cdf395 failed -EIO. The extra mask change was removed completely; pe_probe.h matches HEAD.",
+    "kernel": "FE POL_ID/HKEY_ID correction, 6.18.55 #4",
+    "mac80211_sha256": "9780d6046b9e2021439a785c7b6c68ff569fabf84afc271312bf013badf4343b"
+  },
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx.c": "1470e09e3cd9b6722650bfb6e42d9413a04402dc05c1e0ade07c9d99ee52e897",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/monitor.h": "9bfacfc44f928ff4f62734cdf372aed58a95c260ae86927cefc6dca3a63cfb0b",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-tx-code.h": "e97cfb031e8d61eb278c484c626df6b03342572073f844b23abd923accce5059",
+    "port/pe/rtl9617c-radio-wd.c": "da30c808fe1a2d80dc30d5a7aecebabcb229f14ee17e8c037050fc753ba32e7d",
+    "scripts/test_pe_host_headers.py": "f74c3ccbc496f02a8e1711f15ef693105248f291a2b751c31dc3415b97fa2dec",
+    "scripts/test_radio_stop_route.py": "f28f0b880194f06b4ababf9d0f8731c794e72a2a8a756c9de6c0d9fc90239723"
+  }
+}

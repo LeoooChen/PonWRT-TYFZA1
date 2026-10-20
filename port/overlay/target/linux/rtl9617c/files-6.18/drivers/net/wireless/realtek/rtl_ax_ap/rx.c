@@ -213,6 +213,9 @@ static void rtl_ax_rx_uplink_sync(struct rtl_ax_rx *rx)
 			struct rtl_ax_shortcut_seen *seen = &rx->uplink_seen[macid][tid];
 			u32 guard, snapshot[6], count;
 			u8 pn[6];
+			/* An unchanged publication needs no PN/SN snapshot. Pending
+			 * reorder recovery must still run below, even without new frames. */
+			if (get_unaligned_le32(state + 12) == seen->frames) goto resume;
 			do {
 				guard = get_unaligned_le32(state + 24);
 				dma_rmb();
@@ -965,6 +968,12 @@ struct rtl_ax_rx *rtl_ax_rx_prepare(struct pci_dev *pdev, const struct rtl_ax_io
 free:
 	rtl_ax_rx_free(rx);
 	return ERR_PTR(ret);
+}
+
+u32 rtl_ax_rx_traffic_bytes(struct rtl_ax_rx *rx)
+{
+	return (u32)READ_ONCE(rx->pe_rx_data_bytes) + (rx->rpq_memory ?
+		get_unaligned_le32(rx->rpq_memory + 0x2184) : 0);
 }
 
 int rtl_ax_rx_status(struct rtl_ax_rx *rx, char *out, size_t capacity)

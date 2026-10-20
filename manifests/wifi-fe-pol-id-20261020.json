@@ -1,0 +1,85 @@
+{
+  "date": "2026-10-20",
+  "status": "Root cause proven and source fixed; sustained gigabit goal not yet met",
+  "root_cause": "Wi-Fi DMA interface ID populates both POL_ID and metadata low byte. rtl_fe_add_wifi_port registered POL_ID0, causing every ordinary uplink to miss its installed flow.",
+  "actual_packet": {
+    "source": "46:f0:35:f2:da:12",
+    "destination": "00:e0:4c:16:74:b0",
+    "ethertype": "0800",
+    "logical_source": 18,
+    "metadata_byte": 1,
+    "hardware_POL_ID": 1,
+    "software_old_POL_ID": 0,
+    "mask": 58,
+    "only_different_key_bit": 682
+  },
+  "hardware_CRC": {
+    "old_software": "fb8cde5c/104b",
+    "parsed_hardware": "e154a600/5a9c",
+    "old_bucket": 4160,
+    "correct_bucket": 23168
+  },
+  "evidence": "artifacts/own-wifi-20261020/hardware-key-capture.txt",
+  "manufacturer_reference": "rtk_wifi6.ko RX allocator _phl_alloc_dynamic_rxbuf_pcie and ca-ne.ko __ca_ni_start_xmit_buf_for_fc_wifi_hw_lookup; NI descriptor ABI retained. Key mismatch obtained from real Header-I and actual SWO key/CRC hardware, not inferred from software tests.",
+  "source_fix": "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe.c",
+  "source_sha256": "1272de820921e8b7cd6f8d0d8a4177e227f3e9127b03102a128dff6a9bfc33f2",
+  "validation": {
+    "targeted_test": "scripts/test_wifi_fe_identity.py; old production fails key[21], fixed new/existing registration passes all23words and both CRCs",
+    "compile": "FEobject andoriginal0.8.0baselineImagecompiled;4payloadhash/RSAandbootconfigoriginalRSAverified;written/readbackverified/booted#4",
+    "live_comparison": {
+      "method": "Temporary exact corrected-key clone into unused slot23199, then removed; no mask weakened",
+      "before": {
+        "TCP_received_Mbps": 369.0161,
+        "router_CPU_total_percent": 16.01,
+        "WiFi_miss_delta": 425920
+      },
+      "after": {
+        "TCP_received_Mbps": 390.6418,
+        "router_CPU_total_percent": 4.6,
+        "WiFi_miss_delta": 133
+      },
+      "limitation": "Throughput remains below gigabit; this validates hardware matching and CPU reduction only."
+    },
+    "persisted_route": {
+      "TCP_Mbps": 459.0813,
+      "CPU_total_percent": 2.7958,
+      "flow_HW_packets": 476421,
+      "flow_age": 6,
+      "diagnostic_clone": false
+    }
+  },
+  "separate_open_issue": "Sustained gigabit and HE160 remain unresolved. Current HE80originalradio bridge496.736up/605.192down,CPU2.715/1.702%. Phone reconnected; ordering diagnostic not yet loaded.",
+  "deployment": {
+    "baseline": "v0.8.0-beta kernel with measuredPOL_ID andIPv4/IPv6HKEY_IDfixes; rootfsretained",
+    "fit": "artifacts/own-wifi-20261020/kernel-v080-fe-route/image.itb",
+    "sha256": "0d866905becf7278e0af077c8628483743f3f9869d85dfb5ade05caffa8dcf9c",
+    "active_volume": "ubi0_6 ubi_k1",
+    "readback_verified": true,
+    "booted": "Linux6.18.55 #4 Oct20 07:53:05",
+    "backup_sha256": "d39c3b474fcbc166b5e43168ca4f42836b6737cf334661da2aab019b9d95d4bf",
+    "next_fit": "artifacts/own-wifi-20261020/kernel-v080-fe-route/image.itb",
+    "next_sha256": "0d866905becf7278e0af077c8628483743f3f9869d85dfb5ade05caffa8dcf9c",
+    "next_state": "BothFEfixes written/readbackverified/synced; watchdogbootinprogress"
+  },
+  "routed_wifi_key": {
+    "hardware_mask": 62,
+    "old_software_mask": 63,
+    "hardware_words_last": "000f9200",
+    "old_software_words_last": "000fd200",
+    "hardware_crc": "727fc192/184c",
+    "captured_evidence": "\u73b0\u573a\u8bb0\u5f55/20261020-own-wifi/route-key-capture.txt",
+    "regression": "scripts/test_fe_flow_parser.py, oldfails/fixedpasses actual parser against23capturedwords/CRC; IPv6inheritsmask62",
+    "live_comparison": {
+      "before_samples_2_8": {
+        "CPU_percent": 22.975206611570243,
+        "misses": 108090,
+        "forwarded": 0
+      },
+      "after_samples_12_20": {
+        "CPU_percent": 13.351920693928133,
+        "misses": 53,
+        "forwarded": 0
+      }
+    }
+  }
+}

@@ -375,6 +375,32 @@ int main(void)
     assert(((words[190/32]>>(190%32))&1)==direction);
     assert(!((words[189/32]>>(189%32))&1));
    }
+
+ /* Actual Wi-Fi UDP parser/SWO capture: HKEY_ID must name mask62. */
+ {
+  struct flow_rule rule={.used=15,.meta={.ingress_ifindex=2},
+   .basic={.n_proto=htons(ETH_P_IP),.ip_proto=17},.basic_mask={.n_proto=65535,.ip_proto=255},
+   .ipv4={htonl(0xc0a8019e),htonl(0xc0a801fe)},.ipv4_mask={~0U,~0U},
+   .ports={htons(5212),htons(5211)},.ports_mask={65535,65535}};
+  struct nf_flow_rule nf={.rule=&rule};struct flow_cls_offload cls={.rule=&rule};struct rtl_fe_rule parsed={};
+  const unsigned int captured[23]={0x70516c00,0x51,0,0xf0000000,0x0605400f,0,0,0xf0000000,0x0605400c,0,0,0x40000000,0x8004,0,0,0,0,0,0,0x40,0,0x400,0xf9200};
+  unsigned int words[23],crc;unsigned short crc16;
+  ethernet_actions(&nf,source,destination,&pon);
+  lp.wifi_id=1;lp.llid=1;lp.source=18;
+  assert(!fe_parse(&lp,&cls,&parsed));
+  assert(parsed.key.mask==62 && parsed.action.check_mask==62);
+  rtl_fe_ipv4_key(words,&parsed.key);
+  rtl_fe_key_set(words,RTL_FE_KEY_ORIG_LSPID,0);rtl_fe_key_set(words,RTL_FE_KEY_CTRL_SET_ID,0);
+  rtl_fe_key_set(words,RTL_FE_KEY_TABLE_ID,0);rtl_fe_key_set(words,RTL_FE_KEY_MDATA_BYTE,1);
+  assert(!memcmp(words,captured,sizeof(captured)));
+  rtl_fe_key_crc(words,&crc,&crc16);assert(crc==0x727fc192 && crc16==0x184c);
+  rule.used=BIT(FLOW_DISSECTOR_KEY_META)|BIT(FLOW_DISSECTOR_KEY_BASIC)|BIT(FLOW_DISSECTOR_KEY_PORTS)|BIT(FLOW_DISSECTOR_KEY_IPV6_ADDRS);
+  rule.basic.n_proto=htons(ETH_P_IPV6);
+  for(unsigned int i=0;i<4;i++){rule.ipv6_mask.src.s6_addr32[i]=~0U;rule.ipv6_mask.dst.s6_addr32[i]=~0U;}
+  memset(&parsed,0,sizeof(parsed));assert(!fe_parse(&lp,&cls,&parsed));
+  assert(parsed.key6.mask==62 && parsed.action.check_mask==62);
+  lp.wifi_id=0;lp.llid=0;lp.source=0;
+ }
  unsigned int bridge_cases=0;
  unsigned int ethernet_types[]={0x800,0x86dd,0x8864,0x806};
  for(unsigned int kind=0;kind<4;kind++)

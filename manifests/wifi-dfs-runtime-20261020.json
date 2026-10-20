@@ -1,0 +1,64 @@
+{
+  "status": "DFS runtime correction deployed; full bandwidth goal remains active and incomplete",
+  "factory_module": {
+    "path": "evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko",
+    "sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e"
+  },
+  "root_cause": "Only initialized DFS thresholds were used. Periodic traffic/NHM/FA/ACI updates and adaptive gating were absent. Factory initialized PRI_diff80 becomes1 during normal watchdog operation.",
+  "implementation": [
+    "Factory-default DFS dynamic/adaptive state machine and IE24 signed ACI input",
+    "Real 1900ms NHM measurement, calibrated external loss, raw bins, idle/noise ratios",
+    "Complete CCK/OFDM counter reset, including the missing MP bit0 pulse",
+    "Two-second runtime integration using actual PE/ARM TX/RX byte counters, including accelerated traffic",
+    "Status exposes measured inputs and classifier state"
+  ],
+  "scope": "DFS runtime dependencies. Separate CLM/FAHM consumers are not claimed implemented.",
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/dfs.h": "42597ebf8d7a3c77ee3e48e247f28504a46b210cbc81bb4177aa30fe368930f3",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/environment.h": "9e940920c27179a52810ded1b00507f183b4869c4cc2f40f9841cfe7c5c9a95f",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/monitor.h": "66b549ee8480367f44daf57abf64a6e540d70ce1e4fda174ab74b1ad4b28ba4a",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pci.c": "9cfe9abe166ca5a83ff3f2df7a1ce5d413a75e9bc9cb33d858bf42d624e85ad1",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rate.h": "51ff00362a82fe101eea67eb4333138e283cbf762930e13f7a54e09366abaed4",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx-geometry.h": "c9c86d77d44e21f2f1503f5358756e471122b1cfe439e8372dc95259d27ce3d3",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx.c": "42699e9d04634619684dc56bd7ec805bcb7a6fd4a48252ff5563d0a8ef705463",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx.h": "62cd64bf6d10ca79e4c9386f0ba0a8cc5a04a65b31d81fc0c0f0c94987863b86",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx.c": "87082939632afc46fbbadf9238560597c0b2c81171ad64e2b72c5f025a6403cf",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx.h": "bac04fa16eda23f96d3cfb0e3d8743859eaa158df436cb9b41116bacac61b347",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-tx-code.h": "5ba36532a2c5f07d1c39c48bc80d9d3dc7be46534b3513d39c7f619d038902ed",
+    "port/pe/rtl9617c-radio-wd.c": "60525def08b0962c9f2f16f4502f9c21d422438e03f429f132fb5bb506b8f0da",
+    "scripts/test_radio_dfs.py": "ff489ab3c21c078d6fbc9015118c3adec45d1c42992c232a4654dba622829f90"
+  },
+  "build": {
+    "radio_path": "artifacts/own-wifi-20261020/dfs-runtime-v2/rtl_ax_ap.ko",
+    "radio_sha256": "5a0a6af2d0f6b5e5808f66ba297d0994a4db9e7d692b99e1d5f2e4c4c23a47fa",
+    "PE_program_bytes": 16304,
+    "kernel_rebuilt": false
+  },
+  "validation": {
+    "DFS_contract": "scripts/test_radio_dfs.py:579 classifier vectors,60 runtime state transitions,actual IE24 ACI fields; PASS",
+    "environment_contract": "artifacts/own-wifi-20261020/dfs-observe/check-environment.py:NHM register image,4 calibrated loss inputs,3 counter vectors,not-ready state,complete reset sequence; PASS",
+    "hardware_counter_reset": "BAR2 11a08 before74ff001e after00000000, next window75. Initial BAR0 diagnostic returnedffffffff and is explicitly invalidated.",
+    "CAC": "Native HE16044/50 CAC completed successfully; normal adaptive0 observed with FA48 per window.",
+    "DFS_observation": "1544 reports30427 pulses,events0,malformed0,dropped0 at recorded snapshot; does not prove every historical event was false.",
+    "full_test_suite": false
+  },
+  "deployment": {
+    "radio_on_disk": "5a0a6af2d0f6b5e5808f66ba297d0994a4db9e7d692b99e1d5f2e4c4c23a47fa",
+    "loaded_build_note_sha256": "c28db0698a81333a48beb06a5515ffd7a2df821dbaaf2202f5c07c60fab3cbe3",
+    "previous_accepted_backup": "/root/tyf-wifi-debug-20261020/rtl_ax_ap-rx-inline-before-dfs.ko",
+    "backup_sha256": "e60772d0503250c2c9108a0ba3c798237dd56fefc15b98b48884595824fa3c8d",
+    "sync_completed": true,
+    "mac80211_unchanged": "9780d6046b9e2021439a785c7b6c68ff569fabf84afc271312bf013badf4343b"
+  },
+  "iperf_results": {
+    "HE160_external_up_Mbps": 550.2395,
+    "HE160_external_up_DUT_CPU_percent_of_4_cores": 6.12,
+    "HE160_external_down_Mbps": 843.5694,
+    "HE160_external_down_DUT_CPU_percent_of_4_cores": 2.646,
+    "internal_up_Mbps": 476.7869,
+    "internal_down_Mbps": 141.2922,
+    "internal_down_retransmits": 2557,
+    "goal_complete": false
+  },
+  "historical_causality_limit": "Actual raw report causing old20:24 DFS event was overwritten. Synthetic relocated-ELF reproducer proves the missing runtime logic permits misclassification, not the RF origin of that old event."
+}

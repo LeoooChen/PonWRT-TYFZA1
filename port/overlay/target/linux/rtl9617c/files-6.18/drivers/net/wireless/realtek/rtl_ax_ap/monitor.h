@@ -74,6 +74,10 @@ static void rtl_ax_monitor_stop(struct ieee80211_hw *hw, bool suspend)
 	WRITE_ONCE(radio->monitor_started, false);
 	rtl_ax_update32(&radio->io, 0xce40, BIT(0), 0);
 	tasklet_kill(&radio->tx_tasklet);
+	/* NI owns a netdev reference. Withdraw and drain it while RX/RPQ
+	 * can still complete, before unregister waits for that reference. */
+	ret = rtl_ax_tx_ni_route(radio->tx, NULL, 0);
+	if (ret) dev_err(&radio->pdev->dev, "NI withdrawal on radio stop failed: %d\n", ret);
 	rtl_ax_update32(&radio->io, 0xc400, BIT(12), 0);
 	radio->beacon_enabled = false;
 	ret = rtl_ax_tx_pause(radio->tx);
@@ -1096,6 +1100,8 @@ static void rtl_ax_link_sta_rc_update(struct ieee80211_hw *hw, struct ieee80211_
 static void rtl_ax_dm_work(struct wiphy *wiphy, struct wiphy_work *work)
 {
 	struct rtl_ax_ap *radio = container_of(work, struct rtl_ax_ap, dm_work.work);
+	struct rtl_ax_environment *env = &radio->environment;
+	unsigned long flags;
 
 	if (!radio->monitor_started) return;
 	/* Wiphy work shares start/stop/STA serialization; command_mutex
@@ -1105,6 +1111,26 @@ static void rtl_ax_dm_work(struct wiphy *wiphy, struct wiphy_work *work)
 		radio->chip, &radio->rf_runtime);
 	if (radio->rf_runtime.result)
 		dev_err(&radio->pdev->dev, "RF watchdog failed: %d\n", radio->rf_runtime.result);
+	if (radio->chip == RTL_AX_8852C && radio->channel.configured) {
+		u32 traffic = rtl_ax_tx_traffic_bytes(radio->tx) + rtl_ax_rx_traffic_bytes(radio->rx);
+		u64 now = ktime_get_boottime_ns() / 1000000;
+
+		if (env->background_started) {
+			rtl_ax_environment_sample(&radio->io, env, radio->channel.bandwidth);
+			env->throughput = div_u64((u64)(u32)(traffic - env->traffic_previous) * 8,
+				(now - env->traffic_time_ms) * 1000);
+		}
+		rtl_ax_environment_false_alarms(&radio->io, env);
+		spin_lock_irqsave(&radio->command_lock, flags);
+		if (radio->dfs.enabled)
+			rtl_ax_dfs_dynamic(&radio->dfs, env->throughput,
+				env->nhm_idle_ratio, env->nhm_noise_ratio, env->false_alarms);
+		spin_unlock_irqrestore(&radio->command_lock, flags);
+		env->traffic_previous = traffic;
+		env->traffic_time_ms = now;
+		rtl_ax_environment_trigger(&radio->io, env,
+			rtl_ax_environment_loss(radio->channel.external_loss[0], radio->channel.external_loss[1]));
+	}
 	mutex_unlock(&radio->command_mutex);
 	wiphy_delayed_work_queue(wiphy, &radio->dm_work, 2 * HZ);
 }
@@ -1417,6 +1443,7 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	hw->wiphy->reg_notifier = rtl_ax_regulatory_notify;
 	hw->sta_data_size = sizeof(struct rtl_ax_station);
 	ieee80211_hw_set(hw, RX_INCLUDES_FCS);
+	ieee80211_hw_set(hw, RX_INLINE);
 	/* mac80211 handles BIP and SW_MGMT_TX; RX retains the CCMP IV/MIC. */
 	ieee80211_hw_set(hw, MFP_CAPABLE);
 	ieee80211_hw_set(hw, AMPDU_AGGREGATION);

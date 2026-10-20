@@ -4,6 +4,50 @@
 
 struct rtl_ax_phy_signal { u8 macid, rssi[3]; };
 
+/* Actual physts_parsing@2c55d0 IE lengths (.rodata+24a70) and IE24@2c4af0. */
+static inline int rtl_ax_ppdu_aci(const u8 *data, unsigned int bytes, u8 *aci)
+{
+	static const u8 units[32] = {
+		2,4,3,3,1,1,1,1,255,1,255,22,255,255,255,255,
+		255,255,2,3,255,255,255,0,3,3,3,3,4,4,4,4,
+	};
+	u32 first, second, users, offset, seen = 0;
+	const u8 *phy;
+	unsigned int length, at, type;
+	bool found = false;
+
+	if (bytes < 8) return -EINVAL;
+	first = get_unaligned_le32(data);
+	second = get_unaligned_le32(data + 4);
+	users = first & 15;
+	if (users > 8) return -EINVAL;
+	offset = 8 + ((users + 1) & ~1U) * 4 + (first & BIT(29) ? 96 : 0) +
+		((second >> 16) & 255) * 8;
+	if (offset > bytes || bytes - offset < 8) return -EINVAL;
+	phy = data + offset;
+	length = phy[1] * 8;
+	if (!(phy[0] & BIT(7)) || length < 8 || length > bytes - offset) return -EINVAL;
+	type = phy[0] & 31;
+	if ((type >= 4 && type <= 7) || (type >= 9 && type <= 11)) return 0;
+	for (at = 8; at < length;) {
+		unsigned int id = phy[at] & 31, size = units[id] * 8;
+
+		if (seen & BIT(id)) return -EINVAL;
+		seen |= BIT(id);
+		if (units[id] == 255) {
+			if (length - at < 2) return -EINVAL;
+			size = ((phy[at] >> 5) | (phy[at + 1] & 15) << 3) * 8;
+		}
+		if (!size || size > length - at) return -EINVAL;
+		if (id == 24) {
+			*aci = phy[at + 16] & 127;
+			found = true;
+		}
+		at += size;
+	}
+	return found;
+}
+
 static inline void rtl_ax_ra_limit(u8 command[16], u8 bandwidth, u8 nss, bool update)
 {
 	u64 mask = get_unaligned_le64(command + 4);
