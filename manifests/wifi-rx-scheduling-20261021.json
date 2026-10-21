@@ -1,0 +1,634 @@
+{
+  "status": "Diagnostic branch completed; high-priorityRX not adopted because throughput cause remains unproven. OverallWi-Fi throughput goal remains active and incomplete.",
+  "authority": {
+    "authority_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+    "scope": "Actual factory registration/platform/schedule instructions, synthetic pointer layout and explicit tasklet initialization/scheduling boundaries. No live factory runtime or scheduling-latency proof.",
+    "executed_functions": [
+      "phl_register_trx_hdlr_pcie",
+      "phl_register_handler",
+      "rtw_plfm_init_handler_ext",
+      "rtw_init_os_handler",
+      "_schedule_tasklet_handler"
+    ],
+    "cases": [
+      {
+        "driver_config_flag": 0,
+        "handler_identity_input": 2,
+        "final_type": 0,
+        "priority": 2,
+        "events": [
+          {
+            "call": "tasklet_init",
+            "tasklet": "0x6001240",
+            "callback": "0x1193c3c"
+          },
+          {
+            "call": "tasklet_init",
+            "tasklet": "0x60012d8",
+            "callback": "0x1193b00"
+          },
+          {
+            "call": "__tasklet_hi_schedule",
+            "tasklet": "0x60012d8"
+          }
+        ]
+      },
+      {
+        "driver_config_flag": 1,
+        "handler_identity_input": 2,
+        "final_type": 0,
+        "priority": 3,
+        "events": [
+          {
+            "call": "tasklet_init",
+            "tasklet": "0x6001240",
+            "callback": "0x1193c3c"
+          },
+          {
+            "call": "tasklet_init",
+            "tasklet": "0x60012d8",
+            "callback": "0x1193b00"
+          },
+          {
+            "call": "__tasklet_hi_schedule",
+            "tasklet": "0x60012d8"
+          }
+        ]
+      }
+    ],
+    "native_difference": "Current rtl_ax_rx_work is scheduled on system_wq. Difference alone is not proof of throughput cause."
+  },
+  "static_comparison": {
+    "scope": "Same radio binary81918f..., load-time immutable mode2 versus0, same spinlocks, timing instrumentation and embeddedPE. Same Mac+ONT endpoint, GRO sinkRPS2, NIIRQ CPU0 and iperf serverCPU3. Each test8sec/P1/4M. No opticalPON or PPPoE negotiation.",
+    "timing_scope": "Wake request-to-worker-entry lower bound, only entries with ARM pending. PE-publication-to-event-IRQ interval is not included. RDU counts events rather than lost packets.",
+    "histogram_upper_bounds_us": [
+      10,
+      25,
+      50,
+      100,
+      250,
+      500,
+      1000,
+      5000,
+      20000,
+      null
+    ],
+    "results": [
+      {
+        "label": "rx-static-bh-up",
+        "benchmark": {
+          "scope": "Mac TCP upload to DUT Linux endpoint; hardware uplink requires pon_tcp_sink FE and receive counters. No physical PON egress.",
+          "parallel_streams": 1,
+          "error": null,
+          "client_exit": 0,
+          "received_Mbps": 543.4681185965635,
+          "retransmits": 253,
+          "CPU_total_percent_of_4_cores": 26.721014492753625,
+          "CPU_server_raw_percent_of_4_cores": 6.853864734299517,
+          "CPU_remaining_percent_of_4_cores": 19.867149758454108,
+          "CPU_note": "Same raw100-Hz basis; remaining includes simulated ingress and TCP ACK/softirq work, not pure Wi-Fi forwarding CPU.",
+          "CPU_each_core_percent": [
+            47.58454106280193,
+            31.642512077294686,
+            0.24154589371980675,
+            27.415458937198068
+          ],
+          "data_packets_delta": 107968,
+          "data_bytes_delta": 7133500,
+          "control_packets_delta": 26,
+          "stops_delta": 0,
+          "wakes_delta": 0,
+          "doorbells_delta": 107968,
+          "data_prepare_ns_delta": 191606240,
+          "payload_copy_ns_delta": 25427120,
+          "PE_NI_sent_delta": 107968,
+          "l3te_tail_drop_delta": 406,
+          "no_buffer_delta": 0,
+          "PE_RXQ_RDU_delta": 73618,
+          "PE_RPQ_RDU_delta": 0,
+          "FE_packets_delta": 107968,
+          "hardware_match_proven": true,
+          "actual_client_ports": [
+            55000
+          ],
+          "offload_covers_all_streams": true,
+          "source_stream_packets_delta": [
+            107968,
+            0,
+            0,
+            0
+          ],
+          "uplink_sink_FE_packets_delta": 381401,
+          "uplink_sink_received_delta": 380995,
+          "uplink_sink_received_bytes_delta": 573570827
+        },
+        "RX_schedule_delta": {
+          "calls": 10316,
+          "wait_ns": 243689120,
+          "service_ns": 855147840,
+          "long_count": 116,
+          "BH_calls": 10316,
+          "reentries": 0
+        },
+        "recorded_modes": [
+          2,
+          2
+        ],
+        "reentries_before_after": [
+          0,
+          0
+        ],
+        "RX_stages_delta": {
+          "frames": 10679,
+          "sync_ns": 92119480,
+          "dispatch_ns": 578894320,
+          "seed_ns": 36554160,
+          "dma_ns": 44836880
+        },
+        "mean_wake_wait_us": 23.622442807289648,
+        "mean_service_us": 82.89529274912756,
+        "softirq_fraction": 1.0,
+        "mean_frame_stage_us": {
+          "sync_ns": 8.626227174829104,
+          "dispatch_ns": 54.20866373255923,
+          "seed_ns": 3.422994662421575,
+          "dma_ns": 4.198602865436838
+        },
+        "RX_wait_hist_delta": [
+          7251,
+          1191,
+          692,
+          892,
+          193,
+          53,
+          14,
+          30,
+          0,
+          0
+        ],
+        "RX_service_hist_delta": [
+          0,
+          73,
+          1159,
+          6719,
+          2290,
+          55,
+          12,
+          8,
+          0,
+          0
+        ],
+        "FE_packets_delta": 381401,
+        "received_delta": 380995,
+        "received_bytes_delta": 573570827,
+        "sequence_gap_delta": 395,
+        "unseeded_delta": 8189,
+        "PN_old_delta": 0,
+        "NI_full_delta": 0,
+        "FE_to_endpoint_gap": 406,
+        "global_tail_equals_endpoint_gap": true
+      },
+      {
+        "label": "rx-static-bh-down",
+        "benchmark": {
+          "scope": "Genuine Linux TCP sender -> NI source7 PPPoE SID4660 -> ASIC POP -> NI encrypted Wi-Fi -> Mac iperf3 TCP application. ACKs terminate in DUT Linux; no optics or PPPoE negotiation.",
+          "parallel_streams": 1,
+          "error": null,
+          "client_exit": 0,
+          "received_Mbps": 1215.0306071725884,
+          "retransmits": 84,
+          "CPU_total_percent_of_4_cores": 25.332929782082324,
+          "CPU_server_raw_percent_of_4_cores": 9.685230024213075,
+          "CPU_remaining_percent_of_4_cores": 15.64769975786925,
+          "CPU_note": "Same raw100-Hz basis; remaining includes simulated ingress and TCP ACK/softirq work, not pure Wi-Fi forwarding CPU.",
+          "CPU_each_core_percent": [
+            18.159806295399516,
+            43.82566585956417,
+            0.12106537530266344,
+            39.22518159806295
+          ],
+          "data_packets_delta": 847195,
+          "data_bytes_delta": 1275791894,
+          "control_packets_delta": 19,
+          "stops_delta": 0,
+          "wakes_delta": 0,
+          "doorbells_delta": 23511,
+          "data_prepare_ns_delta": 1560462720,
+          "payload_copy_ns_delta": 647974080,
+          "PE_NI_sent_delta": 847111,
+          "l3te_tail_drop_delta": 84,
+          "no_buffer_delta": 0,
+          "PE_RXQ_RDU_delta": 0,
+          "PE_RPQ_RDU_delta": 0,
+          "FE_packets_delta": 847195,
+          "hardware_match_proven": true,
+          "actual_client_ports": [
+            55000
+          ],
+          "offload_covers_all_streams": true,
+          "source_stream_packets_delta": [
+            847195,
+            0,
+            0,
+            0
+          ]
+        },
+        "RX_schedule_delta": {
+          "calls": 5126,
+          "wait_ns": 121649040,
+          "service_ns": 311940560,
+          "long_count": 60,
+          "BH_calls": 5126,
+          "reentries": 0
+        },
+        "recorded_modes": [
+          2,
+          2
+        ],
+        "reentries_before_after": [
+          0,
+          0
+        ],
+        "RX_stages_delta": {
+          "frames": 5792,
+          "sync_ns": 75478960,
+          "dispatch_ns": 120205800,
+          "seed_ns": 14461040,
+          "dma_ns": 29887080
+        },
+        "mean_wake_wait_us": 23.731767460007802,
+        "mean_service_us": 60.85457666796722,
+        "softirq_fraction": 1.0,
+        "mean_frame_stage_us": {
+          "sync_ns": 13.031588397790056,
+          "dispatch_ns": 20.753763812154695,
+          "seed_ns": 2.4967265193370167,
+          "dma_ns": 5.160062154696133
+        },
+        "RX_wait_hist_delta": [
+          2730,
+          989,
+          1029,
+          265,
+          72,
+          21,
+          8,
+          12,
+          0,
+          0
+        ],
+        "RX_service_hist_delta": [
+          0,
+          103,
+          2887,
+          1627,
+          412,
+          78,
+          19,
+          0,
+          0,
+          0
+        ],
+        "FE_packets_delta": 119877,
+        "received_delta": 119877,
+        "received_bytes_delta": 8002011,
+        "sequence_gap_delta": 161,
+        "unseeded_delta": 2886,
+        "PN_old_delta": 0,
+        "NI_full_delta": 0,
+        "FE_to_endpoint_gap": 84,
+        "ACK_FE_to_endpoint_gap": 0,
+        "global_tail_equals_both_gaps": true
+      },
+      {
+        "label": "rx-static-wq-up",
+        "benchmark": {
+          "scope": "Mac TCP upload to DUT Linux endpoint; hardware uplink requires pon_tcp_sink FE and receive counters. No physical PON egress.",
+          "parallel_streams": 1,
+          "error": null,
+          "client_exit": 0,
+          "received_Mbps": 548.1187931470117,
+          "retransmits": 0,
+          "CPU_total_percent_of_4_cores": 18.048926014319807,
+          "CPU_server_raw_percent_of_4_cores": 4.445107398568019,
+          "CPU_remaining_percent_of_4_cores": 13.60381861575179,
+          "CPU_note": "Same raw100-Hz basis; remaining includes simulated ingress and TCP ACK/softirq work, not pure Wi-Fi forwarding CPU.",
+          "CPU_each_core_percent": [
+            40.334128878281625,
+            13.365155131264917,
+            0.35799522673031026,
+            18.13842482100239
+          ],
+          "data_packets_delta": 59590,
+          "data_bytes_delta": 3932940,
+          "control_packets_delta": 545,
+          "stops_delta": 0,
+          "wakes_delta": 0,
+          "doorbells_delta": 59590,
+          "data_prepare_ns_delta": 110854840,
+          "payload_copy_ns_delta": 14860080,
+          "PE_NI_sent_delta": 59590,
+          "l3te_tail_drop_delta": 0,
+          "no_buffer_delta": 0,
+          "PE_RXQ_RDU_delta": 66006,
+          "PE_RPQ_RDU_delta": 0,
+          "FE_packets_delta": 59590,
+          "hardware_match_proven": true,
+          "actual_client_ports": [
+            55000
+          ],
+          "offload_covers_all_streams": true,
+          "source_stream_packets_delta": [
+            59590,
+            0,
+            0,
+            0
+          ],
+          "uplink_sink_FE_packets_delta": 387912,
+          "uplink_sink_received_delta": 387912,
+          "uplink_sink_received_bytes_delta": 579957973
+        },
+        "RX_schedule_delta": {
+          "calls": 8624,
+          "wait_ns": 114116880,
+          "service_ns": 851459320,
+          "long_count": 61,
+          "BH_calls": 0,
+          "reentries": 0
+        },
+        "recorded_modes": [
+          0,
+          0
+        ],
+        "reentries_before_after": [
+          0,
+          0
+        ],
+        "RX_stages_delta": {
+          "frames": 8926,
+          "sync_ns": 92759960,
+          "dispatch_ns": 578968600,
+          "seed_ns": 41537920,
+          "dma_ns": 40034040
+        },
+        "mean_wake_wait_us": 13.23247680890538,
+        "mean_service_us": 98.73136827458256,
+        "softirq_fraction": 0.0,
+        "mean_frame_stage_us": {
+          "sync_ns": 10.392108447232804,
+          "dispatch_ns": 64.86316379117186,
+          "seed_ns": 4.653587273134662,
+          "dma_ns": 4.485104190006722
+        },
+        "RX_wait_hist_delta": [
+          5996,
+          1674,
+          713,
+          236,
+          4,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "RX_service_hist_delta": [
+          0,
+          79,
+          1385,
+          4301,
+          2645,
+          154,
+          45,
+          15,
+          0,
+          0
+        ],
+        "FE_packets_delta": 387912,
+        "received_delta": 387912,
+        "received_bytes_delta": 579957973,
+        "sequence_gap_delta": 206,
+        "unseeded_delta": 6582,
+        "PN_old_delta": 0,
+        "NI_full_delta": 0,
+        "FE_to_endpoint_gap": 0,
+        "global_tail_equals_endpoint_gap": true
+      },
+      {
+        "label": "rx-static-wq-down",
+        "benchmark": {
+          "scope": "Genuine Linux TCP sender -> NI source7 PPPoE SID4660 -> ASIC POP -> NI encrypted Wi-Fi -> Mac iperf3 TCP application. ACKs terminate in DUT Linux; no optics or PPPoE negotiation.",
+          "parallel_streams": 1,
+          "error": null,
+          "client_exit": 0,
+          "received_Mbps": 1211.5431534046922,
+          "retransmits": 163,
+          "CPU_total_percent_of_4_cores": 23.155985489721886,
+          "CPU_server_raw_percent_of_4_cores": 9.03869407496977,
+          "CPU_remaining_percent_of_4_cores": 14.117291414752117,
+          "CPU_note": "Same raw100-Hz basis; remaining includes simulated ingress and TCP ACK/softirq work, not pure Wi-Fi forwarding CPU.",
+          "CPU_each_core_percent": [
+            12.817412333736396,
+            43.288996372430475,
+            0.12091898428053205,
+            36.396614268440146
+          ],
+          "data_packets_delta": 845436,
+          "data_bytes_delta": 1273168120,
+          "control_packets_delta": 20,
+          "stops_delta": 0,
+          "wakes_delta": 0,
+          "doorbells_delta": 23703,
+          "data_prepare_ns_delta": 1549561040,
+          "payload_copy_ns_delta": 642938560,
+          "PE_NI_sent_delta": 845273,
+          "l3te_tail_drop_delta": 163,
+          "no_buffer_delta": 0,
+          "PE_RXQ_RDU_delta": 0,
+          "PE_RPQ_RDU_delta": 0,
+          "FE_packets_delta": 845436,
+          "hardware_match_proven": true,
+          "actual_client_ports": [
+            55000
+          ],
+          "offload_covers_all_streams": true,
+          "source_stream_packets_delta": [
+            845436,
+            0,
+            0,
+            0
+          ]
+        },
+        "RX_schedule_delta": {
+          "calls": 3478,
+          "wait_ns": 110605680,
+          "service_ns": 339181640,
+          "long_count": 46,
+          "BH_calls": 0,
+          "reentries": 0
+        },
+        "recorded_modes": [
+          0,
+          0
+        ],
+        "reentries_before_after": [
+          0,
+          0
+        ],
+        "RX_stages_delta": {
+          "frames": 4092,
+          "sync_ns": 87395720,
+          "dispatch_ns": 122385920,
+          "seed_ns": 8186000,
+          "dma_ns": 34982440
+        },
+        "mean_wake_wait_us": 31.80151811385854,
+        "mean_service_us": 97.52203565267395,
+        "softirq_fraction": 0.0,
+        "mean_frame_stage_us": {
+          "sync_ns": 21.35770283479961,
+          "dispatch_ns": 29.9085826001955,
+          "seed_ns": 2.0004887585532747,
+          "dma_ns": 8.548983382209189
+        },
+        "RX_wait_hist_delta": [
+          1070,
+          802,
+          1070,
+          462,
+          67,
+          1,
+          1,
+          5,
+          0,
+          0
+        ],
+        "RX_service_hist_delta": [
+          0,
+          102,
+          1455,
+          941,
+          738,
+          203,
+          32,
+          7,
+          0,
+          0
+        ],
+        "FE_packets_delta": 110686,
+        "received_delta": 110686,
+        "received_bytes_delta": 7408729,
+        "sequence_gap_delta": 84,
+        "unseeded_delta": 1198,
+        "PN_old_delta": 0,
+        "NI_full_delta": 0,
+        "FE_to_endpoint_gap": 163,
+        "ACK_FE_to_endpoint_gap": 0,
+        "global_tail_equals_both_gaps": true
+      }
+    ],
+    "limitations": [
+      "First online-switch comparison violates workqueue non-reentrance precondition; retained as observations, excluded from causal comparison.",
+      "Static modes require separate module loads and CAC, so RF/time-dependent variability remains.",
+      "CPU remaining after subtracting server includesNI, Linux endpoint, instrumentation and ACK processing, not pure hardware Wi-Fi forwarding."
+    ],
+    "conclusion": {
+      "production_change_adopted": false,
+      "reason": "Fixed high-priority softirq execution reduced measured service time but did not improve throughput or remove uplink RDU. This endpoint comparison does not establish RX scheduling as the cause of the throughput shortfall.",
+      "scope_limit": "PE publication-to-IRQ delay was not measured; Linux diagnostic endpoint remains in the path. Do not claim all RX scheduling or hardware-forwarding constraints have been ruled out.",
+      "next_evidence": "Correlate hardware RX producer/scan/returned cursors, PE work queue and ARM barrier to separate PE service delay from ARM service delay."
+    },
+    "sha256": {
+      "rx-static-bh-up.json": "4212c35b0c5ea410fc7b7b213665f059d270094e509034eef59a902c20f35630",
+      "rx-static-bh-up-analysis.json": "08428aa894183afe3fd34e2ad368e47a12f3d2f1eb6fe4ba2fc76e41b9029b5e",
+      "rx-static-bh-up-before.txt": "ff5d35209499f21f297b5df63c938da583eb8ca6d5c4dda86164d589e7ad5caf",
+      "rx-static-bh-up-after.txt": "762dc7aa3eefca2b09d86958c9d046e0e7d7b4bd748821e9c5af5c25ff5620ef",
+      "rx-static-bh-up-cpu.txt": "17e283ccb98083ce2d89f18b605b6465046ea5e4561ef3d615d01a73f45ca44b",
+      "rx-static-bh-up-config.txt": "40413b69e6046469fcef367230bb220b0be459132cdeaf5a504213866ca88ed5",
+      "rx-static-bh-down.json": "0837275b05dc6a250840950205116c816f20a5a7a088191a24c624bdcd9779d1",
+      "rx-static-bh-down-analysis.json": "dcc5f568e97e08071e2c3c31434071225b5941317c66d22a89ed1d905f9a3db0",
+      "rx-static-bh-down-before.txt": "1b1d51ef97efda3d86b445e3bf149a456ee6f42e16ea06719212989e098e36dd",
+      "rx-static-bh-down-after.txt": "41dd32e438b2add98c0b18620b69a1c61b25e04e54e0bc0ece3be82524554cab",
+      "rx-static-bh-down-cpu.txt": "bb4416f3e670b378d03d015719c4b4ed93899d6b6b6c576d04246b25518cb820",
+      "rx-static-bh-down-config.txt": "40413b69e6046469fcef367230bb220b0be459132cdeaf5a504213866ca88ed5",
+      "rx-static-wq-up.json": "4111c17ca2bdd497bf45726e23a2dc57fe8991624e0a0555fbbcf9542c7fb988",
+      "rx-static-wq-up-analysis.json": "f5edc4d319b020d95d695b258f06f3246f12a0e59e3251f34c4fd3bf08559af4",
+      "rx-static-wq-up-before.txt": "7467e0f8564d269142f40bec955165f1e6dadbb38fb1ecc147ced85aff8cb36e",
+      "rx-static-wq-up-after.txt": "6d7bea31010bebf8900779e45b8c4591fb3ccd565228a398731bf8c0191b0b2e",
+      "rx-static-wq-up-cpu.txt": "48fd1f59c1e9c2e828b44f1d155aa282aecd562589649b380c0f7dbcc1b83f98",
+      "rx-static-wq-up-config.txt": "e6de5b0aa1d0c4aa9b4cd52e3a2e833cb4a99b41f55ce0df18350a6850ff443a",
+      "rx-static-wq-down.json": "cf361379db08232ea69b2351ed7b9c009286b0b9e895b143e47a1d2fe362add6",
+      "rx-static-wq-down-analysis.json": "b5dedd4dd76e33eb1ad6effaf604f9e1568d7e7058797e3c02ef2d05ca7ba7e1",
+      "rx-static-wq-down-before.txt": "1be8711067a578ed5b09e2f56aa75a1a8f16318311e1b503dd8f4ee06547c501",
+      "rx-static-wq-down-after.txt": "bf5f54fe1eb4dd4097108b0deeedc70ab0e1d1e1d199e46d32d119e4a83f927d",
+      "rx-static-wq-down-cpu.txt": "3ae25d5aa291f6c55b9ee9a228ea10f65818b46a4f450653aea58094ecac9357",
+      "rx-static-wq-down-config.txt": "e6de5b0aa1d0c4aa9b4cd52e3a2e833cb4a99b41f55ce0df18350a6850ff443a",
+      "rx-schedule-static-radio.ko": "81918fcc9995b1126f934bc4795ed579d974328f35962d14bee34697c63c3365",
+      "rx-schedule-static-compare.py": "48718dfd2539740ac569d95338abc1720e48af3b269acee40aeb1f17410458cf",
+      "rx-schedule-static-wq-compare.py": "268fc095f03aac0530c03b7c422635a1ef8a6cbd0bdbc2162804de8534ef7bfc",
+      "rx-bh-dynamic-failure.json": "2c4bc321eb753055abf4bf5f6352d63f4da9a1db8597227680d42cb060ea086a",
+      "analyze-rx-schedule.py": "ab6f6121da34bea6c6bf95eeb8cca28734418b20c3217a5111a53a0eaf403c30"
+    }
+  },
+  "discarded_dynamic_comparison": {
+    "measurement_valid": false,
+    "throughput_Mbps": null,
+    "scope": "Experimental same-work dynamic queue change0->2. No valid softirq throughput result; client5s test exceeded25s and management SSH stopped responding.",
+    "observed": [
+      "Serial Linux responsive; SysRq all-CPU backtrace showed other cores idle, no blocked tasks.",
+      "PE work ring drained, data counters stopped, RX RDU continued rising.",
+      "No firmware halt or SER error in saved state before teardown; teardown exposed RX tag mismatch and H2C timeouts.",
+      "Candidate never persisted; restored accepted on-disk radio and SSH via serial/module reload, no reset/flash."
+    ],
+    "confirmed_harness_defect": "Work item was moved between workqueues without quiescing. Linux6.18 workqueue.rst766ff requires no queue change to guarantee non-reentrance. No direct overlap trace, so the specific fault mechanism remains unproven.",
+    "additional_counter_correction": "in_serving_softirq returns a mask, not bool; oldBH_calls must be divided by256 for this kernel. Fixed new counter uses !!.",
+    "next": "Fixed queue chosen at module load, readonly parameter0444, explicit reentry counter. All records retained."
+  },
+  "kernel_queue_contract": {
+    "path": "sources/openwrt/build_dir/target-aarch64_cortex-a55_musl/linux-rtl9617c_generic/linux-6.18.55/Documentation/core-api/workqueue.rst",
+    "line": 766,
+    "condition": "No one queues the work item to another workqueue after it is queued.",
+    "implementation": "kernel/workqueue.c2314..2329 only keeps current worker pool for the same workqueue."
+  },
+  "endpoint_observation": {
+    "BH_uplink_sink_received": 380995,
+    "BH_uplink_stack_skbs": 146692,
+    "WQ_uplink_sink_received": 387912,
+    "WQ_uplink_stack_skbs": 69228,
+    "meaning": "GRO output differs materially between modes. This is a Linux endpoint comparison, not standalone proof of production uplink hardware forwarding capacity."
+  },
+  "restoration": {
+    "boot_id": "b1ff451e-6d84-45cd-b97a-87785e8fbf29",
+    "on_disk_radio_sha256": "5053c0364cae48b766e6b3e15fa024b3cf0c87351d42dc1ee9575577f1c38919",
+    "loaded_radio_build_note_sha256": "e5e16d4988b70d29b26c7b6a75c6e290d990018f42fdd5d10f586f0abb787841",
+    "mode": "HE160 primary44 center50, DFS/CAC active, events0",
+    "diagnostics": "All helper/sink/PONfixtures and iperf services removed; policy220 and nft rules removed; NIIRQf/APRPS2 restored. No experimental radio parameters remain.",
+    "Mac": "defaulten5/192.168.71.1 unchanged, Antify running, testMAC associated toap5.",
+    "persistent_production_change": false,
+    "reset_or_flash": false
+  },
+  "evidence_root": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi",
+  "sha256": {
+    "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi/rx-schedule-static-analysis.json": "10446d46bec563d0eca9e637bc09eb79807296263868806d047fad704d6ca4b0",
+    "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi/rx-schedule-thread-priority-analysis.json": "501ad42fc77f399ac2b615794f1bdad1375d7c89965dbd551dc8f71fed86b2bf",
+    "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi/rx-bh-dynamic-failure.json": "2c4bc321eb753055abf4bf5f6352d63f4da9a1db8597227680d42cb060ea086a",
+    "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi/rx-bh-fault-serial.txt": "306f4ce347ba9d22c01ffb5d7e9a4bc4a0d0dd87c2b21fffcb93f43e50b2bc49",
+    "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi/rx-bh-fault-state-console.txt": "11cb495532edce954311ccc67d26070b73bf2a402e8c95eace3020d9dd92a519",
+    "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi/rx-bh-recovery-console.txt": "f7ce0efa273c704a4ba2868042576382c216e646153b5e3da794e4bf5ad79fc6",
+    "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi/rx-schedule-final-state.txt": "cf2cc478afa147dd79e4f092cd2f2d6a046833de31c2f0d0a80b027ff9b029de",
+    "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi/rx-schedule-final-mac-state.txt": "02c067acb10350ee2b3cb61ce3f7526fa0c594b9993639297b57625e8a14bd74",
+    "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi/rx-schedule-static-compare-console.txt": "8f35fc4b162b07a062cda24bbb4272effea239c26068e80c6dab98f8aef81d4b",
+    "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi/rx-schedule-static-wq-compare-console.txt": "15bb250302a8bdfd8b120224b441a17806f83e469832362f70dcf9fff417a3c5",
+    "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi/restore-accepted-after-rx-schedule-log.txt": "e8ede379e77bb28e327c7585fe172657eea5b8db57f510a5af5e6ac2686dfec5",
+    "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi/swap-radio-candidate.py": "bd44a556590dfcc41056a9f9d42eb62d11359c6db84f3523a041a063b7e57ac7",
+    "/Users/leo/OrbStack/ubuntu2404/home/leo/PonWRT-TYFZA1/artifacts/own-wifi-20261020/rx-schedule-trace/radio/rx.c": "cb57819aee30340da5556f055e51b7f2ac0b7412a15de7e969c42bb3c7850ad5",
+    "/Users/leo/OrbStack/ubuntu2404/home/leo/PonWRT-TYFZA1/artifacts/own-wifi-20261020/rx-schedule-trace/radio/rtl_ax_ap.ko": "616bc5a05c9cc591091c46c373e3173fb4e99057c3a96a37f72aa8f004d3a2ba",
+    "/Users/leo/OrbStack/ubuntu2404/home/leo/PonWRT-TYFZA1/artifacts/own-wifi-20261020/rx-schedule-trace/radio/pe-tx-code.h": "e97cfb031e8d61eb278c484c626df6b03342572073f844b23abd923accce5059",
+    "/Users/leo/OrbStack/ubuntu2404/home/leo/PonWRT-TYFZA1/artifacts/own-wifi-20261020/rx-schedule-bh/radio/rx.c": "6c017bffaef92779f804ce75ab39689a55952618952f44b8dc86bf984ef69178",
+    "/Users/leo/OrbStack/ubuntu2404/home/leo/PonWRT-TYFZA1/artifacts/own-wifi-20261020/rx-schedule-bh/radio/rtl_ax_ap.ko": "23c1a03ce72b2e4bb6dce78ec2b55b4c738bd4104e40f67202be349ec31b6f88",
+    "/Users/leo/OrbStack/ubuntu2404/home/leo/PonWRT-TYFZA1/artifacts/own-wifi-20261020/rx-schedule-bh/radio/pe-tx-code.h": "e97cfb031e8d61eb278c484c626df6b03342572073f844b23abd923accce5059",
+    "/Users/leo/OrbStack/ubuntu2404/home/leo/PonWRT-TYFZA1/artifacts/own-wifi-20261020/rx-schedule-static/radio/rx.c": "77e958fc1612ef6c63bcb83510a8066270ec3e4c9a012ea401c2815955837a4e",
+    "/Users/leo/OrbStack/ubuntu2404/home/leo/PonWRT-TYFZA1/artifacts/own-wifi-20261020/rx-schedule-static/radio/rtl_ax_ap.ko": "81918fcc9995b1126f934bc4795ed579d974328f35962d14bee34697c63c3365",
+    "/Users/leo/OrbStack/ubuntu2404/home/leo/PonWRT-TYFZA1/artifacts/own-wifi-20261020/rx-schedule-static/radio/pe-tx-code.h": "e97cfb031e8d61eb278c484c626df6b03342572073f844b23abd923accce5059"
+  }
+}

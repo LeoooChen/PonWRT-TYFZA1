@@ -1,0 +1,374 @@
+{
+  "date": "2026-10-21",
+  "authority": {
+    "module": "evidence/wireless-study-20261009-104746/evidence/stock/modules/ca-ne.ko",
+    "module_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+    "function": "__eth_phy_loopback_set@0x18de0",
+    "control": "MDIO BMCR read/modify/write only bit14; saved1140 ->5140 ->restore1140"
+  },
+  "scope": "Exact temporary FE rules use existing production APIs and installed5053 radio. Physically loop LAN1, excluded from bridge while looping. PPPoE SID4660 PUSH/POP and SNAT/DNAT traverse real ASIC. Two Wi-Fi air legs and a1Gbps PHY; cannot verify a1.7Gbps single-direction ceiling. No optical PON or PPPoE negotiation.",
+  "verified_udp": {
+    "hardware-loop-sanity": {
+      "scope": "Mac app -> encrypted Wi-Fi RX/PE/NI -> FE SNAT and PPPoE PUSH -> LAN1 PHY loop -> FE PPPoE POP/DNAT -> encrypted Wi-Fi -> Mac full sequence/payload validating application. No CPU data endpoint; no physical PON/optics or PPPoE negotiation. Two air transmissions per payload and a1Gbps PHY loop.",
+      "sender": {
+        "requested": 100,
+        "sent": 100,
+        "payload_bytes": 146400,
+        "target_Mbps": 10,
+        "seconds": 0.11712,
+        "offered_payload_Mbps": 10.0,
+        "ENOBUFS_retries": 0,
+        "send_buffer_result": 0,
+        "send_buffer_bytes": 4194304
+      },
+      "sender_exit": 0,
+      "receiver": {
+        "binding": "192.168.1.212",
+        "expected": 100,
+        "received": 100,
+        "unique": 100,
+        "missing": 0,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "socket_drops_seen": null,
+        "UDP_payload_bytes": 146400,
+        "valid_unique_payload_bytes": 146400,
+        "receiver_window_seconds": 0.407066,
+        "active_packet_seconds": 0.112705,
+        "missing_ranges": []
+      },
+      "receiver_exit": 0,
+      "CPU_total_percent_of_4_cores": 1.8617021276595744,
+      "CPU_service_on_DUT": 0,
+      "CPU_note": "Bulk sender and receiver both on Mac, so no DUT test-process CPU to subtract. Snapshot includes setup/drain SSH overhead.",
+      "FE_flow0_packets": 100,
+      "FE_flow1_packets": 100
+    },
+    "hardware-loop-pause2-200": {
+      "scope": "Mac app -> encrypted Wi-Fi RX/PE/NI -> FE SNAT and PPPoE PUSH -> LAN1 PHY loop -> FE PPPoE POP/DNAT -> encrypted Wi-Fi -> Mac full sequence/payload validating application. No CPU data endpoint; no physical PON/optics or PPPoE negotiation. Two air transmissions per payload and a1Gbps PHY loop.",
+      "sender": {
+        "requested": 100000,
+        "sent": 100000,
+        "payload_bytes": 146400000,
+        "target_Mbps": 200,
+        "seconds": 5.856,
+        "offered_payload_Mbps": 200.0,
+        "ENOBUFS_retries": 0,
+        "send_buffer_result": 0,
+        "send_buffer_bytes": 4194304
+      },
+      "sender_exit": 0,
+      "receiver": {
+        "binding": "192.168.1.212",
+        "expected": 100000,
+        "received": 100000,
+        "unique": 100000,
+        "missing": 0,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "socket_drops_seen": null,
+        "UDP_payload_bytes": 146400000,
+        "valid_unique_payload_bytes": 146400000,
+        "receiver_window_seconds": 6.169275,
+        "active_packet_seconds": 5.851869,
+        "missing_ranges": []
+      },
+      "receiver_exit": 0,
+      "CPU_total_percent_of_4_cores": 2.204783258594918,
+      "CPU_service_on_DUT": 0,
+      "CPU_note": "Bulk sender and receiver both on Mac, so no DUT test-process CPU to subtract. Snapshot includes setup/drain SSH overhead.",
+      "Mac_interface_drop_delta": 0,
+      "Mac_interface_output_packets_delta": 100090,
+      "valid_payload_Mbps_over_delivery_window": 200.0,
+      "FE_flow0_packets": 100000,
+      "FE_flow1_packets": 100000,
+      "path_verified": true
+    },
+    "hardware-loop-pause-400": {
+      "scope": "Mac app -> encrypted Wi-Fi RX/PE/NI -> FE SNAT and PPPoE PUSH -> LAN1 PHY loop -> FE PPPoE POP/DNAT -> encrypted Wi-Fi -> Mac full sequence/payload validating application. No CPU data endpoint; no physical PON/optics or PPPoE negotiation. Two air transmissions per payload and a1Gbps PHY loop.",
+      "sender": {
+        "requested": 150000,
+        "sent": 150000,
+        "payload_bytes": 219600000,
+        "target_Mbps": 400,
+        "seconds": 4.415748,
+        "offered_payload_Mbps": 397.849,
+        "ENOBUFS_retries": 0,
+        "send_buffer_result": 0,
+        "send_buffer_bytes": 4194304
+      },
+      "sender_exit": 0,
+      "receiver": {
+        "binding": "192.168.1.212",
+        "expected": 150000,
+        "received": 150000,
+        "unique": 150000,
+        "missing": 0,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "socket_drops_seen": null,
+        "UDP_payload_bytes": 219600000,
+        "valid_unique_payload_bytes": 219600000,
+        "receiver_window_seconds": 4.744022,
+        "active_packet_seconds": 4.42528,
+        "missing_ranges": []
+      },
+      "receiver_exit": 0,
+      "CPU_total_percent_of_4_cores": 7.538167938931298,
+      "CPU_service_on_DUT": 0,
+      "CPU_note": "Bulk sender and receiver both on Mac, so no DUT test-process CPU to subtract. Snapshot includes setup/drain SSH overhead.",
+      "Mac_interface_drop_delta": 0,
+      "Mac_interface_output_packets_delta": 150086,
+      "valid_payload_Mbps_over_delivery_window": 396.9918287656375,
+      "FE_flow0_packets": 150000,
+      "FE_flow1_packets": 150000,
+      "path_verified": true
+    }
+  },
+  "tcp": {
+    "scope": "Genuine Mac TCP data and ACK sockets traverse encrypted Wi-Fi -> FE PPPoE PUSH/SNAT -> LAN1 PHY loop -> FE PPPoE POP/DNAT -> encrypted Wi-Fi. Both bulk endpoints on Mac; iperf ephemeral control connection uses software NAT only. No physical PON/PPPoE negotiation; double air and 1Gbps loop.",
+    "error": null,
+    "client_exit": 0,
+    "received_Mbps": 580.2994391235848,
+    "retransmits": 312,
+    "CPU_total_percent_of_4_cores": 3.229665071770335,
+    "DUT_bulk_test_process_CPU": 0,
+    "measurement_valid": true,
+    "FE_flow0_packets": 305963,
+    "FE_flow1_packets": 305919,
+    "FE_flow2_packets": 8448,
+    "FE_flow3_packets": 8448,
+    "PE_RXQ_RDU": 0,
+    "l3te_tail_drop": 0,
+    "no_buffer": 0,
+    "PE_NI_sent": 314367
+  },
+  "failures": {
+    "hardware-loop-600": "Post-send SSH timeout led initial harness to terminate receiver; no final throughput or CPU result. Mac API300000 minus interface drop91077 =both FE208923. NI sent72068 and tail136891 afterward.",
+    "hardware-loop-uart-200": {
+      "scope": "Mac app -> encrypted Wi-Fi RX/PE/NI -> FE SNAT and PPPoE PUSH -> LAN1 PHY loop -> FE PPPoE POP/DNAT -> encrypted Wi-Fi -> Mac full sequence/payload validating application. No CPU data endpoint; no physical PON/optics or PPPoE negotiation. Two air transmissions per payload and a1Gbps PHY loop.",
+      "sender": {
+        "requested": 100000,
+        "sent": 100000,
+        "payload_bytes": 146400000,
+        "target_Mbps": 200,
+        "seconds": 5.856,
+        "offered_payload_Mbps": 200.0,
+        "ENOBUFS_retries": 0,
+        "send_buffer_result": 0,
+        "send_buffer_bytes": 4194304
+      },
+      "sender_exit": 0,
+      "receiver": {
+        "binding": "192.168.1.212",
+        "expected": 100000,
+        "received": 9924,
+        "unique": 9924,
+        "missing": 90076,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "socket_drops_seen": null,
+        "UDP_payload_bytes": 14528736,
+        "valid_unique_payload_bytes": 14528736,
+        "receiver_window_seconds": 15.690369,
+        "active_packet_seconds": 11.368583,
+        "missing_ranges": [
+          [
+            9924,
+            99999
+          ]
+        ]
+      },
+      "receiver_exit": 2,
+      "CPU_total_percent_of_4_cores": 4.161331626120359,
+      "CPU_service_on_DUT": 0,
+      "CPU_note": "Bulk sender and receiver both on Mac, so no DUT test-process CPU to subtract. Snapshot includes setup/drain SSH overhead.",
+      "Mac_interface_drop_delta": 0,
+      "Mac_interface_output_packets_delta": 100000,
+      "valid_payload_Mbps_over_delivery_window": 10.223779691805039,
+      "FE_flow0_packets": 100000,
+      "FE_flow1_packets": 100000,
+      "path_verified": false
+    },
+    "hardware-loop-credit-200": {
+      "scope": "Mac app -> encrypted Wi-Fi RX/PE/NI -> FE SNAT and PPPoE PUSH -> LAN1 PHY loop -> FE PPPoE POP/DNAT -> encrypted Wi-Fi -> Mac full sequence/payload validating application. No CPU data endpoint; no physical PON/optics or PPPoE negotiation. Two air transmissions per payload and a1Gbps PHY loop.",
+      "sender": {
+        "requested": 100000,
+        "sent": 100000,
+        "payload_bytes": 146400000,
+        "target_Mbps": 200,
+        "seconds": 5.856,
+        "offered_payload_Mbps": 200.0,
+        "ENOBUFS_retries": 0,
+        "send_buffer_result": 0,
+        "send_buffer_bytes": 4194304
+      },
+      "sender_exit": 0,
+      "receiver": {
+        "binding": "192.168.1.212",
+        "expected": 100000,
+        "received": 5910,
+        "unique": 5910,
+        "missing": 94090,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "socket_drops_seen": null,
+        "UDP_payload_bytes": 8652240,
+        "valid_unique_payload_bytes": 8652240,
+        "receiver_window_seconds": 15.743043,
+        "active_packet_seconds": 13.424964,
+        "missing_ranges": [
+          [
+            5910,
+            99999
+          ]
+        ]
+      },
+      "receiver_exit": 2,
+      "CPU_total_percent_of_4_cores": 0.704225352112676,
+      "CPU_service_on_DUT": 0,
+      "CPU_note": "Bulk sender and receiver both on Mac, so no DUT test-process CPU to subtract. Snapshot includes setup/drain SSH overhead.",
+      "Mac_interface_drop_delta": 0,
+      "Mac_interface_output_packets_delta": 100000,
+      "valid_payload_Mbps_over_delivery_window": 5.15591103261059,
+      "FE_flow0_packets": 100000,
+      "FE_flow1_packets": 100000,
+      "path_verified": false
+    },
+    "observer_unload_panic": {
+      "cause": "Finite kthread returned after capture; module exit used stale task pointer in kthread_stop, causing refcount UAF/NULL panic. Agent diagnostic bug, not existing radio root cause.",
+      "stack": "\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi/cb-watch-unload-lifetime-panic.txt",
+      "repair": "Capture stops at cap but thread remains alive until kthread_stop. Four-row cap followed by later unload succeeded on same boot. No production source affected.",
+      "boot_before": "fb55aec6-76c0-4103-8580-266b912ef211",
+      "boot_after": "b1ff451e-6d84-45cd-b97a-87785e8fbf29"
+    }
+  },
+  "findings": [
+    "Finite running samples show NI124WPs plus queued buffers and hardware pool14 taildrop while DMA descriptors are all consumed and RPQ/ARM queues are empty; posttest zero backlog had hidden this stall.",
+    "Healthy200 and400Mbps UDP loop samples do not show such sustained completion stall; no firmware performance fix was installed to obtain these results.",
+    "TCP 580Mbps loop on3.23% of4cores still has312retransmits and44-packet difference before second FE hit while PHY TX/RX counters exactly agree. All FE flow drop counters and global QM taildrop remain0. Packet loss location is not yet proved; do not call all retransmits CPU16 taildrops."
+  ],
+  "restoration": "PHY1140, LAN1 back in br-lan, all loop/observer modules removed, only original198.18.0.1 test route retained MTU1500; temporary.2 route and nft control-NAT rules removed. Antify/defaulten5 unchanged.",
+  "artifacts": {
+    "artifacts/own-wifi-20261020/factory-loopback-audit/__eth_phy_loopback_set.s": {
+      "sha256": "e763c095ab299f77a09a2be4cf982894779bc9e6bc6304e8d4a81dafcf789b29"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/aal_eth_phy_loopback_get.s": {
+      "sha256": "763160768b4bb18e56377a68b0b4746a7fc29116b4502c9d5942da787e43600c"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/aal_eth_phy_loopback_set.s": {
+      "sha256": "7ee9ac181a2df7b0524c1de2fdf5b4fd4de0fcc1dc4cc307f831eb2e9a7900f3"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/aal_l3_te_cb_port_free_buf_cnt_get.part.0.s": {
+      "sha256": "097e2a95863e450bf836ca04215ba48a3f63e283a601b0e1a602eed7262eaea7"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/aal_l3_te_cb_port_free_buf_cnt_get.s": {
+      "sha256": "60db14b9974597717ade18cb9c14b6f9ade1112e51019d839a83d26e2cbc6262"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/aal_l3_te_cb_port_threshold_profile_get.part.0.s": {
+      "sha256": "a5985a636083a7a05869d3cb475bb81f590e125ff7f1e953704af56cd5c39ffd"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/aal_l3_te_cb_src_ctrl_get.s": {
+      "sha256": "54ce0a0cb7994e5abca80f4c5c18b407982aa118b3d5604be9410dd1f7e88839"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/aal_l3_te_cb_src_port_buf_cnt_get.s": {
+      "sha256": "5223bbe6d4c2ad899fcff30743e0b73fed2ba584f744a52be3dbdf0f1b85e663"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/aal_l3_te_cb_src_port_threshold_get.s": {
+      "sha256": "5eec0a4e97f4eaa0a7b4fa02ac51db65d04e9770db4373b4809a2ba310dea823"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/aal_l3_te_cb_src_pri_buf_cnt_get.s": {
+      "sha256": "7881c415494b413b36cf30593ffdaa900739428dd363fe4afef43efc8ae295ab"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/aal_l3_te_cb_td_sts_get.s": {
+      "sha256": "d7be71aebd7f40cc36a29d7227c4bbc87b313793cfe18348d1d01d6ec3bbc9d9"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/aal_l3_te_cb_voq_buf_cnt_get.s": {
+      "sha256": "55ee21e14ec65d2facc821db85344d4754d941729233c86b1be2d0ebe24bfbac"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/aal_l3_te_cb_voq_pcnt_get.s": {
+      "sha256": "50328c62cfc091976d88e141d5db53022e5359cb9e51af41b642ff3a7a1d446d"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/aal_l3_te_cb_voq_threshold_profile_get.part.0.s": {
+      "sha256": "6a84a8db86e9ce7bf9f5158ec7473c932d30ee70d4e5bf20d24acffb7fd56e2e"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/get_macid_pause.s": {
+      "sha256": "4f4c6d936f682eb05b68a84bae91f46fed6b94977f82cc5496f44cf92170f0ad"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/mac_get_tx_cnt.s": {
+      "sha256": "b714ff1c73c7d97ffaa517ab7713e359235252f0a7f716108a025174cf6a6a9d"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/own_cb_state.c": {
+      "sha256": "b8889a0962c65ceac34dcc22a4a2200eef5eab69bbf08abba28e9b782e6b6a7d"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/own_cb_state.ko": {
+      "sha256": "d407a57a207ba7a453089158823a4e4f81f74211c4c3ba68f6d19cc02487c4eb"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/own_cb_state.mod.c": {
+      "sha256": "d58cece78f0cd9d5c51df34781da71f69a565ba0dca9bc3d33c73a4e9b33a78e"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/own_cb_watch-before-lifetime-fix.c": {
+      "sha256": "e50637767a22b0b6335e7a25b4c2f410aee47cf490d664b568c44010ecbed15c"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/own_cb_watch-pause-samples.ko": {
+      "sha256": "5a28998d3599148feb75d902df184e2cad0a28679ef60a95967ca7ab342a1986"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/own_cb_watch.c": {
+      "sha256": "866d32d279138380f3c222b8099225d890894dbc5feb3ea26e57070f99a4d4ac"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/own_cb_watch.ko": {
+      "sha256": "8cece4317ed30a53a7156f4147c9141091459a5c01a30905495af3e1f1ce5e33"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/own_cb_watch.mod.c": {
+      "sha256": "d58cece78f0cd9d5c51df34781da71f69a565ba0dca9bc3d33c73a4e9b33a78e"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/own_phy_loop.c": {
+      "sha256": "96accb6534fc2674c4bdbe0c0783c9e5d79d0326a606ea8d837acf9659672496"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/own_phy_loop.ko": {
+      "sha256": "4f30ef515d648a54569000d6b9423db9d97cfe7488d453933ca137737cea149c"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/own_phy_loop.mod.c": {
+      "sha256": "d58cece78f0cd9d5c51df34781da71f69a565ba0dca9bc3d33c73a4e9b33a78e"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/pon_hw_loop.c": {
+      "sha256": "eefc3c8f9607683e888d710c6cfe8638ea54f5586d6a8c9c557eb97547d860bb"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/pon_hw_loop.ko": {
+      "sha256": "3d25a98c2313603c499be996b1a54885bc88d089f2bbfbd2185667a08d1a0191"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/pon_hw_loop.mod.c": {
+      "sha256": "d58cece78f0cd9d5c51df34781da71f69a565ba0dca9bc3d33c73a4e9b33a78e"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/pon_hw_tcp_loop.c": {
+      "sha256": "8ada8fc56c89898387200204e401e2accf947b6a1c2cd318dc306c69fe504153"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/pon_hw_tcp_loop.ko": {
+      "sha256": "ad892e416ddbb76dcbbf8606115a985150be47eeeaead6a15a5259ba1ce3d3f6"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/pon_hw_tcp_loop.mod.c": {
+      "sha256": "d58cece78f0cd9d5c51df34781da71f69a565ba0dca9bc3d33c73a4e9b33a78e"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/process_pwrbit_data.s": {
+      "sha256": "dc289a669003adddb6507d0ad034c1d70bdb274cff4e4ba48136987b1fe73260"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/set_host_rpr.s": {
+      "sha256": "d482c0a64afa58cadb3601530a302e9d08eff0825a32311eb955f4a0119613e6"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/stop_macid_tx.s": {
+      "sha256": "b6e87351cad5569203d2c7b7967992cd5fd851e24730749485289cce69344271"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/stop_sta_xmit.s": {
+      "sha256": "ce12ac4db6f6d1a69b89d057690a13805df91bb33ebc9ed01a69fd666b5e308d"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/wakeup_sta_to_xmit.s": {
+      "sha256": "122ab37763c18ef96cf976f47926a0b9d650740b664ade09c566e644bd1f841d"
+    }
+  },
+  "goal": "Unresolved uplink/downlink throughput; diagnostics are not acceptance of1.7Gbps."
+}

@@ -1,0 +1,223 @@
+{
+  "authority": {
+    "path": "evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko",
+    "sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e"
+  },
+  "scope": "Factory ARM64 RX control flow and one previously captured SN gap, not a throughput fix or full hardware emulation. No production code changed.",
+  "functions": {
+    "phl_rx_pcie": "0x197454",
+    "phl_rx_handle_normal": "0x18eb04",
+    "phl_rx_reorder": "0x137c58",
+    "phl_reorder_release": "0x13513c",
+    "phl_release_reorder_frame": "0x1350f4",
+    "phl_handle_rx_frame_list": "0x1376f0",
+    "rtw_core_rx_process": "0xbd098",
+    "core_rxsc_apply_shortcut": "0xbe830"
+  },
+  "findings": [
+    {
+      "fact": "Normal RX path reorders before adding released frames to the receive ring and before core RX shortcut application.",
+      "instructions": [
+        "0x1977b4 phl_rx_handle_normal",
+        "0x18eb80 phl_rx_reorder",
+        "0x18ec10 phl_handle_rx_frame_list",
+        "0x137778 _phl_add_rx_pkt",
+        "0xbd450 core_rxsc_apply_check",
+        "0xbd17c core_rxsc_apply_shortcut"
+      ],
+      "limit": "Normal PCIe/core RX path; do not infer that every other vendor forwarding path has been exhaustively audited."
+    },
+    {
+      "fact": "Actual factory phl_rx_pcie processes min(hardware_ready, software_free) before one refill call with the processed count.",
+      "instructions": [
+        "0x1976b4..0x1976b8 hardware count",
+        "0x197700 software free",
+        "0x19773c..0x197758 min",
+        "0x1977d8 packet loop",
+        "0x197948..0x197964 count/refill"
+      ],
+      "oracle_cases": 4,
+      "limit": "Explicit packet-extraction/normal-dispatch/refill boundaries, no DMA timing claim; does not vindicate previously rejected fixed-16 batching candidates."
+    },
+    {
+      "fact": "Ten BA-head/stored-count transitions from the recorded first gap exactly match actual factory reorder/release instructions.",
+      "events": 10,
+      "all_match": true,
+      "limit": "HE80 recorded event only; no RF loss cause, PN, timing or all-gap equivalence proven."
+    },
+    {
+      "fact": "Factory per-reorder cached pointer is invalidated on that gap. Once stored frames drain, the next in-order SN2058 restores the pointer. Native PE valid state resumed at next expected SN2058 already.",
+      "instructions": [
+        "0x137e40..0x137e8c mismatch clears cache",
+        "0x138380..0x138390 head and stored count guard",
+        "0x1383e4..0x138460 in-order empty-buffer cache publication"
+      ],
+      "implication": "This event gives no basis to remove the native empty-reorder requirement to recover speed."
+    },
+    {
+      "fact": "Factory dbg_rtw_netif_rx@0x383c calls forwarding before netif_rx. Generic Linux NF_NETDEV_INGRESS is after RPS, but the currently deployed native radio sets RX_INLINE and calls netif_receive_skb_core directly, bypassing that RPS queue for this data path.",
+      "limit": "Initial audit omitted existing patch214; that omission and the inferred active-path RPS placement are corrected. See wifi-rx-inline-20261020.json and live flag57=Y."
+    },
+    {
+      "fact": "Current AP RPS mask2 temporarily changed to0 for a paired TCP isolation and then restored. On668.703Mbps/2389retransmits/930CPU16taildrops versus off604.425Mbps/0retransmits/0taildrops.",
+      "limit": "Different offered throughputs confound comparison; deployed RX_INLINE bypasses RPS on the observed bulk path. Zero retransmits after a mask change do not establish RPS causality. No production RPS change adopted."
+    },
+    {
+      "fact": "At300Mbps, separate RPS-on/off UDP application runs both delivered20000/20000 full-valid payloads, zero drops and19 reordered datagrams.",
+      "limit": "Numeric UDP order is not MPDU SN. RPS alone did not explain these low-rate order changes."
+    },
+    {
+      "fact": "Finite diagnostic ingress hook uses the same existing HOST NI lookup API for the exact test UDP flow, and records endpoint ingress.624 HOST packets captured with both submission and receive preserved HOST relative order. HOST input sequence itself contains5,6,21,7; thus numeric sequence inversions cannot demonstrate NI FIFO inversion.",
+      "limit": "4096 total event limit; no PE per-MPDU SN trace and no proof of all fast/slow relative ordering. No production fix adopted."
+    }
+  ],
+  "artifacts": {
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/core_rxsc_apply_check.s": {
+      "sha256": "8f3fe92ce9846ee35b1a5f5ca61e1321e0d596bc0d5bb3bebf873001ee78fedd"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/core_rxsc_apply_shortcut.s": {
+      "sha256": "3041efb67d310d2e238b21cb72ae47eb11569747b177c3defc512e405754c154"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/dbg_rtw_netif_rx.s": {
+      "sha256": "e97a8ea5a33e6275556bf1f42ec353ded80c6f8f158868ae04f7a25d0d6533ff"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/factory-first-gap.json": {
+      "sha256": "2bd6ff1ad2b1703c17f6994ed749664358326740a2f87cf1e27f0aa0a0175b09"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/factory-pre-stack-forward.s": {
+      "sha256": "7c5dc9d86f03eabf66390b55ca7a8fddb6d2b9948072e9444afc6c4a4af65e2e"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/factory-rx-budget.json": {
+      "sha256": "28856f736f405ee153ef87b553ae729f73d6cb43e979dbbad1b6a3a715b7b356"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/fc_mgr-pre-stack-ingress.s": {
+      "sha256": "dadebfe24c051dd1cc7fdb7cd4bc2e169248a863dc91b783798fc7726aaa10bd"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/first-gap-native-comparison.json": {
+      "sha256": "f04a92d2ba28ae37717a92b2f52741fc61213cab62e4068e7d341e751647bb07"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/get_avail_rxbd_8852c.s": {
+      "sha256": "b47528c368ea3c5cb88fb325a4d52e737453597fbf43ade67f417e28c7022197"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/hal_get_avail_rxbd_8852ce.s": {
+      "sha256": "cf5f74cb5d267baf63c63d4b1415710110462b0b3ca6513e855d7e74a2e42a58"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/hal_get_rxbd_num_8852ce.s": {
+      "sha256": "f91563d17be0a1a7afe59d2f55bae7952b6ed88cdae8eca0b638c2f3e63de108"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/hal_handle_rxbd_info_8852ce.s": {
+      "sha256": "44102fe27da0baefb19b5fa0f2f9a8f4646bd76682bcbe7b2d363b710589059f"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/hal_trx_init_8852ce.s": {
+      "sha256": "c92a1d2cbabc932000eabfc49e9b18c04d93ebb0ac44d586295c36aa0a431e2a"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/hal_update_rxbd_8852ce.s": {
+      "sha256": "d1ce03b76fe8f599dfdc711efcb21daeeb5ef0b362b26a18c4534a1dd15532ed"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/header-conversion-callers.s": {
+      "sha256": "8ebdefd8891a7addb1d2f48425304ff6d091cb5b36bdea3c94a1513f65e5dee9"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/mac_enable_cut_hwamsdu_8852c.s": {
+      "sha256": "766f667a1f202befc960872859c4c090037cc52536f00386fb96295e89a540cd"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/mac_hdr_conv_en.s": {
+      "sha256": "aca6e80c8d414a08a8eb47ccfccb3b1b1a1b81aa4ddbf75b06f2cfa8206e0bf7"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/mac_hdr_conv_rx_en_8852c.s": {
+      "sha256": "0989228b49372f1fffb6bee95bd954ce2d6db005eb24ae740ea00cd908f7e0d8"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/pcie_pre_init.s": {
+      "sha256": "72bf9727b952634ab653e625200ac3baec7f4fe7a3692deaf6b2f8085027711c"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/phl_get_single_rx.s": {
+      "sha256": "9981a21fb1dd22adae99690f2488e77139384fff76b4f419959e4579ce3c66fe"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/phl_handle_rx_frame_list.s": {
+      "sha256": "8a6b413d076cb84ff527c710285abd642bddc9a8439efed70474dbb2280102e3"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/phl_release_reorder_frame.s": {
+      "sha256": "978bcf1dc2b83cc91d712a19752f7d80644bfe4ad5ee1b50215c3081db49f79b"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/phl_reorder_release.s": {
+      "sha256": "8978d1d16b88539e8299faa12835abdfa17b99b8f5985ba9628179e6165f842b"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/phl_rx_handle_normal.s": {
+      "sha256": "aca54eae860f8840c0bc19e398d32dc45b9fc3ce21af82f21dfe334686722192"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/phl_rx_reorder.s": {
+      "sha256": "e9bd0cdcf3ffd32501c0eeda8468736a7df932beecdb39640e7fa4f45c6b96ec"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/reorder-shortcut-callers.s": {
+      "sha256": "26e6884678c443fb0fc134afa5411346d618463de868d2746477a7bbda7500b2"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/replay-factory-first-gap.py": {
+      "sha256": "801d51d50864c2374a4a7606b49b82ed2ce13e8a776c5e899e033391a7971b99"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/replay-factory-rx-budget.py": {
+      "sha256": "2fbfdfcbd8f136ebc2751d063755327a946a60bb027e7b730756364d2504a50d"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/rtw_core_rx_process.s": {
+      "sha256": "777e263200086533c731e0c25f5b503a24d7d02550f5978d30741de92d6e075d"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/rtw_hal_hdr_conv_cfg.s": {
+      "sha256": "383ee81055f1b4c4a9e1048c83adc48106f1dbd454c3163f97d7f35a62bffcb7"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/rtw_netif_rx_enq.s": {
+      "sha256": "c2145f07551473954adfbe743d8376c95a5efaa41a161e5e8c8a46e382048eff"
+    },
+    "artifacts/own-wifi-20261020/rx-oem-path-audit/rtw_os_recv_indicate_pkt.s": {
+      "sha256": "3ce4c8a6bb189462582cc677fea1446c420c28fcc86d1940ace47ab6a09e78e3"
+    }
+  },
+  "current_hardware": {
+    "radio_sha256": "5053c0364cae48b766e6b3e15fa024b3cf0c87351d42dc1ee9575577f1c38919",
+    "channel": "44 / center50 / HE160",
+    "DFS_events": 0,
+    "Antify": "User requires always on; unchanged.",
+    "test_endpoints": "Mac and ONT only."
+  },
+  "throughput_root_cause": "Unresolved. RX reorder equivalence for one event is not a claim that throughput is fixed.",
+  "secondary_authority": {
+    "path": "evidence/wireless-study-20261009-104746/evidence/stock/modules/fc_mgr.ko",
+    "sha256": "6f46a646c14129505b5d77cd17b10ec8956eea047ba49844609d3e52e78793d4"
+  },
+  "correction": {
+    "reason": "Audit missed the already deployed RX_INLINE patch214. General RPS code placement was incorrectly applied to the active bulk RX path.",
+    "loaded_mac80211_note_sha256": "b5bf6b4b4beeacd9283b63e9519c76e7918d19a4f7bcf25e1f90eccf3bf72b87",
+    "accepted_mac80211_sha256": "9780d6046b9e2021439a785c7b6c68ff569fabf84afc271312bf013badf4343b",
+    "runtime_HW_flag_index": 57,
+    "runtime_RX_INLINE_enabled": true,
+    "runtime_flags": 144713530841565314,
+    "evidence": "\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi/rx-inline-runtime-confirmed.txt",
+    "dwf_radio_hw_offset": 14000
+  },
+  "affinity_followup": {
+    "requested_RPS_CPU2_first_run": {
+      "Mbps": 545.842502,
+      "retransmits": 0,
+      "CPU16_tail_drop": 0,
+      "limit": "No before/after affinity fields in this older run."
+    },
+    "verified_RPS_CPU2": {
+      "NI_IRQ_allowed": "2",
+      "NI_IRQ_effective_CPU": 1,
+      "AP_RPS_mask": "4",
+      "both_before_and_after_verified": true,
+      "Mbps": 665.058388,
+      "retransmits": 2676,
+      "CPU16_tail_drop": 1257,
+      "FE_packets": 467726,
+      "received": 466469,
+      "data_CPU2_percent": 0.241255
+    },
+    "default_NI_IRQ": {
+      "allowed": "f",
+      "effective_CPU": 0,
+      "AP_RPS_mask": "2",
+      "Mbps": 494.445308,
+      "retransmits": 0,
+      "CPU16_tail_drop": 0
+    },
+    "conclusion": "Loss can reappear near665Mbps with a different RPS mask. Active bulk RPS bypass is directly verified. A CPU16 measurement-endpoint loss threshold and a remaining zero-loss throughput ceiling must be separated; no complete root-cause chain claimed."
+  }
+}

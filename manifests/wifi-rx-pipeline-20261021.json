@@ -1,0 +1,360 @@
+{
+  "date": "2026-10-21",
+  "status": "Investigation stopped at user request for handoff. Root cause and throughput goal remain unresolved. No new production RX/PE change adopted.",
+  "accepted_code_commit": "0eb92b1",
+  "valid_capture": {
+    "boot_id": "b1ff451e-6d84-45cd-b97a-87785e8fbf29",
+    "radio_sha256": "5053c0364cae48b766e6b3e15fa024b3cf0c87351d42dc1ee9575577f1c38919",
+    "benchmark": {
+      "scope": "Mac TCP upload to DUT Linux endpoint; hardware uplink requires pon_tcp_sink FE and receive counters. No physical PON egress.",
+      "parallel_streams": 1,
+      "error": null,
+      "client_exit": 0,
+      "received_Mbps": 392.5942399811218,
+      "retransmits": 0,
+      "CPU_total_percent_of_4_cores": 19.129392971246006,
+      "CPU_server_raw_percent_of_4_cores": 4.992012779552716,
+      "CPU_remaining_percent_of_4_cores": 14.13738019169329,
+      "CPU_note": "Same raw100-Hz basis; remaining includes simulated ingress and TCP ACK/softirq work, not pure Wi-Fi forwarding CPU.",
+      "CPU_each_core_percent": [
+        30.990415335463258,
+        24.76038338658147,
+        0.0,
+        20.766773162939298
+      ],
+      "data_packets_delta": 57996,
+      "data_bytes_delta": 3827736,
+      "control_packets_delta": 468,
+      "stops_delta": 0,
+      "wakes_delta": 0,
+      "doorbells_delta": 57996,
+      "data_prepare_ns_delta": 103259520,
+      "payload_copy_ns_delta": 13869640,
+      "PE_NI_sent_delta": 57996,
+      "l3te_tail_drop_delta": 0,
+      "no_buffer_delta": 0,
+      "PE_RXQ_RDU_delta": 50458,
+      "PE_RPQ_RDU_delta": 0,
+      "FE_packets_delta": 57996,
+      "hardware_match_proven": true,
+      "actual_client_ports": [
+        55000
+      ],
+      "offload_covers_all_streams": true,
+      "source_stream_packets_delta": [
+        57996,
+        0,
+        0,
+        0
+      ],
+      "uplink_sink_FE_packets_delta": 206685,
+      "uplink_sink_received_delta": 206685,
+      "uplink_sink_received_bytes_delta": 311023295
+    },
+    "timing_analysis": {
+      "scope": "Read-only original coherent CPU mappings, accepted driver DWARF offsets; 250us samples onCPU2. No cache maintenance/MMIO writes or queue/PHY parameter changes.",
+      "raw_sha256": "201aaa854767480ea8b4733da8c644c010abb0885846ad1b1a5ac8f37bc1a7be",
+      "samples": 39907,
+      "stable_samples": 35302,
+      "snapshot_body_median_us": 5.48,
+      "snapshot_body_percent_of_4_cores": 0.5660938121359967,
+      "groups": {
+        "stable": {
+          "samples": 35302,
+          "hardware_ready_tag_missing": 0,
+          "descriptor_DMA_mismatch": 0,
+          "pool_sum_distribution": {
+            "512": 15389,
+            "513": 18919,
+            "514": 981,
+            "515": 1,
+            "516": 1,
+            "518": 1,
+            "517": 3,
+            "524": 1,
+            "527": 1,
+            "520": 1,
+            "529": 1,
+            "519": 2,
+            "522": 1
+          },
+          "head_type_distribution": {
+            "4294967295": 26955,
+            "0": 8335,
+            "8": 3,
+            "1": 9
+          },
+          "median": {
+            "queued": 0.0,
+            "unprocessed": 0.0,
+            "recycle_wait": 0.0,
+            "idle": 256.0,
+            "physical_ready": 0.0,
+            "return_lag": 0.0,
+            "NI_pending": 0.0,
+            "TXpending": 7.0,
+            "TXqueued": 0.0
+          }
+        },
+        "near_full": {
+          "samples": 3062,
+          "hardware_ready_tag_missing": 0,
+          "descriptor_DMA_mismatch": 0,
+          "pool_sum_distribution": {
+            "513": 2810,
+            "514": 244,
+            "512": 3,
+            "518": 1,
+            "520": 1,
+            "529": 1,
+            "522": 1,
+            "519": 1
+          },
+          "head_type_distribution": {
+            "0": 3050,
+            "8": 3,
+            "1": 9
+          },
+          "median": {
+            "queued": 255.0,
+            "unprocessed": 254.0,
+            "recycle_wait": 1.0,
+            "idle": 2.0,
+            "physical_ready": 255.0,
+            "return_lag": 0.0,
+            "NI_pending": 0.0,
+            "TXpending": 18.0,
+            "TXqueued": 0.0
+          }
+        },
+        "near_full_no_ARM_wait": {
+          "samples": 455,
+          "hardware_ready_tag_missing": 0,
+          "descriptor_DMA_mismatch": 0,
+          "pool_sum_distribution": {
+            "514": 99,
+            "513": 348,
+            "512": 3,
+            "518": 1,
+            "520": 1,
+            "529": 1,
+            "522": 1,
+            "519": 1
+          },
+          "head_type_distribution": {
+            "0": 455
+          },
+          "median": {
+            "queued": 255,
+            "unprocessed": 254,
+            "recycle_wait": 0,
+            "idle": 3,
+            "physical_ready": 254,
+            "return_lag": 0,
+            "NI_pending": 0,
+            "TXpending": 21,
+            "TXqueued": 0
+          }
+        }
+      },
+      "first_onsets": {
+        "queued>=32": {
+          "after_start_ms": 829.7468,
+          "queued": 37,
+          "unprocessed": 36,
+          "recycle_wait": 1,
+          "physical_ready": 9,
+          "return_lag": 0,
+          "barrier": 1,
+          "ARMw": 28,
+          "ARMr": 27,
+          "NI_pending": 0,
+          "RDU": 0
+        },
+        "queued>=128": {
+          "after_start_ms": 848.49676,
+          "queued": 137,
+          "unprocessed": 136,
+          "recycle_wait": 1,
+          "physical_ready": 0,
+          "return_lag": 0,
+          "barrier": 1,
+          "ARMw": 123,
+          "ARMr": 122,
+          "NI_pending": 0,
+          "RDU": 0
+        },
+        "queued>=240": {
+          "after_start_ms": 873.9968,
+          "queued": 242,
+          "unprocessed": 241,
+          "recycle_wait": 1,
+          "physical_ready": 0,
+          "return_lag": 0,
+          "barrier": 1,
+          "ARMw": 209,
+          "ARMr": 208,
+          "NI_pending": 0,
+          "RDU": 0
+        },
+        "physical_ready>=240": {
+          "after_start_ms": 899.7468,
+          "queued": 255,
+          "unprocessed": 254,
+          "recycle_wait": 1,
+          "physical_ready": 246,
+          "return_lag": 0,
+          "barrier": 1,
+          "ARMw": 12,
+          "ARMr": 11,
+          "NI_pending": 0,
+          "RDU": 0
+        },
+        "recycle_wait>=32": {
+          "after_start_ms": 3814.2468,
+          "queued": 33,
+          "unprocessed": 1,
+          "recycle_wait": 32,
+          "physical_ready": 0,
+          "return_lag": 0,
+          "barrier": 0,
+          "ARMw": 231,
+          "ARMr": 230,
+          "NI_pending": 0,
+          "RDU": 37619
+        },
+        "return_lag>=32": null,
+        "RDU>=1": {
+          "after_start_ms": 900.2468,
+          "queued": 255,
+          "unprocessed": 254,
+          "recycle_wait": 1,
+          "physical_ready": 255,
+          "return_lag": 0,
+          "barrier": 1,
+          "ARMw": 14,
+          "ARMr": 13,
+          "NI_pending": 0,
+          "RDU": 12
+        }
+      },
+      "limitations": [
+        "Stable means repeated software cursors/barrier matched; it is not an atomic hardware-wide freeze.",
+        "RDU is a hardware event counter, not a count of lost packets.",
+        "Short ARM waits may fall between samples. Constant ARM producer/consumer intervals below exclude observed dispatch; a full256-entry wrap between250us samples is not modeled.",
+        "This trace locates processing versus arrival/refill pressure; it does not identify a specific PE instruction bottleneck by itself."
+      ],
+      "backlog_with_constant_ARM_cursors": {
+        "intervals": 505,
+        "total_ms": 126.24844,
+        "processing_MPDU_per_second": 26915.184060888198,
+        "scanning_MPDU_per_second": 23334.94180205316
+      }
+    },
+    "stronger_ownership_filter": {
+      "stable_samples_with_pool_sum_512_to_514": 35289,
+      "near_full_no_ARM_wait_samples_with_pool_sum_512_to_514": 450
+    },
+    "conclusion": "Software unprocessed queue grows first, physicalRX full andRDU follow. Earliest major growth includesARM barrier. With unchanged ARM cursors there are measured recovery intervals; this does not prove a specific PE instruction or independent PE bug.",
+    "sampling": "Original coherent mappings from accepted ELF DWARF; read-only, no cache maintenance/MMIO writes, CPU2 timer250us."
+  },
+  "phase_candidate_failure": {
+    "candidate": {
+      "ko_sha256": "ee842f589d18932012cd7085cca770228193e3eb3f363decd5d099da119a5c7a",
+      "note_sha256": "f49a91c472792c761949b6bee93ccdc4f6f8d74505bc0f0b3cf8bf21957cc26e",
+      "scope": "Only PE mailbox250 stage markers, unchanged protocol/ownership/queue scheduling."
+    },
+    "source_delta": "Four mailbox250 phase writes only; source/control flow preserved otherwise, generated instruction layout/register allocation changes.",
+    "valid_throughput_result": false,
+    "full_samples_preserved_locally": false,
+    "lost_file": "DUT/tmp/rx-phase-samples.txt,7177614bytes, lost after cold restart; serial transfer never produced complete payload.",
+    "preserved": "Idle/before snapshots, fault console, last4sample lines and aggregatephase counts in preserve-console, exact source/ELF/ko, actual MIPS ownership check, recovery console.",
+    "phase_counts": {
+      "0": 36582,
+      "1": 1095,
+      "2": 1330,
+      "3": 993
+    },
+    "counts_scope": "Include idle and faulted intervals. Must not interpret as valid busy-stage percentages.",
+    "hardware_state": {
+      "SER": "01000000",
+      "DMAC": "00000100",
+      "CMAC": "00000002",
+      "RX_halt": "00001000",
+      "PE_Cause": "00000000",
+      "PE_EPC": "00000000"
+    },
+    "cause": "Unresolved. No proof that the diagnostic stage stores alone caused the fault or that the old throughput failure has the same cause.",
+    "serial_correction": "User reported physicalserial disconnection and reconnected it. Lack of serial output cannot establish kernel/module-unload deadlock; blocked-backtrace file is not an actual kernel stack.",
+    "deployment": "RAM only; never persisted; do not reload this candidate blindly."
+  },
+  "reproducibility": {
+    "accepted_bin_rebuild_sha256": "39534acfbe76aa04c53433cb133a547369cea8edc10039f16f35298a7b196ccb",
+    "original_accepted_bin_same": true,
+    "phase_bin_sha256": "53c32c732dcf3c1eaecf4655fcc5ed6efda291179b473005c25cd81dd6bcc26c",
+    "phase_bin_bytes": 16300,
+    "first_mainloop_marker_attempt": "Linker rejected overlap withmailbox; never deployed; failure source/log retained."
+  },
+  "handoff_state": {
+    "boot_id": "d871034d-5a08-4234-830f-bec74ff2ac18",
+    "radio_sha256": "5053c0364cae48b766e6b3e15fa024b3cf0c87351d42dc1ee9575577f1c38919",
+    "loaded_note_sha256": "e5e16d4988b70d29b26c7b6a75c6e290d990018f42fdd5d10f586f0abb787841",
+    "wireless": "44/center50HE160 CAC0 events0",
+    "temporary_resources": "No diagnostic/sink/fixture/loop modules oriperf processes; no testnft rules/policy220; LAN1br-lan; IRQf/APRPS2; printk7 4 1 7.",
+    "Mac": "en5 default192.168.71.1 preserved; Antifyrunning; en0 test.212 associatedap5; temporary198.18.0.1 hostroute removed and198.18.0.2 absent.",
+    "new_production_modification": false,
+    "cold_restart": "Relay off10sec/on restored accepteddisk module; no new firmware flash."
+  },
+  "evidence_root": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi",
+  "workspace_sha256": {
+    "rx-pipeline-stages-samples.txt": "201aaa854767480ea8b4733da8c644c010abb0885846ad1b1a5ac8f37bc1a7be",
+    "rx-pipeline-stages-before.txt": "cdabb9eaff98f33253d8417d1f3ba1eb99448091800a6a0fc6eb65fc8a73dbc7",
+    "rx-pipeline-stages-after.txt": "fadd9159fdab2afc9fbf9182762911216d62d3938dea4b317e394d534a6bb57e",
+    "rx-pipeline-stages-cpu.txt": "935ea0c850faca466f5c4dca7781ba9c64f6cf60cfa77a37a2e0bcc10b943c33",
+    "rx-pipeline-stages.json": "864e3a501ab65964234aa867a62b03d19ffa8afc89c460b13ac5357466c8f7ae",
+    "rx-pipeline-stages-analysis.json": "fb43c0963003bebf684cab09e1a79078e98cb16d0a3188a55700ce3fe9c4ff62",
+    "rx-pipeline-stages-timing-analysis.json": "5eb8e86cd9b9b54d98b89067cac66d92895fb1bf667e61cac647b117c847a5dd",
+    "rx-pipeline-layout.json": "703818d96fd989497912ce7b8d3f76864047f1072106d744494595ea607d8cc7",
+    "rx-pipeline-phase-module.json": "dec8cd324203f2ce18ae3c4223c9a024bba3a06b845d9cf6e247d9d9b86f1483",
+    "rx-pipeline-phase-before.txt": "5f5588b970cae43094901e62cfece2294db38197802c78a0c099d4ddf5f9275d",
+    "rx-pipeline-phase-idle.txt": "7ed41034673ba07a7359dbf2ca0df6a3a62457c03fc8f8f5968d61523a561a92",
+    "rx-pipeline-phase-capture-console.txt": "01226dd19a338d83a0f254afff7a0ae01aad471ede6e00ae548c48c5be01a638",
+    "rx-pipeline-phase-fault-console.txt": "cf2bfbc7df39449e9e3f718711150ea16e7c2f3dd3c21ddc379a6557b5e5395e",
+    "rx-pipeline-phase-preserve-console.txt": "a33b6130b0538f92e6624f0b9a172dd6ebd470a16cce56ed1bc3b1add5b3935f",
+    "rx-pipeline-phase-recovery-console.txt": "39dfa6488f77470ce9f711f64a46297b27b7e2854ac1b66fae93fc3380817b9a",
+    "rx-pipeline-phase-transfer-raw.txt": "87507b9b24ace63b3dd0bc9db5aaba615828aabdb19418e77c9885a9db4d35a4",
+    "rx-pipeline-phase-cold-recovery.txt": "7b19d7c4a923b67e59d8cf77e91bc4538e308ed17f59d6693a9137c9dc9a5817",
+    "rx-pipeline-after-serial-reconnect.txt": "d4484fedc71cc70ff5a926bb78be182ca869aacf3fadfa3da9020597131d8d05",
+    "handoff-final-device-state.txt": "a6203382572b72995bb059aa68df8d660ec189808f1e0669f62b3201a7fcc466",
+    "handoff-final-mac-state.txt": "ab5244516c81ab7faf9bef37cb093ea1d26477bccf2af95e074f999f3902c3c8",
+    "analyze-rx-pipeline.py": "5d5e19c5eb1a52c555924818d7b8ff37238986b8cfc253630d9d1e8a7f4a4683",
+    "rx-pipeline-capture.py": "f240c643e83b06f2790189c2466f78b471db589a8d2a76e8befde9e311de8957",
+    "rx-pipeline-phase-capture.py": "303294923343bdcec6f37a1094de29641d23bcef3d886b9c450227717eb036bb",
+    "handoff-mac-test-route-cleanup.txt": "ea2fc6d4dc41e94cc2533b7d4f9a76067126d606207d4862f192433b0682297e"
+  },
+  "repository_artifact_sha256": {
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/own_rx_stages-stage-only.c": "4fe423a0afcd30ba6ced796443b2dc9ca6e9dd20e9656f32951644b78a7b912a",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/own_rx_stages-stage-only.ko": "3fd577844ead5bbe46cabd4d112a01349300bdd2721a07f8bc7e9f0d2aaf52d4",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/own_rx_stages.c": "b40e094930782e2910498a7fd2b2d933500b7fbf41b8debdb3e5bff363085b58",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/own_rx_stages.ko": "38ebff4050a3918fa85462fe56be923651e9df3ea160c236b69254fc2bc4d2f6",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/phase-ownership-check.json": "2eb06b5360846883457de115a80fb63a55a008b9bdb9738942a57ca11f0fb285",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/build-phase.log": "bfafdb0cbb7b86f5395f9b6adf3ab2ddbe98b50fbe2e25e3782c09e8795ac25a",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/build-phase-local.log": "6457e535e37ef7860c672a4464595888327d22595b1083e1b4f72f75b0eef9f2",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/factory-amsdu-to-msdu.s": "2e14840ce18f65ca8616381ad38b276e3b1d92e039743264d40bb87f2ed9f8b8",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/factory-dispatcher-error.s": "7ba0522235d3897562b5d4a9a14c40e4cdc6975f95c4534ab9d0da3f02712da2",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/accepted-rx-protocol.s": "fadb9afb07d0d016d517913e1bf470fe51c8dbedd7194e31204aa8b59e4e48db",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/phase-source/rtl9617c-radio-wd.c": "da30c808fe1a2d80dc30d5a7aecebabcb229f14ee17e8c037050fc753ba32e7d",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/phase-source/rtl9617c-radio-uplink.h": "4139ecf409f2f82775d2b1d6244b132f660e873691b9f2e88b8d945330536133",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/phase-source/rtl9617c-radio-downlink.h": "934bd6359ac3b48c7347d7aeae8da27083559cfb89d9d13b3cd5f6753a523d56",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/phase-source/rtl9617c-radio-wd-entry.S": "70d7fc8d9f3c971447b5748023b113cf5d46e24e501d85cb60272290eafd9788",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/phase-source/rtl9617c-radio-wd.ld": "5f549be5e6b6ae27e1ce995b1e0c6d765fb193a66c2c897097549b78c9ff1ac1",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/phase-source/rtl9617c-radio-wd-main-phase-rejected.c": "c26bdf4fedfb431f66e4549d8391ad5bc71f867ba40728b51132796a0244fe21",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/phase-pe/pe-tx.bin": "53c32c732dcf3c1eaecf4655fcc5ed6efda291179b473005c25cd81dd6bcc26c",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/phase-pe/pe-wd.elf": "644e0a26bf16b394e17f71642a583765000c0e4df31c5c4e9ef0ac269fbed561",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/phase-pe/pe-tx-code.h": "05547329bf965625c75f5f1c8f701bc88bfbd275a213423548ef798991c99470",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/phase-radio/rtl_ax_ap.ko": "ee842f589d18932012cd7085cca770228193e3eb3f363decd5d099da119a5c7a",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/rebuilt-accepted/pe-tx.bin": "39534acfbe76aa04c53433cb133a547369cea8edc10039f16f35298a7b196ccb",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/rebuilt-accepted/pe-wd.elf": "fc88b8938554ee52c96de6998cb280ed4e682044890249cde8539e055f4b884b",
+    "artifacts/own-wifi-20261020/rx-pipeline-audit/rebuilt-accepted/pe-tx-code.h": "e97cfb031e8d61eb278c484c626df6b03342572073f844b23abd923accce5059"
+  }
+}
