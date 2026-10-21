@@ -487,7 +487,10 @@ static int rtl_engine_start(struct rtl_xram *priv)
 
 	if (priv->dma_tx) {
 		/* The bootloader's XRAM path leaves the normal LAN scheduler off. */
-		rtl_update(priv, 0x2208, BIT(30) | BIT(31), BIT(31));
+		/* Original aal_l2_qm_init: EQ1 has4K64-byte pages, with29 pages
+		 * reserved per port so one full frame survives shared-pool pressure. */
+		writel(BIT(31) | (4U << 16) | (29U << 20), priv->ni + 0x2208);
+		rtl_update(priv, 0x2218, GENMASK(14, 0), 29);
 		writel(0x08008021, priv->ni + 0x2210);
 		/* Port15 uses scheduler instance14. Leaving it stopped
 		 * holds VOQ120..127 buffers until every LAN/PON data path runs out. */
