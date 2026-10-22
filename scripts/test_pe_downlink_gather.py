@@ -19,7 +19,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         0x04000000, 0x04002000, 0x05100000, 0x05200000, 0x06000000,
         0x05000000, 0x12000000, 0x10000000, 0x06200000)
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-    for at, size in [(0x1fc00000, 0x4000), (base, 0x20000), (pages, 0xc000),
+    for at, size in [(0x1fc00000, 0x10000), (base, 0x20000), (pages, 0xc000),
                      (headers, 0xc000), (payload, 0x10000), (ring, 0x4000),
                      (bar, 0x10000), (ni, 0x10000), (reports, 0x80000),
                      (0x10020000, 0x1000), (0x10030000, 0x1000)]:
@@ -87,7 +87,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     u.reg_write(UC_MIPS_REG_SP, (base + 0x1fff0) | 0xa0000000)
     if observe:
         observe(u)
-    u.emu_start(0xbfc00400, 0xbfc03ffc, count=100000)
+    u.emu_start(0xbfc00400, 0x9fc0fff0, count=100000)
     assert get(mb + 28 * 4) == len(lengths) and get(mb + 38 * 4) == 0
     assert get(mb + 30 * 4) == len(submits) and not returns
     assert get(base + 0x18020) == len(lengths)
@@ -136,11 +136,11 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         put(reports + slot * 1024 + 4, 7 << 24 | 4)
         put(reports + slot * 1024 + 20, (256 + slot) << 16 | 1)
     put(bar + 0x121c, len(all_ids) << 16)
-    u.emu_start(u.reg_read(UC_MIPS_REG_PC), 0xbfc03ffc, count=100000)
+    u.emu_start(u.reg_read(UC_MIPS_REG_PC), 0x9fc0fff0, count=100000)
     assert get(mb + 45 * 4) == len(submits) and not returns
     put(ni + 0x6340, 0x8000007c)
     put(ni + 0x6380, 0x80000000)
-    u.emu_start(u.reg_read(UC_MIPS_REG_PC), 0xbfc03ffc, count=100000)
+    u.emu_start(u.reg_read(UC_MIPS_REG_PC), 0x9fc0fff0, count=100000)
     assert returns == [payload + n * 2048 | 6 for n in range(len(lengths))]
     assert get(mb + 30 * 4) == 0 and get(mb + 29 * 4) == len(lengths)
     assert get(base + 0x18020) == 0

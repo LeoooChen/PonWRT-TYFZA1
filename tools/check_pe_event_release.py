@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory(prefix='pe-event-release-',dir=ROOT/'artifacts'
  lib=ctypes.CDLL(str(tmp/'native.so'));lib.release_native.argtypes=[ctypes.c_void_p,ctypes.c_void_p]
  BASE,CONTROL,RADIO,TIMER=0x4000000,0x4002000,0x4102000,0x100290b0
  u=Uc(UC_ARCH_MIPS,UC_MODE_MIPS32|UC_MODE_LITTLE_ENDIAN)
- for at,size in ((0x1fc00000,0x4000),(BASE,0x20000),(RADIO-0x2000,0x20000),(0x10020000,0x10000)):u.mem_map(at,size)
+ for at,size in ((0x1fc00000,0x10000),(BASE,0x20000),(RADIO-0x2000,0x20000),(0x10020000,0x10000)):u.mem_map(at,size)
  u.mem_write(0x1fc00000,binary)
  def put(at,v):u.mem_write(at,struct.pack('<I',v))
  def get(at):return struct.unpack('<I',u.mem_read(at,4))[0]

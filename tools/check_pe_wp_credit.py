@@ -11,7 +11,7 @@ def replay(path,new,msdu_bytes,gather):
  path=Path(path);binary=(path/'pe-tx.bin').read_bytes()
  names={p[2]:int(p[0],16) for l in subprocess.check_output(['llvm-nm-18',str(path/'pe-wd.elf')],text=True).splitlines() if len(p:=l.split())==3}
  u=Uc(UC_ARCH_MIPS,UC_MODE_MIPS32|UC_MODE_LITTLE_ENDIAN)
- for a,n in ((0x1fc00000,0x4000),(BASE,0x20000),(NI,0x10000),(EPP,0x10000),(PAYLOAD,0x200000)):u.mem_map(a,n)
+ for a,n in ((0x1fc00000,0x10000),(BASE,0x20000),(NI,0x10000),(EPP,0x10000),(PAYLOAD,0x200000)):u.mem_map(a,n)
  u.mem_write(0x1fc00000,binary)
  def put(a,v):u.mem_write(a,struct.pack('<I',v))
  def get(a):return struct.unpack('<I',u.mem_read(a,4))[0]
@@ -26,9 +26,9 @@ def replay(path,new,msdu_bytes,gather):
   u.mem_write(EPP+n*8,struct.pack('<II',at|0x50,msdu_bytes+16))
  put(NI+0x7060,1024*8)
  def call(name):
-  for reg,v in ((UC_MIPS_REG_A0,MB|0xa0000000),(UC_MIPS_REG_A1,BASE|0xa0000000),(UC_MIPS_REG_A2,REQ|0xa0000000),(UC_MIPS_REG_SP,(BASE+0x1fff0)|0xa0000000),(UC_MIPS_REG_RA,0x9fc03ffc)):u.reg_write(reg,v)
-  u.emu_start(names[name],0x9fc03ffc,count=100000)
-  assert u.reg_read(UC_MIPS_REG_PC)==0x9fc03ffc
+  for reg,v in ((UC_MIPS_REG_A0,MB|0xa0000000),(UC_MIPS_REG_A1,BASE|0xa0000000),(UC_MIPS_REG_A2,REQ|0xa0000000),(UC_MIPS_REG_SP,(BASE+0x1fff0)|0xa0000000),(UC_MIPS_REG_RA,0x9fc0fff0)):u.reg_write(reg,v)
+  u.emu_start(names[name],0x9fc0fff0,count=100000)
+  assert u.reg_read(UC_MIPS_REG_PC)==0x9fc0fff0
   return u.reg_read(UC_MIPS_REG_V0)
  selected=0;ids=[]
  for batch in range(128):

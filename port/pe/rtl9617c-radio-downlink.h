@@ -72,6 +72,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 	u32 producer = ni[mailbox[114] / 4 + cos] & mask;
 	if (producer == consumer) return 0;
 	u32 count = 0, group = 0, head = 0, tail = 0, grouped = 0;
+	u32 cached_peer = 0, cached_low = 0, cached_high = 0;
 	u32 fence = mailbox[171] & BIT(cos);
 	u32 target = *(u32 *)(memory + NI_EPP_RETIRE_TARGETS + cos * 4), crossed = 0;
 	sync();
@@ -81,17 +82,25 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		u32 buffer = entry[0] & 0xffffff80, header, length = ni_length(entry, buffer, &header);
 		u8 *ethernet = uncached(buffer + 32 + header);
 		u32 macid = 0;
-		if (length >= 14 && length <= 2048 - 32 - header)
-			for (u32 peer = 1; peer < 128; peer++) {
-				if (!*(u32 *)(memory + NI_PEER_ROUTE + peer * 4)) continue;
-				/* Both NI Ethernet and the eight-byte peer slot are word aligned.
-				 * Compare six bytes without MIPS packed/byte DDR transactions. */
-				const u32 *address = (const void *)(memory + 0xe400 + peer * 8);
-				const u32 *destination = (const void *)ethernet;
-				if (address[0] == destination[0] && !((address[1] ^ destination[1]) & 65535)) {
-					macid = peer; break;
+		if (length >= 14 && length <= 2048 - 32 - header) {
+			const u32 *destination = (const void *)ethernet;
+			u32 low = destination[0], high = destination[1] & 65535;
+			/* Cache only this batch's destination; admission can be revoked
+			 * asynchronously and must still be checked for every packet. */
+			if (cached_peer && low == cached_low && high == cached_high &&
+			    *(volatile u32 *)(memory + NI_PEER_ROUTE + cached_peer * 4))
+				macid = cached_peer;
+			else {
+				for (u32 peer = 1; peer < 128; peer++) {
+					if (!*(u32 *)(memory + NI_PEER_ROUTE + peer * 4)) continue;
+					const u32 *address = (const void *)(memory + 0xe400 + peer * 8);
+					if (address[0] == low && (address[1] & 65535) == high) {
+						macid = peer; break;
+					}
 				}
+				cached_peer = macid; cached_low = low; cached_high = high;
 			}
+		}
 		if (!macid) {
 			mailbox[128] = entry[0]; mailbox[129] = entry[1];
 			mailbox[130] = length; mailbox[131] = header;

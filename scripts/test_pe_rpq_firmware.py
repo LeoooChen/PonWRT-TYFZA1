@@ -15,7 +15,7 @@ binary = (Path(sys.argv[1]) if len(sys.argv) > 1 else root / 'artifacts/pe-radio
 base, mailbox, ring, payload, bar, ni = (0x04000000, 0x04002000, 0x05000000,
                                       0x06000000, 0x12000000, 0x10000000)
 u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-for at, size in ((0x1fc00000, 0x4000), (base, 0x20000), (ring, 0x4000),
+for at, size in ((0x1fc00000, 0x10000), (base, 0x20000), (ring, 0x4000),
                  (payload, 0x10000), (bar, 0x10000), (ni, 0x10000),
                  (0x10020000, 0x1000), (0x10029000, 0x1000)):
     u.mem_map(at, size)

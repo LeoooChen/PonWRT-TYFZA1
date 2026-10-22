@@ -9,7 +9,7 @@ p=Path(sys.argv[1])
 symbols={x[2]:int(x[0],16) for l in subprocess.check_output(["llvm-nm-18",str(p/"pe-wd.elf")],text=True).splitlines() if len(x:=l.split())==3}
 u=Uc(UC_ARCH_MIPS,UC_MODE_MIPS32|UC_MODE_LITTLE_ENDIAN)
 BASE,MB,NI,PAYLOAD,EPP,REQ=0x04000000,0x04002000,0x10000000,0x06000000,0x05000000,0x04007000
-for a,n in [(0x1fc00000,0x4000),(BASE,0x20000),(NI,0x10000),(PAYLOAD,0x200000),(0x12000000,0x10000),(EPP,0x40000),(0x10020000,0x1000)]:u.mem_map(a,n)
+for a,n in [(0x1fc00000,0x10000),(BASE,0x20000),(NI,0x10000),(PAYLOAD,0x200000),(0x12000000,0x10000),(EPP,0x40000),(0x10020000,0x1000)]:u.mem_map(a,n)
 u.mem_write(0x1fc00000,(p/"pe-tx.bin").read_bytes())
 def put(a,v):u.mem_write(a,struct.pack("<I",v))
 def get(a):return struct.unpack("<I",u.mem_read(a,4))[0]
@@ -61,7 +61,7 @@ returned=[]
 u.hook_add(UC_HOOK_MEM_WRITE,lambda uc,access,at,size,value,data:returned.append(value),begin=NI+0x6384,end=NI+0x6387)
 u.reg_write(UC_MIPS_REG_A0,MB|0xa0000000)
 u.reg_write(UC_MIPS_REG_SP,(BASE+0x1fff0)|0xa0000000)
-u.emu_start(0xbfc00400,0xbfc03ffc,count=2000000)
+u.emu_start(0xbfc00400,0x9fc0fff0,count=2000000)
 assert len(returned)==499 and len(set(returned))==499
 assert set(returned)=={PAYLOAD+n*2048|6 for n in range(1,500)}
 assert get(MB+30*4)==2 and get(BASE+0x18000+8*4)==1

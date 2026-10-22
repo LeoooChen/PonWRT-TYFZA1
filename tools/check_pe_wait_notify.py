@@ -21,7 +21,7 @@ B, MB, BAR, NI, RPQ, FORWARD, PAYLOAD = 0x4000000, 0x4002000, 0x12000000, 0x1000
 rows = []
 for kind in ('RPQ-with-other-peer', 'retired-queue-with-other-peer', 'last-WP', 'RPQ-no-waiter'):
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-    for at, size in ((0x1fc00000, 0x4000), (B, 0x20000), (BAR, 0x10000), (NI, 0x10000), (RPQ, 0x40000), (FORWARD, 0x40000), (PAYLOAD, 0x1000), (0x10020000, 0x1000)):
+    for at, size in ((0x1fc00000, 0x10000), (B, 0x20000), (BAR, 0x10000), (NI, 0x10000), (RPQ, 0x40000), (FORWARD, 0x40000), (PAYLOAD, 0x1000), (0x10020000, 0x1000)):
         u.mem_map(at, size)
     u.mem_write(0x1fc00000, binary)
     def put(at, value): u.mem_write(at, struct.pack('<I', value))
@@ -60,7 +60,7 @@ for kind in ('RPQ-with-other-peer', 'retired-queue-with-other-peer', 'last-WP', 
         put(BAR + 0x121c, 1 << 16)
     u.reg_write(UC_MIPS_REG_A0, MB | 0xa0000000)
     u.reg_write(UC_MIPS_REG_SP, (B + 0x1fff0) | 0xa0000000)
-    u.emu_start(0xbfc00400, 0xbfc03ffc, count=25000)
+    u.emu_start(0xbfc00400, 0x9fc0fff0, count=25000)
     requests = get(MB + 67 * 4)
     other_active = bool(get(B + 0xc400 + (0 if kind.startswith('retired') else 8))) if kind != 'last-WP' else False
     if kind == 'last-WP':

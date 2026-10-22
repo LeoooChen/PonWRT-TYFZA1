@@ -29,7 +29,7 @@ host_dma = 0x120380be  # Observed bad region; PE ATU redirects this window to IO
 
 for encap in (True, False):
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-    for at, size in ((0x1fc00000,0x4000),(base,0x20000),(ring,0x10000),
+    for at, size in ((0x1fc00000,0x10000),(base,0x20000),(ring,0x10000),
                      (pages,0x10000),(headers,0x10000),(0x11000000,0x100000),
                      (0x12000000,0x100000),(0x10020000,0x1000)):
         u.mem_map(at,size)

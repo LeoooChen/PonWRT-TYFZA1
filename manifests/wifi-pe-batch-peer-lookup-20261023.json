@@ -1,0 +1,76 @@
+{
+  "date": "2026-10-23",
+  "change": "Reuse the immediately preceding destination lookup within one bounded NI EPP batch. Recheck volatile peer admission for every cached match; no cross-batch cache or negative cache.",
+  "PE_SHA256": "de4c28162271e0bc084d38464beb0ab3b13c1d48fdd7ff474719585eeba1dedf",
+  "PE_bytes": 16592,
+  "memory_limit": "Correct obsolete shared request-ring16KiB limit to the already configured32KiB IMEM. Engine code and per-radio request rings have separate allocations. Mailbox hole remains reserved; no data buffer or hardware window enlarged.",
+  "linked_instruction_checks": {
+    "repeated_peer2_batch_DDR_reads_before": {
+      "route": 16,
+      "address": 32
+    },
+    "after": {
+      "route": 9,
+      "address": 4
+    },
+    "passed": [
+      "EPP mixed peer/TID FIFO, wrap, all8 CoS and retirement fence",
+      "mid-batch admission withdrawal preserves ARM fallback",
+      "RX514-buffer ownership and PE0/PE1 RPQ handoff",
+      "NI descriptor credit, retained prefetch and counter wrap",
+      "boot entry32KiB IMEM/8KiB DMEM and absence of GOT relocations"
+    ],
+    "known_fixture_failures": [
+      "test_pe_host_headers.py fails at boot with UC_ERR_FETCH_UNMAPPED in both the formal baseline and this image; not counted as passed",
+      "test_pe_downlink_gather.py has an existing single-core/generation fixture mismatch; not counted as passed"
+    ]
+  },
+  "RAM_pilot": {
+    "boot_id": "d0a290cd-1491-4e9d-8363-ba86b0df38cb",
+    "radio_SHA256": "fa9a01f8ae16e19b4e543681fbc1ad43ccd990876aae77fac71cbd7f34baa93b",
+    "Mac_MACID": 1,
+    "baseline_capacity_Mbps": [
+      1700.316,
+      1691.595
+    ],
+    "baseline_Mac_MACID": 2,
+    "UDP_down_wire2200": {
+      "Mbps": 1718.432,
+      "valid_unique": 416650,
+      "L3_drops": 83350,
+      "duplicates": 0,
+      "corrupt": 0,
+      "RX_RDU": 0,
+      "CPU_excluding_generator_percent_of_four_cores": 0.5286
+    },
+    "TCP_up20s": {
+      "Mbps": 1389.172,
+      "retransmits": 0,
+      "L3_drops": 0,
+      "FE_packets": 2413789,
+      "received": 2413789,
+      "CPU0_percent": 7.6012
+    },
+    "UDP_up1600": {
+      "valid_unique": 388048,
+      "Mac_interface_drops": 11952,
+      "L3_drops": 0,
+      "RX_RDU": 0,
+      "delivery_complete": false
+    },
+    "TCP_down10s": {
+      "Mbps": 25.682,
+      "retransmits": 13,
+      "auto_offload_starts_before_after": [
+        3,
+        4
+      ],
+      "counter_comparison_valid": false,
+      "halt": 0,
+      "note": "Failed run retained. Management briefly timed out; PE/downlink counters reset during a TX BA/offload refresh. This is not a successful TCP result or evidence of firmware halt."
+    },
+    "interpretation": "Repeated lookup reads are reduced; pilot throughput gain is small and MACID/thermal/RF state differs. No claim that main capacity limit or the earlier duplex drops are fixed. Protected uplink successfully executes rx_frame instructions beyond the old16KiB boundary with PE Cause/EPC zero."
+  },
+  "evidence_directory_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold",
+  "overall_acceptance_passed": false
+}
