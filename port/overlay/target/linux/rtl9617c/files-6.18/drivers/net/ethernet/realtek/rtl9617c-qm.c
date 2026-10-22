@@ -513,6 +513,20 @@ void rtl_qm_rx_free(struct device *dev, struct rtl_qm_rx *rx)
 	dma_free_noncoherent(dev, RTL_QM_MEMORY_BYTES, rx->memory, rx->memory_dma, DMA_FROM_DEVICE);
 }
 
+static void rtl_qm_rx_retire(struct rtl_qm_rx *rx, unsigned int cos,
+	u32 command, bool refill)
+{
+	rx->read[cos] = (rx->read[cos] + RTL_QM_COMMAND_BYTES) & (RTL_QM_RING_BYTES - 1);
+	mb();
+	writel(rx->read[cos], rx->ni + EPP_READ + cos * 4);
+	if (refill) {
+		u32 offset = (command & 0xffffff80) - lower_32_bits(rx->memory_dma);
+		dma_sync_single_for_device(rx->device, rx->memory_dma + offset,
+			RTL_QM_BUFFER_BYTES, DMA_FROM_DEVICE);
+		rtl_qm_refill_add(&rx->refill, command);
+	}
+}
+
 int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 {
 	struct net_device *dev = napi->dev;
@@ -529,10 +543,10 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 		bool nonempty = readl(rx->ni + 0x659c) & BIT(cos);
 		unsigned int wr = readl(rx->ni + EPP_WRITE + cos * 4) & 0xffffff;
 		bool full = rx->read[cos] == wr && nonempty;
-		int before = count;
 
 		while ((rx->read[cos] != wr || full) && count < budget) {
-			void *entry = rx->ring_memory + cos * RTL_QM_RING_BYTES + rx->read[cos];
+			unsigned int read = rx->read[cos];
+			void *entry = rx->ring_memory + cos * RTL_QM_RING_BYTES + read;
 			u32 command, length_word, address, offset, h0, h1;
 			unsigned int length, header;
 			u64 copied = 0;
@@ -601,6 +615,9 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				/* Full Header CPU reason !=15 identifies an ingress return. */
 				if (((metadata >> 8) & 15) != 15) wifi_id = metadata & 255;
 			}
+			/* Packet bytes and metadata are private now. Return the EPP
+			 * credit before GRO or endpoint callbacks can hold up the poll. */
+			rtl_qm_rx_retire(rx, cos, command, refill_buffer);
 			if (wifi_id) {
 				struct rtl9617c_ni_wifi_endpoint *endpoint;
 				rcu_read_lock();
@@ -620,7 +637,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 					dev_kfree_skb_any(skb);
 				}
 				rcu_read_unlock();
-				goto consume;
+				continue;
 			}
 			if (source >= ARRAY_SIZE(rx->lan)) {
 				struct rtl9617c_ni_endpoint *endpoint;
@@ -635,7 +652,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 					dev_kfree_skb_any(skb);
 				}
 				rcu_read_unlock();
-				goto consume;
+				continue;
 			}
 			rcu_read_lock();
 			input = rcu_dereference(rx->lan[source]);
@@ -643,7 +660,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				dev->stats.rx_dropped++;
 				dev_kfree_skb_any(skb);
 				rcu_read_unlock();
-				goto consume;
+				continue;
 			}
 			if (rx->trace_count < ARRAY_SIZE(rx->trace) && length >= 46 &&
 			    get_unaligned_be16(skb->data + 12) == ETH_P_IP &&
@@ -651,7 +668,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			    get_unaligned_be16(skb->data + 36) == 18081) {
 				u32 *trace = rx->trace[rx->trace_count++];
 
-				trace[0] = rx->read[cos]; trace[1] = wr;
+				trace[0] = read; trace[1] = wr;
 				trace[2] = command; trace[3] = length_word;
 				trace[4] = h0; trace[5] = h1;
 				trace[6] = get_unaligned_be32(skb->data + 42);
@@ -661,22 +678,12 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			input->stats.rx_bytes += length;
 			napi_gro_receive(napi, skb);
 			rcu_read_unlock();
+			continue;
 consume:
-			rx->read[cos] = (rx->read[cos] + RTL_QM_COMMAND_BYTES) & (RTL_QM_RING_BYTES - 1);
-			if (refill_buffer) {
-				dma_sync_single_for_device(rx->device, rx->memory_dma + offset,
-					RTL_QM_BUFFER_BYTES, DMA_FROM_DEVICE);
-				rtl_qm_refill_add(&rx->refill, command);
-			}
-		}
-		/* ca_ni_rx_napi consumes one producer snapshot, then publishes RD.
-		 * BIDs stay on the software refill list until that publication. */
-		if (count != before) {
-			mb();
-			writel(rx->read[cos], rx->ni + EPP_READ + cos * 4);
+			rtl_qm_rx_retire(rx, cos, command, refill_buffer);
 		}
 	}
-	/* Vendor receive retires the whole EPP batch before refilling released BIDs. */
+	/* Every EPP is retired before its BID can return to hardware. */
 	rtl_qm_refill_drain(&rx->refill, rx, rtl_qm_try_push, NAPI_POLL_WEIGHT);
 	if (begin) {
 		rx->host_poll_ns += ktime_get_ns() - begin;
