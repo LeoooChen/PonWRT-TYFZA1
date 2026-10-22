@@ -1485,7 +1485,8 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	radio->band.n_bitrates = ARRAY_SIZE(rates) - first_rate;
 	/* Both board radios implement the original 2T2R HT20/40 channel path. */
 	radio->band.ht_cap.ht_supported = true;
-	radio->band.ht_cap.cap = IEEE80211_HT_CAP_SGI_20 | IEEE80211_HT_CAP_MAX_AMSDU |
+	radio->band.ht_cap.cap = IEEE80211_HT_CAP_LDPC_CODING |
+		IEEE80211_HT_CAP_SGI_20 | IEEE80211_HT_CAP_MAX_AMSDU |
 		IEEE80211_HT_CAP_SUP_WIDTH_20_40 | IEEE80211_HT_CAP_SGI_40;
 	radio->band.ht_cap.ampdu_factor = IEEE80211_HT_MAX_AMPDU_64K;
 	radio->band.ht_cap.mcs.rx_mask[0] = 0xff;
@@ -1495,7 +1496,8 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	if (radio->chip == RTL_AX_8852C) {
 		radio->band.vht_cap.vht_supported = true;
 		/* RMAC accepts 11966-byte MPDUs; native RXQ slots hold 12288 bytes. */
-		radio->band.vht_cap.cap = IEEE80211_VHT_CAP_SUPP_CHAN_WIDTH_160MHZ |
+		radio->band.vht_cap.cap = IEEE80211_VHT_CAP_RXLDPC |
+			IEEE80211_VHT_CAP_SUPP_CHAN_WIDTH_160MHZ |
 			IEEE80211_VHT_CAP_SHORT_GI_160 | IEEE80211_VHT_CAP_SHORT_GI_80 | IEEE80211_VHT_CAP_MAX_MPDU_LENGTH_11454 |
 			(IEEE80211_VHT_MAX_AMPDU_1024K << IEEE80211_VHT_CAP_MAX_A_MPDU_LENGTH_EXPONENT_SHIFT);
 		/* Two streams MCS0..9; all higher NSS are unsupported. */
