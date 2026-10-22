@@ -146,6 +146,32 @@ for start,sequences in ((0x123,[0x124,0x123]),(0x123,[0x125,0x124,0x123]),(4094,
  assert r.get(MB+175*4)==len(sequences) and not r.get(MB+94*4)
  r.put(VP+0x1c,len(sequences));r.capture();r.inventory()
 
+# PE1 must not give up on an SN gap while PE0 is still capturing the same
+# hardware producer snapshot. The missing frame is already DMA-complete.
+r=reorder_peer()
+r.arrive(data_frame(0x124,3),True);r.arrive(data_frame(0x123,2),True)
+r.capture();r.process()
+assert r.get(MB+175*4)==0 and not r.get(MB+94*4) and not r.get(MB+90*4)
+assert r.get(ST+1024)==1<<31|0x123 and r.get(ST+1028)==1
+r.capture()
+for _ in range(4):r.process()
+assert r.get(MB+175*4)==2 and not r.get(MB+94*4) and r.get(MB+90*4)==2
+assert r.get(ST+1024)==1<<31|0x125 and r.get(ST+1028)==3
+r.put(VP+0x1c,2);r.capture();r.inventory()
+
+# Missing data with no pending capture still belongs to ARM's reorder timer.
+r=reorder_peer();r.arrive(data_frame(0x124,3),True);r.capture();r.process()
+assert r.get(MB+94*4)==1 and r.get(MB+175*4)==1 and not r.get(MB+90*4)
+r.inventory()
+# Waiting cannot deadlock a full work ring with the missing frame behind it.
+r=reorder_peer();r.arrive(data_frame(0x124,3),True);r.capture()
+for _ in range(254):
+ at,_=r.arrive(bytes(32));r.put(at+4,32|1<<31|1<<24);r.capture()
+r.arrive(data_frame(0x123,2),True);r.capture();r.process()
+assert r.get(MB+94*4)==1 and r.get(MB+175*4)==1 and not r.get(MB+90*4)
+assert r.get(ST+1024)==1<<31|0x123 and r.get(ST+1028)==1
+r.inventory()
+
 # Full seven-subframe aggregates keep every UDP sequence across NI63->0.
 r=reorder_peer();r.put(MB+90*4,61);r.put(MB+91*4,61);r.put(VP+0x1c,61)
 expected_payloads={}
@@ -324,4 +350,4 @@ assert r.get(MB+178*4)==1 and r.get(MB+179*4)==1 and r.isr==1<<7
 print(json.dumps({'scope':'Actual linked production PE; modeled PCIe, ARM acknowledgement, NI consumption and W1C. No RF throughput simulation.',
  'PE_sha256':hashlib.sha256(binary).hexdigest(),'ARM_blocked_capture_and_refill_packets':255,'busy_ring_full_payload_preserved':True,
  'ordered_ARM_delivery':len(seen),'additional_wrap_packets':513,'all_514_buffers_have_one_owner':True,'permuted_noncontiguous_DMA_table_all_buffers':True,
- 'PE0_capture_then_PE1_executor_processing':True,'PE0_RPQ_then_PE1_BID_return_and_IRQ_notification':True,'BA_batch_SN_PN_order_and_4095_wrap':True,'BA_window_replay_BAR_TID_and_protocol_barriers':True,'sorted_payloads_keep_one_owner':True,'seven_subframe_BA_order_and_NI_wrap':True,'PN_SN_no_overtake':True,'stateless_reports_and_RTS_CTS_ACK_BA_do_not_block_data':True,'BAR_PS_Poll_wait_without_forcing_later_data_to_ARM':True,'NI_last_two_payloads_retained':True,'NI_end_bit30_and_31bit_wrap':True,'AMSDU_prefix_alignment_and_HT_control':True,'invalid_or_NI_full_MPDU_unchanged':True,'RXQ_RPQ_RDU_counted_with_W1C':True,'producer_and_RDU_read_once_per_batch':True,'RPQ_RDU_restarts_with_idle_RXQ':True,'unready_DMA_tag_services_RDU_without_advancing_RX':True},indent=2))
+ 'PE0_capture_then_PE1_executor_processing':True,'PE0_RPQ_then_PE1_BID_return_and_IRQ_notification':True,'BA_batch_SN_PN_order_and_4095_wrap':True,'BA_waits_for_known_PE0_capture_batch':True,'BA_missing_or_full_capture_ring_returns_to_ARM':True,'BA_window_replay_BAR_TID_and_protocol_barriers':True,'sorted_payloads_keep_one_owner':True,'seven_subframe_BA_order_and_NI_wrap':True,'PN_SN_no_overtake':True,'stateless_reports_and_RTS_CTS_ACK_BA_do_not_block_data':True,'BAR_PS_Poll_wait_without_forcing_later_data_to_ARM':True,'NI_last_two_payloads_retained':True,'NI_end_bit30_and_31bit_wrap':True,'AMSDU_prefix_alignment_and_HT_control':True,'invalid_or_NI_full_MPDU_unchanged':True,'RXQ_RPQ_RDU_counted_with_W1C':True,'producer_and_RDU_read_once_per_batch':True,'RPQ_RDU_restarts_with_idle_RXQ':True,'unready_DMA_tag_services_RDU_without_advancing_RX':True},indent=2))

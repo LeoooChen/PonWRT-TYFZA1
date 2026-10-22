@@ -1,0 +1,28 @@
+{
+  "date": "2026-10-23",
+  "base_commit": "82e9b05",
+  "problem": "PE1 could exhaust its captured-work snapshot before PE0 captured an already DMA-complete missing BA frame, unnecessarily handing the later frame to ARM and invalidating the shortcut during software reorder recovery.",
+  "fix": "Yield until PE0 finishes its known hardware batch or exposes the newly captured tail. Preserve all packet bytes and PN/SN while waiting. A full work ring or no remaining capture still uses ARM. Missing packets continue to use mac80211's existing reorder handling.",
+  "PE_bytes": 16372,
+  "PE_SHA256": "6aa63ff7609f38678ca13ad64c9a785c6e3be86a9f85a22663580382b7b66969",
+  "layout": "Existing16KiB instruction boundary and request-ring address retained. minsize on pe_rx_work saves branch-layout space; no buffer or timeout increase.",
+  "verification": {
+    "before": "The old linked PE fails the new case: sequence0x124 is handed to ARM even though0x123 is DMA-complete in the same hardware batch.",
+    "after": "The linked PE waits, forwards0x123 then0x124, and preserves PN ordering and buffer ownership. Missing-frame and full-work-ring cases still hand off to ARM.",
+    "passed": ["test_pe_rxq_backpressure.py", "test_pe_ni_descriptor_credit.py", "test_pe_instruction_memory.py"],
+    "legacy_fixture_limitation": "test_pe_downlink_gather.py fails with both original and modified images. Its executor fixture does not publish context generation142 for the current dual-PE dispatcher, nor model the separate PE0 RPQ executor. The passing backpressure fixture exercises actual dual-PE handoff and seven-subframe payload ownership; the legacy failure is not claimed as a pass."
+  },
+  "RAM_radio_SHA256": "870a7a7c31676a3c2bd8dfccd347f694c1ed7bd9d6398998b01bacacbe35592f",
+  "RAM_comparison": {
+    "control": {"TCP_up_Mbps": 1391.511, "retransmits": 0, "L3_drops": 0, "PE_share_percent": 97.7187},
+    "modified": {"TCP_up_Mbps": 1388.326, "retransmits": 0, "L3_drops": 0, "PE_share_percent": 97.5493},
+    "interpretation": "No measurable throughput or overall offload-share improvement in this pair. The model proves the handoff defect; these runs do not establish that it causes most ARM fallback or hardware drops.",
+    "TCP_down": {"Mbps": 1248.231, "retransmits": 63, "L3_drops": 61},
+    "UDP_up": {"Mbps": 1156.575, "sent": 400000, "received_unique": 354644, "Mac_drops": 45356, "duplicates": 0, "corrupt": 0, "L3_drops": 0, "RX_RDU": 15},
+    "UDP_down": {"Mbps": 1506.020, "sent": 500000, "received_unique": 500000, "duplicates": 0, "corrupt": 0, "L3_drops": 0},
+    "limits": "Encrypted Mac Wi-Fi plus the simulated PON endpoint, not physical PON. RAM module reload and another idle5GHz peer prevent treating the pair as a controlled RF capacity measurement. A2.4GHz AP failed to resume after hot replacement and its explicit restart; cold startup must be checked."
+  },
+  "downlink_latency_evidence": "latency-sample-timeline.txt uses one bounded10ms sampler. During the stall the PON injector published/read pointers matched and Wi-Fi TXBD read caught write, while76-78 WPs remained outstanding and RPQ producer/consumer stayed at12. This excludes a pending injector doorbell and a PE completion-recycling backlog at that sample. It does not prove why the chip had not issued completion reports.",
+  "cold_boot_pending": true,
+  "overall_acceptance_passed": false
+}

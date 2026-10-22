@@ -246,7 +246,11 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 		mailbox[191]++;
 		return 1;
 	}
-	return 0;
+	/* Finish PE0's known capture batch before giving an SN gap to ARM.
+	 * A full work ring must fall back so ARM can release its head. */
+	return ((write + 1) & 255) != mailbox[RTL_AX_RX_WORK_READ] &&
+		(write != mailbox[RTL_AX_RX_WORK_WRITE] ||
+		 mailbox[81] != mailbox[RTL_AX_RX_HW_PRODUCER]);
 }
 
 static void __attribute__((noinline)) rx_status_poll(volatile u32 *mailbox)
@@ -307,7 +311,7 @@ static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mail
 	*(volatile u16 *)((u8 *)bar + 0x1218) = mailbox[81];
 }
 
-static void __attribute__((section(".rxq"), noinline)) pe_rx_work(volatile u32 *mailbox)
+static void __attribute__((section(".rxq"), noinline, minsize)) pe_rx_work(volatile u32 *mailbox)
 {
 	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
 	/* Only receive-state handlers serialize subsequent WLAN data. Factory
