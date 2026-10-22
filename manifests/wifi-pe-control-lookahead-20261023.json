@@ -16,6 +16,7 @@
   },
   "Mac_PHY": {"API": "CoreWLAN CWInterface.transmitRate", "samples": 40, "TX_rate_Mbps": {"1921": 38, "286": 2}, "channel": 44, "width_MHz": 160, "RSSI_dBm_range": [-42, -35], "noise_dBm": -91, "interpretation": "The observed uplink PHY during this UDP run was1921Mbps, not the2401.9Mbps capability ceiling. DUT RX rate statistics are updated by ARM-delivered frames and do not provide a full PE RX rate histogram."},
   "warm_original_module": {"TCP_up_Mbps": 1277.797, "retransmits": 0, "L3_drops": 0, "PE_share_percent": 90.9543, "state_invalid_attempts": 14892, "SN_mismatch_attempts": 1776, "PN_replay_attempts": 0, "NI_full_attempts": 0, "PS_transition_attempts": 0, "note": "Read-only BA snapshots show transient reorder occupancy and batch delivery. Empty BA/head-key differences sampled during delivery do not by themselves prove a failed snapshot decision; no PN/SN validity condition was relaxed."},
-  "cold_boot_pending": true,
+  "cold_boot_pending": false,
+  "cold_boot_validation": "wifi-rx-ldpc-cold-20261023.json",
   "overall_acceptance_passed": false
 }

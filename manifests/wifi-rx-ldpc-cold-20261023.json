@@ -1,0 +1,41 @@
+{
+  "date": "2026-10-23",
+  "source_commit": "4882c1203c0206766c868c6f8a571bf930000f7d",
+  "image_directory": "artifacts/local-0.8.2-beta-rx-ldpc-20261023",
+  "sysupgrade_SHA256": "aa9c13a10cd516373ea1d9495ebfa56264d0c78a198a473b68ae0dc5e642b1c7",
+  "kernel_FIT_SHA256": "d4b5eaf3710462c33c8bcc32902721e31cb5ae625e23c83d697c4c2b9dd66000",
+  "radio_SHA256": "29201ce6b278384cf59632a605eb0d4d943d252a2dc0bb220a5ae617e373df10",
+  "PE_SHA256": "79e0299205a460727b8bb6c23940357a67786fa4a25d180d700904d4c86fbdad",
+  "verification": "FIT configuration/payload signatures pass and bad signature rejected. Packaged PE occurs exactly once; built radio and NI sources match overlay; uploaded image hash and sysupgrade-T pass. Relay cold cycle followed completed upgrade reboot.",
+  "measurement_boot_id": "462f3647-2e5c-4f16-8368-2daab28824e2",
+  "scope": "Mac encrypted5GHz160MHz and simulated PON endpoints. Formal Flash radio, no RAM replacement or sampler for the primary cold measurements; no physical PON egress or optical negotiation.",
+  "cold_start": "Both APs start normally; device radio hash matches build. HT0x086f and VHT0x03800076 include RX LDPC. Mac used MACID2 while another5GHz client used MACID1.",
+  "measurements": {
+    "TCP_up20s": {"Mbps": 1352.120, "first10s_Mbps": 1386.609, "last10s_Mbps": 1319.846, "retransmits": 0, "L3_drops": 0, "RX_RDU": 0, "FE_packets": 2350260, "received": 2350260, "PE_frames": 2294552, "PE_share_percent": 97.6297, "CPU0_percent": 7.4494, "CPU_total_percent_of_four_cores": 32.5728},
+    "TCP_down10s": {"Mbps": 1280.314, "retransmits": 0, "L3_drops": 0, "FE_packets": 1114044, "PE_sent": 1114044, "CPU_server_percent_of_four_cores": 19.8537},
+    "UDP_up_target1600": {"sender_Mbps": 1592.515, "receiver_Mbps": 1590.519, "sent": 400000, "valid_unique": 400000, "Mac_interface_drops": 0, "duplicates": 0, "corrupt": 0, "L3_drops": 0, "RX_RDU": 0},
+    "UDP_down_wire_target1600": {"receiver_Mbps": 1507.050, "sent": 500000, "valid_unique": 500000, "duplicates": 0, "corrupt": 0, "L3_drops": 0, "RX_RDU": 0, "CPU_excluding_generator_percent_of_four_cores": 0.3224, "note": "Offered Ethernet wire rate1600Mbps; this is not a measurement of maximum possible downlink capacity."},
+    "TCP_bidirectional6s": {"up_Mbps": 687.992, "down_Mbps": 676.473, "up_retransmits": 266, "down_retransmits": 20, "L3_drops": 290, "no_buffer": 0, "RX_RDU": 0, "uplink_FE_packets": 401348, "uplink_received": 401082, "downlink_FE_packets": 372659, "downlink_PE_sent": 372635, "both_sockets_offloaded": true, "acceptance_passed": false},
+    "TCP_down_zerocopy10s": {"Mbps": 1355.992, "retransmits": 0, "L3_drops": 0, "CPU_server_percent_of_four_cores": 17.1296, "note": "Additional iperf-Z source-endpoint comparison, kept separate from the default TCP result. CPU placement and rate control also vary; do not attribute all gain to copying."}
+  },
+  "Mac_PHY_during_cold_UDP_up": {"API": "CoreWLAN transmitRate", "rate_sample_counts_Mbps": {"2401": 4, "1921": 36}, "note": "Sampling includes initial/final idle periods; maximum capability is not a sustained payload rate."},
+  "duplex_loss_location": "The266-packet difference between uplink FE and received counts plus the24-packet difference between downlink FE and PE counts equals the290 L3 tail drops. Both TCP sockets match FE. This locates loss within NI delivery, not its precise queue/credit cause.",
+  "diagnostic_followup": {
+    "run": "rx-ldpc-duplex-queue-trace",
+    "status": "Timed out25s; management connection then unavailable. Not a valid throughput result.",
+    "sampler": "Read-only CPU0 EPP/refill sampler,100us, pinned CPU0, bounded100000 samples. No production admission, interrupt or buffer setting was modified.",
+    "archive_SHA256": "e6fee41ba1bdb604f6dd6e5ded99da42b83896cc9862cfb7db00492026592c46",
+    "saved_archive_on_mac": "qm-credit-events.tgz in the shared evidence directory",
+    "compression": "Serial transfer preserved every change of sampled numeric state plus constant-period endpoints; repeated-state timestamps were collapsed. This is not an unfiltered sample file.",
+    "L3_counter_first_last": [290, 290],
+    "maximum_stable_EPP_occupancy": 78,
+    "maximum_refill_pending": 64,
+    "final_queue": "EPP empty, IRQ enable bits255, refill pending0. No additional tail drops were observed, so this trace cannot establish the cause of the earlier290 drops.",
+    "wireless_status": "Later snapshots contain5GHz H2C timeouts and zero DMAC/CMAC/HAXI state registers. No explicit firmware-halt0x1000/DMAC0x100 record was captured for this incident. Sampler timing effects and the management failure were not isolated; do not classify it as the previously recorded payload-overflow halt.",
+    "factory_readonly_findings": "Original ca-ne.ko compiled defaults ca_ni_napi_budget=16 and ca_ni_use_qm_eq_refill_int=0; original refill allocation can precede protocol callbacks. These observations alone do not establish which current setting causes duplex drops; no NI change was made from that hypothesis."
+  },
+  "recovery": {"boot_id": "d0a290cd-1491-4e9d-8363-ba86b0df38cb", "action": "Saved timeline/dmesg/radio state through TTL, removed sampler, stopped test server, sync, relay cold cycle. Firmware image retained.", "verified": "Same Flash radio hash; both APs operational; no diagnostic/test modules or table220 policy rule; console printk restored7/4/1/7. No performance rerun was used to replace the failed observations. External default route remains192.168.71.1/en5."},
+  "evidence_directory_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold",
+  "remaining_priority": "Uninstrumented bidirectional NI tail-drop cause. Preserve confirmed Wi-Fi fixes and keep the separate sampling/management incident recorded without expanding it into the primary investigation absent stronger evidence.",
+  "overall_acceptance_passed": false
+}

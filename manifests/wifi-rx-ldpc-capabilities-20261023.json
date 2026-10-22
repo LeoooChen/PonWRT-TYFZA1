@@ -18,6 +18,7 @@
     "limits": "Radio replacement rebuilds association and rate control; this is not a perfectly controlled RF experiment. Do not claim all of the observed gain is isolated to these two bits, or that1.8Gbps delivery is loss-free. HT/VHT packet-mode throughput was not separately tested; actual encrypted HE data and capability propagation were checked."
   },
   "evidence_directory_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold",
-  "cold_boot_pending": true,
+  "cold_boot_pending": false,
+  "cold_boot_validation": "wifi-rx-ldpc-cold-20261023.json",
   "overall_acceptance_passed": false
 }
