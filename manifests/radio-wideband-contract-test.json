@@ -2,8 +2,8 @@
   "scope": "Compare native bandwidth/RF/TPU/WD output with the original ELF traces.\n\nCompile the production function bodies unchanged. Only hardware IO and the\npower-query boundary are replaced; signed values come from the same contract\nused while executing the original constructors in Unicorn.\n",
   "native_source_hashes": {
     "channel.h": "8986f70b0048ef9bb4f5c3e97b50fe18cfc6973caf8b5d54c78eb7805e774db1",
-    "power-tables.c": "aa1bb2f71eb268ea2ff56b9c7815512d6f610c1262685df17d00dce8fa7522ef",
-    "tx.c": "afc646117d6d0ae7c861aa1b70199aa103684df50b85384fb6b92b70497bada8"
+    "power-tables.c": "131e0141f38d5ea2f8058061c51cc8dbc5a1284fd0182043a1dc9651b647f6c4",
+    "tx.c": "421dd8e411bacc77f6174b07b5b56971ce39c5f66f5e751c5d155106575a5f89"
   },
   "C_20_40_80_160_signed_TPU_RF18_ADC_vectors": 4,
   "VHT_20_40_80_160_WD_vectors": 240,
