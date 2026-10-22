@@ -7,7 +7,7 @@
 #include <linux/rtnetlink.h>
 #include <linux/unaligned.h>
 #include <net/flow_offload.h>
-#include <net/hotdata.h>
+#include <net/gro.h>
 #include "rtl9617c-ni.h"
 static struct net_device *sink,*radio,*lan,*bridge;
 static struct rtl9617c_ni_wifi_endpoint endpoint;
@@ -18,26 +18,17 @@ static struct flow_dissector dissector;
 static int identity;
 static u64 packets,bytes,received,received_bytes;
 static u8 first[32];
-/* NI polling can migrate between the IRQ and refill-timer CPUs.
- * Keep one GRO context so a single TCP flow retains receive order. */
-static struct napi_struct sink_napi;
-static struct sk_buff_head sink_queue;
-static u64 queue_drops;
-static int sink_poll(struct napi_struct *napi,int budget)
+/* The callback runs within the NI owner's serialized poll. Use that same
+ * GRO context across CPU migration, as ca_ni_rx_napi does for CPU delivery. */
+static struct napi_struct *ni_napi;
+static void sink_gro_flush(void)
 {
- int done=0;
- while(done<budget){
-  struct sk_buff *skb=skb_dequeue(&sink_queue);
-  if(!skb)break;
-  napi_gro_receive(napi,skb);done++;
- }
- if(done<budget)napi_complete_done(napi,done);
- return done;
-}
-static void sink_gro_destroy(void)
-{
- napi_disable(&sink_napi);netif_napi_del(&sink_napi);
- skb_queue_purge(&sink_queue);
+ /* The endpoint has detached. Flush its last SKBs before freeing its netdev. */
+ napi_disable(ni_napi);local_bh_disable();
+ napi_gro_flush(ni_napi,false);
+ netif_receive_skb_list(&ni_napi->gro.rx_list);
+ ni_napi->gro.rx_count=0;
+ local_bh_enable();napi_enable(ni_napi);napi_schedule(ni_napi);
 }
 static u64 stack_skbs,gro_frames,gro_skbs;
 static rx_handler_result_t count_stack(struct sk_buff **pskb)
@@ -68,11 +59,7 @@ static void receive(struct rtl9617c_ni_wifi_endpoint *ep,struct sk_buff *skb,boo
  received++;received_bytes+=skb->len;
  skb->dev=sink;skb->protocol=eth_type_trans(skb,sink);
  skb_unset_transport_header(skb);
- if(skb_queue_len(&sink_queue)>READ_ONCE(net_hotdata.max_backlog)){
-  queue_drops++;dev_kfree_skb_any(skb);return;
- }
- skb_queue_tail(&sink_queue,skb);
- napi_schedule(&sink_napi);
+ napi_gro_receive(ni_napi,skb);
 }
 static netdev_tx_t discard(struct sk_buff *skb,struct net_device *dev)
 {dev_kfree_skb_any(skb);return NETDEV_TX_OK;}
@@ -88,8 +75,8 @@ static int command(enum flow_cls_command cmd)
 static int stats(char *buf,const struct kernel_param *param)
 {
  int ret;rtnl_lock();ret=command(FLOW_CLS_STATS);rtnl_unlock();
- return scnprintf(buf,PAGE_SIZE,"ret=%d FE_packets=%llu FE_bytes=%llu received=%llu received_bytes=%llu id=%d queue_drops=%llu stack_skbs=%llu gro_skbs=%llu gro_frames=%llu first=%*phN\n",
- ret,packets,bytes,received,received_bytes,identity,queue_drops,stack_skbs,gro_skbs,gro_frames,32,first);
+ return scnprintf(buf,PAGE_SIZE,"ret=%d FE_packets=%llu FE_bytes=%llu received=%llu received_bytes=%llu id=%d stack_skbs=%llu gro_skbs=%llu gro_frames=%llu first=%*phN\n",
+ ret,packets,bytes,received,received_bytes,identity,stack_skbs,gro_skbs,gro_frames,32,first);
 }
 static const struct kernel_param_ops statops={.get=stats};
 module_param_cb(stats,&statops,NULL,0400);
@@ -114,9 +101,9 @@ static int __init initialize(void)
  eth_hw_addr_set(sink,bridge->dev_addr);sink->features|=NETIF_F_GRO;
  endpoint.netdev=sink;endpoint.receive=receive;
  rtnl_lock();ret=register_netdevice(sink);if(ret)goto unlock;
- skb_queue_head_init(&sink_queue);
- netif_napi_add(sink,&sink_napi,sink_poll);napi_enable(&sink_napi);
- ret=netdev_rx_handler_register(sink,count_stack,NULL);if(ret)goto destroy_gro;
+ ni_napi=list_first_entry(&((struct net_device *)dev_get_drvdata(lan->dev.parent))->napi_list,
+  struct napi_struct,dev_list);
+ ret=netdev_rx_handler_register(sink,count_stack,NULL);if(ret)goto unregister_sink;
  ret=dev_open(sink,NULL);if(ret)goto unregister_handler;
  netif_carrier_on(sink);
  identity=rtl9617c_ni_wifi_attach(lan->dev.parent,&endpoint);
@@ -144,10 +131,9 @@ static int __init initialize(void)
  rtnl_unlock();return 0;
 free_rule:kfree(rule);
 unbind:unbind();
-detach:rtl9617c_ni_wifi_detach(lan->dev.parent,identity);rtl9617c_ni_fe_remove_port(lan->dev.parent,sink);
+detach:rtl9617c_ni_wifi_detach(lan->dev.parent,identity);rtl9617c_ni_fe_remove_port(lan->dev.parent,sink);sink_gro_flush();
 unregister_handler:netdev_rx_handler_unregister(sink);
-destroy_gro:sink_gro_destroy();
-unregister_netdevice(sink);
+unregister_sink:unregister_netdevice(sink);
 unlock:rtnl_unlock();free_netdev(sink);
 put:if(bridge)dev_put(bridge);if(lan)dev_put(lan);if(radio)dev_put(radio);return ret;
 }
@@ -155,7 +141,7 @@ static void __exit finish(void)
 {
  rtnl_lock();command(FLOW_CLS_DESTROY);unbind();kfree(rule);
  rtl9617c_ni_wifi_detach(lan->dev.parent,identity);rtl9617c_ni_fe_remove_port(lan->dev.parent,sink);
- netdev_rx_handler_unregister(sink);sink_gro_destroy();
+ sink_gro_flush();netdev_rx_handler_unregister(sink);
  unregister_netdevice(sink);rtnl_unlock();free_netdev(sink);
  dev_put(bridge);dev_put(lan);dev_put(radio);
 }
