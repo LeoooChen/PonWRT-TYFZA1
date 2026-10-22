@@ -1,0 +1,164 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* Diagnostic CPU sink for one real TCP uplink. The FE forwards to CPU0;
+ * this deliberately excludes physical PON egress and PPPoE encapsulation. */
+#include <linux/module.h>
+#include <linux/netdevice.h>
+#include <linux/etherdevice.h>
+#include <linux/rtnetlink.h>
+#include <linux/unaligned.h>
+#include <net/flow_offload.h>
+#include <net/hotdata.h>
+#include "rtl9617c-ni.h"
+static struct net_device *sink,*radio,*lan,*bridge;
+static struct rtl9617c_ni_wifi_endpoint endpoint;
+static struct flow_block block;
+static struct flow_block_cb *callback;
+static struct flow_rule *rule;
+static struct flow_dissector dissector;
+static int identity;
+static u64 packets,bytes,received,received_bytes;
+static u8 first[32];
+/* NI polling can migrate between the IRQ and refill-timer CPUs.
+ * Keep one GRO context so a single TCP flow retains receive order. */
+static struct napi_struct sink_napi;
+static struct sk_buff_head sink_queue;
+static u64 queue_drops;
+static int sink_poll(struct napi_struct *napi,int budget)
+{
+ int done=0;
+ while(done<budget){
+  struct sk_buff *skb=skb_dequeue(&sink_queue);
+  if(!skb)break;
+  napi_gro_receive(napi,skb);done++;
+ }
+ if(done<budget)napi_complete_done(napi,done);
+ return done;
+}
+static void sink_gro_destroy(void)
+{
+ napi_disable(&sink_napi);netif_napi_del(&sink_napi);
+ skb_queue_purge(&sink_queue);
+}
+static u64 stack_skbs,gro_frames,gro_skbs;
+static rx_handler_result_t count_stack(struct sk_buff **pskb)
+{
+ unsigned int segments=skb_shinfo(*pskb)->gso_segs;
+ stack_skbs++;
+ if(segments>1){gro_skbs++;gro_frames+=segments;}
+ return RX_HANDLER_PASS;
+}
+struct sink_key {
+ struct flow_dissector_key_control control;
+ struct flow_dissector_key_meta meta;
+ struct flow_dissector_key_basic basic;
+ struct flow_dissector_key_ipv4_addrs ipv4;
+ struct flow_dissector_key_ports ports;
+};
+static struct sink_key key,mask;
+static const struct flow_dissector_key keys[]={
+ {FLOW_DISSECTOR_KEY_CONTROL,offsetof(struct sink_key,control)},
+ {FLOW_DISSECTOR_KEY_META,offsetof(struct sink_key,meta)},
+ {FLOW_DISSECTOR_KEY_BASIC,offsetof(struct sink_key,basic)},
+ {FLOW_DISSECTOR_KEY_IPV4_ADDRS,offsetof(struct sink_key,ipv4)},
+ {FLOW_DISSECTOR_KEY_PORTS,offsetof(struct sink_key,ports)},
+};
+static void receive(struct rtl9617c_ni_wifi_endpoint *ep,struct sk_buff *skb,bool forwarded)
+{
+ if(!received)memcpy(first,skb->data,min_t(unsigned int,sizeof(first),skb->len));
+ received++;received_bytes+=skb->len;
+ skb->dev=sink;skb->protocol=eth_type_trans(skb,sink);
+ skb_unset_transport_header(skb);
+ if(skb_queue_len(&sink_queue)>READ_ONCE(net_hotdata.max_backlog)){
+  queue_drops++;dev_kfree_skb_any(skb);return;
+ }
+ skb_queue_tail(&sink_queue,skb);
+ napi_schedule(&sink_napi);
+}
+static netdev_tx_t discard(struct sk_buff *skb,struct net_device *dev)
+{dev_kfree_skb_any(skb);return NETDEV_TX_OK;}
+static const struct net_device_ops ops={.ndo_start_xmit=discard};
+static int command(enum flow_cls_command cmd)
+{
+ struct flow_cls_offload cls={.command=cmd,.cookie=(unsigned long)&key,.rule=rule,
+  .common={.protocol=cpu_to_be16(ETH_P_IP),.skip_sw=true}};
+ int ret=callback->cb(TC_SETUP_CLSFLOWER,&cls,callback->cb_priv);
+ if(cmd==FLOW_CLS_STATS){packets+=cls.stats.pkts;bytes+=cls.stats.bytes;}
+ return ret;
+}
+static int stats(char *buf,const struct kernel_param *param)
+{
+ int ret;rtnl_lock();ret=command(FLOW_CLS_STATS);rtnl_unlock();
+ return scnprintf(buf,PAGE_SIZE,"ret=%d FE_packets=%llu FE_bytes=%llu received=%llu received_bytes=%llu id=%d queue_drops=%llu stack_skbs=%llu gro_skbs=%llu gro_frames=%llu first=%*phN\n",
+ ret,packets,bytes,received,received_bytes,identity,queue_drops,stack_skbs,gro_skbs,gro_frames,32,first);
+}
+static const struct kernel_param_ops statops={.get=stats};
+module_param_cb(stats,&statops,NULL,0400);
+static void unbind(void)
+{
+ struct flow_block_offload off={.command=FLOW_BLOCK_UNBIND,
+  .binder_type=FLOW_BLOCK_BINDER_TYPE_CLSACT_INGRESS,.net=&init_net,.block=&block};
+ INIT_LIST_HEAD(&off.cb_list);
+ rtl9617c_ni_fe_setup_tc(lan->dev.parent,radio,TC_SETUP_FT,&off);
+ list_del(&callback->list);flow_block_cb_free(callback);
+}
+static int __init initialize(void)
+{
+ struct flow_block_offload off={.command=FLOW_BLOCK_BIND,
+  .binder_type=FLOW_BLOCK_BINDER_TYPE_CLSACT_INGRESS,.net=&init_net,.block=&block};
+ u8 ethernet[12];int ret;
+ radio=dev_get_by_name(&init_net,"ap5");lan=dev_get_by_name(&init_net,"lan4");
+ bridge=dev_get_by_name(&init_net,"br-lan");
+ if(!radio||!lan||!bridge){ret=-ENODEV;goto put;}
+ sink=alloc_etherdev(0);if(!sink){ret=-ENOMEM;goto put;}
+ strscpy(sink->name,"ponsink%d",IFNAMSIZ);sink->netdev_ops=&ops;
+ eth_hw_addr_set(sink,bridge->dev_addr);sink->features|=NETIF_F_GRO;
+ endpoint.netdev=sink;endpoint.receive=receive;
+ rtnl_lock();ret=register_netdevice(sink);if(ret)goto unlock;
+ skb_queue_head_init(&sink_queue);
+ netif_napi_add(sink,&sink_napi,sink_poll);napi_enable(&sink_napi);
+ ret=netdev_rx_handler_register(sink,count_stack,NULL);if(ret)goto destroy_gro;
+ ret=dev_open(sink,NULL);if(ret)goto unregister_handler;
+ netif_carrier_on(sink);
+ identity=rtl9617c_ni_wifi_attach(lan->dev.parent,&endpoint);
+ if(identity<0){ret=identity;goto unregister_handler;}
+ INIT_LIST_HEAD(&block.cb_list);INIT_LIST_HEAD(&off.cb_list);
+ ret=rtl9617c_ni_fe_setup_tc(lan->dev.parent,radio,TC_SETUP_FT,&off);
+ if(ret)goto detach;
+ callback=list_first_entry(&off.cb_list,struct flow_block_cb,list);
+ list_splice_tail_init(&off.cb_list,&block.cb_list);
+ rule=flow_rule_alloc(4);if(!rule){ret=-ENOMEM;goto unbind;}
+ skb_flow_dissector_init(&dissector,keys,ARRAY_SIZE(keys));
+ rule->match.dissector=&dissector;rule->match.key=&key;rule->match.mask=&mask;
+ key.meta.ingress_ifindex=radio->ifindex;key.basic.n_proto=htons(ETH_P_IP);
+ key.basic.ip_proto=IPPROTO_TCP;mask.basic.n_proto=htons(65535);mask.basic.ip_proto=255;
+ key.ipv4.src=htonl(0xc0a801d4);key.ipv4.dst=htonl(0xc6120001);
+ mask.ipv4.src=mask.ipv4.dst=htonl(~0U);
+ key.ports.src=htons(55000);key.ports.dst=htons(5206);
+ mask.ports.src=mask.ports.dst=htons(65535);
+ memcpy(ethernet,bridge->dev_addr,6);memcpy(ethernet+6,"\x06\x7a\xfb\x78\xb2\x87",6);
+ for(unsigned int i=0;i<3;i++)rule->action.entries[i]=(struct flow_action_entry){
+  .id=FLOW_ACTION_MANGLE,.mangle={.htype=FLOW_ACT_MANGLE_HDR_TYPE_ETH,.offset=i*4,
+   .mask=0,.val=get_unaligned((u32 *)(ethernet+i*4))}};
+ rule->action.entries[3]=(struct flow_action_entry){.id=FLOW_ACTION_REDIRECT,.dev=sink};
+ ret=command(FLOW_CLS_REPLACE);if(ret)goto free_rule;
+ rtnl_unlock();return 0;
+free_rule:kfree(rule);
+unbind:unbind();
+detach:rtl9617c_ni_wifi_detach(lan->dev.parent,identity);rtl9617c_ni_fe_remove_port(lan->dev.parent,sink);
+unregister_handler:netdev_rx_handler_unregister(sink);
+destroy_gro:sink_gro_destroy();
+unregister_netdevice(sink);
+unlock:rtnl_unlock();free_netdev(sink);
+put:if(bridge)dev_put(bridge);if(lan)dev_put(lan);if(radio)dev_put(radio);return ret;
+}
+static void __exit finish(void)
+{
+ rtnl_lock();command(FLOW_CLS_DESTROY);unbind();kfree(rule);
+ rtl9617c_ni_wifi_detach(lan->dev.parent,identity);rtl9617c_ni_fe_remove_port(lan->dev.parent,sink);
+ netdev_rx_handler_unregister(sink);sink_gro_destroy();
+ unregister_netdevice(sink);rtnl_unlock();free_netdev(sink);
+ dev_put(bridge);dev_put(lan);dev_put(radio);
+}
+module_init(initialize);module_exit(finish);
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Single TCP uplink FE to CPU diagnostic sink");
