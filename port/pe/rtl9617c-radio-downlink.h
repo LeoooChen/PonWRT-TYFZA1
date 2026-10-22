@@ -102,7 +102,9 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 			ni_enqueue(mailbox, memory, group, head, tail, grouped); grouped = 0;
 		}
 		u32 *waiting = uncached(buffer);
-		waiting[0] = buffer + 32 + header; waiting[1] = length; waiting[2] = macid; waiting[3] = tid;
+		/* The BID already identifies the payload; only length/header and
+		 * the queue link need storage. Word0 remains the selected MPDU chain. */
+		waiting[1] = length | header << 16; waiting[3] = tid;
 		if (grouped) *(u32 *)uncached(tail + 12) = buffer | tid;
 		else { head = buffer; group = queue; }
 		tail = buffer; grouped++;
@@ -160,12 +162,13 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				owners[id * 2 + 1] |= BIT(31);
 				mailbox[47] = id + 1; mailbox[63]++;
 			} else {
+				u32 metadata = waiting[1], length = metadata & 65535;
 				for (u32 i = 0; i < 8; i++) request[i] = peer[i];
 				request[0] = 256 + id; request[1] = channels[tid];
-				request[2] = BIT(24) | (peer[2] & 0x3f0000) | (waiting[1] + ((peer[2] >> 16) & 63) + 8 - 14);
+				request[2] = BIT(24) | (peer[2] & 0x3f0000) | (length + ((peer[2] >> 16) & 63) + 8 - 14);
 				request[4] = (peer[4] & ~0x1fffU) | tid | indicators[tid] << 12;
 				request[5] = (peer[5] & ~255U) | *(u32 *)(memory + NI_PEER_BA + (macid * 8 + tid) * 4);
-				request[8] = waiting[0]; request[9] = waiting[1];
+				request[8] = buffer + 32 + (metadata >> 16); request[9] = length;
 				u32 caps = *(u32 *)(memory + 0xe200 + macid * 4);
 				if (caps & BIT(17)) request[3] |= BIT(20);
 				if (ps[0]) {
@@ -174,13 +177,15 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 					ps[2] = ps[1]; mailbox[39]++;
 				} else {
 					ps[2] = ps[1];
-					u32 next = waiting[3] & ~127U, body = waiting[1] + 8;
+					u32 next = waiting[3] & ~127U, body = length + 8;
 					if (((request[2] >> 16) & 63) == 26 && !(request[3] & BIT(19))) {
 						while (next && frames < 8) {
 							u32 *part = uncached(next), pad = (0U - body) & 3;
-							if (body + pad + part[1] + 8 > (caps >> 18)) break;
-							request[8 + frames * 2] = part[0]; request[9 + frames * 2] = part[1];
-							body += pad + part[1] + 8;
+							u32 next_metadata = part[1], next_length = next_metadata & 65535;
+							if (body + pad + next_length + 8 > (caps >> 18)) break;
+							request[8 + frames * 2] = next + 32 + (next_metadata >> 16);
+							request[9 + frames * 2] = next_length;
+							body += pad + next_length + 8;
 							*(u32 *)uncached(tail_buffer) = next;
 							tail_buffer = next; next = part[3] & ~127U; frames++;
 						}

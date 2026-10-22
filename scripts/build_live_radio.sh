@@ -12,6 +12,9 @@ KERNEL=$(python3 port/tools/project_paths.py --kernel-directory "$P/sources/open
 OVERLAY=$P/port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap
 mkdir -p "$OUT"
 cp "$OVERLAY"/*.[ch] "$OUT/"
+# Embed the PE built from this source, never a stale generated overlay header.
+PE_RADIO_CFLAGS=-DPE_UPLINK sh "$P/scripts/build_pe_radio_wd.sh" "$OUT/pe"
+cp "$OUT/pe/pe-tx-code.h" "$OUT/pe-tx-code.h"
 # A separate PCI driver name allows replacing the built-in driver after
 # unbind. Every hardware/control function is compiled from the overlay.
 python3 - "$OUT/pci.c" "$DRIVER" <<'PY'

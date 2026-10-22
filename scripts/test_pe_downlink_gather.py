@@ -14,7 +14,7 @@ directory = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'artifacts/pe-rad
 binary = (directory / 'pe-tx.bin').read_bytes()
 
 
-def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None):
+def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False):
     base, mb, pages, headers, payload, ring, bar, ni, reports = (
         0x04000000, 0x04002000, 0x05100000, 0x05200000, 0x06000000,
         0x05000000, 0x12000000, 0x10000000, 0x06200000)
@@ -70,12 +70,12 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         frame += bytes([n + 1]) * (length - 14)
         frames.append(frame)
         at = payload + n * 2048
-        u.mem_write(at + 48, frame)
+        u.mem_write(at + 32 + ni_header, frame)
         if from_epp:
-            u.mem_write(at + 32, struct.pack('>II', 1 << 31, (length + 8) << 15) + bytes(8))
-            u.mem_write(0x10030000 + n * 8, struct.pack('<II', at | 0x50, length + 16))
+            u.mem_write(at + 32, struct.pack('>II', (1 << 31) if ni_header == 16 else 0, (length + ni_header - 8) << 15) + bytes(ni_header - 8))
+            u.mem_write(0x10030000 + n * 8, struct.pack('<II', at | 0x50, (1 << 14 if compact_epp else 0) | (length + 16)))
         else:
-            u.mem_write(at, struct.pack('<4I', at + 48, length, 1,
+            u.mem_write(at, struct.pack('<4I', 0xa5a5a5a5, length | ni_header << 16, 0xdeadbeef,
                         at + 2048 if n + 1 < len(lengths) else 0))
     submits, returns = [], []
     u.hook_add(UC_HOOK_MEM_WRITE, lambda uc, access, at, size, value, data:
@@ -145,7 +145,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     assert get(mb + 30 * 4) == 0 and get(mb + 29 * 4) == len(lengths)
     assert get(base + 0x18020) == 0
     for n, frame in enumerate(frames):
-        assert bytes(u.mem_read(payload + n * 2048 + 62, len(frame) - 14)) == frame[14:]
+        assert bytes(u.mem_read(payload + n * 2048 + 32 + ni_header + 14, len(frame) - 14)) == frame[14:]
         assert get(base + 0xc400 + n * 8) == 0
     return {'lengths': lengths, 'cap': cap, 'MPDUs': len(submits), 'from_EPP': from_epp, 'HW_RTS': hw_rts, 'bandwidth': bandwidth, 'rate': rate}
 
@@ -162,6 +162,8 @@ if __name__ == '__main__':
         rows += [case([1500] * 8, 7935), case([1500] * 8, 3839)]
         rows += [case([1514] * 8, 7935, True), case([64, 65, 66, 67], 7935, True)]
         rows += [case([1514] * 4, 7935, True, True)]
+        rows += [case([1514] * 7, 10896, True, ni_header=8),
+                 case([1514] * 7, 10896, True, compact_epp=True)]
     print(json.dumps({'cases': rows, 'exact_headers_payload_padding_DMA': True,
                       'one_WP_per_aggregate': True,
                       'ownership_until_RPQ_and_EQ_credit': True}, indent=2))
