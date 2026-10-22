@@ -276,9 +276,10 @@ static void rtl_adjust_link(struct net_device *dev)
 	struct phy_device *phy = dev->phydev;
 
 	if (phy->link) {
-		/* Taurus aal_mode_sync selects GMII/MII and negotiated duplex. */
+		/* Port4's SGMII PCS requires GMII even at 10/100 Mbps. */
 		rtl_update(lan->shared, PORT_STATIC + lan->port * PORT_STRIDE,
-			   GENMASK(3, 0), phy->speed >= SPEED_1000 ? 0 : 1);
+			   GENMASK(3, 0),
+			   lan->port == 4 || phy->speed >= SPEED_1000 ? 0 : 1);
 		rtl_update(lan->shared, PORT_GLB + lan->port * PORT_STRIDE,
 			   BIT(0) | BIT(1), (phy->speed == SPEED_10 ? BIT(0) : 0) |
 			   (phy->duplex == DUPLEX_HALF ? BIT(1) : 0));
