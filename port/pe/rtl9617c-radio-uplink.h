@@ -155,8 +155,14 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	}
 	if (pn_high < state[2] || (pn_high == state[2] && pn_low <= state[1])) { mailbox[110]++; return 0; }
 	struct { u8 addresses[12]; u32 range; } plan[63];
-	u32 write = mailbox[90], available = 63 - (write - mailbox[91]);
-	if (!available) { mailbox[111]++; return 0; }
+	/* Stock retains two completed descriptors and requires more than two
+	 * free slots before each submission. The hardware read cursor alone
+	 * does not release those prefetched descriptors. */
+	u32 write = mailbox[90], read = mailbox[91], released = mailbox[118];
+	if (read - released > 2) mailbox[118] = released = read - 2;
+	u32 available = (released - write - 1) & 63;
+	if (available <= 2) { mailbox[111]++; return 0; }
+	available -= 2;
 	u32 body = length - header - 20, offset = 0, frames = 1;
 	if (!amsdu) {
 		/* LLC + IPv4 + UDP is 36 bytes, producing a 42-byte NI frame. */

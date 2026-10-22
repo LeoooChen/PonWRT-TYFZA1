@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-23",
+  "stage": "Descriptor ownership fix proven in linked instruction model;20s RAM upload passes. Cold boot validation pending.",
+  "factory_reference": "analysis/private/live-files/lib/modules/5.10.70/extra/ca-ne.ko __ca_ni_start_xmit_buf_for_fc_wifi_hw_lookup:0x26c8..0x26e8 requires free>2;0x295c..0x2a18 retains two completed descriptors.",
+  "bug": "PE available count used raw hardware READ and allowed63 pending. That reuses the two retained descriptors and omits the stock submission gap.",
+  "fix": "Maintain the released descriptor cursor in existing mailbox118; advance only to hardware READ-2. Accept a whole MPDU only when its subframes fit after the two-slot submission gap. Unaccepted MPDU still follows ARM, PN/SN unchanged. No capacity or threshold increases.",
+  "PE_bytes": 16340,
+  "PE_sha256": "798aff7354aafc986b774bfa27ea2d4eb1c8a4a534691b15318baeae72d312cf",
+  "tests": [
+    "test_pe_ni_descriptor_credit.py: original linked image overwrites retained descriptor62;fixed image preserves it,6 boundary/wrap cases",
+    "test_pe_rxq_backpressure.py: actual linked RX/NI ownership and dual PE handoff pass",
+    "test_pe_instruction_memory.py: linked startup,IMEM/DMEM,GOT checks pass"
+  ],
+  "RAM_result": {
+    "TCP_upload_Mbps": 1049.4638627766572,
+    "seconds": 20,
+    "retransmits": 0,
+    "L3_drop": 0,
+    "FE_packets": 1823993,
+    "received": 1823993,
+    "NI_pre_GRO_data_packets": 1823992,
+    "within_connection_order_discontinuities": 0
+  },
+  "prior_cold_replay_evidence": {
+    "run": "rom-order-mac-capture-up",
+    "retransmits": 8,
+    "L3_drop": 0,
+    "Mac_capture_drops": 0,
+    "old_TCP_block_first_seq": 2452797402,
+    "old_block_packets": 8,
+    "old_block_Mac_occurrences": 1,
+    "NI_replaced_block_first_seq": 2452889562,
+    "sequence_distance_bytes": 92160,
+    "sequence_distance_packets": 64,
+    "important_limit": "This proves unexpected old bytes before GRO;it does not yet prove this descriptor-credit fix is its only cause."
+  },
+  "unresolved": "Original idle WP3/TID3 stall and cold boot retry acceptance still need verification."
+}
