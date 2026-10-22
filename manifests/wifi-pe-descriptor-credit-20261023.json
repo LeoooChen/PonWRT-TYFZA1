@@ -1,6 +1,6 @@
 {
   "date": "2026-10-23",
-  "stage": "Descriptor ownership fix proven in linked instruction model;20s RAM upload passes. Cold boot validation pending.",
+  "stage": "Descriptor ownership fix retained. First cold boot failed with a downlink firmware halt. Latest formal cold boot did not reproduce that halt; throughput acceptance still fails.",
   "factory_reference": "analysis/private/live-files/lib/modules/5.10.70/extra/ca-ne.ko __ca_ni_start_xmit_buf_for_fc_wifi_hw_lookup:0x26c8..0x26e8 requires free>2;0x295c..0x2a18 retains two completed descriptors.",
   "bug": "PE available count used raw hardware READ and allowed63 pending. That reuses the two retained descriptors and omits the stock submission gap.",
   "fix": "Maintain the released descriptor cursor in existing mailbox118; advance only to hardware READ-2. Accept a whole MPDU only when its subframes fit after the two-slot submission gap. Unaccepted MPDU still follows ARM, PN/SN unchanged. No capacity or threshold increases.",
@@ -34,5 +34,12 @@
     "sequence_distance_packets": 64,
     "important_limit": "This proves unexpected old bytes before GRO;it does not yet prove this descriptor-credit fix is its only cause."
   },
-  "unresolved": "Original idle WP3/TID3 stall and cold boot retry acceptance still need verification."
+  "unresolved": "Retransmissions and hardware drops remain. A zero-retransmission upload does not prove their removal. Occasional firmware halt and idle WP3/TID3 stall are recorded separately from the throughput investigation.",
+  "cold_boot": {
+    "up": "credit-cold-tcp-up20s1.038Gbps,0retx/0L3drop,FE1804738=received1804738. Has3-6sec low-throughput dip withoutZeroWindow/PAWS/OFO;Mac congestion window drops~6MBto1.9MB without reportedretx.",
+    "down": "credit-cold-tcp-down timed out25sec;first firmwarehalt atboottime197.757683,halt0x1000 DMAC0x100 host_dispatcher0x20 TX0read63/write64. Later H2Ctimeouts are downstream effects,notfirstcause.",
+    "bidir": "Not executed:failed before snapshot due5GHzSSH timeout."
+  },
+  "current_image": "b0d163bdaa463330f55657361f95be4d0c6eadde9642c5c9123c0067ffc73edf",
+  "latest_formal_cold_boot": "wifi-offload-throughput-20261023.json"
 }
