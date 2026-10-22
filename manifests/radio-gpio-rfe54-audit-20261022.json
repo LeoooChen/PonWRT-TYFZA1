@@ -1,0 +1,56 @@
+{
+  "scope": "RFE54 FEM GPIO configuration and targeted live diagnosis; throughput acceptance is still false",
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "factory_functions": [
+    "halbb_gpio_setting_init_8852c",
+    "halbb_gpio_rfm_8852c",
+    "halbb_gpio_trsw_table_8852c",
+    "halbb_gpio_setting_init_8192xb",
+    "halbb_gpio_rfm_8192xb",
+    "halbb_gpio_trsw_table_8192xb"
+  ],
+  "confirmed_difference": {
+    "chip": "8852c",
+    "RFE": 54,
+    "BB_registers": [
+      "0x5894",
+      "0x7894"
+    ],
+    "mask": "0x00ff0000",
+    "native_before": 10,
+    "factory": 8,
+    "factory_10_branch": "RFE63/64",
+    "8192xb_RFE54_retains": 10
+  },
+  "validation": {
+    "command": ".venv/bin/python scripts/test_radio_gpio_contract.py",
+    "result": "pass",
+    "scope": "Compile the current production GPIO function and compare both radio register results against executed original ARM64, with zero and nonzero initial registers",
+    "ARM64_module_build": "pass",
+    "native_module_sha256": "a651649689c1043d809d44e382e381942f480c6320659edc4f1deca5e94a4fd0"
+  },
+  "live": {
+    "boot_id": "0f3332b6-8fcb-48cd-986b-1248f8b1d74c",
+    "mode": "RAM module with corrected LNA present from initialization; this does not validate Flash startup",
+    "RFM_A_B": [
+      "0x01080604",
+      "0x01080604"
+    ],
+    "RSSI_U8_1_average_A_B": [
+      142,
+      82,
+      148
+    ],
+    "signal_imbalance_remains": true,
+    "TCP_upload_Mbps": 858.2950400390217,
+    "TCP_upload_retransmits": 0,
+    "TCP_download_Mbps": 807.8450798242976,
+    "TCP_download_retransmits": 2,
+    "TCP_download_hardware_tail_drop": 2,
+    "hardware_epochs_continuous": true,
+    "hardware_FE_match": true,
+    "evidence_on_mac": "现场记录/20261022-082-flash-acceptance/native-lna8-initialized-{up,down}-analysis.json"
+  },
+  "conclusion": "A confirmed factory porting error is corrected. This does not resolve the persistent path signal imbalance or restore the requested 0.8.2 throughput. Further root-cause work is required.",
+  "throughput_accepted": false
+}
