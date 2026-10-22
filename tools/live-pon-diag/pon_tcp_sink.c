@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Diagnostic CPU sink for one real TCP uplink. The FE forwards to CPU0;
+/* Diagnostic CPU sink for a real TCP test, including its bidirectional ACKs.
+ * The FE forwards to CPU0;
  * this deliberately excludes physical PON egress and PPPoE encapsulation. */
 #include <linux/module.h>
 #include <linux/netdevice.h>
@@ -45,7 +46,8 @@ struct sink_key {
  struct flow_dissector_key_ipv4_addrs ipv4;
  struct flow_dissector_key_ports ports;
 };
-static struct sink_key key,mask;
+static struct sink_key key[2],mask;
+static u64 flow_packets[2];
 static const struct flow_dissector_key keys[]={
  {FLOW_DISSECTOR_KEY_CONTROL,offsetof(struct sink_key,control)},
  {FLOW_DISSECTOR_KEY_META,offsetof(struct sink_key,meta)},
@@ -66,17 +68,21 @@ static netdev_tx_t discard(struct sk_buff *skb,struct net_device *dev)
 static const struct net_device_ops ops={.ndo_start_xmit=discard};
 static int command(enum flow_cls_command cmd)
 {
- struct flow_cls_offload cls={.command=cmd,.cookie=(unsigned long)&key,.rule=rule,
-  .common={.protocol=cpu_to_be16(ETH_P_IP),.skip_sw=true}};
- int ret=callback->cb(TC_SETUP_CLSFLOWER,&cls,callback->cb_priv);
- if(cmd==FLOW_CLS_STATS){packets+=cls.stats.pkts;bytes+=cls.stats.bytes;}
- return ret;
+ for(unsigned int i=0;i<2;i++){
+  struct flow_cls_offload cls={.command=cmd,.cookie=(unsigned long)&key[i],.rule=rule,
+   .common={.protocol=cpu_to_be16(ETH_P_IP),.skip_sw=true}};
+  int ret;rule->match.key=&key[i];
+  ret=callback->cb(TC_SETUP_CLSFLOWER,&cls,callback->cb_priv);
+  if(ret)return ret;
+  if(cmd==FLOW_CLS_STATS){packets+=cls.stats.pkts;bytes+=cls.stats.bytes;flow_packets[i]+=cls.stats.pkts;}
+ }
+ return 0;
 }
 static int stats(char *buf,const struct kernel_param *param)
 {
  int ret;rtnl_lock();ret=command(FLOW_CLS_STATS);rtnl_unlock();
- return scnprintf(buf,PAGE_SIZE,"ret=%d FE_packets=%llu FE_bytes=%llu received=%llu received_bytes=%llu id=%d stack_skbs=%llu gro_skbs=%llu gro_frames=%llu first=%*phN\n",
- ret,packets,bytes,received,received_bytes,identity,stack_skbs,gro_skbs,gro_frames,32,first);
+ return scnprintf(buf,PAGE_SIZE,"ret=%d FE_packets=%llu FE_bytes=%llu received=%llu received_bytes=%llu id=%d stack_skbs=%llu gro_skbs=%llu gro_frames=%llu first=%*phN flow55000=%llu flow55001=%llu\n",
+ ret,packets,bytes,received,received_bytes,identity,stack_skbs,gro_skbs,gro_frames,32,first,flow_packets[0],flow_packets[1]);
 }
 static const struct kernel_param_ops statops={.get=stats};
 module_param_cb(stats,&statops,NULL,0400);
@@ -115,18 +121,21 @@ static int __init initialize(void)
  list_splice_tail_init(&off.cb_list,&block.cb_list);
  rule=flow_rule_alloc(4);if(!rule){ret=-ENOMEM;goto unbind;}
  skb_flow_dissector_init(&dissector,keys,ARRAY_SIZE(keys));
- rule->match.dissector=&dissector;rule->match.key=&key;rule->match.mask=&mask;
- key.meta.ingress_ifindex=radio->ifindex;key.basic.n_proto=htons(ETH_P_IP);
- key.basic.ip_proto=IPPROTO_TCP;mask.basic.n_proto=htons(65535);mask.basic.ip_proto=255;
- key.ipv4.src=htonl(0xc0a801d4);key.ipv4.dst=htonl(0xc6120001);
+ rule->match.dissector=&dissector;rule->match.key=&key[0];rule->match.mask=&mask;
+ key[0].meta.ingress_ifindex=radio->ifindex;key[0].basic.n_proto=htons(ETH_P_IP);
+ key[0].basic.ip_proto=IPPROTO_TCP;mask.basic.n_proto=htons(65535);mask.basic.ip_proto=255;
+ key[0].ipv4.src=htonl(0xc0a801d4);key[0].ipv4.dst=htonl(0xc6120001);
  mask.ipv4.src=mask.ipv4.dst=htonl(~0U);
- key.ports.src=htons(55000);key.ports.dst=htons(5206);
+ key[0].ports.src=htons(55000);key[0].ports.dst=htons(5206);
  mask.ports.src=mask.ports.dst=htons(65535);
  memcpy(ethernet,bridge->dev_addr,6);memcpy(ethernet+6,"\x06\x7a\xfb\x78\xb2\x87",6);
  for(unsigned int i=0;i<3;i++)rule->action.entries[i]=(struct flow_action_entry){
   .id=FLOW_ACTION_MANGLE,.mangle={.htype=FLOW_ACT_MANGLE_HDR_TYPE_ETH,.offset=i*4,
    .mask=0,.val=get_unaligned((u32 *)(ethernet+i*4))}};
  rule->action.entries[3]=(struct flow_action_entry){.id=FLOW_ACTION_REDIRECT,.dev=sink};
+ /* iperf3 --bidir uses55000 for upload and55001 for download ACKs.
+  * Both must use the NI owner's GRO/RPS context instead of inline TCP RX. */
+ key[1]=key[0];key[1].ports.src=htons(55001);
  ret=command(FLOW_CLS_REPLACE);if(ret)goto free_rule;
  rtnl_unlock();return 0;
 free_rule:kfree(rule);

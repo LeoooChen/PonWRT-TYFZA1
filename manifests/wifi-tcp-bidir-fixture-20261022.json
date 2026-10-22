@@ -1,0 +1,48 @@
+{
+  "date": "2026-10-22",
+  "scope": "Simulated PON endpoints and real encrypted MacBook5GHz Wi-Fi. This records an endpoint fixture correction, not physical PON throughput or final firmware acceptance.",
+  "production_base": "c85f6b6681a69da65400439b904316bce30211c5",
+  "fixture_problem": "iperf3 --bidir sends upload on55000 and download on55001. The old sink handled only55000. Download ACKs on55001 missed the FE sink and executed TCP ACK/output work inline in NI RX.",
+  "change": "Install two exact IPv4/TCP/port matches to the same simulated endpoint, using the existing NI NAPI GRO context and ponsink0 RPS8. Keep ap5 RPS0, unchanged ring sizes and thresholds.",
+  "runs": {
+    "txtrace-bidir": {
+      "up_Mbps": 243.7341383632118,
+      "up_retransmits": 549,
+      "down_Mbps": 1063.0243963249836,
+      "down_retransmits": 0,
+      "L3_drop": 1968,
+      "FE_to_sink": 212632,
+      "sink_received": 212084,
+      "ap5_RPS": "0"
+    },
+    "txtrace-bidir-ap-rps8": {
+      "up_Mbps": 507.51760093878323,
+      "up_retransmits": 64,
+      "down_Mbps": 609.4392612714946,
+      "down_retransmits": 0,
+      "L3_drop": 64,
+      "FE_to_sink": 442675,
+      "sink_received": 442611,
+      "ap5_RPS": "8 (temporary diagnostic)"
+    },
+    "txtrace-bidir-complete-endpoints": {
+      "up_Mbps": 583.6906804211163,
+      "up_retransmits": 0,
+      "down_Mbps": 590.799934633661,
+      "down_retransmits": 0,
+      "L3_drop": 0,
+      "FE_to_sink": 575759,
+      "sink_received": 575759,
+      "ap5_RPS": "0",
+      "flow55000_and_55001_packets": [
+        508692,
+        67067
+      ]
+    }
+  },
+  "separate_unresolved_failures": [
+    "Original cold boot had484 uplink retransmissions and107 downlink retransmissions with0 L3 drop; later single-direction runs passed without a production code change.",
+    "An idle-time ordinary ARM TID3 WP remained pending and TX BA stop stalled after an offload restart. Snapshot retained; cause not proved. Two manual BA stops on the diagnostic RAM module completed successfully."
+  ],
+  "diagnostic_radio": "Production PE program unchanged; temporary ARM TX event logging and BA-stop trigger. No performance claim for final ROM acceptance."
+}
