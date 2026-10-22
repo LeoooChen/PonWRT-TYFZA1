@@ -642,7 +642,6 @@ static int rtl_ax_station_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 	if (ret)
 		goto remove;
 	rtl_ax_tx_peer_qos(radio->tx, id, sta->wme);
-	rtl_ax_rx_uapsd(radio->rx, id, sta->uapsd_queues);
 	{
 		u32 rate, caps;
 		if (rtl_ax_ra_peer(radio, sta, id, radio->ra_config[id], &rate, &caps, false)) {
@@ -740,9 +739,7 @@ static int rtl_ax_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 			wiphy_delayed_work_queue(hw->wiphy, &radio->cleanup_work, HZ);
 		return 0;
 	case IEEE80211_AMPDU_RX_START:
-		/* Stock BA replacement revokes its cached reorder state before reuse. */
-		ret = rtl_ax_tx_ni_retire_peer(radio->tx, station->macid);
-		if (ret) return ret;
+		/* RX reorder state belongs to mac80211, not the PE TX route. */
 		for (i = 0; i < ARRAY_SIZE(radio->rx_ba); i++)
 			if (radio->rx_ba[i].valid && radio->rx_ba[i].macid == station->macid &&
 			    radio->rx_ba[i].tid == params->tid)
@@ -776,8 +773,6 @@ static int rtl_ax_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 			station->macid, params->tid, i + 8, params->ssn);
 		return 0;
 	case IEEE80211_AMPDU_RX_STOP:
-		ret = rtl_ax_tx_ni_retire_peer(radio->tx, station->macid);
-		if (ret) return ret;
 		for (i = 0; i < ARRAY_SIZE(radio->rx_ba); i++)
 			if (radio->rx_ba[i].valid && radio->rx_ba[i].macid == station->macid &&
 			    radio->rx_ba[i].tid == params->tid)
@@ -918,7 +913,6 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	}
 	if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) {
 		ret = rtl_ax_tx_ni_retire_peer(radio->tx, macid);
-		if (cmd == DISABLE_KEY) rtl_ax_rx_key(radio->rx, macid, NULL);
 		if (ret) {
 			if (cmd == SET_KEY) return ret;
 			goto done;
@@ -968,7 +962,6 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		radio->security_unlink[index] = 0;
 		key->hw_key_idx = index;
 		key->flags |= IEEE80211_KEY_FLAG_SW_MGMT_TX;
-		if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) rtl_ax_rx_key(radio->rx, macid, key);
 		radio->keys_installed++;
 	} else {
 		radio->security_unlink[index] = 0;
@@ -1301,10 +1294,13 @@ static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 		return -EOPNOTSUPP;
 	if ((rate >> 7) == 3 && gi_ltf >= ARRAY_SIZE(he_gi))
 		return -EOPNOTSUPP;
-	skb = dev_alloc_skb(packet->bytes);
-	if (!skb)
-		return -ENOMEM;
-	skb_put_data(skb, packet->payload, packet->bytes);
+	/* RXQ passes its DMA-backed skb. RPQ storage remains a bounded copy. */
+	skb = packet->skb;
+	if (!skb) {
+		skb = dev_alloc_skb(packet->bytes);
+		if (!skb) return -ENOMEM;
+		skb_put_data(skb, packet->payload, packet->bytes);
+	}
 	status = IEEE80211_SKB_RXCB(skb);
 	memset(status, 0, sizeof(*status));
 	status->flag = RX_FLAG_NO_SIGNAL_VAL;
@@ -1314,7 +1310,7 @@ static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 	word = rtl_ax_ap_read32(packet->descriptor + 12);
 	if ((word & BIT(2)) && !(word & BIT(1))) {
 		if (packet->icv_error) {
-			dev_kfree_skb(skb);
+			if (!packet->skb) dev_kfree_skb(skb);
 			return -EBADMSG;
 		}
 		status->flag |= RX_FLAG_DECRYPTED;
@@ -1355,7 +1351,7 @@ static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 	radio->mac80211_packets++;
 	if (profile) {
 		delivered = ktime_get_ns();
-		radio->rx_copy_bytes += packet->bytes;
+		if (!packet->skb) radio->rx_copy_bytes += packet->bytes;
 		radio->rx_prepare_ns += delivered - begin;
 	}
 	/* RX dispatch runs in rtl_ax_rx_work, not the hardware IRQ. Process
@@ -1443,7 +1439,6 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	hw->wiphy->reg_notifier = rtl_ax_regulatory_notify;
 	hw->sta_data_size = sizeof(struct rtl_ax_station);
 	ieee80211_hw_set(hw, RX_INCLUDES_FCS);
-	ieee80211_hw_set(hw, RX_INLINE);
 	/* mac80211 handles BIP and SW_MGMT_TX; RX retains the CCMP IV/MIC. */
 	ieee80211_hw_set(hw, MFP_CAPABLE);
 	ieee80211_hw_set(hw, AMPDU_AGGREGATION);

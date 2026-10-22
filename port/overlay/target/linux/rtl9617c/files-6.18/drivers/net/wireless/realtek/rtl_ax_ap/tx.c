@@ -416,11 +416,9 @@ void rtl_ax_tx_peer_authorized(struct rtl_ax_tx *tx, unsigned int macid, bool au
 		if (tx->pe_active)
 			put_unaligned_le32(0, tx->pe.memory + 0x11a00 + macid * 4);
 		dma_wmb();
-		rtl_ax_rx_uplink_disable(tx->rx, macid);
 	} else if (tx->pe_active && READ_ONCE(tx->ni.route_peers[macid])) {
 		put_unaligned_le32(1, tx->pe.memory + 0x11a00 + macid * 4);
 		dma_wmb();
-		rtl_ax_rx_uplink_enable(tx->rx, macid);
 	}
 }
 void rtl_ax_tx_peer_ba(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid, unsigned int size)

@@ -2444,20 +2444,7 @@ static ssize_t radio_pe_route_store(struct device *dev,
 	return ret ? ret : count;
 }
 static DEVICE_ATTR_WO(radio_pe_route);
-static ssize_t radio_pe_uplink_store(struct device *dev,
-	struct device_attribute *attribute, const char *buffer, size_t count)
-{
-	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
-	unsigned int macid, wifi_id = 0;
-	int ret;
-	if (sscanf(buffer, "%u %u", &macid, &wifi_id) < 1) return -EINVAL;
-	if (!radio->ap_vif) return -ENODEV;
-	wiphy_lock(radio->hw->wiphy);
-	ret = rtl_ax_tx_uplink(radio->tx, ieee80211_vif_to_wdev(radio->ap_vif)->netdev, macid, wifi_id);
-	wiphy_unlock(radio->hw->wiphy);
-	return ret ? ret : count;
-}
-static DEVICE_ATTR_WO(radio_pe_uplink);
+
 static ssize_t radio_role_show(struct device *dev,
 	struct device_attribute *attribute, char *buffer)
 {
@@ -2611,7 +2598,6 @@ static ssize_t radio_port_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_port);
 static struct attribute *rtl_ax_attrs[] = {
-	&dev_attr_radio_pe_uplink.attr,
 	&dev_attr_radio_pn.attr,
 	&dev_attr_radio_pe_ni_test.attr,
 	&dev_attr_radio_pe_route.attr,

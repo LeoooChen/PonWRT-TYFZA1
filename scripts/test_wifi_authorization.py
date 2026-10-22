@@ -29,9 +29,7 @@ typedef uint8_t u8;
 #define dma_wmb() ((void)0)
 #define mutex_lock(p) ((void)(p))
 #define mutex_unlock(p) ((void)(p))
-struct ieee80211_key_conf { unsigned keyidx; };
-struct rtl_ax_rx { int uplink_lock; void *uplink_states; unsigned uplink_wifi_id; struct ieee80211_key_conf *keys[128]; };
-struct rtl_ax_tx {bool peer_authorized[128],pe_active;struct {void *memory;} pe;struct {bool route_peers[128];} ni;struct rtl_ax_rx *rx;};
+struct rtl_ax_tx {bool peer_authorized[128],pe_active;struct {void *memory;} pe;struct {bool route_peers[128];} ni;};
 struct rtl_ax_ap {struct rtl_ax_tx *tx; bool peer_authorized[128]; int offload_result;};
 struct rtl_ax_station { unsigned macid; };
 struct ieee80211_sta {void *drv_priv;};
@@ -47,36 +45,31 @@ static void rtl_ax_offload_ready(void *context) {(void)context;}
 static int rtl_ax_tx_ni_retire_peer(struct rtl_ax_tx *tx,unsigned macid) {
  assert(!tx->peer_authorized[macid]);
  assert(!get(tx->pe.memory+0x11a00+macid*4));
- assert(!get(tx->rx->uplink_states+0x10000+macid*4));
  return -ETIMEDOUT;
 }
 '''
 test = r'''
 int main(void) {
- unsigned char memory[131072]={},states[131072]={};
- struct ieee80211_key_conf key={.keyidx=1};
- struct rtl_ax_rx rx={.uplink_states=states,.uplink_wifi_id=2};rx.keys[1]=&key;
- struct rtl_ax_tx tx={.pe_active=true,.pe={memory},.rx=&rx};
+ unsigned char memory[131072]={};
+ struct rtl_ax_tx tx={.pe_active=true,.pe={memory}};
  tx.peer_authorized[1]=tx.ni.route_peers[1]=true;
  struct rtl_ax_ap radio={.tx=&tx};radio.peer_authorized[1]=true;
  struct ieee80211_hw hw={&radio};struct rtl_ax_station station={.macid=1};struct ieee80211_sta sta={&station};struct ieee80211_vif vif={};
  put_unaligned_le32(1,memory+0x11a04);put_unaligned_le32(1,memory+0x11a08);
- put_unaligned_le32(BIT(31)|513,states+0x10004);put_unaligned_le32(BIT(31)|513,states+0x10008);
  assert(!rtl_ax_sta_state(&hw,&vif,&sta,IEEE80211_STA_AUTHORIZED,IEEE80211_STA_ASSOC));
  assert(radio.offload_result==-ETIMEDOUT && !radio.peer_authorized[1]);
- assert(!get(memory+0x11a04) && !get(states+0x10004));
- assert(get(memory+0x11a08)==1 && get(states+0x10008)==(BIT(31)|513));
+ assert(!get(memory+0x11a04));
+ assert(get(memory+0x11a08)==1);
  assert(!rtl_ax_sta_state(&hw,&vif,&sta,IEEE80211_STA_ASSOC,IEEE80211_STA_AUTHORIZED));
- assert(get(memory+0x11a04)==1 && get(states+0x10004)==(BIT(31)|513));
- tx.pe_active=false;
- rtl_ax_tx_peer_authorized(&tx,1,false);assert(!get(states+0x10004));
+ assert(get(memory+0x11a04)==1);
+ tx.pe_active=false;tx.pe.memory=NULL;
+ rtl_ax_tx_peer_authorized(&tx,1,false);assert(!tx.peer_authorized[1]);
  puts("actual ARM source: authorization gates close before failed FE withdrawal; other peer unchanged; reauthorization restored");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='tyfza1-authorization-') as folder:
     folder = Path(folder)
     body = common + '\n'.join(function(f, n) for f, n in [
-        ('rx.c', 'rtl_ax_rx_uplink_enable'), ('rx.c', 'rtl_ax_rx_uplink_disable'),
         ('tx.c', 'rtl_ax_tx_peer_authorized'), ('monitor.h', 'rtl_ax_sta_state')]) + test
     source, binary = folder / 'authorization.c', folder / 'authorization'
     source.write_text(body)

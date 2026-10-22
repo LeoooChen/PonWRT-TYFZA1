@@ -20,7 +20,6 @@ void rtl_ax_tx_bind_rx(struct rtl_ax_tx *tx, struct rtl_ax_rx *rx);
 void rtl_ax_tx_bind_hw(struct rtl_ax_tx *tx, struct ieee80211_hw *hw);
 void rtl_ax_tx_bind_ready(struct rtl_ax_tx *tx, void (*ready)(void *), void *context);
 int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned int macid);
-int rtl_ax_tx_uplink(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned int macid, unsigned int wifi_id);
 int rtl_ax_tx_free(struct rtl_ax_tx *tx, struct ieee80211_hw *hw);
 int rtl_ax_tx_pause(struct rtl_ax_tx *tx);
 void rtl_ax_tx_open(struct rtl_ax_tx *tx);

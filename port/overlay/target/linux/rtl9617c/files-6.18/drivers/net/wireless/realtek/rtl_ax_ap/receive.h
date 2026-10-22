@@ -5,7 +5,9 @@
 #include "transport.h"
 #include "rx-geometry.h"
 
+struct sk_buff;
 struct rtl_ax_rx_packet {
+	struct sk_buff *skb;
 	const unsigned char *descriptor, *driver_info, *payload;
 	unsigned int bytes, driver_info_bytes;
 	unsigned char type, long_descriptor;
