@@ -29,6 +29,7 @@ shim = r'''
 #include <errno.h>
 #include <sys/types.h>
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
+#define READ_ONCE(v) (v)
 #define BIT(n) (1U<<(n))
 #define RTL_NI_MIB_COUNTERS 52
 #define RTL_PON_PM_RECORD_BYTES (8+37*8)

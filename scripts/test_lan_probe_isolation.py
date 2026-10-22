@@ -30,6 +30,7 @@ typedef unsigned char u8;
 #define ETH_ALEN 6
 #define ETH_DATA_LEN 1500
 #define BIT(n) (1U << (n))
+#define WRITE_ONCE(p,v) ((p)=(v))
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 #define IS_ERR(p) ((intptr_t)(p)<0)
 #define PTR_ERR(p) ((int)(intptr_t)(p))
@@ -46,8 +47,12 @@ typedef unsigned char u8;
 struct work_struct {void (*func)(struct work_struct *);};
 struct completion {unsigned int done;};
 #define INIT_WORK(w,f) ((w)->func=(f))
-/* Run the deferred LAN4 registration inline, after ports 0..3. */
-static inline bool schedule_work(struct work_struct *w){w->func(w);return true;}
+static struct work_struct *pending_work;
+static inline bool schedule_work(struct work_struct *w){pending_work=w;return true;}
+static inline void flush_work(struct work_struct *w){if(pending_work==w){pending_work=NULL;w->func(w);}}
+static int rtnl_held;
+static void rtnl_lock(void){assert(!rtnl_held);rtnl_held=1;}
+static void rtnl_unlock(void){assert(rtnl_held);rtnl_held=0;}
 #define init_completion(c) ((c)->done=0)
 #define complete_all(c) ((c)->done=~0U)
 struct device_node {unsigned int port;};
@@ -112,7 +117,8 @@ static int rtl_fe_add_port(void *fe,struct net_device *d,int p,int q,int r){
  fe_ports|=BIT(d->lan.port);return 0;
 }
 static void rtl_fe_remove_port(void *fe,struct net_device *d){fe_ports&=~BIT(d->lan.port);}
-static int register_netdev(struct net_device *d){
+static int register_netdevice(struct net_device *d){
+ assert(rtnl_held);
  if(stage==8 && current_port==fail_port)return -EIO;
  assert(d->phydev);active|=BIT(d->lan.port);return 0;
 }
@@ -148,6 +154,10 @@ int main(void){
   for(int p=0;p<5;p++)nodes[p].port=p;
   init_completion(&priv.lan4_ready);
   rtl_register_lans(&priv,&parent);
+  if(priv.lan4_phy){
+   assert(!priv.lan4_ready.done && !(active&BIT(4)));
+   flush_work(&priv.lan4_work);
+  }
   unsigned int expected=(1U<<board_ports)-1;
   if(board_ports==5)expected&=~BIT(3);
   if(stage>=1 && stage<=3 && board_ports==5)expected&=~BIT(4);
@@ -183,10 +193,11 @@ int main(void){
 code = code.replace('bool phy_led_registered,qm_rx,native_groups_created,wifi_started;', 'bool phy_led_registered,qm_rx,dma_tx,native_groups_created,wifi_started;')
 # The production code uses the device kobject only as a sysfs API argument.
 code = code.replace('struct device {struct device_node *of_node;};', 'struct device {struct device_node *of_node;int kobj;};')
-with tempfile.TemporaryDirectory(prefix='lan-isolation-') as directory:
-    path = Path(directory)
-    (path / 'test.c').write_text(code)
-    subprocess.run(['cc', '-std=gnu11', '-Wall', '-Wextra', '-Werror',
-                    '-Wno-unused-parameter', '-Wno-sign-compare',
-                    str(path / 'test.c'), '-o', str(path / 'test')], check=True)
-    subprocess.run([str(path / 'test')], check=True)
+if __name__ == '__main__':
+    with tempfile.TemporaryDirectory(prefix='lan-isolation-') as directory:
+        path = Path(directory)
+        (path / 'test.c').write_text(code)
+        subprocess.run(['cc', '-std=gnu11', '-Wall', '-Wextra', '-Werror',
+                        '-Wno-unused-parameter', '-Wno-sign-compare',
+                        str(path / 'test.c'), '-o', str(path / 'test')], check=True)
+        subprocess.run([str(path / 'test')], check=True)

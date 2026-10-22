@@ -72,6 +72,8 @@ jobs:
       - name: Verify LAN initialization and port counters
         run: |
           python3 scripts/test_lan_probe_isolation.py
+          python3 scripts/test_lan_async.py
+          python3 scripts/test_qspi_poll.py
           python3 scripts/test_lan_pm_mapping.py
       - name: Verify storage migration
         run: python3 scripts/test_ubi_storage.py

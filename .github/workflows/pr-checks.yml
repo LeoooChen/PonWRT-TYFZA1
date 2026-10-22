@@ -1,0 +1,26 @@
+name: Check LAN initialization and QSPI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Run production-code regression tests
+        run: |
+          mkdir -p artifacts logs
+          python3 scripts/test_lan_probe_isolation.py
+          python3 scripts/test_lan_async.py
+          python3 scripts/test_qspi_poll.py
+          python3 scripts/test_lan_pm_mapping.py
+          python3 scripts/test_lan_link_mode.py
+          python3 scripts/test_fe_lan_lifecycle.py

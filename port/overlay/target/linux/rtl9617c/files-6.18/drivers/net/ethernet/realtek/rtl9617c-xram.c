@@ -165,7 +165,7 @@ static void rtl_mib_work(struct work_struct *work)
 	for (port = 0; port < ARRAY_SIZE(priv->ports); port++) {
 		int ret;
 
-		if (!(priv->registered_ports & BIT(port)))
+		if (!(READ_ONCE(priv->registered_ports) & BIT(port)))
 			continue;
 		ret = rtl9617c_ni_pm_read(priv->netdev->dev.parent, port, counters);
 
@@ -880,7 +880,7 @@ static int rtl_register_lan(struct rtl_xram *priv, struct device *parent,
 	struct phy_device *phydev;
 	struct net_device *dev = NULL;
 	struct rtl_lan *lan;
-	bool sgmii_powered = false;
+	bool sgmii_powered = false, registration_locked = false;
 	u8 mac[ETH_ALEN];
 	int ret;
 
@@ -929,14 +929,18 @@ static int rtl_register_lan(struct rtl_xram *priv, struct device *parent,
 	if (ret)
 		goto put_phy;
 	rcu_assign_pointer(priv->qm.lan[port], dev);
-	/* Publish LAN4 before register_netdev() takes RTNL: an engine start
+	/* Publish LAN4 before taking RTNL for registration: an engine start
 	 * waiting on lan4_ready under RTNL must not block this work. */
-	if (port == 4)
+	if (port == 4) {
 		complete_all(&priv->lan4_ready);
-	ret = register_netdev(dev);
+		rtnl_lock();
+		registration_locked = true;
+	}
+	/* Synchronous ports are registered under rtl_register_lans()' RTNL. */
+	ret = register_netdevice(dev);
 	if (ret)
 		goto put_phy;
-	priv->registered_ports |= BIT(port);
+	WRITE_ONCE(priv->registered_ports, priv->registered_ports | BIT(port));
 	if (port == 4) {
 		priv->phy_led.output = rtl_phy_led_output;
 		priv->phy_led.requested = 2;
@@ -952,6 +956,8 @@ static int rtl_register_lan(struct rtl_xram *priv, struct device *parent,
 		 dev->name, port, priv->qm_rx ? "native NI/DMA" : "management XRAM",
 		 dev->phydev->phy_id, dev->dev_addr);
 	of_node_put(phy);
+	if (registration_locked)
+		rtnl_unlock();
 	return 0;
 
 put_phy:
@@ -960,6 +966,8 @@ put_phy:
 		rtl_unregister_lan(priv, port);
 	if (sgmii_powered)
 		devm_release_action(parent, rtl_sgmii_power_off, priv->sgmii);
+	if (registration_locked)
+		rtnl_unlock();
 	return ret;
 }
 
@@ -979,6 +987,9 @@ static void rtl_register_lans(struct rtl_xram *priv, struct device *parent)
 	unsigned int port;
 	int ret;
 
+	/* Do not expose an openable port until all synchronous ports are
+	 * published and LAN4 work is queued (or its completion is signalled). */
+	rtnl_lock();
 	for (port = 0; port < ARRAY_SIZE(priv->ports); port++) {
 		phy = of_parse_phandle(parent->of_node,
 			port == priv->port ? "phy-handle" : "realtek,lan-phys",
@@ -1002,6 +1013,7 @@ static void rtl_register_lans(struct rtl_xram *priv, struct device *parent)
 	}
 	if (!priv->lan4_phy)
 		complete_all(&priv->lan4_ready);
+	rtnl_unlock();
 }
 
 static ssize_t xram_state_show(struct device *dev, struct device_attribute *attr, char *buf)
