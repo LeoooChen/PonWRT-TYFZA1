@@ -15,6 +15,7 @@
 #include <linux/rcupdate.h>
 #include <linux/unaligned.h>
 #include "rtl9617c-qm.h"
+#include "rtl9617c-rx-checksum.h"
 
 #define EQ_ID 4
 #define EQ_CFG (0x61e8 + EQ_ID * 20)
@@ -518,12 +519,17 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 	int cos;
 	int count = 0;
 	u64 begin = READ_ONCE(rx->profile) ? ktime_get_ns() : 0;
+	bool checksum_enabled = readl(rx->ni + 0x3218) & BIT(16);
 
 	rtl_qm_refill_drain(&rx->refill, rx, rtl_qm_try_push, NAPI_POLL_WEIGHT);
 	/* Service PON control traffic before bulk data, matching the stock RX order. */
 	for (cos = RTL_QM_VOQS - 1; cos >= 0 && count < budget; cos--) {
+		/* Read nonempty before the producer snapshot. A packet arriving
+		 * between the reads must not turn an empty snapshot into a full ring. */
+		bool nonempty = readl(rx->ni + 0x659c) & BIT(cos);
 		unsigned int wr = readl(rx->ni + EPP_WRITE + cos * 4) & 0xffffff;
-		bool full = rx->read[cos] == wr && (readl(rx->ni + 0x659c) & BIT(cos));
+		bool full = rx->read[cos] == wr && nonempty;
+		int before = count;
 
 		while ((rx->read[cos] != wr || full) && count < budget) {
 			void *entry = rx->ring_memory + cos * RTL_QM_RING_BYTES + rx->read[cos];
@@ -587,6 +593,8 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			}
 			if (begin) copied = ktime_get_ns();
 			memcpy(skb_put(skb, length), rx->memory + offset + 32 + header, length);
+			if (checksum_enabled && rtl_rx_checksum_valid(command, skb->data, length))
+				skb->ip_summed = CHECKSUM_UNNECESSARY;
 			source = FIELD_GET(GENMASK(14, 9), h1);
 			if (!wifi_forwarded && source == RTL_WIFI_SOURCE && (h0 & BIT(31))) {
 				u32 metadata = get_unaligned_be32(rx->memory + offset + 44);
@@ -654,16 +662,18 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			napi_gro_receive(napi, skb);
 			rcu_read_unlock();
 consume:
-			/* Retire the EPP/BID before returning its RAM to the hardware pool. */
-			mb();
 			rx->read[cos] = (rx->read[cos] + RTL_QM_COMMAND_BYTES) & (RTL_QM_RING_BYTES - 1);
-			writel(rx->read[cos], rx->ni + EPP_READ + cos * 4);
 			if (refill_buffer) {
 				dma_sync_single_for_device(rx->device, rx->memory_dma + offset,
 					RTL_QM_BUFFER_BYTES, DMA_FROM_DEVICE);
 				rtl_qm_refill_add(&rx->refill, command);
 			}
-			wr = readl(rx->ni + EPP_WRITE + cos * 4) & 0xffffff;
+		}
+		/* ca_ni_rx_napi consumes one producer snapshot, then publishes RD.
+		 * BIDs stay on the software refill list until that publication. */
+		if (count != before) {
+			mb();
+			writel(rx->read[cos], rx->ni + EPP_READ + cos * 4);
 		}
 	}
 	/* Vendor receive retires the whole EPP batch before refilling released BIDs. */

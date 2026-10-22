@@ -89,7 +89,6 @@ static void wifi_receive(struct rtl9617c_ni_wifi_endpoint *endpoint,
 			 struct sk_buff *skb, bool forwarded)
 {
 	skb_reset_mac_header(skb);
-	skb->ip_summed = CHECKSUM_NONE;
 	if (forwarded) {
 		int depth = ETH_HLEN;
 		skb->protocol = eth_hdr(skb)->h_proto;

@@ -101,7 +101,7 @@ static const unsigned int fe_registers[] = {
  0x3278,0x327c,0x3280,
  0x3500,0x3504,0x351c,
  0x3940,0x3944,0x3948,0x3c80,
- 0x3508,0x30cc,0x30a4,
+ 0x3508,0x30cc,0x30a4,0x3218,
 };
 struct rtl_fe {
  struct device *device;
@@ -226,6 +226,8 @@ static int fe_prepare(struct rtl_fe *fe)
   }
  }
  fe->prepared=true;
+ /* Original aal_l3fe_l4_chksum: EPP checksum status requires this engine. */
+ fe_write(fe,0x3218,fe_read(fe,0x3218)|BIT(16));
  /* Keep GEM rewriting disabled until its classifier/default chain is ready. */
  fe_write(fe,0x351c,fe_read(fe,0x351c)&~BIT(10));
  /* The inherited IPPB maps source18 to port4. Preserve the Wi-Fi descriptor's
