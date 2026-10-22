@@ -3,12 +3,13 @@
 import json
 from pathlib import Path
 import struct
+import subprocess
 
 import sys
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / 'analysis/python-deps'))
 from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_MEM_WRITE
-from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_SP, UC_MIPS_REG_PC
+from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_SP, UC_MIPS_REG_PC, UC_MIPS_REG_RA
 
 binary = (Path(sys.argv[1]) if len(sys.argv) > 1 else root / 'artifacts/pe-radio-production/pe-tx.bin').read_bytes()
 base, mailbox, ring, payload, bar, ni = (0x04000000, 0x04002000, 0x05000000,
@@ -26,7 +27,7 @@ def get(at): return struct.unpack('<I', u.mem_read(at, 4))[0]
 
 
 for index, value in ((0, 0x50455744), (2, bar | 0xa0000000), (3, 1),
-                     (11, ring), (116, 0x6380), (117, 6), (140, mailbox | 0xa0000000)):
+                     (11, ring), (116, 0x6380), (117, 6), (140, mailbox | 0xa0000000), (142, 1), (187, base)):
     put(mailbox + index * 4, value)
 put(ni + 0x6340, 0x8000007c)
 put(ni + 0x6380, 0x80000000)
@@ -44,7 +45,7 @@ pc = 0xbfc00400
 
 def run():
     global pc
-    u.emu_start(pc, 0xbfc03ffc, count=50000)
+    u.emu_start(pc, 0xbfc0fff0, count=50000)
     pc = u.reg_read(UC_MIPS_REG_PC)
 
 
@@ -196,6 +197,16 @@ for scan in (0, 1):
     u.mem_write(payload + scan * 12288, bytes(raw))
     put(bar + 0x1218, (scan + 1) << 16)
     run()
+    # RX capture and ordered processing now run on separate physical PEs.
+    saved = u.context_save()
+    elf = (Path(sys.argv[1]) if len(sys.argv) > 1 else root / 'artifacts/pe-radio-production/pe-tx.bin').with_name('pe-wd.elf')
+    symbols = {v[2]: int(v[0], 16) for line in subprocess.check_output(['llvm-nm-18', str(elf)], text=True).splitlines() if len(v := line.split()) == 3}
+    u.reg_write(UC_MIPS_REG_A0, mailbox | 0xa0000000)
+    u.reg_write(UC_MIPS_REG_SP, (base + 0x1dff0) | 0xa0000000)
+    u.reg_write(UC_MIPS_REG_RA, 0xbfc0fff0)
+    u.emu_start(symbols['pe_rx_work'], 0xbfc0fff0, count=10000)
+    assert u.reg_read(UC_MIPS_REG_PC) == 0xbfc0fff0
+    u.context_restore(saved)
     assert get(mailbox + 324) == scan + 1
     assert get(mailbox + 376) == scan
 assert get(mailbox + 172 * 4) == 0

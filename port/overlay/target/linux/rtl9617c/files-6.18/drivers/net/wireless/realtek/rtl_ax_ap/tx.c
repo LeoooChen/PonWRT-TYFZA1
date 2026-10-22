@@ -193,7 +193,7 @@ struct rtl_ax_tx *rtl_ax_tx_prepare(struct pci_dev *pdev, const struct rtl_ax_io
 	tx->io = io;
 	spin_lock_init(&tx->lock);
 	{
-		ret = pe_probe_alloc(&tx->pe, pdev->device == 0xc852 ? 0 : 1);
+		ret = pe_probe_alloc(&tx->pe, pdev->device == 0xc852 ? 0 : 1, 1);
 		if (ret) goto release;
 		/* PE owns shared descriptors/headers; payload DMA belongs to PCIe. */
 		tx->dma_device = &tx->pe.device->dev;
@@ -245,6 +245,7 @@ int rtl_ax_tx_pause(struct rtl_ax_tx *tx)
 	unsigned long flags;
 	unsigned int i;
 	u32 pe_command = 0;
+	int ret;
 
 	spin_lock_irqsave(&tx->lock, flags);
 	tx->queues_paused = true;
@@ -263,6 +264,8 @@ int rtl_ax_tx_pause(struct rtl_ax_tx *tx)
 		    10, 100000, false, tx->pe.memory + PE_PROBE_MAILBOX + 36))
 			return -ETIMEDOUT;
 	}
+	ret = rtl_ax_rx_pe_pause(tx->rx);
+	if (ret) return ret;
 	spin_lock_irqsave(&tx->lock, flags);
 	if (tx->pe_active) {
 		pe_command = tx->pe_command += 2;
@@ -335,6 +338,7 @@ void rtl_ax_tx_open(struct rtl_ax_tx *tx)
 	if (tx->hw && !tx->queues_stopped)
 		ieee80211_wake_queues(tx->hw);
 	spin_unlock_irqrestore(&tx->lock, flags);
+	rtl_ax_rx_pe_open(tx->rx);
 }
 
 static void rtl_ax_tx_unmap(struct rtl_ax_tx *tx, const struct rtl_ax_tx_slot *slot)
@@ -1003,8 +1007,8 @@ int rtl_ax_tx_status(struct rtl_ax_tx *tx, char *out, size_t capacity)
 		length += scnprintf(out + length, capacity - length,
 			"PE_TX_descriptors=%u PE_Cause=%08x PE_EPC=%08x PE_ETH_frames=%llu\n",
 			get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 4),
-			get_unaligned_le32(pe_engine->memory + PE_PROBE_MAILBOX + 20),
-			get_unaligned_le32(pe_engine->memory + PE_PROBE_MAILBOX + 24), tx->pe_ethernet);
+			get_unaligned_le32(pe_probe_engine_memory(&tx->pe) + PE_PROBE_MAILBOX + 20),
+			get_unaligned_le32(pe_probe_engine_memory(&tx->pe) + PE_PROBE_MAILBOX + 24), tx->pe_ethernet);
 	for (i = 0; i < 8; i++)
 		length += scnprintf(out + length, capacity - length, "TX_status=%u count=%llu\n", i, tx->status_count[i]);
 	if (tx->pe_active && tx->pe_ethernet) {

@@ -1,0 +1,368 @@
+{
+  "board": "TYFZA1",
+  "firmware_version": "0.8.2-beta",
+  "stage": "RAM Wi-Fi verification and NI credit causal probe; production kernel image acceptance pending",
+  "original_sources": {
+    "radio_SHA256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+    "NI_SHA256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+    "DSP_SHA256": "936773d314964bf3b70fc21db7b221ee93429dc931c07a2297228f3f06fe3a6e"
+  },
+  "PE": {
+    "architecture": "two MIPS32/Taroko cores",
+    "PE0": "physical RXQ capture/refill and RPQ completion publication",
+    "PE1": "ordered RX,CCMP PN/SN,NI enqueue,TX build,BID recycle,ARM notification timer",
+    "program_bytes": 16308,
+    "program_SHA256": "8a7238ed6e5373242c481791e9c3ff935778e39ce1eba2fbd91882ba04ed59fe",
+    "IMEM_bytes": 32768,
+    "DMEM_bytes": 8192,
+    "capture_payloads": 514,
+    "sorting_scope": "Already-captured same-TID frames inside the negotiated BA window;16-entry scan per turn. Missing gaps,non-BA,control and unsupported traffic retain ARM handling."
+  },
+  "NI_credit_finding": {
+    "CPU0_EPP_slots": 128,
+    "old_trace_drops": 10,
+    "old_trace_TCP_retransmits": 10,
+    "old_full_samples_100us": 64,
+    "credit_probe_drops": 0,
+    "credit_probe_TCP_retransmits": 0,
+    "credit_probe_Mbps": 1293.020279885343,
+    "capacity_changed": false,
+    "probe_status": "Diagnostic sink released one completed EPP credit before GRO. Removed after experiment; normal sink restored. Production fix is in rtl9617c-qm.c."
+  },
+  "benchmarks": {
+    "wait-service-up1400": {
+      "scope": "Mac en0 encrypted Wi-Fi -> PE/NI/FE -> kernel diagnostic consumer validating every byte and sequence; bypasses Linux TCP/UDP socket, no optical PON.",
+      "sender_exit": 0,
+      "sender_complete": true,
+      "sender": {
+        "requested": 400000,
+        "sent": 400000,
+        "payload_bytes": 585600000,
+        "target_Mbps": 1400,
+        "seconds": 3.372197,
+        "offered_payload_Mbps": 1389.243,
+        "ENOBUFS_retries": 0,
+        "send_buffer_result": 0,
+        "send_buffer_bytes": 4194304
+      },
+      "counts": {
+        "FE_packets": 400000,
+        "received": 400000,
+        "valid_unique": 400000,
+        "duplicate": 0,
+        "corrupt": 0,
+        "unexpected": 0,
+        "l3te_tail_drop": 0,
+        "no_buffer": 0,
+        "rxq": 102621,
+        "rdu": 3,
+        "first_valid_ns": 7191004476440,
+        "last_valid_ns": 7194378330680
+      },
+      "valid_payload_Mbps_over_sender_window": 1389.242680661895,
+      "valid_payload_Mbps_including_drain": 1209.8558002085122,
+      "receiver_interval_ns": 3373854240,
+      "receiver_valid_payload_Mbps": 1388.5568121046035,
+      "mac_Opkts_delta": 400000,
+      "mac_Drop_delta": 0,
+      "missing_not_accounted_by_mac_drop": 0,
+      "integrity_passed": true,
+      "delivery_complete": true
+    },
+    "wait-service-down1600": {
+      "scope": "NI PON-source injection, real PPPoE SID match/POP, DNAT, FE/NI, encrypted Wi-Fi and real UDP application. No optics or PPPoE negotiation.",
+      "receiver_platform": "mac",
+      "receiver_exit": 0,
+      "source_elapsed_seconds": 3.84502508,
+      "goodput_denominator_seconds": 3.875373,
+      "valid_unique_payload_Mbps": 1511.0803527815258,
+      "CPU_total_percent_of_4_cores": 3.0868167202572345,
+      "CPU_generator_process_and_children_percent_of_4_cores": 4.372990353697749,
+      "CPU_generator_raw_ticks_percent_of_4_cores": 2.765273311897106,
+      "CPU_remaining_percent_of_4_cores": 0.3215434083601286,
+      "CPU_accounting": "Global and generator raw 100-Hz accounting; tick estimate. Adjusted process runtime is reported separately and is not subtracted from raw global ticks.",
+      "CPU_each_core_percent": [
+        0.2570694087403599,
+        11.34020618556701,
+        0.2570694087403599,
+        0.5141388174807198
+      ],
+      "receive": {
+        "binding": "192.168.1.212",
+        "expected": 500000,
+        "received": 500000,
+        "unique": 500000,
+        "missing": 0,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "socket_drops_seen": null,
+        "UDP_payload_bytes": 732000000,
+        "valid_unique_payload_bytes": 732000000,
+        "receiver_window_seconds": 4.156632,
+        "active_packet_seconds": 3.875373,
+        "missing_ranges": []
+      },
+      "PE_NI_sent_delta": 500000,
+      "l3te_tail_drop_delta": 0,
+      "no_buffer_delta": 0,
+      "RXQ_RDU_delta": 0,
+      "RPQ_RDU_delta": 0
+    },
+    "wait-service-tcp-up": {
+      "scope": "Mac TCP upload to DUT Linux endpoint; hardware uplink requires pon_tcp_sink FE and receive counters. No physical PON egress.",
+      "parallel_streams": 1,
+      "error": null,
+      "client_exit": 0,
+      "received_Mbps": 1289.2709951139886,
+      "retransmits": 13,
+      "CPU_total_percent_of_4_cores": 36.368062317429406,
+      "CPU_server_raw_percent_of_4_cores": 7.667964946445959,
+      "CPU_remaining_percent_of_4_cores": 28.700097370983446,
+      "CPU_note": "Same raw100-Hz basis; remaining includes simulated ingress and TCP ACK/softirq work, not pure Wi-Fi forwarding CPU.",
+      "CPU_each_core_percent": [
+        29.11392405063291,
+        7.108081791626096,
+        71.47030185004868,
+        37.77994157740993
+      ],
+      "data_packets_delta": 52110,
+      "data_bytes_delta": 3439668,
+      "control_packets_delta": 125,
+      "stops_delta": 0,
+      "wakes_delta": 0,
+      "doorbells_delta": 52110,
+      "data_prepare_ns_delta": 122054960,
+      "payload_copy_ns_delta": 18405240,
+      "PE_NI_sent_delta": 52110,
+      "l3te_tail_drop_delta": 13,
+      "no_buffer_delta": 0,
+      "rxq_delta": 284977,
+      "rdu_delta": 0,
+      "FE_packets_delta": 52110,
+      "hardware_match_proven": true,
+      "actual_client_ports": [
+        55000
+      ],
+      "offload_covers_all_streams": true,
+      "source_stream_packets_delta": [
+        52110,
+        0,
+        0,
+        0
+      ],
+      "uplink_sink_FE_packets_delta": 1121198,
+      "uplink_sink_received_delta": 1121185,
+      "uplink_sink_received_bytes_delta": 1688490759,
+      "hardware_epoch_before_after": [
+        [
+          "f559d059-2341-4f49-8277-c24a3ed9e1d8",
+          3
+        ],
+        [
+          "f559d059-2341-4f49-8277-c24a3ed9e1d8",
+          3
+        ]
+      ],
+      "hardware_epoch_continuous": true,
+      "decreasing_counters": [],
+      "hardware_counter_comparison_valid": true
+    },
+    "wait-service-tcp-down": {
+      "scope": "Genuine Linux TCP sender -> NI source7 PPPoE SID4660 -> ASIC POP -> NI encrypted Wi-Fi -> Mac iperf3 TCP application. ACKs terminate in DUT Linux; no optics or PPPoE negotiation.",
+      "parallel_streams": 1,
+      "error": null,
+      "client_exit": 0,
+      "received_Mbps": 1337.8897290257878,
+      "retransmits": 0,
+      "CPU_total_percent_of_4_cores": 26.094357976653697,
+      "CPU_server_raw_percent_of_4_cores": 19.844357976653697,
+      "CPU_remaining_percent_of_4_cores": 6.25,
+      "CPU_note": "Same raw100-Hz basis; remaining includes simulated ingress and TCP ACK/softirq work, not pure Wi-Fi forwarding CPU.",
+      "CPU_each_core_percent": [
+        4.182879377431907,
+        78.89105058365759,
+        8.073929961089494,
+        13.229571984435797
+      ],
+      "data_packets_delta": 1164658,
+      "data_bytes_delta": 1753278116,
+      "control_packets_delta": 162,
+      "stops_delta": 0,
+      "wakes_delta": 0,
+      "doorbells_delta": 39017,
+      "data_prepare_ns_delta": 2176633200,
+      "payload_copy_ns_delta": 884926320,
+      "PE_NI_sent_delta": 1164658,
+      "l3te_tail_drop_delta": 0,
+      "no_buffer_delta": 0,
+      "rxq_delta": 37242,
+      "rdu_delta": 0,
+      "FE_packets_delta": 1164658,
+      "hardware_match_proven": true,
+      "actual_client_ports": [
+        55000
+      ],
+      "offload_covers_all_streams": true,
+      "source_stream_packets_delta": [
+        1164658,
+        0,
+        0,
+        0
+      ],
+      "hardware_epoch_before_after": [
+        [
+          "f559d059-2341-4f49-8277-c24a3ed9e1d8",
+          3
+        ],
+        [
+          "f559d059-2341-4f49-8277-c24a3ed9e1d8",
+          3
+        ]
+      ],
+      "hardware_epoch_continuous": true,
+      "decreasing_counters": [],
+      "hardware_counter_comparison_valid": true
+    },
+    "wait-service-up-qtrace": {
+      "scope": "Mac TCP upload to DUT Linux endpoint; hardware uplink requires pon_tcp_sink FE and receive counters. No physical PON egress.",
+      "parallel_streams": 1,
+      "error": null,
+      "client_exit": 0,
+      "received_Mbps": 1221.9109225631319,
+      "retransmits": 10,
+      "CPU_total_percent_of_4_cores": 37.26874391431353,
+      "CPU_server_raw_percent_of_4_cores": 6.791626095423564,
+      "CPU_remaining_percent_of_4_cores": 30.477117818889973,
+      "CPU_note": "Same raw100-Hz basis; remaining includes simulated ingress and TCP ACK/softirq work, not pure Wi-Fi forwarding CPU.",
+      "CPU_each_core_percent": [
+        38.36416747809153,
+        4.381694255111976,
+        65.82278481012658,
+        40.50632911392405
+      ],
+      "data_packets_delta": 48110,
+      "data_bytes_delta": 3175740,
+      "control_packets_delta": 79,
+      "stops_delta": 0,
+      "wakes_delta": 0,
+      "doorbells_delta": 48110,
+      "data_prepare_ns_delta": 113354480,
+      "payload_copy_ns_delta": 17316400,
+      "PE_NI_sent_delta": 48110,
+      "l3te_tail_drop_delta": 10,
+      "no_buffer_delta": 0,
+      "rxq_delta": 270517,
+      "rdu_delta": 0,
+      "FE_packets_delta": 48110,
+      "hardware_match_proven": true,
+      "actual_client_ports": [
+        55000
+      ],
+      "offload_covers_all_streams": true,
+      "source_stream_packets_delta": [
+        48110,
+        0,
+        0,
+        0
+      ],
+      "uplink_sink_FE_packets_delta": 1063040,
+      "uplink_sink_received_delta": 1063030,
+      "uplink_sink_received_bytes_delta": 1600919185,
+      "hardware_epoch_before_after": [
+        [
+          "f559d059-2341-4f49-8277-c24a3ed9e1d8",
+          3
+        ],
+        [
+          "f559d059-2341-4f49-8277-c24a3ed9e1d8",
+          3
+        ]
+      ],
+      "hardware_epoch_continuous": true,
+      "decreasing_counters": [],
+      "hardware_counter_comparison_valid": true
+    },
+    "wait-service-up-early-credit": {
+      "scope": "Mac TCP upload to DUT Linux endpoint; hardware uplink requires pon_tcp_sink FE and receive counters. No physical PON egress.",
+      "parallel_streams": 1,
+      "error": null,
+      "client_exit": 0,
+      "received_Mbps": 1293.020279885343,
+      "retransmits": 0,
+      "CPU_total_percent_of_4_cores": 36.78188899707887,
+      "CPU_server_raw_percent_of_4_cores": 6.815968841285297,
+      "CPU_remaining_percent_of_4_cores": 29.965920155793572,
+      "CPU_note": "Same raw100-Hz basis; remaining includes simulated ingress and TCP ACK/softirq work, not pure Wi-Fi forwarding CPU.",
+      "CPU_each_core_percent": [
+        31.54819863680623,
+        4.089581304771178,
+        71.66504381694256,
+        39.82473222979552
+      ],
+      "data_packets_delta": 47307,
+      "data_bytes_delta": 3122262,
+      "control_packets_delta": 54,
+      "stops_delta": 0,
+      "wakes_delta": 0,
+      "doorbells_delta": 47307,
+      "data_prepare_ns_delta": 116944040,
+      "payload_copy_ns_delta": 18882720,
+      "PE_NI_sent_delta": 47307,
+      "l3te_tail_drop_delta": 0,
+      "no_buffer_delta": 0,
+      "rxq_delta": 286002,
+      "rdu_delta": 0,
+      "FE_packets_delta": 47307,
+      "hardware_match_proven": true,
+      "actual_client_ports": [
+        55000
+      ],
+      "offload_covers_all_streams": true,
+      "source_stream_packets_delta": [
+        47307,
+        0,
+        0,
+        0
+      ],
+      "uplink_sink_FE_packets_delta": 1124602,
+      "uplink_sink_received_delta": 1124602,
+      "uplink_sink_received_bytes_delta": 1693646649,
+      "hardware_epoch_before_after": [
+        [
+          "f559d059-2341-4f49-8277-c24a3ed9e1d8",
+          3
+        ],
+        [
+          "f559d059-2341-4f49-8277-c24a3ed9e1d8",
+          3
+        ]
+      ],
+      "hardware_epoch_continuous": true,
+      "decreasing_counters": [],
+      "hardware_counter_comparison_valid": true
+    }
+  },
+  "sender_clock": {
+    "CLOCK_MONOTONIC_min_step_ns": 1000,
+    "Mach_min_step_ns": 41.667,
+    "pacing": "Next deadline follows the successful send attempt;no catch-up after ENOBUFS. Report actual elapsed throughput."
+  },
+  "rejected_experiment": {
+    "label": "final-rdu-up1400",
+    "radio_SHA256": "2fce8cf17b977fadc7c001a55d34d5fbb133ade500b650a0e6c39476c600e296",
+    "duplicate_sequences": 96,
+    "status": "Failed integrity. The first RDU variant observed the tag before refreshing the producer and was replaced. Later BPF captures did not reproduce duplicates;their original cause was not established. No flash was written with that variant."
+  },
+  "evidence_directory": "Mac workspace/\u73b0\u573a\u8bb0\u5f55/20261022-pe-uplink-native",
+  "physical_optics_tested": false,
+  "focused_checks": [
+    "linked MIPS capture/refill and BA sorting including seven-subframe aggregates and NI63-to0 wrap",
+    "PN/window/BAR/TID/protocol barriers",
+    "ARM handoff with sorted NI owners beyond contiguous cursor",
+    "RPQ/BID/EOSP ownership and credit stalls",
+    "actual linked IMEM startup and absence of GOT/CALL16/GPREL relocations",
+    "interleaved native ARM event release and MIPS execution",
+    "actual NI poll/refill C with Wi-Fi,LAN,PON callback-time arrivals;baseline overflow reproduced"
+  ]
+}

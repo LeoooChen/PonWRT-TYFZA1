@@ -13,16 +13,18 @@ common=r'''
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
-typedef uint64_t u64;typedef uintptr_t dma_addr_t;typedef int gfp_t;
+typedef uint32_t u32;typedef uint64_t u64;typedef uintptr_t dma_addr_t;typedef int gfp_t;
 #define NET_SKB_PAD 32
 #define GFP_ATOMIC 0
 #define DMA_BIDIRECTIONAL 3
 #define DMA_ATTR_SKIP_CPU_SYNC 32
 #define READ_ONCE(x) (x)
+#define WRITE_ONCE(p,v) ((p)=(v))
+#define cpu_to_le32(v) ((u32)(v))
 struct device {int unused;};
 struct sk_buff {unsigned char *head,*data;unsigned len;};
 struct rtl_ax_rx_buffer {unsigned char *data;dma_addr_t dma;struct sk_buff *skb;};
-struct rtl_ax_rx_queue {struct rtl_ax_rx_buffer payloads[4];unsigned consumer,buffer_bytes;u64 skb_transfers,skb_prepare_ns;};
+struct rtl_ax_rx_queue {struct rtl_ax_rx_buffer payloads[4];u32 addresses[4];unsigned slot_ids[4];unsigned consumer,buffer_bytes;u64 skb_transfers,skb_prepare_ns;};
 struct rtl_ax_rx {struct device *pe_device;int irq_lock;struct rtl_ax_rx_queue queues[2];};
 struct rtl_ax_rx_packet {const unsigned char *payload;unsigned bytes;};
 static bool rtl_ax_datapath_profile=true;
@@ -43,16 +45,17 @@ static void dma_unmap_single_attrs(struct device *d,dma_addr_t dma,unsigned n,in
 test=r'''
 int main(void){
  for(unsigned mode=0;mode<3;mode++){
-  struct device dev={0};struct rtl_ax_rx rx={.pe_device=&dev};struct rtl_ax_rx_queue *q=&rx.queues[0];q->consumer=2;q->buffer_bytes=12288;
+  struct device dev={0};struct rtl_ax_rx rx={.pe_device=&dev};struct rtl_ax_rx_queue *q=&rx.queues[0];q->consumer=2;q->slot_ids[2]=1;q->buffer_bytes=12288;
   fail_alloc=fail_map=0;
-  assert(!rtl_ax_rx_buffer_alloc(&rx,12288,0,&q->payloads[2]));
-  struct rtl_ax_rx_buffer old=q->payloads[2];struct rtl_ax_rx_packet packet={old.data+36,6000};
+  assert(!rtl_ax_rx_buffer_alloc(&rx,12288,0,&q->payloads[1]));
+  struct rtl_ax_rx_buffer old=q->payloads[1];struct rtl_ax_rx_packet packet={old.data+36,6000};
   freed=unmaps=locks=unlocks=0;fail_alloc=mode==1;fail_map=mode==2;
   struct sk_buff *skb=rtl_ax_rx_take_skb(&rx,&packet);
   if(mode==0){assert(skb==old.skb&&skb->data==packet.payload&&skb->len==6000);assert(unmaps==1&&unmapped==old.dma&&locks==1&&unlocks==1&&!freed);
-   assert(q->payloads[2].skb!=old.skb&&q->payloads[2].data==q->payloads[2].skb->data&&q->skb_transfers==1&&q->skb_prepare_ns==100);
-   kfree_skb(q->payloads[2].skb);
-  }else{assert(!skb&&!unmaps&&!locks&&!unlocks&&q->payloads[2].skb==old.skb&&q->payloads[2].dma==old.dma&&old.skb->data==old.data&&old.skb->len==0&&q->skb_transfers==0);assert(freed==(mode==2));}
+   assert(q->payloads[1].skb!=old.skb&&q->payloads[1].data==q->payloads[1].skb->data&&q->skb_transfers==1&&q->skb_prepare_ns==100);
+   assert(q->addresses[1]==(u32)q->payloads[1].dma&&q->addresses[2]==0);
+   kfree_skb(q->payloads[1].skb);
+  }else{assert(!skb&&!unmaps&&!locks&&!unlocks&&q->payloads[1].skb==old.skb&&q->payloads[1].dma==old.dma&&old.skb->data==old.data&&old.skb->len==0&&q->skb_transfers==0);assert(freed==(mode==2));}
   for(unsigned i=36;i<6036;i++)assert(old.data[i]==0xa5);
   kfree_skb(old.skb);
  }

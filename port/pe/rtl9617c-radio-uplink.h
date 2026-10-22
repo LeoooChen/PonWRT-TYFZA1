@@ -11,16 +11,18 @@ static u32 rx_buffer_dma(volatile u32 *mailbox, u32 id)
 	return addresses[id];
 }
 
-static void rx_idle_put(volatile u32 *mailbox, u8 *memory, u32 id)
+static void __attribute__((section(".entry"), noinline)) rx_idle_put(volatile u32 *mailbox, u8 *memory, u32 id)
 {
+	u32 count = mailbox[RTL_AX_RX_IDLE_COUNT];
 	*(volatile u32 *)uncached(rx_buffer_dma(mailbox, id)) = 0;
-	*(u32 *)(memory + RTL_AX_RX_IDLE_IDS + mailbox[RTL_AX_RX_IDLE_COUNT] * 4) = id;
-	mailbox[RTL_AX_RX_IDLE_COUNT]++;
+	*(u32 *)(memory + RTL_AX_RX_IDLE_IDS + count * 4) = id;
+	mailbox[RTL_AX_RX_IDLE_COUNT] = count + 1;
 }
 
 static void __attribute__((noinline)) rx_buffer_recycle(volatile u32 *mailbox, u8 *memory)
 {
 	u32 *held = (void *)(memory + RTL_AX_RX_NI_TAIL);
+#pragma clang loop unroll(disable)
 	for (u32 i = 0; i < 2; i++) {
 		if (!held[i * 2]) continue;
 		/* Stock NI completion retains the last two consumed descriptors. */
@@ -34,6 +36,8 @@ static void __attribute__((noinline)) rx_work_recycle(volatile u32 *mailbox, u8 
 {
 	u32 read = mailbox[RTL_AX_RX_WORK_READ];
 	while (read != mailbox[RTL_AX_RX_WORK_PROCESS]) {
+		/* PE1 releases the completion record before its process cursor. */
+		sync();
 		u32 *status = (void *)(memory + RX_STATUS + read * 4);
 		u32 owner = *status;
 		u32 id = *(u32 *)(memory + RTL_AX_RX_WORK_IDS + read * 4) & ~RTL_AX_RX_WORK_OLD;
@@ -56,7 +60,17 @@ static void __attribute__((noinline)) rx_work_recycle(volatile u32 *mailbox, u8 
 	mailbox[RTL_AX_RX_WORK_READ] = read;
 }
 
-static u32 rx_frame(volatile u32 *mailbox, u8 *buffer, u8 **frame, u32 *length, u32 *station)
+static u8 *__attribute__((section(".entry"), noinline)) rx_prefix(u32 *out, const u8 *data, u32 words)
+{
+	/* DMA payload stays uncached. Parse its small prefix in private DMEM,
+	 * using aligned DDR reads even when the WLAN header is only 2-aligned. */
+	const u32 *in = (const void *)((u32)data & ~3U);
+	for (u32 i = 0; i < words; i++) out[i] = in[i];
+	return (u8 *)out + ((u32)data & 3);
+}
+
+static u32 __attribute__((section(".rxq"), noinline, minsize)) rx_frame(
+	volatile u32 *mailbox, u8 *buffer, u8 **frame, u32 *length, u32 *station, u32 *prefix)
 {
 	u32 info = *(u32 *)buffer, wd = *(u32 *)(buffer + 4);
 	u32 bytes = wd & 0x3fff, written = info & 0x3fff;
@@ -66,12 +80,12 @@ static u32 rx_frame(volatile u32 *mailbox, u8 *buffer, u8 **frame, u32 *length, 
 	    written > 12288 || offset + bytes > written || bytes < 54) return 0;
 	u32 crypto = *(u32 *)(buffer + 16);
 	if (!(crypto & BIT(2)) || crypto & (BIT(1) | BIT(9) | BIT(10))) return 0;
-	u8 *data = buffer + offset;
+	u8 *data = rx_prefix(prefix, buffer + offset, 10);
 	u32 fc = data[0] | (u32)data[1] << 8;
 	/* Protected ToDS QoS DATA; fragments use the full RX path. */
 	if ((fc & 0x47ff) != 0x4188) return 0;
 	if (data[22] & 15) return 0;
-	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
+	u8 *memory = uncached(mailbox[187]);
 	u8 *states = uncached(mailbox[106]);
 	u32 macid = 128;
 	/* Original RX WD5: MACID[23:16], address-CAM-valid[28]. */
@@ -86,7 +100,7 @@ static u32 rx_frame(volatile u32 *mailbox, u8 *buffer, u8 **frame, u32 *length, 
 	u32 config = *(u32 *)(states + RX_PEER_CONFIG + macid * 4);
 	if (!(config & BIT(31))) return 0;
 	u8 *peer = memory + 0xe400 + macid * 8;
-	u8 *ap = (void *)(mailbox + 16);
+	u8 *ap = memory + MAILBOX_OFFSET + 64;
 	if (!mac_equal(data + 4, ap) || !mac_equal(data + 10, peer)) return 0;
 	u32 header = fc & 0x80 ? 26 : 24;
 	if (fc & 0x8000) header += 4;
@@ -100,75 +114,82 @@ static u32 rx_frame(volatile u32 *mailbox, u8 *buffer, u8 **frame, u32 *length, 
 	}
 	if (data[header + 3] != (0x20 | (config & 3) << 6)) return 0;
 	if (bytes < header + 28) return 0;
-	*frame = data; *length = bytes; *station = macid;
+	*frame = buffer + offset; *length = bytes; *station = macid;
 	return header;
 }
 
-static u32 __attribute__((section(".rxq"), noinline)) rx_protocol(const u8 *llc)
+static u32 __attribute__((section(".entry"), noinline)) rx_protocol(const u8 *llc)
 {
-	if (llc[0] != 0xaa || llc[1] != 0xaa || llc[2] != 3 || llc[3] || llc[4] || llc[5]) return 0;
-	if (llc[6] == 8 && !llc[7]) return llc[8] == 0x45 && (llc[17] == 6 || llc[17] == 17);
-	return llc[6] == 0x86 && llc[7] == 0xdd && (llc[8] >> 4) == 6 && (llc[14] == 6 || llc[14] == 17);
+	if (((const struct packed_word *)llc)->value != 0x0003aaaa) return 0;
+	u32 type = ((const struct packed_word *)(llc + 4))->value;
+	if (type == 0x00080000) return llc[8] == 0x45 && (llc[17] == 6 || llc[17] == 17);
+	return type == 0xdd860000 && (llc[8] >> 4) == 6 && (llc[14] == 6 || llc[14] == 17);
 }
 
-static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(volatile u32 *mailbox, u8 *buffer, u32 buffer_dma)
+static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
+	volatile u32 *mailbox, u8 *buffer, u32 buffer_dma, u32 *reorder)
 {
 	if (!mailbox[88] || !mailbox[93]) return 0;
 	/* With FE off, Linux owns TCP/UDP too; leave the original MPDU intact. */
 	volatile u32 *ni = (void *)0xb0000000;
 	if ((ni[0x2300 / 4] & (BIT(31) | BIT(13))) != (BIT(31) | BIT(13)) ||
 	    !(ni[0x38c4 / 4] & BIT(31))) return 0;
-	u8 *frame; u32 length, macid;
-	u32 header = rx_frame(mailbox, buffer, &frame, &length, &macid);
+	u32 prefix[10], sub_prefix[9];
+	u8 *wire; u32 length, macid;
+	u32 header = rx_frame(mailbox, buffer, &wire, &length, &macid, prefix);
 	if (!header) { mailbox[107]++; return 0; }
+	u8 *frame = (u8 *)prefix + ((u32)wire & 3);
 	u32 tid = frame[24] & 15, amsdu = frame[24] & 0x80;
 	u32 sequence = (frame[22] | (u32)frame[23] << 8) >> 4;
 	u8 *states = uncached(mailbox[106]);
 	volatile u32 *state = (void *)(states + (macid * 16 + tid) * 32);
-	u8 *iv = frame + header, *data = iv + 8;
+	u8 *iv = frame + header, *data = wire + header + 8;
 	u32 pn_low = iv[0] | (u32)iv[1] << 8 | (u32)iv[4] << 16 | (u32)iv[5] << 24;
 	u32 pn_high = iv[6] | (u32)iv[7] << 8;
 	if (!(state[0] & BIT(31))) { mailbox[108]++; return 0; }
-	if ((state[0] & 4095) != sequence) { mailbox[109]++; return 0; }
+	if ((state[0] & 4095) != sequence) {
+		mailbox[109]++;
+		if (((sequence - state[0]) & 4095) < state[7])
+			*reorder = ((macid * 16 + tid) << 12) | (state[0] & 4095);
+		return 0;
+	}
 	if (pn_high < state[2] || (pn_high == state[2] && pn_low <= state[1])) { mailbox[110]++; return 0; }
+	struct { u8 addresses[12]; u32 range; } plan[63];
+	u32 write = mailbox[90], available = 63 - (write - mailbox[91]);
+	if (!available) { mailbox[111]++; return 0; }
 	u32 body = length - header - 20, offset = 0, frames = 1;
 	if (!amsdu) {
 		/* LLC + IPv4 + UDP is 36 bytes, producing a 42-byte NI frame. */
-		if (body < 36 || !rx_protocol(data) || (frame[16] & 1) || body + 6 > 2048) return 0;
+		if (body < 36 || body + 6 > 2048 || (frame[16] & 1) ||
+		    !rx_protocol(rx_prefix(sub_prefix, data, 5))) return 0;
+		header_copy(plan[0].addresses, frame + 16, 6);
+		header_copy(plan[0].addresses + 6, frame + 10, 6);
+		plan[0].range = (u32)(data - 6 - buffer) | (body + 6) << 16;
 	} else {
 		frames = 0;
 		while (offset < body) {
 			if (body - offset < 14) return 0;
-			u8 *sub = data + offset;
+			if (frames == available) { mailbox[111]++; return 0; }
+			u8 *sub = rx_prefix(sub_prefix, data + offset, 9);
 			u32 bytes = (u32)sub[12] << 8 | sub[13];
 			if (bytes < 36 || bytes + 6 > 2048 || bytes > body - offset - 14 || (sub[0] & 1) || !rx_protocol(sub + 14)) return 0;
 			if (!mac_equal(sub + 6, frame + 10)) return 0;
+			header_copy(plan[frames].addresses, sub, 12);
+			plan[frames].range = (u32)(data + offset + 8 - buffer) | (bytes + 6) << 16;
 			frames++;
 			offset += bytes + 14;
 			if (offset != body) offset = (offset + 3) & ~3U;
 		}
 		if (offset != body) return 0;
 	}
-	u32 write = mailbox[90];
-	if (frames > 63 - (write - mailbox[91])) { mailbox[111]++; return 0; }
 	u32 config = *(u32 *)(states + RX_PEER_CONFIG + macid * 4);
 	u32 total_bytes = 0;
-	offset = 0;
+	/* Commit only after every subframe and the NI allowance are valid.
+	 * The plan avoids a second traversal of uncached A-MSDU headers. */
 	for (u32 n = 0; n < frames; n++) {
-		u8 addresses[12], *ethernet;
-		u32 bytes;
-		if (amsdu) {
-			u8 *sub = data + offset;
-			u32 payload = (u32)sub[12] << 8 | sub[13];
-			header_copy(addresses, sub, 12);
-			ethernet = sub + 8; bytes = payload + 6;
-			offset = (offset + payload + 17) & ~3U;
-		} else {
-			header_copy(addresses, frame + 16, 6);
-			header_copy(addresses + 6, frame + 10, 6);
-			ethernet = data - 6; bytes = body + 6;
-		}
-		header_copy(ethernet, addresses, 12);
+		u32 bytes = plan[n].range >> 16;
+		u8 *ethernet = buffer + (plan[n].range & 65535);
+		header_copy(ethernet, plan[n].addresses, 12);
 		/* Stock Wi-Fi lookup maps the actual length (minimum 34), not
 		 * ETH_ZLEN. Padding here would overwrite the next A-MSDU header. */
 		u32 *descriptor = uncached(mailbox[89] + ((write + n) & 63) * 8);
@@ -184,7 +205,7 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(volatile u32 *ma
 	if (!(state[3] & 1023)) pe_event(mailbox);
 	mailbox[96] += frames; mailbox[97] += total_bytes;
 	if (amsdu) mailbox[113]++;
-	sync();
+	/* The state release also published all packet and NI descriptor writes. */
 	mailbox[90] = write + frames;
 	volatile u32 *vp = (void *)mailbox[88];
 	vp[0x18 / 4] = (write + frames) & 63;
@@ -192,50 +213,97 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(volatile u32 *ma
 	return RX_NI_PENDING | ((write + frames) & ~RX_NI_PENDING);
 }
 
-static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mailbox)
+static inline u32 __attribute__((always_inline)) rx_reorder(
+	volatile u32 *mailbox, u8 *memory, u32 read, u32 order)
 {
-	if (!mailbox[80]) return;
-	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
+	u32 write = mailbox[RTL_AX_RX_WORK_WRITE];
+	sync();
+	/* One capture batch bounds this turn; TX/RPQ still run between attempts. */
+	for (u32 scan = (read + 1) & 255, budget = 0;
+	     scan != write && budget < 16; scan = (scan + 1) & 255, budget++) {
+		u32 *status = (void *)(memory + RX_STATUS + scan * 4);
+		if (*status & RX_NI_PENDING) continue;
+		u32 item = *(u32 *)(memory + RTL_AX_RX_WORK_IDS + scan * 4);
+		u32 dma = rx_buffer_dma(mailbox, item & ~RTL_AX_RX_WORK_OLD);
+		u8 *buffer = uncached(dma), *wire;
+		u32 type = (*(u32 *)(buffer + 4) >> 24) & 15;
+		if (type == 1 || type == 8 || type == 10) continue;
+		u32 prefix[10], bytes, macid;
+		if (!rx_frame(mailbox, buffer, &wire, &bytes, &macid, prefix)) return 0;
+		u8 *frame = (u8 *)prefix + ((u32)wire & 3);
+		if (macid * 16 + (frame[24] & 15) != order >> 12) return 0;
+		u32 sequence = (frame[22] | (u32)frame[23] << 8) >> 4;
+		if (sequence != (order & 4095)) continue;
+		u32 unused = 0, owner = rx_uplink(mailbox, buffer, dma, &unused);
+		if (!owner) return 0;
+		*status = owner;
+		mailbox[191]++;
+		return 1;
+	}
+	return 0;
+}
+
+static void __attribute__((noinline)) rx_status_poll(volatile u32 *mailbox)
+{
 	volatile u32 *bar = (void *)mailbox[2];
+	mailbox[RTL_AX_RX_HW_PRODUCER] = (bar[0x1218 / 4] >> 16) & 1023;
 	u32 rdu = bar[0x10b4 / 4] & (BIT(19) | BIT(20));
 	if (rdu) {
 		mailbox[RTL_AX_RX_RDU] += !!(rdu & BIT(19));
 		mailbox[RTL_AX_RPQ_RDU] += !!(rdu & BIT(20));
 		bar[0x10b4 / 4] = rdu;
 	}
+}
+
+static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mailbox)
+{
+	if (!mailbox[80]) return;
+	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
+	volatile u32 *bar = (void *)mailbox[2];
+	u32 slot = mailbox[81];
+	if (slot == mailbox[RTL_AX_RX_HW_PRODUCER]) rx_status_poll(mailbox);
 	if (mailbox[88]) {
 		volatile u32 *vp = (void *)mailbox[88];
 		mailbox[91] += ((vp[0x1c / 4] & 63) - (mailbox[91] & 63)) & 63;
 	}
 	rx_buffer_recycle(mailbox, memory);
 	rx_work_recycle(mailbox, memory);
-	u32 *work = (void *)(memory + RTL_AX_RX_WORK_IDS);
-	u32 slot = mailbox[81], write = mailbox[RTL_AX_RX_WORK_WRITE];
+	u32 write = mailbox[RTL_AX_RX_WORK_WRITE];
 	u32 next = (write + 1) & 255;
-	if (next != mailbox[RTL_AX_RX_WORK_READ] &&
-	    ((bar[0x1218 / 4] >> 16) & 1023) != slot) {
-		u32 *map = (void *)(memory + RTL_AX_RX_SLOT_MAP);
-		u32 id = map[slot];
-		u32 info = *(volatile u32 *)uncached(rx_buffer_dma(mailbox, id));
-		u32 tag = mailbox[82] == 8191 ? 1 : mailbox[82] + 1;
-		if (((info >> 16) & 8191) == tag) {
-			sync();
-			work[write] = id | (rtl_ax_rx_epoch_old(&mailbox[RTL_AX_PE_DFS_EPOCH], slot) ? RTL_AX_RX_WORK_OLD : 0);
-			u32 count = mailbox[RTL_AX_RX_IDLE_COUNT] - 1;
-			u32 replacement = *(u32 *)(memory + RTL_AX_RX_IDLE_IDS + count * 4);
-			mailbox[RTL_AX_RX_IDLE_COUNT] = count;
-			map[slot] = replacement;
-			volatile u32 *descriptor = uncached(mailbox[134] + slot * 8);
-			descriptor[1] = rx_buffer_dma(mailbox, replacement);
-			sync();
-			mailbox[RTL_AX_RX_WORK_WRITE] = next;
-			mailbox[82] = tag;
-			mailbox[86]++;
-			mailbox[81] = mailbox[83] = (slot + 1) & 255;
-			sync();
-			*(volatile u16 *)((u8 *)bar + 0x1218) = mailbox[81];
-		}
+	if (next == mailbox[RTL_AX_RX_WORK_READ] ||
+	    mailbox[RTL_AX_RX_HW_PRODUCER] == slot) return;
+	u32 *map = (void *)(memory + RTL_AX_RX_SLOT_MAP);
+	u32 id = map[slot];
+	u32 info = *(volatile u32 *)uncached(rx_buffer_dma(mailbox, id));
+	u32 previous_tag = mailbox[82];
+	u32 tag = previous_tag == 8191 ? 1 : previous_tag + 1;
+	if (((info >> 16) & 8191) != tag) {
+		/* Service the stock RDU cause even inside a cached batch. The next
+		 * turn rereads the DMA tag; this unready buffer stays untouched. */
+		rx_status_poll(mailbox);
+		return;
 	}
+	u32 *work = (void *)(memory + RTL_AX_RX_WORK_IDS);
+	sync();
+	work[write] = id | (rtl_ax_rx_epoch_old(&mailbox[RTL_AX_PE_DFS_EPOCH], slot) ? RTL_AX_RX_WORK_OLD : 0);
+	u32 count = mailbox[RTL_AX_RX_IDLE_COUNT] - 1;
+	u32 replacement = *(u32 *)(memory + RTL_AX_RX_IDLE_IDS + count * 4);
+	mailbox[RTL_AX_RX_IDLE_COUNT] = count;
+	map[slot] = replacement;
+	volatile u32 *descriptor = uncached(mailbox[134] + slot * 8);
+	descriptor[1] = rx_buffer_dma(mailbox, replacement);
+	sync();
+	mailbox[RTL_AX_RX_WORK_WRITE] = next;
+	mailbox[82] = tag;
+	mailbox[86]++;
+	mailbox[81] = mailbox[83] = (slot + 1) & 255;
+	/* RXBD/map release is complete; these cursors have one PE owner. */
+	*(volatile u16 *)((u8 *)bar + 0x1218) = mailbox[81];
+}
+
+static void __attribute__((section(".rxq"), noinline)) pe_rx_work(volatile u32 *mailbox)
+{
+	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
 	/* Only receive-state handlers serialize subsequent WLAN data. Factory
 	 * paths separate reports; native PHY/DFS/C2H and ordinary control
 	 * handlers do not update receive PN/SN or PS. */
@@ -243,7 +311,11 @@ static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mail
 	if (mailbox[RTL_AX_RX_ARM_BARRIER]) return;
 	u32 read = mailbox[RTL_AX_RX_WORK_PROCESS];
 	if (read == mailbox[RTL_AX_RX_WORK_WRITE]) return;
-	u32 item = work[read], id = item & ~RTL_AX_RX_WORK_OLD;
+	/* PE0 publishes the captured payload ID before the write cursor. */
+	sync();
+	/* A lookahead completion stays in its capture slot until this cursor. */
+	if (*(u32 *)(memory + RX_STATUS + read * 4) & RX_NI_PENDING) goto advance;
+	u32 item = *(u32 *)(memory + RTL_AX_RX_WORK_IDS + read * 4), id = item & ~RTL_AX_RX_WORK_OLD;
 	u32 buffer_dma = rx_buffer_dma(mailbox, id);
 	u8 *buffer = uncached(buffer_dma);
 	u32 wd = *(u32 *)(buffer + 4), type = (wd >> 24) & 15;
@@ -254,8 +326,9 @@ static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mail
 		u32 fc = buffer[offset] & 0xfc;
 		if (fc == 0xb4 || fc == 0xc4 || fc == 0xd4 || fc == 0x94) stateful = 0;
 	}
-	u32 owner = (item & RTL_AX_RX_WORK_OLD) && type == 8 ?
-		RX_ARM_DONE : rx_uplink(mailbox, buffer, buffer_dma);
+	u32 reorder = 0, owner = (item & RTL_AX_RX_WORK_OLD) && type == 8 ?
+		RX_ARM_DONE : rx_uplink(mailbox, buffer, buffer_dma, &reorder);
+	if (reorder && rx_reorder(mailbox, memory, read, reorder)) return;
 	*(u32 *)(memory + RX_STATUS + read * 4) = owner;
 	if (!owner) {
 		u32 producer = mailbox[94];
@@ -266,6 +339,22 @@ static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mail
 		if (stateful) mailbox[RTL_AX_RX_ARM_BARRIER] = 1;
 		if (producer == mailbox[95]) pe_event(mailbox);
 	}
+	/* PE0 may recycle a completed payload as soon as this cursor advances. */
+advance:
 	sync();
 	mailbox[RTL_AX_RX_WORK_PROCESS] = (read + 1) & 255;
+}
+
+static void __attribute__((section(".entry"), noinline)) pe_rx_backend(volatile u32 *mailbox)
+{
+	if (!mailbox[RTL_AX_RX_BACKEND_CONTEXT]) return;
+	volatile u32 *receive = uncached(mailbox[RTL_AX_RX_BACKEND_CONTEXT]);
+	/* PE1 serializes every RX/TX event on the shared notification timer. */
+	pe_event_flush(receive);
+#pragma clang loop unroll(disable)
+	for (u32 budget = 0; budget < 16; budget++) {
+		u32 before = receive[RTL_AX_RX_WORK_PROCESS];
+		pe_rx_work(receive);
+		if (before == receive[RTL_AX_RX_WORK_PROCESS]) break;
+	}
 }

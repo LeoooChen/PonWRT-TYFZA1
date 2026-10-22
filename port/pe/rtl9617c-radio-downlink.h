@@ -19,6 +19,7 @@ static void __attribute__((noinline)) ni_peer_event(volatile u32 *mailbox, u8 *m
 {
 	u32 mask = 0;
 	if (*(u32 *)(memory + 0xe800 + macid * 16))
+#pragma clang loop unroll(disable)
 		for (u32 tid = 0; tid < 8; tid++)
 			if (*(u32 *)(memory + NI_TID_PENDING + (macid * 8 + tid) * 4)) mask |= BIT(tid);
 	u32 *old = (void *)(memory + NI_TIM_MASK + macid * 4);
@@ -39,7 +40,7 @@ static void ni_peer_add(volatile u32 *mailbox, u8 *memory, u32 macid)
 	}
 }
 
-static void __attribute__((section(".rxq"), noinline)) ni_enqueue(
+static void __attribute__((noinline)) ni_enqueue(
 	volatile u32 *mailbox, u8 *memory, u32 queue, u32 head, u32 tail, u32 count)
 {
 	u32 macid = queue >> 3, *old_tail = (void *)(memory + NI_TID_TAIL + queue * 4);
@@ -163,6 +164,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				mailbox[47] = id + 1; mailbox[63]++;
 			} else {
 				u32 metadata = waiting[1], length = metadata & 65535;
+#pragma clang loop unroll(disable)
 				for (u32 i = 0; i < 8; i++) request[i] = peer[i];
 				request[0] = 256 + id; request[1] = channels[tid];
 				request[2] = BIT(24) | (peer[2] & 0x3f0000) | (length + ((peer[2] >> 16) & 63) + 8 - 14);

@@ -13,6 +13,7 @@ SECTIONS
     ASSERT(. <= 0xbfc02000, "PE code overlaps mailbox")
     . = 0xbfc02400;
     .rxq : { *(.rxq) }
-    /DISCARD/ : { *(.MIPS.abiflags) *(.reginfo) *(.pdr) *(.comment) *(.note*) }
+    /* The -G0, -mno-abicalls, -fno-pic image has no GOT users. */
+    /DISCARD/ : { *(.MIPS.abiflags) *(.reginfo) *(.pdr) *(.comment) *(.note*) *(.got) }
 }
 ASSERT(. <= 0xbfc04000, "PE code overlaps request ring")

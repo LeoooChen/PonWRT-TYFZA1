@@ -5,14 +5,17 @@
 #include <linux/crc32.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/pci.h>
 #include <linux/slab.h>
+#include <linux/sizes.h>
 #include <linux/spinlock.h>
 #include <linux/workqueue.h>
 #include <linux/unaligned.h>
 #include <net/mac80211.h>
 #include "receive.h"
 #include "rx.h"
+#include "pe_probe.h"
 
 extern bool rtl_ax_datapath_profile;
 
@@ -40,6 +43,9 @@ struct rtl_ax_rx_queue {
 	u8 *descriptors, *buffers;
 	dma_addr_t descriptor_dma, buffer_dma;
 	struct rtl_ax_rx_buffer *payloads;
+	u32 *addresses;
+	dma_addr_t addresses_dma;
+	u16 slot_ids[RTL_AX_RX_ENTRIES];
 	unsigned int allocated_payloads;
 	unsigned int consumer, tag, buffer_bytes;
 	u64 packets, malformed, tag_pending, unhandled;
@@ -51,8 +57,12 @@ struct rtl_ax_rx_queue {
 	struct rtl_ax_data_observation last_data[4];
 };
 
+struct rtl_ax_shortcut_seen { u32 frames, bytes, msdus; };
+
 struct rtl_ax_rx {
 	struct pci_dev *pdev;
+	struct pe_probe pe;
+	u32 pe_command;
 	struct device *rpq_device;
 	struct device *pe_device;
 	void *rpq_memory, *pe_forward;
@@ -70,6 +80,18 @@ struct rtl_ax_rx {
 	int irq;
 	u64 interrupts;
 	u32 halt_error;
+	void *uplink_states;
+	dma_addr_t uplink_states_dma;
+	struct ieee80211_hw *hw;
+	struct ieee80211_key_conf *keys[128];
+	struct mutex uplink_lock;
+	unsigned int uplink_wifi_id;
+	u8 uplink_trigger_tids[128];
+	u16 uplink_pending_tids[128];
+	struct rtl_ax_shortcut_seen uplink_seen[128][16];
+	u32 uplink_forwarded_seen, pe_rdu_seen[2], pe_capture_seen;
+	u64 pe_rdu[2], pe_rx_delivered, pe_rx_malformed, pe_captured;
+	bool pool_initialized;
 };
 
 static struct rtl_ax_rx_buffer rtl_ax_rx_slot_buffer(struct rtl_ax_rx *rx,
@@ -80,7 +102,7 @@ static struct rtl_ax_rx_buffer rtl_ax_rx_slot_buffer(struct rtl_ax_rx *rx,
 	if (number)
 		return (struct rtl_ax_rx_buffer){queue->buffers + slot * queue->buffer_bytes,
 			queue->buffer_dma + slot * queue->buffer_bytes};
-	return queue->payloads[slot];
+	return queue->payloads[queue->slot_ids[slot]];
 }
 
 /* RX work, PE and PCI DMA are paused. Mark each ring's old prefix, using
@@ -91,19 +113,22 @@ void rtl_ax_rx_dfs_epoch(struct rtl_ax_rx *rx)
 		unsigned int consumer = rx->queues[number].consumer;
 		unsigned int producer = (rx->io->read32(rx->io->ctx, 0x1218 + number * 4) >> 16) & 0x3ff;
 
-		if (number && rx->rpq_owned)
-			consumer = get_unaligned_le32(rx->rpq_memory + 0x2118);
+		if (rx->rpq_owned)
+			consumer = get_unaligned_le32((number ? rx->rpq_memory : rx->pe.memory) + (number ? 0x2118 : 0x2144));
 		rx->dfs_epoch[number] = producer | (consumer != producer ? 256 : 0);
 		if (number && rx->rpq_owned) {
 			u8 *mailbox = rx->rpq_memory + 0x2000;
 			u32 read = get_unaligned_le32(mailbox + 296);
 			u32 write = get_unaligned_le32(mailbox + 292);
+			put_unaligned_le32(rx->dfs_epoch[0], rx->pe.memory + 0x2000 + RTL_AX_PE_DFS_EPOCH * 4);
 			put_unaligned_le32(rx->dfs_epoch[1], mailbox + (RTL_AX_PE_DFS_EPOCH + 1) * 4);
 			rx->dfs_epoch[3] = write | (read != write ? 256 : 0);
 		}
 	}
 	dma_wmb();
 }
+
+#include "rx-offload-state.h"
 
 static int rtl_ax_rx_dispatch(struct rtl_ax_rx *rx, bool old, const struct rtl_ax_rx_packet *packet)
 {
@@ -134,7 +159,8 @@ static struct sk_buff *rtl_ax_rx_take_skb(struct rtl_ax_rx *rx,
 	const struct rtl_ax_rx_packet *packet)
 {
 	struct rtl_ax_rx_queue *q = &rx->queues[0];
-	struct rtl_ax_rx_buffer old = q->payloads[q->consumer], replacement;
+	unsigned int id = q->slot_ids[q->consumer];
+	struct rtl_ax_rx_buffer old = q->payloads[id], replacement;
 	bool profile = READ_ONCE(rtl_ax_datapath_profile);
 	u64 begin = profile ? ktime_get_ns() : 0;
 	unsigned long flags;
@@ -148,7 +174,8 @@ static struct sk_buff *rtl_ax_rx_take_skb(struct rtl_ax_rx *rx,
 	skb_reserve(old.skb, packet->payload - old.data);
 	skb_put(old.skb, packet->bytes);
 	spin_lock_irqsave(&rx->irq_lock, flags);
-	q->payloads[q->consumer] = replacement;
+	q->payloads[id] = replacement;
+	WRITE_ONCE(q->addresses[id], cpu_to_le32(replacement.dma));
 	spin_unlock_irqrestore(&rx->irq_lock, flags);
 	q->skb_transfers++;
 	if (profile) q->skb_prepare_ns += ktime_get_ns() - begin;
@@ -302,15 +329,109 @@ static void rtl_ax_rx_pe_drain(struct rtl_ax_rx *rx)
 	}
 }
 
+static void rtl_ax_rx_pe_deliver(struct rtl_ax_rx *rx, unsigned int work)
+{
+	struct rtl_ax_rx_packet packet = {};
+	struct rtl_ax_rx_queue *queue = &rx->queues[0];
+	u32 item = get_unaligned_le32(rx->pe.memory + RTL_AX_RX_WORK_IDS + work * 4);
+	struct rtl_ax_rx_buffer payload = queue->payloads[item & ~RTL_AX_RX_WORK_OLD];
+	dma_addr_t dma = payload.dma;
+	u8 *buffer = payload.data;
+	int ret;
+
+	rtl_ax_rx_uplink_sync(rx);
+	dma_sync_single_for_cpu(rx->pe_device, dma, queue->buffer_bytes, DMA_BIDIRECTIONAL);
+	ret = rtl_ax_receive_packet(buffer, queue->buffer_bytes, &packet);
+	if (!ret) {
+
+		rtl_ax_rx_dispatch(rx, !!(item & RTL_AX_RX_WORK_OLD), &packet);
+		rtl_ax_rx_uplink_seed(rx, &packet);
+		rx->pe_rx_delivered++;
+	} else rx->pe_rx_malformed++;
+	/* Publish PN/SN and discard ARM cache aliases before PE recycles payload. */
+	dma_sync_single_for_device(rx->pe_device, dma, queue->buffer_bytes, DMA_BIDIRECTIONAL);
+	dma_wmb();
+	put_unaligned_le32(BIT(30), rx->pe.memory + RTL_AX_RX_WORK_STATUS + work * 4);
+}
+
+static void rtl_ax_rx_pe_rxq_drain(struct rtl_ax_rx *rx)
+{
+	u8 *mailbox = rx->pe.memory + 0x2000;
+	u32 consumer = get_unaligned_le32(mailbox + 380);
+	u32 budget = 64;
+
+	while (budget-- && consumer != get_unaligned_le32(mailbox + 376)) {
+		dma_rmb();
+		u32 work = get_unaligned_le32(rx->pe.memory + RTL_AX_RX_ARM_RING + consumer * 4);
+		rtl_ax_rx_pe_deliver(rx, work);
+		consumer = (consumer + 1) & 255;
+		dma_wmb();
+		put_unaligned_le32(consumer, mailbox + 380);
+	}
+}
+
+static void rtl_ax_rx_rdu_sync(struct rtl_ax_rx *rx)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&rx->irq_lock, flags);
+	if (rx->pe.memory)
+		for (unsigned int i = 0; i < 2; i++) {
+			u32 count = get_unaligned_le32(rx->pe.memory + 0x2000 + (RTL_AX_RX_RDU + i) * 4);
+			rx->pe_rdu[i] += count - rx->pe_rdu_seen[i];
+			rx->pe_rdu_seen[i] = count;
+		}
+	if (rx->pe.memory) {
+		u32 captured = get_unaligned_le32(rx->pe.memory + 0x2158);
+		rx->pe_captured += captured - rx->pe_capture_seen;
+		rx->pe_capture_seen = captured;
+	}
+	spin_unlock_irqrestore(&rx->irq_lock, flags);
+}
+
+void *rtl_ax_rx_pe_memory(struct rtl_ax_rx *rx) { return rx->pe.memory; }
+
+int rtl_ax_rx_pe_pause(struct rtl_ax_rx *rx)
+{
+	u32 acknowledged, command;
+
+	if (!rx || !rx->pe.attached) return 0;
+	command = rx->pe_command += 2;
+	put_unaligned_le32(command, rx->pe.memory + 0x200c);
+	dma_wmb();
+	return read_poll_timeout(get_unaligned_le32, acknowledged, acknowledged == command,
+		10, 100000, false, rx->pe.memory + 0x2010);
+}
+
+void rtl_ax_rx_pe_open(struct rtl_ax_rx *rx)
+{
+	if (!rx || !rx->pe.attached) return;
+	rx->pe_command += 2;
+	put_unaligned_le32(rx->pe_command | 1, rx->pe.memory + 0x200c);
+	dma_wmb();
+}
+
+void rtl_ax_rx_pe_event_ack(struct rtl_ax_rx *rx)
+{
+	if (rx && READ_ONCE(rx->pe.attached))
+		put_unaligned_le32(get_unaligned_le32(rx->pe.memory + 0x2114), rx->pe.memory + 0x2108);
+}
+
 void rtl_ax_rx_pe_wake(struct rtl_ax_rx *rx)
 {
 	if (READ_ONCE(rx->running)) mod_delayed_work(system_wq, &rx->work, 0);
 }
 
-void rtl_ax_rx_pe_rpq_start(struct rtl_ax_rx *rx, void *memory)
+int rtl_ax_rx_pe_rpq_start(struct rtl_ax_rx *rx, void *tx_memory, u32 tx_dma,
+	const u32 *program, unsigned int bytes)
 {
-	u8 *mailbox = memory + 0x2000;
+	void *memory = rx->pe.memory;
+	u8 *mailbox = memory + 0x2000, *tx_mailbox = tx_memory + 0x2000;
+	int ret;
+	struct rtl_ax_rx_queue *q = &rx->queues[0];
 	unsigned long flags;
+	bool mapped[RTL_AX_RX_BUFFERS] = {};
+	unsigned int i, idle = 0;
 
 	spin_lock_irqsave(&rx->irq_lock, flags);
 	rx->rpq_transfer = true;
@@ -319,54 +440,193 @@ void rtl_ax_rx_pe_rpq_start(struct rtl_ax_rx *rx, void *memory)
 	spin_unlock_irqrestore(&rx->irq_lock, flags);
 	synchronize_irq(rx->irq);
 	cancel_delayed_work_sync(&rx->work);
+	rx->rpq_memory = tx_memory;
+	/* DMA-mapped skbs remain device-owned while PE reads their uncached alias.
+	 * Only ARM exceptions acquire a CPU mapping, and release it before ACK. */
+	for (i = 0; i < RTL_AX_RX_BUFFERS; i++)
+		dma_sync_single_for_device(rx->pe_device, q->payloads[i].dma,
+			q->buffer_bytes, DMA_BIDIRECTIONAL);
 	dma_sync_single_for_device(rx->pe_device, rx->queues[1].buffer_dma,
 		RTL_AX_RX_ENTRIES * RTL_AX_RPQ_BUFFER_BYTES, DMA_BIDIRECTIONAL);
-	rx->rpq_memory = memory;
+	for (i = 0; i < RTL_AX_RX_ENTRIES; i++) {
+		put_unaligned_le32(q->slot_ids[i], memory + RTL_AX_RX_SLOT_MAP + i * 4);
+		mapped[q->slot_ids[i]] = true;
+	}
+	/* Preserve NI's two retained payloads across a stopped/restarted VP. */
+	if (!rx->pool_initialized) {
+		memset(memory + RTL_AX_RX_NI_TAIL, 0, 16);
+		for (i = 0; i < RTL_AX_RX_BUFFERS; i++)
+			if (!mapped[i]) put_unaligned_le32(i, memory + RTL_AX_RX_IDLE_IDS + idle++ * 4);
+		put_unaligned_le32(idle, mailbox + RTL_AX_RX_IDLE_COUNT * 4);
+		rx->pool_initialized = true;
+	}
+	memset(memory + RTL_AX_RX_WORK_STATUS, 0, 0x800);
+	for (i = RTL_AX_RX_WORK_WRITE; i <= RTL_AX_RX_WORK_READ; i++)
+		put_unaligned_le32(0, mailbox + i * 4);
+	for (i = 0; i < 2; i++) {
+		put_unaligned_le32(rx->dfs_epoch[i], mailbox + (RTL_AX_PE_DFS_EPOCH + i) * 4);
+		put_unaligned_le32(0, mailbox + (RTL_AX_RX_RDU + i) * 4);
+		rx->pe_rdu_seen[i] = 0;
+		rx->dfs_epoch[2 + i] = 0;
+	}
+	put_unaligned_le32(0, mailbox + RTL_AX_RX_ARM_BARRIER * 4);
+	put_unaligned_le32(q->descriptor_dma, mailbox + 134 * 4);
+	put_unaligned_le32(q->consumer, mailbox + 324);
+	put_unaligned_le32(q->tag, mailbox + 328);
+	put_unaligned_le32(q->consumer, mailbox + 332);
+	put_unaligned_le32(q->consumer, mailbox + 336);
+	put_unaligned_le32(q->consumer, mailbox + RTL_AX_RX_HW_PRODUCER * 4);
+	put_unaligned_le32(0, mailbox + 376);
+	put_unaligned_le32(0, mailbox + 380);
+	put_unaligned_le32(rx->queues[1].consumer, tx_mailbox + 280);
+	put_unaligned_le32(rx->queues[1].tag, tx_mailbox + 284);
+	put_unaligned_le32(rx->pe_forward_dma, tx_mailbox + 288);
+	put_unaligned_le32(0, tx_mailbox + 292);
+	put_unaligned_le32(0, tx_mailbox + 296);
+	put_unaligned_le32(0, tx_mailbox + RTL_AX_RPQ_EVENT_WRITE * 4);
+	put_unaligned_le32(0, tx_mailbox + RTL_AX_RPQ_EVENT_READ * 4);
+	put_unaligned_le32(get_unaligned_le32(tx_mailbox + 8), mailbox + 8);
+	put_unaligned_le32(tx_dma, mailbox + 187 * 4);
+	put_unaligned_le32(rx->pe_command & ~1U, mailbox + 12);
+	put_unaligned_le32(get_unaligned_le32(tx_mailbox + 256), mailbox + 256);
+	put_unaligned_le32(get_unaligned_le32(mailbox + 268), mailbox + 264);
+	put_unaligned_le32(get_unaligned_le32(mailbox + 268), mailbox + 276);
+	put_unaligned_le32(rx->dfs_epoch[1], tx_mailbox + (RTL_AX_PE_DFS_EPOCH + 1) * 4);
 	rx->rpq_owned = true;
-	rx->dfs_epoch[3] = 0;
-	put_unaligned_le32(rx->dfs_epoch[1], mailbox + (RTL_AX_PE_DFS_EPOCH + 1) * 4);
-	put_unaligned_le32(rx->queues[1].consumer, mailbox + 280);
-	put_unaligned_le32(rx->queues[1].tag, mailbox + 284);
-	put_unaligned_le32(rx->pe_forward_dma, mailbox + 288);
-	put_unaligned_le32(0, mailbox + 292);
-	put_unaligned_le32(0, mailbox + 296);
-	/* PE owns only RPQ. RXQ indices, buffers and PN/SN stay with ARM. */
-	put_unaligned_le32(0, mailbox + 320);
 	dma_wmb();
-	put_unaligned_le32(rx->queues[1].buffer_dma, mailbox + 272);
-	/* ARM must still acknowledge RPQ RDU, not just RXQ interrupts. */
-	rx->irq_mask = RTL_AX_RX_IRQS & ~BIT(2);
-	rx->io->write32(rx->io->ctx, 0x10b0, rx->irq_mask);
+	put_unaligned_le32(rx->queues[1].buffer_dma, tx_mailbox + 272);
+	put_unaligned_le32(0, tx_mailbox + 320);
+	put_unaligned_le32(q->addresses_dma, mailbox + 320);
+	rx->irq_mask = 0;
 	smp_store_release(&rx->rpq_transfer, false);
 	rx->io->write32(rx->io->ctx, 0x30b0, RTL_AX_IRQ_INDICATION);
+	ret = pe_probe_start(&rx->pe, program, bytes);
+	if (!ret) {
+		put_unaligned_le32(rx->pe.dma + PE_PROBE_MAILBOX,
+			tx_mailbox + RTL_AX_RX_BACKEND_CONTEXT * 4);
+		dma_wmb();
+	}
 	rtl_ax_rx_pe_wake(rx);
+	return ret;
+}
+
+static void rtl_ax_rx_idle_put(struct rtl_ax_rx *rx, u32 id)
+{
+	u8 *memory = rx->pe.memory;
+	struct rtl_ax_rx_buffer payload = rx->queues[0].payloads[id];
+	u32 count = get_unaligned_le32(memory + 0x2000 + RTL_AX_RX_IDLE_COUNT * 4);
+
+	WRITE_ONCE(*(__le32 *)payload.data, 0);
+	dma_sync_single_for_device(rx->pe_device, payload.dma,
+		RTL_AX_RXQ_BUFFER_BYTES, DMA_BIDIRECTIONAL);
+	put_unaligned_le32(id, memory + RTL_AX_RX_IDLE_IDS + count * 4);
+	put_unaligned_le32(count + 1, memory + 0x2000 + RTL_AX_RX_IDLE_COUNT * 4);
+}
+
+static void rtl_ax_rx_tail_recycle(struct rtl_ax_rx *rx)
+{
+	u8 *memory = rx->pe.memory;
+	u32 read = get_unaligned_le32(memory + 0x216c);
+	for (unsigned int i = 0; i < 2; i++) {
+		u8 *held = memory + RTL_AX_RX_NI_TAIL + i * 8;
+		u32 id = get_unaligned_le32(held);
+		if (!id || (s32)((read - get_unaligned_le32(held + 4) - 2) << 1) < 0) continue;
+		rtl_ax_rx_idle_put(rx, id - 1);
+		put_unaligned_le32(0, held);
+	}
+}
+
+static void rtl_ax_rx_work_recycle(struct rtl_ax_rx *rx)
+{
+	u8 *memory = rx->pe.memory, *mailbox = memory + 0x2000;
+	u32 read = get_unaligned_le32(mailbox + RTL_AX_RX_WORK_READ * 4);
+	u32 process = get_unaligned_le32(mailbox + RTL_AX_RX_WORK_PROCESS * 4);
+
+	rtl_ax_rx_tail_recycle(rx);
+	while (read != process) {
+		u32 owner = get_unaligned_le32(memory + RTL_AX_RX_WORK_STATUS + read * 4);
+		u32 id = get_unaligned_le32(memory + RTL_AX_RX_WORK_IDS + read * 4) & ~RTL_AX_RX_WORK_OLD;
+		if ((owner & BIT(31)) &&
+		    (s32)((get_unaligned_le32(mailbox + 364) - (owner & 0x7fffffff) - 2) << 1) < 0) {
+			unsigned int i = get_unaligned_le32(memory + RTL_AX_RX_NI_TAIL) ? 1 : 0;
+			put_unaligned_le32(id + 1, memory + RTL_AX_RX_NI_TAIL + i * 8);
+			put_unaligned_le32(owner & 0x7fffffff, memory + RTL_AX_RX_NI_TAIL + i * 8 + 4);
+		} else rtl_ax_rx_idle_put(rx, id);
+		put_unaligned_le32(0, memory + RTL_AX_RX_WORK_STATUS + read * 4);
+		read = (read + 1) & 255;
+	}
+	put_unaligned_le32(read, mailbox + RTL_AX_RX_WORK_READ * 4);
 }
 
 int rtl_ax_rx_pe_rpq_stop(struct rtl_ax_rx *rx)
 {
-	u8 *mailbox;
+	u8 *mailbox, *tx_mailbox;
+	int ret;
 	unsigned long flags;
 
 	if (!rx->rpq_memory) return 0;
-	/* Caller paused PE; RXQ continues from its own ARM cursor after this. */
+	/* Caller has paused PE, so consumer/tag can transfer back to the host. */
 	WRITE_ONCE(rx->rpq_transfer, true);
 	cancel_delayed_work_sync(&rx->work);
-	mailbox = rx->rpq_memory + 0x2000;
+	mailbox = rx->pe.memory + 0x2000;
+	tx_mailbox = rx->rpq_memory + 0x2000;
+	rtl_ax_rx_rdu_sync(rx);
+	/* PE is paused; these producers cannot advance during the handoff. */
 	do { rtl_ax_rx_pe_drain(rx); }
-	while (get_unaligned_le32(mailbox + 296) != get_unaligned_le32(mailbox + 292));
-	dma_sync_single_for_cpu(rx->pe_device, rx->queues[1].buffer_dma,
-		RTL_AX_RX_ENTRIES * RTL_AX_RPQ_BUFFER_BYTES, DMA_BIDIRECTIONAL);
-	rx->queues[1].consumer = get_unaligned_le32(mailbox + 280);
-	rx->queues[1].tag = get_unaligned_le32(mailbox + 284);
-	rx->dfs_epoch[1] = get_unaligned_le32(mailbox + (RTL_AX_PE_DFS_EPOCH + 1) * 4);
-	put_unaligned_le32(0, mailbox + 272);
+	while (get_unaligned_le32(tx_mailbox + 296) != get_unaligned_le32(tx_mailbox + 292));
+	do { rtl_ax_rx_pe_rxq_drain(rx); }
+	while (get_unaligned_le32(mailbox + 380) != get_unaligned_le32(mailbox + 376));
+	rtl_ax_rx_uplink_sync(rx);
+	/* Sorted NI submissions can be beyond the contiguous process cursor. */
+	{
+		u32 read = get_unaligned_le32(mailbox + RTL_AX_RX_WORK_READ * 4);
+		u32 write = get_unaligned_le32(mailbox + RTL_AX_RX_WORK_WRITE * 4);
+		for (; read != write; read = (read + 1) & 255) {
+			u32 owner = get_unaligned_le32(rx->pe.memory + RTL_AX_RX_WORK_STATUS + read * 4);
+			if ((owner & BIT(31)) &&
+			    (s32)((get_unaligned_le32(mailbox + 364) - (owner & 0x7fffffff)) << 1) < 0)
+				return -EBUSY;
+		}
+	}
+	/* PE captured these buffers before pausing; dispatch them in capture order. */
+	{
+		u32 process = get_unaligned_le32(mailbox + RTL_AX_RX_WORK_PROCESS * 4);
+		while (process != get_unaligned_le32(mailbox + RTL_AX_RX_WORK_WRITE * 4)) {
+			if (!(get_unaligned_le32(rx->pe.memory + RTL_AX_RX_WORK_STATUS + process * 4) & BIT(31)))
+				rtl_ax_rx_pe_deliver(rx, process);
+			process = (process + 1) & 255;
+			put_unaligned_le32(process, mailbox + RTL_AX_RX_WORK_PROCESS * 4);
+		}
+	}
+	rtl_ax_rx_work_recycle(rx);
+	for (unsigned int i = 0; i < RTL_AX_RX_ENTRIES; i++)
+		rx->queues[0].slot_ids[i] = get_unaligned_le32(rx->pe.memory + RTL_AX_RX_SLOT_MAP + i * 4);
+	rx->queues[0].consumer = get_unaligned_le32(mailbox + 324);
+	rx->queues[0].tag = get_unaligned_le32(mailbox + 328);
 	dma_wmb();
+	rx->io->write16(rx->io->ctx, 0x1218, rx->queues[0].consumer);
+	dma_sync_single_for_cpu(rx->pe_device, rx->queues[1].buffer_dma, RTL_AX_RX_ENTRIES * RTL_AX_RPQ_BUFFER_BYTES, DMA_BIDIRECTIONAL);
+	rx->queues[1].consumer = get_unaligned_le32(tx_mailbox + 280);
+	rx->queues[1].tag = get_unaligned_le32(tx_mailbox + 284);
+	put_unaligned_le32(0, tx_mailbox + 272);
+	put_unaligned_le32(0, tx_mailbox + RTL_AX_RX_BACKEND_CONTEXT * 4);
+	put_unaligned_le32(0, mailbox + 320);
+	dma_wmb();
+	for (unsigned int i = 0; i < 2; i++)
+		rx->dfs_epoch[i] = get_unaligned_le32((i ? tx_mailbox : mailbox) + (RTL_AX_PE_DFS_EPOCH + i) * 4);
+	ret = pe_probe_stop(&rx->pe);
+	if (ret) return ret;
 	rx->rpq_memory = NULL;
+	rx->uplink_wifi_id = 0;
+	put_unaligned_le32(0, mailbox + 424);
 	spin_lock_irqsave(&rx->irq_lock, flags);
 	rx->rpq_owned = false;
+	rx->rpq_transfer = false;
 	rx->irq_mask = RTL_AX_RX_IRQS;
-	if (rx->running) rx->io->write32(rx->io->ctx, 0x10b0, rx->irq_mask);
-	smp_store_release(&rx->rpq_transfer, false);
+	if (rx->running) {
+		rx->io->write32(rx->io->ctx, 0x10b0, rx->irq_mask);
+		rx->io->write32(rx->io->ctx, 0x30b0, RTL_AX_IRQ_INDICATION);
+	}
 	spin_unlock_irqrestore(&rx->irq_lock, flags);
 	rtl_ax_rx_pe_wake(rx);
 	return 0;
@@ -387,7 +647,10 @@ static void rtl_ax_rx_work(struct work_struct *work)
 			retry |= rtl_ax_rx_drain(rx, 1);
 		} else if (rx->rpq_memory) {
 			rtl_ax_rx_pe_drain(rx);
-			retry = rtl_ax_rx_drain(rx, 0);
+			rtl_ax_rx_pe_rxq_drain(rx);
+			rtl_ax_rx_uplink_sync(rx);
+			rtl_ax_rx_rdu_sync(rx);
+			retry = get_unaligned_le32(rx->pe.memory + 0x2178) != get_unaligned_le32(rx->pe.memory + 0x217c);
 			retry |= get_unaligned_le32(rx->rpq_memory + 0x2124) != get_unaligned_le32(rx->rpq_memory + 0x2128);
 		}
 	}
@@ -525,12 +788,16 @@ static int rtl_ax_rx_buffers_alloc(struct rtl_ax_rx *rx)
 			&queue->descriptor_dma, GFP_KERNEL);
 		if (!queue->descriptors) return -ENOMEM;
 		if (!number) {
-			queue->payloads = kcalloc(RTL_AX_RX_ENTRIES, sizeof(*queue->payloads), GFP_KERNEL);
+			queue->payloads = kcalloc(RTL_AX_RX_BUFFERS, sizeof(*queue->payloads), GFP_KERNEL);
 			if (!queue->payloads) return -ENOMEM;
-			for (unsigned int id = 0; id < RTL_AX_RX_ENTRIES; id++) {
+			queue->addresses = dma_alloc_coherent(device, RTL_AX_RX_BUFFERS * sizeof(u32),
+				&queue->addresses_dma, GFP_KERNEL);
+			if (!queue->addresses) return -ENOMEM;
+			for (unsigned int id = 0; id < RTL_AX_RX_BUFFERS; id++) {
 				int ret = rtl_ax_rx_buffer_alloc(rx, queue->buffer_bytes,
 					GFP_KERNEL, &queue->payloads[id]);
 				if (ret) return ret;
+				queue->addresses[id] = cpu_to_le32(queue->payloads[id].dma);
 				queue->allocated_payloads++;
 			}
 		} else {
@@ -541,6 +808,7 @@ static int rtl_ax_rx_buffers_alloc(struct rtl_ax_rx *rx)
 		}
 		for (unsigned int entry = 0; entry < RTL_AX_RX_ENTRIES; entry++) {
 			dma_addr_t dma = number ? queue->buffer_dma + entry * queue->buffer_bytes : queue->payloads[entry].dma;
+			queue->slot_ids[entry] = entry;
 
 			rtl_ax_rxbd(queue->descriptors + entry * 8, lower_32_bits(dma), queue->buffer_bytes);
 		}
@@ -561,6 +829,8 @@ static void rtl_ax_rx_buffers_free(struct rtl_ax_rx *rx)
 			dev_kfree_skb_any(queue->payloads[id].skb);
 		}
 		kfree(queue->payloads);
+		if (queue->addresses)
+			dma_free_coherent(device, RTL_AX_RX_BUFFERS * sizeof(u32), queue->addresses, queue->addresses_dma);
 		if (queue->buffers)
 			dma_free_coherent(device, RTL_AX_RX_ENTRIES * queue->buffer_bytes, queue->buffers, queue->buffer_dma);
 		if (queue->descriptors)
@@ -571,7 +841,9 @@ static void rtl_ax_rx_buffers_free(struct rtl_ax_rx *rx)
 void rtl_ax_rx_free(struct rtl_ax_rx *rx)
 {
 	rtl_ax_rx_release_interrupts(rx);
+	pe_probe_free(&rx->pe);
 	rtl_ax_rx_buffers_free(rx);
+	if (rx->uplink_states) dma_free_coherent(rx->pe_device, SZ_128K, rx->uplink_states, rx->uplink_states_dma);
 	if (rx->pe_forward) dma_free_coherent(rx->pe_device, RTL_AX_RX_ENTRIES * RTL_AX_RPQ_BUFFER_BYTES, rx->pe_forward, rx->pe_forward_dma);
 	put_device(rx->pe_device);
 	kfree(rx);
@@ -594,8 +866,14 @@ struct rtl_ax_rx *rtl_ax_rx_prepare(struct pci_dev *pdev, const struct rtl_ax_io
 	rx->handler = handler;
 	rx->handler_ctx = ctx;
 	spin_lock_init(&rx->irq_lock);
+	mutex_init(&rx->uplink_lock);
 	INIT_DELAYED_WORK(&rx->work, rtl_ax_rx_work);
 	io->write32(io->ctx, 0x30b0, 0);
+	rx->uplink_states = dma_alloc_coherent(rpq_device, SZ_128K, &rx->uplink_states_dma, GFP_KERNEL);
+	if (!rx->uplink_states) { ret = -ENOMEM; goto free; }
+	memset(rx->uplink_states, 0, SZ_128K);
+	ret = pe_probe_alloc(&rx->pe, pdev->device == 0xc852 ? 0 : 1, 0);
+	if (ret) goto free;
 	ret = rtl_ax_rx_buffers_alloc(rx);
 	if (ret) goto free;
 
@@ -633,19 +911,28 @@ int rtl_ax_rx_status(struct rtl_ax_rx *rx, char *out, size_t capacity)
 	unsigned int type, subtype;
 	int length;
 
+	rtl_ax_rx_rdu_sync(rx);
 	length = scnprintf(out, capacity,
-		"RXQ_owner=ARM RPQ_owner=PE_when_enabled\nrxq=%llu rpq=%llu rx_malformed=%llu rx_tag_pending=%llu rx_unhandled=%llu "
+		"RXQ_owner=%s RPQ_owner=PE0 RXQ_core=0 RX_work_core=1 decoded_type_counters=ARM\nrxq=%llu rpq=%llu rx_malformed=%llu rx_tag_pending=%llu rx_unhandled=%llu "
 		"irq=%llu rdu=%llu halt=0x%08x\n",
-		rx->queues[0].packets, rx->queues[1].packets,
+		rx->rpq_owned ? "PE" : "ARM", rx->queues[0].packets + rx->pe_captured, rx->queues[1].packets,
 		rx->queues[0].malformed + rx->queues[1].malformed,
 		rx->queues[0].tag_pending + rx->queues[1].tag_pending,
 		rx->queues[0].unhandled + rx->queues[1].unhandled,
-		rx->interrupts, rx->queues[0].unavailable + rx->queues[1].unavailable, rx->halt_error);
+		rx->interrupts, rx->queues[0].unavailable + rx->queues[1].unavailable + rx->pe_rdu[0] + rx->pe_rdu[1], rx->halt_error);
 	length += scnprintf(out + length, capacity - length,
 		"RX_skb_transfers=%llu RX_buffer_alloc_failed=%llu RX_skb_prepare_ns=%llu RX_data_bytes=%llu RXQ_RDU=%llu RPQ_RDU=%llu\n",
 		rx->queues[0].skb_transfers, rx->queues[0].alloc_failed,
 		rx->queues[0].skb_prepare_ns, rx->queues[0].data_bytes,
-		rx->queues[0].unavailable, rx->queues[1].unavailable);
+		rx->queues[0].unavailable + rx->pe_rdu[0], rx->queues[1].unavailable + rx->pe_rdu[1]);
+	length += scnprintf(out + length, capacity - length,
+		"PE_uplink_frames=%u PE_uplink_bytes=%u ARM_exceptions=%llu ARM_exception_errors=%llu RX_pool=%u NI_pending=%u/%u PE_reordered=%u\n",
+		rx->rpq_memory ? get_unaligned_le32(rx->pe.memory + 0x2180) : 0,
+		rx->rpq_memory ? get_unaligned_le32(rx->pe.memory + 0x2184) : 0,
+		rx->pe_rx_delivered, rx->pe_rx_malformed, RTL_AX_RX_BUFFERS,
+		rx->rpq_memory ? get_unaligned_le32(rx->pe.memory + 0x2168) : 0,
+		rx->rpq_memory ? get_unaligned_le32(rx->pe.memory + 0x216c) : 0,
+		rx->rpq_memory ? get_unaligned_le32(rx->pe.memory + 0x2000 + 191 * 4) : 0);
 	length += scnprintf(out + length, capacity - length,
 		"PE_RPQ_owned=%u forwarded=%u/%u consumer=%u tag=%u malformed=%u\n",
 		rx->rpq_owned,

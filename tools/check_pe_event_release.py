@@ -16,7 +16,7 @@ typedef uint32_t u32;
 #define READ_ONCE(v) (v)
 #define WRITE_ONCE(v,x) ((v)=(x))
 struct rtl_ax_tx {struct {unsigned slot;void *memory;} pe;};
-static void *pe_event_timer,*pe_engine;
+static void *pe_event_timer;
 static unsigned pe_event_irq;
 static u32 pe_event_saved[4]={7,0,0,0};
 static struct rtl_ax_tx *pe_event_radios[2];
@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='pe-event-release-',dir=ROOT/'artifacts'
  u.mem_write(0x1fc00000,binary)
  def put(at,v):u.mem_write(at,struct.pack('<I',v))
  def get(at):return struct.unpack('<I',u.mem_read(at,4))[0]
- put(CONTROL+140*4,RADIO|0xa0000000);put(RADIO,0x50455744);put(TIMER,7)
+ put(CONTROL+140*4,RADIO|0xa0000000);put(CONTROL+142*4,1);put(RADIO,0x50455744);put(TIMER,7)
  for i,v in ((3,2),(64,TIMER|0xa0000000),(67,1)):put(RADIO+i*4,v)
  pause_ack=False;armed=False;reads=0;released=False;io_after=[]
  def do_release():
@@ -79,7 +79,7 @@ with tempfile.TemporaryDirectory(prefix='pe-event-release-',dir=ROOT/'artifacts'
  u.hook_add(UC_HOOK_MEM_WRITE,io,begin=TIMER,end=TIMER+35)
  u.hook_add(UC_HOOK_CODE,step)
  u.reg_write(UC_MIPS_REG_A0,CONTROL|0xa0000000);u.reg_write(UC_MIPS_REG_SP,(BASE+0x1fff0)|0xa0000000)
- u.emu_start(0xbfc00400,0xbfc03ffc,count=15000)
+ u.emu_start(0xbfc00400,0xbfc0fff0,count=15000)
  assert pause_ack and released
  if old:
   assert io_after==[{'offset':4,'value':0},{'offset':0,'value':1},{'offset':32,'value':16},{'offset':12,'value':1},{'offset':4,'value':128}]

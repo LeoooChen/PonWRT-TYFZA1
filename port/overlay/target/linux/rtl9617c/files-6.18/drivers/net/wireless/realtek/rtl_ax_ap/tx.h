@@ -36,6 +36,7 @@ void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos);
 int rtl_ax_tx_peer_ssn(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid);
 int rtl_ax_tx_ni_test(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid);
 int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned int macid);
+int rtl_ax_tx_rx_retire(struct rtl_ax_tx *tx, unsigned int macid);
 int rtl_ax_tx_ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid);
 int rtl_ax_mac_drop_peer(struct pci_dev *pdev, unsigned int macid);
 void rtl_ax_tx_peer_sleep(struct rtl_ax_tx *tx, unsigned int macid, bool asleep);

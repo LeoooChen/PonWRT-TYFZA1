@@ -19,6 +19,7 @@ static irqreturn_t pe_event_interrupt(int irq, void *context)
   if (!tx) continue;
   put_unaligned_le32(get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 276),
    tx->pe.memory + PE_PROBE_MAILBOX + 264);
+  rtl_ax_rx_pe_event_ack(tx->rx);
   wake_up_all(&tx->key_flush_wait);
   rtl_ax_rx_pe_wake(tx->rx);
   schedule_work(&tx->ni.ps_work);
@@ -38,7 +39,7 @@ static void pe_event_release(struct rtl_ax_tx *tx)
  writel(0, pe_event_timer + 4);
  writel(0, pe_event_timer + 12);
  writel(1, pe_event_timer + 20);
- free_irq(pe_event_irq, pe_engine);
+ free_irq(pe_event_irq, pe_event_radios);
  writel(pe_event_saved[0], pe_event_timer);
  writel(pe_event_saved[2], pe_event_timer + 12);
  writel(pe_event_saved[3], pe_event_timer + 16);
@@ -65,7 +66,7 @@ static int pe_event_prepare(struct rtl_ax_tx *tx)
   pe_event_saved[2] = readl(pe_event_timer + 12);
   pe_event_saved[3] = readl(pe_event_timer + 16);
   if (pe_event_saved[1] || pe_event_saved[2] || pe_event_saved[3]) { ret = -EBUSY; goto unmap; }
-  ret = request_irq(pe_event_irq, pe_event_interrupt, IRQF_NO_AUTOEN, "tyfza1-pe-event", pe_engine);
+  ret = request_irq(pe_event_irq, pe_event_interrupt, IRQF_NO_AUTOEN, "tyfza1-pe-event", pe_event_radios);
   if (ret) goto unmap;
   writel(1, pe_event_timer + 20);
   enable_irq(pe_event_irq);
