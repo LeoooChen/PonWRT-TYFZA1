@@ -1,0 +1,178 @@
+{
+  "version": "0.8.2-beta",
+  "date": "2026-10-22",
+  "status": "Locally built and flashed; performance acceptance FAILED. No theoretical-throughput claim.",
+  "source_commit": "b2a344bf1b18cf47ef7a31790ad130b61cfdcb4a",
+  "artifact_verification": {
+    "version": "0.8.2-beta",
+    "source_commit": "b2a344bf1b18cf47ef7a31790ad130b61cfdcb4a",
+    "kernel_bytes": 3963212,
+    "rootfs_bytes": 8067588,
+    "sysupgrade_payloads_match": true,
+    "FIT_four_payload_SHA256_and_RSA": true,
+    "both_board_configurations_present": true,
+    "repaired_kernel_sources_match_overlay": true,
+    "release": "DISTRIB_ID='OpenWrt'\nDISTRIB_RELEASE='0.8.2-beta'\nDISTRIB_REVISION='r0-79bc56c'\nDISTRIB_TARGET='rtl9617c/generic'\nDISTRIB_ARCH='aarch64_cortex-a55'\nDISTRIB_DESCRIPTION='OpenWrt 0.8.2-beta r0-79bc56c'\nDISTRIB_TAINTS='no-all'\n"
+  },
+  "artifacts": {
+    "sysupgrade.bin": {
+      "bytes": 12042523,
+      "sha256": "9b7756235469846be84c59669c0eee56f0932e15046ced8b624dc2a30b4693fb"
+    },
+    "kernel.itb": {
+      "bytes": 3963212,
+      "sha256": "6a344fead61d62b2381eb6a183c5b5dcb1d4e7c9f79ff3b695ff64dd516dc1ab"
+    },
+    "rootfs.squashfs": {
+      "bytes": 8067588,
+      "sha256": "00d86e7b34df64a37f7bdc0c5c95a4db36137a874683e4d13a3e04afb9dd5053"
+    }
+  },
+  "build_scope": "Reuse the pinned OpenWrt tree and toolchain/package caches; clean only the kernel build to remove prior RAM experiments, regenerate PE, then make world. No full test suite.",
+  "field_records_directory_suffix": "20261022-local-082",
+  "flash": {
+    "method": "sysupgrade with configuration retained",
+    "boot_id": "b6550c7d-29d6-4a06-9235-9ce4259cbf13",
+    "slot": 1,
+    "root": "/dev/ubiblock0_7",
+    "installed_release_verified": true,
+    "network_and_wireless_configuration_bytes_preserved": {
+      "network": true,
+      "wireless": true
+    },
+    "bootloader_changed": false,
+    "note": "Old SSH connection timed out after Wi-Fi shutdown; TTL captures the write and Flash boot, and a new SSH connection verifies the installed release. UART adapter later reported host I/O errors; no postboot TTL result is claimed."
+  },
+  "test_scope": "Mac en0 5GHz HE160, channel44/center50, using project NI/FE simulation endpoints. No physical PON egress or PPPoE negotiation. One short run per default TCP/UDP direction, followed by focused controls for failures.",
+  "fixture_address": "198.18.255.1 replaces 198.18.0.1 only in copied simulation/receiver sources to avoid the Mac tunnel local address. Artifact test-address.patch preserves the three module constant changes; production driver source is unchanged.",
+  "default_profile": {
+    "NI_IRQ23_allowed_mask": "f",
+    "AP_RX_RPS_mask": "2",
+    "TCP_sink_RPS_mask": "0"
+  },
+  "default_results": {
+    "TCP_upload": {
+      "received_Mbps": 584.1528236111379,
+      "retransmits": 0,
+      "client_exit": 0,
+      "error": null,
+      "hardware_match_proven": true,
+      "hardware_epoch_continuous": true,
+      "l3te_tail_drop_delta": 0,
+      "rdu_delta": 3,
+      "CPU_each_core_percent": [
+        94.88636363636364,
+        25.0,
+        28.598484848484848,
+        1.3257575757575757
+      ]
+    },
+    "TCP_download": {
+      "received_Mbps": 573.4111277964745,
+      "retransmits": 13,
+      "client_exit": 0,
+      "error": null,
+      "hardware_match_proven": true,
+      "hardware_epoch_continuous": true,
+      "l3te_tail_drop_delta": 0,
+      "rdu_delta": 1,
+      "CPU_each_core_percent": [
+        10.682004930156122,
+        13.14708299096138,
+        0.4108463434675431,
+        0.5751848808545604
+      ]
+    },
+    "UDP_upload": {
+      "offered_payload_Mbps": 1394.199,
+      "receiver_valid_payload_Mbps": 842.5176020803245,
+      "sent": 400000,
+      "Mac_emitted": 247276,
+      "Mac_drops": 152724,
+      "counts": {
+        "FE_packets": 247276,
+        "received": 247276,
+        "valid_unique": 247276,
+        "duplicate": 0,
+        "corrupt": 0,
+        "unexpected": 0,
+        "l3te_tail_drop": 0,
+        "no_buffer": 0,
+        "rxq": 95716,
+        "rdu": 1,
+        "first_valid_ns": 760437202240,
+        "last_valid_ns": 763874619800
+      },
+      "integrity_passed": true,
+      "delivery_complete": false
+    },
+    "UDP_download": {
+      "offered_wire_Mbps": 1600,
+      "sent": 500000,
+      "received_unique": 2899,
+      "missing": 497101,
+      "duplicates": 0,
+      "payload_errors": 0,
+      "PE_sent": 2899,
+      "hardware_tail_drop": 497101,
+      "receiver_exit": 2,
+      "acceptance_passed": false
+    }
+  },
+  "focused_controls": {
+    "UDP_download_100_wire_Mbps": {
+      "sent": 50000,
+      "received_unique": 50000,
+      "hardware_tail_drop": 0,
+      "purpose": "Check low-rate frame formatting and delivery after the high-rate failure."
+    },
+    "prior_RAM_CPU_profile": {
+      "NI_IRQ23_mask": "4",
+      "AP_RPS_mask": "0",
+      "TCP_sink_RPS_mask": "8",
+      "TCP_upload": {
+        "received_Mbps": 972.41634360906,
+        "retransmits": 0,
+        "client_exit": 0,
+        "error": null,
+        "hardware_match_proven": true,
+        "hardware_epoch_continuous": true,
+        "l3te_tail_drop_delta": 0,
+        "rdu_delta": 0,
+        "CPU_each_core_percent": [
+          77.9047619047619,
+          19.428571428571427,
+          57.523809523809526,
+          61.714285714285715
+        ]
+      },
+      "TCP_download_application_Mbps": 65.62850631511151,
+      "TCP_download_hardware_comparison_valid": false,
+      "TCP_download_counter_epochs": [
+        [
+          "b6550c7d-29d6-4a06-9235-9ce4259cbf13",
+          1
+        ],
+        [
+          "b6550c7d-29d6-4a06-9235-9ce4259cbf13",
+          2
+        ]
+      ],
+      "TCP_download_limitation": "PE route restarted during measurement; counters decreased. Excluded from hardware throughput acceptance. This changes multiple CPU settings and does not isolate a unique root cause."
+    }
+  },
+  "unresolved": [
+    "High-rate downlink hardware tail drops remain; L2QM EQ register reads 0x81d40000 as committed, so reservation enable alone has not fixed this result.",
+    "Default TCP upload saturates CPU0 near95%; moving the IRQ/RPS profile improves throughput but is not a firmware root-cause fix.",
+    "Mac transmit queue drops account for the missing default UDP-upload packets.",
+    "A PE route restart invalidates the hardware counter comparison in the downlink CPU control."
+  ],
+  "cleanup": {
+    "diagnostic_modules_unloaded": true,
+    "iperf_server_stopped": true,
+    "temporary_host_routes_removed": true,
+    "CPU_masks_restored_to_default": true,
+    "Mac_default_gateway": "192.168.71.1",
+    "Mac_default_interface": "en5"
+  }
+}
