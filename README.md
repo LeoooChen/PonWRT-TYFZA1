@@ -1,6 +1,6 @@
 <h1 align="center">PonWRT · TYFZA1</h1>
 
-> **当前为 FTTR 研究分支 `codex/fttr-rewrite`。** 接手开发请先阅读 [FTTR 研究交接说明](FTTR_RESEARCH.md)。FTTR 尚未通过真实光路、从光猫业务通流及硬件加速验收；下文的发布版功能说明不能视为本分支 FTTR 功能的验证结果。
+> **当前为 FTTR 研究分支 `fttr-rewrite`。** 接手开发请先阅读 [FTTR 研究交接说明](FTTR_RESEARCH.md)。FTTR 尚未通过真实光路、从光猫业务通流及硬件加速验收；下文的发布版功能说明不能视为本分支 FTTR 功能的验证结果。
 
 <p align="center">
   天翼 TYFZA1 的 OpenWrt 固件<br>

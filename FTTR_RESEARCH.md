@@ -1,6 +1,6 @@
 # TYFZA1 FTTR 研究分支交接
 
-本分支 `codex/fttr-rewrite` 用于协作开发 TYFZA1 的原生 OpenWrt FTTR 支持。
+本分支 `fttr-rewrite` 用于协作开发 TYFZA1 的原生 OpenWrt FTTR 支持。
 代码最初从 `dcf470f`（`0.7.0-alpha` 时期）分出，保留了逐步实现和修正的提交记录。
 它没有自动跟随之后的 `main` 更新，不是新的发布版本，也不是已经完成验收的固件。
 
@@ -68,13 +68,13 @@ python3 scripts/test_fttr_dispatch.py
 直接检出这个研究分支：
 
 ```sh
-git clone --branch codex/fttr-rewrite https://github.com/LeoooChen/PonWRT-TYFZA1.git
+git clone --branch fttr-rewrite https://github.com/LeoooChen/PonWRT-TYFZA1.git
 cd PonWRT-TYFZA1
 git switch -c fttr-your-topic
 ```
 
 没有本仓库写权限时，先在 GitHub 上 Fork，再从自己的 Fork 克隆；提交后发起 Pull Request。
-**PR 的目标分支选择本仓库的 `codex/fttr-rewrite`**，使 FTTR 研究改动先在这里汇集。
+**PR 的目标分支选择本仓库的 `fttr-rewrite`**，使 FTTR 研究改动先在这里汇集。
 请保留发现、未完成项、适用机型和验证范围；一次 PR 聚焦一个可审查的具体问题，做对应定向检查即可。
 真实 bug 需要修复根因，不以吞错误、返回假成功、猜硬件型号或堆叠兼容分支掩盖。
 通过实机验证、审查并准备好整合后，再单独考虑合入 `main`。

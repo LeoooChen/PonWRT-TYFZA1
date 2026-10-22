@@ -1,6 +1,6 @@
 # TYFZA1 native FTTR worktree
 
-Base: `dcf470f`, version `0.7.0-alpha`. Branch `codex/fttr-rewrite`.
+Base: `dcf470f`, version `0.7.0-alpha`. Branch `fttr-rewrite`.
 Production DTs, release configuration, and the primary checkout are unchanged.
 
 ## Original hardware evidence
