@@ -362,12 +362,14 @@ advance:
 	mailbox[RTL_AX_RX_WORK_PROCESS] = (read + 1) & 255;
 }
 
-static void __attribute__((section(".entry"), noinline)) pe_rx_backend(volatile u32 *mailbox)
+static void __attribute__((section(".rxq"), noinline)) pe_rx_backend(volatile u32 *mailbox)
 {
 	if (!mailbox[RTL_AX_RX_BACKEND_CONTEXT]) return;
 	volatile u32 *receive = uncached(mailbox[RTL_AX_RX_BACKEND_CONTEXT]);
 	/* PE1 serializes every RX/TX event on the shared notification timer. */
 	pe_event_flush(receive);
+	/* A queued packet checks the ARM acknowledgement before use. */
+	if (receive[RTL_AX_RX_WORK_PROCESS] == receive[RTL_AX_RX_WORK_WRITE]) return;
 #pragma clang loop unroll(disable)
 	for (u32 budget = 0; budget < 16; budget++) {
 		u32 before = receive[RTL_AX_RX_WORK_PROCESS];

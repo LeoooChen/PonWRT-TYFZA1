@@ -249,6 +249,30 @@ pipeline.u.emu_start(0xbfc00400,0xbfc0fff0,count=10000)
 assert pipeline.get(MB+90*4)==1 and pipeline.get(ST+1024)==1<<31|0x124
 assert pipeline.get(MB+81*4)==pipeline.slot and pipeline.get(MB+175*4)==1
 pipeline.inventory()
+# An empty capture queue needs no worker, while a later packet still waits
+# for the outstanding ARM state handler before its PN/SN can advance.
+idle=Machine();idle.put(MB+188*4,MB);idle.put(MB+180*4,1)
+idle.put(MB+94*4,23);idle.put(MB+95*4,22)
+worker_calls=[]
+idle_shared_reads=[]
+watch=idle.u.hook_add(UC_HOOK_CODE,lambda uc,at,size,data:worker_calls.append(at),
+                      begin=symbols['pe_rx_work'],end=symbols['pe_rx_work'])
+reads=idle.u.hook_add(UC_HOOK_MEM_READ,lambda uc,access,at,size,value,data:
+ idle_shared_reads.append(at) if MB <= at&0x1fffffff < MB+1024 else None)
+idle.execute('pe_rx_backend')
+idle.u.hook_del(reads)
+empty_worker_calls=len(worker_calls)
+assert empty_worker_calls==int('--before-idle-check' in sys.argv)
+assert len(idle_shared_reads)==(8 if '--before-idle-check' in sys.argv else 5), idle_shared_reads
+idle.u.mem_write(MB+64,ap);idle.u.mem_write(B+0xe410,peer)
+idle.put(B+0x11a08,1);idle.put(ST+0x10008,1<<31|1<<8);idle.put(ST+1024,1<<31|0x123)
+for j,v in ((88,VP|0xa0000000),(89,NI),(93,1),(106,ST)):idle.put(MB+j*4,v)
+idle.arrive(data_frame(0x123,2),True);idle.capture();idle.execute('pe_rx_backend')
+assert idle.get(MB+90*4)==0 and idle.get(ST+1024)==1<<31|0x123
+idle.put(MB+95*4,23);idle.execute('pe_rx_backend');idle.u.hook_del(watch)
+assert idle.get(MB+90*4)==1 and idle.get(ST+1024)==1<<31|0x124
+assert idle.get(MB+180*4)==0
+idle.inventory()
 # In the reverse direction PE0 only publishes completions. PE1 alone
 # returns BIDs and changes the NI pending count, then notifies ARM.
 rpq=0x07500000;pipeline.u.mem_map(rpq,4096);eq_returns=[]
@@ -362,6 +386,7 @@ r.u.emu_start(0xbfc00400,0xbfc0fff0,count=10000)
 assert r.get(MB+70*4)==1 and r.get(MB+81*4)==254
 assert r.get(MB+178*4)==1 and r.get(MB+179*4)==1 and r.isr==1<<7
 print(json.dumps({'scope':'Actual linked production PE; modeled PCIe, ARM acknowledgement, NI consumption and W1C. No RF throughput simulation.',
+ 'empty_RX_worker_calls':empty_worker_calls,'empty_RX_shared_reads':len(idle_shared_reads),'queued_RX_waits_for_ARM_ACK':True,
  'PE_sha256':hashlib.sha256(binary).hexdigest(),'ARM_blocked_capture_and_refill_packets':255,'busy_ring_full_payload_preserved':True,
  'ordered_ARM_delivery':len(seen),'additional_wrap_packets':513,'all_514_buffers_have_one_owner':True,'permuted_noncontiguous_DMA_table_all_buffers':True,
  'PE0_capture_then_PE1_executor_processing':True,'PE0_RPQ_then_PE1_BID_return_and_IRQ_notification':True,'BA_batch_SN_PN_order_and_4095_wrap':True,'BA_waits_for_known_PE0_capture_batch':True,'BA_missing_or_full_capture_ring_returns_to_ARM':True,'BA_window_replay_BAR_TID_and_protocol_barriers':True,'sorted_payloads_keep_one_owner':True,'seven_subframe_BA_order_and_NI_wrap':True,'PN_SN_no_overtake':True,'stateless_reports_and_RTS_CTS_ACK_BA_do_not_block_data':True,'BAR_PS_Poll_wait_without_forcing_later_data_to_ARM':True,'NI_last_two_payloads_retained':True,'NI_end_bit30_and_31bit_wrap':True,'AMSDU_prefix_alignment_and_HT_control':True,'invalid_or_NI_full_MPDU_unchanged':True,'RXQ_RPQ_RDU_counted_with_W1C':True,'producer_and_RDU_read_once_per_batch':True,'RPQ_RDU_restarts_with_idle_RXQ':True,'unready_DMA_tag_services_RDU_without_advancing_RX':True},indent=2))
