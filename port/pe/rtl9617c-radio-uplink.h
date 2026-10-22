@@ -219,6 +219,19 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	return RX_NI_PENDING | ((write + frames) & ~RX_NI_PENDING);
 }
 
+static u32 __attribute__((section(".rxq"), noinline, minsize)) rx_needs_arm_barrier(
+	const u8 *buffer, u32 wd)
+{
+	u32 type = (wd >> 24) & 15;
+	if (type) return !(BIT(type) & (BIT(1) | BIT(8) | BIT(10)));
+	u32 offset = 4 + (wd & BIT(31) ? 32 : 16) + ((wd >> 14) & 3) * 2 +
+		((wd >> 28) & 7) * 16 + (wd & BIT(23) ? 4 : 0);
+	u32 fc = buffer[offset] & 0xfc;
+	/* Stock control dispatch handles BAR/PS-Poll separately. These four
+	 * control subtypes do not advance receive PN/SN or peer PS state. */
+	return fc != 0xb4 && fc != 0xc4 && fc != 0xd4 && fc != 0x94;
+}
+
 static inline u32 __attribute__((always_inline)) rx_reorder(
 	volatile u32 *mailbox, u8 *memory, u32 read, u32 order)
 {
@@ -232,8 +245,8 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 		u32 item = *(u32 *)(memory + RTL_AX_RX_WORK_IDS + scan * 4);
 		u32 dma = rx_buffer_dma(mailbox, item & ~RTL_AX_RX_WORK_OLD);
 		u8 *buffer = uncached(dma), *wire;
-		u32 type = (*(u32 *)(buffer + 4) >> 24) & 15;
-		if (type == 1 || type == 8 || type == 10) continue;
+		u32 wd = *(u32 *)(buffer + 4);
+		if (!rx_needs_arm_barrier(buffer, wd)) continue;
 		u32 prefix[10], bytes, macid;
 		if (!rx_frame(mailbox, buffer, &wire, &bytes, &macid, prefix)) return 0;
 		u8 *frame = (u8 *)prefix + ((u32)wire & 3);
@@ -329,13 +342,7 @@ static void __attribute__((section(".rxq"), noinline, minsize)) pe_rx_work(volat
 	u32 buffer_dma = rx_buffer_dma(mailbox, id);
 	u8 *buffer = uncached(buffer_dma);
 	u32 wd = *(u32 *)(buffer + 4), type = (wd >> 24) & 15;
-	u32 stateful = type != 1 && type != 8 && type != 10;
-	if (!type) {
-		u32 offset = 4 + (wd & BIT(31) ? 32 : 16) + ((wd >> 14) & 3) * 2 +
-			((wd >> 28) & 7) * 16 + (wd & BIT(23) ? 4 : 0);
-		u32 fc = buffer[offset] & 0xfc;
-		if (fc == 0xb4 || fc == 0xc4 || fc == 0xd4 || fc == 0x94) stateful = 0;
-	}
+	u32 stateful = rx_needs_arm_barrier(buffer, wd);
 	u32 reorder = 0, owner = (item & RTL_AX_RX_WORK_OLD) && type == 8 ?
 		RX_ARM_DONE : rx_uplink(mailbox, buffer, buffer_dma, &reorder);
 	if (reorder && rx_reorder(mailbox, memory, read, reorder)) return;

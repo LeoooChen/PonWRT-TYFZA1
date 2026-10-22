@@ -196,11 +196,12 @@ for identity in range(21):
 r.put(VP+0x1c,82&63);r.capture();r.inventory()
 
 # No BA, an outside-window SN, replay PN, or a BAR retain ARM ownership.
-for case in ('no_ba','outside_window','replay','BAR','other_tid','bad_LLC'):
+for case in ('no_ba','outside_window','replay','BAR','PS_Poll','other_tid','bad_LLC'):
  r=reorder_peer(window=0 if case=='no_ba' else 64)
  seq=0x163 if case=='outside_window' else 0x124
  first,raw_first=r.arrive(data_frame(seq,3),True);r.capture()
- if case=='BAR':r.arrive(bytes([0x84,0])+bytes(30));r.capture()
+ if case in ('BAR','PS_Poll'):
+  r.arrive(bytes([0x84 if case=='BAR' else 0xa4,0])+bytes(30));r.capture()
  if case=='other_tid':
   other=bytearray(data_frame(0x123,2));other[24]=1
   r.arrive(bytes(other),True);r.capture()
@@ -219,6 +220,19 @@ r.arrive(data_frame(0x123,2),True);r.capture();r.process();r.process();r.process
 assert r.get(MB+90*4)==2 and r.get(MB+175*4)==3 and r.get(MB+94*4)==1
 assert r.get(ST+1024)==1<<31|0x125 and r.get(MB+191*4)==1
 r.arm_ack();r.put(VP+0x1c,2);r.capture();r.inventory()
+
+# RTS/CTS/ACK/BA do not change receive PN/SN. Lookahead must apply the
+# same classification as the normal worker when they split a BA batch.
+for fc in (0xb4,0xc4,0xd4,0x94):
+ r=reorder_peer();r.arrive(data_frame(0x124,3),True);r.capture()
+ control,raw_control=r.arrive(bytes([fc,0])+bytes(30));r.capture()
+ r.arrive(data_frame(0x123,2),True);r.capture()
+ for _ in range(5):r.process()
+ assert r.get(MB+90*4)==2 and r.get(MB+175*4)==3 and r.get(MB+94*4)==1
+ assert r.get(ST+1024)==1<<31|0x125 and r.get(ST+1028)==3
+ assert bytes(r.u.mem_read(control,len(raw_control)))==raw_control
+ assert r.arm_ack()[36]==fc
+ r.put(VP+0x1c,2);r.capture();r.inventory()
 # PE0 can replenish RX before PE1 runs; PE1's normal TX executor then
 # consumes the published RX context without taking over the physical RXQ.
 pipeline=Machine();pipeline.u.mem_write(MB+64,ap);pipeline.u.mem_write(B+0xe410,peer)
