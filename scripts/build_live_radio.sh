@@ -23,11 +23,13 @@ import sys
 p = Path(sys.argv[1])
 p.write_text(p.read_text().replace('.name = "rtl_ax_ap",', '.name = "' + sys.argv[2] + '",'))
 PY
-python3 - "$OUT/Makefile" "$DRIVER" <<'PYMAKE'
+python3 - "$OVERLAY/Makefile" "$OUT/Makefile" "$DRIVER" <<'PYMAKE'
 from pathlib import Path
 import sys
-name = sys.argv[2]
-Path(sys.argv[1]).write_text(f"obj-m := {name}.o\n{name}-y := pci.o phy.o rx.o tx.o power-tables.o limits.o\n")
+name = sys.argv[3]
+source = Path(sys.argv[1]).read_text()
+Path(sys.argv[2]).write_text(source.replace('obj-$(CONFIG_RTL_AX_AP) += rtl_ax_ap.o',
+    f'obj-m := {name}.o').replace('rtl_ax_ap-y :=', f'{name}-y :='))
 PYMAKE
 TOOLCHAIN=$(dirname "$P"/sources/openwrt/staging_dir/toolchain-aarch64_cortex-a55_gcc-*_musl/bin/aarch64-openwrt-linux-musl-gcc)
 export PATH="$TOOLCHAIN:$PATH"
