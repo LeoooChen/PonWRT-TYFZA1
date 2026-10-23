@@ -46,7 +46,7 @@ def get(address):
 
 
 for index, value in [(2, bar | 0xa0000000), (3, 1), (11, ring), (12, pages),
-                     (14, headers), (140, mailbox | 0xa0000000)]:
+                     (14, headers), (140, mailbox | 0xa0000000), (142, 1)]:
     put(mailbox + index * 4, value)
 ap, client, source = [bytes.fromhex(s) for s in ('020000000001', '020000000002', '020000000003')]
 u.mem_write(mailbox + 64, ap)
@@ -64,6 +64,8 @@ for number, (encap, tid, scatter, crypto) in enumerate([
     body = bytes.fromhex('aaaa030000000800') + bytes(range(80))
     header = bytes([0x88, 0x42 if crypto else 2, 0, 0]) + client + ap + source + struct.pack('<H', 777 << 4) + bytes([tid, 0])
     frame = client + source + bytes.fromhex('0800') + body[8:] if encap else header + body
+    # ARM stages the prefix separately before publishing its request.
+    u.mem_write(headers + number * 128, frame[:40])
     parts = [frame[:40], frame[40:]] if scatter else [frame]
     request = [0] * 32
     request[0] = number

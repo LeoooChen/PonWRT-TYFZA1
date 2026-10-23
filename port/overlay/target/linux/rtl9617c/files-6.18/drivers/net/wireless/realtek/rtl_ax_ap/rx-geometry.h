@@ -23,6 +23,10 @@
 #define RTL_AX_RPQ_EVENT_WRITE 189
 #define RTL_AX_RPQ_EVENT_READ 190
 #define RTL_AX_RX_CROSS_TID 192
+/* PE1 selects MPDUs; PE0 builds WD/TXBD and publishes PCIe producers. */
+#define RTL_AX_TX_PUBLISH_WRITE 193
+#define RTL_AX_TX_PUBLISH_READ 194
+#define RTL_AX_TX_BUILD_REQUESTS 0x1b000
 #define RTL_AX_RX_WORK_OLD (1U << 31)
 /* Full MPDU11966 plus RXBD/WD/shift/driver-info fits12288. */
 #define RTL_AX_RXQ_BUFFER_BYTES 12288

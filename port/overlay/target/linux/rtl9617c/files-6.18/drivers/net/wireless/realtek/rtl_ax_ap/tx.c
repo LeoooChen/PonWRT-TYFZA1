@@ -264,14 +264,23 @@ int rtl_ax_tx_pause(struct rtl_ax_tx *tx)
 		    10, 100000, false, tx->pe.memory + PE_PROBE_MAILBOX + 36))
 			return -ETIMEDOUT;
 	}
-	ret = rtl_ax_rx_pe_pause(tx->rx);
-	if (ret) return ret;
 	spin_lock_irqsave(&tx->lock, flags);
 	if (tx->pe_active) {
 		pe_command = tx->pe_command += 2;
 		put_unaligned_le32(pe_command, tx->pe.memory + PE_PROBE_MAILBOX + 12);
 		dma_wmb();
 	}
+	spin_unlock_irqrestore(&tx->lock, flags);
+	/* Stop preparation before PE0 drains the last batch and stops publishing. */
+	if (tx->pe_active) {
+		u32 acknowledged;
+		if (read_poll_timeout(get_unaligned_le32, acknowledged, acknowledged == pe_command,
+		    10, 100000, false, tx->pe.memory + PE_PROBE_MAILBOX + 16))
+			return -ETIMEDOUT;
+	}
+	ret = rtl_ax_rx_pe_pause(tx->rx);
+	if (ret) return ret;
+	spin_lock_irqsave(&tx->lock, flags);
 	if (!tx->paused) {
 		if (!tx->dfs_blocked)
 			tx->scheduler_saved = io->read32(io->ctx, 0xc398) & 0x3ffff;
@@ -281,12 +290,6 @@ int rtl_ax_tx_pause(struct rtl_ax_tx *tx)
 	 * RFK reason2 additionally waits for band0 TX idle at C6ec[7]. */
 	rtl_ax_update32(io, 0xc398, 0x3ffff, 0);
 	spin_unlock_irqrestore(&tx->lock, flags);
-	if (tx->pe_active) {
-		u32 acknowledged;
-		if (read_poll_timeout(get_unaligned_le32, acknowledged, acknowledged == pe_command,
-		    10, 100000, false, tx->pe.memory + PE_PROBE_MAILBOX + 16))
-			return -ETIMEDOUT;
-	}
 	for (i = 0; i < 2199; i++) {
 		if (!(io->read8(io->ctx, 0xc6ec) & BIT(7))) {
 			/* The active PPDU still needs DMA until MAC TX becomes idle. */

@@ -327,6 +327,8 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 	}
 	for (i = 0; i < RTL_AX_TX_RINGS; i++)
 		put_unaligned_le32(tx->producer[i], tx->pe.memory + PE_PROBE_MAILBOX + 128 + i * 4);
+	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + RTL_AX_TX_PUBLISH_WRITE * 4);
+	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + RTL_AX_TX_PUBLISH_READ * 4);
 	put_unaligned_le32(1, tx->pe.memory + PE_PROBE_MAILBOX + 96);
 	ret = pe_event_prepare(tx);
 	if (ret) return ret;
