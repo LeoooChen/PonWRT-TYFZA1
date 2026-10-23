@@ -17,17 +17,26 @@ platform = (root / 'port/overlay/target/linux/rtl9617c/base-files/lib/upgrade/pl
 start = platform.index('platform_check_image() {')
 end = platform.index('\n}', start) + 2
 checker = platform[start:end]
+start = platform.index('tyfza1_check_storage_format() {')
+end = platform.index('\n}', start) + 2
+storage_checker = platform[start:end]
 
 with tempfile.TemporaryDirectory(prefix='tyfza1-sysupgrade-board-') as directory:
     work = Path(directory)
     nand = work / 'nand.sh'
     nand.write_text((upstream / 'nand.sh').read_text().replace('. /lib/functions.sh', ''))
+    storage_sys = work / 'ubi'
+    storage_sys.mkdir()
+    storage_checker = storage_checker.replace('/sys/class/ubi', str(storage_sys))
+    storage_checker = storage_checker.replace('/tmp/tyfza1-storage-image.json', str(work / 'metadata.json'))
     program = work / 'check.sh'
     program.write_text('''. "$1/common.sh"
 . "$2"
 board_name() { printf '%s\\n' "$TEST_BOARD"; }
 tyfza1_check_sizes() { [ "$TEST_SIZE_FAIL" != 1 ] && [ "$1" -gt 0 ] && [ "$2" -gt 0 ]; }
-''' + checker + '\nplatform_check_image "$3"\n')
+fwtool() { [ "$TEST_METADATA" != broken ]; }
+jsonfilter() { printf '%s\n' "$TEST_METADATA"; }
+''' + storage_checker + '\n' + checker + '\nplatform_check_image "$3"\n')
     image = work / 'sysupgrade.bin'
     with tarfile.open(image, 'w', format=tarfile.USTAR_FORMAT) as archive:
         parent = tarfile.TarInfo('sysupgrade-tianyi_tyfza1/')
@@ -40,8 +49,8 @@ tyfza1_check_sizes() { [ "$TEST_SIZE_FAIL" != 1 ] && [ "$1" -gt 0 ] && [ "$2" -g
     bad = work / 'corrupt.bin'
     data = bytearray(image.read_bytes()); data[0] ^= 1; bad.write_bytes(data)
 
-    def run(board, path, expected, size_fail=False):
-        env = dict(os.environ, TEST_BOARD=board, TEST_SIZE_FAIL=str(int(size_fail)))
+    def run(board, path, expected, size_fail=False, metadata=''):
+        env = dict(os.environ, TEST_BOARD=board, TEST_SIZE_FAIL=str(int(size_fail)), TEST_METADATA=metadata)
         result = subprocess.run(['busybox', 'ash', str(program), str(upstream), str(nand), str(path)],
                                 env=env, capture_output=True, text=True)
         assert (result.returncode == 0) == expected, (board, str(path), result.stdout, result.stderr)
@@ -53,6 +62,32 @@ tyfza1_check_sizes() { [ "$TEST_SIZE_FAIL" != 1 ] && [ "$1" -gt 0 ] && [ "$2" -g
         if args.image:
             run(board, args.image.resolve(), True)
     run('unrelated,device', image, False)
+    # Either published copy requires factory-v1, even with forced upgrade.
+    start = platform.index('platform_do_upgrade() {')
+    end = platform.index('\n}', start) + 2
+    upgrade_body = platform[start:end].replace('/proc/cmdline', str(work / 'cmdline'))
+    (work / 'cmdline').write_text('tyfza1.slot=1\n')
+    forced = work / 'forced.sh'
+    forced.write_text('''fwtool() { [ "$TEST_METADATA" != broken ]; }
+jsonfilter() { printf '%s\n' "$TEST_METADATA"; }
+nand_do_upgrade() { touch "$UPGRADED"; }
+''' + storage_checker + '\n' + upgrade_body + '\nFORCE=1 platform_do_upgrade "$1"\n')
+    upgraded = work / 'upgraded'
+    for ident, name in ((12, 'tyfza1_factory'), (13, 'tyfza1_factory_backup')):
+        volume = storage_sys / f'ubi0_{ident}'
+        volume.mkdir()
+        (volume / 'name').write_text(name + '\n')
+        for metadata in ('', 'broken', 'factory-v1'):
+            expected = metadata == 'factory-v1'
+            for board in ('tianyi,tyfza1', 'tianyi,tyfza1-2p5g'):
+                run(board, image, expected, metadata=metadata)
+            upgraded.unlink(missing_ok=True)
+            result = subprocess.run(['busybox', 'ash', str(forced), str(image)],
+                env=dict(os.environ, TEST_METADATA=metadata, UPGRADED=str(upgraded)), capture_output=True)
+            assert (result.returncode == 0) == expected
+            assert upgraded.exists() == expected
+        (volume / 'name').unlink()
+        volume.rmdir()
     hotfix = (root / 'scripts/fix_legacy_2p5g_upgrade.sh').read_text()
     script = work / 'hotfix.sh'
     board_file = work / 'board_name'
@@ -88,3 +123,4 @@ tyfza1_check_sizes() { [ "$TEST_SIZE_FAIL" != 1 ] && [ "$1" -gt 0 ] && [ "$2" -g
     assert live_platform.read_text() == 'unrecognized custom script\n'
 print('Both boards: shared tar directory accepted; corruption, unknown board and failed size checks still rejected')
 print('Legacy hotfix: board guard, idempotence, test-only sysupgrade and rollback on check failure passed')
+print('Factory-v1: primary/backup format guards and forced-upgrade rejection passed')

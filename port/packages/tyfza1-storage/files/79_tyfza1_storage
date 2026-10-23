@@ -1,0 +1,16 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+
+tyfza1_storage_migrate() {
+	# The shared firmware also boots the unverified 2.5G board; leave it unchanged.
+	[ "$(cat /tmp/sysinfo/board_name)" = tianyi,tyfza1 ] || return 0
+	if /usr/libexec/tyfza1-migrate-storage; then
+		return
+	fi
+	echo 'TYFZA1 storage migration failed; keeping configuration backup and entering failsafe' > /dev/console
+	FAILSAFE=true
+	pi_preinit_no_failsafe=n
+	run_failsafe_hook
+}
+
+[ "$INITRAMFS" = 1 ] || boot_hook_add preinit_main tyfza1_storage_migrate

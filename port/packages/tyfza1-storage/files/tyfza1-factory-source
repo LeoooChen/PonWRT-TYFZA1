@@ -1,0 +1,27 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+set -eu
+umask 077
+. /lib/tyfza1-factory.sh
+destination=${1:?Factory source directory required}
+work=/tmp/tyfza1-factory-read
+trap 'rm -rf "$work"' EXIT
+rm -rf "$destination" "$work"
+mkdir -p "$work"
+for entry in 12:tyfza1_factory 13:tyfza1_factory_backup; do
+	id=${entry%%:*}
+	[ "$(cat "/sys/class/ubi/ubi0_$id/name" 2>/dev/null)" = "${entry#*:}" ] || continue
+	# Do not put the subshell in an if-condition: that disables shell errexit.
+	set +e
+	(tyf_factory_unpack "/dev/ubi0_$id" "$work/$id")
+	result=$?
+	set -e
+	if [ "$result" = 0 ]; then
+		mv "$work/$id/config" "$destination"
+		[ "$id" = 12 ] || echo 'TYFZA1 factory: using verified backup; primary unavailable' >&2
+		exit 0
+	fi
+	echo "TYFZA1 factory: copy $id failed verification" >&2
+done
+echo 'TYFZA1 factory: no valid published copy' >&2
+exit 1

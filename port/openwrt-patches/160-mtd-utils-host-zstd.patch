@@ -1,0 +1,11 @@
+--- a/tools/mtd-utils/Makefile
++++ b/tools/mtd-utils/Makefile
+@@ -36,7 +36,7 @@
+ 	--without-tests \
+ 	--without-crypto \
+ 	--without-xattr \
+-	--without-zstd \
++	--with-zstd \
+ 	--without-lzo \
+ 	--with-lzma
+ 
