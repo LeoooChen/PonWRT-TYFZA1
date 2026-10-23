@@ -1,0 +1,197 @@
+{
+  "date": "2026-10-23",
+  "source_base_commit": "1147de4",
+  "goal_complete": false,
+  "diagnostic_only": true,
+  "production_NI_changes": false,
+  "probe": {
+    "PE_bytes": 17200,
+    "PE_SHA256": "ff5680ef8755e876bd0d63836b46b8f29267f806a0fcc911b53a898a65dac3a8",
+    "radio_SHA256": "6edde8cd32745078e4729dd5d92348cba9204a020dabef9667b7e7aa8fed4eb9",
+    "history": "RX context0x1b000,64 records of8 words. TCP sequence/ports read into private plan before original descriptor stores; shared versioned history written after original NI write/doorbell. Guard even encodes(serial+1)*2; odd means update in progress.",
+    "record_words": [
+      "guard",
+      "expected_NI_address",
+      "Ethernet_length",
+      "TCP_seq",
+      "TCP_ports",
+      "MACID_TID_WLAN_SN",
+      "PN_low",
+      "PN_high"
+    ],
+    "impact": "Adds prefix reads, private stack storage and shared DDR stores. Code placement and timing change; non-reproduction cannot establish a fix. No data buffer/ring/credit/budget/RF change.",
+    "tests": "Actual linked514-buffer/reorder/barrier ownership model, six NI descriptor-credit boundary cases and IMEM boot pass. TCP-specific model confirms recorded sequence0x12345678, ports55000/5206 and NI address/length remain exact."
+  },
+  "snapshot": {
+    "trigger": "Before-GRO TCP sequence/timestamp discontinuities; bounded16 records. Copies PE history and ordinary ARM VP8 descriptor/packet prefixes. Does not dereference the transient PE uplink-ring CPU mapping.",
+    "offsets_verified": "Installed RTL_xram.dma0x1578, qm0x18d0; radio AP.tx0x36a8. Copied TX/RX layouts match the current source.",
+    "count": 9,
+    "overflow": 0,
+    "events_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold/ni-publication-bidir6-events.txt",
+    "publication_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold/ni-publication-bidir6-publication.txt",
+    "comparison_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold/ni-publication-bidir6-compare.json",
+    "seq_present_in_PE_history": [
+      {
+        "snapshot": "1",
+        "seq": "1180171681",
+        "matching_records": 1
+      },
+      {
+        "snapshot": "2",
+        "seq": "1177884961",
+        "matching_records": 1
+      },
+      {
+        "snapshot": "3",
+        "seq": "1180487041",
+        "matching_records": 1
+      },
+      {
+        "snapshot": "4",
+        "seq": "1181498593",
+        "matching_records": 6
+      },
+      {
+        "snapshot": "5",
+        "seq": "1181498593",
+        "matching_records": 6
+      },
+      {
+        "snapshot": "6",
+        "seq": "1181498593",
+        "matching_records": 6
+      },
+      {
+        "snapshot": "7",
+        "seq": "1181498593",
+        "matching_records": 6
+      },
+      {
+        "snapshot": "8",
+        "seq": "1181498593",
+        "matching_records": 6
+      },
+      {
+        "snapshot": "9",
+        "seq": "1181498593",
+        "matching_records": 6
+      }
+    ],
+    "limit": "Observed received sequence numbers appear in the frozen event snapshots, but repeated TCP retransmissions share sequence values and the history lacks TCP timestamp values. This is not a unique packet identity match. Original64-packet stale-block event was not reproduced, so NI publication, Wi-Fi DMA, and CPU-copy visibility are not exonerated."
+  },
+  "run": {
+    "name": "ni-publication-bidir6",
+    "status": "Incomplete diagnostic run. Management SSH failed while collecting post-run counters; raw iperf JSON reports Broken pipe on its control connection. Later direct SSH recovered; no kernel panic or firmware halt was captured.",
+    "iperf_error": "unable to send control message - port may not be available, the other side may have stopped running, etc.: Broken pipe",
+    "Mac_tcpdump_kernel_drops": 0,
+    "usable_throughput_acceptance": false,
+    "no_new_L3_drops": "Before/current2173/2173. Not a complete before/after throughput comparison.",
+    "raw_iperf_end": {
+      "streams": [
+        {
+          "sender": {
+            "socket": 5,
+            "start": 0,
+            "end": 6.001627,
+            "seconds": 6.001627,
+            "bytes": 217972736,
+            "bits_per_second": 290551526.7776555,
+            "retransmits": 1593,
+            "reorder": -1,
+            "max_snd_cwnd": 5617477,
+            "max_snd_wnd": 0,
+            "max_rtt": 25,
+            "min_rtt": 0,
+            "mean_rtt": 13,
+            "sender": true
+          },
+          "receiver": {
+            "socket": 5,
+            "start": 0,
+            "end": 6.001627,
+            "seconds": 6.001627,
+            "bytes": 0,
+            "bits_per_second": 0,
+            "sender": true
+          }
+        },
+        {
+          "sender": {
+            "socket": 7,
+            "start": 0,
+            "end": 6.001627,
+            "seconds": 6.001627,
+            "bytes": 0,
+            "bits_per_second": 0,
+            "sender": false
+          },
+          "receiver": {
+            "socket": 7,
+            "start": 0,
+            "end": 6.001627,
+            "seconds": 6.001627,
+            "bytes": 265420800,
+            "bits_per_second": 353798461.6504824,
+            "sender": false
+          }
+        }
+      ],
+      "sum_sent": {
+        "start": 0,
+        "end": 6.001627,
+        "seconds": 6.001627,
+        "bytes": 217972736,
+        "bits_per_second": 290551526.7776555,
+        "retransmits": 1593,
+        "sender": true
+      },
+      "sum_received": {
+        "start": 0,
+        "end": 6.001627,
+        "seconds": 6.001627,
+        "bytes": 0,
+        "bits_per_second": 0,
+        "sender": true
+      },
+      "sum_sent_bidir_reverse": {
+        "start": 0,
+        "end": 6.001627,
+        "seconds": 6.001627,
+        "bytes": 0,
+        "bits_per_second": 0,
+        "sender": false
+      },
+      "sum_received_bidir_reverse": {
+        "start": 0,
+        "end": 6.001627,
+        "seconds": 6.001627,
+        "bytes": 265420800,
+        "bits_per_second": 353798461.6504824,
+        "sender": false
+      },
+      "cpu_utilization_percent": {
+        "host_total": 8.192773366462367,
+        "host_user": 0.16731779930736745,
+        "host_system": 8.02550541356989,
+        "remote_total": 0,
+        "remote_user": 0,
+        "remote_system": 0
+      }
+    }
+  },
+  "factory_checks": {
+    "tx_read_register": "Original ca_ni_init_tx_dma_lso uses0xf700111c+VP*0xa0; matches the native read-register address.",
+    "retention": "Original free>2 and last2 descriptor retention remain the current contract. No basis found to increase the count.",
+    "ACE_mode": "aal_ni_set_dma_lso_base_depth_addr writes high byte2 only when dma_lso_ace_test is enabled,0 otherwise. The actual factory default_scfg.txt CFG_ID_DMA_LSO_ACE_TEST=1, so current high byte2 matches this board. Do not switch it to0 from the ELF BSS default alone.",
+    "unconfirmed_next_source_check": "Factory CFG_ID_L3QM_AXI_ATTRIB_EQ_VALUES is all0; native rtl_qm_attribute writes0x0a008060 at EQ indices. Need the actual stock initialization path and per-EQ attributes before treating this as a mismatch; do not change from the configuration vector alone."
+  },
+  "restoration": {
+    "boot_id": "3c85a260-e581-45d9-9b09-ce9ab3843959",
+    "normal_RAM_radio_SHA256": "dbe736f6bf621ab93957830c47f5c41697a806847549622137febc47b9713bbb",
+    "ROM_radio_SHA256": "bea86ee63f1304049a58edff00e2197154d1fbf41eb886edd7cd8af2e30e4cc7",
+    "confirmed": "Normal661d881 radio restored; both radios active with halt0/RDU0. Removed all test modules/server/policy220 and capture. Removed task198.18.255.1 host route. printk7/4/1/7; external default192.168.71.1/en5 first.",
+    "final_evidence_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold/ni-publication-final-state.txt"
+  },
+  "next_action": "Prefer a lighter pre-NI record that includes TCP seq and TCP TSval plus publication generation. Freeze only logging on the first backward-sequence/old-TS event, keeping traffic unchanged, to retain a matching64-entry history. Preserve source capture and distinguish a targeted replay from normal loss/retransmission; do not count a clean diagnostic run as a production repair.",
+  "overall_acceptance_passed": false
+}
