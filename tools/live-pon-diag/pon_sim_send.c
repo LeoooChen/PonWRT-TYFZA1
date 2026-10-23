@@ -22,7 +22,8 @@ static int __init send_init(void)
  void *memory;
  dma_addr_t address;
  u32 saved[6],status,first;
- u64 started,elapsed;
+ u64 started,elapsed,due,max_lateness=0;
+ unsigned int late_batches=0;
  u64 user_start,system_start,user_end,system_end;
  unsigned int done=0;
  int ret=0;
@@ -62,7 +63,7 @@ static int __init send_init(void)
  writel(BIT(31)|BIT(30),vp+4);
  ret=readl_poll_timeout(vp+4,status,!(status&BIT(31)),1,100000);if(ret)goto restore;
  writel((saved[0]&~(3U<<22))|(1U<<22),dma+0x14);writel(BIT(9),vp+0x78);writel(1,vp);
- started=ktime_get_ns();
+ started=ktime_get_ns();due=started;
  while(done<packets){
   /* The NI consumer retains its last two prefetched payloads. */
   unsigned int n=min(61U,packets-done),end=(first+done+n)&63;
@@ -75,11 +76,16 @@ static int __init send_init(void)
    put_unaligned_be32(done+i,eth+60);
    if(!udp->check)udp->check=CSUM_MANGLED_0;
   }
+  u64 published=ktime_get_ns();
+  if(published>due){
+   late_batches++;max_lateness=max(max_lateness,published-due);
+  }
   dma_wmb();writel(end,vp+0x18);writel(1,vp+0x68);
   ret=readl_poll_timeout(vp+0x1c,status,(status&63)==end,1,100000);if(ret)break;
   done+=n;
   /* 1514-byte frame + FCS4 + preamble/SFD8 + IFG12. */
-  u64 due=started+div_u64((u64)done*1538*8*1000,rate_mbps);
+  /* A delayed wakeup must not accumulate catch-up bursts into the QM. */
+  due=max(due,published)+div_u64((u64)n*1538*8*1000,rate_mbps);
   u64 now=ktime_get_ns();
   if(due>now+1000){
    unsigned int wait=div_u64(due-now,1000);
@@ -94,6 +100,7 @@ static int __init send_init(void)
   mul_u64_u64_div_u64((u64)done*1538*8,NSEC_PER_SEC,elapsed),
   mul_u64_u64_div_u64((u64)done*1514*8,NSEC_PER_SEC,elapsed));
  pr_info("PON_SIM generator_raw_cpu_ns=%llu\n",user_end+system_end-user_start-system_start);
+ pr_info("PON_SIM late_batches=%u max_lateness_ns=%llu\n",late_batches,max_lateness);
 restore:
  writel(0,vp);writel(saved[1],vp+8);writel(saved[2],vp+12);
  writel(BIT(31)|BIT(30),vp+4);readl_poll_timeout(vp+4,status,!(status&BIT(31)),1,100000);
