@@ -8,6 +8,7 @@ struct packed_word { u32 value; } __attribute__((packed));
 #define REQUEST_BASE 0x4000
 #define MAILBOX_OFFSET 0x2000
 #include "rx-geometry.h"
+#include <linux/rtl9617c-qm-layout.h>
 
 static inline void sync(void) { __asm__ volatile("sync" ::: "memory"); }
 static inline void *uncached(u32 address) { return (void *)(address | 0xa0000000U); }
@@ -48,7 +49,7 @@ static u32 ni_length(const u32 *entry, u32 buffer, u32 *head)
 	/* Stock compact EPP already supplies length; HEADER_A is not needed. */
 	u32 epp = entry[1];
 	if ((epp >> 14) & 63) { *head = 16; return (epp & 0x3fff) - 16; }
-	const u32 *data = uncached(buffer + 32);
+	const u32 *data = uncached(buffer + RTL_QM_HEADROOM);
 	u32 extra = data[0] & 128 ? 8 : 0, raw = data[1];
 	*head = 8 + extra;
 	/* Extract the network-order field without a full MIPS32 byte swap. */
@@ -347,12 +348,7 @@ void pe_main(volatile u32 *control)
 			    ((*(volatile u32 *)uncached(rx_buffer_dma(mailbox,
 			        *(u32 *)(memory + RTL_AX_RX_SLOT_MAP + mailbox[81] * 4))) >> 16) & 8191) ==
 			        (mailbox[82] == 8191 ? 1 : mailbox[82] + 1) || !(++rx_poll[slot] & 15))
-#pragma clang loop unroll(disable)
-			for (u32 budget = 0; budget < 16; budget++) {
-				u32 before = mailbox[81];
-				pe_rxq(mailbox);
-				if (mailbox[81] == before) break;
-			}
+				pe_rxq_batch(mailbox);
 			continue;
 		}
 		u32 reports = mailbox[RTL_AX_RPQ_EVENT_WRITE];
@@ -405,7 +401,7 @@ void pe_main(volatile u32 *control)
 				ni_buffer = entry[0] & 0xffffff80;
 				u32 header, length = ni_length(entry, ni_buffer, &header);
 				/* One EPP owns one 2 KiB BID; never gather past that DMA allocation. */
-				if (retired || (entry[0] & 0x50) != 0x50 || length < 14 || length > 2048 - 32 - header) {
+				if (retired || (entry[0] & 0x50) != 0x50 || length < 14 || length > RTL_QM_DATA_BYTES - header) {
 					owners[id * 2] = ni_buffer;
 					owners[id * 2 + 1] = BIT(31);
 					*(u32 *)uncached(ni_buffer) = 0;
@@ -437,7 +433,7 @@ void pe_main(volatile u32 *control)
 				}
 				ni_request[2] = (ni_request[2] & 0x3f0000) | BIT(24) |
 					(length + ((ni_request[2] >> 16) & 63) + 8 - 14);
-				ni_request[8] = ni_buffer + 32 + header;
+				ni_request[8] = ni_buffer + RTL_QM_HEADROOM + header;
 				ni_request[9] = length;
 				owners[id * 2] = ni_buffer;
 				owners[id * 2 + 1] = (asleep ? BIT(16) : 0) | mailbox[27] << 8 |
@@ -449,11 +445,11 @@ void pe_main(volatile u32 *control)
 					u32 buffer2 = second[0] & 0xffffff80, head2;
 					u32 bytes2 = ni_length(second, buffer2, &head2);
 					u32 pad = (0U - length - 8) & 3;
-					if ((second[0] & 0x50) == 0x50 && bytes2 >= 14 && bytes2 <= 2048 - 32 - head2 &&
+					if ((second[0] & 0x50) == 0x50 && bytes2 >= 14 && bytes2 <= RTL_QM_DATA_BYTES - head2 &&
 					    length + bytes2 + 16 + pad <= (caps >> 18)) {
 						ni_request[4] |= BIT(21);
 						ni_request[2] = BIT(25) | 26U << 16 | (26 + length + bytes2 + 16 + pad);
-						ni_request[10] = buffer2 + 32 + head2;
+						ni_request[10] = buffer2 + RTL_QM_HEADROOM + head2;
 						ni_request[11] = bytes2;
 						*(u32 *)uncached(ni_buffer) = buffer2;
 						*(u32 *)uncached(buffer2) = 0;

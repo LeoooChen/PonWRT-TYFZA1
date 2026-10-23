@@ -8,6 +8,7 @@ mkdir -p "$OUT"
 clang-18 --target=mipsel-none-elf -march=mips32 -msoft-float -mno-abicalls -fno-pic -G0 \
     -ffreestanding -fno-builtin -fno-stack-protector -fomit-frame-pointer -O2 ${PE_RADIO_CFLAGS:-} -Wall -Wextra -Werror \
     -I "$P/port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap" \
+    -I "$P/port/overlay/target/linux/rtl9617c/files-6.18/include" \
     -c "$P/port/pe/rtl9617c-radio-wd.c" -o "$OUT/pe-wd.o"
 clang-18 --target=mipsel-none-elf -march=mips32 -msoft-float -mno-abicalls -fno-pic -G0 \
     -c "$P/port/pe/rtl9617c-radio-wd-entry.S" -o "$OUT/pe-entry.o"

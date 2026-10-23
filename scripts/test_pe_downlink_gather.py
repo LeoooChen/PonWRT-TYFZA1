@@ -32,7 +32,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     for index, value in [(0, 0x50455744), (2, bar | 0xa0000000), (3, 1),
                          (11, ring), (12, pages), (14, headers), (24, 1),
                          (30, 0), (38, len(lengths)), (116, 0x6380),
-                         (117, 6), (140, mb | 0xa0000000)]:
+                         (117, 6), (140, mb | 0xa0000000), (142, 1)]:
         put(mb + index * 4, value)
     peer = [0, 0, 26 << 16, rate | bandwidth << 16 | (1 << 22 if hw_rts else 0),
             1 << 24 | 1 << 18 | 1 << 16, 7 << 16 | 32, 0, 0]
@@ -70,9 +70,9 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         frame += bytes([n + 1]) * (length - 14)
         frames.append(frame)
         at = payload + n * 2048
-        u.mem_write(at + 32 + ni_header, frame)
+        u.mem_write(at + 64 + ni_header, frame)
         if from_epp:
-            u.mem_write(at + 32, struct.pack('>II', (1 << 31) if ni_header == 16 else 0, (length + ni_header - 8) << 15) + bytes(ni_header - 8))
+            u.mem_write(at + 64, struct.pack('>II', (1 << 31) if ni_header == 16 else 0, (length + ni_header - 8) << 15) + bytes(ni_header - 8))
             u.mem_write(0x10030000 + n * 8, struct.pack('<II', at | 0x50, (1 << 14 if compact_epp else 0) | (length + 16)))
         else:
             u.mem_write(at, struct.pack('<4I', 0xa5a5a5a5, length | ni_header << 16, 0xdeadbeef,
@@ -129,13 +129,12 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         all_ids.append(ids)
         member += count
     assert member == len(lengths)
-    put(mb + 68 * 4, reports)
-    put(mb + 72 * 4, reports + 0x40000)
+    # PE0 forwards RPQ completions in the current dual-PE ABI.
+    # Model that boundary; this test executes PE1 gather and BID recycling.
     for slot, ids in enumerate(all_ids):
-        put(reports + slot * 1024, 24 | 0xc000 | (slot + 1) << 16)
-        put(reports + slot * 1024 + 4, 7 << 24 | 4)
-        put(reports + slot * 1024 + 20, (256 + slot) << 16 | 1)
-    put(bar + 0x121c, len(all_ids) << 16)
+        put(base + 0xc404 + slot * 8, get(base + 0xc404 + slot * 8) | (1 << 31))
+        put(base + 0xc800 + slot * 4, slot)
+    put(mb + 45 * 4, len(submits))
     u.emu_start(u.reg_read(UC_MIPS_REG_PC), 0x9fc0fff0, count=100000)
     assert get(mb + 45 * 4) == len(submits) and not returns
     put(ni + 0x6340, 0x8000007c)
@@ -145,7 +144,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     assert get(mb + 30 * 4) == 0 and get(mb + 29 * 4) == len(lengths)
     assert get(base + 0x18020) == 0
     for n, frame in enumerate(frames):
-        assert bytes(u.mem_read(payload + n * 2048 + 32 + ni_header + 14, len(frame) - 14)) == frame[14:]
+        assert bytes(u.mem_read(payload + n * 2048 + 64 + ni_header + 14, len(frame) - 14)) == frame[14:]
         assert get(base + 0xc400 + n * 8) == 0
     return {'lengths': lengths, 'cap': cap, 'MPDUs': len(submits), 'from_EPP': from_epp, 'HW_RTS': hw_rts, 'bandwidth': bandwidth, 'rate': rate}
 

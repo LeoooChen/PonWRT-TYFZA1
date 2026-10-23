@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Per-radio NI VP/EPP/EQ state, consumed by the shared PE1 executor. */
 #include <linux/etherdevice.h>
+#include <linux/rtl9617c-qm-layout.h>
 
 #define RING_BYTES RTL9617C_WIFI_EPP_BYTES
 #define BUFFER_COUNT RTL9617C_WIFI_BUFFERS
@@ -298,9 +299,10 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 228);
 	writel(tx->ni.eq | 15 << 4, tx->ni.regs + tx->ni.registers[5]);
 	writel(tx->ni.profile, tx->ni.regs + tx->ni.registers[6]);
-	writel(0x00020002, tx->ni.regs + tx->ni.registers[7]);
+	writel(RTL_QM_PACKET_LAYOUT, tx->ni.regs + tx->ni.registers[7]);
 	writel(0, tx->ni.regs + tx->ni.registers[8]);
-	writel((RING_BYTES / 16) << 8 | 0xf2, tx->ni.regs + tx->ni.registers[9]);
+	writel((readl(tx->ni.regs + tx->ni.registers[9]) & GENMASK(31, 29)) |
+	       (RING_BYTES / 16) << 8 | 0xf2, tx->ni.regs + tx->ni.registers[9]);
 	for (i = 0; i < 8; i++) {
 		tx->ni.epp_bases[i] = readl(tx->ni.regs + tx->ni.registers[12] + i * 4);
 		tx->ni.epp_eq[i] = readl(tx->ni.regs + tx->ni.registers[10] + i * 4);

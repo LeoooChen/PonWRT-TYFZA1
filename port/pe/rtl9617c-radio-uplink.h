@@ -290,7 +290,6 @@ static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mail
 {
 	if (!mailbox[80]) return;
 	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
-	volatile u32 *bar = (void *)mailbox[2];
 	u32 slot = mailbox[81];
 	if (slot == mailbox[RTL_AX_RX_HW_PRODUCER]) rx_status_poll(mailbox);
 	if (mailbox[88]) {
@@ -327,9 +326,28 @@ static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mail
 	mailbox[RTL_AX_RX_WORK_WRITE] = next;
 	mailbox[82] = tag;
 	mailbox[86]++;
-	mailbox[81] = mailbox[83] = (slot + 1) & 255;
-	/* RXBD/map release is complete; these cursors have one PE owner. */
-	*(volatile u16 *)((u8 *)bar + 0x1218) = mailbox[81];
+	mailbox[81] = (slot + 1) & 255;
+}
+
+static void __attribute__((noinline)) rx_notify_done(volatile u32 *mailbox)
+{
+	if (mailbox[83] == mailbox[81]) return;
+	/* Stock _phl_refill_rxbd updates the batch before notify_rxdone.
+	 * Publish on every exit, including a short/unready/full work batch. */
+	sync();
+	*(volatile u16 *)(mailbox[2] + 0x1218) = mailbox[81];
+	mailbox[83] = mailbox[81];
+}
+
+static void __attribute__((section(".rxq"), noinline)) pe_rxq_batch(volatile u32 *mailbox)
+{
+#pragma clang loop unroll(disable)
+	for (u32 budget = 0; budget < 16; budget++) {
+		u32 before = mailbox[81];
+		pe_rxq(mailbox);
+		if (mailbox[81] == before) break;
+	}
+	rx_notify_done(mailbox);
 }
 
 static void __attribute__((section(".rxq"), noinline, minsize)) pe_rx_work(volatile u32 *mailbox)

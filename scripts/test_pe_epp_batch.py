@@ -31,7 +31,7 @@ start=32752
 for n,(peer,tid) in enumerate(rows):
  at=PAYLOAD+n*2048
  frame=mac[peer-1]+bytes.fromhex("0200000000030800")+bytes(50)
- u.mem_write(at+32,struct.pack(">II",0x80000000,(len(frame)+8)<<15|tid)+bytes(8)+frame)
+ u.mem_write(at+64,struct.pack(">II",0x80000000,(len(frame)+8)<<15|tid)+bytes(8)+frame)
  u.mem_write(EPP+((start+n*8)&32767),struct.pack("<II",at|0x50,1<<14|len(frame)+16))
 put(BASE+0x11c00,start);put(NI+0x7060,(start+len(rows)*8)&32767)
 put(BASE+0x19604,255)
@@ -56,7 +56,7 @@ for peer,tid in set(rows):
 # COS selection and an invalid next entry must not publish an unconsumed BID.
 put(NI+0x659c,0x81<<24);put(NI+0x707c,8)
 at=PAYLOAD+10*2048
-u.mem_write(at+32,struct.pack(">II",0x80000000,72<<15|2)+bytes(8)+mac[1]+bytes.fromhex("0200000000030800")+bytes(50))
+u.mem_write(at+64,struct.pack(">II",0x80000000,72<<15|2)+bytes(8)+mac[1]+bytes.fromhex("0200000000030800")+bytes(50))
 u.mem_write(EPP+(7<<15),struct.pack("<II",at|0x50,80))
 call("ni_ingest"); assert get(NI+0x717c)==8
 put(NI+0x707c,16)
@@ -76,7 +76,7 @@ while peers:
  expected=pending[peer,tid].pop(0)
  call('ni_select')
  assert u.reg_read(UC_MIPS_REG_V0)==1
- assert get(BASE+0x7000+32)==expected+48
+ assert get(BASE+0x7000+32)==expected+80
  assert get(BASE+0x7000+16)&7==tid
  cursor=(tid+1)&7
  mask=sum(1<<t for t in range(8) if pending.get((peer,t)))
@@ -93,7 +93,7 @@ def lookup_probe(withdraw):
  frames=[]
  for n in range(8):
   at=PAYLOAD+n*2048;frame=mac[1]+bytes.fromhex('0200000000030800')+bytes([n])*50
-  frames.append(frame);u.mem_write(at+32,struct.pack('>II',0x80000000,72<<15)+bytes(8)+frame)
+  frames.append(frame);u.mem_write(at+64,struct.pack('>II',0x80000000,72<<15)+bytes(8)+frame)
   u.mem_write(EPP+n*8,struct.pack('<II',at|0x50,1<<14|80))
  reads={'route':0,'address':0};revoked=False
  def observe(uc,access,at,size,value,data):
@@ -111,7 +111,7 @@ def lookup_probe(withdraw):
   node=get(BASE+0x15000+queue*4);actual=[]
   while node:actual.append(node);node=get(node+12)&~127
   assert actual==[PAYLOAD+n*2048 for n in indices]
- for n,frame in enumerate(frames):assert bytes(u.mem_read(PAYLOAD+n*2048+48,64))==frame
+ for n,frame in enumerate(frames):assert bytes(u.mem_read(PAYLOAD+n*2048+80,64))==frame
  assert get(MB+40*4)==(4 if withdraw else 0)
  return reads
 

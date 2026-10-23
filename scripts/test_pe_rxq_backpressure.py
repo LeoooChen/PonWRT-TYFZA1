@@ -35,7 +35,9 @@ class Machine:
   for reg,v in ((UC_MIPS_REG_A0,MB|0xa0000000),(UC_MIPS_REG_SP,(B+0x1fff0)|0xa0000000),(UC_MIPS_REG_RA,0x9fc0fff0)):self.u.reg_write(reg,v)
   self.u.emu_start(symbols[name],0x9fc0fff0,count=100000)
   assert self.u.reg_read(UC_MIPS_REG_PC)==0x9fc0fff0
- def capture(self):self.execute('pe_rxq')
+ def capture(self):
+  self.execute('pe_rxq')
+  if 'rx_notify_done' in symbols:self.execute('rx_notify_done')
  def process(self):self.execute('pe_rx_work')
  def call(self):self.capture();self.process()
  def arrive(self,frame=b'control-payload',data=False):
@@ -418,8 +420,26 @@ r.u.reg_write(UC_MIPS_REG_A0,MB|0xa0000000);r.u.reg_write(UC_MIPS_REG_SP,(B+0x1f
 r.u.emu_start(0xbfc00400,0xbfc0fff0,count=10000)
 assert r.get(MB+70*4)==1 and r.get(MB+81*4)==254
 assert r.get(MB+178*4)==1 and r.get(MB+179*4)==1 and r.isr==1<<7
+# Factory refill contract: all replacement BDs precede one16-bit notify.
+for count,stop in ((1,'empty'),(16,'budget'),(7,'tag'),(7,'work_full'),(0,'empty')):
+ q=Machine();events=[]
+ if stop=='work_full':
+  q.put(MB+174*4,248);q.put(MB+175*4,0);q.put(MB+176*4,0)
+ for i in range(count):q.arrive(struct.pack('<I',i)+bytes(30))
+ if stop=='tag':q.put(BAR+0x1218,((q.slot+1)&255)<<16|254)
+ def observe(uc,access,at,size,value,data):
+  at&=0x1fffffff
+  if BD<=at<BD+2048 or at==BAR+0x1218:events.append((at,size,value))
+ q.u.hook_add(UC_HOOK_MEM_WRITE,observe)
+ q.execute('pe_rxq_batch')
+ notify=[event for event in events if event[0]==BAR+0x1218]
+ assert notify==([(BAR+0x1218,2,(254+count)&255)] if count else [])
+ assert len([event for event in events if BD<=event[0]<BD+2048])==count
+ if count:assert events[-1]==notify[0]
+ assert q.get(MB+83*4)==q.get(MB+81*4)==(254+count)&255
+ before=len(events);q.execute('pe_rxq_batch');assert len(events)==before
 print(json.dumps({'scope':'Actual linked production PE; modeled PCIe, ARM acknowledgement, NI consumption and W1C. No RF throughput simulation.',
- 'empty_RX_worker_calls':empty_worker_calls,'empty_RX_shared_reads':len(idle_shared_reads),'queued_RX_waits_for_ARM_ACK':True,
+ 'batch_BD_then_one16bit_notify':True,'short_unready_full_batch_flush':True,'empty_RX_worker_calls':empty_worker_calls,'empty_RX_shared_reads':len(idle_shared_reads),'queued_RX_waits_for_ARM_ACK':True,
  'interleaved_TID_order_and_protocol_barriers':True,
  'PE_sha256':hashlib.sha256(binary).hexdigest(),'ARM_blocked_capture_and_refill_packets':255,'busy_ring_full_payload_preserved':True,
  'ordered_ARM_delivery':len(seen),'additional_wrap_packets':513,'all_514_buffers_have_one_owner':True,'permuted_noncontiguous_DMA_table_all_buffers':True,

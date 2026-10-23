@@ -1,0 +1,276 @@
+{
+  "source_commit": "e7146f6",
+  "production_changed": false,
+  "hypotheses": {
+    "NI_tail_credit": "Actual factory function and current linked PE match last-two retention; no larger retention justified.",
+    "EPP_false_full": "Actual C has conditional64-old-packet replay if status1/read==write.130976 read-only samples did not reproduce this condition. Not a confirmed cause.",
+    "CPU_payload_cache": "Targeted formal-driver replay survives cache resync in raw buffer; simple stale CPU copy insufficient.",
+    "ARM_NI_ring": "At two target events ARM ring read/write stable, no matching stale sequence found in its64 payload slots. Not enough to globally exonerate other events.",
+    "PE_NI_or_upstream": "Still open;3-word history now records pre-NI sequence,address,generation after original doorbell."
+  },
+  "formal_event_run": {
+    "formal_PE_unchanged": true,
+    "source_capture_drops": 0,
+    "replays": [
+      {
+        "n": 466723,
+        "seq": 1046644191,
+        "expected": 1046736351,
+        "ts": 26022879,
+        "source_occurrences": [
+          {
+            "n": 466659,
+            "ts": 26022879,
+            "time": 1792726612.643993
+          }
+        ],
+        "expected_occurrences": [
+          {
+            "n": 466723,
+            "ts": 26022879,
+            "time": 1792726612.64405
+          },
+          {
+            "n": 468544,
+            "ts": 26022900,
+            "time": 1792726612.65992
+          }
+        ]
+      },
+      {
+        "n": 468745,
+        "seq": 1049544351,
+        "expected": 1049636511,
+        "ts": 26022924,
+        "source_occurrences": [
+          {
+            "n": 468681,
+            "ts": 26022924,
+            "time": 1792726612.684329
+          }
+        ],
+        "expected_occurrences": [
+          {
+            "n": 468745,
+            "ts": 26022926,
+            "time": 1792726612.685948
+          },
+          {
+            "n": 468890,
+            "ts": 26022928,
+            "time": 1792726612.68899
+          }
+        ]
+      }
+    ],
+    "event_snapshots": [
+      {
+        "header": "1 packet=466723 seq=1046644191 ts=26022879 expected=1046736351 ns=1308649014640 bid=02477054 epp=8/40 status=00000001 pe=1409348/1409352 after=1409392/1409392 soft=32/34 after=32/34 dma8=34/34 dma9=8/8",
+        "raw": {
+          "raw_before": {
+            "seq": 1046644191,
+            "ts": 26022879
+          },
+          "raw_after": {
+            "seq": 1046644191,
+            "ts": 26022879
+          }
+        },
+        "soft_matches": []
+      },
+      {
+        "header": "2 packet=468544 seq=1046736351 ts=26022900 expected=1049358591 ns=1308664990040 bid=0243b054 epp=240/296 status=00000001 pe=1410919/1410919 after=1410919/1410919 soft=30/32 after=30/32 dma8=32/32 dma9=39/39",
+        "raw": {
+          "raw_before": {
+            "seq": 1046736351,
+            "ts": 26022900
+          },
+          "raw_after": {
+            "seq": 1046736351,
+            "ts": 26022900
+          }
+        },
+        "soft_matches": []
+      },
+      {
+        "header": "3 packet=468745 seq=1049544351 ts=26022924 expected=1049636511 ns=1308683396240 bid=0246a054 epp=824/888 status=00000001 pe=1411121/1411121 after=1411126/1411126 soft=30/32 after=30/32 dma8=32/32 dma9=49/49",
+        "raw": {
+          "raw_before": {
+            "seq": 1049544351,
+            "ts": 26022924
+          },
+          "raw_after": {
+            "seq": 1049544351,
+            "ts": 26022924
+          }
+        },
+        "soft_matches": []
+      },
+      {
+        "header": "4 packet=468890 seq=1049636511 ts=26022928 expected=1049845311 ns=1308687772360 bid=0247b054 epp=960/976 status=00000001 pe=1411241/1411241 after=1411242/1411242 soft=49/51 after=49/51 dma8=51/51 dma9=41/41",
+        "raw": {
+          "raw_before": {
+            "seq": 1049636511,
+            "ts": 26022928
+          },
+          "raw_after": {
+            "seq": 1049636511,
+            "ts": 26022928
+          }
+        },
+        "soft_matches": []
+      }
+    ],
+    "conclusion": "Target old bytes were present in raw NI DMA buffer before/after cache resync. ARM VP8 descriptors/payloads did not contain the two replay identities; PE descriptor ring only reveals addresses, not submitted bytes. Not a root-cause proof."
+  },
+  "date": "2026-10-23",
+  "overall_acceptance": false,
+  "production_changes": false,
+  "stock_completion": {
+    "scope": "Complete original AArch64 ca_dma_tx_complete_easy with a controlled read-pointer callback and skb-release observer; no hardware DMA.",
+    "nonwrapped_two_consumed_tail_descriptors_retained": true,
+    "records": [
+      {
+        "finished": 0,
+        "hardware_read": 2,
+        "released_indices": [],
+        "next_finished": 0
+      },
+      {
+        "finished": 0,
+        "hardware_read": 3,
+        "released_indices": [
+          0
+        ],
+        "next_finished": 1
+      },
+      {
+        "finished": 0,
+        "hardware_read": 4,
+        "released_indices": [
+          0,
+          1
+        ],
+        "next_finished": 2
+      },
+      {
+        "finished": 60,
+        "hardware_read": 2,
+        "released_indices": [
+          60,
+          61,
+          62,
+          63
+        ],
+        "next_finished": 0
+      }
+    ]
+  },
+  "PE_credit": {
+    "actual_linked_PE": true,
+    "cases": 6,
+    "retained_prefetch_descriptors_unchanged": true,
+    "insufficient_credit_preserves_entire_MPDU": true,
+    "counter_wrap_checked": true,
+    "hardware_test": false
+  },
+  "EPP_model": {
+    "current": {
+      "consumed": 64,
+      "old_packets_delivered": 64,
+      "published_read": 512
+    },
+    "pointer_only_model": {
+      "consumed": 0,
+      "old_packets_delivered": 0,
+      "published_read": 0
+    },
+    "limit": "Actual native poll under a modeled status=1 / write=read condition. This establishes the conditional replay mechanism, not that hardware produces this condition or that it caused the recorded TCP failure."
+  },
+  "EPP_live_sampling": {
+    "samples": 130976,
+    "equal_status_events": 0,
+    "TCP_Mbps": 1219.4208,
+    "retransmits": 0,
+    "scope": "100us bounded read-only register sampling, formal Flash driver unchanged; cannot exclude brief conditions between samples."
+  },
+  "formal_target_events": {
+    "run": "ring-event-up1",
+    "PE_is_formal": true,
+    "TCP_retransmits": 16,
+    "L3_drops": 0,
+    "capture_drops": 0,
+    "sequences": [
+      1046644191,
+      1049544351
+    ],
+    "source_ordinals": [
+      466659,
+      468681
+    ],
+    "NI_ordinals": [
+      466723,
+      468745
+    ],
+    "distance": [
+      64,
+      64
+    ],
+    "raw_DMA_matches_SKB_before_after_sync": true,
+    "raw_DMA_limit": "NI callback runs after payload copy/EPP retirement but before this BID is returned by serialized poll refill. Same target raw sequence and TSval before and after explicit sync. No evidence for simple stale CPU cache copy. Does not distinguish stale EPP/address from stale ingress data.",
+    "ARM_VP8": "At both target events descriptors/read/write remained stable during snapshot; no target sequence in any of64 copied software payload slots. Does not prove all history of VP8 was correct."
+  },
+  "compact_history": {
+    "PE_SHA256": "88b22ddf69471fa26d2a910ea3f19542fbf73a2824257d2a40acc778303ca477",
+    "radio_SHA256": "0f9e39ce5b37e74479e7fd9bc2589a48607f64460589fba596a58856232a6746",
+    "words": [
+      "generation",
+      "payload_DMA_address",
+      "pre_NI_TCP_sequence"
+    ],
+    "entries": 256,
+    "location": "RX context0x1b000..0x1bbff;completed_log_cursor mailbox195",
+    "publication": "Sequence is read before header/descriptor store; sideband writes happen after original NI doorbell. No capacity/credit/PN/SN changes.",
+    "matching": "Compact records lack timestamps by design to reduce per-packet writes; must correlate seq/address/generation with source capture and surrounding records, not infer unique identity from seq alone.",
+    "snapshot_consistency": "Reader copies cursor before/after history; must reject overwritten/inconsistent slots; a stable global cursor alone does not exclude an in-progress batch.",
+    "checks": [
+      "Linked NI descriptor credit6 cases",
+      "Linked RX/dual-core buffer ownership",
+      "Linked IMEM entry",
+      "Known TCP sequence/DMA address recorded exactly"
+    ],
+    "runs": [
+      {
+        "label": "ring-compact-up1",
+        "Mbps": 1107.670715396889,
+        "retx": 2025,
+        "L3_drops": 0,
+        "target_replay_reproduced": false,
+        "source_capture_drops": 0,
+        "interpretation": "All7 NI discontinuities match exact Mac source ordinals and TSvals,3 backward events found PE submission records. No extra DUT replay captured."
+      },
+      {
+        "label": "ring-compact-up2",
+        "Mbps": 1117.9715629825237,
+        "retx": 0,
+        "L3_drops": 0,
+        "target_replay_reproduced": false,
+        "source_capture_drops": 0,
+        "interpretation": "No NI pre/post-GRO discontinuities.11 RDU events. Non-reproduction is not a repair."
+      }
+    ]
+  },
+  "next_focus": "Keep narrowing NI descriptor generation versus payload generation without changing hardware retention. A captured target with pre-NI metadata is still missing; do not claim EPP false-full cause or add arbitrary barriers. Investigate first-fault event capture with production PE if continuous history suppresses the issue.",
+  "restoration": {
+    "boot_id": "195e1379-d53a-4503-96b7-3d888b12c966",
+    "Flash_radio_SHA256": "4c9ef44cb76d3225165523641f5cec180a1b4c473899de7930635ef89e5a0f37",
+    "both_radios_halt0": true,
+    "no_test_modules_server_policy220": true,
+    "no_Flash_write": true,
+    "evidence": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261023-ring-publication/final-state.txt",
+    "external_default": "192.168.71.1/en5",
+    "test_host_route_removed": true
+  },
+  "evidence_directory": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261023-ring-publication",
+  "captures_and_events": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261023-focused-takeover"
+}

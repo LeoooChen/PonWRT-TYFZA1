@@ -35,8 +35,8 @@ put(mailbox + 167 * 4, 15)
 destination = bytes.fromhex('020000000002')
 u.mem_write(base + 0xe408, destination)
 put(base + 0x11a04, 1)
-u.mem_write(packet + 32, struct.pack('>II', 1 << 31, 68 << 15) + bytes(8))
-u.mem_write(packet + 48, destination + bytes.fromhex('0200000000010800') + bytes(46))
+u.mem_write(packet + 64, struct.pack('>II', 1 << 31, 68 << 15) + bytes(8))
+u.mem_write(packet + 80, destination + bytes.fromhex('0200000000010800') + bytes(46))
 for cos in range(8):
     for consumer, producer in [(0, 4096), (4096, 8192), (32760, 0)]:
         u.mem_write(epp, bytes(8 * 32768))
@@ -83,8 +83,8 @@ for cos, batched in ((cos, batched) for cos in range(8) for batched in (False, T
     put(ni + 0x7060 + cos * 4, 16)
     for index, consumer in enumerate((32760, 0, 8)):
         buffer = packet + index * 2048
-        u.mem_write(buffer + 32, struct.pack('>II', 1 << 31, 68 << 15) + bytes(8))
-        u.mem_write(buffer + 48, destination + bytes.fromhex('0200000000010800') + bytes(46))
+        u.mem_write(buffer + 64, struct.pack('>II', 1 << 31, 68 << 15) + bytes(8))
+        u.mem_write(buffer + 80, destination + bytes.fromhex('0200000000010800') + bytes(46))
         u.mem_write(epp + cos * 32768 + consumer, struct.pack('<II', buffer | 0x50, 76))
         if batched and index < 2:
             continue

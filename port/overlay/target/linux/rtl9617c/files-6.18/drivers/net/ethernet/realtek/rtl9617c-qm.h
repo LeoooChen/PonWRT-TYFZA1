@@ -4,6 +4,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/netdevice.h>
 #include <linux/rtl9617c-wifi.h>
+#include <linux/rtl9617c-qm-layout.h>
 #include "rtl9617c-ni.h"
 #include "rtl9617c-qm-refill.h"
 #include "rtl9617c-qm-deepq.h"
@@ -14,7 +15,6 @@
 #define RTL_QM_VOQS 8
 #define RTL_QM_BUFFERS_PER_EQ 256
 #define RTL_QM_BUFFERS (2 * RTL_QM_BUFFERS_PER_EQ)
-#define RTL_QM_BUFFER_BYTES 2048
 #define RTL_QM_MEMORY_BYTES (RTL_QM_RING_BYTES * RTL_QM_VOQS + RTL_QM_BUFFERS * RTL_QM_BUFFER_BYTES)
 #define RTL_QM_PE_EQ 6
 #define RTL_QM_PE_POOLS 2

@@ -13,7 +13,8 @@ if start < 0:
     start = source.index('int rtl_qm_rx_alloc(')
 allocation = source[start:source.index('\nstatic unsigned int rtl_dq_read', start)]
 start = source.index('void rtl_qm_rx_free(')
-release = source[start:source.index('\nint rtl_qm_rx_poll(', start)]
+end = source.index('\nstatic void rtl_qm_rx_retire(', start) if 'static void rtl_qm_rx_retire(' in source else source.index('\nint rtl_qm_rx_poll(', start)
+release = source[start:end]
 start = source.index('\tfor (unsigned int pool = 0;', source.index('int rtl_qm_rx_start('))
 publication = source[start:source.index('\tret = rtl_qm_cpu_credits', start)]
 fixture = r'''
@@ -24,6 +25,8 @@ fixture = r'''
 #include <string.h>
 #include <stdio.h>
 #define RTL_QM_PE_POOLS 2
+#define GENMASK(h,l) ((~0U << (l)) & (~0U >> (31-(h))))
+#define RTL_QM_PACKET_LAYOUT 0x18041804
 #define RTL_QM_PE_BUFFERS 2496
 #define RTL_QM_PE_CHUNK_BUFFERS 1024
 #define RTL_QM_PE_CHUNKS 3

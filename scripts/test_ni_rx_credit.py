@@ -37,7 +37,7 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u6
 #define RTL_QM_RING_BYTES 1024
 #define RTL_QM_COMMAND_BYTES 8
 #define RTL_QM_VOQS 8
-#define RTL_QM_BUFFER_BYTES 2048
+#include "rtl9617c-qm-layout.h"
 #define RTL_QM_MEMORY_BYTES (8192+512*2048)
 #define EQ_ID 4
 #define EPP_WRITE 0x7000
@@ -86,8 +86,8 @@ static void packet_bytes(unsigned id,u8 *b){memset(b,0xa5,64);b[0]=2;b[12]=8;b[1
 static void enqueue(unsigned id){
  if(producer-consumer==128){drops++;return;}
  unsigned offset=8192+id*2048,header=kind==1?16:8;u32 h0=kind==2?5U<<18:0,h1=64U<<15|(kind==2?7U<<9:0);
- put(__builtin_bswap32(h0),active->memory+offset+32);put(__builtin_bswap32(h1),active->memory+offset+36);
- packet_bytes(id,active->memory+offset+32+header);
+ put(__builtin_bswap32(h0),active->memory+offset+RTL_QM_HEADROOM);put(__builtin_bswap32(h1),active->memory+offset+RTL_QM_HEADROOM+4);
+ packet_bytes(id,active->memory+offset+RTL_QM_HEADROOM+header);
  void *entry=active->ring_memory+(producer%128)*8;
  put(((u32)active->memory_dma+offset)|0x54,entry);put(kind==1?1U<<14|80:0,entry+4);producer++;
 }
@@ -123,10 +123,23 @@ int main(void){
  assert(rtl_qm_rx_poll(&rx,&napi,64)==1&&consumer==1&&delivered==0);
  assert(owner.stats.rx_errors==1&&rx.refill.returned==1);
  free(rx.ni);free(rx.memory);
+ for(unsigned full=0;full<2;full++) {
+  kind=1;producer=consumer=drops=delivered=injected=0;
+  struct rtl_qm_rx edge={.memory_dma=0x04000000,.device=&owner};
+  edge.memory=calloc(1,RTL_QM_MEMORY_BYTES);edge.ring_memory=edge.memory;edge.ni=calloc(1,0x10000);active=&edge;
+  unsigned errors=owner.stats.rx_errors,header=full?16:8;
+  enqueue(0);
+  put(0,edge.ring_memory+4);
+  put(__builtin_bswap32(full?BIT(31):0),edge.memory+8192+RTL_QM_HEADROOM);
+  put(__builtin_bswap32((RTL_QM_DATA_BYTES-header+1+(full?8:0))<<15),edge.memory+8192+RTL_QM_HEADROOM+4);
+  assert(rtl_qm_rx_poll(&edge,&napi,64)==1 && owner.stats.rx_errors==errors+1);
+  assert(edge.refill.returned==1 && delivered==0);
+  free(edge.ni);free(edge.memory);
+ }
 }
 '''
 (out/'credit.c').write_text(common+source[a:b]+case)
-subprocess.run(['cc','-std=gnu11','-O2','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-fsanitize=address,undefined','-I',str(root/relative).rsplit('/',1)[0],str(out/'credit.c'),'-o',str(out/'credit')],check=True)
+subprocess.run(['cc','-std=gnu11','-O2','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-fsanitize=address,undefined','-I',str(root/relative).rsplit('/',1)[0],'-I',str(root/'port/overlay/target/linux/rtl9617c/files-6.18/include/linux'),str(out/'credit.c'),'-o',str(out/'credit')],check=True)
 result=subprocess.run([str(out/'credit')],capture_output=True,text=True)
 print(result.stdout,end='')
 if before:

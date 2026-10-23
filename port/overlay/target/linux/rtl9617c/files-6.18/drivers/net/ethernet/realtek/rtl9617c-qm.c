@@ -278,13 +278,6 @@ static int rtl_qm_cpu_credits(struct rtl_qm_rx *rx)
 
 		writel((count / 8) << 16 | (count / 64), rx->ni + 0x9580 + profile * 4);
 		writel(0x3fff3fff, rx->ni + 0x9590 + profile * 4);
-		writel(0, rx->ni + 0x95b4);
-		writel(0x00ffffff, rx->ni + 0x95b8);
-		writel(0xf0000000U | ((count * 7 / 8) << 14) | (count * 6 / 8),
-		       rx->ni + 0x95bc);
-		ret = rtl_qm_indirect(rx, 0x95b0, BIT(31) | BIT(30) | profile);
-		if (ret)
-			return ret;
 	}
 	for (cpu = 0; cpu < 4; cpu++) {
 		unsigned int count0, count1, eq_profile;
@@ -312,11 +305,25 @@ static int rtl_qm_cpu_credits(struct rtl_qm_rx *rx)
 		for (voq = cpu * 8; voq < cpu * 8 + 8; voq++) {
 			if (cpu)
 				writel(eq_profile, rx->ni + 0x65a4 + voq * 4);
-			writel(profile, rx->ni + 0x95c4);
+			/* CPU2 has stock private=12; CPU0/3 have private=3.
+			 * Separate CPU3's native large pool from CPU0's thresholds. */
+			writel(cpu == 3 ? 4 : profile, rx->ni + 0x95c4);
 			ret = rtl_qm_indirect(rx, 0x95c0, BIT(31) | BIT(30) | voq);
 			if (ret)
 				return ret;
 		}
+	}
+	for (profile = 0; profile < 3; profile++) {
+		unsigned int count = profile ? RTL_QM_PE_BUFFERS - 4 : RTL_QM_BUFFERS_PER_EQ;
+
+		/* Original CB init sets private credits; empty-buffer init changes
+		 * only high/low occupancy. Group fields retain their reset value0. */
+		writel(0, rx->ni + 0x95b4);
+		writel((profile == 1 ? 12 : 3) << 24, rx->ni + 0x95b8);
+		writel(((count * 7 / 8) << 14) | (count * 6 / 8), rx->ni + 0x95bc);
+		ret = rtl_qm_indirect(rx, 0x95b0, BIT(31) | BIT(30) | (profile == 2 ? 4 : profile));
+		if (ret)
+			return ret;
 	}
 	writel(select, rx->ni + 0x95a0);
 	return 0;
@@ -387,7 +394,7 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 		return ret;
 	writel(EQ_ID | ((EQ_ID + 1) << 4), ni + EQ_PROFILE);
 	writel(EQ_ID, ni + 0x6148);
-	writel(0x00020002, ni + 0x61c8); /* 32-byte first/rest headroom */
+	writel(RTL_QM_PACKET_LAYOUT, ni + 0x61c8);
 	writel(0x05102013, ni + 0x66d4);
 	writel(0xffff, ni + 0x63a8);
 	writel(0, ni + 0x63a8);
@@ -405,8 +412,9 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	writel((value & ~(BIT(11) | BIT(13))) | 0xff, ni + 0x6000);
 	writel(readl(ni + 0x68f4) | BIT(2), ni + 0x68f4);
 	writel(0, ni + 0x6558);
-	/* Size counts four 32-bit FIFO words, including in EPP64 mode. */
-	writel(((RTL_QM_RING_BYTES / 16) << 8) | 0xf2,
+	/* Stock preserves max_buf_cnt_per_pkt while setting size/coalescing. */
+	writel((readl(ni + 0x657c + EQ_ID * 4) & GENMASK(31, 29)) |
+	       ((RTL_QM_RING_BYTES / 16) << 8) | 0xf2,
 	       ni + 0x657c + EQ_ID * 4);
 	for (i = 0; i < RTL_QM_VOQS; i++) {
 		writel(EQ_ID, ni + 0x65a4 + i * 4);
@@ -429,8 +437,10 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	 * must hold at least the per-port admission limit without a false wrap. */
 	for (unsigned int pool = 0; pool < RTL_QM_PE_POOLS; pool++) {
 		unsigned int cpu = 3 - pool, profile = 7 - pool;
+		writel(RTL_QM_PACKET_LAYOUT, ni + 0x61c8 + cpu * 4);
 		memset(rx->wifi_epp[pool], 0, 8 * RTL9617C_WIFI_EPP_BYTES);
-		writel((RTL9617C_WIFI_EPP_BYTES / 16) << 8 | 0xf2, ni + 0x657c + profile * 4);
+		writel((readl(ni + 0x657c + profile * 4) & GENMASK(31, 29)) |
+		       (RTL9617C_WIFI_EPP_BYTES / 16) << 8 | 0xf2, ni + 0x657c + profile * 4);
 		for (i = 0; i < 8; i++) {
 			writel(rx->wifi_epp_dma[pool] + i * RTL9617C_WIFI_EPP_BYTES,
 				ni + EPP_BASE + cpu * 32 + i * 4);
@@ -568,8 +578,8 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			 * payload buffer before reading it through the CPU's cached map. */
 			dma_sync_single_for_cpu(rx->device, rx->memory_dma + offset,
 				RTL_QM_BUFFER_BYTES, DMA_FROM_DEVICE);
-			h0 = get_unaligned_be32(rx->memory + offset + 32);
-			h1 = get_unaligned_be32(rx->memory + offset + 36);
+			h0 = get_unaligned_be32(rx->memory + offset + RTL_QM_HEADROOM);
+			h1 = get_unaligned_be32(rx->memory + offset + RTL_QM_HEADROOM + 4);
 			rx->last_header[0] = h0;
 			rx->last_header[1] = h1;
 			header = 8 + ((h0 & BIT(31)) ? 8 : 0);
@@ -579,13 +589,13 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			wifi_id = rtl_wifi_epp_id(length_word);
 			wifi_forwarded = !!wifi_id;
 			if (wifi_forwarded) {
-				int payload = rtl_wifi_epp_length(length_word, RTL_QM_BUFFER_BYTES - 48);
+				int payload = rtl_wifi_epp_length(length_word, RTL_QM_DATA_BYTES - RTL_WIFI_INTERNAL_BYTES);
 				if (payload < 0) { dev->stats.rx_errors++; goto consume; }
 				length = payload;
 				header = RTL_WIFI_INTERNAL_BYTES;
 			}
 			if ((command & (BIT(4) | BIT(6))) != (BIT(4) | BIT(6)) ||
-			    length < ETH_HLEN || length > RTL_QM_BUFFER_BYTES - 32 - header) {
+			    length < ETH_HLEN || length > RTL_QM_DATA_BYTES - header) {
 				dev->stats.rx_errors++;
 				goto consume;
 			}
@@ -595,12 +605,12 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				goto consume;
 			}
 			if (begin) copied = ktime_get_ns();
-			memcpy(skb_put(skb, length), rx->memory + offset + 32 + header, length);
+			memcpy(skb_put(skb, length), rx->memory + offset + RTL_QM_HEADROOM + header, length);
 			if (checksum_enabled && rtl_rx_checksum_valid(command, skb->data, length))
 				skb->ip_summed = CHECKSUM_UNNECESSARY;
 			source = FIELD_GET(GENMASK(14, 9), h1);
 			if (!wifi_forwarded && source == RTL_WIFI_SOURCE && (h0 & BIT(31))) {
-				u32 metadata = get_unaligned_be32(rx->memory + offset + 44);
+				u32 metadata = get_unaligned_be32(rx->memory + offset + RTL_QM_HEADROOM + 12);
 				/* Full Header CPU reason !=15 identifies an ingress return. */
 				if (((metadata >> 8) & 15) != 15) wifi_id = metadata & 255;
 			}

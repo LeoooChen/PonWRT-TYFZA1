@@ -1,0 +1,111 @@
+{
+  "status": "Factory-layout/CPU-CB alignment candidate cold-booted and bounded validation completed; retained on DUT. Not full factory port or intermittent-fault closure.",
+  "evidence": [
+    "Actual TYFZA1 ca-ne.ko CPU initialization and CB setters",
+    "Actual EPP64 decoder executed for normal and compact wifi_id1/60 descriptors",
+    "Factory refill allocates1536-byte skb, pushes64, stores skb pointer at buffer+2040; native uses copied fixed buffers so no pointer is stored"
+  ],
+  "change": [
+    "Shared 2048-byte buffer /64-byte head /384-byte tail contract for CPU0/2/3 and PE decoding, gather, length limits",
+    "RMW EPP upper3 bits preserved at all3 programming sites",
+    "Restore VOQ private3 for CPU0/3 and private12 for CPU2; group fields0 as factory reset/init",
+    "Native pool-size-derived occupancy thresholds through actual factory setter; separate CPU3 VOQ profile4 because native CPU3 pool differs from CPU0"
+  ],
+  "preserved": [
+    "Original accepted AXI configuration",
+    "Native EQ/BID allocation map, CPU0 two256-buffer pools, two2496 radio pools with2492 loaded",
+    "PON DQ profile3 and CPU port1 unused",
+    "Confirmed early EPP retirement and deferred refill",
+    "Existing RD=WR/full behavior (pointer-only candidate was rejected)"
+  ],
+  "not_claimed": [
+    "Full factory reproduction: native buffer ownership/ring sizes/EQ assignment remain different",
+    "Root cause of intermittent stale replay or halt is solved",
+    "Live factory register dump (the oracle uses modeled MMIO)"
+  ],
+  "correction": "Earlier commentary called CB fields enlarged private thresholds; precise native-old bits were private=0 and group high/low=0x3fff.",
+  "build": {
+    "source_commit": "7a7a4280d2dc7c84ad945e04c29a47ee8b1a1155",
+    "source_status": " M port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-qm.c\n M port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-qm.h\n M port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/ni-test.h\n M port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-tx-code.h\n M port/pe/rtl9617c-radio-downlink.h\n M port/pe/rtl9617c-radio-wd.c\n M scripts/build_pe_radio_wd.sh\n M scripts/test_native_rx_modes.py\n M scripts/test_ni_rx_credit.py\n M scripts/test_pe_epp_batch.py\n M scripts/test_pe_epp_geometry.py\n M scripts/test_qm_wifi_allocation.py\n M sources/openwrt\n?? manifests/wifi-epp-published-20261023.json\n?? manifests/wifi-factory-epp-contract-20261023.json\n?? manifests/wifi-focused-takeover-20261023.json\n?? manifests/wifi-ring-publication-audit-20261023.json\n?? port/overlay/target/linux/rtl9617c/files-6.18/include/linux/rtl9617c-qm-layout.h\n?? scripts/test_qm_epp_profile.py\n?? scripts/test_qm_factory_layout.py\n?? tools/trace_stock_qm_contract.py\n",
+    "QM_source_SHA256": "dd86e0be10ed3fd46f92a0c7a5af98a56a59fe1d1981e7f8a5bb18972cefa070",
+    "sysupgrade_SHA256": "face5732f15fb0bbf361cfe3ca957e850c30b638ff3c1fd9b4e98bf28f9effb8",
+    "kernel_SHA256": "3d0053bf23de189a7da000478b323b96d59fbf997222a9a640953df97f73f62f",
+    "rootfs_SHA256": "e3c0dbabec8cc0a4d12b01bbb0fc116295c407e522f6c6be59f1099f7e88daf1",
+    "packaged_radio_SHA256": "d0797429b51159d5eb2aa532c84501274c756a942345951e9cc881191c5081c0",
+    "embedded_PE_SHA256": "66edb1ec8256dc30bb2724e15e731cf79d959460d13c5f587491322a85d37708",
+    "embedded_PE_exact": true,
+    "built_NI_source_exact": true,
+    "FIT_profiles": {
+      "conf-0": {
+        "kernel": "5630f24c030673e922579e27607b1e7493b94aa7c6d85418e007d970f2d9b06c",
+        "fdt": "b320cedb5cc72ccf46349de5cf7da3453549afbb07b3c434bafb1f96775b6f94",
+        "script": "ac9ebd6848f0bb05b1f3aab05b4f45b1f308197266738e22d9b05e8084ee3ce2"
+      },
+      "conf-1": {
+        "kernel": "5630f24c030673e922579e27607b1e7493b94aa7c6d85418e007d970f2d9b06c",
+        "fdt": "1895357c670ae28c5db41c3feedf0026dd44e0b7de128437d228cd84c5bf013d",
+        "script": "ac9ebd6848f0bb05b1f3aab05b4f45b1f308197266738e22d9b05e8084ee3ce2"
+      }
+    },
+    "configuration_and_payload_signatures_verified": true,
+    "bad_configuration_signature_rejected": true,
+    "sysupgrade_payloads_exact": true,
+    "rootfs_zero_alignment_bytes": 804
+  },
+  "tests": [
+    "Actual factory init/decoder/CB setters executed",
+    "ARM RX payload, metadata, backpressure, tailroom boundary",
+    "PE all-COS wrap, retirement cutoff and queues",
+    "PE 160MHz gather and large A-MSDU payload/RPQ ownership boundary",
+    "Existing EQ/EPP AXI and allocation checks"
+  ],
+  "live": {
+    "directory": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261023-factory-layout",
+    "boot_id": "91d47034-0db7-4df5-8051-0e3ce8f161df",
+    "hardware_register_readback": "CPU0/2/3 0x18041804; CPU EPP e00040f2; radio EPP e00800f2; VOQ0 003800c0/03000000/0, VOQ1 0221074d/0c000000/0, VOQ4 0221074d/03000000/0",
+    "TCP_up20_Mbps": 1273.3953980114538,
+    "TCP_down10_Mbps": 1357.4106103468814,
+    "TCP_bidir6_Mbps": {
+      "up": 660.0838994784006,
+      "down": 549.721770715398
+    },
+    "TCP_retransmits_all_zero": true,
+    "TCP_offload_epoch_continuous": true,
+    "TCP_FE_hits_validated": true,
+    "UDP_up": {
+      "requested": 400000,
+      "valid_unique": 349727,
+      "duplicates": 0,
+      "corrupt": 0,
+      "Mac_interface_drops": 50273,
+      "unaccounted_missing": 0,
+      "RXQ_RDU_delta": 11,
+      "receiver_payload_Mbps": 1232.2652574302301,
+      "delivery_complete": false
+    },
+    "UDP_down": {
+      "requested": 500000,
+      "valid_unique": 500000,
+      "duplicates": 0,
+      "corrupt": 0,
+      "payload_Mbps": 1503.717695491004,
+      "delivery_complete": true
+    },
+    "kernel_crash_or_radio_halt_observed": false,
+    "intermittent_stale_replay_ruled_out": false
+  },
+  "cleanup": {
+    "test_modules_removed": true,
+    "iperf_server_stopped": true,
+    "DUT_policy220_removed": true,
+    "Mac_test_host_route_removed": true,
+    "UART_recorder_stopped": true,
+    "USB_external_default_preserved": "192.168.71.1/en5",
+    "baseline_image_retained": "artifacts/local-0.8.2-beta-qm-axi-20261023/sysupgrade.bin"
+  },
+  "remaining": [
+    "Uplink sustained rate still limited: the fixed high-rate UDP trial had50273 Mac interface drops and11 RXQ_RDU; do not call this full-line-rate acceptance",
+    "Native CPU0 two-pool fixed-copy ownership, radio EQ map and ring sizes still differ from factory; before additional changes verify corresponding original PE/radio path, not only ca-ne CPU initialization",
+    "No physical optics/PPPoE negotiation or2.4GHz throughput measured; one short cold matrix cannot establish long-term stability"
+  ]
+}

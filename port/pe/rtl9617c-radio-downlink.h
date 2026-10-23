@@ -26,7 +26,7 @@ static void __attribute__((noinline)) ni_peer_event(volatile u32 *mailbox, u8 *m
 	if (*old != mask) { *old = mask; pe_event(mailbox); }
 }
 
-/* Queue metadata uses the 32-byte NI BID headroom, before HEADER_A.
+/* Queue metadata uses the NI BID headroom, before HEADER_A.
  * Hardware WP ownership starts only when a queued frame is selected. */
 static void ni_peer_add(volatile u32 *mailbox, u8 *memory, u32 macid)
 {
@@ -80,9 +80,9 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		const u32 *entry = uncached(mailbox[25] + (cos << shift) + consumer);
 		if ((*(volatile u32 *)entry & 0x50) != 0x50) break;
 		u32 buffer = entry[0] & 0xffffff80, header, length = ni_length(entry, buffer, &header);
-		u8 *ethernet = uncached(buffer + 32 + header);
+		u8 *ethernet = uncached(buffer + RTL_QM_HEADROOM + header);
 		u32 macid = 0;
-		if (length >= 14 && length <= 2048 - 32 - header) {
+		if (length >= 14 && length <= RTL_QM_DATA_BYTES - header) {
 			const u32 *destination = (const void *)ethernet;
 			u32 low = destination[0], high = destination[1] & 65535;
 			/* Cache only this batch's destination; admission can be revoked
@@ -106,7 +106,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 			mailbox[130] = length; mailbox[131] = header;
 			mailbox[132] = big_word(ethernet); mailbox[133] = big_word(ethernet + 4); mailbox[40]++;
 		}
-		u32 tid = macid ? big_word(uncached(buffer + 36)) & 7 : 0, queue = macid * 8 + tid;
+		u32 tid = macid ? big_word(uncached(buffer + RTL_QM_HEADROOM + 4)) & 7 : 0, queue = macid * 8 + tid;
 		/* Link BIDs locally; update the shared peer/TID counts once per group. */
 		if (grouped && queue != group) {
 			ni_enqueue(mailbox, memory, group, head, tail, grouped); grouped = 0;
@@ -179,7 +179,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				request[2] = BIT(24) | (peer[2] & 0x3f0000) | (length + ((peer[2] >> 16) & 63) + 8 - 14);
 				request[4] = (peer[4] & ~0x1fffU) | tid | indicators[tid] << 12;
 				request[5] = (peer[5] & ~255U) | *(u32 *)(memory + NI_PEER_BA + (macid * 8 + tid) * 4);
-				request[8] = buffer + 32 + (metadata >> 16); request[9] = length;
+				request[8] = buffer + RTL_QM_HEADROOM + (metadata >> 16); request[9] = length;
 				u32 caps = *(u32 *)(memory + 0xe200 + macid * 4);
 				if (caps & BIT(17)) request[3] |= BIT(20);
 				if (ps[0]) {
@@ -194,7 +194,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 							u32 *part = uncached(next), pad = (0U - body) & 3;
 							u32 next_metadata = part[1], next_length = next_metadata & 65535;
 							if (body + pad + next_length + 8 > (caps >> 18)) break;
-							request[8 + frames * 2] = next + 32 + (next_metadata >> 16);
+							request[8 + frames * 2] = next + RTL_QM_HEADROOM + (next_metadata >> 16);
 							request[9 + frames * 2] = next_length;
 							body += pad + next_length + 8;
 							*(u32 *)uncached(tail_buffer) = next;

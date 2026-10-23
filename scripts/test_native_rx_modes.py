@@ -40,7 +40,9 @@ xram = read('rtl9617c-xram.c')
 epon = read('rtl9617c-pon-epon.c')
 controller = read('rtl9617c-pon.c')
 wifi_header = (headers.parents[3] / 'include/linux/rtl9617c-wifi.h').read_text()
-constants = '\n'.join(re.findall(r'^#define .*$', wifi_header + '\n' + qm + '\n' + qh, re.M))
+layout_header = ((headers.parents[3] / 'include/linux/rtl9617c-qm-layout.h').read_text()
+                 if 'rtl9617c-qm-layout.h' in qh else '#define RTL_QM_HEADROOM 32')
+constants = '\n'.join(re.findall(r'^#define .*$', layout_header + '\n' + wifi_header + '\n' + qm + '\n' + qh, re.M))
 rx_structure = re.search(r'struct rtl_qm_rx \{.*?\n\};', qh, re.S)[0]
 common = r'''
 #include <assert.h>
@@ -182,8 +184,8 @@ static void check(unsigned int packets,int budget,bool blocked,int flow) {
             unsigned int offset=8192+count*2048;
             unsigned int command=(rx.memory_dma+offset)|BIT(4)|BIT(6)|(4+count/256);
             store(rx.memory+cos*1024+j*8,command);
-            store(rx.memory+offset+32,flow>=0?__builtin_bswap32((unsigned int)flow<<18):0);
-            store(rx.memory+offset+36,__builtin_bswap32((60U<<15)|(flow>=0?7<<9:0)));
+            store(rx.memory+offset+RTL_QM_HEADROOM,flow>=0?__builtin_bswap32((unsigned int)flow<<18):0);
+            store(rx.memory+offset+RTL_QM_HEADROOM+4,__builtin_bswap32((60U<<15)|(flow>=0?7<<9:0)));
         }
     }
     /* A new descriptor arrives between the status and producer reads. */
@@ -191,7 +193,7 @@ static void check(unsigned int packets,int budget,bool blocked,int flow) {
     int consumed=rtl_qm_rx_poll(&rx,&napi,budget);
     assert(consumed==(int)(packets<(unsigned int)budget?packets:(unsigned int)budget));
     assert(delivered==(unsigned int)consumed && dev.stats.rx_errors==0);
-    assert(epp_publications == ((unsigned int)consumed + 127) / 128);
+    assert(epp_publications == (HAS_RETIRE ? (unsigned int)consumed : ((unsigned int)consumed + 127) / 128));
 #if HAS_REFILL
     assert(rx.refill.pending+returned==(unsigned int)consumed);
     if (blocked) {assert(!returned);assert(rx.refill.pending==(unsigned int)consumed);}
@@ -220,10 +222,10 @@ static void check_wifi(unsigned int epp_id,unsigned int source,unsigned int meta
     unsigned int offset=8192;
     store(rx.memory,(rx.memory_dma+offset)|BIT(4)|BIT(6)|4);
     store(rx.memory+4,(epp_id<<14)|76);
-    store(rx.memory+offset+32,__builtin_bswap32(BIT(31)));
-    store(rx.memory+offset+36,__builtin_bswap32((68U<<15)|(source<<9)));
-    store(rx.memory+offset+44,__builtin_bswap32(metadata));
-    for(unsigned int i=0;i<60;i++)((unsigned char *)rx.memory)[offset+48+i]=i^0x5a;
+    store(rx.memory+offset+RTL_QM_HEADROOM,__builtin_bswap32(BIT(31)));
+    store(rx.memory+offset+RTL_QM_HEADROOM+4,__builtin_bswap32((68U<<15)|(source<<9)));
+    store(rx.memory+offset+RTL_QM_HEADROOM+12,__builtin_bswap32(metadata));
+    for(unsigned int i=0;i<60;i++)((unsigned char *)rx.memory)[offset+RTL_QM_HEADROOM+16+i]=i^0x5a;
     if(attached)rx.wifi[2]=&endpoint;
     expected_wifi_forwarded=!!epp_id;
     assert(rtl_qm_rx_poll(&rx,&napi,64)==1);
@@ -246,7 +248,7 @@ static void check_checksum_delivery(bool enabled,bool bad) {
     store(registers+0x6338,1);store(registers+0x6368,BIT(31));store(registers+0x7000,8);
     store(registers+0x3218,enabled?BIT(16):0);
     store(rx.memory,0x10002054|(bad?BIT(5):0));store(rx.memory+4,(2<<14)|76);
-    unsigned char *frame=rx.memory+8192+48;
+    unsigned char *frame=rx.memory+8192+RTL_QM_HEADROOM+16;
     frame[12]=8;frame[14]=0x45;frame[17]=46;frame[23]=6;frame[46]=0x50;
     checksum_expected=enabled&&!bad?CHECKSUM_UNNECESSARY:0;
     assert(rtl_qm_rx_poll(&rx,&napi,64)==1 && delivered==1 && returned==1);
@@ -415,7 +417,10 @@ with tempfile.TemporaryDirectory(prefix='native-rx-tests-', dir=root / 'artifact
         else:
             functions = function(qm, 'rtl_qm_try_push' if 'static int rtl_qm_try_push' in qm else 'rtl_qm_push')
             if case == 'qm':
+                if 'static void rtl_qm_rx_retire' in qm:
+                    functions += function(qm, 'rtl_qm_rx_retire')
                 source = common + constants + '\n' + rx_structure + '\n' + functions + function(qm, 'rtl_qm_rx_poll')
+                source += '\n#define HAS_RETIRE ' + str(int('static void rtl_qm_rx_retire' in qm)) + '\n'
                 source += '\n#define HAS_REFILL ' + str(int('struct rtl_qm_refill refill;' in qh)) + '\n'
                 source += '#define HAS_LAN_PORTS ' + str(int('lan[' in qh)) + '\n' + rx_test
             else:
