@@ -147,11 +147,10 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	u32 pn_low = iv[0] | (u32)iv[1] << 8 | (u32)iv[4] << 16 | (u32)iv[5] << 24;
 	u32 pn_high = iv[6] | (u32)iv[7] << 8;
 	if (!(state[0] & BIT(31))) { mailbox[108]++; return 0; }
-	if ((state[0] & 4095) != sequence) {
+	u32 expected = state[0] & 4095, out_of_order = expected != sequence;
+	if (out_of_order) {
 		mailbox[109]++;
-		if (((sequence - state[0]) & 4095) < state[7])
-			*reorder = ((macid * 16 + tid) << 12) | (state[0] & 4095);
-		return 0;
+		if (((sequence - expected) & 4095) >= state[7]) return 0;
 	}
 	if (pn_high < state[2] || (pn_high == state[2] && pn_low <= state[1])) { mailbox[110]++; return 0; }
 	struct { u8 addresses[12]; u32 range; } plan[63];
@@ -187,6 +186,11 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 			if (offset != body) offset = (offset + 3) & ~3U;
 		}
 		if (offset != body) return 0;
+	}
+	/* A protocol exception must reach ARM before later TIDs can run. */
+	if (out_of_order) {
+		*reorder = ((macid * 16 + tid) << 12) | expected;
+		return 0;
 	}
 	u32 config = *(u32 *)(states + RX_PEER_CONFIG + macid * 4);
 	u32 total_bytes = 0;
@@ -250,14 +254,18 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 		u32 prefix[10], bytes, macid;
 		if (!rx_frame(mailbox, buffer, &wire, &bytes, &macid, prefix)) return 0;
 		u8 *frame = (u8 *)prefix + ((u32)wire & 3);
-		if (macid * 16 + (frame[24] & 15) != order >> 12) return 0;
+		if (macid != order >> 16) return 0;
+		u32 same_tid = (frame[24] & 15) == ((order >> 12) & 15);
 		u32 sequence = (frame[22] | (u32)frame[23] << 8) >> 4;
-		if (sequence != (order & 4095)) continue;
+		if (same_tid && sequence != (order & 4095)) continue;
+		/* Original station[0x928 + 8*TID] keeps independent reorder states.
+		 * Commit another TID only through its complete NI/PN/SN validation. */
 		u32 unused = 0, owner = rx_uplink(mailbox, buffer, dma, &unused);
 		if (!owner) return 0;
 		*status = owner;
 		mailbox[191]++;
-		return 1;
+		if (same_tid) return 1;
+		mailbox[RTL_AX_RX_CROSS_TID]++;
 	}
 	/* Finish PE0's known capture batch before giving an SN gap to ARM.
 	 * A full work ring must fall back so ARM can release its head. */

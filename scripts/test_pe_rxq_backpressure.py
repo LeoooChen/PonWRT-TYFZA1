@@ -116,8 +116,8 @@ n=Machine();peer=bytes.fromhex('067afb78b287');ap=bytes.fromhex('02e04c076805');
 n.u.mem_write(MB+64,ap);n.u.mem_write(B+0xe410,peer)
 n.put(B+0x11a08,1);n.put(ST+0x10008,1<<31|1<<8);n.put(ST+1024,1<<31|0x123)
 for i,v in ((88,VP|0xa0000000),(89,NI),(93,1),(106,ST)):n.put(MB+i*4,v)
-def data_frame(seq,pn):
- hdr=struct.pack('<HH',0x4188,0)+ap+peer+dst+struct.pack('<H',seq<<4)+bytes(2)
+def data_frame(seq,pn,tid=0):
+ hdr=struct.pack('<HH',0x4188,0)+ap+peer+dst+struct.pack('<H',seq<<4)+bytes([tid,0])
  iv=bytes([pn&255,pn>>8,0,0x20,0,0,0,0]);ip=bytearray(20);ip[0]=0x45;ip[9]=17
  return hdr+iv+bytes.fromhex('aaaa030000000800')+ip+bytes(8)+bytes(12)
 
@@ -211,6 +211,39 @@ for case in ('no_ba','outside_window','replay','BAR','PS_Poll','other_tid','bad_
  assert r.get(MB+90*4)==0 and r.get(MB+94*4)==1 and r.get(MB+175*4)==1
  assert r.get(ST+1024)==1<<31|0x123 and r.get(ST+1028)==1
  for at,raw in ((first,raw_first),(last,raw_last)):assert bytes(r.u.mem_read(at,len(raw)))==raw
+ r.inventory()
+
+# Original reorder controls are per station/TID. A valid independent TID
+# can proceed while the earlier TID waits for its missing sequence.
+for fault in (None,'head_protocol','other_protocol','other_replay','other_gap','other_PS'):
+ r=reorder_peer();other_state=ST+1056
+ r.put(other_state,1<<31|0x345);r.put(other_state+4,6);r.put(other_state+28,64)
+ frames=[bytearray(data_frame(0x124,3)),bytearray(data_frame(0x345,7,1)),bytearray(data_frame(0x123,2))]
+ for packet,identity in zip(frames,(0x124,0x345,0x123)):struct.pack_into('!H',packet,46,identity)
+ if fault=='head_protocol':frames[0][34]=0
+ if fault=='other_protocol':frames[1][34]=0
+ if fault=='other_replay':r.put(other_state+4,7)
+ if fault=='other_gap':struct.pack_into('<H',frames[1],22,0x346<<4)
+ if fault=='other_PS':frames[1][1]|=0x10
+ captured=[r.arrive(bytes(packet),True) for packet in frames]
+ for _ in frames:r.capture()
+ r.process()
+ if fault is None:
+  assert r.get(MB+90*4)==2 and r.get(MB+94*4)==0, (r.get(MB+90*4),r.get(MB+94*4))
+  for _ in range(4):r.process()
+  assert r.get(MB+90*4)==3 and r.get(MB+175*4)==3 and not r.get(MB+94*4)
+  assert r.get(ST+1024)==1<<31|0x125 and r.get(ST+1028)==3
+  assert r.get(other_state)==1<<31|0x346 and r.get(other_state+4)==7
+  actual=[struct.unpack('!H',r.u.mem_read(r.get(NI+j*8)+18,2))[0] for j in range(3)]
+  assert actual==[0x345,0x123,0x124]
+  assert r.get(MB+192*4)==1
+  r.put(VP+0x1c,3);r.capture()
+ else:
+  assert not r.get(MB+90*4) and r.get(MB+94*4)==1
+  assert r.get(ST+1024)==1<<31|0x123 and r.get(ST+1028)==1
+  assert r.get(other_state)==1<<31|0x345 and r.get(other_state+4)==(7 if fault=='other_replay' else 6)
+  for at,raw in captured:assert bytes(r.u.mem_read(at,len(raw)))==raw
+  assert not r.get(MB+192*4)
  r.inventory()
 
 # A stateless PHY report between the two data frames does not change BA order.
@@ -387,6 +420,7 @@ assert r.get(MB+70*4)==1 and r.get(MB+81*4)==254
 assert r.get(MB+178*4)==1 and r.get(MB+179*4)==1 and r.isr==1<<7
 print(json.dumps({'scope':'Actual linked production PE; modeled PCIe, ARM acknowledgement, NI consumption and W1C. No RF throughput simulation.',
  'empty_RX_worker_calls':empty_worker_calls,'empty_RX_shared_reads':len(idle_shared_reads),'queued_RX_waits_for_ARM_ACK':True,
+ 'interleaved_TID_order_and_protocol_barriers':True,
  'PE_sha256':hashlib.sha256(binary).hexdigest(),'ARM_blocked_capture_and_refill_packets':255,'busy_ring_full_payload_preserved':True,
  'ordered_ARM_delivery':len(seen),'additional_wrap_packets':513,'all_514_buffers_have_one_owner':True,'permuted_noncontiguous_DMA_table_all_buffers':True,
  'PE0_capture_then_PE1_executor_processing':True,'PE0_RPQ_then_PE1_BID_return_and_IRQ_notification':True,'BA_batch_SN_PN_order_and_4095_wrap':True,'BA_waits_for_known_PE0_capture_batch':True,'BA_missing_or_full_capture_ring_returns_to_ARM':True,'BA_window_replay_BAR_TID_and_protocol_barriers':True,'sorted_payloads_keep_one_owner':True,'seven_subframe_BA_order_and_NI_wrap':True,'PN_SN_no_overtake':True,'stateless_reports_and_RTS_CTS_ACK_BA_do_not_block_data':True,'BAR_PS_Poll_wait_without_forcing_later_data_to_ARM':True,'NI_last_two_payloads_retained':True,'NI_end_bit30_and_31bit_wrap':True,'AMSDU_prefix_alignment_and_HT_control':True,'invalid_or_NI_full_MPDU_unchanged':True,'RXQ_RPQ_RDU_counted_with_W1C':True,'producer_and_RDU_read_once_per_batch':True,'RPQ_RDU_restarts_with_idle_RXQ':True,'unready_DMA_tag_services_RDU_without_advancing_RX':True},indent=2))

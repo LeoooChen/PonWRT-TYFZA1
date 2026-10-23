@@ -926,13 +926,14 @@ int rtl_ax_rx_status(struct rtl_ax_rx *rx, char *out, size_t capacity)
 		rx->queues[0].skb_prepare_ns, rx->queues[0].data_bytes,
 		rx->queues[0].unavailable + rx->pe_rdu[0], rx->queues[1].unavailable + rx->pe_rdu[1]);
 	length += scnprintf(out + length, capacity - length,
-		"PE_uplink_frames=%u PE_uplink_bytes=%u ARM_exceptions=%llu ARM_exception_errors=%llu RX_pool=%u NI_pending=%u/%u PE_reordered=%u\n",
+		"PE_uplink_frames=%u PE_uplink_bytes=%u ARM_exceptions=%llu ARM_exception_errors=%llu RX_pool=%u NI_pending=%u/%u PE_reordered=%u PE_cross_TID_MPDU=%u\n",
 		rx->rpq_memory ? get_unaligned_le32(rx->pe.memory + 0x2180) : 0,
 		rx->rpq_memory ? get_unaligned_le32(rx->pe.memory + 0x2184) : 0,
 		rx->pe_rx_delivered, rx->pe_rx_malformed, RTL_AX_RX_BUFFERS,
 		rx->rpq_memory ? get_unaligned_le32(rx->pe.memory + 0x2168) : 0,
 		rx->rpq_memory ? get_unaligned_le32(rx->pe.memory + 0x216c) : 0,
-		rx->rpq_memory ? get_unaligned_le32(rx->pe.memory + 0x2000 + 191 * 4) : 0);
+		rx->rpq_memory ? get_unaligned_le32(rx->pe.memory + 0x2000 + 191 * 4) : 0,
+		rx->rpq_memory ? get_unaligned_le32(rx->pe.memory + 0x2000 + RTL_AX_RX_CROSS_TID * 4) : 0);
 	length += scnprintf(out + length, capacity - length,
 		"PE_RPQ_owned=%u forwarded=%u/%u consumer=%u tag=%u malformed=%u\n",
 		rx->rpq_owned,
