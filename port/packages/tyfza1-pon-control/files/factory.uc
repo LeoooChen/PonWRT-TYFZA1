@@ -116,15 +116,17 @@ try {
 }
 try {
 	const start = index(cs, '<chain chainName="EPON_LLID_TBL">');
-	if (start < 0) die('Missing factory EPON LLID identity');
-	const remainder = substr(cs, start);
-	const llid = substr(remainder, 0, index(remainder, '</chain>'));
-	const epon = {
-		onu_mac: mac(field(llid, 'macAddr')),
-		vendor_id: field(hs, 'PON_VENDOR_ID'),
-		oam_model: field(hs, 'EPON_ONU_MODEL')
-	};
-	for (let key, value in epon) identity[key] = value;
+	const remainder = start < 0 ? '' : substr(cs, start);
+	const llid = start < 0 ? '' : substr(remainder, 0, index(remainder, '</chain>'));
+	// ITU factory configurations can have an empty EPON LLID table.
+	if (substr(identity.mode || '', 0, 4) == 'epon' || optional_field(llid, 'macAddr') != '') {
+		const epon = {
+			onu_mac: mac(field(llid, 'macAddr')),
+			vendor_id: field(hs, 'PON_VENDOR_ID'),
+			oam_model: field(hs, 'EPON_ONU_MODEL')
+		};
+		for (let key, value in epon) identity[key] = value;
+	}
 } catch (e) {
 	warn('Factory EPON identity: ' + e.message + '\n');
 	failed = true;

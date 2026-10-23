@@ -2,8 +2,10 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
 tyfza1_storage_migrate() {
-	# The shared firmware also boots the unverified 2.5G board; leave it unchanged.
-	[ "$(cat /tmp/sysinfo/board_name)" = tianyi,tyfza1 ] || return 0
+	case "$(cat /tmp/sysinfo/board_name)" in
+		tianyi,tyfza1|tianyi,tyfza1-2p5g) ;;
+		*) return 0 ;;
+	esac
 	if /usr/libexec/tyfza1-migrate-storage; then
 		return
 	fi

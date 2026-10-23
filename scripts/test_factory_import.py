@@ -34,7 +34,9 @@ def invoke(script, case, values, bosa, identity=True, reset=True):
     (source / 'config_hs.xml').write_text('<Config>\n' + '\n'.join(
         f'<Value Name="{key}" Value="{value}"/>' for key, value in values.items()) + '\n</Config>\n')
     config = source / 'config.xml'
-    if identity:
+    if isinstance(identity, str):
+        config.write_text(identity)
+    elif identity:
         config.write_text('<Config><chain chainName="EPON_LLID_TBL">'
             '<Value Name="macAddr" Value="021122334456"/></chain></Config>\n')
     else:
@@ -73,6 +75,21 @@ for family, speed, mode in (('1', '0', 'gpon'), ('1', '1', 'xgpon'),
     assert f"option mode '{mode}'" in (imported / 'var/run/tyfza1-factory/pon_factory').read_text()
 print('Factory protocol: all six OEM family/speed mappings imported')
 
+# The 2.5G factory XG-PON configuration has no EPON LLID MAC.
+for family, speed, mode in (('1', '0', 'gpon'), ('1', '1', 'xgpon'), ('1', '2', 'xgspon'), ('2', '1', 'epon-d10g')):
+    values = dict(fields, PON_MODE=family, PON_SPEED=speed, PON_SUB_MODE='0')
+    for config in ('<Config><chain chainName="EPON_LLID_TBL"></chain></Config>', '<Config/>'):
+        result, data, imported = invoke('factory.uc', 'empty-epon-' + mode, values, valid_bosa, config)
+        assert result.returncode == (1 if family == '2' else 0), result.stderr
+        assert data == expected
+        identity_text = (imported / 'var/run/tyfza1-factory/pon_factory').read_text()
+        assert "option serial_number 'TEST12345678'" in identity_text
+        assert 'option onu_mac' not in identity_text
+bad_mac = '<Config><chain chainName="EPON_LLID_TBL"><Value Name="macAddr" Value="bad"/></chain></Config>'
+result, _, _ = invoke('factory.uc', 'invalid-epon-mac', dict(fields, PON_MODE='1', PON_SUB_MODE='0'), valid_bosa, bad_mac)
+assert result.returncode != 0
+print('ITU empty EPON table accepted; EPON missing identity and malformed supplied MAC rejected')
+
 for case, bosa, identity in (('short-bosa', b'bad', True), ('extended-bosa', valid_bosa + b'original suffix', True),
                              ('missing-bosa', None, True), ('missing-pon-config', valid_bosa, False)):
     result, data, destination = invoke('factory.uc', case, fields, bosa, identity)
@@ -109,6 +126,8 @@ importer = runtime / 'usr/share/tyfza1/factory.uc'
 importer.parent.mkdir(parents=True, exist_ok=True)
 shutil.copy2(project / 'port/packages/tyfza1-pon-control/files/factory.uc', importer)
 importer.chmod(0o755)
+shutil.copy2(project / 'port/packages/tyfza1-storage/files/tyfza1-factory.sh',
+             runtime / 'lib/tyfza1-factory.sh')
 (runtime / 'sys/class/ubi/ubi0').mkdir(parents=True, exist_ok=True)
 pon_mac = runtime / 'sys/bus/platform/devices/4f5500000.pon/data_mac'
 pon_mac.parent.mkdir(parents=True, exist_ok=True)
