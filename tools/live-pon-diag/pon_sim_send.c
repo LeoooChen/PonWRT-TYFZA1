@@ -15,6 +15,15 @@ module_param(packets,uint,0600);
 module_param(rate_mbps,uint,0600);
 module_param(session_id,uint,0600);
 MODULE_PARM_DESC(rate_mbps,"Ethernet wire rate including FCS, preamble and inter-frame gap");
+static void wait_deadline(u64 due)
+{
+ u64 now=ktime_get_ns();
+ if(due>now+20000){
+  unsigned int wait=div_u64(due-now-20000,1000);
+  usleep_range(wait,wait+10);
+ }
+ while(ktime_get_ns()<due)cpu_relax();
+}
 static int __init send_init(void)
 {
  struct net_device *lan=dev_get_by_name(&init_net,"lan4");
@@ -76,6 +85,8 @@ static int __init send_init(void)
    put_unaligned_be32(done+i,eth+60);
    if(!udp->check)udp->check=CSUM_MANGLED_0;
   }
+  /* Prepare while the previous batch's wire time elapses. */
+  wait_deadline(due);
   u64 published=ktime_get_ns();
   if(published>due){
    late_batches++;max_lateness=max(max_lateness,published-due);
@@ -86,12 +97,8 @@ static int __init send_init(void)
   /* 1514-byte frame + FCS4 + preamble/SFD8 + IFG12. */
   /* A delayed wakeup must not accumulate catch-up bursts into the QM. */
   due=max(due,published)+div_u64((u64)n*1538*8*1000,rate_mbps);
-  u64 now=ktime_get_ns();
-  if(due>now+1000){
-   unsigned int wait=div_u64(due-now,1000);
-   usleep_range(wait,wait+20);
-  }
  }
+ wait_deadline(due);
  elapsed=ktime_get_ns()-started;
  writel(0,vp);
  task_cputime(current,&user_end,&system_end);
