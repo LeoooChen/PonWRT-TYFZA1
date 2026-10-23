@@ -29,7 +29,8 @@ module_param(server_pid,uint,0600);
 
 static unsigned int room(void)
 {
- return ((readl(vp+0x1c)&63)-READ_ONCE(producer)-3)&63;
+ /* Keep61 outstanding requests while using the factory1024-entry ring. */
+ return 61-min(61U,(READ_ONCE(producer)-(readl(vp+0x1c)&1023))&1023);
 }
 
 static enum hrtimer_restart tick(struct hrtimer *unused)
@@ -65,7 +66,7 @@ static netdev_tx_t transmit(struct sk_buff *skb,struct net_device *dev)
   hrtimer_start(&timer,ns_to_ktime(100000),HRTIMER_MODE_REL);
   return NETDEV_TX_BUSY;
  }
- slot=producer;length=skb->len+8;frame=memory+512+slot*1536;
+ slot=producer;length=skb->len+8;frame=memory+8192+slot*1536;
  memcpy(frame,bridge->dev_addr,ETH_ALEN);
  memcpy(frame+6,"\x02\x55\x46\x50\x4f\x4e",ETH_ALEN);
  put_unaligned_be16(ETH_P_PPP_SES,frame+12);
@@ -77,7 +78,7 @@ static netdev_tx_t transmit(struct sk_buff *skb,struct net_device *dev)
  skb_copy_bits(skb,ETH_HLEN,frame+22,skb->len-ETH_HLEN);
  payload_copy_ns+=ktime_get_ns()-copy_begin;
  put_unaligned_le32(0x81000001U|(7U<<25)|(length<<8),memory+slot*8+4);
- producer=(producer+1)&63;
+ producer=(producer+1)&1023;
  /* Publish the whole Linux TX batch; also flush before the ring fills. */
  if(!netdev_xmit_more() || available==1){
   dma_wmb();writel(producer,vp+0x18);writel(1,vp+0x68);doorbells++;
@@ -110,7 +111,7 @@ static int show_stats(char *buffer,const struct kernel_param *param)
 {
  return scnprintf(buffer,PAGE_SIZE,
   "data_packets=%llu data_bytes=%llu control_packets=%llu stops=%llu wakes=%llu doorbells=%llu data_prepare_ns=%llu payload_copy_ns=%llu producer=%u consumer=%u room=%u stream_packets=%llu,%llu,%llu,%llu\n",
-  data_packets,data_bytes,control_packets,stops,wakes,doorbells,data_prepare_ns,payload_copy_ns,producer,readl(vp+0x1c)&63,room(),
+  data_packets,data_bytes,control_packets,stops,wakes,doorbells,data_prepare_ns,payload_copy_ns,producer,readl(vp+0x1c)&1023,room(),
   stream_packets[0],stream_packets[1],stream_packets[2],stream_packets[3]);
 }
 static const struct kernel_param_ops stats_ops={.get=show_stats};
@@ -163,15 +164,15 @@ static int __init initialize(void)
  if(!dma){ret=-ENOMEM;goto put;}
  vp=dma+0x100+11*0xa0;
  if(readl(vp)){ret=-EBUSY;goto unmap;}
- memory=dma_alloc_coherent(lan->dev.parent,128*1024,&address,GFP_KERNEL);
+ memory=dma_alloc_coherent(lan->dev.parent,1024*(1536+8),&address,GFP_KERNEL);
  if(!memory){ret=-ENOMEM;goto unmap;}
  saved[0]=readl(dma+0x14);saved[1]=readl(vp+8);saved[2]=readl(vp+12);
  saved[3]=readl(vp+0x64);saved[4]=readl(vp+0x78);saved[5]=readl(vp+0x1c);
- producer=saved[5]&63;
- memset(memory,0,128*1024);
- for(unsigned int i=0;i<64;i++)
-  put_unaligned_le32(lower_32_bits(address)+512+i*1536,memory+i*8);
- writel(0,vp+0x64);writel(2,vp+8);writel(lower_32_bits(address)+6,vp+12);
+ producer=saved[5]&1023;
+ memset(memory,0,1024*(1536+8));
+ for(unsigned int i=0;i<1024;i++)
+  put_unaligned_le32(lower_32_bits(address)+8192+i*1536,memory+i*8);
+ writel(0,vp+0x64);writel(2,vp+8);writel(lower_32_bits(address)+10,vp+12);
  writel(BIT(31)|BIT(30),vp+4);
  ret=readl_poll_timeout(vp+4,status,!(status&BIT(31)),1,100000);
  if(ret)goto restore_dma;
@@ -188,7 +189,7 @@ static int __init initialize(void)
  pr_info("PON_TCP_FEED %s VP11 source7 PPPoE SID4660 TCP5206->55000 ready, dma=%pad\n",feed->name,&address);
  return 0;
 free_netdev:free_netdev(feed);
-restore_dma:restore();dma_free_coherent(lan->dev.parent,128*1024,memory,address);
+restore_dma:restore();dma_free_coherent(lan->dev.parent,1024*(1536+8),memory,address);
 unmap:iounmap(dma);
 put:if(bridge)dev_put(bridge);if(radio)dev_put(radio);if(lan)dev_put(lan);return ret;
 }
@@ -196,7 +197,7 @@ put:if(bridge)dev_put(bridge);if(radio)dev_put(radio);if(lan)dev_put(lan);return
 static void __exit finish(void)
 {
  unregister_netdev(feed);free_netdev(feed);restore();
- dma_free_coherent(lan->dev.parent,128*1024,memory,address);iounmap(dma);
+ dma_free_coherent(lan->dev.parent,1024*(1536+8),memory,address);iounmap(dma);
  dev_put(bridge);dev_put(radio);dev_put(lan);
 }
 module_init(initialize);
