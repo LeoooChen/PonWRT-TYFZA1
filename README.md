@@ -103,8 +103,6 @@ apk add htop nano iperf3
 
 RTL9617C 的 Cortex-A55 可运行官方 `aarch64_cortex-a53` 用户态软件；固件已启用该架构，不限制第三方来源。第三方软件可添加其 APK 软件源，或安装本地 `.apk`，沿用官方 APK 的依赖和签名规则。
 
-OpenClash 不在 OpenWrt 官方源中，需要从其上游下载 `.apk`。已核验的 `v0.48.002` 安装包会报 `UNTRUSTED signature`，这不是固件缺少 OpenWrt 公钥；具体安装步骤见[OpenClash 安装说明](port/APK_COMPATIBILITY.md#openclash-on-080-beta-and-081-beta)。无需为此升级固件或修改 Wi-Fi。
-
 ## 自行编译
 
 ### GitHub Actions

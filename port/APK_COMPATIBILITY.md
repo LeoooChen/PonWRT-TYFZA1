@@ -77,56 +77,8 @@ For a local package whose signing key is already trusted:
 apk add /tmp/example.apk
 ```
 
-An untrusted signature is rejected by upstream APK too. Adding another copy of
-the OpenWrt key cannot authenticate a package signed by someone else. If the
-publisher does not supply a verifiable public key, authenticate the specific
-download separately and explicitly allow that local package as shown below.
-This is a per-command exception, not a persistent change to signature policy.
-The firmware uses APK, so use `.apk` releases rather than `.ipk` packages.
-
-## OpenClash on 0.8.0-beta and 0.8.1-beta
-
-OpenClash is not in the configured official feeds. The upstream
-[v0.48.002 release](https://github.com/vernesong/OpenClash/releases/tag/v0.48.002)
-provides a `noarch` APK. Its signature is not trusted by the official OpenWrt
-keyring; the release assets do not include the signing public key. The upstream
-[installation instructions](https://github.com/vernesong/OpenClash#readme)
-also use `--allow-untrusted` for this package. This is not an A53/A55 mismatch
-or a missing official feed key.
-
-Run the following over SSH on an ONU with working Internet access. Install the
-official dependencies with signature checking first, then authenticate the
-fixed-version OpenClash download against its GitHub release asset SHA-256 and
-install only that local package with a one-command trust exception:
-
-```sh
-(
-    set -e
-    apk update
-    apk add bash ca-bundle curl dnsmasq-full ip-full luci-compat ruby ruby-yaml \
-        unzip kmod-tun kmod-inet-diag kmod-nft-tproxy
-    cd /tmp
-    curl -fL -o luci-app-openclash-0.48.002.apk \
-        https://github.com/vernesong/OpenClash/releases/download/v0.48.002/luci-app-openclash-0.48.002.apk
-    echo 'f7ebbd43f9be15c5e6df26e5d0c03d50d0bb8f7fa4cc0d2c2bf048b08c0b155b  luci-app-openclash-0.48.002.apk' | sha256sum -c -
-    apk add --no-network --allow-untrusted /tmp/luci-app-openclash-0.48.002.apk
-    rm /tmp/luci-app-openclash-0.48.002.apk
-)
-```
-
-The digest above applies only to that exact release asset. APK automatically
-replaces `dnsmasq` with `dnsmasq-full` through its package metadata; do not remove
-DNS service first or use `--force-overwrite` / `--force-broken-world`.
-No firmware flash, Wi-Fi change or global `apk upgrade` is required.
-LuCI's stock file-upload installer does not pass `--allow-untrusted`; use SSH
-for this upstream package rather than disabling signature checks globally.
-
-The firmware already includes TUN, nftables TPROXY and INET_DIAG. The OpenClash
-APK does not include the Clash/Mihomo executable: select the ARM64 core in
-OpenClash and supply your configuration separately. The package metadata alone
-declares 28,863,438 installed bytes, before additional dependencies and the core;
-actual flash usage depends on filesystem compression. Check `/overlay` capacity
-before adding the core and rule databases.
+The firmware uses APK. Install `.apk` packages and use the publisher's signing
+key for third-party repositories.
 
 ## Verification scope
 
@@ -147,9 +99,3 @@ HTTPS server, and removing trust in the official key correctly rejected an
 index signature. All installed kmod package dependencies matched the image's
 kernel ABI. Evidence is recorded in
 `manifests/apk-official-compatibility-20261018.json`.
-
-The 2026-10-21 OpenClash check verified the fixed asset digest, rejection of its
-untrusted signature, official dependency installation and local APK installation
-in a copied ARM64 rootfs. Package scripts were disabled for that check. Bash,
-curl, Lua, dnsmasq and Ruby YAML ran there; OpenClash service startup, core
-operation and traffic forwarding were not validated.
