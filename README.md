@@ -12,6 +12,7 @@
 </p>
 
 <p align="center">
+  <a href="#wi-fi-硬件加速">Wi-Fi 硬件加速</a> ·
   <a href="#下载固件">下载固件</a> ·
   <a href="#刷入">刷入指南</a> ·
   <a href="RELEASE_NOTES.md">更新日志</a> ·
@@ -27,6 +28,33 @@ PonWRT-TYFZA1 是面向天翼 TYFZA1 光猫的 OpenWrt 适配项目。设备采�
 - **硬件加速**：有线与 Wi-Fi 双向硬件转发，可在 LuCI 中启用流量卸载。
 - **原生体验**：使用 LuCI 管理上网、无线和防火墙，通过 sysupgrade 升级。
 - **原厂数据保留**：启动时自动读取本机身份、光学校准和无线校准；扩容时将原厂配置与应用数据保存为两份压缩副本。
+
+## Wi-Fi 硬件加速
+
+固件通过 RTL9617C 的两个 MIPS32 / Taroko 包处理核心（PE），连接 PCIe 无线收发与 NI / FE / QM 硬件转发路径。5 GHz 的 RTL8852C 和 2.4 GHz 的 RTL8192XB 共享这两个 PE；ARM 上的 OpenWrt / mac80211 负责连接管理、密钥配置、流表下发及例外报文处理。
+
+![双 PE Wi-Fi 硬件加速架构：上行经 PE0 接收、PE1 处理后提交 NI；下行经 PE1 构建无线发送描述符；PE0 处理发送完成通知，PE1 回收缓冲](assets/wifi-offload-architecture.png)
+
+- **上行**：PE0 捕获无线 RX 报文、补充接收描述符；PE1 完成重排序、PN/SN 校验并提交 NI，由 FE 匹配流表、执行报文改写，再经队列转发到 PON / LAN。
+- **下行**：PON / LAN 报文经 FE / NI / QM 转发到无线 EPP 队列，PE1 完成聚合和 TX 描述符构建，通过 PCIe 交给无线芯片发送。
+- **缓冲回收**：PE0 处理 RPQ 发送完成通知，PE1 回收对应缓冲；上行缓冲按 NI 消费进度归还，配合 RXBD 批量补环。
+- **硬件分工**：无线芯片负责无线收发与加解密，FE 执行 NAT、VLAN、PPPoE 等流表动作，双 PE 承担无线数据路径处理。
+
+在 LuCI **网络 → 防火墙** 中启用软件流量卸载与硬件流量卸载。实现见 [PE 固件](port/pe/rtl9617c-radio-wd.c)和[无线驱动](port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap)。
+
+### 实测表现
+
+测试配置：**0.8.2-beta、MacBook、5 GHz HE160、设备端 NI/PON 模拟端点**。TCP 使用单流，双向使用 `iperf3 --bidir`；上行指 MacBook 向设备发送，下行反之。速率按接收端有效载荷计算。
+
+| 测试 | 上行 | 下行 | 接收结果 |
+| --- | ---: | ---: | --- |
+| TCP 上行，20 秒 | 1.316 Gbps | — | 0 重传 |
+| TCP 下行，10 秒 | — | 1.428 Gbps | 0 重传 |
+| UDP 上行，40 万包 | 1.395 Gbps | — | 全部收到，逐包校验通过，无重复 |
+| UDP 下行，50 万包 | — | 1.511 Gbps | 全部收到，逐包校验通过，无重复 |
+| TCP 同时双向，20 秒 | 0.679 Gbps | 0.696 Gbps | 上行 0 重传，下行 1 次重传 |
+
+TCP 测试的硬件流表命中与收发计数确认了流量卸载，双向测试的两个数据流均进入硬件路径。上述 UDP 下行测试中，设备四核 CPU 总利用率约 **3.7%**（四核总容量为 100%，含造流量开销）。双向测试同时记录到 L3 队列尾丢 112 包、RX 描述符不足（RDU）14 次。
 
 ## 下载固件
 
