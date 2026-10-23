@@ -1,0 +1,117 @@
+{
+  "date": "2026-10-23",
+  "source_commit": "e7146f6",
+  "acceptance": false,
+  "factory_reference": "Actual board default_scfg CFG_ID_L3QM_AXI_ATTRIB_EQ_VALUES and CFG_ID_L3QM_AXI_ATTRIB_CPU_EPP_VALUES; ca-ne.ko aal_l3qm_init_empty_buffer slice58678..58750 and aal_l3qm_set_epp_axi_attrib. EQ_CFG3/4 are distinct registers and unchanged.",
+  "change": "Reset EQ attribute entries0..15 to0 during native QM init. Radio startup separately programs EQ0 and EPP0x0a008060; CPU EPP48 and PE EPP50/51 remain0x0a008060. No buffer, ring, IRQ, budget, RF, power-save, PN or SN changes.",
+  "targeted_check": "scripts/test_qm_axi_attributes.py executes actual factory ARM64 attribute loops with board arrays and compiles native init statements. Before fix, core EQ4=0x0a008060 mismatches factory0; current core and both radio writes match.",
+  "image": {
+    "source_commit": "e7146f673802ab1fcf9fea5605bb0ab98f3dd238",
+    "sysupgrade_SHA256": "e0d474531fd812fa51b3600bd6776401053819262982010079106e7f1bebf706",
+    "kernel_SHA256": "ea0f2761cb2551fc690034e5d567fb42830e9f03ecc878c2fb523461b5e88ef4",
+    "rootfs_SHA256": "7148c5ae31878f8d6be311c497fd04b772f76feedbbf78ffcb1f2859a83256c7",
+    "packaged_radio_SHA256": "4c9ef44cb76d3225165523641f5cec180a1b4c473899de7930635ef89e5a0f37",
+    "embedded_PE_SHA256": "4ad4b1366d34b3296d83326fc411ffa9cb6583d656ac86c607214ef18acc5c9a",
+    "embedded_PE_exact": true,
+    "built_NI_source_exact": true,
+    "FIT_profiles": {
+      "conf-0": {
+        "kernel": "fb7f4b4939e7d437db716c935e07f32a9ffb858489999c8ff7423b8403dd43ed",
+        "fdt": "b320cedb5cc72ccf46349de5cf7da3453549afbb07b3c434bafb1f96775b6f94",
+        "script": "ac9ebd6848f0bb05b1f3aab05b4f45b1f308197266738e22d9b05e8084ee3ce2"
+      },
+      "conf-1": {
+        "kernel": "fb7f4b4939e7d437db716c935e07f32a9ffb858489999c8ff7423b8403dd43ed",
+        "fdt": "1895357c670ae28c5db41c3feedf0026dd44e0b7de128437d228cd84c5bf013d",
+        "script": "ac9ebd6848f0bb05b1f3aab05b4f45b1f308197266738e22d9b05e8084ee3ce2"
+      }
+    },
+    "configuration_and_payload_signatures_verified": true,
+    "bad_configuration_signature_rejected": true,
+    "sysupgrade_payloads_exact": true,
+    "rootfs_zero_alignment_bytes": 784
+  },
+  "cold_run": {
+    "source_commit": "e7146f6",
+    "boot_id": "8d970c9c-06c2-4984-8378-75779df6abeb",
+    "state": "Firmware halted; first cause preserved, no root fix claimed",
+    "first_halt_boottime": 199.192861,
+    "firmware_halt": "0x1000",
+    "DMAC": "0x100",
+    "host_dispatcher": "0x40",
+    "later_H2C_timeouts": true,
+    "snapshot": "qm-axi-halt-snapshot.tgz",
+    "post_halt_snapshot_limit": "All 384 current host WP images have correct declared length/address sums and EOP. Capture is late; does not prove what NIC fetched at first fault. PE continued producing until pending124.",
+    "up20": {
+      "scope": "Mac TCP upload to DUT Linux endpoint; hardware uplink requires pon_tcp_sink FE and receive counters. No physical PON egress.",
+      "parallel_streams": 1,
+      "error": null,
+      "client_exit": 0,
+      "received_Mbps": 1369.1634464674719,
+      "retransmits": 0,
+      "CPU_total_percent_of_4_cores": 32.963510848126234,
+      "CPU_server_raw_percent_of_4_cores": 7.384122287968442,
+      "CPU_remaining_percent_of_4_cores": 25.579388560157792,
+      "CPU_note": "Same raw100-Hz basis; remaining includes simulated ingress and TCP ACK/softirq work, not pure Wi-Fi forwarding CPU.",
+      "CPU_each_core_percent": [
+        9.319526627218934,
+        0.5424063116370809,
+        70.61143984220907,
+        51.38067061143984
+      ],
+      "data_packets_delta": 128743,
+      "data_bytes_delta": 8497038,
+      "control_packets_delta": 133,
+      "stops_delta": 0,
+      "wakes_delta": 0,
+      "doorbells_delta": 128743,
+      "data_prepare_ns_delta": 273052600,
+      "payload_copy_ns_delta": 38286640,
+      "PE_NI_sent_delta": 128743,
+      "l3te_tail_drop_delta": 0,
+      "no_buffer_delta": 0,
+      "rxq_delta": 603789,
+      "rdu_delta": 0,
+      "FE_packets_delta": 128743,
+      "hardware_match_proven": true,
+      "actual_client_ports": [
+        55000
+      ],
+      "offload_covers_all_streams": true,
+      "source_stream_packets_delta": [
+        128743,
+        0,
+        0,
+        0
+      ],
+      "uplink_sink_FE_packets_delta": 2379721,
+      "uplink_sink_received_delta": 2379721,
+      "uplink_sink_received_bytes_delta": 3583744471,
+      "hardware_epoch_before_after": [
+        [
+          "8d970c9c-06c2-4984-8378-75779df6abeb",
+          3
+        ],
+        [
+          "8d970c9c-06c2-4984-8378-75779df6abeb",
+          3
+        ]
+      ],
+      "hardware_epoch_continuous": true,
+      "decreasing_counters": [],
+      "hardware_counter_comparison_valid": true
+    },
+    "down10": "iperf client timed out25s. No successful downlink report.",
+    "bidir": "Not started: initial SSH snapshot failed.",
+    "EQ_readback": "All EQ0..15=0; EPP48/50/51=0x0a008060; high words0.",
+    "acceptance": false
+  },
+  "scope_limits": [
+    "Configuration mismatch is fixed and hardware readback proves it persists after radio startup. This does not prove it caused the prior stale64-packet block.",
+    "TCP upload20s passes, but downlink firmware halt reproduces; no overall throughput/stability acceptance.",
+    "Late host WP snapshot has no invalid declared length/EOP. It cannot establish what NIC fetched at first hardware error.",
+    "HDT error0x40 is PAYLOAD_UNDERFLOW in reference register definitions; detailed physical cause remains to be verified with board factory implementation. H2C timeouts follow the hardware halt."
+  ],
+  "evidence_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold",
+  "next_diagnostic": "RAM-only rx halt observer requests TX/RX PE context pause only after hardware halt. No normal forwarding/PE program change. Capture first-fault WP/BD state and compare factory ownership/publication."
+}
