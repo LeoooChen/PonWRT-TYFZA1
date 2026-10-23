@@ -46,7 +46,7 @@ static int __init send_init(void)
   eth[14]=0x11;eth[15]=0;put_unaligned_be16(session_id,eth+16);
   put_unaligned_be16(1494,eth+18);put_unaligned_be16(0x21,eth+20);
   ip->version=4;ip->ihl=5;ip->ttl=64;ip->protocol=IPPROTO_UDP;
-  ip->tot_len=htons(1492);ip->saddr=htonl(0xc6120001);ip->daddr=htonl(0xc6120002);
+  ip->tot_len=htons(1492);ip->saddr=htonl(0xc612ff01);ip->daddr=htonl(0xc6120002);
   ip_send_check(ip);udp->source=htons(55000);udp->dest=htons(55001);udp->len=htons(1472);
   for(unsigned int byte=64;byte<1514;byte++)eth[byte]=(byte*31+7)&255;
   memcpy(eth+50,"TYFPPP-SIM",10);put_unaligned_be32(i,eth+60);

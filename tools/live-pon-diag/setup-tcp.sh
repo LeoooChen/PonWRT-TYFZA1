@@ -17,7 +17,7 @@ ip addr add 198.18.255.1/32 dev ponfeed0
 ip route add table 220 192.168.1.212/32 dev ponfeed0 src 198.18.255.1
 ip rule add from 198.18.255.1/32 table 220 priority 22000
 ./set-peer
-insmod ./pon_tcp_sink_final.ko
+insmod ./pon_tcp_sink.ko
 echo 8 > /sys/class/net/ponsink0/queues/rx-0/rps_cpus
 # Software GSO/checksum/TX runs with BH disabled. Keep the generator off
 # the NI NAPI CPU; otherwise a TX burst stalls RX and causes L3 tail drops.
@@ -25,7 +25,7 @@ rm -f tcp.pid
 LD_LIBRARY_PATH=$PWD taskset "$server_mask" ./iperf3 -s -B 198.18.255.1 -p 5206 -D -I "$PWD/tcp.pid"
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
 	if test -s tcp.pid; then break; fi
-	sleep 0.1
+	sleep 1
 done
 pid=$(cat tcp.pid)
 kill -0 "$pid"
