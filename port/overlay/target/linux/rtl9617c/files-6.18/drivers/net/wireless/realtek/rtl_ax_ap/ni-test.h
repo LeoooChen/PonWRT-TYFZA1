@@ -260,7 +260,8 @@ static int ni_test_release(struct rtl_ax_tx *tx)
 
 static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 {
-	static const u32 attr[] = { 0x0a008060, 0 };
+	static const u32 eq_attr[] = { 0, 0 };
+	static const u32 epp_attr[] = { 0x0a008060, 0 };
 	unsigned int i;
 	int ret;
 
@@ -315,8 +316,8 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 	put_unaligned_le32(readl(tx->ni.regs + tx->ni.registers[12]), tx->pe.memory + PE_PROBE_MAILBOX + 100);
 	put_unaligned_le32(readl(tx->ni.regs + tx->ni.registers[11]), tx->pe.memory + PE_PROBE_MAILBOX + 104);
 	put_unaligned_le32(macid, tx->pe.memory + PE_PROBE_MAILBOX + 108);
-	ret = attr_write(tx, tx->ni.eq, attr); if (ret) return ret;
-	ret = attr_write(tx, 48 + tx->ni.cpu, attr); if (ret) return ret;
+	ret = attr_write(tx, tx->ni.eq, eq_attr); if (ret) return ret;
+	ret = attr_write(tx, 48 + tx->ni.cpu, epp_attr); if (ret) return ret;
 	for (i = 0; i < 8; i++) {
 		writel(9, tx->ni.regs + 0x1658);
 		ret = ni_access(tx, 0x1654, BIT(31) | BIT(30) | (i * 64 + 16 + tx->ni.cpu));

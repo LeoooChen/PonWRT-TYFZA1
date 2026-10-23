@@ -392,23 +392,12 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	writel(0xffff, ni + 0x63a8);
 	writel(0, ni + 0x63a8);
 	writel(0, ni + 0x66d4);
-	ret = rtl_qm_attribute(rx, EQ_ID, 0x0a008060);
-	if (ret)
-		return ret;
-	ret = rtl_qm_attribute(rx, EQ_ID + 1, 0x0a008060);
-	if (ret)
-		return ret;
-	for (i = 0; i < RTL_QM_PE_POOLS; i++) {
-		ret = rtl_qm_attribute(rx, RTL_QM_PE_EQ + i, 0x0a008060);
+	/* Stock startup uses separate AXI attributes for EQs and CPU EPPs. */
+	for (i = 0; i < 16; i++) {
+		ret = rtl_qm_attribute(rx, i, 0);
 		if (ret)
 			return ret;
 	}
-	ret = rtl_qm_attribute(rx, RTL_DQ_EQ_PRIVATE, 0x0a008060);
-	if (ret)
-		return ret;
-	ret = rtl_qm_attribute(rx, RTL_DQ_EQ_SHARED, 0x0a008060);
-	if (ret)
-		return ret;
 	ret = rtl_qm_attribute(rx, 48, 0x0a008060);
 	if (ret)
 		return ret;
