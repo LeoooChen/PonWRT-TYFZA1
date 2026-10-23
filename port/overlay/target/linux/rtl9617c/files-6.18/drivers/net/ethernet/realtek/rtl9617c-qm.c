@@ -537,13 +537,11 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 	rtl_qm_refill_drain(&rx->refill, rx, rtl_qm_try_push, NAPI_POLL_WEIGHT);
 	/* Service PON control traffic before bulk data, matching the stock RX order. */
 	for (cos = RTL_QM_VOQS - 1; cos >= 0 && count < budget; cos--) {
-		/* Read nonempty before the producer snapshot. A packet arriving
-		 * between the reads must not turn an empty snapshot into a full ring. */
-		bool nonempty = readl(rx->ni + 0x659c) & BIT(cos);
+		/* Stock ca_ni_rx_napi consumes only the published pointer interval.
+		 * Queue status can precede DDR publication and does not republish EPPs. */
 		unsigned int wr = readl(rx->ni + EPP_WRITE + cos * 4) & 0xffffff;
-		bool full = rx->read[cos] == wr && nonempty;
 
-		while ((rx->read[cos] != wr || full) && count < budget) {
+		while (rx->read[cos] != wr && count < budget) {
 			unsigned int read = rx->read[cos];
 			void *entry = rx->ring_memory + cos * RTL_QM_RING_BYTES + read;
 			u32 command, length_word, address, offset, h0, h1;
@@ -554,7 +552,6 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			unsigned int source, wifi_id;
 			bool wifi_forwarded;
 			bool refill_buffer = false;
-			full = false;
 
 			dma_rmb();
 			command = get_unaligned_le32(entry);

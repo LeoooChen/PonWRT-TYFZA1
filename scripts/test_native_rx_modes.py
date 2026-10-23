@@ -175,11 +175,10 @@ static void check(unsigned int packets,int budget,bool blocked,int flow) {
     memset(owned,0,sizeof(owned));delivered=returned=epp_publications=0;
     store(registers+0x6338,blocked?0:1);store(registers+0x633c,blocked?0:1);
     store(registers+0x6368,blocked?0:BIT(31));
-    /* Up to four full 128-descriptor rings, with unique EQ4/EQ5 buffers. */
+    /* Published pointer intervals, with unique EQ4/EQ5 buffers. */
     for (int cos=7;cos>=0 && count<packets;cos--) {
-        unsigned int n=packets-count; if(n>128)n=128;
+        unsigned int n=packets-count; if(n>127)n=127;
         store(registers+0x7000+cos*4,(n*8)%RTL_QM_RING_BYTES);
-        if (n==128) store(registers+0x659c,readl(registers+0x659c)|BIT(cos));
         for (unsigned int j=0;j<n;j++,count++) {
             unsigned int offset=8192+count*2048;
             unsigned int command=(rx.memory_dma+offset)|BIT(4)|BIT(6)|(4+count/256);
@@ -188,10 +187,10 @@ static void check(unsigned int packets,int budget,bool blocked,int flow) {
             store(rx.memory+offset+RTL_QM_HEADROOM+4,__builtin_bswap32((60U<<15)|(flow>=0?7<<9:0)));
         }
     }
-    /* A new descriptor arrives between the status and producer reads. */
+    /* A new descriptor is published immediately after the WR snapshot. */
     if(packets==1) {store(registers+0x701c,0);arrival_on_snapshot=true;}
     int consumed=rtl_qm_rx_poll(&rx,&napi,budget);
-    assert(consumed==(int)(packets<(unsigned int)budget?packets:(unsigned int)budget));
+    assert(consumed==(packets==1?0:(int)(packets<(unsigned int)budget?packets:(unsigned int)budget)));
     assert(delivered==(unsigned int)consumed && dev.stats.rx_errors==0);
     assert(epp_publications == (HAS_RETIRE ? (unsigned int)consumed : ((unsigned int)consumed + 127) / 128));
 #if HAS_REFILL
@@ -282,7 +281,7 @@ int main(void) {
     check_wifi(2,18,0xf02,false,false,false);
     check_wifi(2,18,0xf02,true,true,false);
     check_wifi(61,18,0xf3d,true,false,false);
-    puts("Actual QM RX: full rings/backpressure; Wi-Fi hit/miss direction, payload, source7/18, retired/down/reserved IDs passed");
+    puts("Actual QM RX: published intervals/backpressure; Wi-Fi hit/miss direction, payload, source7/18, retired/down/reserved IDs passed");
 }
 '''
 
