@@ -657,10 +657,11 @@ static void rtl_ax_rx_work(struct work_struct *work)
 	}
 	spin_lock_irqsave(&rx->irq_lock, flags);
 	if (rx->running) {
+		/* Stock restores RX interrupts after every drain, including an
+		 * unready DMA tag. A later RDU must reach the IRQ handler. */
+		rx->io->write32(rx->io->ctx, 0x30b0, RTL_AX_IRQ_INDICATION);
 		if (retry)
 			mod_delayed_work(system_wq, &rx->work, 0);
-		else
-			rx->io->write32(rx->io->ctx, 0x30b0, RTL_AX_IRQ_INDICATION);
 	}
 	spin_unlock_irqrestore(&rx->irq_lock, flags);
 }
