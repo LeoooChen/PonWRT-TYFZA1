@@ -337,9 +337,44 @@
         "1048022873": 2
       }
     },
-    "interpretation": "Four old TCP fragments sent once by Mac reappear at NI before GRO in the positions of four new fragments. Those new fragments are retransmitted later. Old-to-replaced distance is64 when upload data and download ACK packets are both counted, pointing to NI-ring reuse/publication. The mechanism is not yet proved; do not expand retention heuristically."
+    "interpretation": "Four old TCP fragments sent once in the Mac Ethernet capture reappear in the NI-to-sink copy before GRO in place of four new fragments, which are subsequently retransmitted. The source distance is64 when both upload data and download ACKs are counted. This does not yet isolate the NI producer: both NI TX rings and RX refill batches involve64, and the Wi-Fi path before NI has not been observed. Compare payload content before NI publication with the anomalous NI receipt before changing retention or barriers."
   },
   "fixture_note": "Reused sequence sink rebuilt with the current RTL_xram.qm DWARF offset0x18d0, not its historical0x1880.",
   "evidence_directory_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold",
-  "overall_acceptance_passed": false
+  "overall_acceptance_passed": false,
+  "RAM_UDP_image_SHA256": "611e1f7cac376cf4b61f1a72e06ff15a0d3e0c180932c1c68a60e92bc296aaa8",
+  "RAM_bidir_image_SHA256": "dbe736f6bf621ab93957830c47f5c41697a806847549622137febc47b9713bbb",
+  "sequence_trace": {
+    "Mac_data_packets": 351484,
+    "NI_pre_GRO_data_packets": 351484,
+    "NI_pre_GRO_discontinuities": 10,
+    "NI_post_GRO_discontinuities": 10,
+    "Mac_capture_kernel_drops": 0,
+    "source_compare_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold/interleaved-order-source-compare.json",
+    "packet_distance_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold/interleaved-order-first-replacement.json",
+    "limit": "Mac capture precedes actual Wi-Fi transmission; it does not prove bytes on air or at TYFZA1 RX DMA input."
+  },
+  "raw_buffer_followup": {
+    "run": "interleaved-raw-order-bidir6",
+    "status": "Original64-packet replacement not reproduced.",
+    "NI_device_coherent": false,
+    "NI_device_skip_sync": false,
+    "observed_pre_GRO_events": 8,
+    "raw_vs_SKB": "Raw DMA sequence matched the copied skb before and after standard cache synchronization and a2us delayed reread in the observed events. These were not the targeted old-block event.",
+    "hardware_epoch_before_after": [
+      2,
+      3
+    ],
+    "counter_comparison_valid": false,
+    "throughput_acceptance": false,
+    "events_file_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold/interleaved-raw-order-events.txt",
+    "module_note": "Temporary event-triggered cache reads only while the current BID remained on this serialized poll refill queue. Module removed; no production NI behavior changed."
+  },
+  "final_state": {
+    "boot_id": "3c85a260-e581-45d9-9b09-ce9ab3843959",
+    "ROM_radio_SHA256": "bea86ee63f1304049a58edff00e2197154d1fbf41eb886edd7cd8af2e30e4cc7",
+    "RAM_radio_SHA256": "dbe736f6bf621ab93957830c47f5c41697a806847549622137febc47b9713bbb",
+    "cleanup": "No test sink/feed/simulator/observer/capture, no test server or table220 policy. Removed this turn198.18.255.1 host route; default192.168.71.1/en5 remains first. Both radios have halt0 and no RDU; printk7/4/1/7.",
+    "evidence_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold/interleaved-final-state.txt"
+  }
 }
