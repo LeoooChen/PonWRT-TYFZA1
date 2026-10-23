@@ -1,0 +1,202 @@
+{
+  "date": "2026-10-23",
+  "tested_source_commit": "e4e8bca",
+  "firmware_directory": "artifacts/local-0.8.2-beta-rx-return-20261023",
+  "scope": "One6-second bidirectional TCP run on committed RXBD-return source, actual5GHz encrypted WiFi with simulated NI/PON endpoints; no physical PON",
+  "result": "COMPLETED_WITH_UPLINK_LOSS; not bidirectional acceptance",
+  "measurement": {
+    "scope": "Concurrent Mac upload on55000 and download on55001 through real encrypted Wi-Fi and simulated PON endpoints.",
+    "parallel_streams": 1,
+    "error": null,
+    "client_exit": 0,
+    "received_Mbps": 738.2825340462563,
+    "retransmits": 484,
+    "CPU_total_percent_of_4_cores": 36.20414673046252,
+    "CPU_server_raw_percent_of_4_cores": 16.507177033492823,
+    "CPU_remaining_percent_of_4_cores": 19.696969696969695,
+    "CPU_note": "Same raw100-Hz basis; remaining includes simulated ingress and TCP ACK/softirq work, not pure Wi-Fi forwarding CPU.",
+    "CPU_each_core_percent": [
+      19.936204146730464,
+      32.535885167464116,
+      50.239234449760765,
+      42.10526315789474
+    ],
+    "data_packets_delta": 360709,
+    "data_bytes_delta": 520439466,
+    "control_packets_delta": 133,
+    "stops_delta": 0,
+    "wakes_delta": 0,
+    "doorbells_delta": 26664,
+    "data_prepare_ns_delta": 766745680,
+    "payload_copy_ns_delta": 296601040,
+    "PE_NI_sent_delta": 360709,
+    "l3te_tail_drop_delta": 484,
+    "no_buffer_delta": 0,
+    "rxq_delta": 108963,
+    "rdu_delta": 0,
+    "FE_packets_delta": 360709,
+    "hardware_match_proven": true,
+    "actual_client_ports": [
+      55000,
+      55001
+    ],
+    "offload_covers_all_streams": true,
+    "source_stream_packets_delta": [
+      15754,
+      344955,
+      0,
+      0
+    ],
+    "uplink_sink_FE_packets_delta": 423285,
+    "uplink_sink_received_delta": 422801,
+    "uplink_sink_received_bytes_delta": 583530532,
+    "hardware_epoch_before_after": [
+      [
+        "082e1d90-658c-4006-9d2e-136f40e06098",
+        3
+      ],
+      [
+        "082e1d90-658c-4006-9d2e-136f40e06098",
+        3
+      ]
+    ],
+    "hardware_epoch_continuous": true,
+    "decreasing_counters": [],
+    "hardware_counter_comparison_valid": true,
+    "bidir_iperf_end": {
+      "streams": [
+        {
+          "sender": {
+            "socket": 5,
+            "start": 0,
+            "end": 6.000308,
+            "seconds": 6.000308,
+            "bytes": 556007424,
+            "bits_per_second": 741305178.3341788,
+            "retransmits": 484,
+            "reorder": -1,
+            "max_snd_cwnd": 5968837,
+            "max_snd_wnd": 0,
+            "max_rtt": 24,
+            "min_rtt": 13,
+            "mean_rtt": 19,
+            "sender": true
+          },
+          "receiver": {
+            "socket": 5,
+            "start": 0,
+            "end": 6.009251,
+            "seconds": 6.000308,
+            "bytes": 554565632,
+            "bits_per_second": 738282534.0462563,
+            "sender": true
+          }
+        },
+        {
+          "sender": {
+            "socket": 7,
+            "start": 0,
+            "end": 6.000308,
+            "seconds": 6.000308,
+            "bytes": 496631808,
+            "bits_per_second": 662141754.056625,
+            "retransmits": 0,
+            "reorder": -1,
+            "max_snd_cwnd": 14437,
+            "max_snd_wnd": 0,
+            "max_rtt": 2,
+            "min_rtt": 2,
+            "mean_rtt": 2,
+            "sender": false
+          },
+          "receiver": {
+            "socket": 7,
+            "start": 0,
+            "end": 6.009251,
+            "seconds": 6.000308,
+            "bytes": 493617152,
+            "bits_per_second": 657142997.6880646,
+            "sender": false
+          }
+        }
+      ],
+      "sum_sent": {
+        "start": 0,
+        "end": 6.000308,
+        "seconds": 6.000308,
+        "bytes": 556007424,
+        "bits_per_second": 741305178.3341788,
+        "retransmits": 484,
+        "sender": true
+      },
+      "sum_received": {
+        "start": 0,
+        "end": 6.009251,
+        "seconds": 6.009251,
+        "bytes": 554565632,
+        "bits_per_second": 738282534.0462563,
+        "sender": true
+      },
+      "sum_sent_bidir_reverse": {
+        "start": 0,
+        "end": 6.000308,
+        "seconds": 6.000308,
+        "bytes": 496631808,
+        "bits_per_second": 662141754.056625,
+        "retransmits": 0,
+        "sender": false
+      },
+      "sum_received_bidir_reverse": {
+        "start": 0,
+        "end": 6.009251,
+        "seconds": 6.009251,
+        "bytes": 493617152,
+        "bits_per_second": 657142997.6880646,
+        "sender": false
+      },
+      "cpu_utilization_percent": {
+        "host_total": 18.662131436383707,
+        "host_user": 0.42983442011815837,
+        "host_system": 18.232346863699174,
+        "remote_total": 78.37300619908115,
+        "remote_user": 1.7051342063710107,
+        "remote_system": 76.66793855466375
+      },
+      "sender_tcp_congestion": "cubic"
+    },
+    "up_Mbps": 738.2825340462563,
+    "down_Mbps": 657.1429976880646,
+    "up_retransmits": 484,
+    "down_retransmits": 0,
+    "flow_packets_delta": {
+      "55000": 386338,
+      "55001": 36947
+    },
+    "download_ACK_FE": true
+  },
+  "interpretation": [
+    "Both flows offloaded throughout the same boot and offload epoch; no restart/counter reset",
+    "484 more uplink FE hits than sink receipts,484 L3 tail drops,484 upload TCP retransmits: matching aggregate deltas point to loss on the DUT FE-to-CPU diagnostic receive path. No packet trace was taken, so this does not identify which packets or the cause of congestion.",
+    "RDU0/no_buffer0/halt0 during this run; not evidence of an RXBD starvation event",
+    "CPU4-core average36.2%, maximum per-core average50.2%; no demonstrated sustained ARM CPU saturation, but averages do not exclude transient queues or scheduling stalls",
+    "Prior factory-layout6-second duplex run had zero retransmits; different runs do not establish that RXBD batching caused the new loss",
+    "Real optical forwarding avoids the synthetic local receive/sender endpoints; this test does not establish whether identical loss occurs on physical PON",
+    "Cannot claim WiFi offload is production-complete or that all remaining limits are Mac/generator-side"
+  ],
+  "cleanup": {
+    "fixture_modules_removed": true,
+    "iperf_stopped": true,
+    "policy220_removed": true,
+    "Mac_host_route_removed": true,
+    "external_default": "192.168.71.1/en5",
+    "UART_recorder_stopped": true
+  },
+  "evidence": {
+    "committed-rxreturn-bidir6-after.txt": "f0673fdd7635b2695507343fc565828e82adfe7d8ab7de23765dedc028a76918",
+    "committed-rxreturn-bidir6.json": "9b2dd9f8242730c8b4ebc0b9887d8d4433030688aecdb2925e34cf63b4fe0487",
+    "committed-rxreturn-bidir6.err": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "committed-rxreturn-bidir6-cpu.txt": "0365e93c17b78de0238aaaa37fef0f3e5ce062554a937cd1aa85bbf481befb16",
+    "committed-rxreturn-bidir6-before.txt": "55e74701b5c0e183a0c734dc3f6fcf74ca7167db1635dba85fa8971f4cd57413",
+    "committed-rxreturn-bidir6-analysis.json": "c4ad3850b0958d5983a460e5a45dd03646fb0e893fd329455d8ccc92601da4e2"
+  }
+}
