@@ -6,7 +6,7 @@ START=09
 start() {
 	local source=/tmp/tyfza1-factory-source
 	local runtime=/tmp/tyfza1-factory
-	local device address
+	local device address mounted=0
 
 	# Invalidate the previous import before attempting to access the factory volume.
 	rm -rf "$runtime" /var/run/tyfza1-factory
@@ -18,15 +18,21 @@ start() {
 			break
 		done
 	fi
-	mkdir -p "$source"
-	mount -t ubifs -o ro ubi0:ubi_Config "$source" || return $?
+	. /lib/tyfza1-factory.sh
+	if tyf_factory_published; then
+		/usr/libexec/tyfza1-factory-source "$source" || return $?
+	else
+		mkdir -p "$source"
+		mount -t ubifs -o ro ubi0:ubi_Config "$source" || return $?
+		mounted=1
+	fi
 	mkdir -p /tmp/log
 	/usr/share/tyfza1/factory.uc "$source" / > /tmp/log/tyfza1-factory.log 2>&1
 	local result=$?
 	while IFS= read -r line; do
 		printf 'tyfza1-factory: %s\n' "$line" > /dev/kmsg
 	done < /tmp/log/tyfza1-factory.log
-	umount "$source"
+	if [ "$mounted" = 1 ]; then umount "$source"; else rm -rf "$source"; fi
 	# NI registers belong to the preceding boot, not to the factory identity.
 	# Like stock, all LAN switch ports share ELAN; netifd applies user overrides later.
 	if [ -f "$runtime/lan_mac" ]; then

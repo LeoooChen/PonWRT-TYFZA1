@@ -1,7 +1,7 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-only
 REQUIRE_IMAGE_METADATA=1
-RAMFS_COPY_BIN='fw_printenv fw_setenv'
+RAMFS_COPY_BIN='fw_printenv fw_setenv fwtool jsonfilter'
 RAMFS_COPY_DATA='/etc/fw_env.config'
 CI_UBIPART=ubi_device
 . /lib/upgrade/tyfza1-storage.sh
@@ -30,11 +30,28 @@ tyfza1_check_sizes() {
 		tyfza1_volume_fits "$ubidev" "ubi_k$slot" "$2" 6291456
 }
 
+# A migrated unit has no ubi_Config. Older images cannot import its calibration.
+tyfza1_check_storage_format() {
+	local entry name migrated=0 metadata=/tmp/tyfza1-storage-image.json
+	for entry in /sys/class/ubi/ubi0_12/name /sys/class/ubi/ubi0_13/name; do
+		[ -f "$entry" ] || continue
+		read -r name < "$entry"
+		case "$name" in tyfza1_factory|tyfza1_factory_backup) migrated=1;; esac
+	done
+	[ "$migrated" = 1 ] || return 0
+	fwtool -q -i "$metadata" "$1" || return 1
+	[ "$(jsonfilter -i "$metadata" -e '@.tyfza1_storage')" = factory-v1 ] || {
+		echo 'This unit requires factory-v1 firmware; restore the OEM layout before downgrading' >&2
+		return 1
+	}
+}
+
 platform_check_image() {
 	case "$(board_name)" in
 		tianyi,tyfza1|tianyi,tyfza1-2p5g) ;;
 		*) echo "Unsupported TYFZA1 board" >&2; return 1 ;;
 	esac
+	tyfza1_check_storage_format "$1" || return 1
 	# Both FIT configurations share one sysupgrade archive directory.
 	nand_do_platform_check tianyi,tyfza1 "$1" || return 1
 	local board_dir=$(tar tf "$1" | grep -m 1 '^sysupgrade-.*/$')
@@ -60,6 +77,8 @@ nand_upgrade_prepare_ubi() {
 }
 
 platform_do_upgrade() {
+	# Recheck here as sysupgrade -F can bypass platform_check_image.
+	tyfza1_check_storage_format "$1" || return 1
 	local slot=$(sed -n 's/.*tyfza1.slot=\([01]\).*/\1/p' /proc/cmdline)
 	case "$slot" in
 		0|1) ;;

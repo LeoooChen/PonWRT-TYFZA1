@@ -44,6 +44,13 @@ fi
 for tool in ubirsvol ubiupdatevol ubimkvol; do
 	command -v "$tool" >/dev/null || { echo "Missing storage tool: $tool" >&2; exit 1; }
 done
+# This installer targets an untouched OEM spare slot. Use sysupgrade after migration.
+for path in /sys/class/ubi/ubi0_12/name /sys/class/ubi/ubi0_13/name; do
+	[ -f "$path" ] || continue
+	case "$(cat "$path")" in
+		tyfza1_factory|tyfza1_factory_backup) echo "Use OpenWrt sysupgrade on a migrated unit" >&2; exit 1;;
+	esac
+done
 active=$(./fw_printenv -c ./fw_env.config -n sw_active)
 case "$active" in
 	0|1) ;;
