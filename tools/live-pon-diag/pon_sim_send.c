@@ -71,7 +71,9 @@ static int __init send_init(void)
  writel(0,vp+0x64);writel(2,vp+8);writel(lower_32_bits(address)+10,vp+12);
  writel(BIT(31)|BIT(30),vp+4);
  ret=readl_poll_timeout(vp+4,status,!(status&BIT(31)),1,100000);if(ret)goto restore;
- writel((saved[0]&~(3U<<22))|(1U<<22),dma+0x14);writel(BIT(9),vp+0x78);writel(1,vp);
+ writel((saved[0]&~(3U<<22))|(1U<<22),dma+0x14);writel(BIT(9),vp+0x78);
+ pr_info("PON_SIM source ready\n");
+ writel(1,vp);
  started=ktime_get_ns();due=started;
  while(done<packets){
   /* The NI consumer retains its last two prefetched payloads. */

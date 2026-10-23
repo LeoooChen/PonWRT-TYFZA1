@@ -85,6 +85,7 @@ def put(address, value):
 
 
 put(vp + 0x1c, 898)
+put(vp + 0x18, 898)
 put(vp + 0x0c, 0x9000000 | 10)
 put(oracle.symbols['packets'][0], 2440)
 put(oracle.symbols['rate_mbps'][0], 1900)
