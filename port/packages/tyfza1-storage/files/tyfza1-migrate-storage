@@ -17,6 +17,15 @@ blocks() { cat "$sys/ubi0_$1/reserved_ebs"; }
 free_blocks() { cat "$sys/ubi0/avail_eraseblocks"; }
 word() { hexdump -s "$2" -n 4 -e '1/4 "%u"' "$1"; }
 remove() { if exists "$1"; then ubirmvol "$dev" -n "$1"; fi; }
+create() {
+	local id="$1" devid
+	shift
+	ubimkvol "$dev" -n "$id" "$@"
+	# Preinit uses a static /dev; newly created volumes need their own node.
+	[ -e "${dev}_$id" ] && return 0
+	devid=$(cat "$sys/ubi0_$id/dev")
+	mknod "${dev}_$id" c "${devid%:*}" "${devid#*:}"
+}
 import_hashes() (cd "$1" && find . -type f -exec sha256sum {} \; | sort)
 
 case "$(cat /tmp/sysinfo/board_name)" in
@@ -180,7 +189,7 @@ if ! tyf_factory_published; then
 	for entry in $software; do remove "${entry%%:*}"; done
 	if [ "$stage" != tyf_migrate_ready ]; then
 		remove 14
-		ubimkvol "$dev" -n 14 -N tyf_migrate_pending -t static -s "$backup_bytes"
+		create 14 -N tyf_migrate_pending -t static -s "$backup_bytes"
 		ubiupdatevol "${dev}_14" "$work/backup.tar"
 		cmp "$work/backup.tar" "${dev}_14"
 		ubirename "$dev" tyf_migrate_pending tyf_migrate_ready
@@ -188,7 +197,7 @@ if ! tyf_factory_published; then
 	for entry in 12:tyf_factory_a_pending 13:tyf_factory_b_pending; do
 		id=${entry%%:*}
 		remove "$id"
-		ubimkvol "$dev" -n "$id" -N "${entry#*:}" -t static -s "$bytes"
+		create "$id" -N "${entry#*:}" -t static -s "$bytes"
 		ubiupdatevol "${dev}_$id" "$work/capsule.tar"
 		cmp "$work/capsule.tar" "${dev}_$id"
 		tyf_factory_unpack "${dev}_$id" "$work/check-$id" 1
@@ -217,7 +226,7 @@ while read -r key value; do
 done < "$work/boot.env"
 for entry in $discard; do remove "${entry%%:*}"; done
 remove 11
-ubimkvol "$dev" -n 11 -N rootfs_data -m
+create 11 -N rootfs_data -m
 ubiupdatevol "${dev}_11" "$work/seed.ubifs"
 mount -t ubifs -o noatime "${dev}_11" "$work/mount"
 mounted=1

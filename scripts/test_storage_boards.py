@@ -42,3 +42,34 @@ run_failsafe_hook() {
         result = subprocess.run(['busybox', 'ash', '-c', 'fail() { exit 1; };\n' + gate])
         assert (result.returncode == 0) == (board != 'unrelated,device')
 print('Both storage board gates, preinit failure handling and initramfs exclusion passed')
+
+# Actual volume creation must provide nodes when preinit has no devtmpfs.
+source = (files / 'tyfza1-migrate-storage').read_text()
+start = source.index('create() {')
+end = source.index('\n}', start) + 2
+with tempfile.TemporaryDirectory(prefix='storage-nodes-') as temporary:
+    work = Path(temporary)
+    for ident in (11, 12, 13, 14):
+        directory = work / 'sys' / f'ubi0_{ident}'
+        directory.mkdir(parents=True)
+        (directory / 'dev').write_text(f'252:{ident + 1}\n')
+    fixture = """set -eu
+sys="$1/sys"
+dev="$1/ubi0"
+ubimkvol() { test "$2" = -n; }
+mknod() {
+    test "$2" = c && test "$3" = 252 || exit 90
+    test "$4" = "$((${1##*_} + 1))" || exit 91
+    touch "$1"
+    echo "$1" >> "$sys/nodes"
+}
+""" + source[start:end] + """
+for id in 11 12 13 14; do
+    create "$id" -N fixture -m
+    test -e "${dev}_$id"
+    create "$id" -N fixture -m
+done
+test "$(wc -l < "$sys/nodes")" = 4
+"""
+    subprocess.run(['busybox', 'ash', '-c', fixture, 'nodes', str(work)], check=True)
+print('New UBI volumes11..14 receive device nodes before use; existing nodes are reused')
