@@ -241,9 +241,14 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 	volatile u32 *mailbox, u8 *memory, u32 read, u32 order)
 {
 	u32 write = mailbox[RTL_AX_RX_WORK_WRITE];
+	u32 *search = (void *)(memory + RTL_AX_RX_REORDER_SEARCH);
+	/* Reuse a scan only for the same capture head and BA expectation. */
+	u32 key = BIT(23) | (read << 24) | order;
+	u32 scan = search[0] == key ? search[1] : (read + 1) & 255;
+	search[0] = key;
 	sync();
-	/* One capture batch bounds this turn; TX/RPQ still run between attempts. */
-	for (u32 scan = (read + 1) & 255, budget = 0;
+	/* Resume beyond this turn's budget; the original BA window is not16. */
+	for (u32 budget = 0;
 	     scan != write && budget < 16; scan = (scan + 1) & 255, budget++) {
 		u32 *status = (void *)(memory + RX_STATUS + scan * 4);
 		if (*status & RX_NI_PENDING) continue;
@@ -268,6 +273,8 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 		if (same_tid) return 1;
 		mailbox[RTL_AX_RX_CROSS_TID]++;
 	}
+	search[1] = scan;
+	if (scan != write) return 1;
 	/* Finish PE0's known capture batch before giving an SN gap to ARM.
 	 * A full work ring must fall back so ARM can release its head. */
 	return ((write + 1) & 255) != mailbox[RTL_AX_RX_WORK_READ] &&
@@ -385,6 +392,7 @@ static void __attribute__((section(".rxq"), noinline, minsize)) pe_rx_work(volat
 	}
 	/* PE0 may recycle a completed payload as soon as this cursor advances. */
 advance:
+	*(u32 *)(memory + RTL_AX_RX_REORDER_SEARCH) = 0;
 	sync();
 	mailbox[RTL_AX_RX_WORK_PROCESS] = (read + 1) & 255;
 }

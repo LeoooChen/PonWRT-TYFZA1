@@ -461,6 +461,7 @@ int rtl_ax_rx_pe_rpq_start(struct rtl_ax_rx *rx, void *tx_memory, u32 tx_dma,
 		rx->pool_initialized = true;
 	}
 	memset(memory + RTL_AX_RX_WORK_STATUS, 0, 0x800);
+	memset(memory + RTL_AX_RX_REORDER_SEARCH, 0, 8);
 	for (i = RTL_AX_RX_WORK_WRITE; i <= RTL_AX_RX_WORK_READ; i++)
 		put_unaligned_le32(0, mailbox + i * 4);
 	for (i = 0; i < 2; i++) {

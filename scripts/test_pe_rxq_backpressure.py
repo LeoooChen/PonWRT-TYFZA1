@@ -161,6 +161,35 @@ assert r.get(MB+175*4)==2 and not r.get(MB+94*4) and r.get(MB+90*4)==2
 assert r.get(ST+1024)==1<<31|0x125 and r.get(ST+1028)==3
 r.put(VP+0x1c,2);r.capture();r.inventory()
 
+# A captured BA window can extend past one PE service budget. Keep checking
+# the rest on later turns instead of handing its head to ARM after16 slots.
+for initial,distance in ((0,17),(0,32),(0,63),(240,32)):
+ r=reorder_peer()
+ for cursor in (174,175,176):r.put(MB+cursor*4,initial)
+ r.arrive(data_frame(0x124,3),True);r.capture()
+ for _ in range(distance-1):
+  at,_=r.arrive(bytes(32));r.put(at+4,32|1<<31|1<<24);r.capture()
+ r.arrive(data_frame(0x123,2),True);r.capture()
+ for turn in range((distance+15)//16):
+  r.process()
+  assert not r.get(MB+94*4) and r.get(MB+175*4)==initial, (distance,turn)
+ assert r.get(MB+90*4)==1 and r.get(ST+1024)==1<<31|0x124
+ # Once the head advances, its next search starts afresh, including wrap.
+ r.process()
+ assert r.get(MB+90*4)==2 and r.get(MB+175*4)==(initial+1)&255
+ r.put(VP+0x1c,2);r.capture();r.inventory()
+
+# A resumed search must still stop at a stateful control frame.
+r=reorder_peer();r.arrive(data_frame(0x124,3),True);r.capture()
+for _ in range(16):
+ at,_=r.arrive(bytes(32));r.put(at+4,32|1<<31|1<<24);r.capture()
+r.arrive(bytes([0x84,0])+bytes(30));r.capture()
+r.arrive(data_frame(0x123,2),True);r.capture()
+r.process();assert not r.get(MB+94*4) and not r.get(MB+90*4)
+r.process();assert r.get(MB+94*4)==1 and not r.get(MB+90*4)
+assert r.get(ST+1024)==1<<31|0x123 and r.get(ST+1028)==1
+r.inventory()
+
 # Missing data with no pending capture still belongs to ARM's reorder timer.
 r=reorder_peer();r.arrive(data_frame(0x124,3),True);r.capture();r.process()
 assert r.get(MB+94*4)==1 and r.get(MB+175*4)==1 and not r.get(MB+90*4)
@@ -170,6 +199,9 @@ r=reorder_peer();r.arrive(data_frame(0x124,3),True);r.capture()
 for _ in range(254):
  at,_=r.arrive(bytes(32));r.put(at+4,32|1<<31|1<<24);r.capture()
 r.arrive(data_frame(0x123,2),True);r.capture();r.process()
+for _ in range(15):
+ if r.get(MB+94*4):break
+ r.process()
 assert r.get(MB+94*4)==1 and r.get(MB+175*4)==1 and not r.get(MB+90*4)
 assert r.get(ST+1024)==1<<31|0x123 and r.get(ST+1028)==1
 r.inventory()
