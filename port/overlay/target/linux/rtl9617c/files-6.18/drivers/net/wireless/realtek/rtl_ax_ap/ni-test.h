@@ -102,7 +102,7 @@ static int ni_uplink_stop(struct rtl_ax_tx *tx)
 	dma_wmb();
 	ret = rtl_ax_tx_pause(tx);
 	if (ret) return ret;
-	ret = readl_poll_timeout(tx->ni.vp + 0x1c, status, (status & 63) == (readl(tx->ni.vp + 0x18) & 63), 10, 100000);
+	ret = readl_poll_timeout(tx->ni.vp + 0x1c, status, (status & RTL_AX_NI_TX_MASK) == (readl(tx->ni.vp + 0x18) & RTL_AX_NI_TX_MASK), 10, 100000);
 	if (ret) { rtl_ax_tx_open(tx); return ret; }
 	writel(0, tx->ni.vp);
 	put_unaligned_le32(0, memory + PE_PROBE_MAILBOX + 352);
@@ -116,7 +116,7 @@ static int ni_uplink_stop(struct rtl_ax_tx *tx)
 	writel(tx->ni.vp_saved[3], tx->ni.vp + 0x64);
 	writel(tx->ni.vp_saved[4], tx->ni.vp + 0x78);
 	writel((readl(tx->ni.dma + 0x14) & ~(3U << (tx->ni.vp_index * 2))) | (tx->ni.vp_saved[0] & (3U << (tx->ni.vp_index * 2))), tx->ni.dma + 0x14);
-	dma_free_coherent(tx->dma_device, 512, tx->ni.uplink_memory, tx->ni.uplink_dma);
+	dma_free_coherent(tx->dma_device, RTL_AX_NI_TX_BYTES, tx->ni.uplink_memory, tx->ni.uplink_dma);
 	tx->ni.uplink_memory = NULL;
 	dma_wmb();
 	rtl_ax_tx_open(tx);
@@ -148,9 +148,9 @@ static int ni_uplink_start(struct rtl_ax_tx *tx, unsigned int wifi_id)
 	if (tx->ni.uplink_memory) return 0;
 	ret = rtl_ax_tx_pause(tx);
 	if (ret) return ret;
-	tx->ni.uplink_memory = dma_alloc_coherent(tx->dma_device, 512, &tx->ni.uplink_dma, GFP_KERNEL);
+	tx->ni.uplink_memory = dma_alloc_coherent(tx->dma_device, RTL_AX_NI_TX_BYTES, &tx->ni.uplink_dma, GFP_KERNEL);
 	if (!tx->ni.uplink_memory) { rtl_ax_tx_open(tx); return -ENOMEM; }
-	memset(tx->ni.uplink_memory, 0, 512);
+	memset(tx->ni.uplink_memory, 0, RTL_AX_NI_TX_BYTES);
 	tx->ni.vp_saved[0] = readl(tx->ni.dma + 0x14);
 	tx->ni.vp_saved[1] = readl(tx->ni.vp + 8);
 	tx->ni.vp_saved[2] = readl(tx->ni.vp + 12);
@@ -158,7 +158,7 @@ static int ni_uplink_start(struct rtl_ax_tx *tx, unsigned int wifi_id)
 	tx->ni.vp_saved[4] = readl(tx->ni.vp + 0x78);
 	writel(0, tx->ni.vp + 0x64);
 	writel(2, tx->ni.vp + 8);
-	writel(lower_32_bits(tx->ni.uplink_dma) + 6, tx->ni.vp + 12);
+	writel(lower_32_bits(tx->ni.uplink_dma) | RTL_AX_NI_TX_DEPTH, tx->ni.vp + 12);
 	writel(BIT(31) | BIT(30), tx->ni.vp + 4);
 	ret = readl_poll_timeout(tx->ni.vp + 4, status, !(status & BIT(31)), 1, 100000);
 	if (ret) { ni_uplink_stop(tx); return ret; }
@@ -166,7 +166,7 @@ static int ni_uplink_start(struct rtl_ax_tx *tx, unsigned int wifi_id)
 		(1U << (tx->ni.vp_index * 2)), tx->ni.dma + 0x14);
 	writel(0, tx->ni.vp + 0x78);
 	put_unaligned_le32(tx->ni.uplink_dma, mailbox + 356);
-	uplink_counter_start(tx, readl(tx->ni.vp + 0x1c) & 63);
+	uplink_counter_start(tx, readl(tx->ni.vp + 0x1c) & RTL_AX_NI_TX_MASK);
 	put_unaligned_le32(wifi_id, mailbox + 368);
 	put_unaligned_le32(1, mailbox + 372);
 	rtl_ax_rx_uplink_peer(tx->rx, wifi_id, tx->hw);

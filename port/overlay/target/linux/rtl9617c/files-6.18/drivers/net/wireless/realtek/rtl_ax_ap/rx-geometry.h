@@ -2,6 +2,11 @@
 #ifndef RTL_AX_AP_RX_GEOMETRY_H
 #define RTL_AX_AP_RX_GEOMETRY_H
 #define RTL_AX_RX_ENTRIES 256
+/* Factory ca_ni_init_tx_dma_lso: 1024 eight-byte NI descriptors. */
+#define RTL_AX_NI_TX_DEPTH 10
+#define RTL_AX_NI_TX_ENTRIES (1U << RTL_AX_NI_TX_DEPTH)
+#define RTL_AX_NI_TX_MASK (RTL_AX_NI_TX_ENTRIES - 1)
+#define RTL_AX_NI_TX_BYTES (RTL_AX_NI_TX_ENTRIES * 8)
 /* RXBDs, an independent busy-payload ring, and the two NI tail buffers. */
 #define RTL_AX_RX_BUFFERS (RTL_AX_RX_ENTRIES * 2 + 2)
 #define RTL_AX_RX_WORK_STATUS 0xf000

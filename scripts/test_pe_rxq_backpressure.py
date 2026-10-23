@@ -14,7 +14,7 @@ IDS,IDLE,MAP,STATUS,TAIL=0x1a000,0x1a400,0x17400,0xf000,0x17810
 class Machine:
  def __init__(self):
   self.u=Uc(UC_ARCH_MIPS,UC_MODE_MIPS32|UC_MODE_LITTLE_ENDIAN)
-  for a,n in ((0x1fc00000,0x10000),(B,0x20000),(BAR,0x10000),(RX,514*16384),(BD,4096),(ST,0x20000),(VP,4096),(NI,4096),(TABLE,4096),(0x10000000,0x10000)):self.u.mem_map(a,n)
+  for a,n in ((0x1fc00000,0x10000),(B,0x20000),(BAR,0x10000),(RX,514*16384),(BD,4096),(ST,0x20000),(VP,4096),(NI,8192),(TABLE,4096),(0x10000000,0x10000)):self.u.mem_map(a,n)
   self.put(0x10002300,(1<<31)|(1<<13));self.put(0x100038c4,0xa0000000)
   self.u.mem_write(0x1fc00000,binary);self.tag=8190;self.slot=254;self.pending_w1c=None;self.isr=0;self.acks=[]
   for i,v in ((2,BAR|0xa0000000),(187,B),(80,TABLE),(81,254),(82,8190),(83,254),(134,BD),(177,258),(182,254)):self.put(MB+i*4,v)
@@ -174,8 +174,8 @@ assert r.get(MB+94*4)==1 and r.get(MB+175*4)==1 and not r.get(MB+90*4)
 assert r.get(ST+1024)==1<<31|0x123 and r.get(ST+1028)==1
 r.inventory()
 
-# Full seven-subframe aggregates keep every UDP sequence across NI63->0.
-r=reorder_peer();r.put(MB+90*4,61);r.put(MB+91*4,61);r.put(VP+0x1c,61)
+# Full seven-subframe aggregates keep every UDP sequence across NI1023->0.
+r=reorder_peer();r.put(MB+90*4,1021);r.put(MB+91*4,1021);r.put(VP+0x1c,1021)
 expected_payloads={}
 for seq in (0x125,0x124,0x123):
  parts=[]
@@ -191,11 +191,11 @@ for seq in (0x125,0x124,0x123):
  header=bytearray(data_frame(seq,seq-0x123+2)[:34]);header[24]=0x80
  r.arrive(bytes(header)+b''.join(parts)+bytes(12),True);r.capture()
 for _ in range(6):r.process()
-assert r.get(MB+90*4)==82 and r.get(MB+175*4)==3 and not r.get(MB+94*4)
+assert r.get(MB+90*4)==1042 and r.get(MB+175*4)==3 and not r.get(MB+94*4)
 for identity in range(21):
- address=r.get(NI+((61+identity)&63)*8)
+ address=r.get(NI+((1021+identity)&1023)*8)
  assert bytes(r.u.mem_read(address,len(expected_payloads[identity])))==expected_payloads[identity]
-r.put(VP+0x1c,82&63);r.capture();r.inventory()
+r.put(VP+0x1c,1042&1023);r.capture();r.inventory()
 
 # No BA, an outside-window SN, replay PN, or a BAR retain ARM ownership.
 for case in ('no_ba','outside_window','replay','BAR','PS_Poll','other_tid','bad_LLC'):
@@ -383,16 +383,16 @@ for start in (0x3ffffffe,0x7ffffffe):
  w=Machine();w.u.mem_write(MB+64,ap);w.u.mem_write(B+0xe410,peer)
  w.put(B+0x11a08,1);w.put(ST+0x10008,1<<31|1<<8);w.put(ST+1024,1<<31|0x123)
  for j,v in ((88,VP|0xa0000000),(89,NI),(93,1),(106,ST),(90,start),(91,start)):w.put(MB+j*4,v)
- w.put(VP+0x1c,start&63)
+ w.put(VP+0x1c,start&1023)
  for seq,pn in ((0x123,2),(0x124,3),(0x125,4)):w.arrive(data_frame(seq,pn),True);w.call()
- w.put(VP+0x1c,(start+3)&63);w.call();w.inventory()
+ w.put(VP+0x1c,(start+3)&1023);w.call();w.inventory()
  assert sorted(w.get(B+TAIL+j*8+4) for j in range(2))==sorted(((start+2)&0x7fffffff,(start+3)&0x7fffffff))
 # Prefix parsing must preserve both WLAN alignments and the complete MPDU
 # on an invalid final subframe or insufficient NI descriptor allowance.
 for shift,ht,invalid,available in ((0,0,False,63),(2,0,False,63),(0,4,False,63),(2,4,False,63),(2,4,True,63),(2,0,False,1)):
  w=Machine();w.u.mem_write(MB+64,ap);w.u.mem_write(B+0xe410,peer)
  w.put(B+0x11a08,1);w.put(ST+0x10008,1<<31|1<<8);w.put(ST+1024,1<<31|0x123)
- for j,v in ((88,VP|0xa0000000),(89,NI),(93,1),(106,ST),(90,63-available)):w.put(MB+j*4,v)
+ for j,v in ((88,VP|0xa0000000),(89,NI),(93,1),(106,ST),(90,1023-available)):w.put(MB+j*4,v)
  hdr=struct.pack('<HH',0x4188|(0x8000 if ht else 0),0)+ap+peer+dst+struct.pack('<H',0x123<<4)+bytes([0x80,0])+bytes(ht)
  iv=bytes([2,0,0,0x20,0,0,0,0]);ip=bytearray(20);ip[0]=0x45;ip[9]=17
  llc=bytes.fromhex('aaaa030000000800')+ip+bytes(8)+bytes([0x5a])*1464
@@ -404,12 +404,12 @@ for shift,ht,invalid,available in ((0,0,False,63),(2,0,False,63),(0,4,False,63),
  if shift:w.put(at+4,len(frame)|1<<31|1<<14)
  raw=bytes(w.u.mem_read(at,36+shift+len(frame)));w.call();w.inventory()
  if invalid or available<2:
-  assert bytes(w.u.mem_read(at,len(raw)))==raw and w.get(MB+90*4)==63-available
+  assert bytes(w.u.mem_read(at,len(raw)))==raw and w.get(MB+90*4)==1023-available
   assert w.get(ST+1024)==1<<31|0x123 and w.get(MB+94*4)==1
  else:
-  assert w.get(MB+90*4)==2 and w.get(ST+1024)==1<<31|0x124
+  assert w.get(MB+90*4)==1025-available and w.get(ST+1024)==1<<31|0x124
   expected=dst+peer+bytes.fromhex('0800')+llc[8:]
-  for j in range(2):assert bytes(w.u.mem_read(w.get(NI+j*8),len(expected)))==expected
+  for j in range(2):assert bytes(w.u.mem_read(w.get(NI+((1023-available+j)&1023)*8),len(expected)))==expected
 # Idle RXQ must not starve RDU handling when only RPQ receives a packet.
 r=Machine();r.u.mem_map(0x10020000,4096)
 for i,v in ((0,0x50455744),(3,1),(68,BD),(72,ST),(140,MB|0xa0000000),(142,1)):r.put(MB+i*4,v)

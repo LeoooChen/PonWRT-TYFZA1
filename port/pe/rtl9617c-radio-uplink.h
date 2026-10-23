@@ -159,9 +159,10 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	 * does not release those prefetched descriptors. */
 	u32 write = mailbox[90], read = mailbox[91], released = mailbox[118];
 	if (read - released > 2) mailbox[118] = released = read - 2;
-	u32 available = (released - write - 1) & 63;
+	u32 available = (released - write - 1) & RTL_AX_NI_TX_MASK;
 	if (available <= 2) { mailbox[111]++; return 0; }
 	available -= 2;
+	if (available > 63) available = 63;
 	u32 body = length - header - 20, offset = 0, frames = 1;
 	if (!amsdu) {
 		/* LLC + IPv4 + UDP is 36 bytes, producing a 42-byte NI frame. */
@@ -202,7 +203,7 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 		header_copy(ethernet, plan[n].addresses, 12);
 		/* Stock Wi-Fi lookup maps the actual length (minimum 34), not
 		 * ETH_ZLEN. Padding here would overwrite the next A-MSDU header. */
-		u32 *descriptor = uncached(mailbox[89] + ((write + n) & 63) * 8);
+		u32 *descriptor = uncached(mailbox[89] + ((write + n) & RTL_AX_NI_TX_MASK) * 8);
 		descriptor[0] = buffer_dma + (u32)(ethernet - buffer);
 		descriptor[1] = 0xa5000001U | bytes << 8 | ((config >> 8) & 63) << 1;
 		total_bytes += bytes;
@@ -218,7 +219,7 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	/* The state release also published all packet and NI descriptor writes. */
 	mailbox[90] = write + frames;
 	volatile u32 *vp = (void *)mailbox[88];
-	vp[0x18 / 4] = (write + frames) & 63;
+	vp[0x18 / 4] = (write + frames) & RTL_AX_NI_TX_MASK;
 	vp[0x68 / 4] = 1;
 	return RX_NI_PENDING | ((write + frames) & ~RX_NI_PENDING);
 }
@@ -294,7 +295,7 @@ static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mail
 	if (slot == mailbox[RTL_AX_RX_HW_PRODUCER]) rx_status_poll(mailbox);
 	if (mailbox[88]) {
 		volatile u32 *vp = (void *)mailbox[88];
-		mailbox[91] += ((vp[0x1c / 4] & 63) - (mailbox[91] & 63)) & 63;
+		mailbox[91] += ((vp[0x1c / 4] - mailbox[91]) & RTL_AX_NI_TX_MASK);
 	}
 	rx_buffer_recycle(mailbox, memory);
 	rx_work_recycle(mailbox, memory);
