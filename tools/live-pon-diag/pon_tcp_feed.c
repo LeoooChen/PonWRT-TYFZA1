@@ -23,6 +23,7 @@ static u32 saved[6],producer;
 static struct hrtimer timer;
 static u64 data_packets,control_packets,data_bytes,stops,wakes,doorbells;
 static u64 data_prepare_ns,payload_copy_ns;
+static bool pending;
 static u64 stream_packets[4];
 static unsigned int server_pid;
 module_param(server_pid,uint,0600);
@@ -54,6 +55,10 @@ static netdev_tx_t transmit(struct sk_buff *skb,struct net_device *dev)
     tcp_hdr(skb)->source!=htons(5206) || ntohs(tcp_hdr(skb)->dest)<55000 ||
     ntohs(tcp_hdr(skb)->dest)>55003 ||
     tcp_hdr(skb)->syn || tcp_hdr(skb)->fin || tcp_hdr(skb)->rst){
+  /* A control skb can finish a batch whose data descriptors are deferred. */
+  if(pending){
+   dma_wmb();writel(producer,vp+0x18);writel(1,vp+0x68);doorbells++;pending=false;
+  }
   control_packets++;
   skb->dev=radio;skb_set_queue_mapping(skb,0);
   dev_queue_xmit(skb);
@@ -79,9 +84,10 @@ static netdev_tx_t transmit(struct sk_buff *skb,struct net_device *dev)
  payload_copy_ns+=ktime_get_ns()-copy_begin;
  put_unaligned_le32(0x81000001U|(7U<<25)|(length<<8),memory+slot*8+4);
  producer=(producer+1)&1023;
+ pending=true;
  /* Publish the whole Linux TX batch; also flush before the ring fills. */
  if(!netdev_xmit_more() || available==1){
-  dma_wmb();writel(producer,vp+0x18);writel(1,vp+0x68);doorbells++;
+  dma_wmb();writel(producer,vp+0x18);writel(1,vp+0x68);doorbells++;pending=false;
  }
  data_packets++;data_bytes+=skb->len;
  stream_packets[ntohs(tcp_hdr(skb)->dest)-55000]++;
