@@ -23,8 +23,8 @@ tyfza1_plan_storage() {
 		ubi_r0:${ubidev}_4|ubi_r1:${ubidev}_7) ;;
 		*) echo "Unexpected TYFZA1 root volume: $rootvol" >&2; return 1 ;;
 	esac
-	[ "$size" -gt 0 ] && [ "$size" -le 33648640 ] || {
-		echo "Root image must fit the 33648640-byte OEM slot limit" >&2
+	[ "$size" -gt 0 ] && [ "$size" -le 134217728 ] || {
+		echo "Root image must fit the 134217728-byte OEM slot limit" >&2
 		return 1
 	}
 	free=$(cat "/sys/class/ubi/$ubidev/avail_eraseblocks")

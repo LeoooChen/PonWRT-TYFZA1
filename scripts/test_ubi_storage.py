@@ -220,7 +220,7 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(self.state['vols']['7']['ebs'], 265)
 
     def test_oversize_and_no_space_fail_before_mutation(self):
-        self.prepare_upgrade(size=33648641, success=False)
+        self.prepare_upgrade(size=134217729, success=False)
         self.assertEqual(self.state['events'], [])
         self.state['free'] = 0
         self.prepare_upgrade(size=24000000, success=False)
