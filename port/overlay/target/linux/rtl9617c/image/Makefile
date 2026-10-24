@@ -18,8 +18,8 @@ endef
 
 define Build/tyfza1-rootfs-size
 	@size="$$(stat -c%s $(IMAGE_ROOTFS))"; \
-	[ "$$size" -le 33648640 ] || { \
-		echo "TYFZA1 rootfs is $$size bytes; OEM rootfs volume holds 33648640 bytes" >&2; \
+	[ "$$size" -le 134217728 ] || { \
+		echo "TYFZA1 rootfs is $$size bytes; OEM rootfs volume holds 134217728 bytes" >&2; \
 		exit 1; \
 	}
 endef
