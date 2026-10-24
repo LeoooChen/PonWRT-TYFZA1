@@ -64,10 +64,10 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef int netdev_
 #define cpu_to_le32(x) (x)
 #include "rtl9617c-pon-path.h"
 struct sk_buff {u8 memory[4096],*data;unsigned len,priority,protocol,vlan_proto,vlan_tci;bool tagged;};
-struct net_device {bool carrier,running,stopped,bridge_port;struct net_device *upper;unsigned vlan_proto,vlan_id;struct {unsigned tx_dropped,rx_dropped,rx_packets,rx_bytes;}stats;};
-static bool netif_is_bridge_port(struct net_device*d){return d->bridge_port;}
+struct net_device {bool carrier,running,stopped,bridge_port;struct net_device *upper,*master;unsigned vlan_proto,vlan_id;struct {unsigned tx_dropped,rx_dropped,rx_packets,rx_bytes;}stats;};
 static struct net_device *__vlan_find_dev_deep_rcu(struct net_device*d,unsigned proto,unsigned vid){
- return d->upper && d->upper->vlan_proto==proto && d->upper->vlan_id==vid?d->upper:NULL;
+ if(d->upper)return d->upper->vlan_proto==proto && d->upper->vlan_id==vid?d->upper:NULL;
+ return d->master?__vlan_find_dev_deep_rcu(d->master,proto,vid):NULL;
 }
 struct napi_struct {unsigned unused;};
 struct rtl9617c_ni_frame {u32 header_high,header_low;const u8 *prefix;unsigned prefix_length;bool raw_payload;};
@@ -253,6 +253,7 @@ int main(int argc,char**argv){
  p->profile[0].downstream=8;
  for(unsigned role=0;role<2;role++){
   vlan.bridge_port=false;dev.bridge_port=role==0;vlan.vlan_id=role==1?47:46;
+  dev.upper=role==0?NULL:&vlan;
   unsigned tx_drops=dev.stats.tx_dropped,rx_drops=dev.stats.rx_dropped,before=delivered;
   dma.read=dma.write=0;
   assert(rtl_pon_itu_data_transmit(&pon,packet(46,false,9),&dev)==NETDEV_TX_OK);
@@ -261,7 +262,7 @@ int main(int argc,char**argv){
  }
  puts("Local VLAN service: routed and bridged VLANs bypass UNI tagged-drop, preserve IWTP edits; raw PON bridges and unconfigured VIDs retain UNI policy");
  /* IPTV reproducer: VLAN48 DHCP uses the same service before/after enslaving. */
- dev.bridge_port=false;vlan.vlan_id=48;p->path[0].vlan=48;p->path[0].index=10;
+ dev.bridge_port=false;dev.upper=&vlan;vlan.vlan_id=48;p->path[0].vlan=48;p->path[0].index=10;
  p->path[0].vlan_profile[4]=RTL_EVTO_NONE;
  for(unsigned bridged=0;bridged<2;bridged++)for(unsigned metadata=0;metadata<2;metadata++){
   vlan.bridge_port=bridged;
@@ -277,6 +278,41 @@ int main(int argc,char**argv){
   assert(get_unaligned_be16(received+14)==48 && get_unaligned_be16(received+16)==ETH_P_IP);
   assert(get_unaligned_be16(received+38)==67 && get_unaligned_be16(received+40)==68 && received[288]==2);
  }
+ /* pon0 -> br-pon -> VLAN41, and br-pon.VLAN48 -> IPTV bridge.
+  * Linux's deep VLAN lookup follows a master when the lower has no VLANs. */
+ struct net_device bridge={.upper=&vlan};
+ dev.upper=NULL;dev.master=&bridge;dev.bridge_port=true;
+ for(unsigned iptv=0;iptv<2;iptv++)for(unsigned metadata=0;metadata<2;metadata++){
+  unsigned vid=iptv?48:41,index=iptv?10:8;
+  vlan.vlan_id=vid;vlan.bridge_port=iptv;p->path[0].vlan=vid;p->path[0].index=index;
+  unsigned tx_drops=dev.stats.tx_dropped,rx_drops=dev.stats.rx_dropped,before=delivered;
+  dma.read=dma.write=0;
+  struct sk_buff *request=iptv?dhcp_packet(vid,metadata,false):packet(vid,metadata,9);
+  assert(rtl_pon_itu_data_transmit(&pon,request,&dev)==NETDEV_TX_OK);
+  payload=dma.memory+64*sizeof(struct rtl_dma_descriptor)+16;
+  assert(dma.write==1 && dev.stats.tx_dropped==tx_drops && readl(payload-8)==(BIT(30)|(index<<18)));
+  assert(get_unaligned_be16(payload+14)==vid && get_unaligned_be16(payload+16)==(iptv?ETH_P_IP:0x8863));
+  struct sk_buff *reply=iptv?dhcp_packet(vid,metadata,true):packet(vid,metadata,7);
+  rtl_pon_itu_data_receive(&pon,&napi,reply,7|(index<<8));
+  assert(delivered==before+1 && dev.stats.rx_dropped==rx_drops && get_unaligned_be16(received+14)==vid);
+  if(iptv)assert(received_length==346 && get_unaligned_be16(received+38)==67 && received[288]==2);
+  else assert(received_length==44 && received[19]==7);
+ }
+ puts("PON bridge master: VLAN41 PADI/PADO and bridged VLAN48 DHCP Discover/Offer pass, inline and metadata");
+ vlan.vlan_id=900;p->path[0].vlan=RTL_ITU_VLAN_ANY;p->path[0].index=11;p->path[0].multicast=1;
+ for(unsigned metadata=0;metadata<2;metadata++){
+  unsigned before=delivered,rx_drops=dev.stats.rx_dropped;
+  struct sk_buff *reply=dhcp_packet(900,metadata,true);
+  reply->data[0]=1;reply->data[2]=0x5e;
+  rtl_pon_itu_data_receive(&pon,&napi,reply,7|(11<<8));
+  assert(delivered==before+1 && dev.stats.rx_dropped==rx_drops && get_unaligned_be16(received+14)==900);
+ }
+ puts("PON bridge master: multicast GEM11 retains IPTV VLAN900 on RX");
+ struct rtl_evto_packet service={.count=1,.tag={{0x8100,48}}};
+ vlan.vlan_id=49;assert(!rtl_pon_itu_service_entry(&dev,&service));
+ vlan.vlan_id=48;vlan.vlan_proto=htons(0x88a8);assert(!rtl_pon_itu_service_entry(&dev,&service));
+ vlan.vlan_proto=htons(0x8100);bridge.upper=NULL;assert(!rtl_pon_itu_service_entry(&dev,&service));
+ bridge.upper=&vlan;
  /* Every configured QinQ layer is required, even when the leaf is bridged. */
  struct net_device inner={.vlan_proto=htons(0x8100),.vlan_id=900,.bridge_port=true};
  struct rtl_evto_packet tags={.count=2,.tag={{0x8100,48},{0x8100,900}}};

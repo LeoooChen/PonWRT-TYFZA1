@@ -377,8 +377,9 @@ ssize_t rtl_pon_itu_paths_state(struct rtl9617c_pon *pon, char *buf)
 
 static bool rtl_pon_itu_service_entry(struct net_device *dev, const struct rtl_evto_packet *packet)
 {
-	if (!packet->count || netif_is_bridge_port(dev)) return false;
+	if (!packet->count) return false;
 	for (unsigned int i = 0; i < packet->count; i++) {
+		/* The deep lookup also finds service VLANs on a PON bridge master. */
 		dev = __vlan_find_dev_deep_rcu(dev, htons(packet->tag[i].tpid), packet->tag[i].tci & 4095);
 		/* A VLAN bridge member still selects an explicit local service. */
 		if (!dev) return false;

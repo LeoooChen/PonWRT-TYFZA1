@@ -1,4 +1,4 @@
-name: Check LAN initialization and QSPI
+name: Check LAN initialization, PON VLANs and QSPI
 
 on:
   pull_request:
@@ -24,3 +24,4 @@ jobs:
           python3 scripts/test_lan_pm_mapping.py
           python3 scripts/test_lan_link_mode.py
           python3 scripts/test_fe_lan_lifecycle.py
+          python3 scripts/test_itu_pppoe_datapath.py
