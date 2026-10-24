@@ -64,9 +64,11 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef int netdev_
 #define cpu_to_le32(x) (x)
 #include "rtl9617c-pon-path.h"
 struct sk_buff {u8 memory[4096],*data;unsigned len,priority,protocol,vlan_proto,vlan_tci;bool tagged;};
-struct net_device {bool carrier,running,stopped,bridge_port;struct net_device *upper,*master;unsigned vlan_proto,vlan_id;struct {unsigned tx_dropped,rx_dropped,rx_packets,rx_bytes;}stats;};
+struct net_device {bool carrier,running,stopped,bridge_port,vlan_info;struct net_device *upper,*master;unsigned vlan_proto,vlan_id;struct {unsigned tx_dropped,rx_dropped,rx_packets,rx_bytes;}stats;};
+static bool netif_is_bridge_port(struct net_device*d){return d->bridge_port;}
+static struct net_device *netdev_master_upper_dev_get_rcu(struct net_device*d){return d->master;}
 static struct net_device *__vlan_find_dev_deep_rcu(struct net_device*d,unsigned proto,unsigned vid){
- if(d->upper)return d->upper->vlan_proto==proto && d->upper->vlan_id==vid?d->upper:NULL;
+ if(d->vlan_info || d->upper)return d->upper && d->upper->vlan_proto==proto && d->upper->vlan_id==vid?d->upper:NULL;
  return d->master?__vlan_find_dev_deep_rcu(d->master,proto,vid):NULL;
 }
 struct napi_struct {unsigned unused;};
@@ -279,9 +281,10 @@ int main(int argc,char**argv){
   assert(get_unaligned_be16(received+38)==67 && get_unaligned_be16(received+40)==68 && received[288]==2);
  }
  /* pon0 -> br-pon -> VLAN41, and br-pon.VLAN48 -> IPTV bridge.
-  * Linux's deep VLAN lookup follows a master when the lower has no VLANs. */
+  * The default bridge PVID creates vlan_info without local VLAN devices;
+  * Linux's deep lookup then stops at the port instead of following its master. */
  struct net_device bridge={.upper=&vlan};
- dev.upper=NULL;dev.master=&bridge;dev.bridge_port=true;
+ dev.upper=NULL;dev.master=&bridge;dev.bridge_port=true;dev.vlan_info=true;
  for(unsigned iptv=0;iptv<2;iptv++)for(unsigned metadata=0;metadata<2;metadata++){
   unsigned vid=iptv?48:41,index=iptv?10:8;
   vlan.vlan_id=vid;vlan.bridge_port=iptv;p->path[0].vlan=vid;p->path[0].index=index;
@@ -313,6 +316,9 @@ int main(int argc,char**argv){
  vlan.vlan_id=48;vlan.vlan_proto=htons(0x88a8);assert(!rtl_pon_itu_service_entry(&dev,&service));
  vlan.vlan_proto=htons(0x8100);bridge.upper=NULL;assert(!rtl_pon_itu_service_entry(&dev,&service));
  bridge.upper=&vlan;
+ dev.bridge_port=false;assert(!rtl_pon_itu_service_entry(&dev,&service));
+ dev.bridge_port=true;dev.master=NULL;assert(!rtl_pon_itu_service_entry(&dev,&service));
+ dev.master=&bridge;
  /* Every configured QinQ layer is required, even when the leaf is bridged. */
  struct net_device inner={.vlan_proto=htons(0x8100),.vlan_id=900,.bridge_port=true};
  struct rtl_evto_packet tags={.count=2,.tag={{0x8100,48},{0x8100,900}}};
