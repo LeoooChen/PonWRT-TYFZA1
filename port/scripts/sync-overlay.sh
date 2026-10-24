@@ -33,6 +33,8 @@ cp "$PORT/host-patches/120-netifd-interface-topology.patch" \
 mkdir -p "$TREE/package/network/utils/iwinfo/patches"
 cp "$PORT/host-patches/130-iwinfo-txpower-unknown.patch" \
     "$TREE/package/network/utils/iwinfo/patches/130-iwinfo-txpower-unknown.patch"
+cp "$PORT/host-patches/131-iwinfo-ap-scan.patch" \
+    "$TREE/package/network/utils/iwinfo/patches/131-iwinfo-ap-scan.patch"
 if [ -d "$TREE/feeds/luci/modules/luci-mod-status" ]; then
     sh "$PORT/scripts/apply-luci-patches.sh" "$TREE"
 fi

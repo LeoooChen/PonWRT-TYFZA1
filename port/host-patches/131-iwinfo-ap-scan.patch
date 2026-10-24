@@ -1,0 +1,40 @@
+Subject: [PATCH] nl80211: set the AP scan flag on AP interfaces
+
+mac80211 rejects scans on a beaconing AP without NL80211_SCAN_FLAG_AP.
+Query the mode before creating the request because nl80211_new reuses
+a static message conveyor. Keep other interface types unchanged.
+
+--- a/iwinfo_nl80211.c
++++ b/iwinfo_nl80211.c
+@@ -2891,8 +2891,19 @@
+ static int nl80211_get_scanlist_nl(const char *ifname, char *buf, int *len)
+ {
+ 	struct nl80211_scanlist sl = { .e = (struct iwinfo_scanlist_entry *)buf };
+-
+-	if (nl80211_request(ifname, NL80211_CMD_TRIGGER_SCAN, 0, NULL, NULL))
++	struct nl80211_msg_conveyor *req;
++	int mode;
++	bool ap_scan;
++
++	ap_scan = !nl80211_get_mode(ifname, &mode) && mode == IWINFO_OPMODE_MASTER;
++	req = nl80211_msg(ifname, NL80211_CMD_TRIGGER_SCAN, 0);
++	if (!req)
++		goto out;
++
++	if (ap_scan)
++		NLA_PUT_U32(req->msg, NL80211_ATTR_SCAN_FLAGS, NL80211_SCAN_FLAG_AP);
++
++	if (nl80211_send(req, NULL, NULL))
+ 		goto out;
+ 
+ 	if (nl80211_wait("nl80211", "scan",
+@@ -2905,6 +2916,9 @@
+ 
+ 	*len = sl.len * sizeof(struct iwinfo_scanlist_entry);
+ 	return 0;
++
++nla_put_failure:
++	nl80211_free(req);
+ 
+ out:
+ 	*len = 0;

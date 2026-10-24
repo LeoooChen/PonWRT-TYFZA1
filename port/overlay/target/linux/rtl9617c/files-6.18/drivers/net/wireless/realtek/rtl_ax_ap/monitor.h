@@ -1289,6 +1289,7 @@ static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 	struct ieee80211_rx_status *status;
 	u32 word = rtl_ax_ap_read32(packet->descriptor + 4);
 	u16 rate = (word >> 16) & 0x1ff;
+	__le16 frame_control;
 	u8 bandwidth = word >> 29, gi_ltf = (word >> 25) & 7;
 	bool profile = READ_ONCE(rtl_ax_datapath_profile);
 	u64 begin = profile ? ktime_get_ns() : 0, delivered = 0;
@@ -1297,6 +1298,7 @@ static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 	 * Hardware can report FCS-only records during receive transitions. */
 	if (packet->bytes < 2 + FCS_LEN)
 		return -EINVAL;
+	frame_control = get_unaligned((const __le16 *)packet->payload);
 	/* Actual hal_parsing_rx_wd_C/XB word1 carries rate16:24,
 	 * GI/LTF25:27 and bandwidth29:31; no PPDU-derived RSSI is invented. */
 	if (bandwidth >= ARRAY_SIZE(bandwidths))
@@ -1315,7 +1317,10 @@ static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 	status = IEEE80211_SKB_RXCB(skb);
 	memset(status, 0, sizeof(*status));
 	status->flag = RX_FLAG_NO_SIGNAL_VAL;
-	if (!READ_ONCE(radio->ap_started))
+	/* Startup neighbour scans need discovery frames before start_ap. */
+	if (!READ_ONCE(radio->ap_started) &&
+	    !ieee80211_is_beacon(frame_control) &&
+	    !ieee80211_is_probe_resp(frame_control))
 		status->flag |= RX_FLAG_ONLY_MONITOR;
 	/* The chip retains IV/MIC, so mac80211 still checks the receive PN. */
 	word = rtl_ax_ap_read32(packet->descriptor + 12);
@@ -1357,7 +1362,7 @@ static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 		status->he_gi = he_gi[gi_ltf];
 		break;
 	}
-	if (packet->bytes >= 2 && ieee80211_is_beacon(*(__le16 *)packet->payload))
+	if (ieee80211_is_beacon(frame_control))
 		status->boottime_ns = ktime_get_boottime_ns();
 	radio->mac80211_packets++;
 	if (profile) {
