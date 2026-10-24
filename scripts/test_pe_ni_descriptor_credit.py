@@ -27,12 +27,12 @@ def run(start, initial, outstanding, frames):
     cpu = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
     for address, size in ((0x1fc00000, 0x10000), (base, 0x20000),
                           (states, 0x20000), (payload, 0x4000),
-                          (descriptors, 0x1000), (vp, 0x1000), (0x10000000, 0x10000)):
+                          (descriptors, 0x3000), (vp, 0x1000), (0x10000000, 0x10000)):
         cpu.mem_map(address, size)
     put = lambda address, value: cpu.mem_write(address, struct.pack('<I', value & 0xffffffff))
     get = lambda address: struct.unpack('<I', cpu.mem_read(address, 4))[0]
     cpu.mem_write(0x1fc00000, binary)
-    cpu.mem_write(descriptors, bytes([0xa5]) * 512)
+    cpu.mem_write(descriptors, bytes([0xa5]) * 8192)
     cpu.mem_write(mailbox + 64, ap)
     cpu.mem_write(base + 0xe410, peer)
     put(base + 0x11a08, 1)
@@ -45,8 +45,8 @@ def run(start, initial, outstanding, frames):
                          (90, start + outstanding), (91, start), (93, 1),
                          (106, states), (118, initial), (174, 1), (187, base)):
         put(mailbox + index * 4, value)
-    put(mailbox + 80 * 4, descriptors + 512)
-    put(descriptors + 512, payload)
+    put(mailbox + 80 * 4, descriptors + 8192)
+    put(descriptors + 8192, payload)
     header = struct.pack('<HH', 0x4188, 0) + ap + peer + destination
     header += struct.pack('<H', 0x123 << 4) + bytes([0x80, 0])
     iv = bytes([2, 0, 0, 0x20, 0, 0, 0, 0])
@@ -69,19 +69,20 @@ def run(start, initial, outstanding, frames):
     if not sent:
         assert bytes(cpu.mem_read(payload, len(raw))) == raw
         assert get(states + 1024) == 1 << 31 | 0x123
-        assert bytes(cpu.mem_read(descriptors, 512)) == bytes([0xa5]) * 512
+        assert bytes(cpu.mem_read(descriptors, 8192)) == bytes([0xa5]) * 8192
     return sent
 
 
 # Fresh queue: two free slots plus the empty-ring sentinel. After consumption,
 # the last two descriptors remain prefetched, just as in ca-ne.ko completion.
-cases = [(0, 0, 54, 7, 7), (0, 0, 55, 7, 0),
-         (64, 0, 52, 7, 7), (64, 0, 53, 7, 0),
-         (64, 0, 60, 3, 0), (0xfffffffe, 0xfffffffc, 53, 7, 0)]
+cases = [(0, 0, 1014, 7, 7), (0, 0, 1015, 7, 0),
+         (1024, 0, 1012, 7, 7), (1024, 0, 1013, 7, 0),
+         (1024, 0, 1020, 3, 0), (0xfffffffe, 0xfffffffc, 1013, 7, 0),
+         (0, 0, 0, 63, 63), (0, 0, 0, 64, 0)]
 results = [run(*row[:4]) for row in cases]
 if before:
     assert results[4] == 3
-    print('Original PE overwrites retained descriptor62 when read=64, write=124 and three frames arrive.')
+    print('Original PE overwrites retained descriptor1022 when read=1024, write=2044 and three frames arrive.')
 else:
     assert results == [row[4] for row in cases], results
     print(json.dumps({'actual_linked_PE': True, 'cases': len(cases),

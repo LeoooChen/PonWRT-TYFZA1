@@ -124,7 +124,7 @@ static int __init initialize(void)
  rule->match.dissector=&dissector;rule->match.key=&key[0];rule->match.mask=&mask;
  key[0].meta.ingress_ifindex=radio->ifindex;key[0].basic.n_proto=htons(ETH_P_IP);
  key[0].basic.ip_proto=IPPROTO_TCP;mask.basic.n_proto=htons(65535);mask.basic.ip_proto=255;
- key[0].ipv4.src=htonl(0xc0a801d4);key[0].ipv4.dst=htonl(0xc6120001);
+ key[0].ipv4.src=htonl(0xc0a801d4);key[0].ipv4.dst=htonl(0xc612ff01);
  mask.ipv4.src=mask.ipv4.dst=htonl(~0U);
  key[0].ports.src=htons(55000);key[0].ports.dst=htons(5206);
  mask.ports.src=mask.ports.dst=htons(65535);

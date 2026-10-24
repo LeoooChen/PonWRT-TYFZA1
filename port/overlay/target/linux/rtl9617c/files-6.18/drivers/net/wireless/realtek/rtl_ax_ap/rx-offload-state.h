@@ -118,7 +118,7 @@ static void rtl_ax_rx_uplink_sync(struct rtl_ax_rx *rx)
 	u8 *memory = rx->pe.memory;
 	unsigned int macid, tid;
 	u32 forwarded;
-	bool changed;
+	bool changed, retry = false;
 
 	if (!rx->uplink_wifi_id) return;
 	mutex_lock(&rx->uplink_lock);
@@ -127,7 +127,6 @@ static void rtl_ax_rx_uplink_sync(struct rtl_ax_rx *rx)
 	forwarded = get_unaligned_le32(memory + 0x2180);
 	changed = forwarded != rx->uplink_forwarded_seen;
 	if (changed) dma_rmb();
-	rx->uplink_forwarded_seen = forwarded;
 	local_bh_disable(); rcu_read_lock();
 	for (macid = 1; macid < 128; macid++) {
 		struct ieee80211_key_conf *key = rx->keys[macid];
@@ -142,12 +141,14 @@ static void rtl_ax_rx_uplink_sync(struct rtl_ax_rx *rx)
 			/* An unchanged publication needs no PN/SN snapshot. Pending
 			 * reorder recovery must still run below, even without new frames. */
 			if (!changed || get_unaligned_le32(state + 12) == seen->frames) goto resume;
-			do {
-				guard = get_unaligned_le32(state + 24);
-				dma_rmb();
-				for (unsigned int i = 0; i < 6; i++) snapshot[i] = get_unaligned_le32(state + i * 4);
-				dma_rmb();
-			} while ((guard & 1) || guard != get_unaligned_le32(state + 24));
+			/* PE may keep publishing; never wait for it with BH disabled.
+			 * Leave both the counters and pending ARM seed for a later pass. */
+			guard = get_unaligned_le32(state + 24);
+			if (guard & 1) { retry = true; continue; }
+			dma_rmb();
+			for (unsigned int i = 0; i < 6; i++) snapshot[i] = get_unaligned_le32(state + i * 4);
+			dma_rmb();
+			if (guard != get_unaligned_le32(state + 24)) { retry = true; continue; }
 			count = snapshot[3] - seen->frames;
 			if (!count) goto resume;
 			pn[0] = snapshot[2] >> 8; pn[1] = snapshot[2]; pn[2] = snapshot[1] >> 24;
@@ -163,7 +164,16 @@ resume:
 		}
 	}
 	rcu_read_unlock(); local_bh_enable();
+	if (!retry) rx->uplink_forwarded_seen = forwarded;
 	mutex_unlock(&rx->uplink_lock);
+	if (retry) {
+		unsigned long flags;
+
+		spin_lock_irqsave(&rx->irq_lock, flags);
+		if (rx->running && !READ_ONCE(rx->rpq_transfer))
+			mod_delayed_work(system_wq, &rx->work, 1);
+		spin_unlock_irqrestore(&rx->irq_lock, flags);
+	}
 }
 
 void rtl_ax_rx_uplink_retire(struct rtl_ax_rx *rx, unsigned int macid)

@@ -2,12 +2,18 @@
 #ifndef RTL_AX_AP_RX_GEOMETRY_H
 #define RTL_AX_AP_RX_GEOMETRY_H
 #define RTL_AX_RX_ENTRIES 256
+/* Factory ca_ni_init_tx_dma_lso: 1024 eight-byte NI descriptors. */
+#define RTL_AX_NI_TX_DEPTH 10
+#define RTL_AX_NI_TX_ENTRIES (1U << RTL_AX_NI_TX_DEPTH)
+#define RTL_AX_NI_TX_MASK (RTL_AX_NI_TX_ENTRIES - 1)
+#define RTL_AX_NI_TX_BYTES (RTL_AX_NI_TX_ENTRIES * 8)
 /* RXBDs, an independent busy-payload ring, and the two NI tail buffers. */
 #define RTL_AX_RX_BUFFERS (RTL_AX_RX_ENTRIES * 2 + 2)
 #define RTL_AX_RX_WORK_STATUS 0xf000
 #define RTL_AX_RX_ARM_RING 0xf400
 #define RTL_AX_RX_SLOT_MAP 0x17400
 #define RTL_AX_RX_NI_TAIL 0x17810
+#define RTL_AX_RX_REORDER_SEARCH 0x17820
 #define RTL_AX_RX_WORK_IDS 0x1a000
 #define RTL_AX_RX_IDLE_IDS 0x1a400
 #define RTL_AX_RX_WORK_WRITE 174
@@ -23,6 +29,10 @@
 #define RTL_AX_RPQ_EVENT_WRITE 189
 #define RTL_AX_RPQ_EVENT_READ 190
 #define RTL_AX_RX_CROSS_TID 192
+/* PE1 selects MPDUs; PE0 builds WD/TXBD and publishes PCIe producers. */
+#define RTL_AX_TX_PUBLISH_WRITE 193
+#define RTL_AX_TX_PUBLISH_READ 194
+#define RTL_AX_TX_BUILD_REQUESTS 0x1b000
 #define RTL_AX_RX_WORK_OLD (1U << 31)
 /* Full MPDU11966 plus RXBD/WD/shift/driver-info fits12288. */
 #define RTL_AX_RXQ_BUFFER_BYTES 12288
