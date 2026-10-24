@@ -14,7 +14,7 @@
 #include <errno.h>
 
 #ifdef __APPLE__
-/* Apple XNU bsd/sys/socket_private.h: recvmsg_x() datagram batch ABI. */
+/* Apple XNU bsd/sys/socket.h: recvmsg_x() datagram batch ABI. */
 struct msghdr_x {
     void *msg_name;
     socklen_t msg_namelen;
@@ -46,11 +46,19 @@ int main(int argc, char **argv)
 #else
         "0.0.0.0";
 #endif
-    struct sockaddr_in local = {.sin_family = AF_INET, .sin_port = htons(55001)};
+    const char *peer_ip = argc > 4 ? argv[4] : "198.18.255.1";
+    unsigned int local_port = argc > 5 ? strtoul(argv[5], NULL, 10) : 55001;
+    unsigned int peer_port = argc > 6 ? strtoul(argv[6], NULL, 10) : 55000;
+    struct sockaddr_in local = {.sin_family = AF_INET, .sin_port = htons(local_port)};
     struct timeval timeout = {.tv_sec = 1};
     unsigned int unique = 0, duplicates = 0, bad = 0;
     unsigned int unexpected = 0, received = 0;
-    unsigned int previous_sequence = 0, jumps = 0;
+    unsigned int previous_sequence = 0, jumps = 0, gap_previous = 0, gap_current = 0, gap_received = 0;
+    double largest_gap = 0, gap_started = 0;
+#ifdef __APPLE__
+    double kernel_first = 0, kernel_last = 0, kernel_largest_gap = 0;
+    unsigned int timestamped = 0;
+#endif
 #ifdef __linux__
     unsigned int socket_drops = 0;
 #endif
@@ -60,6 +68,7 @@ int main(int argc, char **argv)
     struct sockaddr_in sources[64];
     struct iovec buffers[64];
     struct msghdr_x messages[64];
+    union { struct cmsghdr aligned; unsigned char data[CMSG_SPACE(sizeof(struct timeval))]; } controls[64];
     ssize_t batch_count = 0, batch_cursor = 0;
 #else
     unsigned char packet_buffer[2048];
@@ -71,8 +80,8 @@ int main(int argc, char **argv)
     if (fd < 0 || !expected || expected > sizeof(seen) * 8) return 1;
     if (inet_pton(AF_INET, binding, &local.sin_addr) != 1) return 1;
     if (bind(fd, (void *)&local, sizeof(local))) { perror("UDP bind"); return 1; }
-    struct sockaddr_in peer = {.sin_family = AF_INET, .sin_port = htons(55000),
-                               .sin_addr.s_addr = htonl(0xc6120001)};
+    struct sockaddr_in peer = {.sin_family = AF_INET, .sin_port = htons(peer_port)};
+    if (inet_pton(AF_INET, peer_ip, &peer.sin_addr) != 1) return 1;
     if (connect(fd, (void *)&peer, sizeof(peer))) { perror("UDP peer"); return 1; }
     int buffer_result = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &buffer, sizeof(buffer));
     socklen_t buffer_size = sizeof(buffer);
@@ -84,8 +93,14 @@ int main(int argc, char **argv)
         perror("UDP drop accounting"); return 1;
     }
 #endif
+#ifdef __APPLE__
+    int timestamps = 1;
+    if (setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP, &timestamps, sizeof(timestamps))) {
+        perror("UDP timestamps"); return 1;
+    }
+#endif
     started = monotonic(); reported = started;
-    printf("PON_SIM receiver %s UDP55001 ready\n", binding);
+    printf("PON_SIM receiver %s UDP%u ready\n", binding, local_port);
     printf("Socket receive buffer: result=%d bytes=%d\n", buffer_result, buffer);
     fflush(stdout);
     while (monotonic() - started < duration && unique < expected) {
@@ -95,7 +110,8 @@ int main(int argc, char **argv)
             for (unsigned int i = 0; i < 64; i++) {
                 buffers[i] = (struct iovec){.iov_base = packet_batch[i], .iov_len = sizeof(packet_batch[i])};
                 messages[i] = (struct msghdr_x){.msg_name = &sources[i], .msg_namelen = sizeof(sources[i]),
-                                               .msg_iov = &buffers[i], .msg_iovlen = 1};
+                                               .msg_iov = &buffers[i], .msg_iovlen = 1,
+                                               .msg_control = controls[i].data, .msg_controllen = sizeof(controls[i].data)};
             }
             batch_count = recvmsg_x(fd, messages, 64, 0);
             batch_cursor = 0;
@@ -107,7 +123,8 @@ int main(int argc, char **argv)
         }
         unsigned char *packet = packet_batch[batch_cursor];
         source = sources[batch_cursor];
-        ssize_t n = messages[batch_cursor++].msg_datalen;
+        struct msghdr_x *received_message = &messages[batch_cursor++];
+        ssize_t n = received_message->msg_datalen;
 #else
         unsigned char *packet = packet_buffer;
         struct iovec io = {.iov_base = packet, .iov_len = sizeof(packet_buffer)};
@@ -122,17 +139,39 @@ int main(int argc, char **argv)
         unsigned int sequence;
         int corrupt = 0;
 
-        if (n < 14 || source.sin_addr.s_addr != htonl(0xc6120001) ||
-            source.sin_port != htons(55000) || memcmp(packet, "TYFPPP-SIM", 10)) continue;
+        if (n < 14 || source.sin_addr.s_addr != peer.sin_addr.s_addr ||
+            source.sin_port != peer.sin_port || memcmp(packet, "TYFPPP-SIM", 10)) continue;
 #ifdef __linux__
         for (struct cmsghdr *c = CMSG_FIRSTHDR(&message); c; c = CMSG_NXTHDR(&message, c))
             if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SO_RXQ_OVFL)
                 memcpy(&socket_drops, CMSG_DATA(c), sizeof(socket_drops));
 #endif
+#ifdef __APPLE__
+        struct msghdr metadata = {.msg_control = received_message->msg_control,
+                                  .msg_controllen = received_message->msg_controllen};
+        for (struct cmsghdr *c = CMSG_FIRSTHDR(&metadata); c; c = CMSG_NXTHDR(&metadata, c)) {
+            if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_TIMESTAMP &&
+                c->cmsg_len >= CMSG_LEN(sizeof(struct timeval))) {
+                struct timeval stamp;
+                memcpy(&stamp, CMSG_DATA(c), sizeof(stamp));
+                double current = stamp.tv_sec + stamp.tv_usec / 1e6;
+                if (timestamped && current - kernel_last > kernel_largest_gap)
+                    kernel_largest_gap = current - kernel_last;
+                kernel_last = current;
+                if (!timestamped) kernel_first = kernel_last;
+                timestamped++;
+            }
+        }
+#endif
+        double previous_packet = last_packet;
         last_packet = monotonic();
         if (!received) first_packet = last_packet;
         received++; bytes += n;
         memcpy(&sequence, packet + 10, 4); sequence = ntohl(sequence);
+        if (received > 1 && last_packet - previous_packet > largest_gap) {
+            largest_gap = last_packet - previous_packet; gap_previous = previous_sequence; gap_current = sequence;
+            gap_received = received - 1; gap_started = previous_packet - first_packet;
+        }
         if (received > 1 && sequence != previous_sequence + 1 && jumps++ < 16)
             printf("SEQUENCE_JUMP previous=%u current=%u receiver_seconds=%.6f\n",
                    previous_sequence, sequence, last_packet - started);
@@ -160,13 +199,21 @@ int main(int argc, char **argv)
            "\"socket_drops_seen\":null,"
 #endif
            "\"UDP_payload_bytes\":%llu,\"valid_unique_payload_bytes\":%llu,\"receiver_window_seconds\":%.6f,"
-           "\"active_packet_seconds\":%.6f,\"missing_ranges\":[",
+           "\"active_packet_seconds\":%.6f,\"first_packet_monotonic_seconds\":%.9f,\"last_packet_monotonic_seconds\":%.9f,"
+#ifdef __APPLE__
+           "\"kernel_active_packet_seconds\":%.6f,\"kernel_timestamp_packets\":%u,\"kernel_largest_gap_seconds\":%.6f,"
+#endif
+           "\"largest_gap_seconds\":%.6f,\"gap_previous_sequence\":%u,\"gap_current_sequence\":%u,\"gap_received_before\":%u,\"gap_started_seconds\":%.6f,\"missing_ranges\":[",
            binding, expected, received, unique, expected - unique, duplicates, bad, unexpected,
 #ifdef __linux__
            socket_drops,
 #endif
            (unsigned long long)bytes, (unsigned long long)good_bytes, finished - started,
-           last_packet - first_packet);
+           last_packet - first_packet, first_packet, last_packet
+#ifdef __APPLE__
+           , kernel_last - kernel_first, timestamped, kernel_largest_gap
+#endif
+           , largest_gap, gap_previous, gap_current, gap_received, gap_started);
     unsigned int ranges = 0;
     for (unsigned int i = 0; i < expected && ranges < 16; i++) {
         if (seen[i >> 3] & (1U << (i & 7))) continue;
