@@ -81,6 +81,7 @@ static struct phy sgmii;
 static int rtl_netdev_ops,rtl_ethtool_ops;
 static int board_ports,fail_port,stage,current_port;
 static unsigned int active,removed,fe_ports,allocated,power,actions,node_refs;
+static unsigned int s3_requests;
 static void *netdev_priv(struct net_device *d){return &d->lan;}
 static void rtl_adjust_link(struct net_device *d){}
 static struct device_node *of_parse_phandle(struct device_node *n,const char *s,unsigned int i){
@@ -89,7 +90,10 @@ static struct device_node *of_parse_phandle(struct device_node *n,const char *s,
  current_port=p;node_refs++;return &nodes[p];
 }
 static void of_node_put(struct device_node *n){assert(node_refs);node_refs--;}
-static struct phy *devm_phy_get(struct device *d,const char *s){return stage==1?(void *)(intptr_t)-EIO:&sgmii;}
+static struct phy *devm_phy_get(struct device *d,const char *s){
+ assert(board_ports==5 && !strcmp(s,"sgmii"));s3_requests++;
+ return stage==1?(void *)(intptr_t)-EIO:&sgmii;
+}
 static int phy_power_on(struct phy *p){if(stage==2)return -EIO;power++;return 0;}
 static void phy_power_off(void *p){assert(power);power--;}
 static int devm_add_action_or_reset(struct device *d,void (*f)(void *),void *p){
@@ -107,6 +111,7 @@ static struct phy_device *of_phy_find_device(struct device_node *n){
  return stage==5 && current_port==fail_port?NULL:&phys[n->port];
 }
 static int phy_connect_direct(struct net_device *d,struct phy_device *p,void (*fn)(struct net_device *),int mode){
+ assert(mode==(d->lan.port==4?PHY_INTERFACE_MODE_SGMII:PHY_INTERFACE_MODE_GMII));
  if(stage==6 && current_port==fail_port)return -ETIMEDOUT;
  d->phydev=p;return 0;
 }
@@ -150,7 +155,7 @@ int main(void){
   struct net_device primary={.dev_addr={0,0x50,0xc2,1,2,3}};
   struct rtl_xram priv={.netdev=&primary,.qm_rx=true};
   struct device parent={0};
-  active=removed=fe_ports=allocated=power=actions=node_refs=0;
+  active=removed=fe_ports=allocated=power=actions=node_refs=s3_requests=0;
   for(int p=0;p<5;p++)nodes[p].port=p;
   init_completion(&priv.lan4_ready);
   rtl_register_lans(&priv,&parent);
@@ -165,6 +170,7 @@ int main(void){
   assert(active==expected && priv.registered_ports==expected && fe_ports==expected);
   assert(!removed && !node_refs);
   assert(priv.lan4_ready.done && !!priv.lan4_phy==(board_ports==5));
+  assert(s3_requests==(unsigned int)(board_ports==5));
   for(int p=0;p<board_ports;p++){
    assert(!!priv.ports[p]==!!(expected&BIT(p)));
    assert(priv.qm.lan[p]==priv.ports[p]);

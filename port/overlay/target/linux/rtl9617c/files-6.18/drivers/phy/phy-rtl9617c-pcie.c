@@ -119,7 +119,7 @@ static int rtl_pcie_lane_power(struct phy *phy, bool enabled)
 		writel(value, controls->phy_control);
 		value = readl(controls->power);
 		value = enabled ? (value | 0xc0080000) & ~0x6020 :
-			(value & ~0xc0080000) | 0x6020;
+			(value & ~0xc0080000) | 0x20;
 		writel(value, controls->power);
 		if (enabled) {
 			writel(0x5359, controls->sgmii_serdes + 0x1c);
