@@ -36,6 +36,7 @@ typedef uint8_t u8; typedef int8_t s8; typedef uint16_t u16; typedef uint32_t u3
 #define BIT(n) (1U << (n))
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 #define min(a,b) ((a)<(b)?(a):(b))
+#define max(a,b) ((a)>(b)?(a):(b))
 #define RTL_AX_PHY_STAGES 2
 #define RTL_AX_PHY_FEM 1
 #define strscpy(d,s,n) snprintf(d,n,"%s",s)

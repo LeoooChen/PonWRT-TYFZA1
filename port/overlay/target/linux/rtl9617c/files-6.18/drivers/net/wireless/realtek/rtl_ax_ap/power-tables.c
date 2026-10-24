@@ -267,8 +267,8 @@ int rtl_ax_power_verify(const struct rtl_ax_io *io, struct rtl_ax_power_hardware
 	}
 	if ((io->read32(io->ctx, 0xd204) & 0x000fffff) != state->offset_mode)
 		goto mismatch;
-	if ((io->read32(io->ctx, 0xd208) & 0x00300000) != 0x00300000 ||
-	    !(io->read32(io->ctx, 0xd21c) & 0x00040000))
+	if ((io->read32(io->ctx, 0xd208) & 0x00300000) ||
+	    (io->read32(io->ctx, 0xd21c) & 0x00040000))
 		goto mismatch;
 	return 0;
 
@@ -286,8 +286,16 @@ int rtl_ax_power_apply(const struct rtl_ax_io *io, unsigned int chip,
 	const char *regulation = "WW";
 	unsigned int i, nss, bf;
 	u32 offset_mode = 0;
+	int rate_peak = 0, rate_boost;
 
 	state->applied = false;
+	max_dbm = min(max_dbm, RTL_AX_TX_POWER_MAX_DBM);
+	/* The factory targets top out at 24/25 dBm. Raise their hardware
+	 * by-rate values when Linux requests a higher ceiling, retaining the
+	 * factory modulation backoff. Updating limit_dbm alone cannot do this. */
+	for (i = band ? 4 : 0; i < 140; i++)
+		rate_peak = max(rate_peak, (int)power->rate[band][i]);
+	rate_boost = max(max_dbm * 4 - rate_peak, 0);
 	for (i = 0; i < limits->regulations; i++)
 		if (!strncmp(limits->regulation[i], country, 2) && !limits->regulation[i][2])
 			regulation = limits->regulation[i];
@@ -295,14 +303,14 @@ int rtl_ax_power_apply(const struct rtl_ax_io *io, unsigned int chip,
 	state->bandwidth = bandwidth;
 	for (i = 0; i < 12; i++)
 		/* Actual get_power_by_rate fetches CCK from2G on a5G channel. */
-		state->rate[i] = rtl_ax_half_dbm(power->rate[i < 4 ? 0 : band][i], max_dbm);
+		state->rate[i] = rtl_ax_half_dbm(power->rate[i < 4 ? 0 : band][i] + rate_boost, max_dbm);
 	for (nss = 0; nss < 2; nss++) {
 		for (i = 0; i < 12; i++)
 			state->rate[12 + nss * 16 + i] =
-				rtl_ax_half_dbm(power->rate[band][84 + nss * 12 + i], max_dbm);
+				rtl_ax_half_dbm(power->rate[band][84 + nss * 12 + i] + rate_boost, max_dbm);
 		for (i = 0; i < 4; i++)
 			state->rate[24 + nss * 16 + i] =
-				rtl_ax_half_dbm(power->rate[band][132 + nss * 4 + i], max_dbm);
+				rtl_ax_half_dbm(power->rate[band][132 + nss * 4 + i] + rate_boost, max_dbm);
 	}
 	for (i = 0; i < 5; i++)
 		offset_mode |= ((power->rate[i == 4 ? 0 : band][140 + i] / 2) & 15) << (i * 4);
@@ -423,12 +431,14 @@ int rtl_ax_power_apply(const struct rtl_ax_io *io, unsigned int chip,
 	rtl_ax_update32(io, 0xd204, 0x000fffff, offset_mode);
 	if ((io->read32(io->ctx, 0xd204) & 0x000fffff) != offset_mode)
 		return -EIO;
-	/* Actual mac_write_pwr_limit_en@21e954: limits and RU limits only
-	 * participate in power selection when these SCC MAC0 bits are set. */
-	rtl_ax_update32(io, 0xd208, 0x00300000, 0x00300000);
-	rtl_ax_update32(io, 0xd21c, 0x00040000, 0x00040000);
-	if ((io->read32(io->ctx, 0xd208) & 0x00300000) != 0x00300000 ||
-	    !(io->read32(io->ctx, 0xd21c) & 0x00040000))
+	/* TYFZA1's original power_limit MIB defaults to 0. Its capability
+	 * selection also disables these optional vendor limit tables. Enabling
+	 * them here caps TX below the board's by-rate targets.
+	 * The by-rate values above already include Linux's channel/user cap. */
+	rtl_ax_update32(io, 0xd208, 0x00300000, 0);
+	rtl_ax_update32(io, 0xd21c, 0x00040000, 0);
+	if ((io->read32(io->ctx, 0xd208) & 0x00300000) ||
+	    (io->read32(io->ctx, 0xd21c) & 0x00040000))
 		return -EIO;
 	rtl_ax_tx_shape_zero(io, chip);
 	state->offset_mode = offset_mode;

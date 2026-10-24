@@ -1479,6 +1479,7 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 		radio->channels[i].band = band;
 		radio->channels[i].hw_value = band == NL80211_BAND_5GHZ ? channels_5g[i] : i + 1;
 		radio->channels[i].center_freq = ieee80211_channel_to_frequency(radio->channels[i].hw_value, band);
+		radio->channels[i].max_power = RTL_AX_TX_POWER_MAX_DBM;
 	}
 	for (i = first_rate; i < ARRAY_SIZE(rates); i++) {
 		radio->rates[i - first_rate].bitrate = rates[i];

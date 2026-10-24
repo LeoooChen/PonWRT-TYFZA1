@@ -5,6 +5,8 @@
 #include "phy.h"
 #include "limits.h"
 
+#define RTL_AX_TX_POWER_MAX_DBM 30
+
 /* Actual halrf_power_by_rate_store_to_array has three145-byte band arrays.
  * Offsets140..144 are HE/DCM,VHT,HT,OFDM,CCK adjustments in quarter-dBm. */
 struct rtl_ax_power_stage {
