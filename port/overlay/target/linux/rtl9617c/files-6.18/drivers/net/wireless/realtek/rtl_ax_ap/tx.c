@@ -723,7 +723,8 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 		u32 report = rtl_ax_ap_read32(packet->payload + offset);
 		unsigned int id = (report >> 16) & 0xfff, status = (report >> 13) & 7;
 		unsigned int qsel = (report >> 8) & 31;
-		unsigned int ring = qsel < 4 ? qsel : qsel == 0x12 ? 4 : qsel == 0x11 ? 5 : RTL_AX_TX_RINGS;
+		/* Stock C/XB maps QSEL0..3 and4..7 to the same band0 DMA channels. */
+		unsigned int ring = qsel < 8 ? qsel & 3 : qsel == 0x12 ? 4 : qsel == 0x11 ? 5 : RTL_AX_TX_RINGS;
 		struct rtl_ax_tx_slot slot;
 		struct ieee80211_tx_info *info;
 		__le16 completed_sequence = 0;
