@@ -1,0 +1,103 @@
+TYFZA1: reclaim an alpha upgrader's oversized root volume during UBI attach.
+
+Validate the selected slot's SquashFS length before exposing volume users.
+Keep both board variants and static-volume data bounds; leave other UBI
+devices and volumes untouched. Preinit gives freed LEBs to rootfs_data.
+
+diff --git a/drivers/mtd/ubi/build.c b/drivers/mtd/ubi/build.c
+--- a/drivers/mtd/ubi/build.c
++++ b/drivers/mtd/ubi/build.c
+@@ -30,6 +30,8 @@
+ #include <linux/of.h>
+ #include <linux/slab.h>
+ #include <linux/major.h>
++#include <linux/magic.h>
++#include <linux/unaligned.h>
+ #include "ubi.h"
+ 
+ /* Maximum length of the 'mtd=' parameter */
+@@ -824,6 +826,75 @@
+ 	return 0;
+ }
+ 
++
++/* Older TYFZA1 upgraders leave the SquashFS image in the full OEM root slot. */
++static int tyfza1_slot = -1;
++
++static int __init tyfza1_slot_setup(char *value)
++{
++	int slot;
++
++	if (!kstrtoint(value, 10, &slot) && (slot == 0 || slot == 1))
++		tyfza1_slot = slot;
++	return 1;
++}
++__setup("tyfza1.slot=", tyfza1_slot_setup);
++
++static void tyfza1_trim_root(struct ubi_device *ubi)
++{
++	struct ubi_volume_desc desc = {};
++	struct ubi_volume *vol;
++	u8 sb[96];
++	u64 bytes;
++	int err, pebs, old_pebs, id = 4 + 3 * tyfza1_slot;
++	const char *name = tyfza1_slot ? "ubi_r1" : "ubi_r0";
++
++	if (tyfza1_slot < 0 || ubi->ubi_num != 0 || ubi->ro_mode ||
++	    ubi->leb_size != 126976 ||
++	    (!of_machine_is_compatible("tianyi,tyfza1") &&
++	     !of_machine_is_compatible("tianyi,tyfza1-2p5g")))
++		return;
++	vol = ubi->volumes[id];
++	if (!vol || strcmp(vol->name, name) || vol->upd_marker)
++		return;
++
++	desc.vol = vol;
++	err = ubi_read(&desc, 0, sb, 0, sizeof(sb));
++	if (err) {
++		ubi_warn(ubi, "skip TYFZA1 root trim: read failed (%d)", err);
++		return;
++	}
++	if (get_unaligned_le32(sb) != SQUASHFS_MAGIC ||
++	    get_unaligned_le16(sb + 28) != 4 ||
++	    get_unaligned_le16(sb + 30) != 0)
++		return;
++
++	/* SquashFS bytes_used is at offset 40 of its 96-byte superblock. */
++	bytes = get_unaligned_le64(sb + 40);
++	if (bytes < sizeof(sb) || bytes > vol->used_bytes ||
++	    get_unaligned_le64(sb + 64) < sizeof(sb) ||
++	    get_unaligned_le64(sb + 64) >= bytes ||
++	    get_unaligned_le64(sb + 72) < get_unaligned_le64(sb + 64) ||
++	    get_unaligned_le64(sb + 72) > bytes ||
++	    get_unaligned_le64(sb + 48) >= bytes) {
++		ubi_warn(ubi, "skip TYFZA1 root trim: invalid SquashFS bounds");
++		return;
++	}
++	pebs = DIV_ROUND_UP_ULL(bytes, vol->usable_leb_size);
++	old_pebs = vol->reserved_pebs;
++	if (pebs >= old_pebs ||
++	    (vol->vol_type == UBI_STATIC_VOLUME && pebs < vol->used_ebs))
++		return;
++
++	/* As for autoresize(), no volume users exist during attach. */
++	err = ubi_resize_volume(&desc, pebs);
++	if (!err)
++		ubi_msg(ubi, "TYFZA1 root %s trimmed from %d to %d LEBs",
++			name, old_pebs, pebs);
++	else
++		ubi_warn(ubi, "cannot trim TYFZA1 root %s (%d)", name, err);
++}
++
+ /**
+  * ubi_attach_mtd_dev - attach an MTD device.
+  * @mtd: MTD device description object
+@@ -1013,6 +1084,8 @@
+ 		if (err)
+ 			goto out_detach;
+ 	}
++
++	tyfza1_trim_root(ubi);
+ 
+ 	err = uif_init(ubi);
+ 	if (err)

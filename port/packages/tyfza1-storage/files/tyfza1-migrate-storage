@@ -156,16 +156,22 @@ if ! tyf_factory_published; then
 	/usr/share/tyfza1/factory.uc "$work/mount" "$work/import-original" > "$work/import-original.log" 2>&1
 	umount "$work/mount"
 	mounted=0
-	mount -t ubifs -o ro,noatime "${dev}_10" "$work/mount"
-	mounted=1
-	tar -cf "$work/apps.tar" -C "$work/mount" .
-	printf '\nApps file metadata:\n' >> "$work/capsule/files.txt"
-	tar -tvf "$work/apps.tar" >> "$work/capsule/files.txt"
-	printf '\nApps file hashes:\n' >> "$work/capsule/files.txt"
-	import_hashes "$work/mount" >> "$work/capsule/files.txt"
-	umount "$work/mount"
-	mounted=0
-	rm "$work/apps.tar"
+	# An erased apps volume has no UBIFS to mount; its raw snapshot is still kept.
+	apps_bytes=$(LC_ALL=C tr -d '\377' < "${dev}_10" | wc -c)
+	if [ "$apps_bytes" = 0 ]; then
+		printf '\nApps filesystem: empty (erased UBI volume)\n' >> "$work/capsule/files.txt"
+	else
+		mount -t ubifs -o ro,noatime "${dev}_10" "$work/mount"
+		mounted=1
+		tar -cf "$work/apps.tar" -C "$work/mount" .
+		printf '\nApps file metadata:\n' >> "$work/capsule/files.txt"
+		tar -tvf "$work/apps.tar" >> "$work/capsule/files.txt"
+		printf '\nApps file hashes:\n' >> "$work/capsule/files.txt"
+		import_hashes "$work/mount" >> "$work/capsule/files.txt"
+		umount "$work/mount"
+		mounted=0
+		rm "$work/apps.tar"
+	fi
 	for entry in 0:config 10:apps; do
 		id=${entry%%:*}; component=${entry#*:}
 		expected=$(sed -n "s/  $component.ubifs\$//p" "$work/capsule/raw.sha256")

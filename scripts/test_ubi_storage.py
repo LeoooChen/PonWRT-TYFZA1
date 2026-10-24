@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise installation and upgrade against a mutable OEM UBI layout."""
+import gzip
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,7 @@ import unittest
 PROJECT = Path(__file__).resolve().parents[1]
 UPGRADE = PROJECT / 'port/overlay/target/linux/rtl9617c/base-files/lib/upgrade'
 LEB = 126976
+SEED = b'UBIFS growth seed fixture'
 OEM = [
     ('ubi_Config', 50), ('ubi_fpga', 34), ('ubi_DTB0', 3),
     ('ubi_k0', 50), ('ubi_r0', 265), ('ubi_DTB1', 3),
@@ -103,6 +105,7 @@ class StorageTests(unittest.TestCase):
         self.helper.write_text(self.rewrite((UPGRADE / 'tyfza1-storage.sh').read_text()))
         self.platform = self.root / 'platform.sh'
         self.platform.write_text(self.rewrite((UPGRADE / 'platform.sh').read_text()))
+        (self.root / 'overlay-seed.ubifs.gz').write_bytes(gzip.compress(SEED))
 
     def rewrite(self, text):
         text = re.sub(r'(?<![/\w.-])(ubirsvol|ubirmvol|ubimkvol|ubiupdatevol|reboot|sync)(?=\s|$)',
@@ -110,6 +113,8 @@ class StorageTests(unittest.TestCase):
         return (text.replace('/sys/class/ubi', str(self.root / 'sys'))
                 .replace('/lib/upgrade/tyfza1-storage.sh', str(self.root / 'tyfza1-storage.sh'))
                 .replace('/proc/cmdline', str(self.root / 'cmdline'))
+                .replace('/usr/share/tyfza1/overlay-seed.ubifs.gz', str(self.root / 'overlay-seed.ubifs.gz'))
+                .replace('/tmp/tyfza1-overlay-seed.ubifs', str(self.root / 'overlay-seed.ubifs'))
                 .replace('/tmp/tyfza1-boot.env', str(self.root / 'boot.env')))
 
     def save(self):
@@ -169,6 +174,23 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(self.state['vols']['7']['ebs'], 64)
         self.assertEqual(self.state['vols']['11']['ebs'], 344)
         self.check_oem(7)
+
+    def test_sysupgrade_seeds_data_before_config_restore(self):
+        self.prepare_upgrade()
+        self.assertEqual(self.state['vols']['11']['used'], len(SEED))
+        self.assertFalse((self.root / 'overlay-seed.ubifs').exists())
+        source = (UPGRADE / 'platform.sh').read_text()
+        copied = re.search(r"^RAMFS_COPY_DATA='([^']*)'", source, re.M)[1].split()
+        self.assertIn('/usr/share/tyfza1/overlay-seed.ubifs.gz', copied)
+
+    def test_invalid_seed_stops_before_erasing_existing_volumes(self):
+        self.state['vols']['11'] = dict(name='rootfs_data', ebs=133, used=1000000)
+        self.state['free'] -= 133
+        (self.root / 'overlay-seed.ubifs.gz').write_bytes(b'invalid gzip')
+        self.prepare_upgrade(success=False)
+        self.assertEqual(self.state['events'], [])
+        self.assertEqual(self.state['vols']['7']['used'], 265 * LEB)
+        self.assertEqual(self.state['vols']['11']['used'], 1000000)
 
     def test_larger_future_image_grows_root_before_writing(self):
         self.state['vols']['4'].update(ebs=64, used=8067048)
