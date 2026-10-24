@@ -151,6 +151,7 @@ struct rtl_ax_ap {
 	spinlock_t pn_lock;
 	struct tasklet_struct tx_tasklet;
 	u64 tim_requests, tim_updates;
+	u64 ps_poll_requests, ps_poll_errors;
 	bool ap_started;
 	int ap_result;
 	DECLARE_BITMAP(station_ids, 128);
