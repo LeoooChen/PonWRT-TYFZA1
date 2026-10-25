@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
+/* Read /sys/module/pon_sim_send/parameters/stats before unloading.
+ * Measurement statistics stay off the synchronous serial console. */
 #include <linux/module.h>
 #include <linux/netdevice.h>
 #include <linux/dma-mapping.h>
@@ -15,6 +17,25 @@ module_param(packets,uint,0600);
 module_param(rate_mbps,uint,0600);
 module_param(session_id,uint,0600);
 MODULE_PARM_DESC(rate_mbps,"Ethernet wire rate including FCS, preamble and inter-frame gap");
+static struct {
+ dma_addr_t address;
+ u64 elapsed,raw_cpu_ns,max_lateness;
+ unsigned int sent,requested,read,rate,late_batches;
+ int result;
+} measurement;
+static int stats(char *out,const struct kernel_param *param)
+{
+ return scnprintf(out,PAGE_SIZE,
+  "PON_SIM HP11 VP11 dma=%pad source=7 connector=25 PPPoE_session=%u sent=%u requested=%u read=%u ret=%d target_wire_Mbps=%u elapsed_ns=%llu offered_wire_bps=%llu offered_frame_bps=%llu\n"
+  "PON_SIM generator_raw_cpu_ns=%llu\n"
+  "PON_SIM late_batches=%u max_lateness_ns=%llu\n",
+  &measurement.address,session_id,measurement.sent,measurement.requested,measurement.read,measurement.result,measurement.rate,measurement.elapsed,
+  measurement.elapsed?mul_u64_u64_div_u64((u64)measurement.sent*1538*8,NSEC_PER_SEC,measurement.elapsed):0,
+  measurement.elapsed?mul_u64_u64_div_u64((u64)measurement.sent*1514*8,NSEC_PER_SEC,measurement.elapsed):0,
+  measurement.raw_cpu_ns,measurement.late_batches,measurement.max_lateness);
+}
+static const struct kernel_param_ops stats_ops={.get=stats};
+module_param_cb(stats,&stats_ops,NULL,0400);
 static void wait_deadline(u64 due)
 {
  u64 now=ktime_get_ns();
@@ -72,7 +93,6 @@ static int __init send_init(void)
  writel(BIT(31)|BIT(30),vp+4);
  ret=readl_poll_timeout(vp+4,status,!(status&BIT(31)),1,100000);if(ret)goto restore;
  writel((saved[0]&~(3U<<22))|(1U<<22),dma+0x14);writel(BIT(9),vp+0x78);
- pr_info("PON_SIM source ready\n");
  writel(1,vp);
  started=ktime_get_ns();due=started;
  while(done<packets){
@@ -104,12 +124,10 @@ static int __init send_init(void)
  elapsed=ktime_get_ns()-started;
  writel(0,vp);
  task_cputime(current,&user_end,&system_end);
- pr_info("PON_SIM HP11 VP11 dma=%pad source=7 connector=25 PPPoE_session=%u sent=%u requested=%u read=%u ret=%d target_wire_Mbps=%u elapsed_ns=%llu offered_wire_bps=%llu offered_frame_bps=%llu\n",
-  &address,session_id,done,packets,readl(vp+0x1c)&1023,ret,rate_mbps,elapsed,
-  mul_u64_u64_div_u64((u64)done*1538*8,NSEC_PER_SEC,elapsed),
-  mul_u64_u64_div_u64((u64)done*1514*8,NSEC_PER_SEC,elapsed));
- pr_info("PON_SIM generator_raw_cpu_ns=%llu\n",user_end+system_end-user_start-system_start);
- pr_info("PON_SIM late_batches=%u max_lateness_ns=%llu\n",late_batches,max_lateness);
+ measurement.address=address;measurement.sent=done;measurement.requested=packets;
+ measurement.read=readl(vp+0x1c)&1023;measurement.result=ret;measurement.rate=rate_mbps;
+ measurement.elapsed=elapsed;measurement.raw_cpu_ns=user_end+system_end-user_start-system_start;
+ measurement.late_batches=late_batches;measurement.max_lateness=max_lateness;
 restore:
  writel(0,vp);writel(saved[1],vp+8);writel(saved[2],vp+12);
  writel(BIT(31)|BIT(30),vp+4);readl_poll_timeout(vp+4,status,!(status&BIT(31)),1,100000);

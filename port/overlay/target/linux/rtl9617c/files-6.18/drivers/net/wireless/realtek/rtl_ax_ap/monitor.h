@@ -1274,6 +1274,29 @@ static const struct ieee80211_ops rtl_ax_monitor_ops = {
 	.change_chanctx = ieee80211_emulate_change_chanctx,
 };
 
+static void rtl_ax_ps_poll(struct rtl_ax_ap *radio, const struct rtl_ax_rx_packet *packet)
+{
+	struct ieee80211_sta *sta;
+	unsigned int macid = 0;
+
+	if (packet->crc_error || packet->bytes < 20 ||
+	    !ieee80211_is_pspoll(get_unaligned((const __le16 *)packet->payload)))
+		return;
+	rcu_read_lock();
+	sta = ieee80211_find_sta_by_ifaddr(radio->hw, packet->payload + 10,
+					packet->payload + 4);
+	/* Actual rtw_proccess_pspoll validates AID and rejects a UAPSD AC
+	 * before releasing the firmware queue, including already submitted WPs. */
+	if (sta && sta->aid == (get_unaligned_le16(packet->payload + 2) & 0x3fff) &&
+	    !(sta->uapsd_queues & BIT(IEEE80211_AC_BE)))
+		macid = ((struct rtl_ax_station *)sta->drv_priv)->macid;
+	rcu_read_unlock();
+	if (macid) {
+		radio->ps_poll_requests++;
+		radio->ps_poll_errors += !!rtl_ax_host_getpkt(&radio->io, macid);
+	}
+}
+
 static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 	const struct rtl_ax_rx_packet *packet)
 {
@@ -1364,6 +1387,7 @@ static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 	}
 	if (ieee80211_is_beacon(frame_control))
 		status->boottime_ns = ktime_get_boottime_ns();
+	rtl_ax_ps_poll(radio, packet);
 	radio->mac80211_packets++;
 	if (profile) {
 		delivered = ktime_get_ns();
@@ -1590,7 +1614,7 @@ static ssize_t radio_mac80211_show(struct device *dev,
 		"TX_unimplemented=%llu AP_started=%u AP_result=%d station_added=%llu station_removed=%llu "
 		"RX_BA_started=%llu RX_BA_stopped=%llu RX_BA_result=%d "
 		"keys_installed=%llu keys_removed=%llu keys_aborted=%llu keys_active=%u key_result=%d RX_decrypted=%llu "
-		"TIM_requests=%llu TIM_updates=%llu "
+		"TIM_requests=%llu TIM_updates=%llu PS_Poll_requests=%llu PS_Poll_errors=%llu "
 		"profile=%u RX_copy_bytes=%llu RX_prepare_ns=%llu RX_mac80211_ns=%llu "
 		"retired_MACIDs=%u RX_BA_active=%u RX_BA_deleting=%u TX_BA_stopping=%u "
 		"auto_offload_starts=%llu auto_offload_result=%d\n",
@@ -1600,6 +1624,7 @@ static ssize_t radio_mac80211_show(struct device *dev,
 		radio->keys_installed, radio->keys_removed, radio->keys_aborted,
 		bitmap_weight(radio->security_ids, RTL_AX_SECURITY_ENTRIES), radio->key_result, radio->rx_decrypted,
 		radio->tim_requests, radio->tim_updates,
+		radio->ps_poll_requests, radio->ps_poll_errors,
 		rtl_ax_datapath_profile, radio->rx_copy_bytes, radio->rx_prepare_ns, radio->rx_mac80211_ns,
 		retired, ba_active, ba_deleting, tx_stopping, radio->offload_started, radio->offload_result);
 }

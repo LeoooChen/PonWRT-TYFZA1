@@ -51,6 +51,7 @@ static u32 registers[256],producer;
 static void *vp=registers,*memory;
 static u64 data_packets,control_packets,data_bytes,stops,wakes,doorbells;
 static u64 data_prepare_ns,payload_copy_ns,stream_packets[4];
+static bool pending;
 static unsigned control_transmits;
 static struct iphdr *ip_hdr(struct sk_buff *s){return &ip;}
 static struct tcphdr *tcp_hdr(struct sk_buff *s){return &tcp;}
@@ -66,7 +67,7 @@ static bool netdev_xmit_more(void){return true;}
 static void dma_wmb(void){}
 static void skb_copy_bits(struct sk_buff *s,unsigned at,void *out,unsigned n){assert(at+n<=s->len);memcpy(out,s->data+at,n);}
 static void skb_set_queue_mapping(struct sk_buff *s,unsigned n){assert(n==0);}
-static void dev_queue_xmit(struct sk_buff *s){assert(s->dev==radio);control_transmits++;}
+static void dev_queue_xmit(struct sk_buff *s){assert(s->dev==radio);assert(readl(vp+0x18)==producer);control_transmits++;}
 static void dev_consume_skb_any(struct sk_buff *s){s->consumed=true;}
 static void put_unaligned_be16(u16 x,void *p){x=htons(x);memcpy(p,&x,2);}
 static void put_unaligned_le32(u32 x,void *p){u8 *b=p;for(unsigned i=0;i<4;i++)b[i]=x>>(8*i);}
@@ -112,6 +113,21 @@ int main(void){
  struct sk_buff syn={.protocol=htons(ETH_P_IP),.len=sizeof(packet),.data=packet};
  assert(transmit(&syn,feed)==NETDEV_TX_OK && !syn.consumed);
  assert(control_packets==1 && control_transmits==1 && data_packets==2440);
+ // A control skb can finish a GSO batch while its last data skb has xmit_more.
+ tcp.syn=false;
+ for(unsigned flag=0;flag<3;flag++){
+  u64 prior=doorbells;
+  struct sk_buff data={.protocol=htons(ETH_P_IP),.len=sizeof(packet),.data=packet};
+  assert(transmit(&data,feed)==NETDEV_TX_OK && data.consumed);
+  assert(doorbells==prior && readl(vp+0x18)!=producer);
+  tcp.syn=flag==0;tcp.fin=flag==1;tcp.rst=flag==2;
+  struct sk_buff control={.protocol=htons(ETH_P_IP),.len=sizeof(packet),.data=packet};
+  assert(transmit(&control,feed)==NETDEV_TX_OK && !control.consumed);
+  assert(doorbells==prior+1 && readl(vp+0x18)==producer);
+  assert(transmit(&control,feed)==NETDEV_TX_OK && doorbells==prior+1);
+  tcp.syn=tcp.fin=tcp.rst=false;
+  writel(producer,vp+0x1c);
+ }
  free(memory);
 }
 '''
@@ -123,4 +139,4 @@ with tempfile.TemporaryDirectory(prefix='pon-tcp-feed-') as directory:
     subprocess.run(['cc', '-std=gnu11', '-O1', '-g', '-fsanitize=address,undefined',
                     str(path / 'test.c'), '-o', str(path / 'test')], check=True)
     subprocess.run([str(path / 'test')], check=True)
-print('TCP feed: 2440 packets,1024-slot wrap,61-credit backpressure,retained payloads,PPPoE bytes and control path passed')
+print('TCP feed: ring wrap,61-credit backpressure,retained payloads,PPPoE bytes and data publication before SYN/FIN/RST passed')

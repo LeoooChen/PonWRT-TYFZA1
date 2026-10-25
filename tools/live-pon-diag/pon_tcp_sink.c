@@ -46,8 +46,8 @@ struct sink_key {
  struct flow_dissector_key_ipv4_addrs ipv4;
  struct flow_dissector_key_ports ports;
 };
-static struct sink_key key[2],mask;
-static u64 flow_packets[2];
+static struct sink_key key[4],mask;
+static u64 flow_packets[4];
 static const struct flow_dissector_key keys[]={
  {FLOW_DISSECTOR_KEY_CONTROL,offsetof(struct sink_key,control)},
  {FLOW_DISSECTOR_KEY_META,offsetof(struct sink_key,meta)},
@@ -68,7 +68,7 @@ static netdev_tx_t discard(struct sk_buff *skb,struct net_device *dev)
 static const struct net_device_ops ops={.ndo_start_xmit=discard};
 static int command(enum flow_cls_command cmd)
 {
- for(unsigned int i=0;i<2;i++){
+ for(unsigned int i=0;i<ARRAY_SIZE(key);i++){
   struct flow_cls_offload cls={.command=cmd,.cookie=(unsigned long)&key[i],.rule=rule,
    .common={.protocol=cpu_to_be16(ETH_P_IP),.skip_sw=true}};
   int ret;rule->match.key=&key[i];
@@ -81,8 +81,8 @@ static int command(enum flow_cls_command cmd)
 static int stats(char *buf,const struct kernel_param *param)
 {
  int ret;rtnl_lock();ret=command(FLOW_CLS_STATS);rtnl_unlock();
- return scnprintf(buf,PAGE_SIZE,"ret=%d FE_packets=%llu FE_bytes=%llu received=%llu received_bytes=%llu id=%d stack_skbs=%llu gro_skbs=%llu gro_frames=%llu first=%*phN flow55000=%llu flow55001=%llu\n",
- ret,packets,bytes,received,received_bytes,identity,stack_skbs,gro_skbs,gro_frames,32,first,flow_packets[0],flow_packets[1]);
+ return scnprintf(buf,PAGE_SIZE,"ret=%d FE_packets=%llu FE_bytes=%llu received=%llu received_bytes=%llu id=%d stack_skbs=%llu gro_skbs=%llu gro_frames=%llu first=%*phN flow55000=%llu flow55001=%llu flow55002=%llu flow55003=%llu\n",
+ ret,packets,bytes,received,received_bytes,identity,stack_skbs,gro_skbs,gro_frames,32,first,flow_packets[0],flow_packets[1],flow_packets[2],flow_packets[3]);
 }
 static const struct kernel_param_ops statops={.get=stats};
 module_param_cb(stats,&statops,NULL,0400);
@@ -133,9 +133,11 @@ static int __init initialize(void)
   .id=FLOW_ACTION_MANGLE,.mangle={.htype=FLOW_ACT_MANGLE_HDR_TYPE_ETH,.offset=i*4,
    .mask=0,.val=get_unaligned((u32 *)(ethernet+i*4))}};
  rule->action.entries[3]=(struct flow_action_entry){.id=FLOW_ACTION_REDIRECT,.dev=sink};
- /* iperf3 --bidir uses55000 for upload and55001 for download ACKs.
-  * Both must use the NI owner's GRO/RPS context instead of inline TCP RX. */
- key[1]=key[0];key[1].ports.src=htons(55001);
+ /* Match all four client ports accepted by the TCP feed and runners.
+  * Download ACKs use the same NI GRO/RPS context as upload data. */
+ for(unsigned int i=1;i<ARRAY_SIZE(key);i++){
+  key[i]=key[0];key[i].ports.src=htons(55000+i);
+ }
  ret=command(FLOW_CLS_REPLACE);if(ret)goto free_rule;
  rtnl_unlock();return 0;
 free_rule:kfree(rule);

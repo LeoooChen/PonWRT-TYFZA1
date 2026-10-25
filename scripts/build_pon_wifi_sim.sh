@@ -12,3 +12,4 @@ printf 'obj-m := pon_wifi_sim.o pon_sim_send.o\n' > "$OUT/Makefile"
 set -- "$P"/sources/openwrt/staging_dir/toolchain-aarch64_cortex-a55_gcc-*_musl/bin
 export PATH="$1:$PATH" STAGING_DIR="$P/sources/openwrt/staging_dir"
 make -C "$KERNEL" M="$OUT" ARCH=arm64 CROSS_COMPILE=aarch64-openwrt-linux-musl- -j2 modules
+echo 'Read /sys/module/pon_sim_send/parameters/stats after injection, before unloading.'
