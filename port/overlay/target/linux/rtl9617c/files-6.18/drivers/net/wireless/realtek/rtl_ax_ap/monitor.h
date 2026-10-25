@@ -1444,11 +1444,18 @@ static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 static void rtl_ax_regulatory_notify(struct wiphy *wiphy, struct regulatory_request *request)
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(wiphy_to_ieee80211_hw(wiphy));
+	unsigned int i;
 	int ret;
 
 	mutex_lock(&radio->command_mutex);
 	radio->power_country[0] = request->alpha2[0];
 	radio->power_country[1] = request->alpha2[1];
+	/* The optional local ceiling changes power only. cfg80211 still owns
+	 * channel eligibility, bandwidth, indoor and radar requirements. */
+	if (cn_power_30 && !memcmp(request->alpha2, "CN", 2))
+		for (i = 0; i < radio->band.n_channels; i++)
+			if (!(radio->channels[i].flags & IEEE80211_CHAN_DISABLED))
+				radio->channels[i].max_power = radio->channels[i].max_reg_power = RTL_AX_TX_POWER_MAX_DBM;
 	switch (request->dfs_region) {
 	case NL80211_DFS_FCC: radio->dfs_domain = 1; break;
 	case NL80211_DFS_JP: radio->dfs_domain = 2; break;

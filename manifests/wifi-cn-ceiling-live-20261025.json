@@ -1,0 +1,1617 @@
+{
+  "base_commit": "b33284b",
+  "branch": "fix/wifi-cn-power-ceiling",
+  "module_parameter": {
+    "name": "cn_power_30",
+    "default": true,
+    "RAM_tests": "explicit cn_power_30=0/1; tested module built with previous default=false"
+  },
+  "module_sha256": "fd340e88a6b381bed377237c83d7364df4f26aae5e06a4dd40b75f22d9cbb594",
+  "factory_rate_backoff_and_mode_offsets": "unchanged from main",
+  "committed_source_sha256": {
+    "pci.c": "f6e7658c45a9543aecf66adc37e8dd20541941093f87753d334cc542039bb2c5",
+    "monitor.h": "8b2ea17408178c993d0e5040fb259c6f733ced6966534b6bdc3502848feb92dd",
+    "power-tables.c": "616473c36dd80026874cb1539bfd5f2c51be8f9245060914f3c42cb49f831780",
+    "power-tables.h": "98dd94125e49953fd9ae015d64fb87cf6a9f050e378e72fc529a47d6a19db16f"
+  },
+  "RAM_module_source_sha256": {
+    "pci.c": "836c79842d19690e7e1100883ab16355b311d0c0a10e2d2e2b4531a503b6e72f",
+    "monitor.h": "8b2ea17408178c993d0e5040fb259c6f733ced6966534b6bdc3502848feb92dd",
+    "power-tables.c": "616473c36dd80026874cb1539bfd5f2c51be8f9245060914f3c42cb49f831780",
+    "power-tables.h": "98dd94125e49953fd9ae015d64fb87cf6a9f050e378e72fc529a47d6a19db16f"
+  },
+  "offline_checks": {
+    "CN_notifier_cases": 12,
+    "power_policy_cases": 558,
+    "bandwidth_vectors": 4,
+    "VHT_WD_vectors": 240,
+    "HE160_WD_vectors": 72
+  },
+  "measurement": "MacBook CoreWLAN associated RSSI; zero values excluded; absolute antenna power not calibrated",
+  "cases": [
+    {
+      "label": "M1-80-p23",
+      "requested_dBm": 23,
+      "width_MHz": 80,
+      "channel": 149,
+      "valid_samples": 200,
+      "invalid_zero_samples": 0,
+      "median_dBm": -30.0,
+      "mean_dBm": -30.465,
+      "minimum_dBm": -35,
+      "maximum_dBm": -29,
+      "counts": {
+        "-35": 1,
+        "-34": 6,
+        "-33": 10,
+        "-32": 8,
+        "-31": 27,
+        "-30": 139,
+        "-29": 9
+      },
+      "TXINFO_internal_dBm": {
+        "23.0": 9,
+        "0.0": 1
+      }
+    },
+    {
+      "label": "M2-80-p30",
+      "requested_dBm": 30,
+      "width_MHz": 80,
+      "channel": 149,
+      "valid_samples": 200,
+      "invalid_zero_samples": 0,
+      "median_dBm": -23.0,
+      "mean_dBm": -23.375,
+      "minimum_dBm": -29,
+      "maximum_dBm": -20,
+      "counts": {
+        "-29": 1,
+        "-28": 3,
+        "-27": 12,
+        "-26": 6,
+        "-25": 19,
+        "-24": 38,
+        "-23": 62,
+        "-22": 35,
+        "-21": 19,
+        "-20": 5
+      },
+      "TXINFO_internal_dBm": {
+        "30.0": 9,
+        "0.0": 1
+      }
+    },
+    {
+      "label": "M3-80-p23",
+      "requested_dBm": 23,
+      "width_MHz": 80,
+      "channel": 149,
+      "valid_samples": 200,
+      "invalid_zero_samples": 0,
+      "median_dBm": -28.0,
+      "mean_dBm": -28.375,
+      "minimum_dBm": -32,
+      "maximum_dBm": -26,
+      "counts": {
+        "-32": 2,
+        "-31": 4,
+        "-30": 21,
+        "-29": 70,
+        "-28": 59,
+        "-27": 31,
+        "-26": 13
+      },
+      "TXINFO_internal_dBm": {
+        "23.0": 9,
+        "0.0": 1
+      }
+    },
+    {
+      "label": "F80-p23",
+      "band": "5G",
+      "request_dBm": 23,
+      "width_MHz": 80,
+      "channel": 149,
+      "rssi_median_dBm": -29.0,
+      "rssi_mean_dBm": -29.34,
+      "rssi_min_dBm": -33,
+      "rssi_max_dBm": -29,
+      "rssi_valid_samples": 100,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 155.71540458485498,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 734,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "tcp_up": {
+          "Mbps": 285.5666011030044,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 0,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_down": {
+          "Mbps": 199.93447514516305,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_up": {
+          "Mbps": 199.84506786896398,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        }
+      }
+    },
+    {
+      "label": "F80-p24",
+      "band": "5G",
+      "request_dBm": 24,
+      "width_MHz": 80,
+      "channel": 149,
+      "rssi_median_dBm": -28.0,
+      "rssi_mean_dBm": -28.57,
+      "rssi_min_dBm": -34,
+      "rssi_max_dBm": -28,
+      "rssi_valid_samples": 100,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 201.0259012834289,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 657,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "tcp_up": {
+          "Mbps": 403.3563365010524,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 4,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_down": {
+          "Mbps": 199.9457363103883,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_up": {
+          "Mbps": 199.8525559957565,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        }
+      }
+    },
+    {
+      "label": "F80-p25",
+      "band": "5G",
+      "request_dBm": 25,
+      "width_MHz": 80,
+      "channel": 149,
+      "rssi_median_dBm": -28.0,
+      "rssi_mean_dBm": -27.85,
+      "rssi_min_dBm": -33,
+      "rssi_max_dBm": -27,
+      "rssi_valid_samples": 100,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 98.88982219185887,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 1947,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "tcp_up": {
+          "Mbps": 261.87269988292127,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 3,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_down": {
+          "Mbps": 199.96710147796236,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_up": {
+          "Mbps": 199.73367644834028,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        }
+      }
+    },
+    {
+      "label": "F80-p26",
+      "band": "5G",
+      "request_dBm": 26,
+      "width_MHz": 80,
+      "channel": 149,
+      "rssi_median_dBm": -27.0,
+      "rssi_mean_dBm": -27.56,
+      "rssi_min_dBm": -32,
+      "rssi_max_dBm": -27,
+      "rssi_valid_samples": 100,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 102.81362331062115,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 1813,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "tcp_up": {
+          "Mbps": 378.1174825865412,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 17,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_down": {
+          "Mbps": 199.93057550213598,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_up": {
+          "Mbps": 199.861763119519,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        }
+      }
+    },
+    {
+      "label": "F80-p27",
+      "band": "5G",
+      "request_dBm": 27,
+      "width_MHz": 80,
+      "channel": 149,
+      "rssi_median_dBm": -26.0,
+      "rssi_mean_dBm": -26.45,
+      "rssi_min_dBm": -31,
+      "rssi_max_dBm": -25,
+      "rssi_valid_samples": 100,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 77.85883125902836,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 1607,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "tcp_up": {
+          "Mbps": 381.97154901077727,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 8,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_down": {
+          "Mbps": 199.97863066499573,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_up": {
+          "Mbps": 199.82461376689517,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        }
+      }
+    },
+    {
+      "label": "F80-p28",
+      "band": "5G",
+      "request_dBm": 28,
+      "width_MHz": 80,
+      "channel": 149,
+      "rssi_median_dBm": -25.0,
+      "rssi_mean_dBm": -25.73,
+      "rssi_min_dBm": -30,
+      "rssi_max_dBm": -24,
+      "rssi_valid_samples": 100,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 229.99677164570537,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 587,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "tcp_up": {
+          "Mbps": 286.32311335007336,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 0,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_down": {
+          "Mbps": 199.9238414435712,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_up": {
+          "Mbps": 199.81213040178167,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        }
+      }
+    },
+    {
+      "label": "F80-p29",
+      "band": "5G",
+      "request_dBm": 29,
+      "width_MHz": 80,
+      "channel": 149,
+      "rssi_median_dBm": -25.0,
+      "rssi_mean_dBm": -25.1,
+      "rssi_min_dBm": -30,
+      "rssi_max_dBm": -24,
+      "rssi_valid_samples": 100,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 131.57891367416235,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 477,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "tcp_up": {
+          "Mbps": 386.0405270933426,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 6,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_down": {
+          "Mbps": 199.98099392778443,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_up": {
+          "Mbps": 199.81108692948328,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        }
+      }
+    },
+    {
+      "label": "F80-p30",
+      "band": "5G",
+      "request_dBm": 30,
+      "width_MHz": 80,
+      "channel": 149,
+      "rssi_median_dBm": -24.0,
+      "rssi_mean_dBm": -24.17,
+      "rssi_min_dBm": -29,
+      "rssi_max_dBm": -23,
+      "rssi_valid_samples": 100,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 89.23966428970037,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 1535,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "tcp_up": {
+          "Mbps": 340.6533569561829,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 5,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_down": {
+          "Mbps": 199.9563510364384,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_up": {
+          "Mbps": 199.8470087666524,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        }
+      }
+    },
+    {
+      "label": "F160-p23",
+      "band": "5G",
+      "request_dBm": 23,
+      "width_MHz": 160,
+      "channel": 36,
+      "rssi_median_dBm": -36.0,
+      "rssi_mean_dBm": -36.09,
+      "rssi_min_dBm": -37,
+      "rssi_max_dBm": -35,
+      "rssi_valid_samples": 100,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 305.52386497526857,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 560,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "tcp_up": {
+          "Mbps": 221.8774792850946,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 2,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_down": {
+          "Mbps": 199.9726844380947,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_up": {
+          "Mbps": 199.86098294644245,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        }
+      }
+    },
+    {
+      "label": "F160-p24",
+      "band": "5G",
+      "request_dBm": 24,
+      "width_MHz": 160,
+      "channel": 36,
+      "rssi_median_dBm": -34.0,
+      "rssi_mean_dBm": -34.45,
+      "rssi_min_dBm": -36,
+      "rssi_max_dBm": -32,
+      "rssi_valid_samples": 100,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 230.84536847948755,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 442,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "tcp_up": {
+          "Mbps": 300.135921981214,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 26,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_down": {
+          "Mbps": 199.9898057393687,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_up": {
+          "Mbps": 199.84038068831143,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        }
+      }
+    },
+    {
+      "label": "F160-p25",
+      "band": "5G",
+      "request_dBm": 25,
+      "width_MHz": 160,
+      "channel": 36,
+      "rssi_median_dBm": -32.0,
+      "rssi_mean_dBm": -31.88,
+      "rssi_min_dBm": -33,
+      "rssi_max_dBm": -30,
+      "rssi_valid_samples": 100,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 312.82327286196784,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 302,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "tcp_up": {
+          "Mbps": 355.8255280178781,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 22,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_down": {
+          "Mbps": 199.95773058192398,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_up": {
+          "Mbps": 199.86704589314957,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        }
+      }
+    },
+    {
+      "label": "F160-p26",
+      "band": "5G",
+      "request_dBm": 26,
+      "width_MHz": 160,
+      "channel": 36,
+      "rssi_median_dBm": -32.0,
+      "rssi_mean_dBm": -32.54,
+      "rssi_min_dBm": -35,
+      "rssi_max_dBm": -31,
+      "rssi_valid_samples": 100,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 172.545966709347,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 1007,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "tcp_up": {
+          "Mbps": 232.43662527767822,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 2,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_down": {
+          "Mbps": 199.9767793566983,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_up": {
+          "Mbps": 199.85644219400686,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        }
+      }
+    },
+    {
+      "label": "F160-p27",
+      "band": "5G",
+      "request_dBm": 27,
+      "width_MHz": 160,
+      "channel": 36,
+      "rssi_median_dBm": -30.0,
+      "rssi_mean_dBm": -30.38,
+      "rssi_min_dBm": -35,
+      "rssi_max_dBm": -29,
+      "rssi_valid_samples": 100,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 288.9754781310144,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 448,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "tcp_up": {
+          "Mbps": 341.22583207966244,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 1,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_down": {
+          "Mbps": 199.80272006576664,
+          "lost_percent": 0.0634570946229092,
+          "lost_packets": 53,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_up": {
+          "Mbps": 199.82922807242744,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        }
+      }
+    },
+    {
+      "label": "F160-p28",
+      "band": "5G",
+      "request_dBm": 28,
+      "width_MHz": 160,
+      "channel": 36,
+      "rssi_median_dBm": -32.0,
+      "rssi_mean_dBm": -31.36,
+      "rssi_min_dBm": -35,
+      "rssi_max_dBm": -29,
+      "rssi_valid_samples": 100,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 161.36141757205985,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 795,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "tcp_up": {
+          "Mbps": 368.71749133893456,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 16,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_down": {
+          "Mbps": 199.9819074270012,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_up": {
+          "Mbps": 199.809943492663,
+          "lost_percent": 0.021599568008639828,
+          "lost_packets": 18,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        }
+      }
+    },
+    {
+      "label": "F160-p29",
+      "band": "5G",
+      "request_dBm": 29,
+      "width_MHz": 160,
+      "channel": 36,
+      "rssi_median_dBm": -29.0,
+      "rssi_mean_dBm": -29.82,
+      "rssi_min_dBm": -36,
+      "rssi_max_dBm": -27,
+      "rssi_valid_samples": 100,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 93.06454012184948,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 1658,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "tcp_up": {
+          "Mbps": 243.28241152818362,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 4,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_down": {
+          "Mbps": 200.00374577008913,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_up": {
+          "Mbps": 199.85001599479776,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        }
+      }
+    },
+    {
+      "label": "F160-p30",
+      "band": "5G",
+      "request_dBm": 30,
+      "width_MHz": 160,
+      "channel": 36,
+      "rssi_median_dBm": -31.0,
+      "rssi_mean_dBm": -30.6,
+      "rssi_min_dBm": -35,
+      "rssi_max_dBm": -29,
+      "rssi_valid_samples": 100,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 219.34941461167494,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 814,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "tcp_up": {
+          "Mbps": 324.8328977503498,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 19,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_down": {
+          "Mbps": 199.97657654463077,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        },
+        "udp_up": {
+          "Mbps": 199.80234403412732,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::106a:b639:dfb:78c2"
+        }
+      }
+    },
+    {
+      "label": "S160-p27",
+      "request_dBm": 27,
+      "socket_window": "1M",
+      "duration_per_direction_s": 30,
+      "directions": {
+        "down": {
+          "Mbps": 199.98574832081155,
+          "packets": 625044,
+          "lost_packets": 16,
+          "lost_percent": 0.002559226090030375,
+          "buffer_counter_deltas": {
+            "router_RcvbufErrors": 0,
+            "router_InCsumErrors": 0,
+            "mac_socket_buffer_drops": 0
+          }
+        },
+        "up": {
+          "Mbps": 199.96113322608252,
+          "packets": 625049,
+          "lost_packets": 65,
+          "lost_percent": 0.010399184703919213,
+          "buffer_counter_deltas": {
+            "router_RcvbufErrors": 0,
+            "router_InCsumErrors": 0,
+            "mac_socket_buffer_drops": 0
+          }
+        }
+      }
+    },
+    {
+      "label": "S160-p28",
+      "request_dBm": 28,
+      "socket_window": "1M",
+      "duration_per_direction_s": 30,
+      "directions": {
+        "down": {
+          "Mbps": 199.99454742602845,
+          "packets": 625070,
+          "lost_packets": 0,
+          "lost_percent": 0,
+          "buffer_counter_deltas": {
+            "router_RcvbufErrors": 0,
+            "router_InCsumErrors": 0,
+            "mac_socket_buffer_drops": 0
+          }
+        },
+        "up": {
+          "Mbps": 199.864179741319,
+          "packets": 625054,
+          "lost_packets": 360,
+          "lost_percent": 0.057594747359040854,
+          "buffer_counter_deltas": {
+            "router_RcvbufErrors": 0,
+            "router_InCsumErrors": 0,
+            "mac_socket_buffer_drops": 0
+          }
+        }
+      }
+    },
+    {
+      "label": "R2G-stock-p20-retry",
+      "band": "2G",
+      "request_dBm": 20,
+      "width_MHz": 20,
+      "channel": 1,
+      "rssi_median_dBm": -19.0,
+      "rssi_mean_dBm": -18.945,
+      "rssi_min_dBm": -20,
+      "rssi_max_dBm": -18,
+      "rssi_valid_samples": 200,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 88.61741075279569,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 301,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "tcp_up": {
+          "Mbps": 137.8709211657653,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 0,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "udp_down": {
+          "Mbps": 20.0004694101861,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "udp_up": {
+          "Mbps": 19.987112436498776,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        }
+      }
+    },
+    {
+      "label": "R2G-cn-p23-ready",
+      "band": "2G",
+      "request_dBm": 23,
+      "width_MHz": 20,
+      "channel": 1,
+      "rssi_median_dBm": -15.0,
+      "rssi_mean_dBm": -14.5625,
+      "rssi_min_dBm": -16,
+      "rssi_max_dBm": -13,
+      "rssi_valid_samples": 128,
+      "invalid_zero_samples": 72,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 33.05307457048327,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 75,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "tcp_up": {
+          "Mbps": 124.24169110034671,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 0,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "udp_down": {
+          "Mbps": 20.00097949947577,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "udp_up": {
+          "Mbps": 19.983269365709194,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        }
+      }
+    },
+    {
+      "label": "R2G-cn-p24",
+      "band": "2G",
+      "request_dBm": 24,
+      "width_MHz": 20,
+      "channel": 1,
+      "rssi_median_dBm": -13.0,
+      "rssi_mean_dBm": -13.47,
+      "rssi_min_dBm": -16,
+      "rssi_max_dBm": -13,
+      "rssi_valid_samples": 200,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 55.84387585998594,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 379,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "tcp_up": {
+          "Mbps": 138.87917818794855,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 0,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "udp_down": {
+          "Mbps": 20.003157215336074,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "udp_up": {
+          "Mbps": 19.985280857025593,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        }
+      }
+    },
+    {
+      "label": "R2G-cn-p25",
+      "band": "2G",
+      "request_dBm": 25,
+      "width_MHz": 20,
+      "channel": 1,
+      "rssi_median_dBm": -14.0,
+      "rssi_mean_dBm": -13.575,
+      "rssi_min_dBm": -15,
+      "rssi_max_dBm": -12,
+      "rssi_valid_samples": 200,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 49.05476352314009,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 491,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "tcp_up": {
+          "Mbps": 95.57543629107258,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 0,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "udp_down": {
+          "Mbps": 20.002771504440023,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "udp_up": {
+          "Mbps": 2.196957247609697,
+          "lost_percent": 6.698357821953327,
+          "lost_packets": 155,
+          "retransmits": null,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        }
+      }
+    },
+    {
+      "label": "R2G-cn-p26",
+      "band": "2G",
+      "request_dBm": 26,
+      "width_MHz": 20,
+      "channel": 1,
+      "rssi_median_dBm": -13.0,
+      "rssi_mean_dBm": -12.695,
+      "rssi_min_dBm": -14,
+      "rssi_max_dBm": -12,
+      "rssi_valid_samples": 200,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 42.68044284128607,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 535,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "tcp_up": {
+          "Mbps": 89.11695933453244,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 0,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "udp_down": {
+          "Mbps": 20.00045942250591,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "udp_up": {
+          "Mbps": 19.975735164369176,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        }
+      }
+    },
+    {
+      "label": "R2G-cn-p27",
+      "band": "2G",
+      "request_dBm": 27,
+      "width_MHz": 20,
+      "channel": 1,
+      "rssi_median_dBm": -12.0,
+      "rssi_mean_dBm": -12.14,
+      "rssi_min_dBm": -14,
+      "rssi_max_dBm": -11,
+      "rssi_valid_samples": 200,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 39.5807952307553,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 593,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "tcp_up": {
+          "Mbps": 124.27683849011346,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 0,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "udp_down": {
+          "Mbps": 20.00525091872342,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "udp_up": {
+          "Mbps": 19.966862482292715,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        }
+      }
+    },
+    {
+      "label": "R2G-cn-p28",
+      "band": "2G",
+      "request_dBm": 28,
+      "width_MHz": 20,
+      "channel": 1,
+      "rssi_median_dBm": -12.0,
+      "rssi_mean_dBm": -11.73,
+      "rssi_min_dBm": -13,
+      "rssi_max_dBm": -10,
+      "rssi_valid_samples": 200,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 69.97212109882081,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 8,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "tcp_up": {
+          "Mbps": 83.75447600633363,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 0,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "udp_down": {
+          "Mbps": 20.00519345624513,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "udp_up": {
+          "Mbps": 19.989491365605282,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        }
+      }
+    },
+    {
+      "label": "R2G-cn-p29",
+      "band": "2G",
+      "request_dBm": 29,
+      "width_MHz": 20,
+      "channel": 1,
+      "rssi_median_dBm": -11.0,
+      "rssi_mean_dBm": -11.415,
+      "rssi_min_dBm": -12,
+      "rssi_max_dBm": -10,
+      "rssi_valid_samples": 200,
+      "invalid_zero_samples": 0,
+      "traffic": {
+        "tcp_down": {
+          "Mbps": 81.26606215608773,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 272,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "tcp_up": {
+          "Mbps": 123.18221761713042,
+          "lost_percent": null,
+          "lost_packets": null,
+          "retransmits": 0,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "udp_down": {
+          "Mbps": 19.99947018358139,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        },
+        "udp_up": {
+          "Mbps": 19.955155161545154,
+          "lost_percent": 0,
+          "lost_packets": 0,
+          "retransmits": null,
+          "local_host": "fe80::c26:3979:65e7:5945"
+        }
+      }
+    }
+  ],
+  "incomplete_tests": [
+    {
+      "label": "R2G-cn-p30 / reverse-p20",
+      "outcome": "stopped at user request; not counted as passed"
+    },
+    {
+      "label": "S160-p30",
+      "outcome": "200 Mbps UDP uplink timed out; later RX tag stall recorded; causality unresolved"
+    },
+    {
+      "label": "R160-stock-request30",
+      "module": "original 0.8.3-beta",
+      "requested_dBm": 30,
+      "effective_dBm": 23,
+      "outcome": "200 Mbps downlink stopped after approximately 6 seconds; 45 second test timed out after 60 seconds",
+      "RX_tag_pending": 0,
+      "RX_RDU": 0,
+      "TX_pending": 53,
+      "TX_unmatched": 53,
+      "TX_queues_stopped": 1
+    }
+  ],
+  "stability_status": "unresolved 160 MHz interruptions and one 2.4 GHz UDP loss case; not claimed as passed",
+  "submission_scope": "user instructed stopping further tests and submitting power changes despite existing firmware issues; enable ceiling by default and merge main",
+  "raw_record_directory": "/Users/leo/Documents/Codex项目/TYFZA1/现场记录/20261025-cn-power-ab",
+  "raw_sha256": {
+    "F160-p23-after.txt": "92840918f567f0f7643458fc402beb09104f7da08394e7a0601ef92ee3b34c4a",
+    "F160-p23-before.txt": "3bd5c3571708ede91abc232ae226fa548338cfd7a82e9b1e9035b0b384b229f2",
+    "F160-p23-registers.txt": "e8c6f3f247854d0e7218f6fa75796d028c18894bcc7a31848664a5f5aa24e244",
+    "F160-p23-rssi.txt": "2b3a29a16af0525c57bd35c27e5ae7db04f27d7195e090647f45453b82153f4d",
+    "F160-p23-state.txt": "047e9cd9deaae4e5ea71397352021390ad53ab181995ce58dc8bbba324f94920",
+    "F160-p23-summary.json": "82592fed00d5a7bd5705835866c1d72052d86816f10cd6c9f8b7347203a27d1c",
+    "F160-p23-tcp-down.json": "bcc5f5f9f2566d9da85c7aa90deefcd24fe2f3951c77721a206c0c9317d72d09",
+    "F160-p23-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p23-tcp-up.json": "7f7e8ec956b023c9af698ae0270a9b8d7e60c7e7107c776ba9920749e849dabc",
+    "F160-p23-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p23-udp-down.json": "140bdf4de7c8bdad1a7330ffb080e5557cf86ecb5752a6e6fd3031a0853eb53e",
+    "F160-p23-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p23-udp-up.json": "a8714a288b4559d861e7cc785e34fa5f6bce0f150794e942bdc7bafbc80143ae",
+    "F160-p23-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p24-after.txt": "1a752c5cbb3211071e70d8abd831e291c9456db3bcf0c7481f3205f5831f8350",
+    "F160-p24-before.txt": "f122cec4cb3d53c496e423a661cf85d678db80bb894c2895fb5732b85b83a09a",
+    "F160-p24-registers.txt": "c89548517c12914d26403fad0b8ca620b4de5bdf98e27066753205640583b453",
+    "F160-p24-rssi.txt": "c36e2d541a5f51e496007f6324cc7d9b19ec9358bc0b536c9c43017b9bd5e57c",
+    "F160-p24-state.txt": "2b7bc60bfdeb546aa3cf02c1cca0e2054a7648e3d4be13d1630085eef3230841",
+    "F160-p24-summary.json": "0fd42cb9565f7766c2735a2ade44de6a414030f67048379fdaf1184cdbbf09fb",
+    "F160-p24-tcp-down.json": "1bb665717ebdaf6578537ef9800d2d90b0a6b25960eff549fe50336f96cb5f24",
+    "F160-p24-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p24-tcp-up.json": "5c09b15741370c594c13640550c62b8e8dfcd4cf60a0fefbf45ebc35d3b9f45f",
+    "F160-p24-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p24-udp-down.json": "ea5a38a4efb2a4a543e07235a856e3a6159606f80369d2e1ec4a4eab4c982907",
+    "F160-p24-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p24-udp-up.json": "e31f370a306cac7e3578ed0c3916897ad58949f8b4603bab84f666ad51d00901",
+    "F160-p24-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p25-after.txt": "12899a09252e06d2693989495eac7dccf1d023c1422eb8db8aac18cb7d03e221",
+    "F160-p25-before.txt": "b3b70c4e1b775ef870d5a196d4d86fa6143785ea66c704873ce1b4f88571cc77",
+    "F160-p25-registers.txt": "21f0a9638a3a803cdf3d144de3ae3b161d15296b1190eb4cb6a917ffe90b77cd",
+    "F160-p25-rssi.txt": "2314dd4571f339b43286d33462bacd465372e2538f03359c2ffb14b134233fed",
+    "F160-p25-state.txt": "14fc55f36ee4430919620fd5ba6546b8262482246ae92a1c020dc9a996633abd",
+    "F160-p25-summary.json": "ed87bdeabd81a1f8b8f1cc61ad38ed84c2e1487468cc0a74e569ccd28ab2bc32",
+    "F160-p25-tcp-down.json": "ef7c4bc030e8a4bd083554429b1ccb7d524048952eb545d80f5d2586f2f69268",
+    "F160-p25-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p25-tcp-up.json": "aa5befc04ed40a7fb788f634fb72de896bd1bf971e89743547abdc60b257e49f",
+    "F160-p25-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p25-udp-down.json": "ee26c84870d69006c2c9088a1152c81068ebd7cfe0a299d7453ef52050be5697",
+    "F160-p25-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p25-udp-up.json": "2c0f04b512f0305e90e84af3b603b362df0bab1fa5be931f8cb82b6e581d8a1d",
+    "F160-p25-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p26-after.txt": "82078e4b431d0d5fd10546d1ec03c2d57ba31ad293188836593e442a5c113872",
+    "F160-p26-before.txt": "d957a065c692644de74bcc024c1ab4b119031e4586166a6ac719200645e81306",
+    "F160-p26-registers.txt": "1bb8809e650d079f943961a7a7a11256470db12289a9670e9e25ec5c65eae191",
+    "F160-p26-rssi.txt": "0b2ede63b4880b38cd20b2f7dbaf705366b883a5d0ba9bfd103b94d9f871a37d",
+    "F160-p26-state.txt": "0273da69ea91df973817d32fb8017a9765c75b220bdc21d96132ee80f836282d",
+    "F160-p26-summary.json": "ead48b52a258c9321cf298214ba9fb94e49e15da94bf56370f1f7bbb44e040b9",
+    "F160-p26-tcp-down.json": "af17c149c90ed468c9dbd1cd31b15f02a90a04bedb880f7820d0f4ce44cb0bd6",
+    "F160-p26-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p26-tcp-up.json": "5f62275951f55e6d09a375df19f5c65d9390f34e5dbcd7fe42819f6fb79f10ef",
+    "F160-p26-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p26-udp-down.json": "3795aa07855b517d9e8aa8aedd9f2213a48842b872b617b30a65e240ad935edd",
+    "F160-p26-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p26-udp-up.json": "ff6643f5367f6048e796a69705f4c4bc0e7453fb77dd554a1bb93f8562e452bd",
+    "F160-p26-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p27-after.txt": "45015f4f9c6cfac30a90459c344a2ea4632707461b46b77786f057992e98be80",
+    "F160-p27-before.txt": "8777350705b03e5230a7b1b3cf18e1a181cff8f146b23a8446225c7cf006de0f",
+    "F160-p27-registers.txt": "3b45bb54161e0949b057486a0f39100604bd32b6dea07d68952a3981f612b4e7",
+    "F160-p27-rssi.txt": "f5504474bdb7f16c3637212218c42768d2f31207c3f021ea307e81be1bf179dd",
+    "F160-p27-state.txt": "496603fb667fa74754af1878649cdee88abf1ed709ed05c8c99381a13e8a940f",
+    "F160-p27-summary.json": "cde663a0e414358c995878c44c4dc75efc9a708d9238b834eda213a8c9408d55",
+    "F160-p27-tcp-down.json": "e6904da06d7d694d57444b01337c9f285dd988feef95e7335cc7ae6d5e06f84d",
+    "F160-p27-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p27-tcp-up.json": "3d8bb7572f5ed7bb8f59f68d2037b83b76c508d191f732dcc0b32d7fbdb6d36d",
+    "F160-p27-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p27-udp-down.json": "1056c044bf612225ab54750b745786de4448aad8e2303b095390e4847963cfe5",
+    "F160-p27-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p27-udp-up.json": "f502e5617697a8005caf2820769d6d3be922b21e2f462b3a437970b3bf3e0b33",
+    "F160-p27-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p28-after.txt": "d4a7afcddb2e7a3e5b9d4a2c1f665b073951f01bf62812a9cd90ebb33e707372",
+    "F160-p28-before.txt": "c7e86722bf6b1b4fcc9ed841e850b8f7c3d2c8e841816fce2ebc6b45e8f1f67c",
+    "F160-p28-registers.txt": "ea68ca453b9cb2a208f66dc30629c1d6183dbe108f12e36d08eaf228b7d7a1b4",
+    "F160-p28-rssi.txt": "e97efaf5794aa6ffcbe7d7007bf53621daf294ac815a162425d541791f445011",
+    "F160-p28-state.txt": "761a08f125fce9a332d64fd192c35fcbe3862af25313315a9b7d8e2aebbbcafb",
+    "F160-p28-summary.json": "c8203de78253e52d5b1b22f512ef30763ef746f169278c7923037b3cb139495c",
+    "F160-p28-tcp-down.json": "7aec1962fdba87341f96c26d6be2274ce6c3b3eb84c0547380013ac028a082a5",
+    "F160-p28-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p28-tcp-up.json": "8dba1324096db294c63f4bf2f0325d813bf02c55723fc113ae775a468442698b",
+    "F160-p28-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p28-udp-down.json": "c7fe3c0fa2a5f514684cc8654e73f638f933603da49747d427f778de1656a9dd",
+    "F160-p28-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p28-udp-up.json": "5de50af3e8b46c5cda16c8d7e9c81f614ae37d2a13eb59df282b0d9c408b6487",
+    "F160-p28-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p29-after.txt": "acf530aad233165a7b4dd3aeae57aa313b39dc10f8a10e7042ed816a4f49ed1b",
+    "F160-p29-before.txt": "bf2151089999dbd43186368c18c7e8ffc1842f9509c9b7b698086467adf1598a",
+    "F160-p29-registers.txt": "4eed92c2150403ad82b93fd97c7bdf28df8a9d22b9352263826def31652b952c",
+    "F160-p29-rssi.txt": "a7358b976002f4d17f77c5b34c5b990b1c154dd66b452c44fecd692b05fe7a7a",
+    "F160-p29-state.txt": "7c67dbadfb9df3dc991b9f7032f0acb6a3f5da921f4a921ffa4ab05a2ffda763",
+    "F160-p29-summary.json": "3df28f58b091c04cd1b715db1c94dd3b1e9c0d873aa9217a104fd7a6417c1da7",
+    "F160-p29-tcp-down.json": "b0d2764139856769e7025d59250dc8a329709718e864698be6177c19ff15546f",
+    "F160-p29-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p29-tcp-up.json": "69d2afde637da583972cd230420566363df7f1543d20a629ea2a47e8b5160942",
+    "F160-p29-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p29-udp-down.json": "49045159bc9a78ba562e10f93f462752ea4db74353d64841899ebb9232a6901d",
+    "F160-p29-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p29-udp-up.json": "488169a51db208fd80d6d6b94fe08d4391d442b3df8b005b5aaa9c744a7eea11",
+    "F160-p29-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p30-after.txt": "bbc3c2175a0328d9dd90116a9c9048e2a97bc2e2cff8f82e3c59035636ee959b",
+    "F160-p30-before.txt": "65f2553ed4c5baf55625a24de2bb93ebb5964d4d89eac8f69703a35b400114ed",
+    "F160-p30-registers.txt": "e1d732b680a21c6a7a8c8da0109175f379879a02898576c3ed7753d452b7bedf",
+    "F160-p30-rssi.txt": "64ef65ecd67a8b48d40bf827fab0753970d8e4061c61ea16c972fca745413b68",
+    "F160-p30-state.txt": "c6906657197f514e0e134809837a12f3ad5907fd86631ec5b7f5a94a27c598d7",
+    "F160-p30-summary.json": "01bad6aba094b5525ec94b1006ca48b33a11c16d8f1486dcfdf8d8ea5fb7c313",
+    "F160-p30-tcp-down.json": "df7d0f662f8d87afe173754b8d13bddea9802ade8a8f01f2093d5ed2ccbead05",
+    "F160-p30-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p30-tcp-up.json": "802b115e44995cedc0ec05fe3d7a7e7c3e186a5f5daa6565081d6986715421e2",
+    "F160-p30-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p30-udp-down.json": "6850223e799105a5286b871ebfd04053814069991d99251f6f07ffd9d9c6413d",
+    "F160-p30-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F160-p30-udp-up.json": "3b3a2e454709b61e84f58a2bbeba278af9579401d66a559cc818052d92a7136b",
+    "F160-p30-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p23-after.txt": "acd45bf1cab922dc41c06d8f175f98b1f5abe150bd2221ef6cfd57ae0f7aaff2",
+    "F80-p23-before.txt": "fee454af3726080cc98593270bd8a1f550c87a95a2736b280c554c08559952c8",
+    "F80-p23-registers.txt": "40615e3317e96979552d6ea3dc3fd6d0656db3ef686aab83b3f5fe5f19c4d330",
+    "F80-p23-rssi.txt": "e32acece97adf54013f7fa99ef6507d78c2547cb0b43a61e8c8fbce58126e14b",
+    "F80-p23-state.txt": "f523fd4c6142d9f90ccb2562d0ff9f4900736dfb3951199fd3f0989507be6094",
+    "F80-p23-summary.json": "20604deb9f214b926a79dd7abccad424cc39a7033faf7df9fa43a66c91718033",
+    "F80-p23-tcp-down.json": "6c384ca23b12f22e5dd3278f04c39659d9ce5620845e3faa9b82944567d92720",
+    "F80-p23-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p23-tcp-up.json": "5623a17e5b9f8e183e1501da40090f272e67de597e54f818fa736ffa08881e1c",
+    "F80-p23-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p23-udp-down.json": "08803d2967c655665a49fc6864af39700f9b2ab7e5515c9c1737e6655e773357",
+    "F80-p23-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p23-udp-up.json": "67889d69d635e764b5f51d8aec86f178bf93bdd4cc574393522931ef3fe0c377",
+    "F80-p23-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p24-after.txt": "b4d99074211f41b060d23b1f3d59222c4b45925d96fb64f778940e2ac9998d1f",
+    "F80-p24-before.txt": "46ccd24283543d8b49c60e5d7ffaf8e494d5dd96075313330d34f6613341bb2b",
+    "F80-p24-registers.txt": "549ea205f8157e157c5b26fcf66d1cf86a615dab5f32aa6e4091456cd1f121bc",
+    "F80-p24-rssi.txt": "ccc8ce351bc785cf6fdf0bb78882dda68f2acf5590f4173c926c16ceb5e3b7c2",
+    "F80-p24-state.txt": "17c8e8abc0ded6d37d6b23193ce692432c5bb96c2685351c1377a7465b34f7a3",
+    "F80-p24-summary.json": "7a3ff883f90883fe27e2871a6ff9e3db23c9fb7eeff2b8f38b41cfca89be516c",
+    "F80-p24-tcp-down.json": "1338c31bfe24bba0bf5eb380d371f437d10440a7a6ffde96a631198faae6b4af",
+    "F80-p24-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p24-tcp-up.json": "8ea23cb3212f5fb9e8f57dfee4941d8c4d4c971556337ec4498fc00e92e36185",
+    "F80-p24-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p24-udp-down.json": "e8bc7ebfcd6df557ece1f88cb9ebb78a590c76bd93baf800b3a68d02ab67e39a",
+    "F80-p24-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p24-udp-up.json": "614ec761620da618e30abf26c9814513460762458cee49d1a05d59c5bbe8bed8",
+    "F80-p24-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p25-after.txt": "902ff86ccb6ca38a041f62fb0b28b78ac5eb8de51f5d0a279406cf07983adf42",
+    "F80-p25-before.txt": "c54f2c16c275b36ebf088c54dfc7aa14b83c78439f16ccb41469b444bce08daf",
+    "F80-p25-registers.txt": "190d1942dea6aaa10c69382d2db02b60943b4bf1da4d92edcd7036ccc7f4cbe1",
+    "F80-p25-rssi.txt": "e142683a34a2ba9ad62c2cf55ad390988ca4dbdc1cd2b0dedc9aa80a91366ee9",
+    "F80-p25-state.txt": "3526641f78d7ab3642ca351f3d4d283ac2baa4a1e1f92797b87dfc1de131e66f",
+    "F80-p25-summary.json": "b27ce0ca5a5260c36e820d97eb3e489f937e3a36059342e9679e6c2fe234a395",
+    "F80-p25-tcp-down.json": "0cb68347cff490ac5f4a9011bf4401c24569948f4672c5afb47f248171b5575b",
+    "F80-p25-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p25-tcp-up.json": "6d6c8267e18cf2471383817e8f9d4663a097aafc141fbc44bdfa1af9628fcfbb",
+    "F80-p25-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p25-udp-down.json": "55865d8638a0caa08faf970d1a5a73f85ca7e6f2dfec9b483fba5bee3d3985c0",
+    "F80-p25-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p25-udp-up.json": "1f70387c260ea04cb9d664ca6e78ac38bd1eea282c230ddc0c3392f473911dd5",
+    "F80-p25-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p26-after.txt": "cfdca4c9c2558cb732a1a2a7c4ae394f05c64e6ecc918ab94f1d39def5e2a36e",
+    "F80-p26-before.txt": "c93ce5e6770fdeac0a0d06bcfb4a40f05d29c8e8801687ac05bf70f99bf3d87c",
+    "F80-p26-registers.txt": "87f5c221d434cf144e5f74d904a624d1d5b7c90b3f72c2380ef7840cd39a4de0",
+    "F80-p26-rssi.txt": "884d44a357de1910d3d432f347312a84253b734563765a2d4042959660627a6f",
+    "F80-p26-state.txt": "c73f8880a728eebca5f212ef95948843aabad3b1aa0bf6b945286009f6d3f2f7",
+    "F80-p26-summary.json": "fea4848373cf8f5ce40cb3f0d221a97a42ca8197d8020920bea69968cc4f103e",
+    "F80-p26-tcp-down.json": "b9b62fba27aa7547b44e3208deca51f72483e02ade6c53f09a3340d1dffe25d9",
+    "F80-p26-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p26-tcp-up.json": "f3c4e6613142c2b087b39fee4ac489220e081ce4e1d81db3976e09bcbb008719",
+    "F80-p26-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p26-udp-down.json": "12311fa5fad8b5d696ce25896f358e7cfeb08ba83a77fbc983efe1d56496a98d",
+    "F80-p26-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p26-udp-up.json": "ffc99f54d44c54085abf73c4b90b138584f830f2f28dd6e8309a7c04572aae12",
+    "F80-p26-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p27-after.txt": "4903737ead7f2267367ca0f5e59de8314078e02c6faa962c87a990f3b80c0c45",
+    "F80-p27-before.txt": "7e656f7535d2bc5e2832f2d4ef55b9e0b8d4edb181e7ee3e60c1498b02e33152",
+    "F80-p27-registers.txt": "c008d467d591a95bc7b04766fc87bb4982d679da267906e71e345bf1a0baf5a0",
+    "F80-p27-rssi.txt": "ddeb4490f9d759a7ebf6a60d6507ed09c9645777b98fa3dbbe59721315a5c624",
+    "F80-p27-state.txt": "b2f2c5b3abe1d56c2bb1ccc2dc732ad267103098d891726957dd4c3a97f5463e",
+    "F80-p27-summary.json": "643a75cd167a88b89237463d32f0f2e120b5b3a299992c95a7cfea87b85d710f",
+    "F80-p27-tcp-down.json": "c6c8a89c5f9a0f92e5d647f38e99e6fe124ec75808dc3da942f992e069e1779c",
+    "F80-p27-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p27-tcp-up.json": "e8717e40101fa4f418fcb94bf214f9f0583b1afe543886933c3718f0ee22cb98",
+    "F80-p27-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p27-udp-down.json": "0ee0aaca5a06505b1720c755cb2cf18cbd6a8dfe025cf9edf23592f2ab8bf029",
+    "F80-p27-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p27-udp-up.json": "4bb4d2e2d64f8497e2fdcbd17442ecb322c31abf54afe751202758de2bdc993d",
+    "F80-p27-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p28-after.txt": "9559ec2f177998801f776fb282b4c1d7062a2a8a89fb90880c52f4270c959d4b",
+    "F80-p28-before.txt": "3e1846127e98d021a1822b348363ba72251c259cf892b85489f69163108eff61",
+    "F80-p28-registers.txt": "cd9222e30ad25b336ba69d8c60298ef5f23442ef7b3731078a2f6318a0a7f289",
+    "F80-p28-rssi.txt": "335bbecc75ad5b66368b913044aebd3d9edf4c87a031ae6a46841e5eae473e60",
+    "F80-p28-state.txt": "07effd6ff4571dda5c626b93dea339d8248cca39ed88a113016da85dcdeb388c",
+    "F80-p28-summary.json": "09832394669c6bbca148ea762aa1d7d7210a1c5dff1b453d1cdba531f240e9bc",
+    "F80-p28-tcp-down.json": "0dd529d444bdf3e17f124e5cd0ae5804e72b288ccef2f5a32fefa9a5bf693f0c",
+    "F80-p28-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p28-tcp-up.json": "aae2c890bc31de3fdb83085cc4747e40f7c284add9c3d1f7869a8492c9a32e9c",
+    "F80-p28-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p28-udp-down.json": "afbdad1b70eba2c9beefaa027cb5a09e46e6de2432c2aa76fabbdd87b3c9feba",
+    "F80-p28-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p28-udp-up.json": "950a6a946b1060348cc5dd0938b9e857a3adca36f37ac1042513d4a48eedf153",
+    "F80-p28-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p29-after.txt": "6ecef27b0e871b2ea752389c732975edb036f3eeb8ba8b874c685af55f5e0e68",
+    "F80-p29-before.txt": "53070b0df5b16e6c7b0bd21fe01da995ea1b30b7f1dd6b646c1d4ccae6f9eac5",
+    "F80-p29-registers.txt": "98eb73b94d1cac829a9f7e7a3327258bdc13f879c59a85c3d7f63c6a46547b8f",
+    "F80-p29-rssi.txt": "6e555a9a319c362efb7fbea63d9dcd3025b979e0add90227fdd457c7b53c38e2",
+    "F80-p29-state.txt": "cbde31e668700b98b2c698ea42cac7c96f5812743760ecb2cd9b06e9a80846e0",
+    "F80-p29-summary.json": "eda807c57e05686de36a5aab02fd29186be16b0e747e5c43b10c8d1a4408d232",
+    "F80-p29-tcp-down.json": "d0d7bef184940d4013d718cf28947e2299e244b0832025d7bb9982f33a89b481",
+    "F80-p29-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p29-tcp-up.json": "56e210e8917aaa85ce62cbde8654bf17da6c40a4c23a5c984cfdb228ceb6b21a",
+    "F80-p29-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p29-udp-down.json": "8c2f609f84bab37db8484fe4b0fb6ef237994af5b2b670547482cc8d5d113cf1",
+    "F80-p29-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p29-udp-up.json": "c62018ccc8ac6b1693e45bb11289a4d4adf4c395e55ad7aac635de15853d970f",
+    "F80-p29-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p30-after.txt": "19f2168091516147dbcc132b554d2032a280e5d91feb205cc3c90957e3680e5e",
+    "F80-p30-before.txt": "6c32e990a1e7b77ff82d86e5cf96c56d65789100841fa41b73f297db3ed55989",
+    "F80-p30-registers.txt": "52d55fa44117f3ab9f3a26e3b4ac1ed3a82ab1aa140257fad89dd5cd6aed6915",
+    "F80-p30-rssi.txt": "e21a5034c93025966ded83795ba44cdbbcc705af5985750b98e770febc79a4ca",
+    "F80-p30-state.txt": "91227541f2d4a1d482f2d77b2f09abc70f218af8310c4793db7336ac58b3d0da",
+    "F80-p30-summary.json": "90c5c9291b4c2ab0685d9240196089ae916a2865f8b14a9f6016c7a0587ba37a",
+    "F80-p30-tcp-down.json": "89cd7499e6aa9603ede61b63fe40f573a206f850b9da80acaf35bf40df579c20",
+    "F80-p30-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p30-tcp-up.json": "80ef446c8b4425bcc800ceb24ae5c4d011cb33677fbaa9bf6b4c28b530b1a562",
+    "F80-p30-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p30-udp-down.json": "20c2352c763bc406060ca926bd9df62975afae617d78b11fc0ce996dbdd07333",
+    "F80-p30-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "F80-p30-udp-up.json": "a021172f3fc73b4c983b0aebbbd9d0769ede5204a57e0d50c41e8cc263f3b492",
+    "F80-p30-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "M1-80-p23-registers.txt": "d69b582ab8296758ef0fb239c7e6b48f9e0f5b5d7c4c7e3b388a707aca3ae944",
+    "M1-80-p23-rssi.txt": "c4c6b848817f7b1c78d66cafbcd45638b6ab90ba4185979da45a62f985103d00",
+    "M1-80-p23-state.txt": "5763a7bcd0b5296a88b1d52691c409874e5971706845055c4049634785a43690",
+    "M1-80-p23-summary.json": "3a08bb8a80239dc1bc77917a0b671ace9c8191387219595958385787c1d6deb6",
+    "M2-80-p30-registers.txt": "2de4328430e65dbb8f8722b3cf27a35f379c2ab8a0626b6930f39be217b02ef7",
+    "M2-80-p30-rssi.txt": "e0916b924e936f1a4ad30fc5dee73702830cc9c9afd4d8b24c20eee871c26ab4",
+    "M2-80-p30-state.txt": "a8e99331751954b606d9b8a17d16879226b00ea73d06bd32c4ac0938a9adad94",
+    "M2-80-p30-summary.json": "f1bdb0b8ab66aa20a9e6b3947697c8611aa6d112883b5c3ea0b2d4467ea2a672",
+    "M3-80-p23-registers.txt": "4578ea3767d7ad17d70e6d3d565cddc87b2c56cefbecbf40e72bacd9743c80d7",
+    "M3-80-p23-rssi.txt": "917a969b49b4f333d9abcf8983a3ef82a28c4fbf47813e621cf41e28eeee682b",
+    "M3-80-p23-state.txt": "fd2719076e9be68b65a4b6da7aac2f152e3077f9294047b3017f8b725e121a23",
+    "M3-80-p23-summary.json": "7398c88aad554a9c03a83e3de4e8df3fdb2765bd667cc1cbbd300ee51092a6a5",
+    "R160-stock-after-timeout-TTL.txt": "05b894f00eabf075b7a499bdda2f7b01cb8d1147449923eaf8fab16f53959d74",
+    "R160-stock-data-path.txt": "3b1d7ed19c2e8afa4cb42c55434d1cb39c483d140efacbe0812718aff711c171",
+    "R160-stock-request30-down.jsonl": "83156c262db0d3cd71db7d0f25635184268884d7d7eaa7d80c41f6ddb5b92fe5",
+    "R160-stock-request30-state.txt": "926d6eac40bf02c59ae791d554de5e3c79a9e867408adb78be0c08607015cb73",
+    "R2G-cn-p23-ready-after.txt": "141aaef103a17a37bcaf213c299bf2327086865433c15d6cb0fbcb817b0b303f",
+    "R2G-cn-p23-ready-before.txt": "45c6448c5e3c71e3c01338199c1f1f8cce490421c2c19f691164e79e56766bb9",
+    "R2G-cn-p23-ready-registers.txt": "ac08eb0b5828e7d01fe0b7ad90592ecfd2b9605f76d8b83e24026ae9e01f6a19",
+    "R2G-cn-p23-ready-rssi.txt": "fc66159ee23d0e3866d55b14fca3d12ead7310acf21b2342ec6aa2e4a3a8a022",
+    "R2G-cn-p23-ready-state.txt": "3d5e05c425b65e778bb178073f944d0b1f1879000ef43bc5448c4b38c89f3339",
+    "R2G-cn-p23-ready-summary.json": "e25d0ecf6bcd37dcd062a380fca366b89d4e466c73bd9095707f8ed5caa83ac7",
+    "R2G-cn-p23-ready-tcp-down.json": "343ed0a0cb45cc004cf611068586e783d5f8555c2ef861cf48670d281a94da31",
+    "R2G-cn-p23-ready-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p23-ready-tcp-up.json": "c821bd8358839021ec3688651e8b40cd6529a2e446caac01090ebc3425a59950",
+    "R2G-cn-p23-ready-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p23-ready-udp-down.json": "446c271099198f665f74df38fdc90555bb40eeaf9970e758bae4d7343f417b20",
+    "R2G-cn-p23-ready-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p23-ready-udp-up.json": "cdd13124f521f20bb0e0cb788c7dae5ddf8b72edb42fdad2fd80b859f3566d33",
+    "R2G-cn-p23-ready-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p24-after.txt": "b88903f8a51bc636d92f329d725d34225ad78d57f87e5d0f526fedc24ccba3cf",
+    "R2G-cn-p24-before.txt": "c9161235c6515644be99843b1580a8cb906598e248b288499c6f3291921ec7bc",
+    "R2G-cn-p24-registers.txt": "93e83fd18c65c0e465c79cb77c34e8d7c1642e96413c39117e4aeb232bc32fd7",
+    "R2G-cn-p24-rssi.txt": "369c7d82740cc7012772bd786b21287e9f838ac4f5a0775c2bb428eb4db39a81",
+    "R2G-cn-p24-state.txt": "51db8451b862f7712f60d4ce40f85fe76d7f254213824c8eaa47dd2524aa4bf9",
+    "R2G-cn-p24-summary.json": "c45923745ed8285ddf02fcd77b4d7c7c2ec66d3697d525cda9d846800398931e",
+    "R2G-cn-p24-tcp-down.json": "aec2e8e70fbc5f4673f96529434a7c1e3de37557d567af1a555f972f36824dc4",
+    "R2G-cn-p24-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p24-tcp-up.json": "4bcb19a0323c86efcc30e4db8c7eb2dedcd9b66eb6b84fb1de6a177e4ac8b1c4",
+    "R2G-cn-p24-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p24-udp-down.json": "335e9cc72d8fe06b8e276deacc8922b0908490b81c82c834eae650e05f5d46f0",
+    "R2G-cn-p24-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p24-udp-up.json": "cb62a4a3a54444889c77a54967741b505e8f7f6281cb03ba7b70224245eb2476",
+    "R2G-cn-p24-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p25-after.txt": "b6ffb28787ba9ff39c6f86af3662306e4889a7e88797b09518ea52c057f2865d",
+    "R2G-cn-p25-before.txt": "d2eca23a944755ed877877186a83e1a32dba38c49ff8319a776dabdb3d69ca10",
+    "R2G-cn-p25-registers.txt": "8fec90f324b863aeda7b93914636046bffd3825c4cee4b51a86faea94420d455",
+    "R2G-cn-p25-rssi.txt": "8e9abcf13cb0bb882297133f6e4654a71044920c57c54f643029093c0564d3c5",
+    "R2G-cn-p25-state.txt": "4eedd5cfdd0a67dccdd1f73c0776d9dc8b719051b335269f68f9421eb4f42dd0",
+    "R2G-cn-p25-summary.json": "7e46c4afdff7e754c6a9aa6a9fc90c69ece145a0bef020ee085f488fe43c3194",
+    "R2G-cn-p25-tcp-down.json": "65bacafec6246380ce649a6ed04a6e708ab7c9f73156e3baf55f1e23275961f3",
+    "R2G-cn-p25-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p25-tcp-up.json": "1e1ed399735719ce6ce6a85fba0a68c826566ca1516caa6d2b40b1dc89707a26",
+    "R2G-cn-p25-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p25-udp-down.json": "0a32a2454f6f5676f748fc95f7cd351dd5109ab303f227cf2a32e7bc85ad2520",
+    "R2G-cn-p25-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p25-udp-up.json": "3f177f48dcaf22c6081590f0d1d386c265d54eca605a3b17ec0bfa3373dde9f8",
+    "R2G-cn-p25-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p26-after.txt": "5b6bdd28911827b7debe3563c3ea9b04fa89ca23b0f6fac03d2d27603b4c3356",
+    "R2G-cn-p26-before.txt": "06bdd45c247d0e81a7111de8f5855f07fcdc08098de37789ca12f605176db59d",
+    "R2G-cn-p26-registers.txt": "6d2473df8d387256a85758df8135b7d29fab30e5cd94ed49a6862db72e111c27",
+    "R2G-cn-p26-rssi.txt": "81e3beb9c1e280c3ccf04b618a7c9fa50468bc3760639392c7f052e6a7f22431",
+    "R2G-cn-p26-state.txt": "26f6fdd5eeee94f74c81a5d563f539fd758839a688bf7a206a3a85e38036169d",
+    "R2G-cn-p26-summary.json": "7187bbacc0424cda55c3e35f8c6280bb7a3f2ac8a717137032d8c91036be2ebb",
+    "R2G-cn-p26-tcp-down.json": "ece2c0e7ecc9afc095c07a166d7062d56ff639aaef2e40494ebaa17cc89e0df9",
+    "R2G-cn-p26-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p26-tcp-up.json": "165a59ca206fbb3906528070cc7bbb99be023c26de64feba60ba3da1fe6ae536",
+    "R2G-cn-p26-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p26-udp-down.json": "e0ca8439d470c2492ebea9e0dba3fba7c5856b1a0c0cb7b530beffb9c5265b69",
+    "R2G-cn-p26-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p26-udp-up.json": "75c9bec80d67264a1d5450d1f0ca1b8a3610bab180d99853ce9e3204bf5391dd",
+    "R2G-cn-p26-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p27-after.txt": "b8ab00cc08d815da3533d7ed34303a91370aeeb7786ad5bc5026990568513347",
+    "R2G-cn-p27-before.txt": "0782c2fe263872d84e2e8437225f9196f74d535c0e3e13973916dfa8a2f88358",
+    "R2G-cn-p27-registers.txt": "c1ff4e0732eec0577b72f66d01394a32f4284b3082d6032d361a17d2a90359b2",
+    "R2G-cn-p27-rssi.txt": "8cb7c7c211bc91eadfb0384a91bba93a1b217f7c8598758350dbe083b906e4c6",
+    "R2G-cn-p27-state.txt": "237f2130144081d80bc51efe1f283f1c7bd368666dae858b9b98101e13a8c638",
+    "R2G-cn-p27-summary.json": "2501077183b5980c6f63f118c552edb522bc4459a0f9f7265a0dc9473dce38fd",
+    "R2G-cn-p27-tcp-down.json": "6ad58ade9460ee6138b12ffdff8efc0199b504b6b62b6f594da8976d7324a467",
+    "R2G-cn-p27-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p27-tcp-up.json": "e4f48b3ba4d042721cc8ad1817e648000c11f0ceea5e01d777683f66d64b3df0",
+    "R2G-cn-p27-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p27-udp-down.json": "7cd79a9cffe85e67ded3443f8686f941a6002543e155714fc65bd43d149af6fc",
+    "R2G-cn-p27-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p27-udp-up.json": "360826fd224ab8b1dcda8ed701055cc84baa405401c0ced6632afc487591fff5",
+    "R2G-cn-p27-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p28-after.txt": "884a6bbc135d6a550510a1db1bb7745d21ebd1ad35bb5a5134cae7b13f8b83b4",
+    "R2G-cn-p28-before.txt": "a430116948385202586d3136eefad017424e7bcc4117884e3294ff51b7a58c6b",
+    "R2G-cn-p28-registers.txt": "9bb58115b950c6b36907ee3273812d1fc628a8accdf8b73ff306ff2f9de635fa",
+    "R2G-cn-p28-rssi.txt": "ecde811bf39dc8e2f23af39e13b73df00677134fda4facf8675d6e58f7e7d811",
+    "R2G-cn-p28-state.txt": "a6458a27864b47a092a2578928043cc54bdcf69ee8aed7cab37196ddac674a60",
+    "R2G-cn-p28-summary.json": "b25eeb18bec7f9d82f0d9c914d543c6a041114c0a1bab8fd45a2e3e816afe0ec",
+    "R2G-cn-p28-tcp-down.json": "4fc4bdadfc00eba707c338dc3139742c620f15cd708d334fb78399959dad25a2",
+    "R2G-cn-p28-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p28-tcp-up.json": "b6c7cacd6c09e1c72f650cb17928317ccf4ab0e5ebb68ecb4ed22beefbc7c851",
+    "R2G-cn-p28-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p28-udp-down.json": "b685af74623e99b3e54f7a58aa5595f82bbca1819e876d4529a01ddce095c153",
+    "R2G-cn-p28-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p28-udp-up.json": "a3cf4db15d50a9200abc5a7bd296d0631f78511143ef3ce78a67d95634092f57",
+    "R2G-cn-p28-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p29-after.txt": "5d9afa36b54aaa848127129258348e3b3564400621d59d16fb4b1cf7057279a8",
+    "R2G-cn-p29-before.txt": "1f4d19e825902742967d6c9495d7b340bf61767afcde88a7a38a0f1b5f4a5b90",
+    "R2G-cn-p29-registers.txt": "ab538194be3865165fd3375293305e99ae3b3e269ca26a1dd479b390d3ce7c64",
+    "R2G-cn-p29-rssi.txt": "02be626d09c64aa705e714be9f1f7e82b1a1a2c3d9fdf42f243171993b6f1a96",
+    "R2G-cn-p29-state.txt": "34a5b1910d7745ef7b90f33294f66fdd77398f9a31bae5e00d790e0be8e92fce",
+    "R2G-cn-p29-summary.json": "3d9c301da9c7780d5b982e1bee62864b6a22e5ddfb03436e402da4406e65ea2e",
+    "R2G-cn-p29-tcp-down.json": "9dddc33c970694f838ede5179cd71a54b835b77ae78385b18c3485a70e010a67",
+    "R2G-cn-p29-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p29-tcp-up.json": "4c4c9637391cca2e634c992c1868868f46ad049321d8a5946dc218cdadb4253e",
+    "R2G-cn-p29-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p29-udp-down.json": "217d7e2c997a736f346e028b4cc077c48cd74c2efaffece33a652ca51349534e",
+    "R2G-cn-p29-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-cn-p29-udp-up.json": "5b0899483440eb40126a34d206acf2cf7502f85312fad47733a973a9135e726f",
+    "R2G-cn-p29-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-stock-p20-retry-after.txt": "c9f047585dfb76fc0329346843f9e79f58af240a292bc77463dfae4b8b55b976",
+    "R2G-stock-p20-retry-before.txt": "fe163ce12fe100195f149bb9ac6b2605dc1f1688b9a7fd5636a6b238333e7229",
+    "R2G-stock-p20-retry-registers.txt": "cd90b79840235d172dcf931b60be5da5a2738e78cd71177a0e3530f6851483ee",
+    "R2G-stock-p20-retry-rssi.txt": "66234f652b3d7bd09b7b13ecc4e94b1c855a5aa269811ac40b3ee1f13ceaf4d1",
+    "R2G-stock-p20-retry-state.txt": "481eb7e00995f7245d246bb9abf3d207afcc93146a492a9e70bc7f5b69b398f1",
+    "R2G-stock-p20-retry-summary.json": "a009169d65bb967f8b75566de6b0db2da289cb2373a6b1d869c0905a14a4f14c",
+    "R2G-stock-p20-retry-tcp-down.json": "f6601fbf82e390bc437ad06c02373b2c9b096e720f8e8a739411201d70ad7ee8",
+    "R2G-stock-p20-retry-tcp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-stock-p20-retry-tcp-up.json": "770ead8d35e83b0df24c57f25dd571e99583481ed24c4be8cfa4dfa690d824ce",
+    "R2G-stock-p20-retry-tcp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-stock-p20-retry-udp-down.json": "52e3ec8bb6e48f4bfaf811f9d8e3f08d5b9ca01340cecd9b8231174bd949dc94",
+    "R2G-stock-p20-retry-udp-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "R2G-stock-p20-retry-udp-up.json": "1cbcadef77aeffa37370dff75c8a4d1401c577a5d33e62547845e2d05954feac",
+    "R2G-stock-p20-retry-udp-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "S160-p27-after.txt": "7fda26e41562e42c69baaa391012ad37db9435134f052a0298a9e5391d6e7abe",
+    "S160-p27-before.txt": "4cbcd53e6174726cbeedbb444b66b4c4b726d2b8f4eea036ba7a6c76b7d255d0",
+    "S160-p27-down-after-mac-udp.txt": "45c12a37f5c0f7a23854eaecaf6a1f2b28359c538606b813e40ad5ff10d59e74",
+    "S160-p27-down-after-router-udp6.txt": "40c99e1a2914c4e91f4fa81a8544168e573b378c9ac753983fe3568817b6e3b6",
+    "S160-p27-down-before-mac-udp.txt": "bad235733d1938cbecda0b4707c4ce9b012a3e501df3238b536f1fc64c60cad4",
+    "S160-p27-down-before-router-udp6.txt": "0c8b59fc0866864af7acd7d364dd2c61cb7c72a329a935a1e40e5ea7e6be811d",
+    "S160-p27-down.json": "9284423072a503e882162a5262fccee63393850a47c17c066e4cf0ac805df76e",
+    "S160-p27-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "S160-p27-state.txt": "f3981e22f1809eb3cf3b1a74caf6293618b6ded1f290654c789691100388267d",
+    "S160-p27-summary.json": "6ad1378bce861f83854002beb982b9c0b0d2eac096ed55ad500ddc797367ebdb",
+    "S160-p27-up-after-mac-udp.txt": "d03d984cdfb757f9c7e06a79ec4897d54db42efc627e296bea8df4590e958127",
+    "S160-p27-up-after-router-udp6.txt": "299f223b4eb5bc72b3570cbf3ec42813321edd829eb54487768dba094470d54f",
+    "S160-p27-up-before-mac-udp.txt": "7948ac2532944239d8786916cad8d8436a9c9c7cbb40f81fa68b11c38cb8f09d",
+    "S160-p27-up-before-router-udp6.txt": "40c99e1a2914c4e91f4fa81a8544168e573b378c9ac753983fe3568817b6e3b6",
+    "S160-p27-up.json": "da68861e0314d9e768f0d9cd74f16bd56a7352b671c02a209cf4b317fe3d7504",
+    "S160-p27-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "S160-p28-after.txt": "3d8f276474359a0dfe851115f22c1d019e177b6c584cf1008dc088d03d77e54e",
+    "S160-p28-before.txt": "d8aa63e9c9ecabddc83bd0a28f58f2906946793a88f56512c7af9a9f50399764",
+    "S160-p28-down-after-mac-udp.txt": "a128e199f68c432f2ac0be493cc7f59ad4b207d2395bc7374ff7e8c945acfe2e",
+    "S160-p28-down-after-router-udp6.txt": "a26a751f772acaea87248d13fd11bdceebbc870080a47f8df8c4d66a242f9806",
+    "S160-p28-down-before-mac-udp.txt": "26c2c0be3e38cab5044b662b4056b111247a7085d7411f867d932914b294b48a",
+    "S160-p28-down-before-router-udp6.txt": "a6b9dce205fd0d1f91d85d6c3a34996b1ae29d911555e7abd5e8a311d0d5d160",
+    "S160-p28-down.json": "12b45e740f8cfb20e0a86f9fcc4c59feede6ec526f938f2927ddabbef91e2712",
+    "S160-p28-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "S160-p28-state.txt": "8e04ab148a9e191003b74682160b9dbd30137ff8a3c3365b1532f73d4fdcef18",
+    "S160-p28-summary.json": "ee7a8a57199b576b0dbd9d11a084f795553923aeb7dbf0f9b760a739d4560611",
+    "S160-p28-up-after-mac-udp.txt": "ab9baa7f3b66b24f2929c6ca2d67df6a11396d40918ee93640e186a01728028f",
+    "S160-p28-up-after-router-udp6.txt": "4dffe2f193609ff295ef819b25c345009bfcf0801e5ad8b5b40db4ca42f70801",
+    "S160-p28-up-before-mac-udp.txt": "b5c3e6203e62f4795733065075e7cc143705c51af4486b1bf65b5c6b12711194",
+    "S160-p28-up-before-router-udp6.txt": "a26a751f772acaea87248d13fd11bdceebbc870080a47f8df8c4d66a242f9806",
+    "S160-p28-up.json": "6a7ec80355a4e079b88588305b81960754eff687fdc3e89d97075be9cb6e2e55",
+    "S160-p28-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "fault-160-rx.txt": "be3e31d4ecff09cde36f8b14c00ccaa01a19a356307491c000b94b0f760bdb33",
+    "fault-blocked-task-dump.txt": "eac05c8d96736cd2281ac957674366caa1c0facc01cc4054e1443b25b99be104",
+    "fault-rx-map-probe.txt": "d26077a501aa7ce81fd6318dc8ea6192724287a30fa027e579520f939080a50d"
+  }
+}
