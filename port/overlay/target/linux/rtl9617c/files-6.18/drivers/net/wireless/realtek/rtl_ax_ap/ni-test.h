@@ -289,6 +289,7 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 		tx->ni.attrs[i][0] = readl(tx->ni.regs + 0x66ac); tx->ni.attrs[i][1] = readl(tx->ni.regs + 0x66a8);
 	}
 	tx->ni.active = true;
+	rtl_ax_tx_ps_clock(tx, ktime_get_boottime_seconds());
 	memset(tx->pe.memory + 0x11000, 0, 0xc00);
 	memset(tx->pe.memory + 0x13000, 0, 0x4000);
 	memset(tx->pe.memory + 0x19000, 0, 0x400);
@@ -476,13 +477,9 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 		    !(get_unaligned_le32(tx->pe.memory + 0xd000 + i * 32 + 16) & BIT(16))) continue;
 		put_unaligned_le32(1, tx->pe.memory + 0x11a00 + i * 4);
 		dma_wmb();
-		ret = rtl9617c_wifi_peer_route(netdev, tx->pe.memory + 0xe400 + i * 8, 16 + tx->ni.cpu);
-		if (ret) {
-			put_unaligned_le32(0, tx->pe.memory + 0x11a00 + i * 4);
-			dma_wmb();
-			goto unlock;
-		}
 		WRITE_ONCE(tx->ni.route_peers[i], true);
+		ret = rtl9617c_wifi_peer_route(netdev, tx->pe.memory + 0xe400 + i * 8, 16 + tx->ni.cpu);
+		if (ret) goto unlock;
 	}
 unlock:
 	mutex_unlock(&ni_test_lock);
@@ -505,14 +502,13 @@ int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned 
 	if (ret) { mutex_unlock(&ni_test_lock); return ret; }
 	put_unaligned_le32(1, tx->pe.memory + 0x11a00 + macid * 4);
 	dma_wmb();
+	/* Own the prepared path before FE can publish even its first rule.
+	 * A failed publish retains admission and is retried by offload_work. */
+	WRITE_ONCE(tx->ni.route_peers[macid], true);
 	ret = rtl9617c_wifi_peer_route(netdev, tx->pe.memory + 0xe400 + macid * 8, 16 + tx->ni.cpu);
 	if (!ret) {
-		WRITE_ONCE(tx->ni.route_peers[macid], true);
 		WRITE_ONCE(tx->peer_offloaded[macid], true);
 		rtl_ax_rx_uplink_enable(tx->rx, macid);
-	} else {
-		put_unaligned_le32(0, tx->pe.memory + 0x11a00 + macid * 4);
-		dma_wmb();
 	}
 	mutex_unlock(&ni_test_lock);
 	return ret ? ret : 1;

@@ -217,6 +217,7 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 {
 	struct rtl_ax_ap *radio = container_of(work, struct rtl_ax_ap, offload_work);
 	unsigned int macid;
+	radio->offload_retry = false;
 	if (!radio->ap_started) return;
 	for (macid = 1; macid < 128; macid++) {
 		int ret;
@@ -224,8 +225,11 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 		    !(radio->security_roles[macid].valid & 3)) continue;
 		ret = rtl_ax_tx_ni_peer(radio->tx, ieee80211_vif_to_wdev(radio->ap_vif)->netdev, macid);
 		radio->offload_result = min(ret, 0);
+		if (ret < 0) radio->offload_retry = true;
 		if (ret > 0) radio->offload_started++;
 	}
+	if (radio->offload_retry)
+		wiphy_delayed_work_queue(wiphy, &radio->cleanup_work, HZ);
 }
 
 static void rtl_ax_offload_ready(void *context)
@@ -435,7 +439,7 @@ static int rtl_ax_station_release(struct rtl_ax_ap *radio, unsigned int macid)
 	if (!ret) {
 		radio->ra_registered[macid] = false;
 		clear_bit(macid, radio->ra_pending);
-		rtl_ax_tx_peer_qos(radio->tx, macid, false);
+		rtl_ax_tx_peer_qos(radio->tx, macid, false, 0);
 		__clear_bit(macid, radio->station_ids);
 		radio->retired_stations[macid].pending = false;
 		radio->station_removed++;
@@ -521,6 +525,10 @@ static void rtl_ax_cleanup_work(struct wiphy *wiphy, struct wiphy_work *work)
 	unsigned int i, tid;
 	bool retry = rtl_ax_security_cleanup(radio);
 
+	if (radio->offload_retry) {
+		radio->offload_retry = false;
+		wiphy_work_queue(wiphy, &radio->offload_work);
+	}
 	for (i = 0; i < ARRAY_SIZE(radio->rx_ba); i++)
 		if (radio->rx_ba[i].deleting && rtl_ax_rx_ba_remove(radio, i))
 			retry = true;
@@ -643,7 +651,8 @@ static int rtl_ax_station_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0, cam, sizeof(cam), true);
 	if (ret)
 		goto remove;
-	rtl_ax_tx_peer_qos(radio->tx, id, sta->wme);
+	rtl_ax_tx_peer_qos(radio->tx, id, sta->wme,
+		DIV_ROUND_UP(ieee80211_sta_ps_buffer_timeout(sta), HZ));
 	rtl_ax_rx_uapsd(radio->rx, id, sta->uapsd_queues);
 	{
 		u32 rate, caps;
@@ -1108,6 +1117,7 @@ static void rtl_ax_dm_work(struct wiphy *wiphy, struct wiphy_work *work)
 	unsigned long flags;
 
 	if (!radio->monitor_started) return;
+	rtl_ax_tx_ps_clock(radio->tx, ktime_get_boottime_seconds());
 	/* Wiphy work shares start/stop/STA serialization; command_mutex
 	 * also excludes sysfs/channel RFK while the meter and LCK use RF IO. */
 	mutex_lock(&radio->command_mutex);

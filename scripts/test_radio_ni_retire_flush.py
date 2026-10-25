@@ -48,6 +48,7 @@ struct rtl_ax_tx {
  bool pe_active,paused,peer_authorized[128],peer_offloaded[128];
  unsigned occupied,ni_reports,ni_failed;
  struct pci_dev *pdev;
+ void *rx;
  struct {void *memory;} pe;
  struct {bool active,route_peers[128];void *vp,*regs;struct net_device *route_dev;
   unsigned route_macid,route_tim[128];int ps_work,cpu;} ni;
@@ -105,6 +106,9 @@ static int rtl9617c_wifi_peer_route(struct net_device *dev,void *mac,unsigned ro
  withdrawn[id]=1;return 0;
 }
 static int rtl_ax_tx_pause(struct rtl_ax_tx *tx) {tx->paused=true;return 0;}
+static bool rtl_ax_rx_uplink_active(void *rx,unsigned id){(void)rx;(void)id;return false;}
+static void rtl_ax_rx_uplink_disable(void *rx,unsigned id){(void)rx;(void)id;}
+static void rtl_ax_rx_uplink_retire(void *rx,unsigned id){(void)rx;(void)id;}
 static void rtl_ax_tx_open(struct rtl_ax_tx *tx) {tx->paused=false;}
 static bool ni_epps_empty(struct rtl_ax_tx *tx) {return !tx->ni.route_peers[2];}
 static u32 readl(void *p) {return get_unaligned_le32(p);}
