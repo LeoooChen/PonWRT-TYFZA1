@@ -144,6 +144,7 @@ struct rtl_ax_ap {
 	struct ieee80211_vif *ap_vif;
 	struct wiphy_work beacon_work;
 	struct wiphy_work offload_work;
+	bool offload_retry;
 	struct wiphy_work ra_update_work;
 	DECLARE_BITMAP(ra_pending, 128);
 	bool peer_authorized[128];

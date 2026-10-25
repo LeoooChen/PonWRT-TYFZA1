@@ -399,7 +399,11 @@ void rtl_ax_tx_ap_address(struct rtl_ax_tx *tx, const u8 *address)
 {
 	if (tx->pe_active) memcpy(tx->pe.memory + PE_PROBE_MAILBOX + 64, address, 6);
 }
-void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos)
+void rtl_ax_tx_ps_clock(struct rtl_ax_tx *tx, u32 seconds)
+{
+	if (tx->pe_active) put_unaligned_le32(seconds, tx->pe.memory + PE_PROBE_MAILBOX + RTL_AX_NI_PS_NOW * 4);
+}
+void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos, unsigned int ps_timeout)
 {
 	tx->peer_qos[macid] = qos;
 	tx->peer_offloaded[macid] = false;
@@ -411,6 +415,7 @@ void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos)
 		memset(tx->pe.memory + 0x12000 + macid * 8 * 4, 0, 32);
 		memset(tx->pe.memory + 0xe400 + macid * 8, 0, 8);
 		memset(tx->pe.memory + 0xe800 + macid * 16, 0, 16);
+		put_unaligned_le32(ps_timeout, tx->pe.memory + RTL_AX_NI_PS_TIMEOUT + macid * 4);
 		memset(tx->pe.memory + 0x18000 + macid * 32, 0, 32);
 		put_unaligned_le32(0, tx->pe.memory + 0xe200 + macid * 4);
 	}
