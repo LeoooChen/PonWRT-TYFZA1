@@ -1,12 +1,56 @@
-Subject: [PATCH] nl80211: set the AP scan flag on AP interfaces
+Subject: [PATCH] nl80211: support scans on AP-only radios
 
-mac80211 rejects scans on a beaconing AP without NL80211_SCAN_FLAG_AP.
-Query the mode before creating the request because nl80211_new reuses
-a static message conveyor. Keep other interface types unchanged.
+Use a temporary AP on PHYs which advertise AP but no station support, so
+LuCI can scan a disabled AP-only radio. Keep temporary stations on PHYs
+which support them. Query capabilities before allocating the interface
+request because nl80211_new reuses a static message conveyor.
+
+mac80211 also requires NL80211_SCAN_FLAG_AP for scans on beaconing APs.
 
 --- a/iwinfo_nl80211.c
 +++ b/iwinfo_nl80211.c
-@@ -2891,8 +2891,19 @@
+@@ -1143,12 +1143,31 @@
+ 	__nl80211_wpactl_query(ifname, ##__VA_ARGS__, NULL)
+ 
+ 
++static int nl80211_get_scan_iftype_cb(struct nl_msg *msg, void *arg)
++{
++	struct nlattr **attr = nl80211_parse(msg);
++	struct nlattr *types = attr[NL80211_ATTR_SUPPORTED_IFTYPES];
++	int *iftype = arg;
++
++	if (types &&
++	    !nla_find(nla_data(types), nla_len(types), NL80211_IFTYPE_STATION) &&
++	    nla_find(nla_data(types), nla_len(types), NL80211_IFTYPE_AP))
++		*iftype = NL80211_IFTYPE_AP;
++
++	return NL_SKIP;
++}
++
+ static char * nl80211_ifadd(const char *ifname)
+ {
+ 	char path[PATH_MAX];
+ 	static char nif[IFNAMSIZ] = { 0 };
+ 	struct nl80211_msg_conveyor *req;
+ 	FILE *sysfs;
++	int iftype = NL80211_IFTYPE_STATION;
++
++	/* AP-only radios cannot create a temporary station for scanning. */
++	nl80211_request(ifname, NL80211_CMD_GET_WIPHY, 0,
++	                nl80211_get_scan_iftype_cb, &iftype);
+ 
+ 	req = nl80211_msg(ifname, NL80211_CMD_NEW_INTERFACE, 0);
+ 	if (req)
+@@ -1156,7 +1175,7 @@
+ 		snprintf(nif, sizeof(nif), "tmp.%s", ifname);
+ 
+ 		NLA_PUT_STRING(req->msg, NL80211_ATTR_IFNAME, nif);
+-		NLA_PUT_U32(req->msg, NL80211_ATTR_IFTYPE, NL80211_IFTYPE_STATION);
++		NLA_PUT_U32(req->msg, NL80211_ATTR_IFTYPE, iftype);
+ 
+ 		nl80211_send(req, NULL, NULL);
+ 
+@@ -2863,8 +2882,19 @@
  static int nl80211_get_scanlist_nl(const char *ifname, char *buf, int *len)
  {
  	struct nl80211_scanlist sl = { .e = (struct iwinfo_scanlist_entry *)buf };
@@ -28,7 +72,7 @@ a static message conveyor. Keep other interface types unchanged.
  		goto out;
  
  	if (nl80211_wait("nl80211", "scan",
-@@ -2905,6 +2916,9 @@
+@@ -2877,6 +2907,9 @@
  
  	*len = sl.len * sizeof(struct iwinfo_scanlist_entry);
  	return 0;
