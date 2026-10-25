@@ -1772,8 +1772,8 @@ static int rtl_ax_receive_configure(struct rtl_ax_ap *radio, unsigned int primar
 	ret = radio->chip == RTL_AX_8852C ?
 		rtl_ax_c_receive_channel(&radio->io, &radio->phy, &radio->bb_dm, primary, channel, bandwidth, &radio->channel) :
 		rtl_ax_xb_receive_channel(&radio->io, &radio->phy, &radio->bb_dm, primary, channel, bandwidth, &radio->channel);
-	if (!ret && radio->chip == RTL_AX_8852C)
-		rtl_ax_c_dig_bandwidth(&radio->io, &radio->dig, bandwidth);
+	if (!ret)
+		rtl_ax_dig_bandwidth(&radio->io, &radio->dig, bandwidth);
 	if (!ret)
 		ret = rtl_ax_power_apply(&radio->io, radio->chip, &radio->power_inputs,
 			radio->channel.band, primary, channel, bandwidth, radio->power_country,
