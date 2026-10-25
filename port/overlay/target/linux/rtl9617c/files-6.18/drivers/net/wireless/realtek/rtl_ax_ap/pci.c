@@ -1428,18 +1428,20 @@ static ssize_t radio_signal_show(struct device *dev,
 	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
 	struct rtl_ax_bb_dm *dm = &radio->bb_dm;
 	u32 psd = rtl_ax_read32(radio, 0x1422c), la = rtl_ax_read32(radio, 0x9660);
-	u32 collision = rtl_ax_read32(radio, 0x10c70);
+	u32 collision = rtl_ax_read32(radio, 0x10c70), edcca = rtl_ax_read32(radio, 0x14840);
 
 	return sysfs_emit(buffer, "LA=%s buffer=%u samples=%u trigger_us=%u cfg=%08x "
 		"PSD=%s fft=%u IQ=%u average=%u path=%u input=%u cfg=%08x "
 		"EDCCA=%s mode=%u power_offset=%u capabilities=%u,%u,%u,%u "
-		"collision_state=%u cfg=%08x dynamic_policy=pending DFS_runtime=pending DIG_periodic=running\n",
+		"collision_state=%u cfg=%08x EDCCA_high=%u EDCCA_low=%u EDCCA_cfg=%08x "
+		"collision_threshold=%u dynamic_policy=%s DFS_runtime=pending DIG_periodic=running\n",
 		dm->la_ready ? "initialized" : "pending", dm->la_buffer_bytes, dm->la_samples, dm->la_trigger_time, la,
 		dm->psd_ready ? "initialized" : "pending", dm->psd_fft_points,
 		(psd >> 11) & 3, (psd >> 13) & 3, (psd >> 17) & 3, (psd >> 19) & 3, psd,
 		dm->edcca_ready ? "initialized" : "pending", dm->edcca_mode, dm->edcca_power_offset,
 		dm->edcca_cap_2g, dm->edcca_cap_5g, dm->edcca_cap_6g, dm->edcca_cap_carrier,
-		(collision >> 20) & 63, collision);
+		(collision >> 20) & 63, collision, dm->edcca_high, dm->edcca_low, edcca,
+		(collision >> 11) & 31, dm->edcca_mode ? "pending" : "running");
 }
 static DEVICE_ATTR_RO(radio_signal);
 

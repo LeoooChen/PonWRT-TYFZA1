@@ -1142,10 +1142,12 @@ static void rtl_ax_dm_work(struct wiphy *wiphy, struct wiphy_work *work)
 			if (rssi < rssi_min) rssi_min = rssi;
 		}
 		spin_unlock_irqrestore(&radio->command_lock, flags);
+		if (!linked) rssi_min = 0;
 		rtl_ax_dig_update(&radio->io, &radio->dig, radio->chip, linked, rssi_min,
 			radio->chip == RTL_AX_8852C ? rtl_ax_environment_loss(
 				radio->channel.external_loss[0], radio->channel.external_loss[1]) : 0,
 			ktime_get_boottime_seconds());
+		rtl_ax_bb_dm_edcca_update(&radio->io, &radio->bb_dm, linked, rssi_min);
 	}
 	if (radio->chip == RTL_AX_8852C && radio->channel.configured) {
 		u32 traffic = rtl_ax_tx_traffic_bytes(radio->tx) + rtl_ax_rx_traffic_bytes(radio->rx);
