@@ -14,6 +14,8 @@ struct rtl_ax_ni_state {
  struct net_device *route_dev;
  unsigned int route_macid;
  u32 route_tim[128];
+ u32 ps_seen[2][128];
+ bool ps_issued[128];
  bool route_peers[128];
  struct work_struct ps_work;
 };

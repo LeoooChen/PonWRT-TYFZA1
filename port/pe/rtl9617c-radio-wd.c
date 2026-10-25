@@ -168,6 +168,14 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 			if (!owners[member * 2] || details & BIT(31) ||
 			    ((details >> 8) & 127) != (report & 127)) { mailbox[77]++; continue; }
 			if (details & BIT(16)) {
+				u32 generation = *(u32 *)(memory + RTL_AX_NI_PS_WP_GENERATION + member * 4);
+				volatile u32 *ps = (void *)(memory + 0xe800 + (report & 127) * 16);
+				/* A late old RPQ must not overwrite the current grant's completion. */
+				if (generation == ps[1]) {
+					volatile u32 *record = (void *)(memory + RTL_AX_NI_PS_DONE + (report & 127) * 8);
+					record[0] = generation;
+					sync(); record[1]++;
+				}
 				if (!forwarded) header_copy(out, (const u8 *)buffer, offset);
 				unaligned_word(out + offset + forwarded, report); forwarded += 4;
 			}
@@ -588,6 +596,9 @@ void pe_main(volatile u32 *control)
 		}
 #endif
 		pe_event_flush(mailbox);
+#ifdef PE_UPLINK
+		if (mailbox[24]) ni_ps_scan(mailbox, memory);
+#endif
 		if (mailbox[30]) ni_recycle(mailbox, memory);
 		sync();
 		/* Stock phl_handle_pending_wd publishes a completed TXBD batch.
@@ -647,6 +658,7 @@ void pe_main(volatile u32 *control)
 					ni_request[4] |= (queued > 1 || (ps[3] & 2) ? BIT(19) : 0) |
 						(ps[3] & 1 ? BIT(20) : 0);
 					ps[2] = grant;
+					*(u32 *)(memory + RTL_AX_NI_PS_WP_GENERATION + id * 4) = grant;
 					mailbox[39]++;
 				}
 				ni_request[0] = 256 + id;

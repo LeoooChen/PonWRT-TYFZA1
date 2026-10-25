@@ -45,6 +45,44 @@ static void ni_test_buffered(struct rtl_ax_tx *tx, unsigned int macid, u16 tids)
 	rcu_read_unlock(); local_bh_enable();
 }
 
+static void ni_ps_done(struct rtl_ax_tx *tx, unsigned int macid)
+{
+	struct ieee80211_sta *sta;
+	static const u32 tables[] = { RTL_AX_NI_PS_CANCEL, RTL_AX_NI_PS_DONE };
+	unsigned int i;
+
+	local_bh_disable(); rcu_read_lock();
+	sta = ieee80211_find_sta_by_ifaddr(tx->hw, tx->pe.memory + 0xe400 + macid * 8, NULL);
+	for (i = 0; sta && i < 2; i++) {
+		u8 *record = tx->pe.memory + tables[i] + macid * 8;
+		u32 producer = get_unaligned_le32(record + 4);
+
+		if (producer == tx->ni.ps_seen[i][macid]) continue;
+		dma_rmb();
+		u32 generation = get_unaligned_le32(record);
+		tx->ni.ps_seen[i][macid] = producer;
+		ni_ps_complete(tx, sta, macid, generation);
+	}
+	rcu_read_unlock(); local_bh_enable();
+}
+
+static void ni_ps_retire(struct rtl_ax_tx *tx)
+{
+	unsigned int macid;
+
+	/* PE is stopped, all WPs and RX callbacks have drained. */
+	local_bh_disable(); rcu_read_lock();
+	for (macid = 1; macid < 128; macid++) {
+		if (!tx->ni.ps_issued[macid]) continue;
+		struct ieee80211_sta *sta = ieee80211_find_sta_by_ifaddr(tx->hw,
+			tx->pe.memory + 0xe400 + macid * 8, NULL);
+		if (sta) ni_ps_complete(tx, sta, macid,
+			get_unaligned_le32(tx->pe.memory + 0xe800 + macid * 16 + 4));
+		tx->ni.ps_issued[macid] = false;
+	}
+	rcu_read_unlock(); local_bh_enable();
+}
+
 static void ni_route_ps(struct work_struct *work)
 {
 	struct rtl_ax_tx *tx = container_of(work, struct rtl_ax_ni_state, ps_work)->tx;
@@ -60,6 +98,7 @@ static void ni_route_ps(struct work_struct *work)
 	spin_unlock_irqrestore(&tx->lock, flags);
 	for (macid = 1; macid < 128; macid++) {
 		u32 mask = 0;
+		if (tx->pe_active) ni_ps_done(tx, macid);
 		if (!READ_ONCE(tx->peer_authorized[macid]) && !READ_ONCE(tx->ni.route_tim[macid])) continue;
 		if (READ_ONCE(tx->peer_asleep[macid])) {
 			mask = pending[macid];
@@ -242,6 +281,7 @@ static int ni_test_release(struct rtl_ax_tx *tx)
 	if (ret) return ret;
 	ret = rtl_ax_rx_pe_rpq_stop(tx->rx);
 	if (ret) return ret;
+	ni_ps_retire(tx);
 	pe_event_release(tx);
 	cancel_work_sync(&tx->ni.ps_work);
 	if (get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 96)) {

@@ -42,9 +42,10 @@ int rtl_ax_mac_drop_peer(struct pci_dev *pdev, unsigned int macid);
 void rtl_ax_tx_ps_clock(struct rtl_ax_tx *tx, u32 seconds);
 void rtl_ax_tx_peer_sleep(struct rtl_ax_tx *tx, unsigned int macid, bool asleep);
 void rtl_ax_tx_peer_authorized(struct rtl_ax_tx *tx, unsigned int macid, bool authorized);
+bool rtl_ax_tx_peer_security(struct rtl_ax_tx *tx, unsigned int macid, unsigned int cam, unsigned int keyid);
 void rtl_ax_tx_peer_ba(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid, unsigned int size);
 void rtl_ax_tx_peer_rate(struct rtl_ax_tx *tx, unsigned int macid, u32 rate, u32 caps);
 bool rtl_ax_tx_ni_buffered(struct rtl_ax_tx *tx, unsigned int macid);
 void rtl_ax_tx_ps_release(struct rtl_ax_tx *tx, struct ieee80211_sta *sta,
-	unsigned int macid, u16 tids, bool uapsd, bool more_data);
+	unsigned int macid, u16 tids, bool uapsd, bool more_data, u32 generation);
 #endif

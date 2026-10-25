@@ -49,9 +49,9 @@ assert selected == 1 and get(NI+0x7160)==251*8 and get(MB+30*4)==1, r
 assert get(BASE+0x18000+8*4)==250
 assert get(BASE+0x18000+16*4)==1
 # One PS grant releases one frame; it does not wake the remaining queue.
-put(BASE+0xe800+16+4,1);put(BASE+0xe800+16+12,1<<16)
+put(BASE+0x19e04,2);put(BASE+0xe800+16+4,1);put(BASE+0xe800+16+12,1<<16)
 assert call("ni_select")==1
-assert get(BASE+0xe800+16+8)==1
+assert get(BASE+0xe800+16+8)==2
 assert get(REQ+4*4)&(1<<19) and not get(REQ+4*4)&(1<<20)
 assert call("ni_select")==0 and get(BASE+0x11804)==249
 # Retire the sleeping peer; only its queued BIDs may return to EQ.

@@ -217,13 +217,18 @@ static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 {
 	struct rtl_ax_ap *radio = container_of(work, struct rtl_ax_ap, offload_work);
-	unsigned int macid;
+	unsigned int macid, index;
 	radio->offload_retry = false;
 	if (!radio->ap_started) return;
 	for (macid = 1; macid < 128; macid++) {
 		int ret;
+		struct rtl_ax_security_role *role = &radio->security_roles[macid];
 		if (!radio->peer_authorized[macid] || !radio->tx_ba[macid].aggregation[0] ||
-		    !(radio->security_roles[macid].valid & 3)) continue;
+		    radio->tx_ba[macid].stopping || !(role->valid & BIT(role->tx_keyid))) continue;
+		for (index = 0; index < RTL_AX_SECURITY_ENTRIES; index++)
+			if (radio->security_unlink[index] == macid + 1) break;
+		if (index != RTL_AX_SECURITY_ENTRIES ||
+		    !rtl_ax_tx_peer_security(radio->tx, macid, role->cam[role->tx_keyid], role->tx_keyid)) continue;
 		ret = rtl_ax_tx_ni_peer(radio->tx, ieee80211_vif_to_wdev(radio->ap_vif)->netdev, macid);
 		radio->offload_result = min(ret, 0);
 		if (ret < 0) radio->offload_retry = true;
@@ -455,6 +460,8 @@ static int rtl_ax_tx_ba_finish(struct rtl_ax_ap *radio, unsigned int macid, unsi
 	bool flush = radio->tx_ba[macid].flushing & BIT(tid);
 	int ret;
 
+	ret = rtl_ax_tx_ni_retire_peer(radio->tx, macid);
+	if (ret) return ret;
 	ret = flush ? rtl_ax_drop_station(radio, macid, tid) :
 		rtl_ax_tx_wait_station(radio->tx, macid, tid);
 	if (ret)
@@ -475,6 +482,7 @@ static int rtl_ax_tx_ba_finish(struct rtl_ax_ap *radio, unsigned int macid, unsi
 	radio->tx_ba[macid].flushing &= ~BIT(tid);
 	if (!flush)
 		ieee80211_stop_tx_ba_cb_irqsafe(radio->ap_vif, radio->tx_ba[macid].address, tid);
+	rtl_ax_offload_ready(radio);
 	return 0;
 }
 
@@ -739,10 +747,6 @@ static int rtl_ax_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 	case IEEE80211_AMPDU_TX_STOP_CONT:
 	case IEEE80211_AMPDU_TX_STOP_FLUSH:
 	case IEEE80211_AMPDU_TX_STOP_FLUSH_CONT:
-		{
-			ret = rtl_ax_tx_ni_retire_peer(radio->tx, station->macid);
-			if (ret) return ret;
-		}
 		WRITE_ONCE(radio->tx_ba[station->macid].aggregation[params->tid], 0);
 		rtl_ax_tx_peer_ba(radio->tx, station->macid, params->tid, 0);
 		radio->tx_ba[station->macid].stopping |= BIT(params->tid);
@@ -1026,12 +1030,12 @@ static void rtl_ax_sta_notify(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 }
 
 static void rtl_ax_release_buffered(struct ieee80211_hw *hw, struct ieee80211_sta *sta,
-	u16 tids, int num_frames, enum ieee80211_frame_release_type reason, bool more_data)
+	u16 tids, int num_frames, enum ieee80211_frame_release_type reason, bool more_data, u32 generation)
 {
 	struct rtl_ax_station *station = (void *)sta->drv_priv;
 
 	rtl_ax_tx_ps_release(rtl_ax_monitor_radio(hw)->tx, sta, station->macid, tids,
-		reason == IEEE80211_FRAME_RELEASE_UAPSD, more_data);
+		reason == IEEE80211_FRAME_RELEASE_UAPSD, more_data, generation);
 }
 
 static void rtl_ax_sta_rate_update(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
@@ -1295,7 +1299,7 @@ static const struct ieee80211_ops rtl_ax_monitor_ops = {
 	.ampdu_action = rtl_ax_ampdu_action,
 	.sta_state = rtl_ax_sta_state,
 	.sta_notify = rtl_ax_sta_notify,
-	.release_buffered_frames = rtl_ax_release_buffered,
+	.release_buffered_frames_generation = rtl_ax_release_buffered,
 	.sta_rate_tbl_update = rtl_ax_sta_rate_update,
 	.link_sta_rc_update = rtl_ax_link_sta_rc_update,
 	.sta_statistics = rtl_ax_sta_statistics,

@@ -163,6 +163,39 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 }
 
 
+/* ARM publishes the generation and TID flags as one versioned command. */
+static u32 __attribute__((section(".rxq"), noinline)) ni_ps_grant(
+	u8 *memory, u32 macid, u32 *generation, u32 *flags, u32 *command)
+{
+	volatile u32 *version = (void *)(memory + RTL_AX_NI_PS_VERSION + macid * 4);
+	volatile u32 *ps = (void *)(memory + 0xe800 + macid * 16);
+	u32 before = *version;
+	if (before & 1) return 0;
+	sync();
+	*generation = ps[1]; *flags = ps[3]; *command = before;
+	sync();
+	return before == *version;
+}
+
+static void __attribute__((section(".rxq"), noinline)) ni_ps_scan(volatile u32 *mailbox, u8 *memory)
+{
+	/* A late grant also needs service when the entire NI queue is empty. */
+	u32 macid = mailbox[RTL_AX_NI_PS_SCAN] + 1, generation, flags, command;
+	if (macid == 128) macid = 1;
+	mailbox[RTL_AX_NI_PS_SCAN] = macid;
+	if (!ni_ps_grant(memory, macid, &generation, &flags, &command)) return;
+	volatile u32 *ps = (void *)(memory + 0xe800 + macid * 16);
+	if (command == ps[2]) return;
+	for (u32 tid = 0; tid < 8; tid++)
+		if ((flags >> 16 & BIT(tid)) &&
+		    *(u32 *)(memory + NI_TID_QUEUED + (macid * 8 + tid) * 4)) return;
+	ps[2] = command;
+	volatile u32 *record = (void *)(memory + RTL_AX_NI_PS_CANCEL + macid * 8);
+	record[0] = generation;
+	sync(); record[1]++;
+	pe_event(mailbox);
+}
+
 static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *mailbox, u8 *memory, u32 *request)
 {
 	if (!mailbox[38]) return 0;
@@ -177,6 +210,10 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 		u32 retired = !macid || (mailbox[62] == 128 || mailbox[62] == macid) ||
 			!*(volatile u32 *)(memory + NI_PEER_ROUTE + macid * 4);
 		u32 *active = (void *)(memory + NI_TID_ACTIVE + macid * 4), tids = *active;
+		u32 generation = 0, grant_flags = 0, command = 0;
+		if (!retired && !ni_ps_grant(memory, macid, &generation, &grant_flags, &command)) {
+			node = next_peer[macid]; continue;
+		}
 		u32 tid = mailbox[112];
 		/* Rotate the active set into the existing round-robin order. */
 		for (tids = (tids >> tid | tids << (8 - tid)) & 255; tids;
@@ -191,7 +228,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				 (int)*(u32 *)(memory + RTL_AX_NI_PS_TIMEOUT + macid * 4)));
 			if (discard && mailbox[47]) continue;
 			if (!discard && (mailbox[30] >= 124 ||
-			    (ps[0] && (ps[1] == ps[2] || !((ps[3] >> 16) & BIT(tid)))))) continue;
+			    (ps[0] && (command == ps[2] || !((grant_flags >> 16) & BIT(tid)))))) continue;
 			u32 id = ni_owner(mailbox, memory), frames = 1;
 			u32 tail_buffer = buffer;
 			const u32 *peer = (void *)(memory + 0xd000 + macid * 32);
@@ -215,11 +252,12 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				u32 caps = *(u32 *)(memory + 0xe200 + macid * 4);
 				if (caps & BIT(17)) request[3] |= BIT(20);
 				if (ps[0]) {
-					request[4] |= (*(u32 *)(memory + NI_PEER_QUEUED + macid * 4) > 1 || (ps[3] & 2) ? BIT(19) : 0) | (ps[3] & 1 ? BIT(20) : 0);
+					request[4] |= (*(u32 *)(memory + NI_PEER_QUEUED + macid * 4) > 1 || (grant_flags & 2) ? BIT(19) : 0) | (grant_flags & 1 ? BIT(20) : 0);
 					owners[id * 2 + 1] |= BIT(16);
-					ps[2] = ps[1]; mailbox[39]++;
+					*(u32 *)(memory + RTL_AX_NI_PS_WP_GENERATION + id * 4) = generation;
+					ps[2] = command; mailbox[39]++;
 				} else {
-					ps[2] = ps[1];
+					ps[2] = command;
 					u32 next = waiting[3] & ~127U, body = length + 8;
 					if (((request[2] >> 16) & 63) == 26 && !(request[3] & BIT(19))) {
 						while (next && frames < 8) {

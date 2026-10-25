@@ -33,7 +33,7 @@ typedef uint32_t u32;
 struct ieee80211_sta {int unused;};
 struct sdata {struct {struct {unsigned beacon_int;}bss_conf;}vif;};
 struct sta_info {unsigned listen_interval;struct sdata *sdata;struct ieee80211_sta sta;};
-struct rtl_ax_tx {bool peer_qos[128],peer_offloaded[128],peer_asleep[128],pe_active;u32 peer_rates[128];struct {void *memory;}pe;};
+struct rtl_ax_tx {bool peer_qos[128],peer_offloaded[128],peer_asleep[128],pe_active;u32 peer_rates[128];struct {void *memory;}pe;struct {u32 ps_seen[2][128];bool ps_issued[128];}ni;};
 static void put_unaligned_le32(u32 value,void *p){memcpy(p,&value,4);}
 static u32 get(const void *p){u32 v;memcpy(&v,p,4);return v;}
 #define PE_PROBE_MAILBOX 0x2000
@@ -204,6 +204,7 @@ assert age.get(BASE + 0x11804) == 3 and not age.returns
 age.put(MB + 195 * 4, 125)
 age.run()
 assert not age.returns
+age.put(BASE + 0x19e04, 2)
 age.put(BASE + 0xe814, 1)
 age.put(BASE + 0xe81c, 1 << 16)
 age.run()
@@ -213,6 +214,86 @@ age.run()
 age.check_returns()
 assert len(age.returns) == 2 and age.get(BASE + 0x18020) == 1
 assert age.get(BASE + 0x14004) == 1 and age.get(MB + 30 * 4) == 1
+
+# A grant can race expiry of its last eligible packet, or arrive after that
+# packet has already left the queue. Both must finish the same grant.
+for late, generation in [(False, 1), (True, 1), (False, 0), (True, 0)]:
+    empty = Radio()
+    empty.packets([1])
+    empty.run()
+    if not late:
+        empty.put(BASE + 0x19e04, 2)
+        empty.put(BASE + 0xe814, generation)
+        empty.put(BASE + 0xe81c, 1 << 16)
+    empty.put(MB + 195 * 4, 110)
+    empty.run()
+    if late:
+        empty.put(BASE + 0x19e04, 2)
+        empty.put(BASE + 0xe814, generation)
+        empty.put(BASE + 0xe81c, 1 << 16)
+        empty.run()
+    assert empty.get(BASE + 0x11804) == 0 and len(empty.returns) == 1
+    assert empty.get(BASE + 0xe818) == 2 and empty.get(BASE + 0x19a08) == generation and empty.get(BASE + 0x19a0c) == 1, 'empty grant never completed'
+# A partially published or changed command cannot be mistaken for a grant.
+publication = Radio()
+publication.packets([1])
+publication.put(BASE + 0xe814, 5)
+publication.put(BASE + 0xe81c, 1 << 16)
+publication.put(BASE + 0x19e04, 1)
+publication.run()
+assert publication.get(MB + 28 * 4) == 0 and publication.get(BASE + 0xe818) == 0
+publication.put(BASE + 0x19e04, 2)
+publication.run()
+assert publication.get(MB + 28 * 4) == 1 and publication.get(BASE + 0x1b800) == 5
+
+from unicorn import UC_HOOK_MEM_READ
+changed = Radio()
+changed.packets([1])
+changed.run()
+changed.put(BASE + 0xe814, 1)
+changed.put(BASE + 0xe81c, 1 << 16)
+version_reads = []
+def publish_during_snapshot(uc, access, address, size, value, data):
+    version_reads.append(address)
+    if len(version_reads) == 2:
+        changed.put(BASE + 0xe814, 2)
+        changed.put(BASE + 0xe81c, 2 << 16)  # Grant TID1; only TID0 is queued.
+        changed.put(BASE + 0x19e04, 2)
+changed.u.hook_add(UC_HOOK_MEM_READ, publish_during_snapshot,
+                  begin=BASE + 0x19e04, end=BASE + 0x19e07)
+changed.run()
+assert changed.get(MB + 28 * 4) == 0 and changed.get(BASE + 0x11804) == 1
+assert changed.get(BASE + 0x19a08) == 2 and changed.get(BASE + 0x19a0c) == 1
+
+# Epoch zero is a valid MAC cookie, distinct from an unissued command.
+for wrapped in (False, True):
+    zero = Radio()
+    zero.packets([1]); zero.run()
+    zero.put(BASE + 0xe814, 0);zero.put(BASE + 0xe81c, 1 << 16)
+    zero.put(BASE + 0x19e04, 0 if wrapped else 2)
+    zero.put(BASE + 0xe818, 0xfffffffe if wrapped else 0)
+    zero.run()
+    assert zero.get(MB + 28 * 4) == 1 and zero.get(BASE + 0x1b800) == 0
+
+# Actual RPQ decoding captures the grant before recycling its WP. New then
+# old completions cannot replace the current service period's notification.
+rpq = Radio()
+rpq.packets([1, 1])
+rpq.run()
+rpq.put(BASE + 0x19e04, 2); rpq.put(BASE + 0xe814, 1); rpq.put(BASE + 0xe81c, 1 << 16)
+rpq.run()
+rpq.put(BASE + 0x19e04, 4); rpq.put(BASE + 0xe814, 2); rpq.run()
+assert rpq.get(BASE + 0x1b800) == 1 and rpq.get(BASE + 0x1b804) == 2
+reports, forwarded = 0x07800000, 0x07900000
+rpq.u.mem_map(reports, 0x40000);rpq.u.mem_map(forwarded, 0x40000)
+for index, value in [(68, reports), (72, forwarded), (187, BASE)]:rpq.put(MB + index * 4, value)
+rpq.put(BAR + 0x121c, 1 << 16)
+payload = struct.pack('<II', 1 | 257 << 16, 1 | 256 << 16)
+rpq.u.mem_write(reports, struct.pack('<II', 28 | 0xc000 | 1 << 16, 7 << 24 | 8) + bytes(12) + payload)
+rpq.run()
+assert rpq.get(BASE + 0x1ba08) == 2 and rpq.get(BASE + 0x1ba0c) == 1
+assert len(rpq.returns) == 2 and rpq.get(MB + 30 * 4) == 0
+
 print(json.dumps({'scope': 'Linked production PE instructions; synthetic EPP, EQ credit and RPQ ownership.',
                   'per_peer_bound': 256, 'total_waiting_bound': 512,
                   'sleep_pool_reclaimed': True, 'awake_peer_submitted': True,
