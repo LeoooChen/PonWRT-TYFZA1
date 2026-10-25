@@ -39,9 +39,8 @@ static int port_number(const struct pon_oam_request *request)
 	} else {
 		return -EINVAL;
 	}
-	/* CTC numbers jacks left-to-right; native lan1..4 run right-to-left.
-	 * NI hardware numbering is handled by the driver, not these netdev IDs. */
-	return port >= 1 && port <= 4 ? 4 - (int)port : -EINVAL;
+	/* CTC UNI and native lan1..4 now both follow the enclosure labels. */
+	return port >= 1 && port <= 4 ? (int)port - 1 : -EINVAL;
 }
 
 static int port_ioctl(unsigned int port, unsigned long operation, struct ifreq *request)

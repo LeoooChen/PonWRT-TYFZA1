@@ -87,9 +87,9 @@ sysupgrade /tmp/sysupgrade.bin
 
 使用 DFS 信道时，无线会先完成 CAC 检测，再开始广播 SSID。系统日志中的 `DFS-CAC-START`、`DFS-CAC-COMPLETED` 和 `AP-ENABLED` 分别对应检测开始、检测完成和 AP 启用。
 
-有线接口使用 `lan1`、`lan2` 等命名，PON 业务接口为 `pon0`。
+两种机型的有线接口 `lan1`–`lan4` 均对应机身 LAN1–LAN4 标号；2.5G 版蓝色口为 `lan1`。PON 业务接口为 `pon0`。
 业务 MAC 在启动时从原厂 `ELAN_MAC_ADDR` 读取，自定义值在网络接口中设置。PON 管理中的 ONU MAC 用于 EPON 注册与 OAM。
-保留配置升级会自动迁移原有网络、防火墙、LED 和 SQM 配置中的设备引用，包括 VLAN 子设备。
+保留配置升级时，已有 `lan1`–`lan4` 配置直接按新的机身编号生效。
 
 ## 软件源
 
