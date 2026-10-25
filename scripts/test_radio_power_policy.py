@@ -81,7 +81,6 @@ typedef uint8_t u8; typedef int8_t s8; typedef uint16_t u16; typedef uint32_t u3
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 #define BIT(n) (1U << (n))
 #define min(a,b) ((a)<(b)?(a):(b))
-#define max(a,b) ((a)>(b)?(a):(b))
 #define GFP_KERNEL 0
 #define strscpy(d,s,n) snprintf(d,n,"%s",s)
 struct device {};
@@ -172,13 +171,16 @@ int main(int argc,char **argv){
      int reported=-1;
      assert(!rtl_ax_monitor_get_txpower(&mac,NULL,0,&reported)&&reported==cap);
      for(unsigned i=0;i<sizeof(hw->rate);i++)assert(half_dbm(hw->rate[i])<=cap*2);
-     /* OFDM6 must really step up to 30dBm in the hardware table.
-      * HE MCS11 retains this FEM's 7dB backoff at the upper endpoint. */
-     assert(half_dbm(hw->rate[4])==cap*2);
-     if(cap==30){
-      assert(hw->rate[4]==60 && hw->rate[23]==46 && hw->rate[39]==46);
-      assert(registers[0xd2c4/4]==(band?0x3c3c3c3cU:0x3a3c3c3cU));
-     }
+     /* Requests above the factory targets must not boost OFDM6 or
+      * either stream's HE MCS11. Keep the original mode offsets too. */
+     const struct rtl_ax_power_stage *factory=&in->stage[RTL_AX_PHY_FEM];
+     assert(half_dbm(hw->rate[4])==min(factory->rate[band][4],cap*4)/2);
+     assert(half_dbm(hw->rate[23])==min(factory->rate[band][95],cap*4)/2);
+     assert(half_dbm(hw->rate[39])==min(factory->rate[band][107],cap*4)/2);
+     u32 offsets=0;
+     for(unsigned i=0;i<5;i++)
+      offsets|=((factory->rate[i==4?0:band][140+i]/2)&15)<<(i*4);
+     assert((registers[0xd204/4]&0x000fffff)==offsets);
      assert(hw->limit_dbm==cap);
      registers[0xd208/4]|=0x00300000;
      assert(rtl_ax_monitor_get_txpower(&mac,NULL,0,&reported)==-EIO);
@@ -193,7 +195,7 @@ int main(int argc,char **argv){
     }
   rtl_ax_power_inputs_release(in);
  }
- printf("PASS: %u actual-table power cases; both radios, all supported widths, CN/world/US, every 1dBm step from 0 to 30, stale gate detection\n",cases);
+ printf("PASS: %u actual-table power cases; both radios, all supported widths, CN/world/US, requested caps 0-30, no factory-target boost, stale gate detection\n",cases);
 }
 '''
 with tempfile.TemporaryDirectory(prefix='tyfza1-power-policy-') as folder:

@@ -286,16 +286,8 @@ int rtl_ax_power_apply(const struct rtl_ax_io *io, unsigned int chip,
 	const char *regulation = "WW";
 	unsigned int i, nss, bf;
 	u32 offset_mode = 0;
-	int rate_peak = 0, rate_boost;
 
 	state->applied = false;
-	max_dbm = min(max_dbm, RTL_AX_TX_POWER_MAX_DBM);
-	/* The factory targets top out at 24/25 dBm. Raise their hardware
-	 * by-rate values when Linux requests a higher ceiling, retaining the
-	 * factory modulation backoff. Updating limit_dbm alone cannot do this. */
-	for (i = band ? 4 : 0; i < 140; i++)
-		rate_peak = max(rate_peak, (int)power->rate[band][i]);
-	rate_boost = max(max_dbm * 4 - rate_peak, 0);
 	for (i = 0; i < limits->regulations; i++)
 		if (!strncmp(limits->regulation[i], country, 2) && !limits->regulation[i][2])
 			regulation = limits->regulation[i];
@@ -303,14 +295,14 @@ int rtl_ax_power_apply(const struct rtl_ax_io *io, unsigned int chip,
 	state->bandwidth = bandwidth;
 	for (i = 0; i < 12; i++)
 		/* Actual get_power_by_rate fetches CCK from2G on a5G channel. */
-		state->rate[i] = rtl_ax_half_dbm(power->rate[i < 4 ? 0 : band][i] + rate_boost, max_dbm);
+		state->rate[i] = rtl_ax_half_dbm(power->rate[i < 4 ? 0 : band][i], max_dbm);
 	for (nss = 0; nss < 2; nss++) {
 		for (i = 0; i < 12; i++)
 			state->rate[12 + nss * 16 + i] =
-				rtl_ax_half_dbm(power->rate[band][84 + nss * 12 + i] + rate_boost, max_dbm);
+				rtl_ax_half_dbm(power->rate[band][84 + nss * 12 + i], max_dbm);
 		for (i = 0; i < 4; i++)
 			state->rate[24 + nss * 16 + i] =
-				rtl_ax_half_dbm(power->rate[band][132 + nss * 4 + i] + rate_boost, max_dbm);
+				rtl_ax_half_dbm(power->rate[band][132 + nss * 4 + i], max_dbm);
 	}
 	for (i = 0; i < 5; i++)
 		offset_mode |= ((power->rate[i == 4 ? 0 : band][140 + i] / 2) & 15) << (i * 4);
