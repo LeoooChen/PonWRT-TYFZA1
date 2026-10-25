@@ -44,6 +44,7 @@ static int rtl_ax_monitor_start(struct ieee80211_hw *hw)
 		return ret;
 	}
 	rtl_ax_receive_mode(&radio->io, radio->ap_started ? 4 : 0);
+	radio->dig.fahm_triggered = radio->dig.fahm_configured = false;
 	WRITE_ONCE(radio->monitor_started, true);
 	rtl_ax_update32(&radio->io, 0x9c18, 3, 1);
 	radio->io.write32(radio, 0xce40, 0x12);
@@ -651,6 +652,7 @@ static int rtl_ax_station_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 			ret = rtl_ax_command_flags(radio, RTL_AX_H2C_LONG_DATA, 2, 1, 0,
 				radio->ra_config[id], 16, false, false);
 			if (ret) goto remove;
+			memset(&radio->dig_rssi[id], 0, sizeof(radio->dig_rssi[id]));
 			radio->ra_registered[id] = true;
 			radio->ra_rssi_samples[id] = radio->ra_reports[id] = radio->ra_updates[id] = 0;
 			radio->ra_update_error[id] = 0;
@@ -1115,6 +1117,26 @@ static void rtl_ax_dm_work(struct wiphy *wiphy, struct wiphy_work *work)
 		radio->chip, &radio->rf_runtime);
 	if (radio->rf_runtime.result)
 		dev_err(&radio->pdev->dev, "RF watchdog failed: %d\n", radio->rf_runtime.result);
+	if (radio->channel.configured) {
+		u8 rssi_min = 255;
+		unsigned int i;
+		bool linked = false;
+
+		spin_lock_irqsave(&radio->command_lock, flags);
+		for (i = 1; i < 128; i++) {
+			u8 rssi;
+
+			if (!radio->ra_registered[i]) continue;
+			linked = true;
+			rssi = rtl_ax_dig_rssi_update(&radio->dig_rssi[i]);
+			if (rssi < rssi_min) rssi_min = rssi;
+		}
+		spin_unlock_irqrestore(&radio->command_lock, flags);
+		rtl_ax_dig_update(&radio->io, &radio->dig, radio->chip, linked, rssi_min,
+			radio->chip == RTL_AX_8852C ? rtl_ax_environment_loss(
+				radio->channel.external_loss[0], radio->channel.external_loss[1]) : 0,
+			ktime_get_boottime_seconds());
+	}
 	if (radio->chip == RTL_AX_8852C && radio->channel.configured) {
 		u32 traffic = rtl_ax_tx_traffic_bytes(radio->tx) + rtl_ax_rx_traffic_bytes(radio->rx);
 		u64 now = ktime_get_boottime_ns() / 1000000;

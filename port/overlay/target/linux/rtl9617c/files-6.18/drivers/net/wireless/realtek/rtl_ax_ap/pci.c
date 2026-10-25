@@ -32,6 +32,7 @@
 #include "bb-dm.h"
 #include "dfs.h"
 #include "dig.h"
+#include "dig-runtime.h"
 #include "cfo.h"
 #include "environment.h"
 #include "rx-pipeline.h"
@@ -197,6 +198,7 @@ struct rtl_ax_ap {
 	u8 ra_txstats[128][32];
 	u64 ra_txstats_reports[128];
 	u8 ra_rssi[128][3];
+	struct rtl_ax_dig_rssi dig_rssi[128];
 	u64 ra_rssi_samples[128], ra_rssi_sent;
 	int ra_rssi_result;
 	u64 ra_ppdu_reports;
@@ -401,6 +403,8 @@ static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 		for (i = 0; ret > 0 && i < ret; i++) {
 			memcpy(radio->ra_rssi[signals[i].macid], signals[i].rssi, 3);
 			radio->ra_rssi_samples[signals[i].macid]++;
+			if (radio->ra_registered[signals[i].macid])
+				rtl_ax_dig_rssi_sample(&radio->dig_rssi[signals[i].macid], signals[i].rssi[0]);
 		}
 		spin_unlock_irqrestore(&radio->command_lock, flags);
 		return ret < 0 ? ret : 0;
@@ -1428,7 +1432,7 @@ static ssize_t radio_signal_show(struct device *dev,
 	return sysfs_emit(buffer, "LA=%s buffer=%u samples=%u trigger_us=%u cfg=%08x "
 		"PSD=%s fft=%u IQ=%u average=%u path=%u input=%u cfg=%08x "
 		"EDCCA=%s mode=%u power_offset=%u capabilities=%u,%u,%u,%u "
-		"collision_state=%u cfg=%08x dynamic_policy=pending DFS_runtime=pending DIG_periodic=pending\n",
+		"collision_state=%u cfg=%08x dynamic_policy=pending DFS_runtime=pending DIG_periodic=running\n",
 		dm->la_ready ? "initialized" : "pending", dm->la_buffer_bytes, dm->la_samples, dm->la_trigger_time, la,
 		dm->psd_ready ? "initialized" : "pending", dm->psd_fft_points,
 		(psd >> 11) & 3, (psd >> 13) & 3, (psd >> 17) & 3, (psd >> 19) & 3, psd,
@@ -1516,10 +1520,12 @@ static ssize_t radio_dig_show(struct device *dev,
 	u32 cck_control = rtl_ax_read32(radio, 0x14b74);
 
 	return sysfs_emit(buffer, "initialization=%s mode=%u max_gaincode=%u,%u,%u "
-		"IB_peak=%d IB_backoff=%u initial_RSSI=%u IGI=%u FA=%u,%u,%u,%u "
+		"IB_peak=%d IB_backoff=%u RSSI=%u IGI=%u FA=%u,%u,%u,%u "
 		"TDMA_ms=%u FAHM_ms=%u damping=%u/%u PD_requested=%u bandwidth_index=%u "
 		"OFDM_enable=%u encoded=%u cfg=%08x CCK_enable=%u low=%d high=%u "
-		"cfg=%08x/%08x follow_PAGC=%u periodic_DIG=pending\n",
+		"cfg=%08x/%08x follow_PAGC=%u periodic_DIG=running "
+		"linked=%u RSSI_min_half=%u updates=%llu FAHM_reports=%llu not_ready=%llu "
+		"FAHM_permille=%u damping_active=%u\n",
 		dig->initialized ? "applied" : "pending", dig->mode,
 		dig->max_gaincode[0], dig->max_gaincode[1], dig->max_gaincode[2],
 		dig->ib_peak_power, dig->ib_backoff, dig->igi_rssi, dig->unit[0].igi,
@@ -1528,7 +1534,8 @@ static ssize_t radio_dig_show(struct device *dev,
 		dig->tdma_period, dig->fahm_time, dig->damping_enabled, dig->damping_count_limit,
 		dig->pd_requested, dig->bandwidth, !!(ofdm & BIT(29)), (ofdm >> 6) & 31,
 		ofdm, !!(cck_control & BIT(30)), (s8)(cck >> 24), (cck >> 16) & 255,
-		cck, cck_control, dig->unit[0].follow_pagc);
+		cck, cck_control, dig->unit[0].follow_pagc, dig->linked, dig->rssi_min,
+		dig->updates, dig->reports, dig->not_ready, dig->false_alarms, dig->damping_active);
 }
 static DEVICE_ATTR_RO(radio_dig);
 
@@ -1772,8 +1779,11 @@ static int rtl_ax_receive_configure(struct rtl_ax_ap *radio, unsigned int primar
 	ret = radio->chip == RTL_AX_8852C ?
 		rtl_ax_c_receive_channel(&radio->io, &radio->phy, &radio->bb_dm, primary, channel, bandwidth, &radio->channel) :
 		rtl_ax_xb_receive_channel(&radio->io, &radio->phy, &radio->bb_dm, primary, channel, bandwidth, &radio->channel);
-	if (!ret)
+	if (!ret) {
 		rtl_ax_dig_bandwidth(&radio->io, &radio->dig, bandwidth);
+		/* Discard FAHM reports spanning RF channel calibration. */
+		radio->dig.fahm_triggered = radio->dig.fahm_configured = false;
+	}
 	if (!ret)
 		ret = rtl_ax_power_apply(&radio->io, radio->chip, &radio->power_inputs,
 			radio->channel.band, primary, channel, bandwidth, radio->power_country,

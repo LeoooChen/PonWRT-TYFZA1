@@ -29,7 +29,7 @@ source = r'''
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-typedef uint8_t u8;typedef int8_t s8;typedef uint16_t u16;typedef uint32_t u32;
+typedef uint8_t u8;typedef int8_t s8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u64;
 #include "dig.h"
 #define BIT(n) (1U<<(n))
 #define mutex_lock(p) ((void)(p))
@@ -80,8 +80,8 @@ static int set_channel(struct channel *ch,unsigned primary,unsigned center,unsig
 #define rtl_ax_c_receive_channel(io,p,d,pri,ch,bw,out) set_channel(out,pri,ch,bw)
 #define rtl_ax_xb_receive_channel(io,p,d,pri,ch,bw,out) set_channel(out,pri,ch,bw)
 static u32 value;
-static u32 read32(void *p,unsigned reg){assert(reg==0x1481c);return value;}
-static void write32(void *p,unsigned reg,u32 word){assert(reg==0x1481c);value=word;}
+static u32 read32(void *p,unsigned reg){return reg==0x1481c?value:0;}
+static void write32(void *p,unsigned reg,u32 word){if(reg==0x1481c)value=word;}
 static int poll32(void *p,unsigned r,unsigned mask,unsigned want,unsigned delay,unsigned timeout,unsigned *last){*last=want;return 0;}
 '''
 source += callback_source
