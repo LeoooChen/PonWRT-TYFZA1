@@ -384,13 +384,25 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 {
 	static const u32 indices[] = { 0x1058, 0x105c, 0x1060, 0x1064, 0x1078, 0x107c };
 	u32 read = mailbox[RTL_AX_TX_PUBLISH_READ], write = mailbox[RTL_AX_TX_PUBLISH_WRITE];
-	u32 mask = 0, producers[6];
+	u32 mask = 0, producers[6], checked = 0, room[6];
 	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
 	if (read == write) return;
 	sync();
 	while (read != write && budget--) {
-		u32 next, ring = pe_build_tx(mailbox, memory,
-			(const u32 *)(memory + RTL_AX_TX_BUILD_REQUESTS + read * 128), &next);
+		const u32 *request = (void *)(memory + RTL_AX_TX_BUILD_REQUESTS + read * 128);
+		u32 next, ring = request[1] & 7;
+		/* Factory hal_get_avail_txbd checks the shared channel before a
+		 * batch: ARM and NI WP limits alone do not bound its TXBD use. */
+		if (!(checked & BIT(ring))) {
+			volatile u32 *bar = (void *)mailbox[2];
+			u32 hardware = (bar[indices[ring] / 4] >> 16) & 255;
+			u32 producer = mailbox[24] ? mailbox[32 + ring] : (request[1] >> 8) & 255;
+			room[ring] = (hardware - producer - 1) & 255;
+			checked |= BIT(ring);
+		}
+		if (!room[ring]) break;
+		room[ring]--;
+		pe_build_tx(mailbox, memory, request, &next);
 		producers[ring] = next; mask |= BIT(ring);
 		read = (read + 1) & 15;
 	}
@@ -518,8 +530,11 @@ void pe_main(volatile u32 *control)
 		u32 command = mailbox[3];
 #ifdef PE_UPLINK
 		/* PE1 is stopped first; a PE0 pause also drains its final TX batch. */
-		if ((command & 1 || command != commands[slot]) && mailbox[187])
-			pe_tx_publish((void *)((u8 *)uncached(mailbox[187]) + MAILBOX_OFFSET), command & 1 ? 4 : 16);
+		if ((command & 1 || command != commands[slot]) && mailbox[187]) {
+			volatile u32 *tx = (void *)((u8 *)uncached(mailbox[187]) + MAILBOX_OFFSET);
+			pe_tx_publish(tx, command & 1 ? 4 : 16);
+			if (!(command & 1) && tx[RTL_AX_TX_PUBLISH_READ] != tx[RTL_AX_TX_PUBLISH_WRITE]) continue;
+		}
 #endif
 		if (command != commands[slot]) {
 			/* Complete the previous turn before acknowledging a pause. */

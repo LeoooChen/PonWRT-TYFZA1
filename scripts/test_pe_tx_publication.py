@@ -50,7 +50,7 @@ class Machine:
         self.put(RXMB + 187 * 4, TX)
         self.put(RXMB + 80 * 4, TABLE)
         self.put(TABLE, RX_BUFFER)
-        self.hardware = [0x8100 + ring for ring in range(6)]
+        self.hardware = [0x8140 + ring for ring in range(6)]
         for ring, register in enumerate(REGISTERS):
             self.put(BAR + register, self.hardware[ring] << 16 | ((NEXT[ring] - 1) & 255))
         self.contexts = {}
@@ -256,6 +256,54 @@ for part in range(7):
     assert bool(length & 0x8000) == (part == 6)
     assert bytes(ni.u.mem_read(PAYLOAD + part * 512 + 94, 100)) == bytes([part]) * 100
 
+# ARM and NI share the same channel even though their WP IDs are disjoint.
+# One free TXBD must admit exactly one request, including on a pause boundary.
+credit = Machine()
+credit.put(TXMB + 24 * 4, 1)
+credit.put(TXMB + 14 * 4, PAGES)
+credit.put(TXMB + 32 * 4, 254)
+credit.put(BAR + REGISTERS[0], 254)  # Hardware consumer0, producer254: one free.
+credit.put(TXMB + 8 * 4, 2)
+credit.put(TXMB + 9 * 4, 0)
+for index, identifier in enumerate((256, 1)):
+    address = PAYLOAD + index * 256 + 80
+    frame = bytes.fromhex('0200000000020200000000030800') + bytes([index]) * 66
+    credit.u.mem_write(address, frame)
+    request = [0] * 32
+    request[0] = identifier
+    request[1] = (254 + index) << 8 | ((255 + index) & 255) << 16
+    request[2] = 1 << 24 | (26 << 16 | 100 if not index else 80)
+    request[3] = 4
+    request[4] = 1 << 24 | 1 << 18 | 1 << 16 if not index else 0
+    request[8], request[9] = address, 80
+    credit.u.mem_write(TX + 0x4000 + index * 128, struct.pack('<32I', *request))
+credit.run('PE1')
+assert credit.get(TXMB + WRITE * 4) == 2
+protected = bytes(credit.u.mem_read(PAGES + 128, 128))
+credit.run('PE0')
+if '--before' in sys.argv:
+    assert credit.get(TXMB + READ * 4) == 2
+    assert credit.get(BAR + REGISTERS[0]) == 0
+    assert bytes(credit.u.mem_read(PAGES + 128, 128)) != protected
+    print('Before: ARM/NI batch consumes both requests with only one TXBD free.')
+else:
+    assert credit.get(TXMB + READ * 4) == 1
+    assert credit.get(BAR + REGISTERS[0]) == 255
+    assert bytes(credit.u.mem_read(PAGES + 128, 128)) == protected
+    pending = credit.snapshot()
+    credit.run('PE0')
+    assert credit.snapshot() == pending
+    credit.put(TXMB + 3 * 4, 2); credit.run('PE1')
+    credit.put(RXMB + 3 * 4, 2); credit.run('PE0')
+    assert credit.get(RXMB + 4 * 4) == 1  # Full TXBD prevents pause ACK.
+    assert credit.snapshot() == pending
+    credit.put(BAR + REGISTERS[0], 1 << 16 | 255)
+    credit.run('PE0')
+    assert credit.get(TXMB + READ * 4) == 2
+    assert credit.get(BAR + REGISTERS[0]) == 1 << 16
+    assert credit.get(RXMB + 4 * 4) == 2
+    assert not [event for event in credit.run('PE0') if event[0] in ('descriptor', 'doorbell')]
+
 single = Machine(paired=False)
 single.queue()
 events = single.run('PE1')
@@ -278,5 +326,6 @@ print(json.dumps({
     'paused_PE0_drains_before_command_ACK': True,
     'no_peer_access_after_pause_ACK': True,
     'seven_subframe_NI_AMSDU_retains_all_payloads': True,
+    'shared_ARM_NI_TXBD_capacity_and_pause_boundary': '--before' not in sys.argv,
     'single_PE_direct_fallback': True,
 }, indent=2))
