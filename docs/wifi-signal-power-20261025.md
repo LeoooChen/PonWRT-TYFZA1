@@ -24,7 +24,7 @@ main 的 `rtl_ax_power_apply()` 强制开启 D208[21:20] 和 D21C[18]，
 
 修复恢复原厂可选表开关状态。表仍按原顺序加载、构造；Linux 国家域和用户
 功率上限继续作用在实际 ByRate 寄存器上。这消除一处可重现的软件功率损失，
-尚不能以离线结果证明所有用户的弱信号都已恢复。
+后面的 RAM 对比进一步确认了该机双频的实际信号改善。
 
 ## 0～30 dBm 的真实设置路径
 
@@ -56,7 +56,56 @@ CN 的 2.4 GHz 为 20 dBm，5150～5250 MHz 为 23 dBm，
 - Linux 6.18.55 ARM64 无线模块编译通过；保留原有
   `MODULE_DESCRIPTION` 的 MODPOST 提示。
 
-没有操作另一位 AI 正在使用的实机，也没有刷写、推送或发布固件。
-模块保存在本 worktree 的 `artifacts/wifi-signal-module/rtl_ax_ap_signal.ko`。
-下一步需在设备空闲后进行同机、同位置、同信道的前后 RSSI/TSSI 和距离对比；
-绝对 30 dBm 射频输出还需校准功率测量，不能从配置值或寄存器读回直接宣称。
+## 2026-10-25 RAM 实机对比
+
+用户释放实机后，先将 main 的新增提交合入修复分支。测试基线为
+`f8f05cc`，两模块都包含该 main 的 PS-Poll 和共享 TXBD 容量修复。
+实际编译源码只有 `monitor.h`、`power-tables.c`、`power-tables.h`
+三个文件不同，PE 固件字节完全一致。
+
+同一台光猫、Mac en0 和固定位置，CN，2G 信道 1/HE20、5G 信道
+149/HE80，按旧→新→旧→新换 RAM 模块。全过程 boot_id 为
+`a316c6d1-55d5-4bf2-94f7-dbae8672f53a`，没有重启或刷 Flash。
+
+| 设置均为 20 dBm | 第一轮旧→新 RSSI | 第二轮旧→新 RSSI | 改善 |
+| --- | --- | --- | --- |
+| 2.4 GHz | −28→−18 dBm | −28→−19 dBm | 9～10 dB |
+| 5 GHz | −35→−29 dBm | −37→−33 dBm | 4～6 dB |
+
+2G 数据帧的硬件 TXINFO 从 12 dBm 变为 19～20 dBm；5G 随调制速率
+从约 15.5～16 dBm 变为 17～20 dBm。旧模块回装后同时恢复较低功率和
+较弱信号。两次修复版 5G/30 dBm 的信标 RSSI 都为 −22 dBm。
+
+原厂 `halbb_get_txinfo_txpwr_dbm_C/XB` 读取 BB1804[26:18] 有符号
+9-bit 值，原厂 MP 调用者除以 4。测试通过 PCI `resource2` 只读映射
+采样该真实寄存器，不新增强制发射、模拟读数或替换芯片校准。
+
+25、26、27、28、29、30 dBm 六档均完成硬件表与当前值核验，OFDM6
+半 dBm 编码逐档为 50、52、54、56、58、60。TXINFO 的 HE MCS11
+报告也逐档上升，30 dBm 档通常为 23 dBm，符合保留的 7 dB 速率回退；
+该档还实际采到 TXINFO=30 dBm 的发送。各档 10 Mbps UDP 下行零丢包，
+双频各轮 12 秒下行也全部零丢包。两路 TSSI tracking 持续开启且未暂停，
+周期 RF 状态 result=0、LCK timeout=0。
+
+快速扫描会缓存前一档的 RSSI，不能据此声称每 1 dBm 都已完成空口标定。
+另在同一关联连接、每档先等待 10 秒，再读取 200 个无零值的关联 RSSI：
+30→20→30 dBm 的中位数为 −25→−33→−24 dBm。这个可逆变化证明
+功率档位实际影响射频信号。收流时 CoreWLAN 返回的无效零 RSSI，以及
+快速扫档的缓存 RSSI，均排除在改善结论之外。
+
+UCI 的 `wireless.radio0.txpower=30` 经正常 `wifi reload radio0`
+路径实际应用，`iw`、驱动读回及寄存器一致；实时 iwinfo RPC 的 5G 档位
+为 0～30，2G 为 0～20。2G 请求 30 后仍实际为 20 dBm，符合 CN 规则。
+没有修改监管域。30 dBm 的硬件目标、发送报告和空口响应已验证；绝对天线
+输出是否恰为 30 dBm 仍需外接功率计标定。本次也未移动 Mac 做 10 米距离测试。
+
+完整结构化记录及原始文件散列见
+`manifests/wifi-signal-power-live-20261025.json`；Mac 原始记录为
+`现场记录/20261025-wifi-signal/`。模块位于本 worktree 的
+`artifacts/signal-ab-{baseline,fixed}/rtl_ax_ap_signal.ko`，修复版 SHA256 为
+`e8ddd28894dc60fff274d49a608875f9eae14570a1358237db817ff8dce01b17`。
+
+收尾保留修复版 RAM 模块及双频测试 SSID：5G 信道149/HE80/30 dBm，
+2G 信道1/HE20/20 dBm。测试 iperf 服务已停止。UCI 测试设置仅暂存在
+`/tmp/.uci`，`/etc/config/wireless` 与开始时的文件逐字相同；没有刷写、
+推送或发布固件。
