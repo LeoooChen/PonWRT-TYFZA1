@@ -884,8 +884,7 @@ static void rtl_ax_tx_queues(struct tasklet_struct *tasklet)
 			struct ieee80211_tx_control control = { .sta = queue->sta };
 			struct sk_buff *skb;
 
-			while (!ieee80211_queue_stopped(hw, ac) &&
-			       (skb = ieee80211_tx_dequeue(hw, queue)))
+			while ((skb = ieee80211_tx_dequeue(hw, queue)))
 				rtl_ax_monitor_tx(hw, &control, skb);
 			ieee80211_return_txq(hw, queue, false);
 			if (ieee80211_queue_stopped(hw, ac))
