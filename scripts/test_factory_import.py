@@ -75,6 +75,36 @@ for family, speed, mode in (('1', '0', 'gpon'), ('1', '1', 'xgpon'),
     assert f"option mode '{mode}'" in (imported / 'var/run/tyfza1-factory/pon_factory').read_text()
 print('Factory protocol: all six OEM family/speed mappings imported')
 
+# Stock PON_MODE=0 selects Active Ethernet, independently of PON_SPEED.
+# It must not abort storage migration or invent a GPON/EPON protocol.
+for speed in ('0', '1', '2'):
+    values = dict(fields, PON_MODE='0', PON_SPEED=speed)
+    for suffix, config in (('epon', True), ('empty', '<Config/>')):
+        result, data, imported = invoke('factory.uc', f'active-ethernet-{speed}-{suffix}',
+                                        values, valid_bosa, config)
+        assert result.returncode == 0 and data == expected, result.stderr
+        assert 'Active Ethernet' in result.stderr
+        identity_text = (imported / 'var/run/tyfza1-factory/pon_factory').read_text()
+        assert 'option mode ' not in identity_text
+        assert "option serial_number 'TEST12345678'" in identity_text
+        assert (imported / 'tmp/tyfza1-factory/rtl9617c/bosa-calibration.bin').read_bytes() == valid_bosa
+        assert (imported / 'tmp/tyfza1-factory/lan_mac').read_text() == '00:11:22:33:44:ff\n'
+        if config is True:
+            assert "option onu_mac '02:11:22:33:44:56'" in identity_text
+for family, speed in (('3', '1'), ('1', '9'), ('2', '9')):
+    result, _, _ = invoke('factory.uc', f'unknown-mode-{family}-{speed}',
+                           dict(fields, PON_MODE=family, PON_SPEED=speed, PON_SUB_MODE='0'), valid_bosa)
+    assert result.returncode != 0 and 'Unsupported factory PON mode/speed' in result.stderr
+result, _, _ = invoke('factory.uc', 'active-ethernet-bad-bosa',
+                       dict(fields, PON_MODE='0'), b'bad')
+assert result.returncode != 0 and 'Factory optical:' in result.stderr
+for case, config in (('missing', False), ('empty', '')):
+    result, data, _ = invoke('factory.uc', 'active-ethernet-' + case + '-config',
+                              dict(fields, PON_MODE='0'), valid_bosa, config)
+    assert result.returncode != 0 and data == expected, result.stderr
+    assert 'Factory PON configuration:' in result.stderr
+print('Active Ethernet imports calibration and identity without selecting a PON mode; invalid inputs still fail')
+
 # The 2.5G factory XG-PON configuration has no EPON LLID MAC.
 for family, speed, mode in (('1', '0', 'gpon'), ('1', '1', 'xgpon'), ('1', '2', 'xgspon'), ('2', '1', 'epon-d10g')):
     values = dict(fields, PON_MODE=family, PON_SPEED=speed, PON_SUB_MODE='0')
@@ -177,6 +207,13 @@ for calibration, data in zip(calibrations, [valid_bosa] + expected):
     link = runtime / 'lib/firmware/realtek' / calibration
     assert link.is_symlink() and os.readlink(link) == '/tmp/tyfza1-factory/' + calibration
     assert (runtime / 'tmp/tyfza1-factory' / calibration).read_bytes() == data
+invoke('factory.uc', 'boot-active-ethernet', dict(fields, PON_MODE='0'), valid_bosa)
+result = boot(True, readonly=True)
+assert result.returncode == 0, (result.stdout, result.stderr)
+assert 'option mode ' not in (runtime / 'var/run/tyfza1-factory/pon_factory').read_text()
+for calibration, data in zip(calibrations, [valid_bosa] + expected):
+    assert (runtime / 'tmp/tyfza1-factory' / calibration).read_bytes() == data
+print('Boot service: Active Ethernet succeeds and retains both radios and optical calibration')
 result = boot(False)
 assert result.returncode == 5, (result.stdout, result.stderr)
 assert not (runtime / 'tmp/run/tyfza1-factory/pon_factory').exists()
