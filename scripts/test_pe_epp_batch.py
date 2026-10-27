@@ -84,7 +84,7 @@ while peers:
  if mask:peers.append(peer)
 assert get(MB+38*4)==0
 
-def lookup_probe(withdraw):
+def lookup_probe(withdraw, compact=True):
  u.mem_write(BASE,bytes(0x20000));u.mem_write(EPP,bytes(64))
  for i,v in [(25,EPP),(114,0x7060),(115,0x7160),(167,15)]:put(MB+i*4,v)
  put(NI+0x659c,1<<24);put(NI+0x7060,64)
@@ -94,8 +94,8 @@ def lookup_probe(withdraw):
  for n in range(8):
   at=PAYLOAD+n*2048;frame=mac[1]+bytes.fromhex('0200000000030800')+bytes([n])*50
   frames.append(frame);u.mem_write(at+64,struct.pack('>II',0x80000000,72<<15)+bytes(8)+frame)
-  u.mem_write(EPP+n*8,struct.pack('<II',at|0x50,1<<14|80))
- reads={'route':0,'address':0,'EPP_head':0,'EPP_base':0,'clock':0};revoked=False
+  u.mem_write(EPP+n*8,struct.pack('<II',at|0x50,(1<<14 if compact else 0)|80))
+ reads={'route':0,'address':0,'EPP_head':0,'EPP_base':0,'clock':0,'header1':0};revoked=False
  def observe(uc,access,at,size,value,data):
   nonlocal revoked
   at&=0x1fffffff
@@ -104,6 +104,7 @@ def lookup_probe(withdraw):
   if EPP<=at<EPP+64 and not (at-EPP)%8:reads['EPP_head']+=1
   if at==MB+25*4:reads['EPP_base']+=1
   if at==MB+195*4:reads['clock']+=1
+  if PAYLOAD<=at<PAYLOAD+8*2048 and (at-PAYLOAD)%2048==68:reads['header1']+=1
   # Admission can be withdrawn before ARM has paused the PE.
   if withdraw and at==EPP+32 and not revoked:
    put(BASE+0x11a08,0);revoked=True
@@ -119,8 +120,10 @@ def lookup_probe(withdraw):
  return reads
 
 repeated=lookup_probe(False);withdrawn=lookup_probe(True)
+normal=lookup_probe(False,False)
 if '--before' in sys.argv:assert repeated['address']>=24
 else:
  assert repeated['address']<=4
  assert repeated['EPP_head']==8 and repeated['EPP_base']==1 and repeated['clock']==1, repeated
+ assert repeated['header1']==normal['header1']==8, (repeated,normal)
 print(json.dumps(dict(batch_budget=16,wrapped_ring=True,mixed_peer_TID_FIFO=True,compact_EPP=True,retire_fence_after_queue_and_consumer=True,COS_priority=True,invalid_entry_not_consumed=True,active_TID_round_robin=True,stale_active_mask_reset=True,repeated_peer_DDR_reads=repeated,withdrawn_peer_DDR_reads=withdrawn,mid_batch_admission_withdrawal_preserved=True)))

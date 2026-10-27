@@ -99,7 +99,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		const u32 *entry = uncached(epp + consumer);
 		u32 descriptor = *(volatile u32 *)entry;
 		if ((descriptor & 0x50) != 0x50) break;
-		u32 buffer = descriptor & 0xffffff80, header, length = ni_length(entry, buffer, &header);
+		u32 buffer = descriptor & 0xffffff80, header, tid;
+		u32 length = ni_length(entry, buffer, &header, &tid);
 		u8 *ethernet = uncached(buffer + RTL_QM_HEADROOM + header);
 		u32 macid = 0;
 		if (length >= 14 && length <= RTL_QM_DATA_BYTES - header) {
@@ -126,7 +127,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 			mailbox[130] = length; mailbox[131] = header;
 			mailbox[132] = big_word(ethernet); mailbox[133] = big_word(ethernet + 4); mailbox[40]++;
 		}
-		u32 tid = macid ? big_word(uncached(buffer + RTL_QM_HEADROOM + 4)) & 7 : 0, queue = macid * 8 + tid;
+		if (!macid) tid = 0;
+		u32 queue = macid * 8 + tid;
 		/* Link BIDs locally; update the shared peer/TID counts once per group. */
 		if (grouped && queue != group) {
 			queued += grouped;

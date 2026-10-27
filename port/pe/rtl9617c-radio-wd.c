@@ -44,13 +44,17 @@ static u32 big_word(const u8 *data)
 }
 #endif
 
-static u32 ni_length(const u32 *entry, u32 buffer, u32 *head)
+static u32 ni_length(const u32 *entry, u32 buffer, u32 *head, u32 *tid)
 {
-	/* Stock compact EPP already supplies length; HEADER_A is not needed. */
+	/* Reuse Header1 for length and TID; compact EPP needs only its TID. */
 	u32 epp = entry[1];
-	if ((epp >> 14) & 63) { *head = 16; return (epp & 0x3fff) - 16; }
 	const u32 *data = uncached(buffer + RTL_QM_HEADROOM);
+	if ((epp >> 14) & 63) {
+		if (tid) *tid = (data[1] >> 24) & 7;
+		*head = 16; return (epp & 0x3fff) - 16;
+	}
 	u32 extra = data[0] & 128 ? 8 : 0, raw = data[1];
+	if (tid) *tid = (raw >> 24) & 7;
 	*head = 8 + extra;
 	/* Extract the network-order field without a full MIPS32 byte swap. */
 	return ((raw & 31) << 9 | ((raw >> 7) & 510) | ((raw >> 23) & 1)) - extra;
@@ -642,7 +646,7 @@ void pe_main(volatile u32 *control)
 				if (id == 128) continue;
 				const u32 *entry = uncached(mailbox[25] + mailbox[26]);
 				ni_buffer = entry[0] & 0xffffff80;
-				u32 header, length = ni_length(entry, ni_buffer, &header);
+				u32 header, length = ni_length(entry, ni_buffer, &header, 0);
 				/* One EPP owns one 2 KiB BID; never gather past that DMA allocation. */
 				if (retired || (entry[0] & 0x50) != 0x50 || length < 14 || length > RTL_QM_DATA_BYTES - header) {
 					owners[id * 2] = ni_buffer;
@@ -687,7 +691,7 @@ void pe_main(volatile u32 *control)
 				    ((ni_request[2] >> 16) & 63) == 26 && !(ni_request[3] & BIT(19))) {
 					const u32 *second = uncached(mailbox[25] + ((mailbox[26] + 8) & 1023));
 					u32 buffer2 = second[0] & 0xffffff80, head2;
-					u32 bytes2 = ni_length(second, buffer2, &head2);
+					u32 bytes2 = ni_length(second, buffer2, &head2, 0);
 					u32 pad = (0U - length - 8) & 3;
 					if ((second[0] & 0x50) == 0x50 && bytes2 >= 14 && bytes2 <= RTL_QM_DATA_BYTES - head2 &&
 					    length + bytes2 + 16 + pad <= (caps >> 18)) {
