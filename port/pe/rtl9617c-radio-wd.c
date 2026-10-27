@@ -469,10 +469,11 @@ static void __attribute__((section(".rxq"), noinline)) ni_recycle(volatile u32 *
 	/* ARM changes the EQ/CPU assignment only while this radio is paused. */
 	u32 eq = mailbox[117];
 	volatile u32 *push = ni + mailbox[116] / 4;
+	u32 recycled = 0, released = 0;
 
 	for (;;) {
 		u32 dropped = mailbox[47], consumer = mailbox[46];
-		if (!dropped && consumer == mailbox[45]) return;
+		if (!dropped && consumer == mailbox[45]) break;
 		sync();
 		u32 id = dropped ? dropped - 1 : *(u32 *)(memory + 0xc800 + consumer * 4);
 		u32 buffer = owners[id * 2], returned = 0;
@@ -487,9 +488,9 @@ static void __attribute__((section(".rxq"), noinline)) ni_recycle(volatile u32 *
 			buffer = next; returned++;
 			sync();
 		} while (buffer);
-		if (!returned) return;
+		if (!returned) break;
 		owners[id * 2] = buffer;
-		mailbox[29] += returned;
+		recycled += returned;
 #ifdef PE_UPLINK
 		u32 macid = (owners[id * 2 + 1] >> 8) & 127;
 		if (macid) {
@@ -498,12 +499,15 @@ static void __attribute__((section(".rxq"), noinline)) ni_recycle(volatile u32 *
 			ni_peer_event(mailbox, memory, macid);
 		}
 #endif
-		if (buffer) return;
+		if (buffer) break;
 		owners[id * 2 + 1] = 0;
-		mailbox[30]--;
+		released++;
 		if (dropped) mailbox[47] = 0;
 		else mailbox[46] = (consumer + 1) & 127;
 	}
+	/* PE1 alone selects/recycles WPs; flush totals before selection resumes. */
+	if (recycled) mailbox[29] += recycled;
+	if (released) mailbox[30] -= released;
 }
 
 void pe_main(volatile u32 *control)

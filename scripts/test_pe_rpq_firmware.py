@@ -32,6 +32,10 @@ for index, value in ((0, 0x50455744), (2, bar | 0xa0000000), (3, 1),
 put(ni + 0x6340, 0x8000007c)
 put(ni + 0x6380, 0x80000000)
 returns = []
+recycle_writes = []
+u.hook_add(UC_HOOK_MEM_WRITE,
+    lambda uc, access, at, size, value, data: recycle_writes.append((at, value)),
+    begin=mailbox + 116, end=mailbox + 123)
 stop_after = None
 def eq_return(uc, access, at, size, value, context):
     returns.append(value)
@@ -132,8 +136,10 @@ for batch in range(64):
         put(payload, 0xdeadbeef)
         stop_after = None
         put(ni + 0x6340, 0x8000007c)
+    recycle_writes.clear()
     run()
     assert get(mailbox + 120) == 0 and returns[old_returns:] == buffers
+    assert recycle_writes == [(mailbox + 116, len(returns)), (mailbox + 120, 0)]
     rpq_consumer = (rpq_consumer + 1) & 255
 
 # Full ARM handoff ring holds physical RPQ ownership until the host consumes.
@@ -218,6 +224,7 @@ for scan in (0, 1):
 assert get(mailbox + 172 * 4) == 0
 
 result = dict(linked_MIPS_C_firmware=True, NI_MPDU=1024, BID_returns=2048,
+              recycle_totals_written_once_per_batch=True,
               completion_totals_written_once_per_RPQ=True,
               ARM_reports_forwarded=256, EOSP_reports_forwarded=64,
               C2H_shift_and_MAC_info_preserved=True, RPQ_and_handoff_wrap=True,
