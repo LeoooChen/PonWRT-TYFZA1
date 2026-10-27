@@ -89,7 +89,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 	u32 fence = mailbox[171] & BIT(cos);
 	u32 target = *(u32 *)(memory + NI_EPP_RETIRE_TARGETS + cos * 4), crossed = 0;
 	sync();
-	for (; count < 8 && consumer != producer; count++) {
+	for (; count < 16 && consumer != producer; count++) {
 		/* One excess arrival lets selection evict a sleeping queue while
 		 * EPP keeps moving, rather than letting it retain the remaining EQ. */
 		if (count && mailbox[38] + grouped > NI_PS_TOTAL_LIMIT) break;

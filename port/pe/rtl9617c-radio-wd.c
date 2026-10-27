@@ -558,7 +558,11 @@ void pe_main(volatile u32 *control)
 		u32 ni_buffer = 0;
 #endif
 		u32 ni_frames = 1;
+#ifdef PE_UPLINK
+		u32 *ni_request;
+#else
 		u32 ni_request[32];
+#endif
 		#ifndef PE_UPLINK
 		volatile u32 *ni = (void *)0xb0000000;
 		volatile u32 *owners = (void *)(memory + 0xc400);
@@ -606,13 +610,20 @@ void pe_main(volatile u32 *control)
 		{
 #ifdef PE_UPLINK
 			if (((mailbox[RTL_AX_TX_PUBLISH_WRITE] + 1) & 15) == mailbox[RTL_AX_TX_PUBLISH_READ]) goto publish_tx;
+			/* PE1 is both producer and consumer: build NI requests directly
+			 * in the reserved slot while retaining the publish barrier. */
+			ni_request = (void *)(memory + RTL_AX_TX_BUILD_REQUESTS +
+				mailbox[RTL_AX_TX_PUBLISH_WRITE] * 128);
 #endif
 			ni_packet = 0; ni_frames = 1;
 			const u32 *request = (void *)(memory + REQUEST_BASE + consumer * 128);
 			if (consumer == mailbox[8]) {
 				if (!mailbox[24]) goto publish_tx;
 #ifdef PE_UPLINK
-				ni_ingest(mailbox, memory);
+				/* One 16-entry ingest can feed two 8-frame selections.
+				 * Refill early if the queue has run dry. */
+				if (!(burst & 1) || mailbox[38] < 8)
+					ni_ingest(mailbox, memory);
 				ni_frames = ni_select(mailbox, memory, ni_request);
 				if (!ni_frames) goto publish_tx;
 #else
@@ -701,7 +712,8 @@ void pe_main(volatile u32 *control)
 				u32 write = mailbox[RTL_AX_TX_PUBLISH_WRITE];
 				u32 words = 8 + (request[2] >> 24) * 2;
 				u32 *out = (void *)(memory + RTL_AX_TX_BUILD_REQUESTS + write * 128);
-				for (u32 i = 0; i < words; i++) out[i] = request[i];
+				if (request != out)
+					for (u32 i = 0; i < words; i++) out[i] = request[i];
 				sync();
 				mailbox[RTL_AX_TX_PUBLISH_WRITE] = (write + 1) & 15;
 			}

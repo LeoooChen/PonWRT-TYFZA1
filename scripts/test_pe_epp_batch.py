@@ -26,7 +26,7 @@ def call(name):
  u.emu_start(symbols[name],0x9fc01ff0,count=100000)
 
 # Wrapped EPP batch: consecutive groups, interleaved peers/TIDs and compact EPP.
-rows=[(1,0),(1,0),(2,3),(1,0),(2,3),(2,3),(1,7),(1,7),(2,0)]
+rows=[(1,0),(1,0),(2,3),(1,0),(2,3),(2,3),(1,7),(1,7),(2,0)] + [(1,0),(2,3)] * 4
 start=32752
 for n,(peer,tid) in enumerate(rows):
  at=PAYLOAD+n*2048
@@ -39,9 +39,9 @@ put(MB+171*4,1);put(BASE+0x19400,(start+3*8)&32767)
 writes=[]
 watch=u.hook_add(UC_HOOK_MEM_WRITE,lambda uc,access,at,size,value,data:writes.append((at,value)))
 call("ni_ingest")
-assert get(NI+0x7160)==48 and get(MB+171*4)==0
+assert get(NI+0x7160)==112 and get(MB+171*4)==0
 assert next(i for i,(at,v) in enumerate(writes) if at==NI+0x7160)<next(i for i,(at,v) in enumerate(writes) if at==MB+171*4)
-assert get(MB+38*4)==8 and get(BASE+0x11804)==5 and get(BASE+0x11808)==3
+assert get(MB+38*4)==16 and get(BASE+0x11804)==sum(peer==1 for peer,tid in rows[:16]) and get(BASE+0x11808)==sum(peer==2 for peer,tid in rows[:16])
 call("ni_ingest")
 for peer,tid in set(rows):
  queue=peer*8+tid
@@ -55,7 +55,7 @@ for peer,tid in set(rows):
  assert get(BASE+0x16000+queue*4)==expected[-1]
 # COS selection and an invalid next entry must not publish an unconsumed BID.
 put(NI+0x659c,0x81<<24);put(NI+0x707c,8)
-at=PAYLOAD+10*2048
+at=PAYLOAD+20*2048
 u.mem_write(at+64,struct.pack(">II",0x80000000,72<<15|2)+bytes(8)+mac[1]+bytes.fromhex("0200000000030800")+bytes(50))
 u.mem_write(EPP+(7<<15),struct.pack("<II",at|0x50,80))
 call("ni_ingest"); assert get(NI+0x717c)==8
@@ -118,4 +118,4 @@ def lookup_probe(withdraw):
 repeated=lookup_probe(False);withdrawn=lookup_probe(True)
 if '--before' in sys.argv:assert repeated['address']>=24
 else:assert repeated['address']<=4
-print(json.dumps(dict(batch_budget=8,wrapped_ring=True,mixed_peer_TID_FIFO=True,compact_EPP=True,retire_fence_after_queue_and_consumer=True,COS_priority=True,invalid_entry_not_consumed=True,active_TID_round_robin=True,stale_active_mask_reset=True,repeated_peer_DDR_reads=repeated,withdrawn_peer_DDR_reads=withdrawn,mid_batch_admission_withdrawal_preserved=True)))
+print(json.dumps(dict(batch_budget=16,wrapped_ring=True,mixed_peer_TID_FIFO=True,compact_EPP=True,retire_fence_after_queue_and_consumer=True,COS_priority=True,invalid_entry_not_consumed=True,active_TID_round_robin=True,stale_active_mask_reset=True,repeated_peer_DDR_reads=repeated,withdrawn_peer_DDR_reads=withdrawn,mid_batch_admission_withdrawal_preserved=True)))

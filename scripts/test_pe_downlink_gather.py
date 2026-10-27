@@ -159,7 +159,8 @@ if __name__ == '__main__':
         rows = [case([64 + (n + pad) % 4 for n in range(count)], 7935)
                 for count in range(2, 9) for pad in range(4)]
         rows += [case([1500] * 8, 7935), case([1500] * 8, 3839)]
-        rows += [case([1514] * 8, 7935, True), case([64, 65, 66, 67], 7935, True)]
+        rows += [case([1514] * 8, 7935, True), case([1514] * 32, 10896, True),
+                 case([64, 65, 66, 67], 7935, True)]
         rows += [case([1514] * 4, 7935, True, True)]
         rows += [case([1514] * 7, 10896, True, ni_header=8),
                  case([1514] * 7, 10896, True, compact_epp=True)]
