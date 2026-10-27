@@ -611,6 +611,12 @@ void pe_main(volatile u32 *control)
 		if (mailbox[24]) ni_ps_scan(mailbox, memory);
 #endif
 		if (mailbox[30]) ni_recycle(mailbox, memory);
+#ifdef PE_UPLINK
+		/* An idle non-offloaded radio still services reports and events,
+		 * but has no NI queues or selected requests to build/publish. */
+		if (!mailbox[24] && consumer == mailbox[8] &&
+		    mailbox[RTL_AX_TX_PUBLISH_READ] == mailbox[RTL_AX_TX_PUBLISH_WRITE]) continue;
+#endif
 		sync();
 		/* Stock phl_handle_pending_wd publishes a completed TXBD batch.
 		 * Bound each radio's turn so RPQ, events and the other radio still run. */

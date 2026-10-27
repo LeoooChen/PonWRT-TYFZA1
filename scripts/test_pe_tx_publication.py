@@ -184,6 +184,13 @@ def check_publish(machine, events, rings, sequence):
 for initial_sequence in (0, 15):
     m = Machine(initial_sequence)
     assert not [e for e in m.run('PE0') + m.run('PE1') if e[0] == 'doorbell']
+    idle_publications = []
+    hook = m.u.hook_add(UC_HOOK_CODE,
+        lambda uc, address, size, data: idle_publications.append(address),
+        begin=SYMBOLS['pe_tx_publish'], end=SYMBOLS['pe_tx_publish'])
+    m.run('PE1')
+    m.u.hook_del(hook)
+    assert not idle_publications
     m.queue()
     pending = m.snapshot()
     assert not [e for e in m.run('PE0') if e[0] in ('doorbell', 'descriptor', 'handoff')]
