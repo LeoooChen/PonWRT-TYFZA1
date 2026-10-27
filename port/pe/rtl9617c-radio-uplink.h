@@ -4,6 +4,8 @@
 #define RX_PEER_CONFIG 0x10000
 #define RX_ARM_DONE BIT(30)
 #define RX_NI_PENDING BIT(31)
+/* Transient return value only; never stored as payload ownership. */
+#define RX_NI_BUSY BIT(29)
 
 static u32 rx_buffer_dma(volatile u32 *mailbox, u32 id)
 {
@@ -163,7 +165,7 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	u32 write = mailbox[90], read = mailbox[91], released = mailbox[118];
 	if (read - released > 2) mailbox[118] = released = read - 2;
 	u32 available = (released - write - 1) & RTL_AX_NI_TX_MASK;
-	if (available <= 2) { mailbox[111]++; return 0; }
+	if (available <= 2) { mailbox[111]++; return RX_NI_BUSY; }
 	available -= 2;
 	if (available > 63) available = 63;
 	u32 body = length - header - 20, offset = 0, frames = 1;
@@ -178,7 +180,10 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 		frames = 0;
 		while (offset < body) {
 			if (body - offset < 14) return 0;
-			if (frames == available) { mailbox[111]++; return 0; }
+			if (frames == available) {
+				mailbox[111]++;
+				return available == 63 ? 0 : RX_NI_BUSY;
+			}
 			u8 *sub = rx_prefix(sub_prefix, data + offset, 9);
 			u32 bytes = (u32)sub[12] << 8 | sub[13];
 			if (bytes < 36 || bytes + 6 > 2048 || bytes > body - offset - 14 || (sub[0] & 1) || !rx_protocol(sub + 14)) return 0;
@@ -274,6 +279,7 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 		/* Original station[0x928 + 8*TID] keeps independent reorder states.
 		 * Commit another TID only through its complete NI/PN/SN validation. */
 		u32 unused = 0, owner = rx_uplink(mailbox, buffer, dma, &unused);
+		if (owner == RX_NI_BUSY) return 1;
 		if (!owner) return 0;
 		*status = owner;
 		mailbox[191]++;
@@ -404,6 +410,9 @@ static void __attribute__((section(".rxq"), noinline, minsize)) pe_rx_work(volat
 	u32 stateful = rx_needs_arm_barrier(buffer, wd);
 	u32 reorder = 0, owner = (item & RTL_AX_RX_WORK_OLD) && type == 8 ?
 		RX_ARM_DONE : rx_uplink(mailbox, buffer, buffer_dma, &reorder);
+	/* NI congestion retains the untouched head until the next completion
+	 * poll, rather than feeding the same congested path through ARM. */
+	if (owner == RX_NI_BUSY) return;
 	if (reorder && rx_reorder(mailbox, memory, read, reorder)) return;
 	*(u32 *)(memory + RX_STATUS + read * 4) = owner;
 	if (!owner) {

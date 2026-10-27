@@ -258,6 +258,25 @@ assert r.get(MB+94*4)==1 and r.get(MB+175*4)==1 and not r.get(MB+90*4)
 assert r.get(ST+1024)==1<<31|0x123 and r.get(ST+1028)==1
 r.inventory()
 
+# A different TID found by lookahead may also hit NI backpressure. Its
+# transient result must not be stored as a completed buffer owner.
+r=reorder_peer();r.put(ST+1024+32,1<<31|0x200);r.put(ST+1024+32+4,1)
+r.arrive(data_frame(0x124,3),True);r.capture()
+at,_=r.arrive(data_frame(0x200,2,tid=1),True);r.capture()
+r.arrive(data_frame(0x123,2),True);r.capture()
+raw=bytes(r.u.mem_read(at,90));status_reads=[]
+def consume_credit(uc,access,addr,size,value,data):
+ if addr&0x1fffffff==B+STATUS+4:
+  status_reads.append(addr);r.put(MB+90*4,1022)
+hook=r.u.hook_add(UC_HOOK_MEM_READ,consume_credit)
+r.process();r.u.hook_del(hook)
+assert status_reads and not r.get(B+STATUS+4) and not r.get(MB+94*4)
+assert bytes(r.u.mem_read(at,90))==raw and r.get(ST+1024+32)==1<<31|0x200
+r.put(VP+0x1c,1022);r.capture()
+for _ in range(6):r.process()
+assert r.get(MB+90*4)==1025 and r.get(MB+175*4)==3 and not r.get(MB+94*4)
+r.put(VP+0x1c,1);r.capture();r.inventory()
+
 # Full seven-subframe aggregates keep every UDP sequence across NI1023->0.
 r=reorder_peer();r.put(MB+90*4,1021);r.put(MB+91*4,1021);r.put(VP+0x1c,1021)
 expected_payloads={}
@@ -511,7 +530,12 @@ for shift,ht,invalid,available in ((0,0,False,63),(2,0,False,63),(0,4,False,63),
  raw=bytes(w.u.mem_read(at,36+shift+len(frame)));w.call();w.inventory()
  if invalid or available<2:
   assert bytes(w.u.mem_read(at,len(raw)))==raw and w.get(MB+90*4)==1023-available
-  assert w.get(ST+1024)==1<<31|0x123 and w.get(MB+94*4)==1
+  assert w.get(ST+1024)==1<<31|0x123 and w.get(MB+94*4)==int(invalid)
+  if not invalid:
+   assert not w.get(MB+175*4) and not w.get(B+STATUS)
+   w.put(VP+0x1c,1023-available);w.call()
+   assert w.get(MB+90*4)==1025-available and not w.get(MB+94*4)
+   assert w.get(ST+1024)==1<<31|0x124
  else:
   assert w.get(MB+90*4)==1025-available and w.get(ST+1024)==1<<31|0x124
   expected=dst+peer+bytes.fromhex('0800')+llc[8:]
