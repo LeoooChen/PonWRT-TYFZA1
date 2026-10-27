@@ -7,7 +7,7 @@ import sys
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / 'analysis/python-deps'))
 from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_MEM_INVALID
-from unicorn.mips_const import UC_MIPS_REG_PC
+from unicorn.mips_const import UC_MIPS_REG_PC, UC_MIPS_REG_A0, UC_MIPS_REG_SP
 
 code = Path(sys.argv[1]).read_bytes()
 words = list(struct.unpack('<%dI' % (len(code) // 4), code))
@@ -48,7 +48,10 @@ for encap in (True, False):
     put(mailbox+140*4,mailbox|0xa0000000)
     put(mailbox+142*4,1)
     put(mailbox+12,1)
-    pc=0xbfc00000
+    # The boot/CP3 path has its own test; start the actual C entry here.
+    u.reg_write(UC_MIPS_REG_A0, mailbox | 0xa0000000)
+    u.reg_write(UC_MIPS_REG_SP, (base + 0x1fff0) | 0xa0000000)
+    pc=0xbfc00400
     def run():
         global pc
         u.emu_start(pc,0xbfc10000,count=12000)
