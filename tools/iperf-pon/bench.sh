@@ -74,7 +74,7 @@ trap 'stop' EXIT HUP INT TERM
 printf '%s\n' "$output" > "$STATE/output"
 insmod "$BASE/iperf_pon_flow.ko" peer_ip="$peer_ip" peer_mac="$peer_mac" output="$output" udp="$udp"
 touch "$STATE/iperf_pon_flow"
-insmod "$BASE/iperf_pon_feed.ko" output="$output" udp="$udp"
+insmod "$BASE/iperf_pon_feed.ko" output="$output" udp="$udp" eq_backpressure="${EQ_BACKPRESSURE:-0}"
 touch "$STATE/iperf_pon_feed"
 if [ "$(cat /sys/module/iperf_pon_feed/parameters/init_error)" != 0 ]; then
 	echo "PON feed initialization failed; releasing DMA" >&2; exit 1

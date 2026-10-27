@@ -52,6 +52,7 @@ static struct net_device devices[3],*feed=&devices[0],*radio=&devices[1],*bridge
 static struct hrtimer timer;
 static u32 registers[256],producer;
 static void *vp=registers,*memory;
+static u32 eqregs[64];static void *eq_monitor;static unsigned output_eq;
 static u64 data_packets,control_packets,data_bytes,stops,wakes,doorbells;
 static u64 data_prepare_ns,payload_copy_ns,stream_packets[4];
 static u64 invalid_packets;
@@ -149,6 +150,24 @@ int main(void){
  udp_header.source=htons(1234);
  struct sk_buff other={.protocol=htons(ETH_P_IP),.len=sizeof(packet),.data=packet};
  assert(transmit(&other,feed)==NETDEV_TX_OK && !other.consumed);
+ // Optional EQ backpressure limits new arrivals and flushes deferred DMA.
+ tcp.syn=tcp.fin=tcp.rst=false;udp=false;ip.protocol=6;
+ for(unsigned eq=6;eq<=7;eq++){
+  output_eq=eq;eq_monitor=eqregs;writel(producer,vp+0x1c);
+  writel(130,eq_monitor+eq*16);
+  assert(room()==2);
+  u64 before=doorbells;
+  struct sk_buff data={.protocol=htons(ETH_P_IP),.len=sizeof(packet),.data=packet};
+  assert(transmit(&data,feed)==NETDEV_TX_OK && data.consumed && pending);
+  writel(128,eq_monitor+eq*16);
+  struct sk_buff blocked={.protocol=htons(ETH_P_IP),.len=sizeof(packet),.data=packet};
+  assert(transmit(&blocked,feed)==NETDEV_TX_BUSY && !blocked.consumed);
+  assert(!pending && doorbells==before+1 && readl(vp+0x18)==producer);
+  assert(tick(&timer)==HRTIMER_RESTART);
+  writel(producer,vp+0x1c);writel(129,eq_monitor+eq*16);
+  assert(tick(&timer)==HRTIMER_NORESTART && room()==1);
+ }
+ eq_monitor=NULL;assert(room()==61);
  free(memory);
 }
 '''

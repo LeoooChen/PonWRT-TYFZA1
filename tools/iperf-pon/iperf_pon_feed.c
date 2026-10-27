@@ -17,7 +17,7 @@
 #include <linux/sched/cputime.h>
 
 static struct net_device *feed,*lan,*radio,*bridge;
-static void __iomem *dma,*vp;
+static void __iomem *dma,*vp,*eq_monitor;
 static void *memory;
 static dma_addr_t address;
 static u32 saved[6],producer;
@@ -32,15 +32,27 @@ static u64 stream_packets[4];
 static u64 invalid_packets;
 static char *output = "ap5";
 static bool udp;
+static bool eq_backpressure;
+static unsigned int output_eq;
 static unsigned int server_pid;
 module_param(output,charp,0400);
 module_param(udp,bool,0400);
+module_param(eq_backpressure,bool,0400);
 module_param(server_pid,uint,0600);
 
 static unsigned int room(void)
 {
  /* Keep61 outstanding requests while using the factory1024-entry ring. */
- return 61-min(61U,(READ_ONCE(producer)-(readl(vp+0x1c)&1023))&1023);
+ unsigned int outstanding=(READ_ONCE(producer)-(readl(vp+0x1c)&1023))&1023;
+ unsigned int available=61-min(61U,outstanding);
+ if(eq_monitor){
+  /* Reserve space for the NI/FE pipeline and already submitted frames.
+   * This optional diagnostic throttles the source, not the PE datapath. */
+  unsigned int free=readl(eq_monitor+output_eq*16)&0x3fff;
+  unsigned int reserved=128+outstanding;
+  available=min(available,free>reserved?free-reserved:0);
+ }
+ return available;
 }
 
 static enum hrtimer_restart tick(struct hrtimer *unused)
@@ -88,6 +100,10 @@ static netdev_tx_t transmit(struct sk_buff *skb,struct net_device *dev)
  begin=ktime_get_ns();
  available=room();
  if(!available){
+  /* EQ pressure may stop a GSO batch before its final skb arrives. */
+  if(pending){
+   dma_wmb();writel(producer,vp+0x18);writel(1,vp+0x68);doorbells++;pending=false;
+  }
   stops++;netif_stop_queue(dev);
   hrtimer_start(&timer,ns_to_ktime(100000),HRTIMER_MODE_REL);
   return NETDEV_TX_BUSY;
@@ -137,9 +153,9 @@ static const struct net_device_ops operations={
 static int show_stats(char *buffer,const struct kernel_param *param)
 {
  return scnprintf(buffer,PAGE_SIZE,
-  "data_packets=%llu data_bytes=%llu control_packets=%llu invalid_packets=%llu stops=%llu wakes=%llu doorbells=%llu data_prepare_ns=%llu payload_copy_ns=%llu producer=%u consumer=%u room=%u stream_packets=%llu,%llu,%llu,%llu\n",
+  "data_packets=%llu data_bytes=%llu control_packets=%llu invalid_packets=%llu stops=%llu wakes=%llu doorbells=%llu data_prepare_ns=%llu payload_copy_ns=%llu producer=%u consumer=%u room=%u stream_packets=%llu,%llu,%llu,%llu eq_backpressure=%u\n",
   data_packets,data_bytes,control_packets,invalid_packets,stops,wakes,doorbells,data_prepare_ns,payload_copy_ns,producer,readl(vp+0x1c)&1023,room(),
-  stream_packets[0],stream_packets[1],stream_packets[2],stream_packets[3]);
+  stream_packets[0],stream_packets[1],stream_packets[2],stream_packets[3],eq_backpressure);
 }
 static const struct kernel_param_ops stats_ops={.get=show_stats};
 module_param_cb(stats,&stats_ops,NULL,0400);
@@ -190,6 +206,7 @@ static int release_set(const char *value,const struct kernel_param *param)
  if(feed){unregister_netdev(feed);free_netdev(feed);feed=NULL;}
  ret=restore();if(ret){mutex_unlock(&release_lock);return ret;}
  dma_free_coherent(lan->dev.parent,1024*(1536+8),memory,address);iounmap(dma);
+ if(eq_monitor){iounmap(eq_monitor);eq_monitor=NULL;}
  dev_put(bridge);dev_put(radio);dev_put(lan);active=false;
  mutex_unlock(&release_lock);module_put(THIS_MODULE);return 0;
 }
@@ -204,8 +221,15 @@ static int __init initialize(void)
  radio=dev_get_by_name(&init_net,output);
  bridge=dev_get_by_name(&init_net,"br-lan");
  if(!lan || !radio || !bridge){ret=-ENODEV;goto put;}
+ if(eq_backpressure){
+  if(!strcmp(output,"ap5"))output_eq=6;
+  else if(!strcmp(output,"ap2"))output_eq=7;
+  else {ret=-EINVAL;goto put;}
+  eq_monitor=ioremap(0x4f43066dcULL,16*16);
+  if(!eq_monitor){ret=-ENOMEM;goto put;}
+ }
  dma=ioremap(0x4f7001000ULL,0x1000);
- if(!dma){ret=-ENOMEM;goto put;}
+ if(!dma){ret=-ENOMEM;goto unmap_eq;}
  vp=dma+0x100+11*0xa0;
  if(readl(vp)){ret=-EBUSY;goto unmap;}
  memory=dma_alloc_coherent(lan->dev.parent,1024*(1536+8),&address,GFP_KERNEL);
@@ -236,6 +260,7 @@ static int __init initialize(void)
  return 0;
 retain:init_error=ret;return 0;
 unmap:iounmap(dma);
+unmap_eq:if(eq_monitor){iounmap(eq_monitor);eq_monitor=NULL;}
 put:if(bridge)dev_put(bridge);if(radio)dev_put(radio);if(lan)dev_put(lan);return ret;
 }
 

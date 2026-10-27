@@ -87,6 +87,31 @@ affects iperf statistics only; hardware counter snapshots also include warmup.
 The sink still sends UDP directly to RPS, including when `--gsro` is used,
 so this option currently improves server transmission, not sink aggregation.
 
+### Optional source backpressure
+
+`EQ_BACKPRESSURE=1` at `bench.sh start` gates the internal PON source on
+the selected radio's free EQ buffers (ap5/EQ6 or ap2/EQ7). It reserves 128
+buffers plus submitted NI descriptors, publishes a pending batch before
+stopping, and retries from the existing timer. It does not change FE/PE
+forwarding or hardware flow-control registers. Default `0` retains the raw
+saturation test; this option is not supported for LAN outputs.
+
+```sh
+EQ_BACKPRESSURE=1 IPERF3=/path/to/iperf3 IPERF_LIB_DIR=/path/to/libraries \
+    sh bench.sh start udp ap5 CLIENT_IP CLIENT_MAC
+iperf3 -c 198.18.255.1 -B CLIENT_IP --cport 55000 -p 5206 \
+    -u -l 1464 -P 1 -b 1720M -w 4M -O 15 -t 65 -R --gsro -J
+```
+
+Two 65-second runs received 1.720 Gbit/s with zero sequence loss and zero
+FE-to-PE packet gap or EQ6 no-buffer drops. The full warmup-inclusive
+feed/FE/PE/recycle counts matched (11,750,465 and 11,749,981 packets).
+The receiver summary can still exclude in-flight tail packets; compare the
+full hardware counters and both endpoints' byte counts. This measures
+sustained Wi-Fi forwarding with a flow-controlled diagnostic source, not
+lossless handling of arbitrary unthrottled ingress bursts. Always report
+`eq_backpressure` from `status` alongside a throughput result.
+
 Read the adapter counters on the device with `sh bench.sh status`. For a
 downlink result to be a hardware-path measurement, the feed data packet count
 and FE hit count must increase; for uplink, the sink's FE and received counts

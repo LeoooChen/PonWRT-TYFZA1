@@ -32,7 +32,7 @@ struct kernel_param {int unused;};
 struct device {void *parent;};struct net_device {struct device dev;};
 static struct net_device obj,*feed=&obj,*lan=&obj,*bridge=&obj,*radio=&obj;
 static u32 regs[1024],saved[6]={0,11,12,13,14};
-static void *dma=regs,*vp=regs+512,*memory=regs;static int address,release_lock;
+static void *dma=regs,*vp=regs+512,*memory=regs,*eq_monitor=regs+768;static int address,release_lock;
 static bool active=true;static int reset_failure,unregisters,frees,unmaps,puts,releases;
 static void mutex_lock(int *x){} static void mutex_unlock(int *x){}
 static int kstrtobool(const char *s,bool *v){if(!strcmp(s,"1")){*v=true;return 0;}return -1;}
@@ -51,7 +51,7 @@ int main(void){
  assert(readl(vp+8)==0 && readl(vp+12)==0);
  reset_failure=0;
  assert(!release_set("1",0) && !active);
- assert(unregisters==1 && frees==1 && unmaps==1 && puts==3 && releases==1);
+ assert(unregisters==1 && frees==1 && unmaps==2 && puts==3 && releases==1 && !eq_monitor);
  assert(readl(vp+8)==11 && readl(vp+12)==12);
  assert(!release_set("1",0) && releases==1);
  assert(release_set("0",0)==-EINVAL);
