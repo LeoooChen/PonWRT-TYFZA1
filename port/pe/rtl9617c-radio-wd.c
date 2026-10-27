@@ -375,9 +375,8 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	u32 *published = uncached(mailbox[12] + id * 128);
 	for (u32 i = 0; i < (used + 3) / 4; i++) published[i] = page_words[i];
 	word(txbd, BIT(30) | used); word(txbd + 4, mailbox[12] + id * 128);
-	sync();
+	/* The batch publisher orders all DMA writes before its doorbells. */
 	*next_producer = next;
-	sync();
 	if (mailbox[24]) mailbox[32 + ring] = next;
 	if (ni_packet) {
 		mailbox[28] += ni_frames; mailbox[56]++;
@@ -397,7 +396,7 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 	u32 mask = 0, producers[6], checked = 0, room[6];
 	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
 	if (read == write) return;
-	sync();
+	/* Requests are private to PE1, not an inter-engine handoff. */
 	while (read != write && budget--) {
 		const u32 *request = requests[read];
 		u32 next, ring = request[1] & 7;
@@ -715,7 +714,6 @@ void pe_main(volatile u32 *control)
 				u32 *out = tx_requests[slot][write];
 				if (request != out)
 					for (u32 i = 0; i < words; i++) out[i] = request[i];
-				sync();
 				mailbox[RTL_AX_TX_PUBLISH_WRITE] = (write + 1) & 15;
 			}
 #else

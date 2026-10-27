@@ -173,8 +173,9 @@ def check_publish(machine, events, rings, sequence):
     assert acks and acks[-1][4] == sequence, acks
     for doorbell in doorbells:
         at = events.index(doorbell)
-        assert any(event[0] == 'descriptor' for event in events[:at])
-        assert any(event[0] == 'sync' for event in events[:at])
+        last_descriptor = max(i for i, event in enumerate(events[:at])
+                              if event[0] == 'descriptor')
+        assert any(event[0] == 'sync' for event in events[last_descriptor + 1:at])
     assert events.index(acks[-1]) > events.index(doorbells[-1])
     for ring, register in enumerate(REGISTERS):
         assert machine.get(BAR + register) >> 16 == machine.hardware[ring]
