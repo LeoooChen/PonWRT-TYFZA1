@@ -160,7 +160,7 @@ resume:
 			/* A reorder timeout can finish after the last DMA frame callback. */
 			if ((rx->uplink_pending_tids[macid] & BIT(tid)) &&
 			    (get_unaligned_le32(rx->uplink_states + 0x10000 + macid * 4) & BIT(31)))
-				rtl_ax_rx_uplink_publish(rx, sta, key, macid, tid);
+				if (!rtl_ax_rx_uplink_publish(rx, sta, key, macid, tid)) retry = true;
 		}
 	}
 	rcu_read_unlock(); local_bh_enable();
