@@ -8,6 +8,7 @@
 #include <linux/rtnetlink.h>
 #include <linux/unaligned.h>
 #include <linux/inet.h>
+#include <linux/percpu.h>
 #include <net/flow_offload.h>
 #include <net/gro.h>
 #include "rtl9617c-ni.h"
@@ -39,12 +40,14 @@ static void sink_gro_flush(void)
  ni_napi->gro.rx_count=0;
  local_bh_enable();napi_enable(ni_napi);napi_schedule(ni_napi);
 }
-static u64 stack_skbs,gro_frames,gro_skbs;
+static DEFINE_PER_CPU(u64, stack_skbs);
+static DEFINE_PER_CPU(u64, gro_frames);
+static DEFINE_PER_CPU(u64, gro_skbs);
 static rx_handler_result_t count_stack(struct sk_buff **pskb)
 {
  unsigned int segments=skb_shinfo(*pskb)->gso_segs;
- stack_skbs++;
- if(segments>1){gro_skbs++;gro_frames+=segments;}
+ this_cpu_inc(stack_skbs);
+ if(segments>1){this_cpu_inc(gro_skbs);this_cpu_add(gro_frames,segments);}
  return RX_HANDLER_PASS;
 }
 struct sink_key {
@@ -115,9 +118,16 @@ static int command(enum flow_cls_command cmd)
 }
 static int stats(char *buf,const struct kernel_param *param)
 {
- int ret;rtnl_lock();ret=command(FLOW_CLS_STATS);rtnl_unlock();
+ u64 stack_total=0,gro_total=0,frames_total=0;
+ int cpu,ret;rtnl_lock();ret=command(FLOW_CLS_STATS);rtnl_unlock();
+ /* RPS delivers on multiple CPUs; aggregate their independent counters. */
+ for_each_possible_cpu(cpu){
+  stack_total+=READ_ONCE(per_cpu(stack_skbs,cpu));
+  gro_total+=READ_ONCE(per_cpu(gro_skbs,cpu));
+  frames_total+=READ_ONCE(per_cpu(gro_frames,cpu));
+ }
  return scnprintf(buf,PAGE_SIZE,"ret=%d FE_packets=%llu FE_bytes=%llu received=%llu received_bytes=%llu bad_pppoe=%llu id=%d stack_skbs=%llu gro_skbs=%llu gro_frames=%llu first=%*phN flow55000=%llu flow55001=%llu flow55002=%llu flow55003=%llu\n",
- ret,packets,bytes,received,received_bytes,bad_pppoe,identity,stack_skbs,gro_skbs,gro_frames,32,first,flow_packets[0],flow_packets[1],flow_packets[2],flow_packets[3]);
+ ret,packets,bytes,received,received_bytes,bad_pppoe,identity,stack_total,gro_total,frames_total,32,first,flow_packets[0],flow_packets[1],flow_packets[2],flow_packets[3]);
 }
 static const struct kernel_param_ops statops={.get=stats};
 module_param_cb(stats,&statops,NULL,0400);

@@ -13,13 +13,22 @@ fixture = r'''
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include <pthread.h>
 typedef unsigned char u8;
 #define ETH_HLEN 14
 #define ETH_P_PPP_SES 0x8864
 #define ETH_P_IP 0x800
 #define CHECKSUM_NONE 0
 #define min_t(t,a,b) ((a)<(b)?(a):(b))
-struct sk_buff {u8 *data;unsigned len;int ip_summed,protocol;void *dev;};
+struct sk_buff {u8 *data;unsigned len;int ip_summed,protocol;void *dev;unsigned gso_segs;};
+typedef uint64_t u64;
+typedef int rx_handler_result_t;
+#define RX_HANDLER_PASS 0
+#define DEFINE_PER_CPU(type,name) type name[2]
+static _Thread_local unsigned cpu;
+#define this_cpu_inc(name) ((name)[cpu]++)
+#define this_cpu_add(name,n) ((name)[cpu]+=(n))
+#define skb_shinfo(s) (s)
 struct rtl9617c_ni_wifi_endpoint {int unused;};
 static void *sink=(void *)1,*ni_napi=(void *)2;
 static unsigned received,received_bytes,bad_pppoe,plain,gro,freed;
@@ -37,6 +46,12 @@ static void napi_gro_receive(void *n,struct sk_buff *s){gro++;assert(n==ni_napi 
 static void dev_kfree_skb_any(struct sk_buff *s){freed++;}
 '''
 checks = r'''
+static void *count_worker(void *arg){
+ cpu=(unsigned)(uintptr_t)arg;
+ struct sk_buff skb={.gso_segs=cpu?7:1};struct sk_buff *p=&skb;
+ for(unsigned i=0;i<250000;i++)assert(count_stack(&p)==RX_HANDLER_PASS);
+ return 0;
+}
 int main(void){
  u8 raw[128],original[128];
  for(int protocol=0;protocol<2;protocol++){
@@ -58,12 +73,19 @@ int main(void){
  memcpy(raw,original,sizeof(raw));raw[16]=0;
  struct sk_buff s={raw,sizeof(raw),0,0,0};receive(0,&s,true);
  assert(freed==23 && bad_pppoe==23 && plain==1 && gro==1);
+ pthread_t workers[2];
+ for(unsigned i=0;i<2;i++)assert(!pthread_create(&workers[i],0,count_worker,(void *)(uintptr_t)i));
+ for(unsigned i=0;i<2;i++)assert(!pthread_join(workers[i],0));
+ assert(stack_skbs[0]+stack_skbs[1]==500000);
+ assert(gro_skbs[0]+gro_skbs[1]==250000);
+ assert(gro_frames[0]+gro_frames[1]==1750000);
 }
 '''
 with tempfile.TemporaryDirectory(prefix='iperf-sink-rx-') as directory:
     p = Path(directory)
-    (p / 'test.c').write_text(fixture + source[start:end] + checks)
-    subprocess.run(['cc', '-O1', '-g', '-fsanitize=address,undefined',
+    counters = source[source.index('static DEFINE_PER_CPU'):source.index('struct sink_key')]
+    (p / 'test.c').write_text(fixture + counters + source[start:end] + checks)
+    subprocess.run(['cc', '-O1', '-g', '-pthread', '-fsanitize=address,undefined',
                     str(p / 'test.c'), '-o', str(p / 'test')], check=True)
     subprocess.run([str(p / 'test')], check=True)
-print('iperf sink: PPPoE/payload preserved, UDP direct/RPS, TCP GRO, bad headers dropped')
+print('iperf sink: PPPoE/payload preserved, UDP direct/RPS, TCP GRO, bad headers dropped, concurrent per-CPU counts exact')
