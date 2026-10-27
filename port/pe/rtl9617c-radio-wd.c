@@ -130,6 +130,7 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 	u32 offset = 4 + (wd & BIT(31) ? 32 : 16) + ((wd >> 14) & 3) * 2 + ((wd >> 28) & 7) * 16;
 	if ((wd & BIT(23)) && type != 1) offset += 4;
 	u32 written = info & 0x3fff, forwarded = 0, completed = mailbox[75];
+	u32 reports = 0, failures = 0;
 	u32 completion_start = mailbox[45], completion_write = completion_start;
 	u32 old = rtl_ax_rx_epoch_old(&mailbox[RTL_AX_PE_DFS_EPOCH + 1], consumer);
 	u8 *out = uncached(mailbox[72] + producer * RTL_AX_RPQ_BUFFER_BYTES);
@@ -180,7 +181,7 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 			owners[member * 2 + 1] = details | BIT(31) | status;
 			*(u32 *)(memory + 0xc800 + completion_write * 4) = member;
 			completion_write = (completion_write + 1) & 127;
-			mailbox[75]++; mailbox[76] += !!(status || (report & BIT(31)));
+			reports++; failures += !!(status || (report & BIT(31)));
 		}
 		if (forwarded) {
 			word(out + 4, (wd & ~0x3fffU) | forwarded);
@@ -190,6 +191,9 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 		}
 	}
 	if (completion_write != completion_start) {
+		/* PE1 alone accounts NI completions; publish totals once per RPQ. */
+		mailbox[75] = completed + reports;
+		if (failures) mailbox[76] += failures;
 		/* Publish completed owners before the local recycler consumes them. */
 		sync();
 		mailbox[45] = completion_write;

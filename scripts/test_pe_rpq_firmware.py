@@ -60,6 +60,10 @@ put(mailbox + 292, 255)
 put(mailbox + 296, 255)
 rpq_consumer, tag = 255, 8190
 ni_reports, failed = 0, 0
+counter_writes = []
+u.hook_add(UC_HOOK_MEM_WRITE,
+    lambda uc, access, at, size, value, data: counter_writes.append((at, value)),
+    begin=mailbox + 300, end=mailbox + 307)
 
 
 def packet(data, kind=7, wd_extra=0, wrong_tag=False):
@@ -104,10 +108,12 @@ for batch in range(64):
     put(ni + 0x6340, 0)
     raw, offset = packet(struct.pack('<%dI' % len(reports), *reports))
     old_returns = len(returns)
+    counter_writes.clear()
     run()
     assert get(mailbox + 280) == (rpq_consumer + 1) & 255
     assert get(mailbox + 284) == tag
     assert get(mailbox + 300) == ni_reports and get(mailbox + 304) == failed
+    assert counter_writes == [(mailbox + 300, ni_reports), (mailbox + 304, failed)]
     assert get(mailbox + 120) == 16 and len(returns) == old_returns
     slot = (batch + 255) & 255
     out = bytes(u.mem_read(forward + slot * 1024, offset + len(expected) * 4))
@@ -212,6 +218,7 @@ for scan in (0, 1):
 assert get(mailbox + 172 * 4) == 0
 
 result = dict(linked_MIPS_C_firmware=True, NI_MPDU=1024, BID_returns=2048,
+              completion_totals_written_once_per_RPQ=True,
               ARM_reports_forwarded=256, EOSP_reports_forwarded=64,
               C2H_shift_and_MAC_info_preserved=True, RPQ_and_handoff_wrap=True,
               tag_8191_to_1=True, no_BID_return_without_EQ_credit=True,
