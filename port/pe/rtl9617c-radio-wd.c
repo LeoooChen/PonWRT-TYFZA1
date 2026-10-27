@@ -7,6 +7,7 @@ struct packed_word { u32 value; } __attribute__((packed));
 #define BIT(n) (1U << (n))
 #define REQUEST_BASE 0x4000
 #define MAILBOX_OFFSET 0x2000
+#define TX_BURST 8
 #include "rx-geometry.h"
 #include <linux/rtl9617c-qm-layout.h>
 
@@ -624,7 +625,7 @@ void pe_main(volatile u32 *control)
 		u32 publish = 0, producers[6];
 #endif
 #ifdef PE_UPLINK
-		for (u32 burst = 0; burst < 4; burst++)
+		for (u32 burst = 0; burst < TX_BURST; burst++)
 #endif
 		{
 #ifdef PE_UPLINK
@@ -747,7 +748,7 @@ void pe_main(volatile u32 *control)
 		}
 	publish_tx:
 #ifdef PE_UPLINK
-		pe_tx_publish(mailbox, 4, tx_requests[slot]);
+		pe_tx_publish(mailbox, TX_BURST, tx_requests[slot]);
 #else
 		if (publish) {
 			sync();

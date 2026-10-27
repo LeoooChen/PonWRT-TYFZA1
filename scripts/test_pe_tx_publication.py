@@ -209,6 +209,20 @@ for initial_sequence in (0, 15):
     assert not [e for e in m.run('PE0') if e[0] in ('doorbell', 'descriptor', 'handoff')]
     assert m.get(RXMB + 4 * 4) == 2
 
+# Both staging and publication use the same bounded eight-MPDU turn.
+burst = Machine()
+burst.put(TXMB + 9 * 4, 0)
+burst.put(TXMB + 8 * 4, 12)
+for index in range(12):
+    request = [0] * 32
+    request[0], request[1] = index, index << 8 | (index + 1) << 16
+    request[2], request[3] = 80 | 1 << 24, 4
+    request[8], request[9] = PAYLOAD + index * 256, 80
+    burst.u.mem_write(TX + 0x4000 + index * 128, struct.pack('<32I', *request))
+events = burst.run('PE1', 50000)
+assert [e[4] for e in events if e[0] == 'doorbell'] == [8, 12]
+assert burst.get(TXMB + 9 * 4) == 12
+
 # Hardware backpressure fills the local selected-MPDU queue. The sixteenth
 # request remains on ARM's ring until PE1 can publish, independent of PE0.
 full = Machine()
