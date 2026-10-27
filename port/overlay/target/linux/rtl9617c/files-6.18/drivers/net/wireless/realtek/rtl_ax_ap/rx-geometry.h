@@ -31,7 +31,6 @@
 /* PE1 retains selected MPDUs locally until TXBD credit permits publication. */
 #define RTL_AX_TX_PUBLISH_WRITE 193
 #define RTL_AX_TX_PUBLISH_READ 194
-#define RTL_AX_TX_BUILD_REQUESTS 0x1b000
 #define RTL_AX_NI_PS_NOW 195
 #define RTL_AX_NI_PS_TIMEOUT 0x19800
 #define RTL_AX_NI_PS_SCAN 196

@@ -88,14 +88,18 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 	u32 cached_peer = 0, cached_low = 0, cached_high = 0;
 	u32 fence = mailbox[171] & BIT(cos);
 	u32 target = *(u32 *)(memory + NI_EPP_RETIRE_TARGETS + cos * 4), crossed = 0;
+	/* PE1 owns queue counts; ARM changes EPP geometry only while paused. */
+	u32 queued = mailbox[38], epp = mailbox[25] + (cos << shift);
+	u32 now = mailbox[RTL_AX_NI_PS_NOW];
 	sync();
 	for (; count < 16 && consumer != producer; count++) {
 		/* One excess arrival lets selection evict a sleeping queue while
 		 * EPP keeps moving, rather than letting it retain the remaining EQ. */
-		if (count && mailbox[38] + grouped > NI_PS_TOTAL_LIMIT) break;
-		const u32 *entry = uncached(mailbox[25] + (cos << shift) + consumer);
-		if ((*(volatile u32 *)entry & 0x50) != 0x50) break;
-		u32 buffer = entry[0] & 0xffffff80, header, length = ni_length(entry, buffer, &header);
+		if (count && queued + grouped > NI_PS_TOTAL_LIMIT) break;
+		const u32 *entry = uncached(epp + consumer);
+		u32 descriptor = *(volatile u32 *)entry;
+		if ((descriptor & 0x50) != 0x50) break;
+		u32 buffer = descriptor & 0xffffff80, header, length = ni_length(entry, buffer, &header);
 		u8 *ethernet = uncached(buffer + RTL_QM_HEADROOM + header);
 		u32 macid = 0;
 		if (length >= 14 && length <= RTL_QM_DATA_BYTES - header) {
@@ -118,20 +122,21 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 			}
 		}
 		if (!macid) {
-			mailbox[128] = entry[0]; mailbox[129] = entry[1];
+			mailbox[128] = descriptor; mailbox[129] = entry[1];
 			mailbox[130] = length; mailbox[131] = header;
 			mailbox[132] = big_word(ethernet); mailbox[133] = big_word(ethernet + 4); mailbox[40]++;
 		}
 		u32 tid = macid ? big_word(uncached(buffer + RTL_QM_HEADROOM + 4)) & 7 : 0, queue = macid * 8 + tid;
 		/* Link BIDs locally; update the shared peer/TID counts once per group. */
 		if (grouped && queue != group) {
+			queued += grouped;
 			ni_enqueue(mailbox, memory, group, head, tail, grouped); grouped = 0;
 		}
 		/* Drop excess arrivals before linking them into a sleeping queue.
 		 * The reserved discard WP retains the BID if EQ credit is absent. */
 		if (macid && *(u32 *)(memory + 0xe800 + macid * 16) &&
 		    (*(u32 *)(memory + NI_PEER_QUEUED + macid * 4) + grouped >= NI_PS_PEER_LIMIT ||
-		     mailbox[38] + grouped >= NI_PS_TOTAL_LIMIT)) {
+		     queued + grouped >= NI_PS_TOTAL_LIMIT)) {
 			if (grouped) ni_enqueue(mailbox, memory, group, head, tail, grouped);
 			grouped = 0;
 			u32 id = ni_owner(mailbox, memory);
@@ -147,7 +152,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		/* The BID identifies the payload; headroom stores length/header,
 		 * enqueue time and the queue link. Word0 remains the selected MPDU chain. */
 		waiting[1] = length | header << 16;
-		waiting[2] = mailbox[RTL_AX_NI_PS_NOW]; waiting[3] = tid;
+		waiting[2] = now; waiting[3] = tid;
 		if (grouped) *(u32 *)uncached(tail + 12) = buffer | tid;
 		else { head = buffer; group = queue; }
 		tail = buffer; grouped++;
@@ -245,9 +250,9 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 #pragma clang loop unroll(disable)
 				for (u32 i = 0; i < 8; i++) request[i] = peer[i];
 				request[0] = 256 + id; request[1] = channels[tid];
-				request[2] = BIT(24) | (peer[2] & 0x3f0000) | (length + ((peer[2] >> 16) & 63) + 8 - 14);
-				request[4] = (peer[4] & ~0x1fffU) | tid | indicators[tid] << 12;
-				request[5] = (peer[5] & ~255U) | *(u32 *)(memory + NI_PEER_BA + (macid * 8 + tid) * 4);
+				request[2] = BIT(24) | (request[2] & 0x3f0000) | (length + ((request[2] >> 16) & 63) + 8 - 14);
+				request[4] = (request[4] & ~0x1fffU) | tid | indicators[tid] << 12;
+				request[5] = (request[5] & ~255U) | *(u32 *)(memory + NI_PEER_BA + (macid * 8 + tid) * 4);
 				request[8] = buffer + RTL_QM_HEADROOM + (metadata >> 16); request[9] = length;
 				u32 caps = *(u32 *)(memory + 0xe200 + macid * 4);
 				if (caps & BIT(17)) request[3] |= BIT(20);

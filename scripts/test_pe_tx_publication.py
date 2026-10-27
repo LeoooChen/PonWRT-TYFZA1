@@ -232,6 +232,41 @@ full.run('PE1', 50000)
 assert full.get(TXMB + 9 * 4) == 18
 assert full.get(TXMB + WRITE * 4) == full.get(TXMB + READ * 4) == 4
 
+# PE1 keeps each radio's selected requests in private DMEM. Block both
+# channels, poison the former DDR staging area, then drain independently.
+dual = Machine()
+dual.queue()
+second = TX + 0x20000
+second_mb = second + 0x2000
+dual.u.mem_map(second, 0x20000)
+dual.u.mem_map(PAGES + 0x10000, 0x10000)
+dual.u.mem_map(RING + 0x10000, 0x10000)
+for index, value in ((2, BAR | 0xa0000000), (3, 1), (8, 1),
+                     (11, RING + 0x10000), (12, PAGES + 0x10000)):
+    dual.put(second_mb + index * 4, value)
+request = [0] * 32
+request[0], request[2], request[3] = 10, 80 | 1 << 24, 4
+request[1] = 1 | 6 << 8 | 7 << 16
+request[8], request[9] = PAYLOAD + 8192, 80
+dual.u.mem_write(PAYLOAD + 8192, bytes([0x77]) * 80)
+dual.u.mem_write(second + 0x4000, struct.pack('<32I', *request))
+dual.put(TXMB + 141 * 4, second_mb | 0xa0000000)
+dual.put(TXMB + 143 * 4, 1)
+for ring, register in enumerate(REGISTERS):
+    dual.put(BAR + register, NEXT[ring] << 16)
+dual.run('PE1')
+assert dual.get(TXMB + WRITE * 4) == 6 and dual.get(TXMB + READ * 4) == 0
+assert dual.get(second_mb + WRITE * 4) == 1
+dual.u.mem_write(TX + BUILD, bytes([0xa5]) * 2048)
+dual.u.mem_write(second + BUILD, bytes([0x5a]) * 2048)
+for register in REGISTERS:
+    dual.put(BAR + register, 128 << 16)
+dual.run('PE1', 30000)
+dual.descriptors(range(6))
+assert dual.get(TXMB + READ * 4) == 6 and dual.get(second_mb + READ * 4) == 1
+page = bytes(dual.u.mem_read(PAGES + 0x10000 + 10 * 128, 128))
+assert struct.unpack_from('<HI', page, 64) == (0x8000 | 80, PAYLOAD + 8192)
+
 # Seven Ethernet buffers must remain one NI MPDU through local publication.
 ni = Machine()
 ni.put(TXMB + 24 * 4, 1)
@@ -333,4 +368,5 @@ print(json.dumps({
     'seven_subframe_NI_AMSDU_retains_all_payloads': True,
     'shared_ARM_NI_TXBD_capacity_and_pause_boundary': True,
     'downlink_runs_without_receive_context': True,
+    'two_radio_private_staging_survives_DDR_poison': True,
 }, indent=2))

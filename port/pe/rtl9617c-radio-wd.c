@@ -390,7 +390,7 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 }
 
 #ifdef PE_UPLINK
-static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u32 *mailbox, u32 budget)
+static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u32 *mailbox, u32 budget, u32 requests[16][32])
 {
 	static const u32 indices[] = { 0x1058, 0x105c, 0x1060, 0x1064, 0x1078, 0x107c };
 	u32 read = mailbox[RTL_AX_TX_PUBLISH_READ], write = mailbox[RTL_AX_TX_PUBLISH_WRITE];
@@ -399,7 +399,7 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 	if (read == write) return;
 	sync();
 	while (read != write && budget--) {
-		const u32 *request = (void *)(memory + RTL_AX_TX_BUILD_REQUESTS + read * 128);
+		const u32 *request = requests[read];
 		u32 next, ring = request[1] & 7;
 		/* Factory hal_get_avail_txbd checks the shared channel before a
 		 * batch: ARM and NI WP limits alone do not bound its TXBD use. */
@@ -505,6 +505,8 @@ void pe_main(volatile u32 *control)
 	u32 contexts[2] = {}, generations[2] = {}, commands[2] = {};
 #ifdef PE_UPLINK
 	u32 rx_poll[2] = {};
+	/* PE1 alone owns selected requests; both radios fit in private DMEM. */
+	u32 tx_requests[2][16][32];
 #endif
 #ifndef PE_UPLINK
 	static const u32 indices[] = { 0x1058, 0x105c, 0x1060, 0x1064, 0x1078, 0x107c };
@@ -543,7 +545,7 @@ void pe_main(volatile u32 *control)
 #ifdef PE_UPLINK
 		/* PE1 finishes its selected MPDUs before acknowledging a pause. */
 		if (!mailbox[80] && !(command & 1) && command != commands[slot]) {
-			pe_tx_publish(mailbox, 16);
+			pe_tx_publish(mailbox, 16, tx_requests[slot]);
 			if (mailbox[RTL_AX_TX_PUBLISH_READ] != mailbox[RTL_AX_TX_PUBLISH_WRITE]) continue;
 		}
 #endif
@@ -612,8 +614,7 @@ void pe_main(volatile u32 *control)
 			if (((mailbox[RTL_AX_TX_PUBLISH_WRITE] + 1) & 15) == mailbox[RTL_AX_TX_PUBLISH_READ]) goto publish_tx;
 			/* PE1 is both producer and consumer: build NI requests directly
 			 * in the reserved slot while retaining the publish barrier. */
-			ni_request = (void *)(memory + RTL_AX_TX_BUILD_REQUESTS +
-				mailbox[RTL_AX_TX_PUBLISH_WRITE] * 128);
+			ni_request = tx_requests[slot][mailbox[RTL_AX_TX_PUBLISH_WRITE]];
 #endif
 			ni_packet = 0; ni_frames = 1;
 			const u32 *request = (void *)(memory + REQUEST_BASE + consumer * 128);
@@ -711,7 +712,7 @@ void pe_main(volatile u32 *control)
 			{
 				u32 write = mailbox[RTL_AX_TX_PUBLISH_WRITE];
 				u32 words = 8 + (request[2] >> 24) * 2;
-				u32 *out = (void *)(memory + RTL_AX_TX_BUILD_REQUESTS + write * 128);
+				u32 *out = tx_requests[slot][write];
 				if (request != out)
 					for (u32 i = 0; i < words; i++) out[i] = request[i];
 				sync();
@@ -730,7 +731,7 @@ void pe_main(volatile u32 *control)
 		}
 	publish_tx:
 #ifdef PE_UPLINK
-		pe_tx_publish(mailbox, 4);
+		pe_tx_publish(mailbox, 4, tx_requests[slot]);
 #else
 		if (publish) {
 			sync();
