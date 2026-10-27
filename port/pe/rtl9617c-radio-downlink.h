@@ -47,6 +47,8 @@ static void __attribute__((noinline)) ni_enqueue(
 	volatile u32 *mailbox, u8 *memory, u32 queue, u32 head, u32 tail, u32 count)
 {
 	u32 macid = queue >> 3, *old_tail = (void *)(memory + NI_TID_TAIL + queue * 4);
+	/* Interior links were filled while gathering; terminate only the tail. */
+	*(u32 *)uncached(tail) = 0;
 	if (*old_tail) *(u32 *)uncached(*old_tail) = head;
 	else *(u32 *)(memory + NI_TID_HEAD + queue * 4) = head;
 	*old_tail = tail;
@@ -152,7 +154,6 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		}
 		u32 *waiting = uncached(buffer);
 		/* The queue link becomes the MPDU ownership chain when selected. */
-		waiting[0] = 0;
 		waiting[1] = length | header << 16;
 		waiting[2] = now;
 		if (grouped) *(u32 *)uncached(tail) = buffer;

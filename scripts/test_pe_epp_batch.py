@@ -91,8 +91,10 @@ def lookup_probe(withdraw, compact=True):
  for peer in (1,2):
   put(BASE+0x11a00+peer*4,1);u.mem_write(BASE+0xe400+peer*8,mac[peer-1])
  frames=[]
+ link_writes=[]
  for n in range(8):
   at=PAYLOAD+n*2048;frame=mac[1]+bytes.fromhex('0200000000030800')+bytes([n])*50
+  put(at,0xdeadbe80)
   frames.append(frame);u.mem_write(at+64,struct.pack('>II',0x80000000,72<<15)+bytes(8)+frame)
   u.mem_write(EPP+n*8,struct.pack('<II',at|0x50,(1<<14 if compact else 0)|80))
  reads={'route':0,'address':0,'EPP_head':0,'EPP_base':0,'clock':0,'header1':0};revoked=False
@@ -109,7 +111,13 @@ def lookup_probe(withdraw, compact=True):
   if withdraw and at==EPP+32 and not revoked:
    put(BASE+0x11a08,0);revoked=True
  hook=u.hook_add(UC_HOOK_MEM_READ,observe)
+ def link_write(uc,access,at,size,value,data):
+  at&=0x1fffffff
+  if PAYLOAD<=at<PAYLOAD+8*2048 and not (at-PAYLOAD)%2048:link_writes.append((at,value))
+ links=u.hook_add(UC_HOOK_MEM_WRITE,link_write) if not withdraw else None
  call('ni_ingest');u.hook_del(hook)
+ if links:
+  u.hook_del(links);assert len(link_writes)==8,link_writes
  assert get(NI+0x7160)==64 and get(MB+38*4)==8
  for queue,indices in ({16:range(4),0:range(4,8)} if withdraw else {16:range(8)}).items():
   node=get(BASE+0x15000+queue*4);actual=[]
