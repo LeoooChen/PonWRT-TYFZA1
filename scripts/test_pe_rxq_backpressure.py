@@ -184,6 +184,20 @@ assert r.get(MB+175*4)==2 and not r.get(MB+94*4) and r.get(MB+90*4)==2
 assert r.get(ST+1024)==1<<31|0x125 and r.get(ST+1028)==3
 r.put(VP+0x1c,2);r.capture();r.inventory()
 
+# A new hardware batch can arrive after capture exhausted its producer
+# snapshot. Refresh it before surrendering a recoverable SN gap to ARM.
+r=reorder_peer()
+r.arrive(data_frame(0x124,3),True);r.capture()
+assert r.get(MB+81*4)==r.get(MB+182*4)
+r.arrive(data_frame(0x123,2),True)
+r.process()
+assert not r.get(MB+94*4) and not r.get(MB+175*4)
+assert r.get(MB+182*4)==r.slot
+r.capture()
+for _ in range(4):r.process()
+assert r.get(MB+90*4)==2 and r.get(MB+175*4)==2 and not r.get(MB+94*4)
+r.put(VP+0x1c,2);r.capture();r.inventory()
+
 # A captured BA window can extend past one PE service budget. Keep checking
 # the rest on later turns instead of handing its head to ARM after16 slots.
 for initial,distance in ((0,17),(0,32),(0,63),(240,32)):

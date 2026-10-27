@@ -278,6 +278,14 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 	}
 	search[1] = scan;
 	if (scan != write) return 1;
+	/* Capture's cached producer may have been exhausted before another
+	 * DMA batch arrived. Check that batch before handing the gap to ARM. */
+	if (((write + 1) & 255) != mailbox[RTL_AX_RX_WORK_READ] &&
+	    write == mailbox[RTL_AX_RX_WORK_WRITE] &&
+	    mailbox[81] == mailbox[RTL_AX_RX_HW_PRODUCER]) {
+		volatile u32 *bar = (void *)mailbox[2];
+		mailbox[RTL_AX_RX_HW_PRODUCER] = (bar[0x1218 / 4] >> 16) & 1023;
+	}
 	/* Finish PE0's known capture batch before giving an SN gap to ARM.
 	 * A full work ring must fall back so ARM can release its head. */
 	return ((write + 1) & 255) != mailbox[RTL_AX_RX_WORK_READ] &&
