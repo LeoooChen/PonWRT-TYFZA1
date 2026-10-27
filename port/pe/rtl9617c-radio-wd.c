@@ -478,15 +478,17 @@ static void __attribute__((section(".rxq"), noinline)) ni_recycle(volatile u32 *
 		sync();
 		u32 id = dropped ? dropped - 1 : *(u32 *)(memory + 0xc800 + consumer * 4);
 		u32 buffer = owners[id * 2], returned = 0;
+		/* PE1 is the sole running producer for this EQ. Reserve the sampled
+		 * inactive BIDs locally; each accepted push consumes one credit. */
+		u32 credit = ni[(0x6328 + eq * 4) / 4] & 0x3fff;
 		/* A WP owns one completed MPDU. Account its BID chain together,
 		 * retaining the unreturned suffix when either hardware credit stalls. */
 		do {
-			if (!(ni[(0x6328 + eq * 4) / 4] & 0x3fff) ||
-			    !(push[0] & BIT(31))) break;
+			if (!credit || !(push[0] & BIT(31))) break;
 			sync();
 			u32 next = *(u32 *)uncached(buffer);
 			push[1] = buffer | eq;
-			buffer = next; returned++;
+			buffer = next; returned++; credit--;
 			sync();
 		} while (buffer);
 		if (!returned) break;
