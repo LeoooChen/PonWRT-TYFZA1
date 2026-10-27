@@ -82,7 +82,10 @@ static void receive(struct rtl9617c_ni_wifi_endpoint *ep,struct sk_buff *skb,boo
  skb->ip_summed=CHECKSUM_NONE;
  skb->dev=sink;skb->protocol=eth_type_trans(skb,sink);
  skb_unset_transport_header(skb);
- napi_gro_receive(ni_napi,skb);
+ /* iperf UDP sockets do not enable UDP_GRO. Let RPS move checksum and
+  * socket delivery off the NI poller instead of checking before RPS. */
+ if(udp)netif_receive_skb(skb);
+ else napi_gro_receive(ni_napi,skb);
 }
 static netdev_tx_t discard(struct sk_buff *skb,struct net_device *dev)
 {dev_kfree_skb_any(skb);return NETDEV_TX_OK;}

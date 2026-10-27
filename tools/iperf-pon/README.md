@@ -45,6 +45,9 @@ RPS. `IPERF_CPU_MASK=1` pins the server and its future worker threads to CPU0,
 which reduced receive-buffer overruns in an uplink test. It is optional:
 leave it unset when investigating downlink, where sender CPU demand differs.
 Neither setting changes the production interfaces or persists after stop.
+UDP delivery enters RPS directly because iperf3 does not request UDP GRO;
+TCP keeps the NI NAPI GRO context. This avoids UDP checksum work on the NI
+poller before RPS distributes the packets to the receiver CPUs.
 
 On the client, measure downlink (`-R`) and uplink, respectively:
 
