@@ -45,7 +45,7 @@ RPS. `IPERF_CPU_MASK=1` pins the server and its future worker threads to CPU0,
 which reduced receive-buffer overruns in an uplink test. It is optional:
 leave it unset when investigating downlink, where sender CPU demand differs.
 Neither setting changes the production interfaces or persists after stop.
-UDP delivery enters RPS directly because iperf3 does not request UDP GRO;
+UDP delivery enters RPS directly because default iperf3 sockets do not request UDP GRO;
 TCP keeps the NI NAPI GRO context. This avoids UDP checksum work on the NI
 poller before RPS distributes the packets to the receiver CPUs.
 
@@ -64,6 +64,28 @@ request 1.2 Gbit/s in total, but always compare the actual sender rate with
 the requested rate: a client can be CPU limited. The control connection uses
 the normal interface and is not counted as simulated PON traffic. When testing from a multihomed macOS host,
 scope `-B` to its Wi-Fi interface, for example `192.168.1.226%en0`.
+
+For high-rate downlink with an iperf3 server supporting UDP GSO, use one
+stream and `--gsro`. The client can lack GSO/GRO support: the Linux server
+still batches its sends, and the client receives ordinary UDP datagrams.
+The feed does not advertise GSO, so Linux segments packets before calling
+the adapter. Use 1464 payload bytes for the 1492-byte PPPoE IP MTU:
+
+```sh
+iperf3 -c 198.18.255.1 -B CLIENT_IP --cport 55000 -p 5206 \
+    -u -l 1464 -P 1 -b 1712M -w 4M -O 15 -t 65 -R --gsro -J
+```
+
+Leave `IPERF_CPU_MASK` unset for this downlink test. With server 3.22 and
+macOS client 3.21, GSO reduced server CPU from about 2.6 cores to 0.95 cores
+at 1.712 Gbit/s offered load. Feed counters showed about 44 packets per
+doorbell, no invalid packets, and actual reception of 1.709 Gbit/s with
+0.18% sequence loss. This is a lower-overhead load source, not a loss fix.
+`gso: 0` in the Mac client's JSON describes its local capability; verify
+server batching through the feed packet/doorbell deltas. Omitting 15 seconds
+affects iperf statistics only; hardware counter snapshots also include warmup.
+The sink still sends UDP directly to RPS, including when `--gsro` is used,
+so this option currently improves server transmission, not sink aggregation.
 
 Read the adapter counters on the device with `sh bench.sh status`. For a
 downlink result to be a hardware-path measurement, the feed data packet count
