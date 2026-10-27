@@ -14,7 +14,10 @@ static u32 rx_buffer_dma(volatile u32 *mailbox, u32 id)
 static void __attribute__((section(".entry"), noinline)) rx_idle_put(volatile u32 *mailbox, u8 *memory, u32 id)
 {
 	u32 count = mailbox[RTL_AX_RX_IDLE_COUNT];
-	*(volatile u32 *)uncached(rx_buffer_dma(mailbox, id)) = 0;
+	volatile u32 *tag = uncached(rx_buffer_dma(mailbox, id));
+	*tag = 0;
+	/* Complete the clear before a new PCIe DMA may write this tag. */
+	(void)*tag;
 	*(u32 *)(memory + RTL_AX_RX_IDLE_IDS + count * 4) = id;
 	mailbox[RTL_AX_RX_IDLE_COUNT] = count + 1;
 }
@@ -294,18 +297,23 @@ static void __attribute__((noinline)) rx_status_poll(volatile u32 *mailbox)
 	}
 }
 
-static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mailbox)
+static void __attribute__((noinline)) rx_completion_poll(volatile u32 *mailbox)
 {
-	if (!mailbox[80]) return;
 	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
-	u32 slot = mailbox[81];
-	if (slot == mailbox[RTL_AX_RX_HW_PRODUCER]) rx_status_poll(mailbox);
 	if (mailbox[88]) {
 		volatile u32 *vp = (void *)mailbox[88];
 		mailbox[91] += ((vp[0x1c / 4] - mailbox[91]) & RTL_AX_NI_TX_MASK);
 	}
 	rx_buffer_recycle(mailbox, memory);
 	rx_work_recycle(mailbox, memory);
+}
+
+static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mailbox)
+{
+	if (!mailbox[80]) return;
+	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
+	u32 slot = mailbox[81];
+	if (slot == mailbox[RTL_AX_RX_HW_PRODUCER]) rx_status_poll(mailbox);
 	u32 write = mailbox[RTL_AX_RX_WORK_WRITE];
 	u32 next = (write + 1) & 255;
 	if (next == mailbox[RTL_AX_RX_WORK_READ] ||
@@ -330,6 +338,8 @@ static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mail
 	map[slot] = replacement;
 	volatile u32 *descriptor = uncached(mailbox[134] + slot * 8);
 	descriptor[1] = rx_buffer_dma(mailbox, replacement);
+	/* Drain the DDR address update before returning this RXBD to PCIe. */
+	(void)descriptor[1];
 	sync();
 	mailbox[RTL_AX_RX_WORK_WRITE] = next;
 	mailbox[82] = tag;
@@ -349,6 +359,9 @@ static void __attribute__((noinline)) rx_notify_done(volatile u32 *mailbox)
 
 static void __attribute__((section(".rxq"), noinline)) pe_rxq_batch(volatile u32 *mailbox)
 {
+	/* Capture does not process work. One completion snapshot supplies the
+	 * entire batch; newer NI/ARM releases are collected on the next turn. */
+	rx_completion_poll(mailbox);
 #pragma clang loop unroll(disable)
 	for (u32 budget = 0; budget < 16; budget++) {
 		u32 before = mailbox[81];

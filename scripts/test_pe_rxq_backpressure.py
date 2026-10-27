@@ -36,6 +36,7 @@ class Machine:
   self.u.emu_start(symbols[name],0x9fc0fff0,count=100000)
   assert self.u.reg_read(UC_MIPS_REG_PC)==0x9fc0fff0
  def capture(self):
+  if 'rx_completion_poll' in symbols:self.execute('rx_completion_poll')
   self.execute('pe_rxq')
   if 'rx_notify_done' in symbols:self.execute('rx_notify_done')
  def process(self):self.execute('pe_rx_work')
@@ -112,6 +113,28 @@ assert reads.count(BAR+0x1218)==reads.count(BAR+0x10b4)==1
 assert b.get(MB+81*4)==b.slot
 b.isr=1<<19;b.put(BAR+0x10b4,b.isr);b.call();b.inventory()
 assert b.get(MB+178*4)==1 and reads.count(BAR+0x1218)==2
+
+# NI completion belongs to the batch, not each captured MPDU.
+batch=Machine();batch.put(MB+88*4,VP|0xa0000000);completion_reads=[]
+batch.u.hook_add(UC_HOOK_MEM_READ,
+ lambda uc,access,at,size,value,data:completion_reads.append(at),
+ begin=VP+0x1c,end=VP+0x1f)
+for _ in range(16):batch.arrive()
+batch.execute('pe_rxq_batch')
+assert batch.get(MB+174*4)==16 and len(completion_reads)==1
+batch.inventory()
+
+# A recycled tag and replacement RXBD must be read back before publication.
+ordered=Machine();recycled,_=ordered.arrive();ordered.call();ordered.arm_ack()
+events=[]
+def ordering_event(uc,access,at,size,value,data):
+ at &= 0x1fffffff
+ events.append(at)
+ordered.u.hook_add(UC_HOOK_MEM_READ,ordering_event)
+ordered.arrive();ordered.capture()
+assert recycled in events and BD+255*8+4 in events
+assert events.index(recycled) < events.index(BD+255*8+4)
+assert ordered.get(recycled)==0 and ordered.get(BAR+0x1218)&65535==0
 
 # A preceding ARM exception cannot be overtaken by a protected data frame.
 n=Machine();peer=bytes.fromhex('067afb78b287');ap=bytes.fromhex('02e04c076805');dst=bytes.fromhex('0050c2010200')
