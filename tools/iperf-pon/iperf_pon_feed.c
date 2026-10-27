@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Feed genuine Linux TCP packets into the verified PON-source NI VP11 ABI.
- * Control traffic uses the AP normally; reverse iperf3 data traverses ASIC.
+/* Feed genuine iperf3 TCP or UDP packets into the PON-source NI VP11 ABI.
+ * Control traffic uses the selected output normally; data traverses the FE.
  */
 #include <linux/module.h>
 #include <linux/netdevice.h>
@@ -12,6 +12,7 @@
 #include <linux/unaligned.h>
 #include <linux/ip.h>
 #include <linux/tcp.h>
+#include <linux/udp.h>
 #include <linux/pid.h>
 #include <linux/sched/cputime.h>
 
@@ -23,9 +24,17 @@ static u32 saved[6],producer;
 static struct hrtimer timer;
 static u64 data_packets,control_packets,data_bytes,stops,wakes,doorbells;
 static u64 data_prepare_ns,payload_copy_ns;
-static bool pending;
+static bool pending, active;
+static int init_error;
+static DEFINE_MUTEX(release_lock);
+module_param(init_error,int,0400);
 static u64 stream_packets[4];
+static u64 invalid_packets;
+static char *output = "ap5";
+static bool udp;
 static unsigned int server_pid;
+module_param(output,charp,0400);
+module_param(udp,bool,0400);
 module_param(server_pid,uint,0600);
 
 static unsigned int room(void)
@@ -49,12 +58,20 @@ static netdev_tx_t transmit(struct sk_buff *skb,struct net_device *dev)
  struct iphdr *ip=ip_hdr(skb);
  u8 *frame;
  unsigned int slot,length,available;
+ u16 source = 0, destination = 0;
+ bool bulk = false;
  u64 begin,copy_begin;
 
- if(skb->protocol!=htons(ETH_P_IP) || ip->protocol!=IPPROTO_TCP ||
-    tcp_hdr(skb)->source!=htons(5206) || ntohs(tcp_hdr(skb)->dest)<55000 ||
-    ntohs(tcp_hdr(skb)->dest)>55003 ||
-    tcp_hdr(skb)->syn || tcp_hdr(skb)->fin || tcp_hdr(skb)->rst){
+ if(skb->protocol==htons(ETH_P_IP)) {
+  if(!udp && ip->protocol==IPPROTO_TCP) {
+   source=ntohs(tcp_hdr(skb)->source);destination=ntohs(tcp_hdr(skb)->dest);
+   bulk=!tcp_hdr(skb)->syn && !tcp_hdr(skb)->fin && !tcp_hdr(skb)->rst;
+  } else if(udp && ip->protocol==IPPROTO_UDP) {
+   source=ntohs(udp_hdr(skb)->source);destination=ntohs(udp_hdr(skb)->dest);
+   bulk=true;
+  }
+ }
+ if(!bulk || source!=5206 || destination<55000 || destination>55003){
   /* A control skb can finish a batch whose data descriptors are deferred. */
   if(pending){
    dma_wmb();writel(producer,vp+0x18);writel(1,vp+0x68);doorbells++;pending=false;
@@ -63,6 +80,10 @@ static netdev_tx_t transmit(struct sk_buff *skb,struct net_device *dev)
   skb->dev=radio;skb_set_queue_mapping(skb,0);
   dev_queue_xmit(skb);
   return NETDEV_TX_OK;
+ }
+ if(skb->len<ETH_HLEN || skb->len>1506 || skb_is_gso(skb) ||
+    (skb->ip_summed==CHECKSUM_PARTIAL && skb_checksum_help(skb))) {
+  invalid_packets++;dev_kfree_skb_any(skb);return NETDEV_TX_OK;
  }
  begin=ktime_get_ns();
  available=room();
@@ -90,7 +111,7 @@ static netdev_tx_t transmit(struct sk_buff *skb,struct net_device *dev)
   dma_wmb();writel(producer,vp+0x18);writel(1,vp+0x68);doorbells++;pending=false;
  }
  data_packets++;data_bytes+=skb->len;
- stream_packets[ntohs(tcp_hdr(skb)->dest)-55000]++;
+ stream_packets[destination-55000]++;
  dev->stats.tx_packets++;dev->stats.tx_bytes+=skb->len;
  dev_consume_skb_any(skb);
  data_prepare_ns+=ktime_get_ns()-begin;
@@ -116,8 +137,8 @@ static const struct net_device_ops operations={
 static int show_stats(char *buffer,const struct kernel_param *param)
 {
  return scnprintf(buffer,PAGE_SIZE,
-  "data_packets=%llu data_bytes=%llu control_packets=%llu stops=%llu wakes=%llu doorbells=%llu data_prepare_ns=%llu payload_copy_ns=%llu producer=%u consumer=%u room=%u stream_packets=%llu,%llu,%llu,%llu\n",
-  data_packets,data_bytes,control_packets,stops,wakes,doorbells,data_prepare_ns,payload_copy_ns,producer,readl(vp+0x1c)&1023,room(),
+  "data_packets=%llu data_bytes=%llu control_packets=%llu invalid_packets=%llu stops=%llu wakes=%llu doorbells=%llu data_prepare_ns=%llu payload_copy_ns=%llu producer=%u consumer=%u room=%u stream_packets=%llu,%llu,%llu,%llu\n",
+  data_packets,data_bytes,control_packets,invalid_packets,stops,wakes,doorbells,data_prepare_ns,payload_copy_ns,producer,readl(vp+0x1c)&1023,room(),
   stream_packets[0],stream_packets[1],stream_packets[2],stream_packets[3]);
 }
 static const struct kernel_param_ops stats_ops={.get=show_stats};
@@ -148,22 +169,39 @@ static int server_cpu(char *buffer,const struct kernel_param *param)
 static const struct kernel_param_ops cpu_ops={.get=server_cpu};
 module_param_cb(server_cpu,&cpu_ops,NULL,0400);
 
-static void restore(void)
+/* Keep DMA memory and the module alive if the VP reset does not complete. */
+static int restore(void)
 {
- u32 status;
- writel(0,vp);writel(saved[1],vp+8);writel(saved[2],vp+12);
- writel(BIT(31)|BIT(30),vp+4);
- readl_poll_timeout(vp+4,status,!(status&BIT(31)),1,100000);
+ u32 status;int ret;
+ writel(0,vp);writel(BIT(31)|BIT(30),vp+4);
+ ret=readl_poll_timeout(vp+4,status,!(status&BIT(31)),1,100000);
+ if(ret)return ret;
+ writel(saved[1],vp+8);writel(saved[2],vp+12);
  writel(saved[3],vp+0x64);writel(saved[4],vp+0x78);
  writel((readl(dma+0x14)&~(3U<<22))|(saved[0]&(3U<<22)),dma+0x14);
+ return 0;
 }
+static int release_set(const char *value,const struct kernel_param *param)
+{
+ bool requested;int ret;
+ ret=kstrtobool(value,&requested);if(ret || !requested)return -EINVAL;
+ mutex_lock(&release_lock);
+ if(!active){mutex_unlock(&release_lock);return 0;}
+ if(feed){unregister_netdev(feed);free_netdev(feed);feed=NULL;}
+ ret=restore();if(ret){mutex_unlock(&release_lock);return ret;}
+ dma_free_coherent(lan->dev.parent,1024*(1536+8),memory,address);iounmap(dma);
+ dev_put(bridge);dev_put(radio);dev_put(lan);active=false;
+ mutex_unlock(&release_lock);module_put(THIS_MODULE);return 0;
+}
+static const struct kernel_param_ops release_ops={.set=release_set};
+module_param_cb(release,&release_ops,NULL,0200);
 
 static int __init initialize(void)
 {
  u32 status;
  int ret;
  lan=dev_get_by_name(&init_net,"lan4");
- radio=dev_get_by_name(&init_net,"ap5");
+ radio=dev_get_by_name(&init_net,output);
  bridge=dev_get_by_name(&init_net,"br-lan");
  if(!lan || !radio || !bridge){ret=-ENODEV;goto put;}
  dma=ioremap(0x4f7001000ULL,0x1000);
@@ -178,35 +216,34 @@ static int __init initialize(void)
  memset(memory,0,1024*(1536+8));
  for(unsigned int i=0;i<1024;i++)
   put_unaligned_le32(lower_32_bits(address)+8192+i*1536,memory+i*8);
+ active=true;__module_get(THIS_MODULE);
  writel(0,vp+0x64);writel(2,vp+8);writel(lower_32_bits(address)+10,vp+12);
  writel(BIT(31)|BIT(30),vp+4);
  ret=readl_poll_timeout(vp+4,status,!(status&BIT(31)),1,100000);
- if(ret)goto restore_dma;
+ if(ret)goto retain;
  writel((saved[0]&~(3U<<22))|(1U<<22),dma+0x14);
  writel(BIT(9),vp+0x78);
  feed=alloc_etherdev(0);
- if(!feed){ret=-ENOMEM;goto restore_dma;}
+ if(!feed){ret=-ENOMEM;goto retain;}
  strscpy(feed->name,"ponfeed%d",IFNAMSIZ);
  feed->netdev_ops=&operations;feed->mtu=1492;
  eth_hw_addr_set(feed,(const u8 *)"\x02\x55\x46\x50\x4f\x4e");
  hrtimer_setup(&timer,tick,CLOCK_MONOTONIC,HRTIMER_MODE_REL);
  ret=register_netdev(feed);
- if(ret)goto free_netdev;
- pr_info("PON_TCP_FEED %s VP11 source7 PPPoE SID4660 TCP5206->55000 ready, dma=%pad\n",feed->name,&address);
+ if(ret){free_netdev(feed);feed=NULL;goto retain;}
+ pr_info("IPERF_PON_FEED %s VP11 source7 PPPoE SID4660 protocol=%s output=%s dma=%pad\n",
+  feed->name,udp?"udp":"tcp",output,&address);
  return 0;
-free_netdev:free_netdev(feed);
-restore_dma:restore();dma_free_coherent(lan->dev.parent,1024*(1536+8),memory,address);
+retain:init_error=ret;return 0;
 unmap:iounmap(dma);
 put:if(bridge)dev_put(bridge);if(radio)dev_put(radio);if(lan)dev_put(lan);return ret;
 }
 
 static void __exit finish(void)
 {
- unregister_netdev(feed);free_netdev(feed);restore();
- dma_free_coherent(lan->dev.parent,1024*(1536+8),memory,address);iounmap(dma);
- dev_put(bridge);dev_put(radio);dev_put(lan);
+ WARN_ON(active);
 }
 module_init(initialize);
 module_exit(finish);
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Genuine TCP PPPoE NI ingress feed for TYFZA1 Wi-Fi diagnosis");
+MODULE_DESCRIPTION("iperf3 TCP/UDP PON ingress feed");

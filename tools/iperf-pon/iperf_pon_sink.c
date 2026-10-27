@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Diagnostic CPU sink for a real TCP test, including its bidirectional ACKs.
- * The FE forwards to CPU0;
- * this deliberately excludes physical PON egress and PPPoE encapsulation. */
+/* Diagnostic CPU sink for genuine iperf3 TCP or UDP packets.
+ * The FE encapsulates PPPoE and forwards to CPU0; the adapter removes the
+ * header for iperf3. This does not exercise the physical PON egress queue. */
 #include <linux/module.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/rtnetlink.h>
 #include <linux/unaligned.h>
+#include <linux/inet.h>
 #include <net/flow_offload.h>
 #include <net/gro.h>
 #include "rtl9617c-ni.h"
@@ -16,9 +17,16 @@ static struct flow_block block;
 static struct flow_block_cb *callback;
 static struct flow_rule *rule;
 static struct flow_dissector dissector;
-static int identity;
-static u64 packets,bytes,received,received_bytes;
+static int identity, init_error;
+module_param(init_error,int,0400);
+static u64 packets,bytes,received,received_bytes,bad_pppoe;
 static u8 first[32];
+static char *peer_ip, *peer_mac, *input = "ap5";
+static bool udp;
+module_param(peer_ip,charp,0400);
+module_param(peer_mac,charp,0400);
+module_param(input,charp,0400);
+module_param(udp,bool,0400);
 /* The callback runs within the NI owner's serialized poll. Use that same
  * GRO context across CPU migration, as ca_ni_rx_napi does for CPU delivery. */
 static struct napi_struct *ni_napi;
@@ -48,6 +56,8 @@ struct sink_key {
 };
 static struct sink_key key[4],mask;
 static u64 flow_packets[4];
+static bool flow_installed[4], attached;
+static DEFINE_MUTEX(release_lock);
 static const struct flow_dissector_key keys[]={
  {FLOW_DISSECTOR_KEY_CONTROL,offsetof(struct sink_key,control)},
  {FLOW_DISSECTOR_KEY_META,offsetof(struct sink_key,meta)},
@@ -59,6 +69,17 @@ static void receive(struct rtl9617c_ni_wifi_endpoint *ep,struct sk_buff *skb,boo
 {
  if(!received)memcpy(first,skb->data,min_t(unsigned int,sizeof(first),skb->len));
  received++;received_bytes+=skb->len;
+ /* FE emitted a PPPoE session frame. Validate and remove only its eight-byte
+  * header so the normal IP stack can deliver the payload to iperf3. */
+ if(skb->len<ETH_HLEN+8 || get_unaligned_be16(skb->data+12)!=ETH_P_PPP_SES ||
+    skb->data[14]!=0x11 || skb->data[15]!=0 ||
+    get_unaligned_be16(skb->data+16)!=0x1234 ||
+    get_unaligned_be16(skb->data+20)!=0x21){
+  bad_pppoe++;dev_kfree_skb_any(skb);return;
+ }
+ memmove(skb->data+8,skb->data,12);skb_pull(skb,8);
+ put_unaligned_be16(ETH_P_IP,skb->data+12);
+ skb->ip_summed=CHECKSUM_NONE;
  skb->dev=sink;skb->protocol=eth_type_trans(skb,sink);
  skb_unset_transport_header(skb);
  napi_gro_receive(ni_napi,skb);
@@ -71,9 +92,20 @@ static int command(enum flow_cls_command cmd)
  for(unsigned int i=0;i<ARRAY_SIZE(key);i++){
   struct flow_cls_offload cls={.command=cmd,.cookie=(unsigned long)&key[i],.rule=rule,
    .common={.protocol=cpu_to_be16(ETH_P_IP),.skip_sw=true}};
-  int ret;rule->match.key=&key[i];
+  int ret;
+  if(cmd!=FLOW_CLS_REPLACE && !flow_installed[i])continue;
+  rule->match.key=&key[i];
   ret=callback->cb(TC_SETUP_CLSFLOWER,&cls,callback->cb_priv);
-  if(ret)return ret;
+  if(ret){
+   if(cmd==FLOW_CLS_REPLACE) while(i--){
+    cls.command=FLOW_CLS_DESTROY;cls.cookie=(unsigned long)&key[i];
+    rule->match.key=&key[i];
+    if(!callback->cb(TC_SETUP_CLSFLOWER,&cls,callback->cb_priv))flow_installed[i]=false;
+   }
+   return ret;
+  }
+  if(cmd==FLOW_CLS_REPLACE)flow_installed[i]=true;
+  if(cmd==FLOW_CLS_DESTROY)flow_installed[i]=false;
   if(cmd==FLOW_CLS_STATS){packets+=cls.stats.pkts;bytes+=cls.stats.bytes;flow_packets[i]+=cls.stats.pkts;}
  }
  return 0;
@@ -81,8 +113,8 @@ static int command(enum flow_cls_command cmd)
 static int stats(char *buf,const struct kernel_param *param)
 {
  int ret;rtnl_lock();ret=command(FLOW_CLS_STATS);rtnl_unlock();
- return scnprintf(buf,PAGE_SIZE,"ret=%d FE_packets=%llu FE_bytes=%llu received=%llu received_bytes=%llu id=%d stack_skbs=%llu gro_skbs=%llu gro_frames=%llu first=%*phN flow55000=%llu flow55001=%llu flow55002=%llu flow55003=%llu\n",
- ret,packets,bytes,received,received_bytes,identity,stack_skbs,gro_skbs,gro_frames,32,first,flow_packets[0],flow_packets[1],flow_packets[2],flow_packets[3]);
+ return scnprintf(buf,PAGE_SIZE,"ret=%d FE_packets=%llu FE_bytes=%llu received=%llu received_bytes=%llu bad_pppoe=%llu id=%d stack_skbs=%llu gro_skbs=%llu gro_frames=%llu first=%*phN flow55000=%llu flow55001=%llu flow55002=%llu flow55003=%llu\n",
+ ret,packets,bytes,received,received_bytes,bad_pppoe,identity,stack_skbs,gro_skbs,gro_frames,32,first,flow_packets[0],flow_packets[1],flow_packets[2],flow_packets[3]);
 }
 static const struct kernel_param_ops statops={.get=stats};
 module_param_cb(stats,&statops,NULL,0400);
@@ -94,12 +126,35 @@ static void unbind(void)
  rtl9617c_ni_fe_setup_tc(lan->dev.parent,radio,TC_SETUP_FT,&off);
  list_del(&callback->list);flow_block_cb_free(callback);
 }
+
+/* A failed NI drain leaves the endpoint reachable by DMA/NAPI. Keep this
+ * module pinned until explicit release succeeds, so rmmod cannot free it. */
+static int release_set(const char *value,const struct kernel_param *param)
+{
+ bool requested;int ret;
+ ret=kstrtobool(value,&requested);if(ret || !requested)return -EINVAL;
+ mutex_lock(&release_lock);
+ if(!attached){mutex_unlock(&release_lock);return 0;}
+ rtnl_lock();
+ ret=command(FLOW_CLS_DESTROY);if(ret)goto unlock;
+ ret=rtl9617c_ni_wifi_detach(lan->dev.parent,identity);if(ret)goto unlock;
+ unbind();kfree(rule);rtl9617c_ni_fe_remove_port(lan->dev.parent,sink);
+ sink_gro_flush();netdev_rx_handler_unregister(sink);unregister_netdevice(sink);
+ rtnl_unlock();free_netdev(sink);dev_put(bridge);dev_put(lan);dev_put(radio);
+ attached=false;mutex_unlock(&release_lock);module_put(THIS_MODULE);return 0;
+unlock:
+ rtnl_unlock();mutex_unlock(&release_lock);return ret;
+}
+static const struct kernel_param_ops release_ops={.set=release_set};
+module_param_cb(release,&release_ops,NULL,0200);
 static int __init initialize(void)
 {
  struct flow_block_offload off={.command=FLOW_BLOCK_BIND,
   .binder_type=FLOW_BLOCK_BINDER_TYPE_CLSACT_INGRESS,.net=&init_net,.block=&block};
- u8 ethernet[12];int ret;
- radio=dev_get_by_name(&init_net,"ap5");lan=dev_get_by_name(&init_net,"lan4");
+ u8 ethernet[12],peer[ETH_ALEN];__be32 peer_address;int ret;
+ if(!peer_mac || !peer_ip || !mac_pton(peer_mac,peer) ||
+    !in4_pton(peer_ip,-1,(u8 *)&peer_address,-1,NULL))return -EINVAL;
+ radio=dev_get_by_name(&init_net,input);lan=dev_get_by_name(&init_net,"lan4");
  bridge=dev_get_by_name(&init_net,"br-lan");
  if(!radio||!lan||!bridge){ret=-ENODEV;goto put;}
  sink=alloc_etherdev(0);if(!sink){ret=-ENOMEM;goto put;}
@@ -112,37 +167,40 @@ static int __init initialize(void)
  ret=netdev_rx_handler_register(sink,count_stack,NULL);if(ret)goto unregister_sink;
  ret=dev_open(sink,NULL);if(ret)goto unregister_handler;
  netif_carrier_on(sink);
- identity=rtl9617c_ni_wifi_attach(lan->dev.parent,&endpoint);
- if(identity<0){ret=identity;goto unregister_handler;}
  INIT_LIST_HEAD(&block.cb_list);INIT_LIST_HEAD(&off.cb_list);
  ret=rtl9617c_ni_fe_setup_tc(lan->dev.parent,radio,TC_SETUP_FT,&off);
- if(ret)goto detach;
+ if(ret)goto unregister_handler;
  callback=list_first_entry(&off.cb_list,struct flow_block_cb,list);
  list_splice_tail_init(&off.cb_list,&block.cb_list);
- rule=flow_rule_alloc(4);if(!rule){ret=-ENOMEM;goto unbind;}
+ rule=flow_rule_alloc(5);if(!rule){ret=-ENOMEM;goto unbind;}
  skb_flow_dissector_init(&dissector,keys,ARRAY_SIZE(keys));
  rule->match.dissector=&dissector;rule->match.key=&key[0];rule->match.mask=&mask;
  key[0].meta.ingress_ifindex=radio->ifindex;key[0].basic.n_proto=htons(ETH_P_IP);
- key[0].basic.ip_proto=IPPROTO_TCP;mask.basic.n_proto=htons(65535);mask.basic.ip_proto=255;
- key[0].ipv4.src=htonl(0xc0a801d4);key[0].ipv4.dst=htonl(0xc612ff01);
+ key[0].basic.ip_proto=udp?IPPROTO_UDP:IPPROTO_TCP;mask.basic.n_proto=htons(65535);mask.basic.ip_proto=255;
+ key[0].ipv4.src=peer_address;key[0].ipv4.dst=htonl(0xc612ff01);
  mask.ipv4.src=mask.ipv4.dst=htonl(~0U);
  key[0].ports.src=htons(55000);key[0].ports.dst=htons(5206);
  mask.ports.src=mask.ports.dst=htons(65535);
- memcpy(ethernet,bridge->dev_addr,6);memcpy(ethernet+6,"\x06\x7a\xfb\x78\xb2\x87",6);
+ memcpy(ethernet,bridge->dev_addr,6);memcpy(ethernet+6,peer,6);
  for(unsigned int i=0;i<3;i++)rule->action.entries[i]=(struct flow_action_entry){
   .id=FLOW_ACTION_MANGLE,.mangle={.htype=FLOW_ACT_MANGLE_HDR_TYPE_ETH,.offset=i*4,
    .mask=0,.val=get_unaligned((u32 *)(ethernet+i*4))}};
- rule->action.entries[3]=(struct flow_action_entry){.id=FLOW_ACTION_REDIRECT,.dev=sink};
+ rule->action.entries[3]=(struct flow_action_entry){.id=FLOW_ACTION_PPPOE_PUSH,.pppoe={.sid=0x1234,.mtu=1492}};
+ rule->action.entries[4]=(struct flow_action_entry){.id=FLOW_ACTION_REDIRECT,.dev=sink};
  /* Match all four client ports accepted by the TCP feed and runners.
   * Download ACKs use the same NI GRO/RPS context as upload data. */
  for(unsigned int i=1;i<ARRAY_SIZE(key);i++){
   key[i]=key[0];key[i].ports.src=htons(55000+i);
  }
- ret=command(FLOW_CLS_REPLACE);if(ret)goto free_rule;
+ identity=rtl9617c_ni_wifi_attach(lan->dev.parent,&endpoint);
+ if(identity<0){ret=identity;goto free_rule;}
+ /* Keep the endpoint and any rules whose rollback failed alive for release. */
+ ret=command(FLOW_CLS_REPLACE);
+ init_error=ret;
+ attached=true;__module_get(THIS_MODULE);
  rtnl_unlock();return 0;
 free_rule:kfree(rule);
 unbind:unbind();
-detach:rtl9617c_ni_wifi_detach(lan->dev.parent,identity);rtl9617c_ni_fe_remove_port(lan->dev.parent,sink);sink_gro_flush();
 unregister_handler:netdev_rx_handler_unregister(sink);
 unregister_sink:unregister_netdevice(sink);
 unlock:rtnl_unlock();free_netdev(sink);
@@ -150,12 +208,8 @@ put:if(bridge)dev_put(bridge);if(lan)dev_put(lan);if(radio)dev_put(radio);return
 }
 static void __exit finish(void)
 {
- rtnl_lock();command(FLOW_CLS_DESTROY);unbind();kfree(rule);
- rtl9617c_ni_wifi_detach(lan->dev.parent,identity);rtl9617c_ni_fe_remove_port(lan->dev.parent,sink);
- sink_gro_flush();netdev_rx_handler_unregister(sink);
- unregister_netdevice(sink);rtnl_unlock();free_netdev(sink);
- dev_put(bridge);dev_put(lan);dev_put(radio);
+ WARN_ON(attached);
 }
 module_init(initialize);module_exit(finish);
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Single TCP uplink FE to CPU diagnostic sink");
+MODULE_DESCRIPTION("iperf3 TCP/UDP FE uplink diagnostic endpoint");
