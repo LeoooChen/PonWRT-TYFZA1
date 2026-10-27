@@ -99,7 +99,60 @@ bash scripts/build_live_radio.sh "$PWD/artifacts/pe-direction/module" rtl_ax_ap
 PE SHA256：0acae06a44ff98676a38a4126cc89ae6a883c5dfa62bfafac81411c06876bf46。
 模块 SHA256：af7f75b24d579d895ee6e4ec37ca1ba8b2b850738937f15399f7643c9137f613。
 
-未构建完整固件，未加载设备、刷写或实测吞吐。
-指令仿真不能证明真实总线时序、射频性能或双向负载表现。
-下一步实机验证包含双频分别及同时双向传输、关联/去关联、PS、重启和卸载，
-核对 RPQ/EQ 与 RX/NI 所有权及错误计数。
+## 2026-10-27 实机验证
+
+实现提交 d700e74 已热加载到本机 6.18.55 / 0.8.3-beta，并持久安装到
+/lib/modules/6.18.55/rtl_ax_ap.ko。未构建完整固件，未执行 sysupgrade。
+设备安装后的哈希与上述候选模块一致。
+
+测试前保存原模块与无线/网络/防火墙配置，卸载上次实验遗留的 dm_hold、
+ba_activity_probe 和测速模块。热加载后的 hostapd 残留旧 PHY 接口，
+重启 wpad 后恢复；没有修改无线配置或跳过 DFS CAC。
+测试脚本最初使用的 ip neigh replace 不受设备的 ip 命令支持，
+改用项目已有 SIOCSARP helper 设置测试接口邻居项；没有修改生产驱动。
+
+真实 Mac 无线客户端连接 5 GHz HE160 或 2.4 GHz HE20。
+下行通过本地 NI VP11 注入 PON source7 的 PPPoE 帧，执行 FE POP/DNAT
+后进入无线 PE；上行由无线 PE 进入 NI/FE，再送往本机测试接收端。
+这是实际 ASIC 与空口测试，不是 OLT 光链路或公网测速。
+测速模块从本 worktree 源码重建，测试副本仅替换目标无线接口及客户端地址。
+
+| 测试 | 时长 | 接收端吞吐 Mbps | TCP 重传 |
+| --- | ---: | ---: | ---: |
+| 5G 下行，目标 500M | 10 s | 499.9 | 0 |
+| 5G 上行，目标 500M | 10 s | 499.7 | 0 |
+| 5G 下行，目标 2000M | 30 s | 1186.2 | 53 |
+| 5G 上行，目标 2000M | 30 s | 1289.5 | 0 |
+| 5G 同时双向，各目标 1200M | 60 s | 上行 689.9 / 下行 784.7 | 上行 1463 / 下行 105 |
+| 2G 下行，目标 300M | 15 s | 117.9 | 41 |
+| 2G 上行，目标 300M | 15 s | 140.4 | 578 |
+| 冷启动后 5G 同时双向，各目标 1200M | 30 s | 上行 706.9 / 下行 786.6 | 双向 0 |
+
+每轮停止发流后，NI sent/recycled 相等、pending=0，上行 NI 提交/完成相等，
+PE Cause/EPC、RPQ failed、invalid_EPP 均为 0。
+5G 60 秒双向后累计 8,025,852 个下行包全部回收；冷启动复测后
+2,131,047 个下行包全部回收。没有新增 ARM exception error。
+2G 测试前的 rx_malformed=116、RDU=2，测试后数值不变；不将其表述为
+整次运行接收错误全零。高负载存在 TCP 重传，不声称所有场景零丢包。
+
+serial140 的 LCUS-1 以 9600 baud 控制 COM/NC，使用已有协议
+a0 01 01 a2 断电、间隔 2 秒后 a0 01 00 a1 上电；serial120 保存启动日志。
+boot ID 从 783f982c-a96b-4b6e-b32b-895f692a96a7 变为
+f5907fd0-3ccc-4f84-b28d-9c31a3cf3175。两频 AP 自动恢复，5G 完成
+60 秒 CAC 后启用，候选驱动自动加载。候选加载及冷启动后未发现
+内核 Oops/BUG/panic/Call trace。
+
+最终设备保留候选驱动与原无线配置，双频 AP 均 ENABLED；测速模块、
+测速进程及测试策略路由已撤除。旧模块保存在
+/root/pe-direction-backup/rtl_ax_ap.before.ko，SHA256 为
+946f3b1c8618b996dd4c61869b2f0e5db02d31a7de9dd2323b4aaaabb8773c0b。
+需要回退时复制该文件回 /lib/modules/6.18.55/rtl_ax_ap.ko 并重启。
+
+完整结果及证据哈希：manifests/wifi-pe-direction-split-live-20261027.json。
+原始日志、iperf JSON、前后计数和串口记录：artifacts/pe-direction/live/。
+电脑现场记录：/Users/leo/Documents/Codex项目/TYFZA1/现场记录/20261027-pe-direction/。
+配置备份及连接凭据仅留在本地私有记录，不纳入 Git。
+
+没有做 main 与本分支的同条件吞吐 A/B，不能据此声称性能提升。
+没有双客户端同时占用两频的负载验证，也没有长时间老化、完整 PS 或
+运营商 PON 链路验收；本次结论限于表中的实机测试与生命周期检查。

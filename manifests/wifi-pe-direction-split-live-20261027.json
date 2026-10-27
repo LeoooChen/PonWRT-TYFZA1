@@ -1,0 +1,274 @@
+{
+  "date": "2026-10-27",
+  "timezone": "Asia/Shanghai",
+  "implementation_commit": "d700e74",
+  "base_commit": "2b45901",
+  "branch": "codex/wifi-pe-direction-split",
+  "scope": "Physical Wi-Fi with local NI DMA PON-source injection, FE PPPoE POP/DNAT and uplink FE redirection; no optical OLT or Internet speed test.",
+  "hotload_passed": true,
+  "relay_cold_boot_passed": true,
+  "boot_id_before": "783f982c-a96b-4b6e-b32b-895f692a96a7",
+  "boot_id_after": "f5907fd0-3ccc-4f84-b28d-9c31a3cf3175",
+  "module_sha256": "af7f75b24d579d895ee6e4ec37ca1ba8b2b850738937f15399f7643c9137f613",
+  "installed_path": "/lib/modules/6.18.55/rtl_ax_ap.ko",
+  "device_backup": "/root/pe-direction-backup/rtl_ax_ap.before.ko",
+  "sysupgrade_performed": false,
+  "simultaneous_dual_band_traffic_tested": false,
+  "comparison_to_main_performance": "Not measured; results do not establish a speed improvement.",
+  "tests": [
+    {
+      "label": "hot-down-500",
+      "receiver_Mbps": 499.9189927952283,
+      "seconds": 10.005036,
+      "retransmits": 0,
+      "NI_sent": 436226,
+      "NI_recycled": 436226,
+      "NI_pending": 0,
+      "RPQ_failed": 0,
+      "invalid_EPP": 0,
+      "uplink_submitted": 43045,
+      "uplink_completed": 43045,
+      "PE_Cause": "00000000",
+      "PE_EPC": "00000000",
+      "rx_malformed": {
+        "before": 0,
+        "after": 0,
+        "delta": 0
+      },
+      "ARM_exception_errors": {
+        "before": 0,
+        "after": 0,
+        "delta": 0
+      }
+    },
+    {
+      "label": "hot-up-500",
+      "receiver_Mbps": 499.660798189368,
+      "seconds": 10.010206,
+      "retransmits": 0,
+      "NI_sent": 468703,
+      "NI_recycled": 468703,
+      "NI_pending": 0,
+      "RPQ_failed": 0,
+      "invalid_EPP": 0,
+      "uplink_submitted": 388656,
+      "uplink_completed": 388656,
+      "PE_Cause": "00000000",
+      "PE_EPC": "00000000",
+      "rx_malformed": {
+        "before": 0,
+        "after": 0,
+        "delta": 0
+      },
+      "ARM_exception_errors": {
+        "before": 0,
+        "after": 0,
+        "delta": 0
+      }
+    },
+    {
+      "label": "hot-down-load",
+      "receiver_Mbps": 1186.2016312300855,
+      "seconds": 30.008397,
+      "retransmits": 53,
+      "NI_sent": 3561025,
+      "NI_recycled": 3561025,
+      "NI_pending": 0,
+      "RPQ_failed": 0,
+      "invalid_EPP": 0,
+      "uplink_submitted": 766218,
+      "uplink_completed": 766218,
+      "PE_Cause": "00000000",
+      "PE_EPC": "00000000",
+      "rx_malformed": {
+        "before": 0,
+        "after": 0,
+        "delta": 0
+      },
+      "ARM_exception_errors": {
+        "before": 0,
+        "after": 0,
+        "delta": 0
+      }
+    },
+    {
+      "label": "hot-up-load",
+      "receiver_Mbps": 1289.5186636033095,
+      "seconds": 30.028928,
+      "retransmits": 0,
+      "NI_sent": 3753367,
+      "NI_recycled": 3753367,
+      "NI_pending": 0,
+      "RPQ_failed": 0,
+      "invalid_EPP": 0,
+      "uplink_submitted": 4055923,
+      "uplink_completed": 4055923,
+      "PE_Cause": "00000000",
+      "PE_EPC": "00000000",
+      "rx_malformed": {
+        "before": 0,
+        "after": 0,
+        "delta": 0
+      },
+      "ARM_exception_errors": {
+        "before": 0,
+        "after": 0,
+        "delta": 0
+      }
+    },
+    {
+      "label": "hot-bidir-load",
+      "receiver_Mbps": 689.940236338362,
+      "seconds": 60.020218,
+      "retransmits": 1463,
+      "NI_sent": 8025852,
+      "NI_recycled": 8025852,
+      "NI_pending": 0,
+      "RPQ_failed": 0,
+      "invalid_EPP": 0,
+      "uplink_submitted": 7824289,
+      "uplink_completed": 7824289,
+      "PE_Cause": "00000000",
+      "PE_EPC": "00000000",
+      "rx_malformed": {
+        "before": 0,
+        "after": 0,
+        "delta": 0
+      },
+      "ARM_exception_errors": {
+        "before": 0,
+        "after": 0,
+        "delta": 0
+      },
+      "reverse_receiver_Mbps": 784.6821056198096,
+      "reverse_retransmits": 105
+    },
+    {
+      "label": "hot-2g-down",
+      "receiver_Mbps": 117.92084776339992,
+      "seconds": 15.010037,
+      "retransmits": 41,
+      "NI_sent": 154286,
+      "NI_recycled": 154286,
+      "NI_pending": 0,
+      "RPQ_failed": 0,
+      "invalid_EPP": 0,
+      "uplink_submitted": 20934,
+      "uplink_completed": 20934,
+      "PE_Cause": "00000000",
+      "PE_EPC": "00000000",
+      "rx_malformed": {
+        "before": 116,
+        "after": 116,
+        "delta": 0
+      },
+      "ARM_exception_errors": {
+        "before": 0,
+        "after": 0,
+        "delta": 0
+      }
+    },
+    {
+      "label": "hot-2g-up",
+      "receiver_Mbps": 140.40513399030266,
+      "seconds": 15.07833,
+      "retransmits": 578,
+      "NI_sent": 207534,
+      "NI_recycled": 207534,
+      "NI_pending": 0,
+      "RPQ_failed": 0,
+      "invalid_EPP": 0,
+      "uplink_submitted": 167384,
+      "uplink_completed": 167384,
+      "PE_Cause": "00000000",
+      "PE_EPC": "00000000",
+      "rx_malformed": {
+        "before": 116,
+        "after": 116,
+        "delta": 0
+      },
+      "ARM_exception_errors": {
+        "before": 0,
+        "after": 0,
+        "delta": 0
+      }
+    },
+    {
+      "label": "cold-bidir-load",
+      "receiver_Mbps": 706.852935097657,
+      "seconds": 30.017468,
+      "retransmits": 0,
+      "NI_sent": 2131047,
+      "NI_recycled": 2131047,
+      "NI_pending": 0,
+      "RPQ_failed": 0,
+      "invalid_EPP": 0,
+      "uplink_submitted": 1938847,
+      "uplink_completed": 1938847,
+      "PE_Cause": "00000000",
+      "PE_EPC": "00000000",
+      "rx_malformed": {
+        "before": 0,
+        "after": 0,
+        "delta": 0
+      },
+      "ARM_exception_errors": {
+        "before": 0,
+        "after": 0,
+        "delta": 0
+      },
+      "reverse_receiver_Mbps": 786.5682006223842,
+      "reverse_retransmits": 0
+    }
+  ],
+  "evidence": {
+    "artifacts/pe-direction/live/hot-down-500.json": "e10d78edb2173bc9e52999a6270268a767f896bebcb77badd6ceec64b21b6e67",
+    "artifacts/pe-direction/live/hot-down-500.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "artifacts/pe-direction/live/hot-down-500-before.txt": "b0a274b49ce2c07455267ee88eb98f16fdd297fc96c560674011f412d293930f",
+    "artifacts/pe-direction/live/hot-down-500-after.txt": "59df2c262b7235597b07bba920fb569a3a452b89409406eb3cdee89fd63b26bc",
+    "artifacts/pe-direction/live/hot-up-500.json": "9fc629692de7ab057d275672de1d77a5738a9a352cffd0104616b50da0177114",
+    "artifacts/pe-direction/live/hot-up-500.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "artifacts/pe-direction/live/hot-up-500-before.txt": "8f0e652050241107dc95e6e754f1019fbd302b0bd78a6db1128be570c9f30f3f",
+    "artifacts/pe-direction/live/hot-up-500-after.txt": "0258c8d0f1c1ca8e5402271b71fed660b7de40cad5a8cffd8ad70c1db8c3105e",
+    "artifacts/pe-direction/live/hot-down-load.json": "66b229608013f22c486dbfd717e97819883610968278b08c44a73141b3e1d390",
+    "artifacts/pe-direction/live/hot-down-load.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "artifacts/pe-direction/live/hot-down-load-before.txt": "5c4ce69bedbe7bd5f9421cec1d383040a17beb792f1de55bb200feb3b013304f",
+    "artifacts/pe-direction/live/hot-down-load-after.txt": "34814f089a5b9ed58771d48ac5b17ab752604e0aad32318ed69d26fdfbf44b65",
+    "artifacts/pe-direction/live/hot-up-load.json": "5e23844cf1a46bf0b6720487d4dc9d3963aa93bbcf66cf9bc9d900c0ae2b4cf6",
+    "artifacts/pe-direction/live/hot-up-load.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "artifacts/pe-direction/live/hot-up-load-before.txt": "3a39a0141838dc913fa1b5b477c74521d31338146f8516287cfb01005fb682df",
+    "artifacts/pe-direction/live/hot-up-load-after.txt": "14b27f729d3d0fbb02078da20c940c783e2b4e43cb3c0d3761457a05397e0f22",
+    "artifacts/pe-direction/live/hot-bidir-load.json": "91ea55c603ebb60a4819d22610401e5d0d3a9792e6adc558edb7b25deb7fb87b",
+    "artifacts/pe-direction/live/hot-bidir-load.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "artifacts/pe-direction/live/hot-bidir-load-before.txt": "95ca08fd1e0447b64e38b480e87144f1b5eeecd3c55f2e6ece4dd7f3f349e436",
+    "artifacts/pe-direction/live/hot-bidir-load-after.txt": "5713ed40c5f90d3340a8bc602ab51fd42203ead5628225535c52126a6fc7c730",
+    "artifacts/pe-direction/live/hot-2g-down.json": "0a99ee5faf0cb46bc8606fc03b99b03225889210619b7774f400bfafa7d06b87",
+    "artifacts/pe-direction/live/hot-2g-down.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "artifacts/pe-direction/live/hot-2g-down-before.txt": "9d5ceb57a2c464b2893fd8ef2f29124838a73091b17f8fa1d637afd2effe834a",
+    "artifacts/pe-direction/live/hot-2g-down-after.txt": "d27acc28e47412ceb03a12310b45a555aab3b4913b7d6a0e1e9b9bf35fb3625f",
+    "artifacts/pe-direction/live/hot-2g-up.json": "f2124f47308c46b8a341a373ce8ff2df16c5c7c463fa6b190a45d0188c38eaec",
+    "artifacts/pe-direction/live/hot-2g-up.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "artifacts/pe-direction/live/hot-2g-up-before.txt": "5ebcc64fe0cc45ce332f30a6d68b067c6eeebe636e349cf450550c649a4bb34f",
+    "artifacts/pe-direction/live/hot-2g-up-after.txt": "7a212e79cec2b566af2e8db5704745feb5b7259b7123db55760c31267dbddd1b",
+    "artifacts/pe-direction/live/cold-bidir-load.json": "9b4849cf26806adb0b60e456017ce116cece673b9b2b46457d0765d34798eb1e",
+    "artifacts/pe-direction/live/cold-bidir-load.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "artifacts/pe-direction/live/cold-bidir-load-before.txt": "6b271a21bca3e07e70c9c6cc609a532a51cb89bcfa2d6e769eb8c26d22cc1faa",
+    "artifacts/pe-direction/live/cold-bidir-load-after.txt": "634f21a3e328a1b20952074dcbea10b2184a3731e9d74cf8442476ca02c8413a",
+    "artifacts/pe-direction/live/cold-boot-uart.bin": "18fa3dd76fcfb39e3aef2acbc674fc7c0c73f058518af81f88a0f5fa4550a1e1",
+    "artifacts/pe-direction/live/cold-identity.txt": "5dcd467af6c7640edafaf02aeca208f009c242808637a94923837f13d922d74e",
+    "artifacts/pe-direction/live/cold-ready.txt": "2ce034e6b9a768bd79fd811402dc008c77343e18092d3dbb11932ad0d1596d9d",
+    "artifacts/pe-direction/live/installed-candidate.txt": "e91f453a85e5dd6d5191b62b548d51d2bf184f0fa2b5d337699d49fc43cb9893",
+    "artifacts/pe-direction/live/final-state.txt": "5f936e0a4f1b3e471b804d63b88cf88745f0b72a466d945b6e695f140940b87e",
+    "artifacts/pe-direction/live/final-dmesg.txt": "7eb54e206d8731f05a160888001b20f45b85ba39dcbefcf5245d6c588ca5e3ee",
+    "artifacts/pe-direction/live/hotload.txt": "fe012bd0997e6b4859fbaefe0c836ccc0c2d17e65b70d4796ef663af7b225e6f",
+    "artifacts/pe-direction/live/hostapd-reset.txt": "256066b8019c83c9f55c2d412f561d924da17af5b361a243bf64cff2d35ea93b",
+    "artifacts/pe-direction/live/traffic-setup.sh": "21896265f12c4f8fd517cc76084f5f6148ff2b272a2992c0476619c3fb5fe15a",
+    "artifacts/pe-direction/live/traffic-2g-setup.sh": "5886cb474a1fdc5fecf673f8abc361586a5a24de29dec9410ff75a3af43998d9",
+    "artifacts/pe-direction/live/traffic-stop.sh": "ee09f40dc70ecdb583d38a8d6093f9aa6efccd63a7d5a6fb616a7b0a17632130",
+    "artifacts/pe-direction/live/run_tcp.py": "62e662762f55b0610c0dddb6f8a71b3937b3325e4e89fab8342e4df7effb7fa2",
+    "artifacts/pe-direction/live/cold_boot.py": "82d11d427adc98d7fc5203665fb3cb8566a0e3ab049adeab16cdd29103c50a5a",
+    "artifacts/pe-direction/live/traffic-setup.txt": "564897195f7003dffaaa58ec48c85b0cf3c7e15cafed998b6ec5a72d14b11b27",
+    "artifacts/pe-direction/live/traffic-2g-setup.txt": "7e27168e366b7a23979c02f3bd7175c8b857b37c7f136222b3aff1ee7674b6cc",
+    "artifacts/pe-direction/live/cold-traffic-setup.txt": "5d1fd35a187ac419c6352bf199c11d892d3a0fd6086aff6704fefe5fab54a113"
+  }
+}
