@@ -345,7 +345,15 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	word(page, dw0); word(page + 4, dw1);
 	word(page + 8, (flags & 0x7f000000) | (ring < 4 ? ring : ring == 4 ? 0x12 : 0x11) << 17 |
 		((flags & BIT(12)) ? BIT(23) : 0) | (packet & 0x3fff));
-	word(page + 12, sequence | (aggregate ? BIT(12) : 0));
+	/* C can stop completing mixed-size A-MPDUs at a large-to-small
+	 * boundary. Keep A-MSDU and break only the enclosing A-MPDU here.
+	 * A peer/TID change must not hide a decrease in an interleaved queue. */
+	u32 context = (flags & 0x7f000000) | (flags & BIT(12)) << 11;
+	u32 previous = mailbox[RTL_AX_TX_LAST_PACKET + ring];
+	u32 bytes = packet & 0x3fff;
+	mailbox[RTL_AX_TX_LAST_PACKET + ring] = context | bytes;
+	word(page + 12, sequence | (aggregate ? BIT(12) : 0) |
+		(bytes < (previous & 0x3fff) || (previous & ~0x3fffU) != context ? BIT(13) : 0));
 	word(page + 16, dw4); word(page + 20, dw5);
 	word(page + 28, (rate & BIT(20) ? 0 : BIT(31)) | ((rate >> 16) & 3) << 28 |
 		((rate >> 12) & 7) << 25 | (rate & 0x1ff) << 16);

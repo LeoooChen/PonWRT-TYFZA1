@@ -35,6 +35,8 @@
 #define RTL_AX_NI_PS_NOW 195
 #define RTL_AX_NI_PS_TIMEOUT 0x19800
 #define RTL_AX_NI_PS_SCAN 196
+/* Six PE1-owned words, one per published TX DMA channel. */
+#define RTL_AX_TX_LAST_PACKET 197
 #define RTL_AX_NI_PS_CANCEL 0x19a00
 #define RTL_AX_NI_PS_VERSION 0x19e00
 #define RTL_AX_NI_PS_WP_GENERATION 0x1b800
