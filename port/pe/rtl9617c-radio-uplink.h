@@ -247,6 +247,10 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 	u32 *search = (void *)(memory + RTL_AX_RX_REORDER_SEARCH);
 	/* Reuse a scan only for the same capture head and BA expectation. */
 	u32 key = BIT(23) | (read << 24) | order;
+	volatile u32 *bar = (void *)mailbox[2];
+	/* Port0 TSF runs in microseconds. Allow a short RX retry to complete
+	 * before transferring the entire TID to mac80211's reorder queue. */
+	if (search[0] != key) search[2] = bar[0xc438 / 4];
 	u32 scan = search[0] == key ? search[1] : (read + 1) & 255;
 	search[0] = key;
 	sync();
@@ -283,14 +287,14 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 	if (((write + 1) & 255) != mailbox[RTL_AX_RX_WORK_READ] &&
 	    write == mailbox[RTL_AX_RX_WORK_WRITE] &&
 	    mailbox[81] == mailbox[RTL_AX_RX_HW_PRODUCER]) {
-		volatile u32 *bar = (void *)mailbox[2];
 		mailbox[RTL_AX_RX_HW_PRODUCER] = (bar[0x1218 / 4] >> 16) & 1023;
 	}
 	/* Finish PE0's known capture batch before giving an SN gap to ARM.
 	 * A full work ring must fall back so ARM can release its head. */
 	return ((write + 1) & 255) != mailbox[RTL_AX_RX_WORK_READ] &&
 		(write != mailbox[RTL_AX_RX_WORK_WRITE] ||
-		 mailbox[81] != mailbox[RTL_AX_RX_HW_PRODUCER]);
+		 mailbox[81] != mailbox[RTL_AX_RX_HW_PRODUCER] ||
+		 (u32)(bar[0xc438 / 4] - search[2]) < 1000);
 }
 
 static void __attribute__((noinline)) rx_status_poll(volatile u32 *mailbox)

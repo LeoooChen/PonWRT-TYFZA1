@@ -227,10 +227,25 @@ r.process();assert r.get(MB+94*4)==1 and not r.get(MB+90*4)
 assert r.get(ST+1024)==1<<31|0x123 and r.get(ST+1028)==1
 r.inventory()
 
-# Missing data with no pending capture still belongs to ARM's reorder timer.
-r=reorder_peer();r.arrive(data_frame(0x124,3),True);r.capture();r.process()
-assert r.get(MB+94*4)==1 and r.get(MB+175*4)==1 and not r.get(MB+90*4)
-r.inventory()
+# Late retries within 1ms stay in PE; true gaps fall back at the deadline.
+# TSF wrap must not extend the deadline or expire it early.
+for start in (100,0xffffff00):
+ r=reorder_peer();r.put(BAR+0xc438,start)
+ r.arrive(data_frame(0x124,3),True);r.capture();r.process()
+ assert not r.get(MB+94*4) and not r.get(MB+175*4)
+ r.put(BAR+0xc438,(start+999)&0xffffffff);r.process()
+ assert not r.get(MB+94*4)
+ r.put(BAR+0xc438,(start+1000)&0xffffffff);r.process()
+ assert r.get(MB+94*4)==1 and r.get(MB+175*4)==1 and not r.get(MB+90*4)
+ r.inventory()
+for start in (0,0xffffff00):
+ r=reorder_peer();r.put(BAR+0xc438,start)
+ r.arrive(data_frame(0x124,3),True);r.capture();r.process()
+ r.put(BAR+0xc438,(start+900)&0xffffffff)
+ r.arrive(data_frame(0x123,2),True);r.capture()
+ for _ in range(4):r.process()
+ assert r.get(MB+90*4)==2 and r.get(MB+175*4)==2 and not r.get(MB+94*4)
+ r.put(VP+0x1c,2);r.capture();r.inventory()
 # Waiting cannot deadlock a full work ring with the missing frame behind it.
 r=reorder_peer();r.arrive(data_frame(0x124,3),True);r.capture()
 for _ in range(254):
