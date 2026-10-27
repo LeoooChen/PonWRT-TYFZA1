@@ -47,7 +47,7 @@ static void __attribute__((noinline)) ni_enqueue(
 	volatile u32 *mailbox, u8 *memory, u32 queue, u32 head, u32 tail, u32 count)
 {
 	u32 macid = queue >> 3, *old_tail = (void *)(memory + NI_TID_TAIL + queue * 4);
-	if (*old_tail) *(u32 *)uncached(*old_tail + 12) = head | (queue & 7);
+	if (*old_tail) *(u32 *)uncached(*old_tail) = head;
 	else *(u32 *)(memory + NI_TID_HEAD + queue * 4) = head;
 	*old_tail = tail;
 	u32 *queued = (void *)(memory + NI_PEER_QUEUED + macid * 4);
@@ -151,11 +151,11 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 			count++; break;
 		}
 		u32 *waiting = uncached(buffer);
-		/* The BID identifies the payload; headroom stores length/header,
-		 * enqueue time and the queue link. Word0 remains the selected MPDU chain. */
+		/* The queue link becomes the MPDU ownership chain when selected. */
+		waiting[0] = 0;
 		waiting[1] = length | header << 16;
-		waiting[2] = now; waiting[3] = tid;
-		if (grouped) *(u32 *)uncached(tail + 12) = buffer | tid;
+		waiting[2] = now;
+		if (grouped) *(u32 *)uncached(tail) = buffer;
 		else { head = buffer; group = queue; }
 		tail = buffer; grouped++;
 		consumer = (consumer + 8) & mask;
@@ -237,7 +237,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			if (!discard && (mailbox[30] >= 124 ||
 			    (ps[0] && (command == ps[2] || !((grant_flags >> 16) & BIT(tid)))))) continue;
 			u32 id = ni_owner(mailbox, memory), frames = 1;
-			u32 tail_buffer = buffer;
+			u32 tail_buffer = buffer, next_buffer = waiting[0];
 			const u32 *peer = (void *)(memory + 0xd000 + macid * 32);
 			u32 key = peer[5];
 			u32 details = macid << 8 | ((key >> 16) & 127) << 17 | BIT(15);
@@ -265,7 +265,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 					ps[2] = command; mailbox[39]++;
 				} else {
 					ps[2] = command;
-					u32 next = waiting[3] & ~127U, body = length + 8;
+					u32 next = next_buffer, body = length + 8;
 					if (((request[2] >> 16) & 63) == 26 && !(request[3] & BIT(19))) {
 						while (next && frames < 8) {
 							u32 *part = uncached(next), pad = (0U - body) & 3;
@@ -274,21 +274,19 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 							request[8 + frames * 2] = next + RTL_QM_HEADROOM + (next_metadata >> 16);
 							request[9 + frames * 2] = next_length;
 							body += pad + next_length + 8;
-							*(u32 *)uncached(tail_buffer) = next;
-							tail_buffer = next; next = part[3] & ~127U; frames++;
+							tail_buffer = next; next = part[0]; frames++;
 						}
 					}
 					if (frames > 1) {
 						request[4] |= BIT(21);
 						request[2] = frames << 24 | 26U << 16 | (26 + body);
-						waiting[3] = tid | next;
+						next_buffer = next;
 					}
 				}
 			}
-			/* One WP owns the entire MPDU. Its BIDs use the untouched first
-			 * word of headroom; the in-place WLAN header starts after it. */
+			/* Detach the existing FIFO prefix; no per-subframe relinking. */
 			*(u32 *)uncached(tail_buffer) = 0;
-			*head = waiting[3] & ~127U;
+			*head = next_buffer;
 			mailbox[112] = (tid + 1) & 7;
 			if (!*head) {
 				*(u32 *)(memory + NI_TID_TAIL + (macid * 8 + tid) * 4) = 0;

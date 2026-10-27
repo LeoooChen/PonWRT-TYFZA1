@@ -50,7 +50,7 @@ for peer,tid in set(rows):
  assert get(BASE+0x18000+queue*4)==len(expected)
  node=get(BASE+0x15000+queue*4);seen=[]
  while node:
-  seen.append(node);link=get(node+12);assert link&7==tid;node=link&~127
+  seen.append(node);node=get(node)
  assert seen==expected
  assert get(BASE+0x16000+queue*4)==expected[-1]
 # COS selection and an invalid next entry must not publish an unconsumed BID.
@@ -113,7 +113,7 @@ def lookup_probe(withdraw, compact=True):
  assert get(NI+0x7160)==64 and get(MB+38*4)==8
  for queue,indices in ({16:range(4),0:range(4,8)} if withdraw else {16:range(8)}).items():
   node=get(BASE+0x15000+queue*4);actual=[]
-  while node:actual.append(node);node=get(node+12)&~127
+  while node:actual.append(node);node=get(node)
   assert actual==[PAYLOAD+n*2048 for n in indices]
  for n,frame in enumerate(frames):assert bytes(u.mem_read(PAYLOAD+n*2048+80,64))==frame
  assert get(MB+40*4)==(4 if withdraw else 0)

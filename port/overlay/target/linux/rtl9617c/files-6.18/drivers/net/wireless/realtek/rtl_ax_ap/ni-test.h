@@ -427,8 +427,8 @@ static int ni_test_remove(struct rtl_ax_tx *tx)
 		u32 address = get_unaligned_le32(tx->pe.memory + 0x15000 + i * 4);
 		while (address) {
 			u32 next;
-			dma_sync_single_for_cpu(tx->dma_device, address, 16, DMA_FROM_DEVICE);
-			next = get_unaligned_le32(phys_to_virt(address + 12)) & ~127U;
+			dma_sync_single_for_cpu(tx->dma_device, address, 4, DMA_FROM_DEVICE);
+			next = get_unaligned_le32(phys_to_virt(address));
 			ret = readl_poll_timeout(tx->ni.regs + (0x6368 + tx->ni.cpu * 8), status, status & BIT(31), 1, 100000);
 			if (ret) return ret;
 			writel(address | tx->ni.eq, tx->ni.regs + (0x636c + tx->ni.cpu * 8));
