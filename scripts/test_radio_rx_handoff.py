@@ -68,7 +68,7 @@ int main(void){
  assert(get_unaligned_le32(mb+320)==q->addresses_dma&&get_unaligned_le32(mb+134*4)==q->descriptor_dma);
  assert(get_unaligned_le32(mb+324)==254&&get_unaligned_le32(mb+328)==8190);
  assert(get_unaligned_le32(mb+RTL_AX_RX_HW_PRODUCER*4)==254);
- assert(get_unaligned_le32(tx_memory+0x2000+RTL_AX_RX_BACKEND_CONTEXT*4)==0x04002000);
+ assert(get_unaligned_le32(tx_memory+0x2000+RTL_AX_RX_EVENT_CONTEXT*4)==0x04002000);
  assert(get_unaligned_le32(mb+177*4)==258);
  for(unsigned i=0;i<256;i++)assert(get_unaligned_le32(memory+RTL_AX_RX_SLOT_MAP+i*4)==i);
  for(unsigned i=0;i<258;i++)assert(get_unaligned_le32(memory+RTL_AX_RX_IDLE_IDS+i*4)==256+i);
@@ -85,7 +85,7 @@ int main(void){
  assert(rx.dfs_epoch[0]==(233|256)&&get_unaligned_le32(mb+172*4)==(233|256));
  assert(!rtl_ax_rx_pe_rpq_stop(&rx));
  assert(!rx.rpq_owned&&!rx.rpq_memory&&!rx.rpq_transfer&&mask==RTL_AX_RX_IRQS);
- assert(!get_unaligned_le32(tx_memory+0x2000+RTL_AX_RX_BACKEND_CONTEXT*4));
+ assert(!get_unaligned_le32(tx_memory+0x2000+RTL_AX_RX_EVENT_CONTEXT*4));
  assert(q->consumer==230&&q->tag==8191&&q->slot_ids[17]==256&&cpu_syncs==1);
  assert(get_unaligned_le32(memory+RTL_AX_RX_NI_TAIL)==513&&get_unaligned_le32(memory+RTL_AX_RX_NI_TAIL+8)==514);
  assert(!rtl_ax_rx_pe_rpq_start(&rx,tx_memory,0x04200000,&program,4));

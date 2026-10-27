@@ -36,7 +36,7 @@ static void __attribute__((noinline)) rx_work_recycle(volatile u32 *mailbox, u8 
 {
 	u32 read = mailbox[RTL_AX_RX_WORK_READ];
 	while (read != mailbox[RTL_AX_RX_WORK_PROCESS]) {
-		/* PE1 releases the completion record before its process cursor. */
+		/* Acquire ARM completion before returning a payload to RXQ. */
 		sync();
 		u32 *status = (void *)(memory + RX_STATUS + read * 4);
 		u32 owner = *status;
@@ -368,7 +368,7 @@ static void __attribute__((section(".rxq"), noinline, minsize)) pe_rx_work(volat
 	if (mailbox[RTL_AX_RX_ARM_BARRIER]) return;
 	u32 read = mailbox[RTL_AX_RX_WORK_PROCESS];
 	if (read == mailbox[RTL_AX_RX_WORK_WRITE]) return;
-	/* PE0 publishes the captured payload ID before the write cursor. */
+	/* Capture publishes the payload ID before the write cursor. */
 	sync();
 	/* A lookahead completion stays in its capture slot until this cursor. */
 	if (*(u32 *)(memory + RX_STATUS + read * 4) & RX_NI_PENDING) goto advance;
@@ -390,25 +390,21 @@ static void __attribute__((section(".rxq"), noinline, minsize)) pe_rx_work(volat
 		if (stateful) mailbox[RTL_AX_RX_ARM_BARRIER] = 1;
 		if (producer == mailbox[95]) pe_event(mailbox);
 	}
-	/* PE0 may recycle a completed payload as soon as this cursor advances. */
+	/* The next capture turn may recycle payloads behind this cursor. */
 advance:
 	*(u32 *)(memory + RTL_AX_RX_REORDER_SEARCH) = 0;
 	sync();
 	mailbox[RTL_AX_RX_WORK_PROCESS] = (read + 1) & 255;
 }
 
-static void __attribute__((section(".rxq"), noinline)) pe_rx_backend(volatile u32 *mailbox)
+static void __attribute__((section(".rxq"), noinline)) pe_rx_work_batch(volatile u32 *mailbox)
 {
-	if (!mailbox[RTL_AX_RX_BACKEND_CONTEXT]) return;
-	volatile u32 *receive = uncached(mailbox[RTL_AX_RX_BACKEND_CONTEXT]);
-	/* PE1 serializes every RX/TX event on the shared notification timer. */
-	pe_event_flush(receive);
 	/* A queued packet checks the ARM acknowledgement before use. */
-	if (receive[RTL_AX_RX_WORK_PROCESS] == receive[RTL_AX_RX_WORK_WRITE]) return;
+	if (mailbox[RTL_AX_RX_WORK_PROCESS] == mailbox[RTL_AX_RX_WORK_WRITE]) return;
 #pragma clang loop unroll(disable)
 	for (u32 budget = 0; budget < 16; budget++) {
-		u32 before = receive[RTL_AX_RX_WORK_PROCESS];
-		pe_rx_work(receive);
-		if (before == receive[RTL_AX_RX_WORK_PROCESS]) break;
+		u32 before = mailbox[RTL_AX_RX_WORK_PROCESS];
+		pe_rx_work(mailbox);
+		if (before == mailbox[RTL_AX_RX_WORK_PROCESS]) break;
 	}
 }

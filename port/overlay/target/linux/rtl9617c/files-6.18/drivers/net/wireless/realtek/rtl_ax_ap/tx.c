@@ -271,7 +271,7 @@ int rtl_ax_tx_pause(struct rtl_ax_tx *tx)
 		dma_wmb();
 	}
 	spin_unlock_irqrestore(&tx->lock, flags);
-	/* Stop preparation before PE0 drains the last batch and stops publishing. */
+	/* PE1 drains its local TX batch before PE0 stops the uplink path. */
 	if (tx->pe_active) {
 		u32 acknowledged;
 		if (read_poll_timeout(get_unaligned_le32, acknowledged, acknowledged == pe_command,

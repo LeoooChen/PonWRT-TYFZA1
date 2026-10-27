@@ -109,13 +109,7 @@ static void ni_buffered_event(volatile u32 *mailbox, u32 buffered)
 
 static void __attribute__((section(".entry"), noinline)) rpq_event(volatile u32 *mailbox)
 {
-#ifdef PE_UPLINK
-	/* PE0 publishes reports; PE1 owns the shared ARM notification timer. */
-	sync();
-	mailbox[RTL_AX_RPQ_EVENT_WRITE]++;
-#else
 	pe_event(mailbox);
-#endif
 }
 
 static void pe_rpq(volatile u32 *mailbox, u8 *memory)
@@ -192,7 +186,7 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 		}
 	}
 	if (completion_write != completion_start) {
-		/* The PE1 recycler acquires this producer before reading WP owners. */
+		/* Publish completed owners before the local recycler consumes them. */
 		sync();
 		mailbox[45] = completion_write;
 	}
@@ -504,7 +498,9 @@ void pe_main(volatile u32 *control)
 #ifdef PE_UPLINK
 	u32 rx_poll[2] = {};
 #endif
+#ifndef PE_UPLINK
 	static const u32 indices[] = { 0x1058, 0x105c, 0x1060, 0x1064, 0x1078, 0x107c };
+#endif
 	u32 cp0;
 
 	__asm__ volatile("mfc0 %0, $15" : "=r"(cp0)); control[48] = cp0;
@@ -537,11 +533,10 @@ void pe_main(volatile u32 *control)
 		}
 		u32 command = mailbox[3];
 #ifdef PE_UPLINK
-		/* PE1 is stopped first; a PE0 pause also drains its final TX batch. */
-		if ((command & 1 || command != commands[slot]) && mailbox[187]) {
-			volatile u32 *tx = (void *)((u8 *)uncached(mailbox[187]) + MAILBOX_OFFSET);
-			pe_tx_publish(tx, command & 1 ? 4 : 16);
-			if (!(command & 1) && tx[RTL_AX_TX_PUBLISH_READ] != tx[RTL_AX_TX_PUBLISH_WRITE]) continue;
+		/* PE1 finishes its selected MPDUs before acknowledging a pause. */
+		if (!mailbox[80] && !(command & 1) && command != commands[slot]) {
+			pe_tx_publish(mailbox, 16);
+			if (mailbox[RTL_AX_TX_PUBLISH_READ] != mailbox[RTL_AX_TX_PUBLISH_WRITE]) continue;
 		}
 #endif
 		if (command != commands[slot]) {
@@ -564,31 +559,22 @@ void pe_main(volatile u32 *control)
 			continue;
 		}
 #ifdef PE_UPLINK
-		if (mailbox[187]) {
-			u8 *tx_memory = uncached(mailbox[187]);
-			pe_rpq((void *)(tx_memory + MAILBOX_OFFSET), tx_memory);
-		}
-#else
-		pe_rpq(mailbox, memory);
-#endif
-#ifdef PE_UPLINK
-		/* Keep ready RX batches moving and revisit idle DMA every16 turns. */
 		if (mailbox[80]) {
+			/* PE0 owns capture, ordering, NI submission and payload recycling. */
 			if (mailbox[RTL_AX_RX_WORK_READ] != mailbox[RTL_AX_RX_WORK_WRITE] ||
 			    ((*(volatile u32 *)uncached(rx_buffer_dma(mailbox,
 			        *(u32 *)(memory + RTL_AX_RX_SLOT_MAP + mailbox[81] * 4))) >> 16) & 8191) ==
 			        (mailbox[82] == 8191 ? 1 : mailbox[82] + 1) || !(++rx_poll[slot] & 15))
 				pe_rxq_batch(mailbox);
+			pe_rx_work_batch(mailbox);
 			continue;
 		}
-		u32 reports = mailbox[RTL_AX_RPQ_EVENT_WRITE];
-		if (reports != mailbox[RTL_AX_RPQ_EVENT_READ]) {
-			sync();
-			mailbox[RTL_AX_RPQ_EVENT_READ] = reports;
-			pe_event(mailbox);
-		}
-		pe_rx_backend(mailbox);
-#else
+		/* PE1 alone writes the shared timer; PE0 only posts RX events. */
+		if (mailbox[RTL_AX_RX_EVENT_CONTEXT])
+			pe_event_flush(uncached(mailbox[RTL_AX_RX_EVENT_CONTEXT]));
+#endif
+		pe_rpq(mailbox, memory);
+#ifndef PE_UPLINK
 		for (u32 budget = 0; budget < 16; budget++) {
 			u32 before = mailbox[81] | mailbox[RTL_AX_RX_WORK_PROCESS] << 8;
 			pe_rxq(mailbox);
@@ -602,15 +588,16 @@ void pe_main(volatile u32 *control)
 		if (mailbox[30]) ni_recycle(mailbox, memory);
 		sync();
 		/* Stock phl_handle_pending_wd publishes a completed TXBD batch.
-		 * Bound each radio's turn so RX/RPQ and the other radio still run. */
+		 * Bound each radio's turn so RPQ, events and the other radio still run. */
+#ifndef PE_UPLINK
 		u32 publish = 0, producers[6];
+#endif
 #ifdef PE_UPLINK
 		for (u32 burst = 0; burst < 4; burst++)
 #endif
 		{
 #ifdef PE_UPLINK
-			if (mailbox[RTL_AX_RX_BACKEND_CONTEXT] &&
-			    ((mailbox[RTL_AX_TX_PUBLISH_WRITE] + 1) & 15) == mailbox[RTL_AX_TX_PUBLISH_READ]) goto publish_tx;
+			if (((mailbox[RTL_AX_TX_PUBLISH_WRITE] + 1) & 15) == mailbox[RTL_AX_TX_PUBLISH_READ]) goto publish_tx;
 #endif
 			ni_packet = 0; ni_frames = 1;
 			const u32 *request = (void *)(memory + REQUEST_BASE + consumer * 128);
@@ -701,23 +688,30 @@ void pe_main(volatile u32 *control)
 #endif
 				request = ni_request; ni_packet = 1;
 			}
-			if (mailbox[RTL_AX_RX_BACKEND_CONTEXT]) {
+#ifdef PE_UPLINK
+			{
 				u32 write = mailbox[RTL_AX_TX_PUBLISH_WRITE];
 				u32 words = 8 + (request[2] >> 24) * 2;
 				u32 *out = (void *)(memory + RTL_AX_TX_BUILD_REQUESTS + write * 128);
 				for (u32 i = 0; i < words; i++) out[i] = request[i];
 				sync();
 				mailbox[RTL_AX_TX_PUBLISH_WRITE] = (write + 1) & 15;
-			} else {
+			}
+#else
+			{
 				u32 next, ring = pe_build_tx(mailbox, memory, request, &next);
 				producers[ring] = next; publish |= BIT(ring);
 			}
+#endif
 			if (!ni_packet) {
 				consumer = (consumer + 1) & 255;
 				mailbox[9] = consumer;
 			}
 		}
 	publish_tx:
+#ifdef PE_UPLINK
+		pe_tx_publish(mailbox, 4);
+#else
 		if (publish) {
 			sync();
 #pragma clang loop unroll(disable)
@@ -725,5 +719,6 @@ void pe_main(volatile u32 *control)
 				if (publish & BIT(ring)) *(volatile u16 *)(mailbox[2] + indices[ring]) = producers[ring];
 			sync();
 		}
+#endif
 	}
 }

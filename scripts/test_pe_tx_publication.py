@@ -84,7 +84,7 @@ class Machine:
             kind = 'descriptor'
         elif TXMB + WRITE * 4 <= address <= TXMB + READ * 4:
             kind = 'handoff'
-        elif address == RXMB + 4 * 4:
+        elif address in (RXMB + 4 * 4, TXMB + 4 * 4):
             kind = 'command_ack'
         if kind:
             self.events.append((kind, self.actor, address, size, value))
@@ -165,9 +165,9 @@ class Machine:
                 bytes(self.u.mem_read(PAGES, 0xc000)))
 
 
-def check_receive(machine, events, rings, sequence):
+def check_publish(machine, events, rings, sequence):
     doorbells = [event for event in events if event[0] == 'doorbell']
-    assert doorbells == [('doorbell', 'PE0', BAR + REGISTERS[ring], 2, NEXT[ring])
+    assert doorbells == [('doorbell', 'PE1', BAR + REGISTERS[ring], 2, NEXT[ring])
                          for ring in rings], doorbells
     acks = [event for event in events if event[0] == 'handoff' and event[2] == TXMB + READ * 4]
     assert acks and acks[-1][4] == sequence, acks
@@ -184,50 +184,55 @@ for initial_sequence in (0, 15):
     m = Machine(initial_sequence)
     assert not [e for e in m.run('PE0') + m.run('PE1') if e[0] == 'doorbell']
     m.queue()
-    published = m.run('PE1')
-    sequence = (initial_sequence + 6) & 15
-    assert m.get(TXMB + WRITE * 4) == sequence
-    assert m.get(TXMB + 9 * 4) == 4
-    assert not [e for e in published if e[0] in ('doorbell', 'descriptor')]
     pending = m.snapshot()
-    m.run('PE1')
+    assert not [e for e in m.run('PE0') if e[0] in ('doorbell', 'descriptor', 'handoff')]
     assert m.snapshot() == pending
+    events = m.run('PE1')
+    sequence = (initial_sequence + 6) & 15
+    check_publish(m, events, range(6), sequence)
+    assert m.get(TXMB + WRITE * 4) == m.get(TXMB + READ * 4) == sequence
+    assert m.get(TXMB + 9 * 4) == 4
+    m.descriptors(range(6))
     m.put(TXMB + 3 * 4, 2)
     m.run('PE1')
-    assert m.get(TXMB + 4 * 4) == 2 and m.snapshot() == pending
+    assert m.get(TXMB + 4 * 4) == 2
+    assert not [e for e in m.run('PE1') if e[0] in ('doorbell', 'descriptor', 'handoff')]
     m.put(RXMB + 3 * 4, 2)
-    events = m.run('PE0')
-    check_receive(m, events, range(6), sequence)
-    m.descriptors(range(6))
+    assert not [e for e in m.run('PE0') if e[0] in ('doorbell', 'descriptor', 'handoff')]
     assert m.get(RXMB + 4 * 4) == 2
-    final_ack = next(i for i,e in enumerate(events) if e[0] == 'command_ack' and e[4] == 2)
-    assert final_ack > max(i for i,e in enumerate(events) if e[0] == 'doorbell')
-    paused = m.run('PE0')
-    assert not [e for e in paused if e[0] in ('read_write', 'doorbell', 'handoff')]
-    for ring, register in enumerate(REGISTERS):
-        assert m.get(BAR + register) == m.hardware[ring] << 16 | NEXT[ring]
 
-# Fill the actual cross-core queue; the sixteenth request must stay with PE1.
+# Hardware backpressure fills the local selected-MPDU queue. The sixteenth
+# request remains on ARM's ring until PE1 can publish, independent of PE0.
 full = Machine()
-full.run('PE0');full.run('PE1');full.queue()
-for index in range(6,20):
+full.run('PE1')
+full.queue()
+for ring, register in enumerate(REGISTERS):
+    producer = (NEXT[ring] - 1) & 255
+    full.put(BAR + register, NEXT[ring] << 16 | producer)
+for index in range(6, 20):
     request = [0] * 32
     request[0] = index
-    request[1] = 0 | ((index - 5) & 255) << 8 | ((index - 4) & 255) << 16
-    request[2] = 80 | 1 << 24;request[3] = 4
-    request[8],request[9] = PAYLOAD + index * 256,80
-    full.u.mem_write(PAYLOAD + index * 256, bytes([index])*80)
-    full.u.mem_write(TX+0x4000+((254+index)&255)*128,struct.pack('<32I',*request))
-full.put(TXMB+8*4,18)
-full.run('PE1',50000)
-assert full.get(TXMB+WRITE*4)==15 and full.get(TXMB+9*4)==13
-saved = bytes(full.u.mem_read(TX+BUILD,16*128))
+    request[1] = (index - 5) << 8 | (index - 4) << 16
+    request[2] = 80 | 1 << 24
+    request[3] = 4
+    request[8], request[9] = PAYLOAD + index * 256, 80
+    full.u.mem_write(PAYLOAD + index * 256, bytes([index]) * 80)
+    full.u.mem_write(TX + 0x4000 + ((254 + index) & 255) * 128,
+                     struct.pack('<32I', *request))
+full.put(TXMB + 8 * 4, 18)
+assert not [e for e in full.run('PE1', 50000) if e[0] == 'doorbell']
+assert full.get(TXMB + WRITE * 4) == 15 and full.get(TXMB + 9 * 4) == 13
+saved = bytes(full.u.mem_read(TX + BUILD, 16 * 128))
 full.run('PE1')
-assert bytes(full.u.mem_read(TX+BUILD,16*128))==saved
-full.run('PE0',50000);full.run('PE1',50000);full.run('PE0',50000)
-assert full.get(TXMB+9*4)==18 and full.get(TXMB+WRITE*4)==full.get(TXMB+READ*4)==4
+assert bytes(full.u.mem_read(TX + BUILD, 16 * 128)) == saved
+assert not [e for e in full.run('PE0') if e[0] in ('doorbell', 'descriptor', 'handoff')]
+for ring, register in enumerate(REGISTERS):
+    full.put(BAR + register, full.hardware[ring] << 16 | ((NEXT[ring] - 1) & 255))
+full.run('PE1', 50000)
+assert full.get(TXMB + 9 * 4) == 18
+assert full.get(TXMB + WRITE * 4) == full.get(TXMB + READ * 4) == 4
 
-# Seven Ethernet buffers must remain one NI MPDU across the PE boundary.
+# Seven Ethernet buffers must remain one NI MPDU through local publication.
 ni = Machine()
 ni.put(TXMB + 24 * 4, 1)
 ni.put(TXMB + 14 * 4, PAGES)
@@ -244,9 +249,9 @@ for part in range(7):
     request[8 + part * 2],request[9 + part * 2] = address,len(frame)
 ni.u.mem_write(TX + 0x4000 + 254 * 128, struct.pack('<32I', *request))
 ni.put(TXMB + 8 * 4, 255)
-ni.run('PE1')
-assert ni.get(TXMB + 28 * 4) == 0
 ni.run('PE0')
+assert ni.get(TXMB + 28 * 4) == 0
+ni.run('PE1')
 page = bytes(ni.u.mem_read(PAGES + 256 * 128, 128))
 assert ni.get(TXMB + 28 * 4) == 7
 assert struct.unpack_from('<I', page, 4)[0] >> 26 == 7
@@ -277,32 +282,32 @@ for index, identifier in enumerate((256, 1)):
     request[4] = 1 << 24 | 1 << 18 | 1 << 16 if not index else 0
     request[8], request[9] = address, 80
     credit.u.mem_write(TX + 0x4000 + index * 128, struct.pack('<32I', *request))
+protected = bytes(credit.u.mem_read(PAGES + 128, 128))
 credit.run('PE1')
 assert credit.get(TXMB + WRITE * 4) == 2
-protected = bytes(credit.u.mem_read(PAGES + 128, 128))
-credit.run('PE0')
-if '--before' in sys.argv:
-    assert credit.get(TXMB + READ * 4) == 2
-    assert credit.get(BAR + REGISTERS[0]) == 0
-    assert bytes(credit.u.mem_read(PAGES + 128, 128)) != protected
-    print('Before: ARM/NI batch consumes both requests with only one TXBD free.')
-else:
-    assert credit.get(TXMB + READ * 4) == 1
-    assert credit.get(BAR + REGISTERS[0]) == 255
-    assert bytes(credit.u.mem_read(PAGES + 128, 128)) == protected
-    pending = credit.snapshot()
-    credit.run('PE0')
-    assert credit.snapshot() == pending
-    credit.put(TXMB + 3 * 4, 2); credit.run('PE1')
-    credit.put(RXMB + 3 * 4, 2); credit.run('PE0')
-    assert credit.get(RXMB + 4 * 4) == 1  # Full TXBD prevents pause ACK.
-    assert credit.snapshot() == pending
-    credit.put(BAR + REGISTERS[0], 1 << 16 | 255)
-    credit.run('PE0')
-    assert credit.get(TXMB + READ * 4) == 2
-    assert credit.get(BAR + REGISTERS[0]) == 1 << 16
-    assert credit.get(RXMB + 4 * 4) == 2
-    assert not [event for event in credit.run('PE0') if event[0] in ('descriptor', 'doorbell')]
+assert credit.get(TXMB + READ * 4) == 1
+assert credit.get(BAR + REGISTERS[0]) == 255
+assert bytes(credit.u.mem_read(PAGES + 128, 128)) == protected
+pending = credit.snapshot()
+credit.run('PE1')
+assert credit.snapshot() == pending
+credit.put(TXMB + 3 * 4, 2)
+credit.run('PE1')
+assert credit.get(TXMB + 4 * 4) == 1  # Full TXBD prevents PE1 pause ACK.
+assert credit.snapshot() == pending
+credit.put(RXMB + 3 * 4, 2)
+events = credit.run('PE0')
+assert credit.get(RXMB + 4 * 4) == 2  # Uplink pause does not depend on TXBD.
+assert not [e for e in events if e[0] in ('descriptor', 'doorbell', 'handoff')]
+credit.put(BAR + REGISTERS[0], 1 << 16 | 255)
+events = credit.run('PE1')
+assert credit.get(TXMB + READ * 4) == 2
+assert credit.get(BAR + REGISTERS[0]) == 1 << 16
+assert credit.get(TXMB + 4 * 4) == 2
+ack = next(i for i, e in enumerate(events)
+           if e[0] == 'command_ack' and e[2] == TXMB + 16 and e[4] == 2)
+assert ack > max(i for i, e in enumerate(events) if e[0] == 'doorbell')
+assert not [e for e in credit.run('PE1') if e[0] in ('descriptor', 'doorbell', 'handoff')]
 
 single = Machine(paired=False)
 single.queue()
@@ -319,13 +324,13 @@ assert not [e for e in single.run('PE1') if e[0] == 'doorbell']
 print(json.dumps({
     'scope': 'Actual linked PE main loops; shared memory and PCIe MMIO modeled, no RF simulation.',
     'PE_sha256': hashlib.sha256(BINARY).hexdigest(),
-    'PE1_prepares_requests_without_writing_DMA_descriptors': True,
-    'PE0_builds_descriptors_and_publishes_all_six_channels': True,
+    'PE0_never_consumes_or_publishes_downlink_requests': True,
+    'PE1_builds_descriptors_and_publishes_all_six_channels': True,
     'payloads_and_hardware_consumer_halfwords_preserved': True,
     'queue_wrap_and_full_backpressure_preserve_requests': True,
-    'paused_PE0_drains_before_command_ACK': True,
-    'no_peer_access_after_pause_ACK': True,
+    'paused_PE1_drains_before_command_ACK': True,
+    'PE0_pause_independent_of_TXBD_backpressure': True,
     'seven_subframe_NI_AMSDU_retains_all_payloads': True,
-    'shared_ARM_NI_TXBD_capacity_and_pause_boundary': '--before' not in sys.argv,
-    'single_PE_direct_fallback': True,
+    'shared_ARM_NI_TXBD_capacity_and_pause_boundary': True,
+    'downlink_runs_without_receive_context': True,
 }, indent=2))

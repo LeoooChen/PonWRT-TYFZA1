@@ -129,8 +129,8 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         all_ids.append(ids)
         member += count
     assert member == len(lengths)
-    # PE0 forwards RPQ completions in the current dual-PE ABI.
-    # Model that boundary; this test executes PE1 gather and BID recycling.
+    # Seed completed WPs to isolate PE1 gather and BID recycling.
+    # The RPQ firmware test covers report decoding.
     for slot, ids in enumerate(all_ids):
         put(base + 0xc404 + slot * 8, get(base + 0xc404 + slot * 8) | (1 << 31))
         put(base + 0xc800 + slot * 4, slot)
