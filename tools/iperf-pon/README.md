@@ -1,6 +1,6 @@
 # iperf3 PON-path benchmark
 
-This diagnostic uses unmodified iperf3 endpoints for TCP/UDP generation and
+This diagnostic uses iperf3 endpoints for TCP/UDP generation and
 measurement. The kernel adapters feed the server's actual data packets into
 NI VP11 as source 7, PPPoE session 0x1234; the FE removes the PPPoE header,
 applies the configured destination and forwards to the selected physical LAN
@@ -86,6 +86,33 @@ server batching through the feed packet/doorbell deltas. Omitting 15 seconds
 affects iperf statistics only; hardware counter snapshots also include warmup.
 The sink still sends UDP directly to RPS, including when `--gsro` is used,
 so this option currently improves server transmission, not sink aggregation.
+
+### iperf3 GRO receiver CPU fix
+
+iperf3 3.22 calls `recvmsg(MSG_DONTWAIT)` in its GRO receiver. Its dedicated
+stream worker immediately retries an empty socket, consuming a core even
+while waiting for traffic. Apply `iperf3-gro-blocking.patch` to a separate
+iperf3 3.22 source tree before building the test server:
+
+```sh
+patch -d /path/to/iperf-3.22 -p1 < tools/iperf-pon/iperf3-gro-blocking.patch
+python3 scripts/test_iperf_gro_blocking.py /path/to/iperf-3.22
+```
+
+Build that tree with the device's cross compiler and select its binary with
+`IPERF3`. The patch follows ordinary UDP's blocking receive behavior and
+preserves socket timeouts, worker cancellation, payloads and GRO segment
+metadata. The Linux regression test exercises all four cases with real UDP
+sockets, including kernel GSO/GRO. No changes to the Mac client are needed.
+
+With two streams per direction, 850 Mbit/s offered each way, `--gsro`, source
+backpressure and CPU mask `b`, 65-second A/B runs reduced server CPU from
+243.5% to 98.7% of one core. Received total rose from 1.316 to 1.427 Gbit/s;
+both runs still had packet loss. Keep this CPU fix independently of the
+remaining Wi-Fi throughput work.
+
+The four supported client ports allow `-P 4` for one direction or `-P 2`
+with `--bidir`, which allocates separate ports for each direction.
 
 ### Optional source backpressure
 
