@@ -1086,8 +1086,9 @@ int rtl_ax_tx_status(struct rtl_ax_tx *tx, char *out, size_t capacity)
 			get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 216));
 	if (tx->pe_active)
 		length += scnprintf(out + length, capacity - length,
-			"PE_slot=%u NI_CPU=%u EQ=%u VP=%u\n",
-			tx->pe.slot, tx->ni.cpu, tx->ni.eq, tx->ni.vp_index);
+			"PE_slot=%u NI_CPU=%u EQ=%u VP=%u BA_refreshes=%llu\n",
+			tx->pe.slot, tx->ni.cpu, tx->ni.eq, tx->ni.vp_index,
+			READ_ONCE(tx->ni.ba_refreshes));
 	if (tx->pe_active)
 		length += scnprintf(out + length, capacity - length,
 			"PE_NI_MPDU=%u AMSDU=%u PEDIV=%08x stack=%08x event_IRQ=%llu event_generation=%u event_ACK=%u\n",

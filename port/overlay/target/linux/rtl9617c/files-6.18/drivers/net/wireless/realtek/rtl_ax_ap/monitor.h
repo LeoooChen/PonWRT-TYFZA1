@@ -460,7 +460,7 @@ static int rtl_ax_tx_ba_finish(struct rtl_ax_ap *radio, unsigned int macid, unsi
 	bool flush = radio->tx_ba[macid].flushing & BIT(tid);
 	int ret;
 
-	ret = rtl_ax_tx_ni_retire_peer(radio->tx, macid);
+	ret = rtl_ax_tx_ni_retire_ba(radio->tx, macid);
 	if (ret) return ret;
 	ret = flush ? rtl_ax_drop_station(radio, macid, tid) :
 		rtl_ax_tx_wait_station(radio->tx, macid, tid);

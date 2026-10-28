@@ -318,6 +318,30 @@ for part in range(7):
     assert bool(length & 0x8000) == (part == 6)
     assert bytes(ni.u.mem_read(PAYLOAD + part * 512 + 94, 100)) == bytes([part]) * 100
 
+# The final sparse packet must notify ARM without another descriptor arriving.
+ni.put(TXMB + 64 * 4, 0xb0020000)
+activity_event = ni.get(TXMB + 67 * 4)
+ni.put(BAR + 0xc438, 9999)
+ni.run('PE1')
+assert ni.get(TX + 0x1c020) == 7
+assert ni.get(TX + 0x1d004) == 1
+assert ni.get(TXMB + 67 * 4) == activity_event
+ni.put(BAR + 0xc438, 10000)
+ni.run('PE1')
+assert ni.get(TX + 0x1d000) == 10000
+assert ni.get(TX + 0x1d004) == 0
+assert ni.get(TXMB + 67 * 4) == activity_event + 1
+ni.put(BAR + 0xc438, 20000)
+ni.run('PE1')
+assert ni.get(TXMB + 67 * 4) == activity_event + 1
+# A wrapped TSF uses the same elapsed-time comparison.
+ni.put(TX + 0x1d000, 0xffffec78)
+ni.put(TX + 0x1d004, 1)
+ni.put(BAR + 0xc438, 5000)
+ni.run('PE1')
+assert ni.get(TX + 0x1d004) == 0
+assert ni.get(TXMB + 67 * 4) == activity_event + 2
+
 # ARM and NI share the same channel even though their WP IDs are disjoint.
 # One free TXBD must admit exactly one request, including on a pause boundary.
 credit = Machine()
@@ -340,7 +364,13 @@ for index, identifier in enumerate((256, 1)):
     request[8], request[9] = address, 80
     credit.u.mem_write(TX + 0x4000 + index * 128, struct.pack('<32I', *request))
 protected = bytes(credit.u.mem_read(PAGES + 128, 128))
+credit.put(TXMB + 64 * 4, 0xb0020000)
+credit.put(BAR + 0xc438, 15000)
+activity_event = credit.get(TXMB + 67 * 4)
 credit.run('PE1')
+assert credit.get(TX + 0x1c020) == 1
+assert credit.get(TX + 0x1d000) == 15000
+assert credit.get(TXMB + 67 * 4) == activity_event + 1
 assert credit.get(TXMB + WRITE * 4) == 2
 assert credit.get(TXMB + READ * 4) == 1
 assert credit.get(BAR + REGISTERS[0]) == 255
@@ -348,6 +378,7 @@ assert bytes(credit.u.mem_read(PAGES + 128, 128)) == protected
 pending = credit.snapshot()
 credit.run('PE1')
 assert credit.snapshot() == pending
+assert credit.get(TX + 0x1c020) == 1
 credit.put(TXMB + 3 * 4, 2)
 credit.run('PE1')
 assert credit.get(TXMB + 4 * 4) == 1  # Full TXBD prevents PE1 pause ACK.
@@ -388,6 +419,7 @@ print(json.dumps({
     'paused_PE1_drains_before_command_ACK': True,
     'PE0_pause_independent_of_TXBD_backpressure': True,
     'seven_subframe_NI_AMSDU_retains_all_payloads': True,
+    'sparse_TX_activity_notifies_once_and_handles_TSF_wrap': True,
     'shared_ARM_NI_TXBD_capacity_and_pause_boundary': True,
     'downlink_runs_without_receive_context': True,
     'two_radio_private_staging_survives_DDR_poison': True,

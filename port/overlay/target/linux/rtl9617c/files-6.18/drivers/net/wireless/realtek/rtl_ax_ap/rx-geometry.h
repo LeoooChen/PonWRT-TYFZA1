@@ -40,6 +40,9 @@
 #define RTL_AX_NI_PS_VERSION 0x19e00
 #define RTL_AX_NI_PS_WP_GENERATION 0x1b800
 #define RTL_AX_NI_PS_DONE 0x1ba00
+/* PE1 publishes per-peer/TID TX activity; ARM owns its observation cursors. */
+#define RTL_AX_NI_TX_ACTIVITY 0x1c000
+#define RTL_AX_NI_TX_NOTIFY_TIME 0x1d000
 #define RTL_AX_RX_WORK_OLD (1U << 31)
 /* Full MPDU11966 plus RXBD/WD/shift/driver-info fits12288. */
 #define RTL_AX_RXQ_BUFFER_BYTES 12288

@@ -89,6 +89,14 @@ static void pe_event(volatile u32 *mailbox)
 static void __attribute__((section(".entry"), noinline)) pe_event_flush(volatile u32 *mailbox)
 {
 	if (!mailbox[64]) return;
+	u32 *activity = (void *)((u8 *)mailbox - 0x2000 + RTL_AX_NI_TX_NOTIFY_TIME);
+	if (activity[1]) {
+		u32 now = *(volatile u32 *)(mailbox[2] + 0xc438);
+		/* ARM's HZ=100 last_tx clock cannot use sub-tick refreshes. */
+		if ((u32)(now - activity[0]) >= 10000) {
+			activity[0] = now; activity[1] = 0; pe_event(mailbox);
+		}
+	}
 	if (mailbox[69] != mailbox[66] || mailbox[69] == mailbox[67]) return;
 	volatile u32 *timer = (void *)mailbox[64];
 	mailbox[69] = mailbox[67];
@@ -389,6 +397,10 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	if (mailbox[24]) mailbox[32 + ring] = next;
 	if (ni_packet) {
 		mailbox[28] += ni_frames; mailbox[56]++;
+		u32 queue = ((flags >> 24) & 127) * 8 + (flags & 7);
+		(*(u32 *)(memory + RTL_AX_NI_TX_ACTIVITY + queue * 4)) += ni_frames;
+		/* Flush the last sparse packet too, without waiting for another TX. */
+		*(u32 *)(memory + RTL_AX_NI_TX_NOTIFY_TIME + 4) = 1;
 	}
 	mailbox[10]++;
 	mailbox[RTL_AX_PE_TX_BYTES] += packet & 0x3fff;

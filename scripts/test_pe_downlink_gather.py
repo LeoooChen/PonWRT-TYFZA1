@@ -89,6 +89,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         observe(u)
     u.emu_start(0xbfc00400, 0x9fc0fff0, count=100000)
     assert get(mb + 28 * 4) == len(lengths) and get(mb + 38 * 4) == 0
+    assert get(base + 0x1c020) == len(lengths)
     assert get(mb + 30 * 4) == len(submits) and not returns
     assert get(base + 0x18020) == len(lengths)
     member = 0
