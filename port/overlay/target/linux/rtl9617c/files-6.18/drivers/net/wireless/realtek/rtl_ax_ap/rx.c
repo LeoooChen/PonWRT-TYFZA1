@@ -902,7 +902,10 @@ free:
 
 u32 rtl_ax_rx_traffic_bytes(struct rtl_ax_rx *rx)
 {
-	return (u32)READ_ONCE(rx->queues[0].data_bytes);
+	/* Fast-path bytes bypass the ARM queue. The PE slot retains its counter
+	 * across detach/reattach, so include it even while ARM owns RXQ. */
+	return (u32)READ_ONCE(rx->queues[0].data_bytes) +
+		get_unaligned_le32(rx->pe.memory + 0x2184);
 }
 
 int rtl_ax_rx_status(struct rtl_ax_rx *rx, char *out, size_t capacity)
