@@ -18,7 +18,7 @@ throughput to less than 1 Gbit/s.
 ## Build and prepare
 
 On the Linux build host, run `sh scripts/build_iperf_pon.sh`. The output is
-`artifacts/iperf-pon/`: three modules and the `set_peer` helper. Copy these and
+`artifacts/iperf-pon/`: three modules and the `set_peer` and `queue` helpers. Copy these and
 `tools/iperf-pon/bench.sh` into the same directory on the device. Supply an
 iperf3 binary and its shared libraries on the device. The test client also
 needs iperf3 and must route `198.18.255.1` through this device.
@@ -122,6 +122,20 @@ buffers plus submitted NI descriptors, publishes a pending batch before
 stopping, and retries from the existing timer. It does not change FE/PE
 forwarding or hardware flow-control registers. Default `0` retains the raw
 saturation test; this option is not supported for LAN outputs.
+
+This mode also selects a 16 MiB byte FIFO on the temporary `ponfeed0` device.
+The default `fq_codel` drops queued GSO packets when EQ stalls increase delay,
+before those packets reach the feed/FE counters. The FIFO lets the server's
+socket send-buffer accounting apply backpressure instead. A dual-process
+65-second test removed 19,540 GSO queue drops and raised total received rate
+from 1.486 to 1.608 Gbit/s; some NI receive and client socket losses remained.
+The byte limit is not preallocated. Stop removes the test netdevice and its
+queue; the normal interfaces keep their existing qdiscs.
+
+`status` reports qdisc kind, backlog, drops and requeues. Qdisc drops count
+SKBs, so one GSO drop can lose many UDP datagrams (44 in the measured run).
+Compare these counters as well as feed/FE/PE and client counters when locating
+loss; a matching FE/PE pair does not cover loss in the source queue.
 
 ```sh
 EQ_BACKPRESSURE=1 IPERF3=/path/to/iperf3 IPERF_LIB_DIR=/path/to/libraries \

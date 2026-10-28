@@ -13,3 +13,4 @@ set -- "$P"/sources/openwrt/staging_dir/toolchain-aarch64_cortex-a55_gcc-*_musl/
 export PATH="$1:$PATH" STAGING_DIR="$P/sources/openwrt/staging_dir"
 make -C "$KERNEL" M="$OUT" ARCH=arm64 CROSS_COMPILE=aarch64-openwrt-linux-musl- -j2 modules
 aarch64-openwrt-linux-musl-gcc -O2 "$P/tools/iperf-pon/set_peer.c" -o "$OUT/set_peer"
+aarch64-openwrt-linux-musl-gcc -O2 "$P/tools/iperf-pon/queue.c" -o "$OUT/queue"

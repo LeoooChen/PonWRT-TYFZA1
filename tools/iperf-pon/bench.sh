@@ -44,6 +44,7 @@ status)
 	for module in iperf_pon_flow iperf_pon_feed iperf_pon_sink; do
 		[ ! -e "/sys/module/$module/parameters/stats" ] || cat "/sys/module/$module/parameters/stats"
 	done
+	[ ! -e /sys/class/net/ponfeed0 ] || "$BASE/queue" ponfeed0
 	if [ -r "$STATE/output" ]; then
 		output=$(cat "$STATE/output")
 		case "$output" in
@@ -81,6 +82,7 @@ if [ "$(cat /sys/module/iperf_pon_feed/parameters/init_error)" != 0 ]; then
 fi
 sysctl -w net.ipv6.conf.ponfeed0.disable_ipv6=1 >/dev/null
 ip link set ponfeed0 up
+[ "${EQ_BACKPRESSURE:-0}" != 1 ] || "$BASE/queue" ponfeed0 bfifo
 ip addr add 198.18.255.1/32 dev ponfeed0
 ip route add table 220 "$peer_ip/32" dev ponfeed0 src 198.18.255.1
 ip rule add from 198.18.255.1/32 table 220 priority 22000
