@@ -2,6 +2,7 @@
 /* Inspect the diagnostic source qdisc, or use a byte FIFO for EQ backpressure. */
 #include <stdio.h>
 #include <stdint.h>
+#include <limits.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
@@ -22,6 +23,11 @@ int main(int argc,char **argv)
  struct sockaddr_nl kernel={.nl_family=AF_NETLINK};
  char buffer[16384];
  if(argc==3){
+  unsigned int maximum;
+  FILE *settings=fopen("/proc/sys/net/core/wmem_max","r");
+  if(!settings){perror("wmem_max");return 1;}
+  int parsed=fscanf(settings,"%u",&maximum);fclose(settings);
+  if(parsed!=1 || maximum>UINT_MAX/4){fprintf(stderr,"Invalid wmem_max for FIFO\n");return 1;}
   struct {struct nlmsghdr h;struct tcmsg t;char attrs[64];} set={
    .h={.nlmsg_len=NLMSG_LENGTH(sizeof(struct tcmsg)),.nlmsg_type=RTM_NEWQDISC,
     .nlmsg_flags=NLM_F_REQUEST|NLM_F_ACK|NLM_F_CREATE|NLM_F_REPLACE,.nlmsg_seq=1},
@@ -31,9 +37,10 @@ int main(int argc,char **argv)
   set.h.nlmsg_len=NLMSG_ALIGN(set.h.nlmsg_len)+RTA_ALIGN(a->rta_len);
   a=(void *)((char *)&set+NLMSG_ALIGN(set.h.nlmsg_len));
   a->rta_type=TCA_OPTIONS;a->rta_len=RTA_LENGTH(sizeof(struct tc_fifo_qopt));
-  /* Above the default server's doubled 4 MiB SO_SNDBUF: socket memory
-   * pressure blocks the sender before this queue's byte limit is reached. */
-  struct tc_fifo_qopt q={.limit=16U*1024*1024};
+  /* Linux doubles SO_SNDBUF; IPv4 UDP can allocate up to twice sk_sndbuf
+   * in __ip_append_data(). Cover that allowance before imposing a limit. */
+  struct tc_fifo_qopt q={.limit=maximum*4};
+  if(q.limit<16U*1024*1024)q.limit=16U*1024*1024;
   memcpy(RTA_DATA(a),&q,sizeof(q));
   set.h.nlmsg_len=NLMSG_ALIGN(set.h.nlmsg_len)+RTA_ALIGN(a->rta_len);
   if(sendto(fd,&set,set.h.nlmsg_len,0,(void *)&kernel,sizeof(kernel))<0){perror("set qdisc");return 1;}
@@ -59,9 +66,16 @@ int main(int argc,char **argv)
    if(t->tcm_ifindex!=(int)index)continue;
    printf("qdisc interface=%s handle=%x parent=%x",argv[1],t->tcm_handle,t->tcm_parent);
    int length=h->nlmsg_len-NLMSG_LENGTH(sizeof(*t));
+   int fifo=0;
    for(struct rtattr *a=TCA_RTA(t);RTA_OK(a,length);a=RTA_NEXT(a,length)){
     unsigned int type=a->rta_type&NLA_TYPE_MASK;
-    if(type==TCA_KIND)printf(" kind=%.*s",(int)RTA_PAYLOAD(a),(char *)RTA_DATA(a));
+    if(type==TCA_KIND){
+     printf(" kind=%.*s",(int)RTA_PAYLOAD(a),(char *)RTA_DATA(a));
+     fifo=RTA_PAYLOAD(a)==6 && !memcmp(RTA_DATA(a),"bfifo",6);
+    }
+    if(type==TCA_OPTIONS && fifo && RTA_PAYLOAD(a)>=sizeof(struct tc_fifo_qopt)){
+     struct tc_fifo_qopt q;memcpy(&q,RTA_DATA(a),sizeof(q));printf(" limit_bytes=%u",q.limit);
+    }
     if(type!=TCA_STATS2)continue;
     int nested=RTA_PAYLOAD(a);
     for(struct rtattr *s=RTA_DATA(a);RTA_OK(s,nested);s=RTA_NEXT(s,nested)){

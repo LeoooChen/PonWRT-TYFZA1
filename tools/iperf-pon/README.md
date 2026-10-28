@@ -123,7 +123,12 @@ stopping, and retries from the existing timer. It does not change FE/PE
 forwarding or hardware flow-control registers. Default `0` retains the raw
 saturation test; this option is not supported for LAN outputs.
 
-This mode also selects a 16 MiB byte FIFO on the temporary `ponfeed0` device.
+This mode also selects a byte FIFO on the temporary `ponfeed0` device,
+sized at start to four times `net.core.wmem_max`, with a 16 MiB minimum.
+Linux doubles `SO_SNDBUF`, and IPv4 UDP's `__ip_append_data()` permits another
+factor of two. This gives 16 MiB for the normal 4 MiB maximum, or 32 MiB when
+the maximum is raised to support `-w 8M`. Set that maximum before starting
+the benchmark so the source queue covers the socket's allocation allowance.
 The default `fq_codel` drops queued GSO packets when EQ stalls increase delay,
 before those packets reach the feed/FE counters. The FIFO lets the server's
 socket send-buffer accounting apply backpressure instead. A dual-process
@@ -132,7 +137,7 @@ from 1.486 to 1.608 Gbit/s; some NI receive and client socket losses remained.
 The byte limit is not preallocated. Stop removes the test netdevice and its
 queue; the normal interfaces keep their existing qdiscs.
 
-`status` reports qdisc kind, backlog, drops and requeues. Qdisc drops count
+`status` reports qdisc kind, byte limit, backlog, drops and requeues. Qdisc drops count
 SKBs, so one GSO drop can lose many UDP datagrams (44 in the measured run).
 Compare these counters as well as feed/FE/PE and client counters when locating
 loss; a matching FE/PE pair does not cover loss in the source queue.
