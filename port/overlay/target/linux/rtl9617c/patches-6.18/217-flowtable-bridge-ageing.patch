@@ -71,9 +71,9 @@
 +/* Traffic in this direction proves activity of the opposite path's peer.
 + * RTNL cannot be taken here: device cleanup flushes this workqueue under RTNL.
 + */
-+static void flow_offload_refresh_bridge(struct flow_offload *flow,
-+					enum flow_offload_tuple_dir dir,
-+					u64 lastused)
++void flow_offload_refresh_bridge(struct flow_offload *flow,
++				 enum flow_offload_tuple_dir dir,
++				 u64 lastused)
 +{
 +	const struct flow_offload_tuple *tuple = &flow->tuplehash[!dir].tuple;
 +	struct net_device *bridge, *port;
@@ -107,3 +107,33 @@
  
  	lastused = max_t(u64, stats[0].lastused, stats[1].lastused);
  	offload->flow->timeout = max_t(u64, offload->flow->timeout,
+--- a/include/net/netfilter/nf_flow_table.h
++++ b/include/net/netfilter/nf_flow_table.h
+@@ -295,6 +295,9 @@
+ void flow_offload_refresh(struct nf_flowtable *flow_table,
+ 			  struct flow_offload *flow, bool force);
+ 
++void flow_offload_refresh_bridge(struct flow_offload *flow,
++				 enum flow_offload_tuple_dir dir, u64 lastused);
++
+ struct flow_offload_tuple_rhash *flow_offload_lookup(struct nf_flowtable *flow_table,
+ 						     struct flow_offload_tuple *tuple);
+ void nf_flow_table_gc_run(struct nf_flowtable *flow_table);
+--- a/net/netfilter/nf_flow_table_ip.c
++++ b/net/netfilter/nf_flow_table_ip.c
+@@ -407,6 +407,7 @@
+ 		return -1;
+ 
+ 	flow_offload_refresh(flow_table, flow, false);
++	flow_offload_refresh_bridge(flow, dir, jiffies);
+ 
+ 	nf_flow_encap_pop(skb, tuplehash);
+ 	thoff -= ctx->offset;
+@@ -696,6 +697,7 @@
+ 		return -1;
+ 
+ 	flow_offload_refresh(flow_table, flow, false);
++	flow_offload_refresh_bridge(flow, dir, jiffies);
+ 
+ 	nf_flow_encap_pop(skb, tuplehash);
+ 
