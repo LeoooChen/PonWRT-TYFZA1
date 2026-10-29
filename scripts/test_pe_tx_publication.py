@@ -66,6 +66,8 @@ class Machine:
         self.stop_next_instruction = False
         self.u.hook_add(UC_HOOK_MEM_READ, self.read,
                         begin=TXMB + WRITE * 4, end=TXMB + WRITE * 4 + 3)
+        self.u.hook_add(UC_HOOK_MEM_READ, self.read,
+                        begin=RING, end=RING + 0x3fff)
         self.u.hook_add(UC_HOOK_CODE, self.step)
         self.u.hook_add(UC_HOOK_BLOCK, self.block)
 
@@ -98,6 +100,8 @@ class Machine:
     def read(self, uc, access, address, size, value, unused):
         if address & 0x1fffffff == TXMB + WRITE * 4:
             self.events.append(('read_write', self.actor, address, size, 0))
+        if RING <= address & 0x1fffffff < RING + 0x4000:
+            self.events.append(('drain', self.actor, address & 0x1fffffff, size, 0))
 
     def step(self, uc, address, size, unused):
         if self.stop_next_instruction:
@@ -176,6 +180,9 @@ def check_publish(machine, events, rings, sequence):
         last_descriptor = max(i for i, event in enumerate(events[:at])
                               if event[0] == 'descriptor')
         assert any(event[0] == 'sync' for event in events[last_descriptor + 1:at])
+        ring = REGISTERS.index(doorbell[2] - BAR)
+        last = (doorbell[4] - 1) & 255
+        assert ('drain', 'PE1', RING + (ring * 256 + last) * 8 + 4, 4, 0) in events[last_descriptor + 1:at]
     assert events.index(acks[-1]) > events.index(doorbells[-1])
     for ring, register in enumerate(REGISTERS):
         assert machine.get(BAR + register) >> 16 == machine.hardware[ring]

@@ -438,8 +438,14 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 	}
 	/* Stock update_txbd finishes the WD and ownership before trigger_txdma. */
 	sync();
-	for (u32 ring = 0; ring < 6; ring++)
-		if (mask & BIT(ring)) *(volatile u16 *)(mailbox[2] + indices[ring]) = producers[ring];
+	for (u32 ring = 0; ring < 6; ring++) {
+		if (!(mask & BIT(ring))) continue;
+		/* Complete the posted DDR batch before PCIe can fetch its WDs. */
+		u32 last = (producers[ring] - 1) & 255;
+		(void)*(volatile u32 *)uncached(mailbox[11] + (ring * 256 + last) * 8 + 4);
+		sync();
+		*(volatile u16 *)(mailbox[2] + indices[ring]) = producers[ring];
+	}
 	sync();
 	mailbox[RTL_AX_TX_PUBLISH_READ] = read;
 }
