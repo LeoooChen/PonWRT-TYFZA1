@@ -68,6 +68,9 @@ static void rtl_ax_monitor_stop(struct ieee80211_hw *hw, bool suspend)
 	wiphy_delayed_work_cancel(hw->wiphy, &radio->ra_work);
 	wiphy_delayed_work_cancel(hw->wiphy, &radio->dm_work);
 	wiphy_work_cancel(hw->wiphy, &radio->ra_update_work);
+	/* Wiphy serialization keeps the AP alive; PKT_DROP takes command_mutex. */
+	ret = rtl_ax_tx_ni_route(radio->tx, NULL, 0);
+	if (ret) dev_err(&radio->pdev->dev, "NI withdrawal on radio stop failed: %d\n", ret);
 	mutex_lock(&radio->command_mutex);
 	spin_lock_irqsave(&radio->command_lock, flags);
 	radio->dfs.enabled = false;
@@ -75,10 +78,6 @@ static void rtl_ax_monitor_stop(struct ieee80211_hw *hw, bool suspend)
 	WRITE_ONCE(radio->monitor_started, false);
 	rtl_ax_update32(&radio->io, 0xce40, BIT(0), 0);
 	tasklet_kill(&radio->tx_tasklet);
-	/* NI owns a netdev reference. Withdraw and drain it while RX/RPQ
-	 * can still complete, before unregister waits for that reference. */
-	ret = rtl_ax_tx_ni_route(radio->tx, NULL, 0);
-	if (ret) dev_err(&radio->pdev->dev, "NI withdrawal on radio stop failed: %d\n", ret);
 	rtl_ax_update32(&radio->io, 0xc400, BIT(12), 0);
 	radio->beacon_enabled = false;
 	ret = rtl_ax_tx_pause(radio->tx);
@@ -225,6 +224,9 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 		struct rtl_ax_security_role *role = &radio->security_roles[macid];
 		if (!radio->peer_authorized[macid] || !radio->tx_ba[macid].aggregation[0] ||
 		    radio->tx_ba[macid].stopping || !(role->valid & BIT(role->tx_keyid))) continue;
+		for (index = 0; index < ARRAY_SIZE(radio->rx_ba); index++)
+			if (radio->rx_ba[index].deleting && radio->rx_ba[index].macid == macid) break;
+		if (index != ARRAY_SIZE(radio->rx_ba)) continue;
 		for (index = 0; index < RTL_AX_SECURITY_ENTRIES; index++)
 			if (radio->security_unlink[index] == macid + 1) break;
 		if (index != RTL_AX_SECURITY_ENTRIES ||
@@ -374,6 +376,11 @@ static int rtl_ax_rx_ba_remove(struct rtl_ax_ap *radio, unsigned int index)
 	int ret;
 
 	radio->rx_ba[index].deleting = true;
+	ret = rtl_ax_tx_rx_retire(radio->tx, radio->rx_ba[index].macid);
+	if (ret) {
+		radio->rx_ba_result = ret;
+		return ret;
+	}
 	rtl_ax_store32(ba, 2 | radio->rx_ba[index].macid << 8);
 	rtl_ax_store32(ba + 4, (index + 8) << 28);
 	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 12, 0, ba, sizeof(ba), true);
@@ -384,6 +391,7 @@ static int rtl_ax_rx_ba_remove(struct rtl_ax_ap *radio, unsigned int index)
 		radio->rx_ba[index].valid = false;
 		radio->rx_ba[index].deleting = false;
 		radio->rx_ba_stopped++;
+		rtl_ax_offload_ready(radio);
 	}
 	return ret;
 }
@@ -794,8 +802,6 @@ static int rtl_ax_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 			station->macid, params->tid, i + 8, params->ssn);
 		return 0;
 	case IEEE80211_AMPDU_RX_STOP:
-		ret = rtl_ax_tx_rx_retire(radio->tx, station->macid);
-		if (ret) return ret;
 		for (i = 0; i < ARRAY_SIZE(radio->rx_ba); i++)
 			if (radio->rx_ba[i].valid && radio->rx_ba[i].macid == station->macid &&
 			    radio->rx_ba[i].tid == params->tid)
@@ -809,7 +815,6 @@ static int rtl_ax_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 		}
 		dev_info(&radio->pdev->dev, "native RX BA MACID%u TID%u entry%u removed\n",
 			station->macid, params->tid, i + 8);
-		rtl_ax_offload_ready(radio);
 		return 0;
 	}
 	return -EOPNOTSUPP;

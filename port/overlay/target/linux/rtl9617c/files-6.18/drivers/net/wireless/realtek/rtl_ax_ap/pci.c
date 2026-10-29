@@ -1838,7 +1838,6 @@ static int rtl_ax_receive_configure(struct rtl_ax_ap *radio, unsigned int primar
 	}
 resume:
 	if (!ret) ret = rtl_ax_dfs_start_locked(radio);
-	radio->dfs.error = ret;
 	pci_set_master(radio->pdev);
 	rtl_ax_h2c_start(&radio->io);
 	rtl_ax_rx_open(radio->rx);
@@ -1846,6 +1845,9 @@ resume:
 		ret = rtl_ax_bb_channel_notify_locked(radio);
 	if (!ret && channel_changed && radio->chip == RTL_AX_8852C)
 		ret = rtl_ax_rfk_notify_locked(radio);
+	/* A channel is reusable only after calibration and firmware notification. */
+	if (ret && channel_changed) radio->channel.configured = false;
+	radio->dfs.error = ret;
 	if (!ret && radio->monitor_started)
 		rtl_ax_tx_open(radio->tx);
 	return ret;

@@ -52,24 +52,41 @@ typedef uint32_t u32;typedef uint8_t u8;
 #define RTL_AX_TX_STOP_MASK 0x303
 #define PE_PROBE_MAILBOX 0x2000
 #define READ_ONCE(p) (p)
+#define WRITE_ONCE(p,v) ((p)=(v))
 #define spin_lock_irqsave(p,f) ((void)(p),(f)=0)
 #define spin_unlock_irqrestore(p,f) ((void)(p),(void)(f))
 #define dma_wmb() ((void)0)
-#define read_poll_timeout(op,v,cond,delay,timeout,sleep,addr) ((void)(delay),(void)(timeout),(void)(sleep),(v)=op(addr),poll_error?poll_error:((cond)?0:-ETIMEDOUT))
+#define read_poll_timeout(op,v,cond,delay,timeout,sleep,addr) ((void)(delay),(void)(timeout),(void)(sleep),poll_tick(addr),(v)=op(addr),poll_error?poll_error:((cond)?0:-ETIMEDOUT))
 struct ieee80211_hw {unsigned queues;bool stopped;};
 struct rtl_ax_io {void *ctx;u32(*read32)(void*,unsigned);u8(*read8)(void*,unsigned);void(*delay_us)(void*,unsigned);};
 struct rtl_ax_tx {const struct rtl_ax_io *io;int lock;bool running,paused,queues_paused,dfs_blocked,pe_active,queues_stopped,checksum_enabled;
+ void *rx;bool peer_offloaded[128];struct {bool active;}ni;
  struct ieee80211_hw *hw;unsigned occupied,pe_producer,pe_command,queue_stops,queue_wakes,stopped;struct {void *memory;}pe;u32 scheduler_saved;};
 struct tasklet_struct {int unused;};
 struct rtl_ax_ap {struct tasklet_struct tx_tasklet;struct ieee80211_hw *hw;bool monitor_started;};
 struct ieee80211_txq {void *sta;};struct ieee80211_tx_control {void *sta;};struct sk_buff {int unused;};
 #define from_tasklet(p,t,member) ((struct rtl_ax_ap *)((char *)(t)-offsetof(struct rtl_ax_ap,member)))
+static int rx_pause_error;static unsigned retired;
+static bool rx_admitted=true;
+static int rtl_ax_rx_pe_pause(void *rx){(void)rx;return rx_pause_error;}
+static void rtl_ax_rx_pe_open(void *rx){(void)rx;}
+static void rtl_ax_rx_uplink_disable(void *rx,unsigned id){(void)rx;(void)id;rx_admitted=false;}
+static void rtl_ax_rx_uplink_retire(void *rx,unsigned id){(void)rx;(void)id;retired++;}
 static unsigned remaining,accepted,dropped,stops,wakes,syncs,inflight;
-static bool check_credit_during_sync;static int poll_error;
+static bool check_credit_during_sync,mac_busy;static int poll_error;
+static unsigned polls,fail_poll;
 static struct rtl_ax_tx *active;
 static struct ieee80211_txq queue;static struct sk_buff skb;
 static u32 get_unaligned_le32(const void *p){u32 v;memcpy(&v,p,4);return v;}
 static void put_unaligned_le32(u32 v,void *p){memcpy(p,&v,4);}
+static void poll_tick(void *address){
+ polls++;
+ if(poll_error||polls==fail_poll)return;
+ if(address==(u8 *)active->pe.memory+PE_PROBE_MAILBOX+36)
+  put_unaligned_le32(active->pe_producer,address);
+ else if(address==(u8 *)active->pe.memory+PE_PROBE_MAILBOX+16)
+  put_unaligned_le32(get_unaligned_le32((u8 *)active->pe.memory+PE_PROBE_MAILBOX+12),address);
+}
 static void ieee80211_stop_queues(struct ieee80211_hw *hw){assert(hw);hw->stopped=true;stops++;}
 static void ieee80211_wake_queues(struct ieee80211_hw *hw){assert(hw);hw->stopped=false;wakes++;}
 static bool ieee80211_queue_stopped(struct ieee80211_hw *hw,unsigned ac){assert(!ac);return hw->stopped;}
@@ -81,7 +98,7 @@ static void ieee80211_txq_schedule_end(struct ieee80211_hw *hw,unsigned ac){(voi
 #define rcu_read_lock() ((void)0)
 #define rcu_read_unlock() ((void)0)
 static u32 read32(void *ctx,unsigned reg){(void)ctx;return reg==0xc398?0x3ffff:0;}
-static u8 read8(void *ctx,unsigned reg){(void)ctx;(void)reg;return 0;}
+static u8 read8(void *ctx,unsigned reg){(void)ctx;(void)reg;return mac_busy?BIT(7):0;}
 static void delay(void *ctx,unsigned us){(void)ctx;(void)us;}
 static void rtl_ax_update32(const struct rtl_ax_io *io,unsigned reg,unsigned mask,unsigned value){(void)io;(void)reg;(void)mask;(void)value;}
 static int guard(struct rtl_ax_tx *tx){int ret;
@@ -95,7 +112,7 @@ static void credit_complete(struct rtl_ax_tx *tx,struct ieee80211_hw *hw){
 callbacks2 = r'''
 }
 static void synchronize_net(void){
- syncs++;assert(active->hw->stopped&&active->running);
+ syncs++;assert(active->hw->stopped);
  if(inflight){assert(!guard(active));accepted+=inflight;inflight=0;}
  if(check_credit_during_sync){credit_complete(active,active->hw);assert(active->hw->stopped);}
 }
@@ -137,6 +154,29 @@ int main(void){
  assert(rtl_ax_tx_pause(&tx)==-ETIMEDOUT);rtl_ax_tx_queues(&radio.tx_tasklet);
  assert(remaining==7&&!dropped&&hw.stopped);poll_error=0;rtl_ax_tx_open(&tx);
  rtl_ax_tx_queues(&radio.tx_tasklet);assert(!remaining&&!dropped);
+ /* RX BA pause failure must roll back only an originally running radio. */
+ tx.ni.active=true;tx.peer_offloaded[7]=true;tx.pe_active=true;
+ for(unsigned failure=1;failure<=4;failure++) {
+  remaining=7;polls=0;fail_poll=failure<=2?failure:0;
+  tx.pe_producer++;
+  rx_pause_error=failure==3?-ETIMEDOUT:0;mac_busy=failure==4;
+  assert(rtl_ax_tx_rx_retire(&tx,7)==-ETIMEDOUT);
+  assert(tx.running&&!tx.queues_paused&&!hw.stopped&&!retired&&!rx_admitted);
+  assert(tx.peer_offloaded[7]);
+  rtl_ax_tx_queues(&radio.tx_tasklet);assert(!remaining&&!dropped);
+ }
+ fail_poll=0;rx_pause_error=0;mac_busy=false;assert(!rtl_ax_tx_rx_retire(&tx,7));
+ assert(retired==1&&!tx.peer_offloaded[7]&&tx.running&&!hw.stopped);
+ /* Never reopen a radio that was already paused (e.g. failed RFK). */
+ assert(!rtl_ax_tx_pause(&tx));rx_pause_error=-ETIMEDOUT;
+ assert(rtl_ax_tx_rx_retire(&tx,7)==-ETIMEDOUT);
+ assert(!tx.running&&tx.queues_paused&&hw.stopped&&retired==1);
+ rx_pause_error=0;rtl_ax_tx_open(&tx);
+ /* Rollback must preserve an independent DFS block and a WP-credit stop. */
+ tx.dfs_blocked=true;tx.queues_stopped=true;tx.occupied=200;rx_pause_error=-ETIMEDOUT;
+ assert(rtl_ax_tx_rx_retire(&tx,7)==-ETIMEDOUT);
+ assert(tx.running&&tx.dfs_blocked&&tx.queues_stopped&&hw.stopped);
+ tx.dfs_blocked=false;rx_pause_error=0;tx.occupied=0;rtl_ax_tx_open(&tx);
  /* Probe/teardown without a registered mac80211 object cannot touch its queues. */
  rtl_ax_tx_bind_hw(&tx,0);tx.pe_active=false;unsigned old_stops=stops,old_wakes=wakes;
  assert(!rtl_ax_tx_pause(&tx));rtl_ax_tx_open(&tx);assert(stops==old_stops&&wakes==old_wakes);
@@ -149,7 +189,7 @@ with tempfile.TemporaryDirectory(prefix='pause-queue-', dir=root / 'artifacts') 
     source = common + guard + callbacks + report + callbacks2
     if not args.before:
         source += function(tx, 'rtl_ax_tx_bind_hw')
-    source += function(tx, 'rtl_ax_tx_pause') + function(tx, 'rtl_ax_tx_open') + function(monitor, 'rtl_ax_tx_queues') + case
+    source += function(tx, 'rtl_ax_tx_pause') + function(tx, 'rtl_ax_tx_open') + function((driver / 'ni-test.h').read_text(), 'rtl_ax_tx_rx_retire') + function(monitor, 'rtl_ax_tx_queues') + case
     (p / 'case.c').write_text(source)
     command = ['cc', '-O2', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function', '-fsanitize=address,undefined']
     if args.before:

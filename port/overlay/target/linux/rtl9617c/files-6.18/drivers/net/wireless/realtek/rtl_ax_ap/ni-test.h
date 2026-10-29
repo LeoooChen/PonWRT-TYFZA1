@@ -613,15 +613,20 @@ static bool ni_peer_idle(struct rtl_ax_tx *tx, unsigned int macid)
 
 int rtl_ax_tx_rx_retire(struct rtl_ax_tx *tx, unsigned int macid)
 {
+	bool running = READ_ONCE(tx->running);
 	int ret;
 
 	if (!tx->ni.active) return 0;
 	rtl_ax_rx_uplink_disable(tx->rx, macid);
 	ret = rtl_ax_tx_pause(tx);
-	if (ret) return ret;
+	if (ret) {
+		/* No ownership changed: cancel this runtime pause, not a prior RFK stop. */
+		if (running) rtl_ax_tx_open(tx);
+		return ret;
+	}
 	rtl_ax_rx_uplink_retire(tx->rx, macid);
 	WRITE_ONCE(tx->peer_offloaded[macid], false);
-	rtl_ax_tx_open(tx);
+	if (running) rtl_ax_tx_open(tx);
 	return 0;
 }
 
