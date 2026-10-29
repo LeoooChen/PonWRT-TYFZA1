@@ -153,6 +153,43 @@ def reorder_peer(start=0x123,window=64):
  for j,v in ((88,VP|0xa0000000),(89,NI),(93,1),(106,ST)):r.put(MB+j*4,v)
  return r
 
+# A waiting head has already validated every A-MSDU protocol. Repeated
+# lookups keep checking admission and PN without rereading its payload.
+retry_parts=[]
+for part in range(7):
+ llc=data_frame(0,2)[34:-12]+bytes(1400)
+ sub=dst+peer+struct.pack('!H',len(llc))+llc
+ retry_parts.append(sub+(bytes((-len(sub))&3) if part<6 else b''))
+retry_header=bytearray(data_frame(0x124,3)[:34]);retry_header[24]=0x80
+retry_frame=bytes(retry_header)+b''.join(retry_parts)+bytes(12)
+r=reorder_peer();at,raw=r.arrive(retry_frame,True);r.capture();payload_reads=[]
+def retry_payload_read(uc,access,address,size,value,data):
+ if at+76 <= address&0x1fffffff < at+len(raw):payload_reads.append(address)
+hook=r.u.hook_add(UC_HOOK_MEM_READ,retry_payload_read)
+r.process();initial_reads=len(payload_reads);payload_reads.clear()
+for _ in range(50):r.process()
+assert initial_reads>0 and not payload_reads
+assert not r.get(MB+175*4) and not r.get(MB+90*4) and not r.get(MB+94*4)
+assert bytes(r.u.mem_read(at,len(raw)))==raw
+r.u.hook_del(hook)
+r.arrive(data_frame(0x123,2),True);r.capture()
+for _ in range(4):r.process()
+assert r.get(MB+90*4)==8 and r.get(MB+175*4)==2
+r.put(VP+0x1c,8);r.capture();r.inventory()
+
+# Admission/PN changes and a new head or BA expectation invalidate reuse.
+for fault in ('replay','unauthorized','new_head','new_expected'):
+ r=reorder_peer();at,raw=r.arrive(retry_frame,True);r.capture();r.process()
+ if fault=='replay':r.put(ST+1028,3)
+ if fault=='unauthorized':r.put(B+0x11a08,0)
+ if fault=='new_head':r.put(B+0x17820,r.get(B+0x17820)^(1<<24))
+ if fault=='new_expected':r.put(ST+1024,1<<31|0x122)
+ if fault in ('new_head','new_expected'):
+  r.u.mem_write(at+84,b'\x00')
+ r.process()
+ assert not r.get(MB+90*4) and r.get(MB+94*4)==1, fault
+ r.inventory()
+
 # A received BA batch is emitted in SN/PN order, including the4095->0 wrap.
 for start,sequences in ((0x123,[0x124,0x123]),(0x123,[0x125,0x124,0x123]),(4094,[0,4095,4094])):
  r=reorder_peer(start)

@@ -158,6 +158,17 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 		if (((sequence - expected) & 4095) >= state[7]) return 0;
 	}
 	if (pn_high < state[2] || (pn_high == state[2] && pn_low <= state[1])) { mailbox[110]++; return 0; }
+	if (out_of_order) {
+		u32 order = ((macid * 16 + tid) << 12) | expected;
+		u32 key = BIT(23) | (mailbox[RTL_AX_RX_WORK_PROCESS] << 24) | order;
+		u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
+		/* This untouched head passed the complete protocol walk before
+		 * starting this scan. Retry the gap, not every A-MSDU subframe. */
+		if (*(u32 *)(memory + RTL_AX_RX_REORDER_SEARCH) == key) {
+			*reorder = order;
+			return 0;
+		}
+	}
 	struct { u8 addresses[12]; u32 range; } plan[63];
 	/* Stock retains two completed descriptors and requires more than two
 	 * free slots before each submission. The hardware read cursor alone
