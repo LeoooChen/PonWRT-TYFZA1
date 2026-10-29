@@ -431,7 +431,6 @@ static void __attribute__((section(".rxq"), noinline, minsize)) pe_rx_work(volat
 	u32 buffer_dma = rx_buffer_dma(mailbox, id);
 	u8 *buffer = uncached(buffer_dma);
 	u32 wd = *(u32 *)(buffer + 4), type = (wd >> 24) & 15;
-	u32 stateful = rx_needs_arm_barrier(buffer, wd);
 	u32 reorder = 0, owner = (item & RTL_AX_RX_WORK_OLD) && type == 8 ?
 		RX_ARM_DONE : rx_uplink(mailbox, buffer, buffer_dma, &reorder);
 	/* NI congestion retains the untouched head until the next completion
@@ -442,6 +441,7 @@ static void __attribute__((section(".rxq"), noinline, minsize)) pe_rx_work(volat
 	if (!owner) {
 		u32 producer = mailbox[94];
 		if (((producer + 1) & 255) == mailbox[95]) return;
+		u32 stateful = rx_needs_arm_barrier(buffer, wd);
 		*(u32 *)(memory + RX_SLOW_RING + producer * 4) = read;
 		sync();
 		mailbox[94] = (producer + 1) & 255;

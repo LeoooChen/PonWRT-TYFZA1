@@ -162,6 +162,16 @@ for part in range(7):
  retry_parts.append(sub+(bytes((-len(sub))&3) if part<6 else b''))
 retry_header=bytearray(data_frame(0x124,3)[:34]);retry_header[24]=0x80
 retry_frame=bytes(retry_header)+b''.join(retry_parts)+bytes(12)
+# Only ARM fallback classifies receive-state barriers, never committed NI data.
+for frame,frames in ((data_frame(0x124,3),1),(retry_frame,7)):
+ r=reorder_peer(start=0x124);r.arrive(frame,True);r.capture();barrier_checks=[]
+ r.u.hook_add(UC_HOOK_CODE,
+  lambda uc,address,size,data:barrier_checks.append(r.get(MB+94*4)),
+  begin=symbols['rx_needs_arm_barrier'],end=symbols['rx_needs_arm_barrier'])
+ r.process()
+ assert r.get(MB+90*4)==frames and not r.get(MB+94*4) and not barrier_checks
+ r.arrive(data_frame(0x125,4)[:34]+bytes(40),True);r.capture();r.process()
+ assert barrier_checks==[0] and r.get(MB+94*4)==1 and r.get(MB+180*4)==1
 r=reorder_peer();at,raw=r.arrive(retry_frame,True);r.capture();payload_reads=[]
 def retry_payload_read(uc,access,address,size,value,data):
  if at+76 <= address&0x1fffffff < at+len(raw):payload_reads.append(address)
