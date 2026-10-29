@@ -88,7 +88,7 @@ ip route add table 220 "$peer_ip/32" dev ponfeed0 src 198.18.255.1
 ip rule add from 198.18.255.1/32 table 220 priority 22000
 touch "$STATE/rule"
 "$BASE/set_peer" "$peer_ip" "$peer_mac"
-insmod "$BASE/iperf_pon_sink.ko" input="$output" peer_ip="$peer_ip" peer_mac="$peer_mac" udp="$udp"
+insmod "$BASE/iperf_pon_sink.ko" input="$output" peer_ip="$peer_ip" peer_mac="$peer_mac" udp="$udp" udp_gro="${UDP_GRO:-0}"
 touch "$STATE/iperf_pon_sink"
 if [ "$(cat /sys/module/iperf_pon_sink/parameters/init_error)" != 0 ]; then
 	echo "Sink rule installation failed; releasing endpoint" >&2; exit 1

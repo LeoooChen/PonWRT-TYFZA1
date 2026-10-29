@@ -45,9 +45,12 @@ RPS. `IPERF_CPU_MASK=1` pins the server and its future worker threads to CPU0,
 which reduced receive-buffer overruns in an uplink test. It is optional:
 leave it unset when investigating downlink, where sender CPU demand differs.
 Neither setting changes the production interfaces or persists after stop.
-UDP delivery enters RPS directly because default iperf3 sockets do not request UDP GRO;
-TCP keeps the NI NAPI GRO context. This avoids UDP checksum work on the NI
-poller before RPS distributes the packets to the receiver CPUs.
+UDP delivery enters RPS directly by default because ordinary iperf3 sockets
+do not request UDP GRO; TCP keeps the NI NAPI GRO context. Set `UDP_GRO=1`
+at benchmark start and use client `--gsro` to aggregate UDP in that context.
+For macOS senders also use `--dont-fragment`: their default IPv4 IDs prevented
+useful GRO in testing. Leave the switch off without aggregatable traffic;
+otherwise checksum work moves onto the NI poller without reducing delivery work.
 
 On the client, measure downlink (`-R`) and uplink, respectively:
 
@@ -84,8 +87,21 @@ doorbell, no invalid packets, and actual reception of 1.709 Gbit/s with
 `gso: 0` in the Mac client's JSON describes its local capability; verify
 server batching through the feed packet/doorbell deltas. Omitting 15 seconds
 affects iperf statistics only; hardware counter snapshots also include warmup.
-The sink still sends UDP directly to RPS, including when `--gsro` is used,
-so this option currently improves server transmission, not sink aggregation.
+`--gsro` alone does not change the sink's default direct-RPS path. To enable
+receive aggregation too, start with `UDP_GRO=1`, then run, for example:
+
+```sh
+iperf3 -c 198.18.255.1 -B CLIENT_IP --cport 55000 -p 5206 \
+    -u -l 1464 -P 1 -b 1050M -w 4M -t 20 --gsro --dont-fragment -J
+```
+
+At the same 1.050 Gbit/s offered load, the opt-in path reduced receive-process
+CPU from 60.3% to 21.6% of one core and four-core total busy from 33.5% to
+23.5%. Both runs had zero interval loss, UDP receive-buffer errors and NI tail
+drops. FE and sink counts matched all sent datagrams plus one handshake;
+iperf reported 80/35 fewer received datagrams respectively. This verifies
+adapter delivery, not exact end-to-end application receipt or the 1.7G target.
+Use `gro_skbs`/`gro_frames` to verify aggregation rather than the option alone.
 
 ### iperf3 GRO receiver CPU fix
 

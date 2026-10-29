@@ -32,7 +32,7 @@ static _Thread_local unsigned cpu;
 struct rtl9617c_ni_wifi_endpoint {int unused;};
 static void *sink=(void *)1,*ni_napi=(void *)2;
 static unsigned received,received_bytes,bad_pppoe,plain,gro,freed;
-static bool udp;static u8 first[32];
+static bool udp,udp_gro;static u8 first[32];
 static unsigned get_unaligned_be16(const u8 *p){return p[0]*256+p[1];}
 static void put_unaligned_be16(unsigned v,u8 *p){p[0]=v>>8;p[1]=v;}
 static void skb_pull(struct sk_buff *s,unsigned n){s->data+=n;s->len-=n;}
@@ -54,8 +54,8 @@ static void *count_worker(void *arg){
 }
 int main(void){
  u8 raw[128],original[128];
- for(int protocol=0;protocol<2;protocol++){
-  udp=protocol;
+ for(int mode=0;mode<4;mode++){
+  udp=mode & 1;udp_gro=mode & 2;
   for(unsigned i=0;i<sizeof(raw);i++)raw[i]=i;
   put_unaligned_be16(ETH_P_PPP_SES,raw+12);
   raw[14]=0x11;raw[15]=0;put_unaligned_be16(0x1234,raw+16);
@@ -66,13 +66,13 @@ int main(void){
   assert(!memcmp(s.data,original+22,s.len));
   assert(!memcmp(raw+8,original,12));
  }
- assert(received==2 && received_bytes==256 && plain==1 && gro==1 && !freed);
+ assert(received==4 && received_bytes==512 && plain==1 && gro==3 && !freed);
  for(unsigned n=0;n<22;n++){
   struct sk_buff s={raw,n,0,0,0};receive(0,&s,true);
  }
  memcpy(raw,original,sizeof(raw));raw[16]=0;
  struct sk_buff s={raw,sizeof(raw),0,0,0};receive(0,&s,true);
- assert(freed==23 && bad_pppoe==23 && plain==1 && gro==1);
+ assert(freed==23 && bad_pppoe==23 && plain==1 && gro==3);
  pthread_t workers[2];
  for(unsigned i=0;i<2;i++)assert(!pthread_create(&workers[i],0,count_worker,(void *)(uintptr_t)i));
  for(unsigned i=0;i<2;i++)assert(!pthread_join(workers[i],0));
@@ -88,4 +88,4 @@ with tempfile.TemporaryDirectory(prefix='iperf-sink-rx-') as directory:
     subprocess.run(['cc', '-O1', '-g', '-pthread', '-fsanitize=address,undefined',
                     str(p / 'test.c'), '-o', str(p / 'test')], check=True)
     subprocess.run([str(p / 'test')], check=True)
-print('iperf sink: PPPoE/payload preserved, UDP direct/RPS, TCP GRO, bad headers dropped, concurrent per-CPU counts exact')
+print('iperf sink: PPPoE/payload preserved, UDP direct/RPS default, opt-in UDP GRO, TCP GRO, bad headers dropped, concurrent per-CPU counts exact')

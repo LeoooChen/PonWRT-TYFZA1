@@ -23,11 +23,12 @@ module_param(init_error,int,0400);
 static u64 packets,bytes,received,received_bytes,bad_pppoe;
 static u8 first[32];
 static char *peer_ip, *peer_mac, *input = "ap5";
-static bool udp;
+static bool udp,udp_gro;
 module_param(peer_ip,charp,0400);
 module_param(peer_mac,charp,0400);
 module_param(input,charp,0400);
 module_param(udp,bool,0400);
+module_param(udp_gro,bool,0400);
 /* The callback runs within the NI owner's serialized poll. Use that same
  * GRO context across CPU migration, as ca_ni_rx_napi does for CPU delivery. */
 static struct napi_struct *ni_napi;
@@ -85,9 +86,9 @@ static void receive(struct rtl9617c_ni_wifi_endpoint *ep,struct sk_buff *skb,boo
  skb->ip_summed=CHECKSUM_NONE;
  skb->dev=sink;skb->protocol=eth_type_trans(skb,sink);
  skb_unset_transport_header(skb);
- /* iperf UDP sockets do not enable UDP_GRO. Let RPS move checksum and
-  * socket delivery off the NI poller instead of checking before RPS. */
- if(udp)netif_receive_skb(skb);
+ /* Default UDP sockets benefit from RPS before checksum work. With --gsro,
+  * use the NI GRO context so the socket receives aggregated datagrams. */
+ if(udp && !udp_gro)netif_receive_skb(skb);
  else napi_gro_receive(ni_napi,skb);
 }
 static netdev_tx_t discard(struct sk_buff *skb,struct net_device *dev)
