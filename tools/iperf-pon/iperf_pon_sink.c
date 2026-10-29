@@ -83,7 +83,8 @@ static void receive(struct rtl9617c_ni_wifi_endpoint *ep,struct sk_buff *skb,boo
  }
  memmove(skb->data+8,skb->data,12);skb_pull(skb,8);
  put_unaligned_be16(ETH_P_IP,skb->data+12);
- skb->ip_summed=CHECKSUM_NONE;
+ /* PPPoE removal does not change the inner checksum verified by NI. */
+ if(skb->ip_summed!=CHECKSUM_UNNECESSARY)skb->ip_summed=CHECKSUM_NONE;
  skb->dev=sink;skb->protocol=eth_type_trans(skb,sink);
  skb_unset_transport_header(skb);
  /* Default UDP sockets benefit from RPS before checksum work. With --gsro,

@@ -19,6 +19,7 @@ typedef unsigned char u8;
 #define ETH_P_PPP_SES 0x8864
 #define ETH_P_IP 0x800
 #define CHECKSUM_NONE 0
+#define CHECKSUM_UNNECESSARY 1
 #define min_t(t,a,b) ((a)<(b)?(a):(b))
 struct sk_buff {u8 *data;unsigned len;int ip_summed,protocol;void *dev;unsigned gso_segs;};
 typedef uint64_t u64;
@@ -31,7 +32,7 @@ static _Thread_local unsigned cpu;
 #define skb_shinfo(s) (s)
 struct rtl9617c_ni_wifi_endpoint {int unused;};
 static void *sink=(void *)1,*ni_napi=(void *)2;
-static unsigned received,received_bytes,bad_pppoe,plain,gro,freed;
+static unsigned received,received_bytes,bad_pppoe,plain,gro,freed,expected_checksum;
 static bool udp,udp_gro;static u8 first[32];
 static unsigned get_unaligned_be16(const u8 *p){return p[0]*256+p[1];}
 static void put_unaligned_be16(unsigned v,u8 *p){p[0]=v>>8;p[1]=v;}
@@ -41,8 +42,8 @@ static int eth_type_trans(struct sk_buff *s,void *dev){
  skb_pull(s,14);return ETH_P_IP;
 }
 static void skb_unset_transport_header(struct sk_buff *s){}
-static void netif_receive_skb(struct sk_buff *s){plain++;assert(!s->ip_summed);}
-static void napi_gro_receive(void *n,struct sk_buff *s){gro++;assert(n==ni_napi && !s->ip_summed);}
+static void netif_receive_skb(struct sk_buff *s){plain++;assert(s->ip_summed==expected_checksum);}
+static void napi_gro_receive(void *n,struct sk_buff *s){gro++;assert(n==ni_napi && s->ip_summed==expected_checksum);}
 static void dev_kfree_skb_any(struct sk_buff *s){freed++;}
 '''
 checks = r'''
@@ -54,25 +55,26 @@ static void *count_worker(void *arg){
 }
 int main(void){
  u8 raw[128],original[128];
- for(int mode=0;mode<4;mode++){
+ for(int mode=0;mode<8;mode++){
   udp=mode & 1;udp_gro=mode & 2;
+  expected_checksum=(mode&4)?CHECKSUM_UNNECESSARY:CHECKSUM_NONE;
   for(unsigned i=0;i<sizeof(raw);i++)raw[i]=i;
   put_unaligned_be16(ETH_P_PPP_SES,raw+12);
   raw[14]=0x11;raw[15]=0;put_unaligned_be16(0x1234,raw+16);
   put_unaligned_be16(sizeof(raw)-20,raw+18);put_unaligned_be16(0x21,raw+20);
   memcpy(original,raw,sizeof(raw));
-  struct sk_buff s={raw,sizeof(raw),7,0,0};receive(0,&s,true);
+  struct sk_buff s={raw,sizeof(raw),(mode&4)?CHECKSUM_UNNECESSARY:7,0,0};receive(0,&s,true);
   assert(s.data==raw+22 && s.len==sizeof(raw)-22 && s.protocol==ETH_P_IP);
   assert(!memcmp(s.data,original+22,s.len));
   assert(!memcmp(raw+8,original,12));
  }
- assert(received==4 && received_bytes==512 && plain==1 && gro==3 && !freed);
+ assert(received==8 && received_bytes==1024 && plain==2 && gro==6 && !freed);
  for(unsigned n=0;n<22;n++){
   struct sk_buff s={raw,n,0,0,0};receive(0,&s,true);
  }
  memcpy(raw,original,sizeof(raw));raw[16]=0;
  struct sk_buff s={raw,sizeof(raw),0,0,0};receive(0,&s,true);
- assert(freed==23 && bad_pppoe==23 && plain==1 && gro==3);
+ assert(freed==23 && bad_pppoe==23 && plain==2 && gro==6);
  pthread_t workers[2];
  for(unsigned i=0;i<2;i++)assert(!pthread_create(&workers[i],0,count_worker,(void *)(uintptr_t)i));
  for(unsigned i=0;i<2;i++)assert(!pthread_join(workers[i],0));
