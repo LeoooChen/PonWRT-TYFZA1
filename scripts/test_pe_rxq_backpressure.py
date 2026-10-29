@@ -212,6 +212,68 @@ for high, low, duplicate in ((1, 0xffffffff, True), (2, 100, True), (3, 0, False
     assert r.get(MB+90*4) == 0 and r.get(ST+1028) == 100 and r.get(ST+1032) == 2
     assert bytes(r.u.mem_read(at, len(raw))) == raw
 
+# Other stations retain independent PN/SN state during a reorder lookup.
+other=bytes.fromhex('02aabbccddee');other_state=ST+3*16*32
+for fault in (None,'sequence','pn','unauthorized','PS','protocol'):
+ r=reorder_peer()
+ r.u.mem_write(B+0xe400+3*8,other);r.put(B+0x11a00+3*4,1);r.put(ST+0x10000+3*4,1<<31|1<<8)
+ r.put(other_state,1<<31|0x345);r.put(other_state+4,6);r.put(other_state+28,64)
+ a=bytearray(data_frame(0x124,3));b=bytearray(data_frame(0x345,7));c=bytearray(data_frame(0x123,2))
+ b[10:16]=other
+ if fault=='sequence':b[22:24]=struct.pack('<H',0x346<<4)
+ if fault=='pn':b[26]=6
+ if fault=='unauthorized':r.put(ST+0x10000+3*4,0)
+ if fault=='PS':b[1]|=16
+ if fault=='protocol':b[34]=0
+ for frame,ident,macid in [(a,0x124,2),(b,0x345,3),(c,0x123,2)]:
+  struct.pack_into('!H',frame,46,ident)
+  at,raw=r.arrive(bytes(frame),True);r.put(at+24,1<<28|macid<<16);r.capture()
+ r.process()
+ if fault is None:
+  assert r.get(MB+94*4)==0 and r.get(MB+90*4)==2, (r.get(MB+94*4),r.get(MB+90*4))
+  for _ in range(4):r.process()
+  assert r.get(MB+90*4)==3 and not r.get(MB+94*4)
+  actual=[struct.unpack('!H',r.u.mem_read(r.get(NI+j*8)+18,2))[0]for j in range(3)]
+  assert actual==[0x345,0x123,0x124]
+  assert r.get(ST+1024)==1<<31|0x125 and r.get(ST+1028)==3
+  assert r.get(other_state)==1<<31|0x346 and r.get(other_state+4)==7
+  r.put(VP+0x1c,3);r.capture();r.inventory()
+ else:
+  assert r.get(MB+94*4)==1 and r.get(MB+90*4)==0
+  assert r.get(other_state)==1<<31|0x345 and r.get(other_state+4)==6
+
+# An equal sequence number at another station is not the missing head.
+r=reorder_peer();r.u.mem_write(B+0xe400+3*8,other);r.put(B+0x11a00+3*4,1)
+r.put(ST+0x10000+3*4,1<<31|1<<8);r.put(other_state,1<<31|0x123)
+r.put(other_state+4,6);r.put(other_state+28,64)
+for sequence,pn,macid in [(0x124,3,2),(0x123,7,3),(0x123,2,2)]:
+ frame=bytearray(data_frame(sequence,pn))
+ if macid==3:frame[10:16]=other
+ at,_=r.arrive(bytes(frame),True);r.put(at+24,1<<28|macid<<16);r.capture()
+for _ in range(5):r.process()
+assert r.get(MB+90*4)==3 and not r.get(MB+94*4)
+assert r.get(ST+1024)==1<<31|0x125 and r.get(other_state)==1<<31|0x124
+r.put(VP+0x1c,3);r.capture();r.inventory()
+
+# Cross-station lookahead under NI pressure preserves its scan and ownership.
+r=reorder_peer();r.u.mem_write(B+0xe400+3*8,other);r.put(B+0x11a00+3*4,1)
+r.put(ST+0x10000+3*4,1<<31|1<<8);r.put(other_state,1<<31|0x345)
+r.put(other_state+4,6);r.put(other_state+28,64)
+for sequence,pn,macid in [(0x124,3,2),(0x345,7,3),(0x123,2,2)]:
+ frame=bytearray(data_frame(sequence,pn))
+ if macid==3:frame[10:16]=other
+ at,_=r.arrive(bytes(frame),True);r.put(at+24,1<<28|macid<<16);r.capture()
+def exhaust(uc,access,address,size,value,data):
+ if address&0x1fffffff==B+STATUS+4:r.put(MB+90*4,1022)
+hook=r.u.hook_add(UC_HOOK_MEM_READ,exhaust)
+r.process();r.u.hook_del(hook)
+assert r.get(MB+90*4)==1022 and not r.get(MB+94*4) and not r.get(B+STATUS+4)
+assert r.get(other_state)==1<<31|0x345 and r.get(other_state+4)==6
+r.put(VP+0x1c,1022);r.capture()
+for _ in range(6):r.process()
+assert r.get(MB+90*4)==1025 and not r.get(MB+94*4)
+r.put(VP+0x1c,1);r.capture();r.inventory()
+
 # A waiting head has already validated every A-MSDU protocol. Repeated
 # lookups keep checking admission and PN without rereading its payload.
 retry_parts=[]

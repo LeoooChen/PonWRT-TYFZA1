@@ -294,15 +294,15 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 		u32 prefix[10], bytes, macid;
 		if (!rx_frame(mailbox, buffer, &wire, &bytes, &macid, prefix)) return 0;
 		u8 *frame = (u8 *)prefix + ((u32)wire & 3);
-		if (macid != order >> 16) return 0;
-		u32 same_tid = (frame[24] & 15) == ((order >> 12) & 15);
+		u32 same_tid = macid == (order >> 16) &&
+			(frame[24] & 15) == ((order >> 12) & 15);
 		u32 sequence = (frame[22] | (u32)frame[23] << 8) >> 4;
 		if (same_tid && sequence != (order & 4095)) {
 			*status = read << 23 | (macid << 16) | (frame[24] & 15) << 12 | sequence;
 			continue;
 		}
-		/* Original station[0x928 + 8*TID] keeps independent reorder states.
-		 * Commit another TID only through its complete NI/PN/SN validation. */
+		/* Each station/TID has independent reorder state. Commit an unrelated
+		 * frame only through its complete NI/PN/SN validation. */
 		u32 unused = 0, owner = rx_uplink(mailbox, buffer, dma, &unused);
 		if (owner == RX_NI_BUSY) {
 			/* Retry this untouched slot, not the previous head's cursor. */
