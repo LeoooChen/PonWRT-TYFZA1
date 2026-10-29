@@ -525,7 +525,7 @@ static void __attribute__((section(".rxq"), noinline)) ni_recycle(volatile u32 *
 	if (released) mailbox[30] -= released;
 }
 
-void pe_main(volatile u32 *control)
+void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 {
 	u32 slot = 1;
 	u32 contexts[2] = {}, generations[2] = {}, commands[2] = {};
