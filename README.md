@@ -90,6 +90,7 @@ sysupgrade /tmp/sysupgrade.bin
 两种机型的有线接口 `lan1`–`lan4` 均对应机身 LAN1–LAN4 标号；2.5G 版蓝色口为 `lan1`。PON 业务接口为 `pon0`。
 业务 MAC 在启动时从原厂 `ELAN_MAC_ADDR` 读取，自定义值在网络接口中设置。PON 管理中的 ONU MAC 用于 EPON 注册与 OAM。
 保留配置升级时，已有 `lan1`–`lan4` 配置直接按新的机身编号生效。
+首次迁移旧 `ethN` 配置时按硬件端口对应到当前编号；2.5G 版遗留的 `lan5` 引用修正为蓝色口 `lan1`。已迁移设备上的 USB `ethN` 名称保持不变。
 
 ## 软件源
 
