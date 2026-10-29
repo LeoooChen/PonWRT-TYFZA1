@@ -153,6 +153,65 @@ def reorder_peer(start=0x123,window=64):
  for j,v in ((88,VP|0xa0000000),(89,NI),(93,1),(106,ST)):r.put(MB+j*4,v)
  return r
 
+# Old Retry duplicates must not serialize subsequent fresh frames through ARM.
+for start in (0x123, 0):
+    for lag in (1, 32, 64):
+        r = reorder_peer(start=start)
+        r.put(ST + 1028, 100)
+        frame = bytearray(data_frame((start-lag) & 4095, 101-lag))
+        frame[1] |= 8
+        r.arrive(bytes(frame), True)
+        r.capture()
+        r.process()
+        assert r.get(MB+90*4) == 0 and r.get(MB+94*4) == 0 and not r.get(MB+180*4)
+        assert r.get(ST+1024) == (1 << 31 | start) and r.get(ST+1028) == 100
+        r.arrive(data_frame(start, 101), True)
+        r.capture()
+        r.process()
+        r.inventory()
+        assert r.get(MB+90*4) == 1 and r.get(MB+94*4) == 0
+
+for kind in ('new-pn', 'future', 'non-retry', 'power-save', 'key-id', 'inactive-ba'):
+    r = reorder_peer()
+    r.put(ST+1028, 100)
+    frame = bytearray(data_frame(0x122, 100))
+    frame[1] |= 8
+    if kind == 'new-pn':
+        frame[26] = 101
+    if kind == 'future':
+        frame[22:24] = struct.pack('<H', 0x124 << 4)
+    if kind == 'non-retry':
+        frame[1] &= ~8
+    if kind == 'power-save':
+        frame[1] |= 16
+    if kind == 'key-id':
+        frame[29] = 0x60
+    if kind == 'inactive-ba':
+        r.put(ST+1024, 0)
+    r.arrive(bytes(frame), True)
+    r.capture()
+    r.process()
+    if kind == 'future':
+        r.put(BAR+0xc438, 2000)
+        r.process()
+    assert r.get(MB+90*4) == 0 and r.get(MB+94*4) == 1
+
+# Compare the complete 48-bit PN, not just its low word.
+for high, low, duplicate in ((1, 0xffffffff, True), (2, 100, True), (3, 0, False)):
+    r = reorder_peer()
+    r.put(ST+1028, 100)
+    r.put(ST+1032, 2)
+    frame = bytearray(data_frame(0x122, 2))
+    frame[1] |= 8
+    frame[26:34] = bytes([low & 255, low >> 8 & 255, 0, 0x20,
+                          low >> 16 & 255, low >> 24, high & 255, high >> 8])
+    at, raw = r.arrive(bytes(frame), True)
+    r.capture()
+    r.process()
+    assert r.get(MB+94*4) == (0 if duplicate else 1)
+    assert r.get(MB+90*4) == 0 and r.get(ST+1028) == 100 and r.get(ST+1032) == 2
+    assert bytes(r.u.mem_read(at, len(raw))) == raw
+
 # A waiting head has already validated every A-MSDU protocol. Repeated
 # lookups keep checking admission and PN without rereading its payload.
 retry_parts=[]

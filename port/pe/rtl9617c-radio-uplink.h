@@ -155,6 +155,11 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	u32 expected = state[0] & 4095, out_of_order = expected != sequence;
 	if (out_of_order) {
 		mailbox[109]++;
+		/* A retried MPDU already behind the BA head and accepted PN is
+		 * a duplicate. Recycle it without serializing fresh RX through ARM. */
+		if ((frame[1] & 8) && ((sequence - expected) & 4095) >= 2048 &&
+		    (pn_high < state[2] || (pn_high == state[2] && pn_low <= state[1])))
+			return RX_ARM_DONE;
 		if (((sequence - expected) & 4095) >= state[7]) return 0;
 	}
 	if (pn_high < state[2] || (pn_high == state[2] && pn_low <= state[1])) { mailbox[110]++; return 0; }
