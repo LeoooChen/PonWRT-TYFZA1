@@ -279,7 +279,11 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 		/* Original station[0x928 + 8*TID] keeps independent reorder states.
 		 * Commit another TID only through its complete NI/PN/SN validation. */
 		u32 unused = 0, owner = rx_uplink(mailbox, buffer, dma, &unused);
-		if (owner == RX_NI_BUSY) return 1;
+		if (owner == RX_NI_BUSY) {
+			/* Retry this untouched slot, not the previous head's cursor. */
+			search[1] = scan;
+			return 1;
+		}
 		if (!owner) return 0;
 		*status = owner;
 		mailbox[191]++;

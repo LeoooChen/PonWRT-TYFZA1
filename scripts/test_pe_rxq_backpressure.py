@@ -277,6 +277,28 @@ for _ in range(6):r.process()
 assert r.get(MB+90*4)==1025 and r.get(MB+175*4)==3 and not r.get(MB+94*4)
 r.put(VP+0x1c,1);r.capture();r.inventory()
 
+# A new search can hit NI backpressure before saving any scan progress.
+# Its retry must not inherit the previous head's cursor and skip the SN.
+for initial in (4,254):
+ r=reorder_peer()
+ for cursor in (174,175,176):r.put(MB+cursor*4,initial)
+ r.put(B+0x17824,(initial+2)&255)
+ # One free NI slot fits the head, but not the missing two-MSDU MPDU.
+ r.put(MB+90*4,1020)
+ r.arrive(data_frame(0x124,3),True);r.capture()
+ header=bytearray(data_frame(0x123,2)[:34]);header[24]=0x80
+ llc=data_frame(0x123,2)[34:-12]
+ sub=dst+peer+struct.pack('!H',len(llc))+llc
+ at,raw=r.arrive(bytes(header)+sub+bytes((-len(sub))&3)+sub+bytes(12),True);r.capture()
+ r.process()
+ assert r.get(MB+90*4)==1020 and not r.get(MB+94*4)
+ assert r.get(ST+1024)==1<<31|0x123 and bytes(r.u.mem_read(at,len(raw)))==raw
+ r.put(VP+0x1c,1020);r.capture()
+ for _ in range(4):r.process()
+ assert r.get(MB+90*4)==1023 and r.get(MB+175*4)==(initial+2)&255 and not r.get(MB+94*4)
+ assert r.get(ST+1024)==1<<31|0x125
+ r.put(VP+0x1c,1023);r.capture();r.inventory()
+
 # Full seven-subframe aggregates keep every UDP sequence across NI1023->0.
 r=reorder_peer();r.put(MB+90*4,1021);r.put(MB+91*4,1021);r.put(VP+0x1c,1021)
 expected_payloads={}
@@ -579,6 +601,7 @@ for count,stop in ((1,'empty'),(16,'budget'),(7,'tag'),(7,'work_full'),(0,'empty
 print(json.dumps({'scope':'Actual linked production PE; modeled PCIe, ARM acknowledgement, NI consumption and W1C. No RF throughput simulation.',
  'batch_BD_then_one16bit_notify':True,'short_unready_full_batch_flush':True,'empty_RX_worker_calls':empty_worker_calls,'empty_RX_shared_reads':len(idle_shared_reads),'queued_RX_waits_for_ARM_ACK':True,
  'interleaved_TID_order_and_protocol_barriers':True,
+ 'NI_backpressure_preserves_reorder_cursor_across_work_wrap':True,
  'PE_sha256':hashlib.sha256(binary).hexdigest(),'ARM_blocked_capture_and_refill_packets':255,'busy_ring_full_payload_preserved':True,
  'ordered_ARM_delivery':len(seen),'additional_wrap_packets':513,'all_514_buffers_have_one_owner':True,'permuted_noncontiguous_DMA_table_all_buffers':True,
  'PE0_capture_and_processing_independent_of_PE1':True,'PE1_RPQ_and_BID_return_independent_of_PE0':True,'PE1_owns_shared_timer_and_preserves_pending_RX_events':True,'BA_batch_SN_PN_order_and_4095_wrap':True,'BA_waits_for_known_PE0_capture_batch':True,'BA_missing_or_full_capture_ring_returns_to_ARM':True,'BA_window_replay_BAR_TID_and_protocol_barriers':True,'sorted_payloads_keep_one_owner':True,'seven_subframe_BA_order_and_NI_wrap':True,'PN_SN_no_overtake':True,'stateless_reports_and_RTS_CTS_ACK_BA_do_not_block_data':True,'BAR_PS_Poll_wait_without_forcing_later_data_to_ARM':True,'NI_last_two_payloads_retained':True,'NI_end_bit30_and_31bit_wrap':True,'AMSDU_prefix_alignment_and_HT_control':True,'invalid_or_NI_full_MPDU_unchanged':True,'RXQ_RPQ_RDU_counted_with_W1C':True,'producer_and_RDU_read_once_per_batch':True,'RPQ_RDU_restarts_with_idle_RXQ':True,'unready_DMA_tag_services_RDU_without_advancing_RX':True},indent=2))
