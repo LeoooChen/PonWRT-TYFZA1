@@ -5,7 +5,7 @@ import hashlib,json,random,struct,subprocess,sys
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'analysis/python-deps'))
 from unicorn import Uc,UC_ARCH_MIPS,UC_MODE_MIPS32,UC_MODE_LITTLE_ENDIAN,UC_HOOK_MEM_WRITE,UC_HOOK_MEM_READ,UC_HOOK_CODE
-from unicorn.mips_const import UC_MIPS_REG_A0,UC_MIPS_REG_SP,UC_MIPS_REG_RA,UC_MIPS_REG_PC
+from unicorn.mips_const import UC_MIPS_REG_A0,UC_MIPS_REG_A1,UC_MIPS_REG_SP,UC_MIPS_REG_RA,UC_MIPS_REG_PC
 P=Path(sys.argv[1]);binary=(P/'pe-tx.bin').read_bytes()
 symbols={s[2]:int(s[0],16) for l in subprocess.check_output(['llvm-nm-18',str(P/'pe-wd.elf')],text=True).splitlines() if len(s:=l.split())==3}
 B,MB,BAR,RX,BD,ST,VP,NI,TABLE=0x04000000,0x04002000,0x12000000,0x0a000000,0x07000000,0x08000000,0x13001000,0x09000000,0x07100000
@@ -32,7 +32,7 @@ class Machine:
  def put(self,a,v):self.u.mem_write(a,struct.pack('<I',v))
  def get(self,a):return struct.unpack('<I',self.u.mem_read(a,4))[0]
  def execute(self,name):
-  for reg,v in ((UC_MIPS_REG_A0,MB|0xa0000000),(UC_MIPS_REG_SP,(B+0x1fff0)|0xa0000000),(UC_MIPS_REG_RA,0x9fc0fff0)):self.u.reg_write(reg,v)
+  for reg,v in ((UC_MIPS_REG_A0,MB|0xa0000000),(UC_MIPS_REG_A1,1),(UC_MIPS_REG_SP,(B+0x1fff0)|0xa0000000),(UC_MIPS_REG_RA,0x9fc0fff0)):self.u.reg_write(reg,v)
   self.u.emu_start(symbols[name],0x9fc0fff0,count=100000)
   assert self.u.reg_read(UC_MIPS_REG_PC)==0x9fc0fff0
  def capture(self):
@@ -822,7 +822,8 @@ assert r.get(txmb+70*4)==1 and r.get(MB+81*4)==254
 
 # Factory refill contract: all replacement BDs precede one16-bit notify.
 for count,stop in ((1,'empty'),(16,'budget'),(7,'tag'),(7,'work_full'),(0,'empty')):
- q=Machine();events=[]
+ q=Machine();events=[];publications=[]
+ q.put(MB+86*4,0xfffffff8)
  if stop=='work_full':
   q.put(MB+174*4,248);q.put(MB+175*4,0);q.put(MB+176*4,0)
  for i in range(count):q.arrive(struct.pack('<I',i)+bytes(30))
@@ -830,6 +831,7 @@ for count,stop in ((1,'empty'),(16,'budget'),(7,'tag'),(7,'work_full'),(0,'empty
  def observe(uc,access,at,size,value,data):
   at&=0x1fffffff
   if BD<=at<BD+2048 or at==BAR+0x1218:events.append((at,size,value))
+  if at in (MB+81*4,MB+82*4,MB+86*4,MB+174*4,MB+177*4):publications.append(at)
  q.u.hook_add(UC_HOOK_MEM_WRITE,observe)
  q.execute('pe_rxq_batch')
  notify=[event for event in events if event[0]==BAR+0x1218]
@@ -837,6 +839,8 @@ for count,stop in ((1,'empty'),(16,'budget'),(7,'tag'),(7,'work_full'),(0,'empty
  assert len([event for event in events if BD<=event[0]<BD+2048])==count
  if count:assert events[-1]==notify[0]
  assert q.get(MB+83*4)==q.get(MB+81*4)==(254+count)&255
+ assert q.get(MB+86*4)==(0xfffffff8+count)&0xffffffff
+ assert len(publications)==(5 if count else 0) and len(set(publications))==len(publications)
  before=len(events);q.execute('pe_rxq_batch');assert len(events)==before
 print(json.dumps({'scope':'Actual linked production PE; modeled PCIe, ARM acknowledgement, NI consumption and W1C. No RF throughput simulation.',
  'batch_BD_then_one16bit_notify':True,'short_unready_full_batch_flush':True,'empty_RX_worker_calls':empty_worker_calls,'empty_RX_shared_reads':len(idle_shared_reads),'queued_RX_waits_for_ARM_ACK':True,

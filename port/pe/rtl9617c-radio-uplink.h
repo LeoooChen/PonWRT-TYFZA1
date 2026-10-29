@@ -355,43 +355,48 @@ static void __attribute__((noinline)) rx_completion_poll(volatile u32 *mailbox)
 	rx_work_recycle(mailbox, memory);
 }
 
-static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mailbox)
+void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mailbox, u32 budget)
 {
 	if (!mailbox[80]) return;
 	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
-	u32 slot = mailbox[81];
-	if (slot == mailbox[RTL_AX_RX_HW_PRODUCER]) rx_status_poll(mailbox);
-	u32 write = mailbox[RTL_AX_RX_WORK_WRITE];
-	u32 next = (write + 1) & 255;
-	if (next == mailbox[RTL_AX_RX_WORK_READ] ||
-	    mailbox[RTL_AX_RX_HW_PRODUCER] == slot) return;
+	u32 slot = mailbox[81], write = mailbox[RTL_AX_RX_WORK_WRITE];
+	u32 read = mailbox[RTL_AX_RX_WORK_READ], count = mailbox[RTL_AX_RX_IDLE_COUNT];
+	u32 tag = mailbox[82], captured = 0, descriptors = mailbox[134];
 	u32 *map = (void *)(memory + RTL_AX_RX_SLOT_MAP);
-	u32 id = map[slot];
-	u32 info = *(volatile u32 *)uncached(rx_buffer_dma(mailbox, id));
-	u32 previous_tag = mailbox[82];
-	u32 tag = previous_tag == 8191 ? 1 : previous_tag + 1;
-	if (((info >> 16) & 8191) != tag) {
-		/* Service the stock RDU cause even inside a cached batch. The next
-		 * turn rereads the DMA tag; this unready buffer stays untouched. */
-		rx_status_poll(mailbox);
-		return;
-	}
 	u32 *work = (void *)(memory + RTL_AX_RX_WORK_IDS);
+	/* PE0 alone changes these cursors. Publish once after the capture batch;
+	 * processing and ARM handoff cannot consume it before this call returns. */
+	for (; captured < budget; captured++) {
+		if (slot == mailbox[RTL_AX_RX_HW_PRODUCER]) rx_status_poll(mailbox);
+		u32 next = (write + 1) & 255;
+		if (next == read || mailbox[RTL_AX_RX_HW_PRODUCER] == slot) break;
+		u32 id = map[slot];
+		u32 info = *(volatile u32 *)uncached(rx_buffer_dma(mailbox, id));
+		u32 next_tag = tag == 8191 ? 1 : tag + 1;
+		if (((info >> 16) & 8191) != next_tag) {
+			/* RDU remains observable even inside a cached producer batch. */
+			rx_status_poll(mailbox);
+			break;
+		}
+		sync();
+		work[write] = id | (rtl_ax_rx_epoch_old(&mailbox[RTL_AX_PE_DFS_EPOCH], slot) ? RTL_AX_RX_WORK_OLD : 0);
+		u32 replacement = *(u32 *)(memory + RTL_AX_RX_IDLE_IDS + --count * 4);
+		map[slot] = replacement;
+		volatile u32 *descriptor = uncached(descriptors + slot * 8);
+		descriptor[1] = rx_buffer_dma(mailbox, replacement);
+		/* Drain the DDR address update before returning this RXBD to PCIe. */
+		(void)descriptor[1];
+		write = next;
+		tag = next_tag;
+		slot = (slot + 1) & 255;
+	}
+	if (!captured) return;
 	sync();
-	work[write] = id | (rtl_ax_rx_epoch_old(&mailbox[RTL_AX_PE_DFS_EPOCH], slot) ? RTL_AX_RX_WORK_OLD : 0);
-	u32 count = mailbox[RTL_AX_RX_IDLE_COUNT] - 1;
-	u32 replacement = *(u32 *)(memory + RTL_AX_RX_IDLE_IDS + count * 4);
 	mailbox[RTL_AX_RX_IDLE_COUNT] = count;
-	map[slot] = replacement;
-	volatile u32 *descriptor = uncached(mailbox[134] + slot * 8);
-	descriptor[1] = rx_buffer_dma(mailbox, replacement);
-	/* Drain the DDR address update before returning this RXBD to PCIe. */
-	(void)descriptor[1];
-	sync();
-	mailbox[RTL_AX_RX_WORK_WRITE] = next;
+	mailbox[RTL_AX_RX_WORK_WRITE] = write;
 	mailbox[82] = tag;
-	mailbox[86]++;
-	mailbox[81] = (slot + 1) & 255;
+	mailbox[86] += captured;
+	mailbox[81] = slot;
 }
 
 static void __attribute__((noinline)) rx_notify_done(volatile u32 *mailbox)
@@ -409,12 +414,7 @@ static void __attribute__((section(".rxq"), noinline)) pe_rxq_batch(volatile u32
 	/* Capture does not process work. One completion snapshot supplies the
 	 * entire batch; newer NI/ARM releases are collected on the next turn. */
 	rx_completion_poll(mailbox);
-#pragma clang loop unroll(disable)
-	for (u32 budget = 0; budget < 16; budget++) {
-		u32 before = mailbox[81];
-		pe_rxq(mailbox);
-		if (mailbox[81] == before) break;
-	}
+	pe_rxq(mailbox, 16);
 	rx_notify_done(mailbox);
 }
 
