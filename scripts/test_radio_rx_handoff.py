@@ -100,7 +100,8 @@ int main(void){
  /* A sorted frame can own NI beyond the contiguous parser cursor. */
  put_unaligned_le32(0,mb+RTL_AX_RX_WORK_PROCESS*4);
  put_unaligned_le32(2,mb+RTL_AX_RX_WORK_WRITE*4);
- put_unaligned_le32(0,memory+RTL_AX_RX_WORK_STATUS);
+ /* An uncommitted lookup hint (including bit30) is not NI ownership. */
+ put_unaligned_le32(200U<<23|2U<<16|0x124,memory+RTL_AX_RX_WORK_STATUS);
  put_unaligned_le32(258,memory+RTL_AX_RX_WORK_IDS+4);
  put_unaligned_le32(BIT(31)|101,memory+RTL_AX_RX_WORK_STATUS+4);
  put_unaligned_le32(254,mb+177*4);

@@ -274,7 +274,13 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 	for (u32 budget = 0;
 	     scan != write && budget < 16; scan = (scan + 1) & 255, budget++) {
 		u32 *status = (void *)(memory + RX_STATUS + scan * 4);
-		if (*status & RX_NI_PENDING) continue;
+		u32 hint = *status;
+		if (hint & RX_NI_PENDING) continue;
+		/* Hints apply only while this head owns the scan. Its ARM
+		 * fallback may change PS/key state before a later head runs.
+		 * A candidate always repeats full admission and PN checks. */
+		if (hint && (hint >> 23) == read && !((hint ^ order) & 0x7ff000) &&
+		    (hint & 4095) != (order & 4095)) continue;
 		u32 item = *(u32 *)(memory + RTL_AX_RX_WORK_IDS + scan * 4);
 		u32 dma = rx_buffer_dma(mailbox, item & ~RTL_AX_RX_WORK_OLD);
 		u8 *buffer = uncached(dma), *wire;
@@ -286,7 +292,10 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 		if (macid != order >> 16) return 0;
 		u32 same_tid = (frame[24] & 15) == ((order >> 12) & 15);
 		u32 sequence = (frame[22] | (u32)frame[23] << 8) >> 4;
-		if (same_tid && sequence != (order & 4095)) continue;
+		if (same_tid && sequence != (order & 4095)) {
+			*status = read << 23 | (macid << 16) | (frame[24] & 15) << 12 | sequence;
+			continue;
+		}
 		/* Original station[0x928 + 8*TID] keeps independent reorder states.
 		 * Commit another TID only through its complete NI/PN/SN validation. */
 		u32 unused = 0, owner = rx_uplink(mailbox, buffer, dma, &unused);
