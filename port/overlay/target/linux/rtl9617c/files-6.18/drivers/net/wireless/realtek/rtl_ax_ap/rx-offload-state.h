@@ -171,7 +171,8 @@ resume:
 
 		spin_lock_irqsave(&rx->irq_lock, flags);
 		if (rx->running && !READ_ONCE(rx->rpq_transfer))
-			mod_delayed_work(system_wq, &rx->work, 1);
+			/* A reorder retry must not postpone an IRQ's immediate RX work. */
+			queue_delayed_work(system_wq, &rx->work, 1);
 		spin_unlock_irqrestore(&rx->irq_lock, flags);
 	}
 }
