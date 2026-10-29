@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Execute linked PE capture/refill, ARM ordering, NI tail and RDU accounting."""
 from pathlib import Path
-import hashlib,json,struct,subprocess,sys
+import hashlib,json,random,struct,subprocess,sys
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'analysis/python-deps'))
 from unicorn import Uc,UC_ARCH_MIPS,UC_MODE_MIPS32,UC_MODE_LITTLE_ENDIAN,UC_HOOK_MEM_WRITE,UC_HOOK_MEM_READ,UC_HOOK_CODE
@@ -298,6 +298,39 @@ for initial in (4,254):
  assert r.get(MB+90*4)==1023 and r.get(MB+175*4)==(initial+2)&255 and not r.get(MB+94*4)
  assert r.get(ST+1024)==1<<31|0x125
  r.put(VP+0x1c,1023);r.capture();r.inventory()
+
+# Full BA windows with mixed aggregate sizes and intermittent NI completions.
+# Every generated identity must appear exactly once in sequence order.
+rng=random.Random(20261029)
+for pressure in (False,True):
+ for trial in range(120):
+  start=rng.randrange(4096);initial=rng.randrange(256);count=rng.choice((2,16,32,64))
+  r=reorder_peer(start)
+  for cursor in (174,175,176):r.put(MB+cursor*4,initial)
+  first=1020 if pressure else 0;r.put(MB+90*4,first)
+  sequences=list(range(count));rng.shuffle(sequences)
+  sizes={d:rng.randint(1,7) if pressure else 1 for d in sequences}
+  expected=[(d,j) for d in range(count) for j in range(sizes[d])]
+  for distance in sequences:
+   header=bytearray(data_frame((start+distance)&4095,distance+2)[:34]);header[24]=0x80
+   parts=[]
+   for j in range(sizes[distance]):
+    llc=bytearray(data_frame(0,2)[34:-12]);struct.pack_into('!HH',llc,12,distance,j)
+    sub=dst+peer+struct.pack('!H',len(llc))+llc
+    parts.append(sub+(bytes((-len(sub))&3) if j<sizes[distance]-1 else b''))
+   r.arrive(bytes(header)+b''.join(parts)+bytes(12),True);r.capture()
+  for step in range(count*count+300):
+   if pressure and step%7==6:
+    consumed=r.get(MB+91*4);produced=r.get(MB+90*4)
+    r.put(VP+0x1c,(consumed+min(73,produced-consumed))&1023);r.capture()
+   r.process()
+   assert not r.get(MB+94*4), ('unexpected ARM fallback',pressure,trial,step)
+   if r.get(MB+175*4)==(initial+count)&255:break
+  else:raise AssertionError(('reorder stalled',pressure,trial))
+  actual=[struct.unpack('!HH',r.u.mem_read(r.get(NI+((first+i)&1023)*8)+18,4)) for i in range(len(expected))]
+  assert actual==expected and r.get(MB+90*4)==first+len(expected)
+  assert r.get(ST+1024)==1<<31|((start+count)&4095) and r.get(ST+1028)==count+1
+  r.put(VP+0x1c,(first+len(expected))&1023);r.capture();r.inventory()
 
 # Full seven-subframe aggregates keep every UDP sequence across NI1023->0.
 r=reorder_peer();r.put(MB+90*4,1021);r.put(MB+91*4,1021);r.put(VP+0x1c,1021)
@@ -602,6 +635,7 @@ print(json.dumps({'scope':'Actual linked production PE; modeled PCIe, ARM acknow
  'batch_BD_then_one16bit_notify':True,'short_unready_full_batch_flush':True,'empty_RX_worker_calls':empty_worker_calls,'empty_RX_shared_reads':len(idle_shared_reads),'queued_RX_waits_for_ARM_ACK':True,
  'interleaved_TID_order_and_protocol_barriers':True,
  'NI_backpressure_preserves_reorder_cursor_across_work_wrap':True,
+ 'seeded_BA_permutations_with_mixed_AMSDU_and_NI_backpressure':240,
  'PE_sha256':hashlib.sha256(binary).hexdigest(),'ARM_blocked_capture_and_refill_packets':255,'busy_ring_full_payload_preserved':True,
  'ordered_ARM_delivery':len(seen),'additional_wrap_packets':513,'all_514_buffers_have_one_owner':True,'permuted_noncontiguous_DMA_table_all_buffers':True,
  'PE0_capture_and_processing_independent_of_PE1':True,'PE1_RPQ_and_BID_return_independent_of_PE0':True,'PE1_owns_shared_timer_and_preserves_pending_RX_events':True,'BA_batch_SN_PN_order_and_4095_wrap':True,'BA_waits_for_known_PE0_capture_batch':True,'BA_missing_or_full_capture_ring_returns_to_ARM':True,'BA_window_replay_BAR_TID_and_protocol_barriers':True,'sorted_payloads_keep_one_owner':True,'seven_subframe_BA_order_and_NI_wrap':True,'PN_SN_no_overtake':True,'stateless_reports_and_RTS_CTS_ACK_BA_do_not_block_data':True,'BAR_PS_Poll_wait_without_forcing_later_data_to_ARM':True,'NI_last_two_payloads_retained':True,'NI_end_bit30_and_31bit_wrap':True,'AMSDU_prefix_alignment_and_HT_control':True,'invalid_or_NI_full_MPDU_unchanged':True,'RXQ_RPQ_RDU_counted_with_W1C':True,'producer_and_RDU_read_once_per_batch':True,'RPQ_RDU_restarts_with_idle_RXQ':True,'unready_DMA_tag_services_RDU_without_advancing_RX':True},indent=2))
