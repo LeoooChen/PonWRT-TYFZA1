@@ -1,21 +1,28 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-only
-# Pin the image's patched packages by identity, including same-version rebuilds.
+# Pin patched packages and the image's LuCI/ucode runtime by identity.
 set -eu
 constraints=$(awk '
-BEGIN { RS = ""; FS = "\n" }
+BEGIN {
+	RS = ""; FS = "\n"
+	split("luci-mod-status luci-mod-network libiwinfo20230701 wifi-scripts luci-base luci-compat luci-lua-runtime luci-lib-base luci-lib-ip luci-lib-jsonc luci-lib-nixio ucode libucode20230711 ucode-mod-lua", names, " ")
+	for (i in names) required[names[i]] = 1
+}
 {
 	name = hash = ""
 	for (i = 1; i <= NF; i++) {
 		if ($i ~ /^P:/) name = substr($i, 3)
 		if ($i ~ /^C:/) hash = substr($i, 3)
 	}
-	if (name == "luci-mod-status" || name == "luci-mod-network" ||
-	    name == "libiwinfo20230701" || name == "wifi-scripts") {
+	if (name in required || name ~ /^ucode-mod-/) {
 		if (hash == "") exit 1
+		seen[name] = 1
 		print name "><" hash
 	}
-}' /rom/lib/apk/db/installed)
+}
+END {
+	for (name in required)
+		if (!seen[name]) exit 1
+}' /rom/lib/apk/db/installed) || { echo "Missing TYFZA1 platform package identities" >&2; exit 1; }
 set -- $constraints
-[ "$#" -eq 4 ] || { echo "Missing TYFZA1 platform package identities" >&2; exit 1; }
 apk add --no-network "$@"
