@@ -344,6 +344,8 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 			used += 6; count++; address += length; bytes -= length;
 		}
 	}
+	/* A header-only ARM frame also needs a terminating address entry. */
+	page[used - 5] |= 0x80;
 	u32 dw0 = BIT(7) | channels[ring] << 16 | BIT(22) |
 		(((packet >> 16) & 63) / 2) << 11 | ((flags & BIT(13)) ? BIT(31) : 0);
 	u32 dw1 = count << 26, dw4 = 0, dw5 = 0;
