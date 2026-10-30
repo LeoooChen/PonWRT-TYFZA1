@@ -52,10 +52,14 @@ configure_link() {
 	pon_stage=onu_mac
 	config_get onu_mac pon onu_mac
 	[ -n "$onu_mac" ] || onu_mac=$(uci -q -c /var/run/tyfza1-factory get pon_factory.pon.onu_mac)
-	if [ "$mode" != gpon ] && [ "$mode" != xgpon ] && [ "$mode" != xgspon ] ||
-	   [ -n "$onu_mac" ]; then
-		printf '%s\n' "$onu_mac" > "$device/onu_mac" || return $?
+	if [ -z "$onu_mac" ] && [ -r /tmp/tyfza1-factory/lan_mac ]; then
+		read -r onu_mac < /tmp/tyfza1-factory/lan_mac
 	fi
+	if [ -z "$onu_mac" ]; then
+		echo 'PON ONU MAC unavailable: no configured or factory MAC' >&2
+		return 1
+	fi
+	printf '%s\n' "$onu_mac" > "$device/onu_mac" || return $?
 	if [ "$mode" = gpon ] || [ "$mode" = xgpon ] || [ "$mode" = xgspon ]; then
 		pon_stage=identity
 		if [ "$mode" = gpon ]; then

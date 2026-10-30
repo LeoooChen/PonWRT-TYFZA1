@@ -63,7 +63,7 @@ return view.extend({
 		};
 		o.retain = true;
 		o.placeholder = '留空使用原厂 MAC';
-		o.description = '使用本机原厂身份时无需填写；清空自定义值后，应用即可恢复原厂身份。';
+		o.description = '留空时优先使用原厂 ONU MAC；若原厂未提供，则使用本机基础 MAC。';
 		[
 			['loid', 'LOID', 24, false, eponModes.concat(ituModes)],
 			['loid_password', 'LOID 密码', 12, true, eponModes.concat(ituModes)],
