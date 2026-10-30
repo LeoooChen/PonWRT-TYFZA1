@@ -267,8 +267,8 @@ int rtl_ax_power_verify(const struct rtl_ax_io *io, struct rtl_ax_power_hardware
 	}
 	if ((io->read32(io->ctx, 0xd204) & 0x000fffff) != state->offset_mode)
 		goto mismatch;
-	if ((io->read32(io->ctx, 0xd208) & 0x00300000) != 0x00300000 ||
-	    !(io->read32(io->ctx, 0xd21c) & 0x00040000))
+	if ((io->read32(io->ctx, 0xd208) & 0x00300000) ||
+	    (io->read32(io->ctx, 0xd21c) & 0x00040000))
 		goto mismatch;
 	return 0;
 
@@ -423,12 +423,14 @@ int rtl_ax_power_apply(const struct rtl_ax_io *io, unsigned int chip,
 	rtl_ax_update32(io, 0xd204, 0x000fffff, offset_mode);
 	if ((io->read32(io->ctx, 0xd204) & 0x000fffff) != offset_mode)
 		return -EIO;
-	/* Actual mac_write_pwr_limit_en@21e954: limits and RU limits only
-	 * participate in power selection when these SCC MAC0 bits are set. */
-	rtl_ax_update32(io, 0xd208, 0x00300000, 0x00300000);
-	rtl_ax_update32(io, 0xd21c, 0x00040000, 0x00040000);
-	if ((io->read32(io->ctx, 0xd208) & 0x00300000) != 0x00300000 ||
-	    !(io->read32(io->ctx, 0xd21c) & 0x00040000))
+	/* TYFZA1's original power_limit MIB defaults to 0. Its capability
+	 * selection also disables these optional vendor limit tables. Enabling
+	 * them here caps TX below the board's by-rate targets.
+	 * The by-rate values above already include Linux's channel/user cap. */
+	rtl_ax_update32(io, 0xd208, 0x00300000, 0);
+	rtl_ax_update32(io, 0xd21c, 0x00040000, 0);
+	if ((io->read32(io->ctx, 0xd208) & 0x00300000) ||
+	    (io->read32(io->ctx, 0xd21c) & 0x00040000))
 		return -EIO;
 	rtl_ax_tx_shape_zero(io, chip);
 	state->offset_mode = offset_mode;

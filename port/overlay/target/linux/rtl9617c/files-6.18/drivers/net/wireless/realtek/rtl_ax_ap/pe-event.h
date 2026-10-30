@@ -16,13 +16,17 @@ static irqreturn_t pe_event_interrupt(int irq, void *context)
  pe_event_interrupts++;
  for (slot = 0; slot < 2; slot++) {
   struct rtl_ax_tx *tx = READ_ONCE(pe_event_radios[slot]);
+  u32 generation, acknowledged;
   if (!tx) continue;
-  put_unaligned_le32(get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 276),
+  generation = get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 276);
+  acknowledged = get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 264);
+  put_unaligned_le32(generation,
    tx->pe.memory + PE_PROBE_MAILBOX + 264);
   rtl_ax_rx_pe_event_ack(tx->rx);
   wake_up_all(&tx->key_flush_wait);
   rtl_ax_rx_pe_wake(tx->rx);
-  schedule_work(&tx->ni.ps_work);
+  /* PE0 RX events share the timer but do not change PE1 TX/PS state. */
+  if (generation != acknowledged) schedule_work(&tx->ni.ps_work);
  }
  return IRQ_HANDLED;
 }

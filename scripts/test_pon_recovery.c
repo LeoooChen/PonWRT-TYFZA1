@@ -106,5 +106,24 @@ int main(void)
 	rtl_qm_refill_drain(&queue, &hw, push, 64);
 	assert(hw.returned == 3072);
 	puts("QM 512-buffer stall/recovery, independent EQs, FIFO stall, cursor wrap and reset ownership passed");
+	/* A single active EQ must not strand half the available refill budget. */
+	for (unsigned int eq = 0; eq < 2; eq++) {
+		memset(&queue, 0, sizeof(queue));
+		memset(&hw, 0, sizeof(hw));
+		hw.fifo_ready = hw.bid_ready[eq] = 1;
+		for (unsigned int i = 0; i < 64; i++)
+			rtl_qm_refill_add(&queue, (0x10000000U + (eq * 256 + i) * 2048) | (4 + eq));
+		rtl_qm_refill_drain(&queue, &hw, push, 64);
+		assert(!queue.pending && hw.returned == 64);
+	}
+	/* Both active queues retain a fair share, including an odd budget. */
+	memset(&queue, 0, sizeof(queue));
+	memset(&hw, 0, sizeof(hw));
+	hw.fifo_ready = hw.bid_ready[0] = hw.bid_ready[1] = 1;
+	for (unsigned int i = 0; i < 512; i++)
+		rtl_qm_refill_add(&queue, (0x10000000U + i * 2048) | (4 + i / 256));
+	rtl_qm_refill_drain(&queue, &hw, push, 65);
+	assert(hw.returned == 65 && queue.count[0] == 223 && queue.count[1] == 224);
+	puts("QM single-EQ full budget and dual-EQ fair budget passed");
 	return 0;
 }

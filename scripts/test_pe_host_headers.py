@@ -7,7 +7,7 @@ import sys
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / 'analysis/python-deps'))
 from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_MEM_INVALID
-from unicorn.mips_const import UC_MIPS_REG_PC
+from unicorn.mips_const import UC_MIPS_REG_PC, UC_MIPS_REG_A0, UC_MIPS_REG_SP
 
 code = Path(sys.argv[1]).read_bytes()
 words = list(struct.unpack('<%dI' % (len(code) // 4), code))
@@ -27,7 +27,8 @@ ap = bytes.fromhex('020000000012')
 ethernet = destination + source + b'\x08\x00'
 host_dma = 0x120380be  # Observed bad region; PE ATU redirects this window to IO.
 
-for encap in (True, False):
+for encap, payload_bytes in ((encap, size) for encap in (True, False)
+                            for size in (0, 1, 1500, 2048)):
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
     for at, size in ((0x1fc00000,0x10000),(base,0x20000),(ring,0x10000),
                      (pages,0x10000),(headers,0x10000),(0x11000000,0x100000),
@@ -48,7 +49,10 @@ for encap in (True, False):
     put(mailbox+140*4,mailbox|0xa0000000)
     put(mailbox+142*4,1)
     put(mailbox+12,1)
-    pc=0xbfc00000
+    # The boot/CP3 path has its own test; start the actual C entry here.
+    u.reg_write(UC_MIPS_REG_A0, mailbox | 0xa0000000)
+    u.reg_write(UC_MIPS_REG_SP, (base + 0x1fff0) | 0xa0000000)
+    pc=0xbfc00400
     def run():
         global pc
         u.emu_start(pc,0xbfc10000,count=12000)
@@ -61,11 +65,11 @@ for encap in (True, False):
     u.mem_write(headers+7*128,ethernet if encap else raw)
     request=[0]*32
     request[0]=7;request[1]=1<<16
-    request[2]=(1534 if encap else 1526)|26<<16|1<<24
+    request[2]=(len(expected)+payload_bytes)|26<<16|1<<24
     request[3]=0x00330180
     request[4]=(2<<24)|(1<<18 if encap else 1<<22)
     request[5]=64
-    request[8]=host_dma;request[9]=1514 if encap else 1526
+    request[8]=host_dma;request[9]=(14 if encap else 26)+payload_bytes
     u.mem_write(base+0x4000,struct.pack('<32I',*request))
     put(mailbox+32,1)
     run()
@@ -73,6 +77,16 @@ for encap in (True, False):
     actual=bytes(u.mem_read(headers+7*128,len(expected)))
     assert actual==expected,('Ethernet' if encap else 'raw QoS',actual.hex(),expected.hex())
     wp=bytes(u.mem_read(pages+7*128,128))
-    payload_dma=struct.unpack_from('<I',wp,72)[0]
-    assert payload_dma==host_dma+(14 if encap else 26)
-print('PE host headers: Ethernet and raw QoS use staged headers; PCIe payload DMA cookies stay opaque')
+    count=struct.unpack_from('<I',wp,4)[0]>>26
+    segments=[struct.unpack_from('<HI',wp,64+i*6) for i in range(count)]
+    lengths=[length & 2047 for length, address in segments]
+    assert lengths==[len(expected)]+([min(payload_bytes,2047)] if payload_bytes else [])+([1] if payload_bytes==2048 else [])
+    assert [length>>15 for length,address in segments]==[0]*(count-1)+[1], (encap,payload_bytes,segments)
+    assert segments[0][1]==headers+7*128
+    offset=14 if encap else 26
+    for length,address in segments[1:]:
+        assert address==host_dma+offset
+        offset+=length & 2047
+    assert struct.unpack_from('<I',wp,8)[0]&0x3fff==sum(lengths)
+    assert get(ring)&0xffff==64+count*6
+print('PE host headers: staged headers, opaque payload DMA, and exactly one final LS for empty, one-byte, normal and split payloads')

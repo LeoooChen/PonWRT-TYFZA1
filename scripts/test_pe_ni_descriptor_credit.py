@@ -60,16 +60,28 @@ def run(start, initial, outstanding, frames):
     struct.pack_into('<I', raw, 16, 4)
     struct.pack_into('<I', raw, 24, 1 << 28 | 2 << 16)
     cpu.mem_write(payload, bytes(raw))
-    for reg, value in ((UC_MIPS_REG_A0, mailbox | 0xa0000000),
-                       (UC_MIPS_REG_SP, (base + 0x1fff0) | 0xa0000000),
-                       (UC_MIPS_REG_RA, 0x9fc0fff0)):
-        cpu.reg_write(reg, value)
-    cpu.emu_start(symbols['pe_rx_work'], 0x9fc0fff0, count=100000)
+    def process():
+        for reg, value in ((UC_MIPS_REG_A0, mailbox | 0xa0000000),
+                           (UC_MIPS_REG_SP, (base + 0x1fff0) | 0xa0000000),
+                           (UC_MIPS_REG_RA, 0x9fc0fff0)):
+            cpu.reg_write(reg, value)
+        cpu.emu_start(symbols['pe_rx_work'], 0x9fc0fff0, count=100000)
+    process()
     sent = (get(mailbox + 90 * 4) - (start + outstanding)) & 0xffffffff
     if not sent:
         assert bytes(cpu.mem_read(payload, len(raw))) == raw
         assert get(states + 1024) == 1 << 31 | 0x123
         assert bytes(cpu.mem_read(descriptors, 8192)) == bytes([0xa5]) * 8192
+        if frames <= 63:
+            assert get(mailbox + 94 * 4) == 0, 'NI backpressure became ARM fallback'
+            assert get(mailbox + 175 * 4) == 0
+            # Polling while still full neither submits nor changes ownership.
+            process()
+            assert get(mailbox + 94 * 4) == 0 and get(mailbox + 175 * 4) == 0
+            put(mailbox + 91 * 4, start + outstanding)
+            process()
+            assert (get(mailbox + 90 * 4) - (start + outstanding)) & 0xffffffff == frames
+            assert get(mailbox + 94 * 4) == 0 and get(mailbox + 175 * 4) == 1
     return sent
 
 

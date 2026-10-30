@@ -874,6 +874,12 @@ static void rtl_sgmii_power_off(void *data)
 	phy_power_off(data);
 }
 
+static unsigned int rtl_lan_number(unsigned int port)
+{
+	/* Enclosure LAN1 is NI3 on 4GE and NI4 on the 2.5G board. */
+	return port == 4 ? 1 : 4 - port;
+}
+
 static int rtl_register_lan(struct rtl_xram *priv, struct device *parent,
 			    unsigned int port, struct device_node *phy)
 {
@@ -905,7 +911,7 @@ static int rtl_register_lan(struct rtl_xram *priv, struct device *parent,
 	}
 	priv->ports[port] = dev;
 	SET_NETDEV_DEV(dev, parent);
-	snprintf(dev->name, sizeof(dev->name), "lan%u", port == 4 ? 4 : port + 1);
+	snprintf(dev->name, sizeof(dev->name), "lan%u", rtl_lan_number(port));
 	lan = netdev_priv(dev);
 	lan->shared = priv;
 	lan->port = port;
@@ -929,7 +935,7 @@ static int rtl_register_lan(struct rtl_xram *priv, struct device *parent,
 	if (ret)
 		goto put_phy;
 	rcu_assign_pointer(priv->qm.lan[port], dev);
-	/* Publish LAN4 before taking RTNL for registration: an engine start
+	/* Publish NI4 (2.5G LAN1) before taking RTNL for registration: an engine start
 	 * waiting on lan4_ready under RTNL must not block this work. */
 	if (port == 4) {
 		complete_all(&priv->lan4_ready);
@@ -948,7 +954,7 @@ static int rtl_register_lan(struct rtl_xram *priv, struct device *parent,
 		priv->phy_led.cdev.max_brightness = 2;
 		ret = tyfza1_led_register(parent, &priv->phy_led, NULL);
 		if (ret)
-			dev_warn(parent, "LAN4 2.5G LED initialization failed: %d\n", ret);
+			dev_warn(parent, "LAN1 2.5G LED initialization failed: %d\n", ret);
 		else
 			priv->phy_led_registered = true;
 	}
@@ -977,7 +983,7 @@ static void rtl_lan4_work(struct work_struct *work)
 	int ret = rtl_register_lan(priv, priv->lan4_parent, 4, priv->lan4_phy);
 
 	if (ret)
-		dev_err(priv->lan4_parent, "LAN4 initialization failed: %d; other ports retained\n", ret);
+		dev_err(priv->lan4_parent, "LAN1 initialization failed: %d; other ports retained\n", ret);
 	complete_all(&priv->lan4_ready);
 }
 
@@ -988,7 +994,7 @@ static void rtl_register_lans(struct rtl_xram *priv, struct device *parent)
 	int ret;
 
 	/* Do not expose an openable port until all synchronous ports are
-	 * published and LAN4 work is queued (or its completion is signalled). */
+	 * published and NI4 work is queued (or its completion is signalled). */
 	rtnl_lock();
 	for (port = 0; port < ARRAY_SIZE(priv->ports); port++) {
 		phy = of_parse_phandle(parent->of_node,
@@ -1009,7 +1015,7 @@ static void rtl_register_lans(struct rtl_xram *priv, struct device *parent)
 		ret = rtl_register_lan(priv, parent, port, phy);
 		if (ret)
 			dev_err(parent, "LAN%u initialization failed: %d; other ports retained\n",
-				port + 1, ret);
+				rtl_lan_number(port), ret);
 	}
 	if (!priv->lan4_phy)
 		complete_all(&priv->lan4_ready);
@@ -1265,7 +1271,7 @@ static int rtl_probe(struct platform_device *pdev)
 	if (ret)
 		goto free_netdev;
 	priv->lan.port = priv->port;
-	snprintf(netdev->name, sizeof(netdev->name), "lan%u", priv->port + 1);
+	snprintf(netdev->name, sizeof(netdev->name), "lan%u", rtl_lan_number(priv->port));
 	value = readl(priv->ni + MAC_ADDR0);
 	put_unaligned_be32(value, mac);
 	mac[4] = readl(priv->ni + MAC_ADDR1);
@@ -1286,6 +1292,12 @@ static int rtl_probe(struct platform_device *pdev)
 		priv->dma.registers = devm_platform_ioremap_resource(pdev, 2);
 		if (IS_ERR(priv->dma.registers)) {
 			ret = PTR_ERR(priv->dma.registers);
+			goto del_napi;
+		}
+		priv->dma.axi_reorder = devm_platform_ioremap_resource_byname(pdev,
+									      "dma-axi-reorder");
+		if (IS_ERR(priv->dma.axi_reorder)) {
+			ret = PTR_ERR(priv->dma.axi_reorder);
 			goto del_napi;
 		}
 		priv->dma.port = priv->port;

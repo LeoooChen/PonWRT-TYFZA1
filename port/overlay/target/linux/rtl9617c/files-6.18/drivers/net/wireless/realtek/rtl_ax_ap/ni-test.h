@@ -45,6 +45,69 @@ static void ni_test_buffered(struct rtl_ax_tx *tx, unsigned int macid, u16 tids)
 	rcu_read_unlock(); local_bh_enable();
 }
 
+static void ni_ps_done(struct rtl_ax_tx *tx, unsigned int macid)
+{
+	struct ieee80211_sta *sta;
+	static const u32 tables[] = { RTL_AX_NI_PS_CANCEL, RTL_AX_NI_PS_DONE };
+	unsigned int i;
+
+	local_bh_disable(); rcu_read_lock();
+	sta = ieee80211_find_sta_by_ifaddr(tx->hw, tx->pe.memory + 0xe400 + macid * 8, NULL);
+	for (i = 0; sta && i < 2; i++) {
+		u8 *record = tx->pe.memory + tables[i] + macid * 8;
+		u32 producer = get_unaligned_le32(record + 4);
+
+		if (producer == tx->ni.ps_seen[i][macid]) continue;
+		dma_rmb();
+		u32 generation = get_unaligned_le32(record);
+		tx->ni.ps_seen[i][macid] = producer;
+		ni_ps_complete(tx, sta, macid, generation);
+	}
+	rcu_read_unlock(); local_bh_enable();
+}
+
+static void ni_ps_retire(struct rtl_ax_tx *tx)
+{
+	unsigned int macid;
+
+	/* PE is stopped, all WPs and RX callbacks have drained. */
+	local_bh_disable(); rcu_read_lock();
+	for (macid = 1; macid < 128; macid++) {
+		if (!tx->ni.ps_issued[macid]) continue;
+		struct ieee80211_sta *sta = ieee80211_find_sta_by_ifaddr(tx->hw,
+			tx->pe.memory + 0xe400 + macid * 8, NULL);
+		if (sta) ni_ps_complete(tx, sta, macid,
+			get_unaligned_le32(tx->pe.memory + 0xe800 + macid * 16 + 4));
+		tx->ni.ps_issued[macid] = false;
+	}
+	rcu_read_unlock(); local_bh_enable();
+}
+
+static void ni_tx_activity(struct rtl_ax_tx *tx, unsigned int macid)
+{
+	struct ieee80211_sta *sta;
+	unsigned int tid, changed = 0;
+
+	if (!READ_ONCE(tx->peer_authorized[macid])) return;
+	dma_rmb();
+	for (tid = 0; tid < 8; tid++) {
+		u32 packets = get_unaligned_le32(tx->pe.memory + RTL_AX_NI_TX_ACTIVITY + (macid * 8 + tid) * 4);
+		if (packets == tx->ni.tx_activity_seen[macid][tid]) continue;
+		tx->ni.tx_activity_seen[macid][tid] = packets;
+		changed |= BIT(tid);
+	}
+	if (!changed) return;
+	/* NI traffic bypasses mac80211's TX preparation and its last_tx update. */
+	local_bh_disable(); rcu_read_lock();
+	sta = ieee80211_find_sta_by_ifaddr(tx->hw, tx->pe.memory + 0xe400 + macid * 8, NULL);
+	for (tid = 0; sta && tid < 8; tid++)
+		if (changed & BIT(tid)) {
+			ieee80211_refresh_tx_agg_session_timer(sta, tid);
+			tx->ni.ba_refreshes++;
+		}
+	rcu_read_unlock(); local_bh_enable();
+}
+
 static void ni_route_ps(struct work_struct *work)
 {
 	struct rtl_ax_tx *tx = container_of(work, struct rtl_ax_ni_state, ps_work)->tx;
@@ -60,6 +123,10 @@ static void ni_route_ps(struct work_struct *work)
 	spin_unlock_irqrestore(&tx->lock, flags);
 	for (macid = 1; macid < 128; macid++) {
 		u32 mask = 0;
+		if (tx->pe_active) {
+			ni_ps_done(tx, macid);
+			ni_tx_activity(tx, macid);
+		}
 		if (!READ_ONCE(tx->peer_authorized[macid]) && !READ_ONCE(tx->ni.route_tim[macid])) continue;
 		if (READ_ONCE(tx->peer_asleep[macid])) {
 			mask = pending[macid];
@@ -242,6 +309,7 @@ static int ni_test_release(struct rtl_ax_tx *tx)
 	if (ret) return ret;
 	ret = rtl_ax_rx_pe_rpq_stop(tx->rx);
 	if (ret) return ret;
+	ni_ps_retire(tx);
 	pe_event_release(tx);
 	cancel_work_sync(&tx->ni.ps_work);
 	if (get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 96)) {
@@ -289,6 +357,7 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 		tx->ni.attrs[i][0] = readl(tx->ni.regs + 0x66ac); tx->ni.attrs[i][1] = readl(tx->ni.regs + 0x66a8);
 	}
 	tx->ni.active = true;
+	rtl_ax_tx_ps_clock(tx, ktime_get_boottime_seconds());
 	memset(tx->pe.memory + 0x11000, 0, 0xc00);
 	memset(tx->pe.memory + 0x13000, 0, 0x4000);
 	memset(tx->pe.memory + 0x19000, 0, 0x400);
@@ -386,8 +455,8 @@ static int ni_test_remove(struct rtl_ax_tx *tx)
 		u32 address = get_unaligned_le32(tx->pe.memory + 0x15000 + i * 4);
 		while (address) {
 			u32 next;
-			dma_sync_single_for_cpu(tx->dma_device, address, 16, DMA_FROM_DEVICE);
-			next = get_unaligned_le32(phys_to_virt(address + 12)) & ~127U;
+			dma_sync_single_for_cpu(tx->dma_device, address, 4, DMA_FROM_DEVICE);
+			next = get_unaligned_le32(phys_to_virt(address));
 			ret = readl_poll_timeout(tx->ni.regs + (0x6368 + tx->ni.cpu * 8), status, status & BIT(31), 1, 100000);
 			if (ret) return ret;
 			writel(address | tx->ni.eq, tx->ni.regs + (0x636c + tx->ni.cpu * 8));
@@ -476,13 +545,9 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 		    !(get_unaligned_le32(tx->pe.memory + 0xd000 + i * 32 + 16) & BIT(16))) continue;
 		put_unaligned_le32(1, tx->pe.memory + 0x11a00 + i * 4);
 		dma_wmb();
-		ret = rtl9617c_wifi_peer_route(netdev, tx->pe.memory + 0xe400 + i * 8, 16 + tx->ni.cpu);
-		if (ret) {
-			put_unaligned_le32(0, tx->pe.memory + 0x11a00 + i * 4);
-			dma_wmb();
-			goto unlock;
-		}
 		WRITE_ONCE(tx->ni.route_peers[i], true);
+		ret = rtl9617c_wifi_peer_route(netdev, tx->pe.memory + 0xe400 + i * 8, 16 + tx->ni.cpu);
+		if (ret) goto unlock;
 	}
 unlock:
 	mutex_unlock(&ni_test_lock);
@@ -492,7 +557,8 @@ unlock:
 int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned int macid)
 {
 	int id, ret;
-	if (!tx->pe_active || READ_ONCE(tx->peer_offloaded[macid])) return 0;
+	if (!tx->pe_active || (READ_ONCE(tx->peer_offloaded[macid]) &&
+	    READ_ONCE(tx->ni.route_peers[macid]))) return 0;
 	if (!(get_unaligned_le32(tx->pe.memory + 0xd000 + macid * 32 + 16) & BIT(16))) return -ENOLINK;
 	id = rtl9617c_wifi_id(netdev);
 	if (id < 0) return id;
@@ -505,14 +571,13 @@ int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned 
 	if (ret) { mutex_unlock(&ni_test_lock); return ret; }
 	put_unaligned_le32(1, tx->pe.memory + 0x11a00 + macid * 4);
 	dma_wmb();
+	/* Own the prepared path before FE can publish even its first rule.
+	 * A failed publish retains admission and is retried by offload_work. */
+	WRITE_ONCE(tx->ni.route_peers[macid], true);
 	ret = rtl9617c_wifi_peer_route(netdev, tx->pe.memory + 0xe400 + macid * 8, 16 + tx->ni.cpu);
 	if (!ret) {
-		WRITE_ONCE(tx->ni.route_peers[macid], true);
 		WRITE_ONCE(tx->peer_offloaded[macid], true);
 		rtl_ax_rx_uplink_enable(tx->rx, macid);
-	} else {
-		put_unaligned_le32(0, tx->pe.memory + 0x11a00 + macid * 4);
-		dma_wmb();
 	}
 	mutex_unlock(&ni_test_lock);
 	return ret ? ret : 1;
@@ -548,37 +613,43 @@ static bool ni_peer_idle(struct rtl_ax_tx *tx, unsigned int macid)
 
 int rtl_ax_tx_rx_retire(struct rtl_ax_tx *tx, unsigned int macid)
 {
+	bool running = READ_ONCE(tx->running);
 	int ret;
 
 	if (!tx->ni.active) return 0;
 	rtl_ax_rx_uplink_disable(tx->rx, macid);
 	ret = rtl_ax_tx_pause(tx);
-	if (ret) return ret;
+	if (ret) {
+		/* No ownership changed: cancel this runtime pause, not a prior RFK stop. */
+		if (running) rtl_ax_tx_open(tx);
+		return ret;
+	}
 	rtl_ax_rx_uplink_retire(tx->rx, macid);
 	WRITE_ONCE(tx->peer_offloaded[macid], false);
-	rtl_ax_tx_open(tx);
+	if (running) rtl_ax_tx_open(tx);
 	return 0;
 }
 
-int rtl_ax_tx_ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid)
+static int ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid, bool keep_rx)
 {
 	unsigned int i;
 	u32 status;
 	int ret;
 	if (!READ_ONCE(tx->ni.route_peers[macid]) && !rtl_ax_rx_uplink_active(tx->rx, macid)) return 0;
-	rtl_ax_rx_uplink_disable(tx->rx, macid);
+	if (!keep_rx) rtl_ax_rx_uplink_disable(tx->rx, macid);
 	/* Key/BA retirement must stop admission before attempting FE withdrawal. */
 	put_unaligned_le32(0, tx->pe.memory + 0x11a00 + macid * 4);
 	dma_wmb();
 	for (i = 1; i < 128; i++)
-		if (i != macid && READ_ONCE(tx->ni.route_peers[i])) break;
-	if (i == 128) return rtl_ax_tx_ni_route(tx, tx->ni.route_dev, 0);
+		if (i != macid && (READ_ONCE(tx->ni.route_peers[i]) ||
+		    rtl_ax_rx_uplink_active(tx->rx, i))) break;
+	if (!keep_rx && i == 128) return rtl_ax_tx_ni_route(tx, tx->ni.route_dev, 0);
 	mutex_lock(&ni_test_lock);
 	ret = rtl9617c_wifi_peer_route(tx->ni.route_dev, tx->pe.memory + 0xe400 + macid * 8, false);
 	if (ret) goto unlock;
 	ret = rtl_ax_tx_pause(tx);
 	if (ret) goto unlock;
-	rtl_ax_rx_uplink_retire(tx->rx, macid);
+	if (!keep_rx) rtl_ax_rx_uplink_retire(tx->rx, macid);
 	ni_peer_fence(tx);
 	put_unaligned_le32(macid, tx->pe.memory + PE_PROBE_MAILBOX + 248);
 	dma_wmb();
@@ -590,7 +661,7 @@ int rtl_ax_tx_ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid)
 	ret = read_poll_timeout(ni_peer_idle, status, status, 100, 2000000, false, tx, macid);
 	if (ret) goto unlock;
 	WRITE_ONCE(tx->ni.route_peers[macid], false);
-	WRITE_ONCE(tx->peer_offloaded[macid], false);
+	if (!keep_rx) WRITE_ONCE(tx->peer_offloaded[macid], false);
 	put_unaligned_le32(0, tx->pe.memory + 0x11a00 + macid * 4);
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 248);
 	dma_wmb();
@@ -599,6 +670,17 @@ int rtl_ax_tx_ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid)
 unlock:
 	mutex_unlock(&ni_test_lock);
 	return ret;
+}
+
+int rtl_ax_tx_ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid)
+{
+	return ni_retire_peer(tx, macid, false);
+}
+
+int rtl_ax_tx_ni_retire_ba(struct rtl_ax_tx *tx, unsigned int macid)
+{
+	/* A TX aggregation change does not invalidate RX's key, PN or BA window. */
+	return ni_retire_peer(tx, macid, true);
 }
 
 int rtl_ax_tx_ni_test(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid)

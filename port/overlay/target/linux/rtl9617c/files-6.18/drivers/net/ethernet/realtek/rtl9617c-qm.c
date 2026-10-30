@@ -603,7 +603,9 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			}
 			if (begin) copied = ktime_get_ns();
 			memcpy(skb_put(skb, length), rx->memory + offset + RTL_QM_HEADROOM + header, length);
-			if (checksum_enabled && rtl_rx_checksum_valid(command, skb->data, length))
+			if (checksum_enabled &&
+			    (wifi_forwarded || get_unaligned_be16(skb->data + 12) == ETH_P_IP) &&
+			    rtl_rx_checksum_valid(command, skb->data, length))
 				skb->ip_summed = CHECKSUM_UNNECESSARY;
 			source = FIELD_GET(GENMASK(14, 9), h1);
 			if (!wifi_forwarded && source == RTL_WIFI_SOURCE && (h0 & BIT(31))) {

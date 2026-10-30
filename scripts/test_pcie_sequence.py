@@ -86,9 +86,12 @@ int main(void){
  /* Literal Taurus ATU fixture:512MiB DDR,64KiB pages,CCI alias4. */
  struct rtl_pcie_io atu_io={NULL,native_read,native_write,NULL,atu_wait_clear};
  used=0;assert(!rtl_pcie_atu_ddr(&atu_io,0x2000,4));
- assert(memory[0]==1); /* Command completed after the hardware cleared busy. */
- assert(memory[1]==0 && memory[2]==0xffffe000 && memory[3]==0x40000);
- assert(memory[4]==0x07ff0022 && memory[5]==0x80 && memory[6]==0x80);
+ assert(used==14 && memory[0]==0x01000003);
+ assert(trace[0].value==0 && trace[1].value==0xffffe000 && trace[2].value==0x40000);
+ assert(trace[3].value==0x07ff0022 && trace[4].value==0x80 && trace[5].value==0x80);
+ assert(trace[6].value==0x80000001);
+ assert(memory[1]==0x8000 && memory[2]==0xffffe000 && memory[3]==0);
+ assert(memory[4]==0x07000022 && memory[5]==0 && memory[6]==0);
  puts("Native PCIe:2048 stock-calibration write traces match;analog timeout and512MiB ATU data fixture passed");
 }
 '''

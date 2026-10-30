@@ -5,6 +5,27 @@
 #define RTL_AX_AP_MAC_RUNTIME_H
 #include "download.h"
 
+static inline int rtl_ax_host_getpkt(const struct rtl_ax_io *io, unsigned int macid)
+{
+	unsigned int retry;
+
+	/* Actual mac_host_getpkt_h2c -> _mac_send_h2creg, C and XB.
+	 * The receive worker calls this after validating a peer's PS-Poll. */
+	for (retry = 0; retry < 100; retry++) {
+		if (!(io->read8(io->ctx, 0x7160) & 1))
+			break;
+		io->delay_us(io->ctx, 200);
+	}
+	if (retry == 100)
+		return -ETIMEDOUT;
+	io->write32(io->ctx, 0x7140, 0x204 | macid << 16);
+	io->write32(io->ctx, 0x7144, 0);
+	io->write32(io->ctx, 0x7148, 0);
+	io->write32(io->ctx, 0x714c, 0);
+	io->write8(io->ctx, 0x7160, io->read8(io->ctx, 0x7160) | 1);
+	return 0;
+}
+
 static inline void rtl_ax_bb_rf_disable(const struct rtl_ax_io *io)
 {
 	/* set_enable_bb_rf(enable=0), actual C/XB branch at21e29c. */

@@ -65,7 +65,7 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
                     ['ip', 'link', 'set', 'pon-oam0', 'address', '02:11:22:33:44:55'],
                     ['ip', 'link', 'set', 'olt', 'address', '02:10:20:30:40:50'],
                     ['ip', 'link', 'set', 'pon-oam0', 'up'], ['ip', 'link', 'set', 'olt', 'up'],
-                    ['ip', 'link', 'add', 'lan4', 'type', 'veth', 'peer', 'name', 'uni-peer']):
+                    ['ip', 'link', 'add', 'lan1', 'type', 'veth', 'peer', 'name', 'uni-peer']):
         subprocess.run(command, check=True)
     sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(0x8809))
     sock.bind(('olt', 0))
@@ -106,9 +106,9 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
         assert versions[83:87] == bytes([3, *map(int, release.split('.'))])
         tests.append('ONU SN carries UCI software identity; FirmwareVer carries three release octets')
         uni_object = bytes.fromhex('37000104 01000001')
-        for command in (['ip', 'link', 'set', 'lan4', 'up'], ['ip', 'link', 'set', 'uni-peer', 'up']):
+        for command in (['ip', 'link', 'set', 'lan1', 'up'], ['ip', 'link', 'set', 'uni-peer', 'up']):
             subprocess.run(command, check=True)
-        before_flags = json.loads(subprocess.check_output(['ip', '-j', 'link', 'show', 'lan4']))[0]['flags']
+        before_flags = json.loads(subprocess.check_output(['ip', '-j', 'link', 'show', 'lan1']))[0]['flags']
         tx_control = temporary / 'epon_tx_control'
         tx_control.write_bytes(b'local-owner')
         blocked = [(0xc9, 1, None), (9, 5, struct.pack('!I', 1)),
@@ -125,7 +125,7 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
             sock.send(ethernet(payload + b'\0', code=0xfe, flags=0x50))
             assert receive(sock, 0xfe)[30:34] == variable + b'\x87', (branch, leaf)
         assert tx_control.read_bytes() == b'local-owner'
-        assert json.loads(subprocess.check_output(['ip', '-j', 'link', 'show', 'lan4']))[0]['flags'] == before_flags
+        assert json.loads(subprocess.check_output(['ip', '-j', 'link', 'show', 'lan1']))[0]['flags'] == before_flags
         tests.append('remote reboot/TX/LAN/alarm/PM Set requests are refused without changing local port or TX controls')
 
         fec_file = temporary / 'fec'

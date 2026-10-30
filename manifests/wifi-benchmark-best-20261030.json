@@ -1,0 +1,174 @@
+{
+  "platform": {
+    "device": "TYFZA1",
+    "client": "MacBook",
+    "wireless": "5 GHz HE160",
+    "kernel": "6.18.55",
+    "architecture": "PE0 uplink / PE1 downlink",
+    "peer": "Internal simulated PON endpoint; real wireless air interface and NI/FE/QM hardware",
+    "dates": [
+      "2026-10-29",
+      "2026-10-30"
+    ]
+  },
+  "selection": "Best full-run mean throughput in the reviewed production-architecture records; UDP requires all sequence IDs received once with no invalid payloads. No instantaneous or diagnostic service-window peaks. Bidirectional rates share one union time window.",
+  "units": "Gbps = 10^9 payload bits/s",
+  "measurements": [
+    {
+      "protocol": "TCP",
+      "mode": "uplink",
+      "streams_per_direction": 1,
+      "duration_s": 20,
+      "source_test": "pe-uplink-service-20261030/V1-p1",
+      "evidence": [
+        {
+          "file": "pe-uplink-service-20261030/V1-p1.json",
+          "sha256": "b67b4ee858d36d975c445eefe6997952b8f2734cb098c5d3fd4860a66a61183e"
+        },
+        {
+          "file": "pe-uplink-service-20261030/V1-p1.before.txt",
+          "sha256": "e8defe5838ba3abac6cedcd90b34797edeb0b5733929353fa073a42f5cf19336"
+        },
+        {
+          "file": "pe-uplink-service-20261030/V1-p1.after.txt",
+          "sha256": "833678325329940599636c9b864bdae2d01a805a867c792e7850c97cfafcd251"
+        }
+      ],
+      "up_Gbps": 1.5530203085463383,
+      "up_retransmits": 1,
+      "firmware_commit": "baae3ab"
+    },
+    {
+      "protocol": "TCP",
+      "mode": "downlink",
+      "streams_per_direction": 4,
+      "duration_s": 30,
+      "source_test": "pe-final-measure-20261029/tcp-down",
+      "evidence": [
+        {
+          "file": "pe-final-measure-20261029/tcp-down.json",
+          "sha256": "2b411b1d87d906af72fabe80fdde252d9fe4c5ad8effd3113f771d06dff12135"
+        },
+        {
+          "file": "pe-final-measure-20261029/tcp-down.before.txt",
+          "sha256": "94eec91b9231de84b16fd25c6ab5f024eb9abd6041dc031ac7ee1dc69f3dc8aa"
+        },
+        {
+          "file": "pe-final-measure-20261029/tcp-down.after.txt",
+          "sha256": "c7855a42f1da3d6f58d0ff468154c487536b74d86569c5f7535176e2a16fc2c7"
+        }
+      ],
+      "down_Gbps": 1.5584803171545183,
+      "down_retransmits": 0
+    },
+    {
+      "protocol": "TCP",
+      "mode": "bidirectional",
+      "streams_per_direction": 2,
+      "duration_s": 30,
+      "source_test": "pe-tail-exit-20261030/E4-early-report",
+      "evidence": [
+        {
+          "file": "pe-tail-exit-20261030/E4-early-report.json",
+          "sha256": "49217f51ffcc17640a72ede800f064f03384d6f24920be437b637fb5691897a9"
+        },
+        {
+          "file": "pe-tail-exit-20261030/E4-early-report.before.txt",
+          "sha256": "8c622f88ad56a89a712d8f7b24faa7988b4b5168cbd4702ec3b7b2545219bf39"
+        },
+        {
+          "file": "pe-tail-exit-20261030/E4-early-report.after.txt",
+          "sha256": "28071399738dcf1e68bee129aa3df9e565f511a456207b93586a910bde661af8"
+        }
+      ],
+      "up_Gbps": 0.81881865646448,
+      "down_Gbps": 0.7885709511154103,
+      "total_Gbps": 1.6073896075798904,
+      "common_window_s": 30.021015,
+      "up_retransmits": 0,
+      "down_retransmits": 0,
+      "firmware_commit": "156e244"
+    },
+    {
+      "protocol": "UDP",
+      "mode": "uplink",
+      "source_test": "pe-endpoint-ab-20261030/K9-exact",
+      "payload_bytes": 1464,
+      "sent": 3000000,
+      "received_unique": 3000000,
+      "duplicates": 0,
+      "invalid": 0,
+      "lost_packets": 0,
+      "up_Gbps": 1.7227807346568973,
+      "window_s": 20.39493436,
+      "evidence": [
+        {
+          "file": "pe-endpoint-ab-20261030/K9-exact.receive.txt",
+          "sha256": "e061d727f2eaddb0687b6b6056e5c847723486169124bb498b4298a35bc484ae"
+        },
+        {
+          "file": "pe-endpoint-ab-20261030/K9-exact.json",
+          "sha256": "24bbbd5607323f7ac0f7b56424e80e205337e9e53547e5ab6089382e89f13a82"
+        }
+      ],
+      "firmware_commit": "c3ef7e7"
+    },
+    {
+      "protocol": "UDP",
+      "mode": "downlink",
+      "source_test": "pe-exact-duplex-20261030/X9-down",
+      "payload_bytes": 1464,
+      "down_sent": 3000000,
+      "down_received_unique": 3000000,
+      "duplicates": 0,
+      "invalid": 0,
+      "down_lost_packets": 0,
+      "evidence": [
+        {
+          "file": "pe-exact-duplex-20261030/X9-down.mac.txt",
+          "sha256": "b471dc188bd7ae5dc00a563a36e515631dd375bb2a28ddde522dc8cd68ac1b54"
+        },
+        {
+          "file": "pe-exact-duplex-20261030/X9-down.router.txt",
+          "sha256": "452b4066a7032686d6b05dad5d78eacdb1f409d813453c498a23ceca7abdfe14"
+        }
+      ],
+      "down_Gbps": 1.7497934769595584,
+      "window_s": 20.080084,
+      "firmware_commit": "c3ef7e7"
+    },
+    {
+      "protocol": "UDP",
+      "mode": "bidirectional",
+      "source_test": "pe-exact-duplex-20261030/X15-asym-repeat",
+      "payload_bytes": 1464,
+      "down_sent": 1520000,
+      "down_received_unique": 1520000,
+      "duplicates": 0,
+      "invalid": 0,
+      "down_lost_packets": 0,
+      "evidence": [
+        {
+          "file": "pe-exact-duplex-20261030/X15-asym-repeat.mac.txt",
+          "sha256": "722d792de476091e10c4b9157acc0debf90a0e3c7bc1b21ffaca0ecd285dfd1e"
+        },
+        {
+          "file": "pe-exact-duplex-20261030/X15-asym-repeat.router.txt",
+          "sha256": "713a06cd4148d715e41193c0a161aa77136cab6eb0aa7d384507e77f97b0991b"
+        },
+        {
+          "file": "pe-exact-duplex-20261030/X15-asym-repeat.send.json",
+          "sha256": "7f1f76ea5a23b0a94e4f7fedbf9c59c1e1285164c6da3692508a0585f60ef62b"
+        }
+      ],
+      "up_sent": 1200000,
+      "up_received_unique": 1200000,
+      "up_lost_packets": 0,
+      "up_Gbps": 0.7448190954165727,
+      "down_Gbps": 0.9434375208609921,
+      "total_Gbps": 1.6882566162775647,
+      "common_window_s": 18.86954844,
+      "firmware_commit": "c3ef7e7"
+    }
+  ]
+}

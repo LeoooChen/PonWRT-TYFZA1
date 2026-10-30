@@ -10,6 +10,11 @@ struct rtl_ax_dig_unit {
 	u16 fa_threshold[4];
 };
 
+struct rtl_ax_dig_rssi {
+	u16 average, packets;
+	u8 factor;
+};
+
 struct rtl_ax_dig {
 	bool initialized, damping_enabled, damping_active, fahm_triggered;
 	u8 mode, previous_mode, igi_rssi, damping_count_limit;
@@ -19,11 +24,16 @@ struct rtl_ax_dig {
 	u8 fahm_level, fahm_application, fahm_numerator, fahm_denominator;
 	struct rtl_ax_dig_unit unit[2];
 	u8 pd_requested, ofdm_encoded, cck_encoded, bandwidth;
+	bool linked, fahm_configured;
+	u8 rssi_min, igi_history[6], direction, damping_igi, damping_rssi;
+	u16 fa_history[6], false_alarms;
+	u32 damping_time;
+	u64 updates, reports, not_ready;
 };
 
-/* Original set_pd_lower_bound_C@2e1658 adds 3 dB per bandwidth step.
+/* Original set_pd_lower_bound_C@2e1658/XB@2ec06c adds 3 dB per bandwidth step.
  * Above102 the original disables the lower bound instead of wrapping it. */
-static inline void rtl_ax_c_dig_bandwidth(const struct rtl_ax_io *io,
+static inline void rtl_ax_dig_bandwidth(const struct rtl_ax_io *io,
 	struct rtl_ax_dig *dig, unsigned int bandwidth)
 {
 	unsigned int adjusted = (dig->pd_requested + 7 + bandwidth * 3 + 1) & ~1U;
@@ -31,13 +41,23 @@ static inline void rtl_ax_c_dig_bandwidth(const struct rtl_ax_io *io,
 	dig->bandwidth = bandwidth;
 	if (!dig->pd_requested || adjusted > 102) {
 		rtl_ax_update32(io, 0x1481c, RTL_AX_BIT(29), 0);
+	} else {
+		if (adjusted < 40)
+			adjusted = 40;
+		dig->ofdm_encoded = (102 - adjusted) / 2;
+		rtl_ax_update32(io, 0x1481c, 0x7c0, dig->ofdm_encoded << 6);
+		rtl_ax_update32(io, 0x1481c, 0, RTL_AX_BIT(29));
+	}
+	/* CCK uses the same bandwidth compensation, without even rounding. */
+	if (!dig->pd_requested) {
+		rtl_ax_update32(io, 0x14b74, RTL_AX_BIT(30), 0);
 		return;
 	}
-	if (adjusted < 40)
-		adjusted = 40;
-	dig->ofdm_encoded = (102 - adjusted) / 2;
-	rtl_ax_update32(io, 0x1481c, 0x7c0, dig->ofdm_encoded << 6);
-	rtl_ax_update32(io, 0x1481c, 0, RTL_AX_BIT(29));
+	adjusted = dig->pd_requested + 5 + bandwidth * 3;
+	dig->cck_encoded = adjusted < 128 ? -(int)adjusted : -128;
+	rtl_ax_update32(io, 0x14b64, 0xff000000, (u32)dig->cck_encoded << 24);
+	rtl_ax_update32(io, 0x14b64, 0xff0000, 127U << 16);
+	rtl_ax_update32(io, 0x14b74, 0, RTL_AX_BIT(30));
 }
 
 static inline void rtl_ax_dig_initialize(const struct rtl_ax_io *io,
@@ -46,7 +66,7 @@ static inline void rtl_ax_dig_initialize(const struct rtl_ax_io *io,
 	static const s8 lna[7] = { -24, -16, -8, 0, 8, 16, 24 };
 	static const s8 tia[2][2] = { { 12, 20 }, { 16, 24 } };
 	static const u16 fa[4] = { 196, 352, 440, 528 };
-	unsigned int band, i, lower, upper, rssi_floor, pd_gain, adjusted;
+	unsigned int band, i, lower, upper, rssi_floor, pd_gain;
 
 	/* Actual halbb_dig_init@2d69f8, normal unlinked PHY0, DIG_ORIGIN.
 	 * Its CLIENT CR initializer@2d8374 does not populate IB power or
@@ -61,6 +81,13 @@ static inline void rtl_ax_dig_initialize(const struct rtl_ax_io *io,
 	dig->fahm_numerator = 1;
 	dig->fahm_denominator = 4;
 	dig->fahm_triggered = false;
+	dig->fahm_configured = dig->linked = false;
+	dig->updates = dig->reports = dig->not_ready = 0;
+	dig->false_alarms = dig->direction = 0;
+	for (i = 0; i < 6; i++) {
+		dig->igi_history[i] = 0;
+		dig->fa_history[i] = 0;
+	}
 	dig->ib_peak_power = 0;
 	dig->ib_backoff = 0;
 	for (band = 0; band < 2; band++) {
@@ -110,26 +137,17 @@ static inline void rtl_ax_dig_initialize(const struct rtl_ax_io *io,
 		dig->unit[0].igi = lower;
 	if (dig->unit[0].igi > upper)
 		dig->unit[0].igi = upper;
-	/* dyn_pd_th_ofdm/cck: max(IGI,RSSI+5)-min(offset,that).
+	/* dyn_pd_th_ofdm/cck: min(IGI,RSSI+5)-min(offset,that).
 	 * Initial bandwidth is 20MHz (index0); channel lifecycle follows. */
 	dig->bandwidth = 0;
 	pd_gain = dig->igi_rssi + 5;
-	if (pd_gain < dig->unit[0].igi)
+	if (pd_gain > dig->unit[0].igi)
 		pd_gain = dig->unit[0].igi;
 	pd_gain -= pd_gain > dig->unit[0].pd_offset ? dig->unit[0].pd_offset : pd_gain;
 	dig->pd_requested = 110 - pd_gain;
 	/* C@2e1658 and XB@2ec06c both add 7dB, round up to even,
 	 * then encode (102-adjusted)/2 in 481c[10:6]. */
-	adjusted = (dig->pd_requested + 7 + 1) & ~1U;
-	dig->ofdm_encoded = (102 - adjusted) / 2;
-	rtl_ax_update32(io, 0x1481c, 0x7c0, dig->ofdm_encoded << 6);
-	rtl_ax_update32(io, 0x1481c, 0, RTL_AX_BIT(29));
-	/* C@2e1828 uses PHY0 common writes; XB@2ec23c direct writes.
-	 * Both add 5dB, set signed CCK threshold, high threshold127, enable. */
-	dig->cck_encoded = -(dig->pd_requested + 5);
-	rtl_ax_update32(io, 0x14b64, 0xff000000, (u32)dig->cck_encoded << 24);
-	rtl_ax_update32(io, 0x14b64, 0x00ff0000, 0x007f0000);
-	rtl_ax_update32(io, 0x14b74, 0, RTL_AX_BIT(30));
+	rtl_ax_dig_bandwidth(io, dig, 0);
 	dig->initialized = true;
 }
 #endif

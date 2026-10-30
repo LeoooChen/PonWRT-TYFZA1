@@ -4,6 +4,8 @@
 #define RX_PEER_CONFIG 0x10000
 #define RX_ARM_DONE BIT(30)
 #define RX_NI_PENDING BIT(31)
+/* Transient return value only; never stored as payload ownership. */
+#define RX_NI_BUSY BIT(29)
 
 static u32 rx_buffer_dma(volatile u32 *mailbox, u32 id)
 {
@@ -14,7 +16,10 @@ static u32 rx_buffer_dma(volatile u32 *mailbox, u32 id)
 static void __attribute__((section(".entry"), noinline)) rx_idle_put(volatile u32 *mailbox, u8 *memory, u32 id)
 {
 	u32 count = mailbox[RTL_AX_RX_IDLE_COUNT];
-	*(volatile u32 *)uncached(rx_buffer_dma(mailbox, id)) = 0;
+	volatile u32 *tag = uncached(rx_buffer_dma(mailbox, id));
+	*tag = 0;
+	/* Complete the clear before a new PCIe DMA may write this tag. */
+	(void)*tag;
 	*(u32 *)(memory + RTL_AX_RX_IDLE_IDS + count * 4) = id;
 	mailbox[RTL_AX_RX_IDLE_COUNT] = count + 1;
 }
@@ -36,7 +41,7 @@ static void __attribute__((noinline)) rx_work_recycle(volatile u32 *mailbox, u8 
 {
 	u32 read = mailbox[RTL_AX_RX_WORK_READ];
 	while (read != mailbox[RTL_AX_RX_WORK_PROCESS]) {
-		/* PE1 releases the completion record before its process cursor. */
+		/* Acquire ARM completion before returning a payload to RXQ. */
 		sync();
 		u32 *status = (void *)(memory + RX_STATUS + read * 4);
 		u32 owner = *status;
@@ -150,9 +155,25 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	u32 expected = state[0] & 4095, out_of_order = expected != sequence;
 	if (out_of_order) {
 		mailbox[109]++;
+		/* A retried MPDU already behind the BA head and accepted PN is
+		 * a duplicate. Recycle it without serializing fresh RX through ARM. */
+		if ((frame[1] & 8) && ((sequence - expected) & 4095) >= 2048 &&
+		    (pn_high < state[2] || (pn_high == state[2] && pn_low <= state[1])))
+			return RX_ARM_DONE;
 		if (((sequence - expected) & 4095) >= state[7]) return 0;
 	}
 	if (pn_high < state[2] || (pn_high == state[2] && pn_low <= state[1])) { mailbox[110]++; return 0; }
+	if (out_of_order) {
+		u32 order = ((macid * 16 + tid) << 12) | expected;
+		u32 key = BIT(23) | (mailbox[RTL_AX_RX_WORK_PROCESS] << 24) | order;
+		u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
+		/* This untouched head passed the complete protocol walk before
+		 * starting this scan. Retry the gap, not every A-MSDU subframe. */
+		if (*(u32 *)(memory + RTL_AX_RX_REORDER_SEARCH) == key) {
+			*reorder = order;
+			return 0;
+		}
+	}
 	struct { u8 addresses[12]; u32 range; } plan[63];
 	/* Stock retains two completed descriptors and requires more than two
 	 * free slots before each submission. The hardware read cursor alone
@@ -160,7 +181,7 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	u32 write = mailbox[90], read = mailbox[91], released = mailbox[118];
 	if (read - released > 2) mailbox[118] = released = read - 2;
 	u32 available = (released - write - 1) & RTL_AX_NI_TX_MASK;
-	if (available <= 2) { mailbox[111]++; return 0; }
+	if (available <= 2) { mailbox[111]++; return RX_NI_BUSY; }
 	available -= 2;
 	if (available > 63) available = 63;
 	u32 body = length - header - 20, offset = 0, frames = 1;
@@ -175,7 +196,10 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 		frames = 0;
 		while (offset < body) {
 			if (body - offset < 14) return 0;
-			if (frames == available) { mailbox[111]++; return 0; }
+			if (frames == available) {
+				mailbox[111]++;
+				return available == 63 ? 0 : RX_NI_BUSY;
+			}
 			u8 *sub = rx_prefix(sub_prefix, data + offset, 9);
 			u32 bytes = (u32)sub[12] << 8 | sub[13];
 			if (bytes < 36 || bytes + 6 > 2048 || bytes > body - offset - 14 || (sub[0] & 1) || !rx_protocol(sub + 14)) return 0;
@@ -244,6 +268,10 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 	u32 *search = (void *)(memory + RTL_AX_RX_REORDER_SEARCH);
 	/* Reuse a scan only for the same capture head and BA expectation. */
 	u32 key = BIT(23) | (read << 24) | order;
+	volatile u32 *bar = (void *)mailbox[2];
+	/* Port0 TSF runs in microseconds. Allow a short RX retry to complete
+	 * before transferring the entire TID to mac80211's reorder queue. */
+	if (search[0] != key) search[2] = bar[0xc438 / 4];
 	u32 scan = search[0] == key ? search[1] : (read + 1) & 255;
 	search[0] = key;
 	sync();
@@ -251,7 +279,13 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 	for (u32 budget = 0;
 	     scan != write && budget < 16; scan = (scan + 1) & 255, budget++) {
 		u32 *status = (void *)(memory + RX_STATUS + scan * 4);
-		if (*status & RX_NI_PENDING) continue;
+		u32 hint = *status;
+		if ((hint & RX_NI_PENDING) || hint == RX_ARM_DONE) continue;
+		/* Hints apply only while this head owns the scan. Its ARM
+		 * fallback may change PS/key state before a later head runs.
+		 * A candidate always repeats full admission and PN checks. */
+		if (hint && (hint >> 23) == read && !((hint ^ order) & 0x7ff000) &&
+		    (hint & 4095) != (order & 4095)) continue;
 		u32 item = *(u32 *)(memory + RTL_AX_RX_WORK_IDS + scan * 4);
 		u32 dma = rx_buffer_dma(mailbox, item & ~RTL_AX_RX_WORK_OLD);
 		u8 *buffer = uncached(dma), *wire;
@@ -260,13 +294,21 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 		u32 prefix[10], bytes, macid;
 		if (!rx_frame(mailbox, buffer, &wire, &bytes, &macid, prefix)) return 0;
 		u8 *frame = (u8 *)prefix + ((u32)wire & 3);
-		if (macid != order >> 16) return 0;
-		u32 same_tid = (frame[24] & 15) == ((order >> 12) & 15);
+		u32 same_tid = macid == (order >> 16) &&
+			(frame[24] & 15) == ((order >> 12) & 15);
 		u32 sequence = (frame[22] | (u32)frame[23] << 8) >> 4;
-		if (same_tid && sequence != (order & 4095)) continue;
-		/* Original station[0x928 + 8*TID] keeps independent reorder states.
-		 * Commit another TID only through its complete NI/PN/SN validation. */
+		if (same_tid && sequence != (order & 4095)) {
+			*status = read << 23 | (macid << 16) | (frame[24] & 15) << 12 | sequence;
+			continue;
+		}
+		/* Each station/TID has independent reorder state. Commit an unrelated
+		 * frame only through its complete NI/PN/SN validation. */
 		u32 unused = 0, owner = rx_uplink(mailbox, buffer, dma, &unused);
+		if (owner == RX_NI_BUSY) {
+			/* Retry this untouched slot, not the previous head's cursor. */
+			search[1] = scan;
+			return 1;
+		}
 		if (!owner) return 0;
 		*status = owner;
 		mailbox[191]++;
@@ -275,11 +317,19 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 	}
 	search[1] = scan;
 	if (scan != write) return 1;
+	/* Capture's cached producer may have been exhausted before another
+	 * DMA batch arrived. Check that batch before handing the gap to ARM. */
+	if (((write + 1) & 255) != mailbox[RTL_AX_RX_WORK_READ] &&
+	    write == mailbox[RTL_AX_RX_WORK_WRITE] &&
+	    mailbox[81] == mailbox[RTL_AX_RX_HW_PRODUCER]) {
+		mailbox[RTL_AX_RX_HW_PRODUCER] = (bar[0x1218 / 4] >> 16) & 1023;
+	}
 	/* Finish PE0's known capture batch before giving an SN gap to ARM.
 	 * A full work ring must fall back so ARM can release its head. */
 	return ((write + 1) & 255) != mailbox[RTL_AX_RX_WORK_READ] &&
 		(write != mailbox[RTL_AX_RX_WORK_WRITE] ||
-		 mailbox[81] != mailbox[RTL_AX_RX_HW_PRODUCER]);
+		 mailbox[81] != mailbox[RTL_AX_RX_HW_PRODUCER] ||
+		 (u32)(bar[0xc438 / 4] - search[2]) < 1000);
 }
 
 static void __attribute__((noinline)) rx_status_poll(volatile u32 *mailbox)
@@ -294,47 +344,59 @@ static void __attribute__((noinline)) rx_status_poll(volatile u32 *mailbox)
 	}
 }
 
-static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mailbox)
+static void __attribute__((noinline)) rx_completion_poll(volatile u32 *mailbox)
 {
-	if (!mailbox[80]) return;
 	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
-	u32 slot = mailbox[81];
-	if (slot == mailbox[RTL_AX_RX_HW_PRODUCER]) rx_status_poll(mailbox);
 	if (mailbox[88]) {
 		volatile u32 *vp = (void *)mailbox[88];
 		mailbox[91] += ((vp[0x1c / 4] - mailbox[91]) & RTL_AX_NI_TX_MASK);
 	}
 	rx_buffer_recycle(mailbox, memory);
 	rx_work_recycle(mailbox, memory);
-	u32 write = mailbox[RTL_AX_RX_WORK_WRITE];
-	u32 next = (write + 1) & 255;
-	if (next == mailbox[RTL_AX_RX_WORK_READ] ||
-	    mailbox[RTL_AX_RX_HW_PRODUCER] == slot) return;
+}
+
+void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mailbox, u32 budget)
+{
+	if (!mailbox[80]) return;
+	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
+	u32 slot = mailbox[81], write = mailbox[RTL_AX_RX_WORK_WRITE];
+	u32 read = mailbox[RTL_AX_RX_WORK_READ], count = mailbox[RTL_AX_RX_IDLE_COUNT];
+	u32 tag = mailbox[82], captured = 0, descriptors = mailbox[134];
 	u32 *map = (void *)(memory + RTL_AX_RX_SLOT_MAP);
-	u32 id = map[slot];
-	u32 info = *(volatile u32 *)uncached(rx_buffer_dma(mailbox, id));
-	u32 previous_tag = mailbox[82];
-	u32 tag = previous_tag == 8191 ? 1 : previous_tag + 1;
-	if (((info >> 16) & 8191) != tag) {
-		/* Service the stock RDU cause even inside a cached batch. The next
-		 * turn rereads the DMA tag; this unready buffer stays untouched. */
-		rx_status_poll(mailbox);
-		return;
-	}
 	u32 *work = (void *)(memory + RTL_AX_RX_WORK_IDS);
+	/* PE0 alone changes these cursors. Publish once after the capture batch;
+	 * processing and ARM handoff cannot consume it before this call returns. */
+	for (; captured < budget; captured++) {
+		if (slot == mailbox[RTL_AX_RX_HW_PRODUCER]) rx_status_poll(mailbox);
+		u32 next = (write + 1) & 255;
+		if (next == read || mailbox[RTL_AX_RX_HW_PRODUCER] == slot) break;
+		u32 id = map[slot];
+		u32 info = *(volatile u32 *)uncached(rx_buffer_dma(mailbox, id));
+		u32 next_tag = tag == 8191 ? 1 : tag + 1;
+		if (((info >> 16) & 8191) != next_tag) {
+			/* RDU remains observable even inside a cached producer batch. */
+			rx_status_poll(mailbox);
+			break;
+		}
+		sync();
+		work[write] = id | (rtl_ax_rx_epoch_old(&mailbox[RTL_AX_PE_DFS_EPOCH], slot) ? RTL_AX_RX_WORK_OLD : 0);
+		u32 replacement = *(u32 *)(memory + RTL_AX_RX_IDLE_IDS + --count * 4);
+		map[slot] = replacement;
+		volatile u32 *descriptor = uncached(descriptors + slot * 8);
+		descriptor[1] = rx_buffer_dma(mailbox, replacement);
+		/* Drain the DDR address update before returning this RXBD to PCIe. */
+		(void)descriptor[1];
+		write = next;
+		tag = next_tag;
+		slot = (slot + 1) & 255;
+	}
+	if (!captured) return;
 	sync();
-	work[write] = id | (rtl_ax_rx_epoch_old(&mailbox[RTL_AX_PE_DFS_EPOCH], slot) ? RTL_AX_RX_WORK_OLD : 0);
-	u32 count = mailbox[RTL_AX_RX_IDLE_COUNT] - 1;
-	u32 replacement = *(u32 *)(memory + RTL_AX_RX_IDLE_IDS + count * 4);
 	mailbox[RTL_AX_RX_IDLE_COUNT] = count;
-	map[slot] = replacement;
-	volatile u32 *descriptor = uncached(mailbox[134] + slot * 8);
-	descriptor[1] = rx_buffer_dma(mailbox, replacement);
-	sync();
-	mailbox[RTL_AX_RX_WORK_WRITE] = next;
+	mailbox[RTL_AX_RX_WORK_WRITE] = write;
 	mailbox[82] = tag;
-	mailbox[86]++;
-	mailbox[81] = (slot + 1) & 255;
+	mailbox[86] += captured;
+	mailbox[81] = slot;
 }
 
 static void __attribute__((noinline)) rx_notify_done(volatile u32 *mailbox)
@@ -349,12 +411,10 @@ static void __attribute__((noinline)) rx_notify_done(volatile u32 *mailbox)
 
 static void __attribute__((section(".rxq"), noinline)) pe_rxq_batch(volatile u32 *mailbox)
 {
-#pragma clang loop unroll(disable)
-	for (u32 budget = 0; budget < 16; budget++) {
-		u32 before = mailbox[81];
-		pe_rxq(mailbox);
-		if (mailbox[81] == before) break;
-	}
+	/* Capture does not process work. One completion snapshot supplies the
+	 * entire batch; newer NI/ARM releases are collected on the next turn. */
+	rx_completion_poll(mailbox);
+	pe_rxq(mailbox, 16);
 	rx_notify_done(mailbox);
 }
 
@@ -368,47 +428,47 @@ static void __attribute__((section(".rxq"), noinline, minsize)) pe_rx_work(volat
 	if (mailbox[RTL_AX_RX_ARM_BARRIER]) return;
 	u32 read = mailbox[RTL_AX_RX_WORK_PROCESS];
 	if (read == mailbox[RTL_AX_RX_WORK_WRITE]) return;
-	/* PE0 publishes the captured payload ID before the write cursor. */
+	/* Capture publishes the payload ID before the write cursor. */
 	sync();
-	/* A lookahead completion stays in its capture slot until this cursor. */
-	if (*(u32 *)(memory + RX_STATUS + read * 4) & RX_NI_PENDING) goto advance;
+	/* Lookahead may forward a frame or finish discarding an old retry. */
+	u32 completed = *(u32 *)(memory + RX_STATUS + read * 4);
+	if ((completed & RX_NI_PENDING) || completed == RX_ARM_DONE) goto advance;
 	u32 item = *(u32 *)(memory + RTL_AX_RX_WORK_IDS + read * 4), id = item & ~RTL_AX_RX_WORK_OLD;
 	u32 buffer_dma = rx_buffer_dma(mailbox, id);
 	u8 *buffer = uncached(buffer_dma);
 	u32 wd = *(u32 *)(buffer + 4), type = (wd >> 24) & 15;
-	u32 stateful = rx_needs_arm_barrier(buffer, wd);
 	u32 reorder = 0, owner = (item & RTL_AX_RX_WORK_OLD) && type == 8 ?
 		RX_ARM_DONE : rx_uplink(mailbox, buffer, buffer_dma, &reorder);
+	/* NI congestion retains the untouched head until the next completion
+	 * poll, rather than feeding the same congested path through ARM. */
+	if (owner == RX_NI_BUSY) return;
 	if (reorder && rx_reorder(mailbox, memory, read, reorder)) return;
 	*(u32 *)(memory + RX_STATUS + read * 4) = owner;
 	if (!owner) {
 		u32 producer = mailbox[94];
 		if (((producer + 1) & 255) == mailbox[95]) return;
+		u32 stateful = rx_needs_arm_barrier(buffer, wd);
 		*(u32 *)(memory + RX_SLOW_RING + producer * 4) = read;
 		sync();
 		mailbox[94] = (producer + 1) & 255;
 		if (stateful) mailbox[RTL_AX_RX_ARM_BARRIER] = 1;
 		if (producer == mailbox[95]) pe_event(mailbox);
 	}
-	/* PE0 may recycle a completed payload as soon as this cursor advances. */
+	/* The next capture turn may recycle payloads behind this cursor. */
 advance:
 	*(u32 *)(memory + RTL_AX_RX_REORDER_SEARCH) = 0;
 	sync();
 	mailbox[RTL_AX_RX_WORK_PROCESS] = (read + 1) & 255;
 }
 
-static void __attribute__((section(".rxq"), noinline)) pe_rx_backend(volatile u32 *mailbox)
+static void __attribute__((section(".rxq"), noinline)) pe_rx_work_batch(volatile u32 *mailbox)
 {
-	if (!mailbox[RTL_AX_RX_BACKEND_CONTEXT]) return;
-	volatile u32 *receive = uncached(mailbox[RTL_AX_RX_BACKEND_CONTEXT]);
-	/* PE1 serializes every RX/TX event on the shared notification timer. */
-	pe_event_flush(receive);
 	/* A queued packet checks the ARM acknowledgement before use. */
-	if (receive[RTL_AX_RX_WORK_PROCESS] == receive[RTL_AX_RX_WORK_WRITE]) return;
+	if (mailbox[RTL_AX_RX_WORK_PROCESS] == mailbox[RTL_AX_RX_WORK_WRITE]) return;
 #pragma clang loop unroll(disable)
 	for (u32 budget = 0; budget < 16; budget++) {
-		u32 before = receive[RTL_AX_RX_WORK_PROCESS];
-		pe_rx_work(receive);
-		if (before == receive[RTL_AX_RX_WORK_PROCESS]) break;
+		u32 before = mailbox[RTL_AX_RX_WORK_PROCESS];
+		pe_rx_work(mailbox);
+		if (before == mailbox[RTL_AX_RX_WORK_PROCESS]) break;
 	}
 }

@@ -5,11 +5,11 @@
 
 case "$(board_name)" in
 	tianyi,tyfza1-2p5g)
-		lan_devs="lan4 lan3 lan2 lan1"
+		lan_devs="lan1 lan2 lan3 lan4"
 		usb_led=LED_USB1
 		;;
 	*)
-		lan_devs="lan1 lan2 lan3 lan4"
+		lan_devs="lan4 lan3 lan2 lan1"
 		usb_led=LED_USB0
 		;;
 esac
@@ -43,13 +43,6 @@ for lan in $lan_devs; do
 	led="LED_EPHY$port"
 	section="led_lan$port"
 	port=$((port + 1))
-	config_get sysfs "$section" sysfs
-	config_get trigger "$section" trigger
-	config_get dev "$section" dev
-	# Retarget the old generated binding, not a custom netdev or trigger.
-	if [ "$sysfs:$trigger:$dev" = "$led:netdev:lan$port" ] && [ "$dev" != "$lan" ]; then
-		uci set "system.$section.dev=$lan"
-	fi
 	has_led "$led" && continue
 	uci -q get "system.$section" >/dev/null && continue
 	uci set "system.$section=led"

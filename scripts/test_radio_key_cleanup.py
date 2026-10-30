@@ -104,7 +104,7 @@ static int rtl_ax_drop_station(struct rtl_ax_ap *r,unsigned id,unsigned tid){(vo
 static int rtl_ax_rx_ba_remove(struct rtl_ax_ap *r,unsigned i){r->rx_ba[i].valid=false;return 0;}
 static void rtl_ax_peer_cam(u8 *out,unsigned id,const u8 *self,const u8 *peer,unsigned aid,bool valid){
  (void)out;(void)id;(void)self;(void)peer;(void)aid;(void)valid;}
-static void rtl_ax_tx_peer_qos(int tx,unsigned id,bool qos){(void)tx;(void)id;(void)qos;}
+static void rtl_ax_tx_peer_qos(int tx,unsigned id,bool qos,unsigned timeout){(void)tx;(void)id;(void)qos;(void)timeout;}
 static void reset(void){fault=NONE;failures=queued=clears=dctls=offload_ready=0;apply_failed_dctl=apply_failed_cam=false;
  memset(hardware_pn,0,sizeof(hardware_pn));memset(hardware_key_tag,0,sizeof(hardware_key_tag));
  memset(hardware_cam,0,sizeof(hardware_cam));memset(hardware_roles,0,sizeof(hardware_roles));}

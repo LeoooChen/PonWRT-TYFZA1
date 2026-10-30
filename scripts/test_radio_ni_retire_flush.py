@@ -48,6 +48,7 @@ struct rtl_ax_tx {
  bool pe_active,paused,peer_authorized[128],peer_offloaded[128];
  unsigned occupied,ni_reports,ni_failed;
  struct pci_dev *pdev;
+ void *rx;
  struct {void *memory;} pe;
  struct {bool active,route_peers[128];void *vp,*regs;struct net_device *route_dev;
   unsigned route_macid,route_tim[128];int ps_work,cpu;} ni;
@@ -56,7 +57,8 @@ struct rtl_ax_ap {struct rtl_ax_tx *tx;};
 static struct rtl_ax_tx *current;
 static unsigned drop_mask[128],pending[128],withdrawn[128],drop_calls;
 static int ni_test_lock,fail_drop,fail_withdraw;
-static bool withhold_rpq,withhold_fence;
+static bool withhold_rpq,withhold_fence,rx_active[128];
+static unsigned rx_retired[128],published;
 static u32 registers[0x10000/4];
 static u32 get_unaligned_le32(const void *p) {u32 v;memcpy(&v,p,4);return v;}
 static void put_unaligned_le32(u32 v,void *p) {memcpy(p,&v,4);}
@@ -100,11 +102,18 @@ static void tick(void) {
 #define msecs_to_jiffies(v) (v)
 static int rtl9617c_wifi_peer_route(struct net_device *dev,void *mac,unsigned route) {
  (void)dev;unsigned id=*(u8 *)mac;
- assert(!route && !get_unaligned_le32(current->pe.memory+0x11a00+id*4));
+ if(route){assert(route==16+(unsigned)current->ni.cpu && get_unaligned_le32(current->pe.memory+0x11a00+id*4));published++;return 0;}
+ assert(!get_unaligned_le32(current->pe.memory+0x11a00+id*4));
  if(fail_withdraw) return -EIO;
  withdrawn[id]=1;return 0;
 }
 static int rtl_ax_tx_pause(struct rtl_ax_tx *tx) {tx->paused=true;return 0;}
+static bool rtl_ax_rx_uplink_active(void *rx,unsigned id){(void)rx;return rx_active[id];}
+static void rtl_ax_rx_uplink_disable(void *rx,unsigned id){(void)rx;rx_active[id]=false;}
+static void rtl_ax_rx_uplink_retire(void *rx,unsigned id){(void)rx;rx_retired[id]++;}
+static void rtl_ax_rx_uplink_enable(void *rx,unsigned id){(void)rx;rx_active[id]=true;}
+static int rtl9617c_wifi_id(struct net_device *dev){(void)dev;return 3;}
+static int ni_uplink_start(struct rtl_ax_tx *tx,unsigned id){assert(tx->ni.active && id==3);return 0;}
 static void rtl_ax_tx_open(struct rtl_ax_tx *tx) {tx->paused=false;}
 static bool ni_epps_empty(struct rtl_ax_tx *tx) {return !tx->ni.route_peers[2];}
 static u32 readl(void *p) {return get_unaligned_le32(p);}
@@ -151,6 +160,34 @@ int main(void) {
   assert(!get_unaligned_le32(memory+0x11a04));
   assert(get_unaligned_le32(memory+0x11a08)==other && !drop_mask[2]);
  }
+
+ for(unsigned other_rx=0;other_rx<2;other_rx++){
+  u8 memory[0x20000]={0};struct net_device dev={0};struct pci_dev pdev={0};
+  struct rtl_ax_tx tx={.pe_active=true,.pe={memory},.pdev=&pdev};
+  struct rtl_ax_ap radio={.tx=&tx};pdev.radio=&radio;current=&tx;
+  memset(pending,0,sizeof(pending));memset(drop_mask,0,sizeof(drop_mask));memset(withdrawn,0,sizeof(withdrawn));
+  memset(rx_active,0,sizeof(rx_active));memset(rx_retired,0,sizeof(rx_retired));
+  fail_drop=fail_withdraw=withhold_rpq=withhold_fence=0;published=drop_calls=0;
+  tx.ni.active=true;tx.ni.route_dev=&dev;tx.ni.regs=registers;tx.ni.cpu=3;
+  memset(registers,0,sizeof(registers));
+  tx.ni.route_peers[1]=tx.peer_offloaded[1]=rx_active[1]=true;
+  rx_active[2]=other_rx;memory[0xe408]=1;memory[0xe410]=2;
+  put_unaligned_le32(1,memory+0x11a04);put_unaligned_le32(BIT(16),memory+0xd030);
+  pending[1]=5;tick();
+  assert(!rtl_ax_tx_ni_retire_ba(&tx,1));
+  assert(rx_active[1] && !rx_retired[1] && tx.peer_offloaded[1]);
+  assert(tx.ni.active && tx.ni.route_dev==&dev && !tx.ni.route_peers[1]);
+  assert(!pending[1] && rx_active[2]==other_rx && !rx_retired[2]);
+  /* RX remains active while a new TX BA session republishes the TX route. */
+  assert(rtl_ax_tx_ni_peer(&tx,&dev,1)==1 && published==1);
+  assert(tx.ni.route_peers[1] && rx_active[1] && !rx_retired[1]);
+  assert(rtl_ax_tx_ni_peer(&tx,&dev,1)==0 && published==1);
+  /* Full key/STA retirement must still preserve another RX-only peer. */
+  assert(!rtl_ax_tx_ni_retire_peer(&tx,1));
+  assert(!rx_active[1] && !tx.peer_offloaded[1]);
+  assert(tx.ni.active==!!other_rx && rx_active[2]==other_rx);
+ }
+ puts("TX BA retirement preserves RX and NI lifetime; TX re-admission works; full retirement preserves other RX-only peers");
  puts("NI retirement: captured EPP cutoff and RPQ must finish; later peer traffic does not block; failed commands and missing completion retain ownership");
 }
 '''
@@ -162,7 +199,8 @@ with tempfile.TemporaryDirectory(prefix='ni-retire-flush-') as directory:
     source, binary = Path(directory) / 'test.c', Path(directory) / 'test'
     source.write_text(common + function((driver / 'role.h').read_text(), 'rtl_ax_station_drop') + drop +
                       function(ni, 'rtl_ax_tx_ni_route') + function(ni, 'ni_peer_fence') + function(ni, 'ni_peer_idle') +
-                      function(ni, 'rtl_ax_tx_ni_retire_peer') + test)
+                      function(ni, 'ni_retire_peer') + function(ni, 'rtl_ax_tx_ni_retire_peer') +
+                      function(ni, 'rtl_ax_tx_ni_retire_ba') + function(ni, 'rtl_ax_tx_ni_peer') + test)
     subprocess.run(['cc', '-std=gnu11', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function',
                     '-fsanitize=address,undefined', str(source), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True, timeout=10)

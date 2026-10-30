@@ -1,0 +1,55 @@
+--- a/net/mac80211/sta_info.c
++++ b/net/mac80211/sta_info.c
+@@ -1157,24 +1157,29 @@
+ 	__sta_info_recalc_tim(sta, false);
+ }
+ 
++unsigned long ieee80211_sta_ps_buffer_timeout(struct ieee80211_sta *pubsta)
++{
++	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
++	unsigned long timeout;
++
++	/* Same two-listen-interval policy for skb and driver-owned queues. */
++	timeout = ((unsigned long)sta->listen_interval *
++		   sta->sdata->vif.bss_conf.beacon_int * 32 / 15625) * HZ;
++	return max_t(unsigned long, timeout, STA_TX_BUFFER_EXPIRE);
++}
++EXPORT_SYMBOL_GPL(ieee80211_sta_ps_buffer_timeout);
++
+ static bool sta_info_buffer_expired(struct sta_info *sta, struct sk_buff *skb)
+ {
+ 	struct ieee80211_tx_info *info;
+-	int timeout;
+ 
+ 	if (!skb)
+ 		return false;
+-
+ 	info = IEEE80211_SKB_CB(skb);
+-
+-	/* Timeout: (2 * listen_interval * beacon_int * 1024 / 1000000) sec */
+-	timeout = (sta->listen_interval *
+-		   sta->sdata->vif.bss_conf.beacon_int *
+-		   32 / 15625) * HZ;
+-	if (timeout < STA_TX_BUFFER_EXPIRE)
+-		timeout = STA_TX_BUFFER_EXPIRE;
+-	return time_after(jiffies, info->control.jiffies + timeout);
+-}
++	return time_after(jiffies, info->control.jiffies +
++			  ieee80211_sta_ps_buffer_timeout(&sta->sta));
++}
++
+ 
+ 
+ static bool sta_info_cleanup_expire_buffered_ac(struct ieee80211_local *local,
+--- a/include/net/mac80211.h
++++ b/include/net/mac80211.h
+@@ -5336,6 +5336,9 @@
+  */
+ #define IEEE80211_TX_STATUS_HEADROOM	ALIGN(14, 4)
+ 
++/* Expiry in jiffies for packets retained by a driver during station PS. */
++unsigned long ieee80211_sta_ps_buffer_timeout(struct ieee80211_sta *sta);
++
+ /**
+  * ieee80211_sta_set_buffered - inform mac80211 about driver-buffered frames
+  * @sta: &struct ieee80211_sta pointer for the sleeping station

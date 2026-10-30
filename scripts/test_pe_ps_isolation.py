@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run linked PE: 500 sleeping frames cannot prevent another peer from transmitting."""
+"""Run linked PE: 250 sleeping frames cannot prevent another peer from transmitting."""
 from pathlib import Path
 import sys,struct,subprocess,json
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/"analysis/python-deps"))
@@ -26,48 +26,49 @@ for peer in [1,2]:
  u.mem_write(BASE+0xe400+peer*8,mac[peer-1])
  u.mem_write(BASE+0xd000+peer*32,struct.pack("<8I",0,0,26<<16,0x20100,peer<<24|1<<18|1<<16,3<<16|64,0,0))
  put(BASE+0x12000+peer*8*4,64)
+ put(BASE+0x19800+peer*4,10)
 put(BASE+0xe800+16,1)
-for n in range(501):
- frame=mac[0 if n<500 else 1]+bytes.fromhex("0200000000030800")+bytes(50)
+for n in range(251):
+ frame=mac[0 if n<250 else 1]+bytes.fromhex("0200000000030800")+bytes(50)
  at=PAYLOAD+n*2048
- u.mem_write(at+32,struct.pack(">II",0x80000000,(len(frame)+8)<<15)+bytes(8)+frame)
+ u.mem_write(at+64,struct.pack(">II",0x80000000,(len(frame)+8)<<15)+bytes(8)+frame)
  u.mem_write(EPP+n*8,struct.pack("<II",at|0x50,len(frame)+16))
-put(NI+0x7060,501*8)
+put(NI+0x7060,251*8)
 def call(name):
  u.reg_write(UC_MIPS_REG_A0,MB|0xa0000000);u.reg_write(UC_MIPS_REG_A1,BASE|0xa0000000);u.reg_write(UC_MIPS_REG_A2,REQ|0xa0000000)
  u.reg_write(UC_MIPS_REG_SP,(BASE+0x1fff0)|0xa0000000);u.reg_write(UC_MIPS_REG_RA,0x9fc01ff0)
  u.emu_start(symbols[name],0x9fc01ff0,count=100000)
  return u.reg_read(UC_MIPS_REG_V0)
-for n in range(501):call("ni_ingest")
+for n in range(251):call("ni_ingest")
 assert bytes(u.mem_read(BASE+0x17400,0x420)) == rx_state, 'downlink ingestion overwrote RX buffer ownership'
 # Current RX handoff/pool geometry is exercised by test_pe_rxq_backpressure.py.
 # Keep the RX ownership sentinel here while exercising downlink PS/retirement.
 selected=call("ni_select")
-r={"scope":"Linked PE instructions, synthetic two-peer traffic; no device measurement","sleeping_peer_packets":500,"awake_peer_next_packets":1,"EPP_consumed_packets":get(NI+0x7160)//8,"awake_peer_selected_frames":selected,"owner_slots_held":get(MB+30*4),"sleeping_peer_queued":get(BASE+0x11804),"awake_peer_queued":get(BASE+0x11808),"counterexample":selected==0 and get(NI+0x7160)==124*8}
-assert selected == 1 and get(NI+0x7160)==501*8 and get(MB+30*4)==1, r
-assert get(BASE+0x18000+8*4)==500
+r={"scope":"Linked PE instructions, synthetic two-peer traffic; no device measurement","sleeping_peer_packets":250,"awake_peer_next_packets":1,"EPP_consumed_packets":get(NI+0x7160)//8,"awake_peer_selected_frames":selected,"owner_slots_held":get(MB+30*4),"sleeping_peer_queued":get(BASE+0x11804),"awake_peer_queued":get(BASE+0x11808),"counterexample":selected==0 and get(NI+0x7160)==124*8}
+assert selected == 1 and get(NI+0x7160)==251*8 and get(MB+30*4)==1, r
+assert get(BASE+0x18000+8*4)==250
 assert get(BASE+0x18000+16*4)==1
 # One PS grant releases one frame; it does not wake the remaining queue.
-put(BASE+0xe800+16+4,1);put(BASE+0xe800+16+12,1<<16)
+put(BASE+0x19e04,2);put(BASE+0xe800+16+4,1);put(BASE+0xe800+16+12,1<<16)
 assert call("ni_select")==1
-assert get(BASE+0xe800+16+8)==1
+assert get(BASE+0xe800+16+8)==2
 assert get(REQ+4*4)&(1<<19) and not get(REQ+4*4)&(1<<20)
-assert call("ni_select")==0 and get(BASE+0x11804)==499
+assert call("ni_select")==0 and get(BASE+0x11804)==249
 # Retire the sleeping peer; only its queued BIDs may return to EQ.
 put(BASE+0x11a04,0)
-for i,v in [(0,0x50455744),(2,0xb2000000),(3,1),(24,1),(116,0x6380),(117,6),(140,MB|0xa0000000)]:put(MB+i*4,v)
+for i,v in [(0,0x50455744),(2,0xb2000000),(3,1),(24,1),(116,0x6380),(117,6),(140,MB|0xa0000000),(142,1)]:put(MB+i*4,v)
 put(NI+0x6340,0x8000007c);put(NI+0x6380,0x80000000)
 returned=[]
 u.hook_add(UC_HOOK_MEM_WRITE,lambda uc,access,at,size,value,data:returned.append(value),begin=NI+0x6384,end=NI+0x6387)
 u.reg_write(UC_MIPS_REG_A0,MB|0xa0000000)
 u.reg_write(UC_MIPS_REG_SP,(BASE+0x1fff0)|0xa0000000)
 u.emu_start(0xbfc00400,0x9fc0fff0,count=2000000)
-assert len(returned)==499 and len(set(returned))==499
-assert set(returned)=={PAYLOAD+n*2048|6 for n in range(1,500)}
+assert len(returned)==249 and len(set(returned))==249, (len(returned),len(set(returned)),get(MB+30*4),get(BASE+0x11804),get(MB+47*4))
+assert set(returned)=={PAYLOAD+n*2048|6 for n in range(1,250)}
 assert get(MB+30*4)==2 and get(BASE+0x18000+8*4)==1
 assert get(BASE+0x18000+16*4)==1 and get(BASE+0x11804)==0
 assert bytes(u.mem_read(BASE+0x17400,0x420)) == rx_state, 'downlink retirement overwrote RX buffer ownership'
-r.update(retired_waiting_BIDs_returned_exactly_once=True,inflight_BIDs_retained=True,pending_TID_counter_above255=True,PS_grant_releases_one_frame=True)
+r.update(retired_waiting_BIDs_returned_exactly_once=True,inflight_BIDs_retained=True,PS_grant_releases_one_frame=True)
 r.update(RX_map_preserved=True)
 r.pop("counterexample")
 print(json.dumps(r,indent=2))

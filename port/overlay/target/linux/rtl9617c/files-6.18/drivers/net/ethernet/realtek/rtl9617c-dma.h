@@ -19,6 +19,7 @@ struct rtl_dma_tx {
 	bool profile;
 	u64 wifi_packets, wifi_copy_bytes, wifi_prepare_ns;
 	void __iomem *registers;
+	void __iomem *axi_reorder;
 	struct rtl_dma_descriptor *descriptors;
 	dma_addr_t memory_dma;
 	void *memory;

@@ -12,7 +12,8 @@ with tempfile.TemporaryDirectory(prefix='tyfza1-apk-config-') as directory:
     work = Path(directory)
     port, tree = work / 'port', work / 'openwrt'
     for path in ('scripts', 'configs', 'host-patches', 'overlay/target/linux/rtl9617c',
-                 'packages/luci-app-tyfza1-pon', 'packages/tyfza1-pon-control'):
+                 'packages/luci-app-tyfza1-pon', 'packages/tyfza1-pon-control',
+                 'packages/tyfza1-storage'):
         (port / path).mkdir(parents=True, exist_ok=True)
     (tree / 'package/network/services/hostapd/patches').mkdir(parents=True)
     (work / 'VERSION').write_text('0.7.0-alpha\n')

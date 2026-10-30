@@ -1,0 +1,139 @@
+--- a/net/bridge/br_fdb.c
++++ b/net/bridge/br_fdb.c
+@@ -290,6 +290,28 @@
+ 	rcu_read_unlock();
+ }
+ EXPORT_SYMBOL_GPL(br_fdb_refresh_offload);
++
++/* The caller holds RCU; an old hardware sample must not extend FDB lifetime. */
++void br_fdb_refresh_offload_rcu(const struct net_device *dev,
++				const unsigned char *addr, u16 vid,
++				unsigned long lastused)
++{
++	const struct net_bridge_port *port;
++	struct net_bridge_fdb_entry *fdb;
++
++	RCU_LOCKDEP_WARN(!rcu_read_lock_held(), "bridge FDB refresh without RCU");
++	port = br_port_get_rcu(dev);
++	if (!port)
++		return;
++	fdb = br_fdb_find_rcu(port->br, addr, vid);
++	if (fdb && READ_ONCE(fdb->dst) == port) {
++		if (time_after(lastused, READ_ONCE(fdb->used)))
++			WRITE_ONCE(fdb->used, lastused);
++		if (time_after(lastused, READ_ONCE(fdb->updated)))
++			WRITE_ONCE(fdb->updated, lastused);
++	}
++}
++EXPORT_SYMBOL_GPL(br_fdb_refresh_offload_rcu);
+ 
+ struct net_bridge_fdb_entry *br_fdb_find_rcu(struct net_bridge *br,
+ 					     const unsigned char *addr,
+--- a/include/linux/if_bridge.h
++++ b/include/linux/if_bridge.h
+@@ -180,6 +180,9 @@
+ 				    const unsigned char *addr,
+ 				    __u16 vid);
+ void br_fdb_clear_offload(const struct net_device *dev, u16 vid);
++void br_fdb_refresh_offload_rcu(const struct net_device *dev,
++				const unsigned char *addr, u16 vid,
++				unsigned long lastused);
+ void br_fdb_refresh_offload(const struct net_device *dev, const unsigned char *addr,
+ 			    u16 vid, bool source);
+ bool br_port_flag_is_set(const struct net_device *dev, unsigned long flag);
+@@ -200,6 +203,12 @@
+ 	return NULL;
+ }
+ 
++static inline void br_fdb_refresh_offload_rcu(const struct net_device *dev,
++					      const unsigned char *addr, u16 vid,
++					      unsigned long lastused)
++{
++}
++
+ static inline void br_fdb_clear_offload(const struct net_device *dev, u16 vid)
+ {
+ }
+--- a/net/netfilter/nf_flow_table_offload.c
++++ b/net/netfilter/nf_flow_table_offload.c
+@@ -4,6 +4,7 @@
+ #include <linux/netfilter.h>
+ #include <linux/rhashtable.h>
+ #include <linux/netdevice.h>
++#include <linux/if_bridge.h>
+ #include <linux/ppp_defs.h>
+ #include <linux/tc_act/tc_csum.h>
+ #include <net/flow_offload.h>
+@@ -1026,6 +1027,30 @@
+ 			      &offload->flowtable->flow_block.cb_list);
+ }
+ 
++/* Traffic in this direction proves activity of the opposite path's peer.
++ * RTNL cannot be taken here: device cleanup flushes this workqueue under RTNL.
++ */
++void flow_offload_refresh_bridge(struct flow_offload *flow,
++				 enum flow_offload_tuple_dir dir,
++				 u64 lastused)
++{
++	const struct flow_offload_tuple *tuple = &flow->tuplehash[!dir].tuple;
++	struct net_device *bridge, *port;
++	struct net *net = nf_ct_net(flow->ct);
++
++	if (flow->type != NF_FLOW_OFFLOAD_ROUTE || !lastused ||
++	    tuple->xmit_type != FLOW_OFFLOAD_XMIT_DIRECT || !tuple->out.bridge_ifidx)
++		return;
++	rcu_read_lock();
++	bridge = dev_get_by_index_rcu(net, tuple->out.bridge_ifidx);
++	port = dev_get_by_index_rcu(net, tuple->out.bridge_port);
++	if (bridge && port &&
++	    br_fdb_find_port_rcu(bridge, tuple->out.h_dest, tuple->out.bridge_vid) == port)
++		br_fdb_refresh_offload_rcu(port, tuple->out.h_dest,
++					   tuple->out.bridge_vid, (unsigned long)lastused);
++	rcu_read_unlock();
++}
++
+ static void flow_offload_work_stats(struct flow_offload_work *offload)
+ {
+ 	struct flow_stats stats[FLOW_OFFLOAD_DIR_MAX] = {};
+@@ -1035,6 +1060,11 @@
+ 	if (test_bit(NF_FLOW_HW_BIDIRECTIONAL, &offload->flow->flags))
+ 		flow_offload_tuple_stats(offload, FLOW_OFFLOAD_DIR_REPLY,
+ 					 &stats[1]);
++
++	flow_offload_refresh_bridge(offload->flow, FLOW_OFFLOAD_DIR_ORIGINAL,
++				    stats[0].lastused);
++	flow_offload_refresh_bridge(offload->flow, FLOW_OFFLOAD_DIR_REPLY,
++				    stats[1].lastused);
+ 
+ 	lastused = max_t(u64, stats[0].lastused, stats[1].lastused);
+ 	offload->flow->timeout = max_t(u64, offload->flow->timeout,
+--- a/include/net/netfilter/nf_flow_table.h
++++ b/include/net/netfilter/nf_flow_table.h
+@@ -295,6 +295,9 @@
+ void flow_offload_refresh(struct nf_flowtable *flow_table,
+ 			  struct flow_offload *flow, bool force);
+ 
++void flow_offload_refresh_bridge(struct flow_offload *flow,
++				 enum flow_offload_tuple_dir dir, u64 lastused);
++
+ struct flow_offload_tuple_rhash *flow_offload_lookup(struct nf_flowtable *flow_table,
+ 						     struct flow_offload_tuple *tuple);
+ void nf_flow_table_gc_run(struct nf_flowtable *flow_table);
+--- a/net/netfilter/nf_flow_table_ip.c
++++ b/net/netfilter/nf_flow_table_ip.c
+@@ -407,6 +407,7 @@
+ 		return -1;
+ 
+ 	flow_offload_refresh(flow_table, flow, false);
++	flow_offload_refresh_bridge(flow, dir, jiffies);
+ 
+ 	nf_flow_encap_pop(skb, tuplehash);
+ 	thoff -= ctx->offset;
+@@ -696,6 +697,7 @@
+ 		return -1;
+ 
+ 	flow_offload_refresh(flow_table, flow, false);
++	flow_offload_refresh_bridge(flow, dir, jiffies);
+ 
+ 	nf_flow_encap_pop(skb, tuplehash);
+ 

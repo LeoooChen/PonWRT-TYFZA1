@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Execute the native PE start/stop sequence and preserve the other core."""
 from pathlib import Path
-import re,subprocess,tempfile
+import re,subprocess,sys,tempfile
 root=Path(__file__).resolve().parents[1]
 p=root/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-core.c'
 s=p.read_text()
@@ -15,18 +15,20 @@ common=r'''
 #include <stdint.h>
 #include <string.h>
 #include <errno.h>
+#include <stdio.h>
 typedef uint32_t u32;
 #define BIT(n) (1U<<(n))
 #define __iomem
 struct pe_probe {unsigned core;u32 reset_mask;bool configured;void *reset,*ram,*atu;u32 entries[6][7],staging[8],dma;};
 static u32 reset=0xffffffff,ram[2],atu[2][8],bist=0xffffffff;
+static u32 table[2][6][2];
 static unsigned delays,transactions;
 static u32 readl(void *p){return *(u32 *)p;}
 static void writel(u32 v,void *p){*(u32 *)p=v;}
 static void udelay(unsigned us){assert(us==1000);delays++;}
 static void *ioremap(uintptr_t a,unsigned bytes){assert(a==0xf4320004&&bytes==4);return &bist;}
 static void iounmap(void *p){assert(p==&bist);}
-static int pe_probe_access(struct pe_probe *p,u32 cmd){assert((cmd&BIT(31))&&(cmd&63)==63);assert(p->core<2);unsigned index=(cmd>>24)&7;if(index==0||index==5){assert(((u32 *)p->atu)[1]==(index?0x0fc0:0x1fc0));assert(((u32 *)p->atu)[2]==0xffff);assert(((u32 *)p->atu)[3]==p->dma>>16);}transactions++;return 0;}
+static int pe_probe_access(struct pe_probe *p,u32 cmd){assert((cmd&BIT(31))&&(cmd&63)==63);assert(p->core<2);unsigned index=(cmd>>24)&7;assert(index<6);table[p->core][index][0]=((u32 *)p->atu)[1];table[p->core][index][1]=((u32 *)p->atu)[2];if(index==0||index==5){assert(((u32 *)p->atu)[1]==(index?0x0fc0:0x1fc0));assert(((u32 *)p->atu)[2]==0xffff);assert(((u32 *)p->atu)[3]==p->dma>>16);}transactions++;return 0;}
 '''
 test=r'''
 int main(void){
@@ -45,10 +47,17 @@ int main(void){
  pe_probe_core_stop(&p[1]);
  assert((reset&(p[0].reset_mask|p[1].reset_mask))==(p[0].reset_mask|p[1].reset_mask));
  assert((reset&~(p[0].reset_mask|p[1].reset_mask))==(0xffffffff&~(p[0].reset_mask|p[1].reset_mask)));
+ assert(!memcmp(table[0],table[1],sizeof(table[0])));
+ printf("[");
+ for(unsigned i=0;i<6;i++)printf("%s[%u,%u]",i?",":"",table[0][i][0],table[0][i][1]);
+ puts("]");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='pe-core-reset-',dir=root/'artifacts') as tmp:
  p=Path(tmp);c=p/'case.c';c.write_text(common+''.join(function(n) for n in ('pe_probe_reset','pe_probe_core_stop','pe_probe_core_start'))+test)
  subprocess.run(['cc','-O2','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',str(c),'-o',str(p/'case')],check=True)
- subprocess.run([str(p/'case')],check=True)
-print('Actual native start/stop: independent core reset and SRAM sleep, unrelated core bits preserved.')
+ table=subprocess.check_output([str(p/'case')],text=True)
+if '--dump-atu' in sys.argv:
+ print(table.strip())
+else:
+ print('Actual native start/stop: independent core reset and SRAM sleep, unrelated core bits preserved.')

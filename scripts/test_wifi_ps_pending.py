@@ -29,6 +29,10 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;
 #define BIT(n) (1U<<(n))
 #define RTL_AX_TX_ENTRIES 256
 #define PE_PROBE_MAILBOX 0x2000
+#define RTL_AX_NI_PS_VERSION 0x19e00
+#define RTL_AX_NI_PS_CANCEL 0x19a00
+#define RTL_AX_NI_PS_DONE 0x1ba00
+#define dma_rmb() ((void)0)
 #define dma_wmb() ((void)0)
 #define READ_ONCE(x) (x)
 #define WRITE_ONCE(x,v) ((x)=(v))
@@ -45,8 +49,8 @@ static void put_unaligned_le32(u32 v,void *p){memcpy(p,&v,4);}
 struct work_struct {int value;};
 struct ieee80211_sta {unsigned id;};
 struct rtl_ax_tx;
-struct rtl_ax_ni_state {struct rtl_ax_tx *tx;bool route_peers[128];u32 route_tim[128];struct work_struct ps_work;};
-struct rtl_ax_tx {int lock;void *hw;unsigned ps_releases;bool pe_active;struct {void *memory;}pe;struct rtl_ax_ni_state ni;
+struct rtl_ax_ni_state {struct rtl_ax_tx *tx;bool route_peers[128];u32 route_tim[128];u32 ps_seen[2][128];bool ps_issued[128];struct work_struct ps_work;};
+struct rtl_ax_tx {int lock;void *hw;unsigned ps_releases,ps_eosp;bool pe_active;struct {void *memory;}pe;struct rtl_ax_ni_state ni;
  bool peer_asleep[128],peer_authorized[128],pending[256];struct {unsigned macid,tid;}slots[256];};
 static struct ieee80211_sta stations[128];static u16 masks[128];
 static void ieee80211_sta_eosp(struct ieee80211_sta *sta){(void)sta;}
@@ -56,6 +60,8 @@ static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *add
 static void ieee80211_sta_set_buffered(struct ieee80211_sta *sta,unsigned tid,bool value){
  if(value)masks[sta->id]|=BIT(tid);else masks[sta->id]&=~BIT(tid);
 }
+static u32 ieee80211_sta_ps_generation(struct ieee80211_sta *sta){(void)sta;return 1;}
+static bool ieee80211_sta_eosp_generation(struct ieee80211_sta *sta,u32 generation){(void)generation;ieee80211_sta_eosp(sta);return true;}
 '''
 cases = r'''
 int main(void){
@@ -86,7 +92,7 @@ int main(void){
  put_unaligned_le32(1,memory+0x11800+2*4);
  put_unaligned_le32(1,memory+0x13000+2*32);
  ni_route_ps(&tx.ni.ps_work);assert(masks[2]==BIT(0));
- rtl_ax_tx_ps_release(&tx,&stations[2],2,BIT(0),false,false);
+ rtl_ax_tx_ps_release(&tx,&stations[2],2,BIT(0),false,false,1);
  assert(tx.ps_releases==1);
  put_unaligned_le32(0,memory+0x11800+2*4); /* PE submits the granted frame. */
  put_unaligned_le32(0,memory+0x13000+2*32);
@@ -104,7 +110,7 @@ int main(void){
 with tempfile.TemporaryDirectory(prefix='tyfza1-ps-') as directory:
     c, exe = Path(directory) / 'ps.c', Path(directory) / 'ps'
     tx_source = (root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx.c').read_text()
-    c.write_text(common + function('ni_test_buffered') + function('ni_route_ps') +
+    c.write_text(common + function('ni_test_buffered') + function('ni_ps_complete', tx_source) + function('ni_ps_done') + function('ni_route_ps') +
                  function('rtl_ax_tx_ni_buffered', tx_source) + function('rtl_ax_tx_ps_release', tx_source) + cases)
     subprocess.run(['cc', '-O2', '-Wall', '-Wextra', '-Werror', str(c), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)

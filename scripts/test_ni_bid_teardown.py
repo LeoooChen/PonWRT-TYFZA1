@@ -38,7 +38,7 @@ int main(void) {
   put_unaligned_le32(0x6000080,phys_to_virt(0x6000000));
   put_unaligned_le32(0x6000100,phys_to_virt(0x6000080));
   put_unaligned_le32(0x6000180,memory+0x15000);
-  put_unaligned_le32(0x6000200|7,phys_to_virt(0x6000180)+12);
+  put_unaligned_le32(0x6000200,phys_to_virt(0x6000180));
   assert(cleanup(&tx)==-ETIMEDOUT && count==stop);
   unsigned owned=get_unaligned_le32(memory+0xc400),queued=get_unaligned_le32(memory+0x15000);
   assert(owned==(stop<3?0x6000000+stop*128:0));

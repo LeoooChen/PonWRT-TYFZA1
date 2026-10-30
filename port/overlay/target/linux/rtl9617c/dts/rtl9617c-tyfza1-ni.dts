@@ -8,9 +8,10 @@
 &{/soc/ethernet@4f4300000} {
 	reg = <4 0xf4300000 0 0x10000>, <0 0xf4500000 0 0x2000>,
 	      <4 0xf7001000 0 0x1000>, <4 0xf432d000 0 0x1000>,
-	      <4 0xf4320098 0 4>, <4 0xf432f000 0 0x1000>;
+	      <4 0xf4320098 0 4>, <4 0xf432f000 0 0x1000>,
+	      <4 0xf432e000 0 0x1000>;
 	reg-names = "ni", "xram", "dma-lso", "qm-axi-reorder", "block-reset",
-		    "l3fe-axi-reorder";
+		    "l3fe-axi-reorder", "dma-axi-reorder";
 	realtek,qm-rx;
 	realtek,lan-phys = <&phy0 &phy1 &phy2 &phy3>;
 	interrupts = <GIC_SPI 84 IRQ_TYPE_LEVEL_HIGH>;

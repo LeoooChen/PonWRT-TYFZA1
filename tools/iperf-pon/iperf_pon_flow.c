@@ -39,18 +39,19 @@ static const struct flow_dissector_key keys[]={
  {FLOW_DISSECTOR_KEY_PORTS,offsetof(struct sim_keys,ports)},
  {FLOW_DISSECTOR_KEY_PPPOE,offsetof(struct sim_keys,pppoe)}
 };
-static char *peer_mac="02:00:00:00:00:4d",*peer_ip="192.0.2.88";
-static bool tcp;
+static char *peer_mac, *peer_ip, *output = "ap5";
+static bool udp;
 module_param(peer_mac,charp,0400);
 module_param(peer_ip,charp,0400);
-module_param(tcp,bool,0400);
+module_param(output,charp,0400);
+module_param(udp,bool,0400);
 static int flow_command(unsigned int index,enum flow_cls_command command)
 {
  struct flow_cls_offload cls={.command=command,.cookie=(unsigned long)&flow_keys[index],.rule=rule,
   .common={.protocol=cpu_to_be16(ETH_P_PPP_SES),.skip_sw=true}};
  rule->match.key=&flow_keys[index];
  int ret=callback->cb(TC_SETUP_CLSFLOWER,&cls,callback->cb_priv);
- if(command==FLOW_CLS_STATS)pr_info("PON_SIM FE ret=%d packets=%llu bytes=%llu\n",ret,cls.stats.pkts,cls.stats.bytes);
+ if(command==FLOW_CLS_STATS)pr_info("IPERF_PON FE ret=%d packets=%llu bytes=%llu\n",ret,cls.stats.pkts,cls.stats.bytes);
  return ret;
 }
 static int sim_stats(char *buffer,const struct kernel_param *param)
@@ -82,12 +83,13 @@ static int __init sim_init(void)
  u8 peer[ETH_ALEN];
  __be32 peer_address;
  int ret;
- if(!mac_pton(peer_mac,peer) || !in4_pton(peer_ip,-1,(u8 *)&peer_address,-1,NULL))return -EINVAL;
- lan=dev_get_by_name(&init_net,"lan4");radio=dev_get_by_name(&init_net,"ap5");
+ if(!peer_mac || !peer_ip || !mac_pton(peer_mac,peer) ||
+    !in4_pton(peer_ip,-1,(u8 *)&peer_address,-1,NULL))return -EINVAL;
+ lan=dev_get_by_name(&init_net,"lan4");radio=dev_get_by_name(&init_net,output);
  bridge=dev_get_by_name(&init_net,"br-lan");
- if(!lan || !radio)return -ENODEV;
+ if(!lan || !radio || !bridge){ret=-ENODEV;goto put;}
  sim=alloc_netdev(0,"ponsim%d",NET_NAME_UNKNOWN,ether_setup);
- if(!sim)return -ENOMEM;
+ if(!sim){ret=-ENOMEM;goto put;}
  sim->netdev_ops=&sim_ops;eth_hw_addr_random(sim);
  rtnl_lock();
  ret=register_netdevice(sim);if(ret)goto out;
@@ -103,13 +105,13 @@ static int __init sim_init(void)
  skb_flow_dissector_init(&dissector,keys,ARRAY_SIZE(keys));
  rule->match.dissector=&dissector;rule->match.key=&key;rule->match.mask=&mask;
  key.meta.ingress_ifindex=sim->ifindex;
- key.basic.n_proto=htons(ETH_P_PPP_SES);key.basic.ip_proto=tcp?IPPROTO_TCP:IPPROTO_UDP;
+ key.basic.n_proto=htons(ETH_P_PPP_SES);key.basic.ip_proto=udp?IPPROTO_UDP:IPPROTO_TCP;
  mask.basic.n_proto=htons(0xffff);mask.basic.ip_proto=255;
  key.pppoe.session_id=htons(0x1234);key.pppoe.ppp_proto=htons(PPP_IP);key.pppoe.type=htons(ETH_P_PPP_SES);
  mask.pppoe.session_id=mask.pppoe.ppp_proto=mask.pppoe.type=htons(0xffff);
- key.ipv4.src=htonl(0xc612ff01);key.ipv4.dst=tcp?peer_address:htonl(0xc6120002);
+ key.ipv4.src=htonl(0xc612ff01);key.ipv4.dst=peer_address;
  mask.ipv4.src=mask.ipv4.dst=htonl(~0U);
- key.ports.src=htons(tcp?5206:55000);key.ports.dst=htons(tcp?55000:55001);
+ key.ports.src=htons(5206);key.ports.dst=htons(55000);
  mask.ports.src=mask.ports.dst=htons(65535);
  memcpy(ethernet,peer,6);memcpy(ethernet+6,bridge->dev_addr,6);
  for(unsigned int i=0;i<3;i++)rule->action.entries[i]=(struct flow_action_entry){
@@ -118,13 +120,14 @@ static int __init sim_init(void)
  rule->action.entries[3]=(struct flow_action_entry){.id=FLOW_ACTION_MANGLE,
   .mangle={.htype=FLOW_ACT_MANGLE_HDR_TYPE_IP4,.offset=16,.mask=0,.val=peer_address}};
  rule->action.entries[4]=(struct flow_action_entry){.id=FLOW_ACTION_REDIRECT,.dev=radio};
- for(installed=0;installed<(tcp?4:1);installed++){
+ for(installed=0;installed<4;installed++){
   flow_keys[installed]=key;
-  if(tcp)flow_keys[installed].ports.dst=htons(55000+installed);
+  flow_keys[installed].ports.dst=htons(55000+installed);
   ret=flow_command(installed,FLOW_CLS_REPLACE);if(ret)goto free_rule;
  }
  rtnl_unlock();
- pr_info("PON_SIM PON source7 LLID0 PPPoE SID4660 POP protocol=%u source%u destination%u DNAT%pI4 peer=%pM ap5 flows=%u installed\n",key.basic.ip_proto,tcp?5206:55000,tcp?55000:55001,&peer_address,peer,installed);
+ pr_info("IPERF_PON source7 PPPoE SID4660 protocol=%u peer=%pI4/%pM output=%s flows=%u\n",
+  key.basic.ip_proto,&peer_address,peer,output,installed);
  return 0;
 free_rule:
  while(installed)flow_command(--installed,FLOW_CLS_DESTROY);
@@ -136,7 +139,8 @@ unbind:
  list_del(&callback->list);flow_block_cb_free(callback);
 remove:rtl9617c_ni_fe_remove_port(lan->dev.parent,sim);
 unregister:unregister_netdevice(sim);
-out:rtnl_unlock();free_netdev(sim);dev_put(bridge);dev_put(radio);dev_put(lan);pr_info("PON_SIM init ret=%d\n",ret);return ret;
+out:rtnl_unlock();free_netdev(sim);
+put:if(bridge)dev_put(bridge);if(radio)dev_put(radio);if(lan)dev_put(lan);return ret;
 }
 static void __exit sim_exit(void)
 {
@@ -155,4 +159,4 @@ static void __exit sim_exit(void)
 module_init(sim_init);
 module_exit(sim_exit);
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("TYFZA1 established PPPoE session POP/DNAT/physical Wi-Fi data-path simulation");
+MODULE_DESCRIPTION("iperf3 PPPoE PON ingress hardware forwarding rule");

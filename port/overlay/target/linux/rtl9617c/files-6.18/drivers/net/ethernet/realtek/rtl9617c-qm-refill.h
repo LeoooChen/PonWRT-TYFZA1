@@ -30,9 +30,13 @@ static inline void rtl_qm_refill_drain(struct rtl_qm_refill *queue, void *contex
 
 	/* A stalled EQ4 must not prevent EQ5 from returning its buffers. */
 	for (eq = 0; eq < 2; eq++) {
-		unsigned int limit = budget / 2;
+		unsigned int limit = budget - attempted;
+		/* Reserve only the other queue's share; idle capacity is reusable. */
+		if (!eq)
+			limit -= queue->count[1] < budget / 2 ? queue->count[1] : budget / 2;
 
-		while (queue->count[eq] && limit-- && attempted++ < budget) {
+		while (queue->count[eq] && limit--) {
+			attempted++;
 			if (push(context, queue->address[eq][queue->head[eq]], eq + 4)) {
 				queue->retries++;
 				break;

@@ -47,7 +47,7 @@ with tempfile.TemporaryDirectory(prefix="epon-native-", dir=root / "artifacts") 
         subprocess.run(["ip", "link", "add", f"lan{port + 1}", "type", "veth", "peer", "name", f"peer{port}"], check=True)
         subprocess.run(["ip", "link", "set", f"lan{port + 1}", "up"], check=True)
         subprocess.run(["ip", "link", "set", f"peer{port}", "up"], check=True)
-    for selector, interface in ((1, "lan4"), (4, "lan1")):
+    for selector, interface in ((1, "lan1"), (4, "lan4")):
         assert native(device, 7, 0x25, selector, None, 0, output) == 4
         assert output.raw[:4] == struct.pack("!I", 2)
         assert native(device, 9, 5, selector, struct.pack("!I", 1), 4, output) == 0x87
@@ -72,4 +72,4 @@ with tempfile.TemporaryDirectory(prefix="epon-native-", dir=root / "artifacts") 
     assert output.raw[:10] == struct.pack("!5H", 0xff00, 33000, 1234, 5678, 65535)
     (directory / "transceiver").unlink()
     assert native(device, 0xc7, 5, 1, None, 0, output) < 0
-print("Native CTC: port1/4 reads target lan4/lan1; OLT writes are refused; local link control and optical raw readings remain functional")
+print("Native CTC: port1/4 reads target lan1/lan4; OLT writes are refused; local link control and optical raw readings remain functional")

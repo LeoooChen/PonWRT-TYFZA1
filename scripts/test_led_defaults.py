@@ -9,7 +9,7 @@ import sys
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
-tree = root / 'sources/openwrt'
+tree = Path(os.environ.get('TYFZA1_UCI_TREE', root / 'sources/openwrt'))
 base = root / 'port/overlay/target/linux/rtl9617c/base-files'
 sys.path.insert(0, str(root / 'tools'))
 from uci_config import command
@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='led-defaults-') as directory:
             .replace('/lib/functions.sh', str(functions)))
     for board, led in [('tianyi,tyfza1', 'LED_USB0'), ('tianyi,tyfza1-2p5g', 'LED_USB1')]:
         # Captured OEM PORT_REMAPPING=04,02,01,00 and EPHY0..3 -> eth0.2..5.
-        lans = ['lan4', 'lan3', 'lan2', 'lan1'] if board.endswith('-2p5g') else ['lan1', 'lan2', 'lan3', 'lan4']
+        lans = ['lan1', 'lan2', 'lan3', 'lan4'] if board.endswith('-2p5g') else ['lan4', 'lan3', 'lan2', 'lan1']
         system.write_text('board_name() { printf "%s\\n" ' + shlex.quote(board) + '; }\n')
         board_file = work / 'board.json'
         board_file.write_text(json.dumps({'model': {'id': board}}))
@@ -71,9 +71,9 @@ with tempfile.TemporaryDirectory(prefix='led-defaults-') as directory:
             subprocess.run(shell + [str(work / 'migrate.sh')], env=env, check=True)
             assert subprocess.check_output(cli + ['export', 'system']) == exported
         (config / 'system').write_text(''.join(
-            f"config led 'led_lan{port}'\n option name 'LAN{port + 1}'\n"
+            f"config led 'led_lan{port}'\n option name 'LAN{lans[port][3:]}'\n"
             f" option sysfs 'LED_EPHY{port}'\n option trigger 'netdev'\n"
-            f" option dev 'lan{port + 1}'\n option mode 'link tx rx'\n"
+            f" option dev '{lans[port]}'\n option mode 'link tx rx'\n"
             for port in range(4)) +
             f"config led 'led_usb'\n option sysfs '{led}'\n option trigger 'usbport'\n"
             " list port 'usb1-port1'\n list port 'usb2-port1'\n")
@@ -84,12 +84,13 @@ with tempfile.TemporaryDirectory(prefix='led-defaults-') as directory:
         exported = subprocess.check_output(cli + ['export', 'system'])
         subprocess.run(shell + [str(work / 'migrate.sh')], env=env, check=True)
         assert subprocess.check_output(cli + ['export', 'system']) == exported
-        # A changed netdev or trigger is not the old generated binding.
+        # Existing netdev bindings and custom triggers remain as configured.
         subprocess.run(cli + ['set', 'system.led_lan0.dev=lan4'], check=True)
         subprocess.run(cli + ['set', 'system.led_lan1.dev=lan2'], check=True)
         subprocess.run(cli + ['set', 'system.led_lan1.trigger=timer'], check=True)
+        subprocess.run(cli + ['set', 'system.led_lan2.dev=lan3'], check=True)
         subprocess.run(cli + ['commit', 'system'], check=True)
         exported = subprocess.check_output(cli + ['export', 'system'])
         subprocess.run(shell + [str(work / 'migrate.sh')], env=env, check=True)
         assert subprocess.check_output(cli + ['export', 'system']) == exported
-print('Both boards: LAN/USB defaults, old LAN/USB migration, custom bindings and repeated boot passed')
+print('Both boards: LAN/USB defaults, existing bindings, USB migration, custom bindings and repeated boot passed')

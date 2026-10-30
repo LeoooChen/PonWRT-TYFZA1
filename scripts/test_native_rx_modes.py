@@ -234,10 +234,10 @@ static void check_wifi(unsigned int epp_id,unsigned int source,unsigned int meta
 }
 static unsigned int checksum_expected;
 static void checksum_receive(struct rtl9617c_ni_wifi_endpoint *ep,struct sk_buff *skb,bool forwarded) {
-    assert(forwarded && skb->dev==ep->netdev && skb->ip_summed==checksum_expected);
+    assert(forwarded==expected_wifi_forwarded && skb->dev==ep->netdev && skb->ip_summed==checksum_expected);
     delivered++;dev_kfree_skb_any(skb);
 }
-static void check_checksum_delivery(bool enabled,bool bad) {
+static void check_checksum_delivery(bool enabled,bool bad,bool ppp,bool hit) {
     struct net_device dev={},wifi={};struct napi_struct napi={&dev};struct rtl_qm_rx rx={};
     struct rtl9617c_ni_wifi_endpoint ep={&wifi,checksum_receive};
     registers=calloc(1,0x10000);rx.ni=registers;rx.memory=calloc(1,RTL_QM_MEMORY_BYTES);
@@ -249,7 +249,21 @@ static void check_checksum_delivery(bool enabled,bool bad) {
     store(rx.memory,0x10002054|(bad?BIT(5):0));store(rx.memory+4,(2<<14)|76);
     unsigned char *frame=rx.memory+8192+RTL_QM_HEADROOM+16;
     frame[12]=8;frame[14]=0x45;frame[17]=46;frame[23]=6;frame[46]=0x50;
-    checksum_expected=enabled&&!bad?CHECKSUM_UNNECESSARY:0;
+    if(ppp){
+        memmove(frame+22,frame+14,46);
+        frame[12]=0x88;frame[13]=0x64;frame[14]=0x11;frame[15]=0;
+        frame[16]=0x12;frame[17]=0x34;frame[18]=0;frame[19]=48;
+        frame[20]=0;frame[21]=0x21;
+        store(rx.memory+4,(2<<14)|84);
+    }
+    if(!hit){
+        store(rx.memory+4,0);
+        store(rx.memory+8192+RTL_QM_HEADROOM,__builtin_bswap32(BIT(31)));
+        store(rx.memory+8192+RTL_QM_HEADROOM+4,__builtin_bswap32(((ppp?76U:68U)<<15)|(18<<9)));
+        store(rx.memory+8192+RTL_QM_HEADROOM+12,__builtin_bswap32((3<<8)|2));
+    }
+    expected_wifi_forwarded=hit;
+    checksum_expected=enabled&&!bad&&(!ppp||hit)?CHECKSUM_UNNECESSARY:0;
     assert(rtl_qm_rx_poll(&rx,&napi,64)==1 && delivered==1 && returned==1);
     free(rx.memory);free(registers);
 }
@@ -266,7 +280,22 @@ int main(void) {
     assert(rtl_rx_checksum_valid(0x50,packet,100));
     packet[39]=65;assert(!rtl_rx_checksum_valid(0x50,packet,100));
     packet[39]=66;packet[40]=0;assert(!rtl_rx_checksum_valid(0x50,packet,100));
-    check_checksum_delivery(true,false);check_checksum_delivery(true,true);check_checksum_delivery(false,false);
+    unsigned char ppp[108]={0};
+    packet[40]=1;
+    memcpy(ppp,packet,12);memcpy(ppp+22,packet+14,86);
+    ppp[12]=0x88;ppp[13]=0x64;ppp[14]=0x11;ppp[17]=1;ppp[19]=88;ppp[21]=0x21;
+    assert(rtl_rx_checksum_valid(0x50,ppp,108));
+    assert(!rtl_rx_checksum_valid(0x70,ppp,108));
+    assert(!rtl_rx_checksum_valid(0x50,ppp,107));
+    ppp[19]=87;assert(!rtl_rx_checksum_valid(0x50,ppp,108));ppp[19]=88;
+    ppp[21]=0x57;assert(!rtl_rx_checksum_valid(0x50,ppp,108));ppp[21]=0x21;
+    ppp[15]=1;assert(!rtl_rx_checksum_valid(0x50,ppp,108));ppp[15]=0;
+    ppp[14]=0x12;assert(!rtl_rx_checksum_valid(0x50,ppp,108));ppp[14]=0x11;
+    ppp[48]=0;assert(!rtl_rx_checksum_valid(0x50,ppp,108));ppp[48]=1;
+    ppp[28]=0x20;assert(!rtl_rx_checksum_valid(0x50,ppp,108));
+    for(unsigned p=0;p<2;p++)for(unsigned hit=0;hit<2;hit++){
+        check_checksum_delivery(true,false,p,hit);check_checksum_delivery(true,true,p,hit);check_checksum_delivery(false,false,p,hit);
+    }
     check(1,64,false,-1);
     check(65,65,false,-1);check(65,256,true,-1);
     check(129,256,false,-1);check(256,256,true,-1);

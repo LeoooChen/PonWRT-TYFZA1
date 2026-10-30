@@ -80,7 +80,7 @@ static int register_netdevice(struct net_device *d){
 }
 '''
 code += '\n'.join(function(n) for n in ('rtl_unregister_lan', 'rtl_sgmii_power_off',
-                                       'rtl_register_lan', 'rtl_lan4_work', 'rtl_register_lans'))
+                                       'rtl_lan_number', 'rtl_register_lan', 'rtl_lan4_work', 'rtl_register_lans'))
 # Execute the production removal barrier; per-port teardown is covered below and
 # by test_lan_probe_isolation, without mocking unrelated DMA/IRQ subsystems.
 remove = function('rtl_remove')

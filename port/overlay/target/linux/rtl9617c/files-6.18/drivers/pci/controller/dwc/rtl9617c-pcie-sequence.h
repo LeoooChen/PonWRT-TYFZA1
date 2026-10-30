@@ -90,6 +90,8 @@ static inline int rtl_pcie_serdes_calibrate(const struct rtl_pcie_io *io,
 static inline int rtl_pcie_atu_ddr(const struct rtl_pcie_io *io,
 	unsigned int pages, unsigned int high_alias)
 {
+	int ret;
+
 	io->write(io->context, 0x04, 0);
 	io->write(io->context, 0x08, ~(pages - 1));
 	io->write(io->context, 0x0c, high_alias << 16);
@@ -97,6 +99,17 @@ static inline int rtl_pcie_atu_ddr(const struct rtl_pcie_io *io,
 	io->write(io->context, 0x14, 0x80); /* Outer shareable ReadOnce. */
 	io->write(io->context, 0x18, 0x80); /* Outer shareable WriteUnique. */
 	io->write(io->context, 0, 0x80000001);
+	ret = io->wait(io->context, 0, 1U << 31);
+	if (ret) return ret;
+	/* PE writes RXBDs directly to DDR. A distinct PCIe bus alias bypasses
+	 * CCI, whose ReadOnce can otherwise return an old ARM cache line. */
+	io->write(io->context, 0x04, 0x8000);
+	io->write(io->context, 0x08, ~(pages - 1));
+	io->write(io->context, 0x0c, 0);
+	io->write(io->context, 0x10, 0x07000022);
+	io->write(io->context, 0x14, 0);
+	io->write(io->context, 0x18, 0);
+	io->write(io->context, 0, 0x81000003);
 	return io->wait(io->context, 0, 1U << 31);
 }
 #endif

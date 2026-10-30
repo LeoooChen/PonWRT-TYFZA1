@@ -191,6 +191,9 @@ static unsigned ieee80211_channel_to_frequency(unsigned channel, unsigned band) 
 static void ieee80211_rx_ni(void *hw, struct sk_buff *skb) {
  (void)hw; received = skb->status; deliveries++; free(skb);
 }
+static void rtl_ax_ps_poll(struct rtl_ax_ap *radio, const struct rtl_ax_rx_packet *packet) {
+ (void)radio; (void)packet;
+}
 '''
 rx_checks = r'''
 int main(void) {

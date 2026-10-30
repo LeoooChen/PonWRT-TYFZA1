@@ -6,6 +6,7 @@
  * aal-77c/aal_ni.c and ni-drv-77c/ca_ni_tx.[ch].
  * The TYFZA1 configuration selects CCI: descriptor fetch uses upper byte 2.
  * The standard Linux DMA API still allocates the underlying RAM and buffers.
+ * Stock asynchronous TX publishes the producer without acknowledging EMPTY.
  */
 #include <linux/bitfield.h>
 #include <linux/delay.h>
@@ -62,6 +63,7 @@ int rtl_dma_tx_start(struct rtl_dma_tx *tx)
 {
 	void __iomem *base = tx->registers;
 	void __iomem *vp = rtl_dma_vp(tx);
+	unsigned int i;
 	u32 value;
 	int ret;
 
@@ -91,6 +93,10 @@ int rtl_dma_tx_start(struct rtl_dma_tx *tx)
 	value = readl(base + AXI_CONFIG);
 	value = (value & ~GENMASK(14, 0)) | 0x7aff;
 	writel(value, base + AXI_CONFIG);
+	/* Stock aal_ni_init_tx_dma_lso sets all five DMA read-reorder IDs. */
+	for (i = 0; i < 5; i++)
+		writel(15, tx->axi_reorder + i * 0x80);
+	readl(tx->axi_reorder + 0x200);
 	writel(readl(base + SS_CTRL) | BIT(31) | BIT(tx->vp), base + SS_CTRL);
 	/* The direct mode consumes Ethernet bytes, and DMA-AFT/MAC supplies FCS. */
 	writel((64 << 4) | BIT(0), base + AFT_CTRL);
@@ -178,7 +184,6 @@ netdev_tx_t rtl_dma_tx_frame(struct rtl_dma_tx *tx, struct sk_buff *skb,
 	dma_wmb();
 	tx->write = next;
 	writel(next, rtl_dma_vp(tx) + VP_WRITE);
-	writel(BIT(0), rtl_dma_vp(tx) + VP_MISC_IRQ);
 	dev_consume_skb_any(skb);
 	return NETDEV_TX_OK;
 }
@@ -212,7 +217,6 @@ int rtl_dma_tx_wifi(struct rtl_dma_tx *tx, struct net_device *dev,
 	dma_wmb();
 	tx->write = (tx->write + 1) & (RTL_DMA_COUNT - 1);
 	writel(tx->write, rtl_dma_vp(tx) + VP_WRITE);
-	writel(BIT(0), rtl_dma_vp(tx) + VP_MISC_IRQ);
 	tx->wifi_packets++;
 	tx->wifi_copy_bytes += skb->len;
 	if (begin)

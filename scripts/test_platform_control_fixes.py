@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Focused interpreter/solver checks. Does not build code or access the ONU."""
 from pathlib import Path
+import argparse
 import base64
 import hashlib
 import io
@@ -17,6 +18,9 @@ tree = root / 'sources/openwrt'
 ucode = tree / 'staging_dir/hostpkg/bin/ucode'
 apk = tree / 'staging_dir/host/bin/apk'
 kernel = tree / 'build_dir/target-aarch64_cortex-a55_musl/linux-rtl9617c_generic/linux-6.18.55'
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--rootfs', type=Path, default=tree / 'build_dir/target-aarch64_cortex-a55_musl/root-rtl9617c')
+args = parser.parse_args()
 
 
 def patch_copy(source, patch, destination):
@@ -24,19 +28,31 @@ def patch_copy(source, patch, destination):
         path = destination / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes((source / name).read_bytes())
-    subprocess.run(['git', 'apply', '--unsafe-paths', '--directory=' + str(destination),
-                    str(patch)], check=True)
+    command = ['git', 'apply', '--unsafe-paths', '--directory=' + str(destination)]
+    if subprocess.run(command + ['--reverse', '--check', str(patch)],
+                      capture_output=True).returncode != 0:
+        subprocess.run(command + [str(patch)], check=True)
 
 
 with tempfile.TemporaryDirectory(prefix='tyfza1-controls-') as directory:
     work = Path(directory)
     patched = work / 'openwrt'
-    patch_copy(tree, root / 'port/openwrt-patches/100-wifi-ucode-txpower.patch', patched)
-    before = {p: p.read_bytes() for p in patched.rglob('*') if p.is_file()}
+    # Start from the pinned upstream files, independently of build-tree patches.
+    for patch in sorted((root / 'port/openwrt-patches').glob('*.patch')):
+        for name in re.findall(r'^--- a/(.+)$', patch.read_text(), re.M):
+            path = patched / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(subprocess.check_output(['git', '-C', str(tree),
+                                                      'show', 'HEAD:' + name]))
+    subprocess.run(['git', 'init', '-q', str(patched)], check=True)
     for _ in range(2):
         subprocess.run(['sh', str(root / 'port/scripts/apply-openwrt-patches.sh'),
                         str(patched)], check=True)
-    assert all(p.read_bytes() == data for p, data in before.items())
+        after = {p: p.read_bytes() for p in patched.rglob('*') if p.is_file() and '.git' not in p.parts}
+        if _ == 0:
+            before = after
+        else:
+            assert after == before
     wifi = patched / 'package/network/config/wifi-scripts/files-ucode'
     source = (wifi / 'lib/netifd/wireless/mac80211.sh').read_text()
     functions = source[source.index('function phy_suffix('):source.index('function teardown(')]
@@ -115,14 +131,19 @@ for (let raw in [null, 0, 1000]) {
     print('CPU source checks: both same-target shortcuts disabled for this board, OPP calls serialized hardware transition, FPLL cannot be mistaken for completion. No hardware execution.')
 
     # Exercise real APK against an isolated installed database and local index.
-    installed = tree / 'build_dir/target-aarch64_cortex-a55_musl/root-rtl9617c'
+    installed = args.rootfs
     sandbox = work / 'root'
     for name in ('lib/apk/db/installed', 'etc/apk/world', 'etc/apk/arch'):
         path = sandbox / name
         path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(installed / name, path)
-    protected = ['luci-mod-status', 'luci-mod-network', 'libiwinfo20230701', 'wifi-scripts']
     database = (sandbox / 'lib/apk/db/installed').read_text()
+    protected = ['luci-mod-status', 'luci-mod-network', 'libiwinfo20230701', 'wifi-scripts',
+                 'luci-base', 'luci-compat', 'luci-lua-runtime', 'luci-lib-base',
+                 'luci-lib-ip', 'luci-lib-jsonc', 'luci-lib-nixio', 'ucode',
+                 'libucode20230711']
+    protected += re.findall(r'^P:(ucode-mod-.*)$', database, re.M)
+    assert 'ucode-mod-lua' in protected
     rom = work / 'rom-installed'
     rom.write_text(database)
     script = (root / 'port/overlay/target/linux/rtl9617c/base-files/etc/uci-defaults/99-tyfza1-platform-packages').read_text()
@@ -132,7 +153,16 @@ for (let raw in [null, 0, 1000]) {
         subprocess.run(['sh', '-s'], input=script, text=True, check=True, capture_output=True)
     constraints = (sandbox / 'etc/apk/world').read_text().splitlines()
     pins = [line for line in constraints if line.split('><')[0] in protected]
-    assert len(pins) == 4 and all('><Q1' in pin for pin in pins)
+    assert len(pins) == len(protected) and all('><Q1' in pin for pin in pins)
+    missing_rom = work / 'rom-without-lua-bridge'
+    missing_rom.write_text('\n\n'.join(
+        record for record in database.strip().split('\n\n')
+        if '\nP:ucode-mod-lua\n' not in '\n' + record + '\n') + '\n')
+    world_before = (sandbox / 'etc/apk/world').read_text()
+    missing = subprocess.run(['sh', '-s'], input=script.replace(str(rom), str(missing_rom)),
+                             text=True, capture_output=True)
+    assert missing.returncode != 0 and 'Missing TYFZA1 platform package identities' in missing.stderr
+    assert (sandbox / 'etc/apk/world').read_text() == world_before
 
     def identity(label):
         return 'Q1' + base64.b64encode(hashlib.sha1(label.encode()).digest()).decode()
@@ -175,7 +205,7 @@ for (let raw in [null, 0, 1000]) {
              for line in constraints]
     world.write_text('\n'.join(stale) + '\n')
     subprocess.run(['sh', '-s'], input=script, text=True, check=True, capture_output=True)
-    assert world.read_text().splitlines() == constraints
+    assert sorted(world.read_text().splitlines()) == sorted(constraints)
     # Control: the same index does offer replacement packages without the pins.
     world.write_text('\n'.join(line.split('><')[0] if line in pins else line for line in constraints) + '\n')
     result = subprocess.run(cli + ['upgrade', '--simulate'], text=True, capture_output=True, check=True)

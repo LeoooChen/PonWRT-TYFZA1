@@ -32,18 +32,21 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 int rtl_ax_tx_status(struct rtl_ax_tx *tx, char *out, size_t capacity);
 u32 rtl_ax_tx_traffic_bytes(struct rtl_ax_tx *tx);
 void rtl_ax_tx_ap_address(struct rtl_ax_tx *tx, const u8 *address);
-void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos);
+void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos, unsigned int ps_timeout);
 int rtl_ax_tx_peer_ssn(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid);
 int rtl_ax_tx_ni_test(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid);
 int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned int macid);
 int rtl_ax_tx_rx_retire(struct rtl_ax_tx *tx, unsigned int macid);
 int rtl_ax_tx_ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid);
+int rtl_ax_tx_ni_retire_ba(struct rtl_ax_tx *tx, unsigned int macid);
 int rtl_ax_mac_drop_peer(struct pci_dev *pdev, unsigned int macid);
+void rtl_ax_tx_ps_clock(struct rtl_ax_tx *tx, u32 seconds);
 void rtl_ax_tx_peer_sleep(struct rtl_ax_tx *tx, unsigned int macid, bool asleep);
 void rtl_ax_tx_peer_authorized(struct rtl_ax_tx *tx, unsigned int macid, bool authorized);
+bool rtl_ax_tx_peer_security(struct rtl_ax_tx *tx, unsigned int macid, unsigned int cam, unsigned int keyid);
 void rtl_ax_tx_peer_ba(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid, unsigned int size);
 void rtl_ax_tx_peer_rate(struct rtl_ax_tx *tx, unsigned int macid, u32 rate, u32 caps);
 bool rtl_ax_tx_ni_buffered(struct rtl_ax_tx *tx, unsigned int macid);
 void rtl_ax_tx_ps_release(struct rtl_ax_tx *tx, struct ieee80211_sta *sta,
-	unsigned int macid, u16 tids, bool uapsd, bool more_data);
+	unsigned int macid, u16 tids, bool uapsd, bool more_data, u32 generation);
 #endif

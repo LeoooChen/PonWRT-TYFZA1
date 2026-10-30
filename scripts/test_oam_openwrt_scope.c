@@ -12,7 +12,7 @@
 #include <unistd.h>
 #include "pon-backend.h"
 
-static unsigned int writes, signals;
+static unsigned int writes, signals, expected_port = 1;
 
 /* Never let a regression change a real interface or signal PID1. */
 int __wrap_ioctl(int fd, unsigned long operation, ...)
@@ -24,7 +24,9 @@ int __wrap_ioctl(int fd, unsigned long operation, ...)
 	va_start(args, operation);
 	request = va_arg(args, struct ifreq *);
 	va_end(args);
-	assert(!strcmp(request->ifr_name, "lan4"));
+	char expected[16];
+	snprintf(expected, sizeof(expected), "lan%u", expected_port);
+	assert(!strcmp(request->ifr_name, expected));
 	if (operation == SIOCGIFFLAGS) {
 		request->ifr_flags = IFF_UP | IFF_RUNNING;
 	} else if (operation == SIOCETHTOOL && *(unsigned int *)request->ifr_data == ETHTOOL_GSET) {
@@ -100,7 +102,20 @@ int main(void)
 	}
 	request.branch = 7;
 	request.leaf = 0x25;
-	assert(identity.get_parameter(&backend, &request, output, sizeof(output)) == 4 && output[3] == 2);
+	for (expected_port = 1; expected_port <= 4; expected_port++) {
+		object[7] = expected_port;
+		assert(identity.get_parameter(&backend, &request, output, sizeof(output)) == 4 && output[3] == 2);
+	}
+	uint8_t legacy_object[] = {7, 0, 1, 1, 1};
+	request.object = legacy_object;
+	request.object_size = sizeof(legacy_object);
+	for (expected_port = 1; expected_port <= 4; expected_port++) {
+		legacy_object[4] = expected_port;
+		assert(identity.get_parameter(&backend, &request, output, sizeof(output)) == 4 && output[3] == 2);
+	}
+	request.object = object;
+	request.object_size = sizeof(object);
+	expected_port = object[7] = 1;
 	request.leaf = 0x4f;
 	assert(identity.get_parameter(&backend, &request, output, sizeof(output)) == 4 && output[3] == 2);
 	request.branch = 0xc7;

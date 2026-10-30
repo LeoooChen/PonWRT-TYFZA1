@@ -9,7 +9,7 @@ root = Path(__file__).resolve().parents[1]
 source = (root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-xram.c').read_text()
 
 def function(name):
-    start = re.search(r'^static (?:void|int) ' + name + r'\(', source, re.M).start()
+    start = re.search(r'^static (?:void|int|unsigned int) ' + name + r'\(', source, re.M).start()
     end = source.index('{', start) + 1
     depth = 1
     while depth:
@@ -135,7 +135,7 @@ static int tyfza1_led_register(struct device *d,struct tyfza1_led *l,void *n){re
 static void tyfza1_led_unregister(struct tyfza1_led *l){}
 static void *rtl_phy_led_output;
 '''
-code = shim + '\n'.join(function(n) for n in ('rtl_unregister_lan', 'rtl_sgmii_power_off', 'rtl_register_lan', 'rtl_lan4_work', 'rtl_register_lans'))
+code = shim + '\n'.join(function(n) for n in ('rtl_unregister_lan', 'rtl_sgmii_power_off', 'rtl_lan_number', 'rtl_register_lan', 'rtl_lan4_work', 'rtl_register_lans'))
 # Run the actual post-registration probe block independently of shared DMA setup.
 probe = function('rtl_probe')
 services = probe[probe.index('\tret = sysfs_create_groups('):probe.index('\tschedule_delayed_work(')]
@@ -175,8 +175,10 @@ int main(void){
    assert(!!priv.ports[p]==!!(expected&BIT(p)));
    assert(priv.qm.lan[p]==priv.ports[p]);
    if(priv.ports[p]){
-    char name[16];snprintf(name,sizeof(name),"lan%u",p==4?4:p+1);
+    static const char *names[]={"lan4","lan3","lan2","lan1","lan1"};
+    const char *name=names[p];
     assert(!strcmp(priv.ports[p]->name,name));
+    assert(priv.ports[p]->lan.port==(unsigned int)p && priv.ports[p]->phydev==&phys[p]);
     assert(priv.ports[p]->dev_addr[5]==3+p);
    }
   }

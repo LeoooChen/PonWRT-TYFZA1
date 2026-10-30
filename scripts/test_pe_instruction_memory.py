@@ -9,6 +9,11 @@ from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_
 from unicorn import mips_const as regs
 
 binary = (Path(sys.argv[1]) / 'pe-tx.bin').read_bytes()
+# Summing every static frame overestimates any non-recursive call chain.
+frames = (Path(sys.argv[1]) / 'pe-wd.su').read_text().splitlines()
+assert all(line.split('\t')[2] == 'static' for line in frames)
+stack_bound = sum(int(line.split('\t')[1]) for line in frames)
+assert stack_bound <= 8192 - 16, stack_bound
 relocations = subprocess.check_output(['llvm-readelf-18', '-r', str(Path(sys.argv[1]) / 'pe-wd.o')], text=True)
 assert not re.search(r'R_MIPS_(?:GOT|CALL16|GPREL)', relocations)
 for dma in (0x04000000, 0x07ae0000):
@@ -53,5 +58,6 @@ for dma in (0x04000000, 0x07ae0000):
 print(json.dumps({'PE_sha256': hashlib.sha256(binary).hexdigest(),
                   'linked_entry_executed': True, 'IMEM_fill_before_execution': True,
                   'IMEM_bytes': 32768, 'DMEM_bytes': 8192,
+                  'conservative_stack_bound_bytes': stack_bound,
                   'no_GOT_CALL16_or_GPREL_relocations': True,
                   'scope': 'Actual linked entry; CP0/CP3 register effects and ATU aliases modeled. No hardware latency or throughput claim.'}, indent=2))

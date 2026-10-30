@@ -113,14 +113,30 @@ The production image Makefile always passes both DTs to `make_ubi_fit.py`.
 `build_lan_ui.sh` passes both PCIe DTs to the RAM packager. Manual RAM builds
 can use `--dtb-2p5g`; single-DT diagnostic images remain available.
 
-## Physical LAN ports (2026-10-19 correction)
+## Physical LAN ports (2026-10-25 correction)
 
 Both enclosures have four Ethernet jacks and a separate gray FXS phone jack.
 The four-GbE board uses NI ports 0,1,2,3. The 2.5G board uses NI ports
 0,1,2,4; internal port3 is unwired. This matches the captured OEM
 `PORT_REMAPPING=04,02,01,00` and the user's physical inspection. The 2.5G
-DT leaves index3 of `realtek,lan-phys` empty, and NI hardware port4 is named
-`lan4`. From the rightmost LAN1 to the leftmost blue LAN4, native names are
-`lan1`, `lan2`, `lan3`, `lan4`; the all-GbE version has the same four names.
+DT leaves index3 of `realtek,lan-phys` empty. The enclosure labels run in the
+opposite direction from the previous Linux names; the blue 2.5G jack is LAN1.
+
+| Enclosure / Linux name | Four-GbE NI port | 2.5G-board NI port |
+| --- | --- | --- |
+| LAN1 / lan1 | 3 | 4 (RTL8221B, 2.5G) |
+| LAN2 / lan2 | 2 | 2 |
+| LAN3 / lan3 | 1 | 1 |
+| LAN4 / lan4 | 0 | 0 |
+
+PHY handles, FE/QM hardware IDs, scheduler slots and per-port MAC derivation
+retain their NI indices. The NI4 asynchronous worker and its readiness barrier
+still refer to hardware port4; its netdev is now lan1. CTC UNI1..4 and the
+Linux names agree, while the existing CTC-to-NI PM mapping stays intact.
+
+Existing lanN configuration references use the new enclosure numbering; no
+LAN-number migration is performed.
+
 Default network generation no longer depends on successful PHY probing.
-No lan5 configuration migration is installed.
+LED defaults follow the same physical jacks. Existing LED bindings are left
+as configured.
