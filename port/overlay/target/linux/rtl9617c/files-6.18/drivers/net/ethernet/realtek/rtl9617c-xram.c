@@ -1294,6 +1294,12 @@ static int rtl_probe(struct platform_device *pdev)
 			ret = PTR_ERR(priv->dma.registers);
 			goto del_napi;
 		}
+		priv->dma.axi_reorder = devm_platform_ioremap_resource_byname(pdev,
+									      "dma-axi-reorder");
+		if (IS_ERR(priv->dma.axi_reorder)) {
+			ret = PTR_ERR(priv->dma.axi_reorder);
+			goto del_napi;
+		}
 		priv->dma.port = priv->port;
 		priv->dma.vp = 8;
 		ret = rtl_dma_tx_alloc(dev, &priv->dma);
