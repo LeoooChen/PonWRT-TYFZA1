@@ -8,7 +8,7 @@ import subprocess
 import sys
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / 'analysis/python-deps'))
-from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_MEM_WRITE
+from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_MEM_WRITE, UC_HOOK_MEM_READ
 from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_SP, UC_MIPS_REG_PC, UC_MIPS_REG_RA
 
 binary = (Path(sys.argv[1]) if len(sys.argv) > 1 else root / 'artifacts/pe-radio-production/pe-tx.bin').read_bytes()
@@ -32,12 +32,23 @@ for index, value in ((0, 0x50455744), (2, bar | 0xa0000000), (3, 1),
 put(ni + 0x6340, 0x8000007c)
 put(ni + 0x6380, 0x80000000)
 returns = []
+recycle_writes = []
+u.hook_add(UC_HOOK_MEM_WRITE,
+    lambda uc, access, at, size, value, data: recycle_writes.append((at, value)),
+    begin=mailbox + 116, end=mailbox + 123)
 stop_after = None
 def eq_return(uc, access, at, size, value, context):
+    credit = get(ni + 0x6340)
+    assert credit & 0x3fff and get(ni + 0x6380) & (1 << 31)
+    put(ni + 0x6340, credit - 1)
     returns.append(value)
     if len(returns) == stop_after:
-        put(ni + 0x6340, 0)
+        put(ni + 0x6380, 0)
 u.hook_add(UC_HOOK_MEM_WRITE, eq_return, begin=ni + 0x6384, end=ni + 0x6387)
+credit_reads = []
+u.hook_add(UC_HOOK_MEM_READ,
+    lambda uc, access, at, size, value, data: credit_reads.append(at),
+    begin=ni + 0x6340, end=ni + 0x6343)
 u.reg_write(UC_MIPS_REG_A0, mailbox | 0xa0000000)
 u.reg_write(UC_MIPS_REG_SP, (base + 0x1fff0) | 0xa0000000)
 pc = 0xbfc00400
@@ -60,6 +71,10 @@ put(mailbox + 292, 255)
 put(mailbox + 296, 255)
 rpq_consumer, tag = 255, 8190
 ni_reports, failed = 0, 0
+counter_writes = []
+u.hook_add(UC_HOOK_MEM_WRITE,
+    lambda uc, access, at, size, value, data: counter_writes.append((at, value)),
+    begin=mailbox + 300, end=mailbox + 307)
 
 
 def packet(data, kind=7, wd_extra=0, wrong_tag=False):
@@ -104,10 +119,12 @@ for batch in range(64):
     put(ni + 0x6340, 0)
     raw, offset = packet(struct.pack('<%dI' % len(reports), *reports))
     old_returns = len(returns)
+    counter_writes.clear()
     run()
     assert get(mailbox + 280) == (rpq_consumer + 1) & 255
     assert get(mailbox + 284) == tag
     assert get(mailbox + 300) == ni_reports and get(mailbox + 304) == failed
+    assert counter_writes == [(mailbox + 300, ni_reports), (mailbox + 304, failed)]
     assert get(mailbox + 120) == 16 and len(returns) == old_returns
     slot = (batch + 255) & 255
     out = bytes(u.mem_read(forward + slot * 1024, offset + len(expected) * 4))
@@ -116,8 +133,9 @@ for batch in range(64):
     assert out[offset:] == struct.pack('<%dI' % len(expected), *expected)
     put(mailbox + 296, (slot + 1) & 255)
     put(ni + 0x6340, 0x8000007c)
-    if batch == 0:
-        stop_after = old_returns + 1
+    if batch in (0, 1):
+        if batch == 0: put(ni + 0x6340, 1)
+        else: stop_after = old_returns + 1
         run()
         assert returns[old_returns:] == buffers[:1]
         assert get(mailbox + 120) == 16
@@ -126,8 +144,13 @@ for batch in range(64):
         put(payload, 0xdeadbeef)
         stop_after = None
         put(ni + 0x6340, 0x8000007c)
+        put(ni + 0x6380, 0x80000000)
+    recycle_writes.clear()
+    credit_reads.clear()
     run()
     assert get(mailbox + 120) == 0 and returns[old_returns:] == buffers
+    assert recycle_writes == [(mailbox + 116, len(returns)), (mailbox + 120, 0)]
+    assert len(credit_reads) == 16
     rpq_consumer = (rpq_consumer + 1) & 255
 
 # Full ARM handoff ring holds physical RPQ ownership until the host consumes.
@@ -212,6 +235,8 @@ for scan in (0, 1):
 assert get(mailbox + 172 * 4) == 0
 
 result = dict(linked_MIPS_C_firmware=True, NI_MPDU=1024, BID_returns=2048,
+              recycle_totals_written_once_per_batch=True,
+              completion_totals_written_once_per_RPQ=True,
               ARM_reports_forwarded=256, EOSP_reports_forwarded=64,
               C2H_shift_and_MAC_info_preserved=True, RPQ_and_handoff_wrap=True,
               tag_8191_to_1=True, no_BID_return_without_EQ_credit=True,

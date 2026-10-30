@@ -271,7 +271,7 @@ int rtl_ax_tx_pause(struct rtl_ax_tx *tx)
 		dma_wmb();
 	}
 	spin_unlock_irqrestore(&tx->lock, flags);
-	/* Stop preparation before PE0 drains the last batch and stops publishing. */
+	/* PE1 drains its local TX batch before PE0 stops the uplink path. */
 	if (tx->pe_active) {
 		u32 acknowledged;
 		if (read_poll_timeout(get_unaligned_le32, acknowledged, acknowledged == pe_command,
@@ -1086,8 +1086,9 @@ int rtl_ax_tx_status(struct rtl_ax_tx *tx, char *out, size_t capacity)
 			get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 216));
 	if (tx->pe_active)
 		length += scnprintf(out + length, capacity - length,
-			"PE_slot=%u NI_CPU=%u EQ=%u VP=%u\n",
-			tx->pe.slot, tx->ni.cpu, tx->ni.eq, tx->ni.vp_index);
+			"PE_slot=%u NI_CPU=%u EQ=%u VP=%u BA_refreshes=%llu\n",
+			tx->pe.slot, tx->ni.cpu, tx->ni.eq, tx->ni.vp_index,
+			READ_ONCE(tx->ni.ba_refreshes));
 	if (tx->pe_active)
 		length += scnprintf(out + length, capacity - length,
 			"PE_NI_MPDU=%u AMSDU=%u PEDIV=%08x stack=%08x event_IRQ=%llu event_generation=%u event_ACK=%u\n",

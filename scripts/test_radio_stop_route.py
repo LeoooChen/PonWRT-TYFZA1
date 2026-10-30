@@ -18,8 +18,8 @@ common=r'''
 #define spin_unlock_irqrestore(l,f) ((void)(l),(void)(f))
 #define wiphy_delayed_work_cancel(a,b) ((void)(a),(void)(b))
 #define wiphy_work_cancel(a,b) ((void)(a),(void)(b))
-#define mutex_lock(a) ((void)(a))
-#define mutex_unlock(a) ((void)(a))
+#define mutex_lock(a) do {assert(!*(a));*(a)=1;} while(0)
+#define mutex_unlock(a) do {assert(*(a));*(a)=0;} while(0)
 #define tasklet_kill(a) ((void)(a))
 #define dev_err(...) ((void)0)
 struct rx {bool running;};struct tx {bool netdev_reference;struct rx *rx;};
@@ -31,7 +31,9 @@ struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};
 static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw){return hw->radio;}
 static void rtl_ax_update32(struct io *io,unsigned reg,unsigned mask,unsigned value){(void)io;(void)reg;(void)mask;(void)value;}
 static void write32(void *ctx,unsigned reg,unsigned value){(void)ctx;(void)reg;(void)value;}
+static int *command_mutex;
 static int rtl_ax_tx_ni_route(struct tx *tx,void *netdev,unsigned id){
+ mutex_lock(command_mutex);mutex_unlock(command_mutex);
  (void)netdev;assert(!id);assert(tx->rx->running);tx->netdev_reference=false;return 0;
 }
 static int rtl_ax_tx_pause(struct tx *tx){assert(!tx->netdev_reference);return 0;}
@@ -42,7 +44,7 @@ common += source[start:end]
 common += r'''
 int main(void){struct rx rx={true};struct tx tx={true,&rx};
  struct rtl_ax_ap radio={.rx=&rx,.tx=&tx,.io={write32},.monitor_started=true};
- struct ieee80211_hw hw={&radio,NULL};rtl_ax_monitor_stop(&hw,false);
+ struct ieee80211_hw hw={&radio,NULL};command_mutex=&radio.command_mutex;rtl_ax_monitor_stop(&hw,false);
  assert(!rx.running&&!tx.netdev_reference&&!radio.monitor_started);return 0;}
 '''
 with tempfile.TemporaryDirectory(prefix='tyf-stop-route-') as temporary:

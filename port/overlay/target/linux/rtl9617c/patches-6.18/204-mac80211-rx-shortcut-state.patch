@@ -1,12 +1,14 @@
 --- a/net/mac80211/rx.c
 +++ b/net/mac80211/rx.c
-@@ -4128,6 +4128,16 @@
+@@ -4128,6 +4128,18 @@
  		CALL_RXH(ieee80211_rx_h_uapsd_and_pspoll);
  		CALL_RXH(ieee80211_rx_h_sta_process);
  		CALL_RXH(ieee80211_rx_h_decrypt);
 +		if (rx->sta && rx->key && rx->key->conf.cipher == WLAN_CIPHER_SUITE_CCMP) {
 +			struct ieee80211_hdr *accepted = (void *)rx->skb->data;
++			/* Plaintext can retain a PTK without accepting a new CCMP PN. */
 +			if (ieee80211_is_data_qos(accepted->frame_control) &&
++			    ieee80211_has_protected(accepted->frame_control) &&
 +			    !ieee80211_has_morefrags(accepted->frame_control) &&
 +			    !(accepted->seq_ctrl & cpu_to_le16(IEEE80211_SCTL_FRAG))) {
 +				rx->key->rx_shortcut_next_seq[rx->security_idx] =
@@ -17,7 +19,7 @@
  		CALL_RXH(ieee80211_rx_h_defragment);
  		CALL_RXH(ieee80211_rx_h_michael_mic_verify);
  		/* must be after MMIC verify so header is counted in MPDU mic */
-@@ -4363,6 +4373,82 @@
+@@ -4363,6 +4375,82 @@
  	rcu_read_unlock();
  }
  EXPORT_SYMBOL(ieee80211_mark_rx_ba_filtered_frames);

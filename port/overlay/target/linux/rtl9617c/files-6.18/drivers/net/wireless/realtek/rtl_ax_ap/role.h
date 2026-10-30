@@ -52,9 +52,8 @@ static inline void rtl_ax_station_cmac_connected(unsigned char out[68],
 	if (band5g)
 		rtl_ax_store32(out + 8, words[2] | BIT(30));
 	if (aggregate) {
-		/* Actual rtw_hal_update_cctrl_tbl -> CCTL V1 output for num_ampdu:
-		 * masks/packing differ from the same-named generic CCTL encoder. */
-		rtl_ax_store32(out + 16, (aggregate - 1) & 0xfe);
+		/* Board HAL subtracts one; C/XB V1 subtracts again if nonzero. */
+		rtl_ax_store32(out + 16, aggregate > 1 ? aggregate - 2 : 0);
 		rtl_ax_store32(out + 48, 0x3ff);
 	}
 }

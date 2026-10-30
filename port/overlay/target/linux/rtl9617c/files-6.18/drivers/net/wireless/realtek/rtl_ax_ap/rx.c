@@ -461,7 +461,7 @@ int rtl_ax_rx_pe_rpq_start(struct rtl_ax_rx *rx, void *tx_memory, u32 tx_dma,
 		rx->pool_initialized = true;
 	}
 	memset(memory + RTL_AX_RX_WORK_STATUS, 0, 0x800);
-	memset(memory + RTL_AX_RX_REORDER_SEARCH, 0, 8);
+	memset(memory + RTL_AX_RX_REORDER_SEARCH, 0, 12);
 	for (i = RTL_AX_RX_WORK_WRITE; i <= RTL_AX_RX_WORK_READ; i++)
 		put_unaligned_le32(0, mailbox + i * 4);
 	for (i = 0; i < 2; i++) {
@@ -484,8 +484,6 @@ int rtl_ax_rx_pe_rpq_start(struct rtl_ax_rx *rx, void *tx_memory, u32 tx_dma,
 	put_unaligned_le32(rx->pe_forward_dma, tx_mailbox + 288);
 	put_unaligned_le32(0, tx_mailbox + 292);
 	put_unaligned_le32(0, tx_mailbox + 296);
-	put_unaligned_le32(0, tx_mailbox + RTL_AX_RPQ_EVENT_WRITE * 4);
-	put_unaligned_le32(0, tx_mailbox + RTL_AX_RPQ_EVENT_READ * 4);
 	put_unaligned_le32(get_unaligned_le32(tx_mailbox + 8), mailbox + 8);
 	put_unaligned_le32(tx_dma, mailbox + 187 * 4);
 	put_unaligned_le32(rx->pe_command & ~1U, mailbox + 12);
@@ -504,7 +502,7 @@ int rtl_ax_rx_pe_rpq_start(struct rtl_ax_rx *rx, void *tx_memory, u32 tx_dma,
 	ret = pe_probe_start(&rx->pe, program, bytes);
 	if (!ret) {
 		put_unaligned_le32(rx->pe.dma + PE_PROBE_MAILBOX,
-			tx_mailbox + RTL_AX_RX_BACKEND_CONTEXT * 4);
+			tx_mailbox + RTL_AX_RX_EVENT_CONTEXT * 4);
 		dma_wmb();
 	}
 	rtl_ax_rx_pe_wake(rx);
@@ -610,7 +608,7 @@ int rtl_ax_rx_pe_rpq_stop(struct rtl_ax_rx *rx)
 	rx->queues[1].consumer = get_unaligned_le32(tx_mailbox + 280);
 	rx->queues[1].tag = get_unaligned_le32(tx_mailbox + 284);
 	put_unaligned_le32(0, tx_mailbox + 272);
-	put_unaligned_le32(0, tx_mailbox + RTL_AX_RX_BACKEND_CONTEXT * 4);
+	put_unaligned_le32(0, tx_mailbox + RTL_AX_RX_EVENT_CONTEXT * 4);
 	put_unaligned_le32(0, mailbox + 320);
 	dma_wmb();
 	for (unsigned int i = 0; i < 2; i++)
@@ -904,7 +902,10 @@ free:
 
 u32 rtl_ax_rx_traffic_bytes(struct rtl_ax_rx *rx)
 {
-	return (u32)READ_ONCE(rx->queues[0].data_bytes);
+	/* Fast-path bytes bypass the ARM queue. The PE slot retains its counter
+	 * across detach/reattach, so include it even while ARM owns RXQ. */
+	return (u32)READ_ONCE(rx->queues[0].data_bytes) +
+		get_unaligned_le32(rx->pe.memory + 0x2184);
 }
 
 int rtl_ax_rx_status(struct rtl_ax_rx *rx, char *out, size_t capacity)
@@ -915,7 +916,7 @@ int rtl_ax_rx_status(struct rtl_ax_rx *rx, char *out, size_t capacity)
 
 	rtl_ax_rx_rdu_sync(rx);
 	length = scnprintf(out, capacity,
-		"RXQ_owner=%s RPQ_owner=PE0 RXQ_core=0 RX_work_core=1 decoded_type_counters=ARM\nrxq=%llu rpq=%llu rx_malformed=%llu rx_tag_pending=%llu rx_unhandled=%llu "
+		"RXQ_owner=%s RPQ_owner=PE1 RXQ_core=0 RX_work_core=0 decoded_type_counters=ARM\nrxq=%llu rpq=%llu rx_malformed=%llu rx_tag_pending=%llu rx_unhandled=%llu "
 		"irq=%llu rdu=%llu halt=0x%08x\n",
 		rx->rpq_owned ? "PE" : "ARM", rx->queues[0].packets + rx->pe_captured, rx->queues[1].packets,
 		rx->queues[0].malformed + rx->queues[1].malformed,

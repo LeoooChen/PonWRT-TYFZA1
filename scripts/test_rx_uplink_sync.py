@@ -51,7 +51,9 @@ static struct ieee80211_sta stations[128];
 static unsigned bh,rcu,queued,guard_reads,snapshots,syncs[128][16],accounts[128][16];
 static u32 counted_frames[128][16],counted_bytes[128][16],counted_msdus[128][16];
 static u8 *racing_state;
-static bool race;
+static bool race,snapshot_blocked;
+static bool work_pending;
+static unsigned work_delay;
 static void *system_wq;
 static void mutex_lock(int *p){assert(!*p);*p=1;}
 static void mutex_unlock(int *p){assert(*p);*p=0;}
@@ -85,6 +87,14 @@ static void mod_delayed_work(void *queue,int *work,unsigned delay){
     (void)queue;assert(work==&active->work&&delay>0);
     assert(!bh&&!rcu&&!active->uplink_lock&&active->irq_lock);
     assert(active->running&&!active->rpq_transfer);queued++;
+    work_pending=true;work_delay=delay;
+}
+static void queue_delayed_work(void *queue,int *work,unsigned delay){
+    (void)queue;assert(work==&active->work&&delay>0);
+    assert(!bh&&!rcu&&!active->uplink_lock&&active->irq_lock);
+    assert(active->running&&!active->rpq_transfer);
+    if(work_pending)return;
+    work_pending=true;work_delay=delay;queued++;
 }
 static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *address,void *unused){
     (void)hw;(void)unused;assert(bh&&rcu&&active->uplink_lock);
@@ -93,6 +103,7 @@ static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *add
 static bool ieee80211_rx_shortcut_snapshot(struct ieee80211_sta *sta,
         struct ieee80211_key_conf *key,unsigned tid,u16 *next,u8 pn[6]){
     (void)tid;assert(bh&&rcu&&active->uplink_lock&&key==active->keys[sta->macid]);
+    if(snapshot_blocked)return false;
     *next=key->next;memcpy(pn,key->pn,6);snapshots++;return true;
 }
 static void ieee80211_rx_shortcut_sync(struct ieee80211_sta *sta,
@@ -122,7 +133,7 @@ static void record(u8 *state,u32 frames,u32 bytes,u32 msdus){
     put_unaligned_le32(2,state+24);put_unaligned_le32(64,state+28);
 }
 int main(void){
-    (void)system_wq;(void)mod_delayed_work;
+    (void)system_wq;(void)mod_delayed_work;(void)queue_delayed_work;
     static u8 memory[0x2200],rpq[0xe800],states[0x10200];
     struct ieee80211_key_conf key={0},other={0};
     struct rtl_ax_rx rx={.pe={memory},.uplink_states=states,.rpq_memory=rpq,
@@ -149,6 +160,7 @@ int main(void){
     assert(syncs[8][4]==1&&accounts[8][4]==1);
     guard_reads=0;rtl_ax_rx_uplink_sync(&rx);assert(!guard_reads&&queued==1&&syncs[7][3]==1);
     /* PE changes its record and global marker during the snapshot. */
+    work_pending=false;
     put_unaligned_le32(11,memory+0x2180);record(state,4,400,8);
     rx.uplink_pending_tids[7]=BIT(3);race=true;guard_reads=0;
     rtl_ax_rx_uplink_sync(&rx);
@@ -168,6 +180,27 @@ int main(void){
     rx.rpq_transfer=true;guard_reads=0;rtl_ax_rx_uplink_sync(&rx);assert(queued==2);
     rx.rpq_transfer=false;rx.running=false;guard_reads=0;rtl_ax_rx_uplink_sync(&rx);assert(queued==2);
     assert(!bh&&!rcu&&!rx.uplink_lock&&!rx.irq_lock);
+    /* ARM's reorder timer may finish without another DMA packet. A failed
+     * seed must schedule its own retry even with no new PE publication. */
+    work_pending=false;rx.running=true;rx.uplink_forwarded_seen=14;
+    rx.uplink_pending_tids[7]=BIT(3);snapshot_blocked=true;guard_reads=0;
+    put_unaligned_le32(0,state);
+    rtl_ax_rx_uplink_sync(&rx);
+    assert(queued==3 && rx.uplink_pending_tids[7]==BIT(3) && !raw(state));
+    snapshot_blocked=false;guard_reads=0;
+    rtl_ax_rx_uplink_sync(&rx);
+    assert(queued==3 && !rx.uplink_pending_tids[7] && (raw(state)&BIT(31)));
+    /* An IRQ queued immediate RX while the current worker was running.
+     * A failed reorder snapshot must not move that work ten ms later. */
+    rx.uplink_pending_tids[7]=BIT(3);snapshot_blocked=true;
+    work_pending=true;work_delay=0;guard_reads=0;
+    rtl_ax_rx_uplink_sync(&rx);
+    assert(queued==3 && work_pending && work_delay==0);
+    /* Repeated failed snapshots do not restart an existing retry timer. */
+    work_delay=1;guard_reads=0;rtl_ax_rx_uplink_sync(&rx);
+    assert(queued==3 && work_delay==1);
+    work_pending=false;guard_reads=0;rtl_ax_rx_uplink_sync(&rx);
+    assert(queued==4 && work_pending && work_delay==1);
     puts("Uplink sync: stalled/torn records, deferred retry, independent TIDs, PN/SN, BA window, counter wrap and shutdown passed");
 }
 '''

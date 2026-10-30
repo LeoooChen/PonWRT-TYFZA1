@@ -68,7 +68,7 @@ int main(void){
  assert(get_unaligned_le32(mb+320)==q->addresses_dma&&get_unaligned_le32(mb+134*4)==q->descriptor_dma);
  assert(get_unaligned_le32(mb+324)==254&&get_unaligned_le32(mb+328)==8190);
  assert(get_unaligned_le32(mb+RTL_AX_RX_HW_PRODUCER*4)==254);
- assert(get_unaligned_le32(tx_memory+0x2000+RTL_AX_RX_BACKEND_CONTEXT*4)==0x04002000);
+ assert(get_unaligned_le32(tx_memory+0x2000+RTL_AX_RX_EVENT_CONTEXT*4)==0x04002000);
  assert(get_unaligned_le32(mb+177*4)==258);
  for(unsigned i=0;i<256;i++)assert(get_unaligned_le32(memory+RTL_AX_RX_SLOT_MAP+i*4)==i);
  for(unsigned i=0;i<258;i++)assert(get_unaligned_le32(memory+RTL_AX_RX_IDLE_IDS+i*4)==256+i);
@@ -85,7 +85,7 @@ int main(void){
  assert(rx.dfs_epoch[0]==(233|256)&&get_unaligned_le32(mb+172*4)==(233|256));
  assert(!rtl_ax_rx_pe_rpq_stop(&rx));
  assert(!rx.rpq_owned&&!rx.rpq_memory&&!rx.rpq_transfer&&mask==RTL_AX_RX_IRQS);
- assert(!get_unaligned_le32(tx_memory+0x2000+RTL_AX_RX_BACKEND_CONTEXT*4));
+ assert(!get_unaligned_le32(tx_memory+0x2000+RTL_AX_RX_EVENT_CONTEXT*4));
  assert(q->consumer==230&&q->tag==8191&&q->slot_ids[17]==256&&cpu_syncs==1);
  assert(get_unaligned_le32(memory+RTL_AX_RX_NI_TAIL)==513&&get_unaligned_le32(memory+RTL_AX_RX_NI_TAIL+8)==514);
  assert(!rtl_ax_rx_pe_rpq_start(&rx,tx_memory,0x04200000,&program,4));
@@ -100,7 +100,8 @@ int main(void){
  /* A sorted frame can own NI beyond the contiguous parser cursor. */
  put_unaligned_le32(0,mb+RTL_AX_RX_WORK_PROCESS*4);
  put_unaligned_le32(2,mb+RTL_AX_RX_WORK_WRITE*4);
- put_unaligned_le32(0,memory+RTL_AX_RX_WORK_STATUS);
+ /* An uncommitted lookup hint (including bit30) is not NI ownership. */
+ put_unaligned_le32(200U<<23|2U<<16|0x124,memory+RTL_AX_RX_WORK_STATUS);
  put_unaligned_le32(258,memory+RTL_AX_RX_WORK_IDS+4);
  put_unaligned_le32(BIT(31)|101,memory+RTL_AX_RX_WORK_STATUS+4);
  put_unaligned_le32(254,mb+177*4);
@@ -121,6 +122,9 @@ print('RX DMA cursors, address directory, separate PE0/PE1 contexts, NI tail ret
 monitor=(driver/'monitor.h').read_text()
 assert 'ieee80211_hw_set(hw, RX_INLINE)' in monitor
 start=monitor.index('case IEEE80211_AMPDU_RX_START:');end=monitor.index('\n\treturn -EOPNOTSUPP;\n}',start)
-assert monitor[start:end].count('rtl_ax_tx_rx_retire')==2
+assert monitor[start:end].count('rtl_ax_tx_rx_retire')==1
+remove=monitor[monitor.index('static int rtl_ax_rx_ba_remove('):monitor.index('static int rtl_ax_station_release(')]
+assert remove.index('rtl_ax_tx_rx_retire') < remove.index('rtl_ax_command(')
+assert 'rtl_ax_rx_ba_remove(radio, i)' in monitor[start:end]
 assert 'rtl_ax_tx_ni_retire_peer' not in monitor[start:end]
 print('RX BA invalidates the receive shortcut while preserving the PE TX route.')

@@ -9,7 +9,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'analysis/python-deps'))
 from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN
-from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2
+from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2, UC_MIPS_REG_A3
 from unicorn.mips_const import UC_MIPS_REG_RA, UC_MIPS_REG_SP, UC_MIPS_REG_PC, UC_MIPS_REG_V0
 
 
@@ -59,7 +59,7 @@ def case(directory, slot, ipv6, payload_bytes, fe_ready=True):
     put(base + 0x11a08, 1)
     put(states + 0x10008, 1 << 31 | (slot + 1) << 8)
     put(states + 2 * 512, 1 << 31 | 0x123)
-    for index, value in [(88, vp | 0xa0000000), (89, descriptors), (93, 1), (106, states)]:
+    for index, value in [(88, vp | 0xa0000000), (89, descriptors), (93, 1), (106, states), (187, base)]:
         put(mb + index * 4, value)
     ethertype, network = packet(ipv6, payload_bytes)
     header = struct.pack('<HH', 0x4188, 0) + ap + peer + dst + struct.pack('<H', 0x123 << 4) + bytes(2)
@@ -70,7 +70,7 @@ def case(directory, slot, ipv6, payload_bytes, fe_ready=True):
     struct.pack_into('<I', raw, 24, 1 << 28 | 2 << 16)
     u.mem_write(buf, bytes(raw))
     for reg, value in [(UC_MIPS_REG_A0, mb | 0xa0000000), (UC_MIPS_REG_A1, buf | 0xa0000000),
-                       (UC_MIPS_REG_A2, buf), (UC_MIPS_REG_SP, (base + 0x17ff0) | 0xa0000000),
+                       (UC_MIPS_REG_A2, buf), (UC_MIPS_REG_A3, (base + 0x1d000) | 0xa0000000), (UC_MIPS_REG_SP, (base + 0x17ff0) | 0xa0000000),
                        (UC_MIPS_REG_RA, 0x9fc0fff0)]:
         u.reg_write(reg, value)
     u.emu_start(entry, 0x9fc0fff0, count=100000)

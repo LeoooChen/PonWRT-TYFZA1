@@ -6,7 +6,8 @@ SECTIONS
     . = 0xbfc00380;
     .exception : { *(.exception) }
     . = 0xbfc00400;
-    .text : { *(.text*) }
+    .text : { *(.text.main) *(.text*) }
+    ASSERT(pe_main == 0xbfc00400, "PE entry trampoline must target pe_main")
     .rodata : { *(.rodata*) }
     .data : { *(.data*) }
     .bss : { *(.bss*) *(COMMON) }

@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 root = Path(__file__).resolve().parents[1]
 source = (root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/ni-test.h').read_text()
-a = source.index('int rtl_ax_tx_ni_retire_peer(')
+a = source.index('static int ni_retire_peer(')
 b = source.index('\nint rtl_ax_tx_ni_test(', a)
 common = r'''
 
