@@ -19,6 +19,11 @@ parser.add_argument('--kernel', required=True, type=Path)
 args = parser.parse_args()
 dts = root / 'port/overlay/target/linux/rtl9617c/dts'
 baseline = json.loads((root / 'scripts/fixtures/tyfza1-board-gpios.json').read_text())['boards']
+# Capture the actual PE0/PE1 ATU writes, not a second copy of their address table.
+atu = json.loads(subprocess.check_output([sys.executable,
+    str(root / 'scripts/test_pe_physical_reset.py'), '--dump-atu'], text=True))
+shadow_pages = {page for page in range(0x2000)
+                if any(((page ^ base) & mask) == 0 for base, mask in atu)}
 results = []
 with tempfile.TemporaryDirectory(prefix='board-variants-') as directory:
     out = Path(directory)
@@ -32,6 +37,16 @@ with tempfile.TemporaryDirectory(prefix='board-variants-') as directory:
         subprocess.run(['dtc', '-q', '-I', 'dts', '-O', 'dtb', '-o', str(blob),
                         str(preprocessed)], check=True)
         native = fdt_nodes(blob.read_bytes())
+        reserved = native['/reserved-memory/pe-atu-shadow@fc00000']
+        assert 'no-map' in reserved and 'reusable' not in reserved
+        reg = cells(reserved['reg'])
+        reserved_pages = set()
+        for i in range(0, len(reg), 4):
+            start = (reg[i] << 32) | reg[i + 1]
+            size = (reg[i + 2] << 32) | reg[i + 3]
+            assert start % 0x10000 == size % 0x10000 == 0 and size
+            reserved_pages.update(range(start >> 16, (start + size) >> 16))
+        assert reserved_pages == shadow_pages, 'RAM reservations must match all PE ATU windows exactly'
         for label, expected in original['leds'].items():
             matching = [p for n, p in native.items() if n.startswith('/leds/') and
                         p.get('label') == label.encode() + b'\0']
@@ -57,6 +72,7 @@ with tempfile.TemporaryDirectory(prefix='board-variants-') as directory:
             assert 'external-phy-enable-gpios' not in mdio
         results.append({'strap': board, 'OEM_LED_GPIOs_and_button_match': True,
                         'LAN_ports': sum(bool(handle) for handle in lan_phys),
+                        'PE_ATU_reserved_bytes': len(reserved_pages) * 0x10000,
                         'hardware_ports': [i for i, handle in enumerate(lan_phys) if handle]})
 
     subprocess.run([sys.executable, str(root / 'port/tools/test_boot_fit.py'),
