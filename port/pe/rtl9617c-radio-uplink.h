@@ -280,7 +280,7 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 	     scan != write && budget < 16; scan = (scan + 1) & 255, budget++) {
 		u32 *status = (void *)(memory + RX_STATUS + scan * 4);
 		u32 hint = *status;
-		if (hint & RX_NI_PENDING) continue;
+		if ((hint & RX_NI_PENDING) || hint == RX_ARM_DONE) continue;
 		/* Hints apply only while this head owns the scan. Its ARM
 		 * fallback may change PS/key state before a later head runs.
 		 * A candidate always repeats full admission and PN checks. */
@@ -430,8 +430,9 @@ static void __attribute__((section(".rxq"), noinline, minsize)) pe_rx_work(volat
 	if (read == mailbox[RTL_AX_RX_WORK_WRITE]) return;
 	/* Capture publishes the payload ID before the write cursor. */
 	sync();
-	/* A lookahead completion stays in its capture slot until this cursor. */
-	if (*(u32 *)(memory + RX_STATUS + read * 4) & RX_NI_PENDING) goto advance;
+	/* Lookahead may forward a frame or finish discarding an old retry. */
+	u32 completed = *(u32 *)(memory + RX_STATUS + read * 4);
+	if ((completed & RX_NI_PENDING) || completed == RX_ARM_DONE) goto advance;
 	u32 item = *(u32 *)(memory + RTL_AX_RX_WORK_IDS + read * 4), id = item & ~RTL_AX_RX_WORK_OLD;
 	u32 buffer_dma = rx_buffer_dma(mailbox, id);
 	u8 *buffer = uncached(buffer_dma);

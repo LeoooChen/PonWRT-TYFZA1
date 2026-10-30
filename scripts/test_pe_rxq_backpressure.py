@@ -274,6 +274,38 @@ for _ in range(6):r.process()
 assert r.get(MB+90*4)==1025 and not r.get(MB+94*4)
 r.put(VP+0x1c,1);r.capture();r.inventory()
 
+# A completed cross-TID retry must not be parsed again after the BA head
+# changes or when the contiguous cursor reaches it. Bit30 also occurs in
+# ordinary scan hints at work128+, so only the exact completion is final.
+for head in (0, 128, 254):
+ r = reorder_peer()
+ for word in (174, 175, 176): r.put(MB + word * 4, head)
+ other_state = ST + 1056
+ r.put(other_state, 1 << 31 | 0x345)
+ r.put(other_state + 4, 6)
+ r.put(other_state + 28, 64)
+ duplicate = bytearray(data_frame(0x344, 6, 1)); duplicate[1] |= 8
+ frames = [data_frame(0x125, 4), bytes(duplicate), data_frame(0x126, 5), data_frame(0x123, 2)]
+ captured = []
+ for frame in frames:
+  captured.append(r.arrive(frame, True)); r.capture()
+ r.process()
+ done = (head + 1) & 255
+ assert r.get(B + STATUS + done * 4) == 1 << 30
+ assert r.get(MB + 90 * 4) == 1 and r.get(MB + 94 * 4) == 0
+ reads = []
+ at, raw = captured[1]
+ hook = r.u.hook_add(UC_HOOK_MEM_READ, lambda uc,access,a,size,value,data: reads.append(a), begin=at, end=at+len(raw)-1)
+ r.process()  # New expected SN must not rescan the completed other-TID retry.
+ r.arrive(data_frame(0x124, 3), True); r.capture()
+ for _ in range(6): r.process()
+ assert not reads, ('completed retry payload read again', head, len(reads))
+ assert r.get(MB + 90 * 4) == 4 and r.get(MB + 94 * 4) == 0
+ assert r.get(MB + 175 * 4) == (head + 5) & 255
+ assert r.get(ST + 1024) == 1 << 31 | 0x127
+ assert r.get(other_state) == 1 << 31 | 0x345 and r.get(other_state + 4) == 6
+ r.put(VP + 0x1c, 4); r.capture(); r.inventory()
+
 # A waiting head has already validated every A-MSDU protocol. Repeated
 # lookups keep checking admission and PN without rereading its payload.
 retry_parts=[]
