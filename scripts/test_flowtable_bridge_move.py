@@ -45,9 +45,13 @@ enum flow_offload_tuple_dir {FLOW_OFFLOAD_DIR_ORIGINAL,FLOW_OFFLOAD_DIR_REPLY};
 enum ip_conntrack_dir {IP_CT_DIR_ORIGINAL,IP_CT_DIR_REPLY};
 enum {DEV_PATH_ETHERNET,DEV_PATH_DSA,DEV_PATH_VLAN,DEV_PATH_PPPOE,DEV_PATH_BRIDGE};
 enum {DEV_PATH_BR_VLAN_UNTAG_HW,DEV_PATH_BR_VLAN_TAG,DEV_PATH_BR_VLAN_UNTAG,DEV_PATH_BR_VLAN_KEEP};
-enum {NF_FLOW_TEARDOWN,NF_FLOW_HW,NF_FLOW_HW_DYING,NF_FLOW_HW_DEAD,NF_FLOW_CLOSING};
+enum {NF_FLOW_TEARDOWN,NF_FLOW_HW,NF_FLOW_HW_DYING,NF_FLOW_HW_DEAD,NF_FLOW_CLOSING,NF_FLOW_HW_PENDING};
 #define BIT(n) (1UL<<(n))
 #define test_bit(n,p) (!!(*(p)&BIT(n)))
+#define test_bit_acquire(n,p) test_bit(n,p)
+static bool test_and_set_bit(unsigned n,unsigned long *p){
+ bool old=test_bit(n,p);*p|=BIT(n);return old;
+}
 #define unlikely(v) (v)
 static bool warn_once(bool value){assert(!value);return value;}
 #define WARN_ON_ONCE(v) warn_once(v)
