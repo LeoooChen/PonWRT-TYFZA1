@@ -1,0 +1,73 @@
+--- a/modules/luci-base/htdocs/luci-static/resources/network.js
++++ b/modules/luci-base/htdocs/luci-static/resources/network.js
+@@ -3580,7 +3580,7 @@
+ 			if (res.error) {
+ 				const err = new Error(res.error == 'restore_failed'
+ 					? _('The AP could not be restored. Restart the wireless interface.')
+-					: _('Wireless scan failed. A running DFS AP may prevent off-channel scanning.'));
++					: _('Scanning failed, possibly due to radar detection. Pause the hotspot and try again.'));
+ 				err.pauseAllowed = res.pause_allowed;
+ 				throw err;
+ 			}
+--- a/modules/luci-mod-status/htdocs/luci-static/resources/view/status/channel_analysis.js
++++ b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/channel_analysis.js
+@@ -399,8 +399,12 @@
+ 						if (window.confirm(_('This will disconnect wireless clients while scanning. DFS channel checks may delay AP recovery. Continue?')))
+ 							return this.handleScanRefresh(true);
+ 					}
+-				}, _('Pause AP and scan')));
++				}, _('Pause hotspot and scan')));
+ 			cbi_update_table(radio.table, [], E('div', {}, message));
++			// Multi-line actions need a normal row, not the theme's fixed-height placeholder.
++			const row = radio.table.querySelector('tr.placeholder');
++			row.classList.remove('placeholder');
++			row.firstElementChild.colSpan = radio.table.rows[0].cells.length;
+ 		});
+ 	},
+ 
+--- a/modules/luci-mod-network/htdocs/luci-static/resources/view/network/wireless.js
++++ b/modules/luci-mod-network/htdocs/luci-static/resources/view/network/wireless.js
+@@ -2345,8 +2345,12 @@
+ 							if (window.confirm(_('This will disconnect wireless clients while scanning. DFS channel checks may delay AP recovery. Continue?')))
+ 								return this.handleScanRefresh(radioDev, scanCache, table, stop, true);
+ 						}
+-					}, _('Pause AP and scan')));
++					}, _('Pause hotspot and scan')));
+ 				cbi_update_table(table, [], E('div', {}, message));
++				// Multi-line actions need a normal row, not the theme's fixed-height placeholder.
++				const row = table.querySelector('tr.placeholder');
++				row.classList.remove('placeholder');
++				row.firstElementChild.colSpan = table.rows[0].cells.length;
+ 			});
+ 		};
+ 
+--- a/modules/luci-base/po/zh_Hans/base.po
++++ b/modules/luci-base/po/zh_Hans/base.po
+@@ -16564,12 +16564,11 @@
+ msgid "The AP could not be restored. Restart the wireless interface."
+ msgstr "AP 恢复失败，请重启无线接口。"
+ 
+-msgid "Wireless scan failed. A running DFS AP may prevent off-channel scanning."
+-msgstr "无线扫描失败。正在运行的 DFS AP 可能不允许离信道扫描。"
++msgid "Scanning failed, possibly due to radar detection. Pause the hotspot and try again."
++msgstr "扫描失败，可能受雷达检测限制。请暂停热点后重试。"
+ 
+ msgid "This will disconnect wireless clients while scanning. DFS channel checks may delay AP recovery. Continue?"
+ msgstr "扫描期间将断开无线客户端。DFS 信道检查可能使 AP 恢复延迟约一分钟或更久。是否继续？"
+ 
+-msgid "Pause AP and scan"
+-msgstr "暂停 AP 并扫描"
+-
++msgid "Pause hotspot and scan"
++msgstr "暂停热点并扫描"
+--- a/modules/luci-base/ucode/template/header.ut
++++ b/modules/luci-base/ucode/template/header.ut
+@@ -13,7 +13,7 @@
+ 		media          : media,
+ 		resource       : resource,
+ 		base_url       : resource,
+-		resource_version: '{# PKG_VERSION #}-' + pkgs_update_time + '-tyfza1-r2',
++		resource_version: '{# PKG_VERSION #}-' + pkgs_update_time + '-tyfza1-r3',
+ 		scriptname     : http.getenv("SCRIPT_NAME"),
+ 		pathinfo       : http.getenv("PATH_INFO"),
+ 		documentroot   : http.getenv("DOCUMENT_ROOT"),
