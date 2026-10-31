@@ -171,15 +171,23 @@ static int rtl8221b_hsgmii(struct phy_device *phydev)
 	ret = rtl8221b_update(phydev, MDIO_MMD_VEND2, 0xa400, 0, BIT(14));
 	if (ret < 0)
 		return ret;
-	ret = phy_read_mmd_poll_timeout(phydev, MDIO_MMD_VEND2, 0xa434,
-					val, val & BIT(2), 100000, 10000000, false);
+	/* Only missing ACK is nonfatal; a negative MDIO read (including
+	 * -ETIMEDOUT) is a bus failure. Avoid phylib's automatic error log
+	 * for the OEM's expected missing-ACK case. */
+	ret = read_poll_timeout(phy_read_mmd, val, val < 0 || (val & BIT(2)),
+				100000, 10000000, false,
+				phydev, MDIO_MMD_VEND2, 0xa434);
+	if (val < 0)
+		ret = val;
 	release = rtl8221b_update(phydev, MDIO_MMD_VEND2, 0xa400, BIT(14), 0);
-	if (release < 0)
+	if (release < 0) {
 		phydev_err(phydev, "HiSGMII force-down release failed: %d\n", release);
+		return release;
+	}
 	/* The OEM also completes this sequence without the force-down ACK.
 	 * In particular, PMA low power can leave a434 bit2 clear. The request
 	 * must still be released before phylib resumes the copper PHY. */
-	if (ret == -ETIMEDOUT) {
+	if (ret == -ETIMEDOUT && val >= 0) {
 		phydev_warn(phydev, "HiSGMII force-down ACK absent; request released\n");
 		return release;
 	}

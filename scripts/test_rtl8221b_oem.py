@@ -110,6 +110,9 @@ struct phy_device {
  struct {unsigned int device_ids[32];} c45_ids;
 };
 static unsigned int revision,version,seed,accesses,fail_at,timeout_reg;
+int bus_error=-EIO;
+unsigned int ack_after=1;
+static unsigned int ack_reads;
 static bool board;
 static u16 registers[32][65536];
 unsigned int count,errors,warnings;
@@ -118,7 +121,7 @@ unsigned int events[8192][4];
 #define phydev_warn(p,...) ((void)(p),warnings++)
 static int event(unsigned int kind,unsigned int mmd,unsigned int reg,unsigned int value) {
  events[count][0]=kind;events[count][1]=mmd;events[count][2]=reg;events[count++][3]=value;
- return ++accesses == fail_at ? -EIO : 0;
+ return ++accesses == fail_at ? bus_error : 0;
 }
 static int phy_read_mmd(struct phy_device *p,int mmd,u16 reg) {
  (void)p;
@@ -130,8 +133,9 @@ static int phy_read_mmd(struct phy_device *p,int mmd,u16 reg) {
   value=registers[31][0xb820]&0x10?0x40:0;
   if(timeout_reg==reg)value^=0x40;
  }
- if(mmd==31 && reg==0xa434)value=timeout_reg==reg?0x5600:4;
- return event('r',mmd,reg,value)<0?-EIO:(int)value;
+ if(mmd==31 && reg==0xa434)value=timeout_reg==reg || ++ack_reads<ack_after?0x5600:4;
+ int ret=event('r',mmd,reg,value);
+ return ret<0?ret:(int)value;
 }
 static int phy_write_mmd(struct phy_device *p,int mmd,u16 reg,u16 value) {
  (void)p;
@@ -139,13 +143,20 @@ static int phy_write_mmd(struct phy_device *p,int mmd,u16 reg,u16 value) {
  if(!ret)registers[mmd][reg]=value;
  return ret;
 }
-#define phy_read_mmd_poll_timeout(p,m,r,v,condition,d,t,s) ({ \
+#define read_poll_timeout(op,v,condition,d,t,s,args...) ({ \
  int result=-ETIMEDOUT; \
  for(int attempt=0;attempt<3;attempt++) { \
-  v=phy_read_mmd(p,m,r); \
-  if(v<0){result=v;break;} \
+  v=op(args); \
   if(condition){result=0;break;} \
  } result; \
+})
+/* Match phylib's error propagation AND its automatic error logging. */
+#define phy_read_mmd_poll_timeout(p,m,r,v,condition,d,t,s) ({ \
+ int __ret,__val; \
+ __ret=read_poll_timeout(__val=phy_read_mmd,v,__val<0 || (condition),d,t,s,p,m,r); \
+ if(__val<0)__ret=__val; \
+ if(__ret)phydev_err(p,"poll failed: %d",__ret); \
+ __ret; \
 })
 static bool of_property_read_bool(void *node,const char *name){(void)node;(void)name;return board;}
 static int rtl822x_c45_get_features(struct phy_device *p){(void)p;return 0;}
@@ -179,7 +190,7 @@ int reset(int present,int error) {
 }
 int run(unsigned int rev,unsigned int ver,unsigned int initial,unsigned int fail,unsigned int timeout) {
  struct phy_device phy={.is_c45=true};
- revision=rev;version=ver;seed=initial;accesses=count=errors=warnings=0;fail_at=fail;timeout_reg=timeout;
+ revision=rev;version=ver;seed=initial;accesses=count=errors=warnings=ack_reads=0;fail_at=fail;timeout_reg=timeout;
  for(unsigned int m=0;m<32;m++)for(unsigned int r=0;r<65536;r++)registers[m][r]=seed;
  return rtl8221b_tyfza1_config_init(&phy);
 }
@@ -197,6 +208,8 @@ with tempfile.TemporaryDirectory(prefix='rtl8221b-oem-') as directory:
     subprocess.run(['cc', '-shared', '-fPIC', '-O1', '-Wall', '-Wextra', '-Werror',
         '-Wno-unused-function', '-Wno-unused-parameter', str(source), '-o', str(library)], check=True)
     native = ctypes.CDLL(str(library))
+    bus_error = ctypes.c_int.in_dll(native, 'bus_error')
+    ack_after = ctypes.c_uint.in_dll(native, 'ack_after')
     assert native.reset(1, 0) == 0
     assert ctypes.c_uint.in_dll(native, 'gpio_puts').value == 1
     assert ctypes.c_uint.in_dll(native, 'gpio_delay').value == stock_enable() == 300
@@ -220,7 +233,7 @@ with tempfile.TemporaryDirectory(prefix='rtl8221b-oem-') as directory:
                      'writes': sum(event[0] == 'w' for event in actual)})
     for register in (0xa420, 0xb800):
         assert native.run(8, 0, 0, 0, register) == -110
-        assert ctypes.c_uint.in_dll(native, 'errors').value == 1
+        assert ctypes.c_uint.in_dll(native, 'errors').value == 2
     # The live 2.5G board has a434=0x5600 (ACK clear). Execute the OEM's
     # timeout branch too: it releases force-down and returns success.
     timed_out = stock(9, 0, 0, ack=0x5600)
@@ -229,14 +242,39 @@ with tempfile.TemporaryDirectory(prefix='rtl8221b-oem-') as directory:
     assert native.run(9, 0, 0, 0, 0xa434) == 0
     assert ctypes.c_uint.in_dll(native, 'warnings').value == 1
     assert ctypes.c_uint.in_dll(native, 'errors').value == 0
-    # A real MDIO failure while releasing a timed-out request remains fatal.
+    count = ctypes.c_uint.in_dll(native, 'count').value
+    values = (ctypes.c_uint * (8192 * 4)).in_dll(native, 'events')
+    assert list(values[(count - 1)*4:count*4]) == [ord('w'), 31, 0xa400, 0]
+    # Release read/write failures must never claim the request was released.
     events = ctypes.c_uint.in_dll(native, 'count').value
-    assert native.run(9, 0, 0, events, 0xa434) == -5
+    for error in (-5, -110):
+        bus_error.value = error
+        for index in (events - 1, events):
+            assert native.run(9, 0, 0, index, 0xa434) == error
+            assert ctypes.c_uint.in_dll(native, 'warnings').value == 0
+    # A bus timeout is not the OEM's nonfatal missing-ACK condition.
+    expected = stock(9, 0, 0)
+    poll_index = next(i + 1 for i, e in enumerate(expected) if e[:3] == ['r', 31, 0xa434])
+    for error in (-5, -110):
+        bus_error.value = error
+        for delay in (0, 1, 2):
+            assert native.run(9, 0, 0, poll_index + delay, 0xa434) == error
+            assert ctypes.c_uint.in_dll(native, 'warnings').value == 0
+            assert ctypes.c_uint.in_dll(native, 'errors').value == 1
+            count = ctypes.c_uint.in_dll(native, 'count').value
+            values = (ctypes.c_uint * (8192 * 4)).in_dll(native, 'events')
+            assert list(values[(count - 1)*4:count*4]) == [ord('w'), 31, 0xa400, 0]
+    bus_error.value = -5
+    ack_after.value = 2
+    assert native.run(9, 0, 0, 0, 0) == 0
+    assert ctypes.c_uint.in_dll(native, 'errors').value == 0
+    assert ctypes.c_uint.in_dll(native, 'warnings').value == 0
+    ack_after.value = 1
     # Bus failures before upload, during patch data, at version commit and at mode latch.
     expected = stock(8, 0, 0)
     for index in (1, 4, 120, len(expected) - 17, len(expected) - 2, len(expected)):
         assert native.run(8, 0, 0, index, 0) == -5, index
-        assert ctypes.c_uint.in_dll(native, 'errors').value == (2 if index == len(expected) else 1)
+        assert ctypes.c_uint.in_dll(native, 'errors').value == (2 if index in (1, len(expected)) else 1)
     for ident in (0x001cc840, 0x001cc848, 0x001cc849, 0x001cc84a):
         assert native.match(ident, 1, 1) == 1
         assert native.match(ident, 1, 0) == 0
@@ -250,4 +288,5 @@ print(json.dumps({'OEM_module_sha256': hashlib.sha256(args.stock_module.read_byt
     'real_poll_conditions_and_MDIO_errors': 'passed', 'board_and_model_match': 'passed',
     'GPIO14_OEM_lifetime_and_settling': 'passed',
     'OEM_missing_ACK_releases_request_and_succeeds': True,
+    'MDIO_timeout_is_fatal_and_release_warning_is_truthful': True,
     'hardware_validation': False}, indent=2))
