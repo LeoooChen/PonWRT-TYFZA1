@@ -31,6 +31,7 @@ source = r'''
 #include <string.h>
 typedef uint8_t u8;typedef int8_t s8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u64;
 #include "dig.h"
+#define rtl_ax_scan_complete_frame(...) ((void)0)
 #define BIT(n) (1U<<(n))
 #define mutex_lock(p) ((void)(p))
 #define mutex_unlock(p) ((void)(p))

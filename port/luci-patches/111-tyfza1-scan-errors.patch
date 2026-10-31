@@ -1,0 +1,166 @@
+--- a/modules/luci-base/htdocs/luci-static/resources/network.js
++++ b/modules/luci-base/htdocs/luci-static/resources/network.js
+@@ -79,9 +79,19 @@
+ const callIwinfoScan = rpc.declare({
+ 	object: 'iwinfo',
+ 	method: 'scan',
++	reject: true,
+ 	params: [ 'device' ],
+ 	nobatch: true,
+-	expect: { results: [] }
++	expect: { '': {} }
++});
++
++const callIwinfoScanPause = rpc.declare({
++	object: 'iwinfo',
++	method: 'scan_pause',
++	reject: true,
++	params: [ 'device' ],
++	nobatch: true,
++	expect: { '': {} }
+ });
+ 
+ const callNetworkInterfaceDump = rpc.declare({
+@@ -3565,8 +3575,17 @@
+ 	 * Returns a promise resolving to an array of scan result objects
+ 	 * describing the networks found in the vicinity.
+ 	 */
+-	getScanList() {
+-		return callIwinfoScan(this.sid);
++	getScanList(pauseAP = false) {
++		return (pauseAP ? callIwinfoScanPause(this.sid) : callIwinfoScan(this.sid)).then(res => {
++			if (res.error) {
++				const err = new Error(res.error == 'restore_failed'
++					? _('The AP could not be restored. Restart the wireless interface.')
++					: _('Wireless scan failed. A running DFS AP may prevent off-channel scanning.'));
++				err.pauseAllowed = res.pause_allowed;
++				throw err;
++			}
++			return res.results || [];
++		});
+ 	},
+ 
+ 	/**
+--- a/modules/luci-mod-status/htdocs/luci-static/resources/view/status/channel_analysis.js
++++ b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/channel_analysis.js
+@@ -193,7 +193,7 @@
+ 		}, this));
+ 	},
+ 
+-	handleScanRefresh() {
++	handleScanRefresh(pauseAP = false) {
+ 		if (!this.active_tab)
+ 			return;
+ 
+@@ -201,7 +201,7 @@
+ 		let q;
+ 
+ 		return Promise.all([
+-			radio.dev.getScanList(),
++			radio.dev.getScanList(pauseAP === true),
+ 			this.callInfo(radio.dev.getName())
+ 		]).then(L.bind(function([results, local_wifi]) {
+ 			const table = radio.table;
+@@ -389,7 +389,19 @@
+ 				radio.loadedOnce = true;
+ 				poll.stop();
+ 			}
+-		}, this))
++		}, this)).catch(err => {
++			poll.stop();
++			const message = [ E('p', {}, err.message) ];
++			if (err.pauseAllowed && L.hasViewPermission())
++				message.push(E('button', {
++					'class': 'btn cbi-button-action',
++					'click': () => {
++						if (window.confirm(_('This will disconnect wireless clients while scanning. DFS channel checks may delay AP recovery. Continue?')))
++							return this.handleScanRefresh(true);
++					}
++				}, _('Pause AP and scan')));
++			cbi_update_table(radio.table, [], E('div', {}, message));
++		});
+ 	},
+ 
+ 	radios: {},
+--- a/modules/luci-mod-network/htdocs/luci-static/resources/view/network/wireless.js
++++ b/modules/luci-mod-network/htdocs/luci-static/resources/view/network/wireless.js
+@@ -2272,8 +2272,8 @@
+ 			poll.start();
+ 		};
+ 
+-		s.handleScanRefresh = function(radioDev, scanCache, table, stop) {
+-			return radioDev.getScanList().then(L.bind(function(results) {
++		s.handleScanRefresh = function(radioDev, scanCache, table, stop, pauseAP = false) {
++			return radioDev.getScanList(pauseAP === true).then(L.bind(function(results) {
+ 				const rows = [];
+ 
+ 				for (let r of results)
+@@ -2329,7 +2329,25 @@
+ 				stop.disabled = false;
+ 				stop.style.display = '';
+ 				stop.classList.remove('spinning');
+-			}, this));
++			}, this)).catch(err => {
++				if (this.pollFn)
++					poll.remove(this.pollFn);
++				stop.disabled = false;
++				stop.style.display = '';
++				stop.classList.remove('spinning');
++				stop.setAttribute('data-state', 'start');
++				stop.firstChild.data = _('Start refresh');
++				const message = [ E('p', {}, err.message) ];
++				if (err.pauseAllowed && L.hasViewPermission())
++					message.push(E('button', {
++						'class': 'btn cbi-button-action',
++						'click': () => {
++							if (window.confirm(_('This will disconnect wireless clients while scanning. DFS channel checks may delay AP recovery. Continue?')))
++								return this.handleScanRefresh(radioDev, scanCache, table, stop, true);
++						}
++					}, _('Pause AP and scan')));
++				cbi_update_table(table, [], E('div', {}, message));
++			});
+ 		};
+ 
+ 		s.handleScanStartStop = function(ev) {
+--- a/modules/luci-mod-network/root/usr/share/rpcd/acl.d/luci-mod-network.json
++++ b/modules/luci-mod-network/root/usr/share/rpcd/acl.d/luci-mod-network.json
+@@ -29,7 +29,7 @@
+ 			"ubus": {
+ 				"file": [ "exec" ],
+ 				"hostapd.*": [ "del_client" ],
+-				"iwinfo": [ "scan" ]
++				"iwinfo": [ "scan", "scan_pause" ]
+ 			},
+ 			"uci": [ "dhcp", "firewall", "luci", "network", "wireless" ]
+ 		}
+--- a/modules/luci-mod-status/root/usr/share/rpcd/acl.d/luci-mod-status.json
++++ b/modules/luci-mod-status/root/usr/share/rpcd/acl.d/luci-mod-status.json
+@@ -81,6 +81,9 @@
+ 			"ubus": {
+ 				"iwinfo": [ "info", "freqlist", "scan" ]
+ 			}
++		},
++		"write": {
++			"ubus": { "iwinfo": [ "scan_pause" ] }
+ 		}
+ 	},
+ 
+--- a/modules/luci-base/po/zh_Hans/base.po
++++ b/modules/luci-base/po/zh_Hans/base.po
+@@ -16560,3 +16560,16 @@
+ 
+ #~ msgid "Set Static"
+ #~ msgstr "设为静态"
++
++msgid "The AP could not be restored. Restart the wireless interface."
++msgstr "AP 恢复失败，请重启无线接口。"
++
++msgid "Wireless scan failed. A running DFS AP may prevent off-channel scanning."
++msgstr "无线扫描失败。正在运行的 DFS AP 可能不允许离信道扫描。"
++
++msgid "This will disconnect wireless clients while scanning. DFS channel checks may delay AP recovery. Continue?"
++msgstr "扫描期间将断开无线客户端。DFS 信道检查可能使 AP 恢复延迟约一分钟或更久。是否继续？"
++
++msgid "Pause AP and scan"
++msgstr "暂停 AP 并扫描"
++

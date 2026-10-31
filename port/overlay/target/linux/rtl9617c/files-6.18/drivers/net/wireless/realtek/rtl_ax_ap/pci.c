@@ -21,6 +21,7 @@
 #include "role.h"
 #include "security.h"
 #include "rate.h"
+#include "scan.h"
 #include "port0.h"
 #include "beacon.h"
 #include "mac-runtime.h"
@@ -163,6 +164,12 @@ struct rtl_ax_ap {
 	struct wiphy_delayed_work ra_work;
 	struct wiphy_delayed_work dm_work;
 	bool ra_sampling;
+	bool scanning;
+	struct sk_buff *scan_pending;
+	u32 scan_word0, scan_word1;
+	u64 scan_received_ns;
+	u64 scan_matched, scan_unmatched;
+	u8 scan_last_bssid[6], scan_last_rpl;
 	u64 station_added, station_removed;
 	DECLARE_BITMAP(security_ids, RTL_AX_SECURITY_ENTRIES);
 	DECLARE_BITMAP(security_deleting, RTL_AX_SECURITY_ENTRIES);
@@ -347,6 +354,8 @@ static int rtl_ax_h2c_send(void *ctx, const unsigned char *data,
 
 static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 	const struct rtl_ax_rx_packet *packet);
+static void rtl_ax_scan_complete_frame(struct rtl_ax_ap *radio,
+	const struct rtl_ax_rx_packet *report);
 
 static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 {
@@ -385,14 +394,17 @@ static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 			ieee80211_radar_detected(radio->hw, NULL);
 		return 0;
 	}
-	if (packet->type == 0 && READ_ONCE(radio->monitor_started))
+	if (packet->type == 0 && READ_ONCE(radio->monitor_started)) {
+		rtl_ax_scan_complete_frame(radio, NULL);
 		return rtl_ax_monitor_receive(radio, packet);
+	}
 	if (packet->type == 1) {
 		struct rtl_ax_phy_signal signals[8];
 		unsigned int i;
 		u8 aci;
 		int aci_report;
 
+		rtl_ax_scan_complete_frame(radio, packet);
 		if (!(rtl_ax_ap_read32(packet->descriptor) & BIT(23))) return 0;
 		ret = rtl_ax_ppdu_signal(packet->payload, packet->bytes, signals);
 		aci_report = rtl_ax_ppdu_aci(packet->payload, packet->bytes, &aci);
@@ -1771,6 +1783,7 @@ static int rtl_ax_receive_configure(struct rtl_ax_ap *radio, unsigned int primar
 	}
 	rtl_ax_rx_close(radio->rx);
 	ret = rtl_ax_dfs_stop_locked(radio);
+	rtl_ax_scan_complete_frame(radio, NULL);
 	/* CAC and a failed detector configuration both keep the MAC quiet. */
 	if (radio->radar_required) rtl_ax_tx_dfs_block(radio->tx, true);
 	rtl_ax_hci_pause(&radio->io);
@@ -2502,6 +2515,11 @@ static ssize_t radio_ra_show(struct device *dev,
 	unsigned int bytes = 0, i;
 	unsigned long flags;
 
+	bytes += sysfs_emit_at(buffer, bytes, "scan_RSSI_matched=%llu unmatched=%llu\n",
+		radio->scan_matched, radio->scan_unmatched);
+	bytes += sysfs_emit_at(buffer, bytes, "scan_last_BSSID=%pM RPL_U8_1=%u signal_dBm=%d\n",
+		radio->scan_last_bssid, radio->scan_last_rpl,
+		(radio->scan_last_rpl >> 1) - 110);
 	spin_lock_irqsave(&radio->command_lock, flags);
 	for (i = 1; i < 128 && bytes < PAGE_SIZE - 180; i++) {
 		const u8 *r = radio->ra_feedback[i];

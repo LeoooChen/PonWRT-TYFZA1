@@ -29,6 +29,7 @@ source = r"""
 #define pci_clear_master(p) ((void)(p))
 #define pci_set_master(p) ((void)(p))
 #define rtl_ax_rx_close(...) ((void)0)
+#define rtl_ax_scan_complete_frame(...) ((void)0)
 #define rtl_ax_rx_open(...) ((void)0)
 #define rtl_ax_hci_pause(...) ((void)0)
 #define rtl_ax_h2c_start(...) ((void)0)

@@ -2,6 +2,7 @@
 """Exercise actual iwinfo scan requests and native RX delivery without hardware."""
 from pathlib import Path
 import resource
+import re
 import subprocess
 import tempfile
 
@@ -13,7 +14,7 @@ monitor = 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/re
 
 
 def function(source, name):
-    at = source.index(name + '(')
+    at = re.search(r'^static (?:inline )?\w+ ' + name + r'\(', source, re.M).start()
     start = source.rfind('\n', 0, at) + 1
     end = source.index('{', at) + 1
     depth = 1
@@ -156,7 +157,7 @@ enum { RX_FLAG_NO_SIGNAL_VAL=1, RX_FLAG_ONLY_MONITOR=2, RX_FLAG_DECRYPTED=4,
  RX_FLAG_FAILED_FCS_CRC=8, RX_ENC_FLAG_SHORT_GI=16 };
 struct ieee80211_rx_status {
  u32 flag; unsigned band, freq, bw, encoding, rate_idx, enc_flags, nss, he_gi;
- u64 boottime_ns;
+ u64 boottime_ns; int signal;
 };
 struct sk_buff { struct ieee80211_rx_status status; unsigned len; u8 data[256]; };
 struct rtl_ax_rx_packet {
@@ -164,6 +165,9 @@ struct rtl_ax_rx_packet {
  bool icv_error, crc_error;
 };
 struct rtl_ax_ap {
+ struct sk_buff *scan_pending; u32 scan_word0, scan_word1;
+ u64 scan_matched, scan_unmatched, scan_received_ns;
+ u8 scan_last_bssid[6], scan_last_rpl;
  bool ap_started; unsigned chip; struct { unsigned primary; } channel; void *hw;
  u64 rx_decrypted, mac80211_packets, rx_copy_bytes, rx_prepare_ns, rx_mac80211_ns;
 };
@@ -176,7 +180,8 @@ static __le16 read_frame_control(const void *p) { __le16 v; memcpy(&v, p, sizeof
 #define get_unaligned(p) read_frame_control(p)
 static bool ieee80211_is_beacon(__le16 fc) { return (fc & 0xfc) == 0x80; }
 static bool ieee80211_is_probe_resp(__le16 fc) { return (fc & 0xfc) == 0x50; }
-static u64 ktime_get_ns(void) { return 123456; }
+static u64 test_time = 123456;
+static u64 ktime_get_ns(void) { return test_time; }
 static u64 ktime_get_boottime_ns(void) { return 987654; }
 static struct sk_buff *dev_alloc_skb(unsigned bytes) {
  assert(bytes <= 256); return calloc(1, sizeof(struct sk_buff));
@@ -195,6 +200,7 @@ static void rtl_ax_ps_poll(struct rtl_ax_ap *radio, const struct rtl_ax_rx_packe
  (void)radio; (void)packet;
 }
 '''
+rx_model += '#define get_unaligned_le32 rtl_ax_ap_read32\n' + (root / monitor).with_name('scan.h').read_text()
 rx_checks = r'''
 int main(void) {
  u8 descriptor[32] = {}, frame[40] = {};
@@ -216,9 +222,13 @@ int main(void) {
   if (packet.skb) skb_put_data(packet.skb, frame, sizeof(frame));
   unsigned before=deliveries;
   assert(!rtl_ax_monitor_receive(&radio, &packet));
-  assert(deliveries==before+1);
   bool discovery=types[i]==0x80 || types[i]==0x50;
-  assert(!!(received.flag & RX_FLAG_ONLY_MONITOR)==(!ap && !discovery));
+  if (discovery && !crc) {
+   assert(deliveries==before && radio.scan_pending);
+   rtl_ax_scan_complete_frame(&radio, NULL);
+  }
+  assert(deliveries==before+1);
+  assert(!!(received.flag & RX_FLAG_ONLY_MONITOR)==((!ap && !discovery) || (discovery && !crc)));
   assert(!!(received.flag & RX_FLAG_FAILED_FCS_CRC)==crc);
   assert(received.flag & RX_FLAG_NO_SIGNAL_VAL);
   assert(received.band==(chip==2 ? NL80211_BAND_5GHZ : NL80211_BAND_2GHZ));
@@ -236,6 +246,43 @@ int main(void) {
  u32 decrypted=BIT(2); memcpy(descriptor+12, &decrypted, sizeof(decrypted));
  packet.icv_error=true;
  assert(rtl_ax_monitor_receive(&radio, &packet)==-EBADMSG && deliveries==before);
+ /* Unassociated beacon RSSI comes from its own following PPDU, not MACID. */
+ u8 phy[48] = {}, report_wd[32] = {};
+ struct rtl_ax_rx_packet report = {.descriptor=report_wd, .payload=phy, .bytes=sizeof(phy)};
+ u32 mac_info=BIT(23); memcpy(report_wd, &mac_info, 4);
+ phy[8]=0x8c; phy[9]=5; phy[16]=1; phy[17]=147;
+ packet.icv_error=false; frame[0]=0x80; memset(descriptor+12, 0, 4);
+ for (unsigned id=0; id<8; id++) {
+  u32 w=4U<<16 | id<<4; memcpy(descriptor+4,&w,4); memcpy(report_wd+4,&w,4);
+  assert(!rtl_ax_monitor_receive(&radio,&packet));
+  assert(radio.scan_pending);
+  rtl_ax_scan_complete_frame(&radio,&report);
+  assert(received.signal==-37 && !(received.flag & RX_FLAG_NO_SIGNAL_VAL));
+  assert(!(received.flag & RX_FLAG_ONLY_MONITOR) && !radio.scan_pending);
+  for (unsigned bit=0; bit<32; bit++) {
+   u32 wrong=w^(1U<<bit); memcpy(report_wd+4,&wrong,4);
+   assert(!rtl_ax_monitor_receive(&radio,&packet));
+   rtl_ax_scan_complete_frame(&radio,&report);
+   assert(!!(received.flag & RX_FLAG_NO_SIGNAL_VAL)==!!((1U<<bit)&0xefff007f));
+  }
+  memcpy(report_wd+4,&w,4);
+ }
+ for (unsigned len=0; len<sizeof(phy); len++) {
+  report.bytes=len;
+  assert(!rtl_ax_monitor_receive(&radio,&packet));
+  rtl_ax_scan_complete_frame(&radio,&report);
+  assert(received.flag & RX_FLAG_NO_SIGNAL_VAL);
+ }
+ report.bytes=sizeof(phy); report.crc_error=true;
+ assert(!rtl_ax_monitor_receive(&radio,&packet));
+ rtl_ax_scan_complete_frame(&radio,&report);
+ assert(received.flag & RX_FLAG_NO_SIGNAL_VAL);
+ report.crc_error=false;
+ assert(!rtl_ax_monitor_receive(&radio,&packet));
+ test_time += 20000000;
+ rtl_ax_scan_complete_frame(&radio,&report);
+ assert(received.flag & RX_FLAG_NO_SIGNAL_VAL);
+ puts("Scan RSSI: unassociated BSS, all PPDU IDs, rate/GI/BW mismatches, truncation and CRC rejection passed");
  printf("Native RX: %u AP/pre-AP, band, DMA/copy, management/data and CRC cases; short/rate/ICV rejection passed\n", cases);
  return 0;
 }
@@ -255,7 +302,7 @@ with tempfile.TemporaryDirectory(prefix='tyfza1-scan-test-') as folder:
     radio_source = (root / monitor).read_text()
     cases = {
         'iwinfo': iwinfo_model + function(source.read_text(), 'nl80211_get_scanlist_nl') + iwinfo_checks,
-        'rx': rx_model + function(radio_source, 'rtl_ax_monitor_receive') + rx_checks,
+        'rx': rx_model + function(radio_source, 'rtl_ax_scan_complete_frame') + function(radio_source, 'rtl_ax_monitor_receive') + rx_checks,
     }
     failed = []
     for name, content in cases.items():

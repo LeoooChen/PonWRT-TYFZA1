@@ -83,6 +83,7 @@ static void rtl_ax_monitor_stop(struct ieee80211_hw *hw, bool suspend)
 	ret = rtl_ax_tx_pause(radio->tx);
 	if (ret) dev_err(&radio->pdev->dev, "TX pause on radio stop failed: %d\n", ret);
 	rtl_ax_rx_close(radio->rx);
+	rtl_ax_scan_complete_frame(radio, NULL);
 	radio->dfs.error = rtl_ax_dfs_stop_locked(radio);
 	if (radio->dfs.error)
 		dev_err(&radio->pdev->dev, "radar stop failed: %d\n", radio->dfs.error);
@@ -828,6 +829,31 @@ static void rtl_ax_monitor_filter(struct ieee80211_hw *hw,
 	*flags &= FIF_ALLMULTI | FIF_BCN_PRBRESP_PROMISC | FIF_CONTROL |
 		FIF_OTHER_BSS | FIF_PSPOLL | FIF_PROBE_REQ | FIF_MCAST_ACTION;
 	mutex_lock(&radio->command_mutex);
+	rtl_ax_receive_mode(&radio->io, radio->ap_started && !radio->scanning ? 4 : 0);
+	mutex_unlock(&radio->command_mutex);
+}
+
+static void rtl_ax_sw_scan_start(struct ieee80211_hw *hw,
+	struct ieee80211_vif *vif, const u8 *mac_addr)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+
+	mutex_lock(&radio->command_mutex);
+	radio->scanning = true;
+	/* Include foreign beacons, not only address-1 matches. */
+	rtl_ax_update32(&radio->io, 0xce40, BIT(4), BIT(0));
+	mutex_unlock(&radio->command_mutex);
+}
+
+static void rtl_ax_sw_scan_complete(struct ieee80211_hw *hw,
+	struct ieee80211_vif *vif)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+
+	mutex_lock(&radio->command_mutex);
+	radio->scanning = false;
+	rtl_ax_update32(&radio->io, 0xce40, BIT(0) | BIT(4),
+		BIT(4) | (radio->ra_sampling ? BIT(0) : 0));
 	rtl_ax_receive_mode(&radio->io, radio->ap_started ? 4 : 0);
 	mutex_unlock(&radio->command_mutex);
 }
@@ -1197,7 +1223,8 @@ static void rtl_ax_ra_work(struct wiphy *wiphy, struct wiphy_work *work)
 		wiphy_delayed_work_queue(wiphy, &radio->ra_work, msecs_to_jiffies(20));
 		return;
 	}
-	rtl_ax_update32(&radio->io, 0xce40, BIT(0), 0);
+	if (!radio->scanning)
+		rtl_ax_update32(&radio->io, 0xce40, BIT(0), 0);
 	radio->ra_sampling = false;
 	spin_lock_irqsave(&radio->command_lock, flags);
 	for (i = 1; i < 128; i++) {
@@ -1311,6 +1338,8 @@ static const struct ieee80211_ops rtl_ax_monitor_ops = {
 	.get_key_seq = rtl_ax_get_key_seq,
 	.set_tim = rtl_ax_set_tim,
 	.configure_filter = rtl_ax_monitor_filter,
+	.sw_scan_start = rtl_ax_sw_scan_start,
+	.sw_scan_complete = rtl_ax_sw_scan_complete,
 	.add_chanctx = ieee80211_emulate_add_chanctx,
 	.remove_chanctx = ieee80211_emulate_remove_chanctx,
 	.change_chanctx = ieee80211_emulate_change_chanctx,
@@ -1337,6 +1366,39 @@ static void rtl_ax_ps_poll(struct rtl_ax_ap *radio, const struct rtl_ax_rx_packe
 		radio->ps_poll_requests++;
 		radio->ps_poll_errors += !!rtl_ax_host_getpkt(&radio->io, macid);
 	}
+}
+
+static void rtl_ax_scan_complete_frame(struct rtl_ax_ap *radio,
+	const struct rtl_ax_rx_packet *report)
+{
+	struct sk_buff *skb = radio->scan_pending;
+	struct ieee80211_rx_status *status;
+	int rpl = -EINVAL;
+
+	if (!skb) return;
+	radio->scan_pending = NULL;
+	/* Do not match a wrapped PPDU ID after a report-sampling gap. */
+	if (report && ktime_get_ns() - radio->scan_received_ns < 20000000 &&
+	    !report->crc_error &&
+	    (rtl_ax_ap_read32(report->descriptor) & BIT(23)) &&
+	    rtl_ax_scan_ppdu_match(radio->scan_word0, radio->scan_word1,
+		rtl_ax_ap_read32(report->descriptor),
+		rtl_ax_ap_read32(report->descriptor + 4)))
+		rpl = rtl_ax_scan_rpl(report->payload, report->bytes);
+	status = IEEE80211_SKB_RXCB(skb);
+	if (rpl >= 0) {
+		status->signal = (rpl >> 1) - 110;
+		status->flag &= ~RX_FLAG_NO_SIGNAL_VAL;
+		radio->scan_last_rpl = rpl;
+		memcpy(radio->scan_last_bssid, skb->data + 16, 6);
+		radio->scan_matched++;
+	} else {
+		/* Keep unknown samples out of the BSS cache: a zero signal would
+		 * overwrite a real measurement and become -256 in iwinfo. */
+		status->flag |= RX_FLAG_ONLY_MONITOR;
+		radio->scan_unmatched++;
+	}
+	ieee80211_rx_ni(radio->hw, skb);
 }
 
 static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
@@ -1439,7 +1501,15 @@ static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 	/* RX dispatch runs in rtl_ax_rx_work, not the hardware IRQ. Process
 	 * the frame here so rx_close's synchronous work cancellation also
 	 * completes mac80211 delivery before .stop returns. */
-	ieee80211_rx_ni(radio->hw, skb);
+	if (packet->bytes >= 36 + FCS_LEN && !packet->crc_error && (ieee80211_is_beacon(frame_control) ||
+	    ieee80211_is_probe_resp(frame_control))) {
+		radio->scan_pending = skb;
+		radio->scan_word0 = rtl_ax_ap_read32(packet->descriptor);
+		radio->scan_word1 = rtl_ax_ap_read32(packet->descriptor + 4);
+		radio->scan_received_ns = ktime_get_ns();
+	} else {
+		ieee80211_rx_ni(radio->hw, skb);
+	}
 	if (profile)
 		radio->rx_mac80211_ns += ktime_get_ns() - delivered;
 	return 0;
@@ -1521,6 +1591,7 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	hw->wiphy->reg_notifier = rtl_ax_regulatory_notify;
 	hw->sta_data_size = sizeof(struct rtl_ax_station);
 	ieee80211_hw_set(hw, RX_INCLUDES_FCS);
+	ieee80211_hw_set(hw, SIGNAL_DBM);
 	ieee80211_hw_set(hw, RX_INLINE);
 	/* mac80211 handles BIP and SW_MGMT_TX; RX retains the CCMP IV/MIC. */
 	ieee80211_hw_set(hw, MFP_CAPABLE);

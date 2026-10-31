@@ -35,6 +35,11 @@ cp "$PORT/host-patches/130-iwinfo-txpower-unknown.patch" \
     "$TREE/package/network/utils/iwinfo/patches/130-iwinfo-txpower-unknown.patch"
 cp "$PORT/host-patches/131-iwinfo-ap-scan.patch" \
     "$TREE/package/network/utils/iwinfo/patches/131-iwinfo-ap-scan.patch"
+cp "$PORT/host-patches/132-iwinfo-scan-timeout.patch" \
+    "$TREE/package/network/utils/iwinfo/patches/132-iwinfo-scan-timeout.patch"
+mkdir -p "$TREE/package/system/rpcd/patches"
+cp "$PORT/host-patches/132-rpcd-scan-pause.patch" \
+    "$TREE/package/system/rpcd/patches/132-rpcd-scan-pause.patch"
 if [ -d "$TREE/feeds/luci/modules/luci-mod-status" ]; then
     sh "$PORT/scripts/apply-luci-patches.sh" "$TREE"
 fi

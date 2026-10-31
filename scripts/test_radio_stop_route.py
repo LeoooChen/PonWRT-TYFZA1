@@ -12,6 +12,7 @@ common=r'''
 #include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
+#define rtl_ax_scan_complete_frame(...) ((void)0)
 #define BIT(n) (1U<<(n))
 #define WRITE_ONCE(p,v) ((p)=(v))
 #define spin_lock_irqsave(l,f) ((void)(l),(f)=0)
