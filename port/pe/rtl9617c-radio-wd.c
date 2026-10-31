@@ -226,6 +226,8 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	u32 rate = request[3], flags = request[4], aggregation = request[5];
 	u32 ring = ring_info & 7, slot = (ring_info >> 8) & 255, next = (ring_info >> 16) & 255;
 	if (mailbox[24]) { slot = mailbox[32 + ring]; next = (slot + 1) & 255; }
+	u32 wd_slot = mailbox[RTL_AX_TX_WD_NEXT + ring];
+	u32 wd_page = ring * RTL_AX_TX_WD_PER_RING + wd_slot;
 	u32 segments = packet >> 24, count = 0, used = 64;
 	u32 aggregate = aggregation & 255;
 	if (ni_packet) *(u32 *)(memory + 0xe000 + (id - 256) * 4) = rate;
@@ -391,9 +393,12 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	if (!ni_packet && (flags & (BIT(18) | BIT(22))))
 		header_copy(uncached(mailbox[14] + id * 128), header,
 			((packet >> 16) & 63) + (flags & BIT(18) ? 8 : 0));
-	u32 *published = uncached(mailbox[12] + id * 128);
+	/* RPQ releases payload/WP ownership, not PCIe's retained WD page. */
+	u32 *published = uncached(mailbox[12] + wd_page * 128);
 	for (u32 i = 0; i < (used + 3) / 4; i++) published[i] = page_words[i];
-	word(txbd, BIT(30) | used); word(txbd + 4, mailbox[12] + id * 128);
+	word(txbd, BIT(30) | used); word(txbd + 4, mailbox[12] + wd_page * 128);
+	mailbox[RTL_AX_TX_WD_NEXT + ring] = wd_slot + 1 == RTL_AX_TX_WD_PER_RING ? 0 : wd_slot + 1;
+	mailbox[RTL_AX_TX_LAST_WD] = wd_page;
 	/* The batch publisher orders all DMA writes before its doorbells. */
 	*next_producer = next;
 	if (mailbox[24]) mailbox[32 + ring] = next;

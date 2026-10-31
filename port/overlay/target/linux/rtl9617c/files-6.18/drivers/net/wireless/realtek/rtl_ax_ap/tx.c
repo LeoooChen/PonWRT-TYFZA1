@@ -80,6 +80,7 @@ struct rtl_ax_tx {
 	struct rtl_ax_tx_slot slots[RTL_AX_TX_ENTRIES];
 	DECLARE_BITMAP(pending, RTL_AX_TX_ENTRIES);
 	unsigned int producer[RTL_AX_TX_RINGS];
+	unsigned int wd_producer[RTL_AX_TX_RINGS];
 	u64 submitted_ring[RTL_AX_TX_RINGS], completed_ring[RTL_AX_TX_RINGS];
 	bool running, paused, dfs_blocked;
 	bool checksum_enabled;
@@ -199,7 +200,7 @@ struct rtl_ax_tx *rtl_ax_tx_prepare(struct pci_dev *pdev, const struct rtl_ax_io
 		tx->dma_device = &tx->pe.device->dev;
 	}
 	tx->ring = dma_alloc_coherent(tx->dma_device, RTL_AX_TX_RINGS * RTL_AX_TX_ENTRIES * 8, &tx->ring_dma, GFP_KERNEL);
-	tx->pages = dma_alloc_coherent(tx->dma_device, RTL_AX_TX_PAGES * RTL_AX_TX_WP_BYTES,
+	tx->pages = dma_alloc_coherent(tx->dma_device, RTL_AX_TX_WD_PAGES * RTL_AX_TX_WP_BYTES,
 		&tx->pages_dma, GFP_KERNEL);
 	tx->headers = dma_alloc_coherent(tx->dma_device, RTL_AX_TX_PAGES * 128, &tx->headers_dma, GFP_KERNEL);
 	if (!tx->ring || !tx->pages || !tx->headers) {
@@ -207,7 +208,7 @@ struct rtl_ax_tx *rtl_ax_tx_prepare(struct pci_dev *pdev, const struct rtl_ax_io
 		goto release;
 	}
 	memset(tx->ring, 0, RTL_AX_TX_RINGS * RTL_AX_TX_ENTRIES * 8);
-	memset(tx->pages, 0, RTL_AX_TX_PAGES * RTL_AX_TX_WP_BYTES);
+	memset(tx->pages, 0, RTL_AX_TX_WD_PAGES * RTL_AX_TX_WP_BYTES);
 	/* Before the common BDRAM reset in H2C setup, install channel8
 	 * from the original C/XB register map and bdram table{40,5,1}. */
 	rtl_ax_update32(io, 0x1010, 0, RTL_AX_TX_STOP_MASK);
@@ -590,7 +591,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		ret = -ENOSPC;
 		goto unmap;
 	}
-	page = tx->pages + id * RTL_AX_TX_WP_BYTES;
+	page = tx->pages + (ring * RTL_AX_TX_WD_PER_RING + tx->wd_producer[ring]) * RTL_AX_TX_WP_BYTES;
 	if (encap || ieee80211_is_data(header->frame_control))
 		rate |= tx->peer_rates[macid] & BIT(22);
 	if (tx->pe_active) {
@@ -696,7 +697,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	tx->occupied++;
 	if (!tx->pe_active)
 		rtl_ax_txbd(tx->ring + (ring * RTL_AX_TX_ENTRIES + tx->producer[ring]) * 8,
-		lower_32_bits(tx->pages_dma + id * RTL_AX_TX_WP_BYTES), length);
+		lower_32_bits(tx->pages_dma + (page - tx->pages)), length);
 	dma_wmb();
 	tx->producer[ring] = next;
 	tx->submitted++;
@@ -710,7 +711,10 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	tx->ampdu_submitted += !!aggregate;
 	tx->submitted_ring[ring]++;
 	tx->last_sequence = id;
-	if (!tx->pe_active) memcpy(tx->last_words, page, sizeof(tx->last_words));
+	if (!tx->pe_active) {
+		memcpy(tx->last_words, page, sizeof(tx->last_words));
+		if (++tx->wd_producer[ring] == RTL_AX_TX_WD_PER_RING) tx->wd_producer[ring] = 0;
+	}
 	if (tx->pe_active) {
 		tx->pe_producer = (tx->pe_producer + 1) & 255;
 		put_unaligned_le32(tx->pe_producer, tx->pe.memory + PE_PROBE_MAILBOX + 32);
@@ -992,7 +996,7 @@ int rtl_ax_tx_free(struct rtl_ax_tx *tx, struct ieee80211_hw *hw)
 		}
 	if (tx->headers) dma_free_coherent(tx->dma_device, RTL_AX_TX_PAGES * 128, tx->headers, tx->headers_dma);
 	if (tx->pages)
-		dma_free_coherent(tx->dma_device, RTL_AX_TX_PAGES * RTL_AX_TX_WP_BYTES, tx->pages, tx->pages_dma);
+		dma_free_coherent(tx->dma_device, RTL_AX_TX_WD_PAGES * RTL_AX_TX_WP_BYTES, tx->pages, tx->pages_dma);
 	if (tx->ring)
 		dma_free_coherent(tx->dma_device, RTL_AX_TX_RINGS * RTL_AX_TX_ENTRIES * 8, tx->ring, tx->ring_dma);
 	if (tx->pe.memory)
@@ -1015,9 +1019,9 @@ int rtl_ax_tx_status(struct rtl_ax_tx *tx, char *out, size_t capacity)
 
 	spin_lock_irqsave(&tx->lock, flags);
 	if (tx->pe_active) {
-		/* PE owns WP IDs 256..383; truncating to eight bits shows an ARM WD. */
-		unsigned int id = get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 52);
-		memcpy(tx->last_words, tx->pages + id * RTL_AX_TX_WP_BYTES, sizeof(tx->last_words));
+		unsigned int page = get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + RTL_AX_TX_LAST_WD * 4);
+		if (page < RTL_AX_TX_WD_PAGES)
+			memcpy(tx->last_words, tx->pages + page * RTL_AX_TX_WP_BYTES, sizeof(tx->last_words));
 	}
 	length = scnprintf(out, capacity, "native_TX_running=%u submitted=%llu completed=%llu pending=%u "
 		"last_sequence=%u last_RPQ=%08x polluted=%llu unmatched=%llu full=%llu stopped=%llu "

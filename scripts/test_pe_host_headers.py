@@ -14,7 +14,7 @@ words = list(struct.unpack('<%dI' % (len(code) // 4), code))
 for i, word in enumerate(words):
     if word in (0x4c880000, 0x4c880800, 0x4c882000, 0x4c882800, 0x4cc80000, 0x4cc81000): words[i] = 0
     if word == 0x4c084000: words[i] = 0x24080000
-base, mailbox, ring, pages, headers = 0x04000000, 0x04002000, 0x05000000, 0x05100000, 0x05200000
+base, mailbox, ring, pages, headers = 0x04000000, 0x04002000, 0x05000000, 0x05100000, 0x05400000
 words[0] |= (mailbox | 0xa0000000) >> 16
 words[1] |= mailbox & 65535
 words[2] |= (base | 0x80000000) >> 16
@@ -31,7 +31,7 @@ for encap, payload_bytes in ((encap, size) for encap in (True, False)
                             for size in (0, 1, 1500, 2048)):
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
     for at, size in ((0x1fc00000,0x10000),(base,0x20000),(ring,0x10000),
-                     (pages,0x10000),(headers,0x10000),(0x11000000,0x100000),
+                     (pages,0x32000),(headers,0x10000),(0x11000000,0x100000),
                      (0x12000000,0x100000),(0x10020000,0x1000)):
         u.mem_map(at,size)
     u.mem_write(0x1fc00000,struct.pack('<%dI'%len(words),*words))
@@ -76,7 +76,7 @@ for encap, payload_bytes in ((encap, size) for encap in (True, False)
     assert get(mailbox+36)==1
     actual=bytes(u.mem_read(headers+7*128,len(expected)))
     assert actual==expected,('Ethernet' if encap else 'raw QoS',actual.hex(),expected.hex())
-    wp=bytes(u.mem_read(pages+7*128,128))
+    wp=bytes(u.mem_read(get(ring+4),128))
     count=struct.unpack_from('<I',wp,4)[0]>>26
     segments=[struct.unpack_from('<HI',wp,64+i*6) for i in range(count)]
     lengths=[length & 2047 for length, address in segments]

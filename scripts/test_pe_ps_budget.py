@@ -69,7 +69,7 @@ class Radio:
         self.u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
         for address, size in [(0x1fc00000, 0x10000), (BASE, 0x20000), (NI, 0x10000),
                               (BAR, 0x10000), (EPP, 0x40000), (PAYLOAD, 0x600000),
-                              (RING, 0x4000), (PAGES, 0xc000), (0x10020000, 0x1000)]:
+                              (RING, 0x4000), (PAGES, 0x32000), (0x10020000, 0x1000)]:
             self.u.mem_map(address, size)
         self.u.mem_write(0x1fc00000, binary)
         for index, value in [(0, 0x50455744), (2, BAR | 0xa0000000), (3, 1),

@@ -29,8 +29,8 @@ for crypto in (0, 15, 16):
 directory = Path(sys.argv[1])
 u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
 base, mailbox, pages, headers, payload, ring, bar = (
-    0x04000000, 0x04002000, 0x05100000, 0x05200000, 0x06000000, 0x05000000, 0x12000000)
-for address, size in [(0x1fc00000, 0x10000), (base, 0x20000), (pages, 0xc000),
+    0x04000000, 0x04002000, 0x05100000, 0x05400000, 0x06000000, 0x05000000, 0x12000000)
+for address, size in [(0x1fc00000, 0x10000), (base, 0x20000), (pages, 0x32000),
                       (headers, 0xc000), (payload, 0x10000), (ring, 0x4000),
                       (bar, 0x10000), (0x10020000, 0x1000)]:
     u.mem_map(address, size)
@@ -86,7 +86,7 @@ for number, (encap, tid, scatter, crypto) in enumerate([
     put(mailbox + 8 * 4, number + 1)
     u.emu_start(pc, 0x9fc0fff0, count=50000)
     pc = u.reg_read(UC_MIPS_REG_PC)
-    page = bytes(u.mem_read(pages + number * 128, 128))
+    page = bytes(u.mem_read(get(ring + number * 8 + 4), 128))
     assert (struct.unpack_from('<I', page, 0)[0] >> 24) & 31 == offsets[crypto]
     count = struct.unpack_from('<I', page, 4)[0] >> 26
     sequence = sequences[tid]

@@ -36,6 +36,12 @@
 #define RTL_AX_NI_PS_SCAN 196
 /* Six PE1-owned words, one per published TX DMA channel. */
 #define RTL_AX_TX_LAST_PACKET 197
+/* PCIe retains eight consumed WDs per channel (factory txbd_multi_tag).
+ * Keep 256 ring slots plus those eight pages, independent of RPQ WP IDs. */
+#define RTL_AX_TX_WD_PER_RING 264
+#define RTL_AX_TX_WD_PAGES (6 * RTL_AX_TX_WD_PER_RING)
+#define RTL_AX_TX_LAST_WD 203
+#define RTL_AX_TX_WD_NEXT 204
 #define RTL_AX_NI_PS_CANCEL 0x19a00
 #define RTL_AX_NI_PS_VERSION 0x19e00
 #define RTL_AX_NI_PS_WP_GENERATION 0x1b800

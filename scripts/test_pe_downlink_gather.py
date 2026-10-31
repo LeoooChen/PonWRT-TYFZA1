@@ -16,10 +16,10 @@ binary = (directory / 'pe-tx.bin').read_bytes()
 
 def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False):
     base, mb, pages, headers, payload, ring, bar, ni, reports = (
-        0x04000000, 0x04002000, 0x05100000, 0x05200000, 0x06000000,
+        0x04000000, 0x04002000, 0x05100000, 0x05400000, 0x06000000,
         0x05000000, 0x12000000, 0x10000000, 0x06200000)
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-    for at, size in [(0x1fc00000, 0x10000), (base, 0x20000), (pages, 0xc000),
+    for at, size in [(0x1fc00000, 0x10000), (base, 0x20000), (pages, 0x32000),
                      (headers, 0xc000), (payload, 0x10000), (ring, 0x4000),
                      (bar, 0x10000), (ni, 0x10000), (reports, 0x80000),
                      (0x10020000, 0x1000), (0x10030000, 0x1000)]:
@@ -95,7 +95,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     member = 0
     all_ids = []
     for slot in range(len(submits)):
-        page = bytes(u.mem_read(pages + (256 + slot) * 128, 128))
+        page = bytes(u.mem_read(get(ring + slot * 8 + 4), 128))
         count = struct.unpack_from('<I', page, 4)[0] >> 26
         assert bool(struct.unpack_from('<I', page, 32)[0] & (1 << 12)) == hw_rts
         assert struct.unpack_from('<I', page, 28)[0] >> 28 & 3 == bandwidth

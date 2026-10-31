@@ -34,7 +34,7 @@ class Machine:
         self.u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
         for address, size in ((0x1fc00000, 0x10000), (RX, 0x20000),
                               (TX, 0x20000), (BAR, 0x10000), (RING, 0x4000),
-                              (PAGES, 0xc000), (PAYLOAD, 0x10000),
+                              (PAGES, 0x32000), (PAYLOAD, 0x10000),
                               (TABLE, 0x1000), (RX_BUFFER, 0x4000),
                               (0x10000000, 0x10000), (0x10020000, 0x1000)):
             self.u.mem_map(address, size)
@@ -82,7 +82,7 @@ class Machine:
         kind = None
         if address in [BAR + register for register in REGISTERS]:
             kind = 'doorbell'
-        elif RING <= address < RING + 0x4000 or PAGES <= address < PAGES + 0xc000:
+        elif RING <= address < RING + 0x4000 or PAGES <= address < PAGES + 0x31800:
             kind = 'descriptor'
         elif TXMB + WRITE * 4 <= address <= TXMB + READ * 4:
             kind = 'handoff'
@@ -156,8 +156,8 @@ class Machine:
         for ring in rings:
             descriptor = RING + (ring * 256 + ((NEXT[ring] - 1) & 255)) * 8
             assert self.get(descriptor) == 1 << 30 | 70
-            assert self.get(descriptor + 4) == PAGES + ring * 128
-            page = bytes(self.u.mem_read(PAGES + ring * 128, 128))
+            assert self.get(descriptor + 4) == PAGES + ring * 264 * 128
+            page = bytes(self.u.mem_read(PAGES + ring * 264 * 128, 128))
             assert struct.unpack_from('<I', page)[0] >> 16 & 15 == CHANNELS[ring]
             length, address = struct.unpack_from('<HI', page, 64)
             assert length == 0x8000 | 80 and address == PAYLOAD + ring * 256
@@ -166,7 +166,7 @@ class Machine:
     def snapshot(self):
         return (bytes(self.u.mem_read(TXMB + WRITE * 4, 2 * 4)),
                 bytes(self.u.mem_read(RING, 0x4000)),
-                bytes(self.u.mem_read(PAGES, 0xc000)))
+                bytes(self.u.mem_read(PAGES, 0x32000)))
 
 
 def check_publish(machine, events, rings, sequence):
@@ -268,10 +268,10 @@ dual.queue()
 second = TX + 0x20000
 second_mb = second + 0x2000
 dual.u.mem_map(second, 0x20000)
-dual.u.mem_map(PAGES + 0x10000, 0x10000)
+dual.u.mem_map(PAGES + 0x40000, 0x32000)
 dual.u.mem_map(RING + 0x10000, 0x10000)
 for index, value in ((2, BAR | 0xa0000000), (3, 1), (8, 1),
-                     (11, RING + 0x10000), (12, PAGES + 0x10000)):
+                     (11, RING + 0x10000), (12, PAGES + 0x40000)):
     dual.put(second_mb + index * 4, value)
 request = [0] * 32
 request[0], request[2], request[3] = 10, 80 | 1 << 24, 4
@@ -293,7 +293,7 @@ for register in REGISTERS:
 dual.run('PE1', 30000)
 dual.descriptors(range(6))
 assert dual.get(TXMB + READ * 4) == 6 and dual.get(second_mb + READ * 4) == 1
-page = bytes(dual.u.mem_read(PAGES + 0x10000 + 10 * 128, 128))
+page = bytes(dual.u.mem_read(dual.get(RING + 0x10000 + (256 + 6) * 8 + 4), 128))
 assert struct.unpack_from('<HI', page, 64) == (0x8000 | 80, PAYLOAD + 8192)
 
 # Seven Ethernet buffers must remain one NI MPDU through local publication.
@@ -316,7 +316,7 @@ ni.put(TXMB + 8 * 4, 255)
 ni.run('PE0')
 assert ni.get(TXMB + 28 * 4) == 0
 ni.run('PE1')
-page = bytes(ni.u.mem_read(PAGES + 256 * 128, 128))
+page = bytes(ni.u.mem_read(ni.get(RING + 4), 128))
 assert ni.get(TXMB + 28 * 4) == 7
 assert struct.unpack_from('<I', page, 4)[0] >> 26 == 7
 for part in range(7):
