@@ -1478,13 +1478,13 @@ Original response dispatch `40d198` accepts a result-only acknowledgement while
 a request is pending; execution with `Result:0`/`Result:1` confirms it retires
 the pending slot in either case. Its zero result takes the failure branch.
 An acknowledgement need not carry `RPCMethod`, `MAC` or Wi-Fi values. Therefore
-it cannot prove configuration readback. Subsequent reports and discovery must
-be traced before enabling automatic writes through this protocol.
+it cannot prove configuration readback. The later Flag1 read/report path below
+provides a separate observation, still without authenticated transaction IDs.
 
 The package now installs a native, read-only diagnostic:
 
 ```sh
-fttr-sync <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype>
+fttr-sync <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [wifi-settings]
 fttr-sync <interface> discover <ethertype>
 ```
 
@@ -1506,8 +1506,9 @@ SSID/key values, unknown fields and raw replies are never printed.
 
 There is no request transaction ID in the verified header. A stale identical
 response from the same peer cannot be distinguished by this diagnostic;
-its output must not be used as configuration-transaction acceptance. No Set,
-reboot or upgrade command is exposed.
+its output must not be used as configuration-transaction acceptance. No
+configuration write, reboot or upgrade command is exposed. The optional
+`wifi-settings` command uses the read action described below.
 
 `scripts/test_fttr_sync.py` compares36 native frames against actual original
 encoding (six security cases, slots0/5/15, request/response), checks size limits,
@@ -1586,7 +1587,7 @@ The updated real OpenWrt GCC14.4/musl package stages successfully under
 `artifacts/fttr/discovery-build-20261103/`. Timer/saved-MIB state and peer packets
 are modeled in these checks; no optical or real slave interoperability is claimed.
 Capability/identity authentication, automatic resident syncserv management,
-follow-up reports and verified writes remain required work.
+and verified writes remain required work; Flag1 read reports are covered below.
 
 ### Syncserv JSON receive fragments
 
@@ -1635,9 +1636,92 @@ missing fragments and invalid counts. Reports are
 `artifacts/fttr/fragments-stock-20261103.json` and `fragments-native-20261103.json`;
 OpenWrt GCC14.4/musl package stage and source hashes are in
 `artifacts/fttr/fragments-build-20261103/`. There is no retained slave fragment
-transmitter execution or real slave acceptance evidence yet. ACK-followed
-reports, authenticated identity/capability and verified configuration writes
-remain separate work.
+transmitter execution or real slave acceptance evidence yet. Authenticated
+identity/capability and verified configuration writes remain separate work.
+The Wi-Fi read/report path is now implemented below.
+
+### Wi-Fi settings read and completion report
+
+Further original execution changed the next-step assumption: a pending GetWifi
+(`method2`) consumes `Result` and retires the request without saving its Wi-Fi
+values. GetAllSetting (`method10`, producer `411a10`) instead passes a successful
+reply to `40ad50`, saving the entire JSON as `/var/sync_onuconfig_<JSON MAC>`.
+Neither behavior establishes a later same-name GetWifi report. The original
+pending Result handler also fails to correlate an optional RPCMethod, so its
+acceptance is not sufficient evidence for a native transaction.
+
+The retained `fttrManage:getWifiSsidInfo` at `44d634` reveals another read path:
+it calls `get_syncserv_setting(1, "{\"act\":\"get\"}", target, NULL)` in libmib,
+then reads `content.List` from the returned document. `libmib:get_syncserv_setting`
+at `1a4228` writes a request file, sets the operation flag, wakes the controller
+and waits for the flag/result file. Controller `411e78`/`411c50` construct:
+
+```json
+{"RPCMethod":"SetAllSetting","MAC":"<host>","DMAC":"<target>","Flag":1,"content":{"act":"get"}}
+```
+
+The fttrManage/libmib caller evidence is disassembly, not execution. Their
+SHA-256 values are respectively
+`9c8b1c80b3efe72f0a6f03b27bdf93b3cd6027021c00350b307807f522df195b` and
+`5e14985931f51977c0b0e190bfa1c16122b8614b596f58f7ad121a83beb37ec2`.
+
+Despite the outer method name, this is the original **read** action. Unlike the
+older GetWifi command, its JSON explicitly selects the target DMAC while its
+Ethernet destination remains the slave multicast group. The specific request
+file is `/tmp/syncserv_bssc_<target>`. This request construction is executed in
+`tools/trace_stock_fttr_settings.py`, with the MIB flag and file reads modeled.
+
+Original `40d198` also handles a separate `RPCMethod:"SetAllSetting"`, `Flag:1`
+report. With the modern branch enabled at `42ea84`, it saves `content` to
+`/tmp/syncserv_bssg_<source-peer-MAC>` and clears the pending flag on `STATUS:0`.
+The manager then reads `content.List` inside that saved object (`44d834` and
+`44d860`); consequently the complete Ethernet JSON has `content.content.List`.
+The transport content wrapper and the management document's content wrapper
+are separate. An unwrapped `content.List` reply cannot establish compatibility
+with that actual consumer.
+Execution proves this works after a positive ACK has retired the original
+request state. A nonzero STATUS does not clear the flag; its progress/error
+subcodes have not been established. Original ingress `403e24` queues both
+type6 and type7 into the same JSON dispatcher; source MAC, not a JSON MAC or
+received slot echo, owns this report. This contrasts with the older
+GetAllSetting persistence path above.
+
+The native entry point is:
+
+```sh
+fttr-sync <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> wifi-settings
+```
+
+It sends exactly the fixed Flag1 `act:get` request and waits within the existing
+three-second diagnostic budget. Positive Result only records `ack_seen`; a
+standalone ACK cannot complete the read. Completion requires a matching source,
+SetAllSetting method, integer Flag1 and STATUS0, plus the nested array
+`content.content.List` of objects. An empty List is a valid empty observation. Nonzero
+STATUS waits without extending the budget. An explicit rejected Result fails;
+wrong method/flag/source is ignored, and malformed matching content fails.
+Result/Flag/STATUS comparisons use full64-bit integers to avoid truncating a
+large number into a success value.
+
+Both type6/type7 reports are accepted. Each has separate bounded fragment state,
+and standalone ACK parsing does not clear a fragmented report, including one
+using type7. The output event `sync_wifi_settings` includes only entry count,
+`ack_seen`, `report_complete:true`, `values_redacted:true` and
+`configuration_verified:false`. It never prints returned fields or credentials,
+and does not persist raw configuration. A matching report is an observation;
+the protocol still cannot distinguish a stale identical report from the same
+source, and no authenticated serial/capability or applied-setting claim is made.
+
+The original producer, pending reply/save path, post-ACK report/save/flag path
+and ingress classification are executed by the new oracle. The expanded
+`scripts/test_fttr_sync.py` covers39 AF_PACKET/veth cases, including delayed
+post-ACK reports, direct reports, auto discovery, incomplete STATUS followed by
+completion, both frame types, ACK interleaving within both kinds of fragmented
+report, invalid fields and redaction. Existing36 encoder and56 concatenation
+comparisons remain. Evidence is `artifacts/fttr/settings-stock-20261103.json`,
+`settings-native-20261103.json` and the real GCC14.4/musl package stage with source
+hashes in `settings-build-20261103/`. Slave replies are modeled; slave-side
+production, real optical transport, field-by-field configuration mapping and
+verified writes remain required work.
 
 ### Outstanding implementation and acceptance
 
@@ -1680,9 +1764,9 @@ remain separate work.
    settings mapping and
    actual subordinate capability/behavior verification remain work.
    The independent syncserv JSON path now has original producer/frame evidence
-   and native heartbeat discovery/local MAC binding plus a read-only query;
-   authenticated identity/capability negotiation, report
-   correlation and verified configuration transactions remain work.
+   and native heartbeat discovery/local MAC binding, bounded fragments and
+   Flag1 Wi-Fi read/report completion; authenticated identity/capability,
+   per-field mapping and verified configuration transactions remain work.
 6. FE/PE acceleration and stale-flow invalidation, then hardware acceptance
    with real downstream gateways and a recorded interoperability scope.
 

@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / 'tools'))
 from trace_stock_fttr_sync import SyncOriginal
 from trace_stock_fttr_discovery import DiscoveryOriginal
 from trace_stock_fttr_fragments import FragmentOriginal, fragments
+from trace_stock_fttr_settings import SettingsOriginal
 
 GROUP = bytes.fromhex('0110ec000002')
 MASTER_GROUP = bytes.fromhex('0110ec000001')
@@ -348,10 +349,105 @@ def main():
             cases.append('discovery-'+mode)
 
         for mode in ('auto','list','timeout'):discovery_run(mode)
+
+        settings_stock = SettingsOriginal(args.controller)
+        settings_query = settings_stock.wifi_query()
+
+        def settings_run(case):
+            command = [str(binary),'sync-host',stock.peer.hex(':'),
+                       'auto' if case=='auto' else '5','0x88aa','wifi-settings']
+            process = subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+            deadline = time.monotonic()+5
+            requests = 0
+            reports_at = None
+            response_value = {'RPCMethod':'SetAllSetting','Flag':1,'STATUS':0,
+                              'content':{'content':{'List':[{'Name':'do-not-print-name','Key':'do-not-print-key'}]}}}
+
+            def send(value,kind=7,source=stock.peer):
+                encoded = stock.encode(value,15,kind==6)
+                peer.send(MASTER_GROUP+source+encoded[12:])
+
+            try:
+                while process.poll() is None:
+                    assert time.monotonic()<deadline,case
+                    if reports_at is not None and time.monotonic() >= reports_at:
+                        send(response_value,6)
+                        reports_at=None
+                    ready,_,_=select.select([peer],[],[],0.02)
+                    if not ready:continue
+                    received,address=peer.recvfrom(4096)
+                    if address[2]==socket.PACKET_OUTGOING:continue
+                    if received[14]&15==1:
+                        assert case=='auto'
+                        peer.send(MASTER_GROUP+stock.peer+b'\x88\xaa\x01\0')
+                        continue
+                    requests+=1
+                    expected=stock.encode(settings_query,0 if case=='auto' else 5)
+                    assert received==GROUP+expected[6:]
+                    if case=='ack-only':send({'Result':1});continue
+                    if case=='nack':send({'Result':0,'FailReason':'do-not-print-key'});continue
+                    if case=='unrelated':
+                        send(dict(response_value,Flag=2))
+                        send(dict(response_value,RPCMethod='GetWifi',Result=0))
+                        send(response_value,source=bytes.fromhex('020000000099'))
+                    if case in ('ack-report','auto'):
+                        send({'Result':1})
+                        reports_at=time.monotonic()+0.15
+                        continue
+                    if case=='progress':
+                        send(dict(response_value,STATUS=1))
+                        reports_at=time.monotonic()+0.15
+                        continue
+                    if case=='empty':response_value['content']['content']['List']=[]
+                    if case=='status-incomplete':response_value['STATUS']=1
+                    if case=='status-only':response_value={'RPCMethod':'SetAllSetting','Flag':1,'STATUS':1}
+                    if case=='no-status':del response_value['STATUS']
+                    if case=='no-flag':del response_value['Flag']
+                    if case=='bad-list':response_value['content']['content']['List']=['do-not-print-key']
+                    if case=='unwrapped':response_value['content']=response_value['content']['content']
+                    if case=='large-result':response_value={'Result':4294967297}
+                    if case in ('fragment-report','fragment-response'):
+                        response_value['content']['Extra']='do-not-print-large'*200
+                        body=json.dumps(response_value,separators=(',',':')).encode()
+                        body=len(body).to_bytes(4,'big')+body
+                        kind=6 if case=='fragment-report' else 7
+                        frames=[MASTER_GROUP+stock.peer+b'\x88\xaa'+bytes([0xf0|kind,flags])+part
+                                for part,flags in fragments(body,3,1)]
+                        peer.send(frames[2])
+                        send({'Result':1})  # Response ACK amid request-type fragments.
+                        peer.send(frames[0]);peer.send(frames[1])
+                        continue
+                    send(response_value,6 if case=='request-type' else 7)
+                output,error=process.communicate(timeout=1)
+            finally:
+                if process.poll() is None:process.kill();process.communicate()
+            assert requests==1 and 'do-not-print' not in output+error,(case,error)
+            errors={'ack-only':errno.ETIMEDOUT,'nack':errno.EREMOTEIO,'large-result':errno.EREMOTEIO,
+                    'status-incomplete':errno.ETIMEDOUT,'status-only':errno.ETIMEDOUT,'no-status':errno.EBADMSG,'no-flag':errno.EBADMSG,
+                    'bad-list':errno.EBADMSG,'unwrapped':errno.EBADMSG}
+            if case in errors:
+                assert process.returncode==1 and not output and str(-errors[case]) in error,(case,error,output)
+            else:
+                assert process.returncode==0,(case,error)
+                result=json.loads(output)
+                assert result['event']=='sync_wifi_settings' and result['report_complete']
+                assert not result['configuration_verified'] and result['values_redacted']
+                assert result['ack_seen']==(case in ('ack-report','auto','fragment-report','fragment-response'))
+                assert result['slot']==(0 if case=='auto' else 5)
+                assert result['settings_entries']==(0 if case=='empty' else 1)
+                assert reports_at is None  # Never exit on ACK before the delayed report.
+            cases.append('settings-'+case)
+
+        for case in ('direct','request-type','ack-report','auto','unrelated','empty','fragment-report','fragment-response','progress',
+                     'ack-only','nack','status-incomplete','status-only','no-status','no-flag','bad-list','large-result','unwrapped'):
+            settings_run(case)
         peer.close()
     result={'controller_sha256':hashlib.sha256(args.controller.read_bytes()).hexdigest(),
             'original_frame_comparisons':count,'packet_cases':cases,
             'fragment_concatenation_comparisons':fragment_comparisons,
+            'settings_checks':['Wi-Fi act:get request matches actual original producer including target DMAC',
+                               'positive ACK waits for Flag1 content.content.List and STATUS0; report alone is accepted',
+                               'types6/7, interleaved ACK/fragments, method/flag/source correlation, strict errors and redaction'],
             'checks':['native bytes match original JSON Ethernet encoder at slots 0/5/15, requests and responses',
                       'invalid slot, oversize/truncated length and trailing data are rejected',
                       'bounded fragments match original concatenation; final original dispatch bug is corrected',

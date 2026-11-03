@@ -48,10 +48,11 @@ static int mac_parse(const char *text, uint8_t mac[6])
 }
 
 static int reply_decode(const struct fttr_sync_message *message, const uint8_t peer[6],
-			struct json_object **summary)
+			bool settings, bool *ack_seen, struct json_object **summary)
 {
 	struct json_tokener *parser = json_tokener_new();
-	struct json_object *value = NULL, *field, *result = NULL;
+	struct json_object *value = NULL, *field, *result = NULL, *entries = NULL;
+	const char *method = settings ? "SetAllSetting" : "GetWifi";
 	uint8_t address[6];
 	char mac[18];
 	int ret = -EBADMSG;
@@ -68,14 +69,65 @@ static int reply_decode(const struct fttr_sync_message *message, const uint8_t p
 		goto out;
 	if (json_object_object_get_ex(value, "RPCMethod", &field) &&
 	    (!json_object_is_type(field, json_type_string) ||
-	     json_object_get_string_len(field) != 7 || strcmp(json_object_get_string(field), "GetWifi"))) {
+	     (size_t)json_object_get_string_len(field) != strlen(method) || strcmp(json_object_get_string(field), method))) {
 		ret = -EAGAIN;
 		goto out;
+	}
+	if (settings) {
+		struct json_object *content, *settings_content, *status;
+		bool report;
+
+		if (json_object_object_get_ex(value, "Flag", &field)) {
+			if (!json_object_is_type(field, json_type_int))
+				goto out;
+			if (json_object_get_int64(field) != 1) { ret = -EAGAIN; goto out; }
+		}
+		report = json_object_object_get_ex(value, "content", &content);
+		if (json_object_object_get_ex(value, "Result", &field)) {
+			if (!json_object_is_type(field, json_type_int))
+				goto out;
+			if (json_object_get_int64(field) != 1) { ret = -EREMOTEIO; goto out; }
+			*ack_seen = true;
+		}
+		if (!report) {
+			if (json_object_object_get_ex(value, "STATUS", &status)) {
+				if (!json_object_is_type(status, json_type_int))
+					goto out;
+				if (json_object_get_int64(status) != 0) { ret = -EAGAIN; goto out; }
+				goto out;
+			}
+			ret = -EAGAIN;
+			goto out;
+		}
+		/* Native completion requires the separately identified Flag1 report.
+		 * A positive Result by itself is only an ACK, even with a method. */
+		if (!json_object_object_get_ex(value, "RPCMethod", &field) ||
+		    !json_object_object_get_ex(value, "Flag", &field) ||
+		    !json_object_object_get_ex(value, "STATUS", &status) ||
+		    !json_object_is_type(status, json_type_int))
+			goto out;
+		/* Original leaves the operation pending on nonzero STATUS. Its
+		 * precise progress/error meanings are not established here. */
+		if (json_object_get_int64(status) != 0) { ret = -EAGAIN; goto out; }
+		if (!json_object_is_type(content, json_type_object) ||
+		    !json_object_object_get_ex(content, "content", &settings_content) ||
+		    !json_object_is_type(settings_content, json_type_object) ||
+		    !json_object_object_get_ex(settings_content, "List", &entries) ||
+		    !json_object_is_type(entries, json_type_array))
+			goto out;
+		for (i = 0; i < json_object_array_length(entries); i++)
+			if (!json_object_is_type(json_object_array_get_idx(entries, i), json_type_object))
+				goto out;
+		/* Original report ownership is the Ethernet source resolved at ingress;
+		 * it does not require a redundant JSON MAC or a remote slot echo. */
+		snprintf(mac, sizeof(mac), "%02x:%02x:%02x:%02x:%02x:%02x",
+			peer[0], peer[1], peer[2], peer[3], peer[4], peer[5]);
+		goto summarize;
 	}
 	if (json_object_object_get_ex(value, "Result", &field)) {
 		if (!json_object_is_type(field, json_type_int))
 			goto out;
-		if (json_object_get_int(field) != 1) {
+		if (json_object_get_int64(field) != 1) {
 			ret = -EREMOTEIO;
 			goto out;
 		}
@@ -108,10 +160,16 @@ static int reply_decode(const struct fttr_sync_message *message, const uint8_t p
 	}
 summarize:
 	result = json_object_new_object();
-	json_object_object_add(result, "event", json_object_new_string(acknowledgement ? "sync_ack" : "sync_wifi_reply"));
+	json_object_object_add(result, "event", json_object_new_string(settings ? "sync_wifi_settings" :
+		acknowledgement ? "sync_ack" : "sync_wifi_reply"));
 	json_object_object_add(result, "configuration_verified", json_object_new_boolean(0));
 	json_object_object_add(result, "peer", json_object_new_string(mac));
 	json_object_object_add(result, "slot", json_object_new_int(message->slot));
+	if (settings) {
+		json_object_object_add(result, "ack_seen", json_object_new_boolean(*ack_seen));
+		json_object_object_add(result, "report_complete", json_object_new_boolean(1));
+		json_object_object_add(result, "settings_entries", json_object_new_int(json_object_array_length(entries)));
+	}
 	/* Summarize shape only. GetWifi can contain SSIDs and keys, including
 	 * fields not implemented here. Never print raw JSON or arbitrary values. */
 	json_object_object_add(result, "attributes", json_object_new_int(json_object_object_length(value)));
@@ -194,22 +252,24 @@ int main(int argc, char **argv)
 {
 	struct ifreq request = { 0 };
 	struct fttr_sync_message message;
-	struct fttr_sync_receiver receiver = { 0 };
+	struct fttr_sync_receiver receivers[2] = { 0 };
 	struct json_object *summary = NULL;
 	struct pollfd descriptor;
 	struct sockaddr_un lock = { .sun_family = AF_UNIX };
 	uint8_t peer[6], source[6], frame[FTTR_SYNC_FRAME_MAX];
-	char payload[80], *end;
+	char payload[192], *end;
 	unsigned int index;
 	unsigned long slot, ethertype;
 	int lease = -1, control = -1, fd = -1, ret = -EINVAL, length;
 	int64_t deadline;
 	bool discover = argc == 4 && !strcmp(argv[2], "discover");
-	bool automatic = argc == 5 && !strcmp(argv[3], "auto");
+	bool settings = argc == 6 && !strcmp(argv[5], "wifi-settings");
+	bool automatic = (argc == 5 || settings) && !strcmp(argv[3], "auto");
+	bool ack_seen = false;
 
-	if ((!discover && argc != 5) || strlen(argv[1]) >= IFNAMSIZ || strchr(argv[1], '/') ||
+	if ((!discover && !settings && argc != 5) || strlen(argv[1]) >= IFNAMSIZ || strchr(argv[1], '/') ||
 	    (!discover && mac_parse(argv[2], peer))) {
-		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype>\n"
+		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [wifi-settings]\n"
 			"       %s <interface> discover <ethertype>\n", argv[0], argv[0]);
 		return 2;
 	}
@@ -221,8 +281,8 @@ int main(int argc, char **argv)
 			goto out;
 	}
 	errno = 0;
-	ethertype = strtoul(argv[argc - 1], &end, 0);
-	if (errno || !*argv[argc - 1] || *end || ethertype < 0x600 || ethertype > 0xffff)
+	ethertype = strtoul(argv[discover ? 3 : 4], &end, 0);
+	if (errno || !*argv[discover ? 3 : 4] || *end || ethertype < 0x600 || ethertype > 0xffff)
 		goto out;
 	index = if_nametoindex(argv[1]);
 	if (!index) { ret = -errno; goto out; }
@@ -260,6 +320,11 @@ int main(int argc, char **argv)
 	}
 	length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"GetWifi\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\"}",
 		source[0], source[1], source[2], source[3], source[4], source[5]);
+	if (settings)
+		length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"SetAllSetting\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\","
+			"\"DMAC\":\"%02X%02X%02X%02X%02X%02X\",\"Flag\":1,\"content\":{\"act\":\"get\"}}",
+			source[0], source[1], source[2], source[3], source[4], source[5],
+			peer[0], peer[1], peer[2], peer[3], peer[4], peer[5]);
 	ret = fttr_sync_pack(source, fttr_sync_slave_group, ethertype, slot, FTTR_SYNC_REQUEST,
 		payload, length, frame, sizeof(frame));
 	if (ret < 0)
@@ -285,9 +350,16 @@ int main(int argc, char **argv)
 		received = recv(fd, frame, sizeof(frame), MSG_TRUNC);
 		if (received < 0) { if (errno == EAGAIN) continue; ret = -errno; break; }
 		if (received < 16 || !fttr_sync_destination(frame, source) || memcmp(frame + 6, peer, 6) ||
-		    (frame[14] & 15) != FTTR_SYNC_RESPONSE)
+		    ((frame[14] & 15) != FTTR_SYNC_RESPONSE &&
+		     (!settings || (frame[14] & 15) != FTTR_SYNC_REQUEST)))
 			continue;
-		ret = fttr_sync_receive(&receiver, frame, received, ethertype, now_ms(), &message);
+		/* Original JSON ingress accepts6 and7. Keep their partial messages
+		 * separate; a standalone ACK must not discard a fragmented report. */
+		if (settings && !(frame[15] & 0xfc))
+			ret = fttr_sync_unpack(frame, received, ethertype, &message);
+		else
+			ret = fttr_sync_receive(&receivers[(frame[14] & 15) == FTTR_SYNC_RESPONSE],
+				frame, received, ethertype, now_ms(), &message);
 		if (ret == -EAGAIN)
 			continue;
 		if (ret)
@@ -295,7 +367,7 @@ int main(int argc, char **argv)
 		/* Original ingress resolves the local slot by Ethernet source MAC;
 		 * the sender's header nibble is not our table index. */
 		message.slot = slot;
-		ret = reply_decode(&message, peer, &summary);
+		ret = reply_decode(&message, peer, settings, &ack_seen, &summary);
 		if (ret == -EAGAIN)
 			continue;
 		break;
@@ -306,7 +378,7 @@ out:
 		if (fflush(stdout))
 			ret = -errno;
 	} else {
-		fprintf(stderr, "FTTR sync %s: %s (%d)\n", discover ? "discovery" : "GetWifi", strerror(-ret), ret);
+		fprintf(stderr, "FTTR sync %s: %s (%d)\n", discover ? "discovery" : settings ? "wifi-settings" : "GetWifi", strerror(-ret), ret);
 	}
 	json_object_put(summary);
 	if (fd >= 0) close(fd);
