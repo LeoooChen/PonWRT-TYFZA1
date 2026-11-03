@@ -132,6 +132,7 @@ jobs:
           python3 scripts/test_rpcd_async_scan.py
           python3 scripts/test_package_manager_output.py
           python3 scripts/test_package_timeout.py
+          sh scripts/build_wifi_forward_hash_test.sh artifacts/wifi-forward-hash-test
       - name: Package firmware and installer
         run: |
           sh scripts/package_release.sh sources/openwrt artifacts/release

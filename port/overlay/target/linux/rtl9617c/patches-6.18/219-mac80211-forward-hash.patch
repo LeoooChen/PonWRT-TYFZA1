@@ -1,0 +1,49 @@
+--- a/net/mac80211/tx.c
++++ b/net/mac80211/tx.c
+@@ -11,6 +11,8 @@
+  */
+ 
+ #include <linux/kernel.h>
++#include <linux/jhash.h>
++#include <net/flow_dissector.h>
+ #include <linux/slab.h>
+ #include <linux/skbuff.h>
+ #include <linux/if_vlan.h>
+@@ -4316,6 +4318,28 @@
+ }
+ EXPORT_SYMBOL(ieee80211_txq_schedule_start);
+ 
++/* RX/bridge paths retain different protocol, header-offset and hash metadata.
++ * Classify forwarded Ethernet bytes before WLAN encapsulation so one flow
++ * keeps one TX queue. Include the receiver to separate station TXQs. */
++static void ieee80211_prepare_forward_hash(struct sk_buff *skb)
++{
++	struct flow_keys keys = {};
++	struct ethhdr eth;
++	u32 hash;
++
++	if (skb->sk || skb_copy_bits(skb, 0, &eth, sizeof(eth)))
++		return;
++	if (!__skb_flow_dissect(NULL, skb, &flow_keys_dissector, &keys,
++			       skb->data, eth.h_proto, ETH_HLEN, skb_headlen(skb),
++			       FLOW_DISSECTOR_F_STOP_AT_FLOW_LABEL))
++		return;
++
++	hash = flow_hash_from_keys(&keys);
++	hash = jhash(eth.h_dest, ETH_ALEN, hash);
++	skb_set_hash(skb, hash ?: 1,
++		     flow_keys_have_l4(&keys) ? PKT_HASH_TYPE_L4 : PKT_HASH_TYPE_L3);
++}
++
+ void __ieee80211_subif_start_xmit(struct sk_buff *skb,
+ 				  struct net_device *dev,
+ 				  u32 info_flags,
+@@ -4332,6 +4356,8 @@
+ 		kfree_skb(skb);
+ 		return;
+ 	}
++
++	ieee80211_prepare_forward_hash(skb);
+ 
+ 	sk_pacing_shift_update(skb->sk, sdata->local->hw.tx_sk_pacing_shift);
+ 
