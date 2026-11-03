@@ -34,6 +34,8 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u6
 #define CHECKSUM_UNNECESSARY 1
 #define DMA_FROM_DEVICE 2
 #define NAPI_POLL_WEIGHT 64
+#define L1_CACHE_BYTES 64
+#define prefetch(p) ((void)(p))
 #define RTL_QM_RING_BYTES 1024
 #define RTL_QM_COMMAND_BYTES 8
 #define RTL_QM_VOQS 8
@@ -47,7 +49,7 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u6
 struct net_device {bool running;struct {u64 rx_errors,rx_dropped,rx_packets,rx_bytes;} stats;};
 struct napi_struct {struct net_device *dev;};
 struct sk_buff {u8 storage[128],*data;unsigned len,priority,protocol,ip_summed;struct net_device *dev;};
-struct rtl9617c_ni_wifi_endpoint {struct net_device *netdev;void (*receive)(struct rtl9617c_ni_wifi_endpoint *,struct sk_buff *,bool);};
+struct rtl9617c_ni_wifi_endpoint {struct net_device *netdev;void (*receive)(struct rtl9617c_ni_wifi_endpoint *,struct napi_struct *,struct sk_buff *,bool);};
 struct rtl9617c_ni_endpoint {void (*receive)(struct rtl9617c_ni_endpoint *,struct napi_struct *,struct sk_buff *,unsigned);};
 struct rtl_qm_rx {
  void *ni,*ring_memory,*memory,*device;dma_addr_t memory_dma;unsigned read[8];
@@ -72,7 +74,7 @@ static void writel(u32 v,void *p){unsigned r=(u8 *)p-(u8 *)active->ni;
  else assert(r>EPP_READ&&r<EPP_READ+32&&v==0);
 }
 static void dma_sync_single_for_cpu(void *d,dma_addr_t a,unsigned n,int direction){(void)d;(void)a;assert(n==2048&&direction==2);}
-static void dma_sync_single_for_device(void *d,dma_addr_t a,unsigned n,int direction){dma_sync_single_for_cpu(d,a,n,direction);}
+static inline void dma_sync_single_for_device(void *d,dma_addr_t a,unsigned n,int direction){dma_sync_single_for_cpu(d,a,n,direction);}
 static int rtl_qm_try_push(void *context,unsigned address,unsigned eq){struct rtl_qm_rx *rx=context;
  unsigned id=(address-(u32)rx->memory_dma-8192)/2048;
  assert(eq==4&&consumer>id);return 0;}
@@ -96,9 +98,13 @@ static void received(struct sk_buff *s){unsigned skip=kind==0?14:0;u8 expected[6
  if(!injected++){for(unsigned i=64;i<129;i++)enqueue(i);}free(s);
 }
 static void napi_gro_receive(struct napi_struct *n,struct sk_buff *s){(void)n;assert(kind==0);received(s);}
-static void wifi_receive(struct rtl9617c_ni_wifi_endpoint *e,struct sk_buff *s,bool f){(void)e;assert(kind==1&&f);received(s);}
+static void wifi_receive(struct rtl9617c_ni_wifi_endpoint *e,struct napi_struct *n,struct sk_buff *s,bool f){(void)e;assert(n && n->dev==active->device);assert(kind==1&&f);received(s);}
 static void pon_receive(struct rtl9617c_ni_endpoint *e,struct napi_struct *n,struct sk_buff *s,unsigned metadata){(void)e;(void)n;assert(kind==2&&metadata==(7|5<<8));received(s);}
 '''
+if 'endpoint->receive(endpoint, napi, skb, wifi_forwarded)' not in source:
+ common=common.replace('struct napi_struct *,struct sk_buff *,bool', 'struct sk_buff *,bool')
+ common=common.replace('struct napi_struct *n,struct sk_buff *s,bool f', 'struct sk_buff *s,bool f')
+ common=common.replace('assert(n && n->dev==active->device);', '')
 case=r'''
 int main(void){
  for(unsigned mode=0;mode<3;mode++){

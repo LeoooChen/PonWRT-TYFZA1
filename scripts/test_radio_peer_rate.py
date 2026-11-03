@@ -40,9 +40,12 @@ int main(void) {
  rtl_ax_ra_vht80(c,1,0xff0,0xfffa,true);rtl_ax_ra_limit(c,0,1,true);
  assert(c[0]==0x14 && c[3]==0x40 && !(get_unaligned_le64(c+4)&(BIT_ULL(21)|BIT_ULL(33))));
  assert((get_unaligned_le64(c+4)&0xffffff000000ULL)==0);
- rtl_ax_ra_ht20(c,1,0xfff,0xffff,true);rtl_ax_ra_limit(c,1,2,true);
+ rtl_ax_ra_ht20(c,1,0xfff,0xffff,true,false);rtl_ax_ra_limit(c,1,2,true);
  assert(c[0]==0x4e && c[2]==0x20 && c[3]==0x41);
  assert(get_unaligned_le64(c+4)==0x80000000ff0ff015ULL);
+ rtl_ax_ra_ht20(c,1,0xff0,0xffff,true,true);rtl_ax_ra_limit(c,1,2,true);
+ assert(c[0]==0x4c && c[2]==0x20 && c[3]==0x41 && c[15]==0x20);
+ assert(get_unaligned_le64(c+4)==0x80000000ff0ff010ULL);
  rtl_ax_tx_wd(wd,1500,1,0x180,1,2,7,26,false,false,0,0,false,1,64,0);
  rtl_ax_tx_wd(rts,1500,1,0x180|BIT(22),1,2,7,26,false,false,0,0,false,1,64,0);
  assert(get_unaligned_le32(rts+32)==(get_unaligned_le32(wd+32)|BIT(12)));

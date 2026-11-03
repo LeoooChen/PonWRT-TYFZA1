@@ -103,12 +103,13 @@ int main(void){
   struct rtl_dma_tx tx={.vp=8,.port=0,.registers=dma,.axi_reorder=reo,.memory_dma=0x04000000};
   tx.memory=malloc(MEMORY_BYTES);assert(tx.memory);memset(tx.memory,0xaa,MEMORY_BYTES);
   memset(dma,0,sizeof(dma));for(unsigned i=0;i<1024;i++)reo[i]=pass;
-  dma[0]=0x1d;reo_writes=reo_reads=0;fail_access=false;
+  dma[0]=0x1d;dma[0x18/4]=0xa5555555;reo_writes=reo_reads=0;fail_access=false;
   assert(!rtl_dma_tx_start(&tx));assert(dma[0]&1);
 #ifdef EXPECT_BEFORE
   assert(!reo_writes&&!reo_reads);
   for(unsigned i=0;i<1024;i++)assert(reo[i]==pass);
 #else
+  assert(dma[0x18/4]==0 && dma[0x1c/4]==0x02008080);
   assert(reo_writes==5&&reo_reads==1);
   for(unsigned i=0;i<1024;i++)assert(reo[i]==(i<=128&&i%32==0?15:pass));
 #endif

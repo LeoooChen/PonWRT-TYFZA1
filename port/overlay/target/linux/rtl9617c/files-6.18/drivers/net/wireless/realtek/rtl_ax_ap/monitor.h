@@ -619,7 +619,8 @@ static bool rtl_ax_ra_peer(struct rtl_ax_ap *radio, struct ieee80211_sta *sta,
 		*rate = 0x100;
 		*caps |= ht | (sgi ? BIT(16) : 0);
 	} else if (link->ht_cap.ht_supported) {
-		rtl_ax_ra_ht20(command, id, link->supp_rates[radio->band.band], ht, sgi);
+		rtl_ax_ra_ht20(command, id, link->supp_rates[radio->band.band] << (band5g ? 4 : 0),
+			ht, sgi, band5g);
 		*rate = 0x80;
 		*caps |= ht | (sgi ? BIT(16) : 0);
 	} else return false;
@@ -1589,6 +1590,8 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	hw->queues = 4;
 	hw->max_rates = 1;
 	hw->max_report_rates = 1;
+	/* TX maps page fragments; keep software GSO from copying whole payloads. */
+	hw->netdev_features = NETIF_F_SG;
 	radio->requested_tx_dbm = 20;
 	memcpy(radio->power_country, "00", 3);
 	hw->wiphy->reg_notifier = rtl_ax_regulatory_notify;

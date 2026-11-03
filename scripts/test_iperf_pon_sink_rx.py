@@ -31,6 +31,7 @@ static _Thread_local unsigned cpu;
 #define this_cpu_add(name,n) ((name)[cpu]+=(n))
 #define skb_shinfo(s) (s)
 struct rtl9617c_ni_wifi_endpoint {int unused;};
+struct napi_struct;
 static void *sink=(void *)1,*ni_napi=(void *)2;
 static unsigned received,received_bytes,bad_pppoe,plain,gro,freed,expected_checksum;
 static bool udp,udp_gro;static u8 first[32];
@@ -63,17 +64,17 @@ int main(void){
   raw[14]=0x11;raw[15]=0;put_unaligned_be16(0x1234,raw+16);
   put_unaligned_be16(sizeof(raw)-20,raw+18);put_unaligned_be16(0x21,raw+20);
   memcpy(original,raw,sizeof(raw));
-  struct sk_buff s={raw,sizeof(raw),(mode&4)?CHECKSUM_UNNECESSARY:7,0,0};receive(0,&s,true);
+  struct sk_buff s={raw,sizeof(raw),(mode&4)?CHECKSUM_UNNECESSARY:7,0,0};receive(0,ni_napi,&s,true);
   assert(s.data==raw+22 && s.len==sizeof(raw)-22 && s.protocol==ETH_P_IP);
   assert(!memcmp(s.data,original+22,s.len));
   assert(!memcmp(raw+8,original,12));
  }
  assert(received==8 && received_bytes==1024 && plain==2 && gro==6 && !freed);
  for(unsigned n=0;n<22;n++){
-  struct sk_buff s={raw,n,0,0,0};receive(0,&s,true);
+  struct sk_buff s={raw,n,0,0,0};receive(0,ni_napi,&s,true);
  }
  memcpy(raw,original,sizeof(raw));raw[16]=0;
- struct sk_buff s={raw,sizeof(raw),0,0,0};receive(0,&s,true);
+ struct sk_buff s={raw,sizeof(raw),0,0,0};receive(0,ni_napi,&s,true);
  assert(freed==23 && bad_pppoe==23 && plain==2 && gro==6);
  pthread_t workers[2];
  for(unsigned i=0;i<2;i++)assert(!pthread_create(&workers[i],0,count_worker,(void *)(uintptr_t)i));

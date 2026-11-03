@@ -660,12 +660,15 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 		if (mailbox[24]) ni_ps_scan(mailbox, memory);
 #endif
 		if (mailbox[30]) ni_recycle(mailbox, memory);
+		u32 arm_producer = mailbox[8];
 #ifdef PE_UPLINK
 		/* An idle non-offloaded radio still services reports and events,
 		 * but has no NI queues or selected requests to build/publish. */
-		if (!mailbox[24] && consumer == mailbox[8] &&
+		if (!mailbox[24] && consumer == arm_producer &&
 		    mailbox[RTL_AX_TX_PUBLISH_READ] == mailbox[RTL_AX_TX_PUBLISH_WRITE]) continue;
 #endif
+		/* Acquire only the sampled ARM prefix; later arrivals wait for the
+		 * next turn's barrier instead of entering this batch unsynchronized. */
 		sync();
 		/* Stock phl_handle_pending_wd publishes a completed TXBD batch.
 		 * Bound each radio's turn so RPQ, events and the other radio still run. */
@@ -684,7 +687,7 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 #endif
 			ni_packet = 0; ni_frames = 1;
 			const u32 *request = (void *)(memory + REQUEST_BASE + consumer * 128);
-			if (consumer == mailbox[8]) {
+			if (consumer == arm_producer) {
 				if (!mailbox[24]) goto publish_tx;
 #ifdef PE_UPLINK
 				/* One 16-entry ingest can feed two 8-frame selections.

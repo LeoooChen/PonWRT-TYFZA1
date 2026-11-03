@@ -51,6 +51,11 @@ static void ni_ps_done(struct rtl_ax_tx *tx, unsigned int macid)
 	static const u32 tables[] = { RTL_AX_NI_PS_CANCEL, RTL_AX_NI_PS_DONE };
 	unsigned int i;
 
+	/* Most event passes have no PS completion, including unused MACIDs.
+	 * Avoid hashing an uncached PE MAC address until a record changes. */
+	if (get_unaligned_le32(tx->pe.memory + RTL_AX_NI_PS_CANCEL + macid * 8 + 4) == tx->ni.ps_seen[0][macid] &&
+	    get_unaligned_le32(tx->pe.memory + RTL_AX_NI_PS_DONE + macid * 8 + 4) == tx->ni.ps_seen[1][macid])
+		return;
 	local_bh_disable(); rcu_read_lock();
 	sta = ieee80211_find_sta_by_ifaddr(tx->hw, tx->pe.memory + 0xe400 + macid * 8, NULL);
 	for (i = 0; sta && i < 2; i++) {
@@ -230,8 +235,10 @@ static int ni_uplink_start(struct rtl_ax_tx *tx, unsigned int wifi_id)
 	writel(BIT(31) | BIT(30), tx->ni.vp + 4);
 	ret = readl_poll_timeout(tx->ni.vp + 4, status, !(status & BIT(31)), 1, 100000);
 	if (ret) { ni_uplink_stop(tx); return ret; }
-	writel((tx->ni.vp_saved[0] & ~(3U << (tx->ni.vp_index * 2))) |
-		(1U << (tx->ni.vp_index * 2)), tx->ni.dma + 0x14);
+	/* PE rewrites RX Ethernet headers in DDR without updating ARM caches.
+	 * Pattern 1 ReadOnce can return the old A-MSDU prefix to NI. Pattern 0
+	 * reads this PE-owned queue without snooping; other VPs keep their mode. */
+	writel(tx->ni.vp_saved[0] & ~(3U << (tx->ni.vp_index * 2)), tx->ni.dma + 0x14);
 	writel(0, tx->ni.vp + 0x78);
 	put_unaligned_le32(tx->ni.uplink_dma, mailbox + 356);
 	uplink_counter_start(tx, readl(tx->ni.vp + 0x1c) & RTL_AX_NI_TX_MASK);

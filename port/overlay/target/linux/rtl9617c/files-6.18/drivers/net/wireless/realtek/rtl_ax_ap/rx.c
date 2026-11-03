@@ -324,7 +324,8 @@ static void rtl_ax_rx_pe_drain(struct rtl_ax_rx *rx)
 		if (!rtl_ax_receive_packet(rx->pe_forward + consumer * RTL_AX_RPQ_BUFFER_BYTES, RTL_AX_RPQ_BUFFER_BYTES, &packet))
 			rtl_ax_rx_dispatch(rx, old, &packet);
 		consumer = (consumer + 1) & 255;
-		dma_wmb();
+		/* Finish reading the report before PE can reuse its shared slot. */
+		dma_mb();
 		put_unaligned_le32(consumer, mailbox + 296);
 	}
 }

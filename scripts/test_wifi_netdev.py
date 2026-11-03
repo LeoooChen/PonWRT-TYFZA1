@@ -44,6 +44,7 @@ typedef uint8_t u8;typedef uint16_t __be16;
 #define NF_ACCEPT 1
 #define NF_STOLEN 2
 struct net_device {int unused;};
+struct napi_struct {int unused;};
 struct sk_buff {
  unsigned char *head,*data;unsigned int len,mac,network,priority,ip_summed;
  unsigned short protocol,vlan;
@@ -56,6 +57,8 @@ struct rtl_wifi_port {unsigned int id;};
 struct ethhdr {unsigned char h_dest[6],h_source[6];unsigned short h_proto;} __attribute__((packed));
 static int wifi_ni,enabled=1,busy,allocation_failure;
 static unsigned int frees,injected,transmitted,returned,id_seen,frame_length,network_seen;
+static unsigned int gro_received,immediate_received;
+static struct napi_struct expected_napi;
 static unsigned char frame_seen[2048];
 static struct sk_buff *new_skb(const unsigned char *frame,unsigned int len,bool ethernet){
  struct sk_buff *s=calloc(1,sizeof(*s));assert(s);
@@ -107,9 +110,15 @@ static void dev_queue_xmit(struct sk_buff *s){
 static unsigned short eth_type_trans(struct sk_buff *s,struct net_device *dev){
  unsigned short p=eth_hdr(s)->h_proto;s->data+=14;s->len-=14;s->dev=dev;return p;
 }
-static void netif_receive_skb(struct sk_buff *s){
+static void receive_check(struct sk_buff *s){
  assert(s->rtl9617c_wifi_miss && skb_mac_header_len(s)==14);returned++;
  frame_length=s->len+14;memcpy(frame_seen,s->head+s->mac,s->len+14);kfree_skb(s);
+}
+static void __attribute__((unused)) netif_receive_skb(struct sk_buff *s){
+ immediate_received++;receive_check(s);
+}
+static void __attribute__((unused)) napi_gro_receive(struct napi_struct *n,struct sk_buff *s){
+ assert(n==&expected_napi);gro_received++;receive_check(s);
 }
 '''.replace('static int wifi_ni,enabled', 'static void *wifi_ni;static int enabled')
 
@@ -128,12 +137,13 @@ int main(void){
   struct sk_buff *skb=new_skb(frames[i],60,false);skb->dev=&dev;
   assert(wifi_ingress(&port,skb,&state)==NF_STOLEN);
   assert(id_seen==2 && frame_length==60 && !memcmp(frame_seen,frames[i],60));
-  skb=new_skb(frames[i],60,true);skb->dev=&dev;wifi_receive(&endpoint,skb,true);
+  skb=new_skb(frames[i],60,true);skb->dev=&dev;wifi_receive(&endpoint,&expected_napi,skb,true);
   assert(network_seen==14 && frame_length==60 && !memcmp(frame_seen,frames[i],60));
-  skb=new_skb(frames[i],60,true);skb->dev=&dev;wifi_receive(&endpoint,skb,false);
+  skb=new_skb(frames[i],60,true);skb->dev=&dev;wifi_receive(&endpoint,&expected_napi,skb,false);
   assert(frame_length==60 && !memcmp(frame_seen,frames[i],60));
  }
  assert(injected==8 && transmitted==8 && returned==8 && frees==24);
+ assert(gro_received==8 && immediate_received==0);
  struct sk_buff *skb=new_skb(frames[0],60,false);skb->dev=&dev;unsigned int old=injected;
  skb->rtl9617c_wifi_miss=true;
  assert(wifi_ingress(&port,skb,&state)==NF_ACCEPT && !skb->rtl9617c_wifi_miss && injected==old);
@@ -148,7 +158,7 @@ int main(void){
  assert(!memcmp(frame_seen+16,frames[0]+12,48));
  unsigned char tagged[68];memcpy(tagged,frames[0],12);
  memcpy(tagged+12,"\x88\xa8\x00\x7b\x81\x00\x00\x7c",8);memcpy(tagged+20,frames[0]+12,48);
- skb=new_skb(tagged,68,true);skb->dev=&dev;wifi_receive(&endpoint,skb,true);
+ skb=new_skb(tagged,68,true);skb->dev=&dev;wifi_receive(&endpoint,&expected_napi,skb,true);
  assert(network_seen==22 && frame_length==68 && !memcmp(frame_seen,tagged,68));
  unsigned char ppp[70]={};memcpy(ppp,frames[0],12);
  memcpy(ppp+12,"\x88\x64\x11\0\x12\x34\0\x30\0\x21",10);
@@ -163,7 +173,7 @@ int main(void){
  ppp[20]=0xc0;ppp[21]=0x21;
  skb=new_skb(ppp,70,false);skb->dev=&dev;
  assert(wifi_ingress(&port,skb,&state)==NF_ACCEPT);kfree_skb(skb);
- puts("Wi-Fi netdev: Ethernet/VLAN/QinQ and PPPoE IPv4/IPv6 bytes preserved; LCP stays with Linux");
+ puts("Wi-Fi netdev: FE misses use original NAPI; Ethernet/VLAN/QinQ and PPPoE bytes preserved; LCP stays with Linux");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='wifi-netdev-', dir=root / 'artifacts') as directory:
@@ -177,4 +187,5 @@ with tempfile.TemporaryDirectory(prefix='wifi-netdev-', dir=root / 'artifacts') 
     'captured_hardware_frames': len(records), 'actual_functions': ['wifi_ingress', 'wifi_receive'],
     'single_miss_reinjection': True, 'full_Ethernet_TX': True, 'VLAN_QinQ': True,
     'busy_retains_original': True, 'sanitizers': ['ASan', 'UBSan'], 'real_AP_traffic_test': False,
+    'FE_miss_uses_original_NAPI': True,
 }, indent=2) + '\n')

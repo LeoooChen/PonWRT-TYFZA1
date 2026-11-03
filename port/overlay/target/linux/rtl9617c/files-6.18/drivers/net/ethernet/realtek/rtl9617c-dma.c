@@ -24,6 +24,7 @@
 #define CTRL_ENABLE BIT(0)
 #define CTRL_RESET BIT(8)
 #define AXI_USER_SELECT 0x014
+#define AXI_USER_PATTERN0 0x018
 #define AXI_USER_PATTERN1 0x01c
 #define VP_BASE 0x100
 #define VP_STRIDE 0xa0
@@ -89,6 +90,8 @@ int rtl_dma_tx_start(struct rtl_dma_tx *tx)
 	value &= ~(3U << (tx->vp * 2));
 	value |= 1U << (tx->vp * 2);
 	writel(value, base + AXI_USER_SELECT);
+	/* Wi-Fi VP9/10 fetch PE-owned DDR without snooping ARM's old headers. */
+	writel(0, base + AXI_USER_PATTERN0);
 	writel(0x02008080, base + AXI_USER_PATTERN1);
 	value = readl(base + AXI_CONFIG);
 	value = (value & ~GENMASK(14, 0)) | 0x7aff;

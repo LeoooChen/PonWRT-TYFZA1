@@ -61,8 +61,9 @@ struct rtl_ax_tx {bool pe_active;pthread_mutex_t lock;void *hw;unsigned ps_relea
  bool peer_qos[128],peer_offloaded[128],peer_asleep[128];u32 peer_rates[128];
  struct {void *memory;}pe;struct {u32 ps_seen[2][128];bool ps_issued[128];}ni;};
 static struct sta_info *lookup[128];
+static unsigned lookup_calls;
 static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *mac,void *vif){
- (void)hw;(void)vif;return lookup[mac[0]]?&lookup[mac[0]]->sta:NULL;}
+ (void)hw;(void)vif;lookup_calls++;return lookup[mac[0]]?&lookup[mac[0]]->sta:NULL;}
 static u32 get_unaligned_le32(const void *p){u32 v;memcpy(&v,p,4);return v;}
 static void put_unaligned_le32(u32 v,void *p){memcpy(p,&v,4);}
 '''
@@ -85,6 +86,9 @@ int main(void){
  struct ieee80211_local local={};struct sta_info sta={.sta={1},.local=&local,.ps_lock=PTHREAD_MUTEX_INITIALIZER};
  u8 memory[0x20000]={};struct rtl_ax_tx tx={.pe_active=true,.lock=PTHREAD_MUTEX_INITIALIZER,.pe={memory}};
  lookup[1]=&sta;memory[0xe408]=1;put_unaligned_le32(1,memory+0x2060);
+ /* Empty slots and unchanged records must not hash PE-memory MAC addresses. */
+ for(unsigned id=1;id<128;id++)ni_ps_done(&tx,id);
+ assert(lookup_calls==0);
  put_unaligned_le32(1,memory+0x11804);put_unaligned_le32(1,memory+0x13020);
  u32 first=start(&sta);
  rtl_ax_tx_ps_release(&tx,&sta.sta,1,BIT(0),false,false,first);
@@ -96,7 +100,8 @@ int main(void){
  put_unaligned_le32(1,memory+RTL_AX_NI_PS_CANCEL+12);
  ni_ps_done(&tx,1);
  assert(!sta.service_period && tx.ps_eosp==1 && !tx.ni.ps_issued[1]);
- ni_ps_done(&tx,1);assert(tx.ps_eosp==1);
+ unsigned lookups=lookup_calls;
+ ni_ps_done(&tx,1);assert(tx.ps_eosp==1 && lookup_calls==lookups);
  /* Waking invalidates the old period. A late completion cannot close its successor. */
  wake(&sta);u32 second=start(&sta);
  put_unaligned_le32(1,memory+0x11804);put_unaligned_le32(1,memory+0x13020);

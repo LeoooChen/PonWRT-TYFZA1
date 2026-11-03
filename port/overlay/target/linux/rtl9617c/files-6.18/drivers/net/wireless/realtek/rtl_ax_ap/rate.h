@@ -98,19 +98,20 @@ static inline int rtl_ax_ppdu_signal(const u8 *data, unsigned int bytes,
 	return count;
 }
 
-static inline void rtl_ax_ra_ht20(u8 command[16], u8 macid, u16 legacy, u16 ht, bool sgi)
+static inline void rtl_ax_ra_ht20(u8 command[16], u8 macid, u16 legacy, u16 ht, bool sgi,
+	bool band5g)
 {
-	u64 mask = (legacy & 0x15) | (u64)(ht & 255) << 12 |
+	u64 mask = (legacy & (band5g ? 0x10 : 0x15)) | (u64)(ht & 255) << 12 |
 		(u64)(ht >> 8) << 24 | BIT_ULL(63);
 
 	memset(command, 0, 16);
-	command[0] = 0x0e; /* CCK/OFDM/HT, 20 MHz, firmware RA enabled. */
+	command[0] = band5g ? 0x0c : 0x0e; /* 5 GHz excludes CCK; BW updated by ra_limit. */
 	command[1] = macid;
 	command[2] = 0x10 | (sgi ? 0x20 : 0); /* Update all; RSSI unknown, init level0. */
 	command[3] = !!(ht >> 8);
 	put_unaligned_le64(mask, command + 4);
 	command[13] = 0x38; /* Original RFE54 fixed CSI GI/LTF. */
-	command[15] = 0x80; /* Original 8192XB RA debug-register format. */
+	command[15] = band5g ? 0x20 : 0x80; /* Original C/XB report formats. */
 }
 
 static inline void rtl_ax_ra_vht80(u8 command[16], u8 macid, u16 legacy, u16 mcs, bool sgi)

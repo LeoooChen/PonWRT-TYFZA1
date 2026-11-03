@@ -12,6 +12,7 @@
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/ktime.h>
+#include <linux/prefetch.h>
 #include <linux/rcupdate.h>
 #include <linux/unaligned.h>
 #include "rtl9617c-qm.h"
@@ -519,9 +520,9 @@ static void rtl_qm_rx_retire(struct rtl_qm_rx *rx, unsigned int cos,
 	mb();
 	writel(rx->read[cos], rx->ni + EPP_READ + cos * 4);
 	if (refill) {
-		u32 offset = (command & 0xffffff80) - lower_32_bits(rx->memory_dma);
-		dma_sync_single_for_device(rx->device, rx->memory_dma + offset,
-			RTL_QM_BUFFER_BYTES, DMA_FROM_DEVICE);
+		/* CPU only reads this DMA_FROM_DEVICE buffer and delivers a copy.
+		 * No device sync is needed on reuse (dma-api-howto); the next
+		 * receive still synchronizes for CPU before reading any bytes. */
 		rtl_qm_refill_add(&rx->refill, command);
 	}
 }
@@ -596,6 +597,9 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				dev->stats.rx_errors++;
 				goto consume;
 			}
+			/* Warm only validated, CPU-owned bytes while allocating the skb. */
+			for (unsigned int i = 0; i < length; i += L1_CACHE_BYTES)
+				prefetch(rx->memory + offset + RTL_QM_HEADROOM + header + i);
 			skb = napi_alloc_skb(napi, length);
 			if (!skb) {
 				dev->stats.rx_dropped++;
@@ -628,7 +632,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 					rx->wifi_copy_bytes += length;
 					skb->dev = endpoint->netdev;
 					skb->priority = h1 & 7;
-					endpoint->receive(endpoint, skb, wifi_forwarded);
+					endpoint->receive(endpoint, napi, skb, wifi_forwarded);
 					if (begin) rx->wifi_dispatch_ns += ktime_get_ns() - dispatch;
 				} else {
 					dev->stats.rx_dropped++;

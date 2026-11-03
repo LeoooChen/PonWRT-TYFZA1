@@ -46,11 +46,15 @@ source = '''#include <stdint.h>
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef uint64_t u64;
 #define BIT(n) (1U << (n))
 #define BIT_ULL(n) (1ULL << (n))
+#define IEEE80211_HE_PHY_CAP1_LDPC_CODING_IN_PAYLOAD 0x20
+#define IEEE80211_HE_PHY_CAP1_HE_LTF_AND_GI_FOR_HE_PPDUS_0_8US 0x40
+#define IEEE80211_HE_PHY_CAP7_HE_SU_MU_PPDU_4XLTF_AND_08_US_GI 4
 static void put_unaligned_le64(u64 v, void *p) { memcpy(p, &v, 8); }
+static u64 get_unaligned_le64(const void *p) { u64 v; memcpy(&v, p, 8); return v; }
 static inline u32 get_unaligned_le32(const void *p) { u32 v; memcpy(&v, p, 4); return v; }
-''' + (root / 'artifacts/live-radio-pe-ni/rate.h').read_text() + '''
+''' + (root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rate.h').read_text() + '''
 void native(u8 *p, u8 id, u16 legacy, u16 ht, bool sgi) {
-    rtl_ax_ra_ht20(p, id, legacy, ht, sgi);
+    rtl_ax_ra_ht20(p, id, legacy, ht, sgi, false);
 }
 void native_vht(u8 *p, u8 id, u16 legacy, u16 mcs, bool sgi) {
     rtl_ax_ra_vht80(p, id, legacy, mcs, sgi);

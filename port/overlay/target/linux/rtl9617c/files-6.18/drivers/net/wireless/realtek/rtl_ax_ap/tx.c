@@ -595,7 +595,8 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	if (encap || ieee80211_is_data(header->frame_control))
 		rate |= tx->peer_rates[macid] & BIT(22);
 	if (tx->pe_active) {
-		u32 *request = tx->pe.memory + 0x4000 + tx->pe_producer * 128;
+		u32 request[8 + RTL_AX_TX_WP_ADDRESS_MAX * 2];
+		u32 *published = tx->pe.memory + 0x4000 + tx->pe_producer * 128;
 		unsigned int segments = slot.mapping ? slot.mapping->dma_count : 1;
 		u32 request_flags = (encap ? tid : le16_to_cpu(header->seq_ctrl) >> 4) | tid_indicators[tid] << 12 |
 			!!(info->flags & IEEE80211_TX_CTL_NO_ACK) << 13 |
@@ -647,6 +648,9 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 			}
 			memcpy(tx->pe.memory + 0xe400 + macid * 8, skb->data, 6);
 		}
+		/* Build in cached memory, then publish before the existing DMA barrier
+		 * and producer handoff. Unused address slots remain untouched. */
+		memcpy(published, request, (8 + segments * 2) * sizeof(*request));
 	} else {
 	memset(page, 0, RTL_AX_TX_WP_BYTES);
 	if (slot.mapping) {
