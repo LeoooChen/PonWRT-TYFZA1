@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
+#define _POSIX_C_SOURCE 200809L
+#include <ctype.h>
+#include <stdlib.h>
 #include <errno.h>
 #include <string.h>
 
@@ -87,6 +90,22 @@ int fttr_wifi_job_start(struct fttr_wifi_job *job, uint16_t onu, uint16_t *count
 	return 0;
 }
 
+void fttr_wifi_job_cancel(struct fttr_wifi_job *job, int error)
+{
+	struct fttr_objects_job *transaction = &job->transaction;
+
+	if (transaction->phase == FTTR_OBJECT_FAILED)
+		return;
+	if (transaction->error) {
+		transaction->cleanup_error = error;
+		transaction->cleanup_failure = transaction->me;
+	} else {
+		transaction->error = error;
+		transaction->failure = transaction->me;
+	}
+	transaction->phase = FTTR_OBJECT_FAILED;
+}
+
 int fttr_wifi_job_dump(const struct fttr_wifi_job *job, FILE *file)
 {
 	const struct fttr_objects_job *transaction = &job->transaction;
@@ -107,4 +126,96 @@ int fttr_wifi_job_dump(const struct fttr_wifi_job *job, FILE *file)
 		transaction->failure.result, transaction->failure.replied ? "true" : "false",
 		transaction->cleanup_failure.result, transaction->cleanup_failure.replied ? "true" : "false");
 	return ferror(file) ? -EIO : 0;
+}
+
+/* Byte strings are hex to preserve whitespace and full-width fields. */
+int fttr_wifi_config_read(const char *path, struct fttr_wifi_input *input)
+{
+	static const char * const names[] = { "instance", "mode", "channel", "bandwidth",
+		"security", "encryption", "key_auth", "key_index", "ssid_enabled", "radio_enabled",
+		"ssid_hex", "shared_key_hex", "key1_hex", "key2_hex", "key3_hex", "key4_hex" };
+	struct fttr_wifi_config *config = &input->config;
+	unsigned long number[10] = { 0 };
+	size_t sizes[6] = { 0 }, capacity = 0;
+	unsigned int seen = 0, required = 0x7ff;
+	char *line = NULL;
+	ssize_t length;
+	FILE *file = fopen(path, "r");
+	int ret = 0;
+
+	if (!file)
+		return -errno;
+	memset(input, 0, sizeof(*input));
+	while ((length = getline(&line, &capacity, file)) >= 0) {
+		char *key, *value, *extra, *save, *end;
+		unsigned int i;
+
+		/* Embedded NULs must not hide a suffix from validation. */
+		if (memchr(line, '\0', length)) {
+			ret = -EINVAL;
+			break;
+		}
+		key = strtok_r(line, " \t\r\n", &save);
+		if (!key || *key == '#')
+			continue;
+		value = strtok_r(NULL, " \t\r\n", &save);
+		extra = strtok_r(NULL, " \t\r\n", &save);
+		if (!value || (extra && *extra != '#')) { ret = -EINVAL; break; }
+		for (i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+			if (!strcmp(key, names[i]))
+				break;
+		if (i == sizeof(names) / sizeof(names[0]) || (seen & (1U << i))) {
+			ret = -EINVAL;
+			break;
+		}
+		seen |= 1U << i;
+		if (i < 10) {
+			errno = 0;
+			number[i] = strtoul(value, &end, 0);
+			if (errno || *end || *value == '-' ||
+			    number[i] > (i == 0 ? UINT16_MAX : i >= 8 ? 1U : UINT8_MAX)) {
+				ret = -EINVAL;
+				break;
+			}
+		} else {
+			size_t n, length = !strcmp(value, "-") ? 0 : strlen(value);
+
+			if (length % 2) { ret = -EINVAL; break; }
+			if (length / 2 > (i < 12 ? 24U : 26U)) { ret = -EMSGSIZE; break; }
+			for (n = 0; n < length; n += 2) {
+				char byte[3] = { value[n], value[n + 1], 0 };
+
+				if (!isxdigit((unsigned char)byte[0]) || !isxdigit((unsigned char)byte[1])) {
+					ret = -EINVAL;
+					break;
+				}
+				input->bytes[i - 10][n / 2] = strtoul(byte, NULL, 16);
+			}
+			if (ret)
+				break;
+			sizes[i - 10] = length / 2;
+		}
+	}
+	if (!ret && ferror(file))
+		ret = -EIO;
+	free(line);
+	fclose(file);
+	if (number[4] == 5 || number[4] == 6)
+		required |= 0xf000;
+	else if (number[4])
+		required |= 0x0800;
+	if (!ret && (seen & required) != required)
+		ret = -EINVAL;
+	if (ret)
+		return ret;
+	*config = (struct fttr_wifi_config) {
+		.instance = number[0], .mode = number[1], .channel = number[2], .bandwidth = number[3],
+		.security = number[4], .encryption = number[5], .key_auth = number[6], .key_index = number[7],
+		.ssid_enabled = number[8], .radio_enabled = number[9],
+		.ssid = input->bytes[0], .ssid_size = sizes[0],
+		.shared_key = input->bytes[1], .shared_key_size = sizes[1],
+		.keys = { input->bytes[2], input->bytes[3], input->bytes[4], input->bytes[5] },
+		.key_size = { sizes[2], sizes[3], sizes[4], sizes[5] }
+	};
+	return 0;
 }

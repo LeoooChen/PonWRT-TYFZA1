@@ -84,6 +84,7 @@ def main():
     p.add_argument('--slave', type=Path, required=True)
     p.add_argument('--daemon', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
+    p.add_argument("--wifi", action="store_true", help="exercise resident remote Wi-Fi policies")
     args = p.parse_args()
     assert {x['ifname'] for x in json.loads(subprocess.check_output(['ip','-j','link','show'],text=True))} == {'lo'}
     stock = Original(args.master)
@@ -106,7 +107,7 @@ def main():
     sync_request=stock.me_request(0x49,2,0,0x8000,b'\0')
     o, ptr = stock.oracle, stock.data
     widths = {}
-    for c in (2,11,45,47,84,171,262,266,268,272,277,329):
+    for c in (2,11,45,47,84,171,262,266,268,272,277,329,0xff69,0xff6a):
         assert o.call('plr_gponomci_medetail_get',c,ptr,ptr+8)==1
         table = struct.unpack('<Q',o.uc.mem_read(ptr+8,8))[0]
         widths[c] = {struct.unpack('<H',o.uc.mem_read(table+i*40+8,2))[0]:o.uc.mem_read(table+i*40+12,1)[0]
@@ -118,12 +119,22 @@ def main():
             self.tcont,self.queue = 0x8700+uni,0x8a00+uni
             self.slave,self.hold,self.reject = SyncSlave(args.slave),hold,reject
             self.counter=OriginalSync(args.slave)
+            self.wifi_hold = self.wifi_reject = self.wifi_restore_hold = self.wifi_drop = False
+            self.wifi_sets = 0
+            self.wifi_reject_at = 3
+            self.wifi_timeout = self.wifi_malformed = False
+            self.wifi_lost_tci = None
             self.drop_sync=False
             self.fail_upload_once=False
             self.pool = {(262,self.tcont):{0x8000:b'\0\xff'},
                 (277,self.queue):{0x0400:struct.pack('>I',self.tcont<<16|3)},
                 (329 if veip else 11,uni):{0x8000:b'\1'} if veip else {0x8000:b'\0',0x0800:b'\1'}}
             if veip: self.pool[11,1] = {0x8000:b'\0',0x0800:b'\1'}
+            if args.wifi:
+                for instance in (0x101, 0x201):
+                    for cls, masks in ((0xff69, (0x8000,0x4000,0x1000,0x2000,0x20,0x10)),
+                                       (0xff6a, (0x8000,0x40,0x4000))):
+                        self.pool[cls,instance] = {bit: bytes([0x55])*widths[cls][bit] for bit in masks}
             self.table,self.snapshot,self.operations = {},[],[]
             self.held = None
 
@@ -152,6 +163,7 @@ def main():
             if c==2 and op==0x49:assert body[2:]==sync_request[2:]
             self.operations.append((tci,op,c,id))
             if c==2 and op==0x49 and self.drop_sync:return None
+            if c in (0xff69,0xff6a) and self.wifi_drop:return None
             status,content,wire = 0,b'',None
             if op==0x4d:
                 self.snapshot=self.records();content=struct.pack('>H',len(self.snapshot))
@@ -178,8 +190,13 @@ def main():
                     else: self.table[row[:8]]=row
                     wire=self.slave.reply(body,b''.join(self.table.values()),8)
                 else:
+                    if c in (0xff69,0xff6a):
+                        self.wifi_sets += 1
                     n=sum(w for bit,w in widths[c].items() if mask&bit)
-                    self.pool[c,id].update(self.fields(c,mask,body[10:10+n]))
+                    if self.wifi_reject and self.wifi_sets == self.wifi_reject_at and c in (0xff69,0xff6a):
+                        status=2
+                    else:
+                        self.pool[c,id].update(self.fields(c,mask,body[10:10+n]))
             else:
                 assert op in (0x49,0x5a)
                 if c==2:
@@ -193,13 +210,24 @@ def main():
             if wire is None:
                 wire=stock.frame(tci,(op&0x1f)|0x20,content if op in (0x4d,0x4e) else bytes([status])+content,
                                  onu=self.id,class_id=c,instance=id)[16:]
+            if self.wifi_timeout and c in (0xff69,0xff6a) and op==0x48:
+                if self.wifi_lost_tci is None:self.wifi_lost_tci=tci
+                if tci==self.wifi_lost_tci:return None
+            if self.wifi_malformed and c in (0xff69,0xff6a) and op==0x48 and self.wifi_sets==2:
+                wire=bytearray(wire);wire[3]=0xff;wire=bytes(wire)
+            if c in (0xff69,0xff6a) and op==0x48 and (self.wifi_hold or
+                (self.wifi_restore_hold and self.wifi_sets == self.wifi_reject_at + 1)):
+                self.held=wire;return None
             if (self.hold and op==0x48 and c==262) or (self.reject and op==0x46 and c==268):
                 self.held=wire;return None
             return wire
 
     nodes={7:Node(7,'5445535400000007',0x107,False,hold=True),
            9:Node(9,'5445535400000009',0x203,True)}
-    nodes[9].fail_upload_once=True
+    nodes[9].fail_upload_once=not args.wifi
+    if args.wifi:
+        nodes[7].hold=False
+        nodes[7].wifi_hold=True
     subprocess.run(['ip','link','add','fap-host','type','veth','peer','name','fap-peer'],check=True)
     for interface,mac in [('fap-host','02:03:04:05:06:07'),('fap-peer','0a:0b:0c:0d:0e:0f')]:
         subprocess.run(['ip','link','set','dev',interface,'address',mac,'mtu','1982','up'],check=True)
@@ -238,6 +266,16 @@ def main():
         subprocess.run(['ip','link','add','br-fttr','type','bridge'],check=True)
         subprocess.run(['ip','link','set','dev','br-fttr','up'],check=True)
         policy.write_text('5445535400000007 0 0 1 3 none 50 100 200 br-fttr\n* 2 0 1 3 200 50 100 200 br-fttr\n')
+        wifi_policy=root/'wifi-policies'
+        if args.wifi:
+            from test_fttr_wifi_cli import policy as wifi_config_text
+            from trace_stock_fttr_wifi import config as wifi_config
+            for name, instance, channel in (('wifi-first',0x101,6), ('wifi-second',0x201,6), ('wifi-exact',0x101,11)):
+                cfg=bytearray(wifi_config());cfg[4]=channel
+                path=root/name
+                path.write_text(wifi_config_text(cfg).replace('instance 257',f'instance {instance}'))
+                path.chmod(0o600)
+            wifi_policy.write_text(f'* {root}/wifi-first\n* {root}/wifi-second\n5445535400000007 {root}/wifi-exact\n')
         grants,grant_buffer=[],b''
         def hardware():
             data=b''.join(struct.pack('<III8s',1<<18 if id in nodes else 0,1,42,
@@ -281,20 +319,166 @@ def main():
                         wire=nodes[id].reply(frame[16:60])
                         if wire:peer.send(HOST+OLT+struct.pack('>HH',0x8888,id)+wire)
                 current=status()
-                if predicate(current):return current
+                if current.get('pid') == process.pid and predicate(current):return current
             current=status()
             current['onus']=[r for r in current.get('onus',[]) if r['id'] in nodes]
             raise AssertionError(('state timeout',current,grants))
         hardware()
-        def launch(with_policy=True):
+        def launch(with_policy=True, with_wifi=None):
             subprocess.run(['ip','link','set','dev','fap-host','up'],check=True)
             ni.joinpath('fttr_link').write_text('configured=1 mode=9 nway=1 clock=1 error=0 link=1\n')
             device.joinpath('tx_enable').write_text('1\n')
             return subprocess.Popen([str(args.daemon.resolve()),str(device),str(ni),str(store),'fap-host']+
-                (['--services',str(policy)] if with_policy else []),
+                (['--services',str(policy)] if with_policy else []) +
+                (['--wifi',str(wifi_policy)] if (args.wifi if with_wifi is None else with_wifi) else []),
                 stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True,
                 env=dict(os.environ,LD_PRELOAD=str(root/'sysfs.so'),FTTR_SERVICE_CASE='normal',
                     FTTR_ACCEL_LOG=str(accel_log),FTTR_ACCEL_FAIL=str(accel_fault)))
+        if args.wifi:
+            def configured(state, ids=(7,9)):
+                return state.get('onus') and all(state['onus'][id]['wifi_configured']==2 and
+                    state['onus'][id]['mib_sync_valid'] for id in ids)
+            def stop():
+                process.send_signal(signal.SIGTERM)
+                _, errors=process.communicate(timeout=3)
+                assert process.returncode==0,errors
+            process=launch()
+            try:
+                current=until(lambda s:configured(s,(9,)) and nodes[7].held is not None)
+                assert current['onus'][7]['phase']=='wifi' and current['onus'][9]['service_configured']
+                assert not any(op in (0x44,0x48) and c<0xff00 for _,op,c,_ in nodes[7].operations)
+                nodes[7].wifi_hold=False
+                peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+nodes[7].held)
+                current=until(lambda s:configured(s) and all(s['onus'][i]['service_configured'] for i in nodes))
+                assert nodes[7].pool[0xff69,0x101][0x4000]==b'\x0b'
+                assert nodes[9].pool[0xff69,0x101][0x4000]==b'\x06'
+                assert current['onus'][7]['mib_rescans']==current['onus'][9]['mib_rescans']==0
+                for node in nodes.values():
+                    writes=[(op,c) for _,op,c,_ in node.operations if op in (0x44,0x48)]
+                    assert all(c>=0xff00 for op,c in writes[:12])
+                    assert writes[12][1]==262
+                # Attribute drift without any standard data-sync change is detected.
+                prior=current['onus'][7]['mib_rescans']
+                healthy=sum(op==0x4d for _,op,_,_ in nodes[9].operations)
+                nodes[7].pool[0xff69,0x201][0x2000]=b'changed'.ljust(24,b'\0')
+                current=until(lambda s:configured(s) and s['onus'][7]['mib_rescans']==prior+1)
+                assert nodes[7].pool[0xff69,0x201][0x2000].startswith(b'FTTR native research')
+                assert sum(op==0x4d for _,op,_,_ in nodes[9].operations)==healthy
+                # Replacement while a Wi-Fi Set has no reply.
+                nodes[7]=Node(7,'5445535400000077',0x317,True)
+                nodes[7].wifi_hold=True;hardware()
+                until(lambda s:nodes[7].held is not None)
+                old=nodes[7];old_tcis={t for t,_,_,_ in old.operations}
+                nodes[7]=Node(7,'5445535400000777',0x327,True);hardware()
+                peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+old.held)
+                current=until(lambda s:configured(s) and s['onus'][7]['mib_serial']==nodes[7].serial.hex())
+                assert not old_tcis.intersection(t for t,_,_,_ in nodes[7].operations)
+                assert journal(7,'wifi-old')[0]['error']==-errno.ESTALE
+                assert any(g['touched'] for row in journal(7,'wifi-old')[1:] for g in row['groups'])
+                # Replacement during restoration preserves primary and cleanup errors.
+                nodes[7]=Node(7,'5445535400007777',0x337,True)
+                nodes[7].wifi_reject=True;nodes[7].wifi_reject_at=9;nodes[7].wifi_restore_hold=True;hardware()
+                until(lambda s:nodes[7].held is not None)
+                old=nodes[7]
+                nodes[7]=Node(7,'5445535400077777',0x347,True);hardware()
+                peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+old.held)
+                until(lambda s:configured(s) and s['onus'][7]['mib_serial']==nodes[7].serial.hex())
+                previous=journal(7,'wifi-old')[0]
+                assert previous['error']==-errno.EREMOTEIO and previous['cleanup_error']==-errno.ESTALE
+                # Matching malformed reply restores that instance; the next instance still progresses.
+                nodes[7]=Node(7,'5445535400707777',0x34f,True)
+                nodes[7].wifi_malformed=True;hardware()
+                current=until(lambda s:s.get('onus') and s['onus'][7]['wifi_error']==-errno.EOPNOTSUPP and
+                    s['onus'][7]['service_configured'])
+                assert current['onus'][7]['wifi_configured']==1 and not current['onus'][7]['wifi_cleanup_error']
+                assert nodes[7].pool[0xff69,0x101][0x2000]==bytes([0x55])*24
+                # Lost Set replies exhaust the original three attempts, then restoration can complete.
+                nodes[7]=Node(7,'5445535400717777',0x34e,True)
+                nodes[7].wifi_timeout=True;hardware()
+                current=until(lambda s:s.get('onus') and s['onus'][7]['wifi_error']==-errno.ETIMEDOUT and
+                    s['onus'][7]['service_configured'],seconds=12)
+                assert current['onus'][7]['wifi_configured']==1 and not current['onus'][7]['wifi_cleanup_error']
+                assert sum(t==nodes[7].wifi_lost_tci for t,_,_,_ in nodes[7].operations)==3
+                # Missing capabilities remain a Wi-Fi failure without breaking another peer or wired service.
+                nodes[7]=Node(7,'5445535400777777',0x357,True)
+                nodes[7].pool.pop((0xff6a,0x201));hardware()
+                current=until(lambda s:s.get('onus') and s['onus'][7]['wifi_error']==-errno.EOPNOTSUPP and
+                    s['onus'][7]['service_configured'])
+                assert current['onus'][7]['wifi_configured']==1 and current['onus'][9]['wifi_configured']==2
+                stop()
+                # Wi-Fi-only policies must not require a fictitious GEM service.
+                nodes[7]=Node(7,'5445535400000007',0x107,False);hardware()
+                process=launch(with_policy=False)
+                until(configured)
+                assert not ports() and all(not status()['onus'][id]['service_configured'] for id in nodes)
+                prior=status()['onus'][7]['mib_rescans'];nodes[7].counter.value=0
+                until(lambda s:configured(s) and s['onus'][7]['mib_rescans']==prior+1)
+                prior=status()['onus'][7]['mib_rescans']
+                nodes[7].pool[0xff69,0x101][0x2000]=b'reset'.ljust(24,b'\0')
+                until(lambda s:configured(s) and s['onus'][7]['mib_rescans']==prior+1)
+                assert not any(c==268 for _,_,c,_ in nodes[7].operations)
+                # Periodic Wi-Fi probe timeout clears configuration and resumes from a fresh MIB.
+                nodes[7].wifi_drop=True
+                until(lambda s:s.get('onus') and s['onus'][7]['wifi_configured']==0 and
+                    s['onus'][7]['mib_sync_error']==-errno.ETIMEDOUT,seconds=12)
+                nodes[7].wifi_drop=False
+                until(configured)
+                # A duplicate per-serial instance fails before touching the running controller.
+                valid=wifi_policy.read_text()
+                wifi_policy.write_text(valid+f'* {root}/wifi-first\n')
+                rejected=subprocess.Popen([str(args.daemon.resolve()),str(device),str(ni),str(store),
+                    'fap-host','--wifi',str(wifi_policy)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                _,errors=rejected.communicate(timeout=2)
+                assert rejected.returncode==1 and 'Wi-Fi policy' in errors
+                assert status()['pid']==process.pid
+                wifi_policy.write_text(valid)
+                # Runtime files retain no names, keys or raw Wi-Fi values.
+                for path in store.iterdir():
+                    if path.is_file():
+                        content=path.read_text()
+                        for secret in (b'FTTR native research', b'test-passphrase-123', bytes([0x55])*24):
+                            assert secret.hex() not in content and secret.decode() not in content,(path,secret)
+                        assert not path.stat().st_mode&0o077
+                stop()
+                before={id:len(n.operations) for id,n in nodes.items()}
+                process=launch(with_policy=False)
+                until(configured)
+                assert all(not any(op==0x48 for _,op,_,_ in nodes[id].operations[before[id]:]) for id in nodes)
+                stop()
+                process=launch(with_policy=False,with_wifi=False)
+                until(lambda s:s.get('onus') and all(s['onus'][id]['phase']=='inventory' for id in nodes))
+                assert not any(store.joinpath(f'onu-{id}.wifi').exists() for id in nodes)
+                stop()
+                # Shared transport failure must stop the entire controller, recording the pending Wi-Fi job.
+                nodes[7]=Node(7,'5445535400007777',0x367,True);nodes[7].wifi_hold=True;hardware()
+                process=launch(with_policy=False)
+                until(lambda s:nodes[7].held is not None)
+                subprocess.run(['ip','link','set','dev','fap-host','down'],check=True)
+                _,errors=process.communicate(timeout=4)
+                assert process.returncode==1 and status()['error'] in (-errno.ENETDOWN,-errno.EIO),errors
+                assert status()['onus'][7]['wifi_configured']==0 and not ports()
+                assert device.joinpath('tx_enable').read_text().startswith('0\n')
+            finally:
+                if process.poll() is None:process.terminate();process.communicate(timeout=3)
+            checks=['two ONUs and two Wi-Fi instances progress independently before their own service/sync jobs',
+                'exact serial overrides wildcard per actual instance; no Set-induced MIB rescan',
+                'attribute drift is detected even when standard data-sync stays unchanged or zero',
+                'replacement during Set/restoration stops old requests and retains primary/cleanup errors',
+                'lost Set replies and matching malformed responses restore the affected instance without blocking another',
+                'missing capability remains a Wi-Fi error while wired service and other ONUs continue',
+                'Wi-Fi-only policy supports sync/recovery without a GEM probe',
+                'three-attempt probe timeout revokes configuration, then re-inventory recovers',
+                'duplicate policies fail before hardware IO; runtime diagnostics redact Wi-Fi credentials',
+                'warm restart reuses verified values; omitted policy archives previous journals',
+                'shared transport failure cancels jobs and disables optical TX']
+            os.close(grant_fd)
+            peer.close()
+            report={'master_sha256':hashlib.sha256(args.master.read_bytes()).hexdigest(),
+                'slave_sha256':hashlib.sha256(args.slave.read_bytes()).hexdigest(),
+                'checks':checks, 'scope':'Native daemon over AF_PACKET/veth with original ARM64 descriptors, sync update/reset and VLAN replies; modeled peer MIB/sysfs; no optical or wireless acceptance.'}
+            args.output.write_text(json.dumps(report,indent=2)+'\n')
+            print(json.dumps(report,indent=2))
+            return
         process=launch()
         try:
             first=until(lambda s:s.get('onus') and s['onus'][9]['phase']=='configured' and nodes[7].held is not None)

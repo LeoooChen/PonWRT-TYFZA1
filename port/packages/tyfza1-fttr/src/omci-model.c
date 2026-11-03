@@ -158,10 +158,15 @@ int fttr_mib_model_dump(const struct fttr_mib_model *model, FILE *file)
 		offset = 0;
 		for (i = 0; entity->schema && i < 16; i++) {
 			if (entity->present & (0x8000U >> i)) {
-				fprintf(file, "%s{\"mask\":%u,\"value\":\"", first ? "" : ",", 0x8000U >> i);
-				for (n = 0; n < entity->schema->width[i]; n++)
-					fprintf(file, "%02x", entity->data[offset + n]);
-				fputs("\"}", file);
+				fprintf(file, "%s{\"mask\":%u", first ? "" : ",", 0x8000U >> i);
+				if (entity->class_id == 0xff69 || entity->class_id == 0xff6a) {
+					fputs(",\"redacted\":true}", file);
+				} else {
+					fputs(",\"value\":\"", file);
+					for (n = 0; n < entity->schema->width[i]; n++)
+						fprintf(file, "%02x", entity->data[offset + n]);
+					fputs("\"}", file);
+				}
 				first = false;
 			}
 			offset += entity->schema->width[i];

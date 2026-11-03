@@ -1,0 +1,11 @@
+# Explicit remote Wi-Fi policies, loaded before hardware startup.
+# No active rows means no Wi-Fi configuration writes.
+# serial: 16 hexadecimal digits in vendor-first wire order, or *.
+# config: absolute path without whitespace; same format as fttrctl wifi.
+# Each file selects one actual ff69/ff6a instance. Multiple instances per
+# ONU are allowed; exact serial overrides * for that instance only.
+# Repeated serial/instance pairs fail before hardware changes.
+# Store credential files with mode 0600; restart to load a changed policy.
+# Numeric values are original wire codes, not OpenWrt/hostapd enums.
+#
+# serial            config

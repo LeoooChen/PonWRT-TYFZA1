@@ -52,11 +52,13 @@ define Package/tyfza1-fttr/install
 	$(INSTALL_DIR) $(1)/etc/init.d $(1)/lib/firmware/realtek/rtl9617c
 	$(INSTALL_BIN) ./files/tyfza1-fttr.init $(1)/etc/init.d/tyfza1-fttr
 	$(INSTALL_DATA) ./files/tyfza1-fttr.services $(1)/etc/tyfza1-fttr.services
+	$(INSTALL_DATA) ./files/tyfza1-fttr.wifi $(1)/etc/tyfza1-fttr.wifi
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/firmware/*.bin $(1)/lib/firmware/realtek/rtl9617c/
 endef
 
 define Package/tyfza1-fttr/conffiles
 /etc/tyfza1-fttr.services
+/etc/tyfza1-fttr.wifi
 endef
 
 $(eval $(call BuildPackage,tyfza1-fttr))

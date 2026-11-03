@@ -16,6 +16,14 @@ struct fttr_wifi_config {
 	size_t ssid_size, shared_key_size, key_size[4];
 };
 
+struct fttr_wifi_input {
+	struct fttr_wifi_config config;
+	uint8_t bytes[6][26];
+};
+
+/* Shared file parser; pointers in config refer to bytes in this input. */
+int fttr_wifi_config_read(const char *path, struct fttr_wifi_input *input);
+
 struct fttr_wifi_job {
 	struct fttr_objects_job transaction;
 	struct fttr_omci_object objects[9];
@@ -28,5 +36,7 @@ int fttr_wifi_job_start(struct fttr_wifi_job *job, uint16_t onu, uint16_t *count
 		const uint8_t serial[8]);
 /* Diagnostic output excludes all SSID/key values and raw exchanges. */
 int fttr_wifi_job_dump(const struct fttr_wifi_job *job, FILE *file);
+/* Stop without sending restoration to a lost/replaced peer. */
+void fttr_wifi_job_cancel(struct fttr_wifi_job *job, int error);
 
 #endif

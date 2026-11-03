@@ -1229,7 +1229,7 @@ producer trace is`remote-wifi-producer.json`. The musl package compiles and
 stages both tools with the new module (`package-root-remote-wifi/`,
 `package-stage-remote-wifi.log`). The explicit CLI workflow below now uses this
 transaction module. Automatic main/subordinate settings
-mapping, daemon integration, alternative capability branches and actual
+mapping, alternative capability branches and actual
 subordinate execution/roaming remain work; a successful modeled transaction
 is not wireless acceptance.
 
@@ -1319,6 +1319,91 @@ and warnings-as-errors in `artifacts/fttr/wifi-cli-build-20261103/`; its command
 and log are retained there. These checks do not include a firmware image,
 optical hardware, subordinate wireless execution or automatic daemon policy.
 
+### Resident remote Wi-Fi policy
+
+`fttrd` now accepts `--wifi <policy-file>` alongside `--services`. The packaged
+procd service loads `/etc/tyfza1-fttr.wifi`, whose default contains comments
+only. Each row is `serial absolute-config-path`; the serial is 16 hex digits
+in vendor-first order or `*`. Referenced files use the exact `fttrctl wifi`
+format above. Paths cannot contain whitespace. A file selects one actual
+`ff69/ff6a` instance; multiple instances per ONU are supported in file order.
+An exact serial entry overrides the wildcard for the same instance only.
+Duplicate serial/instance entries and all invalid configuration files fail
+before the controller acquires the device or changes hardware. Files are read
+once at startup; restart the service to load changes. There is no live reload
+or inferred hostapd-to-vendor enumeration conversion.
+
+```text
+# Synthetic example; prepare files for actual reported instances first.
+* /etc/fttr-radio-first.conf
+* /etc/fttr-radio-second.conf
+5445535400000007 /etc/fttr-radio-first-override.conf
+```
+
+Each ONU progresses from fresh MIB inventory through selected Wi-Fi instances,
+then its optional wired service and the shared MIB-sync baseline. An instance
+performs all preflight Gets, ordered Sets, readbacks and any failure restoration
+before the next instance begins. Other ONUs continue asynchronously. Wi-Fi Sets
+therefore cannot be mistaken for an unexpected change to an already established
+service sync baseline. ONU/TCI dispatch, the original two-second/three-attempt
+deadline policy and fresh registration/serial checks apply to requests,
+retransmissions and completion. A lost Set reply restores the touched groups;
+replacement cancels writes/restoration to the old identity and starts fresh
+inventory. A shared socket/register IO error stops the controller and disables
+TX. SIGTERM cancels the pending jobs and records their unresolved groups before
+exit; this is not a remote rollback after controller shutdown.
+
+Instances are separate transactions: one rejected or unsupported instance does
+not undo a previously successful instance or prevent the ONU's wired service.
+`status.json` reports `wifi_instances`, the number `wifi_configured`, and separate
+`wifi_error`/`wifi_cleanup_error`. The `wifi` phase means a transaction is active;
+the existing `configured` phase continues to describe wired service. A Wi-Fi-only
+ONU can remain in `inventory` with verified Wi-Fi instances and no GEM port.
+`onu-<ID>.wifi` records the serial, summary and redacted per-instance group state;
+replacement archives it as `.wifi-old`. Initial failures are retained until a
+new inventory after observed disconnect/replacement, sync recovery or restart;
+there is no unbounded automatic retry of rejected policy writes.
+
+The existing sync cycle also reads every selected group of successful Wi-Fi
+instances. This verifies actual configuration even if private attributes change
+without updating standard ONU Data sync, or while its value stays zero. A
+missing/mismatching group triggers fresh inventory and policy evaluation;
+timeout invalidates Wi-Fi state, and a later valid sync reply starts recovery.
+When a wired service exists its old local port/grant is withdrawn during this
+reconciliation. Wi-Fi-only operation never invents a GEM probe. Failed instances
+are not treated as verified probes. This is explicit policy enforcement; remote
+manual changes to successful instances are restored to the selected policy.
+
+Credential-bearing Wi-Fi request/reply bodies, raw MIB records and merged MIB
+attribute values are omitted from daemon journals. Class/instance/masks,
+attempt counts and actual result/error codes remain available. The shared MIB
+model still retains actual values in memory for protocol work; its diagnostic
+export now marks `ff69/ff6a` attributes `redacted`. Policy credential files should
+be mode0600 and are not generated from this host's saved Wi-Fi credentials.
+Runtime snapshots remain in `/var/run`; they do not provide durable restoration
+of remote configuration ownership after a crash.
+
+`scripts/test_fttr_autoprovision.py --wifi` runs the actual daemon with two ONUs
+and two instances per ONU over AF_PACKET/veth. It uses the matching original
+attribute descriptors, ONU sync increment/reset instructions and VLAN table
+responses; peer MIB storage, registration and sysfs are modeled. Checks include
+independent progress, exact/wildcard selection, no self-induced rescan, periodic
+attribute drift, Wi-Fi-only/zero-sync recovery, lost Set replies, malformed
+matching replies, three-attempt probe timeout, replacement during a later
+instance's cleanup, retained primary/cleanup errors, missing capability without
+loss of wired service, duplicate-policy rejection, restart reuse, omitted-policy
+archive, redacted journals and shared transport shutdown.
+
+Local reports are `artifacts/fttr/wifi-runtime-20261103.json`,
+`autoprovision-wifi-runtime.json` (existing service regression),
+`wifi-cli-runtime-20261103.json`, `model-wifi-runtime-20261103.json` and
+`wifi-groups-runtime-20261103.json`. The updated real OpenWrt GCC14.4/musl package
+prepare/compile/install runs with warnings-as-errors in
+`artifacts/fttr/wifi-runtime-build-20261103/`, including the new policy conffile
+and procd argument. Neither these tests nor the earlier original Set-byte
+comparison establish optical connectivity, subordinate Wi-Fi interoperability,
+client association or roaming. Those remain hardware acceptance work.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: import its own retained bitstream, load it before
@@ -1356,7 +1441,8 @@ optical hardware, subordinate wireless execution or automatic daemon policy.
    multicast, reboot/upgrade and roaming coordination, using the connected
    ONU's actual capabilities rather than assuming one fixed subordinate model.
    The original ff69/ff6a Wi-Fi update transaction is implemented with
-   preflight/readback/restoration and an explicit CLI caller; settings mapping, daemon integration and
+   preflight/readback/restoration, explicit CLI and resident per-ONU policy;
+   settings mapping and
    actual subordinate capability/behavior verification remain work.
 6. FE/PE acceleration and stale-flow invalidation, then hardware acceptance
    with real downstream gateways and a recorded interoperability scope.

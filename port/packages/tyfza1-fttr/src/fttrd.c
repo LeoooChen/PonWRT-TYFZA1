@@ -22,10 +22,23 @@
 #include "omci-mib.h"
 #include "omci-model.h"
 #include "omci-service.h"
+#include "omci-wifi.h"
 #include "omci-socket.h"
 
 enum onu_phase { ONU_ABSENT, ONU_BLOCKED, ONU_MIB, ONU_INVENTORY, ONU_FAILED,
-	ONU_SERVICE, ONU_CONFIGURED, ONU_SERVICE_FAILED, ONU_SYNC };
+	ONU_SERVICE, ONU_CONFIGURED, ONU_SERVICE_FAILED, ONU_SYNC, ONU_WIFI };
+
+struct wifi_policy {
+	struct wifi_policy *next;
+	struct fttr_wifi_input input;
+	uint8_t serial[8];
+	bool wildcard;
+};
+
+struct wifi_run {
+	struct wifi_run *next;
+	struct fttr_wifi_job job;
+};
 
 struct mib_sync {
 	struct fttr_me_job job, failure;
@@ -33,6 +46,8 @@ struct mib_sync {
 	int error;
 	uint8_t value, observed;
 	bool enabled, active, valid, recover, gem_probe;
+	struct wifi_run *wifi_probe;
+	int wifi_group;
 };
 
 struct service_policy {
@@ -49,7 +64,10 @@ struct onu {
 	struct fttr_mib_job job;
 	struct fttr_mib_model model;
 	struct fttr_service_job service;
-	bool service_started;
+	struct wifi_run *wifi, *wifi_current;
+	unsigned int wifi_count, wifi_configured;
+	int wifi_error, wifi_cleanup_error;
+	bool service_started, service_ready;
 	uint16_t service_ordinal;
 	struct mib_sync sync;
 	struct fttr_net_port port;
@@ -72,6 +90,8 @@ struct controller {
 	uint64_t rx_errors;
 	struct service_policy *policies;
 	unsigned int policy_count;
+	struct wifi_policy *wifi_policies;
+	unsigned int wifi_policy_count;
 	struct onu onu[FTTR_ONUS];
 };
 
@@ -190,6 +210,65 @@ static int load_policies(struct controller *c, const char *path)
 	return ret;
 }
 
+static int load_wifi_policies(struct controller *c, const char *path)
+{
+	FILE *file = fopen(path, "r");
+	char *line = NULL;
+	size_t capacity = 0;
+	ssize_t length;
+	unsigned int number = 0;
+	int ret = 0;
+
+	if (!file)
+		return -errno;
+	while ((length = getline(&line, &capacity, file)) >= 0) {
+		struct wifi_policy *policy, **tail;
+		char *serial, *config, *extra, *save;
+		unsigned int i;
+
+		number++;
+		if (memchr(line, '\0', length)) { ret = -EINVAL; break; }
+		serial = strtok_r(line, " \t\r\n", &save);
+		if (!serial || *serial == '#')
+			continue;
+		config = strtok_r(NULL, " \t\r\n", &save);
+		extra = strtok_r(NULL, " \t\r\n", &save);
+		if (!config || *config != '/' || (extra && *extra != '#')) { ret = -EINVAL; break; }
+		policy = calloc(1, sizeof(*policy));
+		if (!policy) { ret = -ENOMEM; break; }
+		policy->wildcard = !strcmp(serial, "*");
+		if (!policy->wildcard) {
+			if (strlen(serial) != 16)
+				ret = -EINVAL;
+			for (i = 0; !ret && i < 16; i++)
+				if (!isxdigit((unsigned char)serial[i]))
+					ret = -EINVAL;
+			for (i = 0; !ret && i < 8; i++) {
+				char byte[3] = { serial[i * 2], serial[i * 2 + 1], 0 };
+
+				policy->serial[i] = strtoul(byte, NULL, 16);
+			}
+		}
+		if (!ret)
+			ret = fttr_wifi_config_read(config, &policy->input);
+		for (tail = &c->wifi_policies; *tail && !ret; tail = &(*tail)->next)
+			if ((*tail)->wildcard == policy->wildcard &&
+			    (policy->wildcard || !memcmp((*tail)->serial, policy->serial, 8)) &&
+			    (*tail)->input.config.instance == policy->input.config.instance)
+				ret = -EEXIST;
+		if (ret) { free(policy); break; }
+		*tail = policy;
+		c->wifi_policy_count++;
+	}
+	if (!ret && ferror(file))
+		ret = -EIO;
+	if (ret)
+		fprintf(stderr, "FTTR Wi-Fi policy %s:%u: %s (%d)\n", path, number, strerror(-ret), ret);
+	free(line);
+	fclose(file);
+	return ret;
+}
+
 static int remove_file(int store, unsigned int id, const char *suffix)
 {
 	char name[24];
@@ -201,7 +280,7 @@ static int remove_file(int store, unsigned int id, const char *suffix)
 static int publish(struct controller *c, const char *state, int error)
 {
 	static const char * const phases[] = { "absent", "blocked", "mib", "inventory", "failed",
-		"provision", "configured", "service-failed", "sync" };
+		"provision", "configured", "service-failed", "sync", "wifi" };
 	int fd = openat(c->store, "status.json.new", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
 	FILE *file;
 	unsigned int id;
@@ -216,8 +295,8 @@ static int publish(struct controller *c, const char *state, int error)
 		return ret;
 	}
 	fprintf(file, "{\"state\":\"%s\",\"pid\":%ld,\"error\":%d,\"observed_ms\":%" PRId64
-		",\"rx_errors\":%" PRIu64 ",\"service_policies\":%u",
-		state, stopping || error ? 0L : (long)getpid(), error, c->observed_at, c->rx_errors, c->policy_count);
+		",\"rx_errors\":%" PRIu64 ",\"service_policies\":%u,\"wifi_policies\":%u",
+		state, stopping || error ? 0L : (long)getpid(), error, c->observed_at, c->rx_errors, c->policy_count, c->wifi_policy_count);
 	if (c->observed) {
 		fputs(",\"onus\":[", file);
 		for (id = 0; id < FTTR_ONUS; id++) {
@@ -235,11 +314,13 @@ static int publish(struct controller *c, const char *state, int error)
 			fprintf(file, "\",\"service_configured\":%s,\"service_cleanup_error\":%d,"
 				"\"mib_sync_valid\":%s,\"mib_sync\":%u,\"mib_sync_observed\":%u,"
 				"\"mib_sync_error\":%d,\"mib_sync_checked_ms\":%" PRId64 ",\"mib_rescans\":%u,"
-				"\"datapath_configured\":%s,\"datapath_error\":%d,\"datapath_cleanup_error\":%d}",
+				"\"datapath_configured\":%s,\"datapath_error\":%d,\"datapath_cleanup_error\":%d,"
+				"\"wifi_instances\":%u,\"wifi_configured\":%u,\"wifi_error\":%d,\"wifi_cleanup_error\":%d}",
 				u->service.configured ? "true" : "false", u->service.cleanup_error,
 				u->sync.valid ? "true" : "false", u->sync.value, u->sync.observed,
 				u->sync.error, u->sync.checked, u->rescans,
-				u->port.configured ? "true" : "false", u->datapath_error, u->datapath_cleanup_error);
+				u->port.configured ? "true" : "false", u->datapath_error, u->datapath_cleanup_error,
+				u->wifi_count, u->wifi_configured, u->wifi_error, u->wifi_cleanup_error);
 		}
 		fputc(']', file);
 	}
@@ -277,9 +358,18 @@ static void journal_sync(FILE *file, const struct onu *u, unsigned int id)
 		"\"error\":%d,\"checked_ms\":%" PRId64 ",\"rescans\":%u,\"exchange\":",
 		sync->active ? "true" : "false", sync->valid ? "true" : "false", sync->value,
 		sync->observed, sync->error, sync->checked, u->rescans);
-	journal_me(file, &sync->job);
+	if (sync->job.request[4] == 0xff &&
+	    (sync->job.request[5] == 0x69 || sync->job.request[5] == 0x6a))
+		fputs("{\"redacted\":true}", file);
+	else
+		journal_me(file, &sync->job);
 	fputs(",\"failure\":", file);
-	journal_me(file, &sync->failure);
+	if (sync->failure.request[4] == 0xff &&
+	    (sync->failure.request[5] == 0x69 || sync->failure.request[5] == 0x6a))
+		fprintf(file, "{\"error\":%d,\"attempts\":%u,\"result\":%u,\"redacted\":true}",
+			sync->failure.error, sync->failure.attempts, sync->failure.result);
+	else
+		journal_me(file, &sync->failure);
 	fputs("}\n", file);
 }
 
@@ -392,6 +482,159 @@ static int service_transport_failed(struct controller *c, unsigned int id, int e
 }
 
 static int start_sync(struct controller *c, unsigned int id);
+static int start_service(struct controller *c, unsigned int id);
+
+static int save_wifi(struct controller *c, unsigned int id)
+{
+	struct onu *u = &c->onu[id];
+	struct wifi_run *run;
+	char temporary[24], destination[24];
+	FILE *file;
+	int fd;
+
+	filename(temporary, id, "wifi.new");
+	filename(destination, id, "wifi");
+	fd = openat(c->store, temporary, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+	if (fd < 0)
+		return -errno;
+	file = fdopen(fd, "w");
+	if (!file) { int ret = -errno; close(fd); return ret; }
+
+	fprintf(file, "{\"event\":\"wifi_policy\",\"id\":%u,\"serial\":\"", id);
+	hex(file, u->identity, 8);
+	fprintf(file, "\",\"instances\":%u,\"configured\":%u,\"error\":%d,\"cleanup_error\":%d}\n",
+		u->wifi_count, u->wifi_configured, u->wifi_error, u->wifi_cleanup_error);
+	for (run = u->wifi; run; run = run->next)
+		fttr_wifi_job_dump(&run->job, file);
+	if (fclose(file))
+		return -errno;
+	return renameat(c->store, temporary, c->store, destination) ? -errno : 0;
+}
+
+static void cancel_wifi(struct onu *u, int error)
+{
+	struct wifi_run *run;
+
+	/* Preserve the active instance's primary/cleanup failure before marking
+	 * previously completed instances stale. */
+	if (u->wifi_current) {
+		fttr_wifi_job_cancel(&u->wifi_current->job, error);
+		if (!u->wifi_error)
+			u->wifi_error = u->wifi_current->job.transaction.error;
+		if (!u->wifi_cleanup_error)
+			u->wifi_cleanup_error = u->wifi_current->job.transaction.cleanup_error;
+	}
+	for (run = u->wifi; run; run = run->next) {
+		fttr_wifi_job_cancel(&run->job, error);
+		if (!u->wifi_error)
+			u->wifi_error = run->job.transaction.error;
+		if (!u->wifi_cleanup_error)
+			u->wifi_cleanup_error = run->job.transaction.cleanup_error;
+	}
+	u->wifi_configured = 0;
+	u->wifi_current = NULL;
+}
+
+static int wifi_transport_failed(struct controller *c, unsigned int id, int error)
+{
+	int ret;
+
+	cancel_wifi(&c->onu[id], error);
+	ret = save_wifi(c, id);
+	return ret ? ret : error;
+}
+
+static int wifi_drive(struct controller *c, unsigned int id)
+{
+	struct onu *u = &c->onu[id];
+	struct fttr_onu_state expected = u->hardware;
+	int ret;
+
+	memcpy(expected.serial, u->identity, 8);
+	while (u->wifi_current) {
+		struct fttr_objects_job *job = &u->wifi_current->job.transaction;
+		int action;
+
+		ret = fttr_miniolt_same(c->directory, id, &expected);
+		if (ret) {
+			cancel_wifi(u, ret);
+			if (ret != -ESTALE)
+				return wifi_transport_failed(c, id, ret);
+			u->phase = ONU_INVENTORY;
+			return save_wifi(c, id);
+		}
+		/* Unsent initial Get already exists; update() waits for its reply. */
+		action = !job->me.attempts && job->phase == FTTR_OBJECT_CHECK ?
+			FTTR_OBJECT_REQUEST : fttr_objects_job_update(job, &c->transaction);
+		if (action == FTTR_OBJECT_REQUEST) {
+			ret = fttr_me_job_send(&job->me, c->socket, &c->link, now_ms());
+			if (ret)
+				return wifi_transport_failed(c, id, ret);
+			/* Track a sent Set before cancellation/replacement can occur. */
+			fttr_objects_job_update(job, &c->transaction);
+			return save_wifi(c, id);
+		}
+		if (!action)
+			return save_wifi(c, id);
+		if (action < 0) {
+			if (!u->wifi_error)
+				u->wifi_error = job->error;
+			if (!u->wifi_cleanup_error)
+				u->wifi_cleanup_error = job->cleanup_error;
+		} else {
+			u->wifi_configured++;
+		}
+		u->wifi_current = u->wifi_current->next;
+	}
+	ret = save_wifi(c, id);
+	if (ret)
+		return ret;
+	u->phase = ONU_INVENTORY;
+	ret = start_service(c, id);
+	if (!ret && u->phase != ONU_SERVICE && !u->sync.enabled) {
+		u->sync.enabled = true;
+		ret = start_sync(c, id);
+	}
+	return ret;
+}
+
+static bool wifi_policy_matches(const struct controller *c, const struct wifi_policy *policy,
+			       const uint8_t serial[8])
+{
+	const struct wifi_policy *other;
+
+	if (!policy->wildcard)
+		return !memcmp(policy->serial, serial, 8);
+	for (other = c->wifi_policies; other; other = other->next)
+		if (!other->wildcard && !memcmp(other->serial, serial, 8) &&
+		    other->input.config.instance == policy->input.config.instance)
+			return false;
+	return true;
+}
+
+static int start_wifi(struct controller *c, unsigned int id)
+{
+	struct onu *u = &c->onu[id];
+	struct wifi_run **tail = &u->wifi;
+	const struct wifi_policy *policy;
+
+	for (policy = c->wifi_policies; policy; policy = policy->next) {
+		if (!wifi_policy_matches(c, policy, u->identity))
+			continue;
+		*tail = calloc(1, sizeof(**tail));
+		if (!*tail)
+			return -ENOMEM;
+		fttr_wifi_job_start(&(*tail)->job, id, &c->transaction, &u->model,
+			&policy->input.config, u->identity);
+		u->wifi_count++;
+		tail = &(*tail)->next;
+	}
+	if (!u->wifi)
+		return start_service(c, id);
+	u->wifi_current = u->wifi;
+	u->phase = ONU_WIFI;
+	return wifi_drive(c, id);
+}
 
 static int service_drive(struct controller *c, unsigned int id)
 {
@@ -422,6 +665,7 @@ static int service_drive(struct controller *c, unsigned int id)
 					fttr_service_cancel(&u->service, ret);
 				u->phase = ret ? ONU_SERVICE_FAILED : ONU_SYNC;
 				if (!ret) {
+					u->service_ready = true;
 					u->service.configured = false;
 					u->sync.enabled = true;
 					return start_sync(c, id);
@@ -437,7 +681,12 @@ static int service_drive(struct controller *c, unsigned int id)
 		if (ret)
 			return service_transport_failed(c, id, ret);
 	}
-	return save_service(c, id);
+	ret = save_service(c, id);
+	if (!ret && u->wifi && u->phase == ONU_SERVICE_FAILED && !u->sync.enabled) {
+		u->sync.enabled = true;
+		ret = start_sync(c, id);
+	}
+	return ret;
 }
 
 static const struct service_policy *matching_policy(const struct controller *c, const uint8_t serial[8])
@@ -536,6 +785,23 @@ static int cancel(struct controller *c, unsigned int id)
 	struct onu *u = &c->onu[id];
 	int ret;
 
+	if (u->wifi) {
+		cancel_wifi(u, -ESTALE);
+		ret = save_wifi(c, id);
+		if (!ret)
+			ret = archive_state(c, id, "wifi");
+		if (ret)
+			return ret;
+		while (u->wifi) {
+			struct wifi_run *next = u->wifi->next;
+
+			free(u->wifi);
+			u->wifi = next;
+		}
+		u->wifi_count = 0;
+		u->wifi_error = u->wifi_cleanup_error = 0;
+	}
+	u->service_ready = false;
 	if (u->dump) {
 		ret = fclose(u->dump);
 		u->dump = NULL;
@@ -597,7 +863,11 @@ static int failed(struct controller *c, unsigned int id, int error)
 {
 	struct onu *u = &c->onu[id];
 	char pending[24], destination[24];
+	const struct wifi_policy *policy;
 	bool watch = u->dump && matching_policy(c, u->identity);
+
+	for (policy = c->wifi_policies; u->dump && policy; policy = policy->next)
+		watch |= wifi_policy_matches(c, policy, u->identity);
 
 	u->phase = ONU_FAILED;
 	u->job.step = FTTR_MIB_FAILED;
@@ -694,6 +964,12 @@ static int sync_failed(struct controller *c, unsigned int id, int error)
 	}
 	u->sync.recover = true;
 	u->sync.due = now_ms() + 2000;
+	if (u->wifi) {
+		cancel_wifi(u, error);
+		ret = save_wifi(c, id);
+		if (ret)
+			return ret;
+	}
 	if (u->service_started) {
 		fttr_service_cancel(&u->service, error);
 		u->phase = ONU_SERVICE_FAILED;
@@ -727,6 +1003,8 @@ static int start_sync(struct controller *c, unsigned int id)
 	struct mib_sync *sync = &c->onu[id].sync;
 
 	sync->gem_probe = false;
+	sync->wifi_probe = NULL;
+	sync->wifi_group = 0;
 	fttr_me_job_start(&sync->job, id, &c->transaction, FTTR_ME_GET, 2, 0, 0x8000, NULL, 0);
 	return sync_send(c, id);
 }
@@ -743,12 +1021,39 @@ static int rescan_sync(struct controller *c, unsigned int id)
 	if (ret)
 		return ret;
 	u->sync = previous;
+	u->sync.wifi_probe = NULL;
 	u->sync.enabled = false;
 	u->sync.recover = true;
 	ret = start_mib(c, id);
 	if (!ret)
 		u->rescans++;
 	return ret;
+}
+
+static int sync_wifi_next(struct controller *c, unsigned int id)
+{
+	struct mib_sync *sync = &c->onu[id].sync;
+
+	while (sync->wifi_probe) {
+		struct fttr_objects_job *job = &sync->wifi_probe->job.transaction;
+
+		if (job->phase == FTTR_OBJECT_CONFIGURED && sync->wifi_group < job->count) {
+			const struct fttr_omci_object *object = &job->objects[sync->wifi_group];
+
+			fttr_me_job_start(&sync->job, id, &c->transaction, FTTR_ME_GET,
+				object->class_id, object->instance, object->create.mask, NULL, 0);
+			{
+				int ret = sync_send(c, id);
+
+				return ret ? ret : 1;
+			}
+		}
+		sync->wifi_probe = sync->wifi_probe->next;
+		sync->wifi_group = 0;
+	}
+	/* Do not retain a credential-bearing last Get in the generic sync journal. */
+	memset(&sync->job, 0, sizeof(sync->job));
+	return 0;
 }
 
 static int sync_reply(struct controller *c, unsigned int id)
@@ -763,7 +1068,22 @@ static int sync_reply(struct controller *c, unsigned int id)
 	if (ret)
 		return ret == -ESTALE ? sync_failed(c, id, ret) : sync_io_failed(c, id, ret);
 	sync->active = false;
-	if (sync->gem_probe) {
+	if (sync->wifi_probe) {
+		const struct fttr_omci_values *values =
+			&sync->wifi_probe->job.objects[sync->wifi_group].create;
+
+		if ((sync->job.error == -EREMOTEIO && sync->job.result == 5) ||
+		    (!sync->job.error && memcmp(sync->job.reply + 11, values->value, values->size))) {
+			sync->error = -ESTALE;
+			return rescan_sync(c, id);
+		}
+		if (sync->job.error)
+			return sync_failed(c, id, sync->job.error);
+		sync->wifi_group++;
+		ret = sync_wifi_next(c, id);
+		if (ret)
+			return ret < 0 ? ret : 0;
+	} else if (sync->gem_probe) {
 		/* The fixed service plan's class268 CTP is object3; its complete
 		 * selected attributes prove it survived when data-sync remains zero. */
 		const struct fttr_omci_values *values = &u->service.objects[3].create;
@@ -775,6 +1095,13 @@ static int sync_reply(struct controller *c, unsigned int id)
 		}
 		if (sync->job.error)
 			return sync_failed(c, id, sync->job.error);
+		sync->gem_probe = false;
+		sync->wifi_probe = u->wifi;
+		if (sync->wifi_probe) {
+			ret = sync_wifi_next(c, id);
+			if (ret)
+				return ret < 0 ? ret : 0;
+		}
 	} else {
 		if (sync->job.error)
 			return sync_failed(c, id, sync->job.error);
@@ -785,11 +1112,17 @@ static int sync_reply(struct controller *c, unsigned int id)
 			sync->error = -ESTALE;
 			return rescan_sync(c, id);
 		}
-		if (!sync->observed) {
+		if (!sync->observed && u->service_ready) {
 			sync->gem_probe = true;
 			fttr_me_job_start(&sync->job, id, &c->transaction, FTTR_ME_GET,
 				268, u->service.gem, u->service.objects[3].create.mask, NULL, 0);
 			return sync_send(c, id);
+		}
+		sync->wifi_probe = u->wifi;
+		if (sync->wifi_probe) {
+			ret = sync_wifi_next(c, id);
+			if (ret)
+				return ret < 0 ? ret : 0;
 		}
 	}
 	sync->value = sync->observed;
@@ -797,6 +1130,10 @@ static int sync_reply(struct controller *c, unsigned int id)
 	sync->error = 0;
 	sync->checked = now_ms();
 	sync->due = sync->checked + 2000;
+	if (!u->service_ready) {
+		u->phase = u->service_started ? ONU_SERVICE_FAILED : ONU_INVENTORY;
+		return save_sync(c, id);
+	}
 	u->service.configured = true;
 	{
 		const struct service_policy *policy = matching_policy(c, u->identity);
@@ -883,7 +1220,7 @@ static int complete(struct controller *c, unsigned int id)
 		return -errno;
 	u->phase = ONU_INVENTORY;
 	memset(&u->sync, 0, sizeof(u->sync));
-	return start_service(c, id);
+	return start_wifi(c, id);
 }
 
 static int receive_message(struct controller *c)
@@ -922,6 +1259,16 @@ static int receive_message(struct controller *c)
 						return ret;
 				}
 			}
+			if (u->phase == ONU_WIFI && u->wifi_current) {
+				struct fttr_me_job *me = &u->wifi_current->job.transaction.me;
+
+				if (((uint16_t)message.body[0] << 8 | message.body[1]) == me->transaction) {
+					me->state = FTTR_ME_FAILED;
+					me->error = error;
+					ret = wifi_drive(c, message.onu);
+					return ret ? ret : publish(c, "running", 0);
+				}
+			}
 			if (u->phase == ONU_MIB &&
 			    ((uint16_t)message.body[0] << 8 | message.body[1]) == u->job.transaction) {
 				ret = failed(c, message.onu, error);
@@ -936,6 +1283,12 @@ static int receive_message(struct controller *c)
 	if (message.onu >= FTTR_ONUS)
 		return 0;
 	u = &c->onu[message.onu];
+	if (u->phase == ONU_WIFI && u->wifi_current) {
+		if (!fttr_me_job_reply(&u->wifi_current->job.transaction.me, &message))
+			return 0;
+		ret = wifi_drive(c, message.onu);
+		return ret ? ret : publish(c, "running", 0);
+	}
 	if (u->sync.active) {
 		if (!fttr_me_job_reply(&u->sync.job, &message))
 			return 0;
@@ -952,7 +1305,9 @@ static int receive_message(struct controller *c)
 	ret = fttr_mib_job_reply(&u->job, &message, &c->transaction, &record);
 	if (ret < 0) {
 		fprintf(u->dump, "{\"event\":\"mib_reply_error\",\"error\":%d,\"body\":\"", ret);
-		hex(u->dump, message.body, message.length);
+		/* A malformed MIB reply may contain private Wi-Fi values. */
+		if (!c->wifi_policies)
+			hex(u->dump, message.body, message.length);
 		fputs("\"}\n", u->dump);
 		ret = failed(c, message.onu, ret);
 		return ret ? ret : publish(c, "running", 0);
@@ -964,7 +1319,8 @@ static int receive_message(struct controller *c)
 
 		fprintf(u->dump, "{\"event\":\"mib_record\",\"sequence\":%u,\"class\":%u,"
 			"\"instance\":%u,\"mask\":%u,\"attributes\":\"", sequence, record.class_id, record.instance, record.mask);
-		hex(u->dump, record.attributes, sizeof(record.attributes));
+		if (record.class_id != 0xff69 && record.class_id != 0xff6a)
+			hex(u->dump, record.attributes, sizeof(record.attributes));
 		fputs("\"}\n", u->dump);
 		if (ferror(u->dump))
 			return -EIO;
@@ -1008,6 +1364,31 @@ static int run(struct controller *c)
 		for (id = 0; id < FTTR_ONUS; id++) {
 			struct onu *u = &c->onu[id];
 
+			if (u->phase == ONU_WIFI && u->wifi_current) {
+				struct fttr_me_job *me = &u->wifi_current->job.transaction.me;
+
+				if (now >= me->deadline) {
+					struct fttr_onu_state expected = u->hardware;
+
+					memcpy(expected.serial, u->identity, 8);
+					ret = fttr_miniolt_same(c->directory, id, &expected);
+					if (ret && ret != -ESTALE)
+						return wifi_transport_failed(c, id, ret);
+					if (!ret) {
+						ret = fttr_me_job_timeout(me, c->socket, &c->link, now);
+						if (ret && ret != -ETIMEDOUT)
+							return wifi_transport_failed(c, id, ret);
+					}
+					ret = wifi_drive(c, id);
+					if (!ret)
+						ret = publish(c, "running", 0);
+					if (ret)
+						return ret;
+				}
+				if (u->wifi_current && u->wifi_current->job.transaction.me.deadline < deadline)
+					deadline = u->wifi_current->job.transaction.me.deadline;
+				continue;
+			}
 			if (u->sync.enabled) {
 				if (!u->sync.active && now >= u->sync.due) {
 					ret = start_sync(c, id);
@@ -1218,14 +1599,15 @@ int main(int argc, char **argv)
 	int ret = 0, result;
 	uint16_t seed;
 
-	if (argc >= 3 && !strcmp(argv[argc - 2], "--services")) {
-		ret = load_policies(&c, argv[argc - 1]);
+	while (argc >= 3 && (!strcmp(argv[argc - 2], "--services") || !strcmp(argv[argc - 2], "--wifi"))) {
+		ret = !strcmp(argv[argc - 2], "--wifi") ? load_wifi_policies(&c, argv[argc - 1]) :
+			load_policies(&c, argv[argc - 1]);
 		argc -= 2;
 		if (ret)
 			goto out;
 	}
 	if ((argc != 5 && argc != 9) || strlen(argv[4]) >= IFNAMSIZ) {
-		fprintf(stderr, "Usage: %s <MiniOLT-dir> <NI-dir> <state-dir> <interface> [optical-dir host-mode nway pon-mode] [--services policy-file]\n", argv[0]);
+		fprintf(stderr, "Usage: %s <MiniOLT-dir> <NI-dir> <state-dir> <interface> [optical-dir host-mode nway pon-mode] [--services policy-file] [--wifi policy-file]\n", argv[0]);
 		ret = -EINVAL;
 		goto out;
 	}
@@ -1261,6 +1643,8 @@ int main(int argc, char **argv)
 			ret = archive_state(&c, id, "service");
 		if (!ret)
 			ret = archive_state(&c, id, "sync");
+		if (!ret)
+			ret = archive_state(&c, id, "wifi");
 		if (ret)
 			goto out;
 	}
@@ -1295,6 +1679,12 @@ out:
 		if (!ret)
 			ret = result;
 		for (id = 0; id < FTTR_ONUS; id++) {
+			if (c.store >= 0 && c.onu[id].wifi) {
+				cancel_wifi(&c.onu[id], ret ? ret : -ECANCELED);
+				result = save_wifi(&c, id);
+				if (!ret)
+					ret = result;
+			}
 			result = fttr_net_remove(&c.net, &c.onu[id].port);
 			if (result)
 				c.onu[id].datapath_cleanup_error = result;
@@ -1312,12 +1702,24 @@ out:
 			ret = -errno;
 		fttr_mib_model_clear(&c.onu[id].model);
 		fttr_service_clear(&c.onu[id].service);
+		while (c.onu[id].wifi) {
+			struct wifi_run *next = c.onu[id].wifi->next;
+
+			free(c.onu[id].wifi);
+			c.onu[id].wifi = next;
+		}
 	}
 	while (c.policies) {
 		struct service_policy *next = c.policies->next;
 
 		free(c.policies);
 		c.policies = next;
+	}
+	while (c.wifi_policies) {
+		struct wifi_policy *next = c.wifi_policies->next;
+
+		free(c.wifi_policies);
+		c.wifi_policies = next;
 	}
 	if (c.store >= 0) {
 		result = publish(&c, ret ? "failed" : "stopped", ret);
