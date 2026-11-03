@@ -11,6 +11,8 @@ struct rtl_ax_ni_state {
  u32 attrs[2][2], vp_saved[5];
  unsigned int cpu, eq, profile, vp_index;
  bool active, vp_active;
+ bool retire_quiescing;
+ u8 retire_macid;
  struct net_device *route_dev;
  unsigned int route_macid;
  u32 route_tim[128];

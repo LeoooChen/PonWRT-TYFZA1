@@ -53,7 +53,8 @@ struct rtl_ax_ap {
 };
 struct ieee80211_hw {struct wiphy *wiphy;};
 struct params {unsigned tid;};
-static int retire_error,command_error;static unsigned retired,commands,queued,ready,admitted,window;
+static int retire_error,command_error,cleanup_error;static unsigned cleanup_calls;
+static int rtl_ax_tx_ni_cleanup(int tx){(void)tx;cleanup_calls++;return cleanup_error;}static unsigned retired,commands,queued,ready,admitted,window;
 static void rtl_ax_store32(u8 *p,u32 v){(void)p;(void)v;}
 static int rtl_ax_tx_rx_retire(int tx,unsigned macid){(void)tx;assert(macid==7);retired++;return retire_error;}
 static int rtl_ax_command(struct rtl_ax_ap *r,unsigned q,unsigned cat,unsigned cls,unsigned fn,u8 *data,unsigned len,bool ack){
@@ -95,6 +96,12 @@ int main(void){
  /* Successful restart/stop reuses the same entry without delayed deletion. */
  r.rx_ba[0].valid=true;window=64;assert(!stop(&r,&hw,&sta,&p));
  assert(!r.rx_ba[0].valid&&window==0&&r.rx_ba_stopped==2);
+ /* Global release retries must run even without retired stations or keys. */
+ unsigned queued_before=queued,cleanup_before=cleanup_calls;
+ cleanup_error=-EAGAIN;rtl_ax_cleanup_work(&w,&r.cleanup_work.work);
+ assert(cleanup_calls==cleanup_before+1 && queued==queued_before+1);
+ cleanup_error=0;rtl_ax_cleanup_work(&w,&r.cleanup_work.work);
+ assert(cleanup_calls==cleanup_before+2 && queued==queued_before+1);
  puts("PASS: RX BA retirement and H2C failures retry; pending deletion blocks offload; success resumes admission");
 }
 """

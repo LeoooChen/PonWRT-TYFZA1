@@ -50,13 +50,14 @@ struct rtl_ax_tx {
  struct pci_dev *pdev;
  void *rx;
  struct {void *memory;} pe;
- struct {bool active,route_peers[128];void *vp,*regs;struct net_device *route_dev;
+ struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;void *vp,*regs;struct net_device *route_dev;
   unsigned route_macid,route_tim[128];int ps_work,cpu;} ni;
 };
 struct rtl_ax_ap {struct rtl_ax_tx *tx;};
 static struct rtl_ax_tx *current;
-static unsigned drop_mask[128],pending[128],withdrawn[128],drop_calls;
-static int ni_test_lock,fail_drop,fail_withdraw;
+static unsigned drop_mask[128],pending[128],withdrawn[128],drop_calls,pause_calls,poll_calls;
+static int ni_test_lock,fail_drop,fail_withdraw,fail_release;
+static unsigned release_calls;
 static bool withhold_rpq,withhold_fence,rx_active[128];
 static unsigned rx_retired[128],published;
 static u32 registers[0x10000/4];
@@ -67,14 +68,16 @@ static int rtl_ax_command(struct rtl_ax_ap *r,unsigned q,unsigned cat,unsigned c
  unsigned fn,const u8 *data,unsigned bytes,bool ack) {
  assert(r->tx==current && q==0 && cat==1 && cls==9 && fn==27 && bytes==24 && !ack);
  unsigned word=get_unaligned_le32(data),id=(word>>8)&255,ac=word&255;
- assert(id==1 && ac<4 && withdrawn[id]);
+ assert(id>0 && id<128 && ac<4 && withdrawn[id]);
  assert(!get_unaligned_le32(current->pe.memory+0x11a00+id*4));
- assert(get_unaligned_le32(current->pe.memory+0x20f8)==1 || get_unaligned_le32(current->pe.memory+0x20f8)==128);
+ assert(get_unaligned_le32(current->pe.memory+0x20f8)==id || get_unaligned_le32(current->pe.memory+0x20f8)==128);
  assert(!current->paused);
- if(current->ni.route_peers[2]) {
+ if(id==1 && current->ni.route_peers[2]) {
   assert(get_unaligned_le32(current->pe.memory+0x22ac)==0x81);
-  assert(get_unaligned_le32(current->pe.memory+EPP_RETIRE_TARGETS)==24);
-  assert(get_unaligned_le32(current->pe.memory+EPP_RETIRE_TARGETS+28)==8);
+  assert(get_unaligned_le32(current->pe.memory+EPP_RETIRE_TARGETS)==24 ||
+         get_unaligned_le32(current->pe.memory+EPP_RETIRE_TARGETS)==1024);
+  assert(get_unaligned_le32(current->pe.memory+EPP_RETIRE_TARGETS+28)==8 ||
+         get_unaligned_le32(current->pe.memory+EPP_RETIRE_TARGETS+28)==512);
   registers[0x7060/4]=1024;registers[0x707c/4]=512;
  }
  drop_calls++;
@@ -95,7 +98,7 @@ static void tick(void) {
  }
 }
 #define read_poll_timeout(op,val,cond,delay,timeout,sleep,args...) ({ \
- (void)(delay);(void)(timeout);(void)(sleep);tick();val=op(args);(cond)?0:-ETIMEDOUT;})
+ (void)(delay);(void)(timeout);(void)(sleep);poll_calls++;tick();val=op(args);(cond)?0:-ETIMEDOUT;})
 #define readl_poll_timeout(address,val,cond,delay,timeout) ({ \
  (void)(address);(void)(delay);(void)(timeout);val=0;(cond)?0:-ETIMEDOUT;})
 #define wait_event_timeout(w,cond,t) ((void)(t),(cond)?1:0)
@@ -107,7 +110,7 @@ static int rtl9617c_wifi_peer_route(struct net_device *dev,void *mac,unsigned ro
  if(fail_withdraw) return -EIO;
  withdrawn[id]=1;return 0;
 }
-static int rtl_ax_tx_pause(struct rtl_ax_tx *tx) {tx->paused=true;return 0;}
+static int rtl_ax_tx_pause(struct rtl_ax_tx *tx) {pause_calls++;tx->paused=true;return 0;}
 static bool rtl_ax_rx_uplink_active(void *rx,unsigned id){(void)rx;return rx_active[id];}
 static void rtl_ax_rx_uplink_disable(void *rx,unsigned id){(void)rx;rx_active[id]=false;}
 static void rtl_ax_rx_uplink_retire(void *rx,unsigned id){(void)rx;rx_retired[id]++;}
@@ -115,7 +118,7 @@ static void rtl_ax_rx_uplink_enable(void *rx,unsigned id){(void)rx;rx_active[id]
 static int rtl9617c_wifi_id(struct net_device *dev){(void)dev;return 3;}
 static int ni_uplink_start(struct rtl_ax_tx *tx,unsigned id){assert(tx->ni.active && id==3);return 0;}
 static void rtl_ax_tx_open(struct rtl_ax_tx *tx) {tx->paused=false;}
-static bool ni_epps_empty(struct rtl_ax_tx *tx) {return !tx->ni.route_peers[2];}
+static bool ni_epps_empty(struct rtl_ax_tx *tx) {return !tx->ni.route_peers[2] || drop_mask[2]==15;}
 static u32 readl(void *p) {return get_unaligned_le32(p);}
 static void ni_test_buffered(struct rtl_ax_tx *tx,unsigned id,unsigned mask) {(void)tx;(void)id;(void)mask;}
 static void cancel_work_sync(void *p) {(void)p;}
@@ -123,7 +126,14 @@ static void dev_put(struct net_device *dev) {(void)dev;}
 static void dev_hold(struct net_device *dev) {(void)dev;}
 static void schedule_work(void *p) {(void)p;}
 static int ni_test_prepare(struct rtl_ax_tx *tx,unsigned id) {(void)tx;(void)id;return 0;}
-static int ni_test_release(struct rtl_ax_tx *tx) {assert(!pending[1]);tx->ni.active=false;return 0;}
+static int ni_test_release(struct rtl_ax_tx *tx) {
+ assert(!pending[1]);release_calls++;
+ if(fail_release){fail_release--;return -ETIMEDOUT;}
+ tx->ni.active=false;return 0;
+}
+static int rtl_ax_tx_rx_retire(struct rtl_ax_tx *tx,unsigned id) {
+ assert(!rx_active[id]);rtl_ax_tx_pause(tx);rtl_ax_rx_uplink_retire(tx->rx,id);rtl_ax_tx_open(tx);return 0;
+}
 int rtl_ax_mac_drop_peer(struct pci_dev *pdev,unsigned macid);
 '''
 
@@ -135,7 +145,7 @@ int main(void) {
   struct rtl_ax_tx tx={.pe_active=true,.pe={memory},.pdev=&pdev};
   struct rtl_ax_ap radio={.tx=&tx};pdev.radio=&radio;current=&tx;
   memset(pending,0,sizeof(pending));memset(drop_mask,0,sizeof(drop_mask));memset(withdrawn,0,sizeof(withdrawn));
-  drop_calls=0;fail_drop=failure==1;withhold_rpq=failure==2;fail_withdraw=failure==3;withhold_fence=failure==4;
+  drop_calls=pause_calls=poll_calls=0;fail_drop=failure==1;withhold_rpq=failure==2;fail_withdraw=failure==3;withhold_fence=failure==4;
   tx.ni.active=true;tx.ni.route_dev=&dev;tx.ni.route_macid=1;
   tx.ni.regs=registers;tx.ni.vp=registers;tx.ni.cpu=3;
   memset(registers,0,sizeof(registers));
@@ -147,15 +157,60 @@ int main(void) {
   tx.ni.route_peers[2]=other;
   memory[0xe408]=1;memory[0xe410]=2;
   put_unaligned_le32(1,memory+0x11a04);put_unaligned_le32(other,memory+0x11a08);
-  pending[1]=5;tick();
+  pending[1]=(!other && failure==2)?8:5;tick();
   int ret=rtl_ax_tx_ni_retire_peer(&tx,1);
   if(!failure) {
    assert(ret==0 && drop_calls==4 && pending[1]==0);
    assert(!tx.ni.route_peers[1] && !tx.peer_offloaded[1]);
   } else {
-   assert(ret==((failure==2 || failure==4)?-ETIMEDOUT:-EIO) && pending[1]==(failure==4?0:5));
+   assert(ret==((failure==2 || failure==4)?-ETIMEDOUT:-EIO) &&
+          pending[1]==(failure==4?0:(!other && failure==2)?8:5));
    assert(tx.ni.route_peers[1] && tx.peer_offloaded[1]);
    assert(drop_calls==(failure==3?0:failure==1?1:4));
+  }
+  if (!other && failure==2) {
+   unsigned before=drop_calls, before_pause=pause_calls, before_poll=poll_calls;
+   for(unsigned attempt=0;attempt<100;attempt++) {
+    assert(rtl_ax_tx_ni_retire_peer(&tx,1)==-EAGAIN);
+    assert(rtl_ax_tx_ni_peer(&tx,&dev,2)==-EAGAIN);
+    assert(drop_calls==before && pause_calls==before_pause && poll_calls==before_poll);
+    assert(pending[1]==8 && tx.ni.route_peers[1]);
+   }
+   assert(tx.ni.retire_quiescing);
+   withhold_rpq=false;tick();
+   assert(!rtl_ax_tx_ni_retire_peer(&tx,1));
+   assert(!tx.ni.retire_quiescing && !tx.ni.route_peers[1]);
+  }
+  if (other && (failure==2 || failure==4)) {
+   unsigned before=drop_calls, before_pause=pause_calls, before_poll=poll_calls;
+   for(unsigned attempt=0;attempt<100;attempt++) {
+    assert(rtl_ax_tx_ni_retire_peer(&tx,1)==-EAGAIN);
+    assert(rtl_ax_tx_ni_peer(&tx,&dev,2)==-EAGAIN);
+    assert(drop_calls==before && pause_calls==before_pause && poll_calls==before_poll);
+   }
+   assert(tx.ni.retire_quiescing && tx.ni.retire_macid==1);
+   /* A second departing peer withdraws admission without replacing fence 1. */
+   fail_withdraw=true;
+   assert(rtl_ax_tx_ni_retire_peer(&tx,2)==-EIO);
+   assert(!get_unaligned_le32(memory+0x11a08));
+   assert(get_unaligned_le32(memory+0x20f8)==1);
+   fail_withdraw=false;
+   assert(rtl_ax_tx_ni_retire_peer(&tx,2)==-EAGAIN);
+   assert(withdrawn[2] && !get_unaligned_le32(memory+0x11a08));
+   assert(get_unaligned_le32(memory+0x20f8)==1 && tx.ni.route_peers[2]);
+   withhold_rpq=withhold_fence=false;tick();
+   assert(!rtl_ax_tx_ni_retire_peer(&tx,1));
+   assert(!tx.ni.retire_quiescing && !tx.ni.route_peers[1]);
+   /* The second peer remains withdrawn and can retire after the first. */
+   assert(!rtl_ax_tx_ni_retire_peer(&tx,2));
+   assert(!tx.ni.route_peers[2] && !tx.ni.retire_quiescing);
+   continue;
+  }
+  if (!other && failure==1) {
+   assert(!tx.ni.retire_quiescing);
+   fail_drop=false;
+   assert(!rtl_ax_tx_ni_retire_peer(&tx,1));
+   assert(!tx.ni.retire_quiescing && !tx.ni.route_peers[1]);
   }
   assert(!get_unaligned_le32(memory+0x11a04));
   assert(get_unaligned_le32(memory+0x11a08)==other && !drop_mask[2]);
@@ -187,6 +242,58 @@ int main(void) {
   assert(!rx_active[1] && !tx.peer_offloaded[1]);
   assert(tx.ni.active==!!other_rx && rx_active[2]==other_rx);
  }
+
+ /* BA timeout -> station removal, including an RX-only companion. */
+ for(unsigned other=0;other<3;other++) {
+  u8 memory[0x20000]={0};struct net_device dev={0};struct pci_dev pdev={0};
+  struct rtl_ax_tx tx={.pe_active=true,.pe={memory},.pdev=&pdev};
+  struct rtl_ax_ap radio={.tx=&tx};pdev.radio=&radio;current=&tx;
+  memset(pending,0,sizeof(pending));memset(drop_mask,0,sizeof(drop_mask));memset(withdrawn,0,sizeof(withdrawn));
+  memset(rx_active,0,sizeof(rx_active));memset(rx_retired,0,sizeof(rx_retired));memset(registers,0,sizeof(registers));
+  fail_drop=fail_withdraw=fail_release=withhold_fence=0;withhold_rpq=true;
+  release_calls=drop_calls=pause_calls=poll_calls=published=0;
+  tx.ni.active=true;tx.ni.route_dev=&dev;tx.ni.route_macid=1;tx.ni.regs=registers;tx.ni.vp=registers;tx.ni.cpu=3;
+  tx.ni.route_peers[1]=tx.peer_offloaded[1]=rx_active[1]=true;
+  rx_active[2]=other!=0;tx.ni.route_peers[2]=other==2;
+  if(other==2){registers[0x7060/4]=24;registers[0x707c/4]=8;put_unaligned_le32(32760,memory+EPP_CONSUMERS+28);}
+  memory[0xe408]=1;memory[0xe410]=2;put_unaligned_le32(1,memory+0x11a04);put_unaligned_le32(other!=0,memory+0x11a08);
+  pending[1]=8;tick();assert(rtl_ax_tx_ni_retire_ba(&tx,1)==-ETIMEDOUT);
+  assert(tx.ni.retire_quiescing && tx.ni.retire_macid==1 && rx_active[1]);
+  unsigned drops=drop_calls,pauses=pause_calls,polls=poll_calls;
+  for(unsigned n=0;n<100;n++)assert(rtl_ax_tx_ni_retire_peer(&tx,1)==-EAGAIN);
+  assert(!rx_active[1] && pending[1]==8 && drop_calls==drops && pause_calls==pauses && poll_calls==polls);
+  withhold_rpq=false;tick();assert(ni_peer_idle(&tx,1));
+  assert(!rtl_ax_tx_ni_retire_peer(&tx,1));
+  assert(!tx.ni.retire_quiescing && !tx.ni.route_peers[1] && !tx.peer_offloaded[1]);
+  assert(rx_retired[1] && rx_active[2]==(other!=0) && !rx_retired[2]);
+  assert(drop_calls==drops && !drop_mask[2]);
+  assert(tx.ni.active==(other!=0));
+ }
+ /* Final release can fail after draining; retry without restarting withdrawal. */
+ for(unsigned rx_only=0;rx_only<2;rx_only++) for(unsigned failures=1;failures<=3;failures++) {
+  u8 memory[0x20000]={0};struct net_device dev={0};struct pci_dev pdev={0};
+  struct rtl_ax_tx tx={.pe_active=true,.pe={memory},.pdev=&pdev};
+  struct rtl_ax_ap radio={.tx=&tx};pdev.radio=&radio;current=&tx;
+  memset(pending,0,sizeof(pending));memset(drop_mask,0,sizeof(drop_mask));memset(withdrawn,0,sizeof(withdrawn));
+  memset(rx_active,0,sizeof(rx_active));memset(registers,0,sizeof(registers));
+  fail_drop=fail_withdraw=withhold_rpq=withhold_fence=0;fail_release=failures;
+  release_calls=drop_calls=pause_calls=poll_calls=0;
+  tx.ni.active=true;tx.ni.route_dev=&dev;tx.ni.route_macid=1;tx.ni.regs=registers;tx.ni.vp=registers;tx.ni.cpu=3;
+  tx.ni.route_peers[1]=!rx_only;tx.peer_offloaded[1]=rx_active[1]=true;
+  memory[0xe408]=1;put_unaligned_le32(!rx_only,memory+0x11a04);pending[1]=rx_only?0:8;tick();
+  for(unsigned n=0;n<failures;n++) {
+   assert((n?rtl_ax_tx_ni_cleanup(&tx):rtl_ax_tx_ni_retire_peer(&tx,1))==-ETIMEDOUT);
+   assert(tx.ni.retire_quiescing && tx.ni.retire_macid==0 && tx.ni.route_dev==&dev);
+   assert(rtl_ax_tx_ni_peer(&tx,&dev,2)==-EAGAIN);
+   /* A newly associating software-only peer must still install its key. */
+   assert(!rtl_ax_tx_ni_retire_peer(&tx,2));
+  }
+  assert(!rtl_ax_tx_ni_cleanup(&tx));
+  assert(release_calls==failures+1 && drop_calls==(rx_only?0:4) && pause_calls==1 && poll_calls==1);
+  assert(!tx.ni.retire_quiescing && !tx.ni.route_dev && !tx.ni.active && !tx.ni.route_peers[1]);
+  assert(!rtl_ax_tx_ni_retire_peer(&tx,1) && release_calls==failures+1);
+ }
+ puts("BA-to-STA transition and final-release failure retries preserve ownership and complete without repeated DROP");
  puts("TX BA retirement preserves RX and NI lifetime; TX re-admission works; full retirement preserves other RX-only peers");
  puts("NI retirement: captured EPP cutoff and RPQ must finish; later peer traffic does not block; failed commands and missing completion retain ownership");
 }
@@ -200,7 +307,8 @@ with tempfile.TemporaryDirectory(prefix='ni-retire-flush-') as directory:
     source.write_text(common + function((driver / 'role.h').read_text(), 'rtl_ax_station_drop') + drop +
                       function(ni, 'rtl_ax_tx_ni_route') + function(ni, 'ni_peer_fence') + function(ni, 'ni_peer_idle') +
                       function(ni, 'ni_retire_peer') + function(ni, 'rtl_ax_tx_ni_retire_peer') +
-                      function(ni, 'rtl_ax_tx_ni_retire_ba') + function(ni, 'rtl_ax_tx_ni_peer') + test)
+                      function(ni, 'rtl_ax_tx_ni_retire_ba') + function(ni, 'rtl_ax_tx_ni_peer') +
+                      function(ni, 'rtl_ax_tx_ni_cleanup') + test)
     subprocess.run(['cc', '-std=gnu11', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function',
                     '-fsanitize=address,undefined', str(source), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True, timeout=10)

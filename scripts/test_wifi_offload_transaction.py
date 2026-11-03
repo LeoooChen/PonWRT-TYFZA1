@@ -87,12 +87,12 @@ struct ieee80211_ampdu_params {struct ieee80211_sta *sta;unsigned action,tid;};
 struct wireless_dev {struct net_device *netdev;};struct ieee80211_vif {struct wireless_dev wdev;};
 struct rtl_ax_tx {int lock;bool pe_active,peer_offloaded[128],peer_authorized[128];unsigned occupied,ni_reports,ni_failed;
  struct {void *memory;}pe;void *rx,*pdev;
- struct {bool active,route_peers[128];unsigned cpu,route_macid,route_tim[128];struct net_device *route_dev;struct work_struct ps_work;}ni;};
+ struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;unsigned cpu,route_macid,route_tim[128];struct net_device *route_dev;struct work_struct ps_work;}ni;};
 struct rtl_ax_ap {struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_vif *ap_vif;
  struct wiphy_work offload_work;struct wiphy_delayed_work cleanup_work;bool ap_started,monitor_started,offload_retry,peer_authorized[128];
  struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[6];}security_roles[128];struct {unsigned aggregation[16],stopping,flushing;u8 address[6];}tx_ba[128];
  unsigned security_unlink[128];bool ra_registered[128];
- struct {bool deleting;}rx_ba[8];struct {bool pending;}retired_stations[128];int offload_result;unsigned offload_started,chip;};
+ struct {bool deleting;unsigned macid;}rx_ba[8];struct {bool pending;}retired_stations[128];int offload_result;unsigned offload_started,chip;};
 static struct rtl_ax_ap *active_radio;
 static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw){assert(active_radio->hw==hw);return active_radio;}
 static struct rtl_fe *active_fe;static struct rtl_ax_tx *active_tx;static int ni_test_lock;
@@ -113,6 +113,7 @@ static void rtl_ax_rx_uplink_retire(void *rx,unsigned id){(void)rx;assert(id==1)
 static bool rtl_ax_rx_uplink_active(void *rx,unsigned id){(void)rx;(void)id;return false;}
 static int rtl_ax_tx_pause(struct rtl_ax_tx *tx){assert(tx==active_tx);return 0;}
 static void rtl_ax_tx_open(struct rtl_ax_tx *tx){assert(tx==active_tx);}
+static int rtl_ax_tx_rx_retire(struct rtl_ax_tx *tx,unsigned id){assert(tx==active_tx);(void)id;return 0;}
 static int ni_test_prepare(struct rtl_ax_tx *tx,unsigned id){assert(id==1);tx->ni.active=true;return 0;}
 static int ni_test_release(struct rtl_ax_tx *tx){tx->ni.active=false;return 0;}
 static bool ni_epps_empty(struct rtl_ax_tx *tx){(void)tx;return true;}
@@ -213,7 +214,7 @@ static int rtl9617c_wifi_peer_route(struct net_device *dev,const u8 *mac,unsigne
  if(route)assert(active_tx->ni.route_peers[1]);
  return rtl_fe_wifi_peer_route(active_fe,dev,mac,route);}
 '''
-code += function(ni, 'rtl_ax_tx_ni_route') + function(ni, 'rtl_ax_tx_ni_peer') + function(ni, 'rtl_ax_tx_ni_retire_peer')
+code += function(ni, 'rtl_ax_tx_ni_route') + function(ni, 'rtl_ax_tx_ni_peer') + function(ni, 'rtl_ax_tx_ni_cleanup') + function(ni, 'ni_retire_peer') + function(ni, 'rtl_ax_tx_ni_retire_peer') + function(ni, 'rtl_ax_tx_ni_retire_ba')
 code += function(tx, 'rtl_ax_tx_peer_authorized')
 if 'bool rtl_ax_tx_peer_security(' in tx:
     code += function(tx, 'rtl_ax_tx_peer_security')

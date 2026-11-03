@@ -25,3 +25,20 @@ jobs:
           python3 scripts/test_lan_link_mode.py
           python3 scripts/test_fe_lan_lifecycle.py
           python3 scripts/test_itu_pppoe_datapath.py
+          python3 scripts/test_radio_ni_retire_flush.py
+          python3 scripts/test_wifi_ni_retirement.py
+          python3 scripts/test_radio_rx_ba_cleanup.py
+          python3 scripts/test_wifi_offload_transaction.py
+          python3 scripts/test_radio_key_cleanup.py
+          python3 scripts/test_ni_release_inflight.py
+      - name: Verify PE completion records and publication
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 llvm-18 lld-18
+          python3 -m venv artifacts/pe-test-env
+          artifacts/pe-test-env/bin/pip install unicorn==2.1.4
+          PE_RADIO_CFLAGS=-DPE_UPLINK sh scripts/build_pe_radio_wd.sh artifacts/pe-check
+          cmp artifacts/pe-check/pe-tx-code.h port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-tx-code.h
+          artifacts/pe-test-env/bin/python scripts/test_pe_rpq_firmware.py artifacts/pe-check/pe-tx.bin
+          artifacts/pe-test-env/bin/python scripts/test_pe_tx_publication.py artifacts/pe-check
+          artifacts/pe-test-env/bin/python scripts/test_pe_instruction_memory.py artifacts/pe-check

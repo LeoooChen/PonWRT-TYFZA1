@@ -125,6 +125,23 @@ static void __attribute__((section(".entry"), noinline)) rpq_event(volatile u32 
 	pe_event(mailbox);
 }
 
+/* PE1 is the only RPQ consumer for a radio; publish the record before count. */
+static void pe_rpq_fault(u8 *memory, u32 reason, u32 info, u32 wd,
+			 u32 report, u32 owner, u32 details, u32 consumer)
+{
+	volatile u32 *trace = (void *)(memory + RTL_AX_RPQ_FAULT_TRACE);
+	u32 sequence = trace[0] + 1;
+	volatile u32 *entry = trace + 1 + ((sequence - 1) & (RTL_AX_RPQ_FAULT_SLOTS - 1)) * RTL_AX_RPQ_FAULT_WORDS;
+
+	entry[0] = 0;
+	/* Invalidate an overwritten slot before any replacement fields reach ARM. */
+	sync();
+	entry[1] = reason; entry[2] = info; entry[3] = wd; entry[4] = report;
+	entry[5] = owner; entry[6] = details; entry[7] = consumer;
+	sync(); entry[0] = sequence;
+	sync(); trace[0] = sequence;
+}
+
 static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 {
 	if (!mailbox[68]) return;
@@ -144,6 +161,7 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 	u32 old = rtl_ax_rx_epoch_old(&mailbox[RTL_AX_PE_DFS_EPOCH + 1], consumer);
 	u8 *out = uncached(mailbox[72] + producer * RTL_AX_RPQ_BUFFER_BYTES);
 	if ((info & 0xc000) != 0xc000 || written > RTL_AX_RPQ_BUFFER_BYTES || offset > written || bytes > written - offset) {
+		pe_rpq_fault(memory, 1, info, wd, 0, 0, 0, consumer);
 		mailbox[77]++;
 	} else {
 		/* Stock dispatch recycles WPs separately from ordinary RX delivery.
@@ -174,7 +192,10 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 			volatile u32 *owners = (void *)(memory + 0xc400);
 			u32 member = id - 256, details = owners[member * 2 + 1];
 			if (!owners[member * 2] || details & BIT(31) ||
-			    ((details >> 8) & 127) != (report & 127)) { mailbox[77]++; continue; }
+			    ((details >> 8) & 127) != (report & 127)) {
+				pe_rpq_fault(memory, 2, info, wd, report, owners[member * 2], details, consumer);
+				mailbox[77]++; continue;
+			}
 			if (details & BIT(16)) {
 				u32 generation = *(u32 *)(memory + RTL_AX_NI_PS_WP_GENERATION + member * 4);
 				volatile u32 *ps = (void *)(memory + 0xe800 + (report & 127) * 16);

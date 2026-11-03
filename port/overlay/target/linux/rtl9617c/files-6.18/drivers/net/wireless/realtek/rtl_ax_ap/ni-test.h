@@ -483,6 +483,22 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 	mutex_lock(&ni_test_lock);
 	if (!macid) {
 		if (!tx->ni.route_dev) goto unlock;
+		/* Preserve an unfinished per-peer fence until its owner retires. */
+		if (tx->ni.retire_quiescing && tx->ni.retire_macid) {
+			ret = -EAGAIN;
+			goto unlock;
+		}
+		/* A previous withdrawal already stopped admission and sent DROP.
+		 * Do not hold the wiphy lock polling permanently lost completions. */
+		if (tx->ni.retire_quiescing) {
+			if (get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 120) ||
+			    get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 152) ||
+			    !ni_epps_empty(tx)) {
+				ret = -EAGAIN;
+				goto unlock;
+			}
+			goto release;
+		}
 		for (i = 1; i < 128; i++) {
 			if (!tx->ni.route_peers[i]) continue;
 			put_unaligned_le32(0, tx->pe.memory + 0x11a00 + i * 4);
@@ -503,10 +519,17 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 			ret = rtl_ax_mac_drop_peer(tx->pdev, i);
 			if (ret) goto unlock;
 		}
+		WRITE_ONCE(tx->ni.retire_macid, 0);
+		WRITE_ONCE(tx->ni.retire_quiescing, true);
 		ret = read_poll_timeout(get_unaligned_le32, status,
 			!status && !get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 152) && ni_epps_empty(tx),
 			100, 2000000, false, tx->pe.memory + PE_PROBE_MAILBOX + 120);
 		if (ret) goto unlock;
+	release:
+		cancel_work_sync(&tx->ni.ps_work);
+		ret = ni_test_release(tx);
+		if (ret) goto unlock;
+		/* Keep the route ownership and retry marker until release succeeds. */
 		for (i = 1; i < 128; i++) {
 			if (tx->ni.route_peers[i]) ni_test_buffered(tx, i, false);
 			WRITE_ONCE(tx->ni.route_peers[i], false);
@@ -514,10 +537,8 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 			put_unaligned_le32(0, tx->pe.memory + 0x11a00 + i * 4);
 		}
 		WRITE_ONCE(tx->ni.route_macid, 0);
-		cancel_work_sync(&tx->ni.ps_work);
-		ret = ni_test_release(tx);
-		if (ret) goto unlock;
 		dev_put(tx->ni.route_dev); tx->ni.route_dev = NULL;
+		WRITE_ONCE(tx->ni.retire_quiescing, false);
 		goto unlock;
 	}
 	if (tx->ni.active || tx->ni.route_dev) { ret = -EBUSY; goto unlock; }
@@ -557,6 +578,8 @@ unlock:
 int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned int macid)
 {
 	int id, ret;
+	/* Preserve the active retirement fence; existing peers keep their routes. */
+	if (READ_ONCE(tx->ni.retire_quiescing)) return -EAGAIN;
 	if (!tx->pe_active || (READ_ONCE(tx->peer_offloaded[macid]) &&
 	    READ_ONCE(tx->ni.route_peers[macid]))) return 0;
 	if (!(get_unaligned_le32(tx->pe.memory + 0xd000 + macid * 32 + 16) & BIT(16))) return -ENOLINK;
@@ -567,6 +590,7 @@ int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned 
 		if (ret) return ret;
 	}
 	mutex_lock(&ni_test_lock);
+	if (tx->ni.retire_quiescing) { mutex_unlock(&ni_test_lock); return -EAGAIN; }
 	ret = ni_uplink_start(tx, id);
 	if (ret) { mutex_unlock(&ni_test_lock); return ret; }
 	put_unaligned_le32(1, tx->pe.memory + 0x11a00 + macid * 4);
@@ -581,6 +605,14 @@ int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned 
 	}
 	mutex_unlock(&ni_test_lock);
 	return ret ? ret : 1;
+}
+
+int rtl_ax_tx_ni_cleanup(struct rtl_ax_tx *tx)
+{
+	/* A global release outlives individual route bits, including RX-only peers. */
+	if (tx->ni.retire_quiescing && !tx->ni.retire_macid)
+		return rtl_ax_tx_ni_route(tx, tx->ni.route_dev, 0);
+	return 0;
 }
 
 static void ni_peer_fence(struct rtl_ax_tx *tx)
@@ -634,12 +666,36 @@ static int ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid, bool keep_rx
 {
 	unsigned int i;
 	u32 status;
-	int ret;
+	int ret = 0;
 	if (!READ_ONCE(tx->ni.route_peers[macid]) && !rtl_ax_rx_uplink_active(tx->rx, macid)) return 0;
 	if (!keep_rx) rtl_ax_rx_uplink_disable(tx->rx, macid);
 	/* Key/BA retirement must stop admission before attempting FE withdrawal. */
 	put_unaligned_le32(0, tx->pe.memory + 0x11a00 + macid * 4);
 	dma_wmb();
+	if (READ_ONCE(tx->ni.retire_quiescing)) {
+		u8 retiring = READ_ONCE(tx->ni.retire_macid);
+
+		if (!retiring) return rtl_ax_tx_ni_route(tx, tx->ni.route_dev, 0);
+		if (retiring == macid) {
+			if (!ni_peer_idle(tx, macid)) return -EAGAIN;
+			mutex_lock(&ni_test_lock);
+			/* BA retirement can become full key/STA retirement while waiting.
+			 * Finish that same fence before considering a global withdrawal. */
+			if (!keep_rx) {
+				ret = rtl_ax_tx_rx_retire(tx, macid);
+				if (ret) goto unlock;
+			}
+			goto complete;
+		} else {
+			/* Do not replace the first peer's fence. Withdraw this peer's
+			 * FE route now, and complete its teardown after the first one. */
+			mutex_lock(&ni_test_lock);
+			ret = rtl9617c_wifi_peer_route(tx->ni.route_dev,
+					tx->pe.memory + 0xe400 + macid * 8, false);
+			mutex_unlock(&ni_test_lock);
+			return ret ? ret : -EAGAIN;
+		}
+	}
 	for (i = 1; i < 128; i++)
 		if (i != macid && (READ_ONCE(tx->ni.route_peers[i]) ||
 		    rtl_ax_rx_uplink_active(tx->rx, i))) break;
@@ -658,8 +714,11 @@ static int ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid, bool keep_rx
 	/* PE admission is closed and its last submission has finished; flush before waiting for RPQ. */
 	ret = rtl_ax_mac_drop_peer(tx->pdev, macid);
 	if (ret) goto unlock;
+	WRITE_ONCE(tx->ni.retire_macid, macid);
+	WRITE_ONCE(tx->ni.retire_quiescing, true);
 	ret = read_poll_timeout(ni_peer_idle, status, status, 100, 2000000, false, tx, macid);
 	if (ret) goto unlock;
+complete:
 	WRITE_ONCE(tx->ni.route_peers[macid], false);
 	if (!keep_rx) WRITE_ONCE(tx->peer_offloaded[macid], false);
 	put_unaligned_le32(0, tx->pe.memory + 0x11a00 + macid * 4);
@@ -667,8 +726,14 @@ static int ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid, bool keep_rx
 	dma_wmb();
 	ni_test_buffered(tx, macid, false);
 	tx->ni.route_tim[macid] = 0;
+	WRITE_ONCE(tx->ni.retire_quiescing, false);
 unlock:
 	mutex_unlock(&ni_test_lock);
+	if (!ret && !keep_rx) {
+		for (i = 1; i < 128; i++)
+			if (READ_ONCE(tx->ni.route_peers[i]) || rtl_ax_rx_uplink_active(tx->rx, i)) break;
+		if (i == 128) ret = rtl_ax_tx_ni_route(tx, tx->ni.route_dev, 0);
+	}
 	return ret;
 }
 
