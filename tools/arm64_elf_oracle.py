@@ -12,7 +12,7 @@ from unicorn.arm64_const import (UC_ARM64_REG_X0, UC_ARM64_REG_X1, UC_ARM64_REG_
 
 
 class ElfOracle:
-    def __init__(self, path, handler, overrides=()):
+    def __init__(self, path, handler, overrides=(), copy_symbols=None):
         self.uc = Uc(UC_ARCH_ARM64, UC_MODE_ARM)
         self.scratch = 0x20000000
         self.uc.mem_map(self.scratch, 0x200000)
@@ -35,6 +35,15 @@ class ElfOracle:
                     continue
                 for rel in section.iter_relocations():
                     kind = rel['r_info_type']
+                    if kind == 1024:
+                        symbol = table.get_symbol(rel['r_info_sym'])
+                        # COPY needs the supplying DSO's object bytes, not an
+                        # address relocation. Require explicit fixture storage.
+                        assert copy_symbols is not None and symbol.name in copy_symbols, ('unmodeled COPY', symbol.name)
+                        data = copy_symbols[symbol.name]
+                        assert len(data) == symbol['st_size'] and not rel['r_addend']
+                        self.uc.mem_write(rel['r_offset'], data)
+                        continue
                     if kind == 1027:
                         value = rel['r_addend']
                     elif kind in (257, 1025, 1026):

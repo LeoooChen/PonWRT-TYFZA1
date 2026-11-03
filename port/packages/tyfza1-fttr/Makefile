@@ -13,7 +13,7 @@ define Package/tyfza1-fttr
   SECTION:=net
   CATEGORY:=Network
   TITLE:=TYFZA1 native FTTR control
-  DEPENDS:=@TARGET_rtl9617c +kmod-tyfza1-fttr +tyfza1-pon-control
+  DEPENDS:=@TARGET_rtl9617c +kmod-tyfza1-fttr +tyfza1-pon-control +libjson-c
 endef
 
 define Build/Prepare
@@ -43,12 +43,17 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/omci-association.c $(PKG_BUILD_DIR)/omci-vlan.c \
 		$(PKG_BUILD_DIR)/omci-service.c $(PKG_BUILD_DIR)/omci-wifi.c \
 		$(PKG_BUILD_DIR)/fttr-net.c $(TARGET_LDFLAGS)
+	$(TARGET_CC) $(TARGET_CPPFLAGS) $(TARGET_CFLAGS) -std=c11 -Wall -Wextra \
+		-o $(PKG_BUILD_DIR)/fttr-sync $(PKG_BUILD_DIR)/fttr-sync.c \
+		$(PKG_BUILD_DIR)/sync-wire.c $(PKG_BUILD_DIR)/omci-socket.c \
+		$(PKG_BUILD_DIR)/omci-wire.c $(TARGET_LDFLAGS) -ljson-c
 endef
 
 define Package/tyfza1-fttr/install
 	$(INSTALL_DIR) $(1)/usr/sbin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/fttrctl $(1)/usr/sbin/fttrctl
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/fttrd $(1)/usr/sbin/fttrd
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/fttr-sync $(1)/usr/sbin/fttr-sync
 	$(INSTALL_DIR) $(1)/etc/init.d $(1)/lib/firmware/realtek/rtl9617c
 	$(INSTALL_BIN) ./files/tyfza1-fttr.init $(1)/etc/init.d/tyfza1-fttr
 	$(INSTALL_DATA) ./files/tyfza1-fttr.services $(1)/etc/tyfza1-fttr.services

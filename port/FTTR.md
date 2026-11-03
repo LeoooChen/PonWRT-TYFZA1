@@ -1187,6 +1187,12 @@ remain unverified; this fix supplies the missing original reset sequence.
 
 ### Original remote Wi-Fi configuration transaction
 
+This section describes the library's Sino private OMCI branch. The retained
+firmware also contains a separate syncserv Ethernet/JSON implementation; see
+the original syncserv evidence below. No live subordinate capability inventory
+has established which path it accepts. An OMCI model test is not evidence for
+syncserv compatibility, and the two protocols' enums/string limits differ.
+
 `tools/trace_stock_fttr_wifi.py` executes
 `libponrelay.so:plr_gponrm_onu_wifi_set` (`ef5a4`), its real per-class Set
 producers/adapters and baseline encoders. The protocol uses existing
@@ -1404,6 +1410,114 @@ and procd argument. Neither these tests nor the earlier original Set-byte
 comparison establish optical connectivity, subordinate Wi-Fi interoperability,
 client association or roaming. Those remain hardware acceptance work.
 
+### Original syncserv Ethernet path
+
+The retained December2024 firmware's `bin/sync_controllerd` SHA-256 is
+`cfe3afada669992624f087aebef91e4000f361c83cdaeb15cfd6f3906f2d21e2`.
+Its `do_wifi_sync` dispatcher calls the JSON producer at `410cc4` for peers
+whose protocol field is2. `410c60` builds `GetWifi`. `405320` builds the JSON
+transport header, and `407be8` prepends Ethernet addresses/type. These are
+independent of `libponrelay`'s private `ff69/ff6a` OMCI classes. This establishes
+an implemented path in the retained firmware, not a live capture proving that
+a particular connected slave uses it.
+
+`tools/trace_stock_fttr_sync.py` executes those actual ARM64 functions. Synthetic
+MIB rows model only `wlan_getEntry` and radio-disable values; JSON-C allocation
+and serialization, packet allocation and slot-to-peer lookup are explicit
+fixtures. Original field selection, security branches, pktbuf pointer arithmetic,
+length/header writes and Ethernet construction execute unchanged. The shared
+ELF oracle now accepts explicit COPY-symbol byte fixtures; it still rejects
+COPY relocations without a named, correctly sized fixture. The unused Unix
+socket descriptor/optarg/stderr fixtures are zeroed and no original daemon is
+launched on a network.
+
+Verified framing:
+
+| Offset | Meaning |
+| --- | --- |
+| 0..11 | Destination/source Ethernet MAC |
+| 12..13 | Big-endian EtherType; this executable's initialized default is `88aa` |
+| 14 | High nibble: syncserv peer slot0..15; low nibble6=request,7=response |
+| 15 | Flags; zero for the verified unfragmented sender |
+| 16..19 | Big-endian JSON byte length |
+| 20 onward | JSON bytes, without a transmitted trailing NUL |
+
+The four-bit peer slot is **not** the MiniOLT's six-bit hardware ONU ID. The
+executable has an EtherType override and a fallback-message string mentioning
+`8899`, so native queries require an explicit value rather than inferring it
+from that string. Peer MAC and slot also remain explicit until discovery and
+identity binding are implemented. The original receive path `405760` sends
+upper-flagged frames to reassembly; native currently rejects all nonzero flags
+with `-EOPNOTSUPP` rather than interpreting a fragment as complete JSON.
+
+`GetWifi` is `{"RPCMethod":"GetWifi","MAC":"<host MAC as 12 hex digits>"}`.
+The original `SetWifi` contains `RPCMethod`, host `MAC`, `2.4GEnable`, `5GEnable`
+and a `SSID` array. It selects the first WLAN entry on each band, with `Band`
+`2.4G`/`5G`, one-based `Index`, `Enable`, `Name`, and security fields. Execution
+confirms these source-MIB security mappings:
+
+| Source MIB code | JSON BeaconType |
+| --- | --- |
+| 0 | None |
+| 2 | WPA |
+| 4 | WPA2 |
+| 6 | WPA/WPA2 |
+| 16 | WPA3 |
+| 20 | WPA2/WPA3 |
+
+WPA/WPA2 cipher byte2 produces `AES`; bytes1/other produce `TKIP`/`TKIP+AES`
+in the disassembled branch. `WPAKey` is a JSON string. A synthetic32-byte SSID
+and63-byte shared key survive original production intact; the OMCI24-byte limit
+does not apply. Unknown source security255 falls back to `BeaconType:"None"`
+while still emitting `WPAKey`; this is observed original behavior, **not** a
+permitted native fallback or a reason to silently weaken requested security.
+WEP branches, full UCI conversion, radio configuration and slave-side application
+still need their own evidence. The strings here do not prove WPA3 interoperability.
+
+Original response dispatch `40d198` accepts a result-only acknowledgement while
+a request is pending; execution with `Result:0`/`Result:1` confirms it retires
+the pending slot in either case. Its zero result takes the failure branch.
+An acknowledgement need not carry `RPCMethod`, `MAC` or Wi-Fi values. Therefore
+it cannot prove configuration readback. Subsequent reports and discovery must
+be traced before enabling automatic writes through this protocol.
+
+The package now installs a native, read-only diagnostic:
+
+```sh
+fttr-sync <interface> <peer-MAC> <sync-slot:0..15> <ethertype>
+```
+
+Choose the actual management interface (potentially an already configured GEM
+VLAN child), peer identity/slot and configured EtherType. The tool does not
+initialize hardware, allocate a slot or discover peers. It sends one GetWifi
+and waits up to three seconds; this is a diagnostic budget, not a claimed
+original retry policy. A namespace-scoped abstract Unix socket prevents two
+native probes from sharing an interface concurrently. Source/destination MAC,
+slot/type, complete length and strict UTF-8 JSON are checked. Unrelated methods
+are ignored, matching malformed data fails, and a rejected `Result` returns
+`-EREMOTEIO`. `sync_ack` means a positive acknowledgement; `sync_wifi_reply`
+means an identified JSON reply was received. Both explicitly report
+`configuration_verified:false`. Output includes only shape/count metadata;
+SSID/key values, unknown fields and raw replies are never printed.
+
+There is no request transaction ID in the verified header. A stale identical
+response from the same peer/slot cannot be distinguished by this diagnostic;
+its output must not be used as configuration-transaction acceptance. No Set,
+reboot or upgrade command is exposed.
+
+`scripts/test_fttr_sync.py` compares36 native frames against actual original
+encoding (six security cases, slots0/5/15, request/response), checks size limits,
+padding/truncation/fragment rejection, then runs the real diagnostic over
+AF_PACKET/veth. Peer replies are modeled using original encoding. It covers
+data/ACK/rejection, unrelated source/slot/method, malformed JSON, timeout,
+interface lease and output redaction. Reports are
+`artifacts/fttr/sync-stock-20261103.json` and `sync-native-20261103.json`.
+Existing OMCI Wi-Fi oracle checks still pass (`wifi-oracle-regression-sync.json`).
+Actual OpenWrt GCC14.4/musl prepare/compile/install, including the explicit
+`libjson-c` dependency and installed `fttr-sync`, passes in
+`artifacts/fttr/sync-build-20261103/`. No live slave, optical throughput or
+full firmware image has been validated by these checks.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: import its own retained bitstream, load it before
@@ -1444,6 +1558,9 @@ client association or roaming. Those remain hardware acceptance work.
    preflight/readback/restoration, explicit CLI and resident per-ONU policy;
    settings mapping and
    actual subordinate capability/behavior verification remain work.
+   The independent syncserv JSON path now has original producer/frame evidence
+   and a native read-only query; discovery, slot/identity binding, fragmentation,
+   report correlation and verified configuration transactions remain work.
 6. FE/PE acceleration and stale-flow invalidation, then hardware acceptance
    with real downstream gateways and a recorded interoperability scope.
 
