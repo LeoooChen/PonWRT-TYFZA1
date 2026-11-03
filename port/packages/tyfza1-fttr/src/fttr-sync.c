@@ -20,6 +20,8 @@
 #include "sync-wire.h"
 #include "sync-peer.h"
 #include "sync-wifi.h"
+#include "sync-json.h"
+#include "sync-register.h"
 
 static int64_t now_ms(void)
 {
@@ -346,6 +348,74 @@ static int drain(int fd)
 	return -EBUSY;
 }
 
+static int registration(int fd, const uint8_t source[6], const uint8_t peer[6],
+		uint16_t ethertype, uint8_t slot, struct json_object *policy, struct json_object **summary)
+{
+	struct fttr_sync_receiver receivers[2] = { 0 };
+	struct fttr_sync_message message;
+	struct pollfd descriptor = { .fd = fd, .events = POLLIN };
+	struct json_object *reply = NULL, *ready;
+	uint8_t frame[FTTR_SYNC_FRAME_MAX], sequence = 0;
+	int64_t deadline = now_ms() + 6500, next = 0;
+	int ret;
+
+	while (now_ms() < deadline) {
+		int64_t now = now_ms(), wake;
+		ssize_t n;
+		const char *payload;
+
+		if (now >= next) {
+			fttr_sync_heartbeat(source, ethertype, sequence++, frame);
+			n = send(fd, frame, 16, 0);
+			if (n != 16)
+				return n < 0 ? -errno : -EIO;
+			next = now + FTTR_SYNC_HEARTBEAT_MS;
+		}
+		wake = next < deadline ? next : deadline;
+		ret = poll(&descriptor, 1, wake > now ? wake - now : 0);
+		if (ret < 0) { if (errno == EINTR) continue; return -errno; }
+		if (descriptor.revents & (POLLERR | POLLHUP | POLLNVAL))
+			return -EIO;
+		if (!ret)
+			continue;
+		n = recv(fd, frame, sizeof(frame), MSG_TRUNC);
+		if (n < 0) { if (errno == EAGAIN) continue; return -errno; }
+		if (n < 16 || !fttr_sync_destination(frame, source) || memcmp(frame + 6, peer, 6) ||
+		    ((frame[14] & 15) != FTTR_SYNC_REQUEST && (frame[14] & 15) != FTTR_SYNC_RESPONSE))
+			continue;
+		ret = fttr_sync_receive(&receivers[(frame[14] & 15) == FTTR_SYNC_RESPONSE], frame, n,
+			ethertype, now_ms(), &message);
+		if (ret == -EAGAIN)
+			continue;
+		if (ret)
+			return ret;
+		ret = fttr_sync_register_reply(&message, policy, source, &reply);
+		if (ret == -EAGAIN)
+			continue;
+		if (ret)
+			return ret;
+		payload = json_object_to_json_string_ext(reply, JSON_C_TO_STRING_PLAIN);
+		ret = fttr_sync_pack(source, fttr_sync_slave_group, ethertype, slot, FTTR_SYNC_RESPONSE,
+			payload, strlen(payload), frame, sizeof(frame));
+		json_object_put(reply);
+		if (ret < 0)
+			return ret;
+		n = send(fd, frame, ret, 0);
+		if (n != ret)
+			return n < 0 ? -errno : -EIO;
+		*summary = json_object_new_object();
+		json_object_object_add(*summary, "event", json_object_new_string("sync_registration_reply"));
+		json_object_object_add(*summary, "slot", json_object_new_int(slot));
+		json_object_object_add(*summary, "identity_pin_match", json_object_new_boolean(1));
+		json_object_object_add(*summary, "identity_authenticated", json_object_new_boolean(0));
+		json_object_object_add(*summary, "peer_acceptance_verified", json_object_new_boolean(0));
+		json_object_object_get_ex(policy, "Ready", &ready);
+		json_object_object_add(*summary, "advertised_ready", json_object_get(ready));
+		return 0;
+	}
+	return -ETIMEDOUT;
+}
+
 int main(int argc, char **argv)
 {
 	struct ifreq request = { 0 };
@@ -358,18 +428,27 @@ int main(int argc, char **argv)
 	int lease = -1, control = -1, fd = -1, ret = -EINVAL;
 	bool discover = argc == 4 && !strcmp(argv[2], "discover");
 	bool apply = argc == 7 && !strcmp(argv[5], "wifi-apply");
+	bool registering = argc == 7 && !strcmp(argv[5], "register");
 	bool settings = apply || (argc == 6 && !strcmp(argv[5], "wifi-settings"));
-	bool automatic = (argc == 5 || settings) && !strcmp(argv[3], "auto");
+	bool automatic = (argc == 5 || settings || registering) && !strcmp(argv[3], "auto");
 	bool ack_seen = false;
 
-	if ((!discover && !settings && argc != 5) || strlen(argv[1]) >= IFNAMSIZ || strchr(argv[1], '/') ||
+	if ((!discover && !settings && !registering && argc != 5) || strlen(argv[1]) >= IFNAMSIZ || strchr(argv[1], '/') ||
 	    (!discover && mac_parse(argv[2], peer))) {
-		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [wifi-settings | wifi-apply <private-json-file>]\n"
+		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [wifi-settings | wifi-apply <private-json-file> | register <private-policy-file>]\n"
 			"       %s <interface> discover <ethertype>\n", argv[0], argv[0]);
 		return 2;
 	}
 	if (apply) {
 		ret = fttr_sync_wifi_load(argv[6], &desired);
+		if (ret)
+			goto out;
+		ret = -EINVAL;
+	}
+	if (registering) {
+		ret = fttr_sync_json_load_private(argv[6], &desired);
+		if (!ret)
+			ret = fttr_sync_register_policy(desired);
 		if (ret)
 			goto out;
 		ret = -EINVAL;
@@ -418,6 +497,10 @@ int main(int argc, char **argv)
 		if (ret < 0 || discover)
 			goto out;
 		slot = ret;
+	}
+	if (registering) {
+		ret = registration(fd, source, peer, ethertype, slot, desired, &summary);
+		goto out;
 	}
 	if (apply) {
 		struct json_object *observed = NULL;
@@ -473,7 +556,7 @@ out:
 			ret = -errno;
 	}
 	if (ret)
-		fprintf(stderr, "FTTR sync %s: %s (%d)\n", discover ? "discovery" : apply ? "wifi-apply" : settings ? "wifi-settings" : "GetWifi", strerror(-ret), ret);
+		fprintf(stderr, "FTTR sync %s: %s (%d)\n", discover ? "discovery" : registering ? "register" : apply ? "wifi-apply" : settings ? "wifi-settings" : "GetWifi", strerror(-ret), ret);
 	json_object_put(summary);
 	json_object_put(desired);
 	if (fd >= 0) close(fd);

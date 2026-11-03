@@ -1484,7 +1484,7 @@ provides a separate observation, still without authenticated transaction IDs.
 The package now installs a native, read-only diagnostic:
 
 ```sh
-fttr-sync <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [wifi-settings | wifi-apply <private-json-file>]
+fttr-sync <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [wifi-settings | wifi-apply <private-json-file> | register <private-policy-file>]
 fttr-sync <interface> discover <ethertype>
 ```
 
@@ -1820,6 +1820,83 @@ comparisons still pass after sharing the exchange loop. Reports are
 and `wifi-apply-sync-regression-20261103.json`; actual GCC14.4/musl package stage
 and matching source hashes are in `wifi-apply-build-20261103/`.
 
+### Explicit syncserv registration reply
+
+`tools/trace_stock_fttr_registration.py` executes the baseline Register branch
+of original `40d198`, its LOID lookup/row construction and reply producer. It
+models JSON-C, source MIB values, an empty stored LOID list and `isMasterReady`;
+modern/province-dependent side effects are explicitly disabled. The executed
+scope does not stand in for those other branches or for an actual slave.
+
+On `RPCMethod:"Register"`, original code sets peer protocol offset472 to1 and
+copies optional DevName, LOID, Manufacturer, ModelName, OUI, SN and GPONSN into
+the source-MAC-selected row. Sizes are128/64/64/64/12/64/16 bytes respectively;
+the native parser leaves room for a terminator except the16-byte GPONSN. The
+original even accepts a registration with none of those fields, so registration
+is not authentication. Its baseline reply is:
+
+```json
+{"Result":1,"MAC":"<host MAC>","OUI":"<host OUI>","SN":"<host serial>","Ready":0}
+```
+
+Ready comes from actual `isMasterReady`, not heartbeats or link speed. The
+original may also return an assigned LOID or province-dependent web password;
+neither is inferred or sent by the native baseline entry point. A positive
+pending SetAllSetting ACK sets protocol2. A repeated Register sets protocol1
+again, even if the prior protocol was2. Those transitions were executed and
+must be respected by a future resident controller rather than treating the
+first observed protocol as permanent.
+
+The native one-shot command is:
+
+```sh
+fttr-sync <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> register /root/fttr-registration.json
+```
+
+Its private policy file provides the master identity/readiness and the expected
+peer serial explicitly, for example (synthetic values only):
+
+```json
+{"OUI":"020304","SN":"synthetic-host-serial","Ready":0,"ExpectedSN":"synthetic-peer-serial","ExpectedGPONSN":"ABCD12345678"}
+```
+
+OUI must be six hex characters; host SN and ExpectedSN are required nonempty
+strings up to63 bytes. ExpectedGPONSN is optional, up to16 bytes. Ready must be
+integer0/1 and represents the operator-supplied state, not a native optical or
+service measurement. Unknown policy keys are rejected. The file uses the same
+owner/private-permission/regular-file checks as Wi-Fi configuration, now shared
+in `sync-json.c`. No hardware identity is fabricated or taken from the peer.
+
+Under the interface lease, `auto` first resolves the target MAC using heartbeat
+discovery. Registration then sends heartbeats and listens for up to6.5 seconds
+for that target's Register, accepting type6/type7 and bounded reassembly. It
+ignores other sources/methods, validates optional field lengths/types, requires
+the expected SN and optional GPONSN to match, and only then sends one baseline
+type7 reply to the original slave multicast group. Missing/mismatched identities
+fail before a reply; optional empty LOID/description fields are accepted. No
+received text, LOID or raw registration is printed.
+
+Success reports `sync_registration_reply`, the local slot,
+`identity_pin_match:true`, `identity_authenticated:false`,
+`peer_acceptance_verified:false` and the explicit `advertised_ready`. This means
+the expected self-description was observed and a reply was sent; it does not
+prove the slave accepted it, has optical service, or supports Flag1 writes.
+The association is not persisted and this separate invocation does not bind a
+later `wifi-apply` call to that serial. Resident integration, replacement
+cancellation, readiness measurements, LOID policy, capability negotiation and
+real subordinate acceptance remain work.
+
+Six original baseline cases exercise Ready0/1 and prior protocol0/1/2, plus
+missing identifiers and positive SetAllSetting ACK transition. The new
+`scripts/test_fttr_sync_register.py` covers20 AF_PACKET/veth cases: original
+reply-byte comparison, auto discovery, both JSON types, fragmented Register,
+empty optional fields, wrong/missing serials, oversized/control-containing
+fields, malformed policy and timeout. Existing39 sync and30 Wi-Fi apply cases
+pass after sharing the private JSON loader. Reports are
+`artifacts/fttr/registration-stock-20261103.json`, `registration-native-20261103.json`,
+`registration-sync-regression-20261103.json` and `registration-wifi-regression-20261103.json`.
+Real GCC14.4/musl package staging and source hashes are in `registration-build-20261103/`.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: import its own retained bitstream, load it before
@@ -1863,8 +1940,9 @@ and matching source hashes are in `wifi-apply-build-20261103/`.
    The independent syncserv JSON path now has original producer/frame evidence
    and native heartbeat discovery/local MAC binding, bounded fragments and
    Flag1 Wi-Fi read/report completion and explicit write/readable-field
-   comparison; authenticated identity/capability, actual credentials,
-   resident policy and complete configuration transactions remain work.
+   comparison plus a pinned one-shot Register reply; authenticated identity/
+   capability, real readiness/credentials, resident registration/policy and
+   complete configuration transactions remain work.
 6. FE/PE acceleration and stale-flow invalidation, then hardware acceptance
    with real downstream gateways and a recorded interoperability scope.
 

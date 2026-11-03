@@ -35,10 +35,10 @@ def main():
     with tempfile.TemporaryDirectory() as name:
         directory=Path(name);binary=directory/'fttr-sync'
         subprocess.run(['cc','-std=c11','-O2','-Wall','-Wextra','-Werror',
-                        *[str(src/n) for n in ('fttr-sync.c','sync-wire.c','sync-peer.c','sync-wifi.c','omci-socket.c','omci-wire.c')],
+                        *[str(src/n) for n in ('fttr-sync.c','sync-wire.c','sync-peer.c','sync-wifi.c','sync-json.c','sync-register.c','omci-socket.c','omci-wire.c')],
                         '-ljson-c','-o',str(binary)],check=True)
         subprocess.run(['cc','-std=c11','-O2','-Wall','-Wextra','-Werror','-shared','-fPIC',
-                        str(src/'sync-wifi.c'),'-ljson-c','-o',str(directory/'wifi.so')],check=True)
+                        str(src/'sync-wifi.c'),str(src/'sync-json.c'),'-ljson-c','-o',str(directory/'wifi.so')],check=True)
         native=C.CDLL(str(directory/'wifi.so'))
         native.json_tokener_parse.argtypes=[C.c_char_p];native.json_tokener_parse.restype=C.c_void_p
         native.json_object_put.argtypes=[C.c_void_p]
