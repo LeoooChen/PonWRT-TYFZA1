@@ -148,9 +148,23 @@ def verify(manager, mib):
     stock.row[219:252]=b'S'*32+b'\0'
     assert stock.write({'SSIDIndex':'17'})['content']['SSID']=='S'*32
     assert stock.read_local()['List'][0]['SSID']=='S'*32
+    standards=[]
+    for band,index,modes in ((1,0,((1,'11b'),(2,'11g'),(3,'11bg'),(10,'11gn'),(11,'11bgn'),(139,'11ax'))),
+                             (2,8,((4,'11a'),(12,'11na'),(64,'11ac'),(204,'11ax')))):
+        for raw,name in modes:
+            stock.row[338]=raw
+            assert stock.read_local()['List'][index]['Standard']==name
+            pointer=stock.mib.scratch+0x80000
+            stock.mib.uc.mem_write(pointer,name.encode()+b'\0')
+            assert stock.mib.call('map_wlan_standard_to_mib',band,pointer)&255==raw
+            standards.append({'band':band,'standard':name,'raw':raw})
+    # Setter accepts 11n, but retained getter renders raw8 as undefined. Do not
+    # advertise this as a supported write/readback pair in native policy.
+    stock.row[338]=8
+    assert stock.read_local()['List'][0]['Standard']=='undefined'
     return {'manager_sha256':hashlib.sha256(Path(manager).read_bytes()).hexdigest(),
             'mib_sha256':hashlib.sha256(Path(mib).read_bytes()).hexdigest(),
-            'cases':cases,'read_fields':list(read['List'][0]),
+            'cases':cases,'standard_roundtrips':standards,'read_fields':list(read['List'][0]),
             'read_entry_example':read['List'][0],
             'findings':['remote write content.act=config uses device-local SSIDIndex string1..16',
                         'write ENCRYPT uses raw MIB code, while local read ENCRYPT uses UI code string',

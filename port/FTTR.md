@@ -1958,7 +1958,8 @@ whether the actual syncserv network is the management bridge or a hardware
 endpoint. Supply a chmod0600 policy at `/etc/tyfza1-fttr.sync.json`, configure
 `main.interface` and `main.enabled`, and start/enable the service only with the
 intended interface and readiness policy. This does not alter hardware `fttrd`
-startup. There is no dynamic readiness, policy reload or local Wi-Fi/UCI import.
+startup. There is no dynamic readiness or policy reload; the explicit UCI
+snapshot converter below supplies initial Wi-Fi content.
 
 Redacted JSON events include local slot, registration generation, protocol and
 error. Apply events retain independent write/readback results and SSID index.
@@ -1984,6 +1985,114 @@ Reports are `artifacts/fttr/resident-native-20261103.json`,
 and `resident-registration-regression-20261103.json`. GCC14.4/musl package
 prepare/compile/install and staged source hashes are in `resident-build-20261103/`.
 These are offline behavioral/build checks, not hardware acceptance.
+
+### Original master readiness predicate
+
+`tools/trace_stock_fttr_ready.py` now executes `libmib:isMasterReady` at
+`0x81ac0`, instead of treating its return as an unspecified fixture. Original
+`configd` definitions identify chain3004 as `ATM_VC_TBL`, row size11637,
+`applicationtype` at offset8502, and scalar4111/4115 as
+`CWMP_USERINFO_STATUS`/`CWMP_USERINFO_RESULT`.
+
+Ready requires a WAN row whose applicationtype bit0 is set, a successful
+`ifGetName`, successful `getInFlags` with IFF_UP, and successful IPv4
+`getInAddr`. It then requires USERINFO_STATUS==0 and USERINFO_RESULT==1.
+It does not check MiniOLT optics, IFF_RUNNING/carrier, nonzero returned IP,
+Internet reachability or subordinate acceptance. The29 executed fixtures cover
+row/name/flag/address failures, mixed service bits, later usable WAN rows and
+all tested CWMP status/result combinations. They are in
+`artifacts/fttr/ready-stock-20261103.json`, including input hashes and original
+schema definitions. These are simulated external reads, not current WAN or
+CWMP observations.
+
+The current native branch has no equivalent live CWMP user-registration
+provider. Therefore Ready stays explicit in both registration entry points;
+neither `fttrd` optical state nor OpenWrt interface-up is substituted for the
+original full predicate. Automatic readiness remains incomplete.
+
+### OpenWrt Wi-Fi policy snapshot
+
+The package now installs `fttr-sync-policy`, using real libuci to import one
+specified wireless file and turn explicit bindings into a resident JSON policy:
+
+```sh
+fttr-sync-policy /etc/config/wireless /root/fttr-bindings.json /root/fttr-generated.json
+fttr-sync br-lan serve 0x88aa /root/fttr-generated.json
+```
+
+The interface in the second command is an example, not inferred topology.
+Both input files must be regular files owned by the effective user, with no
+group/other permissions or symlinks. Wireless and binding inputs are bounded
+at128 KiB (JSON strictly below the bound). Only the supplied committed wireless
+file is imported: no `/tmp/.uci` deltas, default configuration directory,
+shell evaluation or current radio-state inference. The output is a validated
+private snapshot, not a live subscription to UCI changes. Output is staged at
+mode0600, fsynced and linked into an absent destination atomically; an existing
+file or symlink is never replaced. No SSID, password or raw JSON is printed.
+
+Binding example (synthetic identity; each entry requires explicit Registration
+as in the resident policy above):
+
+```json
+{
+  "Peers": [{
+    "MAC": "02:00:00:00:00:01",
+    "Registration": {
+      "OUI": "020304", "SN": "synthetic-host", "Ready": 1,
+      "ExpectedSN": "synthetic-peer"
+    },
+    "WiFiFromUCI": [
+      {"Section": "default_radio0", "SSIDIndex": "1", "Standard": "11bgn"},
+      {"Section": "default_radio1", "SSIDIndex": "9", "Standard": "11ax"}
+    ]
+  }]
+}
+```
+
+Bindings use existing, named `wifi-iface` AP sections and their `wifi-device`
+reference. Positional/anonymous sections are rejected. Radio `band` must be
+explicitly2g/5g and match the subordinate index1..8/9..16. SSID and key are
+copied as UTF-8 without shell interpolation or truncation. Enable is false if
+either radio or AP is disabled; advertisement is the inverse of hidden. Absent
+disabled/hidden options use their normal false defaults; malformed/list values
+are rejected.
+
+| OpenWrt encryption | Original Flag1 ENCRYPT |
+| --- | --- |
+| none | 0 |
+| psk | 2 |
+| psk2 | 4 |
+| psk-mixed | 6 |
+| sae | 16 |
+| sae-mixed | 20 |
+
+The converter supports these exact modes with a single passphrase, and empty
+key only for open mode. It rejects WEP key slots,64-digit raw PSKs, enterprise,
+OWE, explicit cipher suffixes and separate authentication/PMF/FT/WPS fields
+that Flag1 does not represent. This is SSID/passphrase and authentication-family
+mapping, not a complete hostapd security/radio policy clone. The direct JSON
+entry point remains available for independently established native settings.
+
+Standard is intentionally explicit for the subordinate. OpenWrt htmode includes
+channel width, and a master's configured HE/VHT mode does not prove subordinate
+support. Ten retained read-to-MIB standard pairs were executed:2g11b/11g/11bg/
+11gn/11bgn/11ax and5g11a/11na/11ac/11ax. Although the original setter also accepts
+11n, its retained getter returns `undefined` for raw8; it is not included in the
+native verified readback set. Mapping does not change channels, widths, power,
+VLANs, network attachment, ACLs or roaming settings.
+
+`scripts/test_fttr_sync_policy.py` runs49 converter invocations using the actual
+packaged AArch64/musl executable and libuci. It covers both bands, escaping and
+UTF-8,32-byte SSID, flags, supported authentication families, invalid/missing/
+ambiguous bindings, unsupported security settings, private file checks and
+existing output preservation. It compares24 generated entries with the retained
+original remote writer, then feeds a generated dual-band snapshot into the
+packaged resident daemon over AF_PACKET/veth: two writes and four reads pass.
+`credentials_verified` remains false. Reports are
+`artifacts/fttr/uci-native-20261103.json` and `uci-wifi-fields-stock-20261103.json`.
+Final GCC14.4/musl package build/install and source hashes are in
+`uci-build-20261103/`; its stand-alone staging command supplies rpath-link for
+libuci's libubox dependency. No physical slave or password installation was tested.
 
 ### Outstanding implementation and acceptance
 
