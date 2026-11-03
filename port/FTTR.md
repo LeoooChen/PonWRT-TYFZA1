@@ -1445,8 +1445,8 @@ Verified framing:
 The four-bit peer slot is **not** the MiniOLT's six-bit hardware ONU ID. The
 executable has an EtherType override and a fallback-message string mentioning
 `8899`, so native queries require an explicit value rather than inferring it
-from that string. Peer MAC and slot also remain explicit until discovery and
-identity binding are implemented. The original receive path `405760` sends
+from that string. Peer MAC remains explicit for targeted queries; `auto` now
+discovers its local slot as described below. The original receive path `405760` sends
 upper-flagged frames to reassembly; native currently rejects all nonzero flags
 with `-EOPNOTSUPP` rather than interpreting a fragment as complete JSON.
 
@@ -1484,16 +1484,20 @@ be traced before enabling automatic writes through this protocol.
 The package now installs a native, read-only diagnostic:
 
 ```sh
-fttr-sync <interface> <peer-MAC> <sync-slot:0..15> <ethertype>
+fttr-sync <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype>
+fttr-sync <interface> discover <ethertype>
 ```
 
 Choose the actual management interface (potentially an already configured GEM
-VLAN child), peer identity/slot and configured EtherType. The tool does not
-initialize hardware, allocate a slot or discover peers. It sends one GetWifi
+VLAN child), peer MAC and configured EtherType. The tool does not initialize
+hardware. `auto` discovers the peer's local slot under the same interface lease;
+an explicit slot remains available for diagnostics. It sends one GetWifi
 and waits up to three seconds; this is a diagnostic budget, not a claimed
 original retry policy. A namespace-scoped abstract Unix socket prevents two
 native probes from sharing an interface concurrently. Source/destination MAC,
-slot/type, complete length and strict UTF-8 JSON are checked. Unrelated methods
+message type, complete length and strict UTF-8 JSON are checked. The received
+slot nibble belongs to the remote sender and does not override local source-MAC
+binding. Unrelated methods
 are ignored, matching malformed data fails, and a rejected `Result` returns
 `-EREMOTEIO`. `sync_ack` means a positive acknowledgement; `sync_wifi_reply`
 means an identified JSON reply was received. Both explicitly report
@@ -1501,7 +1505,7 @@ means an identified JSON reply was received. Both explicitly report
 SSID/key values, unknown fields and raw replies are never printed.
 
 There is no request transaction ID in the verified header. A stale identical
-response from the same peer/slot cannot be distinguished by this diagnostic;
+response from the same peer cannot be distinguished by this diagnostic;
 its output must not be used as configuration-transaction acceptance. No Set,
 reboot or upgrade command is exposed.
 
@@ -1509,7 +1513,7 @@ reboot or upgrade command is exposed.
 encoding (six security cases, slots0/5/15, request/response), checks size limits,
 padding/truncation/fragment rejection, then runs the real diagnostic over
 AF_PACKET/veth. Peer replies are modeled using original encoding. It covers
-data/ACK/rejection, unrelated source/slot/method, malformed JSON, timeout,
+data/ACK/rejection, unrelated source/method, a different remote slot, malformed JSON, timeout,
 interface lease and output redaction. Reports are
 `artifacts/fttr/sync-stock-20261103.json` and `sync-native-20261103.json`.
 Existing OMCI Wi-Fi oracle checks still pass (`wifi-oracle-regression-sync.json`).
@@ -1517,6 +1521,72 @@ Actual OpenWrt GCC14.4/musl prepare/compile/install, including the explicit
 `libjson-c` dependency and installed `fttr-sync`, passes in
 `artifacts/fttr/sync-build-20261103/`. No live slave, optical throughput or
 full firmware image has been validated by these checks.
+
+### Syncserv heartbeat discovery and local MAC binding
+
+`tools/trace_stock_fttr_discovery.py` extends the original execution past the
+previous slot-lookup fixture. This revealed two corrections to the first native
+probe: original `403efc` checks the selected local slot and looks up its MAC,
+but ultimately passes group `01:10:ec:00:00:02` to `407be8`; JSON requests are
+therefore multicast in this firmware. Original ingress `403f80`/`40a1a8` maps the
+Ethernet source MAC to a local slot before dispatch. A received slot nibble of
+0/5/15 all maps to12 for an actual MAC retained in local slot12. The earlier
+encoder-only comparisons remain valid within their narrower scope, but did
+not establish this routing behavior. The native probe now sends to that group
+and correlates a response with the explicit source MAC, independently of the
+sender's slot nibble. Socket memberships include both original groups
+`01:10:ec:00:00:01` and `01:10:ec:00:00:02`, as selected by `libsyncserv:get_socket`.
+
+Actual heartbeat execution at `4038d0` produces16 bytes before Ethernet minimum
+padding: the multicast/source/type header, byte14=`01`, and byte15=`80 | seq`
+with a three-bit sequence wrapping0..7. The initialized timer period is two
+seconds (`42b458=2`); `40a068` runs after sending. `403868` ignores request-bit7
+and observes the source MAC of responses. It does not authenticate a serial
+number, echo-check a transaction ID or establish the peer's JSON capability.
+
+The original table initializer `413f80`, lookup `409a20`, state transition
+`409b64` and ageing function are executed with empty saved-MIB side effects:
+
+- Sixteen local slots, initialized with their own index; the MAC is the lookup
+  key, not the packet's slot field or the MiniOLT ONU-ID.
+- Prefer an exact retained MAC, even in an offline slot. Otherwise select the
+  first offline slot. A full online table cannot accept another MAC.
+- A response sets online and resets the missed count. Each subsequent timer
+  tick increments it; count3 exceeds the original threshold2 and expires it.
+- Keep the MAC after expiration, allowing the same peer to regain its old slot
+  unless that slot has since been reused.
+
+Native `sync-peer.c` implements these verified behaviors with a portable table.
+It additionally rejects zero/multicast/self source addresses, wrong Ethernet
+type/destination, non-heartbeat/request frames and invalid lengths before
+changing state. Full capacity returns `-ENOSPC`; it never silently evicts an
+online peer. This state is discovery liveness only, not an authenticated FTTR
+registration or a durable configuration owner.
+
+`discover` runs a bounded6.5-second observation with immediate first heartbeat
+then two-second intervals. It returns current responders, local slots and
+miss counts as `sync_discovery`, with `identity_authenticated:false`. A peer
+that answers only the first heartbeat expires on the fourth send and is not
+listed. An empty list is a completed observation, not a link-up claim. `auto`
+uses the same discovery but returns as soon as the specified target MAC replies,
+then sends GetWifi while retaining the interface lease; absence returns timeout.
+The process-local slot table is not saved between invocations, so a listed slot
+must not be treated as a persistent device identifier. Discovery does not query
+or mutate unrelated peers' configuration. A malformed or reflected frame cannot
+allocate a slot. Full table aborts the observation rather than reporting an
+apparently complete inventory.
+
+The current `scripts/test_fttr_sync.py` executes both original/native table
+lifecycles and complete routed queries, then covers15 AF_PACKET/veth cases,
+including auto discovery, expiring an unresponsive neighbor, absent target,
+multicast replies, different remote header slots and invalid identities. It
+retains the36 original JSON encoder comparisons. Reports are
+`artifacts/fttr/discovery-stock-20261103.json` and `discovery-native-20261103.json`.
+The updated real OpenWrt GCC14.4/musl package stages successfully under
+`artifacts/fttr/discovery-build-20261103/`. Timer/saved-MIB state and peer packets
+are modeled in these checks; no optical or real slave interoperability is claimed.
+Capability/identity authentication, automatic resident syncserv management,
+fragmentation, follow-up reports and verified writes remain required work.
 
 ### Outstanding implementation and acceptance
 
@@ -1559,8 +1629,9 @@ full firmware image has been validated by these checks.
    settings mapping and
    actual subordinate capability/behavior verification remain work.
    The independent syncserv JSON path now has original producer/frame evidence
-   and a native read-only query; discovery, slot/identity binding, fragmentation,
-   report correlation and verified configuration transactions remain work.
+   and native heartbeat discovery/local MAC binding plus a read-only query;
+   authenticated identity/capability negotiation, fragmentation, report
+   correlation and verified configuration transactions remain work.
 6. FE/PE acceleration and stale-flow invalidation, then hardware acceptance
    with real downstream gateways and a recorded interoperability scope.
 

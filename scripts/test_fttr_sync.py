@@ -16,6 +16,14 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from trace_stock_fttr_sync import SyncOriginal
+from trace_stock_fttr_discovery import DiscoveryOriginal
+
+GROUP = bytes.fromhex('0110ec000002')
+MASTER_GROUP = bytes.fromhex('0110ec000001')
+
+
+class Peer(C.Structure):
+    _fields_ = [('mac',C.c_ubyte*6),('missed',C.c_ubyte),('online',C.c_bool)]
 
 
 class Message(C.Structure):
@@ -35,15 +43,58 @@ def main():
         directory = Path(directory)
         src = ROOT / 'port/packages/tyfza1-fttr/src'
         subprocess.run(['cc','-std=c11','-O2','-Wall','-Wextra','-Werror','-shared','-fPIC',
-                        str(src/'sync-wire.c'),'-o',str(directory/'wire.so')], check=True)
+                        str(src/'sync-wire.c'),str(src/'sync-peer.c'),'-o',str(directory/'wire.so')], check=True)
         binary = directory/'fttr-sync'
         subprocess.run(['cc','-std=c11','-O2','-Wall','-Wextra','-Werror',
-                        *[str(src/n) for n in ('fttr-sync.c','sync-wire.c','omci-socket.c','omci-wire.c')],
+                        *[str(src/n) for n in ('fttr-sync.c','sync-wire.c','sync-peer.c','omci-socket.c','omci-wire.c')],
                         '-ljson-c','-o',str(binary)], check=True)
         native = C.CDLL(str(directory/'wire.so'))
         native.fttr_sync_pack.argtypes = [C.c_void_p,C.c_void_p,C.c_ushort,C.c_ubyte,C.c_ubyte,
                                           C.c_void_p,C.c_size_t,C.c_void_p,C.c_size_t]
         native.fttr_sync_unpack.argtypes = [C.c_void_p,C.c_size_t,C.c_ushort,C.POINTER(Message)]
+        native.fttr_sync_heartbeat.argtypes = [C.c_void_p,C.c_ushort,C.c_ubyte,C.c_void_p]
+        native.fttr_sync_peer_receive.argtypes = [C.POINTER(Peer),C.c_void_p,C.c_ushort,C.c_void_p,C.c_size_t]
+        native.fttr_sync_peer_age.argtypes = [C.POINTER(Peer)]
+        original = DiscoveryOriginal(args.controller)
+        peers = (Peer*16)()
+        heartbeat = C.create_string_buffer(16)
+
+        def compare_peers():
+            assert [{'mac':bytes(p.mac).hex(':'),'slot':i,'missed':p.missed,'online':p.online}
+                    for i,p in enumerate(peers)] == original.rows()
+
+        def observe(mac, flags=0):
+            original.receive(mac,flags)
+            frame=MASTER_GROUP+mac+b'\x88\xaa\x01'+bytes([flags])
+            ret=native.fttr_sync_peer_receive(peers,stock.mac,0x88aa,frame,len(frame))
+            compare_peers()
+            return ret
+
+        for sequence in range(10):
+            assert native.fttr_sync_heartbeat(stock.mac,0x88aa,sequence,heartbeat)==16
+            assert heartbeat.raw==original.heartbeat()
+            native.fttr_sync_peer_age(peers)
+            compare_peers()
+        macs=[bytes([2,0,0,0,0,i+1]) for i in range(17)]
+        assert observe(macs[0],0x80)==-errno.EAGAIN
+        for i,mac in enumerate(macs[:16]):assert observe(mac)==i
+        assert observe(macs[16])==-errno.ENOSPC
+        for _ in range(2):
+            original.heartbeat();native.fttr_sync_peer_age(peers);compare_peers()
+        assert observe(macs[5])==5
+        original.heartbeat();native.fttr_sync_peer_age(peers);compare_peers()
+        assert observe(macs[16])==0
+        assert observe(macs[12])==12
+        for header in (0,5,15):assert original.ingress_slot(macs[12],header)==12
+        for slot in (0,5,12):
+            expected=original.encode_bound(stock.wifi(get=True),slot)
+            buffer=C.create_string_buffer(1996)
+            n=native.fttr_sync_pack(stock.mac,GROUP,0x88aa,slot,6,expected[20:],len(expected)-20,buffer,1996)
+            assert buffer.raw[:n]==expected
+        # Native ingress rejects impossible identities and wrong envelopes.
+        for mac in (bytes(6),stock.mac,bytes.fromhex('0110ec000001')):
+            f=MASTER_GROUP+mac+b'\x88\xaa\x01\0'
+            assert native.fttr_sync_peer_receive(peers,stock.mac,0x88aa,f,len(f))==-errno.EINVAL
         count = 0
         for code in (0,2,4,6,16,20):
             stock.entries = [stock.entry(code),stock.entry(code)]
@@ -98,7 +149,8 @@ def main():
                     received,address=peer.recvfrom(4096)
                     if address[2]==socket.PACKET_OUTGOING:continue
                     requests += 1
-                    assert received == stock.encode(stock.wifi(get=True),5,True)
+                    expected = stock.encode(stock.wifi(get=True),5,True)
+                    assert received == GROUP+expected[6:]
                     if case in ('timeout','lease'):continue
                     value={'RPCMethod':'GetWifi','MAC':stock.peer.hex(),
                            'SSID':[{'Name':'do-not-print-name','WPAKey':'do-not-print-key'}]}
@@ -108,9 +160,9 @@ def main():
                     response=response[6:12]+response[:6]+response[12:]
                     if case=='unrelated':
                         peer.send(response[:6]+bytes.fromhex('020000000099')+response[12:])
-                        peer.send(response[:14]+b'\x47'+response[15:])
                         other=stock.encode(dict(value,RPCMethod='GetTimeSetting',Result=0),5,False)
                         peer.send(other[6:12]+other[:6]+other[12:])
+                    if case=='different-slot':response=MASTER_GROUP+response[6:14]+b'\xf7'+response[15:]
                     if case=='fragment':response=response[:15]+b'\x20'+response[16:]
                     if case=='truncated':response=response[:-1]
                     if case=='bad-json':response=response[:20]+b'!'*len(response[20:])
@@ -121,10 +173,11 @@ def main():
             finally:
                 if process.poll() is None:process.kill();process.communicate()
             assert 'do-not-print' not in output+error
-            if case in ('normal','unrelated','ack'):
+            if case in ('normal','unrelated','ack','different-slot'):
                 assert process.returncode==0,(case,error)
                 result=json.loads(output)
                 assert not result['configuration_verified']
+                assert result['slot']==5
                 if case=='ack':assert result['event']=='sync_ack' and 'ssid_entries' not in result
                 else:assert result['ssid_entries']==1
             else:
@@ -134,13 +187,65 @@ def main():
             assert requests == (0 if case=='lease' else 1)
             cases.append(case)
 
-        for case in ('normal','ack','unrelated','fragment','truncated','bad-json','bad-utf8','nul-json','rejected','timeout'):
+        for case in ('normal','ack','unrelated','different-slot','fragment','truncated','bad-json','bad-utf8','nul-json','rejected','timeout'):
             run(case)
         lease=socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM)
         try:
             lease.bind('\0tyfza1-fttr-sync-'+str(socket.if_nametoindex('sync-host')))
             run('lease')
         finally:lease.close()
+        # Discovery operates under the same lease, and auto keeps that lease
+        # while resolving a target MAC and sending its first JSON request.
+        def discovery_run(mode):
+            command=[str(binary),'sync-host','discover','0x88aa'] if mode=='list' else \
+                [str(binary),'sync-host',stock.peer.hex(':'),'auto','0x88aa']
+            process=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+            deadline=time.monotonic()+9
+            beats=queries=0
+            try:
+                while process.poll() is None:
+                    assert time.monotonic()<deadline,mode
+                    ready,_,_=select.select([peer],[],[],0.02)
+                    if not ready:continue
+                    frame,address=peer.recvfrom(4096)
+                    if address[2]==socket.PACKET_OUTGOING:continue
+                    assert frame[:6]==GROUP
+                    if frame[14]&15==1:
+                        assert frame[14:]==bytes([1,0x80|(beats&7)])
+                        beats+=1
+                        if mode=='timeout':continue
+                        # Group requests, zero/multicast/self source and other
+                        # destination must not allocate slots ahead of real peers.
+                        peer.send(stock.mac+stock.peer+b'\x88\xaa\x01\x80')
+                        for invalid in (bytes(6),stock.mac,GROUP):
+                            peer.send(MASTER_GROUP+invalid+b'\x88\xaa\x01\0')
+                        peer.send(bytes.fromhex('020000000099')+stock.peer+b'\x88\xaa\x01\0')
+                        first=bytes.fromhex('020000000033')
+                        if beats==1:peer.send(MASTER_GROUP+first+b'\x88\xaa\x01\0')
+                        peer.send(MASTER_GROUP+stock.peer+b'\x88\xaa\xf1\x03')
+                    else:
+                        queries+=1
+                        assert mode=='auto' and frame[14]==0x16
+                        expected=stock.encode(stock.wifi(get=True),1,True)
+                        assert frame==GROUP+expected[6:]
+                        reply=stock.encode({'Result':1},15,False)
+                        peer.send(MASTER_GROUP+stock.peer+reply[12:])
+                output,error=process.communicate(timeout=1)
+            finally:
+                if process.poll() is None:process.kill();process.communicate()
+            if mode=='timeout':
+                assert process.returncode==1 and str(-errno.ETIMEDOUT) in error and not output
+                assert queries==0 and beats==4
+            else:
+                assert process.returncode==0,error
+                result=json.loads(output)
+                if mode=='auto':assert result['slot']==1 and result['event']=='sync_ack' and queries==1
+                else:
+                    assert beats==4 and queries==0 and not result['identity_authenticated']
+                    assert result['peers']==[{'mac':stock.peer.hex(':'),'slot':1,'missed':0}]
+            cases.append('discovery-'+mode)
+
+        for mode in ('auto','list','timeout'):discovery_run(mode)
         peer.close()
     result={'controller_sha256':hashlib.sha256(args.controller.read_bytes()).hexdigest(),
             'original_frame_comparisons':count,'packet_cases':cases,
@@ -148,6 +253,10 @@ def main():
                       'invalid slot, oversize/truncated length, trailing data and fragments are rejected',
                       'short Ethernet padding and maximum native payload are handled',
                       'real AF_PACKET GetWifi probe sends one read-only request and redacts returned values'],
+            'discovery_checks':['heartbeat and 16-slot lifecycle match original execution',
+                                'complete original JSON route uses slave multicast group',
+                                'original ingress maps source MAC independently of header slot',
+                                'native discover and auto use group membership, valid source binding and bounded waits'],
             'scope':'original encoder/producer plus native AF_PACKET/veth. JSON-C serialization and peer responses modeled; no real subordinate acceptance.'}
     args.output.write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result,indent=2))
 

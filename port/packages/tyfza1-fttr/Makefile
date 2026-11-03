@@ -45,7 +45,7 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/fttr-net.c $(TARGET_LDFLAGS)
 	$(TARGET_CC) $(TARGET_CPPFLAGS) $(TARGET_CFLAGS) -std=c11 -Wall -Wextra \
 		-o $(PKG_BUILD_DIR)/fttr-sync $(PKG_BUILD_DIR)/fttr-sync.c \
-		$(PKG_BUILD_DIR)/sync-wire.c $(PKG_BUILD_DIR)/omci-socket.c \
+		$(PKG_BUILD_DIR)/sync-wire.c $(PKG_BUILD_DIR)/sync-peer.c $(PKG_BUILD_DIR)/omci-socket.c \
 		$(PKG_BUILD_DIR)/omci-wire.c $(TARGET_LDFLAGS) -ljson-c
 endef
 

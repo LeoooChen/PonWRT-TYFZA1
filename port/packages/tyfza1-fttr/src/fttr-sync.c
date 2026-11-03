@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <json-c/json.h>
+#include <linux/if_packet.h>
 #include <net/if.h>
 #include <poll.h>
 #include <stdio.h>
@@ -17,6 +18,7 @@
 
 #include "omci-socket.h"
 #include "sync-wire.h"
+#include "sync-peer.h"
 
 static int64_t now_ms(void)
 {
@@ -124,6 +126,70 @@ out:
 	return ret;
 }
 
+static int discovery(int fd, const uint8_t source[6], uint16_t ethertype,
+		     const uint8_t *target, struct json_object **summary)
+{
+	struct fttr_sync_peer peers[FTTR_SYNC_PEERS] = { 0 };
+	struct pollfd descriptor = { .fd = fd, .events = POLLIN };
+	uint8_t frame[FTTR_SYNC_FRAME_MAX], sequence = 0;
+	int64_t deadline = now_ms() + 6500, next = 0;
+	int ret, slot;
+
+	while (now_ms() < deadline) {
+		int64_t now = now_ms(), wake;
+		ssize_t received;
+
+		if (now >= next) {
+			fttr_sync_heartbeat(source, ethertype, sequence++, frame);
+			received = send(fd, frame, 16, 0);
+			if (received != 16)
+				return received < 0 ? -errno : -EIO;
+			fttr_sync_peer_age(peers);
+			next = now + FTTR_SYNC_HEARTBEAT_MS;
+		}
+		wake = next < deadline ? next : deadline;
+		ret = poll(&descriptor, 1, wake > now ? wake - now : 0);
+		if (ret < 0) { if (errno == EINTR) continue; return -errno; }
+		if (descriptor.revents & (POLLERR | POLLHUP | POLLNVAL))
+			return -EIO;
+		if (!ret)
+			continue;
+		received = recv(fd, frame, sizeof(frame), MSG_TRUNC);
+		if (received < 0) { if (errno == EAGAIN) continue; return -errno; }
+		slot = fttr_sync_peer_receive(peers, source, ethertype, frame, received);
+		if (slot == -ENOSPC)
+			return slot;
+		if (slot >= 0 && target && !memcmp(peers[slot].mac, target, 6))
+			return slot;
+	}
+	if (target)
+		return -ETIMEDOUT;
+	*summary = json_object_new_object();
+	{
+		struct json_object *list = json_object_new_array();
+
+		json_object_object_add(*summary, "event", json_object_new_string("sync_discovery"));
+		json_object_object_add(*summary, "identity_authenticated", json_object_new_boolean(0));
+		for (slot = 0; slot < FTTR_SYNC_PEERS; slot++) {
+			struct json_object *entry;
+			char mac[18];
+
+			if (!peers[slot].online)
+				continue;
+			entry = json_object_new_object();
+			snprintf(mac, sizeof(mac), "%02x:%02x:%02x:%02x:%02x:%02x",
+				peers[slot].mac[0], peers[slot].mac[1], peers[slot].mac[2],
+				peers[slot].mac[3], peers[slot].mac[4], peers[slot].mac[5]);
+			json_object_object_add(entry, "mac", json_object_new_string(mac));
+			json_object_object_add(entry, "slot", json_object_new_int(slot));
+			json_object_object_add(entry, "missed", json_object_new_int(peers[slot].missed));
+			json_object_array_add(list, entry);
+		}
+		json_object_object_add(*summary, "peers", list);
+	}
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	struct ifreq request = { 0 };
@@ -137,19 +203,25 @@ int main(int argc, char **argv)
 	unsigned long slot, ethertype;
 	int lease = -1, control = -1, fd = -1, ret = -EINVAL, length;
 	int64_t deadline;
+	bool discover = argc == 4 && !strcmp(argv[2], "discover");
+	bool automatic = argc == 5 && !strcmp(argv[3], "auto");
 
-	if (argc != 5 || strlen(argv[1]) >= IFNAMSIZ || strchr(argv[1], '/') ||
-	    mac_parse(argv[2], peer)) {
-		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15> <ethertype>\n", argv[0]);
+	if ((!discover && argc != 5) || strlen(argv[1]) >= IFNAMSIZ || strchr(argv[1], '/') ||
+	    (!discover && mac_parse(argv[2], peer))) {
+		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype>\n"
+			"       %s <interface> discover <ethertype>\n", argv[0], argv[0]);
 		return 2;
 	}
 	errno = 0;
-	slot = strtoul(argv[3], &end, 0);
-	if (errno || !*argv[3] || *end || slot > 15)
-		goto out;
+	slot = 0;
+	if (!discover && !automatic) {
+		slot = strtoul(argv[3], &end, 0);
+		if (errno || !*argv[3] || *end || slot > 15)
+			goto out;
+	}
 	errno = 0;
-	ethertype = strtoul(argv[4], &end, 0);
-	if (errno || !*argv[4] || *end || ethertype < 0x600 || ethertype > 0xffff)
+	ethertype = strtoul(argv[argc - 1], &end, 0);
+	if (errno || !*argv[argc - 1] || *end || ethertype < 0x600 || ethertype > 0xffff)
 		goto out;
 	index = if_nametoindex(argv[1]);
 	if (!index) { ret = -errno; goto out; }
@@ -166,9 +238,28 @@ int main(int argc, char **argv)
 	memcpy(source, request.ifr_hwaddr.sa_data, 6);
 	fd = fttr_omci_open(argv[1], ethertype);
 	if (fd < 0) { ret = fd; goto out; }
+	{
+		struct packet_mreq membership = { .mr_ifindex = index, .mr_type = PACKET_MR_MULTICAST, .mr_alen = 6 };
+		const uint8_t *groups[] = { fttr_sync_master_group, fttr_sync_slave_group };
+		unsigned int i;
+
+		for (i = 0; i < 2; i++) {
+			memcpy(membership.mr_address, groups[i], 6);
+			if (setsockopt(fd, SOL_PACKET, PACKET_ADD_MEMBERSHIP, &membership, sizeof(membership))) {
+				ret = -errno;
+				goto out;
+			}
+		}
+	}
+	if (discover || automatic) {
+		ret = discovery(fd, source, ethertype, discover ? NULL : peer, &summary);
+		if (ret < 0 || discover)
+			goto out;
+		slot = ret;
+	}
 	length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"GetWifi\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\"}",
 		source[0], source[1], source[2], source[3], source[4], source[5]);
-	ret = fttr_sync_pack(source, peer, ethertype, slot, FTTR_SYNC_REQUEST,
+	ret = fttr_sync_pack(source, fttr_sync_slave_group, ethertype, slot, FTTR_SYNC_REQUEST,
 		payload, length, frame, sizeof(frame));
 	if (ret < 0)
 		goto out;
@@ -192,12 +283,15 @@ int main(int argc, char **argv)
 		if (descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) { ret = -EIO; break; }
 		received = recv(fd, frame, sizeof(frame), MSG_TRUNC);
 		if (received < 0) { if (errno == EAGAIN) continue; ret = -errno; break; }
-		if (received < 16 || memcmp(frame, source, 6) || memcmp(frame + 6, peer, 6) ||
-		    frame[14] != (slot << 4 | FTTR_SYNC_RESPONSE))
+		if (received < 16 || !fttr_sync_destination(frame, source) || memcmp(frame + 6, peer, 6) ||
+		    (frame[14] & 15) != FTTR_SYNC_RESPONSE)
 			continue;
 		ret = fttr_sync_unpack(frame, received, ethertype, &message);
 		if (ret)
 			break;
+		/* Original ingress resolves the local slot by Ethernet source MAC;
+		 * the sender's header nibble is not our table index. */
+		message.slot = slot;
 		ret = reply_decode(&message, peer, &summary);
 		if (ret == -EAGAIN)
 			continue;
@@ -209,7 +303,7 @@ out:
 		if (fflush(stdout))
 			ret = -errno;
 	} else {
-		fprintf(stderr, "FTTR sync GetWifi: %s (%d)\n", strerror(-ret), ret);
+		fprintf(stderr, "FTTR sync %s: %s (%d)\n", discover ? "discovery" : "GetWifi", strerror(-ret), ret);
 	}
 	json_object_put(summary);
 	if (fd >= 0) close(fd);
