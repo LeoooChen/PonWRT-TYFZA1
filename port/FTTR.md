@@ -1227,11 +1227,97 @@ wrong readback, restoration and failed restoration. Protocol group replies
 and MIB storage are modeled (`remote-wifi-comparison.json`); the original
 producer trace is`remote-wifi-producer.json`. The musl package compiles and
 stages both tools with the new module (`package-root-remote-wifi/`,
-`package-stage-remote-wifi.log`). This is a configuration transaction module,
-not an enabled daemon/CLI workflow yet. Automatic main/subordinate settings
-mapping, runtime integration, alternative capability branches and actual
+`package-stage-remote-wifi.log`). The explicit CLI workflow below now uses this
+transaction module. Automatic main/subordinate settings
+mapping, daemon integration, alternative capability branches and actual
 subordinate execution/roaming remain work; a successful modeled transaction
 is not wireless acceptance.
+
+### Explicit remote Wi-Fi command
+
+`fttrctl <MiniOLT-dir> wifi <hardware-ID> <config-file> [interface=fttr0]`
+uses the existing exclusive MiniOLT lease. It requires an already initialized
+MiniOLT, ready management transport and registered, unblocked ONU; it does not
+bootstrap the optics. A running daemon holds the lease and the command fails
+without sending traffic. Stopping that daemon also disables its hardware, so
+this is an explicit development command for a separately initialized setup,
+not a live configuration API for the resident controller.
+
+The command parses the whole file before opening an OMCI session, collects a
+fresh MIB, verifies the same registered serial and requires the actual matching
+`ff69` and `ff6a` instance. The shared transaction then reads all selected
+groups before any Set, verifies each write, restores touched groups on failure
+and checks the hardware identity before every request/retransmission and at
+completion. Replacement prevents further writes, including restoration to the
+new peer; the original error and any separate cleanup error remain visible.
+The inventory itself is read-only and is checked again before any Wi-Fi request.
+Only the redacted `wifi_state` diagnostic is emitted, including on failure.
+
+Each non-comment line contains one field and one value. Unknown/duplicate
+fields, missing required fields, embedded NULs, invalid numbers or hex, and
+oversized strings fail before management traffic. Numbers accept decimal or
+`0x` notation. `instance` is a 16-bit actual ME ID, booleans are 0/1, and other
+numeric fields are byte-sized **original protocol codes**, without an invented
+hostapd mapping. All ten numeric fields plus `ssid_hex` are required, including
+numeric fields unused by the selected branch. `shared_key_hex` is required for
+nonzero security other than5/6; codes5/6 require all four `key1_hex` through
+`key4_hex` fields. The maximum byte lengths are24 for SSID/shared key and26 for
+each indexed key. Hex preserves spaces, UTF-8 and full-length fields; `-`
+explicitly selects an empty zero-filled value. Short fields are zero-padded.
+
+This is the synthetic configuration used in the original comparison, **not a
+recommended wireless policy or a claim that instance `0x101` exists on a peer**:
+
+```text
+instance 0x101
+mode 3
+channel 6
+bandwidth 1
+security 3
+encryption 2
+key_auth 1
+key_index 2
+ssid_enabled 1
+radio_enabled 1
+ssid_hex 46545452206e6174697665207265736561726368
+shared_key_hex 746573742d706173737068726173652d313233
+```
+
+Store real configuration files with mode0600; credentials are read from the
+file, not command-line arguments. The command does not print SSIDs, keys,
+previous values, MIB attributes or raw exchanges. Success means the requested
+OMCI attributes were read back, not that wireless clients associated or roamed.
+
+`scripts/test_fttr_wifi_cli.py` compiles and runs the actual command inside a
+fresh network namespace. The matching original `libponrelay.so` SHA-256 is
+`a72925a031144bca86ef53eb48fa0e1c8ea379285dadcf017305dcf81896cf8d`;
+other firmware versions must not be substituted into its fixed-address oracle.
+The test executes original Set producers/encoders and attribute descriptors,
+while modeling peer MIB storage and MiniOLT sysfs. Five mode/security branches
+match wire bytes and unchanged configuration sends no Set. Cases cover missing
+capabilities, bad input, lease contention, NACK, wrong readback, failed restore,
+lost replies, three-attempt timeout and replacement during inventory, Set,
+restoration and final verification. No writes follow replacement. Unrelated
+ONU/TCI replies, including malformed ones, cannot fail the active object
+transaction; matching malformed replies still trigger failure/restoration.
+The latter check reproduced and corrected misattribution in the shared
+`fttr_objects_execute` receive path.
+
+```sh
+sudo unshare -n env PYTHONPATH=tools:scripts:/path/to/python-deps \
+  python3 scripts/test_fttr_wifi_cli.py \
+  --master /path/to/matching/libponrelay.so --output /tmp/fttr-wifi-cli.json
+```
+
+Local results are `artifacts/fttr/wifi-cli-20261103.json`,
+`wifi-baseline-20261103.json` and `mib-wifi-cli-20261103.json`. The existing
+controller/CLI namespace regression also passes with the updated shared
+engine (`controller-wifi-cli-20261103.json`), including inventory/replacement,
+SIGTERM and Get/T-CONT/GEM/profile/UNI/forwarding commands. The actual OpenWrt
+package prepare/compile/install recipes are also exercised with GCC14.4/musl
+and warnings-as-errors in `artifacts/fttr/wifi-cli-build-20261103/`; its command
+and log are retained there. These checks do not include a firmware image,
+optical hardware, subordinate wireless execution or automatic daemon policy.
 
 ### Outstanding implementation and acceptance
 
@@ -1270,7 +1356,7 @@ is not wireless acceptance.
    multicast, reboot/upgrade and roaming coordination, using the connected
    ONU's actual capabilities rather than assuming one fixed subordinate model.
    The original ff69/ff6a Wi-Fi update transaction is implemented with
-   preflight/readback/restoration; settings mapping, a runtime caller and
+   preflight/readback/restoration and an explicit CLI caller; settings mapping, daemon integration and
    actual subordinate capability/behavior verification remain work.
 6. FE/PE acceleration and stale-flow invalidation, then hardware acceptance
    with real downstream gateways and a recorded interoperability scope.

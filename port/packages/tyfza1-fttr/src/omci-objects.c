@@ -357,6 +357,13 @@ int fttr_objects_execute(struct fttr_omci_session *session, struct fttr_objects_
 			ret = fttr_omci_receive(session->fd, session->link.ethertype, frame, sizeof(frame), &message);
 			if (ret == -EAGAIN)
 				continue;
+			if (ret == -EMSGSIZE || ret == -EBADMSG || ret == -EPROTO || ret == -EOPNOTSUPP) {
+				/* A malformed frame belongs to this exchange only if its
+				 * decoded envelope and TCI identify the pending request. */
+				if (message.onu != job->me.onu || !message.body ||
+				    ((uint16_t)message.body[0] << 8 | message.body[1]) != job->me.transaction)
+					continue;
+			}
 			if (ret) {
 				job->me.error = ret;
 				job->me.state = FTTR_ME_FAILED;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #define _POSIX_C_SOURCE 200809L
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -17,6 +18,7 @@
 #include "omci-association.h"
 #include "omci-vlan.h"
 #include "omci-service.h"
+#include "omci-wifi.h"
 #include "omci-socket.h"
 
 static void hex(const uint8_t *data, size_t length)
@@ -426,6 +428,141 @@ static int service_record(void *context, uint16_t sequence, const struct fttr_mi
 	return ret < 0 ? ret : 0;
 }
 
+/* Byte strings are hex so whitespace, UTF-8 and full-width fields are lossless.
+ * Keep credentials out of argv and out of the generic object diagnostics. */
+struct wifi_input {
+	struct fttr_wifi_config config;
+	uint8_t bytes[6][26];
+};
+
+static int wifi_config_read(const char *path, struct wifi_input *input)
+{
+	static const char * const names[] = { "instance", "mode", "channel", "bandwidth",
+		"security", "encryption", "key_auth", "key_index", "ssid_enabled", "radio_enabled",
+		"ssid_hex", "shared_key_hex", "key1_hex", "key2_hex", "key3_hex", "key4_hex" };
+	struct fttr_wifi_config *config = &input->config;
+	unsigned long number[10] = { 0 };
+	size_t sizes[6] = { 0 }, capacity = 0;
+	unsigned int seen = 0, required = 0x7ff;
+	char *line = NULL;
+	ssize_t length;
+	FILE *file = fopen(path, "r");
+	int ret = 0;
+
+	if (!file)
+		return -errno;
+	memset(input, 0, sizeof(*input));
+	while ((length = getline(&line, &capacity, file)) >= 0) {
+		char *key, *value, *extra, *save, *end;
+		unsigned int i;
+
+		/* Embedded NULs must not hide a suffix from validation. */
+		if (memchr(line, '\0', length)) {
+			ret = -EINVAL;
+			break;
+		}
+		key = strtok_r(line, " \t\r\n", &save);
+		if (!key || *key == '#')
+			continue;
+		value = strtok_r(NULL, " \t\r\n", &save);
+		extra = strtok_r(NULL, " \t\r\n", &save);
+		if (!value || (extra && *extra != '#')) { ret = -EINVAL; break; }
+		for (i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+			if (!strcmp(key, names[i]))
+				break;
+		if (i == sizeof(names) / sizeof(names[0]) || (seen & (1U << i))) {
+			ret = -EINVAL;
+			break;
+		}
+		seen |= 1U << i;
+		if (i < 10) {
+			errno = 0;
+			number[i] = strtoul(value, &end, 0);
+			if (errno || *end || *value == '-' ||
+			    number[i] > (i == 0 ? UINT16_MAX : i >= 8 ? 1U : UINT8_MAX)) {
+				ret = -EINVAL;
+				break;
+			}
+		} else {
+			size_t n, length = !strcmp(value, "-") ? 0 : strlen(value);
+
+			if (length % 2) { ret = -EINVAL; break; }
+			if (length / 2 > (i < 12 ? 24U : 26U)) { ret = -EMSGSIZE; break; }
+			for (n = 0; n < length; n += 2) {
+				char byte[3] = { value[n], value[n + 1], 0 };
+
+				if (!isxdigit((unsigned char)byte[0]) || !isxdigit((unsigned char)byte[1])) {
+					ret = -EINVAL;
+					break;
+				}
+				input->bytes[i - 10][n / 2] = strtoul(byte, NULL, 16);
+			}
+			if (ret)
+				break;
+			sizes[i - 10] = length / 2;
+		}
+	}
+	if (!ret && ferror(file))
+		ret = -EIO;
+	free(line);
+	fclose(file);
+	if (number[4] == 5 || number[4] == 6)
+		required |= 0xf000;
+	else if (number[4])
+		required |= 0x0800;
+	if (!ret && (seen & required) != required)
+		ret = -EINVAL;
+	if (ret)
+		return ret;
+	*config = (struct fttr_wifi_config) {
+		.instance = number[0], .mode = number[1], .channel = number[2], .bandwidth = number[3],
+		.security = number[4], .encryption = number[5], .key_auth = number[6], .key_index = number[7],
+		.ssid_enabled = number[8], .radio_enabled = number[9],
+		.ssid = input->bytes[0], .ssid_size = sizes[0],
+		.shared_key = input->bytes[1], .shared_key_size = sizes[1],
+		.keys = { input->bytes[2], input->bytes[3], input->bytes[4], input->bytes[5] },
+		.key_size = { sizes[2], sizes[3], sizes[4], sizes[5] }
+	};
+	return 0;
+}
+
+static int wifi_command(int directory, unsigned int id, const char *path, const char *interface)
+{
+	struct wifi_input input;
+	struct fttr_wifi_job job = { 0 };
+	struct fttr_mib_model model = { 0 };
+	struct fttr_onu_state before;
+	struct fttr_omci_session session;
+	uint16_t commands;
+	int ret = wifi_config_read(path, &input);
+
+	job.transaction.me.onu = id;
+	if (ret)
+		goto out;
+	ret = open_session(directory, id, interface, &session, &before);
+	if (ret)
+		goto out;
+	ret = fttr_mib_scan(&session, &commands, service_record, &model);
+	if (!ret)
+		ret = fttr_miniolt_same(directory, id, &before);
+	if (!ret)
+		ret = fttr_wifi_job_start(&job, id, &session.transaction, &model, &input.config, before.serial);
+	if (!ret)
+		ret = fttr_objects_execute(&session, &job.transaction, directory, &before);
+	close(session.fd);
+out:
+	fttr_mib_model_clear(&model);
+	if (ret && !job.transaction.error) {
+		job.transaction.error = ret;
+		job.transaction.phase = FTTR_OBJECT_FAILED;
+	}
+	{
+		int result = fttr_wifi_job_dump(&job, stdout);
+
+		return result ? result : ret;
+	}
+}
+
 static int service_command(int directory, unsigned int id, const uint16_t fields[8],
 			   bool tagged, const char *interface)
 {
@@ -473,14 +610,14 @@ static int service_command(int directory, unsigned int id, const uint16_t fields
 
 int main(int argc, char **argv)
 {
-	bool mib, wait, query, binding, gem, profiles, uni, ani, mapper, vlan, vlan_table, service;
+	bool mib, wait, query, binding, gem, profiles, uni, ani, mapper, vlan, vlan_table, service, wifi;
 	int directory, ret;
 
 	if (argc < 3 || (strcmp(argv[2], "status") && strcmp(argv[2], "mib") &&
 	    strcmp(argv[2], "wait-link") && strcmp(argv[2], "get") && strcmp(argv[2], "tcont") &&
 	    strcmp(argv[2], "gem") && strcmp(argv[2], "profiles") && strcmp(argv[2], "uni") &&
 	    strcmp(argv[2], "ani") && strcmp(argv[2], "mapper") && strcmp(argv[2], "vlan") &&
-	    strcmp(argv[2], "vlan-table") && strcmp(argv[2], "service"))) {
+	    strcmp(argv[2], "vlan-table") && strcmp(argv[2], "service") && strcmp(argv[2], "wifi"))) {
 		fprintf(stderr, "Usage: %s <miniolt-sysfs-directory> status\n"
 			"       %s <miniolt-sysfs-directory> mib <hardware-ID> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> get <hardware-ID> <class> <instance> <mask> [interface=fttr0]\n"
@@ -493,8 +630,9 @@ int main(int argc, char **argv)
 			"       %s <miniolt-sysfs-directory> vlan-table <hardware-ID> <EVTO-instance> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> vlan <hardware-ID> <EVTO-instance> <policy:0..5> <input-VID> <output-VID> <priority:0..7> <remove:0|1> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> service <hardware-ID> <UNI-kind:0|2> <UNI-instance> <slot:1..7> <priority:0..7> <VID|none> <fixed> <assured> <maximum> [interface=fttr0]\n"
+			"       %s <miniolt-sysfs-directory> wifi <hardware-ID> <config-file> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> wait-link <NI-sysfs-directory>\n",
-			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
+			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
 		return 2;
 	}
 	mib = !strcmp(argv[2], "mib");
@@ -509,20 +647,22 @@ int main(int argc, char **argv)
 	vlan = !strcmp(argv[2], "vlan");
 	vlan_table = !strcmp(argv[2], "vlan-table");
 	service = !strcmp(argv[2], "service");
+	wifi = !strcmp(argv[2], "wifi");
 	if ((mib && argc != 4 && argc != 5) || (query && argc != 7 && argc != 8) ||
 	    (binding && argc != 9 && argc != 10) || (gem && argc != 10 && argc != 11) ||
 	    (profiles && argc != 8 && argc != 9) || (uni && argc != 9 && argc != 10) ||
 	    (ani && argc != 10 && argc != 11) || (mapper && argc != 7 && argc != 8) ||
 	    (vlan && argc != 10 && argc != 11) || (vlan_table && argc != 5 && argc != 6) ||
 	    (service && argc != 12 && argc != 13) ||
-	    (wait && argc != 4) || (!mib && !wait && !query && !binding && !gem && !profiles && !uni && !ani && !mapper && !vlan && !vlan_table && !service && argc != 3))
+	    (wifi && argc != 5 && argc != 6) ||
+	    (wait && argc != 4) || (!mib && !wait && !query && !binding && !gem && !profiles && !uni && !ani && !mapper && !vlan && !vlan_table && !service && !wifi && argc != 3))
 		return 2;
 	directory = open(argv[1], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (directory < 0) {
 		perror(argv[1]);
 		return 1;
 	}
-	if (mib || query || binding || gem || profiles || uni || ani || mapper || vlan || vlan_table || service) {
+	if (mib || query || binding || gem || profiles || uni || ani || mapper || vlan || vlan_table || service || wifi) {
 		char *end;
 		unsigned long id;
 
@@ -532,7 +672,9 @@ int main(int argc, char **argv)
 			close(directory);
 			return 2;
 		}
-		if (query || binding || gem || profiles || uni || ani || mapper || vlan || vlan_table || service) {
+		if (wifi) {
+			ret = wifi_command(directory, id, argv[4], argc == 6 ? argv[5] : "fttr0");
+		} else if (query || binding || gem || profiles || uni || ani || mapper || vlan || vlan_table || service) {
 			uint16_t fields[8];
 			unsigned int i;
 
