@@ -35,7 +35,7 @@ def main():
     with tempfile.TemporaryDirectory() as name:
         directory=Path(name);binary=directory/'fttr-sync'
         subprocess.run(['cc','-std=c11','-O2','-Wall','-Wextra','-Werror',
-                        *[str(src/n) for n in ('fttr-sync.c','sync-wire.c','sync-peer.c','sync-wifi.c','sync-json.c','sync-register.c','omci-socket.c','omci-wire.c')],
+                        *[str(src/n) for n in ('fttr-sync.c','sync-client.c','sync-controller.c','sync-wire.c','sync-peer.c','sync-wifi.c','sync-json.c','sync-register.c','omci-socket.c','omci-wire.c')],
                         '-ljson-c','-o',str(binary)],check=True)
         subprocess.run(['cc','-std=c11','-O2','-Wall','-Wextra','-Werror','-shared','-fPIC',
                         str(src/'sync-wifi.c'),str(src/'sync-json.c'),'-ljson-c','-o',str(directory/'wifi.so')],check=True)

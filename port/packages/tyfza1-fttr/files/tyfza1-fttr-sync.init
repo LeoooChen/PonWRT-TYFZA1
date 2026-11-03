@@ -1,0 +1,27 @@
+#!/bin/sh /etc/rc.common
+# SPDX-License-Identifier: GPL-2.0-only
+START=95
+STOP=88
+USE_PROCD=1
+
+start_service() {
+	local enabled interface ethertype policy
+	config_load tyfza1-fttr-sync
+	config_get_bool enabled main enabled 0
+	[ "$enabled" = 1 ] || return 0
+	config_get interface main interface
+	config_get ethertype main ethertype 0x88aa
+	config_get policy main policy /etc/tyfza1-fttr.sync.json
+	[ -n "$interface" ] && [ -r "$policy" ] || {
+		echo 'FTTR sync: explicit interface and private peer policy required' >&2
+		return 1
+	}
+	procd_open_instance
+	procd_set_param command /usr/sbin/fttr-sync "$interface" serve "$ethertype" "$policy"
+	procd_set_param term_timeout 10
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	# No respawn: a new process can reapply explicit passwords. Restart only
+	# after reviewing the previous attempt and current peer state.
+	procd_close_instance
+}

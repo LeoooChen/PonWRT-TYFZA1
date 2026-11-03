@@ -46,7 +46,8 @@ define Build/Compile
 	$(TARGET_CC) $(TARGET_CPPFLAGS) $(TARGET_CFLAGS) -std=c11 -Wall -Wextra \
 		-o $(PKG_BUILD_DIR)/fttr-sync $(PKG_BUILD_DIR)/fttr-sync.c \
 		$(PKG_BUILD_DIR)/sync-wire.c $(PKG_BUILD_DIR)/sync-peer.c $(PKG_BUILD_DIR)/sync-wifi.c $(PKG_BUILD_DIR)/sync-json.c \
-		$(PKG_BUILD_DIR)/sync-register.c $(PKG_BUILD_DIR)/omci-socket.c \
+		$(PKG_BUILD_DIR)/sync-register.c $(PKG_BUILD_DIR)/sync-client.c \
+		$(PKG_BUILD_DIR)/sync-controller.c $(PKG_BUILD_DIR)/omci-socket.c \
 		$(PKG_BUILD_DIR)/omci-wire.c $(TARGET_LDFLAGS) -ljson-c
 endef
 
@@ -55,8 +56,10 @@ define Package/tyfza1-fttr/install
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/fttrctl $(1)/usr/sbin/fttrctl
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/fttrd $(1)/usr/sbin/fttrd
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/fttr-sync $(1)/usr/sbin/fttr-sync
-	$(INSTALL_DIR) $(1)/etc/init.d $(1)/lib/firmware/realtek/rtl9617c
+	$(INSTALL_DIR) $(1)/etc/init.d $(1)/etc/config $(1)/lib/firmware/realtek/rtl9617c
 	$(INSTALL_BIN) ./files/tyfza1-fttr.init $(1)/etc/init.d/tyfza1-fttr
+	$(INSTALL_BIN) ./files/tyfza1-fttr-sync.init $(1)/etc/init.d/tyfza1-fttr-sync
+	$(INSTALL_DATA) ./files/tyfza1-fttr-sync.config $(1)/etc/config/tyfza1-fttr-sync
 	$(INSTALL_DATA) ./files/tyfza1-fttr.services $(1)/etc/tyfza1-fttr.services
 	$(INSTALL_DATA) ./files/tyfza1-fttr.wifi $(1)/etc/tyfza1-fttr.wifi
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/firmware/*.bin $(1)/lib/firmware/realtek/rtl9617c/
@@ -65,6 +68,8 @@ endef
 define Package/tyfza1-fttr/conffiles
 /etc/tyfza1-fttr.services
 /etc/tyfza1-fttr.wifi
+/etc/config/tyfza1-fttr-sync
+/etc/tyfza1-fttr.sync.json
 endef
 
 $(eval $(call BuildPackage,tyfza1-fttr))

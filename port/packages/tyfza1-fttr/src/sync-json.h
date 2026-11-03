@@ -5,5 +5,6 @@
 #include <json-c/json.h>
 
 int fttr_sync_json_load_private(const char *path, struct json_object **value);
+int fttr_sync_json_load_bounded(const char *path, size_t limit, struct json_object **value);
 
 #endif

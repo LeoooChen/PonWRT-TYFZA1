@@ -1587,8 +1587,8 @@ retains the36 original JSON encoder comparisons. Reports are
 The updated real OpenWrt GCC14.4/musl package stages successfully under
 `artifacts/fttr/discovery-build-20261103/`. Timer/saved-MIB state and peer packets
 are modeled in these checks; no optical or real slave interoperability is claimed.
-Capability/identity authentication, automatic resident syncserv management,
-and verified writes remain required work; Flag1 read reports are covered below.
+Capability/identity authentication and physically verified writes remain
+required work; Flag1 reads, explicit writes and resident policies are covered below.
 
 ### Syncserv JSON receive fragments
 
@@ -1843,9 +1843,8 @@ Ready comes from actual `isMasterReady`, not heartbeats or link speed. The
 original may also return an assigned LOID or province-dependent web password;
 neither is inferred or sent by the native baseline entry point. A positive
 pending SetAllSetting ACK sets protocol2. A repeated Register sets protocol1
-again, even if the prior protocol was2. Those transitions were executed and
-must be respected by a future resident controller rather than treating the
-first observed protocol as permanent.
+again, even if the prior protocol was2. Those executed transitions are also
+used by the resident controller below.
 
 The native one-shot command is:
 
@@ -1882,9 +1881,9 @@ Success reports `sync_registration_reply`, the local slot,
 the expected self-description was observed and a reply was sent; it does not
 prove the slave accepted it, has optical service, or supports Flag1 writes.
 The association is not persisted and this separate invocation does not bind a
-later `wifi-apply` call to that serial. Resident integration, replacement
-cancellation, readiness measurements, LOID policy, capability negotiation and
-real subordinate acceptance remain work.
+later `wifi-apply` call to that serial. The resident mode below binds its own
+transactions to registration and cancels on replacement. Readiness measurements,
+LOID policy, capability negotiation and real subordinate acceptance remain work.
 
 Six original baseline cases exercise Ready0/1 and prior protocol0/1/2, plus
 missing identifiers and positive SetAllSetting ACK transition. The new
@@ -1896,6 +1895,95 @@ pass after sharing the private JSON loader. Reports are
 `artifacts/fttr/registration-stock-20261103.json`, `registration-native-20261103.json`,
 `registration-sync-regression-20261103.json` and `registration-wifi-regression-20261103.json`.
 Real GCC14.4/musl package staging and source hashes are in `registration-build-20261103/`.
+
+### Resident syncserv registration and Wi-Fi policies
+
+`fttr-sync <interface> serve <ethertype> <private-policy-file>` now holds the
+same interface lease as the one-shot commands for its whole lifetime. It keeps
+16 heartbeat slots and separate type6/type7 reassembly for each source MAC.
+Heartbeats remain on the original two-second cadence while other peers are
+waiting for JSON. Three missed ticks expire a peer. Policy is selected by the
+observed MAC and requires the same explicit expected serials as one-shot
+Register; no JSON report or heartbeat alone authorizes a write.
+
+The owner-only regular JSON policy is bounded below128 KiB. It contains1..16
+unique peer MACs, with a registration policy and optionally0..16 complete Wi-Fi
+configurations with distinct device-local SSID indices. All entries are
+validated before socket ownership or any transmission. Example (synthetic
+values; the Wi-Fi content has exactly the same validation as `wifi-apply`):
+
+```json
+{
+  "Peers": [{
+    "MAC": "02:00:00:00:00:01",
+    "Registration": {
+      "OUI": "020304", "SN": "synthetic-host", "Ready": 1,
+      "ExpectedSN": "synthetic-peer", "ExpectedGPONSN": "ABCD00000000"
+    },
+    "WiFi": [{
+      "act": "config", "SSIDIndex": "1", "SSID": "example",
+      "SSIDAdvertisementEnabled": "true", "Standard": "11bgn",
+      "ENCRYPT": 4, "PWD": "example-passphrase", "Enable": 1
+    }]
+  }]
+}
+```
+
+A matching Register gets the baseline original reply and resets protocol to1.
+A positive pending SetAllSetting ACK promotes it to2. Each configured SSID uses
+an independent preflight read, one write and another readback. Peers advance
+independently; a slow peer cannot block the other peer's exchange or heartbeat.
+An omitted/empty WiFi list only requests settings after registration. Ready0
+also permits observation but never sends a configuration; Ready remains an
+explicit operator-supplied value, not a measured optical/service state.
+
+Before each request, the ingress queue must reach EAGAIN; unsolicited reports
+received while a send is pending are discarded. A bounded ingress batch keeps
+heartbeats and termination responsive under traffic. Incomplete fragmented
+messages hold subsequent sends until completion or their fixed deadline, so
+an interleaved ACK cannot erase an in-progress Register. Every repeated
+Register, malformed identity, expired peer or slot replacement cancels old
+transactions and clears fragments. New matching registration may restart a
+preflight only if no write has been attempted for that peer during this
+process. Once a write was sent, re-registration/disconnection blocks further
+policy writes for that peer; failed write/readback also stops remaining SSIDs.
+Lost or negative write replies still trigger an independent readback while the
+same registration is valid. Passwords are never retried automatically.
+
+This write-attempt memory is **process-local**, not durable. An explicit service
+restart or reboot may apply the configured passwords again. The separate
+`/etc/init.d/tyfza1-fttr-sync` service has no respawn and is disabled by default.
+`/etc/config/tyfza1-fttr-sync` requires an explicit interface; it does not guess
+whether the actual syncserv network is the management bridge or a hardware
+endpoint. Supply a chmod0600 policy at `/etc/tyfza1-fttr.sync.json`, configure
+`main.interface` and `main.enabled`, and start/enable the service only with the
+intended interface and readiness policy. This does not alter hardware `fttrd`
+startup. There is no dynamic readiness, policy reload or local Wi-Fi/UCI import.
+
+Redacted JSON events include local slot, registration generation, protocol and
+error. Apply events retain independent write/readback results and SSID index.
+`identity_authenticated`, `credentials_verified` and `configuration_verified`
+remain false. Registration reports `peer_acceptance_verified:false`. The
+protocol still has no trustworthy transaction ID; later identical same-source
+replies cannot be conclusively separated from current replies. No claim of
+physical identity authentication, credential installation or real slave
+interoperability follows from a successful resident run.
+
+`scripts/test_fttr_sync_controller.py` covers37 AF_PACKET/veth cases with
+modeled peers and original local Wi-Fi producer rows: concurrent peers,
+multiple SSIDs,16-policy input, reverse fragments/interleaved ACKs, all-phase
+re-registration and replacement, partial Register retirement, lost/negative
+ACK and readback errors, expiry/slot reuse, interface ownership, termination,
+Ready0 and malformed/private policy handling. `test_fttr_sync_init.sh` checks
+disabled startup, explicit interface/policy, quoted procd arguments and absent
+respawn. One-shot39 sync,30 Wi-Fi and20 Register regressions also pass after
+extracting shared request/decoder code into `sync-client.c`.
+
+Reports are `artifacts/fttr/resident-native-20261103.json`,
+`resident-sync-regression-20261103.json`, `resident-wifi-regression-20261103.json`
+and `resident-registration-regression-20261103.json`. GCC14.4/musl package
+prepare/compile/install and staged source hashes are in `resident-build-20261103/`.
+These are offline behavioral/build checks, not hardware acceptance.
 
 ### Outstanding implementation and acceptance
 
@@ -1940,9 +2028,9 @@ Real GCC14.4/musl package staging and source hashes are in `registration-build-2
    The independent syncserv JSON path now has original producer/frame evidence
    and native heartbeat discovery/local MAC binding, bounded fragments and
    Flag1 Wi-Fi read/report completion and explicit write/readable-field
-   comparison plus a pinned one-shot Register reply; authenticated identity/
-   capability, real readiness/credentials, resident registration/policy and
-   complete configuration transactions remain work.
+   comparison plus pinned registration and asynchronous resident Wi-Fi policies;
+   authenticated identity/capability, real readiness/credentials, durable
+   transaction recovery and complete configuration transactions remain work.
 6. FE/PE acceleration and stale-flow invalidation, then hardware acceptance
    with real downstream gateways and a recorded interoperability scope.
 

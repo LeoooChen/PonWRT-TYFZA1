@@ -36,7 +36,7 @@ def main():
     with tempfile.TemporaryDirectory() as name:
         directory=Path(name);src=ROOT/'port/packages/tyfza1-fttr/src';binary=directory/'fttr-sync'
         subprocess.run(['cc','-std=c11','-O2','-Wall','-Wextra','-Werror',
-                        *[str(src/n) for n in ('fttr-sync.c','sync-wire.c','sync-peer.c','sync-wifi.c','sync-json.c',
+                        *[str(src/n) for n in ('fttr-sync.c','sync-client.c','sync-controller.c','sync-wire.c','sync-peer.c','sync-wifi.c','sync-json.c',
                                                'sync-register.c','omci-socket.c','omci-wire.c')],
                         '-ljson-c','-o',str(binary)],check=True)
         subprocess.run(['ip','link','add','register-host','type','veth','peer','name','register-peer'],check=True)
