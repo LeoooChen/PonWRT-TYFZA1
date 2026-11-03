@@ -2,6 +2,7 @@
 /* Native TYFZA1 MiniOLT control transport, derived from stock machine code. */
 #include <linux/delay.h>
 #include <linux/etherdevice.h>
+#include <linux/fpga/fpga-mgr.h>
 #include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/mdio.h>
@@ -18,6 +19,7 @@
 #include "rtl9617c-fttr-omci.h"
 #include "rtl9617c-fttr-onu.h"
 #include "rtl9617c-fttr-serdes.h"
+#include "rtl9617c-fttr-fpga.h"
 
 struct rtl_fttr {
 	struct mdio_device *mdio;
@@ -134,6 +136,23 @@ static ssize_t backend_show(struct device *dev, struct device_attribute *attr, c
 	return sysfs_emit(buf, "%s\n", names[fttr->backend]);
 }
 static DEVICE_ATTR_RO(backend);
+
+static ssize_t fpga_init_store(struct device *dev, struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	bool calibrated;
+	int ret;
+
+	ret = kstrtobool(buf, &calibrated);
+	if (ret)
+		return ret;
+	mutex_lock(&fttr->control_lock);
+	ret = rtl_fttr_fpga_init(&fttr->reg_io, fttr->backend, calibrated);
+	mutex_unlock(&fttr->control_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_WO(fpga_init);
 
 static ssize_t version_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -481,6 +500,7 @@ static struct attribute *rtl_fttr_attrs[] = {
 	&dev_attr_dba.attr,
 	&dev_attr_tcont.attr,
 	&dev_attr_management_grant.attr,
+	&dev_attr_fpga_init.attr,
 	NULL,
 };
 
@@ -488,6 +508,8 @@ static umode_t rtl_fttr_attr_visible(struct kobject *kobj, struct attribute *att
 {
 	struct rtl_fttr *fttr = dev_get_drvdata(kobj_to_dev(kobj));
 
+	if (attr == &dev_attr_fpga_init.attr)
+		return fttr->backend == RTL_FTTR_ASIC9690 ? 0 : attr->mode;
 	if (n >= 2 && fttr->backend != RTL_FTTR_ASIC9690)
 		return 0;
 	return attr->mode;
@@ -514,12 +536,77 @@ static const struct attribute_group rtl_fttr_group = {
 };
 __ATTRIBUTE_GROUPS(rtl_fttr);
 
+#if IS_REACHABLE(CONFIG_FPGA)
+static void rtl_fttr_fpga_release(void *data)
+{
+	struct fpga_manager *mgr = data;
+
+	fpga_mgr_put(mgr);
+}
+#endif
+
+/* The boot-image supplier rejects manual programming while bound. Its device
+ * link retires MDIO/I2C consumers before an unbind/reprobe can reload it. */
+static int rtl_fttr_fpga_acquire(struct device *dev)
+{
+	struct device_node *node;
+	int ret = -EOPNOTSUPP;
+#if IS_REACHABLE(CONFIG_FPGA)
+	struct fpga_manager *mgr;
+#endif
+
+	if (!of_find_property(dev->of_node, "fpga-mgr", NULL))
+		return 0;
+	node = of_parse_phandle(dev->of_node, "fpga-mgr", 0);
+	if (!node)
+		return -EINVAL;
+	if (!of_device_is_compatible(node, "pango,tyfza1-pg2l100h") ||
+	    !of_find_property(node, "firmware-name", NULL)) {
+		of_node_put(node);
+		return -EINVAL;
+	}
+#if IS_REACHABLE(CONFIG_FPGA)
+	mgr = of_fpga_mgr_get(node);
+	if (IS_ERR(mgr)) {
+		ret = PTR_ERR(mgr) == -ENODEV ? -EPROBE_DEFER : PTR_ERR(mgr);
+		goto out;
+	}
+	if (!device_link_add(dev, mgr->dev.parent, DL_FLAG_AUTOREMOVE_CONSUMER)) {
+		ret = -ENOMEM;
+		goto put;
+	}
+	if (!device_is_bound(mgr->dev.parent)) {
+		ret = -EPROBE_DEFER;
+		goto put;
+	}
+	ret = fpga_mgr_lock(mgr);
+	if (ret)
+		goto put;
+	if (mgr->state != FPGA_MGR_STATE_OPERATING || mgr->mops->state(mgr) != FPGA_MGR_STATE_OPERATING) {
+		ret = -EIO;
+		fpga_mgr_unlock(mgr);
+		goto put;
+	}
+	fpga_mgr_unlock(mgr);
+	ret = devm_add_action_or_reset(dev, rtl_fttr_fpga_release, mgr);
+	goto out;
+put:
+	fpga_mgr_put(mgr);
+out:
+#endif
+	of_node_put(node);
+	return ret;
+}
+
 static int rtl_fttr_probe(struct mdio_device *mdio)
 {
 	struct device *dev = &mdio->dev;
 	struct rtl_fttr *fttr;
 	int ret;
 
+	ret = rtl_fttr_fpga_acquire(dev);
+	if (ret)
+		return dev_err_probe(dev, ret, "MiniOLT FPGA dependency unavailable\n");
 	fttr = devm_kzalloc(dev, sizeof(*fttr), GFP_KERNEL);
 	if (!fttr)
 		return -ENOMEM;

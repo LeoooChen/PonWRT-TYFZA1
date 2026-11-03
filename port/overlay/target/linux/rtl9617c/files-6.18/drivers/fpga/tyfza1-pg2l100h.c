@@ -81,32 +81,46 @@ static const struct fpga_manager_ops tyfza1_fpga_ops = {
 	.write_complete = tyfza1_fpga_write_complete,
 };
 
-static ssize_t firmware_store(struct device *dev, struct device_attribute *attr,
-			     const char *buf, size_t count)
+static int tyfza1_fpga_load(struct device *dev, struct fpga_manager *mgr, const char *name)
 {
-	struct fpga_manager *mgr = spi_get_drvdata(to_spi_device(dev));
 	struct fpga_image_info *info;
-	char *name;
 	int ret;
 
-	name = devm_kmalloc(dev, count + 1, GFP_KERNEL);
-	if (!name)
-		return -ENOMEM;
-	memcpy(name, buf, count);
-	name[count] = '\0';
-	strim(name);
 	info = fpga_image_info_alloc(dev);
-	if (!info) {
-		devm_kfree(dev, name);
+	if (!info)
+		return -ENOMEM;
+	info->firmware_name = devm_kstrdup(dev, name, GFP_KERNEL);
+	if (!info->firmware_name) {
+		fpga_image_info_free(info);
 		return -ENOMEM;
 	}
-	info->firmware_name = name;
 	ret = fpga_mgr_lock(mgr);
 	if (!ret) {
 		ret = fpga_mgr_load(mgr, info);
 		fpga_mgr_unlock(mgr);
 	}
 	fpga_image_info_free(info);
+	return ret;
+}
+
+static ssize_t firmware_store(struct device *dev, struct device_attribute *attr,
+			     const char *buf, size_t count)
+{
+	struct fpga_manager *mgr = spi_get_drvdata(to_spi_device(dev));
+	char *name;
+	int ret;
+
+	/* Managed boot images are immutable while the supplier is bound. Device
+	 * links retire its consumers before an explicit unbind/reprobe reload. */
+	if (of_find_property(dev->of_node, "firmware-name", NULL))
+		return -EBUSY;
+	if (!count || count > 255 || memchr(buf, '\0', count))
+		return -EINVAL;
+	name = kmemdup_nul(buf, count, GFP_KERNEL);
+	if (!name)
+		return -ENOMEM;
+	ret = tyfza1_fpga_load(dev, mgr, strim(name));
+	kfree(name);
 	return ret ? ret : count;
 }
 static DEVICE_ATTR_WO(firmware);
@@ -123,6 +137,7 @@ static int tyfza1_fpga_probe(struct spi_device *spi)
 	struct fpga_manager *mgr;
 	struct tyfza1_fpga *fpga;
 	struct gpio_desc *gpio;
+	const char *firmware;
 	int ret;
 
 	fpga = devm_kzalloc(dev, sizeof(*fpga), GFP_KERNEL);
@@ -156,6 +171,14 @@ static int tyfza1_fpga_probe(struct spi_device *spi)
 	if (IS_ERR(mgr))
 		return PTR_ERR(mgr);
 	spi_set_drvdata(spi, mgr);
+	if (of_find_property(dev->of_node, "firmware-name", NULL)) {
+		ret = of_property_read_string(dev->of_node, "firmware-name", &firmware);
+		if (ret)
+			return ret;
+		ret = tyfza1_fpga_load(dev, mgr, firmware);
+		if (ret)
+			return dev_err_probe(dev, ret, "FPGA boot image load failed\n");
+	}
 	return 0;
 }
 

@@ -23,7 +23,7 @@ define KernelPackage/tyfza1-fttr
   SUBMENU:=Network Devices
   TITLE:=TYFZA1 native MiniOLT and optical control
   DEPENDS:=@TARGET_rtl9617c +kmod-i2c-core
-  KCONFIG:=CONFIG_RTL9617C_FTTR
+  KCONFIG:=CONFIG_RTL9617C_FTTR CONFIG_FPGA=y
   FILES:= \
 	$(LINUX_DIR)/drivers/net/ethernet/realtek/rtl9617c-fttr.ko \
 	$(LINUX_DIR)/drivers/net/ethernet/realtek/rtl9617c-fttr-bosa.ko
@@ -31,3 +31,14 @@ define KernelPackage/tyfza1-fttr
 endef
 
 $(eval $(call KernelPackage,tyfza1-fttr))
+
+define KernelPackage/tyfza1-fttr-fpga
+  SUBMENU:=Network Devices
+  TITLE:=TYFZA1 PG2L100H downstream FPGA loader
+  DEPENDS:=@TARGET_rtl9617c +kmod-spi-dw-mmio
+  KCONFIG:=CONFIG_FPGA=y CONFIG_FPGA_MGR_TYFZA1_PG2L100H
+  FILES:=$(LINUX_DIR)/drivers/fpga/tyfza1-pg2l100h.ko
+  AUTOLOAD:=$(call AutoProbe,tyfza1-pg2l100h)
+endef
+
+$(eval $(call KernelPackage,tyfza1-fttr-fpga))

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-only
-// FPGA hardware from 20261017 running FDT; bind MiniOLT after loading its image.
+// FPGA hardware from 20261017 running FDT; load the retained image before MDIO.
 #include "rtl9617c-tyfza1-fttr.dts"
 #include "rtl9617c-tyfza1-2p5g.dtsi"
 
 &miniolt {
 	/delete-property/ reset-gpios;
+	fpga-mgr = <&fttr_fpga>;
 };
 
 // This unit's optical model is not present in the saved runtime log.
@@ -41,10 +42,11 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&fttr_spi_pins>;
 
-		fpga@0 {
+		fttr_fpga: fpga@0 {
 			compatible = "pango,tyfza1-pg2l100h";
 			reg = <0>;
 			spi-max-frequency = <4000000>;
+			firmware-name = "realtek/rtl9617c/fttr-top.bin";
 			cs-input-gpios = <&gpio0 13 GPIO_ACTIVE_HIGH>;
 			rxd-input-gpios = <&gpio0 14 GPIO_ACTIVE_HIGH>;
 			reserved-gpios = <&gpio0 105 GPIO_ACTIVE_HIGH>;

@@ -9,6 +9,13 @@ include $(INCLUDE_DIR)/package.mk
 
 TYFZA1_PROJECT ?= $(abspath $(TOPDIR)/../..)
 
+define Package/tyfza1-fttr-fpga
+  SECTION:=firmware
+  CATEGORY:=Firmware
+  TITLE:=TYFZA1 retained downstream FPGA image
+  DEPENDS:=@TARGET_rtl9617c +kmod-tyfza1-fttr-fpga
+endef
+
 define Package/tyfza1-fttr
   SECTION:=net
   CATEGORY:=Network
@@ -23,6 +30,13 @@ define Build/Prepare
 		echo "Set TYFZA1_FTTR_SERDES_SOURCE to this firmware's original /etc/serdes directory" >&2; exit 1; }
 	python3 $(TYFZA1_PROJECT)/tools/prepare_fttr_serdes.py \
 		"$(TYFZA1_FTTR_SERDES_SOURCE)" $(PKG_BUILD_DIR)/firmware
+	$(if $(CONFIG_PACKAGE_tyfza1-fttr-fpga),python3 $(TYFZA1_PROJECT)/tools/prepare_fttr_fpga.py \
+		"$(TYFZA1_FTTR_FPGA_SOURCE)" $(PKG_BUILD_DIR)/fpga)
+endef
+
+define Package/tyfza1-fttr-fpga/install
+	$(INSTALL_DIR) $(1)/lib/firmware/realtek/rtl9617c
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/fpga/fttr-top.bin $(1)/lib/firmware/realtek/rtl9617c/
 endef
 
 define Build/Compile
@@ -81,3 +95,4 @@ define Package/tyfza1-fttr/conffiles
 endef
 
 $(eval $(call BuildPackage,tyfza1-fttr))
+$(eval $(call BuildPackage,tyfza1-fttr-fpga))

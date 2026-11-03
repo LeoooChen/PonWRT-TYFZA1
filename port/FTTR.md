@@ -43,8 +43,10 @@ It does not use the names of the original libraries as a capability probe.
   The FPGA unit's optical client stays disabled until its actual model is known.
 * PG2L100H FPGA Manager: PROGB/INITB/DONE handshake, original SPI payload,
   and real SPI error propagation. Firmware is loaded explicitly through the
-  SPI device's root-writable `firmware` sysfs attribute. The name is relative
-  to the kernel firmware directory. Original `top.bin` stays outside Git.
+  SPI device's root-writable `firmware` sysfs attribute for manual DTs. The FPGA
+  development DT now requests its named boot image during probe and makes
+  MiniOLT binding depend on successful loading; see the FPGA boot section below.
+  The name is relative to the firmware directory. Original `top.bin` stays outside Git.
   The driver removes the original automatic seven-attempt loading loop;
   the actual failed phase is reported by FPGA Manager.
 * Two development DTs and an optional configuration fragment. These do not
@@ -715,10 +717,11 @@ profiles; `package-stage-controller.log` records the recipe output.
 
 To load a development image, first merge `port/configs/tyfza1-fttr.config` into
 its kernel configuration, then select the matching development DT. On the
-FPGA unit, load its retained image by writing its firmware-relative filename
-to `/sys/bus/spi/devices/<device>/firmware`. Only after successful loading,
-bind the previously failed MiniOLT MDIO device through the standard driver's
-`bind` attribute. Automatic factory import and sequencing remain pending.
+FPGA development DT, select the optional FPGA package and supply its retained
+image as described below. Its loader requests the image during probe; MiniOLT
+binding is deferred until loading succeeds and DONE is high. Manual DTs without
+a boot image retain the SPI `firmware` attribute. Full FPGA optical/core/service
+startup remains incomplete.
   Optical calibration import now runs independently of upstream BOSA import;
   absent downstream data removes any previous runtime copy.
 
@@ -778,7 +781,8 @@ selection fragment. `sync-overlay.sh` copies the package, and the target's
 `modules.mk` packages/autoloads the MiniOLT and GN25L99 modules. Production
 package selection and production FIT DT selection stay unchanged. The image
 recipe now also offers `fttr-asic.dtb` / `fttr-2p5g.dtb` development artifacts;
-their FPGA loader package/startup is still pending.
+the optional FPGA loader/firmware package now supplies the image-to-MDIO
+binding stage. Full optical/core/service sequencing is still pending.
 
 The retained settings are independently imported into
 `/tmp/tyfza1-factory/fttr_startup`; credentials are not part of this file.
@@ -2180,10 +2184,90 @@ and staged source hashes are in `store-build-20261103/`. These establish process
 crash behavior and filesystem ordering, not physical power-loss survival or
 actual subordinate password installation.
 
+### FPGA boot image and MiniOLT dependency
+
+The retained image at `selected/ubi_fpga/top.bin` is3,789,476 bytes with SHA-256
+`9c7e8ba3b1521277d2af4b777869287010bc3e8e7884a2542f6ab5ec4af58ab5`.
+`tools/prepare_fttr_fpga.py` checks that exact identity and installs unchanged
+bytes as `realtek/rtl9617c/fttr-top.bin`; an image of the same size but different
+content is rejected. This identifies the available sample, not every FPGA
+revision. The binary remains external to Git.
+
+For the FPGA development build, merge `tyfza1-fttr-fpga-packages.config` with
+the existing FTTR package fragment, use `fttr-2p5g.dtb`, and provide:
+
+```sh
+TYFZA1_FTTR_FPGA_SOURCE=/absolute/path/to/original/top.bin
+```
+
+`tyfza1-fttr-fpga` installs the retained image and depends on
+`kmod-tyfza1-fttr-fpga`, which packages/autoprobes `tyfza1-pg2l100h` and depends
+on the DesignWare MMIO SPI package. FPGA Manager is built in for the FTTR
+kernel package so MiniOLT's optional manager calls remain linkable. The normal
+FTTR package fragment does not select or require the FPGA image.
+
+The FPGA development node now has `firmware-name`; the SPI probe requests and
+loads it through FPGA Manager after GPIO/SPI setup. Missing image, handshake
+failure and SPI errors fail that probe; there is no blind loading retry loop.
+MiniOLT's `fpga-mgr` phandle resolves this exact supplier before any MDIO
+identification. Absent/unbound supplier defers the consumer. Under the manager
+lock, both its completed-operation state and current DONE state must say
+operating. This prevents pre-load zero registers from being treated as FPGA1.
+The consumer retains a manager reference and a managed device link, so a
+supplier unbind retires its consumers before loading can occur again.
+
+For a node with firmware-name, the manual firmware store always returns EBUSY.
+An explicit loader unbind/reprobe is the reload path, with consumer retirement
+handled by the device link. No mutex is held across a consumer's lifetime;
+manager locking stays within a single operation/thread. A manual node without
+firmware-name keeps the explicit firmware store but is not accepted as the
+managed MiniOLT supplier. Failed allocation/load paths release image and manager
+resources. Physical device removal/reprobe behavior still needs hardware testing.
+
+The retained `lib/modules/users/sloader.sh` contains a further post-DONE register
+stage. Native `fpga_init` on FPGA MiniOLT devices now implements it:
+
+| Detected backend/input | Ordered operations |
+| --- | --- |
+| FPGA1, no calibration file | `40023=100000`,1ms delay,`10=1` |
+| FPGA1, calibration file present | `40001=25`,`40002=22`,`40022=5`,each followed by1ms; then the preceding sequence |
+| FPGA2 | No writes in this stage |
+
+Values are hexadecimal except delay. Writing0/1 to `fpga_init` explicitly
+selects absent/present calibration; it does not itself calibrate the optic or
+claim optical readiness. The attribute is absent on ASIC9690 and preserves
+MDIO errors before any further operation. The controller does not automatically
+choose the calibration branch for an unidentified optical model. The FPGA DT
+still disables the unconfirmed GN25L99 child, and `fttrd` bootstrap remains the
+ASIC implementation. Native FPGA-specific core/DBA/OMCI/ONU behavior, P6 startup
+orchestration and the original reset-before-optical-calibration timing remain
+work; successful bitstream loading is not complete FTTR startup.
+
+`scripts/test_fttr_fpga_boot.py` executes the original post-ready shell suffix
+with modeled MDIO and compares its four FPGA/calibration combinations with the
+native helper, including every write-error cutoff. It also runs ten production
+MiniOLT dependency branches and six loader branches in C shims, checks image
+identity/rejection, and confirms MDIO identification follows dependency acquisition.
+The prior `test_fttr_fpga.py` still matches original PROGB/SPI payload ordering
+and verifies SPI/handshake error propagation. Reports are
+`artifacts/fttr/fpga-boot-native-20261103.json` and
+`fpga-loader-regression-20261103.json`.
+
+Real6.18.55 kernel objects compile in `fpga-boot-kernel-20261103.log`. External
+module compilation/modpost/linking succeeds under `fpga-modules-20261103/`,
+including the actual kernel FPGA Manager to supply the new symbol references;
+this isolated symbol check does not replace a full firmware ABI build. Its
+stripped module metadata configuration emits description warnings. The FPGA
+DT compiles to `fpga-boot-20261103.dtb`, with the manager phandle and image name
+checked. `fpga-package-20261103/` runs real OpenWrt prepare/compile/install for
+the control and optional firmware recipes, verifying the installed image hash.
+No physical FPGA, GPIO timing, optical link or ONU interoperability was tested.
+
 ### Outstanding implementation and acceptance
 
-1. FPGA board startup: import its own retained bitstream, load it before
-   binding the MiniOLT transport, and initialize the original post-load registers.
+1. FPGA board startup: retained image packaging, automatic loading before
+   MiniOLT binding and explicit original post-load register control are implemented.
+   Complete P6/FPGA core, optical and ONU/service startup sequencing remains work.
 2. Optical identification for the other sample, plus real GN25L99 calibration
    and optical readiness verification. The native sequence is implemented.
 3. Real P6/FTTR frame verification. Native SoC P6, ASIC peer WTG/PON SerDes,
