@@ -217,6 +217,21 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 		*reorder = ((macid * 16 + tid) << 12) | expected;
 		return 0;
 	}
+	/* The CPU EPP can fill before CB occupancy asserts NI backpressure.
+	 * Count published EPPs and this VP's in-flight descriptors before
+	 * modifying payload/PN/SN. Leave 32 entries for fabric/other ingress. */
+	{
+		u32 peak = 0;
+#pragma clang loop unroll(disable)
+		for (u32 cos = 0; cos < 8; cos++) {
+			u32 wr = ni[0x7000 / 4 + cos];
+			u32 rd = ni[0x7100 / 4 + cos];
+			u32 used = ((wr - rd) & 1023) / 8;
+			if (used > peak) peak = used;
+		}
+		if (peak + ((write - read) & RTL_AX_NI_TX_MASK) + frames > 96)
+			return RX_NI_BUSY;
+	}
 	u32 config = *(u32 *)(states + RX_PEER_CONFIG + macid * 4);
 	u32 total_bytes = 0;
 	/* Commit only after every subframe and the NI allowance are valid.

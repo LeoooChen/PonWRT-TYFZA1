@@ -98,6 +98,20 @@ static inline int rtl_ax_ppdu_signal(const u8 *data, unsigned int bytes,
 	return count;
 }
 
+static inline void rtl_ax_ra_legacy(u8 command[16], u8 macid, u16 legacy, bool band5g)
+{
+	u8 mode = band5g || !(legacy & 15) ? 4 : (legacy & 0xff0) ? 6 : 2;
+	u16 mask = legacy & (mode == 2 ? 15 : mode == 4 ? 0xff0 : 0xff5);
+
+	memset(command, 0, 16);
+	command[0] = mode;
+	command[1] = macid;
+	command[2] = 0x10;
+	put_unaligned_le64(mask | BIT_ULL(63), command + 4);
+	command[13] = 0x38;
+	command[15] = band5g ? 0x20 : 0x80;
+}
+
 static inline void rtl_ax_ra_ht20(u8 command[16], u8 macid, u16 legacy, u16 ht, bool sgi,
 	bool band5g)
 {

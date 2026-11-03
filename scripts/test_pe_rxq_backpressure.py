@@ -822,7 +822,8 @@ for shift,ht,invalid,available in ((0,0,False,63),(2,0,False,63),(0,4,False,63),
  at,_=w.arrive(bytes(shift)+frame,True)
  if shift:w.put(at+4,len(frame)|1<<31|1<<14)
  raw=bytes(w.u.mem_read(at,36+shift+len(frame)));w.call();w.inventory()
- if invalid or available<2:
+ # CPU admission also retains a valid MPDU while NI has >96 in flight.
+ if invalid or available<2 or 1023-available+2>96:
   assert bytes(w.u.mem_read(at,len(raw)))==raw and w.get(MB+90*4)==1023-available
   assert w.get(ST+1024)==1<<31|0x123 and w.get(MB+94*4)==int(invalid)
   if not invalid:

@@ -31,6 +31,8 @@ static void rtl_ax_store32(void *p,u32 v){memcpy(p,&v,4);}
 checks = r'''
 int main(void) {
  u8 c[16],full[16],wd[56],rts[56];
+ rtl_ax_ra_legacy(c,1,0xfff,false);assert(c[0]==6 && c[15]==0x80 && get_unaligned_le64(c+4)==(BIT_ULL(63)|0xff5));
+ rtl_ax_ra_legacy(c,1,0xff0,true);assert(c[0]==4 && c[15]==0x20 && get_unaligned_le64(c+4)==(BIT_ULL(63)|0xff0));
  rtl_ax_ra_he(full,1,0xff0,0xfffa,0x60,0,true,2);
  memcpy(c,full,16);rtl_ax_ra_limit(c,0,1,true);
  assert(c[0]==0x24 && c[2]==0x40 && c[3]==0x50);

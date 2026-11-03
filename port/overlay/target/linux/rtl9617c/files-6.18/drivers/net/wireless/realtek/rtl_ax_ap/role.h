@@ -12,6 +12,7 @@
 
 struct rtl_ax_station {
 	u8 macid;
+	unsigned long ba_retry[8];
 };
 
 static inline void rtl_ax_station_drop(u8 out[24], unsigned int macid, unsigned int ac)

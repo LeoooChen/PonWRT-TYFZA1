@@ -63,8 +63,16 @@ struct rtl_ax_tx {const struct rtl_ax_io *io;int lock;bool running,paused,queues
  void *rx;bool peer_offloaded[128];struct {bool active;}ni;
  struct ieee80211_hw *hw;unsigned occupied,pe_producer,pe_command,queue_stops,queue_wakes,stopped;struct {void *memory;}pe;u32 scheduler_saved;};
 struct tasklet_struct {int unused;};
-struct rtl_ax_ap {struct tasklet_struct tx_tasklet;struct ieee80211_hw *hw;bool monitor_started;};
-struct ieee80211_txq {void *sta;};struct ieee80211_tx_control {void *sta;};struct sk_buff {int unused;};
+struct rtl_ax_station {unsigned macid;unsigned long ba_retry[8];};
+struct ieee80211_sta {void *drv_priv;bool wme;struct {struct {bool ht_supported;}ht_cap;struct {bool vht_supported;}vht_cap;struct {bool has_he;}he_cap;}deflink;};
+struct rtl_ax_ap {struct tasklet_struct tx_tasklet;struct ieee80211_hw *hw;bool monitor_started;bool peer_authorized[128];struct {unsigned aggregation[8],stopping;}tx_ba[128];};
+struct ieee80211_txq {struct ieee80211_sta *sta;unsigned tid;};
+#define IEEE80211_AC_VO 0
+#define HZ 100
+#define jiffies 1000UL
+#define time_after_eq(a,b) ((long)((a)-(b))>=0)
+static int ieee80211_start_tx_ba_session(struct ieee80211_sta *s,unsigned tid,unsigned timeout){(void)s;(void)tid;(void)timeout;return 0;}
+struct ieee80211_tx_control {void *sta;};struct sk_buff {int unused;};
 #define from_tasklet(p,t,member) ((struct rtl_ax_ap *)((char *)(t)-offsetof(struct rtl_ax_ap,member)))
 static int rx_pause_error;static unsigned retired;
 static bool rx_admitted=true;

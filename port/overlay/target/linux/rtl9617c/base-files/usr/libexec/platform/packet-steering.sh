@@ -19,12 +19,13 @@ case "$1" in
 	*) exit 0 ;;
 esac
 
-# ARM already handles RXQ; an additional RPS hop costs forwarding throughput.
+# NI RX runs on CPU2. Deliver CPU-bound Wi-Fi misses to CPU3 so socket
+# processing cannot hold up the next EPP drain. PE-forwarded frames bypass RPS.
 for driver in /sys/class/net/*/device/driver; do
 	case "$(readlink "$driver")" in
 		*/rtl_ax_ap)
 			for queue in "${driver%/device/driver}"/queues/rx-*/rps_cpus; do
-				echo 0 > "$queue"
+				echo 8 > "$queue"
 			done
 			;;
 	esac

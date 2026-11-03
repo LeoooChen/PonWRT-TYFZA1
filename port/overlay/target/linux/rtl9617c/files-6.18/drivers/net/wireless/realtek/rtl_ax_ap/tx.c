@@ -44,7 +44,7 @@ struct rtl_ax_tx_slot {
 	u8 ring;
 	u8 key_index;
 	u8 macid, tid;
-	bool encrypted, pe_sequence;
+	bool encrypted, pe_sequence, firmware_rate;
 	struct rtl_ax_tx_mapping *mapping;
 };
 
@@ -222,8 +222,10 @@ struct rtl_ax_tx *rtl_ax_tx_prepare(struct pci_dev *pdev, const struct rtl_ax_io
 		ret = io->poll32(io->ctx, rtl_ax_tx_indices[ring], 0x3ff03ff, 0, 10, 100000, &last);
 		if (ret)
 			goto release;
+		/* PE publishes TXBDs in DDR, just like RXBDs. Fetch through the
+		 * raw alias; CCI ReadOnce can return a previous ARM cache line. */
 		io->write32(io->ctx, 0x1230 + channel * 8,
-			lower_32_bits(tx->ring_dma + ring * RTL_AX_TX_ENTRIES * 8));
+			lower_32_bits(tx->ring_dma + ring * RTL_AX_TX_ENTRIES * 8) | 0x80000000U);
 		io->write32(io->ctx, 0x1234 + channel * 8, 0);
 		rtl_ax_update16(io, 0x1024 + channel * 2, 0x3ff, RTL_AX_TX_ENTRIES);
 		rtl_ax_update32(io, 0x1300 + channel * 4, 0x3f3f3f,
@@ -533,6 +535,25 @@ int rtl_ax_tx_peer_ssn(struct rtl_ax_tx *tx, unsigned int macid, unsigned int ti
 	return tx->pe_active ? get_unaligned_le32(tx->pe.memory + 0x10000 + (macid * 8 + tid) * 4) : 0;
 }
 
+static bool rtl_ax_tx_raw_fw_rate(struct rtl_ax_tx *tx, struct sk_buff *skb,
+	unsigned int macid)
+{
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+	struct ieee80211_hdr *hdr = (void *)skb->data;
+
+	if (!tx->pe_active || !macid ||
+	    !READ_ONCE(tx->peer_authorized[macid]) ||
+	    info->flags & (IEEE80211_TX_CTL_HW_80211_ENCAP | IEEE80211_TX_CTL_INJECTED |
+		IEEE80211_TX_CTL_RATE_CTRL_PROBE | IEEE80211_TX_CTL_USE_MINRATE |
+		IEEE80211_TX_CTL_TX_OFFCHAN) ||
+	    info->control.flags & (IEEE80211_TX_CTRL_RATE_INJECT |
+		IEEE80211_TX_CTRL_PORT_CTRL_PROTO | IEEE80211_TX_CTRL_DONT_USE_RATE_MASK))
+		return false;
+	return ieee80211_is_data_present(hdr->frame_control) &&
+		!is_multicast_ether_addr(hdr->addr1) &&
+		(get_unaligned_le32(tx->pe.memory + 0xe200 + macid * 4) & BIT(17));
+}
+
 int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	struct sk_buff *skb, unsigned int rate, unsigned int gi, unsigned int bandwidth, unsigned int macid,
 	unsigned int aggregate, unsigned int density)
@@ -554,6 +575,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	unsigned int original_header_bytes = encap ? ETH_HLEN : pe_sequence ? header_bytes : 0;
 	u8 *page;
 	int ret;
+	bool template_ready = false;
 	u64 begin = READ_ONCE(rtl_ax_datapath_profile) ? ktime_get_ns() : 0;
 	if (packet_bytes > 0x3fff) return -EMSGSIZE;
 
@@ -628,6 +650,9 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		if (encap) request[3] |= tx->peer_rates[macid] & (BIT(21) | BIT(22));
 		if (encap && (get_unaligned_le32(tx->pe.memory + 0xe200 + macid * 4) & BIT(17)))
 			request[3] |= BIT(20);
+		if (rtl_ax_tx_raw_fw_rate(tx, skb, macid))
+			request[3] = tx->peer_rates[macid] | BIT(20);
+		slot.firmware_rate = !!(request[3] & BIT(20));
 		request[4] = request_flags; request[5] = aggregate | density << 8 | key;
 		request[6] = pn; request[7] = pn >> 32;
 		if (slot.mapping) {
@@ -648,8 +673,24 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 			}
 			memcpy(tx->pe.memory + 0xe400 + macid * 8, skb->data, 6);
 		}
-		/* Build in cached memory, then publish before the existing DMA barrier
-		 * and producer handoff. Unused address slots remain untouched. */
+		/* NI needs an Ethernet template even when mac80211 assembled A-MSDU.
+		 * Never copy the raw frame's sequence/AMSDU/PS flags into that template. */
+		if (!encap && !tid && pe_sequence && slot.firmware_rate &&
+		    (request_flags & BIT(16)) && tx->peer_authorized[macid] &&
+		    info->control.vif && info->control.vif->type == NL80211_IFTYPE_AP &&
+		    ieee80211_has_fromds(header->frame_control) &&
+		    !ieee80211_has_tods(header->frame_control) &&
+		    !(info->flags & (IEEE80211_TX_CTL_NO_ACK | IEEE80211_TX_CTL_NO_PS_BUFFER)) &&
+		    !(info->control.flags & IEEE80211_TX_CTRL_PS_RESPONSE)) {
+			u32 peer[8] = { 0, 0, 26U << 16,
+				tx->peer_rates[macid] & ~BIT(31),
+				macid << 24 | BIT(18) | BIT(16) | tx->checksum_enabled << 17,
+				aggregate | density << 8 | key, 0, 0 };
+
+			memcpy(tx->pe.memory + 0xd000 + macid * 32, peer, sizeof(peer));
+			memcpy(tx->pe.memory + 0xe400 + macid * 8, header->addr1, ETH_ALEN);
+			template_ready = true;
+		}
 		memcpy(published, request, (8 + segments * 2) * sizeof(*request));
 	} else {
 	memset(page, 0, RTL_AX_TX_WP_BYTES);
@@ -734,7 +775,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	}
 	spin_unlock_irqrestore(&tx->lock, flags);
 	if (READ_ONCE(tx->peer_asleep[macid])) ni_route_sleep(tx, macid);
-	if (encap && tx->pe_active && tx->peer_ready && !READ_ONCE(tx->peer_offloaded[macid]))
+	if ((encap || template_ready) && tx->pe_active && tx->peer_ready && !READ_ONCE(tx->peer_offloaded[macid]))
 		tx->peer_ready(tx->peer_ready_context);
 	return 0;
 unmap:
@@ -772,6 +813,9 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 {
 	unsigned int offset;
 	unsigned long flags;
+
+	/* Defer local TX re-entry until every record in this report is consumed. */
+	local_bh_disable();
 
 	/* Original handle_rx_report@27c1a4: four-byte release records,
 	 * qsel8:12, status13:15, WPseq16:30 (ID low12), polluted31. */
@@ -855,8 +899,7 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 			((struct ieee80211_hdr *)slot.skb->data)->seq_ctrl = completed_sequence;
 		info = IEEE80211_SKB_CB(slot.skb);
 		ieee80211_tx_info_clear_status(info);
-		if ((info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP) &&
-		    (get_unaligned_le32(tx->pe.memory + 0xe200 + slot.macid * 4) & BIT(17)))
+		if (slot.firmware_rate)
 			info->status.rates[0].idx = -1;
 		if (!status && !(report & BIT(31)))
 			info->flags |= info->flags & IEEE80211_TX_CTL_NO_ACK ?
@@ -882,6 +925,7 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 			rcu_read_unlock(); local_bh_enable();
 		} else ieee80211_tx_status_ni(hw, slot.skb);
 	}
+	local_bh_enable();
 	return 0;
 }
 

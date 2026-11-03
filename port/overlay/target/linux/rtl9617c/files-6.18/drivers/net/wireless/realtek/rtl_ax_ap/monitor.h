@@ -12,6 +12,40 @@ static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw)
 	return *(struct rtl_ax_ap **)hw->priv;
 }
 
+static int rtl_ax_set_rts_threshold(struct ieee80211_hw *hw, int radio_idx, u32 value)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	u32 time = value == (u32)-1 ? hw_rts_time : 255U << 5;
+	u32 length = value == (u32)-1 ? hw_rts_length : value;
+
+	/* Same C614 units as factory hw_rts_th; retain the board default. */
+	mutex_lock(&radio->command_mutex);
+	radio->io.write16(radio, 0xc614,
+		min(time >> 5, 255U) << 8 | min(length >> 4, 255U));
+	mutex_unlock(&radio->command_mutex);
+	return 0;
+}
+
+static unsigned int rtl_ax_tx_basic_rate(struct rtl_ax_ap *radio, struct ieee80211_sta *sta,
+	struct ieee80211_tx_info *info)
+{
+	struct ieee80211_vif *vif = info->control.vif;
+	u32 basic = vif ? vif->bss_conf.basic_rates : 0;
+	unsigned int index, rate;
+
+	if (sta) basic &= sta->deflink.supp_rates[radio->band.band];
+	if (info->flags & IEEE80211_TX_CTL_NO_CCK_RATE && radio->band.band == NL80211_BAND_2GHZ)
+		basic &= ~15U;
+	index = basic ? __ffs(basic) : radio->band.band == NL80211_BAND_2GHZ &&
+		(info->flags & IEEE80211_TX_CTL_NO_CCK_RATE) ? 4 : 0;
+	if (index >= radio->band.n_bitrates) index = 0;
+	rate = radio->band.bitrates[index].hw_value;
+	info->control.rates[0].idx = index;
+	info->control.rates[0].flags = 0;
+	info->control.rates[0].count = 1;
+	return rate;
+}
+
 /* The simulated single-channel interface keeps mac80211 software scanning.
  * Patch208 also notifies config when only radar_enabled changes. */
 static int rtl_ax_chandef_locked(struct rtl_ax_ap *radio, const struct cfg80211_chan_def *def)
@@ -52,6 +86,7 @@ static int rtl_ax_monitor_start(struct ieee80211_hw *hw)
 	rtl_ax_rx_open(radio->rx);
 	rtl_ax_tx_open(radio->tx);
 	mutex_unlock(&radio->command_mutex);
+	rtl_ax_set_rts_threshold(hw, -1, hw->wiphy->rts_threshold);
 	wiphy_delayed_work_queue(hw->wiphy, &radio->cleanup_work, 0);
 	wiphy_delayed_work_queue(hw->wiphy, &radio->ra_work, HZ);
 	wiphy_delayed_work_queue(hw->wiphy, &radio->dm_work, 2 * HZ);
@@ -689,7 +724,11 @@ static int rtl_ax_station_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 			clear_bit(id, radio->ra_pending);
 			memset(radio->ra_feedback[id], 0, 8);
 			rtl_ax_tx_peer_rate(radio->tx, id, rate, caps);
-		}
+			/* Firmware is the only rate controller; do not retain Minstrel's
+			 * initial HT-BA ceiling for a negotiated VHT/HE peer. */
+			sta->deflink.agg.max_rc_amsdu_len = !sta->deflink.he_cap.has_he &&
+				!sta->deflink.vht_cap.vht_supported ? min(caps >> 18, 4065U) : caps >> 18;
+		} else { ret = -EOPNOTSUPP; goto remove; }
 	}
 	radio->station_added++;
 	dev_info(&radio->pdev->dev, "native AP station MACID%u AID%u connected\n", id, sta->aid);
@@ -873,23 +912,30 @@ static void rtl_ax_monitor_tx(struct ieee80211_hw *hw,
 	unsigned int macid = control->sta ? ((struct rtl_ax_station *)control->sta->drv_priv)->macid : 0;
 	bool encap = IEEE80211_SKB_CB(skb)->flags & IEEE80211_TX_CTL_HW_80211_ENCAP;
 	unsigned int aggregate = 0, density = 0;
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+	bool injected_rate = info->control.flags & IEEE80211_TX_CTRL_RATE_INJECT;
+
+	/* mac80211 leaves rates unset with HAS_RATE_CONTROL. Management, group
+	 * and pre-authorization traffic still need a valid basic fallback. */
+	if (!injected_rate)
+		rate = rtl_ax_tx_basic_rate(radio, control->sta, info);
 
 	if (skb->len >= (encap ? ETH_HLEN : 24) && skb->len <= 0x3fff &&
 	    (encap || ieee80211_is_mgmt(header->frame_control) || ieee80211_is_data(header->frame_control))) {
 		/* Original RTW_DATA_RATE_MCS0=0x80, GI0=long/GI1=short.
 		 * mac80211's MCS index must not index the legacy bitrate array. */
-		if (selected->flags & IEEE80211_TX_RC_VHT_MCS) {
+		if (injected_rate && selected->flags & IEEE80211_TX_RC_VHT_MCS) {
 			rate = 0x100 + (ieee80211_rate_get_vht_nss(selected) - 1) * 16 +
 				ieee80211_rate_get_vht_mcs(selected);
 			gi = !!(selected->flags & IEEE80211_TX_RC_SHORT_GI);
 			bandwidth = selected->flags & IEEE80211_TX_RC_160_MHZ_WIDTH ? 3 :
 				selected->flags & IEEE80211_TX_RC_80_MHZ_WIDTH ? 2 :
 				!!(selected->flags & IEEE80211_TX_RC_40_MHZ_WIDTH);
-		} else if (selected->flags & IEEE80211_TX_RC_MCS) {
+		} else if (injected_rate && selected->flags & IEEE80211_TX_RC_MCS) {
 			rate = 0x80 + selected->idx;
 			gi = !!(selected->flags & IEEE80211_TX_RC_SHORT_GI);
 			bandwidth = !!(selected->flags & IEEE80211_TX_RC_40_MHZ_WIDTH);
-		} else if (selected->idx >= 0 && selected->idx < radio->band.n_bitrates)
+		} else if (injected_rate && selected->idx >= 0 && selected->idx < radio->band.n_bitrates)
 			rate = radio->band.bitrates[selected->idx].hw_value;
 		if (control->sta && (IEEE80211_SKB_CB(skb)->flags & IEEE80211_TX_CTL_AMPDU)) {
 			unsigned int tid = encap ? skb->priority & 7 : *ieee80211_get_qos_ctl(header) & IEEE80211_QOS_CTL_TID_MASK;
@@ -918,6 +964,20 @@ static void rtl_ax_tx_queues(struct tasklet_struct *tasklet)
 		while ((queue = ieee80211_next_txq(hw, ac))) {
 			struct ieee80211_tx_control control = { .sta = queue->sta };
 			struct sk_buff *skb;
+			struct rtl_ax_station *station = queue->sta ? (void *)queue->sta->drv_priv : NULL;
+
+			/* Hardware RC replaces Minstrel's BA trigger, not mac80211's
+			 * negotiated session lifecycle. Retry rejection at most once/sec. */
+			if (station && station->macid && queue->tid < 8 && ac != IEEE80211_AC_VO &&
+			    queue->sta->wme && READ_ONCE(radio->peer_authorized[station->macid]) &&
+			    (queue->sta->deflink.ht_cap.ht_supported || queue->sta->deflink.vht_cap.vht_supported ||
+			     queue->sta->deflink.he_cap.has_he) &&
+			    !READ_ONCE(radio->tx_ba[station->macid].aggregation[queue->tid]) &&
+			    !(READ_ONCE(radio->tx_ba[station->macid].stopping) & BIT(queue->tid)) &&
+			    (!station->ba_retry[queue->tid] || time_after_eq(jiffies, station->ba_retry[queue->tid]))) {
+				station->ba_retry[queue->tid] = jiffies + HZ;
+				ieee80211_start_tx_ba_session(queue->sta, queue->tid, 0);
+			}
 
 			while ((skb = ieee80211_tx_dequeue(hw, queue)))
 				rtl_ax_monitor_tx(hw, &control, skb);
@@ -1317,6 +1377,7 @@ found:
 }
 
 static const struct ieee80211_ops rtl_ax_monitor_ops = {
+	.set_rts_threshold = rtl_ax_set_rts_threshold,
 	.tx = rtl_ax_monitor_tx,
 	.wake_tx_queue = rtl_ax_wake_tx_queue,
 	.net_setup_tc = rtl_ax_net_setup_tc,
@@ -1602,14 +1663,15 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	/* mac80211 handles BIP and SW_MGMT_TX; RX retains the CCMP IV/MIC. */
 	ieee80211_hw_set(hw, MFP_CAPABLE);
 	ieee80211_hw_set(hw, AMPDU_AGGREGATION);
+	ieee80211_hw_set(hw, HAS_RATE_CONTROL);
 	ieee80211_hw_set(hw, SUPPORTS_AMSDU_IN_AMPDU);
 	/* RPQ releases individual MPDUs without the transmitted PPDU length. */
 	ieee80211_hw_set(hw, TX_STATUS_NO_AMPDU_LEN);
 	ieee80211_hw_set(hw, SUPPORT_FAST_XMIT);
-	ieee80211_hw_set(hw, SUPPORTS_TX_ENCAP_OFFLOAD);
+	/* mac80211 assembles host A-MSDUs; NI retains its PE encapsulation. */
 	ieee80211_hw_set(hw, TX_AMSDU);
 	ieee80211_hw_set(hw, TX_FRAG_LIST);
-	hw->max_tx_fragments = 4;
+	hw->max_tx_fragments = RTL_AX_TX_WP_ADDRESS_MAX - 1;
 	hw->max_tx_aggregation_subframes = 64;
 	hw->max_rx_aggregation_subframes = 64;
 	hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_MONITOR) | BIT(NL80211_IFTYPE_AP);
