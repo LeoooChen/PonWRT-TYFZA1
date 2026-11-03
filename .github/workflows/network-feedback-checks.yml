@@ -1,0 +1,36 @@
+name: Check LAN address and Wi-Fi cleanup fixes
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Check Wi-Fi completion ownership and cleanup
+        run: |
+          mkdir -p artifacts logs
+          python3 scripts/test_wifi_cleanup_nonblocking.py
+          python3 scripts/test_radio_key_cleanup.py
+          python3 scripts/test_radio_pe_waiters.py
+          python3 scripts/test_wifi_offload_transaction.py
+          python3 scripts/test_radio_rx_ba_cleanup.py
+          python3 scripts/test_radio_ni_retire_flush.py
+          python3 scripts/test_wifi_ni_retirement.py
+          python3 scripts/test_ni_release_inflight.py
+          python3 scripts/test_wifi_authorization.py
+      - name: Fetch the LuCI revision used for the address regression
+        run: |
+          git init artifacts/luci-reference
+          git -C artifacts/luci-reference fetch --depth=1 https://git.openwrt.org/project/luci.git 86d1549227ffef9cf60418583b7b4b9b0b06bc08
+          git -C artifacts/luci-reference checkout --detach FETCH_HEAD
+      - name: Check LAN address validation and patch compatibility
+        run: python3 scripts/test_lan_address_ui.py --feed artifacts/luci-reference

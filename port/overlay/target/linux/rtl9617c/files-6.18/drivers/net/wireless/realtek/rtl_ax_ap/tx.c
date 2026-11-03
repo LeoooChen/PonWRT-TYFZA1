@@ -903,7 +903,7 @@ static bool rtl_ax_tx_pe_pending(struct rtl_ax_tx *tx, unsigned int macid, unsig
 	return false;
 }
 
-static bool rtl_ax_tx_key_pending(struct rtl_ax_tx *tx, unsigned int index)
+bool rtl_ax_tx_key_pending(struct rtl_ax_tx *tx, unsigned int index)
 {
 	unsigned long flags;
 	unsigned int id;

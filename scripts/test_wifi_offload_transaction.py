@@ -133,7 +133,7 @@ static int rtl_ax_rx_ba_remove(struct rtl_ax_ap *r,unsigned id){(void)r;(void)id
 static int rtl_ax_station_release(struct rtl_ax_ap *r,unsigned id){(void)r;(void)id;assert(0);return 0;}
 static unsigned ba_callbacks;
 static int rtl_ax_drop_station(struct rtl_ax_ap *r,unsigned id,unsigned tid){(void)r;(void)id;(void)tid;assert(!active_tx->ni.route_peers[1]);return 0;}
-static int rtl_ax_tx_wait_station(struct rtl_ax_tx *tx,unsigned id,unsigned tid){(void)tx;(void)id;(void)tid;assert(!active_tx->ni.route_peers[1]);return 0;}
+static bool rtl_ax_tx_station_pending(struct rtl_ax_tx *tx,unsigned id,unsigned tid){(void)tx;(void)id;(void)tid;assert(!active_tx->ni.route_peers[1]);return 0;}
 static void rtl_ax_station_cmac_connected(u8 *data,unsigned id,bool five,unsigned aggregate){(void)id;(void)five;(void)aggregate;memset(data,0,68);}
 static void rtl_ax_store32(u8 *p,u32 value){put_unaligned_le32(value,p);}
 static u32 rtl_ax_ap_read32(const u8 *p){return get_unaligned_le32(p);}

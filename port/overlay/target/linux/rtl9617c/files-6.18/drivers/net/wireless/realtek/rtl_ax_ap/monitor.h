@@ -367,8 +367,9 @@ static int rtl_ax_drop_station(struct rtl_ax_ap *radio, unsigned int macid, unsi
 			if (ret)
 				return ret;
 		}
-	/* PKT_DROP has no ACK. RPQ release, not H2C submission, ends DMA ownership. */
-	return rtl_ax_tx_wait_station(radio->tx, macid, tid);
+	/* PKT_DROP has no ACK. Keep ownership until RPQ, but let the delayed
+	 * cleanup retry instead of sleeping for every STA under the wiphy lock. */
+	return rtl_ax_tx_station_pending(radio->tx, macid, tid) ? -EAGAIN : 0;
 }
 
 static int rtl_ax_rx_ba_remove(struct rtl_ax_ap *radio, unsigned int index)
@@ -472,7 +473,7 @@ static int rtl_ax_tx_ba_finish(struct rtl_ax_ap *radio, unsigned int macid, unsi
 	ret = rtl_ax_tx_ni_retire_ba(radio->tx, macid);
 	if (ret) return ret;
 	ret = flush ? rtl_ax_drop_station(radio, macid, tid) :
-		rtl_ax_tx_wait_station(radio->tx, macid, tid);
+		(rtl_ax_tx_station_pending(radio->tx, macid, tid) ? -EAGAIN : 0);
 	if (ret)
 		return ret;
 	for (i = 0; i < IEEE80211_NUM_TIDS; i++)
@@ -506,7 +507,7 @@ static bool rtl_ax_security_cleanup(struct rtl_ax_ap *radio)
 			unsigned int macid = radio->security_unlink[index] - 1;
 
 			if ((macid && rtl_ax_tx_ni_retire_peer(radio->tx, macid)) ||
-			    rtl_ax_tx_flush_key(radio->tx, index)) {
+			    rtl_ax_tx_key_pending(radio->tx, index)) {
 				retry = true;
 				continue;
 			}
