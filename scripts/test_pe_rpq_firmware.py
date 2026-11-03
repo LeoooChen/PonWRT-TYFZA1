@@ -8,7 +8,7 @@ import subprocess
 import sys
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / 'analysis/python-deps'))
-from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_MEM_WRITE, UC_HOOK_MEM_READ
+from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_MEM_WRITE, UC_HOOK_MEM_READ, UC_HOOK_CODE
 from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_SP, UC_MIPS_REG_PC, UC_MIPS_REG_RA
 
 binary = (Path(sys.argv[1]) if len(sys.argv) > 1 else root / 'artifacts/pe-radio-production/pe-tx.bin').read_bytes()
@@ -153,6 +153,78 @@ for batch in range(64):
     assert len(credit_reads) == 16
     rpq_consumer = (rpq_consumer + 1) & 255
 
+# Model the ARM reader while PE overwrites one of the sixteen retained records.
+# Stores before SYNC may reach ARM in different order: hold the invalidation
+# back and expose a payload field first. The old sequence must not validate it.
+trace_base = base + 0x1e000
+visible_sequences, invalidations = {}, {}
+overwrite_checks = 0
+
+
+def trace_write(uc, access, at, size, value, data):
+    global overwrite_checks
+    index, word = divmod((at - trace_base - 4) // 4, 8)
+    if not word:
+        if not value:
+            invalidations[index] = 0
+        else:
+            visible_sequences[index] = value
+    elif index in invalidations and visible_sequences.get(index, 0):
+        raise AssertionError('ARM can accept mixed RPQ fields with the old sequence: missing invalidation SYNC')
+    elif index in visible_sequences:
+        overwrite_checks += 1
+
+
+def trace_instruction(uc, at, size, data):
+    if get(at & 0x1fffffff) == 0xf:  # MIPS SYNC publishes the invalidation prefix.
+        visible_sequences.update(invalidations)
+        invalidations.clear()
+
+
+trace_write_hook = u.hook_add(UC_HOOK_MEM_WRITE, trace_write,
+                             begin=trace_base + 4, end=trace_base + 4 + 16 * 32 - 1)
+trace_code_hook = u.hook_add(UC_HOOK_CODE, trace_instruction)
+
+# A rejected report must retain the real owner and preserve the raw evidence.
+member, bad_report = 50, (306 << 16) | 2
+owner, owner_meta = payload + 0x2000, 0x48100
+put(base + 0xc400 + member * 8, owner)
+put(base + 0xc404 + member * 8, owner_meta)
+put(mailbox + 120, 1)
+for seq in range(1, 21):
+    raw, offset = packet(struct.pack('<I', bad_report))
+    run()
+    assert get(mailbox + 280) == (rpq_consumer + 1) & 255
+    assert get(mailbox + 120) == 1 and get(base + 0xc400 + member * 8) == owner
+    assert get(base + 0xc404 + member * 8) == owner_meta
+    trace = base + 0x1e000
+    record = trace + 4 + ((seq - 1) & 15) * 32
+    assert get(trace) == seq and get(record) == seq
+    assert [get(record + i * 4) for i in range(1, 8)] == [
+        2, struct.unpack_from('<I', raw)[0], struct.unpack_from('<I', raw, 4)[0],
+        bad_report, owner, owner_meta, rpq_consumer]
+    rpq_consumer = (rpq_consumer + 1) & 255
+
+assert overwrite_checks >= 4 * 7
+u.hook_del(trace_write_hook)
+u.hook_del(trace_code_hook)
+
+# A malformed physical RPQ descriptor records its own header and reason.
+raw, offset = packet(b'bad!', kind=7)
+bad_info = struct.unpack_from('<I', raw)[0] & ~(1 << 14)
+put(rpq + rpq_consumer * 1024, bad_info)
+run()
+trace = base + 0x1e000
+record = trace + 4 + (20 & 15) * 32
+assert get(trace) == 21 and get(record) == 21
+assert [get(record + i * 4) for i in range(1, 8)] == [
+    1, bad_info, struct.unpack_from('<I', raw, 4)[0], 0, 0, 0, rpq_consumer]
+assert get(mailbox + 308) == 21
+put(base + 0xc400 + member * 8, 0)
+put(base + 0xc404 + member * 8, 0)
+put(mailbox + 120, 0)
+rpq_consumer = (rpq_consumer + 1) & 255
+
 # Full ARM handoff ring holds physical RPQ ownership until the host consumes.
 put(mailbox + 296, (get(mailbox + 292) + 1) & 255)
 raw, offset = packet(b'control-ACK', kind=10, wd_extra=(1 << 14) | (1 << 23))
@@ -169,7 +241,7 @@ run()
 assert get(mailbox + 280) == (rpq_consumer + 1) & 255
 out = bytes(u.mem_read(forward + 63 * 1024, len(raw)))
 assert out == raw
-assert get(mailbox + 308) == 0
+assert get(mailbox + 308) == 21
 
 # A full factory DFS batch is516 bytes including RXBD/WD. Preserve it
 # through the physical RPQ and the PE handoff, including the channel boundary.
@@ -243,6 +315,8 @@ result = dict(linked_MIPS_C_firmware=True, NI_MPDU=1024, BID_returns=2048,
               one_WP_per_aggregate=True, partial_EQ_resume_without_duplicate_BID=True,
               no_ARM_per_NI_completion=True, handoff_full_holds_RPQ=True,
               paused_PE_does_not_consume=True, factory_DFS_61_pulses_preserved=True,
+              rejected_RPQ_evidence_retained_with_wrap=True,
+              RPQ_overwrite_invalidation_precedes_payload_visibility=True,
               old_DFS_discarded_on_RXQ_and_RPQ=True, new_DFS_preserved=True, hardware_test=False)
 (root / 'logs/pe-rpq-firmware-test.json').write_text(json.dumps(result, indent=2) + '\n')
 print(json.dumps(result, indent=2))

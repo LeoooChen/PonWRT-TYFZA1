@@ -1112,6 +1112,29 @@ int rtl_ax_tx_status(struct rtl_ax_tx *tx, char *out, size_t capacity)
 			get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 252));
 	if (tx->pe_active)
 		length += scnprintf(out + length, capacity - length,
+			"NI_retire_quiescing=%u MACID=%u\n",
+			READ_ONCE(tx->ni.retire_quiescing), READ_ONCE(tx->ni.retire_macid));
+	if (tx->pe_active) {
+		void *trace = tx->pe.memory + RTL_AX_RPQ_FAULT_TRACE;
+		u32 count = get_unaligned_le32(trace);
+
+		length += scnprintf(out + length, capacity - length, "PE_RPQ_fault_records=%u\n", count);
+		for (i = 0; i < min_t(u32, count, 8); i++) {
+			u32 sequence = count - i, values[7], j;
+			void *entry = trace + 4 + ((sequence - 1) & (RTL_AX_RPQ_FAULT_SLOTS - 1)) * RTL_AX_RPQ_FAULT_WORDS * 4;
+
+			if (get_unaligned_le32(entry) != sequence) continue;
+			dma_rmb();
+			for (j = 0; j < ARRAY_SIZE(values); j++) values[j] = get_unaligned_le32(entry + 4 + j * 4);
+			dma_rmb();
+			if (get_unaligned_le32(entry) != sequence) continue;
+			length += scnprintf(out + length, capacity - length,
+				"PE_RPQ_fault=%u reason=%u info=%08x wd=%08x report=%08x owner=%08x meta=%08x slot=%u\n",
+				sequence, values[0], values[1], values[2], values[3], values[4], values[5], values[6]);
+		}
+	}
+	if (tx->pe_active)
+		length += scnprintf(out + length, capacity - length,
 			"PE_NI_reject_EPP=%08x/%08x length=%u header=%u Ethernet=%08x/%08x\n",
 			get_unaligned_le32(tx->pe.memory + 0x2200), get_unaligned_le32(tx->pe.memory + 0x2204),
 			get_unaligned_le32(tx->pe.memory + 0x2208), get_unaligned_le32(tx->pe.memory + 0x220c),

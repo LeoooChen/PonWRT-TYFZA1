@@ -15,7 +15,7 @@ common = r'''
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
-typedef uint32_t u32;
+typedef uint8_t u8; typedef uint32_t u32;
 #define BIT(n) (1U<<(n))
 #define PE_PROBE_MAILBOX 0x2000
 #define READ_ONCE(p) (p)
@@ -26,7 +26,7 @@ typedef uint32_t u32;
 #define read_poll_timeout(op,val,cond,delay,timeout,sleep,args...) ({(void)(delay);(void)(timeout);(void)(sleep);(val)=op(args);(cond)?0:-ETIMEDOUT;})
 #define readl_poll_timeout(address,val,cond,delay,timeout) ({(void)(address);(void)(delay);(void)(timeout);(val)=0;(cond)?0:-ETIMEDOUT;})
 struct rx_state {bool active[128];};
-struct rtl_ax_tx {struct rx_state *rx;struct {void *memory;}pe;struct {bool route_peers[128];void *route_dev,*vp;unsigned route_tim[128];}ni;bool peer_offloaded[128];void *pdev;};
+struct rtl_ax_tx {struct rx_state *rx;struct {void *memory;}pe;struct {bool retire_quiescing,route_peers[128];u8 retire_macid;void *route_dev,*vp;unsigned route_tim[128];}ni;bool peer_offloaded[128];void *pdev;};
 static bool rtl_ax_rx_uplink_active(struct rx_state *rx,unsigned id){return rx->active[id];}
 static void rtl_ax_rx_uplink_disable(struct rx_state *rx,unsigned id){rx->active[id]=false;}
 static void rtl_ax_rx_uplink_retire(struct rx_state *rx,unsigned id){(void)rx;(void)id;assert(false);}
@@ -43,6 +43,7 @@ static int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx,void *dev,unsigned id) {
 }
 static int rtl_ax_tx_pause(struct rtl_ax_tx *tx) {(void)tx;return 0;}
 static void rtl_ax_tx_open(struct rtl_ax_tx *tx) {(void)tx;}
+static int rtl_ax_tx_rx_retire(struct rtl_ax_tx *tx,unsigned id){(void)tx;(void)id;assert(false);return 0;}
 static void ni_peer_fence(struct rtl_ax_tx *tx) {(void)tx;assert(false);}
 static int rtl_ax_mac_drop_peer(void *pdev,unsigned id) {(void)pdev;(void)id;assert(false);return 0;}
 static bool ni_peer_idle(struct rtl_ax_tx *tx,unsigned id) {(void)tx;(void)id;return true;}

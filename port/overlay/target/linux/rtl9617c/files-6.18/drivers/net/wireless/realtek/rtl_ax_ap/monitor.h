@@ -541,7 +541,9 @@ static void rtl_ax_cleanup_work(struct wiphy *wiphy, struct wiphy_work *work)
 {
 	struct rtl_ax_ap *radio = container_of(work, struct rtl_ax_ap, cleanup_work.work);
 	unsigned int i, tid;
-	bool retry = rtl_ax_security_cleanup(radio);
+	bool retry = rtl_ax_tx_ni_cleanup(radio->tx) != 0;
+
+	retry |= rtl_ax_security_cleanup(radio);
 
 	if (radio->offload_retry) {
 		radio->offload_retry = false;
