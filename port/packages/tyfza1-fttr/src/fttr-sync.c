@@ -243,18 +243,18 @@ int main(int argc, char **argv)
 	unsigned long slot, ethertype;
 	int lease = -1, control = -1, fd = -1, ret = -EINVAL;
 	bool discover = argc == 4 && !strcmp(argv[2], "discover");
-	bool resident = argc == 5 && !strcmp(argv[2], "serve");
+	bool resident = (argc == 5 || (argc == 7 && !strcmp(argv[5], "--state"))) && !strcmp(argv[2], "serve");
 	bool apply = argc == 7 && !strcmp(argv[5], "wifi-apply");
 	bool registering = argc == 7 && !strcmp(argv[5], "register");
 	bool settings = apply || (argc == 6 && !strcmp(argv[5], "wifi-settings"));
 	bool automatic = !resident && (argc == 5 || settings || registering) && !strcmp(argv[3], "auto");
 	bool ack_seen = false;
 
-	if ((!discover && !settings && !registering && argc != 5) || strlen(argv[1]) >= IFNAMSIZ || strchr(argv[1], '/') ||
+	if ((!discover && !resident && !settings && !registering && argc != 5) || strlen(argv[1]) >= IFNAMSIZ || strchr(argv[1], '/') ||
 	    (!discover && !resident && fttr_sync_mac_parse(argv[2], peer))) {
 		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [wifi-settings | wifi-apply <private-json-file> | register <private-policy-file>]\n"
 			"       %s <interface> discover <ethertype>\n"
-			"       %s <interface> serve <ethertype> <private-policy-file>\n", argv[0], argv[0], argv[0]);
+			"       %s <interface> serve <ethertype> <private-policy-file> [--state <private-persistent-directory>]\n", argv[0], argv[0], argv[0]);
 		return 2;
 	}
 	if (resident) {
@@ -319,7 +319,7 @@ int main(int argc, char **argv)
 		}
 	}
 	if (resident) {
-		ret = fttr_sync_controller(fd, source, ethertype, desired);
+		ret = fttr_sync_controller(fd, source, ethertype, desired, argc == 7 ? argv[6] : NULL);
 		goto out;
 	}
 	if (discover || automatic) {

@@ -8,20 +8,23 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "sync-controller.h"
 #include "sync-client.h"
 #include "sync-peer.h"
 #include "sync-register.h"
 #include "sync-wifi.h"
+#include "sync-store.h"
 
 /* Pending sends only run after ingress reaches EAGAIN. No protocol transaction
  * ID exists: later identical same-source reports remain indistinguishable. */
-enum phase { IDLE, PREFLIGHT_SEND, PREFLIGHT, WRITE_SEND, WRITE, READBACK_SEND, READBACK };
+enum phase { IDLE, PREFLIGHT_SEND, PREFLIGHT, WRITE_SEND, WRITE, READBACK_SEND, READBACK, RECOVER_SEND, RECOVER };
 
 struct policy_peer {
 	uint8_t mac[6];
 	struct json_object *registration, *wifi;
+	struct json_object *input, *record;
 	unsigned int attempted;
 	bool blocked;
 };
@@ -54,7 +57,7 @@ static int64_t now_ms(void)
 
 static int policies(struct json_object *value, struct policy_peer peers[FTTR_SYNC_PEERS])
 {
-	struct json_object *list, *entry, *mac, *registration, *wifi;
+	struct json_object *list, *entry, *mac, *registration, *wifi, *revision;
 	size_t i, j, k, count;
 	uint8_t address[6];
 
@@ -88,7 +91,13 @@ static int policies(struct json_object *value, struct policy_peer peers[FTTR_SYN
 				}
 			}
 		}
-		if (json_object_object_length(entry) != (wifi ? 3 : 2))
+		j = wifi ? 3 : 2;
+		if (json_object_object_get_ex(entry, "Revision", &revision)) {
+			if (fttr_sync_store_revision(entry))
+				return -EINVAL;
+			j++;
+		}
+		if ((size_t)json_object_object_length(entry) != j)
 			return -EINVAL;
 		for (j = 0; j < i; j++)
 			if (!memcmp(peers[j].mac, address, 6))
@@ -96,6 +105,7 @@ static int policies(struct json_object *value, struct policy_peer peers[FTTR_SYN
 		memcpy(peers[i].mac, address, 6);
 		peers[i].registration = registration;
 		peers[i].wifi = wifi;
+		peers[i].input = entry;
 	}
 	return 0;
 }
@@ -126,12 +136,27 @@ static void event(const char *name, const struct session *session, const struct 
 	json_object_object_add(value, "credentials_verified", json_object_new_boolean(0));
 	json_object_object_add(value, "configuration_verified", json_object_new_boolean(0));
 	json_object_object_add(value, "values_redacted", json_object_new_boolean(1));
+	if (session->policy) {
+		struct json_object *revision;
+
+		if (json_object_object_get_ex(session->policy->input, "Revision", &revision))
+			json_object_object_add(value, "revision", json_object_get(revision));
+	}
 	if (!strcmp(name, "sync_resident_registered")) {
 		struct json_object *ready;
 
 		json_object_object_get_ex(session->policy->registration, "Ready", &ready);
 		json_object_object_add(value, "advertised_ready", json_object_get(ready));
 		json_object_object_add(value, "peer_acceptance_verified", json_object_new_boolean(0));
+	}
+	if (!strcmp(name, "sync_resident_recovery")) {
+		struct json_object *index;
+
+		json_object_object_get_ex(json_object_array_get_idx(session->policy->wifi, session->configuration), "SSIDIndex", &index);
+		json_object_object_add(value, "ssid_index", json_object_get(index));
+		json_object_object_add(value, "prior_write_outcome_unknown", json_object_new_boolean(1));
+		json_object_object_add(value, "write_replayed", json_object_new_boolean(0));
+		json_object_object_add(value, "readable_fields_match", json_object_new_boolean(!result));
 	}
 	if (!strcmp(name, "sync_resident_apply")) {
 		struct json_object *index;
@@ -159,7 +184,7 @@ static void revoke(struct session *session, const struct fttr_sync_peer *peer, i
 	if (session->phase != IDLE) {
 		event("sync_resident_cancel", session, peer, slot, reason, reason);
 	}
-	if (session->policy && session->policy->attempted)
+	if (session->policy && session->policy->attempted && (session->registered || session->phase != IDLE))
 		session->policy->blocked = true;
 	phase(session, IDLE);
 	memset(session->receivers, 0, sizeof(session->receivers));
@@ -175,11 +200,28 @@ static struct json_object *desired(struct session *session)
 	return json_object_array_get_idx(session->policy->wifi, session->configuration);
 }
 
+static void next_configuration(struct session *session)
+{
+	if (!desired(session))
+		phase(session, IDLE);
+	else
+		phase(session, session->policy->attempted & (1u << session->configuration) ? RECOVER_SEND : PREFLIGHT_SEND);
+}
+
 static void completed(struct session *session, const struct fttr_sync_peer *peer, int slot, int result)
 {
 	struct json_object *ready;
 
-	if (session->phase == WRITE) {
+	if (session->phase == RECOVER) {
+		event("sync_resident_recovery", session, peer, slot, result, result);
+		if (result) {
+			session->policy->blocked = true;
+			phase(session, IDLE);
+		} else {
+			session->configuration++;
+			next_configuration(session);
+		}
+	} else if (session->phase == WRITE) {
 		session->write_result = result;
 		phase(session, READBACK_SEND);
 	} else if (session->phase == READBACK) {
@@ -189,7 +231,7 @@ static void completed(struct session *session, const struct fttr_sync_peer *peer
 			phase(session, IDLE);
 		} else {
 			session->configuration++;
-			phase(session, desired(session) ? PREFLIGHT_SEND : IDLE);
+			next_configuration(session);
 		}
 	} else if (session->phase == PREFLIGHT) {
 		json_object_object_get_ex(session->policy->registration, "Ready", &ready);
@@ -246,11 +288,15 @@ static int receive_message(int fd, const uint8_t source[6], uint16_t ethertype,
 		session->protocol = 1;
 		session->configuration = 0;
 		event("sync_resident_registered", session, peer, slot, 0, 0);
-		if (!session->policy->blocked)
-			phase(session, PREFLIGHT_SEND);
+		if (!session->policy->blocked) {
+			if (desired(session))
+				next_configuration(session);
+			else
+				phase(session, PREFLIGHT_SEND);
+		}
 		return 0;
 	}
-	if (!session->registered || (session->phase != PREFLIGHT && session->phase != WRITE && session->phase != READBACK))
+	if (!session->registered || (session->phase != PREFLIGHT && session->phase != WRITE && session->phase != READBACK && session->phase != RECOVER))
 		return 0;
 	message.slot = slot;
 	ret = fttr_sync_reply_decode(&message, peer->mac, true, session->phase == WRITE,
@@ -259,14 +305,15 @@ static int receive_message(int fd, const uint8_t source[6], uint16_t ethertype,
 	if (session->ack_seen)
 		session->protocol = 2;
 	if (!ret && session->phase != WRITE && desired(session))
-		ret = fttr_sync_wifi_check(observed, desired(session), session->phase == READBACK);
+		ret = fttr_sync_wifi_check(observed, desired(session), session->phase == READBACK || session->phase == RECOVER);
 	json_object_put(observed);
 	if (ret != -EAGAIN)
 		completed(session, peer, slot, ret);
 	return 0;
 }
 
-int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype, struct json_object *policy)
+int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype, struct json_object *policy,
+		const char *state_directory)
 {
 	struct policy_peer configured[FTTR_SYNC_PEERS] = { 0 };
 	struct fttr_sync_peer peers[FTTR_SYNC_PEERS] = { 0 };
@@ -275,13 +322,26 @@ int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype, st
 	struct sigaction action = { .sa_handler = stop }, old_int, old_term;
 	uint8_t frame[FTTR_SYNC_FRAME_MAX], sequence = 0;
 	int64_t next = 0;
-	int ret = -ENOMEM, slot, i;
+	int ret = -ENOMEM, slot, i, store = -1;
 
 	if (!sessions)
 		return ret;
 	ret = policies(policy, configured);
 	if (ret)
 		goto out;
+	if (state_directory) {
+		store = fttr_sync_store_open(state_directory);
+		if (store < 0) { ret = store; goto out; }
+		for (slot = 0; slot < FTTR_SYNC_PEERS; slot++) {
+			struct policy_peer *peer = &configured[slot];
+
+			if (!peer->wifi || !json_object_array_length(peer->wifi))
+				continue;
+			ret = fttr_sync_store_load(store, source, peer->mac, ethertype, peer->input, &peer->record, &peer->attempted);
+			if (ret)
+				goto out;
+		}
+	}
 	stopping = 0;
 	sigemptyset(&action.sa_mask);
 	if (sigaction(SIGINT, &action, &old_int)) { ret = -errno; goto out; }
@@ -312,7 +372,7 @@ int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype, st
 				revoke(session, &peers[slot], slot, -ETIMEDOUT);
 				continue;
 			}
-			if ((session->phase == PREFLIGHT || session->phase == WRITE || session->phase == READBACK) && now >= session->deadline)
+			if ((session->phase == PREFLIGHT || session->phase == WRITE || session->phase == READBACK || session->phase == RECOVER) && now >= session->deadline)
 				completed(session, &peers[slot], slot, -ETIMEDOUT);
 		}
 		/* Bound flood work so heartbeats, expiry and termination still run. */
@@ -358,12 +418,24 @@ int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype, st
 			struct session *session = &sessions[slot];
 			enum phase current = session->phase;
 
-			if (current == PREFLIGHT_SEND || current == WRITE_SEND || current == READBACK_SEND) {
+			if (current == PREFLIGHT_SEND || current == WRITE_SEND || current == READBACK_SEND || current == RECOVER_SEND) {
 				if (session->receivers[0].count || session->receivers[1].count) {
 					for (i = 0; i < 2; i++)
 						if (session->receivers[i].count && session->receivers[i].deadline < wake)
 							wake = session->receivers[i].deadline;
 					continue;
+				}
+				if (current == WRITE_SEND && store >= 0 &&
+				    !(session->policy->attempted & (1u << session->configuration))) {
+					ret = fttr_sync_store_mark(store, peers[slot].mac, session->policy->record,
+						session->policy->attempted | (1u << session->configuration));
+					if (ret)
+						goto restore;
+					/* fsync can take time. Revisit ingress/liveness before
+					 * sending; a queued replacement must cancel this write. */
+					session->policy->attempted |= 1u << session->configuration;
+					wake = 0;
+					break;
 				}
 				ret = fttr_sync_request(fd, source, peers[slot].mac, ethertype, slot, true,
 					current == WRITE_SEND ? desired(session) : NULL);
@@ -371,7 +443,7 @@ int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype, st
 					goto restore;
 				if (current == WRITE_SEND)
 					session->policy->attempted |= 1u << session->configuration;
-				phase(session, current == PREFLIGHT_SEND ? PREFLIGHT : current == WRITE_SEND ? WRITE : READBACK);
+				phase(session, current == PREFLIGHT_SEND ? PREFLIGHT : current == WRITE_SEND ? WRITE : current == RECOVER_SEND ? RECOVER : READBACK);
 				session->deadline = now_ms() + 3000;
 			}
 			if (session->phase != IDLE && session->deadline < wake)
@@ -391,6 +463,9 @@ restore:
 restore_int:
 	sigaction(SIGINT, &old_int, NULL);
 out:
+	for (slot = 0; slot < FTTR_SYNC_PEERS; slot++)
+		json_object_put(configured[slot].record);
+	if (store >= 0) close(store);
 	free(sessions);
 	return ret;
 }

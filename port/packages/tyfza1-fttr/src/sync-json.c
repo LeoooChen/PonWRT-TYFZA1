@@ -8,7 +8,7 @@
 
 #include "sync-json.h"
 
-int fttr_sync_json_load_bounded(const char *path, size_t limit, struct json_object **desired)
+int fttr_sync_json_read_private(int fd, size_t limit, struct json_object **desired)
 {
 	struct json_tokener *parser = NULL;
 	struct json_object *value = NULL;
@@ -16,14 +16,11 @@ int fttr_sync_json_load_bounded(const char *path, size_t limit, struct json_obje
 	char *data = NULL;
 	size_t used = 0;
 	ssize_t n;
-	int fd, ret = -EINVAL;
+	int ret = -EINVAL;
 
 	*desired = NULL;
 	if (!limit || limit > 131072)
 		return -EINVAL;
-	fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
-	if (fd < 0)
-		return -errno;
 	if (fstat(fd, &st)) { ret = -errno; goto out; }
 	if (!S_ISREG(st.st_mode) || (st.st_mode & 077) || st.st_uid != geteuid()) { ret = -EACCES; goto out; }
 	data = malloc(limit);
@@ -49,6 +46,18 @@ out:
 	json_object_put(value);
 	if (parser)
 		json_tokener_free(parser);
+	return ret;
+}
+
+int fttr_sync_json_load_bounded(const char *path, size_t limit, struct json_object **desired)
+{
+	int ret, fd;
+
+	*desired = NULL;
+	fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+	if (fd < 0)
+		return -errno;
+	ret = fttr_sync_json_read_private(fd, limit, desired);
 	close(fd);
 	return ret;
 }

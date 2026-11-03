@@ -6,5 +6,7 @@
 
 int fttr_sync_json_load_private(const char *path, struct json_object **value);
 int fttr_sync_json_load_bounded(const char *path, size_t limit, struct json_object **value);
+/* Reads from the current offset; the caller retains descriptor ownership. */
+int fttr_sync_json_read_private(int fd, size_t limit, struct json_object **value);
 
 #endif

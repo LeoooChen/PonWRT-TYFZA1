@@ -47,11 +47,11 @@ define Build/Compile
 		-o $(PKG_BUILD_DIR)/fttr-sync $(PKG_BUILD_DIR)/fttr-sync.c \
 		$(PKG_BUILD_DIR)/sync-wire.c $(PKG_BUILD_DIR)/sync-peer.c $(PKG_BUILD_DIR)/sync-wifi.c $(PKG_BUILD_DIR)/sync-json.c \
 		$(PKG_BUILD_DIR)/sync-register.c $(PKG_BUILD_DIR)/sync-client.c \
-		$(PKG_BUILD_DIR)/sync-controller.c $(PKG_BUILD_DIR)/omci-socket.c \
+		$(PKG_BUILD_DIR)/sync-controller.c $(PKG_BUILD_DIR)/sync-store.c $(PKG_BUILD_DIR)/omci-socket.c \
 		$(PKG_BUILD_DIR)/omci-wire.c $(TARGET_LDFLAGS) -ljson-c
 	$(TARGET_CC) $(TARGET_CPPFLAGS) $(TARGET_CFLAGS) -std=c11 -Wall -Wextra \
 		-o $(PKG_BUILD_DIR)/fttr-sync-policy $(PKG_BUILD_DIR)/fttr-sync-policy.c \
-		$(PKG_BUILD_DIR)/sync-controller.c $(PKG_BUILD_DIR)/sync-client.c \
+		$(PKG_BUILD_DIR)/sync-controller.c $(PKG_BUILD_DIR)/sync-store.c $(PKG_BUILD_DIR)/sync-client.c \
 		$(PKG_BUILD_DIR)/sync-wire.c $(PKG_BUILD_DIR)/sync-peer.c \
 		$(PKG_BUILD_DIR)/sync-wifi.c $(PKG_BUILD_DIR)/sync-register.c \
 		$(PKG_BUILD_DIR)/sync-json.c $(TARGET_LDFLAGS) -ljson-c -luci
@@ -77,6 +77,7 @@ define Package/tyfza1-fttr/conffiles
 /etc/tyfza1-fttr.wifi
 /etc/config/tyfza1-fttr-sync
 /etc/tyfza1-fttr.sync.json
+/etc/tyfza1-fttr-sync-state/
 endef
 
 $(eval $(call BuildPackage,tyfza1-fttr))

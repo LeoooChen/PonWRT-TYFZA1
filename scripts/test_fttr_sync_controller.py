@@ -39,7 +39,7 @@ def main():
         src = ROOT / 'port/packages/tyfza1-fttr/src'
         binary = directory / 'fttr-sync'
         subprocess.run(['cc', '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror',
-                        *[str(src / n) for n in ('fttr-sync.c', 'sync-client.c', 'sync-controller.c', 'sync-wire.c',
+                        *[str(src / n) for n in ('fttr-sync.c', 'sync-client.c', 'sync-controller.c','sync-store.c', 'sync-wire.c',
                           'sync-peer.c', 'sync-register.c', 'sync-wifi.c', 'sync-json.c', 'omci-socket.c', 'omci-wire.c')],
                         '-ljson-c', '-o', str(binary)], check=True)
         subprocess.run(['ip', 'link', 'add', 'resident-host', 'type', 'veth', 'peer', 'name', 'resident-peer'], check=True)

@@ -98,6 +98,8 @@ def main():
             if case == 'missing-ready': del desired['Peers'][0]['Registration']['Ready']
             if case == 'mixed-input': desired['Peers'][0]['WiFi'] = []
             if case == 'extra-field': desired['Peers'][0]['WiFiFromUCI'][0]['Default'] = True
+            if case == 'revision': desired['Peers'][0]['Revision'] = 'setup-1'
+            if case == 'invalid-revision': desired['Peers'][0]['Revision'] = '../escape'
             wireless(device, interface)
             binding.write_text(json.dumps(desired)); binding.chmod(0o600)
             if case == 'bad-uci': source.write_text("config 'unterminated")
@@ -115,12 +117,13 @@ def main():
                     output.unlink(); output.symlink_to(target)
             result = subprocess.run(converter + [str(source), str(binding), str(output)], capture_output=True, text=True)
             assert not result.stdout and 'do-not-print' not in result.stderr, case
-            success = case in ('normal', 'none', 'psk', 'psk-mixed', 'sae', 'sae-mixed', 'disabled', 'radio-disabled', 'hidden', 'defaults', 'ssid32')
+            success = case in ('normal', 'revision', 'none', 'psk', 'psk-mixed', 'sae', 'sae-mixed', 'disabled', 'radio-disabled', 'hidden', 'defaults', 'ssid32')
             assert result.returncode == (0 if success else 1), (case, result.stderr)
             if success:
                 assert output.stat().st_mode & 0o777 == 0o600
                 generated = json.loads(output.read_text())
                 assert generated['Peers'][0]['Registration'] == policy['Peers'][0]['Registration']
+                if case == 'revision': assert generated['Peers'][0]['Revision'] == 'setup-1'
                 rows = generated['Peers'][0]['WiFi']
                 assert len(rows) == 2 and rows[0]['SSID'] == interface['ssid']
                 assert rows[0]['Enable'] == int(case not in ('disabled', 'radio-disabled'))
@@ -142,15 +145,16 @@ def main():
             assert not list(folder.glob('policy.json.*')), case
             cases.append(case)
 
-        for case in ('normal', 'none', 'psk', 'psk-mixed', 'sae', 'sae-mixed', 'disabled', 'radio-disabled', 'hidden', 'defaults', 'ssid32',
+        for case in ('normal', 'revision', 'invalid-revision', 'none', 'psk', 'psk-mixed', 'sae', 'sae-mixed', 'disabled', 'radio-disabled', 'hidden', 'defaults', 'ssid32',
                      'wep', 'cipher', 'enterprise', 'owe', 'sae-password', 'psk-file', 'pmf', 'missing-key', 'list-key', 'open-key',
                      'short-key', 'hex-psk', 'long-ssid', 'bad-boolean', 'list-boolean', 'sta', 'missing-band', '6g', 'wrong-band',
                      'missing-radio', 'missing-section', 'positional', 'invalid-index', 'invalid-standard', 'duplicate-index',
                      'duplicate-peer', 'missing-ready', 'mixed-input', 'extra-field', 'bad-uci', 'invalid-utf8', 'public-uci', 'public-binding',
                      'large-uci', 'symlink-uci', 'existing-output', 'output-symlink'):
             run(case)
-        run('normal')
+        run('revision')
         generated = json.loads(output.read_text())['Peers'][0]['WiFi']
+        store = folder / 'state'; store.mkdir(mode=0o700)
         subprocess.run(['ip', 'link', 'add', 'uci-host', 'type', 'veth', 'peer', 'name', 'uci-peer'], check=True)
         for interface, mac in (('uci-host', host), ('uci-peer', peer_mac)):
             subprocess.run(['ip', 'link', 'set', interface, 'address', mac.hex(':'), 'mtu', '1982', 'up'], check=True)
@@ -165,7 +169,7 @@ def main():
             for i in reversed(range(count)):
                 remote.send(master + peer_mac + b'\x88\xaa\xf6' + bytes([(count - 1) << 5 | i << 2 | 1]) + body[i * size:(i + 1) * size])
         with (folder / 'events').open('w+') as events, (folder / 'errors').open('w+') as errors:
-            proc = subprocess.Popen(controller + ['uci-host', 'serve', '0x88aa', str(output)], stdout=events, stderr=errors)
+            proc = subprocess.Popen(controller + ['uci-host', 'serve', '0x88aa', str(output), '--state', str(store)], stdout=events, stderr=errors)
             deadline = time.monotonic() + 3; writes = 0; gets = 0
             try:
                 while time.monotonic() < deadline:
@@ -185,6 +189,8 @@ def main():
                         send({'RPCMethod': 'SetAllSetting', 'Flag': 1, 'STATUS': 0, 'content': {'content': {'List': state}}})
                     else:
                         assert content == generated[writes]
+                        record = json.loads((store / (peer_mac.hex() + '-setup-1.json')).read_text())
+                        assert record['attempted'] & (1 << writes)
                         entry = state[int(content['SSIDIndex']) - 1]
                         for key in ('SSID', 'Standard', 'SSIDAdvertisementEnabled'): entry[key] = content[key]
                         entry['Enable'] = str(content['Enable'])

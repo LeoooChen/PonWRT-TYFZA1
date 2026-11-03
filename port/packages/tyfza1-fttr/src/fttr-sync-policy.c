@@ -129,7 +129,7 @@ static int row(struct uci_context *ctx, struct uci_package *wireless,
 
 static int convert(struct uci_context *ctx, struct uci_package *wireless, struct json_object *policy)
 {
-	struct json_object *peers, *peer, *bindings, *wifi, *value;
+	struct json_object *peers, *peer, *bindings, *wifi, *value, *revision;
 	size_t i, j;
 	int ret;
 
@@ -138,7 +138,8 @@ static int convert(struct uci_context *ctx, struct uci_package *wireless, struct
 		return -EINVAL;
 	for (i = 0; i < json_object_array_length(peers); i++) {
 		peer = json_object_array_get_idx(peers, i);
-		if (!json_object_is_type(peer, json_type_object) || json_object_object_length(peer) != 3 ||
+		if (!json_object_is_type(peer, json_type_object) ||
+		    json_object_object_length(peer) != (json_object_object_get_ex(peer, "Revision", &revision) ? 4 : 3) ||
 		    !json_object_object_get_ex(peer, "WiFiFromUCI", &bindings) || !json_object_is_type(bindings, json_type_array) ||
 		    !json_object_array_length(bindings) || json_object_array_length(bindings) > 16 ||
 		    json_object_object_get_ex(peer, "WiFi", &value))

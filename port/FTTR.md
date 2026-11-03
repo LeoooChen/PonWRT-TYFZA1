@@ -1950,14 +1950,16 @@ policy writes for that peer; failed write/readback also stops remaining SSIDs.
 Lost or negative write replies still trigger an independent readback while the
 same registration is valid. Passwords are never retried automatically.
 
-This write-attempt memory is **process-local**, not durable. An explicit service
-restart or reboot may apply the configured passwords again. The separate
-`/etc/init.d/tyfza1-fttr-sync` service has no respawn and is disabled by default.
+Without `--state`, write-attempt memory is process-local and restart can
+reapply passwords. The durable mode described below records intent before
+transmission and recovers with reads. The separate `/etc/init.d/tyfza1-fttr-sync`
+service requires a private state directory, has no respawn and is disabled by default.
 `/etc/config/tyfza1-fttr-sync` requires an explicit interface; it does not guess
 whether the actual syncserv network is the management bridge or a hardware
 endpoint. Supply a chmod0600 policy at `/etc/tyfza1-fttr.sync.json`, configure
-`main.interface` and `main.enabled`, and start/enable the service only with the
-intended interface and readiness policy. This does not alter hardware `fttrd`
+`main.interface`, `main.enabled` and `main.state_directory`, and start/enable
+the service only with the intended interface and readiness policy. Each peer
+with Wi-Fi writes needs a Revision when using the service. This does not alter hardware `fttrd`
 startup. There is no dynamic readiness or policy reload; the explicit UCI
 snapshot converter below supplies initial Wi-Fi content.
 
@@ -2094,6 +2096,90 @@ Final GCC14.4/musl package build/install and source hashes are in
 `uci-build-20261103/`; its stand-alone staging command supplies rpath-link for
 libuci's libubox dependency. No physical slave or password installation was tested.
 
+### Durable syncserv write intent and restart recovery
+
+The resident CLI accepts an optional persistent state directory:
+
+```sh
+mkdir -m 700 /etc/tyfza1-fttr-sync-state
+fttr-sync br-lan serve 0x88aa /root/fttr-generated.json --state /etc/tyfza1-fttr-sync-state
+```
+
+The directory must exist, be owned by the effective user and have no group/other
+permissions. A symlink directory is rejected. The controller holds an exclusive
+filesystem lock on it, in addition to its network interface lease. Use storage
+that survives restart and honors fsync; `/tmp` and `/var/run` do not provide
+reboot persistence. The service's `main.state_directory` defaults to
+`/etc/tyfza1-fttr-sync-state` and is not automatically created or cleared.
+The package conffile list includes the directory for configuration preservation.
+
+Each peer with a nonempty WiFi list must have an explicit `Revision`, for
+example `"Revision":"setup-1"`, alongside MAC, Registration and WiFi.
+It is1..32 ASCII letters/digits/underscore/hyphen. The UCI converter accepts
+and preserves this same field alongside WiFiFromUCI. A new revision explicitly
+requests a new application; do not automatically generate one on every boot.
+Old revision records remain retained, so returning to an old revision does
+not replay it. There is no automatic record pruning or policy reload.
+
+Before each configuration packet, `sync-store.c` writes the complete desired
+peer configuration and a cumulative attempt bitmap to `<mac>-<revision>.json.new`
+with mode0600, fsyncs the file, atomically renames it to the committed record,
+and fsyncs the directory. Only after all those calls succeed can transmission
+proceed. It then returns to ingress/liveness processing before sending anything
+else, so a replacement queued during disk IO cancels the pending write.
+Persistence failures stop the controller without sending that configuration.
+A crash before commit leaves a disposable staging file and no sent packet;
+a crash after commit, including before the send syscall, leaves a possible
+attempt and forbids automatic replay.
+
+The record binds host source MAC, EtherType, peer MAC, revision, master/expected
+peer identity and the entire ordered WiFi list. Changing any of these under
+the same revision fails with ESTALE before the first heartbeat. Ready is omitted
+from the immutable identity so explicit readiness changes do not force a new
+password application. Invalid JSON/masks, public permissions and record symlinks
+also fail before network activity. Records contain passwords to compare exact
+policy identity, so retain their private permissions and do not publish them.
+The record proves local intent only, not transmission or remote acceptance.
+
+After restart the controller still requires fresh discovery and matching
+Register. An attempted row enters a read-only recovery phase. If its readable
+fields match, the controller advances to the next row; a row never attempted
+can then follow normal preflight/write/readback. A recovery mismatch, malformed
+report or timeout stops the remaining rows for that peer. It never resends an
+attempted row, restores an unknown previous password or marks credentials
+verified. `sync_resident_recovery` includes revision/index/result,
+`prior_write_outcome_unknown:true`, `write_replayed:false` and the readable-field
+comparison. Regular events also include revision when present. Re-registration
+or expiry still cancels all in-process transactions.
+
+This is conservative recovery of possible writes, not exactly-once delivery.
+If a crash happened after intent commit but before actual transmission, a new
+explicit revision is required to retry after inspecting the peer. Loss/deletion
+of the state directory removes replay history. Physical flash/power-cut
+behavior, final credential verification, failure outcome journaling, status
+inspection tooling and automated rollback remain unverified or unimplemented.
+Synchronous fsync can briefly delay heartbeats; link/ingress is revisited after
+it completes, but no bound on physical storage latency is claimed.
+
+`scripts/test_fttr_sync_store.py` covers38 native AF_PACKET/veth cases: successful
+restart, SIGKILL after a modeled peer receives a write with/without application,
+file-fsync and directory-fsync failure/stops, replacement queued during fsync,
+recovery mismatch/timeout, resuming never-attempted rows, policy/password/pin/
+source/row-order mismatch, returning to old revisions, malformed/private records,
+and directory ownership. Test-only libc hooks stop/fail fsync; no production
+fault switches are added. Packaged UCI tests now run51 conversions and26 original
+writer comparisons, then send the dual-band generated policy using the real
+musl resident executable with persistence enabled and verify intent files before
+replying. The existing37 resident and89 one-shot network cases also pass.
+
+Reports are `artifacts/fttr/store-native-20261103.json`,
+`store-resident-regression-20261103.json`, `store-uci-regression-20261103.json`,
+`store-sync-regression-20261103.json`, `store-wifi-regression-20261103.json` and
+`store-registration-regression-20261103.json`. GCC14.4/musl package build/install
+and staged source hashes are in `store-build-20261103/`. These establish process
+crash behavior and filesystem ordering, not physical power-loss survival or
+actual subordinate password installation.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: import its own retained bitstream, load it before
@@ -2138,8 +2224,10 @@ libuci's libubox dependency. No physical slave or password installation was test
    and native heartbeat discovery/local MAC binding, bounded fragments and
    Flag1 Wi-Fi read/report completion and explicit write/readable-field
    comparison plus pinned registration and asynchronous resident Wi-Fi policies;
-   authenticated identity/capability, real readiness/credentials, durable
-   transaction recovery and complete configuration transactions remain work.
+   authenticated identity/capability, real readiness/credentials, complete
+   configuration transactions and physical power-loss recovery remain work.
+   Durable per-revision write intent and conservative read-only restart recovery
+   are implemented for the resident syncserv path.
 6. FE/PE acceleration and stale-flow invalidation, then hardware acceptance
    with real downstream gateways and a recorded interoperability scope.
 

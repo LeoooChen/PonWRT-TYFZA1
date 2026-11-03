@@ -7,6 +7,6 @@
 
 int fttr_sync_controller_policy(struct json_object *policy);
 int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype,
-		struct json_object *policy);
+		struct json_object *policy, const char *state_directory);
 
 #endif
