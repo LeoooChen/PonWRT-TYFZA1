@@ -25,6 +25,7 @@ jobs:
           python3 scripts/test_lan_link_mode.py
           python3 scripts/test_fe_lan_lifecycle.py
           python3 scripts/test_itu_pppoe_datapath.py
+          python3 scripts/test_package_timeout.py
           python3 scripts/test_radio_ni_retire_flush.py
           python3 scripts/test_wifi_ni_retirement.py
           python3 scripts/test_radio_rx_ba_cleanup.py

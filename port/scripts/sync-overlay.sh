@@ -40,6 +40,8 @@ cp "$PORT/host-patches/132-iwinfo-scan-timeout.patch" \
 mkdir -p "$TREE/package/system/rpcd/patches"
 cp "$PORT/host-patches/132-rpcd-scan-pause.patch" \
     "$TREE/package/system/rpcd/patches/132-rpcd-scan-pause.patch"
+cp "$PORT/host-patches/133-rpcd-async-scan.patch" \
+    "$TREE/package/system/rpcd/patches/133-rpcd-async-scan.patch"
 if [ -d "$TREE/feeds/luci/modules/luci-mod-status" ]; then
     sh "$PORT/scripts/apply-luci-patches.sh" "$TREE"
 fi

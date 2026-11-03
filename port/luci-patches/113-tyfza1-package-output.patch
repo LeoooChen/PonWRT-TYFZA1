@@ -1,0 +1,61 @@
+--- a/applications/luci-app-package-manager/root/usr/libexec/package-manager-call
++++ b/applications/luci-app-package-manager/root/usr/libexec/package-manager-call
+@@ -1,6 +1,4 @@
+ #!/bin/sh
+-
+-. /usr/share/libubox/jshn.sh
+ 
+ action=$1
+ shift
+@@ -29,6 +27,13 @@
+ 	;;
+ 	install|update|upgrade|remove)
+ 		(
++			umask 077
++			work=$(mktemp -d /tmp/package-manager.XXXXXX) || {
++				printf '%s\n' '{"code":255,"stderr":"Unable to create package operation directory"}'
++				exit 1
++			}
++			trap 'rm -rf "$work"' EXIT
++			trap 'exit 1' HUP INT TERM
+ 			cmd="$ipkg_bin"
+ 
+ 			# The apk package manager uses distinct commands for installing and removing packages.
+@@ -88,24 +93,25 @@
+ 
+ 			if flock -x 200; then
+ 				pkmcmd="$cmd $action $@"
+-				$cmd $action "$@" </dev/null >/tmp/ipkg.out 2>/tmp/ipkg.err
++				# Daemons started by postinst must not inherit the operation lock.
++				$cmd $action "$@" 200>&- </dev/null >"$work/out" 2>"$work/err"
+ 				code=$?
+-				stdout=$(cat /tmp/ipkg.out)
+-				stderr=$(cat /tmp/ipkg.err)
+ 			else
+ 				code=255
+-				stderr="Failed to acquire lock"
++				printf '%s\n' 'Failed to acquire lock' >"$work/err"
+ 			fi
+ 
+-			json_init
+-			json_add_int code $code
+-			[ -n "$pkmcmd" ] && json_add_string pkmcmd "$pkmcmd"
+-			[ -n "$stdout" ] && json_add_string stdout "$stdout"
+-			[ -n "$stderr" ] && json_add_string stderr "$stderr"
+-			json_dump
++			# Read logs directly: exporting them for jshn can exceed MAX_ARG_STRLEN.
++			ucode -e '
++				import { readfile } from "fs";
++				printf("%J\n", {
++					code: +ARGV[0], pkmcmd: ARGV[1],
++					stdout: readfile(ARGV[2]) || "",
++					stderr: readfile(ARGV[3]) || ""
++				});
++			' "$code" "$pkmcmd" "$work/out" "$work/err" 200>&-
+ 		) 200>/tmp/ipkg.lock
+-
+-		rm -f /tmp/ipkg.lock /tmp/ipkg.err /tmp/ipkg.out
++		# Keep the inode: waiters may already have this lock file open.
+ 	;;
+ 	*)
+ 		echo "Usage: $0 {list-installed|list-available|update}" >&2

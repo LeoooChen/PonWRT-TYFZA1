@@ -126,6 +126,12 @@ jobs:
           kernel=$(python3 port/tools/project_paths.py --kernel-directory sources/openwrt)
           python3 scripts/test_board_variants.py --kernel "$kernel"
           python3 scripts/test_nand_batch.py --kernel "$kernel"
+      - name: Verify LuCI scan and package regressions
+        run: |
+          python3 scripts/test_luci_feedback.py
+          python3 scripts/test_rpcd_async_scan.py
+          python3 scripts/test_package_manager_output.py
+          python3 scripts/test_package_timeout.py
       - name: Package firmware and installer
         run: |
           sh scripts/package_release.sh sources/openwrt artifacts/release
