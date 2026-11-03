@@ -194,6 +194,7 @@ int main(int argc, char **argv)
 {
 	struct ifreq request = { 0 };
 	struct fttr_sync_message message;
+	struct fttr_sync_receiver receiver = { 0 };
 	struct json_object *summary = NULL;
 	struct pollfd descriptor;
 	struct sockaddr_un lock = { .sun_family = AF_UNIX };
@@ -286,7 +287,9 @@ int main(int argc, char **argv)
 		if (received < 16 || !fttr_sync_destination(frame, source) || memcmp(frame + 6, peer, 6) ||
 		    (frame[14] & 15) != FTTR_SYNC_RESPONSE)
 			continue;
-		ret = fttr_sync_unpack(frame, received, ethertype, &message);
+		ret = fttr_sync_receive(&receiver, frame, received, ethertype, now_ms(), &message);
+		if (ret == -EAGAIN)
+			continue;
 		if (ret)
 			break;
 		/* Original ingress resolves the local slot by Ethernet source MAC;

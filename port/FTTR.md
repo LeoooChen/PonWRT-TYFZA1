@@ -1446,9 +1446,9 @@ The four-bit peer slot is **not** the MiniOLT's six-bit hardware ONU ID. The
 executable has an EtherType override and a fallback-message string mentioning
 `8899`, so native queries require an explicit value rather than inferring it
 from that string. Peer MAC remains explicit for targeted queries; `auto` now
-discovers its local slot as described below. The original receive path `405760` sends
-upper-flagged frames to reassembly; native currently rejects all nonzero flags
-with `-EOPNOTSUPP` rather than interpreting a fragment as complete JSON.
+discovers its local slot as described below. Original receive `405760` sends
+frames with nonzero count bits to reassembly. Native now reassembles bounded
+messages before interpreting JSON; see the fragment evidence below.
 
 `GetWifi` is `{"RPCMethod":"GetWifi","MAC":"<host MAC as 12 hex digits>"}`.
 The original `SetWifi` contains `RPCMethod`, host `MAC`, `2.4GEnable`, `5GEnable`
@@ -1586,7 +1586,58 @@ The updated real OpenWrt GCC14.4/musl package stages successfully under
 `artifacts/fttr/discovery-build-20261103/`. Timer/saved-MIB state and peer packets
 are modeled in these checks; no optical or real slave interoperability is claimed.
 Capability/identity authentication, automatic resident syncserv management,
-fragmentation, follow-up reports and verified writes remain required work.
+follow-up reports and verified writes remain required work.
+
+### Syncserv JSON receive fragments
+
+`tools/trace_stock_fttr_fragments.py` executes original `405760`, `40552c` and
+`405498`, capturing the bytes passed to reply dispatch `40d198`. Packet storage
+is modeled; header extraction, fragment table lookup, copying and cleanup are
+actual retained instructions. The second sync header byte contains a two-bit
+sequence in bits0..1, index in bits2..4, and count minus1 in bits5..7. Counts2..8
+enter reassembly. Low sequence bits alone are legal on an unfragmented message;
+native now accepts them as well. Native rejects index >= count.
+
+The original concatenates packet bodies (bytes after the16-byte Ethernet/sync
+header) in index order, including a single four-byte big-endian JSON length at
+the start of the joined body. All56 combinations of counts2..8, four sequences
+and forward/reverse arrival order were executed. However, the retained binary
+then passes the **last arriving packet's body and local slot** to reply dispatch,
+not the joined buffer at `42bdc0`. Its table and sequence are global across peer
+slots, and a duplicate index invokes an assertion. These are observed defects,
+not behavior to copy into the native implementation. Changing sequence frees
+incomplete state; an unfragmented reply also clears it.
+
+Native `fttr_sync_receive()` owns bounded state per query and checks source MAC,
+message type and EtherType before accepting another slice. An unrelated owner
+cannot splice into or clear active state. The sender's slot nibble remains
+independent of local MAC binding. Out-of-order fragments are supported; an
+identical duplicate is ignored without extending the deadline. Conflicting
+duplicates, inconsistent count and invalid index fail explicitly. The context
+has a fixed three-second reassembly budget; the diagnostic's total three-second
+query budget still applies across sequence changes. These are native bounds,
+not a claimed original timeout policy or authentication mechanism.
+
+Each frame is limited to1996 bytes and each body slice to1980 bytes, with eight
+slots and15840 bytes total joined storage. The declared JSON length must fit;
+only surplus bytes wholly in a short terminal frame may be Ethernet minimum
+padding. No partial JSON is exposed. A successful fragmented message points at
+the joined data; strict JSON/UTF-8 decoding and value redaction still apply.
+The native sender remains single-frame GetWifi only.
+
+`scripts/test_fttr_sync.py` compares native concatenation with the original
+joined buffer for56 cases, while deliberately correcting its final-dispatch
+defect. Additional checks exercise maximum size, tiny/truncated bodies,
+duplicate conflicts, ownership, sequence changes, count changes, deadline and
+terminal padding. The21 AF_PACKET/veth cases include a modeled multi-kilobyte
+slave reply, reverse order, duplicate delivery, another source interleaved,
+missing fragments and invalid counts. Reports are
+`artifacts/fttr/fragments-stock-20261103.json` and `fragments-native-20261103.json`;
+OpenWrt GCC14.4/musl package stage and source hashes are in
+`artifacts/fttr/fragments-build-20261103/`. There is no retained slave fragment
+transmitter execution or real slave acceptance evidence yet. ACK-followed
+reports, authenticated identity/capability and verified configuration writes
+remain separate work.
 
 ### Outstanding implementation and acceptance
 
@@ -1630,7 +1681,7 @@ fragmentation, follow-up reports and verified writes remain required work.
    actual subordinate capability/behavior verification remain work.
    The independent syncserv JSON path now has original producer/frame evidence
    and native heartbeat discovery/local MAC binding plus a read-only query;
-   authenticated identity/capability negotiation, fragmentation, report
+   authenticated identity/capability negotiation, report
    correlation and verified configuration transactions remain work.
 6. FE/PE acceleration and stale-flow invalidation, then hardware acceptance
    with real downstream gateways and a recorded interoperability scope.

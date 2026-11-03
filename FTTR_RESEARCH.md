@@ -23,7 +23,7 @@
 4. 多 ONU 异步调度、运行时记录、序列号更换及 MIB 同步丢失后的重新读取；按 GEM Port-ID 添加外层 VLAN，接到明确指定的 Linux 网桥。
 5. 原厂格式的 P6 CF/FE 接入、删除端口前同步撤销 Hash/cache 流；P6 ES 队列清空函数和 DMA/AFT 配对复位修正。
 6. 原厂 `0xff69/0xff6a` 远端 Wi-Fi 更新事务，支持预读取、核验与恢复。`fttrctl wifi` 和 `fttrd --wifi` 共用配置解析；常驻控制器按序列号与实际实例选择策略，串行完成每 ONU 的 Wi-Fi、业务和同步核验，支持多实例、超时、替换及属性漂移后的重新配置。原厂报文及 AF_PACKET/veth 对比已通过；尚未实现 OpenWrt 配置到原厂枚举的映射。用法见 [Wi-Fi 命令说明](port/FTTR.md#explicit-remote-wi-fi-command)和[常驻策略说明](port/FTTR.md#resident-remote-wi-fi-policy)。
-7. 已执行保留原厂 `sync_controllerd` 的 JSON 构造、完整发送路由、心跳发现、MAC/槽号查找及老化代码。原生 `fttr-sync` 支持 `discover` 和按目标 MAC 自动发现后查询；发送到原厂组播地址，接收按来源 MAC 解析本地槽号。完成原厂报文/状态对比和 AF_PACKET/veth 检查。发现仅证明心跳响应，不是身份认证；分片、后续上报及写入事务尚未实现。详见 [syncserv 证据与入口](port/FTTR.md#original-syncserv-ethernet-path)。
+7. 已执行保留原厂 `sync_controllerd` 的 JSON 构造、完整发送路由、心跳发现、MAC/槽号查找、老化及分片接收代码。原生 `fttr-sync` 支持 `discover` 和按目标 MAC 自动发现后查询；发送到原厂组播地址，接收按来源 MAC 解析本地槽号，并支持有长度/期限限制的 JSON 分片重组。修正已查实的原厂重组后误传单片、跨槽共用状态及重复片断言缺陷，完成原厂报文/状态/拼接对比和21项 AF_PACKET/veth 检查。发现仅证明心跳响应，不是身份认证；后续上报及写入事务尚未实现。详见 [syncserv 证据与入口](port/FTTR.md#original-syncserv-ethernet-path)。
 
 ## 建议接着做的工作
 
@@ -31,7 +31,7 @@
 | --- | --- |
 | 真实数据路径验收 | 核验 P6 收发、光学就绪、ONU 注册、OMCI、业务双向通流及真实 FE 命中；记录实测从光猫型号和固件，而非宣称通用兼容。 |
 | GEM 复用前旧报文退场 | ES 队列清空函数尚未接入完整撤销流程。DMA 有两个预取描述符，PE/MiniOLT 缓存没有查实的完整退场依据；仅删除 Hash/cache 不能证明所有旧报文已消失。 |
-| Wi-Fi 配置联动 | 私有 OMCI 的 CLI/常驻策略已接入；独立 syncserv JSON 链已有心跳发现、MAC 到本地槽号的绑定和只读查询，下一步补齐认证/能力协商、确认后的上报、分片与配置事务。JSON 路径已验证 32 字节 SSID、63 字节共享密钥，不能套用 OMCI 的 24 字节限制或枚举。两条路径均缺实际从设备验收。 |
+| Wi-Fi 配置联动 | 私有 OMCI 的 CLI/常驻策略已接入；独立 syncserv JSON 链已有心跳发现、MAC 到本地槽号的绑定、只读查询和分片接收，下一步补齐认证/能力协商、确认后的上报与配置事务。JSON 路径已验证 32 字节 SSID、63 字节共享密钥，不能套用 OMCI 的 24 字节限制或枚举。两条路径均缺实际从设备验收。 |
 | 配置恢复与服务策略 | 当前记录在 `/var/run`，不是掉电后的持久事务日志；远端资源归属恢复、默认策略导入、多业务和认证策略仍需实现。 |
 | FPGA 机型 | 原厂 bitstream 导入、加载及后续初始化时序，以及该样本的实际光学器件确认。不能按 LAN 速率猜硬件后端。 |
 | 完整 FTTR 管理 | 从设备网关配置、组播、重启/升级、漫游协调及其他原厂能力分支仍未完成。 |

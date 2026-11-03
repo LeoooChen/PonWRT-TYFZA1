@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from trace_stock_fttr_sync import SyncOriginal
 from trace_stock_fttr_discovery import DiscoveryOriginal
+from trace_stock_fttr_fragments import FragmentOriginal, fragments
 
 GROUP = bytes.fromhex('0110ec000002')
 MASTER_GROUP = bytes.fromhex('0110ec000001')
@@ -30,6 +31,83 @@ class Message(C.Structure):
     _fields_ = [('source', C.c_ubyte*6), ('destination', C.c_ubyte*6),
                 ('slot', C.c_ubyte), ('type', C.c_ubyte),
                 ('payload', C.c_void_p), ('length', C.c_size_t)]
+
+
+class Receiver(C.Structure):
+    _fields_ = [('source',C.c_ubyte*6),('type',C.c_ubyte),('sequence',C.c_ubyte),
+                ('count',C.c_ubyte),('mask',C.c_ubyte),('ethertype',C.c_ushort),
+                ('deadline',C.c_int64),('lengths',C.c_size_t*8),
+                ('parts',(C.c_ubyte*1980)*8),('body',C.c_ubyte*(1980*8))]
+
+
+def check_fragments(native, binary, stock):
+    native.fttr_sync_receive.argtypes = [C.POINTER(Receiver),C.c_void_p,C.c_size_t,
+                                         C.c_ushort,C.c_int64,C.POINTER(Message)]
+    receiver, message = Receiver(), Message()
+    base = stock.peer + stock.mac + b'\x88\xaa\x57'
+
+    def feed(part, flags, now=0, source=None):
+        frame = base + bytes([flags]) + part
+        if source is not None:frame = frame[:6] + source + frame[12:]
+        return native.fttr_sync_receive(C.byref(receiver),frame,len(frame),0x88aa,now,C.byref(message))
+
+    body = (3900).to_bytes(4,'big') + b'x'*3900
+    for count in range(2,9):
+        for sequence in range(4):
+            for reverse in (False,True):
+                receiver = Receiver()
+                original = FragmentOriginal(binary)
+                parts = fragments(body,count,sequence)
+                order = list(range(count))[::(-1 if reverse else 1)]
+                for index in order:
+                    original.receive(*parts[index])
+                    ret = feed(*parts[index])
+                    assert ret == (0 if index==order[-1] else -errno.EAGAIN)
+                    if ret:assert not message.payload and not message.length
+                assert C.string_at(message.payload,message.length) == body[4:]
+                assert bytes(original.oracle.uc.mem_read(0x42bdc0,len(body))) == body
+    parts = fragments(body,3,2)
+    receiver = Receiver()
+    assert feed(*parts[0]) == -errno.EAGAIN
+    before = bytes(receiver)
+    assert feed(*parts[0],now=100) == -errno.EAGAIN and bytes(receiver)==before
+    assert feed(*parts[1],source=bytes.fromhex('020000000099')) == -errno.EAGAIN
+    assert bytes(receiver)==before
+    assert feed(parts[0][0]+b'!',parts[0][1]) == -errno.EBADMSG and not receiver.count
+    assert feed(*parts[0]) == -errno.EAGAIN
+    assert feed(*parts[1],now=3000) == -errno.ETIMEDOUT and not receiver.count
+    assert feed(*parts[0]) == -errno.EAGAIN
+    assert feed(parts[1][0],parts[1][1]^0x20) == -errno.EBADMSG and not receiver.count
+    assert feed(b'x',0x3c) == -errno.EBADMSG  # index7/count2
+    # New sequence retires old slices; an old missing slice cannot complete it.
+    assert feed(*parts[0]) == -errno.EAGAIN
+    changed=fragments(body,3,3)
+    assert feed(*changed[1]) == -errno.EAGAIN and receiver.mask==2
+    assert feed(*changed[0]) == -errno.EAGAIN
+    assert feed(*changed[2]) == 0
+    assert C.string_at(message.payload,message.length)==body[4:]
+    # Single-frame sequence values, plus retirement of partial state.
+    for sequence in range(4):
+        receiver=Receiver()
+        assert feed(*parts[0]) == -errno.EAGAIN
+        assert feed(b'\0\0\0\x02{}',sequence)==0 and not receiver.count
+        assert C.string_at(message.payload,message.length)==b'{}'
+    # Maximum8 fragments, shorter final frame padding, and excessive length.
+    receiver=Receiver()
+    maximum=(8*1980-4).to_bytes(4,'big')+b'x'*(8*1980-4)
+    for index,part in enumerate(fragments(maximum,8)):
+        assert feed(*part)==(0 if index==7 else -errno.EAGAIN)
+    assert message.length==8*1980-4
+    for total,expected in ((52,0),(91,-errno.EMSGSIZE),(10,-errno.EBADMSG)):
+        receiver=Receiver()
+        assert feed(total.to_bytes(4,'big')+b'x'*46,0x20)==-errno.EAGAIN
+        assert feed((b'y'*6).ljust(44,b'\0'),0x24)==expected
+        if not expected:assert C.string_at(message.payload,message.length)==b'x'*46+b'y'*6
+    receiver=Receiver()
+    assert feed(b'x'*1981,0x20)==-errno.EMSGSIZE
+    assert feed(b'x',0x20)==-errno.EAGAIN
+    assert feed(b'y',0x24)==-errno.EBADMSG
+    return 56
 
 
 def main():
@@ -128,6 +206,7 @@ def main():
             assert native.fttr_sync_unpack(invalid,len(invalid),0x88aa,C.byref(Message())) == error
         short=stock.encode({})
         assert native.fttr_sync_unpack(short.ljust(60,b'\0'),60,0x88aa,C.byref(Message())) == 0
+        fragment_comparisons = check_fragments(native,args.controller,stock)
 
         subprocess.run(['ip','link','add','sync-host','type','veth','peer','name','sync-peer'],check=True)
         for interface,mac in (('sync-host',stock.mac),('sync-peer',stock.peer)):
@@ -164,6 +243,27 @@ def main():
                         peer.send(other[6:12]+other[:6]+other[12:])
                     if case=='different-slot':response=MASTER_GROUP+response[6:14]+b'\xf7'+response[15:]
                     if case=='fragment':response=response[:15]+b'\x20'+response[16:]
+                    if case.startswith('fragments-'):
+                        value['Extra']='redacted-large-value'*200
+                        text=json.dumps(value,separators=(',',':')).encode()
+                        # Model a slave fragment transmitter. The retained
+                        # controller's encoder does not split oversized JSON.
+                        response=response[:16]+len(text).to_bytes(4,'big')+text
+                        parts=fragments(response[16:],3,3)
+                        frames=[response[:15]+bytes([flags])+body for body,flags in parts]
+                        if case=='fragments-missing':
+                            peer.send(frames[0]);peer.send(frames[2]);continue
+                        if case=='fragments-conflict':
+                            peer.send(frames[0]);peer.send(frames[0][:-1]+b'!');continue
+                        if case=='fragments-count':
+                            peer.send(frames[0]);peer.send(frames[1][:15]+b'\x67'+frames[1][16:]);continue
+                        if case=='fragments-source':
+                            peer.send(frames[0])
+                            peer.send(frames[1][:6]+bytes.fromhex('020000000099')+frames[1][12:])
+                            peer.send(frames[2])
+                        if case=='fragments-duplicate':peer.send(frames[0])
+                        for f in reversed(frames):peer.send(f)
+                        continue
                     if case=='truncated':response=response[:-1]
                     if case=='bad-json':response=response[:20]+b'!'*len(response[20:])
                     if case=='bad-utf8':response=response[:21]+b'\xff'+response[22:]
@@ -173,7 +273,7 @@ def main():
             finally:
                 if process.poll() is None:process.kill();process.communicate()
             assert 'do-not-print' not in output+error
-            if case in ('normal','unrelated','ack','different-slot'):
+            if case in ('normal','unrelated','ack','different-slot','fragments-order','fragments-duplicate','fragments-source'):
                 assert process.returncode==0,(case,error)
                 result=json.loads(output)
                 assert not result['configuration_verified']
@@ -183,11 +283,13 @@ def main():
             else:
                 assert process.returncode==1 and not output,(case,error)
                 if case=='rejected':assert str(-errno.EREMOTEIO) in error
-                if case=='timeout':assert str(-errno.ETIMEDOUT) in error
+                if case in ('timeout','fragment','fragments-missing'):assert str(-errno.ETIMEDOUT) in error
+                if case in ('fragments-conflict','fragments-count'):assert str(-errno.EBADMSG) in error
             assert requests == (0 if case=='lease' else 1)
             cases.append(case)
 
-        for case in ('normal','ack','unrelated','different-slot','fragment','truncated','bad-json','bad-utf8','nul-json','rejected','timeout'):
+        for case in ('normal','ack','unrelated','different-slot','fragment','truncated','bad-json','bad-utf8','nul-json','rejected','timeout',
+                     'fragments-order','fragments-duplicate','fragments-source','fragments-missing','fragments-conflict','fragments-count'):
             run(case)
         lease=socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM)
         try:
@@ -249,8 +351,11 @@ def main():
         peer.close()
     result={'controller_sha256':hashlib.sha256(args.controller.read_bytes()).hexdigest(),
             'original_frame_comparisons':count,'packet_cases':cases,
+            'fragment_concatenation_comparisons':fragment_comparisons,
             'checks':['native bytes match original JSON Ethernet encoder at slots 0/5/15, requests and responses',
-                      'invalid slot, oversize/truncated length, trailing data and fragments are rejected',
+                      'invalid slot, oversize/truncated length and trailing data are rejected',
+                      'bounded fragments match original concatenation; final original dispatch bug is corrected',
+                      'fragment order, duplicates/conflicts, ownership, deadline, sequence, count and padding checked',
                       'short Ethernet padding and maximum native payload are handled',
                       'real AF_PACKET GetWifi probe sends one read-only request and redacts returned values'],
             'discovery_checks':['heartbeat and 16-slot lifecycle match original execution',
