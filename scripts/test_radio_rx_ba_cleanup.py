@@ -42,7 +42,7 @@ struct wiphy_delayed_work {struct wiphy_work work;};
 struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[2];};
 struct rtl_ax_station {unsigned macid;};
 struct rtl_ax_ap {
- struct {unsigned macid,tid;bool valid,deleting;}rx_ba[8];
+ struct {unsigned macid,tid,cam;bool valid,deleting;}rx_ba[128*8];
  unsigned rx_ba_stopped;int rx_ba_result,tx,rx;
  bool ap_started,monitor_started,offload_retry,peer_authorized[128];
  struct {unsigned aggregation[16],stopping;}tx_ba[128];

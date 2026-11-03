@@ -29,6 +29,7 @@ jobs:
           python3 scripts/test_radio_ni_retire_flush.py
           python3 scripts/test_wifi_ni_retirement.py
           python3 scripts/test_radio_rx_ba_cleanup.py
+          python3 tools/test_wifi_rx_ba_sessions.py
           python3 scripts/test_wifi_offload_transaction.py
           python3 scripts/test_radio_key_cleanup.py
           python3 scripts/test_ni_release_inflight.py

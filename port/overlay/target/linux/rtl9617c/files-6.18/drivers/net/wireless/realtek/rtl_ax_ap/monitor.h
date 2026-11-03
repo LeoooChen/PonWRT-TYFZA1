@@ -418,9 +418,11 @@ static int rtl_ax_rx_ba_remove(struct rtl_ax_ap *radio, unsigned int index)
 		radio->rx_ba_result = ret;
 		return ret;
 	}
-	rtl_ax_store32(ba, 2 | radio->rx_ba[index].macid << 8);
-	rtl_ax_store32(ba + 4, (index + 8) << 28);
-	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 12, 0, ba, sizeof(ba), true);
+	if (radio->rx_ba[index].cam < 8) {
+		rtl_ax_store32(ba, 2 | radio->rx_ba[index].macid << 8);
+		rtl_ax_store32(ba + 4, (radio->rx_ba[index].cam + 8U) << 28);
+		ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 12, 0, ba, sizeof(ba), true);
+	}
 	radio->rx_ba_result = ret;
 	if (!ret) {
 		rtl_ax_rx_ba_window(radio->rx, radio->rx_ba[index].macid,
@@ -808,7 +810,9 @@ static int rtl_ax_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 		if (ret)
 			wiphy_delayed_work_queue(hw->wiphy, &radio->cleanup_work, HZ);
 		return 0;
-	case IEEE80211_AMPDU_RX_START:
+	case IEEE80211_AMPDU_RX_START: {
+		unsigned int j, cam, used;
+
 		ret = rtl_ax_tx_rx_retire(radio->tx, station->macid);
 		if (ret) return ret;
 		for (i = 0; i < ARRAY_SIZE(radio->rx_ba); i++)
@@ -822,19 +826,48 @@ static int rtl_ax_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 		}
 		if (i == ARRAY_SIZE(radio->rx_ba))
 			return -ENOSPC;
+		if (radio->rx_ba[i].valid) {
+			cam = radio->rx_ba[i].cam;
+		} else {
+			used = 0;
+			for (j = 0; j < ARRAY_SIZE(radio->rx_ba); j++)
+				if (radio->rx_ba[j].valid && radio->rx_ba[j].cam < 8)
+					used |= BIT(radio->rx_ba[j].cam);
+			for (cam = 0; cam < 8; cam++)
+				if (!(used & BIT(cam))) break;
+			/* Hardware learns nonzero TIDs dynamically. Keep TID0 in a
+			 * static entry when the shared CAM is full, as rtw89 does. */
+			if (cam == 8 && !params->tid) {
+				for (j = 0; j < ARRAY_SIZE(radio->rx_ba); j++)
+					if (radio->rx_ba[j].valid && !radio->rx_ba[j].deleting &&
+					    radio->rx_ba[j].tid && radio->rx_ba[j].cam < 8) break;
+				if (j == ARRAY_SIZE(radio->rx_ba)) return -ENOSPC;
+				ret = rtl_ax_tx_rx_retire(radio->tx, radio->rx_ba[j].macid);
+				if (ret) return ret;
+				cam = radio->rx_ba[j].cam;
+				/* Keep the old software window; only its static CAM moves.
+				 * A failed replacement is deleted by the existing retry. */
+				radio->rx_ba[j].cam = 8;
+			}
+		}
 		/* Actual C/XB MAC ops+496 reports extended standard entries8..15.
 		 * ops+504 selects mac_bacam_info@23ca2c: index belongs to word1,
 		 * standard-enable bit8, band0; own Linux allocation retains that ABI. */
-		rtl_ax_store32(ba, 3 | (params->tid & 15) << 4 | station->macid << 8 |
-			(params->ssn & 0xfff) << 20);
-		rtl_ax_store32(ba + 4, (i + 8) << 28 | BIT(8));
 		radio->rx_ba[i].macid = station->macid;
 		radio->rx_ba[i].tid = params->tid;
+		radio->rx_ba[i].cam = cam;
 		radio->rx_ba[i].valid = true;
 		radio->rx_ba[i].deleting = true;
-		ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 12, 0, ba, sizeof(ba), true);
+		ret = 0;
+		if (cam < 8) {
+			rtl_ax_store32(ba, 3 | (params->tid & 15) << 4 | station->macid << 8 |
+				(params->ssn & 0xfff) << 20);
+			rtl_ax_store32(ba + 4, (cam + 8) << 28 | BIT(8));
+			ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 12, 0, ba, sizeof(ba), true);
+		}
 		radio->rx_ba_result = ret;
 		if (ret) {
+			rtl_ax_offload_ready(radio);
 			wiphy_delayed_work_queue(hw->wiphy, &radio->cleanup_work, HZ);
 			return ret;
 		}
@@ -842,9 +875,11 @@ static int rtl_ax_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 		radio->rx_ba_started++;
 		rtl_ax_rx_ba_window(radio->rx, station->macid, params->tid, params->buf_size);
 		rtl_ax_offload_ready(radio);
-		dev_info(&radio->pdev->dev, "native RX BA MACID%u TID%u entry%u SSN%u FW completed\n",
-			station->macid, params->tid, i + 8, params->ssn);
+		dev_info(&radio->pdev->dev, "native RX BA MACID%u TID%u CAM%d SSN%u size%u ready\n",
+			station->macid, params->tid, cam < 8 ? (int)cam + 8 : -1,
+			params->ssn, params->buf_size);
 		return 0;
+	}
 	case IEEE80211_AMPDU_RX_STOP:
 		for (i = 0; i < ARRAY_SIZE(radio->rx_ba); i++)
 			if (radio->rx_ba[i].valid && radio->rx_ba[i].macid == station->macid &&
@@ -857,8 +892,9 @@ static int rtl_ax_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 			wiphy_delayed_work_queue(hw->wiphy, &radio->cleanup_work, HZ);
 			return ret;
 		}
-		dev_info(&radio->pdev->dev, "native RX BA MACID%u TID%u entry%u removed\n",
-			station->macid, params->tid, i + 8);
+		dev_info(&radio->pdev->dev, "native RX BA MACID%u TID%u CAM%d removed\n",
+			station->macid, params->tid,
+			radio->rx_ba[i].cam < 8 ? (int)radio->rx_ba[i].cam + 8 : -1);
 		return 0;
 	}
 	return -EOPNOTSUPP;

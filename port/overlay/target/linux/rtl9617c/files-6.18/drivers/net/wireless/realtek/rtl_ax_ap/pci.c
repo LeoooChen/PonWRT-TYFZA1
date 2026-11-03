@@ -178,7 +178,8 @@ struct rtl_ax_ap {
 	struct rtl_ax_security_role security_roles[128];
 	u64 keys_installed, keys_removed, keys_aborted, rx_decrypted;
 	int key_result;
-	struct { u8 macid, tid; bool valid, deleting; } rx_ba[8];
+	/* Software BA sessions outlive static CAM allocation; cam==8 is dynamic. */
+	struct { u8 macid, tid, cam; bool valid, deleting; } rx_ba[128 * 8];
 	u64 rx_ba_started, rx_ba_stopped;
 	int rx_ba_result;
 	struct ieee80211_tx_queue_params edca[IEEE80211_NUM_ACS];
