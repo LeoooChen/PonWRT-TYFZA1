@@ -125,7 +125,7 @@ def main():
                         str(src/'sync-wire.c'),str(src/'sync-peer.c'),'-o',str(directory/'wire.so')], check=True)
         binary = directory/'fttr-sync'
         subprocess.run(['cc','-std=c11','-O2','-Wall','-Wextra','-Werror',
-                        *[str(src/n) for n in ('fttr-sync.c','sync-wire.c','sync-peer.c','omci-socket.c','omci-wire.c')],
+                        *[str(src/n) for n in ('fttr-sync.c','sync-wire.c','sync-peer.c','sync-wifi.c','omci-socket.c','omci-wire.c')],
                         '-ljson-c','-o',str(binary)], check=True)
         native = C.CDLL(str(directory/'wire.so'))
         native.fttr_sync_pack.argtypes = [C.c_void_p,C.c_void_p,C.c_ushort,C.c_ubyte,C.c_ubyte,

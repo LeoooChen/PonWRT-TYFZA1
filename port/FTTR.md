@@ -1484,7 +1484,7 @@ provides a separate observation, still without authenticated transaction IDs.
 The package now installs a native, read-only diagnostic:
 
 ```sh
-fttr-sync <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [wifi-settings]
+fttr-sync <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [wifi-settings | wifi-apply <private-json-file>]
 fttr-sync <interface> discover <ethertype>
 ```
 
@@ -1506,9 +1506,10 @@ SSID/key values, unknown fields and raw replies are never printed.
 
 There is no request transaction ID in the verified header. A stale identical
 response from the same peer cannot be distinguished by this diagnostic;
-its output must not be used as configuration-transaction acceptance. No
-configuration write, reboot or upgrade command is exposed. The optional
-`wifi-settings` command uses the read action described below.
+its output must not be used as configuration-transaction acceptance. The optional
+`wifi-settings` command uses the read action described below. Explicit
+`wifi-apply` adds a single write and field readback with the limitations below;
+no reboot or upgrade command is exposed.
 
 `scripts/test_fttr_sync.py` compares36 native frames against actual original
 encoding (six security cases, slots0/5/15, request/response), checks size limits,
@@ -1624,7 +1625,7 @@ slots and15840 bytes total joined storage. The declared JSON length must fit;
 only surplus bytes wholly in a short terminal frame may be Ethernet minimum
 padding. No partial JSON is exposed. A successful fragmented message points at
 the joined data; strict JSON/UTF-8 decoding and value redaction still apply.
-The native sender remains single-frame GetWifi only.
+Native requests remain single-frame; received reports can be fragmented.
 
 `scripts/test_fttr_sync.py` compares native concatenation with the original
 joined buffer for56 cases, while deliberately correcting its final-dispatch
@@ -1720,8 +1721,104 @@ report, invalid fields and redaction. Existing36 encoder and56 concatenation
 comparisons remain. Evidence is `artifacts/fttr/settings-stock-20261103.json`,
 `settings-native-20261103.json` and the real GCC14.4/musl package stage with source
 hashes in `settings-build-20261103/`. Slave replies are modeled; slave-side
-production, real optical transport, field-by-field configuration mapping and
-verified writes remain required work.
+production and real optical transport remain required work. The explicit
+field mapping/write/readback implementation below does not establish credential
+verification or full configuration acceptance.
+
+### Explicit Flag1 Wi-Fi write and readable-field comparison
+
+`tools/trace_stock_fttr_wifi_fields.py` now executes the retained
+`fttrManage:setWiFiInfo`, `getWifiSsidInfo` local producer and libmib
+`map_encrypt_to_mib` / standard conversion. JSON-C, MIB rows and the final
+`sync_syncserv_setting` call are fixtures; no network, local Commit or WLAN
+reconfiguration is run. The original remote branch builds a Flag1 document:
+
+```json
+{"act":"config","SSIDIndex":"1","SSIDAdvertisementEnabled":"true","Standard":"11bgn","SSID":"example","ENCRYPT":4,"PWD":"example-passphrase","Enable":1}
+```
+
+Original UI indices17..32 address the first subordinate and33..48 the second;
+the wire document carries the subordinate-local1..16 index as a string.
+The native command already identifies the peer by MAC and therefore accepts
+only its local index. Do not pass the UI's combined index or a MiniOLT ONU-ID.
+The retained local producer reports indices1..8 as2.4G and9..16 as5G, returns
+Enable as string0/1, advertisement as stringtrue/false, and standard strings
+such as `11bgn` / `11ac` / `11ax`.
+
+Read and write encryption representations differ:
+
+| Local read/UI ENCRYPT string | Write ENCRYPT integer | Original MIB meaning |
+| --- | --- | --- |
+| 1 | 0 | Open |
+| 2 | 1 | WEP |
+| 3 | 2 | WPA |
+| 4 | 4 | WPA2 |
+| 5 | 6 | WPA/WPA2 |
+| 9 | 16 | WPA3 |
+| 10 | 20 | WPA2/WPA3 |
+
+The original invalid-encryption fallback is not used. Its explicit SSID setter
+silently truncates to31 bytes, although an existing32-byte SSID survives both
+read production and omitted-SSID remote construction. Native preserves up to32
+UTF-8 bytes and rejects overflow rather than truncating. The original also
+emits empty PWD/Standard/advertisement when those inputs are omitted. Native
+requires all eight fields, so that omission cannot silently change those values.
+
+```sh
+# Use the actual management interface and observed peer MAC.
+chmod 600 /root/fttr-wifi.json
+fttr-sync <interface> <peer-MAC> auto 0x88aa wifi-apply /root/fttr-wifi.json
+```
+
+The file is the complete content object shown above. It must be a regular file
+owned by the effective user, with no group/other permissions; symlinks and
+nonregular files are rejected before any network operation. Strict UTF-8 JSON,
+known fields/types, local index, band-appropriate standard, exact encryption
+enum and key lengths are checked. Open mode requires an explicit empty PWD;
+WEP accepts5/13-byte strings and WPA-family modes8..63 bytes. These are native
+input bounds matching the verified branches, not claims of real radio support.
+Known round-trippable standard strings are `11b`, `11g`, `11bg`, `11gn`,
+`11bgn`, `11ax` for2.4G and `11a`, `11ac`, `11na`, `11ax` for5G.
+
+Under one interface lease, the command first performs the Flag1 read. It requires
+the selected index exactly once, rejects duplicate/invalid indices and more
+than16 rows, and validates the selected row's radio band and readable fields.
+It then sends exactly one `act:config` request. Positive Result or a matching
+STATUS0 report permits the next phase; neither means the setting was applied.
+An independent `act:get` follows even after write timeout/rejection. Each
+exchange has its own fixed three-second budget. Queued frames are discarded
+between phases with a bounded drain; reassembly state is fresh for each phase.
+There is no retry of the write. Original write errors remain visible even when
+the later readable fields happen to match.
+
+Readback compares SSID, Enable, ENCRYPT after enum conversion, advertisement
+and standard for the selected local index. The **retained local read producer
+omits PWD entirely**. Consequently the command reports `readable_fields_match`,
+`write_result`, `readback_result`, peer/slot/index and always
+`credentials_verified:false`, `configuration_verified:false`. A0 exit status
+means only that the write response and readable-field comparison passed.
+No raw values or credentials are printed or persisted. There is no automatic
+restoration: without the old remote password, complete rollback cannot be
+proved, and replaying guessed or local credentials could break the peer.
+
+This explicit tool advances the usable write path but is not resident Wi-Fi
+synchronization or complete acceptance. Slave read/apply behavior, actual
+credential installation/client association, identity/capability binding and
+recovery policy are still required. An identical delayed same-source report
+cannot be distinguished by this protocol, so queue draining alone is not a
+freshness/authentication guarantee. The native comparator's schema comes from
+the retained manager's local producer, with remote packets modeled in tests.
+
+Evidence:56 actual remote builder cases cover seven encryption conversions and
+eight combined-index boundaries;28 native field comparisons use actual original
+read output. `scripts/test_fttr_sync_wifi.py` runs30 AF_PACKET/veth cases,
+including direct/auto selection, open/WEP/WPA3/UTF-8, preserved32-byte SSID,
+lost ACK, rejection, mismatched/missing readback, bad target and invalid private
+files. The existing39 sync protocol cases and36 encoder/56 concatenation
+comparisons still pass after sharing the exchange loop. Reports are
+`artifacts/fttr/wifi-fields-stock-20261103.json`, `wifi-apply-native-20261103.json`
+and `wifi-apply-sync-regression-20261103.json`; actual GCC14.4/musl package stage
+and matching source hashes are in `wifi-apply-build-20261103/`.
 
 ### Outstanding implementation and acceptance
 
@@ -1765,8 +1862,9 @@ verified writes remain required work.
    actual subordinate capability/behavior verification remain work.
    The independent syncserv JSON path now has original producer/frame evidence
    and native heartbeat discovery/local MAC binding, bounded fragments and
-   Flag1 Wi-Fi read/report completion; authenticated identity/capability,
-   per-field mapping and verified configuration transactions remain work.
+   Flag1 Wi-Fi read/report completion and explicit write/readable-field
+   comparison; authenticated identity/capability, actual credentials,
+   resident policy and complete configuration transactions remain work.
 6. FE/PE acceleration and stale-flow invalidation, then hardware acceptance
    with real downstream gateways and a recorded interoperability scope.
 

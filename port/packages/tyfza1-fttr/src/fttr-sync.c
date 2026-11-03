@@ -19,6 +19,7 @@
 #include "omci-socket.h"
 #include "sync-wire.h"
 #include "sync-peer.h"
+#include "sync-wifi.h"
 
 static int64_t now_ms(void)
 {
@@ -48,7 +49,8 @@ static int mac_parse(const char *text, uint8_t mac[6])
 }
 
 static int reply_decode(const struct fttr_sync_message *message, const uint8_t peer[6],
-			bool settings, bool *ack_seen, struct json_object **summary)
+			bool settings, bool writing, bool *ack_seen,
+			struct json_object **summary, struct json_object **observed)
 {
 	struct json_tokener *parser = json_tokener_new();
 	struct json_object *value = NULL, *field, *result = NULL, *entries = NULL;
@@ -88,6 +90,13 @@ static int reply_decode(const struct fttr_sync_message *message, const uint8_t p
 				goto out;
 			if (json_object_get_int64(field) != 1) { ret = -EREMOTEIO; goto out; }
 			*ack_seen = true;
+			if (writing) { ret = 0; goto out; }
+		}
+		if (writing && json_object_object_get_ex(value, "RPCMethod", &field) &&
+		    json_object_object_get_ex(value, "Flag", &field) &&
+		    json_object_object_get_ex(value, "STATUS", &status) && json_object_is_type(status, json_type_int)) {
+			ret = json_object_get_int64(status) == 0 ? 0 : -EAGAIN;
+			goto out;
 		}
 		if (!report) {
 			if (json_object_object_get_ex(value, "STATUS", &status)) {
@@ -169,6 +178,8 @@ summarize:
 		json_object_object_add(result, "ack_seen", json_object_new_boolean(*ack_seen));
 		json_object_object_add(result, "report_complete", json_object_new_boolean(1));
 		json_object_object_add(result, "settings_entries", json_object_new_int(json_object_array_length(entries)));
+		if (observed)
+			*observed = json_object_get(entries);
 	}
 	/* Summarize shape only. GetWifi can contain SSIDs and keys, including
 	 * fields not implemented here. Never print raw JSON or arbitrary values. */
@@ -182,6 +193,77 @@ out:
 	json_object_put(value);
 	json_tokener_free(parser);
 	return ret;
+}
+
+static int exchange(int fd, const uint8_t source[6], const uint8_t peer[6], uint16_t ethertype,
+		    uint8_t slot, bool settings, struct json_object *configuration, bool *ack_seen,
+		    struct json_object **summary, struct json_object **observed)
+{
+	struct fttr_sync_receiver receivers[2] = { 0 };
+	struct fttr_sync_message message;
+	struct pollfd descriptor = { .fd = fd, .events = POLLIN };
+	uint8_t frame[FTTR_SYNC_FRAME_MAX];
+	char payload[FTTR_SYNC_FRAME_MAX];
+	const char *content = configuration ? json_object_to_json_string_ext(configuration, JSON_C_TO_STRING_PLAIN) : "{\"act\":\"get\"}";
+	int ret, length;
+	int64_t deadline;
+
+	*ack_seen = false;
+	length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"GetWifi\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\"}",
+		source[0], source[1], source[2], source[3], source[4], source[5]);
+	if (settings)
+		length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"SetAllSetting\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\","
+			"\"DMAC\":\"%02X%02X%02X%02X%02X%02X\",\"Flag\":1,\"content\":%s}",
+			source[0], source[1], source[2], source[3], source[4], source[5],
+			peer[0], peer[1], peer[2], peer[3], peer[4], peer[5], content);
+	if (length < 0 || (size_t)length >= sizeof(payload))
+		return -E2BIG;
+	ret = fttr_sync_pack(source, fttr_sync_slave_group, ethertype, slot, FTTR_SYNC_REQUEST,
+		payload, length, frame, sizeof(frame));
+	if (ret < 0)
+		return ret;
+	length = ret;
+	{
+		ssize_t sent = send(fd, frame, length, 0);
+
+		if (sent != length)
+			return sent < 0 ? -errno : -EIO;
+	}
+	/* Fixed per-exchange budget, not an asserted original retry policy. */
+	deadline = now_ms() + 3000;
+	for (;;) {
+		int64_t remaining = deadline - now_ms();
+		ssize_t received;
+
+		if (remaining <= 0)
+			return -ETIMEDOUT;
+		ret = poll(&descriptor, 1, remaining);
+		if (ret < 0) { if (errno == EINTR) continue; return -errno; }
+		if (!ret)
+			return -ETIMEDOUT;
+		if (descriptor.revents & (POLLERR | POLLHUP | POLLNVAL))
+			return -EIO;
+		received = recv(fd, frame, sizeof(frame), MSG_TRUNC);
+		if (received < 0) { if (errno == EAGAIN) continue; return -errno; }
+		if (received < 16 || !fttr_sync_destination(frame, source) || memcmp(frame + 6, peer, 6) ||
+		    ((frame[14] & 15) != FTTR_SYNC_RESPONSE &&
+		     (!settings || (frame[14] & 15) != FTTR_SYNC_REQUEST)))
+			continue;
+		/* Independent partial6/7 reports; standalone ACKs cannot clear them. */
+		if (settings && !(frame[15] & 0xfc))
+			ret = fttr_sync_unpack(frame, received, ethertype, &message);
+		else
+			ret = fttr_sync_receive(&receivers[(frame[14] & 15) == FTTR_SYNC_RESPONSE],
+				frame, received, ethertype, now_ms(), &message);
+		if (ret == -EAGAIN)
+			continue;
+		if (ret)
+			return ret;
+		message.slot = slot;
+		ret = reply_decode(&message, peer, settings, configuration != NULL, ack_seen, summary, observed);
+		if (ret != -EAGAIN)
+			return ret;
+	}
 }
 
 static int discovery(int fd, const uint8_t source[6], uint16_t ethertype,
@@ -248,30 +330,49 @@ static int discovery(int fd, const uint8_t source[6], uint16_t ethertype,
 	return 0;
 }
 
+static int drain(int fd)
+{
+	uint8_t frame[FTTR_SYNC_FRAME_MAX];
+	unsigned int i;
+	ssize_t n;
+
+	/* Retire queued replies between phases, with a hard bound under flood.
+	 * A later stale identical reply remains indistinguishable on this wire. */
+	for (i = 0; i < 256; i++) {
+		n = recv(fd, frame, sizeof(frame), MSG_DONTWAIT | MSG_TRUNC);
+		if (n < 0)
+			return errno == EAGAIN || errno == EWOULDBLOCK ? 0 : -errno;
+	}
+	return -EBUSY;
+}
+
 int main(int argc, char **argv)
 {
 	struct ifreq request = { 0 };
-	struct fttr_sync_message message;
-	struct fttr_sync_receiver receivers[2] = { 0 };
-	struct json_object *summary = NULL;
-	struct pollfd descriptor;
+	struct json_object *summary = NULL, *desired = NULL;
 	struct sockaddr_un lock = { .sun_family = AF_UNIX };
-	uint8_t peer[6], source[6], frame[FTTR_SYNC_FRAME_MAX];
-	char payload[192], *end;
+	uint8_t peer[6], source[6];
+	char *end;
 	unsigned int index;
 	unsigned long slot, ethertype;
-	int lease = -1, control = -1, fd = -1, ret = -EINVAL, length;
-	int64_t deadline;
+	int lease = -1, control = -1, fd = -1, ret = -EINVAL;
 	bool discover = argc == 4 && !strcmp(argv[2], "discover");
-	bool settings = argc == 6 && !strcmp(argv[5], "wifi-settings");
+	bool apply = argc == 7 && !strcmp(argv[5], "wifi-apply");
+	bool settings = apply || (argc == 6 && !strcmp(argv[5], "wifi-settings"));
 	bool automatic = (argc == 5 || settings) && !strcmp(argv[3], "auto");
 	bool ack_seen = false;
 
 	if ((!discover && !settings && argc != 5) || strlen(argv[1]) >= IFNAMSIZ || strchr(argv[1], '/') ||
 	    (!discover && mac_parse(argv[2], peer))) {
-		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [wifi-settings]\n"
+		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [wifi-settings | wifi-apply <private-json-file>]\n"
 			"       %s <interface> discover <ethertype>\n", argv[0], argv[0]);
 		return 2;
+	}
+	if (apply) {
+		ret = fttr_sync_wifi_load(argv[6], &desired);
+		if (ret)
+			goto out;
+		ret = -EINVAL;
 	}
 	errno = 0;
 	slot = 0;
@@ -318,69 +419,63 @@ int main(int argc, char **argv)
 			goto out;
 		slot = ret;
 	}
-	length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"GetWifi\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\"}",
-		source[0], source[1], source[2], source[3], source[4], source[5]);
-	if (settings)
-		length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"SetAllSetting\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\","
-			"\"DMAC\":\"%02X%02X%02X%02X%02X%02X\",\"Flag\":1,\"content\":{\"act\":\"get\"}}",
-			source[0], source[1], source[2], source[3], source[4], source[5],
-			peer[0], peer[1], peer[2], peer[3], peer[4], peer[5]);
-	ret = fttr_sync_pack(source, fttr_sync_slave_group, ethertype, slot, FTTR_SYNC_REQUEST,
-		payload, length, frame, sizeof(frame));
-	if (ret < 0)
-		goto out;
-	length = ret;
-	{
-		ssize_t sent = send(fd, frame, length, 0);
+	if (apply) {
+		struct json_object *observed = NULL;
+		int write_result = 0, read_result = 0;
 
-		if (sent != length) { ret = sent < 0 ? -errno : -EIO; goto out; }
-	}
-	/* Diagnostic budget, not an asserted original retransmission policy. */
-	deadline = now_ms() + 3000;
-	descriptor = (struct pollfd) { .fd = fd, .events = POLLIN };
-	for (;;) {
-		int64_t remaining = deadline - now_ms();
-		ssize_t received;
-
-		if (remaining <= 0) { ret = -ETIMEDOUT; break; }
-		ret = poll(&descriptor, 1, remaining);
-		if (ret < 0) { if (errno == EINTR) continue; ret = -errno; break; }
-		if (!ret) { ret = -ETIMEDOUT; break; }
-		if (descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) { ret = -EIO; break; }
-		received = recv(fd, frame, sizeof(frame), MSG_TRUNC);
-		if (received < 0) { if (errno == EAGAIN) continue; ret = -errno; break; }
-		if (received < 16 || !fttr_sync_destination(frame, source) || memcmp(frame + 6, peer, 6) ||
-		    ((frame[14] & 15) != FTTR_SYNC_RESPONSE &&
-		     (!settings || (frame[14] & 15) != FTTR_SYNC_REQUEST)))
-			continue;
-		/* Original JSON ingress accepts6 and7. Keep their partial messages
-		 * separate; a standalone ACK must not discard a fragmented report. */
-		if (settings && !(frame[15] & 0xfc))
-			ret = fttr_sync_unpack(frame, received, ethertype, &message);
-		else
-			ret = fttr_sync_receive(&receivers[(frame[14] & 15) == FTTR_SYNC_RESPONSE],
-				frame, received, ethertype, now_ms(), &message);
-		if (ret == -EAGAIN)
-			continue;
+		ret = exchange(fd, source, peer, ethertype, slot, true, NULL, &ack_seen, &summary, &observed);
+		if (!ret)
+			ret = fttr_sync_wifi_check(observed, desired, false);
+		json_object_put(observed);
+		observed = NULL;
+		json_object_put(summary);
+		summary = NULL;
 		if (ret)
-			break;
-		/* Original ingress resolves the local slot by Ethernet source MAC;
-		 * the sender's header nibble is not our table index. */
-		message.slot = slot;
-		ret = reply_decode(&message, peer, settings, &ack_seen, &summary);
-		if (ret == -EAGAIN)
-			continue;
-		break;
+			goto out;
+		ret = drain(fd);
+		if (ret)
+			goto out;
+		write_result = exchange(fd, source, peer, ethertype, slot, true, desired, &ack_seen, &summary, NULL);
+		/* A lost ACK does not imply the remote write was not applied. Always
+		 * attempt independent readback; never replay a password blindly. */
+		read_result = drain(fd);
+		if (!read_result)
+			read_result = exchange(fd, source, peer, ethertype, slot, true, NULL, &ack_seen, &summary, &observed);
+		if (!read_result)
+			read_result = fttr_sync_wifi_check(observed, desired, true);
+		json_object_put(observed);
+		json_object_put(summary);
+		summary = json_object_new_object();
+		json_object_object_add(summary, "event", json_object_new_string("sync_wifi_apply"));
+		json_object_object_add(summary, "peer", json_object_new_string(argv[2]));
+		json_object_object_add(summary, "slot", json_object_new_int(slot));
+		{
+			struct json_object *ssid_index;
+
+			json_object_object_get_ex(desired, "SSIDIndex", &ssid_index);
+			json_object_object_add(summary, "ssid_index", json_object_get(ssid_index));
+		}
+		json_object_object_add(summary, "write_attempted", json_object_new_boolean(1));
+		json_object_object_add(summary, "write_result", json_object_new_int(write_result));
+		json_object_object_add(summary, "readback_result", json_object_new_int(read_result));
+		json_object_object_add(summary, "readable_fields_match", json_object_new_boolean(!read_result));
+		json_object_object_add(summary, "credentials_verified", json_object_new_boolean(0));
+		json_object_object_add(summary, "configuration_verified", json_object_new_boolean(0));
+		json_object_object_add(summary, "values_redacted", json_object_new_boolean(1));
+		ret = write_result ? write_result : read_result;
+	} else {
+		ret = exchange(fd, source, peer, ethertype, slot, settings, NULL, &ack_seen, &summary, NULL);
 	}
 out:
-	if (!ret) {
+	if (summary) {
 		puts(json_object_to_json_string_ext(summary, JSON_C_TO_STRING_PLAIN));
 		if (fflush(stdout))
 			ret = -errno;
-	} else {
-		fprintf(stderr, "FTTR sync %s: %s (%d)\n", discover ? "discovery" : settings ? "wifi-settings" : "GetWifi", strerror(-ret), ret);
 	}
+	if (ret)
+		fprintf(stderr, "FTTR sync %s: %s (%d)\n", discover ? "discovery" : apply ? "wifi-apply" : settings ? "wifi-settings" : "GetWifi", strerror(-ret), ret);
 	json_object_put(summary);
+	json_object_put(desired);
 	if (fd >= 0) close(fd);
 	if (control >= 0) close(control);
 	if (lease >= 0) close(lease);
