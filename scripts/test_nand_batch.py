@@ -39,7 +39,7 @@ def check_status(callback, expected):
 
 def check_registers(lib):
     for on in (0, 1):
-        for initial in (0, 0x10, 0xa5, 0xff):
+        for initial in range(256):
             assert lib.regtest(on, initial, 0) == (initial & ~16) | (16 if on else 0)
         assert lib.regtest(on, 0, -5) == -5
         assert lib.regtest(on, 0, -30) == -30
@@ -56,6 +56,8 @@ def main():
     header = (args.kernel / 'include/linux/mtd/spinand.h').read_text()
     assert '&dosilicon_spinand_manufacturer,' in core
     assert 'dosilicon.o' in (args.kernel / 'drivers/mtd/nand/spi/Makefile').read_text()
+    assert re.search(r'\.id\s*=\s*0xe5\b', ds)
+    assert re.search(r'#define SPINAND_MFR_FMSH\s+0xA1\b', fm)
     common = '''#include <stdint.h>
 #include <stdbool.h>
 #include <errno.h>
@@ -79,6 +81,7 @@ struct spinand_device { unsigned int flags; };
             assert 'NAND_MEMORG(' + org + ')' in entry
             assert 'OPCODE_DUMMY, 0x' + ('b2' if name.startswith('ds') else 'f2') in entry
             assert 'SPINAND_HAS_QE_BIT' in entry
+            assert f'NAND_ECCREQ({8 if name.startswith("ds") else 4}, 512)' in entry
             if name.startswith('fm'):
                 assert 'SPINAND_ECC_REG_90' in entry
             code = common + ''.join(function(source, name + suffix) for suffix in
@@ -99,16 +102,18 @@ int layout(int ecc, int section, struct mtd_oob_region *r) {{
         flag = re.search(r'#define SPINAND_ECC_REG_90[^\n]+', header).group()
         code = common + '\n#define BIT(n) (1U << (n))\n' + flag + '''
 #define CFG_ECC_ENABLE 16
-static int value, failure, last_reg, generic_calls;
-static int spinand_read_reg_op(void *s,int r,u8 *v) { last_reg=r; *v=value; return failure == -5 ? failure : 0; }
-static int spinand_write_reg_op(void *s,int r,u8 v) { last_reg=r; value=v; return failure == -30 ? failure : 0; }
+static int value, failure, reads, writes, read_reg, write_reg, generic_calls;
+static int spinand_read_reg_op(void *s,int r,u8 *v) { reads++; read_reg=r; if(failure == -5) return failure; *v=value; return 0; }
+static int spinand_write_reg_op(void *s,int r,u8 v) { writes++; write_reg=r; if(failure == -30) return failure; value=v; return 0; }
 static int spinand_upd_cfg(void *s,int mask,int v) { generic_calls++; return 123; }
 ''' + function(core, 'spinand_ecc_enable') + '''
 int regtest(int on,int initial,int fail) {
  struct spinand_device s={SPINAND_ECC_REG_90};
- value=initial; failure=fail; last_reg=0; generic_calls=0;
+ value=initial; failure=fail; reads=writes=read_reg=write_reg=generic_calls=0;
  int ret=spinand_ecc_enable(&s,on);
- if(last_reg!=0x90 || generic_calls) return -999;
+ if(reads!=1 || read_reg!=0x90 || generic_calls) return -999;
+ if(writes!=(fail==-5?0:1) || (writes && write_reg!=0x90)) return -998;
+ if(fail && value!=initial) return -997;
  return ret ? ret : value;
 }
 int legacy(void) {struct spinand_device s={0}; return spinand_ecc_enable(&s,1);}
@@ -129,9 +134,9 @@ struct spi_nand_info {int mfr_id,dev_id;};
 #define SPI_NAND_MFR_FMSH 0xa1
 #define CFG_ECC_ENABLE 16
 #define CFG_ECC_MASK 16
-static int value,failure,last_reg;
-static int spi_nand_get_feature_register(void *s,int r,u8 *v) {last_reg=r;*v=value;return failure == -5 ? failure : 0;}
-static int spi_nand_set_feature_register(void *s,int r,u8 *v) {last_reg=r;value=*v;return failure == -30 ? failure : 0;}
+static int value,failure,reads,writes,read_reg,write_reg;
+static int spi_nand_get_feature_register(void *s,int r,u8 *v) {reads++;read_reg=r;if(failure == -5) return failure;*v=value;return 0;}
+static int spi_nand_set_feature_register(void *s,int r,u8 *v) {writes++;write_reg=r;if(failure == -30) return failure;value=*v;return 0;}
 static int spi_nand_get_cfg(void *s,u8 *v) {return spi_nand_get_feature_register(s,0xb0,v);}
 static int spi_nand_set_cfg(void *s,u8 *v) {return spi_nand_set_feature_register(s,0xb0,v);}
 '''
@@ -150,9 +155,11 @@ int status(unsigned int s,int ds,int id) {
  return e ? -74 : c;
 }
 int regtest(int on,int initial,int fail) {
- struct spi_nand_info info={0xa1,0xf2}; value=initial;failure=fail;last_reg=0;
+ struct spi_nand_info info={0xa1,0xf2}; value=initial;failure=fail;reads=writes=read_reg=write_reg=0;
  int ret=on?spi_nand_enable_ecc(&info):spi_nand_disable_ecc(&info);
- if(last_reg!=0x90) return -999;
+ if(reads!=1 || read_reg!=0x90) return -999;
+ if(writes!=(fail==-5?0:1) || (writes && write_reg!=0x90)) return -998;
+ if(fail && value!=initial) return -997;
  return ret ? ret : value;
 }
 int layout(void) {

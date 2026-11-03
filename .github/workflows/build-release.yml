@@ -125,6 +125,7 @@ jobs:
         run: |
           kernel=$(python3 port/tools/project_paths.py --kernel-directory sources/openwrt)
           python3 scripts/test_board_variants.py --kernel "$kernel"
+          python3 scripts/test_nand_batch.py --kernel "$kernel"
       - name: Package firmware and installer
         run: |
           sh scripts/package_release.sh sources/openwrt artifacts/release
