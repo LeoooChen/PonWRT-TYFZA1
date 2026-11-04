@@ -132,3 +132,23 @@ PE方向分工、主要聚合循环及当时上行修复均已保留。当前增
 实际ELF还确认RA背景噪声输入byte15 bit0未接入native；现有原厂说明仅明确用于92XB带宽切换，不能解释本轮8852C MCS10/11变化。因此记为有待定位关联的细节，不在本轮扩大修复范围。
 
 在正常模块和稳定关联下，完整复用旧下行参数P4/w4M/30s得到1.53923Gbps，距历史1.55848约1.2%；Windows全局重传差1849，仍有no_buffer。当前旧参数下能力基本保留，暂无整体PE回退依据。该结果为定位证据，不替代默认单流验收。
+
+### EPP 摄取批量的限定对照
+
+`ni_ingest` 原行为在全局 queued>512 后，即使当前 peer 唤醒，每轮也只消费一个 EPP。去掉该提前退出仍保留后面的睡眠 peer256/global512 入口限制、超限单包 discard、回收 fence、16项预算和124普通 owner额度；实际链接 PE 的批量、睡眠资源和发布测试均通过。
+
+临时同关联 A/B/A 只开关这条条件：默认TCP下行1.430/1.360/1.425Gbps，UDP1.85G下行1.774/1.761/1.761Gbps、丢包63083/74613/74246。TCP no_buffer240/100/236，UDP61487/65535/65535（后两项饱和），failed MPDU均0。减少重复摄取开销没有改善服务速率，TCP还出现退步；因此没有采用这个候选，也不扩大批量或额度。源码恢复，RAM恢复stockdetail，临时模块移除。
+
+这轮前置UDP pacing和供给速率对照无一致增益；高频SSH采样导致Mac接收CPU开销增大，其1.580Gbps结果仅用于识别观测干扰。无连续采样时丢101680包而Mac socket drops仅2493，仍支持NI缓冲耗尽是主要丢包位置。Windows拒绝MSS1440且未发送流量，该次不作归因、不继续修测试工具。
+
+用户将目标更新为默认TCP双向1.8Gbps、UDP双向1.9Gbps，当前尚未达到。历史feed停上游的差别继续限定在物理入口XOFF链条核对；不重新开启BK分支、不重复RMU和TXPause实验。
+
+### 原厂源端口 XOFF 联动的限定验证
+
+实际`ca-ne.ko`的`__ni_flow_ctrl_init`、`__ge_phy2mac_sync`及`aal_ni_eth_port_mac_set`表明，链路协商后还会联动L2TE和TE源端口计数，旧的单独清MAC bit12实验没有覆盖这条链。NI4实读96c4/96a8/290c/2a80/2124均0、2914=73ff、a814=04059901，确实未配置此联动。
+
+按原厂细节临时设置：2124=88888888、源端口低376/高424、2914 bit31、MAC PFC_disable=1/pause_sel=2/flow_disable=0（a814=04054901）、8个COS quanta=ffff、2a80 bit1、290c bit4、96c4 bit31、96a8=ffffff00。VOQ108与VOQ0的profile实读均0，无需修改。保持RMU80000000和无线配置不变。
+
+单开计数掩码的SRC-COUNT及缺少2a80 bit1的SRCFC-B均不用于完整机制归因。补齐后的SRCFC-C为TCP1.283Gbps/no_buffer7、UDP1.724Gbps/丢106401包（6.65%）/no_buffer65535饱和，failed/retired均0；UDP中间样本NI软件排队499且持有396个已提交BID，源端口0..6计数和XOFF状态全部0。前置正常UDP1.749/1.781Gbps。该原厂联动没有解除本路径EQ6耗尽，未合入；未证明源计数覆盖离开TE后的WiFi BID持有周期。
+
+所有临时寄存器逐项恢复并读回确认，正常stockdetail仍在RAM，无诊断进程。目的LPID核对：native实际19（16+CPU3），已包含在ffffff00掩码中，不能用编号不匹配解释零计数。此分支停止，不增加流控工具或重试RMU/TXPause。
