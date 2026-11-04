@@ -535,7 +535,7 @@ static void __attribute__((section(".rxq"), noinline)) ni_recycle(volatile u32 *
 		 * retaining the unreturned suffix when either hardware credit stalls. */
 		do {
 			if (!credit || !(push[0] & BIT(31))) break;
-			sync();
+			/* The owner acquire or preceding PUSH fence orders this link. */
 			u32 next = *(u32 *)uncached(buffer);
 			push[1] = buffer | eq;
 			buffer = next; returned++; credit--;

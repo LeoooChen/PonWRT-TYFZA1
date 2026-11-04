@@ -182,3 +182,16 @@ PE方向分工、主要聚合循环及当时上行修复均已保留。当前增
 原厂ACK/BA判定限定复核：actual cmac_init@240050–24009c 对CC00 OR00380000，对CC04清bit19并置1f800000，C/XB patch predicate返回false，native一致。CC00当前60784040，ACKTO/ACKTO_CCK均64us；原厂普通160MHz初始化保留低16位，仅5/10MHz分支写ff/80，原厂复位值尚未证明，不能据此称遗漏或改超时。BA_IGNOREA2 bit16当前0，已核对路径同样保留；未发现虚假retry的已证实字段差异。CC04 response CCA位不能误说为接收BA有效性开关。
 
 历史PE主能力保留、旧feed软件背压与零NI缺缓冲的关系已记在前节；本轮没有新增产品修复。保留现有正确性修复，BK关闭分支仍终止。原始验收尚未完成。证据RETRY-SERVICE-*、CWMIN*及retry-service-summary.json。
+
+
+### NI 缓冲归还的重复屏障
+
+当前固定NI BID从接收到无线RPQ完成一直被同一PE持有。每owner获取之前已有完整sync；每BID PUSH之后也有完整sync，覆盖下一次链读取。原内层在读取next之前再执行一次sync，没有新增发布/跨PE获取对象。实际原厂aal_l3qm_set_cpu_push_paddr（.nictrx-sec a0，f8直接str）函数内没有DMB/DSB，不存在逐BID双屏障的原厂要求；ARM写法不等同PE内存模型，原生仍保留outer acquire、PUSH后sync及全部credit/readiness检查。
+
+最终最小修改仅删除这条重复sync。实际链接7BID回收由15次屏障降为8次；next读取先于PUSH、PUSH后屏障先于owner发布、缺credit/ready保留后缀、已归还BID立即覆写、completion127→0及reserved discard通过。原有RPQ、PS预算及TX发布回归均通过；最终模块编译通过。诊断同关联OFF/ON/OFF TCP1.517/1.493/1.482Gbps，UDP2G1.809/1.804/1.802Gbps，未证明吞吐改善。保留价值为每个报文减少一条已证明重复的完整屏障，不称原始吞吐修复。最终版已去掉全部诊断开关。
+
+另纠正此前容量口径：2496来自本机PE1配置，不能称当前路径与原厂等价容量。原厂实际WFO关闭，CPU普通池768、CPU2特殊2048；NAPI将旧skb交上层后分配另一块skb补充inactive BID，旧payload仍可持有到无线RPQ。native固定池直到RPQ才归还同一BID，这是真实的缓冲生命周期差异，尚未修改分配架构或扩大pool。后续只沿此处评估对no_buffer的因果影响，不重开BK、源XOFF、RMU或竞争窗口扫描。
+
+最终RAM模块rtl_ax_ap_recyclefinal SHA256=7f9ad0e2fe18d18293baea8fd8d7e8cb748416b074353a6261fa6e0ed2eb3f18，PE24008字节/SHA256=71154f2a035dd3ee97a5a8ab8b4b74a325b5ad73cbcba86162f8d7f975672808，phy48。默认TCP上行1.683627Gbps/0重传、下行1.488827Gbps；UDP2G实际发送1.997347/收到1.844711Gbps、丢131749包（7.6292%）。未达到验收，也未将跨关联单次UDP提升归因于本改动。最终无诊断开关，保留BK，时钟/EDCA默认。
+
+补池依据：主仓evidence/rtl-workspace/private/tyfza1/kernel.config:2540关闭CONFIG_RTK_WFO，2336关闭CONFIG_RTK_FC_WIFI_AMSDU_OFFLOAD_BY_PE；scfg-persisted-20261005/default_scfg.txt:224配CPU pool0=768。evidence/wireless-study-20261010-ne-goal/evidence/stock/modules/ca-ne.ko中aal_l3qm_init_startup_config@5a390读取配置，aal_l3qm_init_empty_buffer@588b8–588cc对相对EQ索引2跳58a94取2048，再5890c写CFG1；CB额度5837c–583ac匹配。其.nictrx-sec ca_ni_rx_napi@ddc先调用上层RX hook，13fc/1414读inactive BID并refill；refill@740分配/714 CPU_PUSH；fill_empty@164 dev_alloc_skb_recy_eth，188写新skb到新buffer+7f8。此处证明补池不等无线RPQ，不表示旧payload提前释放。
