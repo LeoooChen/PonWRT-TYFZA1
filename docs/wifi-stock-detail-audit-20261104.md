@@ -237,3 +237,16 @@ PE方向分工、主要聚合循环及当时上行修复均已保留。当前增
 编译保留OpenWrt的-fno-caller-saves，mac80211模块SHA256 a1887df2e494af167ff52e3d1cb30402c4fc225b7f4549881b9ffc11c25c6179。修改前build模块.text与板载flash模块.text逐字节SHA一致，确认基线。RAM仅替换mac80211，radio仍rtl_ax_ap_recyclefinal、PE unchanged；当前phy4。修复前默认TCP上行1.649308G/7重传，下行1.487985G；修复后上行1.698083G/0，下行1.499108G，UDP2G下行收到1.834378G/丢8.0913%，上行发送1.622058G/收到1.602637G且MacCPU98.8%。跨关联不作吞吐增益归因，仍未达标；上行UDP本轮发送端未造足流量。手机重新建立TID0/4/5的RX BA256，Mac BA64，加载后无新增marker告警。结束ARM/NI pending0，无临时设置。此正确性修复保留，flash未写。
 
 附定位边界：SERVICE-AIR-TCP反向PE转发138721帧、重排14次、无RXQ/RPQ RDU，没有大量ACK重排证据。实际原厂opcode11的旧AGGCOUNT日志进一步解码：0x340的四行是1..4SS，每桶u32 report计数；TCP9473份report中9350份为2SS HE MCS10/11，UDP8824份中8803份同档。0xb3是队列时间，不能当发送airtime。22份旧日志均仅38条且止于0x343；真正ZLD均值0x38a在末尾，level2/comp64相同却未收到，不能将缺失视为0。ZLD补读尚未执行，保留这项观测缺口，不建设新通用工具。
+
+
+### 原厂高吞吐积累后排空策略的限定验证
+
+实际txsc_init@eb45c–eb470默认enable/amsdu_enable/mode均1。普通mode1字节门槛会在第8个1514B包到达后触发最多7包出队，但高TX有优先分支：enqueue@eb1d8–eb214在BW160且tx_tp_kbits>>10>1300时等128项或10ms。rtw_core_tx@e8e20–e8f6c在满128后直接调用txsc_amsdu_timeout_tx；f0ae4/f0afc/f0b18循环组装、提交和deque_check，剩余>=7继续，所以128→18组7包→余2。collect_sta_traffic_statistics@d0510–d0550用名义2秒字节增量直接统计；另算的60/40平滑值不参与此门槛。这与旧“不足7包等200/500us”的实验不同。
+
+RAM候选仅人工启用这套开始排空条件，保留原BK、124 owner、每turn发布预算、PS、回收和短ACK策略；每TID 1byte状态位于0x1d100..1d4ff。实际PE测试127等待/128触发/18x7按序/尾部超时/empty reset/独立ACK peer/TSF回绕/PS/退役通过，publication与PSbudget通过。gate可跨暂时睡眠保留，但不越过原PS资格。候选PE SHA d824efcc4990a736564c1821f37d27f07a4fe57bcaff1655a53fb22eed65c192；模块d006ca68fd1ec1bebb30542284486905c207caca61e00f5ca1e14aa758e06c29。源码构建后即恢复HEAD。
+
+OFF/ON/OFF默认TCP1.305/0.804/1.481Gbps；UDP2G1.848/1.830/1.840Gbps，丢7.47/8.39/7.86%。ON实际触发1689次TCP/75次UDP。TCP开启从SYN生效，与原厂达到门槛后启用不同，因此追加同一连接30s中途ON(5s)/OFF(20s)对照：明确排除切换附近区间后ON平均1.509Gbps，后OFF平均1.523Gbps，无稳定收益。候选撤回，不做128/10ms参数扫描，不将直接对齐原厂策略当作适配当前架构的充分条件。
+
+另一个本轮已终止观测：根据原厂WCPU_DATA窗口18e00000及mask3ffff、现有锁定CMAC读工具，读8个已知U2地址校验映射，全部返回deadbeef。没有有效WCPU统计；辅助模块已经卸载，不能据此判断ZLD为0。无新日志/内存工具分支。
+
+恢复收尾：RAM回到rtl_ax_ap_recyclefinal/phy8，mac80211_rxbasync保持；boot a56cceb0未变。首次重关联默认上行1.474477Gbps/3重传（仅通信恢复检查，不作新的稳定性能结论），ARM/NI pending0、failed0/retired0、PEDIV40404/EDCA003f642b，临时ban为空，wcpu/stockdrain辅助模块和测速进程均已结束。生产源码无新增变更，保留88b37cd。
