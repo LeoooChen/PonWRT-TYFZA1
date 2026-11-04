@@ -50,8 +50,9 @@ int main(void) {
  assert(get_unaligned_le64(c+4)==0x80000000ff0ff010ULL);
  rtl_ax_tx_wd(wd,1500,1,0x180,1,2,7,26,false,false,0,0,false,1,64,0);
  rtl_ax_tx_wd(rts,1500,1,0x180|BIT(22),1,2,7,26,false,false,0,0,false,1,64,0);
- assert(get_unaligned_le32(rts+32)==(get_unaligned_le32(wd+32)|BIT(12)));
- rts[33]&=~0x10;assert(!memcmp(wd,rts,56));
+ assert(get_unaligned_le32(rts+32)==get_unaligned_le32(wd+32));
+ assert(get_unaligned_le32(rts+48)==(BIT(27)|BIT(31)));
+ memset(rts+48,0,4);assert(!memcmp(wd,rts,56));
  puts("Peer RA: HE20/1SS, HE80/2SS restoration, VHT20 MCS limit, HT40 and native HW RTS descriptor passed");
 }
 '''
