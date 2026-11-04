@@ -217,3 +217,12 @@ PE方向分工、主要聚合循环及当时上行修复均已保留。当前增
 结束gate0/pending0/free4096后重启，清除临时内存和临时ban。新boot a56cceb0-c77a-4d54-bcbe-7edc14ece606，RAM恢复已提交rtl_ax_ap_recyclefinal/phy2。证据REPLACE-ISOLATED-*及replacement-isolated-results.json。生产源码仍为48f0ba4，没有新增产品修改。
 
 恢复复测：默认TCP上行1.712672Gbps/0重传、下行1.452918Gbps。随后核对boot不变、rtl_ax_ap_recyclefinal为唯一radio模块、ARM与NI pending均0，hostapd临时ban为空，EDCA003f642b。隔离实验完整结束。
+
+
+### 正常 TCP/UDP 发送形态与历史丢包恢复
+
+复用旧worktree的mac_tx_debug_steady及实际原厂halbb解码器，保持正常recyclefinal模块、同一关联，临时断开手机60秒。SERVICE-AIR-TCP默认下行1.497963Gbps，SERVICE-AIR-UDP1500收到1.489116Gbps；两轮前后手机均不在发送peer中。每轮在开始后约2秒采800项MAC mux样本，按raw[:14]+raw[22:24]+6个0映射原厂BB字段。TCP已解码HE样本568项MCS11/55项MCS10，UDP667/3项；全部HE160/2SS/0.8us GI，TCP出现2288us长数据段，未显示整体降速或只能短聚合的机制。解码器只列最常见40种，顺序读取可能跨PPDU，且寄存器保留旧值；样本数量不是实际PPDU占比，PSDU容量估计不能当准确载荷。旧NORMAL-AIR-UDP已能证明MCS10/11与正确GI，本轮新增的是同关联同速TCP/UDP比较。不能据此再调GI/BW或强制速率。
+
+复用无kernel capture drop的CAP2-DOWN抓包，按ACK推进到已观察SACK右边界计算未闭合恢复区间。5200个SACK ACK集中在0.099367–0.135561s和5.207217–5.245431s，共74.408ms。5.2s所在100ms窗只有0.673Gbps，下一窗已恢复1.501Gbps；0.5–5.1s无SACK长区间平均1.503Gbps，5.8–10s平均1.490Gbps。丢包造成局部低谷，但这份记录的持续1.5Gbps上限不由长期SACK恢复解释，不能据此继续扩大缓冲/背压。该分析不推断完整cwnd，也不把所有低速轮等同这份抓包。证据CAP2-DOWN-recovery-summary.json。
+
+逐包保护条件沿用已有实际ELF结论：普通HE且无动态SMPS/ERP时RTS_EN/HW_RTS_EN均0，响应速率字段一致；未发现新候选，不重复RTS参数实验。本轮无产品代码修改。已有原厂对齐正确性修复及48f0ba4重复屏障删除均保留。mac_tx_debug已退出并删除临时可执行文件，CAE4=0、EDCA003f642b/PEDIV00040404，hostapd临时ban为空，ARM/NI pending均0，boot a56cceb0不变。原始吞吐验收未满足。
