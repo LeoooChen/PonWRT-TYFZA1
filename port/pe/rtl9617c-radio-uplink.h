@@ -222,8 +222,12 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	 * modifying payload/PN/SN. Leave 32 entries for fabric/other ingress. */
 	{
 		u32 peak = 0;
+		/* Stock ca_ni_rx_poll uses STATUS0's CPU0 byte to skip empty
+		 * COS queues. Take a fresh snapshot for each complete MPDU. */
+		u32 active = ni[0x659c / 4] & 255;
 #pragma clang loop unroll(disable)
 		for (u32 cos = 0; cos < 8; cos++) {
+			if (!(active & BIT(cos))) continue;
 			u32 wr = ni[0x7000 / 4 + cos];
 			u32 rd = ni[0x7100 / 4 + cos];
 			u32 used = ((wr - rd) & 1023) / 8;
