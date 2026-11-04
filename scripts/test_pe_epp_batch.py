@@ -13,7 +13,7 @@ for a,n in [(0x1fc00000,0x10000),(BASE,0x20000),(NI,0x10000),(PAYLOAD,0x200000),
 u.mem_write(0x1fc00000,(p/"pe-tx.bin").read_bytes())
 def put(a,v):u.mem_write(a,struct.pack("<I",v))
 def get(a):return struct.unpack("<I",u.mem_read(a,4))[0]
-for i,v in [(25,EPP),(114,0x7060),(115,0x7160),(167,15)]:put(MB+i*4,v)
+for i,v in [(2,0xb2000000),(25,EPP),(114,0x7060),(115,0x7160),(167,15)]:put(MB+i*4,v)
 put(NI+0x659c,1<<24)
 mac=[bytes.fromhex("020000000001"),bytes.fromhex("020000000002")]
 for peer in [1,2]:
@@ -74,6 +74,7 @@ while peers:
  peer=peers.pop(0)
  tid=next((cursor+i)&7 for i in range(8) if pending.get((peer,(cursor+i)&7)))
  expected=pending[peer,tid].pop(0)
+ put(0x1200c438,4000)
  call('ni_select')
  assert u.reg_read(UC_MIPS_REG_V0)==1
  assert get(BASE+0x7000+32)==expected+80
@@ -86,7 +87,7 @@ assert get(MB+38*4)==0
 
 def lookup_probe(withdraw, compact=True):
  u.mem_write(BASE,bytes(0x20000));u.mem_write(EPP,bytes(64))
- for i,v in [(25,EPP),(114,0x7060),(115,0x7160),(167,15)]:put(MB+i*4,v)
+ for i,v in [(2,0xb2000000),(25,EPP),(114,0x7060),(115,0x7160),(167,15)]:put(MB+i*4,v)
  put(NI+0x659c,1<<24);put(NI+0x7060,64)
  for peer in (1,2):
   put(BASE+0x11a00+peer*4,1);u.mem_write(BASE+0xe400+peer*8,mac[peer-1])

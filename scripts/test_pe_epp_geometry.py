@@ -23,11 +23,12 @@ base, ni, epp, packet = 0x04000000, 0x10000000, 0x07000000, 0x06000000
 mailbox = base + 0x2000
 u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
 for address, size in [(0x1fc00000, 0x10000), (base, 0x20000), (ni, 0x10000),
-                       (epp, 8 * 32768), (packet, 0x2000)]:
+                       (epp, 8 * 32768), (packet, 0x2000), (0x12000000, 0x10000)]:
     u.mem_map(address, size)
 u.mem_write(0x1fc00000, (directory / 'pe-tx.bin').read_bytes())
 def put(address, value): u.mem_write(address, struct.pack('<I', value))
 def get(address): return struct.unpack('<I', u.mem_read(address, 4))[0]
+put(mailbox + 2 * 4, 0xb2000000)
 put(mailbox + 25 * 4, epp)
 put(mailbox + 114 * 4, 0x7060)
 put(mailbox + 115 * 4, 0x7160)
@@ -69,6 +70,7 @@ print('Linked PE EPP: all8 COS, pending beyond512 entries, separate ring DMA and
 for cos, batched in ((cos, batched) for cos in range(8) for batched in (False, True)):
     u.mem_write(epp, bytes(8 * 32768))
     u.mem_write(base, bytes(0x20000))
+    put(mailbox + 2 * 4, 0xb2000000)
     put(mailbox + 25 * 4, epp)
     put(mailbox + 114 * 4, 0x7060)
     put(mailbox + 115 * 4, 0x7160)

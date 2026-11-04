@@ -13,7 +13,7 @@ for a,n in [(0x1fc00000,0x10000),(BASE,0x20000),(NI,0x10000),(PAYLOAD,0x200000),
 u.mem_write(0x1fc00000,(p/"pe-tx.bin").read_bytes())
 def put(a,v):u.mem_write(a,struct.pack("<I",v))
 def get(a):return struct.unpack("<I",u.mem_read(a,4))[0]
-for i,v in [(25,EPP),(114,0x7060),(115,0x7160),(167,15)]:put(MB+i*4,v)
+for i,v in [(2,0xb2000000),(25,EPP),(114,0x7060),(115,0x7160),(167,15)]:put(MB+i*4,v)
 put(NI+0x659c,1<<24)
 # RX handoff and downlink scheduling use the same per-radio PE memory.
 rx_map = struct.pack('<256I', *range(256))
@@ -43,6 +43,7 @@ for n in range(251):call("ni_ingest")
 assert bytes(u.mem_read(BASE+0x17400,0x420)) == rx_state, 'downlink ingestion overwrote RX buffer ownership'
 # Current RX handoff/pool geometry is exercised by test_pe_rxq_backpressure.py.
 # Keep the RX ownership sentinel here while exercising downlink PS/retirement.
+put(0x1200c438,4000)
 selected=call("ni_select")
 r={"scope":"Linked PE instructions, synthetic two-peer traffic; no device measurement","sleeping_peer_packets":250,"awake_peer_next_packets":1,"EPP_consumed_packets":get(NI+0x7160)//8,"awake_peer_selected_frames":selected,"owner_slots_held":get(MB+30*4),"sleeping_peer_queued":get(BASE+0x11804),"awake_peer_queued":get(BASE+0x11808),"counterexample":selected==0 and get(NI+0x7160)==124*8}
 assert selected == 1 and get(NI+0x7160)==251*8 and get(MB+30*4)==1, r

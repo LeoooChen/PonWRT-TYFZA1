@@ -156,6 +156,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		/* The queue link becomes the MPDU ownership chain when selected. */
 		waiting[1] = length | header << 16;
 		waiting[2] = now;
+		if (length <= 128) waiting[3] = *(volatile u32 *)(mailbox[2] + 0xc438);
 		if (grouped) *(u32 *)uncached(tail) = buffer;
 		else { head = buffer; group = queue; }
 		tail = buffer; grouped++;
@@ -237,6 +238,13 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			if (discard && mailbox[47]) continue;
 			if (!discard && (mailbox[30] >= 124 ||
 			    (ps[0] && (command == ps[2] || !((grant_flags >> 16) & BIT(tid)))))) continue;
+			/* Stock TXSC batches short frames with a timeout. Give ACKs the
+			 * same opportunity; a full A-MSDU or an expired head sends now. */
+			if (!discard && !ps[0] && (waiting[1] & 65535) <= 128 &&
+			    *(u32 *)(memory + NI_TID_QUEUED + (macid * 8 + tid) * 4) < 8 &&
+			    (u32)(*(volatile u32 *)(mailbox[2] + 0xc438) - waiting[3]) < 4000) {
+				continue;
+			}
 			u32 id = ni_owner(mailbox, memory), frames = 1;
 			u32 tail_buffer = buffer, next_buffer = waiting[0];
 			const u32 *peer = (void *)(memory + 0xd000 + macid * 32);
