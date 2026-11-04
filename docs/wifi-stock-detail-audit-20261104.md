@@ -293,3 +293,18 @@ PS-SCAN同关联OFF/ON/OFF，手机六轮前后均未关联：默认TCP下行1.4
 进一步只读实际U2：2011dc18/24把报告byte24累计到stats+256，dc2c/30把byte25累计到+260，dc3a/3e把byte31累计到+264；2013c69c..c704分别除stats+12输出0x38a，与参考tx_statistic.h的pre/mid/post_zld_len吻合。仍无报告字段单位/完整实机平均值，CA24低10位不能替代这三个字段。未恢复已终止的WCPU或固件日志工具。TXSTS尾部固定/a5a5数据继续不用于RTS/PPDU归因。
 
 本轮没有新产品修改。稳定默认下行仍约1.49–1.51Gbps，TCP1.8/UDP1.9和低丢包目标未满足。保留全部已接受修复；不重复BK关闭、队列阈值、时序/EDCA/时钟、补池或ACK替换实验。
+
+
+### 正常 RTS 对照及 BSSID CAM 颜色假设的边界
+
+保持7c0ea7c/psfinal/phy16、同一关联、BK开启及正常EDCA/PEDIV。正常TCP比同速UDP有更多MAC重试，因此仅使用已有动态SMPS的RTS编码作因果干预，不把普通HE缺少RTS称为原厂遗漏。第一组OFF/ON/OFF下行TCP为1.421804/1.535364/1.486493Gbps；去掉首个旧TXSTS报告后成功MPDU分别176094/190513/184319，重试12275/9908/16031（每百成功6.97/5.20/8.70）。只用单个持久SSH每秒读取既有TXSTS，描述符确认ON的word12=88000000、OFF为0。
+
+限定追加不带持续采样的ON/OFF/ON：默认下行TCP1.546364/1.485690/1.547737Gbps；UDP2G收到1.831331/1.844769/1.833072Gbps，丢包8.2011/7.5864/8.1555%。收益可重复但有限，UDP有小幅代价。参考check_rts的普通分支沿用psta->rtsen，VCS_update只有动态SMPS/ERP/显式配置；cca_rts_mode唯一赋值来自调试命令，未发现按TCP重试率自动开启的原厂策略。保持普通默认RTS关闭，不新增按协议判别、阈值扫描或自创动态保护策略。smps_probe已卸载，peer rate00230180、WD12=0，未更改生产源码。证据Mac NORMAL-RTS-*、RTS-CONFIRM-*、normal-rts-results.json、rts-confirm-results.json；worktree artifacts/normal-rts。
+
+随后沿双向空口竞争核对同BSS/NAV识别：端口C6A0=5，native自角色及peer的BSSID CAM命令byte53固定0。实际原厂_hal_stainfo_to_macrinfo@1a86d4从sta+2513取低6位写role+55，role_info_init@22e8ec再转入BSSID字段，fill_bssid_cam_info@1e7bac编码到H2C byte53。执行这三层64种颜色全部通过，证明给定输入的编码，不能证明AP客户端的默认输入非零。
+
+复用既有H2C入口，在无流量时只重发完全相同的MACID0自角色CAM、byte53改5；done ACK与连通冒烟通过，恢复byte53=0同样done ACK成功。手机90s隔离、同关联0/5/0：下行TCP1.509666/1.484779/1.485192Gbps；上行TCP1.648289/1.650232/1.687897Gbps，重传19/816/0；UDP2G下行1.841937/1.840079/1.837527Gbps，丢7.7372/7.8426/7.9608%。ON上行816次集中于第二秒，未归因，但不能称无相关负面；没有吞吐收益，候选未纳入，不重复颜色实验。
+
+继续核对实际update_sta_he_info_apmode@af95c（内联MAC/PHY处理，MCS/PPE另调）：零/5/63初值及4种HE能力模式共12组保留sta+2513，内存写监测没有触及该字节；参考AP producer也没有复制AP广播颜色。这里更正实验前“原厂会把同一广播颜色写入AP客户端CAM”的过强表述：原厂底层会透传输入，但尚未证明本机AP producer给非零输入，不能将CAM0定性为已确认缺陷。此分支停止，无产品补丁。证据worktree artifacts/bss-color/{verify_stock.py,stock-fields.json,verify_ap_producer.py,ap-producer.json,color_probe.c}；Mac COLOR-*、color-results.json。
+
+本轮仅增加定位证据，没有产品或工具修复；主仓全部已接受修复保留。最后OFF-B正常上行1.687897Gbps/0重传、下行1.485192Gbps、UDP下行1.837527Gbps/7.9608%，未达TCP1.8/UDP1.9及低丢包目标。清除本轮辅助模块，恢复CAM0/RTS关闭，flash未写，不重开BK、队列阈值、EDCA、超时和填充观测分支。
