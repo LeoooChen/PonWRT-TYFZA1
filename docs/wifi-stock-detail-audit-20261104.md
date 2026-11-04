@@ -62,3 +62,13 @@ RAM模块SHA256 d659b5c8a96ebc477c472ae4f7f1e88d69f7ebf40e2c6cf85afbd316cdfc2050
 RSSI平均值有有效样本，两peer周期mask更新持续，update_error=0；Mac协商TX/RX64，手机RX256。未达到完整验收，不能把一次下行1.504当作稳定达标。当前radio修复未显示明确新异常，保留；cached EPP已重编Image，本次未刷写，以历史实机和本次生命周期回归作为当前保留依据。
 
 下一调查点限定为下行排空：已有证据BID池耗尽→NI no_buffer丢包；需判定硬件发送、聚合供给和RPQ回收哪个关键环节限制服务速率，再对该环节核对原厂。暂停新增不在这条故障链上的细节候选。
+
+### 按下行故障链定位的新增证据
+
+临时诊断已能查询当前C U2原厂30个AGG break桶。实际ARM菜单、H2C编码、U2配置和日志编码、原厂ARM解码均经离线执行核对；实机按同MACID在测速前后取差，测速中关闭日志。
+
+TCP1.428Gbps：桶3(0x2000)6508、桶18(0x7000)2821；UDP1.797Gbps：桶3为1572、桶18为6569。原厂长度桶6/7、时间桶8/9均为0，暂不支持调大这两个上限。
+
+临时仅关闭size-decrease BK，桶3从ON的3486降至47，恢复后为4629，证明此WD条件会导致大量聚合中断。OFF期间TCP发生停顿，但sleep/wake事件从对照的10–19次增至210次，Windows控制连接同时中断，不能据此把停顿单独归因为混合包长硬件错误。保留既有规避，后续聚焦该条件与PS/发送连续性的交互。诊断已撤掉，RAM恢复rtl_ax_ap_stockdetail，关联与收发正常。
+
+这轮没有新增生产行为改动。证据位于Mac artifacts/wifi-wired-peer-20261104/AGGREASON-*、AGGCOUNT-*、AGGBK-*；离线命令与解码脚本位于工作树artifacts/agg-break-u2和agg-break-fw-log。
