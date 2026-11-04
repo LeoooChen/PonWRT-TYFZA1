@@ -245,6 +245,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			    (u32)(*(volatile u32 *)(mailbox[2] + 0xc438) - waiting[3]) < 4000) {
 				continue;
 			}
+			/* Commit this selection only while its grant snapshot is current. */
+			if (!discard && command != *(volatile u32 *)(memory + RTL_AX_NI_PS_VERSION + macid * 4)) continue;
 			u32 id = ni_owner(mailbox, memory), frames = 1;
 			u32 tail_buffer = buffer, next_buffer = waiting[0];
 			const u32 *peer = (void *)(memory + 0xd000 + macid * 32);

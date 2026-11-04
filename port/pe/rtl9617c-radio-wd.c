@@ -402,7 +402,9 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	/* Original DATA metadata enables fallback for firmware-selected rates. */
 	word(page + 32, (rate & BIT(20) ? 0 : BIT(9) | BIT(10)) |
 		(rate & BIT(21) ? BIT(11) : 0));
-	word(page + 36, ((flags & BIT(14)) ? BIT(11) : 0) | (aggregate ? (aggregate - 1) & 255 : 0));
+	/* Original TXSC keeps oversized MPDU retries within their PHY family. */
+	word(page + 36, ((flags & BIT(14)) ? BIT(11) : 0) | (aggregate ? (aggregate - 1) & 255 : 0) |
+		(bytes > 2300 ? (rate & 0x180U) << 16 : 0));
 	word(page + 40, dw10);
 	word(page + 48, rate & BIT(22) ? BIT(27) | BIT(31) : 0);
 	if (flags & BIT(17)) {

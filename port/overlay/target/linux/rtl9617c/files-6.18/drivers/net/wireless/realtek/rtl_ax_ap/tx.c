@@ -142,7 +142,8 @@ static void rtl_ax_tx_wd(u8 *out, unsigned int bytes,
 	/* Actual C/XB DATA-WD@2525ac: GI[27:25], rate[24:16], fixed-rate[31]. */
 	rtl_ax_store32(out + 28, BIT(31) | (bandwidth & 3) << 28 | (gi & 7) << 25 | (rate & 0x1ff) << 16);
 	rtl_ax_store32(out + 32, BIT(9) | BIT(10));
-	rtl_ax_store32(out + 36, (multicast ? BIT(11) : 0) | (aggregate ? (aggregate - 1) & 0xff : 0));
+	rtl_ax_store32(out + 36, (multicast ? BIT(11) : 0) | (aggregate ? (aggregate - 1) & 0xff : 0) |
+		(bytes > 2300 ? (rate & 0x180U) << 16 : 0));
 	rtl_ax_store32(out + 40, aggregate ? (density & 7) << 18 : 0);
 	rtl_ax_store32(out + 48, rate & BIT(22) ? BIT(27) | BIT(31) : 0);
 }
@@ -474,13 +475,29 @@ void rtl_ax_tx_peer_rate(struct rtl_ax_tx *tx, unsigned int macid, u32 rate, u32
 }
 void rtl_ax_tx_peer_sleep(struct rtl_ax_tx *tx, unsigned int macid, bool asleep)
 {
+	unsigned long flags;
+
+	spin_lock_irqsave(&tx->lock, flags);
 	WRITE_ONCE(tx->peer_asleep[macid], asleep);
 	if (tx->pe_active) {
-		put_unaligned_le32(asleep, tx->pe.memory + 0xe800 + macid * 16);
+		u32 *ps = tx->pe.memory + 0xe800 + macid * 16;
+		u32 *version = tx->pe.memory + RTL_AX_NI_PS_VERSION + macid * 4;
+
+		/* Revoke an unconsumed grant before the next sleep, even if PE
+		 * never selects an awake packet between the two transitions. */
+		if (!asleep) {
+			put_unaligned_le32(get_unaligned_le32(version) + 1, version);
+			dma_wmb();
+			put_unaligned_le32(0, ps + 3);
+		}
+		put_unaligned_le32(asleep, ps);
 		dma_wmb();
+		if (!asleep)
+			put_unaligned_le32(get_unaligned_le32(version) + 1, version);
 	}
 	if (asleep) tx->peer_sleep_events++;
 	else tx->peer_wake_events++;
+	spin_unlock_irqrestore(&tx->lock, flags);
 	/* mac80211 clears driver-buffered TIDs whenever the peer wakes. */
 	WRITE_ONCE(tx->ni.route_tim[macid], ~0U);
 	ni_route_sleep(tx, macid);

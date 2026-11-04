@@ -27,8 +27,9 @@ ap = bytes.fromhex('981e896168d2')
 ethernet = destination + source + b'\x08\x00'
 host_dma = 0x120380be  # Observed bad region; PE ATU redirects this window to IO.
 
-for encap, payload_bytes, smps in ((encap, size, smps) for encap in (True, False)
-                                 for size in (0, 1, 1500, 2048) for smps in (False, True)):
+for encap, payload_bytes, smps, mode, firmware in ((encap, size, smps, mode, firmware) for encap in (True, False)
+                                 for size in (0, 1, 1500, 2048, 2266, 2267, 4096) for smps in (False, True)
+                                 for mode in (4, 0x80, 0x100, 0x180) for firmware in (False, True)):
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
     for at, size in ((0x1fc00000,0x10000),(base,0x20000),(ring,0x10000),
                      (pages,0x32000),(headers,0x10000),(0x11000000,0x100000),
@@ -66,7 +67,7 @@ for encap, payload_bytes, smps in ((encap, size, smps) for encap in (True, False
     request=[0]*32
     request[0]=7;request[1]=1<<16
     request[2]=(len(expected)+payload_bytes)|26<<16|1<<24
-    request[3]=0x00330180 | (1 << 22 if smps else 0)
+    request[3]=0x00230000 | mode | (1 << 20 if firmware else 0) | (1 << 22 if smps else 0)
     request[4]=(2<<24)|(1<<18 if encap else 1<<22)
     request[5]=64
     request[8]=host_dma;request[9]=(14 if encap else 26)+payload_bytes
@@ -79,12 +80,13 @@ for encap, payload_bytes, smps in ((encap, size, smps) for encap in (True, False
     wp=bytes(u.mem_read(get(ring+4),128))
     # Actual original C/XB encoder: STBC is INFO0 bit12, while dynamic
     # SMPS protection is INFO4 RTS_EN/HW_RTS_EN (offset48 bits27/31).
-    assert struct.unpack_from('<I',wp,32)[0] == 1 << 11
+    assert struct.unpack_from('<I',wp,32)[0] == ((1 << 11) | (0 if firmware else 1536))
+    assert struct.unpack_from('<I',wp,36)[0] == (63 | ((mode & 0x180) << 16 if len(expected)+payload_bytes>2300 else 0))
     assert struct.unpack_from('<I',wp,48)[0] == (0x88000000 if smps else 0)
     count=struct.unpack_from('<I',wp,4)[0]>>26
     segments=[struct.unpack_from('<HI',wp,64+i*6) for i in range(count)]
     lengths=[length & 2047 for length, address in segments]
-    assert lengths==[len(expected)]+([min(payload_bytes,2047)] if payload_bytes else [])+([1] if payload_bytes==2048 else [])
+    assert lengths==[len(expected)]+[min(2047,payload_bytes-i) for i in range(0,payload_bytes,2047)]
     assert [length>>15 for length,address in segments]==[0]*(count-1)+[1], (encap,payload_bytes,segments)
     assert segments[0][1]==headers+7*128
     offset=14 if encap else 26
