@@ -343,3 +343,21 @@ NORMAL-BACKLOG-DOWN用原radio_tx读取31个中间样本：pending min/median/ma
 无持续采样的PHY-TIME-TCP1.493017G，busy8406984，有效bits/busy1777.23；UDP2G1.841335G，busy9155883，比值2011.93。限定同速UDP1.5G收到1.494421G，busy7794394，比值1918.73；默认TCP复测1.475147G，busy8425376，比值1751.20。计数窗口包含测速前后状态读，故busy_fraction不是精确测试期占空比，但总发射时间/有效数据仍显示TCP效率较低。
 
 最后仅将既有TXSTS每秒查询与该时间计数放在同组：PHY-RETRY-TCP收到1.490793G，OK184796/retry27539，每百成功14.9024，bits/busy1774.49；同速UDP收到1.491714G，OK187501/retry12587，每百成功6.7130，bits/busy1891.63。去掉首陈旧report，后续report均不同；统计窗口近似同测速但并非逐MPDU严格匹配。按等MPDU/等PHY成本近似乘(1+retry/OK)，结果2038.93/2018.61，差约1%。这不是实际逐重试airtime，不能严格证明重试解释全部损失，但足以取消当前“另加TCP填充损耗”候选；接下来优先正常TCP额外MAC重试原因，不重开BK、EDCA扫描、RTS扫描或ZLD观察工具。此轮无产品改动，完整目标仍未达成。
+
+
+### 正常双向小包竞争、响应分类与广播 RTS 门槛
+
+本轮b51d106/creditfinal/phy24保持。RX-CRC-TCP下行1.484589G，已有MAC RX计数连续12次读取（16位回绕按差）：OFDM成功10377/CRC1，HESU成功48257/CRC5；UDP1.5G收到1.492493G，OFDM11090/CRC0、HESU35/CRC0。未见与数千额外MAC重试相称的AP接收CRC错误；不能排除未检测到的响应或部分BA确认，未改RX配置。
+
+复用已有正常BK开启的AGGREASON/AGGCOUNT/AGGPS-ON日志，实际U2@2011da06报告byte12/13低9位=total，byte14/15低9位=OK，s9=total-OK；SU分支2011e330..e346累加OK到stats+28、差到+32，2011e428..e442仅report byte0 bits7:6==1时把差累加+40。日志0xac@2013be36输出这三项；所以norsp单位为MPDU尝试，不是BA次数。TCP正常四轮failed13872/14061/13696/11506，norsp7107/7679/5385/6388；UDP两轮failed3410/5972，norsp1209/1338。0x376零OK报告TCP206/197/180/204、UDP67/65。这里只证明状态1和部分失败都存在，不把状态1MPDU数说成丢失BA数量。0xb3末三项是队列时间极值/均值，不求差。原始解析historical-response-results.json保留before/after。
+
+新因果干预保持下行UDP1.5G，额外上行UDP24B payload/3M约15625pps（Ethernet约66B，与TCP ACK大小接近），Mac无线→路由器本地5212；本地服务器仅接收约10MB/s线速开销，CPU实测9.85%。其使用相同无线反向路径，但终点为路由器，不把它当完整Windows ACK路径模拟。冒烟31274发/31273收、0丢；正式12秒187523发/187518收、0丢，发送3.000M足量。OFF/ON/OFF下行收到1.489923/1.476414/1.495535G，MAC每百成功重试2.2497/8.2304/1.7831，UDP丢0.5478/1.4292/0.2562%。仅增加反向小包即可显著提高下行重试，支持收发竞争链，不要求TCP特有协议行为。TXSTS首旧报告去除、后续序号独立。源ACKLOAD-*、ackload-results.json；临时5212服务已kill并确认退出，Windows原5201保留。WindowsSSH master h过期后仅重新认证恢复，未改端点网络设置。
+
+响应取消计数CC14/18/1C初值0/00ff0000/0；参考CC18bit24清零后仍00ff0000，TCP/UDP期间全部不变。该字段未确认是否饱和或此版本布局不同，不能用于排除/支持调度取消响应。清零bit已恢复0，观察停止；RESP-ABORT-*不作归因，不改响应CCA/NAV或重试超时。
+
+沿客户端保护策略发现HE Operation具体差异：实际rtw_build_he_operation_ie@b0944先清16B，只写defaultPEdur4，RTS TXOP bits4..13保持0；4种颜色、污染初值的原厂执行均输出ff0724040000...。当前hostapd实际Beacon为ff0724f43f00...（门槛1023）。现有ubus get_sta_ies可读完整客户端IE，后续若需要应直接用它，不修之前Unix socket查询工具。为确认广播用既有ieee80211_beacon_get_template读取HE Operation，DWARF hw14064/ap_vif16256，辅助模块仅读模板并卸载。
+
+仅修改/var/run/hostapd-phy24.conf。第一次BSS reload没有读入新值，Beacon仍1023且触发重新关联，这不是候选有效轮，finally恢复。一次最小重试使用现成全局ubus hostapd reload phy24/radio-1，重新建立BSS并CAC，读回ff07240400002cfcff确认0已生效。此方法跨关联且BSS颜色随机变化，不把单轮差归因。原正常1023轮TCP下行1.465235G/每百成功retry13.3319、上行1.687323G/0重传、UDP2G收到1.836140G（raw loss7.8515%）；原厂门槛0轮下行1.486843G/retry11.8452、上行1.690179G/0、UDP1.846538G/loss7.5700%。没有解除上限，未进行门槛扫描，未改AP WD RTS。恢复1023后Beacon读回ff0724f43f0024fcff，恢复轮随后记录。门槛候选不直接合入，完整目标未满足。
+
+
+HE门槛恢复轮：TCP下行1.420070G/retry9.8271每百成功、上行1.681945G/0重传、UDP2G1.850648G/7.2653%。两侧1023的retry13.33/9.83夹住0的11.85，没有稳定原厂门槛收益，且三轮跨关联/颜色变化；不合入、不重复门槛试验。结束运行配置与备份cmp一致，删备份和beacon_read设备文件；ARM/NI pending0、failed0、RPS8、PEDIV40404、EDCA003f642b、C654c8033005、WD12=0，无辅助模块/测试进程，临时ban为空。RAM creditfinal/mac80211_rxbasync保留，flash未写。本轮无产品变更，唯一新主线证据是双向小包流量可诱发额外下行重试，未证明最终根因。
