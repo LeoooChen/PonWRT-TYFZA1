@@ -188,13 +188,13 @@ int rtl_qm_rx_alloc(struct device *dev, struct rtl_qm_rx *rx)
 		DMA_FROM_DEVICE, GFP_KERNEL);
 	if (!rx->memory)
 		return -ENOMEM;
-	rx->ring_memory = dma_alloc_coherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS,
-		&rx->ring_dma, GFP_KERNEL);
+	rx->ring_memory = dma_alloc_noncoherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS,
+		&rx->ring_dma, DMA_FROM_DEVICE, GFP_KERNEL);
 	if (!rx->ring_memory)
 		goto free_payload;
 	rx->deepq_memory = dma_alloc_coherent(dev, RTL_DQ_MEMORY_BYTES, &rx->deepq_dma, GFP_KERNEL);
 	if (!rx->deepq_memory) {
-		dma_free_coherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS, rx->ring_memory, rx->ring_dma);
+		dma_free_noncoherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS, rx->ring_memory, rx->ring_dma, DMA_FROM_DEVICE);
 		rx->ring_memory = NULL;
 		goto free_payload;
 	}
@@ -363,6 +363,8 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	readl(ni + EPP_READ);
 	rtl_qm_axi_reorder(rx);
 	memset(rx->ring_memory, 0, RTL_QM_RING_BYTES * RTL_QM_VOQS);
+	dma_sync_single_for_device(rx->device, rx->ring_dma,
+		RTL_QM_RING_BYTES * RTL_QM_VOQS, DMA_FROM_DEVICE);
 	dma_sync_single_for_device(rx->device, rx->memory_dma, RTL_QM_MEMORY_BYTES, DMA_FROM_DEVICE);
 	rx->trace_count = 0;
 	/* Unused bootloader EQs must not retain overlapping BID ownership. */
@@ -509,7 +511,7 @@ void rtl_qm_rx_free(struct device *dev, struct rtl_qm_rx *rx)
 				dma_free_coherent(dev, rtl_qm_wifi_chunk_bytes(chunk),
 					rx->wifi_memory[pool][chunk], rx->wifi_dma[pool][chunk]);
 	dma_free_coherent(dev, RTL_DQ_MEMORY_BYTES, rx->deepq_memory, rx->deepq_dma);
-	dma_free_coherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS, rx->ring_memory, rx->ring_dma);
+	dma_free_noncoherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS, rx->ring_memory, rx->ring_dma, DMA_FROM_DEVICE);
 	dma_free_noncoherent(dev, RTL_QM_MEMORY_BYTES, rx->memory, rx->memory_dma, DMA_FROM_DEVICE);
 }
 
@@ -541,6 +543,23 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 		/* Stock ca_ni_rx_napi consumes only the published pointer interval.
 		 * Queue status can precede DDR publication and does not republish EPPs. */
 		unsigned int wr = readl(rx->ni + EPP_WRITE + cos * 4) & 0xffffff;
+
+		/* Only published commands are CPU-owned. The ring is CPU read-only
+		 * after startup; invalidate again for each newly sampled interval,
+		 * including a shared cache line that hardware extended since then. */
+		unsigned int rd = round_down(rx->read[cos], L1_CACHE_BYTES);
+		unsigned int end = round_up(wr, L1_CACHE_BYTES);
+		if (rx->read[cos] != wr) {
+			unsigned int base = cos * RTL_QM_RING_BYTES;
+			if (wr < rx->read[cos]) {
+				dma_sync_single_for_cpu(rx->device, rx->ring_dma + base + rd,
+					RTL_QM_RING_BYTES - rd, DMA_FROM_DEVICE);
+				rd = 0;
+			}
+			if (end > rd)
+				dma_sync_single_for_cpu(rx->device, rx->ring_dma + base + rd,
+					end - rd, DMA_FROM_DEVICE);
+		}
 
 		while (rx->read[cos] != wr && count < budget) {
 			unsigned int read = rx->read[cos];

@@ -35,6 +35,8 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u6
 #define DMA_FROM_DEVICE 2
 #define NAPI_POLL_WEIGHT 64
 #define L1_CACHE_BYTES 64
+#define round_down(x,a) ((x)&~((a)-1))
+#define round_up(x,a) (((x)+(a)-1)&~((a)-1))
 #define prefetch(p) ((void)(p))
 #define RTL_QM_RING_BYTES 1024
 #define RTL_QM_COMMAND_BYTES 8
@@ -52,7 +54,7 @@ struct sk_buff {u8 storage[128],*data;unsigned len,priority,protocol,ip_summed;s
 struct rtl9617c_ni_wifi_endpoint {struct net_device *netdev;void (*receive)(struct rtl9617c_ni_wifi_endpoint *,struct napi_struct *,struct sk_buff *,bool);};
 struct rtl9617c_ni_endpoint {void (*receive)(struct rtl9617c_ni_endpoint *,struct napi_struct *,struct sk_buff *,unsigned);};
 struct rtl_qm_rx {
- void *ni,*ring_memory,*memory,*device;dma_addr_t memory_dma;unsigned read[8];
+ void *ni,*ring_memory,*memory,*device;dma_addr_t memory_dma,ring_dma;unsigned read[8];
  u32 last_address,last_size,last_header[2],trace[32][7];unsigned trace_count;
  struct rtl_qm_refill refill;struct rtl9617c_ni_wifi_endpoint *wifi[61];struct rtl9617c_ni_endpoint *pon;struct net_device *lan[5];bool profile;
  u64 host_poll_ns,host_polls,wifi_copy_ns,wifi_forwarded,wifi_missed,wifi_copy_bytes,wifi_dispatch_ns;
@@ -73,7 +75,9 @@ static void writel(u32 v,void *p){unsigned r=(u8 *)p-(u8 *)active->ni;
  if(r==EPP_READ){consumer+=((v-(consumer%128)*8)&1023)/8;assert(consumer<=producer);}
  else assert(r>EPP_READ&&r<EPP_READ+32&&v==0);
 }
-static void dma_sync_single_for_cpu(void *d,dma_addr_t a,unsigned n,int direction){(void)d;(void)a;assert(n==2048&&direction==2);}
+static void dma_sync_single_for_cpu(void *d,dma_addr_t a,unsigned n,int direction){(void)d;
+ if(a>=active->ring_dma&&a<active->ring_dma+8192){assert(n&&!(a%64)&&!(n%64)&&a+n<=active->ring_dma+8192&&direction==2);return;}
+ assert(n==2048&&direction==2);}
 static inline void dma_sync_single_for_device(void *d,dma_addr_t a,unsigned n,int direction){dma_sync_single_for_cpu(d,a,n,direction);}
 static int rtl_qm_try_push(void *context,unsigned address,unsigned eq){struct rtl_qm_rx *rx=context;
  unsigned id=(address-(u32)rx->memory_dma-8192)/2048;

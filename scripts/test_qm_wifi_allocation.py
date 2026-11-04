@@ -57,7 +57,7 @@ struct rtl_qm_rx {
  void *wifi_memory[2][3];dma_addr_t wifi_dma[2][3];
  void *wifi_epp[2];dma_addr_t wifi_epp_dma[2];
 };
-static struct {void *memory;dma_addr_t dma;unsigned int bytes;} records[16];
+static struct {void *memory;dma_addr_t dma;unsigned int bytes;int noncoherent;} records[16];
 static unsigned int calls,live,reject,published;
 static unsigned char seen[2][2496];
 static void *dma_alloc_coherent(struct device *dev,unsigned int bytes,dma_addr_t *dma,int flags)
@@ -66,19 +66,32 @@ static void *dma_alloc_coherent(struct device *dev,unsigned int bytes,dma_addr_t
  if(calls==reject || bytes>4*1024*1024)return NULL;
  assert(calls<16);void *p=calloc(1,bytes);assert(p);
  *dma=0x04000000ULL+calls*0x01000000ULL;
- records[calls]=(typeof(records[0])){p,*dma,bytes};live++;return p;
+ records[calls]=(typeof(records[0])){p,*dma,bytes,0};live++;return p;
 }
 static void dma_free_coherent(struct device *dev,unsigned int bytes,void *memory,dma_addr_t dma)
 {
  (void)dev;
  for(unsigned int i=1;i<16;i++)if(records[i].memory==memory) {
-  assert(memory && records[i].dma==dma && records[i].bytes==bytes);
+  assert(memory && records[i].dma==dma && records[i].bytes==bytes && !records[i].noncoherent);
   free(memory);records[i].memory=NULL;live--;return;
  }
  assert(0);
 }
-#define dma_alloc_noncoherent(d,b,a,dir,f) dma_alloc_coherent(d,b,a,f)
-#define dma_free_noncoherent(d,b,p,a,dir) dma_free_coherent(d,b,p,a)
+static void *dma_alloc_noncoherent(struct device *dev,unsigned bytes,dma_addr_t *dma,int dir,int flags)
+{
+ assert(dir==DMA_FROM_DEVICE);void *p=dma_alloc_coherent(dev,bytes,dma,flags);
+ if(p)records[calls].noncoherent=1;
+ return p;
+}
+static void dma_free_noncoherent(struct device *dev,unsigned bytes,void *memory,dma_addr_t dma,int dir)
+{
+ assert(dir==DMA_FROM_DEVICE);
+ for(unsigned i=1;i<16;i++)if(records[i].memory==memory){
+  assert(records[i].noncoherent);records[i].noncoherent=0;
+  dma_free_coherent(dev,bytes,memory,dma);return;
+ }
+ assert(0);
+}
 static int rtl_qm_push(struct rtl_qm_rx *rx,dma_addr_t address,unsigned int eq)
 {
  unsigned int pool=eq-6;
@@ -97,6 +110,7 @@ test = r'''
 int main(void) {
  struct device dev={};struct rtl_qm_rx rx={};
  assert(!rtl_qm_rx_alloc(&dev,&rx));assert(live==11);
+ assert(records[2].memory==rx.ring_memory && records[2].noncoherent);
  assert(!publish(&rx) && published==2*2492);
  for(unsigned int p=0;p<2;p++) {
   assert(2492 < RTL9617C_WIFI_EPP_BYTES/8);
