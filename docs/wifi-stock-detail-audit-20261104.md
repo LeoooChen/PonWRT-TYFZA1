@@ -206,3 +206,14 @@ PE方向分工、主要聚合循环及当时上行修复均已保留。当前增
 诊断未合入。结束gate0、free4096/held0、WP pending0后直接重启，清除可能仍驻留EQ的临时地址；未rmmod或释放已发布备用内存。新boot a31ad74e-face-4509-bdcf-b2761edf4da7，正在恢复已提交rtl_ax_ap_recyclefinal。证据Mac REPLACEMENT-*、replacement-results.json、replacement-confirm-results.json；worktree artifacts/ni-replacement。诊断module SHA256 ed2c3510971abcfe04ac503f05feab74f7b47fa7845aa184d64837c47f92a35e，PE9ad50c00aaba398f5549bb84d4bb1506b3484ec7a3cae96bf0d7eecca3e6c1ab。本輪没有新增产品改动；BK关闭分支及批量/竞争窗口扫描仍终止。
 
 恢复确认：新boot a31ad74e-face-4509-bdcf-b2761edf4da7、phy2，RAM已加载rtl_ax_ap_recyclefinal（已提交48f0ba4），替换实验模块随重启消失。默认TCP下行1.516426Gbps，上行首轮1.341510Gbps/0重传；仍未达成完整验收。
+
+
+### 备用补池结论的干扰核对与单客户端复验
+
+逐peer计数发现，上一组最低TCP开启轮手机同时收到91912帧，恢复低速轮47012帧；恢复UDP1.800Gbps轮手机仅5帧（replacement-peer-traffic.json）。因此此前不能把全部低速归于候选处理开销。此项新证据触发一次限定复验，复用完全相同模块，hostapd临时断开手机并ban120秒，全部六次测速前后均验证手机未关联。
+
+同关联OFF/ON/OFF：TCP0.975/1.171/1.503Gbps（前两轮仍爬升，无稳定TCP增益结论），UDP2G1.803/1.441/1.809Gbps，丢包9.68/27.67/9.43%。开启轮实际替换2268978次，结束free4096/held0；仍有NI no_buffer。两侧UDP基线一致且唯一peer为Mac，支持这一逐批补池实现确实降低正常服务能力，候选继续撤回，不扩大备用数量或继续改写此实验。
+
+结束gate0/pending0/free4096后重启，清除临时内存和临时ban。新boot a56cceb0-c77a-4d54-bcbe-7edc14ece606，RAM恢复已提交rtl_ax_ap_recyclefinal/phy2。证据REPLACE-ISOLATED-*及replacement-isolated-results.json。生产源码仍为48f0ba4，没有新增产品修改。
+
+恢复复测：默认TCP上行1.712672Gbps/0重传、下行1.452918Gbps。随后核对boot不变、rtl_ax_ap_recyclefinal为唯一radio模块、ARM与NI pending均0，hostapd临时ban为空，EDCA003f642b。隔离实验完整结束。
