@@ -72,3 +72,11 @@ TCP1.428Gbps：桶3(0x2000)6508、桶18(0x7000)2821；UDP1.797Gbps：桶3为1572
 临时仅关闭size-decrease BK，桶3从ON的3486降至47，恢复后为4629，证明此WD条件会导致大量聚合中断。OFF期间TCP发生停顿，但sleep/wake事件从对照的10–19次增至210次，Windows控制连接同时中断，不能据此把停顿单独归因为混合包长硬件错误。保留既有规避，后续聚焦该条件与PS/发送连续性的交互。诊断已撤掉，RAM恢复rtl_ax_ap_stockdetail，关联与收发正常。
 
 这轮没有新增生产行为改动。证据位于Mac artifacts/wifi-wired-peer-20261104/AGGREASON-*、AGGCOUNT-*、AGGBK-*；离线命令与解码脚本位于工作树artifacts/agg-break-u2和agg-break-fw-log。
+
+### 长时间去除size BK后的故障定位
+
+按MACID记录PS后，一次ON/OFF/ON默认TCP下行得到1.478/1.542/1.471Gbps，Mac在传输中唤醒，频繁PM来自手机；bucket3为5137/12/3402。但进一步三对TCP与UDP验证复现严重停顿：第三次TCP下行5.76Mbps，UDP下行101Mbps而Windows实际发送1.849Gbps。去除size BK候选已撤回，未提交。
+
+30秒UDP OFF采样复现两个发送冻结区间，pending124且没有RPQ。在多个连续样本中，Mac的PE状态为awake、硬件C2C0 sleep与9EB0 pause位也清零，排除“持续暂停未清除”这一解释。两个peer的RX trigger config均为0，无U-APSD；虽然原厂U-APSD host_getpkt通知确有遗漏，它不解释本次停顿。已有WP持有问题先于/独立于部分PS转换。
+
+下一条证据链是原厂软件批次结束BK的默认开关和额度边界；不能未验证就以任意batch8/64替代。正常RAM模块已恢复，诊断读取模块已移除。
