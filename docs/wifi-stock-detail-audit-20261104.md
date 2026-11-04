@@ -326,3 +326,20 @@ PS-SCAN同关联OFF/ON/OFF，手机六轮前后均未关联：默认TCP下行1.4
 为补足上行直接回归证据，恢复同一诊断版phy22再做OFF/ON/OFF：TCP1.368145/1.682120/1.691893Gbps，全部0重传。首个OFF同样在后3秒1.227/0.449/0.197发生低谷、sleep/wake各+23，说明低谷不以本改动开启为必要条件；不重开PM或BK分支。UDP发1.897636/1.902630/1.904928Gbps，收1.892780/1.844143/1.894631Gbps，丢648/650/247（0.03952/0.03954/0.01501%）；ON接收统计时长10.320975秒，OFF10.022742/10.023290秒，收到总字节2.371/2.379/2.374GB基本相近，仍按原始received速率报告，不用统一时长替代验收。不据单个不同计时轮证明稳定吞吐回退或提升。来源CREDIT-FINAL-*、CREDIT-UP-*、credit-up-results.json。
 
 保留依据为明确减少MMIO且最小所有权契约不变，实机无新回收/失败状态。目标吞吐和低丢包仍未达到。最终恢复无诊断开关rtl_ax_ap_creditfinal；mac80211_rxbasync与全部前序修复保留，flash不变。
+
+
+### 正常 ACK、供包与 PHY 发射时间的定向核对
+
+b51d106/creditfinal/phy24保持，未重载radio。当前接收公布11K MPDU、HE exponent扩展2、RX BA256及AMSDU，hostapd默认SMPS_DISABLED；没有建立ACK缺少聚合能力的候选。ACK-AIR-DOWN1.469206Gbps，单持久SSH每秒取iw/env：反向PE报文162186，RXQ46373、ARM例外2445、重排13，说明已有聚合；多数最新RX速率HE160/2SS/MCS11、少数20MHz，最新样本不等于完整速率分布。没有据此修改接收能力、聚合间距或窗口。
+
+补齐Windows默认单流物理发送方向验证：路由器iperf3客户端-R向原Windows5201服务，WIRED-SEND-DEFAULT收到2.337645Gbps，路由器CPU61.36%，排除Windows发端固定1.5Gbps上限。反向路由器发送WIRED-RECEIVE-DEFAULT1.548817Gbps/0重传、路由器CPU98.51%，属于CPU造流检查，不给无线转发能力设上限；临时客户端自行结束，无新服务。复用CAP2无SACK稳定区间0.5–5.1秒，数据间隙>500us共2608项/累计2.2097秒，其中2535项间隙内有ACK，数据gap p99约279us/p99.9约953us；这些是接收栈时间戳，不能当空口空闲。解析只复用已有parser，缺__file__做一次最小修正后完成，没有新抓包。
+
+NORMAL-BACKLOG-DOWN用原radio_tx读取31个中间样本：pending min/median/max0/84/124，queued0/106/499，TXBD0/0/8；29项TXBD0，只有1项pending和queued同时0。采样吞吐1.364818Gbps低于无采样约1.49，不作新基线，且粗采样不能排除短暂空队列；结果不支持长期等发端供包，继续聚焦取走WD后的无线服务效率。未加载队列探针。
+
+沿原厂HE关联元数据发现当前JOIN固定id|8b040000，HE/trigger/bandwidth字段全0。实际_hal_stainfo_to_macrinfo@1a8390在HE且role linked2时置trigger/HE，带宽从sta+44生成；mac_h2c_join_info@22dc7c编码trigger bit12、HE bit13、DL_BW bits15:14。16组HE/HT、BW0..3、linked0/2实际执行通过。原厂填充取PPE/trigger能力，不能直接假定。hostapd原始HE能力查询临时20行Unix socket工具缺time头修正后仍超时，停止并删除设备可执行文件，不再维修工具。限定诊断仅补已知HE160的f000位，未知填充值不动，关闭轮也重复相同JOIN排除单纯重发影响。OFF/ON/OFF：TCP下行1.492943/1.494536/1.477208G，上行1.685467/1.663571/1.691309G（重传0/4/0），UDP2G下行1.844627/1.845311/1.838828G，丢7.6599/7.6100/7.8989%。未解除上限，部分JOIN候选未合入；完整元数据差异保留记录，不把它当已验证完整正确性修复。helper卸载恢复8b040001 doneACK=0，radio正常；artifacts/he-join及Mac JOIN-*。
+
+新的低观测开销依据：实际set_hw_ch_busy_cnt@239410（参考status.c）仅更换C654统计参考源，保留低23位，将原C8033005暂改00833005只计PHY_TXON，不改ATM调度位/收发配置；C658/C65C原始32位idle/busy差无reset。idle约1.13s冒烟总增长1.150695百万，支持微秒尺度但分析用单位比值，不强定单位。每组开始/结束校验cfg保持00833005，无中途重置或回绕，结束恢复C8033005实读。
+
+无持续采样的PHY-TIME-TCP1.493017G，busy8406984，有效bits/busy1777.23；UDP2G1.841335G，busy9155883，比值2011.93。限定同速UDP1.5G收到1.494421G，busy7794394，比值1918.73；默认TCP复测1.475147G，busy8425376，比值1751.20。计数窗口包含测速前后状态读，故busy_fraction不是精确测试期占空比，但总发射时间/有效数据仍显示TCP效率较低。
+
+最后仅将既有TXSTS每秒查询与该时间计数放在同组：PHY-RETRY-TCP收到1.490793G，OK184796/retry27539，每百成功14.9024，bits/busy1774.49；同速UDP收到1.491714G，OK187501/retry12587，每百成功6.7130，bits/busy1891.63。去掉首陈旧report，后续report均不同；统计窗口近似同测速但并非逐MPDU严格匹配。按等MPDU/等PHY成本近似乘(1+retry/OK)，结果2038.93/2018.61，差约1%。这不是实际逐重试airtime，不能严格证明重试解释全部损失，但足以取消当前“另加TCP填充损耗”候选；接下来优先正常TCP额外MAC重试原因，不重开BK、EDCA扫描、RTS扫描或ZLD观察工具。此轮无产品改动，完整目标仍未达成。
