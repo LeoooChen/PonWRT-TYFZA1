@@ -95,6 +95,24 @@ static inline void rtl_ax_station_cmac_he(u8 out[68], u8 padding)
 	rtl_ax_store32(out + 28, (rtl_ax_ap_read32(out + 28) & ~0xffU) | padding);
 }
 
+static inline void rtl_ax_station_join(u8 out[4], unsigned int macid,
+	unsigned int bandwidth, const struct ieee80211_sta_he_cap *he, unsigned int nss)
+{
+	u32 value = macid | 0x8b040000 | bandwidth << 14;
+
+	if (he->has_he) {
+		/* Actual HAL JOIN uses PPE80 even for a 160MHz peer; absent PPE
+		 * leaves the original zero-filled PPE table, which selects 8us. */
+		u8 padding = he->he_cap_elem.phy_cap_info[6] &
+			IEEE80211_HE_PHY_CAP6_PPE_THRESHOLD_PRESENT ?
+			(rtl_ax_he_padding(he->he_cap_elem.phy_cap_info, he->ppe_thres, nss) >> 4) & 3 : 1;
+
+		value = macid | 0x8b003000 | bandwidth << 14 | padding << 18 |
+			((he->he_cap_elem.mac_cap_info[1] & IEEE80211_HE_MAC_CAP1_TF_MAC_PAD_DUR_MASK) >> 2) << 16;
+	}
+	rtl_ax_store32(out, value);
+}
+
 static inline void rtl_ax_peer_cam(unsigned char out[60], unsigned int macid,
 	const u8 *self, const u8 *peer, unsigned int aid, bool valid)
 {
@@ -133,7 +151,7 @@ static inline void rtl_ax_role_create(unsigned char out[4], unsigned int macid)
 static inline void rtl_ax_role_join(unsigned char out[4], unsigned int macid)
 {
 	/* Original open legacy self-station creation: DISCONN=1,
-	 * SCC band0/port0, TF padding1, net_type AP3, wifi AP2, self AP1.
+	 * SCC band0/port0, DL_T_PE1, net_type AP3, wifi AP2, self AP1.
 	 * AP enable and peer association have subsequent role transitions. */
 	rtl_ax_store32(out, macid | 0x4b040100);
 }

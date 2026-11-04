@@ -376,3 +376,18 @@ HE门槛恢复轮：TCP下行1.420070G/retry9.8271每百成功、上行1.681945G
 临时Windows后台启动方式未保留监听，唯一修复改为持久SSH前台server后冒烟2秒0丢通过；第二次del_client超时，直接用现有iw/PE peer确认无手机后取消重复调用，不维修ubus。无效冒烟不作归因。结束停止5212监听进程、删除两条临时防火墙规则及日志，原5201保留；没有修改产品源码、模块或flash。原始TCP1.8/UDP1.9低丢包目标仍未完成。来源Mac ACKPATH-*及ackpath-results.json。到此停止无实际差异的CCA参数方向，不重复已关闭的BK、EDCA/RTS/超时、源XOFF或补池试验。
 
 收尾读回：creditfinal/phy24、boot a56cceb0保持，ARM submitted/completed4420、NI sent/recycled6772495，pending/failed/unmatched均0；C300003f642b、C654c8033005，无辅助模块或路由器iperf。Windows5212监听数0、临时防火墙规则数0，原5201 PID18992保留。list_bans限定3秒仍超时，未宣称查询返回空；本轮只请求20秒临时ban、距请求已超过数分钟，未设置永久ban，也未为此重启hostapd。
+
+
+### 2026-11-05：完整 HE peer JOIN 与 trigger CAM 对齐
+
+反向小包重试链继续核对关联元数据。此前只补JOIN f000的临时试验未覆盖TF padding、DL_T_PE及地址CAM trigger。实际_hal_stainfo_to_macrinfo@1a8390读取sta+2504 bits55:54作为TF padding、根据sta+2624+(nss-1)*4的PPE80生成DL_T_PE（即使160MHz也取80字段），HE且role linked2同时设trigger/is_hesta；mac_h2c_join_info@22dc7c编码bits12/13、BW15:14、TF17:16、PE20:18。role_info_init@22e7cc还将trigger拷至a_info.tf_trs，fill_addr_cam_info@1e773c输出CAM byte32 bit14。之前代码始终legacy JOIN8b040000且CAM trigger0，能力变化只更新RA/CCTL、不更新JOIN。
+
+现有get_sta_ies仍3秒超时，未修查询工具；只读小模块通过当前creditfinal DWARF确认hw14064/ap_vif16256后读取Linux已有STA。Mac HE160/nss2，MAC010808800088、PHY4c3002807d019f080ccc00、PPE791cc7711cc771：TF padding2=16us、PPE每SS每RU值56对应DL_T_PE2。因此该peer JOIN应8b0af001、CAM32应4001。修正原注释：旧8b040000中的1是DL_T_PE，不是TF padding。
+
+产品修改仅role.h/monitor.h：从实际HE能力/PPE和受限NSS/BW生成JOIN，在正常station_add的两次地址CAM写入加HE trigger；带宽/NSS变化的ra_update_work同步JOIN。无PPE时保留原厂零初始化PPE80的8us语义，不把nominal padding误用于该JOIN字段；自角色创建/删除及非HE处理保留。PE代码/二进制不变。测试scripts/test_radio_he_join.py编译实际native helper，与原厂PPE parser→HAL producer→JOIN及CAM encoders比较800组，包含HE/legacy、BW0..3、NSS1/2、不同RU mask/缺PPE、随机PPE和TF时长；通过。另96组底层字段验证通过。完整ARM64模块编译通过。旧test_wifi_station_release夹具缺少现有HE/BA/ra字段而编译失败（含新helper类型），不将其记为通过，未扩大修复旧夹具。
+
+临时同关联JOIN+全量CAM重写的第一组不代表正常产品路径：三轮上行PE_uplink_frames增量均0，ARM_exceptions约13万/轮，上行只0.592/0.570/0.592G，开启轮630次重传；下行1.194/1.378/1.206G。全量CAM在已安装密钥的关联中重发后出现全ARM接收，尚未单独定位具体CAM安全字段，不能把此组当正常候选收益/回归证据。辅助工具退出/删除，不继续维修；改用正式station_add在密钥安装前写正确字段。
+
+正式无开关RAM rtl_ax_ap_hejoin SHA2245af9edc1fd1cf3b55a9d2b7f3d4f13c36ee7a5f21072f8e85609d5da71dab，PE SHA65869939084cd2c83e12ddd1592c001bf6b0e9097aeec0683138d036ef180e9f与creditfinal相同。加载时原hostapd忙循环阻塞wifi up，服务日志明确SIGTERM不能处理；仅一次/etc/init.d/wpad restart后恢复，未修改hostapd，phy26/CAC60s完成，Mac重新关联/密钥/BA均成功，ubus恢复。完整产品上行首轮1.209494G/44重传且逐秒1.608→0.782→1.452，未忽略；后两次1.669741/1.687334G均0重传。下行1.484723/1.493733G。上行各轮PE转发1018274/1414596/1431156帧，默认下行ACK PE176417/163662帧，确认正常快速路径。UDP2G上行发1.865131/收1.858769G、丢449(0.02786%)，MacCPU98.64%；下行发1.998585/收1.849946G、丢126961(7.35223%)。
+
+保留价值是正确上报已经协商的HE关联能力，正式路径无持续吞吐退步证据；没有稳定提速结论，更没有完成TCP1.8/UDP1.9低丢包验收。最后boot a56cceb0、phy26、ARM pending0、NI pending0/failed0（退休3个）、unmatched0，RPS8、EDCA003f642b、C654c8033005、临时ban为空，无诊断模块/测速进程，原Windows5201保持。flash未写。来源worktree artifacts/he-join-full、Mac JOIN-FULL-*（临时路径无效组）、HEJOIN-PRODUCT-*及hejoin-product-results.json。

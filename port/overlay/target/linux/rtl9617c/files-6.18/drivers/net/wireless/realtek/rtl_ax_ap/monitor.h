@@ -692,6 +692,7 @@ static int rtl_ax_station_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 	memset(&radio->tx_ba[id], 0, sizeof(radio->tx_ba[id]));
 	ether_addr_copy(radio->tx_ba[id].address, sta->addr);
 	rtl_ax_peer_cam(cam, id, vif->addr, sta->addr, 0, true);
+	if (sta->deflink.he_cap.has_he) rtl_ax_store32(cam + 32, id | BIT(14));
 	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0, cam, sizeof(cam), true);
 	if (ret)
 		goto remove;
@@ -701,12 +702,14 @@ static int rtl_ax_station_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 	ret = rtl_ax_station_connected_table(radio, id, sta);
 	if (ret)
 		goto remove;
-	/* Original connect transition: self AP_CLIENT2, AP3, legacy TF padding1. */
-	rtl_ax_store32(command, id | 0x8b040000);
+	rtl_ax_station_join(command, id, min_t(unsigned int, radio->channel.bandwidth,
+		sta->deflink.bandwidth), &sta->deflink.he_cap,
+		min_t(unsigned int, sta->deflink.smps_mode == IEEE80211_SMPS_STATIC ? 1 : sta->deflink.rx_nss, 2));
 	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 0, command, sizeof(command), true);
 	if (ret)
 		goto remove;
 	rtl_ax_peer_cam(cam, id, vif->addr, sta->addr, sta->aid, true);
+	if (sta->deflink.he_cap.has_he) rtl_ax_store32(cam + 32, id | BIT(14));
 	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0, cam, sizeof(cam), true);
 	if (ret)
 		goto remove;
@@ -1206,7 +1209,7 @@ static void rtl_ax_ra_update_work(struct wiphy *wiphy, struct wiphy_work *work)
 	if (!radio->ap_started) return;
 	for (id = 1; id < 128; id++) {
 		struct ieee80211_sta *sta;
-		u8 command[16], cmac[68] = {};
+		u8 command[16], cmac[68] = {}, join[4];
 		u32 rate, caps;
 		bool configured, he;
 		int ret = 0;
@@ -1217,6 +1220,9 @@ static void rtl_ax_ra_update_work(struct wiphy *wiphy, struct wiphy_work *work)
 		sta = ieee80211_find_sta_by_ifaddr(radio->hw, radio->tx_ba[id].address, radio->ap_vif->addr);
 		configured = sta && rtl_ax_ra_peer(radio, sta, id, command, &rate, &caps, true);
 		he = configured && sta->deflink.he_cap.has_he;
+		if (configured)
+			rtl_ax_station_join(join, id, min_t(unsigned int, radio->channel.bandwidth,
+				sta->deflink.bandwidth), &sta->deflink.he_cap, (command[3] & 7) + 1);
 		if (he) {
 			rtl_ax_store32(cmac, id | 0x80);
 			rtl_ax_store32(cmac + 28, rtl_ax_he_padding(sta->deflink.he_cap.he_cap_elem.phy_cap_info,
@@ -1226,6 +1232,7 @@ static void rtl_ax_ra_update_work(struct wiphy *wiphy, struct wiphy_work *work)
 		rcu_read_unlock();
 		if (!configured) continue;
 		if (he) ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 2, cmac, sizeof(cmac), true);
+		if (!ret) ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 0, join, sizeof(join), true);
 		if (!ret) ret = rtl_ax_command_flags(radio, RTL_AX_H2C_LONG_DATA, 2, 1, 0,
 			command, sizeof(command), false, false);
 		spin_lock_irqsave(&radio->command_lock, flags);
