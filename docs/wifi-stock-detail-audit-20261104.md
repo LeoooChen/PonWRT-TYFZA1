@@ -80,3 +80,17 @@ TCP1.428Gbps：桶3(0x2000)6508、桶18(0x7000)2821；UDP1.797Gbps：桶3为1572
 30秒UDP OFF采样复现两个发送冻结区间，pending124且没有RPQ。在多个连续样本中，Mac的PE状态为awake、硬件C2C0 sleep与9EB0 pause位也清零，排除“持续暂停未清除”这一解释。两个peer的RX trigger config均为0，无U-APSD；虽然原厂U-APSD host_getpkt通知确有遗漏，它不解释本次停顿。已有WP持有问题先于/独立于部分PS转换。
 
 下一条证据链是原厂软件批次结束BK的默认开关和额度边界；不能未验证就以任意batch8/64替代。正常RAM模块已恢复，诊断读取模块已移除。
+
+### CMAC实读与WDE队列定位
+
+原厂软件额度BK默认开关为0，没有固定64包必须BK的依据。实际HAL最终将CMAC max_agg_num_sel清零；native一致。执行原厂`__dump_mac_mem`确认CMAC读取窗口后，实机MACID1读回word2=`0x2000`、word3=`0x3e`，MACID2为`0x2000`/`0x17e`，分别对应当前64/128窗口。没有配置漏写证据。
+
+临时按原厂WDE DFI查询group0，OFF停顿期间连续读到`ffffffef`，MACID1四AC的空位图为`e`。在发送/完成计数连续约14秒不变、124 owner持有且Mac sleep/pause清零的同时，至少一个MACID1硬件AC队列仍非空。因此下一步应定位队首及消费条件，不能再把问题只归于RPQ回报丢失。
+
+三份实际已发布WD快照均能将124个held owner匹配到124个MACID1 MPDU；SN连续、各包WD长度等于SG长度之和、末项LS正确。两次独立停顿最早未完成两包均为10524字节A-MSDU紧接1510字节普通MPDU，BK均为0；后续另一个1510字节包已有context BK。期间Mac TX BA未重建。对快照各最早三包执行实际原厂TXSC floor逻辑和encoder，9/9前56字节完全一致；原厂7/1地址对应106/70字节TXBD实际长度，亦一致。这是故障边界证据，尚不是根因。
+
+追加物理报文头ioremap诊断时设备重启，该次实验无有效header快照，诊断撤销。恢复已验证stockdetail模块、所有helper卸除后，默认TCP下行1.433Gbps，运行恢复但吞吐目标仍未达到。后续header读取只沿NI已经分配的CPU DMA映射；原厂队首查询限定GET_FIRST/GET_NEXT，不移动队列。
+
+通过NI原有coherent CPU映射补齐报文头后，QMAC停顿的124包头序号均与WD一致，原厂GET_FIRST/GET_NEXT连续三次返回完全相同的124个Q0 packet ID，Q1–3为空。新边界10524→4524两包同为A-MSDU且retry floor相同，因此故障不要求A-MSDU到普通帧或floor切换。原厂SG encoder、HDR_LLC_LEN、preload配置进一步对照无字段差异。
+
+QHEAD2进一步以shared-buffer `0x18700000 + PID*64`读回硬件队首：前两个PID为`4be/65c`，内容WP=`8133/8134`、SN=`3823/3824`与最早held两个WD相符，分别为10524/3024字节A-MSDU。硬件长度已各加8并插入PN。三次队首及124项链未变；下一步限定于硬件改写的WD状态与队首消费条件。该轮UDP诊断约1.104Gbps并长停顿，不计验收；结束恢复生产模块，未将去掉BK合入。
