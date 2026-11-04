@@ -361,3 +361,18 @@ NORMAL-BACKLOG-DOWN用原radio_tx读取31个中间样本：pending min/median/ma
 
 
 HE门槛恢复轮：TCP下行1.420070G/retry9.8271每百成功、上行1.681945G/0重传、UDP2G1.850648G/7.2653%。两侧1023的retry13.33/9.83夹住0的11.85，没有稳定原厂门槛收益，且三轮跨关联/颜色变化；不合入、不重复门槛试验。结束运行配置与备份cmp一致，删备份和beacon_read设备文件；ARM/NI pending0、failed0、RPS8、PEDIV40404、EDCA003f642b、C654c8033005、WD12=0，无辅助模块/测试进程，临时ban为空。RAM creditfinal/mac80211_rxbasync保留，flash未写。本轮无产品变更，唯一新主线证据是双向小包流量可诱发额外下行重试，未证明最终根因。
+
+
+### 2026-11-05：旧 PE 结果复核及反向小包的接收路径对照
+
+再次核对旧记录而不重复测速：tcp-down为P4/w4M/30s、1.558480Gbps、TCP重传0；此前当前版本同参数已测1.53923Gbps。旧单流上传w4M为1.55002/1.55337Gbps；当前默认上传已有约1.68Gbps/0重传。因此没有旧PE整体吞吐能力退化的依据。旧Linux ponfeed使用EQ背压和16MiB bfifo，stop/wake各10212且NI no_buffer0；这说明其低TCP丢包有不同的供包条件。旧快照的iw tx retries0没有覆盖PE空口重试，不能与当前TXSTS重试直接比较。原厂对齐修复全部保留。
+
+按反向小包诱发重试这一链条，只读复核实际rtk_wifi6.ko cmac_init@23f100–23f430：C33C低7位C=3e/XB=40、C340清BTCCA、ASIC保留其余CCA位、9D00 bit11为0才设C338低5位16、C的C340高字节6a，均与native及旧PE版本一致。当前9D00=80001f3f（bit11=1），C338=103c0209，所以当前prebackoff9不构成漏写16的证据。C390=712100ff，CC00/CC04、slot9和已查T2R原厂分支一致；正确BAR地址a0410608读1e1e1e1e、a0410624读0101030a。先前误读a04010608的0无效。没有改寄存器，没有CCA/退避/时序候选。
+
+共享QoS序号也沿已有实现核对：ARM raw BIT22与NI BIT18都由同一PE的sequences[macid*8+tid]分配；ACKLOAD开启轮ARM submitted仅+2，关闭两侧+1/+0，不支持ARM发送插入解释大批重试。不新增序号观测工具。
+
+限定ACKPATH对照将额外Mac无线UDP24B/3M的接收端由路由器本机改为Windows物理有线5212，主下行仍UDP1.5G，radio模块/关联/策略不变。OFF-A/WIN/OFF-B收到1.495179/1.485875/1.495759Gbps，MAC retry/100成功MPDU=2.2213/8.5490/2.0352；UDP丢2713/11121/2965（0.20936/0.85844/0.22868%）。辅流12秒收到187514包、2.998901Mbps、0丢包。每秒既有TXSTS去掉首陈旧报告，剩余序号独立；WIN和OFF-B前后仅Mac，OFF-A前快照还有手机、结束已无，因此因果判断主要依WIN/OFF-B及前一组ACKLOAD的重复效应。这支持小包反向空口本身的影响不依赖路由器本机UDP接收；不证明全部TCP差距由碰撞或某字段解释。
+
+临时Windows后台启动方式未保留监听，唯一修复改为持久SSH前台server后冒烟2秒0丢通过；第二次del_client超时，直接用现有iw/PE peer确认无手机后取消重复调用，不维修ubus。无效冒烟不作归因。结束停止5212监听进程、删除两条临时防火墙规则及日志，原5201保留；没有修改产品源码、模块或flash。原始TCP1.8/UDP1.9低丢包目标仍未完成。来源Mac ACKPATH-*及ackpath-results.json。到此停止无实际差异的CCA参数方向，不重复已关闭的BK、EDCA/RTS/超时、源XOFF或补池试验。
+
+收尾读回：creditfinal/phy24、boot a56cceb0保持，ARM submitted/completed4420、NI sent/recycled6772495，pending/failed/unmatched均0；C300003f642b、C654c8033005，无辅助模块或路由器iperf。Windows5212监听数0、临时防火墙规则数0，原5201 PID18992保留。list_bans限定3秒仍超时，未宣称查询返回空；本轮只请求20秒临时ban、距请求已超过数分钟，未设置永久ban，也未为此重启hostapd。
