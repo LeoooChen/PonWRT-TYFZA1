@@ -520,7 +520,7 @@ static void __attribute__((section(".rxq"), noinline)) ni_recycle(volatile u32 *
 	/* ARM changes the EQ/CPU assignment only while this radio is paused. */
 	u32 eq = mailbox[117];
 	volatile u32 *push = ni + mailbox[116] / 4;
-	u32 recycled = 0, released = 0;
+	u32 recycled = 0, released = 0, credit = 0;
 
 	for (;;) {
 		u32 dropped = mailbox[47], consumer = mailbox[46];
@@ -528,9 +528,10 @@ static void __attribute__((section(".rxq"), noinline)) ni_recycle(volatile u32 *
 		sync();
 		u32 id = dropped ? dropped - 1 : *(u32 *)(memory + 0xc800 + consumer * 4);
 		u32 buffer = owners[id * 2], returned = 0;
-		/* PE1 is the sole running producer for this EQ. Reserve the sampled
-		 * inactive BIDs locally; each accepted push consumes one credit. */
-		u32 credit = ni[(0x6328 + eq * 4) / 4] & 0x3fff;
+		/* PE1 alone pushes to this EQ. Carry unused credit across this
+		 * call's MPDUs; every accepted PUSH consumes one sampled BID. */
+		if (!credit)
+			credit = ni[(0x6328 + eq * 4) / 4] & 0x3fff;
 		/* A WP owns one completed MPDU. Account its BID chain together,
 		 * retaining the unreturned suffix when either hardware credit stalls. */
 		do {

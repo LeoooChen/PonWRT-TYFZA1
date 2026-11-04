@@ -308,3 +308,21 @@ PS-SCAN同关联OFF/ON/OFF，手机六轮前后均未关联：默认TCP下行1.4
 继续核对实际update_sta_he_info_apmode@af95c（内联MAC/PHY处理，MCS/PPE另调）：零/5/63初值及4种HE能力模式共12组保留sta+2513，内存写监测没有触及该字节；参考AP producer也没有复制AP广播颜色。这里更正实验前“原厂会把同一广播颜色写入AP客户端CAM”的过强表述：原厂底层会透传输入，但尚未证明本机AP producer给非零输入，不能将CAM0定性为已确认缺陷。此分支停止，无产品补丁。证据worktree artifacts/bss-color/{verify_stock.py,stock-fields.json,verify_ap_producer.py,ap-producer.json,color_probe.c}；Mac COLOR-*、color-results.json。
 
 本轮仅增加定位证据，没有产品或工具修复；主仓全部已接受修复保留。最后OFF-B正常上行1.687897Gbps/0重传、下行1.485192Gbps、UDP下行1.837527Gbps/7.9608%，未达TCP1.8/UDP1.9及低丢包目标。清除本轮辅助模块，恢复CAM0/RTS关闭，flash未写，不重开BK、队列阈值、EDCA、超时和填充观测分支。
+
+
+### NI 回收批次复用剩余额度
+
+先复用本轮已有前后快照排除ARM小包插入解释：六轮正常TCP下行约17.7–19.3万PE MPDU，ARM submitted增量仅0–21，不能解释数千聚合break；未加新诊断。沿NI排空固定开销核对实际ca-ne：ca_ni_rx_napi .nictrx-sec 13fc读inactive BID计数，1414把整份数量传给refill；ca_ni_refill_eq_buf_pool_with_rule_zero@6d0在714循环PUSH，不逐个重读额度。native同MPDU已经使用局部credit，跨完成MPDU仍重复MMIO读。本机运行时ARM仅补EQ4/5，PE1独占当前无线EQ6；PE代码保持每BID ready检查和PUSH后完整sync。
+
+限定改动把credit移到ni_recycle调用局部，只有credit==0才重新读取，接受一次PUSH就减1；跨调用不缓存。保留所有ownership、PS/TID、回收统计及busy行为。硬件新释放只增加可用额度，局部剩余是可用量下界。若原快照在一个MPDU中途用完，沿用原部分回收出口，下个主循环再获取，最多延后剩余链到下次调用，不强行无界排空。实际链接16个7BID MPDU的计数由16次额度读降1，112次ready读不变；初始7额度且硬件追加时读2次。测试覆盖零额度、MPDU中途耗尽、MPDU边界/中途busy、跨completion126→14、已归还BID立即覆写、续调无重复，全部通过。原RPQ1024MPDU/2048BID、PS预算、七BID顺序、TX发布、IMEM通过，保守栈6744<8176。
+
+临时MB221诊断同关联OFF/ON/OFF：默认TCP下行1.413335/1.478999/1.432756Gbps，UDP2G1.841505/1.840619/1.834400Gbps，丢7.7866/7.7973/8.1168%。TCP的no_buffer93/42/159，UDP均计数饱和；failed/retired/RXQ_RDU增量均0。反向顺序确认ON/OFF/ON的TCP1.470502/1.490835/1.471722Gbps，UDP1.840425/1.830517/1.837282Gbps，丢7.8447/8.3631/7.9920%。第二组不支持稳定TCP提升，因此不称吞吐根因修复；按明确减少重复MMIO及原厂批量额度契约保留最小改动，未改变资源数量或无线策略。
+
+无开关最终PE SHA256=65869939084cd2c83e12ddd1592c001bf6b0e9097aeec0683138d036ef180e9f；rtl_ax_ap_creditfinal模块SHA256=ebf0dedb8d615ea74bc8e2943b1d553a81629130f7ca731771e8d63100931f01。最终无开关实际代码重跑上述六套验证通过。产物worktree artifacts/recycle-credit，实机Mac CREDIT-*及credit-results.json、credit-confirm-results.json。最终RAM验收随后记录，目标仍TCP1.8/UDP1.9且低丢包。
+
+
+无开关最终版首次phy20验收：默认TCP上行1.232523Gbps/0重传，前5秒1.62–1.72、7–9秒0.455/0.342/0.209并有+24sleep/+25wake；下行1.488273Gbps。UDP2G上行发1.719081/收1.709070Gbps、丢341（0.02297%）、Mac CPU98.37%；下行收1.844196Gbps、丢131914（7.63808%）。上行单次复测1.640576Gbps/45重传，未将这些异常忽略为“必然无关”。
+
+为补足上行直接回归证据，恢复同一诊断版phy22再做OFF/ON/OFF：TCP1.368145/1.682120/1.691893Gbps，全部0重传。首个OFF同样在后3秒1.227/0.449/0.197发生低谷、sleep/wake各+23，说明低谷不以本改动开启为必要条件；不重开PM或BK分支。UDP发1.897636/1.902630/1.904928Gbps，收1.892780/1.844143/1.894631Gbps，丢648/650/247（0.03952/0.03954/0.01501%）；ON接收统计时长10.320975秒，OFF10.022742/10.023290秒，收到总字节2.371/2.379/2.374GB基本相近，仍按原始received速率报告，不用统一时长替代验收。不据单个不同计时轮证明稳定吞吐回退或提升。来源CREDIT-FINAL-*、CREDIT-UP-*、credit-up-results.json。
+
+保留依据为明确减少MMIO且最小所有权契约不变，实机无新回收/失败状态。目标吞吐和低丢包仍未达到。最终恢复无诊断开关rtl_ax_ap_creditfinal；mac80211_rxbasync与全部前序修复保留，flash不变。

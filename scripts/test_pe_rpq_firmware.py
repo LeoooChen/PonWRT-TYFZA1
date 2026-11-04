@@ -150,7 +150,7 @@ for batch in range(64):
     run()
     assert get(mailbox + 120) == 0 and returns[old_returns:] == buffers
     assert recycle_writes == [(mailbox + 116, len(returns)), (mailbox + 120, 0)]
-    assert len(credit_reads) == 16
+    assert len(credit_reads) == 1, len(credit_reads)
     rpq_consumer = (rpq_consumer + 1) & 255
 
 # Model the ARM reader while PE overwrites one of the sixteen retained records.
