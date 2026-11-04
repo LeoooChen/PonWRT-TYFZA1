@@ -9,7 +9,7 @@ import tempfile
 
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / 'analysis/python-deps'))
-from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_MEM_READ
+from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_MEM_READ, UC_HOOK_CODE
 from unicorn.mips_const import (UC_MIPS_REG_A0, UC_MIPS_REG_A1, UC_MIPS_REG_A2,
                                UC_MIPS_REG_SP, UC_MIPS_REG_RA, UC_MIPS_REG_V0)
 
@@ -139,3 +139,32 @@ for wrap, raced in ((0, False), (1, False), (0, True), (1, True)):
     assert call('ni_select') == 0 and get(BASE + 0x11804) == 1
     assert get(BASE + 0x1b800) == 18
 print('Linked PE: wake/sleep revokes queued and snapshotted old grants; fresh grant releases once; version wrap passed.')
+
+# An unchanged command is only polled; no acquire or grant-content read is needed.
+B=BASE
+counts={'sync':0,'generation':0}
+def observe_code(uc,address,size,data):
+    if bytes(uc.mem_read(address & 0x1fffffff,4)) == b'\x0f\0\0\0':
+        counts['sync'] += 1
+def observe_generation(uc,access,address,size,value,data):
+    counts['generation'] += 1
+code_hook=u.hook_add(UC_HOOK_CODE,observe_code)
+data_hook=u.hook_add(UC_HOOK_MEM_READ,observe_generation,begin=B+0xe814,end=B+0xe817)
+u.mem_write(B,bytes(0x20000));put(B+0x19e04,8);put(B+0xe818,8)
+call('ni_ps_scan')
+assert counts=={'sync':0,'generation':0},counts
+u.hook_del(code_hook);u.hook_del(data_hook)
+# Publication just after the equality read is serviced on a later scan.
+u.mem_write(B,bytes(0x20000));put(B+0x19e04,2);put(B+0xe818,2)
+def publish(uc,access,at,size,value,data):
+    put(B+0x19e04,4);put(B+0xe814,20);put(B+0xe81c,0);u.hook_del(h)
+h=u.hook_add(UC_HOOK_MEM_READ,publish,begin=B+0xe818,end=B+0xe81b)
+call('ni_ps_scan');put(MB+196*4,0);call('ni_ps_scan');assert get(B+0xe818)==4 and get(B+0x19a08)==20 and get(B+0x19a0c)==1
+# The scan still wraps MACID127 to MACID1, including after early return.
+u.mem_write(B,bytes(0x20000));put(MB+196*4,126)
+call('ni_ps_scan');assert get(MB+196*4)==127
+call('ni_ps_scan');assert get(MB+196*4)==1
+# A full version rollover is processed when the ACK still holds fffffffe.
+u.mem_write(B,bytes(0x20000));put(B+0xe818,0xfffffffe);put(B+0xe814,23)
+call('ni_ps_scan');assert get(B+0xe818)==0 and get(B+0x19a08)==23 and get(B+0x19a0c)==1
+print('PS scan: unchanged versions skip both syncs; racing and wrapped new grants still cancel once; MACID127 wraps to1')

@@ -267,3 +267,16 @@ OFF/ON/OFF默认TCP1.305/0.804/1.481Gbps；UDP2G1.848/1.830/1.840Gbps，丢7.47/
 此前正常重试/T2R核对也结束：live C62C=20200000，与原厂参考MIB默认31经实际rtw_hal_mac_set_tx_retry_limit_all_sta@1a9ed0加一后的32一致；C IC init@2e14c4只写a10/2a10，live10624=0101030a/10608=1e1e1e1e与原厂PHY表一致，不能复制XB专用15/9时间配置。EDCCA原有3072向量核对仍有效，没有新差异。不改重试/时序、不重开BK分支。
 
 最终无开关模块rtl_ax_ap_eppfinal/phy12：默认TCP上行1.675232Gbps/0重传；首次下行1.138554Gbps，最后3秒0.793/0.155/0.074Gbps，未忽略此异常；UDP完成后默认下行复测1.490533Gbps。UDP2G上行发1.873873/收1.863058Gbps、丢650（0.04014%），下行发1.997969/收1.830260Gbps、丢144596（8.364%）。这组最终测试手机未隔离；此前同关联隔离A/B支持本改动无稳定TCP退步，最终单轮低谷不作新归因。原始吞吐验收仍未满足。结束ARM/NI pending0、failed0、EDCA003f642b、RPS8、临时ban为空、无诊断开关或本轮测速进程，boot a56cceb0不变；mac80211_rxbasync继续保留，flash未写。
+
+
+### 正常发送填充观测与 PS 扫描候选
+
+保持0b4863b/eppfinal，复用已有mac_tx_debug采样程序，仅追加原厂CA20用户0选择和CA24/CA28/CA20读取。idle800项ZLD全0；同关联隔离手机的AIR-FILL-TCP1.471315Gbps、UDP2G收到1.835484Gbps。TCP/UDP各800项CA24低10位中位848/864、饱和1023各16/7项。单位未确认，不换算空口占比；顺序mux读取不等于独立完整PPDU，不能用样本数量当PPDU数量。MPDU与DMA计数相等且HE字段前后相同的常见组合：TCP63MPDU/168符号，UDP24/65、32/86、40/106，与当前约7MSDU/MPDU的数据量基本相符；不支持据此修改填充阈值。程序已退出并删除，CA20恢复01010100、CAE4恢复0，未更改生产行为。
+
+旧TXSTS原始32B的offset20..31出现a5a5和固定地址，不能强行按较新SDK解码RTS/PPDU数字；已有OK/retry/total口径保留，没有新报告工具。缺失opcode11的0x38a仍不能由这些观测补成可靠的pre/mid/post平均值。
+
+沿正常PE1固定处理成本，ni_ps_scan每轮对一个MACID先ni_ps_grant（两次sync及内容读取），之后才比较command与PE已处理ps[2]。该扫描与原厂事件式stop/wakeup语义的适配有关，但重复读取不是原厂要求。限定候选只提前比较version==ps[2]，相等本次返回；不读新授权内容，不改变127站点轮转、新授权完整ni_ps_grant及原8TID检查/事件发布。测试实际PE120组旧新状态、0xfffffffe回绕、并发新授权下一扫描处理、未变化不读generation通过；启用条件下原PS budget、wake撤销及TX publication/IMEM通过。临时MB221开关/module046f0581636feff2522b8c72041ce11dc0911e0e9a85a5a5e61c8b3071a3770f、PE3115d8165cb78a0c06899ec087bf1e9021ff256ae7173556cee088549a47046d，源码构建后恢复。该阶段仅为RAM候选；后续结果如下。
+
+PS-SCAN同关联OFF/ON/OFF，手机六轮前后均未关联：默认TCP下行1.476129/1.459377/1.245579Gbps，恢复轮后半段明显下降，不能称稳定提速；UDP2G收到1.839691/1.850317/1.841480Gbps，丢7.881/7.361/7.690%。没有明显UDP退步或新的数据所有权错误。按减少固定处理成本保留提前version==ack判断，不将它称为已找到吞吐根因。最终版本仅新增版本/ACK读取和相等返回（连注释5行），新授权仍完整获取。新旧实际二进制120组状态/事件比较一致，已处理偶版本sync2→0；最终原有PS wake/queue budget/publication、IMEM和新增无grant读取/竞态/版本及MACID回绕回归通过。诊断开关去掉，产品模块de4dbfecb7d270e384d8c287e32a22df3e35210d2a879489a8ed3d554757c794，PE8a48f08278629905bdd525d5fed46031422539908b6a1d97b3e13d5ec05d6cdb。
+
+最终RAM rtl_ax_ap_psfinal/phy16：默认TCP上行1.682167Gbps/0重传；首次下行0.905050Gbps（1秒区间1.301/1.405/1.482/1.410/1.127/0.320/0.120/0.140/0.783/0.959），其前后仅Mac1且sleep/wake分别+25/+26，RXQ/RPQ RDU均0；随后默认下行恢复1.482141Gbps。不能把正常场景低谷归于本次扫描优化：上一已提交eppfinal首次下行1.138554低谷也仅Mac，sleep/wake各+25，先前“该组手机未隔离”的描述不足以说明这两个具体TCP轮。此证据只将正常低谷与Mac PM切换建立关联，不能倒推因果，不重开BK关闭分支。UDP2G上行发1.887185/收1.878853Gbps、丢34（0.00209%）；下行收1.842961Gbps、丢132822（7.684%）。上行host_total字段0.0129与user7.9569/system89.6044自相矛盾，记录原值但不据其判断CPU空闲。原始验收未完成。结束ARM/NI pending0、failed0、RPS8、EDCA003f642b、临时ban为空，无本轮诊断/iperf进程；mac80211_rxbasync保留，flash未写。

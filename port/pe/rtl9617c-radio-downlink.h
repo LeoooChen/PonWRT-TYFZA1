@@ -205,6 +205,11 @@ static void __attribute__((section(".rxq"), noinline)) ni_ps_scan(volatile u32 *
 	u32 macid = mailbox[RTL_AX_NI_PS_SCAN] + 1, generation, flags, command;
 	if (macid == 128) macid = 1;
 	mailbox[RTL_AX_NI_PS_SCAN] = macid;
+	volatile u32 *version = (void *)(memory + RTL_AX_NI_PS_VERSION + macid * 4);
+	volatile u32 *ack = (void *)(memory + 0xe800 + macid * 16 + 8);
+	/* No command content is consumed on this path. A new publication
+	 * is acquired by ni_ps_grant here or on the next scan. */
+	if (*version == *ack) return;
 	if (!ni_ps_grant(memory, macid, &generation, &flags, &command)) return;
 	volatile u32 *ps = (void *)(memory + 0xe800 + macid * 16);
 	if (command == ps[2]) return;
