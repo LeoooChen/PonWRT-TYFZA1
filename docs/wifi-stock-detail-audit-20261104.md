@@ -195,3 +195,14 @@ PE方向分工、主要聚合循环及当时上行修复均已保留。当前增
 最终RAM模块rtl_ax_ap_recyclefinal SHA256=7f9ad0e2fe18d18293baea8fd8d7e8cb748416b074353a6261fa6e0ed2eb3f18，PE24008字节/SHA256=71154f2a035dd3ee97a5a8ab8b4b74a325b5ad73cbcba86162f8d7f975672808，phy48。默认TCP上行1.683627Gbps/0重传、下行1.488827Gbps；UDP2G实际发送1.997347/收到1.844711Gbps、丢131749包（7.6292%）。未达到验收，也未将跨关联单次UDP提升归因于本改动。最终无诊断开关，保留BK，时钟/EDCA默认。
 
 补池依据：主仓evidence/rtl-workspace/private/tyfza1/kernel.config:2540关闭CONFIG_RTK_WFO，2336关闭CONFIG_RTK_FC_WIFI_AMSDU_OFFLOAD_BY_PE；scfg-persisted-20261005/default_scfg.txt:224配CPU pool0=768。evidence/wireless-study-20261010-ne-goal/evidence/stock/modules/ca-ne.ko中aal_l3qm_init_startup_config@5a390读取配置，aal_l3qm_init_empty_buffer@588b8–588cc对相对EQ索引2跳58a94取2048，再5890c写CFG1；CB额度5837c–583ac匹配。其.nictrx-sec ca_ni_rx_napi@ddc先调用上层RX hook，13fc/1414读inactive BID并refill；refill@740分配/714 CPU_PUSH；fill_empty@164 dev_alloc_skb_recy_eth，188写新skb到新buffer+7f8。此处证明补池不等无线RPQ，不表示旧payload提前释放。
+
+
+### NI 备用缓冲补池的 RAM 对照
+
+沿原厂NAPI补新skb这一已确认差异，限定RAM诊断分配4096个2KiB备用缓冲：EPP RD发布后按credit/readiness补新地址，旧payload仍由原WP/队列持有，RPQ或丢弃完成后只回备用链。原队列、124 owner和聚合策略不变，不复制载荷。生命周期固定到本次重启，避免已入EQ的地址被模块卸载释放。实际PE验证覆盖整组/部分替换、零备用/credit/ready、旧新地址多轮循环、载荷保持、EPP回绕和retire fence、PS超额及年龄丢弃；全部保持free+held=4096。原有EPP/RPQ/PS/publication通过，源码恢复后加载诊断模块。
+
+首次OFF/ON/OFF TCP1.457/0.311/0.685Gbps，UDP2G1.284/1.306/1.800Gbps，跨轮明显状态变化，不把低基线造成的差额视为收益。限定追加ON/OFF：TCP1.159/1.514Gbps，UDP1.373/1.402Gbps。ON期间中间样本free3506/held590、queued284/pending46，NI inactive623/active1700；OFF样本free4096/held0、queued499/pending114，inactive2496/active0。补位确实使NI保留更多可用缓冲，但逐批补池候选没有提高吞吐，UDP整轮no_buffer仍饱和。不能把此负结果概括为原厂生命周期差异无价值，也没有依据直接扩大备用池。
+
+诊断未合入。结束gate0、free4096/held0、WP pending0后直接重启，清除可能仍驻留EQ的临时地址；未rmmod或释放已发布备用内存。新boot a31ad74e-face-4509-bdcf-b2761edf4da7，正在恢复已提交rtl_ax_ap_recyclefinal。证据Mac REPLACEMENT-*、replacement-results.json、replacement-confirm-results.json；worktree artifacts/ni-replacement。诊断module SHA256 ed2c3510971abcfe04ac503f05feab74f7b47fa7845aa184d64837c47f92a35e，PE9ad50c00aaba398f5549bb84d4bb1506b3484ec7a3cae96bf0d7eecca3e6c1ab。本輪没有新增产品改动；BK关闭分支及批量/竞争窗口扫描仍终止。
+
+恢复确认：新boot a31ad74e-face-4509-bdcf-b2761edf4da7、phy2，RAM已加载rtl_ax_ap_recyclefinal（已提交48f0ba4），替换实验模块随重启消失。默认TCP下行1.516426Gbps，上行首轮1.341510Gbps/0重传；仍未达成完整验收。
