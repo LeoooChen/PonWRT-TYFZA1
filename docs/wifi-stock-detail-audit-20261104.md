@@ -226,3 +226,14 @@ PE方向分工、主要聚合循环及当时上行修复均已保留。当前增
 复用无kernel capture drop的CAP2-DOWN抓包，按ACK推进到已观察SACK右边界计算未闭合恢复区间。5200个SACK ACK集中在0.099367–0.135561s和5.207217–5.245431s，共74.408ms。5.2s所在100ms窗只有0.673Gbps，下一窗已恢复1.501Gbps；0.5–5.1s无SACK长区间平均1.503Gbps，5.8–10s平均1.490Gbps。丢包造成局部低谷，但这份记录的持续1.5Gbps上限不由长期SACK恢复解释，不能据此继续扩大缓冲/背压。该分析不推断完整cwnd，也不把所有低速轮等同这份抓包。证据CAP2-DOWN-recovery-summary.json。
 
 逐包保护条件沿用已有实际ELF结论：普通HE且无动态SMPS/ERP时RTS_EN/HW_RTS_EN均0，响应速率字段一致；未发现新候选，不重复RTS参数实验。本轮无产品代码修改。已有原厂对齐正确性修复及48f0ba4重复屏障删除均保留。mac_tx_debug已退出并删除临时可执行文件，CAE4=0、EDCA003f642b/PEDIV00040404，hostapd临时ban为空，ARM/NI pending均0，boot a56cceb0不变。原始吞吐验收未满足。
+
+
+### RX BA256 的零位图同步修复
+
+本轮检查反向ACK接收路径时，现场boot a56cceb0的190.541s日志明确出现`RX BA marker can't support max_rx_aggregation_subframes 256 > 64`，调用链为rtl_ax_rx_uplink_sync→ieee80211_rx_shortcut_sync→ieee80211_mark_rx_ba_filtered_frames。原厂支持>64 BA会话能力已纳入，但native回交仍使用64位过滤位图接口；即使filtered=0，函数仍右移diff并按实际buf_size循环BIT_ULL，BA128/256存在越界移位。这是已保留BA256能力的配套同步缺陷，不是将原厂架构复制进mac80211。
+
+新增patch220限定零位图语义：原窗口推进/received>=2048/落后diff>=buf_size的出口均不变；diff有效后filtered=0直接清零并进入原最终重排释放，避开移位及逐槽循环。非零位图仍保留64限制，接口注释同步。测试实际kernel函数，临时逆/正应用patch；BA1..64的159744组原新状态与调用序列相同，BA128/256的312组通过，旧代码4个UBSan移位反例失败，错误前移fastpath的变体被拒绝。底层skb交付和最终超时释放为记录stub，实际window-advance helper参与执行。既有test_rx_uplink_sync和RX BA cleanup通过。
+
+编译保留OpenWrt的-fno-caller-saves，mac80211模块SHA256 a1887df2e494af167ff52e3d1cb30402c4fc225b7f4549881b9ffc11c25c6179。修改前build模块.text与板载flash模块.text逐字节SHA一致，确认基线。RAM仅替换mac80211，radio仍rtl_ax_ap_recyclefinal、PE unchanged；当前phy4。修复前默认TCP上行1.649308G/7重传，下行1.487985G；修复后上行1.698083G/0，下行1.499108G，UDP2G下行收到1.834378G/丢8.0913%，上行发送1.622058G/收到1.602637G且MacCPU98.8%。跨关联不作吞吐增益归因，仍未达标；上行UDP本轮发送端未造足流量。手机重新建立TID0/4/5的RX BA256，Mac BA64，加载后无新增marker告警。结束ARM/NI pending0，无临时设置。此正确性修复保留，flash未写。
+
+附定位边界：SERVICE-AIR-TCP反向PE转发138721帧、重排14次、无RXQ/RPQ RDU，没有大量ACK重排证据。实际原厂opcode11的旧AGGCOUNT日志进一步解码：0x340的四行是1..4SS，每桶u32 report计数；TCP9473份report中9350份为2SS HE MCS10/11，UDP8824份中8803份同档。0xb3是队列时间，不能当发送airtime。22份旧日志均仅38条且止于0x343；真正ZLD均值0x38a在末尾，level2/comp64相同却未收到，不能将缺失视为0。ZLD补读尚未执行，保留这项观测缺口，不建设新通用工具。
