@@ -18,6 +18,18 @@
 #define NI_PS_PEER_LIMIT 256
 #define NI_PS_TOTAL_LIMIT 512
 
+static u64 ni_tsf(volatile u32 *mailbox)
+{
+	volatile u32 *bar = (void *)mailbox[2];
+	u32 high, low;
+
+	do {
+		high = bar[0xc43c / 4];
+		low = bar[0xc438 / 4];
+	} while (high != bar[0xc43c / 4]);
+	return (u64)high << 32 | low;
+}
+
 static void __attribute__((noinline)) ni_peer_event(volatile u32 *mailbox, u8 *memory, u32 macid)
 {
 	u32 mask = 0;
@@ -92,8 +104,10 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 	u32 target = *(u32 *)(memory + NI_EPP_RETIRE_TARGETS + cos * 4), crossed = 0;
 	/* PE1 owns queue counts; ARM changes EPP geometry only while paused. */
 	u32 queued = mailbox[38], epp = mailbox[25] + (cos << shift);
-	u32 now = mailbox[RTL_AX_NI_PS_NOW];
 	sync();
+	/* One admission turn handles at most16 EPPs without waiting. Its
+	 * timestamp error is this turn's processing time, not a watchdog tick. */
+	u64 now = ni_tsf(mailbox);
 	for (; count < 16 && consumer != producer; count++) {
 		/* One excess arrival lets selection evict a sleeping queue while
 		 * EPP keeps moving, rather than letting it retain the remaining EQ. */
@@ -155,8 +169,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		u32 *waiting = uncached(buffer);
 		/* The queue link becomes the MPDU ownership chain when selected. */
 		waiting[1] = length | header << 16;
-		waiting[2] = now;
-		if (length <= 128) waiting[3] = *(volatile u32 *)(mailbox[2] + 0xc438);
+		waiting[2] = now; waiting[3] = now >> 32;
 		if (grouped) *(u32 *)uncached(tail) = buffer;
 		else { head = buffer; group = queue; }
 		tail = buffer; grouped++;
@@ -212,7 +225,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 	static const u8 channels[8] = {0, 1, 1, 0, 2, 2, 3, 3};
 	static const u8 indicators[8] = {0, 0, 1, 1, 0, 1, 0, 1};
 	u32 *next_peer = (void *)(memory + NI_PEER_NEXT), *prev_peer = (void *)(memory + NI_PEER_PREV);
-	u32 first = mailbox[170], node = first;
+	u32 first = mailbox[170], node = first, sampled = 0;
+	u64 now = 0;
 	do {
 		u32 macid = node - 1;
 		volatile u32 *ps = (void *)(memory + 0xe800 + macid * 16);
@@ -230,11 +244,13 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			if (!(tids & 1)) continue;
 			u32 *head = (void *)(memory + NI_TID_HEAD + (macid * 8 + tid) * 4);
 			u32 buffer = *head, *waiting = uncached(buffer);
-			u32 discard = retired || (ps[0] &&
+			u32 asleep = ps[0];
+			if (!retired && asleep && !sampled) { now = ni_tsf(mailbox); sampled = 1; }
+			u32 discard = retired || (asleep &&
 				(*(u32 *)(memory + NI_PEER_QUEUED + macid * 4) > NI_PS_PEER_LIMIT ||
 				 mailbox[38] > NI_PS_TOTAL_LIMIT ||
-				 (int)(mailbox[RTL_AX_NI_PS_NOW] - waiting[2]) >=
-				 (int)*(u32 *)(memory + RTL_AX_NI_PS_TIMEOUT + macid * 4)));
+				 now - ((u64)waiting[3] << 32 | waiting[2]) >=
+				 (u64)*(u32 *)(memory + RTL_AX_NI_PS_TIMEOUT + macid * 4) * 1000000));
 			if (discard && mailbox[47]) continue;
 			if (!discard && (mailbox[30] >= 124 ||
 			    (ps[0] && (command == ps[2] || !((grant_flags >> 16) & BIT(tid)))))) continue;
@@ -242,7 +258,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			 * same opportunity; a full A-MSDU or an expired head sends now. */
 			if (!discard && !ps[0] && (waiting[1] & 65535) <= 128 &&
 			    *(u32 *)(memory + NI_TID_QUEUED + (macid * 8 + tid) * 4) < 8 &&
-			    (u32)(*(volatile u32 *)(mailbox[2] + 0xc438) - waiting[3]) < 4000) {
+			    (u32)(*(volatile u32 *)(mailbox[2] + 0xc438) - waiting[2]) < 4000) {
 				continue;
 			}
 			/* Commit this selection only while its grant snapshot is current. */

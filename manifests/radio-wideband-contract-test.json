@@ -3,11 +3,12 @@
   "native_source_hashes": {
     "channel.h": "8986f70b0048ef9bb4f5c3e97b50fe18cfc6973caf8b5d54c78eb7805e774db1",
     "power-tables.c": "067d879688888e00e3b8b6679fd64aa89a72bdcee574797254b0d1ae0e45304b",
-    "tx.c": "5ba473c4e103f385391756a80123fc389f86d08ebebd507d5cf43544a74217b1"
+    "tx.c": "0feb4158a59c51d6ad1dc7f6be06c97111dde40bf51116e55368eb6fd094ff6f"
   },
   "C_20_40_80_160_signed_TPU_RF18_ADC_vectors": 4,
   "VHT_20_40_80_160_WD_vectors": 240,
   "HE160_WD_vectors": 72,
+  "non_AMPDU_BK_follows_original_fill_txreq_mdata": true,
   "hardware_IO_and_power_query_only_mocked": true,
   "hardware_test": false
 }

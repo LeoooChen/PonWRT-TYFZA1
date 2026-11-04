@@ -1,11 +1,13 @@
 {
-  "scope": "Execute original per-station AMPDU wrapper and CMAC global limit writer.",
+  "scope": "Execute original AMPDU API encoding, C/XB initialization callers and global writer.",
   "original_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
   "executed_functions": [
     "rtw_hal_cfg_tx_ampdu",
     "rtw_hal_mac_set_hw_ampdu_cfg",
     "set_hw_ampdu_cfg",
-    "check_mac_en"
+    "check_mac_en",
+    "hal_trx_init_8852ce",
+    "hal_trx_init_8192xbe"
   ],
   "initial_registers": {
     "c604": "80",
@@ -13,6 +15,7 @@
   },
   "records": [
     {
+      "chip": "8852c",
       "maximum_aggregation": 64,
       "original_parameter": "0000000000000000000000004000a500",
       "writes": [
@@ -29,6 +32,7 @@
       ]
     },
     {
+      "chip": "8852c",
       "maximum_aggregation": 128,
       "original_parameter": "0000000000000000000000008000a500",
       "writes": [
@@ -45,6 +49,7 @@
       ]
     },
     {
+      "chip": "8852c",
       "maximum_aggregation": 256,
       "original_parameter": "0000000000000000000000000001a500",
       "writes": [
@@ -57,6 +62,95 @@
           "operation": "write32",
           "address": "0xc610",
           "value": "0xa53400ff"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "maximum_aggregation": 64,
+      "original_parameter": "0000000000000000000000004000a500",
+      "writes": [
+        {
+          "operation": "write8",
+          "address": "0xc604",
+          "value": "0x80"
+        },
+        {
+          "operation": "write32",
+          "address": "0xc610",
+          "value": "0xa534003f"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "maximum_aggregation": 128,
+      "original_parameter": "0000000000000000000000008000a500",
+      "writes": [
+        {
+          "operation": "write8",
+          "address": "0xc604",
+          "value": "0x80"
+        },
+        {
+          "operation": "write32",
+          "address": "0xc610",
+          "value": "0xa534007f"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "maximum_aggregation": 256,
+      "original_parameter": "0000000000000000000000000001a500",
+      "writes": [
+        {
+          "operation": "write8",
+          "address": "0xc604",
+          "value": "0x80"
+        },
+        {
+          "operation": "write32",
+          "address": "0xc610",
+          "value": "0xa53400ff"
+        }
+      ]
+    }
+  ],
+  "initialization_callers": [
+    {
+      "chip": "8852c",
+      "caller": "hal_trx_init_8852ce",
+      "original_parameter": "0000000000000000000000008000a000",
+      "maximum_aggregation": 128,
+      "writes": [
+        {
+          "operation": "write8",
+          "address": "0xc604",
+          "value": "0x80"
+        },
+        {
+          "operation": "write32",
+          "address": "0xc610",
+          "value": "0xa034007f"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "caller": "hal_trx_init_8192xbe",
+      "original_parameter": "0000000000000000000000008000a000",
+      "maximum_aggregation": 128,
+      "writes": [
+        {
+          "operation": "write8",
+          "address": "0xc604",
+          "value": "0x80"
+        },
+        {
+          "operation": "write32",
+          "address": "0xc610",
+          "value": "0xa034007f"
         }
       ]
     }

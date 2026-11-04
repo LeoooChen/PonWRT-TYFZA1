@@ -37,7 +37,7 @@ def enqueue(n,peer,size):
  u.mem_write(EPP+n*8,struct.pack("<II",at|0x50,len(frame)+16))
  put(NI+0x7060,(n+1)*8);call('ni_ingest')
 enqueue(0,1,66)
-assert get(PAYLOAD+12)==1000
+assert get(PAYLOAD+8)==1000
 assert call('ni_select')==0 and get(MB+30*4)==0
 # A different peer's large frame proceeds while the short-frame queue waits.
 enqueue(1,2,1500)

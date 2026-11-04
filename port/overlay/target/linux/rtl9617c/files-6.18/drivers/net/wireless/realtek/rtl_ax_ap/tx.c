@@ -138,7 +138,7 @@ static void rtl_ax_tx_wd(u8 *out, unsigned int bytes,
 		(no_ack ? BIT(31) : 0));
 	rtl_ax_store32(out + 4, (addresses & 63) << 26);
 	rtl_ax_store32(out + 8, macid << 24 | qsel << 17 | (tid_ind ? BIT(23) : 0) | (bytes & 0x3fff));
-	rtl_ax_store32(out + 12, (sequence & 0xfff) | (aggregate ? BIT(12) : 0));
+	rtl_ax_store32(out + 12, (sequence & 0xfff) | (aggregate ? BIT(12) : BIT(13)));
 	/* Actual C/XB DATA-WD@2525ac: GI[27:25], rate[24:16], fixed-rate[31]. */
 	rtl_ax_store32(out + 28, BIT(31) | (bandwidth & 3) << 28 | (gi & 7) << 25 | (rate & 0x1ff) << 16);
 	rtl_ax_store32(out + 32, BIT(9) | BIT(10));
@@ -404,10 +404,6 @@ void rtl_ax_tx_ap_address(struct rtl_ax_tx *tx, const u8 *address)
 {
 	if (tx->pe_active) memcpy(tx->pe.memory + PE_PROBE_MAILBOX + 64, address, 6);
 }
-void rtl_ax_tx_ps_clock(struct rtl_ax_tx *tx, u32 seconds)
-{
-	if (tx->pe_active) put_unaligned_le32(seconds, tx->pe.memory + PE_PROBE_MAILBOX + RTL_AX_NI_PS_NOW * 4);
-}
 void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos, unsigned int ps_timeout)
 {
 	tx->peer_qos[macid] = qos;
@@ -597,7 +593,8 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	u64 begin = READ_ONCE(rtl_ax_datapath_profile) ? ktime_get_ns() : 0;
 	if (packet_bytes > 0x3fff) return -EMSGSIZE;
 
-	if (!encap && ieee80211_is_mgmt(header->frame_control)) {
+	if (!encap && (ieee80211_is_mgmt(header->frame_control) ||
+		      ieee80211_is_back_req(header->frame_control))) {
 		ring = 4;
 		qsel = 0x12;
 	} else if (info->flags & IEEE80211_TX_CTL_SEND_AFTER_DTIM) {
@@ -638,7 +635,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		u32 request[8 + RTL_AX_TX_WP_ADDRESS_MAX * 2];
 		u32 *published = tx->pe.memory + 0x4000 + tx->pe_producer * 128;
 		unsigned int segments = slot.mapping ? slot.mapping->dma_count : 1;
-		u32 request_flags = (encap ? tid : le16_to_cpu(header->seq_ctrl) >> 4) | tid_indicators[tid] << 12 |
+		u32 request_flags = (encap ? tid : ieee80211_is_ctl(header->frame_control) ? 0 : le16_to_cpu(header->seq_ctrl) >> 4) | tid_indicators[tid] << 12 |
 			!!(info->flags & IEEE80211_TX_CTL_NO_ACK) << 13 |
 			is_multicast_ether_addr(encap ? skb->data : header->addr1) << 14 | tx->checksum_enabled << 17 | macid << 24 | encap << 18;
 		u32 key = 0; u64 pn = 0;
@@ -726,7 +723,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		rtl_ax_tx_wp_addresses(page + 56 + RTL_AX_TX_WP_SEQUENCE_BYTES, lower_32_bits(slot.dma), skb->len, true);
 	length = 56 + RTL_AX_TX_WP_SEQUENCE_BYTES + addresses * RTL_AX_TX_WP_ADDRESS_BYTES;
 	rtl_ax_tx_wd(page, skb->len, addresses, rate, gi, bandwidth,
-		le16_to_cpu(header->seq_ctrl) >> 4, ieee80211_hdrlen(header->frame_control),
+		ieee80211_is_ctl(header->frame_control) ? 0 : le16_to_cpu(header->seq_ctrl) >> 4, header_bytes,
 		info->flags & IEEE80211_TX_CTL_NO_ACK, is_multicast_ether_addr(header->addr1),
 		rtl_ax_tx_channels[ring], qsel, tid_indicators[tid], macid, aggregate, density);
 	if (info->control.hw_key) {

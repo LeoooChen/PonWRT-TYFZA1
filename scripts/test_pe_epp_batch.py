@@ -98,7 +98,7 @@ def lookup_probe(withdraw, compact=True):
   put(at,0xdeadbe80)
   frames.append(frame);u.mem_write(at+64,struct.pack('>II',0x80000000,72<<15)+bytes(8)+frame)
   u.mem_write(EPP+n*8,struct.pack('<II',at|0x50,(1<<14 if compact else 0)|80))
- reads={'route':0,'address':0,'EPP_head':0,'EPP_base':0,'clock':0,'header1':0};revoked=False
+ reads={'route':0,'address':0,'EPP_head':0,'EPP_base':0,'clock':0,'TSF_low':0,'TSF_high':0,'header1':0};revoked=False
  def observe(uc,access,at,size,value,data):
   nonlocal revoked
   at&=0x1fffffff
@@ -107,6 +107,8 @@ def lookup_probe(withdraw, compact=True):
   if EPP<=at<EPP+64 and not (at-EPP)%8:reads['EPP_head']+=1
   if at==MB+25*4:reads['EPP_base']+=1
   if at==MB+195*4:reads['clock']+=1
+  if at==0x1200c438:reads['TSF_low']+=1
+  if at==0x1200c43c:reads['TSF_high']+=1
   if PAYLOAD<=at<PAYLOAD+8*2048 and (at-PAYLOAD)%2048==68:reads['header1']+=1
   # Admission can be withdrawn before ARM has paused the PE.
   if withdraw and at==EPP+32 and not revoked:
@@ -133,6 +135,7 @@ normal=lookup_probe(False,False)
 if '--before' in sys.argv:assert repeated['address']>=24
 else:
  assert repeated['address']<=4
- assert repeated['EPP_head']==8 and repeated['EPP_base']==1 and repeated['clock']==1, repeated
+ assert repeated['EPP_head']==8 and repeated['EPP_base']==1 and repeated['clock']==0, repeated
+ assert repeated['TSF_low']==1 and repeated['TSF_high']==2, repeated
  assert repeated['header1']==normal['header1']==8, (repeated,normal)
 print(json.dumps(dict(batch_budget=16,wrapped_ring=True,mixed_peer_TID_FIFO=True,compact_EPP=True,retire_fence_after_queue_and_consumer=True,COS_priority=True,invalid_entry_not_consumed=True,active_TID_round_robin=True,stale_active_mask_reset=True,repeated_peer_DDR_reads=repeated,withdrawn_peer_DDR_reads=withdrawn,mid_batch_admission_withdrawal_preserved=True)))

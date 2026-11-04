@@ -3,6 +3,7 @@
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned int u32;
+typedef unsigned long long u64;
 struct packed_word { u32 value; } __attribute__((packed));
 #define BIT(n) (1U << (n))
 #define REQUEST_BASE 0x4000
@@ -394,7 +395,7 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	u32 previous = mailbox[RTL_AX_TX_LAST_PACKET + ring];
 	u32 bytes = packet & 0x3fff;
 	mailbox[RTL_AX_TX_LAST_PACKET + ring] = context | bytes;
-	word(page + 12, sequence | (aggregate ? BIT(12) : 0) |
+	word(page + 12, sequence | (aggregate ? BIT(12) : BIT(13)) |
 		(bytes < (previous & 0x3fff) || (previous & ~0x3fffU) != context ? BIT(13) : 0));
 	word(page + 16, dw4); word(page + 20, dw5);
 	word(page + 28, (rate & BIT(20) ? 0 : BIT(31)) | ((rate >> 16) & 3) << 28 |

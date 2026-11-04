@@ -720,8 +720,11 @@ static int rtl_ax_station_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 				radio->ra_config[id], 16, false, false);
 			if (ret) goto remove;
 			memset(&radio->dig_rssi[id], 0, sizeof(radio->dig_rssi[id]));
+			rtl_ax_ra_rssi_init(&radio->ra_rssi_state[id]);
+			memset(radio->ra_rssi[id], 0, sizeof(radio->ra_rssi[id]));
 			radio->ra_registered[id] = true;
 			radio->ra_rssi_samples[id] = radio->ra_reports[id] = radio->ra_updates[id] = 0;
+			radio->ra_rssi_level[id] = 0;
 			radio->ra_update_error[id] = 0;
 			clear_bit(id, radio->ra_pending);
 			memset(radio->ra_feedback[id], 0, 8);
@@ -779,11 +782,12 @@ static int rtl_ax_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 		}
 		return IEEE80211_AMPDU_TX_START_IMMEDIATE;
 	case IEEE80211_AMPDU_TX_OPERATIONAL:
-		aggregate = min_t(unsigned int, params->buf_size, 64);
-		/* rtw_hal_cfg_tx_ampdu(count64) -> set_hw_ampdu_cfg, band0,
-		 * normal/non-single mode, maximum time165 and number64. */
+		aggregate = min_t(unsigned int, params->buf_size, hw->max_tx_aggregation_subframes);
+		/* Original C/XB hal_trx_init sets global count128 and time160;
+		 * each peer's negotiated window belongs in CMAC/WD, not here. */
 		rtl_ax_update8(&radio->io, 0xc604, 7, 0);
-		rtl_ax_update32(&radio->io, 0xc610, 0xff0000ff, 0xa500003f);
+		rtl_ax_update32(&radio->io, 0xc610, 0xff0000ff,
+			0xa0000000 | (hw->max_tx_aggregation_subframes - 1));
 		rtl_ax_station_cmac_connected(cmac, station->macid, radio->chip == RTL_AX_8852C, aggregate);
 		rtl_ax_store32(cmac + 60, rtl_ax_ap_read32(cmac + 60) & ~0xffU);
 		/* The stock VW_NO_WDINFO default must not overwrite firmware RA. */
@@ -861,7 +865,7 @@ static int rtl_ax_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 		ret = 0;
 		if (cam < 8) {
 			rtl_ax_store32(ba, 3 | (params->tid & 15) << 4 | station->macid << 8 |
-				(params->ssn & 0xfff) << 20);
+				(params->buf_size > 64 ? 4U << 16 : 0) | (params->ssn & 0xfff) << 20);
 			rtl_ax_store32(ba + 4, (cam + 8) << 28 | BIT(8));
 			ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 12, 0, ba, sizeof(ba), true);
 		}
@@ -956,8 +960,9 @@ static void rtl_ax_monitor_tx(struct ieee80211_hw *hw,
 	if (!injected_rate)
 		rate = rtl_ax_tx_basic_rate(radio, control->sta, info);
 
-	if (skb->len >= (encap ? ETH_HLEN : 24) && skb->len <= 0x3fff &&
-	    (encap || ieee80211_is_mgmt(header->frame_control) || ieee80211_is_data(header->frame_control))) {
+	if (skb->len >= (encap ? ETH_HLEN : ieee80211_is_back_req(header->frame_control) ? sizeof(struct ieee80211_bar) : 24) && skb->len <= 0x3fff &&
+	    (encap || ieee80211_is_mgmt(header->frame_control) || ieee80211_is_data(header->frame_control) ||
+	     ieee80211_is_back_req(header->frame_control))) {
 		/* Original RTW_DATA_RATE_MCS0=0x80, GI0=long/GI1=short.
 		 * mac80211's MCS index must not index the legacy bitrate array. */
 		if (injected_rate && selected->flags & IEEE80211_TX_RC_VHT_MCS) {
@@ -973,7 +978,8 @@ static void rtl_ax_monitor_tx(struct ieee80211_hw *hw,
 			bandwidth = !!(selected->flags & IEEE80211_TX_RC_40_MHZ_WIDTH);
 		} else if (injected_rate && selected->idx >= 0 && selected->idx < radio->band.n_bitrates)
 			rate = radio->band.bitrates[selected->idx].hw_value;
-		if (control->sta && (IEEE80211_SKB_CB(skb)->flags & IEEE80211_TX_CTL_AMPDU)) {
+		if (control->sta && (encap || ieee80211_is_data_qos(header->frame_control)) &&
+		    (IEEE80211_SKB_CB(skb)->flags & IEEE80211_TX_CTL_AMPDU)) {
 			unsigned int tid = encap ? skb->priority & 7 : *ieee80211_get_qos_ctl(header) & IEEE80211_QOS_CTL_TID_MASK;
 			aggregate = READ_ONCE(radio->tx_ba[macid].aggregation[tid]);
 			density = control->sta->deflink.ht_cap.ampdu_density;
@@ -1253,7 +1259,6 @@ static void rtl_ax_dm_work(struct wiphy *wiphy, struct wiphy_work *work)
 	unsigned long flags;
 
 	if (!radio->monitor_started) return;
-	rtl_ax_tx_ps_clock(radio->tx, ktime_get_boottime_seconds());
 	/* Wiphy work shares start/stop/STA serialization; command_mutex
 	 * also excludes sysfs/channel RFK while the meter and LCK use RF IO. */
 	mutex_lock(&radio->command_mutex);
@@ -1329,10 +1334,13 @@ static void rtl_ax_ra_work(struct wiphy *wiphy, struct wiphy_work *work)
 	spin_lock_irqsave(&radio->command_lock, flags);
 	for (i = 1; i < 128; i++) {
 		u8 *setting = command + entries * 8;
-		if (!radio->ra_registered[i] || !radio->ra_rssi_samples[i]) continue;
+		if (!radio->ra_registered[i]) continue;
+		rtl_ax_ra_rssi_watchdog(&radio->ra_rssi_state[i]);
+		if (!radio->ra_rssi_samples[i]) continue;
 		setting[0] = i;
 		setting[1] = BIT(7) | (radio->ra_rssi[i][1] >> 1);
-		setting[2] = BIT(7); /* No client beacon RSSI on an AP. */
+		setting[2] = BIT(7) | (radio->ra_rssi_state[i].ma[1][1] >> 5);
+		setting[3] = radio->ra_rssi_state[i].ma[1][2] >> 5;
 		setting[7] = radio->ra_rssi[i][2] >> 1;
 		entries++;
 	}
@@ -1343,6 +1351,32 @@ static void rtl_ax_ra_work(struct wiphy *wiphy, struct wiphy_work *work)
 		radio->ra_rssi_result = rtl_ax_command_flags(radio, RTL_AX_H2C_LONG_DATA,
 			2, 1, 1, command, sizeof(command), false, false);
 		radio->ra_rssi_sent += !radio->ra_rssi_result;
+	}
+	/* The original watchdog follows RSSI reporting with a mask-only update.
+	 * ra_config retains the full capability mask so lower rates can return. */
+	for (i = 1; i < 128; i++) {
+		u8 mask_command[16], rssi, previous, level;
+		int ret;
+
+		spin_lock_irqsave(&radio->command_lock, flags);
+		if (!radio->ra_registered[i] || !radio->ra_rssi_samples[i]) {
+			spin_unlock_irqrestore(&radio->command_lock, flags);
+			continue;
+		}
+		memcpy(mask_command, radio->ra_config[i], sizeof(mask_command));
+		rssi = radio->ra_rssi[i][0] >> 1;
+		previous = radio->ra_rssi_level[i];
+		spin_unlock_irqrestore(&radio->command_lock, flags);
+		level = rtl_ax_ra_rssi_mask(mask_command, rssi, previous);
+		ret = rtl_ax_command_flags(radio, RTL_AX_H2C_LONG_DATA, 2, 1, 0,
+			mask_command, sizeof(mask_command), false, false);
+		spin_lock_irqsave(&radio->command_lock, flags);
+		radio->ra_update_error[i] = ret;
+		if (!ret) {
+			radio->ra_rssi_level[i] = level;
+			radio->ra_updates[i]++;
+		}
+		spin_unlock_irqrestore(&radio->command_lock, flags);
 	}
 	wiphy_delayed_work_queue(wiphy, &radio->ra_work, 2 * HZ);
 }
@@ -1708,8 +1742,8 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	ieee80211_hw_set(hw, TX_AMSDU);
 	ieee80211_hw_set(hw, TX_FRAG_LIST);
 	hw->max_tx_fragments = RTL_AX_TX_WP_ADDRESS_MAX - 1;
-	hw->max_tx_aggregation_subframes = 64;
-	hw->max_rx_aggregation_subframes = 64;
+	hw->max_tx_aggregation_subframes = 128;
+	hw->max_rx_aggregation_subframes = 256;
 	hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_MONITOR) | BIT(NL80211_IFTYPE_AP);
 	if (radio->chip == RTL_AX_8852C) {
 		hw->wiphy->iface_combinations = &dfs_combination;

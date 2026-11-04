@@ -40,7 +40,7 @@ static u32 get(const void *p){u32 v;memcpy(&v,p,4);return v;}
 '''
 tx = (root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx.c').read_text()
 arm = ''
-for name in ('rtl_ax_tx_ps_clock', 'rtl_ax_tx_peer_qos'):
+for name in ('rtl_ax_tx_peer_qos',):
     at = tx.index('void ' + name + '(')
     arm += tx[at:tx.index('\n}\n', at) + 3]
 with tempfile.TemporaryDirectory(prefix='wifi-ps-policy-') as directory:
@@ -51,9 +51,10 @@ int main(void){struct sdata s={.vif={.bss_conf={100}}};struct sta_info sta={.sda
  sta.listen_interval=128;assert(ieee80211_sta_ps_buffer_timeout(&sta.sta)==2600);
  unsigned char memory[0x20000]={};struct rtl_ax_tx tx={.pe_active=true,.pe={memory}};
  rtl_ax_tx_peer_qos(&tx,1,true,ieee80211_sta_ps_buffer_timeout(&sta.sta)/HZ);
- rtl_ax_tx_ps_clock(&tx,100);
- assert(get(memory+0x19804)==26 && get(memory+0x230c)==100);
- sta.listen_interval=65535;assert(ieee80211_sta_ps_buffer_timeout(&sta.sta)==1342100);}
+ assert(get(memory+0x19804)==26);
+ sta.listen_interval=65535;assert(ieee80211_sta_ps_buffer_timeout(&sta.sta)==1342100);
+ s.vif.bss_conf.beacon_int=65535;
+ assert(ieee80211_sta_ps_buffer_timeout(&sta.sta)==879582400UL);}
 ''')
     subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
                     '-I' + str(root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap'),
@@ -75,12 +76,13 @@ class Radio:
         for index, value in [(0, 0x50455744), (2, BAR | 0xa0000000), (3, 1),
                              (11, RING), (12, PAGES), (14, PAGES), (24, 1), (25, EPP),
                              (30, inflight), (114, 0x7060), (115, 0x7160), (116, 0x6380),
-                             (117, 6), (140, MB | 0xa0000000), (142, 1), (167, 15), (195, 100)]:
+                             (117, 6), (140, MB | 0xa0000000), (142, 1), (167, 15)]:
             self.put(MB + index * 4, value)
         self.put(NI + 0x659c, 1 << 24)
         self.put(NI + 0x6340, 0x8000007c)
         self.put(NI + 0x6380, 0x80000000)
         self.put(BAR + 0x1058, 255 << 16)
+        self.clock(100)
         for peer in range(1, peers + 1):
             mac = bytes([2, 0, 0, 0, 0, peer])
             self.u.mem_write(BASE + 0xe400 + peer * 8, mac)
@@ -120,6 +122,11 @@ class Radio:
     def get(self, address):
         return struct.unpack('<I', self.u.mem_read(address, 4))[0]
 
+    def clock(self, seconds):
+        now = seconds * 1000000
+        self.put(BAR + 0xc438, now & 0xffffffff)
+        self.put(BAR + 0xc43c, now >> 32)
+
     def packets(self, peers):
         self.expected = set()
         for index, peer in enumerate(peers):
@@ -153,7 +160,7 @@ assert r.get(BASE + 0x11808) == 1  # Pending normal WP credit, not discarded.
 assert r.get(MB + 30 * 4) == 124
 assert r.get(BASE + 0x18020) == 256 + 124
 # Expiry can reclaim unsent frames even when all 124 transmit credits are held.
-r.put(MB + 195 * 4, 110)
+r.clock(110)
 r.run(1000000)
 r.check_returns()
 assert r.get(BASE + 0x11804) == 0 and len(r.returns) == 2491
@@ -201,7 +208,7 @@ age.put(BASE + 0x19804, 26)
 age.packets([1] * 3)
 age.run()
 assert age.get(BASE + 0x11804) == 3 and not age.returns
-age.put(MB + 195 * 4, 125)
+age.clock(125)
 age.run()
 assert not age.returns
 age.put(BASE + 0x19e04, 2)
@@ -209,7 +216,7 @@ age.put(BASE + 0xe814, 1)
 age.put(BASE + 0xe81c, 1 << 16)
 age.run()
 assert age.get(MB + 28 * 4) == 1 and age.get(BASE + 0x11804) == 2
-age.put(MB + 195 * 4, 126)
+age.clock(126)
 age.run()
 age.check_returns()
 assert len(age.returns) == 2 and age.get(BASE + 0x18020) == 1
@@ -225,7 +232,7 @@ for late, generation in [(False, 1), (True, 1), (False, 0), (True, 0)]:
         empty.put(BASE + 0x19e04, 2)
         empty.put(BASE + 0xe814, generation)
         empty.put(BASE + 0xe81c, 1 << 16)
-    empty.put(MB + 195 * 4, 110)
+    empty.clock(110)
     empty.run()
     if late:
         empty.put(BASE + 0x19e04, 2)

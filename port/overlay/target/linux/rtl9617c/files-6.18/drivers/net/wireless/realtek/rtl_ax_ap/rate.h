@@ -4,6 +4,89 @@
 
 struct rtl_ax_phy_signal { u8 macid, rssi[3]; };
 
+struct rtl_ax_ra_sample { u8 macid, rssi[3], paths; bool beacon; };
+struct rtl_ax_ra_rssi {
+	u16 ma[2][3], count[2]; /* Data/beacon; overall and independent RF paths. */
+	u8 factor[2];
+};
+
+static inline void rtl_ax_ra_rssi_init(struct rtl_ax_ra_rssi *state)
+{
+	memset(state, 0, sizeof(*state));
+	state->factor[0] = state->factor[1] = 2;
+}
+
+/* Actual halbb_rx_pkt_su_store_in_sta_info: samples are U8.1, MA is sample*16.
+ * Each zero MA initializes independently; subtraction rounds before addition. */
+static inline void rtl_ax_ra_rssi_sample(struct rtl_ax_ra_rssi *state,
+	const struct rtl_ax_ra_sample *sample, u8 rssi[3])
+{
+	unsigned int kind = sample->beacon, shift = 4 - state->factor[kind], i;
+
+	for (i = 0; i < 3; i++) {
+		u16 *ma = &state->ma[kind][i];
+
+		if (i && !(sample->paths & BIT(i - 1))) continue;
+		*ma = !*ma ? sample->rssi[i] << 4 :
+			*ma + (sample->rssi[i] << shift) - ((*ma << shift) >> 4);
+	}
+	state->count[kind]++;
+	if (!kind) {
+		rssi[0] = (state->ma[0][0] + 8) >> 4;
+		rssi[1] = state->ma[0][1] >> 4;
+		rssi[2] = state->ma[0][2] >> 4;
+	}
+}
+
+/* halbb_cmn_info_self_update selects the next period's factor, then clears
+ * the qualifying PHY-report counts. Native reports remain sampled. */
+static inline void rtl_ax_ra_rssi_watchdog(struct rtl_ax_ra_rssi *state)
+{
+	u16 data = state->count[0];
+
+	state->factor[0] = data > 100 ? 4 : data > 20 ? 3 : data > 5 ? 2 : 1;
+	state->factor[1] = state->count[1] > 5 ? 2 : 1;
+	state->count[0] = state->count[1] = 0;
+}
+
+/* Board hal_handle_rx_buffer -> halbb_physts_parsing -> halbb_cmn_rpt.
+ * SU is WD1 PPDU type !=6/9/10; the parser uses only user0's MACID/flags. */
+static inline int rtl_ax_ppdu_ra_signal(const u8 *data, unsigned int bytes,
+	u8 ppdu_type, bool to_self, struct rtl_ax_ra_sample *sample)
+{
+	u32 first, second, users, offset, user;
+	const u8 *phy;
+	u8 average, a, b, type;
+
+	if (!to_self || ppdu_type == 6 || ppdu_type == 9 || ppdu_type == 10) return 0;
+	if (bytes < 8) return -EINVAL;
+	first = get_unaligned_le32(data); second = get_unaligned_le32(data + 4);
+	users = first & 15;
+	if (users > 8) return -EINVAL;
+	offset = 8 + ((users + 1) & ~1U) * 4 + (first & BIT(29) ? 96 : 0) + ((second >> 16) & 255) * 8;
+	if (offset > bytes || bytes - offset < 8) return -EINVAL;
+	phy = data + offset;
+	if (!(phy[0] & BIT(7)) || phy[1] * 8 != bytes - offset || phy[1] < 1) return -EINVAL;
+	type = phy[0] & 31;
+	/* halbb_physts_parsing@2c5744: types0..5 and8 clear to-self/user flags. */
+	if (!users || type <= 5 || type == 8) return 0;
+	user = get_unaligned_le32(data + 8);
+	if (!(user & BIT(0)) || !(user & (BIT(1) | BIT(4))) || ((user >> 8) & 255) >= 128) return 0;
+	if (phy[1] < 3 || (phy[8] & 31) > 1) return 0;
+	if ((phy[8] & 31) == 1 && phy[1] < 5) return 0;
+	sample->macid = (user >> 8) & 255;
+	sample->beacon = !!(user & BIT(4));
+	/* IE0 byte15[7:4], IE1 DWORD0[31:28] are rx_path_en. */
+	sample->paths = (phy[8] & 31) ? phy[11] >> 4 : phy[23] >> 4;
+	a = sample->paths & BIT(0) ? phy[4] : 0;
+	b = sample->paths & BIT(1) ? phy[5] : 0;
+	average = (sample->paths & 3) == 3 ? phy[3] : a > b ? a : b;
+	sample->rssi[0] = phy[9];
+	sample->rssi[1] = a ? phy[9] + a - average : 0;
+	sample->rssi[2] = b ? phy[9] + b - average : 0;
+	return 1;
+}
+
 /* Actual physts_parsing@2c55d0 IE lengths (.rodata+24a70) and IE24@2c4af0. */
 static inline int rtl_ax_ppdu_aci(const u8 *data, unsigned int bytes, u8 *aci)
 {
@@ -64,6 +147,27 @@ static inline void rtl_ax_ra_limit(u8 command[16], u8 bandwidth, u8 nss, bool up
 		command[3] = (command[3] & ~BIT(7)) | BIT(6);
 	}
 	put_unaligned_le64(mask, command + 4);
+}
+
+/* Board halbb_ra_update_mask_watchdog: keep the capability mask as input,
+ * apply RSSI hysteresis each watchdog, and publish UpdateMask (not UpdateAll). */
+static inline u8 rtl_ax_ra_rssi_mask(u8 command[16], u8 rssi, u8 previous)
+{
+	static const u8 thresholds[] = {30, 44, 48, 52, 56, 60, 100};
+	static const u32 remove[] = {0, 0xf, 0x101f, 0x303f, 0x707f, 0xf0ff, 0xf0ff};
+	u8 level = 0;
+	u64 mask = get_unaligned_le64(command + 4) & ~BIT_ULL(63), filtered;
+
+	for (; level < 7; level++)
+		if (rssi < thresholds[level] + (level >= previous ? 3 : 0)) break;
+	if (level == 7) level = 0;
+	filtered = mask & ~((u64)remove[level]);
+	if (!(filtered >> 12)) filtered |= mask & ~0xfffULL;
+	if (!filtered) filtered = mask & 0xfff;
+	command[2] &= ~BIT(4);
+	command[3] = (command[3] & ~BIT(6)) | BIT(7);
+	put_unaligned_le64(filtered, command + 4);
+	return level;
 }
 
 static inline int rtl_ax_ppdu_signal(const u8 *data, unsigned int bytes,

@@ -109,23 +109,30 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='radio-wideband-
             value = struct.unpack_from('<I', data, 144 + (address | 0x10000))[0]
             assert (value & mask) >> shift == int(w['value'], 16), (width, w)
         vectors += 1
+    # These stored encoder traces supplied BK=0 directly. Normal original
+    # fill_txreq_mdata sets BK for non-AMPDU, executed by the peer-rate test.
     for width in (20, 40, 80, 160):
         rows = json.loads((root / f'manifests/radio-stock-VHT{width}-WD.json').read_text())['records']
         for r in rows:
             data = subprocess.check_output([str(binary), str(width), '36', '42', str(r['rate']),
                                             str(r['GI']), str(r['maximum_aggregation'])])
-            assert list(struct.unpack('<14I', data)) == [int(w, 16) for w in r['WD_words']], r
+            expected = [int(w, 16) for w in r['WD_words']]
+            if not r['AMPDU']: expected[3] |= 1 << 13
+            assert list(struct.unpack('<14I', data)) == expected, r
             wd_vectors += 1
     rows = json.loads((root / 'manifests/radio-stock-HE160-WD.json').read_text())['records']
     for r in rows:
         data = subprocess.check_output([str(binary), '160', '36', '50', str(r['rate']),
                                         str(r['GI']), str(r['maximum_aggregation'])])
-        assert list(struct.unpack('<14I', data)) == [int(w, 16) for w in r['WD_words']], r
+        expected = [int(w, 16) for w in r['WD_words']]
+        if not r['AMPDU']: expected[3] |= 1 << 13
+        assert list(struct.unpack('<14I', data)) == expected, r
     he_vectors = len(rows)
 report = {'scope': __doc__, 'native_source_hashes': {
     f: hashlib.sha256((driver / f).read_bytes()).hexdigest() for f in ('channel.h', 'power-tables.c', 'tx.c')},
     'C_20_40_80_160_signed_TPU_RF18_ADC_vectors': vectors,
     'VHT_20_40_80_160_WD_vectors': wd_vectors, 'HE160_WD_vectors': he_vectors,
+    'non_AMPDU_BK_follows_original_fill_txreq_mdata': True,
     'hardware_IO_and_power_query_only_mocked': True, 'hardware_test': False}
 (root / 'manifests/radio-wideband-contract-test.json').write_text(json.dumps(report, indent=2) + '\n')
 print(json.dumps(report, indent=2))

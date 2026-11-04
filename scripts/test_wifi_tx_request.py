@@ -62,6 +62,7 @@ struct tx {bool pe_active,checksum_enabled;struct {void *memory;}pe;u8 *headers;
 static unsigned get_unaligned_le32(const void*p){u32 v;memcpy(&v,p,4);return v;}
 static void put_unaligned_le32(u32 v,void*p){memcpy(p,&v,4);}
 static bool ieee80211_is_data(unsigned fc){return fc&8;}
+static bool ieee80211_is_ctl(unsigned fc){return (fc&12)==4;}
 static bool is_multicast_ether_addr(const u8*p){return *p&1;}
 #define for_each_sg(list,sg,n,i) for((i)=0;(i)<(n)&&((sg)=&(list)[i],1);(i)++)
 #define sg_dma_address(s) ((s)->dma)

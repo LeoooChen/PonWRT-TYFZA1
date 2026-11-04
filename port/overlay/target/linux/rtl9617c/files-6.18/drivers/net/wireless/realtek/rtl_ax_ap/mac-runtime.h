@@ -432,8 +432,8 @@ static inline void rtl_ax_mac_trx_registers(const struct rtl_ax_io *io)
 	io->write32(io->ctx, 0x8520, 0xffffffff);
 	io->write32(io->ctx, 0xc160, 0xffffffff);
 	/* set_host_rpr: PCIe SCC's POH profile enables all four WP outcomes.
-	 * Eight-MSDU aggregates reduce 124 BIDs to 15 WPs. Report after 12
-	 * WPs so recycling starts before the BID pool fills. */
+	 * Native NI has 128 WP owners and 2492 usable BIDs. Keep its 12-report
+	 * recycle batch; the original POH profile uses 121 reports, timeout255. */
 	value = io->read32(io->ctx, 0x9408);
 	next = value & ~3U;
 	if (value != next)
