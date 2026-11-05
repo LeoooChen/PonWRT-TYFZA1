@@ -232,7 +232,16 @@ static int fe_bridge_learn(struct rtl_fe_bridge *bridge,const struct fe_bridge_p
   return -ENOENT;
  data.input=fe_port(fe,__dev_get_by_index(packet->net,packet->input.ingress));
  data.output=fe_port(fe,outdev);
- if(!data.input || !data.output || data.input==data.output || packet->input.tags>2)return -EOPNOTSUPP;
+ if(!data.input || !data.output || packet->input.tags>2)return -EOPNOTSUPP;
+ /* Two ONU service VLANs share P6. The kernel bridge must have selected
+  * distinct logical ports and the wire GEM tag must change, so this cannot
+  * install a same-port/same-service reflection rule. DEEPQ returns via L2TM. */
+ if(data.input==data.output &&
+    (data.input->netdev!=fe->fttr_netdev || packet->ingress==packet->output.port ||
+     !packet->input.tags || !packet->output.tags ||
+     (packet->input.tag[0].protocol==packet->output.tag[0].protocol &&
+      (packet->input.tag[0].tci&VLAN_VID_MASK)==(packet->output.tag[0].tci&VLAN_VID_MASK))))
+  return -EOPNOTSUPP;
  list_for_each_entry(flow,&fe->flows,list)
   if(flow->learned && flow->input==data.input && flow->output==data.output &&
      flow->ethernet_protocol==packet->input.protocol && flow->ingress_session==packet->input.session &&

@@ -173,6 +173,12 @@ int main(void)
  f.restore_error=0;
  assert(!rtl_fe_fttr_set(&f,true) && f.enabled && f.fttr_admitted);
  assert(!rtl_fe_fttr_close(&f) && !f.enabled && !f.prepared);
+ /* Both endpoints on P6 still participate in the existing withdrawal barrier. */
+ assert(!rtl_fe_fttr_open(&f) && f.fttr_admitted);
+ a.input=a.output=&fp6;a.next=NULL;f.flows=&a;
+ assert(!admission_check(&f,&fp6,&fp6));
+ assert(!rtl_fe_fttr_set(&f,false) && !f.flows && !f.fttr_admitted);
+ assert(!rtl_fe_fttr_close(&f));
  puts("P6 FE: standalone/shared enable, both-direction PON/P6 admission and withdrawal, failed cleanup/re-enable, prepare rollback and last-owner restore");
 }
 '''

@@ -1105,8 +1105,8 @@ queue retirement. NI/PE and MiniOLT packet-buffer drain/flush before GEM
 reuse still require original-path research and implementation. Existing FE
 parser/editor support is limited to two wire VLAN tags, including the outer
 GEM tag; customer QinQ with three total tags continues through Linux. Traffic
-between two ONUs on the same physical P6 also retains the current software
-path. Actual P6 Hash keys/hits, optical traffic and throughput remain unverified.
+between two ONUs on P6 now has the constrained bridge-learning path described
+below; physical operation remains unverified. Actual P6 Hash keys/hits, optical traffic and throughput remain unverified.
 
 ### Shared FE ownership after main alignment
 
@@ -1234,8 +1234,34 @@ for cached-EPP synchronization and was not used as a passing result.
 Reports are under `artifacts/fttr/p6-deepq-20261105/`, including
 `factory-register-contract.json`, `qm-native.json`, `bridge-action.json` and
 `kernel-build.log`. The current6.18.55 NI composite compiles with GCC14.4/musl.
-P6-to-P6 learning, complete producer/queue/MiniOLT retirement and real device
-acceptance remain outstanding.
+P6-to-P6 learning is implemented below; complete producer/queue/MiniOLT
+retirement and real device acceptance remain outstanding.
+
+### Learning between two ONU service ports on P6
+
+With original P6 DEEPQ/QM return programmed, the native bridge learner can
+represent two distinct ONU service VLANs on the same physical FE port6.
+Previously it rejected all equal physical endpoints. It now accepts this
+case only for the registered FTTR parent, with distinct logical bridge ports
+and a changed outer service TPID/VID. The kernel bridge's FDB, STP, carrier
+and forwarding decision are still prerequisites. Same-service reflection
+and equal physical endpoints on other devices are still rejected.
+
+The existing exact Ethernet/VLAN Hash uses source6 and the input GEM tag;
+the packet editor replaces that tag with the output service tag and forwards
+to destination6 with DEEPQ. This uses the same actual FC action and NI mapping
+verified above: it does not depend on the L2FE same-port filter, since the
+verified QM return selects L2TM. New rules still go through FTTR admission;
+the existing both-direction P6 withdrawal includes these equal-endpoint flows.
+
+The real bridge-hook/learner check verifies both directions between GEM tags
+263/264, output priority, distinct native Hash keys/CRCs, same-service and
+non-FTTR rejection, and FDB movement cleanup. The FE owner check verifies
+that a P6-to-P6 rule is removed by the same withdrawal barrier. Both pass
+ASan/UBSan; the current NI composite rebuild passes (`same-p6-build.log` under
+`artifacts/fttr/p6-deepq-20261105/`). This is implementation and offline evidence;
+ONU-to-ONU throughput/hardware hits and physical old-packet retirement remain
+unverified.
 
 ### Segmented CPU receive for long FTTR frames
 

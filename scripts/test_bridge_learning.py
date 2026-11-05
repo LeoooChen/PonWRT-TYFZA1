@@ -75,7 +75,7 @@ struct rtl_fe_port {struct net_device *netdev;unsigned int source,destination,ll
 struct work_struct {int unused;};struct delayed_work {struct work_struct work;unsigned int queued;};
 #define to_delayed_work(w) container_of(w,struct delayed_work,work)
 struct rtl_dq_io {int unused;};
-struct rtl_fe {int cookies;struct list_head flows;struct rtl_fe_port *ports[2];struct net_device *itu_netdev;struct rtl_itu_paths *itu_paths;unsigned char ppp_protocol_ids[2];bool enabled;int lock;};
+struct rtl_fe {int cookies;struct list_head flows;struct rtl_fe_port *ports[2];struct net_device *itu_netdev,*fttr_netdev;struct rtl_itu_paths *itu_paths;unsigned char ppp_protocol_ids[2];bool enabled;int lock;};
 struct fe_bridge_packet {struct net *net;struct rtl9617c_bridge_frame input,output;unsigned int bridge,ingress,egress;u16 vid;};
 struct rtl_fe_bridge {struct rtl_fe *fe;struct delayed_work work;int pending_lock;unsigned int read,write;int epoch,flush;bool stopping;struct fe_bridge_packet pending[256];};
 static struct net_device *devices[128],*fdb_source,*fdb_destination;
@@ -222,6 +222,49 @@ int main(void){
   assert(((words[6]>>20)&3)==(p<2?3U:0));
  }
  lan.state=0;fe_bridge_work(&bridge.work.work);assert(deleted==7 && !net.references);
+ /* Distinct ONU service VLANs share P6; use the real ingress/capture/egress
+  * hooks so the Hash key keeps the old GEM tag and the PE replaces it. */
+ struct net_device onu2={.ifindex=71,.running=true,.carrier=true,.state=3,.master=&br,
+  .lower=&pon,.vlan=264,.protocol=0x8100,.qos=2<<13,.net=&net};
+ devices[71]=&onu2;vlan.vlan=263;vlan.qos=5<<13;
+ pp.source=pp.destination=6;fe.fttr_netdev=&pon;
+ lan.state=3;fdb_source=&vlan;fdb_destination=&onu2;
+ wire.in=&pon;input.in=&vlan;output.out=&onu2;
+ skb.frame[12]=8;skb.frame[13]=6;skb.extension=false;skb.tagged=true;skb.vlan=263|0xb000;
+ fe_bridge_wire(&bridge,&skb,&wire);skb.tagged=false;skb.vlan=0;
+ fe_bridge_capture(&bridge,&skb,&input);fe_bridge_forwarded(&bridge,&skb,&output);
+ fe_bridge_work(&bridge.work.work);
+ assert(installed==8 && last.input==&pp && last.output==&pp);
+ assert(last.key.ingress==6 && last.vlan[0].vid==263 && last.ingress_tci[0]==(263|0xb000));
+ assert(last.action.destination==6 && last.action.vlan_set && last.action.vlan_count==1);
+ assert(last.action.vlan[0].vid==264 && last.action.vlan[0].priority==2 && last.action.vlan_only);
+ /* Reverse direction has its own ingress GEM identity and egress tag. */
+ fdb_source=&onu2;fdb_destination=&vlan;input.in=&onu2;output.out=&vlan;
+ skb.extension=false;skb.tagged=true;skb.vlan=264;
+ fe_bridge_wire(&bridge,&skb,&wire);skb.tagged=false;skb.vlan=0;
+ fe_bridge_capture(&bridge,&skb,&input);fe_bridge_forwarded(&bridge,&skb,&output);
+ fe_bridge_work(&bridge.work.work);
+ assert(installed==9 && last.vlan[0].vid==264 && last.action.vlan[0].vid==263);
+ /* The ingress GEM tag remains part of the actual native Hash namespace. */
+ unsigned int key_a[RTL_FE_KEY_WORDS],key_b[RTL_FE_KEY_WORDS];
+ struct rtl_fe_vlan tags[2]={{.vid=263,.tpid=1}};
+ rtl_fe_bridge_key(key_a,last.source,last.destination,0x0806,6,0,59);
+ rtl_fe_bridge_key(key_b,last.source,last.destination,0x0806,6,0,59);
+ rtl_fe_vlan_key(key_a,tags,1);tags[0].vid=264;rtl_fe_vlan_key(key_b,tags,1);
+ assert(memcmp(key_a,key_b,sizeof(key_a)));
+ unsigned c32a,c32b;unsigned short c16a,c16b;
+ rtl_fe_key_crc(key_a,&c32a,&c16a);rtl_fe_key_crc(key_b,&c32b,&c16b);
+ assert(c32a!=c32b || c16a!=c16b);
+ /* Same service reflection and a non-FTTR parent still decline offload. */
+ struct fe_bridge_packet rejected=bridge.pending[(bridge.read-1)%FE_BRIDGE_PENDING];
+ rejected.input.epoch=bridge.epoch;
+ rejected.input.tag[0]=rejected.output.tag[0];
+ assert(fe_bridge_learn(&bridge,&rejected)==-EOPNOTSUPP);
+ rejected=bridge.pending[(bridge.read-1)%FE_BRIDGE_PENDING];fe.fttr_netdev=NULL;
+ assert(fe_bridge_learn(&bridge,&rejected)==-EOPNOTSUPP);
+ fe.fttr_netdev=&pon;
+ /* Changing the destination's FDB or STP still removes the P6 hairpin. */
+ fdb_destination=&other;fe_bridge_work(&bridge.work.work);assert(deleted==9 && !net.references);
  puts("Bridge learner: real wire/bridge hooks, VLAN subinterfaces, PCP/DEI, access VID, PPPoE preservation, FDB ageing/movement, STP and link changes passed");
 }
 '''
