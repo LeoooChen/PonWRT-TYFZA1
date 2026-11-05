@@ -1427,6 +1427,12 @@ PON RX drop/out/in counters at`30087..30089`. Extracted rows are retained in
 `miniolt-buffer-registers.json`. These are labels and counters, not a proved
 empty-buffer condition or a per-GEM flush protocol. `drv_gpon_ni_deactive`
 and`drv_gpon_onu_clear` in the retained relay are no-op implementations.
+The retained `ca_ni_stop` at`a2040..a2150` disables CPU TX and RX interrupts,
+then netdev TX, NAPI and IRQs. It contains no AFT/MiniOLT empty observation.
+`dma_lso_stuck_check.constprop.0` at`a6010` tests DEBUG0 offset50 bits4..7
+for value5; the TX paths at`aa7f8..aa888` use this as a stuck-engine reset
+trigger. This failure detector does not establish a normal idle/retirement
+condition. Neither path was added as a GEM reuse barrier.
 DMA/PE producer retirement and MiniOLT buffer retirement still require their
 actual original implementation or further hardware evidence before GEM reuse
 can be declared fully protected.
@@ -3059,6 +3065,58 @@ pass. OpenWrt package and Linux6.18.55 MiniOLT/BOSA module compilation/linking
 pass (the existing external-module MODULE_DESCRIPTION warnings remain).
 Reports/log: `artifacts/fttr/optical-diagnostics*-20261106.{json,log}`.
 No physical sensor accuracy, SFP compatibility or optical readiness is claimed.
+
+### Original ONU authentication evidence (integration outstanding)
+
+`tools/trace_stock_fttr_auth.py` executes the retained ASIC and FPGA relay
+comparators, global LOID predicate, remote LOID acquisition and result writer.
+Each backend passes45 comparison cases,8 global result cases,6 acquisition
+branches and9 result-write/error cases. Inputs are synthetic and the report
+contains no credential bytes (`artifacts/fttr/onu-auth-original-20261106.json`).
+This is evidence for the next controller change, not implemented native ONU
+authentication or hardware acceptance.
+
+`plr_ponsrv_auth_check_func_get` selects methods1..5: SN; PLOAM credential with
+optional SN binding; SN+PLOAM credential; LOID with optional SN binding; and
+LOID+key with optional SN binding. SN compares8 bytes and PLOAM credential10,
+including bytes after an embedded NUL. LOID/key use C-string comparison.
+Result0 is an exact match,1 requests SN binding (methods2/4/5 when the expected
+SN's first byte is zero),2 rejects. Padding bytes do not participate. Retained
+local comparator addresses are ASIC92ec8/92f40/92ff8/93098/9314c; FPGA addresses
+are selected at runtime by its own exported dispatcher.
+
+Global LOID checking (`plr_ponsrv_pon_loid_auth_check`, ASIC8d6c8) separately
+returns output0 when disabled,1 on match,2 on LOID mismatch and3 on key
+mismatch. `onuinfo` reads MIB1539/1540, whose configd definitions are
+`CTC_FTTR_MASTER_GLOBAL_LOID`/`CTC_FTTR_MASTER_GLOBAL_LOID_PASSWD`. Disassembly
+of the startup tails at ASIC419c04 and FPGA4125c4 enables global checking only
+when both strings are nonempty. These are separate from the unit's upstream
+PON LOID and the FPGA bitstream authentication input.
+
+The registration callback packs PON1-based/hardware ONU0-based IDs, SN8 and
+PLOAM credential10. On ASIC, the local serial reader47104 reads only the two
+SN words and leaves the caller's zeroed credential buffer unchanged. Native
+must not invent a PLOAM credential from the serial/state registers.
+The auth task then calls `plr_gponrm_authinfo_get`, which uses the remote OMCI
+LOID operation. Original `plr_gponrm_onu_loid_get` first reads class`fffa`,
+instance0, mask4000 (24-byte LOID), then2000 (12-byte key). If either fails,
+it reads ONU-G class100, instance0, masks0040 then0020. Its fallback contains
+false-success paths: both attributes can be absent, or the LOID can be copied
+without a key, while the function still returns0. The native implementation
+must retain explicit missing/read-failed status rather than treating those
+zero/partial outputs as acquired credentials. The result writer sends class
+fffa instance0 mask1000 and propagates its return value.
+
+`plr_ponsrv_onu_is_authed` accepts internal states2 and5; state5 is set by
+`plr_ponsrv_fttr_loid_auth_fail_set`. The main auth handler at93eb8 distinguishes
+this from success, writes the LOID result, reports state5 and still sends
+driver state2. The `onuinfo_fpga` status callback at410e28 handles state5 in a
+separate path from successful registration. Therefore a state/registration
+bit or the helper's name alone cannot authorize native service/FE activation.
+Policy import, native asynchronous OMCI acquisition/result handling, resource
+ownership on refusal/retry and full callback behavior remain to be integrated.
+Current explicitly configured development service policies are not represented
+as verified ONU authentication.
 
 ### Outstanding implementation and acceptance
 
