@@ -126,7 +126,8 @@ int main(void){
 #endif
 }
 '''
-data = common + types + defines + function(source, "rtl_dma_vp") + function(source, "rtl_dma_tx_start") + cases
+reset = function(source, "rtl_dma_tx_reset") if re.search(r"static void rtl_dma_tx_reset\(", source) else ""
+data = common + types + defines + function(source, "rtl_dma_vp") + reset + function(source, "rtl_dma_tx_start") + cases
 with tempfile.TemporaryDirectory(prefix="ni-dma-reorder-") as directory:
     work = Path(directory)
     (work / "test.c").write_text(data)
