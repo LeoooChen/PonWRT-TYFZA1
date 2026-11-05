@@ -116,6 +116,7 @@ struct rtl_xram {
 	struct rtl_fe *fe;
 	struct rtl_fttr_p6 p6;
 	struct net_device *fttr;
+	bool fttr_tx_active;
 	bool removing;
 };
 
@@ -711,6 +712,21 @@ static void rtl_fttr_link_work(struct work_struct *work)
 		schedule_delayed_work(&port->link_work, HZ);
 }
 
+static void rtl_fttr_tx_gate(struct rtl_xram *priv, bool active)
+{
+	unsigned long flags;
+
+	/* Serialize with both DMA submission and the timer's endpoint wake.
+	 * Stop the netdev after closing this gate, without holding tx_lock
+	 * across its own TX queue lock.
+	 */
+	spin_lock_irqsave(&priv->tx_lock, flags);
+	WRITE_ONCE(priv->fttr_tx_active, active);
+	spin_unlock_irqrestore(&priv->tx_lock, flags);
+	if (!active && priv->fttr)
+		netif_tx_disable(priv->fttr);
+}
+
 static int rtl_fttr_open(struct net_device *dev)
 {
 	struct rtl_fttr_port *port = netdev_priv(dev);
@@ -727,6 +743,7 @@ static int rtl_fttr_open(struct net_device *dev)
 		rtl_engine_put(port->shared);
 		return ret;
 	}
+	rtl_fttr_tx_gate(port->shared, true);
 	netif_start_queue(dev);
 	schedule_delayed_work(&port->link_work, 0);
 	return 0;
@@ -738,7 +755,7 @@ static int rtl_fttr_stop(struct net_device *dev)
 	int ret;
 
 	WRITE_ONCE(port->shared->qm.fttr_epoch, port->shared->qm.fttr_epoch + 1);
-	netif_stop_queue(dev);
+	rtl_fttr_tx_gate(port->shared, false);
 	cancel_delayed_work_sync(&port->link_work);
 	netif_carrier_off(dev);
 	ret = rtl_fe_fttr_close(port->shared->fe);
@@ -781,7 +798,7 @@ static void rtl_fttr_wake(struct rtl9617c_ni_endpoint *endpoint)
 {
 	struct rtl_fttr_port *port = container_of(endpoint, struct rtl_fttr_port, endpoint);
 
-	if (READ_ONCE(port->shared->p6.configured) && netif_running(endpoint->netdev) &&
+	if (READ_ONCE(port->shared->fttr_tx_active) && netif_running(endpoint->netdev) &&
 	    netif_queue_stopped(endpoint->netdev))
 		netif_wake_queue(endpoint->netdev);
 }
@@ -862,7 +879,12 @@ netdev_tx_t rtl9617c_ni_transmit(struct device *dev, struct net_device *owner,
 	netdev_tx_t result;
 
 	spin_lock_irqsave(&priv->tx_lock, flags);
-	result = rtl_dma_tx_frame(&priv->dma, skb, owner, frame);
+	if (owner == priv->fttr && !priv->fttr_tx_active) {
+		netif_stop_queue(owner);
+		result = NETDEV_TX_BUSY;
+	} else {
+		result = rtl_dma_tx_frame(&priv->dma, skb, owner, frame);
+	}
 	spin_unlock_irqrestore(&priv->tx_lock, flags);
 	return result;
 }
@@ -1422,10 +1444,9 @@ static ssize_t fttr_link_store(struct device *dev, struct device_attribute *attr
 	if (mode && mode != 5 && mode != 9)
 		return -EOPNOTSUPP;
 	rtnl_lock();
-	if (priv->fttr && netif_running(priv->fttr)) {
-		netif_tx_disable(priv->fttr);
+	rtl_fttr_tx_gate(priv, false);
+	if (priv->fttr && netif_running(priv->fttr))
 		netif_carrier_off(priv->fttr);
-	}
 	ret = rtl_fe_fttr_set(priv->fe, false);
 	if (ret && mode)
 		goto out;
@@ -1435,8 +1456,10 @@ static ssize_t fttr_link_store(struct device *dev, struct device_attribute *attr
 	} else {
 		ret = rtl_fttr_p6_configure(&priv->p6, mode, nway);
 	}
-	if (priv->fttr && netif_running(priv->fttr) && !ret && mode)
+	if (priv->fttr && netif_running(priv->fttr) && !ret && mode) {
+		rtl_fttr_tx_gate(priv, true);
 		netif_wake_queue(priv->fttr);
+	}
 out:
 	rtnl_unlock();
 	return ret ? ret : count;

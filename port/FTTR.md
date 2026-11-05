@@ -1435,6 +1435,24 @@ This corrects the existing shared-engine lifecycle. It does not reset the
 global DMA engine during an individual ONU replacement, and does not claim
 that NI/PE or the MiniOLT's separate buffers have been retired.
 
+P6 software submission has a separate synchronized gate. Previously
+`fttr_link` stopped the netdev queue, but the shared DMA timer could see the
+old `p6.configured` value and wake it again before/during SerDes changes.
+The gate now closes under the same `tx_lock` used by DMA submission and
+the timer, then disables the netdev queue without inverting its lock order.
+Both the timer wake and actual P6 submission check the gate. Open or a
+successful reconfiguration re-enables it; close, stop or failed FE/SerDes
+configuration leaves it closed. Other DMA owners continue to transmit.
+This closes a demonstrated software-producer race, not the outstanding
+DMA-prefetch/FE/PE/QM/MiniOLT retirement barrier.
+
+`test_fttr_tx_gate.py` interleaves the production wake/submission callbacks
+inside the real link store/close transitions. It fails on the previous
+unexpected wake, and passes after the gate, including FE/configuration
+failures, netdev-down state, reopen and other-owner submissions. ASan/UBSan,
+shared FE lifecycle and4096 DMA wrap/BUSY submissions pass. Normal6.18.55
+Image/modules builds pass with these sources (`p6-tx-gate-build-final-20261105.log`).
+
 `scripts/test_fttr_dma_reset.py` failed against the prior native stop code
 because the two AFT writes were absent. It now matches original execution
 for two nonzero control/configuration seeds after disabling submission
