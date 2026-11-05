@@ -1806,6 +1806,9 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	radio->he_band.he_cap.he_cap_elem.phy_cap_info[1] = IEEE80211_HE_PHY_CAP1_LDPC_CODING_IN_PAYLOAD |
 		IEEE80211_HE_PHY_CAP1_HE_LTF_AND_GI_FOR_HE_PPDUS_0_8US;
 	radio->he_band.he_cap.he_cap_elem.phy_cap_info[7] = IEEE80211_HE_PHY_CAP7_HE_SU_MU_PPDU_4XLTF_AND_08_US_GI;
+	/* Original AP protocol capability requires 16us receive processing. */
+	radio->he_band.he_cap.he_cap_elem.phy_cap_info[9] =
+		IEEE80211_HE_PHY_CAP9_NOMINAL_PKT_PADDING_16US << IEEE80211_HE_PHY_CAP9_NOMINAL_PKT_PADDING_POS;
 	radio->he_band.he_cap.he_mcs_nss_supp.rx_mcs_80 = cpu_to_le16(0xfffa);
 	radio->he_band.he_cap.he_mcs_nss_supp.tx_mcs_80 = cpu_to_le16(0xfffa);
 	radio->he_band.he_cap.he_mcs_nss_supp.rx_mcs_160 = cpu_to_le16(band == NL80211_BAND_5GHZ ? 0xfffa : 0xffff);

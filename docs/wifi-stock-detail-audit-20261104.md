@@ -406,3 +406,18 @@ HE门槛恢复轮：TCP下行1.420070G/retry9.8271每百成功、上行1.681945G
 产品mac-runtime.h仅增加两条write16及说明；无运行开关。模块rtl_ax_ap_navinit SHA256 da446fb3461616953f055394fea2317552dd0753446338445bad4db9ec710ccd，PE仍65869939084cd2c83e12ddd1592c001bf6b0e9097aeec0683138d036ef180e9f。RAM加载phy28，启动读回C67400400000/C67800040000，flash未写。误读a041c674的0不是第二radio寄存器，未用其论证XB现场验证。最终测速随后记录；TCP1.8/UDP1.9低丢包目标仍未完成。
 
 最终navinit/phy28默认首轮上行1.216450G/0重传，逐秒1.62/1.689/1.721/1.711/1.692/1.12/0.307/0.170/0.596/1.573，sleep/wake+27/+28；下行1.417059G。该低谷在前基线已有，未归因、未忽略。唯一复测上行1.698482G/0、下行1.508516G。UDP2G上行发1.826849/收1.816805G，MacCPU97.92%、丢228(0.01445%)；下行发1.999885/收1.851149G、丢125872(7.28017%)。目标未满足，不以一次下行跨1.5G宣称完成。启动及结束C67400400000/C67800040000，PEDIV40404/C300003f642b/C654c8033005/RPS8、临时ban为空，普通BK开启。无新工具服务残留，flash未写。保留NAV初始化对齐，不能称稳定提速。来源NAVFINAL-*。
+
+
+### 2026-11-05：AP 接收包扩展能力对齐
+
+沿供包节奏影响重试的新证据，先核对载荷预取：实际preload_init_set_8852c@25dcfc与native9f48/9f4c一致，PCIe保留TX_PARTIAL_MODE；唯一运行时切换来自rtw_hal_set_key的TKIP type3分支，不适用本次CCMP。正常TCP TXFETCH-DOWN1.502066G期间既有寄存器CA28低8长度错误0，CAE4错误位0、C86C/CCEC/9F7C均0。CA28为fe000100或00000100，高FE是未用用户1..7，active user0的length-stuck位未置，bit8是ZLD而非长度错误。不能由这些采样排除全部短暂取数异常，但无实际配置差异，停止预取/partial候选，没有重开ZLD工具。
+
+反向ACK发送必须按接收方HE能力留出处理时间。当前AP HE PHY9=00、PPE absent，公布0us；原厂_phl_init_protocol_cap@14f114的AP role2/3正常路径固定pkt_padding2，rtw_build_he_phy_caps@aee90编码PHY9 bits7:6=2。实际函数4组AP角色/频段执行通过；STBC/BF初始化为显式边界，不提供该字段，pkt_padding赋值发生在之后。实际PHY encoder不写PPE存在位，当前对应分支亦无PPE。原厂HT AP的最终ampdu_density getter返回0，较早cfg80211能力16不是最终Beacon，未改HT密度。
+
+产品monitor.h只增加HE PHY9的NOMINAL_PKT_PADDING_16US<<6；不开启其他HE功能。原厂复核保存为tools/check_stock_he_rx_padding.py。原始Beacon读取为ff1a230100001040000c60000000000004000000fafffafffafffaff，候选为ff1a230100001040000c60000000000004008000fafffafffafffaff，仅该字节变化。候选rtl_ax_ap_rxpad SHA15de917a36cd2367306f4bf5a49b04a03de71c76348a524fe7ed51b9fce1b8eb，PE仍65869939084cd2c83e12ddd1592c001bf6b0e9097aeec0683138d036ef180e9f，模块编译及原厂调用验证通过。
+
+跨关联BASE0us/ON16us/OFF0us，均恢复正常PE路径、无测试参数：BASE TCPdown1.260694、up1.644831/19重传，UDPdown1.828577/up1.820179；ON TCPdown1.505526及1.444329、up1.686929/0，UDPdown1.842679（7.7037%）、up1.880626（280包，0.01715%；实际发送1.890089、MacCPU98.32%）；OFF TCP首次down0.706844（逐秒1.154→.405→.089→.080→1.213，PS+25/+26且retired1780），up1.696420/0，UDPdown1.838486/up1.850889，唯一down复测1.424284。BASE首轮前快照尚有手机、结束已无，其他ON/OFF轮前后只Mac。首恢复低谷及跨关联不可用于推断候选收益；ON无持续上传/UDP退步证据。保留正确接收能力声明，不宣称稳定提速，TCP1.8/UDP1.9低丢包验收仍未达。
+
+回到候选模块后仅做关联/字段/队列收尾，已有4方向产品验证不重复。临时beacon_read卸载，结束删除设备文件；所有BK、时钟、EDCA及已接受HE JOIN/NAV改动保留，flash未写。来源worktree artifacts/he-rx-padding，Mac TXFETCH-*、RXPAD-*与rxpad-results.json。
+
+最终恢复候选确认：rxpad/phy34、boot a56cceb0，Mac已授权；Beacon再次读回PHY9=80。ARM submitted/completed391，NI sent/recycled13，pending/failed/retired/unmatched0；C67400400000、C300003f642b、PEDIV40404、RPS8，临时ban为空，无beacon_read或测速进程。未扩大验证，未刷写。
