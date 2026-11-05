@@ -8,8 +8,10 @@
  * The state-directory socket is owned by the controller's MiniOLT lease.
  */
 struct fttr_admin_request {
-	uint32_t version, id, blocked;
+	uint32_t version, id, action;
 	uint8_t serial[8];
 };
+
+enum fttr_admin_action { FTTR_ADMIN_RESUME, FTTR_ADMIN_BLOCK, FTTR_ADMIN_DEACTIVATE };
 
 #endif

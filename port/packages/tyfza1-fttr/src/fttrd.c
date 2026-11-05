@@ -81,6 +81,9 @@ struct onu {
 	enum onu_phase phase;
 	uint8_t identity[8];
 	bool grant;
+	bool admin_pending;
+	uint8_t admin_serial[8];
+	int64_t admin_timeout;
 	FILE *dump;
 };
 
@@ -93,6 +96,7 @@ struct controller {
 	const char *interface;
 	uint16_t transaction;
 	int64_t observed_at;
+	int64_t admin_scan_due;
 	bool observed;
 	uint64_t rx_errors;
 	struct service_policy *policies;
@@ -322,12 +326,14 @@ static int publish(struct controller *c, const char *state, int error)
 				"\"mib_sync_valid\":%s,\"mib_sync\":%u,\"mib_sync_observed\":%u,"
 				"\"mib_sync_error\":%d,\"mib_sync_checked_ms\":%" PRId64 ",\"mib_rescans\":%u,"
 				"\"datapath_configured\":%s,\"datapath_error\":%d,\"datapath_cleanup_error\":%d,"
-				"\"wifi_instances\":%u,\"wifi_configured\":%u,\"wifi_error\":%d,\"wifi_cleanup_error\":%d}",
+				"\"wifi_instances\":%u,\"wifi_configured\":%u,\"wifi_error\":%d,\"wifi_cleanup_error\":%d,"
+				"\"temporary_deactivation\":%s}",
 				u->service.configured ? "true" : "false", u->service.cleanup_error,
 				u->sync.valid ? "true" : "false", u->sync.value, u->sync.observed,
 				u->sync.error, u->sync.checked, u->rescans,
 				u->port.configured ? "true" : "false", u->datapath_error, u->datapath_cleanup_error,
-				u->wifi_count, u->wifi_configured, u->wifi_error, u->wifi_cleanup_error);
+				u->wifi_count, u->wifi_configured, u->wifi_error, u->wifi_cleanup_error,
+				u->admin_pending ? "true" : "false");
 		}
 		fputc(']', file);
 	}
@@ -1181,6 +1187,12 @@ static int refresh(struct controller *c)
 		enum onu_phase inactive = table[id].downstream & (1U << 16) ? ONU_BLOCKED : ONU_ABSENT;
 
 		u->hardware = table[id];
+		if (u->admin_pending) {
+			if (memcmp(u->admin_serial, table[id].serial, 8))
+				u->admin_pending = false;
+			else
+				continue;
+		}
 		if (!(table[id].downstream & (1U << 18)) || inactive == ONU_BLOCKED) {
 			if (u->phase != inactive) {
 				ret = cancel(c, id, false);
@@ -1382,12 +1394,10 @@ static int admin_request(struct controller *c, const struct fttr_admin_request *
 {
 	struct fttr_onu_state observed;
 	struct onu *u;
-	char command[40];
-	unsigned int i, length;
 	int ret;
 
 	*fatal = 0;
-	if (request->version != 1 || request->id >= FTTR_ONUS || request->blocked > 1)
+	if (request->version != 1 || request->id >= FTTR_ONUS || request->action > FTTR_ADMIN_DEACTIVATE)
 		return -EINVAL;
 	u = &c->onu[request->id];
 	ret = fttr_miniolt_one(c->directory, request->id, &observed);
@@ -1395,6 +1405,8 @@ static int admin_request(struct controller *c, const struct fttr_admin_request *
 		return ret;
 	if (memcmp(observed.serial, request->serial, 8))
 		return -ESTALE;
+	/* A later permanent block/resume replaces this registration's timer. */
+	u->admin_pending = false;
 	/* Keep FE admission closed through port removal, grant withdrawal and
 	 * the hardware state change. cancel() must not reopen it midway.
 	 */
@@ -1406,12 +1418,8 @@ static int admin_request(struct controller *c, const struct fttr_admin_request *
 		return ret;
 	}
 	u->phase = ONU_ABSENT;
-	length = snprintf(command, sizeof(command), "%u %u ", request->id, request->blocked);
-	for (i = 0; i < 8; i++)
-		length += snprintf(command + length, sizeof(command) - length, "%02x", request->serial[i]);
-	snprintf(command + length, sizeof(command) - length, "\n");
 	/* The driver rechecks the serial under the same lock as state/DBA IO. */
-	ret = fttr_miniolt_command(c->directory, "onu_admin", command);
+	ret = fttr_miniolt_admin(c->directory, request->id, request->action != FTTR_ADMIN_RESUME, request->serial);
 	if (ret && ret != -ESTALE) {
 		*fatal = ret;
 		return ret;
@@ -1422,7 +1430,12 @@ static int admin_request(struct controller *c, const struct fttr_admin_request *
 			*fatal = ret;
 			return ret;
 		}
-		u->phase = request->blocked ? ONU_BLOCKED : ONU_ABSENT;
+		u->phase = request->action != FTTR_ADMIN_RESUME ? ONU_BLOCKED : ONU_ABSENT;
+		if (request->action == FTTR_ADMIN_DEACTIVATE) {
+			memcpy(u->admin_serial, request->serial, 8);
+			u->admin_pending = true;
+			u->admin_timeout = now_ms() + 15000;
+		}
 	}
 	*fatal = fttr_miniolt_command(c->ni, "fttr_accel", "1\n");
 	if (!*fatal)
@@ -1468,6 +1481,44 @@ static int receive_control(struct controller *c)
 	return fatal;
 }
 
+/* Original FPGA polling: 64*1ms + 36ms between scans; ASIC offline polling
+ * runs every four 2s iterations and also has a 15s deactivation callback.
+ * Only outstanding temporary operations need this faster FPGA observation.
+ */
+static int admin_tick(struct controller *c, int64_t now)
+{
+	bool scan = now >= c->admin_scan_due, changed = false;
+	unsigned int id;
+	int ret;
+
+	if (scan)
+		c->admin_scan_due = now + (c->backend == FTTR_ASIC9690 ? 8000 : 100);
+	for (id = 0; id < FTTR_ONUS; id++) {
+		struct onu *u = &c->onu[id];
+
+		if (!u->admin_pending || (!scan &&
+		    (c->backend != FTTR_ASIC9690 || now < u->admin_timeout)))
+			continue;
+		/* The initial command already retired the software service owners.
+		 * Releasing bit16 must never race an active service for this ONU.
+		 */
+		if (u->port.index || u->service_started || u->grant || u->wifi)
+			return -EUCLEAN;
+		ret = fttr_miniolt_admin(c->directory, id, 2, u->admin_serial);
+		if (ret == -EAGAIN)
+			continue;
+		if (ret && ret != -ESTALE)
+			return ret;
+		u->admin_pending = false;
+		u->phase = ONU_ABSENT;
+		ret = fttr_miniolt_one(c->directory, id, &u->hardware);
+		if (ret)
+			return ret;
+		changed = true;
+	}
+	return changed ? publish(c, "running", 0) : 0;
+}
+
 static int run(struct controller *c)
 {
 	struct pollfd descriptors[2] = { { .fd = c->socket, .events = POLLIN },
@@ -1476,9 +1527,13 @@ static int run(struct controller *c)
 	unsigned int id;
 	int ret;
 
+	c->admin_scan_due = now_ms() + (c->backend == FTTR_ASIC9690 ? 8000 : 100);
 	while (!stopping) {
 		now = now_ms();
 		ret = fttr_miniolt_optical_tick(&c->optical, c->directory, now);
+		if (ret)
+			return ret;
+		ret = admin_tick(c, now);
 		if (ret)
 			return ret;
 		if (now >= next_refresh) {
@@ -1494,6 +1549,13 @@ static int run(struct controller *c)
 		for (id = 0; id < FTTR_ONUS; id++) {
 			struct onu *u = &c->onu[id];
 
+			if (u->admin_pending) {
+				if (c->admin_scan_due < deadline)
+					deadline = c->admin_scan_due;
+				if (c->backend == FTTR_ASIC9690 && u->admin_timeout < deadline)
+					deadline = u->admin_timeout;
+				continue;
+			}
 			if (u->phase == ONU_WIFI && u->wifi_current) {
 				struct fttr_me_job *me = &u->wifi_current->job.transaction.me;
 
@@ -1851,6 +1913,7 @@ out:
 		if (!ret)
 			ret = result;
 		for (id = 0; id < FTTR_ONUS; id++) {
+			c.onu[id].admin_pending = false;
 			if (c.store >= 0 && c.onu[id].wifi) {
 				cancel_wifi(&c.onu[id], ret ? ret : -ECANCELED);
 				result = save_wifi(&c, id);

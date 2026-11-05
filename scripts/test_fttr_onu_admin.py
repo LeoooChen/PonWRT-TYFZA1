@@ -198,7 +198,7 @@ int store(const struct rtl_fttr_reg_io *io, int backend, const char *input) {
             dropped = Registers(5); dropped.drop = True; io = native_io(dropped)
             assert native.admin(C.byref(io), backend, 5, 1, serial) == -errno.EUCLEAN
             actual = Registers(5); io = native_io(actual)
-            for invalid in ('64 1 ' + serial.hex(), '5 2 ' + serial.hex(), '5 1 xxxx',
+            for invalid in ('64 1 ' + serial.hex(), '5 3 ' + serial.hex(), '5 1 xxxx',
                             '5 1 ' + serial.hex() + ' junk', '5 1 ' + serial.hex() + '0'):
                 assert native.store(C.byref(io), backend, invalid.encode()) == -errno.EINVAL
                 assert not actual.events
@@ -214,8 +214,27 @@ int store(const struct rtl_fttr_reg_io *io, int backend, const char *input) {
                     writes = [e for e in regs.events if e[0] == 'write']
                     cleared = bool(downstream & 0x10000) and not keep and (backend == 3 or not downstream & 0x40000)
                     assert writes == ([['write', 0x4040b, downstream & ~0x10000]] if cleared else [])
+                    if not keep:
+                        actual = Registers(5, seed=downstream); io = native_io(actual)
+                        result = native.admin(C.byref(io), backend, 5, 2, serial)
+                        assert result == (-errno.EAGAIN if backend != 3 and downstream == 0x50000 else 0)
+                        assert [e for e in actual.events if e[0] == 'write'] == writes
+                        assert all(not 0x40007 <= e[1] <= 0x4000a for e in actual.events)
                     release_cases.append({'backend': backend, 'downstream': downstream, 'keep': keep,
                                           'offline_clears_block': cleared})
+            # Temporary FPGA release must keep grant/status bits, whereas
+            # explicit resume writes0. Identity and every IO error still stop.
+            actual = Registers(5, seed=0xa5fb5678); io = native_io(actual)
+            assert native.admin(C.byref(io), backend, 5, 2, serial) == 0
+            assert actual.values[0x4040b] == 0xa5fa5678
+            trace = list(actual.events)
+            for fail in range(1, len(trace) + 1):
+                broken = Registers(5, seed=0xa5fb5678); broken.fail = fail; io = native_io(broken)
+                assert native.admin(C.byref(io), backend, 5, 2, serial) == -errno.EIO
+                assert broken.events == trace[:fail]
+            stale = Registers(5, seed=0x10000); io = native_io(stale)
+            assert native.admin(C.byref(io), backend, 5, 2, bytes(8)) == -errno.ESTALE
+            assert all(e[0] == 'read' for e in stale.events)
             for state in (4, 5):
                 regs = Registers(5); stock = Stock(args.asic, relay, regs)
                 assert stock.relay.call('drv_gpon_onu_state_set', 0, 5, state) == 0

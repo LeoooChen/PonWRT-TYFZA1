@@ -427,7 +427,7 @@ static ssize_t onu_admin_store(struct device *dev, struct device_attribute *attr
 	int ret;
 
 	if (sscanf(buf, "%u %u %16s %c", &id, &blocked, hex, &extra) != 3 ||
-	    id >= RTL_FTTR_ONUS || blocked > 1 || strlen(hex) != 16 ||
+	    id >= RTL_FTTR_ONUS || blocked > 2 || strlen(hex) != 16 ||
 	    hex2bin(serial, hex, sizeof(serial)))
 		return -EINVAL;
 	mutex_lock(&fttr->control_lock);

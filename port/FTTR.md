@@ -2808,9 +2808,10 @@ device access, loading or flashing is authorized at this stage.
 ### Resident ONU deactivation and explicit resume
 
 `fttrctl /var/run/tyfza1-fttr onu-admin <hardware-ID> <16-hex-serial> block`
-asks the resident controller to deactivate that exact ONU. `resume` clears
+asks the resident controller to permanently deactivate that exact ONU. `resume` clears
 the block and lets the normal inventory/service policy run when registration
-is observed. This command uses the controller state directory; existing
+is observed. `deactivate` requests original temporary state4, with automatic
+release owned by the running controller. This command uses the controller state directory; existing
 read-only/OMCI commands still use the MiniOLT sysfs directory. A successful
 reply confirms the local operation and blocked-bit readback, not remote
 PLOAM reception or optical re-registration.
@@ -2829,8 +2830,11 @@ when downstream bit18 is clear, and does not schedule that timer. It clears
 only bit16 of the observed word, whereas the explicit state3 operation below
 replaces the whole FPGA downstream word. The original loop scans64 ONUs
 with1ms per-ONU and36ms between scans, in addition to register work. Native
-temporary-deactivation policy must preserve these distinctions; it is not
-implemented by a shared15s timeout. The extended original test executes24
+checks outstanding FPGA operations on100ms scan deadlines and ASIC operations
+on8s scan deadlines; ASIC also has the15s per-operation deadline. The8s
+interval comes from `polling_onu_state` at48e98..48ed8: every fourth2s
+iteration calls `ONU_Offline`. Register work and scheduler latency can extend
+these intervals. The extended original test executes24
 offline state/keep combinations and the actual ASIC callback for states4/5.
 
 FPGA `libponrelay1p25g:drv_gpon_onu_state_set` at47188 instead calls46acc:
@@ -2876,9 +2880,31 @@ checks pass. Reports: `artifacts/fttr/onu-admin-{original,fpga1,asic}-20261105.j
 Existing controller, resident Wi-Fi and optical-startup regressions pass;
 the OpenWrt package and MiniOLT/BOSA modules compile/link.
 
-This implements original permanent deactivation and explicit resume, with
-custom FE/DBA ownership ordering. Timed state4 policy, persistent block
-policy across a core reset, physical PLOAM acceptance and **full queued
+The controller records each temporary operation's serial and skips inventory
+and provisioning for that slot until release completes or the serial changes.
+Driver action2 checks identity and the FPGA registration condition under the
+control lock before clearing only bit16. `EAGAIN` leaves the operation pending;
+`ESTALE` cancels it without modifying the new ONU. A later block/resume replaces
+the outstanding operation, and shutdown cancels all deadlines. Release checks
+that the old service/grant/port/Wi-Fi owners are gone; unexpected ownership or
+IO failure stops the controller. There is no timer worker in the driver and
+no delayed write after process shutdown. `temporary_deactivation` in status
+reports pending work. A normal startup/core reset discards this volatile
+operation; persistent administration policy remains work.
+
+`scripts/test_fttr_admin_lifecycle.py` executes the production dispatcher at
+scan/15s boundaries, including FPGA remaining blocked beyond15s, stale identity,
+superseding operations, ownership violations and IO/readback/publish failures.
+The extended real-daemon test covers both backends' temporary release, the
+healthy peer, replacement, permanent-block override and SIGTERM/restart.
+Original/native release writes preserve all non-block bits. Reports:
+`artifacts/fttr/onu-temporary-{original,fpga1,asic}-20261105.json`; package and
+MiniOLT/BOSA module builds pass. Controller/CLI and FPGA optical-startup
+regressions also pass. No physical timing or PLOAM reception has been tested.
+
+This implements original permanent/temporary deactivation and explicit resume,
+with custom FE/DBA ownership ordering. Persistent block policy across a core
+reset, physical PLOAM acceptance and **full queued
 packet retirement before GEM reuse** remain open. This work does not
 establish a DMA-prefetch/PE/MiniOLT retirement fence or FPGA2 service binding.
 

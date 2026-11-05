@@ -98,19 +98,19 @@ static inline int rtl_fttr_ploam_send(const struct rtl_fttr_reg_io *io,
 	return 0;
 }
 
-/* Permanent deactivation (original state5) and explicit resume (state3).
- * The original state4 ASIC timer is a separate controller policy, not a
- * background driver action that may reopen a withdrawn ONU.
+/* action0: explicit resume (state3), action1: deactivate (state4/5),
+ * action2: release a controller-owned temporary block. The controller owns
+ * the original keep flag and polling/timer policy; there is no driver timer.
  */
 static inline int rtl_fttr_onu_admin(const struct rtl_fttr_reg_io *io,
-		enum rtl_fttr_backend backend, unsigned int id, bool blocked,
+		enum rtl_fttr_backend backend, unsigned int id, unsigned int action,
 		const unsigned char serial[8])
 {
 	struct rtl_fttr_onu onu;
 	unsigned int words[3] = { (id << 24) | 0x50000, 0, 0 }, i, status;
 	int ret;
 
-	if (id >= RTL_FTTR_ONUS || backend < RTL_FTTR_FPGA1 || backend > RTL_FTTR_ASIC9690)
+	if (id >= RTL_FTTR_ONUS || action > 2 || backend < RTL_FTTR_FPGA1 || backend > RTL_FTTR_ASIC9690)
 		return -EINVAL;
 	ret = rtl_fttr_onu_read(io, id, &onu);
 	if (ret)
@@ -118,17 +118,28 @@ static inline int rtl_fttr_onu_admin(const struct rtl_fttr_reg_io *io,
 	for (i = 0; i < sizeof(onu.serial); i++)
 		if (onu.serial[i] != serial[i])
 			return -ESTALE;
-	ret = rtl_fttr_onu_block(io, backend, id, blocked);
+	if (action == 2) {
+		if (!(onu.downstream & BIT(16)))
+			return 0;
+		/* FPGA polling releases only after hardware registration is gone.
+		 * Unlike explicit state3, it preserves the other downstream bits.
+		 */
+		if (backend != RTL_FTTR_ASIC9690 && (onu.downstream & BIT(18)))
+			return -EAGAIN;
+		ret = io->write(io->context, 0x40401 + 2 * id, onu.downstream & ~BIT(16));
+	} else {
+		ret = rtl_fttr_onu_block(io, backend, id, action == 1);
+	}
 	if (ret)
 		return ret;
-	if (blocked) {
+	if (action == 1) {
 		/* FPGA deactivation writes only the first mailbox word. */
 		ret = rtl_fttr_ploam_send(io, words, backend == RTL_FTTR_ASIC9690 ? 3 : 1, 1);
 		if (ret)
 			return ret;
 	}
 	ret = io->read(io->context, 0x40401 + 2 * id, &status);
-	return ret ? ret : !!(status & BIT(16)) == blocked ? 0 : -EUCLEAN;
+	return ret ? ret : !!(status & BIT(16)) == (action == 1) ? 0 : -EUCLEAN;
 }
 
 #endif

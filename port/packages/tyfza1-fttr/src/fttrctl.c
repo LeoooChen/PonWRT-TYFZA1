@@ -544,10 +544,11 @@ static int onu_admin(int directory, const char *id, const char *serial, const ch
 	errno = 0;
 	number = strtoul(id, &end, 10);
 	if (errno || !*id || *end || number >= FTTR_ONUS || strlen(serial) != 16 ||
-	    (strcmp(action, "block") && strcmp(action, "resume")))
+	    (strcmp(action, "block") && strcmp(action, "resume") && strcmp(action, "deactivate")))
 		return -EINVAL;
 	request.id = number;
-	request.blocked = !strcmp(action, "block");
+	request.action = !strcmp(action, "deactivate") ? FTTR_ADMIN_DEACTIVATE :
+		!strcmp(action, "block") ? FTTR_ADMIN_BLOCK : FTTR_ADMIN_RESUME;
 	for (i = 0; i < 8; i++) {
 		char pair[3] = { serial[i * 2], serial[i * 2 + 1], 0 };
 
@@ -578,8 +579,9 @@ static int onu_admin(int directory, const char *id, const char *serial, const ch
 	size = recv(fd, &result, sizeof(result), MSG_TRUNC);
 	ret = size < 0 ? -errno : size != sizeof(result) ? -EPROTO : result;
 	if (!ret)
-		printf("{\"event\":\"onu_admin\",\"id\":%u,\"serial\":\"%s\",\"blocked\":%s}\n",
-			request.id, serial, request.blocked ? "true" : "false");
+		printf("{\"event\":\"onu_admin\",\"id\":%u,\"serial\":\"%s\",\"blocked\":%s,\"temporary\":%s}\n",
+			request.id, serial, request.action != FTTR_ADMIN_RESUME ? "true" : "false",
+			request.action == FTTR_ADMIN_DEACTIVATE ? "true" : "false");
 out:
 	close(fd);
 	return ret;
@@ -611,7 +613,7 @@ int main(int argc, char **argv)
 			"       %s <miniolt-sysfs-directory> wifi <hardware-ID> <config-file> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> wait-link <NI-sysfs-directory>\n",
 			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
-		fprintf(stderr, "       %s <controller-state-directory> onu-admin <hardware-ID> <serial-hex> <block|resume>\n", argv[0]);
+		fprintf(stderr, "       %s <controller-state-directory> onu-admin <hardware-ID> <serial-hex> <block|resume|deactivate>\n", argv[0]);
 		return 2;
 	}
 	if (!strcmp(argv[2], "onu-admin")) {

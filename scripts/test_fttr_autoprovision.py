@@ -255,6 +255,8 @@ def main():
         device.joinpath('tcont_state').write_bytes(bytes(4096))
         device.joinpath('onu_admin').write_text('')
         admin_fault=root/'admin.fail'
+        admin_hold,admin_log=root/'admin.hold',root/'admin.log'
+        admin_log.write_text('')
         os.mkfifo(device/'tcont');grant_fd=os.open(device/'tcont',os.O_RDWR|os.O_NONBLOCK)
         accel_log,accel_fault=root/'accel.log',root/'accel.fail'
         accel_log.write_text('')
@@ -278,12 +280,13 @@ def main():
    char target[544],accel;
    snprintf(target,sizeof(target),"%s/../ni/fttr_accel",base);
    int fd=open(target,O_RDONLY);pread(fd,&accel,1,0);close(fd);
-   if(accel!='0') {errno=EBUSY;return -1;}
+   if(blocked!=2 && accel!='0') {errno=EBUSY;return -1;}
    snprintf(target,sizeof(target),"%s/tcont_state",base);
    fd=open(target,O_RDONLY);uint32_t grants[2];
    int slot=getenv("FTTR_ADMIN_FPGA") ? 0 : 1;
    pread(fd,grants,8,(id*8+slot)*8);close(fd);
    if(grants[0] || grants[1]) {errno=EBUSY;return -1;}
+   FILE *log=fopen(getenv("FTTR_ADMIN_LOG"),"a");fprintf(log,"%u %u %s\n",id,blocked,serial);fclose(log);
    fd=open(getenv("FTTR_ADMIN_FAIL"),O_RDONLY);
    if(fd>=0) {char fault=0;read(fd,&fault,1);close(fd);errno=fault=='s'?ESTALE:EIO;return -1;}
    snprintf(target,sizeof(target),"%s/onu_state",base);
@@ -291,7 +294,14 @@ def main():
    char observed[17];for(unsigned i=0;i<8;i++)snprintf(observed+2*i,3,"%02x",row[12+i]);
    if(strcmp(serial,observed)) {close(fd);errno=ESTALE;return -1;}
    uint32_t state;memcpy(&state,row,4);
-   if(slot==0) {state=blocked?0x10000:0;if(blocked)memset(row+4,0,4);}
+   if(blocked==2) {
+    if(slot==0 && (state&0x10000) && (state&0x40000)) {close(fd);errno=EAGAIN;return -1;}
+    state&=~0x10000U;
+   }
+   else if(slot==0) {
+    state=blocked?0x10000:0;if(blocked)memset(row+4,0,4);
+    if(blocked && !access(getenv("FTTR_ADMIN_HOLD"),F_OK))state|=0x40000;
+   }
    else state=(state&~0x10000U)|(blocked?0x10000:0);
    memcpy(row,&state,4);pwrite(fd,row,20,id*20);
    snprintf(target,sizeof(target),"%s/onu_table",base);FILE *table=fopen(target,"w");
@@ -391,7 +401,8 @@ def main():
                 stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True,
                 env=dict(os.environ,LD_PRELOAD=str(root/'sysfs.so'),FTTR_SERVICE_CASE='normal',
                     FTTR_ACCEL_LOG=str(accel_log),FTTR_ACCEL_FAIL=str(accel_fault),
-                    FTTR_ADMIN_FAIL=str(admin_fault), **({'FTTR_ADMIN_FPGA':'1'} if args.backend=='fpga1' else {})))
+                    FTTR_ADMIN_FAIL=str(admin_fault),FTTR_ADMIN_HOLD=str(admin_hold),FTTR_ADMIN_LOG=str(admin_log),
+                    **({'FTTR_ADMIN_FPGA':'1'} if args.backend=='fpga1' else {})))
         if args.wifi:
             def configured(state, ids=(7,9)):
                 return state.get('onus') and all(state['onus'][id]['wifi_configured']==2 and
@@ -680,7 +691,19 @@ def main():
                         nodes[7].serial.hex() if serial is None else serial,action],capture_output=True,text=True,timeout=5)
                     assert result.returncode==bool(error),(result.stdout,result.stderr)
                     if error: assert f'({-error})' in result.stderr,result.stderr
-                    else: assert json.loads(result.stdout)['blocked']==(action=='block')
+                    else:
+                        row=json.loads(result.stdout)
+                        assert row['blocked']==(action!='resume') and row['temporary']==(action=='deactivate')
+                def admin_events():
+                    return [line.split() for line in admin_log.read_text().splitlines()]
+                def downstream(value):
+                    data=bytearray(device.joinpath('onu_state').read_bytes())
+                    struct.pack_into('<I',data,7*20,value)
+                    device.joinpath('onu_state.new').write_bytes(data)
+                    os.replace(device/'onu_state.new',device/'onu_state')
+                    rows=[struct.unpack_from('<III8s',data,id*20) for id in range(64)]
+                    device.joinpath('onu_table').write_text(''.join(
+                        f'{id} {ds:08x} {us:08x} {eqd:08x} {sn.hex()}\n' for id,(ds,us,eqd,sn) in enumerate(rows)))
                 event_start=len(accel_events())
                 admin('block',serial='0000000000000000',error=errno.ESTALE)
                 assert len(accel_events())==event_start and set(ports())=={'fttr-u7','fttr-u9'}
@@ -715,6 +738,53 @@ def main():
                 admin_fault.write_text('stale')
                 admin('block',error=errno.ESTALE);admin_fault.unlink()
                 until(lambda s:s['onus'][7]['phase']=='configured')
+                # State4 is temporary. FPGA must remain blocked while bit18
+                # remains set; ASIC offline polling clears even that state.
+                admin_hold.touch();event_start=len(admin_events());healthy_port=datapath(9)
+                admin('deactivate')
+                if args.backend=='fpga1':
+                    current=until(lambda s:s['onus'][7]['temporary_deactivation'] and
+                        len(admin_events())>=event_start+3)
+                    assert current['onus'][7]['phase']=='blocked' and current['onus'][7]['hardware_registered']
+                    assert set(ports())=={'fttr-u9'} and datapath(9)==healthy_port
+                    downstream(0x10000)
+                until(lambda s:not s['onus'][7]['temporary_deactivation'],seconds=10)
+                assert any(action=='2' for _,action,_ in admin_events()[event_start:])
+                admin_hold.unlink()
+                if args.backend=='fpga1':hardware()
+                until(lambda s:s['onus'][7]['phase']=='configured')
+                # A permanent command supersedes a pending temporary release.
+                admin_hold.touch();admin('deactivate');admin('block')
+                event_start=len(admin_events())
+                until(lambda s:not s['onus'][7]['temporary_deactivation'] and s['onus'][7]['phase']=='blocked')
+                # Pump another successful peer sync after the next FPGA scan.
+                before=len(nodes[9].operations)
+                until(lambda s:len(nodes[9].operations)>before+2)
+                assert not any(action=='2' for _,action,_ in admin_events()[event_start:])
+                admin_hold.unlink();admin('resume')
+                if args.backend=='fpga1':hardware()
+                until(lambda s:s['onus'][7]['phase']=='configured')
+                # Replacement cancels a pending release, with a changed serial
+                # checked again by the driver if it wins the refresh race.
+                admin_hold.touch();admin('deactivate')
+                old_serial=nodes[7].serial
+                nodes[7].serial=bytes.fromhex('5445535400770007');hardware()
+                downstream(0x10000);event_start=len(admin_events())
+                until(lambda s:not s['onus'][7]['temporary_deactivation'] and s['onus'][7]['serial']==nodes[7].serial.hex(),seconds=10)
+                assert struct.unpack_from('<I',device.joinpath('onu_state').read_bytes(),7*20)[0]==0x10000
+                assert all(sn==old_serial.hex() for _,_,sn in admin_events()[event_start:])
+                nodes[7].serial=old_serial;hardware();downstream(0x10000)
+                admin_hold.unlink();admin('resume')
+                hardware();until(lambda s:s['onus'][7]['phase']=='configured')
+                # Stop owns cancellation: no timer can write after shutdown.
+                admin_hold.touch();admin('deactivate')
+                process.send_signal(signal.SIGTERM);_,error=process.communicate(timeout=3)
+                assert process.returncode==0,error
+                event_start=len(admin_events())
+                assert not status()['onus'][7]['temporary_deactivation'] and not ports()
+                admin_hold.unlink();hardware();process=launch()
+                until(lambda s:s.get('onus') and all(s['onus'][id]['phase']=='configured' for id in nodes))
+                assert not any(action=='2' for _,action,_ in admin_events()[event_start:])
                 # Hardware IO failure after withdrawal must stop TX and never
                 # reopen FE admission, even if the request client exits.
                 event_start=len(accel_events());admin_fault.write_text('io')
@@ -804,6 +874,7 @@ def main():
         'acceleration withdrawal occurs with the old VLAN still present, resumes after removal, and an unconfirmed withdrawal stops TX without resuming'] +
         (['resident administration rejects stale IDs and malformed commands before FE changes',
           'block/resume removes owned GEM VLAN and DBA before backend IO while retaining the healthy peer',
+          'temporary release waits for FPGA deregistration; ASIC polling, superseding block, replacement and shutdown are checked',
           'driver-side stale serial permits fresh inventory; hardware IO failure stops TX without resuming FE'] if args.admin_control else []),
         'scope':'native daemon over AF_PACKET/veth in a private namespace with original ARM64 schemas and VLAN table replies; peer MIB and synchronous DBA sysfs are modeled; no optical traffic'}
     args.output.write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
