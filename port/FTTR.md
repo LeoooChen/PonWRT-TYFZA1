@@ -3143,6 +3143,28 @@ Full per-ONU policy selection, SN binding, assignment and callback behavior
 remain to be integrated. Current explicit development service policies alone
 do not establish ONU authentication.
 
+The same oracle now executes the complete local selection function
+ASIC938b4/FPGA907f4, including the real comparator dispatcher and global
+predicate with modeled registry access. Each backend passes39 scenarios
+(`onu-auth-assignment-original-20261106.json`). Its return values differ from
+the comparator:0 accepts,1 waits/inactive,2 unconfigured/pending,3 requests a
+different logical ONU slot,4 denotes global LOID rejection. The logical slot
+is1-based, while the observed hardware slot is0-based. Exact credentials in
+the wrong slot return3; unbound methods2/4/5 bind the SN only in the matching
+slot, then return1 for another authentication attempt. Rows in state2 on
+another hardware slot are skipped.
+
+An existing state2/5 row on the same hardware slot bypasses its per-row
+credential comparison and checks global LOID again. Native must not adopt
+that shortcut across serial replacement. Automatic add requires both auto-learn
+and auto-find, prefers the observed slot if free, otherwise the first free
+logical slot, and returns2 with a separate added flag; adding a configuration
+row does not authorize service. Vendor refusal precedes all assignments.
+The original vendor-check storage holds four-byte SN prefixes, but the selector
+test models its verdict; vendor policy loading and persistent SN/slot assignment
+remain native implementation work. These results must not be represented as
+completion of the five per-ONU authentication methods.
+
 ### Resident global LOID authentication
 
 The factory importer now reads the two original CTC global fields into a

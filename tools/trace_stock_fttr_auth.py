@@ -14,11 +14,11 @@ from arm64_elf_oracle import ElfOracle
 
 
 class AuthOriginal:
-    def __init__(self, binary):
+    def __init__(self, binary, overrides=()):
         self.events, self.failures = [], {}
         self.data_error, self.global_enabled = 0, 0
         self.o = ElfOracle(binary, self.hook, ('plr_gponrm_pr_ctc_loid_auth_get',
-            'plr_gponrm_pr_ctc_loid_auth_set', 'plr_gponrm_pr_onug_get', 'plr_ponsrv_pon_data_get'))
+            'plr_gponrm_pr_ctc_loid_auth_set', 'plr_gponrm_pr_onug_get', 'plr_ponsrv_pon_data_get') + overrides)
         self.p = self.o.scratch + 0x4000
 
     def string(self, address):
@@ -106,6 +106,106 @@ class AuthOriginal:
         return ret, self.o.uc.mem_read(self.p + 256, 1)[0]
 
 
+class AssignmentOriginal(AuthOriginal):
+    """Execute the original selector/comparators with explicit registry storage."""
+    def __init__(self, binary):
+        super().__init__(binary, ('plr_gpon_maxonu_get', 'plr_ponsrv_onu_check',
+            'plr_ponsrv_onu_is_add', 'plr_ponsrv_onu_is_authed', 'plr_ponsrv_onu_state_get',
+            'plr_ponsrv_onu_auth_data_get', 'plr_ponsrv_onu_auth_data_set_sn',
+            'plr_ponsrv_onu_active_state_get', 'plr_ponsrv_pon_auto_learn_get',
+            'plr_ponsrv_pon_auto_find_get', 'plr_ponsrv_auto_add_onu', 'plr_ponsrv_log_module_id_get'))
+        # Both retained builds place the local complete selector at +690.
+        self.o.symbols['select_assignment'] = self.o.symbols['plr_ponsrv_auth_check_func_get'] + 0x690
+
+    def hook(self, name, a):
+        u = self.o.uc
+        if name == 'plr_gpon_maxonu_get': return 64
+        if name == 'plr_ponsrv_onu_check': return int(self.vendor_allowed)
+        if name == 'plr_ponsrv_pon_auto_learn_get': return self.auto_learn
+        if name == 'plr_ponsrv_pon_auto_find_get': return self.auto_find
+        if name == 'plr_ponsrv_log_module_id_get': return 0
+        if name in ('plr_ponsrv_onu_is_add', 'plr_ponsrv_onu_is_authed', 'plr_ponsrv_onu_state_get',
+                'plr_ponsrv_onu_auth_data_get', 'plr_ponsrv_onu_auth_data_set_sn',
+                'plr_ponsrv_onu_active_state_get', 'plr_ponsrv_auto_add_onu'):
+            assert a[0] & 65535 == 1
+            id = a[0] >> 16
+            assert 1 <= id <= 64
+            row = self.rows.get(id)
+            if name == 'plr_ponsrv_onu_is_add': return int(row is not None)
+            if name == 'plr_ponsrv_auto_add_onu':
+                self.events.append(['auto-add', id]); return self.add_error
+            assert row is not None
+            if name == 'plr_ponsrv_onu_is_authed':
+                u.mem_write(a[1], struct.pack('<H', row.get('hardware', 65535)))
+                return int(row.get('state', 1) in (2, 5))
+            if name == 'plr_ponsrv_onu_state_get':
+                u.mem_write(a[1], struct.pack('<I', row.get('state', 1))); return 0
+            if name == 'plr_ponsrv_onu_active_state_get': return row.get('active', 1)
+            if name == 'plr_ponsrv_onu_auth_data_get':
+                u.mem_write(a[1], struct.pack('<I', row['method']))
+                u.mem_write(a[2], row['credentials']); self.events.append(['compare-row', id]); return 0
+            if name == 'plr_ponsrv_onu_auth_data_set_sn':
+                row['credentials'] = bytes(u.mem_read(a[1], 8)) + row['credentials'][8:]
+                self.events.append(['bind-sn', id]); return 0
+        return super().hook(name, a)
+
+    def select(self, rows, observed, hardware=5, enabled=0, allowed=True, learn=0, find=0, add_error=0):
+        self.rows = {id: dict(row) for id, row in rows.items()}
+        self.global_enabled, self.vendor_allowed = enabled, allowed
+        self.auto_learn, self.auto_find, self.add_error = learn, find, add_error
+        self.events = []
+        u, p = self.o.uc, self.p + 0x2000
+        u.mem_write(p, struct.pack('<HH', 1, hardware) + observed)
+        u.mem_write(p+128, bytes(16))
+        ret = self.o.call('select_assignment', p, p+128, p+132, p+136)
+        logical, added = struct.unpack('<H2xI', u.mem_read(p+128, 8))
+        return dict(returned=ret, logical_onu=logical, auto_added=added,
+                    global_result=u.mem_read(p+136, 1)[0], operations=list(self.events))
+
+
+def verify_assignment(binary):
+    original = AssignmentOriginal(binary)
+    observed = original.credentials()
+    cases = []
+    def run(label, rows, expected, **kwargs):
+        result = original.select(rows, observed, **kwargs)
+        assert (result['returned'], result['logical_onu'], result['auto_added'], result['global_result']) == expected, (label, result)
+        cases.append(dict(case=label, **result))
+        return result
+    for method in range(1, 6):
+        row = dict(method=method, credentials=observed)
+        run(f'method{method}-same-slot', {6:row}, (0,6,0,0))
+        run(f'method{method}-wrong-slot', {3:row}, (3,3,0,0))
+        run(f'method{method}-inactive', {6:dict(row, active=0)}, (1,0,0,0))
+        run(f'method{method}-already-active-elsewhere', {6:dict(row, state=2, hardware=4)}, (2,0,0,0))
+        if method in (2,4,5):
+            unbound = dict(row, credentials=original.credentials(serial=bytes(8)))
+            result = run(f'method{method}-bind-current', {6:unbound}, (1,0,0,0))
+            assert result['operations'][-1] == ['bind-sn', 6]
+            result = run(f'method{method}-unbound-wrong-slot', {3:unbound}, (3,3,0,0))
+            assert not any(op[0]=='bind-sn' for op in result['operations'])
+    row = dict(method=1, credentials=observed)
+    run('global-match', {6:row}, (0,6,0,1), enabled=1)
+    observed = original.credentials(loid=b'wrong')
+    run('global-loid-reject', {6:row}, (4,6,0,2), enabled=1)
+    observed = original.credentials(key=b'wrong')
+    run('global-key-reject', {6:row}, (4,6,0,3), enabled=1)
+    observed = original.credentials(serial=b'ELSE\1\2\3\4')
+    result = run('existing-hardware-bypasses-comparator', {6:dict(row,state=2,hardware=5)}, (0,6,0,0))
+    assert result['operations']==[]
+    run('existing-reject-state-rechecks-global', {6:dict(row,state=5,hardware=5)}, (0,6,0,1), enabled=1)
+    run('vendor-refusal-precedes-assignment', {6:row}, (2,0,0,0), allowed=False, learn=1, find=1)
+    for learn, find in ((0,0),(0,1),(1,0)):
+        run(f'learning-{learn}-find-{find}', {}, (2,0,0,0), learn=learn, find=find)
+    result = run('auto-add-current-is-pending', {}, (2,6,1,0), learn=1, find=1)
+    assert result['operations']==[['auto-add',6]]
+    result = run('auto-add-first-free-is-pending', {6:row}, (2,1,1,0), learn=1, find=1)
+    assert result['operations'][-1]==['auto-add',1]
+    run('auto-add-failure', {}, (7,0,0,0), learn=1, find=1, add_error=7)
+    run('no-free-row', {id:row for id in range(1,65)}, (2,0,0,0), learn=1, find=1)
+    return cases
+
+
 def verify(binary):
     stock = AuthOriginal(binary)
     comparison_cases = []
@@ -183,7 +283,8 @@ def verify(binary):
             assert stock.loid_set(result, failure) == failure
             set_cases.append(dict(result=result, injected_return=failure, operations=list(stock.events)))
     return dict(sha256=hashlib.sha256(binary.read_bytes()).hexdigest(), comparisons=comparison_cases,
-        global_checks=global_cases, loid_reads=loid_cases, result_writes=set_cases)
+        global_checks=global_cases, loid_reads=loid_cases, result_writes=set_cases,
+        assignment=verify_assignment(binary))
 
 
 def main():
@@ -198,12 +299,14 @@ def main():
             'LOID reads prefer fffa:4000/2000 then fall back to100:0040/0020',
             'original lower LOID getter returns0 with absent or partially populated credentials after IO failures',
             'global LOID result0 disabled,1 accepted,2 LOID mismatch,3 key mismatch',
-            'LOID result writes fffa instance0 mask1000 and propagates errors'],
+            'LOID result writes fffa instance0 mask1000 and propagates errors',
+            'assignment distinguishes accept, wait, unconfigured, slot migration and global rejection',
+            'SN binding in the current slot waits for reauthentication; auto-add remains pending'],
         scope='Actual original ARM64 routines with synthetic credentials and modeled OMCI/table IO. No native auth policy or hardware acceptance.')
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps({backend: {key: len(result[backend][key]) for key in
-        ('comparisons', 'global_checks', 'loid_reads', 'result_writes')} for backend in ('asic', 'fpga')}))
+        ('comparisons', 'global_checks', 'loid_reads', 'result_writes', 'assignment')} for backend in ('asic', 'fpga')}))
 
 
 if __name__ == '__main__':
