@@ -74,3 +74,9 @@ RAM模块rtl_ax_ap_stockphy SHA256=92e8bffd287a8726684fcb1f69585b2a8987542d7e8ed
 504组C/XB带宽/损耗/计数桶输入：旧实现112处不同，修正后0不同。原厂CR初始化→get_result→utility→noise exclusion→ratio串联执行，与编译native一致。真实模块rtl_ax_ap_stocknhm SHA256=4f7fccaab8818a193e908057ff4e1e95a46bd8885ae63c8431a206b5614781a9，TCP1.492Gbps、UDP1.574Gbps/21.30%。无pending冻结，未达标。
 
 最近GATHER/THERMAL/PHY三组UDP，NI发包8020319/7946148/8020657，与客户端实际收到8009635/7934704/8009428相差约万包，RPQ失败均0。约220万以上丢包发生在NI发送前或其背压上游；这一观测不能独立区分无线背压和PE供给极限。
+
+## XB OP5K
+
+按实际原厂33e978/33f3b0/33f7bc补齐16点ADC扫描、连续零区间/中点/±5设置限制、最多两次尝试、两次温度平均、低于基准26且相对上次温差>5时校准、回温后恢复带宽默认值。保留PE架构，非CV0在带宽设置后记录默认值，周期调用。20组原厂序列与状态对照通过；换信道重试/DIG1332继续通过。
+
+RAM模块rtl_ax_ap_stockop5k SHA256=be7350f8e62353566dad305997638f58d0d71c23d3b773feffcc59c2b826d334。原有2G接口配置禁用；创建临时monitor运行5秒再删除，2G温度30/29、OP5K_ready=1默认4/4、周期2次、NHM有效1次。温度未低于26，没有硬件触发扫描；扫描写序列已离线原厂对照。没有为纯XB变化重复5G长测。

@@ -1602,6 +1602,8 @@ static void rtl_ax_dm_work(struct wiphy *wiphy, struct wiphy_work *work)
 		radio->chip, &radio->rf_runtime);
 	if (!radio->rf_runtime.result)
 		radio->rf_runtime.result = rtl_ax_rxdck_tracking_locked(radio);
+	if (!radio->rf_runtime.result && radio->chip == RTL_AX_8192XB)
+		radio->rf_runtime.result = rtl_ax_xb_op5k_track(&radio->io, &radio->xb_op5k);
 	if (radio->rf_runtime.result)
 		dev_err(&radio->pdev->dev, "RF watchdog failed: %d\n", radio->rf_runtime.result);
 	if (radio->channel.configured) {

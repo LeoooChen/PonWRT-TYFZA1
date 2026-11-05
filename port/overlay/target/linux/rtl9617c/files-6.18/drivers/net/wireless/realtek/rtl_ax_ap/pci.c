@@ -44,6 +44,7 @@
 #include "xb-channel.h"
 #include "rf-start.h"
 #include "rf-runtime.h"
+#include "xb-op5k.h"
 #include "dack.h"
 #include "rxdck.h"
 #include "c-rxdck.h"
@@ -123,6 +124,7 @@ struct rtl_ax_ap {
 	u64 rfk_notifications;
 	struct rtl_ax_rf_start rf_start;
 	struct rtl_ax_rf_runtime rf_runtime;
+	struct rtl_ax_xb_op5k xb_op5k;
 	struct rtl_ax_dack dack;
 	struct rtl_ax_rxdck rxdck;
 	u8 rxdck_channel;
@@ -1129,6 +1131,8 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 				 radio->identity.hardware_cv, &radio->rf_start);
 	if (ret)
 		return ret;
+	if (radio->chip == RTL_AX_8192XB)
+		radio->xb_op5k.thermal[0] = radio->xb_op5k.thermal[1] = 26;
 	rtl_ax_ref_power_start(&radio->io, &radio->ref_power);
 	ret = rtl_ax_rf_rck_start(&radio->io, &radio->rf_start);
 	if (ret)
@@ -1843,6 +1847,8 @@ static int rtl_ax_receive_configure(struct rtl_ax_ap *radio, unsigned int primar
 		rtl_ax_c_receive_channel(&radio->io, &radio->phy, &radio->bb_dm, primary, channel, bandwidth, &radio->channel) :
 		rtl_ax_xb_receive_channel(&radio->io, &radio->phy, &radio->bb_dm, primary, channel, bandwidth, &radio->channel);
 	if (!ret) {
+		if (radio->chip == RTL_AX_8192XB)
+			rtl_ax_xb_op5k_channel(&radio->io, &radio->xb_op5k, radio->identity.hardware_cv);
 		rtl_ax_dig_bandwidth(&radio->io, &radio->dig, bandwidth);
 		/* Discard FAHM reports spanning RF channel calibration. */
 		radio->dig.fahm_triggered = radio->dig.fahm_configured = false;
@@ -1979,6 +1985,13 @@ static ssize_t radio_rf_runtime_show(struct device *dev,
 		state->thermal[0], state->thermal[1], state->lck_thermal[0], state->lck_thermal[1],
 		state->lck_runs, state->lck_timeouts, state->result, radio->rxdck_tracking_runs,
 		radio->rxdck.thermal[0], radio->rxdck.thermal[1], radio->rxdck.retries[0], radio->rxdck.retries[1]);
+	if (radio->chip == RTL_AX_8192XB)
+		length += sysfs_emit_at(buffer, length,
+			"OP5K_ready=%u adjusted=%u runs=%u default=%u,%u result=%u,%u thermal=%u,%u\n",
+			radio->xb_op5k.channel_ready, radio->xb_op5k.adjusted, radio->xb_op5k.runs,
+			radio->xb_op5k.defaults[0], radio->xb_op5k.defaults[1],
+			radio->xb_op5k.result[0], radio->xb_op5k.result[1],
+			radio->xb_op5k.thermal[0], radio->xb_op5k.thermal[1]);
 	mutex_unlock(&radio->command_mutex);
 	return length;
 }

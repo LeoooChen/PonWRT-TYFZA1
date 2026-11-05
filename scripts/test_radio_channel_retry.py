@@ -56,6 +56,7 @@ static int pause_tx(void){stopped=true;return step(1);}
 #define rtl_ax_tx_dfs_block(tx,value) ((void)(tx),blocked=(value))
 #define rtl_ax_dfs_stop_locked(...) step(2)
 #define rtl_ax_power_apply(...) step(5)
+#define rtl_ax_xb_op5k_channel(...) ((void)0)
 #define rtl_ax_xb_rxdck_start(...) step(6)
 #define rtl_ax_c_rxdck_start(...) step(6)
 #define rtl_ax_gapk_channel(...) step(7)
