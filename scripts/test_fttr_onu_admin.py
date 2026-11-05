@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from arm64_elf_oracle import ElfOracle
 from test_fttr_fpga_boot import function
+from unicorn.arm64_const import UC_ARM64_REG_SP, UC_ARM64_REG_PC
 
 
 class Registers:
@@ -41,9 +42,10 @@ class Registers:
 class Stock:
     def __init__(self, asic, relay, regs):
         self.regs = regs
+        self.timer, self.software_state = None, 0
         self.asic = ElfOracle(asic, self.io, ('FPGA_reg_read', 'FPGA_reg_write', 'drv_get_miniolt_chiptype'))
         self.relay = ElfOracle(relay, self.io, ('fpga_reg_read', 'fpga_reg_write',
-            'plr_log', 'plr_pondrv_log_module_id_get', 'plr_timer_timeout_handle_add'))
+            'plr_log', 'plr_pondrv_log_module_id_get', 'plr_timer_timeout_handle_add', 'drv_gpon_fpga_state_get'))
 
     def io(self, name, a):
         if name == 'FPGA_reg_read':
@@ -58,12 +60,34 @@ class Stock:
             return self.asic.call(name, data, a[1])
         elif name == 'usleep':
             self.regs.events.append(['delay', a[0]])
+        elif name == 'drv_gpon_fpga_state_get':
+            return self.software_state
+        elif name == 'plr_timer_timeout_handle_add':
+            self.timer = (a[0], a[2], bytes(self.relay.uc.mem_read(a[3], a[4])))
         elif name in ('drv_get_miniolt_chiptype', 'open'):
             return 3
         elif name not in ('flock', 'close', 'pthread_mutex_lock', 'pthread_mutex_unlock',
                           'plr_log', 'plr_pondrv_log_module_id_get', 'plr_timer_timeout_handle_add'):
             raise AssertionError(('unmodeled original call', name))
         return 0
+
+    def offline_unblock(self, backend, id, downstream, keep):
+        """Run the actual offline decision block, with explicit current state."""
+        oracle = self.relay
+        oracle.uc.mem_write(oracle.symbols['g_onu_deactive_keep_flag'] + 4 * id, struct.pack('<I', keep))
+        stack = oracle.scratch + 0x1ff000
+        oracle.uc.reg_write(UC_ARM64_REG_SP, stack)
+        if backend == 3:
+            # ONU_Offline has already fetched the downstream state at this boundary.
+            oracle.uc.mem_write(stack + 60, struct.pack('<II', downstream, id))
+            start, end = 0x48acc, 0x48c10
+        else:
+            oracle.uc.mem_write(stack + 20, struct.pack('<I', id))
+            self.regs.values[0x40401 + 2 * id] = downstream
+            self.software_state = 2 if downstream & (1 << 18) else 0
+            start, end = 0x47ac0, 0x47cd0
+        oracle.uc.emu_start(start, end, count=20000)
+        assert oracle.uc.reg_read(UC_ARM64_REG_PC) == end
 
 
 def main():
@@ -82,7 +106,7 @@ def main():
         _fields_ = [('context', C.c_void_p), ('read', rd), ('write', wr), ('delay', delay)]
 
     serial = bytes.fromhex('5445535401234567')
-    cases = []
+    cases, release_cases = [], []
     with tempfile.TemporaryDirectory() as temporary:
         folder = Path(temporary)
         source = '''#include <stdbool.h>
@@ -180,9 +204,35 @@ int store(const struct rtl_fttr_reg_io *io, int backend, const char *input) {
                 assert not actual.events
             command = f'5 1 {serial.hex()}\n'.encode()
             assert native.store(C.byref(io), backend, command) == len(command)
+            # Verify why permanent administration must retain the block even
+            # after the original offline scanner or ASIC 15s callback runs.
+            for downstream in (0, 0x10000, 0x40000, 0x50000):
+                for keep in (0, 1):
+                    regs = Registers(5); regs.values[0x4040b] = downstream
+                    stock = Stock(args.asic, relay, regs)
+                    stock.offline_unblock(backend, 5, downstream, keep)
+                    writes = [e for e in regs.events if e[0] == 'write']
+                    cleared = bool(downstream & 0x10000) and not keep and (backend == 3 or not downstream & 0x40000)
+                    assert writes == ([['write', 0x4040b, downstream & ~0x10000]] if cleared else [])
+                    release_cases.append({'backend': backend, 'downstream': downstream, 'keep': keep,
+                                          'offline_clears_block': cleared})
+            for state in (4, 5):
+                regs = Registers(5); stock = Stock(args.asic, relay, regs)
+                assert stock.relay.call('drv_gpon_onu_state_set', 0, 5, state) == 0
+                if backend == 3:
+                    seconds, callback, payload = stock.timer
+                    assert (seconds, callback, payload) == (15, 0x4775c, b'\x05')
+                    regs.events.clear(); data = stock.relay.scratch + 0x2000
+                    stock.relay.uc.mem_write(data, payload)
+                    stock.relay.symbols['unblock_callback'] = callback
+                    stock.relay.call('unblock_callback', data)
+                    assert bool([e for e in regs.events if e[0] == 'write']) == (state == 4)
+                else:
+                    assert stock.timer is None
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps({'cases': cases, 'io_failures_stop': True,
+    args.output.write_text(json.dumps({'cases': cases, 'original_offline_release_cases': release_cases,
+        'original_asic_timer_and_keep_flag_checked': True, 'io_failures_stop': True,
         'stale_identity_read_only': True, 'mailbox_timeout_stops': True,
         'original_timeout_false_success_reproduced': True, 'state_readback_checked': True,
         'sysfs_parser_and_lock_checked': True, 'hardware_verified': False,

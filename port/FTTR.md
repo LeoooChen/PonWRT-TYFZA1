@@ -104,7 +104,7 @@ It does not use the names of the original libraries as a capability probe.
   vendor-first serial bytes. The registration flag is downstream bit18 from
   original `ONU_Online`; it is not a claim that OMCI/service provisioning passed.
   Native block control changes only downstream bit16. Its lifetime belongs to
-  the controller instead of copying the original unconditional 15-second clear.
+  the controller; the original15-second callback checks the per-ONU keep flag.
   PLOAM mailbox `40007..4000a` preserves the original word/trigger order and
   explicit repeat count. Real transport errors stop before further writes.
   The original wait rejects a ready mailbox on its 2000th read; native accepts
@@ -2820,6 +2820,18 @@ to mask downstream bit16, then479d0 sends `(ONU<<24)|00050000,0,0` through
 `SendDsPloamMsg`. State5 sets `g_onu_deactive_keep_flag`; the original15s
 callback at4775c consequently leaves the block set. Native permanent block
 has no background unblock timer. State3 explicitly clears bit16.
+
+The temporary state4 differs from permanent state5 in software keep state.
+The original ASIC `ONU_Offline` block at48acc..48c10 clears bit16 when
+keep is0, including when bit18 is still set; its15s callback is an additional
+release path. FPGA's polling block47ac0..47cd0 only reaches this release
+when downstream bit18 is clear, and does not schedule that timer. It clears
+only bit16 of the observed word, whereas the explicit state3 operation below
+replaces the whole FPGA downstream word. The original loop scans64 ONUs
+with1ms per-ONU and36ms between scans, in addition to register work. Native
+temporary-deactivation policy must preserve these distinctions; it is not
+implemented by a shared15s timeout. The extended original test executes24
+offline state/keep combinations and the actual ASIC callback for states4/5.
 
 FPGA `libponrelay1p25g:drv_gpon_onu_state_set` at47188 instead calls46acc:
 write the **whole** `40401+2*ONU` word to10000, wait10000us, then clear
