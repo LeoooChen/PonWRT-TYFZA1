@@ -1237,6 +1237,33 @@ Reports are under `artifacts/fttr/p6-deepq-20261105/`, including
 P6-to-P6 learning is implemented below; complete producer/queue/MiniOLT
 retirement and real device acceptance remain outstanding.
 
+### CPU-originated P6 DEEPQ
+
+FE output already selected P6 DEEPQ, but `fttr0` CPU transmission previously
+set only Header A `no_drop`. Original `ca_ni_virtual_instance_alloc`
+(`a30e0`) sets the private DEEPQ bit, and the header assignment in
+`__ca_ni_start_xmit_by_specific_vp` (`a9cf0..a9d04`) copies it to bit62.
+Native `rtl_fttr_xmit` now sets high-word bit30 as well as bit13, so both
+CPU management/service traffic and FE output use the configured port14
+VOQ112..119 path and its buffering/backpressure.
+
+`test_fttr_cpu_deepq.py` executes the original virtual-port allocation and
+header assignment block, then runs the production FTTR xmit/DMA packing
+functions. It failed on the prior missing bit and passes for64/1518/1996-byte
+frames after the fix. ASan/UBSan,4096 mixed DMA submissions with wrap/BUSY
+checks and QM P6/PON dispatch regression pass. Evidence is
+`artifacts/fttr/cpu-deepq-20261105.json`. This validates header construction,
+not physical scheduling or packet retirement.
+
+The normal Linux6.18.55 `Image modules` build passes with current NI,
+MiniOLT/BOSA and authentication sources verified against the compiled tree
+(`cpu-deepq-build-native-20261105.log` and `cpu-deepq-build-20261105.json`).
+The target builds NI into vmlinux; an initial external-module check was invalid
+because it duplicated those exported symbols. Normal in-tree build resolves
+that check without changing product code. Existing module-description warnings
+remain. The shared FE owner checks and1358 flow-parser cases, including P6
+routing, pass. No new rootfs/FIT or hardware validation is implied.
+
 ### Learning between two ONU service ports on P6
 
 With original P6 DEEPQ/QM return programmed, the native bridge learner can

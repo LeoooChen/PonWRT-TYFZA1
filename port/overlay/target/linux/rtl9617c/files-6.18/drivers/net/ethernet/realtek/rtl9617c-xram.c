@@ -750,7 +750,10 @@ static netdev_tx_t rtl_fttr_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct rtl_fttr_port *port = netdev_priv(dev);
 	const struct rtl9617c_ni_frame frame = {
-		.header_high = BIT(13),
+		/* Original virtual CPU TX sets Header A DEEPQ (bit62). P6 uses
+		 * QM port14/VOQ112..119 for CPU submissions as well as FE output.
+		 */
+		.header_high = BIT(13) | BIT(30),
 		.header_low = (16 << 9) | (6 << 3) | BIT(29),
 	};
 
