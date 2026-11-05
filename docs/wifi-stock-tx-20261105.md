@@ -66,3 +66,11 @@ RAM模块rtl_ax_ap_stockrpr SHA256 `d1c680b345c1dca3dbaca05ddf6a926a468c86c4da95
 实际C/XB hal_start分别277ca4/27e788附近传入enable=1、append=0e、filter=20；实际rtw_hal_mac_ppdu_stat_cfg→cfg_ppdu_status输出CE40=2f、9c18低2位1。当前12+20ms/2s采样改为原厂2f持续采集；扫描沿用CRC正确的外部beacon报告，不再关闭采样开关。18928RSSI/36噪声H2C对照和构建通过。
 
 RAM模块rtl_ax_ap_stockphy SHA256=92e8bffd287a8726684fcb1f69585b2a8987542d7e8ed3e9ae403ea09c5109c3。有效NI TCP1.467Gbps、UDP1.546Gbps/22.66%，未达标。初次TCP0.728中NI只144包、ARM新增314257请求，排除。RSSI样本14473，PHY总报告281302，持续配置读回2f。CPU抽样最大核没有饱和；没有证明吞吐增益。
+
+## NHM 统计修正
+
+原先C最后raw bin11错误合并bin10；实际halbb_nhm_get_utility 2a61b0..2a61bc合并到sw_result[0]。另外原先utility使用未减external loss的阈值，实际nhm_set保存并使用减loss后的阈值。修正两处，并将XB独立12桶NHM周期接入DM（同一CLIENT CR，XB损耗项0）。
+
+504组C/XB带宽/损耗/计数桶输入：旧实现112处不同，修正后0不同。原厂CR初始化→get_result→utility→noise exclusion→ratio串联执行，与编译native一致。真实模块rtl_ax_ap_stocknhm SHA256=4f7fccaab8818a193e908057ff4e1e95a46bd8885ae63c8431a206b5614781a9，TCP1.492Gbps、UDP1.574Gbps/21.30%。无pending冻结，未达标。
+
+最近GATHER/THERMAL/PHY三组UDP，NI发包8020319/7946148/8020657，与客户端实际收到8009635/7934704/8009428相差约万包，RPQ失败均0。约220万以上丢包发生在NI发送前或其背压上游；这一观测不能独立区分无线背压和PE供给极限。

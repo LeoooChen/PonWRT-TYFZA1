@@ -1626,7 +1626,7 @@ static void rtl_ax_dm_work(struct wiphy *wiphy, struct wiphy_work *work)
 			ktime_get_boottime_seconds());
 		rtl_ax_bb_dm_edcca_update(&radio->io, &radio->bb_dm, linked, rssi_min);
 	}
-	if (radio->chip == RTL_AX_8852C && radio->channel.configured) {
+	if (radio->channel.configured) {
 		u32 traffic = rtl_ax_tx_traffic_bytes(radio->tx) + rtl_ax_rx_traffic_bytes(radio->rx);
 		u64 now = ktime_get_boottime_ns() / 1000000;
 
@@ -1635,7 +1635,7 @@ static void rtl_ax_dm_work(struct wiphy *wiphy, struct wiphy_work *work)
 			env->throughput = div_u64((u64)(u32)(traffic - env->traffic_previous) * 8,
 				(now - env->traffic_time_ms) * 1000);
 		}
-		rtl_ax_environment_false_alarms(&radio->io, env);
+		if (radio->chip == RTL_AX_8852C) rtl_ax_environment_false_alarms(&radio->io, env);
 		spin_lock_irqsave(&radio->command_lock, flags);
 		if (radio->dfs.enabled)
 			rtl_ax_dfs_dynamic(&radio->dfs, env->throughput,
@@ -1644,7 +1644,8 @@ static void rtl_ax_dm_work(struct wiphy *wiphy, struct wiphy_work *work)
 		env->traffic_previous = traffic;
 		env->traffic_time_ms = now;
 		rtl_ax_environment_trigger(&radio->io, env,
-			rtl_ax_environment_loss(radio->channel.external_loss[0], radio->channel.external_loss[1]));
+			radio->chip == RTL_AX_8852C ? rtl_ax_environment_loss(
+				radio->channel.external_loss[0], radio->channel.external_loss[1]) : 0);
 	}
 	if (radio->ap_started) rtl_ax_traffic_update(radio);
 	mutex_unlock(&radio->command_mutex);
