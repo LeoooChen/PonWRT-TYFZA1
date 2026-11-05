@@ -77,7 +77,9 @@ for file, names in [('channel.h', ('rtl_ax_channel_field', 'rtl_ax_channel_prima
                                    'rtl_ax_c_tssi_bw_diff', 'rtl_ax_c_tssi_slope', 'rtl_ax_c_tssi_de20'))]:
     source += ''.join(function(file, name) for name in names)
 source += '''
-struct rtl_ax_ap {struct rtl_ax_channel channel;unsigned int chip;struct {unsigned int band;}band;};
+struct ieee80211_vif {unsigned type;};
+#define NL80211_IFTYPE_MESH_POINT 7
+struct rtl_ax_ap {struct ieee80211_vif *ap_vif;struct rtl_ax_channel channel;unsigned int chip;struct {unsigned int band;}band;};
 struct ieee80211_sta_he_cap {
  bool has_he;
  struct {u16 rx_mcs_80,rx_mcs_160;} he_mcs_nss_supp;

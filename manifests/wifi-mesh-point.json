@@ -16,15 +16,17 @@
     "stock_peer_JOIN_CAM_cases": 1600,
     "stock_self_JOIN_cases": 32,
     "stock_C_XB_role_create_connect_remove_switch": "pass; artifacts/mesh/stock-mesh-role.json",
-    "AP_mesh_lifecycle_ASan_UBSan": "pass; scripts/test_radio_mesh.py",
+    "AP_mesh_lifecycle_ASan_UBSan": "pass; includes scan/ROC pause, idle/removal teardown, rejoin with retained monitor channel, asynchronous stop on start error",
     "PE_raw_mesh_header_QoS_DMA": "pass; scripts/test_pe_host_headers.py",
     "AP_basic_rates_RTS": "pass",
     "AP_DFS": "pass with local fixture repair for preexisting missing RX PE stubs; production DFS unchanged",
     "AP_stop_NI_reference": "pass",
-    "compiler_warning": "existing missing MODULE_DESCRIPTION modpost warnings"
+    "compiler_warning": "existing missing MODULE_DESCRIPTION modpost warnings",
+    "mesh_NOHT_peers": "pass; C/XB legacy mask and rate selection; AP legacy rejection unchanged",
+    "AP_HE_VHT_160_and_peer_rate_regression": "pass; scripts/test_radio_160.py and scripts/test_radio_peer_rate.py"
   },
   "artifacts_sha256": {
-    "artifacts/mesh/radio/rtl_ax_ap_mesh.ko": "0543bbb879f1581ba065c6f575ceac393201656c85231a8def4ab8b235ed3914",
+    "artifacts/mesh/radio/rtl_ax_ap_mesh.ko": "a7fa473352efecba3c2d392c659b91ac28104c51a44e0d62d73c596cf5ad2b07",
     "artifacts/mesh/kernel/net/mac80211/mac80211.ko": "f6667998e602da349f5dceafb2e8579df5445e9b0856785cf853d1be0a1414b2",
     "artifacts/mesh/radio/pe/pe-tx.bin": "99134a0bc5a5bace8071853cb21134b46e5522e102f15dfa5e0da248285bd6f8"
   },
@@ -32,5 +34,27 @@
     "device_modified": false,
     "air_peer_link_and_SAE_data": "pending; device reserved by user for another AI task",
     "full_firmware_image_built": false
+  },
+  "review": {
+    "reviewed_commit": "6b09fcd",
+    "fixed": [
+      "BSS_CHANGED_BEACON_ENABLED false during scan/ROC incorrectly stopped mesh and cancelled runtime work; now only pauses beacons; IDLE/removal performs teardown",
+      "Default NOHT mesh peers were rejected by rtl_ax_ra_peer; connect existing legacy RA only for mesh",
+      "Start errors were logged while mac80211 returned successful join; now request cfg80211 asynchronous interface stop"
+    ],
+    "open": [
+      {
+        "issue": "TSF neighbor synchronization missing",
+        "evidence": "monitor_ops has no get_tsf/set_tsf/offset_tsf; mesh_sync.c uses drv_get_tsf(-1) and cannot adjust local TSF",
+        "impact": "Neighbor clock drift correction and TSF-based DTIM alignment are not implemented; register write semantics still need verification"
+      },
+      {
+        "issue": "HWMP metric does not receive actual firmware-selected rate",
+        "evidence": "rtl_ax_tx_report clears rates[0].idx for firmware RA and supplies no extended rate; ieee80211s_update_metric reads last_rate, which remains basic/old; no get_expected_throughput callback",
+        "impact": "Airtime path metric is based on stale/basic rate instead of real link rate"
+      }
+    ],
+    "logs_directory": "artifacts/mesh-review",
+    "hardware_access": false
   }
 }

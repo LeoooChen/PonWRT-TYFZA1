@@ -25,11 +25,12 @@ code = r"""
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
-typedef uint8_t u8; typedef uint32_t u32; typedef uint64_t u64;
+typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef uint64_t u64;
 #define BIT(n) (1U << (n))
 #define RTL_AX_BIT(n) BIT(n)
 #define RTL_AX_H2C_CMD 0
 #define RTL_AX_H2C_DATA 1
+#define GFP_KERNEL 0
 #define RTL_AX_8852C 3
 #define NL80211_IFTYPE_MONITOR 6
 #define NL80211_IFTYPE_AP 3
@@ -39,30 +40,33 @@ typedef uint8_t u8; typedef uint32_t u32; typedef uint64_t u64;
 #define BSS_CHANGED_HE_BSS_COLOR BIT(1)
 #define BSS_CHANGED_BEACON BIT(2)
 #define BSS_CHANGED_BEACON_ENABLED BIT(3)
+#define BSS_CHANGED_IDLE BIT(4)
+#define BSS_CHANGED_BEACON_INT BIT(5)
 #define WRITE_ONCE(x,v) ((x)=(v))
 #define spin_lock_irqsave(l,f) ((void)(l),(f)=0)
 #define spin_unlock_irqrestore(l,f) ((void)(l),(void)(f))
 #define mutex_lock(l) ((void)(l))
 #define mutex_unlock(l) ((void)(l))
-#define wiphy_work_cancel(w,p) ((void)(w),(void)(p))
+#define wiphy_work_cancel(w,p) ((void)(w),(void)(p),cancellations++)
 #define dev_err(...) ((void)0)
 #define dev_info(...) ((void)0)
 struct ieee80211_bss_conf {unsigned beacon_int,dtim_period; bool enable_beacon;
  struct {bool enabled; unsigned color;} he_bss_color;};
-struct ieee80211_vif {int type; u8 addr[6]; struct ieee80211_bss_conf bss_conf;};
+struct ieee80211_vif {int type;struct {bool idle;}cfg; u8 addr[6]; struct ieee80211_bss_conf bss_conf;};
 struct port {int result;};
 struct io {int unused;}; struct tx {bool blocked;};
 struct rtl_ax_ap {struct ieee80211_vif *ap_vif; struct io io; struct tx *tx; void *pdev,*rx;
  bool monitor_started,ap_started,beacon_enabled,radar_required;
  struct {int error;bool enabled,detected,in_cac;}dfs;
  struct {unsigned valid;}security_roles[1];
- unsigned chip,role_stage,role_type,edca_valid;
+ unsigned chip,role_stage,role_type,edca_valid;struct {unsigned bandwidth;}channel;struct {unsigned band;}band;
  int role_result,ap_result,command_mutex,command_lock,offload_work,beacon_work,ra_update_work;
  struct port port0;u8 role_cam[60];unsigned receive_acks,done_acks,unmatched_acks;
  struct sk_buff *scan_pending;struct ieee80211_hw *hw;u64 scan_received_ns;
  unsigned scan_word0,scan_word1,scan_last_rpl,scan_matched,scan_unmatched;u8 scan_last_bssid[6];
 };
 struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};
+static unsigned cancellations,stop_requests;
 static unsigned bcn_enable,rx_mode,templates,fail_template,fail_command,commands;
 static unsigned command_class[32],command_function[32],command_word[32];
 static void rtl_ax_store32(u8 *p,u32 value){memcpy(p,&value,4);}
@@ -86,6 +90,8 @@ static int rtl_ax_port0_drop_mbid(void *p,unsigned id){(void)p;(void)id;return 0
 static int rtl_ax_port0_start(struct io *io,struct port *port,void *r,int(*drop)(void*,unsigned),unsigned interval,unsigned dtim){
  (void)io;(void)port;(void)r;(void)drop;assert(interval==100&&dtim==2);return 0;
 }
+static void *ieee80211_vif_to_wdev(struct ieee80211_vif *vif){return vif;}
+static void cfg80211_stop_iface(void *wiphy,void *wdev,int gfp){(void)wiphy;(void)wdev;(void)gfp;stop_requests++;}
 static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw){return hw->radio;}
 static void rtl_ax_tx_ap_address(struct tx *tx,u8 *addr){(void)tx;(void)addr;}
 static void rtl_ax_update32(struct io *io,unsigned reg,unsigned mask,unsigned value){(void)io;assert(reg==0xc400&&mask==BIT(12));bcn_enable=value;}
@@ -112,7 +118,7 @@ static unsigned delivered_flags;
 static void ieee80211_rx_ni(struct ieee80211_hw *hw,struct sk_buff *skb){(void)hw;delivered_flags=skb->status.flag;}
 """
 code += r"""
-struct net_device {};struct ieee80211_sta {};
+struct net_device {};struct ieee80211_sta;
 enum tc_setup_type { TC_SETUP_BLOCK };
 struct net_device_path_ctx {struct net_device *dev;};
 struct net_device_path {unsigned type;struct net_device *dev;};
@@ -120,6 +126,34 @@ struct net_device_path {unsigned type;struct net_device *dev;};
 static unsigned tc_calls;
 static int rtl9617c_wifi_setup_tc(struct net_device *dev,enum tc_setup_type type,void *data){(void)dev;(void)type;(void)data;tc_calls++;return 0;}
 """
+
+code += r"""
+#define BIT_ULL(n) (1ULL<<(n))
+#define min(a,b) ((a)<(b)?(a):(b))
+#define min_t(t,a,b) ((t)(a)<(t)(b)?(t)(a):(t)(b))
+#define le16_to_cpu(v) (v)
+#define NL80211_BAND_5GHZ 1
+#define IEEE80211_VHT_CAP_SHORT_GI_80 BIT(5)
+#define IEEE80211_VHT_CAP_SHORT_GI_160 BIT(6)
+#define IEEE80211_HT_CAP_SGI_20 BIT(5)
+#define IEEE80211_HT_CAP_SGI_40 BIT(6)
+#define IEEE80211_SMPS_STATIC 2
+#define IEEE80211_SMPS_DYNAMIC 3
+#define IEEE80211_HE_PHY_CAP1_LDPC_CODING_IN_PAYLOAD 0x20
+#define IEEE80211_HE_PHY_CAP1_HE_LTF_AND_GI_FOR_HE_PPDUS_0_8US 0x40
+#define IEEE80211_HE_PHY_CAP7_HE_SU_MU_PPDU_4XLTF_AND_08_US_GI 4
+static u32 get_unaligned_le32(const void *p){u32 v;memcpy(&v,p,4);return v;}
+static u64 get_unaligned_le64(const void *p){u64 v;memcpy(&v,p,8);return v;}
+static void put_unaligned_le64(u64 v,void *p){memcpy(p,&v,8);}
+#include "rate.h"
+struct ieee80211_sta_he_cap {bool has_he;struct {u16 rx_mcs_80,rx_mcs_160;}he_mcs_nss_supp;struct {u8 phy_cap_info[11];}he_cap_elem;};
+struct ieee80211_link_sta {unsigned bandwidth,rx_nss,smps_mode,supp_rates[2];
+ struct {struct {u8 rx_mask[2];}mcs;u32 cap;bool ht_supported;}ht_cap;
+ struct {u32 cap;bool vht_supported;struct {u16 rx_mcs_map;}vht_mcs;}vht_cap;
+ struct ieee80211_sta_he_cap he_cap;};
+struct ieee80211_sta {struct ieee80211_link_sta deflink;struct {u32 max_amsdu_len;}*cur;};
+"""
+code += function("monitor.h", "rtl_ax_ra_peer")
 code += function("monitor.h", "rtl_ax_net_setup_tc")
 code += function("monitor.h", "rtl_ax_net_fill_forward_path")
 code += function("monitor.h", "rtl_ax_scan_complete_frame")
@@ -127,7 +161,7 @@ code += function("monitor.h", "rtl_ax_scan_complete_frame")
 for name in ("rtl_ax_role_unpause", "rtl_ax_role_create", "rtl_ax_role_join", "rtl_ax_role_cam"):
     code += function("role.h", name)
 code += function("pci.c", "rtl_ax_self_role_prepare")
-for name in ("rtl_ax_monitor_add_interface", "rtl_ax_monitor_remove_interface", "rtl_ax_ap_start", "rtl_ax_ap_stop", "rtl_ax_ap_changed"):
+for name in ("rtl_ax_monitor_add_interface", "rtl_ax_ap_start", "rtl_ax_ap_stop", "rtl_ax_monitor_remove_interface", "rtl_ax_ap_changed"):
     code += function("monitor.h", name)
 code += r"""
 static void reset_commands(void){commands=fail_command=0;}
@@ -144,6 +178,13 @@ int main(void){
   assert(rtl_ax_monitor_add_interface(&hw,&sta)==-EOPNOTSUPP);
   assert(!rtl_ax_monitor_add_interface(&hw,&monitor)&&!r.ap_vif);
   assert(!rtl_ax_monitor_add_interface(&hw,&mesh));
+  struct ieee80211_sta peer={.deflink={.rx_nss=1,.supp_rates={0xfff,0xff}}};
+  typeof(*peer.cur) cur={.max_amsdu_len=0};peer.cur=&cur;
+  r.band.band=chip==3;u8 ra[16];u32 rate,caps;
+  assert(rtl_ax_ra_peer(&r,&peer,1,ra,&rate,&caps,false));
+  assert(ra[0]==(chip==3?4:6)&&rate==(chip==3?4:0));
+  assert(get_unaligned_le64(ra+4)==(BIT_ULL(63)|(chip==3?0xff0:0xff5)));
+  r.ap_vif=&ap;assert(!rtl_ax_ra_peer(&r,&peer,1,ra,&rate,&caps,false));r.ap_vif=&mesh;
   assert(rtl_ax_monitor_add_interface(&hw,&ap)==-EBUSY);
   struct net_device dev;struct net_device_path_ctx ctx={&dev};struct net_device_path path={};
   assert(rtl_ax_net_setup_tc(&hw,&mesh,&dev,TC_SETUP_BLOCK,NULL)==-EOPNOTSUPP);
@@ -154,18 +195,34 @@ int main(void){
   rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON|BSS_CHANGED_BEACON_ENABLED);
   assert(r.ap_started&&r.beacon_enabled&&templates==1&&bcn_enable==BIT(12)&&rx_mode==4);
   assert(r.role_type==6);check_join(0x5b040100|bw);
+  /* Scan/ROC toggles only beacon enable. The channel remains assigned. */
+  reset_commands();cancellations=0;unsigned saved_templates=templates;
+  r.dfs.enabled=true;r.dfs.in_cac=false;r.radar_required=true;
+  conf.enable_beacon=false;rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);
+  assert(r.ap_started&&!r.beacon_enabled&&!r.dfs.in_cac&&!tx.blocked&&!cancellations);
+  conf.enable_beacon=true;rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);
+  assert(r.ap_started&&r.beacon_enabled&&!commands&&templates==saved_templates);
+  r.dfs.enabled=false;r.radar_required=false;
+  /* A retained monitor channel can suppress vif IDLE during mesh leave. */
+  conf.enable_beacon=false;rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);
+  reset_commands();conf.enable_beacon=true;
+  rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED|BSS_CHANGED_BEACON_INT|BSS_CHANGED_BEACON);
+  assert(commands==1&&command_class[0]==6&&templates==saved_templates+1);templates--;
   reset_commands();rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON);assert(templates==2&&!commands);
   conf.enable_beacon=false;rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);
+  mesh.cfg.idle=true;rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_IDLE);
   assert(!r.ap_started&&!r.beacon_enabled&&!bcn_enable&&rx_mode==0);
+  mesh.cfg.idle=false;
   conf.enable_beacon=true;reset_commands();rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);
   assert(r.ap_started&&commands==1&&command_class[0]==6);
   conf.enable_beacon=false;rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);
-  rtl_ax_monitor_remove_interface(&hw,&mesh);assert(!r.ap_vif);assert(!rtl_ax_monitor_add_interface(&hw,&ap));
+  mesh.cfg.idle=true;rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_IDLE);
+  mesh.cfg.idle=false;rtl_ax_monitor_remove_interface(&hw,&mesh);assert(!r.ap_vif);assert(!rtl_ax_monitor_add_interface(&hw,&ap));
   reset_commands();assert(!rtl_ax_ap_start(&hw,&ap,&conf));check_join(0x4b040100|bw);assert(r.role_type==2);
   rtl_ax_ap_stop(&hw,&ap,&conf);rtl_ax_monitor_remove_interface(&hw,&ap);assert(!rtl_ax_monitor_add_interface(&hw,&mesh));
   conf.enable_beacon=true;reset_commands();fail_command=1;
   rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);
-  assert(r.ap_result==-EIO&&!r.ap_started&&!bcn_enable);
+  assert(r.ap_result==-EIO&&!r.ap_started&&!bcn_enable&&stop_requests==1);
   reset_commands();rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);assert(r.ap_started);check_join(0x5b040100|bw);
   struct sk_buff skb={.status={.flag=RX_FLAG_NO_SIGNAL_VAL}};
   r.hw=&hw;r.scan_pending=&skb;rtl_ax_scan_complete_frame(&r,NULL);
@@ -174,15 +231,21 @@ int main(void){
   assert(delivered_flags==(RX_FLAG_NO_SIGNAL_VAL|RX_FLAG_ONLY_MONITOR));
   r.ap_vif=&mesh;
   rtl_ax_ap_stop(&hw,&mesh,&conf);reset_commands();fail_template=1;
-  rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);assert(r.ap_result==-ENOMEM&&!r.ap_started&&!bcn_enable);
-  fail_template=0;r.radar_required=true;r.dfs.error=-EIO;reset_commands();
-  rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);assert(r.ap_result==-EIO&&!r.ap_started&&!commands);
+  rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);assert(r.ap_result==-ENOMEM&&!r.ap_started&&!bcn_enable&&stop_requests==2);
+  fail_template=0;
+  /* Removal also retires an active mesh when a monitor retains a channel. */
+  reset_commands();rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);
+  assert(r.ap_started);rtl_ax_monitor_remove_interface(&hw,&mesh);
+  assert(!r.ap_vif&&!r.ap_started&&!r.beacon_enabled);
+  assert(!rtl_ax_monitor_add_interface(&hw,&mesh));
+  r.radar_required=true;r.dfs.error=-EIO;reset_commands();
+  rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);assert(r.ap_result==-EIO&&!r.ap_started&&!commands&&stop_requests==3);stop_requests=0;
  }
- puts("AP/mesh: interface/offload exclusion, C/XB role creation/switch/retry, beacon start/update/stop/rejoin, mesh beacon delivery without PHY report, firmware/template/DFS errors PASS");
+ puts("AP/mesh: interface/offload exclusion, C/XB role creation/switch/retry, beacon start/update/stop/rejoin, scan/ROC pause without teardown, NOHT mesh peers, mesh beacon delivery without PHY report, firmware/template/DFS errors PASS");
 }
 """
 with tempfile.TemporaryDirectory(prefix="radio-mesh-") as directory:
     work = Path(directory)
     (work / "test.c").write_text(code)
-    subprocess.run(["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-Wno-missing-field-initializers", "-Wno-unused-parameter", "-fsanitize=address,undefined", str(work / "test.c"), "-o", str(work / "test")], check=True)
+    subprocess.run(["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-Wno-missing-field-initializers", "-Wno-unused-parameter", "-fsanitize=address,undefined", "-I" + str(driver), str(work / "test.c"), "-o", str(work / "test")], check=True)
     subprocess.run([str(work / "test")], check=True)

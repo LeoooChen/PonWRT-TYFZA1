@@ -181,13 +181,6 @@ static int rtl_ax_monitor_add_interface(struct ieee80211_hw *hw, struct ieee8021
 	return 0;
 }
 
-static void rtl_ax_monitor_remove_interface(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
-{
-	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
-
-	if (radio->ap_vif == vif)
-		radio->ap_vif = NULL;
-}
 
 static int rtl_ax_ap_template(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	struct ieee80211_bss_conf *conf)
@@ -323,6 +316,17 @@ static void rtl_ax_ap_stop(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	rtl_ax_receive_mode(&radio->io, 0);
 }
 
+static void rtl_ax_monitor_remove_interface(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+
+	if (radio->ap_vif == vif) {
+		if (vif->type == NL80211_IFTYPE_MESH_POINT && radio->ap_started)
+			rtl_ax_ap_stop(hw, vif, &vif->bss_conf);
+		radio->ap_vif = NULL;
+	}
+}
+
 static void rtl_ax_edca_apply(struct rtl_ax_ap *radio, struct ieee80211_vif *vif, unsigned int ac)
 {
 	static const u16 addresses[] = { 0xc30c, 0xc308, 0xc300, 0xc304 };
@@ -366,17 +370,22 @@ static void rtl_ax_ap_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 				rtl_ax_edca_apply(radio, vif, ac);
 		mutex_unlock(&radio->command_mutex);
 	}
-	/* mac80211 mesh starts/stops through BSS changes, not start_ap. */
+	/* A scan/ROC only pauses beaconing. Leaving mesh releases its channel. */
+	if (vif->type == NL80211_IFTYPE_MESH_POINT &&
+	    (changed & BSS_CHANGED_IDLE) && vif->cfg.idle) {
+		rtl_ax_ap_stop(hw, vif, conf);
+		return;
+	}
+	/* mac80211 mesh starts through BSS changes, not start_ap. */
 	if (vif->type == NL80211_IFTYPE_MESH_POINT &&
 	    (changed & BSS_CHANGED_BEACON_ENABLED)) {
-		if (conf->enable_beacon && !radio->ap_started) {
+		if (conf->enable_beacon &&
+		    (!radio->ap_started || (changed & BSS_CHANGED_BEACON_INT))) {
 			radio->ap_result = rtl_ax_ap_start(hw, vif, conf);
-			if (radio->ap_result)
+			if (radio->ap_result) {
 				dev_err(&radio->pdev->dev, "mesh start failed: %d\n", radio->ap_result);
-			return;
-		}
-		if (!conf->enable_beacon) {
-			rtl_ax_ap_stop(hw, vif, conf);
+				cfg80211_stop_iface(hw->wiphy, ieee80211_vif_to_wdev(vif), GFP_KERNEL);
+			}
 			return;
 		}
 	}
@@ -675,6 +684,9 @@ static bool rtl_ax_ra_peer(struct rtl_ax_ap *radio, struct ieee80211_sta *sta,
 			ht, sgi, band5g);
 		*rate = 0x80;
 		*caps |= ht | (sgi ? BIT(16) : 0);
+	} else if (radio->ap_vif->type == NL80211_IFTYPE_MESH_POINT) {
+		rtl_ax_ra_legacy(command, id, link->supp_rates[radio->band.band] << (band5g ? 4 : 0), band5g);
+		*rate = band5g ? 4 : 0;
 	} else return false;
 	rtl_ax_ra_limit(command, bandwidth, nss, update);
 	*rate |= bandwidth << 16;
