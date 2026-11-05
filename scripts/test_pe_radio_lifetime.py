@@ -26,6 +26,7 @@ common = r'''
 #include <string.h>
 #include <stdio.h>
 typedef uint32_t u32;
+#include "tx-ownership.h"
 #define BIT(n) (1U<<(n))
 #define PE_PROBE_MAILBOX 0x2000
 #define RTL_AX_TX_ENTRIES 256
@@ -42,14 +43,14 @@ static void put_unaligned_le32(u32 v,void *p){put(p,v);}
 '''
 test = r'''
 int main(void){
- unsigned char memory[0x18000]={};struct rtl_ax_tx tx={.pe_active=true,.pe={memory}};
+ unsigned char memory[0x80000]={};struct rtl_ax_tx tx={.pe_active=true,.pe={memory}};
  assert(!rtl_ax_tx_ni_buffered(&tx,7));
  put(memory+0x2060,1);put(memory+0x206c,7);put(memory+0xd000+7*32+20,42<<16);
- put(memory+0xc400,0x06000000);put(memory+0xc404,(7<<8)|(42<<17));
+ put(memory+0x20000,0x06000000);put(memory+0x20004,(7<<8)|(42<<17));
  assert(rtl_ax_tx_station_pending(&tx,7,16) && rtl_ax_tx_station_pending(&tx,7,0));
  assert(!rtl_ax_tx_station_pending(&tx,7,3) && !rtl_ax_tx_station_pending(&tx,8,16));
  assert(rtl_ax_tx_key_pending(&tx,42) && !rtl_ax_tx_key_pending(&tx,43));
- put(memory+0xc404,BIT(31)|(7<<8)|(42<<17));
+ put(memory+0x20004,BIT(31)|(7<<8)|(42<<17));
  assert(!rtl_ax_tx_station_pending(&tx,7,16) && !rtl_ax_tx_key_pending(&tx,42));
  /* Waiting BIDs have no hardware owner; they still block a TID reset. */
  put(memory+0x13000+(7*8+3)*4,300);
@@ -58,25 +59,36 @@ int main(void){
  put(memory+0x13000+(7*8+3)*4,0);
  /* Every supported TID owns queued/submitted PE frames until its RPQ. */
  for(unsigned int tid=0;tid<8;tid++) {
-  put(memory+0xc404,(7<<8)|(42<<17));put(memory+0x1100c,tid);
+  put(memory+0x20004,(7<<8)|(42<<17));put(memory+0x2b000,tid);
   assert(rtl_ax_tx_station_pending(&tx,7,tid));
   assert(rtl_ax_tx_station_pending(&tx,7,16) && rtl_ax_tx_key_pending(&tx,42));
   for(unsigned int other=0;other<8;other++)
    assert(rtl_ax_tx_station_pending(&tx,7,other)==(other==tid));
-  put(memory+0xc404,BIT(31)|(7<<8)|(42<<17));
+  put(memory+0x20004,BIT(31)|(7<<8)|(42<<17));
   assert(!rtl_ax_tx_station_pending(&tx,7,tid));
+ }
+ /* The enlarged pool and untagged discard slot participate in retirement. */
+ for(unsigned int member=0;member<4;member++) {
+  unsigned int id=(unsigned int[]){128,1023,2047,RTL_AX_NI_DISCARD}[member];
+  put(memory+RTL_AX_NI_OWNERS+id*8,0x06000000);
+  put(memory+RTL_AX_NI_OWNERS+id*8+4,(7<<8)|(42<<17));
+  put(memory+RTL_AX_NI_TIDS+id*4,3);
+  assert(rtl_ax_tx_station_pending(&tx,7,3) && rtl_ax_tx_key_pending(&tx,42));
+  put(memory+RTL_AX_NI_OWNERS+id*8+4,BIT(31)|(7<<8)|(42<<17));
+  assert(!rtl_ax_tx_station_pending(&tx,7,3) && !rtl_ax_tx_key_pending(&tx,42));
+  put(memory+RTL_AX_NI_OWNERS+id*8,0);
  }
  tx.pending[0]=true;tx.slots[0].macid=8;tx.slots[0].tid=3;
  tx.slots[0].encrypted=true;tx.slots[0].key_index=43;
  assert(rtl_ax_tx_station_pending(&tx,8,3) && rtl_ax_tx_key_pending(&tx,43));
- put(memory+0xc400,0x06000000);put(memory+0xc404,BIT(15)|(7<<8)|(42<<17));
- put(memory+0xc408,0);put(memory+0xc40c,0);
- tx.ni_rpq_producer=127;
+ put(memory+0x20000,0x06000000);put(memory+0x20004,BIT(15)|(7<<8)|(42<<17));
+ put(memory+0x20008,0);put(memory+0x2000c,0);
+ tx.ni_rpq_producer=4095;
  rtl_ax_tx_pe_complete(&tx,256,0);
  assert(tx.ni_rpq_producer==0 && get_unaligned_le32(memory+0x20b4)==0);
- assert(get_unaligned_le32(memory+0xc800+127*4)==0);
- assert(get_unaligned_le32(memory+0xc404)&BIT(31));
- assert(get_unaligned_le32(memory+0xc40c)==0);
+ assert(get_unaligned_le32(memory+0x30000+4095*4)==0);
+ assert(get_unaligned_le32(memory+0x20004)&BIT(31));
+ assert(get_unaligned_le32(memory+0x2000c)==0);
  assert(!rtl_ax_tx_station_pending(&tx,7,16) && !rtl_ax_tx_key_pending(&tx,42));
  puts("PE lifetime: all eight TIDs retain BA/MACID/key ownership until RPQ; unrelated TIDs and completed frames do not block");
 }
@@ -87,5 +99,5 @@ with tempfile.TemporaryDirectory(prefix='pe-lifetime-', dir=root / 'artifacts') 
         ('rtl_ax_tx_ni_buffered', 'rtl_ax_tx_pe_pending', 'rtl_ax_tx_key_pending',
          'rtl_ax_tx_station_pending', 'rtl_ax_tx_pe_complete')) + test)
     subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
-                    str(work / 'test.c'), '-o', str(work / 'test')], check=True)
+                    '-I'+str(root/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap'), str(work / 'test.c'), '-o', str(work / 'test')], check=True)
     subprocess.run([str(work / 'test')], check=True)

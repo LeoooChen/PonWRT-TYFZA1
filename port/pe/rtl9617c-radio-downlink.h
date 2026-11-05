@@ -1,5 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-#define NI_WAIT 0x11000
 #define NI_PEER_QUEUED 0x11800
 #define NI_PEER_ROUTE 0x11a00
 #define NI_PEER_BA 0x12000
@@ -72,15 +71,6 @@ static void __attribute__((noinline)) ni_enqueue(
 	*(u32 *)(memory + NI_TID_QUEUED + queue * 4) += count;
 	if (macid) *(u32 *)(memory + NI_TID_PENDING + queue * 4) += count;
 	ni_peer_event(mailbox, memory, macid);
-}
-
-static u32 ni_owner(volatile u32 *mailbox, u8 *memory)
-{
-	volatile u32 *owners = (void *)(memory + 0xc400);
-	u32 id = mailbox[166];
-	while (owners[id * 2]) id = (id + 1) & 127;
-	mailbox[166] = (id + 1) & 127;
-	return id;
 }
 
 static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *mailbox, u8 *memory)
@@ -159,8 +149,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		     queued + grouped >= NI_PS_TOTAL_LIMIT)) {
 			if (grouped) ni_enqueue(mailbox, memory, group, head, tail, grouped);
 			grouped = 0;
-			u32 id = ni_owner(mailbox, memory);
-			u32 *owners = (void *)(memory + 0xc400);
+			u32 id = RTL_AX_NI_DISCARD;
+			u32 *owners = (void *)(memory + RTL_AX_NI_OWNERS);
 			*(u32 *)uncached(buffer) = 0;
 			owners[id * 2] = buffer; owners[id * 2 + 1] = BIT(31);
 			mailbox[30]++; mailbox[47] = id + 1; mailbox[63]++;
@@ -228,7 +218,7 @@ static void __attribute__((section(".rxq"), noinline)) ni_ps_scan(volatile u32 *
 static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *mailbox, u8 *memory, u32 *request)
 {
 	if (!mailbox[38]) return 0;
-	volatile u32 *owners = (void *)(memory + 0xc400);
+	volatile u32 *owners = (void *)(memory + RTL_AX_NI_OWNERS);
 	static const u8 channels[8] = {0, 1, 1, 0, 2, 2, 3, 3};
 	static const u8 indicators[8] = {0, 0, 1, 1, 0, 1, 0, 1};
 	u32 *next_peer = (void *)(memory + NI_PEER_NEXT), *prev_peer = (void *)(memory + NI_PEER_PREV);
@@ -259,7 +249,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				 now - ((u64)waiting[3] << 32 | waiting[2]) >=
 				 (u64)*(u32 *)(memory + RTL_AX_NI_PS_TIMEOUT + macid * 4) * 1000000));
 			if (discard && mailbox[47]) continue;
-			if (!discard && (mailbox[30] >= 124 ||
+			if (!discard && (!ni_owner_available(memory) ||
 			    (ps[0] && (command == ps[2] || !((grant_flags >> 16) & BIT(tid)))))) continue;
 			/* Stock TXSC batches short frames with a timeout. Give ACKs the
 			 * same opportunity; a full A-MSDU or an expired head sends now. */
@@ -270,14 +260,14 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			}
 			/* Commit this selection only while its grant snapshot is current. */
 			if (!discard && command != *(volatile u32 *)(memory + RTL_AX_NI_PS_VERSION + macid * 4)) continue;
-			u32 id = ni_owner(mailbox, memory), frames = 1;
+			u32 id = discard ? RTL_AX_NI_DISCARD : ni_owner(memory), frames = 1;
 			u32 tail_buffer = buffer, next_buffer = waiting[0];
 			const u32 *peer = (void *)(memory + 0xd000 + macid * 32);
 			u32 key = peer[5];
 			u32 details = macid << 8 | ((key >> 16) & 127) << 17 | BIT(15);
 			owners[id * 2] = buffer;
 			owners[id * 2 + 1] = details;
-			*(u32 *)(memory + NI_WAIT + id * 16 + 12) = tid;
+			*(u32 *)(memory + RTL_AX_NI_TIDS + id * 4) = tid;
 			if (discard) {
 				owners[id * 2 + 1] |= BIT(31);
 				mailbox[47] = id + 1; mailbox[63]++;
@@ -295,7 +285,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				if (ps[0]) {
 					request[4] |= (*(u32 *)(memory + NI_PEER_QUEUED + macid * 4) > 1 || (grant_flags & 2) ? BIT(19) : 0) | (grant_flags & 1 ? BIT(20) : 0);
 					owners[id * 2 + 1] |= BIT(16);
-					*(u32 *)(memory + RTL_AX_NI_PS_WP_GENERATION + id * 4) = generation;
+					*(u32 *)(memory + RTL_AX_NI_GENERATIONS + id * 4) = generation;
 					ps[2] = command; mailbox[39]++;
 				} else {
 					ps[2] = command;

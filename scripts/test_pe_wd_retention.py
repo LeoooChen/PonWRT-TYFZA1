@@ -3,6 +3,7 @@
 from collections import deque
 from pathlib import Path
 import json
+from pe_tx_ownership_fixture import initialize, map_report
 import struct
 import subprocess
 import sys
@@ -24,10 +25,11 @@ base, ring, pages, headers, payload, request, result = (
     0x04000000, 0x05000000, 0x05100000, 0x05400000, 0x06000000, 0x04004000, 0x04003000)
 mb = base + 0x2000
 u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-for address, size in ((0x1fc00000, 0x10000), (base, 0x20000), (ring, 0x4000),
+for address, size in ((0x1fc00000, 0x10000), (base, 0x80000), (ring, 0x4000),
                       (pages, 0x32000), (headers, 0xc000), (payload, 0x10000)):
     u.mem_map(address, size)
 u.mem_write(0x1fc00000, binary)
+initialize(u, base)
 
 
 def put(address, value): u.mem_write(address, struct.pack('<I', value))
@@ -70,7 +72,8 @@ for number in range(800):
         bd = ring + (channel * 256 + slot) * 8
         used, address = get(bd) & 0xffff, get(bd + 4)
         page = bytes(u.mem_read(address, 128))
-        assert struct.unpack_from('<I', page, 56)[0] & 0xfff == wp
+        tag = struct.unpack_from('<I', page, 56)[0] & 0xfff
+        assert get(base + 0x40000 + (channel * 4096 + tag) * 4) == wp + 1
         assert used == 64 + count * 6
         assert sum(struct.unpack_from('<H', page, 64 + i * 6)[0] & 2047
                    for i in range(count)) == total

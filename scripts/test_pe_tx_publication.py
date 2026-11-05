@@ -3,6 +3,7 @@
 from pathlib import Path
 import hashlib
 import json
+from pe_tx_ownership_fixture import initialize
 import struct
 import subprocess
 import sys
@@ -33,12 +34,13 @@ class Machine:
     def __init__(self, sequence=0, paired=True):
         self.u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
         for address, size in ((0x1fc00000, 0x10000), (RX, 0x20000),
-                              (TX, 0x20000), (BAR, 0x10000), (RING, 0x4000),
+                              (TX, 0x80000), (BAR, 0x10000), (RING, 0x4000),
                               (PAGES, 0x32000), (PAYLOAD, 0x10000),
                               (TABLE, 0x1000), (RX_BUFFER, 0x4000),
                               (0x10000000, 0x10000), (0x10020000, 0x1000)):
             self.u.mem_map(address, size)
         self.u.mem_write(0x1fc00000, BINARY)
+        initialize(self.u, TX)
         for mailbox in (TXMB, RXMB):
             for index, value in ((2, BAR | 0xa0000000), (3, 1),
                                  (140, mailbox | 0xa0000000), (142, 1)):
@@ -265,9 +267,10 @@ assert full.get(TXMB + WRITE * 4) == full.get(TXMB + READ * 4) == 4
 # channels, poison the former DDR staging area, then drain independently.
 dual = Machine()
 dual.queue()
-second = TX + 0x20000
+second = TX + 0x100000
 second_mb = second + 0x2000
-dual.u.mem_map(second, 0x20000)
+dual.u.mem_map(second, 0x80000)
+initialize(dual.u, second)
 dual.u.mem_map(PAGES + 0x40000, 0x32000)
 dual.u.mem_map(RING + 0x10000, 0x10000)
 for index, value in ((2, BAR | 0xa0000000), (3, 1), (8, 1),

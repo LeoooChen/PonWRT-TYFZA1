@@ -12,6 +12,7 @@
 #include <linux/rtl9617c-wifi.h>
 #include "receive.h"
 #include "tx-format.h"
+#include "tx-ownership.h"
 #include "security.h"
 #include "tx.h"
 #include "rx.h"
@@ -20,7 +21,7 @@
 #include "ni-state.h"
 
 #define RTL_AX_TX_ENTRIES 256
-#define RTL_AX_TX_PAGES 384
+#define RTL_AX_TX_PAGES RTL_AX_NI_ID_END
 static int ni_test_remove(struct rtl_ax_tx *tx);
 static void pe_event_release(struct rtl_ax_tx *tx);
 static void ni_route_sleep(struct rtl_ax_tx *tx, unsigned int macid);
@@ -175,6 +176,7 @@ static int rtl_ax_tx_pe_start(struct rtl_ax_tx *tx)
 	put_unaligned_le32(tx->ring_dma, tx->pe.memory + PE_PROBE_MAILBOX + 44);
 	put_unaligned_le32(tx->pages_dma, tx->pe.memory + PE_PROBE_MAILBOX + 48);
 	put_unaligned_le32(tx->headers_dma, tx->pe.memory + PE_PROBE_MAILBOX + 56);
+	rtl_ax_tx_ownership_init(tx->pe.memory, tx->pe.slot ? 1024 : 2048);
 	dma_wmb();
 	ret = pe_probe_start(&tx->pe, pe_tx_program, sizeof(pe_tx_program));
 	if (ret) return ret;
@@ -825,11 +827,11 @@ static void rtl_ax_tx_pe_complete(struct rtl_ax_tx *tx, unsigned int id, unsigne
 {
 	unsigned int member = id - 256;
 
-	void *entry = tx->pe.memory + 0xc400 + member * 8;
+	void *entry = tx->pe.memory + RTL_AX_NI_OWNERS + member * 8;
 	u32 details = get_unaligned_le32(entry + 4);
 	put_unaligned_le32(details | BIT(31) | status, entry + 4);
-	put_unaligned_le32(member, tx->pe.memory + 0xc800 + tx->ni_rpq_producer * 4);
-	tx->ni_rpq_producer = (tx->ni_rpq_producer + 1) & 127;
+	put_unaligned_le32(member, tx->pe.memory + RTL_AX_NI_COMPLETIONS + tx->ni_rpq_producer * 4);
+	tx->ni_rpq_producer = (tx->ni_rpq_producer + 1) & RTL_AX_NI_COMPLETION_MASK;
 	dma_wmb();
 	put_unaligned_le32(tx->ni_rpq_producer, tx->pe.memory + PE_PROBE_MAILBOX + 180);
 }
@@ -865,15 +867,26 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 		struct rtl_ax_tx_slot slot;
 		struct ieee80211_tx_info *info;
 		__le16 completed_sequence = 0;
+		u32 *tag_owner = NULL;
+		/* PE-forwarded reports already carry a software request ID. During
+		 * RPQ handoff, decode a direct hardware report through the same map. */
+		if (tx->pe_active && !packet->pe_completed) {
+			if (ring == RTL_AX_TX_RINGS || id == RTL_AX_WP_TAG_INVALID) {
+				tx->unmatched++; continue;
+			}
+			tag_owner = tx->pe.memory + RTL_AX_WP_TAG_MAP + (ring * RTL_AX_WP_TAG_STRIDE + id) * 4;
+			id = get_unaligned_le32(tag_owner) - 1;
+			if (id >= RTL_AX_TX_PAGES) { tx->unmatched++; continue; }
+		}
 		if (packet->pe_completed && id >= 256 && id < RTL_AX_TX_PAGES) {
 			schedule_work(&tx->ni.ps_work);
 			continue;
 		}
 		if (tx->pe_active && id >= 256 && id < RTL_AX_TX_PAGES) {
-			void *owner = tx->pe.memory + 0xc400 + (id - 256) * 8;
+			void *owner = tx->pe.memory + RTL_AX_NI_OWNERS + (id - 256) * 8;
 			u32 meta = get_unaligned_le32(owner + 4);
-			u32 generation = get_unaligned_le32(tx->pe.memory + RTL_AX_NI_PS_WP_GENERATION + (id - 256) * 4);
-			u32 rate = get_unaligned_le32(tx->pe.memory + 0xe000 + (id - 256) * 4);
+			u32 generation = get_unaligned_le32(tx->pe.memory + RTL_AX_NI_GENERATIONS + (id - 256) * 4);
+			u32 rate = get_unaligned_le32(tx->pe.memory + RTL_AX_NI_RATES + (id - 256) * 4);
 			unsigned int macid = (meta >> 8) & 127;
 			struct ieee80211_tx_info feedback = {.band = NL80211_BAND_5GHZ};
 			struct ieee80211_tx_status feedback_status = {.info = &feedback};
@@ -911,6 +924,16 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 			tx->unmatched++;
 			spin_unlock_irqrestore(&tx->lock, flags);
 			continue;
+		}
+		if (tag_owner) {
+			u32 tag = (report >> 16) & 4095;
+			put_unaligned_le32(0, tag_owner);
+			if (!ring) {
+				u32 *state = tx->pe.memory + RTL_AX_TX_OWNER_STATE;
+				u32 write = get_unaligned_le32(state + 3);
+				put_unaligned_le16(tag, tx->pe.memory + RTL_AX_WP_FREE + write * 2);
+				dma_wmb(); put_unaligned_le32((write + 1) % RTL_AX_WP_TAGS, state + 3);
+			}
 		}
 		slot = tx->slots[id];
 		if (slot.pe_sequence)
@@ -979,14 +1002,14 @@ static bool rtl_ax_tx_pe_pending(struct rtl_ax_tx *tx, unsigned int macid, unsig
 		for (i = 0; i < 8; i++)
 			if ((tid == IEEE80211_NUM_TIDS || tid == i) &&
 			    get_unaligned_le32(tx->pe.memory + 0x13000 + (macid * 8 + i) * 4)) return true;
-	/* NI_WAIT retains the submitted TID; RPQ done ends the MAC/key wait. */
-	for (i = 0; i < 128; i++) {
-		void *owner = tx->pe.memory + 0xc400 + i * 8;
+	/* The request retains its TID; RPQ done ends the MAC/key wait. */
+	for (i = 0; i < RTL_AX_NI_OWNER_SLOTS; i++) {
+		void *owner = tx->pe.memory + RTL_AX_NI_OWNERS + i * 8;
 		u32 meta = get_unaligned_le32(owner + 4);
 		if (!get_unaligned_le32(owner) || (meta & BIT(31))) continue;
 		if (by_key ? ((meta >> 17) & 127) == key :
 		    ((meta >> 8) & 127) == macid && (tid == IEEE80211_NUM_TIDS ||
-		    (get_unaligned_le32(tx->pe.memory + 0x11000 + i * 16 + 12) & 7) == tid)) return true;
+		    (get_unaligned_le32(tx->pe.memory + RTL_AX_NI_TIDS + i * 4) & 7) == tid)) return true;
 	}
 	return false;
 }
