@@ -2535,6 +2535,44 @@ the MiniOLT object against Linux6.18.55. Reports/logs are
 state are modeled; FPGA extended OMCI, grant behavior and physical traffic
 remain unverified.
 
+### Full offline build after main alignment
+
+An isolated OpenWrt checkout under this worktree now builds `world` with
+both FTTR package fragments enabled, using the pinned OpenWrt revision,
+GCC14.4/musl and Linux6.18.55. The kernel was prepared from all current
+patches and overlay sources; full Image, modpost, MiniOLT/BOSA/FPGA modules,
+userspace packages, rootfs and package indexes complete successfully at
+`0ca3e4b`. The current source hashes match the compiled kernel tree.
+
+The first full build exposed11 newly visible FPGA Kconfig prompts. The
+target config now explicitly disables those unrelated FPGA drivers, so
+enabling the optional package is noninteractive (`c695db6`). Copying the
+existing build inputs into the isolated tree also required relocating
+absolute symlinks and26 pkg-config files; otherwise two copies of the same
+compatibility endian header hid libc definitions when compiling host apk.
+That relocation is local build preparation, not an FTTR product fix. The
+source main checkout was mounted read-only inside each build's private
+mount namespace to catch accidental writes through residual paths.
+
+Offline inspection verifies21 native driver source hashes,9 packaged
+AArch64 programs/modules, the original FPGA image hash, both P6 SerDes
+profiles, calibration symlink and FTTR service script. Both FTTR DT artifacts
+retain DMA reorder/P6 resources; the FPGA DT manager phandle and image name
+match and its unconfirmed optic remains disabled. The rootfs contains no
+original NI/FC/relay/ASIC host runtime. The receipt is
+`artifacts/fttr/world-20261105/build-verification.json`; final build log is
+`artifacts/fttr/world-p6-routing-20261105.log`.
+
+The ordinary sysupgrade FIT still contains ordinary UBI DTs, so it is not
+a complete FTTR boot image. Separate explicit FTTR RAM FITs were assembled
+with the built initramfs and ASIC/FPGA DT artifacts, at
+`world-20261105/ram-asic/image.itb` and `ram-fpga/image.itb`. Their kernel,
+FDT and script SHA256/RSA payload signatures independently verify against
+the supplied certificate. They are local research artifacts, not released
+or boot-tested firmware, and do not imply completion of the functions below.
+Per the user's current instruction, further work remains offline and no
+device access, loading or flashing is authorized at this stage.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

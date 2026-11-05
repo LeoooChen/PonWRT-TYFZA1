@@ -79,7 +79,7 @@ python3 scripts/test_fttr_dispatch.py
 
 可选 FTTR 包和内核配置分别见 [包配置片段](port/configs/tyfza1-fttr-packages.config)与[内核配置片段](port/configs/tyfza1-fttr.config)，两者不能混用。
 准备包时 `TYFZA1_PROJECT` 指向项目根目录，`TYFZA1_FTTR_SERDES_SOURCE` 指向匹配原厂的 `/etc/serdes`。
-此前验证包括定向 native/musl 包构建、6.18 驱动对象编译及部分原厂指令对比；**尚无完成 FTTR 实机验收的全量固件构建交付**。
+已在本 worktree 的独立 OpenWrt 树完成包含 FTTR/FPGA 包的 `world` 构建，核对源码、模块、原生程序、固件输入及 DT，并生成分开的 ASIC/FPGA RAM FIT，验证载荷哈希和签名。普通 sysupgrade 仍使用普通 UBI DT，不能作为 FTTR 镜像；本地 RAM FIT 也未启动或发布。详见[整机构建范围](port/FTTR.md#full-offline-build-after-main-alignment)。**功能仍有明确缺口，尚未完成 FTTR 实机验收。**
 
 ## 如何接着贡献
 
