@@ -172,7 +172,6 @@ struct rtl_ax_ap {
 	struct wiphy_delayed_work cleanup_work;
 	struct wiphy_delayed_work ra_work;
 	struct wiphy_delayed_work dm_work;
-	bool ra_sampling;
 	struct rtl_ax_traffic_peer traffic[128];
 	struct rtl_ax_traffic_wmm traffic_wmm;
 	u8 traffic_peer;

@@ -60,3 +60,9 @@ RAM模块rtl_ax_ap_stockrpr SHA256 `d1c680b345c1dca3dbaca05ddf6a926a468c86c4da95
 单独换信道模块dd5cf754bb5bedcf8fcc2d13d369d25ad75bf6f12103416e0cc465e1e4f16791，UDP1.521Gbps/23.93%，有效NI TCP补测1.477Gbps；初次TCP0.731Gbps中NI只发70包、ARM新增270795个请求，排除该数据。加入温度模式后模块rtl_ax_ap_stockthermal SHA256=adf3e7fcd6f9a5c6ccf0d5d2cd26c65c75b704a33bc5bfe26e4fddb13f426a82，TCP1.506Gbps、UDP1.532Gbps/23.37%，NI有效。运行温差不足12，RXDCK_runs=0；无pending冻结，未证明吞吐收益。
 
 实际BTC RFK回调无H2C发送，仅首次START100ms延时；当前native启动尚未对齐该首次通知延时，温度周期代码不额外发送不存在的通知。原厂周期RF仍有XB OP5K未适配。
+
+## 持续PHY报告批次
+
+实际C/XB hal_start分别277ca4/27e788附近传入enable=1、append=0e、filter=20；实际rtw_hal_mac_ppdu_stat_cfg→cfg_ppdu_status输出CE40=2f、9c18低2位1。当前12+20ms/2s采样改为原厂2f持续采集；扫描沿用CRC正确的外部beacon报告，不再关闭采样开关。18928RSSI/36噪声H2C对照和构建通过。
+
+RAM模块rtl_ax_ap_stockphy SHA256=92e8bffd287a8726684fcb1f69585b2a8987542d7e8ed3e9ae403ea09c5109c3。有效NI TCP1.467Gbps、UDP1.546Gbps/22.66%，未达标。初次TCP0.728中NI只144包、ARM新增314257请求，排除。RSSI样本14473，PHY总报告281302，持续配置读回2f。CPU抽样最大核没有饱和；没有证明吞吐增益。

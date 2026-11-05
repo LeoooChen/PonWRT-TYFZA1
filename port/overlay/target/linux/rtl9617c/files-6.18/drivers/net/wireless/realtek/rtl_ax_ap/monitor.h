@@ -83,8 +83,8 @@ static int rtl_ax_monitor_start(struct ieee80211_hw *hw)
 	radio->dig.fahm_triggered = radio->dig.fahm_configured = false;
 	WRITE_ONCE(radio->monitor_started, true);
 	rtl_ax_update32(&radio->io, 0x9c18, 3, 1);
-	radio->io.write32(radio, 0xce40, 0x12);
-	radio->ra_sampling = false;
+	/* Actual C/XB hal_start: enable MAC/PLCP/RX-count reports for CRC-OK. */
+	radio->io.write32(radio, 0xce40, 0x2f);
 	rtl_ax_rx_open(radio->rx);
 	rtl_ax_tx_open(radio->tx);
 	mutex_unlock(&radio->command_mutex);
@@ -1175,8 +1175,7 @@ static void rtl_ax_sw_scan_start(struct ieee80211_hw *hw,
 	radio->scan_offload_result = radio->sta_associated ?
 		rtl_ax_tx_ni_retire_peer(radio->tx, RTL_AX_CLIENT_MACID) : 0;
 	mutex_lock(&radio->command_mutex);
-	/* Include foreign beacons, not only address-1 matches. */
-	rtl_ax_update32(&radio->io, 0xce40, BIT(4), BIT(0));
+	/* Factory CRC-OK reports already include foreign beacons. */
 	mutex_unlock(&radio->command_mutex);
 }
 
@@ -1192,8 +1191,6 @@ static void rtl_ax_sw_scan_complete(struct ieee80211_hw *hw,
 	 * channel transaction. Retry that restore before admitting NI traffic. */
 	if (radio->sta_associated && !radio->scan_offload_result && radio->dfs.error)
 		ret = rtl_ax_chandef_locked(radio, &hw->conf.chandef);
-	rtl_ax_update32(&radio->io, 0xce40, BIT(0) | BIT(4),
-		BIT(4) | (radio->ra_sampling ? BIT(0) : 0));
 	rtl_ax_receive_mode(&radio->io, radio->ap_started ? 4 : radio->sta_vif ? 2 : 0);
 	mutex_unlock(&radio->command_mutex);
 	if (ret) {
@@ -1662,17 +1659,8 @@ static void rtl_ax_ra_work(struct wiphy *wiphy, struct wiphy_work *work)
 	unsigned long flags;
 
 	if (!radio->monitor_started) return;
-	/* PHY reports include neighbouring traffic. Sample for each two-second
-	 * firmware RSSI update instead of dispatching every received PPDU. */
-	if (!radio->ra_sampling) {
-		radio->ra_sampling = true;
-		rtl_ax_update32(&radio->io, 0xce40, 0, BIT(0));
-		wiphy_delayed_work_queue(wiphy, &radio->ra_work, msecs_to_jiffies(20));
-		return;
-	}
-	if (!radio->scanning)
-		rtl_ax_update32(&radio->io, 0xce40, BIT(0), 0);
-	radio->ra_sampling = false;
+	/* Original PHY collection runs continuously; only H2C RSSI/mask
+	 * publication and moving-average factors have the two-second cadence. */
 	spin_lock_irqsave(&radio->command_lock, flags);
 	for (i = 1; i < 128; i++) {
 		u8 *setting = command + entries * 8;

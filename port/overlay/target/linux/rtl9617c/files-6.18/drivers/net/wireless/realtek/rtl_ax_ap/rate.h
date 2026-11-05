@@ -37,7 +37,7 @@ static inline void rtl_ax_ra_rssi_sample(struct rtl_ax_ra_rssi *state,
 }
 
 /* halbb_cmn_info_self_update selects the next period's factor, then clears
- * the qualifying PHY-report counts. Native reports remain sampled. */
+ * the qualifying PHY-report counts from continuous collection. */
 static inline void rtl_ax_ra_rssi_watchdog(struct rtl_ax_ra_rssi *state)
 {
 	u16 data = state->count[0];
