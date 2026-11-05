@@ -3,26 +3,6 @@
 #define RTL_AX_AP_DIG_RUNTIME_H
 #include "dig.h"
 
-/* SU station RSSI accumulator, rx_pkt_su_store_in_sta_info@296950.
- * The watchdog chooses the smoothing factor from its last packet count. */
-static inline void rtl_ax_dig_rssi_sample(struct rtl_ax_dig_rssi *rssi, u8 value)
-{
-	if (!rssi->average)
-		rssi->average = value << 4;
-	else
-		rssi->average += (value << (4 - rssi->factor)) -
-			((rssi->average << (4 - rssi->factor)) >> 4);
-	rssi->packets++;
-}
-
-static inline u8 rtl_ax_dig_rssi_update(struct rtl_ax_dig_rssi *rssi)
-{
-	rssi->factor = rssi->packets > 100 ? 4 : rssi->packets > 20 ? 3 :
-		rssi->packets > 5 ? 2 : 1;
-	rssi->packets = 0;
-	return (rssi->average + 8) >> 4;
-}
-
 /* Origin DIG owns FAHM in this driver. The factory's background FAHM uses
  * priority1; DIG uses priority2. NHM has independent control/report CRs.
  * Keep acquisition, consumption and retrigger in the one serialized task. */

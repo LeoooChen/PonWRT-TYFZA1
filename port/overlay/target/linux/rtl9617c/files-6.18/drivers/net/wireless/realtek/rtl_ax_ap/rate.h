@@ -2,8 +2,6 @@
 #ifndef RTL_AX_AP_RATE_H
 #define RTL_AX_AP_RATE_H
 
-struct rtl_ax_phy_signal { u8 macid, rssi[3]; };
-
 struct rtl_ax_ra_sample { u8 macid, rssi[3], paths; bool beacon; };
 struct rtl_ax_ra_rssi {
 	u16 ma[2][3], count[2]; /* Data/beacon; overall and independent RF paths. */
@@ -47,6 +45,14 @@ static inline void rtl_ax_ra_rssi_watchdog(struct rtl_ax_ra_rssi *state)
 	state->factor[0] = data > 100 ? 4 : data > 20 ? 3 : data > 5 ? 2 : 1;
 	state->factor[1] = state->count[1] > 5 ? 2 : 1;
 	state->count[0] = state->count[1] = 0;
+}
+
+/* Normal halbb_cmn_info_self_update selects data, then beacon RSSI. */
+static inline u8 rtl_ax_bb_rssi(const struct rtl_ax_ra_rssi *state)
+{
+	u8 data = (state->ma[0][0] + 8) >> 4;
+
+	return data ? data : (state->ma[1][0] + 8) >> 4;
 }
 
 /* Board hal_handle_rx_buffer -> halbb_physts_parsing -> halbb_cmn_rpt.
@@ -168,38 +174,6 @@ static inline u8 rtl_ax_ra_rssi_mask(u8 command[16], u8 rssi, u8 previous)
 	command[3] = (command[3] & ~BIT(6)) | BIT(7);
 	put_unaligned_le64(filtered, command + 4);
 	return level;
-}
-
-static inline int rtl_ax_ppdu_signal(const u8 *data, unsigned int bytes,
-	struct rtl_ax_phy_signal signal[8])
-{
-	u32 first, second, users, offset;
-	unsigned int i, count = 0;
-	const u8 *phy;
-	u8 rpl;
-
-	if (bytes < 8) return -EINVAL;
-	first = get_unaligned_le32(data); second = get_unaligned_le32(data + 4);
-	users = first & 15;
-	if (users > 8) return -EINVAL;
-	offset = 8 + ((users + 1) & ~1U) * 4 + (first & BIT(29) ? 96 : 0) + ((second >> 16) & 255) * 8;
-	if (offset > bytes || bytes - offset < 8) return -EINVAL;
-	phy = data + offset;
-	if (!(phy[0] & BIT(7)) || phy[1] * 8 > bytes - offset || phy[1] < 1) return -EINVAL;
-	/* Original halbb converts TD RSSI to the IE0/1 frequency-domain RPL. */
-	if (phy[1] < 3 || (phy[8] & 31) > 1) return 0;
-	rpl = phy[9];
-	for (i = 0; i < users; i++) {
-		u32 user = get_unaligned_le32(data + 8 + i * 4);
-		unsigned int macid = (user >> 8) & 255;
-		if (!(user & BIT(0)) || macid >= 128) continue;
-		signal[count].macid = macid;
-		signal[count].rssi[0] = rpl;
-		signal[count].rssi[1] = phy[4] ? rpl + phy[4] - phy[3] : 0;
-		signal[count].rssi[2] = phy[5] ? rpl + phy[5] - phy[3] : 0;
-		count++;
-	}
-	return count;
 }
 
 static inline void rtl_ax_ra_legacy(u8 command[16], u8 macid, u16 legacy, bool band5g)

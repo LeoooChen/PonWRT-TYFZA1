@@ -21,7 +21,7 @@ if sys.platform == 'darwin':
     import unicorn
 sys.path.insert(0, str(root / 'tools'))
 from arm64_module_oracle import ModuleOracle
-from unicorn.arm64_const import UC_ARM64_REG_X20, UC_ARM64_REG_X22
+from unicorn.arm64_const import UC_ARM64_REG_X20, UC_ARM64_REG_X22, UC_ARM64_REG_X23
 
 names = ['halbb_rx_pkt_su_store_in_sta_info', 'halbb_media_status_update',
          'halbb_cmn_info_self_update', 'halbb_physts_parsing', 'halbb_physts_ie_hdr',
@@ -97,6 +97,7 @@ source = prefix + '#include "' + str(header) + '"\n' + '''
 void init(struct rtl_ax_ra_rssi *s) { rtl_ax_ra_rssi_init(s); }
 void sample(struct rtl_ax_ra_rssi *s,struct rtl_ax_ra_sample *p,u8 *r) { rtl_ax_ra_rssi_sample(s,p,r); }
 void watchdog(struct rtl_ax_ra_rssi *s) { rtl_ax_ra_rssi_watchdog(s); }
+unsigned bb_rssi(struct rtl_ax_ra_rssi *s) { return rtl_ax_bb_rssi(s); }
 int ppdu(const u8 *p,unsigned n,u8 type,bool self,struct rtl_ax_ra_sample *s) {
     return rtl_ax_ppdu_ra_signal(p,n,type,self,s);
 }
@@ -153,6 +154,19 @@ with tempfile.TemporaryDirectory(prefix='tyfza1-rssi-ma-') as temp:
             o.uc.emu_start(entry + 0x368, entry + 0x3b0, count=100)
             compare_state(state)
             factor_vectors += 1
+
+    native.bb_rssi.argtypes = [ctypes.POINTER(State)]
+    for data in (0, 1, 7, 8, 127, 1024, 2040, 3000, 4080):
+        for beacon in (0, 1, 7, 8, 127, 1024, 2040, 3000, 4080):
+            state.ma[0][0] = data
+            state.ma[1][0] = beacon
+            put(halsta + 4, 'B', (data + 8) >> 4)
+            put(halsta + 18, 'B', (beacon + 8) >> 4)
+            put(halsta + 35, 'B', 0)  # Native does not store association RSSI.
+            o.uc.reg_write(UC_ARM64_REG_X22, halsta)
+            o.uc.emu_start(entry + 0xb4, entry + 0x368, count=20)
+            assert native.bb_rssi(state) == o.uc.reg_read(UC_ARM64_REG_X23), (data, beacon)
+    print('PASS: shared DIG/RA RSSI selection matches actual normal watchdog, 81 cases')
 
     # Execute the original type->is_su instruction block, then the complete
     # PHY parser/IE conversion/common-report/MA chain with bookkeeping stubbed.

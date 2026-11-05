@@ -722,7 +722,6 @@ static int rtl_ax_station_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 			ret = rtl_ax_command_flags(radio, RTL_AX_H2C_LONG_DATA, 2, 1, 0,
 				radio->ra_config[id], 16, false, false);
 			if (ret) goto remove;
-			memset(&radio->dig_rssi[id], 0, sizeof(radio->dig_rssi[id]));
 			rtl_ax_ra_rssi_init(&radio->ra_rssi_state[id]);
 			memset(radio->ra_rssi[id], 0, sizeof(radio->ra_rssi[id]));
 			radio->ra_registered[id] = true;
@@ -1284,7 +1283,7 @@ static void rtl_ax_dm_work(struct wiphy *wiphy, struct wiphy_work *work)
 
 			if (!radio->ra_registered[i]) continue;
 			linked = true;
-			rssi = rtl_ax_dig_rssi_update(&radio->dig_rssi[i]);
+			rssi = rtl_ax_bb_rssi(&radio->ra_rssi_state[i]);
 			if (rssi < rssi_min) rssi_min = rssi;
 		}
 		spin_unlock_irqrestore(&radio->command_lock, flags);

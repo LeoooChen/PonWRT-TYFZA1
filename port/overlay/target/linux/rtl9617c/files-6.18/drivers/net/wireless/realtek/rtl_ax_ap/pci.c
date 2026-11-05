@@ -208,7 +208,6 @@ struct rtl_ax_ap {
 	u64 ra_txstats_reports[128];
 	u8 ra_rssi[128][3], ra_rssi_level[128];
 	struct rtl_ax_ra_rssi ra_rssi_state[128];
-	struct rtl_ax_dig_rssi dig_rssi[128];
 	u64 ra_rssi_samples[128], ra_rssi_sent;
 	int ra_rssi_result;
 	u64 ra_ppdu_reports;
@@ -401,15 +400,12 @@ static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 		return rtl_ax_monitor_receive(radio, packet);
 	}
 	if (packet->type == 1) {
-		struct rtl_ax_phy_signal signals[8];
 		struct rtl_ax_ra_sample sample;
-		unsigned int i;
 		u8 aci;
 		int aci_report, ra_sample;
 
 		rtl_ax_scan_complete_frame(radio, packet);
 		if (!(rtl_ax_ap_read32(packet->descriptor) & BIT(23))) return 0;
-		ret = rtl_ax_ppdu_signal(packet->payload, packet->bytes, signals);
 		ra_sample = rtl_ax_ppdu_ra_signal(packet->payload, packet->bytes,
 			rtl_ax_ap_read32(packet->descriptor + 4) & 15,
 			!!(rtl_ax_ap_read32(packet->descriptor + 12) & BIT(0)), &sample);
@@ -419,17 +415,13 @@ static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 		radio->ra_ppdu_reports++;
 		radio->ra_last_ppdu_bytes = packet->bytes;
 		memcpy(radio->ra_last_ppdu, packet->payload, min_t(unsigned int, packet->bytes, 64));
-		for (i = 0; ret > 0 && i < ret; i++) {
-			if (radio->ra_registered[signals[i].macid])
-				rtl_ax_dig_rssi_sample(&radio->dig_rssi[signals[i].macid], signals[i].rssi[0]);
-		}
 		if (ra_sample > 0 && radio->ra_registered[sample.macid]) {
 			rtl_ax_ra_rssi_sample(&radio->ra_rssi_state[sample.macid], &sample,
 				radio->ra_rssi[sample.macid]);
 			radio->ra_rssi_samples[sample.macid]++;
 		}
 		spin_unlock_irqrestore(&radio->command_lock, flags);
-		return ret < 0 ? ret : 0;
+		return ra_sample < 0 ? ra_sample : 0;
 	}
 	/* Original hal_handle_rx_buffer_C@279904/XB@28036c:
 	 * descriptor type7 is the WP recycle report; type8 is not RPQ. */

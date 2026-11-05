@@ -436,3 +436,24 @@ scripts/test_radio_he_join.py复用现有原厂oracle，800组peer回归、实�
 最终默认TCP上行首轮1.210327G/9重传，逐秒1.627/1.694/1.690/1.695/1.175/.358/.222/.503/1.580/1.584；PM总计数+34/+35，不能单由总计数归因Mac。唯一复测1.673607G/14重传；下行1.504558G。UDP2G上行实际发送1.835564/收到1.827637G、132丢(0.00832%)、MacCPU97.96%；下行首轮1.825641G/147914丢(8.5535%)，复测1.846309G/130316丢(7.5297%)。保留首次低谷，不宣称零重传或稳定提速；数值在既有基线波动区间，保留带宽正确性修复。完整TCP1.8/UDP1.9低丢包目标仍未完成。Mac SELFBW-*及self-role-results.json。
 
 结束AP_role stage5/result0、unmatchedACK0，ARM557/557、NI4610487/4610487，pending/failed/retired/unmatched0；C67400400000、C300003f642b、RPS8。没有辅助模块/测速进程，未刷写flash。f43200d0的读值30不是PEDIV验证，不用于结论。
+
+
+### 2026-11-05：UDP 上传端点丢包边界与 BB RSSI 输入修正
+
+正常fa18f67/selfbw/phy38，先前UDP上传327丢但RDU0，不能归因RX环。复用原ni_mib_read：UDPBOUNDARY-UP物理NI4发送1095155、WindowsNIC单播收到1095128，差27远少于iperf1247loss；窗口非原子且含其他包，仅作抓包方向。WindowsUDP IncomingDatagramsDiscarded实际映射NoPorts，不是ReceiveErrors（后者0），不能把无listener尾包计数说成socket溢出。
+
+Windows PktMon仅Realtek comp600、UDP5201/源Mac过滤，96B截断。UDPBOUNDARY-CAP-UP发送1641709数据包/1.900760G，iperf接收1.891163G、packets1635670、lost116；PktMon停止报告无事件丢失、数据包丢弃计数0，转换1641711记录。解析得到1448B UDP数据恰1641709个，payload offset8的seq从1到1641709全部唯一递增，缺号0、重复0、倒序0，网卡捕获窗口10.05106s。故这一次116内部缺号及6039超出接收统计尾序号都已经到达WindowsNIC；该轮固件→网卡转发没有缺包，丢失在NIC观测点之后。不能泛化所有轮或断言具体Windows层原因。完整pcapng及udp-boundary-sequence-result.json留Mac。
+
+一次临时Mac5210 server接收实现对照：Cygwin reverseUDP收到1.897895G/386loss；已有WSL3.9报sum1.901750G/839loss，旧sum口径不等于新版sum_received，且两者默认payload1460/1448不同，不当严格同包长A/B。它不支持Cygwin是唯一原因，停止端点工具投入。Mac均~98%CPU。Windows原5201 PID18992保留，RX buffers64/256未改；PktMon/过滤器/Win临时ETL和pcap、Mac一次性server、ni_mib_read都已清理。SSH master重新认证到原h.sock，bound管理线.172。
+
+沿收发竞争定位核对BB动态输入发现实际差异：原厂halbb_cmn_info_self_update@285434 normal branch2854e8先用hal_sta+4数据RSSI，0时用+18beacon，再0才assocRSSI<<1。DIG/EDCCA与RA共享同一合格SU数据/beacon RSSI状态。native DIG此前另从rtl_ax_ppdu_signal对所有有效user（含控制/MU）采样，独立factor初值0；RA已用实际原厂资格/初值2/数据beacon独立MA。早先口头“峰值”错误，旧DIG也是MA，差别是资格、重复状态与因子来源。
+
+产品修改：DIG/EDCCA直接使用现RA状态的dataMA（加8舍入）或其为0时beaconMA；删去dig_rssi[128]、旧采样/清零、宽资格parser及其仅供自身的测试片段。没有新增配置/开关/样本缓存。native尚无association RSSI存储，两种MA都0时仍0，不宣称完整覆盖原厂关联瞬间fallback。已有RA采样窗仍20ms/约2s，非全流PPDU。重用合格输入消除控制/MU报告污染，也减少重复解析及768字节状态；不靠吞吐提升判断价值。
+
+验证：test_radio_rssi_ma实际ELF4096MA、32factor、11520完整PHY资格，加81数据/beacon选择指令片段通过；选择用assocRSSI0明确边界。test_radio_dig_runtime保留4200DIG/FAHM寄存器/状态、12阻尼激活步骤通过，旧重复MA测试由完整RSSI测试取代。test_radio_ra_contract剩128HT20/48VHT80通过，完整模块构建、git diff --check通过。PE未变。
+
+BASE默认TCPdown1.374095/up1.687529G(0retx)，前后Mac+phone。ON下行首轮1.042228G逐秒.132/.964/1.016/1.043/1.123/1.209/1.242/1.252/1.259/1.185；前仅Mac，结束phone加入，PS总计数+32/+33及retired725，保留该轮不把它当稳定候选回归。唯一复测down1.493893；up1.692099G/0retx；UDPup发1.841629/收1.829744G、644loss(.04047%)、Mac97.78%CPU；down收1.841663G/133996loss(7.7642%)。候选TCPup host_total0.0343与user.1215/system25.9038矛盾，不能说CPU近0。无稳定提速结论，无持续明显回归；保留输入正确性修正。ON DIG min122与RA Mac150/phone122相符。
+
+最终去掉无调用parser后的模块58d76ce37c26513cef8e09c9d0508726e610abed39dc03b7c9d02849a357a28e；与已测a3effa1a704241128cfe33234e7e89bd74c6ce5f1ad8d228a6010edbcca9811e的所有SHF_ALLOC非NOBITS段逐字节相等，只有.note.gnu.build-id不同。最终重载rtl_ax_ap_bbrssi（待本节收尾关联确认），不重复四方向测试。完整TCP1.8/UDP1.9低丢包目标仍未达，不把端点边界或此正确性修复当作完成。来源BBRSSI-*、bbrssi-results.json及artifacts/bb-rssi-input。
+
+最终收尾：bbrssi/phy42、boot a56cceb0；Mac授权且en0.186，ARM401/401、NI138/138，pending/failed/retired/unmatched0，self role stage5 result0 unmatchedACK0。PEDIV40404、EDCA003f642b、NAV00400000、RPS8；模块文件SHA与最终构建一致，临时ban为空，无辅助模块。本次无push/flash，所有accepted改动继续保留。
