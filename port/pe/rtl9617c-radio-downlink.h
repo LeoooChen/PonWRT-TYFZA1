@@ -90,6 +90,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 	if (producer == consumer) return 0;
 	u32 count = 0, group = 0, head = 0, tail = 0, grouped = 0;
 	u32 cached_peer = 0, cached_low = 0, cached_high = 0;
+	u32 flow_peer = 0, flow_low = 0, flow_high = 0, flow_packets = 0;
 	u32 fence = mailbox[171] & BIT(cos);
 	u32 target = *(u32 *)(memory + NI_EPP_RETIRE_TARGETS + cos * 4), crossed = 0;
 	/* PE1 owns queue counts; ARM changes EPP geometry only while paused. */
@@ -137,6 +138,16 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		}
 		if (!macid) tid = 0;
 		u32 queue = macid * 8 + tid;
+		if (macid) {
+			u32 low = ((const struct packed_word *)(ethernet + 6))->value;
+			u32 high = ((const struct packed_word *)(ethernet + 10))->value;
+			if (flow_packets && (macid != flow_peer || low != flow_low || high != flow_high)) {
+				rtl_ax_traffic_flow_hit((void *)(memory + RTL_AX_TX_PEER_FLOWS + flow_peer * 256),
+					flow_low, flow_high, (u32)now, flow_packets);
+				flow_packets = 0;
+			}
+			flow_peer = macid; flow_low = low; flow_high = high; flow_packets++;
+		}
 		/* Link BIDs locally; update the shared peer/TID counts once per group. */
 		if (grouped && queue != group) {
 			queued += grouped;
@@ -169,6 +180,9 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		if (fence && consumer == target) crossed = 1;
 	}
 	if (grouped) ni_enqueue(mailbox, memory, group, head, tail, grouped);
+	if (flow_packets)
+		rtl_ax_traffic_flow_hit((void *)(memory + RTL_AX_TX_PEER_FLOWS + flow_peer * 256),
+			flow_low, flow_high, (u32)now, flow_packets);
 	consumers[cos] = consumer; mailbox[26] = consumers[0];
 	sync(); ni[mailbox[115] / 4 + cos] = consumer;
 	/* A batch may pass the cutoff. Publish its queues and RD before ACK. */
@@ -290,11 +304,17 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				} else {
 					ps[2] = command;
 					u32 next = next_buffer, body = length + 8;
+					u32 policy = *(u32 *)(memory + RTL_AX_TX_PEER_AMSDU + macid * 4);
+					u32 size = policy & 65535, max_big = policy >> 16;
+					u32 selected = length + 12, big = length > 1000;
 					if (((request[2] >> 16) & 63) == 26 && !(request[3] & BIT(19))) {
-						while (next && frames < 8) {
+						while (next && frames < 9) {
 							u32 *part = uncached(next), pad = (0U - body) & 3;
 							u32 next_metadata = part[1], next_length = next_metadata & 65535;
-							if (body + pad + next_length + 8 > (caps >> 18)) break;
+							if (selected + next_length + 12 > size ||
+							    body + pad + next_length + 8 > (caps >> 18) ||
+							    (big == max_big && next_length > 1000)) break;
+							selected += next_length + 12; big += next_length > 1000;
 							request[8 + frames * 2] = next + RTL_QM_HEADROOM + (next_metadata >> 16);
 							request[9 + frames * 2] = next_length;
 							body += pad + next_length + 8;

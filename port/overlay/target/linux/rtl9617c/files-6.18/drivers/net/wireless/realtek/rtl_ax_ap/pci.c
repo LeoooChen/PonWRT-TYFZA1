@@ -21,6 +21,8 @@
 #include "role.h"
 #include "security.h"
 #include "rate.h"
+#include "traffic.h"
+#include "vendor.h"
 #include "scan.h"
 #include "port0.h"
 #include "beacon.h"
@@ -170,6 +172,11 @@ struct rtl_ax_ap {
 	struct wiphy_delayed_work ra_work;
 	struct wiphy_delayed_work dm_work;
 	bool ra_sampling;
+	struct rtl_ax_traffic_peer traffic[128];
+	struct rtl_ax_traffic_wmm traffic_wmm;
+	u8 traffic_peer;
+	bool traffic_busy;
+	u32 traffic_edca_saved[2];
 	bool scanning;
 	int scan_offload_result;
 	struct sk_buff *scan_pending;
@@ -2452,6 +2459,16 @@ static ssize_t radio_edca_show(struct device *dev,
 		length += sysfs_emit_at(buffer, length, "mac80211_AC=%u valid=%u register=%04x expected=%08x actual=%08x\n",
 			ac, !!(radio->edca_valid & BIT(ac)), addresses[ac], radio->edca_words[ac],
 			rtl_ax_read32(radio, addresses[ac]));
+	length += sysfs_emit_at(buffer, length, "WMM=%u timeout=%u streams=%u selected_MACID=%u busy=%u\n",
+		radio->traffic_wmm.enabled, radio->traffic_wmm.timeout, radio->traffic_wmm.streams,
+		radio->traffic_peer, radio->traffic_busy);
+	for (ac = 1; ac < 128 && length < PAGE_SIZE - 160; ac++) {
+		const struct rtl_ax_traffic_peer *p = &radio->traffic[ac];
+		if (!radio->ra_registered[ac]) continue;
+		length += sysfs_emit_at(buffer, length, "MACID=%u vendor=%u TX_Kibit=%u RX_Kibit=%u mode=%u A_MSDU=%u/%u flow_count=%u\n",
+			ac, p->vendor, p->tx_kbits, p->rx_kbits, p->mode, p->amsdu_num, p->amsdu_bytes,
+			rtl_ax_tx_peer_flows(radio->tx, ac));
+	}
 	mutex_unlock(&radio->command_mutex);
 	return length;
 }

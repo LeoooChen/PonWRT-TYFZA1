@@ -16,8 +16,12 @@
 #define RTL_AX_NI_COMPLETION_MASK 4095
 #define RTL_AX_TX_OWNER_STATE 0x34000
 #define RTL_AX_NI_COOKIES 0x35000
+/* Per-peer data statistics/policy are independent of recyclable request IDs. */
+#define RTL_AX_TX_PEER_STATS 0x38000
+#define RTL_AX_TX_PEER_AMSDU 0x39000
 #define RTL_AX_WP_TAG_MAP 0x40000
 #define RTL_AX_WP_FREE 0x58000
+#define RTL_AX_TX_PEER_FLOWS 0x60000
 #define RTL_AX_WP_TAGS 4095
 #define RTL_AX_WP_TAG_INVALID 4095
 #define RTL_AX_WP_TAG_STRIDE 4096

@@ -11,6 +11,7 @@ struct packed_word { u32 value; } __attribute__((packed));
 #define TX_BURST 8
 #include "rx-geometry.h"
 #include "tx-ownership.h"
+#include "traffic-flow.h"
 #include <linux/rtl9617c-qm-layout.h>
 
 static inline void sync(void) { __asm__ volatile("sync" ::: "memory"); }
@@ -495,6 +496,9 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	if (mailbox[24]) mailbox[32 + ring] = next;
 	if (ni_packet) {
 		mailbox[28] += ni_frames; mailbox[56]++;
+		u32 *stats = (void *)(memory + RTL_AX_TX_PEER_STATS + ((flags >> 24) & 127) * 8);
+		stats[0] += (packet & 0x3fff) - ((packet >> 16) & 63) - 8;
+		stats[1] += ni_frames;
 		u32 queue = ((flags >> 24) & 127) * 8 + (flags & 7);
 		(*(u32 *)(memory + RTL_AX_NI_TX_ACTIVITY + queue * 4)) += ni_frames;
 		/* Flush the last sparse packet too, without waiting for another TX. */

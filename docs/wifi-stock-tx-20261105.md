@@ -40,3 +40,13 @@ BK同关联ON/OFF/ON 10秒：TCP1.324/1.171/1.416、UDP1.120/1.735/1.651；波�
 用户扩大原厂细节对齐范围后，将回报聚合从12恢复实际ELF的121，超时代码仍255。`tools/check_radio_report_config.py`执行本机原厂默认选择分支（agg_def/tmr_def及四种默认状态），再比较native写回；默认9414=`a5ff5a79`，重复配置不写寄存器，检查通过。
 
 RAM模块rtl_ax_ap_stockrpr SHA256 `d1c680b345c1dca3dbaca05ddf6a926a468c86c4da95cdcdda5234106daebb6c`；实测单流TCP30秒1.250Gbps、UDP60秒1.520Gbps/23.97%丢包，完成持续前进。单独本项没有提速，保留为完整原厂策略组合的中间版本，后续须验证组合和NI池持有时间。
+
+## 动态发送策略批次（2026-11-05）
+
+按本机原厂 ELF 普通 AP 分支实现每两秒流量策略、A-MSDU 3793/7433/10896 字节及 2/4/7 大包数量策略、最多9个子帧出队、关联厂商识别、WMM 状态和动态 EDCA，并接入 RA 注册/更新/看门狗的 NHM 噪声位。PE 架构保留，ARM/NI 独立累计流量、以源 MAC+EtherType 合并活动流。NI 每批次合并相同流统计以控制执行开销。
+
+原厂对照通过：1920 A-MSDU、82944 EDCA、220厂商分类、156 WMM状态调用；18928 RSSI及36 NHM命令。链接PE验证动态尺寸、9小包、逐字节DMA内容、所有权和完成回收；生命周期/退役检查通过。
+
+最新已测模块 rtl_ax_ap_stockgather SHA256=650f0a9d47fd7c2fe227d0d3f7db471654b8be6d785f398ec2b4aacfdc183fec，PE SHA256=9976fba2e59597177cf7ac06dd88689529c0ca312a73649cf4904f2ee03fc0ae。TCP30秒1.466Gbps，UDP60秒1.546Gbps、丢包22.65%，未见持续pending冻结；未达到1.8/1.9Gbps目标。中间动态版本1.243/1.269Gbps不用于宣称收益。
+
+实际Mac关联被原厂IE规则识别为Broadcom(3)，160MHz下EDCA为0138642b。仍未对齐：WMM每流请求配额、完整TXSC缓存替换生命周期、聚合等待细节、XB环境采样、RF周期跟踪和完整PHY包统计。此提交是可追溯中间批次，不代表全面对齐或吞吐修复完成。

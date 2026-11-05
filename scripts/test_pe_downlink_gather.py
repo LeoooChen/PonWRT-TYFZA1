@@ -15,7 +15,7 @@ directory = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'artifacts/pe-rad
 binary = (directory / 'pe-tx.bin').read_bytes()
 
 
-def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False):
+def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False, policy=None):
     base, mb, pages, headers, payload, ring, bar, ni, reports = (
         0x04000000, 0x04002000, 0x05100000, 0x05400000, 0x06000000,
         0x05000000, 0x12000000, 0x10000000, 0x06200000)
@@ -42,6 +42,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
             1 << 24 | 1 << 18 | 1 << 16 | (1 << 23 if client else 0), 7 << 16 | 32, 0, 0]
     u.mem_write(base + 0xd020, struct.pack('<8I', *peer))
     put(base + 0xe204, cap << 18)
+    if policy is not None: put(base + 0x39004, policy | (0 if not policy else 2 if policy <= 3793 else 4 if policy <= 7433 else 7) << 16)
     put(base + 0x11a04, 1)
     put(base + 0x11804, len(lengths))
     put(base + 0x13020, len(lengths))
@@ -130,7 +131,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         assert struct.unpack_from('<I', page, 8)[0] & 0x3fff == len(gathered)
         assert struct.unpack_from('<I', page, 0)[0] & (1 << 6), 'hardware PN disabled'
         assert struct.unpack_from('<I', page, 40)[0] & 0x17f == 0x107, 'wrong CCMP CAM'
-        assert len(gathered) - 26 <= cap or count == 1
+        assert len(gathered) - 26 <= (cap if policy is None else min(cap,policy)) or count == 1
         chain = get(base + 0x20000 + slot * 8)
         for n in range(count):
             assert chain == payload + (member + n) * 2048
@@ -162,6 +163,11 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
 if __name__ == '__main__':
     if len(sys.argv) > 2 and sys.argv[2] == '--160':
         rows = [case([1514] * 4, 7935, True, bandwidth=3, rate=rate) for rate in (0x119, 0x19b)]
+    elif len(sys.argv) > 2 and sys.argv[2] == '--dynamic':
+        rows = [case([1514] * 8, 10896, True, policy=size) for size in (0,3793,7433,10896)]
+        assert [row['MPDUs'] for row in rows] == [8,4,2,2]
+        rows += [case([64] * 9, 10896, True, policy=3793)]
+        assert rows[-1]['MPDUs'] == 1
     elif len(sys.argv) > 2 and sys.argv[2] == '--he-large':
         rows = [case([1514] * 7, cap, True, bandwidth=3, rate=0x19b) for cap in (7935, 10896)]
         assert [row['MPDUs'] for row in rows] == [2, 1]

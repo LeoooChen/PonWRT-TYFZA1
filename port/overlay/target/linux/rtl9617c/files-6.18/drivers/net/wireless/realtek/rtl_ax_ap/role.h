@@ -11,7 +11,7 @@
 #include "transport.h"
 
 struct rtl_ax_station {
-	u8 macid;
+	u8 macid, vendor;
 	bool mesh;
 	unsigned long ba_retry[8];
 };

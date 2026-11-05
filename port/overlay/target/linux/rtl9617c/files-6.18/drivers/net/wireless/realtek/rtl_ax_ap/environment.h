@@ -41,7 +41,7 @@ struct rtl_ax_environment {
 	bool background_started, nhm_ready;
 	s8 external_loss;
 	u16 nhm_period, nhm_bins[12], nhm_tx, nhm_cca, nhm_idle;
-	u8 nhm_idle_ratio, nhm_noise_ratio;
+	u8 nhm_idle_ratio, nhm_noise_ratio, nhm_cca_ratio;
 	u32 false_alarms, throughput, traffic_previous;
 	u64 samples, not_ready;
 	u64 traffic_time_ms;
@@ -161,6 +161,7 @@ static inline bool rtl_ax_environment_sample(const struct rtl_ax_io *io,
 	env->nhm_idle = io->read32(io->ctx, 0x11aa4);
 	env->nhm_idle_ratio = rtl_ax_environment_ratio(env->nhm_idle, env->nhm_period);
 	env->nhm_noise_ratio = rtl_ax_environment_ratio(noise, env->nhm_period);
+	env->nhm_cca_ratio = rtl_ax_environment_ratio(env->nhm_cca, env->nhm_period);
 	env->samples++;
 	return true;
 }

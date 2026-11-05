@@ -176,6 +176,13 @@ static inline u8 rtl_ax_ra_rssi_mask(u8 command[16], u8 rssi, u8 previous)
 	return level;
 }
 
+/* Actual register/update/watchdog commands use background NHM ratio1..254.
+ * 0xff is the factory failed-sample value, not a noisy environment. */
+static inline void rtl_ax_ra_environment(u8 command[16], u8 nhm_ratio)
+{
+	command[15] = (command[15] & ~BIT(0)) | (nhm_ratio && nhm_ratio != 255);
+}
+
 static inline void rtl_ax_ra_legacy(u8 command[16], u8 macid, u16 legacy, bool band5g)
 {
 	u8 mode = band5g || !(legacy & 15) ? 4 : (legacy & 0xff0) ? 6 : 2;

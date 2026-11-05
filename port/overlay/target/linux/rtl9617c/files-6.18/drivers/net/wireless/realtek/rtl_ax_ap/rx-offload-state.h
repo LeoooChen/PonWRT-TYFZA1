@@ -45,6 +45,11 @@ void rtl_ax_rx_ba_window(struct rtl_ax_rx *rx, unsigned int macid,
 	mutex_unlock(&rx->uplink_lock);
 }
 
+u16 rtl_ax_rx_ba_size(struct rtl_ax_rx *rx, unsigned int macid, unsigned int tid)
+{
+	return get_unaligned_le32(rx->uplink_states + (macid * 16 + tid) * 32 + 28);
+}
+
 bool rtl_ax_rx_uplink_active(struct rtl_ax_rx *rx, unsigned int macid)
 {
 	return rx->uplink_wifi_id &&

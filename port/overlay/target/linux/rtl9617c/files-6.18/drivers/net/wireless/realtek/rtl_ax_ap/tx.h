@@ -52,4 +52,8 @@ void rtl_ax_tx_peer_rate(struct rtl_ax_tx *tx, unsigned int macid, u32 rate, u32
 bool rtl_ax_tx_ni_buffered(struct rtl_ax_tx *tx, unsigned int macid);
 void rtl_ax_tx_ps_release(struct rtl_ax_tx *tx, struct ieee80211_sta *sta,
 	unsigned int macid, u16 tids, bool uapsd, bool more_data, u32 generation);
+void rtl_ax_tx_peer_counters(struct rtl_ax_tx *tx, unsigned int macid, u32 *bytes, u32 *packets);
+void rtl_ax_tx_ac_counters(struct rtl_ax_tx *tx, u32 packets[4]);
+void rtl_ax_tx_peer_amsdu(struct rtl_ax_tx *tx, unsigned int macid, unsigned int bytes, unsigned int num);
+unsigned int rtl_ax_tx_peer_flows(struct rtl_ax_tx *tx, unsigned int macid);
 #endif
