@@ -109,6 +109,7 @@ def main():
             case=work/bad;case.mkdir()
             miniolt,ni,optical,store=[case/n for n in ('miniolt','ni','optical','state')]
             for p in (miniolt,ni,optical,store):p.mkdir(mode=0o700)
+            miniolt.joinpath('backend').write_text('asic9690\n')
             for name in ('tx_enable','reset','host_serdes','pon_serdes','core_init','omci_link','dba'):
                 miniolt.joinpath(name).write_text('0\n')
             ni.joinpath('fttr_link').write_text('0 0\n');optical.joinpath('calibration').write_text('0\n')

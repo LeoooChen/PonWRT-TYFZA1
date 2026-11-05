@@ -234,13 +234,15 @@ static ssize_t tcont_store(struct device *dev, struct device_attribute *attr,
 	    id >= RTL_FTTR_ONUS || tcont > 7 || fixed > 0xffff || assured > 0xffff || maximum > 0xffff)
 		return -EINVAL;
 	mutex_lock(&fttr->control_lock);
-	ret = rtl_fttr_tcont_program(&fttr->reg_io, id, tcont, fixed, assured, maximum);
+	ret = rtl_fttr_tcont_program(&fttr->reg_io, fttr->backend, id, tcont, fixed, assured, maximum);
 	mutex_unlock(&fttr->control_lock);
 	return ret ? ret : count;
 }
 static DEVICE_ATTR_WO(tcont);
 
-/* Eight-byte LE records, indexed by ONU * 8 + T-CONT: fixed, assured|max. */
+/* Eight-byte LE records, indexed by ONU * 8 + physical T-CONT: fixed,
+ * assured|max. FPGA1 has only physical slot0; other slots return EINVAL.
+ */
 static ssize_t tcont_state_read(struct file *file, struct kobject *kobj,
 		const struct bin_attribute *attr, char *buf, loff_t offset, size_t count)
 {
@@ -253,7 +255,7 @@ static ssize_t tcont_state_read(struct file *file, struct kobject *kobj,
 	if (index >= RTL_FTTR_ONUS * 8)
 		return 0;
 	mutex_lock(&fttr->control_lock);
-	ret = rtl_fttr_tcont_read(&fttr->reg_io, index / 8, index % 8, &fixed, &limits);
+	ret = rtl_fttr_tcont_read(&fttr->reg_io, fttr->backend, index / 8, index % 8, &fixed, &limits);
 	mutex_unlock(&fttr->control_lock);
 	if (ret)
 		return ret;
@@ -511,7 +513,7 @@ static umode_t rtl_fttr_attr_visible(struct kobject *kobj, struct attribute *att
 	if (attr == &dev_attr_fpga_init.attr)
 		return fttr->backend == RTL_FTTR_ASIC9690 ? 0 : attr->mode;
 	if (attr == &dev_attr_omci_link.attr || attr == &dev_attr_onu_table.attr ||
-	    attr == &dev_attr_tx_enable.attr)
+	    attr == &dev_attr_tx_enable.attr || attr == &dev_attr_tcont.attr)
 		return attr->mode;
 	if (n >= 2 && fttr->backend != RTL_FTTR_ASIC9690)
 		return 0;
@@ -520,10 +522,7 @@ static umode_t rtl_fttr_attr_visible(struct kobject *kobj, struct attribute *att
 
 static umode_t rtl_fttr_bin_visible(struct kobject *kobj, const struct bin_attribute *attr, int n)
 {
-	struct rtl_fttr *fttr = dev_get_drvdata(kobj_to_dev(kobj));
-
-	return fttr->backend == RTL_FTTR_ASIC9690 || attr == &bin_attr_onu_state ?
-		attr->attr.mode : 0;
+	return attr->attr.mode;
 }
 
 static const struct bin_attribute * const rtl_fttr_bin_attrs[] = {

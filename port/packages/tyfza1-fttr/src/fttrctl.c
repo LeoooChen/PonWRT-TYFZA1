@@ -159,11 +159,20 @@ static int bind_tcont(int directory, unsigned int id, const uint16_t fields[5], 
 	struct fttr_onu_state before;
 	struct fttr_omci_session session;
 	struct fttr_me_job job;
-	uint16_t alloc = fttr_miniolt_alloc_id(id, fields[0]), previous = 0, observed = 0;
-	uint8_t value[2] = { alloc >> 8, alloc };
+	uint16_t previous = 0, observed = 0;
+	uint8_t value[2];
 	bool read = false, sent = false, verified = false;
 	const char *phase = "read";
-	int ret = open_session(directory, id, interface, &session, &before);
+	int alloc, ret = fttr_miniolt_backend(directory);
+
+	if (ret < 0)
+		return ret;
+	alloc = fttr_miniolt_alloc_id(ret, id, fields[0]);
+	if (alloc < 0)
+		return alloc;
+	value[0] = alloc >> 8;
+	value[1] = alloc;
+	ret = open_session(directory, id, interface, &session, &before);
 
 	if (ret)
 		return ret;
@@ -475,8 +484,15 @@ static int service_command(int directory, unsigned int id, const uint16_t fields
 	struct fttr_onu_state before;
 	struct fttr_omci_session session;
 	uint16_t commands;
-	int ret = open_session(directory, id, interface, &session, &before);
+	int ret = fttr_miniolt_backend(directory);
 
+	if (ret < 0)
+		return ret;
+	config.backend = ret;
+	ret = fttr_miniolt_alloc_id(config.backend, id, config.slot);
+	if (ret < 0)
+		return ret;
+	ret = open_session(directory, id, interface, &session, &before);
 	if (ret)
 		return ret;
 	job.transaction.me.onu = id;

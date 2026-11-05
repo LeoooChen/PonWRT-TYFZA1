@@ -42,6 +42,8 @@
 
 13. 新增可选 FPGA 镜像包：核对保留 top.bin 的长度和 SHA-256 后原样安装，开发 DT 在 SPI probe 中加载镜像，MiniOLT 通过设备依赖等到加载成功且 DONE 就绪后才访问 MDIO，避免把未加载的零寄存器识别成 FPGA1。加载器绑定期间禁止手动重写，设备链约束卸载顺序。新增 FPGA1/FPGA2 原厂 post-DONE 寄存器控制与错误停止检查，真实内核对象/模块链接、DT 和固件包暂存验证通过。进一步按 `libponrelay1p25g` 补上 FPGA 专属 OMCI 初始化、固定目的 MAC/基线封装、只读 ONU 状态和保留其他位的 TX 控制；12组原厂对比、18个报文、ASIC OMCI/FPGA 启动回归和6.18.55对象编译通过。原厂 FPGA 带宽配置接口为空实现，不能据此套用 ASIC 的管理 grant/DBA。完整光学、核心、ONU 业务启动或实机验证仍未完成。详见[FPGA 启动依赖](port/FTTR.md#fpga-boot-image-and-miniolt-dependency)及[管理通道](port/FTTR.md#fpga-management-transport)。
 
+14. 补上 FPGA1 独立 DBA/资源编号及控制器接入：原厂 `libasicdrv` 的 FPGA1 授权位于 `40400+ONU*2`，fixed 与 ONU 状态共用下一字，写入只替换低16位；原厂 FPGA relay 的 Alloc-ID 为256..319，每 ONU 一个业务槽。CLI/常驻控制器按真实 backend 选择资源编号，将业务槽1映射到 FPGA1 物理槽0；管理会话不写 ASIC 管理授权，P6 就绪检查不再读取 FPGA 上不存在的 WTG 属性。63组原厂 DBA、64个分配/占用及 Set 报文、CLI 事务、FPGA1/ASIC 常驻生命周期与启动回归、真实软件包/内核模块构建通过。FPGA2 的底层 DBA 访问已对比，但其物理授权表与 relay 编号的对应尚未查实，业务入口明确拒绝且仍列为缺口。完整启动、真实授权/流量及旧报文退场仍未完成。详见[FPGA DBA 接入](port/FTTR.md#fpga-dba-and-controller-integration)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

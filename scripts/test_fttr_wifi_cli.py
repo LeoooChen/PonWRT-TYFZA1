@@ -71,6 +71,7 @@ def main():
         device.mkdir()
         (device / 'omci_link').write_text('host=02:03:04:05:06:07 olt=0a:0b:0c:0d:0e:0f '
                                         'ethertype=8888 downstream_length=0\n')
+        (device / 'backend').write_text('asic9690\n')
         (device / 'management_grant').write_text('')
         config_file = directory / 'wifi.conf'
         config_file.touch(mode=0o600)

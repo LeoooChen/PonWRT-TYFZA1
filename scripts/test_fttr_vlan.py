@@ -143,6 +143,7 @@ def main():
         peer.bind(('ftv-peer',0x8888)); peer.setblocking(False)
         device = work/'miniolt'; device.mkdir()
         device.joinpath('omci_link').write_text('host=02:03:04:05:06:07 olt=0a:0b:0c:0d:0e:0f ethertype=8888 downstream_length=0\n')
+        device.joinpath('backend').write_text('asic9690\n')
         device.joinpath('management_grant').write_text('')
 
         def identity(replaced=False):

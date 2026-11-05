@@ -82,6 +82,7 @@ struct onu {
 struct controller {
 	int directory, ni, store, socket;
 	struct fttr_omci_link link;
+	enum fttr_backend backend;
 	struct fttr_net net;
 	const char *interface;
 	uint16_t transaction;
@@ -716,6 +717,7 @@ static int start_service(struct controller *c, unsigned int id)
 	if (!match)
 		return 0;
 	config = match->config;
+	config.backend = c->backend;
 	for (entity = u->model.entities; entity; entity = entity->next)
 		if (entity->class_id == (config.veip ? 329 : 11) && ordinal++ == match->ordinal)
 			break;
@@ -1620,6 +1622,19 @@ int main(int argc, char **argv)
 	sigaction(SIGINT, &action, NULL);
 	c.directory = open(argv[1], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (c.directory < 0) { ret = -errno; goto out; }
+	ret = fttr_miniolt_backend(c.directory);
+	if (ret < 0)
+		goto out;
+	c.backend = ret;
+	{
+		const struct service_policy *policy;
+
+		for (policy = c.policies; policy; policy = policy->next) {
+			ret = fttr_miniolt_alloc_id(c.backend, 0, policy->config.slot);
+			if (ret < 0)
+				goto out;
+		}
+	}
 	/* A procd replacement waits for the preceding controller's teardown. */
 	if (flock(c.directory, LOCK_EX | (argc == 5 ? LOCK_NB : 0))) { ret = -errno; goto out; }
 	owned = true;

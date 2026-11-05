@@ -44,13 +44,57 @@ int fttr_miniolt_command(int directory, const char *name, const char *value)
 int fttr_miniolt_management(int directory, unsigned int id, bool enable)
 {
 	char value[16];
+	int backend = fttr_miniolt_backend(directory);
 
+	if (backend < 0)
+		return backend;
+	/* libponrelay1p25g configures OMCI globally in plr_fpga_init; its
+	 * per-ONU OMCI GEM entry point performs no IO. No service grant is owned
+	 * by an OMCI session on FPGA, so opening/closing it must not overwrite DBA.
+	 */
+	if (backend != FTTR_ASIC9690)
+		return 0;
 	snprintf(value, sizeof(value), "%u %u\n", id, enable);
 	return fttr_miniolt_command(directory, "management_grant", value);
 }
 
-uint16_t fttr_miniolt_alloc_id(unsigned int id, unsigned int slot)
+int fttr_miniolt_backend(int directory)
 {
+	FILE *file = attribute(directory, "backend");
+	char name[16];
+	int ret;
+
+	if (!file)
+		return -errno;
+	if (!fgets(name, sizeof(name), file))
+		ret = ferror(file) ? -errno : -EPROTO;
+	else if (!strcmp(name, "asic9690\n"))
+		ret = FTTR_ASIC9690;
+	else if (!strcmp(name, "fpga1\n"))
+		ret = FTTR_FPGA1;
+	else if (!strcmp(name, "fpga2\n"))
+		ret = FTTR_FPGA2;
+	else
+		ret = -EPROTO;
+	fclose(file);
+	return ret;
+}
+
+int fttr_miniolt_alloc_id(enum fttr_backend backend, unsigned int id, unsigned int slot)
+{
+	if (id >= FTTR_ONUS || !slot || slot > 7)
+		return -EINVAL;
+	/* The FPGA relay's declared Alloc-ID pool has only one 64-ONU row. */
+	if (backend == FTTR_FPGA1)
+		return slot == 1 ? 256 + (int)id : -ERANGE;
+	/* FPGA2's retained diagnostic DBA table uses ASIC slot addressing, but
+	 * its relay allocates the FPGA1 IDs. Their physical binding is not yet
+	 * established; never assign a remote ID while guessing its local grant.
+	 */
+	if (backend == FTTR_FPGA2)
+		return -EOPNOTSUPP;
+	if (backend != FTTR_ASIC9690)
+		return -EINVAL;
 	/* Original ASIC allocator: 257 + (ONU - 1) * 8 + slot - 1. */
 	return 256 + id * 8 + slot;
 }
@@ -64,7 +108,17 @@ int fttr_miniolt_tcont(int directory, unsigned int id, unsigned int slot,
 		       unsigned int fixed, unsigned int assured, unsigned int maximum)
 {
 	char value[48];
+	int backend = fttr_miniolt_backend(directory);
 
+	if (backend < 0)
+		return backend;
+	if (backend == FTTR_FPGA2)
+		return -EOPNOTSUPP;
+	if (backend == FTTR_FPGA1) {
+		if (slot != 1)
+			return -ERANGE;
+		slot = 0;
+	}
 	snprintf(value, sizeof(value), "%u %u %u %u %u\n", id, slot, fixed, assured, maximum);
 	return fttr_miniolt_command(directory, "tcont", value);
 }
@@ -88,9 +142,19 @@ int fttr_miniolt_tcont_read(int directory, unsigned int id, unsigned int slot,
 			   struct fttr_tcont_grant *grant)
 {
 	uint8_t data[8];
-	int fd = openat(directory, "tcont_state", O_RDONLY | O_CLOEXEC), ret;
+	int backend = fttr_miniolt_backend(directory), fd, ret;
 	ssize_t size;
 
+	if (backend < 0)
+		return backend;
+	if (backend == FTTR_FPGA2)
+		return -EOPNOTSUPP;
+	if (backend == FTTR_FPGA1) {
+		if (slot != 1)
+			return -ERANGE;
+		slot = 0;
+	}
+	fd = openat(directory, "tcont_state", O_RDONLY | O_CLOEXEC);
 	if (fd < 0)
 		return -errno;
 	size = pread(fd, data, sizeof(data), (id * 8 + slot) * sizeof(data));
@@ -185,17 +249,27 @@ int fttr_miniolt_link(int directory, struct fttr_omci_link *link)
 
 int fttr_miniolt_links_ready(int directory, int ni)
 {
-	FILE *file = attribute(directory, "host_serdes");
+	FILE *file;
 	unsigned int peer_clock, peer_link, host_clock, host_link;
-	int error, fields, ret;
+	int error, fields, ret = fttr_miniolt_backend(directory);
 
-	if (!file)
-		return -errno;
-	fields = fscanf(file, "mode=%*u nway=%*u pll=%u error=%d link=%u", &peer_clock, &error, &peer_link);
-	ret = fields == 3 ? error : ferror(file) ? -errno : -EPROTO;
-	fclose(file);
-	if (ret)
+	if (ret < 0)
 		return ret;
+	/* FPGA readiness is established by its manager dependency and the SoC
+	 * P6 PCS. The WTG peer SerDes window exists only on ASIC9690.
+	 */
+	if (ret == FTTR_ASIC9690) {
+		file = attribute(directory, "host_serdes");
+		if (!file)
+			return -errno;
+		fields = fscanf(file, "mode=%*u nway=%*u pll=%u error=%d link=%u", &peer_clock, &error, &peer_link);
+		ret = fields == 3 ? error : ferror(file) ? -errno : -EPROTO;
+		fclose(file);
+		if (ret)
+			return ret;
+		if (!peer_clock || !peer_link)
+			return 0;
+	}
 	file = attribute(ni, "fttr_link");
 	if (!file)
 		return -errno;
@@ -203,7 +277,7 @@ int fttr_miniolt_links_ready(int directory, int ni)
 			&host_clock, &error, &host_link);
 	ret = fields == 3 ? error : ferror(file) ? -errno : -EPROTO;
 	fclose(file);
-	return ret ? ret : !!(peer_clock && peer_link && host_clock && host_link);
+	return ret ? ret : !!(host_clock && host_link);
 }
 
 static int64_t monotonic_ms(void)

@@ -245,8 +245,8 @@ int remove_device(const struct rtl_fttr_reg_io *io, int backend) {
                 cases.append({'backend': backend, 'onu': id, 'snapshot_matches': True})
             for index, name in enumerate(attrs):
                 assert bool(native.visible(backend, index)) == (name in
-                    ('backend', 'version', 'fpga_init', 'omci_link', 'onu_table', 'tx_enable'))
-            assert native.bin_visible(backend, 0) and not native.bin_visible(backend, 1)
+                    ('backend', 'version', 'fpga_init', 'omci_link', 'onu_table', 'tx_enable', 'tcont'))
+            assert native.bin_visible(backend, 0) and native.bin_visible(backend, 1)
             for fail_at in (0, 1, 2):
                 events.clear(); values[0x20] = 0xa55a1000
                 assert native.remove_device(C.byref(io), backend) == int(bool(fail_at))

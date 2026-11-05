@@ -2465,7 +2465,7 @@ claim optical readiness. The attribute is absent on ASIC9690 and preserves
 MDIO errors before any further operation. The controller does not automatically
 choose the calibration branch for an unidentified optical model. The FPGA DT
 still disables the unconfirmed GN25L99 child, and `fttrd` bootstrap remains the
-ASIC implementation. Native FPGA-specific core/DBA/OMCI/ONU behavior, P6 startup
+ASIC implementation. Complete FPGA core/ONU behavior, P6 startup
 orchestration and the original reset-before-optical-calibration timing remain
 work; successful bitstream loading is not complete FTTR startup.
 
@@ -2518,11 +2518,10 @@ link or assert that a downstream ONU is ready.
 The original FPGA bandwidth entry points `drv_gpon_alloc_id_config` (`42c54`)
 and `drv_gpon_alloc_id_clear` (`42cc0`) return without programming registers.
 They do not establish the ASIC's per-ONU T-CONT/DBA recipe for FPGA hardware.
-ASIC core clearing, WTG/PON SerDes, reset GPIO, management grants and service
-DBA attributes therefore remain unavailable on FPGA. The resident bootstrap
-and `fttrctl` OMCI sessions still require a verified FPGA management-grant
-and startup path; only `fttrctl status` can consume the newly exposed state
-directly. No successful FPGA MIB scan/service provisioning is claimed.
+ASIC core clearing, WTG/PON SerDes, reset GPIO and the ASIC management grant
+remain unavailable on FPGA. The backend-specific DBA access in the retained
+`libasicdrv.so` provides additional evidence described below. It supersedes
+the earlier assumption that the empty relay API was the only grant interface.
 
 `scripts/test_fttr_fpga_control.py` executes the original relay initialization,
 TX and serial reader, plus the retained state getters with FPGA1/FPGA2 inputs.
@@ -2534,6 +2533,61 @@ the MiniOLT object against Linux6.18.55. Reports/logs are
 `artifacts/fttr/fpga-control*-20261105.*`. MDIO, registration and optical
 state are modeled; FPGA extended OMCI, grant behavior and physical traffic
 remain unverified.
+
+### FPGA DBA and controller integration
+
+The retained `libasicdrv.so:drv_set_onu_tcont_dba_profile` (`d428`) branches on
+the actual backend. FPGA1 uses `40400 + 2 * zero_based_ONU`: write `14bf0`,
+replace only the low16 bits of the next word with the fixed grant, then write
+`assured << 16 | maximum` to the first word. Preserving the high16 bits is
+essential because they contain registration/block/FEC state. The slot argument
+is ignored by the original FPGA1 API; native exposes one physical slot0 and
+rejects other slots rather than creating independent aliases. FPGA2 and ASIC
+use `41000 + ONU * 32 + slot * 4` and a separate fixed-grant word. Raw readback
+retains the existing `ONU * 8 + physical_slot` eight-byte record layout.
+
+`libponrelay1p25g:plr_gpon_const_val_init` (`81104`) declares Alloc-ID256..319;
+its allocator (`8e6d8`) gives `256 + (ordinal-1)*64 + (ONU-1)` and checks the
+per-PON occupancy bitmap. Only ordinal1 fits that pool. Native FPGA1 service
+slot1 therefore uses Alloc-ID`256 + zero_based_ONU` and physical grant slot0;
+GEM tagging continues through the existing service/VLAN/FE path. The original
+FPGA Set builder (`62530`) confirms the resulting class262 wire assignment.
+ASIC service numbering and physical slots remain unchanged.
+
+CLI and resident control now read the mandatory `backend` attribute. Missing
+or unknown identity fails explicitly. FPGA OMCI sessions do not request the
+ASIC management grant: the retained FPGA per-ONU OMCI GEM function (`43608`)
+does no IO, with management setup performed by the existing global FPGA init.
+This avoids overwriting the single data grant when management sessions open
+or close. FPGA link checks require the real SoC P6 clock/link, without reading
+an absent WTG peer-SerDes attribute. This checks host connectivity, not optical
+readiness. Full automatic FPGA bootstrap/calibration remains incomplete.
+
+FPGA2's diagnostic DBA accessor is implemented and compared, but its ASIC-like
+slot table and FPGA relay resource numbering do not yet establish a coherent
+physical binding. Native service/explicit T-CONT assignment rejects FPGA2
+before any remote change; resident policy validation rejects it before taking
+hardware ownership. Resolving that binding remains required work, not a
+completed backend or a software fallback.
+
+`test_fttr_fpga_dba.py` compares63 original/native DBA write/readback groups,
+every IO failure cutoff,64 original Alloc-ID/occupancy cases and FPGA Set
+frames, plus native backend/physical-slot/link checks. The real CLI service
+test covers FPGA1 creation, repeated adoption and failed-VLAN restoration.
+`test_fttr_autoprovision.py --backend fpga1` runs the full resident lifecycle
+with no WTG or management-grant attributes and the fixed FPGA management MAC:
+replacement, MIB loss, disconnect, restart, real Linux GEM VLAN creation and
+the existing acceleration-withdrawal failure ordering. ASIC resident/startup,
+core, MIB and FPGA control regressions pass. These tests model registers,
+subordinate MIB storage and DBA completion; they do not prove optical grant
+delivery, FE hits or physical packet retirement.
+
+Reports are `artifacts/fttr/fpga-dba-final-20261105.json`,
+`dba-final-{service,asic-resident,fpga1-resident}-20261105.json` and
+`dba-startup-20261105.json`. GCC14.4/musl OpenWrt package compilation and
+Linux6.18.55 MiniOLT module compilation/modpost/link pass in
+`dba-build-final-20261105.log`, using the FTTR build tree with main mounted
+read-only. The previously assembled full FIT images predate these DBA changes.
 
 ### Full offline build after main alignment
 
@@ -2577,7 +2631,8 @@ device access, loading or flashing is authorized at this stage.
 
 1. FPGA board startup: retained image packaging, automatic loading before
    MiniOLT binding, explicit original post-load register control, baseline
-   management envelope, ONU state reads and TX control are implemented.
+   management envelope, ONU state reads, TX control and FPGA1 DBA/controller
+   integration are implemented. FPGA2 resource-to-grant binding remains open.
    Complete P6/FPGA core, optical and ONU/service startup sequencing remains work.
 2. Optical identification for the other sample, plus real GN25L99 calibration
    and optical readiness verification. The native sequence is implemented.

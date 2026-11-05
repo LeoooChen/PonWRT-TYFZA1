@@ -120,7 +120,7 @@ int fttr_service_start(struct fttr_service_job *job, uint16_t onu, uint16_t *cou
 	struct fttr_ani_config ani = { .bridge = 0x8080 };
 	struct fttr_gem_config g = { .profile = 0x8080, .gal = 1, .bridge = true };
 	const struct fttr_mib_entity *e, *assigned = NULL;
-	uint16_t alloc = fttr_miniolt_alloc_id(onu, config->slot);
+	uint16_t alloc;
 	uint32_t current;
 	uint8_t uni_number = 0, ani_number = 0;
 	int i, ret;
@@ -130,6 +130,10 @@ int fttr_service_start(struct fttr_service_job *job, uint16_t onu, uint16_t *cou
 	job->transaction.me.onu = onu;
 	memcpy(job->transaction.serial, serial, 8);
 	job->config = *config;
+	ret = fttr_miniolt_alloc_id(config->backend, onu, config->slot);
+	if (ret < 0)
+		return job->error = ret;
+	alloc = ret;
 	if (!entity(model, config->veip ? 329 : 11, config->uni))
 		return job->error = -ENOENT;
 	/* Never assign an already-owned Alloc-ID to a second T-CONT merely because
@@ -322,7 +326,7 @@ int fttr_service_update(struct fttr_service_job *job, uint16_t *counter,
 		if (job->previous.fixed > 0xffff)
 			return service_failed(job, -EUCLEAN);
 		if ((job->previous.fixed || job->previous.limits) &&
-		    job->previous_alloc != fttr_miniolt_alloc_id(onu, job->config.slot))
+		    job->previous_alloc != fttr_miniolt_alloc_id(job->config.backend, onu, job->config.slot))
 			return service_failed(job, -EBUSY);
 		job->phase = "objects";
 		job->stage = FTTR_SERVICE_OBJECTS;

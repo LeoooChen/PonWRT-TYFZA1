@@ -48,6 +48,7 @@ def main():
         ni.joinpath('fttr_link').write_text('configured=1 mode=9 nway=1 clock=1 error=0 link=1\n')
         ni.joinpath('fttr_accel').write_text('0\n')
         miniolt.joinpath('tx_enable').write_text('1\n')
+        (miniolt/'backend').write_text('asic9690\n')
         os.mkfifo(miniolt/'management_grant')
         grants_fd = os.open(miniolt/'management_grant',os.O_RDWR|os.O_NONBLOCK)
         grants, requests, old_reply = [], [], None

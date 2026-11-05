@@ -79,13 +79,17 @@ class SyncSlave(Slave):
 
 
 def main():
+    global OLT
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--master', type=Path, required=True)
     p.add_argument('--slave', type=Path, required=True)
     p.add_argument('--daemon', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
     p.add_argument("--wifi", action="store_true", help="exercise resident remote Wi-Fi policies")
+    p.add_argument("--backend", choices=("asic9690", "fpga1"), default="asic9690")
     args = p.parse_args()
+    physical_slot = 0 if args.backend == "fpga1" else 1
+    if args.backend == "fpga1": OLT = bytes.fromhex("001111111111")
     assert {x['ifname'] for x in json.loads(subprocess.check_output(['ip','-j','link','show'],text=True))} == {'lo'}
     stock = Original(args.master)
     original_sync=OriginalSync(args.slave)
@@ -241,7 +245,12 @@ def main():
         ni.joinpath('fttr_link').write_text('configured=1 mode=9 nway=1 clock=1 error=0 link=1\n')
         ni.joinpath('fttr_accel').write_text('0\n')
         device.joinpath('tx_enable').write_text('1\n')
-        device.joinpath('management_grant').write_text('')
+        device.joinpath('backend').write_text(args.backend+'\n')
+        if args.backend == 'asic9690':
+            device.joinpath('management_grant').write_text('')
+        else:
+            device.joinpath('host_serdes').unlink()
+            device.joinpath('omci_link').write_text('host=02:03:04:05:06:07 olt=00:11:11:11:11:11 ethertype=8888 downstream_length=0\n')
         device.joinpath('tcont_state').write_bytes(bytes(4096))
         os.mkfifo(device/'tcont');grant_fd=os.open(device/'tcont',os.O_RDWR|os.O_NONBLOCK)
         accel_log,accel_fault=root/'accel.log',root/'accel.fail'
@@ -266,6 +275,17 @@ def main():
         subprocess.run(['ip','link','add','br-fttr','type','bridge'],check=True)
         subprocess.run(['ip','link','set','dev','br-fttr','up'],check=True)
         policy.write_text('5445535400000007 0 0 1 3 none 50 100 200 br-fttr\n* 2 0 1 3 200 50 100 200 br-fttr\n')
+        # Backend policy rejection precedes ownership, TX and FE mutations.
+        for backend, slot in (('fpga1', 2), ('fpga2', 1)):
+            device.joinpath('backend').write_text(backend+'\n')
+            rejected_policy=root/'unsupported-services'
+            rejected_policy.write_text(f'* 2 0 {slot} 3 200 50 100 200 br-fttr\n')
+            rejected=subprocess.run([str(args.daemon.resolve()),str(device),str(ni),str(store),
+                'fap-host','--services',str(rejected_policy)],capture_output=True,text=True,timeout=2)
+            assert rejected.returncode==1 and not store.joinpath('status.json').exists()
+            assert device.joinpath('tx_enable').read_text()=='1\n'
+            assert ni.joinpath('fttr_accel').read_text()=='0\n'
+        device.joinpath('backend').write_text(args.backend+'\n')
         wifi_policy=root/'wifi-policies'
         if args.wifi:
             from test_fttr_wifi_cli import policy as wifi_config_text
@@ -473,7 +493,7 @@ def main():
                 'shared transport failure cancels jobs and disables optical TX']
             os.close(grant_fd)
             peer.close()
-            report={'master_sha256':hashlib.sha256(args.master.read_bytes()).hexdigest(),
+            report={'backend':args.backend,'master_sha256':hashlib.sha256(args.master.read_bytes()).hexdigest(),
                 'slave_sha256':hashlib.sha256(args.slave.read_bytes()).hexdigest(),
                 'checks':checks, 'scope':'Native daemon over AF_PACKET/veth with original ARM64 descriptors, sync update/reset and VLAN replies; modeled peer MIB/sysfs; no optical or wireless acceptance.'}
             args.output.write_text(json.dumps(report,indent=2)+'\n')
@@ -496,7 +516,7 @@ def main():
             datapath(7)
             previous=journal(7,'service-old')[0]
             assert previous['serial']==old.serial.hex() and previous['error']==-errno.ESTALE and previous['grant_withdrawn']
-            assert (7,1,0,0,0) in grants
+            assert (7,physical_slot,0,0,0) in grants
             recipe=next(x for x in journal(7) if x['event']=='service_recipe')
             assert recipe['kind']==2 and recipe['uni']==0x317 and recipe['uni_ordinal']==0
             # Lose registration after a primary failure has started cleanup.
@@ -571,7 +591,7 @@ def main():
             assert current['onus'][9]['phase']=='configured'
             assert not current['onus'][7]['service_configured']
             assert not current['onus'][7]['datapath_configured'] and set(ports())=={'fttr-u9'}
-            assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),(7*8+1)*8)==(0,0)
+            assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),(7*8+physical_slot)*8)==(0,0)
             failed_probe=next(x for x in journal(7) if x['event']=='mib_sync')
             assert failed_probe['failure']['error']==-errno.ETIMEDOUT and failed_probe['failure']['attempts']==3
             nodes[7].drop_sync=False
@@ -610,7 +630,7 @@ def main():
             events=accel_events()[event_start:]
             assert any(mode==0 and seven==old_port and nine for mode,seven,nine in events)
             assert any(mode==1 and seven==0 and nine for mode,seven,nine in events)
-            assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),(7*8+1)*8)==(0,0)
+            assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),(7*8+physical_slot)*8)==(0,0)
             nodes[7]=node;hardware()
             until(lambda s:s.get('onus') and s['onus'][7]['phase']=='configured')
             datapath(7)
@@ -638,7 +658,7 @@ def main():
             assert next(x for x in journal(7) if x['event']=='service_datapath')['bridge']=='br-missing'
             assert not current['onus'][7]['service_configured'] and not ports()
             assert current['onus'][9]['service_configured'] and not current['onus'][9]['datapath_configured']
-            assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),(7*8+1)*8)==(0,0)
+            assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),(7*8+physical_slot)*8)==(0,0)
             process.send_signal(signal.SIGTERM);_,error=process.communicate(timeout=3)
             assert process.returncode==0,error
             policy.write_text(valid_policy)
@@ -658,7 +678,7 @@ def main():
             # peer timeout that leaves the global controller falsely running.
             nodes[7]=Node(7,'5445535400000077',0x3ff,True,hold=True)
             with device.joinpath('tcont_state').open('r+b') as f:
-                f.seek((7*8+1)*8);f.write(bytes(8))
+                f.seek((7*8+physical_slot)*8);f.write(bytes(8))
             hardware();process=launch()
             until(lambda s:nodes[7].held is not None and s.get('onus') and s['onus'][9]['phase']=='configured')
             subprocess.run(['ip','link','set','dev','fap-host','down'],check=True)
@@ -671,7 +691,7 @@ def main():
             if process.poll() is None:process.terminate();process.communicate(timeout=3)
         os.close(grant_fd)
     peer.close()
-    report={'master_sha256':hashlib.sha256(args.master.read_bytes()).hexdigest(),
+    report={'backend':args.backend,'master_sha256':hashlib.sha256(args.master.read_bytes()).hexdigest(),
         'slave_sha256':hashlib.sha256(args.slave.read_bytes()).hexdigest(),
         'onu_data_sha256':hashlib.sha256(onu_data.read_bytes()).hexdigest(),
         'checks':['one stalled ONU does not block another ONU service',

@@ -6,6 +6,8 @@
 
 #define FTTR_ONUS 64
 
+enum fttr_backend { FTTR_FPGA1 = 1, FTTR_FPGA2, FTTR_ASIC9690 };
+
 struct fttr_onu_state {
 	uint32_t downstream, upstream, eqd;
 	uint8_t serial[8];
@@ -17,7 +19,8 @@ int fttr_miniolt_links_ready(int directory, int ni);
 int fttr_miniolt_one(int directory, unsigned int id, struct fttr_onu_state *onu);
 int fttr_miniolt_same(int directory, unsigned int id, const struct fttr_onu_state *expected);
 int fttr_miniolt_management(int directory, unsigned int id, bool enable);
-uint16_t fttr_miniolt_alloc_id(unsigned int id, unsigned int slot);
+int fttr_miniolt_backend(int directory);
+int fttr_miniolt_alloc_id(enum fttr_backend backend, unsigned int id, unsigned int slot);
 uint16_t fttr_miniolt_gem_id(unsigned int id, unsigned int ordinal);
 int fttr_miniolt_tcont(int directory, unsigned int id, unsigned int slot,
 		       unsigned int fixed, unsigned int assured, unsigned int maximum);

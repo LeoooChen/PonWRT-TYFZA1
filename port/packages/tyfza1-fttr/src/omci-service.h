@@ -10,6 +10,7 @@
 struct fttr_service_config {
 	uint16_t uni, slot, priority, vid, fixed, assured, maximum;
 	bool veip, tagged;
+	enum fttr_backend backend;
 };
 
 struct fttr_service_job {

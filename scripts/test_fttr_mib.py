@@ -103,8 +103,8 @@ def main():
         library.fttr_mib_scan.argtypes = [ctypes.POINTER(Session), ctypes.POINTER(ctypes.c_ushort), record_fn, ctypes.c_void_p]
         library.fttr_miniolt_link.argtypes = [ctypes.c_int, ctypes.POINTER(Link)]
         library.fttr_miniolt_management.argtypes = [ctypes.c_int,ctypes.c_uint,ctypes.c_bool]
-        library.fttr_miniolt_alloc_id.argtypes = [ctypes.c_uint,ctypes.c_uint]
-        library.fttr_miniolt_alloc_id.restype = ctypes.c_ushort
+        library.fttr_miniolt_alloc_id.argtypes = [ctypes.c_int,ctypes.c_uint,ctypes.c_uint]
+        library.fttr_miniolt_alloc_id.restype = ctypes.c_int
         class Hardware(ctypes.Structure):
             _fields_=[('downstream',ctypes.c_uint),('upstream',ctypes.c_uint),
                       ('eqd',ctypes.c_uint),('serial',ctypes.c_ubyte*8)]
@@ -244,7 +244,7 @@ def main():
         o.hooks[0x914d4]='stock_alloc_unused'
         for id,slot in [(0,1),(5,3),(63,7)]:
             assert o.call('plr_ponsrv_alloc_id_get',0,id+1,slot,p)==0
-            assert library.fttr_miniolt_alloc_id(id,slot)==struct.unpack('<H',o.uc.mem_read(p,2))[0]
+            assert library.fttr_miniolt_alloc_id(3,id,slot)==struct.unpack('<H',o.uc.mem_read(p,2))[0]
 
         # Exercise the actual executable against the kernel attribute ABI only.
         fixture = path / 'device'
@@ -253,6 +253,7 @@ def main():
             f'{id} {0x40000 if id == 5 else 0:08x} 12345678 0000002a 5445535401234567\n'
             for id in range(64)))
         fixture.joinpath('omci_link').write_text('host=02:03:04:05:06:07 olt=0a:0b:0c:0d:0e:0f ethertype=8888 downstream_length=1\n')
+        fixture.joinpath('backend').write_text('asic9690\n')
         fixture.joinpath('management_grant').write_text('')
         fixture.joinpath('onu_state').write_bytes(b''.join(struct.pack('<III8s',
             0x40000 if id==5 else 0,0x12345678,42,bytes.fromhex('5445535401234567')) for id in range(64)))

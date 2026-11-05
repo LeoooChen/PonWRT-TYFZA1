@@ -131,10 +131,10 @@ def main():
 int core(const struct rtl_fttr_reg_io *io) {return rtl_fttr_core_init(io);}
 int dba(const struct rtl_fttr_reg_io *io) {return rtl_fttr_dba_defaults(io);}
 int tcont(const struct rtl_fttr_reg_io *io,unsigned int id,unsigned int tc,unsigned int f,unsigned int a,unsigned int m) {
- return rtl_fttr_tcont_program(io,id,tc,f,a,m);
+ return rtl_fttr_tcont_program(io,RTL_FTTR_ASIC9690,id,tc,f,a,m);
 }
 int tcont_read(const struct rtl_fttr_reg_io *io,unsigned int id,unsigned int tc,unsigned int *f,unsigned int *limits) {
- return rtl_fttr_tcont_read(io,id,tc,f,limits);
+ return rtl_fttr_tcont_read(io,RTL_FTTR_ASIC9690,id,tc,f,limits);
 }
 int link(const struct rtl_fttr_reg_io *io,unsigned int mode,unsigned int *ready) {
  return rtl_fttr_wtg_link(io,mode,ready);

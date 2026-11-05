@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Original UMM1001M_regInit and onuinfo DBA setup, ASIC9690. */
+/* Original UMM1001M_regInit and backend-specific libasicdrv DBA access. */
 #ifndef RTL9617C_FTTR_CORE_H
 #define RTL9617C_FTTR_CORE_H
 
 #include "rtl9617c-fttr-reg.h"
+#include "rtl9617c-fttr-mdio.h"
 
 static inline int rtl_fttr_core_init(const struct rtl_fttr_reg_io *io)
 {
@@ -81,26 +82,45 @@ static inline int rtl_fttr_dba_defaults(const struct rtl_fttr_reg_io *io)
 }
 
 static inline int rtl_fttr_tcont_program(const struct rtl_fttr_reg_io *io,
-		unsigned int id, unsigned int tcont, unsigned int fixed,
+		enum rtl_fttr_backend backend, unsigned int id, unsigned int tcont, unsigned int fixed,
 		unsigned int assured, unsigned int maximum)
 {
 	unsigned int base = 0x41000 + id * 32 + tcont * 4;
 	int ret;
 
+	/* FPGA1 has one physical grant per ONU. Do not expose aliases as
+	 * independently owned T-CONTs; its fixed grant shares the ONU state word.
+	 */
+	if (backend == RTL_FTTR_FPGA1) {
+		if (tcont)
+			return -EINVAL;
+		base = 0x40400 + id * 2;
+	}
 	/* Preserve the original intermediate value while installing the fixed grant. */
 	ret = io->write(io->context, base, 0x14bf0);
 	if (ret)
 		return ret;
-	ret = io->write(io->context, base + 1, fixed);
+	ret = backend == RTL_FTTR_FPGA1 ?
+		rtl_fttr_masked_write(io, base + 1, 0xffff, fixed) :
+		io->write(io->context, base + 1, fixed);
 	return ret ? ret : io->write(io->context, base, assured << 16 | maximum);
 }
 
 static inline int rtl_fttr_tcont_read(const struct rtl_fttr_reg_io *io,
-		unsigned int id, unsigned int tcont, unsigned int *fixed, unsigned int *limits)
+		enum rtl_fttr_backend backend, unsigned int id, unsigned int tcont,
+		unsigned int *fixed, unsigned int *limits)
 {
 	unsigned int base = 0x41000 + id * 32 + tcont * 4;
-	int ret = io->read(io->context, base + 1, fixed);
+	int ret;
 
+	if (backend == RTL_FTTR_FPGA1) {
+		if (tcont)
+			return -EINVAL;
+		base = 0x40400 + id * 2;
+	}
+	ret = io->read(io->context, base + 1, fixed);
+	if (!ret && backend == RTL_FTTR_FPGA1)
+		*fixed &= 0xffff;
 	return ret ? ret : io->read(io->context, base, limits);
 }
 

@@ -117,6 +117,7 @@ def main():
         shim.write_text(SYSFS_WRITE_SHIM)
         subprocess.run(['cc','-shared','-fPIC','-Wall','-Wextra','-Werror','-o',str(device/'sysfs.so'),str(shim),'-ldl'],check=True)
         device.joinpath('omci_link').write_text('host=02:03:04:05:06:07 olt=0a:0b:0c:0d:0e:0f ethertype=8888 downstream_length=0\n')
+        device.joinpath('backend').write_text('asic9690\n')
         device.joinpath('management_grant').write_text('')
         os.mkfifo(device/'tcont')
         grant_fd = os.open(device/'tcont',os.O_RDWR|os.O_NONBLOCK)
@@ -130,7 +131,11 @@ def main():
             with device.joinpath('tcont_state').open('r+b') as f:
                 f.seek(offset); f.write(struct.pack('<II',fixed,limits))
 
-        def run(case='normal', veip=False, tagged=False, initial=None):
+        def run(case='normal', veip=False, tagged=False, initial=None, backend='asic9690'):
+            nonlocal offset
+            device.joinpath('backend').write_text(backend+'\n')
+            physical_slot = 0 if backend == 'fpga1' else 1
+            offset = (7*8+physical_slot)*8
             identity(); device.joinpath('tcont_state').write_bytes(bytes(4096))
             pool = {(262,0x8765):{0x8000:struct.pack('>H',255)}}
             pool[329 if veip else 11,0x107] = {0x8000:b'\1'} if veip else {0x8000:b'\0',0x0800:b'\1'}
@@ -182,7 +187,7 @@ def main():
                             grant_buffer += os.read(grant_fd,1024)
                             while b'\n' in grant_buffer:
                                 line,grant_buffer = grant_buffer.split(b'\n',1)
-                                id,slot,f,a,m = map(int,line.split()); assert (id,slot)==(7,1)
+                                id,slot,f,a,m = map(int,line.split()); assert (id,slot)==(7,physical_slot)
                                 grants.append((f,a,m))
                             continue
                         frame,address = peer.recvfrom(2048)
@@ -242,7 +247,7 @@ def main():
                 while select.select([grant_fd],[],[],0)[0]: grant_buffer += os.read(grant_fd,1024)
                 while b'\n' in grant_buffer:
                     line,grant_buffer = grant_buffer.split(b'\n',1)
-                    id,slot,f,a,m = map(int,line.split()); assert (id,slot)==(7,1)
+                    id,slot,f,a,m = map(int,line.split()); assert (id,slot)==(7,physical_slot)
                     grants.append((f,a,m))
                 events = [json.loads(line) for line in output.splitlines()]
                 result = next(x for x in events if x['event']=='service_state')
@@ -269,6 +274,21 @@ def main():
             assert reused['configured'] and not reused['grant_sent'] and not writes
             assert not any(o[0] in (0x44,0x48,0x46) for o in again)
         checks.append('fresh MIB chooses available real T-CONT and related upstream queue; Ethernet transparent and VEIP access paths configure/read back all objects, UNI administration, local DBA and original compound VLAN policy; repeats send no configuration writes')
+        for backend in ('fpga1',):
+            device.joinpath('management_grant').unlink()
+            result,events,pool,table,operations,grants = run(backend=backend)
+            assert result['configured'] and result['grant_verified'], events
+            assert pool[262,0x8765][0x8000] == b'\x01\x07'
+            assert grants == [(50,100,200)]
+            reused,_,_,_,again,writes = run(backend=backend, initial=(pool,table))
+            assert reused['configured'] and not writes
+            assert not any(o[0] in (0x44,0x48,0x46) for o in again)
+            failed,_,pool,table,_,grants = run(backend=backend, case='vlan-reject')
+            assert failed['error'] == -errno.EREMOTEIO and not failed['cleanup_error']
+            assert pool[262,0x8765][0x8000] == b'\0\xff' and not table
+            assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),offset) == (0,0)
+            device.joinpath('management_grant').write_text('')
+        checks.append('FPGA1 service CLI generates the FPGA Alloc-ID, opens OMCI without an ASIC management grant, verifies the correct physical DBA slot, reuses resources and restores on VLAN failure')
         for case in ('gem-reject','delete-reject','grant-false-success','vlan-reject','vlan-restore-reject','grant-restore-false','busy','no-queue','alloc-without-queue','duplicate-alloc'):
             result,events,pool,table,operations,grants = run(case)
             expected_error = {'delete-reject':errno.EUCLEAN,'grant-false-success':errno.EUCLEAN,
