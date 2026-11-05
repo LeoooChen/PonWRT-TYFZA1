@@ -27,9 +27,9 @@ ap = bytes.fromhex('981e896168d2')
 ethernet = destination + source + b'\x08\x00'
 host_dma = 0x120380be  # Observed bad region; PE ATU redirects this window to IO.
 
-for encap, payload_bytes, smps, mode, firmware, aggregate in ((encap, size, smps, mode, firmware, aggregate) for encap in (True, False)
+for encap, payload_bytes, smps, mode, firmware, aggregate, mesh in ((encap, size, smps, mode, firmware, aggregate, mesh) for encap in (True, False)
                                  for size in (0, 1, 1500, 2048, 2266, 2267, 4096) for smps in (False, True)
-                                 for mode in (4, 0x80, 0x100, 0x180) for firmware in (False, True) for aggregate in (0, 64)):
+                                 for mode in (4, 0x80, 0x100, 0x180) for firmware in (False, True) for aggregate in (0, 64) for mesh in ((0,) if encap else (0, 1, 2))):
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
     for at, size in ((0x1fc00000,0x10000),(base,0x20000),(ring,0x10000),
                      (pages,0x32000),(headers,0x10000),(0x11000000,0x100000),
@@ -61,16 +61,19 @@ for encap, payload_bytes, smps, mode, firmware, aggregate in ((encap, size, smps
     run()
     assert get(mailbox)==0x50455744
     raw=bytes.fromhex('88020000')+destination+ap+source+b'\x30\x12\0\0'
+    if mesh == 1: raw=bytes.fromhex('88030000')+destination+ap+source+b'\x30\x12'+source+b'\0\x01'
+    if mesh == 2: raw=bytes.fromhex('88020000')+b'\xff'*6+ap+source+b'\x30\x12\0\x01'
+    header_len=len(raw)
     expected=raw[:22]+b'\0\0'+raw[24:]
     if encap:expected+=b'\xaa\xaa\x03\0\0\0\x08\0'
     u.mem_write(headers+7*128,ethernet if encap else raw)
     request=[0]*32
     request[0]=7;request[1]=1<<16
-    request[2]=(len(expected)+payload_bytes)|26<<16|1<<24
+    request[2]=(len(expected)+payload_bytes)|header_len<<16|1<<24
     request[3]=0x00230000 | mode | (1 << 20 if firmware else 0) | (1 << 22 if smps else 0)
-    request[4]=(2<<24)|(1<<18 if encap else 1<<22)
+    request[4]=(2<<24)|(1<<18 if encap else 1<<22)|(1<<14 if mesh==2 else 0)
     request[5]=aggregate
-    request[8]=host_dma;request[9]=(14 if encap else 26)+payload_bytes
+    request[8]=host_dma;request[9]=(14 if encap else header_len)+payload_bytes
     u.mem_write(base+0x4000,struct.pack('<32I',*request))
     put(mailbox+32,1)
     run()
@@ -81,7 +84,7 @@ for encap, payload_bytes, smps, mode, firmware, aggregate in ((encap, size, smps
     # Actual original C/XB encoder: STBC is INFO0 bit12, while dynamic
     # SMPS protection is INFO4 RTS_EN/HW_RTS_EN (offset48 bits27/31).
     assert struct.unpack_from('<I',wp,32)[0] == ((1 << 11) | (0 if firmware else 1536))
-    assert struct.unpack_from('<I',wp,36)[0] == ((aggregate-1 if aggregate else 0) | ((mode & 0x180) << 16 if len(expected)+payload_bytes>2300 else 0))
+    assert struct.unpack_from('<I',wp,36)[0] == ((aggregate-1 if aggregate else 0) | (1<<11 if mesh==2 else 0) | ((mode & 0x180) << 16 if len(expected)+payload_bytes>2300 else 0))
     assert struct.unpack_from('<I',wp,48)[0] == (0x88000000 if smps else 0)
     count=struct.unpack_from('<I',wp,4)[0]>>26
     segments=[struct.unpack_from('<HI',wp,64+i*6) for i in range(count)]
@@ -89,7 +92,7 @@ for encap, payload_bytes, smps, mode, firmware, aggregate in ((encap, size, smps
     assert lengths==[len(expected)]+[min(2047,payload_bytes-i) for i in range(0,payload_bytes,2047)]
     assert [length>>15 for length,address in segments]==[0]*(count-1)+[1], (encap,payload_bytes,segments)
     assert segments[0][1]==headers+7*128
-    offset=14 if encap else 26
+    offset=14 if encap else header_len
     for length,address in segments[1:]:
         assert address==host_dma+offset
         offset+=length & 2047
@@ -118,4 +121,4 @@ for encap, payload_bytes, smps, mode, firmware, aggregate in ((encap, size, smps
             run()
             assert get(mailbox+36)==slot+1
             assert get(get(ring+slot*8+4)+12)&0x3000==0x3000
-print('PE host headers: staged headers, opaque DMA, final LS, retry floor and repeated same-peer/length AMPDU/non-AMPDU BK passed')
+print('PE host headers: staged headers, mesh four-address/QoS preservation, opaque DMA, final LS, retry floor and repeated same-peer/length AMPDU/non-AMPDU BK passed')

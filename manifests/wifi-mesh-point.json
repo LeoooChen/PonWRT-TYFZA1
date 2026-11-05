@@ -1,0 +1,36 @@
+{
+  "baseline": "9331c6e",
+  "branch": "feat/wifi-mesh-point-20261105",
+  "date": "2026-11-05",
+  "kernel": "6.18.55",
+  "scope": "802.11s mesh point on C and XB; one AP or mesh per radio",
+  "implementation": [
+    "mac80211 mesh enabled; full wpad-mbedtls already has mesh/SAE",
+    "mesh beacon lifecycle and unknown-signal beacon delivery",
+    "stock mesh self/peer role6; AP/mesh transitions use JOIN and CAM",
+    "mac80211 software crypto and mesh forwarding; no AP NI/FE offload"
+  ],
+  "validation": {
+    "ARM64_driver_and_mesh_mac80211_build": "pass",
+    "source_vs_build_inputs": "pass; PCI driver registration name is rtl_ax_ap_mesh",
+    "stock_peer_JOIN_CAM_cases": 1600,
+    "stock_self_JOIN_cases": 32,
+    "stock_C_XB_role_create_connect_remove_switch": "pass; artifacts/mesh/stock-mesh-role.json",
+    "AP_mesh_lifecycle_ASan_UBSan": "pass; scripts/test_radio_mesh.py",
+    "PE_raw_mesh_header_QoS_DMA": "pass; scripts/test_pe_host_headers.py",
+    "AP_basic_rates_RTS": "pass",
+    "AP_DFS": "pass with local fixture repair for preexisting missing RX PE stubs; production DFS unchanged",
+    "AP_stop_NI_reference": "pass",
+    "compiler_warning": "existing missing MODULE_DESCRIPTION modpost warnings"
+  },
+  "artifacts_sha256": {
+    "artifacts/mesh/radio/rtl_ax_ap_mesh.ko": "0543bbb879f1581ba065c6f575ceac393201656c85231a8def4ab8b235ed3914",
+    "artifacts/mesh/kernel/net/mac80211/mac80211.ko": "f6667998e602da349f5dceafb2e8579df5445e9b0856785cf853d1be0a1414b2",
+    "artifacts/mesh/radio/pe/pe-tx.bin": "99134a0bc5a5bace8071853cb21134b46e5522e102f15dfa5e0da248285bd6f8"
+  },
+  "runtime_validation": {
+    "device_modified": false,
+    "air_peer_link_and_SAE_data": "pending; device reserved by user for another AI task",
+    "full_firmware_image_built": false
+  }
+}

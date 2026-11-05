@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Native AP self-role payloads. Original TYFZA1 ELF:
+/* Native AP/mesh self-role payloads. Original TYFZA1 ELF:
  * _hal_stainfo_to_macrinfo@1a8390 -> mac_add_role@22f1f0 ->
  * set_macid_pause@21c82c, mac_fw_role_maintain@22db0c,
  * mac_h2c_join_info@22dc7c, mac_upd_addr_cam@1e7cd8.
@@ -96,7 +96,7 @@ static inline void rtl_ax_station_cmac_he(u8 out[68], u8 padding)
 }
 
 static inline void rtl_ax_station_join(u8 out[4], unsigned int macid,
-	unsigned int bandwidth, const struct ieee80211_sta_he_cap *he, unsigned int nss)
+	unsigned int bandwidth, const struct ieee80211_sta_he_cap *he, unsigned int nss, bool mesh)
 {
 	u32 value = macid | 0x8b040000 | bandwidth << 14;
 
@@ -110,6 +110,8 @@ static inline void rtl_ax_station_join(u8 out[4], unsigned int macid,
 		value = macid | 0x8b003000 | bandwidth << 14 | padding << 18 |
 			((he->he_cap_elem.mac_cap_info[1] & IEEE80211_HE_MAC_CAP1_TF_MAC_PAD_DUR_MASK) >> 2) << 16;
 	}
+	/* Original mesh role6 shares AP net_type3 and self roles1/2. */
+	if (mesh) value += 4U << 26;
 	rtl_ax_store32(out, value);
 }
 
@@ -142,19 +144,19 @@ static inline void rtl_ax_role_unpause(unsigned char out[32], unsigned int macid
 	rtl_ax_store32(out + 16 + (macid / 32) * 4, RTL_AX_BIT(macid % 32));
 }
 
-static inline void rtl_ax_role_create(unsigned char out[4], unsigned int macid)
+static inline void rtl_ax_role_create(unsigned char out[4], unsigned int macid, bool mesh)
 {
-	/* self_role AP=1, update CREATE=0, wifi_role AP=2. */
-	rtl_ax_store32(out, macid | (1U << 8) | (2U << 13));
+	/* self_role AP=1, update CREATE=0, wifi_role AP=2 / mesh=6. */
+	rtl_ax_store32(out, macid | (1U << 8) | ((mesh ? 6U : 2U) << 13));
 }
 
 static inline void rtl_ax_role_join(unsigned char out[4], unsigned int macid,
-	unsigned int bandwidth)
+	unsigned int bandwidth, bool mesh)
 {
 	/* Original open legacy self-station creation: DISCONN=1,
 	 * SCC band0/port0, DL_T_PE1, net_type AP3, wifi AP2, self AP1.
 	 * The self role uses the chip's maximum supported bandwidth. */
-	rtl_ax_store32(out, macid | 0x4b040100 | bandwidth << 14);
+	rtl_ax_store32(out, macid | (mesh ? 0x5b040100 : 0x4b040100) | bandwidth << 14);
 }
 
 static inline void rtl_ax_role_cam(unsigned char out[60], unsigned int macid,

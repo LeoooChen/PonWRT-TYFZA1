@@ -158,7 +158,7 @@ struct rtl_ax_ap {
 	bool ap_started;
 	int ap_result;
 	DECLARE_BITMAP(station_ids, 128);
-	struct { u8 self[6], peer[6]; u16 aid; bool pending; } retired_stations[128];
+	struct { u8 self[6], peer[6]; u16 aid; bool pending, mesh; } retired_stations[128];
 	struct { u8 address[6], aggregation[IEEE80211_NUM_TIDS]; u16 stopping, flushing; } tx_ba[128];
 	struct wiphy_delayed_work cleanup_work;
 	struct wiphy_delayed_work ra_work;
@@ -213,7 +213,7 @@ struct rtl_ax_ap {
 	u64 ra_ppdu_reports;
 	u8 ra_last_ppdu[64];
 	u32 ra_last_ppdu_bytes;
-	u8 role_stage;
+	u8 role_stage, role_type;
 	int role_result;
 	u8 role_cam[60];
 	struct rtl_ax_port0 port0;
@@ -764,19 +764,24 @@ static int rtl_ax_self_role_prepare(struct rtl_ax_ap *radio, const u8 *address,
 {
 	u8 unpause[32], create[4], join[4];
 	bool owns_transport = !radio->monitor_started;
+	bool mesh = radio->ap_vif && radio->ap_vif->type == NL80211_IFTYPE_MESH_POINT;
+	u8 role_type = mesh ? 6 : 2;
 	int ret;
 
 	/* Probe has not yet registered the wiphy. Keep the C2H receive ring
 	 * available for original receive/done acknowledgements. */
 	rtl_ax_role_unpause(unpause, 0);
-	rtl_ax_role_create(create, 0);
-	rtl_ax_role_join(join, 0, radio->chip == RTL_AX_8852C ? 3 : 1);
+	rtl_ax_role_create(create, 0, mesh);
+	rtl_ax_role_join(join, 0, radio->chip == RTL_AX_8852C ? 3 : 1, mesh);
 	rtl_ax_role_cam(radio->role_cam, 0, address);
 	pci_set_master(radio->pdev);
 	rtl_ax_h2c_start(&radio->io);
 	rtl_ax_rx_open(radio->rx);
-	if (radio->role_stage >= 4)
+	if (radio->role_stage >= 4 && radio->role_type == role_type)
 		goto update_cam;
+	/* Original _change_role updates existing AP/mesh roles with JOIN + CAM. */
+	if (radio->role_stage >= 2)
+		goto update_join;
 	ret = rtl_ax_command_flags(radio, RTL_AX_H2C_CMD, 1, 9, 8,
 				   unpause, sizeof(unpause), true, false);
 	if (ret)
@@ -787,11 +792,13 @@ static int rtl_ax_self_role_prepare(struct rtl_ax_ap *radio, const u8 *address,
 	if (ret)
 		goto stop;
 	radio->role_stage = 2;
+update_join:
 	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 0,
 			     join, sizeof(join), true);
 	if (ret)
 		goto stop;
 	radio->role_stage = 3;
+	radio->role_type = role_type;
 update_cam:
 	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0,
 			     radio->role_cam, sizeof(radio->role_cam), true);
