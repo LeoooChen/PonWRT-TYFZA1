@@ -31,7 +31,7 @@ def replay(directory, networks, slot):
     base, states, buf, descriptors = 0x04000000, 0x05000000, 0x06000000, 0x06100000
     mb, vp = base + 0x2000, 0x13001100 + (9 + slot) * 0xa0
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-    for at, size in ((0x1fc00000, 0x4000), (base, 0x20000), (states, 0x20000),
+    for at, size in ((0x1fc00000, 0x10000), (base, 0x20000), (states, 0x20000),
                      (buf, 0x4000), (descriptors, 0x1000), (0x13000000, 0x2000),
                      (0x10000000, 0x10000)):
         u.mem_map(at, size)
@@ -66,10 +66,10 @@ def replay(directory, networks, slot):
     u.mem_write(buf, bytes(raw))
     for reg, value in ((UC_MIPS_REG_A0, mb | 0xa0000000), (UC_MIPS_REG_A1, buf | 0xa0000000),
                        (UC_MIPS_REG_A2, buf), (UC_MIPS_REG_SP, (base + 0x17ff0) | 0xa0000000),
-                       (UC_MIPS_REG_RA, 0xbfc03ff0)):
+                       (UC_MIPS_REG_RA, 0x9fc0fff0)):
         u.reg_write(reg, value)
-    u.emu_start(entry, 0xbfc03ff0, count=100000)
-    assert u.reg_read(UC_MIPS_REG_PC) == 0xbfc03ff0
+    u.emu_start(entry, 0x9fc0fff0, count=100000)
+    assert u.reg_read(UC_MIPS_REG_PC) == 0x9fc0fff0
     result = u.reg_read(UC_MIPS_REG_V0)
     if result:
         assert result == 0x80000000 | (63 + len(networks))

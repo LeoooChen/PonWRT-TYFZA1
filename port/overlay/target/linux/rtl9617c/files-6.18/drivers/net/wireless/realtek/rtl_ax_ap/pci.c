@@ -21,6 +21,7 @@
 #include "role.h"
 #include "security.h"
 #include "rate.h"
+#include "scan.h"
 #include "port0.h"
 #include "beacon.h"
 #include "mac-runtime.h"
@@ -32,6 +33,7 @@
 #include "bb-dm.h"
 #include "dfs.h"
 #include "dig.h"
+#include "dig-runtime.h"
 #include "cfo.h"
 #include "environment.h"
 #include "rx-pipeline.h"
@@ -143,6 +145,7 @@ struct rtl_ax_ap {
 	struct ieee80211_vif *ap_vif;
 	struct wiphy_work beacon_work;
 	struct wiphy_work offload_work;
+	bool offload_retry;
 	struct wiphy_work ra_update_work;
 	DECLARE_BITMAP(ra_pending, 128);
 	bool peer_authorized[128];
@@ -151,6 +154,7 @@ struct rtl_ax_ap {
 	spinlock_t pn_lock;
 	struct tasklet_struct tx_tasklet;
 	u64 tim_requests, tim_updates;
+	u64 ps_poll_requests, ps_poll_errors;
 	bool ap_started;
 	int ap_result;
 	DECLARE_BITMAP(station_ids, 128);
@@ -160,6 +164,12 @@ struct rtl_ax_ap {
 	struct wiphy_delayed_work ra_work;
 	struct wiphy_delayed_work dm_work;
 	bool ra_sampling;
+	bool scanning;
+	struct sk_buff *scan_pending;
+	u32 scan_word0, scan_word1;
+	u64 scan_received_ns;
+	u64 scan_matched, scan_unmatched;
+	u8 scan_last_bssid[6], scan_last_rpl;
 	u64 station_added, station_removed;
 	DECLARE_BITMAP(security_ids, RTL_AX_SECURITY_ENTRIES);
 	DECLARE_BITMAP(security_deleting, RTL_AX_SECURITY_ENTRIES);
@@ -168,7 +178,8 @@ struct rtl_ax_ap {
 	struct rtl_ax_security_role security_roles[128];
 	u64 keys_installed, keys_removed, keys_aborted, rx_decrypted;
 	int key_result;
-	struct { u8 macid, tid; bool valid, deleting; } rx_ba[8];
+	/* Software BA sessions outlive static CAM allocation; cam==8 is dynamic. */
+	struct { u8 macid, tid, cam; bool valid, deleting; } rx_ba[128 * 8];
 	u64 rx_ba_started, rx_ba_stopped;
 	int rx_ba_result;
 	struct ieee80211_tx_queue_params edca[IEEE80211_NUM_ACS];
@@ -195,7 +206,8 @@ struct rtl_ax_ap {
 	int ra_update_error[128];
 	u8 ra_txstats[128][32];
 	u64 ra_txstats_reports[128];
-	u8 ra_rssi[128][3];
+	u8 ra_rssi[128][3], ra_rssi_level[128];
+	struct rtl_ax_ra_rssi ra_rssi_state[128];
 	u64 ra_rssi_samples[128], ra_rssi_sent;
 	int ra_rssi_result;
 	u64 ra_ppdu_reports;
@@ -343,6 +355,8 @@ static int rtl_ax_h2c_send(void *ctx, const unsigned char *data,
 
 static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 	const struct rtl_ax_rx_packet *packet);
+static void rtl_ax_scan_complete_frame(struct rtl_ax_ap *radio,
+	const struct rtl_ax_rx_packet *report);
 
 static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 {
@@ -358,7 +372,7 @@ static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 
 		spin_lock_irqsave(&radio->command_lock, flags);
 		if (dfs->enabled && !dfs->detected) {
-			if (packet->bytes < 8 || (packet->bytes - 8) % 8) {
+			if (packet->bytes < 8 || packet->bytes > 8 + 61 * 8 || (packet->bytes - 8) % 8) {
 				dfs->malformed++;
 				spin_unlock_irqrestore(&radio->command_lock, flags);
 				return -EINVAL;
@@ -366,7 +380,7 @@ static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 			dfs->reports++;
 			dfs->pulses_seen += (packet->bytes - 8) / 8;
 			dfs->dropped += get_unaligned_le16(packet->payload);
-			detected = rtl_ax_dfs_detect(dfs, packet->payload + 8,
+			detected = rtl_ax_dfs_report(dfs, packet->payload + 8,
 				(packet->bytes - 8) / 8, ktime_get_boottime_seconds());
 			if (detected) {
 				dfs->detected = true;
@@ -381,24 +395,33 @@ static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 			ieee80211_radar_detected(radio->hw, NULL);
 		return 0;
 	}
-	if (packet->type == 0 && READ_ONCE(radio->monitor_started))
+	if (packet->type == 0 && READ_ONCE(radio->monitor_started)) {
+		rtl_ax_scan_complete_frame(radio, NULL);
 		return rtl_ax_monitor_receive(radio, packet);
+	}
 	if (packet->type == 1) {
-		struct rtl_ax_phy_signal signals[8];
-		unsigned int i;
+		struct rtl_ax_ra_sample sample;
+		u8 aci;
+		int aci_report, ra_sample;
 
+		rtl_ax_scan_complete_frame(radio, packet);
 		if (!(rtl_ax_ap_read32(packet->descriptor) & BIT(23))) return 0;
-		ret = rtl_ax_ppdu_signal(packet->payload, packet->bytes, signals);
+		ra_sample = rtl_ax_ppdu_ra_signal(packet->payload, packet->bytes,
+			rtl_ax_ap_read32(packet->descriptor + 4) & 15,
+			!!(rtl_ax_ap_read32(packet->descriptor + 12) & BIT(0)), &sample);
+		aci_report = rtl_ax_ppdu_aci(packet->payload, packet->bytes, &aci);
 		spin_lock_irqsave(&radio->command_lock, flags);
+		if (aci_report > 0) rtl_ax_dfs_aci(&radio->dfs, aci);
 		radio->ra_ppdu_reports++;
 		radio->ra_last_ppdu_bytes = packet->bytes;
 		memcpy(radio->ra_last_ppdu, packet->payload, min_t(unsigned int, packet->bytes, 64));
-		for (i = 0; ret > 0 && i < ret; i++) {
-			memcpy(radio->ra_rssi[signals[i].macid], signals[i].rssi, 3);
-			radio->ra_rssi_samples[signals[i].macid]++;
+		if (ra_sample > 0 && radio->ra_registered[sample.macid]) {
+			rtl_ax_ra_rssi_sample(&radio->ra_rssi_state[sample.macid], &sample,
+				radio->ra_rssi[sample.macid]);
+			radio->ra_rssi_samples[sample.macid]++;
 		}
 		spin_unlock_irqrestore(&radio->command_lock, flags);
-		return ret < 0 ? ret : 0;
+		return ra_sample < 0 ? ra_sample : 0;
 	}
 	/* Original hal_handle_rx_buffer_C@279904/XB@28036c:
 	 * descriptor type7 is the WP recycle report; type8 is not RPQ. */
@@ -747,7 +770,7 @@ static int rtl_ax_self_role_prepare(struct rtl_ax_ap *radio, const u8 *address,
 	 * available for original receive/done acknowledgements. */
 	rtl_ax_role_unpause(unpause, 0);
 	rtl_ax_role_create(create, 0);
-	rtl_ax_role_join(join, 0);
+	rtl_ax_role_join(join, 0, radio->chip == RTL_AX_8852C ? 3 : 1);
 	rtl_ax_role_cam(radio->role_cam, 0, address);
 	pci_set_master(radio->pdev);
 	rtl_ax_h2c_start(&radio->io);
@@ -1418,18 +1441,20 @@ static ssize_t radio_signal_show(struct device *dev,
 	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
 	struct rtl_ax_bb_dm *dm = &radio->bb_dm;
 	u32 psd = rtl_ax_read32(radio, 0x1422c), la = rtl_ax_read32(radio, 0x9660);
-	u32 collision = rtl_ax_read32(radio, 0x10c70);
+	u32 collision = rtl_ax_read32(radio, 0x10c70), edcca = rtl_ax_read32(radio, 0x14840);
 
 	return sysfs_emit(buffer, "LA=%s buffer=%u samples=%u trigger_us=%u cfg=%08x "
 		"PSD=%s fft=%u IQ=%u average=%u path=%u input=%u cfg=%08x "
 		"EDCCA=%s mode=%u power_offset=%u capabilities=%u,%u,%u,%u "
-		"collision_state=%u cfg=%08x dynamic_policy=pending DFS_runtime=pending DIG_periodic=pending\n",
+		"collision_state=%u cfg=%08x EDCCA_high=%u EDCCA_low=%u EDCCA_cfg=%08x "
+		"collision_threshold=%u dynamic_policy=%s DFS_runtime=pending DIG_periodic=running\n",
 		dm->la_ready ? "initialized" : "pending", dm->la_buffer_bytes, dm->la_samples, dm->la_trigger_time, la,
 		dm->psd_ready ? "initialized" : "pending", dm->psd_fft_points,
 		(psd >> 11) & 3, (psd >> 13) & 3, (psd >> 17) & 3, (psd >> 19) & 3, psd,
 		dm->edcca_ready ? "initialized" : "pending", dm->edcca_mode, dm->edcca_power_offset,
 		dm->edcca_cap_2g, dm->edcca_cap_5g, dm->edcca_cap_6g, dm->edcca_cap_carrier,
-		(collision >> 20) & 63, collision);
+		(collision >> 20) & 63, collision, dm->edcca_high, dm->edcca_low, edcca,
+		(collision >> 11) & 31, dm->edcca_mode ? "pending" : "running");
 }
 static DEVICE_ATTR_RO(radio_signal);
 
@@ -1491,6 +1516,12 @@ static ssize_t radio_dfs_show(struct device *dev,
 		length += sysfs_emit_at(buffer, length, "type=%u PW=%u..%u PRI=%u..%u pulses=%u\n",
 			i, dfs->profile.pw_min[i], dfs->profile.pw_max[i],
 			dfs->profile.pri_min[i], dfs->profile.pri_max[i], dfs->profile.pulses[i]);
+	length += sysfs_emit_at(buffer, length,
+		"dynamic=%u PW_factor=%u PRI_factor=%u PW_diff=%u PRI_diff=%u chirp_diff=%u "
+		"adaptive=%u count=%u total=%u ACI=%d ACI_pending=%u ACI_wait=%u\n",
+		dfs->dynamic_setting, dfs->pw_factor, dfs->pri_factor, dfs->pw_diff,
+		dfs->pri_diff, dfs->long_chirp_diff, dfs->adaptive_state,
+		dfs->adaptive_count, dfs->adaptive_total, dfs->aci, dfs->aci_pending, dfs->aci_wait);
 	return length;
 }
 static DEVICE_ATTR_RO(radio_dfs);
@@ -1505,10 +1536,12 @@ static ssize_t radio_dig_show(struct device *dev,
 	u32 cck_control = rtl_ax_read32(radio, 0x14b74);
 
 	return sysfs_emit(buffer, "initialization=%s mode=%u max_gaincode=%u,%u,%u "
-		"IB_peak=%d IB_backoff=%u initial_RSSI=%u IGI=%u FA=%u,%u,%u,%u "
+		"IB_peak=%d IB_backoff=%u RSSI=%u IGI=%u FA=%u,%u,%u,%u "
 		"TDMA_ms=%u FAHM_ms=%u damping=%u/%u PD_requested=%u bandwidth_index=%u "
 		"OFDM_enable=%u encoded=%u cfg=%08x CCK_enable=%u low=%d high=%u "
-		"cfg=%08x/%08x follow_PAGC=%u periodic_DIG=pending\n",
+		"cfg=%08x/%08x follow_PAGC=%u periodic_DIG=running "
+		"linked=%u RSSI_min_half=%u updates=%llu FAHM_reports=%llu not_ready=%llu "
+		"FAHM_permille=%u damping_active=%u\n",
 		dig->initialized ? "applied" : "pending", dig->mode,
 		dig->max_gaincode[0], dig->max_gaincode[1], dig->max_gaincode[2],
 		dig->ib_peak_power, dig->ib_backoff, dig->igi_rssi, dig->unit[0].igi,
@@ -1517,7 +1550,8 @@ static ssize_t radio_dig_show(struct device *dev,
 		dig->tdma_period, dig->fahm_time, dig->damping_enabled, dig->damping_count_limit,
 		dig->pd_requested, dig->bandwidth, !!(ofdm & BIT(29)), (ofdm >> 6) & 31,
 		ofdm, !!(cck_control & BIT(30)), (s8)(cck >> 24), (cck >> 16) & 255,
-		cck, cck_control, dig->unit[0].follow_pagc);
+		cck, cck_control, dig->unit[0].follow_pagc, dig->linked, dig->rssi_min,
+		dig->updates, dig->reports, dig->not_ready, dig->false_alarms, dig->damping_active);
 }
 static DEVICE_ATTR_RO(radio_dig);
 
@@ -1553,10 +1587,25 @@ static ssize_t radio_environment_show(struct device *dev,
 	unsigned int i;
 	ssize_t length = sysfs_emit(buffer, "initialization=%s CCX_unit=%u CLM_input=%u "
 		"NHM_include_CCA=%u threshold_last_NHM_FAHM=%u,%u "
-		"measurement_trigger=pending report_collection=pending\n",
+		"NHM_trigger=%s NHM_report=%s\n",
 		environment->initialized ? "applied" : "pending", environment->ccx_unit,
 		environment->clm_input, environment->nhm_include_cca,
-		environment->nhm_threshold[10], environment->fahm_threshold[10]);
+		environment->nhm_threshold[10], environment->fahm_threshold[10],
+		environment->background_started ? "running" : "pending",
+		environment->nhm_ready ? "ready" : "not-ready");
+	length += sysfs_emit_at(buffer, length,
+		"NHM_samples=%llu not_ready=%llu period=%u TX=%u CCA=%u idle=%u "
+		"idle_ratio=%u noise_ratio=%u false_alarms=%u throughput_Mbps=%u RX_loss=%d\n",
+		environment->samples, environment->not_ready, environment->nhm_period,
+		environment->nhm_tx, environment->nhm_cca, environment->nhm_idle,
+		environment->nhm_idle_ratio, environment->nhm_noise_ratio,
+		environment->false_alarms, environment->throughput, environment->external_loss);
+	length += sysfs_emit_at(buffer, length,
+		"NHM_raw_bins=%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
+		environment->nhm_bins[0], environment->nhm_bins[1], environment->nhm_bins[2],
+		environment->nhm_bins[3], environment->nhm_bins[4], environment->nhm_bins[5],
+		environment->nhm_bins[6], environment->nhm_bins[7], environment->nhm_bins[8],
+		environment->nhm_bins[9], environment->nhm_bins[10], environment->nhm_bins[11]);
 
 	for (i = 0; i < ARRAY_SIZE(rtl_ax_environment_start); i++) {
 		const struct rtl_ax_environment_write *write = &rtl_ax_environment_start[i];
@@ -1604,11 +1653,15 @@ static ssize_t radio_power_hardware_show(struct device *dev,
 {
 	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
 	unsigned int i;
-	ssize_t length = sysfs_emit(buffer, "applied=%u bandwidth_MHz=%u units=half-dBm regulation=%s country=%s requested_dBm=%d\n",
-		radio->power_hardware.applied, 20U << radio->power_hardware.bandwidth, radio->power_hardware.regulation,
-		radio->power_country, radio->requested_tx_dbm);
+	ssize_t length;
+	int ret;
 
 	mutex_lock(&radio->command_mutex);
+	ret = rtl_ax_power_verify(&radio->io, &radio->power_hardware);
+	length = sysfs_emit(buffer, "applied=%u bandwidth_MHz=%u units=half-dBm regulation=%s country=%s requested_dBm=%d error=%d\n",
+		radio->power_hardware.applied, 20U << radio->power_hardware.bandwidth, radio->power_hardware.regulation,
+		radio->power_country, radio->requested_tx_dbm, ret);
+
 	for (i = 0; i < 43; i++) {
 		u32 address = i < 11 ? 0xd2c0 + i * 4 : i < 31 ? 0xd2ec + (i - 11) * 4 :
 			0xd33c + (i - 31) * 4;
@@ -1682,6 +1735,21 @@ static int rtl_ax_dfs_start_locked(struct rtl_ax_ap *radio)
 		return -EOPNOTSUPP;
 	rtl_ax_dfs_initialize(dfs, region);
 	rtl_ax_dfs_channel(dfs, region, radio->channel.primary, radio->channel.bandwidth);
+	/* TW segment0 is the lower80, including when the primary is in the
+	 * upper80 (factory MKK36..64 policy). Classifier region does not decide
+	 * which frequencies require detection: use the actual channel flags. */
+	if (dfs->two_segments) {
+		bool lower_radar = false;
+
+		for (unsigned int i = 0; i < 4; i++) {
+			unsigned int channel = radio->channel.center - 14 + i * 4;
+			int frequency = ieee80211_channel_to_frequency(channel, NL80211_BAND_5GHZ);
+			struct ieee80211_channel *lower = ieee80211_get_channel(radio->hw->wiphy, frequency);
+
+			lower_radar |= !!(lower->flags & IEEE80211_CHAN_RADAR);
+		}
+		dfs->bypass_segment0 = !lower_radar;
+	}
 	dfs->in_cac = !radio->ap_started;
 	ret = rtl_ax_dfs_hardware(&radio->io, true);
 	if (ret) return ret;
@@ -1716,6 +1784,7 @@ static int rtl_ax_receive_configure(struct rtl_ax_ap *radio, unsigned int primar
 	}
 	rtl_ax_rx_close(radio->rx);
 	ret = rtl_ax_dfs_stop_locked(radio);
+	rtl_ax_scan_complete_frame(radio, NULL);
 	/* CAC and a failed detector configuration both keep the MAC quiet. */
 	if (radio->radar_required) rtl_ax_tx_dfs_block(radio->tx, true);
 	rtl_ax_hci_pause(&radio->io);
@@ -1727,8 +1796,11 @@ static int rtl_ax_receive_configure(struct rtl_ax_ap *radio, unsigned int primar
 	ret = radio->chip == RTL_AX_8852C ?
 		rtl_ax_c_receive_channel(&radio->io, &radio->phy, &radio->bb_dm, primary, channel, bandwidth, &radio->channel) :
 		rtl_ax_xb_receive_channel(&radio->io, &radio->phy, &radio->bb_dm, primary, channel, bandwidth, &radio->channel);
-	if (!ret && radio->chip == RTL_AX_8852C)
-		rtl_ax_c_dig_bandwidth(&radio->io, &radio->dig, bandwidth);
+	if (!ret) {
+		rtl_ax_dig_bandwidth(&radio->io, &radio->dig, bandwidth);
+		/* Discard FAHM reports spanning RF channel calibration. */
+		radio->dig.fahm_triggered = radio->dig.fahm_configured = false;
+	}
 	if (!ret)
 		ret = rtl_ax_power_apply(&radio->io, radio->chip, &radio->power_inputs,
 			radio->channel.band, primary, channel, bandwidth, radio->power_country,
@@ -1780,7 +1852,6 @@ static int rtl_ax_receive_configure(struct rtl_ax_ap *radio, unsigned int primar
 	}
 resume:
 	if (!ret) ret = rtl_ax_dfs_start_locked(radio);
-	radio->dfs.error = ret;
 	pci_set_master(radio->pdev);
 	rtl_ax_h2c_start(&radio->io);
 	rtl_ax_rx_open(radio->rx);
@@ -1788,6 +1859,9 @@ resume:
 		ret = rtl_ax_bb_channel_notify_locked(radio);
 	if (!ret && channel_changed && radio->chip == RTL_AX_8852C)
 		ret = rtl_ax_rfk_notify_locked(radio);
+	/* A channel is reusable only after calibration and firmware notification. */
+	if (ret && channel_changed) radio->channel.configured = false;
+	radio->dfs.error = ret;
 	if (!ret && radio->monitor_started)
 		rtl_ax_tx_open(radio->tx);
 	return ret;
@@ -2400,20 +2474,7 @@ static ssize_t radio_pe_route_store(struct device *dev,
 	return ret ? ret : count;
 }
 static DEVICE_ATTR_WO(radio_pe_route);
-static ssize_t radio_pe_uplink_store(struct device *dev,
-	struct device_attribute *attribute, const char *buffer, size_t count)
-{
-	struct rtl_ax_ap *radio = dev_get_drvdata(dev);
-	unsigned int macid, wifi_id = 0;
-	int ret;
-	if (sscanf(buffer, "%u %u", &macid, &wifi_id) < 1) return -EINVAL;
-	if (!radio->ap_vif) return -ENODEV;
-	wiphy_lock(radio->hw->wiphy);
-	ret = rtl_ax_tx_uplink(radio->tx, ieee80211_vif_to_wdev(radio->ap_vif)->netdev, macid, wifi_id);
-	wiphy_unlock(radio->hw->wiphy);
-	return ret ? ret : count;
-}
-static DEVICE_ATTR_WO(radio_pe_uplink);
+
 static ssize_t radio_role_show(struct device *dev,
 	struct device_attribute *attribute, char *buffer)
 {
@@ -2455,6 +2516,11 @@ static ssize_t radio_ra_show(struct device *dev,
 	unsigned int bytes = 0, i;
 	unsigned long flags;
 
+	bytes += sysfs_emit_at(buffer, bytes, "scan_RSSI_matched=%llu unmatched=%llu\n",
+		radio->scan_matched, radio->scan_unmatched);
+	bytes += sysfs_emit_at(buffer, bytes, "scan_last_BSSID=%pM RPL_U8_1=%u signal_dBm=%d\n",
+		radio->scan_last_bssid, radio->scan_last_rpl,
+		(radio->scan_last_rpl >> 1) - 110);
 	spin_lock_irqsave(&radio->command_lock, flags);
 	for (i = 1; i < 128 && bytes < PAGE_SIZE - 180; i++) {
 		const u8 *r = radio->ra_feedback[i];
@@ -2567,7 +2633,6 @@ static ssize_t radio_port_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(radio_port);
 static struct attribute *rtl_ax_attrs[] = {
-	&dev_attr_radio_pe_uplink.attr,
 	&dev_attr_radio_pn.attr,
 	&dev_attr_radio_pe_ni_test.attr,
 	&dev_attr_radio_pe_route.attr,

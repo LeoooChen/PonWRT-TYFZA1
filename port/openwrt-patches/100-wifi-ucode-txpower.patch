@@ -1,0 +1,61 @@
+--- a/package/network/config/wifi-scripts/files-ucode/lib/netifd/wireless/mac80211.sh
++++ b/package/network/config/wifi-scripts/files-ucode/lib/netifd/wireless/mac80211.sh
+@@ -95,7 +95,7 @@
+ 		rxantenna: config.rxantenna
+ 	});
+ 
+-	if (config.txpower)
++	if (config.txpower != null)
+ 		config.txpower = 'fixed ' + config.txpower + '00';
+ 	else
+ 		config.txpower = 'auto';
+@@ -106,12 +106,16 @@
+ 		system(`iw phy ${phy} set antenna ${config.txantenna} ${config.rxantenna} >/dev/null 2>&1`);
+ 	}
+ 	system(`iw phy ${phy} set distance ${config.distance} >/dev/null 2>&1`);
+-	system(`iw phy ${phy} set txpower ${config.txpower}`);
++	if (system(`iw phy ${phy} set txpower ${config.txpower}`)) {
++		netifd.setup_failed('TXPOWER_FAILED');
++		return false;
++	}
+ 
+ 	if (config.frag)
+ 		system(`iw phy ${phy} set frag ${config.frag}`);
+ 	if (config.rts)
+ 		system(`iw phy ${phy} set rts ${config.rts}`);
++	return true;
+ }
+ 
+ function iw_htmode(config) {
+@@ -206,7 +210,8 @@
+ 	delete config.hwmode;
+ 
+ 	validate('device', config);
+-	setup_phy(data.phy, data.config, data.data);
++	if (!setup_phy(data.phy, data.config, data.data))
++		return 1;
+ 
+ 	let supplicant_mesh;
+ 	let has_ap = false;
+--- a/package/network/config/wifi-scripts/files-ucode/usr/share/ucode/iwinfo.uc
++++ b/package/network/config/wifi-scripts/files-ucode/usr/share/ucode/iwinfo.uc
+@@ -444,7 +444,7 @@
+ 			htmode: data.radio?.htmode,
+ 			center_freq1: format_channel(data.center_freq1) || 'unknown',
+ 			center_freq2: format_channel(data.center_freq2) || 'unknown',
+-			txpower: data.wiphy_tx_power_level / 100,
++			txpower: data.wiphy_tx_power_level == null ? null : data.wiphy_tx_power_level / 100,
+ 			noise: data.noise,
+ 			signal: 0,
+ 			bitrate: 0,
+--- a/package/network/config/wifi-scripts/files-ucode/usr/bin/iwinfo
++++ b/package/network/config/wifi-scripts/files-ucode/usr/bin/iwinfo
+@@ -56,7 +56,7 @@
+ 		printf(`${padding}Access Point: ${bss.mac}\n`);
+ 		printf(`${padding}Mode: ${bss.mode}  Channel: ${bss.channel} (${bss.freq} GHz)  HT Mode: ${bss.htmode}\n`);
+ 		printf(`${padding}Center Channel 1: ${bss.center_freq1} 2: ${bss.center_freq2}\n`);
+-		printf(`${padding}Tx-Power: ${bss.txpower} dBm  Link Quality: ${bss.quality}/70\n`);
++		printf(`${padding}Tx-Power: ${bss.txpower == null ? 'unknown' : bss.txpower + ' dBm'}  Link Quality: ${bss.quality}/70\n`);
+ 		printf(`${padding}Signal: ${bss.signal} dBm  Noise: ${bss.noise} dBm\n`);
+ 		printf(`${padding}Bit Rate: ${bss.bitrate == 'unknown' ? 'unknown' : bss.bitrate + ' MBit/s'}\n`);
+ 		printf(`${padding}Encryption: ${bss.encryption}\n`);

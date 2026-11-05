@@ -1,0 +1,66 @@
+--- a/net/mac80211/cfg.c
++++ b/net/mac80211/cfg.c
+@@ -3361,7 +3361,6 @@
+ 	bool update_txp_type = false;
+ 	bool has_monitor = false;
+ 	int user_power_level;
+-	int old_power = local->user_power_level;
+ 
+ 	lockdep_assert_wiphy(local->hw.wiphy);
+ 
+@@ -3412,7 +3411,7 @@
+ 
+ 			ieee80211_recalc_txpower(link, update_txp_type);
+ 		}
+-		return 0;
++		goto apply_emulated;
+ 	}
+ 
+ 	local->user_power_level = user_power_level;
+@@ -3471,9 +3470,18 @@
+ 		}
+ 	}
+ 
+-	if (local->emulate_chanctx &&
+-	    (old_power != local->user_power_level))
+-		ieee80211_hw_conf_chan(local);
++apply_emulated:
++	if (local->emulate_chanctx) {
++		int old_hw_power = local->hw.conf.power_level;
++		int ret = ieee80211_hw_conf_chan(local);
++
++		if (ret || !local->open_count)
++			return ret;
++		/* Apply even an unchanged request: the previous attempt may have
++		 * failed, or the hardware may not yet have this power programmed. */
++		if (old_hw_power == local->hw.conf.power_level)
++			return drv_config(local, radio_idx, IEEE80211_CONF_CHANGE_POWER);
++	}
+ 
+ 	return 0;
+ }
+--- a/net/mac80211/main.c
++++ b/net/mac80211/main.c
+@@ -229,6 +229,8 @@
+ 				   bool radar_enabled)
+ {
+ 	u32 changed = 0;
++	int old_power = local->hw.conf.power_level;
++	int ret;
+ 
+ 	if (local->hw.conf.radar_enabled != radar_enabled)
+ 		changed = IEEE80211_CONF_CHANGE_CHANNEL;
+@@ -241,7 +243,12 @@
+ 	if (!changed)
+ 		return 0;
+ 
+-	return drv_config(local, -1, changed);
++	ret = drv_config(local, -1, changed);
++	/* A failed power request must be retried even when the user repeats
++	 * the same target. calc_hw_conf_chan has already updated this field. */
++	if (ret && (changed & IEEE80211_CONF_CHANGE_POWER))
++		local->hw.conf.power_level = old_power;
++	return ret;
+ }
+ 
+ int ieee80211_hw_conf_chan(struct ieee80211_local *local)

@@ -1,0 +1,214 @@
+{
+  "date": "2026-10-25",
+  "base_main": "46b305a3226b3cd26fd52cfe351c7df669b60219",
+  "boot_id": "a316c6d1-55d5-4bf2-94f7-dbae8672f53a",
+  "fix": "Apply the existing factory-backed OFDM PD bandwidth update to RTL8192XB as well as RTL8852C.",
+  "old_XB_40MHz": {
+    "dig_bandwidth": 0,
+    "OFDM_lower_bound_enabled": true,
+    "BB481C": "776af854"
+  },
+  "fixed_XB_20_40_20": [
+    {
+      "dig_bandwidth": 0,
+      "OFDM_lower_bound_enabled": true,
+      "BB481C": "776af854"
+    },
+    {
+      "dig_bandwidth": 1,
+      "OFDM_lower_bound_enabled": false,
+      "BB481C": "576af854"
+    },
+    {
+      "dig_bandwidth": 0,
+      "OFDM_lower_bound_enabled": true,
+      "BB481C": "776af854"
+    }
+  ],
+  "factory_ARM64_vectors": 1332,
+  "production_channel_callbacks_tested": "C and XB, 20->40->20 MHz",
+  "main_callback_regression_reproduced": true,
+  "ARM64_module_build": "pass",
+  "module_sha256": "9f2685519e38f09ad64204032b04a7612faff8f1974dc2b856f83cacbddb05fb",
+  "production_source_sha256": {
+    "dig.h": "abbfe84231aab9055a1f511606223f21503ffd5d3dbc587398c4d263923e424f",
+    "pci.c": "938734f6b95c441afcecc9b945ee3e414b174af4fd1d956cd39e2363d295bc5f"
+  },
+  "temporary_RF_or_beacon_diagnostics_in_production": false,
+  "monitor_test_passive": true,
+  "monitor_interfaces_removed": true,
+  "antenna_first": {
+    "5G": [
+      {
+        "band": "5G",
+        "antenna": 0,
+        "valid_RSSI": 100,
+        "invalid_zero": 0,
+        "median_RSSI_dBm": -36.0,
+        "mean_RSSI_dBm": -35.67,
+        "scan": "channel=149 rssi=-35 noise=-92",
+        "H2C_header": "a6000000,01004500,00000000,00000000",
+        "requested_dBm": 20
+      },
+      {
+        "band": "5G",
+        "antenna": 1,
+        "valid_RSSI": 100,
+        "invalid_zero": 0,
+        "median_RSSI_dBm": -36.0,
+        "mean_RSSI_dBm": -35.6,
+        "scan": "channel=149 rssi=-35 noise=-92",
+        "H2C_header": "a6000000,01004500,00000003,00000000",
+        "requested_dBm": 20
+      },
+      {
+        "band": "5G",
+        "antenna": 2,
+        "valid_RSSI": 100,
+        "invalid_zero": 0,
+        "median_RSSI_dBm": -34.0,
+        "mean_RSSI_dBm": -33.58,
+        "scan": "channel=149 rssi=-32 noise=-94",
+        "H2C_header": "a6000000,01004500,00000025,00000000",
+        "requested_dBm": 20
+      },
+      {
+        "band": "5G",
+        "antenna": 3,
+        "valid_RSSI": 100,
+        "invalid_zero": 0,
+        "median_RSSI_dBm": -32.0,
+        "mean_RSSI_dBm": -32.28,
+        "scan": "channel=149 rssi=-34 noise=-95",
+        "H2C_header": "a6000000,01004500,00000087,00000000",
+        "requested_dBm": 20
+      },
+      {
+        "band": "5G",
+        "antenna": 0,
+        "valid_RSSI": 100,
+        "invalid_zero": 0,
+        "median_RSSI_dBm": -34.0,
+        "mean_RSSI_dBm": -34.56,
+        "scan": "channel=149 rssi=-33 noise=-90",
+        "H2C_header": "a6000000,01004500,00000000,00000000",
+        "requested_dBm": 20
+      }
+    ],
+    "2G": [
+      {
+        "band": "2G",
+        "antenna": 0,
+        "valid_RSSI": 62,
+        "invalid_zero": 38,
+        "median_RSSI_dBm": -21.0,
+        "mean_RSSI_dBm": -21.06451612903226,
+        "scan": "channel=1 rssi=-24 noise=-71",
+        "H2C_header": "a9000000,01004500,00000000,00000000",
+        "requested_dBm": 20
+      },
+      {
+        "band": "2G",
+        "antenna": 3,
+        "valid_RSSI": 56,
+        "invalid_zero": 44,
+        "median_RSSI_dBm": -21.0,
+        "mean_RSSI_dBm": -20.964285714285715,
+        "scan": "channel=1 rssi=-20 noise=-70",
+        "H2C_header": "a9000000,01004500,00000087,00000000",
+        "requested_dBm": 20
+      },
+      {
+        "band": "2G",
+        "antenna": 0,
+        "valid_RSSI": 98,
+        "invalid_zero": 2,
+        "median_RSSI_dBm": -20.0,
+        "mean_RSSI_dBm": -19.887755102040817,
+        "scan": "channel=1 rssi=-19 noise=-71",
+        "H2C_header": "a9000000,01004500,00000000,00000000",
+        "requested_dBm": 20
+      }
+    ]
+  },
+  "antenna_5G_reversal": [
+    {
+      "band": "5G",
+      "antenna": 3,
+      "valid_RSSI": 100,
+      "invalid_zero": 0,
+      "median_RSSI_dBm": -31.0,
+      "mean_RSSI_dBm": -29.24,
+      "scan": "channel=149 rssi=-27 noise=-91",
+      "H2C_header": "a6000000,01004500,00000087,00000000",
+      "requested_dBm": 20
+    },
+    {
+      "band": "5G",
+      "antenna": 0,
+      "valid_RSSI": 100,
+      "invalid_zero": 0,
+      "median_RSSI_dBm": -31.0,
+      "mean_RSSI_dBm": -30.31,
+      "scan": "channel=149 rssi=-29 noise=-92",
+      "H2C_header": "a6000000,01004500,00000000,00000000",
+      "requested_dBm": 20
+    },
+    {
+      "band": "5G",
+      "antenna": 3,
+      "valid_RSSI": 100,
+      "invalid_zero": 0,
+      "median_RSSI_dBm": -33.0,
+      "mean_RSSI_dBm": -32.87,
+      "scan": "channel=149 rssi=-31 noise=-91",
+      "H2C_header": "a6000000,01004500,00000087,00000000",
+      "requested_dBm": 20
+    }
+  ],
+  "antenna_conclusion": "No repeatable gain; original antenna policy retained.",
+  "RF18_B_conclusion": "Difference is already present immediately after tuning. Digital channels match; actual B-path RPL145 exceeds A139. A restore bug or failed B receiver is not established.",
+  "power_reference_direct_read": "All four BB5804/5808/7804/7808 were 02b21000 in read-only resource2 reads.",
+  "smoke": [
+    {
+      "label": "dig-fixed-2g20",
+      "payload_Mbps": 9.999815910359509,
+      "packets": 12506,
+      "lost_packets": 1,
+      "lost_percent": 0.00799488327470419
+    },
+    {
+      "label": "dig-fixed-5g30",
+      "payload_Mbps": 10.000199154700788,
+      "packets": 12501,
+      "lost_packets": 0,
+      "lost_percent": 0
+    }
+  ],
+  "weak_signal_coverage_gain_quantified": false,
+  "absolute_RF_power_measured": false,
+  "remaining_space": "Factory runtime DIG/common-state and shared-FAHM resource handling remain incomplete; no extra dB claimed.",
+  "persistent_wireless_configuration_changed": false,
+  "Flash_written": false,
+  "raw_evidence_directory_on_Mac": "\u73b0\u573a\u8bb0\u5f55/20261025-rf-parity",
+  "evidence_sha256": {
+    "old-xb-monitor40.txt": "e34f1fe8637217a2eb191a4247aa52775584faeaa4f0cbdae22a58564e5e61b4",
+    "fixed-xb-monitor-widths.txt": "a9ace1c84aa0fa40a45f392f41da6b5223bddc47f230e5ee8d86155993a4faa3",
+    "channel-stage-trace.txt": "7c8aa978bb71fd5308877da80c14668ad8ec6cd10875d21fa4d7bfd7ccb30d62",
+    "ra-paths-initial.txt": "67834621de4b0ad7b65a23070f0ac152e19677ba5695d2a62547a16e94df8aa3",
+    "antenna-5G-result.json": "c10610ee40941933750aa2ca0cfdc889829e7e26e1b09bf7197cfa7b0ebb20a4",
+    "antenna-2G-result.json": "564b3b3d4007f614db0580e1060eb630b5061e3982eea54c47531a56e6fe2d86",
+    "ant-repeat-5G-result.json": "627d184dc230a51bdd2dd7bcfd50717d669734333195ba7d91181f67c89edaa8",
+    "final-state.txt": "7039f12f70cf547fb1577d75bb493ce6eabcb738f5afa79d1f4336c9bff054c2",
+    "dig-fixed-2g20-before.txt": "68ed49441a9a81f336d94f75fe6d0e181c74a9126cdd4bc2976780bb9e2e83f4",
+    "dig-fixed-2g20-after.txt": "e3cd9a13be6f7e1737129f1c694e720a463d3e2fbcd16108b7baab03fdf31b3d",
+    "dig-fixed-2g20-scan.txt": "d59d06cd6b5c5db7a4f5b408ba5b54fba11fe14cd4b5d285611809f4d59e3f75",
+    "dig-fixed-2g20-registers.txt": "0a0c46e46f5f2bc123ee92dedec356e6b58d6dbf5fb9d2212f42d28c8c20aa46",
+    "dig-fixed-2g20-iperf.json": "df184bb8485d0f27fa5480146daa5c20dbf8be3066bf9931203f4c7bc2f50569",
+    "dig-fixed-5g30-before.txt": "5761db3f2f8b3b1726ef662e6a239edea230d36a7a053be895d6f4cdc744e77e",
+    "dig-fixed-5g30-after.txt": "65b750005447157b700526724cbe718f66652d08962a81f5f78429fd411d87e0",
+    "dig-fixed-5g30-scan.txt": "c82743f12913c535d4a09113b1bcf7b827b443be26a74d426dee92f4fa27e7b8",
+    "dig-fixed-5g30-registers.txt": "2292a32b69c815a454cc7e9152d1efba2ad0e6370adc53cc5768a312a1d485fb",
+    "dig-fixed-5g30-iperf.json": "2e6525ccbc041274e3eb2f02d927373cc9cd9df845c83c2565c849287c169b45"
+  }
+}

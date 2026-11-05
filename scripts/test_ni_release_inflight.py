@@ -21,7 +21,7 @@ typedef uint32_t u32;
 #define BIT(n) (1U << (n))
 #define PE_PROBE_MAILBOX 0x2000
 #define RTL_AX_TX_RINGS 6
-#define SZ_256K 262144
+#define TEST_MEMORY_BYTES (0x4000 + 8192 * 2048)
 struct rtl_ax_tx {
  void *dma_device,*rx;
  unsigned producer[6];
@@ -30,6 +30,9 @@ struct rtl_ax_tx {
   unsigned cpu,vp_index,vp_saved[5],test_dma;int ps_work;} ni;
 };
 static unsigned released,stopped,restored;
+static int uplink_error,rpq_error;
+static int ni_uplink_stop(struct rtl_ax_tx *tx){(void)tx;return uplink_error;}
+static void ni_ps_retire(struct rtl_ax_tx *tx){(void)tx;}
 static u32 get_unaligned_le32(const void *p){u32 v;memcpy(&v,p,4);return v;}
 static void put_unaligned_le32(u32 v,void *p){memcpy(p,&v,4);}
 static u32 readl(const void *p){return get_unaligned_le32(p);}
@@ -37,7 +40,7 @@ static void writel(u32 v,void *p){put_unaligned_le32(v,p);}
 #define readl_poll_timeout(a,v,c,d,t) ({(void)(d);(void)(t);v=readl(a);(c)?0:-ETIMEDOUT;})
 static bool ni_epps_empty(struct rtl_ax_tx *tx){(void)tx;return true;}
 static int rtl_ax_tx_pause(struct rtl_ax_tx *tx){(void)tx;stopped++;return 0;}
-static int rtl_ax_rx_pe_rpq_stop(void *rx){(void)rx;return 0;}
+static int rtl_ax_rx_pe_rpq_stop(void *rx){(void)rx;return rpq_error;}
 static void pe_event_release(struct rtl_ax_tx *tx){(void)tx;}
 static void cancel_work_sync(void *work){(void)work;}
 static void dma_wmb(void){}
@@ -65,6 +68,11 @@ int main(void){
  assert(ni_test_release(&tx)==-EBUSY && !released);
  /* Actual RPQ/EQ completion permits normal release. */
  put_unaligned_le32(0,memory+0x2078);put_unaligned_le32(0,memory+0xc400);
+ uplink_error=-ETIMEDOUT;
+ assert(ni_test_release(&tx)==-ETIMEDOUT && tx.ni.active && !released && !restored);
+ uplink_error=0;rpq_error=-ETIMEDOUT;
+ assert(ni_test_release(&tx)==-ETIMEDOUT && tx.ni.active && !released && !restored);
+ rpq_error=0;
  assert(!ni_test_release(&tx) && !tx.ni.active && released==2 && restored==1);
  puts("NI release retains in-flight or partially recycled WPs; teardown follows only after their last BID returns");
 #endif

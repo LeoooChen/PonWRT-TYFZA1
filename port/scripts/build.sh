@@ -33,10 +33,20 @@ fi
 make defconfig
 for package in luci-app-tyfza1-pon luci-theme-argon luci-i18n-argon-config-zh-cn; do
     grep -qx "CONFIG_PACKAGE_$package=y" .config || {
-        echo "Required ONU UI package missing after defconfig: $package" >&2
+        echo "Required firmware package missing after defconfig: $package" >&2
         exit 1
     }
 done
+while IFS= read -r setting; do
+    case "$setting" in
+        CONFIG_PACKAGE_*=y)
+            grep -qxF "$setting" .config || {
+                echo "Required plugin dependency missing after defconfig: $setting" >&2
+                exit 1
+            }
+            ;;
+    esac
+done < "$PORT/configs/tyfza1-compat.config"
 if [ "$REGDB_PATCHED" = 1 ]; then
     make package/firmware/wireless-regdb/clean
 fi

@@ -1,0 +1,256 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+# Runs before mount_root. IDs 12/13 are permanent; ID14 is a transaction journal.
+set -eu
+set -o pipefail
+umask 077
+. /lib/tyfza1-factory.sh
+sys=/sys/class/ubi
+dev=/dev/ubi0
+work=/tmp/tyfza1-storage-migration
+mounted=0
+trap '[ "$mounted" = 0 ] || umount "$work/mount"' EXIT
+fail() { echo "TYFZA1 storage: $*" >&2; exit 1; }
+exists() { [ -d "$sys/ubi0_$1" ]; }
+name() { cat "$sys/ubi0_$1/name"; }
+blocks() { cat "$sys/ubi0_$1/reserved_ebs"; }
+free_blocks() { cat "$sys/ubi0/avail_eraseblocks"; }
+word() { hexdump -s "$2" -n 4 -e '1/4 "%u"' "$1"; }
+remove() { if exists "$1"; then ubirmvol "$dev" -n "$1"; fi; }
+create() {
+	local id="$1" devid
+	shift
+	ubimkvol "$dev" -n "$id" "$@"
+	# Preinit uses a static /dev; newly created volumes need their own node.
+	[ -e "${dev}_$id" ] && return 0
+	devid=$(cat "$sys/ubi0_$id/dev")
+	mknod "${dev}_$id" c "${devid%:*}" "${devid#*:}"
+}
+import_hashes() (cd "$1" && find . -type f -exec sha256sum {} \; | sort)
+
+case "$(cat /tmp/sysinfo/board_name)" in
+	tianyi,tyfza1|tianyi,tyfza1-2p5g) ;;
+	*) fail 'Unsupported board' ;;
+esac
+slot=$(sed -n 's/.*tyfza1.slot=\([01]\).*/\1/p' /proc/cmdline)
+case "$slot" in 0|1) ;; *) fail 'Missing booted slot';; esac
+leb=$(cat "$sys/ubi0/eraseblock_size")
+[ "$leb" = 126976 ] || fail 'Unexpected UBI geometry'
+other=$((1 - slot))
+software="1:ubi_fpga 2:ubi_DTB0 5:ubi_DTB1 8:ubi_framework1 9:ubi_framework2"
+discard="$software $((3 + other * 3)):ubi_k$other $((4 + other * 3)):ubi_r$other 0:ubi_Config 10:ubi_apps"
+for entry in "$((3 + slot * 3)):ubi_k$slot" "$((4 + slot * 3)):ubi_r$slot"; do
+	id=${entry%%:*}
+	exists "$id" && [ "$(name "$id")" = "${entry#*:}" ] || fail "Missing active $entry"
+done
+remaining=0
+for entry in $discard 11:rootfs_data; do
+	id=${entry%%:*}
+	exists "$id" || continue
+	[ "$(name "$id")" = "${entry#*:}" ] || fail "Unexpected volume ID$id"
+	[ "$id" = 11 ] || remaining=$((remaining + 1))
+done
+for id in 12 13 14; do
+	exists "$id" || continue
+	case "$id:$(name "$id")" in
+		12:tyf_factory_a_pending|12:tyfza1_factory|13:tyf_factory_b_pending|13:tyfza1_factory_backup|14:tyf_migrate_pending|14:tyf_migrate_ready|14:tyf_migrate_done) ;;
+		*) fail "Reserved ID$id is occupied";;
+	esac
+	[ "$(cat "$sys/ubi0_$id/type")" = static ] || fail "ID$id must be static"
+done
+# The source snapshots and overlay must not have another mounted writer/reader.
+for entry in $discard 11:rootfs_data; do
+	id=${entry%%:*}
+	grep -Eq "^(/dev/ubi0_$id|ubi0:${entry#*:}) " /proc/mounts && fail "Volume ID$id is mounted"
+done
+rm -rf "$work"
+mkdir -p "$work/mount" "$work/backup"
+stage=
+if exists 14; then stage=$(name 14); fi
+
+grow_data() {
+	local free target magic
+	exists 11 || fail 'Missing data volume'
+	[ "$(cat "$sys/ubi0_11/upd_marker")" = 0 ] || fail 'Interrupted data update'
+	free=$(free_blocks)
+	[ "$free" -gt 0 ] || return 0
+	target=$(( $(blocks 11) + free ))
+	magic=$(word "${dev}_11" 0)
+	case "$magic" in
+		101718065) [ "$(word "${dev}_11" 44)" -ge "$target" ] || fail 'UBIFS growth limit too small';;
+		4294967295) ;; # Blank volume left by sysupgrade -n / factory reset.
+		*) fail 'Unknown data filesystem';;
+	esac
+	ubirsvol "$dev" -n 11 -s "$((target * leb))"
+}
+
+if tyf_factory_published && [ -z "$stage" ]; then
+	[ "$remaining" = 0 ] || fail 'Published factory data without migration journal'
+	/usr/libexec/tyfza1-factory-source "$work/verified-config"
+	grow_data
+	rm -rf "$work"
+	exit 0
+fi
+if [ "$stage" = tyf_migrate_done ]; then
+	[ "$remaining" = 0 ] || fail 'Completed transaction still has OEM volumes'
+	/usr/libexec/tyfza1-factory-source "$work/verified-config"
+	exists 11 && [ "$(cat "$sys/ubi0_11/upd_marker")" = 0 ] || fail 'Completed transaction lost data volume'
+	ubirmvol "$dev" -n 14
+	grow_data
+	rm -rf "$work"
+	exit 0
+fi
+
+if [ "$stage" = tyf_migrate_ready ]; then
+	[ "$(cat "$sys/ubi0_14/upd_marker")" = 0 ] || fail 'Interrupted published journal'
+	cat "${dev}_14" > "$work/backup.tar"
+	tar -xf "$work/backup.tar" -C "$work/backup"
+	[ "$(cat "$work/backup/version")" = "1:$slot" ] || fail 'Journal slot/version mismatch'
+	(cd "$work/backup" && sha256sum -c SHA256SUMS)
+else
+	! tyf_factory_published || fail 'Factory published without ready journal'
+	# The upgrade installer already saved settings and replaced the old overlay.
+	if exists 11; then
+		magic=$(word "${dev}_11" 0)
+		if [ "$magic" = 101718065 ]; then
+			mount -t ubifs -o ro,noatime "${dev}_11" "$work/mount"
+			mounted=1
+			for path in "$work/mount"/* "$work/mount"/.[!.]* "$work/mount"/..?*; do
+				[ -e "$path" ] || [ -L "$path" ] || continue
+				[ "${path##*/}" = sysupgrade.tgz ] && [ -f "$path" ] || fail 'Upgrade first: existing user overlay cannot be rebuilt in place'
+				cp -p "$path" "$work/backup/sysupgrade.tgz"
+				tar -tzf "$work/backup/sysupgrade.tgz" >/dev/null
+			done
+			umount "$work/mount"
+			mounted=0
+		else
+			[ "$magic" = 4294967295 ] || fail 'Unknown old data filesystem'
+		fi
+	fi
+	printf '1:%s\n' "$slot" > "$work/backup/version"
+	(cd "$work/backup" && sha256sum version $(test ! -f sysupgrade.tgz || echo sysupgrade.tgz)) > "$work/backup/SHA256SUMS"
+	tar -cf "$work/backup.tar" -C "$work/backup" .
+fi
+
+if ! tyf_factory_published; then
+	exists 0 && exists 10 || fail 'Missing original factory sources'
+	mkdir "$work/capsule"
+	printf 'TYFZA1_FACTORY_1\n' > "$work/capsule/format"
+	for entry in 0:config 10:apps; do
+		id=${entry%%:*}; component=${entry#*:}
+		[ "$(cat "$sys/ubi0_$id/upd_marker")" = 0 ] || fail 'Original volume has interrupted update'
+		before=$(sha256sum "${dev}_$id"); before=${before%% *}
+		gzip -c < "${dev}_$id" > "$work/capsule/$component.ubifs.gz"
+		after=$(gzip -dc "$work/capsule/$component.ubifs.gz" | sha256sum)
+		[ "${after%% *}" = "$before" ] || fail 'Original volume changed during snapshot'
+		printf '%s  %s.ubifs\n' "$before" "$component" >> "$work/capsule/raw.sha256"
+	done
+	# RO UBIFS replays its journal in memory; the raw snapshot retains the journal.
+	mount -t ubifs -o ro,noatime "${dev}_0" "$work/mount"
+	mounted=1
+	tar -cf "$work/config.tar" -C "$work/mount" .
+	gzip -c < "$work/config.tar" > "$work/capsule/config-files.tar.gz"
+	tar -tvf "$work/config.tar" > "$work/capsule/files.txt"
+	printf '\nConfig file hashes:\n' >> "$work/capsule/files.txt"
+	import_hashes "$work/mount" >> "$work/capsule/files.txt"
+	/usr/share/tyfza1/factory.uc "$work/mount" "$work/import-original" > "$work/import-original.log" 2>&1
+	umount "$work/mount"
+	mounted=0
+	# An erased apps volume has no UBIFS to mount; its raw snapshot is still kept.
+	apps_bytes=$(LC_ALL=C tr -d '\377' < "${dev}_10" | wc -c)
+	if [ "$apps_bytes" = 0 ]; then
+		printf '\nApps filesystem: empty (erased UBI volume)\n' >> "$work/capsule/files.txt"
+	else
+		mount -t ubifs -o ro,noatime "${dev}_10" "$work/mount"
+		mounted=1
+		tar -cf "$work/apps.tar" -C "$work/mount" .
+		printf '\nApps file metadata:\n' >> "$work/capsule/files.txt"
+		tar -tvf "$work/apps.tar" >> "$work/capsule/files.txt"
+		printf '\nApps file hashes:\n' >> "$work/capsule/files.txt"
+		import_hashes "$work/mount" >> "$work/capsule/files.txt"
+		umount "$work/mount"
+		mounted=0
+		rm "$work/apps.tar"
+	fi
+	for entry in 0:config 10:apps; do
+		id=${entry%%:*}; component=${entry#*:}
+		expected=$(sed -n "s/  $component.ubifs\$//p" "$work/capsule/raw.sha256")
+		actual=$(sha256sum "${dev}_$id")
+		[ "${actual%% *}" = "$expected" ] || fail 'Source changed while archiving files'
+	done
+	(cd "$work/capsule" && sha256sum format *.gz files.txt raw.sha256) > "$work/capsule/SHA256SUMS"
+	tar -cf "$work/capsule.tar" -C "$work/capsule" format config.ubifs.gz apps.ubifs.gz config-files.tar.gz files.txt raw.sha256 SHA256SUMS
+	bytes=$(wc -c < "$work/capsule.tar")
+	backup_bytes=$(wc -c < "$work/backup.tar")
+	need=$((2 * ((bytes + leb - 1) / leb)))
+	[ "$stage" = tyf_migrate_ready ] || need=$((need + (backup_bytes + leb - 1) / leb))
+	available=$(free_blocks)
+	for entry in $software 12:tyf_factory_a_pending 13:tyf_factory_b_pending; do
+		id=${entry%%:*}
+		exists "$id" || continue
+		available=$((available + $(blocks "$id")))
+	done
+	if [ "$stage" = tyf_migrate_pending ]; then available=$((available + $(blocks 14))); fi
+	[ "$available" -ge "$need" ] || fail 'Insufficient temporary space; original data retained'
+	for entry in $software; do remove "${entry%%:*}"; done
+	if [ "$stage" != tyf_migrate_ready ]; then
+		remove 14
+		create 14 -N tyf_migrate_pending -t static -s "$backup_bytes"
+		ubiupdatevol "${dev}_14" "$work/backup.tar"
+		cmp "$work/backup.tar" "${dev}_14"
+		ubirename "$dev" tyf_migrate_pending tyf_migrate_ready
+	fi
+	for entry in 12:tyf_factory_a_pending 13:tyf_factory_b_pending; do
+		id=${entry%%:*}
+		remove "$id"
+		create "$id" -N "${entry#*:}" -t static -s "$bytes"
+		ubiupdatevol "${dev}_$id" "$work/capsule.tar"
+		cmp "$work/capsule.tar" "${dev}_$id"
+		tyf_factory_unpack "${dev}_$id" "$work/check-$id" 1
+		/usr/share/tyfza1/factory.uc "$work/check-$id/config" "$work/import-$id" > "$work/import-$id.log" 2>&1
+		import_hashes "$work/import-original" > "$work/original.sha256"
+		import_hashes "$work/import-$id" > "$work/import-$id.sha256"
+		cmp "$work/original.sha256" "$work/import-$id.sha256"
+	done
+	# Both names publish in one UBI volume-table transaction. Journal already exists.
+	ubirename "$dev" tyf_factory_a_pending tyfza1_factory tyf_factory_b_pending tyfza1_factory_backup
+else
+	[ "$(name 12)" = tyfza1_factory ] && [ "$(name 13)" = tyfza1_factory_backup ] || fail 'Incomplete factory publication'
+	for id in 12 13; do tyf_factory_unpack "${dev}_$id" "$work/check-$id" 1; done
+	cmp "$work/check-12/capsule.tar" "$work/check-13/capsule.tar"
+	/usr/share/tyfza1/factory.uc "$work/check-12/config" "$work/import-published" > "$work/import-published.log" 2>&1
+fi
+
+# Validate the seed before deleting original data or the old overlay.
+gzip -dc /usr/share/tyfza1/overlay-seed.ubifs.gz > "$work/seed.ubifs"
+[ "$(word "$work/seed.ubifs" 0)" = 101718065 ] &&
+	[ "$(word "$work/seed.ubifs" 44)" = 1966 ] || fail 'Invalid UBIFS growth seed'
+printf 'sw_commit %s\nsw_active %s\nsw_tryactive 2\ntyfza1_slot %s\n' "$slot" "$slot" "$slot" > "$work/boot.env"
+fw_setenv -l "$work" -s "$work/boot.env"
+while read -r key value; do
+	[ "$(fw_printenv -l "$work" -n "$key")" = "$value" ] || fail "Boot field $key did not persist"
+done < "$work/boot.env"
+for entry in $discard; do remove "${entry%%:*}"; done
+remove 11
+create 11 -N rootfs_data -m
+ubiupdatevol "${dev}_11" "$work/seed.ubifs"
+mount -t ubifs -o noatime "${dev}_11" "$work/mount"
+mounted=1
+if [ -f "$work/backup/sysupgrade.tgz" ]; then
+	cp -p "$work/backup/sysupgrade.tgz" "$work/mount/sysupgrade.tgz"
+fi
+sync
+umount "$work/mount"
+mounted=0
+mount -t ubifs -o ro,noatime "${dev}_11" "$work/mount"
+mounted=1
+if [ -f "$work/backup/sysupgrade.tgz" ]; then
+	cmp "$work/backup/sysupgrade.tgz" "$work/mount/sysupgrade.tgz"
+fi
+umount "$work/mount"
+mounted=0
+ubirename "$dev" tyf_migrate_ready tyf_migrate_done
+ubirmvol "$dev" -n 14
+grow_data
+rm -rf "$work"
+echo 'TYFZA1 storage: factory-v1 migration complete'

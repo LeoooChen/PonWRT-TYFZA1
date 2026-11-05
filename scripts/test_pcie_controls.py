@@ -46,7 +46,7 @@ struct rtk_taurus_phy_core {void *dev,*reg_ctrl,*reg_pwr;int lock;};
 struct rtk_taurus_phy {struct rtk_taurus_phy_core *core;unsigned int id;};
 static int rtk_taurus_phy_serdes_config(struct rtk_taurus_phy *phy,bool on){(void)phy;(void)on;return 0;}
 static int rtk_taurus_phy_sgmii_config(struct rtk_taurus_phy *phy,bool on){(void)phy;(void)on;return 0;}
-struct rtl_pcie_controls {void *core_reset,*phy_reset,*phy_control,*power;int lock;u32 powered_lanes;};
+struct rtl_pcie_controls {void *core_reset,*phy_reset,*phy_control,*power,*sgmii_serdes;int lock;u32 powered_lanes;};
 struct rtl_pcie_lane {struct rtl_pcie_controls *controls;unsigned int id;};
 struct phy {struct rtl_pcie_lane *lane;};
 static void *phy_get_drvdata(struct phy *phy){return phy->lane;}
@@ -90,10 +90,28 @@ int main(void){
   assert(!(native_power&analog));
   assert(native_power==other_pair && !c.powered_lanes);
   }
- puts("PCIe PHY: stock normal sequence unchanged; either lane can start first; sibling survives power cycle/unwind; last lane releases shared analog");
+ /* S3 power transitions must preserve the OEM's unrelated PCIe/USB bits.
+  * SerDes/PCS initialization is checked separately against the OEM NI code. */
+ const u32 seeds[]={0,~0U,0xa5a5a5a5};
+ for(unsigned seed=0;seed<ARRAY_SIZE(seeds);seed++) {
+  u32 rc[8]={0},nc[8]={0},serdes[8]={0};
+  reference_power=native_power=seeds[seed];rc[0]=nc[0]=seeds[seed];
+  r.reg_ctrl=rc;c.phy_control=nc;c.sgmii_serdes=serdes;
+  original.id=PHY_S3_SGMII;lane.id=5;
+  for(unsigned step=0;step<4;step++) {
+   assert(!rtk_taurus_phy_power_config(&original,!(step&1)));
+   assert(!rtl_pcie_lane_power(&phy,!(step&1)));
+   if(rc[0]!=nc[0] || reference_power!=native_power)
+    fprintf(stderr,"S3 seed=%08x step=%u control=%08x/%08x power=%08x/%08x\n",
+     seeds[seed],step,rc[0],nc[0],reference_power,native_power);
+   assert(rc[0]==nc[0] && reference_power==native_power);
+   if(!(step&1))assert(serdes[7]==0x5359 && nc[3]==0x30 && nc[4]==0x34200248);
+  }
+ }
+ puts("PCIe/S3 PHY: OEM power transitions match; independent lanes and shared analog ownership passed");
 }
 '''
-defines = '\n'.join(line for line in stock.splitlines() if line.lstrip().startswith('#define '))
+defines = '#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))\n' + '\n'.join(line for line in stock.splitlines() if line.lstrip().startswith('#define '))
 with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='pcie-controls-') as directory:
     work = Path(directory)
     source, binary = work / 'controls.c', work / 'controls'
@@ -104,7 +122,8 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='pcie-controls-'
 (root / 'logs/pcie-controls-test.json').write_text(json.dumps({
     'Taurus_GPL_source_sha256': hashlib.sha256(reference.read_bytes()).hexdigest(),
     'native_source_sha256': hashlib.sha256(native.read_bytes()).hexdigest(),
-    'lane_IDs': [0, 1, 2, 3], 'stock_normal_sequence_matches': True,
+    'lane_IDs': [0, 1, 2, 3, 5], 'stock_normal_sequence_matches': True,
+    'S3_OEM_power_on_off_matches': True,
     'independent_lane_start': True, 'sibling_survives_power_cycle_and_unwind': True,
     'last_lane_releases_shared_analog': True,
     'unrelated_bits_preserved': True, 'power_register': 'f432036c',

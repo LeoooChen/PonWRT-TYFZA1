@@ -72,8 +72,8 @@ static int sysfs_emit(char *buf, const char *format, ...)
 static int effect(struct rtl9617c_pon *pon) {assert(pon->control_lock); pon->effects++; return 0;}
 static int rtl_pon_epon_traffic_locked(struct rtl9617c_pon *pon, bool enable)
 {pon->tx_disabled=!enable; pon->fe_enabled=enable; return effect(pon);}
-static void rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon)
-{pon->fe_enabled=false; effect(pon);}
+static int rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon)
+{pon->fe_enabled=false; return effect(pon);}
 static int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon, bool enable)
 {assert(pon->control_lock && !enable); return pon->cleanup_error;}
 static int rtl_pon_mpcp_configure(struct rtl9617c_pon *pon)

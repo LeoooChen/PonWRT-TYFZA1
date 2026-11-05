@@ -1,0 +1,22 @@
+{
+  "date": "2026-10-23",
+  "base_commit": "fa6bdcc",
+  "factory_reference": "rtk_wifi6.ko validate_recv_ctrl_frame0xb8c00..0xb8c18 distinguishes BAR0x84 and PS-Poll0xa4; ordinary RTS/CTS/ACK/BA do not update receive reorder/PS state.",
+  "bug": "The normal PE worker classified RTS/CTS/ACK/BA as stateless, but reorder lookahead stopped at those same records and unnecessarily sent the data batch to ARM.",
+  "fix": "Use the same RX state-barrier classifier in normal dispatch and lookahead. Control records remain unchanged for ARM. BAR/PS-Poll barriers, PN/SN checks, queue bounds and buffer counts remain intact.",
+  "PE_bytes": 16380,
+  "PE_SHA256": "79e0299205a460727b8bb6c23940357a67786fa4a25d180d700904d4c86fbdad",
+  "verification": "The old linked image fails the new interleaved-control case. Modified linked PE passes all four control cases, BAR/PS-Poll negative cases and the existing RX ownership/backpressure cases. NI descriptor credit and actual instruction-memory startup checks also pass.",
+  "RAM_radio_SHA256": "bdd1ac834391dadc49328f1d9cdc63c89995fa21e057fad60aac0e617ffdabd5",
+  "RAM_measurements": {
+    "control_reorder_tcp_up": {"Mbps": 1038.548, "retransmits": 130, "L3_drops": 0, "PE_share_percent": 92.7090, "OFO_queue": 258},
+    "stage_order_tcp_up": {"Mbps": 1361.128, "retransmits": 0, "L3_drops": 0, "NI_data_packets": 712398, "NI_before_GRO_discontinuities": 0, "after_GRO_discontinuities": 0, "capture_kernel_drops": 0},
+    "UDP_up": {"sender_payload_Mbps": 1394.185, "receiver_payload_Mbps": 1389.099, "sent": 400000, "valid_unique": 400000, "Mac_drops": 0, "duplicates": 0, "corrupt": 0, "L3_drops": 0, "RX_RDU": 0},
+    "limits": "RAM replacement changed client association order: Mac became MACID1 and the other peer MACID2. Read-only timing/capture instrumentation affects TCP measurements. These results do not isolate a throughput gain or prove that all retransmissions are fixed. The once-observed130retransmission condition did not recur in the single aligned capture; it was recorded without repeating until failure or success."
+  },
+  "Mac_PHY": {"API": "CoreWLAN CWInterface.transmitRate", "samples": 40, "TX_rate_Mbps": {"1921": 38, "286": 2}, "channel": 44, "width_MHz": 160, "RSSI_dBm_range": [-42, -35], "noise_dBm": -91, "interpretation": "The observed uplink PHY during this UDP run was1921Mbps, not the2401.9Mbps capability ceiling. DUT RX rate statistics are updated by ARM-delivered frames and do not provide a full PE RX rate histogram."},
+  "warm_original_module": {"TCP_up_Mbps": 1277.797, "retransmits": 0, "L3_drops": 0, "PE_share_percent": 90.9543, "state_invalid_attempts": 14892, "SN_mismatch_attempts": 1776, "PN_replay_attempts": 0, "NI_full_attempts": 0, "PS_transition_attempts": 0, "note": "Read-only BA snapshots show transient reorder occupancy and batch delivery. Empty BA/head-key differences sampled during delivery do not by themselves prove a failed snapshot decision; no PN/SN validity condition was relaxed."},
+  "cold_boot_pending": false,
+  "cold_boot_validation": "wifi-rx-ldpc-cold-20261023.json",
+  "overall_acceptance_passed": false
+}

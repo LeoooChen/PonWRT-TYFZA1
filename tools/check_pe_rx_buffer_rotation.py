@@ -18,7 +18,7 @@ def instance(directory):
     entry = next(int(s.split()[0], 16) for s in symbols.splitlines() if s.endswith(' pe_rxq'))
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
     base, mb, bar, vp, buffers, rxbd = 0x04000000, 0x04002000, 0x11000000, 0x130016a0, 0x06000000, 0x07000000
-    for address, size in [(0x1fc00000, 0x4000), (base, 0x20000), (bar, 0x10000),
+    for address, size in [(0x1fc00000, 0x10000), (base, 0x20000), (bar, 0x10000),
                           (0x13000000, 0x2000), (buffers, 258 * 12288), (rxbd, 0x1000),
                           (0x05000000, 0x20000), (0x07100000, 0x1000)]:
         u.mem_map(address, size)
@@ -38,10 +38,10 @@ def instance(directory):
     def call():
         for reg, value in [(UC_MIPS_REG_A0, mb | 0xa0000000),
                            (UC_MIPS_REG_SP, (base + 0xfff0) | 0xa0000000),
-                           (UC_MIPS_REG_RA, 0xbfc03ff0)]:
+                           (UC_MIPS_REG_RA, 0x9fc0fff0)]:
             u.reg_write(reg, value)
-        u.emu_start(entry, 0xbfc03ff0, count=100000)
-        assert u.reg_read(UC_MIPS_REG_PC) == 0xbfc03ff0
+        u.emu_start(entry, 0x9fc0fff0, count=100000)
+        assert u.reg_read(UC_MIPS_REG_PC) == 0x9fc0fff0
 
     return u, base, mb, bar, vp, buffers, rxbd, put, get, call
 

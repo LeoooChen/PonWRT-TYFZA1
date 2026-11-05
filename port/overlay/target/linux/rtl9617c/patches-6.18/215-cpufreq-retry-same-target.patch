@@ -1,0 +1,24 @@
+--- a/drivers/cpufreq/cpufreq-dt.c
++++ b/drivers/cpufreq/cpufreq-dt.c
+@@ -302,6 +302,9 @@
+ 		}
+ 	}
+ 
++	if (of_machine_is_compatible("realtek,rtl9617c"))
++		dt_cpufreq_driver.flags |= CPUFREQ_NEED_UPDATE_LIMITS;
++
+ 	ret = cpufreq_register_driver(&dt_cpufreq_driver);
+ 	if (ret) {
+ 		dev_err(&pdev->dev, "failed register driver: %d\n", ret);
+--- a/drivers/cpufreq/cpufreq.c
++++ b/drivers/cpufreq/cpufreq.c
+@@ -2296,7 +2296,8 @@
+ 	int retval = -EINVAL;
+ 	bool notify;
+ 
+-	if (newfreq == policy->cur)
++	if (newfreq == policy->cur &&
++	    !(cpufreq_driver->flags & CPUFREQ_NEED_UPDATE_LIMITS))
+ 		return 0;
+ 
+ 	/* Save last value to restore later on errors */

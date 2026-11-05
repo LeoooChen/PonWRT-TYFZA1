@@ -1,0 +1,151 @@
+--- a/net/mac80211/ieee80211_i.h
++++ b/net/mac80211/ieee80211_i.h
+@@ -1530,6 +1530,7 @@
+ 	 * by the wiphy mutex, reads are done with RCU.
+ 	 */
+ 	spinlock_t tim_lock;
++	atomic_t ps_generation;
+ 	unsigned long num_sta;
+ 	struct list_head sta_list;
+ 	struct rhltable sta_hash;
+--- a/net/mac80211/sta_info.h
++++ b/net/mac80211/sta_info.h
+@@ -736,6 +736,7 @@
+ 
+ 	/* STA powersave lock and frame queues */
+ 	spinlock_t ps_lock;
++	u32 ps_generation;
+ 	struct sk_buff_head ps_tx_buf[IEEE80211_NUM_ACS];
+ 	struct sk_buff_head tx_filtered[IEEE80211_NUM_ACS];
+ 	unsigned long driver_buffered_tids;
+--- a/net/mac80211/sta_info.c
++++ b/net/mac80211/sta_info.c
+@@ -1640,6 +1640,7 @@
+ 	}
+ 
+ 	spin_lock_init(&local->tim_lock);
++	atomic_set(&local->ps_generation, 0);
+ 	INIT_LIST_HEAD(&local->sta_list);
+ 
+ 	timer_setup(&local->sta_cleanup, sta_info_cleanup, 0);
+@@ -1796,7 +1797,10 @@
+ 	else
+ 		return;
+ 
++	spin_lock_bh(&sta->ps_lock);
++	sta->ps_generation = atomic_inc_return(&local->ps_generation);
+ 	clear_sta_flag(sta, WLAN_STA_SP);
++	spin_unlock_bh(&sta->ps_lock);
+ 
+ 	BUILD_BUG_ON(BITS_TO_LONGS(IEEE80211_NUM_TIDS) > 1);
+ 	sta->driver_buffered_tids = 0;
+@@ -2056,8 +2060,14 @@
+ 	struct sk_buff_head frames;
+ 	bool more_data;
+ 
+-	/* Service or PS-Poll period starts */
++	u32 generation;
++
++	/* Bind asynchronous driver completion to this service period. */
++	spin_lock_bh(&sta->ps_lock);
++	generation = atomic_inc_return(&local->ps_generation);
++	sta->ps_generation = generation;
+ 	set_sta_flag(sta, WLAN_STA_SP);
++	spin_unlock_bh(&sta->ps_lock);
+ 
+ 	__skb_queue_head_init(&frames);
+ 
+@@ -2212,7 +2222,7 @@
+ 		 * to allow the service period to end properly.
+ 		 */
+ 		drv_release_buffered_frames(local, sta, driver_release_tids,
+-					    n_frames, reason, more_data);
++					    n_frames, reason, more_data, generation);
+ 
+ 		/*
+ 		 * Note that we don't recalculate the TIM bit here as it would
+@@ -2328,6 +2338,29 @@
+ 	clear_sta_flag(sta, WLAN_STA_SP);
+ }
+ EXPORT_SYMBOL(ieee80211_sta_eosp);
++
++u32 ieee80211_sta_ps_generation(struct ieee80211_sta *pubsta)
++{
++	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
++
++	return READ_ONCE(sta->ps_generation);
++}
++EXPORT_SYMBOL_GPL(ieee80211_sta_ps_generation);
++
++bool ieee80211_sta_eosp_generation(struct ieee80211_sta *pubsta, u32 generation)
++{
++	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
++	bool completed;
++
++	spin_lock_bh(&sta->ps_lock);
++	completed = sta->ps_generation == generation && test_sta_flag(sta, WLAN_STA_SP);
++	if (completed)
++		clear_sta_flag(sta, WLAN_STA_SP);
++	spin_unlock_bh(&sta->ps_lock);
++	return completed;
++}
++EXPORT_SYMBOL_GPL(ieee80211_sta_eosp_generation);
++
+ 
+ void ieee80211_send_eosp_nullfunc(struct ieee80211_sta *pubsta, int tid)
+ {
+--- a/net/mac80211/driver-ops.h
++++ b/net/mac80211/driver-ops.h
+@@ -926,11 +926,14 @@
+ drv_release_buffered_frames(struct ieee80211_local *local,
+ 			    struct sta_info *sta, u16 tids, int num_frames,
+ 			    enum ieee80211_frame_release_type reason,
+-			    bool more_data)
++			    bool more_data, u32 generation)
+ {
+ 	trace_drv_release_buffered_frames(local, &sta->sta, tids, num_frames,
+ 					  reason, more_data);
+-	if (local->ops->release_buffered_frames)
++	if (local->ops->release_buffered_frames_generation)
++		local->ops->release_buffered_frames_generation(&local->hw, &sta->sta,
++						    tids, num_frames, reason, more_data, generation);
++	else if (local->ops->release_buffered_frames)
+ 		local->ops->release_buffered_frames(&local->hw, &sta->sta, tids,
+ 						    num_frames, reason,
+ 						    more_data);
+--- a/include/net/mac80211.h
++++ b/include/net/mac80211.h
+@@ -4280,6 +4280,10 @@
+  *	on the last frame in the SP. Alternatively, it may call the function
+  *	ieee80211_sta_eosp() to inform mac80211 of the end of the SP.
+  *	This callback must be atomic.
++ * @release_buffered_frames_generation: As @release_buffered_frames, with an
++ *	opaque service-period generation for ieee80211_sta_eosp_generation().
++ *	This replaces the legacy callback when provided and must be atomic.
++ *
+  * @allow_buffered_frames: Prepare device to allow the given number of frames
+  *	to go out to the given station. The frames will be sent by mac80211
+  *	via the usual TX path after this call. The TX information for frames
+@@ -4744,6 +4748,12 @@
+ 					u16 tids, int num_frames,
+ 					enum ieee80211_frame_release_type reason,
+ 					bool more_data);
++	/* Epoch-aware completion for asynchronously buffered driver frames. */
++	void (*release_buffered_frames_generation)(struct ieee80211_hw *hw,
++					struct ieee80211_sta *sta,
++					u16 tids, int num_frames,
++					enum ieee80211_frame_release_type reason,
++					bool more_data, u32 generation);
+ 
+ 	int	(*get_et_sset_count)(struct ieee80211_hw *hw,
+ 				     struct ieee80211_vif *vif, int sset);
+@@ -6534,6 +6544,9 @@
+  *     and restore the _irqsafe version!
+  */
+ void ieee80211_sta_eosp(struct ieee80211_sta *pubsta);
++/* Complete only the service period named by the driver release callback. */
++u32 ieee80211_sta_ps_generation(struct ieee80211_sta *sta);
++bool ieee80211_sta_eosp_generation(struct ieee80211_sta *sta, u32 generation);
+ 
+ /**
+  * ieee80211_send_eosp_nullfunc - ask mac80211 to send NDP with EOSP

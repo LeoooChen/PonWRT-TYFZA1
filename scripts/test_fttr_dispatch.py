@@ -43,9 +43,10 @@ unsigned int dispatch(unsigned int source,int fttr,int pon) {
  struct device d={0},*dev=&d;struct napi_struct np,*napi=&np;
  struct sk_buff packet,*skb=&packet;unsigned int h0=123U<<18;
  delivered=tag=freed=0;
+ for (unsigned int packet_index=0;packet_index<1;packet_index++) {
 '''
 tail = r'''
-consume:
+ }
  return d.stats.rx_dropped;
 }
 '''

@@ -5,7 +5,9 @@
 #include "transport.h"
 #include "rx-geometry.h"
 
+struct sk_buff;
 struct rtl_ax_rx_packet {
+	struct sk_buff *skb;
 	const unsigned char *descriptor, *driver_info, *payload;
 	unsigned int bytes, driver_info_bytes;
 	unsigned char type, long_descriptor;
@@ -100,7 +102,8 @@ static inline int rtl_ax_rx_configure(const struct rtl_ax_io *io,
 		if (ret)
 			return ret;
 		rtl_ax_update16(io, 0x1210 + queue * 2, 0x3ff, RTL_AX_RX_ENTRIES);
-		io->write32(io->ctx, 0x1220 + queue * 8, addresses[queue]);
+		/* RXBDs are PE-owned uncached DDR; payload DMA keeps its CCI path. */
+		io->write32(io->ctx, 0x1220 + queue * 8, addresses[queue] | 0x80000000U);
 		io->write32(io->ctx, 0x1224 + queue * 8, 0);
 	}
 	/* Commit the complete ring geometry before enabling firmware DMA. */

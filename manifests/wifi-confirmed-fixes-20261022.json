@@ -1,0 +1,84 @@
+{
+  "date": "2026-10-22",
+  "status": "Targeted fixes validated; overall Wi-Fi throughput goal remains incomplete.",
+  "deployment": "RAM validation only; no firmware flash or version change.",
+  "fixes": {
+    "bbe8b88": "ARM exclusively owns RXQ and streaming-DMA skbs; PE retains TX/RPQ; RX BA changes preserve the TX route.",
+    "4e7b1fc": "QM reads status before WR, consumes a stable snapshot and publishes RD before BID refill; preserve verified hardware checksum status.",
+    "5031712": "Pack PE downlink metadata and regenerate the embedded PE from current source in live builds.",
+    "tcp_sink": "One NAPI/GRO FIFO preserves flow order across NI poll CPU migration; backlog limits and queue_drops remain visible."
+  },
+  "factory_authority": [
+    {
+      "path": "evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko",
+      "sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "basis": "phl_rx_pcie and _phl_alloc_dynamic_rxbuf_pcie ARM receive/allocation path"
+    },
+    {
+      "path": "evidence/wireless-study-20261009-104746/evidence/stock/modules/ca-ne.ko",
+      "sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+      "basis": "ca_ni_rx_poll/ca_ni_rx_napi status, snapshot, RD/refill ordering; aal_l3fe_l4_chksum engine control"
+    }
+  ],
+  "focused_validation": {
+    "log_directory": "artifacts/confirmed-fixes-20261022",
+    "passed": [
+      "scripts/test_rx_dma_alloc.py",
+      "scripts/test_rx_skb_ownership.py",
+      "scripts/test_radio_rx_handoff.py",
+      "scripts/test_wifi_authorization.py",
+      "scripts/test_wifi_ni_retirement.py",
+      "scripts/test_radio_ni_retire_flush.py",
+      "scripts/test_ni_release_inflight.py",
+      "scripts/test_native_rx_modes.py --case qm",
+      "scripts/test_pe_downlink_gather.py artifacts/confirmed-fixes-20261022/radio/pe",
+      "scripts/test_pe_epp_batch.py artifacts/confirmed-fixes-20261022/radio/pe"
+    ],
+    "builds": [
+      "ARM64 radio module from current source",
+      "ARM64 rtl9617c-fe.o, rtl9617c-qm.o and rtl9617c-wifi.o from current source",
+      "ARM64 pon_tcp_sink.ko; compiled source matches tools/live-pon-diag/pon_tcp_sink.c"
+    ],
+    "radio_build_warning": "modpost reports missing MODULE_DESCRIPTION() in rtl_ax_ap.o",
+    "radio_module_sha256": "ced771e54fe0765eb3a373210b35455c63f4cee87f32c6177cf03316c0013110",
+    "sink_module_sha256": "d6c8c1aa922902fa7603480fe702309fea9b7b2c182defdbb06b38263ac35ebc",
+    "embedded_PE_matches_generated": true,
+    "embedded_PE_header_sha256": "02d9cfe90c1be4cde9b37b67f5a0f8398df1e4a953624f88274e3240ba4455c5",
+    "scope": "Focused host tests mock kernel/DMA operations; PE tests emulate generated code. They complement, not replace, hardware evidence. No full test suite run."
+  },
+  "hardware_evidence": {
+    "location": "Existing Mac workspace field records (outside this Git repository)",
+    "checksum": {
+      "directory_suffix": "20261022-pe-focus",
+      "files": ["checksum-integrated-tcp-0.txt", "checksum-integrated-tcp-1.txt"],
+      "observed": "Good payloads 0/2: EPP error=0, ip_summed=1; damaged payloads 1/3: EPP error=1, ip_summed=0.",
+      "scope": "Synthetic packets through actual NI/FE/QM; this probe did not traverse Wi-Fi or optics."
+    },
+    "single_GRO_TCP_upload": {
+      "directory_suffix": "20261022-tcp-sequence",
+      "analysis": "single-final-up-analysis.json",
+      "raw_counters": ["single-final-up-before.txt", "single-final-up-after.txt"],
+      "received_Mbps": 1150.519369634,
+      "retransmits": 0,
+      "FE_packets": 801464,
+      "sink_received": 801464,
+      "queue_drops": 0,
+      "tail_drop": 0,
+      "RDU": 0,
+      "scope": "One Mac Wi-Fi TCP upload to simulated FE/CPU endpoint; no physical PON egress."
+    },
+    "failure_records": [
+      "20261022-tcp-sequence/memory-up-order.json: eight missing segments before GRO, later recovered by retransmission.",
+      "20261022-tcp-sequence/page-paired-order.json and gro-order-comparison.json: pre-GRO stream without gaps, post-GRO temporary reordering and duplicates.",
+      "20261022-tcp-sequence/cpu-paired-core-analysis.json: NI callback migrates between CPUs.",
+      "20261022-tcp-sequence/switch-order.json: controlled old/new switch did not reproduce all earlier failures; no unique-cause claim.",
+      "20261022-pe-focus: metadata PE reached 1.677 Gbps with 3858 tail drops; not an acceptance pass."
+    ]
+  },
+  "limits": [
+    "These commits do not establish stable 160 MHz maximum application throughput in both directions.",
+    "The simulated endpoint excludes physical PON egress and PPPoE session negotiation; its CPU overhead is part of measured throughput.",
+    "The single GRO queue fixes the diagnostic endpoint's ordering mechanism; it does not prove every observed TCP retransmission had the same cause.",
+    "Raw build and field evidence remains local and is not included as binary artifacts in these commits."
+  ]
+}

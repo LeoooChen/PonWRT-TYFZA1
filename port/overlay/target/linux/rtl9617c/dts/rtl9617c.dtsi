@@ -16,24 +16,73 @@
 			compatible = "arm,cortex-a55";
 			reg = <0 0>;
 			enable-method = "psci";
+			clocks = <&cpu_clk>;
+			clock-names = "cpu";
+			operating-points-v2 = <&cpu_opp>;
 		};
 		cpu1: cpu@100 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a55";
 			reg = <0 0x100>;
 			enable-method = "psci";
+			clocks = <&cpu_clk>;
+			clock-names = "cpu";
+			operating-points-v2 = <&cpu_opp>;
 		};
 		cpu2: cpu@200 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a55";
 			reg = <0 0x200>;
 			enable-method = "psci";
+			clocks = <&cpu_clk>;
+			clock-names = "cpu";
+			operating-points-v2 = <&cpu_opp>;
 		};
 		cpu3: cpu@300 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a55";
 			reg = <0 0x300>;
 			enable-method = "psci";
+			clocks = <&cpu_clk>;
+			clock-names = "cpu";
+			operating-points-v2 = <&cpu_opp>;
+		};
+	};
+
+	cpu_opp: opp-table-cpu {
+		compatible = "operating-points-v2";
+		opp-shared;
+		opp-400000000 {
+			opp-hz = /bits/ 64 <400000000>;
+		};
+		opp-625000000 {
+			opp-hz = /bits/ 64 <625000000>;
+		};
+		opp-700000000 {
+			opp-hz = /bits/ 64 <700000000>;
+		};
+		opp-800000000 {
+			opp-hz = /bits/ 64 <800000000>;
+		};
+		opp-900000000 {
+			opp-hz = /bits/ 64 <900000000>;
+		};
+		opp-1000000000 {
+			opp-hz = /bits/ 64 <1000000000>;
+		};
+		opp-1100000000 {
+			opp-hz = /bits/ 64 <1100000000>;
+		};
+		opp-1200000000 {
+			opp-hz = /bits/ 64 <1200000000>;
+		};
+	};
+
+	thermal-zones {
+		cpu-thermal {
+			polling-delay-passive = <500>;
+			polling-delay = <3000>;
+			thermal-sensors = <&cpu_thermal>;
 		};
 	};
 
@@ -64,6 +113,12 @@
 		clock-frequency = <25000000>;
 	};
 
+	ref_clk: clock-reference {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <25000000>;
+	};
+
 	apb_clk: clock-apb {
 		compatible = "fixed-clock";
 		#clock-cells = <0>;
@@ -75,6 +130,19 @@
 		#address-cells = <2>;
 		#size-cells = <2>;
 		ranges;
+
+		cpu_clk: clock-controller@f4320200 {
+			compatible = "realtek,rtl9617c-cpu-clock";
+			reg = <0 0xf4320200 0 0x44>;
+			#clock-cells = <0>;
+			clocks = <&ref_clk>;
+		};
+
+		cpu_thermal: thermal-sensor@f4320264 {
+			compatible = "realtek,rtl9617c-thermal";
+			reg = <0 0xf4320264 0 0x10>;
+			#thermal-sensor-cells = <0>;
+		};
 
 		global_config: syscon@f43200c0 {
 			compatible = "realtek,rtl9617c-global-config", "syscon";

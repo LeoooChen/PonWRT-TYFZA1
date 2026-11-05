@@ -1,0 +1,238 @@
+{
+  "complete": false,
+  "date": "2026-10-17",
+  "scope": "14 PON hardware counter alarm/warning IDs and UNI link changes0316/0327 on four physical ports; whole EPON alarm coverage remains incomplete",
+  "stock_sha256": "a9b075cdee5a2b176eca35e731c7b0d48881d46091d7b7469344e99c7f2e4b28",
+  "implemented_pon_ids": [
+    "0117",
+    "0119",
+    "011b",
+    "011a",
+    "011c",
+    "0123",
+    "0124",
+    "0127",
+    "0129",
+    "012b",
+    "012a",
+    "012c",
+    "0133",
+    "0134"
+  ],
+  "unported_pon_counter_ids": [
+    "0115",
+    "0116",
+    "0118",
+    "011d",
+    "011e",
+    "011f",
+    "0120",
+    "0121",
+    "0122",
+    "0125",
+    "0126",
+    "0128",
+    "012d",
+    "012e",
+    "012f",
+    "0130",
+    "0131",
+    "0132"
+  ],
+  "unported_uni_frame_counter_ids": [
+    "0306",
+    "0307",
+    "0308",
+    "0309",
+    "030a",
+    "030b",
+    "030c",
+    "030d",
+    "030e",
+    "030f",
+    "0310",
+    "0311",
+    "0312",
+    "0313",
+    "0314",
+    "0315",
+    "0317",
+    "0318",
+    "0319",
+    "031a",
+    "031b",
+    "031c",
+    "031d",
+    "031e",
+    "031f",
+    "0320",
+    "0321",
+    "0322",
+    "0323",
+    "0324",
+    "0325",
+    "0326"
+  ],
+  "counter_semantics": "Cumulative physical MAC MIB, never a PM period delta. Strict trigger > threshold and clear < clear_threshold; equality retains state. Eight-byte BE event value.",
+  "pon_pm_slots": {
+    "0117/0127": [
+      10
+    ],
+    "0119/0129": [
+      12
+    ],
+    "011b/012b": [
+      14
+    ],
+    "011a/012a": [
+      13
+    ],
+    "011c/012c": [
+      15
+    ],
+    "0123/0133": [
+      10,
+      12,
+      14
+    ],
+    "0124/0134": [
+      13,
+      15
+    ]
+  },
+  "fixes": [
+    "SDK zero assignments no longer hide the established MAC CRC/length counters",
+    "Actual64-bit event is encoded without stock signed-word concatenation corruption",
+    "Native link count1 is valid, separated from read errors",
+    "PM baseline resets and history rollover do not reset cumulative alarm inputs"
+  ],
+  "limitations": [
+    "PON drop/discard/fragment/jabber and other unsupported IDs lack an established physical hardware mapping",
+    "UNI frame selectors reject03xx IDs; the correct mapping remains unestablished and unsupported",
+    "Downstream error sum uses established CRC/undersize/oversize; original fragment/jabber contributions are permanently zero in this board DAL and have no MAC MIB field",
+    "No kernel source changes in this increment; no repeated full kernel link",
+    "No physical sensor, FE traffic or OLT test; no flashing, deployment, merge or push"
+  ],
+  "previous_optical_evidence": "manifests/epon-optical-alarms.json",
+  "hardware_source_evidence": "manifests/epon-hardware-pm.json",
+  "rea": [
+    {
+      "batch": "ghidra-epon-counter-alarms-entry-20261017",
+      "file": "000-open_binary.json",
+      "sha256": "8c2d67e4615114ce33a0965a2dd717ca448e9191a8fdb1482df82cd6675f5828",
+      "evidence_id": null,
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-counter-alarms-entry-20261017",
+      "file": "001-xrefs.json",
+      "sha256": "76bde9c2bb9c65b50160f3ba66a296f0d51213924372d3de33e68b27e899eacc",
+      "evidence_id": "ev_64010111add79b17aa9999e0cefe318035e548f19433ad903bf91797d03568f1",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-counter-alarms-entry-20261017",
+      "file": "002-search_strings.json",
+      "sha256": "fb4bfc6939e3b89c413c661d29985d2d60605c255b187f09bd54fb8ca14f14af",
+      "evidence_id": "ev_0b84655d33818ef5c598ea8589f152e66b44d165c3cda6f8d45ee4184c119bcd",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-counter-alarms-entry-20261017",
+      "file": "003-close_binary.json",
+      "sha256": "fef9b48da567071706da117a426347af4eabf0ee45e8dcdfdbb0a50a52a039cb",
+      "evidence_id": null,
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-counter-alarms-backends-20261017",
+      "file": "000-open_binary.json",
+      "sha256": "8c2d67e4615114ce33a0965a2dd717ca448e9191a8fdb1482df82cd6675f5828",
+      "evidence_id": null,
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-counter-alarms-backends-20261017",
+      "file": "001-procedure_pseudo_code.json",
+      "sha256": "51fd8674a5d5571ae38d26454d1e2b2c878727a4c27861121e3dc63e6086a0ec",
+      "evidence_id": "ev_5a3de74d5537031daa737183c58f4643d15cc883a9a1e1aeff30c0d1f2e6c44b",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-counter-alarms-backends-20261017",
+      "file": "002-procedure_pseudo_code.json",
+      "sha256": "1f1836a4a4a525716324e84e787280e5e40f20c1a1b75c69141df7c5944045ff",
+      "evidence_id": "ev_f908ab0d75d4afde00b2669752b33198f4bd81b25c7d06c3518a91ae836bdc5c",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-counter-alarms-backends-20261017",
+      "file": "003-procedure_pseudo_code.json",
+      "sha256": "1f6db2fc82d220c72a19e6d76e0c0cfaf4437fc3dcc80b0837ae4b9a5c136812",
+      "evidence_id": "ev_026edd81dce446bb874aa16a65852255c31525c9a7f1fff6c9c822d00954f000",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-counter-alarms-backends-20261017",
+      "file": "004-procedure_pseudo_code.json",
+      "sha256": "fa1a791936cb2b6f911f017c28ad97554e9c5a223b55f0a0947b85dceda84339",
+      "evidence_id": "ev_5d1ad5affe13c41548a2d0697adeda971048b8c74330c415114e2f4ca4fe48ed",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-counter-alarms-backends-20261017",
+      "file": "005-procedure_pseudo_code.json",
+      "sha256": "098b8bab0f366abec448998e2f503505e34bddfe5c47e7a133bca73c716fc354",
+      "evidence_id": "ev_13c288ca95eda6fe0ec97c864077f00516db302553729e64ccab9a654fba276c",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-counter-alarms-backends-20261017",
+      "file": "006-procedure_pseudo_code.json",
+      "sha256": "0de23b20e1769f37f18ee00a611200980f0de28b3a8639a641fbd8ae62cf6871",
+      "evidence_id": "ev_93b5c786dabef52d7842745b8c13007e3ccbb3055636f150a8034f41802664cb",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-counter-alarms-backends-20261017",
+      "file": "007-close_binary.json",
+      "sha256": "047863ff5db94306e28d4a1d231d704b53929e13b0ea262aed0a973765a107cc",
+      "evidence_id": null,
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-counter-alarms-dal-20261017",
+      "file": "000-open_binary.json",
+      "sha256": "996346a6b3a418df6a94cde8abced62df84fc6a35500872939b3dcb64b07ef94",
+      "evidence_id": null,
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-counter-alarms-dal-20261017",
+      "file": "001-procedure_pseudo_code.json",
+      "sha256": "8dad6f01f007535bc0639eb5101b6bbe67b8cfcf57c4572fae1baa972454da81",
+      "evidence_id": "ev_7a02e064c2de96527148f18de091bbe0618fcd9362126e3c02390623735cc53c",
+      "error": false
+    },
+    {
+      "batch": "ghidra-epon-counter-alarms-dal-20261017",
+      "file": "002-close_binary.json",
+      "sha256": "ce5eee2b3262af2325af008b6ed29f2366f383e5a747c5b6a54070c3eb974673",
+      "evidence_id": null,
+      "error": false
+    }
+  ],
+  "source_sha256": {
+    "port/packages/tyfza1-pon-control/src/pon-alarm.c": "a204627ac5d716976ccbbb1504c0ddeff38a15e675abf6b311f382c42c819858",
+    "port/packages/tyfza1-pon-control/src/pon-alarm.h": "ec8b0270dca25957ddd3bfd9d3b23f234d43718041a47863e31b1db968a5039e",
+    "port/packages/tyfza1-pon-control/src/pon-backend.c": "08deeeba29baf1b17794e6ad752bb7a9cd349c239979f9d4c064dcd41178ea91",
+    "scripts/test_oam_daemon.py": "996a2a5c1860bcc74e19e92ca55afdc82487fc203b004316190cd6ec3e1b2927",
+    "port/scripts/check-pon-userspace.sh": "26a27f6d9100a32dcb25558fffa22dd6102b9f463e9e2d8a6a4818cb62d722dc",
+    "tools/check_stock_epon_alarms.py": "2c02fa3cfaa517f351043d6e4138e932d531940f9ae634067414abbe847fa5f4"
+  },
+  "evidence": {
+    "logs/epon-counter-alarms-stock-contract.json": "42defefd0cc49ea9e445e97cd469065fd97dcd1f732a75497040a2b667b95346",
+    "logs/epon-counter-alarms-daemon-20261017.json": "c578639d5ccccd52196df583cb5612e54cb6b96774b4c50f1c68e153cf205d87",
+    "artifacts/epon-parity/counter-alarms-userspace-20261017-r3/pon-oamd": "8909f028d742920b872d5e55e706f06c5e4185156ec911409dd69f09a92c4e90"
+  }
+}

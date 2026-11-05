@@ -14,9 +14,10 @@ import time
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--binary', type=Path, default=root / 'artifacts/oam-control/pon-oamd')
+parser.add_argument('--openwrt', type=Path, default=root / 'sources/openwrt')
 args = parser.parse_args()
-toolchain = root / 'sources/openwrt/staging_dir/toolchain-aarch64_cortex-a55_gcc-14.4.0_musl'
-libraries = root / 'sources/openwrt/staging_dir/target-aarch64_cortex-a55_musl/usr/lib'
+toolchain = args.openwrt / 'staging_dir/toolchain-aarch64_cortex-a55_gcc-14.4.0_musl'
+libraries = args.openwrt / 'staging_dir/target-aarch64_cortex-a55_musl/usr/lib'
 loader = toolchain / 'lib/libc.so'
 peer_mac = bytes.fromhex('021020304050')
 tests = []
@@ -55,7 +56,7 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
     config.mkdir()
     (config / 'pon').write_text("config pon 'pon'\n option loid '0012345678'\n option loid_password ''\n option vendor_id 'TEST'\n option oam_model 'FZA1'\n option equipment_id 'TYFZA1'\n option hardware_version 'HARDWARE-1'\n option software_version 'SOFTWARE-2'\n")
     mpcp = temporary / 'mpcp'
-    mpcp.write_text('configured=1 enabled=1 registered=00000000\n')
+    mpcp.write_text('configured=1 enabled=1 registered=00000000 epochs=0000000000000001\n')
     state = temporary / 'state'
     state.mkdir()
     state_file = state / 'llid-0.json'
@@ -63,7 +64,8 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
                     ['ip', 'link', 'add', 'pon-oam0', 'type', 'veth', 'peer', 'name', 'olt'],
                     ['ip', 'link', 'set', 'pon-oam0', 'address', '02:11:22:33:44:55'],
                     ['ip', 'link', 'set', 'olt', 'address', '02:10:20:30:40:50'],
-                    ['ip', 'link', 'set', 'pon-oam0', 'up'], ['ip', 'link', 'set', 'olt', 'up']):
+                    ['ip', 'link', 'set', 'pon-oam0', 'up'], ['ip', 'link', 'set', 'olt', 'up'],
+                    ['ip', 'link', 'add', 'lan1', 'type', 'veth', 'peer', 'name', 'uni-peer']):
         subprocess.run(command, check=True)
     sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(0x8809))
     sock.bind(('olt', 0))
@@ -74,7 +76,7 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
         waiting = status(state_file, lambda s: not s['registered'])
         assert not select.select([sock], [], [], 1.2)[0]
         tests.append('unregistered process sends no OAM')
-        mpcp.write_text('configured=1 enabled=1 registered=00000001\n')
+        mpcp.write_text('configured=1 enabled=1 registered=00000001 epochs=0000000000000001\n')
         info = receive(sock, 0)
         local = info[20:34]
         peer_local = b'\x01\x00\x07\x06\x14\x05\xee\x00\x0d\xb6\x01\x02\x03\x04'
@@ -99,9 +101,67 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
         versions = receive(sock, 0xfe)
         assert versions[21] == 2 and versions[26:34] == b'TESTFZA1'
         assert versions[40:48] == b'HARDWARE'
-        assert versions[48:64] == b'SOFTWARE-2'.ljust(16, b'\0')
-        assert versions[84:100] == b'SOFTWARE-2'.ljust(16, b'\0')
-        tests.append('UCI hardware/software versions enter live Get replies')
+        assert versions[48:64] == b'SOFTWARE-2'.rjust(16, b'\0')
+        release = (root / 'VERSION').read_text().strip().split('-')[0]
+        assert versions[83:87] == bytes([3, *map(int, release.split('.'))])
+        tests.append('ONU SN carries UCI software identity; FirmwareVer carries three release octets')
+        uni_object = bytes.fromhex('37000104 01000001')
+        for command in (['ip', 'link', 'set', 'lan1', 'up'], ['ip', 'link', 'set', 'uni-peer', 'up']):
+            subprocess.run(command, check=True)
+        before_flags = json.loads(subprocess.check_output(['ip', '-j', 'link', 'show', 'lan1']))[0]['flags']
+        tx_control = temporary / 'epon_tx_control'
+        tx_control.write_bytes(b'local-owner')
+        blocked = [(0xc9, 1, None), (9, 5, struct.pack('!I', 1)),
+                   (9, 0xb, None), (9, 0xc, struct.pack('!I', 1)), (0xc7, 0x12, b'\1'),
+                   (0xc7, 0xa1, b'\0\2' + bytes.fromhex('021122334455') + bytes(4)),
+                   (0xc7, 0x81, struct.pack('!HI', 0x101, 2)),
+                   (0xc7, 0x82, struct.pack('!HII', 0x101, 100, 90)),
+                   (0xc7, 0xb1, struct.pack('!HI', 2, 900)), (0xc7, 0xb2, b'\0')]
+        for branch, leaf, data in blocked:
+            variable = bytes([branch]) + struct.pack('!H', leaf)
+            payload = b'\x11\x11\x11\x03' + uni_object + variable
+            if data is not None:
+                payload += bytes([len(data)]) + data
+            sock.send(ethernet(payload + b'\0', code=0xfe, flags=0x50))
+            assert receive(sock, 0xfe)[30:34] == variable + b'\x87', (branch, leaf)
+        assert tx_control.read_bytes() == b'local-owner'
+        assert json.loads(subprocess.check_output(['ip', '-j', 'link', 'show', 'lan1']))[0]['flags'] == before_flags
+        tests.append('remote reboot/TX/LAN/alarm/PM Set requests are refused without changing local port or TX controls')
+
+        fec_file = temporary / 'fec'
+        fec_file.write_text('supported=1 upstream=1\n')
+        sock.send(ethernet(b'\x11\x11\x11\x01' + uni_object + bytes.fromhex('c70082020101 070139 00'), code=0xfe, flags=0x50))
+        assert receive(sock, 0xfe)[30:42] == bytes.fromhex('c7008286 0701390400000002')
+        for leaf in (0x81, 0xb1, 0xb2, 0xb3):
+            variable = bytes([0xc7, 0, leaf])
+            sock.send(ethernet(b'\x11\x11\x11\x01' + uni_object + variable + b'\0', code=0xfe, flags=0x50))
+            assert receive(sock, 0xfe)[30:34] == variable + b'\x86'
+        tests.append('removed alarm/PM Gets report unsupported; parameterized Get still preserves the following FEC query')
+
+        (temporary / 'llid_count').write_text('1\n')
+        sock.send(ethernet(b'\x11\x11\x11\x01\xc7\0\x0c\0', code=0xfe, flags=0x50))
+        assert receive(sock, 0xfe)[22:29] == bytes.fromhex('c7000c03010001')
+        (temporary / 'transceiver').write_text('temperature_raw=-256 voltage_raw=33000 bias_raw=1234 tx_power_raw=5678 rx_power_raw=65535\n')
+        sock.send(ethernet(b'\x11\x11\x11\x01\xc7\0\x05\0', code=0xfe, flags=0x50))
+        assert receive(sock, 0xfe)[22:36] == b'\xc7\0\x05\x0a' + struct.pack('!5H', 0xff00, 33000, 1234, 5678, 65535)
+        sock.send(ethernet(b'\x11\x11\x11\x01' + uni_object + b'\x07\0\x25\0', code=0xfe, flags=0x50))
+        assert receive(sock, 0xfe)[30:38] == bytes.fromhex('0700250400000002')
+        tests.append('read-only port state and optical diagnosis remain usable; ONU no longer advertises OAM TX power control')
+
+        # Also cover the alternate alarm opcode and the old delayed-reboot deadline.
+        # check-pon-userspace.sh isolates PID1 to contain any future regression.
+        sock.send(ethernet(b'\x11\x11\x11\xff\x02\0\1' + struct.pack('!HIHI', 4, 0, 0x101, 1), code=0xfe, flags=0x50))
+        until = time.monotonic() + 3.4
+        while time.monotonic() < until:
+            if select.select([sock], [], [], .2)[0]:
+                frame = sock.recv(2048)
+                assert frame[17] not in (1, 0xfe), 'unexpected alarm/management reply'
+                if frame[17] == 0:
+                    sock.send(ethernet(peer_info, flags=16))
+        retained = status(state_file, lambda s: s['auth_state'] == 'accepted')
+        assert process.poll() is None and retained['generation'] == accepted['generation']
+        assert 'alarm_error' not in retained and 'pm_error' not in retained
+        tests.append('no proactive alarm events or delayed reboot; registration/auth stay live after refused management traffic')
         set_request = bytes.fromhex('11111103 37000104 01000007 c700250102 3600010103 c700130200e3 00')
         set_response = bytes.fromhex('11111104 37000104 01000007 c7002587 3600010103 c7001387 00')
         sock.send(ethernet(set_request, code=0xfe, flags=0x50))
@@ -126,12 +186,12 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
         rejected = status(state_file, lambda s: s['auth_state'] == 'rejected')
         assert rejected['auth_failure'] == 7 and rejected['auth_failures'] == 1
         tests.append('reauthentication clears success and records rejection')
-        mpcp.write_text('configured=1 enabled=1 registered=00000000\n')
+        mpcp.write_text('configured=1 enabled=1 registered=00000000 epochs=0000000000000001\n')
         reset = status(state_file, lambda s: not s['registered'])
         assert reset['auth_state'] == 'waiting' and reset['auth_results'] == 2
         assert not reset['discovery_stable']
         tests.append('MPCP loss resets current auth and retains result history')
-        mpcp.write_text('configured=1 enabled=1 registered=00000001\n')
+        mpcp.write_text('configured=1 enabled=1 registered=00000001 epochs=0000000000000001\n')
         fresh = receive(sock, 0)
         assert fresh[20:34] != local
         fresh_info = b'\x01\x10' + peer_local + b'\x02\x10' + fresh[20:34] + b'\xfe\x07\x11\x11\x11\x01\x30\0\0'
@@ -139,8 +199,22 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
         status(state_file, lambda s: s['discovery_stable'])
         sock.send(ethernet(b'\x11\x11\x11\x05\x03\0\0', code=0xfe, flags=0x50))
         status(state_file, lambda s: s['auth_state'] == 'accepted')
+        before_epoch = status(state_file, lambda s: s['discovery_stable'])
+        mpcp.write_text('configured=1 enabled=1 registered=00000001 epochs=0000000000000002\n')
+        changed_epoch = status(state_file, lambda s: s['generation'] == before_epoch['generation'] + 1)
+        assert changed_epoch['registered'] and not changed_epoch['discovery_stable']
+        assert changed_epoch['auth_state'] == 'waiting'
+        fresh = receive(sock, 0)
+        while int.from_bytes(fresh[21:23], 'big') != (changed_epoch['generation'] & 0xffff):
+            fresh = receive(sock, 0)
+        fresh_info = b'\x01\x10' + peer_local + b'\x02\x10' + fresh[20:34] + b'\0\0'
+        sock.send(ethernet(fresh_info, flags=16))
+        status(state_file, lambda s: s['discovery_stable'])
+        sock.send(ethernet(b'\x11\x11\x11\x05\x03\0\0', code=0xfe, flags=0x50))
+        status(state_file, lambda s: s['auth_state'] == 'accepted')
+        tests.append('a registration epoch change invalidates auth even when the sampled bitmap stays registered')
         timed_out = status(state_file, lambda s: not s['discovery_stable'] and s['auth_state'] == 'waiting', timeout=7)
-        assert timed_out['auth_successes'] == 2 and timed_out['registered']
+        assert timed_out['auth_successes'] == 3 and timed_out['registered']
         tests.append('OAM peer timeout revokes current auth while MPCP remains registered')
         # Establish another accepted session, then keep feeding invalid or
         # unhandled traffic past the five-second liveness deadline.
@@ -161,7 +235,7 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts') as temporary:
             time.sleep(.7)
         expired = status(state_file, lambda s: s['auth_state'] == 'waiting' and not s['discovery_stable'])
         assert expired['registered'] and expired['generation'] == live['generation'] + 1
-        assert expired['auth_successes'] == 3
+        assert expired['auth_successes'] == 4
         tests.append('truncated, unsupported-code and unknown-OUI traffic cannot extend an accepted session')
         duplicate = subprocess.run([str(loader), '--library-path', str(libraries) + ':' + str(toolchain / 'lib'),
             str(args.binary), '--config-dir', str(config), '--mpcp-status', str(mpcp), '--state-dir', str(state)],

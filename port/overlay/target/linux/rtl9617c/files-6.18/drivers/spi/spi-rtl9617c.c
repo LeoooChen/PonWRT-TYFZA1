@@ -7,7 +7,7 @@
  */
 #include <linux/delay.h>
 #include <linux/io.h>
-#include <linux/iopoll.h>
+#include <linux/ktime.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/spi/spi.h>
@@ -37,11 +37,22 @@ struct rtl_qspi {
 
 static int rtl_qspi_kick(struct rtl_qspi *qspi, bool out)
 {
-	u32 status;
+	ktime_t timeout;
 
 	writel(BUSY_START | (out ? BUSY_WRITE : 0), qspi->base + BUSY);
-	return readl_poll_timeout(qspi->base + BUSY, status,
-				  !(status & BUSY_MASK), 1, 100000);
+	// One kick moves at most 4 bytes, and the GPL ca_qspi_wait_{rd,wr}_cmd
+	// spin on BUSY without delay. A sleeping poll turned every word into an
+	// hrtimer sleep and dominated UBI attach time. Bound the spin by wall
+	// clock: a zero-delay read_poll_timeout_atomic() counts iterations.
+	timeout = ktime_add_us(ktime_get(), 100000);
+	for (;;) {
+		if (!(readl(qspi->base + BUSY) & BUSY_MASK))
+			return 0;
+		if (ktime_after(ktime_get(), timeout))
+			break;
+		cpu_relax();
+	}
+	return readl(qspi->base + BUSY) & BUSY_MASK ? -ETIMEDOUT : 0;
 }
 
 static bool rtl_qspi_supports_op(struct spi_mem *mem, const struct spi_mem_op *op)

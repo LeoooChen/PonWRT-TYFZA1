@@ -1,0 +1,8 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+uci -q get system.cpu >/dev/null && exit 0
+uci batch <<'EOF'
+set system.cpu=cpu
+set system.cpu.frequency='1000000'
+commit system
+EOF

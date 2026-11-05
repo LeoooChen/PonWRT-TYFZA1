@@ -5,6 +5,27 @@
 #define RTL_AX_AP_MAC_RUNTIME_H
 #include "download.h"
 
+static inline int rtl_ax_host_getpkt(const struct rtl_ax_io *io, unsigned int macid)
+{
+	unsigned int retry;
+
+	/* Actual mac_host_getpkt_h2c -> _mac_send_h2creg, C and XB.
+	 * The receive worker calls this after validating a peer's PS-Poll. */
+	for (retry = 0; retry < 100; retry++) {
+		if (!(io->read8(io->ctx, 0x7160) & 1))
+			break;
+		io->delay_us(io->ctx, 200);
+	}
+	if (retry == 100)
+		return -ETIMEDOUT;
+	io->write32(io->ctx, 0x7140, 0x204 | macid << 16);
+	io->write32(io->ctx, 0x7144, 0);
+	io->write32(io->ctx, 0x7148, 0);
+	io->write32(io->ctx, 0x714c, 0);
+	io->write8(io->ctx, 0x7160, io->read8(io->ctx, 0x7160) | 1);
+	return 0;
+}
+
 static inline void rtl_ax_bb_rf_disable(const struct rtl_ax_io *io)
 {
 	/* set_enable_bb_rf(enable=0), actual C/XB branch at21e29c. */
@@ -360,6 +381,10 @@ static inline int rtl_ax_mac_cmac_start(const struct rtl_ax_io *io,
 	if (ret)
 		return ret;
 	rtl_ax_cmac_protocol(io, firmware_tx);
+	/* C/XB hal_trx_init disables NAV padding; its disabled branch leaves
+	 * the upper protocol fields and NAV_OVER_TXOP_EN untouched. */
+	io->write16(io->ctx, 0xc674, 0);
+	io->write16(io->ctx, 0xc678, 0);
 	return 0;
 }
 
@@ -411,8 +436,8 @@ static inline void rtl_ax_mac_trx_registers(const struct rtl_ax_io *io)
 	io->write32(io->ctx, 0x8520, 0xffffffff);
 	io->write32(io->ctx, 0xc160, 0xffffffff);
 	/* set_host_rpr: PCIe SCC's POH profile enables all four WP outcomes.
-	 * Eight-MSDU aggregates reduce 124 BIDs to 15 WPs. Report after 12
-	 * WPs so recycling starts before the BID pool fills. */
+	 * Native NI has 128 WP owners and 2492 usable BIDs. Keep its 12-report
+	 * recycle batch; the original POH profile uses 121 reports, timeout255. */
 	value = io->read32(io->ctx, 0x9408);
 	next = value & ~3U;
 	if (value != next)

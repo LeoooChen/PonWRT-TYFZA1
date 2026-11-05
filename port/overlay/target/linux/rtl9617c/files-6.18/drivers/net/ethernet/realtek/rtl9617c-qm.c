@@ -12,9 +12,11 @@
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/ktime.h>
+#include <linux/prefetch.h>
 #include <linux/rcupdate.h>
 #include <linux/unaligned.h>
 #include "rtl9617c-qm.h"
+#include "rtl9617c-rx-checksum.h"
 
 #define EQ_ID 4
 #define EQ_CFG (0x61e8 + EQ_ID * 20)
@@ -186,13 +188,13 @@ int rtl_qm_rx_alloc(struct device *dev, struct rtl_qm_rx *rx)
 		DMA_FROM_DEVICE, GFP_KERNEL);
 	if (!rx->memory)
 		return -ENOMEM;
-	rx->ring_memory = dma_alloc_coherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS,
-		&rx->ring_dma, GFP_KERNEL);
+	rx->ring_memory = dma_alloc_noncoherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS,
+		&rx->ring_dma, DMA_FROM_DEVICE, GFP_KERNEL);
 	if (!rx->ring_memory)
 		goto free_payload;
 	rx->deepq_memory = dma_alloc_coherent(dev, RTL_DQ_MEMORY_BYTES, &rx->deepq_dma, GFP_KERNEL);
 	if (!rx->deepq_memory) {
-		dma_free_coherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS, rx->ring_memory, rx->ring_dma);
+		dma_free_noncoherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS, rx->ring_memory, rx->ring_dma, DMA_FROM_DEVICE);
 		rx->ring_memory = NULL;
 		goto free_payload;
 	}
@@ -277,13 +279,6 @@ static int rtl_qm_cpu_credits(struct rtl_qm_rx *rx)
 
 		writel((count / 8) << 16 | (count / 64), rx->ni + 0x9580 + profile * 4);
 		writel(0x3fff3fff, rx->ni + 0x9590 + profile * 4);
-		writel(0, rx->ni + 0x95b4);
-		writel(0x00ffffff, rx->ni + 0x95b8);
-		writel(0xf0000000U | ((count * 7 / 8) << 14) | (count * 6 / 8),
-		       rx->ni + 0x95bc);
-		ret = rtl_qm_indirect(rx, 0x95b0, BIT(31) | BIT(30) | profile);
-		if (ret)
-			return ret;
 	}
 	for (cpu = 0; cpu < 4; cpu++) {
 		unsigned int count0, count1, eq_profile;
@@ -311,11 +306,25 @@ static int rtl_qm_cpu_credits(struct rtl_qm_rx *rx)
 		for (voq = cpu * 8; voq < cpu * 8 + 8; voq++) {
 			if (cpu)
 				writel(eq_profile, rx->ni + 0x65a4 + voq * 4);
-			writel(profile, rx->ni + 0x95c4);
+			/* CPU2 has stock private=12; CPU0/3 have private=3.
+			 * Separate CPU3's native large pool from CPU0's thresholds. */
+			writel(cpu == 3 ? 4 : profile, rx->ni + 0x95c4);
 			ret = rtl_qm_indirect(rx, 0x95c0, BIT(31) | BIT(30) | voq);
 			if (ret)
 				return ret;
 		}
+	}
+	for (profile = 0; profile < 3; profile++) {
+		unsigned int count = profile ? RTL_QM_PE_BUFFERS - 4 : RTL_QM_BUFFERS_PER_EQ;
+
+		/* Original CB init sets private credits; empty-buffer init changes
+		 * only high/low occupancy. Group fields retain their reset value0. */
+		writel(0, rx->ni + 0x95b4);
+		writel((profile == 1 ? 12 : 3) << 24, rx->ni + 0x95b8);
+		writel(((count * 7 / 8) << 14) | (count * 6 / 8), rx->ni + 0x95bc);
+		ret = rtl_qm_indirect(rx, 0x95b0, BIT(31) | BIT(30) | (profile == 2 ? 4 : profile));
+		if (ret)
+			return ret;
 	}
 	writel(select, rx->ni + 0x95a0);
 	return 0;
@@ -354,6 +363,8 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	readl(ni + EPP_READ);
 	rtl_qm_axi_reorder(rx);
 	memset(rx->ring_memory, 0, RTL_QM_RING_BYTES * RTL_QM_VOQS);
+	dma_sync_single_for_device(rx->device, rx->ring_dma,
+		RTL_QM_RING_BYTES * RTL_QM_VOQS, DMA_FROM_DEVICE);
 	dma_sync_single_for_device(rx->device, rx->memory_dma, RTL_QM_MEMORY_BYTES, DMA_FROM_DEVICE);
 	rx->trace_count = 0;
 	/* Unused bootloader EQs must not retain overlapping BID ownership. */
@@ -386,28 +397,17 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 		return ret;
 	writel(EQ_ID | ((EQ_ID + 1) << 4), ni + EQ_PROFILE);
 	writel(EQ_ID, ni + 0x6148);
-	writel(0x00020002, ni + 0x61c8); /* 32-byte first/rest headroom */
+	writel(RTL_QM_PACKET_LAYOUT, ni + 0x61c8);
 	writel(0x05102013, ni + 0x66d4);
 	writel(0xffff, ni + 0x63a8);
 	writel(0, ni + 0x63a8);
 	writel(0, ni + 0x66d4);
-	ret = rtl_qm_attribute(rx, EQ_ID, 0x0a008060);
-	if (ret)
-		return ret;
-	ret = rtl_qm_attribute(rx, EQ_ID + 1, 0x0a008060);
-	if (ret)
-		return ret;
-	for (i = 0; i < RTL_QM_PE_POOLS; i++) {
-		ret = rtl_qm_attribute(rx, RTL_QM_PE_EQ + i, 0x0a008060);
+	/* Stock startup uses separate AXI attributes for EQs and CPU EPPs. */
+	for (i = 0; i < 16; i++) {
+		ret = rtl_qm_attribute(rx, i, 0);
 		if (ret)
 			return ret;
 	}
-	ret = rtl_qm_attribute(rx, RTL_DQ_EQ_PRIVATE, 0x0a008060);
-	if (ret)
-		return ret;
-	ret = rtl_qm_attribute(rx, RTL_DQ_EQ_SHARED, 0x0a008060);
-	if (ret)
-		return ret;
 	ret = rtl_qm_attribute(rx, 48, 0x0a008060);
 	if (ret)
 		return ret;
@@ -415,8 +415,9 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	writel((value & ~(BIT(11) | BIT(13))) | 0xff, ni + 0x6000);
 	writel(readl(ni + 0x68f4) | BIT(2), ni + 0x68f4);
 	writel(0, ni + 0x6558);
-	/* Size counts four 32-bit FIFO words, including in EPP64 mode. */
-	writel(((RTL_QM_RING_BYTES / 16) << 8) | 0xf2,
+	/* Stock preserves max_buf_cnt_per_pkt while setting size/coalescing. */
+	writel((readl(ni + 0x657c + EQ_ID * 4) & GENMASK(31, 29)) |
+	       ((RTL_QM_RING_BYTES / 16) << 8) | 0xf2,
 	       ni + 0x657c + EQ_ID * 4);
 	for (i = 0; i < RTL_QM_VOQS; i++) {
 		writel(EQ_ID, ni + 0x65a4 + i * 4);
@@ -439,8 +440,10 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	 * must hold at least the per-port admission limit without a false wrap. */
 	for (unsigned int pool = 0; pool < RTL_QM_PE_POOLS; pool++) {
 		unsigned int cpu = 3 - pool, profile = 7 - pool;
+		writel(RTL_QM_PACKET_LAYOUT, ni + 0x61c8 + cpu * 4);
 		memset(rx->wifi_epp[pool], 0, 8 * RTL9617C_WIFI_EPP_BYTES);
-		writel((RTL9617C_WIFI_EPP_BYTES / 16) << 8 | 0xf2, ni + 0x657c + profile * 4);
+		writel((readl(ni + 0x657c + profile * 4) & GENMASK(31, 29)) |
+		       (RTL9617C_WIFI_EPP_BYTES / 16) << 8 | 0xf2, ni + 0x657c + profile * 4);
 		for (i = 0; i < 8; i++) {
 			writel(rx->wifi_epp_dma[pool] + i * RTL9617C_WIFI_EPP_BYTES,
 				ni + EPP_BASE + cpu * 32 + i * 4);
@@ -513,8 +516,22 @@ void rtl_qm_rx_free(struct device *dev, struct rtl_qm_rx *rx)
 				dma_free_coherent(dev, rtl_qm_wifi_chunk_bytes(chunk),
 					rx->wifi_memory[pool][chunk], rx->wifi_dma[pool][chunk]);
 	dma_free_coherent(dev, RTL_DQ_MEMORY_BYTES, rx->deepq_memory, rx->deepq_dma);
-	dma_free_coherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS, rx->ring_memory, rx->ring_dma);
+	dma_free_noncoherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS, rx->ring_memory, rx->ring_dma, DMA_FROM_DEVICE);
 	dma_free_noncoherent(dev, RTL_QM_MEMORY_BYTES, rx->memory, rx->memory_dma, DMA_FROM_DEVICE);
+}
+
+static void rtl_qm_rx_retire(struct rtl_qm_rx *rx, unsigned int cos,
+	u32 command, bool refill)
+{
+	rx->read[cos] = (rx->read[cos] + RTL_QM_COMMAND_BYTES) & (RTL_QM_RING_BYTES - 1);
+	mb();
+	writel(rx->read[cos], rx->ni + EPP_READ + cos * 4);
+	if (refill) {
+		/* CPU only reads this DMA_FROM_DEVICE buffer and delivers a copy.
+		 * No device sync is needed on reuse (dma-api-howto); the next
+		 * receive still synchronizes for CPU before reading any bytes. */
+		rtl_qm_refill_add(&rx->refill, command);
+	}
 }
 
 int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
@@ -523,15 +540,35 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 	int cos;
 	int count = 0;
 	u64 begin = READ_ONCE(rx->profile) ? ktime_get_ns() : 0;
+	bool checksum_enabled = readl(rx->ni + 0x3218) & BIT(16);
 
 	rtl_qm_refill_drain(&rx->refill, rx, rtl_qm_try_push, NAPI_POLL_WEIGHT);
 	/* Service PON control traffic before bulk data, matching the stock RX order. */
 	for (cos = RTL_QM_VOQS - 1; cos >= 0 && count < budget; cos--) {
+		/* Stock ca_ni_rx_napi consumes only the published pointer interval.
+		 * Queue status can precede DDR publication and does not republish EPPs. */
 		unsigned int wr = readl(rx->ni + EPP_WRITE + cos * 4) & 0xffffff;
-		bool full = rx->read[cos] == wr && (readl(rx->ni + 0x659c) & BIT(cos));
 
-		while ((rx->read[cos] != wr || full) && count < budget) {
-			void *entry = rx->ring_memory + cos * RTL_QM_RING_BYTES + rx->read[cos];
+		/* Only published commands are CPU-owned. The ring is CPU read-only
+		 * after startup; invalidate again for each newly sampled interval,
+		 * including a shared cache line that hardware extended since then. */
+		unsigned int rd = round_down(rx->read[cos], L1_CACHE_BYTES);
+		unsigned int end = round_up(wr, L1_CACHE_BYTES);
+		if (rx->read[cos] != wr) {
+			unsigned int base = cos * RTL_QM_RING_BYTES;
+			if (wr < rx->read[cos]) {
+				dma_sync_single_for_cpu(rx->device, rx->ring_dma + base + rd,
+					RTL_QM_RING_BYTES - rd, DMA_FROM_DEVICE);
+				rd = 0;
+			}
+			if (end > rd)
+				dma_sync_single_for_cpu(rx->device, rx->ring_dma + base + rd,
+					end - rd, DMA_FROM_DEVICE);
+		}
+
+		while (rx->read[cos] != wr && count < budget) {
+			unsigned int read = rx->read[cos];
+			void *entry = rx->ring_memory + cos * RTL_QM_RING_BYTES + read;
 			u32 command, length_word, address, offset, h0, h1;
 			unsigned int length, header;
 			u64 copied = 0;
@@ -540,7 +577,6 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			unsigned int source, wifi_id;
 			bool wifi_forwarded;
 			bool refill_buffer = false;
-			full = false;
 
 			dma_rmb();
 			command = get_unaligned_le32(entry);
@@ -564,8 +600,8 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			 * payload buffer before reading it through the CPU's cached map. */
 			dma_sync_single_for_cpu(rx->device, rx->memory_dma + offset,
 				RTL_QM_BUFFER_BYTES, DMA_FROM_DEVICE);
-			h0 = get_unaligned_be32(rx->memory + offset + 32);
-			h1 = get_unaligned_be32(rx->memory + offset + 36);
+			h0 = get_unaligned_be32(rx->memory + offset + RTL_QM_HEADROOM);
+			h1 = get_unaligned_be32(rx->memory + offset + RTL_QM_HEADROOM + 4);
 			rx->last_header[0] = h0;
 			rx->last_header[1] = h1;
 			header = 8 + ((h0 & BIT(31)) ? 8 : 0);
@@ -575,29 +611,39 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			wifi_id = rtl_wifi_epp_id(length_word);
 			wifi_forwarded = !!wifi_id;
 			if (wifi_forwarded) {
-				int payload = rtl_wifi_epp_length(length_word, RTL_QM_BUFFER_BYTES - 48);
+				int payload = rtl_wifi_epp_length(length_word, RTL_QM_DATA_BYTES - RTL_WIFI_INTERNAL_BYTES);
 				if (payload < 0) { dev->stats.rx_errors++; goto consume; }
 				length = payload;
 				header = RTL_WIFI_INTERNAL_BYTES;
 			}
 			if ((command & (BIT(4) | BIT(6))) != (BIT(4) | BIT(6)) ||
-			    length < ETH_HLEN || length > RTL_QM_BUFFER_BYTES - 32 - header) {
+			    length < ETH_HLEN || length > RTL_QM_DATA_BYTES - header) {
 				dev->stats.rx_errors++;
 				goto consume;
 			}
+			/* Warm only validated, CPU-owned bytes while allocating the skb. */
+			for (unsigned int i = 0; i < length; i += L1_CACHE_BYTES)
+				prefetch(rx->memory + offset + RTL_QM_HEADROOM + header + i);
 			skb = napi_alloc_skb(napi, length);
 			if (!skb) {
 				dev->stats.rx_dropped++;
 				goto consume;
 			}
 			if (begin) copied = ktime_get_ns();
-			memcpy(skb_put(skb, length), rx->memory + offset + 32 + header, length);
+			memcpy(skb_put(skb, length), rx->memory + offset + RTL_QM_HEADROOM + header, length);
+			if (checksum_enabled &&
+			    (wifi_forwarded || get_unaligned_be16(skb->data + 12) == ETH_P_IP) &&
+			    rtl_rx_checksum_valid(command, skb->data, length))
+				skb->ip_summed = CHECKSUM_UNNECESSARY;
 			source = FIELD_GET(GENMASK(14, 9), h1);
 			if (!wifi_forwarded && source == RTL_WIFI_SOURCE && (h0 & BIT(31))) {
-				u32 metadata = get_unaligned_be32(rx->memory + offset + 44);
+				u32 metadata = get_unaligned_be32(rx->memory + offset + RTL_QM_HEADROOM + 12);
 				/* Full Header CPU reason !=15 identifies an ingress return. */
 				if (((metadata >> 8) & 15) != 15) wifi_id = metadata & 255;
 			}
+			/* Packet bytes and metadata are private now. Return the EPP
+			 * credit before GRO or endpoint callbacks can hold up the poll. */
+			rtl_qm_rx_retire(rx, cos, command, refill_buffer);
 			if (wifi_id) {
 				struct rtl9617c_ni_wifi_endpoint *endpoint;
 				rcu_read_lock();
@@ -610,14 +656,14 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 					rx->wifi_copy_bytes += length;
 					skb->dev = endpoint->netdev;
 					skb->priority = h1 & 7;
-					endpoint->receive(endpoint, skb, wifi_forwarded);
+					endpoint->receive(endpoint, napi, skb, wifi_forwarded);
 					if (begin) rx->wifi_dispatch_ns += ktime_get_ns() - dispatch;
 				} else {
 					dev->stats.rx_dropped++;
 					dev_kfree_skb_any(skb);
 				}
 				rcu_read_unlock();
-				goto consume;
+				continue;
 			}
 			if (source >= ARRAY_SIZE(rx->lan)) {
 				struct rtl9617c_ni_endpoint *endpoint;
@@ -633,7 +679,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 					dev_kfree_skb_any(skb);
 				}
 				rcu_read_unlock();
-				goto consume;
+				continue;
 			}
 			rcu_read_lock();
 			input = rcu_dereference(rx->lan[source]);
@@ -641,7 +687,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				dev->stats.rx_dropped++;
 				dev_kfree_skb_any(skb);
 				rcu_read_unlock();
-				goto consume;
+				continue;
 			}
 			if (rx->trace_count < ARRAY_SIZE(rx->trace) && length >= 46 &&
 			    get_unaligned_be16(skb->data + 12) == ETH_P_IP &&
@@ -649,7 +695,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			    get_unaligned_be16(skb->data + 36) == 18081) {
 				u32 *trace = rx->trace[rx->trace_count++];
 
-				trace[0] = rx->read[cos]; trace[1] = wr;
+				trace[0] = read; trace[1] = wr;
 				trace[2] = command; trace[3] = length_word;
 				trace[4] = h0; trace[5] = h1;
 				trace[6] = get_unaligned_be32(skb->data + 42);
@@ -659,20 +705,12 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			input->stats.rx_bytes += length;
 			napi_gro_receive(napi, skb);
 			rcu_read_unlock();
+			continue;
 consume:
-			/* Retire the EPP/BID before returning its RAM to the hardware pool. */
-			mb();
-			rx->read[cos] = (rx->read[cos] + RTL_QM_COMMAND_BYTES) & (RTL_QM_RING_BYTES - 1);
-			writel(rx->read[cos], rx->ni + EPP_READ + cos * 4);
-			if (refill_buffer) {
-				dma_sync_single_for_device(rx->device, rx->memory_dma + offset,
-					RTL_QM_BUFFER_BYTES, DMA_FROM_DEVICE);
-				rtl_qm_refill_add(&rx->refill, command);
-			}
-			wr = readl(rx->ni + EPP_WRITE + cos * 4) & 0xffffff;
+			rtl_qm_rx_retire(rx, cos, command, refill_buffer);
 		}
 	}
-	/* Vendor receive retires the whole EPP batch before refilling released BIDs. */
+	/* Every EPP is retired before its BID can return to hardware. */
 	rtl_qm_refill_drain(&rx->refill, rx, rtl_qm_try_push, NAPI_POLL_WEIGHT);
 	if (begin) {
 		rx->host_poll_ns += ktime_get_ns() - begin;

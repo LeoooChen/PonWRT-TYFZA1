@@ -1,0 +1,20 @@
+{
+  "luci-tyfza1-cpu": {
+    "description": "Read SoC temperature and configure the shared CPU frequency",
+    "read": {
+      "ubus": {
+        "luci.tyfza1-system": [
+          "status"
+        ]
+      },
+      "uci": [
+        "system"
+      ]
+    },
+    "write": {
+      "uci": [
+        "system"
+      ]
+    }
+  }
+}

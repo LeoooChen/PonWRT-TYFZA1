@@ -298,7 +298,8 @@ static int __init probe_init(void)
 	unsigned int i;
 	int ret = -ENODEV;
 
-	netdev = dev_get_by_name(&init_net, "lan1");
+	/* NI0 is present on both boards even when the external PHY fails. */
+	netdev = dev_get_by_name(&init_net, "lan4");
 	if (!netdev) return ret;
 	ni = ioremap(0x4f4300000ULL, 0x10000);
 	dma = ioremap(0x4f7001000ULL, 0x1000);

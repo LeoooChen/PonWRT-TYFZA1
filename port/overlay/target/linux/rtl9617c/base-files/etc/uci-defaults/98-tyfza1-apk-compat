@@ -1,0 +1,6 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+# APK writes its primary architecture during rootfs assembly; add compatibility
+# after that transaction, on first boot and after sysupgrade.
+[ -s /etc/apk/keys/openwrt-snapshots.pem ] || exit 1
+printf 'aarch64_cortex-a55\naarch64_cortex-a53\n' > /etc/apk/arch

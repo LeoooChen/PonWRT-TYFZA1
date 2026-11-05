@@ -4,6 +4,20 @@
 
 / { model = "Tianyi TYFZA1 (native PON/PCIe bring-up)"; };
 
+&{/reserved-memory} {
+ /* PE ATU shadows these RAM addresses with code or MMIO. Keep skb and
+  * DMA allocations out of every window installed by pe_probe_core_start(). */
+ pe-atu-shadow@fc00000 {
+  reg = <0 0x0fc00000 0 0x00010000>,
+        <0 0x10000000 0 0x00100000>,
+        <0 0x11000000 0 0x00100000>,
+        <0 0x12000000 0 0x00100000>,
+        <0 0x13000000 0 0x00100000>,
+        <0 0x1fc00000 0 0x00010000>;
+  no-map;
+ };
+};
+
 &{/soc} {
  pcie_controls: pcie-controls@f4320098 {
   compatible = "realtek,rtl9617c-pcie-controls";
@@ -33,7 +47,9 @@
   bus-range = <0 255>;
   linux,pci-domain = <0>;
   ranges = <0x81000000 0x0 0x0 0x0 0xa0003000 0x0 0x10000 0x82000000 0x0 0xa0400000 0x0 0xa0400000 0x0 0xfc00000>;
-  dma-ranges = <0x02000000 0 0 0 0 0 0x20000000>;
+  /* RXBD bus alias reaches the SoC raw-DDR ATU window unchanged. */
+  dma-ranges = <0x02000000 0 0 0 0 0 0x20000000>,
+               <0x02000000 0 0x80000000 0 0x80000000 0 0x20000000>;
   dma-coherent;
   interrupts = <0 42 4>;
   interrupt-names = "wrapper";
@@ -101,7 +117,9 @@
   bus-range = <0 255>;
   linux,pci-domain = <1>;
   ranges = <0x81000000 0x0 0x0 0x0 0xb0003000 0x0 0x10000 0x82000000 0x0 0xb0400000 0x0 0xb0400000 0x0 0xfc00000>;
-  dma-ranges = <0x02000000 0 0 0 0 0 0x20000000>;
+  /* RXBD bus alias reaches the SoC raw-DDR ATU window unchanged. */
+  dma-ranges = <0x02000000 0 0 0 0 0 0x20000000>,
+               <0x02000000 0 0x80000000 0 0x80000000 0 0x20000000>;
   dma-coherent;
   interrupts = <0 46 4>;
   interrupt-names = "wrapper";

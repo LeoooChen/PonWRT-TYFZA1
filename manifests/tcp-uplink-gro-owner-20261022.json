@@ -1,0 +1,96 @@
+{
+  "date": "2026-10-22",
+  "status": "TCP upload hardware tail drops and retransmissions reproduced with the old diagnostic endpoint and eliminated in the measured runs with the NI-owned GRO context. Firmware radio and hardware thresholds unchanged.",
+  "root_cause": "The simulated TCP sink queued each NI receive packet into a second NAPI, adding a separate budget and GRO scheduling turn. Under burst load the CPU0-target EPP filled and L3TE VOQ admission dropped packets before the sink. Feed the same serialized NI NAPI GRO context directly, preserving flow order across poll CPU migration.",
+  "factory_authority": {
+    "module": "evidence/wireless-study-20261009-104746/evidence/stock/modules/ca-ne.ko",
+    "sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+    "instruction": "ca_ni_rx_napi calls napi_gro_receive at 0x1298, using its own poll NAPI argument"
+  },
+  "read_only_trace": {
+    "file": "queue-trace.txt",
+    "samples": 85460,
+    "interval_us": 100,
+    "hardware_drops": 20,
+    "drop_events": 5,
+    "CB_pool_and_port_drop_flags": 0,
+    "CB_VOQ0_full_flag_observed": true,
+    "EPP_WR_equals_RD_while_nonempty": true,
+    "no_buffer_counter_delta": 0,
+    "limit": "Sampling can perturb timing; the uninstrumented old endpoint return run separately reproduced 18 hardware drops and 18 retransmissions."
+  },
+  "implementation": "tools/live-pon-diag/pon_tcp_sink.c removes the second NAPI/FIFO and its backlog setting; uses the native NI owner NAPI; drains its GRO packets after endpoint detach before freeing the sink netdev. Hardware FE/NI path and packet checksums are preserved.",
+  "tests": {
+    "queue-trace-up": {
+      "received_Mbps": 1188.7936101412954,
+      "retransmits": 21,
+      "l3te_tail_drop_delta": 20,
+      "rdu_delta": 0,
+      "uplink_sink_FE_packets_delta": 518342,
+      "uplink_sink_received_delta": 518322,
+      "hardware_epoch_continuous": true
+    },
+    "inline-gro-up": {
+      "received_Mbps": 1225.331783757551,
+      "retransmits": 0,
+      "l3te_tail_drop_delta": 0,
+      "rdu_delta": 10,
+      "uplink_sink_FE_packets_delta": 533816,
+      "uplink_sink_received_delta": 533816,
+      "hardware_epoch_continuous": true
+    },
+    "old-queue-return-up": {
+      "received_Mbps": 1240.7673482740393,
+      "retransmits": 18,
+      "l3te_tail_drop_delta": 18,
+      "rdu_delta": 2,
+      "uplink_sink_FE_packets_delta": 541076,
+      "uplink_sink_received_delta": 541058,
+      "hardware_epoch_continuous": true
+    },
+    "inline-gro-long-up": {
+      "received_Mbps": 1228.729690244239,
+      "retransmits": 0,
+      "l3te_tail_drop_delta": 0,
+      "rdu_delta": 18,
+      "uplink_sink_FE_packets_delta": 1068161,
+      "uplink_sink_received_delta": 1068161,
+      "hardware_epoch_continuous": true
+    },
+    "final-source-up": {
+      "received_Mbps": 1178.1709259473678,
+      "retransmits": 0,
+      "l3te_tail_drop_delta": 0,
+      "rdu_delta": 11,
+      "uplink_sink_FE_packets_delta": 1024339,
+      "uplink_sink_received_delta": 1024339,
+      "hardware_epoch_continuous": true
+    },
+    "profile-native-up": {
+      "received_Mbps": 1241.2446893057966,
+      "retransmits": 0,
+      "l3te_tail_drop_delta": 0,
+      "rdu_delta": 22,
+      "uplink_sink_FE_packets_delta": 541141,
+      "uplink_sink_received_delta": 541141,
+      "hardware_epoch_continuous": true
+    }
+  },
+  "limits": [
+    "RXQ RDU events remain visible and are not packet loss counts; they were not hidden or cleared.",
+    "The simulated endpoint excludes physical PON egress. The core radio firmware was not changed by this endpoint fix.",
+    "Throughput is still around 1.2 Gbps; removing packet loss does not establish maximum PHY-rate application throughput."
+  ],
+  "build": "ARM64 final sink compiled from repository source with only the established test address changed from 198.18.0.1 to 198.18.255.1",
+  "built_module_sha256": "c3fcd60d0e9efa784e09cd86c142318b6543df6d2be9e67a703e6423eb98864d",
+  "unload_check": "Final module unloaded successfully; management access and NI polling remained available.",
+  "evidence_directory_on_Mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-tcp-uplink-rootcause",
+  "evidence_sha256": {
+    "queue-trace-up": "e9406508e42e4d80b59ee73aa295e93e5298ebd18e271fc5577f209619b65769",
+    "inline-gro-up": "eec27e333e02877f0e7ea5c27d988dccfd33a3216681bbcd75da33f4c01385ae",
+    "old-queue-return-up": "fcccb281e02fa94c5e9755febf335fb7171398a9d7f3a87deab799811cd487a2",
+    "inline-gro-long-up": "92e463b632685c7af20432f725ab02d728badbf986f59546e3b413e5048bb475",
+    "final-source-up": "85a220d828c40ff2c30d8ed48d8be2dda34c8d0d741e8b01a078795118886434",
+    "profile-native-up": "ecd8b266d503ecf2055eb5932926476e27b5321ae66bc79fdc7d30c3c727c44f"
+  }
+}

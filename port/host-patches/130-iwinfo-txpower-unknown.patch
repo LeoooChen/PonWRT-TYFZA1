@@ -1,0 +1,15 @@
+--- a/iwinfo_nl80211.c
++++ b/iwinfo_nl80211.c
+@@ -1650,10 +1650,10 @@
+ 	char *res;
+ 
+ 	res = nl80211_phy2ifname(ifname);
+-	*buf = 0;
++	*buf = INT_MIN;
+ 
+ 	if (nl80211_request(res ? res : ifname, NL80211_CMD_GET_INTERFACE, 0,
+-	                    nl80211_get_txpower_cb, buf))
++	                    nl80211_get_txpower_cb, buf) || *buf == INT_MIN)
+ 		return -1;
+ 
+ 	return 0;

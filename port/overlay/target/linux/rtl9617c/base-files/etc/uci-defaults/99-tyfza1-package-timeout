@@ -1,0 +1,9 @@
+#!/bin/sh
+# Large package downloads outlive uhttpd's stock 60-second CGI limit.
+uci -q show uhttpd | sed -n 's/^uhttpd\.\([^.=]*\)=uhttpd$/\1/p' |
+while IFS= read -r section; do
+	case "$(uci -q get "uhttpd.$section.script_timeout")" in
+		''|60) uci set "uhttpd.$section.script_timeout=3600" ;;
+	esac
+done
+uci commit uhttpd

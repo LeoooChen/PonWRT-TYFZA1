@@ -39,7 +39,10 @@ qh = read('rtl9617c-qm.h')
 xram = read('rtl9617c-xram.c')
 epon = read('rtl9617c-pon-epon.c')
 controller = read('rtl9617c-pon.c')
-constants = '\n'.join(re.findall(r'^#define .*$', qm + '\n' + qh, re.M))
+wifi_header = (headers.parents[3] / 'include/linux/rtl9617c-wifi.h').read_text()
+layout_header = ((headers.parents[3] / 'include/linux/rtl9617c-qm-layout.h').read_text()
+                 if 'rtl9617c-qm-layout.h' in qh else '#define RTL_QM_HEADROOM 32')
+constants = '\n'.join(re.findall(r'^#define .*$', layout_header + '\n' + wifi_header + '\n' + qm + '\n' + qh, re.M))
 rx_structure = re.search(r'struct rtl_qm_rx \{.*?\n\};', qh, re.S)[0]
 common = r'''
 #include <assert.h>
@@ -54,6 +57,7 @@ common = r'''
 #include "rtl9617c-qm-refill.h"
 #include "rtl9617c-qm-deepq.h"
 #include "rtl9617c-wifi-format.h"
+#include "rtl9617c-rx-checksum.h"
 typedef uint32_t u32;
 typedef uint16_t u16;
 typedef uint8_t u8;
@@ -69,8 +73,11 @@ typedef uint64_t u64;
 static uint64_t ktime_get_ns(void){return 100;}
 #define lower_32_bits(x) ((u32)(x))
 #define NAPI_POLL_WEIGHT 64
+#define L1_CACHE_BYTES 64
+#define prefetch(p) ((void)(p))
 #define ETH_HLEN 14
 #define ETH_P_IP 0x800
+#define CHECKSUM_UNNECESSARY 1
 #define IPPROTO_UDP 17
 #define PAGE_SIZE 4096
 #define dma_rmb() ((void)0)
@@ -80,11 +87,11 @@ static uint64_t ktime_get_ns(void){return 100;}
 #define rcu_dereference(x) (x)
 struct net_device { bool down; struct {unsigned long rx_errors,rx_dropped,rx_packets,rx_bytes;} stats; };
 struct napi_struct {struct net_device *dev;};
-struct sk_buff {unsigned char *data; unsigned int protocol,priority; struct net_device *dev;};
+struct sk_buff {unsigned char *data; unsigned int protocol,priority,ip_summed; struct net_device *dev;};
 struct rtl9617c_ni_endpoint {
     void (*receive)(struct rtl9617c_ni_endpoint *,struct napi_struct *,struct sk_buff *,unsigned int);
 };
-struct rtl9617c_ni_wifi_endpoint {struct net_device *netdev;void (*receive)(struct rtl9617c_ni_wifi_endpoint *,struct sk_buff *,bool);};
+struct rtl9617c_ni_wifi_endpoint {struct net_device *netdev;void (*receive)(struct rtl9617c_ni_wifi_endpoint *,struct napi_struct *,struct sk_buff *,bool);};
 #define DMA_FROM_DEVICE 2
 struct device;
 static unsigned int synced_cpu[512],synced_device[512];
@@ -99,20 +106,34 @@ static void dma_sync_single_for_device(struct device *dev,dma_addr_t address,uns
     assert(index<512 && synced_cpu[index]);synced_cpu[index]=0;synced_device[index]=1;
 }
 static unsigned int delivered, returned, owned[512], expected_source;
+static unsigned int epp_publications;
+static bool arrival_on_snapshot;
 static unsigned char *registers;
-static u32 readl(const void *address) {u32 value; memcpy(&value,address,4); return value;}
+static u32 readl(const void *address) {
+    u32 value; memcpy(&value,address,4);
+    if (arrival_on_snapshot && ((const unsigned char *)address==registers+0x701c ||
+                                (const unsigned char *)address==registers+0x659c)) {
+        u32 producer=8,status=BIT(7);arrival_on_snapshot=false;
+        memcpy(registers+0x701c,&producer,4);memcpy(registers+0x659c,&status,4);
+    }
+    return value;
+}
 static void writel(u32 value,void *address) {
     unsigned int offset=(unsigned char *)address-registers;
     if (offset==0x636c) {
         unsigned int buffer=((value & 0xffffff80U)-0x10002000U)/2048;
         assert(buffer<512 && !owned[buffer]);
-        assert(synced_device[buffer] && !synced_cpu[buffer]);
+        /* Both explicit sync and documented read-only FROM_DEVICE reuse work.
+         * The separate mprotect regression forbids writes to RX storage. */
+        assert(synced_device[buffer] || synced_cpu[buffer]);
+        synced_cpu[buffer]=0;
         assert((value & 15)==4+buffer/256);
         owned[buffer]=1; returned++;
     }
     if (offset==0x66b0) value &= ~BIT(31);
     memcpy(address,&value,4);
     if (offset>=0x7100 && offset<0x7120) {
+        epp_publications++;
         u32 flags=readl(registers+0x659c) & ~BIT((offset-0x7100)/4);
         memcpy(registers+0x659c,&flags,4);
     }
@@ -124,7 +145,7 @@ static u32 get_unaligned_le32(const void *p) {u32 value; memcpy(&value,p,4); ret
 static u32 get_unaligned_be32(const void *p) {return __builtin_bswap32(get_unaligned_le32(p));}
 static u16 get_unaligned_be16(const void *p) {u16 value; memcpy(&value,p,2); return __builtin_bswap16(value);}
 static struct sk_buff *napi_alloc_skb(struct napi_struct *napi,unsigned int size) {
-    (void)napi; struct sk_buff *skb=malloc(sizeof(*skb)); assert(skb);
+    (void)napi; struct sk_buff *skb=calloc(1,sizeof(*skb)); assert(skb);
     skb->data=calloc(1,size); assert(skb->data); return skb;
 }
 static void *skb_put(struct sk_buff *skb,unsigned int length) {(void)length; return skb->data;}
@@ -156,25 +177,27 @@ static void check(unsigned int packets,int budget,bool blocked,int flow) {
     registers=calloc(1,0x10000);rx.ni=registers;
     rx.memory=calloc(1,RTL_QM_MEMORY_BYTES);rx.memory_dma=0x10000000;rx.ring_memory=rx.memory;
     memset(synced_cpu,0,sizeof(synced_cpu));memset(synced_device,0,sizeof(synced_device));
-    memset(owned,0,sizeof(owned));delivered=returned=0;
+    memset(owned,0,sizeof(owned));delivered=returned=epp_publications=0;
     store(registers+0x6338,blocked?0:1);store(registers+0x633c,blocked?0:1);
     store(registers+0x6368,blocked?0:BIT(31));
-    /* Up to four full 128-descriptor rings, with unique EQ4/EQ5 buffers. */
+    /* Published pointer intervals, with unique EQ4/EQ5 buffers. */
     for (int cos=7;cos>=0 && count<packets;cos--) {
-        unsigned int n=packets-count; if(n>128)n=128;
+        unsigned int n=packets-count; if(n>127)n=127;
         store(registers+0x7000+cos*4,(n*8)%RTL_QM_RING_BYTES);
-        if (n==128) store(registers+0x659c,readl(registers+0x659c)|BIT(cos));
         for (unsigned int j=0;j<n;j++,count++) {
             unsigned int offset=8192+count*2048;
             unsigned int command=(rx.memory_dma+offset)|BIT(4)|BIT(6)|(4+count/256);
             store(rx.memory+cos*1024+j*8,command);
-            store(rx.memory+offset+32,flow>=0?__builtin_bswap32((unsigned int)flow<<18):0);
-            store(rx.memory+offset+36,__builtin_bswap32((60U<<15)|(flow>=0?7<<9:0)));
+            store(rx.memory+offset+RTL_QM_HEADROOM,flow>=0?__builtin_bswap32((unsigned int)flow<<18):0);
+            store(rx.memory+offset+RTL_QM_HEADROOM+4,__builtin_bswap32((60U<<15)|(flow>=0?7<<9:0)));
         }
     }
+    /* A new descriptor is published immediately after the WR snapshot. */
+    if(packets==1) {store(registers+0x701c,0);arrival_on_snapshot=true;}
     int consumed=rtl_qm_rx_poll(&rx,&napi,budget);
-    assert(consumed==(int)(packets<(unsigned int)budget?packets:(unsigned int)budget));
+    assert(consumed==(packets==1?0:(int)(packets<(unsigned int)budget?packets:(unsigned int)budget)));
     assert(delivered==(unsigned int)consumed && dev.stats.rx_errors==0);
+    assert(epp_publications == (HAS_RETIRE ? (unsigned int)consumed : ((unsigned int)consumed + 127) / 128));
 #if HAS_REFILL
     assert(rx.refill.pending+returned==(unsigned int)consumed);
     if (blocked) {assert(!returned);assert(rx.refill.pending==(unsigned int)consumed);}
@@ -186,7 +209,9 @@ static void check(unsigned int packets,int budget,bool blocked,int flow) {
     free(rx.memory);free(registers);
 }
 static bool expected_wifi_forwarded;
-static void wifi_receive(struct rtl9617c_ni_wifi_endpoint *endpoint,struct sk_buff *skb,bool forwarded) {
+static struct napi_struct *expected_wifi_napi;
+static void wifi_receive(struct rtl9617c_ni_wifi_endpoint *endpoint,struct napi_struct *napi,struct sk_buff *skb,bool forwarded) {
+    assert(napi==expected_wifi_napi);
     assert(skb->dev==endpoint->netdev && forwarded==expected_wifi_forwarded);
     for(unsigned int i=0;i<60;i++)assert(skb->data[i]==(unsigned char)(i^0x5a));
     delivered++;dev_kfree_skb_any(skb);
@@ -203,18 +228,85 @@ static void check_wifi(unsigned int epp_id,unsigned int source,unsigned int meta
     unsigned int offset=8192;
     store(rx.memory,(rx.memory_dma+offset)|BIT(4)|BIT(6)|4);
     store(rx.memory+4,(epp_id<<14)|76);
-    store(rx.memory+offset+32,__builtin_bswap32(BIT(31)));
-    store(rx.memory+offset+36,__builtin_bswap32((68U<<15)|(source<<9)));
-    store(rx.memory+offset+44,__builtin_bswap32(metadata));
-    for(unsigned int i=0;i<60;i++)((unsigned char *)rx.memory)[offset+48+i]=i^0x5a;
+    store(rx.memory+offset+RTL_QM_HEADROOM,__builtin_bswap32(BIT(31)));
+    store(rx.memory+offset+RTL_QM_HEADROOM+4,__builtin_bswap32((68U<<15)|(source<<9)));
+    store(rx.memory+offset+RTL_QM_HEADROOM+12,__builtin_bswap32(metadata));
+    for(unsigned int i=0;i<60;i++)((unsigned char *)rx.memory)[offset+RTL_QM_HEADROOM+16+i]=i^0x5a;
     if(attached)rx.wifi[2]=&endpoint;
     expected_wifi_forwarded=!!epp_id;
+    expected_wifi_napi=&napi;
     assert(rtl_qm_rx_poll(&rx,&napi,64)==1);
     assert(delivered==expected && returned==1 && !rx.refill.pending);
     if(!expected)assert(dev.stats.rx_errors+dev.stats.rx_dropped==1);
     free(rx.memory);free(registers);
 }
+static unsigned int checksum_expected;
+static void checksum_receive(struct rtl9617c_ni_wifi_endpoint *ep,struct napi_struct *napi,struct sk_buff *skb,bool forwarded) {
+    assert(napi==expected_wifi_napi);
+    assert(forwarded==expected_wifi_forwarded && skb->dev==ep->netdev && skb->ip_summed==checksum_expected);
+    delivered++;dev_kfree_skb_any(skb);
+}
+static void check_checksum_delivery(bool enabled,bool bad,bool ppp,bool hit) {
+    struct net_device dev={},wifi={};struct napi_struct napi={&dev};struct rtl_qm_rx rx={};
+    struct rtl9617c_ni_wifi_endpoint ep={&wifi,checksum_receive};
+    registers=calloc(1,0x10000);rx.ni=registers;rx.memory=calloc(1,RTL_QM_MEMORY_BYTES);
+    rx.memory_dma=0x10000000;rx.ring_memory=rx.memory;rx.wifi[2]=&ep;
+    memset(synced_cpu,0,sizeof(synced_cpu));memset(synced_device,0,sizeof(synced_device));
+    memset(owned,0,sizeof(owned));delivered=returned=0;
+    store(registers+0x6338,1);store(registers+0x6368,BIT(31));store(registers+0x7000,8);
+    store(registers+0x3218,enabled?BIT(16):0);
+    store(rx.memory,0x10002054|(bad?BIT(5):0));store(rx.memory+4,(2<<14)|76);
+    unsigned char *frame=rx.memory+8192+RTL_QM_HEADROOM+16;
+    frame[12]=8;frame[14]=0x45;frame[17]=46;frame[23]=6;frame[46]=0x50;
+    if(ppp){
+        memmove(frame+22,frame+14,46);
+        frame[12]=0x88;frame[13]=0x64;frame[14]=0x11;frame[15]=0;
+        frame[16]=0x12;frame[17]=0x34;frame[18]=0;frame[19]=48;
+        frame[20]=0;frame[21]=0x21;
+        store(rx.memory+4,(2<<14)|84);
+    }
+    if(!hit){
+        store(rx.memory+4,0);
+        store(rx.memory+8192+RTL_QM_HEADROOM,__builtin_bswap32(BIT(31)));
+        store(rx.memory+8192+RTL_QM_HEADROOM+4,__builtin_bswap32(((ppp?76U:68U)<<15)|(18<<9)));
+        store(rx.memory+8192+RTL_QM_HEADROOM+12,__builtin_bswap32((3<<8)|2));
+    }
+    expected_wifi_forwarded=hit;
+    checksum_expected=enabled&&!bad&&(!ppp||hit)?CHECKSUM_UNNECESSARY:0;
+    expected_wifi_napi=&napi;
+    assert(rtl_qm_rx_poll(&rx,&napi,64)==1 && delivered==1 && returned==1);
+    free(rx.memory);free(registers);
+}
 int main(void) {
+    unsigned char packet[100]={0};packet[12]=8;packet[14]=0x45;
+    packet[17]=86;packet[23]=6;packet[46]=0x50;
+    assert(rtl_rx_checksum_valid(0x50,packet,100));
+    assert(!rtl_rx_checksum_valid(0x70,packet,100));
+    packet[20]=0x20;assert(!rtl_rx_checksum_valid(0x50,packet,100));
+    packet[20]=0;packet[14]=0x46;assert(!rtl_rx_checksum_valid(0x50,packet,100));
+    packet[14]=0x45;packet[46]=0x40;assert(!rtl_rx_checksum_valid(0x50,packet,100));
+    packet[46]=0x50;assert(!rtl_rx_checksum_valid(0x50,packet,53));
+    packet[23]=17;packet[39]=66;packet[40]=1;
+    assert(rtl_rx_checksum_valid(0x50,packet,100));
+    packet[39]=65;assert(!rtl_rx_checksum_valid(0x50,packet,100));
+    packet[39]=66;packet[40]=0;assert(!rtl_rx_checksum_valid(0x50,packet,100));
+    unsigned char ppp[108]={0};
+    packet[40]=1;
+    memcpy(ppp,packet,12);memcpy(ppp+22,packet+14,86);
+    ppp[12]=0x88;ppp[13]=0x64;ppp[14]=0x11;ppp[17]=1;ppp[19]=88;ppp[21]=0x21;
+    assert(rtl_rx_checksum_valid(0x50,ppp,108));
+    assert(!rtl_rx_checksum_valid(0x70,ppp,108));
+    assert(!rtl_rx_checksum_valid(0x50,ppp,107));
+    ppp[19]=87;assert(!rtl_rx_checksum_valid(0x50,ppp,108));ppp[19]=88;
+    ppp[21]=0x57;assert(!rtl_rx_checksum_valid(0x50,ppp,108));ppp[21]=0x21;
+    ppp[15]=1;assert(!rtl_rx_checksum_valid(0x50,ppp,108));ppp[15]=0;
+    ppp[14]=0x12;assert(!rtl_rx_checksum_valid(0x50,ppp,108));ppp[14]=0x11;
+    ppp[48]=0;assert(!rtl_rx_checksum_valid(0x50,ppp,108));ppp[48]=1;
+    ppp[28]=0x20;assert(!rtl_rx_checksum_valid(0x50,ppp,108));
+    for(unsigned p=0;p<2;p++)for(unsigned hit=0;hit<2;hit++){
+        check_checksum_delivery(true,false,p,hit);check_checksum_delivery(true,true,p,hit);check_checksum_delivery(false,false,p,hit);
+    }
+    check(1,64,false,-1);
     check(65,65,false,-1);check(65,256,true,-1);
     check(129,256,false,-1);check(256,256,true,-1);
     check(512,512,true,-1);check(512,1024,false,-1);check(129,64,true,-1);
@@ -228,7 +320,7 @@ int main(void) {
     check_wifi(2,18,0xf02,false,false,false);
     check_wifi(2,18,0xf02,true,true,false);
     check_wifi(61,18,0xf3d,true,false,false);
-    puts("Actual QM RX: full rings/backpressure; Wi-Fi hit/miss direction, payload, source7/18, retired/down/reserved IDs passed");
+    puts("Actual QM RX: published intervals/backpressure; Wi-Fi hit/miss direction, payload, source7/18, retired/down/reserved IDs passed");
 }
 '''
 
@@ -363,13 +455,20 @@ with tempfile.TemporaryDirectory(prefix='native-rx-tests-', dir=root / 'artifact
         else:
             functions = function(qm, 'rtl_qm_try_push' if 'static int rtl_qm_try_push' in qm else 'rtl_qm_push')
             if case == 'qm':
+                if 'static void rtl_qm_rx_retire' in qm:
+                    functions += function(qm, 'rtl_qm_rx_retire')
                 source = common + constants + '\n' + rx_structure + '\n' + functions + function(qm, 'rtl_qm_rx_poll')
+                source += '\n#define HAS_RETIRE ' + str(int('static void rtl_qm_rx_retire' in qm)) + '\n'
                 source += '\n#define HAS_REFILL ' + str(int('struct rtl_qm_refill refill;' in qh)) + '\n'
-                source += '#define HAS_LAN_PORTS ' + str(int('lan[4]' in qh)) + '\n' + rx_test
+                source += '#define HAS_LAN_PORTS ' + str(int('lan[' in qh)) + '\n' + rx_test
             else:
                 visibility = function(xram, 'rtl_native_visible') if 'static umode_t rtl_native_visible' in xram else 'static umode_t rtl_native_visible(struct kobject *kobj,struct attribute *attr,int index) {(void)kobj;(void)index;return attr->mode;}\n'
                 model, main = diagnostics_model.split('int main(void)', 1)
                 source = common + constants + '\n' + rx_structure + '\n' + function(qm, 'rtl_qm_indirect') + function(qm, 'rtl_qm_rx_pool') + model + visibility + function(xram, 'qm_pool_show') + 'int main(void)' + main
+        if 'endpoint->receive(endpoint, napi, skb, wifi_forwarded)' not in qm:
+            source = source.replace('struct napi_struct *,struct sk_buff *,bool', 'struct sk_buff *,bool')
+            source = source.replace('struct napi_struct *napi,struct sk_buff *skb,bool forwarded', 'struct sk_buff *skb,bool forwarded')
+            source = source.replace('assert(napi==expected_wifi_napi);', '')
         path = directory / f'{case}.c'
         binary = directory / case
         path.write_text(source)

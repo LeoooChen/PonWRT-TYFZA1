@@ -71,7 +71,7 @@ for file, name in [('channel.h', 'rtl_ax_channel'), ('board-cal.h', 'rtl_ax_boar
     source += structure(file, name)
 for file, names in [('channel.h', ('rtl_ax_channel_field', 'rtl_ax_channel_primary_index', 'rtl_ax_channel_txsc')),
                     ('c-iqk.h', ('rtl_ax_c_iqk_rxclock',)),
-                    ('dig.h', ('rtl_ax_c_dig_bandwidth',)),
+                    ('dig.h', ('rtl_ax_dig_bandwidth',)),
                     ('tssi-de.h', ('rtl_ax_tssi_cck_group', 'rtl_ax_tssi_ofdm_group', 'rtl_ax_tssi_trim_group',
                                    'rtl_ax_tssi_flash_ofdm', 'rtl_ax_tssi_flash_ofdm_de', 'rtl_ax_tssi_trim_de',
                                    'rtl_ax_c_tssi_bw_diff', 'rtl_ax_c_tssi_slope', 'rtl_ax_c_tssi_de20'))]:
@@ -125,7 +125,7 @@ void iqk_clock(u32 *out){
 }
 u32 packet_detection(unsigned int bandwidth,unsigned int requested){
  struct rtl_ax_dig dig={.pd_requested=requested};regs[0x1481c/4]=0xa55a;
- rtl_ax_c_dig_bandwidth(&io,&dig,bandwidth);return regs[0x1481c/4];
+ rtl_ax_dig_bandwidth(&io,&dig,bandwidth);return regs[0x1481c/4];
 }
 void tssi(unsigned int bandwidth,u32 adc,u16 *out){
  struct rtl_ax_board_cal cal={};struct rtl_ax_trim trim={};struct rtl_ax_tssi_de state={};

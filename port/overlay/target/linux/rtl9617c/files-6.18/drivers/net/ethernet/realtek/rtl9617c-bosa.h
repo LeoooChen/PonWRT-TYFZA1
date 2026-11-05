@@ -4,4 +4,5 @@
 #include <linux/device.h>
 int rtl9617c_bosa_prepare(struct device *device);
 ssize_t rtl9617c_bosa_state(struct device *device, char *buf);
+ssize_t rtl9617c_bosa_diagnostics(struct device *device, char *buf);
 #endif

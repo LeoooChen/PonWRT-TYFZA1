@@ -1,19 +1,24 @@
 --- a/drivers/leds/Kconfig
 +++ b/drivers/leds/Kconfig
-@@ -1,3 +1,8 @@
+@@ -1,3 +1,12 @@
  # SPDX-License-Identifier: GPL-2.0-only
 +
 +config LEDS_TYFZA1
 +	bool "TYFZA1 native LED controller"
 +	depends on ARCH_RTL9617C && LEDS_CLASS && GPIOLIB && OF
 +	select LEDS_TRIGGERS
++
++config LEDS_TRIGGER_TYFZA1_USB
++	tristate "TYFZA1 USB presence and activity LED"
++	depends on ARCH_RTL9617C && USB && LEDS_TRIGGERS
  config LEDS_GPIO_REGISTER
  	bool
 --- a/drivers/leds/Makefile
 +++ b/drivers/leds/Makefile
-@@ -1,4 +1,5 @@
+@@ -1,4 +1,6 @@
  # SPDX-License-Identifier: GPL-2.0
 +obj-$(CONFIG_LEDS_TYFZA1) += leds-tyfza1.o
++obj-$(CONFIG_LEDS_TRIGGER_TYFZA1_USB) += ledtrig-tyfza1-usb.o
  
  # LED Core
  obj-$(CONFIG_NEW_LEDS)			+= led-core.o

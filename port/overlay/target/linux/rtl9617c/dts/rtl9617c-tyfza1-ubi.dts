@@ -8,6 +8,7 @@
 	flash@0 {
 		/delete-property/ read-only;
 		partitions {
+			partition@0 { /delete-property/ read-only; };
 			partition@280000 { /delete-property/ read-only; };
 			partition@2c0000 { /delete-property/ read-only; };
 			partition@340000 { /delete-property/ read-only; };

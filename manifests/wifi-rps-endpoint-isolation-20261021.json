@@ -1,0 +1,169 @@
+{
+  "status": "diagnostic evidence only; throughput goal remains unresolved; no production source/configuration changes in this round",
+  "authority": {
+    "factory_wifi_module": "evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko",
+    "factory_wifi_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+    "factory_fc_module": "evidence/wireless-study-20261009-104746/evidence/stock/modules/fc_mgr.ko",
+    "factory_fc_sha256": "6f46a646c14129505b5d77cd17b10ec8956eea047ba49844609d3e52e78793d4",
+    "actual_instruction_audit": "manifests/wifi-rx-oem-path-audit-20261021.json",
+    "ordering_contract": "Factory forwarding before Linux fallback; native RX_INLINE already bypasses initial RPS. Later NI miss reinjection can enter RPS; diagnostic CPU sink is a separate endpoint."
+  },
+  "downlink_findings": [
+    "Exact reverse FE flow reduces Wi-Fi misses from119665 to123; ACK average Ethernet length confirms small feedback packets.",
+    "Global NI taildrop899 equals downlink data gap54 plus ACK endpoint gap845. It is not a per-direction counter.",
+    "Throughput remains1146.862Mbps; this run provides no evidence of solving the throughput limit.",
+    "Both runs record effective NI IRQ CPU0 before and after. CPU1 utilization falls47.24%->0.24% and CPU0 rises10.46%->58.26%; this is consistent with removing ACK RPS reinjection, but does not alone prove its mechanism.",
+    "AP RPS stays2. RX_INLINE bypasses RPS for mac80211 delivery; later NI miss reinjection uses netif_receive_skb and can still enter RPS.",
+    "The already observed MAC completion delay, queue buildup, exhaustion and loss form a partial chain. Its initiating cause, and any connection to RPS, remain unresolved.",
+    "RPS mask2 on the temporary ACK sink moves work toCPU1: all74534 FE ACK hits reach the sink. Global tail270 now equals downlink data gap270, while throughput remains1098.801Mbps. This isolates endpoint pressure without fixing downlink."
+  ],
+  "uplink_results": [
+    {
+      "label": "up-sink-rps-0",
+      "received_Mbps": 374.01918962003026,
+      "retransmits": 0,
+      "l3te_tail_drop_delta": 0,
+      "PE_RXQ_RDU_delta": 37621,
+      "endpoint_FE_to_receive_gap": 0,
+      "CPU_each_core_percent": [
+        48.68913857677903,
+        0.37453183520599254,
+        1.4981273408239701,
+        16.10486891385768
+      ]
+    },
+    {
+      "label": "up-sink-rps-2",
+      "received_Mbps": 589.567754381983,
+      "retransmits": 0,
+      "l3te_tail_drop_delta": 0,
+      "PE_RXQ_RDU_delta": 11524,
+      "endpoint_FE_to_receive_gap": 0,
+      "CPU_each_core_percent": [
+        39.626168224299064,
+        32.71028037383178,
+        0.18691588785046728,
+        27.289719626168225
+      ]
+    },
+    {
+      "label": "up-sink-rps-0-return",
+      "received_Mbps": 537.5718202782818,
+      "retransmits": 25,
+      "l3te_tail_drop_delta": 0,
+      "PE_RXQ_RDU_delta": 13722,
+      "endpoint_FE_to_receive_gap": 0,
+      "CPU_each_core_percent": [
+        56.0,
+        2.0952380952380953,
+        0.38095238095238093,
+        22.666666666666668
+      ]
+    }
+  ],
+  "causal_limits": [
+    "RPS genuinely changes the temporary endpoint processing CPU, with ACK sink loss845->0 in the two observed runs. No matched-load repetition or proof of every taildrop mechanism.",
+    "No proof that RPS is the initiating cause of production Wi-Fi uplink/downlink shortfall.",
+    "Previous MAC completion stall->queue buildup->buffer pressure->taildrop chain remains a partial explanation, with other independent L2QM omission already committed0eb92b1."
+  ],
+  "evidence_root": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi",
+  "sha256": {
+    "analyze-down-ack-path.py": "8f3907a10dd9a6673af4f81ee776ae4b61bc01fb228b491f532291e019edfa4f",
+    "down-ack-fe-watch.py": "144d9cee02860ff3e101f9c6c02b94c9dc84d19a178ef8401fa2b2a6093312e7",
+    "up-sink-rps-compare.py": "2b15b875c90dc28601b2719fdf43c3d3a6f55775e9410e883d5a82bad6e91e0f",
+    "down-ack-path-comparison.json": "0cd0975906a6439557756c383f66151b9c4e2c6c756b06aff263c52b1a0f0e66",
+    "up-sink-rps-0-analysis.json": "7b1ef2a03172eb3cc5f1f1931d9e1e0126832fddf6d562a4e78ed93168fe7632",
+    "up-sink-rps-0.json": "e092df973716caf25abcbb1033931d411a5a292d3957496fcf4179da0ed93ace",
+    "up-sink-rps-0-before.txt": "e0c85558862dce711c6fd48d7d057c9cedc113ac260fe9596360f597cb513c69",
+    "up-sink-rps-0-after.txt": "b4b7d1f48764171081505bb2eb6c1c08c4f758d6edeeb5e2fd423e5b6538c10b",
+    "up-sink-rps-0-cpu.txt": "ac9cf3c79111a30b8960b02a46d4ecbfd85384d48bcdb42f6d269186005b27e9",
+    "up-sink-rps-0-config.txt": "fab24035a37495397e451d56d991959a3fa4e31f9a8373555afbc56b6e745717",
+    "up-sink-rps-2-analysis.json": "ba66e2383d922c27f3362167058d71b030644a6049640e2fa2b52631160aa3f6",
+    "up-sink-rps-2.json": "829b9748468402fc3fc38c1af002096960b5f2f2be408820711fc6fd131273e8",
+    "up-sink-rps-2-before.txt": "7b1d1364eb0e2f1f751a073a1f95bf3efed1b92fde8eb272844506d6d83a056c",
+    "up-sink-rps-2-after.txt": "3987da08312e776d682537b194c89f5fc530c0c589b46a2b6377b7c8dfcd78e7",
+    "up-sink-rps-2-cpu.txt": "a1577731cf751dd63de3ae807fb47c8d746c9fc6bf61378265537f664d309e9e",
+    "up-sink-rps-2-config.txt": "ec3de5b0e4174f529c6bfe75828787e698d5766d57f44997acdd4097ff681823",
+    "up-sink-rps-0-return-analysis.json": "e361146dc8e0f4f9fd3d66d7056911511593df36ae7c8901839969a8efaf0efa",
+    "up-sink-rps-0-return.json": "3c11f3f30307e254f4a56b25eff53e7ef72a01f9a0a838e5c62ca90c67c112eb",
+    "up-sink-rps-0-return-before.txt": "3aee8c6a89644449ed57251df7fe4dcd46711bb04082aeaf36e0fb36a94b01e2",
+    "up-sink-rps-0-return-after.txt": "287ab9b99559f8f5535a3f5fb693c5e753ab6bea9e38b85722a917baf7b9ffac",
+    "up-sink-rps-0-return-cpu.txt": "80d69c635e078e1275576a3aa0780c0abcaeb9ac85586cc784ec0ac5ab81b8a9",
+    "up-sink-rps-0-return-config.txt": "d332fc99bb9b0bb3e06eca147add3fac59951d111a90ffb857011ad3d5838c26",
+    "up-sink-rps-comparison.json": "92ddb1520bcbf035edbad3bec7051491524ba42cb9b75fd7deaccc09b962651f",
+    "down-ack-fe-rps-watch-before.txt": "492a3bd7cdf070c976b34f12828b9b68975b042d5d80a24b01b8335ff6f1de70",
+    "down-ack-fe-rps-watch-after.txt": "69b1f372a16242711854989f91ec5c73948797baf4fbd66f43453ed94e90997c",
+    "down-ack-fe-rps-watch-cpu.txt": "0c469aaa491b7fb65ef4d7d428b350234f50698b0952ddafd412effe9d56d8c1",
+    "down-ack-fe-rps-watch.json": "edd8f91a2f3a9c56ef00f0ec390b7620fd84722655103f6e1104c28655daa740",
+    "down-ack-fe-rps-watch-sink-rps.txt": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
+  },
+  "factory_RX_bottom_half_audit": {
+    "result": {
+      "authority_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+      "scope": "Actual factory registration/platform/schedule instructions, synthetic pointer layout and explicit tasklet initialization/scheduling boundaries. No live factory runtime or scheduling-latency proof.",
+      "executed_functions": [
+        "phl_register_trx_hdlr_pcie",
+        "phl_register_handler",
+        "rtw_plfm_init_handler_ext",
+        "rtw_init_os_handler",
+        "_schedule_tasklet_handler"
+      ],
+      "cases": [
+        {
+          "driver_config_flag": 0,
+          "handler_identity_input": 2,
+          "final_type": 0,
+          "priority": 2,
+          "events": [
+            {
+              "call": "tasklet_init",
+              "tasklet": "0x6001240",
+              "callback": "0x1193c3c"
+            },
+            {
+              "call": "tasklet_init",
+              "tasklet": "0x60012d8",
+              "callback": "0x1193b00"
+            },
+            {
+              "call": "__tasklet_hi_schedule",
+              "tasklet": "0x60012d8"
+            }
+          ]
+        },
+        {
+          "driver_config_flag": 1,
+          "handler_identity_input": 2,
+          "final_type": 0,
+          "priority": 3,
+          "events": [
+            {
+              "call": "tasklet_init",
+              "tasklet": "0x6001240",
+              "callback": "0x1193c3c"
+            },
+            {
+              "call": "tasklet_init",
+              "tasklet": "0x60012d8",
+              "callback": "0x1193b00"
+            },
+            {
+              "call": "__tasklet_hi_schedule",
+              "tasklet": "0x60012d8"
+            }
+          ]
+        }
+      ],
+      "native_difference": "Current rtl_ax_rx_work is scheduled on system_wq. Difference alone is not proof of throughput cause."
+    },
+    "artifacts": {
+      "artifacts/own-wifi-20261020/factory-loopback-audit/audit-rx-handler.py": "b21b0872e41caff7529a2b5f98e8bbd9778267f1bef5622584151a3a4b372609",
+      "artifacts/own-wifi-20261020/factory-loopback-audit/factory-rx-handler.json": "e2dc3a5113a38fadb2f57cf63ecd75b4012980e4f8286ce0c22def8e13ee64ac"
+    },
+    "next_measurement": "Measure PE-to-ARM publication/service/ack latency against RDU and TCP/NI CPU load. Do not replace system_wq with tasklets solely from this implementation difference."
+  },
+  "cleanup_evidence": {
+    "path": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi/rps-endpoint-final-state.txt",
+    "sha256": "910e811ac7f6e80cc92b1ab518607960f7421a3996af422f46e421e1ea780c91"
+  }
+}

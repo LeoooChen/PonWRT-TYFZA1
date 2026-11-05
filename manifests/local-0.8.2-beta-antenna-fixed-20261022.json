@@ -1,0 +1,160 @@
+{
+  "version": "0.8.2-beta",
+  "date": "2026-10-22",
+  "status": "Requested previous throughput level reproduced after Flash installation and a controlled cold power cycle. TCP upload still has hardware drops and retransmissions; complete loss-free TCP acceptance is not achieved.",
+  "source_commit": "f20d02a6000abaa28781bdf24b3ca59ae098aa5b",
+  "antenna_repair": {
+    "reported_by": "user",
+    "observation": "Two antenna pigtails had come off; the user reconnected them. Prior no-movement information did not establish antenna continuity.",
+    "before_A_B_U8_1": [
+      81,
+      152
+    ],
+    "after_A_B_U8_1": [
+      153,
+      152
+    ],
+    "meaning": "The measured approximately 35 dB imbalance disappeared after physical reconnection. This explains the prior radio-path imbalance; it does not imply all software defects are resolved."
+  },
+  "factory_alignment_retained": {
+    "commit": "f20d02a",
+    "C_RFE54_LNA": 8,
+    "XB_RFE54_LNA": 10,
+    "test": "scripts/test_radio_gpio_contract.py passes against executed factory ARM64 functions"
+  },
+  "artifact_verification": {
+    "version": "0.8.2-beta",
+    "source_commit": "f20d02a6000abaa28781bdf24b3ca59ae098aa5b",
+    "sysupgrade_payloads_match": true,
+    "four_FIT_payload_hashes_and_signatures_valid": true,
+    "packaged_radio_text_matches_verified_LNA8_module": true,
+    "radio_text_sha256": "b42227eb042a937c3ffc0549bd39f8726c9073eae210ac93032fdee7c76689f2",
+    "packaged_module_sha256": "38ae16d879f8c5d1e2203e13dae0b4889d926a698fe082958fd45a51794b7f42",
+    "platform_steering_hook_in_image": true,
+    "kernel_unchanged_from_previous_candidate": true,
+    "images": {
+      "sysupgrade.bin": {
+        "bytes": 12042523,
+        "sha256": "7d6b633f7518798241bc7f3c17974f5a954a79f2c397e42ab25098ebd4b89edd"
+      },
+      "kernel.itb": {
+        "bytes": 3963212,
+        "sha256": "6a344fead61d62b2381eb6a183c5b5dcb1d4e7c9f79ff3b695ff64dd516dc1ab"
+      },
+      "rootfs.squashfs": {
+        "bytes": 8070240,
+        "sha256": "10159eadd83bde24e9d7ee3c08ba8d9162d75140b3c401ba2cb0f4238f08c43d"
+      }
+    }
+  },
+  "flash": {
+    "root": "/dev/ubiblock0_7",
+    "slot": 1,
+    "boot_id": "ce743f53-fb06-4655-aa91-332b70987ba2",
+    "power_off_seconds": 4,
+    "sync_completed_and_acknowledged_before_power_off": true,
+    "native_ROM_and_active_module_sha256": "38ae16d879f8c5d1e2203e13dae0b4889d926a698fe082958fd45a51794b7f42",
+    "RAM_radio_module_used_for_final_tests": false,
+    "board_JSON_valid_without_manual_repair_in_final_cold_boot": true,
+    "configuration_preservation": {
+      "configuration_bytes_preserved": true,
+      "sha256": {
+        "network": "f44277ce65ebd958115c46a7f7f183443b8b45f4fec77418310415863befede3",
+        "wireless": "6dc3604a28b93a6fc8cb204a7b35d733c2a0344814ba7519202305e6eefe10a4"
+      }
+    },
+    "automatic_NI_IRQ_CPU": 2,
+    "automatic_AP_RPS_mask": 0
+  },
+  "test_scope": "Mac en0 5GHz HE160 channel44/center50; existing project simulated PON/PPPoE endpoints use real NI/FE/PE and encrypted Wi-Fi. No optical PON or PPPoE negotiation was measured. One short run per direction after the final cold boot.",
+  "TCP_upload": {
+    "received_Mbps": 1227.7408591979101,
+    "retransmits": 36,
+    "l3te_tail_drop_delta": 36,
+    "rdu_delta": 4,
+    "uplink_sink_FE_packets_delta": 535407,
+    "uplink_sink_received_delta": 535371,
+    "hardware_counter_comparison_valid": true,
+    "hardware_match_proven": true
+  },
+  "TCP_download": {
+    "received_Mbps": 1356.8966602640955,
+    "retransmits": 0,
+    "l3te_tail_drop_delta": 0,
+    "rdu_delta": 0,
+    "hardware_counter_comparison_valid": true,
+    "hardware_match_proven": true
+  },
+  "UDP_upload": {
+    "valid_payload_Mbps_over_sender_window": 1399.999880464491,
+    "receiver_valid_payload_Mbps": 1400.9564350622234,
+    "sent": 400000,
+    "counts": {
+      "FE_packets": 400000,
+      "received": 400000,
+      "valid_unique": 400000,
+      "duplicate": 0,
+      "corrupt": 0,
+      "unexpected": 0,
+      "l3te_tail_drop": 0,
+      "no_buffer": 0,
+      "rxq": 102765,
+      "rdu": 1,
+      "first_valid_ns": 231275012480,
+      "last_valid_ns": 234619005320
+    },
+    "Mac_drops": 0,
+    "delivery_complete": true
+  },
+  "UDP_download": {
+    "valid_unique_payload_Mbps": 1522.6723732211437,
+    "receive": {
+      "binding": "192.168.1.212",
+      "expected": 500000,
+      "received": 500000,
+      "unique": 500000,
+      "missing": 0,
+      "duplicates": 0,
+      "payload_errors": 0,
+      "unexpected_sequences": 0,
+      "socket_drops_seen": null,
+      "UDP_payload_bytes": 732000000,
+      "valid_unique_payload_bytes": 732000000,
+      "receiver_window_seconds": 4.094883,
+      "active_packet_seconds": 3.84587,
+      "missing_ranges": []
+    },
+    "l3te_tail_drop_delta": 0,
+    "RXQ_RDU_delta": 0,
+    "RPQ_RDU_delta": 0
+  },
+  "remaining_defects": {
+    "TCP_upload": "36 hardware tail drops, 36 TCP retransmissions, four RXQ RDU events. FE hit count 535407, diagnostic endpoint receive count 535371. Throughput parity does not resolve this loss.",
+    "UDP_upload": "One RXQ RDU event occurred; all 400000 application packets arrived with valid sequence and payload. Do not describe every hardware counter as zero."
+  },
+  "earlier_power_cycle_incident": {
+    "result": "After the first upgrade and power cycle, /etc/board.json was empty and wireless setup failed.",
+    "procedure_limit": "The pre-power-off UART sync command had not been acknowledged. The causal link to missing sync was not independently proven.",
+    "handling": "Retained failure evidence, regenerated the board data to regain access, reflashed the same image, parsed the newly generated board data and obtained an SSH sync acknowledgement before a new power cycle. Final cold startup required no repair.",
+    "evidence_file": "first-cold-board-failure.txt"
+  },
+  "cleanup": {
+    "test_modules_unloaded": true,
+    "iperf_server_stopped": true,
+    "DUT_table220_rule_removed": true,
+    "Mac_test_host_routes_removed": [
+      "198.18.255.1",
+      "198.19.0.1"
+    ],
+    "external_default_route": "192.168.71.1 en5"
+  },
+  "requested_throughput_parity_passed": true,
+  "complete_loss_free_TCP_acceptance": false,
+  "evidence_directory_on_Mac": "/Users/leo/Documents/Codex项目/TYFZA1/现场记录/20261022-082-antenna-fixed",
+  "result_file_sha256": {
+    "cold-tcp-up": "d75047b77c7c31c5da3c41b40565d55523ac3485b36b120b4d5707e8febaa9b5",
+    "cold-tcp-down": "5269941f37828d066ea5d607664ec7519e2ccbd5d30f3d6154c9e3a7b926c0bc",
+    "cold-udp-up": "947b38a96eb193578f41e7ec14d0dbe19b90b4476b8916783ff5e0de231bc059",
+    "cold-udp-down": "e819cbe0b23e705601b56152a2a790791cf525bd5a6bbd3d46e0aeb44594d506"
+  }
+}

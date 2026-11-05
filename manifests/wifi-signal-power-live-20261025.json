@@ -1,0 +1,653 @@
+{
+  "date": "2026-10-25",
+  "base_main": "f8f05cccbda1d1b6a77e79afd0a81f524f714384",
+  "method": "same unit, stationary Mac en0, original -> fixed -> original -> fixed RAM modules; CN; 2G channel1 HE20 and 5G channel149 HE80; no Flash write",
+  "boot_id": "a316c6d1-55d5-4bf2-94f7-dbae8672f53a",
+  "module_source_differences": [
+    "monitor.h",
+    "power-tables.c",
+    "power-tables.h"
+  ],
+  "same_PE_firmware": true,
+  "module_sha256": {
+    "baseline": "9facff35b08617d8a7aed484c751af387ea974b802b2f4df06886376181d8282",
+    "fixed": "e8ddd28894dc60fff274d49a608875f9eae14570a1358237db817ff8dce01b17"
+  },
+  "cases": [
+    {
+      "label": "A3-2g20",
+      "power_request_dBm": 20,
+      "beacon_scan_RSSI_dBm": [
+        -28,
+        -28,
+        -28,
+        -28,
+        -28
+      ],
+      "scan_reads_may_share_cache": true,
+      "TXINFO_dBm_counts": {
+        "12.0": 120
+      },
+      "UDP_payload_Mbps": 9.098229106116184,
+      "UDP_lost_packets": 0,
+      "TSSI_tracking_both_paths": true,
+      "evidence_sha256": {
+        "A3-2g20-before.txt": "5b7dedffd47ceb1177b5c5fc714f39e18e7468276128025551fe8613e9c6d9ef",
+        "A3-2g20-after.txt": "18a8a572b5bd43c566b936ae3a729c18944a6821f7db780785c0be06394ca0e9",
+        "A3-2g20-scan.txt": "9b1dc13b7631ff88cb2978e53110422602b113cfacca6589e47870f36286c72f",
+        "A3-2g20-rssi.txt": "b52c692ac6340fe52d0396ce2eb311a5a1d872355f56f1bb50d1475e474a797f",
+        "A3-2g20-registers.txt": "f96262d67dcc7019f6151fcd4dc8b60c89ea9d239dc5c340592a7f9eb1deeb96",
+        "A3-2g20-iperf.json": "3d278eb1ab545535909a63d16286e3c357826058730eeb41ae430c08b8d69788"
+      }
+    },
+    {
+      "label": "B1-2g20",
+      "power_request_dBm": 20,
+      "beacon_scan_RSSI_dBm": [
+        -18,
+        -18,
+        -18,
+        -18,
+        -18
+      ],
+      "scan_reads_may_share_cache": true,
+      "TXINFO_dBm_counts": {
+        "19.0": 24,
+        "20.0": 96
+      },
+      "UDP_payload_Mbps": 10.000750529431459,
+      "UDP_lost_packets": 0,
+      "TSSI_tracking_both_paths": true,
+      "evidence_sha256": {
+        "B1-2g20-before.txt": "0339c87cb43f982526076d899e13077e57bd1005b58e6299d7be38f77527cd9c",
+        "B1-2g20-after.txt": "5cab5367ba4739c49ca35d68c1649f9b0e56e7924d86f8b00efa07a1fd5b02c0",
+        "B1-2g20-scan.txt": "ef7ec5b5c435a11c7bdf8b870181c414931627c79d14f8eceab5c212ff89fa78",
+        "B1-2g20-rssi.txt": "32c82fdaeb15e6171bcba3d2f7b468eb12ad2c0a60e38e93e5b04e5f086b3e53",
+        "B1-2g20-registers.txt": "b5714e647f9fa96d21fdeeea976777ce183c67dfcc2b1b6d0df1277ceec64cae",
+        "B1-2g20-iperf.json": "b7267ee53cef1bf5d0d4e8d14bf62f7f9a6882f9f3d1d6522229c6250a35a7a7"
+      }
+    },
+    {
+      "label": "A4-2g20",
+      "power_request_dBm": 20,
+      "beacon_scan_RSSI_dBm": [
+        -28,
+        -28,
+        -28,
+        -28,
+        -28
+      ],
+      "scan_reads_may_share_cache": true,
+      "TXINFO_dBm_counts": {
+        "12.0": 120
+      },
+      "UDP_payload_Mbps": 10.0008191027084,
+      "UDP_lost_packets": 0,
+      "TSSI_tracking_both_paths": true,
+      "evidence_sha256": {
+        "A4-2g20-before.txt": "3a37b4ad6d8927287de87966fc07013e83438fa3be2b76f7513a62eb41148478",
+        "A4-2g20-after.txt": "60c7f4b4bbf565e310a1b0ce5fa3cc0b489c3e44caf69f586b3fc11161837398",
+        "A4-2g20-scan.txt": "145543208f8ea19bb092bf311843aef1c9605595ac0334526ea2098e7d9a4413",
+        "A4-2g20-rssi.txt": "4486ce014c4f30693e014b14d406bd7691a4a7988624fa88304e83b6138ec8b4",
+        "A4-2g20-registers.txt": "0b56439eacd4de1a33f4b04afe5fc538000eddd5145f91d2b668d55885c6c16e",
+        "A4-2g20-iperf.json": "cf9af4bc4a3854c97bc464598941a159a38a201595368168cc25594b946edd1b"
+      }
+    },
+    {
+      "label": "B2-2g20",
+      "power_request_dBm": 20,
+      "beacon_scan_RSSI_dBm": [
+        -19,
+        -19,
+        -19,
+        -19,
+        -19
+      ],
+      "scan_reads_may_share_cache": true,
+      "TXINFO_dBm_counts": {
+        "20.0": 97,
+        "19.0": 23
+      },
+      "UDP_payload_Mbps": 10.000696492311423,
+      "UDP_lost_packets": 0,
+      "TSSI_tracking_both_paths": true,
+      "evidence_sha256": {
+        "B2-2g20-before.txt": "a65787f8d17536f56581eb9588acb9a26ee2ae243d8c68938c8de1cd74389124",
+        "B2-2g20-after.txt": "149dc86848da93294e8542d9634c054b2cdee41c800d8c1fe81f508f4d5bbbf6",
+        "B2-2g20-scan.txt": "ea426ac3b63923965e50603f34b2ba78dbee5dac17c61553778f12137976ae70",
+        "B2-2g20-rssi.txt": "e71dadc80cfb09ab30acb5af64988e5f96b6349b31deabaf715d5150344351f9",
+        "B2-2g20-registers.txt": "b05ec3a2ee297de5132b8f2bc819a67ac7d0908c2dc09d9691c624aa5319f9fe",
+        "B2-2g20-iperf.json": "52c8fec5499dcc8f9145b8b5910c8a88560c1c7ac455f7ac65857cb0e097a238"
+      }
+    },
+    {
+      "label": "A3-5g20",
+      "power_request_dBm": 20,
+      "beacon_scan_RSSI_dBm": [
+        -35,
+        -35,
+        -35,
+        -35,
+        -35
+      ],
+      "scan_reads_may_share_cache": true,
+      "TXINFO_dBm_counts": {
+        "15.5": 97,
+        "16.0": 22,
+        "0.0": 1
+      },
+      "UDP_payload_Mbps": 10.000609744517046,
+      "UDP_lost_packets": 0,
+      "TSSI_tracking_both_paths": true,
+      "evidence_sha256": {
+        "A3-5g20-before.txt": "340092a21696cf5c790b0a44959b2d85a543f7bb61c0019974077d74b6addbe3",
+        "A3-5g20-after.txt": "087fef5d1a97c5d8c7c43ce2e4c1b407dcb423f0c6b5d01993fb07e1266385d4",
+        "A3-5g20-scan.txt": "fcba5ee48c8313896d5071affc376a162ae9ca70a75f3bb75bd5f29f35e2436d",
+        "A3-5g20-rssi.txt": "6ce40cf3bddc5a696dc46d9b4dd1e92fab7bee2d357bab59dfe121f62bb7980b",
+        "A3-5g20-registers.txt": "2365b63e2ac4cbcb0fe96bd8ea81277ec8bc96ba2d0fbaf78b9e7e2c590af569",
+        "A3-5g20-iperf.json": "5ae9958347f496b15f9f61d4fcec19a23d589c061ffeac613b0749d67d49eb24"
+      }
+    },
+    {
+      "label": "B1-5g20",
+      "power_request_dBm": 20,
+      "beacon_scan_RSSI_dBm": [
+        -29,
+        -29,
+        -29,
+        -29,
+        -29
+      ],
+      "scan_reads_may_share_cache": true,
+      "TXINFO_dBm_counts": {
+        "17.0": 95,
+        "20.0": 23,
+        "0.0": 2
+      },
+      "UDP_payload_Mbps": 10.000604746308923,
+      "UDP_lost_packets": 0,
+      "TSSI_tracking_both_paths": true,
+      "evidence_sha256": {
+        "B1-5g20-before.txt": "860e81ebf07d5f7a89915f76bb8878fa9c2d6d44433970f3d86de62f0ff57305",
+        "B1-5g20-after.txt": "fb053ba514c05ca765039bbd44d11f78168c5d2f4d7bf10216e43232f5bcdd74",
+        "B1-5g20-scan.txt": "b52cc8ce9b11ecf4fe33989647326f8c9b994cf6daa57079e99ee481363168c4",
+        "B1-5g20-rssi.txt": "e20d3bef28f2071465391844f7c9502a4c0e4a29d7ef8a4f66f031d8b836c2d2",
+        "B1-5g20-registers.txt": "6931efab48ed2c6fb4730bcc5a4be2586665e8376ac8a4b63e94fc3b59d1883a",
+        "B1-5g20-iperf.json": "ede628a2cd6efda98c0e49fe30698994a96151fc382aa7e5626e9e13cad9a0c5"
+      }
+    },
+    {
+      "label": "A4-5g20",
+      "power_request_dBm": 20,
+      "beacon_scan_RSSI_dBm": [
+        -37,
+        -37,
+        -37,
+        -37,
+        -37
+      ],
+      "scan_reads_may_share_cache": true,
+      "TXINFO_dBm_counts": {
+        "15.5": 99,
+        "16.0": 20,
+        "0.0": 1
+      },
+      "UDP_payload_Mbps": 10.000410685931307,
+      "UDP_lost_packets": 0,
+      "TSSI_tracking_both_paths": true,
+      "evidence_sha256": {
+        "A4-5g20-before.txt": "7e15f60caab36853593061af11b4c8a429a2eb129cd47d94f08555d66c0f14ce",
+        "A4-5g20-after.txt": "8f14b8c6325945f1601eb052867100eb0c32552bcbcd9fcd34d078c88626ab64",
+        "A4-5g20-scan.txt": "63539a221a6f9fc84dafde69a3ff9c1c5e34d03a1c8fb53bb677e668f0e74dc5",
+        "A4-5g20-rssi.txt": "75f53e9bdfd29285cf453790086e7e9e1fb081af888236e67b9a831e92694b92",
+        "A4-5g20-registers.txt": "6b4696054024d7255fb6e32cfc86f92b306a014d88d9261d78f2bcc875ceda0b",
+        "A4-5g20-iperf.json": "f4681ea3bc71a2ae17d27ee439bc7807aeebe629e86aaa6fef232ad10c652bc8"
+      }
+    },
+    {
+      "label": "B2-5g20",
+      "power_request_dBm": 20,
+      "beacon_scan_RSSI_dBm": [
+        -33,
+        -33,
+        -33,
+        -33,
+        -33
+      ],
+      "scan_reads_may_share_cache": true,
+      "TXINFO_dBm_counts": {
+        "17.0": 104,
+        "0.0": 16
+      },
+      "UDP_payload_Mbps": 10.000537485890996,
+      "UDP_lost_packets": 0,
+      "TSSI_tracking_both_paths": true,
+      "evidence_sha256": {
+        "B2-5g20-before.txt": "0ef6c5cfdce873bb2147240a0b6f69e1647339ea328468be1038ab0e0f0e4ead",
+        "B2-5g20-after.txt": "9f63c05fed785ce4e14da9e412eca34d552de3fbfa0a54a90010fb1ec695686c",
+        "B2-5g20-scan.txt": "3d6ffbd62dd4eafb802da34e06a828c523e6ec6c06f926f9f2c5a6b0c0745df3",
+        "B2-5g20-rssi.txt": "8688fb674feed5882ca14665a7de630de67720aa27b9572ae53e0e5929d53ff1",
+        "B2-5g20-registers.txt": "2bfedbc539e5040f22c706b089bce74ad58e182592d199ad6a161b02cc45964f",
+        "B2-5g20-iperf.json": "9ddb88f289d846a6b75609bf9faccb9b92f8aec4f8dbe7522e2b6c640ed88712"
+      }
+    },
+    {
+      "label": "B1-5g30",
+      "power_request_dBm": 30,
+      "beacon_scan_RSSI_dBm": [
+        -22,
+        -22,
+        -22,
+        -22,
+        -22
+      ],
+      "scan_reads_may_share_cache": true,
+      "TXINFO_dBm_counts": {
+        "24.0": 1,
+        "27.0": 1,
+        "23.0": 101,
+        "30.0": 16,
+        "25.0": 1
+      },
+      "UDP_payload_Mbps": 10.000622240059215,
+      "UDP_lost_packets": 0,
+      "TSSI_tracking_both_paths": true,
+      "evidence_sha256": {
+        "B1-5g30-before.txt": "9d58e1dfa59e2e59611f43239c27841955445474c2cc5c9ee718b4756a0665eb",
+        "B1-5g30-after.txt": "1bd8447fc672c3e6cb4aedc2cc52bdce387b1e822bcf50e1faf60d36d772218c",
+        "B1-5g30-scan.txt": "d3e559f57ca34ca71b96ac0dbb3b68cf18701ab1c86c469d52523046ee9aa2a9",
+        "B1-5g30-rssi.txt": "20fa9ed00d77efa693ecef054857b57ce80eb3d03dd5bdd9aa23fc9ebd66c0c8",
+        "B1-5g30-registers.txt": "df2baf6db697fe6370fd4aa6e509de8c93621b6c73d997dbf4fa85d1eabff83e",
+        "B1-5g30-iperf.json": "5e8a653ec7e60e9c09017bdb9d8b032cf28d3f9e184a98ffb3c07934e0a8cd80"
+      }
+    },
+    {
+      "label": "B2-5g30",
+      "power_request_dBm": 30,
+      "beacon_scan_RSSI_dBm": [
+        -22,
+        -22,
+        -22,
+        -22,
+        -22
+      ],
+      "scan_reads_may_share_cache": true,
+      "TXINFO_dBm_counts": {
+        "24.0": 2,
+        "23.0": 104,
+        "0.0": 14
+      },
+      "UDP_payload_Mbps": 10.000609744517046,
+      "UDP_lost_packets": 0,
+      "TSSI_tracking_both_paths": true,
+      "evidence_sha256": {
+        "B2-5g30-before.txt": "e9b7f89220fe62ad11db07cd642dbcbfaa43a2e0118ce8410cf3ce39efb5c48a",
+        "B2-5g30-after.txt": "76a369866732c60cf0ba778a0354d926772a6afd11ffb23ccdd58a559ae060e2",
+        "B2-5g30-scan.txt": "d3e559f57ca34ca71b96ac0dbb3b68cf18701ab1c86c469d52523046ee9aa2a9",
+        "B2-5g30-rssi.txt": "4f06b8dbb9ef0139b3ced8f4249d58e8c7647d15172a0a874d3b96188ce42e2a",
+        "B2-5g30-registers.txt": "4a32fe62331961588de805a131c161b2a70c89c9b36d1217c25ca38a554a35c1",
+        "B2-5g30-iperf.json": "cf6cdbd909f84a91312a9ea297d77a3693a1ca7498ae4556946479072ee7aa5c"
+      }
+    }
+  ],
+  "associated_RSSI_power_reversal": [
+    {
+      "request_dBm": 30,
+      "valid": 200,
+      "invalid_zeros": 0,
+      "median": -25.0,
+      "mean": -25.115,
+      "minimum": -30,
+      "maximum": -24
+    },
+    {
+      "request_dBm": 20,
+      "valid": 200,
+      "invalid_zeros": 0,
+      "median": -33.0,
+      "mean": -32.765,
+      "minimum": -35,
+      "maximum": -31
+    },
+    {
+      "request_dBm": 30,
+      "valid": 200,
+      "invalid_zeros": 0,
+      "median": -24.0,
+      "mean": -23.95,
+      "minimum": -28,
+      "maximum": -20
+    }
+  ],
+  "hardware_power_sweep": [
+    {
+      "requested": 20,
+      "actual": 20,
+      "ofdm6_half_dbm": 40,
+      "TXINFO_quarter_dbm_raw": [
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        72,
+        0
+      ],
+      "loss_percent": 0,
+      "payload_Mbps": 10.0024092889403
+    },
+    {
+      "requested": 25,
+      "actual": 25,
+      "ofdm6_half_dbm": 50,
+      "TXINFO_quarter_dbm_raw": [
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        100,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        72,
+        100,
+        100,
+        72,
+        100,
+        72,
+        100,
+        72,
+        100,
+        100,
+        72,
+        72,
+        100
+      ],
+      "loss_percent": 0,
+      "payload_Mbps": 10.003015646372976
+    },
+    {
+      "requested": 26,
+      "actual": 26,
+      "ofdm6_half_dbm": 52,
+      "TXINFO_quarter_dbm_raw": [
+        76,
+        76,
+        76,
+        76,
+        76,
+        76,
+        76,
+        76,
+        76,
+        76,
+        76,
+        76,
+        76,
+        76,
+        104,
+        76,
+        76,
+        76,
+        76,
+        76,
+        76,
+        76,
+        76,
+        76,
+        76,
+        76,
+        76,
+        76,
+        76,
+        0
+      ],
+      "loss_percent": 0,
+      "payload_Mbps": 9.999683748150343
+    },
+    {
+      "requested": 27,
+      "actual": 27,
+      "ofdm6_half_dbm": 54,
+      "TXINFO_quarter_dbm_raw": [
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        108,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        80,
+        0
+      ],
+      "loss_percent": 0,
+      "payload_Mbps": 10.00210909519816
+    },
+    {
+      "requested": 28,
+      "actual": 28,
+      "ofdm6_half_dbm": 56,
+      "TXINFO_quarter_dbm_raw": [
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        84,
+        0
+      ],
+      "loss_percent": 0,
+      "payload_Mbps": 10.000983115409417
+    },
+    {
+      "requested": 29,
+      "actual": 29,
+      "ofdm6_half_dbm": 58,
+      "TXINFO_quarter_dbm_raw": [
+        88,
+        88,
+        88,
+        88,
+        88,
+        88,
+        88,
+        88,
+        92,
+        92,
+        116,
+        92,
+        88,
+        88,
+        88,
+        88,
+        88,
+        88,
+        88,
+        88,
+        88,
+        88,
+        88,
+        88,
+        88,
+        88,
+        88,
+        88,
+        88,
+        0
+      ],
+      "loss_percent": 0,
+      "payload_Mbps": 10.002889546101578
+    },
+    {
+      "requested": 30,
+      "actual": 30,
+      "ofdm6_half_dbm": 60,
+      "TXINFO_quarter_dbm_raw": [
+        92,
+        92,
+        92,
+        92,
+        92,
+        92,
+        92,
+        92,
+        92,
+        92,
+        92,
+        92,
+        92,
+        92,
+        92,
+        92,
+        92,
+        92,
+        96,
+        92,
+        92,
+        92,
+        92,
+        92,
+        92,
+        92,
+        92,
+        92,
+        92,
+        0
+      ],
+      "loss_percent": 0,
+      "payload_Mbps": 10.002392646223463
+    },
+    {
+      "requested": 20,
+      "actual": 20,
+      "ofdm6_half_dbm": 40,
+      "TXINFO_quarter_dbm_raw": [
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        80,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        68,
+        0
+      ],
+      "loss_percent": 0,
+      "payload_Mbps": 10.002412617490313
+    }
+  ],
+  "power_report_decode": "Original halbb_get_txinfo_txpwr_dbm_C/XB reads BB1804[26:18], signed9; original MP caller divides by4. TXINFO is an internal power report, not an external RF meter.",
+  "power30_hardware_report_observed": true,
+  "UCI_30_and_netifd_applied": true,
+  "CN_2G_request30_effective20": true,
+  "regulatory_bypass": false,
+  "absolute_antenna_output_measured": false,
+  "10m_range_test_performed": false,
+  "excluded": "A1/A2 associated RSSI included invalid zero values; early baseline-2g20 file had the wrong channel; rapid sweep scan RSSI was cached. None is used as RF improvement evidence.",
+  "raw_evidence_directory_on_Mac": "\u73b0\u573a\u8bb0\u5f55/20261025-wifi-signal",
+  "control_and_reversal_evidence_sha256": {
+    "power-response-result.json": "111aad992ee774444cb6c78ed3e8fa181b154de73c9c1a645d93c44f561a78fe",
+    "sweep-result.json": "0c978f16ed64d61831d286e2d70ee5ef45647a9797eefae7cdbc47734ea5136d",
+    "uci-30-result.txt": "622c5a6239e79f15e71fa32d3f20211fbffc8049ed0e32a9e4c08d15f5544ce7",
+    "cn-2g30-clamp.txt": "3e55db002ea8a9b7d13ee40ed8420b75a3a60bb20700ef5785ef3caca9f3149e",
+    "live-control-capabilities.txt": "fd70e04d85122510f5a0f3915e68118f1271617146e7f54459a0e3e8a0a76adc",
+    "final-device-state.txt": "f41204332e600fb3c916ebba0f1854faf5f262d111dd70314c5a60735b8c10fa"
+  }
+}

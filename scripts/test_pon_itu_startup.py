@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
-"""Exercise ITU startup without EPON identity in an isolated OpenWrt root."""
+"""Exercise PON startup and factory MAC selection in an isolated OpenWrt root."""
 import argparse
 import os
 from pathlib import Path
@@ -15,9 +15,11 @@ project = Path(__file__).resolve().parents[1]
 importer = project / 'port/packages/tyfza1-pon-control/files/factory.uc'
 service = project / 'port/overlay/target/linux/rtl9617c/base-files/etc/init.d/pon'
 shutil.copyfile(importer, runtime / 'factory.uc')
+shutil.copyfile(project / 'port/overlay/target/linux/rtl9617c/base-files/etc/uci-defaults/87-tyfza1-pon-mode',
+                runtime / 'pon-mode.sh')
 (runtime / 'pon-service.sh').write_text(service.read_text().replace(
     '/sys/bus/platform/devices/4f5500000.pon', '/device'))
-for directory in ('input', 'output', 'etc/config', 'var/run/tyfza1-factory', 'dev', 'tmp'):
+for directory in ('input', 'output', 'etc/config', 'var/run/tyfza1-factory', 'dev', 'tmp', 'device'):
     (runtime / directory).mkdir(parents=True, exist_ok=True)
 (runtime / 'dev/null').touch()
 (runtime / 'bin/cat').unlink(missing_ok=True)
@@ -33,6 +35,9 @@ def run(*command):
 def import_itu(case, epon):
     source = runtime / 'input'
     (source / 'config_hs.xml').write_text('<Config>'
+        '<Value Name="PON_MODE" Value="1"/><Value Name="PON_SPEED" Value="1"/>'
+        '<Value Name="PON_SUB_MODE" Value="0"/>'
+        '<Value Name="ELAN_MAC_ADDR" Value="001122334455"/>'
         '<Value Name="GPON_SN" Value="TEST12345678"/>'
         '<Value Name="GPON_ONU_MODEL" Value="TYFZA1"/></Config>\n')
     (source / 'config.xml').write_text('<Config>' + epon +
@@ -41,12 +46,17 @@ def import_itu(case, epon):
     destination = runtime / 'output' / case
     shutil.rmtree(destination, ignore_errors=True)
     result = run('/usr/bin/ucode', '/factory.uc', '/input', '/output/' + case)
-    # The EPON import error remains visible; ITU identity is still usable.
-    assert result.returncode == 1 and 'Factory EPON identity:' in result.stderr, result
+    # Incomplete radio fixtures fail independently; invalid EPON data is reported.
+    assert result.returncode == 1, result
+    assert ('Factory EPON identity:' in result.stderr) == bool(epon), result.stderr
     identity = destination / 'var/run/tyfza1-factory/pon_factory'
     text = identity.read_text()
     assert "serial_number 'TEST12345678'" in text and 'option onu_mac' not in text
+    assert "mode 'xgpon'" in text
     shutil.copyfile(identity, runtime / 'var/run/tyfza1-factory/pon_factory')
+    lan = runtime / 'tmp/tyfza1-factory/lan_mac'
+    lan.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(destination / 'tmp/tyfza1-factory/lan_mac', lan)
 
 
 launcher = r'''
@@ -79,13 +89,20 @@ def start(mode='xgpon', custom=''):
     shutil.rmtree(device)
     device.mkdir()
     for attribute in ('bosa', 'serdes', 'mac', 'puc', 'pdc', 'gpon_identity',
-                      'xgpon_identity', 'activation', 'fe'):
+                      'xgpon_identity', 'activation', 'fe', 'onu_mac',
+                      'llid_count', 'traffic', 'mpcp'):
         (device / attribute).touch()
-    # Any attempted access to the unrelated EPON MAC endpoint must fail.
-    if not custom:
-        (device / 'onu_mac').mkdir()
-    (runtime / 'etc/config/pon').write_text("config pon 'pon'\n"
-        f"\toption enabled '1'\n\toption mode '{mode}'\n" + custom)
+    disable_ipv6 = runtime / 'proc/sys/net/ipv6/conf/pon-oam0/disable_ipv6'
+    disable_ipv6.parent.mkdir(parents=True, exist_ok=True)
+    disable_ipv6.touch()
+    initial = (project / 'port/overlay/target/linux/rtl9617c/base-files/etc/config/pon').read_text()
+    if mode is not None:
+        initial += f"\toption mode '{mode}'\n"
+    (runtime / 'etc/config/pon').write_text(initial + custom)
+    result = run('/bin/sh', '/pon-mode.sh')
+    assert result.returncode == 0, result
+    expected = mode or 'xgpon'
+    assert run('/sbin/uci', 'get', 'pon.pon.mode').stdout.strip() == expected
     (runtime / 'tmp/pon-log').write_text('')
     return run('/bin/sh', '-c', launcher)
 
@@ -96,20 +113,27 @@ for case, epon in (
                       '<Value Name="macAddr" Value="000000000000"/></chain>'),
 ):
     import_itu(case, epon)
-    for mode in ('gpon', 'xgpon', 'xgspon'):
+    result = start(None)
+    assert result.returncode == 0 and (runtime / 'device/serdes').read_text() == 'xgpon\n', result
+    for mode in ('gpon', 'xgpon', 'xgspon', 'epon', 'epon-d10g', 'epon-bi10g'):
         result = start(mode)
         assert result.returncode == 0, (case, mode, result.stderr)
-        attribute, length = ('gpon_identity', 10) if mode == 'gpon' else ('xgpon_identity', 36)
-        identity = (runtime / 'device' / attribute).read_bytes()
-        assert identity == b'TEST\x12\x34\x56\x78' + b'test-pass'.ljust(length, b'\0')
-        assert (runtime / 'device/activation').read_text() == '1\n'
-    print(case + ': original ITU identity reaches GPON/XG-PON/XGS-PON activation')
+        assert (runtime / 'device/onu_mac').read_text() == '00:11:22:33:44:55\n', (case, mode)
+        if mode in ('gpon', 'xgpon', 'xgspon'):
+            attribute, length = ('gpon_identity', 10) if mode == 'gpon' else ('xgpon_identity', 36)
+            identity = (runtime / 'device' / attribute).read_bytes()
+            assert identity == b'TEST\x12\x34\x56\x78' + b'test-pass'.ljust(length, b'\0')
+            assert (runtime / 'device/activation').read_text() == '1\n'
+        else:
+            assert (runtime / 'device/mpcp').read_text() == '1\n'
+    print(case + ': all six modes use the factory base MAC and start their protocol')
 
-# A configured Ethernet MAC remains applied on ITU links.
-result = start(custom="\toption onu_mac '02:11:22:33:44:55'\n")
-assert result.returncode == 0, result.stderr
-assert (runtime / 'device/onu_mac').read_text() == '02:11:22:33:44:55\n'
-print('Explicit ITU Ethernet MAC is preserved')
+# An explicit override wins on both protocol families.
+for mode in ('gpon', 'xgpon', 'xgspon', 'epon', 'epon-d10g', 'epon-bi10g'):
+    result = start(mode, custom="\toption onu_mac '02:11:22:33:44:55'\n")
+    assert result.returncode == 0, (mode, result.stderr)
+    assert (runtime / 'device/onu_mac').read_text() == '02:11:22:33:44:55\n'
+print('Explicit ONU MAC wins for all six modes')
 
 # Invalid SN must stop before MAC programming, retaining its actual error.
 result = start(custom="\toption serial_number 'invalid'\n")
@@ -120,11 +144,15 @@ assert 'PON serial_number' in (runtime / 'tmp/pon-log').read_text()
 assert (runtime / 'device/mac').read_bytes() == b''
 print('Invalid identity stops startup; failing step and original error remain visible')
 
-result = start('epon-d10g')
-assert result.returncode != 0
-assert 'stage=onu_mac error=' in (runtime / 'var/run/pon-service').read_text()
-assert (runtime / 'device/mac').read_bytes() == b''
-print('EPON still requires its LLID MAC before MAC preparation')
+# Missing both factory MAC sources must stop with a useful error for every mode.
+(runtime / 'tmp/tyfza1-factory/lan_mac').unlink()
+for mode in ('gpon', 'xgpon', 'xgspon', 'epon', 'epon-d10g', 'epon-bi10g'):
+    result = start(mode)
+    assert result.returncode != 0, mode
+    assert 'stage=onu_mac error=' in (runtime / 'var/run/pon-service').read_text()
+    assert 'ONU MAC' in (runtime / 'var/run/pon-service-error').read_text()
+    assert (runtime / 'device/mac').read_bytes() == b''
+print('Missing MAC stops all modes with a diagnostic')
 
 # The inverse case: missing ITU identity must not discard valid EPON credentials.
 (runtime / 'input/config_hs.xml').write_text('<Config>'
@@ -140,6 +168,15 @@ text = identity.read_text()
 assert "onu_mac '02:11:22:33:44:55'" in text and "loid 'test-loid'" in text
 assert 'option serial_number' not in text
 shutil.copyfile(identity, runtime / 'var/run/tyfza1-factory/pon_factory')
+result = start('epon-d10g')
+assert result.returncode == 0, result.stderr
+assert (runtime / 'device/onu_mac').read_text() == '02:11:22:33:44:55\n'
+assert (runtime / 'device/mpcp').read_text() == '1\n'
+print('Dedicated EPON identity remains usable without a base MAC')
+(runtime / 'tmp/tyfza1-factory/lan_mac').write_text('00:11:22:33:44:55\n')
+result = start('epon-d10g')
+assert result.returncode == 0 and (runtime / 'device/onu_mac').read_text() == '02:11:22:33:44:55\n'
+print('Dedicated EPON identity takes precedence over the factory base MAC')
 (runtime / 'etc/config/pon').write_text("config pon 'pon'\n\toption mode 'epon-d10g'\n")
 result = run('/usr/sbin/pon-oamd', '--check-config')
 assert result.returncode == 0 and '"loid_configured":true' in result.stdout, result

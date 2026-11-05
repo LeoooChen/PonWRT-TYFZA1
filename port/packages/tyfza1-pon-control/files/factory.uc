@@ -102,6 +102,10 @@ function import_radio(radio) {
 let failed = false;
 
 function import_identity() {
+if (cs == null || cs == '') {
+	warn('Factory PON configuration: Missing or empty config.xml\n');
+	failed = true;
+}
 const identity = {
 	loid: optional_field(cs, 'LOID'),
 	loid_password: optional_field(cs, 'LOID_PASSWD'),
@@ -112,6 +116,28 @@ const identity = {
 	software_version: optional_field(cs, 'OMCI_SW_VER1')
 };
 try {
+	// Original modutils.sh maps MIB family/speed to the six supported protocols.
+	const family = field(hs, 'PON_MODE');
+	const speed = field(hs, 'PON_SPEED');
+	if (family == '1' && field(hs, 'PON_SUB_MODE') != '0')
+		die('Unsupported factory ITU sub-mode');
+	const modes = {
+		'1:0': 'gpon', '1:1': 'xgpon', '1:2': 'xgspon',
+		'2:0': 'epon', '2:1': 'epon-d10g', '2:2': 'epon-bi10g'
+	};
+	const mode = modes[family + ':' + speed];
+	// Active Ethernet is valid OEM data, but has no supported PON protocol.
+	if (family == '0')
+		warn('Factory Active Ethernet is not supported; leaving PON mode unset\n');
+	else {
+		if (mode == null) die('Unsupported factory PON mode/speed: ' + family + '/' + speed);
+		identity.mode = mode;
+	}
+} catch (e) {
+	warn('Factory PON mode: ' + e.message + '\n');
+	failed = true;
+}
+try {
 	identity.serial_number = field(hs, 'GPON_SN');
 } catch (e) {
 	warn('Factory ITU identity: ' + e.message + '\n');
@@ -119,15 +145,17 @@ try {
 }
 try {
 	const start = index(cs, '<chain chainName="EPON_LLID_TBL">');
-	if (start < 0) die('Missing factory EPON LLID identity');
-	const remainder = substr(cs, start);
-	const llid = substr(remainder, 0, index(remainder, '</chain>'));
-	const epon = {
-		onu_mac: mac(field(llid, 'macAddr')),
-		vendor_id: field(hs, 'PON_VENDOR_ID'),
-		oam_model: field(hs, 'EPON_ONU_MODEL')
-	};
-	for (let key, value in epon) identity[key] = value;
+	const remainder = start < 0 ? '' : substr(cs, start);
+	const llid = start < 0 ? '' : substr(remainder, 0, index(remainder, '</chain>'));
+	// ITU factory configurations can have an empty EPON LLID table.
+	if (substr(identity.mode || '', 0, 4) == 'epon' || optional_field(llid, 'macAddr') != '') {
+		const epon = {
+			onu_mac: mac(field(llid, 'macAddr')),
+			vendor_id: field(hs, 'PON_VENDOR_ID'),
+			oam_model: field(hs, 'EPON_ONU_MODEL')
+		};
+		for (let key, value in epon) identity[key] = value;
+	}
 } catch (e) {
 	warn('Factory EPON identity: ' + e.message + '\n');
 	failed = true;

@@ -1,0 +1,159 @@
+{
+  "date": "2026-10-23",
+  "source_commit": "faa6f3850a3827582f54b1bebdc96295b3a40643",
+  "image_directory": "artifacts/local-0.8.2-beta-peer-batch-20261023",
+  "verification": {
+    "source_commit": "faa6f3850a3827582f54b1bebdc96295b3a40643",
+    "sysupgrade_SHA256": "2d0dfc4ff64a1bee75f675acd7ea246b80fc65b9337d44a70605b02f72f1cbc8",
+    "kernel_SHA256": "d4b5eaf3710462c33c8bcc32902721e31cb5ae625e23c83d697c4c2b9dd66000",
+    "rootfs_SHA256": "214a797a6bf605be292045cbaa03a15c609345a8ab5efda8699a29f9a384680e",
+    "packaged_radio_SHA256": "73f77e44202108dcad1f8bd117069a4481512b254c911d18299846ff8b168c3d",
+    "embedded_PE_SHA256": "de4c28162271e0bc084d38464beb0ab3b13c1d48fdd7ff474719585eeba1dedf",
+    "embedded_PE_exact": true,
+    "built_NI_source_exact": true,
+    "FIT_profiles": {
+      "conf-0": {
+        "kernel": "5748bb9721638756b9df38096d480ae672fea1f86a4aee3259ced6dc47b3f0cf",
+        "fdt": "b320cedb5cc72ccf46349de5cf7da3453549afbb07b3c434bafb1f96775b6f94",
+        "script": "ac9ebd6848f0bb05b1f3aab05b4f45b1f308197266738e22d9b05e8084ee3ce2"
+      },
+      "conf-1": {
+        "kernel": "5748bb9721638756b9df38096d480ae672fea1f86a4aee3259ced6dc47b3f0cf",
+        "fdt": "1895357c670ae28c5db41c3feedf0026dd44e0b7de128437d228cd84c5bf013d",
+        "script": "ac9ebd6848f0bb05b1f3aab05b4f45b1f308197266738e22d9b05e8084ee3ce2"
+      }
+    },
+    "configuration_and_payload_signatures_verified": true,
+    "bad_configuration_signature_rejected": true,
+    "sysupgrade_payloads_exact": true,
+    "rootfs_zero_alignment_bytes": 820
+  },
+  "device_flash_and_rom_radio_match": true,
+  "relay_cold_cycle_after_completed_upgrade_reboot": true,
+  "cold_boot_id": "e8332f25-3219-432f-b327-620225aa0a8a",
+  "Mac_MACID": 1,
+  "scope": "Formal Flash modules, no RAM radio replacement or sampler. Mac5GHz160MHz and simulated PON endpoints; no optical PON traffic. External default remains192.168.71.1/en5.",
+  "cold_TCP_down10s": {
+    "scope": "Genuine Linux TCP sender -> NI source7 PPPoE SID4660 -> ASIC POP -> NI encrypted Wi-Fi -> Mac iperf3 TCP application. ACKs terminate in DUT Linux; no optics or PPPoE negotiation.",
+    "parallel_streams": 1,
+    "error": null,
+    "client_exit": 0,
+    "received_Mbps": 1012.838454835109,
+    "retransmits": 10,
+    "CPU_total_percent_of_4_cores": 19.657919400187442,
+    "CPU_server_raw_percent_of_4_cores": 15.299906279287722,
+    "CPU_remaining_percent_of_4_cores": 4.358013120899719,
+    "CPU_note": "Same raw100-Hz basis; remaining includes simulated ingress and TCP ACK/softirq work, not pure Wi-Fi forwarding CPU.",
+    "CPU_each_core_percent": [
+      6.373008434864105,
+      17.900656044985944,
+      42.549203373945645,
+      11.808809746954077
+    ],
+    "data_packets_delta": 882487,
+    "data_bytes_delta": 1328348558,
+    "control_packets_delta": 256,
+    "stops_delta": 0,
+    "wakes_delta": 0,
+    "doorbells_delta": 30934,
+    "data_prepare_ns_delta": 1677886600,
+    "payload_copy_ns_delta": 680251640,
+    "PE_NI_sent_delta": 882386,
+    "l3te_tail_drop_delta": 101,
+    "no_buffer_delta": 0,
+    "rxq_delta": 36373,
+    "rdu_delta": 0,
+    "FE_packets_delta": 882487,
+    "hardware_match_proven": true,
+    "actual_client_ports": [
+      55000
+    ],
+    "offload_covers_all_streams": true,
+    "source_stream_packets_delta": [
+      882487,
+      0,
+      0,
+      0
+    ],
+    "hardware_epoch_before_after": [
+      [
+        "e8332f25-3219-432f-b327-620225aa0a8a",
+        3
+      ],
+      [
+        "e8332f25-3219-432f-b327-620225aa0a8a",
+        3
+      ]
+    ],
+    "hardware_epoch_continuous": true,
+    "decreasing_counters": [],
+    "hardware_counter_comparison_valid": true
+  },
+  "cold_TCP_up20s": {
+    "status": "Client timed out25s; not a valid completed throughput result.",
+    "before_snapshot": "peer-batch-cold-up20-before.txt",
+    "after_failure": "peer-batch-cold-halt-queues.txt"
+  },
+  "cold_firmware_halt": {
+    "first_boottime_seconds": 153.150556,
+    "halt": "0x1000",
+    "DMAC_error": "0x100",
+    "host_dispatcher": "0x20",
+    "WDE_error": 0,
+    "PLE_error": 0,
+    "TX0_read_write_at_first_log": "0x00480048",
+    "PE_Cause": 0,
+    "PE_EPC": 0,
+    "interpretation": "Same register signature was captured before this peer-lookup change. The precise triggering ownership/descriptor/payload cause remains unproved; do not label this fixed or attribute the halt to the lookup change without a controlled comparison.",
+    "test_order": "TCP_down10s completed, followed by TCP_up20s which timed out at25s. Do not assume the first halt occurred in the completed download merely because it preceded this upload."
+  },
+  "snapshot": {
+    "directory_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold/peer-batch-cold-fatal-snapshot",
+    "method": "Reused read-only tx_observer after verifying exact TX/RX struct definitions and AP.tx DWARF offset0x36a8. Loaded after failure only; removed after collection. Binary blobs copied through SSH cat.",
+    "resident_WP_pages": 384,
+    "inconsistent_declared_vs_gather_lengths_or_last_flags": 0,
+    "limit": "Post-halt resident state does not prove the first triggering WP or validity of fetched payload data.",
+    "SHA256": {
+      "memory": "d71db5fc53a10b847bc5073274db3705b80aea5d8a3585f139e7e1a1d0af9d31",
+      "wp-length-audit.json": "9363c21cbd8139ca2fde3baab8532e154673b8982e1db206eb95c1aaf56d7e08",
+      "dmesg.txt": "2122dac179e7d5ddc0b0549e1606e171eb79a976f114bcea0ccbd5cb26b2eb7b",
+      "registers": "4b6278cb5d666cc71a47819f9efdf2e977f932b901b433349c9524a75e051f91",
+      "headers": "c2702dc9280b4ce521272c69d4d5945069738cbcb3844bb20a184ebc41766f13",
+      "state.txt": "010304be75b9ba269c518c855023c0c640e2176440b8f1b360b9093271d9399e",
+      "ring": "a822b92ddf2f121dd0c70fc881110f19ff94dbb8886e86f682d4022787cf8fca",
+      "rpq": "2b64ebeae6cd7101389b47812b6d598b4338f8ec6abe1742b40dd43be82328d5",
+      "pages": "1ff5b943a013cea98ee22d5f9b7e7953f414209279fd4ac7045f78c7324b408c",
+      "forward": "fc1095a5f2dffb2bbf5225cd326dbe51f0e1ee5d0c8b4115862767024a222ec7"
+    }
+  },
+  "recovery": {
+    "boot_id": "ded1cff4-4ff1-4a5b-a4a9-d2ac70341eeb",
+    "same_formal_flash_radio": true,
+    "both_bands_halt": 0,
+    "UDP_up_target1500": {
+      "receiver_Mbps": 1486.9526586201066,
+      "sent": 400000,
+      "valid_unique": 400000,
+      "Mac_drops": 0,
+      "L3_drops": 0,
+      "duplicate": 0,
+      "corrupt": 0,
+      "complete": true
+    },
+    "UDP_down_wire_target1700": {
+      "receiver_Mbps": 1598.217070956089,
+      "sent": 500000,
+      "valid_unique": 500000,
+      "missing": 0,
+      "duplicate": 0,
+      "corrupt": 0,
+      "L3_drops": 0,
+      "CPU_excluding_generator_percent_of_four_cores": 0.5468215994531784
+    },
+    "test_source_limit": "These are integrity runs below the observed loss-producing input, not a maximum-capacity or TCP acceptance claim.",
+    "clean_final_state": "No PON test modules, observer, server or policy220 rule. Mac host route198.18.255.1 removed. printk7/4/1/7; external default192.168.71.1/en5. Flash radio retained.",
+    "final_evidence_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold/peer-batch-final-state.txt"
+  },
+  "overall_acceptance_passed": false,
+  "remaining_focus": "PE/NIC ownership and the wireless host-dispatcher halt in real bidirectional traffic. Reduced peer lookups alone do not resolve this; no speculative RF, IRQ, budget, buffer or threshold changes were made."
+}

@@ -86,10 +86,9 @@ static unsigned int wifi_ingress(void *private, struct sk_buff *skb,
 }
 
 static void wifi_receive(struct rtl9617c_ni_wifi_endpoint *endpoint,
-			 struct sk_buff *skb, bool forwarded)
+			 struct napi_struct *napi, struct sk_buff *skb, bool forwarded)
 {
 	skb_reset_mac_header(skb);
-	skb->ip_summed = CHECKSUM_NONE;
 	if (forwarded) {
 		int depth = ETH_HLEN;
 		skb->protocol = eth_hdr(skb)->h_proto;
@@ -99,7 +98,9 @@ static void wifi_receive(struct rtl9617c_ni_wifi_endpoint *endpoint,
 	} else {
 		skb->protocol = eth_type_trans(skb, endpoint->netdev);
 		skb->rtl9617c_wifi_miss = 1;
-		netif_receive_skb(skb);
+		/* NI already owns a NAPI poll. Keep its batching on FE misses too;
+		 * the original VIF and provenance survive GRO and ingress policy. */
+		napi_gro_receive(napi, skb);
 	}
 }
 

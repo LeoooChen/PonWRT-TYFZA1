@@ -181,7 +181,7 @@ static ssize_t configure_show(struct device *dev, struct device_attribute *attri
 
 static DEVICE_ATTR_RO(configure);
 
-static ssize_t diagnostics_show(struct device *dev, struct device_attribute *attribute, char *buf)
+ssize_t rtl9617c_bosa_diagnostics(struct device *dev, char *buf)
 {
 	struct rtl_bosa *bosa = dev_get_drvdata(dev);
 	u8 data[14];
@@ -201,6 +201,12 @@ static ssize_t diagnostics_show(struct device *dev, struct device_attribute *att
 unlock:
 	mutex_unlock(&bosa->lock);
 	return ret;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_bosa_diagnostics);
+
+static ssize_t diagnostics_show(struct device *dev, struct device_attribute *attribute, char *buf)
+{
+	return rtl9617c_bosa_diagnostics(dev, buf);
 }
 static DEVICE_ATTR_RO(diagnostics);
 

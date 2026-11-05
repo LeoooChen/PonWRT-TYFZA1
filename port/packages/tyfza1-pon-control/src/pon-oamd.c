@@ -26,6 +26,10 @@
 #include "pon-backend.h"
 #include "pon-config.h"
 
+#ifndef PON_FIRMWARE_VERSION
+#error PON_FIRMWARE_VERSION must identify the built firmware
+#endif
+
 static volatile sig_atomic_t running = 1;
 
 static void stop(int signal_number)
@@ -59,9 +63,18 @@ static int identity_load(const char *directory, struct pon_oam_identity *identit
 {
 	struct pon_config config = {};
 	int ret = pon_config_load(&config, directory);
+	unsigned int major, minor, patch;
 
 	if (ret)
 		goto done;
+	if (sscanf(PON_FIRMWARE_VERSION, "%u.%u.%u", &major, &minor, &patch) != 3 ||
+	    major > 255 || minor > 255 || patch > 255) {
+		ret = -EINVAL;
+		goto done;
+	}
+	identity->firmware[0] = major;
+	identity->firmware[1] = minor;
+	identity->firmware[2] = patch;
 #define COPY_OPTION(key, member) do { ret = option_copy(&config, key, identity->member, sizeof(identity->member)); if (ret) goto done; } while (0)
 	COPY_OPTION("loid", loid);
 	COPY_OPTION("loid_password", password);
@@ -77,11 +90,11 @@ done:
 	return ret;
 }
 
-static int registered(const char *path, unsigned int llid, bool *online)
+static int registered(const char *path, unsigned int llid, bool *online, uint64_t *epoch, bool *holdover)
 {
-	char data[1024], *token, *save = NULL;
+	char data[2048], *token, *save = NULL;
 	unsigned int bitmap = 0;
-	bool enabled = false, have_bitmap = false;
+	bool enabled = false, have_bitmap = false, have_epoch = false;
 	FILE *stream = fopen(path, "r");
 
 	if (!stream)
@@ -101,9 +114,29 @@ static int registered(const char *path, unsigned int llid, bool *online)
 			have_bitmap = !*end;
 		} else if (!strcmp(token, "enabled=1")) {
 			enabled = true;
+		} else if (!strncmp(token, "holdover=", 9)) {
+			*holdover = !!(strtoul(token + 9, NULL, 16) & (1U << llid));
+		} else if (!strncmp(token, "epochs=", 7)) {
+			char *entry = token + 7, *end;
+			unsigned int index;
+
+			for (index = 0; index <= llid; index++) {
+				uint64_t value = strtoull(entry, &end, 16);
+
+				if (entry == end || (*end && *end != ','))
+					break;
+				if (index == llid) {
+					*epoch = value;
+					have_epoch = true;
+					break;
+				}
+				if (*end != ',')
+					break;
+				entry = end + 1;
+			}
 		}
 	}
-	if (!have_bitmap)
+	if (!have_bitmap || !have_epoch)
 		return -EPROTO;
 	*online = enabled && (bitmap & (1U << llid));
 	return 0;
@@ -158,7 +191,7 @@ static void read_starttime(char output[32])
 static int publish_status(const char *path, const struct pon_oam_session *session,
 			 unsigned int llid, int link_error, bool online, unsigned int send_errors,
 			 unsigned int receive_errors, bool loid_configured, uint64_t auth_result_ms,
-			 const char *starttime)
+			 const char *starttime, int management_error)
 {
 	static const char *auth[] = {"waiting", "challenge", "accepted", "rejected"};
 	char temporary[544];
@@ -175,13 +208,13 @@ static int publish_status(const char *path, const struct pon_oam_session *sessio
 		"\"extension_selected\":%s,\"loid_configured\":%s,\"auth_state\":\"%s\","
 		"\"auth_failure\":%u,\"auth_challenges\":%u,\"auth_results\":%u,\"auth_successes\":%u,"
 		"\"auth_failures\":%u,\"last_auth_result_ms\":%llu,\"rx_frames\":%u,\"tx_frames\":%u,"
-		"\"send_errors\":%u,\"receive_errors\":%u}\n",
+		"\"send_errors\":%u,\"receive_errors\":%u,\"management_error\":%d}\n",
 		(long)getpid(), starttime, (unsigned long long)monotonic_ms(), llid, link_error,
 		online ? "true" : "false", session->generation, session->local_echoed ? "true" : "false",
 		session->extension_selected ? "true" : "false", loid_configured ? "true" : "false",
 		auth[session->auth], session->auth_failure, session->auth_challenges, session->auth_results,
 		session->auth_successes, session->auth_failures, (unsigned long long)auth_result_ms,
-		session->rx_frames, session->tx_frames, send_errors, receive_errors);
+		session->rx_frames, session->tx_frames, send_errors, receive_errors, management_error);
 	if (fclose(stream) || ret < 0) {
 		unlink(temporary);
 		return -EIO;
@@ -205,10 +238,12 @@ int main(int argc, char **argv)
 	unsigned int llid = 0, send_errors = 0, receive_errors = 0;
 	bool online = false, check_config = false;
 	bool session_valid = false;
+	bool was_holdover = false;
 	int fd, lock_fd, ret, option;
 	char state_path[512], lock_path[512], starttime[32] = {};
 	uint64_t next_information = 0, next_status = 0, auth_result_ms = 0;
 	uint64_t last_received = 0;
+	uint64_t line_epoch = 0;
 	static const struct option options[] = {
 		{"interface", required_argument, NULL, 'i'},
 		{"llid-index", required_argument, NULL, 'n'},
@@ -234,7 +269,7 @@ int main(int argc, char **argv)
 		return 2;
 	if (pon_backend_init(&backend, mpcp))
 		return 2;
-	pon_backend_bind(&identity, &backend);
+	backend.llid = llid;
 	ret = identity_load(configuration, &identity);
 	if (ret) {
 		fprintf(stderr, "PON identity configuration failed: %s\n", strerror(-ret));
@@ -265,6 +300,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	read_starttime(starttime);
+	pon_backend_bind(&identity, &backend);
 	signal(SIGTERM, stop);
 	signal(SIGINT, stop);
 	openlog("pon-oamd", LOG_PID, LOG_DAEMON);
@@ -274,20 +310,27 @@ int main(int argc, char **argv)
 		struct timeval timeout = {.tv_usec = 200000};
 		fd_set readable;
 		bool now_online = false;
+		bool holdover = false;
 		uint64_t now = monotonic_ms();
-		int link_error = registered(mpcp, llid, &now_online);
+		uint64_t epoch = 0;
+		int link_error = registered(mpcp, llid, &now_online, &epoch, &holdover);
 
 		if (link_error)
 			now_online = false;
-		if (now_online != online) {
+		if (was_holdover && !holdover && now_online && epoch == line_epoch)
+			last_received = now;
+		was_holdover = holdover;
+		if (now_online != online || epoch != line_epoch) {
 			pon_oam_reset(&session);
 			session_valid = false;
 			last_received = 0;
 			online = now_online;
+			line_epoch = epoch;
+			backend.epoch = epoch;
 			next_information = now;
 			syslog(LOG_INFO, "LLID%u MPCP registered=%u generation=%u", llid, online, session.generation);
 		}
-		if (online && session_valid && now - last_received >= 5000) {
+		if (online && !holdover && session_valid && now - last_received >= 5000) {
 			pon_oam_reset(&session);
 			session_valid = false;
 			syslog(LOG_INFO, "LLID%u OAM peer timeout generation=%u", llid, session.generation);
@@ -303,7 +346,7 @@ int main(int argc, char **argv)
 		}
 		if (now >= next_status) {
 			ret = publish_status(state_path, &session, llid, link_error, online, send_errors,
-				receive_errors, identity.loid_configured, auth_result_ms, starttime);
+				receive_errors, identity.loid_configured, auth_result_ms, starttime, backend.management_error);
 			if (ret)
 				syslog(LOG_ERR, "LLID%u status publish failed: %s", llid, strerror(-ret));
 			next_status = now + 1000;

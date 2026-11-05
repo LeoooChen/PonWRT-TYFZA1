@@ -1,0 +1,467 @@
+{
+  "date": "2026-10-25",
+  "boot_id": "a316c6d1-55d5-4bf2-94f7-dbae8672f53a",
+  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "baseline_main": "41b3bae",
+  "baseline_with_bandwidth_tree": "cd86b946a11618308d6137811c1762b00a0a11b8",
+  "implementation_commits": [
+    "6706cf6",
+    "5423dd2",
+    "382e908"
+  ],
+  "modules": {
+    "before": {
+      "sha256": "1a08ca1e64bab6d182cfce9845b7947d727c8f2a7d73da53d6d00d187a3b9565",
+      "bytes": 1769168
+    },
+    "after": {
+      "sha256": "364e30fd4d9dcc394936a4854c430a3bc74d1e643e1e8b0f7ff2cd98b33369b3",
+      "bytes": 1784784
+    },
+    "complete": {
+      "sha256": "22e0ce8b0578a05c3fcad6101ca768546b23adf60b63e8aeafdb869c567ebe26",
+      "bytes": 1788104
+    }
+  },
+  "mac80211_sha256": "59b2466f49d156831794061a835211d113e93dd36316f6b31d2b60d65ed36c69",
+  "tests": {
+    "DIG_FAHM_factory_steps": 4200,
+    "RSSI_factory_samples": 3632,
+    "EDCCA_collision_factory_vectors": 3072,
+    "bandwidth_factory_vectors": 1332,
+    "power_policy_cases": 558,
+    "ARM64_module_build": true
+  },
+  "primary_cases": [
+    {
+      "label": "before-1-5g",
+      "valid_rssi": 100,
+      "rssi_median": -26.0,
+      "rssi_mean": -25.9,
+      "up": {
+        "start": 0,
+        "end": 12.00803,
+        "seconds": 12.00803,
+        "bytes": 14289600,
+        "bits_per_second": 9520029.51358383,
+        "jitter_ms": 0.280082802948276,
+        "lost_packets": 598,
+        "packets": 12506,
+        "lost_percent": 4.78170478170478,
+        "sender": false
+      },
+      "down": {
+        "start": 0,
+        "end": 12.005027,
+        "seconds": 12.005027,
+        "bytes": 14986800,
+        "bits_per_second": 9987016.272433206,
+        "jitter_ms": 0.0456140186706127,
+        "lost_packets": 17,
+        "packets": 12506,
+        "lost_percent": 0.13591301566997122,
+        "sender": false
+      },
+      "ping": "100 packets transmitted, 100 packets received, 0.0% packet loss"
+    },
+    {
+      "label": "before-3-2g",
+      "valid_rssi": 73,
+      "rssi_median": -22,
+      "rssi_mean": -21.726027397260275,
+      "up": {
+        "start": 0,
+        "end": 12.006854,
+        "seconds": 12.006854,
+        "bytes": 14980800,
+        "bits_per_second": 9981498.90054464,
+        "jitter_ms": 1.121712760441027,
+        "lost_packets": 19,
+        "packets": 12503,
+        "lost_percent": 0.15196352875309926,
+        "sender": false
+      },
+      "down": {
+        "start": 0,
+        "end": 12.005011,
+        "seconds": 12.005011,
+        "bytes": 15007200,
+        "bits_per_second": 10000623.906133864,
+        "jitter_ms": 0.421084453822804,
+        "lost_packets": 0,
+        "packets": 12506,
+        "lost_percent": 0,
+        "sender": false
+      },
+      "ping": "100 packets transmitted, 100 packets received, 0.0% packet loss"
+    },
+    {
+      "label": "complete-2-5g",
+      "valid_rssi": 100,
+      "rssi_median": -25.0,
+      "rssi_mean": -25.26,
+      "up": {
+        "start": 0,
+        "end": 12.002914,
+        "seconds": 12.002914,
+        "bytes": 14446800,
+        "bits_per_second": 9628861.79139499,
+        "jitter_ms": 0.3461245213514562,
+        "lost_packets": 462,
+        "packets": 12501,
+        "lost_percent": 3.695704343652508,
+        "sender": false
+      },
+      "down": {
+        "start": 0,
+        "end": 12.001956,
+        "seconds": 12.001956,
+        "bytes": 15003600,
+        "bits_per_second": 10000769.874510454,
+        "jitter_ms": 0.022487842127523753,
+        "lost_packets": 0,
+        "packets": 12503,
+        "lost_percent": 0,
+        "sender": false
+      },
+      "ping": "100 packets transmitted, 100 packets received, 0.0% packet loss"
+    },
+    {
+      "label": "complete-4-2g",
+      "valid_rssi": 100,
+      "rssi_median": -21.0,
+      "rssi_mean": -21.21,
+      "up": {
+        "start": 0,
+        "end": 12.00562,
+        "seconds": 12.00562,
+        "bytes": 15004800,
+        "bits_per_second": 9998517.361035915,
+        "jitter_ms": 0.6583011756764542,
+        "lost_packets": 0,
+        "packets": 12504,
+        "lost_percent": 0,
+        "sender": false
+      },
+      "down": {
+        "start": 0,
+        "end": 12.000999,
+        "seconds": 12.000999,
+        "bytes": 14995200,
+        "bits_per_second": 9995967.83567768,
+        "jitter_ms": 0.09138782439642312,
+        "lost_packets": 5,
+        "packets": 12501,
+        "lost_percent": 0.0399872040946897,
+        "sender": false
+      },
+      "ping": "100 packets transmitted, 100 packets received, 0.0% packet loss"
+    }
+  ],
+  "lifecycle": {
+    "two_GHz_stop_update_count": [
+      22,
+      22,
+      22
+    ],
+    "restart_update_count": 32,
+    "final_update_count": 86
+  },
+  "final": {
+    "ram_module": "rtl_ax_ap_dig_complete",
+    "2G": "channel1 HE20 20dBm",
+    "5G": "channel149 HE80 30dBm",
+    "rf_result": [
+      0,
+      0
+    ],
+    "LCK_timeouts": [
+      0,
+      0
+    ],
+    "wireless_file_unchanged_sha256": "8b1e09b959cf1e0d3eec60f000c411c7254f7ebbe5bf7e2f68821e4ed6061b46",
+    "flash_written": false
+  },
+  "limitations": [
+    "Single fixed location; no controlled attenuator/interferer or distance coverage test.",
+    "RSSI/payload loss variations are not proof of coverage or throughput gain.",
+    "CoreWLAN RSSI0 excluded as unavailable.",
+    "Some hotplug trials left ap2 without an enabled hostapd BSS; these were excluded.",
+    "complete-3-2g transferred payload but its post-test SSH snapshot reset; later complete-4-2g completed traffic and SSH snapshots."
+  ],
+  "records": {
+    "after-1-2g-after.txt": {
+      "bytes": 5524,
+      "sha256": "01846b1949b566c8f8996137414ec7bb3f05e10b661a6a15ae239df6bf9693a4"
+    },
+    "after-1-2g-before.txt": {
+      "bytes": 5509,
+      "sha256": "63721e25bab4d2261f1d8c811fb23f7500fc02fc104ba7ca359ccb6a8e565894"
+    },
+    "after-1-2g-dig-trace.txt": {
+      "bytes": 2767,
+      "sha256": "4601f8025e9ba8a6f4d4d8ad5a4327ff10712f5fffb20e0c3f8e7b69c2a43ecd"
+    },
+    "after-1-2g-downlink.json": {
+      "bytes": 12281,
+      "sha256": "e5203979c10f6117db42cdda376c65d4884b5e43dafbd83143c720e82bf3054a"
+    },
+    "after-1-2g-join.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "after-1-2g-ping.txt": {
+      "bytes": 6251,
+      "sha256": "c003dcc96f89f7a010d891b59e554ad47b0c42e59d0856471088ffef3a9339d6"
+    },
+    "after-1-2g-rssi.txt": {
+      "bytes": 6415,
+      "sha256": "f852dc13ec893edfeee2f2528c52c4d28714dd06bd197c24c8ee038431cf7002"
+    },
+    "after-1-2g-summary.json": {
+      "bytes": 660,
+      "sha256": "1e7c7e4f3a4132d357cba5a71e1dbca6988adec6740892cf2944e36b291edea1"
+    },
+    "after-1-2g-uplink.json": {
+      "bytes": 9988,
+      "sha256": "388b0dcda1978a25f37bfa6209afeb20646df1bedd793da9a04d63f3a17c288b"
+    },
+    "before-1-2g-join.txt": {
+      "bytes": 141,
+      "sha256": "b96f3cb1e49f7aa2c9b09dfb71e5a082be13a3c3e534431543ca75d5f61b8c77"
+    },
+    "before-1-5g-after.txt": {
+      "bytes": 5488,
+      "sha256": "ce221c8862045aa767736d601e256aeecfa213a7f2776bd11e333e97a286872f"
+    },
+    "before-1-5g-before.txt": {
+      "bytes": 5457,
+      "sha256": "6fe805e1d6c82243cbfde8c5c966a43e94d15413bc593693a9df0c460fefeea8"
+    },
+    "before-1-5g-dig-trace.txt": {
+      "bytes": 2163,
+      "sha256": "954c304ea0f2f64016416ce62f35eeee41eba227edbd3e60fcaebd19c1860ec4"
+    },
+    "before-1-5g-downlink.json": {
+      "bytes": 12489,
+      "sha256": "40213d29481cb5f87355896f5ab144c01e2e304595d3f8a4963cd3555b64989b"
+    },
+    "before-1-5g-join.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "before-1-5g-ping.txt": {
+      "bytes": 6275,
+      "sha256": "c5822f3be34220acce8005d0297da0a8e0fd753180085779a4f562d96ccdc47b"
+    },
+    "before-1-5g-rssi.txt": {
+      "bytes": 6785,
+      "sha256": "b7328fa432219b2432e28764cc7ab300af7a7d9caf7501ba69fb99d24632d4b5"
+    },
+    "before-1-5g-summary.json": {
+      "bytes": 667,
+      "sha256": "2dab9770118bc9b8ac8a6c8e3c8078be710c86b04f9f0dacbc17c337f976603b"
+    },
+    "before-1-5g-uplink.json": {
+      "bytes": 9976,
+      "sha256": "a8b24643da43d455c3f7c6f9132682abd675363352aedd236fd53e9f9092fce8"
+    },
+    "before-2-2g-join.txt": {
+      "bytes": 39,
+      "sha256": "14ad1c1216d41927f9b444eb0600e5fefe8e06489152caa1ec80aab3075a8053"
+    },
+    "before-3-2g-after.txt": {
+      "bytes": 5439,
+      "sha256": "29d83a820b888aeaf158a911b17ec67800bd415fbab04b993e9c9fe050636613"
+    },
+    "before-3-2g-before.txt": {
+      "bytes": 5422,
+      "sha256": "0f2944bd7b043ab56b5da434b2107d0e5d6091cd5cd54fe83ffc82de63de7d24"
+    },
+    "before-3-2g-dig-trace.txt": {
+      "bytes": 2163,
+      "sha256": "8c5047ca6967385c635378c2d0321a2f9b2c7d8da96b1eebc605146d53dec3bd"
+    },
+    "before-3-2g-downlink.json": {
+      "bytes": 12242,
+      "sha256": "8699584b27aa0bace61b526a81533f5ef03cb93a15dda5e552f7243417864b47"
+    },
+    "before-3-2g-join.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "before-3-2g-ping.txt": {
+      "bytes": 6258,
+      "sha256": "7602e55e8f4b9cb6e65f4340763108215eac3ac0db6a58101dc92371c1065206"
+    },
+    "before-3-2g-rssi.txt": {
+      "bytes": 6496,
+      "sha256": "6a4a4036e65b775cb899a3602eb011b8e6cadd3478f1ac0c174f3a137547dc05"
+    },
+    "before-3-2g-summary.json": {
+      "bytes": 663,
+      "sha256": "0d1b7611c21f83d7a6e0a32e28966df9f145db02ec4cf03e3c6ab5afb650de52"
+    },
+    "before-3-2g-uplink.json": {
+      "bytes": 9982,
+      "sha256": "a58d00a1351e7721eb72c3d2b079e545486e366e83ac6b0fba2747ea10819be6"
+    },
+    "before-radio-signal.txt": {
+      "bytes": 625,
+      "sha256": "14ec513875fca21559a8d5f5674d36ee02c55bf4542455ea836fa85441d6bea4"
+    },
+    "complete-1-2g-join.txt": {
+      "bytes": 39,
+      "sha256": "14ad1c1216d41927f9b444eb0600e5fefe8e06489152caa1ec80aab3075a8053"
+    },
+    "complete-1-5g-join.txt": {
+      "bytes": 141,
+      "sha256": "9f927f43fa3f19018e95f8cbdce3443912e5fb13fa844ba321905e1cd0464676"
+    },
+    "complete-2-2g-join.txt": {
+      "bytes": 39,
+      "sha256": "14ad1c1216d41927f9b444eb0600e5fefe8e06489152caa1ec80aab3075a8053"
+    },
+    "complete-2-5g-after.txt": {
+      "bytes": 4044,
+      "sha256": "0e5409b925fa93b98749f1366a334fb59628a2506075dcdf54e179b0093e75c0"
+    },
+    "complete-2-5g-before.txt": {
+      "bytes": 4040,
+      "sha256": "064b87b19f84fce8ea4a85579e3f4081d0dc32f5fe15cd35ac026608e35b31a1"
+    },
+    "complete-2-5g-dig-trace.txt": {
+      "bytes": 2760,
+      "sha256": "d1a4711595479b58c22332394ec8034c5b5ce7a8de3c8b533af239692e35aacc"
+    },
+    "complete-2-5g-downlink.json": {
+      "bytes": 12340,
+      "sha256": "4b2329c994fcf4ae5b6156c8dadde3af49f209eb039d85768a173637f6234354"
+    },
+    "complete-2-5g-join.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "complete-2-5g-ping.txt": {
+      "bytes": 6268,
+      "sha256": "ab7c13028783493b68b293fdb97123f563bb1e4c0adb861d42d2fbf6970809b1"
+    },
+    "complete-2-5g-rssi.txt": {
+      "bytes": 6739,
+      "sha256": "a70df7455a5f2ae7adf9d4ba5cc149894467c2f955cbf0c6476ee44e766a2898"
+    },
+    "complete-2-5g-summary.json": {
+      "bytes": 658,
+      "sha256": "08c87884c59e843d74c40a6aba4ccaaa97b2e866fd511bec77e46f21db8c48f8"
+    },
+    "complete-2-5g-uplink.json": {
+      "bytes": 9989,
+      "sha256": "691b7b2e2141b1ff4322a4eb56442db27101f5da27ce339416158c3cba0a20d8"
+    },
+    "complete-3-2g-before.txt": {
+      "bytes": 5912,
+      "sha256": "7968a8af8067bfce2b47717ddd0256ff1f9b70342f139a8515612eaa9f0d6533"
+    },
+    "complete-3-2g-dig-trace.txt": {
+      "bytes": 2768,
+      "sha256": "bd2123c6ac7bc31ab512c269c1b6c515aa1e7bf0cb5e02be2b7dcf45439a1568"
+    },
+    "complete-3-2g-downlink.json": {
+      "bytes": 12408,
+      "sha256": "f098325751599f72540a2d0f480febd5e4860a08236430ca3e1920cb1b324a08"
+    },
+    "complete-3-2g-join.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "complete-3-2g-ping.txt": {
+      "bytes": 6288,
+      "sha256": "e7f059282cc5ca05a7d32cf431000041da3e6e8670d80ff3d05f9c271ce3206e"
+    },
+    "complete-3-2g-rssi.txt": {
+      "bytes": 6363,
+      "sha256": "bc1e9da39fdfb3a67da911f45bf10cda83de20811dd13c1a847e4451f5cf23ca"
+    },
+    "complete-3-2g-summary.json": {
+      "bytes": 729,
+      "sha256": "fef708ff7a3ab55110b8dc8b312809de903c62baf3f9d4dc9fae26a7107ddc90"
+    },
+    "complete-3-2g-uplink.json": {
+      "bytes": 9976,
+      "sha256": "5745d6f4722253f33ad83de14a8acc0e1578bb73f37188834e4daaf5d86fa6c9"
+    },
+    "complete-4-2g-after.txt": {
+      "bytes": 4058,
+      "sha256": "27b49f763afb02e24830feb1f5e05dc3c421e3291a5539e217eea95249ab31ac"
+    },
+    "complete-4-2g-before.txt": {
+      "bytes": 4045,
+      "sha256": "64f49455aac4a6174dbc3327d291f32788d5e84e641a7ab6758e00e44b6c8e56"
+    },
+    "complete-4-2g-dig-trace.txt": {
+      "bytes": 2769,
+      "sha256": "a9ad22385c3597e8a9af469f31b8e5715419088725ed5b8df929d5d153aa1d14"
+    },
+    "complete-4-2g-downlink.json": {
+      "bytes": 12476,
+      "sha256": "e7c6e8827da2f36edc099b596d70b93a07bf1346c5e3a031f91effccbebc15e5"
+    },
+    "complete-4-2g-join.txt": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "complete-4-2g-ping.txt": {
+      "bytes": 6250,
+      "sha256": "a8215797be51595a4c5cc33d209f05b6295fe0ae2b858896e0c5db1c1a8ca9f5"
+    },
+    "complete-4-2g-rssi.txt": {
+      "bytes": 6559,
+      "sha256": "9e1871a0c08e49d58c5c98ab3ab0763ec7a706ed49f7b652284d5d23ab3c2e2b"
+    },
+    "complete-4-2g-summary.json": {
+      "bytes": 653,
+      "sha256": "cf788521005cc1c8da55735548102992a229a102fb36df331cdf70e51e8b7c33"
+    },
+    "complete-4-2g-uplink.json": {
+      "bytes": 9929,
+      "sha256": "b1e64a96b1cba49e826bd3c54d8a24f7075c7cf3409df16f4e290d6d47fa8066"
+    },
+    "complete-5g-registers.txt": {
+      "bytes": 1845,
+      "sha256": "eeab008f984db804508ad30900874fcc140b9fac0e4e14dc02987959c6729946"
+    },
+    "complete-lifecycle.txt": {
+      "bytes": 1493,
+      "sha256": "78cfdfd9d11c4b023e0b9556c52f20000ac82ddb79c37f9da7f8a222e754a3c5"
+    },
+    "final-state.txt": {
+      "bytes": 3994,
+      "sha256": "c64c0e48d8f215bffc5b8a4331848d6a922c560310449b224176d4fbac088d06"
+    },
+    "module-hashes.json": {
+      "bytes": 370,
+      "sha256": "88fb22b9495c77ac0da1e64f1f16f43893081008c22456096808727685541dbc"
+    },
+    "read-dm.c": {
+      "bytes": 836,
+      "sha256": "0b020d3c52a4f2b17ad0c863d7b2f7c945b18b0787e2052631d70c285668350f"
+    },
+    "run_case.py": {
+      "bytes": 2715,
+      "sha256": "27f393e5913f54a2db256b39e467df2b4cbe5ef1515cd701c1b66f875e6751c8"
+    },
+    "setup-before-1-2g-before.txt": {
+      "bytes": 4471,
+      "sha256": "0149c26c9ea1755d53c4abdb640d0c4b32e17a6e6cebaf954a9c659e6c594cbe"
+    },
+    "setup-before-1-2g-join.txt": {
+      "bytes": 39,
+      "sha256": "14ad1c1216d41927f9b444eb0600e5fefe8e06489152caa1ec80aab3075a8053"
+    },
+    "setup-before-1-2g-rssi.txt": {
+      "bytes": 6827,
+      "sha256": "85b70cc88c2119807c1b4b5b03f59de0645c7d6bf868a073b153c24f5f139009"
+    }
+  },
+  "raw_records_mac": "现场记录/20261025-dig-runtime/"
+}

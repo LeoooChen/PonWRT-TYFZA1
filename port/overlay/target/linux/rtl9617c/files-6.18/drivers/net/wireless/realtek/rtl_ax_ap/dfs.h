@@ -20,6 +20,10 @@ struct rtl_ax_dfs {
 	u8 throughput_threshold, nhm_threshold, pri_mask, fake_radar_threshold;
 	u16 pw_diff, pri_diff, long_chirp_diff;
 	u8 adaptive_initial_count, adaptive_add_count, adaptive_count_threshold;
+	u8 adaptive_count, adaptive_total, adaptive_state;
+	u8 aci_wait, aci_wait_threshold, aci_high, aci_low;
+	s8 aci;
+	bool aci_pending;
 	u16 idle_period_threshold, false_alarm_threshold, max_pulse_width;
 	bool initialized, dynamic_setting, in_cac, first_dynamic, dynamic_reset;
 	bool enabled, hardware_enabled, detected, two_segments, bypass_segment0, w53, chirp_started[2];
@@ -81,6 +85,13 @@ static inline void rtl_ax_dfs_initialize(struct rtl_ax_dfs *dfs, unsigned int re
 	dfs->adaptive_initial_count = 1;
 	dfs->adaptive_add_count = 1;
 	dfs->adaptive_count_threshold = 30;
+	dfs->adaptive_count = dfs->adaptive_total = dfs->adaptive_state = 0;
+	dfs->aci = -128;
+	dfs->aci_pending = true;
+	dfs->aci_wait = 0;
+	dfs->aci_wait_threshold = 5;
+	dfs->aci_high = 3;
+	dfs->aci_low = 0;
 	dfs->in_cac = true;
 	dfs->first_dynamic = true;
 	dfs->dynamic_reset = true;
@@ -119,6 +130,77 @@ static inline void rtl_ax_dfs_channel(struct rtl_ax_dfs *dfs,
 	memset(dfs->long_count, 0, sizeof(dfs->long_count));
 	memset(dfs->chirp_started, 0, sizeof(dfs->chirp_started));
 	dfs->detected = false;
+}
+
+/* halbb_dfs_dyn_setting@2a1240, with the board's default runtime policy.
+ * Inputs are the preceding watchdog window's measured Mbps/NHM/FA values. */
+static inline void rtl_ax_dfs_dynamic(struct rtl_ax_dfs *dfs, u32 throughput,
+	u8 idle_ratio, u8 noise_ratio, u32 false_alarms)
+{
+	bool noisy;
+	unsigned int count;
+
+	if (!dfs->dynamic_setting) return;
+	if (dfs->aci_pending) {
+		dfs->aci = -128;
+		dfs->aci_wait++;
+	} else {
+		dfs->aci_pending = true;
+		dfs->aci_wait = 0;
+	}
+	if (dfs->first_dynamic) {
+		dfs->first_dynamic = false;
+		return;
+	}
+	/* Default dyn_setting uses these thresholds both during and after CAC.
+	 * Its separate debug-force branch is not the CAC flag. */
+	dfs->aci_high = dfs->bandwidth ? 5 : 12;
+	dfs->aci_low = dfs->bandwidth ? 2 : 9;
+	if (throughput < dfs->throughput_threshold) {
+		dfs->pw_diff = dfs->long_chirp_diff = 18;
+		dfs->pri_diff = 80;
+		dfs->pw_factor = dfs->pri_factor = 1;
+		dfs->ppb_parameter = 5;
+	} else {
+		dfs->pw_diff = dfs->long_chirp_diff = 20;
+		dfs->pri_diff = 170;
+		dfs->pw_factor = dfs->pri_factor = 3;
+		dfs->ppb_parameter = 4;
+	}
+	if (!(dfs->region == 3 && dfs->primary == 60 && !dfs->bandwidth))
+		dfs->pri_diff = 1;
+	noisy = (idle_ratio && idle_ratio < dfs->idle_period_threshold) ||
+		false_alarms > dfs->false_alarm_threshold ||
+		(idle_ratio <= 97 && !throughput) ||
+		(noise_ratio != 100 && noise_ratio > dfs->nhm_threshold);
+	if (!dfs->adaptive_state) {
+		if (dfs->aci > dfs->aci_high || noisy) {
+			dfs->adaptive_count = dfs->adaptive_initial_count;
+			dfs->adaptive_total++;
+			dfs->adaptive_state = 1;
+		}
+	} else if (dfs->adaptive_state == 1) {
+		if (dfs->adaptive_count) dfs->adaptive_count--;
+		if (dfs->aci > dfs->aci_low || noisy) {
+			count = dfs->adaptive_count + dfs->adaptive_add_count;
+			dfs->adaptive_count = count > 255 ? 255 : count;
+			if (dfs->adaptive_total < 255) dfs->adaptive_total++;
+		}
+		if (!dfs->adaptive_count) dfs->adaptive_state = 0;
+	} else {
+		dfs->adaptive_state = 0;
+		dfs->adaptive_count = 0;
+	}
+}
+
+/* parsing_aci2sig@2a1150: signed7-bit IE24 value, adjusted for bandwidth. */
+static inline void rtl_ax_dfs_aci(struct rtl_ax_dfs *dfs, u8 raw)
+{
+	int value = raw & 127;
+
+	if (value & 64) value -= 128;
+	dfs->aci = value - (!dfs->bandwidth ? 30 : dfs->bandwidth == 1 ? 40 : 50);
+	dfs->aci_pending = false;
 }
 
 /* cfg_dfs@229864 and en_bbrpt@2296f4: MACband0, report threshold61,
@@ -300,9 +382,29 @@ static inline bool rtl_ax_dfs_detect(struct rtl_ax_dfs *dfs, const u8 *data,
 		if (masked || s->maximum > dfs->max_pulse_width ||
 		    rtl_ax_dfs_range_diff(&s->chirp_width) > dfs->long_chirp_diff ||
 		    (dfs->bandwidth <= 2 && s->sequence_error)) hit = false;
+		/* Factory adaptive rejection keeps accumulated long-pulse evidence. */
+		if (dfs->adaptive_state) hit = false;
 		if (hit) dfs->long_count[i] = 0;
 		detected |= hit;
 	}
 	return detected;
+}
+/* Reports may contain both80MHz segments. Remove the non-DFS lower80
+ * before classification, so its pulses are not counted as masked/fake pulses
+ * against the still-required upper80. Caller validates the hardware61 limit. */
+static inline bool rtl_ax_dfs_report(struct rtl_ax_dfs *dfs, const u8 *data,
+	unsigned int count, u32 seconds)
+{
+	u8 selected[61 * 8];
+	unsigned int used = 0;
+
+	if (!dfs->two_segments || !dfs->bypass_segment0)
+		return rtl_ax_dfs_detect(dfs, data, count, seconds);
+	for (unsigned int i = 0; i < count; i++)
+		if (rtl_ax_dfs_pulse(data + i * 8, true).segment) {
+			memcpy(selected + used * 8, data + i * 8, 8);
+			used++;
+		}
+	return rtl_ax_dfs_detect(dfs, selected, used, seconds);
 }
 #endif

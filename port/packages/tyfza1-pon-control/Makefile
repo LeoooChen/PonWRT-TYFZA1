@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=tyfza1-pon-control
-PKG_VERSION:=0.7.0_alpha
+PKG_VERSION:=0.8.4_beta
 PKG_RELEASE:=
 PKG_LICENSE:=GPL-2.0-or-later
 
@@ -27,6 +27,7 @@ define Build/Compile
 	cd $(PKG_BUILD_DIR)/omci && RUSTC="$(dir $(TYFZA1_CARGO))rustc" \
 		RUSTFLAGS="-C target-cpu=cortex-a55" $(TYFZA1_CARGO) build --release --locked --target aarch64-unknown-linux-musl
 	$(TARGET_CC) $(TARGET_CPPFLAGS) $(TARGET_CFLAGS) -Wall -Wextra -Werror \
+		-DPON_FIRMWARE_VERSION='"$(PKG_VERSION)"' \
 		$(PKG_BUILD_DIR)/pon-oamd.c $(PKG_BUILD_DIR)/pon-oam.c $(PKG_BUILD_DIR)/pon-backend.c \
 		$(TARGET_LDFLAGS) -luci -o $(PKG_BUILD_DIR)/pon-oamd
 	$(TARGET_CC) $(TARGET_CPPFLAGS) $(TARGET_CFLAGS) -Wall -Wextra -Werror \
@@ -37,6 +38,12 @@ define Build/Compile
 endef
 
 define Package/tyfza1-pon-control/install
+	$(INSTALL_DIR) $(1)/lib/firmware/realtek/rtl9617c
+	$(LN) /tmp/tyfza1-factory/rtl9617c/bosa-calibration.bin $(1)/lib/firmware/realtek/rtl9617c/bosa-calibration.bin
+	$(INSTALL_DIR) $(1)/lib/firmware/realtek/tyfza1/rtl8852ce
+	$(LN) /tmp/tyfza1-factory/tyfza1/rtl8852ce/flash-calibration.bin $(1)/lib/firmware/realtek/tyfza1/rtl8852ce/flash-calibration.bin
+	$(INSTALL_DIR) $(1)/lib/firmware/realtek/tyfza1/rtl8192xbe
+	$(LN) /tmp/tyfza1-factory/tyfza1/rtl8192xbe/flash-calibration.bin $(1)/lib/firmware/realtek/tyfza1/rtl8192xbe/flash-calibration.bin
 	$(INSTALL_DIR) $(1)/usr/sbin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/pon-oamd $(1)/usr/sbin/pon-oamd
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/pon-identity $(1)/usr/sbin/pon-identity

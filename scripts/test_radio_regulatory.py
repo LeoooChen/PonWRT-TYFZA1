@@ -34,6 +34,7 @@ common = r'''
 #include <stdio.h>
 #include <string.h>
 #define RTL_AX_8852C 2
+#define rtl_ax_scan_complete_frame(...) ((void)0)
 #define BIT(n) (1U << (n))
 #define READ_ONCE(v) (v)
 #define WRITE_ONCE(p,v) ((p)=(v))

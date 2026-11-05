@@ -1,0 +1,53 @@
+{
+  "status": "Targeted RX synchronization optimization validated; full Wi-Fi throughput goal remains incomplete",
+  "root_cause": "Every ARM exception and work completion scanned each active peer/TID count in uncached PE state even when no PE forwarding publication had occurred. Bounded live traces show repeated work invocations during reorder recovery.",
+  "implementation": "Read the existing radio-wide forwarded-MSDU count first. It is published after per-TID guarded PN/SN state. When unchanged, skip per-TID publication reads but still run pending reorder recovery. A DMA read barrier orders changed-count observation before state snapshots.",
+  "production_scope": "Only rx.c and its focused regression; cached payload allocation and event instrumentation are not production changes.",
+  "validation": {
+    "actual_function_regression": "inactive shared reads32->1; new PN/SN/counters synchronized exactly once; pending reorder recovery still runs without new forwarding",
+    "before_test": "artifacts/own-wifi-20261020/rx-sync-global/before-test.log",
+    "after_test": "artifacts/own-wifi-20261020/rx-sync-global/after-test.log",
+    "live_scope": "HE80, cached-RX experimental module with bounded memory trace, native FE to CPU16 GRO sink and actual TCP; no physical PON egress",
+    "baseline": {
+      "record": "sequence-gap-wake",
+      "TCP_Mbps": 397.8845842519823,
+      "retransmits": 0,
+      "RDU": 15419
+    },
+    "candidate": {
+      "record": "sequence-gap-global",
+      "TCP_Mbps": 564.1735659583904,
+      "retransmits": 0,
+      "FE_packets": 198721,
+      "sink_received": 198721,
+      "tail_drops": 0,
+      "RDU": 5798,
+      "CPU_total_percent_of_4_cores": 22.38372093023256,
+      "CPU_service_percent_of_4_cores": 6.627906976744186,
+      "CPU_remaining_percent_of_4_cores": 15.755813953488373
+    },
+    "limitations": "Different RF/retransmission events and allocation times; throughput difference is not a controlled RF benchmark. Remaining CPU includes simulated endpoint/softirq work. No full test suite or firmware flash."
+  },
+  "first_gap_evidence": {
+    "peer": "06:7a:fb:78:b2:87",
+    "PE_next": 72,
+    "BA_head": 72,
+    "key_next": 72,
+    "first_received": 73,
+    "missing_arrival": {
+      "SN": 72,
+      "retry": true
+    },
+    "RDU_first_last": [
+      0,
+      0
+    ],
+    "recovered_next": 74,
+    "duration_us": 269,
+    "interpretation": "Observed gap and retry with mutually consistent PE/software state; RDU is not necessary for every gap. Does not identify RF versus pre-delivery hardware loss."
+  },
+  "source_sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rx.c": "a5262854e03bb8567bba60c7e82e8f406c3f824f75c72391cc31235c6b97306e",
+    "scripts/test_rx_sync_publications.py": "514fdb348a07e760085757c11ac5eadf98a236996bc22926a4fa7d713bc62b7c"
+  }
+}

@@ -1,0 +1,397 @@
+{
+  "base_commit": "c86ebe33f478d1396a3b27f3feb61973a90fb192",
+  "architectures": [
+    "aarch64_cortex-a55",
+    "aarch64_cortex-a53"
+  ],
+  "feeds": [
+    "https://downloads.openwrt.org/snapshots/packages/aarch64_cortex-a53/base/packages.adb",
+    "https://downloads.openwrt.org/snapshots/packages/aarch64_cortex-a53/luci/packages.adb",
+    "https://downloads.openwrt.org/snapshots/packages/aarch64_cortex-a53/packages/packages.adb",
+    "https://downloads.openwrt.org/snapshots/packages/aarch64_cortex-a53/routing/packages.adb",
+    "https://downloads.openwrt.org/snapshots/packages/aarch64_cortex-a53/telephony/packages.adb",
+    "https://downloads.openwrt.org/snapshots/packages/aarch64_cortex-a53/video/packages.adb"
+  ],
+  "official_key_sha256": "ec0b8a34856a67c124dcc3bfc6717b4c0b7e60c237028f26b5daf0eb489f4bae",
+  "kernel": "6.18.55~3c5495fe5b2a3b0f1bfcdde0de90fcbe-r1",
+  "preinstalled_kmods": {
+    "kmod-crypto-aead": "6.18.55-r1",
+    "kmod-crypto-chacha20poly1305": "6.18.55-r1",
+    "kmod-crypto-crc32c": "6.18.55-r1",
+    "kmod-crypto-hash": "6.18.55-r1",
+    "kmod-crypto-kpp": "6.18.55-r1",
+    "kmod-crypto-lib-chacha20": "6.18.55-r1",
+    "kmod-crypto-lib-chacha20poly1305": "6.18.55-r1",
+    "kmod-crypto-lib-curve25519": "6.18.55-r1",
+    "kmod-crypto-lib-poly1305": "6.18.55-r1",
+    "kmod-crypto-manager": "6.18.55-r1",
+    "kmod-crypto-null": "6.18.55-r1",
+    "kmod-fs-exfat": "6.18.55-r1",
+    "kmod-fs-ext4": "6.18.55-r1",
+    "kmod-fs-ntfs3": "6.18.55-r1",
+    "kmod-fs-vfat": "6.18.55-r1",
+    "kmod-gpio-button-hotplug": "6.18.55-r7",
+    "kmod-ifb": "6.18.55-r1",
+    "kmod-inet-diag": "6.18.55-r1",
+    "kmod-ip6tables": "6.18.55-r1",
+    "kmod-ipt-conntrack": "6.18.55-r1",
+    "kmod-ipt-conntrack-extra": "6.18.55-r1",
+    "kmod-ipt-core": "6.18.55-r1",
+    "kmod-ipt-ipopt": "6.18.55-r1",
+    "kmod-ipt-ipset": "6.18.55-r1",
+    "kmod-ipt-nat": "6.18.55-r1",
+    "kmod-ipt-nat6": "6.18.55-r1",
+    "kmod-ipt-offload": "6.18.55-r1",
+    "kmod-ipt-socket": "6.18.55-r1",
+    "kmod-ipt-tproxy": "6.18.55-r1",
+    "kmod-iptables": "6.18.55-r1",
+    "kmod-lib-crc-ccitt": "6.18.55-r1",
+    "kmod-lib-crc16": "6.18.55-r1",
+    "kmod-nf-conncount": "6.18.55-r1",
+    "kmod-nf-conntrack": "6.18.55-r1",
+    "kmod-nf-conntrack-netlink": "6.18.55-r1",
+    "kmod-nf-flow": "6.18.55-r1",
+    "kmod-nf-ipt": "6.18.55-r1",
+    "kmod-nf-ipt6": "6.18.55-r1",
+    "kmod-nf-log": "6.18.55-r1",
+    "kmod-nf-log6": "6.18.55-r1",
+    "kmod-nf-nat": "6.18.55-r1",
+    "kmod-nf-nat6": "6.18.55-r1",
+    "kmod-nf-reject": "6.18.55-r1",
+    "kmod-nf-reject6": "6.18.55-r1",
+    "kmod-nf-socket": "6.18.55-r1",
+    "kmod-nf-tproxy": "6.18.55-r1",
+    "kmod-nfnetlink": "6.18.55-r1",
+    "kmod-nfnetlink-queue": "6.18.55-r1",
+    "kmod-nft-compat": "6.18.55-r1",
+    "kmod-nft-core": "6.18.55-r1",
+    "kmod-nft-fib": "6.18.55-r1",
+    "kmod-nft-nat": "6.18.55-r1",
+    "kmod-nft-offload": "6.18.55-r1",
+    "kmod-nft-queue": "6.18.55-r1",
+    "kmod-nft-socket": "6.18.55-r1",
+    "kmod-nft-tproxy": "6.18.55-r1",
+    "kmod-nls-base": "6.18.55-r1",
+    "kmod-nls-cp437": "6.18.55-r1",
+    "kmod-nls-iso8859-1": "6.18.55-r1",
+    "kmod-nls-utf8": "6.18.55-r1",
+    "kmod-ovpn-backports": "6.18.55.7.2.0.2026082800-r1",
+    "kmod-ppp": "6.18.55-r1",
+    "kmod-pppoe": "6.18.55-r1",
+    "kmod-pppox": "6.18.55-r1",
+    "kmod-rtl-ax-ap": "6.18.55-r1",
+    "kmod-sched-cake": "6.18.55-r1",
+    "kmod-sched-connmark": "6.18.55-r1",
+    "kmod-sched-core": "6.18.55-r1",
+    "kmod-sched-ctinfo": "6.18.55-r1",
+    "kmod-scsi-core": "6.18.55-r1",
+    "kmod-slhc": "6.18.55-r1",
+    "kmod-tun": "6.18.55-r1",
+    "kmod-tyfza1-usb-led": "6.18.55-r1",
+    "kmod-udptunnel4": "6.18.55-r1",
+    "kmod-udptunnel6": "6.18.55-r1",
+    "kmod-usb-common": "6.18.55-r1",
+    "kmod-usb-core": "6.18.55-r1",
+    "kmod-usb-ledtrig-usbport": "6.18.55-r1",
+    "kmod-usb-storage": "6.18.55-r1",
+    "kmod-usb-storage-uas": "6.18.55-r1",
+    "kmod-usb-xhci-hcd": "6.18.55-r1",
+    "kmod-usb3": "6.18.55-r1",
+    "kmod-wireguard": "6.18.55-r1"
+  },
+  "simulated_packages": [
+    "luci-app-sqm",
+    "luci-proto-wireguard",
+    "luci-proto-openvpn",
+    "luci-app-nlbwmon",
+    "luci-app-mwan3",
+    "luci-app-pbr",
+    "luci-app-smartdns",
+    "luci-app-unbound",
+    "luci-app-statistics",
+    "luci-app-ddns",
+    "luci-app-adblock",
+    "luci-app-upnp",
+    "luci-app-watchcat",
+    "luci-app-commands",
+    "luci-app-hd-idle",
+    "luci-app-samba4",
+    "htop",
+    "nano",
+    "iperf3",
+    "curl",
+    "btop"
+  ],
+  "checks": {
+    "first-boot": {
+      "exit_code": 0,
+      "output": "",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "update": {
+      "exit_code": 0,
+      "output": " [https://downloads.openwrt.org/snapshots/packages/aarch64_cortex-a53/base/packages.adb]\n [https://downloads.openwrt.org/snapshots/packages/aarch64_cortex-a53/luci/packages.adb]\n [https://downloads.openwrt.org/snapshots/packages/aarch64_cortex-a53/packages/packages.adb]\n [https://downloads.openwrt.org/snapshots/packages/aarch64_cortex-a53/routing/packages.adb]\n [https://downloads.openwrt.org/snapshots/packages/aarch64_cortex-a53/telephony/packages.adb]\n [https://downloads.openwrt.org/snapshots/packages/aarch64_cortex-a53/video/packages.adb]\nOK: 9927 distinct packages available\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-luci-app-sqm": {
+      "exit_code": 0,
+      "output": "(1/4) Installing ip-tiny (6.18.0-r2)\n(2/4) Installing tc-tiny (6.18.0-r2)\n(3/4) Installing sqm-scripts (1.8.0-r1)\n(4/4) Installing luci-app-sqm (26.288.56961~b0cead4)\nOK: 23.7 MiB in 209 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-luci-proto-wireguard": {
+      "exit_code": 0,
+      "output": "(1/3) Installing resolveip (2)\n(2/3) Installing wireguard-tools (1.0.20260223-r2)\n(3/3) Installing luci-proto-wireguard (26.288.56961~b0cead4)\nOK: 23.1 MiB in 208 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-luci-proto-openvpn": {
+      "exit_code": 0,
+      "output": "(1/5) Installing libcap-ng (0.8.4-r2)\n(2/5) Installing libnl-core200 (3.12.0-r2)\n(3/5) Installing libnl-genl200 (3.12.0-r2)\n(4/5) Installing openvpn-mbedtls (2.7.7-r1)\n(5/5) Installing luci-proto-openvpn (26.288.56961~b0cead4)\nOK: 23.8 MiB in 210 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-luci-app-nlbwmon": {
+      "exit_code": 0,
+      "output": "(1/3) Installing luci-lib-chartjs (26.288.56961~b0cead4)\n(2/3) Installing nlbwmon (2025.06.02~29236be6-r2)\n(3/3) Installing luci-app-nlbwmon (26.288.56961~b0cead4)\nOK: 23.1 MiB in 208 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-luci-app-mwan3": {
+      "exit_code": 0,
+      "output": "(1/5) Installing ip-tiny (6.18.0-r2)\n(2/5) Installing libipset13 (7.24-r1)\n(3/5) Installing ipset (7.24-r1)\n(4/5) Installing mwan3 (2.12.2-r2)\n(5/5) Installing luci-app-mwan3 (26.288.56961~b0cead4)\nOK: 23.7 MiB in 210 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-luci-app-pbr": {
+      "exit_code": 0,
+      "output": "(1/6) Installing libelf1 (0.196-r1)\n(2/6) Installing libbpf1 (1.8.0-r1)\n(3/6) Installing ip-full (6.18.0-r2)\n(4/6) Installing resolveip (2)\n(5/6) Installing pbr (1.2.2-r20)\n(6/6) Installing luci-app-pbr (1.2.2-r20)\nOK: 24.1 MiB in 211 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-luci-app-smartdns": {
+      "exit_code": 0,
+      "output": "(1/3) Installing libopenssl3 (3.5.9-r2)\n(2/3) Installing smartdns (46.1-r1)\n(3/3) Installing luci-app-smartdns (1.2023.42-r1)\nOK: 28.1 MiB in 208 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-luci-app-unbound": {
+      "exit_code": 0,
+      "output": "(1/5) Installing libopenssl3 (3.5.9-r2)\n(2/5) Installing libevent2-7 (2.1.13-r1)\n(3/5) Installing libunbound (1.26.1-r2)\n(4/5) Installing unbound-daemon (1.26.1-r2)\n(5/5) Installing luci-app-unbound (26.288.56961~b0cead4)\nOK: 29.6 MiB in 210 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-luci-app-statistics": {
+      "exit_code": 0,
+      "output": "( 1/12) Installing libltdl7 (2.5.4-r1)\n( 2/12) Installing collectd (5.12.0-r58)\n( 3/12) Installing collectd-mod-cpu (5.12.0-r58)\n( 4/12) Installing collectd-mod-interface (5.12.0-r58)\n( 5/12) Installing collectd-mod-iwinfo (5.12.0-r58)\n( 6/12) Installing collectd-mod-load (5.12.0-r58)\n( 7/12) Installing collectd-mod-memory (5.12.0-r58)\n( 8/12) Installing collectd-mod-network (5.12.0-r58)\n( 9/12) Installing librrd1 (1.0.50-r7)\n(10/12) Installing collectd-mod-rrdtool (5.12.0-r58)\n(11/12) Installing rrdtool1 (1.0.50-r7)\n(12/12) Installing luci-app-statistics (26.288.56961~b0cead4)\nOK: 24.1 MiB in 217 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-luci-app-ddns": {
+      "exit_code": 0,
+      "output": "(1/5) Installing ddns-scripts-services (2.8.4-r11)\n(2/5) Installing ip-tiny (6.18.0-r2)\n(3/5) Installing resolveip (2)\n(4/5) Installing ddns-scripts (2.8.4-r11)\n(5/5) Installing luci-app-ddns (26.288.56961~b0cead4)\nOK: 23.5 MiB in 210 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-luci-app-adblock": {
+      "exit_code": 0,
+      "output": "(1/9) Installing coreutils (9.11-r1)\n(2/9) Installing coreutils-sort (9.11-r1)\n(3/9) Installing terminfo (6.6.20260801-r2)\n(4/9) Installing libncurses6 (6.6.20260801-r2)\n(5/9) Installing libreadline8 (8.3-r1)\n(6/9) Installing gawk (5.4.1-r1)\n(7/9) Installing rpcd-mod-rpcsys (2026.10.04~d99f703e-r1)\n(8/9) Installing adblock (4.5.9-r3)\n(9/9) Installing luci-app-adblock (4.5.9-r2)\nOK: 25.2 MiB in 214 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-luci-app-upnp": {
+      "exit_code": 0,
+      "output": "(1/4) Installing libcap-ng (0.8.4-r2)\n(2/4) Installing libuuid1 (2.42.2-r1)\n(3/4) Installing miniupnpd-nftables (2.3.11-r1)\n(4/4) Installing luci-app-upnp (26.288.56961~b0cead4)\nOK: 23.2 MiB in 209 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-luci-app-watchcat": {
+      "exit_code": 0,
+      "output": "(1/2) Installing watchcat (1-r26)\n(2/2) Installing luci-app-watchcat (26.288.56961~b0cead4)\nOK: 23.0 MiB in 207 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-luci-app-commands": {
+      "exit_code": 0,
+      "output": "(1/1) Installing luci-app-commands (26.288.56961~b0cead4)\nOK: 23.0 MiB in 206 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-luci-app-hd-idle": {
+      "exit_code": 0,
+      "output": "(1/9) Installing hd-idle (1.05-r2)\n(2/9) Installing libuuid1 (2.42.2-r1)\n(3/9) Installing libblkid1 (2.42.2-r1)\n(4/9) Installing libmount1 (2.42.2-r1)\n(5/9) Installing terminfo (6.6.20260801-r2)\n(6/9) Installing libncurses6 (6.6.20260801-r2)\n(7/9) Installing libsmartcols1 (2.42.2-r1)\n(8/9) Installing lsblk (2.42.2-r1)\n(9/9) Installing luci-app-hd-idle (26.288.56961~b0cead4)\nOK: 24.5 MiB in 214 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-luci-app-samba4": {
+      "exit_code": 0,
+      "output": "( 1/27) Installing libattr (2.5.2-r3)\n( 2/27) Installing attr (2.5.2-r3)\n( 3/27) Installing icu78 (78.3-r1)\n( 4/27) Installing libdbus (1.16.2-r4)\n( 5/27) Installing libexpat (2.8.4-r1)\n( 6/27) Installing dbus (1.16.2-r4)\n( 7/27) Installing libavahi-dbus-support (0.9_rc5-r1)\n( 8/27) Installing libdaemon (0.14-r5)\n( 9/27) Installing avahi-dbus-daemon (0.9_rc5-r1)\n(10/27) Installing libavahi-client (0.9_rc5-r1)\n(11/27) Installing libcap (2.69-r1)\n(12/27) Installing libgmp10 (6.3.0-r2)\n(13/27) Installing libnettle8 (3.10.2-r1)\n(14/27) Installing libgnutls (3.8.10-r2)\n(15/27) Installing libopenssl3 (3.5.9-r2)\n(16/27) Installing libpam (1.7.1-r5)\n(17/27) Installing libpopt0 (1.19-r1)\n(18/27) Installing terminfo (6.6.20260801-r2)\n(19/27) Installing libncurses6 (6.6.20260801-r2)\n(20/27) Installing libreadline8 (8.3-r1)\n(21/27) Installing libtasn1 (4.19.0-r2)\n(22/27) Installing libtirpc (1.3.7-r2)\n(23/27) Installing liburing (2.14-r1)\n(24/27) Installing libuuid1 (2.42.2-r1)\n(25/27) Installing samba4-libs (4.24.5-r1)\n(26/27) Installing samba4-server (4.24.5-r1)\n(27/27) Installing luci-app-samba4 (26.288.56961~b0cead4)\nOK: 66.2 MiB in 232 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-htop": {
+      "exit_code": 0,
+      "output": "(1/3) Installing terminfo (6.6.20260801-r2)\n(2/3) Installing libncurses6 (6.6.20260801-r2)\n(3/3) Installing htop (3.5.1-r1)\nOK: 23.7 MiB in 208 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-nano": {
+      "exit_code": 0,
+      "output": "(1/3) Installing terminfo (6.6.20260801-r2)\n(2/3) Installing libncurses6 (6.6.20260801-r2)\n(3/3) Installing nano (9.2-r1)\nOK: 23.6 MiB in 208 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-iperf3": {
+      "exit_code": 0,
+      "output": "(1/2) Installing libiperf3 (3.22-r1)\n(2/2) Installing iperf3 (3.22-r1)\nOK: 23.2 MiB in 207 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-curl": {
+      "exit_code": 0,
+      "output": "(1/3) Installing libnghttp2-14 (1.70.0-r1)\n(2/3) Installing libcurl4 (8.23.0-r1)\n(3/3) Installing curl (8.23.0-r1)\nOK: 23.8 MiB in 208 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "simulate-btop": {
+      "exit_code": 0,
+      "output": "(1/1) Installing btop (1.4.7-r1)\nOK: 24.0 MiB in 206 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "install": {
+      "exit_code": 0,
+      "output": "( 1/11) Installing btop (1.4.7-r1)\n  Executing btop-1.4.7-r1.post-install\n( 2/11) Installing libnghttp2-14 (1.70.0-r1)\n  Executing libnghttp2-14-1.70.0-r1.post-install\n( 3/11) Installing libcurl4 (8.23.0-r1)\n  Executing libcurl4-8.23.0-r1.post-install\n( 4/11) Installing curl (8.23.0-r1)\n  Executing curl-8.23.0-r1.post-install\n( 5/11) Installing terminfo (6.6.20260801-r2)\n  Executing terminfo-6.6.20260801-r2.post-install\n( 6/11) Installing libncurses6 (6.6.20260801-r2)\n  Executing libncurses6-6.6.20260801-r2.post-install\n( 7/11) Installing htop (3.5.1-r1)\n  Executing htop-3.5.1-r1.post-install\n( 8/11) Installing libiperf3 (3.22-r1)\n  Executing libiperf3-3.22-r1.post-install\n( 9/11) Installing iperf3 (3.22-r1)\n  Executing iperf3-3.22-r1.post-install\n(10/11) Installing luci-app-commands (26.288.56961~b0cead4)\n  Executing luci-app-commands-26.288.56961~b0cead4.post-install\n(11/11) Installing nano (9.2-r1)\n  Executing nano-9.2-r1.post-install\nOK: 25.9 MiB in 216 packages\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "execute-htop": {
+      "exit_code": 0,
+      "output": "htop 3.5.1\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "execute-nano": {
+      "exit_code": 0,
+      "output": " GNU nano, version 9.2\n Compiled options: --enable-tiny --enable-linenumbers --disable-nls --disable-utf8\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "execute-iperf3": {
+      "exit_code": 0,
+      "output": "iperf 3.22 (cJSON 1.7.15)\nLinux ubuntu2404 7.0.14-orbstack-00374-gbbca68e8d741 #1 SMP PREEMPT Fri Jul 31 00:11:41 UTC 2026 aarch64\nOptional features available: CPU affinity setting, IPv6 flow label, TCP congestion algorithm setting, sendfile / zerocopy, socket pacing, bind to device, support IPv4 don't fragment, POSIX threads, GSO/GRO support\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "execute-curl": {
+      "exit_code": 0,
+      "output": "curl 8.23.0 (aarch64-openwrt-linux-gnu) libcurl/8.23.0 mbedTLS/3.6.7 zlib/1.3.1.zlib-ng nghttp2/1.70.0\nRelease-Date: 2026-10-14\nProtocols: file ftp ftps http https mqtt mqtts\nFeatures: alt-svc HSTS HTTP2 HTTPS-proxy IPv6 Largefile libz SSL threadsafe UnixSockets\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "execute-btop": {
+      "exit_code": 0,
+      "output": "btop version: \u001b[1m1.4.7\u001b[0m\nCompiled with: aarch64-openwrt-linux-musl-g++ (14.4.0)\nConfigured with: make STATIC= GPU_SUPPORT=false RSMI_STATIC=\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "curl-official-https": {
+      "exit_code": 0,
+      "output": "HTTP/2 200 \nserver: nginx\ncontent-type: application/octet-stream\nlast-modified: Sun, 18 Oct 2026 02:02:22 GMT\netag: \"6ad428ae-1c5d4\"\naccept-ranges: bytes\nvia: 1.1 varnish, 1.1 varnish\ntmp-path: \naccess-control-allow-origin: *\naccess-control-allow-methods: GET, POST, OPTIONS\naccess-control-allow-headers: DNT, X-CustomHeader, Keep-Alive, User-Agent, X-Requested-With, If-Modified-Since, Cache-Control, Content-Type, Content-Range, Range\ndate: Sun, 18 Oct 2026 05:57:09 GMT\nx-served-by: cache-fra-eddf8230046-FRA, cache-icn1450062-ICN\nx-cache: MISS, MISS\nx-cache-hits: 0, 0\nx-timer: S1792303030.637935,VS0,VE231\nalt-svc: h3=\":443\";ma=86400,h3-29=\":443\";ma=86400,h3-27=\":443\";ma=86400\ncontent-length: 116180\n\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "verify-official": {
+      "exit_code": 0,
+      "output": "/tmp/base.adb: OK\n",
+      "expected_exit_code": 0,
+      "passed": true
+    },
+    "verify-without-key": {
+      "exit_code": 1,
+      "output": "/tmp/base.adb: UNTRUSTED signature\n",
+      "expected_exit_code": 1,
+      "passed": true
+    }
+  },
+  "scope": "Native ARM64 userspace in isolated copied rootfs on Ubuntu; no ONU flash or physical VPN/SQM test.",
+  "firmware": {
+    "openwrt-rtl9617c-generic-tianyi_tyfza1-squashfs-rootfs.squashfs": {
+      "bytes": 8067088,
+      "sha256": "047217f0b8bd8611c793cf2c68dc9abd056105b0ee44202d9a14627595432d4f"
+    },
+    "openwrt-rtl9617c-generic-tianyi_tyfza1-squashfs-sysupgrade.bin": {
+      "bytes": 12042524,
+      "sha256": "8ed518978362cd8d80b0fd6199f4df51e6f69677b401dc14c4ab64901358f603"
+    }
+  },
+  "required_packages": [
+    "openwrt-keyring",
+    "ca-bundle",
+    "libatomic",
+    "libstdcpp",
+    "libpthread",
+    "librt",
+    "kmod-tun",
+    "kmod-wireguard",
+    "kmod-ovpn-backports",
+    "kmod-ifb",
+    "kmod-sched-core",
+    "kmod-sched-cake",
+    "kmod-sched-connmark",
+    "kmod-sched-ctinfo",
+    "kmod-nf-conntrack-netlink",
+    "kmod-inet-diag",
+    "iptables-nft",
+    "ip6tables-nft",
+    "iptables-mod-conntrack-extra",
+    "iptables-mod-ipopt",
+    "iptables-mod-tproxy",
+    "iptables-mod-socket",
+    "ip6tables-mod-nat",
+    "kmod-nft-socket",
+    "kmod-nft-tproxy",
+    "kmod-nft-compat",
+    "kmod-nft-queue",
+    "kmod-ipt-ipset",
+    "kmod-ipt-ipopt",
+    "kmod-ipt-conntrack",
+    "kmod-ipt-conntrack-extra",
+    "kmod-ipt-tproxy",
+    "kmod-ipt-nat",
+    "kmod-ip6tables",
+    "kmod-ipt-nat6"
+  ],
+  "build_result": "make world succeeded; full signed firmware image generated",
+  "build_fixes": [
+    "Complete CPU frequency and thermal default Kconfig values for noninteractive builds",
+    "Fix to_rtl_cpu macro parameter collision with its hw member"
+  ],
+  "source_files": {
+    "port/configs/tyfza1-compat.config": "cf60acc23ff0407376fcde1fc89f144d7cb8abeed2beba7c1bb6077738ae001b",
+    "port/overlay/target/linux/rtl9617c/base-files.mk": "b76dcef57a05d013aa9cd523ab11eb27abf3f9e3508a81b5e36a15e255809da2",
+    "port/overlay/target/linux/rtl9617c/base-files/etc/uci-defaults/98-tyfza1-apk-compat": "da2f399eb9570b4d78671be317e65b4130d84b9568699fa1eb32ba35fd61aaf8",
+    "port/overlay/target/linux/rtl9617c/config-6.18": "28fccee16c1eac9416883bc4731de149a24cca796e9e9ec0db6454da3f037b83",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/clk/clk-rtl9617c-cpu.c": "6d0d1ce8a2298c033435d75986ac0e92c67626b84a6ab1885539026821ed3186",
+    "port/scripts/sync-overlay.sh": "237cd48c1376cf75088e6d0c47d9fa540ac612a028261f1abcdf1d9f9e53fcf3",
+    "port/scripts/build.sh": "427c8a982b2f69ed3f1966fb59ac566d5bdfa10336e5b8e28939c0d61c666517"
+  },
+  "artifact_payload_verification": "SquashFS feed/key/migration checked; sysupgrade kernel matches exactly, root matches with standard zero alignment padding",
+  "package_install_test_firmware_version": "0.7.0-alpha",
+  "release_build": {
+    "version": "0.8.0-beta",
+    "result": "make world succeeded; image, package and PON identity versions verified",
+    "firmware": {
+      "openwrt-rtl9617c-generic-tianyi_tyfza1-squashfs-rootfs.squashfs": {
+        "bytes": 8067048,
+        "sha256": "3250b28eabcb71946e4ecc74031536f3e24835c736cfc598ffbdbfe9da2ec846"
+      },
+      "openwrt-rtl9617c-generic-tianyi_tyfza1-squashfs-sysupgrade.bin": {
+        "bytes": 12042523,
+        "sha256": "9ddc14de30e5e39bce775c2a49539cb366784f974d7e13cb1ec6c2c641ebeadb"
+      }
+    }
+  }
+}

@@ -112,8 +112,8 @@ static inline void rtl_ax_bb_dm_gpio_start(const struct rtl_ax_io *io, unsigned 
 	for (path = 0; path < 2; path++) {
 		unsigned int reg = path ? 0x17894 : 0x15894;
 
-		/* PAPE byte0=4,TRSW byte1=6. RFE53/54 LNA inverted,
-		 * standby mode=1,so LNA byte2=a instead of the default8. */
+		/* PAPE byte0=4,TRSW byte1=6. RFE54 uses LNA byte2=a
+		 * on XB; C reserves that setting for RFE63/64. */
 		rtl_ax_update32(io, reg, 255, 4);
 		rtl_ax_update32(io, reg, 255U << 8, 6U << 8);
 		if (chip == RTL_AX_8192XB)
@@ -121,7 +121,7 @@ static inline void rtl_ax_bb_dm_gpio_start(const struct rtl_ax_io *io, unsigned 
 	}
 	if (chip == RTL_AX_8852C)
 		for (path = 0; path < 2; path++)
-			rtl_ax_update32(io, path ? 0x17894 : 0x15894, 255U << 16, 10U << 16);
+			rtl_ax_update32(io, path ? 0x17894 : 0x15894, 255U << 16, 8U << 16);
 	dm->gpio_ready = true;
 }
 
@@ -339,5 +339,33 @@ static inline void rtl_ax_bb_dm_signal_start(const struct rtl_ax_io *io, unsigne
 	dm->edcca_power_offset = (io->read32(io->ctx, 0x14848) >> 17) & 31;
 	rtl_ax_update32(io, 0x10c70, 0x3f00000, 41U << 20);
 	dm->edcca_ready = true;
+}
+
+/* Normal mode: edcca_thre_calc/transfer_rssi@2a3a60/2a3a20 and
+ * set_collision_th@2a38c8, using the CLIENT CR map on both chips. */
+static inline void rtl_ax_bb_dm_edcca_update(const struct rtl_ax_io *io,
+	struct rtl_ax_bb_dm *dm, bool linked, u8 rssi_min)
+{
+	unsigned int high = linked ? (rssi_min >> 1) + 15 : 249;
+	int collision = 60 - (rssi_min >> 1);
+	unsigned int i, shift, address;
+
+	/* Adaptivity/carrier-sense modes have different regulatory inputs. */
+	if (dm->edcca_mode) return;
+	if (linked && high < 66) high = 66;
+	dm->edcca_high = high;
+	dm->edcca_low = high - 8;
+	rtl_ax_update32(io, 0x14840, 0xff00, high << 8);
+	rtl_ax_update32(io, 0x14840, 0xff, high);
+	rtl_ax_update32(io, 0x14840, 0xff000000, high << 24);
+	rtl_ax_update32(io, 0x14848, 0x1f000, 8U << 12);
+	if (collision < 0) collision = 0;
+	if (collision > 31) collision = 31;
+	rtl_ax_update32(io, 0x10c70, 0xf800, collision << 11);
+	for (i = 0; i < 13; i++) {
+		address = 0x10c74 + (i / 6) * 4;
+		shift = (i % 6) * 5;
+		rtl_ax_update32(io, address, 31U << shift, (u32)collision << shift);
+	}
 }
 #endif

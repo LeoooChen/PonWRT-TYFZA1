@@ -1,0 +1,630 @@
+{
+  "date": "2026-10-18",
+  "takeover_HEAD": "78f4dbb",
+  "current_HEAD": "e166eebe40587dc38d09fc8c4d347aeb0a33090d",
+  "device_boot_id": "fe769226-7a17-425d-9480-3eeae45c9714",
+  "kernel": "6.18.55",
+  "stock_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "status": "PE service ceiling fixed; 1400Mbps wire/2M zero loss verified; 1500Mbps residual loss and 2400Mbps overload retained",
+  "deployment": {
+    "hot_loaded": true,
+    "persistent_path": "/lib/modules/6.18.55/rtl_ax_ap.ko",
+    "module_sha256": "b2fd27baa28c538e9763fb8ca5e8ec2088d0865d725ff9d05a6abd71974f1ed5",
+    "reboot_tested": false,
+    "full_firmware_built": false,
+    "flashed": false,
+    "committed": true
+  },
+  "scope": {
+    "preserved_inherited_changes": true,
+    "preserved_concurrent_other_AI_changes": true,
+    "production_files_modified_by_this_takeover": [
+      "port/pe/rtl9617c-radio-wd.c",
+      "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/monitor.h",
+      "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-tx-code.h"
+    ],
+    "inherited_performance_changes": [
+      "port/pe/rtl9617c-radio-downlink.h",
+      "port/pe/rtl9617c-radio-wd.c"
+    ]
+  },
+  "focused_checks": [
+    "Linked PE EPP batching/active TID round-robin",
+    "Linked PE PS isolation",
+    "Linked PE RPQ/EQ lifecycle",
+    "Linked PE 7-MSDU gather/header/payload/padding",
+    "Factory ARM64 HE A-MSDU budget vs native capability",
+    "Final ARM64 external module build",
+    "Final built-source and embedded PE identity"
+  ],
+  "runs": {
+    "tyf-final-bpf-1400-1792298239": {
+      "directory": "tyf-final-bpf-1400-1792298239",
+      "BPF": {
+        "expected": 2000000,
+        "received": 2000000,
+        "unique": 2000000,
+        "missing": 0,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "BPF_kernel_drops": 0,
+        "active_seconds": 17.578604,
+        "UDP_payload_Mbps": 1339.811
+      },
+      "UDP": {
+        "interface": "en0",
+        "expected": 2000000,
+        "received": 2000000,
+        "unique": 2000000,
+        "missing": 0,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "UDP_payload_bytes": 2944000000,
+        "receiver_window_seconds": 17.800724,
+        "active_packet_seconds": 17.577582,
+        "UDP_payload_Mbps": 1339.889,
+        "missing_ranges": []
+      },
+      "modem_delta": {
+        "l3te_tail_drop": 0,
+        "PE_NI_sent": 2003699,
+        "recycled": 2003696,
+        "RPQ_reports": 297456,
+        "failed": 0,
+        "PE_NI_MPDU": 297458,
+        "AMSDU": 295404,
+        "sleep_events": 0,
+        "wake_events": 0
+      },
+      "skywalk_delta": [
+        [
+          "total Rx packet",
+          2003927
+        ],
+        [
+          "demux AF unkown (passed to BSD)",
+          1
+        ],
+        [
+          "dropped, flow lookup failure",
+          2000057
+        ],
+        [
+          "copied pkt  -> mbuf",
+          2003344
+        ],
+        [
+          "copy+checksumed",
+          2003343
+        ],
+        [
+          "aggregated pkt  -> super mbuf",
+          2497
+        ],
+        [
+          "IP header merge via fastpath",
+          757
+        ],
+        [
+          "IP header merge via slowpath",
+          615
+        ],
+        [
+          "TCP header merge via fastpath",
+          862
+        ],
+        [
+          "TCP header merge via slowpath",
+          12
+        ],
+        [
+          "TCP aggregation via fastpath",
+          757
+        ],
+        [
+          "TCP aggregation via slowpath",
+          615
+        ],
+        [
+          "TCP packet too short for mask compare",
+          224
+        ],
+        [
+          "TCP mask compare mismatch",
+          3
+        ],
+        [
+          "TCP ulength compare mismatch",
+          17
+        ],
+        [
+          "TCP sequence number compare mismatch",
+          11
+        ],
+        [
+          "TCP ACK or window compare mismatch",
+          1
+        ],
+        [
+          "mbuf too short for mask compare",
+          341
+        ],
+        [
+          "wasted pre-allocate mbufs",
+          3
+        ]
+      ],
+      "captured_but_not_UDP": 0,
+      "UDP_not_captured": 0
+    },
+    "tyf-final-bpf-1500-1792298139": {
+      "directory": "tyf-final-bpf-1500-1792298139",
+      "BPF": {
+        "expected": 1000000,
+        "received": 997815,
+        "unique": 997815,
+        "missing": 2185,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "BPF_kernel_drops": 0,
+        "active_seconds": 8.204011,
+        "UDP_payload_Mbps": 1432.259
+      },
+      "UDP": {
+        "interface": "en0",
+        "expected": 1000000,
+        "received": 997815,
+        "unique": 997815,
+        "missing": 2185,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "UDP_payload_bytes": 1468783680,
+        "receiver_window_seconds": 18.437656,
+        "active_packet_seconds": 8.203597,
+        "UDP_payload_Mbps": 1432.331,
+        "missing_ranges": [
+          [
+            176016,
+            176838
+          ],
+          [
+            177084,
+            177493
+          ],
+          [
+            177500,
+            177500
+          ],
+          [
+            177507,
+            177507
+          ],
+          [
+            177576,
+            178180
+          ],
+          [
+            178425,
+            178546
+          ],
+          [
+            426045,
+            426267
+          ]
+        ]
+      },
+      "modem_delta": {
+        "l3te_tail_drop": 2191,
+        "PE_NI_sent": 1000977,
+        "recycled": 1000978,
+        "RPQ_reports": 148363,
+        "failed": 0,
+        "PE_NI_MPDU": 148364,
+        "AMSDU": 147276,
+        "sleep_events": 0,
+        "wake_events": 0
+      },
+      "skywalk_delta": [
+        [
+          "total Rx packet",
+          1003688
+        ],
+        [
+          "demux AF unkown (passed to BSD)",
+          1
+        ],
+        [
+          "dropped, flow lookup failure",
+          997868
+        ],
+        [
+          "copied pkt  -> mbuf",
+          1002187
+        ],
+        [
+          "copy+checksumed",
+          1002186
+        ],
+        [
+          "aggregated pkt  -> super mbuf",
+          3491
+        ],
+        [
+          "IP header merge via fastpath",
+          789
+        ],
+        [
+          "IP header merge via slowpath",
+          1539
+        ],
+        [
+          "TCP header merge via fastpath",
+          892
+        ],
+        [
+          "TCP header merge via slowpath",
+          11
+        ],
+        [
+          "TCP aggregation via fastpath",
+          789
+        ],
+        [
+          "TCP aggregation via slowpath",
+          1539
+        ],
+        [
+          "TCP packet too short for mask compare",
+          654
+        ],
+        [
+          "TCP mask compare mismatch",
+          6
+        ],
+        [
+          "TCP header length compare mismatch",
+          1
+        ],
+        [
+          "TCP ulength compare mismatch",
+          18
+        ],
+        [
+          "TCP sequence number compare mismatch",
+          14
+        ],
+        [
+          "TCP ACK or window compare mismatch",
+          1
+        ],
+        [
+          "mbuf too short for mask compare",
+          822
+        ]
+      ],
+      "UDP_socket_drops": 0,
+      "captured_but_not_UDP": 0,
+      "UDP_not_captured": 0
+    },
+    "tyf-final-bpf-2400-1792298178": {
+      "directory": "tyf-final-bpf-2400-1792298178",
+      "BPF": {
+        "expected": 1000000,
+        "received": 731322,
+        "unique": 731322,
+        "missing": 268678,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "BPF_kernel_drops": 0,
+        "active_seconds": 5.14603,
+        "UDP_payload_Mbps": 1673.532
+      },
+      "UDP": {
+        "interface": "en0",
+        "expected": 1000000,
+        "received": 633938,
+        "unique": 633938,
+        "missing": 366062,
+        "duplicates": 0,
+        "payload_errors": 0,
+        "unexpected_sequences": 0,
+        "UDP_payload_bytes": 933156736,
+        "receiver_window_seconds": 15.441161,
+        "active_packet_seconds": 5.201904,
+        "UDP_payload_Mbps": 1435.1,
+        "missing_ranges": [
+          [
+            4632,
+            4696
+          ],
+          [
+            7125,
+            7407
+          ],
+          [
+            7415,
+            7415
+          ],
+          [
+            7437,
+            7438
+          ],
+          [
+            7496,
+            7624
+          ],
+          [
+            7709,
+            7841
+          ],
+          [
+            7850,
+            7850
+          ],
+          [
+            7929,
+            8051
+          ],
+          [
+            8136,
+            8173
+          ],
+          [
+            8188,
+            8188
+          ],
+          [
+            11608,
+            11937
+          ],
+          [
+            12022,
+            12565
+          ],
+          [
+            12650,
+            12908
+          ],
+          [
+            12930,
+            12930
+          ],
+          [
+            12994,
+            13396
+          ],
+          [
+            13404,
+            13404
+          ]
+        ]
+      },
+      "modem_delta": {
+        "l3te_tail_drop": 268799,
+        "PE_NI_sent": 731868,
+        "recycled": 731868,
+        "RPQ_reports": 104655,
+        "failed": 0,
+        "PE_NI_MPDU": 104655,
+        "AMSDU": 104540,
+        "sleep_events": 0,
+        "wake_events": 0
+      },
+      "skywalk_delta": [
+        [
+          "total Rx packet",
+          735012
+        ],
+        [
+          "dropped, flow lookup failure",
+          731364
+        ],
+        [
+          "copied pkt  -> mbuf",
+          636575
+        ],
+        [
+          "copy+checksumed",
+          636575
+        ],
+        [
+          "dropped due to mbuf alloc failure",
+          10
+        ],
+        [
+          "aggregated pkt  -> super mbuf",
+          2299
+        ],
+        [
+          "IP TTL compare mismatch",
+          1
+        ],
+        [
+          "IP header merge via fastpath",
+          222
+        ],
+        [
+          "IP header merge via slowpath",
+          1117
+        ],
+        [
+          "TCP header merge via fastpath",
+          396
+        ],
+        [
+          "TCP header merge via slowpath",
+          11
+        ],
+        [
+          "TCP aggregation via fastpath",
+          222
+        ],
+        [
+          "TCP aggregation via slowpath",
+          1117
+        ],
+        [
+          "TCP packet too short for mask compare",
+          405
+        ],
+        [
+          "TCP mask compare mismatch",
+          2
+        ],
+        [
+          "TCP ulength compare mismatch",
+          5
+        ],
+        [
+          "TCP sequence number compare mismatch",
+          19
+        ],
+        [
+          "TCP ACK or window compare mismatch",
+          1
+        ],
+        [
+          "mbuf too short for mask compare",
+          601
+        ],
+        [
+          "wasted pre-allocate mbufs",
+          7
+        ],
+        [
+          "total dropped",
+          97385
+        ],
+        [
+          "dropped, mbuf alloc failure",
+          97385
+        ]
+      ],
+      "UDP_socket_drops": 0,
+      "captured_but_not_UDP": 97384,
+      "UDP_not_captured": 0
+    }
+  },
+  "limitations": [
+    "2.4Gbps is offered Ethernet wire input, not achieved UDP goodput",
+    "No real optical WAN or uplink throughput acceptance in this turn",
+    "Global queue and Skywalk counters include other traffic; per-flow sequence bitmaps are preserved",
+    "Short measurements do not establish long-duration zero-loss stability",
+    "Earlier BPF version did not return nonzero on missing packets; explicit missing counts remain authoritative",
+    "Incomplete UART and SSH-sampling runs are not acceptance results"
+  ],
+  "sha256": {
+    "port/pe/rtl9617c-radio-wd.c": "7bf7705c85a4b17161cb0f62a5bfa2920b04ffb16bb70aa0e2c865d7b7fbaeac",
+    "port/pe/rtl9617c-radio-downlink.h": "934bd6359ac3b48c7347d7aeae8da27083559cfb89d9d13b3cd5f6753a523d56",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/monitor.h": "aaf71bea15ee1052f4aaa807233785923643c3918ccdfcfd25ca253915c8462a",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pe-tx-code.h": "c1f1a3664fbaef848f0158f9d575a2a7b004e7a4c7b37fe67766ee44e4d9ed36",
+    "scripts/test_pe_downlink_gather.py": "6e93f697094d2cd71bcbca58cfa5f6712f277d688b90e970cf5869a202473113",
+    "scripts/test_pe_epp_batch.py": "b209856f1516cfd6688de62b63e62530ce2f26fc358d65055df514a070b2febe",
+    "docs/wifi-overgig-20261018.md": "b9f2b8c6215f2dee2ba75f10d6068819ff326fc45064a0aa8c87e510572183f2",
+    "artifacts/wifi-overgig-takeover-20261018/installed-before.ko": "37a059ce485603fe78110b338617960d9cd87d2e21be2efc648454fd863ecc4c",
+    "artifacts/wifi-overgig-takeover-20261018/radio-final/rtl_ax_ap.ko": "b2fd27baa28c538e9763fb8ca5e8ec2088d0865d725ff9d05a6abd71974f1ed5",
+    "artifacts/wifi-overgig-takeover-20261018/pe-verified/pe-tx.bin": "c5124daf8a3f513be40a34f61d0a4955cb34f1c3fbf5f4eaa69ad11b67c6b155",
+    "artifacts/wifi-overgig-takeover-20261018/he-budget.json": "32ab09ee1ea7182b16887071e5bc16c56fe770432fc07f67345e9463bb61bab2",
+    "artifacts/wifi-overgig-takeover-20261018/epp-batch.json": "0b2e45d429600c8788913b0674a33935e333401e089ada65eeaa72b79d1d4127",
+    "artifacts/wifi-overgig-takeover-20261018/ps-isolation.json": "38ae6b16d0993eb0693b97cf6a7f53fde3be0661ba574f1d8e4a85cd51d2f720",
+    "artifacts/wifi-overgig-takeover-20261018/he-large-gather.json": "8b30f8701c896eebdd027236b4a1a8cbdd1aefe3e8950d23ac34e9d87e5dec38",
+    "artifacts/wifi-overgig-takeover-20261018/check_he_budget.py": "b6de14a2e80afbdeb9a0aa09c86be715b4b88ead24e8b700aef8a84067039fce",
+    "artifacts/wifi-overgig-takeover-20261018/receiver-bpf.c": "9a88f45787718c9347b6f68c6b8cb6fea15e6d86a423126213352f0ab71437c2",
+    "artifacts/wifi-overgig-takeover-20261018/receiver-batch.c": "22f3c77012572ce312f4527d23462556475465b1d383410a64c19c33518cb697",
+    "artifacts/wifi-overgig-takeover-20261018/final_capture.py": "454086eaf1bb99e9c5c8b3a45787d0b42fa975095ccbd8e0ecfe1c0d48900c5a",
+    "artifacts/wifi-overgig-takeover-20261018/run_final.py": "aed27e9224b979e2207d4c0b8d81637158dd1d655a1868c3cc20b175e84c7eed",
+    "artifacts/wifi-overgig-takeover-20261018/inherited/uncommitted.patch": "d60841d4b9fe0ecfa5dcc32420a06b8801f6b133348090a99a91bf13b3289539",
+    "artifacts/wifi-overgig-takeover-20261018/inherited/status.txt": "0ea2cb16a80c557bff5fc015cece8a925b4ebfb19914e89193556fac6d2b451c",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/all-before.txt": "50c9859566134b448f7af5893e9088a8dd3d41460c8d670e12cea46d16977478",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/link-before.txt": "bd309e3e0e9cea291c864579dbd9b1b3b92942ff9b7c1cad5cf17d6ae88a26ab",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/cleanup.txt": "dd193a8389b8cb238063158d802a98ddb521128e00320175440eac8dc32ab831",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/skywalk-before.txt": "b1dcb2d44079b85a60e600966ea38143a79dddf422c638e89b8ceaa93e63e304",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/receiver.txt": "6bcf1c73769a5df76f99df98e5219dd36b1d94fa39ede7c89daa35a1702fd66a",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/bpf.txt": "99c387a3eaba002ab543b094cb8105472bae9c226b0391fde36b10ceda908b3a",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/mbuf-before.txt": "f8adc4b5c945ada540703d9ec027f6f9cf0d88ba8474300ef3b86c98ef8f4ccf",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/udp-after.txt": "23ab9d4d55a29f8f363dfb11c9ae1c1361a3a76fec4b67515cb70f3b014e973a",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/before.txt": "61ac19bc3aaf24cee8586217cc360e7fb45bea9f65c063e5308010ade57c1422",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/skywalk-after.txt": "89f0ee08652bc625d767716e543efb85c72b15711691b7b4d77a322b2c0676f0",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/receiver.err": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/input-before.json": "0d24a6bc41ea6d142f6f8a6ca1d06b4416221bb330f14007270d54693eae86dd",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/bpf.bitmap": "5499a017e5937d55db3d4b771130c3f7788e8eee28a7dc4cc57aaad1e24fdd26",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/link-after.txt": "c1a2e1223ba7685c3631ed531e90f5dbeca04ad8de81257eceb7b09bab2fe81d",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/after.txt": "893db65871b93e6bdfb26902dd4ac1928848f1a4ea0d55ab5e48e5d331723c63",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/all-after.txt": "22ef14322e7cb1ccfdc385f005d17617df71b21da88e11301fdfc08bb8a2dd42",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/ip-before.txt": "58ec3e70ecf586e982db8d570329f3e541339b82409a90a0736a9f004d8fa5a1",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/generator.txt": "6c7ec84456c48c219d414e756a1103fc575d9499cc01b5a6e835618080494998",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/flow-stats.txt": "2cdd6f01a41bce6014549bbd9de12951a1da777c6971233c8fc918c346d135bd",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/received.bitmap": "5499a017e5937d55db3d4b771130c3f7788e8eee28a7dc4cc57aaad1e24fdd26",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/input-after.json": "762f9f5f54a0f4152e5a67d93293097ec2c7725a3056e966ea56ceea087b8f92",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/mbuf-after.txt": "03c78f2ac3585468a2e47e8a63ad863ebcb857f07588d1de35019b186f3624fe",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/udp-before.txt": "47f41b569e7df265f27ad8fa2c17764b669b96f3dd5feab6ef073b23e44fe117",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/receiver.plist": "149b3670fd2c4528e92d7d1164de61c001ca89e7008d031c026194e37766fd7a",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/ip-after.txt": "01a31c2db0432fdb38b0d42e83ca1fc8ce863d48c7532584504a3b20315d7a4f",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1400-1792298239/analysis.json": "c3421909d44b78e4666499d9b7530e7bfae7a7985bd2f0dfb6d5c6540aa8b95d",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/all-before.txt": "6677cf23895debc6d79479047f50c4ea5d33203976fb4ac7abce6983337ba465",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/link-before.txt": "76ab7fac2777ad9f7d95304b90109e7bafa4432c827e1cf73298fdde61bf6264",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/cleanup.txt": "dd193a8389b8cb238063158d802a98ddb521128e00320175440eac8dc32ab831",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/skywalk-before.txt": "b945d0b9ca8e70409e9e007e89da1e22722cf139d445840508acc7e59c9cfb94",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/receiver.txt": "3e42bdb2c06875a86afb0f7673c0f4529b8121bd7488eb8f02eff552b80f7552",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/bpf.txt": "4ca799df89758ddba31131ed214ab3a2b28d6d0d50ed8230b1fc4541a125ac1d",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/mbuf-before.txt": "caf935b4a7f62ad65f01feb61432449da108ebed085f30b6e51cc7ced81bbc0d",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/udp-after.txt": "fe62a5d2bb599e65a99716775c2ecc1aea8b1b572ae0a9358b63ffc2cb6a5d10",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/before.txt": "f2a585da9f0ad0352a7ddfbff0acee1aa7db43c2796e5da5899f7e0895a2fec2",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/skywalk-after.txt": "2114c873899203eae4b3f9034b9a2339ea2cfdeb389bede18b34c3815bfa2caa",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/receiver.err": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/input-before.json": "17640472f1c8d4534c7d3204f3453c1630df63c6a8547b673554361587e408c1",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/bpf.bitmap": "c712fdb0a0ed6622cfa7a91bfd8c1353423ab5841b27f7082db0c42d591c1915",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/link-after.txt": "8d478f8952d63842f5ef220bde105e51d27db898b379decc9acca56a6275259e",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/after.txt": "80577f3a19f0a221ec6f0473424d58895792dc9cc6cf523752e7e2e5bb415c84",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/all-after.txt": "b3fea6b2dd033930c9c145faa62affd58155f3fa8b2e5cd15bf82270328bf386",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/ip-before.txt": "45f06d133390678a2549dd5a4d7b7dd17e7922f053db14d2384284251337d345",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/generator.txt": "ab7bdbf465b0dc4076c414ae58fdeda71eaa5836139fff8cba1f79686b3eb7c0",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/flow-stats.txt": "0c097cda22ed0baed28f543960156504c5970a9696d840ebd54d5b928972ed61",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/received.bitmap": "c712fdb0a0ed6622cfa7a91bfd8c1353423ab5841b27f7082db0c42d591c1915",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/input-after.json": "a0eaba04658393314bfb6d76336277be44bff786f2b788ebdb070a8d3105b56f",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/mbuf-after.txt": "ea8a67ae19d4033648b68624696932a0d8b6aca1169a9f3db3b529cf7494f94a",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/udp-before.txt": "65edea2d1f574626f24a3eca1f142481641e0090e579acede8ec9bc665357dcb",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/receiver.plist": "54cfded45249b58566e87f34cebcf6fa9c91bc034020ec441ea4e61da36a843b",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/ip-after.txt": "5f6c899c42ecab5dabf9a430b04f19b4251099650109152ea9a2994acb0b5972",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-1500-1792298139/analysis.json": "42bac896af045c982d240347e679a4677811524535002808de03d4af727c4d68",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/all-before.txt": "c5f53da17063e2884574f3ec5d4d27658fcd03987311b354f3bbfea234db78fb",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/link-before.txt": "f7ee9292e4fec28647b76c5dbe6060d9b00eff5915a097331f0a203e5e551da6",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/cleanup.txt": "dd193a8389b8cb238063158d802a98ddb521128e00320175440eac8dc32ab831",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/skywalk-before.txt": "2c7c375575ff91e8c9859416084b908a203101adbf4a78f4a60f522de81b13b3",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/receiver.txt": "4ddd960ac60c18582294aae447f46f03d2688519577d4ae14da8cf4e227fe760",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/bpf.txt": "60336e99892a3aa70918977a0da94047dd309dcf8099414a52171ce75873fe6b",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/mbuf-before.txt": "eddca4082b2b79e0a4c38e5424e7aedb5d4e4d4580e9cb680deac3a3235b2b5f",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/udp-after.txt": "06852718f0d572aed505a5007f33ec28c5fe054f0ebdda56a7fffbdfef01f7ff",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/before.txt": "1e463cc8129264318b9b4024937c3e64cc1939b3824f727c8a8261d4539217ed",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/skywalk-after.txt": "a90a86d1e9531595c045e321301c955da76d97b4f4a854b3804f51480fb3c41d",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/receiver.err": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/input-before.json": "5b0b60abf0bfcbbc149d06e468f2cb5f02f9487b707ac66c94496b5b38d2886e",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/bpf.bitmap": "ab5caa27606a42784422a9706523dadf129cc3a03d0b3bf0daa781620211dd10",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/link-after.txt": "83b5f81d96430e27d2bdfa2428364a43116ef6cfd4d2d68b590cedb79dbbe2e9",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/after.txt": "c4563e73cae6c1c7e1807188471dfbfe5a5793b54946a47bc3f4c6bde1b8bc3a",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/all-after.txt": "f058ea7cd95c55f6a9c6e8d8fde85b0e5b3d4d59ea29cd46efca151b37953922",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/ip-before.txt": "a543736c0c0fb684c0f485b6a6bcda2602bded532c84f9e5a4b4e0e22f55f466",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/generator.txt": "ea1f0473366abe18156c0e774e1e949f519a71312e45763c6a1417f9bb99f4d1",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/flow-stats.txt": "2d23b2a59334d4c5c6c3da532c492d4caf113764dfd9236c9278db3ed0050657",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/received.bitmap": "1d50e483b7f44f2c1232415e0c3a26d5c04c8496174ccefbad73f484a60d9881",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/input-after.json": "752ea357757e21fa51214effea943ba78c54db345c4276dad9a1e5bf07ed83e9",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/mbuf-after.txt": "bcbf02f6b445da644ad74945692e1a4ee5f27642a9a5220bb325e92d789acca9",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/udp-before.txt": "469bbd5f4cff716721b3f1e57bbe15c5fa5226df29c27d36dae94badeda3ead3",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/receiver.plist": "6b510b77e5562a39abe6ec3958d6562562016aad2f53b97f052f20ffd8276579",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/ip-after.txt": "c25a2eb240e522481484528bae0e0e540502f0f90ec0b96c73fe2a16170fb0cd",
+    "artifacts/wifi-overgig-takeover-20261018/tyf-final-bpf-2400-1792298178/analysis.json": "6c3cb7b57645a62daad3cdfad717b483c30a28399fea7790975813e8aac8d294"
+  },
+  "commit_scope": {
+    "branch": "main",
+    "includes": "PE batching, active TID scheduling, DDR access reduction, HE 11K aggregation, generated PE image, focused tests and evidence report",
+    "excludes": "Inherited power-management changes and all non-Wi-Fi changes remain in the working tree",
+    "runtime_build": "Final validated module includes inherited power changes; it is not a clean build of the performance-only commit tree"
+  },
+  "sha256_scope": "Recorded validated worktree files; monitor.h includes inherited power edits retained outside this commit.",
+  "committed_monitor_sha256": "4885c6a66e57b22e8298e99554919d97996ebdc33407aaaba4afef2530637c29"
+}

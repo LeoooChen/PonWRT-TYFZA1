@@ -1,64 +1,24 @@
 --- a/drivers/net/phy/realtek/realtek_main.c
 +++ b/drivers/net/phy/realtek/realtek_main.c
-@@ -132,6 +132,7 @@
- #define RTL822X_VND1_SERDES_OPTION_MODE_MASK		GENMASK(5, 0)
- #define RTL822X_VND1_SERDES_OPTION_MODE_2500BASEX_SGMII		0
- #define RTL822X_VND1_SERDES_OPTION_MODE_2500BASEX		2
-+#define RTL822X_VND1_SERDES_OPTION_MODE_HSGMII_SGMII		1
- 
- #define RTL822X_VND1_SERDES_CTRL3			0x7580
- #define RTL822X_VND1_SERDES_CTRL3_MODE_MASK		GENMASK(5, 0)
-@@ -1991,7 +1992,10 @@
- 		return 0;
- 
- 	/* determine SerDes option mode */
--	if (has_2500 && (!has_sgmii || !phydev->is_c45)) {
-+	if (of_property_read_bool(phydev->mdio.dev.of_node, "realtek,hsgmii")) {
-+		mode = RTL822X_VND1_SERDES_OPTION_MODE_HSGMII_SGMII;
-+		phydev->rate_matching = RATE_MATCH_NONE;
-+	} else if (has_2500 && (!has_sgmii || !phydev->is_c45)) {
- 		mode = RTL822X_VND1_SERDES_OPTION_MODE_2500BASEX;
- 		phydev->rate_matching = RATE_MATCH_PAUSE;
- 	} else {
-@@ -2004,7 +2008,7 @@
- 	 */
- 
- 	if (!gen1) {
--		ret = phy_write_mmd(phydev, MDIO_MMD_VEND1, 0x75f3, 0);
-+		ret = phy_clear_bits_mmd(phydev, MDIO_MMD_VEND1, 0x75f3, BIT(0));
- 		if (ret < 0)
- 			return ret;
- 	}
-@@ -2020,7 +2024,9 @@
- 	if (ret < 0)
- 		return ret;
- 
--	ret = phy_write_mmd(phydev, MDIO_MMD_VEND1, 0x6f10, 0xd455);
-+	ret = phy_write_mmd(phydev, MDIO_MMD_VEND1, 0x6f10,
-+			    mode == RTL822X_VND1_SERDES_OPTION_MODE_HSGMII_SGMII ?
-+			    0xd433 : 0xd455);
- 	if (ret < 0)
- 		return ret;
- 
-@@ -2032,6 +2038,21 @@
- 	if (ret < 0)
- 		return ret;
- 
-+	if (mode == RTL822X_VND1_SERDES_OPTION_MODE_HSGMII_SGMII) {
-+		int val, release;
-+
-+		/* Stock Rtl8221_serdes_option_set latches the new mode at link down. */
-+		ret = phy_set_bits_mmd(phydev, MDIO_MMD_VEND2, 0xa400, BIT(14));
-+		if (ret < 0)
-+			return ret;
-+		ret = phy_read_mmd_poll_timeout(phydev, MDIO_MMD_VEND2, 0xa434,
-+					       val, val & BIT(2), 100000, 10000000, false);
-+		release = phy_clear_bits_mmd(phydev, MDIO_MMD_VEND2, 0xa400, BIT(14));
-+		if (release < 0)
-+			return release;
-+		if (ret < 0)
-+			return ret;
-+	}
+@@ -3811,7 +3811,21 @@
  	return 0;
  }
  
++#include "rtl8221b-tyfza1.h"
++
+ static struct phy_driver realtek_drvs[] = {
++	{
++		.match_phy_device = rtl8221b_tyfza1_match,
++		.name		= "TYFZA1 RTL8221B HiSGMII PHY",
++		.get_features	= rtl8221b_tyfza1_get_features,
++		.config_init	= rtl8221b_tyfza1_config_init,
++		.config_aneg	= rtl822x_c45_config_aneg,
++		.read_status	= rtl822x_c45_read_status,
++		.suspend	= genphy_c45_pma_suspend,
++		.resume		= rtlgen_c45_resume,
++		.read_mmd	= rtl822xb_read_mmd,
++		.write_mmd	= rtl822xb_write_mmd,
++	},
+ 	{
+ 		PHY_ID_MATCH_EXACT(0x00008201),
+ 		.name		= "RTL8201CP Ethernet",

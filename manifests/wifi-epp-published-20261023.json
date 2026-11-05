@@ -1,0 +1,74 @@
+{
+  "date": "2026-10-23",
+  "base_commit": "7a7a428",
+  "change": "Follow actual ca_ni_rx_napi published EPP pointer interval. Equal RD/WR means no published entries, irrespective of queue-status bit.",
+  "preserved": [
+    "EPP early credit return before callbacks",
+    "BID refill ownership",
+    "AXI EQ/EPP attributes",
+    "PE program and wireless module unchanged",
+    "PN/SN and BA rules"
+  ],
+  "factory_evidence": "ca-ne.ko ca_ni_rx_napi0xb00..0xb98 reads WR/RD, computes count, stops on0. Reference ca_ni_rx.c1832..1888. Status0 is a queue-activity bitmap, not a per-ring wrap marker.",
+  "tests": {
+    "before": {
+      "result": "Original poll delivers64 stale entries without producer progress",
+      "actual_poll_C": true,
+      "hardware_timing_modeled": true,
+      "root_cause_claim": false
+    },
+    "after": {
+      "result": "Factory EPP contract: equal pointers empty; later publication and wrap exact",
+      "actual_poll_C": true,
+      "hardware_timing_modeled": true,
+      "root_cause_claim": false
+    },
+    "credit": "kind=1 accepted=129 received=129 drops=0 returned=129\nkind=2 accepted=129 received=129 drops=0 returned=129\nkind=0 accepted=129 received=129 drops=0 returned=129\n",
+    "rx_modes": "python3 scripts/test_native_rx_modes.py --case qm passed"
+  },
+  "image": {
+    "source_commit": "7a7a4280d2dc7c84ad945e04c29a47ee8b1a1155",
+    "source_status": " M port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-qm.c\n M scripts/test_native_rx_modes.py\n M sources/openwrt\n?? manifests/wifi-focused-takeover-20261023.json\n?? manifests/wifi-ring-publication-audit-20261023.json\n?? scripts/test_ni_epp_publication.py\n",
+    "QM_source_SHA256": "e13a020f53836b30528c034aae614665e70dda60964de177daa2fc4d06800ea3",
+    "sysupgrade_SHA256": "dd614227689310faafd5aced6409eab441c3087af0e21c0284f127818d59558d",
+    "kernel_SHA256": "57c6a40cf4e48eb3e02385c366f4834faba05deca7f689de80f35067a443e1d7",
+    "rootfs_SHA256": "7148c5ae31878f8d6be311c497fd04b772f76feedbbf78ffcb1f2859a83256c7",
+    "packaged_radio_SHA256": "4c9ef44cb76d3225165523641f5cec180a1b4c473899de7930635ef89e5a0f37",
+    "embedded_PE_SHA256": "4ad4b1366d34b3296d83326fc411ffa9cb6583d656ac86c607214ef18acc5c9a",
+    "embedded_PE_exact": true,
+    "built_NI_source_exact": true,
+    "FIT_profiles": {
+      "conf-0": {
+        "kernel": "4d9be6efe179894759a454799408e3d719df855aff838dd5031fb628433ddcf7",
+        "fdt": "b320cedb5cc72ccf46349de5cf7da3453549afbb07b3c434bafb1f96775b6f94",
+        "script": "ac9ebd6848f0bb05b1f3aab05b4f45b1f308197266738e22d9b05e8084ee3ce2"
+      },
+      "conf-1": {
+        "kernel": "4d9be6efe179894759a454799408e3d719df855aff838dd5031fb628433ddcf7",
+        "fdt": "1895357c670ae28c5db41c3feedf0026dd44e0b7de128437d228cd84c5bf013d",
+        "script": "ac9ebd6848f0bb05b1f3aab05b4f45b1f308197266738e22d9b05e8084ee3ce2"
+      }
+    },
+    "configuration_and_payload_signatures_verified": true,
+    "bad_configuration_signature_rejected": true,
+    "sysupgrade_payloads_exact": true,
+    "rootfs_zero_alignment_bytes": 784
+  },
+  "root_cause_claim": false,
+  "cold_acceptance": {
+    "passed": false,
+    "reason": "TCP up20 timeout; EPP status1 RD=WR=720 persists, L3drops407, no wireless halt. Pointer-only production edit withdrawn.",
+    "boot_id": "a245f403-f449-4909-b3bb-47e421aeda38"
+  },
+  "evidence_directory": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261023-epp-aligned",
+  "status": "REJECTED: pointer-only change requires a matching hardware admission contract; not retained",
+  "profile_comparison": {
+    "runtime_value": "000040f2 -> e00040f2",
+    "upper_bits_match_factory": true,
+    "up_Mbps": 1164.92,
+    "up_retx": 1172,
+    "down_Mbps": 339.739,
+    "bidir_offload_restart": true,
+    "passed": false
+  }
+}

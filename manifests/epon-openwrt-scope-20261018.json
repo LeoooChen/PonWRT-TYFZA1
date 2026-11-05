@@ -1,0 +1,114 @@
+{
+  "baseline": "7ff0d028245e599cc7eaec6f1f153fc196b457c6",
+  "branch": "codex/epon-openwrt-scope-20261018",
+  "scope": "Remove low-value OLT administration from OpenWrt OAM; keep local diagnostics/control and EPON service essentials",
+  "removed": [
+    "C9/0001 delayed reboot",
+    "C7/00a1 remote optical TX control",
+    "09/0005,000b,000c LAN administrative/autonegotiation actions",
+    "C7/0012 Pause Set",
+    "C7/0081,0082 and opcodeFF alarm management",
+    "code1 proactive CTC event reporting",
+    "C7/00b1..00b3 CTC PM management"
+  ],
+  "retained": [
+    "CTC identity and capability negotiation, LOID/authentication",
+    "LLID epoch and churning key exchange",
+    "FEC and queue SLA",
+    "Holdover/PCS/GATE recovery",
+    "Read-only UNI status/abilities/Pause",
+    "Optical diagnostic raw readings",
+    "Local hardware MIB sampling and pm_counters",
+    "Local TX-disable control and safe PON stop"
+  ],
+  "wire_behavior": {
+    "removed_set": "0x87 failure",
+    "removed_get": "0x86 unsupported",
+    "opcode_ff": "ignored without reply",
+    "onu_capabilities_3_tx_control": 0
+  },
+  "validation": {
+    "before_reproducer": "scope-before exits134 on old remote reboot success; ioctl and kill are wrapped",
+    "asan_ubsan": [
+      "test_oam_openwrt_scope.c",
+      "test_epon_key_exchange.c",
+      "test_pon_fec.c",
+      "test_oam_control.c"
+    ],
+    "retained_functions_identical_except_removed_event_sequence": [
+      "port_get",
+      "technology",
+      "transceiver_get",
+      "fec_read",
+      "sla_get",
+      "sla_set",
+      "holdover_get",
+      "holdover_set",
+      "churning_key",
+      "pon_oam_reset",
+      "local_information",
+      "receive_information",
+      "receive_auth",
+      "receive_variables",
+      "receive_churning"
+    ],
+    "kernel_source_unchanged": true,
+    "native_netns": "local ip link control succeeds; OAM port writes fail; read-only and optical queries work",
+    "daemon_arm64_musl_checks": [
+      "unregistered process sends no OAM",
+      "registered Information discovery reaches stable with remote echo",
+      "actual process sends 24-byte LOID and blank 12-byte password",
+      "OLT success changes state without publishing credential values",
+      "ONU SN carries UCI software identity; FirmwareVer carries three release octets",
+      "remote reboot/TX/LAN/alarm/PM Set requests are refused without changing local port or TX controls",
+      "removed alarm/PM Gets report unsupported; parameterized Get still preserves the following FEC query",
+      "read-only port state and optical diagnosis remain usable; ONU no longer advertises OAM TX power control",
+      "no proactive alarm events or delayed reboot; registration/auth stay live after refused management traffic",
+      "Set response retains complete four-byte and one-byte port instances",
+      "same Local EVAL without Remote echo revokes success and negotiates a fresh revision",
+      "reauthentication clears success and records rejection",
+      "MPCP loss resets current auth and retains result history",
+      "a registration epoch change invalidates auth even when the sampled bitmap stays registered",
+      "OAM peer timeout revokes current auth while MPCP remains registered",
+      "truncated, unsupported-code and unknown-OUI traffic cannot extend an accepted session",
+      "duplicate LLID daemon rejected",
+      "SIGTERM removes current status and closes socket"
+    ],
+    "stock_oracles": [
+      "CTC containers",
+      "NI/EPON hardware MIB",
+      "queue SLA DAL/AAL"
+    ],
+    "directed_management": "Holdover deadlines, local TX timer, retained Holdover/SLA backend and remote-operation refusal",
+    "full_tests": false,
+    "hardware_test": false
+  },
+  "sha256": {
+    "artifacts/scope-audit/oam-after/pon-oamd": "f18d6bda10d120973270ed4caab73562626d2cb03e8c81d82117f6cd19d0684d",
+    "docs/epon-stock-parity.md": "737653c1fcbcc06f7471f9d6a716704a1258a8a0cdd3e082ec4f41024815d1ad",
+    "logs/oam-daemon-netns-test.json": "a4075fe6187b18965f363cb516b14024b14be7956d6a01413cbe02cef45a669c",
+    "logs/oam-scope-before.txt": "aad06e5abaab0668f1cde9c1d0105415550d025ac1ca76c1440294d2ebe52be9",
+    "logs/oam-scope-containers.json": "eeaf9fdfce9b508cdb5f0b78e616fb3b6e4e73bf0327ad6b1045eb77ce2a4406",
+    "logs/oam-scope-directed.txt": "2ec0c1fde2a9d9d8844f0339e8c3bdde9a7f5f9e83be1fd21c6269d8bbe6eb2d",
+    "logs/oam-scope-mib.json": "f296a14cd7eef8c3ffb914463807ac80f0946f7235e40beb05d25b73cb607493",
+    "manifests/epon-stock-oam-callbacks.json": "834b76055281eb7ae870fd055db934846c774165ff6eef3e175656b1bb816a7c",
+    "port/packages/tyfza1-pon-control/Makefile": "ebc9e7bbd9a2f3ed09eb7c3ebf1e5b11740e5d26250199ed961bdfbf940325fb",
+    "port/packages/tyfza1-pon-control/src/pon-backend.c": "82d7c7c4250a010ffa3b1720f84596ada90665cf605ec03b1ca0038ce1fb8e57",
+    "port/packages/tyfza1-pon-control/src/pon-backend.h": "7b7a546cb616fb55afd3489c588ffdd1150c2122f6b0471338d560bd4d6e6325",
+    "port/packages/tyfza1-pon-control/src/pon-oam.c": "8acb75faf854ddc76670c0a82c1f92068d2f0d703f2dbd4136023d311bbefc06",
+    "port/packages/tyfza1-pon-control/src/pon-oam.h": "d6f3795329d7b310ced44fe7a5046489c688a995e646179b0e6d91226b36becb",
+    "port/packages/tyfza1-pon-control/src/pon-oamd.c": "4ff86d722b3606ba5823326fa735ab008f916363d505cf6b679d912a40a5df3f",
+    "port/scripts/check-pon-userspace.sh": "a22e574f088cb01d96a334c50872d5af4950bc42a615e8487ef5280cd2083953",
+    "scripts/test_oam_daemon.py": "ceba500a60e4a93b56ce204aca5b528205525e8347552a76c1b3618e75b965f9",
+    "scripts/test_oam_openwrt_scope.c": "c8195e0bd186de20ac18d9bc627dcec37f719e3f450f6a8b0d4951a683b41548",
+    "tools/check_epon_management.py": "c976933dee44b4ec87bd7f6cdb1f04fcbb883c8dd83bedca8478dd2f7f975be3",
+    "tools/check_epon_native_parameters.py": "91844267ddbf3e15202daca2a4d4382ceb25ee43f4aecea59bb212b61401fac1"
+  },
+  "deleted_paths": [
+    "port/packages/tyfza1-pon-control/src/pon-alarm.c",
+    "port/packages/tyfza1-pon-control/src/pon-alarm.h",
+    "port/packages/tyfza1-pon-control/src/pon-pm.c",
+    "port/packages/tyfza1-pon-control/src/pon-pm.h",
+    "tools/check_stock_epon_alarms.py"
+  ]
+}

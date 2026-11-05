@@ -1,0 +1,380 @@
+{
+  "date": "2026-10-23",
+  "base_commit": "86a8d26",
+  "factory_reference": "Actual C parser@2783c0..2783c8 extracts WD4 TID bits8..11 to mdata+0x3f. Original phl_rx_reorder uses RX mdata at+0x28, then station[0x928+8*TID] at1380a8..1380b0.",
+  "defect": "A valid independent TID between a sequence gap and its captured missing frame forced the whole head through ARM. The original per-station/TID state does not require that barrier.",
+  "change": "Validate the entire gapped head MPDU before permitting lookahead. For the same station, another TID can commit only through the existing complete protocol, SN, PN, PS and NI-credit path. Unknown/unseeded/protocol/replay/PS cases still go to ARM. Other stations keep the existing barrier. RX/TX budgets and buffer counts unchanged.",
+  "PE_bytes": 16836,
+  "PE_SHA256": "4ad4b1366d34b3296d83326fc411ffa9cb6583d656ac86c607214ef18acc5c9a",
+  "RAM_radio_SHA256": "dbe736f6bf621ab93957830c47f5c41697a806847549622137febc47b9713bbb",
+  "linked_verification": "Old linked image fails the interleaved valid-TID case with NI0/ARM1. New linked image forwards the independent TID plus the missing head sequence through NI, then drains all three in per-TID SN/PN order with514-buffer ownership preserved. Head/foreign unsupported protocols, foreign replay, sequence gap and PS transition remain barriers. NI credit and IMEM checks are scoped separately.",
+  "event_counter": "PE_cross_TID_MPDU counts actual independent-TID NI completions only.",
+  "RAM_UDP_up1500": {
+    "scope": "Mac en0 encrypted Wi-Fi -> PE/NI/FE -> kernel diagnostic consumer validating every byte and sequence; bypasses Linux TCP/UDP socket, no optical PON.",
+    "sender_exit": 0,
+    "sender_complete": true,
+    "sender": {
+      "requested": 400000,
+      "sent": 400000,
+      "payload_bytes": 585600000,
+      "target_Mbps": 1500,
+      "seconds": 3.1704,
+      "offered_payload_Mbps": 1477.668,
+      "ENOBUFS_retries": 141,
+      "send_buffer_result": 0,
+      "send_buffer_bytes": 4194304
+    },
+    "counts": {
+      "FE_packets": 400000,
+      "received": 400000,
+      "valid_unique": 400000,
+      "duplicate": 0,
+      "corrupt": 0,
+      "unexpected": 0,
+      "l3te_tail_drop": 0,
+      "no_buffer": 0,
+      "rxq": 102249,
+      "rdu": 0,
+      "first_valid_ns": 1837830472360,
+      "last_valid_ns": 1841077512240
+    },
+    "valid_payload_Mbps_over_sender_window": 1477.668433005299,
+    "valid_payload_Mbps_including_drain": 1276.3731473408893,
+    "receiver_interval_ns": 3247039880,
+    "receiver_valid_payload_Mbps": 1442.787419044573,
+    "mac_Opkts_delta": 400010,
+    "mac_Drop_delta": 0,
+    "missing_not_accounted_by_mac_drop": 0,
+    "integrity_passed": true,
+    "delivery_complete": true
+  },
+  "RAM_UDP_fallback_delta": {
+    "captured_MPDU": 102560,
+    "forwarded_MSDU": 392450,
+    "frame_not_eligible": 988,
+    "state_invalid": 1911,
+    "SN_mismatch": 559,
+    "PN_replay": 0,
+    "NI_full": 0,
+    "AMSDU_MPDU": 98527,
+    "PS_transition": 0,
+    "reordered": 29
+  },
+  "RAM_bidir6": {
+    "scope": "Concurrent Mac upload on55000 and download on55001 through real encrypted Wi-Fi and simulated PON endpoints.",
+    "parallel_streams": 1,
+    "error": null,
+    "client_exit": 0,
+    "received_Mbps": 328.12741176174893,
+    "retransmits": 434,
+    "CPU_total_percent_of_4_cores": 34.27547770700637,
+    "CPU_server_raw_percent_of_4_cores": 19.068471337579616,
+    "CPU_remaining_percent_of_4_cores": 15.207006369426752,
+    "CPU_note": "Same raw100-Hz basis; remaining includes simulated ingress and TCP ACK/softirq work, not pure Wi-Fi forwarding CPU.",
+    "CPU_each_core_percent": [
+      26.59235668789809,
+      54.93630573248408,
+      32.1656050955414,
+      23.40764331210191
+    ],
+    "data_packets_delta": 549882,
+    "data_bytes_delta": 817483192,
+    "control_packets_delta": 76,
+    "stops_delta": 0,
+    "wakes_delta": 0,
+    "doorbells_delta": 24056,
+    "data_prepare_ns_delta": 1089961440,
+    "payload_copy_ns_delta": 445647240,
+    "PE_NI_sent_delta": 549893,
+    "l3te_tail_drop_delta": 0,
+    "no_buffer_delta": 0,
+    "rxq_delta": 65158,
+    "rdu_delta": 0,
+    "FE_packets_delta": 549882,
+    "hardware_match_proven": true,
+    "actual_client_ports": [
+      55000,
+      55001
+    ],
+    "offload_covers_all_streams": true,
+    "source_stream_packets_delta": [
+      7261,
+      542621,
+      0,
+      0
+    ],
+    "uplink_sink_FE_packets_delta": 247824,
+    "uplink_sink_received_delta": 247824,
+    "uplink_sink_received_bytes_delta": 263665350,
+    "hardware_epoch_before_after": [
+      [
+        "3c85a260-e581-45d9-9b09-ce9ab3843959",
+        2
+      ],
+      [
+        "3c85a260-e581-45d9-9b09-ce9ab3843959",
+        2
+      ]
+    ],
+    "hardware_epoch_continuous": true,
+    "decreasing_counters": [],
+    "hardware_counter_comparison_valid": true,
+    "bidir_iperf_end": {
+      "streams": [
+        {
+          "sender": {
+            "socket": 5,
+            "start": 0,
+            "end": 6.002381,
+            "seconds": 6.002381,
+            "bytes": 247463936,
+            "bits_per_second": 329821030.68765545,
+            "retransmits": 434,
+            "reorder": -1,
+            "max_snd_cwnd": 866880,
+            "max_snd_wnd": 0,
+            "max_rtt": 21,
+            "min_rtt": 14,
+            "mean_rtt": 18,
+            "sender": true
+          },
+          "receiver": {
+            "socket": 5,
+            "start": 0,
+            "end": 6.007797,
+            "seconds": 6.002381,
+            "bytes": 246415360,
+            "bits_per_second": 328127411.7617489,
+            "sender": true
+          }
+        },
+        {
+          "sender": {
+            "socket": 7,
+            "start": 0,
+            "end": 6.002381,
+            "seconds": 6.002381,
+            "bytes": 781189120,
+            "bits_per_second": 1041172321.4504378,
+            "retransmits": 0,
+            "reorder": -1,
+            "max_snd_cwnd": 14437,
+            "max_snd_wnd": 0,
+            "max_rtt": 2,
+            "min_rtt": 2,
+            "mean_rtt": 2,
+            "sender": false
+          },
+          "receiver": {
+            "socket": 7,
+            "start": 0,
+            "end": 6.007797,
+            "seconds": 6.002381,
+            "bytes": 779091968,
+            "bits_per_second": 1037441135.910551,
+            "sender": false
+          }
+        }
+      ],
+      "sum_sent": {
+        "start": 0,
+        "end": 6.002381,
+        "seconds": 6.002381,
+        "bytes": 247463936,
+        "bits_per_second": 329821030.68765545,
+        "retransmits": 434,
+        "sender": true
+      },
+      "sum_received": {
+        "start": 0,
+        "end": 6.007797,
+        "seconds": 6.007797,
+        "bytes": 246415360,
+        "bits_per_second": 328127411.7617489,
+        "sender": true
+      },
+      "sum_sent_bidir_reverse": {
+        "start": 0,
+        "end": 6.002381,
+        "seconds": 6.002381,
+        "bytes": 781189120,
+        "bits_per_second": 1041172321.4504378,
+        "retransmits": 0,
+        "sender": false
+      },
+      "sum_received_bidir_reverse": {
+        "start": 0,
+        "end": 6.007797,
+        "seconds": 6.007797,
+        "bytes": 779091968,
+        "bits_per_second": 1037441135.910551,
+        "sender": false
+      },
+      "cpu_utilization_percent": {
+        "host_total": 23.337654899744145,
+        "host_user": 0.607328785138065,
+        "host_system": 24.935288655215263,
+        "remote_total": 79.33331280485825,
+        "remote_user": 0.9011445734501904,
+        "remote_system": 78.43196849489382
+      },
+      "sender_tcp_congestion": "cubic"
+    },
+    "up_Mbps": 328.12741176174893,
+    "down_Mbps": 1037.4411359105509,
+    "up_retransmits": 434,
+    "down_retransmits": 0,
+    "flow_packets_delta": {
+      "55000": 171741,
+      "55001": 76083
+    },
+    "download_ACK_FE": true
+  },
+  "RAM_bidir_events": {
+    "PE_cross_TID_MPDU": 0,
+    "PE_reordered": 32,
+    "PE_uplink_frames": 238161,
+    "ARM_exceptions": 4118
+  },
+  "performance_limit": "No observed cross-TID completion in the measured bidirectional run. UDP fallback counts did not decrease. The model defect is fixed; no real throughput gain or retransmission cure is claimed.",
+  "next_actual_failure": {
+    "run": "interleaved-order-bidir6",
+    "Mac_capture_drops": 0,
+    "pre_GRO_discontinuities": 10,
+    "first_replacement": {
+      "old_fragment": {
+        "all_upload_ordinal": 209875,
+        "src_port": 55000,
+        "seq": 1047947993,
+        "length": 1440,
+        "time": 1792714566.641383,
+        "data_ordinal": 196036
+      },
+      "fragment_expected_at_NI": {
+        "all_upload_ordinal": 209939,
+        "src_port": 55000,
+        "seq": 1048018553,
+        "length": 1440,
+        "time": 1792714566.642201,
+        "data_ordinal": 196085
+      },
+      "data_packet_distance": 49,
+      "all_upload_packet_distance": 64,
+      "Mac_data_at_first_NI_error": [
+        {
+          "all_upload_ordinal": 209937,
+          "src_port": 55000,
+          "seq": 1048015673,
+          "length": 1440,
+          "time": 1792714566.6422,
+          "data_ordinal": 196083
+        },
+        {
+          "all_upload_ordinal": 209938,
+          "src_port": 55000,
+          "seq": 1048017113,
+          "length": 1440,
+          "time": 1792714566.642201,
+          "data_ordinal": 196084
+        },
+        {
+          "all_upload_ordinal": 209939,
+          "src_port": 55000,
+          "seq": 1048018553,
+          "length": 1440,
+          "time": 1792714566.642201,
+          "data_ordinal": 196085
+        },
+        {
+          "all_upload_ordinal": 209940,
+          "src_port": 55000,
+          "seq": 1048019993,
+          "length": 1440,
+          "time": 1792714566.642202,
+          "data_ordinal": 196086
+        },
+        {
+          "all_upload_ordinal": 209941,
+          "src_port": 55000,
+          "seq": 1048021433,
+          "length": 1440,
+          "time": 1792714566.642203,
+          "data_ordinal": 196087
+        },
+        {
+          "all_upload_ordinal": 209942,
+          "src_port": 55000,
+          "seq": 1048022873,
+          "length": 1440,
+          "time": 1792714566.642203,
+          "data_ordinal": 196088
+        },
+        {
+          "all_upload_ordinal": 209943,
+          "src_port": 55000,
+          "seq": 1048024313,
+          "length": 1440,
+          "time": 1792714566.642204,
+          "data_ordinal": 196089
+        },
+        {
+          "all_upload_ordinal": 209944,
+          "src_port": 55000,
+          "seq": 1048025753,
+          "length": 1440,
+          "time": 1792714566.642231,
+          "data_ordinal": 196090
+        }
+      ],
+      "source_exact_occurrences": {
+        "1047947993": 1,
+        "1047949433": 1,
+        "1047950873": 1,
+        "1047952313": 1,
+        "1048018553": 2,
+        "1048019993": 2,
+        "1048021433": 2,
+        "1048022873": 2
+      }
+    },
+    "interpretation": "Four old TCP fragments sent once in the Mac Ethernet capture reappear in the NI-to-sink copy before GRO in place of four new fragments, which are subsequently retransmitted. The source distance is64 when both upload data and download ACKs are counted. This does not yet isolate the NI producer: both NI TX rings and RX refill batches involve64, and the Wi-Fi path before NI has not been observed. Compare payload content before NI publication with the anomalous NI receipt before changing retention or barriers."
+  },
+  "fixture_note": "Reused sequence sink rebuilt with the current RTL_xram.qm DWARF offset0x18d0, not its historical0x1880.",
+  "evidence_directory_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold",
+  "overall_acceptance_passed": false,
+  "RAM_UDP_image_SHA256": "611e1f7cac376cf4b61f1a72e06ff15a0d3e0c180932c1c68a60e92bc296aaa8",
+  "RAM_bidir_image_SHA256": "dbe736f6bf621ab93957830c47f5c41697a806847549622137febc47b9713bbb",
+  "sequence_trace": {
+    "Mac_data_packets": 351484,
+    "NI_pre_GRO_data_packets": 351484,
+    "NI_pre_GRO_discontinuities": 10,
+    "NI_post_GRO_discontinuities": 10,
+    "Mac_capture_kernel_drops": 0,
+    "source_compare_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold/interleaved-order-source-compare.json",
+    "packet_distance_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold/interleaved-order-first-replacement.json",
+    "limit": "Mac capture precedes actual Wi-Fi transmission; it does not prove bytes on air or at TYFZA1 RX DMA input."
+  },
+  "raw_buffer_followup": {
+    "run": "interleaved-raw-order-bidir6",
+    "status": "Original64-packet replacement not reproduced.",
+    "NI_device_coherent": false,
+    "NI_device_skip_sync": false,
+    "observed_pre_GRO_events": 8,
+    "raw_vs_SKB": "Raw DMA sequence matched the copied skb before and after standard cache synchronization and a2us delayed reread in the observed events. These were not the targeted old-block event.",
+    "hardware_epoch_before_after": [
+      2,
+      3
+    ],
+    "counter_comparison_valid": false,
+    "throughput_acceptance": false,
+    "events_file_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold/interleaved-raw-order-events.txt",
+    "module_note": "Temporary event-triggered cache reads only while the current BID remained on this serialized poll refill queue. Module removed; no production NI behavior changed."
+  },
+  "final_state": {
+    "boot_id": "3c85a260-e581-45d9-9b09-ce9ab3843959",
+    "ROM_radio_SHA256": "bea86ee63f1304049a58edff00e2197154d1fbf41eb886edd7cd8af2e30e4cc7",
+    "RAM_radio_SHA256": "dbe736f6bf621ab93957830c47f5c41697a806847549622137febc47b9713bbb",
+    "cleanup": "No test sink/feed/simulator/observer/capture, no test server or table220 policy. Removed this turn198.18.255.1 host route; default192.168.71.1/en5 remains first. Both radios have halt0 and no RDU; printk7/4/1/7.",
+    "evidence_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold/interleaved-final-state.txt"
+  }
+}

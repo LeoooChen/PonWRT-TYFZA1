@@ -33,6 +33,20 @@ return view.extend({
 		Object.keys(status.modes).forEach(function(mode) { o.value(mode, status.modes[mode]); });
 		o.rmempty = false;
 		o.description = '按运营商线路选择；顶部显示设备实际运行的协议，不随未应用的选择改变。';
+		o = s.taboption('advanced', form.ListValue, 'omcc_version', 'OMCC 版本');
+		o.value('0xb0', '0xb0（默认）');
+		o.value('0x86', '0x86（兼容模式）');
+		o.default = '0xb0';
+		o.rmempty = false;
+		o.retain = true;
+		o.description = '通常保持默认。OLT 在 OMCI 配置阶段不兼容时，可尝试 0x86。';
+		ituModes.forEach(function(mode) { o.depends('mode', mode); });
+		o = s.taboption('advanced', form.Flag, 'disable_enhanced_security', '禁用 OMCI 增强认证（Class 332）');
+		o.default = '0';
+		o.rmempty = false;
+		o.retain = true;
+		o.description = '默认不禁用。仅在线路不支持增强认证时开启，与 OMCC 版本独立设置。';
+		ituModes.forEach(function(mode) { o.depends('mode', mode); });
 		o = s.taboption('advanced', form.Value, 'llid_count', 'EPON 逻辑链路数');
 		o.datatype = 'and(uinteger,range(1,32))';
 		o.write = function(section, value) { uci.set('pon', section, 'llid_count', String(Number(value))); };
@@ -49,7 +63,7 @@ return view.extend({
 		};
 		o.retain = true;
 		o.placeholder = '留空使用原厂 MAC';
-		o.description = '使用本机原厂身份时无需填写；清空自定义值后，应用即可恢复原厂身份。';
+		o.description = '留空时优先使用原厂 ONU MAC；若原厂未提供，则使用本机基础 MAC。';
 		[
 			['loid', 'LOID', 24, false, eponModes.concat(ituModes)],
 			['loid_password', 'LOID 密码', 12, true, eponModes.concat(ituModes)],

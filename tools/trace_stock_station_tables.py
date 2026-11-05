@@ -116,7 +116,7 @@ for chip in ('8852c','8192xb'):
     oracle.uc.mem_write(sta+40,struct.pack('<I',chip=='8852c'))
     oracle.uc.mem_write(sta+28,struct.pack('<H',1))
     oracle.uc.mem_write(sta+2332,struct.pack('<I',8))  # WLAN_MD_11N
-    for number in (4,16,64):
+    for number in (4,16,32,64,128):
         oracle.uc.mem_write(sta+2506,struct.pack('<H',number))
         operations.clear()
         status=oracle.call('rtw_hal_update_cctrl_tbl',hal,sta)

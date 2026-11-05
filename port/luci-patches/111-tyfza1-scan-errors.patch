@@ -1,0 +1,294 @@
+--- a/modules/luci-base/htdocs/luci-static/resources/network.js
++++ b/modules/luci-base/htdocs/luci-static/resources/network.js
+@@ -79,9 +79,19 @@
+ const callIwinfoScan = rpc.declare({
+ 	object: 'iwinfo',
+ 	method: 'scan',
++	reject: true,
+ 	params: [ 'device' ],
+ 	nobatch: true,
+-	expect: { results: [] }
++	expect: { '': {} }
++});
++
++const callIwinfoScanPause = rpc.declare({
++	object: 'iwinfo',
++	method: 'scan_pause',
++	reject: true,
++	params: [ 'device' ],
++	nobatch: true,
++	expect: { '': {} }
+ });
+ 
+ const callNetworkInterfaceDump = rpc.declare({
+@@ -3565,8 +3575,17 @@
+ 	 * Returns a promise resolving to an array of scan result objects
+ 	 * describing the networks found in the vicinity.
+ 	 */
+-	getScanList() {
+-		return callIwinfoScan(this.sid);
++	getScanList(pauseAP = false) {
++		return (pauseAP ? callIwinfoScanPause(this.sid) : callIwinfoScan(this.sid)).then(res => {
++			if (res.error) {
++				const err = new Error(res.error == 'restore_failed'
++					? _('The AP could not be restored. Restart the wireless interface.')
++					: _('Scanning failed, possibly due to radar detection. Pause the hotspot and try again.'));
++				err.pauseAllowed = res.pause_allowed;
++				throw err;
++			}
++			return res.results || [];
++		});
+ 	},
+ 
+ 	/**
+--- a/modules/luci-base/po/zh_Hans/base.po
++++ b/modules/luci-base/po/zh_Hans/base.po
+@@ -16560,3 +16560,21 @@
+ 
+ #~ msgid "Set Static"
+ #~ msgstr "设为静态"
++
++msgid "The AP could not be restored. Restart the wireless interface."
++msgstr "AP 恢复失败，请重启无线接口。"
++
++msgid "Scanning failed, possibly due to radar detection. Pause the hotspot and try again."
++msgstr "扫描失败，可能受雷达检测限制。请暂停热点后重试。"
++
++msgid "This will disconnect wireless clients while scanning. DFS channel checks may delay AP recovery. Continue?"
++msgstr "扫描期间将断开无线客户端。DFS 信道检查可能使 AP 恢复延迟约一分钟或更久。是否继续？"
++
++msgid "Pause hotspot and scan"
++msgstr "暂停热点并扫描"
++
++msgid "This radio driver supports AP and monitor modes only; wireless client/repeater mode is not implemented."
++msgstr "当前无线驱动仅支持 AP 和监听模式，尚未实现无线客户端/中继模式。"
++
++msgid "Wireless client mode is not supported by this driver."
++msgstr "此驱动尚不支持无线客户端模式。"
+--- a/modules/luci-base/root/usr/share/rpcd/ucode/luci
++++ b/modules/luci-base/root/usr/share/rpcd/ucode/luci
+@@ -284,6 +284,16 @@
+ 				mptcp:      access('/proc/sys/net/mptcp/enabled'),
+ 			};
+ 
++			// This native driver currently implements AP/monitor, not station roles.
++			result.wifi_ap_only = {};
++			for (let phy in glob('/sys/class/ieee80211/*')) {
++				if (basename(readlink(phy + '/device/driver') || '') == 'rtl_ax_ap') {
++					let device = realpath(phy + '/device');
++					if (device && index(device, '/sys/devices/') == 0)
++						result.wifi_ap_only[replace(substr(device, 13), /^platform\//, '')] = true;
++				}
++			}
++
+ 			const wifi_features = [ 
+ 				'11ac',
+ 				'11ax',
+--- a/modules/luci-mod-network/htdocs/luci-static/resources/view/network/wireless.js
++++ b/modules/luci-mod-network/htdocs/luci-static/resources/view/network/wireless.js
+@@ -13,6 +13,10 @@
+ 'require uqr';
+ 
+ const isReadonlyView = !L.hasViewPermission();
++
++function isAPOnlyRadio(name) {
++	return L.hasSystemFeature('wifi_ap_only', uci.get('wireless', name, 'path')) === true;
++}
+ 
+ function count_changes(section_id) {
+ 	const changes = ui.changes.changes?.wireless;
+@@ -994,6 +998,7 @@
+ 		s.addModalOptions = function(s) {
+ 			return network.getWifiNetwork(s.section).then(function(radioNet) {
+ 				const hwtype = uci.get('wireless', radioNet.getWifiDeviceName(), 'type');
++				const apOnly = isAPOnlyRadio(radioNet.getWifiDeviceName());
+ 				const have_mesh = L.hasSystemFeature('hostapd', 'mesh') || L.hasSystemFeature('wpasupplicant', 'mesh');
+ 				let o, ss;
+ 
+@@ -1079,8 +1084,12 @@
+ 				o = ss.taboption('general', form.ListValue, 'mode', _('Mode') , !have_mesh ? '<a id="installmesh" href="%s" target="_blank" rel="noreferrer">%s</a>'
+ 						.format(L.url('admin/system/package-manager') + '?query=wpad-mesh', _('802.11s? Install mesh wpad') ) : '');
+ 				o.value('ap', _('Access Point'));
+-				o.value('sta', _('Client'));
+-				o.value('adhoc', _('Ad-Hoc'));
++				if (apOnly)
++					o.description = _('This radio driver supports AP and monitor modes only; wireless client/repeater mode is not implemented.');
++				else {
++					o.value('sta', _('Client'));
++					o.value('adhoc', _('Ad-Hoc'));
++				}
+ 
+ 				o = ss.taboption('general', form.Value, 'mesh_id', _('Mesh Id'));
+ 				o.depends('mode', 'mesh');
+@@ -1165,8 +1174,8 @@
+ 					const mode = ss.children.find(obj => obj.option === 'mode');
+ 					const bssid = ss.children.find(obj => obj.option === 'bssid');
+ 
+-					if (have_mesh) mode.value('mesh', '802.11s');
+-					mode.value('ahdemo', _('Pseudo Ad-Hoc (ahdemo)'));
++					if (have_mesh && !apOnly) mode.value('mesh', '802.11s');
++					if (!apOnly) mode.value('ahdemo', _('Pseudo Ad-Hoc (ahdemo)'));
+ 					mode.value('monitor', _('Monitor'));
+ 
+ 					bssid.depends('mode', 'adhoc');
+@@ -1196,7 +1205,7 @@
+ 					};
+ 
+ 					mode.value('ap-wds', '%s (%s)'.format(_('Access Point'), _('WDS')));
+-					mode.value('sta-wds', '%s (%s)'.format(_('Client'), _('WDS')));
++					if (!apOnly) mode.value('sta-wds', '%s (%s)'.format(_('Client'), _('WDS')));
+ 
+ 					mode.write = function(section_id, value) {
+ 						switch (value) {
+@@ -2272,8 +2281,8 @@
+ 			poll.start();
+ 		};
+ 
+-		s.handleScanRefresh = function(radioDev, scanCache, table, stop) {
+-			return radioDev.getScanList().then(L.bind(function(results) {
++		s.handleScanRefresh = function(radioDev, scanCache, table, stop, pauseAP = false) {
++			return radioDev.getScanList(pauseAP === true).then(L.bind(function(results) {
+ 				const rows = [];
+ 
+ 				for (let r of results)
+@@ -2284,7 +2293,9 @@
+ 						results.push(scanCache[k]);
+ 
+ 				results.sort(function(a, b) {
+-					const diff = (b.quality - a.quality) || (a.channel - b.channel);
++					const signal = r => (typeof r.signal == 'number' && r.signal > -256 && r.signal < 0)
++						? r.signal : -Infinity;
++					const diff = (signal(b) - signal(a)) || (a.channel - b.channel);
+ 
+ 					if (diff)
+ 						return diff;
+@@ -2317,6 +2328,8 @@
+ 						E('span', { 'style': s }, `${network.formatWifiEncryption(res?.encryption)}`),
+ 						E('div', { 'class': 'right' }, E('button', {
+ 							'class': 'cbi-button cbi-button-action important',
++							'disabled': isAPOnlyRadio(radioDev.getName()),
++							'title': isAPOnlyRadio(radioDev.getName()) ? _('Wireless client mode is not supported by this driver.') : null,
+ 							'click': ui.createHandlerFn(this, 'handleJoin', radioDev, res)
+ 						}, _('Join Network')))
+ 					]);
+@@ -2329,7 +2342,29 @@
+ 				stop.disabled = false;
+ 				stop.style.display = '';
+ 				stop.classList.remove('spinning');
+-			}, this));
++			}, this)).catch(err => {
++				if (this.pollFn)
++					poll.remove(this.pollFn);
++				stop.disabled = false;
++				stop.style.display = '';
++				stop.classList.remove('spinning');
++				stop.setAttribute('data-state', 'start');
++				stop.firstChild.data = _('Start refresh');
++				const message = [ E('p', {}, err.message) ];
++				if (err.pauseAllowed && L.hasViewPermission())
++					message.push(E('button', {
++						'class': 'btn cbi-button-action',
++						'click': () => {
++							if (window.confirm(_('This will disconnect wireless clients while scanning. DFS channel checks may delay AP recovery. Continue?')))
++								return this.handleScanRefresh(radioDev, scanCache, table, stop, true);
++						}
++					}, _('Pause hotspot and scan')));
++				cbi_update_table(table, [], E('div', {}, message));
++				// Multi-line actions need a normal row, not the theme's fixed-height placeholder.
++				const row = table.querySelector('tr.placeholder');
++				row.classList.remove('placeholder');
++				row.firstElementChild.colSpan = table.rows[0].cells.length;
++			});
+ 		};
+ 
+ 		s.handleScanStartStop = function(ev) {
+@@ -2364,6 +2399,10 @@
+ 		};
+ 
+ 		s.handleJoinConfirm = function(radioDev, bss, form, ev) {
++			if (isAPOnlyRadio(radioDev.getName())) {
++				ui.addNotification(null, E('p', _('Wireless client mode is not supported by this driver.')));
++				return Promise.resolve();
++			}
+ 			const nameopt = L.toArray(form.lookupOption('name', '_new_'))[0];
+ 			const passopt = L.toArray(form.lookupOption('password', '_new_'))[0];
+ 			const ssidopt = L.toArray(form.lookupOption('ssid', '_new_'))[0];
+@@ -2489,6 +2528,10 @@
+ 		};
+ 
+ 		s.handleJoin = function(radioDev, bss, ev) {
++			if (isAPOnlyRadio(radioDev.getName())) {
++				ui.addNotification(null, E('p', _('Wireless client mode is not supported by this driver.')));
++				return Promise.resolve();
++			}
+ 			if (this.pollFn)
+ 				poll.remove(this.pollFn);
+ 			const m2 = new form.Map('wireless');
+--- a/modules/luci-mod-network/root/usr/share/rpcd/acl.d/luci-mod-network.json
++++ b/modules/luci-mod-network/root/usr/share/rpcd/acl.d/luci-mod-network.json
+@@ -29,7 +29,7 @@
+ 			"ubus": {
+ 				"file": [ "exec" ],
+ 				"hostapd.*": [ "del_client" ],
+-				"iwinfo": [ "scan" ]
++				"iwinfo": [ "scan", "scan_pause" ]
+ 			},
+ 			"uci": [ "dhcp", "firewall", "luci", "network", "wireless" ]
+ 		}
+--- a/modules/luci-mod-status/htdocs/luci-static/resources/view/status/channel_analysis.js
++++ b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/channel_analysis.js
+@@ -193,7 +193,7 @@
+ 		}, this));
+ 	},
+ 
+-	handleScanRefresh() {
++	handleScanRefresh(pauseAP = false) {
+ 		if (!this.active_tab)
+ 			return;
+ 
+@@ -201,7 +201,7 @@
+ 		let q;
+ 
+ 		return Promise.all([
+-			radio.dev.getScanList(),
++			radio.dev.getScanList(pauseAP === true),
+ 			this.callInfo(radio.dev.getName())
+ 		]).then(L.bind(function([results, local_wifi]) {
+ 			const table = radio.table;
+@@ -389,7 +389,23 @@
+ 				radio.loadedOnce = true;
+ 				poll.stop();
+ 			}
+-		}, this))
++		}, this)).catch(err => {
++			poll.stop();
++			const message = [ E('p', {}, err.message) ];
++			if (err.pauseAllowed && L.hasViewPermission())
++				message.push(E('button', {
++					'class': 'btn cbi-button-action',
++					'click': () => {
++						if (window.confirm(_('This will disconnect wireless clients while scanning. DFS channel checks may delay AP recovery. Continue?')))
++							return this.handleScanRefresh(true);
++					}
++				}, _('Pause hotspot and scan')));
++			cbi_update_table(radio.table, [], E('div', {}, message));
++			// Multi-line actions need a normal row, not the theme's fixed-height placeholder.
++			const row = radio.table.querySelector('tr.placeholder');
++			row.classList.remove('placeholder');
++			row.firstElementChild.colSpan = radio.table.rows[0].cells.length;
++		});
+ 	},
+ 
+ 	radios: {},
+--- a/modules/luci-mod-status/root/usr/share/rpcd/acl.d/luci-mod-status.json
++++ b/modules/luci-mod-status/root/usr/share/rpcd/acl.d/luci-mod-status.json
+@@ -81,6 +81,9 @@
+ 			"ubus": {
+ 				"iwinfo": [ "info", "freqlist", "scan" ]
+ 			}
++		},
++		"write": {
++			"ubus": { "iwinfo": [ "scan_pause" ] }
+ 		}
+ 	},
+ 

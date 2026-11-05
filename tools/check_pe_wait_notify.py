@@ -21,13 +21,13 @@ B, MB, BAR, NI, RPQ, FORWARD, PAYLOAD = 0x4000000, 0x4002000, 0x12000000, 0x1000
 rows = []
 for kind in ('RPQ-with-other-peer', 'retired-queue-with-other-peer', 'last-WP', 'RPQ-no-waiter'):
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-    for at, size in ((0x1fc00000, 0x4000), (B, 0x20000), (BAR, 0x10000), (NI, 0x10000), (RPQ, 0x40000), (FORWARD, 0x40000), (PAYLOAD, 0x1000), (0x10020000, 0x1000)):
+    for at, size in ((0x1fc00000, 0x10000), (B, 0x20000), (BAR, 0x10000), (NI, 0x10000), (RPQ, 0x40000), (FORWARD, 0x40000), (PAYLOAD, 0x1000), (0x10020000, 0x1000)):
         u.mem_map(at, size)
     u.mem_write(0x1fc00000, binary)
     def put(at, value): u.mem_write(at, struct.pack('<I', value))
     def get(at): return struct.unpack('<I', u.mem_read(at, 4))[0]
     for index, value in ((0, 0x50455744), (2, BAR | 0xa0000000), (3, 1), (30, 1),
-                         (68, RPQ), (72, FORWARD), (78, 1), (116, 0x6380), (117, 6), (140, MB | 0xa0000000)):
+                         (68, RPQ), (72, FORWARD), (78, 1), (116, 0x6380), (117, 6), (140, MB | 0xa0000000), (142, 1)):
         put(MB + index * 4, value)
     if kind == 'retired-queue-with-other-peer':
         # Peer8 owns an unrelated live WP. Peer7 has one queued TID3 BID.
@@ -39,9 +39,10 @@ for kind in ('RPQ-with-other-peer', 'retired-queue-with-other-peer', 'last-WP', 
         put(B + 0x19000 + 7 * 4, 8)
         put(B + 0x19200 + 7 * 4, 8)
         put(B + 0x11800 + 7 * 4, 1)
+        put(B + 0x19600 + 7 * 4, 1 << 3)
         for base in (0x13000, 0x18000): put(B + base + (7 * 8 + 3) * 4, 1)
         for base in (0x15000, 0x16000): put(B + base + (7 * 8 + 3) * 4, PAYLOAD)
-        u.mem_write(PAYLOAD, struct.pack('<4I', PAYLOAD + 48, 1514, 7, 3))
+        u.mem_write(PAYLOAD, struct.pack('<4I', 0, 1514, 7, 3))
     else:
         put(B + 0xc400, PAYLOAD)
         put(B + 0xc404, 7 << 8 | 1 << 15)
@@ -60,7 +61,7 @@ for kind in ('RPQ-with-other-peer', 'retired-queue-with-other-peer', 'last-WP', 
         put(BAR + 0x121c, 1 << 16)
     u.reg_write(UC_MIPS_REG_A0, MB | 0xa0000000)
     u.reg_write(UC_MIPS_REG_SP, (B + 0x1fff0) | 0xa0000000)
-    u.emu_start(0xbfc00400, 0xbfc03ffc, count=25000)
+    u.emu_start(0xbfc00400, 0x9fc0fff0, count=25000)
     requests = get(MB + 67 * 4)
     other_active = bool(get(B + 0xc400 + (0 if kind.startswith('retired') else 8))) if kind != 'last-WP' else False
     if kind == 'last-WP':

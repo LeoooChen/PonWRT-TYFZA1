@@ -30,6 +30,7 @@ fixture = r'''
 enum {RTL_PON_EPON_1G, RTL_PON_EPON_D10G, RTL_PON_EPON_BI10G, RTL_PON_GPON, RTL_PON_XGPON, RTL_PON_XGSPON};
 struct rtl9617c_pon {
  int lock, control_lock, mode, cleanup_error, cleanup_calls, carrier_updates;
+ int epon_tx_action, epon_tx_error;
  bool fe_enabled, traffic_enabled, pdc_configured, puc_configured;
  void *mac; int *tx_disable;
  void *dev, *top_irq, *optical_irq;
@@ -44,6 +45,7 @@ static void mutex_unlock(int *lock) { assert(*lock); *lock = 0; }
 #define lockdep_assert_held(lock) assert(*(lock))
 static bool rtl_pon_mode_is_epon(int mode) { return mode < RTL_PON_GPON; }
 static void gpiod_set_value_cansleep(int *gpio, int value) { *gpio = value; }
+static int gpiod_get_value_cansleep(int *gpio) { return *gpio; }
 static int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon, bool enable)
 {
  assert(pon->control_lock && !pon->lock && !enable);
@@ -61,8 +63,8 @@ static void rtl_pon_gpon_stop_locked(struct rtl9617c_pon *pon)
 { assert(pon->control_lock && pon->mode==RTL_PON_GPON); pon->gpon_stops++; }
 static void rtl_pon_xgpon_stop_locked(struct rtl9617c_pon *pon)
 { assert(pon->control_lock && pon->mode>=RTL_PON_XGPON); pon->xgpon_stops++; }
-static void rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon)
-{ assert(pon->control_lock && *pon->tx_disable); pon->mpcp_stops++; }
+static int rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon)
+{ assert(pon->control_lock && *pon->tx_disable); pon->mpcp_stops++; return 0; }
 static void synchronize_irq(int irq)
 {
  assert(irq == 24 && shutting_down->control_lock);
@@ -121,7 +123,8 @@ int main(void)
 '''
 with tempfile.TemporaryDirectory(prefix='pon-shutdown-', dir=root / 'artifacts') as directory:
     work = Path(directory)
-    (work / 'test.c').write_text(fixture + defines + '\n' + function(epon, 'rtl_pon_epon_traffic_locked') +
+    (work / 'test.c').write_text(fixture + defines + '\n' + function(epon, 'rtl_epon_tx_apply') +
+                               function(epon, 'rtl_pon_epon_traffic_locked') +
                                function(platform, 'rtl_pon_stop_locked') +
                                function(platform, 'rtl9617c_pon_shutdown') +
                                function(platform, 'rtl9617c_pon_remove') + test)

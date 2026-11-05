@@ -425,6 +425,26 @@
     {
       "chip": "8852c",
       "MACID": 1,
+      "maximum_aggregation": 32,
+      "status": 0,
+      "operations": [
+        {
+          "H2C_buffer": 1,
+          "category": 1,
+          "class": 5,
+          "function": 2,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "810000009b01000600000840002000001e00000000000000000000000000000000000000ff0100060008fff1c0600000ff030000f710000000000000ff00020000000000"
+        },
+        {
+          "boundary": "mac_upd_role_cctrl_v1_8852c"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "MACID": 1,
       "maximum_aggregation": 64,
       "status": 0,
       "operations": [
@@ -436,6 +456,26 @@
           "receive_ACK": 0,
           "done_ACK": 1,
           "payload": "810000009b01000600000840002000003e00000000000000000000000000000000000000ff0100060008fff1c0600000ff030000f710000000000000ff00020000000000"
+        },
+        {
+          "boundary": "mac_upd_role_cctrl_v1_8852c"
+        }
+      ]
+    },
+    {
+      "chip": "8852c",
+      "MACID": 1,
+      "maximum_aggregation": 128,
+      "status": 0,
+      "operations": [
+        {
+          "H2C_buffer": 1,
+          "category": 1,
+          "class": 5,
+          "function": 2,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "810000009b01000600000840002000007e01000000000000000000000000000000000000ff0100060008fff1c0600000ff030000f710000000000000ff00020000000000"
         },
         {
           "boundary": "mac_upd_role_cctrl_v1_8852c"
@@ -485,6 +525,26 @@
     {
       "chip": "8192xb",
       "MACID": 1,
+      "maximum_aggregation": 32,
+      "status": 0,
+      "operations": [
+        {
+          "H2C_buffer": 1,
+          "category": 1,
+          "class": 5,
+          "function": 2,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "810000009b01000600000800002000001e00000000000000000000000000000000000000ff0100060008fff1c0600000ff030000f710000000000000ff00020000000000"
+        },
+        {
+          "boundary": "mac_upd_role_cctrl_v1_8192xb"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "MACID": 1,
       "maximum_aggregation": 64,
       "status": 0,
       "operations": [
@@ -496,6 +556,26 @@
           "receive_ACK": 0,
           "done_ACK": 1,
           "payload": "810000009b01000600000800002000003e00000000000000000000000000000000000000ff0100060008fff1c0600000ff030000f710000000000000ff00020000000000"
+        },
+        {
+          "boundary": "mac_upd_role_cctrl_v1_8192xb"
+        }
+      ]
+    },
+    {
+      "chip": "8192xb",
+      "MACID": 1,
+      "maximum_aggregation": 128,
+      "status": 0,
+      "operations": [
+        {
+          "H2C_buffer": 1,
+          "category": 1,
+          "class": 5,
+          "function": 2,
+          "receive_ACK": 0,
+          "done_ACK": 1,
+          "payload": "810000009b01000600000800002000007e01000000000000000000000000000000000000ff0100060008fff1c0600000ff030000f710000000000000ff00020000000000"
         },
         {
           "boundary": "mac_upd_role_cctrl_v1_8192xb"

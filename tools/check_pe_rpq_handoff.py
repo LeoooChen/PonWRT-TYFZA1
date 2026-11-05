@@ -20,7 +20,7 @@ BASE, MB, BAR, NI, RPQ, FORWARD, PAYLOAD = (
 
 def case(kind):
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-    for a, n in ((0x1fc00000, 0x4000), (BASE, 0x20000), (BAR, 0x10000),
+    for a, n in ((0x1fc00000, 0x10000), (BASE, 0x20000), (BAR, 0x10000),
                  (NI, 0x10000), (RPQ, 0x40000), (FORWARD, 0x40000), (PAYLOAD, 0x1000),
                  (0x10020000, 0x1000)):
         u.mem_map(a, n)
@@ -32,7 +32,7 @@ def case(kind):
     pc = 0xbfc00400
     def run():
         nonlocal pc
-        u.emu_start(pc, 0xbfc03ffc, count=10000)
+        u.emu_start(pc, 0x9fc0fff0, count=10000)
         pc = u.reg_read(UC_MIPS_REG_PC)
     # Full handoff: producer 255, consumer 0. Protect its entire contents.
     sentinel = bytes([0xa5]) * 0x40000

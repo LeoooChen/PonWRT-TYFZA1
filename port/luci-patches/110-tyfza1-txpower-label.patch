@@ -1,0 +1,11 @@
+--- a/modules/luci-mod-network/htdocs/luci-static/resources/view/network/wireless.js
++++ b/modules/luci-mod-network/htdocs/luci-static/resources/view/network/wireless.js
+@@ -649,7 +649,7 @@
+ 		widget.firstElementChild.style.width = 'auto';
+ 
+ 		dom.append(widget, E('span', [
+-			' - ', _('Current power'), ': ',
++			' - ', '当前功率上限', ': ',
+ 			E('span', [ this.powerval != null ? `${this.powerval} dBm` : E('em', _('unknown')) ]),
+ 			this.poweroff ? ` + ${this.poweroff} dB offset = ${this.powerval != null ? this.powerval + this.poweroff : '?'} dBm` : ''
+ 		]));

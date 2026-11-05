@@ -1,0 +1,80 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+set -eu
+umask 077
+ROOT=/overlay/tyfza1-recorder
+BIN=/usr/libexec/tyfza1-recorderd
+BOOT=$(cat /proc/sys/kernel/random/boot_id)
+case "$BOOT" in ''|*[!a-f0-9-]*) echo 'Invalid boot ID' >&2; exit 1;; esac
+DIR=$ROOT/boot-$BOOT
+
+storage_ok() {
+	awk '$2 == "/overlay" && $3 == "ubifs" && $4 ~ /^rw[,]/ {found=1} END {exit !found}' /proc/mounts || {
+		echo 'Writable UBIFS /overlay is required; refusing volatile storage' >&2
+		exit 1
+	}
+	[ ! -L "$ROOT" ] && [ ! -L "$DIR" ] || exit 1
+}
+
+prepare() {
+	storage_ok
+	free=$(df -k /overlay | awk 'END {print $4}')
+	[ "$free" -ge 17408 ] || { echo 'Less than 17 MiB free; no old evidence will be deleted' >&2; exit 1; }
+	mkdir -p "$DIR"
+	chmod 700 "$ROOT" "$DIR"
+	if [ ! -e "$DIR/boot.txt" ]; then
+		{
+			echo "recorder_version=1.0.0 boot_id=$BOOT"
+			echo 'Wall clock may be wrong before NTP; use boot ID and monotonic timestamps.'
+			echo 'No shutdown-requested marker means only that no marker was captured, not a diagnosis.'
+			echo 'UART TX, U-Boot, power loss and late panic may be unavailable to userspace.'
+			date -u; uname -a
+			for f in /etc/openwrt_release /proc/cmdline /proc/mounts /proc/mtd \
+				/proc/sys/kernel/panic /proc/sys/kernel/panic_on_oops /proc/sys/vm/panic_on_oom \
+				/sys/class/watchdog/watchdog0/identity /sys/class/watchdog/watchdog0/bootstatus \
+				/sys/class/watchdog/watchdog0/status /sys/class/watchdog/watchdog0/nowayout; do
+				echo "--- $f ---"
+				cat "$f" 2>/dev/null || :
+			done
+			if [ ! -d /sys/fs/pstore ]; then echo 'pstore unavailable'; fi
+		} > "$DIR/boot.txt.new"
+		mv "$DIR/boot.txt.new" "$DIR/boot.txt"
+		# Copy, never consume/delete a firmware-provided crash record.
+		for f in /sys/fs/pstore/*; do
+			[ -f "$f" ] || continue
+			head -c 262144 "$f" > "$DIR/pstore-${f##*/}"
+		done
+		sync
+	fi
+	ln -sfn "boot-$BOOT" "$ROOT/current"
+}
+
+case "${1:-status}" in
+	run)
+		prepare
+		exec "$BIN" "$DIR"
+		;;
+	status)
+		echo "Current boot: $BOOT"
+		/etc/init.d/tyfza1-recorder status || :
+		df -k /overlay
+		[ ! -d "$ROOT" ] || du -k "$ROOT"
+		if [ -f "$DIR/events.log" ]; then tail -n 18 "$DIR/events.log"; fi
+		;;
+	shutdown-marker)
+		storage_ok
+		[ -d "$DIR" ] || exit 0
+		{
+			echo 'OpenWrt orderly shutdown hook entered; NOT proof shutdown completed.'
+			date -u
+			cat /proc/uptime
+		} > "$DIR/shutdown-requested.txt"
+		sync
+		;;
+	export)
+		[ -d "$ROOT" ] || { echo 'No evidence yet' >&2; exit 1; }
+		# Stream to SSH/stdout, never create a potentially huge archive in router RAM.
+		exec tar -czf - -C /overlay tyfza1-recorder
+		;;
+	*) echo "Usage: $0 {status|export|run|shutdown-marker}" >&2; exit 2;;
+esac

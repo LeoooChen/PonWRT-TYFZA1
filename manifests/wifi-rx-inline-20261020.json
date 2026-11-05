@@ -1,0 +1,72 @@
+{
+  "date": "2026-10-20",
+  "status": "RX ordering root fixed and deployed; gigabit and HE160 throughput goals remain incomplete",
+  "root_cause": "mac80211 Ethernet delivery was deferred past rx_path_lock and then queued through RPS. PE resumed using the updated PN/SN before those slower Ethernet packets reached NI, so later PE-forwarded data overtook them.",
+  "manufacturer_reference": {
+    "module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+    "normal_and_shortcut_paths": "rtw_os_recv_indicate_pkt -> rtw_netif_rx_enq -> dbg_rtw_netif_rx -> rtk_fc_fastfwd_netif_rx, NI before generic Linux receive"
+  },
+  "implementation": [
+    "port/overlay/target/linux/rtl9617c/patches-6.18/214-mac80211-inline-rx.patch",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/monitor.h"
+  ],
+  "contract": "Native radio declares RX_INLINE. mac80211 submits Ethernet synchronously before releasing RX serialization, including reorder-timeout and BAR delivery. Existing other-driver delivery remains unchanged; RPS config remains2. Hardware flag count57->58 stays within64-bit bitmap.",
+  "live_validation": {
+    "original": {
+      "TCP_Mbps": 470.0377,
+      "retransmits": 1560,
+      "TCP_reorder": 7913,
+      "CPU_total_percent": 3.3428
+    },
+    "inline_P1": [
+      {
+        "TCP_Mbps": 509.5496,
+        "retransmits": 879,
+        "TCP_reorder": 0
+      },
+      {
+        "TCP_Mbps": 509.2677,
+        "retransmits": 191,
+        "TCP_reorder": 0,
+        "CPU_total_percent": 3.0473
+      }
+    ],
+    "full_capture": {
+      "USB_unique_segments": 528392,
+      "duplicates": 0,
+      "late_segments": 191,
+      "sender_retransmits": 191,
+      "late_ARM": 7,
+      "late_PE": 184,
+      "file": "\u73b0\u573a\u8bb0\u5f55/20261020-own-wifi/tyf-order-full.pcapng",
+      "analysis": "\u73b0\u573a\u8bb0\u5f55/20261020-own-wifi/order-full-correlation.json",
+      "sequence_analysis": "32-bit TCP sequence wrap is unwrapped; initial incorrect293677late count was discarded"
+    },
+    "production_P4": {
+      "actual_streams": 4,
+      "TCP_Mbps": 632.1826,
+      "TCP_reorder_each": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "CPU_total_percent": 2.8768,
+      "RDU_delta": 0,
+      "WiFi_miss_delta": 231
+    }
+  },
+  "deployed_pair": {
+    "mac80211_sha256": "9780d6046b9e2021439a785c7b6c68ff569fabf84afc271312bf013badf4343b",
+    "rtl_ax_ap_sha256": "e60772d0503250c2c9108a0ba3c798237dd56fefc15b98b48884595824fa3c8d",
+    "artifact": "artifacts/own-wifi-20261020/rx-inline",
+    "note": "A later PHY-metadata candidate failed same-MAC automatic-RA control and is being reverted to this pair."
+  },
+  "open_issues": [
+    "P1 bridge remains around500Mbps; P4 around632Mbps atHE80",
+    "Internal WiFi downlink roughly88-229Mbps with manyTCP retransmits and lowCPU; no solved claim",
+    "Internal endpoints use LinuxTCP, so processCPU subtraction still leaves kernelTCP/softirq/NI costs",
+    "DUT->USB927.6Mbps establishes USBreceive capability above500Mbps; USB->DUT769.5Mbps has CPU0~85%",
+    "HE160 and maximum2.4GbpsPHY throughput remain unverified"
+  ]
+}

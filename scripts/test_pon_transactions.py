@@ -66,11 +66,20 @@ struct rtl9617c_pon {
     void *mac,*control,*epon_control,*gpon_control,*serdes_init,*optical_control,*top_irq,*dev;
     bool mpcp_enabled,mpcp_configured,mac_prepared,traffic_enabled,serdes_configured,gearbox_ready,rx_synced,puc_configured,pdc_configured,fe_enabled,xgpon_pending_valid;
     u32 registered,waiting,serdes_status;int sync_result,serdes_error,mpcp_irq,cleanup_error,policy_error;
+    uint64_t epon_epoch,epon_llid_epoch[32];
+    u32 epon_crypto_llids,epon_sync_failures;
+    u32 epon_holdover_active,epon_holdover_pending;
+    unsigned int epon_tx_action;
+    unsigned long epon_health_at;
     int *tx_disable;
     unsigned int llid_count,los_invert,profile_rows;u8 onu_mac[6];
-    struct rtl_mpcp_backoff backoff;struct delayed_work mpcp_work,serdes_work;
+    struct rtl_mpcp_backoff backoff;struct delayed_work mpcp_work,serdes_work,epon_tx_work,epon_holdover_work;
 };
 static struct rtl9617c_pon *current;
+static unsigned long jiffies;
+#define msecs_to_jiffies(ms) (ms)
+static int rtl_pon_epon_crypto_forget(struct rtl9617c_pon *pon,u32 mask)
+{pon->epon_crypto_llids &= ~mask;return 0;}
 int rtl_pon_stop_locked(struct rtl9617c_pon *pon);
 static int rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *pon,enum rtl_pon_mode mode){(void)mode;assert(pon->lock.held);return pon->policy_error;}
 static int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon,bool enable) {
@@ -162,7 +171,7 @@ int main(void) {
         assert(!stale_puc && !stale_pdc && !(control&(BIT(8)|BIT(9))));
     }
     assert(data_resets==3);
-    assert(canceled==6);
+    assert(canceled==12); /* SerDes, MPCP, TX restore and holdover per mode. */
     pon.mode=RTL_PON_GPON;control=0x30e;stale_puc=1;stale_pdc=2;
     assert(!rtl_pon_serdes_configure(&pon,RTL_PON_EPON_D10G));
     assert(pon.mode==RTL_PON_EPON_D10G && !stale_puc && !stale_pdc &&
@@ -216,10 +225,10 @@ address_model = r'''
 #define ETH_ALEN 6
 #define NET_ADDR_SET 3
 #define NETDEV_CHANGEADDR 8
-struct rtl_oam_port {bool mac_configured;};
-struct net_device {struct rtl_oam_port private;u8 address[6];bool locked;int addr_assign_type;unsigned int updates,notifications;};
+struct rtl_oam_port {bool mac_configured;struct rtl9617c_pon *pon;unsigned int llid;bool control;};
+struct net_device {struct rtl_oam_port private;u8 address[6];bool locked;int addr_assign_type;unsigned int updates,notifications;char name[16];const void *netdev_ops,*sysfs_groups[1];unsigned int max_mtu,flags;};
 struct device {void *data;};struct device_attribute {};
-struct rtl9617c_pon {struct mutex control_lock,lock;bool mpcp_enabled;u8 onu_mac[6];struct net_device *oam_devices[32],*data_devices[32];};
+struct rtl9617c_pon {struct mutex control_lock,lock;bool mpcp_enabled;u8 onu_mac[6],data_mac[6];struct net_device *oam_devices[32],*data_devices[32];void *dev,*ni_dev;};
 static bool rtnl;
 #define ASSERT_RTNL() assert(rtnl)
 #define rtnl_dereference(p) (assert(rtnl),(p))
@@ -233,7 +242,10 @@ static void *netdev_priv(struct net_device *dev) {return &dev->private;}
 static void netdev_lock(struct net_device *dev) {assert(rtnl&&!dev->locked);dev->locked=true;}
 static void netdev_unlock(struct net_device *dev) {assert(dev->locked);dev->locked=false;}
 static void ether_addr_copy(u8 *dst,const u8 *src) {memcpy(dst,src,6);}
-static void eth_hw_addr_set(struct net_device *dev,const u8 *mac) {assert(rtnl&&dev->locked);memcpy(dev->address,mac,6);dev->updates++;}
+static void eth_addr_add(u8 *mac,long offset) {
+ for(int i=5;i>=0 && offset;i--){offset+=mac[i];mac[i]=offset;offset>>=8;}
+}
+static void eth_hw_addr_set(struct net_device *dev,const u8 *mac) {memcpy(dev->address,mac,6);dev->updates++;}
 static int eth_mac_addr(struct net_device *dev,void *address) {
  if(!address)return -EINVAL;
  eth_hw_addr_set(dev,address);return 0;
@@ -241,36 +253,60 @@ static int eth_mac_addr(struct net_device *dev,void *address) {
 static void call_netdevice_notifiers(int event,struct net_device *dev) {assert(rtnl&&dev->locked&&event==NETDEV_CHANGEADDR);dev->notifications++;}
 static int mac_pton(const char *text,u8 *out) {unsigned int b[6];if(sscanf(text,"%x:%x:%x:%x:%x:%x",b,b+1,b+2,b+3,b+4,b+5)!=6)return 0;for(unsigned int i=0;i<6;i++)out[i]=b[i];return 1;}
 static int is_valid_ether_addr(const u8 *mac) {return !(mac[0]&1)&&memcmp(mac,"\0\0\0\0\0\0",6);}
+#define ETH_DATA_LEN 1500
+#define IFF_NOARP 0x80
+#define SET_NETDEV_DEV(dev,parent) ((void)(parent))
+static const int rtl_oam_ops,rtl_data_ops,rtl_oam_group;
+static struct net_device *alloc_etherdev(unsigned int size){(void)size;return calloc(1,sizeof(struct net_device));}
+static void free_netdev(struct net_device *dev){free(dev);}
+static void netif_carrier_off(struct net_device *dev){(void)dev;}
+static int rtl9617c_ni_fe_add_port(void *engine,struct net_device *dev,unsigned int index){(void)engine;(void)dev;(void)index;return 0;}
+
 '''
 address_test = r'''
 int main(void) {
     struct rtl9617c_pon pon={};struct device device={&pon};struct net_device ports[3]={},data[3]={};
-	pon.oam_devices[0]=ports;pon.oam_devices[7]=ports+1;pon.oam_devices[31]=ports+2;
+    pon.oam_devices[0]=ports;pon.oam_devices[7]=ports+1;pon.oam_devices[31]=ports+2;
     pon.data_devices[0]=data;pon.data_devices[7]=data+1;pon.data_devices[31]=data+2;
     pthread_mutex_init(&pon.lock.native,NULL);pthread_mutex_init(&pon.control_lock.native,NULL);
-    const char *mac="02:11:22:33:44:f0";
-    assert(onu_mac_store(&device,NULL,mac,17)==17);
-    const u8 expected[3]={0xf0,0xf7,0x0f};
+    struct net_device *initial=rtl_oam_allocate(&pon,0,false);
+    assert(initial && !memcmp(initial->address,"\0\0\0\0\0\0",6));
+    free_netdev(initial);
+    const char *factory="00:11:22:33:44:ff";
+    assert(data_mac_store(&device,NULL,factory,17)==17);
+    const u8 expected[3][6]={{0,0x11,0x22,0x33,0x44,0xff},
+                           {0,0x11,0x22,0x33,0x45,6},
+                           {0,0x11,0x22,0x33,0x45,0x1e}};
     for(unsigned int i=0;i<3;i++) {
-        assert(ports[i].address[5]==expected[i] && ports[i].updates==1 && ports[i].notifications==1);
-		assert(!ports[i].locked);
-        assert(!memcmp(data[i].address,ports[i].address,6) && data[i].updates==1 && data[i].notifications==1);
+        assert(!memcmp(data[i].address,expected[i],6));
+        assert(data[i].updates==1 && data[i].notifications==1 && !data[i].locked);
+        assert(ports[i].updates==0);
     }
-    /* The normal network MAC path owns the business address, while OAM
-     * remains derived from ONU MAC. Test both failed and successful setters. */
+    struct net_device *late=rtl_oam_allocate(&pon,31,false);
+    assert(late && !memcmp(late->address,expected[2],6));
+    free_netdev(late);
+    assert(onu_mac_store(&device,NULL,"02:11:22:33:44:f0",17)==17);
+    const u8 oam[3][6]={{2,0x11,0x22,0x33,0x44,0xf0},
+                      {2,0x11,0x22,0x33,0x44,0xf7},
+                      {2,0x11,0x22,0x33,0x45,0x0f}};
+    for(unsigned int i=0;i<3;i++) {
+        assert(!memcmp(ports[i].address,oam[i],6));
+        assert(!memcmp(data[i].address,expected[i],6) && data[i].updates==1);
+    }
     const u8 configured[6]={2,0x55,0x44,0x33,0x22,0x11};
     rtnl_lock();netdev_lock(data+1);
     assert(rtl_data_set_address(data+1,NULL)==-EINVAL && !data[1].private.mac_configured);
     assert(rtl_data_set_address(data+1,(void *)configured)==0 && data[1].private.mac_configured);
     netdev_unlock(data+1);rtnl_unlock();
-    assert(onu_mac_store(&device,NULL,"02:11:22:33:44:02",17)==17);
-    assert(!memcmp(data[1].address,configured,6) && ports[1].address[5]==9);
-    assert(data[0].address[5]==2 && data[2].address[5]==33);
-        pon.mpcp_enabled=true;assert(onu_mac_store(&device,NULL,"02:11:22:33:44:01",17)==-EBUSY);
+    assert(data_mac_store(&device,NULL,factory,17)==17);
+    assert(!memcmp(data[1].address,configured,6));
+    assert(data_mac_store(&device,NULL,"00:00:00:00:00:00",17)==-EINVAL);
+    pon.mpcp_enabled=true;
+    assert(data_mac_store(&device,NULL,factory,17)==17);
+    assert(onu_mac_store(&device,NULL,"02:11:22:33:44:01",17)==-EBUSY);
     assert(!rtnl&&!pon.lock.held&&!pon.control_lock.held);
-    for(unsigned int i=0;i<3;i++)assert(ports[i].updates==2);
     pthread_mutex_destroy(&pon.lock.native);pthread_mutex_destroy(&pon.control_lock.native);
-    puts("Actual ONU MAC store: RTNL/device locks, LLID-derived addresses, change notifications and busy rejection passed");
+    puts("Factory PON Ethernet MAC: independent of ONU registration, full-address carry, explicit overrides and locked notifications passed");
 }
 '''
 
@@ -285,7 +321,7 @@ with tempfile.TemporaryDirectory(prefix='control-tests-', dir=root / 'artifacts'
         if case == 'transactions':
             constants = '\n'.join(re.findall(r'^#define .*$', serdes + '\n' + mpcp, re.M))
             definitions = function(mpcp, 'rtl_pon_llid_mask')
-            locked = '_locked' if 'void rtl_pon_mpcp_stop_locked' in mpcp else ''
+            locked = '_locked' if 'rtl_pon_mpcp_stop_locked(' in mpcp else ''
             definitions += function(mpcp, 'rtl_pon_mpcp_stop' + locked) + function(mpcp, 'rtl_pon_mpcp_configure' + locked)
             definitions += function(serdes, 'rtl_pon_serdes_configure' + locked)
             if locked:
@@ -302,7 +338,7 @@ with tempfile.TemporaryDirectory(prefix='control-tests-', dir=root / 'artifacts'
             # Reuse the host mutex primitive; the RX/MMIO model is unnecessary.
             prefix = common[:common.index('struct delayed_work')]
             helper = function(oam, 'rtl_data_set_address') + function(oam, 'rtl_port_address') if 'static void rtl_port_address' in oam else ''
-            source = prefix + address_model + helper + function(oam, 'rtl_pon_oam_address') + function(controller, 'onu_mac_store') + address_test
+            source = prefix + address_model + helper + function(oam, 'rtl_pon_oam_address') + function(oam, 'rtl_pon_data_address') + function(controller, 'onu_mac_store') + function(controller, 'data_mac_store') + function(oam, 'rtl_oam_allocate') + address_test
         cfile = directory / f'{case}.c'
         binary = directory / case
         cfile.write_text(source)

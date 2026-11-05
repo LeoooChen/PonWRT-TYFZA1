@@ -1,0 +1,192 @@
+--- a/include/net/netfilter/nf_flow_table.h
++++ b/include/net/netfilter/nf_flow_table.h
+@@ -148,6 +148,8 @@
+ 		struct {
+ 			u32		ifidx;
+ 			u32		hw_ifidx;
++			u32		bridge_ifidx, bridge_port;
++			u16		bridge_vid;
+ 			u8		h_source[ETH_ALEN];
+ 			u8		h_dest[ETH_ALEN];
+ 		} out;
+@@ -214,6 +216,8 @@
+ 		struct {
+ 			u32			ifindex;
+ 			u32			hw_ifindex;
++			u32			bridge_ifindex, bridge_port;
++			u16			bridge_vid;
+ 			u8			h_source[ETH_ALEN];
+ 			u8			h_dest[ETH_ALEN];
+ 		} out;
+--- a/net/netfilter/nf_flow_table_path.c
++++ b/net/netfilter/nf_flow_table_path.c
+@@ -84,6 +84,8 @@
+ 	} encap[NF_FLOW_TABLE_ENCAP_MAX];
+ 	u8 num_encaps;
+ 	u8 ingress_vlans;
++	u32 bridge_ifindex, bridge_port;
++	u16 bridge_vid;
+ 	u8 h_source[ETH_ALEN];
+ 	u8 h_dest[ETH_ALEN];
+ 	enum flow_offload_xmit_type xmit_type;
+@@ -130,6 +132,9 @@
+ 				memcpy(info->h_dest, path->encap.h_dest, ETH_ALEN);
+ 			break;
+ 		case DEV_PATH_BRIDGE:
++			info->bridge_ifindex = path->dev->ifindex;
++			info->bridge_port = stack->path[i + 1].dev->ifindex;
++			info->bridge_vid = path->bridge.vlan_id;
+ 			if (is_zero_ether_addr(info->h_source))
+ 				memcpy(info->h_source, path->dev->dev_addr, ETH_ALEN);
+ 
+@@ -223,6 +228,9 @@
+ 		memcpy(route->tuple[dir].out.h_source, info.h_source, ETH_ALEN);
+ 		memcpy(route->tuple[dir].out.h_dest, info.h_dest, ETH_ALEN);
+ 		route->tuple[dir].out.hw_ifindex = info.hw_outdev->ifindex;
++		route->tuple[dir].out.bridge_ifindex = info.bridge_ifindex;
++		route->tuple[dir].out.bridge_port = info.bridge_port;
++		route->tuple[dir].out.bridge_vid = info.bridge_vid;
+ 		route->tuple[dir].xmit_type = info.xmit_type;
+ 	}
+ }
+--- a/net/netfilter/nf_flow_table_core.c
++++ b/net/netfilter/nf_flow_table_core.c
+@@ -5,6 +5,7 @@
+ #include <linux/netfilter.h>
+ #include <linux/rhashtable.h>
+ #include <linux/netdevice.h>
++#include <linux/if_bridge.h>
+ #include <net/ip.h>
+ #include <net/ip6_route.h>
+ #include <net/netfilter/nf_flow_table.h>
+@@ -127,6 +128,9 @@
+ 		       ETH_ALEN);
+ 		flow_tuple->out.ifidx = route->tuple[dir].out.ifindex;
+ 		flow_tuple->out.hw_ifidx = route->tuple[dir].out.hw_ifindex;
++		flow_tuple->out.bridge_ifidx = route->tuple[dir].out.bridge_ifindex;
++		flow_tuple->out.bridge_port = route->tuple[dir].out.bridge_port;
++		flow_tuple->out.bridge_vid = route->tuple[dir].out.bridge_vid;
+ 		dst_release(dst);
+ 		break;
+ 	case FLOW_OFFLOAD_XMIT_XFRM:
+@@ -396,6 +400,31 @@
+ }
+ EXPORT_SYMBOL_GPL(flow_offload_teardown);
+ 
++/* Called under the flowtable lookup/iterator RCU read section. A bridge
++ * move invalidates the whole connection, including its reverse HW rule. */
++static bool nf_flow_bridge_changed(const struct flow_offload *flow)
++{
++	struct net *net = nf_ct_net(flow->ct);
++	unsigned int dir;
++
++	if (flow->type != NF_FLOW_OFFLOAD_ROUTE)
++		return false;
++	for (dir = 0; dir < FLOW_OFFLOAD_DIR_MAX; dir++) {
++		const struct flow_offload_tuple *tuple = &flow->tuplehash[dir].tuple;
++		struct net_device *bridge, *port;
++
++		if (tuple->xmit_type != FLOW_OFFLOAD_XMIT_DIRECT || !tuple->out.bridge_ifidx)
++			continue;
++		bridge = dev_get_by_index_rcu(net, tuple->out.bridge_ifidx);
++		if (!bridge)
++			return true;
++		port = br_fdb_find_port_rcu(bridge, tuple->out.h_dest, tuple->out.bridge_vid);
++		if (!port || port->ifindex != tuple->out.bridge_port)
++			return true;
++	}
++	return false;
++}
++
+ struct flow_offload_tuple_rhash *
+ flow_offload_lookup(struct nf_flowtable *flow_table,
+ 		    struct flow_offload_tuple *tuple)
+@@ -416,6 +445,10 @@
+ 
+ 	if (unlikely(nf_ct_is_dying(flow->ct)))
+ 		return NULL;
++	if (nf_flow_bridge_changed(flow)) {
++		flow_offload_teardown(flow);
++		return NULL;
++	}
+ 
+ 	return tuplehash;
+ }
+@@ -570,6 +603,7 @@
+ 
+ 	if (nf_flow_has_expired(flow) ||
+ 	    nf_ct_is_dying(flow->ct) ||
++	    nf_flow_bridge_changed(flow) ||
+ 	    nf_flow_custom_gc(flow_table, flow)) {
+ 		flow_offload_teardown(flow);
+ 		teardown = true;
+--- a/include/linux/if_bridge.h
++++ b/include/linux/if_bridge.h
+@@ -174,6 +174,8 @@
+ #endif
+ 
+ #if IS_ENABLED(CONFIG_BRIDGE)
++struct net_device *br_fdb_find_port_rcu(const struct net_device *br_dev,
++				     const unsigned char *addr, __u16 vid);
+ struct net_device *br_fdb_find_port(const struct net_device *br_dev,
+ 				    const unsigned char *addr,
+ 				    __u16 vid);
+@@ -185,6 +187,12 @@
+ clock_t br_get_ageing_time(const struct net_device *br_dev);
+ #else
+ static inline struct net_device *
++br_fdb_find_port_rcu(const struct net_device *br_dev,
++		     const unsigned char *addr, __u16 vid)
++{
++	return NULL;
++}
++static inline struct net_device *
+ br_fdb_find_port(const struct net_device *br_dev,
+ 		 const unsigned char *addr,
+ 		 __u16 vid)
+--- a/net/bridge/br_fdb.c
++++ b/net/bridge/br_fdb.c
+@@ -232,7 +232,7 @@
+ 	return fdb;
+ }
+ 
+-struct net_device *br_fdb_find_port(const struct net_device *br_dev,
++struct net_device *br_fdb_find_port_rcu(const struct net_device *br_dev,
+ 				    const unsigned char *addr,
+ 				    __u16 vid)
+ {
+@@ -241,21 +241,30 @@
+ 	struct net_device *dev = NULL;
+ 	struct net_bridge *br;
+ 
+-	ASSERT_RTNL();
+-
+ 	if (!netif_is_bridge_master(br_dev))
+ 		return NULL;
+ 
+ 	br = netdev_priv(br_dev);
+-	rcu_read_lock();
+ 	f = br_fdb_find_rcu(br, addr, vid);
+ 	if (f) {
+ 		dst = READ_ONCE(f->dst);
+ 		if (dst)
+ 			dev = dst->dev;
+ 	}
++
++	return dev;
++}
++EXPORT_SYMBOL_GPL(br_fdb_find_port_rcu);
++
++struct net_device *br_fdb_find_port(const struct net_device *br_dev,
++				    const unsigned char *addr, __u16 vid)
++{
++	struct net_device *dev;
++
++	ASSERT_RTNL();
++	rcu_read_lock();
++	dev = br_fdb_find_port_rcu(br_dev, addr, vid);
+ 	rcu_read_unlock();
+-
+ 	return dev;
+ }
+ EXPORT_SYMBOL_GPL(br_fdb_find_port);

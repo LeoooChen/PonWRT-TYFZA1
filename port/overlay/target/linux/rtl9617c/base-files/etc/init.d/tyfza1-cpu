@@ -1,0 +1,32 @@
+#!/bin/sh /etc/rc.common
+# SPDX-License-Identifier: GPL-2.0-only
+START=20
+USE_PROCD=1
+
+start_service() {
+	local frequency available current
+	local policy=/sys/devices/system/cpu/cpufreq/policy0
+	config_load system
+	config_get frequency cpu frequency
+	[ -n "$frequency" ] || return 0
+	read -r available < "$policy/scaling_available_frequencies" || return 1
+	case " $available " in
+		*" $frequency "*) ;;
+		*) logger -t tyfza1-cpu "Unsupported CPU frequency: $frequency kHz"; return 1 ;;
+	esac
+	printf 'userspace\n' > "$policy/scaling_governor" || return 1
+	printf '%s\n' "$frequency" > "$policy/scaling_setspeed" || return 1
+	read -r current < "$policy/cpuinfo_cur_freq" || return 1
+	[ "$current" = "$frequency" ] || {
+		logger -t tyfza1-cpu "CPU clock mismatch: requested $frequency, read $current kHz"
+		return 1
+	}
+}
+
+reload_service() {
+	start_service
+}
+
+service_triggers() {
+	procd_add_reload_trigger system
+}

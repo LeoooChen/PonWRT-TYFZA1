@@ -1,0 +1,688 @@
+{
+  "date": "2026-10-25",
+  "test_driver_commit": "74511eb",
+  "integration_base": "55890e0",
+  "driver_ram_sha256": "22e0ce8b0578a05c3fcad6101ca768546b23adf60b63e8aeafdb869c567ebe26",
+  "kernel": "6.18.55",
+  "fix": {
+    "parameter": "net.core.rmem_default",
+    "before": 212992,
+    "after": 524288,
+    "rmem_max": 4194304,
+    "file": "port/overlay/target/linux/rtl9617c/base-files/etc/sysctl.d/30-tyfza1-udp.conf",
+    "scope": "Default receive budget for new local sockets; per-application SO_RCVBUF and forwarding paths retain their policies."
+  },
+  "evidence": {
+    "normal_5g_sender": 12501,
+    "normal_5g_local_in": 12501,
+    "normal_5g_payload_received": 11885,
+    "normal_5g_socket_overflow": 616,
+    "skb_truesize": 1920,
+    "original_socket_budget": 212992,
+    "original_observed_peak_rmem": 211200,
+    "fixed_socket_budget": 524288,
+    "fixed_observed_peak_rmem": 489600,
+    "normal_first_flow_gap_us": 135495,
+    "normal_first_flow_max_packets_1ms": 73
+  },
+  "cases": [
+    {
+      "label": "before-fw-1",
+      "udp_delta": {
+        "InDatagrams": 11886,
+        "NoPorts": 0,
+        "InErrors": 616,
+        "OutDatagrams": 1,
+        "RcvbufErrors": 616,
+        "SndbufErrors": 0,
+        "InCsumErrors": 0,
+        "IgnoredMulti": 0,
+        "MemErrors": 0
+      },
+      "result": {
+        "start": 0,
+        "end": 12.00428,
+        "seconds": 12.00428,
+        "bytes": 14262000,
+        "bits_per_second": 9504610.022425335,
+        "jitter_ms": 0.388374024978827,
+        "lost_packets": 616,
+        "packets": 12501,
+        "lost_percent": 4.927605791536677,
+        "sender": false
+      },
+      "error": null,
+      "sender_packets": 12501,
+      "received_payload_packets": 11885,
+      "actual_missing": 616
+    },
+    {
+      "label": "before-burst256",
+      "udp_delta": {
+        "InDatagrams": 9099,
+        "NoPorts": 0,
+        "InErrors": 3446,
+        "OutDatagrams": 1,
+        "RcvbufErrors": 3446,
+        "SndbufErrors": 0,
+        "InCsumErrors": 0,
+        "IgnoredMulti": 0,
+        "MemErrors": 0
+      },
+      "result": {
+        "start": 0,
+        "end": 12.007071,
+        "seconds": 12.007071,
+        "bytes": 10917600,
+        "bits_per_second": 7274113.72848549,
+        "jitter_ms": 0.022342246702283623,
+        "lost_packets": 3446,
+        "packets": 12544,
+        "lost_percent": 27.471301020408163,
+        "sender": false
+      },
+      "error": null,
+      "sender_packets": 12544,
+      "received_payload_packets": 9098,
+      "actual_missing": 3446
+    },
+    {
+      "label": "rps0-burst256-repeat",
+      "udp_delta": {
+        "InDatagrams": 9747,
+        "NoPorts": 0,
+        "InErrors": 2798,
+        "OutDatagrams": 1,
+        "RcvbufErrors": 2798,
+        "SndbufErrors": 0,
+        "InCsumErrors": 0,
+        "IgnoredMulti": 0,
+        "MemErrors": 0
+      },
+      "result": {
+        "start": 0,
+        "end": 12.006272,
+        "seconds": 12.006272,
+        "bytes": 11695200,
+        "bits_per_second": 7792727.00135396,
+        "jitter_ms": 0.006353042894158748,
+        "lost_packets": 2798,
+        "packets": 12544,
+        "lost_percent": 22.305484693877553,
+        "sender": false
+      },
+      "error": null,
+      "sender_packets": 12544,
+      "received_payload_packets": 9746,
+      "actual_missing": 2798
+    },
+    {
+      "label": "rmem512-burst256-1",
+      "udp_delta": {
+        "InDatagrams": 12561,
+        "NoPorts": 0,
+        "InErrors": 0,
+        "OutDatagrams": 17,
+        "RcvbufErrors": 0,
+        "SndbufErrors": 0,
+        "InCsumErrors": 0,
+        "IgnoredMulti": 0,
+        "MemErrors": 0
+      },
+      "result": {
+        "start": 0,
+        "end": 12.002792,
+        "seconds": 12.002792,
+        "bytes": 15052800,
+        "bits_per_second": 10032865.686583588,
+        "jitter_ms": 0.00481132553387251,
+        "lost_packets": 0,
+        "packets": 12544,
+        "lost_percent": 0,
+        "sender": false
+      },
+      "error": null,
+      "sender_packets": 12544,
+      "received_payload_packets": 12544,
+      "actual_missing": 0
+    },
+    {
+      "label": "rollback212-burst256",
+      "udp_delta": {
+        "InDatagrams": 7585,
+        "NoPorts": 0,
+        "InErrors": 4960,
+        "OutDatagrams": 1,
+        "RcvbufErrors": 4960,
+        "SndbufErrors": 0,
+        "InCsumErrors": 0,
+        "IgnoredMulti": 0,
+        "MemErrors": 0
+      },
+      "result": {
+        "start": 0,
+        "end": 12.006201,
+        "seconds": 12.006201,
+        "bytes": 9100800,
+        "bits_per_second": 6064066.39369106,
+        "jitter_ms": 0.012991259556367585,
+        "lost_packets": 4827,
+        "packets": 12411,
+        "lost_percent": 38.480548469387756,
+        "sender": false
+      },
+      "error": null,
+      "sender_packets": 12544,
+      "received_payload_packets": 7584,
+      "actual_missing": 4960
+    },
+    {
+      "label": "reapply512-burst256",
+      "udp_delta": {
+        "InDatagrams": 12545,
+        "NoPorts": 0,
+        "InErrors": 0,
+        "OutDatagrams": 1,
+        "RcvbufErrors": 0,
+        "SndbufErrors": 0,
+        "InCsumErrors": 0,
+        "IgnoredMulti": 0,
+        "MemErrors": 0
+      },
+      "result": {
+        "start": 0,
+        "end": 12.007545,
+        "seconds": 12.007545,
+        "bytes": 15052800,
+        "bits_per_second": 10028894.332688322,
+        "jitter_ms": 0.005468784793919512,
+        "lost_packets": 0,
+        "packets": 12544,
+        "lost_percent": 0,
+        "sender": false
+      },
+      "error": null,
+      "sender_packets": 12544,
+      "received_payload_packets": 12544,
+      "actual_missing": 0
+    },
+    {
+      "label": "fixed-uninstrumented-burst256",
+      "udp_delta": {
+        "InDatagrams": 12545,
+        "NoPorts": 0,
+        "InErrors": 0,
+        "OutDatagrams": 1,
+        "RcvbufErrors": 0,
+        "SndbufErrors": 0,
+        "InCsumErrors": 0,
+        "IgnoredMulti": 0,
+        "MemErrors": 0
+      },
+      "result": {
+        "start": 0,
+        "end": 12.007945,
+        "seconds": 12.007945,
+        "bytes": 15052800,
+        "bits_per_second": 10028560.25739625,
+        "jitter_ms": 0.005855516673109946,
+        "lost_packets": 0,
+        "packets": 12544,
+        "lost_percent": 0,
+        "sender": false
+      },
+      "error": null,
+      "sender_packets": 12544,
+      "received_payload_packets": 12544,
+      "actual_missing": 0
+    },
+    {
+      "label": "fixed-reload-normal-1",
+      "udp_delta": {
+        "InDatagrams": 12503,
+        "NoPorts": 0,
+        "InErrors": 0,
+        "OutDatagrams": 1,
+        "RcvbufErrors": 0,
+        "SndbufErrors": 0,
+        "InCsumErrors": 0,
+        "IgnoredMulti": 0,
+        "MemErrors": 0
+      },
+      "result": {
+        "start": 0,
+        "end": 12.004548,
+        "seconds": 12.004548,
+        "bytes": 15002400,
+        "bits_per_second": 9997810.829695545,
+        "jitter_ms": 0.4657267791453527,
+        "lost_packets": 0,
+        "packets": 12502,
+        "lost_percent": 0,
+        "sender": false
+      },
+      "error": null,
+      "sender_packets": 12502,
+      "received_payload_packets": 12502,
+      "actual_missing": 0
+    },
+    {
+      "label": "rollback-uninstrumented-burst256",
+      "udp_delta": {
+        "InDatagrams": 7216,
+        "NoPorts": 0,
+        "InErrors": 5329,
+        "OutDatagrams": 1,
+        "RcvbufErrors": 5329,
+        "SndbufErrors": 0,
+        "InCsumErrors": 0,
+        "IgnoredMulti": 0,
+        "MemErrors": 0
+      },
+      "result": {
+        "start": 0,
+        "end": 12.006656,
+        "seconds": 12.006656,
+        "bytes": 8658000,
+        "bits_per_second": 5768800.23880088,
+        "jitter_ms": 0.02284889709934837,
+        "lost_packets": 5194,
+        "packets": 12409,
+        "lost_percent": 41.40625,
+        "sender": false
+      },
+      "error": null,
+      "sender_packets": 12544,
+      "received_payload_packets": 7215,
+      "actual_missing": 5329
+    },
+    {
+      "label": "final512-uninstrumented-burst256",
+      "udp_delta": {
+        "InDatagrams": 12561,
+        "NoPorts": 0,
+        "InErrors": 0,
+        "OutDatagrams": 17,
+        "RcvbufErrors": 0,
+        "SndbufErrors": 0,
+        "InCsumErrors": 0,
+        "IgnoredMulti": 0,
+        "MemErrors": 0
+      },
+      "result": {
+        "start": 0,
+        "end": 12.013079,
+        "seconds": 12.013079,
+        "bytes": 15052800,
+        "bits_per_second": 10024274.376286047,
+        "jitter_ms": 0.005943678053658872,
+        "lost_packets": 0,
+        "packets": 12544,
+        "lost_percent": 0,
+        "sender": false
+      },
+      "error": null,
+      "sender_packets": 12544,
+      "received_payload_packets": 12544,
+      "actual_missing": 0
+    }
+  ],
+  "validation": {
+    "sysctl_file_applied_from_tmp": true,
+    "diagnostic_modules_removed_for_final_cases": true,
+    "RF_driver_production_changes": false,
+    "RPS_final": 0,
+    "flash_written": false
+  },
+  "limitations": [
+    "The measured loss occurs at the ONT local UDP receiver. No claim is made about unrelated RF or hardware-forwarding losses.",
+    "The origin of arrival gaps is not narrowed to client power save, air scheduling, or a particular kernel scheduling path.",
+    "iperf lost_packets can omit trailing lost sequence numbers. actual_missing uses sent versus received payload bytes.",
+    "Already-open sockets retain their previous receive budget."
+  ],
+  "records": {
+    "amsdu-memory-before.txt": {
+      "sha256": "7acd119322111d509581879a017377ca18b9775d9cb6241aa87848195154d54e",
+      "bytes": 3143
+    },
+    "before-2-after.txt": {
+      "sha256": "f76c786e9ed74b825c0cebe5bc36ef45edb60f35499cd3295e628e8767281bc6",
+      "bytes": 2825
+    },
+    "before-2-before.txt": {
+      "sha256": "937ddc0d367c5d8679a9f8227f4e5e5ac47de56109d7b2515e22ed15e8ed992e",
+      "bytes": 2799
+    },
+    "before-2-summary.json": {
+      "sha256": "f336138a17093d165e2588aa9d064ac95cd73406eebe9041df55a5e7c5ccc1d4",
+      "bytes": 533
+    },
+    "before-2.json": {
+      "sha256": "bf0b654aed7c3c76bbd0a88544fc5503c27eb9696f2e3f30c84c387f334cdf05",
+      "bytes": 8248
+    },
+    "before-3-after.txt": {
+      "sha256": "56341c0a3909b57e8128a882dceb7519bd9eb825c956f9e5ca092fe7a381b215",
+      "bytes": 2826
+    },
+    "before-3-before.txt": {
+      "sha256": "ce68d6bcf8c8331d093285ab184a96b89a83b8d2534476051f697bd2807be120",
+      "bytes": 2825
+    },
+    "before-3-summary.json": {
+      "sha256": "eef8f2a108f41ca67d14f43f48f5de43392832162591142f7a11b3a7e67d2cee",
+      "bytes": 532
+    },
+    "before-3.json": {
+      "sha256": "b631a03fd987bb94b44f4f9d14cb4ba068da168a9c15b2234b99bd5a71fc7cb8",
+      "bytes": 8250
+    },
+    "before-arm-1-after.txt": {
+      "sha256": "80dac14dc31c5f2cba202cd815a3cb9e7547a42758da1211112acb05c66595e7",
+      "bytes": 2827
+    },
+    "before-arm-1-before.txt": {
+      "sha256": "1b11185b41e8a371d1669567ba2ff45ed8ffe6f41bc04d131d55208ca909d989",
+      "bytes": 2826
+    },
+    "before-arm-1-summary.json": {
+      "sha256": "243cd55156b6eba38ce940990def87bacbe722802c486854f684caa40ada643b",
+      "bytes": 539
+    },
+    "before-arm-1.json": {
+      "sha256": "77a9baf99b958a40d4792d9b3fe996242f4e8ae1145c6186b90d73f9bfd9f069",
+      "bytes": 8255
+    },
+    "before-arm-mode.txt": {
+      "sha256": "fed4240af4d356546e7c66bc93640000cc44f5c965450d2c10f87c2975629c8b",
+      "bytes": 858
+    },
+    "before-burst256-after.txt": {
+      "sha256": "daa3ef76961d93c088b2a2a2f21f0fdd348d5143a0373b7290ddafe252350321",
+      "bytes": 2864
+    },
+    "before-burst256-before.txt": {
+      "sha256": "23edb07edd4b5745477a6c38b58d6fa35ced4c16bc7e2a25fe228ad6629c165a",
+      "bytes": 2861
+    },
+    "before-burst256-summary.json": {
+      "sha256": "b56286acbadb57c1d199ef4df770513c1814892fac0c284372ac7a70bffb4f00",
+      "bytes": 567
+    },
+    "before-burst256.json": {
+      "sha256": "bee306c79e4351dde3681c192015e8bcc377fcbb66da3f73664028152cc66efb",
+      "bytes": 9921
+    },
+    "before-burst64-after.txt": {
+      "sha256": "a4960d5bdddbb7e9f953df08bc9ff0c306a8c90c134e47914ff5788b5ed6090f",
+      "bytes": 2826
+    },
+    "before-burst64-before.txt": {
+      "sha256": "41df62e07392568e889d4cbb07de847105063b33c23f82506a2435f59d43c980",
+      "bytes": 2826
+    },
+    "before-burst64-summary.json": {
+      "sha256": "8c7cbb7c9f94e68f46a520206a72360546a5fd0d2a95f951c5655f6b3c967966",
+      "bytes": 543
+    },
+    "before-burst64.json": {
+      "sha256": "ac74c91e5592dc158dcd82a3bf8d87af10c62c8eacf2339bfd06d182df61b0f8",
+      "bytes": 8264
+    },
+    "before-fw-1-after.txt": {
+      "sha256": "8417fde1ed54f1737dfae2656589357f69b40264e5f36e6952e49ad966e85d45",
+      "bytes": 2827
+    },
+    "before-fw-1-before.txt": {
+      "sha256": "5ca79bf802b5c4869dd4607fd7f6c36c26c4020d0b4353d05be4e71693935629",
+      "bytes": 2827
+    },
+    "before-fw-1-summary.json": {
+      "sha256": "bc7a5545b9108c3c9630d5eaf0a6beadca7ddd5e77e3332cfcef0e5186d10f43",
+      "bytes": 556
+    },
+    "before-fw-1.json": {
+      "sha256": "3f3e86b2ca075a125273db8c2252b63869f1c47894b3c9c4ce1f2a51d4cf62d7",
+      "bytes": 8313
+    },
+    "before-fw-2-after.txt": {
+      "sha256": "96895d431f3060a3fe4785ee639e171bc65b364ed170e656a7a7c4b4369a3876",
+      "bytes": 2828
+    },
+    "before-fw-2-before.txt": {
+      "sha256": "2d47a8514ac1252d9fc2fcd7b40eb2c6aad2b292e3225d0179995c86b8c269b6",
+      "bytes": 2827
+    },
+    "before-fw-2-summary.json": {
+      "sha256": "da7ecf5875bcae170317ba5a38a1e87a084f9af8452f4231ae06592373b58136",
+      "bytes": 538
+    },
+    "before-fw-2.json": {
+      "sha256": "40487e6abf2361b882cae34fdc12db02e17672fed0d9c7842a596b9041d93c06",
+      "bytes": 8263
+    },
+    "before-original-load-after.txt": {
+      "sha256": "4f902c0bb36cc5b4514ed3c34096b238b1148dfd4231bcd0dc00c9f16b4e3f9b",
+      "bytes": 2994
+    },
+    "before-original-load-before.txt": {
+      "sha256": "7302af679d5f4bc2c74c02770ac0240f2d42a4fe270dc7e0b48d771ca5074eac",
+      "bytes": 2826
+    },
+    "before-original-load-dig.txt": {
+      "sha256": "09d27f3318a817426b198b64a888581a1b56c149d503c39a80c546f553300b18",
+      "bytes": 2759
+    },
+    "before-original-load-ping.txt": {
+      "sha256": "b176fe53c6301cb1b41a0cf00e872aa206e9daf63a61875ef2976eb28714dc00",
+      "bytes": 6196
+    },
+    "before-original-load-summary.json": {
+      "sha256": "1034d51deb5cf79d81f34ace05674bcfd9b5aa1ac77d5ae1dcc52f050f49cc40",
+      "bytes": 545
+    },
+    "before-original-load.json": {
+      "sha256": "bfcdb101145e1c7df27e115790a01c13552e679c3b3938c3c3141b53b31aa50a",
+      "bytes": 8257
+    },
+    "before-timing-1-after.txt": {
+      "sha256": "e5776bbd643dadd1c47f6ee5bac447a0128a0801e161d3e207507bba3ebf62f9",
+      "bytes": 2861
+    },
+    "before-timing-1-before.txt": {
+      "sha256": "8aa46195c3687201a379fa42f31c999300b32d4565f75df6bfc79f129b916b8c",
+      "bytes": 2829
+    },
+    "before-timing-1-summary.json": {
+      "sha256": "befe99f8c5e076fbd407e85405f9419a017a38a48f1c779991254b507dce1775",
+      "bytes": 561
+    },
+    "before-timing-1.json": {
+      "sha256": "b70257b90a332aca5c941e09c8dcc9699b04d752c7e5557094bd82666c9fcdbc",
+      "bytes": 9788
+    },
+    "final512-uninstrumented-burst256-after.txt": {
+      "sha256": "55b861331584752f8fb04bf7ab15ed080ade9652bc80551b378b88ac29f721bf",
+      "bytes": 2883
+    },
+    "final512-uninstrumented-burst256-before.txt": {
+      "sha256": "acf6eb9aafcf649e49f300e3fd88ed182fa6ae48677229fb6ce8dd9bfc95de2b",
+      "bytes": 2883
+    },
+    "final512-uninstrumented-burst256-summary.json": {
+      "sha256": "9574496560a7564fc97a1e1a392a3d9bdc2e013da2293fde980227d84ca194cb",
+      "bytes": 562
+    },
+    "final512-uninstrumented-burst256.json": {
+      "sha256": "aa219ebc451accd0a5aaf7583f555cb5e87ad09ba0b53f2cef394d04aa03f870",
+      "bytes": 9822
+    },
+    "fixed-reload-normal-1-after.txt": {
+      "sha256": "5a07f8362c8cc794b3aca8e224a1b18818a4479bb6c1654ae9442f4d7d8874f7",
+      "bytes": 2715
+    },
+    "fixed-reload-normal-1-before.txt": {
+      "sha256": "622c0db6e76d5560cf3c763b17b21620a526f2069b00003e305a165559472eea",
+      "bytes": 2715
+    },
+    "fixed-reload-normal-1-summary.json": {
+      "sha256": "b668fd49ae2ac0adaefd225b67933faea07e1999783c05e3885144852dd595d8",
+      "bytes": 547
+    },
+    "fixed-reload-normal-1.json": {
+      "sha256": "356d5b39d988a0b7394c7a59fbb43fbbd9059724d77a14030254befe72875f1e",
+      "bytes": 9915
+    },
+    "fixed-uninstrumented-burst256-after.txt": {
+      "sha256": "09ac2b4f88c77d0cad341672f117dd92f1e07c1a51da981a0bd3ebb1471e4870",
+      "bytes": 2715
+    },
+    "fixed-uninstrumented-burst256-before.txt": {
+      "sha256": "5ceae929b585805aa57acdad064e0e9af946927effb1d70b0057fdc2d9664dd7",
+      "bytes": 2715
+    },
+    "fixed-uninstrumented-burst256-summary.json": {
+      "sha256": "c10dba2db4e7818eba614c95e998232c0f1650fa4badcf072b4bf9883bc30ba4",
+      "bytes": 557
+    },
+    "fixed-uninstrumented-burst256.json": {
+      "sha256": "7551f1e634c2762999931b693ac85a77738ca590d0086fb28a81365111ddd871",
+      "bytes": 9816
+    },
+    "reapply512-burst256-after.txt": {
+      "sha256": "cb35260e1710e991f785d1d75bd5bca5c7f02ade376063104d9a8d9fae50a05b",
+      "bytes": 2903
+    },
+    "reapply512-burst256-before.txt": {
+      "sha256": "12dab9d2ec89af17eedb24ba8c838c0475beafe74261d75dcb76a0f76d78613a",
+      "bytes": 2901
+    },
+    "reapply512-burst256-summary.json": {
+      "sha256": "14dce7785f7bb1d4d18cc57879bed6d98d5a34474afeec8468e26e43ed6e6823",
+      "bytes": 548
+    },
+    "reapply512-burst256.json": {
+      "sha256": "f884adfd118cc64b2176b3482e4c6d45dd1d826d687fa4454d85c34ad9ed3fcb",
+      "bytes": 9829
+    },
+    "rmem512-burst256-1-after.txt": {
+      "sha256": "fcdd418edc3b129c8eaa93cd2132d618b99fbb1b290fef8f348fa59e4a6982e0",
+      "bytes": 3034
+    },
+    "rmem512-burst256-1-before.txt": {
+      "sha256": "b6489e60754416c29cc04a15b9d6da6c5c42bb644ccd14c035f564dc9510dda0",
+      "bytes": 3033
+    },
+    "rmem512-burst256-1-summary.json": {
+      "sha256": "7f32dc87868e9c6349d166118c7698306d82a52579354f99ce4e903a2e7ff7af",
+      "bytes": 547
+    },
+    "rmem512-burst256-1.json": {
+      "sha256": "1106df062bd2858fc067e54b8f9fd527adcb3f13f751450a65b792d7fab6b275",
+      "bytes": 9816
+    },
+    "rollback-uninstrumented-burst256-after.txt": {
+      "sha256": "3ce33796f1c0a11e961af98c40747e98bc9f13cdb8cc0c8f1d7386e12711cea4",
+      "bytes": 2715
+    },
+    "rollback-uninstrumented-burst256-before.txt": {
+      "sha256": "be0a6275a0837e42db55d6595a41766dd40275e7c4fde1b5522bcdeca7365299",
+      "bytes": 2715
+    },
+    "rollback-uninstrumented-burst256-summary.json": {
+      "sha256": "574d02eea0960a1f40189418aa1e8d970ad3e719ee083656636afc54dd2f2ba4",
+      "bytes": 572
+    },
+    "rollback-uninstrumented-burst256.json": {
+      "sha256": "64287806191b1800d2228960c6a681130da7de98ea0589fd2c1f5bcb4debc49a",
+      "bytes": 9915
+    },
+    "rollback212-burst256-after.txt": {
+      "sha256": "19624a942ac6de80d9b018d7fc91a826ee3037fff5d0541e1fe5bae50e827a97",
+      "bytes": 2900
+    },
+    "rollback212-burst256-before.txt": {
+      "sha256": "f0533abbfa3cf80176b91ab12b7c05770e80fb7bb30b8e136875b8ebdee2d705",
+      "bytes": 2856
+    },
+    "rollback212-burst256-summary.json": {
+      "sha256": "1358bf779b3cc72818ed36e561703e71318aa467d3cf3ee3579079765019bbd0",
+      "bytes": 571
+    },
+    "rollback212-burst256.json": {
+      "sha256": "91ef7f2830aaa5186146b6596719c009009881a4c5b695204e8fb40250ff894b",
+      "bytes": 9841
+    },
+    "rps0-burst256-repeat-after.txt": {
+      "sha256": "ca6727af20b386aaf75080bce6b80b6fed0ca6c6f0263feeb009cc6af4ce30d4",
+      "bytes": 2865
+    },
+    "rps0-burst256-repeat-before.txt": {
+      "sha256": "aaae932227cf52e7600444a509abcd6abaaeb4693eec9e632d220552177dde44",
+      "bytes": 2865
+    },
+    "rps0-burst256-repeat-summary.json": {
+      "sha256": "29644dce9ac5d844f7cfce6024d547d6b71f66e0c398006183f5eecc9641bf4e",
+      "bytes": 572
+    },
+    "rps0-burst256-repeat.json": {
+      "sha256": "e30dac93942b473edf1231095527c41dd57c58bcff6cc58ef8c2a52fe801984d",
+      "bytes": 9887
+    },
+    "rps8-burst256-after.txt": {
+      "sha256": "3b67f4b448c5a9cc50d2abe84ea78c04f513f8b9713218d9f9cc946fc036e443",
+      "bytes": 2865
+    },
+    "rps8-burst256-before.txt": {
+      "sha256": "8e33a1d08378c0bb8fcec9c214d18a5abbf594ff33fc8425f3e8546151faa03c",
+      "bytes": 2864
+    },
+    "rps8-burst256-summary.json": {
+      "sha256": "65af0b43888d49c7488b3d256cb8694b1ee9d27e94e713b4ee2fff6123a54aea",
+      "bytes": 561
+    },
+    "rps8-burst256.json": {
+      "sha256": "2fd9c6684ec8baf983e02925cf5c42eabda3db38cf8c7c53664dd68c0b42040a",
+      "bytes": 9879
+    },
+    "run-final.py": {
+      "sha256": "2c73d07d65d3f72ed2108e9e745917500b6cf07b588085e225aba98475227b77",
+      "bytes": 1348
+    },
+    "run-original-load.py": {
+      "sha256": "bf350ba01f96b3d9d57783f806ae56903035febe3b7cc2349421ad523d925601",
+      "bytes": 1801
+    },
+    "run-timing.py": {
+      "sha256": "384fa5e14e6dda2219525dd2bffe42893fc4146d0650b33c67a7f053d04f6340",
+      "bytes": 1395
+    },
+    "run-uplink.py": {
+      "sha256": "5b51e312b8c033176a32380354d81e14444b70833df716dc9d28194c01f8e0f7",
+      "bytes": 1373
+    },
+    "udp_mem_diag.c": {
+      "sha256": "a2abd46ce34cb078355e400b29cf4a110b5c81e851909533f89c5d11e1752d77",
+      "bytes": 2996
+    },
+    "final-state.txt": {
+      "sha256": "5af46d1735cd066d7675509e4ecb9d97c84538f73ad05ccaed4b8f905a69ce34",
+      "bytes": 1513
+    }
+  },
+  "raw_records_mac": "现场记录/20261025-5g-uplink/",
+  "boot_id": "a316c6d1-55d5-4bf2-94f7-dbae8672f53a",
+  "final_state": {
+    "rmem_default": 524288,
+    "rmem_max": 4194304,
+    "force_fw_tx": false,
+    "RPS": 0,
+    "5G": "149/HE80/30dBm",
+    "2G": "1/HE20/20dBm",
+    "RF_watchdog_result": 0,
+    "LCK_timeouts": 0,
+    "observers_unloaded": true,
+    "own_iperf_server_stopped": true,
+    "wireless_config_unchanged_sha256": "8b1e09b959cf1e0d3eec60f000c411c7254f7ebbe5bf7e2f68821e4ed6061b46"
+  }
+}

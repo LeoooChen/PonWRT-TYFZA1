@@ -32,6 +32,7 @@ if [ -e "$TREE/package/luci-theme-argon" ] && [ ! -L "$TREE/package/luci-theme-a
 fi
 ln -sfn "$ARGON" "$TREE/package/luci-theme-argon"
 ./scripts/feeds update packages luci
+sh "$P/port/scripts/apply-luci-patches.sh" "$TREE"
 printf '%s\n' "$PACKAGES" | xargs ./scripts/feeds install cgi-io luasrcdiet luci
 # Existing build trees retain .config; select the new default there as well.
 sed -i '/^CONFIG_PACKAGE_luci-theme-argon=/d; /^# CONFIG_PACKAGE_luci-theme-argon is not set$/d; /^CONFIG_PACKAGE_luci-i18n-argon-config-zh-cn=/d; /^# CONFIG_PACKAGE_luci-i18n-argon-config-zh-cn is not set$/d' .config

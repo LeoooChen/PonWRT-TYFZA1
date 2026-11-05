@@ -1,0 +1,66 @@
+From: Codex <codex@localhost>
+Subject: [PATCH] netfilter: serialize flowtable work admission and retirement
+
+Do not queue new work once hardware deletion has started. Claim PENDING
+before checking DYING, and retain the same gate through GC unlink and RCU
+free so stale readers cannot hand a retired flow to an asynchronous worker.
+Publish worker updates before returning ownership to GC.
+
+Signed-off-by: Codex <codex@localhost>
+---
+--- a/net/netfilter/nf_flow_table_core.c
++++ b/net/netfilter/nf_flow_table_core.c
+@@ -599,7 +599,13 @@
+ static void nf_flow_offload_gc_step(struct nf_flowtable *flow_table,
+ 				    struct flow_offload *flow, void *data)
+ {
+-	bool teardown = test_bit(NF_FLOW_TEARDOWN, &flow->flags);
++	bool teardown;
++
++	/* A queued worker owns the flow until it publishes its updates. */
++	if (test_bit_acquire(NF_FLOW_HW_PENDING, &flow->flags))
++		return;
++
++	teardown = test_bit(NF_FLOW_TEARDOWN, &flow->flags);
+ 
+ 	if (nf_flow_has_expired(flow) ||
+ 	    nf_ct_is_dying(flow->ct) ||
+@@ -615,8 +621,13 @@
+ 		if (test_bit(NF_FLOW_HW, &flow->flags)) {
+ 			if (!test_bit(NF_FLOW_HW_DYING, &flow->flags))
+ 				nf_flow_offload_del(flow_table, flow);
+-			else if (test_bit(NF_FLOW_HW_DEAD, &flow->flags))
++			else if (test_bit(NF_FLOW_HW_DEAD, &flow->flags) &&
++				 !test_and_set_bit(NF_FLOW_HW_PENDING, &flow->flags)) {
++				/* Exclude late work, including pre-unlink RCU readers.
++				 * Retirement keeps PENDING set through the RCU free.
++				 */
+ 				flow_offload_del(flow_table, flow);
++			}
+ 		} else {
+ 			flow_offload_del(flow_table, flow);
+ 		}
+--- a/net/netfilter/nf_flow_table_offload.c
++++ b/net/netfilter/nf_flow_table_offload.c
+@@ -1106,6 +1106,8 @@
+ 			WARN_ON_ONCE(1);
+ 	}
+ 
++	/* Publish worker updates before handing ownership back to GC. */
++	smp_mb__before_atomic();
+ 	clear_bit(NF_FLOW_HW_PENDING, &offload->flow->flags);
+ 	if (offload->cmd == FLOW_CLS_DESTROY) {
+ 		/* Publish after the worker's last flow access. */
+@@ -1141,6 +1143,12 @@
+ 	if (test_and_set_bit(NF_FLOW_HW_PENDING, &flow->flags))
+ 		return NULL;
+ 
++	/* Recheck after acquiring ownership: hardware deletion is terminal. */
++	if (test_bit(NF_FLOW_HW_DYING, &flow->flags)) {
++		clear_bit(NF_FLOW_HW_PENDING, &flow->flags);
++		return NULL;
++	}
++
+ 	offload = kmalloc(sizeof(struct flow_offload_work), GFP_ATOMIC);
+ 	if (!offload) {
+ 		clear_bit(NF_FLOW_HW_PENDING, &flow->flags);

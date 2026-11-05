@@ -21,8 +21,7 @@ names = ['rtw_halbb_raregistered', 'halbb_init_ra_by_rssi', 'halbb_nss_mapping',
          'halbb_giltf_trans', 'halbb_stbc_mapping', 'halbb_ldpc_chk',
          'halbb_sgi_chk', 'halbb_ac_n_sgi_chk', 'halbb_ramask_mod',
          'halbb_ramask_trans', 'halbb_set_csi_rate', 'halbb_rssi_lv_dec',
-         'halbb_ramask_by_rssi', 'halbb_physts_ie_hdr',
-         'halbb_physts_fd_rpl_2_rssi_cvrt']
+         'halbb_ramask_by_rssi']
 commands = []
 
 
@@ -46,17 +45,18 @@ source = '''#include <stdint.h>
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef uint64_t u64;
 #define BIT(n) (1U << (n))
 #define BIT_ULL(n) (1ULL << (n))
+#define IEEE80211_HE_PHY_CAP1_LDPC_CODING_IN_PAYLOAD 0x20
+#define IEEE80211_HE_PHY_CAP1_HE_LTF_AND_GI_FOR_HE_PPDUS_0_8US 0x40
+#define IEEE80211_HE_PHY_CAP7_HE_SU_MU_PPDU_4XLTF_AND_08_US_GI 4
 static void put_unaligned_le64(u64 v, void *p) { memcpy(p, &v, 8); }
+static u64 get_unaligned_le64(const void *p) { u64 v; memcpy(&v, p, 8); return v; }
 static inline u32 get_unaligned_le32(const void *p) { u32 v; memcpy(&v, p, 4); return v; }
-''' + (root / 'artifacts/live-radio-pe-ni/rate.h').read_text() + '''
+''' + (root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rate.h').read_text() + '''
 void native(u8 *p, u8 id, u16 legacy, u16 ht, bool sgi) {
-    rtl_ax_ra_ht20(p, id, legacy, ht, sgi);
+    rtl_ax_ra_ht20(p, id, legacy, ht, sgi, false);
 }
 void native_vht(u8 *p, u8 id, u16 legacy, u16 mcs, bool sgi) {
     rtl_ax_ra_vht80(p, id, legacy, mcs, sgi);
-}
-int native_ppdu(const u8 *p, unsigned bytes, struct rtl_ax_phy_signal *signals) {
-    return rtl_ax_ppdu_signal(p, bytes, signals);
 }
 '''
 vectors = 0
@@ -125,38 +125,10 @@ with tempfile.TemporaryDirectory(prefix='tyfza1-ra-contract-') as temp:
                 vht(output, macid, 0xff0, mcs, sgi)
                 assert len(commands) == 1 and output.raw == commands[0], (macid, mcs, sgi, output.raw.hex(), commands)
                 vht_vectors += 1
-    ppdu = ctypes.CDLL(str(library)).native_ppdu
-    ppdu.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p]
-    ppdu_vectors = 0
-    for users in (1, 2, 7, 8):
-        for rx_count in (False, True):
-            for plcp in (0, 16):
-                for rpl in (20, 80, 150, 210):
-                    for average, paths in ((73, (72, 77)), (81, (0, 83))):
-                        header = bytes([0x8d, 4, 0, average, *paths, 0, 0])
-                        phy = header + bytes([1, rpl]) + bytes(22)
-                        data = struct.pack('<II', users | int(rx_count) << 29, plcp // 8 << 16)
-                        data += b''.join(struct.pack('<I', 3 | (i + 1) << 8) for i in range(users))
-                        data += bytes((users & 1) * 4 + (96 if rx_count else 0) + plcp) + phy
-                        oracle.uc.mem_write(bb, bytes(0x10000))
-                        oracle.uc.mem_write(phl, header)
-                        assert oracle.call('halbb_physts_ie_hdr', bb, phl, sta, common) == 1
-                        oracle.uc.mem_write(bb + 0x3339, bytes([rpl]))
-                        oracle.uc.mem_write(bb + 0x3334, b'\x01')
-                        oracle.call('halbb_physts_fd_rpl_2_rssi_cvrt', bb)
-                        expected = bytes(oracle.uc.mem_read(bb + 0x3390, 1)) + bytes(oracle.uc.mem_read(bb + 0x3388, 2))
-                        out = ctypes.create_string_buffer(32)
-                        assert ppdu(data, len(data), out) == users
-                        for i in range(users):
-                            assert out.raw[i * 4:i * 4 + 4] == bytes([i + 1]) + expected
-                        for size in range(len(data) - 8):
-                            assert ppdu(data, size, out) < 0
-                        ppdu_vectors += 1
 report = {'native_command_equals_original_ARM64': True, 'vectors': vectors,
           'VHT80_original_command_vectors': vht_vectors,
-          'MAC_PPDU_layout_and_original_RPL_conversion_vectors': ppdu_vectors,
           'chip': '8192XB', 'PHY': 'HT20', 'unknown_RSSI_init_level': 0,
           'original_sha256': hashlib.sha256(module.read_bytes()).hexdigest(),
           'H2C_publication_mocked': True, 'hardware_test': False}
 (root / 'logs/radio-ra-native-contract.json').write_text(json.dumps(report, indent=2) + '\n')
-print(f'Native firmware RA: {vectors} HT20, {vht_vectors} VHT80, {ppdu_vectors} PPDU/RPL vectors passed')
+print(f'Native firmware RA: {vectors} HT20, {vht_vectors} VHT80 vectors passed; qualified PPDU coverage is in test_radio_rssi_ma.py')

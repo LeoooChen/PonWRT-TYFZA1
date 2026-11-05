@@ -1,0 +1,285 @@
+{
+  "date": "2026-10-21",
+  "status": "Original L2QM private reservation restored in source; original-instruction checks and isolated ARM64 driver-object compile pass. Temporary live-register comparison completed and restored. New kernel initialization has not been flashed or boot-validated.",
+  "problem": "Native start enabled the inherited EQ1 pool but left EQ1 private allocation and private profile0 at0. Actual L2TM no-buffer drops occurred with QM no_buffer=0 and L3TE tail_drop=0. Source must initialize its own EQ geometry and original per-port reservation instead of inheriting bootloader state.",
+  "authority": {
+    "module": "evidence/wireless-study-20261009-104746/evidence/stock/modules/ca-ne.ko",
+    "sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+    "init": "aal_l2_qm_init@0x4a170",
+    "eq_set": "aal_l2_qm_eq_cfg_set@0x49be0",
+    "private_profile_set": "aal_l2_qm_port_prvt_profile_set.part.0@0x4a0b0",
+    "constant": "Original init sets EQ1 buffer count4 and private count29; profile0=29. Reference header identifies29*64 bytes as storage for one maximum-size packet.",
+    "reference": "evidence/rtl-workspace/downloads/reference/ca-network-drivers-20261005/ca-network-engine/1.0-r0/ca-network-engine-1.0/aal-77c/include/aal_l2_qm.h",
+    "non_congestion_boundary": "Original ARM64 replay explicitly supplies existing2048 via startup-config callback; this change does not alter that preexisting threshold."
+  },
+  "initialization": {
+    "EQ0": "disabled; original zero count/private fields",
+    "EQ1": "enabled,4096pages x64bytes,private29perport",
+    "EQ_CFG_2208": "81d40000",
+    "PRIVATE_PROFILE0_2218": "low15bits29, preserve all other profiles/reserved bit",
+    "total_pool": "same4096pages; no increased pool or disabled drops"
+  },
+  "live_isolation": {
+    "native_EQ": "80040008",
+    "native_profile01": "00100000",
+    "temporary_EQ": "81d40008",
+    "temporary_profile01": "0010001d",
+    "scope": "Only private reservation/profile fields changed while idle; disabled EQ0 count bits remained inherited8 in live comparison. Full source init also clears disabled EQ0 fields to match original.",
+    "flow": "Mac TCP and ACK -> Wi-Fi -> FE PPPoE PUSH/SNAT -> LAN1 internal PHY loop -> FE POP/DNAT -> same Mac.1Gbps loop and two air legs, not1.7Gbps single-direction acceptance.",
+    "A_B_A": [
+      {
+        "label": "hardware-tcp-stage-counters",
+        "setting": "native0",
+        "received_Mbps": 540.0068144889125,
+        "TCP_retransmits": 67,
+        "L2TM_no_buffer_drop": 67,
+        "L3TE_tail_drop": 0,
+        "CPU_percent_of_four_cores": 2.629513343799058,
+        "FE_first_second_gap": 49
+      },
+      {
+        "label": "hardware-tcp-private29",
+        "setting": "factory29",
+        "received_Mbps": 526.2546949171707,
+        "TCP_retransmits": 9,
+        "L2TM_no_buffer_drop": 9,
+        "L3TE_tail_drop": 0,
+        "CPU_percent_of_four_cores": 5.863708399366086,
+        "FE_first_second_gap": 9
+      },
+      {
+        "label": "hardware-tcp-private-off-control",
+        "setting": "restored0",
+        "received_Mbps": 539.7890138505712,
+        "TCP_retransmits": 96,
+        "L2TM_no_buffer_drop": 96,
+        "L3TE_tail_drop": 0,
+        "CPU_percent_of_four_cores": 4.0669856459330145,
+        "FE_first_second_gap": 71
+      }
+    ],
+    "limits": [
+      "A_B_A reduces no-buffer drops materially but does not eliminate them or improve measured throughput.",
+      "The tested variables are private fields only; complete new-driver boot remains unverified.",
+      "RF and other scheduling variation remain; no claim that these fields explain every loss."
+    ]
+  },
+  "original_downlink_check": {
+    "l2qm-down-before": {
+      "scope": "Genuine Linux TCP sender -> NI source7 PPPoE SID4660 -> ASIC POP -> NI encrypted Wi-Fi -> Mac iperf3 TCP application. ACKs terminate in DUT Linux; no optics or PPPoE negotiation.",
+      "parallel_streams": 1,
+      "error": null,
+      "client_exit": 0,
+      "received_Mbps": 1145.44306464715,
+      "retransmits": 92,
+      "CPU_total_percent_of_4_cores": 23.454833597464344,
+      "CPU_server_raw_percent_of_4_cores": 8.874801901743265,
+      "CPU_remaining_percent_of_4_cores": 14.580031695721077,
+      "CPU_note": "Same raw100-Hz basis; remaining includes simulated ingress and TCP ACK/softirq work, not pure Wi-Fi forwarding CPU.",
+      "CPU_each_core_percent": [
+        16.64025356576862,
+        47.385103011093506,
+        28.684627575277336,
+        1.109350237717908
+      ],
+      "data_packets_delta": 599962,
+      "data_bytes_delta": 903494484,
+      "control_packets_delta": 18,
+      "stops_delta": 0,
+      "wakes_delta": 0,
+      "doorbells_delta": 17249,
+      "data_prepare_ns_delta": 1097529080,
+      "payload_copy_ns_delta": 458075520,
+      "PE_NI_sent_delta": 599870,
+      "l3te_tail_drop_delta": 92,
+      "no_buffer_delta": 0,
+      "PE_RXQ_RDU_delta": 0,
+      "PE_RPQ_RDU_delta": 0,
+      "FE_packets_delta": 599962,
+      "hardware_match_proven": true,
+      "actual_client_ports": [
+        55000
+      ],
+      "offload_covers_all_streams": true,
+      "source_stream_packets_delta": [
+        599962,
+        0,
+        0,
+        0
+      ]
+    },
+    "l2qm-down-private29": {
+      "scope": "Genuine Linux TCP sender -> NI source7 PPPoE SID4660 -> ASIC POP -> NI encrypted Wi-Fi -> Mac iperf3 TCP application. ACKs terminate in DUT Linux; no optics or PPPoE negotiation.",
+      "parallel_streams": 1,
+      "error": null,
+      "client_exit": 0,
+      "received_Mbps": 1152.1705114506883,
+      "retransmits": 624,
+      "CPU_total_percent_of_4_cores": 23.24,
+      "CPU_server_raw_percent_of_4_cores": 8.6,
+      "CPU_remaining_percent_of_4_cores": 14.64,
+      "CPU_note": "Same raw100-Hz basis; remaining includes simulated ingress and TCP ACK/softirq work, not pure Wi-Fi forwarding CPU.",
+      "CPU_each_core_percent": [
+        14.88,
+        47.84,
+        0.16,
+        30.08
+      ],
+      "data_packets_delta": 603783,
+      "data_bytes_delta": 909230862,
+      "control_packets_delta": 18,
+      "stops_delta": 0,
+      "wakes_delta": 0,
+      "doorbells_delta": 17426,
+      "data_prepare_ns_delta": 1101522960,
+      "payload_copy_ns_delta": 461015320,
+      "PE_NI_sent_delta": 603159,
+      "l3te_tail_drop_delta": 624,
+      "no_buffer_delta": 0,
+      "PE_RXQ_RDU_delta": 0,
+      "PE_RPQ_RDU_delta": 0,
+      "FE_packets_delta": 603783,
+      "hardware_match_proven": true,
+      "actual_client_ports": [
+        55000
+      ],
+      "offload_covers_all_streams": true,
+      "source_stream_packets_delta": [
+        603783,
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  "downlink_limits": "Single-direction PPPoE simulated TCP stays around1.15Gbps. Retransmits and L3TE taildrops are92 before and624 during reservation test; each matches exactly within its run. This is a distinct NI queue loss and is unresolved. Sender migrated cores between runs; do not attribute count difference solely to reservation or hide it.",
+  "checks": {
+    "actual_driver_statements_vs_original_ARM64": {
+      "scope": "Native init statements compiled from the driver, compared with actual original ARM64 init/setters. No RF, traffic timing or whole-driver execution claimed.",
+      "cases": [
+        {
+          "initial": [
+            "0x80040008",
+            "0x100000",
+            "0x8008021"
+          ],
+          "original": [
+            "0x81d40000",
+            "0x10001d",
+            "0x8008021"
+          ],
+          "current": [
+            "0x81d40000",
+            "0x10001d",
+            "0x8008021"
+          ],
+          "old_counterexample": [
+            "0x80040008",
+            "0x100000",
+            "0x8008021"
+          ]
+        },
+        {
+          "initial": [
+            "0x0",
+            "0x0",
+            "0x0"
+          ],
+          "original": [
+            "0x81d40000",
+            "0x1d",
+            "0x8008021"
+          ],
+          "current": [
+            "0x81d40000",
+            "0x1d",
+            "0x8008021"
+          ],
+          "old_counterexample": [
+            "0x80000000",
+            "0x0",
+            "0x8008021"
+          ]
+        },
+        {
+          "initial": [
+            "0xffffffff",
+            "0xffffffff",
+            "0x0"
+          ],
+          "original": [
+            "0x81d40000",
+            "0xffff801d",
+            "0x8008021"
+          ],
+          "current": [
+            "0x81d40000",
+            "0xffff801d",
+            "0x8008021"
+          ],
+          "old_counterexample": [
+            "0xbfffffff",
+            "0xffffffff",
+            "0x8008021"
+          ]
+        },
+        {
+          "initial": [
+            "0x40abfeed",
+            "0xdead8000",
+            "0x8008021"
+          ],
+          "original": [
+            "0x81d40000",
+            "0xdead801d",
+            "0x8008021"
+          ],
+          "current": [
+            "0x81d40000",
+            "0xdead801d",
+            "0x8008021"
+          ],
+          "old_counterexample": [
+            "0x80abfeed",
+            "0xdead8000",
+            "0x8008021"
+          ]
+        }
+      ]
+    },
+    "isolated_ARM64_object": {
+      "rtl9617c-xram.c": "6de2c315f797dc7d676fbf17225e0c436b210a99ecc3763f4c87ebc053f88eec",
+      "rtl9617c-xram.o": "852d6b24b13856a5e6522f5889b1913f979bf1bf97ba901fb8f1a2a4df373519"
+    },
+    "isolated_source": "71ae24a driver plus only this initialization change; existing unrelated SGMII edit excluded from the compiled artifact",
+    "test": "scripts/test_l2qm_private.py",
+    "full_suite_or_firmware_build": false
+  },
+  "packet_evidence": {
+    "capture": "\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi/hardware-tcp-header.pcap",
+    "sha256": "e90b091002dae80627d95fe45630b1ceddda37eac87388731506a868830648c6",
+    "scope": "96byte Ethernet/TCP header capture.68 original data packet instances absent at receiver,68 data sequence repeats, matching68 iperf retransmits. No IP packet larger than1492 and no tcpdump kernel drop reported. Mac interface drop delta0.",
+    "analysis": "\u73b0\u573a\u8bb0\u5f55/20261020-local-wifi/hardware-tcp-header-packet-analysis.json"
+  },
+  "evidence": {
+    "artifacts/own-wifi-20261020/factory-loopback-audit/aal_l2_qm_init.s": {
+      "sha256": "ea77ac8f948d02e2a2c3adcf13684236f06a735e5ebfa68542ef4e5c51bc5ee0"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/aal_l2_qm_eq_cfg_set.s": {
+      "sha256": "06ed8d2b0cbc5d6e8eabaddbebfb86a34760856777b69e5f29a6c8235245a7c7"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/factory-l2qm-init.json": {
+      "sha256": "ec36cbe928bec41ffecfb5bd2cf7eb888c2d8df640dbde4781e91597a2c3660a"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/native-factory-l2qm-check.json": {
+      "sha256": "4645b66a169c8292e0681855331cad474af74ed16e911181378e60545fb6df6d"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/own_l2qm_private.c": {
+      "sha256": "44d0d4d54d70bd5ccd55e7c4e7aec31f76dccf19361dfc8a839df4ae1bc0a747"
+    },
+    "artifacts/own-wifi-20261020/factory-loopback-audit/factory-drop-register-map.json": {
+      "sha256": "de7c0547e532b5f0441de41997943a23fefb43fcfc4abad691fd24fdd597a3c9"
+    }
+  },
+  "goal": "Full uplink and downlink TCP throughput objective remains incomplete; this is one independently demonstrated initialization defect, not a complete Wi-Fi performance fix."
+}

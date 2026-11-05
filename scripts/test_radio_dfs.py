@@ -31,7 +31,10 @@ names = ['halbb_dfs_init', 'halbb_dfs_rgn_dmn_dflt_cnfg', 'halbb_dfs_rgn_dmn_cnf
          'halbb_dfs_change_dmn', 'halbb_radar_detect', 'halbb_radar_info_processing',
          'halbb_radar_seq_inspctn', 'halbb_radar_ptrn_cmprn', 'halbb_radar_chrp_mntr',
          'cfg_dfs', 'en_bbrpt', 'get_bbrpt_dle_cfg_8852c', 'halbb_radar_detect_enable',
-         'halbb_radar_detect_disable']
+         'halbb_radar_detect_disable', 'halbb_dfs_dyn_setting',
+         'halbb_physts_brk_fail_rpt_en', 'halbb_parsing_aci2sig',
+         'halbb_cnvrt_2_sign', 'halbb_cr_cfg_dfs_init', 'halbb_physts_ie_24',
+         'halbb_dfs_enable_cac_flag', 'halbb_dfs_disable_cac_flag']
 registers, writes = {}, []
 
 
@@ -60,6 +63,9 @@ def boundary(name, args):
         registers[address] = registers.get(address, 0) & ~mask | value
         writes.append((address, registers[address]))
         return 0
+    if name == 'halbb_get_reg_cmn':
+        address, mask = args[1:3]
+        return (registers.get(address | 0x10000, 0) & mask) >> ((mask & -mask).bit_length() - 1)
     raise AssertionError((name, args))
 
 
@@ -85,6 +91,7 @@ def initialize(region, primary, bandwidth):
     word(common + 896, bandwidth)
     oracle.uc.mem_write(common + 904, bytes([primary]))
     oracle.call('halbb_dfs_init', bb)
+    oracle.call('halbb_cr_cfg_dfs_init', bb)
     oracle.call('halbb_dfs_change_dmn', bb, primary, bandwidth)
     # Width-dependent branch of dfs_dyn_setting; no environment callbacks here.
     oracle.uc.mem_write(bb + 0x24f0 + 24, bytes([
@@ -105,6 +112,7 @@ source = r'''
 #include <assert.h>
 #include <errno.h>
 typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u64;
+typedef int8_t s8;
 #define BIT(n) (1U<<(n))
 #define BIT_ULL(n) (1ULL<<(n))
 #define spin_lock_irqsave(lock,flags) ((void)(lock),(flags)=0)
@@ -140,6 +148,17 @@ source += r'''
 static struct rtl_ax_dfs state;
 void init(unsigned region,unsigned primary,unsigned bw){memset(&state,0,sizeof(state));rtl_ax_dfs_initialize(&state,region);rtl_ax_dfs_channel(&state,region,primary,bw);}
 int detect(const void *p,unsigned count,unsigned seconds){return rtl_ax_dfs_detect(&state,p,count,seconds);}
+void dynamic(unsigned tp,unsigned idle,unsigned noise,unsigned fa){rtl_ax_dfs_dynamic(&state,tp,idle,noise,fa);}
+void aci(unsigned value){rtl_ax_dfs_aci(&state,value);}
+void cac(unsigned value){state.in_cac=value;}
+void bypass(unsigned value){state.bypass_segment0=value;}
+int selected_report(const void *p,unsigned count,unsigned seconds){return rtl_ax_dfs_report(&state,p,count,seconds);}
+unsigned field(unsigned n){
+ unsigned values[]={state.ppb_parameter,state.pw_factor,state.pri_factor,state.pw_diff,
+ state.long_chirp_diff,state.pri_diff,state.adaptive_count,state.adaptive_total,
+ state.adaptive_state,(u8)state.aci,state.aci_wait,state.aci_pending,
+ state.aci_high,state.aci_low};return values[n];
+}
 unsigned hardware(unsigned enabled,u32 *out){
  memset(regs,0,sizeof(regs));regs[0x9630/4]=0xd41;regs[0x10000/4]=0x8580801f;used=0;timeout=false;
  assert(!rtl_ax_dfs_hardware(&io,enabled));memcpy(out,trace,used*8);return used;
@@ -157,12 +176,20 @@ source += r'''
 static unsigned dfs_region;static bool inject_radar;
 struct rtl_ax_ap {
  struct rtl_ax_dfs dfs;struct rtl_ax_io io;struct rtl_ax_tx *tx;
- struct {unsigned primary,bandwidth;}channel;
+ struct {unsigned primary,bandwidth,center;}channel;
+ struct ieee80211_hw *hw;
  unsigned dfs_domain,chip;bool radar_required,ap_started,beacon_enabled;
  int command_lock,ap_result;
  struct {unsigned valid;}security_roles[1];
 };
-struct ieee80211_hw {struct rtl_ax_ap *radio;};
+#define NL80211_BAND_5GHZ 1
+#define IEEE80211_CHAN_RADAR 1
+struct ieee80211_channel {unsigned flags;};
+static struct ieee80211_channel regulatory_channels[32];
+struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};
+static int ieee80211_channel_to_frequency(unsigned channel,unsigned band){(void)band;return 5000+channel*5;}
+static struct ieee80211_channel *ieee80211_get_channel(void *wiphy,int frequency)
+{(void)wiphy;unsigned channel=(frequency-5000)/5;return &regulatory_channels[(channel-36)/4];}
 struct ieee80211_vif {u8 addr[6];};
 struct ieee80211_bss_conf {unsigned beacon_int,dtim_period;struct {bool enabled;unsigned color;}he_bss_color;};
 static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw){return hw->radio;}
@@ -180,12 +207,21 @@ source += function('monitor.h', 'rtl_ax_ap_start')
 source += r'''
 void lifecycle(void){
  struct rtl_ax_tx tx={.io=&io,.scheduler_saved=0x3ffff};
- struct rtl_ax_ap radio={.io=io,.tx=&tx,.chip=RTL_AX_8852C,.dfs_domain=1,.radar_required=true,.channel={100,3}};
+ struct rtl_ax_ap radio={.io=io,.tx=&tx,.chip=RTL_AX_8852C,.dfs_domain=1,.radar_required=true,.channel={100,3,114}};
  struct ieee80211_hw hw={.radio=&radio};struct ieee80211_vif vif={};struct ieee80211_bss_conf conf={};
+ radio.hw=&hw;for(unsigned i=0;i<32;i++)regulatory_channels[i].flags=IEEE80211_CHAN_RADAR;
  memset(regs,0,sizeof(regs));regs[0xc398/4]=0x3ffff;used=0;
  assert(!rtl_ax_tx_pause(&tx));
  assert(!rtl_ax_dfs_start_locked(&radio));
  assert(radio.dfs.enabled&&radio.dfs.hardware_enabled&&radio.dfs.in_cac);
+ assert(!radio.dfs.bypass_segment0);
+ radio.channel.primary=44;radio.channel.center=50;
+ for(unsigned i=0;i<4;i++)regulatory_channels[i].flags=0;
+ assert(!rtl_ax_dfs_start_locked(&radio));assert(radio.dfs.bypass_segment0);
+ regulatory_channels[0].flags=IEEE80211_CHAN_RADAR;
+ assert(!rtl_ax_dfs_start_locked(&radio));assert(!radio.dfs.bypass_segment0);
+ radio.channel.primary=100;radio.channel.center=114;
+ assert(!rtl_ax_dfs_start_locked(&radio));assert(!radio.dfs.bypass_segment0);
  rtl_ax_tx_open(&tx);assert(!regs[0xc398/4]);
  assert(!rtl_ax_ap_start(&hw,&vif,&conf));
  assert(radio.ap_started&&!radio.dfs.in_cac&&regs[0xc398/4]==0x3ffff);
@@ -216,6 +252,10 @@ void ownership(void){
  }
 }
 '''
+source += function('rate.h', 'rtl_ax_ppdu_aci')
+source += r'''
+int ppdu_aci(const void *p,unsigned bytes){u8 raw;int ret=rtl_ax_ppdu_aci(p,bytes,&raw);return ret==1?raw:ret-256;}
+'''
 vectors = 0
 with tempfile.TemporaryDirectory(prefix='rtl-ax-dfs-') as temporary:
     temporary = Path(temporary)
@@ -224,6 +264,7 @@ with tempfile.TemporaryDirectory(prefix='rtl-ax-dfs-') as temporary:
                     '-I' + str(driver), str(temporary / 'native.c'), '-o', str(temporary / 'native.so')], check=True)
     native = ctypes.CDLL(str(temporary / 'native.so'))
     native.detect.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint]
+    native.ppdu_aci.argtypes = [ctypes.c_void_p,ctypes.c_uint]
 
     def compare(region, primary, bandwidth, records, seconds=100, reset=True):
         global vectors
@@ -261,6 +302,105 @@ with tempfile.TemporaryDirectory(prefix='rtl-ax-dfs-') as temporary:
                 compare(region, 100, 3, [pulse(300, 60, i, 1, segment) for i in range(3)],
                         seconds, reset=not batch)
 
+    # The old test exercised only initialized thresholds. Compare actual
+    # factory watchdog state and classifier decisions across environment changes.
+    dynamic_vectors = 0
+    offsets = [(27,'B'),(1166,'B'),(1167,'B'),(1224,'H'),(1226,'H'),
+               (1228,'H'),(1204,'B'),(1207,'B'),(1209,'B'),(1218,'B'),
+               (1220,'B'),(1219,'B'),(1215,'B'),(1216,'B')]
+    for region, primary, bandwidth in ((1,44,3),(1,100,2),(2,52,2),(3,60,0),(3,100,3)):
+        initialize(region,primary,bandwidth)
+        native.init(region,primary,bandwidth)
+        for tp, idle, noise, fa, aci in (
+                (0,100,0,0,None),(0,100,0,0,None),(0,100,0,0,60),
+                (20,100,0,0,None),(20,100,0,0,None),(0,20,1,0,None),
+                (0,100,4,0,None),(0,100,100,51,None),(0,100,0,0,None),
+                (1,100,0,0,None),(2,100,0,0,None),(0,100,0,0,None)):
+            if aci is not None:
+                word(bb+13204,0)
+                oracle.uc.mem_write(bb+0x37d0+25,bytes([aci]))
+                oracle.call('halbb_parsing_aci2sig',bb,1<<24)
+                native.aci(aci)
+            word(bb+0x424c+48,tp)
+            word(bb+11784,fa)
+            oracle.uc.mem_write(bb+0x22cc,bytes([idle,noise]))
+            oracle.call('halbb_dfs_dyn_setting',bb)
+            native.dynamic(tp,idle,noise,fa)
+            expected=[oracle.unpack(bb+0x24f0+at,kind)[0] for at,kind in offsets]
+            actual=[native.field(i) for i in range(len(offsets))]
+            assert actual==expected,(region,primary,bandwidth,tp,idle,noise,fa,expected,actual)
+            records=[pulse(5,20 if i%2 else 100,i) for i in range(18)]
+            compare(region,primary,bandwidth,records,reset=False)
+            compare(region,primary,bandwidth,[pulse(5,57,i) for i in range(20)],reset=False)
+            dynamic_vectors+=1
+
+    # Default watchdog thresholds are independent of CAC. The OEM debug-force
+    # field at dfs+1190 is not the real CAC flag at dfs+1222.
+    for in_cac in (1, 0):
+        initialize(1,44,3); native.init(1,44,3); native.cac(in_cac)
+        oracle.call('halbb_dfs_enable_cac_flag' if in_cac else 'halbb_dfs_disable_cac_flag',bb)
+        word(phl+12816,16 if in_cac else 0)
+        for tick in range(3):
+            word(bb+0x424c+48,0);word(bb+11784,0)
+            oracle.uc.mem_write(bb+0x22cc,bytes([100,0]))
+            oracle.call('halbb_dfs_dyn_setting',bb);native.dynamic(0,100,0,0)
+            assert [native.field(i) for i in (12,13)] == [
+                oracle.unpack(bb+0x24f0+at,'B')[0] for at in (1215,1216)]
+            dynamic_vectors += 1
+
+    # Minimized stateful counterexample: adaptive rejection must retain the
+    # preceding long-pulse accumulation for the next clean report.
+    initialize(1,44,3);native.init(1,44,3)
+    for seconds, dynamic, raw in (
+        (12005,None,'7958020000004e00795802000000520079580200000056007958020000005800'),
+        (12013,None,'795802000000a000795802000000a600'),
+        (12017,None,'795802000000d800'),
+        (12018,(0,90,0,51),''),
+        (12020,(0,90,3,30),''),
+        (12021,None,'795802000000fe0079580200000002007958020000000400'),
+        (12022,(0,100,0,49),''),
+        (12023,None,'000038cc12000016')):
+        if dynamic is not None:
+            tp,idle,noise,fa=dynamic
+            word(bb+0x424c+48,tp);word(bb+11784,fa)
+            oracle.uc.mem_write(bb+0x22cc,bytes([idle,noise]))
+            oracle.call('halbb_dfs_dyn_setting',bb);native.dynamic(*dynamic)
+        payload=bytes.fromhex(raw)
+        records=[payload[i:i+8] for i in range(0,len(payload),8)]
+        compare(1,44,3,records,seconds,reset=False)
+
+    # Linux channel flags select only the required upper80. Non-DFS pulses
+    # must not mask valid upper80 evidence in the factory classifier.
+    for upper in (False, True):
+        initialize(1,44,3);native.init(1,44,3);native.bypass(1)
+        lower_records=[pulse(900,57,i,segment=0) for i in range(10)]
+        upper_records=[pulse(5,57,i,segment=1) for i in range(20)] if upper else []
+        full=lower_records+upper_records;selected=b''.join(upper_records)
+        word(bb+3116,100)
+        oracle.uc.mem_write(data,selected or bytes(8))
+        oracle.uc.mem_write(report,struct.pack('<QHB5x',data,len(upper_records),0))
+        expected=oracle.call('halbb_radar_detect',bb,report,instruction_budget=500000)
+        native.selected_report.argtypes=[ctypes.c_void_p,ctypes.c_uint,ctypes.c_uint]
+        actual=native.selected_report(b''.join(full),len(full),100)
+        assert actual==expected==int(upper)
+        vectors+=1
+
+    # ACI comes from the actual IE24 field, including signed7-bit wrapping.
+    for raw in (0,63,64,127):
+        initialize(1,44,3)
+        native.init(1,44,3)
+        report_data=bytearray(40)
+        report_data[8]=0x80;report_data[9]=4
+        report_data[16]=24;report_data[32]=raw
+        oracle.uc.mem_write(data,bytes(report_data[16:]))
+        oracle.call('halbb_physts_ie_24',bb,data)
+        word(bb+13204,0)
+        oracle.call('halbb_parsing_aci2sig',bb,1<<24)
+        parsed=native.ppdu_aci(bytes(report_data),len(report_data))
+        assert parsed==raw
+        native.aci(parsed)
+        assert native.field(9)==oracle.unpack(bb+0x24f0+1218,'B')[0]
+
     oracle.word(adapter, bus)
     oracle.word(bus, ops)
     for offset, name in ((0, 'read8'), (8, 'write8'), (32, 'read32'), (40, 'write32')):
@@ -284,6 +424,7 @@ with tempfile.TemporaryDirectory(prefix='rtl-ax-dfs-') as temporary:
 
 result = dict(factory_module_sha256=hashlib.sha256(module.read_bytes()).hexdigest(),
               classifier_vectors=vectors, classification='actual relocated ARM64 factory functions',
+              dynamic_vectors=dynamic_vectors,
               profiles=['FCC', 'MKK W53', 'MKK W56', 'ETSI', 'KCC'],
               hardware='MAC/BB enable/disable writes equal factory cfg_dfs and radar_detect_enable/disable',
               boundaries=['RFK/DFS queue ownership', 'report engine timeout propagates', 'ring epoch wrap and expiry',

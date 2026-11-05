@@ -22,10 +22,13 @@ typedef uint8_t u8;
 #define dev_info(...) ((void)0)
 struct wiphy {int unused;};struct ieee80211_hw {struct wiphy *wiphy;};
 struct rtl_ax_station {unsigned macid;};
-struct ieee80211_ampdu_params {unsigned action,tid,ssn;};
-struct rtl_ax_ap {int tx,cleanup_work;struct {u8 macid,tid;bool valid,deleting;} rx_ba[8];int rx_ba_result;unsigned rx_ba_started;};
+struct ieee80211_ampdu_params {unsigned action,tid,ssn,buf_size;};
+struct rtl_ax_ap {int tx,rx,cleanup_work;struct {u8 macid,tid,cam;bool valid,deleting;} rx_ba[128*8];int rx_ba_result;unsigned rx_ba_started;};
 static bool gate;static unsigned withdrawals,commands,late_commands;static int fail_retire;
 static int __attribute__((unused)) rtl_ax_tx_ni_retire_peer(int tx,unsigned id){(void)tx;assert(id==7);withdrawals++;gate=false;return fail_retire;}
+static int __attribute__((unused)) rtl_ax_tx_rx_retire(int tx,unsigned id){return rtl_ax_tx_ni_retire_peer(tx,id);}
+static void __attribute__((unused)) rtl_ax_rx_ba_window(int rx,unsigned id,unsigned tid,unsigned size){(void)rx;assert(id==7&&tid==2&&size==64);}
+static void __attribute__((unused)) rtl_ax_offload_ready(struct rtl_ax_ap *r){(void)r;assert(!gate);}
 static void rtl_ax_store32(u8 *p,uint32_t v){memcpy(p,&v,4);}
 static int rtl_ax_command(struct rtl_ax_ap *r,unsigned q,unsigned cat,unsigned cls,unsigned fn,const u8 *p,unsigned bytes,bool ack){
  (void)r;assert(q==0 && cat==1 && cls==12 && fn==0 && bytes==8 && ack);commands++;late_commands+=gate;
@@ -36,7 +39,7 @@ static int start(struct rtl_ax_ap *radio,struct ieee80211_hw *hw,struct rtl_ax_s
 test=r'''default:return -EINVAL;}}
 int main(void){
  struct rtl_ax_ap radio={0};struct ieee80211_hw hw={0};struct rtl_ax_station station={.macid=7};
- struct ieee80211_ampdu_params params={.action=1,.tid=2,.ssn=512};gate=true;fail_retire=-EIO;
+ struct ieee80211_ampdu_params params={.action=1,.tid=2,.ssn=512,.buf_size=64};gate=true;fail_retire=-EIO;
 #ifdef EXPECT_OLD
  assert(!start(&radio,&hw,&station,&params) && !withdrawals && commands==1 && late_commands==1);
  puts("REPRODUCED: BA hardware programmed while existing PE admission stayed open");

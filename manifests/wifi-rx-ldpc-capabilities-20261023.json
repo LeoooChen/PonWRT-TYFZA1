@@ -1,0 +1,24 @@
+{
+  "date": "2026-10-23",
+  "base_commit": "6c88b55",
+  "problem": "Native HT/VHT capabilities omitted RX LDPC, although the original module enables its default policy and HE already advertises the decoder. This also made hostapd omit LDPC/RXLDPC from those capability elements.",
+  "factory_module_SHA256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "factory_reference": "rtw_ldpc_cap default0x33; rtw_cfg80211_init_ht_capab0x22e10..0x22e20 sets HT bit0 from RX LDPC; rtw_build_vht_cap_ie0xae0e0..0xae0f0 sets VHT bit4. Actual original instruction gates were executed with enabled/disabled inputs.",
+  "fix": "Advertise IEEE80211_HT_CAP_LDPC_CODING and IEEE80211_VHT_CAP_RXLDPC. No RF register, rate mask, PN/SN policy, buffer or clock change.",
+  "live_capabilities": {"HT_before": "0x086e", "HT_after": "0x086f", "VHT_before": "0x03800066", "VHT_after": "0x03800076", "hostapd_after": "ht_capab contains LDPC; vht_capab contains RXLDPC"},
+  "RAM_radio_SHA256": "54b551ae87ee91c3f5312355c39543d2a8725b53d6d4fa0f228b8eabddf3f58b",
+  "same_PE_SHA256_before_after": "79e0299205a460727b8bb6c23940357a67786fa4a25d180d700904d4c86fbdad",
+  "RAM_observations": {
+    "control_UDP_target1800": {"sender_Mbps": 1716.074, "receiver_Mbps": 1437.361, "sent": 400000, "valid_unique": 343879, "Mac_interface_drops": 56121, "RX_RDU": 10, "L3_drops": 0, "corrupt": 0},
+    "enabled_UDP_target1400": {"sender_Mbps": 1391.808, "receiver_Mbps": 1392.073, "sent": 400000, "valid_unique": 400000, "Mac_interface_drops": 0, "RX_RDU": 0, "L3_drops": 0, "duplicates": 0, "corrupt": 0},
+    "enabled_UDP_target1600": {"sender_Mbps": 1590.104, "receiver_Mbps": 1587.593, "sent": 400000, "valid_unique": 400000, "Mac_interface_drops": 0, "RX_RDU": 0, "L3_drops": 0, "duplicates": 0, "corrupt": 0},
+    "enabled_UDP_target1800": {"sender_Mbps": 1778.993, "receiver_Mbps": 1613.576, "sent": 400000, "valid_unique": 366338, "Mac_interface_drops": 33662, "RX_RDU": 0, "L3_drops": 0, "corrupt": 0, "delivery_complete": false},
+    "enabled_TCP_up10s": {"Mbps": 1376.298, "retransmits": 0, "L3_drops": 0, "RX_RDU": 0, "FE_packets": 1196834, "received": 1196834, "PE_share_percent": 97.2951},
+    "Mac_PHY": "CoreWLAN sampling: control1800 run active-rate samples1814Mbps; enabled1400 run2161Mbps from0.21s to5.07s, then1921Mbps. Enabled1800 samples include2041/1921/2161Mbps. Channel44/160MHz and RSSI range-42..-35dBm; idle CCA before experiment4percent.",
+    "limits": "Radio replacement rebuilds association and rate control; this is not a perfectly controlled RF experiment. Do not claim all of the observed gain is isolated to these two bits, or that1.8Gbps delivery is loss-free. HT/VHT packet-mode throughput was not separately tested; actual encrypted HE data and capability propagation were checked."
+  },
+  "evidence_directory_on_mac": "/Users/leo/Documents/Codex\u9879\u76ee/TYFZA1/\u73b0\u573a\u8bb0\u5f55/20261022-dual-pe-082-cold",
+  "cold_boot_pending": false,
+  "cold_boot_validation": "wifi-rx-ldpc-cold-20261023.json",
+  "overall_acceptance_passed": false
+}

@@ -1,0 +1,118 @@
+{
+  "baseline": "9d19bbf",
+  "complete": false,
+  "scope": "native CTC SLA SP/WRR and CIR/PIR only; REPORT extensions remain unported",
+  "hardware_validated": false,
+  "stock_kernel_sha256": "4a43feb73503f3a25d7791a31e618abfdd5114ecbaa2ac0e263b908097980e95",
+  "stock_kernel_rt_epon_ponQueue_set": "0xffffffc0105ba690",
+  "rea_evidence": [
+    {
+      "path": "rea/ghidra-epon-sla-buckets-20261017-root/001-procedure_pseudo_code.json",
+      "procedure": "aal_puc_voq_tbc_mem_set",
+      "subject_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+      "sha256": "e01fe7740d5f11c0f415cf495a8a1026917fde244933e796cfe0250d46978487"
+    },
+    {
+      "path": "rea/ghidra-epon-sla-buckets-20261017-root/002-procedure_pseudo_code.json",
+      "procedure": "aal_puc_pir_voq_tbc_mem_set",
+      "subject_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+      "sha256": "7a3b7eb780b9ad74f05a79be1eb0d4458b36633fac15975b323ff66189a9effd"
+    },
+    {
+      "path": "rea/ghidra-epon-sla-buckets-20261017-root/003-procedure_pseudo_code.json",
+      "procedure": "aal_puc_port_voq_map_set",
+      "subject_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+      "sha256": "7f13472f121b619dce5e5f6c020e36e630a6de2d1e30105caf3c3c60b42a37f4"
+    },
+    {
+      "path": "rea/ghidra-epon-sla-buckets-20261017-root/004-procedure_pseudo_code.json",
+      "procedure": "aal_puc_voq_drop_set",
+      "subject_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+      "sha256": "b9cb19b561ae3481056de20a402e7be8a0f34c94e9df66a82b7c0d518d961d49"
+    },
+    {
+      "path": "rea/ghidra-epon-sla-flush-20261017-root/001-procedure_pseudo_code.json",
+      "procedure": "aal_puc_voq_flush_by_idx",
+      "subject_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+      "sha256": "6702b7e14f2afe3d98c021eed3b336114dcb7144232899965178b32fcc583823"
+    },
+    {
+      "path": "rea/ghidra-epon-sla-flush-register-20261017-root/001-procedure_pseudo_code.json",
+      "procedure": "aal_puc_voq_flush_set",
+      "subject_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+      "sha256": "162e91ae038bc4e8fc48491d33ef3bdac7394dea5a154fd5d23aadfcec755f2d"
+    },
+    {
+      "path": "rea/ghidra-epon-sla-flush-register-20261017-root/002-procedure_pseudo_code.json",
+      "procedure": "aal_puc_voq_flush_get",
+      "subject_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+      "sha256": "5001cdd4e82a6355de8c3fa1d45b13b4967a116598705038e6cb9381e07319df"
+    },
+    {
+      "path": "rea/ghidra-epon-sla-flush-register-20261017-root/003-procedure_pseudo_code.json",
+      "procedure": "aal_puc_voq_total_queue_len_mem_get",
+      "subject_sha256": "16840ba70afc0ae700c2d63c57b8248475a67154eef89536d90028d4fe6486d7",
+      "sha256": "d85bb90318bab887f702edef1a02d69d2f9189b7827e9c7f69980eaf5c6f6192"
+    },
+    {
+      "path": "rea/ghidra-epon-sla-hardware-20261017-root/001-procedure_pseudo_code.json",
+      "procedure": "dal_rtl8277c_ponmac_queue_add",
+      "subject_sha256": "2360c7dbf93157cb3ab212c733e76a513c34015bc466f192dd19e4ae87eb0311",
+      "sha256": "d36853296eda7c0597f150bac2a3e834d0670b97311773084c55f2ae428e4ca4"
+    },
+    {
+      "path": "rea/ghidra-epon-sla-hardware-20261017-root/002-procedure_pseudo_code.json",
+      "procedure": "dal_rtl8277c_ponmac_queue_del",
+      "subject_sha256": "2360c7dbf93157cb3ab212c733e76a513c34015bc466f192dd19e4ae87eb0311",
+      "sha256": "c6fda7abbb35b4052370426c7e000ed035a0542733aaaebed184f5a89e87a1d7"
+    },
+    {
+      "path": "rea/ghidra-epon-sla-hardware-20261017-root/003-procedure_pseudo_code.json",
+      "procedure": "dal_rtl8277c_epon_mpcp_queue_threshold_set",
+      "subject_sha256": "2360c7dbf93157cb3ab212c733e76a513c34015bc466f192dd19e4ae87eb0311",
+      "sha256": "ec0cef335a278b86888e9125876657e4e43688b3e1031047aad92645d320ab1b"
+    },
+    {
+      "path": "rea/ghidra-epon-sla-queue-20261017-root/001-procedure_pseudo_code.json",
+      "procedure": "rt_epon_ponQueue_set",
+      "subject_sha256": "757061ddbbbc8286d045b6247bb1cd0ba76502f306679af9ffad71056a72d950",
+      "sha256": "84a29b0cd1db6ba58e6f906f2f1d66b1de610591be0eefc28eb5ea44578abd66"
+    },
+    {
+      "path": "rea/ghidra-epon-sla-queue-20261017-root/002-procedure_pseudo_code.json",
+      "procedure": "rt_epon_ponQueue_del",
+      "subject_sha256": "757061ddbbbc8286d045b6247bb1cd0ba76502f306679af9ffad71056a72d950",
+      "sha256": "5d6a0e0f3f6579e30a4addf8697de9bc6133d0721c59a56439b12eb21aeb1af8"
+    },
+    {
+      "path": "rea/ghidra-epon-sla-queue-20261017-root/003-procedure_pseudo_code.json",
+      "procedure": "rt_epon_mpcp_queue_threshold_set",
+      "subject_sha256": "757061ddbbbc8286d045b6247bb1cd0ba76502f306679af9ffad71056a72d950",
+      "sha256": "267d7a62b51561bbadcb7eeb497848234369090824bb4651f5e5febed5b81c87"
+    },
+    {
+      "path": "rea/ghidra-epon-sla-queue-20261017-root/006-procedure_pseudo_code.json",
+      "procedure": "dal_rt_rtl8277c_gpon_ponQueue_set",
+      "subject_sha256": "2360c7dbf93157cb3ab212c733e76a513c34015bc466f192dd19e4ae87eb0311",
+      "sha256": "38f0df90f0cd34502755111757c087215b464beef597e929d3e53ecedcd42723"
+    },
+    {
+      "path": "rea/ghidra-epon-sla-queue-20261017-root/007-procedure_pseudo_code.json",
+      "procedure": "dal_rt_rtl8277c_gpon_ponQueue_del",
+      "subject_sha256": "2360c7dbf93157cb3ab212c733e76a513c34015bc466f192dd19e4ae87eb0311",
+      "sha256": "71da69d6cb5c1bdd0806232136a5f6c668258d6c6c3f28cc84eb26c2ea4a85b7"
+    }
+  ],
+  "sha256": {
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-epon-sla.h": "b43cf5e5c063e8c424f0bce34d6e6df6afd15c39ac6b3b315443fc04a7ef73d9",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.h": "6cfa729648a1391ddaea03352d9a8b79bd3ac05ecfcd62715a72546d6ed0941d",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon.c": "55f043dcc528b6546b04336714147fc57e9be0692e04d6dc68d23a78327f5aa5",
+    "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-pon-puc.c": "ba9e480a1d0720faa0b6a3b8b45a58f18af13e28ec975262bffec93ab99c5ccd",
+    "port/packages/tyfza1-pon-control/src/pon-backend.c": "b24cb507dbe8dd56411ad7a655e0d3968df387fd25fed30f1b67d6114900c5c6",
+    "tools/check_stock_epon_sla.py": "934f805b41931d72e7c9c1ec850579f080391ee38c921ce98b4981f1422b6ed6",
+    "tools/check_epon_management.py": "01e59ae008447f5a4069f35a25117adefcda8a1f036d41d3ef032b33761c46f4",
+    "logs/epon-sla-checks.txt": "691243fbaa0885dbe37585477e42ed2204b0c6ccb023578d3d41dc6e7658fc66",
+    "logs/epon-sla-objects.txt": "8a4fe44506d1fe2c9735013bfe0ae81fccca51bc483ac607bb18eb22911d6a2c",
+    "artifacts/epon-management/pon-oamd": "b24c4bbe1d44d25b9c19689d2ae2329e193d90262c7e9f4cd032565785e3af2a"
+  }
+}

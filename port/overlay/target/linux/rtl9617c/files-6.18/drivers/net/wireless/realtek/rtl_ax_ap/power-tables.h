@@ -22,11 +22,14 @@ int rtl_ax_power_inputs_load(struct device *dev, unsigned int chip,
 			     struct rtl_ax_power_inputs *inputs);
 struct rtl_ax_power_hardware {
 	bool applied;
+	int limit_dbm;
 	u8 bandwidth;
 	char regulation[3];
 	u8 rate[44], limit20[80], ru20[48];
 	u32 readback[43];
+	u32 offset_mode;
 };
+int rtl_ax_power_verify(const struct rtl_ax_io *io, struct rtl_ax_power_hardware *state);
 int rtl_ax_power_apply(const struct rtl_ax_io *io, unsigned int chip,
 	const struct rtl_ax_power_inputs *inputs, unsigned int band, unsigned int primary, unsigned int channel, unsigned int bandwidth,
 	const char *country, int max_dbm, struct rtl_ax_power_hardware *state);

@@ -1,0 +1,50 @@
+--- a/iwinfo_nl80211.c
++++ b/iwinfo_nl80211.c
+@@ -23,6 +23,8 @@
+  */
+ 
+ #include <sys/stat.h>
++#include <poll.h>
++#include <time.h>
+ #include <limits.h>
+ #include <glob.h>
+ #include <fnmatch.h>
+@@ -642,6 +644,9 @@
+ static int __nl80211_wait(const char *family, const char *group, ...)
+ {
+ 	struct nl80211_event_conveyor cv = { };
++	struct timespec now;
++	struct pollfd fd = { .fd = nl_socket_get_fd(nls->nl_sock), .events = POLLIN };
++	long long deadline, remaining;
+ 	struct nl_cb *cb;
+ 	int err = 0;
+ 	int cmd;
+@@ -666,8 +671,27 @@
+ 
+ 	va_end(ap);
+ 
+-	while (!cv.recv && !err)
++	/* A lost completion must not leave a deliberately paused AP down. */
++	clock_gettime(CLOCK_MONOTONIC, &now);
++	deadline = now.tv_sec * 1000LL + now.tv_nsec / 1000000 + 10000;
++	while (!cv.recv && !err) {
++		clock_gettime(CLOCK_MONOTONIC, &now);
++		remaining = deadline - now.tv_sec * 1000LL - now.tv_nsec / 1000000;
++		if (remaining <= 0) {
++			err = -ETIMEDOUT;
++			break;
++		}
++		int ready = poll(&fd, 1, remaining);
++		if (ready < 0 && errno == EINTR)
++			continue;
++		if (ready <= 0 || !(fd.revents & POLLIN)) {
++			err = ready == 0 ? -ETIMEDOUT : -EIO;
++			break;
++		}
+ 		nl_recvmsgs(nls->nl_sock, cb);
++	}
++	if (!err && cv.recv == NL80211_CMD_SCAN_ABORTED)
++		err = -ECANCELED;
+ 
+ 	nl_cb_put(cb);
+ 
