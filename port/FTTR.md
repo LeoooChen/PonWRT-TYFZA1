@@ -2741,6 +2741,20 @@ before any remote change; resident policy validation rejects it before taking
 hardware ownership. Resolving that binding remains required work, not a
 completed backend or a software fallback.
 
+Executing the actual `plr_ponsrv_hw_bw_set/clear` chain confirms that its
+`drv_gpon_alloc_id_config/clear` implementations are no-ops in both retained
+relays (FPGA42c54/42cc0, ASIC43a08/43a74). Across144 direct/wrapped calls with
+both resource-number ranges, the real routines return success without any
+nonstack memory write or hardware call. The wrapper reaches the actual driver;
+it is not replaced by a success hook. Thus neither its success nor the
+high-level `tcont_add` path proves physical Alloc-ID/DBA binding or grant
+withdrawal. Native verified register programming remains required. In contrast,
+ASIC `onuinfo` separately imports/calls `SetOnuTcontDba`; the retained FPGA
+executable does not import that entry. The direct register producers and FPGA
+sequencing, rather than the no-op bandwidth wrapper, remain the next evidence
+source. The optional `--asic-relay` comparison records both paths in
+`artifacts/fttr/relay-bw-noop-20261106.json`.
+
 `test_fttr_fpga_dba.py` compares63 original/native DBA write/readback groups,
 every IO failure cutoff,64 original Alloc-ID/occupancy cases and FPGA Set
 frames, plus native backend/physical-slot/link checks. The real CLI service

@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from arm64_elf_oracle import ElfOracle
 from test_fttr_mib import Stock as StockOmci
+from unicorn import UC_HOOK_MEM_WRITE, UC_HOOK_CODE
 
 
 class Stock:
@@ -45,10 +46,48 @@ class Stock:
         return 0
 
 
+def relay_bandwidth(binary):
+    """Execute bandwidth wrappers through their actual low-level implementations."""
+    events, writes, entered = [], [], []
+    def boundary(name, args):
+        assert name in ('plr_log', 'plr_ponsrv_log_module_id_get'), name
+        events.append(name)
+        return 0
+    oracle = ElfOracle(binary, boundary, ('plr_log', 'plr_ponsrv_log_module_id_get'))
+    config = oracle.symbols['drv_gpon_alloc_id_config']
+    clear = oracle.symbols['drv_gpon_alloc_id_clear']
+    def write(uc, kind, address, size, value, unused):
+        # Local stack stores are not hardware or persistent state changes.
+        if not oracle.scratch + 0x1f0000 <= address < oracle.scratch + 0x200000:
+            writes.append((address, size, value))
+    oracle.uc.hook_add(UC_HOOK_MEM_WRITE, write)
+    oracle.uc.hook_add(UC_HOOK_CODE, lambda uc, address, size, unused:
+        entered.append('config' if address == config else 'clear') if address in (config, clear) else None)
+    count = 0
+    for id in (0, 5, 63):
+        for alloc in (256 + id, 512 + id):
+            for rates in ((0, 0, 0), (50, 100, 200), (65535, 65535, 65535)):
+                for function, args, expected in (
+                    ('drv_gpon_alloc_id_config', (0, id, alloc, *rates), ['config']),
+                    ('plr_ponsrv_hw_bw_set', (1, id, alloc, *rates), ['config']),
+                    ('drv_gpon_alloc_id_clear', (0, alloc), ['clear']),
+                    ('plr_ponsrv_hw_bw_clear', (1, alloc), ['clear'])):
+                    writes.clear(); entered.clear(); events.clear()
+                    assert oracle.call(function, *args) == 0
+                    assert entered == expected and not writes, (function, entered, writes)
+                    if function.startswith('drv_'): assert not events
+                    count += 1
+    return dict(sha256=hashlib.sha256(binary.read_bytes()).hexdigest(), calls=count,
+                config_address=hex(config), clear_address=hex(clear),
+                nonstack_writes=0, hardware_calls=0,
+                finding='Bandwidth set/clear wrappers reach real no-op driver implementations and return success; this does not establish physical Alloc-ID binding or retirement.')
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--asic', type=Path, required=True)
     p.add_argument('--relay', type=Path, required=True)
+    p.add_argument('--asic-relay', type=Path, help='also execute the ASIC high-level bandwidth path')
     p.add_argument('--output', type=Path, required=True)
     args = p.parse_args()
     headers = ROOT / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek'
@@ -211,7 +250,8 @@ int read_grant(const struct rtl_fttr_reg_io *io, int backend, unsigned id, unsig
             os.close(fd)
     report = {'asic_sha256': hashlib.sha256(args.asic.read_bytes()).hexdigest(),
               'relay_sha256': hashlib.sha256(args.relay.read_bytes()).hexdigest(), 'cases': cases,
-              'allocator_cases': 64, 'scope': 'original ARM64 IO, allocator and native sysfs ABI; no physical grant delivery or traffic'}
+              'allocator_cases': 64, 'relay_bandwidth': [relay_bandwidth(path) for path in
+                  ([args.relay, args.asic_relay] if args.asic_relay else [args.relay])], 'scope': 'original ARM64 IO, allocator and native sysfs ABI; no physical grant delivery or traffic'}
     args.output.write_text(json.dumps(report, indent=2) + '\n')
     print(f'PASS: {len(cases)} DBA IO/readback groups, 64 allocators with occupancy and native backend ABI')
 

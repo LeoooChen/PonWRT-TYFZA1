@@ -80,6 +80,8 @@
 
 32. 补齐撤销时的 CPU 业务入口：已复现仅写 `fttr_accel=0` 时 GEM/VLAN 帧仍进入 DMA。新增 `fttr_forward`，先在共享发送锁下关闭业务、等待接收读者并清理父接口 qdisc，再执行既有 FE 撤销；非管理 CPU 收发丢弃，原厂无外层 VLAN 的 OMCI 信封继续可用。启用失败撤销待生效 FE 请求，接口重开不继承旧业务许可；控制器启动/撤销/迁移/管理/退出全部接入，缺少接口明确失败。生产函数交错/ASan/UBSan、实际两后端控制器场景、P6/FE/768组收包回归及最终 Image/模块/软件包编译通过。DMA/AFT预取、在途 FE/PE、已交付 RX/GRO 和 MiniOLT 仍未证明排空，不作为完整 GEM 复用屏障。详见[CPU业务撤销入口](port/FTTR.md#cpu-business-admission-during-forwarding-withdrawal)。
 
+33. 排除 FPGA2 授权绑定的一条错误依据：执行两套原厂 relay 的带宽设置/清除完整调用链及直接驱动入口，144次均返回成功但无硬件调用或栈外写入。实际 `drv_gpon_alloc_id_config/clear` 为空实现，因此高层 T-CONT 添加成功不证明物理 DBA 已绑定，亦不能作为退场证据。原厂63组直接 DBA 读写及64个分配器回归通过；后续应追踪独立寄存器生产者，FPGA2仍保持明确未支持。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
