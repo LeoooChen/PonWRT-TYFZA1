@@ -145,7 +145,10 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 			mailbox[130] = length; mailbox[131] = header;
 			mailbox[132] = big_word(ethernet); mailbox[133] = big_word(ethernet + 4); mailbox[40]++;
 		}
-		if (!macid) tid = 0;
+		/* FE's generic action has COS0. The original Wi-Fi OS entry
+		 * classifies the Ethernet payload again before TXSC enqueue. */
+		tid = macid && ((*(u32 *)(memory + 0xd000 + macid * 32 + 8) >> 16) & 63) == 26 ?
+			rtl_ax_ethernet_tid(ethernet, length) : 0;
 		u32 queue = macid * 8 + tid;
 		if (macid) {
 			u32 low = ((const struct packed_word *)(ethernet + 6))->value;

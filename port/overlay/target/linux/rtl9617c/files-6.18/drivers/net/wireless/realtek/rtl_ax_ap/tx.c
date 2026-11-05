@@ -574,8 +574,8 @@ void rtl_ax_tx_ps_release(struct rtl_ax_tx *tx, struct ieee80211_sta *sta,
 }
 int rtl_ax_tx_peer_ssn(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid)
 {
-	int ret = rtl_ax_tx_wait_station(tx, macid, tid);
-	if (ret) return ret;
+	/* issue_action_ba@906dc snapshots the next sequence without draining
+	 * traffic. PE stores the next value; original HW stores the last one. */
 	return tx->pe_active ? get_unaligned_le32(tx->pe.memory + 0x10000 + (macid * 8 + tid) * 4) : 0;
 }
 
@@ -1216,6 +1216,11 @@ unsigned int rtl_ax_tx_peer_flows(struct rtl_ax_tx *tx, unsigned int macid)
 		active += flows[i].average > 50;
 	}
 	return active;
+}
+
+u8 rtl_ax_tx_active_tids(struct rtl_ax_tx *tx, unsigned int macid)
+{
+	return get_unaligned_le32(tx->pe.memory + 0x17200 + macid * 4);
 }
 
 void rtl_ax_tx_wmm(struct rtl_ax_tx *tx, unsigned int quota)

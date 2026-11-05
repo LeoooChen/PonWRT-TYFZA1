@@ -32,8 +32,8 @@ def call(name):
 
 put(MB+2*4,0xb2000000)
 put(0x1200c438,1000)
-def enqueue(n,peer,size):
- frame=mac[peer-1]+bytes.fromhex("0200000000030800")+bytes(size-14)
+def enqueue(n,peer,size,tos=0):
+ frame=mac[peer-1]+bytes.fromhex("0200000000030800")+bytes([0x45,tos])+bytes(size-16)
  at=PAYLOAD+n*2048
  u.mem_write(at+64,struct.pack(">II",0x80000000,(len(frame)+8)<<15)+bytes(8)+frame)
  u.mem_write(EPP+n*8,struct.pack("<II",at|0x50,len(frame)+16))
@@ -96,4 +96,8 @@ assert get(MB+47*4)==0 and get(BASE+0x3e010)==1 and get(MB+30*4)==before
 enqueue(143,2,66);assert call('ni_select')==1
 put(BASE+0x3e810,0);enqueue(144,1,66)
 assert call('ni_select')==1 and get(BASE+0x3e010)==2
+# NI payload classification preserves a separate VI TID despite EPP COS0.
+put(BASE+0x3f000,0);enqueue(145,1,66,0x80)
+assert get(BASE+0x13000+(8+4)*4)==1
+assert call('ni_select')==1 and get(REQ+4)==2 and get(REQ+16)&7==4
 print('PASS linked PE: SWQ gates/timers/PS and WMM per-AC quota,ARM accounting,drop ownership,peer isolation')

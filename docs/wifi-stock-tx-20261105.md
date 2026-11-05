@@ -102,3 +102,11 @@ CFO配置补充：实际supportability函数可执行确认共享/独立晶振�
 RAM测试初始模块bf174255...：TCP30s1.429Gbps，UDP60s1.591Gbps/20.45%丢包，单AC配额0、无pending冻结。设备本地两条各15Mbps的DSCP0/46流量实际进入DMA0/3（Linux把EF映射VO），quota0→1024→0，两流接收零丢包。此前从LAN转发的DSCP双流全部TID0，不能算多AC验证；已定位FE默认COS0使NI未保留IP优先级，下一批对齐真实原厂分类。
 
 最终代码将quota计算收敛到已测traffic helper；重编模块9a4e19c138a1e7a864755686ff81d9d4920695e505e9d2dc9dc73efbc51d335e，PE与RAM版本完全相同82b7b778c0c2669e6c0645394b495cfd7285eec0e291548cc5a661999ccc11bf（26396字节）。最终helper调用位置变化编译通过，RAM仍初始WMM模块，未把未装载版本称为实测。
+
+## NI 默认 QoS 与新 TID 的 BA 启动
+
+实际tos_to_up@de93c默认CTC0/custom mapping0/force_qos0（MIB字段初值已读ELF）按IPv4/IPv6/PPPoE报文优先级再映射到0/1/4/6，原厂不会把FE COS0当作最终无线TID。native NI现按该入口规则分类，1024组实际ELF报文对照通过。ARM/mac80211仍使用Linux分类（例如EF→VO），尚未宣称所有自定义QoS映射已统一。
+
+NI新TID有活动时触发已有wiphy offload工作，按正常授权/能力/retry门槛启动BA。原厂issue_action_ba@906dc直接读硬件last_seq+1；native tx_peer_ssn从PE的next_seq取快照，去掉整个TID排空等待，避免持续NI流使BA启动等不到。linked分类、WMM/PS、6144所有权随机完成、聚合通过；普通BA触发测试通过。
+
+RAM stockqos SHAec0dbe5b1671d15df6ac5524c3ad91e3b8e6184fec5103f9cf1f622ef787ee6f：两条LAN下行DSCP0/32实际TID bitmap0011，TID4 BA size64在14878.494建成。第一次采样脚本误把WMM_request_quota替换成QOS_request_quota，缺配额行不能证明启用；修正后的短复测实际读到1024→0，无quota drop。两条50Mbps流第一次各7.90% loss，第二次各13.31%，同期retired_EPP增9204且sleep/wake计数增长，BA早已建成。低速丢包并非一次BA启动窗口，也非WMM拒绝；继续核对原厂PS缓存。单流TCP30s1.357Gbps/UDP60s1.458Gbps loss27.06%，无pending冻结，未提速。

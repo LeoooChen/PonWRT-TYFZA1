@@ -13,6 +13,7 @@ struct packed_word { u32 value; } __attribute__((packed));
 #include "tx-ownership.h"
 #include "traffic-flow.h"
 #include "amsdu-queue.h"
+#include "qos.h"
 #include <linux/rtl9617c-qm-layout.h>
 
 static inline void sync(void) { __asm__ volatile("sync" ::: "memory"); }

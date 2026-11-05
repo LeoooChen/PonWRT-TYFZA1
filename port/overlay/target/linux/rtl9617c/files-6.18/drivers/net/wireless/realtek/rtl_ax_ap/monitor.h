@@ -351,6 +351,26 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 	for (macid = 1; macid < 128; macid++) {
 		int ret;
 		struct rtl_ax_security_role *role = &radio->security_roles[macid];
+		/* NI bypasses wake_tx_queue; its active TIDs need the same BA
+		 * request policy while data transmission continues normally. */
+		if (radio->peer_authorized[macid]) {
+			u8 tids = rtl_ax_tx_active_tids(radio->tx, macid);
+			struct ieee80211_sta *sta;
+			rcu_read_lock();
+			sta = ieee80211_find_sta_by_ifaddr(radio->hw, radio->tx_ba[macid].address, radio->ap_vif->addr);
+			if (sta && sta->wme && (sta->deflink.ht_cap.ht_supported ||
+			    sta->deflink.vht_cap.vht_supported || sta->deflink.he_cap.has_he)) {
+				struct rtl_ax_station *station = (void *)sta->drv_priv;
+				for (unsigned int tid = 0; tid < 6; tid++)
+					if ((tids & BIT(tid)) && !radio->tx_ba[macid].aggregation[tid] &&
+					    !(radio->tx_ba[macid].stopping & BIT(tid)) &&
+					    (!station->ba_retry[tid] || time_after_eq(jiffies, station->ba_retry[tid]))) {
+						station->ba_retry[tid] = jiffies + HZ;
+						ieee80211_start_tx_ba_session(sta, tid, 0);
+					}
+			}
+			rcu_read_unlock();
+		}
 		if (!radio->peer_authorized[macid] || !radio->tx_ba[macid].aggregation[0] ||
 		    radio->tx_ba[macid].stopping || !(role->valid & BIT(role->tx_keyid))) continue;
 		for (index = 0; index < ARRAY_SIZE(radio->rx_ba); index++)
