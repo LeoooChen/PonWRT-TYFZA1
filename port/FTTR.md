@@ -2632,12 +2632,10 @@ stage. Native `fpga_init` on FPGA MiniOLT devices now implements it:
 Values are hexadecimal except delay. Writing0/1 to `fpga_init` explicitly
 selects absent/present calibration; it does not itself calibrate the optic or
 claim optical readiness. The attribute is absent on ASIC9690 and preserves
-MDIO errors before any further operation. The controller does not automatically
-choose the calibration branch for an unidentified optical model. The FPGA DT
-still disables the unconfirmed GN25L99 child, and `fttrd` bootstrap remains the
-ASIC implementation. Complete FPGA core/ONU behavior, P6 startup
-orchestration and the original reset-before-optical-calibration timing remain
-work; successful bitstream loading is not complete FTTR startup.
+MDIO errors before any further operation. The controller selects the calibration branch after factory optical import.
+The FPGA DT keeps the unconfirmed static GN25L99 child disabled; the native
+factory-selected client and FPGA bootstrap below handle the actual model.
+Successful bitstream loading alone does not establish complete FTTR startup.
 
 `scripts/test_fttr_fpga_boot.py` executes the original post-ready shell suffix
 with modeled MDIO and compares its four FPGA/calibration combinations with the
@@ -2661,19 +2659,22 @@ No physical FPGA, GPIO timing, optical link or ONU interoperability was tested.
 
 ### FPGA management transport
 
-The retained `onuinfo_check` selects `onuinfo_fpga` for non-ASIC backends;
-that executable links `libponrelay1p25g.so`. Its `plr_fpga_init` (`487e0`)
+The retained `onuinfo_check` selects `onuinfo_fpga` only for FPGA1;
+FPGA2 and ASIC use `onuinfo`, which links `libponrelay.so`. Executing
+the supervisor dispatch corrects the earlier non-ASIC grouping. The FPGA1
+executable links `libponrelay1p25g.so`. Its `plr_fpga_init` (`487e0`)
 and `drv_gpon_fpga_glb_reg_init` (`45e3c`) differ from the ASIC relay:
 they write the whole EtherType register `30004=8888`, then `40029=c0c8`,
-and enable bit3 of `4000c`. The ASIC relay uses `40029=c140` and updates
+and enable bit3 of `4000c`. The FPGA2/ASIC relay uses `40029=c140` and updates
 the EtherType only when the prior low16 bits are `88a8`.
 
 Native `omci_link` configuration now selects those actual backend sequences.
-The FPGA relay's baseline sender (`485e0`) always uses destination
+The FPGA1 relay's baseline sender (`485e0`) always uses destination
 `00:11:11:11:11:11`, host source MAC, EtherType8888 and a16-byte envelope;
 it does not consult the peer-source-MAC or downstream-length-mode registers.
-The FPGA `omci_link` report supplies this effective destination/envelope to
-the existing native packet builder. ASIC reporting remains register-derived.
+The FPGA1 `omci_link` report supplies this effective destination/envelope to
+the existing native packet builder. FPGA2/ASIC reporting is register-derived,
+including the optional downstream length field.
 The explicit host MAC write uses the existing original `drv_set_omci_dst_mac`
 register layout; it binds native reception to `fttr0`'s selected MAC.
 
@@ -2688,19 +2689,21 @@ link or assert that a downstream ONU is ready.
 The original FPGA bandwidth entry points `drv_gpon_alloc_id_config` (`42c54`)
 and `drv_gpon_alloc_id_clear` (`42cc0`) return without programming registers.
 They do not establish the ASIC's per-ONU T-CONT/DBA recipe for FPGA hardware.
-ASIC core clearing, WTG/PON SerDes, reset GPIO and the ASIC management grant
-remain unavailable on FPGA. The backend-specific DBA access in the retained
+ASIC core clearing, WTG/PON SerDes and reset GPIO remain unavailable on FPGA.
+FPGA2 uses a separate management grant at slot0; FPGA1 uses global OMCI setup. The backend-specific DBA access in the retained
 `libasicdrv.so` provides additional evidence described below. It supersedes
 the earlier assumption that the empty relay API was the only grant interface.
 
 `scripts/test_fttr_fpga_control.py` executes the original relay initialization,
 TX and serial reader, plus the retained state getters with FPGA1/FPGA2 inputs.
-Twelve groups compare exact IO/state,18 baseline frames compare all64 bytes,
+Twelve groups compare IO/state,18 baseline frames compare the selected relay
+envelope, including70-byte FPGA2 length-mode frames,
 and each initialization/TX IO error stops at the failed operation. Production
 sysfs visibility and removal predicates run in C shims. The ASIC OMCI and
 FPGA boot/dependency regressions pass, as does GCC14.4/musl compilation of
 the MiniOLT object against Linux6.18.55. Reports/logs are
-`artifacts/fttr/fpga-control*-20261105.*`. MDIO, registration and optical
+`artifacts/fttr/fpga-control*-20261105.*` and
+`fpga2-control-20261106.json`. MDIO, registration and optical
 state are modeled; FPGA extended OMCI, grant behavior and physical traffic
 remain unverified.
 
@@ -2722,11 +2725,12 @@ per-PON occupancy bitmap. Only ordinal1 fits that pool. Native FPGA1 service
 slot1 therefore uses Alloc-ID`256 + zero_based_ONU` and physical grant slot0;
 GEM tagging continues through the existing service/VLAN/FE path. The original
 FPGA Set builder (`62530`) confirms the resulting class262 wire assignment.
-ASIC service numbering and physical slots remain unchanged.
+FPGA2/ASIC service numbering uses `256 + zero_based_ONU * 8 + slot`,
+with data slots1..7 and management slot0.
 
 CLI and resident control now read the mandatory `backend` attribute. Missing
-or unknown identity fails explicitly. FPGA OMCI sessions do not request the
-ASIC management grant: the retained FPGA per-ONU OMCI GEM function (`43608`)
+or unknown identity fails explicitly. FPGA1 OMCI sessions do not request the
+separate management grant: the retained FPGA per-ONU OMCI GEM function (`43608`)
 does no IO, with management setup performed by the existing global FPGA init.
 This avoids overwriting the single data grant when management sessions open
 or close. FPGA link checks require the real SoC P6 clock/link, without reading
@@ -2734,12 +2738,11 @@ an absent WTG peer-SerDes attribute. This checks host connectivity, not optical
 readiness. FPGA bootstrap and factory-selected optical calibration are described
 below; complete original FPGA behavior remains incomplete.
 
-FPGA2's diagnostic DBA accessor is implemented and compared, but its ASIC-like
-slot table and FPGA relay resource numbering do not yet establish a coherent
-physical binding. Native service/explicit T-CONT assignment rejects FPGA2
-before any remote change; resident policy validation rejects it before taking
-hardware ownership. Resolving that binding remains required work, not a
-completed backend or a software fallback.
+FPGA2 uses the ASIC relay selected by the original supervisor, not the FPGA1
+relay. Its native service/explicit T-CONT path now uses that relay's Alloc-ID
+formula and the independently verified FPGA2 DBA layout. The prior refusal
+was based on the wrong executable selection; the corrected startup and
+controller integration are detailed below.
 
 Executing the actual `plr_ponsrv_hw_bw_set/clear` chain confirms that its
 `drv_gpon_alloc_id_config/clear` implementations are no-ops in both retained
@@ -2749,10 +2752,9 @@ nonstack memory write or hardware call. The wrapper reaches the actual driver;
 it is not replaced by a success hook. Thus neither its success nor the
 high-level `tcont_add` path proves physical Alloc-ID/DBA binding or grant
 withdrawal. Native verified register programming remains required. In contrast,
-ASIC `onuinfo` separately imports/calls `SetOnuTcontDba`; the retained FPGA
-executable does not import that entry. The direct register producers and FPGA
-sequencing, rather than the no-op bandwidth wrapper, remain the next evidence
-source. The optional `--asic-relay` comparison records both paths in
+`onuinfo`, used by FPGA2 and ASIC, separately calls `SetOnuTcontDba`;
+the FPGA1 executable does not import that entry. The executed FPGA2 startup
+and registration callback below establish the independent DBA producer. The optional `--asic-relay` comparison records both paths in
 `artifacts/fttr/relay-bw-noop-20261106.json`.
 
 `test_fttr_fpga_dba.py` compares63 original/native DBA write/readback groups,
@@ -2773,6 +2775,56 @@ Reports are `artifacts/fttr/fpga-dba-final-20261105.json`,
 Linux6.18.55 MiniOLT module compilation/modpost/link pass in
 `dba-build-final-20261105.log`, using the FTTR build tree with main mounted
 read-only. The previously assembled full FIT images predate these DBA changes.
+
+### FPGA2 controller selection and startup
+
+`tools/trace_stock_fttr_backend.py` executes the retained supervisor main
+(`onuinfo_check:400adc`, dispatch at400bac..400bf8): backend1 execs
+`/bin/onuinfo_fpga`; backend2/3 exec `/bin/onuinfo`. The latter's ELF dependencies
+select `libponrelay.so`. Physical FPGA2 and protocol-family selection are
+therefore separate: its MDIO completion, image/optical/P6 setup stay FPGA-specific,
+while OMCI framing, registration/admin/recovery, Alloc-ID and management grants
+follow the ASIC relay. This supersedes the earlier FPGA2 refusal and fixed
+FPGA1-envelope assumption; it does not infer the physical backend from a library.
+
+Executing `onuinfo:418e30` with backend2 confirms the startup sequence:
+reset PHY0/1 (`10010=0`, `10011=0`), optical delay (`40022[3:0]=6`), soft reset
+(`10=0`,100us,`10=1`), then OTP mode (`11=6` for host mode5, or7 for mode9).
+Mode9 also sets pause enable (`30005` bit4). The native FPGA2-only `fpga2_init`
+attribute applies these operations under the MiniOLT control mutex and stops
+at the first failed IO. The existing post-DONE helper remains a separate no-op
+for FPGA2. Resident boot passes mode5, matching the original forced FPGA P6 mode,
+and applies common default DBA values19440/38/38/10/10 before opening TX.
+ASIC GPIO/core/WTG/PON SerDes remain ASIC-only.
+
+The actual registration callback's DBA loop (`415ec4..415fc0`) uses the table
+initialized by that executed startup. For registered one-based ONU IDs1/6/64,
+it calls `SetOnuTcontDba(id,0,0,3840,3840)` for management and
+`SetOnuTcontDba(id,1,0,0,19440*64)` for its default business. The retained relay
+allocator supplies `256 + zero_based_ONU * 8 + slot` for all448 data slots;
+the direct FPGA2 register driver maps them to `41000 + ONU*32 + slot*4`.
+Native explicit policies use their requested data-slot grant and the separate
+management slot. Importing the complete factory default service remains work.
+
+FPGA2 now participates in service creation/readback/withdrawal, global and
+per-ONU authentication, residual-grant cleanup, serial migration and admin/error
+recovery. It uses the ASIC relay's masked downstream block bit, three-word
+Deactivate PLOAM, upstream error mask01f00000,8s scans and15s temporary release.
+FPGA1 retains its whole-word/one-word/100ms behaviors. Both FPGA physical TX
+helpers preserve unrelated register20 bits.
+
+Verification executes original dispatch/startup,448 allocator cases, both host
+mode register sequences and every native IO failure cutoff; management wire,
+DBA, all three backend admin/move/recovery and startup tests pass. Actual
+`fttrd`/`fttrctl` run in isolated network namespaces with veth, Linux bridges
+and VLANs: FPGA2 global auth/Wi-Fi, per-ONU selection/learning/migration,
+slot7 grant isolation, explicit migration and admin lifecycle pass. FPGA1
+policy and ASIC wire regressions plus P6 forward/TX gates pass. Hardware/peer
+registers and MIB storage remain modeled. Reports are
+`artifacts/fttr/fpga2-*-20261106.json`; FTTR package and MiniOLT/BOSA module
+compilation/linking pass in `fpga2-package-modules-20261106.log`.
+No physical FPGA2, DBA delivery, FE hit or complete queued-packet retirement
+acceptance is claimed.
 
 ### Factory-selected optics and FPGA bootstrap
 
@@ -2798,13 +2850,14 @@ on failure. These checks do not prove laser power or optical readiness.
 The rc script configures host P6 mode5 with the factory nway setting before
 FPGA loading. The resident FPGA bootstrap stops TX/netdev and preserves that
 configured P6; a warm restart reconfigures it if the preceding owner stopped
-it or the requested NWAY differs. It performs original post-DONE setup, waits650ms,
+it or the requested NWAY differs. It performs original post-DONE setup,
+FPGA2 controller initialization or version-gated FPGA1 authentication, waits650ms,
 calibrates the selected optics and checks P6. It then configures the original
 management envelope, verifies calibration, opens the interface and enables TX
-last. FPGA paths skip ASIC reset/WTG/PON/core/default-DBA attributes. The rc
-script creates the optical client and waits for its driver before launching
-the controller. FPGA2 inventory startup works with modeled devices; its
-unsupported service-to-grant binding still fails explicitly.
+last. FPGA paths skip ASIC reset/WTG/PON/core attributes; FPGA2 also applies
+the original common default DBA settings. The rc script creates the optical
+client and waits for its driver before launching the controller. FPGA2
+authenticated startup and service provisioning pass with modeled devices.
 
 `test_fttr_optical_models.py` executes all four original ARM64 initializers
 with three patterned files each, compares every write and identity check,
@@ -3091,7 +3144,8 @@ This implements original permanent/temporary deactivation and explicit resume,
 with custom FE/DBA ownership ordering. Persistent block policy across a core
 reset, physical PLOAM acceptance and **full queued
 packet retirement before GEM reuse** remain open. This work does not
-establish a DMA-prefetch/PE/MiniOLT retirement fence or FPGA2 service binding.
+establish a DMA-prefetch/PE/MiniOLT retirement fence. FPGA2 now follows the
+same relay control operations/timing as ASIC; its physical platform stays separate.
 
 ### Original upstream-state error recovery
 
@@ -3299,8 +3353,8 @@ its service under the new ID. The CLI's success reports only
 Current-process ownership is required to release a configured service;
 restart adoption without its original recipe returns ENODATA before FE/peer
 writes. Inventory-only operation also rejects unmanaged GEMs or assigned
-T-CONTs. Durable ownership recovery, automatic policy-triggered moves and
-FPGA2 binding remain incomplete. IO/partial cleanup failures stop TX/FE rather
+T-CONTs. Durable ownership recovery remains incomplete. Automatic
+policy-triggered moves and FPGA2 integration are now implemented below. IO/partial cleanup failures stop TX/FE rather
 than guessing how to undo hardware-observed state. This operation does not
 claim a physical DMA/PE/MiniOLT packet-retirement barrier.
 
@@ -3338,8 +3392,7 @@ must be cleared and read back as zero. In full optical bootstrap this happens
 after core/FPGA initialization and before TX enable. The management-only
 invocation performs it before FE admission/OMCI. Missing readback, failed writes
 or false-success clears stop the controller through normal TX/FE teardown.
-FPGA2 with an enabled authentication policy fails before ownership because
-its service-grant binding remains unproven. This is a local grant barrier;
+FPGA2 uses the same seven data slots and separate management slot as ASIC. This is a local grant barrier;
 it does not establish downstream buffer retirement or per-GEM ingress filtering.
 
 Each new registered identity then receives management access, followed by the
@@ -3393,8 +3446,8 @@ Wi-Fi/service provisioning. The startup script adds this option when
 `/etc/tyfza1-fttr.onus.json` exists. No default per-ONU credentials or permissive
 policy are installed. This is independent of `--loid-auth`: when both are
 configured, a per-ONU match must also pass the global check/result readback.
-FPGA2 is rejected before hardware ownership while its data-grant mapping is
-unproven. Either authentication policy triggers withdrawal/readback of residual
+All three verified backends use their own data-grant layout. Either
+authentication policy triggers withdrawal/readback of residual
 data grants before admission, including grants for absent/unconfigured ONUs.
 
 The version1 JSON has exactly these fields (all required):
@@ -3502,7 +3555,9 @@ packet-retirement acceptance is implied.
    management envelope, ONU state reads, TX control and FPGA1 DBA/controller
    integration are implemented. Factory-selected optical calibration and separate
    FPGA bootstrap and version-gated FPGA1 factory authentication are implemented.
-   FPGA2 resource-to-grant binding and full original sequencing remain open.
+   FPGA2 now follows the supervisor-selected ASIC relay, including independent
+   startup, default DBA, resource/grant numbering, authentication and management
+   recovery/migration. Physical startup and traffic acceptance remain open.
 2. Four original optical calibration recipes and available identity checks are
    implemented, together with the original UX3326 temperature/reset recovery
    loop and model-specific diagnostic readings. SFP handling, optical alarms, identifying

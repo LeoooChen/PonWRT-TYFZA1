@@ -82,9 +82,9 @@ int fttr_miniolt_management(int directory, unsigned int id, bool enable)
 		return backend;
 	/* libponrelay1p25g configures OMCI globally in plr_fpga_init; its
 	 * per-ONU OMCI GEM entry point performs no IO. No service grant is owned
-	 * by an OMCI session on FPGA, so opening/closing it must not overwrite DBA.
+	 * by an OMCI session on FPGA1, so opening/closing it must not overwrite DBA.
 	 */
-	if (backend != FTTR_ASIC9690)
+	if (backend == FTTR_FPGA1)
 		return 0;
 	snprintf(value, sizeof(value), "%u %u\n", id, enable);
 	return fttr_miniolt_command(directory, "management_grant", value);
@@ -116,18 +116,13 @@ int fttr_miniolt_alloc_id(enum fttr_backend backend, unsigned int id, unsigned i
 {
 	if (id >= FTTR_ONUS || !slot || slot > 7)
 		return -EINVAL;
-	/* The FPGA relay's declared Alloc-ID pool has only one 64-ONU row. */
+	/* The FPGA1 relay's declared Alloc-ID pool has only one 64-ONU row. */
 	if (backend == FTTR_FPGA1)
 		return slot == 1 ? 256 + (int)id : -ERANGE;
-	/* FPGA2's retained diagnostic DBA table uses ASIC slot addressing, but
-	 * its relay allocates the FPGA1 IDs. Their physical binding is not yet
-	 * established; never assign a remote ID while guessing its local grant.
-	 */
-	if (backend == FTTR_FPGA2)
-		return -EOPNOTSUPP;
-	if (backend != FTTR_ASIC9690)
+	/* The original supervisor runs onuinfo/libponrelay for FPGA2 too. */
+	if (backend != FTTR_ASIC9690 && backend != FTTR_FPGA2)
 		return -EINVAL;
-	/* Original ASIC allocator: 257 + (ONU - 1) * 8 + slot - 1. */
+	/* Original FPGA2/ASIC allocator: 257 + (ONU - 1) * 8 + slot - 1. */
 	return 256 + id * 8 + slot;
 }
 
@@ -144,8 +139,6 @@ int fttr_miniolt_tcont(int directory, unsigned int id, unsigned int slot,
 
 	if (backend < 0)
 		return backend;
-	if (backend == FTTR_FPGA2)
-		return -EOPNOTSUPP;
 	if (backend == FTTR_FPGA1) {
 		if (slot != 1)
 			return -ERANGE;
@@ -202,8 +195,6 @@ int fttr_miniolt_tcont_read(int directory, unsigned int id, unsigned int slot,
 
 	if (backend < 0)
 		return backend;
-	if (backend == FTTR_FPGA2)
-		return -EOPNOTSUPP;
 	if (backend == FTTR_FPGA1) {
 		if (slot != 1)
 			return -ERANGE;

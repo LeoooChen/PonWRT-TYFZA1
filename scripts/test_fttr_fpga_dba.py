@@ -200,7 +200,8 @@ int read_grant(const struct rtl_fttr_reg_io *io, int backend, unsigned id, unsig
                 for slot in (0, 2, 7, 8):
                     assert native.fttr_miniolt_alloc_id(backend, id, slot) < 0
                     assert relay.call('plr_ponsrv_alloc_id_get', 1, id + 1, slot, data) != 0
-            assert native.fttr_miniolt_alloc_id(2, id, 1) == -errno.EOPNOTSUPP
+            for slot in range(1,8):
+                assert native.fttr_miniolt_alloc_id(2,id,slot)==256+id*8+slot
             occupied = relay.scratch + 0x4000 + 142 + alloc // 8
             relay.uc.mem_write(occupied, bytes([1 << (alloc % 8)]))
             assert relay.call('plr_ponsrv_alloc_id_get', 1, id + 1, 1, data) != 0
@@ -218,7 +219,7 @@ int read_grant(const struct rtl_fttr_reg_io *io, int backend, unsigned id, unsig
                 assert native.fttr_miniolt_backend(fd) == backend
                 (device / 'management_grant').write_text('unchanged')
                 assert native.fttr_miniolt_management(fd, 5, 1) == 0
-                assert (device / 'management_grant').read_text() == ('5 1\nanged' if backend == 3 else 'unchanged')
+                assert (device / 'management_grant').read_text() == ('5 1\nanged' if backend != 1 else 'unchanged')
                 # FPGA has no WTG peer status attribute. Its real P6 state is
                 # still mandatory; missing/malformed/down states cannot pass.
                 if backend != 3:
@@ -230,10 +231,6 @@ int read_grant(const struct rtl_fttr_reg_io *io, int backend, unsigned id, unsig
                         assert native.fttr_miniolt_links_ready(fd, fd) == expected
                     (device / 'fttr_link').unlink()
                 (device / 'tcont').write_text('')
-                if backend == 2:
-                    assert native.fttr_miniolt_tcont(fd, 5, 1, 50, 100, 200) == -errno.EOPNOTSUPP
-                    assert (device / 'tcont').read_text() == ''
-                    continue
                 assert native.fttr_miniolt_tcont(fd, 5, 1, 50, 100, 200) == 0
                 physical_slot = 0 if backend == 1 else 1
                 assert (device / 'tcont').read_text() == f'5 {physical_slot} 50 100 200\n'

@@ -71,7 +71,7 @@ int main(void) {
   reset(backend,100);assert(!admin_tick(&c,99) && !calls);
   io_error=-EAGAIN;assert(!admin_tick(&c,100));assert(calls==1 && !readbacks && !publishes);
   assert(c.onu[7].admin_pending && c.onu[7].phase==ONU_BLOCKED);
-  int64_t next=backend==3?8100:200;
+  int64_t next=backend!=1?8100:200;
   assert(c.admin_scan_due==next);
   assert(!admin_tick(&c,next-1) && calls==1);
   io_error=0;assert(!admin_tick(&c,next));
@@ -95,15 +95,15 @@ int main(void) {
   }
   reset(backend,20000);
   assert(!admin_tick(&c,14999) && !calls);
-  assert(!admin_tick(&c,15000));assert(calls==(backend==3));
-  if(backend!=3)assert(c.onu[7].admin_pending); /* no guessed FPGA timeout */
+  assert(!admin_tick(&c,15000));assert(calls==(backend!=1));
+  if(backend==1)assert(c.onu[7].admin_pending); /* no guessed FPGA timeout */
   reset(backend,100);table_error=-EIO;assert(admin_tick(&c,100)==-EIO && !calls);
   reset(backend,100);io_duration=500;
-  assert(!admin_tick(&c,100));assert(c.admin_scan_due==600+(backend==3?8000:100));
+  assert(!admin_tick(&c,100));assert(c.admin_scan_due==600+(backend!=1?8000:100));
   reset(backend,100);c.onu[7].admin_pending=false;samples[7].upstream=0x100000;
   assert(!admin_tick(&c,99) && !recoveries);
-  assert(!admin_tick(&c,100) && recoveries==1 && calls==(backend==3));
-  if(backend!=3)assert(c.onu[7].admin_pending); /* release in next pass */
+  assert(!admin_tick(&c,100) && recoveries==1 && calls==(backend!=1));
+  if(backend==1)assert(c.onu[7].admin_pending); /* release in next pass */
   reset(backend,100);c.onu[7].admin_pending=false;samples[7].upstream=0x100000;samples[7].downstream=0x10000;
   assert(!admin_tick(&c,100) && !recoveries && !calls);
   for(int failure=0;failure<3;failure++) {

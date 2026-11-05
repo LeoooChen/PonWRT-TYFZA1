@@ -40,7 +40,7 @@ static inline int rtl_fttr_onu_move(const struct rtl_fttr_reg_io *io,
 
 	if (from >= RTL_FTTR_ONUS || to >= RTL_FTTR_ONUS || from == to)
 		return -EINVAL;
-	if (backend != RTL_FTTR_ASIC9690 && backend != RTL_FTTR_FPGA1)
+	if (backend < RTL_FTTR_FPGA1 || backend > RTL_FTTR_ASIC9690)
 		return -EOPNOTSUPP;
 	ret = rtl_fttr_onu_read(io, from, &source);
 	if (!ret)

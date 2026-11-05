@@ -78,7 +78,7 @@ class Stock:
         oracle.uc.mem_write(oracle.symbols['g_onu_deactive_keep_flag'] + 4 * id, struct.pack('<I', keep))
         stack = oracle.scratch + 0x1ff000
         oracle.uc.reg_write(UC_ARM64_REG_SP, stack)
-        if backend == 3:
+        if backend != 1:
             # ONU_Offline has already fetched the downstream state at this boundary.
             oracle.uc.mem_write(stack + 60, struct.pack('<II', downstream, id))
             start, end = 0x48acc, 0x48c10
@@ -94,9 +94,9 @@ class Stock:
         oracle = self.relay
         stack = oracle.scratch + 0x1ff000
         oracle.uc.reg_write(UC_ARM64_REG_SP, stack)
-        oracle.uc.mem_write(stack + (64 if backend == 3 else 20), struct.pack('<I', id))
-        start = 0x48914 if backend == 3 else 0x479bc
-        stops = (0x489ec,) if backend == 3 else (0x47ab0, 0x47ac0, 0x47cd0)
+        oracle.uc.mem_write(stack + (64 if backend != 1 else 20), struct.pack('<I', id))
+        start = 0x48914 if backend != 1 else 0x479bc
+        stops = (0x489ec,) if backend != 1 else (0x47ab0, 0x47ac0, 0x47cd0)
         handle = oracle.uc.hook_add(UC_HOOK_CODE,
             lambda uc, pc, size, data: uc.emu_stop() if pc in stops else None)
         try:
@@ -180,7 +180,7 @@ int store(const struct rtl_fttr_reg_io *io, int backend, const char *input) {
             return IO(None, rd(read), wr(write), delay(lambda ctx, usec: regs.events.append(['delay', usec])))
 
         for backend in (1, 2, 3):
-            relay = args.relay_asic if backend == 3 else args.relay_fpga
+            relay = args.relay_asic if backend != 1 else args.relay_fpga
             for id in (0, 5, 63):
                 for blocked in (0, 1):
                     expected, actual = Registers(id), Registers(id)
@@ -214,7 +214,7 @@ int store(const struct rtl_fttr_reg_io *io, int backend, const char *input) {
             assert stock.relay.call('drv_gpon_onu_state_set', 0, 5, 5) == 0
             mailbox_writes = [e for e in original_timeout.events if e[0] == 'write' and
                               0x40007 <= e[1] <= 0x4000a]
-            assert bool(mailbox_writes) == (backend != 3)
+            assert bool(mailbox_writes) == (backend == 1)
             dropped = Registers(5); dropped.drop = True; io = native_io(dropped)
             assert native.admin(C.byref(io), backend, 5, 1, serial) == -errno.EUCLEAN
             actual = Registers(5); io = native_io(actual)
@@ -232,12 +232,12 @@ int store(const struct rtl_fttr_reg_io *io, int backend, const char *input) {
                     stock = Stock(args.asic, relay, regs)
                     stock.offline_unblock(backend, 5, downstream, keep)
                     writes = [e for e in regs.events if e[0] == 'write']
-                    cleared = bool(downstream & 0x10000) and not keep and (backend == 3 or not downstream & 0x40000)
+                    cleared = bool(downstream & 0x10000) and not keep and (backend != 1 or not downstream & 0x40000)
                     assert writes == ([['write', 0x4040b, downstream & ~0x10000]] if cleared else [])
                     if not keep:
                         actual = Registers(5, seed=downstream); io = native_io(actual)
                         result = native.admin(C.byref(io), backend, 5, 2, serial)
-                        assert result == (-errno.EAGAIN if backend != 3 and downstream == 0x50000 else 0)
+                        assert result == (-errno.EAGAIN if backend == 1 and downstream == 0x50000 else 0)
                         assert [e for e in actual.events if e[0] == 'write'] == writes
                         assert all(not 0x40007 <= e[1] <= 0x4000a for e in actual.events)
                     release_cases.append({'backend': backend, 'downstream': downstream, 'keep': keep,
@@ -258,7 +258,7 @@ int store(const struct rtl_fttr_reg_io *io, int backend, const char *input) {
             for state in (4, 5):
                 regs = Registers(5); stock = Stock(args.asic, relay, regs)
                 assert stock.relay.call('drv_gpon_onu_state_set', 0, 5, state) == 0
-                if backend == 3:
+                if backend != 1:
                     seconds, callback, payload = stock.timer
                     assert (seconds, callback, payload) == (15, 0x4775c, b'\x05')
                     regs.events.clear(); data = stock.relay.scratch + 0x2000

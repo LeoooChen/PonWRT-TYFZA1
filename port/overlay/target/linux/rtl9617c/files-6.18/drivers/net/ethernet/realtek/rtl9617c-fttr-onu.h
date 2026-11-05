@@ -47,7 +47,7 @@ static inline int rtl_fttr_onu_block(const struct rtl_fttr_reg_io *io,
 	unsigned int reg = 0x40401 + 2 * id, value;
 	int ret;
 
-	if (backend != RTL_FTTR_ASIC9690) {
+	if (backend == RTL_FTTR_FPGA1) {
 		/* libponrelay1p25g: replace the whole DS word (including the
 		 * FPGA1 fixed grant), then clear US state after 10ms. The caller
 		 * must withdraw its forwarding and DBA ownership first.
@@ -100,7 +100,7 @@ static inline int rtl_fttr_ploam_send(const struct rtl_fttr_reg_io *io,
 
 static inline bool rtl_fttr_onu_recovery_needed(enum rtl_fttr_backend backend, unsigned int upstream)
 {
-	unsigned int mask = backend == RTL_FTTR_ASIC9690 ? 0x01f00000 : 0x00f00000;
+	unsigned int mask = backend != RTL_FTTR_FPGA1 ? 0x01f00000 : 0x00f00000;
 
 	return !(upstream >> 30) && (upstream & mask);
 }
@@ -127,14 +127,14 @@ static inline int rtl_fttr_onu_admin(const struct rtl_fttr_reg_io *io,
 		if (onu.serial[i] != serial[i])
 			return -ESTALE;
 	if (action == 3) {
-		unsigned int mask = backend == RTL_FTTR_ASIC9690 ? 0x01f00000 : 0x00f00000;
+		unsigned int mask = backend != RTL_FTTR_FPGA1 ? 0x01f00000 : 0x00f00000;
 
 		/* A newer administrative block or a vanished error must not be
 		 * replaced by an automatic temporary operation from an older sample.
 		 */
 		if ((onu.downstream & BIT(16)) || !rtl_fttr_onu_recovery_needed(backend, onu.upstream))
 			return -EAGAIN;
-		ret = backend == RTL_FTTR_ASIC9690 ?
+		ret = backend != RTL_FTTR_FPGA1 ?
 			rtl_fttr_masked_write(io, 0x40803 + 4 * id, mask, 0) :
 			io->write(io->context, 0x40803 + 4 * id, onu.upstream & ~mask);
 		if (ret)
@@ -144,10 +144,10 @@ static inline int rtl_fttr_onu_admin(const struct rtl_fttr_reg_io *io,
 	if (action == 2) {
 		if (!(onu.downstream & BIT(16)))
 			return 0;
-		/* FPGA polling releases only after hardware registration is gone.
+		/* FPGA1 polling releases only after hardware registration is gone.
 		 * Unlike explicit state3, it preserves the other downstream bits.
 		 */
-		if (backend != RTL_FTTR_ASIC9690 && (onu.downstream & BIT(18)))
+		if (backend == RTL_FTTR_FPGA1 && (onu.downstream & BIT(18)))
 			return -EAGAIN;
 		ret = io->write(io->context, 0x40401 + 2 * id, onu.downstream & ~BIT(16));
 	} else {
@@ -156,8 +156,8 @@ static inline int rtl_fttr_onu_admin(const struct rtl_fttr_reg_io *io,
 	if (ret)
 		return ret;
 	if (action == 1) {
-		/* FPGA deactivation writes only the first mailbox word. */
-		ret = rtl_fttr_ploam_send(io, words, backend == RTL_FTTR_ASIC9690 ? 3 : 1, 1);
+		/* FPGA1 deactivation writes only the first mailbox word. */
+		ret = rtl_fttr_ploam_send(io, words, backend != RTL_FTTR_FPGA1 ? 3 : 1, 1);
 		if (ret)
 			return ret;
 	}

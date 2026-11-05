@@ -90,9 +90,10 @@ def main():
     p.add_argument("--wifi", action="store_true", help="exercise resident remote Wi-Fi policies")
     p.add_argument("--onu-policy", action="store_true", help="exercise per-ONU authentication and persistent assignment")
     p.add_argument("--auth", action="store_true", help="exercise original global LOID policy before services")
-    p.add_argument("--backend", choices=("asic9690", "fpga1"), default="asic9690")
+    p.add_argument("--backend", choices=("asic9690", "fpga1", "fpga2"), default="asic9690")
     args = p.parse_args()
     physical_slot = 0 if args.backend == "fpga1" else 1
+    downstream_length = args.backend=='fpga2'
     if args.backend == "fpga1": OLT = bytes.fromhex("001111111111")
     assert {x['ifname'] for x in json.loads(subprocess.check_output(['ip','-j','link','show'],text=True))} == {'lo'}
     stock = Original(args.master)
@@ -286,11 +287,14 @@ def main():
         auth_policy=root/'loid.bin'
         auth_policy.write_bytes(b'TFL1'+b'synthetic-loid'.ljust(25,b'\0')+b'synthetic-pw'.ljust(13,b'\0'))
         auth_policy.chmod(0o600)
-        if args.backend == 'asic9690':
+        if args.backend != 'fpga1':
             device.joinpath('management_grant').write_text('')
-        else:
+        if args.backend != 'asic9690':
             device.joinpath('host_serdes').unlink()
-            device.joinpath('omci_link').write_text('host=02:03:04:05:06:07 olt=00:11:11:11:11:11 ethertype=8888 downstream_length=0\n')
+            if args.backend=='fpga1':
+                device.joinpath('omci_link').write_text('host=02:03:04:05:06:07 olt=00:11:11:11:11:11 ethertype=8888 downstream_length=0\n')
+        if downstream_length:
+            path=device/'omci_link';path.write_text(path.read_text().replace('downstream_length=0','downstream_length=1'))
         device.joinpath('tcont_state').write_bytes(bytes(4096))
         device.joinpath('onu_admin').write_text('')
         device.joinpath('onu_move').write_text('')
@@ -406,7 +410,7 @@ def main():
         subprocess.run(['ip','link','set','dev','br-fttr','up'],check=True)
         policy.write_text('5445535400000007 0 0 1 3 none 50 100 200 br-fttr\n* 2 0 1 3 200 50 100 200 br-fttr\n')
         # Backend policy rejection precedes ownership, TX and FE mutations.
-        for backend, slot in (('fpga1', 2), ('fpga2', 1)):
+        for backend, slot in (('fpga1', 2), ('fpga2', 8)):
             device.joinpath('backend').write_text(backend+'\n')
             rejected_policy=root/'unsupported-services'
             rejected_policy.write_text(f'* 2 0 {slot} 3 200 50 100 200 br-fttr\n')
@@ -441,7 +445,7 @@ def main():
                 assert ni.joinpath('fttr_forward').read_text()=='0\n'
                 assert device.joinpath('tcont_state').read_bytes()==bytes(4096)
             auth_policy.write_bytes(good_auth);auth_policy.chmod(0o600)
-            device.joinpath('backend').write_text('fpga2\n')
+            device.joinpath('backend').write_text('invalid\n')
             rejected=subprocess.run([str(args.daemon.resolve()),str(device),str(ni),str(store),
                 'fap-host','--loid-auth',str(auth_policy)],capture_output=True,text=True,timeout=2)
             assert rejected.returncode==1 and not store.joinpath('status.json').exists()
@@ -498,7 +502,11 @@ def main():
                         if address[2]==socket.PACKET_OUTGOING:continue
                         assert frame[:14]==OLT+HOST+b'\x88\x88'
                         id=struct.unpack('>H',frame[14:16])[0]
-                        wire=nodes[id].reply(frame[16:60])
+                        if downstream_length:
+                            assert struct.unpack('>H',frame[16:18])[0]==48 and frame[66:70]==b'\0\1\2\3'
+                            body=frame[18:62]
+                        else: body=frame[16:60]
+                        wire=nodes[id].reply(body)
                         if wire:peer.send(HOST+OLT+struct.pack('>HH',0x8888,id)+wire)
                 current=status()
                 if args.auth and not args.move_control and not args.onu_policy and (not current.get('onus') or current['onus'][7]['mib_serial']!=nodes[7].serial.hex()):
@@ -567,14 +575,21 @@ def main():
                 reset();configure([policy_row()])
                 good=onu_policy.read_text()
                 for invalid,mode,duplicate,backend in [('{}',0o600,False,args.backend),
-                        (good,0o644,False,args.backend),(good,0o600,True,args.backend),(good,0o600,False,'fpga2')]:
+                        (good,0o644,False,args.backend),(good,0o600,True,args.backend),(good,0o600,False,'invalid')]:
                     onu_policy.write_text(invalid);onu_policy.chmod(mode);device.joinpath('backend').write_text(backend+'\n')
                     rejected=subprocess.run([str(args.daemon.resolve()),str(device),str(ni),str(store),'fap-host']+
                         ['--onu-auth',str(onu_policy)]*(2 if duplicate else 1),capture_output=True,text=True,timeout=2)
                     assert rejected.returncode==1 and not store.joinpath('status.json').exists()
                     assert ni.joinpath('fttr_forward').read_text()=='0\n' and device.joinpath('tx_enable').read_text()=='1\n'
                 onu_policy.write_text(good);onu_policy.chmod(0o600);device.joinpath('backend').write_text(args.backend+'\n')
-                checks.append('malformed/private-mode/duplicate policies and unsupported FPGA2 fail before hardware ownership')
+                checks.append('malformed/private-mode/duplicate policies and invalid backend fail before hardware ownership')
+                if args.backend=='fpga2':
+                    reset();configure([policy_row()]);policy.write_text('* 0 0 7 3 none 50 100 200 br-fttr\n')
+                    process=launch();until(lambda s:s['onus'][7]['datapath_configured'])
+                    assert nodes[7].pool[262,nodes[7].tcont][0x8000]==struct.pack('>H',256+7*8+7)
+                    assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),(7*8+7)*8)==(50,100<<16|200)
+                    stop();policy.write_text('5445535400000007 0 0 1 3 none 50 100 200 br-fttr\n* 2 0 1 3 200 50 100 200 br-fttr\n')
+                    checks.append('FPGA2 highest business slot7 binds the original Alloc-ID and distinct physical DBA slot')
                 for method in (1,4,5):
                     reset();configure([policy_row(method=method)])
                     process=launch();accepted()
@@ -858,7 +873,7 @@ def main():
                 nodes[7]=replacement;hardware()
             # An earlier controller may have died without withdrawing DBA.
             # Seed both the selected data slot and a slot with no current policy.
-            residual_slots=(1,7) if args.backend=='asic9690' else (0,)
+            residual_slots=(0,) if args.backend=='fpga1' else (1,7)
             with device.joinpath('tcont_state').open('r+b') as f:
                 for id in (7,11):
                     for slot in residual_slots:
@@ -1347,7 +1362,7 @@ def main():
                 # Recovery is detected by the resident refresh, not a CLI
                 # command; it must first retire the actual port and DBA owner.
                 admin_hold.touch();event_start=len(admin_events());healthy_port=datapath(9)
-                downstream(0x40000,0x01000001 if args.backend=='asic9690' else 0x00100001)
+                downstream(0x40000,0x00100001 if args.backend=='fpga1' else 0x01000001)
                 until(lambda s:any(action=='3' for _,action,_ in admin_events()[event_start:]),seconds=10)
                 assert datapath(9)==healthy_port and 'fttr-u7' not in ports()
                 assert journal(7,'service-old')[0]['grant_withdrawn']

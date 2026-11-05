@@ -39,7 +39,7 @@ ssize_t write(int fd,const void *buffer,size_t count) {
  name=strrchr(path,'/');name=name ? name+1 : path;
  if(strcmp(name,"tx_enable") && strcmp(name,"reset") && strcmp(name,"calibration") &&
     strcmp(name,"host_serdes") && strcmp(name,"fttr_link") && strcmp(name,"pon_serdes") &&
-    strcmp(name,"core_init") && strcmp(name,"fpga_init") && strcmp(name,"fpga_auth") && strcmp(name,"omci_link") && strcmp(name,"dba") && strcmp(name,"fttr_forward") && strcmp(name,"maintenance") && strcmp(name,"tcont"))
+    strcmp(name,"core_init") && strcmp(name,"fpga_init") && strcmp(name,"fpga2_init") && strcmp(name,"fpga_auth") && strcmp(name,"omci_link") && strcmp(name,"dba") && strcmp(name,"fttr_forward") && strcmp(name,"maintenance") && strcmp(name,"tcont"))
   return real_write(fd,buffer,count);
  log=open(getenv("FTTR_TEST_LOG"),O_WRONLY|O_CREAT|O_APPEND,0600);
  real_write(log,name,strlen(name));real_write(log," ",1);real_write(log,buffer,count);close(log);
@@ -100,7 +100,6 @@ def main():
     parser.add_argument('--monitor',action='store_true',help='include UX3326 recovery, runtime failure and cancellation')
     parser.add_argument('--loid-auth',action='store_true',help='check authenticated startup clears old data grants before TX')
     args=parser.parse_args()
-    assert not args.loid_auth or args.backend!='fpga2'
     assert {x['ifname'] for x in json.loads(subprocess.check_output(['ip','-j','link','show'],text=True))}=={'lo'}
     subprocess.run(['ip','link','add','ftr-host','type','veth','peer','name','ftr-peer'],check=True)
     for interface,mac in [('ftr-host','02:03:04:05:06:07'),('ftr-peer','0a:0b:0c:0d:0e:0f')]:
@@ -146,6 +145,8 @@ def main():
             if args.backend != 'asic9690':
                 for name in ('reset','host_serdes','pon_serdes','core_init','dba'): miniolt.joinpath(name).unlink()
                 miniolt.joinpath('fpga_init').write_text('0\n')
+                if args.backend=='fpga2':
+                    miniolt.joinpath('fpga2_init').write_text('0\n');miniolt.joinpath('dba').write_text('0\n')
                 if args.backend == 'fpga1': miniolt.joinpath('fpga_auth').write_text('0\n')
             ni.joinpath('fttr_link').write_text('configured=1 mode=5 nway=1 clock=1 error=0 link=1\n' if bad=='preloaded' else
                 'configured=0 mode=0 nway=0 clock=0 error=0 link=0\n')
@@ -179,6 +180,9 @@ def main():
                         expected_commands=['fttr_forward 0','tx_enable 0','fttr_link 5 1','fpga_init 1',
                             'calibration 1','omci_link 02:03:04:05:06:07','tx_enable 1','fttr_forward 1 8888']
                         if args.backend == 'fpga1': expected_commands.insert(4,'fpga_auth 1')
+                        if args.backend == 'fpga2':
+                            expected_commands.insert(4,'fpga2_init 5')
+                            expected_commands.insert(expected_commands.index('tx_enable 1'),'dba 1')
                         if bad=='preloaded': expected_commands.remove('fttr_link 5 1')
                     if args.loid_auth: expected_commands.insert(expected_commands.index('tx_enable 1'),f'tcont 7 {slot} 0 0 0')
                     assert log.read_text().splitlines()==expected_commands

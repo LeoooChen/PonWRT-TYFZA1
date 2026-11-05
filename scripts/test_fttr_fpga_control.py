@@ -27,7 +27,7 @@ class Stock:
         self.relay = ElfOracle(relay, self.io, ('fpga_reg_read', 'fpga_reg_write',
             'fpga_reg_read_check', 'fpga_omci_send_msg', 'plr_pondrv_log_module_id_get', 'plr_log'))
         # Local serial reader in the retained libponrelay1p25g.so.
-        self.relay.symbols['serial_read'] = 0x464b0
+        self.relay.symbols['serial_read'] = 0x464b0 if backend==1 else 0x47104
 
     def io(self, name, args):
         if name in ('FPGA_reg_read', 'fpga_reg_read', 'fpga_reg_read_check'):
@@ -84,6 +84,7 @@ def main():
     parser.add_argument('--asic', type=Path, required=True)
     parser.add_argument('--relay', type=Path, required=True,
                         help='retained rootfs/lib/libponrelay1p25g.so')
+    parser.add_argument('--relay-asic', type=Path, required=True, help='libponrelay.so selected by FPGA2')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     headers = ROOT / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek'
@@ -128,7 +129,7 @@ int snapshot(const struct rtl_fttr_reg_io *io, unsigned int id, struct rtl_fttr_
         driver = (headers / 'rtl9617c-fttr.c').read_text()
         attrs = ('backend', 'version', 'reset', 'host_serdes', 'pon_serdes', 'omci_link',
                  'onu_table', 'onu_block', 'ploam', 'tx_enable', 'core_init', 'dba',
-                 'tcont', 'management_grant', 'fpga_init', 'optical_init', 'fpga_auth', 'onu_admin', 'onu_move')
+                 'tcont', 'management_grant', 'fpga_init', 'optical_init', 'fpga_auth', 'onu_admin', 'onu_move', 'fpga2_init')
         source += '''typedef unsigned short umode_t;
 struct attribute { umode_t mode; };
 struct device_attribute { struct attribute attr; };
@@ -194,11 +195,17 @@ int remove_device(const struct rtl_fttr_reg_io *io, int backend) {
             for seed in (0, 0x123488a8, 0xffffffff):
                 initial = {0x30004: seed, 0x4000c: seed, 0x20: seed,
                            0x30002: 0x89abcdef, 0x30003: 0x4567, 0x30005: 8}
-                stock = Stock(args.asic, args.relay, backend, initial)
+                stock = Stock(args.asic, args.relay if backend==1 else args.relay_asic, backend, initial)
                 stock.initialize()
                 events.clear(); values.clear(); values.update(initial)
                 assert native.init(C.byref(io), backend, HOST) == 0
-                assert events == stock.events and values == stock.values
+                if backend==1:
+                    assert events == stock.events and values == stock.values
+                else:
+                    # Native uses one sampled type; original samples it twice
+                    # and reads once more during masked 88a8 conversion.
+                    assert [e for e in events if e[0]=='write']==[e for e in stock.events if e[0]=='write']
+                    assert values==stock.values
                 expected = list(events)
                 for fail_at in range(1, len(expected) + 1):
                     events.clear(); values.clear(); values.update(initial)
@@ -208,23 +215,26 @@ int remove_device(const struct rtl_fttr_reg_io *io, int backend) {
                 values.clear(); values.update(stock.values); events.clear()
                 link = Link()
                 assert native.link_read(C.byref(io), backend, C.byref(link)) == 0
-                assert bytes(link.host) == HOST and bytes(link.olt) == bytes.fromhex('001111111111')
-                assert link.ethertype == 0x8888 and not link.downstream_length
-                stock.relay.uc.mem_write(stock.relay.symbols['g_pfpacket_info'] + 0x28, HOST)
+                assert bytes(link.host) == HOST
+                assert bytes(link.olt) == (bytes.fromhex('001111111111') if backend==1 else bytes.fromhex('456789abcdef'))
+                assert link.ethertype == (0x8888 if backend==1 or seed&65535==0x88a8 else seed&65535)
+                assert link.downstream_length == (backend==2)
+                stock.relay.uc.mem_write(stock.relay.symbols['g_pfpacket_info'] + 0x28, HOST+bytes(link.olt))
                 assert stock.relay.call('plr_omci_sw_crc32_table_init') == 0
                 for id in (0, 5, 63):
                     body = bytes([0x80, id, 0x49, 10]) + bytes(range(40))
                     data = stock.relay.scratch + 0x2000
                     stock.relay.uc.mem_write(data, body)
                     assert stock.relay.call('drv_gponomci_send_packet', 0, id, data, 48) == 0
-                    output = C.create_string_buffer(64)
-                    assert native.fttr_omci_pack(C.byref(link), id, body, len(body), output, 64) == 64
+                    size=70 if backend==2 else 64
+                    output = C.create_string_buffer(size)
+                    assert native.fttr_omci_pack(C.byref(link), id, body, len(body), output, size) == size
                     assert output.raw == stock.frame
                 for enabled in (0, 1):
                     stock.events.clear(); events.clear()
                     assert stock.relay.call('drv_gpon_trx_set', 0, enabled) == 0
                     assert native.tx(C.byref(io), backend, enabled) == 0
-                    assert events == stock.events and values == stock.values
+                    assert events == stock.events and values == stock.values, (backend,seed,events,stock.events)
                     expected = list(events)
                     for fail_at in (1, 2):
                         values[0x20] = expected[0][2]; events.clear()
@@ -236,7 +246,7 @@ int remove_device(const struct rtl_fttr_reg_io *io, int backend) {
                 initial = {0x40401 + id * 2: 0x00fc0000, 0x40803 + id * 4: 0xa5abcdef,
                            0x40801 + id * 4: 0x54455354, 0x40800 + id * 4: 0x01234567,
                            0x40802 + id * 4: 0x9876}
-                stock = Stock(args.asic, args.relay, backend, initial)
+                stock = Stock(args.asic, args.relay if backend==1 else args.relay_asic, backend, initial)
                 expected = stock.snapshot(id)
                 values.clear(); values.update(initial); events.clear()
                 onu = Onu()
@@ -245,8 +255,8 @@ int remove_device(const struct rtl_fttr_reg_io *io, int backend) {
                 cases.append({'backend': backend, 'onu': id, 'snapshot_matches': True})
             for index, name in enumerate(attrs):
                 assert bool(native.visible(backend, index)) == (name in
-                    ('backend', 'version', 'fpga_init', 'omci_link', 'onu_table', 'tx_enable', 'tcont', 'optical_init', 'onu_admin') or
-                    (backend == 1 and name in ('fpga_auth', 'onu_move')))
+                    ('backend', 'version', 'fpga_init', 'omci_link', 'onu_table', 'tx_enable', 'tcont', 'optical_init', 'onu_admin', 'onu_move') or
+                    (backend == 1 and name == 'fpga_auth') or (backend==2 and name in ('fpga2_init','dba','management_grant')))
             assert native.bin_visible(backend, 0) and native.bin_visible(backend, 1)
             for fail_at in (0, 1, 2):
                 events.clear(); values[0x20] = 0xa55a1000
@@ -255,7 +265,7 @@ int remove_device(const struct rtl_fttr_reg_io *io, int backend) {
                 assert events == expected[:fail_at or 2]
             fail_at = 0
         for index, name in enumerate(attrs):
-            assert bool(native.visible(3, index)) == (name not in ('fpga_init', 'optical_init', 'fpga_auth'))
+            assert bool(native.visible(3, index)) == (name not in ('fpga_init', 'optical_init', 'fpga_auth', 'fpga2_init'))
         assert native.bin_visible(3, 0) and native.bin_visible(3, 1)
         for backend in (0, 4):
             events.clear()
@@ -265,9 +275,10 @@ int remove_device(const struct rtl_fttr_reg_io *io, int backend) {
             assert not events
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps({'asic_sha256': hashlib.sha256(args.asic.read_bytes()).hexdigest(),
-        'relay_sha256': hashlib.sha256(args.relay.read_bytes()).hexdigest(), 'cases': cases,
+        'relay_sha256': hashlib.sha256(args.relay.read_bytes()).hexdigest(),
+        'fpga2_relay_sha256': hashlib.sha256(args.relay_asic.read_bytes()).hexdigest(), 'cases': cases,
         'register_errors_stop': True, 'sysfs_visibility_checked': True,
-        'scope': 'Original FPGA relay initialization/TX/serial and ASIC-library getters with FPGA backend; '
+        'scope': 'Original supervisor-selected relay initialization/TX/serial and ASIC-library getters per FPGA backend; '
                  'baseline sender compared byte-for-byte. MDIO and device state modeled. '
                  'No optical startup, extended FPGA OMCI, DBA/service provisioning or hardware acceptance.'}, indent=2) + '\n')
     print(f'FPGA control: {len(cases)} original/native groups, 18 baseline frames, IO failure cutoffs and sysfs visibility passed')

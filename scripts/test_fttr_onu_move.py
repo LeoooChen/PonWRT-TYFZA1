@@ -89,10 +89,10 @@ int store(const struct rtl_fttr_reg_io *io,int backend,const char *input) {
                     r.values[0x40800+r.race_from*4]^=1
                 return -errno.EIO if len(r.events)==r.fail else 0
             return IO(None,rd(read),wr(write),delay(lambda ctx,us:r.events.append(['delay',us])))
-        for backend in (1,3):
+        for backend in (1,2,3):
             for from_id,to in ((0,63),(5,7),(63,0)):
                 expected,actual=setup(from_id,to),setup(from_id,to)
-                original=Original(args.asic,args.relay_asic if backend==3 else args.relay_fpga,expected)
+                original=Original(args.asic,args.relay_asic if backend!=1 else args.relay_fpga,expected)
                 o=original.relay;p=o.scratch+0x2000;o.uc.mem_write(p,serial)
                 assert o.call('drv_gpon_onuid_mismatch_deactive',0,to,p,from_id)==0
                 native_io=io(actual)
@@ -139,7 +139,7 @@ int store(const struct rtl_fttr_reg_io *io,int backend,const char *input) {
             r=setup(5,7);r_io=io(r);text=f'5 7 {serial.hex()} {target.hex()}\n'.encode()
             assert native.store(C.byref(r_io),backend,text)==len(text)
         r=setup(5,7);r_io=io(r)
-        assert native.move(C.byref(r_io),2,5,7,serial,target)==-errno.EOPNOTSUPP and not r.events
+        assert native.move(C.byref(r_io),4,5,7,serial,target)==-errno.EOPNOTSUPP and not r.events
     args.output.write_text(json.dumps(dict(cases=cases,guard_errors='passed',fault_cutoffs='passed',
         asic_sha256=hashlib.sha256(args.relay_asic.read_bytes()).hexdigest(),
         fpga_sha256=hashlib.sha256(args.relay_fpga.read_bytes()).hexdigest(),

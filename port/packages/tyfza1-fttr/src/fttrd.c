@@ -1818,8 +1818,6 @@ static int move_request(struct controller *c, const struct fttr_admin_request *r
 		return -EINVAL;
 	if (c->move.active)
 		return -EBUSY;
-	if (c->backend == FTTR_FPGA2)
-		return -EOPNOTSUPP;
 	ret = fttr_miniolt_one(c->directory, request->id, &source);
 	if (!ret)
 		ret = fttr_miniolt_one(c->directory, request->target, &target);
@@ -2003,11 +2001,11 @@ static int admin_tick(struct controller *c, int64_t now)
 			/* Original FPGA skips the remainder of this ONU's pass after
 			 * recovery. ASIC rereads DS and may release in the same pass.
 			 */
-			if (ret || c->backend != FTTR_ASIC9690)
+			if (ret || c->backend == FTTR_FPGA1)
 				continue;
 		}
 		if (!u->admin_pending || (!scan &&
-		    (c->backend != FTTR_ASIC9690 || now < u->admin_timeout)))
+		    (c->backend == FTTR_FPGA1 || now < u->admin_timeout)))
 			continue;
 		/* The initial command already retired the software service owners.
 		 * Releasing bit16 must never race an active service for this ONU.
@@ -2030,7 +2028,7 @@ static int admin_tick(struct controller *c, int64_t now)
 	 * the next interval after this pass, leaving time for OMCI/stop events.
 	 */
 	if (scan)
-		c->admin_scan_due = now_ms() + (c->backend == FTTR_ASIC9690 ? 8000 : 100);
+		c->admin_scan_due = now_ms() + (c->backend == FTTR_FPGA1 ? 100 : 8000);
 	return changed ? publish(c, "running", 0) : 0;
 }
 
@@ -2042,7 +2040,7 @@ static int run(struct controller *c)
 	unsigned int id;
 	int ret;
 
-	c->admin_scan_due = now_ms() + (c->backend == FTTR_ASIC9690 ? 8000 : 100);
+	c->admin_scan_due = now_ms() + (c->backend == FTTR_FPGA1 ? 100 : 8000);
 	while (!stopping) {
 		now = now_ms();
 		ret = fttr_miniolt_optical_tick(&c->optical, c->directory, now);
@@ -2069,7 +2067,7 @@ static int run(struct controller *c)
 			if (u->admin_pending) {
 				if (c->admin_scan_due < deadline)
 					deadline = c->admin_scan_due;
-				if (c->backend == FTTR_ASIC9690 && u->admin_timeout < deadline)
+				if (c->backend != FTTR_FPGA1 && u->admin_timeout < deadline)
 					deadline = u->admin_timeout;
 				continue;
 			}
@@ -2344,6 +2342,8 @@ static int bootstrap(struct controller *c, int optical, const char *mode, const 
 		 */
 		BOOT_STEP("prepare host P6", fttr_miniolt_p6_prepare(c->ni, !strcmp(nway, "1")));
 		BOOT_STEP("initialize FPGA", fttr_miniolt_command(c->directory, "fpga_init", "1\n"));
+		if (c->backend == FTTR_FPGA2)
+			BOOT_STEP("initialize FPGA2 controller", fttr_miniolt_command(c->directory, "fpga2_init", "5\n"));
 		if (c->backend == FTTR_FPGA1)
 			BOOT_STEP("authenticate FPGA", fttr_miniolt_command(c->directory, "fpga_auth", "1\n"));
 		BOOT_STEP("settle optical reset", nanosleep(&optical_settle, NULL) ? -errno : 0);
@@ -2362,7 +2362,7 @@ static int bootstrap(struct controller *c, int optical, const char *mode, const 
 	snprintf(mac, sizeof(mac), "%02x:%02x:%02x:%02x:%02x:%02x\n",
 		address[0], address[1], address[2], address[3], address[4], address[5]);
 	BOOT_STEP("configure OMCI envelope", fttr_miniolt_command(c->directory, "omci_link", mac));
-	if (c->backend == FTTR_ASIC9690)
+	if (c->backend != FTTR_FPGA1)
 		BOOT_STEP("configure DBA", fttr_miniolt_command(c->directory, "dba", "1\n"));
 	if (c->auth.enabled || c->onu_policy.enabled)
 		BOOT_STEP("clear unverified data grants", clear_auth_grants(c));
@@ -2445,8 +2445,6 @@ int main(int argc, char **argv)
 	if (ret < 0)
 		goto out;
 	c.backend = ret;
-	/* FPGA2's physical data-grant binding is not established yet. */
-	if ((c.auth.enabled || c.onu_policy.enabled) && c.backend == FTTR_FPGA2) { ret = -EOPNOTSUPP; goto out; }
 	{
 		const struct service_policy *policy;
 

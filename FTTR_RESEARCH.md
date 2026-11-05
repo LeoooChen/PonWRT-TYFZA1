@@ -24,7 +24,7 @@
 
 ## 已经实现的部分
 
-1. MiniOLT MDIO/regmap 和光学 I2C；确认的 ASIC9690/GN25L99 路径、SoC P6 与对端 SerDes、核心初始化及 DBA。另有 FPGA Manager、原厂镜像打包及加载后绑定 MDIO 的开发设备树依赖；完整 FPGA 光学/核心/ONU 自动启动链仍未完成。
+1. MiniOLT MDIO/regmap 和光学 I2C；确认的 ASIC9690/GN25L99 路径、SoC P6 与对端 SerDes、核心初始化及 DBA。另有 FPGA Manager、原厂镜像打包及加载后绑定 MDIO 的开发设备树依赖；FPGA 光学/控制器启动与 FPGA2 协议分派的后续进展见第34项；实机启动仍未验收。
 2. 独立 `fttr0`，P6 源端口 6 与运营商上联 PON 源端口 7 分开；原厂 OMCI 封装、CRC、异步 MIB 读取和实体模型。
 3. 显式策略选择实际 UNI/T-CONT/队列，创建并读回 GEM、桥接和 VLAN 配置；原始错误及清理失败均保留。
 4. 多 ONU 异步调度、运行时记录、序列号更换及 MIB 同步丢失后的重新读取；按 GEM Port-ID 添加外层 VLAN，接到明确指定的 Linux 网桥。
@@ -39,6 +39,8 @@
 11. 新增 `fttr-sync-policy`，用真实 libuci 将指定命名 AP 的 SSID/密码、启用/隐藏及加密模式转成常驻策略；明确绑定从设备频段、SSID 序号和 Standard，输出私有快照。49次转换检查、24次原厂字段比较及打包常驻程序的双频 veth 下发/回读通过。另执行原厂 Ready 的29个场景，确认依赖 WAN IPv4 与 CWMP USERINFO 状态，不能用光口就绪代替；动态 Ready、UCI 热更新和完整安全/无线参数映射仍未完成。详见[UCI 快照入口](port/FTTR.md#openwrt-wi-fi-policy-snapshot)与[原厂 Ready](port/FTTR.md#original-master-readiness-predicate)。
 
 12. 新增 `fttr-sync serve --state`：按从设备 MAC 与显式 Revision 保存完整私有配置和尝试位图，文件/目录 fsync 成功后才发配置包。进程重启先重新发现及核对身份，对已尝试的行只做可读字段核验；不匹配即停止，未尝试的后续行可继续。38项强制终止/同步失败/版本冲突/权限及恢复检查、37项常驻与89项单次回归通过；打包 UCI 到网络链路启用持久记录后也通过。并未验证物理闪存掉电或从设备密码安装。详见[持久恢复](port/FTTR.md#durable-syncserv-write-intent-and-restart-recovery)。
+
+> 下列按完成顺序保留研究记录。第13–33项中关于 FPGA2 使用 FPGA1 relay、授权绑定未知或拒绝业务的旧结论，已由第34项执行原厂 supervisor 的证据纠正；当前支持范围以第34项及详细文档为准。
 
 13. 新增可选 FPGA 镜像包：核对保留 top.bin 的长度和 SHA-256 后原样安装，开发 DT 在 SPI probe 中加载镜像，MiniOLT 通过设备依赖等到加载成功且 DONE 就绪后才访问 MDIO，避免把未加载的零寄存器识别成 FPGA1。加载器绑定期间禁止手动重写，设备链约束卸载顺序。新增 FPGA1/FPGA2 原厂 post-DONE 寄存器控制与错误停止检查，真实内核对象/模块链接、DT 和固件包暂存验证通过。进一步按 `libponrelay1p25g` 补上 FPGA 专属 OMCI 初始化、固定目的 MAC/基线封装、只读 ONU 状态和保留其他位的 TX 控制；12组原厂对比、18个报文、ASIC OMCI/FPGA 启动回归和6.18.55对象编译通过。原厂 FPGA 带宽配置接口为空实现，不能据此套用 ASIC 的管理 grant/DBA。完整光学、核心、ONU 业务启动或实机验证仍未完成。详见[FPGA 启动依赖](port/FTTR.md#fpga-boot-image-and-miniolt-dependency)及[管理通道](port/FTTR.md#fpga-management-transport)。
 
@@ -82,6 +84,8 @@
 
 33. 排除 FPGA2 授权绑定的一条错误依据：执行两套原厂 relay 的带宽设置/清除完整调用链及直接驱动入口，144次均返回成功但无硬件调用或栈外写入。实际 `drv_gpon_alloc_id_config/clear` 为空实现，因此高层 T-CONT 添加成功不证明物理 DBA 已绑定，亦不能作为退场证据。原厂63组直接 DBA 读写及64个分配器回归通过；后续应追踪独立寄存器生产者，FPGA2仍保持明确未支持。
 
+34. 纠正 FPGA2 的原厂程序分派并补齐控制器接入：执行 `onuinfo_check` 证明仅 FPGA1 使用 `onuinfo_fpga/libponrelay1p25g`，FPGA2 与 ASIC 使用 `onuinfo/libponrelay`。据此修正 FPGA2 OMCI 目的地址/长度封装、七业务槽 Alloc-ID/DBA、独立管理授权、停用/恢复/迁移及认证流程；执行实际启动和注册回调，补上 PHY/软复位、光学延迟、OTP 和默认 DBA，保留 FPGA 物理加载/MDIO/P6 路径。448个原厂分配用例、两模式启动逐笔 IO/故障、三后端管理/迁移/恢复、FPGA2真实守护进程与 CLI 的认证/Wi-Fi/业务槽7/迁移/启动、FPGA1策略及ASIC报文回归通过；FTTR包及MiniOLT/BOSA模块编译链接通过。完整默认业务导入、缓存退场及实机验收仍未完成。详见[FPGA2分派与启动](port/FTTR.md#fpga2-controller-selection-and-startup)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
@@ -90,7 +94,7 @@
 | GEM 复用前旧报文退场 | CPU 业务门控和父接口 qdisc 清理已接入；ES 队列清空函数尚未接入完整撤销流程。DMA 有两个预取描述符，PE/MiniOLT 缓存没有查实的完整退场依据；仅删除 Hash/cache 不能证明所有旧报文已消失。 |
 | Wi-Fi 配置联动 | 私有 OMCI 的 CLI/常驻策略已接入；独立 syncserv JSON 链已有发现、显式注册回复、回读及写入/可读字段比较，并加入绑定 MAC/自报 SN 的常驻多设备、多 SSID 策略和默认关闭的独立服务。注册、掉线或替换会取消旧事务；支持持久配置版本及发送前意图记录，重启后对已尝试配置只回读、不自动重发密码。自报 SN 核对不等于认证。下一步补齐实际从设备能力/身份、密码安装核验、实物掉电验收、真实 CWMP/WAN 就绪来源及 UCI 变更联动；显式 UCI 初始快照映射已实现。两条路径均缺实际从设备验收。 |
 | 配置恢复与服务策略 | OMCI/业务记录仍在 `/var/run`；syncserv 新增持久版本写入意图和只读恢复，但未实测闪存掉电；原厂全局 LOID、逐 ONU 五种比较/选择、SN持久绑定/自动学习与迁移已接入；PLOAM 获取、逐 ONU 原厂配置导入、远端资源归属恢复、默认业务策略和多业务仍需实现。 |
-| FPGA 机型 | 已实现保留 bitstream 核验打包、P6 先于镜像加载、加载后绑定 MiniOLT、原厂 post-DONE 控制、工厂文件选择四种光学校准、UX3326 温度调节/恢复、独立启动流程及新版 FPGA1 工厂认证。下一步补齐 FPGA2 授权绑定和完整 DDMI/SFP，确认该样本的实际器件。不能按 LAN 速率猜硬件后端。 |
+| FPGA 机型 | 已实现保留 bitstream 核验打包、P6 先于镜像加载、加载后绑定 MiniOLT、原厂 post-DONE 控制、工厂文件选择四种光学校准、UX3326 温度调节/恢复、独立启动流程及新版 FPGA1 工厂认证。FPGA2 原厂程序分派、控制器启动及业务/认证/管理已接入；下一步补齐 SFP/告警并确认实际器件与物理行为。不能按 LAN 速率猜硬件后端。 |
 | 完整 FTTR 管理 | 从设备网关配置、组播、重启/升级、漫游协调及其他原厂能力分支仍未完成。 |
 
 ## 资料与验证边界

@@ -71,6 +71,34 @@ static inline int rtl_fttr_fpga_init(const struct rtl_fttr_reg_io *io,
 	return 0;
 }
 
+/* onuinfo_check selects onuinfo/libponrelay for FPGA2. Its startup at
+ * 418e30 resets both PHYs, delays optics, pulses soft reset and selects OTP.
+ * The loader's post-DONE suffix above is a separate operation.
+ */
+static inline int rtl_fttr_fpga2_init(const struct rtl_fttr_reg_io *io, unsigned int mode)
+{
+	int ret;
+
+	if (mode != 5 && mode != 9)
+		return -EINVAL;
+	ret = io->write(io->context, 0x10010, 0);
+	if (!ret)
+		ret = io->write(io->context, 0x10011, 0);
+	if (!ret)
+		ret = rtl_fttr_masked_write(io, 0x40022, 15, 6);
+	if (!ret)
+		ret = io->write(io->context, 0x10, 0);
+	if (ret)
+		return ret;
+	io->delay(io->context, 100);
+	ret = io->write(io->context, 0x10, 1);
+	if (!ret)
+		ret = io->write(io->context, 0x11, mode == 5 ? 6 : 7);
+	if (!ret && mode != 5)
+		ret = rtl_fttr_masked_write(io, 0x30005, 16, 16);
+	return ret;
+}
+
 static inline int rtl_fttr_tx_enable(const struct rtl_fttr_reg_io *io,
 		enum rtl_fttr_backend backend, int enabled)
 {

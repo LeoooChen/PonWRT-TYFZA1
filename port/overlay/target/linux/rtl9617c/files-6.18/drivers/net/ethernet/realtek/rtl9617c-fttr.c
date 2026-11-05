@@ -167,6 +167,22 @@ static ssize_t fpga_init_store(struct device *dev, struct device_attribute *attr
 }
 static DEVICE_ATTR_WO(fpga_init);
 
+static ssize_t fpga2_init_store(struct device *dev, struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	unsigned int mode;
+	int ret = kstrtouint(buf, 0, &mode);
+
+	if (ret)
+		return ret;
+	mutex_lock(&fttr->control_lock);
+	ret = rtl_fttr_fpga2_init(&fttr->reg_io, mode);
+	mutex_unlock(&fttr->control_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_WO(fpga2_init);
+
 static ssize_t fpga_auth_store(struct device *dev, struct device_attribute *attr,
 		const char *buf, size_t count)
 {
@@ -617,6 +633,7 @@ static struct attribute *rtl_fttr_attrs[] = {
 	&dev_attr_tcont.attr,
 	&dev_attr_management_grant.attr,
 	&dev_attr_fpga_init.attr,
+	&dev_attr_fpga2_init.attr,
 	&dev_attr_fpga_auth.attr,
 	&dev_attr_optical_init.attr,
 	&dev_attr_onu_admin.attr,
@@ -630,13 +647,15 @@ static umode_t rtl_fttr_attr_visible(struct kobject *kobj, struct attribute *att
 
 	if (attr == &dev_attr_fpga_auth.attr)
 		return fttr->backend == RTL_FTTR_FPGA1 ? attr->mode : 0;
-	if (attr == &dev_attr_onu_move.attr)
-		return fttr->backend == RTL_FTTR_FPGA2 ? 0 : attr->mode;
+	if (attr == &dev_attr_fpga2_init.attr)
+		return fttr->backend == RTL_FTTR_FPGA2 ? attr->mode : 0;
+	if (attr == &dev_attr_dba.attr || attr == &dev_attr_management_grant.attr)
+		return fttr->backend == RTL_FTTR_FPGA1 ? 0 : attr->mode;
 	if (attr == &dev_attr_fpga_init.attr || attr == &dev_attr_optical_init.attr)
 		return fttr->backend == RTL_FTTR_ASIC9690 ? 0 : attr->mode;
 	if (attr == &dev_attr_omci_link.attr || attr == &dev_attr_onu_table.attr ||
 	    attr == &dev_attr_tx_enable.attr || attr == &dev_attr_tcont.attr ||
-	    attr == &dev_attr_onu_admin.attr)
+	    attr == &dev_attr_onu_admin.attr || attr == &dev_attr_onu_move.attr)
 		return attr->mode;
 	if (n >= 2 && fttr->backend != RTL_FTTR_ASIC9690)
 		return 0;
