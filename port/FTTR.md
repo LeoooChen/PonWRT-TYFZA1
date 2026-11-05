@@ -2561,7 +2561,8 @@ does no IO, with management setup performed by the existing global FPGA init.
 This avoids overwriting the single data grant when management sessions open
 or close. FPGA link checks require the real SoC P6 clock/link, without reading
 an absent WTG peer-SerDes attribute. This checks host connectivity, not optical
-readiness. Full automatic FPGA bootstrap/calibration remains incomplete.
+readiness. FPGA bootstrap and factory-selected optical calibration are described
+below; complete original FPGA behavior remains incomplete.
 
 FPGA2's diagnostic DBA accessor is implemented and compared, but its ASIC-like
 slot table and FPGA relay resource numbering do not yet establish a coherent
@@ -2588,6 +2589,54 @@ Reports are `artifacts/fttr/fpga-dba-final-20261105.json`,
 Linux6.18.55 MiniOLT module compilation/modpost/link pass in
 `dba-build-final-20261105.log`, using the FTTR build tree with main mounted
 read-only. The previously assembled full FIT images predate these DBA changes.
+
+### Factory-selected optics and FPGA bootstrap
+
+The retained `rtkoltbosa` dispatches four calibration operation tables:
+UX3326 (type1,588 bytes), UX3326S (type2,901 bytes), GN25L99
+(type10,661 bytes), and GN25L81 (type20,284 bytes). The factory file contains
+the model and the eight-bit I2C address; the address is not restricted to the
+fallback Cx/Dx scan list. FPGA `optical_init` validates that file and creates
+the optical I2C client at its address. Repeated creation at the same address
+is idempotent; a changed address returns `EBUSY`. Client teardown precedes
+adapter teardown. The retained ASIC DT still binds its confirmed GN25L99.
+
+Native calibration reproduces the original56/514/128/256 register writes.
+UX3326S includes the unlock, six page ranges, final page0 selection and
+register90 bit3 toggle. Identity checks use the original `UX3326S1` bytes
+or GN register60 markers `b0`/`a1`. UX3326 has no original silicon-ID
+predicate: native requires an acknowledged register0 read and trusts the
+validated factory type. File checksum/length/type mismatch and I2C errors
+stop before success, unlike the original initializer's checksum warning
+followed by writes. Calibration status rechecks identity and clears readiness
+on failure. These checks do not prove laser power or optical readiness.
+
+The resident FPGA bootstrap stops TX/netdev/P6, configures host P6 mode5
+with the factory nway setting, performs original post-DONE setup, waits650ms,
+calibrates the selected optics and checks P6. It then configures the original
+management envelope, verifies calibration, opens the interface and enables TX
+last. FPGA paths skip ASIC reset/WTG/PON/core/default-DBA attributes. The rc
+script creates the optical client and waits for its driver before launching
+the controller. FPGA2 inventory startup works with modeled devices; its
+unsupported service-to-grant binding still fails explicitly.
+
+`test_fttr_optical_models.py` executes all four original ARM64 initializers
+with three patterned files each, compares every write and identity check,
+and injects errors at each operation. It also exercises the production
+configure/status paths, userspace status parser, dynamic client creation and
+the shipped rc script, including delayed binding and missing-device failure.
+The retained actual GN25L99 factory calibration, FPGA control/dependency and
+ASIC/FPGA1/FPGA2 namespace startup regressions pass. Reports are
+`artifacts/fttr/optical-*-20261105.*`. The current OpenWrt package and both
+MiniOLT/BOSA modules compile and link against Linux6.18.55; module postprocessing
+retains the build's `MODULE_DESCRIPTION` warnings. Full FITs predate this change.
+
+Remaining differences include FPGA1 authentication on versions newer than
+`230406ff`, original continuous optical monitoring/DDMI, SFP dispatch and
+the original ordering of P6 before bitstream loading (native configures P6
+after the manager has loaded). The actual optical model of the retained FPGA
+sample is not established. No physical optical, FPGA or traffic acceptance
+is claimed by the offline recipe and startup comparisons.
 
 ### Full offline build after main alignment
 
@@ -2632,10 +2681,12 @@ device access, loading or flashing is authorized at this stage.
 1. FPGA board startup: retained image packaging, automatic loading before
    MiniOLT binding, explicit original post-load register control, baseline
    management envelope, ONU state reads, TX control and FPGA1 DBA/controller
-   integration are implemented. FPGA2 resource-to-grant binding remains open.
-   Complete P6/FPGA core, optical and ONU/service startup sequencing remains work.
-2. Optical identification for the other sample, plus real GN25L99 calibration
-   and optical readiness verification. The native sequence is implemented.
+   integration are implemented. Factory-selected optical calibration and separate
+   FPGA bootstrap are implemented. FPGA2 resource-to-grant binding, FPGA1
+   authentication and full original sequencing remain open.
+2. Four original optical calibration recipes and available identity checks are
+   implemented. Continuous optical monitoring/DDMI, SFP handling, identifying
+   the retained FPGA sample's actual optics and physical readiness remain open.
 3. Real P6/FTTR frame verification. Native SoC P6, ASIC peer WTG/PON SerDes,
    the dedicated RX/TX endpoint, core/DBA and ASIC hardware startup orchestration
    are implemented. Real ONU-management and service traffic still require

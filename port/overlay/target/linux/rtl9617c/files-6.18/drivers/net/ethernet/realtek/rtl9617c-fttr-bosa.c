@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Native GN25L99 calibration on the TYFZA1 downstream optical bus. */
+/* Original rtkoltbosa calibration on the TYFZA1 downstream optical bus. */
 #include <linux/firmware.h>
 #include <linux/i2c.h>
 #include <linux/module.h>
@@ -12,9 +12,17 @@ struct rtl_fttr_bosa {
 	struct i2c_client *client;
 	struct mutex lock;
 	unsigned int writes;
+	unsigned int model;
 	int error;
 	bool configured;
 };
+
+static int rtl_fttr_bosa_read(void *context, unsigned int reg)
+{
+	struct rtl_fttr_bosa *bosa = context;
+
+	return i2c_smbus_read_byte_data(bosa->client, reg);
+}
 
 static int rtl_fttr_bosa_write(void *context, unsigned int reg, unsigned char value)
 {
@@ -29,25 +37,40 @@ static int rtl_fttr_bosa_write(void *context, unsigned int reg, unsigned char va
 static int rtl_fttr_bosa_configure(struct rtl_fttr_bosa *bosa)
 {
 	const struct firmware *calibration;
+	unsigned int marker;
 	int ret;
 
 	mutex_lock(&bosa->lock);
 	bosa->configured = false;
 	bosa->writes = 0;
+	bosa->model = 0;
 	ret = request_firmware_direct(&calibration, "realtek/rtl9617c/fttr-bosa-calibration.bin",
 				      &bosa->client->dev);
 	if (ret)
 		goto out;
-	ret = rtl_fttr_gn25l99_validate(calibration->data, calibration->size,
-				      bosa->client->addr);
+	ret = rtl_fttr_optical_validate(calibration->data, calibration->size);
+	if (!ret && (calibration->data[4] != bosa->client->addr << 1 ||
+	    (of_device_is_compatible(bosa->client->dev.of_node, "semtech,tyfza1-gn25l99") &&
+	     calibration->data[3] != RTL_FTTR_GN25L99)))
+		ret = -EINVAL;
+	if (!ret) {
+		bosa->model = calibration->data[3];
+		if (bosa->model == RTL_FTTR_UX3326S) {
+			ret = rtl_fttr_ux3326s_unlock(bosa, rtl_fttr_bosa_write);
+			if (!ret)
+				ret = rtl_fttr_bosa_write(bosa, 0x7f, 0x80);
+		}
+	}
 	if (!ret)
-		ret = rtl_fttr_gn25l99_calibrate(bosa, rtl_fttr_bosa_write, calibration->data);
+		ret = rtl_fttr_optical_identity(bosa, rtl_fttr_bosa_read, bosa->model, &marker);
+	/* Count the calibration sequence separately from identification writes. */
+	bosa->writes = 0;
+	if (!ret)
+		ret = rtl_fttr_optical_calibrate(bosa, rtl_fttr_bosa_write, calibration->data);
 	release_firmware(calibration);
 	if (ret)
 		goto out;
-	ret = i2c_smbus_read_byte_data(bosa->client, 0x60);
-	if (ret >= 0)
-		ret = ret == 0xb0 ? 0 : -EIO;
+	ret = rtl_fttr_optical_identity(bosa, rtl_fttr_bosa_read, bosa->model, &marker);
 	bosa->configured = !ret;
 out:
 	bosa->error = ret;
@@ -59,16 +82,19 @@ static ssize_t calibration_show(struct device *dev, struct device_attribute *att
 {
 	struct rtl_fttr_bosa *bosa = dev_get_drvdata(dev);
 	ssize_t size;
-	int marker;
+	unsigned int marker = 0;
+	int ret;
 
 	mutex_lock(&bosa->lock);
-	marker = i2c_smbus_read_byte_data(bosa->client, 0x60);
-	if (marker < 0) {
-		size = marker;
+	ret = bosa->model ? rtl_fttr_optical_identity(bosa, rtl_fttr_bosa_read,
+						    bosa->model, &marker) : 0;
+	if (ret) {
+		bosa->configured = false;
+		bosa->error = ret;
+		size = ret;
 	} else {
-		bosa->configured &= marker == 0xb0;
-		size = sysfs_emit(buf, "configured=%u model=GN25L99 marker=%02x writes=%u error=%d\n",
-			bosa->configured, marker, bosa->writes, bosa->error);
+		size = sysfs_emit(buf, "configured=%u model=%s marker=%02x writes=%u error=%d\n",
+			bosa->configured, rtl_fttr_optical_name(bosa->model), marker, bosa->writes, bosa->error);
 	}
 	mutex_unlock(&bosa->lock);
 	return size;
@@ -113,8 +139,15 @@ static const struct of_device_id rtl_fttr_bosa_match[] = {
 };
 MODULE_DEVICE_TABLE(of, rtl_fttr_bosa_match);
 
+static const struct i2c_device_id rtl_fttr_bosa_ids[] = {
+	{ "tyfza1-fttr-bosa" },
+	{ }
+};
+MODULE_DEVICE_TABLE(i2c, rtl_fttr_bosa_ids);
+
 static struct i2c_driver rtl_fttr_bosa_driver = {
 	.probe = rtl_fttr_bosa_probe,
+	.id_table = rtl_fttr_bosa_ids,
 	.driver = {
 		.name = "tyfza1-fttr-bosa",
 		.of_match_table = rtl_fttr_bosa_match,
@@ -122,5 +155,5 @@ static struct i2c_driver rtl_fttr_bosa_driver = {
 	},
 };
 module_i2c_driver(rtl_fttr_bosa_driver);
-MODULE_DESCRIPTION("TYFZA1 native downstream GN25L99 calibration");
+MODULE_DESCRIPTION("TYFZA1 native downstream optical calibration");
 MODULE_LICENSE("GPL");

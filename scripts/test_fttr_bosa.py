@@ -25,8 +25,8 @@ def main():
 #include "rtl9617c-fttr-bosa.h"
 typedef int (*write_fn)(void *, unsigned int, unsigned char);
 int configure(write_fn write, const unsigned char *cal, unsigned int size) {
-    int ret = rtl_fttr_gn25l99_validate(cal, size, 0x68);
-    return ret ? ret : rtl_fttr_gn25l99_calibrate(0, write, cal);
+    int ret = rtl_fttr_optical_validate(cal, size);
+    return ret ? ret : rtl_fttr_optical_calibrate(0, write, cal);
 }
 '''
     callback = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_uint, ctypes.c_ubyte)

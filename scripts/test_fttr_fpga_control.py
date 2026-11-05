@@ -128,7 +128,7 @@ int snapshot(const struct rtl_fttr_reg_io *io, unsigned int id, struct rtl_fttr_
         driver = (headers / 'rtl9617c-fttr.c').read_text()
         attrs = ('backend', 'version', 'reset', 'host_serdes', 'pon_serdes', 'omci_link',
                  'onu_table', 'onu_block', 'ploam', 'tx_enable', 'core_init', 'dba',
-                 'tcont', 'management_grant', 'fpga_init')
+                 'tcont', 'management_grant', 'fpga_init', 'optical_init')
         source += '''typedef unsigned short umode_t;
 struct attribute { umode_t mode; };
 struct device_attribute { struct attribute attr; };
@@ -245,7 +245,7 @@ int remove_device(const struct rtl_fttr_reg_io *io, int backend) {
                 cases.append({'backend': backend, 'onu': id, 'snapshot_matches': True})
             for index, name in enumerate(attrs):
                 assert bool(native.visible(backend, index)) == (name in
-                    ('backend', 'version', 'fpga_init', 'omci_link', 'onu_table', 'tx_enable', 'tcont'))
+                    ('backend', 'version', 'fpga_init', 'omci_link', 'onu_table', 'tx_enable', 'tcont', 'optical_init'))
             assert native.bin_visible(backend, 0) and native.bin_visible(backend, 1)
             for fail_at in (0, 1, 2):
                 events.clear(); values[0x20] = 0xa55a1000
@@ -254,7 +254,7 @@ int remove_device(const struct rtl_fttr_reg_io *io, int backend) {
                 assert events == expected[:fail_at or 2]
             fail_at = 0
         for index, name in enumerate(attrs):
-            assert bool(native.visible(3, index)) == (name != 'fpga_init')
+            assert bool(native.visible(3, index)) == (name not in ('fpga_init', 'optical_init'))
         assert native.bin_visible(3, 0) and native.bin_visible(3, 1)
         for backend in (0, 4):
             events.clear()

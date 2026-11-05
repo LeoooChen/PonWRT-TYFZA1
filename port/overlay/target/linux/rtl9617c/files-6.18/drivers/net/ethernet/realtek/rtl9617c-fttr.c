@@ -2,6 +2,7 @@
 /* Native TYFZA1 MiniOLT control transport, derived from stock machine code. */
 #include <linux/delay.h>
 #include <linux/etherdevice.h>
+#include <linux/firmware.h>
 #include <linux/fpga/fpga-mgr.h>
 #include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
@@ -20,6 +21,7 @@
 #include "rtl9617c-fttr-onu.h"
 #include "rtl9617c-fttr-serdes.h"
 #include "rtl9617c-fttr-fpga.h"
+#include "rtl9617c-fttr-bosa.h"
 
 struct rtl_fttr {
 	struct mdio_device *mdio;
@@ -27,6 +29,7 @@ struct rtl_fttr {
 	struct rtl_fttr_mdio_io io;
 	struct rtl_fttr_reg_io reg_io;
 	struct i2c_adapter optical;
+	struct i2c_client *optical_client;
 	struct gpio_desc *reset;
 	struct mutex control_lock;
 	enum rtl_fttr_backend backend;
@@ -153,6 +156,43 @@ static ssize_t fpga_init_store(struct device *dev, struct device_attribute *attr
 	return ret ? ret : count;
 }
 static DEVICE_ATTR_WO(fpga_init);
+
+static ssize_t optical_init_store(struct device *dev, struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	struct i2c_board_info info = { I2C_BOARD_INFO("tyfza1-fttr-bosa", 0) };
+	const struct firmware *calibration;
+	struct i2c_client *client;
+	int ret;
+
+	if (!sysfs_streq(buf, "1"))
+		return -EINVAL;
+	ret = request_firmware_direct(&calibration, "realtek/rtl9617c/fttr-bosa-calibration.bin", dev);
+	if (ret)
+		return ret;
+	ret = rtl_fttr_optical_validate(calibration->data, calibration->size);
+	if (!ret)
+		info.addr = calibration->data[4] >> 1;
+	release_firmware(calibration);
+	if (ret)
+		return ret;
+	mutex_lock(&fttr->control_lock);
+	if (fttr->optical_client) {
+		ret = fttr->optical_client->addr == info.addr ? 0 : -EBUSY;
+	} else {
+		/* The FPGA sample has no fixed optical model/address in its DT.
+		 * Instantiate only the address supplied by its validated factory file.
+		 */
+		client = i2c_new_client_device(&fttr->optical, &info);
+		ret = PTR_ERR_OR_ZERO(client);
+		if (!ret)
+			fttr->optical_client = client;
+	}
+	mutex_unlock(&fttr->control_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_WO(optical_init);
 
 static ssize_t version_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -503,6 +543,7 @@ static struct attribute *rtl_fttr_attrs[] = {
 	&dev_attr_tcont.attr,
 	&dev_attr_management_grant.attr,
 	&dev_attr_fpga_init.attr,
+	&dev_attr_optical_init.attr,
 	NULL,
 };
 
@@ -510,7 +551,7 @@ static umode_t rtl_fttr_attr_visible(struct kobject *kobj, struct attribute *att
 {
 	struct rtl_fttr *fttr = dev_get_drvdata(kobj_to_dev(kobj));
 
-	if (attr == &dev_attr_fpga_init.attr)
+	if (attr == &dev_attr_fpga_init.attr || attr == &dev_attr_optical_init.attr)
 		return fttr->backend == RTL_FTTR_ASIC9690 ? 0 : attr->mode;
 	if (attr == &dev_attr_omci_link.attr || attr == &dev_attr_onu_table.attr ||
 	    attr == &dev_attr_tx_enable.attr || attr == &dev_attr_tcont.attr)
@@ -601,6 +642,14 @@ out:
 	return ret;
 }
 
+static void rtl_fttr_optical_unregister(void *context)
+{
+	struct rtl_fttr *fttr = context;
+
+	if (fttr->optical_client)
+		i2c_unregister_device(fttr->optical_client);
+}
+
 static int rtl_fttr_probe(struct mdio_device *mdio)
 {
 	struct device *dev = &mdio->dev;
@@ -651,7 +700,10 @@ static int rtl_fttr_probe(struct mdio_device *mdio)
 	fttr->optical.dev.of_node = dev->of_node;
 	strscpy(fttr->optical.name, "TYFZA1 FTTR optical I2C", sizeof(fttr->optical.name));
 	i2c_set_adapdata(&fttr->optical, fttr);
-	return devm_i2c_add_adapter(dev, &fttr->optical);
+	ret = devm_i2c_add_adapter(dev, &fttr->optical);
+	if (ret)
+		return ret;
+	return devm_add_action_or_reset(dev, rtl_fttr_optical_unregister, fttr);
 }
 
 static void rtl_fttr_remove(struct mdio_device *mdio)

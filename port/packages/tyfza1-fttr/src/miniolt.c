@@ -314,15 +314,26 @@ int fttr_miniolt_calibrated(int optical)
 {
 	FILE *file = attribute(optical, "calibration");
 	unsigned int configured, marker, writes;
+	char model[16];
 	int error, fields, ret;
 
 	if (!file)
 		return -errno;
-	fields = fscanf(file, "configured=%u model=GN25L99 marker=%x writes=%u error=%d",
-		&configured, &marker, &writes, &error);
-	ret = fields == 4 ? error : ferror(file) ? -errno : -EPROTO;
+	fields = fscanf(file, "configured=%u model=%15s marker=%x writes=%u error=%d",
+		&configured, model, &marker, &writes, &error);
+	ret = fields == 5 ? error : ferror(file) ? -errno : -EPROTO;
 	fclose(file);
 	if (ret)
 		return ret;
-	return configured && marker == 0xb0 && writes == 128 ? 0 : -EIO;
+	if (!configured)
+		return -EIO;
+	if (!strcmp(model, "GN25L99"))
+		return marker == 0xb0 && writes == 128 ? 0 : -EIO;
+	if (!strcmp(model, "GN25L81"))
+		return marker == 0xa1 && writes == 256 ? 0 : -EIO;
+	if (!strcmp(model, "UX3326S"))
+		return marker == 'U' && writes == 514 ? 0 : -EIO;
+	if (!strcmp(model, "UX3326"))
+		return writes == 56 ? 0 : -EIO;
+	return -EOPNOTSUPP;
 }

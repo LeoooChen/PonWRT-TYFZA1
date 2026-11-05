@@ -1525,6 +1525,7 @@ static int bootstrap(struct controller *c, int optical, const char *mode, const 
 	char setting[16], mac[20];
 	const uint8_t *address;
 	int fd, ret;
+	const struct timespec optical_settle = { .tv_nsec = 650000000 };
 
 #define BOOT_STEP(name, operation) do { \
 	if (stopping) return -EINTR; \
@@ -1534,15 +1535,27 @@ static int bootstrap(struct controller *c, int optical, const char *mode, const 
 	BOOT_STEP("disable TX", fttr_miniolt_tx_disable(c->directory));
 	BOOT_STEP("close netdev", interface_state(c, false, 0));
 	BOOT_STEP("stop P6", fttr_miniolt_p6_stop(c->ni));
-	BOOT_STEP("reset MiniOLT", fttr_miniolt_command(c->directory, "reset", "1\n"));
-	BOOT_STEP("calibrate optics", fttr_miniolt_command(optical, "calibration", "1\n"));
-	snprintf(setting, sizeof(setting), "%s %s\n", mode, nway);
-	BOOT_STEP("configure peer WTG", fttr_miniolt_command(c->directory, "host_serdes", setting));
-	BOOT_STEP("configure host P6", fttr_miniolt_command(c->ni, "fttr_link", setting));
-	snprintf(setting, sizeof(setting), "%s\n", pon);
-	BOOT_STEP("configure PON SerDes", fttr_miniolt_command(c->directory, "pon_serdes", setting));
-	BOOT_STEP("wait for PCS", fttr_miniolt_wait_links(c->directory, c->ni));
-	BOOT_STEP("initialize core", fttr_miniolt_command(c->directory, "core_init", "1\n"));
+	if (c->backend == FTTR_ASIC9690) {
+		BOOT_STEP("reset MiniOLT", fttr_miniolt_command(c->directory, "reset", "1\n"));
+		BOOT_STEP("calibrate optics", fttr_miniolt_command(optical, "calibration", "1\n"));
+		snprintf(setting, sizeof(setting), "%s %s\n", mode, nway);
+		BOOT_STEP("configure peer WTG", fttr_miniolt_command(c->directory, "host_serdes", setting));
+		BOOT_STEP("configure host P6", fttr_miniolt_command(c->ni, "fttr_link", setting));
+		snprintf(setting, sizeof(setting), "%s\n", pon);
+		BOOT_STEP("configure PON SerDes", fttr_miniolt_command(c->directory, "pon_serdes", setting));
+		BOOT_STEP("wait for PCS", fttr_miniolt_wait_links(c->directory, c->ni));
+		BOOT_STEP("initialize core", fttr_miniolt_command(c->directory, "core_init", "1\n"));
+	} else {
+		/* Original FPGA loader board forces P6 HSGMII before post-DONE
+		 * register setup. Its bitstream supplies the GPON/peer PCS logic.
+		 */
+		snprintf(setting, sizeof(setting), "5 %s\n", nway);
+		BOOT_STEP("configure host P6", fttr_miniolt_command(c->ni, "fttr_link", setting));
+		BOOT_STEP("initialize FPGA", fttr_miniolt_command(c->directory, "fpga_init", "1\n"));
+		BOOT_STEP("settle optical reset", nanosleep(&optical_settle, NULL) ? -errno : 0);
+		BOOT_STEP("calibrate optics", fttr_miniolt_command(optical, "calibration", "1\n"));
+		BOOT_STEP("wait for PCS", fttr_miniolt_wait_links(c->directory, c->ni));
+	}
 	fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 	if (fd < 0)
 		return -errno;
@@ -1555,7 +1568,8 @@ static int bootstrap(struct controller *c, int optical, const char *mode, const 
 	snprintf(mac, sizeof(mac), "%02x:%02x:%02x:%02x:%02x:%02x\n",
 		address[0], address[1], address[2], address[3], address[4], address[5]);
 	BOOT_STEP("configure OMCI envelope", fttr_miniolt_command(c->directory, "omci_link", mac));
-	BOOT_STEP("configure DBA", fttr_miniolt_command(c->directory, "dba", "1\n"));
+	if (c->backend == FTTR_ASIC9690)
+		BOOT_STEP("configure DBA", fttr_miniolt_command(c->directory, "dba", "1\n"));
 	BOOT_STEP("verify optical calibration", fttr_miniolt_calibrated(optical));
 	BOOT_STEP("open netdev", interface_state(c, true, 1982));
 	BOOT_STEP("enable TX", fttr_miniolt_command(c->directory, "tx_enable", "1\n"));

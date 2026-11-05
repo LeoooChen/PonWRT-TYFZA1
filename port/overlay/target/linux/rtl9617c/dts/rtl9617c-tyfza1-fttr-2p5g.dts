@@ -8,7 +8,8 @@
 	fpga-mgr = <&fttr_fpga>;
 };
 
-// This unit's optical model is not present in the saved runtime log.
+// The validated factory file supplies model/address through optical_init;
+// retain no fixed GN25L99 binding on the FPGA board.
 &fttr_bosa {
 	status = "disabled";
 };

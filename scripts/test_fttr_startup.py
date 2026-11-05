@@ -37,11 +37,11 @@ ssize_t write(int fd,const void *buffer,size_t count) {
  name=strrchr(path,'/');name=name ? name+1 : path;
  if(strcmp(name,"tx_enable") && strcmp(name,"reset") && strcmp(name,"calibration") &&
     strcmp(name,"host_serdes") && strcmp(name,"fttr_link") && strcmp(name,"pon_serdes") &&
-    strcmp(name,"core_init") && strcmp(name,"omci_link") && strcmp(name,"dba") && strcmp(name,"fttr_accel"))
+    strcmp(name,"core_init") && strcmp(name,"fpga_init") && strcmp(name,"omci_link") && strcmp(name,"dba") && strcmp(name,"fttr_accel"))
   return real_write(fd,buffer,count);
  log=open(getenv("FTTR_TEST_LOG"),O_WRONLY|O_CREAT|O_APPEND,0600);
  real_write(log,name,strlen(name));real_write(log," ",1);real_write(log,buffer,count);close(log);
- if(bad && !strcmp(bad,"core") && !strcmp(name,"core_init")){errno=EIO;return -1;}
+ if(bad && !strcmp(bad,"core") && (!strcmp(name,"core_init") || !strcmp(name,"fpga_init"))){errno=EIO;return -1;}
  result=real_write(fd,buffer,count);if(result<0)return result;
  n=count<sizeof(command)-1 ? count : sizeof(command)-1;memcpy(command,buffer,n);command[n]=0;
  show[0]=0;
@@ -73,6 +73,7 @@ def main():
     parser.add_argument('--ucode-modules',type=Path,required=True)
     parser.add_argument('--factory',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--backend',choices=('asic9690','fpga1','fpga2'),default='asic9690')
     args=parser.parse_args()
     assert {x['ifname'] for x in json.loads(subprocess.check_output(['ip','-j','link','show'],text=True))}=={'lo'}
     subprocess.run(['ip','link','add','ftr-host','type','veth','peer','name','ftr-peer'],check=True)
@@ -109,9 +110,12 @@ def main():
             case=work/bad;case.mkdir()
             miniolt,ni,optical,store=[case/n for n in ('miniolt','ni','optical','state')]
             for p in (miniolt,ni,optical,store):p.mkdir(mode=0o700)
-            miniolt.joinpath('backend').write_text('asic9690\n')
+            miniolt.joinpath('backend').write_text(args.backend+'\n')
             for name in ('tx_enable','reset','host_serdes','pon_serdes','core_init','omci_link','dba'):
                 miniolt.joinpath(name).write_text('0\n')
+            if args.backend != 'asic9690':
+                for name in ('reset','host_serdes','pon_serdes','core_init','dba'): miniolt.joinpath(name).unlink()
+                miniolt.joinpath('fpga_init').write_text('0\n')
             ni.joinpath('fttr_link').write_text('0 0\n');optical.joinpath('calibration').write_text('0\n')
             ni.joinpath('fttr_accel').write_text('0\n')
             miniolt.joinpath('onu_table').write_text(''.join(f'{i} 00000000 00000000 00000000 0000000000000000\n' for i in range(64)))
@@ -128,6 +132,9 @@ def main():
                     wait(process,lambda:state().get('state')=='running')
                     expected_commands=['fttr_accel 0','tx_enable 0','fttr_link 0 0','reset 1','calibration 1','host_serdes 9 1',
                         'fttr_link 9 1','pon_serdes 3','core_init 1','omci_link 02:03:04:05:06:07','dba 1','tx_enable 1','fttr_accel 1']
+                    if args.backend != 'asic9690':
+                        expected_commands=['fttr_accel 0','tx_enable 0','fttr_link 0 0','fttr_link 5 1','fpga_init 1',
+                            'calibration 1','omci_link 02:03:04:05:06:07','tx_enable 1','fttr_accel 1']
                     assert log.read_text().splitlines()==expected_commands
                     replacement=subprocess.Popen(argv,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
                     try:
@@ -135,13 +142,13 @@ def main():
                         process.send_signal(signal.SIGTERM);_,errors=process.communicate(timeout=10)
                         assert process.returncode==0,errors
                         wait(replacement,lambda:state().get('state')=='running' and state().get('pid')==replacement.pid)
-                        assert log.read_text().splitlines().count('reset 1')==2
+                        assert log.read_text().splitlines().count('reset 1' if args.backend=='asic9690' else 'fpga_init 1')==2
                         replacement.send_signal(signal.SIGTERM);_,errors=replacement.communicate(timeout=10)
                         assert replacement.returncode==0,errors
                     finally:
                         if replacement.poll() is None:replacement.terminate();replacement.communicate(timeout=10)
                 elif bad=='stop-during-init':
-                    wait(process,lambda:'pon_serdes 3\n' in log.read_text())
+                    wait(process,lambda:('pon_serdes 3\n' if args.backend=='asic9690' else 'fpga_init 1\n') in log.read_text())
                     process.send_signal(signal.SIGTERM);_,errors=process.communicate(timeout=10)
                     assert process.returncode==0,errors
                     assert 'core_init 1' not in log.read_text()
@@ -158,7 +165,7 @@ def main():
             finally:
                 if process.poll() is None:process.terminate();process.communicate(timeout=10)
     args.output.parent.mkdir(parents=True,exist_ok=True)
-    args.output.write_text(json.dumps({'factory_parameters_imported':True,'stale_parameters_revoked':True,
+    args.output.write_text(json.dumps({'backend':args.backend,'factory_parameters_imported':True,'stale_parameters_revoked':True,
         'native_bootstrap_command_order':True,'link_marker_core_errors_stop_before_tx':True,
         'stop_during_init_closes_hardware':True,'restart_waits_for_previous_owner':True,
         'real_netdev_ioctls_in_private_namespace':True,'modeled_hardware':'sysfs write/show callbacks',
