@@ -3610,8 +3610,16 @@ to an existing per-UNI bridge returns35. An explicit UNI-binding mask instead
 selects the Ethernet UNI bridge. Thus mapping the default to a wildcard native
 policy for Ethernet ordinal0 would be an unsupported change in topology.
 
-Nine producer recipes,33 first-failure/recovery paths,12 API translations and
-four bridge-selection branches execute successfully in the offline oracle.
+The original `plr_gponrm_cfg_uni_bp_autocfg` (`b68c4`) visits Ethernet and
+VEIP through separate helpers (`b6310`, `b65e8`). Executing them with different
+configured/reported card and UNI counts confirms that each uses the smaller
+count and attaches every selected UNI to the shared bridge. It does not discard
+the Ethernet UNIs merely because a VEIP exists. Three mixed/missing-card cases
+exercise these enumeration limits; counts and MIB boundaries are modeled.
+
+Nine producer recipes,33 first-failure/recovery paths,12 API translations,
+four bridge-selection branches and these UNI enumerations execute successfully
+in the offline oracle.
 The report is `artifacts/fttr/default-service-original-20261106.json`. Remote
 configuration/MIB storage, configuration records and semaphore operations are
 modeled; the bridge selector stops before GEM inventory. This research does

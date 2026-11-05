@@ -180,6 +180,49 @@ def bridge_selection(binary):
     return cases
 
 
+def shared_uni_selection(binary):
+    """Run original Ethernet/VEIP enumeration with differing configured/reported counts."""
+    calls = []
+    configured, reported = {}, {}
+    def hook(name, args):
+        for prefix, counts in (('plr_gponrm_cfg_card_', configured), ('plr_gponrm_card_', reported)):
+            for kind in ('eth', 'veip'):
+                if name == prefix + kind + '_num_get': return len(counts[kind])
+                if name == prefix + kind + '_uni_num_get':
+                    oracle.uc.mem_write(args[2], struct.pack('<H', counts[kind][args[1]]))
+                    return 0
+        if name == 'plr_gponrm_cfg_bridge_mode_get': return 1
+        if name == 'plr_gponrm_dft_mbs_me_id_get':
+            oracle.uc.mem_write(args[1], struct.pack('<H', 0x8080)); return 0
+        if name == 'plr_gponrm_uni_bp_add':
+            data = bytes(oracle.uc.mem_read(args[1], 20))
+            card = struct.unpack_from('<H', data, 4)[0]
+            kind = struct.unpack_from('<I', data, 8)[0]
+            uni = struct.unpack_from('<H', data, 12)[0]
+            bridge = struct.unpack_from('<H', data, 16)[0]
+            calls.append([kind, card, uni, bridge])
+            return 0
+        raise AssertionError(('unmodeled UNI enumeration', name))
+    overrides = ['plr_gponrm_cfg_bridge_mode_get', 'plr_gponrm_dft_mbs_me_id_get', 'plr_gponrm_uni_bp_add']
+    for prefix in ('plr_gponrm_cfg_card_', 'plr_gponrm_card_'):
+        for kind in ('eth', 'veip'):
+            overrides += [prefix + kind + '_num_get', prefix + kind + '_uni_num_get']
+    oracle = ElfOracle(binary, hook, overrides)
+    cases = []
+    for configured, reported in (
+            ({'eth': [4], 'veip': [1]}, {'eth': [2], 'veip': [1]}),
+            ({'eth': [2], 'veip': [2]}, {'eth': [4, 2], 'veip': [1]}),
+            ({'eth': [], 'veip': [1]}, {'eth': [4], 'veip': []})):
+        calls.clear()
+        assert oracle.call('plr_gponrm_cfg_uni_bp_autocfg', oracle.scratch + 0x2000) == 0
+        expected = [[value, card, uni, 0x8080] for kind, value in (('eth', 0), ('veip', 2))
+                    for card in range(min(len(configured[kind]), len(reported[kind])))
+                    for uni in range(min(configured[kind][card], reported[kind][card]))]
+        assert calls == expected, (calls, expected)
+        cases.append(dict(configured=configured, reported=reported, attachments=list(calls)))
+    return cases
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ('caller', 'relay', 'output'):
@@ -209,6 +252,7 @@ def main():
                     for onu in (1, 6, 63) for slot in (1, 7)]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(dict(cases=cases, failures=failures, translations=translations, bridge_selection=bridge_selection(args.relay),
+        shared_uni_selection=shared_uni_selection(args.relay),
         caller_sha256=hashlib.sha256(args.caller.read_bytes()).hexdigest(),
         relay_sha256=hashlib.sha256(args.relay.read_bytes()).hexdigest(),
         findings=['Default two-slot ONU creates one named T-CONT/GEM/flow and enables multicast.',
@@ -217,7 +261,7 @@ def main():
                   'With the first default flow, the original selector chooses the shared bridge; it does not select Ethernet UNI ordinal0.',
                   'Original failed provisioning deletes/re-adds the ONU, preserves the initiating error and ignores cleanup results.'],
         scope='Actual original producer and flow API adaptation; allocator/remote OMCI, semaphore, configuration owner and reset IO are modeled. No complete service/topology/traffic or hardware acceptance.'), indent=2) + '\n')
-    print(f'PASS: {len(cases)} original default/multi-slot recipes, {len(failures)} failure paths, {len(translations)*2} flow adapter calls')
+    print(f'PASS: {len(cases)} original default/multi-slot recipes, {len(failures)} failure paths, {len(translations)*2} flow adapter calls, 4 bridge selections and 3 shared-UNI enumerations')
 
 
 if __name__ == '__main__': main()
