@@ -1,6 +1,7 @@
 # TYFZA1 native FTTR worktree
 
-Base: `dcf470f`, version `0.7.0-alpha`. Branch `fttr-rewrite`.
+Original base: `dcf470f` (`0.7.0-alpha`). Branch `fttr-rewrite` now includes
+`main` through `9331c6e`, merged in `61d24e6`.
 Production DTs, release configuration, and the primary checkout are unchanged.
 
 ## Original hardware evidence
@@ -64,8 +65,9 @@ It does not use the names of the original libraries as a capability probe.
   Source7 and logical LLIDs keep using the upstream ONU endpoint. CPU-facing
   carrier uses the original P6 clock/link bits, not the optical ONU count.
   A delayed worker reads the real link state; close cancels it, retires DMA
-  ownership and detaches RX before freeing the device. FE/PE offload for this
-  interface is pending; the interface currently uses the kernel data path.
+  ownership and detaches RX before freeing the device. P6 CF admission and
+  FE flow programming are implemented below; real hardware hits and packet
+  retirement remain unverified.
 * ASIC9690 peer WTG HSGMII/USXGMII and all three original PON SerDes modes.
   These are separate from the SoC P6 initialization. Original field updates,
   analog writes, soft reset/OTP/pause settings, and mode-2 upstream settings
@@ -1072,10 +1074,10 @@ tables underneath an unconfirmed route.
 
 `fttr_accel` reads report`requested`, `admitted`, `live`, `owned`, CF index,
 destination, primary FE/CF errors and separate withdrawal/CF restoration
-errors. Requested admission does not enable the global FE owner by itself;
-`admitted=1` also requires that owner and the FTTR parent to be active.
-It describes programmed setup, not measured hits, bandwidth or an optical
-link. Coordination of global FE ownership for standalone FTTR remains work.
+errors. With an active FTTR parent, requested admission now starts the shared
+FE tables without requiring the upstream PON to be enabled. `admitted=1`
+still describes programmed setup, not measured hits, bandwidth or an optical
+link. PON and FTTR hold independent enable requests; details follow below.
 
 The resident controller requires this new NI operation. Startup withdraws
 before deleting prior-process ports. Service replacement/reconciliation
@@ -1104,6 +1106,41 @@ parser/editor support is limited to two wire VLAN tags, including the outer
 GEM tag; customer QinQ with three total tags continues through Linux. Traffic
 between two ONUs on the same physical P6 also retains the current software
 path. Actual P6 Hash keys/hits, optical traffic and throughput remain unverified.
+
+### Shared FE ownership after main alignment
+
+The main alignment in `61d24e6` retains asynchronous LAN4 registration, optional
+NI services, current DMA/QM/PE code and the factory-storage layout. Both FTTR
+DTs now retain the required DMA AXI reorder window alongside P6/QX. FTTR BOSA
+calibration uses a package-installed symlink, matching the main read-only
+firmware layout. Main itself is not changed by this merge.
+
+Previously `fttr_accel=1` only changed the CF destination if the upstream PON
+had already enabled FE. Standalone FTTR therefore never prepared the Hash,
+classifier, cache and packet-editor tables. FTTR now calls the same verified
+FE preparation transaction while holding the table mutex. Repeated requests
+are idempotent; a request made while the parent is closed takes effect on open.
+
+PON retains its own request. After its PDC ingress has switched to CPU16,
+PON disable blocks new source7 flows, invalidates queued bridge learning and
+withdraws every flow with source7 at either endpoint. Active FTTR keeps the
+shared tables and its unrelated flows. Failed withdrawal is returned and a
+subsequent PON enable must finish that withdrawal before reopening admission.
+FTTR disable/close retains the analogous P6 barrier. The last active owner
+restores the original FE snapshot; final supplier removal withdraws both.
+
+`scripts/test_fttr_fe.py` executes the production owner transactions and
+flow-admission checks, using real CF helpers and modeled indirect tables,
+flow deletion and global preparation. It covers standalone FTTR, enable-before-
+open, both owner orders, both PON directions, failed deletion/re-enable,
+failed preparation/restoration and last-owner release under ASan/UBSan.
+`scripts/test_fe_lan_lifecycle.py` still executes actual shared preparation
+and restoration against five distinct LAN register states. The unchanged
+CF bytes are compared again to actual FC/NI ARM64 execution in
+`artifacts/fttr/main-20261105/cf-stock.json`. GCC14.4/musl compiles and links
+the current 6.18.55 NI composite object (`fe-owner-build.log` in that directory).
+These checks establish software transactions, not physical queue retirement
+or measured FTTR acceleration. Those remain required acceptance work.
 
 ### P6 ES queue flush and remaining producer barrier
 

@@ -117,7 +117,7 @@ struct rtl_fe {
  struct rb_root cookies;
  void *memory;
  dma_addr_t dma;
- bool enabled, prepared;
+ bool enabled, prepared, pon_requested;
  int error;
  u64 installs, deletes, misses;
  unsigned int saved[ARRAY_SIZE(fe_registers)], mask_saved[8];
@@ -942,6 +942,9 @@ retry:
  mod_delayed_work(system_wq,&fe->cleanup_work,HZ);
  return ret;
 }
+static int fe_enable_locked(struct rtl_fe *fe);
+static int fe_disable_locked(struct rtl_fe *fe);
+
 static int fe_fttr_route_locked(struct rtl_fe *fe,bool accelerate)
 {
  struct rtl_dq_io io=fe_io(fe);
@@ -993,6 +996,7 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
  if(port->retired)return -ENODEV;
  if((data.input->netdev==fe->fttr_netdev || data.output->netdev==fe->fttr_netdev) &&
     !fe->fttr_admitted)return -EAGAIN;
+ if((data.input->source==7 || data.output->source==7) && !fe->pon_requested)return -EAGAIN;
  if(!fe->enabled || !netif_running(data.input->netdev) || !netif_running(data.output->netdev) ||
     !netif_carrier_ok(data.input->netdev) || !netif_carrier_ok(data.output->netdev))return -EAGAIN;
  if(fe_flow(fe,cookie))return -EEXIST;
@@ -1345,7 +1349,8 @@ int rtl_fe_fttr_open(struct rtl_fe *fe)
  if(!ret)ret=rtl_fttr_cf_destination(&io,&fe->fttr_cf,16);
  if(!ret) {
   fe->fttr_live=true;
-  ret=fe_fttr_route_locked(fe,fe->enabled);
+  if(fe->fttr_requested && !fe->enabled)ret=fe_enable_locked(fe);
+  else ret=fe_fttr_route_locked(fe,fe->enabled);
  }
  if(ret) {
   fe->fttr_live=false;
@@ -1367,6 +1372,7 @@ int rtl_fe_fttr_close(struct rtl_fe *fe)
  fe->fttr_live=false;
  ret=fe_fttr_quiesce_locked(fe);
  if(!ret)ret=rtl_fttr_cf_release(&io,&fe->fttr_cf);
+ if(!ret && !fe->pon_requested)ret=fe_disable_locked(fe);
  fe->error=ret;
  mutex_unlock(&fe->lock);
  return ret;
@@ -1380,7 +1386,11 @@ int rtl_fe_fttr_set(struct rtl_fe *fe,bool allowed)
  mutex_lock(&fe->lock);
  fe->fttr_requested=allowed;
  ret=fe_fttr_quiesce_locked(fe);
- if(!ret && allowed)ret=fe_fttr_route_locked(fe,fe->enabled);
+ if(!ret && allowed) {
+  if(fe->fttr_live && !fe->enabled)ret=fe_enable_locked(fe);
+  else ret=fe_fttr_route_locked(fe,fe->enabled);
+ }
+ if(!ret && !allowed && !fe->pon_requested)ret=fe_disable_locked(fe);
  fe->error=ret;
  mutex_unlock(&fe->lock);
  return ret;
@@ -1547,33 +1557,56 @@ static int fe_disable_locked(struct rtl_fe *fe)
  fe_collect_ports(fe);
  return ret;
 }
-int rtl_fe_enable(struct rtl_fe *fe)
+static int fe_enable_locked(struct rtl_fe *fe)
 {
  unsigned int i;
  int ret;
 
- if(!fe)return -EOPNOTSUPP;
- mutex_lock(&fe->lock);
- if(fe->enabled){ret=0;goto unlock;}
+ if(fe->enabled){ret=0;goto out;}
  /* An unfinished rollback still owns the original register snapshot. */
  if(fe->prepared) {
   ret=fe_disable_locked(fe);
-  if(ret)goto unlock;
+  if(ret)goto out;
  }
  ret=fe_prepare(fe);
- if(ret){fe_restore(fe);goto unlock;}
+ if(ret){fe_restore(fe);goto out;}
  ret=fe_fttr_route_locked(fe,true);
  if(ret) {
   int cleanup=fe_fttr_quiesce_locked(fe);
   if(!cleanup)cleanup=fe_restore(fe);
   fe->fttr_cleanup_error=cleanup;
-  goto unlock;
+  goto out;
  }
  /* The DMA tables, miss actions and port maps exist before admitting LAN. */
  for(i=0;i<FE_LAN_PORTS;i++)
   fe_write(fe,FE_LAN_RX_CTRL(i),(fe_read(fe,FE_LAN_RX_CTRL(i))&~(63U<<16))|(25U<<16));
  fe->enabled=true;
-unlock:
+out:
+ return ret;
+}
+static int fe_pon_quiesce_locked(struct rtl_fe *fe)
+{
+ struct rtl_fe_flow *flow,*next;
+ int ret=0;
+
+ fe_bridge_invalidate(fe);
+ list_for_each_entry_safe(flow,next,&fe->flows,list)
+  if(flow->input->source==7 || flow->output->source==7) {
+   ret=fe_delete(fe,flow);
+   if(ret)break;
+  }
+ fe_collect_ports(fe);
+ return ret;
+}
+int rtl_fe_enable(struct rtl_fe *fe)
+{
+ int ret;
+
+ if(!fe)return -EOPNOTSUPP;
+ mutex_lock(&fe->lock);
+ ret=fe->pon_requested?0:fe_pon_quiesce_locked(fe);
+ if(!ret)ret=fe_enable_locked(fe);
+ if(!ret)fe->pon_requested=true;
  fe->error=ret;
  mutex_unlock(&fe->lock);
  return ret;
@@ -1584,7 +1617,11 @@ int rtl_fe_disable(struct rtl_fe *fe)
 
  if(!fe)return 0;
  mutex_lock(&fe->lock);
- ret=fe_disable_locked(fe);
+ /* PDC has already returned PON ingress to CPU16. Stop learning source7
+  * in either direction before deleting its flows. FTTR may still need FE. */
+ fe->pon_requested=false;
+ if(fe->fttr_live && fe->fttr_requested)ret=fe_pon_quiesce_locked(fe);
+ else ret=fe_disable_locked(fe);
  fe->error=ret;
  mutex_unlock(&fe->lock);
  return ret;
@@ -1598,7 +1635,11 @@ void rtl_fe_free(struct rtl_fe *fe)
 
  if(!fe)return;
  /* Quiesce still invalidates bridge generations; keep that owner alive. */
- ret=rtl_fe_disable(fe);
+ mutex_lock(&fe->lock);
+ fe->pon_requested=false;
+ fe->fttr_requested=false;
+ ret=fe_disable_locked(fe);
+ mutex_unlock(&fe->lock);
  if(ret)dev_err(fe->device,"FE withdrawal failed during removal: %d\n",ret);
  fe_bridge_stop(fe->bridge);
  debugfs_remove_recursive(fe->debug);
@@ -1626,8 +1667,8 @@ ssize_t rtl_fe_state(struct rtl_fe *fe,char *buffer)
   counted+=flow->counted;
   bridged+=flow->bridge;learned+=flow->learned;
  }
- length=sysfs_emit(buffer,"available=1 enabled=%u prepared=%u error=%d flows=%u hash_entries=%u counter_slots=%u counted_flows=%u activity_flows=%u installs=%llu deletes=%llu rejected=%llu bridge_rules=%u learned_bridge_rules=%u\n",
-  fe->enabled,fe->prepared,fe->error,flows,RTL_FE_HASH_ENTRIES,
+ length=sysfs_emit(buffer,"available=1 enabled=%u prepared=%u pon_requested=%u error=%d flows=%u hash_entries=%u counter_slots=%u counted_flows=%u activity_flows=%u installs=%llu deletes=%llu rejected=%llu bridge_rules=%u learned_bridge_rules=%u\n",
+  fe->enabled,fe->prepared,fe->pon_requested,fe->error,flows,RTL_FE_HASH_ENTRIES,
   FE_COUNTERS,counted,flows-counted,fe->installs,fe->deletes,fe->misses,bridged,learned);
  mutex_unlock(&fe->lock);
  return length;

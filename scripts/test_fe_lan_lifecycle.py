@@ -17,7 +17,7 @@ relative = str((drivers / 'rtl9617c-fe.c').relative_to(root))
 source = subprocess.check_output(['git', 'show', args.revision + ':' + relative], text=True) if args.revision else (drivers / 'rtl9617c-fe.c').read_text()
 
 def function(name):
-    start = re.search(r'^(?:static )?int ' + name + r'\(', source, re.M).start()
+    start = re.search(r'^(?:static )?int ' + name + r'\([^;]*?\)\n\{', source, re.M).start()
     end = source.index('{', start) + 1
     depth = 1
     while depth:
@@ -46,12 +46,14 @@ common = r'''
 #define upper_32_bits(v) ((unsigned int)((uint64_t)(v)>>32))
 struct mutex {int unused;};
 struct list_head {int unused;};
-struct rtl_fe_flow {int unused;};
+struct rtl_fe_port {unsigned int source;};
+struct rtl_fe_flow {struct rtl_fe_port *input,*output;};
 #define list_for_each_entry_safe(p,n,h,m) for(p=NULL,n=NULL;p;p=n)
 static void mutex_lock(struct mutex *m){(void)m;}
 static void mutex_unlock(struct mutex *m){(void)m;}
 struct rtl_fe {
  void *fttr_netdev;
+ bool pon_requested,fttr_live,fttr_requested;
  int fttr_cleanup_error;
  struct mutex lock;struct list_head flows;
  uint64_t dma;bool prepared,enabled;int error;
@@ -125,6 +127,7 @@ static int fe_access(void *ctx,unsigned int reg,unsigned int value){
 }
 static struct rtl_dq_io fe_io(struct rtl_fe *f){return (struct rtl_dq_io){f,fe_read,fe_write,fe_access};}
 static void fe_collect_ports(struct rtl_fe *f){(void)f;}
+static void fe_bridge_invalidate(struct rtl_fe *f){(void)f;}
 /* This check models no FTTR endpoint; P6 transactions have their own check. */
 static int fe_fttr_quiesce_locked(struct rtl_fe *f){assert(!f->fttr_netdev);return 0;}
 static int fe_fttr_route_locked(struct rtl_fe *f,bool enable){(void)enable;assert(!f->fttr_netdev);return 0;}
@@ -215,6 +218,8 @@ int main(void){
 functions = ['fe_prepare', 'fe_restore']
 if re.search(r'^static int fe_disable_locked\(', source, re.M):
     functions.append('fe_disable_locked')
+if re.search(r'^static int fe_enable_locked\(', source, re.M):
+    functions += ['fe_enable_locked', 'fe_pon_quiesce_locked']
 functions += ['rtl_fe_enable', 'rtl_fe_disable']
 with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='fe-lan-lifecycle-') as work:
     path = Path(work) / 'test.c'
