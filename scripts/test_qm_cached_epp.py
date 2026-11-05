@@ -10,6 +10,14 @@ source=(args.source or root/'port/overlay/target/linux/rtl9617c/files-6.18/drive
 tree=ast.parse((root/'scripts/test_ni_rx_credit.py').read_text())
 common=next(ast.literal_eval(n.value) for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='common' for t in n.targets))
 common=common.replace('struct rtl9617c_ni_endpoint *pon;', 'struct rtl9617c_ni_endpoint *pon,*fttr;')
+common=common.replace('struct rtl_qm_rx {', '''
+static struct sk_buff *napi_alloc_skb(struct napi_struct *,unsigned);
+static void *skb_put(struct sk_buff *,unsigned);
+static void dev_kfree_skb_any(struct sk_buff *);
+#include <errno.h>
+#include "rtl9617c-fttr-rx.h"
+struct rtl_qm_rx {struct rtl_fttr_rx fttr_rx[8];unsigned fttr_epoch;
+''')
 common=common.replace('static bool seen[129];', 'static bool seen[129];static u8 hardware_ring[8192];static unsigned syncs;')
 common=common.replace('void *entry=active->ring_memory+(producer%128)*8;', 'void *entry=hardware_ring+(producer%128)*8;')
 a=common.index('static void dma_sync_single_for_cpu(');b=common.index('static int rtl_qm_try_push',a)
@@ -83,7 +91,9 @@ typedef uint32_t u32;
 #define CB_CTRL 0x950c
 #define RMU_CTRL 0x6104
 #define ES_CTRL 0x6108
-struct rtl_qm_rx {void *ni,*device,*ring_memory,*memory;unsigned ring_dma,memory_dma,read[8],trace_count;bool deepq_configured;};
+struct rtl_fttr_rx {int unused;};
+static void rtl_fttr_rx_reset(struct rtl_fttr_rx *r){(void)r;}
+struct rtl_qm_rx {struct rtl_fttr_rx fttr_rx[8];void *ni,*device,*ring_memory,*memory;unsigned ring_dma,memory_dma,read[8],trace_count;bool deepq_configured;};
 static unsigned char registers[65536],cpu[8192],hardware[8192];
 static unsigned synced,retired,reordered;
 static u32 readl(void *p){u32 v;memcpy(&v,p,4);return v;}

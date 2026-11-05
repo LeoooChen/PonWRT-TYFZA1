@@ -718,6 +718,7 @@ static int rtl_fttr_open(struct net_device *dev)
 
 	if (!port->shared->p6.configured)
 		return -ENETDOWN;
+	WRITE_ONCE(port->shared->qm.fttr_epoch, port->shared->qm.fttr_epoch + 1);
 	ret = rtl_engine_get(port->shared);
 	if (ret)
 		return ret;
@@ -736,6 +737,7 @@ static int rtl_fttr_stop(struct net_device *dev)
 	struct rtl_fttr_port *port = netdev_priv(dev);
 	int ret;
 
+	WRITE_ONCE(port->shared->qm.fttr_epoch, port->shared->qm.fttr_epoch + 1);
 	netif_stop_queue(dev);
 	cancel_delayed_work_sync(&port->link_work);
 	netif_carrier_off(dev);
@@ -1455,6 +1457,8 @@ static ssize_t fttr_accel_store(struct device *dev, struct device_attribute *att
 	if (ret)
 		return ret;
 	rtnl_lock();
+	if (!allowed)
+		WRITE_ONCE(priv->qm.fttr_epoch, priv->qm.fttr_epoch + 1);
 	ret = rtl_fe_fttr_set(priv->fe, allowed);
 	rtnl_unlock();
 	return ret ? ret : count;

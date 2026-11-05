@@ -51,7 +51,9 @@ static unsigned char ni[65536];
 static void writel(u32 value,void *p){memcpy(p,&value,4);}
 static u32 readl(const void *p){u32 value;memcpy(&value,p,4);return value;}
 struct device { int unused; };
-struct rtl_qm_rx {
+struct rtl_fttr_rx {int unused;};
+static void rtl_fttr_rx_reset(struct rtl_fttr_rx *r){(void)r;}
+struct rtl_qm_rx {struct rtl_fttr_rx fttr_rx[8];
  struct device *device;
  int fttr_supported;void *fttr_memory;dma_addr_t fttr_dma;
  void *memory,*ring_memory,*deepq_memory;

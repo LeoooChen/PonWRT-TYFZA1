@@ -510,6 +510,8 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 
 void rtl_qm_rx_stop(struct rtl_qm_rx *rx)
 {
+	for (unsigned int cos = 0; cos < RTL_QM_VOQS; cos++)
+		rtl_fttr_rx_reset(&rx->fttr_rx[cos]);
 	rx->deepq_configured = false;
 	writel(readl(rx->ni + CB_CTRL) & ~BIT(31), rx->ni + CB_CTRL);
 	writel(readl(rx->ni + 0x610c) & ~0xffffU, rx->ni + 0x610c);
@@ -519,6 +521,8 @@ void rtl_qm_rx_stop(struct rtl_qm_rx *rx)
 
 void rtl_qm_rx_free(struct device *dev, struct rtl_qm_rx *rx)
 {
+	for (unsigned int cos = 0; cos < RTL_QM_VOQS; cos++)
+		rtl_fttr_rx_reset(&rx->fttr_rx[cos]);
 	for (unsigned int pool = 0; pool < RTL_QM_PE_POOLS; pool++)
 		if (rx->wifi_epp[pool])
 			dma_free_coherent(dev, 8 * RTL9617C_WIFI_EPP_BYTES,
@@ -592,6 +596,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			unsigned int source, wifi_id;
 			bool wifi_forwarded;
 			bool refill_buffer = false;
+			int segment;
 
 			dma_rmb();
 			command = get_unaligned_le32(entry);
@@ -607,6 +612,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			if (offset < RTL_QM_RING_BYTES * RTL_QM_VOQS ||
 			    offset >= RTL_QM_MEMORY_BYTES ||
 			    ((command & 0xf) != EQ_ID && (command & 0xf) != EQ_ID + 1)) {
+				rtl_fttr_rx_reset(&rx->fttr_rx[cos]);
 				dev->stats.rx_errors++;
 				goto consume;
 			}
@@ -615,6 +621,16 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			 * payload buffer before reading it through the CPU's cached map. */
 			dma_sync_single_for_cpu(rx->device, rx->memory_dma + offset,
 				RTL_QM_BUFFER_BYTES, DMA_FROM_DEVICE);
+			if (!(command & BIT(4))) {
+				segment = rtl_fttr_rx_segment(&rx->fttr_rx[cos], napi, command,
+					rx->memory + offset + RTL_QM_HEADROOM, RTL_QM_DATA_BYTES,
+					0, 0, READ_ONCE(rx->fttr_epoch), ktime_get_ns(), &skb);
+				if (segment < 0) { dev->stats.rx_errors++; goto consume; }
+				source = rx->fttr_rx[cos].source;
+				rtl_qm_rx_retire(rx, cos, command, refill_buffer);
+				goto fttr_packet;
+			}
+			rtl_fttr_rx_reset(&rx->fttr_rx[cos]);
 			h0 = get_unaligned_be32(rx->memory + offset + RTL_QM_HEADROOM);
 			h1 = get_unaligned_be32(rx->memory + offset + RTL_QM_HEADROOM + 4);
 			rx->last_header[0] = h0;
@@ -630,6 +646,18 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				if (payload < 0) { dev->stats.rx_errors++; goto consume; }
 				length = payload;
 				header = RTL_WIFI_INTERNAL_BYTES;
+			}
+			if (!wifi_forwarded && !(command & BIT(6))) {
+				segment = rtl_fttr_rx_segment(&rx->fttr_rx[cos], napi, command,
+					rx->memory + offset + RTL_QM_HEADROOM + header, RTL_QM_DATA_BYTES - header,
+					length, FIELD_GET(GENMASK(14, 9), h1) |
+					(FIELD_GET(GENMASK(26, 18), h0) << 8),
+					READ_ONCE(rx->fttr_epoch), ktime_get_ns(), &skb);
+				if (segment < 0) {
+					if (segment == -ENOMEM) dev->stats.rx_dropped++;
+					else dev->stats.rx_errors++;
+				}
+				goto consume;
 			}
 			if ((command & (BIT(4) | BIT(6))) != (BIT(4) | BIT(6)) ||
 			    length < ETH_HLEN || length > RTL_QM_DATA_BYTES - header) {
@@ -680,15 +708,16 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				rcu_read_unlock();
 				continue;
 			}
-			if (source >= ARRAY_SIZE(rx->lan)) {
+			source |= FIELD_GET(GENMASK(26, 18), h0) << 8;
+			if ((source & 255) >= ARRAY_SIZE(rx->lan)) {
 				struct rtl9617c_ni_endpoint *endpoint;
+fttr_packet:
 
 				rcu_read_lock();
-				endpoint = source == 6 ? rcu_dereference(rx->fttr) :
-					(source == 7 || source >= 32) ? rcu_dereference(rx->pon) : NULL;
+				endpoint = (source & 255) == 6 ? rcu_dereference(rx->fttr) :
+					((source & 255) == 7 || (source & 255) >= 32) ? rcu_dereference(rx->pon) : NULL;
 				if (endpoint)
-					endpoint->receive(endpoint, napi, skb, source |
-						(FIELD_GET(GENMASK(26, 18), h0) << 8));
+					endpoint->receive(endpoint, napi, skb, source);
 				else {
 					dev->stats.rx_dropped++;
 					dev_kfree_skb_any(skb);
@@ -697,7 +726,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				continue;
 			}
 			rcu_read_lock();
-			input = rcu_dereference(rx->lan[source]);
+			input = rcu_dereference(rx->lan[source & 255]);
 			if (!input || !netif_running(input)) {
 				dev->stats.rx_dropped++;
 				dev_kfree_skb_any(skb);

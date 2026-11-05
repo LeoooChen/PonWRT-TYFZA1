@@ -8,12 +8,12 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 path = root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-qm.c'
 text = path.read_text()
-start = text.index('if (source >= ARRAY_SIZE(rx->lan)) {')
+start = text.index('if ((source & 255) >= ARRAY_SIZE(rx->lan)) {')
 end, depth = text.index('{', start) + 1, 1
 while depth:
     depth += (text[end] == '{') - (text[end] == '}')
     end += 1
-branch = text[start:end]
+branch = text[start:end].replace("fttr_packet:\n", "")
 shim = r'''
 #include <stddef.h>
 #include <stdint.h>
@@ -41,7 +41,8 @@ unsigned int dispatch(unsigned int source,int fttr,int pon) {
  struct rtl9617c_ni_endpoint a={fttr_rx},b={pon_rx};
  struct rx r={.fttr=fttr?&a:0,.pon=pon?&b:0},*rx=&r;
  struct device d={0},*dev=&d;struct napi_struct np,*napi=&np;
- struct sk_buff packet,*skb=&packet;unsigned int h0=123U<<18;
+ struct sk_buff packet,*skb=&packet;
+ source |= 123U<<8;
  delivered=tag=freed=0;
  for (unsigned int packet_index=0;packet_index<1;packet_index++) {
 '''

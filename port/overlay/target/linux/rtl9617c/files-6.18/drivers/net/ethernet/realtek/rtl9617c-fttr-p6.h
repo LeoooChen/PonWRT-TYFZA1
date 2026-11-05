@@ -2,8 +2,7 @@
 #ifndef RTL9617C_FTTR_P6_H
 #define RTL9617C_FTTR_P6_H
 
-/* 2 KiB QM buffer minus 32-byte headroom, full header and possible Ethernet FCS. */
-#define RTL_FTTR_FRAME_BYTES 1996
+#include "rtl9617c-fttr-frame.h"
 
 struct platform_device;
 struct reset_control;

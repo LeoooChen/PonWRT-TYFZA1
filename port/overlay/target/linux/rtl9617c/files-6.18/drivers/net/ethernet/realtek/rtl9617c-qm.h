@@ -9,6 +9,7 @@
 #include "rtl9617c-qm-refill.h"
 #include "rtl9617c-qm-deepq.h"
 #include "rtl9617c-fttr-qm.h"
+#include "rtl9617c-fttr-rx.h"
 #include "rtl9617c-wifi-format.h"
 
 #define RTL_QM_RING_BYTES 1024
@@ -37,6 +38,8 @@ struct rtl_qm_rx {
 	struct device *device;
 	void *ring_memory;
 	dma_addr_t ring_dma;
+	struct rtl_fttr_rx fttr_rx[RTL_QM_VOQS];
+	unsigned int fttr_epoch;
 	bool fttr_supported;
 	void *fttr_memory;
 	dma_addr_t fttr_dma;

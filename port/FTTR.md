@@ -92,8 +92,9 @@ It does not use the names of the original libraries as a capability probe.
   native `fttrctl` and `fttrd` executables. Automatic MIB inventory and explicit
   policy-driven service provisioning are implemented; authentication remains work.
 * `fttr0` MTU 1982, with a 1996-byte Ethernet frame budget. This fits the
-  existing 2048-byte QM buffers with 32-byte headroom, a full 16-byte header
-  and a possible 4-byte FCS. The MAC threshold is 2000; the shared NI maximum
+  existing2048-byte DMA TX storage. With the current64-byte headroom/384-byte
+  tailroom CPU QM layout, RX frames above1592/1584 payload bytes use two
+  EPP buffers and are reassembled natively (see the segmented RX section). The MAC threshold is 2000; the shared NI maximum
   is raised to 2000 only when it is smaller. Both fields come from actual
   original `aal_ni_xge_mac_frame_len_set` / `aal_ni_pkt_len_set` execution.
   Ordinary 1500-byte configuration would reject long OMCI frames in AF_PACKET.
@@ -1235,6 +1236,40 @@ Reports are under `artifacts/fttr/p6-deepq-20261105/`, including
 `kernel-build.log`. The current6.18.55 NI composite compiles with GCC14.4/musl.
 P6-to-P6 learning, complete producer/queue/MiniOLT retirement and real device
 acceptance remain outstanding.
+
+### Segmented CPU receive for long FTTR frames
+
+Main's stock-compatible CPU EQ layout reserves64 bytes of headroom and384
+bytes of tailroom. The previous FTTR code still advertised MTU1982, while
+QM accepted only SOP+EOP in one buffer and discarded long OMCI envelopes.
+Executing this unit's `ca_ni_rx_napi` arithmetic confirms first-segment
+payload1592 (HeaderA only) or1584 (HeaderA+CPU header), and continuation
+payload up to1600. These are the actual machine-code values, not a newer
+SDK's buffer-size constants.
+
+Native P6 RX now copies a long frame into a bounded1996-byte skb, one partial
+frame per COS. The first segment's source/POL_ID is retained; a continuation
+has payload after headroom and no new HeaderA. Every EPP/BID is retired after
+its bytes have been copied, including when the second EPP is published in a
+later NAPI poll. No additional hardware buffers are held by reassembly.
+A new SOP replaces an incomplete frame; malformed lengths/flags, allocation
+failure, a stale continuation or a one-second completion deadline reject
+completion. Parent open/close and acknowledged accelerator withdrawal advance
+a software generation so an old partial frame cannot complete after those
+transitions. Shared QM stop/free releases all partial skbs. This protects
+software reassembly only; it is not the outstanding physical producer or
+MiniOLT packet-retirement barrier.
+
+`scripts/test_fttr_rx.py` executes the original segment arithmetic and the
+actual native QM poll/stop using separately published DMA-ring bytes. Its768
+cases cover both header modes, boundary/max lengths, all8 COS queues, ring
+wrap, budget1, delayed continuation, first-buffer overwrite after early return,
+ENOMEM, oversize, timeout, generation change, stop, absent endpoint and invalid
+EOP. Byte-for-byte payload checks and ASan/UBSan pass. Existing source dispatch,
+17024 cached-EPP poll cases, allocation cleanup, P6 startup and FE ownership
+checks pass. The6.18.55 NI composite compiles/links with GCC14.4/musl.
+Reports are in `artifacts/fttr/p6-rx-20261105/`. Physical long-OMCI RX has not
+been tested; no hardware acceptance is implied.
 
 ### P6 ES queue flush and remaining producer barrier
 
