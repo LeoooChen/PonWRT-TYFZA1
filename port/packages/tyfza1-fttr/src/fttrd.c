@@ -28,10 +28,11 @@
 #include "omci-model.h"
 #include "omci-service.h"
 #include "omci-wifi.h"
+#include "omci-auth.h"
 #include "omci-socket.h"
 
 enum onu_phase { ONU_ABSENT, ONU_BLOCKED, ONU_MIB, ONU_INVENTORY, ONU_FAILED,
-	ONU_SERVICE, ONU_CONFIGURED, ONU_SERVICE_FAILED, ONU_SYNC, ONU_WIFI };
+	ONU_SERVICE, ONU_CONFIGURED, ONU_SERVICE_FAILED, ONU_SYNC, ONU_WIFI, ONU_AUTH, ONU_AUTH_FAILED };
 
 struct wifi_policy {
 	struct wifi_policy *next;
@@ -69,6 +70,7 @@ struct onu {
 	struct fttr_mib_job job;
 	struct fttr_mib_model model;
 	struct fttr_service_job service;
+	struct fttr_auth_job auth;
 	struct wifi_run *wifi, *wifi_current;
 	unsigned int wifi_count, wifi_configured;
 	int wifi_error, wifi_cleanup_error;
@@ -93,6 +95,7 @@ struct controller {
 	enum fttr_backend backend;
 	struct fttr_net net;
 	struct fttr_optical_monitor optical;
+	struct fttr_auth_config auth;
 	const char *interface;
 	uint16_t transaction;
 	int64_t observed_at;
@@ -291,7 +294,7 @@ static int remove_file(int store, unsigned int id, const char *suffix)
 static int publish(struct controller *c, const char *state, int error)
 {
 	static const char * const phases[] = { "absent", "blocked", "mib", "inventory", "failed",
-		"provision", "configured", "service-failed", "sync", "wifi" };
+		"provision", "configured", "service-failed", "sync", "wifi", "authentication", "auth-failed" };
 	int fd = openat(c->store, "status.json.new", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
 	FILE *file;
 	unsigned int id;
@@ -327,13 +330,18 @@ static int publish(struct controller *c, const char *state, int error)
 				"\"mib_sync_error\":%d,\"mib_sync_checked_ms\":%" PRId64 ",\"mib_rescans\":%u,"
 				"\"datapath_configured\":%s,\"datapath_error\":%d,\"datapath_cleanup_error\":%d,"
 				"\"wifi_instances\":%u,\"wifi_configured\":%u,\"wifi_error\":%d,\"wifi_cleanup_error\":%d,"
-				"\"temporary_deactivation\":%s}",
+				"\"temporary_deactivation\":%s,\"loid_auth_required\":%s,"
+				"\"loid_acquired\":%s,\"loid_result\":%u,\"loid_result_verified\":%s,"
+				"\"loid_authenticated\":%s,\"loid_auth_error\":%d,\"loid_fallback_error\":%d}",
 				u->service.configured ? "true" : "false", u->service.cleanup_error,
 				u->sync.valid ? "true" : "false", u->sync.value, u->sync.observed,
 				u->sync.error, u->sync.checked, u->rescans,
 				u->port.configured ? "true" : "false", u->datapath_error, u->datapath_cleanup_error,
 				u->wifi_count, u->wifi_configured, u->wifi_error, u->wifi_cleanup_error,
-				u->admin_pending ? "true" : "false");
+				u->admin_pending ? "true" : "false", c->auth.enabled ? "true" : "false",
+				u->auth.acquired ? "true" : "false", u->auth.result, u->auth.verified ? "true" : "false",
+				u->auth.phase == FTTR_AUTH_DONE && !u->auth.error ? "true" : "false",
+				u->auth.error, u->auth.fallback_error);
 		}
 		fputc(']', file);
 	}
@@ -631,6 +639,8 @@ static int start_wifi(struct controller *c, unsigned int id)
 	struct wifi_run **tail = &u->wifi;
 	const struct wifi_policy *policy;
 
+	if (c->auth.enabled && (u->auth.phase != FTTR_AUTH_DONE || !u->auth.verified || u->auth.error))
+		return -EACCES;
 	for (policy = c->wifi_policies; policy; policy = policy->next) {
 		if (!wifi_policy_matches(c, policy, u->identity))
 			continue;
@@ -726,6 +736,8 @@ static int start_service(struct controller *c, unsigned int id)
 	unsigned int ordinal = 0;
 	int ret;
 
+	if (c->auth.enabled && (u->auth.phase != FTTR_AUTH_DONE || !u->auth.verified || u->auth.error))
+		return -EACCES;
 	if (!match)
 		return 0;
 	config = match->config;
@@ -799,6 +811,7 @@ static int cancel(struct controller *c, unsigned int id, bool accel_paused)
 	struct onu *u = &c->onu[id];
 	int ret;
 
+	fttr_auth_cancel(&u->auth, -ESTALE);
 	if (u->wifi) {
 		cancel_wifi(u, -ESTALE);
 		ret = save_wifi(c, id);
@@ -870,6 +883,7 @@ static int cancel(struct controller *c, unsigned int id, bool accel_paused)
 	if (ret)
 		return ret;
 	fttr_mib_model_clear(&u->model);
+	memset(&u->auth, 0, sizeof(u->auth));
 	return 0;
 }
 
@@ -937,6 +951,57 @@ static int start_mib(struct controller *c, unsigned int id)
 	fprintf(u->dump, "{\"event\":\"mib_start\",\"id\":%u,\"serial\":\"", id);
 	hex(u->dump, u->identity, 8);
 	fputs("\"}\n", u->dump);
+	u->phase = ONU_MIB;
+	ret = fttr_auth_start(&u->auth, &c->auth, id, &c->transaction);
+	if (ret)
+		return ret;
+	if (c->auth.enabled) {
+		u->phase = ONU_AUTH;
+		return fttr_me_job_send(&u->auth.me, c->socket, &c->link, now_ms());
+	}
+	fttr_mib_job_start(&u->job, id, &c->transaction);
+	return fttr_mib_job_send(&u->job, c->socket, &c->link, now_ms());
+}
+
+static int auth_drive(struct controller *c, unsigned int id)
+{
+	struct onu *u = &c->onu[id];
+	struct fttr_onu_state expected = u->hardware;
+	int ret;
+
+	memcpy(expected.serial, u->identity, 8);
+	ret = fttr_miniolt_same(c->directory, id, &expected);
+	if (ret && ret != -ESTALE)
+		return ret;
+	if (ret)
+		fttr_auth_cancel(&u->auth, ret);
+	else {
+		ret = fttr_auth_advance(&u->auth, &c->auth, &c->transaction);
+		if (ret < 0)
+			return ret;
+		if (ret)
+			return fttr_me_job_send(&u->auth.me, c->socket, &c->link, now_ms());
+	}
+	if (u->auth.error) {
+		char pending[24], destination[24];
+
+		/* No service/Wi-Fi job or data port exists before this transaction.
+		 * Keep management available; a fresh registration/restart retries.
+		 */
+		fprintf(u->dump, "{\"event\":\"loid_auth\",\"result\":%u,\"verified\":%s,\"error\":%d}\n",
+			u->auth.result, u->auth.verified ? "true" : "false", u->auth.error);
+		ret = fclose(u->dump);
+		u->dump = NULL;
+		if (ret)
+			return -errno;
+		filename(pending, id, "pending");
+		filename(destination, id, "failed");
+		if (renameat(c->store, pending, c->store, destination))
+			return -errno;
+		u->job.error = u->auth.error;
+		u->phase = ONU_AUTH_FAILED;
+		return 0;
+	}
 	u->phase = ONU_MIB;
 	fttr_mib_job_start(&u->job, id, &c->transaction);
 	return fttr_mib_job_send(&u->job, c->socket, &c->link, now_ms());
@@ -1226,6 +1291,8 @@ static int complete(struct controller *c, unsigned int id)
 	if (!(current.downstream & (1U << 18)) || (current.downstream & (1U << 16)) ||
 	    memcmp(current.serial, u->identity, 8))
 		return failed(c, id, -ESTALE);
+	if (c->auth.enabled && (u->auth.phase != FTTR_AUTH_DONE || !u->auth.verified || u->auth.error))
+		return -EACCES;
 	ret = fttr_mib_model_dump(&u->model, u->dump);
 	if (ret)
 		return ret;
@@ -1261,6 +1328,13 @@ static int receive_message(struct controller *c)
 		fprintf(stderr, "FTTR OMCI receive error: %d, ONU=%u\n", error, message.onu);
 		if (message.onu < FTTR_ONUS && message.body) {
 			u = &c->onu[message.onu];
+			if (u->phase == ONU_AUTH &&
+			    ((uint16_t)message.body[0] << 8 | message.body[1]) == u->auth.me.transaction) {
+				u->auth.me.state = FTTR_ME_FAILED;
+				u->auth.me.error = error;
+				ret = auth_drive(c, message.onu);
+				return ret ? ret : publish(c, "running", 0);
+			}
 			if (u->sync.active &&
 			    ((uint16_t)message.body[0] << 8 | message.body[1]) == u->sync.job.transaction) {
 				u->sync.job.state = FTTR_ME_FAILED;
@@ -1303,6 +1377,12 @@ static int receive_message(struct controller *c)
 	if (message.onu >= FTTR_ONUS)
 		return 0;
 	u = &c->onu[message.onu];
+	if (u->phase == ONU_AUTH) {
+		if (!fttr_me_job_reply(&u->auth.me, &message))
+			return 0;
+		ret = auth_drive(c, message.onu);
+		return ret ? ret : publish(c, "running", 0);
+	}
 	if (u->phase == ONU_WIFI && u->wifi_current) {
 		if (!fttr_me_job_reply(&u->wifi_current->job.transaction.me, &message))
 			return 0;
@@ -1325,9 +1405,11 @@ static int receive_message(struct controller *c)
 	ret = fttr_mib_job_reply(&u->job, &message, &c->transaction, &record);
 	if (ret < 0) {
 		fprintf(u->dump, "{\"event\":\"mib_reply_error\",\"error\":%d,\"body\":\"", ret);
-		/* A malformed MIB reply may contain private Wi-Fi values. */
+		/* Preserve the transaction/class/instance header only: malformed
+		 * payloads cannot safely identify the private credential fields.
+		 */
 		if (!c->wifi_policies)
-			hex(u->dump, message.body, message.length);
+			hex(u->dump, message.body, message.length < 8 ? message.length : 8);
 		fputs("\"}\n", u->dump);
 		ret = failed(c, message.onu, ret);
 		return ret ? ret : publish(c, "running", 0);
@@ -1339,7 +1421,7 @@ static int receive_message(struct controller *c)
 
 		fprintf(u->dump, "{\"event\":\"mib_record\",\"sequence\":%u,\"class\":%u,"
 			"\"instance\":%u,\"mask\":%u,\"attributes\":\"", sequence, record.class_id, record.instance, record.mask);
-		if (record.class_id != 0xff69 && record.class_id != 0xff6a)
+		if (!fttr_mib_private(record.class_id, record.mask))
 			hex(u->dump, record.attributes, sizeof(record.attributes));
 		fputs("\"}\n", u->dump);
 		if (ferror(u->dump))
@@ -1586,6 +1668,34 @@ static int run(struct controller *c)
 					deadline = c->admin_scan_due;
 				if (c->backend == FTTR_ASIC9690 && u->admin_timeout < deadline)
 					deadline = u->admin_timeout;
+				continue;
+			}
+			if (u->phase == ONU_AUTH) {
+				struct fttr_me_job *me = &u->auth.me;
+				struct fttr_onu_state expected = u->hardware;
+
+				if (now >= me->deadline) {
+					memcpy(expected.serial, u->identity, 8);
+					ret = fttr_miniolt_same(c->directory, id, &expected);
+					if (ret && ret != -ESTALE)
+						return ret;
+					if (ret)
+						fttr_auth_cancel(&u->auth, ret);
+					else {
+						ret = fttr_me_job_timeout(me, c->socket, &c->link, now);
+						if (ret && ret != -ETIMEDOUT)
+							return ret;
+					}
+					if (ret) {
+						ret = auth_drive(c, id);
+						if (!ret)
+							ret = publish(c, "running", 0);
+						if (ret)
+							return ret;
+					}
+				}
+				if (u->phase == ONU_AUTH && me->deadline < deadline)
+					deadline = me->deadline;
 				continue;
 			}
 			if (u->phase == ONU_WIFI && u->wifi_current) {
@@ -1840,20 +1950,26 @@ int main(int argc, char **argv)
 	struct controller c = { .directory = -1, .ni = -1, .store = -1, .socket = -1,
 		.control = -1, .net = { .fd = -1 }, .optical = { .directory = -1 } };
 	struct sigaction action = { .sa_handler = stop_signal };
-	bool owned = false;
+	bool owned = false, auth_loaded = false;
 	unsigned int id;
 	int ret = 0, result;
 	uint16_t seed;
 
-	while (argc >= 3 && (!strcmp(argv[argc - 2], "--services") || !strcmp(argv[argc - 2], "--wifi"))) {
-		ret = !strcmp(argv[argc - 2], "--wifi") ? load_wifi_policies(&c, argv[argc - 1]) :
+	while (argc >= 3 && (!strcmp(argv[argc - 2], "--services") || !strcmp(argv[argc - 2], "--wifi") ||
+	       !strcmp(argv[argc - 2], "--loid-auth"))) {
+		if (!strcmp(argv[argc - 2], "--loid-auth")) {
+			if (auth_loaded) { ret = -EEXIST; goto out; }
+			auth_loaded = true;
+		}
+		ret = !strcmp(argv[argc - 2], "--loid-auth") ? fttr_auth_config_read(argv[argc - 1], &c.auth) :
+			!strcmp(argv[argc - 2], "--wifi") ? load_wifi_policies(&c, argv[argc - 1]) :
 			load_policies(&c, argv[argc - 1]);
 		argc -= 2;
 		if (ret)
 			goto out;
 	}
 	if ((argc != 5 && argc != 9) || strlen(argv[4]) >= IFNAMSIZ) {
-		fprintf(stderr, "Usage: %s <MiniOLT-dir> <NI-dir> <state-dir> <interface> [optical-dir host-mode nway pon-mode] [--services policy-file] [--wifi policy-file]\n", argv[0]);
+		fprintf(stderr, "Usage: %s <MiniOLT-dir> <NI-dir> <state-dir> <interface> [optical-dir host-mode nway pon-mode] [--services policy-file] [--wifi policy-file] [--loid-auth private-file]\n", argv[0]);
 		ret = -EINVAL;
 		goto out;
 	}
@@ -1945,6 +2061,11 @@ out:
 			ret = result;
 		for (id = 0; id < FTTR_ONUS; id++) {
 			c.onu[id].admin_pending = false;
+			if (c.auth.enabled) {
+				fttr_auth_cancel(&c.onu[id].auth, ret ? ret : -ECANCELED);
+				if (c.onu[id].phase == ONU_AUTH)
+					c.onu[id].phase = ONU_AUTH_FAILED;
+			}
 			if (c.store >= 0 && c.onu[id].wifi) {
 				cancel_wifi(&c.onu[id], ret ? ret : -ECANCELED);
 				result = save_wifi(&c, id);

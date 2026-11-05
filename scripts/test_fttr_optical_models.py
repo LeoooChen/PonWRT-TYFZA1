@@ -66,6 +66,8 @@ def check_init_script(folder):
     device = directory / 'mdio/miniolt'; device.mkdir(parents=True)
     factory = directory / 'factory'; factory.mkdir()
     (factory / 'fttr_startup').write_text('1 9 0 2\n')
+    (factory / 'fttr-private').mkdir()
+    (factory / 'fttr-private/loid.bin').write_bytes(b'TFL1' + bytes(38))
     optical = device / 'i2c-0/0-0060'; optical.mkdir(parents=True)
     log = directory / 'command'
     script = (ROOT / 'port/packages/tyfza1-fttr/files/tyfza1-fttr.init').read_text()
@@ -93,7 +95,8 @@ sleep() { attempts=$((attempts+1)); [ "$attempts" != 3 ] || [ "$late" != 1 ] || 
             if present:
                 assert log.read_text().splitlines() == ['command', '/usr/sbin/fttrd', str(device),
                     '/sys/class/net/fttr0/device', str(directory / 'run'), 'fttr0', str(optical),
-                    '9', '0', '2', '--services', '/etc/tyfza1-fttr.services', '--wifi', '/etc/tyfza1-fttr.wifi']
+                    '9', '0', '2', '--services', '/etc/tyfza1-fttr.services', '--wifi', '/etc/tyfza1-fttr.wifi',
+                    '--loid-auth', str(factory / 'fttr-private/loid.bin')]
             else: assert not log.exists()
     # Delayed I2C driver binding and an unsupported backend must be distinct.
     subprocess.run(['sh', '-c', 'late=1\n' + prefix + script + '\nstart_service'], check=True)

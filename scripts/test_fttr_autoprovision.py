@@ -15,7 +15,7 @@ import tempfile
 import time
 
 from test_fttr_association import Original
-from test_fttr_controller import HOST, OLT
+from test_fttr_controller import HOST, OLT, crc
 from test_fttr_service import SYSFS_WRITE_SHIM
 from test_fttr_vlan import Slave
 from arm64_elf_oracle import ElfOracle
@@ -87,6 +87,7 @@ def main():
     p.add_argument('--admin-control', type=Path, help='exercise the resident ONU administration CLI')
     p.add_argument('--output', type=Path, required=True)
     p.add_argument("--wifi", action="store_true", help="exercise resident remote Wi-Fi policies")
+    p.add_argument("--auth", action="store_true", help="exercise original global LOID policy before services")
     p.add_argument("--backend", choices=("asic9690", "fpga1"), default="asic9690")
     args = p.parse_args()
     physical_slot = 0 if args.backend == "fpga1" else 1
@@ -112,7 +113,7 @@ def main():
     sync_request=stock.me_request(0x49,2,0,0x8000,b'\0')
     o, ptr = stock.oracle, stock.data
     widths = {}
-    for c in (2,11,45,47,84,171,262,266,268,272,277,329,0xff69,0xff6a):
+    for c in (2,11,45,47,84,171,256,262,266,268,272,277,329,0xff69,0xff6a,0xfffa):
         assert o.call('plr_gponomci_medetail_get',c,ptr,ptr+8)==1
         table = struct.unpack('<Q',o.uc.mem_read(ptr+8,8))[0]
         widths[c] = {struct.unpack('<H',o.uc.mem_read(table+i*40+8,2))[0]:o.uc.mem_read(table+i*40+12,1)[0]
@@ -131,10 +132,18 @@ def main():
             self.wifi_lost_tci = None
             self.drop_sync=False
             self.fail_upload_once=False
+            self.auth_hold = self.auth_drop = self.auth_bad_result = self.auth_reject_result = False
+            self.auth_malformed = False
+            self.auth_ctc_fail = self.auth_onug_fail = 0
             self.pool = {(262,self.tcont):{0x8000:b'\0\xff'},
                 (277,self.queue):{0x0400:struct.pack('>I',self.tcont<<16|3)},
                 (329 if veip else 11,uni):{0x8000:b'\1'} if veip else {0x8000:b'\0',0x0800:b'\1'}}
             if veip: self.pool[11,1] = {0x8000:b'\0',0x0800:b'\1'}
+            if args.auth:
+                self.pool[0xfffa,0] = {0x4000:b'synthetic-loid'.ljust(24,b'\0'),
+                    0x2000:b'synthetic-pw'.ljust(12,b'\0'),0x1000:b'\0'}
+                self.pool[256,0] = {0x0040:b'synthetic-loid'.ljust(24,b'\0'),
+                    0x0020:b'synthetic-pw'.ljust(12,b'\0')}
             if args.wifi:
                 for instance in (0x101, 0x201):
                     for cls, masks in ((0xff69, (0x8000,0x4000,0x1000,0x2000,0x20,0x10)),
@@ -167,6 +176,25 @@ def main():
             mask = struct.unpack('>H',body[8:10])[0]
             if c==2 and op==0x49:assert body[2:]==sync_request[2:]
             self.operations.append((tci,op,c,id))
+            if args.auth and c in (256,0xfffa) and op in (0x48,0x49):
+                if self.auth_drop:return None
+                failure=(c==0xfffa and mask==self.auth_ctc_fail) or (c==256 and mask==self.auth_onug_fail)
+                status=5 if failure else 2 if op==0x48 and self.auth_reject_result else 0
+                if op==0x48:
+                    assert c==0xfffa and mask==0x1000
+                    if not status:
+                        self.pool[c,id][mask]=body[10:11];self.counter.increment()
+                    content=b''
+                else:
+                    value=self.pool[c,id][mask]
+                    if mask==0x1000 and self.auth_bad_result:value=b'\0'
+                    content=struct.pack('>H',mask)+value
+                wire=stock.frame(tci,(op&31)|32,bytes([status])+content,onu=self.id,class_id=c,instance=id)[16:]
+                if self.auth_malformed:
+                    wire=bytearray(wire);wire[3]=0xff;wire[44:]=struct.pack('>I',crc(wire[:44]));wire=bytes(wire)
+                if self.auth_hold:
+                    self.held=wire;return None
+                return wire
             if c==2 and op==0x49 and self.drop_sync:return None
             if c in (0xff69,0xff6a) and self.wifi_drop:return None
             status,content,wire = 0,b'',None
@@ -247,6 +275,9 @@ def main():
         ni.joinpath('fttr_accel').write_text('0\n')
         device.joinpath('tx_enable').write_text('1\n')
         device.joinpath('backend').write_text(args.backend+'\n')
+        auth_policy=root/'loid.bin'
+        auth_policy.write_bytes(b'TFL1'+b'synthetic-loid'.ljust(25,b'\0')+b'synthetic-pw'.ljust(13,b'\0'))
+        auth_policy.chmod(0o600)
         if args.backend == 'asic9690':
             device.joinpath('management_grant').write_text('')
         else:
@@ -339,6 +370,20 @@ def main():
             assert device.joinpath('tx_enable').read_text()=='1\n'
             assert ni.joinpath('fttr_accel').read_text()=='0\n'
         device.joinpath('backend').write_text(args.backend+'\n')
+        if args.auth:
+            good_auth = auth_policy.read_bytes()
+            rejected_auth = [b'', good_auth[:-1], b'FAIL'+good_auth[4:]]
+            for data, mode, duplicate in [(data, 0o600, False) for data in rejected_auth] + [
+                    (good_auth, 0o644, False), (good_auth, 0o600, True)]:
+                auth_policy.write_bytes(data);auth_policy.chmod(mode)
+                rejected=subprocess.run([str(args.daemon.resolve()),str(device),str(ni),str(store),
+                    'fap-host']+['--loid-auth',str(auth_policy)]*(2 if duplicate else 1),
+                    capture_output=True,text=True,timeout=2)
+                assert rejected.returncode==1 and not store.joinpath('status.json').exists()
+                assert device.joinpath('tx_enable').read_text()=='1\n'
+                assert ni.joinpath('fttr_accel').read_text()=='0\n'
+                assert device.joinpath('tcont_state').read_bytes()==bytes(4096)
+            auth_policy.write_bytes(good_auth);auth_policy.chmod(0o600)
         wifi_policy=root/'wifi-policies'
         if args.wifi:
             from test_fttr_wifi_cli import policy as wifi_config_text
@@ -393,6 +438,8 @@ def main():
                         wire=nodes[id].reply(frame[16:60])
                         if wire:peer.send(HOST+OLT+struct.pack('>HH',0x8888,id)+wire)
                 current=status()
+                if args.auth and (not current.get('onus') or current['onus'][7]['mib_serial']!=nodes[7].serial.hex()):
+                    continue
                 if current.get('pid') == process.pid and predicate(current):return current
             current=status()
             current['onus']=[r for r in current.get('onus',[]) if r['id'] in nodes]
@@ -404,12 +451,120 @@ def main():
             device.joinpath('tx_enable').write_text('1\n')
             return subprocess.Popen([str(args.daemon.resolve()),str(device),str(ni),str(store),'fap-host']+
                 (['--services',str(policy)] if with_policy else []) +
+                (['--loid-auth',str(auth_policy)] if args.auth else []) +
                 (['--wifi',str(wifi_policy)] if (args.wifi if with_wifi is None else with_wifi) else []),
                 stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True,
                 env=dict(os.environ,LD_PRELOAD=str(root/'sysfs.so'),FTTR_SERVICE_CASE='normal',
                     FTTR_ACCEL_LOG=str(accel_log),FTTR_ACCEL_FAIL=str(accel_fault),
                     FTTR_ADMIN_FAIL=str(admin_fault),FTTR_ADMIN_HOLD=str(admin_hold),FTTR_ADMIN_LOG=str(admin_log),
                     **({'FTTR_ADMIN_FPGA':'1'} if args.backend=='fpga1' else {})))
+        if args.auth:
+            checks=['invalid, exposed or duplicate LOID policy fails before ownership and hardware writes']
+            nodes[7].hold=False;nodes[7].wifi_hold=False;nodes[7].auth_hold=True;nodes[9].fail_upload_once=False
+            def auth_status(state,id=7):return state.get('onus') and state['onus'][id]
+            def no_service(id=7):
+                row=status()['onus'][id]
+                assert not row['service_configured'] and not row['datapath_configured'] and not row['wifi_configured']
+                assert f'fttr-u{id}' not in [p['ifname'] for p in json.loads(subprocess.check_output(['ip','-j','link'],text=True))]
+                grant=device.joinpath('tcont_state').read_bytes()[(id*8+physical_slot)*8:(id*8+physical_slot+1)*8]
+                assert grant==bytes(8)
+                assert not any(op in (0x44,0x48) and c not in (256,65530) for _,op,c,_ in nodes[id].operations)
+            def replace(**attrs):
+                replacement=Node(7,(int.from_bytes(nodes[7].serial,'big')+1).to_bytes(8,'big').hex(),0x307,True)
+                for name,value in attrs.items():setattr(replacement,name,value)
+                nodes[7]=replacement;hardware()
+            process=launch()
+            try:
+                until(lambda s:auth_status(s) and s['onus'][7]['phase']=='authentication' and s['onus'][9]['datapath_configured'])
+                no_service()
+                assert not status()['onus'][7]['loid_authenticated']
+                nodes[7].auth_hold=False
+                peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+nodes[7].held)
+                until(lambda s:s['onus'][7]['datapath_configured'])
+                assert status()['onus'][7]['loid_authenticated'] and status()['onus'][7]['loid_result_verified']
+                if args.wifi:
+                    assert all(status()['onus'][id]['wifi_configured']==2 for id in (7,9))
+                checks.append('held authentication does not create services or block the authenticated peer')
+                for attribute,error,result in [('loid',-errno.EACCES,2),('key',-errno.EACCES,3)]:
+                    replace()
+                    nodes[7].pool[65530,0][0x4000 if attribute=='loid' else 0x2000]=b'wrong'.ljust(24 if attribute=='loid' else 12,b'\0')
+                    until(lambda s:s['onus'][7]['phase']=='auth-failed')
+                    row=status()['onus'][7]
+                    assert row['loid_auth_error']==error and row['loid_result']==result and row['loid_result_verified']
+                    assert not row['loid_authenticated'];no_service()
+                checks.append('LOID/key rejection writes and verifies original2/3 result without provisioning')
+                for first in (0x4000,0x2000):
+                    replace(auth_ctc_fail=first)
+                    until(lambda s:s['onus'][7]['datapath_configured'])
+                    row=status()['onus'][7]
+                    assert row['loid_authenticated'] and row['loid_fallback_error']==-errno.EREMOTEIO
+                    assert any(c==256 for _,_,c,_ in nodes[7].operations)
+                for second in (0x0040,0x0020):
+                    replace(auth_ctc_fail=0x4000,auth_onug_fail=second)
+                    until(lambda s:s['onus'][7]['phase']=='auth-failed')
+                    assert not status()['onus'][7]['loid_acquired'] and status()['onus'][7]['loid_auth_error']==-errno.EREMOTEIO
+                    no_service()
+                checks.append('both original acquisition paths work; failed/partial fallback never authenticates')
+                for attrs,error in [({'auth_bad_result':True},-errno.EUCLEAN),
+                        ({'auth_reject_result':True},-errno.EREMOTEIO),({'auth_malformed':True},-errno.EOPNOTSUPP)]:
+                    replace(**attrs)
+                    until(lambda s:s['onus'][7]['phase']=='auth-failed')
+                    assert status()['onus'][7]['loid_auth_error']==error,(attrs,error,status()['onus'][7]['loid_auth_error'])
+                    no_service()
+                replace(auth_drop=True)
+                until(lambda s:s['onus'][7]['phase']=='auth-failed',seconds=16)
+                assert status()['onus'][7]['loid_auth_error']==-errno.ETIMEDOUT
+                assert len(nodes[7].operations)==6;no_service()
+                checks.append('write rejection, bad readback, malformed response and bounded timeout fail explicitly')
+                replace(auth_hold=True)
+                until(lambda s:s['onus'][7]['phase']=='authentication' and nodes[7].held is not None)
+                stale=nodes[7].held
+                replace()
+                # Deliver an old transaction before refresh observes the replacement.
+                peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+stale)
+                until(lambda s:s['onus'][7]['datapath_configured'])
+                assert status()['onus'][7]['loid_authenticated']
+                checks.append('replacement invalidates old authentication and requires a fresh transaction')
+                # Same-SN MIB loss must rerun authentication before any service rebuild.
+                previous=status()['onus'][7]['mib_rescans']
+                nodes[7].counter.value=0;nodes[7].auth_hold=True;nodes[7].operations=[]
+                until(lambda s:s['onus'][7]['phase']=='authentication' and s['onus'][7]['mib_rescans']==previous+1)
+                no_service()
+                nodes[7].auth_hold=False
+                peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+nodes[7].held)
+                until(lambda s:s['onus'][7]['datapath_configured'])
+                checks.append('same-serial MIB reset withdraws service and reauthenticates before rebuilding')
+                for path in store.iterdir():
+                    if path.is_file():
+                        content=path.read_bytes()
+                        for value in (b'synthetic-loid',b'synthetic-pw'):
+                            assert value not in content and value.hex().encode() not in content
+                replace(auth_hold=True)
+                until(lambda s:s['onus'][7]['phase']=='authentication')
+                process.send_signal(signal.SIGTERM);_,errors=process.communicate(timeout=3)
+                assert process.returncode==0,errors
+                assert device.joinpath('tx_enable').read_text()=='0\n' and not ports()
+                assert not any(row['loid_authenticated'] for row in status()['onus'])
+                checks.append('journals contain no credentials; shutdown cancels authentication and withdraws peer services')
+                # The original empty policy is explicit and does not assert authentication.
+                auth_policy.write_bytes(b'TFL1'+bytes(38))
+                replace();nodes[9].operations=[]
+                process=launch()
+                until(lambda s:all(s['onus'][id]['datapath_configured'] for id in (7,9)))
+                for id in (7,9):
+                    row=status()['onus'][id]
+                    assert not row['loid_auth_required'] and not row['loid_authenticated']
+                    assert not any(c in (256,65530) and op in (0x48,0x49) for _,op,c,_ in nodes[id].operations)
+                process.send_signal(signal.SIGTERM);_,errors=process.communicate(timeout=3)
+                assert process.returncode==0,errors
+                checks.append('explicit disabled policy provisions without credential requests or authenticated status')
+            finally:
+                if process.poll() is None:process.kill();process.wait()
+                peer.close();os.close(grant_fd)
+            args.output.write_text(json.dumps(dict(backend=args.backend,checks=checks,
+                scope='Real daemon/veth/bridge/VLAN and original OMCI frame builders; modeled peer/sysfs; no hardware acceptance.'),indent=2)+'\n')
+            print(json.dumps(checks,indent=2))
+            return
         if args.wifi:
             def configured(state, ids=(7,9)):
                 return state.get('onus') and all(state['onus'][id]['wifi_configured']==2 and

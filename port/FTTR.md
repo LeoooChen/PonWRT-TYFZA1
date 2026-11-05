@@ -3073,8 +3073,8 @@ comparators, global LOID predicate, remote LOID acquisition and result writer.
 Each backend passes45 comparison cases,8 global result cases,6 acquisition
 branches and9 result-write/error cases. Inputs are synthetic and the report
 contains no credential bytes (`artifacts/fttr/onu-auth-original-20261106.json`).
-This is evidence for the next controller change, not implemented native ONU
-authentication or hardware acceptance.
+This establishes the original behavior. The native global-policy integration
+is described below; the five per-ONU methods are not yet integrated.
 
 `plr_ponsrv_auth_check_func_get` selects methods1..5: SN; PLOAM credential with
 optional SN binding; SN+PLOAM credential; LOID with optional SN binding; and
@@ -3113,10 +3113,62 @@ this from success, writes the LOID result, reports state5 and still sends
 driver state2. The `onuinfo_fpga` status callback at410e28 handles state5 in a
 separate path from successful registration. Therefore a state/registration
 bit or the helper's name alone cannot authorize native service/FE activation.
-Policy import, native asynchronous OMCI acquisition/result handling, resource
-ownership on refusal/retry and full callback behavior remain to be integrated.
-Current explicitly configured development service policies are not represented
-as verified ONU authentication.
+Full per-ONU policy selection, SN binding, assignment and callback behavior
+remain to be integrated. Current explicit development service policies alone
+do not establish ONU authentication.
+
+### Resident global LOID authentication
+
+The factory importer now reads the two original CTC global fields into a
+private runtime file, independently of upstream PON credentials and FPGA
+authentication. The exact42-byte format is `TFL1`, LOID[25], key[13], with
+NUL termination. Directory mode0700 and file mode0600 protect the input.
+Empty/missing fields produce an explicit disabled policy, matching the original
+startup predicate; invalid lengths fail import and remove the previous file.
+The normal FTTR init requires this file and passes `--loid-auth` to `fttrd`.
+Manual invocation without that option retains the explicitly unprotected
+development mode. Invalid, exposed, nonregular or duplicate inputs fail before
+the daemon takes hardware ownership or writes TX/FE/DBA state.
+
+Each new registered identity first receives management access, then the
+asynchronous CTC LOID/key acquisition. Peer rejection or timeout on either CTC
+field restarts acquisition through ONU-G; data from the two paths is never
+mixed. Malformed frames, local IO and stale identities do not trigger a
+capability fallback. Each operation uses the existing three2-second attempts.
+Both credentials must be acquired before applying the original1/2/3 predicate.
+The daemon writes classfffa result1000, then reads it back; rejected writes,
+wrong readback and failed/partial acquisition remain explicit errors. Unlike
+the original fallback, no missing or partial credentials produce success.
+
+Only a verified successful result starts the MIB/Wi-Fi/service chain. A failure
+leaves management available, records `auth-failed`, and creates no owned data
+grant, GEM configuration or Linux service VLAN. Authentication does not disable
+the healthy peer's service. Serial replacement, explicit management resume and
+same-serial MIB loss cancel the old assertion and authenticate again. A failed
+identity is retried on new registration/resume/controller restart, not by an
+unbounded auth timer. Runtime policy changes currently require a controller
+restart. Shutdown cancels pending authentication and clears authenticated status.
+
+Status reports whether the policy is required, credentials were acquired,
+the original result was verified, and primary/fallback errors; it does not
+publish credentials. Normalized/raw MIB journals redact CTC/ONU-G credential
+attributes, and malformed replies retain at most the noncredential header.
+Explicit developer `fttrctl mib/get` output is not covered by that journal
+redaction. The global FE gate is unchanged: this binds authentication to native
+owned service creation/lifecycle, not a new per-GEM hardware ACL or a complete
+queued-packet retirement guarantee.
+
+`test_fttr_auth.py` compares native requests with original master encoders and
+both global predicates, including fallback, partial/error cases and private
+factory inputs. Result readback executes the retained slave GET worker and its
+actual `mib_LoidAuth` metadata (modeled result storage). Both ASIC/FPGA1 real
+daemon/veth/bridge/VLAN suites pass with authentication and Wi-Fi enabled,
+including held requests, failures, stale replies, MIB loss, shutdown, disabled
+policy and zero physical data-grant slots before acceptance. Existing resident
+management and Wi-Fi regression suites pass. GCC14.4/musl FTTR and factory
+packages compile/install, and installed sources/init/importer match this tree.
+Reports/logs are `artifacts/fttr/onu-auth-*-20261106.*`. These are offline
+protocol/lifecycle checks, not physical authentication or traffic acceptance.
 
 ### Outstanding implementation and acceptance
 
@@ -3138,8 +3190,9 @@ as verified ONU authentication.
    VLAN/service provisioning. The native MiniOLT OMCI framing/transport
    foundation, management grants and automatic baseline MIB inventory are
    implemented, including a native entity/attribute model from original wire
-   layouts. Authentication policy and broader capability-based service decisions
-   remain work. Explicit T-CONT binding/readback/local DBA
+   layouts. Original global LOID acquisition/result verification is integrated;
+   the five per-ONU methods, SN binding/assignment and broader capability-based
+   service decisions remain work. Explicit T-CONT binding/readback/local DBA
    and native GEM CTP/IW lifecycle/readback/cleanup are implemented. Native GAL,
    bridge/initial Mapper and basic Ethernet/VEIP attachment are implemented.
    Mapper binding and ANI/GEM-side bridge ports/VLAN filtering are implemented.

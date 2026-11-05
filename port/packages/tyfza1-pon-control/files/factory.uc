@@ -94,6 +94,26 @@ function import_fttr_ciphertext() {
 		die('Cannot protect factory FPGA ciphertext');
 }
 
+function import_fttr_loid() {
+	const path = 'tmp/tyfza1-factory/fttr-private';
+	unlink(output + '/' + path + '/loid.bin');
+	const loid = optional_field(cs, 'CTC_FTTR_MASTER_GLOBAL_LOID');
+	const key = optional_field(cs, 'CTC_FTTR_MASTER_GLOBAL_LOID_PASSWD');
+	// Original enables global authentication only when both are nonempty.
+	// Explicit disabled output distinguishes it from a failed import.
+	let data = 'TFL1';
+	for (let pair in [ [ loid, 25 ], [ key, 13 ] ]) {
+		if (length(pair[0]) >= pair[1] || index(pair[0], chr(0)) >= 0)
+			die('Invalid factory FTTR LOID length');
+		data += pair[0];
+		for (let i = length(pair[0]); i < pair[1]; i++) data += chr(0);
+	}
+	mkdir(output + '/' + path, 0700);
+	if (!chmod(output + '/' + path, 0700)) die('Cannot protect factory FTTR LOID');
+	save(path + '/loid.bin', data);
+	if (!chmod(output + '/' + path + '/loid.bin', 0600)) die('Cannot protect factory FTTR LOID');
+}
+
 function import_radio(radio) {
 	unlink(output + '/tmp/tyfza1-factory/tyfza1/' + radio[0] + '/flash-calibration.bin');
 	let data = 'TYFC0003';
@@ -237,6 +257,12 @@ try {
 	import_fttr_ciphertext();
 } catch (e) {
 	warn('Factory FTTR authentication: ' + e.message + '\n');
+	failed = true;
+}
+try {
+	import_fttr_loid();
+} catch (e) {
+	warn('Factory FTTR LOID: ' + e.message + '\n');
 	failed = true;
 }
 exit(failed ? 1 : 0);

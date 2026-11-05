@@ -159,7 +159,7 @@ int fttr_mib_model_dump(const struct fttr_mib_model *model, FILE *file)
 		for (i = 0; entity->schema && i < 16; i++) {
 			if (entity->present & (0x8000U >> i)) {
 				fprintf(file, "%s{\"mask\":%u", first ? "" : ",", 0x8000U >> i);
-				if (entity->class_id == 0xff69 || entity->class_id == 0xff6a) {
+				if (fttr_mib_private(entity->class_id, 0x8000U >> i)) {
 					fputs(",\"redacted\":true}", file);
 				} else {
 					fputs(",\"value\":\"", file);

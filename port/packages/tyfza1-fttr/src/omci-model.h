@@ -23,6 +23,12 @@ struct fttr_mib_model {
 int fttr_mib_model_add(struct fttr_mib_model *model, const struct fttr_mib_record *record);
 const uint8_t *fttr_mib_entity_attr(const struct fttr_mib_entity *entity, uint16_t mask, size_t *size);
 int fttr_mib_model_dump(const struct fttr_mib_model *model, FILE *file);
+/* These original classes carry Wi-Fi settings or ONU authentication secrets. */
+static inline bool fttr_mib_private(uint16_t class_id, uint16_t mask)
+{
+	return class_id == 0xff69 || class_id == 0xff6a ||
+		(class_id == 0xfffa && (mask & 0x6000)) || (class_id == 256 && (mask & 0x0060));
+}
 void fttr_mib_model_clear(struct fttr_mib_model *model);
 
 #endif
