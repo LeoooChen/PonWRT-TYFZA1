@@ -55,8 +55,17 @@ static void ni_peer_add(volatile u32 *mailbox, u8 *memory, u32 macid)
 }
 
 static void __attribute__((noinline)) ni_enqueue(
-	volatile u32 *mailbox, u8 *memory, u32 queue, u32 head, u32 tail, u32 count)
+	volatile u32 *mailbox, u8 *memory, u32 queue, u32 head, u32 tail, u32 count, u32 bytes, u32 now)
 {
+	u32 *batch = (void *)(memory + RTL_AX_TX_AMSDU_QUEUES + queue * 16);
+	u32 policy = *(u32 *)(memory + RTL_AX_TX_PEER_AMSDU + (queue >> 3) * 4);
+	/* A timer persists across an early dequeue, as in the original SWQ.
+	 * An empty queue whose timer has fired starts a new interval. */
+	if (!batch[2] || (!*(u32 *)(memory + NI_TID_QUEUED + queue * 4) &&
+	    (u32)(now - batch[1]) >= rtl_ax_amsdu_queue_timeout(policy))) {
+		batch[1] = now; batch[2] = 1;
+	}
+	batch[0] += bytes;
 	u32 macid = queue >> 3, *old_tail = (void *)(memory + NI_TID_TAIL + queue * 4);
 	/* Interior links were filled while gathering; terminate only the tail. */
 	*(u32 *)uncached(tail) = 0;
@@ -88,7 +97,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 	/* Stock ca_ni_rx_napi consumes a producer snapshot before publishing RD. */
 	u32 producer = ni[mailbox[114] / 4 + cos] & mask;
 	if (producer == consumer) return 0;
-	u32 count = 0, group = 0, head = 0, tail = 0, grouped = 0;
+	u32 count = 0, group = 0, head = 0, tail = 0, grouped = 0, group_bytes = 0;
 	u32 cached_peer = 0, cached_low = 0, cached_high = 0;
 	u32 flow_peer = 0, flow_low = 0, flow_high = 0, flow_packets = 0;
 	u32 fence = mailbox[171] & BIT(cos);
@@ -151,15 +160,15 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		/* Link BIDs locally; update the shared peer/TID counts once per group. */
 		if (grouped && queue != group) {
 			queued += grouped;
-			ni_enqueue(mailbox, memory, group, head, tail, grouped); grouped = 0;
+			ni_enqueue(mailbox, memory, group, head, tail, grouped, group_bytes, (u32)now); grouped = 0; group_bytes = 0;
 		}
 		/* Drop excess arrivals before linking them into a sleeping queue.
 		 * The reserved discard WP retains the BID if EQ credit is absent. */
 		if (macid && *(u32 *)(memory + 0xe800 + macid * 16) &&
 		    (*(u32 *)(memory + NI_PEER_QUEUED + macid * 4) + grouped >= NI_PS_PEER_LIMIT ||
 		     queued + grouped >= NI_PS_TOTAL_LIMIT)) {
-			if (grouped) ni_enqueue(mailbox, memory, group, head, tail, grouped);
-			grouped = 0;
+			if (grouped) ni_enqueue(mailbox, memory, group, head, tail, grouped, group_bytes, (u32)now);
+			grouped = 0; group_bytes = 0;
 			u32 id = RTL_AX_NI_DISCARD;
 			u32 *owners = (void *)(memory + RTL_AX_NI_OWNERS);
 			*(u32 *)uncached(buffer) = 0;
@@ -175,11 +184,11 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		waiting[2] = now; waiting[3] = now >> 32;
 		if (grouped) *(u32 *)uncached(tail) = buffer;
 		else { head = buffer; group = queue; }
-		tail = buffer; grouped++;
+		tail = buffer; grouped++; group_bytes += length;
 		consumer = (consumer + 8) & mask;
 		if (fence && consumer == target) crossed = 1;
 	}
-	if (grouped) ni_enqueue(mailbox, memory, group, head, tail, grouped);
+	if (grouped) ni_enqueue(mailbox, memory, group, head, tail, grouped, group_bytes, (u32)now);
 	if (flow_packets)
 		rtl_ax_traffic_flow_hit((void *)(memory + RTL_AX_TX_PEER_FLOWS + flow_peer * 256),
 			flow_low, flow_high, (u32)now, flow_packets);
@@ -265,17 +274,23 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			if (discard && mailbox[47]) continue;
 			if (!discard && (!ni_owner_available(memory) ||
 			    (ps[0] && (command == ps[2] || !((grant_flags >> 16) & BIT(tid)))))) continue;
-			/* Stock TXSC batches short frames with a timeout. Give ACKs the
-			 * same opportunity; a full A-MSDU or an expired head sends now. */
-			if (!discard && !ps[0] && (waiting[1] & 65535) <= 128 &&
-			    *(u32 *)(memory + NI_TID_QUEUED + (macid * 8 + tid) * 4) < 8 &&
-			    (u32)(*(volatile u32 *)(mailbox[2] + 0xc438) - waiting[2]) < 4000) {
-				continue;
+			u32 queue = macid * 8 + tid;
+			u32 *batch = (void *)(memory + RTL_AX_TX_AMSDU_QUEUES + queue * 16);
+			u32 policy = *(u32 *)(memory + RTL_AX_TX_PEER_AMSDU + macid * 4);
+			u32 num = policy >> 16 & 255;
+			if (!discard && !ps[0] && num) {
+				u32 count = *(u32 *)(memory + NI_TID_QUEUED + queue * 4);
+				if (!batch[3] && !rtl_ax_amsdu_queue_ready(policy, count, batch[0])) {
+					u32 stamp = *(volatile u32 *)(mailbox[2] + 0xc438);
+					if (!batch[2] || (u32)(stamp - batch[1]) < rtl_ax_amsdu_queue_timeout(policy)) continue;
+					batch[1] = stamp;
+				}
+				if (policy & RTL_AX_AMSDU_BATCH) batch[3] = 1;
 			}
 			/* Commit this selection only while its grant snapshot is current. */
 			if (!discard && command != *(volatile u32 *)(memory + RTL_AX_NI_PS_VERSION + macid * 4)) continue;
 			u32 id = discard ? RTL_AX_NI_DISCARD : ni_owner(memory), frames = 1;
-			u32 tail_buffer = buffer, next_buffer = waiting[0];
+			u32 tail_buffer = buffer, next_buffer = waiting[0], selected_bytes = waiting[1] & 65535;
 			const u32 *peer = (void *)(memory + 0xd000 + macid * 32);
 			u32 key = peer[5];
 			u32 details = macid << 8 | ((key >> 16) & 127) << 17 | BIT(15);
@@ -304,17 +319,16 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				} else {
 					ps[2] = command;
 					u32 next = next_buffer, body = length + 8;
-					u32 policy = *(u32 *)(memory + RTL_AX_TX_PEER_AMSDU + macid * 4);
-					u32 size = policy & 65535, max_big = policy >> 16;
-					u32 selected = length + 12, big = length > 1000;
+					u32 size = policy & 65535, max_big = num;
+					u32 selected = length, big = length > 1000;
 					if (((request[2] >> 16) & 63) == 26 && !(request[3] & BIT(19))) {
 						while (next && frames < 9) {
 							u32 *part = uncached(next), pad = (0U - body) & 3;
 							u32 next_metadata = part[1], next_length = next_metadata & 65535;
-							if (selected + next_length + 12 > size ||
+							if (selected + next_length > size ||
 							    body + pad + next_length + 8 > (caps >> 18) ||
 							    (big == max_big && next_length > 1000)) break;
-							selected += next_length + 12; big += next_length > 1000;
+							selected += next_length; selected_bytes += next_length; big += next_length > 1000;
 							request[8 + frames * 2] = next + RTL_QM_HEADROOM + (next_metadata >> 16);
 							request[9 + frames * 2] = next_length;
 							body += pad + next_length + 8;
@@ -339,7 +353,11 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			u32 *queued = (void *)(memory + NI_PEER_QUEUED + macid * 4);
 			/* Admission counts WPs, not the number of gathered MSDUs. */
 			*queued -= frames; mailbox[38] -= frames; mailbox[30]++;
-			(*(u32 *)(memory + NI_TID_QUEUED + (macid * 8 + tid) * 4)) -= frames;
+			(*(u32 *)(memory + NI_TID_QUEUED + queue * 4)) -= frames;
+			batch[0] -= selected_bytes;
+			if (!(policy & RTL_AX_AMSDU_BATCH) || !num ||
+			    *(u32 *)(memory + NI_TID_QUEUED + queue * 4) < num || discard || ps[0]) batch[3] = 0;
+			if (retired && !*head) batch[1] = batch[2] = 0;
 			mailbox[170] = next_peer[macid];
 			if (!*queued) {
 				if (next_peer[macid] == node) mailbox[170] = 0;

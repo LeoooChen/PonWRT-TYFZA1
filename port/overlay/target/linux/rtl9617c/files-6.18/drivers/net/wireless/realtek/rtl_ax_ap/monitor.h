@@ -954,7 +954,9 @@ connected:
 			traffic->amsdu_bytes = traffic->max_bytes;
 			rtl_ax_tx_peer_counters(radio->tx, id, &traffic->tx_seen, &traffic->packets_seen);
 			traffic->rx_seen = rtl_ax_rx_peer_bytes(radio->rx, id);
-			rtl_ax_tx_peer_amsdu(radio->tx, id, traffic->amsdu_bytes, traffic->amsdu_num);
+			rtl_ax_tx_peer_amsdu(radio->tx, id, rtl_ax_amsdu_queue_policy(
+				traffic->amsdu_bytes, traffic->amsdu_num, traffic->bandwidth, traffic->band5g,
+				traffic->tx_kbits, traffic->rx_kbits));
 			memset(radio->ra_feedback[id], 0, 8);
 			rtl_ax_tx_peer_rate(radio->tx, id, rate, caps);
 			/* Firmware is the only rate controller; do not retain Minstrel's
@@ -1559,7 +1561,9 @@ static void rtl_ax_traffic_update(struct rtl_ax_ap *radio)
 			rtl_ax_traffic_amsdu(p, 0);
 			sta->max_amsdu_subframes = p->amsdu_num ? 9 : 1;
 			sta->deflink.agg.max_rc_amsdu_len = p->amsdu_bytes;
-			rtl_ax_tx_peer_amsdu(radio->tx, id, p->amsdu_bytes, p->amsdu_num);
+			rtl_ax_tx_peer_amsdu(radio->tx, id, rtl_ax_amsdu_queue_policy(
+				p->amsdu_bytes, p->amsdu_num, p->bandwidth, p->band5g,
+				p->tx_kbits, p->rx_kbits));
 		}
 		rcu_read_unlock();
 	}

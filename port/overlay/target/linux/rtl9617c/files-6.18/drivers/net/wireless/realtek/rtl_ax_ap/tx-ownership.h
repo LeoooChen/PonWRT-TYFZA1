@@ -19,6 +19,8 @@
 /* Per-peer data statistics/policy are independent of recyclable request IDs. */
 #define RTL_AX_TX_PEER_STATS 0x38000
 #define RTL_AX_TX_PEER_AMSDU 0x39000
+/* PE-owned per-TID byte count, timer origin/armed and batch drain state. */
+#define RTL_AX_TX_AMSDU_QUEUES 0x3a000
 #define RTL_AX_WP_TAG_MAP 0x40000
 #define RTL_AX_WP_FREE 0x58000
 #define RTL_AX_TX_PEER_FLOWS 0x60000

@@ -80,3 +80,15 @@ RAM模块rtl_ax_ap_stockphy SHA256=92e8bffd287a8726684fcb1f69585b2a8987542d7e8ed
 按实际原厂33e978/33f3b0/33f7bc补齐16点ADC扫描、连续零区间/中点/±5设置限制、最多两次尝试、两次温度平均、低于基准26且相对上次温差>5时校准、回温后恢复带宽默认值。保留PE架构，非CV0在带宽设置后记录默认值，周期调用。20组原厂序列与状态对照通过；换信道重试/DIG1332继续通过。
 
 RAM模块rtl_ax_ap_stockop5k SHA256=be7350f8e62353566dad305997638f58d0d71c23d3b773feffcc59c2b826d334。原有2G接口配置禁用；创建临时monitor运行5秒再删除，2G温度30/29、OP5K_ready=1默认4/4、周期2次、NHM有效1次。温度未低于26，没有硬件触发扫描；扫描写序列已离线原厂对照。没有为纯XB变化重复5G长测。
+
+## 默认 SWQ 聚合调度对齐
+
+实际 `txsc_init@eb444` 默认 txsc_amsdu_mode=1；`rtw_core_tx@e8c10` 在tx_mode=0调用 `txsc_amsdu_enqueue@eaf00`，128帧分支进入 `txsc_amsdu_timeout_tx` 连续出队。现在PE按同样的字节/帧数触发与128批量/num尾部条件发送，替换了“长度<=128且少于8帧固定4ms”的自定义规则；聚合禁用不再强加短包等待。普通超时10ms，5G且16<接收Kibit/s>>10<680、发送Kibit/s>>10<16时4ms。
+
+原厂默认SWQ路径实际内联于 `txsc_apply_sc_cached_entry@ee5bc`，选取上限按以太帧len累计。此前采用另一条 `txsc_amsdu_dequeue_txq` 的len+12规则；本批改为默认SWQ规则，保留协商MPDU长度、9帧和大包数量边界。PE继续使用BID链和WP异步完成，未搬原厂skb和线程架构。TCP ACK合并分支尚未对齐。
+
+验证：`tools/check_stock_amsdu_queue.py` 执行实际ELF，864组enqueue大小/帧数/128边界与387组连续出队条件一致。linked PE覆盖9短帧触发、10/4ms、TSF回绕、禁用聚合无等待、128批量排空、PS及退站；聚合报文/DMA/padding、6144次WP随机完成和250休眠包隔离通过。IMEM32768/DMEM8192、栈保守上界6880字节。
+
+RAM模块 `stockswq` SHA256=e53abe8af3cdd7d929f941f48d0e3895b664b90f8ee9cb44d645332aa0c70368，PE=afd1f8f718ae2aba6be65cff532474393789ffea1fd907de7f1eb04fde7ea128。60s UDP=1.530Gbps、丢包23.49%；30s TCP首次0.730Gbps但NI仅125帧、ARM+304129请求，不能归因到PE；附加流表观测复测TCP=1.433Gbps，双向HW_OFFLOAD且数据流age6/NI持续增长。UDP→TCP短复测均进入PE，没有稳定复现准入故障，保留未解状态，不再重复盲测。本批未解决1.8/1.9目标，无pending停滞、RPQ失败0。
+
+CFO配置补充：实际supportability函数可执行确认共享/独立晶振掩码；实际final_cap中未见SDK为第三颗radio设置独立晶振的分支。原机最终is_indiv_xtal仍缺实测，不将native默认0当成已证实原厂值，不强开运行跟踪。

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run linked PE: 250 sleeping frames cannot prevent another peer from transmitting."""
 from pathlib import Path
+from pe_tx_ownership_fixture import initialize
 import sys,struct,subprocess,json
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/"analysis/python-deps"))
 from unicorn import UC_HOOK_MEM_WRITE, Uc,UC_ARCH_MIPS,UC_MODE_MIPS32,UC_MODE_LITTLE_ENDIAN
@@ -9,8 +10,9 @@ p=Path(sys.argv[1])
 symbols={x[2]:int(x[0],16) for l in subprocess.check_output(["llvm-nm-18",str(p/"pe-wd.elf")],text=True).splitlines() if len(x:=l.split())==3}
 u=Uc(UC_ARCH_MIPS,UC_MODE_MIPS32|UC_MODE_LITTLE_ENDIAN)
 BASE,MB,NI,PAYLOAD,EPP,REQ=0x04000000,0x04002000,0x10000000,0x06000000,0x05000000,0x04007000
-for a,n in [(0x1fc00000,0x10000),(BASE,0x20000),(NI,0x10000),(PAYLOAD,0x200000),(0x12000000,0x10000),(EPP,0x40000),(0x10020000,0x1000)]:u.mem_map(a,n)
+for a,n in [(0x1fc00000,0x10000),(BASE,0x80000),(NI,0x10000),(PAYLOAD,0x200000),(0x12000000,0x10000),(EPP,0x40000),(0x10020000,0x1000)]:u.mem_map(a,n)
 u.mem_write(0x1fc00000,(p/"pe-tx.bin").read_bytes())
+initialize(u,BASE)
 def put(a,v):u.mem_write(a,struct.pack("<I",v))
 def get(a):return struct.unpack("<I",u.mem_read(a,4))[0]
 for i,v in [(2,0xb2000000),(25,EPP),(114,0x7060),(115,0x7160),(167,15)]:put(MB+i*4,v)
@@ -22,6 +24,7 @@ put(BASE+0x17800,257);put(BASE+0x17804,258)
 rx_state = bytes(u.mem_read(BASE+0x17400,0x420))
 mac=[bytes.fromhex("020000000001"),bytes.fromhex("020000000002")]
 for peer in [1,2]:
+ put(BASE+0x39000+peer*4,0)
  put(BASE+0x11a00+peer*4,1);put(BASE+0xe200+peer*4,3839<<18|1<<17)
  u.mem_write(BASE+0xe400+peer*8,mac[peer-1])
  u.mem_write(BASE+0xd000+peer*32,struct.pack("<8I",0,0,26<<16,0x20100,peer<<24|1<<18|1<<16,3<<16|64,0,0))

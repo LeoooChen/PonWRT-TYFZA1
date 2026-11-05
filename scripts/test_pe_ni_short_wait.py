@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Execute linked PE short-frame aggregation, deadline and peer isolation."""
 from pathlib import Path
+from pe_tx_ownership_fixture import initialize
 import sys,struct,subprocess
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/"analysis/python-deps"))
 from unicorn import Uc,UC_ARCH_MIPS,UC_MODE_MIPS32,UC_MODE_LITTLE_ENDIAN
@@ -9,8 +10,9 @@ p=Path(sys.argv[1])
 symbols={x[2]:int(x[0],16) for l in subprocess.check_output(["llvm-nm-18",str(p/"pe-wd.elf")],text=True).splitlines() if len(x:=l.split())==3}
 u=Uc(UC_ARCH_MIPS,UC_MODE_MIPS32|UC_MODE_LITTLE_ENDIAN)
 BASE,MB,NI,PAYLOAD,EPP,REQ=0x04000000,0x04002000,0x10000000,0x06000000,0x05000000,0x04007000
-for a,n in [(0x1fc00000,0x10000),(BASE,0x20000),(NI,0x10000),(PAYLOAD,0x200000),(0x12000000,0x10000),(EPP,0x40000),(0x10020000,0x1000)]:u.mem_map(a,n)
+for a,n in [(0x1fc00000,0x10000),(BASE,0x80000),(NI,0x10000),(PAYLOAD,0x200000),(0x12000000,0x10000),(EPP,0x40000),(0x10020000,0x1000)]:u.mem_map(a,n)
 u.mem_write(0x1fc00000,(p/"pe-tx.bin").read_bytes())
+initialize(u,BASE)
 def put(a,v):u.mem_write(a,struct.pack("<I",v))
 def get(a):return struct.unpack("<I",u.mem_read(a,4))[0]
 for i,v in [(25,EPP),(114,0x7060),(115,0x7160),(167,15)]:put(MB+i*4,v)
@@ -36,27 +38,45 @@ def enqueue(n,peer,size):
  u.mem_write(at+64,struct.pack(">II",0x80000000,(len(frame)+8)<<15)+bytes(8)+frame)
  u.mem_write(EPP+n*8,struct.pack("<II",at|0x50,len(frame)+16))
  put(NI+0x7060,(n+1)*8);call('ni_ingest')
+put(BASE+0x39004,3793 | 2<<16)
+put(BASE+0x39008,0)
 enqueue(0,1,66)
-assert get(PAYLOAD+8)==1000
-assert call('ni_select')==0 and get(MB+30*4)==0
-# A different peer's large frame proceeds while the short-frame queue waits.
-enqueue(1,2,1500)
+assert call('ni_select')==0
+# Disabled aggregation has no artificial short-frame delay, isolated per peer.
+enqueue(1,2,66)
 assert call('ni_select')==1 and get(REQ+32)==PAYLOAD+2048+80
-put(0x1200c438,4999);assert call('ni_select')==0
-put(0x1200c438,5000);assert call('ni_select')==1
-# Eight small frames release immediately and remain a single aggregate.
+put(0x1200c438,10999);assert call('ni_select')==0
+put(0x1200c438,11000);assert call('ni_select')==1
+# Size mode holds eight small frames and releases nine.
 for n in range(2,10):enqueue(n,1,66)
-assert call('ni_select')==8 and get(REQ+8)>>24==8
-# Unsigned TSF subtraction expires correctly across wrap.
-put(0x1200c438,0xffffffb0);enqueue(10,1,66)
+assert call('ni_select')==0
+enqueue(10,1,66)
+assert call('ni_select')==9 and get(REQ+8)>>24==9
+# Factory shorter timer is a policy decision; timer subtraction wraps.
+put(BASE+0x39004,3793 | 2<<16 | 1<<25)
+put(0x1200c438,0xffffffb0);enqueue(11,1,66)
 put(0x1200c438,3900);assert call('ni_select')==0
 put(0x1200c438,3920);assert call('ni_select')==1
-# Retirement and a PS grant bypass batching immediately.
-enqueue(11,1,66);put(BASE+0x11a04,0)
+# Retirement and a PS grant bypass aggregation immediately.
+enqueue(12,1,66);put(BASE+0x11a04,0)
 assert call('ni_select')==0 and get(MB+47*4)!=0 and get(BASE+0x11804)==0
+assert get(BASE+0x3a080)==0 and get(BASE+0x3a088)==0
 put(BASE+0x11a04,1);put(MB+47*4,0)
 put(BASE+0xe800+16,1);put(BASE+0x19e04,2)
 put(BASE+0xe800+20,1);put(BASE+0xe800+28,1<<16)
-enqueue(12,1,66)
+enqueue(13,1,66)
 assert call('ni_select')==1 and get(BASE+0x11804)==0
-print('PASS linked PE: short-frame wait, peer isolation, full aggregate, TSF wrap, retirement and PS grant')
+put(BASE+0xe800+16,0)
+# Batch mode starts at128 then drains while at least the policy count remains.
+put(BASE+0x39004,10896 | 7<<16 | 1<<24)
+put(BASE+0xe204,10896<<18)
+put(0x1200c438,20000)
+for n in range(14,141):enqueue(n,1,1514)
+assert get(BASE+0x13020)==127 and call('ni_select')==0
+enqueue(141,1,1514)
+assert call('ni_select')==7
+for n in range(17):assert call('ni_select')==7
+assert get(BASE+0x13020)==2 and call('ni_select')==0
+put(0x1200c438,30000);assert call('ni_select')==2
+assert get(BASE+0x3a080)==0
+print('PASS linked PE: size/count gates, disabled aggregation,10/4ms timers,wrap,peer isolation,PS/retirement,128-frame batch and tail drain')

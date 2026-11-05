@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 #ifndef RTL_AX_TRAFFIC_H
 #define RTL_AX_TRAFFIC_H
+#include "amsdu-queue.h"
 /* Board core counters are sampled every two seconds, in binary kbit/s. */
 struct rtl_ax_traffic_peer {
 	u32 tx_seen, rx_seen, packets_seen;

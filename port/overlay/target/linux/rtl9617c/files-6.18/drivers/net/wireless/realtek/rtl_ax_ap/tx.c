@@ -1196,9 +1196,9 @@ unsigned int rtl_ax_tx_peer_flows(struct rtl_ax_tx *tx, unsigned int macid)
 	return active;
 }
 
-void rtl_ax_tx_peer_amsdu(struct rtl_ax_tx *tx, unsigned int macid, unsigned int bytes, unsigned int num)
+void rtl_ax_tx_peer_amsdu(struct rtl_ax_tx *tx, unsigned int macid, unsigned int policy)
 {
-	put_unaligned_le32(bytes | num << 16, tx->pe.memory + RTL_AX_TX_PEER_AMSDU + macid * 4);
+	put_unaligned_le32(policy, tx->pe.memory + RTL_AX_TX_PEER_AMSDU + macid * 4);
 	dma_wmb();
 }
 

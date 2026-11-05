@@ -42,11 +42,14 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
             1 << 24 | 1 << 18 | 1 << 16 | (1 << 23 if client else 0), 7 << 16 | 32, 0, 0]
     u.mem_write(base + 0xd020, struct.pack('<8I', *peer))
     put(base + 0xe204, cap << 18)
-    if policy is not None: put(base + 0x39004, policy | (0 if not policy else 2 if policy <= 3793 else 4 if policy <= 7433 else 7) << 16)
+    effective_policy = policy if policy is not None else 3793 if cap == 3839 else 7433 if cap == 7935 else 10896
+    put(base + 0x39004, effective_policy | (0 if not effective_policy else 2 if effective_policy <= 3793 else 4 if effective_policy <= 7433 else 7) << 16)
     put(base + 0x11a04, 1)
     put(base + 0x11804, len(lengths))
     put(base + 0x13020, len(lengths))
     put(base + 0x18020, len(lengths))
+    put(base + 0x3a080, sum(lengths))
+    put(base + 0x3a088, 1)
     put(base + 0x15020, payload)
     put(base + 0x19604, 1)
     put(base + 0x16020, payload + (len(lengths) - 1) * 2048)
@@ -65,6 +68,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         put(base + 0x15020, 0)
         put(base + 0x16020, 0)
         put(base + 0x18020, 0)
+        put(base + 0x3a080, 0)
         put(mb + 170 * 4, 0)
         put(ni + 0x659c, 1 << 24)
         put(ni + 0x7060, len(lengths) * 8)
@@ -92,8 +96,8 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     if observe:
         observe(u)
     u.emu_start(0xbfc00400, 0x9fc0fff0, count=100000)
-    if from_epp and max(lengths) <= 128:
-        put(bar + 0xc438, 4001)
+    if get(mb + 38 * 4):
+        put(bar + 0xc438, 10001)
         u.emu_start(u.reg_read(UC_MIPS_REG_PC), 0x9fc0fff0, count=100000)
     assert get(mb + 28 * 4) == len(lengths) and get(mb + 38 * 4) == 0
     assert get(base + 0x1c020) == len(lengths)

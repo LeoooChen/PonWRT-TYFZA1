@@ -28,7 +28,7 @@ for i,v in [(0,0x50455744),(3,1),(140,MB|0xa0000000),(142,1),(2,BAR|0xa0000000),
 put(NI+0x6380,1<<31);put(NI+0x6340,4095)
 ap=bytes.fromhex('020000000001');dst=bytes.fromhex('020000000002');u.mem_write(MB+64,ap)
 u.mem_write(B+0xd020,struct.pack('<8I',0,0,26<<16,0x3019b,1<<24|1<<18|1<<16,7<<16|64,0,0))
-put(B+0xe204,64<<18);put(B+0x11a04,1);put(B+0x12020,64)
+put(B+0x39004,0);put(B+0xe204,64<<18);put(B+0x11a04,1);put(B+0x12020,64)
 returns=[]
 u.hook_add(UC_HOOK_MEM_WRITE,lambda uc,access,a,n,v,d:returns.append(v),begin=NI+0x6384,end=NI+0x6387)
 def enqueue(count):
