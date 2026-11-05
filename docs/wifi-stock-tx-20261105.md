@@ -50,3 +50,13 @@ RAM模块rtl_ax_ap_stockrpr SHA256 `d1c680b345c1dca3dbaca05ddf6a926a468c86c4da95
 最新已测模块 rtl_ax_ap_stockgather SHA256=650f0a9d47fd7c2fe227d0d3f7db471654b8be6d785f398ec2b4aacfdc183fec，PE SHA256=9976fba2e59597177cf7ac06dd88689529c0ca312a73649cf4904f2ee03fc0ae。TCP30秒1.466Gbps，UDP60秒1.546Gbps、丢包22.65%，未见持续pending冻结；未达到1.8/1.9Gbps目标。中间动态版本1.243/1.269Gbps不用于宣称收益。
 
 实际Mac关联被原厂IE规则识别为Broadcom(3)，160MHz下EDCA为0138642b。仍未对齐：WMM每流请求配额、完整TXSC缓存替换生命周期、聚合等待细节、XB环境采样、RF周期跟踪和完整PHY包统计。此提交是可追溯中间批次，不代表全面对齐或吞吐修复完成。
+
+## 8852C RXDCK 对齐批次
+
+修正换信道以及该次RFK中DPK后的重复RXDCK：原厂is_chl_rfk时跳过偏移修正。普通offset读取去掉原先多读一次second+1的差异。增加独立温度模式，偏移差>10最多追加3次shot后才修正；SCC两路径校准完成且5G温差>=12触发。复用PE暂停/恢复适配原厂TMAC暂停，保留原厂20ms静默等待。
+
+证据：实际halrf_rfability_init C=0088e17f/XB=0038e17f，rtw_rfk_ability数据默认ffffffff；实际final_cap_decision 1d0f7c..1d0f90在默认值选择hal硬件cap，halrf_set_final_rfability再取交集。RXDCK普通/换信道/温度的120组RF序列及324组触发条件与本机原厂ELF一致；测试RF读写使用模型，尚未在真实温差>=12下观测周期触发。换信道重试及1332组DIG带宽验证通过。
+
+单独换信道模块dd5cf754bb5bedcf8fcc2d13d369d25ad75bf6f12103416e0cc465e1e4f16791，UDP1.521Gbps/23.93%，有效NI TCP补测1.477Gbps；初次TCP0.731Gbps中NI只发70包、ARM新增270795个请求，排除该数据。加入温度模式后模块rtl_ax_ap_stockthermal SHA256=adf3e7fcd6f9a5c6ccf0d5d2cd26c65c75b704a33bc5bfe26e4fddb13f426a82，TCP1.506Gbps、UDP1.532Gbps/23.37%，NI有效。运行温差不足12，RXDCK_runs=0；无pending冻结，未证明吞吐收益。
+
+实际BTC RFK回调无H2C发送，仅首次START100ms延时；当前native启动尚未对齐该首次通知延时，温度周期代码不额外发送不存在的通知。原厂周期RF仍有XB OP5K未适配。

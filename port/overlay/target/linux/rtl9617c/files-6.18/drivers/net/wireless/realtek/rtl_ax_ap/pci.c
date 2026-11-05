@@ -126,6 +126,7 @@ struct rtl_ax_ap {
 	struct rtl_ax_dack dack;
 	struct rtl_ax_rxdck rxdck;
 	u8 rxdck_channel;
+	u32 rxdck_tracking_runs;
 	struct rtl_ax_xb_iqk xb_iqk;
 	struct rtl_ax_c_iqk c_iqk;
 	struct rtl_ax_gapk gapk;
@@ -1140,7 +1141,7 @@ static int rtl_ax_load_firmware(struct rtl_ax_ap *radio, const struct firmware *
 	if (ret)
 		return ret;
 	ret = radio->chip == RTL_AX_8192XB ? rtl_ax_xb_rxdck_start(&radio->io, &radio->rxdck, false) :
-		rtl_ax_c_rxdck_start(&radio->io, &radio->rxdck, false);
+		rtl_ax_c_rxdck_start(&radio->io, &radio->rxdck, false, RTL_AX_RXDCK_NORMAL);
 	if (ret)
 		return ret;
 	ret = rtl_ax_trim_start(&radio->io, radio->chip, &radio->trim);
@@ -1782,6 +1783,29 @@ static int rtl_ax_dfs_start_locked(struct rtl_ax_ap *radio)
 }
 
 /* Caller holds command_mutex across channel and receive-mode ownership. */
+/* Wiphy/command serialization excludes channel RFK and PSD. The board's
+ * RF mask0088e17f enables RXDCK tracking; SCC requires both calibrated paths.
+ * The original BTC callback sends no H2C on this board (only a first-start
+ * delay). PE pause/open adapts the original TMAC pause to shared DMA ownership. */
+static int rtl_ax_rxdck_tracking_locked(struct rtl_ax_ap *radio)
+{
+	int ret;
+
+	if (radio->chip != RTL_AX_8852C || !radio->channel.configured ||
+	    !radio->rxdck_channel || !rtl_ax_c_rxdck_track(&radio->rxdck,
+		 radio->channel.band, radio->rf_runtime.thermal)) return 0;
+	ret = rtl_ax_tx_pause(radio->tx);
+	if (ret) return ret;
+	/* Actual thermal trigger@2f565c waits2000*10us after TMAC pause. */
+	for (unsigned int i = 0; i < 2000; i++)
+		radio->io.delay_us(radio->io.ctx, 10);
+	ret = rtl_ax_c_rxdck_start(&radio->io, &radio->rxdck,
+		radio->c_tssi.ready, RTL_AX_RXDCK_THERMAL);
+	rtl_ax_tx_open(radio->tx);
+	if (!ret) radio->rxdck_tracking_runs++;
+	return ret;
+}
+
 static int rtl_ax_receive_configure(struct rtl_ax_ap *radio, unsigned int primary, unsigned int channel, unsigned int bandwidth)
 {
 	bool channel_changed = !radio->channel.configured || radio->channel.primary != primary ||
@@ -1834,7 +1858,7 @@ static int rtl_ax_receive_configure(struct rtl_ax_ap *radio, unsigned int primar
 	if (!ret) {
 		memset(&radio->rxdck, 0, sizeof(radio->rxdck));
 		ret = radio->chip == RTL_AX_8192XB ? rtl_ax_xb_rxdck_start(&radio->io, &radio->rxdck, radio->xb_tssi.ready) :
-			rtl_ax_c_rxdck_start(&radio->io, &radio->rxdck, radio->c_tssi.ready);
+			rtl_ax_c_rxdck_start(&radio->io, &radio->rxdck, radio->c_tssi.ready, RTL_AX_RXDCK_CHANNEL);
 		if (!ret)
 			radio->rxdck_channel = channel;
 	}
@@ -1871,7 +1895,7 @@ static int rtl_ax_receive_configure(struct rtl_ax_ap *radio, unsigned int primar
 		/* C dpk@32b938 reruns RF RX_DCK when initializer reK is set,
 		 * including on the bypass branch, after TSSI has been enabled. */
 		if (radio->chip == RTL_AX_8852C && radio->rxdck.rek_enabled)
-			ret = rtl_ax_c_rxdck_start(&radio->io, &radio->rxdck, radio->c_tssi.ready);
+			ret = rtl_ax_c_rxdck_start(&radio->io, &radio->rxdck, radio->c_tssi.ready, RTL_AX_RXDCK_CHANNEL);
 	}
 resume:
 	if (!ret) ret = rtl_ax_dfs_start_locked(radio);
@@ -1952,9 +1976,10 @@ static ssize_t radio_rf_runtime_show(struct device *dev,
 
 	mutex_lock(&radio->command_mutex);
 	length = sysfs_emit(buffer, "periods=%u thermal=%u,%u LCK_thermal=%u,%u "
-		"LCK_runs=%u LCK_timeouts=%u result=%d\n", state->periods,
+		"LCK_runs=%u LCK_timeouts=%u result=%d RXDCK_runs=%u RXDCK_thermal=%u,%u retries=%u,%u\n", state->periods,
 		state->thermal[0], state->thermal[1], state->lck_thermal[0], state->lck_thermal[1],
-		state->lck_runs, state->lck_timeouts, state->result);
+		state->lck_runs, state->lck_timeouts, state->result, radio->rxdck_tracking_runs,
+		radio->rxdck.thermal[0], radio->rxdck.thermal[1], radio->rxdck.retries[0], radio->rxdck.retries[1]);
 	mutex_unlock(&radio->command_mutex);
 	return length;
 }

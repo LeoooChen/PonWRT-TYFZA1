@@ -7,7 +7,7 @@ struct rtl_ax_rxdck {
 	bool ready, done[2][2];
 	u16 observations[2][2];
 	u32 saved[2][7], restored[2][7], rf_result[2][2];
-	u8 offsets[2][8][2], thermal[2], corrections[2];
+	u8 offsets[2][8][2], thermal[2], corrections[2], retries[2];
 	bool rek_enabled;
 };
 
