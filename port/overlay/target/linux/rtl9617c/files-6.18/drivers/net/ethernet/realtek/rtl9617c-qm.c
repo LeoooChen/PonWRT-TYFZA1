@@ -198,6 +198,14 @@ int rtl_qm_rx_alloc(struct device *dev, struct rtl_qm_rx *rx)
 		rx->ring_memory = NULL;
 		goto free_payload;
 	}
+	if (rx->fttr_supported) {
+		rx->fttr_memory = dma_alloc_coherent(dev, RTL_FTTR_DQ_BYTES, &rx->fttr_dma, GFP_KERNEL);
+		if (!rx->fttr_memory) {
+			rtl_qm_rx_free(dev, rx);
+			rx->memory = NULL;
+			return -ENOMEM;
+		}
+	}
 	/* CPU EQs publish individual buffer addresses; they need no contiguous pool. */
 	for (unsigned int pool = 0; pool < RTL_QM_PE_POOLS; pool++)
 		for (unsigned int chunk = 0; chunk < RTL_QM_PE_CHUNKS; chunk++) {
@@ -395,6 +403,11 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	ret = rtl_qm_deepq_prepare(&dq, lower_32_bits(rx->deepq_dma));
 	if (ret)
 		return ret;
+	if (rcu_access_pointer(rx->fttr)) {
+		ret = rtl_fttr_qm_prepare(&dq, lower_32_bits(rx->fttr_dma), RTL_FTTR_DQ_BID_START);
+		if (ret)
+			return ret;
+	}
 	writel(EQ_ID | ((EQ_ID + 1) << 4), ni + EQ_PROFILE);
 	writel(EQ_ID, ni + 0x6148);
 	writel(RTL_QM_PACKET_LAYOUT, ni + 0x61c8);
@@ -515,6 +528,8 @@ void rtl_qm_rx_free(struct device *dev, struct rtl_qm_rx *rx)
 			if (rx->wifi_memory[pool][chunk])
 				dma_free_coherent(dev, rtl_qm_wifi_chunk_bytes(chunk),
 					rx->wifi_memory[pool][chunk], rx->wifi_dma[pool][chunk]);
+	if (rx->fttr_memory)
+		dma_free_coherent(dev, RTL_FTTR_DQ_BYTES, rx->fttr_memory, rx->fttr_dma);
 	dma_free_coherent(dev, RTL_DQ_MEMORY_BYTES, rx->deepq_memory, rx->deepq_dma);
 	dma_free_noncoherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS, rx->ring_memory, rx->ring_dma, DMA_FROM_DEVICE);
 	dma_free_noncoherent(dev, RTL_QM_MEMORY_BYTES, rx->memory, rx->memory_dma, DMA_FROM_DEVICE);

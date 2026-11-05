@@ -129,8 +129,8 @@ static struct rtl_dq_io fe_io(struct rtl_fe *f){return (struct rtl_dq_io){f,fe_r
 static void fe_collect_ports(struct rtl_fe *f){(void)f;}
 static void fe_bridge_invalidate(struct rtl_fe *f){(void)f;}
 /* This check models no FTTR endpoint; P6 transactions have their own check. */
-static int fe_fttr_quiesce_locked(struct rtl_fe *f){assert(!f->fttr_netdev);return 0;}
-static int fe_fttr_route_locked(struct rtl_fe *f,bool enable){(void)enable;assert(!f->fttr_netdev);return 0;}
+static int fe_fttr_quiesce_locked(struct rtl_fe *f){(void)f;return 0;}
+static int fe_fttr_route_locked(struct rtl_fe *f,bool enable){(void)enable;(void)f;return 0;}
 static int fe_delete(struct rtl_fe *f,struct rtl_fe_flow *p){(void)f;(void)p;assert(0);return 0;}
 static void usleep_range(unsigned int a,unsigned int b){assert(a==1000 && b==2000);}
 '''
@@ -211,6 +211,15 @@ int main(void){
  assert(!rtl_fe_enable(&f));
  assert(!rtl_fe_disable(&f));
  for(unsigned int i=0;i<ARRAY_SIZE(fe_registers);i++)assert(fe_read(&f,fe_registers[i])==old_regs[i]);
+ /* P6 uses DEEPQ selector0; ordinary P6 output and every other selector survive. */
+ for(unsigned int seed=0;seed<4;seed++) {
+  unsigned int old=0xa55aa55aU|(seed<<12);
+  f.fttr_netdev=&f;fe_write(&f,0xa1f0,old);
+  assert(!rtl_fe_enable(&f));
+  assert(fe_read(&f,0xa1f0)==(old&~(3U<<12)));
+  assert(fe_read(&f,0xa1e0)==(old_demux|0x3ff));
+  assert(!rtl_fe_disable(&f) && fe_read(&f,0xa1f0)==old);
+ }
  puts("Five-LAN FE:ordered admission,physical source preservation,direct L2TM output,three exact restore cycles and failed preparation passed");
  puts("FE rollback: failed prepare/disable preserves original snapshots across re-enable and repeated rollback failure");
 }

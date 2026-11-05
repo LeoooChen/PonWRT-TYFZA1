@@ -38,6 +38,12 @@ void pack(unsigned int protocol,unsigned int count,unsigned int destination,unsi
  struct rtl_fe_ipv4_action action={.bridge=1,.vlan_only=rtl_fe_bridge_vlan_only(protocol),
   .vlan_set=1,.vlan_count=count,.destination=destination,.cos=5,
   .vlan={{.vid=263,.tpid=1,.priority=5,.dei=1},{.vid=100,.tpid=2,.priority=3,.dei=0}}};
+ /* Execute the production final P6 action selection, not a second policy. */
+ struct { void *netdev; } output={destination==6?(void *)6:(void *)1};
+ struct {void *fttr_netdev;} state={(void *)6},*fe=&state;
+ struct {typeof(output) *output;struct rtl_fe_ipv4_action action;} data={&output,action};
+P6_ACTION
+ action=data.action;
  const enum rtl_fe_action_field fields[]={RTL_FE_DPID_VLD,RTL_FE_DPID_PRI,RTL_FE_PERMIT,
   RTL_FE_MCGID,RTL_FE_MC,RTL_FE_SMAC_TRANS,RTL_FE_IP_TTL_DEC1,
   RTL_FE_IP_TTL_ZERO_DISCARD_EN1,RTL_FE_MAC_DA_IDX_VLD,RTL_FE_COS_UPDATE_EN,RTL_FE_COS1,
@@ -45,6 +51,7 @@ void pack(unsigned int protocol,unsigned int count,unsigned int destination,unsi
  rtl_fe_ipv4_action(words,&action);
  for(unsigned int i=0;i<RTL_FE_ACTION_WORDS;i++)mask[i]=0;
  for(unsigned int i=0;i<sizeof(fields)/sizeof(fields[0]);i++)rtl_fe_action_set(mask,fields[i],~0U);
+ if(destination==6)rtl_fe_action_set(mask,RTL_FE_DEEPQ,1);
  for(unsigned int i=0;i<count;i++) {
   rtl_fe_action_set(mask,i?RTL_FE_INNER_TPID_ENC1:RTL_FE_TOP_TPID_ENC1,~0U);
   rtl_fe_action_set(mask,i?RTL_FE_INNER_VID1:RTL_FE_TOP_VID1,~0U);
@@ -54,6 +61,9 @@ void pack(unsigned int protocol,unsigned int count,unsigned int destination,unsi
 }
 '''
 
+fe_source = (drivers / 'rtl9617c-fe.c').read_text()
+selection = fe_source[fe_source.index(' if(data.output->netdev==fe->fttr_netdev)data.action.deep_queue=1;'):]
+source = source.replace('P6_ACTION', selection.splitlines()[0])
 
 def bits(data, bit, width, value):
     n = int.from_bytes(data, 'little')

@@ -1,19 +1,27 @@
 #!/usr/bin/env python3
 """Execute TYFZA1 CPU QM/CB initialization with explicit modeled MMIO."""
 from pathlib import Path
+import argparse
 import json
 import re
 import struct
 import sys
 
 root = Path(__file__).resolve().parents[1]
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--registers', action='store_true')
+parser.add_argument('--p6', action='store_true', help='also execute the P6 profile mapping and NI return path')
+parser.add_argument('--stock-project', type=Path, default=root)
+parser.add_argument('--output-dir', type=Path, default=root / 'artifacts/wifi-factory-epp-contract-20261023')
+args = parser.parse_args()
+stock_project = args.stock_project
 sys.path.insert(0, str(root / 'tools'))
 from arm64_module_oracle import ModuleOracle
 from unicorn import UC_HOOK_MEM_WRITE, UC_HOOK_CODE
 from elftools.elf.elffile import ELFFile
 from elftools.elf.relocation import RelocationSection
 
-config = (root / 'analysis/private/live-files/etc/default_scfg.txt').read_text()
+config = (stock_project / 'analysis/private/live-files/etc/default_scfg.txt').read_text()
 values = {}
 for name, value in re.findall(r'\b(CFG_ID_\w+)\s*=\s*(\{[^}]*\}|[^;\n]+)', config):
     try:
@@ -23,7 +31,7 @@ for name, value in re.findall(r'\b(CFG_ID_\w+)\s*=\s*(\{[^}]*\}|[^;\n]+)', confi
         pass
 calls, writes = [], []
 voq_profiles, port_profiles = {}, {}
-with (root / 'analysis/private/live-files/lib/modules/5.10.70/extra/libscfg.ko').open('rb') as stream:
+with (stock_project / 'analysis/private/live-files/lib/modules/5.10.70/extra/libscfg.ko').open('rb') as stream:
     elf = ELFFile(stream)
     symbols = elf.get_section_by_name('.symtab')
     table = symbols.get_symbol_by_name('ca_cfg_id')[0]
@@ -66,7 +74,7 @@ def boundary(name, args):
     if name == 'ca_soc_data_get':
         oracle.uc.mem_write(args[0], bytes(64))
         return 0
-    if name in ('printk', 'aal_l3qm_insert_magic_number'):
+    if name in ('printk', 'aal_l3qm_insert_magic_number', 'aal_ni_init_tx_dma_lso'):
         return 0
     if name == 'aal_l3qm_get_buffer_size_index':
         assert args[0] == 2048
@@ -102,16 +110,18 @@ setters = ['aal_l3_te_cb_port_free_buf_cnt_set', 'aal_l3_te_cb_voq_threshold_pro
            'aal_l3_te_cb_voq_profile_sel_get', 'aal_l3_te_cb_dqsch_voq_thrsh_profile_set',
            'aal_l3_te_cb_dqsch_port_thrsh_profile_set',
            'aal_l3_te_cb_pool_profile_set.part.0']
-register_mode = '--registers' in sys.argv
+register_mode = args.registers or args.p6
+if args.p6:
+    names += ['aal_port_physical_port_to_dq_get', 'aal_ni_init_nirx_l3fe_demux', 'aal_ni_init_ni']
 if register_mode:
     names += setters
-oracle = ModuleOracle(root / 'analysis/private/live-files/lib/modules/5.10.70/extra/ca-ne.ko',
+oracle = ModuleOracle(stock_project / 'analysis/private/live-files/lib/modules/5.10.70/extra/ca-ne.ko',
                       names, boundary, external_symbols={'vabits_actual': 0x5007000,
                       'memstart_addr': 0x5007010, 'kimage_voffset': 0x5007020})
 ni = 0x6000000
 oracle.uc.mem_map(ni, 0x10000)
 oracle.word(oracle.symbols['g_ne_reg_iobase'][0], ni)
-register_header = (root / 'evidence/wireless-study-20261009-104746/evidence/reference/registers/rtl8277c_registers.h').read_text()
+register_header = (stock_project / 'evidence/wireless-study-20261009-104746/evidence/reference/registers/rtl8277c_registers.h').read_text()
 defines = {name: int(value, 0) for name, value in re.findall(
     r'^#define\s+(\w+)\s+(0x[0-9a-fA-F]+|[0-9]+)\s*$', register_header, re.M)}
 for name, address in defines.items():
@@ -166,11 +176,36 @@ before_cpu_calls = len(calls)
 before_cpu_writes = len(writes)
 # The board initializes CB before ca_ni_init_l3qm overrides CPU pool credits.
 # Stop the real function at the first DQ-only instruction; no optical/DQ setup.
-from unicorn.arm64_const import UC_ARM64_REG_SP
+from unicorn.arm64_const import UC_ARM64_REG_SP, UC_ARM64_REG_PC
 oracle.uc.reg_write(UC_ARM64_REG_SP, oracle.scratch + 0xff00)
 start = oracle.functions['aal_l3qm_init_empty_buffer']
 oracle.uc.emu_start(start, start + 0x354, count=200000)
 cpu_writes = writes[before_cpu_writes:]
+p6_contract = None
+if args.p6:
+    # Resume the real prefix through its NI profile selection, stopping before
+    # SRAM pool allocation. Use this board's actual port-to-DQ table.
+    oracle.uc.mem_write(oracle.symbols['g_physical_port_to_deep_q'][0],
+        struct.pack('<8I', *values['CFG_ID_RTK_PHY_PORT_TO_DEEP_Q']))
+    oracle.uc.emu_start(start + 0x354, start + 0x4a4, count=200000)
+    assert oracle.uc.reg_read(UC_ARM64_REG_PC) == start + 0x4a4
+    p6_contract = {'eq_profile': oracle.unpack(ni+0x6128, 'I')[0],
+                   'port14_profile': oracle.unpack(ni+0x6180, 'I')[0],
+                   'credit_profile': (oracle.unpack(ni+0x95a0, 'I')[0] >> 28) & 3,
+                   'voq112_profile': tables[0x95c0][112][0]}
+    oracle.call('aal_ni_init_nirx_l3fe_demux')
+    p6_contract['deepq_demux'] = (oracle.unpack(ni+0xa1f0, 'I')[0] >> 12) & 3
+    # Stop NI initialization just after the real QM-return selector write;
+    # DMA initialization is a modeled unrelated boundary.
+    oracle.uc.mem_write(ni+0xa004, struct.pack('<I', 2))
+    oracle.uc.reg_write(UC_ARM64_REG_SP, oracle.scratch+0xff00)
+    ni_start = oracle.functions['aal_ni_init_ni']
+    oracle.uc.emu_start(ni_start, ni_start+0x1fc, count=200000)
+    assert oracle.uc.reg_read(UC_ARM64_REG_PC) == ni_start + 0x1fc
+    p6_contract['qm_return_l2tm'] = (oracle.unpack(ni+0xa1c8, 'I')[0] >> 6) & 1
+    assert p6_contract == {'eq_profile': 0x20, 'port14_profile': 0,
+        'credit_profile': 2, 'voq112_profile': 2, 'deepq_demux': 0, 'qm_return_l2tm': 1}
+
 before_epp_writes = len(writes)
 oracle.call('aal_l3qm_init_cpu_epp', instruction_budget=200000)
 epp_writes = writes[before_epp_writes:]
@@ -187,8 +222,11 @@ if register_mode:
                                  for k, t in tables.items()}
     result['final_registers'] = {hex(reg): hex(oracle.unpack(ni+reg, 'I')[0]) for reg in
                                  ([0x61c8, 0x658c, 0x950c, 0x95a0, 0x95e0, 0x963c] + list(range(0x9560, 0x95a0, 4)))}
+if args.p6:
+    result['p6_contract'] = p6_contract
+    result['scope'] += ' P6 NI profile-selection prefix, original demux and NI QM-return prefix executed; DQ pool allocation and physical buffering not executed.'
 name = 'factory-register-contract.json' if register_mode else 'factory-contract.json'
-output = root / 'artifacts/wifi-factory-epp-contract-20261023'
+output = args.output_dir
 output.mkdir(parents=True, exist_ok=True)
 (output / name).write_text(json.dumps(result, indent=2) + '\n')
 print(json.dumps({'resolved': resolved, 'final_registers': result.get('final_registers'),

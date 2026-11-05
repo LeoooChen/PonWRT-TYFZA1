@@ -34,6 +34,7 @@ fixture = r'''
 #define RTL_QM_PE_EQ 6
 #define RTL_QM_BUFFER_BYTES 2048
 #define RTL_DQ_MEMORY_BYTES (1024*2048)
+#define RTL_FTTR_DQ_BYTES (512*2048)
 #define RTL_QM_RING_BYTES 1024
 #define RTL_QM_VOQS 8
 #define RTL_QM_MEMORY_BYTES (RTL_QM_RING_BYTES*RTL_QM_VOQS+512*2048)
@@ -52,6 +53,7 @@ static u32 readl(const void *p){u32 value;memcpy(&value,p,4);return value;}
 struct device { int unused; };
 struct rtl_qm_rx {
  struct device *device;
+ int fttr_supported;void *fttr_memory;dma_addr_t fttr_dma;
  void *memory,*ring_memory,*deepq_memory;
  dma_addr_t memory_dma,ring_dma,deepq_dma;
  void *wifi_memory[2][3];dma_addr_t wifi_dma[2][3];
@@ -109,7 +111,11 @@ void rtl_qm_rx_free(struct device *,struct rtl_qm_rx *);
 test = r'''
 int main(void) {
  struct device dev={};struct rtl_qm_rx rx={};
- assert(!rtl_qm_rx_alloc(&dev,&rx));assert(live==11);
+ for(unsigned int fttr=0;fttr<2;fttr++) {
+ calls=live=reject=published=0;memset(&rx,0,sizeof(rx));memset(records,0,sizeof(records));memset(seen,0,sizeof(seen));
+ rx.fttr_supported=fttr;
+ assert(!rtl_qm_rx_alloc(&dev,&rx));assert(live==11+fttr);
+ assert(!!rx.fttr_memory==fttr);
  assert(records[2].memory==rx.ring_memory && records[2].noncoherent);
  assert(!publish(&rx) && published==2*2492);
  for(unsigned int p=0;p<2;p++) {
@@ -120,11 +126,13 @@ int main(void) {
  }
  for(unsigned int p=0;p<2;p++)for(unsigned int i=0;i<2492;i++)assert(seen[p][i]);
  rtl_qm_rx_free(&dev,&rx);assert(!live);
- for(reject=1;reject<=11;reject++) {
+ for(reject=1;reject<=11+fttr;reject++) {
   calls=0;memset(&rx,0,sizeof(rx));memset(records,0,sizeof(records));
+  rx.fttr_supported=fttr;
   assert(rtl_qm_rx_alloc(&dev,&rx)==-ENOMEM && !live && !rx.memory);
  }
- puts("QM: all2492 buffers per radio published across separate DMA chunks; 4MiB allocation limit and partial-allocation cleanup passed");
+ }
+ puts("QM: optional P6 pool and all2492 buffers per radio published across separate DMA chunks; 4MiB allocation limit and partial-allocation cleanup passed");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='qm-wifi-') as temp:

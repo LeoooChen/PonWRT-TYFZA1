@@ -8,6 +8,7 @@
 #include "rtl9617c-ni.h"
 #include "rtl9617c-qm-refill.h"
 #include "rtl9617c-qm-deepq.h"
+#include "rtl9617c-fttr-qm.h"
 #include "rtl9617c-wifi-format.h"
 
 #define RTL_QM_RING_BYTES 1024
@@ -20,6 +21,10 @@
 #define RTL_QM_PE_POOLS 2
 #define RTL_QM_PE_BUFFERS RTL9617C_WIFI_BUFFERS
 #define RTL_QM_PE_BID_START RTL9617C_WIFI_BID_START
+#define RTL_FTTR_DQ_BID_START (RTL_QM_PE_BID_START + RTL_QM_PE_POOLS * RTL_QM_PE_BUFFERS)
+#if RTL_FTTR_DQ_BID_START + RTL_FTTR_DQ_BUFFERS > 16384
+#error "Native QM pools exceed the 14-bit BID table"
+#endif
 #define RTL_QM_PE_CHUNK_BUFFERS 1024
 #define RTL_QM_PE_CHUNKS ((RTL_QM_PE_BUFFERS + RTL_QM_PE_CHUNK_BUFFERS - 1) / RTL_QM_PE_CHUNK_BUFFERS)
 
@@ -32,6 +37,9 @@ struct rtl_qm_rx {
 	struct device *device;
 	void *ring_memory;
 	dma_addr_t ring_dma;
+	bool fttr_supported;
+	void *fttr_memory;
+	dma_addr_t fttr_dma;
 	void *deepq_memory;
 	dma_addr_t deepq_dma;
 	void *wifi_memory[RTL_QM_PE_POOLS][RTL_QM_PE_CHUNKS];

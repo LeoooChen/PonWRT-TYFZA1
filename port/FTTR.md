@@ -1181,6 +1181,61 @@ symlink. The native startup test passes factory import, command order, failure
 cleanup and controller replacement in a private network namespace (`startup.json`).
 No optical traffic or physical packet-editor execution is implied by these checks.
 
+### P6 hardware queue path
+
+The earlier native action forced P6 to direct L2TM output with DEEPQ clear.
+Execution of this unit's `aal_ni_init_nirx_l3fe_demux` instead confirms P6
+DEEPQ selector0 (L3QM), and `aal_ni_init_ni` sets logical destination6's
+QM-return bit in `a1c8` to L2TM. Original FC path12 actions set DEEPQ for
+unicast destination6. The retained SCFG selects P6 as a LAN DQ port;
+actual `aal_l3qm_init_empty_buffer` chooses QM port14, EQ profile0
+(private EQ0/shared EQ2), CB port profile2 and VOQs112..119/profile2.
+The previous native QM setup only initialized PON DQ ports16..31.
+
+Native FTTR now allocates a512-buffer/1MiB coherent private EQ0 pool when P6
+hardware is present. Its BID range6528..7039 follows both Wi-Fi pools; CPU,
+PON and Wi-Fi ranges do not move. The original DRAM EQ0 builder's address,
+size/count and BID fields are executed with these native values; Linux
+coherent AXI attributes replace the original reserved-memory attributes.
+Shared EQ2 remains owned by the existing PON/QM initialization. P6 credits,
+VOQ occupancy and port free-buffer thresholds use the native pool capacity
+and the actual original CB setters. Profile0's pool-selection thresholds
+remain the stock4096/12; private VOQ credit remains25. All eight COS queues
+receive their real selectors and scheduler weights before the BID caches
+and shared engines start. QM return destination6 selects L2TM.
+
+The real DQSCH profile-selector APIs are no-ops in this module. Native does
+not write guessed selection registers from another chip's SDK. It initializes
+the original port backpressure profile0 (1000 buffers) and all eight VOQ
+backpressure profiles (768 buffers), as actual CB initialization does.
+These values count2KiB buffers and fit the combined private/shared capacity.
+
+The common FE installer sets DEEPQ on every flow targeting the FTTR parent,
+covering bridge, routed and Wi-Fi flows. Shared FE preparation clears only
+P6's DEEPQ selector at `a1f0` and restores its exact prior value on disable;
+the ordinary P6 selector at `a1e0` is preserved. Admission still follows QM
+initialization. This enables the intended buffering path; it does not prove
+physical queue retirement, throughput or optical delivery.
+
+`tools/trace_stock_qm_contract.py --p6 --stock-project <stock-project>` executes
+the relevant initialization prefixes and asserts completion addresses.
+`scripts/test_fttr_qm.py` compares native configuration to those mappings,
+the real DRAM EQ0 builder and real CB setters, including three neighboring
+register seeds and18 injected indirect-operation failures. Existing allocation
+checks cover both P6 presence states and every allocation failure under
+ASan/UBSan. The30-vector bridge action comparison now checks the production
+P6 DEEPQ selection against actual FC/NI output. Shared FE restore, source
+routing, asynchronous registration, BID teardown and EPP field checks pass.
+The cached EPP test passes17024 cases and repeated stop/open; its fixture now
+includes the FTTR endpoint. The old `test_native_rx_modes.py` fixture is stale
+for cached-EPP synchronization and was not used as a passing result.
+
+Reports are under `artifacts/fttr/p6-deepq-20261105/`, including
+`factory-register-contract.json`, `qm-native.json`, `bridge-action.json` and
+`kernel-build.log`. The current6.18.55 NI composite compiles with GCC14.4/musl.
+P6-to-P6 learning, complete producer/queue/MiniOLT retirement and real device
+acceptance remain outstanding.
+
 ### P6 ES queue flush and remaining producer barrier
 
 `tools/trace_stock_fttr_queue.py` executes the exact NI module's

@@ -1579,6 +1579,7 @@ static int rtl_probe(struct platform_device *pdev)
 			ret = PTR_ERR(priv->qm.block_reset);
 			goto free_dma;
 		}
+		priv->qm.fttr_supported = !!priv->p6.qx;
 		ret = rtl_qm_rx_alloc(dev, &priv->qm);
 		if (ret)
 			goto free_dma;

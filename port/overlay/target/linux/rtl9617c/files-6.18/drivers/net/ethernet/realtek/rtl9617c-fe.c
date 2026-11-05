@@ -101,7 +101,7 @@ static const unsigned int fe_registers[] = {
  0x3854,0x3858,0x385c,0x38a0,0x38b8,0x38bc,0x38c4,0x3924,0x3724,
  0x3400,0x3404,0x3414,0x3418,0x341c,0x3420,0x3424,0x3428,
  0x3700,0x3704,0x3708,0x370c,0x3710,0x3714,0x3718,0x371c,0x3720,0x3860,0x394c,0x3950,0x3954,0x3958,0x395c,
- 0x2300,0x23a0,0x23a4,0xa1e0,
+ 0x2300,0x23a0,0x23a4,0xa1e0,0xa1f0,
  0x3278,0x327c,0x3280,
  0x3500,0x3504,0x351c,
  0x3940,0x3944,0x3948,0x3c80,
@@ -357,7 +357,9 @@ static int fe_prepare(struct rtl_fe *fe)
  /* The Linux rule already selected the physical LAN output. A second
   * L2 lookup would override it with the indexed DA entry's forwarding port.
   * NI demux3 enters L2TM directly; only LAN0..4's selectors change. */
- fe_write(fe,0xa1e0,fe_read(fe,0xa1e0)|0x3ff|(fe->fttr_netdev?3U<<12:0));
+ fe_write(fe,0xa1e0,fe_read(fe,0xa1e0)|0x3ff);
+ /* P6 DEEPQ hits use the stock QM selector; its pools precede FE enable. */
+ if(fe->fttr_netdev)fe_write(fe,0xa1f0,fe_read(fe,0xa1f0)&~(3U<<12));
  rtl_fe_cache_start(&io);
  fe_write(fe,0x351c,fe_read(fe,0x351c)|BIT(10));
  return 0;
@@ -1066,6 +1068,8 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
  data.action.egress_interface=flow->counter;
  { struct rtl_fe_wifi_peer *peer=fe_wifi_peer(fe,data.output,data.destination);
    if(peer)data.action.destination=peer->destination; }
+ /* P6 has its own QM port14 and must retain buffering/backpressure. */
+ if(data.output->netdev==fe->fttr_netdev)data.action.deep_queue=1;
  rtl_fe_ipv4_action(action,&data.action);
  if(data.input->wifi_id || data.output->wifi_id) {
   rtl_fe_action_set(action,RTL_FE_MDATA_BYTE_VLD,1);
