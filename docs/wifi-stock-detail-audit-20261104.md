@@ -457,3 +457,16 @@ BASE默认TCPdown1.374095/up1.687529G(0retx)，前后Mac+phone。ON下行首轮1
 最终去掉无调用parser后的模块58d76ce37c26513cef8e09c9d0508726e610abed39dc03b7c9d02849a357a28e；与已测a3effa1a704241128cfe33234e7e89bd74c6ce5f1ad8d228a6010edbcca9811e的所有SHF_ALLOC非NOBITS段逐字节相等，只有.note.gnu.build-id不同。最终重载rtl_ax_ap_bbrssi（待本节收尾关联确认），不重复四方向测试。完整TCP1.8/UDP1.9低丢包目标仍未达，不把端点边界或此正确性修复当作完成。来源BBRSSI-*、bbrssi-results.json及artifacts/bb-rssi-input。
 
 最终收尾：bbrssi/phy42、boot a56cceb0；Mac授权且en0.186，ARM401/401、NI138/138，pending/failed/retired/unmatched0，self role stage5 result0 unmatchedACK0。PEDIV40404、EDCA003f642b、NAV00400000、RPS8；模块文件SHA与最终构建一致，临时ban为空，无辅助模块。本次无push/flash，所有accepted改动继续保留。
+
+
+### 2026-11-05：减少 PE 描述符重复清零
+
+基线5a0f429/bbrssi正常状态。RTS/SMPS/BA请求/信用按现有原厂证据复核无新字段错误，不重开相关扫参。尝试旧downlink_gather全链统计CPU exception，唯一修正为函数入口仍失败，已停止该工具；无有效数据用于归因。现有test_pe_tx_publication主循环可正常执行，不需要工具修复。
+
+具体候选只改pe_build_tx的初始化：原每MPDU先清128B，随后有效字段全部覆盖。改为只清24/44/52/60四个保留word，地址表末尾再写2B0使向上取整的DDR尾字完全相同。现10项地址表最大used124，末尾写仍在128B内；不改WD字段、DMA/WP寿命、BK、队列规模、屏障、时间或聚合阈值。原厂trx_desc按字段构造并清WD保留位、WP encoder另填地址表；不声称原厂代码完全等同本优化，只保持原厂线格式。
+
+复用已有主循环Machine，scripts/test_pe_wd_initialization.py对旧接受二进制与候选比较plain/raw/encap/NI、1..10/9/8项、55/aa/ff污染栈108例，发布WD（含ceil4尾）及payload逐字节一致。七子帧各少183条实际链接MIPS指令/24次store：无checksum示例1223→1040，带checksum1338→1155及1328→1145。仅统计构造器动态指令/存储，不是周期模拟，也不称整机降耗百分比。test_pe_tx_publication新增1/2/7/8/10地址污染栈保留word/尾字检查，与既有六通道/暂停/共享信用/双radio/7子帧回归通过。IMEM24116B、保守栈6744<8176、无GOT/CALL16/GPREL通过；完整ARM64模块编译通过。PE SHA99134a0bc5a5bace8071853cb21134b46e5522e102f15dfa5e0da248285bd6f8，生成overlay头已同步。
+
+BASE TCPdown1.507385G，UDPdown1.827325G/146597loss(8.4836%)。ON rtl_ax_ap_wdinit/phy44，模块SHA4e1b89389683f208711ea72cf87331118ca513518e0d68475c59f10fec364031，默认TCPdown1.512201、up1.700148G/0retx；UDPdown1.828940G/145670loss(8.4354%)；UDPup发1.916675/收1.907007G、272loss(.01643%)，MacCPU97.17%。均Mac+phone，跨关联不作细微增益归因。没有稳定吞吐提升，四方向无明显相关回归，保留明确减少重复工作这一价值。UDPup单方向超过1.9不满足双向低丢包要求，完整目标仍active/unmet。
+
+artifacts/wd-init-cost/verification.json及scripts/test_pe_wd_initialization.py保留字节/成本证据，Mac WDINIT-*及wd-init-results.json保留原始测速。停止该分支继续优化；不以此放宽验收。所有已接受原厂修复继续保留，flash未写。

@@ -260,9 +260,10 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	u8 *txbd = uncached(mailbox[11] + (ring * 256 + slot) * 8);
 	u32 sequence = flags & 0xfff;
 
-	/* Keep fixed DMEM builders compact for the RX ordering code. */
-#pragma clang loop unroll(disable)
-	for (u32 i = 0; i < 128; i += 4) word(page + i, 0);
+	/* All active fields are assigned below. Clear only reserved WD words
+	 * and WP padding, preserving the original descriptor format. */
+	word(page + 24, 0); word(page + 44, 0);
+	word(page + 52, 0); word(page + 60, 0);
 	if (flags & BIT(22)) {
 		/* Original normal and shortcut TX share sta->txseq_tid[]. */
 		u32 macid = flags >> 24, tid = flags & 7;
@@ -370,6 +371,8 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	}
 	/* A header-only ARM frame also needs a terminating address entry. */
 	page[used - 5] |= 0x80;
+	/* Address entries are six bytes; keep the rounded final DDR word zero. */
+	page[used] = page[used + 1] = 0;
 	u32 dw0 = BIT(7) | channels[ring] << 16 | BIT(22) |
 		(((packet >> 16) & 63) / 2) << 11 | ((flags & BIT(13)) ? BIT(31) : 0);
 	u32 dw1 = count << 26, dw4 = 0, dw5 = 0;
