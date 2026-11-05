@@ -4,6 +4,8 @@
 #
 # serial: 16 hexadecimal digits in vendor-first wire order, or *
 # kind: 0=Ethernet, 2=VEIP; ordinal: zero-based within that actual MIB class
+# kind shared: attach all reported Ethernet and VEIP UNIs; ordinal must be 0
+# This is explicit unicast policy, not the full factory default/multicast recipe.
 # slot: ASIC9690/FPGA2 1..7, FPGA1 1
 # priority: 0..7; VID: 0..4094, or none for transparent mode
 # fixed/assured/maximum: hardware grant units, as in fttrctl service

@@ -27,6 +27,10 @@ static int request(struct fttr_objects_job *job, uint16_t *counter, enum fttr_me
 
 static int next_apply(struct fttr_objects_job *job, uint16_t *counter)
 {
+	if (job->defer_apply) {
+		job->phase = FTTR_OBJECT_CHECKED;
+		return FTTR_OBJECT_COMPLETE;
+	}
 	while (job->index < job->count) {
 		if (job->objects[job->index].presence == FTTR_OBJECT_ABSENT) {
 			job->phase = FTTR_OBJECT_CREATE;
@@ -43,6 +47,15 @@ static int next_apply(struct fttr_objects_job *job, uint16_t *counter)
 	}
 	job->phase = FTTR_OBJECT_CONFIGURED;
 	return FTTR_OBJECT_COMPLETE;
+}
+
+int fttr_objects_job_apply(struct fttr_objects_job *job, uint16_t *counter)
+{
+	if (job->phase != FTTR_OBJECT_CHECKED)
+		return -EINVAL;
+	job->defer_apply = false;
+	job->index = 0;
+	return next_apply(job, counter);
 }
 
 static int next_cleanup(struct fttr_objects_job *job, uint16_t *counter)
@@ -131,7 +144,8 @@ int fttr_objects_job_update(struct fttr_objects_job *job, uint16_t *counter)
 	int i;
 	bool absent = error == -EREMOTEIO && job->me.result == OMCI_UNKNOWN_INSTANCE;
 
-	if (job->phase == FTTR_OBJECT_CONFIGURED || job->phase == FTTR_OBJECT_RELEASED)
+	if (job->phase == FTTR_OBJECT_CONFIGURED || job->phase == FTTR_OBJECT_RELEASED ||
+	    job->phase == FTTR_OBJECT_CHECKED)
 		return FTTR_OBJECT_COMPLETE;
 	if (job->phase == FTTR_OBJECT_FAILED)
 		return job->error ? job->error : job->cleanup_error;
@@ -291,7 +305,7 @@ static void dump_error(FILE *file, const char *name, int error, const struct ftt
 int fttr_objects_job_dump(const struct fttr_objects_job *job, FILE *file, const char *event)
 {
 	static const char * const phases[] = { "check", "create", "configure", "verify", "cleanup-probe",
-		"delete", "delete-verify", "restore", "restore-verify", "configured", "released", "failed", "release-check" };
+		"delete", "delete-verify", "restore", "restore-verify", "configured", "released", "failed", "release-check", "checked" };
 	static const char * const states[] = { "unknown", "absent", "present", "verified", "restored" };
 	int i;
 

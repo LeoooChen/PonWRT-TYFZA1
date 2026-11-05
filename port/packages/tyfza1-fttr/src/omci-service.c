@@ -41,28 +41,37 @@ static uint16_t queue(const struct fttr_mib_model *model, uint16_t tcont, uint16
 }
 
 static int ports(struct fttr_service_job *job, const struct fttr_mib_model *model,
-		 uint8_t *uni_number, uint8_t *ani_number)
+		 uint8_t *ani_number)
 {
 	const struct fttr_mib_entity *e;
-	bool used[256] = { 0 };
+	bool used[256] = { 0 }, occupied[2049] = { 0 };
 	uint32_t bridge, number, type, pointer;
-	unsigned int id;
+	unsigned int i, id;
 
 	for (e = model->entities; e; e = e->next) {
+		if ((e->class_id == 47 || e->class_id == 84 || e->class_id == 171) && e->instance <= 2048)
+			occupied[e->instance] = true;
 		if (e->class_id != 47)
 			continue;
 		if (attr(e, 0x8000, &bridge) || attr(e, 0x4000, &number) ||
 		    attr(e, 0x2000, &type) || attr(e, 0x1000, &pointer))
 			return -ENODATA;
+		for (i = 0; i < job->uni_count; i++) {
+			struct fttr_service_uni *uni = &job->unis[i];
+
+			if (type != (uni->veip ? 11U : 1U) || pointer != uni->instance)
+				continue;
+			/* A UNI belonging to another bridge cannot be silently duplicated. */
+			if (bridge != 0x8080 || uni->port)
+				return -EEXIST;
+			uni->port = e->instance;
+			uni->number = number;
+		}
 		if (bridge != 0x8080)
 			continue;
+		if (!number || number > 255 || used[number] || !entity(model, 45, bridge))
+			return -EUCLEAN;
 		used[number] = true;
-		if (type == (job->config.veip ? 11U : 1U) && pointer == job->config.uni) {
-			if (job->uni_port)
-				return -EUCLEAN;
-			job->uni_port = e->instance;
-			*uni_number = number;
-		}
 		if (type == 5 && pointer == job->gem) {
 			if (job->ani_port)
 				return -EUCLEAN;
@@ -70,31 +79,57 @@ static int ports(struct fttr_service_job *job, const struct fttr_mib_model *mode
 			*ani_number = number;
 		}
 	}
-	for (id = 1; id <= 2048 && (!job->uni_port || !job->ani_port); id++) {
-		if (entity(model, 47, id) || entity(model, 84, id) || entity(model, 171, id))
-			continue;
-		if (!job->uni_port)
-			job->uni_port = id;
-		else if (id != job->uni_port)
-			job->ani_port = id;
+	/* Reserve every chosen entity and bridge port before constructing IO. */
+	for (i = 0; i <= job->uni_count; i++) {
+		uint16_t *port = i < job->uni_count ? &job->unis[i].port : &job->ani_port;
+		uint8_t *number = i < job->uni_count ? &job->unis[i].number : ani_number;
+
+		if (!*port) {
+			for (id = 1; id <= 2048 && occupied[id]; id++)
+				;
+			if (id > 2048)
+				return -ENOSPC;
+			*port = id;
+			occupied[id] = true;
+		}
+		if (!*number) {
+			for (id = i < job->uni_count && job->unis[i].veip ? 9 : 1; id < 256 && used[id]; id++)
+				;
+			if (id == 256)
+				return -ENOSPC;
+			*number = id;
+			used[id] = true;
+		}
 	}
-	if (!job->uni_port || !job->ani_port)
+	job->uni_port = job->unis[0].port;
+	return 0;
+}
+
+static int select_unis(struct fttr_service_job *job, const struct fttr_mib_model *model)
+{
+	const struct fttr_service_config *config = &job->config;
+	const struct fttr_mib_entity *e;
+	unsigned int count = 0, i = 0;
+
+	for (e = model->entities; e; e = e->next)
+		if (config->shared ? e->class_id == 11 || e->class_id == 329 :
+		    e->class_id == (config->veip ? 329 : 11) && e->instance == config->uni)
+			count++;
+	if (!count)
+		return -ENOENT;
+	/* Bridge port numbers are eight bits; reserve one for this ANI. */
+	if (count > 254)
 		return -ENOSPC;
-	if (!*uni_number) {
-		for (id = job->config.veip ? 9 : 1; id < 256 && used[id]; id++)
-			;
-		if (id == 256)
-			return -ENOSPC;
-		*uni_number = id;
-		used[id] = true;
-	}
-	if (!*ani_number) {
-		for (id = 1; id < 256 && used[id]; id++)
-			;
-		if (id == 256)
-			return -ENOSPC;
-		*ani_number = id;
-	}
+	job->unis = calloc(count, sizeof(*job->unis));
+	if (!job->unis)
+		return -ENOMEM;
+	job->uni_count = count;
+	for (e = model->entities; e; e = e->next)
+		if (config->shared ? e->class_id == 11 || e->class_id == 329 :
+		    e->class_id == (config->veip ? 329 : 11) && e->instance == config->uni) {
+			job->unis[i].instance = e->instance;
+			job->unis[i++].veip = e->class_id == 329;
+		}
 	return 0;
 }
 
@@ -116,13 +151,12 @@ int fttr_service_start(struct fttr_service_job *job, uint16_t onu, uint16_t *cou
 	struct fttr_association_job association;
 	struct fttr_gem_job gem;
 	struct fttr_profiles_config profiles = { .bridge = 0x8080 };
-	struct fttr_uni_config uni = { .uni = config->uni, .bridge = 0x8080, .veip = config->veip };
 	struct fttr_ani_config ani = { .bridge = 0x8080 };
 	struct fttr_gem_config g = { .profile = 0x8080, .gal = 1, .bridge = true };
 	const struct fttr_mib_entity *e, *assigned = NULL;
 	uint16_t alloc;
 	uint32_t current;
-	uint8_t uni_number = 0, ani_number = 0;
+	uint8_t ani_number = 0;
 	int i, ret;
 
 	memset(job, 0, sizeof(*job));
@@ -134,8 +168,9 @@ int fttr_service_start(struct fttr_service_job *job, uint16_t onu, uint16_t *cou
 	if (ret < 0)
 		return job->error = ret;
 	alloc = ret;
-	if (!entity(model, config->veip ? 329 : 11, config->uni))
-		return job->error = -ENOENT;
+	ret = select_unis(job, model);
+	if (ret)
+		return job->error = ret;
 	/* Never assign an already-owned Alloc-ID to a second T-CONT merely because
 	 * the current owner lacks the requested priority queue. */
 	for (e = model->entities; e; e = e->next)
@@ -162,7 +197,7 @@ int fttr_service_start(struct fttr_service_job *job, uint16_t onu, uint16_t *cou
 	if (!job->queue)
 		return job->error = -ENOSPC;
 	job->gem = fttr_miniolt_gem_id(onu, config->slot);
-	ret = ports(job, model, &uni_number, &ani_number);
+	ret = ports(job, model, &ani_number);
 	if (ret)
 		return job->error = ret;
 	job->objects[0] = (struct fttr_omci_object) { .class_id = 262, .instance = job->tcont,
@@ -177,11 +212,6 @@ int fttr_service_start(struct fttr_service_job *job, uint16_t onu, uint16_t *cou
 	append(job, &gem.transaction);
 	job->objects[3].dependencies |= 1;
 	job->objects[4].dependencies |= (1U << 1) | (1U << 2);
-	uni.entity = job->uni_port;
-	fttr_uni_job_start(&association, onu, counter, &uni, serial);
-	association.objects[0].create.value[2] = uni_number;
-	append(job, &association.transaction);
-	job->objects[5].dependencies |= 1U << 2;
 	ani.entity = job->ani_port;
 	ani.pointer = job->gem;
 	ani.port = ani_number;
@@ -191,11 +221,25 @@ int fttr_service_start(struct fttr_service_job *job, uint16_t onu, uint16_t *cou
 	i = job->transaction.count;
 	append(job, &association.transaction);
 	job->objects[i].dependencies |= (1U << 2) | (1U << 4);
-	job->objects[job->transaction.count++] = (struct fttr_omci_object) {
-		.class_id = config->veip ? 329 : 11, .instance = config->uni, .update_only = true,
-		.create = { .mask = config->veip ? 0x8000 : 0x0800, .size = 1, .value = { 0 } }
-	};
+	for (i = 0; i < (int)job->uni_count; i++) {
+		struct fttr_service_uni *u = &job->unis[i];
+		struct fttr_uni_config uni = { .entity = u->port, .uni = u->instance,
+			.bridge = 0x8080, .veip = u->veip };
+		int count;
+
+		fttr_uni_job_start(&association, onu, counter, &uni, serial);
+		association.objects[0].create.value[2] = u->number;
+		count = association.transaction.count;
+		memcpy(u->objects, association.objects, count * sizeof(*u->objects));
+		u->objects[count++] = (struct fttr_omci_object) {
+			.class_id = u->veip ? 329 : 11, .instance = u->instance, .update_only = true,
+			.create = { .mask = u->veip ? 0x8000 : 0x0800, .size = 1, .value = { 0 } }
+		};
+		fttr_objects_job_start(&u->transaction, onu, counter, u->objects, count, serial);
+		u->transaction.defer_apply = true;
+	}
 	fttr_objects_job_start(&job->transaction, onu, counter, job->objects, job->transaction.count, serial);
+	job->transaction.defer_apply = true;
 	return 0;
 }
 
@@ -226,61 +270,76 @@ static int grant_write(struct fttr_service_job *job, int directory,
 	return ret;
 }
 
-struct fttr_me_job *fttr_service_pending(struct fttr_service_job *job)
+static struct fttr_objects_job *pending_objects(struct fttr_service_job *job)
 {
 	if (job->stage == FTTR_SERVICE_OBJECTS || job->stage == FTTR_SERVICE_RELEASE ||
-	    job->stage == FTTR_SERVICE_RELEASING_OBJECTS)
-		return &job->transaction.me;
-	if (job->stage == FTTR_SERVICE_VLAN || job->stage == FTTR_SERVICE_RELEASING_VLAN)
-		return fttr_vlan_change_pending(&job->vlan);
+	    job->stage == FTTR_SERVICE_RELEASING_OBJECTS || job->stage == FTTR_SERVICE_CHECK)
+		return &job->transaction;
+	if (job->stage == FTTR_SERVICE_UNIS || job->stage == FTTR_SERVICE_ROLLBACK_UNIS ||
+	    job->stage == FTTR_SERVICE_RELEASING_UNIS || job->stage == FTTR_SERVICE_CHECK_UNIS)
+		return &job->unis[job->uni_index].transaction;
+	return NULL;
+}
+
+struct fttr_me_job *fttr_service_pending(struct fttr_service_job *job)
+{
+	struct fttr_objects_job *objects = pending_objects(job);
+
+	if (objects)
+		return &objects->me;
+	if (job->stage == FTTR_SERVICE_VLAN || job->stage == FTTR_SERVICE_RELEASING_VLAN ||
+	    job->stage == FTTR_SERVICE_ROLLBACK_VLAN)
+		return fttr_vlan_change_pending(&job->unis[job->uni_index].vlan);
 	return NULL;
 }
 
 void fttr_service_cancel(struct fttr_service_job *job, int error)
 {
 	struct fttr_me_job *me = fttr_service_pending(job);
+	struct fttr_objects_job *objects = pending_objects(job);
+	struct fttr_vlan_change *vlan = me && !objects ? &job->unis[job->uni_index].vlan : NULL;
 	int original = job->error;
-	bool objects = job->stage == FTTR_SERVICE_OBJECTS || job->stage == FTTR_SERVICE_RELEASE ||
-		job->stage == FTTR_SERVICE_RELEASING_OBJECTS;
 	bool releasing = job->stage == FTTR_SERVICE_RELEASE || job->stage == FTTR_SERVICE_RELEASING_OBJECTS ||
-		job->stage == FTTR_SERVICE_RELEASING_VLAN;
+		job->stage == FTTR_SERVICE_RELEASING_VLAN || job->stage == FTTR_SERVICE_RELEASING_UNIS ||
+		job->stage == FTTR_SERVICE_ROLLBACK_UNIS || job->stage == FTTR_SERVICE_ROLLBACK_VLAN;
+	unsigned int i;
 
 	if (!original && objects)
-		original = job->transaction.error;
-	if (!original && (job->stage == FTTR_SERVICE_VLAN || job->stage == FTTR_SERVICE_RELEASING_VLAN))
-		original = job->vlan.error;
-
+		original = objects->error;
+	if (!original && vlan)
+		original = vlan->error;
 	if (me) {
 		me->state = FTTR_ME_FAILED;
 		me->error = error;
 		if (objects) {
-			if (job->transaction.error || releasing) {
-				job->transaction.cleanup_error = error;
-				job->transaction.cleanup_failure = *me;
+			if (objects->error || releasing) {
+				objects->cleanup_error = error;
+				objects->cleanup_failure = *me;
 			} else {
-				job->transaction.error = error;
-				job->transaction.failure = *me;
+				objects->error = error;
+				objects->failure = *me;
 			}
-			job->transaction.phase = FTTR_OBJECT_FAILED;
+			objects->phase = FTTR_OBJECT_FAILED;
 		} else {
-			if (job->vlan.error || releasing) {
-				job->vlan.cleanup_error = error;
-				job->vlan.cleanup_failure = *me;
+			if (vlan->error || releasing) {
+				vlan->cleanup_error = error;
+				vlan->cleanup_failure = *me;
 			} else {
-				job->vlan.error = error;
-				job->vlan.failure = *me;
+				vlan->error = error;
+				vlan->failure = *me;
 			}
-			job->vlan.stage = FTTR_VLAN_FAILED;
+			vlan->stage = FTTR_VLAN_FAILED;
 		}
 	}
 	if ((original || releasing) && me)
 		job->cleanup_error = error;
 	job->error = original ? original : error;
 	job->stage = FTTR_SERVICE_FAILED;
-	job->configured = false;
-	job->grant_verified = false;
-	job->vlan.verified = false;
-	job->vlan.after.table.complete = false;
+	job->configured = job->grant_verified = false;
+	for (i = 0; i < job->uni_count; i++) {
+		job->unis[i].vlan.verified = false;
+		job->unis[i].vlan.after.table.complete = false;
+	}
 }
 
 static int service_failed(struct fttr_service_job *job, int error)
@@ -310,7 +369,8 @@ int fttr_service_release(struct fttr_service_job *job, uint16_t *counter)
 
 	if (ret || !job->grant_withdrawn)
 		return ret ? ret : -EBUSY;
-	ret = fttr_vlan_change_release(&job->vlan, counter);
+	job->uni_index = job->uni_count - 1;
+	ret = fttr_vlan_change_release(&job->unis[job->uni_index].vlan, counter);
 	if (ret < 0)
 		return ret;
 	job->configured = job->grant_verified = false;
@@ -332,11 +392,27 @@ static int release_objects(struct fttr_service_job *job, uint16_t *counter,
 			return service_failed(job, error);
 		job->grant_restored = true;
 	}
-	job->stage = FTTR_SERVICE_RELEASE;
-	ret = fttr_objects_job_release(&job->transaction, counter);
-	if (ret == FTTR_OBJECT_REQUEST)
-		return 1;
-	return service_failed(job, error);
+	job->uni_index = job->uni_count - 1;
+	job->stage = FTTR_SERVICE_ROLLBACK_UNIS;
+	ret = fttr_objects_job_release(&job->unis[job->uni_index].transaction, counter);
+	/* Even an untouched UNI must advance through the release dispatcher. */
+	return ret == 1 ? 1 : fttr_service_update(job, counter, directory, identity);
+}
+
+static int restore_vlans(struct fttr_service_job *job, uint16_t *counter,
+		int directory, const struct fttr_onu_state *identity)
+{
+	int ret;
+
+	if (job->uni_index < 0)
+		return release_objects(job, counter, directory, identity, job->error);
+	job->stage = FTTR_SERVICE_ROLLBACK_VLAN;
+	ret = fttr_vlan_change_release(&job->unis[job->uni_index].vlan, counter);
+	if (ret < 0) {
+		job->cleanup_error = ret;
+		return service_failed(job, job->error);
+	}
+	return 1;
 }
 
 int fttr_service_update(struct fttr_service_job *job, uint16_t *counter,
@@ -345,27 +421,85 @@ int fttr_service_update(struct fttr_service_job *job, uint16_t *counter,
 	struct fttr_tcont_grant desired = { .fixed = job->config.fixed,
 		.limits = (uint32_t)job->config.assured << 16 | job->config.maximum };
 	struct fttr_vlan_plan plan;
+	struct fttr_objects_job *objects;
+	struct fttr_vlan_change *vlan;
 	unsigned int onu = job->transaction.me.onu;
 	int ret;
 
+again:
 	switch (job->stage) {
 	case FTTR_SERVICE_READY: return 2;
 	case FTTR_SERVICE_RELEASED: return 2;
 	case FTTR_SERVICE_FAILED: return job->error;
+	case FTTR_SERVICE_ROLLBACK_VLAN:
 	case FTTR_SERVICE_RELEASING_VLAN:
-		ret = fttr_vlan_change_update(&job->vlan, counter);
+		vlan = &job->unis[job->uni_index].vlan;
+		ret = fttr_vlan_change_update(vlan, counter);
+		if (ret < 0) {
+			job->cleanup_error = ret;
+			return service_failed(job, job->error ? job->error : ret);
+		}
+		if (ret != 2)
+			return ret;
+		job->uni_index--;
+		if (job->stage == FTTR_SERVICE_ROLLBACK_VLAN)
+			return restore_vlans(job, counter, directory, identity);
+		if (job->uni_index >= 0) {
+			ret = fttr_vlan_change_release(&job->unis[job->uni_index].vlan, counter);
+			if (ret < 0) {
+				job->cleanup_error = ret;
+				return service_failed(job, ret);
+			}
+			return 1;
+		}
+		job->uni_index = job->uni_count - 1;
+		job->phase = "release-unis";
+		job->stage = FTTR_SERVICE_RELEASING_UNIS;
+		ret = fttr_objects_job_release_checked(&job->unis[job->uni_index].transaction, counter);
 		if (ret < 0) {
 			job->cleanup_error = ret;
 			return service_failed(job, ret);
 		}
-		if (ret != 2)
-			return ret;
-		job->phase = "release-objects";
-		job->stage = FTTR_SERVICE_RELEASING_OBJECTS;
-		ret = fttr_objects_job_release_checked(&job->transaction, counter);
 		if (ret == 1)
 			return 1;
-		/* fall through */
+		goto again;
+	case FTTR_SERVICE_ROLLBACK_UNIS:
+	case FTTR_SERVICE_RELEASING_UNIS:
+		objects = &job->unis[job->uni_index].transaction;
+		ret = fttr_objects_job_update(objects, counter);
+		if (ret < 0 && (objects->cleanup_error || !job->error)) {
+			job->cleanup_error = objects->cleanup_error ? objects->cleanup_error : ret;
+			return service_failed(job, job->error ? job->error : ret);
+		}
+		if (ret >= 0 && ret != 2)
+			return ret;
+		if (--job->uni_index >= 0) {
+			objects = &job->unis[job->uni_index].transaction;
+			ret = job->stage == FTTR_SERVICE_RELEASING_UNIS ?
+				fttr_objects_job_release_checked(objects, counter) : fttr_objects_job_release(objects, counter);
+			if (ret < 0 && (objects->cleanup_error || !job->error)) {
+				job->cleanup_error = ret;
+				return service_failed(job, job->error ? job->error : ret);
+			}
+			if (ret == 1)
+				return 1;
+			goto again;
+		}
+		job->phase = "release-objects";
+		if (job->stage == FTTR_SERVICE_ROLLBACK_UNIS) {
+			job->stage = FTTR_SERVICE_RELEASE;
+			ret = fttr_objects_job_release(&job->transaction, counter);
+		} else {
+			job->stage = FTTR_SERVICE_RELEASING_OBJECTS;
+			ret = fttr_objects_job_release_checked(&job->transaction, counter);
+		}
+		if (ret < 0) {
+			job->cleanup_error = ret;
+			return service_failed(job, job->error ? job->error : ret);
+		}
+		if (ret == 1)
+			return 1;
+		goto again;
 	case FTTR_SERVICE_RELEASING_OBJECTS:
 		ret = fttr_objects_job_update(&job->transaction, counter);
 		if (ret < 0) {
@@ -388,9 +522,40 @@ int fttr_service_update(struct fttr_service_job *job, uint16_t *counter,
 		if ((job->previous.fixed || job->previous.limits) &&
 		    job->previous_alloc != fttr_miniolt_alloc_id(job->config.backend, onu, job->config.slot))
 			return service_failed(job, -EBUSY);
+		job->phase = "check-objects";
+		job->stage = FTTR_SERVICE_CHECK;
+		return 1;
+	case FTTR_SERVICE_CHECK:
+		ret = fttr_objects_job_update(&job->transaction, counter);
+		if (ret < 0)
+			return service_failed(job, ret);
+		if (ret != 2)
+			return ret;
+		job->uni_index = 0;
+		job->phase = "check-unis";
+		job->stage = FTTR_SERVICE_CHECK_UNIS;
+		return 1;
+	case FTTR_SERVICE_CHECK_UNIS:
+		objects = &job->unis[job->uni_index].transaction;
+		ret = fttr_objects_job_update(objects, counter);
+		if (ret < 0)
+			return service_failed(job, ret);
+		if (ret != 2)
+			return ret;
+		/* Cross-plan dependency: an existing UNI port cannot refer to a
+		 * missing shared bridge. No configuration has been written yet.
+		 */
+		if (objects->objects[0].presence == FTTR_OBJECT_VERIFIED &&
+		    job->objects[2].presence == FTTR_OBJECT_ABSENT)
+			return service_failed(job, -EUCLEAN);
+		if (++job->uni_index < (int)job->uni_count)
+			return 1;
 		job->phase = "objects";
 		job->stage = FTTR_SERVICE_OBJECTS;
-		return 1;
+		ret = fttr_objects_job_apply(&job->transaction, counter);
+		if (ret == 1)
+			return 1;
+		goto again;
 	case FTTR_SERVICE_OBJECTS:
 	case FTTR_SERVICE_RELEASE:
 		ret = fttr_objects_job_update(&job->transaction, counter);
@@ -402,6 +567,32 @@ int fttr_service_update(struct fttr_service_job *job, uint16_t *counter,
 			return ret;
 		if (job->stage == FTTR_SERVICE_RELEASE)
 			return service_failed(job, job->error);
+		job->uni_index = 0;
+		job->stage = FTTR_SERVICE_UNIS;
+		job->phase = "unis";
+		ret = fttr_objects_job_apply(&job->unis[0].transaction, counter);
+		if (ret == 1)
+			return 1;
+		goto again;
+	case FTTR_SERVICE_UNIS:
+		objects = &job->unis[job->uni_index].transaction;
+		ret = fttr_objects_job_update(objects, counter);
+		if (ret < 0) {
+			if (objects->cleanup_error) {
+				job->cleanup_error = objects->cleanup_error;
+				return service_failed(job, ret);
+			}
+			return release_objects(job, counter, directory, identity, ret);
+		}
+		if (ret != 2)
+			return ret;
+		if (++job->uni_index < (int)job->uni_count) {
+			ret = fttr_objects_job_apply(&job->unis[job->uni_index].transaction, counter);
+			if (ret == 1)
+				return 1;
+			goto again;
+		}
+		job->uni_index = 0;
 		job->phase = "grant";
 		if (!grant_equal(&job->previous, &desired)) {
 			ret = grant_write(job, directory, identity, &desired, &job->grant_sent);
@@ -422,22 +613,31 @@ int fttr_service_update(struct fttr_service_job *job, uint16_t *counter,
 			/* Original transparent mode4 b5704. */
 			fttr_vlan_plan_build(&plan, FTTR_VLAN_FORWARD_ALL, 0, 0, 0, false);
 		}
-		fttr_vlan_change_start(&job->vlan, onu, counter, job->uni_port, &plan);
+		fttr_vlan_change_start(&job->unis[0].vlan, onu, counter, job->unis[0].port, &plan);
 		job->stage = FTTR_SERVICE_VLAN;
 		return 1;
 	case FTTR_SERVICE_VLAN:
-		ret = fttr_vlan_change_update(&job->vlan, counter);
+		vlan = &job->unis[job->uni_index].vlan;
+		ret = fttr_vlan_change_update(vlan, counter);
 		if (ret < 0) {
-			if (job->vlan.cleanup_error) {
-				job->cleanup_error = job->vlan.cleanup_error;
+			if (vlan->cleanup_error) {
+				job->cleanup_error = vlan->cleanup_error;
 				if (ret == -ESTALE || job->cleanup_error == -ESTALE)
 					job->grant_verified = false;
 				return service_failed(job, ret);
 			}
-			return release_objects(job, counter, directory, identity, ret);
+			job->error = ret;
+			job->uni_index--;
+			return restore_vlans(job, counter, directory, identity);
 		}
 		if (ret != 2)
 			return ret;
+		if (++job->uni_index < (int)job->uni_count) {
+			struct fttr_service_uni *uni = &job->unis[job->uni_index];
+
+			fttr_vlan_change_start(&uni->vlan, onu, counter, uni->port, &job->unis[0].vlan.plan);
+			return 1;
+		}
 		job->configured = true;
 		job->phase = "configured";
 		job->stage = FTTR_SERVICE_READY;
@@ -458,26 +658,38 @@ int fttr_service_execute(struct fttr_omci_session *session, struct fttr_service_
 
 int fttr_service_dump(const struct fttr_service_job *job, FILE *file)
 {
-	int i;
+	int i, vlan_error = 0, vlan_cleanup_error = 0;
 
+	for (i = 0; i < (int)job->uni_count; i++) {
+		if (!vlan_error) vlan_error = job->unis[i].vlan.error;
+		if (!vlan_cleanup_error) vlan_cleanup_error = job->unis[i].vlan.cleanup_error;
+	}
 	fprintf(file, "{\"event\":\"service_state\",\"id\":%u,\"serial\":\"", job->transaction.me.onu);
 	for (i = 0; i < 8; i++)
 		fprintf(file, "%02x", job->transaction.serial[i]);
 	fprintf(file, "\",\"phase\":\"%s\",\"error\":%d,\"cleanup_error\":%d,"
-		"\"configured\":%s,\"tcont\":%u,\"queue\":%u,\"gem\":%u,\"uni_port\":%u,\"ani_port\":%u,"
+		"\"shared\":%s,\"uni_count\":%u,\"configured\":%s,\"tcont\":%u,\"queue\":%u,\"gem\":%u,\"uni_port\":%u,\"ani_port\":%u,"
 		"\"grant_sent\":%s,\"grant_verified\":%s,\"grant_restored\":%s,\"grant_withdrawn\":%s,"
 		"\"previous_grant\":[%u,%u],\"observed_grant\":[%u,%u],\"vlan_error\":%d,\"vlan_cleanup_error\":%d}\n",
-		job->phase, job->error, job->cleanup_error, job->configured ? "true" : "false", job->tcont, job->queue,
+		job->phase, job->error, job->cleanup_error, job->config.shared ? "true" : "false", job->uni_count,
+		job->configured ? "true" : "false", job->tcont, job->queue,
 		job->gem, job->uni_port, job->ani_port, job->grant_sent ? "true" : "false",
 		job->grant_verified ? "true" : "false", job->grant_restored ? "true" : "false",
 		job->grant_withdrawn ? "true" : "false",
 		job->previous.fixed, job->previous.limits, job->observed.fixed, job->observed.limits,
-		job->vlan.error, job->vlan.cleanup_error);
+		vlan_error, vlan_cleanup_error);
 	return ferror(file) ? -EIO : 0;
 }
 
 void fttr_service_clear(struct fttr_service_job *job)
 {
-	free(job->vlan.before.table.data);
-	free(job->vlan.after.table.data);
+	unsigned int i;
+
+	for (i = 0; i < job->uni_count; i++) {
+		free(job->unis[i].vlan.before.table.data);
+		free(job->unis[i].vlan.after.table.data);
+	}
+	free(job->unis);
+	job->unis = NULL;
+	job->uni_count = 0;
 }

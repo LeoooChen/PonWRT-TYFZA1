@@ -90,6 +90,8 @@
 
 36. 查实 FPGA2/ASIC 的默认业务生产链：执行原厂 `ctc_ponrelay_onu_init`，确认默认一个 `FTTR-100M` T-CONT/GEM/流及组播启用，多槽时每流增加100×序号的VLAN过滤。继续执行 relay 参数转换和新流选择，证明默认选择共享桥，不能用当前“以太网UNI序号0”策略替代；失败后原厂整ONU删除/重加且忽略恢复错误。9组配置、33个失败分支、12次转换及4组桥选择通过；后续执行共享桥UNI枚举，确认Ethernet与VEIP分别按配置/实报较小数量全部接入（3组差异数量场景）。这是原厂证据进展，共享桥完整UNI接入、组播、多业务和恢复仍待原生实现。详见[默认业务证据](port/FTTR.md#original-default-service-and-shared-bridge-selection)。
 
+37. 接入共享桥的全部 Ethernet/VEIP UNI：显式 `shared` 业务从实际 MIB 选择所有 UNI，先完成全部只读预检，再创建共享 GEM/T-CONT 及逐 UNI 对象、管理状态和独立 VLAN 事务，成功后接入既有 NI/P6/FE 业务端口。后段失败恢复早先 UNI 的旧表/状态，清理失败保留依赖；迁移先撤销 FE/VLAN/DBA，再释放全部 UNI 和共享资源。原厂报文对比、混合 UNI/重复采用/归属冲突/中末段失败/旧表恢复、FPGA1/FPGA2 实际守护进程迁移及既有认证/Wi-Fi/控制器回归通过。原厂配置数量限制、组播、多业务和持久资源归属仍未完成，尚未实机验证。详见[共享桥事务](port/FTTR.md#shared-bridge-ethernet-and-veip-service-transactions)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

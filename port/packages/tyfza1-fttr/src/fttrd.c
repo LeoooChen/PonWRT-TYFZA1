@@ -199,6 +199,10 @@ static int load_policies(struct controller *c, const char *path)
 		    strchr(token[9], '/') || strchr(token[9], ':') || strchr(token[9], '"') ||
 		    strchr(token[9], '\\')) { ret = -EINVAL; break; }
 		for (i = 0; i < 8; i++) {
+			if (!i && !strcmp(token[1], "shared")) {
+				value[0] = 3;
+				continue;
+			}
 			if (i == 4 && !strcmp(token[i + 1], "none")) {
 				value[i] = 0;
 				continue;
@@ -209,7 +213,8 @@ static int load_policies(struct controller *c, const char *path)
 		}
 		if (ret)
 			break;
-		if ((value[0] != 0 && value[0] != 2) || !value[2] || value[2] > 7 ||
+		if ((value[0] != 0 && value[0] != 2 && value[0] != 3) ||
+		    (value[0] == 3 && (strcmp(token[1], "shared") || value[1])) || !value[2] || value[2] > 7 ||
 		    value[3] > 7 || value[4] > 4094) { ret = -EINVAL; break; }
 		policy = calloc(1, sizeof(*policy));
 		if (!policy) { ret = -ENOMEM; break; }
@@ -235,7 +240,7 @@ static int load_policies(struct controller *c, const char *path)
 				ret = -EEXIST;
 		if (ret) { free(policy); break; }
 		policy->config = (struct fttr_service_config) {
-			.veip = value[0] == 2, .slot = value[2], .priority = value[3],
+			.veip = value[0] == 2, .shared = value[0] == 3, .slot = value[2], .priority = value[3],
 			.tagged = strcmp(token[5], "none") != 0, .vid = value[4],
 			.fixed = value[5], .assured = value[6], .maximum = value[7]
 		};
@@ -430,6 +435,23 @@ static void journal_sync(FILE *file, const struct onu *u, unsigned int id)
 	fputs("}\n", file);
 }
 
+static void journal_objects(FILE *file, const struct fttr_objects_job *job)
+{
+	int i;
+
+	for (i = 0; i < job->count; i++) {
+		const struct fttr_omci_object *obj = &job->objects[i];
+
+		fprintf(file, "%s{\"class\":%u,\"instance\":%u,\"dependencies\":%u,"
+			"\"create_mask\":%u,\"create\":\"", i ? "," : "", obj->class_id,
+			obj->instance, obj->dependencies, obj->create.mask);
+		hex(file, obj->create.value, obj->create.size);
+		fprintf(file, "\",\"set_mask\":%u,\"set\":\"", obj->set.mask);
+		hex(file, obj->set.value, obj->set.size);
+		fputs("\"}", file);
+	}
+}
+
 static int save_service(struct controller *c, unsigned int id)
 {
 	struct fttr_service_job *job = &c->onu[id].service;
@@ -456,36 +478,36 @@ static int save_service(struct controller *c, unsigned int id)
 		fttr_objects_job_dump(&job->transaction, file, "service_objects");
 	fprintf(file, "{\"event\":\"service_recipe\",\"kind\":%u,\"uni\":%u,\"uni_ordinal\":%u,\"slot\":%u,"
 		"\"priority\":%u,\"tagged\":%s,\"vid\":%u,\"bandwidth\":[%u,%u,%u],\"objects\":[",
-		cfg->veip ? 2 : 0, cfg->uni, c->onu[id].service_ordinal, cfg->slot, cfg->priority, cfg->tagged ? "true" : "false",
+		cfg->shared ? 3 : cfg->veip ? 2 : 0, cfg->uni, c->onu[id].service_ordinal, cfg->slot, cfg->priority, cfg->tagged ? "true" : "false",
 		cfg->vid, cfg->fixed, cfg->assured, cfg->maximum);
-	for (i = 0; i < job->transaction.count; i++) {
-		struct fttr_omci_object *obj = &job->objects[i];
-
-		fprintf(file, "%s{\"class\":%u,\"instance\":%u,\"dependencies\":%u,"
-			"\"create_mask\":%u,\"create\":\"", i ? "," : "", obj->class_id,
-			obj->instance, obj->dependencies, obj->create.mask);
-		hex(file, obj->create.value, obj->create.size);
-		fprintf(file, "\",\"set_mask\":%u,\"set\":\"", obj->set.mask);
-		hex(file, obj->set.value, obj->set.size);
-		fputs("\"}", file);
-	}
+	journal_objects(file, &job->transaction);
 	fputs("]}\n", file);
 	if (me) {
 		fputs("{\"event\":\"service_pending\",\"exchange\":", file);
 		journal_me(file, me);
 		fputs("}\n", file);
 	}
-	if (job->vlan.before.me.request[2]) {
-		fprintf(file, "{\"event\":\"service_vlan\",\"sent\":%u,\"verified\":%s,"
-			"\"restored\":%s,\"before\":", job->vlan.sent,
-			job->vlan.verified ? "true" : "false", job->vlan.restored ? "true" : "false");
-		journal_table(file, &job->vlan.before.table);
+	for (i = 0; i < (int)job->uni_count; i++) {
+		struct fttr_service_uni *uni = &job->unis[i];
+		struct fttr_vlan_change *vlan = &uni->vlan;
+
+		fprintf(file, "{\"event\":\"service_uni\",\"kind\":%u,\"instance\":%u,\"port\":%u,\"objects\":[",
+			uni->veip ? 2 : 0, uni->instance, uni->port);
+		journal_objects(file, &uni->transaction);
+		fputs("]}\n", file);
+		fttr_objects_job_dump(&uni->transaction, file, "service_uni_objects");
+		if (!vlan->before.me.request[2])
+			continue;
+		fprintf(file, "{\"event\":\"service_vlan\",\"instance\":%u,\"sent\":%u,\"verified\":%s,"
+			"\"restored\":%s,\"before\":", uni->port, vlan->sent,
+			vlan->verified ? "true" : "false", vlan->restored ? "true" : "false");
+		journal_table(file, &vlan->before.table);
 		fputs(",\"after\":", file);
-		journal_table(file, &job->vlan.after.table);
+		journal_table(file, &vlan->after.table);
 		fputs(",\"failure\":", file);
-		journal_me(file, &job->vlan.failure);
+		journal_me(file, &vlan->failure);
 		fputs(",\"cleanup_failure\":", file);
-		journal_me(file, &job->vlan.cleanup_failure);
+		journal_me(file, &vlan->cleanup_failure);
 		fputs("}\n", file);
 	}
 	if (c->onu[id].sync.enabled) {
@@ -786,7 +808,7 @@ static int start_service(struct controller *c, unsigned int id)
 		return ret;
 	u->service_started = true;
 	u->service_ordinal = match->ordinal;
-	if (!entity) {
+	if (!entity && !config.shared) {
 		u->service.phase = "select-uni";
 		u->service.error = -ENOENT;
 		u->service.transaction.me.onu = id;
@@ -795,7 +817,7 @@ static int start_service(struct controller *c, unsigned int id)
 		u->phase = ONU_SERVICE_FAILED;
 		return save_service(c, id);
 	}
-	config.uni = entity->instance;
+	config.uni = config.shared ? 0 : entity->instance;
 	ret = fttr_service_start(&u->service, id, &c->transaction, &u->model, &config, u->identity);
 	if (ret) {
 		u->phase = ONU_SERVICE_FAILED;

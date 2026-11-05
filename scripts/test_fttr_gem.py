@@ -85,7 +85,8 @@ class Object(C.Structure):
 
 class ObjectsJob(C.Structure):
     _fields_=[('me',Me),('failure',Me),('cleanup_failure',Me),('objects',C.POINTER(Object)),('serial',C.c_ubyte*8),
-              ('phase',C.c_int),('count',C.c_int),('index',C.c_int),('group',C.c_int),('error',C.c_int),('cleanup_error',C.c_int)]
+              ('phase',C.c_int),('count',C.c_int),('index',C.c_int),('group',C.c_int),('error',C.c_int),('cleanup_error',C.c_int),
+              ('defer_apply',C.c_bool)]
 
 
 class Job(C.Structure):

@@ -131,7 +131,7 @@ def main():
             with device.joinpath('tcont_state').open('r+b') as f:
                 f.seek(offset); f.write(struct.pack('<II',fixed,limits))
 
-        def run(case='normal', veip=False, tagged=False, initial=None, backend='asic9690'):
+        def run(case='normal', veip=False, tagged=False, initial=None, backend='asic9690', shared=False):
             nonlocal offset
             device.joinpath('backend').write_text(backend+'\n')
             physical_slot = 0 if backend == 'fpga1' else 1
@@ -139,6 +139,10 @@ def main():
             identity(); device.joinpath('tcont_state').write_bytes(bytes(4096))
             pool = {(262,0x8765):{0x8000:struct.pack('>H',255)}}
             pool[329 if veip else 11,0x107] = {0x8000:b'\1'} if veip else {0x8000:b'\0',0x0800:b'\1'}
+            if shared:
+                pool[11,0x101] = {0x8000:b'\0',0x0800:b'\1'}
+                pool[11,0x203] = {0x8000:b'\0',0x0800:b'\1'}
+                pool[329,0x301] = {0x8000:b'\1'}
             table, operations, grants, snapshot = {}, [], [], []
             if initial:
                 pool,table = copy.deepcopy(initial)
@@ -173,8 +177,8 @@ def main():
                     rows.append((c,instance,mask,content))
                 return rows
 
-            query = subprocess.Popen([str(args.control.resolve()),str(device),'service','7','2' if veip else '0',
-                '0x107','1','3','200' if tagged else 'none','50','100','200','fts-host'],
+            query = subprocess.Popen([str(args.control.resolve()),str(device),'service','7','shared' if shared else '2' if veip else '0',
+                '0' if shared else '0x107','1','3','200' if tagged else 'none','50','100','200','fts-host'],
                 stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,
                 env=dict(os.environ,LD_PRELOAD=str(device/'sysfs.so'),FTTR_SERVICE_CASE=case))
             try:
@@ -204,33 +208,37 @@ def main():
                             a,b,d,v = snapshot[mask]; content = struct.pack('>HHH',a,b,d)+v.ljust(26,b'\0')
                         elif op == 0x44:
                             assert (c,instance) not in pool
-                            if case == 'gem-reject' and c == 266: status = 6
+                            if (case == 'gem-reject' and c == 266) or (c == 171 and (
+                                case in ('shared-uni-reject','shared-cleanup-reject') and instance == 2 or
+                                case == 'shared-last-uni-reject' and instance == 4)): status = 6
                             else:
-                                create_mask = {272:0x8000,45:0xff80,268:0xfac0,266:0xf200,47:0xfc00 if instance==2 or veip else 0xfe00,
-                                               84:0xe000 if instance==2 and tagged else 0x4000,171:0x8200}[c]
+                                if c==47: create_mask=0xfc00 if body[11] in (5,11) else 0xfe00
+                                elif c==84: create_mask=0xe000 if tagged and pool[47,instance][0x2000]==bytes([5]) else 0x4000
+                                else: create_mask={272:0x8000,45:0xff80,268:0xfac0,266:0xf200,171:0x8200}[c]
                                 n = sum(w for bit,w in widths[c].items() if create_mask&bit)
                                 pool[c,instance] = attrs(c,instance,create_mask,body[8:8+n])
                         elif op == 0x46:
-                            if case == 'delete-reject' and c == 268: status = 6
+                            if (case == 'delete-reject' and c == 268) or (case == 'shared-cleanup-reject' and c == 47 and instance == 2): status = 6
                             else: pool.pop((c,instance))
                         elif op == 0x48:
                             if c == 171 and mask == 0x0400:
                                 vlan_writes += 1
-                                if case in ('vlan-reject','vlan-restore-reject','grant-restore-false') and vlan_writes == 2: status = 6
-                                elif case == 'vlan-restore-reject' and vlan_writes == 3: status = 6
+                                if case in ('vlan-reject','vlan-restore-reject','grant-restore-false') and vlan_writes == (5 if shared else 2): status = 6
+                                elif case == 'vlan-restore-reject' and vlan_writes == (6 if shared else 3): status = 6
                                 else:
                                     row = body[10:26]
-                                    if row[8:] == b'\xff'*8: table.pop(row[:8],None)
-                                    else: table[row[:8]] = row
-                                wire = slave.reply(body,b''.join(table.values()),8,status)
+                                    key=(instance,row[:8]) if shared else row[:8]
+                                    if row[8:] == b'\xff'*8: table.pop(key,None)
+                                    else: table[key] = row
+                                wire = slave.reply(body,b''.join(row for key,row in table.items() if not shared or key[0]==instance),8,status)
                             else:
                                 n = sum(w for bit,w in widths[c].items() if mask&bit)
                                 pool[c,instance].update(attrs(c,instance,mask,body[10:10+n]))
                         else:
                             assert op in (0x49,0x5a)
-                            if (c,instance) not in pool: status = 5
+                            if (c,instance) not in pool or (case == 'shared-check-missing' and c == 329 and instance == 0x301): status = 5
                             elif c == 171 and mask in (0x4000,0x0400):
-                                wire = slave.reply(body,b''.join(table.values()),8)
+                                wire = slave.reply(body,b''.join(row for key,row in table.items() if not shared or key[0]==instance),8)
                             else:
                                 values = b''.join(pool[c,instance][bit] for bit in sorted(widths[c],reverse=True) if mask&bit)
                                 content = struct.pack('>H',mask)+values
@@ -274,6 +282,69 @@ def main():
             assert reused['configured'] and not reused['grant_sent'] and not writes
             assert not any(o[0] in (0x44,0x48,0x46) for o in again)
         checks.append('fresh MIB chooses available real T-CONT and related upstream queue; Ethernet transparent and VEIP access paths configure/read back all objects, UNI administration, local DBA and original compound VLAN policy; repeats send no configuration writes')
+        for tagged in (False,True):
+            result,events,pool,table,operations,grants=run(shared=True,tagged=tagged)
+            assert result['configured'] and result['shared'] and result['uni_count']==4
+            unis=[e for e in events if e['event']=='service_uni']
+            assert {(e['kind'],e['instance']) for e in unis}=={(0,0x101),(0,0x107),(0,0x203),(2,0x301)}
+            assert len({e['port'] for e in unis})==4 and result['ani_port'] not in {e['port'] for e in unis}
+            assert grants==[(50,100,200)]
+            first_write=next(i for i,o in enumerate(operations) if o[0] in (0x44,0x48,0x46))
+            checked={(c,i) for op,c,i,_ in operations[:first_write] if op==0x49}
+            for u in unis:
+                expected={(47,u['port']),(171,u['port']),
+                          (329 if u['kind']==2 else 11,u['instance'])}
+                if u['kind']==0: expected.add((84,u['port']))
+                assert expected <= checked,(u,expected-checked)
+            for u in unis:
+                assert pool[47,u['port']][0x8000]==b'\x80\x80'
+                assert pool[47,u['port']][0x1000]==struct.pack('>H',u['instance'])
+                assert pool[329 if u['kind']==2 else 11,u['instance']][0x8000 if u['kind']==2 else 0x0800]==b'\0'
+                expected=master_rules(master,0xfbd08,0,0,0)+master_rules(master,0xfc0c0,0,200,3) if tagged else master_rules(master,0xfbeb0,0,0,0)
+                assert [row for key,row in table.items() if key[0]==u['port']]==expected
+            reused,_,_,_,again,writes=run(shared=True,tagged=tagged,initial=(pool,table))
+            assert reused['configured'] and not writes and not any(o[0] in (0x44,0x48,0x46) for o in again)
+        # The later UNI's missing administration ME is visible only during the
+        # live preflight GET, after the complete MIB snapshot was uploaded.
+        result,_,_,_,operations,grants=run(case='shared-check-missing',shared=True)
+        assert result['error']==-errno.EREMOTEIO and not grants
+        assert not any(o[0] in (0x44,0x48,0x46) for o in operations)
+        for failure in ('shared-uni-reject','shared-last-uni-reject','vlan-reject'):
+            result,events,pool,table,operations,grants=run(case=failure,shared=True,tagged=True)
+            assert result['error'] and not result['configured'] and not result['cleanup_error'],(failure,result)
+            assert not table and not any(c in (45,47,84,171,266,268,272) for c,i in pool),(failure,pool,table)
+            assert pool[262,0x8765][0x8000]==b'\0\xff'
+            assert all(pool[c,i][0x8000 if c==329 else 0x0800]==b'\1' for c,i in pool if c in (11,329))
+            if failure=='shared-uni-reject':
+                assert not any(op in (0x44,0x48,0x46) and ((c in (47,84,171) and i in (3,4)) or
+                    (c==11 and i==0x203) or c==329) for op,c,i,_ in operations)
+        for failure in ('shared-cleanup-reject','vlan-restore-reject'):
+            result,events,pool,table,operations,grants=run(case=failure,shared=True,tagged=True)
+            assert result['error']==result['cleanup_error']==-errno.EREMOTEIO
+            assert all((c,i) in pool for c,i in ((45,0x8080),(266,0x107),(268,0x107),(272,1)))
+            assert not any(op==0x46 and c in (45,266,268,272) for op,c,i,_ in operations)
+        # Preserve an existing UNI table and its original admin state while a
+        # later UNI fails. The table's tag-untagged row differs from the recipe.
+        _,events,prior_pool,_,_,_=run(shared=True,tagged=True)
+        old_row=master_rules(master,0xfc0c0,0,123,3)[0]
+        prior_table={(e['port'],old_row[:8]):old_row for e in events if e['event']=='service_uni'}
+        for c,i in prior_pool:
+            if c in (11,329): prior_pool[c,i][0x8000 if c==329 else 0x0800]=b'\1'
+        result,_,pool,table,_,grants=run(case='vlan-reject',shared=True,tagged=True,initial=(prior_pool,prior_table))
+        assert result['error']==-errno.EREMOTEIO and not result['cleanup_error']
+        assert pool==prior_pool and table==prior_table and not grants
+        for conflict,expected in (('foreign-bridge',errno.EEXIST),('duplicate-uni',errno.EEXIST),
+                                  ('duplicate-number',errno.EUCLEAN),('missing-bridge',errno.EUCLEAN)):
+            inconsistent=copy.deepcopy(prior_pool)
+            ports=[e['port'] for e in events if e['event']=='service_uni']
+            if conflict=='foreign-bridge': inconsistent[47,ports[-1]][0x8000]=b'\x80\x81'
+            elif conflict=='duplicate-uni': inconsistent[47,99]=copy.deepcopy(inconsistent[47,ports[0]])
+            elif conflict=='duplicate-number': inconsistent[47,ports[-1]][0x4000]=inconsistent[47,ports[0]][0x4000]
+            else: del inconsistent[45,0x8080]
+            result,_,_,_,operations,grants=run(shared=True,tagged=True,initial=(inconsistent,prior_table))
+            assert result['error']==-expected and not grants,(conflict,result)
+            assert not any(o[0] in (0x44,0x48,0x46) for o in operations)
+        checks.append('shared bridge attaches every reported Ethernet and VEIP UNI; all dependencies are checked before writes, repeated adoption is read-only, foreign/duplicate ownership rejects, later failures restore prior tables/admin state, and cleanup failure preserves shared dependencies')
         for backend in ('fpga1',):
             device.joinpath('management_grant').unlink()
             result,events,pool,table,operations,grants = run(backend=backend)

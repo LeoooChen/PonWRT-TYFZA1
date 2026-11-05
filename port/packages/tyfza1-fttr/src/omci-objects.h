@@ -25,7 +25,7 @@ enum fttr_objects_phase {
 	FTTR_OBJECT_CHECK, FTTR_OBJECT_CREATE, FTTR_OBJECT_CONFIGURE, FTTR_OBJECT_VERIFY,
 	FTTR_OBJECT_CLEANUP_PROBE, FTTR_OBJECT_DELETE, FTTR_OBJECT_DELETE_VERIFY,
 	FTTR_OBJECT_RESTORE, FTTR_OBJECT_RESTORE_VERIFY,
-	FTTR_OBJECT_CONFIGURED, FTTR_OBJECT_RELEASED, FTTR_OBJECT_FAILED, FTTR_OBJECT_RELEASE_CHECK
+	FTTR_OBJECT_CONFIGURED, FTTR_OBJECT_RELEASED, FTTR_OBJECT_FAILED, FTTR_OBJECT_RELEASE_CHECK, FTTR_OBJECT_CHECKED
 };
 enum fttr_objects_action { FTTR_OBJECT_REQUEST = 1, FTTR_OBJECT_COMPLETE = 2 };
 
@@ -35,11 +35,14 @@ struct fttr_objects_job {
 	uint8_t serial[8];
 	enum fttr_objects_phase phase;
 	int count, index, group, error, cleanup_error;
+	bool defer_apply;
 };
 
 /* The caller owns the fixed, ordered plan (at most 32 objects) for the job lifetime. */
 void fttr_objects_job_start(struct fttr_objects_job *job, uint16_t onu, uint16_t *counter,
 		struct fttr_omci_object *objects, int count, const uint8_t serial[8]);
+/* Continue a deferred plan only after all related plans passed their checks. */
+int fttr_objects_job_apply(struct fttr_objects_job *job, uint16_t *counter);
 int fttr_objects_job_update(struct fttr_objects_job *job, uint16_t *counter);
 /* Remove created resources and restore changed attributes; preserve untouched objects. */
 int fttr_objects_job_release(struct fttr_objects_job *job, uint16_t *counter);

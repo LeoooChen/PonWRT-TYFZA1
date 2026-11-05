@@ -3622,10 +3622,52 @@ four bridge-selection branches and these UNI enumerations execute successfully
 in the offline oracle.
 The report is `artifacts/fttr/default-service-original-20261106.json`. Remote
 configuration/MIB storage, configuration records and semaphore operations are
-modeled; the bridge selector stops before GEM inventory. This research does
-not implement complete shared-bridge UNI attachment, multicast, factory service
-restoration or multiple services per ONU. Those are the next native integration
-steps, using reported subordinate capabilities and the existing FE/P6 owners.
+modeled; the bridge selector stops before GEM inventory. Native shared-bridge
+attachment is implemented below. Multicast, factory service restoration and
+multiple services per ONU remain work.
+
+### Shared-bridge Ethernet and VEIP service transactions
+
+The explicit service policy now accepts `shared` in the kind field and requires
+ordinal0. It attaches every class11 Ethernet UNI and class329 VEIP in the actual
+MIB to bridge8080, sharing one selected T-CONT/GEM/ANI. Ethernet and VEIP both
+remain present; missing inventory is an error. This explicit policy does not
+yet import the original configured card/UNI count limits, multicast enable or
+multi-service default recipe. The installed policy file still has no active rows.
+
+For example, `* shared 0 1 3 200 50 100 200 br-fttr` selects access VLAN200 on
+all reported UNIs. `none` retains the original transparent mode4. The CLI takes
+`service 7 shared 0 1 3 none 50 100 200 fttr0` after its MiniOLT directory.
+Backend-specific Alloc-ID, GEM and physical DBA slot mappings are unchanged.
+
+Entity IDs and bridge port numbers are reserved for the whole service before
+IO. Existing matching bridge ports can be reused; a selected UNI on another
+bridge, duplicate UNI association/port number or a missing parent bridge
+rejects before writes. Core and every UNI object group finish their read-only
+preflight before the first Create/Set. Each UNI owns its attachment, admin
+snapshot and independent EVTO table transaction. A later failure restores
+earlier VLAN tables, restores the prior local grant, then releases owned UNI
+objects in reverse order before the shared core. Failed cleanup retains the
+dependent resources and separate initiating/cleanup errors.
+
+The resident controller exposes one per-GEM Linux VLAN through the existing
+NI/P6/FE lifecycle only after all UNI transactions and DBA readback succeed.
+Explicit SN migration first withdraws local FE/VLAN/DBA, restores all owned UNI
+state and releases the common GEM/T-CONT before mutating reservations. Runtime
+journals include each UNI's desired object recipe, ownership, prior admin value
+and VLAN tables. These records are not yet durable restart ownership recovery;
+adopted resources still reject migration without the original owner.
+
+`test_fttr_service.py` passes original wire/schema comparisons for mixed
+three-Ethernet/one-VEIP services, transparent/access rules, read-only repeated
+adoption, all-UNI preflight, inconsistent ownership, middle/last UNI failures,
+preservation of preexisting tables and cleanup failure dependency retention.
+Actual daemon/CLI migration passes with FPGA1/FPGA2 in private veth/bridge
+namespaces, including authentication, Wi-Fi, peer isolation, drift, timeout,
+identity replacement and restart adoption. Existing GEM/association/Wi-Fi,
+per-ONU policy and controller regressions pass. Reports are
+`artifacts/fttr/shared-*-20261106.json`. No optical traffic or physical packet
+retirement is exercised by these modeled MiniOLT/ONU peers.
 
 ### Outstanding implementation and acceptance
 
@@ -3658,7 +3700,7 @@ steps, using reported subordinate capabilities and the existing FE/P6 owners.
    Mapper binding and ANI/GEM-side bridge ports/VLAN filtering are implemented.
    UNI VLAN operation rules, table readback and exact prior-rule restoration
    are implemented. Explicit fresh-MIB selection, direct-bridge service
-   orchestration and local DBA readback/restoration are implemented. Resident
+   orchestration, shared Ethernet/VEIP attachment and local DBA readback/restoration are implemented. Resident
    provisioning from explicit policies and asynchronous per-ONU dispatch are
    implemented, with runtime journals and observed disconnect/replacement
    handling. MIB sync monitoring now also detects/reconciles same-serial MIB

@@ -9,14 +9,25 @@
 
 struct fttr_service_config {
 	uint16_t uni, slot, priority, vid, fixed, assured, maximum;
-	bool veip, tagged;
+	bool veip, tagged, shared;
 	enum fttr_backend backend;
+};
+
+struct fttr_service_uni {
+	uint16_t instance, port;
+	uint8_t number;
+	bool veip;
+	struct fttr_objects_job transaction;
+	struct fttr_omci_object objects[4];
+	struct fttr_vlan_change vlan;
 };
 
 struct fttr_service_job {
 	struct fttr_objects_job transaction;
-	struct fttr_omci_object objects[11];
-	struct fttr_vlan_change vlan;
+	struct fttr_omci_object objects[7];
+	struct fttr_service_uni *unis;
+	unsigned int uni_count;
+	int uni_index;
 	struct fttr_tcont_grant previous, observed;
 	struct fttr_service_config config;
 	uint16_t tcont, queue, gem, uni_port, ani_port, previous_alloc;
@@ -25,10 +36,12 @@ struct fttr_service_job {
 	bool grant_sent, grant_verified, grant_restored, grant_withdrawn, configured;
 	enum { FTTR_SERVICE_START, FTTR_SERVICE_OBJECTS, FTTR_SERVICE_VLAN,
 		FTTR_SERVICE_RELEASE, FTTR_SERVICE_READY, FTTR_SERVICE_FAILED,
-		FTTR_SERVICE_RELEASING_VLAN, FTTR_SERVICE_RELEASING_OBJECTS, FTTR_SERVICE_RELEASED } stage;
+		FTTR_SERVICE_RELEASING_VLAN, FTTR_SERVICE_RELEASING_OBJECTS, FTTR_SERVICE_RELEASED,
+		FTTR_SERVICE_UNIS, FTTR_SERVICE_ROLLBACK_VLAN, FTTR_SERVICE_ROLLBACK_UNIS,
+		FTTR_SERVICE_RELEASING_UNIS, FTTR_SERVICE_CHECK, FTTR_SERVICE_CHECK_UNIS } stage;
 };
 
-/* Select real MEs and build the original direct-bridge service dependency graph. */
+/* Select real MEs for one UNI or all reported Ethernet/VEIP UNIs on the shared bridge. */
 int fttr_service_start(struct fttr_service_job *job, uint16_t onu, uint16_t *counter,
 		const struct fttr_mib_model *model, const struct fttr_service_config *config,
 		const uint8_t serial[8]);

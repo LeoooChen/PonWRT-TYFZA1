@@ -539,7 +539,7 @@ out:
 static int service_command(int directory, unsigned int id, const uint16_t fields[8],
 			   bool tagged, const char *interface)
 {
-	struct fttr_service_config config = { .veip = fields[0] == 2, .uni = fields[1],
+	struct fttr_service_config config = { .veip = fields[0] == 2, .shared = fields[0] == 3, .uni = fields[1],
 		.slot = fields[2], .priority = fields[3], .tagged = tagged, .vid = fields[4],
 		.fixed = fields[5], .assured = fields[6], .maximum = fields[7] };
 	struct fttr_service_job job = { .phase = "inventory" };
@@ -547,6 +547,7 @@ static int service_command(int directory, unsigned int id, const uint16_t fields
 	struct fttr_onu_state before;
 	struct fttr_omci_session session;
 	uint16_t commands;
+	unsigned int i;
 	int ret = fttr_miniolt_backend(directory);
 
 	if (ret < 0)
@@ -573,15 +574,23 @@ static int service_command(int directory, unsigned int id, const uint16_t fields
 	fttr_service_dump(&job, stdout);
 	if (job.transaction.count)
 		fttr_objects_job_dump(&job.transaction, stdout, "service_objects");
-	if (job.vlan.before.me.request[2]) {
-		printf("{\"event\":\"service_vlan\",\"id\":%u,\"before\":", id);
-		vlan_table_dump(&job.vlan.before);
+	for (i = 0; i < job.uni_count; i++) {
+		struct fttr_service_uni *uni = &job.unis[i];
+		struct fttr_vlan_change *vlan = &uni->vlan;
+
+		printf("{\"event\":\"service_uni\",\"kind\":%u,\"instance\":%u,\"port\":%u}\n",
+			uni->veip ? 2 : 0, uni->instance, uni->port);
+		fttr_objects_job_dump(&uni->transaction, stdout, "service_uni_objects");
+		if (!vlan->before.me.request[2])
+			continue;
+		printf("{\"event\":\"service_vlan\",\"id\":%u,\"instance\":%u,\"before\":", id, uni->port);
+		vlan_table_dump(&vlan->before);
 		printf(",\"after\":");
-		vlan_table_dump(&job.vlan.after);
+		vlan_table_dump(&vlan->after);
 		printf(",\"failure\":");
-		vlan_failure_dump(&job.vlan.failure);
+		vlan_failure_dump(&vlan->failure);
 		printf(",\"cleanup_failure\":");
-		vlan_failure_dump(&job.vlan.cleanup_failure);
+		vlan_failure_dump(&vlan->cleanup_failure);
 		puts("}");
 	}
 	fttr_service_clear(&job);
@@ -691,7 +700,7 @@ int main(int argc, char **argv)
 			"       %s <miniolt-sysfs-directory> mapper <hardware-ID> <mapper-instance> <P-bit-mask> <GEM-IW-instance|0xffff> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> vlan-table <hardware-ID> <EVTO-instance> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> vlan <hardware-ID> <EVTO-instance> <policy:0..5> <input-VID> <output-VID> <priority:0..7> <remove:0|1> [interface=fttr0]\n"
-			"       %s <miniolt-sysfs-directory> service <hardware-ID> <UNI-kind:0|2> <UNI-instance> <slot:1..7> <priority:0..7> <VID|none> <fixed> <assured> <maximum> [interface=fttr0]\n"
+			"       %s <miniolt-sysfs-directory> service <hardware-ID> <UNI-kind:0|2|shared> <UNI-instance:0-if-shared> <slot:1..7> <priority:0..7> <VID|none> <fixed> <assured> <maximum> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> wifi <hardware-ID> <config-file> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> wait-link <NI-sysfs-directory>\n",
 			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
@@ -777,6 +786,10 @@ int main(int argc, char **argv)
 			for (i = 0; i < (service ? 8U : vlan_table ? 1U : (gem || vlan) ? 6U : profiles ? 4U : (binding || uni || ani) ? 5U : 3U); i++) {
 				unsigned long value;
 
+				if (service && !i && !strcmp(argv[4], "shared")) {
+					fields[0] = 3;
+					continue;
+				}
 				if (service && i == 4 && !strcmp(argv[8], "none")) {
 					fields[4] = 0;
 					continue;
@@ -790,7 +803,8 @@ int main(int argc, char **argv)
 				    (ani && ((i == 2 && (!value || value > 255)) || (i == 3 && value > 1))) ||
 				    (mapper && i == 1 && (!value || value > 255)) ||
 				    (vlan && ((i == 1 && value > 5) || (i == 4 && value > 7) || (i == 5 && value > 1))) ||
-				    (service && ((i == 0 && value != 0 && value != 2) || (i == 2 && (!value || value > 7)) ||
+				    (service && ((i == 0 && value != 0 && value != 2) ||
+				                 (i == 1 && fields[0] == 3 && value) || (i == 2 && (!value || value > 7)) ||
 				                 (i == 3 && value > 7) || (i == 4 && value > 4094))) ||
 				    (uni && ((i == 0 && value != 0 && value != 2) ||
 				             (i == 4 && value > (fields[0] == 2 ? 246U : 254U))))) {

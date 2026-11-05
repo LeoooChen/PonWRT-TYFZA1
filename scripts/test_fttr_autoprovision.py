@@ -87,11 +87,14 @@ def main():
     p.add_argument('--admin-control', type=Path, help='exercise the resident ONU administration CLI')
     p.add_argument('--move-control', type=Path, help='exercise the resident SN reservation move')
     p.add_argument('--output', type=Path, required=True)
+    p.add_argument("--shared", action="store_true", help="exercise shared Ethernet/VEIP services and release with --move-control")
     p.add_argument("--wifi", action="store_true", help="exercise resident remote Wi-Fi policies")
     p.add_argument("--onu-policy", action="store_true", help="exercise per-ONU authentication and persistent assignment")
     p.add_argument("--auth", action="store_true", help="exercise original global LOID policy before services")
     p.add_argument("--backend", choices=("asic9690", "fpga1", "fpga2"), default="asic9690")
     args = p.parse_args()
+    assert not args.shared or (args.move_control and not args.onu_policy)
+
     physical_slot = 0 if args.backend == "fpga1" else 1
     downstream_length = args.backend=='fpga2'
     if args.backend == "fpga1": OLT = bytes.fromhex("001111111111")
@@ -144,6 +147,9 @@ def main():
                 (277,self.queue):{0x0400:struct.pack('>I',self.tcont<<16|3)},
                 (329 if veip else 11,uni):{0x8000:b'\1'} if veip else {0x8000:b'\0',0x0800:b'\1'}}
             if veip: self.pool[11,1] = {0x8000:b'\0',0x0800:b'\1'}
+            if args.shared:
+                self.pool[11,0x602]={0x8000:b'\0',0x0800:b'\1'}
+                self.pool[329,0x605]={0x8000:b'\1'}
             if args.auth or args.onu_policy:
                 self.pool[0xfffa,0] = {0x4000:b'synthetic-loid'.ljust(24,b'\0'),
                     0x2000:b'synthetic-pw'.ljust(12,b'\0'),0x1000:b'\0'}
@@ -215,7 +221,7 @@ def main():
                 if c==266 and self.reject: status=6
                 else:
                     if c==47: create_mask=0xfc00 if body[11] in (5,11) else 0xfe00
-                    elif c==84: create_mask=0xe000 if self.veip and self.pool[47,id][0x2000]==b'\5' else 0x4000
+                    elif c==84: create_mask=0xe000 if (self.veip or args.shared) and self.pool[47,id][0x2000]==b'\5' else 0x4000
                     else: create_mask={272:0x8000,45:0xff80,268:0xfac0,266:0xf200,171:0x8200}[c]
                     n=sum(w for bit,w in widths[c].items() if create_mask&bit)
                     self.pool[c,id]=self.fields(c,create_mask,body[8:8+n])
@@ -225,9 +231,10 @@ def main():
             elif op==0x48:
                 if c==171 and mask==0x0400:
                     row=body[10:26]
-                    if row[8:]==b'\xff'*8: self.table.pop(row[:8],None)
-                    else: self.table[row[:8]]=row
-                    wire=self.slave.reply(body,b''.join(self.table.values()),8)
+                    key=(id,row[:8]) if args.shared else row[:8]
+                    if row[8:]==b'\xff'*8: self.table.pop(key,None)
+                    else: self.table[key]=row
+                    wire=self.slave.reply(body,b''.join(row for key,row in self.table.items() if not args.shared or key[0]==id),8)
                 else:
                     if c in (0xff69,0xff6a):
                         self.wifi_sets += 1
@@ -242,7 +249,7 @@ def main():
                     self.slave.sync_value=self.counter.value
                     wire=self.slave.reply(body,b'',8)
                 elif (c,id) not in self.pool: status=5
-                elif c==171 and mask in (0x4000,0x0400): wire=self.slave.reply(body,b''.join(self.table.values()),8)
+                elif c==171 and mask in (0x4000,0x0400): wire=self.slave.reply(body,b''.join(row for key,row in self.table.items() if not args.shared or key[0]==id),8)
                 else: content=struct.pack('>H',mask)+b''.join(self.pool[c,id][bit] for bit in sorted(widths[c],reverse=True) if mask&bit)
             if op in (0x44,0x48,0x46) and not status:
                 self.counter.increment()
@@ -707,6 +714,8 @@ def main():
                 scope='Real controller/veth/bridge/VLAN, modeled MiniOLT and original OMCI encoders; no physical packet-retirement acceptance.'),indent=2)+'\n')
             print(json.dumps(checks,indent=2));return
         if args.move_control:
+            if args.shared:
+                policy.write_text('* shared 0 1 3 200 50 100 200 br-fttr\n')
             checks=[];nodes[7].hold=False;nodes[7].wifi_hold=False;nodes[9].fail_upload_once=False
             def move(from_id,to,serial=None,target=None,error=0):
                 client=subprocess.Popen([str(args.move_control.resolve()),str(store),'onu-move',str(from_id),
@@ -725,6 +734,20 @@ def main():
             process=launch()
             try:
                 until(lambda s:all(s['onus'][id]['datapath_configured'] for id in (7,9)))
+                if args.shared:
+                    for id in (7,9):
+                        unis=[e for e in journal(id) if e['event']=='service_uni']
+                        reported={(c,i) for c,i in nodes[id].pool if c in (11,329)}
+                        assert {(329 if u['kind']==2 else 11,u['instance']) for u in unis}==reported
+                        assert len({u['port'] for u in unis})==len(unis)
+                        assert all(nodes[id].pool[47,u['port']][0x8000]==b'\x80\x80' for u in unis)
+                        assert all(nodes[id].pool[c,i][0x8000 if c==329 else 0x0800]==b'\0' for c,i in reported)
+                        for uni in unis:
+                            expected={(47,uni['port']),(171,uni['port']),
+                                      (329 if uni['kind']==2 else 11,uni['instance'])}
+                            if uni['kind']==0: expected.add((84,uni['port']))
+                            assert {(o['class'],o['instance']) for o in uni['objects']}==expected
+                    checks.append('shared policy configures every reported Ethernet/VEIP UNI before attaching a single GEM port through the native FE lifecycle')
                 before=len(accel_events());peer_port=datapath(9)
                 move(7,11,serial='0'*16,error=errno.ESTALE)
                 move(7,11,target='1'*16,error=errno.ESTALE)
@@ -762,6 +785,12 @@ def main():
                 assert accel_events()[before:]==[(0,old_port,peer_port),(1,0,peer_port),(0,0,peer_port),(1,0,peer_port)]
                 data=device.joinpath('onu_state').read_bytes()
                 assert data[7*20+12:8*20]==bytes(8) and data[11*20+12:12*20]==nodes[7].serial
+                if args.shared:
+                    assert not nodes[7].table and not any(c in (45,47,84,171,266,268,272) for c,i in nodes[7].pool)
+                    assert all(nodes[7].pool[c,i][0x8000 if c==329 else 0x0800]==b'\1' for c,i in nodes[7].pool if c in (11,329))
+                    uni_ledgers=[e for e in journal(7,'service-old') if e['event']=='service_uni_objects']
+                    assert len(uni_ledgers)>=3 and all(not o['touched'] for e in uni_ledgers for o in e['objects'])
+                    checks.append('shared migration restores all UNI VLAN/admin state and releases every owned attachment before shared GEM/T-CONT and SN mutation')
                 # Registration is an external event, never synthesized by the controller.
                 node=nodes.pop(7);node.id=11;node.auth_hold=args.auth;node.held=None;nodes[11]=node
                 hardware()
