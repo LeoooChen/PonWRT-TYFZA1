@@ -384,6 +384,12 @@ def main():
                 assert ni.joinpath('fttr_accel').read_text()=='0\n'
                 assert device.joinpath('tcont_state').read_bytes()==bytes(4096)
             auth_policy.write_bytes(good_auth);auth_policy.chmod(0o600)
+            device.joinpath('backend').write_text('fpga2\n')
+            rejected=subprocess.run([str(args.daemon.resolve()),str(device),str(ni),str(store),
+                'fap-host','--loid-auth',str(auth_policy)],capture_output=True,text=True,timeout=2)
+            assert rejected.returncode==1 and not store.joinpath('status.json').exists()
+            assert device.joinpath('tx_enable').read_text()=='1\n' and ni.joinpath('fttr_accel').read_text()=='0\n'
+            device.joinpath('backend').write_text(args.backend+'\n')
         wifi_policy=root/'wifi-policies'
         if args.wifi:
             from test_fttr_wifi_cli import policy as wifi_config_text
@@ -445,7 +451,7 @@ def main():
             current['onus']=[r for r in current.get('onus',[]) if r['id'] in nodes]
             raise AssertionError(('state timeout',current,grants))
         hardware()
-        def launch(with_policy=True, with_wifi=None):
+        def launch(with_policy=True, with_wifi=None, grant_case='normal'):
             subprocess.run(['ip','link','set','dev','fap-host','up'],check=True)
             ni.joinpath('fttr_link').write_text('configured=1 mode=9 nway=1 clock=1 error=0 link=1\n')
             device.joinpath('tx_enable').write_text('1\n')
@@ -454,7 +460,7 @@ def main():
                 (['--loid-auth',str(auth_policy)] if args.auth else []) +
                 (['--wifi',str(wifi_policy)] if (args.wifi if with_wifi is None else with_wifi) else []),
                 stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True,
-                env=dict(os.environ,LD_PRELOAD=str(root/'sysfs.so'),FTTR_SERVICE_CASE='normal',
+                env=dict(os.environ,LD_PRELOAD=str(root/'sysfs.so'),FTTR_SERVICE_CASE=grant_case,
                     FTTR_ACCEL_LOG=str(accel_log),FTTR_ACCEL_FAIL=str(accel_fault),
                     FTTR_ADMIN_FAIL=str(admin_fault),FTTR_ADMIN_HOLD=str(admin_hold),FTTR_ADMIN_LOG=str(admin_log),
                     **({'FTTR_ADMIN_FPGA':'1'} if args.backend=='fpga1' else {})))
@@ -473,10 +479,21 @@ def main():
                 replacement=Node(7,(int.from_bytes(nodes[7].serial,'big')+1).to_bytes(8,'big').hex(),0x307,True)
                 for name,value in attrs.items():setattr(replacement,name,value)
                 nodes[7]=replacement;hardware()
+            # An earlier controller may have died without withdrawing DBA.
+            # Seed both the selected data slot and a slot with no current policy.
+            residual_slots=(1,7) if args.backend=='asic9690' else (0,)
+            with device.joinpath('tcont_state').open('r+b') as f:
+                for id in (7,11):
+                    for slot in residual_slots:
+                        f.seek((id*8+slot)*8);f.write(struct.pack('<II',50,100<<16|200))
             process=launch()
             try:
                 until(lambda s:auth_status(s) and s['onus'][7]['phase']=='authentication' and s['onus'][9]['datapath_configured'])
                 no_service()
+                assert not any(device.joinpath('tcont_state').read_bytes()[11*64:12*64])
+                for slot in residual_slots:
+                    assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),(7*8+slot)*8)==(0,0)
+                checks.append('warm ownership clears residual data grants, including absent/unconfigured ONUs, before authentication')
                 assert not status()['onus'][7]['loid_authenticated']
                 nodes[7].auth_hold=False
                 peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+nodes[7].held)
@@ -558,6 +575,21 @@ def main():
                 process.send_signal(signal.SIGTERM);_,errors=process.communicate(timeout=3)
                 assert process.returncode==0,errors
                 checks.append('explicit disabled policy provisions without credential requests or authenticated status')
+                auth_policy.write_bytes(good_auth)
+                for case,expected in [('grant-false-success',-errno.EUCLEAN),('missing-grants',-errno.ENOENT)]:
+                    for node in nodes.values():node.operations=[]
+                    accel_log.write_text('')
+                    if case=='missing-grants':device.joinpath('tcont_state').unlink()
+                    else:
+                        with device.joinpath('tcont_state').open('r+b') as f:
+                            f.seek((7*8+physical_slot)*8);f.write(struct.pack('<II',50,100<<16|200))
+                    process=launch(grant_case=case)
+                    _,errors=process.communicate(timeout=3)
+                    assert process.returncode==1 and status()['error']==expected,(case,errors,status())
+                    assert device.joinpath('tx_enable').read_text()=='0\n' and not ports()
+                    assert not any(enabled for enabled,_,_ in accel_events())
+                    assert not select.select([peer],[],[],0)[0]
+                checks.append('unreadable or false-success grant withdrawal stops TX before FE admission or OMCI')
             finally:
                 if process.poll() is None:process.kill();process.wait()
                 peer.close();os.close(grant_fd)

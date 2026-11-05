@@ -924,6 +924,38 @@ static int failed(struct controller *c, unsigned int id, int error)
 	return 0;
 }
 
+static int clear_auth_grants(struct controller *c)
+{
+	struct fttr_tcont_grant grant;
+	unsigned int id, slot, last = c->backend == FTTR_FPGA1 ? 1 : 7;
+	int ret;
+
+	/* Exclusive controller ownership and FE/VLAN withdrawal precede this.
+	 * An earlier process can leave hardware grants behind even when no
+	 * current service policy names them. No data grant is trusted before
+	 * the new controller authenticates that registration. Keep ASIC slot0
+	 * for management; FPGA1 service slot1 maps to its sole physical slot0.
+	 */
+	for (id = 0; id < FTTR_ONUS; id++)
+		for (slot = 1; slot <= last; slot++) {
+			if (stopping)
+				return -EINTR;
+			ret = fttr_miniolt_tcont_read(c->directory, id, slot, &grant);
+			if (ret)
+				return ret;
+			if (!grant.fixed && !grant.limits)
+				continue;
+			ret = fttr_miniolt_tcont(c->directory, id, slot, 0, 0, 0);
+			if (!ret)
+				ret = fttr_miniolt_tcont_read(c->directory, id, slot, &grant);
+			if (ret)
+				return ret;
+			if (grant.fixed || grant.limits)
+				return -EUCLEAN;
+		}
+	return 0;
+}
+
 static int start_mib(struct controller *c, unsigned int id)
 {
 	static const uint8_t empty[8];
@@ -1909,6 +1941,8 @@ static int bootstrap(struct controller *c, int optical, const char *mode, const 
 	BOOT_STEP("configure OMCI envelope", fttr_miniolt_command(c->directory, "omci_link", mac));
 	if (c->backend == FTTR_ASIC9690)
 		BOOT_STEP("configure DBA", fttr_miniolt_command(c->directory, "dba", "1\n"));
+	if (c->auth.enabled)
+		BOOT_STEP("clear unverified data grants", clear_auth_grants(c));
 	BOOT_STEP("verify optical calibration", fttr_miniolt_calibrated(optical));
 	BOOT_STEP("initialize optical maintenance", fttr_miniolt_optical_start(&c->optical, now_ms()));
 	BOOT_STEP("open netdev", interface_state(c, true, 1982));
@@ -1986,6 +2020,8 @@ int main(int argc, char **argv)
 	if (ret < 0)
 		goto out;
 	c.backend = ret;
+	/* FPGA2's physical data-grant binding is not established yet. */
+	if (c.auth.enabled && c.backend == FTTR_FPGA2) { ret = -EOPNOTSUPP; goto out; }
 	{
 		const struct service_policy *policy;
 
@@ -2024,6 +2060,11 @@ int main(int argc, char **argv)
 			goto out;
 	}
 	if (unlinkat(c.store, "status.json", 0) && errno != ENOENT) { ret = -errno; goto out; }
+	if (c.auth.enabled && argc == 5) {
+		ret = clear_auth_grants(&c);
+		if (ret)
+			goto out;
+	}
 	if (argc == 9) {
 		c.optical.directory = open(argv[5], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 

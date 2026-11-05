@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import struct
 import subprocess
 import tempfile
 import time
@@ -20,6 +21,7 @@ shim = r'''
 #include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -37,10 +39,19 @@ ssize_t write(int fd,const void *buffer,size_t count) {
  name=strrchr(path,'/');name=name ? name+1 : path;
  if(strcmp(name,"tx_enable") && strcmp(name,"reset") && strcmp(name,"calibration") &&
     strcmp(name,"host_serdes") && strcmp(name,"fttr_link") && strcmp(name,"pon_serdes") &&
-    strcmp(name,"core_init") && strcmp(name,"fpga_init") && strcmp(name,"fpga_auth") && strcmp(name,"omci_link") && strcmp(name,"dba") && strcmp(name,"fttr_accel") && strcmp(name,"maintenance"))
+    strcmp(name,"core_init") && strcmp(name,"fpga_init") && strcmp(name,"fpga_auth") && strcmp(name,"omci_link") && strcmp(name,"dba") && strcmp(name,"fttr_accel") && strcmp(name,"maintenance") && strcmp(name,"tcont"))
   return real_write(fd,buffer,count);
  log=open(getenv("FTTR_TEST_LOG"),O_WRONLY|O_CREAT|O_APPEND,0600);
  real_write(log,name,strlen(name));real_write(log," ",1);real_write(log,buffer,count);close(log);
+ if(!strcmp(name,"tcont")) {
+  unsigned id,slot,f,a,m;
+  if(sscanf(buffer,"%u %u %u %u %u",&id,&slot,&f,&a,&m)!=5){errno=EINVAL;return -1;}
+  if(!bad || strcmp(bad,"grant-false")) {
+   strcpy(strrchr(path,'/'),"/tcont_state");int grant=open(path,O_WRONLY);
+   uint32_t words[2]={f,a<<16|m};pwrite(grant,words,8,(id*8+slot)*8);close(grant);
+  }
+  return count;
+ }
  if(bad && !strcmp(bad,"core") && (!strcmp(name,"core_init") || !strcmp(name,"fpga_init"))){errno=EIO;return -1;}
  if(bad && !strcmp(bad,"auth") && !strcmp(name,"fpga_auth")){errno=EACCES;return -1;}
  if(bad && !strcmp(name,"maintenance")) {
@@ -87,7 +98,9 @@ def main():
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--backend',choices=('asic9690','fpga1','fpga2'),default='asic9690')
     parser.add_argument('--monitor',action='store_true',help='include UX3326 recovery, runtime failure and cancellation')
+    parser.add_argument('--loid-auth',action='store_true',help='check authenticated startup clears old data grants before TX')
     args=parser.parse_args()
+    assert not args.loid_auth or args.backend!='fpga2'
     assert {x['ifname'] for x in json.loads(subprocess.check_output(['ip','-j','link','show'],text=True))}=={'lo'}
     subprocess.run(['ip','link','add','ftr-host','type','veth','peer','name','ftr-peer'],check=True)
     for interface,mac in [('ftr-host','02:03:04:05:06:07'),('ftr-peer','0a:0b:0c:0d:0e:0f')]:
@@ -122,6 +135,7 @@ def main():
         cases = ('none','link','marker','core','stop-during-init') + (('auth',) if args.backend=='fpga1' else ())
         if args.backend != 'asic9690': cases += ('preloaded',)
         if args.monitor: cases += ('temperature','monitor-ok','monitor-low','monitor-stop')
+        if args.loid_auth: cases += ('grant-false','grant-missing')
         for bad in cases:
             case=work/bad;case.mkdir()
             miniolt,ni,optical,store=[case/n for n in ('miniolt','ni','optical','state')]
@@ -144,6 +158,14 @@ def main():
             env=dict(os.environ,LD_PRELOAD=str(work/'sysfs.so'),FTTR_TEST_ROOT=str(case),
                 FTTR_TEST_LOG=str(log),FTTR_TEST_BAD=bad)
             argv=[str(args.daemon.resolve()),str(miniolt),str(ni),str(store),'ftr-host',str(optical),'9','1','3']
+            slot=0 if args.backend=='fpga1' else 7
+            if args.loid_auth:
+                policy=case/'loid.bin';policy.write_bytes(b'TFL1'+b'test'.ljust(25,b'\0')+b'key'.ljust(13,b'\0'));policy.chmod(0o600)
+                argv+=['--loid-auth',str(policy)]
+                miniolt.joinpath('tcont').write_text('')
+                if bad!='grant-missing':
+                    grants=bytearray(4096);struct.pack_into('<II',grants,(7*8+slot)*8,50,100<<16|200)
+                    miniolt.joinpath('tcont_state').write_bytes(grants)
             process=subprocess.Popen(argv,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
             def state():
                 try:return json.loads(store.joinpath('status.json').read_text())
@@ -158,7 +180,9 @@ def main():
                             'calibration 1','omci_link 02:03:04:05:06:07','tx_enable 1','fttr_accel 1']
                         if args.backend == 'fpga1': expected_commands.insert(4,'fpga_auth 1')
                         if bad=='preloaded': expected_commands.remove('fttr_link 5 1')
+                    if args.loid_auth: expected_commands.insert(expected_commands.index('tx_enable 1'),f'tcont 7 {slot} 0 0 0')
                     assert log.read_text().splitlines()==expected_commands
+                    if args.loid_auth: assert miniolt.joinpath('tcont_state').read_bytes()==bytes(4096)
                     replacement=subprocess.Popen(argv,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
                     try:
                         wait(replacement,lambda:'locks' in Path(f'/proc/{replacement.pid}/wchan').read_text())
@@ -198,7 +222,7 @@ def main():
                 else:
                     _,errors=process.communicate(timeout=5)
                     assert process.returncode==1,errors
-                    assert state()['error']==(-110 if bad=='link' else -13 if bad=='auth' else -5)
+                    assert state()['error']==(-110 if bad=='link' else -13 if bad=='auth' else -117 if bad=='grant-false' else -2 if bad=='grant-missing' else -5)
                     assert 'tx_enable 1' not in log.read_text().splitlines()
                 assert miniolt.joinpath('tx_enable').read_text()=='0\n'
                 assert ni.joinpath('fttr_link').read_text().startswith('configured=0 ')
@@ -213,6 +237,7 @@ def main():
         'stop_during_init_closes_hardware':True,'restart_waits_for_previous_owner':True,
         'real_netdev_ioctls_in_private_namespace':True,'modeled_hardware':'sysfs write/show callbacks',
         'ux3326_recovery_and_stop_checked':args.monitor,
+        'loid_auth_grants_cleared_before_tx':args.loid_auth,
         'optical_hardware_verified':False},indent=2)+'\n')
     print('Native startup: factory import, IO order, failure cleanup and controller replacement passed')
 

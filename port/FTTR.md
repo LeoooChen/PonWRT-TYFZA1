@@ -3156,7 +3156,20 @@ Manual invocation without that option retains the explicitly unprotected
 development mode. Invalid, exposed, nonregular or duplicate inputs fail before
 the daemon takes hardware ownership or writes TX/FE/DBA state.
 
-Each new registered identity first receives management access, then the
+An authenticated controller first withdraws residual data grants left by a
+previous process, after taking exclusive ownership and withdrawing FE/owned
+VLANs. It checks all64 ONUs and all seven ASIC data slots, including currently
+absent/unconfigured identities, while retaining ASIC management slot0. FPGA1
+uses its single physical data slot0. Zero grants cause no write; nonzero grants
+must be cleared and read back as zero. In full optical bootstrap this happens
+after core/FPGA initialization and before TX enable. The management-only
+invocation performs it before FE admission/OMCI. Missing readback, failed writes
+or false-success clears stop the controller through normal TX/FE teardown.
+FPGA2 with an enabled authentication policy fails before ownership because
+its service-grant binding remains unproven. This is a local grant barrier;
+it does not establish downstream buffer retirement or per-GEM ingress filtering.
+
+Each new registered identity then receives management access, followed by the
 asynchronous CTC LOID/key acquisition. Peer rejection or timeout on either CTC
 field restarts acquisition through ONU-G; data from the two paths is never
 mixed. Malformed frames, local IO and stale identities do not trigger a
@@ -3195,6 +3208,10 @@ management and Wi-Fi regression suites pass. GCC14.4/musl FTTR and factory
 packages compile/install, and installed sources/init/importer match this tree.
 Reports/logs are `artifacts/fttr/onu-auth-*-20261106.*`. These are offline
 protocol/lifecycle checks, not physical authentication or traffic acceptance.
+The additional `onu-auth-restart-*` suites reproduce the prior residual-grant
+failure, verify both backend service/Wi-Fi lifecycles, absent/unconfigured slots,
+unreadable/false-success withdrawal and the full bootstrap ordering/replacement.
+The final FTTR package build includes this grant barrier.
 
 ### Outstanding implementation and acceptance
 
