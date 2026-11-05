@@ -3724,6 +3724,55 @@ reports are `artifacts/fttr/multicast-original-20261106.json` and
 evidence. Native multicast provisioning/forwarding and hardware acceptance
 remain incomplete.
 
+### Native multicast P6 transport endpoint
+
+The NI driver now registers `fttr-mc` as an initially down upper of `fttr0`.
+It implements the dedicated transport required by the original VID4095 SMUX
+path without treating the reserved VID as a Linux VLAN interface. Sending
+adds TPID0x8100/VID4095 outside up to two customer tags and submits through
+the parent P6 qdisc/DMA path, retaining the original DEEPQ destination6/header.
+No second DMA owner, ring or hardware port is allocated. Hardware replication
+and remote multicast provisioning are not implemented by this transport step;
+the endpoint is not registered as a unicast FE port.
+
+When attached to the same live bridge as an owned ONU service VLAN, the endpoint
+receives IPv4 IGMP and IPv6 MLD131/143 from that service. The outer GEM tag is
+removed while customer tags survive. IPv6 extension-header traversal is bounded;
+truncated headers, non-first fragments, unknown GEMs and foreign/down/blocked
+service ports are not redirected. The original local/unicast/broadcast/IEEE
+multicast rules and per-ONU duplicate IPv4/IPv6 multicast drops apply while the
+multicast upper is running. The dedicated `rtl9617c_fttr_ingress` skb bit replaces
+the original `EXT_SWITCH_EN` provenance for source-MAC loop handling; it remains
+in the copied skb header group, so bridge/routing changes to `skb_iif` do not
+erase the origin. This bit is not authentication or a GEM-reuse epoch.
+
+`fttr_forward` closes the multicast producer and purges its qdisc before the
+shared CPU RX/P6 qdisc/FE withdrawal. Successful FE admission is required to
+restore the producer. Parent reconfiguration, close and FPGA loading close it;
+the carrier follows actual P6 state and never brings an administratively down
+multicast upper online. Closing the multicast upper retires shared-NAPI
+reports and queued parent submissions; parent close also purges retained RX.
+Unregister stops the link worker, removes the RCU RX endpoint, waits for held
+RX and retires the upper before freeing the parent. New opens reject removal.
+DMA-prefetched and downstream packets are still outside this software purge.
+
+`test_fttr_mcast.py` executes the native packet/gate callbacks and actual Linux
+`skb_vlan_pop/push` control flow under ASan/UBSan, with modeled buffer storage,
+topology, qdisc and delivery. It covers in-band/metadata tags, IGMP/MLD, IPv6
+extensions, malformed packets, preserved customer tags, VID4095 wire bytes,
+return-source handling, duplicate filtering and closed-upper rejection.
+Existing forward/TX gates, multicast-aware GRO purge, original CPU-DEEPQ,
+P6 queue setup, shared FE/bridge learning and768 receive-poll cases pass.
+Linux6.18.55 Image/modules compile with the new skb field and multicast object;
+the edited patch hunks reverse cleanly against the build tree. Reports/logs
+are under `artifacts/fttr/multicast-*`. These are offline checks; no physical
+device or optical link was touched.
+
+The controller does not yet open/enslave `fttr-mc`. Remote GEM4095, multicast
+profiles/ACLs, verified ownership across restart, and binding each admitted ONU
+to the shared endpoint remain the next integration work. The presence of the
+kernel interface alone does not establish a complete multicast service.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

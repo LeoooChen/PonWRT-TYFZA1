@@ -28,7 +28,7 @@ struct device {void *data;};struct device_attribute {int unused;};struct work {i
 struct net_device {void *data;bool running,stopped,carrier;struct {unsigned tx_dropped;}stats;};
 struct sk_buff {bool consumed;};struct rtl9617c_ni_frame {int unused;};
 struct rtl_fttr_p6 {bool configured;int error;unsigned int mode;unsigned char *qx;};
-struct rtl_xram {struct rtl_fttr_p6 p6;struct net_device *fttr;int fe,dma,tx_lock;bool fttr_tx_active,fttr_loading,fttr_forwarding;
+struct rtl_xram {struct rtl_fttr_p6 p6;struct net_device *fttr,*fttr_mc;int fe,dma,tx_lock;bool fttr_tx_active,fttr_loading,fttr_forwarding,removing;
  struct {unsigned fttr_epoch;} qm;};
 struct rtl9617c_ni_endpoint {struct net_device *netdev;};
 struct rtl_fttr_port {struct rtl9617c_ni_endpoint endpoint;struct rtl_xram *shared;struct work link_work;};
@@ -61,6 +61,8 @@ static int rtl_fe_fttr_open(int fe){(void)fe;return failed_fe;}
 static int rtl_fe_fttr_close(int fe){(void)fe;closed++;return failed_fe;}
 static void rtl9617c_ni_close(struct device *dev,struct net_device *owner);
 static void interleave(void);
+static void rtl_fttr_mcast_gate(struct net_device *d,bool enabled){(void)d;(void)enabled;}
+static void rtl_fttr_rx_purge(struct rtl_xram *p){(void)p;}
 static int rtl_fe_fttr_set(int fe,bool enabled){(void)fe;assert(!enabled);interleave();return failed_fe;}
 static int rtl_fttr_p6_configure(struct rtl_fttr_p6 *p,unsigned mode,bool nway){
  (void)mode;(void)nway;interleave();p->configured=!failed_config;configured++;return failed_config;
@@ -122,6 +124,7 @@ int main(void) {
  assert(!rtl_fttr_open(&p6));assert(engine_refs==1 && !p6.stopped);
  setup();rtnl=1;failed_fe=-EIO;shared.fttr_tx_active=false;p6.stopped=true;engine_refs=0;
  assert(rtl_fttr_open(&p6)==-EIO && !shared.fttr_tx_active && engine_refs==0);
+ shared.removing=true;assert(rtl_fttr_open(&p6)==-ENODEV && engine_refs==0);
  setup();assert(rtl9617c_ni_fttr_load_begin(&device)==-EBUSY && !shared.fttr_loading);
  p6.running=false;shared.p6.configured=false;
  assert(rtl9617c_ni_fttr_load_begin(&device)==-EPROBE_DEFER);

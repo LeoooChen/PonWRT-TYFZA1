@@ -40,6 +40,7 @@
 #include <linux/rtl9617c-fttr.h>
 #include "rtl9617c-fe.h"
 #include "rtl9617c-fttr-p6.h"
+#include "rtl9617c-fttr-mcast.h"
 #include "rtl9617c-mib.h"
 
 #define GLB_STATIC 0xa01c
@@ -67,6 +68,7 @@
 #define PKT_ERRORS (GENMASK(23, 20) | BIT(25) | BIT(26))
 
 struct rtl_xram;
+static void rtl_fttr_rx_purge(struct rtl_xram *priv);
 struct rtl_lan {
 	struct rtl_xram *shared;
 	unsigned int port;
@@ -119,6 +121,7 @@ struct rtl_xram {
 	struct rtl_fe *fe;
 	struct rtl_fttr_p6 p6;
 	struct net_device *fttr;
+	struct net_device *fttr_mc;
 	bool fttr_tx_active;
 	bool fttr_forwarding;
 	u16 fttr_omci_type;
@@ -709,13 +712,14 @@ static void rtl_fttr_link_work(struct work_struct *work)
 	struct net_device *dev = port->endpoint.netdev;
 
 	if (rtnl_trylock()) {
-		if (rtl_fttr_p6_link(&port->shared->p6))
+		if (!port->shared->removing && rtl_fttr_p6_link(&port->shared->p6))
 			netif_carrier_on(dev);
 		else
 			netif_carrier_off(dev);
+		rtl_fttr_mcast_link(port->shared->fttr_mc, netif_carrier_ok(dev));
 		rtnl_unlock();
 	}
-	if (netif_running(dev))
+	if (!READ_ONCE(port->shared->removing) && netif_running(dev))
 		schedule_delayed_work(&port->link_work, HZ);
 }
 
@@ -734,6 +738,8 @@ static void rtl_fttr_tx_gate(struct rtl_xram *priv, bool active)
 	spin_unlock_irqrestore(&priv->tx_lock, flags);
 	if (!active && priv->fttr)
 		netif_tx_disable(priv->fttr);
+	if (!active)
+		rtl_fttr_mcast_gate(priv->fttr_mc, false);
 }
 
 static int rtl_fttr_open(struct net_device *dev)
@@ -741,6 +747,8 @@ static int rtl_fttr_open(struct net_device *dev)
 	struct rtl_fttr_port *port = netdev_priv(dev);
 	int ret;
 
+	if (port->shared->removing)
+		return -ENODEV;
 	if (port->shared->fttr_loading)
 		return -EBUSY;
 	if (!port->shared->p6.configured)
@@ -768,6 +776,7 @@ static int rtl_fttr_stop(struct net_device *dev)
 	WRITE_ONCE(port->shared->qm.fttr_epoch, port->shared->qm.fttr_epoch + 1);
 	rtl_fttr_tx_gate(port->shared, false);
 	cancel_delayed_work_sync(&port->link_work);
+	rtl_fttr_rx_purge(port->shared);
 	netif_carrier_off(dev);
 	ret = rtl_fe_fttr_set(port->shared->fe, false);
 	cleanup = rtl_fe_fttr_close(port->shared->fe);
@@ -788,6 +797,14 @@ static netdev_tx_t rtl_fttr_xmit(struct sk_buff *skb, struct net_device *dev)
 		.header_low = (16 << 9) | (6 << 3) | BIT(29),
 	};
 
+	rcu_read_lock();
+	if (rtl_fttr_mcast_drop(READ_ONCE(port->shared->fttr_mc), skb)) {
+		rcu_read_unlock();
+		dev->stats.tx_dropped++;
+		dev_kfree_skb_any(skb);
+		return NETDEV_TX_OK;
+	}
+	rcu_read_unlock();
 	return rtl9617c_ni_transmit(port->shared->p6.dev, dev, skb, &frame);
 }
 
@@ -821,6 +838,10 @@ static void rtl_fttr_receive(struct rtl9617c_ni_endpoint *endpoint, struct napi_
 	}
 	dev->stats.rx_packets++;
 	dev->stats.rx_bytes += skb->len;
+	/* Original EXT_SWITCH_EN survives bridge/routing and skb copies. */
+	skb->rtl9617c_fttr_ingress = 1;
+	if (rtl_fttr_mcast_receive(READ_ONCE(port->shared->fttr_mc), napi, skb))
+		return;
 	skb->protocol = eth_type_trans(skb, dev);
 	napi_gro_receive(napi, skb);
 }
@@ -888,14 +909,37 @@ static int rtl_register_fttr(struct rtl_xram *priv)
 		return ret;
 	}
 	priv->fttr = dev;
+	priv->fttr_mc = rtl_fttr_mcast_create(dev);
+	if (IS_ERR(priv->fttr_mc)) {
+		ret = PTR_ERR(priv->fttr_mc);
+		priv->fttr_mc = NULL;
+		priv->fttr = NULL;
+		rtl_fe_remove_port(priv->fe, dev);
+		dev->needs_free_netdev = true;
+		unregister_netdevice(dev);
+		return ret;
+	}
 	rcu_assign_pointer(priv->qm.fttr, &port->endpoint);
 	return 0;
 }
 
 static void rtl_unregister_fttr(struct rtl_xram *priv)
 {
+	struct net_device *mc;
+	struct rtl_fttr_port *port;
+
 	if (!priv->fttr)
 		return;
+	port = netdev_priv(priv->fttr);
+	rtnl_lock();
+	cancel_delayed_work_sync(&port->link_work);
+	rtl_fttr_tx_gate(priv, false);
+	rcu_assign_pointer(priv->qm.fttr, NULL);
+	rtl_fttr_rx_purge(priv);
+	mc = priv->fttr_mc;
+	WRITE_ONCE(priv->fttr_mc, NULL);
+	rtnl_unlock();
+	rtl_fttr_mcast_destroy(mc);
 	unregister_netdev(priv->fttr);
 	rtl_fe_remove_port(priv->fe, priv->fttr);
 	rcu_assign_pointer(priv->qm.fttr, NULL);
@@ -1590,8 +1634,8 @@ static DEVICE_ATTR_RW(fttr_accel);
  */
 static bool rtl_fttr_gro_business(struct rtl_xram *priv, const struct sk_buff *skb)
 {
-	return skb->dev == priv->fttr && (skb_vlan_tag_present(skb) ||
-	       !priv->fttr_omci_type || skb->protocol != htons(priv->fttr_omci_type));
+	return skb->dev == priv->fttr_mc || (skb->dev == priv->fttr && (skb_vlan_tag_present(skb) ||
+	       !priv->fttr_omci_type || skb->protocol != htons(priv->fttr_omci_type)));
 }
 
 static void rtl_fttr_rx_purge(struct rtl_xram *priv)
@@ -1615,7 +1659,7 @@ static void rtl_fttr_rx_purge(struct rtl_xram *priv)
 				continue;
 			skb_list_del_init(skb);
 			gro->hash[i].count--;
-			priv->fttr->stats.rx_dropped++;
+			skb->dev->stats.rx_dropped++;
 			kfree_skb(skb);
 		}
 		if (!gro->hash[i].count)
@@ -1625,7 +1669,7 @@ static void rtl_fttr_rx_purge(struct rtl_xram *priv)
 		if (!rtl_fttr_gro_business(priv, skb))
 			continue;
 		skb_list_del_init(skb);
-		priv->fttr->stats.rx_dropped++;
+		skb->dev->stats.rx_dropped++;
 		kfree_skb(skb);
 	}
 	/* The normal batch counts original segments, not skb entries. Deliver
@@ -1641,6 +1685,21 @@ static void rtl_fttr_rx_purge(struct rtl_xram *priv)
 		napi_enable(&priv->napi);
 		/* An IRQ during napi_disable may have masked RX without scheduling. */
 		napi_schedule(&priv->napi);
+	}
+}
+
+void rtl_fttr_mcast_quiesce(struct net_device *parent)
+{
+	struct rtl_fttr_port *port = netdev_priv(parent);
+
+	ASSERT_RTNL();
+	rtl_fttr_rx_purge(port->shared);
+	/* The DMA queue has one P6 owner. Clear its software qdisc as on a
+	 * forwarding withdrawal; other physical NI ports keep their queues.
+	 */
+	if (netif_running(parent)) {
+		dev_deactivate(parent);
+		dev_activate(parent);
 	}
 }
 
@@ -1671,6 +1730,7 @@ static ssize_t fttr_forward_store(struct device *dev, struct device_attribute *a
 	spin_lock_irqsave(&priv->tx_lock, flags);
 	smp_store_release(&priv->fttr_forwarding, false);
 	spin_unlock_irqrestore(&priv->tx_lock, flags);
+	rtl_fttr_mcast_gate(priv->fttr_mc, false);
 	WRITE_ONCE(priv->qm.fttr_epoch, priv->qm.fttr_epoch + 1);
 	/* Retire held CPU RX before detaching/resetting the parent qdisc and
 	 * waiting for current qdisc runs, including a BUSY skb being requeued.
@@ -1694,6 +1754,7 @@ static ssize_t fttr_forward_store(struct device *dev, struct device_attribute *a
 		WRITE_ONCE(priv->fttr_omci_type, type);
 		smp_store_release(&priv->fttr_forwarding, true);
 		spin_unlock_irqrestore(&priv->tx_lock, flags);
+		rtl_fttr_mcast_gate(priv->fttr_mc, true);
 	}
 out:
 	priv->fttr_forward_error = ret;
@@ -1896,7 +1957,7 @@ static void rtl_remove(struct platform_device *pdev)
 	if (priv->lan4_phy)
 		flush_work(&priv->lan4_work);
 	cancel_delayed_work_sync(&priv->mib_work);
-	priv->removing = true;
+	WRITE_ONCE(priv->removing, true);
 	if (priv->wifi_started) rtl_wifi_stop();
 	if (priv->native_groups_created)
 		sysfs_remove_groups(&pdev->dev.kobj, rtl_native_groups);

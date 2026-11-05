@@ -1,11 +1,12 @@
 --- a/include/linux/skbuff.h
 +++ b/include/linux/skbuff.h
-@@ -1026,6 +1026,9 @@ struct sk_buff {
+@@ -1026,6 +1026,10 @@ struct sk_buff {
  #ifdef CONFIG_SKB_DECRYPTED
  	__u8			decrypted:1;
  #endif
 +#ifdef CONFIG_ARCH_RTL9617C
 +	__u8			rtl9617c_wifi_miss:1;
++	__u8			rtl9617c_fttr_ingress:1;
 +#endif
  	__u8			slow_gro:1;
  #if IS_ENABLED(CONFIG_IP_SCTP)

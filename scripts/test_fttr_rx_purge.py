@@ -15,7 +15,7 @@ text = subprocess.check_output(['git', 'show', f'{args.revision}:{path}'], cwd=R
 
 
 def function(name):
-    start = re.search(r'^static (?:void|bool) ' + name + r'\(', text, re.M).start()
+    start = re.search(r'^static (?:void|bool) ' + name + r'\([^;]*?\)\s*\{', text, re.M).start()
     end = text.index('{', start) + 1
     depth = 1
     while depth:
@@ -49,9 +49,9 @@ struct sk_buff {struct list_head list;struct net_device *dev;unsigned protocol;b
 struct gro_node {unsigned long bitmask;struct {struct list_head list;int count;}hash[GRO_HASH_BUCKETS];struct list_head rx_list;unsigned rx_count;};
 struct napi_struct {struct gro_node gro;};
 struct rtl_fttr_rx {struct sk_buff *skb;};
-struct rtl_xram {struct net_device *fttr;unsigned engine_users,fttr_omci_type;struct napi_struct napi;struct {struct rtl_fttr_rx fttr_rx[8];}qm;};
+struct rtl_xram {struct net_device *fttr,*fttr_mc;unsigned engine_users,fttr_omci_type;struct napi_struct napi;struct {struct rtl_fttr_rx fttr_rx[8];}qm;};
 static struct rtl_xram shared;
-static struct net_device fttr,lan;
+static struct net_device fttr,lan,mc;
 static unsigned freed[256],delivered[256],disable_calls,enable_calls,schedule_calls,sync_calls,resets;
 static bool napi_enabled,poll_tail,bh,locked;
 #define ASSERT_RTNL() assert(locked)
@@ -95,7 +95,7 @@ int main(void){
   memset(&shared,0,sizeof(shared));memset(&fttr,0,sizeof(fttr));
   memset(freed,0,sizeof(freed));memset(delivered,0,sizeof(delivered));
   disable_calls=enable_calls=schedule_calls=sync_calls=resets=0;
-  shared.fttr=&fttr;shared.engine_users=users;shared.fttr_omci_type=custom?0x9999:0x8888;
+  shared.fttr=&fttr;shared.fttr_mc=&mc;memset(&mc,0,sizeof(mc));shared.engine_users=users;shared.fttr_omci_type=custom?0x9999:0x8888;
   napi_enabled=!!users;locked=true;bh=poll_tail=false;
   for(unsigned i=0;i<GRO_HASH_BUCKETS;i++)init(&shared.napi.gro.hash[i].list);
   init(&shared.napi.gro.rx_list);
@@ -111,6 +111,7 @@ int main(void){
   normal(62,&fttr,shared.fttr_omci_type,false,1);
   normal(63,&fttr,shared.fttr_omci_type,true,1);
   normal(64,&fttr,0x88a8,false,3);
+  held(1,65,&mc,0x0800,false);normal(66,&mc,shared.fttr_omci_type,false,1);
   rtl_fttr_rx_purge(&shared);
   for(unsigned i=0;i<GRO_HASH_BUCKETS;i++){
    assert(freed[10+i]==1 && freed[80+i]==1 && !shared.qm.fttr_rx[i].skb);
@@ -120,6 +121,7 @@ int main(void){
   assert(shared.napi.gro.bitmask==0x55 && !freed[50] && !delivered[50]);
   assert(freed[51] && freed[60] && freed[63] && freed[64] && delivered[61] && delivered[62]);
   assert(shared.napi.gro.rx_count==0 && shared.napi.gro.rx_list.next==&shared.napi.gro.rx_list);
+  assert(freed[65] && freed[66] && mc.stats.rx_dropped==2);
   assert(fttr.stats.rx_dropped==12 && resets==8 && sync_calls==1);
   assert(disable_calls==!!users && enable_calls==!!users && schedule_calls==!!users && napi_enabled==!!users);
   /* Repeated withdrawal must neither redeliver survivors nor damage buckets. */

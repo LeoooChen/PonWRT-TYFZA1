@@ -29,17 +29,17 @@ typedef uint8_t u8;typedef uint16_t u16;typedef int netdev_tx_t;
 #define container_of(p,t,m) ((t *)((char *)(p)-offsetof(t,m)))
 struct device {void *data;};struct device_attribute {int unused;};struct napi_struct {int unused;};
 struct net_device {void *data;bool running,stopped;struct {unsigned tx_dropped,rx_dropped,rx_packets,rx_bytes;}stats;};
-struct sk_buff {unsigned len;bool consumed,vlan;unsigned protocol;u8 bytes[2100];};
+struct sk_buff {unsigned len;bool consumed,vlan,rtl9617c_fttr_ingress;unsigned protocol;u8 bytes[2100];};
 struct rtl9617c_ni_frame {int unused;};
 struct rtl9617c_ni_endpoint {struct net_device *netdev;};
-struct rtl_xram {struct net_device *fttr;bool fttr_tx_active,fttr_loading,fttr_forwarding;
+struct rtl_xram {struct net_device *fttr,*fttr_mc;bool fttr_tx_active,fttr_loading,fttr_forwarding;
  u16 fttr_omci_type;int fttr_forward_error,fttr_forward_cleanup_error,tx_lock,fe,dma;struct {bool configured;}p6;struct {unsigned fttr_epoch;}qm;};
 struct rtl_fttr_port {struct rtl9617c_ni_endpoint endpoint;struct rtl_xram *shared;};
 #define netdev_priv(d) ((d)->data)
 #define dev_get_drvdata(d) ((struct net_device *)(d)->data)
 #define netif_running(d) ((d)->running)
 static int locked,rtnl,submitted,received,failed_fe,purged,synchronized;
-static bool qdisc_active=true,fe_enabled=true,fe_requested=true;
+static bool qdisc_active=true,fe_enabled=true,fe_requested=true,mc_admitted=true;
 static struct rtl_xram shared;static struct net_device parent,lan,root;static struct device device;
 static struct rtl_fttr_port port;static struct napi_struct napi;
 #define spin_lock_irqsave(p,f) do{(void)(p);(f)=0;assert(!locked);locked=1;}while(0)
@@ -58,6 +58,9 @@ static void napi_gro_receive(struct napi_struct *n,struct sk_buff *s){(void)n;re
 static netdev_tx_t rtl_dma_tx_frame(int *dma,struct sk_buff *skb,struct net_device *owner,const struct rtl9617c_ni_frame *f){
  (void)dma;(void)owner;(void)f;assert(locked);submitted++;skb->consumed=true;return 0;}
 static void interleave(void);
+static void rtl_fttr_mcast_gate(struct net_device *d,bool enabled){(void)d;assert(!locked && rtnl);
+ assert(enabled==shared.fttr_forwarding);if(enabled)assert(fe_enabled);mc_admitted=enabled;}
+static bool rtl_fttr_mcast_receive(struct net_device *d,struct napi_struct *n,struct sk_buff *s){(void)d;(void)n;(void)s;return false;}
 static int rtl_fe_fttr_set(int fe,bool enabled){(void)fe;assert(rtnl);interleave();fe_requested=enabled;if(!failed_fe)fe_enabled=enabled;return failed_fe;}
 static void synchronize_net(void){assert(rtnl && !locked);synchronized++;interleave();}
 static void rtl_fttr_rx_purge(struct rtl_xram *priv){assert(priv==&shared);synchronize_net();}
@@ -85,9 +88,11 @@ static void check(unsigned type,bool metadata,bool allowed){
  s=packet(type);s.vlan=metadata;before=received;drop=parent.stats.rx_dropped;
  rtl_fttr_receive(&port.endpoint,&napi,&s,6);assert(s.consumed);
  assert(received-before==allowed && parent.stats.rx_dropped-drop==!allowed);
+ assert(s.rtl9617c_fttr_ingress==allowed);
 }
 static void interleave(void){
  assert(!locked);
+ assert(!mc_admitted);
  check(0x8100,false,false);check(0x8888,true,false);check(0x0800,false,false);
  check(shared.fttr_omci_type,false,shared.fttr_omci_type!=0);
  struct sk_buff s=packet(0x8100);unsigned before=submitted;
@@ -98,7 +103,7 @@ int main(void){
  parent=(struct net_device){.data=&port,.running=true};root.data=&shared;device.data=&root;
  port=(struct rtl_fttr_port){.shared=&shared,.endpoint={&parent}};
  assert(fttr_forward_store(&device,NULL,"0\n",2)==2);
- assert(!shared.fttr_forwarding && !fe_enabled && qdisc_active && purged==1 && synchronized==1);
+ assert(!shared.fttr_forwarding && !mc_admitted && !fe_enabled && qdisc_active && purged==1 && synchronized==1);
  assert(fttr_accel_store(&device,NULL,"1",1)==-EBUSY && !fe_requested);
  assert(fttr_accel_store(&device,NULL,"0",1)==1 && !shared.fttr_forwarding);
  check(0x8100,false,false);check(0x88a8,false,false);check(0x8888,false,true);
@@ -111,7 +116,7 @@ int main(void){
  for(unsigned i=0;i<32;i++){
   unsigned type=i&1?0x8888:0x9999;char command[16];snprintf(command,sizeof(command),"1 %04x\n",type);
   assert(fttr_forward_store(&device,NULL,command,strlen(command))==(int)strlen(command));
-  assert(shared.fttr_forwarding && fe_enabled && shared.fttr_omci_type==type);
+  assert(shared.fttr_forwarding && mc_admitted && fe_enabled && shared.fttr_omci_type==type);
   check(0x8100,false,true);check(0x0800,false,true);
   assert(fttr_forward_store(&device,NULL,"0\n",2)==2);check(type,false,true);check(type,true,false);
  }

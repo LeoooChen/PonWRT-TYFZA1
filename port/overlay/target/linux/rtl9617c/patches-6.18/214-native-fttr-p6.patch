@@ -3,7 +3,7 @@
 @@ -7,3 +7,3 @@
  obj-$(CONFIG_RTL9617C_XRAM_ETH) += rtl9617c-eth.o
 -rtl9617c-eth-y := rtl9617c-xram.o rtl9617c-dma.o rtl9617c-qm.o rtl9617c-fe.o rtl9617c-wifi.o
-+rtl9617c-eth-y := rtl9617c-xram.o rtl9617c-dma.o rtl9617c-qm.o rtl9617c-fe.o rtl9617c-wifi.o rtl9617c-fttr-p6.o
++rtl9617c-eth-y := rtl9617c-xram.o rtl9617c-dma.o rtl9617c-qm.o rtl9617c-fe.o rtl9617c-wifi.o rtl9617c-fttr-p6.o rtl9617c-fttr-mcast.o
  #
 --- a/drivers/net/ethernet/realtek/Kconfig
 +++ b/drivers/net/ethernet/realtek/Kconfig

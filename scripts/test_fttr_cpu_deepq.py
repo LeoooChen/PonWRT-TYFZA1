@@ -86,12 +86,16 @@ typedef uint32_t u32,__le32;typedef uint64_t u64;typedef uintptr_t dma_addr_t;ty
 #define VP_WRITE 0x18
 #define VP_READ 0x1c
 struct device { int unused; };
-struct net_device {void *data;bool stopped;struct {u64 tx_packets,tx_bytes;} stats;};
+struct net_device {void *data;bool stopped;struct {u64 tx_packets,tx_bytes,tx_dropped;} stats;};
 struct sk_buff {unsigned len;bool consumed;unsigned char data[2048];};
 struct rtl9617c_ni_frame {unsigned prefix_length,header_high,header_low;bool raw_payload;const void *prefix;};
-struct rtl_xram {struct {struct device *dev;} p6;};
+struct rtl_xram {struct net_device *fttr_mc;struct {struct device *dev;} p6;};
 struct rtl_fttr_port {struct rtl_xram *shared;};
 #define netdev_priv(d) ((d)->data)
+#define rcu_read_lock() ((void)0)
+#define rcu_read_unlock() ((void)0)
+static bool rtl_fttr_mcast_drop(struct net_device *d,struct sk_buff *s){(void)d;(void)s;return false;}
+static void dev_kfree_skb_any(struct sk_buff *s){s->consumed=true;}
 static void put_unaligned_le32(u32 v,void *p){memcpy(p,&v,4);}
 static u32 readl(void *p){u32 v;memcpy(&v,p,4);return v;}
 static void writel(u32 v,void *p){memcpy(p,&v,4);}
