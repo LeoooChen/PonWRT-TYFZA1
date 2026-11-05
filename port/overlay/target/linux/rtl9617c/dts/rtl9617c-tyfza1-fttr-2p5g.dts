@@ -48,6 +48,7 @@
 			reg = <0>;
 			spi-max-frequency = <4000000>;
 			firmware-name = "realtek/rtl9617c/fttr-top.bin";
+			realtek,network-engine = <&ni0>;
 			cs-input-gpios = <&gpio0 13 GPIO_ACTIVE_HIGH>;
 			rxd-input-gpios = <&gpio0 14 GPIO_ACTIVE_HIGH>;
 			reserved-gpios = <&gpio0 105 GPIO_ACTIVE_HIGH>;

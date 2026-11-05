@@ -1730,8 +1730,8 @@ static int bootstrap(struct controller *c, int optical, const char *mode, const 
 } while (0)
 	BOOT_STEP("disable TX", fttr_miniolt_tx_disable(c->directory));
 	BOOT_STEP("close netdev", interface_state(c, false, 0));
-	BOOT_STEP("stop P6", fttr_miniolt_p6_stop(c->ni));
 	if (c->backend == FTTR_ASIC9690) {
+		BOOT_STEP("stop P6", fttr_miniolt_p6_stop(c->ni));
 		BOOT_STEP("reset MiniOLT", fttr_miniolt_command(c->directory, "reset", "1\n"));
 		BOOT_STEP("calibrate optics", fttr_miniolt_command(optical, "calibration", "1\n"));
 		snprintf(setting, sizeof(setting), "%s %s\n", mode, nway);
@@ -1745,8 +1745,7 @@ static int bootstrap(struct controller *c, int optical, const char *mode, const 
 		/* Original FPGA loader board forces P6 HSGMII before post-DONE
 		 * register setup. Its bitstream supplies the GPON/peer PCS logic.
 		 */
-		snprintf(setting, sizeof(setting), "5 %s\n", nway);
-		BOOT_STEP("configure host P6", fttr_miniolt_command(c->ni, "fttr_link", setting));
+		BOOT_STEP("prepare host P6", fttr_miniolt_p6_prepare(c->ni, !strcmp(nway, "1")));
 		BOOT_STEP("initialize FPGA", fttr_miniolt_command(c->directory, "fpga_init", "1\n"));
 		if (c->backend == FTTR_FPGA1)
 			BOOT_STEP("authenticate FPGA", fttr_miniolt_command(c->directory, "fpga_auth", "1\n"));

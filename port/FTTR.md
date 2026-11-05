@@ -2477,8 +2477,9 @@ on the DesignWare MMIO SPI package. FPGA Manager is built in for the FTTR
 kernel package so MiniOLT's optional manager calls remain linkable. The normal
 FTTR package fragment does not select or require the FPGA image.
 
-The FPGA development node now has `firmware-name`; the SPI probe requests and
-loads it through FPGA Manager after GPIO/SPI setup. Missing image, handshake
+The FPGA development node has `firmware-name` and `realtek,network-engine`;
+the SPI probe waits for the linked NI/P6 prerequisite before GPIO/SPI setup,
+then requests and loads the image through FPGA Manager. Missing image, handshake
 failure and SPI errors fail that probe; there is no blind loading retry loop.
 MiniOLT's `fpga-mgr` phandle resolves this exact supplier before any MDIO
 identification. Absent/unbound supplier defers the consumer. Under the manager
@@ -2656,8 +2657,10 @@ stop before success, unlike the original initializer's checksum warning
 followed by writes. Calibration status rechecks identity and clears readiness
 on failure. These checks do not prove laser power or optical readiness.
 
-The resident FPGA bootstrap stops TX/netdev/P6, configures host P6 mode5
-with the factory nway setting, performs original post-DONE setup, waits650ms,
+The rc script configures host P6 mode5 with the factory nway setting before
+FPGA loading. The resident FPGA bootstrap stops TX/netdev and preserves that
+configured P6; a warm restart reconfigures it if the preceding owner stopped
+it or the requested NWAY differs. It performs original post-DONE setup, waits650ms,
 calibrates the selected optics and checks P6. It then configures the original
 management envelope, verifies calibration, opens the interface and enables TX
 last. FPGA paths skip ASIC reset/WTG/PON/core/default-DBA attributes. The rc
@@ -2676,11 +2679,55 @@ ASIC/FPGA1/FPGA2 namespace startup regressions pass. Reports are
 MiniOLT/BOSA modules compile and link against Linux6.18.55; module postprocessing
 retains the build's `MODULE_DESCRIPTION` warnings. Full FITs predate this change.
 
-Remaining differences include broader optical DDMI, SFP dispatch and
-the original ordering of P6 before bitstream loading (native configures P6
-after the manager has loaded). The actual optical model of the retained FPGA
+Remaining differences include broader optical DDMI and SFP dispatch.
+The actual optical model of the retained FPGA
 sample is not established. No physical optical, FPGA or traffic acceptance
 is claimed by the offline recipe and startup comparisons.
+
+### P6 prerequisite for FPGA loading
+
+Original `olt_startup.sh` forces mode5, calls `serdesInit` (whose main invokes
+`rtk_fc_external_virtual_port_init`), and only then inserts the FPGA loader.
+The native rc script now follows that order after factory import, passing
+the actual NWAY value. The FPGA DT points at NI; the loader retains a device
+reference and managed link, checks the bound supplier, and acquires a P6
+load hold before any FPGA GPIO setup. A down `fttr0`, configured mode5 and
+P6 clock bit13 are required. The peer PCS link is intentionally checked
+later, after loading its logic. Missing configuration returns EPROBE_DEFER
+without FPGA GPIO or SPI activity. Kconfig requires the native NI driver.
+
+The NI hold is serialized by RTNL. It closes the software TX gate and FE
+admission; while held, netdev open, P6 reconfiguration and FE enable return
+EBUSY. Other NI/DMA users remain available. Successful loading releases the
+hold with P6 configured and software transmission still closed. GPIO,
+firmware, manager-lock, SPI or DONE failure stops P6 before returning the
+error and releases references. Both initial setup and optional manual image
+programming use this hold. NI unbind retires the FPGA/MiniOLT consumers via
+device links. This is boot/reload ordering, not a per-ONU packet-retirement
+barrier; queued-packet retirement remains unresolved.
+
+Early autoprobes defer until the rc script configures P6. The script then
+uses module loading and `drivers_probe`, checking the driver's `firmware`
+attribute that appears after successful probe. A `driver` symlink alone is
+insufficient because the core creates it before calling probe. It waits for
+the resulting MiniOLT consumer before optical setup. Missing supplier/load
+failure stops startup. A warm start keeps the loaded image and uses the
+controller lease/normal teardown. On a cold start, the daemon preserves the
+preload P6 clock rather than resetting it after the bitstream was loaded.
+
+`test_fttr_preload.py` executes the production rc sequence for both NWAY
+values, warm/probing states and P6/module/load/consumer failures, plus the
+production dependency/probe functions' reference and error paths.
+`test_fttr_tx_gate.py` interleaves production load-hold callbacks with DMA
+wake/transmit and checks open/reconfigure/FE exclusion, wrong mode, absent
+clock, FE failure and failed-load stop. Original loader post-DONE/GPIO/SPI
+checks remain separate. FPGA1/FPGA2 and ASIC startup regressions pass,
+including a preconfigured cold start with no extra P6 reset and a warm
+replacement after teardown. Four optical recipes, shared FE and21 threaded
+LAN registration/removal regressions pass. Reports/logs are
+`artifacts/fttr/p6-preload-*-20261105.*`. Linux Image/modules, the new exported
+NI symbols and FPGA module link, the FPGA DT phandle and native package
+build pass. No bitstream was loaded onto a physical device.
 
 ### UX3326 temperature adjustment and recovery
 

@@ -29,6 +29,7 @@ int fttr_miniolt_tcont_read(int directory, unsigned int id, unsigned int slot,
 			   struct fttr_tcont_grant *grant);
 int fttr_miniolt_tx_disable(int directory);
 int fttr_miniolt_p6_stop(int ni);
+int fttr_miniolt_p6_prepare(int ni, unsigned int nway);
 int fttr_miniolt_command(int directory, const char *name, const char *value);
 int fttr_miniolt_admin(int directory, unsigned int id, unsigned int action, const uint8_t serial[8]);
 int fttr_miniolt_wait_links(int directory, int ni);

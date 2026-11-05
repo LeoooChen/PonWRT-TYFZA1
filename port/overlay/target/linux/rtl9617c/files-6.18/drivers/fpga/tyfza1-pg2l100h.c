@@ -6,6 +6,8 @@
 #include <linux/iopoll.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/of_platform.h>
+#include <linux/rtl9617c-fttr.h>
 #include <linux/spi/spi.h>
 #include <linux/string.h>
 
@@ -81,7 +83,42 @@ static const struct fpga_manager_ops tyfza1_fpga_ops = {
 	.write_complete = tyfza1_fpga_write_complete,
 };
 
-static int tyfza1_fpga_load(struct device *dev, struct fpga_manager *mgr, const char *name)
+static int tyfza1_fpga_p6_acquire(struct device *dev, struct device **supplier)
+{
+	struct device_node *node = of_parse_phandle(dev->of_node, "realtek,network-engine", 0);
+	struct platform_device *engine;
+	int ret;
+
+	if (!node)
+		return -EINVAL;
+	if (!of_device_is_compatible(node, "realtek,rtl9617c-xram-eth")) {
+		of_node_put(node);
+		return -EINVAL;
+	}
+	engine = of_find_device_by_node(node);
+	of_node_put(node);
+	if (!engine)
+		return -EPROBE_DEFER;
+	if (!device_is_bound(&engine->dev) || !platform_get_drvdata(engine)) {
+		ret = -EPROBE_DEFER;
+		goto put;
+	}
+	if (!device_link_add(dev, &engine->dev, DL_FLAG_AUTOREMOVE_CONSUMER)) {
+		ret = -ENOMEM;
+		goto put;
+	}
+	ret = rtl9617c_ni_fttr_load_begin(&engine->dev);
+	if (ret)
+		goto put;
+	*supplier = &engine->dev;
+	return 0;
+put:
+	put_device(&engine->dev);
+	return ret;
+}
+
+/* P6 is held across GPIO setup as well as FPGA programming. */
+static int tyfza1_fpga_program(struct device *dev, struct fpga_manager *mgr, const char *name)
 {
 	struct fpga_image_info *info;
 	int ret;
@@ -100,6 +137,19 @@ static int tyfza1_fpga_load(struct device *dev, struct fpga_manager *mgr, const 
 		fpga_mgr_unlock(mgr);
 	}
 	fpga_image_info_free(info);
+	return ret;
+}
+
+static int tyfza1_fpga_load(struct device *dev, struct fpga_manager *mgr, const char *name)
+{
+	struct device *ni;
+	int ret = tyfza1_fpga_p6_acquire(dev, &ni);
+
+	if (ret)
+		return ret;
+	ret = tyfza1_fpga_program(dev, mgr, name);
+	rtl9617c_ni_fttr_load_end(ni, ret);
+	put_device(ni);
 	return ret;
 }
 
@@ -131,7 +181,7 @@ static struct attribute *tyfza1_fpga_attrs[] = {
 };
 ATTRIBUTE_GROUPS(tyfza1_fpga);
 
-static int tyfza1_fpga_probe(struct spi_device *spi)
+static int tyfza1_fpga_setup(struct spi_device *spi)
 {
 	struct device *dev = &spi->dev;
 	struct fpga_manager *mgr;
@@ -175,11 +225,24 @@ static int tyfza1_fpga_probe(struct spi_device *spi)
 		ret = of_property_read_string(dev->of_node, "firmware-name", &firmware);
 		if (ret)
 			return ret;
-		ret = tyfza1_fpga_load(dev, mgr, firmware);
+		ret = tyfza1_fpga_program(dev, mgr, firmware);
 		if (ret)
 			return dev_err_probe(dev, ret, "FPGA boot image load failed\n");
 	}
 	return 0;
+}
+
+static int tyfza1_fpga_probe(struct spi_device *spi)
+{
+	struct device *ni;
+	int ret = tyfza1_fpga_p6_acquire(&spi->dev, &ni);
+
+	if (ret)
+		return dev_err_probe(&spi->dev, ret, "FPGA P6 prerequisite unavailable\n");
+	ret = tyfza1_fpga_setup(spi);
+	rtl9617c_ni_fttr_load_end(ni, ret);
+	put_device(ni);
+	return ret;
 }
 
 static const struct of_device_id tyfza1_fpga_match[] = {

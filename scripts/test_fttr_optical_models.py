@@ -70,6 +70,7 @@ def check_init_script(folder):
     log = directory / 'command'
     script = (ROOT / 'port/packages/tyfza1-fttr/files/tyfza1-fttr.init').read_text()
     script = script.replace('/sys/bus/mdio_bus/devices', str(directory / 'mdio'))
+    script = script.replace('/sys/bus/spi/devices', str(directory / 'spi'))
     script = script.replace('/tmp/tyfza1-factory', str(factory))
     script = script.replace('/var/run/tyfza1-fttr', str(directory / 'run'))
     prefix = '''

@@ -35,6 +35,7 @@
 #include "rtl9617c-qm.h"
 #include "rtl9617c-ni.h"
 #include <linux/rtl9617c-wifi.h>
+#include <linux/rtl9617c-fttr.h>
 #include "rtl9617c-fe.h"
 #include "rtl9617c-fttr-p6.h"
 #include "rtl9617c-mib.h"
@@ -117,6 +118,7 @@ struct rtl_xram {
 	struct rtl_fttr_p6 p6;
 	struct net_device *fttr;
 	bool fttr_tx_active;
+	bool fttr_loading;
 	bool removing;
 };
 
@@ -732,6 +734,8 @@ static int rtl_fttr_open(struct net_device *dev)
 	struct rtl_fttr_port *port = netdev_priv(dev);
 	int ret;
 
+	if (port->shared->fttr_loading)
+		return -EBUSY;
 	if (!port->shared->p6.configured)
 		return -ENETDOWN;
 	WRITE_ONCE(port->shared->qm.fttr_epoch, port->shared->qm.fttr_epoch + 1);
@@ -1418,6 +1422,52 @@ static ssize_t rx_bypass_store(struct device *dev, struct device_attribute *attr
 }
 static DEVICE_ATTR_RW(rx_bypass);
 
+int rtl9617c_ni_fttr_load_begin(struct device *dev)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	int ret = 0;
+
+	rtnl_lock();
+	if (!priv->fttr || !priv->p6.qx) {
+		ret = -ENODEV;
+		goto out;
+	}
+	if (priv->fttr_loading || netif_running(priv->fttr)) {
+		ret = -EBUSY;
+		goto out;
+	}
+	/* Factory NWAY is configured by userspace before the loader probe.
+	 * Peer link cannot be required before the FPGA has its bitstream.
+	 */
+	if (!priv->p6.configured || priv->p6.mode != 5 ||
+	    !(readl(priv->p6.qx + 0x58) & BIT(13))) {
+		ret = -EPROBE_DEFER;
+		goto out;
+	}
+	rtl_fttr_tx_gate(priv, false);
+	ret = rtl_fe_fttr_set(priv->fe, false);
+	if (!ret)
+		priv->fttr_loading = true;
+out:
+	rtnl_unlock();
+	return ret;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_fttr_load_begin);
+
+void rtl9617c_ni_fttr_load_end(struct device *dev, int error)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+
+	rtnl_lock();
+	if (error) {
+		rtl_fttr_p6_stop(&priv->p6);
+		priv->p6.error = error;
+	}
+	priv->fttr_loading = false;
+	rtnl_unlock();
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_fttr_load_end);
+
 static ssize_t fttr_link_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
@@ -1444,6 +1494,10 @@ static ssize_t fttr_link_store(struct device *dev, struct device_attribute *attr
 	if (mode && mode != 5 && mode != 9)
 		return -EOPNOTSUPP;
 	rtnl_lock();
+	if (priv->fttr_loading) {
+		ret = -EBUSY;
+		goto out;
+	}
 	rtl_fttr_tx_gate(priv, false);
 	if (priv->fttr && netif_running(priv->fttr))
 		netif_carrier_off(priv->fttr);
@@ -1483,6 +1537,10 @@ static ssize_t fttr_accel_store(struct device *dev, struct device_attribute *att
 	if (ret)
 		return ret;
 	rtnl_lock();
+	if (priv->fttr_loading && allowed) {
+		rtnl_unlock();
+		return -EBUSY;
+	}
 	if (!allowed)
 		WRITE_ONCE(priv->qm.fttr_epoch, priv->qm.fttr_epoch + 1);
 	ret = rtl_fe_fttr_set(priv->fe, allowed);

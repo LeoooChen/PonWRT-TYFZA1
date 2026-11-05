@@ -120,6 +120,7 @@ def main():
             raise AssertionError('bootstrap observation timeout')
 
         cases = ('none','link','marker','core','stop-during-init') + (('auth',) if args.backend=='fpga1' else ())
+        if args.backend != 'asic9690': cases += ('preloaded',)
         if args.monitor: cases += ('temperature','monitor-ok','monitor-low','monitor-stop')
         for bad in cases:
             case=work/bad;case.mkdir()
@@ -132,7 +133,9 @@ def main():
                 for name in ('reset','host_serdes','pon_serdes','core_init','dba'): miniolt.joinpath(name).unlink()
                 miniolt.joinpath('fpga_init').write_text('0\n')
                 if args.backend == 'fpga1': miniolt.joinpath('fpga_auth').write_text('0\n')
-            ni.joinpath('fttr_link').write_text('0 0\n');optical.joinpath('calibration').write_text('0\n')
+            ni.joinpath('fttr_link').write_text('configured=1 mode=5 nway=1 clock=1 error=0 link=1\n' if bad=='preloaded' else
+                'configured=0 mode=0 nway=0 clock=0 error=0 link=0\n')
+            optical.joinpath('calibration').write_text('0\n')
             monitor = bad.startswith('monitor') or bad == 'temperature'
             optical.joinpath('maintenance').write_text('supported=1 interval_ms=200\n' if monitor else 'supported=0 interval_ms=0\n')
             ni.joinpath('fttr_accel').write_text('0\n')
@@ -146,14 +149,15 @@ def main():
                 try:return json.loads(store.joinpath('status.json').read_text())
                 except FileNotFoundError:return {}
             try:
-                if bad=='none':
+                if bad in ('none','preloaded'):
                     wait(process,lambda:state().get('state')=='running')
                     expected_commands=['fttr_accel 0','tx_enable 0','fttr_link 0 0','reset 1','calibration 1','host_serdes 9 1',
                         'fttr_link 9 1','pon_serdes 3','core_init 1','omci_link 02:03:04:05:06:07','dba 1','tx_enable 1','fttr_accel 1']
                     if args.backend != 'asic9690':
-                        expected_commands=['fttr_accel 0','tx_enable 0','fttr_link 0 0','fttr_link 5 1','fpga_init 1',
+                        expected_commands=['fttr_accel 0','tx_enable 0','fttr_link 5 1','fpga_init 1',
                             'calibration 1','omci_link 02:03:04:05:06:07','tx_enable 1','fttr_accel 1']
-                        if args.backend == 'fpga1': expected_commands.insert(5,'fpga_auth 1')
+                        if args.backend == 'fpga1': expected_commands.insert(4,'fpga_auth 1')
+                        if bad=='preloaded': expected_commands.remove('fttr_link 5 1')
                     assert log.read_text().splitlines()==expected_commands
                     replacement=subprocess.Popen(argv,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
                     try:

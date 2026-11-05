@@ -168,7 +168,7 @@ int dependency(int test) {
         probe = function(source, 'rtl_fttr_probe')
         assert probe.index('rtl_fttr_fpga_acquire') < probe.index('rtl_fttr_identify')
         loader_source = (source_dir.parents[3] / 'drivers/fpga/tyfza1-pg2l100h.c').read_text()
-        loader = function(loader_source, 'tyfza1_fpga_load')
+        loader = function(loader_source, 'tyfza1_fpga_program') + function(loader_source, 'tyfza1_fpga_load')
         load_fixture = r'''
 #include <errno.h>
 #include <stdlib.h>
@@ -178,6 +178,16 @@ struct device { int unused; };
 struct fpga_manager { int unused; };
 struct fpga_image_info { char *firmware_name; };
 static int fault, allocated, locked, loads;
+static int held,ended,put;
+static int tyfza1_fpga_p6_acquire(struct device *d,struct device **ni) {
+ if(fault==6)return -517;
+ held++;*ni=d;return 0;
+}
+static void rtl9617c_ni_fttr_load_end(struct device *d,int error) {
+ (void)d;if(error!=(fault<=2 && fault?-ENOMEM:fault==3?-EBUSY:fault==4?-ENOENT:fault==5?-EIO:0))abort();
+ held--;ended++;
+}
+static void put_device(struct device *d) {(void)d;put++;}
 static struct fpga_image_info *fpga_image_info_alloc(struct device *d) {
     (void)d;if(fault==1)return NULL;allocated++;return calloc(1,sizeof(struct fpga_image_info));
 }
@@ -189,15 +199,17 @@ static int fpga_mgr_lock(struct fpga_manager *m) { (void)m;if(fault==3)return -E
 static void fpga_mgr_unlock(struct fpga_manager *m) { (void)m;locked--; }
 static int fpga_mgr_load(struct fpga_manager *m,struct fpga_image_info *info) {
     (void)m;if(!locked || strcmp(info->firmware_name,"realtek/rtl9617c/fttr-top.bin"))abort();
+    if(!held)abort();
     loads++;return fault==4?-ENOENT:fault==5?-EIO:0;
 }
 '''
         load_wrapper = r'''
 int run_load(int f) {
     struct device d;struct fpga_manager m;int ret;
-    fault=f;allocated=locked=loads=0;
+    fault=f;allocated=locked=loads=held=ended=put=0;
     ret=tyfza1_fpga_load(&d,&m,"realtek/rtl9617c/fttr-top.bin");
-    if(allocated || locked || loads!=(f==0 || f>=4))return 1000;
+    if(allocated || locked || held || loads!=(f==0 || f==4 || f==5))return 1000;
+    if(ended!=(f!=6) || put!=ended)return 1001;
     return ret;
 }
 '''
@@ -205,10 +217,10 @@ int run_load(int f) {
         subprocess.run(['cc', '-shared', '-fPIC', '-Wall', '-Wextra', '-Werror', str(folder / 'load.c'),
                         '-o', str(folder / 'load.so')], check=True)
         load = C.CDLL(str(folder / 'load.so'))
-        load_cases = {0:0,1:-12,2:-12,3:-16,4:-2,5:-5}
+        load_cases = {0:0,1:-12,2:-12,3:-16,4:-2,5:-5,6:-517}
         for scenario, result in load_cases.items(): assert load.run_load(scenario) == result
-        load_probe = function(loader_source, 'tyfza1_fpga_probe')
-        assert '"firmware-name", &firmware' in load_probe and 'tyfza1_fpga_load(dev, mgr, firmware)' in load_probe
+        load_probe = function(loader_source, 'tyfza1_fpga_setup')
+        assert '"firmware-name", &firmware' in load_probe and 'tyfza1_fpga_program(dev, mgr, firmware)' in load_probe
         store = loader_source[loader_source.index('static ssize_t firmware_store'):loader_source.index('static DEVICE_ATTR_WO(firmware)')]
         assert store.index('"firmware-name"') < store.index('tyfza1_fpga_load')
     result = {'stock_script_sha256': hashlib.sha256(args.stock_script.read_bytes()).hexdigest(),

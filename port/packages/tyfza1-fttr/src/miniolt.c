@@ -147,6 +147,29 @@ int fttr_miniolt_p6_stop(int ni)
 	return fttr_miniolt_command(ni, "fttr_link", "0 0\n");
 }
 
+int fttr_miniolt_p6_prepare(int ni, unsigned int nway)
+{
+	FILE *file = attribute(ni, "fttr_link");
+	unsigned int configured, mode, observed_nway, clock;
+	char command[16];
+	int error, fields;
+
+	if (!file)
+		return -errno;
+	fields = fscanf(file, "configured=%u mode=%u nway=%u clock=%u error=%d",
+		&configured, &mode, &observed_nway, &clock, &error);
+	fclose(file);
+	if (fields != 5)
+		return -EPROTO;
+	/* Cold FPGA startup already configured P6 before loading. Preserve its
+	 * clock through post-DONE initialization; warm teardown may have stopped it.
+	 */
+	if (configured && mode == 5 && observed_nway == nway && clock && !error)
+		return 0;
+	snprintf(command, sizeof(command), "5 %u\n", nway);
+	return fttr_miniolt_command(ni, "fttr_link", command);
+}
+
 static uint32_t read_le32(const uint8_t *p)
 {
 	return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;

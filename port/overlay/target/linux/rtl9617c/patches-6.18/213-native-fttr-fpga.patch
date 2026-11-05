@@ -4,7 +4,7 @@
  # FPGA framework configuration
 +config FPGA_MGR_TYFZA1_PG2L100H
 +	tristate "TYFZA1 PG2L100H serial FPGA manager"
-+	depends on FPGA && SPI && GPIOLIB && OF
++	depends on FPGA && SPI && GPIOLIB && OF && RTL9617C_XRAM_ETH
 +	help
 +	  Native serial configuration for the TYFZA1 downstream OLT FPGA.
 +

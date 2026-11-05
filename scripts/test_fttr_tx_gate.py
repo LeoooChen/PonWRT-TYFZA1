@@ -15,6 +15,8 @@ source = r'''
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
+#define EPROBE_DEFER 517
+#define BIT(n) (1U<<(n))
 typedef int netdev_tx_t;
 #define NETDEV_TX_OK 0
 #define NETDEV_TX_BUSY 1
@@ -24,8 +26,8 @@ typedef int netdev_tx_t;
 struct device {void *data;};struct device_attribute {int unused;};struct work {int unused;};
 struct net_device {void *data;bool running,stopped,carrier;};
 struct sk_buff {bool consumed;};struct rtl9617c_ni_frame {int unused;};
-struct rtl_fttr_p6 {bool configured;int error;};
-struct rtl_xram {struct rtl_fttr_p6 p6;struct net_device *fttr;int fe,dma,tx_lock;bool fttr_tx_active;
+struct rtl_fttr_p6 {bool configured;int error;unsigned int mode;unsigned char *qx;};
+struct rtl_xram {struct rtl_fttr_p6 p6;struct net_device *fttr;int fe,dma,tx_lock;bool fttr_tx_active,fttr_loading;
  struct {unsigned fttr_epoch;} qm;};
 struct rtl9617c_ni_endpoint {struct net_device *netdev;};
 struct rtl_fttr_port {struct rtl9617c_ni_endpoint endpoint;struct rtl_xram *shared;struct work link_work;};
@@ -34,6 +36,9 @@ struct rtl_fttr_port {struct rtl9617c_ni_endpoint endpoint;struct rtl_xram *shar
 #define netif_running(d) ((d)->running)
 #define netif_queue_stopped(d) ((d)->stopped)
 static int locks,rtnl,submissions,failed_fe,failed_config,configured,closed,engine_refs;
+static unsigned int clock_status=BIT(13);
+static unsigned int readl(void *p){(void)p;return clock_status;}
+static int kstrtobool(const char *s,bool *value){if(s[0]!='0' && s[0]!='1')return -EINVAL;*value=s[0]=='1';return 0;}
 #define spin_lock_irqsave(p,f) do{(void)(p);(f)=0;assert(!locks);locks++;}while(0)
 #define spin_unlock_irqrestore(p,f) do{(void)(p);(void)(f);assert(locks==1);locks--;}while(0)
 static void rtnl_lock(void){assert(!rtnl);rtnl++;}
@@ -67,6 +72,8 @@ if 'static void rtl_fttr_tx_gate(' in text:
     source += function(text, 'rtl_fttr_tx_gate')
 for name in ('rtl_fttr_open', 'rtl_fttr_stop', 'fttr_link_store'):
     source += function(text, name)
+for name in ('rtl9617c_ni_fttr_load_begin', 'rtl9617c_ni_fttr_load_end', 'fttr_accel_store'):
+    source += function(text, name)
 source += r'''
 static struct rtl_xram shared;
 static struct net_device p6,lan,root;
@@ -88,7 +95,7 @@ static void interleave(void) {
  interleaved++;
 }
 static void setup(void) {
- shared=(struct rtl_xram){.p6={.dev=&device,.configured=true},.fttr=&p6,.fttr_tx_active=true};
+ shared=(struct rtl_xram){.p6={.dev=&device,.configured=true,.mode=5,.qx=(void *)0x1000},.fttr=&p6,.fttr_tx_active=true};
  p6=(struct net_device){.data=&port,.running=true,.carrier=true};root=(struct net_device){.data=&shared};
  port=(struct rtl_fttr_port){.shared=&shared,.endpoint={&p6}};device.data=&root;
  locks=rtnl=submissions=failed_fe=failed_config=configured=closed=0;engine_refs=1;interleaved=0;
@@ -112,6 +119,28 @@ int main(void) {
  assert(!rtl_fttr_open(&p6));assert(engine_refs==1 && !p6.stopped);
  setup();rtnl=1;failed_fe=-EIO;shared.fttr_tx_active=false;p6.stopped=true;engine_refs=0;
  assert(rtl_fttr_open(&p6)==-EIO && !shared.fttr_tx_active && engine_refs==0);
+ setup();assert(rtl9617c_ni_fttr_load_begin(&device)==-EBUSY && !shared.fttr_loading);
+ p6.running=false;shared.p6.configured=false;
+ assert(rtl9617c_ni_fttr_load_begin(&device)==-EPROBE_DEFER);
+ shared.p6.configured=true;shared.p6.mode=9;
+ assert(rtl9617c_ni_fttr_load_begin(&device)==-EPROBE_DEFER);
+ shared.p6.mode=5;clock_status=0;
+ assert(rtl9617c_ni_fttr_load_begin(&device)==-EPROBE_DEFER);
+ clock_status=BIT(13);failed_fe=-ETIMEDOUT;
+ assert(rtl9617c_ni_fttr_load_begin(&device)==-ETIMEDOUT && !shared.fttr_loading);
+ failed_fe=0;assert(!rtl9617c_ni_fttr_load_begin(&device));
+ assert(shared.fttr_loading && !shared.fttr_tx_active && p6.stopped);
+ assert(rtl9617c_ni_fttr_load_begin(&device)==-EBUSY);
+ assert(rtl_fttr_open(&p6)==-EBUSY);
+ assert(fttr_link_store(&device,NULL,"0 0",3)==-EBUSY);
+ assert(fttr_link_store(&device,NULL,"5 1",3)==-EBUSY);
+ assert(fttr_accel_store(&device,NULL,"1",1)==-EBUSY);
+ assert(fttr_accel_store(&device,NULL,"0",1)==1);
+ rtl9617c_ni_fttr_load_end(&device,0);
+ assert(!shared.fttr_loading && shared.p6.configured && !shared.fttr_tx_active);
+ assert(!rtl9617c_ni_fttr_load_begin(&device));
+ rtl9617c_ni_fttr_load_end(&device,-EIO);
+ assert(!shared.fttr_loading && !shared.p6.configured && shared.p6.error==-EIO);
  puts("P6 TX gate: timer cannot reopen during SerDes/FE transitions; rejected packets retained, other DMA owners continue");
 }
 '''

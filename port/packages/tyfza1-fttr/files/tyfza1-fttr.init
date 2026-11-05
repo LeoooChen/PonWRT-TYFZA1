@@ -11,7 +11,45 @@ miniolt_device() {
 		miniolt=$candidate
 		return 0
 	done
-	echo 'FTTR: native MiniOLT device is not bound' >&2
+	return 1
+}
+
+fpga_start() {
+	local candidate fpga attempt ni=/sys/class/net/fttr0/device
+	for candidate in /sys/bus/spi/devices/*; do
+		[ -r "$candidate/of_node/compatible" ] || continue
+		tr '\000' '\n' < "$candidate/of_node/compatible" | grep -qx 'pango,tyfza1-pg2l100h' || continue
+		fpga=$candidate
+		break
+	done
+	[ -n "$fpga" ] || return 0
+	# A warm controller restart uses the already loaded image. The daemon
+	# reconfigures P6 if its previous owner stopped it during teardown.
+	if [ ! -w "$fpga/firmware" ]; then
+		ip link set dev fttr0 down || return $?
+		echo 0 > "$ni/fttr_accel" || return $?
+		echo "5 $1" > "$ni/fttr_link" || return $?
+		# Early module probing defers until P6 is configured with factory NWAY.
+		# drivers_probe also handles an already loaded but deferred driver.
+		if ! modprobe tyfza1-pg2l100h ||
+		   { [ ! -w "$fpga/firmware" ] && ! echo "${fpga##*/}" > /sys/bus/spi/drivers_probe; }; then
+			echo 'FTTR: FPGA loader probe failed' >&2
+			echo '0 0' > "$ni/fttr_link"
+			return 1
+		fi
+		if [ ! -w "$fpga/firmware" ]; then
+			echo 'FTTR: FPGA load did not bind its driver' >&2
+			echo '0 0' > "$ni/fttr_link"
+			return 1
+		fi
+	fi
+	# Supplier binding triggers the deferred MiniOLT consumer probe.
+	for attempt in 1 2 3 4 5 6 7 8 9 10; do
+		miniolt_device && return 0
+		sleep 0.1
+	done
+	echo 'FTTR: loaded FPGA MiniOLT did not bind' >&2
+	echo '0 0' > "$ni/fttr_link"
 	return 1
 }
 
@@ -19,7 +57,9 @@ start_service() {
 	local enabled mode nway pon miniolt optical backend attempt
 	read -r enabled mode nway pon < /tmp/tyfza1-factory/fttr_startup || return $?
 	[ "$enabled" = 1 ] || return 0
-	miniolt_device || return $?
+	case "$nway" in 0|1) ;; *) echo 'FTTR: invalid factory NWAY' >&2; return 1 ;; esac
+	fpga_start "$nway" || return $?
+	miniolt_device || { echo 'FTTR: native MiniOLT device is not bound' >&2; return 1; }
 	read -r backend < "$miniolt/backend" || return $?
 	case "$backend" in
 		fpga1|fpga2)
