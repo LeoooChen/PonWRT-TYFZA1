@@ -85,6 +85,26 @@ static int cleanup_failure(struct fttr_objects_job *job, int error)
 	return job->error ? job->error : error;
 }
 
+static int release_check(struct fttr_objects_job *job, uint16_t *counter)
+{
+	while (job->index < job->count) {
+		if (job->objects[job->index].touched)
+			return request(job, counter, FTTR_ME_GET);
+		job->index++;
+	}
+	job->index = job->count - 1;
+	return next_cleanup(job, counter);
+}
+
+int fttr_objects_job_release_checked(struct fttr_objects_job *job, uint16_t *counter)
+{
+	if (job->phase != FTTR_OBJECT_CONFIGURED || job->error)
+		return -EINVAL;
+	job->phase = FTTR_OBJECT_RELEASE_CHECK;
+	job->index = job->group = 0;
+	return release_check(job, counter);
+}
+
 void fttr_objects_job_start(struct fttr_objects_job *job, uint16_t onu, uint16_t *counter,
 		struct fttr_omci_object *objects, int count, const uint8_t serial[8])
 {
@@ -125,6 +145,16 @@ int fttr_objects_job_update(struct fttr_objects_job *job, uint16_t *counter)
 	if (job->me.state == FTTR_ME_WAIT)
 		return 0;
 	switch (job->phase) {
+	case FTTR_OBJECT_RELEASE_CHECK:
+		if (error || memcmp(job->me.reply + 11, values->value, values->size))
+			return cleanup_failure(job, error ? error : -EUCLEAN);
+		if (!job->group && object->set.mask) {
+			job->group = 1;
+			return request(job, counter, FTTR_ME_GET);
+		}
+		job->group = 0;
+		job->index++;
+		return release_check(job, counter);
 	case FTTR_OBJECT_CHECK:
 		if (absent && !object->update_only) {
 			object->presence = FTTR_OBJECT_ABSENT;
@@ -261,7 +291,7 @@ static void dump_error(FILE *file, const char *name, int error, const struct ftt
 int fttr_objects_job_dump(const struct fttr_objects_job *job, FILE *file, const char *event)
 {
 	static const char * const phases[] = { "check", "create", "configure", "verify", "cleanup-probe",
-		"delete", "delete-verify", "restore", "restore-verify", "configured", "released", "failed" };
+		"delete", "delete-verify", "restore", "restore-verify", "configured", "released", "failed", "release-check" };
 	static const char * const states[] = { "unknown", "absent", "present", "verified", "restored" };
 	int i;
 

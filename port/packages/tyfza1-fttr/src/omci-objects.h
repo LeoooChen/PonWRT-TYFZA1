@@ -25,7 +25,7 @@ enum fttr_objects_phase {
 	FTTR_OBJECT_CHECK, FTTR_OBJECT_CREATE, FTTR_OBJECT_CONFIGURE, FTTR_OBJECT_VERIFY,
 	FTTR_OBJECT_CLEANUP_PROBE, FTTR_OBJECT_DELETE, FTTR_OBJECT_DELETE_VERIFY,
 	FTTR_OBJECT_RESTORE, FTTR_OBJECT_RESTORE_VERIFY,
-	FTTR_OBJECT_CONFIGURED, FTTR_OBJECT_RELEASED, FTTR_OBJECT_FAILED
+	FTTR_OBJECT_CONFIGURED, FTTR_OBJECT_RELEASED, FTTR_OBJECT_FAILED, FTTR_OBJECT_RELEASE_CHECK
 };
 enum fttr_objects_action { FTTR_OBJECT_REQUEST = 1, FTTR_OBJECT_COMPLETE = 2 };
 
@@ -43,6 +43,7 @@ void fttr_objects_job_start(struct fttr_objects_job *job, uint16_t onu, uint16_t
 int fttr_objects_job_update(struct fttr_objects_job *job, uint16_t *counter);
 /* Remove created resources and restore changed attributes; preserve untouched objects. */
 int fttr_objects_job_release(struct fttr_objects_job *job, uint16_t *counter);
+int fttr_objects_job_release_checked(struct fttr_objects_job *job, uint16_t *counter);
 int fttr_objects_job_dump(const struct fttr_objects_job *job, FILE *file, const char *event);
 int fttr_objects_execute(struct fttr_omci_session *session, struct fttr_objects_job *job,
 			int directory, const struct fttr_onu_state *identity);

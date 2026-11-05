@@ -255,6 +255,16 @@ static int failed_change(struct fttr_vlan_change *change, uint16_t *counter,
 	return begin_read(change, counter, false);
 }
 
+int fttr_vlan_change_release(struct fttr_vlan_change *change, uint16_t *counter)
+{
+	if (change->stage != FTTR_VLAN_DONE || !change->verified || change->error || !change->before.table.complete)
+		return -EINVAL;
+	change->verified = false;
+	change->stage = FTTR_VLAN_RESTORE_READ;
+	change->phase = "release-read";
+	return begin_read(change, counter, false);
+}
+
 static int failed_restore(struct fttr_vlan_change *change, int error, const struct fttr_me_job *me)
 {
 	change->cleanup_error = error;
@@ -359,6 +369,11 @@ int fttr_vlan_change_update(struct fttr_vlan_change *change, uint16_t *counter)
 		change->stage = FTTR_VLAN_DONE;
 		return 2;
 	case FTTR_VLAN_RESTORE_READ:
+		/* An explicit release may restore only the still-verified recipe.
+		 * Another writer's changed table is not ours to overwrite.
+		 */
+		if (!change->error && (ret = verify(before, after, &change->plan)))
+			return failed_restore(change, ret, &read->me);
 		change->stage = FTTR_VLAN_RESTORE;
 		change->index = change->plan.count - 1;
 		return next_restore(change, counter);

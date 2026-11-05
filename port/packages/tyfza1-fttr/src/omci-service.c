@@ -228,9 +228,10 @@ static int grant_write(struct fttr_service_job *job, int directory,
 
 struct fttr_me_job *fttr_service_pending(struct fttr_service_job *job)
 {
-	if (job->stage == FTTR_SERVICE_OBJECTS || job->stage == FTTR_SERVICE_RELEASE)
+	if (job->stage == FTTR_SERVICE_OBJECTS || job->stage == FTTR_SERVICE_RELEASE ||
+	    job->stage == FTTR_SERVICE_RELEASING_OBJECTS)
 		return &job->transaction.me;
-	if (job->stage == FTTR_SERVICE_VLAN)
+	if (job->stage == FTTR_SERVICE_VLAN || job->stage == FTTR_SERVICE_RELEASING_VLAN)
 		return fttr_vlan_change_pending(&job->vlan);
 	return NULL;
 }
@@ -239,17 +240,21 @@ void fttr_service_cancel(struct fttr_service_job *job, int error)
 {
 	struct fttr_me_job *me = fttr_service_pending(job);
 	int original = job->error;
+	bool objects = job->stage == FTTR_SERVICE_OBJECTS || job->stage == FTTR_SERVICE_RELEASE ||
+		job->stage == FTTR_SERVICE_RELEASING_OBJECTS;
+	bool releasing = job->stage == FTTR_SERVICE_RELEASE || job->stage == FTTR_SERVICE_RELEASING_OBJECTS ||
+		job->stage == FTTR_SERVICE_RELEASING_VLAN;
 
-	if (!original && (job->stage == FTTR_SERVICE_OBJECTS || job->stage == FTTR_SERVICE_RELEASE))
+	if (!original && objects)
 		original = job->transaction.error;
-	if (!original && job->stage == FTTR_SERVICE_VLAN)
+	if (!original && (job->stage == FTTR_SERVICE_VLAN || job->stage == FTTR_SERVICE_RELEASING_VLAN))
 		original = job->vlan.error;
 
 	if (me) {
 		me->state = FTTR_ME_FAILED;
 		me->error = error;
-		if (job->stage == FTTR_SERVICE_OBJECTS || job->stage == FTTR_SERVICE_RELEASE) {
-			if (job->transaction.error || job->stage == FTTR_SERVICE_RELEASE) {
+		if (objects) {
+			if (job->transaction.error || releasing) {
 				job->transaction.cleanup_error = error;
 				job->transaction.cleanup_failure = *me;
 			} else {
@@ -258,7 +263,7 @@ void fttr_service_cancel(struct fttr_service_job *job, int error)
 			}
 			job->transaction.phase = FTTR_OBJECT_FAILED;
 		} else {
-			if (job->vlan.error) {
+			if (job->vlan.error || releasing) {
 				job->vlan.cleanup_error = error;
 				job->vlan.cleanup_failure = *me;
 			} else {
@@ -268,7 +273,7 @@ void fttr_service_cancel(struct fttr_service_job *job, int error)
 			job->vlan.stage = FTTR_VLAN_FAILED;
 		}
 	}
-	if (original && me)
+	if ((original || releasing) && me)
 		job->cleanup_error = error;
 	job->error = original ? original : error;
 	job->stage = FTTR_SERVICE_FAILED;
@@ -283,6 +288,35 @@ static int service_failed(struct fttr_service_job *job, int error)
 	job->stage = FTTR_SERVICE_FAILED;
 	job->error = error;
 	return error;
+}
+
+int fttr_service_release_ready(const struct fttr_service_job *job)
+{
+	if (job->stage != FTTR_SERVICE_READY || job->error)
+		return -EBUSY;
+	/* Adoption proves current values, not authority to delete old resources.
+	 * Without the original ownership journal, a move cannot safely reclaim
+	 * the old T-CONT and GEMs or infer their prior configuration.
+	 */
+	if (!job->objects[0].touched || !job->objects[0].have_previous ||
+	    !job->objects[3].touched || !job->objects[4].touched)
+		return -ENODATA;
+	return 0;
+}
+
+int fttr_service_release(struct fttr_service_job *job, uint16_t *counter)
+{
+	int ret = fttr_service_release_ready(job);
+
+	if (ret || !job->grant_withdrawn)
+		return ret ? ret : -EBUSY;
+	ret = fttr_vlan_change_release(&job->vlan, counter);
+	if (ret < 0)
+		return ret;
+	job->configured = job->grant_verified = false;
+	job->phase = "release-vlan";
+	job->stage = FTTR_SERVICE_RELEASING_VLAN;
+	return ret;
 }
 
 static int release_objects(struct fttr_service_job *job, uint16_t *counter,
@@ -316,7 +350,33 @@ int fttr_service_update(struct fttr_service_job *job, uint16_t *counter,
 
 	switch (job->stage) {
 	case FTTR_SERVICE_READY: return 2;
+	case FTTR_SERVICE_RELEASED: return 2;
 	case FTTR_SERVICE_FAILED: return job->error;
+	case FTTR_SERVICE_RELEASING_VLAN:
+		ret = fttr_vlan_change_update(&job->vlan, counter);
+		if (ret < 0) {
+			job->cleanup_error = ret;
+			return service_failed(job, ret);
+		}
+		if (ret != 2)
+			return ret;
+		job->phase = "release-objects";
+		job->stage = FTTR_SERVICE_RELEASING_OBJECTS;
+		ret = fttr_objects_job_release_checked(&job->transaction, counter);
+		if (ret == 1)
+			return 1;
+		/* fall through */
+	case FTTR_SERVICE_RELEASING_OBJECTS:
+		ret = fttr_objects_job_update(&job->transaction, counter);
+		if (ret < 0) {
+			job->cleanup_error = ret;
+			return service_failed(job, ret);
+		}
+		if (ret != 2)
+			return ret;
+		job->phase = "released";
+		job->stage = FTTR_SERVICE_RELEASED;
+		return 2;
 	case FTTR_SERVICE_START:
 		job->phase = "grant-read";
 		ret = fttr_miniolt_tcont_read(directory, onu, job->config.slot, &job->previous);

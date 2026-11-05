@@ -3165,6 +3165,72 @@ test models its verdict; vendor policy loading and persistent SN/slot assignment
 remain native implementation work. These results must not be represented as
 completion of the five per-ONU authentication methods.
 
+### Resident ONU serial reservation migration
+
+`drv_gpon_onuid_mismatch_deactive` (ASIC47ec0/FPGA4727c) receives the target
+hardware slot, the SN and the source slot. The retained auth callback converts
+its1-based logical destination to0-based before calling it. Its local SN helper
+(4733c/466bc) writes the vendor word at40801+slot*4, then the serial word at
+40800+slot*4. With an unused target the mismatch path writes that reservation,
+deactivates the source through its backend-specific state/PLOAM sequence, then
+clears the source SN. The extra source deactivation for a prior target OMCC
+flag is a software-state branch; native rejects a registered/blocked target.
+
+The controller now exposes this operation through its owned local socket:
+
+```sh
+fttrctl /var/run/tyfza1-fttr onu-move SOURCE_ID SOURCE_SN_HEX TARGET_ID TARGET_SN_HEX
+```
+
+IDs are0..63; both SN arguments are exact16-hex-digit snapshots, including the
+target's current stale reservation or all-zero empty SN. The new version2
+message extends the local request; the original20-byte version1 administration
+messages remain supported. Only a same-user client can request it, one move
+is active at a time, and conflicting administration on its two slots rejects.
+It is an explicit operation and does not yet implement automatic five-method
+authentication-policy selection or persistent SN binding.
+
+Before moving a configured ONU, the controller verifies that it owns the
+remote T-CONT/GEM recipe, withdraws the local service VLAN/DBA with synchronous
+FE Hash/cache invalidation, then asynchronously restores its VLAN rules and
+releases its remote MEs in dependency order. Current table/object attributes
+are read again before release; changed values, rejected operations, false
+success and timeouts stop the move. This closes the observed ENOSPC failure
+where a moved ONU retained its old Alloc-ID and no free T-CONT remained.
+Other ONU transactions continue while remote release waits. Local authenticated
+and configured status is withdrawn immediately.
+
+After release, FE is paused again through final two-slot cleanup and hardware
+mutation. The new `onu_move` driver operation holds the common control mutex,
+rechecks both identities/status, verifies all source/target data grants are
+zero, and checks identities again after that potentially long MDIO scan.
+Each SN write is read back; a source change after target publication returns
+EUCLEAN as a partial mutation and never permits an automatic FE resume.
+The old slot uses the existing temporary-deactivation release timing with its
+now-empty SN; the destination must actually register, authenticate and build
+its service under the new ID. The CLI's success reports only
+`reservation_updated:true, registration_verified:false`.
+
+Current-process ownership is required to release a configured service;
+restart adoption without its original recipe returns ENODATA before FE/peer
+writes. Inventory-only operation also rejects unmanaged GEMs or assigned
+T-CONTs. Durable ownership recovery, automatic policy-triggered moves and
+FPGA2 binding remain incomplete. IO/partial cleanup failures stop TX/FE rather
+than guessing how to undo hardware-observed state. This operation does not
+claim a physical DMA/PE/MiniOLT packet-retirement barrier.
+
+`test_fttr_onu_move.py` compares six original/native backend/slot write
+sequences, both identities, occupied/blocked destinations, all data-grant
+checks, every IO failure cutoff, readback failure and source replacement after
+target publication. Real daemon/CLI tests on both ASIC/FPGA1 use original OMCI
+encoders, veth, Linux bridge/VLAN and modeled MiniOLT state: release and move
+back, registration/authentication before rebuilding, held deletion with a
+healthy peer, VLAN/T-CONT drift, refusal/false success/timeout, target replacement,
+shutdown and restart-adoption refusal. Existing management, controller/CLI,
+VLAN, FPGA visibility and register regressions pass. FTTR package and
+Linux6.18.55 MiniOLT/BOSA module builds pass, with source identity checked.
+Local reports/logs: `artifacts/fttr/onu-move-*-20261106.*`; no hardware was used.
+
 ### Resident global LOID authentication
 
 The factory importer now reads the two original CTC global fields into a

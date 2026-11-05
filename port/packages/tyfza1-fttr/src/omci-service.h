@@ -24,7 +24,8 @@ struct fttr_service_job {
 	int error, cleanup_error;
 	bool grant_sent, grant_verified, grant_restored, grant_withdrawn, configured;
 	enum { FTTR_SERVICE_START, FTTR_SERVICE_OBJECTS, FTTR_SERVICE_VLAN,
-		FTTR_SERVICE_RELEASE, FTTR_SERVICE_READY, FTTR_SERVICE_FAILED } stage;
+		FTTR_SERVICE_RELEASE, FTTR_SERVICE_READY, FTTR_SERVICE_FAILED,
+		FTTR_SERVICE_RELEASING_VLAN, FTTR_SERVICE_RELEASING_OBJECTS, FTTR_SERVICE_RELEASED } stage;
 };
 
 /* Select real MEs and build the original direct-bridge service dependency graph. */
@@ -36,6 +37,9 @@ int fttr_service_update(struct fttr_service_job *job, uint16_t *counter,
 			int directory, const struct fttr_onu_state *identity);
 struct fttr_me_job *fttr_service_pending(struct fttr_service_job *job);
 void fttr_service_cancel(struct fttr_service_job *job, int error);
+/* Requires an intact current-process ownership recipe and withdrawn local DBA. */
+int fttr_service_release(struct fttr_service_job *job, uint16_t *counter);
+int fttr_service_release_ready(const struct fttr_service_job *job);
 int fttr_service_execute(struct fttr_omci_session *session, struct fttr_service_job *job,
 			 int directory, const struct fttr_onu_state *identity);
 int fttr_service_dump(const struct fttr_service_job *job, FILE *file);

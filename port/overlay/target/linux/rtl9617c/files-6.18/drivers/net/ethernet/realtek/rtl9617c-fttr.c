@@ -20,6 +20,7 @@
 #include "rtl9617c-fttr-i2c.h"
 #include "rtl9617c-fttr-omci.h"
 #include "rtl9617c-fttr-onu.h"
+#include "rtl9617c-fttr-move.h"
 #include "rtl9617c-fttr-serdes.h"
 #include "rtl9617c-fttr-fpga.h"
 #include "rtl9617c-fttr-bosa.h"
@@ -437,6 +438,27 @@ static ssize_t onu_admin_store(struct device *dev, struct device_attribute *attr
 }
 static DEVICE_ATTR_WO(onu_admin);
 
+static ssize_t onu_move_store(struct device *dev, struct device_attribute *attr,
+			      const char *buf, size_t count)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	unsigned int from, to;
+	unsigned char serial[8], target[8];
+	char hex[17], target_hex[17], extra;
+	int ret;
+
+	if (sscanf(buf, "%u %u %16s %16s %c", &from, &to, hex, target_hex, &extra) != 4 ||
+	    from >= RTL_FTTR_ONUS || to >= RTL_FTTR_ONUS || from == to ||
+	    strlen(hex) != 16 || strlen(target_hex) != 16 ||
+	    hex2bin(serial, hex, sizeof(serial)) || hex2bin(target, target_hex, sizeof(target)))
+		return -EINVAL;
+	mutex_lock(&fttr->control_lock);
+	ret = rtl_fttr_onu_move(&fttr->reg_io, fttr->backend, from, to, serial, target);
+	mutex_unlock(&fttr->control_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_WO(onu_move);
+
 static ssize_t ploam_store(struct device *dev, struct device_attribute *attr,
 			   const char *buf, size_t count)
 {
@@ -598,6 +620,7 @@ static struct attribute *rtl_fttr_attrs[] = {
 	&dev_attr_fpga_auth.attr,
 	&dev_attr_optical_init.attr,
 	&dev_attr_onu_admin.attr,
+	&dev_attr_onu_move.attr,
 	NULL,
 };
 
@@ -607,6 +630,8 @@ static umode_t rtl_fttr_attr_visible(struct kobject *kobj, struct attribute *att
 
 	if (attr == &dev_attr_fpga_auth.attr)
 		return fttr->backend == RTL_FTTR_FPGA1 ? attr->mode : 0;
+	if (attr == &dev_attr_onu_move.attr)
+		return fttr->backend == RTL_FTTR_FPGA2 ? 0 : attr->mode;
 	if (attr == &dev_attr_fpga_init.attr || attr == &dev_attr_optical_init.attr)
 		return fttr->backend == RTL_FTTR_ASIC9690 ? 0 : attr->mode;
 	if (attr == &dev_attr_omci_link.attr || attr == &dev_attr_onu_table.attr ||

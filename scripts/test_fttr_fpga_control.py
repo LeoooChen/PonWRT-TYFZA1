@@ -128,7 +128,7 @@ int snapshot(const struct rtl_fttr_reg_io *io, unsigned int id, struct rtl_fttr_
         driver = (headers / 'rtl9617c-fttr.c').read_text()
         attrs = ('backend', 'version', 'reset', 'host_serdes', 'pon_serdes', 'omci_link',
                  'onu_table', 'onu_block', 'ploam', 'tx_enable', 'core_init', 'dba',
-                 'tcont', 'management_grant', 'fpga_init', 'optical_init', 'fpga_auth', 'onu_admin')
+                 'tcont', 'management_grant', 'fpga_init', 'optical_init', 'fpga_auth', 'onu_admin', 'onu_move')
         source += '''typedef unsigned short umode_t;
 struct attribute { umode_t mode; };
 struct device_attribute { struct attribute attr; };
@@ -246,7 +246,7 @@ int remove_device(const struct rtl_fttr_reg_io *io, int backend) {
             for index, name in enumerate(attrs):
                 assert bool(native.visible(backend, index)) == (name in
                     ('backend', 'version', 'fpga_init', 'omci_link', 'onu_table', 'tx_enable', 'tcont', 'optical_init', 'onu_admin') or
-                    (backend == 1 and name == 'fpga_auth'))
+                    (backend == 1 and name in ('fpga_auth', 'onu_move')))
             assert native.bin_visible(backend, 0) and native.bin_visible(backend, 1)
             for fail_at in (0, 1, 2):
                 events.clear(); values[0x20] = 0xa55a1000

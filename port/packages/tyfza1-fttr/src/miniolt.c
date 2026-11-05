@@ -55,6 +55,24 @@ int fttr_miniolt_admin(int directory, unsigned int id, unsigned int action, cons
 	return fttr_miniolt_command(directory, "onu_admin", command);
 }
 
+int fttr_miniolt_move(int directory, unsigned int from, unsigned int to,
+		const uint8_t serial[8], const uint8_t target[8])
+{
+	char command[64];
+	unsigned int i, length;
+
+	if (from >= FTTR_ONUS || to >= FTTR_ONUS || from == to)
+		return -EINVAL;
+	length = snprintf(command, sizeof(command), "%u %u ", from, to);
+	for (i = 0; i < 8; i++)
+		length += snprintf(command + length, sizeof(command) - length, "%02x", serial[i]);
+	command[length++] = ' ';
+	for (i = 0; i < 8; i++)
+		length += snprintf(command + length, sizeof(command) - length, "%02x", target[i]);
+	snprintf(command + length, sizeof(command) - length, "\n");
+	return fttr_miniolt_command(directory, "onu_move", command);
+}
+
 int fttr_miniolt_management(int directory, unsigned int id, bool enable)
 {
 	char value[16];

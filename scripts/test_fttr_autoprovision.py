@@ -85,6 +85,7 @@ def main():
     p.add_argument('--slave', type=Path, required=True)
     p.add_argument('--daemon', type=Path, required=True)
     p.add_argument('--admin-control', type=Path, help='exercise the resident ONU administration CLI')
+    p.add_argument('--move-control', type=Path, help='exercise the resident SN reservation move')
     p.add_argument('--output', type=Path, required=True)
     p.add_argument("--wifi", action="store_true", help="exercise resident remote Wi-Fi policies")
     p.add_argument("--auth", action="store_true", help="exercise original global LOID policy before services")
@@ -134,6 +135,7 @@ def main():
             self.fail_upload_once=False
             self.auth_hold = self.auth_drop = self.auth_bad_result = self.auth_reject_result = False
             self.auth_malformed = False
+            self.move_hold = self.move_drop = self.move_reject = self.move_false = False
             self.auth_ctc_fail = self.auth_onug_fail = 0
             self.pool = {(262,self.tcont):{0x8000:b'\0\xff'},
                 (277,self.queue):{0x0400:struct.pack('>I',self.tcont<<16|3)},
@@ -215,7 +217,8 @@ def main():
                     n=sum(w for bit,w in widths[c].items() if create_mask&bit)
                     self.pool[c,id]=self.fields(c,create_mask,body[8:8+n])
             elif op==0x46:
-                if not (self.reject and c==268): self.pool.pop((c,id),None)
+                if self.move_reject:status=2
+                elif not self.move_false and not (self.reject and c==268): self.pool.pop((c,id),None)
             elif op==0x48:
                 if c==171 and mask==0x0400:
                     row=body[10:26]
@@ -243,6 +246,8 @@ def main():
             if wire is None:
                 wire=stock.frame(tci,(op&0x1f)|0x20,content if op in (0x4d,0x4e) else bytes([status])+content,
                                  onu=self.id,class_id=c,instance=id)[16:]
+            if op==0x46 and self.move_drop:return None
+            if op==0x46 and self.move_hold:self.held=wire;return None
             if self.wifi_timeout and c in (0xff69,0xff6a) and op==0x48:
                 if self.wifi_lost_tci is None:self.wifi_lost_tci=tci
                 if tci==self.wifi_lost_tci:return None
@@ -285,6 +290,7 @@ def main():
             device.joinpath('omci_link').write_text('host=02:03:04:05:06:07 olt=00:11:11:11:11:11 ethertype=8888 downstream_length=0\n')
         device.joinpath('tcont_state').write_bytes(bytes(4096))
         device.joinpath('onu_admin').write_text('')
+        device.joinpath('onu_move').write_text('')
         admin_fault=root/'admin.fail'
         admin_hold,admin_log=root/'admin.hold',root/'admin.log'
         admin_log.write_text('')
@@ -292,6 +298,39 @@ def main():
         accel_log,accel_fault=root/'accel.log',root/'accel.fail'
         accel_log.write_text('')
         accel_shim = r'''
+  if(n>=9 && !strcmp(path+n-9,"/onu_move")) {
+   unsigned from,to;char sn[17],target[17],base[512],file[544],name[32],accel;
+   if(sscanf(buf,"%u %u %16s %16s",&from,&to,sn,target)!=4 || from>=64 || to>=64 || from==to){errno=EINVAL;return -1;}
+   for(unsigned i=0;i<2;i++){snprintf(name,sizeof(name),"fttr-u%u",i?to:from);if(if_nametoindex(name)){errno=EBUSY;return -1;}}
+   strcpy(base,path);base[n-9]=0;snprintf(file,sizeof(file),"%s/../ni/fttr_accel",base);
+   int f=open(file,O_RDONLY);pread(f,&accel,1,0);close(f);if(accel!='0'){errno=EBUSY;return -1;}
+   snprintf(file,sizeof(file),"%s/tcont_state",base);f=open(file,O_RDONLY);
+   unsigned first=getenv("FTTR_ADMIN_FPGA")?0:1,last=first?7:0;
+   for(unsigned i=0;i<2;i++)for(unsigned slot=first;slot<=last;slot++){
+    uint32_t grant[2];pread(f,grant,8,((i?to:from)*8+slot)*8);
+    if(grant[0]||grant[1]){close(f);errno=EBUSY;return -1;}}
+   close(f);
+   f=open(getenv("FTTR_ADMIN_FAIL"),O_RDONLY);
+   if(f>=0){char fault=0;read(f,&fault,1);close(f);errno=fault=='s'?ESTALE:fault=='b'?EBUSY:EIO;return -1;}
+   snprintf(file,sizeof(file),"%s/onu_state",base);f=open(file,O_RDWR);
+   unsigned char source[20],dest[20];pread(f,source,20,from*20);pread(f,dest,20,to*20);
+   char actual[17];for(unsigned i=0;i<8;i++)snprintf(actual+2*i,3,"%02x",source[12+i]);
+   if(strcmp(actual,sn)){close(f);errno=ESTALE;return -1;}
+   for(unsigned i=0;i<8;i++)snprintf(actual+2*i,3,"%02x",dest[12+i]);
+   if(strcmp(actual,target)){close(f);errno=ESTALE;return -1;}
+   uint32_t state;memcpy(&state,dest,4);if(state&0x50000){close(f);errno=EBUSY;return -1;}
+   memcpy(dest+12,source+12,8);memset(source+12,0,8);
+   memcpy(&state,source,4);state=first?(state|0x10000):0x10000;memcpy(source,&state,4);
+   if(!first)memset(source+4,0,4);
+   pwrite(f,source,20,from*20);pwrite(f,dest,20,to*20);
+   snprintf(file,sizeof(file),"%s/onu_table",base);FILE *table=fopen(file,"w");
+   for(unsigned i=0;i<64;i++){unsigned char row[20];uint32_t words[3];pread(f,row,20,i*20);memcpy(words,row,12);
+    fprintf(table,"%u %08x %08x %08x ",i,words[0],words[1],words[2]);
+    for(unsigned j=0;j<8;j++)fprintf(table,"%02x",row[12+j]);
+    fputc('\n',table);}
+   fclose(table);close(f);
+   FILE *trace=fopen(getenv("FTTR_ADMIN_LOG"),"a");fprintf(trace,"move %u %u\n",from,to);fclose(trace);
+  }
   if(n>=11 && !strcmp(path+n-11,"/fttr_accel")) {
    unsigned int seven=if_nametoindex("fttr-u7"),nine=if_nametoindex("fttr-u9");
    char row[64];int length=snprintf(row,sizeof(row),"%c %u %u\n",((const char *)buf)[0],seven,nine);
@@ -425,11 +464,11 @@ def main():
             return port['ifindex']
         def accel_events():
             return [tuple(map(int,line.split())) for line in accel_log.read_text().splitlines()]
-        def until(predicate,seconds=8):
+        def until(predicate,seconds=8,allow_exit=False):
             nonlocal grant_buffer
             deadline=time.monotonic()+seconds
             while time.monotonic()<deadline:
-                if process.poll() is not None:raise AssertionError(process.communicate())
+                if process.poll() is not None and not allow_exit:raise AssertionError(process.communicate())
                 ready,_,_=select.select([peer,grant_fd],[],[],0.01)
                 for source in ready:
                     if source==grant_fd:
@@ -444,9 +483,9 @@ def main():
                         wire=nodes[id].reply(frame[16:60])
                         if wire:peer.send(HOST+OLT+struct.pack('>HH',0x8888,id)+wire)
                 current=status()
-                if args.auth and (not current.get('onus') or current['onus'][7]['mib_serial']!=nodes[7].serial.hex()):
+                if args.auth and not args.move_control and (not current.get('onus') or current['onus'][7]['mib_serial']!=nodes[7].serial.hex()):
                     continue
-                if current.get('pid') == process.pid and predicate(current):return current
+                if (current.get('pid') == process.pid or (allow_exit and current.get('pid')==0 and process.poll() is not None)) and predicate(current):return current
             current=status()
             current['onus']=[r for r in current.get('onus',[]) if r['id'] in nodes]
             raise AssertionError(('state timeout',current,grants))
@@ -464,6 +503,156 @@ def main():
                     FTTR_ACCEL_LOG=str(accel_log),FTTR_ACCEL_FAIL=str(accel_fault),
                     FTTR_ADMIN_FAIL=str(admin_fault),FTTR_ADMIN_HOLD=str(admin_hold),FTTR_ADMIN_LOG=str(admin_log),
                     **({'FTTR_ADMIN_FPGA':'1'} if args.backend=='fpga1' else {})))
+        if args.move_control:
+            checks=[];nodes[7].hold=False;nodes[7].wifi_hold=False;nodes[9].fail_upload_once=False
+            def move(from_id,to,serial=None,target=None,error=0):
+                client=subprocess.Popen([str(args.move_control.resolve()),str(store),'onu-move',str(from_id),
+                    nodes[from_id].serial.hex() if serial is None else serial,str(to),
+                    (nodes[to].serial.hex() if to in nodes else '0'*16) if target is None else target],
+                    stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                try:
+                    until(lambda s:client.poll() is not None,seconds=20,allow_exit=bool(error))
+                    output,errors=client.communicate(timeout=1)
+                finally:
+                    if client.poll() is None:client.kill();client.wait()
+                assert client.returncode==bool(error),(output,errors)
+                if error:assert f'({-error})' in errors,errors
+                else:
+                    row=json.loads(output);assert row['reservation_updated'] and not row['registration_verified']
+            process=launch()
+            try:
+                until(lambda s:all(s['onus'][id]['datapath_configured'] for id in (7,9)))
+                before=len(accel_events());peer_port=datapath(9)
+                move(7,11,serial='0'*16,error=errno.ESTALE)
+                move(7,11,target='1'*16,error=errno.ESTALE)
+                move(7,9,error=errno.EBUSY)
+                assert len(accel_events())==before and datapath(9)==peer_port
+                # An occupied target discovered only under the driver lock stops the move.
+                admin_fault.write_text('busy');move(7,11,error=errno.EBUSY);admin_fault.unlink()
+                until(lambda s:s['onus'][7]['datapath_configured'])
+                assert 'move' not in admin_log.read_text()
+                checks.append('stale source/target and occupied target reject; driver preflight rejection leaves the healthy peer active')
+                before=len(accel_events());old_port=datapath(7)
+                # Hold release mid-flight: healthy ONU sync continues while local data stays withdrawn.
+                nodes[7].move_hold=True;nodes[7].held=None
+                client=subprocess.Popen([str(args.move_control.resolve()),str(store),'onu-move','7',
+                    nodes[7].serial.hex(),'11','0'*16],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                try:
+                    until(lambda s:nodes[7].held is not None)
+                    current=status()['onus'][7]
+                    assert current['phase']=='move-release' and not current['datapath_configured'] and not current['loid_authenticated']
+                    previous=len(nodes[9].operations)
+                    until(lambda s:len(nodes[9].operations)>previous)
+                    assert not ports().get('fttr-u7') and datapath(9)==peer_port
+                    assert 'move' not in admin_log.read_text()
+                    nodes[7].move_hold=False
+                    peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+nodes[7].held)
+                    until(lambda s:client.poll() is not None)
+                    output,errors=client.communicate(timeout=1)
+                    assert client.returncode==0,(output,errors)
+                finally:
+                    if client.poll() is None:client.kill();client.wait()
+                current=until(lambda s:not s['onus'][7]['datapath_configured'])
+                assert 'fttr-u7' not in ports() and 'fttr-u11' not in ports() and datapath(9)==peer_port
+                assert journal(7,'service-old')[0]['grant_withdrawn']
+                assert journal(7,'service-old')[0]['phase']=='released' and not journal(7,'service-old')[0]['error']
+                assert accel_events()[before:]==[(0,old_port,peer_port),(1,0,peer_port),(0,0,peer_port),(1,0,peer_port)]
+                data=device.joinpath('onu_state').read_bytes()
+                assert data[7*20+12:8*20]==bytes(8) and data[11*20+12:12*20]==nodes[7].serial
+                # Registration is an external event, never synthesized by the controller.
+                node=nodes.pop(7);node.id=11;node.auth_hold=args.auth;node.held=None;nodes[11]=node
+                hardware()
+                if args.auth:
+                    until(lambda s:s['onus'][11]['phase']=='authentication' and nodes[11].held is not None)
+                    assert 'fttr-u11' not in ports() and not status()['onus'][11]['loid_authenticated']
+                    nodes[11].auth_hold=False
+                    peer.send(HOST+OLT+struct.pack('>HH',0x8888,11)+nodes[11].held)
+                until(lambda s:s['onus'][11]['datapath_configured'])
+                datapath(11)
+                until(lambda s:s['onus'][7]['phase']=='absent',seconds=17)
+                assert datapath(9)==peer_port
+                checks.append('move withdraws source FE/VLAN/DBA, reserves target, waits for registration and reauthenticates before service')
+                # Move back, then fail during hardware mutation: never reopen FE.
+                move(11,7);node=nodes.pop(11);node.id=7;nodes[7]=node;hardware()
+                until(lambda s:s['onus'][7]['datapath_configured'])
+                before=len(accel_events());admin_fault.write_text('io');move(7,11,error=errno.EIO)
+                _,errors=process.communicate(timeout=3)
+                assert process.returncode==1 and status()['error']==-errno.EIO,errors
+                events=accel_events()[before:]
+                assert sum(enabled for enabled,_,_ in events)==1 and events[-1][0]==0,events
+                assert device.joinpath('tx_enable').read_text()=='0\n' and not ports()
+                checks.append('partial move error stops TX and removes all services without resuming FE')
+                admin_fault.unlink()
+                for fault,expected in [('vlan-drift',errno.EUCLEAN),('object-drift',errno.EUCLEAN),('move_reject',errno.EREMOTEIO),('move_false',errno.EUCLEAN),
+                        ('move_drop',errno.ETIMEDOUT),('target-replaced',errno.ESTALE),('stop',errno.ECANCELED)]:
+                    nodes[7]=Node(7,'5445535400000007',0x107,False)
+                    nodes[9]=Node(9,'5445535400000009',0x203,True)
+                    hardware();admin_log.write_text('');accel_log.write_text('')
+                    process=launch()
+                    until(lambda s:all(s['onus'][id]['datapath_configured'] for id in (7,9)))
+                    if fault=='vlan-drift':
+                        key=next(iter(nodes[7].table));value=nodes[7].table[key]
+                        nodes[7].table[key]=value[:-1]+bytes([value[-1]^1])
+                    if fault=='object-drift':nodes[7].pool[262,nodes[7].tcont][0x8000]=b'\x00\xfa'
+                    if fault.startswith('move_'):setattr(nodes[7],fault,True)
+                    elif not fault.endswith('drift'):nodes[7].move_hold=True;nodes[7].held=None
+                    if fault.startswith('move_') or fault.endswith('drift'):
+                        move(7,11,error=expected)
+                    else:
+                        client=subprocess.Popen([str(args.move_control.resolve()),str(store),'onu-move','7',
+                            nodes[7].serial.hex(),'11','0'*16],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                        try:
+                            until(lambda s:nodes[7].held is not None)
+                            if fault=='stop':process.send_signal(signal.SIGTERM)
+                            else:
+                                nodes[11]=Node(11,'54455354000000aa',0x311,True);hardware()
+                                peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+nodes[7].held)
+                            until(lambda s:client.poll() is not None,allow_exit=True)
+                            _,errors=client.communicate(timeout=1)
+                            assert client.returncode==1 and f'({-expected})' in errors,errors
+                        finally:
+                            if client.poll() is None:client.kill();client.wait()
+                    _,errors=process.communicate(timeout=3)
+                    assert process.returncode==(0 if fault=='stop' else 1),(fault,errors)
+                    assert 'move' not in admin_log.read_text() and device.joinpath('tx_enable').read_text()=='0\n' and not ports()
+                    assert journal(7)[0]['error']==-expected
+                    nodes.pop(11,None)
+                checks.append('VLAN/object drift, release rejection, false-success delete, timeout, target replacement and shutdown never program the SN reservation')
+                # Restarted adoption lacks deletion ownership and rejects before FE changes.
+                nodes[7]=Node(7,'5445535400000007',0x107,False);nodes[9]=Node(9,'5445535400000009',0x203,True);hardware()
+                process=launch();until(lambda s:all(s['onus'][id]['datapath_configured'] for id in (7,9)))
+                process.send_signal(signal.SIGTERM);process.communicate(timeout=3)
+                process=launch();until(lambda s:all(s['onus'][id]['datapath_configured'] for id in (7,9)))
+                before=len(accel_events());move(7,11,error=errno.ENODATA)
+                assert len(accel_events())==before and set(ports())=={'fttr-u7','fttr-u9'}
+                process.send_signal(signal.SIGTERM);process.communicate(timeout=3)
+                checks.append('adopted remote resources without a prior ownership recipe reject move before FE or peer writes')
+                process=launch(with_policy=False,with_wifi=False)
+                until(lambda s:all(s['onus'][id]['phase']=='inventory' for id in (7,9)))
+                before=len(accel_events());move(7,11,error=errno.ENODATA)
+                assert len(accel_events())==before
+                process.send_signal(signal.SIGTERM);process.communicate(timeout=3)
+                nodes[7]=Node(7,'5445535400000007',0x107,False);nodes[9]=Node(9,'5445535400000009',0x203,True);hardware()
+                process=launch(with_policy=False,with_wifi=False)
+                until(lambda s:all(s['onus'][id]['phase']=='inventory' for id in (7,9)))
+                move(7,11)
+                process.send_signal(signal.SIGTERM);process.communicate(timeout=3)
+                checks.append('inventory-only move rejects unmanaged data resources; an unassigned ONU may move without a service policy')
+                if args.auth:
+                    nodes[7]=Node(7,'5445535400000007',0x107,False);nodes[9]=Node(9,'5445535400000009',0x203,True)
+                    nodes[7].pool[65530,0][0x4000]=b'wrong'.ljust(24,b'\0');hardware()
+                    process=launch(with_policy=False,with_wifi=False)
+                    until(lambda s:s['onus'][7]['phase']=='auth-failed')
+                    before=len(accel_events());move(7,11,error=errno.EBUSY)
+                    assert len(accel_events())==before
+                    process.send_signal(signal.SIGTERM);process.communicate(timeout=3)
+                    checks.append('authentication failure without MIB inventory cannot bypass remote resource ownership checks')
+            finally:
+                if process.poll() is None:process.kill();process.wait()
+                peer.close();os.close(grant_fd)
+            args.output.write_text(json.dumps(dict(backend=args.backend,checks=checks,
+                scope='Real controller/CLI/veth/bridge/VLAN, modeled MiniOLT and original OMCI encoders. No physical registration/packet retirement.'),indent=2)+'\n')
+            print(json.dumps(checks,indent=2));return
         if args.auth:
             checks=['invalid, exposed or duplicate LOID policy fails before ownership and hardware writes']
             nodes[7].hold=False;nodes[7].wifi_hold=False;nodes[7].auth_hold=True;nodes[9].fail_upload_once=False

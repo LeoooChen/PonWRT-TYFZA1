@@ -588,7 +588,8 @@ static int service_command(int directory, unsigned int id, const uint16_t fields
 	return ferror(stdout) ? -EIO : ret;
 }
 
-static int onu_admin(int directory, const char *id, const char *serial, const char *action)
+static int onu_admin(int directory, const char *id, const char *serial, const char *action,
+		const char *target_id, const char *target_serial)
 {
 	struct fttr_admin_request request = { .version = 1 };
 	struct sockaddr_un address = { .sun_family = AF_UNIX };
@@ -603,7 +604,7 @@ static int onu_admin(int directory, const char *id, const char *serial, const ch
 	errno = 0;
 	number = strtoul(id, &end, 10);
 	if (errno || !*id || *end || number >= FTTR_ONUS || strlen(serial) != 16 ||
-	    (strcmp(action, "block") && strcmp(action, "resume") && strcmp(action, "deactivate")))
+	    (strcmp(action, "block") && strcmp(action, "resume") && strcmp(action, "deactivate") && strcmp(action, "move")))
 		return -EINVAL;
 	request.id = number;
 	request.action = !strcmp(action, "deactivate") ? FTTR_ADMIN_DEACTIVATE :
@@ -614,6 +615,24 @@ static int onu_admin(int directory, const char *id, const char *serial, const ch
 		if (strspn(pair, "0123456789abcdefABCDEF") != 2)
 			return -EINVAL;
 		request.serial[i] = strtoul(pair, NULL, 16);
+	}
+	if (!strcmp(action, "move")) {
+		if (!target_id || !target_serial || strlen(target_serial) != 16)
+			return -EINVAL;
+		errno = 0;
+		number = strtoul(target_id, &end, 10);
+		if (errno || !*target_id || *end || number >= FTTR_ONUS || number == request.id)
+			return -EINVAL;
+		request.version = 2;
+		request.action = FTTR_ADMIN_MOVE;
+		request.target = number;
+		for (i = 0; i < 8; i++) {
+			char pair[3] = { target_serial[i * 2], target_serial[i * 2 + 1], 0 };
+
+			if (strspn(pair, "0123456789abcdefABCDEF") != 2)
+				return -EINVAL;
+			request.target_serial[i] = strtoul(pair, NULL, 16);
+		}
 	}
 	fd = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 	if (fd < 0)
@@ -630,14 +649,18 @@ static int onu_admin(int directory, const char *id, const char *serial, const ch
 		ret = -errno;
 		goto out;
 	}
-	size = send(fd, &request, sizeof(request), 0);
-	if (size != sizeof(request)) {
+	unsigned int request_size = request.version == 1 ? offsetof(struct fttr_admin_request, target) : sizeof(request);
+	size = send(fd, &request, request_size, 0);
+	if (size != request_size) {
 		ret = size < 0 ? -errno : -EIO;
 		goto out;
 	}
 	size = recv(fd, &result, sizeof(result), MSG_TRUNC);
 	ret = size < 0 ? -errno : size != sizeof(result) ? -EPROTO : result;
-	if (!ret)
+	if (!ret && request.action == FTTR_ADMIN_MOVE)
+		printf("{\"event\":\"onu_move\",\"from\":%u,\"to\":%u,\"reservation_updated\":true,\"registration_verified\":false}\n",
+			request.id, request.target);
+	else if (!ret)
 		printf("{\"event\":\"onu_admin\",\"id\":%u,\"serial\":\"%s\",\"blocked\":%s,\"temporary\":%s}\n",
 			request.id, serial, request.action != FTTR_ADMIN_RESUME ? "true" : "false",
 			request.action == FTTR_ADMIN_DEACTIVATE ? "true" : "false");
@@ -656,7 +679,7 @@ int main(int argc, char **argv)
 	    strcmp(argv[2], "gem") && strcmp(argv[2], "profiles") && strcmp(argv[2], "uni") &&
 	    strcmp(argv[2], "ani") && strcmp(argv[2], "mapper") && strcmp(argv[2], "vlan") &&
 	    strcmp(argv[2], "vlan-table") && strcmp(argv[2], "service") && strcmp(argv[2], "wifi") &&
-	    strcmp(argv[2], "onu-admin") && strcmp(argv[2], "optical"))) {
+	    strcmp(argv[2], "onu-admin") && strcmp(argv[2], "onu-move") && strcmp(argv[2], "optical"))) {
 		fprintf(stderr, "Usage: %s <miniolt-sysfs-directory> status\n"
 			"       %s <miniolt-sysfs-directory> mib <hardware-ID> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> get <hardware-ID> <class> <instance> <mask> [interface=fttr0]\n"
@@ -673,6 +696,7 @@ int main(int argc, char **argv)
 			"       %s <miniolt-sysfs-directory> wait-link <NI-sysfs-directory>\n",
 			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
 		fprintf(stderr, "       %s <controller-state-directory> onu-admin <hardware-ID> <serial-hex> <block|resume|deactivate>\n", argv[0]);
+		fprintf(stderr, "       %s <controller-state-directory> onu-move <source-ID> <source-serial-hex> <target-ID> <target-serial-hex>\n", argv[0]);
 		fprintf(stderr, "       %s <optical-sysfs-directory> optical\n", argv[0]);
 		return 2;
 	}
@@ -689,12 +713,17 @@ int main(int argc, char **argv)
 			fprintf(stderr, "FTTR optical: %s (%d)\n", strerror(-ret), ret);
 		return ret ? 1 : 0;
 	}
-	if (!strcmp(argv[2], "onu-admin")) {
-		if (argc != 6)
+	if (!strcmp(argv[2], "onu-admin") || !strcmp(argv[2], "onu-move")) {
+		bool move = !strcmp(argv[2], "onu-move");
+
+		if (argc != (move ? 7 : 6))
+			return 2;
+		if (!move && !strcmp(argv[5], "move"))
 			return 2;
 		directory = open(argv[1], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 		if (directory < 0) { perror(argv[1]); return 1; }
-		ret = onu_admin(directory, argv[3], argv[4], argv[5]);
+		ret = onu_admin(directory, argv[3], argv[4], move ? "move" : argv[5],
+			move ? argv[5] : NULL, move ? argv[6] : NULL);
 		close(directory);
 		if (!ret && fflush(stdout))
 			ret = -errno;

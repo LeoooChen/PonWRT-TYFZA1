@@ -55,6 +55,7 @@ void fttr_vlan_change_start(struct fttr_vlan_change *change, uint16_t onu,
 		uint16_t *counter, uint16_t instance, const struct fttr_vlan_plan *plan);
 /* Zero waits, one requests IO, two completes, negative fails. */
 int fttr_vlan_change_update(struct fttr_vlan_change *change, uint16_t *counter);
+int fttr_vlan_change_release(struct fttr_vlan_change *change, uint16_t *counter);
 struct fttr_me_job *fttr_vlan_change_pending(struct fttr_vlan_change *change);
 int fttr_vlan_apply(struct fttr_omci_session *session, uint16_t instance,
 		   const struct fttr_vlan_plan *plan, int directory,
