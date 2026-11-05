@@ -33,6 +33,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, struct sk_bu
 int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct rtl_ax_rx_packet *packet);
 int rtl_ax_tx_status(struct rtl_ax_tx *tx, char *out, size_t capacity);
 u32 rtl_ax_tx_traffic_bytes(struct rtl_ax_tx *tx);
+u32 rtl_ax_tx_success(struct rtl_ax_tx *tx, unsigned int macid);
 void rtl_ax_tx_ap_address(struct rtl_ax_tx *tx, const u8 *address);
 void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos, unsigned int ps_timeout);
 int rtl_ax_tx_peer_ssn(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid);

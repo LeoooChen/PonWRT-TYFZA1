@@ -12,6 +12,7 @@
 
 struct rtl_ax_station {
 	u8 macid;
+	bool mesh;
 	unsigned long ba_retry[8];
 };
 

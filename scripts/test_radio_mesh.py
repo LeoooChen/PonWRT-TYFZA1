@@ -25,7 +25,7 @@ code = r"""
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
-typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef uint64_t u64;
+typedef int64_t s64; typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef uint64_t u64;
 #define BIT(n) (1U << (n))
 #define RTL_AX_BIT(n) BIT(n)
 #define RTL_AX_H2C_CMD 0
@@ -47,6 +47,9 @@ typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef uint64_t
 #define spin_unlock_irqrestore(l,f) ((void)(l),(void)(f))
 #define mutex_lock(l) ((void)(l))
 #define mutex_unlock(l) ((void)(l))
+#define usecs_to_jiffies(x) (x)
+#define wiphy_delayed_work_queue(w,p,d) ((void)(w),(void)(d),(p)->queued=true)
+#define wiphy_delayed_work_cancel(w,p) ((void)(w),(p)->queued=false)
 #define wiphy_work_cancel(w,p) ((void)(w),(void)(p),cancellations++)
 #define dev_err(...) ((void)0)
 #define dev_info(...) ((void)0)
@@ -55,7 +58,7 @@ struct ieee80211_bss_conf {unsigned beacon_int,dtim_period; bool enable_beacon;
 struct ieee80211_vif {int type;struct {bool idle;}cfg; u8 addr[6]; struct ieee80211_bss_conf bss_conf;};
 struct port {int result;};
 struct io {int unused;}; struct tx {bool blocked;};
-struct rtl_ax_ap {struct ieee80211_vif *ap_vif; struct io io; struct tx *tx; void *pdev,*rx;
+struct rtl_ax_ap {s64 mesh_tsf_remainder;struct {bool queued;}mesh_sync_work;struct ieee80211_vif *ap_vif; struct io io; struct tx *tx; void *pdev,*rx;
  bool monitor_started,ap_started,beacon_enabled,radar_required;
  struct {int error;bool enabled,detected,in_cac;}dfs;
  struct {unsigned valid;}security_roles[1];
@@ -193,14 +196,17 @@ int main(void){
   assert(!rtl_ax_net_fill_forward_path(&hw,&ap,NULL,&ctx,&path)&&!ctx.dev&&path.dev==&dev);
   reset_commands();templates=0;
   rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON|BSS_CHANGED_BEACON_ENABLED);
+  assert(r.mesh_sync_work.queued);
   assert(r.ap_started&&r.beacon_enabled&&templates==1&&bcn_enable==BIT(12)&&rx_mode==4);
   assert(r.role_type==6);check_join(0x5b040100|bw);
   /* Scan/ROC toggles only beacon enable. The channel remains assigned. */
   reset_commands();cancellations=0;unsigned saved_templates=templates;
   r.dfs.enabled=true;r.dfs.in_cac=false;r.radar_required=true;
   conf.enable_beacon=false;rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);
+  assert(!r.mesh_sync_work.queued);
   assert(r.ap_started&&!r.beacon_enabled&&!r.dfs.in_cac&&!tx.blocked&&!cancellations);
   conf.enable_beacon=true;rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);
+  assert(r.mesh_sync_work.queued);
   assert(r.ap_started&&r.beacon_enabled&&!commands&&templates==saved_templates);
   r.dfs.enabled=false;r.radar_required=false;
   /* A retained monitor channel can suppress vif IDLE during mesh leave. */
@@ -236,7 +242,7 @@ int main(void){
   /* Removal also retires an active mesh when a monitor retains a channel. */
   reset_commands();rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);
   assert(r.ap_started);rtl_ax_monitor_remove_interface(&hw,&mesh);
-  assert(!r.ap_vif&&!r.ap_started&&!r.beacon_enabled);
+  assert(!r.ap_vif&&!r.ap_started&&!r.beacon_enabled&&!r.mesh_sync_work.queued);
   assert(!rtl_ax_monitor_add_interface(&hw,&mesh));
   r.radar_required=true;r.dfs.error=-EIO;reset_commands();
   rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);assert(r.ap_result==-EIO&&!r.ap_started&&!commands&&stop_requests==3);stop_requests=0;

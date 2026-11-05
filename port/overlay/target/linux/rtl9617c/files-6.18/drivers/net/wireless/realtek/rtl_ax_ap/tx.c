@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Native management WP/TXBD ownership and original RPQ completion. */
 #include <linux/bitmap.h>
+#include <linux/average.h>
 #include <linux/dma-mapping.h>
 #include <linux/pci.h>
 #include <linux/scatterlist.h>
@@ -48,6 +49,8 @@ struct rtl_ax_tx_slot {
 	struct rtl_ax_tx_mapping *mapping;
 };
 
+DECLARE_EWMA(rtl_ax_success, 8, 8);
+
 struct rtl_ax_tx {
 	struct pci_dev *pdev;
 	struct device *dma_device;
@@ -68,6 +71,7 @@ struct rtl_ax_tx {
 	bool peer_qos[128];
 	bool peer_asleep[128];
 	u32 peer_rates[128];
+	struct ewma_rtl_ax_success peer_success[128];
 	u64 peer_sleep_events, peer_wake_events;
 	u64 ps_releases, ps_eosp;
 	u64 pe_ethernet;
@@ -410,6 +414,8 @@ void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos, unsi
 	tx->peer_offloaded[macid] = false;
 	tx->peer_asleep[macid] = false;
 	tx->peer_rates[macid] = 0;
+	ewma_rtl_ax_success_init(&tx->peer_success[macid]);
+	ewma_rtl_ax_success_add(&tx->peer_success[macid], 100);
 	if (tx->pe_active) {
 		memset(tx->pe.memory + 0x10000 + macid * 8 * 4, 0, 8 * 4);
 		memset(tx->pe.memory + 0xd000 + macid * 32, 0, 32);
@@ -426,6 +432,11 @@ void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos, unsi
 		put_unaligned_le32(0, tx->pe.memory + 0xe200 + macid * 4);
 	}
 }
+u32 rtl_ax_tx_success(struct rtl_ax_tx *tx, unsigned int macid)
+{
+	return READ_ONCE(tx->peer_success[macid].internal) >> 8;
+}
+
 void rtl_ax_tx_peer_authorized(struct rtl_ax_tx *tx, unsigned int macid, bool authorized)
 {
 	WRITE_ONCE(tx->peer_authorized[macid], authorized);
@@ -920,6 +931,9 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 			info->flags |= info->flags & IEEE80211_TX_CTL_NO_ACK ?
 				IEEE80211_TX_STAT_NOACK_TRANSMITTED : IEEE80211_TX_STAT_ACK;
 		info->status.rates[0].count = 1;
+		if (slot.macid && !(info->flags & IEEE80211_TX_CTL_NO_ACK))
+			ewma_rtl_ax_success_add(&tx->peer_success[slot.macid],
+				info->flags & IEEE80211_TX_STAT_ACK ? 100 : 0);
 		if (info->flags & IEEE80211_TX_CTL_AMPDU) {
 			/* RPQ returns one WP/MPDU at a time, not a PPDU aggregate count.
 			 * Account the actual completed MPDU and its individual result. */

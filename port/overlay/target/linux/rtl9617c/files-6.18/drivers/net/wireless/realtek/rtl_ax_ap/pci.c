@@ -144,6 +144,8 @@ struct rtl_ax_ap {
 	bool monitor_started;
 	struct ieee80211_vif *ap_vif;
 	struct wiphy_work beacon_work;
+	struct wiphy_delayed_work mesh_sync_work;
+	s64 mesh_tsf_remainder;
 	struct wiphy_work offload_work;
 	bool offload_retry;
 	struct wiphy_work ra_update_work;

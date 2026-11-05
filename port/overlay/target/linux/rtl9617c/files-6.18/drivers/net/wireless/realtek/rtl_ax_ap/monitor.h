@@ -6,6 +6,7 @@
 #include <linux/rtl9617c-wifi.h>
 #include "tx-format.h"
 #include "rate.h"
+#include "rate-report.h"
 
 static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw)
 {
@@ -102,6 +103,7 @@ static void rtl_ax_monitor_stop(struct ieee80211_hw *hw, bool suspend)
 	wiphy_delayed_work_cancel(hw->wiphy, &radio->cleanup_work);
 	wiphy_delayed_work_cancel(hw->wiphy, &radio->ra_work);
 	wiphy_delayed_work_cancel(hw->wiphy, &radio->dm_work);
+	wiphy_delayed_work_cancel(hw->wiphy, &radio->mesh_sync_work);
 	wiphy_work_cancel(hw->wiphy, &radio->ra_update_work);
 	/* Wiphy serialization keeps the AP alive; PKT_DROP takes command_mutex. */
 	ret = rtl_ax_tx_ni_route(radio->tx, NULL, 0);
@@ -201,6 +203,55 @@ static int rtl_ax_ap_template(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 	return ret;
 }
 
+static u64 rtl_ax_get_tsf(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+
+	return rtl_ax_port0_tsf(&radio->io);
+}
+
+static void rtl_ax_offset_tsf(struct ieee80211_hw *hw, struct ieee80211_vif *vif, s64 offset)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	s64 total, units;
+	int ret;
+
+	if (offset < -0x3ffffLL * 32 || offset > 0x3ffffLL * 32) {
+		ret = -ERANGE;
+		goto failed;
+	}
+	total = offset + radio->mesh_tsf_remainder;
+	units = div_s64(total, 32);
+	if (!units) {
+		radio->mesh_tsf_remainder = total;
+		return;
+	}
+	mutex_lock(&radio->command_mutex);
+	ret = rtl_ax_port0_offset_tsf(&radio->io, units);
+	mutex_unlock(&radio->command_mutex);
+failed:
+	if (ret) {
+		dev_err(&radio->pdev->dev, "mesh TSF adjustment failed: %d\n", ret);
+		cfg80211_stop_iface(hw->wiphy, ieee80211_vif_to_wdev(vif), GFP_KERNEL);
+	} else radio->mesh_tsf_remainder = total - units * 32;
+}
+
+static void rtl_ax_mesh_sync_work(struct wiphy *wiphy, struct wiphy_work *work)
+{
+	struct rtl_ax_ap *radio = container_of(work, struct rtl_ax_ap, mesh_sync_work.work);
+	struct ieee80211_vif *vif = radio->ap_vif;
+	struct sk_buff *skb;
+
+	if (!radio->ap_started || !radio->beacon_enabled)
+		return;
+	/* Firmware repeats the uploaded template. Fetching the mesh beacon
+	 * once per interval lets mac80211 schedule neighbor drift correction. */
+	skb = ieee80211_beacon_get_template(radio->hw, vif, NULL, 0);
+	dev_kfree_skb(skb);
+	wiphy_delayed_work_queue(wiphy, &radio->mesh_sync_work,
+		usecs_to_jiffies(vif->bss_conf.beacon_int * 1024));
+}
+
 static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	struct ieee80211_bss_conf *conf)
 {
@@ -239,6 +290,11 @@ static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	}
 	spin_unlock_irqrestore(&radio->command_lock, flags);
 	radio->ap_result = ret;
+	if (!ret && vif->type == NL80211_IFTYPE_MESH_POINT) {
+		radio->mesh_tsf_remainder = 0;
+		wiphy_delayed_work_queue(hw->wiphy, &radio->mesh_sync_work,
+			usecs_to_jiffies(conf->beacon_int * 1024));
+	}
 	return ret;
 }
 
@@ -312,6 +368,7 @@ static void rtl_ax_ap_stop(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	spin_unlock_irqrestore(&radio->command_lock, flags);
 	wiphy_work_cancel(hw->wiphy, &radio->offload_work);
 	wiphy_work_cancel(hw->wiphy, &radio->beacon_work);
+	wiphy_delayed_work_cancel(hw->wiphy, &radio->mesh_sync_work);
 	wiphy_work_cancel(hw->wiphy, &radio->ra_update_work);
 	rtl_ax_receive_mode(&radio->io, 0);
 }
@@ -407,6 +464,12 @@ static void rtl_ax_ap_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 		rtl_ax_update32(&radio->io, 0xc400, BIT(12), enable ? BIT(12) : 0);
 		radio->beacon_enabled = enable;
 		spin_unlock_irqrestore(&radio->command_lock, flags);
+		if (vif->type == NL80211_IFTYPE_MESH_POINT) {
+			if (enable)
+				wiphy_delayed_work_queue(hw->wiphy, &radio->mesh_sync_work,
+					usecs_to_jiffies(conf->beacon_int * 1024));
+			else wiphy_delayed_work_cancel(hw->wiphy, &radio->mesh_sync_work);
+		}
 	}
 }
 
@@ -715,6 +778,7 @@ static int rtl_ax_station_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 	if (ret)
 		return ret;
 	station->macid = id;
+	station->mesh = vif->type == NL80211_IFTYPE_MESH_POINT;
 	__set_bit(id, radio->station_ids);
 	memset(&radio->tx_ba[id], 0, sizeof(radio->tx_ba[id]));
 	ether_addr_copy(radio->tx_ba[id].address, sta->addr);
@@ -1429,7 +1493,6 @@ static void rtl_ax_sta_statistics(struct ieee80211_hw *hw, struct ieee80211_vif 
 	unsigned long flags;
 	u8 feedback[8], rssi;
 	u64 reports, signals;
-	static const u8 bandwidths[] = { RATE_INFO_BW_20, RATE_INFO_BW_40, RATE_INFO_BW_80, RATE_INFO_BW_160 };
 
 	spin_lock_irqsave(&radio->command_lock, flags);
 	memcpy(feedback, radio->ra_feedback[id], 8);
@@ -1441,28 +1504,38 @@ static void rtl_ax_sta_statistics(struct ieee80211_hw *hw, struct ieee80211_vif 
 		info->signal = (int)(rssi >> 1) - 110;
 		info->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL);
 	}
-	if (!reports || (feedback[4] & BIT(7))) return;
-	memset(&info->txrate, 0, sizeof(info->txrate));
-	info->txrate.bw = bandwidths[(feedback[5] >> 5) & 3];
-	if ((feedback[5] & 3) == 3) {
-		u8 giltf = (feedback[5] >> 2) & 7;
+	if (reports && rtl_ax_rate_report(feedback, &info->txrate))
+		info->filled |= BIT_ULL(NL80211_STA_INFO_TX_BITRATE);
+}
 
-		info->txrate.flags = RATE_INFO_FLAGS_HE_MCS;
-		info->txrate.mcs = feedback[4] & 15;
-		info->txrate.nss = ((feedback[4] >> 4) & 7) + 1;
-		info->txrate.he_gi = giltf == 1 || giltf == 3 || giltf == 5 ? NL80211_RATE_INFO_HE_GI_0_8 :
-			giltf == 2 || giltf == 4 ? NL80211_RATE_INFO_HE_GI_1_6 : NL80211_RATE_INFO_HE_GI_3_2;
-	} else if ((feedback[5] & 3) == 2) {
-		info->txrate.flags = RATE_INFO_FLAGS_VHT_MCS;
-		info->txrate.mcs = feedback[4] & 15;
-		info->txrate.nss = ((feedback[4] >> 4) & 7) + 1;
-	} else if ((feedback[5] & 3) == 1) {
-		info->txrate.flags = RATE_INFO_FLAGS_MCS;
-		info->txrate.mcs = feedback[4] & 127;
-	} else return;
-	if ((feedback[5] & 3) != 3 && ((feedback[5] >> 2) & 7))
-		info->txrate.flags |= RATE_INFO_FLAGS_SHORT_GI;
-	info->filled |= BIT_ULL(NL80211_STA_INFO_TX_BITRATE);
+static u32 rtl_ax_get_expected_throughput(struct ieee80211_hw *hw, struct ieee80211_sta *sta)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	struct rtl_ax_station *station = (void *)sta->drv_priv;
+	struct rate_info rate;
+	u8 feedback[8];
+	u64 reports;
+	unsigned long flags;
+	u32 bitrate, success;
+
+	if (!station->mesh || !station->macid) return 0;
+	spin_lock_irqsave(&radio->command_lock, flags);
+	memcpy(feedback, radio->ra_feedback[station->macid], 8);
+	reports = radio->ra_reports[station->macid];
+	spin_unlock_irqrestore(&radio->command_lock, flags);
+	if (reports && rtl_ax_rate_report(feedback, &rate))
+		bitrate = cfg80211_calculate_bitrate(&rate);
+	else {
+		u32 supported = sta->deflink.supp_rates[radio->band.band];
+
+		if (!supported) return 0;
+		bitrate = radio->band.bitrates[__ffs(supported)].bitrate;
+	}
+	/* HWMP treats expected throughput as already including losses. Use
+	 * firmware's current rate and the actual unicast RPQ success EWMA;
+	 * leave per-packet PHY status unknown when RPQ supplies no rate. */
+	success = rtl_ax_tx_success(radio->tx, station->macid);
+	return max(bitrate * success, 1U); /* 100 kbit/s * percent = kbit/s */
 }
 
 static void rtl_ax_get_key_seq(struct ieee80211_hw *hw,
@@ -1496,6 +1569,8 @@ static const struct ieee80211_ops rtl_ax_monitor_ops = {
 	.stop = rtl_ax_monitor_stop,
 	.config = rtl_ax_monitor_config,
 	.get_txpower = rtl_ax_monitor_get_txpower,
+	.get_tsf = rtl_ax_get_tsf,
+	.offset_tsf = rtl_ax_offset_tsf,
 	.add_interface = rtl_ax_monitor_add_interface,
 	.remove_interface = rtl_ax_monitor_remove_interface,
 	.start_ap = rtl_ax_ap_start,
@@ -1509,6 +1584,7 @@ static const struct ieee80211_ops rtl_ax_monitor_ops = {
 	.sta_rate_tbl_update = rtl_ax_sta_rate_update,
 	.link_sta_rc_update = rtl_ax_link_sta_rc_update,
 	.sta_statistics = rtl_ax_sta_statistics,
+	.get_expected_throughput = rtl_ax_get_expected_throughput,
 	.set_key = rtl_ax_set_key,
 	.get_key_seq = rtl_ax_get_key_seq,
 	.set_tim = rtl_ax_set_tim,
@@ -1856,6 +1932,7 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	rtl_ax_tx_bind_hw(radio->tx, hw);
 	spin_lock_init(&radio->pn_lock);
 	wiphy_work_init(&radio->beacon_work, rtl_ax_tim_work);
+	wiphy_delayed_work_init(&radio->mesh_sync_work, rtl_ax_mesh_sync_work);
 	wiphy_work_init(&radio->offload_work, rtl_ax_offload_work);
 	wiphy_work_init(&radio->ra_update_work, rtl_ax_ra_update_work);
 	rtl_ax_tx_bind_ready(radio->tx, rtl_ax_offload_ready, radio);
