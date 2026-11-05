@@ -703,6 +703,7 @@ static int fe_parse_bridge(struct rtl_fe_port *port,struct flow_rule *rule,struc
  data->output=fe_port(port->fe,output);
  if(!data->output || data->input==data->output)return -EOPNOTSUPP;
  data->action.bridge=1;
+ data->action.vlan_only=rtl_fe_bridge_vlan_only(data->ethernet_protocol);
  data->action.destination=data->output->destination;
  data->action.deep_queue=data->output->destination>=32;
  data->action.check_mask=data->key.mask;

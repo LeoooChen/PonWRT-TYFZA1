@@ -1147,6 +1147,40 @@ the current 6.18.55 NI composite object (`fe-owner-build.log` in that directory)
 These checks establish software transactions, not physical queue retirement
 or measured FTTR acceleration. Those remain required acceptance work.
 
+### Non-IP bridge packet-editor mode
+
+Actual execution of `fc_8277c.ko:_rtk_8277c_asic_flow_action_gen` (`ca360`)
+shows that path12 without source-MAC translation sets `modify_vlan_only_vld`
+and `modify_vlan_only` when its input `ip_vld` is zero. The retained firmware
+reads that flag at key offset24 bit0, and sets action byte127 bits5/6. The
+actual NI `convert_act_flow_nomal_mode` converts these to native action bits
+212/213. The native bridge action previously left both zero, including when
+removing or inserting the outer GEM VLAN on non-IP service packets.
+
+Both TC Ethernet rules and learned bridge flows now select this mode for
+non-IP Ethernet-II payloads. IPv4, IPv6 and PPPoE session traffic retain the
+existing IP editor selection; 802.3 length encodings do not use this mode.
+This changes neither the direct-L2TM output policy nor the bridge source-MAC
+preservation policy. It does not enable P6-to-P6 forwarding yet.
+
+`scripts/test_fttr_bridge_action.py` executes the exact FC producer followed by
+the actual NI packer, modeling only the TPID lookup against the native table.
+Its30 vectors cover ARP/private control EtherTypes, IPv4/IPv6/PPPoE, zero to
+two output tags and LAN/P6 destinations. Packet-edit, destination, COS and
+MAC/TTL preservation fields match; global interface/mirror/deep-Q policy is
+outside that comparison. `scripts/test_bridge_learning.py` exercises the real
+hooks, learner and native packer through tagged non-IP/IP flows, along with
+existing FDB movement, VLAN/PCP/DEI, PPPoE and STP cases under ASan/UBSan. The
+current flow-parser check passes1028 NAT/IPv6,288 VLAN/QinQ,8 PPPoE and24
+transparent bridge vectors. The NI composite rebuild succeeds.
+
+Reports/logs are in `artifacts/fttr/main-20261105/` (`bridge-action.json` and
+`bridge-action-build.log`). The four FTTR programs also pass real OpenWrt
+GCC14.4/musl prepare/compile/install under `package/`, including the calibration
+symlink. The native startup test passes factory import, command order, failure
+cleanup and controller replacement in a private network namespace (`startup.json`).
+No optical traffic or physical packet-editor execution is implied by these checks.
+
 ### P6 ES queue flush and remaining producer barrier
 
 `tools/trace_stock_fttr_queue.py` executes the exact NI module's

@@ -243,7 +243,8 @@ static int fe_bridge_learn(struct rtl_fe_bridge *bridge,const struct fe_bridge_p
      !memcmp(flow->bridge_tag,packet->input.tag,sizeof(packet->input.tag)))return 0;
  data.key=(struct rtl_fe_ipv4_key){.ingress=data.input->source,.llid=data.input->llid,
   .mask=data.input->wifi_id?58:59};
- data.action=(struct rtl_fe_ipv4_action){.bridge=1,.destination=data.output->destination,
+ data.action=(struct rtl_fe_ipv4_action){.bridge=1,
+  .vlan_only=rtl_fe_bridge_vlan_only(packet->input.protocol),.destination=data.output->destination,
   .deep_queue=data.output->destination>=32,.check_mask=data.key.mask};
  data.ethernet_protocol=packet->input.protocol;
  data.pppoe_input=packet->input.protocol==ETH_P_PPP_SES;

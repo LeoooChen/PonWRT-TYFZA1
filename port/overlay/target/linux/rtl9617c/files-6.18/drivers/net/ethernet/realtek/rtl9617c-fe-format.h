@@ -170,6 +170,13 @@ static inline void rtl_fe_action_set(unsigned int words[RTL_FE_ACTION_WORDS],
  rtl_fe_bits_set(words, layout->bit, layout->width, value);
 }
 
+/* The stock path12 action sets modify_vlan_only for non-IP Ethernet.
+ * PPPoE session traffic is classified separately and retains its IP editor. */
+static inline int rtl_fe_bridge_vlan_only(unsigned int protocol)
+{
+ return protocol>=0x600 && protocol!=0x0800 && protocol!=0x86dd && protocol!=0x8864;
+}
+
 /* Source/destination IPv4 NAT share one address/port rewrite selector per
  * directional flow. Indexed DA and egress interface supply Ethernet rewrite. */
 struct rtl_fe_vlan {
@@ -184,7 +191,7 @@ struct rtl_fe_ipv4_action {
  unsigned char vlan_set, vlan_count;
  unsigned char pppoe_pop, mtu_set, mtu_index;
  unsigned char gem_set, gem_index;
- unsigned char bridge;
+ unsigned char bridge, vlan_only;
  struct rtl_fe_vlan vlan[2]; /* Outermost tag first; TPID hardware index+1. */
 };
 
@@ -202,6 +209,8 @@ static inline void rtl_fe_ipv4_action(unsigned int words[RTL_FE_ACTION_WORDS],
  rtl_fe_action_set(words, RTL_FE_MCGID, action->destination);
  rtl_fe_action_set(words, RTL_FE_L3_IF_VLD1, !action->bridge);
  rtl_fe_action_set(words, RTL_FE_SMAC_TRANS, action->bridge); /* One preserves the original source MAC. */
+ rtl_fe_action_set(words, RTL_FE_MODIFY_VLAN_ONLY_VLD, action->bridge && action->vlan_only);
+ rtl_fe_action_set(words, RTL_FE_MODIFY_VLAN_ONLY, action->bridge && action->vlan_only);
  rtl_fe_action_set(words, RTL_FE_IGR_L3_IF_IDX1, action->ingress_interface);
  rtl_fe_action_set(words, RTL_FE_EGR_L3_IF_IDX1, action->egress_interface);
  rtl_fe_action_set(words, RTL_FE_IP_TTL_DEC1, !action->bridge);

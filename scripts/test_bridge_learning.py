@@ -30,6 +30,8 @@ common = r'''
 #include <string.h>
 #include <errno.h>
 #include <arpa/inet.h>
+struct rb_node {int unused;};
+static void rb_erase(void *node,void *root){(void)node;(void)root;}
 typedef uint8_t u8;typedef uint16_t u16,__be16;typedef uint32_t u32;typedef uint64_t u64;
 #include "rtl9617c-fe-format.h"
 #include "rtl9617c-pon-path.h"
@@ -73,7 +75,7 @@ struct rtl_fe_port {struct net_device *netdev;unsigned int source,destination,ll
 struct work_struct {int unused;};struct delayed_work {struct work_struct work;unsigned int queued;};
 #define to_delayed_work(w) container_of(w,struct delayed_work,work)
 struct rtl_dq_io {int unused;};
-struct rtl_fe {struct list_head flows;struct rtl_fe_port *ports[2];struct net_device *itu_netdev;struct rtl_itu_paths *itu_paths;unsigned char ppp_protocol_ids[2];bool enabled;int lock;};
+struct rtl_fe {int cookies;struct list_head flows;struct rtl_fe_port *ports[2];struct net_device *itu_netdev;struct rtl_itu_paths *itu_paths;unsigned char ppp_protocol_ids[2];bool enabled;int lock;};
 struct fe_bridge_packet {struct net *net;struct rtl9617c_bridge_frame input,output;unsigned int bridge,ingress,egress;u16 vid;};
 struct rtl_fe_bridge {struct rtl_fe *fe;struct delayed_work work;int pending_lock;unsigned int read,write;int epoch,flush;bool stopping;struct fe_bridge_packet pending[256];};
 static struct net_device *devices[128],*fdb_source,*fdb_destination;
@@ -132,6 +134,7 @@ static void br_fdb_refresh_offload(struct net_device *d,const u8 *mac,u16 vid,bo
 '''
 structs = '\n'.join(re.search(r'struct '+name+r' \{.*?\n\};',fe,re.S)[0] for name in ['rtl_fe_flow','rtl_fe_rule'])
 backend = r'''
+static void fe_index_flow(struct rtl_fe *fe,struct rtl_fe_flow *flow){(void)fe;(void)flow;}
 static struct rtl_fe_rule last;
 static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned long cookie){
  if(!port->netdev->carrier || !data.output->netdev->carrier)return -EAGAIN;
@@ -204,6 +207,21 @@ int main(void){
  fe_bridge_forwarded(&bridge,&skb,&output);fe_bridge_work(&bridge.work.work);
  assert(installed==3);
  assert(!net.references);
+ /* FTTR GEM tag removal must select the stock non-IP PE edit mode. */
+ pon.carrier=true;
+ for(unsigned int p=0;p<4;p++) {
+  const unsigned int protocols[]={0x0806,0x8888,0x0800,0x86dd};
+  unsigned int words[RTL_FE_ACTION_WORDS];
+  skb.frame[12]=protocols[p]>>8;skb.frame[13]=protocols[p];
+  skb.extension=false;skb.tagged=true;skb.vlan=263;
+  fe_bridge_wire(&bridge,&skb,&wire);skb.tagged=false;skb.vlan=0;
+  fe_bridge_capture(&bridge,&skb,&input);fe_bridge_forwarded(&bridge,&skb,&output);
+  fe_bridge_work(&bridge.work.work);
+  assert(installed==4+p && last.action.vlan_only==(p<2));
+  rtl_fe_ipv4_action(words,&last.action);
+  assert(((words[6]>>20)&3)==(p<2?3U:0));
+ }
+ lan.state=0;fe_bridge_work(&bridge.work.work);assert(deleted==7 && !net.references);
  puts("Bridge learner: real wire/bridge hooks, VLAN subinterfaces, PCP/DEI, access VID, PPPoE preservation, FDB ageing/movement, STP and link changes passed");
 }
 '''
