@@ -1,5 +1,5 @@
 {
-  "scope": "Execute original AMPDU API encoding, C/XB initialization callers and global writer.",
+  "scope": "Execute original AMPDU API encoding, C/XB initialization callers and global AMPDU/NAV writers.",
   "original_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
   "executed_functions": [
     "rtw_hal_cfg_tx_ampdu",
@@ -7,7 +7,9 @@
     "set_hw_ampdu_cfg",
     "check_mac_en",
     "hal_trx_init_8852ce",
-    "hal_trx_init_8192xbe"
+    "hal_trx_init_8192xbe",
+    "rtw_hal_mac_set_nav_padding",
+    "set_nav_padding"
   ],
   "initial_registers": {
     "c604": "80",
@@ -134,6 +136,19 @@
           "address": "0xc610",
           "value": "0xa034007f"
         }
+      ],
+      "nav_parameters": "000001000000",
+      "nav_writes": [
+        {
+          "operation": "write16",
+          "address": "0xc674",
+          "value": "0x0"
+        },
+        {
+          "operation": "write16",
+          "address": "0xc678",
+          "value": "0x0"
+        }
       ]
     },
     {
@@ -151,6 +166,19 @@
           "operation": "write32",
           "address": "0xc610",
           "value": "0xa034007f"
+        }
+      ],
+      "nav_parameters": "000001000000",
+      "nav_writes": [
+        {
+          "operation": "write16",
+          "address": "0xc674",
+          "value": "0x0"
+        },
+        {
+          "operation": "write16",
+          "address": "0xc678",
+          "value": "0x0"
         }
       ]
     }

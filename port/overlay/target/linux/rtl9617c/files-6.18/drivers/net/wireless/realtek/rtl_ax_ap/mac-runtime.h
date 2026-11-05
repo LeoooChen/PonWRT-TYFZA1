@@ -381,6 +381,10 @@ static inline int rtl_ax_mac_cmac_start(const struct rtl_ax_io *io,
 	if (ret)
 		return ret;
 	rtl_ax_cmac_protocol(io, firmware_tx);
+	/* C/XB hal_trx_init disables NAV padding; its disabled branch leaves
+	 * the upper protocol fields and NAV_OVER_TXOP_EN untouched. */
+	io->write16(io->ctx, 0xc674, 0);
+	io->write16(io->ctx, 0xc678, 0);
 	return 0;
 }
 

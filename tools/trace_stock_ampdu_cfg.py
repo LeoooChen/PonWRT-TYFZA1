@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Execute original AMPDU API encoding, C/XB initialization callers and global writer."""
+"""Execute original AMPDU API encoding, C/XB initialization callers and global AMPDU/NAV writers."""
 from pathlib import Path
 import hashlib
 import json
@@ -8,17 +8,20 @@ from arm64_module_oracle import ModuleOracle
 root = Path(__file__).resolve().parents[1]
 module = root / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
 names = ['rtw_hal_cfg_tx_ampdu', 'rtw_hal_mac_set_hw_ampdu_cfg', 'set_hw_ampdu_cfg', 'check_mac_en',
-         'hal_trx_init_8852ce', 'hal_trx_init_8192xbe']
+         'hal_trx_init_8852ce', 'hal_trx_init_8192xbe', 'rtw_hal_mac_set_nav_padding', 'set_nav_padding']
 hal, sta, adapter, ops, io, param = [0x6000000 + n * 0x10000 for n in range(6)]
 operations = []
+nav_parameters = []
 registers = {0xc604: 0x80, 0xc610: 0x12340000}
 def callback(name, args):
     if name == '_rtw_memset':
         oracle.uc.mem_write(args[0], bytes([args[1] & 255]) * args[2]); return args[0]
     if name == 'set_hw_value':
-        assert args[1] == 114
-        oracle.uc.mem_write(param, bytes(oracle.uc.mem_read(args[2], 16))); return 0
-    if name == 'rtw_hal_mac_set_nav_padding':
+        assert args[1] in (114, 139)
+        if args[1] == 139:
+            nav_parameters.append(bytes(oracle.uc.mem_read(args[2], 6)))
+        else:
+            oracle.uc.mem_write(param, bytes(oracle.uc.mem_read(args[2], 16)))
         return 0
     if name.startswith('read'):
         return registers.get(args[1], 0)
@@ -30,7 +33,7 @@ oracle = ModuleOracle(module, names, callback)
 for address in (hal, sta, adapter, ops, io, param): oracle.uc.mem_map(address, 0x10000)
 oracle.word(hal + 328, adapter); oracle.word(adapter, ops); oracle.word(ops, io)
 oracle.word(ops + 1992, oracle.callback('set_hw_value'))
-for offset, name in [(0, 'read8'), (8, 'write8'), (32, 'read32'), (40, 'write32')]:
+for offset, name in [(0, 'read8'), (8, 'write8'), (24, 'write16'), (32, 'read32'), (40, 'write32')]:
     oracle.word(io + offset, oracle.callback(name))
 oracle.uc.mem_write(adapter + 32, b'\x01\x04'); oracle.uc.mem_write(adapter + 67, b'\x01\x01\x00')
 records = []
@@ -49,14 +52,23 @@ initialization = []
 for chip, caller in (('8852c','hal_trx_init_8852ce'), ('8192xb','hal_trx_init_8192xbe')):
     oracle.word(adapter + 88, oracle.symbols['mac'+chip+'_hw_info'][0])
     registers.update({0xc604: 0x80, 0xc610: 0x12340000})
+    nav_parameters.clear()
     assert oracle.call(caller, hal) == 0
+    assert nav_parameters == [bytes([0, 0, 1, 0, 0, 0])]
     original_parameter = bytes(oracle.uc.mem_read(param, 16))
     assert struct.unpack_from('<H', original_parameter, 12)[0] == 128
     operations.clear()
     assert oracle.call('set_hw_ampdu_cfg', adapter, param) == 0
+    ampdu_writes = list(operations)
+    oracle.uc.mem_write(param, nav_parameters[0])
+    operations.clear()
+    assert oracle.call('set_nav_padding', adapter, param) == 0
+    assert operations == [{'operation': 'write16', 'address': '0xc674', 'value': '0x0'},
+                          {'operation': 'write16', 'address': '0xc678', 'value': '0x0'}]
     initialization.append({'chip': chip, 'caller': caller,
                            'original_parameter': original_parameter.hex(),
-                           'maximum_aggregation': 128, 'writes': list(operations)})
+                           'maximum_aggregation': 128, 'writes': ampdu_writes,
+                           'nav_parameters': nav_parameters[0].hex(), 'nav_writes': list(operations)})
 (root / 'manifests/radio-stock-AMPDU-config.json').write_text(json.dumps({
     'scope': __doc__, 'original_sha256': hashlib.sha256(module.read_bytes()).hexdigest(),
     'executed_functions': names, 'initial_registers': {'c604': '80', 'c610': '12340000'},
