@@ -21,13 +21,14 @@ typedef int netdev_tx_t;
 #define NETDEV_TX_OK 0
 #define NETDEV_TX_BUSY 1
 #define READ_ONCE(v) (v)
+#define smp_store_release(p,v) (*(p)=(v))
 #define WRITE_ONCE(v,x) ((v)=(x))
 #define container_of(p,t,m) ((t *)((char *)(p)-offsetof(t,m)))
 struct device {void *data;};struct device_attribute {int unused;};struct work {int unused;};
-struct net_device {void *data;bool running,stopped,carrier;};
+struct net_device {void *data;bool running,stopped,carrier;struct {unsigned tx_dropped;}stats;};
 struct sk_buff {bool consumed;};struct rtl9617c_ni_frame {int unused;};
 struct rtl_fttr_p6 {bool configured;int error;unsigned int mode;unsigned char *qx;};
-struct rtl_xram {struct rtl_fttr_p6 p6;struct net_device *fttr;int fe,dma,tx_lock;bool fttr_tx_active,fttr_loading;
+struct rtl_xram {struct rtl_fttr_p6 p6;struct net_device *fttr;int fe,dma,tx_lock;bool fttr_tx_active,fttr_loading,fttr_forwarding;
  struct {unsigned fttr_epoch;} qm;};
 struct rtl9617c_ni_endpoint {struct net_device *netdev;};
 struct rtl_fttr_port {struct rtl9617c_ni_endpoint endpoint;struct rtl_xram *shared;struct work link_work;};
@@ -35,6 +36,8 @@ struct rtl_fttr_port {struct rtl9617c_ni_endpoint endpoint;struct rtl_xram *shar
 #define dev_get_drvdata(d) ((struct net_device *)(d)->data)
 #define netif_running(d) ((d)->running)
 #define netif_queue_stopped(d) ((d)->stopped)
+static bool rtl_fttr_management(struct rtl_xram *p,const struct sk_buff *s){(void)p;(void)s;return true;}
+static void dev_kfree_skb_any(struct sk_buff *s){s->consumed=true;}
 static int locks,rtnl,submissions,failed_fe,failed_config,configured,closed,engine_refs;
 static unsigned int clock_status=BIT(13);
 static unsigned int readl(void *p){(void)p;return clock_status;}

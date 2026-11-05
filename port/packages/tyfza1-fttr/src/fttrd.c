@@ -121,6 +121,16 @@ struct controller {
 	} move;
 };
 
+static int forwarding(struct controller *c, bool enable)
+{
+	char command[24];
+
+	if (!enable)
+		return fttr_miniolt_command(c->ni, "fttr_forward", "0\n");
+	snprintf(command, sizeof(command), "1 %04x\n", c->link.ethertype);
+	return fttr_miniolt_command(c->ni, "fttr_forward", command);
+}
+
 static int move_drive(struct controller *c);
 static int policy_move(struct controller *c, unsigned int id);
 static int auth_drive(struct controller *c, unsigned int id);
@@ -803,7 +813,7 @@ static int withdraw_service(struct controller *c, unsigned int id, bool accel_pa
 
 	c->onu[id].port.configured = false;
 	if (paused)
-		cleanup = fttr_miniolt_command(c->ni, "fttr_accel", "0\n");
+		cleanup = forwarding(c, false);
 	if (!cleanup)
 		cleanup = fttr_net_remove(&c->net, &c->onu[id].port);
 	if (cleanup)
@@ -824,7 +834,7 @@ static int withdraw_service(struct controller *c, unsigned int id, bool accel_pa
 	job->grant_withdrawn = true;
 resume:
 	if (!cleanup && paused)
-		cleanup = fttr_miniolt_command(c->ni, "fttr_accel", "1\n");
+		cleanup = forwarding(c, true);
 	if (cleanup) {
 		c->onu[id].datapath_cleanup_error = cleanup;
 		save_service(c, id);
@@ -1685,7 +1695,7 @@ static int admin_request(struct controller *c, const struct fttr_admin_request *
 	/* Keep FE admission closed through port removal, grant withdrawal and
 	 * the hardware state change. cancel() must not reopen it midway.
 	 */
-	ret = fttr_miniolt_command(c->ni, "fttr_accel", "0\n");
+	ret = forwarding(c, false);
 	if (!ret)
 		ret = cancel(c, request->id, true);
 	if (ret) {
@@ -1713,7 +1723,7 @@ static int admin_request(struct controller *c, const struct fttr_admin_request *
 			u->admin_timeout = now_ms() + 15000;
 		}
 	}
-	*fatal = fttr_miniolt_command(c->ni, "fttr_accel", "1\n");
+	*fatal = forwarding(c, true);
 	if (!*fatal)
 		*fatal = publish(c, "running", 0);
 	return *fatal ? *fatal : ret;
@@ -1769,7 +1779,7 @@ static int move_drive(struct controller *c)
 			return ret ? move_finish(c, ret) : 0;
 		}
 	}
-	ret = fttr_miniolt_command(c->ni, "fttr_accel", "0\n");
+	ret = forwarding(c, false);
 	if (!ret)
 		ret = cancel(c, request->id, true);
 	if (!ret)
@@ -1791,7 +1801,7 @@ static int move_drive(struct controller *c)
 		memset(u->admin_serial, 0, sizeof(u->admin_serial));
 		u->admin_timeout = now_ms() + 15000;
 	}
-	resume = fttr_miniolt_command(c->ni, "fttr_accel", "1\n");
+	resume = forwarding(c, true);
 	move_finish(c, ret ? ret : resume);
 	return resume ? resume : publish(c, "running", 0);
 }
@@ -1848,7 +1858,7 @@ static int move_request(struct controller *c, const struct fttr_admin_request *r
 				return -ENODATA;
 		}
 	}
-	ret = fttr_miniolt_command(c->ni, "fttr_accel", "0\n");
+	ret = forwarding(c, false);
 	if (!ret)
 		ret = withdraw_service(c, request->id, true);
 	if (!ret)
@@ -1859,7 +1869,7 @@ static int move_request(struct controller *c, const struct fttr_admin_request *r
 			ret = 0;
 	}
 	if (!ret)
-		ret = fttr_miniolt_command(c->ni, "fttr_accel", "1\n");
+		ret = forwarding(c, true);
 	if (ret) {
 		*fatal = ret;
 		return ret;
@@ -2371,9 +2381,9 @@ static int shutdown_hardware(struct controller *c)
 	if (ret)
 		fprintf(stderr, "FTTR TX disable failed: %d\n", ret);
 	if (c->ni >= 0) {
-		result = fttr_miniolt_command(c->ni, "fttr_accel", "0\n");
+		result = forwarding(c, false);
 		if (result)
-			fprintf(stderr, "FTTR accelerator withdrawal failed: %d\n", result);
+			fprintf(stderr, "FTTR forwarding withdrawal failed: %d\n", result);
 		if (!ret)
 			ret = result;
 	}
@@ -2453,7 +2463,7 @@ int main(int argc, char **argv)
 	if (c.ni < 0) { ret = -errno; goto out; }
 	c.store = open(argv[3], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (c.store < 0) { ret = -errno; goto out; }
-	ret = fttr_miniolt_command(c.ni, "fttr_accel", "0\n");
+	ret = forwarding(&c, false);
 	if (ret)
 		goto out;
 	ret = fttr_net_open(&c.net, c.interface);
@@ -2495,7 +2505,7 @@ int main(int argc, char **argv)
 		goto out;
 	if (getrandom(&seed, sizeof(seed), 0) < 0) { ret = -errno; goto out; }
 	c.transaction = seed | 0x8000;
-	ret = fttr_miniolt_command(c.ni, "fttr_accel", "1\n");
+	ret = forwarding(&c, true);
 	if (ret)
 		goto out;
 	c.socket = fttr_omci_open(c.interface, c.link.ethertype);

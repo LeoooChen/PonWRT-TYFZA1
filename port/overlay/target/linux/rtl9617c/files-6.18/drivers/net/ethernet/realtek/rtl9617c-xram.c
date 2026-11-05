@@ -16,6 +16,7 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
+#include <linux/if_vlan.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/of_mdio.h>
@@ -29,6 +30,7 @@
 #include <linux/tyfza1-led.h>
 #include <linux/workqueue.h>
 #include <net/gro.h>
+#include <net/sch_generic.h>
 
 #include "rtl9617c-xram-format.h"
 #include "rtl9617c-dma.h"
@@ -118,6 +120,9 @@ struct rtl_xram {
 	struct rtl_fttr_p6 p6;
 	struct net_device *fttr;
 	bool fttr_tx_active;
+	bool fttr_forwarding;
+	u16 fttr_omci_type;
+	int fttr_forward_error, fttr_forward_cleanup_error;
 	bool fttr_loading;
 	bool removing;
 };
@@ -724,6 +729,8 @@ static void rtl_fttr_tx_gate(struct rtl_xram *priv, bool active)
 	 */
 	spin_lock_irqsave(&priv->tx_lock, flags);
 	WRITE_ONCE(priv->fttr_tx_active, active);
+	if (!active)
+		smp_store_release(&priv->fttr_forwarding, false);
 	spin_unlock_irqrestore(&priv->tx_lock, flags);
 	if (!active && priv->fttr)
 		netif_tx_disable(priv->fttr);
@@ -756,13 +763,16 @@ static int rtl_fttr_open(struct net_device *dev)
 static int rtl_fttr_stop(struct net_device *dev)
 {
 	struct rtl_fttr_port *port = netdev_priv(dev);
-	int ret;
+	int ret, cleanup;
 
 	WRITE_ONCE(port->shared->qm.fttr_epoch, port->shared->qm.fttr_epoch + 1);
 	rtl_fttr_tx_gate(port->shared, false);
 	cancel_delayed_work_sync(&port->link_work);
 	netif_carrier_off(dev);
-	ret = rtl_fe_fttr_close(port->shared->fe);
+	ret = rtl_fe_fttr_set(port->shared->fe, false);
+	cleanup = rtl_fe_fttr_close(port->shared->fe);
+	if (!ret)
+		ret = cleanup;
 	rtl9617c_ni_close(port->shared->p6.dev, dev);
 	return ret;
 }
@@ -781,13 +791,30 @@ static netdev_tx_t rtl_fttr_xmit(struct sk_buff *skb, struct net_device *dev)
 	return rtl9617c_ni_transmit(port->shared->p6.dev, dev, skb, &frame);
 }
 
+/* Native MiniOLT management is an untagged Ethernet envelope. A service
+ * carrying that ethertype still has its outer GEM VLAN and cannot bypass the
+ * forwarding gate. The controller supplies the actual MiniOLT ethertype.
+ */
+static bool rtl_fttr_management(struct rtl_xram *priv, const struct sk_buff *skb)
+{
+	u8 header[ETH_HLEN];
+	const u8 *data;
+	u16 type = READ_ONCE(priv->fttr_omci_type);
+
+	if (!type || skb_vlan_tag_present(skb))
+		return false;
+	data = skb_header_pointer(skb, 0, sizeof(header), header);
+	return data && get_unaligned_be16(data + 12) == type;
+}
+
 static void rtl_fttr_receive(struct rtl9617c_ni_endpoint *endpoint, struct napi_struct *napi,
 			     struct sk_buff *skb, unsigned int source)
 {
 	struct rtl_fttr_port *port = container_of(endpoint, struct rtl_fttr_port, endpoint);
 	struct net_device *dev = endpoint->netdev;
 
-	if (!netif_running(dev) || !READ_ONCE(port->shared->p6.configured) || skb->len < ETH_HLEN) {
+	if (!netif_running(dev) || !READ_ONCE(port->shared->p6.configured) || skb->len < ETH_HLEN ||
+	    (!smp_load_acquire(&port->shared->fttr_forwarding) && !rtl_fttr_management(port->shared, skb))) {
 		dev->stats.rx_dropped++;
 		dev_kfree_skb_any(skb);
 		return;
@@ -836,6 +863,8 @@ static int rtl_register_fttr(struct rtl_xram *priv)
 		return -ENOMEM;
 	port = netdev_priv(dev);
 	port->shared = priv;
+	/* Original ASIC/FPGA OMCI default, also available for manual bring-up. */
+	priv->fttr_omci_type = 0x8888;
 	port->endpoint = (struct rtl9617c_ni_endpoint) {
 		.netdev = dev, .receive = rtl_fttr_receive, .wake = rtl_fttr_wake,
 	};
@@ -886,6 +915,13 @@ netdev_tx_t rtl9617c_ni_transmit(struct device *dev, struct net_device *owner,
 	if (owner == priv->fttr && !priv->fttr_tx_active) {
 		netif_stop_queue(owner);
 		result = NETDEV_TX_BUSY;
+	} else if (owner == priv->fttr && !priv->fttr_forwarding && !rtl_fttr_management(priv, skb)) {
+		/* Consume rejected business packets: returning BUSY would retain
+		 * them in qdisc for transmission after a different ONU owns the GEM.
+		 */
+		owner->stats.tx_dropped++;
+		dev_kfree_skb_any(skb);
+		result = NETDEV_TX_OK;
 	} else {
 		result = rtl_dma_tx_frame(&priv->dma, skb, owner, frame);
 	}
@@ -1537,7 +1573,7 @@ static ssize_t fttr_accel_store(struct device *dev, struct device_attribute *att
 	if (ret)
 		return ret;
 	rtnl_lock();
-	if (priv->fttr_loading && allowed) {
+	if (allowed && (priv->fttr_loading || !priv->fttr_forwarding)) {
 		rtnl_unlock();
 		return -EBUSY;
 	}
@@ -1548,6 +1584,78 @@ static ssize_t fttr_accel_store(struct device *dev, struct device_attribute *att
 	return ret ? ret : count;
 }
 static DEVICE_ATTR_RW(fttr_accel);
+
+/* Full software forwarding admission, distinct from acceleration-only mode.
+ * 0 closes business RX/TX before FE withdrawal and purges queued CPU sends.
+ * 1 <OMCI-ethertype> enables after successful FE withdrawal/reconfiguration.
+ * This does not claim DMA/AFT/PE/MiniOLT queues have finished older packets.
+ */
+static ssize_t fttr_forward_store(struct device *dev, struct device_attribute *attr,
+				 const char *buf, size_t count)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	unsigned int enable, type = 0;
+	unsigned long flags;
+	char extra;
+	bool running;
+	int ret;
+
+	if (sscanf(buf, "%u", &enable) != 1 || enable > 1 ||
+	    (!enable && sscanf(buf, "%u %c", &enable, &extra) != 1) ||
+	    (enable && (sscanf(buf, "%u %x %c", &enable, &type, &extra) != 2 ||
+	     type < 0x600 || type > 0xffff || type == ETH_P_8021Q || type == ETH_P_8021AD)))
+		return -EINVAL;
+	rtnl_lock();
+	if (!priv->fttr) { ret = -ENODEV; goto out; }
+	if (enable && priv->fttr_loading) { ret = -EBUSY; goto out; }
+	if (enable && !priv->p6.configured) { ret = -ENETDOWN; goto out; }
+	spin_lock_irqsave(&priv->tx_lock, flags);
+	smp_store_release(&priv->fttr_forwarding, false);
+	spin_unlock_irqrestore(&priv->tx_lock, flags);
+	WRITE_ONCE(priv->qm.fttr_epoch, priv->qm.fttr_epoch + 1);
+	/* Wait for prior RX readers, then detach/reset the parent qdisc and
+	 * wait for current qdisc runs, including a BUSY skb being requeued.
+	 * No NI spinlock is held across the netdev/qdisc locks or RCU wait.
+	 */
+	synchronize_net();
+	running = netif_running(priv->fttr);
+	if (running)
+		dev_deactivate(priv->fttr);
+	priv->fttr_forward_cleanup_error = 0;
+	ret = rtl_fe_fttr_set(priv->fe, enable);
+	if (ret && enable)
+		/* Cancel a pending enable request too: another shared FE owner
+		 * must not admit this port after the failed transition.
+		 */
+		priv->fttr_forward_cleanup_error = rtl_fe_fttr_set(priv->fe, false);
+	if (running)
+		dev_activate(priv->fttr);
+	if (!ret && enable) {
+		spin_lock_irqsave(&priv->tx_lock, flags);
+		WRITE_ONCE(priv->fttr_omci_type, type);
+		smp_store_release(&priv->fttr_forwarding, true);
+		spin_unlock_irqrestore(&priv->tx_lock, flags);
+	}
+out:
+	priv->fttr_forward_error = ret;
+	rtnl_unlock();
+	return ret ? ret : count;
+}
+
+static ssize_t fttr_forward_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+
+	ssize_t size;
+
+	rtnl_lock();
+	size = sysfs_emit(buf, "forwarding=%u omci_type=%04x error=%d cleanup_error=%d\n",
+		priv->fttr_forwarding, priv->fttr_omci_type,
+		priv->fttr_forward_error, priv->fttr_forward_cleanup_error);
+	rtnl_unlock();
+	return size;
+}
+static DEVICE_ATTR_RW(fttr_forward);
 
 static struct attribute *rtl_native_attrs[] = {
 	&dev_attr_xram_state.attr,
@@ -1564,13 +1672,15 @@ static struct attribute *rtl_native_attrs[] = {
 	&dev_attr_rx_bypass.attr,
 	&dev_attr_fttr_link.attr,
 	&dev_attr_fttr_accel.attr,
+	&dev_attr_fttr_forward.attr,
 	NULL,
 };
 static umode_t rtl_native_visible(struct kobject *kobj, struct attribute *attr, int index)
 {
 	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(kobj_to_dev(kobj)));
 
-	if ((attr == &dev_attr_fttr_link.attr || attr == &dev_attr_fttr_accel.attr) && !priv->p6.qx)
+	if ((attr == &dev_attr_fttr_link.attr || attr == &dev_attr_fttr_accel.attr ||
+	     attr == &dev_attr_fttr_forward.attr) && !priv->p6.qx)
 		return 0;
 	if (!priv->qm_rx &&
 	    (attr == &dev_attr_qm_pool.attr || attr == &dev_attr_pon_deepq.attr || attr == &dev_attr_qm_trace.attr ||

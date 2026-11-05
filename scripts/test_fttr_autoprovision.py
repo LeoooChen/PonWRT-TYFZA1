@@ -280,7 +280,7 @@ def main():
         device.joinpath('omci_link').write_text('host=02:03:04:05:06:07 olt=0a:0b:0c:0d:0e:0f ethertype=8888 downstream_length=0\n')
         device.joinpath('host_serdes').write_text('mode=9 nway=1 pll=1 error=0 link=1\n')
         ni.joinpath('fttr_link').write_text('configured=1 mode=9 nway=1 clock=1 error=0 link=1\n')
-        ni.joinpath('fttr_accel').write_text('0\n')
+        ni.joinpath('fttr_forward').write_text('0\n')
         device.joinpath('tx_enable').write_text('1\n')
         device.joinpath('backend').write_text(args.backend+'\n')
         auth_policy=root/'loid.bin'
@@ -305,7 +305,7 @@ def main():
    unsigned from,to;char sn[17],target[17],base[512],file[544],name[32],accel;
    if(sscanf(buf,"%u %u %16s %16s",&from,&to,sn,target)!=4 || from>=64 || to>=64 || from==to){errno=EINVAL;return -1;}
    for(unsigned i=0;i<2;i++){snprintf(name,sizeof(name),"fttr-u%u",i?to:from);if(if_nametoindex(name)){errno=EBUSY;return -1;}}
-   strcpy(base,path);base[n-9]=0;snprintf(file,sizeof(file),"%s/../ni/fttr_accel",base);
+   strcpy(base,path);base[n-9]=0;snprintf(file,sizeof(file),"%s/../ni/fttr_forward",base);
    int f=open(file,O_RDONLY);pread(f,&accel,1,0);close(f);if(accel!='0'){errno=EBUSY;return -1;}
    snprintf(file,sizeof(file),"%s/tcont_state",base);f=open(file,O_RDONLY);
    unsigned first=getenv("FTTR_ADMIN_FPGA")?0:1,last=first?7:0;
@@ -334,7 +334,11 @@ def main():
    fclose(table);close(f);
    FILE *trace=fopen(getenv("FTTR_ADMIN_LOG"),"a");fprintf(trace,"move %u %u\n",from,to);fclose(trace);
   }
-  if(n>=11 && !strcmp(path+n-11,"/fttr_accel")) {
+  if(n>=13 && !strcmp(path+n-13,"/fttr_forward")) {
+   unsigned enabled,type;char extra;
+   if(sscanf(buf,"%u",&enabled)!=1 || enabled>1 ||
+      (!enabled && sscanf(buf,"%u %c",&enabled,&extra)!=1) ||
+      (enabled && (sscanf(buf,"%u %x %c",&enabled,&type,&extra)!=2 || type!=0x8888))){errno=EINVAL;return -1;}
    unsigned int seven=if_nametoindex("fttr-u7"),nine=if_nametoindex("fttr-u9");
    char row[64];int length=snprintf(row,sizeof(row),"%c %u %u\n",((const char *)buf)[0],seven,nine);
    ssize_t (*emit)(int,const void *,size_t)=dlsym(RTLD_NEXT,"write");
@@ -351,7 +355,7 @@ def main():
    if(if_nametoindex(name)) {errno=EBUSY;return -1;}
    strcpy(base,path);base[n-10]=0;
    char target[544],accel;
-   snprintf(target,sizeof(target),"%s/../ni/fttr_accel",base);
+   snprintf(target,sizeof(target),"%s/../ni/fttr_forward",base);
    int fd=open(target,O_RDONLY);pread(fd,&accel,1,0);close(fd);
    if(blocked!=2 && accel!='0') {errno=EBUSY;return -1;}
    snprintf(target,sizeof(target),"%s/tcont_state",base);
@@ -410,8 +414,19 @@ def main():
                 'fap-host','--services',str(rejected_policy)],capture_output=True,text=True,timeout=2)
             assert rejected.returncode==1 and not store.joinpath('status.json').exists()
             assert device.joinpath('tx_enable').read_text()=='1\n'
-            assert ni.joinpath('fttr_accel').read_text()=='0\n'
+            assert ni.joinpath('fttr_forward').read_text()=='0\n'
         device.joinpath('backend').write_text(args.backend+'\n')
+        # Missing forwarding withdrawal is a hard startup error, never an
+        # acceleration-only fallback that still allows old CPU business TX.
+        ni.joinpath('fttr_forward').unlink()
+        rejected=subprocess.run([str(args.daemon.resolve()),str(device),str(ni),str(store),'fap-host'],
+            capture_output=True,text=True,timeout=2)
+        assert rejected.returncode==1 and json.loads(store.joinpath('status.json').read_text())['error']==-errno.ENOENT
+        assert device.joinpath('tx_enable').read_text()=='0\n'
+        store.joinpath('status.json').unlink();device.joinpath('tx_enable').write_text('1\n')
+        ni.joinpath('fttr_forward').write_text('0\n')
+        ni.joinpath('fttr_link').write_text('configured=1 mode=9 nway=1 clock=1 error=0 link=1\n')
+        subprocess.run(['ip','link','set','dev','fap-host','up'],check=True)
         if args.auth:
             good_auth = auth_policy.read_bytes()
             rejected_auth = [b'', good_auth[:-1], b'FAIL'+good_auth[4:]]
@@ -423,14 +438,14 @@ def main():
                     capture_output=True,text=True,timeout=2)
                 assert rejected.returncode==1 and not store.joinpath('status.json').exists()
                 assert device.joinpath('tx_enable').read_text()=='1\n'
-                assert ni.joinpath('fttr_accel').read_text()=='0\n'
+                assert ni.joinpath('fttr_forward').read_text()=='0\n'
                 assert device.joinpath('tcont_state').read_bytes()==bytes(4096)
             auth_policy.write_bytes(good_auth);auth_policy.chmod(0o600)
             device.joinpath('backend').write_text('fpga2\n')
             rejected=subprocess.run([str(args.daemon.resolve()),str(device),str(ni),str(store),
                 'fap-host','--loid-auth',str(auth_policy)],capture_output=True,text=True,timeout=2)
             assert rejected.returncode==1 and not store.joinpath('status.json').exists()
-            assert device.joinpath('tx_enable').read_text()=='1\n' and ni.joinpath('fttr_accel').read_text()=='0\n'
+            assert device.joinpath('tx_enable').read_text()=='1\n' and ni.joinpath('fttr_forward').read_text()=='0\n'
             device.joinpath('backend').write_text(args.backend+'\n')
         wifi_policy=root/'wifi-policies'
         if args.wifi:
@@ -557,7 +572,7 @@ def main():
                     rejected=subprocess.run([str(args.daemon.resolve()),str(device),str(ni),str(store),'fap-host']+
                         ['--onu-auth',str(onu_policy)]*(2 if duplicate else 1),capture_output=True,text=True,timeout=2)
                     assert rejected.returncode==1 and not store.joinpath('status.json').exists()
-                    assert ni.joinpath('fttr_accel').read_text()=='0\n' and device.joinpath('tx_enable').read_text()=='1\n'
+                    assert ni.joinpath('fttr_forward').read_text()=='0\n' and device.joinpath('tx_enable').read_text()=='1\n'
                 onu_policy.write_text(good);onu_policy.chmod(0o600);device.joinpath('backend').write_text(args.backend+'\n')
                 checks.append('malformed/private-mode/duplicate policies and unsupported FPGA2 fail before hardware ownership')
                 for method in (1,4,5):

@@ -1047,6 +1047,76 @@ an acknowledged write that did not change hardware, a completion timeout
 after a committed write, failed retirement/retry and a shadowing wildcard.
 Results are in`cf-native-comparison.json`.
 
+### CPU business admission during forwarding withdrawal
+
+The controller now requires NI `fttr_forward`, distinct from `fttr_accel`.
+The old acceleration withdrawal left CPU business submissions active: the
+production-function regression reproduces a GEM/VLAN frame entering DMA while
+FE was being withdrawn. This can keep downstream queues populated while the
+controller removes/reassigns the service.
+
+`fttr_forward` accepts `0` to close business forwarding, and
+`1 ETHERTYPE` to open it with the observed MiniOLT OMCI ethertype in hexadecimal
+(e.g. `1 8888`). The latter requires configured P6 and rejects an active FPGA
+load. Business admission starts closed at NI registration and closes on
+P6 reconfiguration, parent stop and FPGA loading. Parent stop also clears the
+FE request, so a later netdev open cannot silently restore an earlier owner.
+The default management ethertype is the original ASIC/FPGA8888 for explicit
+manual bring-up; the daemon passes the actual value from MiniOLT `omci_link`.
+
+Closing serializes with DMA submission under the existing NI `tx_lock`, then
+waits for prior RX readers. It deactivates/resets the parent qdisc using Linux
+`dev_deactivate` before FE withdrawal, and reactivates it afterward for
+management traffic. Linux6.18's operation resets the queued skb lists and
+waits for outstanding qdisc runs, including BUSY/requeue paths; NI spinlocks
+are not held across qdisc locks or the RCU wait. The successful enable path
+purges again before publishing admission, so packets accumulated while closed
+are not intentionally retained for the next service generation.
+
+While closed, new nonmanagement CPU TX frames are consumed/dropped before DMA
+rather than returned BUSY for later replay. RX callbacks also drop new business
+frames. Only an **untagged outer** frame with the configured OMCI ethertype
+passes: in-band GEM/VLAN tags and skb VLAN metadata cannot turn a customer
+frame containing an inner8888 payload into management. Short/nonlinear packet
+headers are read through the skb accessor. This is management/data
+classification, not an OMCI peer-authentication assertion or payload validator.
+The existing P6 physical TX gate still rejects all submissions during SerDes
+changes, and LAN/other DMA owners remain independent.
+
+FE failures keep CPU business admission closed and preserve primary and
+rollback errors. A failed enable explicitly cancels its pending FE request,
+preventing a later shared-owner enable from reopening it. `fttr_forward` reads
+report `forwarding`, `omci_type`, `error`, `cleanup_error`. An acceleration-only
+`fttr_accel=0` retains Linux forwarding when business admission is already
+open; `fttr_accel=1` cannot bypass a closed business gate. Manual service tests
+must explicitly open `fttr_forward` after P6 setup; raw OMCI on8888 remains
+available with business closed.
+
+Startup, service cancellation/reconciliation, administration, migration and
+shutdown all use this operation. The same native FE Hash/cache withdrawal
+is retained. On a missing/failing operation the daemon stops, rather than
+assuming CPU forwarding has been withdrawn. An asynchronous remote release
+continues to use management and resumes healthy peers between local mutation
+stages as before.
+
+`test_fttr_forward_gate.py` executes production TX/RX and sysfs control under
+ASan/UBSan with interleaved submissions at the RCU/qdisc/FE boundaries; it
+reproduces the preceding CPU-admission failure, verifies repeated close/open,
+outer/metadata VLAN rejection, short frames, management/LAN continuation,
+failed enable/rollback, and startup/loading constraints. Qdisc/RCU timing is
+modeled; the matching Linux implementation was inspected and the complete
+kernel Image/modules compiled. Existing P6 TX/loading, shared FE, original
+CPU-DEEPQ and768 QM RX cases pass. Actual daemon/CLI/veth suites cover ASIC
+migration/global authentication, FPGA1 policy/administration, both backend
+bootstrap/replacement and missing-operation failures. Final FTTR package
+compile/install passes. Reports/logs use `artifacts/fttr/forward-gate-*`.
+
+This is a necessary producer-admission step, **not complete packet retirement**.
+DMA/AFT-prefetched packets, FE/PE work already in flight, already-delivered RX/
+GRO packets and MiniOLT queues are not proven empty. The existing L3/L2 ES
+flush function therefore remains unconnected to a claimed GEM-reuse fence.
+There was no physical port, ONU or acceleration acceptance in this step.
+
 ### Native P6 FE lifecycle and acknowledged withdrawal
 
 The FTTR parent is now registered with FE as physical source6/destination6,
@@ -1066,8 +1136,8 @@ new P6 flow installation, switches the live CF action to CPU16 with readback,
 invalidates queued bridge-learning generations, and synchronously deletes
 every existing flow that receives from or sends to P6 through the existing
 Hash age/cache withdrawal transaction. Other physical ports' flows stay
-installed. Existing FTTR ports continue through Linux while admission is
-closed. A one repeats the withdrawal check before permitting admission,
+installed. Existing FTTR ports continue through Linux when only acceleration
+admission is closed; `fttr_forward=0` also closes CPU business admission. A one repeats the withdrawal check before permitting admission,
 so an unfinished failed deletion cannot be bypassed by an enable request.
 Global FE enable prepares its tables before P6 admission; an unconfirmed
 P6 rollback retains the prepared snapshot instead of restoring dependent
@@ -1080,7 +1150,8 @@ FE tables without requiring the upstream PON to be enabled. `admitted=1`
 still describes programmed setup, not measured hits, bandwidth or an optical
 link. PON and FTTR hold independent enable requests; details follow below.
 
-The resident controller requires this new NI operation. Startup withdraws
+The resident controller now uses `fttr_forward`, which wraps this FE operation
+and the CPU admission/qdisc step described above. Startup withdraws
 before deleting prior-process ports. Service replacement/reconciliation
 withdraws while the old VLAN still exists, removes that port/FDB, clears
 and reads back the local grant, then permits learning from current ports.
