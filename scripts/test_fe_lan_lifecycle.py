@@ -37,6 +37,7 @@ common = r'''
 #include <linux/ppp_defs.h>
 #include <linux/if_ether.h>
 #include "rtl9617c-fe-pipeline.h"
+#include "rtl9617c-fttr-frame.h"
 #include "rtl9617c-wifi-format.h"
 #define BIT(n) (1U<<(n))
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
@@ -167,6 +168,7 @@ int main(void){
   for(unsigned int i=0;i<5;i++)assert(fe_read(&f,0xa5f8+i*0x90)==((lan[i]&~(63U<<16))|(25U<<16)));
   assert(!(f.cls[1028][6]&BIT(16)) && (f.cls[1024][6]&BIT(16)) && ((f.cls[1024][6]>>17)&63)==7);
   assert(((fe_read(&f,0x3418)>>10)&15)==1 && ((fe_read(&f,0x3424)>>10)&15)==0);
+  assert((((uint64_t)fe_read(&f,0x3418)<<32|fe_read(&f,0x3414))>>24&16383)==1700);
   assert((fe_read(&f,0x351c)&BIT(10)) && ((fe_read(&f,0x351c)>>4)&63)==32);
   /* Profile defaults start at 1024 | (profile << 2); all other rows survive. */
   for(unsigned int row=0;row<1040;row++)
@@ -218,7 +220,15 @@ int main(void){
   assert(!rtl_fe_enable(&f));
   assert(fe_read(&f,0xa1f0)==(old&~(3U<<12)));
   assert(fe_read(&f,0xa1e0)==(old_demux|0x3ff));
+  /* P6 is routed through LDPID25/LPB1, including CPU-bound OMCI misses.
+   * The custom FE's length limit must cover its complete MAC frame budget.
+   * The upstream-PON profile keeps its own existing limit.
+   */
+  assert(((fe_read(&f,0x3404)>>8)&63)==25 && ((fe_read(&f,0x3404)>>14)&3)==1);
+  assert((((uint64_t)fe_read(&f,0x3418)<<32|fe_read(&f,0x3414))>>24&16383)==2000);
+  assert((((uint64_t)fe_read(&f,0x3424)<<32|fe_read(&f,0x3420))>>24&16383)==1700);
   assert(!rtl_fe_disable(&f) && fe_read(&f,0xa1f0)==old);
+  for(unsigned int i=0;i<6;i++)assert(fe_read(&f,0x3414+i*4)==old_regs[19+i]);
  }
  puts("Five-LAN FE:ordered admission,physical source preservation,direct L2TM output,three exact restore cycles and failed preparation passed");
  puts("FE rollback: failed prepare/disable preserves original snapshots across re-enable and repeated rollback failure");
@@ -246,5 +256,6 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='fe-lan-lifecycl
     'both_CLS_defaults_supply_CPU16': True, 'physical_LSPID_preserved': True,
     'failed_rollback_preserves_original_snapshot_on_reenable': True,
     'post_PE_LAN_output': 'NI demux3 to L2TM; upper selectors preserved',
+    'FTTR_shared_LPB1_MRU': 2000, 'without_FTTR_LPB1_MRU': 1700,
     'sanitizers': ['ASan', 'UBSan'], 'hardware_verified_by_this_test': False,
 }, indent=2) + '\n')

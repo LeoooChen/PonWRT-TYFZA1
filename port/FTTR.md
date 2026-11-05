@@ -1324,6 +1324,32 @@ bridge-learning and callback-lifetime regressions also pass. The report is
 `logs/fe-flow-parser.json`. This establishes software action construction and
 admission; it does not establish physical flow hits or packet retirement.
 
+### Shared FE ingress limit for long FTTR frames
+
+The custom FE LPB builder used MRU1700 for both ingress connectors. P6's
+original MAC contract permits2000 bytes including FCS (1996 delivered bytes),
+so its shared FE entry must cover that limit before Hash lookup or a CPU miss.
+Executing retained `aal_l3fe_stg0_set_normal` (`68af0`) confirms LDPID25 selects
+LPB1 at3414..341c. The original masked setter/getter (`67b20`/`67a70`)
+confirms MRU bits24..37 and preservation of all other fields. Original default
+initialization writes zero to this field; its zero semantics are not inferred
+as an unlimited native setting.
+
+When the FTTR endpoint is present, native preparation now sets that shared
+LPB1 limit to the P6 MAC budget2000. The upstream-PON profile and the ordinary
+no-FTTR configuration retain1700, and existing FE ownership restores the prior
+registers on exit. This changes the shared LAN/P6 connector limit; individual
+netdev and P6 frame checks remain in force.
+
+The production FE preparation test reproduces the previous1700 result and
+passes after the fix, with repeated enable/restore, neighboring profiles and
+failed rollback checks under ASan/UBSan. Original routing and48 masked
+MRU write/read cases, four full P6 configuration traces, FE admission and768
+actual QM RX poll cases pass. Linux6.18.55 Image/modules build and source
+identity checks pass (`artifacts/fttr/p6-fe-mru-*-20261106.*`). These establish
+configuration consistency; actual long-frame forwarding/drop behavior still
+requires hardware acceptance.
+
 ### Segmented CPU receive for long FTTR frames
 
 Main's stock-compatible CPU EQ layout reserves64 bytes of headroom and384

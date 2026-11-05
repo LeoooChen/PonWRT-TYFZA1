@@ -13,6 +13,7 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / 'tools'))
 from trace_stock_fttr_p6 import trace
+from arm64_module_oracle import ModuleOracle
 from prepare_fttr_serdes import convert
 
 
@@ -106,6 +107,41 @@ def config_writes(records):
     return [row for row in records if not (row[0] == 1 and row[1] == 0x4c and not row[2] & (1 << 30))]
 
 
+def lpb_contract(module):
+    """Actual STG0 routing and masked MRU programming, with modeled MMIO."""
+    def callback(name, args):
+        if name in ('printk', 'ca_printf'): return 0
+        raise AssertionError(('unmodeled original LPB call', name))
+    names = ['aal_l3fe_stg0_set_normal', 'aal_l3_stg0_lpb_tbl_get', 'aal_l3_stg0_lpb_tbl_set',
+             'aal_l3fe_stg0_ctrl_get', 'aal_l3_stg0_ldpid_map_get']
+    oracle = ModuleOracle(module, names, callback)
+    mmio = 0x6000000
+    oracle.uc.mem_map(mmio, 0x10000)
+    oracle.word(oracle.symbols['g_ne_reg_iobase'][0], mmio)
+    assert oracle.call(names[0]) == 0
+    route = oracle.unpack(mmio + 0x3404, 'I')[0]
+    assert (route >> 8 & 63, route >> 14 & 3) == (25, 1)
+    # The stock default writes zero to MRU; its zero semantics are not used
+    # as an inferred unlimited setting in the native custom FE path.
+    defaults = [int.from_bytes(oracle.uc.mem_read(mmio+0x3408+i*12, 12), 'little') >> 24 & 16383
+                for i in range(4)]
+    cases = 0
+    for profile in range(4):
+        for seed in (0, (1 << 96)-1, 0xa5c3695a3c55aaff55aacc33):
+            for mru in (0, 1700, 2000, 16383):
+                table = mmio+0x3408+profile*12
+                oracle.uc.mem_write(table, seed.to_bytes(12, 'little'))
+                oracle.uc.mem_write(oracle.scratch+0x1000, (mru << 24).to_bytes(12, 'little'))
+                assert oracle.call('aal_l3_stg0_lpb_tbl_set', 0, profile, 1 << 14, oracle.scratch+0x1000) == 0
+                assert oracle.call('aal_l3_stg0_lpb_tbl_get', 0, profile, oracle.scratch+0x1100) == 0
+                expected = (seed & ~(16383 << 24)) | mru << 24
+                assert int.from_bytes(oracle.uc.mem_read(table, 12), 'little') == expected
+                assert int.from_bytes(oracle.uc.mem_read(oracle.scratch+0x1100, 12), 'little') == expected
+                cases += 1
+    return dict(original_ldpid=25, profile=1, mru_bit=24, mru_width=14,
+                original_default_mru=defaults, original_masked_write_read_cases=cases)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--stock', type=Path, required=True)
@@ -164,6 +200,7 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps({'stock_sha256': hashlib.sha256(args.stock.read_bytes()).hexdigest(),
         'cases': cases, 'missing_or_invalid_profile_stops': True, 'clock_failure_stops_before_mac': True,
+        'shared_fe_lpb_contract': lpb_contract(args.stock),
         'reset_error_propagated': True, 'hardware_verified': False,
         'scope': 'configuration writes; stock diagnostic read-address commands omitted; timing/clock modeled'}, indent=2)+'\n')
     print('P6: 4 stock/native configuration sequences match, including profile/MAC/NWAY; startup failures stop')

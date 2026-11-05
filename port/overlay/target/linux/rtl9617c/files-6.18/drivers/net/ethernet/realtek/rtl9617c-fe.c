@@ -26,6 +26,7 @@
 #include "rtl9617c-fe.h"
 #include "rtl9617c-fe-pipeline.h"
 #include "rtl9617c-fttr-cf.h"
+#include "rtl9617c-fttr-frame.h"
 #include "rtl9617c-wifi-format.h"
 #include "rtl9617c-pon-path.h"
 #include <linux/rtl9617c-bridge.h>
@@ -320,6 +321,11 @@ static int fe_prepare(struct rtl_fe *fe)
   ret=rtl_fe_classifier_write(&io,1024+4*(i?0:1),cls);
   if(ret)return ret;
   rtl_fe_ingress_lpb(lpb,i?7:0,16);
+  /* P6 enters through the shared LDPID25/LPB1 connector. Its extended
+   * management frames must fit before either Hash lookup or CPU delivery.
+   * Match the original P6 MAC limit, including FCS, when FTTR is present.
+   */
+  if(!i && fe->fttr_netdev)rtl_fe_bits_set(lpb,24,14,RTL_FTTR_FRAME_BYTES+4);
   rtl_fe_bits_set(lpb,42,4,i?0:1); /* Native WAN0/LAN1 selectors. */
   for(side=0;side<3;side++)fe_write(fe,0x3414+i*12+side*4,lpb[side]);
   for(side=0;side<4;side++) {
