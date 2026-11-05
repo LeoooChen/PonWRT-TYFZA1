@@ -1569,6 +1569,8 @@ static void rtl_ax_traffic_update(struct rtl_ax_ap *radio)
 	}
 	rtl_ax_tx_ac_counters(radio->tx, ac);
 	rtl_ax_traffic_wmm_update(&radio->traffic_wmm, ac);
+	rtl_ax_tx_wmm(radio->tx, rtl_ax_traffic_wmm_quota(&radio->traffic_wmm,
+		radio->chip == RTL_AX_8852C ? 2048 : 1024));
 	if (radio->traffic_wmm.enabled && !was_wmm) {
 		radio->traffic_edca_saved[0] = radio->io.read32(radio->io.ctx, 0xc300);
 		radio->traffic_edca_saved[1] = radio->io.read32(radio->io.ctx, 0xc304);

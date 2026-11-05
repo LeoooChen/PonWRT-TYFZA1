@@ -79,4 +79,21 @@ for n in range(17):assert call('ni_select')==7
 assert get(BASE+0x13020)==2 and call('ni_select')==0
 put(0x1200c438,30000);assert call('ni_select')==2
 assert get(BASE+0x3a080)==0
-print('PASS linked PE: size/count gates, disabled aggregation,10/4ms timers,wrap,peer isolation,PS/retirement,128-frame batch and tail drain')
+# Per-AC quota counts accepted MPDUs, including ARM requests.
+put(BASE+0x39004,0);put(BASE+0x3f000,2)
+put(BASE+0x3e010,1);put(BASE+0x3e810,1)
+before=get(MB+30*4)
+enqueue(142,1,66)
+assert call('ni_select')==0 and get(MB+47*4)==2049
+assert get(BASE+0x3e010)==1 and get(BASE+0x3f004)==1
+# A rejected request retains its BID until EQ credit allows recycling.
+put(MB+116*4,0x6380);put(MB+117*4,6)
+put(NI+0x6380,1<<31);put(NI+0x6340,0)
+call('ni_recycle');assert get(MB+47*4)==2049
+put(NI+0x6340,8);call('ni_recycle')
+assert get(MB+47*4)==0 and get(BASE+0x3e010)==1 and get(MB+30*4)==before
+# Shared AC full does not reject an independent peer.
+enqueue(143,2,66);assert call('ni_select')==1
+put(BASE+0x3e810,0);enqueue(144,1,66)
+assert call('ni_select')==1 and get(BASE+0x3e010)==2
+print('PASS linked PE: SWQ gates/timers/PS and WMM per-AC quota,ARM accounting,drop ownership,peer isolation')

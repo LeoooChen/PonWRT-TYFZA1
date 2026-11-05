@@ -37,6 +37,13 @@ static inline bool rtl_ax_traffic_wmm_update(struct rtl_ax_traffic_wmm *w, const
 	return w->enabled;
 }
 
+/* Actual WMM quota divides the radio's request pool by peak active ACs.
+ * Disabled normal WMM leaves _txreq_lmt_check's limit gate closed. */
+static inline u32 rtl_ax_traffic_wmm_quota(const struct rtl_ax_traffic_wmm *w, u32 requests)
+{
+	return w->enabled ? requests / w->streams : 0;
+}
+
 static inline u8 rtl_ax_traffic_mode(u32 tx, u32 rx)
 {
 	if (tx > 8192 && tx > (rx << 3)) return 1;

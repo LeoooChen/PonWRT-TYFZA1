@@ -289,7 +289,13 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			}
 			/* Commit this selection only while its grant snapshot is current. */
 			if (!discard && command != *(volatile u32 *)(memory + RTL_AX_NI_PS_VERSION + macid * 4)) continue;
-			u32 id = discard ? RTL_AX_NI_DISCARD : ni_owner(memory), frames = 1;
+			u32 quota = *(volatile u32 *)(memory + RTL_AX_TX_WMM_QUOTA);
+			u32 ac_index = macid * 4 + channels[tid];
+			u32 limited = !discard && quota &&
+				*(u32 *)(memory + RTL_AX_TX_NI_AC_PENDING + ac_index * 4) +
+				*(volatile u32 *)(memory + RTL_AX_TX_ARM_AC_PENDING + ac_index * 4) >= quota;
+			if (limited && mailbox[47]) continue;
+			u32 id = discard || limited ? RTL_AX_NI_DISCARD : ni_owner(memory), frames = 1;
 			u32 tail_buffer = buffer, next_buffer = waiting[0], selected_bytes = waiting[1] & 65535;
 			const u32 *peer = (void *)(memory + 0xd000 + macid * 32);
 			u32 key = peer[5];
@@ -342,6 +348,17 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 					}
 				}
 			}
+			if (limited) {
+				owners[id * 2 + 1] |= BIT(31);
+				mailbox[47] = id + 1;
+				(*(u32 *)(memory + RTL_AX_TX_WMM_QUOTA + 4))++;
+				if (ps[0]) {
+					volatile u32 *done = (void *)(memory + RTL_AX_NI_PS_DONE + macid * 8);
+					done[0] = generation; sync(); done[1]++; pe_event(mailbox);
+				}
+			} else if (!discard) {
+				(*(u32 *)(memory + RTL_AX_TX_NI_AC_PENDING + ac_index * 4))++;
+			}
 			/* Detach the existing FIFO prefix; no per-subframe relinking. */
 			*(u32 *)uncached(tail_buffer) = 0;
 			*head = next_buffer;
@@ -368,7 +385,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			}
 			ni_peer_event(mailbox, memory, macid);
 			if (discard && mailbox[78]) pe_event(mailbox);
-			if (!discard) {
+			if (!discard && !limited) {
 				(*(u32 *)(memory + 0x17000 + macid * 4)) += frames;
 				(*(u32 *)(memory + 0x17200 + macid * 4)) |= BIT(tid);
 				return frames;

@@ -92,3 +92,13 @@ RAM模块rtl_ax_ap_stockop5k SHA256=be7350f8e62353566dad305997638f58d0d71c23d3b7
 RAM模块 `stockswq` SHA256=e53abe8af3cdd7d929f941f48d0e3895b664b90f8ee9cb44d645332aa0c70368，PE=afd1f8f718ae2aba6be65cff532474393789ffea1fd907de7f1eb04fde7ea128。60s UDP=1.530Gbps、丢包23.49%；30s TCP首次0.730Gbps但NI仅125帧、ARM+304129请求，不能归因到PE；附加流表观测复测TCP=1.433Gbps，双向HW_OFFLOAD且数据流age6/NI持续增长。UDP→TCP短复测均进入PE，没有稳定复现准入故障，保留未解状态，不再重复盲测。本批未解决1.8/1.9目标，无pending停滞、RPQ失败0。
 
 CFO配置补充：实际supportability函数可执行确认共享/独立晶振掩码；实际final_cap中未见SDK为第三颗radio设置独立晶振的分支。原机最终is_indiv_xtal仍缺实测，不将native默认0当成已证实原厂值，不强开运行跟踪。
+
+## WMM 每站/每 AC 请求配额
+
+`rtw_switch_wmm_mode@59e0c` 的资源配额是max_tx_ring_cnt/活动AC峰值，`_txreq_lmt_check@e68d8` 在每站AC未完成请求数>=配额时拒绝。ARM与NI现在分别发布各自MPDU请求计数，检查合计；NI直到完成的全部BID归还后减一，不按聚合子帧数计请求。拒绝的NI聚合通过既有discard所有权回收，PS服务失败仍完成对应generation。两侧沿用原厂check后计数的语义，非跨CPU原子reserve。
+
+原厂320组pending/TID边界、156 WMM转换、既有1920聚合/82944 EDCA/220 vendor对照通过。linked PE覆盖ARM+NI合计、AC/peer隔离、拒绝时EQ无credit不提前归还、6144次请求回收后AC计数归零、PS及聚合/IMEM通过。
+
+RAM测试初始模块bf174255...：TCP30s1.429Gbps，UDP60s1.591Gbps/20.45%丢包，单AC配额0、无pending冻结。设备本地两条各15Mbps的DSCP0/46流量实际进入DMA0/3（Linux把EF映射VO），quota0→1024→0，两流接收零丢包。此前从LAN转发的DSCP双流全部TID0，不能算多AC验证；已定位FE默认COS0使NI未保留IP优先级，下一批对齐真实原厂分类。
+
+最终代码将quota计算收敛到已测traffic helper；重编模块9a4e19c138a1e7a864755686ff81d9d4920695e505e9d2dc9dc73efbc51d335e，PE与RAM版本完全相同82b7b778c0c2669e6c0645394b495cfd7285eec0e291548cc5a661999ccc11bf（26396字节）。最终helper调用位置变化编译通过，RAM仍初始WMM模块，未把未装载版本称为实测。

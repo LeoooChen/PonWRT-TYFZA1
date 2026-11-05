@@ -18,7 +18,7 @@ def cb(name,args):
  if name=='_rtw_memcmp':return int(bytes(o.uc.mem_read(args[0],args[2]))==bytes(o.uc.mem_read(args[1],args[2])))
  if name=='printk':return 0
  raise AssertionError((name,args))
-o=ModuleOracle(M,['sta_dynamic_control','sta_amsdu_num_by_rate','throughput_dynamic_control','rtw_switch_wmm_mode','rtw_parse_vendor_info','rtw_get_ie'],cb)
+o=ModuleOracle(M,['sta_dynamic_control','sta_amsdu_num_by_rate','throughput_dynamic_control','rtw_switch_wmm_mode','rtw_parse_vendor_info','rtw_get_ie','_txreq_lmt_check'],cb)
 A,V,S,P,H=0x6000000,0x6040000,0x6080000,0x60c0000,0x6100000
 for a in [A,V,S,P,H]:o.uc.mem_map(a,0x40000)
 def put(a,v,fmt='I'):
@@ -33,7 +33,7 @@ def setup(p):
  put(S+0xa7cc,p.amsdu_num,'B');put(S+0xa7cd,p.max_num,'B')
 with tempfile.TemporaryDirectory(dir=root/'artifacts') as t:
  c=Path(t)/'check.c';so=Path(t)/'check.so'
- c.write_text('#include <stdint.h>\n#include <stdbool.h>\ntypedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;\n#include <string.h>\n#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))\n#include "traffic.h"\n#include "vendor.h"\nbool wmm(struct rtl_ax_traffic_wmm *w,const u32 a[4]){return rtl_ax_traffic_wmm_update(w,a); }\nunsigned int vendor(const u8 *a,const u8 *b,unsigned int n){return rtl_ax_vendor(a,b,n);}\nvoid amsdu(struct rtl_ax_traffic_peer *p,u32 pps){rtl_ax_traffic_amsdu(p,pps);}\nu32 edca(struct rtl_ax_traffic_peer *p,bool ba,u16 window,u8 flows,u8 busy,bool *old){return rtl_ax_traffic_edca(p,ba,window,flows,busy,old);}')
+ c.write_text('#include <stdint.h>\n#include <stdbool.h>\ntypedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;\n#include <string.h>\n#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))\n#include "traffic.h"\n#include "vendor.h"\nbool wmm(struct rtl_ax_traffic_wmm *w,const u32 a[4]){return rtl_ax_traffic_wmm_update(w,a); }\nunsigned int vendor(const u8 *a,const u8 *b,unsigned int n){return rtl_ax_vendor(a,b,n);}\nvoid amsdu(struct rtl_ax_traffic_peer *p,u32 pps){rtl_ax_traffic_amsdu(p,pps);}\nu32 quota(struct rtl_ax_traffic_wmm *w,u32 n){return rtl_ax_traffic_wmm_quota(w,n); }\nu32 edca(struct rtl_ax_traffic_peer *p,bool ba,u16 window,u8 flows,u8 busy,bool *old){return rtl_ax_traffic_edca(p,ba,window,flows,busy,old);}')
  subprocess.run(['cc','-shared','-fPIC','-O2','-Wall','-Werror','-I'+str(D),str(c),'-o',str(so)],check=True)
  lib=ctypes.CDLL(str(so));lib.amsdu.argtypes=[ctypes.POINTER(Peer),ctypes.c_uint32];lib.edca.argtypes=[ctypes.POINTER(Peer),ctypes.c_bool,ctypes.c_uint16,ctypes.c_uint8,ctypes.c_uint8,ctypes.POINTER(ctypes.c_bool)];lib.edca.restype=ctypes.c_uint32
  count=0
@@ -73,6 +73,7 @@ with tempfile.TemporaryDirectory(dir=root/'artifacts') as t:
  class Wmm(ctypes.Structure):
   _fields_=[('ac_seen',ctypes.c_uint32*4),('timeout',ctypes.c_uint32),('streams',ctypes.c_uint8),('enabled',ctypes.c_bool)]
  lib.wmm.argtypes=[ctypes.POINTER(Wmm),ctypes.POINTER(ctypes.c_uint32)];lib.wmm.restype=ctypes.c_bool
+ lib.quota.argtypes=[ctypes.POINTER(Wmm),ctypes.c_uint32];lib.quota.restype=ctypes.c_uint32
  sequences=[[0]*8+[2]*8+[0]*40,[2,0,2,2,0,0,4,3,1,0]*5,[0,1,2,3,4]*10]
  count=0
  for sequence in sequences:
@@ -85,5 +86,15 @@ with tempfile.TemporaryDirectory(dir=root/'artifacts') as t:
    o.call('rtw_switch_wmm_mode',A)
    lib.wmm(ctypes.byref(w),(ctypes.c_uint32*4)(*totals))
    assert (w.timeout,w.streams,w.enabled)==(o.unpack(V+0x15764,'I')[0],o.unpack(V+0x15763,'B')[0],bool(o.unpack(V+0x15762,'B')[0]))
+   quota=lib.quota(ctypes.byref(w),2048)
+   assert quota==(o.unpack(V+0x15768,'I')[0] if w.enabled else 0)
    count+=1
  print('WMM ordinary AP transitions:',count,'calls match actual ELF')
+
+ for streams,tid,pending in itertools.product([1,2,3,4],range(8),[0,511,512,513,682,683,1023,1024,1025,2048]):
+  setup(Peer());put(V+0x15868,1,'B');put(V+0x15762,1,'B');put(V+0x15768,2048//streams)
+  o.word(H+0x28,tid<<32)
+  ac=[0,1,1,0,2,2,3,3][tid];put(S+0xacf8+ac*4,pending)
+  result=o.call('_txreq_lmt_check',A,H,S,H+0x100)
+  assert result==int(pending<2048//streams) and o.unpack(H+0x100,'B')[0]==ac
+ print('WMM quota check:320 pending/TID boundary cases match actual ELF')

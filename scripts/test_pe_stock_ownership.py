@@ -71,6 +71,7 @@ for cycle in range(cycles):
  assert len(returns)-before==capacity and len(set(returns[before:]))==capacity
  assert all(get(B+0x40000+t*4)==0 for t in tags)
  assert get(B+0x34004)-get(B+0x34000)==capacity
+ assert get(B+0x3e010)==0
  all_tags+=tags
 assert max(all_tags)==4094 and 0 in all_tags
 # Former metadata regions are unaffected by the moved owner/rate/generation tables.

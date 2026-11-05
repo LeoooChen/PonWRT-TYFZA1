@@ -625,6 +625,13 @@ static void __attribute__((section(".rxq"), noinline)) ni_recycle(volatile u32 *
 		}
 #endif
 		if (buffer) break;
+#ifdef PE_UPLINK
+		if (!dropped && macid) {
+			static const u8 ac[8] = {0, 1, 1, 0, 2, 2, 3, 3};
+			u32 tid = *(u32 *)(memory + RTL_AX_NI_TIDS + id * 4) & 7;
+			(*(u32 *)(memory + RTL_AX_TX_NI_AC_PENDING + (macid * 4 + ac[tid]) * 4))--;
+		}
+#endif
 		owners[id * 2 + 1] = 0;
 		released++;
 		if (dropped) mailbox[47] = 0;

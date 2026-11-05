@@ -21,6 +21,9 @@
 #define RTL_AX_TX_PEER_AMSDU 0x39000
 /* PE-owned per-TID byte count, timer origin/armed and batch drain state. */
 #define RTL_AX_TX_AMSDU_QUEUES 0x3a000
+#define RTL_AX_TX_NI_AC_PENDING 0x3e000
+#define RTL_AX_TX_ARM_AC_PENDING 0x3e800
+#define RTL_AX_TX_WMM_QUOTA 0x3f000
 #define RTL_AX_WP_TAG_MAP 0x40000
 #define RTL_AX_WP_FREE 0x58000
 #define RTL_AX_TX_PEER_FLOWS 0x60000

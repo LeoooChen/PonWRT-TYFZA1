@@ -47,7 +47,7 @@ struct rtl_ax_tx_slot {
 	u8 ring;
 	u8 key_index;
 	u8 macid, tid;
-	bool encrypted, pe_sequence, firmware_rate;
+	bool encrypted, pe_sequence, firmware_rate, quota_counted;
 	struct rtl_ax_tx_mapping *mapping;
 };
 
@@ -99,6 +99,8 @@ struct rtl_ax_tx {
 	u64 submitted, completed, status_count[8], polluted, unmatched, stopped, full;
 	u32 traffic_bytes;
 	u32 peer_bytes[128], peer_packets[128], ac_packets[4];
+	u32 ac_pending[128][4], wmm_quota;
+	u64 wmm_dropped;
 	struct rtl_ax_traffic_flow peer_flows[128][8];
 	u64 encrypted, hardware_pn;
 	u64 prepare_ns;
@@ -423,6 +425,7 @@ void rtl_ax_tx_peer_client(struct rtl_ax_tx *tx, unsigned int macid, bool client
 void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos, unsigned int ps_timeout)
 {
 	tx->peer_qos[macid] = qos;
+	memset(tx->pe.memory + RTL_AX_TX_AMSDU_QUEUES + macid * 128, 0, 128);
 	/* Called with the peer path withdrawn; MACID reuse gets fresh TXSC keys. */
 	memset(tx->peer_flows[macid], 0, sizeof(tx->peer_flows[macid]));
 	if (tx->pe_active)
@@ -653,6 +656,13 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		ret = -ENETDOWN;
 		goto unmap;
 	}
+	/* Original _txreq_lmt_check counts accepted requests, one per MPDU.
+	 * Each execution side publishes its own outstanding count. */
+	if (macid && data_frame && ring < 4 && tx->wmm_quota &&
+	    tx->ac_pending[macid][ring] + get_unaligned_le32(tx->pe.memory +
+	    RTL_AX_TX_NI_AC_PENDING + (macid * 4 + ring) * 4) >= tx->wmm_quota) {
+		tx->wmm_dropped++; ret = -ENOSPC; goto unmap;
+	}
 	id = find_first_zero_bit(tx->pending, RTL_AX_TX_ENTRIES);
 	next = (tx->producer[ring] + 1) & (RTL_AX_TX_ENTRIES - 1);
 	/* Every RPQ release follows consumption of its TXBD. The shared WP
@@ -783,6 +793,12 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	if (tx->checksum_enabled)
 		rtl_ax_tx_checksum(page);
 	rtl_ax_tx_wp_sequence(page + 56, id | (tid_indicators[tid] ? BIT(14) : 0));
+	}
+	slot.quota_counted = macid && data_frame && ring < 4;
+	if (slot.quota_counted) {
+		tx->ac_pending[macid][ring]++;
+		put_unaligned_le32(tx->ac_pending[macid][ring], tx->pe.memory +
+			RTL_AX_TX_ARM_AC_PENDING + (macid * 4 + ring) * 4);
 	}
 	slot.ring = ring;
 	slot.pe_sequence = pe_sequence;
@@ -967,6 +983,12 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 			}
 		}
 		slot = tx->slots[id];
+		if (slot.quota_counted) {
+			tx->ac_pending[slot.macid][ring]--;
+			put_unaligned_le32(tx->ac_pending[slot.macid][ring], tx->pe.memory +
+				RTL_AX_TX_ARM_AC_PENDING + (slot.macid * 4 + ring) * 4);
+			dma_wmb();
+		}
 		if (slot.pe_sequence)
 			completed_sequence = get_unaligned((__le16 *)(tx->headers + id * 128 + 22));
 		tx->slots[id].skb = NULL;
@@ -1196,6 +1218,16 @@ unsigned int rtl_ax_tx_peer_flows(struct rtl_ax_tx *tx, unsigned int macid)
 	return active;
 }
 
+void rtl_ax_tx_wmm(struct rtl_ax_tx *tx, unsigned int quota)
+{
+	unsigned long flags;
+	spin_lock_irqsave(&tx->lock, flags);
+	tx->wmm_quota = quota;
+	put_unaligned_le32(tx->wmm_quota, tx->pe.memory + RTL_AX_TX_WMM_QUOTA);
+	dma_wmb();
+	spin_unlock_irqrestore(&tx->lock, flags);
+}
+
 void rtl_ax_tx_peer_amsdu(struct rtl_ax_tx *tx, unsigned int macid, unsigned int policy)
 {
 	put_unaligned_le32(policy, tx->pe.memory + RTL_AX_TX_PEER_AMSDU + macid * 4);
@@ -1226,6 +1258,10 @@ int rtl_ax_tx_status(struct rtl_ax_tx *tx, char *out, size_t capacity)
 		tx->running, tx->submitted, tx->completed, bitmap_weight(tx->pending, RTL_AX_TX_ENTRIES),
 		tx->last_sequence, tx->last_report, tx->polluted, tx->unmatched, tx->full, tx->stopped,
 		tx->io->read32(tx->io->ctx, 0xc398), tx->io->read32(tx->io->ctx, 0x1010), tx->io->read32(tx->io->ctx, 0x8830));
+	length += scnprintf(out + length, capacity - length,
+		"WMM_request_quota=%u ARM_dropped=%llu NI_dropped=%u\n",
+		tx->wmm_quota, tx->wmm_dropped,
+		get_unaligned_le32(tx->pe.memory + RTL_AX_TX_WMM_QUOTA + 4));
 	report_config = tx->io->read32(tx->io->ctx, 0x9414);
 	length += scnprintf(out + length, capacity - length,
 		"RPQ_release_config=%08x aggregate_reports=%u timeout_code=%u\n",
