@@ -29,6 +29,7 @@
 #include "omci-service.h"
 #include "omci-wifi.h"
 #include "omci-auth.h"
+#include "onu-policy.h"
 #include "omci-socket.h"
 
 enum onu_phase { ONU_ABSENT, ONU_BLOCKED, ONU_MIB, ONU_INVENTORY, ONU_FAILED,
@@ -71,6 +72,10 @@ struct onu {
 	struct fttr_mib_model model;
 	struct fttr_service_job service;
 	struct fttr_auth_job auth;
+	struct fttr_onu_selection selection;
+	bool policy_authenticated, policy_move;
+	int policy_error;
+	int64_t auth_retry;
 	struct wifi_run *wifi, *wifi_current;
 	unsigned int wifi_count, wifi_configured;
 	int wifi_error, wifi_cleanup_error;
@@ -96,6 +101,7 @@ struct controller {
 	struct fttr_net net;
 	struct fttr_optical_monitor optical;
 	struct fttr_auth_config auth;
+	struct fttr_onu_policy onu_policy;
 	const char *interface;
 	uint16_t transaction;
 	int64_t observed_at;
@@ -116,6 +122,14 @@ struct controller {
 };
 
 static int move_drive(struct controller *c);
+static int policy_move(struct controller *c, unsigned int id);
+static int auth_drive(struct controller *c, unsigned int id);
+
+static bool authenticated(const struct controller *c, const struct onu *u)
+{
+	return (!c->auth.enabled || (u->auth.phase == FTTR_AUTH_DONE && u->auth.verified && !u->auth.error)) &&
+		(!c->onu_policy.enabled || u->policy_authenticated);
+}
 static volatile sig_atomic_t stopping;
 
 static void stop_signal(int signal)
@@ -339,7 +353,9 @@ static int publish(struct controller *c, const char *state, int error)
 				"\"wifi_instances\":%u,\"wifi_configured\":%u,\"wifi_error\":%d,\"wifi_cleanup_error\":%d,"
 				"\"temporary_deactivation\":%s,\"loid_auth_required\":%s,"
 				"\"loid_acquired\":%s,\"loid_result\":%u,\"loid_result_verified\":%s,"
-				"\"loid_authenticated\":%s,\"loid_auth_error\":%d,\"loid_fallback_error\":%d}",
+				"\"loid_authenticated\":%s,\"loid_auth_error\":%d,\"loid_fallback_error\":%d,"
+				"\"onu_auth_required\":%s,\"onu_authenticated\":%s,\"onu_auth_action\":%u,"
+				"\"onu_auth_logical_id\":%u,\"onu_auth_method\":%u,\"onu_auth_error\":%d}",
 				u->service.configured ? "true" : "false", u->service.cleanup_error,
 				u->sync.valid ? "true" : "false", u->sync.value, u->sync.observed,
 				u->sync.error, u->sync.checked, u->rescans,
@@ -347,8 +363,11 @@ static int publish(struct controller *c, const char *state, int error)
 				u->wifi_count, u->wifi_configured, u->wifi_error, u->wifi_cleanup_error,
 				u->admin_pending ? "true" : "false", c->auth.enabled ? "true" : "false",
 				u->auth.acquired ? "true" : "false", u->auth.result, u->auth.verified ? "true" : "false",
-				u->auth.phase == FTTR_AUTH_DONE && !u->auth.error ? "true" : "false",
-				u->auth.error, u->auth.fallback_error);
+				c->auth.enabled && u->auth.phase == FTTR_AUTH_DONE && u->auth.verified && !u->auth.error ? "true" : "false",
+				u->auth.error, u->auth.fallback_error, c->onu_policy.enabled ? "true" : "false",
+				u->policy_authenticated ? "true" : "false", u->selection.action,
+				c->onu_policy.enabled && u->selection.method ? u->selection.id + 1 : 0,
+				u->selection.method, u->policy_error);
 		}
 		fputc(']', file);
 	}
@@ -646,7 +665,7 @@ static int start_wifi(struct controller *c, unsigned int id)
 	struct wifi_run **tail = &u->wifi;
 	const struct wifi_policy *policy;
 
-	if (c->auth.enabled && (u->auth.phase != FTTR_AUTH_DONE || !u->auth.verified || u->auth.error))
+	if (!authenticated(c, u))
 		return -EACCES;
 	for (policy = c->wifi_policies; policy; policy = policy->next) {
 		if (!wifi_policy_matches(c, policy, u->identity))
@@ -743,7 +762,7 @@ static int start_service(struct controller *c, unsigned int id)
 	unsigned int ordinal = 0;
 	int ret;
 
-	if (c->auth.enabled && (u->auth.phase != FTTR_AUTH_DONE || !u->auth.verified || u->auth.error))
+	if (!authenticated(c, u))
 		return -EACCES;
 	if (!match)
 		return 0;
@@ -819,6 +838,11 @@ static int cancel(struct controller *c, unsigned int id, bool accel_paused)
 	int ret;
 
 	fttr_auth_cancel(&u->auth, -ESTALE);
+	u->policy_authenticated = u->policy_move = false;
+	u->auth_retry = 0;
+	u->policy_error = 0;
+	memset(&u->selection, 0, sizeof(u->selection));
+	u->selection.action = FTTR_ONU_REJECT;
 	if (u->wifi) {
 		cancel_wifi(u, -ESTALE);
 		ret = save_wifi(c, id);
@@ -992,15 +1016,45 @@ static int start_mib(struct controller *c, unsigned int id)
 	hex(u->dump, u->identity, 8);
 	fputs("\"}\n", u->dump);
 	u->phase = ONU_MIB;
-	ret = fttr_auth_start(&u->auth, &c->auth, id, &c->transaction);
+	ret = c->onu_policy.enabled ? fttr_auth_credentials(&u->auth,
+		c->auth.enabled || fttr_onu_policy_needs_loid(&c->onu_policy), id, &c->transaction) :
+		fttr_auth_start(&u->auth, &c->auth, id, &c->transaction);
 	if (ret)
 		return ret;
-	if (c->auth.enabled) {
+	if (c->auth.enabled || c->onu_policy.enabled) {
 		u->phase = ONU_AUTH;
+		if (u->auth.phase == FTTR_AUTH_READY)
+			return auth_drive(c, id);
 		return fttr_me_job_send(&u->auth.me, c->socket, &c->link, now_ms());
 	}
 	fttr_mib_job_start(&u->job, id, &c->transaction);
 	return fttr_mib_job_send(&u->job, c->socket, &c->link, now_ms());
+}
+
+static int auth_failed(struct controller *c, unsigned int id, int error)
+{
+	struct onu *u = &c->onu[id];
+	char pending[24], destination[24];
+	int ret;
+
+	u->policy_authenticated = u->policy_move = false;
+	if (u->dump) {
+		fprintf(u->dump, "{\"event\":\"authentication\",\"global_result\":%u,\"verified\":%s,"
+			"\"action\":%u,\"logical_id\":%u,\"error\":%d}\n",
+			u->auth.result, u->auth.verified ? "true" : "false", u->selection.action,
+			u->selection.method ? u->selection.id + 1 : 0, error);
+		ret = fclose(u->dump);
+		u->dump = NULL;
+		if (ret)
+			return -errno;
+		filename(pending, id, "pending");
+		filename(destination, id, "failed");
+		if (renameat(c->store, pending, c->store, destination))
+			return -errno;
+	}
+	u->job.error = error;
+	u->phase = ONU_AUTH_FAILED;
+	return 0;
 }
 
 static int auth_drive(struct controller *c, unsigned int id)
@@ -1023,25 +1077,81 @@ static int auth_drive(struct controller *c, unsigned int id)
 			return fttr_me_job_send(&u->auth.me, c->socket, &c->link, now_ms());
 	}
 	if (u->auth.error) {
-		char pending[24], destination[24];
-
-		/* No service/Wi-Fi job or data port exists before this transaction.
-		 * Keep management available; a fresh registration/restart retries.
+		/* An unrelated LOID row must not make an SN-only peer depend on
+		 * credential MEs. Re-run selection with explicitly missing input;
+		 * only an independently proven match/move may continue.
 		 */
-		fprintf(u->dump, "{\"event\":\"loid_auth\",\"result\":%u,\"verified\":%s,\"error\":%d}\n",
-			u->auth.result, u->auth.verified ? "true" : "false", u->auth.error);
-		ret = fclose(u->dump);
-		u->dump = NULL;
-		if (ret)
-			return -errno;
-		filename(pending, id, "pending");
-		filename(destination, id, "failed");
-		if (renameat(c->store, pending, c->store, destination))
-			return -errno;
-		u->job.error = u->auth.error;
-		u->phase = ONU_AUTH_FAILED;
-		return 0;
+		if (c->onu_policy.enabled && !c->auth.enabled &&
+		    (u->auth.error == -EREMOTEIO || u->auth.error == -ETIMEDOUT)) {
+			struct fttr_onu_credentials observed = { 0 };
+			struct fttr_onu_selection selected;
+			bool live[FTTR_ONUS];
+
+			memcpy(observed.serial, u->identity, 8);
+			for (unsigned int i = 0; i < FTTR_ONUS; i++)
+				live[i] = c->onu[i].policy_authenticated;
+			selected = fttr_onu_policy_select(&c->onu_policy, id, &observed, live);
+			if (selected.action == FTTR_ONU_MATCH || selected.action == FTTR_ONU_MOVE) {
+				u->auth.error = 0;
+				u->auth.phase = FTTR_AUTH_READY;
+				u->auth.me.onu = id;
+			}
+		}
+		if (u->auth.error)
+			return auth_failed(c, id, u->auth.error);
 	}
+	if (u->auth.phase == FTTR_AUTH_READY) {
+		struct fttr_onu_credentials observed = { .loid_valid = u->auth.acquired };
+		bool live[FTTR_ONUS];
+
+		memcpy(observed.serial, u->identity, 8);
+		memcpy(observed.loid, u->auth.loid, sizeof(observed.loid));
+		memcpy(observed.key, u->auth.key, sizeof(observed.key));
+		/* Only a current-process authenticated identity reserves a live row.
+		 * PLOAM is deliberately invalid until its acquisition is established.
+		 */
+		for (unsigned int i = 0; i < FTTR_ONUS; i++)
+			live[i] = c->onu[i].policy_authenticated;
+		u->selection = fttr_onu_policy_select(&c->onu_policy, id, &observed, live);
+		memset(&observed, 0, sizeof(observed));
+		u->policy_error = u->selection.error;
+		switch (u->selection.action) {
+		case FTTR_ONU_BIND:
+		case FTTR_ONU_LEARN:
+			ret = fttr_onu_policy_bind(&c->onu_policy, &u->selection, u->identity);
+			if (ret) {
+				u->policy_error = ret;
+				fttr_auth_cancel(&u->auth, ret);
+				/* Persistence may have reached rename before a failed fsync. */
+				return ret;
+			}
+			u->auth_retry = now_ms() + 2000;
+			u->policy_error = -EAGAIN;
+			fttr_auth_cancel(&u->auth, -EAGAIN);
+			return auth_failed(c, id, -EAGAIN);
+		case FTTR_ONU_WAIT:
+		case FTTR_ONU_REJECT:
+			u->policy_error = u->selection.error ? u->selection.error : -EACCES;
+			fttr_auth_cancel(&u->auth, u->policy_error);
+			return auth_failed(c, id, u->policy_error);
+		case FTTR_ONU_MOVE:
+			/* Original assignment precedes global authentication. Inventory
+			 * may establish safe migration, but must not create services.
+			 */
+			fttr_auth_cancel(&u->auth, 0);
+			u->policy_move = true;
+			break;
+		case FTTR_ONU_MATCH:
+			ret = fttr_auth_decide(&u->auth, &c->auth, &c->transaction);
+			if (ret < 0)
+				return ret;
+			if (ret)
+				return fttr_me_job_send(&u->auth.me, c->socket, &c->link, now_ms());
+			break;
+		}
+	}
+	if (c->onu_policy.enabled && !u->policy_move)
+		u->policy_authenticated = true;
 	u->phase = ONU_MIB;
 	fttr_mib_job_start(&u->job, id, &c->transaction);
 	return fttr_mib_job_send(&u->job, c->socket, &c->link, now_ms());
@@ -1333,7 +1443,7 @@ static int complete(struct controller *c, unsigned int id)
 	if (!(current.downstream & (1U << 18)) || (current.downstream & (1U << 16)) ||
 	    memcmp(current.serial, u->identity, 8))
 		return failed(c, id, -ESTALE);
-	if (c->auth.enabled && (u->auth.phase != FTTR_AUTH_DONE || !u->auth.verified || u->auth.error))
+	if (!authenticated(c, u) && !u->policy_move)
 		return -EACCES;
 	ret = fttr_mib_model_dump(&u->model, u->dump);
 	if (ret)
@@ -1349,7 +1459,7 @@ static int complete(struct controller *c, unsigned int id)
 		return -errno;
 	u->phase = ONU_INVENTORY;
 	memset(&u->sync, 0, sizeof(u->sync));
-	return start_wifi(c, id);
+	return u->policy_move ? policy_move(c, id) : start_wifi(c, id);
 }
 
 static int receive_message(struct controller *c)
@@ -1737,6 +1847,7 @@ static int move_request(struct controller *c, const struct fttr_admin_request *r
 	}
 	u->admin_pending = c->onu[request->target].admin_pending = false;
 	fttr_auth_cancel(&u->auth, -ECANCELED);
+	u->policy_authenticated = u->policy_move = false;
 	u->sync.active = u->sync.enabled = u->sync.valid = false;
 	u->service_ready = false;
 	u->phase = ONU_MOVE;
@@ -1748,6 +1859,38 @@ static int move_request(struct controller *c, const struct fttr_admin_request *r
 		return ret;
 	}
 	return -EINPROGRESS;
+}
+
+static int policy_move(struct controller *c, unsigned int id)
+{
+	struct onu *u = &c->onu[id];
+	struct fttr_admin_request request = { .version = 2, .action = FTTR_ADMIN_MOVE,
+		.id = id, .target = u->selection.id };
+	struct fttr_onu_state target;
+	int ret, fatal;
+
+	if (c->move.active)
+		return 0;
+	/* A different registration may have bound this formerly empty SN
+	 * while the source MIB upload was in flight. Never overwrite it.
+	 */
+	if (c->onu_policy.rows[request.target].expected.serial[0] &&
+	    memcmp(c->onu_policy.rows[request.target].expected.serial, u->identity, 8)) {
+		u->policy_error = -ESTALE;
+		return auth_failed(c, id, -ESTALE);
+	}
+	ret = fttr_miniolt_one(c->directory, request.target, &target);
+	if (ret)
+		return ret;
+	memcpy(request.serial, u->identity, 8);
+	memcpy(request.target_serial, target.serial, 8);
+	ret = move_request(c, &request, &fatal);
+	if (fatal)
+		return fatal;
+	if (ret == -EINPROGRESS)
+		return move_drive(c);
+	u->policy_error = ret;
+	return auth_failed(c, id, ret);
 }
 
 static int receive_control(struct controller *c)
@@ -1900,6 +2043,32 @@ static int run(struct controller *c)
 				if (c->backend == FTTR_ASIC9690 && u->admin_timeout < deadline)
 					deadline = u->admin_timeout;
 				continue;
+			}
+			if (u->phase == ONU_INVENTORY && u->policy_move) {
+				ret = policy_move(c, id);
+				if (ret)
+					return ret;
+			}
+			if (u->phase == ONU_AUTH_FAILED && u->auth_retry) {
+				if (now >= u->auth_retry) {
+					struct fttr_onu_state expected = u->hardware;
+
+					memcpy(expected.serial, u->identity, 8);
+					ret = fttr_miniolt_same(c->directory, id, &expected);
+					if (ret && ret != -ESTALE)
+						return ret;
+					u->auth_retry = 0;
+					if (!ret) {
+						ret = cancel(c, id, false);
+						if (!ret)
+							ret = start_mib(c, id);
+						if (!ret)
+							ret = publish(c, "running", 0);
+						if (ret)
+							return ret;
+					}
+				} else if (u->auth_retry < deadline)
+					deadline = u->auth_retry;
 			}
 			if (u->phase == ONU_MOVE) {
 				struct fttr_me_job *me = fttr_service_pending(&u->service);
@@ -2166,7 +2335,7 @@ static int bootstrap(struct controller *c, int optical, const char *mode, const 
 	BOOT_STEP("configure OMCI envelope", fttr_miniolt_command(c->directory, "omci_link", mac));
 	if (c->backend == FTTR_ASIC9690)
 		BOOT_STEP("configure DBA", fttr_miniolt_command(c->directory, "dba", "1\n"));
-	if (c->auth.enabled)
+	if (c->auth.enabled || c->onu_policy.enabled)
 		BOOT_STEP("clear unverified data grants", clear_auth_grants(c));
 	BOOT_STEP("verify optical calibration", fttr_miniolt_calibrated(optical));
 	BOOT_STEP("initialize optical maintenance", fttr_miniolt_optical_start(&c->optical, now_ms()));
@@ -2207,7 +2376,7 @@ static int shutdown_hardware(struct controller *c)
 int main(int argc, char **argv)
 {
 	struct controller c = { .directory = -1, .ni = -1, .store = -1, .socket = -1,
-		.control = -1, .net = { .fd = -1 }, .optical = { .directory = -1 } };
+		.control = -1, .onu_policy = { .directory = -1 }, .net = { .fd = -1 }, .optical = { .directory = -1 } };
 	struct sigaction action = { .sa_handler = stop_signal };
 	bool owned = false, auth_loaded = false;
 	unsigned int id;
@@ -2215,12 +2384,14 @@ int main(int argc, char **argv)
 	uint16_t seed;
 
 	while (argc >= 3 && (!strcmp(argv[argc - 2], "--services") || !strcmp(argv[argc - 2], "--wifi") ||
-	       !strcmp(argv[argc - 2], "--loid-auth"))) {
+	       !strcmp(argv[argc - 2], "--loid-auth") || !strcmp(argv[argc - 2], "--onu-auth"))) {
 		if (!strcmp(argv[argc - 2], "--loid-auth")) {
 			if (auth_loaded) { ret = -EEXIST; goto out; }
 			auth_loaded = true;
 		}
-		ret = !strcmp(argv[argc - 2], "--loid-auth") ? fttr_auth_config_read(argv[argc - 1], &c.auth) :
+		if (!strcmp(argv[argc - 2], "--onu-auth") && c.onu_policy.enabled) { ret = -EEXIST; goto out; }
+		ret = !strcmp(argv[argc - 2], "--onu-auth") ? fttr_onu_policy_load(argv[argc - 1], &c.onu_policy) :
+			!strcmp(argv[argc - 2], "--loid-auth") ? fttr_auth_config_read(argv[argc - 1], &c.auth) :
 			!strcmp(argv[argc - 2], "--wifi") ? load_wifi_policies(&c, argv[argc - 1]) :
 			load_policies(&c, argv[argc - 1]);
 		argc -= 2;
@@ -2228,7 +2399,7 @@ int main(int argc, char **argv)
 			goto out;
 	}
 	if ((argc != 5 && argc != 9) || strlen(argv[4]) >= IFNAMSIZ) {
-		fprintf(stderr, "Usage: %s <MiniOLT-dir> <NI-dir> <state-dir> <interface> [optical-dir host-mode nway pon-mode] [--services policy-file] [--wifi policy-file] [--loid-auth private-file]\n", argv[0]);
+		fprintf(stderr, "Usage: %s <MiniOLT-dir> <NI-dir> <state-dir> <interface> [optical-dir host-mode nway pon-mode] [--services policy-file] [--wifi policy-file] [--loid-auth private-file] [--onu-auth private-json]\n", argv[0]);
 		ret = -EINVAL;
 		goto out;
 	}
@@ -2246,7 +2417,7 @@ int main(int argc, char **argv)
 		goto out;
 	c.backend = ret;
 	/* FPGA2's physical data-grant binding is not established yet. */
-	if (c.auth.enabled && c.backend == FTTR_FPGA2) { ret = -EOPNOTSUPP; goto out; }
+	if ((c.auth.enabled || c.onu_policy.enabled) && c.backend == FTTR_FPGA2) { ret = -EOPNOTSUPP; goto out; }
 	{
 		const struct service_policy *policy;
 
@@ -2285,7 +2456,7 @@ int main(int argc, char **argv)
 			goto out;
 	}
 	if (unlinkat(c.store, "status.json", 0) && errno != ENOENT) { ret = -errno; goto out; }
-	if (c.auth.enabled && argc == 5) {
+	if ((c.auth.enabled || c.onu_policy.enabled) && argc == 5) {
 		ret = clear_auth_grants(&c);
 		if (ret)
 			goto out;
@@ -2329,7 +2500,8 @@ out:
 			ret = result;
 		for (id = 0; id < FTTR_ONUS; id++) {
 			c.onu[id].admin_pending = false;
-			if (c.auth.enabled) {
+			c.onu[id].policy_authenticated = c.onu[id].policy_move = false;
+			if (c.auth.enabled || c.onu_policy.enabled) {
 				fttr_auth_cancel(&c.onu[id].auth, ret ? ret : -ECANCELED);
 				if (c.onu[id].phase == ONU_AUTH)
 					c.onu[id].phase = ONU_AUTH_FAILED;
@@ -2392,6 +2564,7 @@ out:
 		close(c.ni);
 	if (c.directory >= 0)
 		close(c.directory);
+	fttr_onu_policy_close(&c.onu_policy);
 	if (ret)
 		fprintf(stderr, "FTTR controller stopped: %s (%d)\n", strerror(-ret), ret);
 	return ret ? 1 : 0;

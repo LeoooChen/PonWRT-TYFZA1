@@ -12,7 +12,7 @@ struct fttr_auth_config {
 
 enum fttr_auth_phase { FTTR_AUTH_DISABLED, FTTR_AUTH_CTC_LOID, FTTR_AUTH_CTC_KEY,
 	FTTR_AUTH_ONUG_LOID, FTTR_AUTH_ONUG_KEY, FTTR_AUTH_WRITE, FTTR_AUTH_VERIFY,
-	FTTR_AUTH_DONE, FTTR_AUTH_FAILED };
+	FTTR_AUTH_DONE, FTTR_AUTH_FAILED, FTTR_AUTH_READY };
 
 struct fttr_auth_job {
 	struct fttr_me_job me;
@@ -21,6 +21,8 @@ struct fttr_auth_job {
 	uint8_t result;
 	bool acquired, verified;
 	int error, fallback_error;
+	char key[13];
+	bool gather_only;
 };
 
 /* Private factory file: TFL1, LOID[25], key[13], both NUL terminated.
@@ -29,6 +31,12 @@ struct fttr_auth_job {
 int fttr_auth_config_read(const char *path, struct fttr_auth_config *config);
 int fttr_auth_start(struct fttr_auth_job *job, const struct fttr_auth_config *config,
 		uint16_t onu, uint16_t *counter);
+/* Acquire credentials for per-ONU selection before the global check.
+ * READY has no outstanding ME; decide() clears credentials and returns1
+ * for a global result request,0 for disabled global authentication.
+ */
+int fttr_auth_credentials(struct fttr_auth_job *job, bool acquire, uint16_t onu, uint16_t *counter);
+int fttr_auth_decide(struct fttr_auth_job *job, const struct fttr_auth_config *config, uint16_t *counter);
 /* Advance a completed/failed ME. Positive means a new request, zero terminal. */
 int fttr_auth_advance(struct fttr_auth_job *job, const struct fttr_auth_config *config,
 		uint16_t *counter);

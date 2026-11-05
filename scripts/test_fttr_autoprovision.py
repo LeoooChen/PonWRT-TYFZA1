@@ -88,6 +88,7 @@ def main():
     p.add_argument('--move-control', type=Path, help='exercise the resident SN reservation move')
     p.add_argument('--output', type=Path, required=True)
     p.add_argument("--wifi", action="store_true", help="exercise resident remote Wi-Fi policies")
+    p.add_argument("--onu-policy", action="store_true", help="exercise per-ONU authentication and persistent assignment")
     p.add_argument("--auth", action="store_true", help="exercise original global LOID policy before services")
     p.add_argument("--backend", choices=("asic9690", "fpga1"), default="asic9690")
     args = p.parse_args()
@@ -136,12 +137,13 @@ def main():
             self.auth_hold = self.auth_drop = self.auth_bad_result = self.auth_reject_result = False
             self.auth_malformed = False
             self.move_hold = self.move_drop = self.move_reject = self.move_false = False
+            self.mib_hold = False
             self.auth_ctc_fail = self.auth_onug_fail = 0
             self.pool = {(262,self.tcont):{0x8000:b'\0\xff'},
                 (277,self.queue):{0x0400:struct.pack('>I',self.tcont<<16|3)},
                 (329 if veip else 11,uni):{0x8000:b'\1'} if veip else {0x8000:b'\0',0x0800:b'\1'}}
             if veip: self.pool[11,1] = {0x8000:b'\0',0x0800:b'\1'}
-            if args.auth:
+            if args.auth or args.onu_policy:
                 self.pool[0xfffa,0] = {0x4000:b'synthetic-loid'.ljust(24,b'\0'),
                     0x2000:b'synthetic-pw'.ljust(12,b'\0'),0x1000:b'\0'}
                 self.pool[256,0] = {0x0040:b'synthetic-loid'.ljust(24,b'\0'),
@@ -178,7 +180,7 @@ def main():
             mask = struct.unpack('>H',body[8:10])[0]
             if c==2 and op==0x49:assert body[2:]==sync_request[2:]
             self.operations.append((tci,op,c,id))
-            if args.auth and c in (256,0xfffa) and op in (0x48,0x49):
+            if (args.auth or args.onu_policy) and c in (256,0xfffa) and op in (0x48,0x49):
                 if self.auth_drop:return None
                 failure=(c==0xfffa and mask==self.auth_ctc_fail) or (c==256 and mask==self.auth_onug_fail)
                 status=5 if failure else 2 if op==0x48 and self.auth_reject_result else 0
@@ -246,6 +248,7 @@ def main():
             if wire is None:
                 wire=stock.frame(tci,(op&0x1f)|0x20,content if op in (0x4d,0x4e) else bytes([status])+content,
                                  onu=self.id,class_id=c,instance=id)[16:]
+            if op==0x4d and self.mib_hold:self.held=wire;return None
             if op==0x46 and self.move_drop:return None
             if op==0x46 and self.move_hold:self.held=wire;return None
             if self.wifi_timeout and c in (0xff69,0xff6a) and op==0x48:
@@ -483,7 +486,7 @@ def main():
                         wire=nodes[id].reply(frame[16:60])
                         if wire:peer.send(HOST+OLT+struct.pack('>HH',0x8888,id)+wire)
                 current=status()
-                if args.auth and not args.move_control and (not current.get('onus') or current['onus'][7]['mib_serial']!=nodes[7].serial.hex()):
+                if args.auth and not args.move_control and not args.onu_policy and (not current.get('onus') or current['onus'][7]['mib_serial']!=nodes[7].serial.hex()):
                     continue
                 if (current.get('pid') == process.pid or (allow_exit and current.get('pid')==0 and process.poll() is not None)) and predicate(current):return current
             current=status()
@@ -496,13 +499,174 @@ def main():
             device.joinpath('tx_enable').write_text('1\n')
             return subprocess.Popen([str(args.daemon.resolve()),str(device),str(ni),str(store),'fap-host']+
                 (['--services',str(policy)] if with_policy else []) +
-                (['--loid-auth',str(auth_policy)] if args.auth else []) +
+                (['--loid-auth',str(auth_policy)] if args.auth or args.onu_policy else []) +
+                (['--onu-auth',str(onu_policy)] if args.onu_policy else []) +
                 (['--wifi',str(wifi_policy)] if (args.wifi if with_wifi is None else with_wifi) else []),
                 stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True,
                 env=dict(os.environ,LD_PRELOAD=str(root/'sysfs.so'),FTTR_SERVICE_CASE=grant_case,
                     FTTR_ACCEL_LOG=str(accel_log),FTTR_ACCEL_FAIL=str(accel_fault),
                     FTTR_ADMIN_FAIL=str(admin_fault),FTTR_ADMIN_HOLD=str(admin_hold),FTTR_ADMIN_LOG=str(admin_log),
                     **({'FTTR_ADMIN_FPGA':'1'} if args.backend=='fpga1' else {})))
+        if args.onu_policy:
+            checks=[]
+            auth_policy.write_bytes(b'TFL1'+bytes(38))
+            onu_policy=root/'onus.json';onu_state=root/'onu-state';onu_state.mkdir(mode=0o700)
+            revision=0
+            def policy_row(id=8,method=1,serial='5445535400000007',active=True,loid='synthetic-loid',key='synthetic-pw'):
+                return dict(id=id,method=method,serial=serial,active=active,ploam='0'*20,loid=loid,key=key)
+            def configure(rows,learn=False,find=False,vendors=None):
+                nonlocal revision
+                revision+=1
+                document=dict(version=1,revision=f'v{revision}',state_directory=str(onu_state),
+                    auto_learn=learn,auto_find=find,vendors=['54455354'] if vendors is None else vendors,
+                    onus=rows+[policy_row(id=10,serial='5445535400000009')])
+                onu_policy.write_text(json.dumps(document));onu_policy.chmod(0o600)
+            def reset():
+                # Prior process requests can remain queued after SIGTERM.
+                # They do not belong to the new synthetic registration.
+                while True:
+                    try: peer.recvfrom(2048)
+                    except BlockingIOError: break
+                nodes.clear();nodes[7]=Node(7,'5445535400000007',0x107,False)
+                nodes[9]=Node(9,'5445535400000009',0x203,True)
+                admin_log.write_text('');hardware()
+            def stop():
+                process.send_signal(signal.SIGTERM);_,errors=process.communicate(timeout=3)
+                assert process.returncode==0,errors
+                assert not ports() and not any(r['onu_authenticated'] for r in status()['onus'])
+            def accepted(ids=(7,9)):
+                until(lambda s:all(s['onus'][id]['datapath_configured'] for id in ids))
+                for id in ids:
+                    row=status()['onus'][id]
+                    assert row['onu_authenticated'] and row['onu_auth_required']
+                    assert row['loid_authenticated']==row['loid_auth_required']
+            def denied(error,id=7):
+                until(lambda s:s['onus'][id]['phase']=='auth-failed')
+                row=status()['onus'][id]
+                assert row['error']==error,(row,error)
+                assert not row['onu_authenticated'] and not row['datapath_configured'] and not row['wifi_configured']
+                assert not any(op in (0x44,0x48) and c not in (256,65530) for _,op,c,_ in nodes[id].operations)
+                assert device.joinpath('tcont_state').read_bytes()[(id*8+physical_slot)*8:(id*8+physical_slot+1)*8]==bytes(8)
+            process=None
+            try:
+                reset();configure([policy_row()])
+                good=onu_policy.read_text()
+                for invalid,mode,duplicate,backend in [('{}',0o600,False,args.backend),
+                        (good,0o644,False,args.backend),(good,0o600,True,args.backend),(good,0o600,False,'fpga2')]:
+                    onu_policy.write_text(invalid);onu_policy.chmod(mode);device.joinpath('backend').write_text(backend+'\n')
+                    rejected=subprocess.run([str(args.daemon.resolve()),str(device),str(ni),str(store),'fap-host']+
+                        ['--onu-auth',str(onu_policy)]*(2 if duplicate else 1),capture_output=True,text=True,timeout=2)
+                    assert rejected.returncode==1 and not store.joinpath('status.json').exists()
+                    assert ni.joinpath('fttr_accel').read_text()=='0\n' and device.joinpath('tx_enable').read_text()=='1\n'
+                onu_policy.write_text(good);onu_policy.chmod(0o600);device.joinpath('backend').write_text(args.backend+'\n')
+                checks.append('malformed/private-mode/duplicate policies and unsupported FPGA2 fail before hardware ownership')
+                for method in (1,4,5):
+                    reset();configure([policy_row(method=method)])
+                    process=launch();accepted()
+                    if method==1:assert not any(c in (256,65530) and op in (0x48,0x49) for _,op,c,_ in nodes[7].operations)
+                    stop()
+                checks.append('SN, LOID and LOID+key methods gate actual Wi-Fi/VLAN/DBA service creation; disabled global result stays unauthenticated')
+                for method in (2,3):
+                    reset();configure([policy_row(method=method)],learn=True,find=True)
+                    process=launch();denied(-errno.ENODATA);accepted((9,));stop()
+                checks.append('unavailable PLOAM credentials reject without fabricated credentials or auto-learning bypass; healthy SN peer continues')
+                for rows,vendors,error in [([policy_row(active=False)],None,-errno.EACCES),
+                        ([policy_row(method=5, key='wrong')],None,-errno.EACCES),
+                        ([policy_row()],['454c5345'],-errno.EACCES)]:
+                    reset();configure(rows,vendors=vendors);process=launch();denied(error);stop()
+                checks.append('inactive row, wrong key and vendor filtering prohibit business configuration')
+                reset();configure([policy_row(method=5,serial='0'*16)])
+                process=launch();denied(-errno.EAGAIN)
+                saved=onu_state/f'v{revision}.json'
+                assert json.loads(saved.read_text())['bindings'][7]==nodes[7].serial.hex()
+                accepted();stop()
+                # Restart must retrieve credentials again; a durable SN is not authentication.
+                reset();nodes[7].auth_hold=True;process=launch()
+                until(lambda s:s['onus'][7]['phase']=='authentication' and nodes[7].held is not None)
+                assert not status()['onus'][7]['onu_authenticated'] and 'fttr-u7' not in ports()
+                nodes[7].auth_hold=False;peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+nodes[7].held)
+                accepted();stop()
+                reset();nodes[7].serial=bytes.fromhex('5445535400000088');hardware();process=launch();denied(-errno.EACCES);stop()
+                checks.append('SN binding persists before retry, survives restart, requires fresh OMCI credentials and rejects replacement identity')
+                reset();configure([policy_row(method=5)]);process=launch();accepted()
+                previous=status()['onus'][7]['mib_rescans'];nodes[7].counter.value=0;nodes[7].auth_hold=True;nodes[7].held=None
+                until(lambda s:s['onus'][7]['phase']=='authentication' and s['onus'][7]['mib_rescans']==previous+1)
+                assert not status()['onus'][7]['onu_authenticated'] and 'fttr-u7' not in ports()
+                until(lambda s:nodes[7].held is not None)
+                stale=nodes[7].held
+                nodes[7]=Node(7,'5445535400000088',0x107,False);hardware()
+                peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+stale)
+                until(lambda s:s['onus'][7]['mib_serial']==nodes[7].serial.hex() and s['onus'][7]['phase']=='auth-failed')
+                assert not status()['onus'][7]['onu_authenticated'] and not status()['onus'][7]['datapath_configured']
+                stop();checks.append('same-SN MIB reset reauthenticates; stale replies cannot authorize a replacement SN')
+                reset();configure([policy_row(method=5,serial='0'*16)])
+                # Force persistence failure after policy load, before binding.
+                nodes[7].auth_hold=True;process=launch()
+                until(lambda s:nodes[7].held is not None)
+                (onu_state/f'v{revision}.json.new').mkdir()
+                nodes[7].auth_hold=False;peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+nodes[7].held)
+                until(lambda s:s['state']=='failed',allow_exit=True)
+                assert process.wait(timeout=3)==1 and not ports() and device.joinpath('tx_enable').read_text()=='0\n'
+                assert json.loads((onu_state/f'v{revision}.json').read_text())['bindings'][7] is None
+                checks.append('failed binding persistence stops TX and never leaves an authenticated runtime or durable SN assertion')
+                for method in (4,5):
+                    reset();configure([policy_row(method=method)])
+                    nodes[7].auth_ctc_fail=0x2000;process=launch();accepted();stop()
+                    reset();nodes[7].auth_ctc_fail=0x4000;nodes[7].auth_onug_fail=0x0020
+                    process=launch();denied(-errno.EREMOTEIO);stop()
+                checks.append('per-ONU-only LOID uses original CTC/ONU-G fallback; partial acquisition remains rejected')
+                reset();configure([policy_row(method=1),policy_row(id=12,method=5,serial='0'*16,loid='other')])
+                nodes[7].auth_ctc_fail=0x4000;nodes[7].auth_onug_fail=0x0040
+                process=launch();accepted();stop()
+                checks.append('an unrelated LOID rule does not block a proven SN-only peer lacking credential MEs')
+                reset();configure([],learn=True,find=True);process=launch();denied(-errno.EAGAIN);accepted();stop()
+                reset();process=launch();accepted()
+                assert not any(c in (256,65530) and op in (0x48,0x49) for _,op,c,_ in nodes[7].operations)
+                stop();checks.append('auto-find AND auto-learn persists method1 at the current free row and authenticates only on a new pass')
+                # Exact and unbound wrong-slot matching uses the same owned move path.
+                for method,serial in ((1,'5445535400000007'),(5,'0'*16)):
+                    reset();configure([policy_row(id=12,method=method,serial=serial)])
+                    process=launch()
+                    until(lambda s:'move 7 11' in admin_log.read_text())
+                    assert not any(op in (0x44,0x48) and c not in (256,65530) for _,op,c,_ in nodes[7].operations)
+                    assert 'fttr-u7' not in ports() and 'fttr-u11' not in ports()
+                    data=device.joinpath('onu_state').read_bytes()
+                    assert data[11*20+12:12*20]==nodes[7].serial
+                    node=nodes.pop(7);node.id=11;nodes[11]=node;hardware()
+                    if method==5:denied(-errno.EAGAIN,11)
+                    accepted((9,11));stop()
+                checks.append('wrong-slot SN/LOID selection inventories without provisioning, migrates reservation and reauthenticates after external registration')
+                # A legacy remote GEM blocks automatic migration before MiniOLT mutation.
+                reset();configure([policy_row(id=12)])
+                nodes[7].pool[268,77]={0x8000:b'\0\x77'}
+                process=launch();denied(-errno.ENODATA)
+                assert 'move' not in admin_log.read_text();accepted((9,));stop()
+                checks.append('unowned remote GEM prevents automatic serial migration and leaves the healthy peer running')
+                reset();configure([policy_row(id=12,method=5,serial='0'*16)])
+                nodes[7].mib_hold=True;process=launch()
+                until(lambda s:nodes[7].held is not None and s['onus'][7]['phase']=='mib')
+                nodes[11]=Node(11,'5445535400000011',0x311,True);hardware()
+                until(lambda s:s['onus'][11]['datapath_configured'])
+                nodes[7].mib_hold=False;peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+nodes[7].held)
+                denied(-errno.ESTALE)
+                assert 'move' not in admin_log.read_text() and status()['onus'][11]['onu_authenticated']
+                stop();checks.append('a target bound by another registration during source inventory invalidates the earlier move selection')
+                reset();configure([policy_row(method=5)])
+                auth_policy.write_bytes(b'TFL1'+b'synthetic-loid'.ljust(25,b'\0')+b'wrong'.ljust(13,b'\0'))
+                process=launch();denied(-errno.EACCES)
+                assert status()['onus'][7]['loid_result']==3 and status()['onus'][7]['loid_result_verified']
+                stop();checks.append('per-ONU match still requires global LOID acceptance and verified result readback')
+                for path in store.iterdir():
+                    if path.is_file():
+                        for secret in (b'synthetic-loid',b'synthetic-pw'):
+                            assert secret not in path.read_bytes() and secret.hex().encode() not in path.read_bytes()
+                checks.append('private credential buffers are omitted from status and MIB journals; shutdown clears authentication assertions')
+            finally:
+                if process and process.poll() is None:process.kill();process.wait()
+                peer.close();os.close(grant_fd)
+            args.output.write_text(json.dumps(dict(backend=args.backend,checks=checks,
+                scope='Real controller/veth/bridge/VLAN, modeled MiniOLT and original OMCI encoders; no physical packet-retirement acceptance.'),indent=2)+'\n')
+            print(json.dumps(checks,indent=2));return
         if args.move_control:
             checks=[];nodes[7].hold=False;nodes[7].wifi_hold=False;nodes[9].fail_upload_once=False
             def move(from_id,to,serial=None,target=None,error=0):

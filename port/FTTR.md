@@ -3301,6 +3301,110 @@ failure, verify both backend service/Wi-Fi lifecycles, absent/unconfigured slots
 unreadable/false-success withdrawal and the full bootstrap ordering/replacement.
 The final FTTR package build includes this grant barrier.
 
+### Resident per-ONU authentication and assignment
+
+`fttrd --onu-auth PRIVATE_JSON` enables the original logical ONU selector before
+Wi-Fi/service provisioning. The startup script adds this option when
+`/etc/tyfza1-fttr.onus.json` exists. No default per-ONU credentials or permissive
+policy are installed. This is independent of `--loid-auth`: when both are
+configured, a per-ONU match must also pass the global check/result readback.
+FPGA2 is rejected before hardware ownership while its data-grant mapping is
+unproven. Either authentication policy triggers withdrawal/readback of residual
+data grants before admission, including grants for absent/unconfigured ONUs.
+
+The version1 JSON has exactly these fields (all required):
+
+```json
+{
+  "version": 1,
+  "revision": "v1",
+  "state_directory": "/etc/tyfza1-fttr-onu-state",
+  "auto_learn": false,
+  "auto_find": false,
+  "vendors": ["54455354"],
+  "onus": [
+    {
+      "id": 6,
+      "method": 1,
+      "active": true,
+      "serial": "5445535401020304",
+      "ploam": "00000000000000000000",
+      "loid": "",
+      "key": ""
+    }
+  ]
+}
+```
+
+The example contains a synthetic SN and configures **logical ID6 / hardware
+slot5**. Logical row IDs are1..64, while runtime/CLI hardware IDs remain0..63.
+Methods1..5 compare SN, PLOAM, SN+PLOAM, LOID, LOID+key respectively. SN is8 bytes
+and PLOAM10 bytes expressed as16/20 hex digits, including bytes after embedded
+NUL. LOID/key are strings up to24/12 bytes. Methods2/4/5 with configured SN first
+byte zero require a durable SN binding before a later authentication pass;
+method3 never binds implicitly. Inactive exact rows cannot create services.
+`vendors` is an allow-list of up to32 four-byte SN prefixes as8 hex digits;
+an empty list allows all prefixes, following the original empty vendor list.
+Unknown fields, duplicate row IDs, invalid types/widths and unsupported versions
+are rejected. JSON-c parsing does not detect duplicate JSON property names.
+
+The complete five comparators and selector branches are implemented, but
+**PLOAM acquisition is still unproven**: the original serial-registration helper
+only reads the two SN words, and the OMCI auth-info helper supplies LOID/key.
+Native methods2/3 therefore return `ENODATA` rather than treating an unfilled
+buffer as a valid all-zero credential. Missing required inputs also prevent
+auto-learning from bypassing a configured credential rule. LOID reads use the
+original CTC then ONU-G fallback and require complete acquisition. An independent
+SN match can proceed without those MEs when global LOID is disabled; malformed
+or identity/transport errors are not converted into a capability fallback.
+
+`auto_learn` **and** `auto_find` must both be true to create a new method1 SN row.
+The current logical row is preferred if free, otherwise the first free row.
+Binding/learning uses a single two-second retry after durable persistence; it
+does not immediately declare authentication. No runtime authenticated state is
+persisted. New registrations, same-SN MIB loss, restart and management resume
+must authenticate again. Other rejects wait for registration/resume/restart.
+
+The private JSON must be a regular file owned by the daemon UID with no group/
+other permissions. Create the state directory as the same UID, mode0700; it must
+already exist. The daemon takes an exclusive directory lock and writes
+`REVISION.json` with the exact policy and64 SN binding slots, mode0600, using
+file fsync, rename and directory fsync. The same revision with a changed policy
+returns `ESTALE`. Choose a new revision deliberately when replacing a policy;
+that starts new bindings. Bind failures stop the controller because a failed
+fsync can leave uncertain persistence. The config and default state directory
+are package conffiles; other custom state locations need their own backup.
+This has not been tested against physical flash power loss.
+
+A match in a different slot performs MIB inventory without creating Wi-Fi,
+GEMs, DBA or VLANs, then enters the existing serial reservation migration path.
+Unowned remote GEM/IW objects or assigned T-CONTs refuse migration; no unknown
+remote resources are deleted. The source/target hardware identities and the
+current target policy binding are checked again before mutation. The target
+must externally register and authenticate before service creation. A new target
+binding during the source's inventory cancels the older selection. Automatic
+assignment uses the same FE pause, native port/grant withdrawal and driver
+identity guards as explicit migration; it does not establish full retirement
+of packets cached in DMA/AFT/PE/MiniOLT.
+
+Status separates `onu_authenticated` from verified global
+`loid_authenticated`. `onu_auth_logical_id` is1-based (zero means none);
+`onu_auth_method` and `onu_auth_error` describe the policy decision.
+`onu_auth_action` enumerates0 match,1 inactive/wait,2 reject,3 move,4 bind,5 learn.
+Credentials are absent from status and MIB journals, and terminal authentication
+jobs clear their credential/reply buffers.
+
+`test_fttr_onu_policy.py` checks240 comparisons and96 selection cases against
+both original ARM64 implementations, plus private parsing, revision locking,
+persistence/restart and failed-write behavior. The real daemon/veth tests cover
+both ASIC/FPGA1 with Wi-Fi, binding/learning retries, wrong-slot migration,
+unavailable/partial credentials, global result rejection, stale response/SN
+replacement, target binding during inventory, unowned GEM rejection, failed
+persistence and shutdown. Global authentication and explicit migration regressions
+also pass. GCC14.4/musl package compilation/install passes; reports are
+`artifacts/fttr/onu-policy-*-20261106.*`. No physical ONU/authentication or queued
+packet-retirement acceptance is implied.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
@@ -3322,8 +3426,9 @@ The final FTTR package build includes this grant barrier.
    foundation, management grants and automatic baseline MIB inventory are
    implemented, including a native entity/attribute model from original wire
    layouts. Original global LOID acquisition/result verification is integrated;
-   the five per-ONU methods, SN binding/assignment and broader capability-based
-   service decisions remain work. Explicit T-CONT binding/readback/local DBA
+   per-ONU comparison/selection, durable SN binding/learning and automatic
+   assignment are integrated. PLOAM credential acquisition, factory per-ONU
+   policy import and broader capability-based service decisions remain work. Explicit T-CONT binding/readback/local DBA
    and native GEM CTP/IW lifecycle/readback/cleanup are implemented. Native GAL,
    bridge/initial Mapper and basic Ethernet/VEIP attachment are implemented.
    Mapper binding and ANI/GEM-side bridge ports/VLAN filtering are implemented.

@@ -49,6 +49,7 @@ void fttr_auth_cancel(struct fttr_auth_job *job, int error)
 	job->error = error;
 	job->verified = false;
 	memset(job->loid, 0, sizeof(job->loid));
+	memset(job->key, 0, sizeof(job->key));
 	memset(&job->me, 0, sizeof(job->me));
 }
 
@@ -81,10 +82,43 @@ int fttr_auth_start(struct fttr_auth_job *job, const struct fttr_auth_config *co
 	return request(job, counter);
 }
 
+int fttr_auth_credentials(struct fttr_auth_job *job, bool acquire, uint16_t onu, uint16_t *counter)
+{
+	memset(job, 0, sizeof(*job));
+	job->gather_only = true;
+	job->phase = acquire ? FTTR_AUTH_CTC_LOID : FTTR_AUTH_READY;
+	job->me.onu = onu;
+	return acquire ? request(job, counter) : 0;
+}
+
+int fttr_auth_decide(struct fttr_auth_job *job, const struct fttr_auth_config *config, uint16_t *counter)
+{
+	int ret;
+
+	if (job->phase != FTTR_AUTH_READY)
+		return -EINVAL;
+	if (config->enabled && !job->acquired) {
+		fttr_auth_cancel(job, -ENODATA);
+		return -ENODATA;
+	}
+	job->result = !config->enabled ? 0 : strcmp(config->loid, job->loid) ? 2 : strcmp(config->key, job->key) ? 3 : 1;
+	memset(job->loid, 0, sizeof(job->loid));
+	memset(job->key, 0, sizeof(job->key));
+	if (!config->enabled) {
+		job->phase = FTTR_AUTH_DONE;
+		memset(&job->me, 0, sizeof(job->me));
+		return 0;
+	}
+	job->phase = FTTR_AUTH_WRITE;
+	ret = request(job, counter);
+	if (ret)
+		fttr_auth_cancel(job, ret);
+	return ret ? ret : 1;
+}
+
 int fttr_auth_advance(struct fttr_auth_job *job, const struct fttr_auth_config *config,
 		uint16_t *counter)
 {
-	char key[13];
 	int ret;
 
 	if (job->phase == FTTR_AUTH_DISABLED || job->phase >= FTTR_AUTH_DONE)
@@ -115,13 +149,13 @@ int fttr_auth_advance(struct fttr_auth_job *job, const struct fttr_auth_config *
 			break;
 		case FTTR_AUTH_CTC_KEY:
 		case FTTR_AUTH_ONUG_KEY:
-			memcpy(key, job->me.reply + 11, 12);
-			key[12] = 0;
-			job->result = strcmp(config->loid, job->loid) ? 2 : strcmp(config->key, key) ? 3 : 1;
+			memcpy(job->key, job->me.reply + 11, 12);
+			job->key[12] = 0;
 			job->acquired = true;
-			memset(job->loid, 0, sizeof(job->loid));
-			job->phase = FTTR_AUTH_WRITE;
-			break;
+			job->phase = FTTR_AUTH_READY;
+			/* Preserve the ONU for the result transaction, erase raw replies. */
+			memset(job->me.reply, 0, sizeof(job->me.reply));
+			return job->gather_only ? 0 : fttr_auth_decide(job, config, counter);
 		case FTTR_AUTH_WRITE:
 			job->phase = FTTR_AUTH_VERIFY;
 			break;

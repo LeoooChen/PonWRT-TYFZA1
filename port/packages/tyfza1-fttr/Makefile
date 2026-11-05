@@ -56,8 +56,8 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/omci-objects.c $(PKG_BUILD_DIR)/omci-gem.c \
 		$(PKG_BUILD_DIR)/omci-association.c $(PKG_BUILD_DIR)/omci-vlan.c \
 		$(PKG_BUILD_DIR)/omci-service.c $(PKG_BUILD_DIR)/omci-wifi.c \
-		$(PKG_BUILD_DIR)/omci-auth.c \
-		$(PKG_BUILD_DIR)/fttr-net.c $(TARGET_LDFLAGS)
+		$(PKG_BUILD_DIR)/omci-auth.c $(PKG_BUILD_DIR)/onu-policy.c $(PKG_BUILD_DIR)/sync-json.c \
+		$(PKG_BUILD_DIR)/fttr-net.c $(TARGET_LDFLAGS) -ljson-c
 	$(TARGET_CC) $(TARGET_CPPFLAGS) $(TARGET_CFLAGS) -std=c11 -Wall -Wextra \
 		-o $(PKG_BUILD_DIR)/fttr-sync $(PKG_BUILD_DIR)/fttr-sync.c \
 		$(PKG_BUILD_DIR)/sync-wire.c $(PKG_BUILD_DIR)/sync-peer.c $(PKG_BUILD_DIR)/sync-wifi.c $(PKG_BUILD_DIR)/sync-json.c \
@@ -92,6 +92,8 @@ endef
 define Package/tyfza1-fttr/conffiles
 /etc/tyfza1-fttr.services
 /etc/tyfza1-fttr.wifi
+/etc/tyfza1-fttr.onus.json
+/etc/tyfza1-fttr-onu-state/
 /etc/config/tyfza1-fttr-sync
 /etc/tyfza1-fttr.sync.json
 /etc/tyfza1-fttr-sync-state/

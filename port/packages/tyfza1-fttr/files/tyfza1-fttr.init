@@ -87,6 +87,9 @@ start_service() {
 			/var/run/tyfza1-fttr fttr0 "$optical" "$mode" "$nway" "$pon" \
 			--services /etc/tyfza1-fttr.services --wifi /etc/tyfza1-fttr.wifi \
 			--loid-auth /tmp/tyfza1-factory/fttr-private/loid.bin
+		if [ -e /etc/tyfza1-fttr.onus.json ] || [ -L /etc/tyfza1-fttr.onus.json ]; then
+			procd_append_param command --onu-auth /etc/tyfza1-fttr.onus.json
+		fi
 		procd_set_param term_timeout 10
 		procd_set_param stdout 1
 		procd_set_param stderr 1

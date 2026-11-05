@@ -26,7 +26,7 @@ class Config(C.Structure):
 
 class Job(C.Structure):
     _fields_ = [('me', Me), ('phase', C.c_int), ('loid', C.c_char * 25), ('result', C.c_ubyte),
-               ('acquired', C.c_bool), ('verified', C.c_bool), ('error', C.c_int), ('fallback_error', C.c_int)]
+               ('acquired', C.c_bool), ('verified', C.c_bool), ('error', C.c_int), ('fallback_error', C.c_int), ('key', C.c_char * 13), ('gather_only', C.c_bool)]
 
 
 class LoidSlave(Slave):
@@ -173,7 +173,7 @@ def main():
                     assert native.fttr_me_job_reply(C.byref(job.me), C.byref(msg)) != 0
                 assert native.fttr_auth_advance(C.byref(job), C.byref(cfg), C.byref(counter)) in (0, 1)
                 assert len(operations) <= 6
-            assert not job.loid and bytes(job.me.reply) == bytes(44)
+            assert not job.loid and not job.key and bytes(job.me.reply) == bytes(44)
             if job.phase == 7:
                 if label == 'maximum-width':
                     expected = 1
