@@ -128,6 +128,10 @@ int main(void){
   rtl_fttr_rx_purge(&shared);
   assert(fttr.stats.rx_dropped==12 && delivered[61]==1 && delivered[62]==1 && resets==16);
   assert(shared.napi.gro.bitmask==0x55 && !shared.napi.gro.rx_count);
+  /* Unregister withdraws the management type before the final purge. */
+  shared.fttr_omci_type=0;rtl_fttr_rx_purge(&shared);
+  assert(freed[50] && !delivered[50] && shared.napi.gro.hash[0].count==1);
+  assert(!freed[30] && !delivered[30]);
   /* Cleanup the preserved objects under the same NAPI exclusion. */
   napi_enabled=false;bh=true;
   for(unsigned i=0;i<GRO_HASH_BUCKETS;i++){

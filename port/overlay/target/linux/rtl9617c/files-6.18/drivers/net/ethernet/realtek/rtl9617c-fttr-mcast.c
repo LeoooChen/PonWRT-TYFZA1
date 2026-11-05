@@ -12,6 +12,7 @@
 #include <linux/unaligned.h>
 #include <net/ip.h>
 #include <net/ipv6.h>
+#include <net/netdev_lock.h>
 #include <net/sch_generic.h>
 
 #include "rtl9617c-fttr-mcast.h"
@@ -309,6 +310,8 @@ struct net_device *rtl_fttr_mcast_create(struct net_device *parent)
 	dev->max_mtu = parent->mtu - VLAN_HLEN;
 	dev->netns_immutable = true;
 	dev->needed_headroom = parent->needed_headroom + VLAN_HLEN;
+	/* The upper submits to the parent while holding its own TX queue lock. */
+	netdev_lockdep_set_classes(dev);
 	SET_NETDEV_DEV(dev, parent->dev.parent);
 	eth_hw_addr_set(dev, parent->dev_addr);
 	netif_carrier_off(dev);

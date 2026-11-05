@@ -935,6 +935,10 @@ static void rtl_unregister_fttr(struct rtl_xram *priv)
 	cancel_delayed_work_sync(&port->link_work);
 	rtl_fttr_tx_gate(priv, false);
 	rcu_assign_pointer(priv->qm.fttr, NULL);
+	/* Unregister must retire management skbs too: no endpoint will consume
+	 * them, and a shared engine may retain GRO without another P6 poll.
+	 */
+	WRITE_ONCE(priv->fttr_omci_type, 0);
 	rtl_fttr_rx_purge(priv);
 	mc = priv->fttr_mc;
 	WRITE_ONCE(priv->fttr_mc, NULL);
