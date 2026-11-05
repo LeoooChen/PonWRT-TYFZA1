@@ -1263,6 +1263,40 @@ ASan/UBSan; the current NI composite rebuild passes (`same-p6-build.log` under
 ONU-to-ONU throughput/hardware hits and physical old-packet retirement remain
 unverified.
 
+### Routed and explicit TC forwarding between P6 services
+
+The same physical P6 can also be the input and output of a Linux routed
+flow or an explicit TC redirect between two ONU service VLANs. The native
+flowtable/TC parser previously rejected every equal-endpoint pair even after
+the bridge learner had gained this path. It now accepts a P6 pair only when
+the parsed outer TPID/VID changes, both input/output retain a service tag,
+and the endpoint is the registered FTTR parent. PCP-only changes, inner-tag
+changes with the same service, untagged reflections and other ports remain
+rejected. Linux supplies the routing/firewall or explicit TC decision;
+installation still uses the existing FTTR admission, destination6 DEEPQ,
+Hash/cache publication and bidirectional withdrawal.
+
+Executing Linux6.18.55's actual flowtable action constructor exposed a
+separate QinQ failure on this path. `flow_offload_fill_route` and ingress
+matching store `encap[]` outermost first, while the output constructor
+iterated that array forward and emitted VLAN_PUSH in the same order.
+Each push prepends a tag, so the resulting hardware action put the customer
+VLAN outside the FTTR service/GEM tag. Patch221 emits output encapsulation
+actions from inner to outer; input matching/pops keep wire order. PPPoE is
+therefore pushed before its enclosing VLAN too. The native parser continues
+to interpret ordinary TC push order literally.
+
+`test_fe_flow_parser.py` first failed on the same-P6 rejection and then
+on the reversed outer service tag. With both fixes it passes1028 NAT/IPv6,
+288 VLAN/QinQ,8 bidirectional PPPoE,24 transparent-bridge and10 P6 service
+vectors against Linux's actual constructors under ASan/UBSan. It checks
+both ONU directions, IPv4/IPv6, one/two tags, TC ARP, same-service rejection
+and non-FTTR rejection. Earlier QinQ expectations mirrored the constructor's
+reversed result; they now require the original tuple's wire order. FE owner,
+bridge-learning and callback-lifetime regressions also pass. The report is
+`logs/fe-flow-parser.json`. This establishes software action construction and
+admission; it does not establish physical flow hits or packet retirement.
+
 ### Segmented CPU receive for long FTTR frames
 
 Main's stock-compatible CPU EQ layout reserves64 bytes of headroom and384

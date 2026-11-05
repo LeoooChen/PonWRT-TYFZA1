@@ -703,7 +703,13 @@ static int fe_parse_bridge(struct rtl_fe_port *port,struct flow_rule *rule,struc
  }
  if(changed)for(i=0;i<count;i++)if(!known[i])return -EOPNOTSUPP;
  data->output=fe_port(port->fe,output);
- if(!data->output || data->input==data->output)return -EOPNOTSUPP;
+ if(!data->output)return -EOPNOTSUPP;
+ /* Explicit TC redirects between ONU service tags use the same P6 endpoint.
+  * Keep same-service reflections out, including PCP-only/inner-tag edits. */
+ if(data->input==data->output &&
+    (port->netdev!=port->fe->fttr_netdev || !data->vlan_count || !count ||
+     !changed || (data->vlan[0].vid==data->action.vlan[0].vid &&
+                  data->vlan[0].tpid==data->action.vlan[0].tpid)))return -EOPNOTSUPP;
  data->action.bridge=1;
  data->action.vlan_only=rtl_fe_bridge_vlan_only(data->ethernet_protocol);
  data->action.destination=data->output->destination;
@@ -857,7 +863,13 @@ static int fe_parse(struct rtl_fe_port *port,struct flow_cls_offload *cls,struct
   }
  }
  data->output=fe_port(port->fe,output);
- if(!data->output || data->input==data->output)return -EOPNOTSUPP;
+ if(!data->output)return -EOPNOTSUPP;
+ /* Linux flowtable can route between two VLAN children of fttr0. Its
+  * outer wire tag identifies the ONU service on this shared P6 endpoint. */
+ if(data->input==data->output &&
+    (port->netdev!=port->fe->fttr_netdev || !data->vlan_count || !output_vlan_count ||
+     !vlan_changed || (data->vlan[0].vid==output_vlan[0].vid &&
+                       data->vlan[0].tpid==output_vlan[0].tpid)))return -EOPNOTSUPP;
  ether_addr_copy(data->destination,ethernet);
  ether_addr_copy(data->source,ethernet+ETH_ALEN);
  if(!is_valid_ether_addr(data->source) || !is_valid_ether_addr(data->destination))return -EINVAL;

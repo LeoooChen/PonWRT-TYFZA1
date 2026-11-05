@@ -120,7 +120,7 @@ static u32 get_unaligned(const u32 *p){u32 v;memcpy(&v,p,4);return v;}
 static void put_unaligned(u32 v,u32 *p){memcpy(p,&v,4);}
 struct rtl_fe;
 struct rtl_fe_port {struct rtl_fe *fe;struct net_device *netdev;unsigned int source,destination,llid,wifi_id;};
-struct rtl_fe {struct rtl_fe_port *ports[2];struct net_device *itu_netdev;struct rtl_itu_paths *itu_paths;};
+struct rtl_fe {struct rtl_fe_port *ports[2];struct net_device *itu_netdev,*fttr_netdev;struct rtl_itu_paths *itu_paths;};
 static struct rtl_fe_port *fe_port(struct rtl_fe *fe,struct net_device *dev){for(unsigned int i=0;i<2;i++)if(fe->ports[i]->netdev==dev)return fe->ports[i];return NULL;}
 struct net {};
 enum flow_offload_tuple_dir {FLOW_OFFLOAD_DIR_ORIGINAL,FLOW_OFFLOAD_DIR_REPLY};
@@ -269,9 +269,9 @@ int main(void)
      assert(parsed.ethernet_bytes==14+4*output);
      for(unsigned int tag=0;tag<input;tag++)
       assert(parsed.vlan[tag].vid==((id+tag)&4095) && parsed.vlan[tag].tpid==1);
-     /* Linux pushes the encap array in order; last push is outermost. */
+     /* encap[] is outer first; push inner first to retain wire order. */
      for(unsigned int tag=0;tag<output;tag++)
-      assert(parsed.action.vlan[tag].vid==((4095-id+output-1-tag)&4095) && parsed.action.vlan[tag].tpid==1);
+      assert(parsed.action.vlan[tag].vid==((4095-id+tag)&4095) && parsed.action.vlan[tag].tpid==1);
      unsigned int packed[8],key[23];rtl_fe_ipv4_action(packed,&parsed.action);
      rtl_fe_ipv4_key(key,&parsed.key);rtl_fe_vlan_key(key,parsed.vlan,parsed.vlan_count);
      assert((packed[5]&12)==(output<<2)); /* Literal group20 final VLAN count at162. */
@@ -303,10 +303,10 @@ int main(void)
     }
     struct flow_offload_tuple *input=&flow.tuplehash[1].tuple;
     flow.tuplehash[1].tuple.encap_num=2;
-    flow.tuplehash[1].tuple.encap[0].proto=htons(ETH_P_PPP_SES);
-    flow.tuplehash[1].tuple.encap[0].id=sid;
-    flow.tuplehash[1].tuple.encap[1].proto=htons(ETH_P_8021Q);
-    flow.tuplehash[1].tuple.encap[1].id=100;
+    flow.tuplehash[1].tuple.encap[0].proto=htons(ETH_P_8021Q);
+    flow.tuplehash[1].tuple.encap[0].id=100;
+    flow.tuplehash[1].tuple.encap[1].proto=htons(ETH_P_PPP_SES);
+    flow.tuplehash[1].tuple.encap[1].id=sid;
     struct nf_flow_match match={};
     assert(!nf_flow_rule_match(&match,input,NULL));
     assert(match.dissector.used_keys&BIT_ULL(FLOW_DISSECTOR_KEY_PPPOE));
@@ -331,6 +331,14 @@ int main(void)
      assert(!flow_offload_port_snat(NULL,&flow,direction,&nf));
     }
     assert(!linux_vlan_actions(&flow,direction,&nf));
+    if(!direction) {
+     unsigned int push=0;
+     for(unsigned int a=0;a<rule.action.num_entries;a++) {
+      if(rule.action.entries[a].id==FLOW_ACTION_PPPOE_PUSH)assert(push++==0);
+      if(rule.action.entries[a].id==FLOW_ACTION_VLAN_PUSH)assert(push++==1);
+     }
+     assert(push==2);
+    }
     ethernet_actions(&nf,source,destination,direction?&lan:&pon);
     assert(!fe_parse(direction?&pp:&lp,&cls,&parsed));
     assert(parsed.ipv6==ipv6 && parsed.pppoe_input==direction);
@@ -457,7 +465,88 @@ int main(void)
     }
     bridge_cases++;
    }
- printf("Native flow parser: %u NAT/IPv6, %u VLAN/QinQ, 8 bidirectional PPPoE and %u transparent bridge vectors passed\n",cases,vlan_cases,bridge_cases);
+ /* A router can forward between two ONU service VLANs on the same P6.
+  * Execute Linux's VLAN action builder for both directions, then the
+  * production parser. Same-service reflections and other ports stay out. */
+ unsigned int fttr_cases=0;
+ pp.source=pp.destination=6;fe.fttr_netdev=&pon;
+ for(unsigned int ipv6=0;ipv6<2;ipv6++)
+  for(unsigned int direction=0;direction<2;direction++)
+   for(unsigned int tags=1;tags<=2;tags++) {
+    struct flow_offload flow={};
+    for(unsigned int dir=0;dir<2;dir++) {
+     struct flow_offload_tuple *t=&flow.tuplehash[dir].tuple;
+     t->iifidx=4;t->l3proto=ipv6?AF_INET6:AF_INET;t->l4proto=IPPROTO_TCP;
+     t->src_v4.s_addr=htonl(dir?0xc0a80202:0xc0a80102);
+     t->dst_v4.s_addr=htonl(dir?0xc0a80102:0xc0a80202);
+     t->src_port=htons(dir?443:53000);t->dst_port=htons(dir?53000:443);
+     for(unsigned int w=0;w<4;w++) {
+      t->src_v6.s6_addr32[w]=htonl(0x20010db8+w+dir);
+      t->dst_v6.s6_addr32[w]=htonl(0x20010db8+w+!dir);
+     }
+     t->encap_num=tags;
+     for(unsigned int tag=0;tag<tags;tag++) {
+      t->encap[tag].proto=htons(ETH_P_8021Q);
+      /* The tuple stack is outer first. Linux reverses pushes itself. */
+      t->encap[tag].id=tag?100:263+dir;
+     }
+    }
+    struct nf_flow_match match={};
+    assert(!nf_flow_rule_match(&match,&flow.tuplehash[direction].tuple,NULL));
+    struct flow_rule rule={.used=match.dissector.used_keys,.meta=match.key.meta,
+     .basic=match.key.basic,.basic_mask=match.mask.basic,
+     .ipv4=match.key.ipv4,.ipv4_mask=match.mask.ipv4,
+     .ipv6=match.key.ipv6,.ipv6_mask=match.mask.ipv6,
+     .ports=match.key.tp,.ports_mask=match.mask.tp,
+     .vlan=match.key.vlan,.vlan_mask=match.mask.vlan,
+     .cvlan=match.key.cvlan,.cvlan_mask=match.mask.cvlan};
+    struct nf_flow_rule nf={.rule=&rule};struct flow_cls_offload cls={.rule=&rule};
+    struct rtl_fe_rule parsed={};
+    assert(!linux_vlan_actions(&flow,direction,&nf));
+    ethernet_actions(&nf,source,destination,&pon);
+    assert(!fe_parse(&pp,&cls,&parsed));
+    assert(parsed.input==&pp && parsed.output==&pp && parsed.ipv6==ipv6);
+    assert(parsed.key.ingress==6 && parsed.action.destination==6 && parsed.vlan_count==tags);
+    assert(parsed.vlan[0].vid==263+direction && parsed.action.vlan[0].vid==264-direction);
+    assert(!parsed.action.translate && parsed.action.vlan_set);
+    unsigned int action[8];rtl_fe_ipv4_action(action,&parsed.action);
+    /* Literal PE top/inner VID fields from the original NI action converter. */
+    assert(((action[4]>>19)&4095)==264-direction);
+    if(tags==2)assert(((action[4]>>3)&4095)==100);
+    fe.fttr_netdev=NULL;memset(&parsed,0,sizeof(parsed));
+    assert(fe_parse(&pp,&cls,&parsed)==-EOPNOTSUPP);
+    fe.fttr_netdev=&pon;
+    /* Preserve the outer service but change the inner VLAN: still reject. */
+    flow.tuplehash[!direction].tuple.encap[0].id=263+direction;
+    if(tags==2)flow.tuplehash[!direction].tuple.encap[1].id=101;
+    rule.action.num_entries=0;
+    assert(!linux_vlan_actions(&flow,direction,&nf));
+    ethernet_actions(&nf,source,destination,&pon);
+    memset(&parsed,0,sizeof(parsed));assert(fe_parse(&pp,&cls,&parsed)==-EOPNOTSUPP);
+    fttr_cases++;
+   }
+ for(unsigned int direction=0;direction<2;direction++) {
+  struct flow_rule rule={.used=BIT(FLOW_DISSECTOR_KEY_BASIC)|BIT(FLOW_DISSECTOR_KEY_ETH_ADDRS)|BIT(FLOW_DISSECTOR_KEY_VLAN),
+   .basic={.n_proto=htons(0x806)},.basic_mask={.n_proto=65535},
+   .vlan={.vlan_id=263+direction,.vlan_tpid=htons(ETH_P_8021Q)},
+   .vlan_mask={.vlan_id=4095,.vlan_tpid=65535}};
+  memcpy(rule.eth.src,source,6);memcpy(rule.eth.dst,destination,6);
+  memset(&rule.eth_mask,255,sizeof(rule.eth_mask));
+  rule.action.entries[0]=(struct flow_action_entry){.id=FLOW_ACTION_VLAN_POP};
+  rule.action.entries[1]=(struct flow_action_entry){.id=FLOW_ACTION_VLAN_PUSH,.vlan={.vid=264-direction,.proto=htons(ETH_P_8021Q),.prio=5}};
+  rule.action.entries[2]=(struct flow_action_entry){.id=FLOW_ACTION_REDIRECT,.dev=&pon};
+  rule.action.num_entries=3;
+  struct flow_cls_offload cls={.rule=&rule};struct rtl_fe_rule parsed={};
+  assert(!fe_parse(&pp,&cls,&parsed) && parsed.bridge && parsed.action.vlan_only);
+  assert(parsed.action.vlan[0].vid==264-direction && parsed.action.vlan[0].priority==5);
+  rule.action.entries[1].vlan.vid=263+direction;
+  memset(&parsed,0,sizeof(parsed));assert(fe_parse(&pp,&cls,&parsed)==-EOPNOTSUPP);
+  rule.used&=~BIT(FLOW_DISSECTOR_KEY_VLAN);rule.action.entries[0]=rule.action.entries[2];
+  rule.action.num_entries=1;
+  memset(&parsed,0,sizeof(parsed));assert(fe_parse(&pp,&cls,&parsed)==-EOPNOTSUPP);
+  fttr_cases++;
+ }
+ printf("Native flow parser: %u NAT/IPv6, %u VLAN/QinQ, 8 bidirectional PPPoE, %u transparent bridge and %u P6 service routing vectors passed\n",cases,vlan_cases,bridge_cases,fttr_cases);
 }
 '''
 
@@ -488,6 +577,7 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts',prefix='fe-parser-') as 
     'production_source_sha256':hashlib.sha256(native.encode()).hexdigest(),
     'Linux_NAT_builder_sha256':hashlib.sha256(upstream.encode()).hexdigest(),
     'Linux_version':'6.18.55','TCP_UDP_both_directions':True,
-    'vectors':1028,'IPv6_128bit_route_vectors':4,'Linux_VLAN_QinQ_vectors':288,'PPPoE_IPv4_IPv6_both_directions':8,'sanitizers':['ASan','UBSan'],
+    'vectors':1028,'IPv6_128bit_route_vectors':4,'Linux_VLAN_QinQ_vectors':288,'PPPoE_IPv4_IPv6_both_directions':8,
+    'P6_service_routing_vectors':10,'outer_service_tag_preserved':True,'sanitizers':['ASan','UBSan'],
     'hardware_flowtable_acceptance':False,
 },indent=2)+'\n')

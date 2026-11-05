@@ -1,0 +1,21 @@
+From: TYFZA1 native port <tyfza1@example.invalid>
+Subject: [PATCH] netfilter: push flowtable encapsulations from inner to outer
+
+flow_offload_fill_route stores encap[] in wire order, outermost first.
+A VLAN_PUSH prepends a tag, so walking that array forward reverses QinQ
+on hardware output. For FTTR this replaces the outer GEM service tag with
+the customer's inner tag. Emit the output actions from inner to outer,
+also placing PPPoE before its enclosing VLAN. Input pops remain forward.
+
+--- a/net/netfilter/nf_flow_table_offload.c
++++ b/net/netfilter/nf_flow_table_offload.c
+@@ -734,7 +734,8 @@ nf_flow_rule_route_common(struct net *net, const struct flow_offload *flow,
+ 
+ 	other_tuple = &flow->tuplehash[!dir].tuple;
+ 
+-	for (i = 0; i < other_tuple->encap_num; i++) {
++	/* encap[] is outermost first; each push prepends to the packet. */
++	for (i = other_tuple->encap_num - 1; i >= 0; i--) {
+ 		struct flow_action_entry *entry;
+ 
+ 		if (other_tuple->in_vlan_ingress & BIT(i))
