@@ -2455,10 +2455,57 @@ checked. `fpga-package-20261103/` runs real OpenWrt prepare/compile/install for
 the control and optional firmware recipes, verifying the installed image hash.
 No physical FPGA, GPIO timing, optical link or ONU interoperability was tested.
 
+### FPGA management transport
+
+The retained `onuinfo_check` selects `onuinfo_fpga` for non-ASIC backends;
+that executable links `libponrelay1p25g.so`. Its `plr_fpga_init` (`487e0`)
+and `drv_gpon_fpga_glb_reg_init` (`45e3c`) differ from the ASIC relay:
+they write the whole EtherType register `30004=8888`, then `40029=c0c8`,
+and enable bit3 of `4000c`. The ASIC relay uses `40029=c140` and updates
+the EtherType only when the prior low16 bits are `88a8`.
+
+Native `omci_link` configuration now selects those actual backend sequences.
+The FPGA relay's baseline sender (`485e0`) always uses destination
+`00:11:11:11:11:11`, host source MAC, EtherType8888 and a16-byte envelope;
+it does not consult the peer-source-MAC or downstream-length-mode registers.
+The FPGA `omci_link` report supplies this effective destination/envelope to
+the existing native packet builder. ASIC reporting remains register-derived.
+The explicit host MAC write uses the existing original `drv_set_omci_dst_mac`
+register layout; it binds native reception to `fttr0`'s selected MAC.
+
+FPGA backends now expose `omci_link`, read-only `onu_table`/`onu_state` and
+`tx_enable`, in addition to version/backend and post-DONE control. Original
+FPGA `drv_gpon_trx_set` (`451b4`) changes only bit0 of register20, so native
+FPGA TX control preserves every other bit. Probe and removal both disable
+TX through this backend helper and retain errors. The ASIC whole-register
+write is unchanged. These controls do not automatically start the optical
+link or assert that a downstream ONU is ready.
+
+The original FPGA bandwidth entry points `drv_gpon_alloc_id_config` (`42c54`)
+and `drv_gpon_alloc_id_clear` (`42cc0`) return without programming registers.
+They do not establish the ASIC's per-ONU T-CONT/DBA recipe for FPGA hardware.
+ASIC core clearing, WTG/PON SerDes, reset GPIO, management grants and service
+DBA attributes therefore remain unavailable on FPGA. The resident bootstrap
+and `fttrctl` OMCI sessions still require a verified FPGA management-grant
+and startup path; only `fttrctl status` can consume the newly exposed state
+directly. No successful FPGA MIB scan/service provisioning is claimed.
+
+`scripts/test_fttr_fpga_control.py` executes the original relay initialization,
+TX and serial reader, plus the retained state getters with FPGA1/FPGA2 inputs.
+Twelve groups compare exact IO/state,18 baseline frames compare all64 bytes,
+and each initialization/TX IO error stops at the failed operation. Production
+sysfs visibility and removal predicates run in C shims. The ASIC OMCI and
+FPGA boot/dependency regressions pass, as does GCC14.4/musl compilation of
+the MiniOLT object against Linux6.18.55. Reports/logs are
+`artifacts/fttr/fpga-control*-20261105.*`. MDIO, registration and optical
+state are modeled; FPGA extended OMCI, grant behavior and physical traffic
+remain unverified.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
-   MiniOLT binding and explicit original post-load register control are implemented.
+   MiniOLT binding, explicit original post-load register control, baseline
+   management envelope, ONU state reads and TX control are implemented.
    Complete P6/FPGA core, optical and ONU/service startup sequencing remains work.
 2. Optical identification for the other sample, plus real GN25L99 calibration
    and optical readiness verification. The native sequence is implemented.

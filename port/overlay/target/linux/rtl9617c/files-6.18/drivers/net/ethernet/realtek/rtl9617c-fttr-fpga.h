@@ -28,4 +28,15 @@ static inline int rtl_fttr_fpga_init(const struct rtl_fttr_reg_io *io,
 	return 0;
 }
 
+static inline int rtl_fttr_tx_enable(const struct rtl_fttr_reg_io *io,
+		enum rtl_fttr_backend backend, int enabled)
+{
+	if (backend == RTL_FTTR_ASIC9690)
+		return io->write(io->context, 0x20, !enabled);
+	if (backend != RTL_FTTR_FPGA1 && backend != RTL_FTTR_FPGA2)
+		return -EOPNOTSUPP;
+	/* FPGA drv_gpon_trx_set changes only bit0 through bit_set/bit_cls. */
+	return rtl_fttr_masked_write(io, 0x20, 1, !enabled);
+}
+
 #endif

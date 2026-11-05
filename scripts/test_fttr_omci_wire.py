@@ -122,14 +122,15 @@ def main():
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory)
         (path / 'registers.c').write_text('''#include <stdbool.h>
+#include <errno.h>
 #define BIT(n) (1U << (n))
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 #include "rtl9617c-fttr-omci.h"
 int configure_link(const struct rtl_fttr_reg_io *io, const unsigned char *host) {
- return rtl_fttr_omci_init(io, host);
+ return rtl_fttr_omci_init(io, RTL_FTTR_ASIC9690, host);
 }
 int read_link(const struct rtl_fttr_reg_io *io, struct rtl_fttr_omci_link *link) {
- return rtl_fttr_omci_link_read(io, link);
+ return rtl_fttr_omci_link_read(io, RTL_FTTR_ASIC9690, link);
 }
 ''')
         headers = root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek'

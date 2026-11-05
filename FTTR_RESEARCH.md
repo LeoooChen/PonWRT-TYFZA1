@@ -34,7 +34,7 @@
 
 12. 新增 `fttr-sync serve --state`：按从设备 MAC 与显式 Revision 保存完整私有配置和尝试位图，文件/目录 fsync 成功后才发配置包。进程重启先重新发现及核对身份，对已尝试的行只做可读字段核验；不匹配即停止，未尝试的后续行可继续。38项强制终止/同步失败/版本冲突/权限及恢复检查、37项常驻与89项单次回归通过；打包 UCI 到网络链路启用持久记录后也通过。并未验证物理闪存掉电或从设备密码安装。详见[持久恢复](port/FTTR.md#durable-syncserv-write-intent-and-restart-recovery)。
 
-13. 新增可选 FPGA 镜像包：核对保留 top.bin 的长度和 SHA-256 后原样安装，开发 DT 在 SPI probe 中加载镜像，MiniOLT 通过设备依赖等到加载成功且 DONE 就绪后才访问 MDIO，避免把未加载的零寄存器识别成 FPGA1。加载器绑定期间禁止手动重写，设备链约束卸载顺序。新增 FPGA1/FPGA2 原厂 post-DONE 寄存器控制与错误停止检查，真实内核对象/模块链接、DT 和固件包暂存验证通过。仍未完成 FPGA 光学、核心、ONU 业务启动或实机验证。详见[FPGA 启动依赖](port/FTTR.md#fpga-boot-image-and-miniolt-dependency)。
+13. 新增可选 FPGA 镜像包：核对保留 top.bin 的长度和 SHA-256 后原样安装，开发 DT 在 SPI probe 中加载镜像，MiniOLT 通过设备依赖等到加载成功且 DONE 就绪后才访问 MDIO，避免把未加载的零寄存器识别成 FPGA1。加载器绑定期间禁止手动重写，设备链约束卸载顺序。新增 FPGA1/FPGA2 原厂 post-DONE 寄存器控制与错误停止检查，真实内核对象/模块链接、DT 和固件包暂存验证通过。进一步按 `libponrelay1p25g` 补上 FPGA 专属 OMCI 初始化、固定目的 MAC/基线封装、只读 ONU 状态和保留其他位的 TX 控制；12组原厂对比、18个报文、ASIC OMCI/FPGA 启动回归和6.18.55对象编译通过。原厂 FPGA 带宽配置接口为空实现，不能据此套用 ASIC 的管理 grant/DBA。完整光学、核心、ONU 业务启动或实机验证仍未完成。详见[FPGA 启动依赖](port/FTTR.md#fpga-boot-image-and-miniolt-dependency)及[管理通道](port/FTTR.md#fpga-management-transport)。
 
 ## 建议接着做的工作
 

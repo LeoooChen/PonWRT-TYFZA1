@@ -171,7 +171,7 @@ static ssize_t omci_link_show(struct device *dev, struct device_attribute *attr,
 	int ret;
 
 	mutex_lock(&fttr->control_lock);
-	ret = rtl_fttr_omci_link_read(&fttr->reg_io, &link);
+	ret = rtl_fttr_omci_link_read(&fttr->reg_io, fttr->backend, &link);
 	mutex_unlock(&fttr->control_lock);
 	return ret ? ret : sysfs_emit(buf, "host=%pM olt=%pM ethertype=%04x downstream_length=%u\n",
 		link.host, link.olt, link.ethertype, link.downstream_length);
@@ -187,7 +187,7 @@ static ssize_t omci_link_store(struct device *dev, struct device_attribute *attr
 	if (!mac_pton(buf, host) || !is_valid_ether_addr(host))
 		return -EINVAL;
 	mutex_lock(&fttr->control_lock);
-	ret = rtl_fttr_omci_init(&fttr->reg_io, host);
+	ret = rtl_fttr_omci_init(&fttr->reg_io, fttr->backend, host);
 	mutex_unlock(&fttr->control_lock);
 	return ret ? ret : count;
 }
@@ -370,7 +370,7 @@ static ssize_t tx_enable_store(struct device *dev, struct device_attribute *attr
 	if (ret)
 		return ret;
 	mutex_lock(&fttr->control_lock);
-	ret = regmap_write(fttr->map, 0x20, !enabled);
+	ret = rtl_fttr_tx_enable(&fttr->reg_io, fttr->backend, enabled);
 	mutex_unlock(&fttr->control_lock);
 	return ret ? ret : count;
 }
@@ -510,6 +510,9 @@ static umode_t rtl_fttr_attr_visible(struct kobject *kobj, struct attribute *att
 
 	if (attr == &dev_attr_fpga_init.attr)
 		return fttr->backend == RTL_FTTR_ASIC9690 ? 0 : attr->mode;
+	if (attr == &dev_attr_omci_link.attr || attr == &dev_attr_onu_table.attr ||
+	    attr == &dev_attr_tx_enable.attr)
+		return attr->mode;
 	if (n >= 2 && fttr->backend != RTL_FTTR_ASIC9690)
 		return 0;
 	return attr->mode;
@@ -519,7 +522,8 @@ static umode_t rtl_fttr_bin_visible(struct kobject *kobj, const struct bin_attri
 {
 	struct rtl_fttr *fttr = dev_get_drvdata(kobj_to_dev(kobj));
 
-	return fttr->backend == RTL_FTTR_ASIC9690 ? attr->attr.mode : 0;
+	return fttr->backend == RTL_FTTR_ASIC9690 || attr == &bin_attr_onu_state ?
+		attr->attr.mode : 0;
 }
 
 static const struct bin_attribute * const rtl_fttr_bin_attrs[] = {
@@ -631,9 +635,6 @@ static int rtl_fttr_probe(struct mdio_device *mdio)
 		fttr->reset = devm_gpiod_get(dev, "reset", GPIOD_ASIS);
 		if (IS_ERR(fttr->reset))
 			return dev_err_probe(dev, PTR_ERR(fttr->reset), "MiniOLT reset GPIO\n");
-		ret = regmap_write(fttr->map, 0x20, 1);
-		if (ret)
-			return dev_err_probe(dev, ret, "MiniOLT initial TX disable failed\n");
 	}
 	dev_set_drvdata(dev, fttr);
 	fttr->reg_io = (struct rtl_fttr_reg_io) {
@@ -642,6 +643,9 @@ static int rtl_fttr_probe(struct mdio_device *mdio)
 		.write = rtl_fttr_reg_write,
 		.delay = rtl_fttr_delay,
 	};
+	ret = rtl_fttr_tx_enable(&fttr->reg_io, fttr->backend, 0);
+	if (ret)
+		return dev_err_probe(dev, ret, "MiniOLT initial TX disable failed\n");
 	fttr->optical.owner = THIS_MODULE;
 	fttr->optical.algo = &rtl_fttr_i2c_algorithm;
 	fttr->optical.dev.parent = dev;
@@ -656,10 +660,8 @@ static void rtl_fttr_remove(struct mdio_device *mdio)
 	struct rtl_fttr *fttr = dev_get_drvdata(&mdio->dev);
 	int ret;
 
-	if (fttr->backend != RTL_FTTR_ASIC9690)
-		return;
 	mutex_lock(&fttr->control_lock);
-	ret = regmap_write(fttr->map, 0x20, 1);
+	ret = rtl_fttr_tx_enable(&fttr->reg_io, fttr->backend, 0);
 	mutex_unlock(&fttr->control_lock);
 	if (ret)
 		dev_err(&mdio->dev, "MiniOLT TX disable on removal failed: %d\n", ret);
