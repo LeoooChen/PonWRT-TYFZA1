@@ -34,3 +34,9 @@ Mac en6 2.5GbE→路由器→Mac en0 Wi-Fi160MHz，地址按接口绑定，经�
 BK同关联ON/OFF/ON 10秒：TCP1.324/1.171/1.416、UDP1.120/1.735/1.651；波动明显，无稳定TCP收益。此前一组有线lan1掉线12秒导致控制中断，缺失段排除。恢复基线的第一次60秒UDP走ARM而非NI，0.306Gbps排除，确认进入快路后重测为表中1.722。
 
 原始数据、命令、1Hz队列样本、模块和诊断源码均在worktree `artifacts/`，汇总 `measurement-summary.json`。第一批结束时已恢复 RAM基线 `rtl_ax_ap_wdinit`，flash与main源码未改。用户后续扩大到全部Wi-Fi原厂细节对齐，继续在同分支分批推进；本提交是可回退的第一批，不是最终验收。
+
+## 第二批：RPQ POH 默认回报
+
+用户扩大原厂细节对齐范围后，将回报聚合从12恢复实际ELF的121，超时代码仍255。`tools/check_radio_report_config.py`执行本机原厂默认选择分支（agg_def/tmr_def及四种默认状态），再比较native写回；默认9414=`a5ff5a79`，重复配置不写寄存器，检查通过。
+
+RAM模块rtl_ax_ap_stockrpr SHA256 `d1c680b345c1dca3dbaca05ddf6a926a468c86c4da95cdcdda5234106daebb6c`；实测单流TCP30秒1.250Gbps、UDP60秒1.520Gbps/23.97%丢包，完成持续前进。单独本项没有提速，保留为完整原厂策略组合的中间版本，后续须验证组合和NI池持有时间。

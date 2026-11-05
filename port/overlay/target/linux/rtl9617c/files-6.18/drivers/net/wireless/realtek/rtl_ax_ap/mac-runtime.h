@@ -437,9 +437,8 @@ static inline void rtl_ax_mac_trx_registers(const struct rtl_ax_io *io)
 	/* mac_err_imr_ctrl(1),SCC has no CMAC1. */
 	io->write32(io->ctx, 0x8520, 0xffffffff);
 	io->write32(io->ctx, 0xc160, 0xffffffff);
-	/* set_host_rpr: PCIe SCC's POH profile enables all four WP outcomes.
-	 * Native NI has 128 WP owners and 2492 usable BIDs. Keep its 12-report
-	 * recycle batch; the original POH profile uses 121 reports, timeout255. */
+	/* set_host_rpr: actual PCIe SCC POH defaults enable all four WP
+	 * outcomes, aggregate121 and timeout255. Requests stay owned until RPQ. */
 	value = io->read32(io->ctx, 0x9408);
 	next = value & ~3U;
 	if (value != next)
@@ -449,7 +448,7 @@ static inline void rtl_ax_mac_trx_registers(const struct rtl_ax_io *io)
 	if (value != next)
 		io->write32(io->ctx, 0x9410, next);
 	value = io->read32(io->ctx, 0x9414);
-	next = (value & 0xff00ff00) | 0x00ff000c;
+	next = (value & 0xff00ff00) | 0x00ff0079;
 	if (value != next)
 		io->write32(io->ctx, 0x9414, next);
 	/* set_l2_status changes a host state byte,not a hardware register.
