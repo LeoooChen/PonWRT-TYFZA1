@@ -84,6 +84,7 @@ def main():
     p.add_argument('--master', type=Path, required=True)
     p.add_argument('--slave', type=Path, required=True)
     p.add_argument('--daemon', type=Path, required=True)
+    p.add_argument('--admin-control', type=Path, help='exercise the resident ONU administration CLI')
     p.add_argument('--output', type=Path, required=True)
     p.add_argument("--wifi", action="store_true", help="exercise resident remote Wi-Fi policies")
     p.add_argument("--backend", choices=("asic9690", "fpga1"), default="asic9690")
@@ -252,6 +253,8 @@ def main():
             device.joinpath('host_serdes').unlink()
             device.joinpath('omci_link').write_text('host=02:03:04:05:06:07 olt=00:11:11:11:11:11 ethertype=8888 downstream_length=0\n')
         device.joinpath('tcont_state').write_bytes(bytes(4096))
+        device.joinpath('onu_admin').write_text('')
+        admin_fault=root/'admin.fail'
         os.mkfifo(device/'tcont');grant_fd=os.open(device/'tcont',os.O_RDWR|os.O_NONBLOCK)
         accel_log,accel_fault=root/'accel.log',root/'accel.fail'
         accel_log.write_text('')
@@ -265,6 +268,40 @@ def main():
    if(((const char *)buf)[0]=='0' && seven && !access(getenv("FTTR_ACCEL_FAIL"),F_OK)) {
     errno=ETIMEDOUT;return -1;
    }
+  }
+  if(n>=10 && !strcmp(path+n-10,"/onu_admin")) {
+   unsigned int id,blocked;char serial[17],base[512],name[32];
+   if(sscanf(buf,"%u %u %16s",&id,&blocked,serial)!=3 || id>=64) {errno=EINVAL;return -1;}
+   snprintf(name,sizeof(name),"fttr-u%u",id);
+   if(if_nametoindex(name)) {errno=EBUSY;return -1;}
+   strcpy(base,path);base[n-10]=0;
+   char target[544],accel;
+   snprintf(target,sizeof(target),"%s/../ni/fttr_accel",base);
+   int fd=open(target,O_RDONLY);pread(fd,&accel,1,0);close(fd);
+   if(accel!='0') {errno=EBUSY;return -1;}
+   snprintf(target,sizeof(target),"%s/tcont_state",base);
+   fd=open(target,O_RDONLY);uint32_t grants[2];
+   int slot=getenv("FTTR_ADMIN_FPGA") ? 0 : 1;
+   pread(fd,grants,8,(id*8+slot)*8);close(fd);
+   if(grants[0] || grants[1]) {errno=EBUSY;return -1;}
+   fd=open(getenv("FTTR_ADMIN_FAIL"),O_RDONLY);
+   if(fd>=0) {char fault=0;read(fd,&fault,1);close(fd);errno=fault=='s'?ESTALE:EIO;return -1;}
+   snprintf(target,sizeof(target),"%s/onu_state",base);
+   fd=open(target,O_RDWR);unsigned char row[20];pread(fd,row,20,id*20);
+   char observed[17];for(unsigned i=0;i<8;i++)snprintf(observed+2*i,3,"%02x",row[12+i]);
+   if(strcmp(serial,observed)) {close(fd);errno=ESTALE;return -1;}
+   uint32_t state;memcpy(&state,row,4);
+   if(slot==0) {state=blocked?0x10000:0;if(blocked)memset(row+4,0,4);}
+   else state=(state&~0x10000U)|(blocked?0x10000:0);
+   memcpy(row,&state,4);pwrite(fd,row,20,id*20);
+   snprintf(target,sizeof(target),"%s/onu_table",base);FILE *table=fopen(target,"w");
+   for(unsigned i=0;i<64;i++) {
+    pread(fd,row,20,i*20);uint32_t words[3];memcpy(words,row,12);
+    fprintf(table,"%u %08x %08x %08x ",i,words[0],words[1],words[2]);
+    for(unsigned j=0;j<8;j++)fprintf(table,"%02x",row[12+j]);
+    fputc('\n',table);
+   }
+   fclose(table);close(fd);
   }
 '''
         shim=root/'sysfs.c';shim.write_text(SYSFS_WRITE_SHIM.replace('#include <fcntl.h>',
@@ -353,7 +390,8 @@ def main():
                 (['--wifi',str(wifi_policy)] if (args.wifi if with_wifi is None else with_wifi) else []),
                 stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True,
                 env=dict(os.environ,LD_PRELOAD=str(root/'sysfs.so'),FTTR_SERVICE_CASE='normal',
-                    FTTR_ACCEL_LOG=str(accel_log),FTTR_ACCEL_FAIL=str(accel_fault)))
+                    FTTR_ACCEL_LOG=str(accel_log),FTTR_ACCEL_FAIL=str(accel_fault),
+                    FTTR_ADMIN_FAIL=str(admin_fault), **({'FTTR_ADMIN_FPGA':'1'} if args.backend=='fpga1' else {})))
         if args.wifi:
             def configured(state, ids=(7,9)):
                 return state.get('onus') and all(state['onus'][id]['wifi_configured']==2 and
@@ -636,6 +674,58 @@ def main():
             datapath(7)
             assert not any(op in (0x44,0x48,0x46) for _,op,_,_ in node.operations[before:])
             assert journal(7,'service-old')[0]['grant_withdrawn']
+            if args.admin_control:
+                def admin(action, serial=None, error=0):
+                    result=subprocess.run([str(args.admin_control.resolve()),str(store),'onu-admin','7',
+                        nodes[7].serial.hex() if serial is None else serial,action],capture_output=True,text=True,timeout=5)
+                    assert result.returncode==bool(error),(result.stdout,result.stderr)
+                    if error: assert f'({-error})' in result.stderr,result.stderr
+                    else: assert json.loads(result.stdout)['blocked']==(action=='block')
+                event_start=len(accel_events())
+                admin('block',serial='0000000000000000',error=errno.ESTALE)
+                assert len(accel_events())==event_start and set(ports())=={'fttr-u7','fttr-u9'}
+                # Truncated/oversized local datagrams cannot alter forwarding.
+                client=socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM);client.bind('');client.settimeout(2)
+                client.connect(str(store/'control.sock'))
+                for payload in (b'',bytes(4),bytes(21),struct.pack('III8s',2,7,1,nodes[7].serial)):
+                    client.send(payload);assert struct.unpack('i',client.recv(4))[0]==-errno.EINVAL
+                client.close()
+                for bad_id,bad_sn,bad_action in (('64',nodes[7].serial.hex(),'block'),
+                                                ('7','x'*16,'block'),('7',nodes[7].serial.hex(),'bad')):
+                    invalid=subprocess.run([str(args.admin_control.resolve()),str(store),'onu-admin',
+                        bad_id,bad_sn,bad_action],capture_output=True,text=True,timeout=2)
+                    assert invalid.returncode==1
+                assert len(accel_events())==event_start
+                old_port=datapath(7);healthy_port=datapath(9)
+                admin('block')
+                current=until(lambda s:s['onus'][7]['phase']=='blocked')
+                assert set(ports())=={'fttr-u9'} and datapath(9)==healthy_port
+                assert not current['onus'][7]['service_configured']
+                assert not current['onus'][7]['datapath_configured']
+                assert journal(7,'service-old')[0]['grant_withdrawn']
+                assert accel_events()[event_start:]==[(0,old_port,healthy_port),(1,0,healthy_port)]
+                assert not store.joinpath('control.sock').stat().st_mode&0o077
+                admin('resume')
+                # FPGA state3 clears registration; re-registration is a hardware event.
+                if args.backend=='fpga1':hardware()
+                until(lambda s:s['onus'][7]['phase']=='configured')
+                datapath(7)
+                # Driver-side serial recheck failure cancels the old service,
+                # preserves the error and permits a fresh inventory afterward.
+                admin_fault.write_text('stale')
+                admin('block',error=errno.ESTALE);admin_fault.unlink()
+                until(lambda s:s['onus'][7]['phase']=='configured')
+                # Hardware IO failure after withdrawal must stop TX and never
+                # reopen FE admission, even if the request client exits.
+                event_start=len(accel_events());admin_fault.write_text('io')
+                admin('block',error=errno.EIO)
+                _,error=process.communicate(timeout=3)
+                assert process.returncode==1 and status()['error']==-errno.EIO,error
+                assert all(mode==0 for mode,_,_ in accel_events()[event_start:])
+                assert not ports() and device.joinpath('tx_enable').read_text().startswith('0\n')
+                assert not store.joinpath('control.sock').exists()
+                admin_fault.unlink();hardware();process=launch()
+                until(lambda s:s.get('onus') and all(s['onus'][id]['phase']=='configured' for id in nodes))
             process.send_signal(signal.SIGTERM);_,error=process.communicate(timeout=3)
             assert process.returncode==0,error
             # No policy keeps the original inventory-only behavior and cannot
@@ -691,7 +781,8 @@ def main():
             if process.poll() is None:process.terminate();process.communicate(timeout=3)
         os.close(grant_fd)
     peer.close()
-    report={'backend':args.backend,'master_sha256':hashlib.sha256(args.master.read_bytes()).hexdigest(),
+    report={'backend':args.backend,'resident_onu_admin_checked':bool(args.admin_control),
+        'master_sha256':hashlib.sha256(args.master.read_bytes()).hexdigest(),
         'slave_sha256':hashlib.sha256(args.slave.read_bytes()).hexdigest(),
         'onu_data_sha256':hashlib.sha256(onu_data.read_bytes()).hexdigest(),
         'checks':['one stalled ONU does not block another ONU service',
@@ -710,7 +801,10 @@ def main():
         'atomic private runtime journals retain recipes/ownership/table snapshots; SIGTERM shuts hardware down',
         'actual GEM VLAN ports are created only after verified service sync, withdrawn on MIB loss/replacement/disconnect, and removed on shutdown',
         'missing bridge reports a peer datapath failure and withdraws its grant; explicit OMCI-only policy remains distinct',
-        'acceleration withdrawal occurs with the old VLAN still present, resumes after removal, and an unconfirmed withdrawal stops TX without resuming'],
+        'acceleration withdrawal occurs with the old VLAN still present, resumes after removal, and an unconfirmed withdrawal stops TX without resuming'] +
+        (['resident administration rejects stale IDs and malformed commands before FE changes',
+          'block/resume removes owned GEM VLAN and DBA before backend IO while retaining the healthy peer',
+          'driver-side stale serial permits fresh inventory; hardware IO failure stops TX without resuming FE'] if args.admin_control else []),
         'scope':'native daemon over AF_PACKET/veth in a private namespace with original ARM64 schemas and VLAN table replies; peer MIB and synchronous DBA sysfs are modeled; no optical traffic'}
     args.output.write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
 

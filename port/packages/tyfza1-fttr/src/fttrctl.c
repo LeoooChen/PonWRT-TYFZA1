@@ -8,9 +8,13 @@
 #include <string.h>
 #include <sys/file.h>
 #include <sys/random.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 #include "miniolt.h"
+#include "fttr-control.h"
 #include "omci-mib.h"
 #include "omci-me.h"
 #include "omci-gem.h"
@@ -525,6 +529,62 @@ static int service_command(int directory, unsigned int id, const uint16_t fields
 	return ferror(stdout) ? -EIO : ret;
 }
 
+static int onu_admin(int directory, const char *id, const char *serial, const char *action)
+{
+	struct fttr_admin_request request = { .version = 1 };
+	struct sockaddr_un address = { .sun_family = AF_UNIX };
+	struct timeval timeout = { .tv_sec = 30 };
+	unsigned long number;
+	unsigned int i;
+	char *end;
+	int fd, ret;
+	int32_t result;
+	ssize_t size;
+
+	errno = 0;
+	number = strtoul(id, &end, 10);
+	if (errno || !*id || *end || number >= FTTR_ONUS || strlen(serial) != 16 ||
+	    (strcmp(action, "block") && strcmp(action, "resume")))
+		return -EINVAL;
+	request.id = number;
+	request.blocked = !strcmp(action, "block");
+	for (i = 0; i < 8; i++) {
+		char pair[3] = { serial[i * 2], serial[i * 2 + 1], 0 };
+
+		if (strspn(pair, "0123456789abcdefABCDEF") != 2)
+			return -EINVAL;
+		request.serial[i] = strtoul(pair, NULL, 16);
+	}
+	fd = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	if (fd < 0)
+		return -errno;
+	/* Linux allocates a unique abstract return address for this client. */
+	if (bind(fd, (struct sockaddr *)&address, sizeof(address.sun_family)) ||
+	    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) ||
+	    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout))) {
+		ret = -errno;
+		goto out;
+	}
+	snprintf(address.sun_path, sizeof(address.sun_path), "/proc/self/fd/%d/control.sock", directory);
+	if (connect(fd, (struct sockaddr *)&address, sizeof(address))) {
+		ret = -errno;
+		goto out;
+	}
+	size = send(fd, &request, sizeof(request), 0);
+	if (size != sizeof(request)) {
+		ret = size < 0 ? -errno : -EIO;
+		goto out;
+	}
+	size = recv(fd, &result, sizeof(result), MSG_TRUNC);
+	ret = size < 0 ? -errno : size != sizeof(result) ? -EPROTO : result;
+	if (!ret)
+		printf("{\"event\":\"onu_admin\",\"id\":%u,\"serial\":\"%s\",\"blocked\":%s}\n",
+			request.id, serial, request.blocked ? "true" : "false");
+out:
+	close(fd);
+	return ret;
+}
+
 int main(int argc, char **argv)
 {
 	bool mib, wait, query, binding, gem, profiles, uni, ani, mapper, vlan, vlan_table, service, wifi;
@@ -534,7 +594,8 @@ int main(int argc, char **argv)
 	    strcmp(argv[2], "wait-link") && strcmp(argv[2], "get") && strcmp(argv[2], "tcont") &&
 	    strcmp(argv[2], "gem") && strcmp(argv[2], "profiles") && strcmp(argv[2], "uni") &&
 	    strcmp(argv[2], "ani") && strcmp(argv[2], "mapper") && strcmp(argv[2], "vlan") &&
-	    strcmp(argv[2], "vlan-table") && strcmp(argv[2], "service") && strcmp(argv[2], "wifi"))) {
+	    strcmp(argv[2], "vlan-table") && strcmp(argv[2], "service") && strcmp(argv[2], "wifi") &&
+	    strcmp(argv[2], "onu-admin"))) {
 		fprintf(stderr, "Usage: %s <miniolt-sysfs-directory> status\n"
 			"       %s <miniolt-sysfs-directory> mib <hardware-ID> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> get <hardware-ID> <class> <instance> <mask> [interface=fttr0]\n"
@@ -550,7 +611,21 @@ int main(int argc, char **argv)
 			"       %s <miniolt-sysfs-directory> wifi <hardware-ID> <config-file> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> wait-link <NI-sysfs-directory>\n",
 			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
+		fprintf(stderr, "       %s <controller-state-directory> onu-admin <hardware-ID> <serial-hex> <block|resume>\n", argv[0]);
 		return 2;
+	}
+	if (!strcmp(argv[2], "onu-admin")) {
+		if (argc != 6)
+			return 2;
+		directory = open(argv[1], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+		if (directory < 0) { perror(argv[1]); return 1; }
+		ret = onu_admin(directory, argv[3], argv[4], argv[5]);
+		close(directory);
+		if (!ret && fflush(stdout))
+			ret = -errno;
+		if (ret)
+			fprintf(stderr, "FTTR onu-admin: %s (%d)\n", strerror(-ret), ret);
+		return ret ? 1 : 0;
 	}
 	mib = !strcmp(argv[2], "mib");
 	wait = !strcmp(argv[2], "wait-link");

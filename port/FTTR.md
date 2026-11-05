@@ -2805,6 +2805,71 @@ or boot-tested firmware, and do not imply completion of the functions below.
 Per the user's current instruction, further work remains offline and no
 device access, loading or flashing is authorized at this stage.
 
+### Resident ONU deactivation and explicit resume
+
+`fttrctl /var/run/tyfza1-fttr onu-admin <hardware-ID> <16-hex-serial> block`
+asks the resident controller to deactivate that exact ONU. `resume` clears
+the block and lets the normal inventory/service policy run when registration
+is observed. This command uses the controller state directory; existing
+read-only/OMCI commands still use the MiniOLT sysfs directory. A successful
+reply confirms the local operation and blocked-bit readback, not remote
+PLOAM reception or optical re-registration.
+
+Original ASIC `libponrelay:drv_gpon_onu_state_set` at47dcc uses local4788c
+to mask downstream bit16, then479d0 sends `(ONU<<24)|00050000,0,0` through
+`SendDsPloamMsg`. State5 sets `g_onu_deactive_keep_flag`; the original15s
+callback at4775c consequently leaves the block set. Native permanent block
+has no background unblock timer. State3 explicitly clears bit16.
+
+FPGA `libponrelay1p25g:drv_gpon_onu_state_set` at47188 instead calls46acc:
+write the **whole** `40401+2*ONU` word to10000, wait10000us, then clear
+`40803+4*ONU`. Its write-check routine45920 does not mask/preserve the
+fixed grant. Local46c30 sends only mailbox word40008 between40007=0 and1;
+it does not write40009/4000a. Resume writes the whole downstream word to0,
+so it must wait for hardware registration again. These operations are now
+backend-aware; unrelated ASIC low-level `onu_block`/generic `ploam` sysfs
+attributes remain hidden on FPGA. The new `onu_admin` attribute serializes
+identity check and operation with DBA under `control_lock`; the existing
+MDIO transport performs the backend-specific table-completion wait.
+
+The supported administration command goes through the controller's private
+Unix socket and MiniOLT lease. It rejects a stale serial before touching FE,
+closes FTTR FE admission, cancels pending OMCI/Wi-Fi work, removes the owned
+GEM VLAN/FDB and withdraws/readbacks its DBA grant. Only then does it call
+the driver's serial-checked state change. FE stays closed throughout that
+sequence; successful completion restores admission for the remaining ONUs.
+A second identity mismatch permits fresh inventory without touching the new
+ONU state. Other hardware/cleanup failures stop the controller and disable
+TX; they cannot silently resume acceleration. Socket access is0600 with
+kernel peer-UID checks and bounded client send/receive waits. Shutdown
+removes the socket. Direct sysfs writes are low-level driver operations and
+do not themselves perform controller/FE cleanup.
+
+The original FPGA mailbox timeout still writes the command and returns
+success; the original ASIC outer state setter also loses its helper error.
+Native reports ETIMEDOUT without overwriting the busy mailbox, propagates
+every IO failure and checks bit16 after the operation. The blocking path
+may already have changed ONU state before a later failure, so controller
+shutdown is required rather than a success response or speculative rollback.
+
+`scripts/test_fttr_onu_admin.py` executes both original state setters for
+18 backend/ID/action combinations and compares register/delay sequences,
+with separate serial, every-IO-failure, timeout, lost-write and production
+sysfs parsing/locking checks. `test_fttr_autoprovision.py --admin-control`
+uses the real daemon/CLI, two ONUs and real VLAN/bridge ports in a private
+namespace; modeled sysfs refuses administration unless FE is paused and
+the target port and grant are already gone. FPGA1 and ASIC block/resume,
+malformed/stale requests, driver recheck failure, IO failure and shutdown
+checks pass. Reports: `artifacts/fttr/onu-admin-{original,fpga1,asic}-20261105.json`.
+Existing controller, resident Wi-Fi and optical-startup regressions pass;
+the OpenWrt package and MiniOLT/BOSA modules compile/link.
+
+This implements original permanent deactivation and explicit resume, with
+custom FE/DBA ownership ordering. Timed state4 policy, persistent block
+policy across a core reset, physical PLOAM acceptance and **full queued
+packet retirement before GEM reuse** remain open. This work does not
+establish a DMA-prefetch/PE/MiniOLT retirement fence or FPGA2 service binding.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

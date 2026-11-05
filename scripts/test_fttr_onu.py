@@ -113,10 +113,10 @@ int snapshot(const struct rtl_fttr_reg_io *io, unsigned int id, struct rtl_fttr_
  return rtl_fttr_onu_read(io, id, onu);
 }
 int block(const struct rtl_fttr_reg_io *io, unsigned int id, int blocked) {
- return rtl_fttr_onu_block(io, id, blocked);
+ return rtl_fttr_onu_block(io, RTL_FTTR_ASIC9690, id, blocked);
 }
 int send_ploam(const struct rtl_fttr_reg_io *io, const unsigned int *words, unsigned int repeat) {
- return rtl_fttr_ploam_send(io, words, repeat);
+ return rtl_fttr_ploam_send(io, words, 3, repeat);
 }
 ''')
         headers = root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek'

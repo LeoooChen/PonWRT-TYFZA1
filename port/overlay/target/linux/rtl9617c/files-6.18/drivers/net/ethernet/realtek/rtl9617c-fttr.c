@@ -411,11 +411,31 @@ static ssize_t onu_block_store(struct device *dev, struct device_attribute *attr
 	if (sscanf(buf, "%u %u", &id, &blocked) != 2 || id >= RTL_FTTR_ONUS || blocked > 1)
 		return -EINVAL;
 	mutex_lock(&fttr->control_lock);
-	ret = rtl_fttr_onu_block(&fttr->reg_io, id, blocked);
+	ret = rtl_fttr_onu_block(&fttr->reg_io, fttr->backend, id, blocked);
 	mutex_unlock(&fttr->control_lock);
 	return ret ? ret : count;
 }
 static DEVICE_ATTR_WO(onu_block);
+
+static ssize_t onu_admin_store(struct device *dev, struct device_attribute *attr,
+			       const char *buf, size_t count)
+{
+	struct rtl_fttr *fttr = dev_get_drvdata(dev);
+	unsigned int id, blocked;
+	unsigned char serial[8];
+	char hex[17], extra;
+	int ret;
+
+	if (sscanf(buf, "%u %u %16s %c", &id, &blocked, hex, &extra) != 3 ||
+	    id >= RTL_FTTR_ONUS || blocked > 1 || strlen(hex) != 16 ||
+	    hex2bin(serial, hex, sizeof(serial)))
+		return -EINVAL;
+	mutex_lock(&fttr->control_lock);
+	ret = rtl_fttr_onu_admin(&fttr->reg_io, fttr->backend, id, blocked, serial);
+	mutex_unlock(&fttr->control_lock);
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_WO(onu_admin);
 
 static ssize_t ploam_store(struct device *dev, struct device_attribute *attr,
 			   const char *buf, size_t count)
@@ -428,7 +448,7 @@ static ssize_t ploam_store(struct device *dev, struct device_attribute *attr,
 	    !repeat || repeat > 3)
 		return -EINVAL;
 	mutex_lock(&fttr->control_lock);
-	ret = rtl_fttr_ploam_send(&fttr->reg_io, words, repeat);
+	ret = rtl_fttr_ploam_send(&fttr->reg_io, words, 3, repeat);
 	mutex_unlock(&fttr->control_lock);
 	return ret ? ret : count;
 }
@@ -577,6 +597,7 @@ static struct attribute *rtl_fttr_attrs[] = {
 	&dev_attr_fpga_init.attr,
 	&dev_attr_fpga_auth.attr,
 	&dev_attr_optical_init.attr,
+	&dev_attr_onu_admin.attr,
 	NULL,
 };
 
@@ -589,7 +610,8 @@ static umode_t rtl_fttr_attr_visible(struct kobject *kobj, struct attribute *att
 	if (attr == &dev_attr_fpga_init.attr || attr == &dev_attr_optical_init.attr)
 		return fttr->backend == RTL_FTTR_ASIC9690 ? 0 : attr->mode;
 	if (attr == &dev_attr_omci_link.attr || attr == &dev_attr_onu_table.attr ||
-	    attr == &dev_attr_tx_enable.attr || attr == &dev_attr_tcont.attr)
+	    attr == &dev_attr_tx_enable.attr || attr == &dev_attr_tcont.attr ||
+	    attr == &dev_attr_onu_admin.attr)
 		return attr->mode;
 	if (n >= 2 && fttr->backend != RTL_FTTR_ASIC9690)
 		return 0;

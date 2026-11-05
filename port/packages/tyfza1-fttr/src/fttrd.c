@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+#define _GNU_SOURCE
 #define _DEFAULT_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #include <ctype.h>
@@ -14,11 +15,15 @@
 #include <sys/file.h>
 #include <sys/ioctl.h>
 #include <sys/random.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "miniolt.h"
 #include "fttr-net.h"
+#include "fttr-control.h"
 #include "omci-mib.h"
 #include "omci-model.h"
 #include "omci-service.h"
@@ -80,7 +85,7 @@ struct onu {
 };
 
 struct controller {
-	int directory, ni, store, socket;
+	int directory, ni, store, socket, control;
 	struct fttr_omci_link link;
 	enum fttr_backend backend;
 	struct fttr_net net;
@@ -746,10 +751,10 @@ static int start_service(struct controller *c, unsigned int id)
 	return service_drive(c, id);
 }
 
-static int withdraw_service(struct controller *c, unsigned int id)
+static int withdraw_service(struct controller *c, unsigned int id, bool accel_paused)
 {
 	struct fttr_service_job *job = &c->onu[id].service;
-	bool paused = c->onu[id].port.index != 0;
+	bool paused = c->onu[id].port.index != 0 && !accel_paused;
 	int ret, cleanup = 0;
 
 	c->onu[id].port.configured = false;
@@ -783,7 +788,7 @@ resume:
 	return cleanup;
 }
 
-static int cancel(struct controller *c, unsigned int id)
+static int cancel(struct controller *c, unsigned int id, bool accel_paused)
 {
 	struct onu *u = &c->onu[id];
 	int ret;
@@ -821,7 +826,7 @@ static int cancel(struct controller *c, unsigned int id)
 		u->sync.active = false;
 		u->sync.valid = false;
 		fttr_service_cancel(&u->service, -ESTALE);
-		ret = withdraw_service(c, id);
+		ret = withdraw_service(c, id, accel_paused);
 		if (ret)
 			return ret;
 		ret = save_service(c, id);
@@ -976,7 +981,7 @@ static int sync_failed(struct controller *c, unsigned int id, int error)
 	if (u->service_started) {
 		fttr_service_cancel(&u->service, error);
 		u->phase = ONU_SERVICE_FAILED;
-		ret = withdraw_service(c, id);
+		ret = withdraw_service(c, id, false);
 		if (ret)
 			return ret;
 	}
@@ -1020,7 +1025,7 @@ static int rescan_sync(struct controller *c, unsigned int id)
 
 	u->sync.active = false;
 	u->sync.valid = false;
-	ret = cancel(c, id);
+	ret = cancel(c, id, false);
 	if (ret)
 		return ret;
 	u->sync = previous;
@@ -1149,7 +1154,7 @@ static int sync_reply(struct controller *c, unsigned int id)
 				u->sync.enabled = false;
 				fttr_service_cancel(&u->service, ret);
 				u->phase = ONU_SERVICE_FAILED;
-				ret = withdraw_service(c, id);
+				ret = withdraw_service(c, id, false);
 				return ret ? ret : save_service(c, id);
 			}
 		}
@@ -1178,7 +1183,7 @@ static int refresh(struct controller *c)
 		u->hardware = table[id];
 		if (!(table[id].downstream & (1U << 18)) || inactive == ONU_BLOCKED) {
 			if (u->phase != inactive) {
-				ret = cancel(c, id);
+				ret = cancel(c, id, false);
 				if (ret)
 					return ret;
 			}
@@ -1186,7 +1191,7 @@ static int refresh(struct controller *c)
 			continue;
 		}
 		if (u->phase == ONU_ABSENT || u->phase == ONU_BLOCKED || memcmp(u->identity, table[id].serial, 8)) {
-			ret = cancel(c, id);
+			ret = cancel(c, id, false);
 			if (ret)
 				return ret;
 			ret = start_mib(c, id);
@@ -1347,9 +1352,126 @@ static int receive_message(struct controller *c)
 	return publish(c, "running", 0);
 }
 
+static int open_control(struct controller *c)
+{
+	struct sockaddr_un address = { .sun_family = AF_UNIX };
+	struct stat st;
+	mode_t mask;
+	int enabled = 1, ret;
+
+	if (fstat(c->store, &st))
+		return -errno;
+	if (st.st_uid != geteuid() || (st.st_mode & 0022))
+		return -EACCES;
+	/* Binding through the directory descriptor also supports long paths. */
+	snprintf(address.sun_path, sizeof(address.sun_path), "/proc/self/fd/%d/control.sock", c->store);
+	if (unlinkat(c->store, "control.sock", 0) && errno != ENOENT)
+		return -errno;
+	c->control = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+	if (c->control < 0)
+		return -errno;
+	if (setsockopt(c->control, SOL_SOCKET, SO_PASSCRED, &enabled, sizeof(enabled)))
+		return -errno;
+	mask = umask(0077);
+	ret = bind(c->control, (struct sockaddr *)&address, sizeof(address)) ? -errno : 0;
+	umask(mask);
+	return ret;
+}
+
+static int admin_request(struct controller *c, const struct fttr_admin_request *request, int *fatal)
+{
+	struct fttr_onu_state observed;
+	struct onu *u;
+	char command[40];
+	unsigned int i, length;
+	int ret;
+
+	*fatal = 0;
+	if (request->version != 1 || request->id >= FTTR_ONUS || request->blocked > 1)
+		return -EINVAL;
+	u = &c->onu[request->id];
+	ret = fttr_miniolt_one(c->directory, request->id, &observed);
+	if (ret)
+		return ret;
+	if (memcmp(observed.serial, request->serial, 8))
+		return -ESTALE;
+	/* Keep FE admission closed through port removal, grant withdrawal and
+	 * the hardware state change. cancel() must not reopen it midway.
+	 */
+	ret = fttr_miniolt_command(c->ni, "fttr_accel", "0\n");
+	if (!ret)
+		ret = cancel(c, request->id, true);
+	if (ret) {
+		*fatal = ret;
+		return ret;
+	}
+	u->phase = ONU_ABSENT;
+	length = snprintf(command, sizeof(command), "%u %u ", request->id, request->blocked);
+	for (i = 0; i < 8; i++)
+		length += snprintf(command + length, sizeof(command) - length, "%02x", request->serial[i]);
+	snprintf(command + length, sizeof(command) - length, "\n");
+	/* The driver rechecks the serial under the same lock as state/DBA IO. */
+	ret = fttr_miniolt_command(c->directory, "onu_admin", command);
+	if (ret && ret != -ESTALE) {
+		*fatal = ret;
+		return ret;
+	}
+	if (!ret) {
+		ret = fttr_miniolt_one(c->directory, request->id, &u->hardware);
+		if (ret) {
+			*fatal = ret;
+			return ret;
+		}
+		u->phase = request->blocked ? ONU_BLOCKED : ONU_ABSENT;
+	}
+	*fatal = fttr_miniolt_command(c->ni, "fttr_accel", "1\n");
+	if (!*fatal)
+		*fatal = publish(c, "running", 0);
+	return *fatal ? *fatal : ret;
+}
+
+static int receive_control(struct controller *c)
+{
+	struct fttr_admin_request request;
+	struct sockaddr_un address;
+	struct iovec vector = { .iov_base = &request, .iov_len = sizeof(request) };
+	union { struct cmsghdr align; char bytes[CMSG_SPACE(sizeof(struct ucred))]; } credentials;
+	struct msghdr message = { .msg_name = &address, .msg_namelen = sizeof(address),
+		.msg_iov = &vector, .msg_iovlen = 1, .msg_control = credentials.bytes,
+		.msg_controllen = sizeof(credentials.bytes) };
+	struct cmsghdr *header;
+	bool authorized = false;
+	int32_t result;
+	int fatal = 0;
+	ssize_t size = recvmsg(c->control, &message, MSG_DONTWAIT);
+
+	if (size < 0)
+		return errno == EAGAIN ? 0 : -errno;
+	for (header = CMSG_FIRSTHDR(&message); header; header = CMSG_NXTHDR(&message, header)) {
+		if (header->cmsg_level == SOL_SOCKET && header->cmsg_type == SCM_CREDENTIALS &&
+		    header->cmsg_len == CMSG_LEN(sizeof(struct ucred))) {
+			struct ucred *peer = (void *)CMSG_DATA(header);
+
+			authorized = peer->uid == geteuid();
+		}
+	}
+	if (size != sizeof(request) || message.msg_flags & (MSG_TRUNC | MSG_CTRUNC))
+		result = -EINVAL;
+	else if (!authorized)
+		result = -EACCES;
+	else
+		result = admin_request(c, &request, &fatal);
+	/* Client disappearance does not undo an already completed operation. */
+	if (sendto(c->control, &result, sizeof(result), MSG_DONTWAIT | MSG_NOSIGNAL,
+		   (struct sockaddr *)&address, message.msg_namelen) < 0)
+		fprintf(stderr, "FTTR control reply failed: %s\n", strerror(errno));
+	return fatal;
+}
+
 static int run(struct controller *c)
 {
-	struct pollfd descriptor = { .fd = c->socket, .events = POLLIN };
+	struct pollfd descriptors[2] = { { .fd = c->socket, .events = POLLIN },
+		{ .fd = c->control, .events = POLLIN } };
 	int64_t next_refresh = 0, now, deadline;
 	unsigned int id;
 	int ret;
@@ -1485,12 +1607,18 @@ static int run(struct controller *c)
 				deadline = u->job.deadline;
 			}
 		}
-		ret = poll(&descriptor, 1, deadline > now ? deadline - now : 0);
+		ret = poll(descriptors, 2, deadline > now ? deadline - now : 0);
 		if (ret < 0)
 			return -errno;
-		if (descriptor.revents & (POLLERR | POLLHUP | POLLNVAL))
+		if ((descriptors[0].revents | descriptors[1].revents) & (POLLERR | POLLHUP | POLLNVAL))
 			return -EIO;
-		if (ret) {
+		if (descriptors[1].revents & POLLIN) {
+			ret = receive_control(c);
+			if (ret)
+				return ret;
+			next_refresh = 0;
+		}
+		if (descriptors[0].revents & POLLIN) {
 			ret = receive_message(c);
 			if (ret)
 				return ret;
@@ -1617,7 +1745,7 @@ static int shutdown_hardware(struct controller *c)
 int main(int argc, char **argv)
 {
 	struct controller c = { .directory = -1, .ni = -1, .store = -1, .socket = -1,
-		.net = { .fd = -1 }, .optical = { .directory = -1 } };
+		.control = -1, .net = { .fd = -1 }, .optical = { .directory = -1 } };
 	struct sigaction action = { .sa_handler = stop_signal };
 	bool owned = false;
 	unsigned int id;
@@ -1707,11 +1835,18 @@ int main(int argc, char **argv)
 		goto out;
 	c.socket = fttr_omci_open(c.interface, c.link.ethertype);
 	if (c.socket < 0) { ret = c.socket; goto out; }
+	ret = open_control(&c);
+	if (ret)
+		goto out;
 	ret = run(&c);
 out:
 	if (stopping && ret == -EINTR)
 		ret = 0;
 	if (owned) {
+		if (c.control >= 0) {
+			close(c.control);
+			unlinkat(c.store, "control.sock", 0);
+		}
 		result = shutdown_hardware(&c);
 		if (!ret)
 			ret = result;
