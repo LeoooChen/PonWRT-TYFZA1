@@ -88,6 +88,8 @@
 
 35. 关闭撤销时的 CPU 接收暂存窗口：已复现仅等待 RCU 后 NAPI/GRO 仍保留旧 FTTR 业务包。`fttr_forward` 现暂停活动 NAPI、等待完成尾部，清理 P6 业务聚合/普通批次及跨缓冲片段，保留管理和其他端口聚合；恢复时重新调度，已停止引擎不被误启动。八桶混合帧/聚合计数/重复撤销/停机的生产函数 ASan/UBSan、既有转发/TX门控、共享FE及768组QM收包检查通过，最终Image/模块构建通过。已进入RPS/协议栈的包和硬件在途缓冲仍不属于该清理范围，完整退场未宣告完成。详见[CPU接收暂存清理](port/FTTR.md#retiring-cpu-held-fttr-receive-packets)。
 
+36. 查实 FPGA2/ASIC 的默认业务生产链：执行原厂 `ctc_ponrelay_onu_init`，确认默认一个 `FTTR-100M` T-CONT/GEM/流及组播启用，多槽时每流增加100×序号的VLAN过滤。继续执行 relay 参数转换和新流选择，证明默认选择共享桥，不能用当前“以太网UNI序号0”策略替代；失败后原厂整ONU删除/重加且忽略恢复错误。9组配置、33个失败分支、12次转换及4组桥选择通过；这是原厂证据进展，共享桥完整UNI接入、组播、多业务和恢复仍待原生实现。详见[默认业务证据](port/FTTR.md#original-default-service-and-shared-bridge-selection)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

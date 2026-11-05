@@ -3583,6 +3583,42 @@ compilation/install passes; reports are
 `artifacts/fttr/onu-policy-*-20261106.*`. No physical ONU/authentication or queued
 packet-retirement acceptance is implied.
 
+### Original default service and shared-bridge selection
+
+`tools/trace_stock_fttr_default.py` follows the actual `onuinfo` operation table
+at430bd8: `fpga_api_onu_init` selects `ctc_ponrelay_onu_init` at41243c.
+This executable serves FPGA2 and ASIC. Executing that producer for ONU IDs1/6/63
+and configured slot counts2/3/8 establishes the following recipe:
+
+* The default count2 creates logical data T-CONT1 with profile name `FTTR-100M`,
+  GEM1 referencing T-CONT1, and remote flow1 referencing GEM1.
+* Counts3..8 add T-CONT/GEM/flow ordinals2..7. Each data flow, including flow1,
+  gets a VLAN filter `100 * ordinal` in this branch.
+* Successful setup then calls `plr_api_remote_onu_mcast_enable` with its actual
+  type2/instance1 record. This is part of the original default recipe; the
+  current native unicast service must not be described as reproducing it.
+* A failed operation stops subsequent configuration, reads the ONU record and
+  deletes/re-adds that ONU. It returns the initiating error and does not check
+  those recovery results. Native cleanup must preserve separate recovery errors
+  and its existing ownership checks instead of treating re-add as confirmation.
+
+Executing the relay flow API adapters through `plr_gponrm_flow_op_api` shows
+that GEM assignment uses mask2 and VLAN filtering uses mask4, with no UNI-binding
+bit. The original new-flow selector (`aac90` through`ab024`) selects shared-bridge
+mode1 for the first such flow and calls `plr_gponrm_dft_mbs_me_id_get`; adding it
+to an existing per-UNI bridge returns35. An explicit UNI-binding mask instead
+selects the Ethernet UNI bridge. Thus mapping the default to a wildcard native
+policy for Ethernet ordinal0 would be an unsupported change in topology.
+
+Nine producer recipes,33 first-failure/recovery paths,12 API translations and
+four bridge-selection branches execute successfully in the offline oracle.
+The report is `artifacts/fttr/default-service-original-20261106.json`. Remote
+configuration/MIB storage, configuration records and semaphore operations are
+modeled; the bridge selector stops before GEM inventory. This research does
+not implement complete shared-bridge UNI attachment, multicast, factory service
+restoration or multiple services per ONU. Those are the next native integration
+steps, using reported subordinate capabilities and the existing FE/P6 owners.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
