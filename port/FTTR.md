@@ -1065,7 +1065,7 @@ The default management ethertype is the original ASIC/FPGA8888 for explicit
 manual bring-up; the daemon passes the actual value from MiniOLT `omci_link`.
 
 Closing serializes with DMA submission under the existing NI `tx_lock`, then
-waits for prior RX readers. It deactivates/resets the parent qdisc using Linux
+retires held CPU RX as described below. It deactivates/resets the parent qdisc using Linux
 `dev_deactivate` before FE withdrawal, and reactivates it afterward for
 management traffic. Linux6.18's operation resets the queued skb lists and
 waits for outstanding qdisc runs, including BUSY/requeue paths; NI spinlocks
@@ -1112,10 +1112,45 @@ bootstrap/replacement and missing-operation failures. Final FTTR package
 compile/install passes. Reports/logs use `artifacts/fttr/forward-gate-*`.
 
 This is a necessary producer-admission step, **not complete packet retirement**.
-DMA/AFT-prefetched packets, FE/PE work already in flight, already-delivered RX/
-GRO packets and MiniOLT queues are not proven empty. The existing L3/L2 ES
+DMA/AFT-prefetched packets, FE/PE work already in flight, packets already
+delivered to Linux/RPS and MiniOLT queues are not proven empty. The retained
+NAPI/GRO window is now closed as described below. The existing L3/L2 ES
 flush function therefore remains unconnected to a claimed GEM-reuse fence.
 There was no physical port, ONU or acceleration acceptance in this step.
+
+### Retiring CPU-held FTTR receive packets
+
+A grace period alone did not retire packets already retained by the shared
+NAPI GRO node. The actual Linux6.18 GRO code keeps both hash-bucket aggregates
+and a normal receive batch; `synchronize_net` waits for readers, and the parent
+qdisc reset addresses TX, but neither purges these RX lists. A busy poll can
+therefore leave an old P6 packet to be delivered after service reconstruction.
+`test_fttr_rx_purge.py --revision 52f0c38` reproduces that missing cleanup.
+
+After closing business admission, `fttr_forward` now disables active shared
+NAPI and waits for its completion tail before inspecting those lists. It drops
+only skbs whose device is the FTTR parent and whose saved Ethernet protocol or
+VLAN metadata identifies business, updates the held-bucket counts/bitmask, and
+preserves management and other ports' aggregates. Surviving normal-batch packets
+are delivered with bottom halves disabled before its segment count is reset;
+the segment count is not incorrectly decremented once per aggregated skb.
+All retained P6 split-frame copies are released. If the engine was already
+stopped, the same cleanup runs without a second NAPI disable or an enable.
+Otherwise NAPI is re-enabled and scheduled so an interrupt masked during the
+pause cannot strand shared RX. The subsequent qdisc and FE withdrawal order
+is unchanged; no NI spinlock spans NAPI/RCU/stack operations.
+
+The production helper runs under ASan/UBSan across all eight hash buckets,
+mixed management/LAN/FTTR frames, VLAN metadata, custom OMCI type, aggregated
+normal batches, split frames, repeated withdrawal and running/stopped engines.
+The fixture asserts synchronization before freeing and exact preservation of
+unrelated GRO state; it fails on the prior source. Existing forward/TX gate,
+shared FE and768 original/native QM receive cases pass. Current Image/modules
+compile successfully, with exact NI source identity checked, in
+`artifacts/fttr/rx-purge-build-20261106.log`. This is software lifecycle evidence
+with modeled NAPI scheduling, not a live-kernel concurrency or hardware test.
+Packets already passed into RPS/the protocol stack and physical DMA/FE/PE/
+MiniOLT buffers remain outside this purge and the full GEM-reuse barrier.
 
 ### Native P6 FE lifecycle and acknowledged withdrawal
 

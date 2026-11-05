@@ -60,6 +60,7 @@ static netdev_tx_t rtl_dma_tx_frame(int *dma,struct sk_buff *skb,struct net_devi
 static void interleave(void);
 static int rtl_fe_fttr_set(int fe,bool enabled){(void)fe;assert(rtnl);interleave();fe_requested=enabled;if(!failed_fe)fe_enabled=enabled;return failed_fe;}
 static void synchronize_net(void){assert(rtnl && !locked);synchronized++;interleave();}
+static void rtl_fttr_rx_purge(struct rtl_xram *priv){assert(priv==&shared);synchronize_net();}
 static void dev_deactivate(struct net_device *d){assert(d==&parent && rtnl && !locked);qdisc_active=false;purged++;interleave();}
 static void dev_activate(struct net_device *d){assert(d==&parent && rtnl && !locked);qdisc_active=true;}
 '''

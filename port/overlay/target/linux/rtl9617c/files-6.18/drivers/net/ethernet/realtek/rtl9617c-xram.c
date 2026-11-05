@@ -1585,6 +1585,65 @@ static ssize_t fttr_accel_store(struct device *dev, struct device_attribute *att
 }
 static DEVICE_ATTR_RW(fttr_accel);
 
+/* GRO retains the Ethernet protocol even after eth_type_trans pulls the
+ * header. In-band or metadata VLANs cannot turn business into management.
+ */
+static bool rtl_fttr_gro_business(struct rtl_xram *priv, const struct sk_buff *skb)
+{
+	return skb->dev == priv->fttr && (skb_vlan_tag_present(skb) ||
+	       !priv->fttr_omci_type || skb->protocol != htons(priv->fttr_omci_type));
+}
+
+static void rtl_fttr_rx_purge(struct rtl_xram *priv)
+{
+	struct gro_node *gro = &priv->napi.gro;
+	struct sk_buff *skb, *next;
+	unsigned int i;
+
+	ASSERT_RTNL();
+	/* A shared engine can still hold P6 skbs after fttr0 was closed. Never
+	 * disable NAPI a second time when the last engine owner already stopped.
+	 */
+	if (priv->engine_users)
+		napi_disable(&priv->napi);
+	/* NAPI completion releases ownership before finishing GRO delivery. */
+	synchronize_net();
+	local_bh_disable();
+	for (i = 0; i < GRO_HASH_BUCKETS; i++) {
+		list_for_each_entry_safe(skb, next, &gro->hash[i].list, list) {
+			if (!rtl_fttr_gro_business(priv, skb))
+				continue;
+			skb_list_del_init(skb);
+			gro->hash[i].count--;
+			priv->fttr->stats.rx_dropped++;
+			kfree_skb(skb);
+		}
+		if (!gro->hash[i].count)
+			__clear_bit(i, &gro->bitmask);
+	}
+	list_for_each_entry_safe(skb, next, &gro->rx_list, list) {
+		if (!rtl_fttr_gro_business(priv, skb))
+			continue;
+		skb_list_del_init(skb);
+		priv->fttr->stats.rx_dropped++;
+		kfree_skb(skb);
+	}
+	/* The normal batch counts original segments, not skb entries. Deliver
+	 * its surviving management/other-port packets before resetting that count.
+	 * Other ports' held GRO aggregates stay intact.
+	 */
+	netif_receive_skb_list(&gro->rx_list);
+	gro->rx_count = 0;
+	for (i = 0; i < ARRAY_SIZE(priv->qm.fttr_rx); i++)
+		rtl_fttr_rx_reset(&priv->qm.fttr_rx[i]);
+	local_bh_enable();
+	if (priv->engine_users) {
+		napi_enable(&priv->napi);
+		/* An IRQ during napi_disable may have masked RX without scheduling. */
+		napi_schedule(&priv->napi);
+	}
+}
+
 /* Full software forwarding admission, distinct from acceleration-only mode.
  * 0 closes business RX/TX before FE withdrawal and purges queued CPU sends.
  * 1 <OMCI-ethertype> enables after successful FE withdrawal/reconfiguration.
@@ -1613,11 +1672,11 @@ static ssize_t fttr_forward_store(struct device *dev, struct device_attribute *a
 	smp_store_release(&priv->fttr_forwarding, false);
 	spin_unlock_irqrestore(&priv->tx_lock, flags);
 	WRITE_ONCE(priv->qm.fttr_epoch, priv->qm.fttr_epoch + 1);
-	/* Wait for prior RX readers, then detach/reset the parent qdisc and
-	 * wait for current qdisc runs, including a BUSY skb being requeued.
-	 * No NI spinlock is held across the netdev/qdisc locks or RCU wait.
+	/* Retire held CPU RX before detaching/resetting the parent qdisc and
+	 * waiting for current qdisc runs, including a BUSY skb being requeued.
+	 * No NI spinlock is held across NAPI, netdev/qdisc locks or RCU waits.
 	 */
-	synchronize_net();
+	rtl_fttr_rx_purge(priv);
 	running = netif_running(priv->fttr);
 	if (running)
 		dev_deactivate(priv->fttr);
