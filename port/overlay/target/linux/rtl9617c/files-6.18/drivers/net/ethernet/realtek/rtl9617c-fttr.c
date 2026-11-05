@@ -12,6 +12,7 @@
 #include <linux/of.h>
 #include <linux/phy.h>
 #include <linux/regmap.h>
+#include <linux/swab.h>
 #include <linux/unaligned.h>
 
 #include "rtl9617c-fttr-mdio.h"
@@ -105,25 +106,33 @@ static s32 rtl_fttr_smbus_xfer(struct i2c_adapter *adapter, u16 addr,
 {
 	struct rtl_fttr *fttr = i2c_get_adapdata(adapter);
 	bool read = read_write == I2C_SMBUS_READ;
+	bool word = size == I2C_SMBUS_WORD_DATA;
 	unsigned int value;
 	int ret;
 
 	if (flags & I2C_CLIENT_TEN)
 		return -EOPNOTSUPP;
-	if (size != I2C_SMBUS_BYTE_DATA)
+	if (size != I2C_SMBUS_BYTE_DATA && !word)
 		return -EOPNOTSUPP;
-	value = read ? 0 : data->byte;
+	/* MiniOLT word mode puts the first register in the high byte; Linux
+	 * SMBus words put the first wire byte in the low byte.
+	 */
+	value = read ? 0 : word ? swab16(data->word) : data->byte;
 	mutex_lock(&fttr->control_lock);
-	ret = rtl_fttr_i2c_xfer(&fttr->reg_io, addr, command, &value, 0, read);
+	ret = rtl_fttr_i2c_xfer(&fttr->reg_io, addr, command, &value, word, read);
 	mutex_unlock(&fttr->control_lock);
-	if (!ret && read)
-		data->byte = value;
+	if (!ret && read) {
+		if (word)
+			data->word = swab16(value);
+		else
+			data->byte = value;
+	}
 	return ret;
 }
 
 static u32 rtl_fttr_i2c_functionality(struct i2c_adapter *adapter)
 {
-	return I2C_FUNC_SMBUS_BYTE_DATA;
+	return I2C_FUNC_SMBUS_BYTE_DATA | I2C_FUNC_SMBUS_WORD_DATA;
 }
 
 static const struct i2c_algorithm rtl_fttr_i2c_algorithm = {

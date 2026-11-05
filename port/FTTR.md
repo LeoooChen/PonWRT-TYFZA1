@@ -2658,11 +2658,64 @@ ASIC/FPGA1/FPGA2 namespace startup regressions pass. Reports are
 MiniOLT/BOSA modules compile and link against Linux6.18.55; module postprocessing
 retains the build's `MODULE_DESCRIPTION` warnings. Full FITs predate this change.
 
-Remaining differences include original continuous optical monitoring/DDMI, SFP dispatch and
+Remaining differences include broader optical DDMI, SFP dispatch and
 the original ordering of P6 before bitstream loading (native configures P6
 after the manager has loaded). The actual optical model of the retained FPGA
 sample is not established. No physical optical, FPGA or traffic acceptance
 is claimed by the offline recipe and startup comparisons.
+
+### UX3326 temperature adjustment and recovery
+
+Original `rtkoltbosa` UX3326 initializer (`40222c`) remains resident when
+called with argument1. Its monitor (`402650..402b54`) now runs natively
+through the optical driver's `maintenance` attribute and `fttrd`'s existing
+event loop. Calibration byte6 enables200ms temperature adjustment; otherwise
+the loop interval is1000ms. Read register2e, round/map/clamp to one of84
+entries at calibration offsetfc, compare register6's packed10-bit value,
+and write6 then7 only when it differs. The initial56-write calibration
+count is unchanged by runtime updates.
+
+The original reset test runs after1600ms (2000ms with adjustment disabled),
+reloads the factory file, and checks registers0..3 against `00 80 00 00`.
+Only when that reset pattern differs from the calibration does it test TX
+power. The original conversion at404d08 uses the register34 word, the
+factory gain at8 and signed offset at10. Native compares the original
+`-30dBm` threshold in linear units, avoiding floating point in kernel.
+It preserves the original signed32-bit product semantics; invalid negative
+power is reported as an error instead of treating a NaN as good power.
+
+Low power with a reset signature requests the original56-write reload,
+waits5s, rechecks, and if necessary disables TX for1s then enables it and
+waits1s before the last power check. These waits use event-loop deadlines;
+OMCI, ONU identity refresh and stop signals continue to run. The driver
+performs no independent periodic writes, so controller teardown cannot be
+followed by a delayed recovery re-enabling the laser. I2C/firmware errors
+stop the controller and its existing cleanup disables TX and withdraws FE.
+Continued low power after the last recovery returns `ENOLINK`; the original
+only logged the failure and continued. Each power read reloads the factory
+input; model/address/length/checksum changes fail before IO to a mismatched
+client. Runtime recovery is available through the normal bootstrap form
+of `fttrd`, which retains the optical directory descriptor.
+
+MiniOLT SMBus now advertises byte and word transfers. Its register engine
+returns the first wire register in the high byte; the adapter swaps to the
+Linux SMBus convention, and BOSA uses `i2c_smbus_read_word_swapped()` to
+retain the original numeric values. Tests cover both directions and error
+propagation as well as the original underlying I2C register transactions.
+
+`test_fttr_optical_monitor.py` executes514 temperature-boundary cases,
+63 original floating-point power cases, reset predicates and four complete
+original monitor/recovery loops with external IO modeled. Production driver
+commands and userspace lifecycle checks cover write failures, firmware
+ownership, invalid/missing input and recovery deadlines. The real daemon's
+namespace startup includes successful recovery, persistent low power,
+temperature IO failure and SIGTERM during recovery; ASIC startup and existing
+OMCI controller/CLI regression pass. GCC14.4/musl package and Linux6.18.55
+MiniOLT/BOSA module builds pass. Reports/logs are
+`artifacts/fttr/optical-monitor-20261105.json`, `monitor-startup-*-20261105.json`,
+`monitor-controller-20261105.json` and `monitor-build-final-20261105.log`.
+These checks do not establish measured optical power, actual temperature
+stability, laser safety margins or physical recovery on a board.
 
 ### FPGA1 factory authentication
 
@@ -2743,7 +2796,8 @@ device access, loading or flashing is authorized at this stage.
    FPGA bootstrap and version-gated FPGA1 factory authentication are implemented.
    FPGA2 resource-to-grant binding and full original sequencing remain open.
 2. Four original optical calibration recipes and available identity checks are
-   implemented. Continuous optical monitoring/DDMI, SFP handling, identifying
+   implemented, together with the original UX3326 temperature/reset recovery
+   loop. Broader DDMI, SFP handling, identifying
    the retained FPGA sample's actual optics and physical readiness remain open.
 3. Real P6/FTTR frame verification. Native SoC P6, ASIC peer WTG/PON SerDes,
    the dedicated RX/TX endpoint, core/DBA and ASIC hardware startup orchestration

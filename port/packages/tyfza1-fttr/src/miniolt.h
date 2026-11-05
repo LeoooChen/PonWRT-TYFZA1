@@ -33,4 +33,14 @@ int fttr_miniolt_command(int directory, const char *name, const char *value);
 int fttr_miniolt_wait_links(int directory, int ni);
 int fttr_miniolt_calibrated(int optical);
 
+struct fttr_optical_monitor {
+	int directory;
+	unsigned int interval, elapsed;
+	int64_t due;
+	enum { FTTR_OPTICAL_IDLE, FTTR_OPTICAL_RELOADED, FTTR_OPTICAL_DISABLED,
+		FTTR_OPTICAL_ENABLED } phase;
+};
+int fttr_miniolt_optical_start(struct fttr_optical_monitor *monitor, int64_t now);
+int fttr_miniolt_optical_tick(struct fttr_optical_monitor *monitor, int miniolt, int64_t now);
+
 #endif

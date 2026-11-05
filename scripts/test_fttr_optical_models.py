@@ -146,6 +146,7 @@ struct i2c_client { struct device dev; unsigned int addr; };
 struct firmware { const unsigned char *data; unsigned int size; };
 struct rtl_fttr_bosa {
  struct i2c_client *client; int lock; unsigned int writes,model; int error; bool configured;
+ unsigned char ux_calibration[588];
 };
 static struct firmware firmware;
 static int references,locks,fw_error;

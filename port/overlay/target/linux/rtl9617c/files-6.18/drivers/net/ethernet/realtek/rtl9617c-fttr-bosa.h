@@ -138,4 +138,81 @@ static inline int rtl_fttr_optical_calibrate(void *context,
 	return ret ? ret : write(context, 0x90, cal[0x95] & ~8);
 }
 
+/* rtkoltbosa UX3326 monitor, 402940..402ad0. Word reads use the original
+ * device order (first register in the high byte), not SMBus wire order.
+ */
+static inline int rtl_fttr_ux3326_temperature(void *context,
+		int (*read_word)(void *, unsigned int),
+		int (*write)(void *, unsigned int, unsigned char), const unsigned char *cal)
+{
+	unsigned int wanted, observed;
+	int raw, index, ret;
+
+	if (!cal[6])
+		return 0;
+	raw = read_word(context, 0x2e);
+	if (raw < 0)
+		return raw;
+	index = (((raw + 64) >> 7) - 65) / 2;
+	if (index < 0)
+		index = 0;
+	if (index > 83)
+		index = 83;
+	wanted = (unsigned int)cal[0xfc + index * 2] << 8 | cal[0xfd + index * 2];
+	raw = read_word(context, 6);
+	if (raw < 0)
+		return raw;
+	observed = ((raw >> 6) & 0x3fc) | (raw & 3);
+	if (wanted == observed)
+		return 0;
+	ret = write(context, 6, wanted >> 2);
+	return ret ? ret : write(context, 7, wanted & 3);
+}
+
+/* Original 404d08: 10*log10(raw*gain/256 + signed_offset)-40 dBm.
+ * Compare -30dBm exactly in linear units, without floating point in kernel.
+ * A negative calibrated power is invalid; zero is below the threshold.
+ */
+static inline int rtl_fttr_ux3326_low_power(void *context,
+		int (*read_word)(void *, unsigned int), const unsigned char *cal)
+{
+	unsigned int gain = (unsigned int)cal[8] << 8 | cal[9];
+	int offset = ((unsigned int)cal[10] << 8 | cal[11]);
+	int raw = read_word(context, 0x34);
+	long long linear;
+
+	if (raw < 0)
+		return raw;
+	if (offset & 0x8000)
+		offset -= 65536;
+	/* Original MUL W0 followed by SCVTF uses a signed 32-bit product. */
+	linear = (long long)raw * gain;
+	if (linear > 0x7fffffff)
+		linear -= 0x100000000LL;
+	linear += offset * 256;
+	if (linear < 0)
+		return -ERANGE;
+	return linear < 2560 ? -EUCLEAN : 0;
+}
+
+static inline int rtl_fttr_ux3326_check_reset(void *context,
+		int (*read)(void *, unsigned int), int (*read_word)(void *, unsigned int),
+		const unsigned char *cal)
+{
+	static const unsigned char reset[] = { 0, 0x80, 0, 0 };
+	unsigned int i;
+	int value, different = 0;
+
+	/* Original checks each byte before reading the next one. */
+	for (i = 0; i < 4; i++) {
+		value = read(context, i);
+		if (value < 0)
+			return value;
+		if (value != reset[i])
+			return 0;
+		different |= value != cal[0x1c + i];
+	}
+	return different ? rtl_fttr_ux3326_low_power(context, read_word, cal) : 0;
+}
+
 #endif

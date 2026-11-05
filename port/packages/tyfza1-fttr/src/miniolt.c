@@ -337,3 +337,82 @@ int fttr_miniolt_calibrated(int optical)
 		return writes == 56 ? 0 : -EIO;
 	return -EOPNOTSUPP;
 }
+
+int fttr_miniolt_optical_start(struct fttr_optical_monitor *monitor, int64_t now)
+{
+	FILE *file = attribute(monitor->directory, "maintenance");
+	unsigned int supported, interval;
+	int ret;
+
+	if (!file)
+		return -errno;
+	ret = fscanf(file, "supported=%u interval_ms=%u", &supported, &interval);
+	fclose(file);
+	if (ret != 2 || supported > 1 || (supported ? interval != 200 && interval != 1000 : interval != 0))
+		return -EPROTO;
+	monitor->interval = interval;
+	monitor->elapsed = 0;
+	monitor->due = now;
+	monitor->phase = FTTR_OPTICAL_IDLE;
+	return 0;
+}
+
+int fttr_miniolt_optical_tick(struct fttr_optical_monitor *monitor, int miniolt, int64_t now)
+{
+	int ret;
+
+	if (!monitor->interval || now < monitor->due)
+		return 0;
+	switch (monitor->phase) {
+	case FTTR_OPTICAL_DISABLED:
+		ret = fttr_miniolt_command(miniolt, "tx_enable", "1\n");
+		if (ret)
+			return ret;
+		monitor->phase = FTTR_OPTICAL_ENABLED;
+		monitor->due = now + 1000;
+		return 0;
+	case FTTR_OPTICAL_RELOADED:
+	case FTTR_OPTICAL_ENABLED:
+		ret = fttr_miniolt_command(monitor->directory, "maintenance", "power\n");
+		if (ret == -EUCLEAN && monitor->phase == FTTR_OPTICAL_RELOADED) {
+			ret = fttr_miniolt_tx_disable(miniolt);
+			if (ret)
+				return ret;
+			monitor->phase = FTTR_OPTICAL_DISABLED;
+			monitor->due = now + 1000;
+			return 0;
+		}
+		if (ret)
+			return ret == -EUCLEAN ? -ENOLINK : ret;
+		ret = fttr_miniolt_optical_start(monitor, now);
+		if (ret)
+			return ret;
+		break;
+	case FTTR_OPTICAL_IDLE:
+		if (monitor->elapsed < 1600)
+			break;
+		monitor->elapsed = 0;
+		ret = fttr_miniolt_command(monitor->directory, "maintenance", "reset\n");
+		if (ret == -EUCLEAN) {
+			ret = fttr_miniolt_command(monitor->directory, "calibration", "1\n");
+			if (ret)
+				return ret;
+			monitor->phase = FTTR_OPTICAL_RELOADED;
+			monitor->due = now + 5000;
+			return 0;
+		}
+		if (ret)
+			return ret;
+		/* The periodic file reload may change the original temperature flag. */
+		ret = fttr_miniolt_optical_start(monitor, now);
+		if (ret)
+			return ret;
+		break;
+	}
+	ret = fttr_miniolt_command(monitor->directory, "maintenance", "temperature\n");
+	if (ret)
+		return ret;
+	monitor->due = now + monitor->interval;
+	monitor->elapsed += monitor->interval;
+	return 0;
+}

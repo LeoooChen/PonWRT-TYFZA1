@@ -84,6 +84,7 @@ struct controller {
 	struct fttr_omci_link link;
 	enum fttr_backend backend;
 	struct fttr_net net;
+	struct fttr_optical_monitor optical;
 	const char *interface;
 	uint16_t transaction;
 	int64_t observed_at;
@@ -1355,6 +1356,9 @@ static int run(struct controller *c)
 
 	while (!stopping) {
 		now = now_ms();
+		ret = fttr_miniolt_optical_tick(&c->optical, c->directory, now);
+		if (ret)
+			return ret;
 		if (now >= next_refresh) {
 			ret = refresh(c);
 			if (ret)
@@ -1363,6 +1367,8 @@ static int run(struct controller *c)
 		}
 		now = now_ms();
 		deadline = next_refresh;
+		if (c->optical.interval && c->optical.due < deadline)
+			deadline = c->optical.due;
 		for (id = 0; id < FTTR_ONUS; id++) {
 			struct onu *u = &c->onu[id];
 
@@ -1573,6 +1579,7 @@ static int bootstrap(struct controller *c, int optical, const char *mode, const 
 	if (c->backend == FTTR_ASIC9690)
 		BOOT_STEP("configure DBA", fttr_miniolt_command(c->directory, "dba", "1\n"));
 	BOOT_STEP("verify optical calibration", fttr_miniolt_calibrated(optical));
+	BOOT_STEP("initialize optical maintenance", fttr_miniolt_optical_start(&c->optical, now_ms()));
 	BOOT_STEP("open netdev", interface_state(c, true, 1982));
 	BOOT_STEP("enable TX", fttr_miniolt_command(c->directory, "tx_enable", "1\n"));
 #undef BOOT_STEP
@@ -1610,7 +1617,7 @@ static int shutdown_hardware(struct controller *c)
 int main(int argc, char **argv)
 {
 	struct controller c = { .directory = -1, .ni = -1, .store = -1, .socket = -1,
-		.net = { .fd = -1 } };
+		.net = { .fd = -1 }, .optical = { .directory = -1 } };
 	struct sigaction action = { .sa_handler = stop_signal };
 	bool owned = false;
 	unsigned int id;
@@ -1681,13 +1688,12 @@ int main(int argc, char **argv)
 	}
 	if (unlinkat(c.store, "status.json", 0) && errno != ENOENT) { ret = -errno; goto out; }
 	if (argc == 9) {
-		int optical = open(argv[5], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+		c.optical.directory = open(argv[5], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 
-		if (optical < 0) { ret = -errno; goto out; }
+		if (c.optical.directory < 0) { ret = -errno; goto out; }
 		ret = publish(&c, "initializing", 0);
 		if (!ret)
-			ret = bootstrap(&c, optical, argv[6], argv[7], argv[8]);
-		close(optical);
+			ret = bootstrap(&c, c.optical.directory, argv[6], argv[7], argv[8]);
 		if (ret)
 			goto out;
 	}
@@ -1760,6 +1766,8 @@ out:
 	}
 	if (c.socket >= 0)
 		close(c.socket);
+	if (c.optical.directory >= 0)
+		close(c.optical.directory);
 	if (c.net.fd >= 0)
 		close(c.net.fd);
 	if (c.ni >= 0)

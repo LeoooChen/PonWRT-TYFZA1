@@ -37,18 +37,29 @@ ssize_t write(int fd,const void *buffer,size_t count) {
  name=strrchr(path,'/');name=name ? name+1 : path;
  if(strcmp(name,"tx_enable") && strcmp(name,"reset") && strcmp(name,"calibration") &&
     strcmp(name,"host_serdes") && strcmp(name,"fttr_link") && strcmp(name,"pon_serdes") &&
-    strcmp(name,"core_init") && strcmp(name,"fpga_init") && strcmp(name,"fpga_auth") && strcmp(name,"omci_link") && strcmp(name,"dba") && strcmp(name,"fttr_accel"))
+    strcmp(name,"core_init") && strcmp(name,"fpga_init") && strcmp(name,"fpga_auth") && strcmp(name,"omci_link") && strcmp(name,"dba") && strcmp(name,"fttr_accel") && strcmp(name,"maintenance"))
   return real_write(fd,buffer,count);
  log=open(getenv("FTTR_TEST_LOG"),O_WRONLY|O_CREAT|O_APPEND,0600);
  real_write(log,name,strlen(name));real_write(log," ",1);real_write(log,buffer,count);close(log);
  if(bad && !strcmp(bad,"core") && (!strcmp(name,"core_init") || !strcmp(name,"fpga_init"))){errno=EIO;return -1;}
  if(bad && !strcmp(bad,"auth") && !strcmp(name,"fpga_auth")){errno=EACCES;return -1;}
+ if(bad && !strcmp(name,"maintenance")) {
+  static unsigned resets,powers;
+  if(count>=11 && !memcmp(buffer,"temperature",11) && !strcmp(bad,"temperature")){errno=EIO;return -1;}
+  if(count>=5 && !memcmp(buffer,"reset",5) && !strncmp(bad,"monitor",7) && !resets++){errno=EUCLEAN;return -1;}
+  if(count>=5 && !memcmp(buffer,"power",5) && !strncmp(bad,"monitor",7) &&
+     (strcmp(bad,"monitor-ok") || !powers++)){errno=EUCLEAN;return -1;}
+  return count;
+ }
  result=real_write(fd,buffer,count);if(result<0)return result;
  n=count<sizeof(command)-1 ? count : sizeof(command)-1;memcpy(command,buffer,n);command[n]=0;
  show[0]=0;
  if(!strcmp(name,"calibration"))
-  snprintf(show,sizeof(show),"configured=%u model=GN25L99 marker=%s writes=128 error=0\n",
-   bad && !strcmp(bad,"marker") ? 0 : 1,bad && !strcmp(bad,"marker") ? "00" : "b0");
+  snprintf(show,sizeof(show),"configured=%u model=%s marker=%s writes=%u error=0\n",
+   bad && !strcmp(bad,"marker") ? 0 : 1,
+   bad && (!strncmp(bad,"monitor",7) || !strcmp(bad,"temperature")) ? "UX3326" : "GN25L99",
+   bad && !strcmp(bad,"marker") ? "00" : "b0",
+   bad && (!strncmp(bad,"monitor",7) || !strcmp(bad,"temperature")) ? 56 : 128);
  if(!strcmp(name,"host_serdes")) {
   sscanf(command,"%u %u",&mode,&nway);
   snprintf(show,sizeof(show),"mode=%u nway=%u pll=1 error=0 link=%u\n",mode,nway,
@@ -75,6 +86,7 @@ def main():
     parser.add_argument('--factory',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--backend',choices=('asic9690','fpga1','fpga2'),default='asic9690')
+    parser.add_argument('--monitor',action='store_true',help='include UX3326 recovery, runtime failure and cancellation')
     args=parser.parse_args()
     assert {x['ifname'] for x in json.loads(subprocess.check_output(['ip','-j','link','show'],text=True))}=={'lo'}
     subprocess.run(['ip','link','add','ftr-host','type','veth','peer','name','ftr-peer'],check=True)
@@ -107,7 +119,9 @@ def main():
                 time.sleep(0.01)
             raise AssertionError('bootstrap observation timeout')
 
-        for bad in ('none','link','marker','core','stop-during-init') + (('auth',) if args.backend=='fpga1' else ()):
+        cases = ('none','link','marker','core','stop-during-init') + (('auth',) if args.backend=='fpga1' else ())
+        if args.monitor: cases += ('temperature','monitor-ok','monitor-low','monitor-stop')
+        for bad in cases:
             case=work/bad;case.mkdir()
             miniolt,ni,optical,store=[case/n for n in ('miniolt','ni','optical','state')]
             for p in (miniolt,ni,optical,store):p.mkdir(mode=0o700)
@@ -119,6 +133,8 @@ def main():
                 miniolt.joinpath('fpga_init').write_text('0\n')
                 if args.backend == 'fpga1': miniolt.joinpath('fpga_auth').write_text('0\n')
             ni.joinpath('fttr_link').write_text('0 0\n');optical.joinpath('calibration').write_text('0\n')
+            monitor = bad.startswith('monitor') or bad == 'temperature'
+            optical.joinpath('maintenance').write_text('supported=1 interval_ms=200\n' if monitor else 'supported=0 interval_ms=0\n')
             ni.joinpath('fttr_accel').write_text('0\n')
             miniolt.joinpath('onu_table').write_text(''.join(f'{i} 00000000 00000000 00000000 0000000000000000\n' for i in range(64)))
             log=case/'commands';log.write_text('')
@@ -155,6 +171,26 @@ def main():
                     process.send_signal(signal.SIGTERM);_,errors=process.communicate(timeout=10)
                     assert process.returncode==0,errors
                     assert 'core_init 1' not in log.read_text()
+                elif monitor:
+                    if bad == 'temperature':
+                        _,errors=process.communicate(timeout=5)
+                        assert process.returncode==1 and state()['error']==-5,errors
+                    elif bad == 'monitor-low':
+                        _,errors=process.communicate(timeout=15)
+                        assert process.returncode==1 and state()['error']==-67,errors
+                    else:
+                        if bad == 'monitor-stop':
+                            wait(process,lambda:log.read_text().splitlines().count('tx_enable 0')==2,seconds=12)
+                        else:
+                            wait(process,lambda:log.read_text().splitlines().count('maintenance power')==2,seconds=15)
+                        process.send_signal(signal.SIGTERM);_,errors=process.communicate(timeout=5)
+                        assert process.returncode==0,errors
+                    commands=log.read_text().splitlines()
+                    if bad != 'temperature':
+                        assert commands.count('calibration 1')==2
+                        assert commands.count('tx_enable 1')==(1 if bad=='monitor-stop' else 2)
+                    else:
+                        assert commands.count('calibration 1')==1
                 else:
                     _,errors=process.communicate(timeout=5)
                     assert process.returncode==1,errors
@@ -172,6 +208,7 @@ def main():
         'native_bootstrap_command_order':True,'link_marker_core_errors_stop_before_tx':True,
         'stop_during_init_closes_hardware':True,'restart_waits_for_previous_owner':True,
         'real_netdev_ioctls_in_private_namespace':True,'modeled_hardware':'sysfs write/show callbacks',
+        'ux3326_recovery_and_stop_checked':args.monitor,
         'optical_hardware_verified':False},indent=2)+'\n')
     print('Native startup: factory import, IO order, failure cleanup and controller replacement passed')
 

@@ -13,6 +13,7 @@ struct rtl_fttr_bosa {
 	struct mutex lock;
 	unsigned int writes;
 	unsigned int model;
+	unsigned char ux_calibration[588];
 	int error;
 	bool configured;
 };
@@ -32,6 +33,21 @@ static int rtl_fttr_bosa_write(void *context, unsigned int reg, unsigned char va
 	if (!ret)
 		bosa->writes++;
 	return ret;
+}
+
+static int rtl_fttr_bosa_read_word(void *context, unsigned int reg)
+{
+	struct rtl_fttr_bosa *bosa = context;
+
+	return i2c_smbus_read_word_swapped(bosa->client, reg);
+}
+
+static int rtl_fttr_bosa_maintain_write(void *context, unsigned int reg, unsigned char value)
+{
+	struct rtl_fttr_bosa *bosa = context;
+
+	/* Runtime temperature adjustment does not alter the calibration count. */
+	return i2c_smbus_write_byte_data(bosa->client, reg, value);
 }
 
 static int rtl_fttr_bosa_configure(struct rtl_fttr_bosa *bosa)
@@ -67,6 +83,8 @@ static int rtl_fttr_bosa_configure(struct rtl_fttr_bosa *bosa)
 	bosa->writes = 0;
 	if (!ret)
 		ret = rtl_fttr_optical_calibrate(bosa, rtl_fttr_bosa_write, calibration->data);
+	if (!ret && bosa->model == RTL_FTTR_UX3326)
+		memcpy(bosa->ux_calibration, calibration->data, sizeof(bosa->ux_calibration));
 	release_firmware(calibration);
 	if (ret)
 		goto out;
@@ -112,8 +130,69 @@ static ssize_t calibration_store(struct device *dev, struct device_attribute *at
 }
 static DEVICE_ATTR_RW(calibration);
 
+static ssize_t maintenance_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_fttr_bosa *bosa = dev_get_drvdata(dev);
+	ssize_t size;
+
+	mutex_lock(&bosa->lock);
+	size = bosa->configured ? sysfs_emit(buf, "supported=%u interval_ms=%u\n",
+		bosa->model == RTL_FTTR_UX3326, bosa->model == RTL_FTTR_UX3326 ?
+		(bosa->ux_calibration[6] ? 200 : 1000) : 0) : -EIO;
+	mutex_unlock(&bosa->lock);
+	return size;
+}
+
+static ssize_t maintenance_store(struct device *dev, struct device_attribute *attr,
+		const char *buf, size_t size)
+{
+	struct rtl_fttr_bosa *bosa = dev_get_drvdata(dev);
+	const struct firmware *calibration;
+	int ret;
+
+	mutex_lock(&bosa->lock);
+	if (!bosa->configured) {
+		ret = -EIO;
+		goto out;
+	}
+	if (bosa->model != RTL_FTTR_UX3326) {
+		ret = -EOPNOTSUPP;
+		goto out;
+	}
+	if (sysfs_streq(buf, "temperature")) {
+		ret = rtl_fttr_ux3326_temperature(bosa, rtl_fttr_bosa_read_word,
+			rtl_fttr_bosa_maintain_write, bosa->ux_calibration);
+	} else if (sysfs_streq(buf, "reset") || sysfs_streq(buf, "power")) {
+		/* Original periodically reloads the calibration used by its monitor.
+		 * A changed model/address cannot be applied to this bound client.
+		 */
+		ret = request_firmware_direct(&calibration, "realtek/rtl9617c/fttr-bosa-calibration.bin", dev);
+		if (ret)
+			goto out;
+		ret = rtl_fttr_optical_validate(calibration->data, calibration->size);
+		if (!ret && (calibration->data[3] != RTL_FTTR_UX3326 ||
+		    calibration->data[4] != bosa->client->addr << 1))
+			ret = -EINVAL;
+		if (!ret) {
+			memcpy(bosa->ux_calibration, calibration->data, sizeof(bosa->ux_calibration));
+			ret = sysfs_streq(buf, "reset") ?
+				rtl_fttr_ux3326_check_reset(bosa, rtl_fttr_bosa_read,
+					rtl_fttr_bosa_read_word, bosa->ux_calibration) :
+				rtl_fttr_ux3326_low_power(bosa, rtl_fttr_bosa_read_word, bosa->ux_calibration);
+		}
+		release_firmware(calibration);
+	} else {
+		ret = -EINVAL;
+	}
+out:
+	mutex_unlock(&bosa->lock);
+	return ret ? ret : size;
+}
+static DEVICE_ATTR_RW(maintenance);
+
 static struct attribute *rtl_fttr_bosa_attrs[] = {
 	&dev_attr_calibration.attr,
+	&dev_attr_maintenance.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(rtl_fttr_bosa);
