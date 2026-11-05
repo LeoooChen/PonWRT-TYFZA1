@@ -804,7 +804,8 @@ serial-or-* kind UNI-ordinal slot priority VID-or-none fixed assured maximum bri
 
 The serial is16 hexadecimal digits in the hardware inventory's vendor-first
 order. Kind0 selects Ethernet; kind2 selects VEIP. Ordinals are zero-based
-within that actual MIB class. Slot1..7, priority0..7, VID0..4094/`none` and
+within that actual MIB class. Kind`shared` selects all reported Ethernet/VEIP
+UNIs and requires ordinal0. Slot1..7, priority0..7, VID0..4094/`none` and
 hardware grant units have the same meanings as `fttrctl service`. There is
 one policy per exact serial and at most one wildcard; exact matches win.
 The final field names an existing/up Linux bridge (for example `br-lan`), or
@@ -832,7 +833,7 @@ fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> ani <hardware-ID> <port-insta
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> mapper <hardware-ID> <mapper-instance> <P-bit-mask> <GEM-IW-instance|0xffff> fttr0
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> vlan-table <hardware-ID> <EVTO-instance> fttr0
 fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> vlan <hardware-ID> <EVTO-instance> <policy:0..5> <input-VID> <output-VID> <priority:0..7> <remove:0|1> fttr0
-fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> service <hardware-ID> <UNI-kind:0|2> <UNI-instance> <slot:1..7> <priority:0..7> <VID|none> <fixed> <assured> <maximum> fttr0
+fttrctl /sys/bus/mdio_bus/devices/<MiniOLT-device> service <hardware-ID> <UNI-kind:0|2|shared> <UNI-instance:0-if-shared> <slot:1..7> <priority:0..7> <VID|none> <fixed> <assured> <maximum> fttr0
 ```
 
 `status` emits raw hardware state and the registration bit for all 64 slots.
@@ -923,7 +924,8 @@ only that policy's filter keys. A configured result applies to these selected
 rules, not a complete forwarding path or supported subordinate model.
 
 `service` performs a fresh inventory and selects real T-CONT/queue resources
-for the explicitly selected UNI. Kind0 is Ethernet; kind2 is VEIP. `none`
+for the explicitly selected UNI. Kind0 is Ethernet; kind2 is VEIP; `shared`
+with instance0 selects all reported Ethernet/VEIP UNIs. `none`
 selects the original transparent UNI policy; a VID0..4094 selects the original
 access policy with the chosen priority. Bandwidth values are the existing
 hardware grant units, not kbit/s. It emits `service_state`, `service_objects`
@@ -3662,12 +3664,65 @@ adopted resources still reject migration without the original owner.
 three-Ethernet/one-VEIP services, transparent/access rules, read-only repeated
 adoption, all-UNI preflight, inconsistent ownership, middle/last UNI failures,
 preservation of preexisting tables and cleanup failure dependency retention.
-Actual daemon/CLI migration passes with FPGA1/FPGA2 in private veth/bridge
+Actual daemon/CLI migration passes with ASIC9690/FPGA1/FPGA2 in private veth/bridge
 namespaces, including authentication, Wi-Fi, peer isolation, drift, timeout,
 identity replacement and restart adoption. Existing GEM/association/Wi-Fi,
-per-ONU policy and controller regressions pass. Reports are
+per-ONU policy and controller regressions pass. GCC14.4/musl package compilation
+and staging installation pass. Reports are
 `artifacts/fttr/shared-*-20261106.json`. No optical traffic or physical packet
 retirement is exercised by these modeled MiniOLT/ONU peers.
+
+### Original default multicast objects and transport boundary
+
+`tools/trace_stock_fttr_multicast.py` executes the actual default multicast API,
+configuration state machine, object producers and baseline wire encoders.
+The pool initializer `plr_gponrm_cfg_card_uni_mul_init` supplies the original
+IGMP defaults; only reported UNI records, configuration storage, allocation
+and OMCI responses are modeled. The default API selects card0/UNI0 of VEIP
+when any VEIP card is reported, otherwise card0/UNI0 of Ethernet. This differs
+from the shared unicast bridge's enumeration of both classes.
+
+The ordinary path creates class309 Multicast Operations Profile, sets its
+downstream tag control, creates class310 Subscriber Config and class311
+Subscriber Monitor at the selected UNI bridge-port entity. The
+`g_plrGponrmCtcDebug` branch uses class65531 Extended Multicast Operations
+Profile instead, followed by its own required Set. This is an actual global
+selector, not evidence that every peer supports the extended class. The first
+shared-bridge multicast user also creates a class47 port with TP type6 and
+pointer4095 plus class84 filter; later shared users retain that common port.
+
+The separate `plr_gponrm_cfg_gem_dft` path creates downstream-only class268
+GEM CTP4095, class281 Multicast GEM IW4095 referencing GAL1, then installs the
+IPv4 range224.0.1.0 through239.255.255.255. The initialization callsite at
+`a7c7c` follows default bridge setup. Full startup ordering remains outside this
+focused execution. The default API does not allocate another unicast T-CONT
+or its local DBA for these downstream multicast objects.
+
+Failure execution identifies original behavior that native ownership handling
+must correct: the ordinary class309 downstream-tag Set failure is overwritten
+by the next Create result; early extended-profile failure tears down class309
+despite having created class65531; cleanup results are ignored; and
+`plr_gponrm_cfg_gem_dft` returns success for errors other than13, including
+failed GEM Create/Set. Native implementation must read back requested values,
+delete only objects it owns and preserve separate cleanup failures.
+
+The retained `onu_setup.sh` creates a dedicated `.mc` SMUX interface when
+`EXTERNAL_SWITCH_HANDLE_IGMP_SINGLE_NETDEV` is enabled. The retained hardware
+configuration has this value1, TPID0x8100 and IGMP VID4095. The script pushes
+this outer tag, filters duplicate multicast on individual external interfaces
+and applies its multicast/source-MAC loop rules. This is not an ordinary
+per-ONU service VLAN. Native Linux `net/8021q/vlan_netlink.c` rejects VID4095;
+an isolated veth/rtnetlink check accepts4094 and returns `Invalid VLAN id` for
+4095. A native multicast endpoint therefore needs explicit P6/NI forwarding
+and lifecycle integration, including shared ownership across ONUs, before
+remote multicast provisioning can constitute a complete working feature.
+
+Eighteen selection/profile/reference cases,24 operation/cleanup failures,
+seven direct multicast-GEM cases and six default-GEM wrapper cases pass;
+reports are `artifacts/fttr/multicast-original-20261106.json` and
+`multicast-vlan-boundary-20261106.json`. This is original implementation
+evidence. Native multicast provisioning/forwarding and hardware acceptance
+remain incomplete.
 
 ### Outstanding implementation and acceptance
 

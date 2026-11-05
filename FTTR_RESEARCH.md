@@ -92,6 +92,8 @@
 
 37. 接入共享桥的全部 Ethernet/VEIP UNI：显式 `shared` 业务从实际 MIB 选择所有 UNI，先完成全部只读预检，再创建共享 GEM/T-CONT 及逐 UNI 对象、管理状态和独立 VLAN 事务，成功后接入既有 NI/P6/FE 业务端口。后段失败恢复早先 UNI 的旧表/状态，清理失败保留依赖；迁移先撤销 FE/VLAN/DBA，再释放全部 UNI 和共享资源。原厂报文对比、混合 UNI/重复采用/归属冲突/中末段失败/旧表恢复、FPGA1/FPGA2 实际守护进程迁移及既有认证/Wi-Fi/控制器回归通过。原厂配置数量限制、组播、多业务和持久资源归属仍未完成，尚未实机验证。详见[共享桥事务](port/FTTR.md#shared-bridge-ethernet-and-veip-service-transactions)。
 
+38. 查实默认组播的远端对象与本地接口要求：执行原厂选择/配置/报文链，确认优先首个VEIP、否则首个Ethernet；创建309或全局CTC分支的65531、310/311，并为共享桥首个组播用户创建指向GEM4095的type6端口。默认GEM路径创建268/281及IPv4范围；18组正常、24组失败、7组GEM与6组默认包装调用确认原厂漏查Set和清理类型/错误处理问题。保留工厂配置与脚本使用独立`.mc`及VID4095，隔离网络实测Linux VLAN拒绝4095，后续须在原生NI/P6框架接入专用组播端点及共享生命周期。这是实现依据，尚未完成组播产品代码。详见[默认组播与接口边界](port/FTTR.md#original-default-multicast-objects-and-transport-boundary)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
