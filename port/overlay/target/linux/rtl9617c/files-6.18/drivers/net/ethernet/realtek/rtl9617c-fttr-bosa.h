@@ -138,6 +138,98 @@ static inline int rtl_fttr_optical_calibrate(void *context,
 	return ret ? ret : write(context, 0x90, cal[0x95] & ~8);
 }
 
+struct rtl_fttr_optical_diagnostics {
+	int temperature_q8;
+	unsigned int voltage_100uv, bias_2ua;
+	/* Original power input is in 0.1uW. Keep its /256 fraction for log10
+	 * in userspace; zero is a measured zero, not an I2C failure.
+	 */
+	long long tx_power_q8, rx_power_q8;
+	bool rx_supported;
+};
+
+/* Original MUL W + SCVTF D, followed by /256, FCVTZU W and a 16-bit
+ * addition. Negative signed products saturate to zero before the addition.
+ */
+static inline unsigned int rtl_fttr_optical_linear(unsigned int raw,
+		const unsigned char *cal)
+{
+	unsigned int gain = (unsigned int)cal[0] << 8 | cal[1];
+	unsigned int offset = (unsigned int)cal[2] << 8 | cal[3];
+	unsigned int product = raw * gain;
+
+	return (((product & 0x80000000U) ? 0 : product / 256) + offset) & 0xffff;
+}
+
+/* rtkoltbosa status tails: 4057c4, 40a7a0, 40c90c, 40e70c.
+ * UX3326S exposes calibrated words in its unpaged lower register space.
+ * The other three models use this unit's calibration file, not SFP EEPROM.
+ * Read order and word byte order match the original routines.
+ */
+static inline int rtl_fttr_optical_diagnostics_read(void *context,
+		int (*read_word)(void *, unsigned int), unsigned int model,
+		const unsigned char *cal, struct rtl_fttr_optical_diagnostics *result)
+{
+	struct rtl_fttr_optical_diagnostics value = { 0 };
+	unsigned int voltage, bias, tx, temperature;
+	int raw, offset;
+	long long product;
+
+	switch (model) {
+	case RTL_FTTR_UX3326:
+		voltage = 0x30; bias = 0x32; tx = 0x34; temperature = 0x2e;
+		break;
+	case RTL_FTTR_UX3326S:
+		voltage = 0x6f; bias = 0x71; tx = 0x73; temperature = 0x6d;
+		value.rx_supported = true;
+		break;
+	case RTL_FTTR_GN25L99:
+	case RTL_FTTR_GN25L81:
+		voltage = 0x70; bias = 0x6a; tx = 0x6c; temperature = 0x66;
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+	if (!value.rx_supported && !cal)
+		return -EINVAL;
+	raw = read_word(context, voltage);
+	if (raw < 0)
+		return raw;
+	value.voltage_100uv = value.rx_supported ? (unsigned int)raw : rtl_fttr_optical_linear(raw, cal + 24);
+	raw = read_word(context, bias);
+	if (raw < 0)
+		return raw;
+	value.bias_2ua = value.rx_supported ? (unsigned int)raw : rtl_fttr_optical_linear(raw, cal + 20);
+	raw = read_word(context, tx);
+	if (raw < 0)
+		return raw;
+	if (value.rx_supported) {
+		value.tx_power_q8 = raw * 256;
+		raw = read_word(context, 0x75);
+		if (raw < 0)
+			return raw;
+		value.rx_power_q8 = raw * 256;
+	} else {
+		product = (long long)raw * ((unsigned int)cal[8] << 8 | cal[9]);
+		if (product > 0x7fffffff)
+			product -= 0x100000000LL;
+		offset = (unsigned int)cal[10] << 8 | cal[11];
+		if (offset & 0x8000)
+			offset -= 65536;
+		value.tx_power_q8 = product + offset * 256;
+		if (value.tx_power_q8 < 0)
+			return -ERANGE;
+	}
+	raw = read_word(context, temperature);
+	if (raw < 0)
+		return raw;
+	value.temperature_q8 = value.rx_supported ? (unsigned int)raw : rtl_fttr_optical_linear(raw, cal + 16);
+	if (value.temperature_q8 & 0x8000)
+		value.temperature_q8 -= 65536;
+	*result = value;
+	return 0;
+}
+
 /* rtkoltbosa UX3326 monitor, 402940..402ad0. Word reads use the original
  * device order (first register in the high byte), not SMBus wire order.
  */

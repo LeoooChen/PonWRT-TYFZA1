@@ -66,7 +66,7 @@ def main():
         control = directory / 'fttrctl'
         subprocess.run(['cc', '-O2', '-std=c11', '-Wall', '-Wextra', '-Werror', '-o', str(control),
                         str(source / 'fttrctl.c'), str(source / 'miniolt.c'),
-                        *map(str, sorted(source.glob('omci-*.c')))], check=True)
+                        *map(str, sorted(source.glob('omci-*.c'))), '-lm'], check=True)
         device = directory / 'miniolt'
         device.mkdir()
         (device / 'omci_link').write_text('host=02:03:04:05:06:07 olt=0a:0b:0c:0d:0e:0f '

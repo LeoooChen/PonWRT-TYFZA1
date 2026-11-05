@@ -96,7 +96,7 @@ def main():
         sources = [source / n for n in ('miniolt.c', 'omci-wire.c', 'omci-socket.c', 'omci-mib.c', 'omci-me.c', 'omci-objects.c', 'omci-gem.c', 'omci-association.c', 'omci-vlan.c', 'omci-model.c', 'omci-service.c', 'omci-wifi.c')]
         flags = ['cc', '-O2', '-std=c11', '-Wall', '-Wextra', '-Werror']
         subprocess.run(flags + ['-shared', '-fPIC', '-o', str(path / 'native.so')] + list(map(str, sources)), check=True)
-        subprocess.run(flags + ['-o', str(path / 'fttrctl'), str(source / 'fttrctl.c')] + list(map(str, sources)), check=True)
+        subprocess.run(flags + ['-o', str(path / 'fttrctl'), str(source / 'fttrctl.c')] + list(map(str, sources)) + ['-lm'], check=True)
         library = ctypes.CDLL(str(path / 'native.so'))
         library.fttr_mib_request.argtypes = [ctypes.c_ushort, ctypes.c_bool, ctypes.c_ushort, ctypes.c_void_p]
         library.fttr_mib_record_decode.argtypes = [ctypes.c_char_p, ctypes.POINTER(Record)]

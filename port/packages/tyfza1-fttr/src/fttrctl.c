@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -61,6 +62,64 @@ static int status(int directory)
 		hex(onu->serial, sizeof(onu->serial));
 		puts("\"}");
 	}
+	return ferror(stdout) ? -EIO : 0;
+}
+
+static int optical_status(int directory)
+{
+	unsigned int model, voltage, bias, rx_supported;
+	long long tx, rx;
+	int temperature, fields, ret, fd;
+	const char *name;
+	char trailing;
+	FILE *file;
+
+	fd = openat(directory, "diagnostics", O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+	if (fd < 0)
+		return -errno;
+	file = fdopen(fd, "r");
+	if (!file) {
+		ret = -errno;
+		close(fd);
+		return ret;
+	}
+	fields = fscanf(file, "model=%u temperature_q8=%d voltage_100uv=%u bias_2ua=%u "
+		"tx_power_q8=%lld rx_power_q8=%lld rx_supported=%u %c",
+		&model, &temperature, &voltage, &bias, &tx, &rx, &rx_supported, &trailing);
+	ret = ferror(file) ? -(errno ? errno : EIO) : fields == 7 ? 0 : -EPROTO;
+	fclose(file);
+	if (ret)
+		return ret;
+	switch (model) {
+	case 1: name = "UX3326"; break;
+	case 2: name = "UX3326S"; break;
+	case 10: name = "GN25L99"; break;
+	case 20: name = "GN25L81"; break;
+	default: return -EOPNOTSUPP;
+	}
+	if (temperature < -32768 || temperature > 32767 || voltage > 65535 || bias > 65535 ||
+	    tx < 0 || tx > 2155871999LL || rx < 0 || rx > 65535 * 256 ||
+	    rx_supported != (model == 2) || (!rx_supported && rx) ||
+	    (model == 2 && tx > 65535 * 256))
+		return -EPROTO;
+	printf("{\"model\":\"%s\",\"temperature_c\":%.8f,\"voltage_v\":%.4f,\"bias_ma\":%.3f,"
+	       "\"tx_power_uw\":%.9f,\"tx_power_dbm\":", name, temperature / 256.0,
+	       voltage * 0.0001, bias * 0.002, tx / 2560.0);
+	if (tx)
+		printf("%.8f", 10 * log10(tx / 256.0) - 40);
+	else
+		fputs("null", stdout); /* Measured zero has no finite dBm representation. */
+	printf(",\"rx_supported\":%s,\"rx_power_uw\":", rx_supported ? "true" : "false");
+	if (rx_supported)
+		printf("%.9f", rx / 2560.0);
+	else
+		fputs("null", stdout);
+	fputs(",\"rx_power_dbm\":", stdout);
+	if (rx_supported && rx)
+		printf("%.8f", 10 * log10(rx / 256.0) - 40);
+	else
+		fputs("null", stdout);
+	puts("}");
 	return ferror(stdout) ? -EIO : 0;
 }
 
@@ -597,7 +656,7 @@ int main(int argc, char **argv)
 	    strcmp(argv[2], "gem") && strcmp(argv[2], "profiles") && strcmp(argv[2], "uni") &&
 	    strcmp(argv[2], "ani") && strcmp(argv[2], "mapper") && strcmp(argv[2], "vlan") &&
 	    strcmp(argv[2], "vlan-table") && strcmp(argv[2], "service") && strcmp(argv[2], "wifi") &&
-	    strcmp(argv[2], "onu-admin"))) {
+	    strcmp(argv[2], "onu-admin") && strcmp(argv[2], "optical"))) {
 		fprintf(stderr, "Usage: %s <miniolt-sysfs-directory> status\n"
 			"       %s <miniolt-sysfs-directory> mib <hardware-ID> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> get <hardware-ID> <class> <instance> <mask> [interface=fttr0]\n"
@@ -614,7 +673,21 @@ int main(int argc, char **argv)
 			"       %s <miniolt-sysfs-directory> wait-link <NI-sysfs-directory>\n",
 			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
 		fprintf(stderr, "       %s <controller-state-directory> onu-admin <hardware-ID> <serial-hex> <block|resume|deactivate>\n", argv[0]);
+		fprintf(stderr, "       %s <optical-sysfs-directory> optical\n", argv[0]);
 		return 2;
+	}
+	if (!strcmp(argv[2], "optical")) {
+		if (argc != 3)
+			return 2;
+		directory = open(argv[1], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+		if (directory < 0) { perror(argv[1]); return 1; }
+		ret = optical_status(directory);
+		close(directory);
+		if (!ret && fflush(stdout))
+			ret = -errno;
+		if (ret)
+			fprintf(stderr, "FTTR optical: %s (%d)\n", strerror(-ret), ret);
+		return ret ? 1 : 0;
 	}
 	if (!strcmp(argv[2], "onu-admin")) {
 		if (argc != 6)

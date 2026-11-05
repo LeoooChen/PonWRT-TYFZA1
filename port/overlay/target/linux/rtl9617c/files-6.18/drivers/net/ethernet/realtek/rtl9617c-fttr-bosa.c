@@ -190,9 +190,49 @@ out:
 }
 static DEVICE_ATTR_RW(maintenance);
 
+static ssize_t diagnostics_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct rtl_fttr_bosa *bosa = dev_get_drvdata(dev);
+	struct rtl_fttr_optical_diagnostics value;
+	const struct firmware *calibration = NULL;
+	int ret;
+
+	mutex_lock(&bosa->lock);
+	if (!bosa->configured) {
+		ret = -EIO;
+		goto out;
+	}
+	if (bosa->model != RTL_FTTR_UX3326S) {
+		ret = request_firmware_direct(&calibration, "realtek/rtl9617c/fttr-bosa-calibration.bin", dev);
+		if (ret)
+			goto out;
+		ret = rtl_fttr_optical_validate(calibration->data, calibration->size);
+		if (!ret && (calibration->data[3] != bosa->model ||
+		    calibration->data[4] != bosa->client->addr << 1))
+			ret = -EINVAL;
+		if (ret)
+			goto release;
+	}
+	ret = rtl_fttr_optical_diagnostics_read(bosa, rtl_fttr_bosa_read_word, bosa->model,
+		calibration ? calibration->data : NULL, &value);
+	if (!ret)
+		ret = sysfs_emit(buf, "model=%u temperature_q8=%d voltage_100uv=%u bias_2ua=%u "
+			"tx_power_q8=%lld rx_power_q8=%lld rx_supported=%u\n",
+			bosa->model, value.temperature_q8, value.voltage_100uv, value.bias_2ua,
+			value.tx_power_q8, value.rx_power_q8, value.rx_supported);
+release:
+	if (calibration)
+		release_firmware(calibration);
+out:
+	mutex_unlock(&bosa->lock);
+	return ret;
+}
+static DEVICE_ATTR_RO(diagnostics);
+
 static struct attribute *rtl_fttr_bosa_attrs[] = {
 	&dev_attr_calibration.attr,
 	&dev_attr_maintenance.attr,
+	&dev_attr_diagnostics.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(rtl_fttr_bosa);
@@ -201,7 +241,7 @@ static int rtl_fttr_bosa_probe(struct i2c_client *client)
 {
 	struct rtl_fttr_bosa *bosa;
 
-	if (!i2c_check_functionality(client->adapter, I2C_FUNC_SMBUS_BYTE_DATA))
+	if (!i2c_check_functionality(client->adapter, I2C_FUNC_SMBUS_BYTE_DATA | I2C_FUNC_SMBUS_WORD_DATA))
 		return -EOPNOTSUPP;
 	bosa = devm_kzalloc(&client->dev, sizeof(*bosa), GFP_KERNEL);
 	if (!bosa)

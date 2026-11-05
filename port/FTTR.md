@@ -3013,6 +3013,53 @@ recovery and permanent-block preservation. Reports:
 package and MiniOLT/BOSA modules compile/link. Physical error induction,
 latency and optical recovery have not been tested.
 
+### Original BOSA diagnostics
+
+The bound optical driver's read-only `diagnostics` attribute now reads the four
+factory-selected BOSA models under the same mutex as calibration and UX3326
+maintenance. It requires successful configuration. It does not probe a guessed
+SFP address or alter the laser/FE state. `fttrctl <optical-sysfs-directory> optical`
+prints the model, temperature in degrees C, voltage in V, bias in mA, and optical
+power in uW/dBm as JSON. This command is also usable while the controller runs;
+the driver serializes the optical transactions.
+
+The reference is `rtkoltbosa`'s model status output, reached through operation
+table offset112, and its diagnostic tails at4057c4,40a7a0,40c914,40e70c:
+
+| Model | Voltage | Bias | TX power | RX power | Temperature |
+| --- | --- | --- | --- | --- | --- |
+| UX3326 | word30 | word32 | word34 | unavailable | word2e |
+| UX3326S | word6f | word71 | word73 | word75 | word6d |
+| GN25L99/GN25L81 | word70 | word6a | word6c | unavailable | word66 |
+
+Register numbers are hexadecimal. Reads follow the table order and the existing
+external-I2C wire byte order. UX3326S supplies calibrated lower-page words and
+requires no diagnostic page writes. Other models reload and validate this
+unit's calibration file, including model/address, and use BE16 gain/offset pairs
+at offsets24/20/8/16 for voltage/bias/TX/temperature. Original signed32 multiply,
+unsigned saturating conversion, 16-bit addition and signed temperature behavior
+are preserved. Voltage units are100uV, bias2uA, temperature1/256C. The kernel
+retains fractional TX power in1/256 of0.1uW; user space computes
+`10*log10(power_in_0.1uW)-40`. It does not use floating point in the kernel.
+
+Measured zero power is reported as0uW with a null dBm value. Unsupported RX
+is explicit and both RX numbers are null. Negative calibrated power is ERANGE;
+firmware or I2C errors return an error without a partial/fabricated status.
+This deliberately avoids the original getters' zero-on-IO-error behavior.
+These BOSA functions differ from relay's SFP EEPROM getters and do not establish
+SFP dispatch or alarm policy.
+
+`test_fttr_optical_diagnostics.py` executes400 original ARM64 input combinations:
+353 valid results match exactly and47 invalid negative-power inputs are rejected.
+It additionally checks distinct words, all17 read failure positions, firmware
+validation/ownership, driver locking, unsupported models, and the actual CLI's
+units, zero/unavailable fields and malformed-input rejection. Four calibration
+recipes,514 temperature cases,63 power cases and real Wi-Fi/MIB CLI regressions
+pass. OpenWrt package and Linux6.18.55 MiniOLT/BOSA module compilation/linking
+pass (the existing external-module MODULE_DESCRIPTION warnings remain).
+Reports/log: `artifacts/fttr/optical-diagnostics*-20261106.{json,log}`.
+No physical sensor accuracy, SFP compatibility or optical readiness is claimed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
@@ -3023,7 +3070,7 @@ latency and optical recovery have not been tested.
    FPGA2 resource-to-grant binding and full original sequencing remain open.
 2. Four original optical calibration recipes and available identity checks are
    implemented, together with the original UX3326 temperature/reset recovery
-   loop. Broader DDMI, SFP handling, identifying
+   loop and model-specific diagnostic readings. SFP handling, optical alarms, identifying
    the retained FPGA sample's actual optics and physical readiness remain open.
 3. Real P6/FTTR frame verification. Native SoC P6, ASIC peer WTG/PON SerDes,
    the dedicated RX/TX endpoint, core/DBA and ASIC hardware startup orchestration
