@@ -85,6 +85,7 @@ define Package/tyfza1-fttr/install
 	$(INSTALL_DATA) ./files/tyfza1-fttr.wifi $(1)/etc/tyfza1-fttr.wifi
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/firmware/*.bin $(1)/lib/firmware/realtek/rtl9617c/
 	$(LN) /tmp/tyfza1-factory/rtl9617c/fttr-bosa-calibration.bin $(1)/lib/firmware/realtek/rtl9617c/fttr-bosa-calibration.bin
+	$(LN) /tmp/tyfza1-factory/fttr-private/ciphertext.bin $(1)/lib/firmware/realtek/rtl9617c/fttr-fpga-ciphertext.bin
 endef
 
 define Package/tyfza1-fttr/conffiles

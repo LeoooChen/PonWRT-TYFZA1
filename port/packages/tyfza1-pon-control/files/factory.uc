@@ -71,6 +71,29 @@ function import_fttr_startup() {
 	save('tmp/tyfza1-factory/fttr_startup', enabled + ' ' + mode + ' ' + nway + ' ' + pon + '\n');
 }
 
+function import_fttr_ciphertext() {
+	const path = 'tmp/tyfza1-factory/fttr-private';
+	unlink(output + '/' + path + '/ciphertext.bin');
+	const text = optional_field(hs, 'HW_OLTFPGA_CIPHERTEXT');
+	if (text == '') return;
+	const words = split(text, ',');
+	if (length(words) != 8)
+		die('Invalid factory FPGA ciphertext');
+	let data = '';
+	for (let word in words) {
+		if (!match(word, /^[0-9a-fA-F]{1,8}$/)) die('Invalid factory FPGA ciphertext');
+		const value = int(word, 16);
+		for (let byte = 0; byte < 4; byte++) data += chr((value >> (byte * 8)) & 255);
+	}
+	// Original MIB type13 stores eight little-endian u32 values. Keep the
+	// per-unit authentication input behind a private directory before writing.
+	mkdir(output + '/' + path, 0700);
+	if (!chmod(output + '/' + path, 0700)) die('Cannot protect factory FPGA ciphertext');
+	save(path + '/ciphertext.bin', data);
+	if (!chmod(output + '/' + path + '/ciphertext.bin', 0600))
+		die('Cannot protect factory FPGA ciphertext');
+}
+
 function import_radio(radio) {
 	unlink(output + '/tmp/tyfza1-factory/tyfza1/' + radio[0] + '/flash-calibration.bin');
 	let data = 'TYFC0003';
@@ -208,6 +231,12 @@ try {
 	import_fttr_startup();
 } catch (e) {
 	warn('Factory FTTR startup: ' + e.message + '\n');
+	failed = true;
+}
+try {
+	import_fttr_ciphertext();
+} catch (e) {
+	warn('Factory FTTR authentication: ' + e.message + '\n');
 	failed = true;
 }
 exit(failed ? 1 : 0);

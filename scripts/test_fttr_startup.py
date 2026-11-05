@@ -37,11 +37,12 @@ ssize_t write(int fd,const void *buffer,size_t count) {
  name=strrchr(path,'/');name=name ? name+1 : path;
  if(strcmp(name,"tx_enable") && strcmp(name,"reset") && strcmp(name,"calibration") &&
     strcmp(name,"host_serdes") && strcmp(name,"fttr_link") && strcmp(name,"pon_serdes") &&
-    strcmp(name,"core_init") && strcmp(name,"fpga_init") && strcmp(name,"omci_link") && strcmp(name,"dba") && strcmp(name,"fttr_accel"))
+    strcmp(name,"core_init") && strcmp(name,"fpga_init") && strcmp(name,"fpga_auth") && strcmp(name,"omci_link") && strcmp(name,"dba") && strcmp(name,"fttr_accel"))
   return real_write(fd,buffer,count);
  log=open(getenv("FTTR_TEST_LOG"),O_WRONLY|O_CREAT|O_APPEND,0600);
  real_write(log,name,strlen(name));real_write(log," ",1);real_write(log,buffer,count);close(log);
  if(bad && !strcmp(bad,"core") && (!strcmp(name,"core_init") || !strcmp(name,"fpga_init"))){errno=EIO;return -1;}
+ if(bad && !strcmp(bad,"auth") && !strcmp(name,"fpga_auth")){errno=EACCES;return -1;}
  result=real_write(fd,buffer,count);if(result<0)return result;
  n=count<sizeof(command)-1 ? count : sizeof(command)-1;memcpy(command,buffer,n);command[n]=0;
  show[0]=0;
@@ -106,7 +107,7 @@ def main():
                 time.sleep(0.01)
             raise AssertionError('bootstrap observation timeout')
 
-        for bad in ('none','link','marker','core','stop-during-init'):
+        for bad in ('none','link','marker','core','stop-during-init') + (('auth',) if args.backend=='fpga1' else ()):
             case=work/bad;case.mkdir()
             miniolt,ni,optical,store=[case/n for n in ('miniolt','ni','optical','state')]
             for p in (miniolt,ni,optical,store):p.mkdir(mode=0o700)
@@ -116,6 +117,7 @@ def main():
             if args.backend != 'asic9690':
                 for name in ('reset','host_serdes','pon_serdes','core_init','dba'): miniolt.joinpath(name).unlink()
                 miniolt.joinpath('fpga_init').write_text('0\n')
+                if args.backend == 'fpga1': miniolt.joinpath('fpga_auth').write_text('0\n')
             ni.joinpath('fttr_link').write_text('0 0\n');optical.joinpath('calibration').write_text('0\n')
             ni.joinpath('fttr_accel').write_text('0\n')
             miniolt.joinpath('onu_table').write_text(''.join(f'{i} 00000000 00000000 00000000 0000000000000000\n' for i in range(64)))
@@ -135,6 +137,7 @@ def main():
                     if args.backend != 'asic9690':
                         expected_commands=['fttr_accel 0','tx_enable 0','fttr_link 0 0','fttr_link 5 1','fpga_init 1',
                             'calibration 1','omci_link 02:03:04:05:06:07','tx_enable 1','fttr_accel 1']
+                        if args.backend == 'fpga1': expected_commands.insert(5,'fpga_auth 1')
                     assert log.read_text().splitlines()==expected_commands
                     replacement=subprocess.Popen(argv,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
                     try:
@@ -155,7 +158,7 @@ def main():
                 else:
                     _,errors=process.communicate(timeout=5)
                     assert process.returncode==1,errors
-                    assert state()['error']==(-110 if bad=='link' else -5)
+                    assert state()['error']==(-110 if bad=='link' else -13 if bad=='auth' else -5)
                     assert 'tx_enable 1' not in log.read_text().splitlines()
                 assert miniolt.joinpath('tx_enable').read_text()=='0\n'
                 assert ni.joinpath('fttr_link').read_text().startswith('configured=0 ')

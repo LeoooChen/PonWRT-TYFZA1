@@ -1552,6 +1552,8 @@ static int bootstrap(struct controller *c, int optical, const char *mode, const 
 		snprintf(setting, sizeof(setting), "5 %s\n", nway);
 		BOOT_STEP("configure host P6", fttr_miniolt_command(c->ni, "fttr_link", setting));
 		BOOT_STEP("initialize FPGA", fttr_miniolt_command(c->directory, "fpga_init", "1\n"));
+		if (c->backend == FTTR_FPGA1)
+			BOOT_STEP("authenticate FPGA", fttr_miniolt_command(c->directory, "fpga_auth", "1\n"));
 		BOOT_STEP("settle optical reset", nanosleep(&optical_settle, NULL) ? -errno : 0);
 		BOOT_STEP("calibrate optics", fttr_miniolt_command(optical, "calibration", "1\n"));
 		BOOT_STEP("wait for PCS", fttr_miniolt_wait_links(c->directory, c->ni));

@@ -2631,12 +2631,43 @@ ASIC/FPGA1/FPGA2 namespace startup regressions pass. Reports are
 MiniOLT/BOSA modules compile and link against Linux6.18.55; module postprocessing
 retains the build's `MODULE_DESCRIPTION` warnings. Full FITs predate this change.
 
-Remaining differences include FPGA1 authentication on versions newer than
-`230406ff`, original continuous optical monitoring/DDMI, SFP dispatch and
+Remaining differences include original continuous optical monitoring/DDMI, SFP dispatch and
 the original ordering of P6 before bitstream loading (native configures P6
 after the manager has loaded). The actual optical model of the retained FPGA
 sample is not established. No physical optical, FPGA or traffic acceptance
 is claimed by the offline recipe and startup comparisons.
+
+### FPGA1 factory authentication
+
+`onuinfo_fpga` startup (`4122f8`) runs authentication only for backend1 and
+version greater than `230406ff`. MIB2715 is `HW_OLTFPGA_CIPHERTEXT`, a32-byte
+type13 field in `configd`; `libmib:string_to_mib` stores its eight hexadecimal
+words as little-endian u32s. The factory importer now converts that field into
+private runtime storage, and the firmware package links to it. Missing fields
+remove stale input. Malformed supplied fields fail rather than generating a
+default authentication value. No device ciphertext is stored in Git or logs.
+
+The `fpga_auth` operation checks the actual FPGA version, loads the per-unit
+input when required, then reproduces `drv_set_auth_ciphertext` (`11420`):
+eight writes from register57 down to50. After the original1200000us delay,
+`drv_get_auth_result` (`11490`) reads5e; bit0 clear means success. A read of
+`ffffffff` or IO failure returns an error. The controller executes this after
+post-DONE setup and before optical calibration/TX enable. Older FPGA1 skips
+the credential request; FPGA2/ASIC do not expose the operation. Original
+startup logs a rejected authentication but continues; native returns `EACCES`
+and the controller keeps TX disabled and releases ownership.
+
+`test_fttr_fpga_auth.py` executes the actual original startup prefix,
+`libasicdrv` authentication and `libmib` type13 conversion. It compares36
+backend/version/result cases and each IO failure cutoff, plus the production
+sysfs handler and private factory import, including stale-data removal.
+FPGA1 namespace startup covers rejected authentication and cleanup before TX;
+FPGA2 startup, FPGA management and the existing whole factory importer
+regressions pass. GCC14.4/musl packages and Linux6.18.55 MiniOLT/BOSA modules
+compile and link. Evidence: `artifacts/fttr/fpga-auth-20261105.json`,
+`auth-startup-*-20261105.json`, `auth-build-20261105.log` and
+`auth-factory-build-20261105.log`. All credentials/registers in these protocol
+tests are synthetic. Physical authentication acceptance remains unverified.
 
 ### Full offline build after main alignment
 
@@ -2682,8 +2713,8 @@ device access, loading or flashing is authorized at this stage.
    MiniOLT binding, explicit original post-load register control, baseline
    management envelope, ONU state reads, TX control and FPGA1 DBA/controller
    integration are implemented. Factory-selected optical calibration and separate
-   FPGA bootstrap are implemented. FPGA2 resource-to-grant binding, FPGA1
-   authentication and full original sequencing remain open.
+   FPGA bootstrap and version-gated FPGA1 factory authentication are implemented.
+   FPGA2 resource-to-grant binding and full original sequencing remain open.
 2. Four original optical calibration recipes and available identity checks are
    implemented. Continuous optical monitoring/DDMI, SFP handling, identifying
    the retained FPGA sample's actual optics and physical readiness remain open.
