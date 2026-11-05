@@ -3382,7 +3382,11 @@ Unowned remote GEM/IW objects or assigned T-CONTs refuse migration; no unknown
 remote resources are deleted. The source/target hardware identities and the
 current target policy binding are checked again before mutation. The target
 must externally register and authenticate before service creation. A new target
-binding during the source's inventory cancels the older selection. Automatic
+binding during the source's inventory cancels the older selection. A full
+registration snapshot retires every departed/replaced authenticated identity
+before any new selection: the real daemon test reproduced a lower slot
+auto-learning a SN while its departed higher slot still looked authenticated;
+the corrected two-pass refresh preserves the original reservation. Automatic
 assignment uses the same FE pause, native port/grant withdrawal and driver
 identity guards as explicit migration; it does not establish full retirement
 of packets cached in DMA/AFT/PE/MiniOLT.
@@ -3401,7 +3405,8 @@ both ASIC/FPGA1 with Wi-Fi, binding/learning retries, wrong-slot migration,
 unavailable/partial credentials, global result rejection, stale response/SN
 replacement, target binding during inventory, unowned GEM rejection, failed
 persistence and shutdown. Global authentication and explicit migration regressions
-also pass. GCC14.4/musl package compilation/install passes; reports are
+also pass. The snapshot regression passes on both backends; GCC14.4/musl package
+compilation/install passes; reports are
 `artifacts/fttr/onu-policy-*-20261106.*`. No physical ONU/authentication or queued
 packet-retirement acceptance is implied.
 

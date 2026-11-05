@@ -1397,6 +1397,25 @@ static int refresh(struct controller *c)
 		return ret;
 	c->observed_at = now_ms();
 	c->observed = true;
+	/* Retire the complete snapshot before selecting any new identity. A
+	 * lower hardware slot may otherwise skip a departed higher live row
+	 * and auto-learn the same serial into the wrong logical reservation.
+	 */
+	for (id = 0; id < FTTR_ONUS; id++) {
+		struct onu *u = &c->onu[id];
+
+		u->hardware = table[id];
+		if (!u->policy_authenticated ||
+		    (c->move.active && (id == c->move.request.id || id == c->move.request.target)))
+			continue;
+		if (!(table[id].downstream & (1U << 18)) || (table[id].downstream & (1U << 16)) ||
+		    memcmp(u->identity, table[id].serial, 8)) {
+			ret = cancel(c, id, false);
+			if (ret)
+				return ret;
+			u->phase = ONU_ABSENT;
+		}
+	}
 	for (id = 0; id < FTTR_ONUS; id++) {
 		struct onu *u = &c->onu[id];
 		enum onu_phase inactive = table[id].downstream & (1U << 16) ? ONU_BLOCKED : ONU_ABSENT;

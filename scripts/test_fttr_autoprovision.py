@@ -636,6 +636,15 @@ def main():
                     if method==5:denied(-errno.EAGAIN,11)
                     accepted((9,11));stop()
                 checks.append('wrong-slot SN/LOID selection inventories without provisioning, migrates reservation and reauthenticates after external registration')
+                # Refresh must retire the old high slot before selecting a newly observed low slot.
+                reset();configure([policy_row(id=12)],learn=True,find=True)
+                node=nodes.pop(7);node.id=11;nodes[11]=node;hardware()
+                process=launch();accepted((9,11))
+                del nodes[11];nodes[7]=Node(7,'5445535400000007',0x107,False);hardware()
+                until(lambda s:'move 7 11' in admin_log.read_text())
+                assert json.loads((onu_state/f'v{revision}.json').read_text())['bindings'][7] is None
+                assert not any(op in (0x44,0x48) and c not in (256,65530) for _,op,c,_ in nodes[7].operations)
+                stop();checks.append('same-scan departure invalidates the old live row before lower-slot selection, preserving the original SN assignment')
                 # A legacy remote GEM blocks automatic migration before MiniOLT mutation.
                 reset();configure([policy_row(id=12)])
                 nodes[7].pool[268,77]={0x8000:b'\0\x77'}
