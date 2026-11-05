@@ -148,12 +148,13 @@ static inline void rtl_ax_role_create(unsigned char out[4], unsigned int macid)
 	rtl_ax_store32(out, macid | (1U << 8) | (2U << 13));
 }
 
-static inline void rtl_ax_role_join(unsigned char out[4], unsigned int macid)
+static inline void rtl_ax_role_join(unsigned char out[4], unsigned int macid,
+	unsigned int bandwidth)
 {
 	/* Original open legacy self-station creation: DISCONN=1,
 	 * SCC band0/port0, DL_T_PE1, net_type AP3, wifi AP2, self AP1.
-	 * AP enable and peer association have subsequent role transitions. */
-	rtl_ax_store32(out, macid | 0x4b040100);
+	 * The self role uses the chip's maximum supported bandwidth. */
+	rtl_ax_store32(out, macid | 0x4b040100 | bandwidth << 14);
 }
 
 static inline void rtl_ax_role_cam(unsigned char out[60], unsigned int macid,

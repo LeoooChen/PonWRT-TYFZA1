@@ -778,7 +778,7 @@ static int rtl_ax_self_role_prepare(struct rtl_ax_ap *radio, const u8 *address,
 	 * available for original receive/done acknowledgements. */
 	rtl_ax_role_unpause(unpause, 0);
 	rtl_ax_role_create(create, 0);
-	rtl_ax_role_join(join, 0);
+	rtl_ax_role_join(join, 0, radio->chip == RTL_AX_8852C ? 3 : 1);
 	rtl_ax_role_cam(radio->role_cam, 0, address);
 	pci_set_master(radio->pdev);
 	rtl_ax_h2c_start(&radio->io);

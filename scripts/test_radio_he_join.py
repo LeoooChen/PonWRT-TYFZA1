@@ -7,6 +7,7 @@ sys.path.insert(0,str(root/'tools'))
 from arm64_module_oracle import ModuleOracle
 m=root/'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
 def cb(name,a):
+ if name=='hal_mac_get_macid_num':return 128
  if name=='get_addr_cam_size':return 32
  if name=='h2cb_alloc':return out+256
  if name=='h2cb_put':return out
@@ -16,7 +17,7 @@ def cb(name,a):
  if name=='memcmp':
   x,y=bytes(o.uc.mem_read(a[0],a[2])),bytes(o.uc.mem_read(a[1],a[2]));return (x>y)-(x<y)
  raise AssertionError((name,a))
-o=ModuleOracle(m,['_hal_stainfo_to_macrinfo','_rtype_to_mac_nettype','role_info_init','fill_bssid_cam_info','mac_h2c_join_info','fill_addr_cam_info','get_set_bits_of_msk','rtw_he_set_asoc_cap_ppe_thre'],cb)
+o=ModuleOracle(m,['_hal_stainfo_to_macrinfo','_rtype_to_mac_nettype','role_info_init','fill_bssid_cam_info','mac_h2c_join_info','fill_addr_cam_info','get_set_bits_of_msk','rtw_he_set_asoc_cap_ppe_thre','init_hal_spec_8852c','init_hal_spec_8192xb'],cb)
 hal,common,role,sta,info,out=[0x6000000+i*0x10000 for i in range(6)]
 for x in (hal,common,role,sta,info,out):o.uc.mem_map(x,0x10000)
 o.word(hal+8,common);o.word(sta+16,role)
@@ -47,6 +48,7 @@ struct ieee80211_sta_he_cap {bool has_he;struct {u8 mac_cap_info[6],phy_cap_info
 static inline void rtl_ax_store32(u8 *p,u32 v){memcpy(p,&v,4);}
 """
 wrapper="""
+unsigned int self_join(unsigned int id,unsigned int bw){u8 out[4];rtl_ax_role_join(out,id,bw);unsigned int v;memcpy(&v,out,4);return v;}
 unsigned int camword(unsigned int id,unsigned int he){u8 out[60];rtl_ax_peer_cam(out,id,self,peer,1,true);if(he)rtl_ax_store32(out+32,id|BIT(14));unsigned int v;memcpy(&v,out+32,4);return v;}
 unsigned int run(unsigned int id,unsigned int bw,unsigned int he,unsigned int nss,const u8 *mac,const u8 *phy,const u8 *ppe){
  struct ieee80211_sta_he_cap cap={};u8 out[4];cap.has_he=he;
@@ -56,10 +58,11 @@ unsigned int run(unsigned int id,unsigned int bw,unsigned int he,unsigned int ns
 """
 with tempfile.TemporaryDirectory() as temp:
  c=Path(temp)/'join.c';so=Path(temp)/'join.so'
- c.write_text(prefix+function('rtl_ax_he_padding(')+function('rtl_ax_station_join(')+function('rtl_ax_peer_cam(')+wrapper)
+ c.write_text(prefix+function('rtl_ax_he_padding(')+function('rtl_ax_station_join(')+function('rtl_ax_peer_cam(')+function('rtl_ax_role_join(')+wrapper)
  subprocess.run(['cc','-shared','-fPIC','-Wall','-Werror','-O2',str(c),'-o',str(so)],check=True)
  lib=ctypes.CDLL(str(so));lib.run.restype=ctypes.c_uint;lib.run.argtypes=[ctypes.c_uint]*4+[ctypes.c_char_p]*3
  lib.camword.restype=ctypes.c_uint;lib.camword.argtypes=[ctypes.c_uint]*2
+ lib.self_join.restype=ctypes.c_uint;lib.self_join.argtypes=[ctypes.c_uint]*2
  rng=random.Random(9617);count=0
  for test in range(800):
   he=test%5!=0;nss=1+test%2;bw=test%4;macid=1+test%127
@@ -83,4 +86,22 @@ with tempfile.TemporaryDirectory() as temp:
   o.call('role_info_init',hal,info);o.uc.mem_write(out,bytes(512));o.call('fill_addr_cam_info',hal,info,out)
   assert lib.camword(macid,he)==o.unpack(out+32,'I')[0]
   count+=1
+ # The original self producer overrides the channel BW with hardware BW support.
+ phl=0x6060000;o.uc.mem_map(phl,0x10000)
+ for chip,chip_id,mask in [('8852c',3,15),('8192xb',4,3)]:
+  o.uc.mem_write(common,struct.pack('<I',chip_id))
+  o.call('init_hal_spec_'+chip,phl,hal)
+  assert o.unpack(common+665,'B')[0]==mask,chip
+ o.uc.mem_write(sta+30,bytes.fromhex('d05bcbd3ebb2'))
+ o.uc.mem_write(sta+2332,bytes(4));o.uc.mem_write(sta+2504,bytes(8))
+ o.uc.mem_write(sta+2622,bytes(32));o.word(sta+2656,1<<20)
+ for bw in range(4):
+  o.uc.mem_write(common+665,bytes([(1<<(bw+1))-1]))
+  for channel_bw in range(4):
+   o.uc.mem_write(sta+44,struct.pack('<I',channel_bw))
+   o.uc.mem_write(sta+28,bytes(2));o.uc.mem_write(info,bytes(512))
+   o.call('_hal_stainfo_to_macrinfo',hal,sta,info,0,0)
+   o.call('mac_h2c_join_info',hal,info)
+   assert lib.self_join(0,bw)==o.unpack(out,'I')[0],(bw,channel_bw)
 print('Native JOIN and CAM match original PPE parser, HAL producer and encoders: '+str(count)+' cases')
+print('AP self creation matches original maximum-bandwidth selection: 16 cases')

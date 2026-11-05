@@ -421,3 +421,18 @@ HE门槛恢复轮：TCP下行1.420070G/retry9.8271每百成功、上行1.681945G
 回到候选模块后仅做关联/字段/队列收尾，已有4方向产品验证不重复。临时beacon_read卸载，结束删除设备文件；所有BK、时钟、EDCA及已接受HE JOIN/NAV改动保留，flash未写。来源worktree artifacts/he-rx-padding，Mac TXFETCH-*、RXPAD-*与rxpad-results.json。
 
 最终恢复候选确认：rxpad/phy34、boot a56cceb0，Mac已授权；Beacon再次读回PHY9=80。ARM submitted/completed391，NI sent/recycled13，pending/failed/retired/unmatched0；C67400400000、C300003f642b、PEDIV40404、RPS8，临时ban为空，无beacon_read或测速进程。未扩大验证，未刷写。
+
+
+### 2026-11-05：自身角色 JOIN 核对与最大带宽修正
+
+实际原厂update_ap_info@d19d4只更新软件wmode/BW/HT/VHT/HE私有数据，rtw_sta_media_status_rpt@84a40是单条ret，不能用它们证明AP启动漏发connected。原厂setkey_hdl@9fba4的AP分支用adapter自身MAC找sta；rtw_hw_add_key@10df1c在sec_mode变化时调用STA_CHG_SEC_MODE3，_change_stainfo@13fc78写sta+2669并以PHL mode4调用HAL；rtw_hal_change_sta_entry@1c98fc以is_connect1更新CAM/JOIN。原厂实际producer+_change_role执行确认HE/linked2的self例子可生成4b04f000(C)，不同于native创建4b040100。此例asoc_cap按零字段/NSS1建模，不冒充完整原厂live self快照。初始AP trace的无关port0_mbid_set调用不受旧工具支持，唯一修复跳过port初始化、只执行既有role链后成功，没有新增工具框架。
+
+限定同关联仅重发self JOIN、保持CAM和keys，OFF/ON/OFF默认TCP下行1.507251/1.509405/1.517435G；ON/OFF上行1.684663/1.683778G均0重传。ON UDP2G下行1.841799G、丢134039(7.7436%)。所有轮均Mac+手机，无低频连续采样。没有提速证据，不提交此connected/HE通知候选，不继续扩展self角色实验。卸载helper恢复4b040100，设备helper文件删除。代码/离线记录artifacts/self-join；Mac SELFJOIN-*。
+
+同一producer中存在独立且明确的初始化错误：self DL_BW由hal_com+665最高支持带宽决定，不取当前channel。实际init_hal_spec_8852c@276ef8写mask15（最大160MHz）；init_hal_spec_8192xb@27d98c中chip4写mask3（最大40MHz），chip5的80MHz属于8832BR，不能混用。修正role.h/pci.c自身创建JOIN：C为4b04c100，XB为4b044100，保留DISCONN及其余已有元数据；不加入新的运行开关。早期临时self trace把XB建模成80MHz已纠正在最终stock-trace.json，未以该值提交产品。
+
+scripts/test_radio_he_join.py复用现有原厂oracle，800组peer回归、实际两颗芯片cap initializer及16组self硬件支持/当前带宽组合通过，git diff --check和完整ARM64模块构建通过。最终rtl_ax_ap_selfbw SHA256 18dfa6a96cb4ddc982e51e3c3988da31752e3dafaddd91488776e2a725925190；PE仍65869939084cd2c83e12ddd1592c001bf6b0e9097aeec0683138d036ef180e9f。加载phy38，Mac此次MACID2，手机MACID1；accepted RX padding/NAV/peer JOIN均保留。先前仅XB选择不同的中间构建已被最终构建替换，验收全部使用最终构建。
+
+最终默认TCP上行首轮1.210327G/9重传，逐秒1.627/1.694/1.690/1.695/1.175/.358/.222/.503/1.580/1.584；PM总计数+34/+35，不能单由总计数归因Mac。唯一复测1.673607G/14重传；下行1.504558G。UDP2G上行实际发送1.835564/收到1.827637G、132丢(0.00832%)、MacCPU97.96%；下行首轮1.825641G/147914丢(8.5535%)，复测1.846309G/130316丢(7.5297%)。保留首次低谷，不宣称零重传或稳定提速；数值在既有基线波动区间，保留带宽正确性修复。完整TCP1.8/UDP1.9低丢包目标仍未完成。Mac SELFBW-*及self-role-results.json。
+
+结束AP_role stage5/result0、unmatchedACK0，ARM557/557、NI4610487/4610487，pending/failed/retired/unmatched0；C67400400000、C300003f642b、RPS8。没有辅助模块/测速进程，未刷写flash。f43200d0的读值30不是PEDIV验证，不用于结论。
