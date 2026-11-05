@@ -98,8 +98,16 @@ static inline int rtl_fttr_ploam_send(const struct rtl_fttr_reg_io *io,
 	return 0;
 }
 
+static inline bool rtl_fttr_onu_recovery_needed(enum rtl_fttr_backend backend, unsigned int upstream)
+{
+	unsigned int mask = backend == RTL_FTTR_ASIC9690 ? 0x01f00000 : 0x00f00000;
+
+	return !(upstream >> 30) && (upstream & mask);
+}
+
 /* action0: explicit resume (state3), action1: deactivate (state4/5),
- * action2: release a controller-owned temporary block. The controller owns
+ * action2: release a controller-owned temporary block, action3: recover the
+ * original upstream error condition before temporary deactivation. The controller owns
  * the original keep flag and polling/timer policy; there is no driver timer.
  */
 static inline int rtl_fttr_onu_admin(const struct rtl_fttr_reg_io *io,
@@ -110,7 +118,7 @@ static inline int rtl_fttr_onu_admin(const struct rtl_fttr_reg_io *io,
 	unsigned int words[3] = { (id << 24) | 0x50000, 0, 0 }, i, status;
 	int ret;
 
-	if (id >= RTL_FTTR_ONUS || action > 2 || backend < RTL_FTTR_FPGA1 || backend > RTL_FTTR_ASIC9690)
+	if (id >= RTL_FTTR_ONUS || action > 3 || backend < RTL_FTTR_FPGA1 || backend > RTL_FTTR_ASIC9690)
 		return -EINVAL;
 	ret = rtl_fttr_onu_read(io, id, &onu);
 	if (ret)
@@ -118,6 +126,21 @@ static inline int rtl_fttr_onu_admin(const struct rtl_fttr_reg_io *io,
 	for (i = 0; i < sizeof(onu.serial); i++)
 		if (onu.serial[i] != serial[i])
 			return -ESTALE;
+	if (action == 3) {
+		unsigned int mask = backend == RTL_FTTR_ASIC9690 ? 0x01f00000 : 0x00f00000;
+
+		/* A newer administrative block or a vanished error must not be
+		 * replaced by an automatic temporary operation from an older sample.
+		 */
+		if ((onu.downstream & BIT(16)) || !rtl_fttr_onu_recovery_needed(backend, onu.upstream))
+			return -EAGAIN;
+		ret = backend == RTL_FTTR_ASIC9690 ?
+			rtl_fttr_masked_write(io, 0x40803 + 4 * id, mask, 0) :
+			io->write(io->context, 0x40803 + 4 * id, onu.upstream & ~mask);
+		if (ret)
+			return ret;
+		action = 1;
+	}
 	if (action == 2) {
 		if (!(onu.downstream & BIT(16)))
 			return 0;

@@ -294,6 +294,12 @@ def main():
    char observed[17];for(unsigned i=0;i<8;i++)snprintf(observed+2*i,3,"%02x",row[12+i]);
    if(strcmp(serial,observed)) {close(fd);errno=ESTALE;return -1;}
    uint32_t state;memcpy(&state,row,4);
+   if(blocked==3) {
+    uint32_t upstream;memcpy(&upstream,row+4,4);
+    uint32_t mask=slot==0?0x00f00000:0x01f00000;
+    if((state&0x10000) || (upstream>>30) || !(upstream&mask)) {close(fd);errno=EAGAIN;return -1;}
+    upstream&=~mask;memcpy(row+4,&upstream,4);blocked=1;
+   }
    if(blocked==2) {
     if(slot==0 && (state&0x10000) && (state&0x40000)) {close(fd);errno=EAGAIN;return -1;}
     state&=~0x10000U;
@@ -348,8 +354,9 @@ def main():
             data=b''.join(struct.pack('<III8s',1<<18 if id in nodes else 0,1,42,
                 nodes[id].serial if id in nodes else bytes(8)) for id in range(64))
             device.joinpath('onu_state.new').write_bytes(data);os.replace(device/'onu_state.new',device/'onu_state')
-            device.joinpath('onu_table').write_text(''.join(f'{id} {(1<<18 if id in nodes else 0):08x} 00000001 0000002a '+
+            device.joinpath('onu_table.new').write_text(''.join(f'{id} {(1<<18 if id in nodes else 0):08x} 00000001 0000002a '+
                 (nodes[id].serial if id in nodes else bytes(8)).hex()+'\n' for id in range(64)))
+            os.replace(device/'onu_table.new',device/'onu_table')
         def status():
             try:return json.loads(store.joinpath('status.json').read_text())
             except FileNotFoundError:return {}
@@ -696,14 +703,16 @@ def main():
                         assert row['blocked']==(action!='resume') and row['temporary']==(action=='deactivate')
                 def admin_events():
                     return [line.split() for line in admin_log.read_text().splitlines()]
-                def downstream(value):
+                def downstream(value, upstream=None):
                     data=bytearray(device.joinpath('onu_state').read_bytes())
                     struct.pack_into('<I',data,7*20,value)
+                    if upstream is not None:struct.pack_into('<I',data,7*20+4,upstream)
                     device.joinpath('onu_state.new').write_bytes(data)
                     os.replace(device/'onu_state.new',device/'onu_state')
                     rows=[struct.unpack_from('<III8s',data,id*20) for id in range(64)]
-                    device.joinpath('onu_table').write_text(''.join(
+                    device.joinpath('onu_table.new').write_text(''.join(
                         f'{id} {ds:08x} {us:08x} {eqd:08x} {sn.hex()}\n' for id,(ds,us,eqd,sn) in enumerate(rows)))
+                    os.replace(device/'onu_table.new',device/'onu_table')
                 event_start=len(accel_events())
                 admin('block',serial='0000000000000000',error=errno.ESTALE)
                 assert len(accel_events())==event_start and set(ports())=={'fttr-u7','fttr-u9'}
@@ -763,6 +772,33 @@ def main():
                 assert not any(action=='2' for _,action,_ in admin_events()[event_start:])
                 admin_hold.unlink();admin('resume')
                 if args.backend=='fpga1':hardware()
+                until(lambda s:s['onus'][7]['phase']=='configured')
+                # Original upper state bits gate automatic recovery. Merely
+                # setting a lower error field while high bits are set is inert.
+                event_start=len(admin_events());before=len(nodes[9].operations)
+                downstream(0x40000,0x40100001)
+                until(lambda s:len(nodes[9].operations)>before+2)
+                assert not any(action=='3' for _,action,_ in admin_events()[event_start:])
+                assert set(ports())=={'fttr-u7','fttr-u9'}
+                # Recovery is detected by the resident refresh, not a CLI
+                # command; it must first retire the actual port and DBA owner.
+                admin_hold.touch();event_start=len(admin_events());healthy_port=datapath(9)
+                downstream(0x40000,0x01000001 if args.backend=='asic9690' else 0x00100001)
+                until(lambda s:any(action=='3' for _,action,_ in admin_events()[event_start:]),seconds=10)
+                assert datapath(9)==healthy_port and 'fttr-u7' not in ports()
+                assert journal(7,'service-old')[0]['grant_withdrawn']
+                if args.backend=='fpga1':downstream(0x10000,0)
+                until(lambda s:not s['onus'][7]['temporary_deactivation'],seconds=10)
+                admin_hold.unlink();hardware()
+                until(lambda s:s['onus'][7]['phase']=='configured')
+                # Explicit permanent block must never become temporary due to
+                # a later upstream error sample.
+                admin('block');event_start=len(admin_events());before=len(nodes[9].operations)
+                downstream(0x10000,0x100001)
+                until(lambda s:len(nodes[9].operations)>before+2)
+                assert not any(action in ('2','3') for _,action,_ in admin_events()[event_start:])
+                assert status()['onus'][7]['phase']=='blocked'
+                downstream(0x10000,1);admin('resume');hardware()
                 until(lambda s:s['onus'][7]['phase']=='configured')
                 # Replacement cancels a pending release, with a changed serial
                 # checked again by the driver if it wins the refresh race.
@@ -875,6 +911,7 @@ def main():
         (['resident administration rejects stale IDs and malformed commands before FE changes',
           'block/resume removes owned GEM VLAN and DBA before backend IO while retaining the healthy peer',
           'temporary release waits for FPGA deregistration; ASIC polling, superseding block, replacement and shutdown are checked',
+          'upstream error recovery uses original backend/high-bit conditions and retires FE/VLAN/DBA; permanent blocks remain blocked',
           'driver-side stale serial permits fresh inventory; hardware IO failure stops TX without resuming FE'] if args.admin_control else []),
         'scope':'native daemon over AF_PACKET/veth in a private namespace with original ARM64 schemas and VLAN table replies; peer MIB and synchronous DBA sysfs are modeled; no optical traffic'}
     args.output.write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))

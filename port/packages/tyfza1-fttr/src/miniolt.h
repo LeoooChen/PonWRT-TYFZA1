@@ -8,6 +8,13 @@
 
 enum fttr_backend { FTTR_FPGA1 = 1, FTTR_FPGA2, FTTR_ASIC9690 };
 
+static inline bool fttr_miniolt_recovery_needed(enum fttr_backend backend, uint32_t upstream)
+{
+	uint32_t mask = backend == FTTR_ASIC9690 ? 0x01f00000 : 0x00f00000;
+
+	return !(upstream >> 30) && (upstream & mask);
+}
+
 struct fttr_onu_state {
 	uint32_t downstream, upstream, eqd;
 	uint8_t serial[8];

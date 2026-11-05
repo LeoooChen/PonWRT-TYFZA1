@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / 'tools'))
 from arm64_elf_oracle import ElfOracle
 from test_fttr_fpga_boot import function
 from unicorn.arm64_const import UC_ARM64_REG_SP, UC_ARM64_REG_PC
+from unicorn import UC_HOOK_CODE
 
 
 class Registers:
@@ -67,7 +68,7 @@ class Stock:
         elif name in ('drv_get_miniolt_chiptype', 'open'):
             return 3
         elif name not in ('flock', 'close', 'pthread_mutex_lock', 'pthread_mutex_unlock',
-                          'plr_log', 'plr_pondrv_log_module_id_get', 'plr_timer_timeout_handle_add'):
+                          'plr_log', 'plr_pondrv_log_module_id_get', 'plr_timer_timeout_handle_add', 'printf'):
             raise AssertionError(('unmodeled original call', name))
         return 0
 
@@ -89,6 +90,21 @@ class Stock:
         oracle.uc.emu_start(start, end, count=20000)
         assert oracle.uc.reg_read(UC_ARM64_REG_PC) == end
 
+    def recover(self, backend, id):
+        oracle = self.relay
+        stack = oracle.scratch + 0x1ff000
+        oracle.uc.reg_write(UC_ARM64_REG_SP, stack)
+        oracle.uc.mem_write(stack + (64 if backend == 3 else 20), struct.pack('<I', id))
+        start = 0x48914 if backend == 3 else 0x479bc
+        stops = (0x489ec,) if backend == 3 else (0x47ab0, 0x47ac0, 0x47cd0)
+        handle = oracle.uc.hook_add(UC_HOOK_CODE,
+            lambda uc, pc, size, data: uc.emu_stop() if pc in stops else None)
+        try:
+            oracle.uc.emu_start(start, 0, count=400000)
+            assert oracle.uc.reg_read(UC_ARM64_REG_PC) in stops
+        finally:
+            oracle.uc.hook_del(handle)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -106,7 +122,7 @@ def main():
         _fields_ = [('context', C.c_void_p), ('read', rd), ('write', wr), ('delay', delay)]
 
     serial = bytes.fromhex('5445535401234567')
-    cases, release_cases = [], []
+    cases, release_cases, recovery_cases = [], [], []
     with tempfile.TemporaryDirectory() as temporary:
         folder = Path(temporary)
         source = '''#include <stdbool.h>
@@ -116,6 +132,9 @@ def main():
 #include <sys/types.h>
 #define BIT(n) (1U << (n))
 #include "rtl9617c-fttr-onu.h"
+#include "miniolt.h"
+int kernel_needed(int backend, unsigned int upstream) {return rtl_fttr_onu_recovery_needed(backend, upstream);}
+int userspace_needed(int backend, unsigned int upstream) {return fttr_miniolt_recovery_needed(backend, upstream);}
 struct rtl_fttr { struct rtl_fttr_reg_io reg_io; enum rtl_fttr_backend backend; int control_lock; };
 struct device { struct rtl_fttr *fttr; };
 struct device_attribute { int unused; };
@@ -145,7 +164,8 @@ int store(const struct rtl_fttr_reg_io *io, int backend, const char *input) {
 '''
         (folder / 'native.c').write_text(source)
         subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-Wno-sign-compare', '-shared', '-fPIC',
-                        '-I' + str(headers), str(folder / 'native.c'), '-o', str(folder / 'native.so')], check=True)
+                        '-I' + str(headers), '-I' + str(ROOT/'port/packages/tyfza1-fttr/src'),
+                        str(folder / 'native.c'), '-o', str(folder / 'native.so')], check=True)
         native = C.CDLL(str(folder / 'native.so'))
 
         def native_io(regs):
@@ -198,7 +218,7 @@ int store(const struct rtl_fttr_reg_io *io, int backend, const char *input) {
             dropped = Registers(5); dropped.drop = True; io = native_io(dropped)
             assert native.admin(C.byref(io), backend, 5, 1, serial) == -errno.EUCLEAN
             actual = Registers(5); io = native_io(actual)
-            for invalid in ('64 1 ' + serial.hex(), '5 3 ' + serial.hex(), '5 1 xxxx',
+            for invalid in ('64 1 ' + serial.hex(), '5 4 ' + serial.hex(), '5 1 xxxx',
                             '5 1 ' + serial.hex() + ' junk', '5 1 ' + serial.hex() + '0'):
                 assert native.store(C.byref(io), backend, invalid.encode()) == -errno.EINVAL
                 assert not actual.events
@@ -248,16 +268,52 @@ int store(const struct rtl_fttr_reg_io *io, int backend, const char *input) {
                     assert bool([e for e in regs.events if e[0] == 'write']) == (state == 4)
                 else:
                     assert stock.timer is None
+            regs = Registers(5, seed=0x40000)
+            stock = Stock(args.asic, relay, regs)
+            for high in (0, 0x40000000, 0x80000000, 0xc0000000):
+                for bits in range(32):
+                    upstream = high | (bits << 20) | 0x12345
+                    expected = Registers(5, seed=0x40000)
+                    expected.values[0x40817] = upstream
+                    stock.regs = expected
+                    stock.recover(backend, 5)
+                    triggered = any(e[0]=='write' and e[1]==0x4040b for e in expected.events)
+                    assert native.kernel_needed(backend, upstream) == triggered
+                    assert native.userspace_needed(backend, upstream) == triggered
+                    actual = Registers(5, seed=0x40000); actual.values[0x40817] = upstream
+                    io = native_io(actual)
+                    assert native.admin(C.byref(io), backend, 5, 3, serial) == (0 if triggered else -errno.EAGAIN)
+                    if triggered:
+                        original = [e for e in expected.events if e[:2]!=['read',0x40040]]
+                        assert actual.events[5:-1] == original[1:], (backend, upstream, actual.events, original)
+                        assert actual.values == expected.values
+                        if not high and bits == 1:
+                            trace=list(actual.events)
+                            for fail in range(1,len(trace)+1):
+                                if trace[fail-1][0]=='delay':continue
+                                broken=Registers(5,seed=0x40000);broken.values[0x40817]=upstream;broken.fail=fail
+                                io=native_io(broken)
+                                assert native.admin(C.byref(io),backend,5,3,serial)==-errno.EIO
+                                assert broken.events==trace[:fail]
+                    else:
+                        assert all(e[0]=='read' for e in actual.events)
+                    recovery_cases.append({'backend':backend,'upstream':upstream,'recovery':triggered})
+            for blocked in (False,True):
+                actual=Registers(5,seed=0x50000 if blocked else 0x40000)
+                actual.values[0x40817]=0x100001;io=native_io(actual)
+                assert native.admin(C.byref(io),backend,5,3,serial if blocked else bytes(8))==(-errno.EAGAIN if blocked else -errno.ESTALE)
+                assert all(e[0]=='read' for e in actual.events)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps({'cases': cases, 'original_offline_release_cases': release_cases,
+        'upstream_recovery_cases': recovery_cases,
         'original_asic_timer_and_keep_flag_checked': True, 'io_failures_stop': True,
         'stale_identity_read_only': True, 'mailbox_timeout_stops': True,
         'original_timeout_false_success_reproduced': True, 'state_readback_checked': True,
         'sysfs_parser_and_lock_checked': True, 'hardware_verified': False,
         'inputs': {name: hashlib.sha256(getattr(args, name).read_bytes()).hexdigest()
                    for name in ('asic', 'relay_asic', 'relay_fpga')}}, indent=2) + '\n')
-    print(f'ONU admin: {len(cases)} original state operations, serial guards, IO/timeout/readback and sysfs checks passed')
+    print(f'ONU admin: {len(cases)} state operations, {len(recovery_cases)} original upstream recovery cases, serial/IO/timeout/readback/sysfs checks passed')
 
 
 if __name__ == '__main__':

@@ -2976,6 +2976,43 @@ reset, physical PLOAM acceptance and **full queued
 packet retirement before GEM reuse** remain open. This work does not
 establish a DMA-prefetch/PE/MiniOLT retirement fence or FPGA2 service binding.
 
+### Original upstream-state error recovery
+
+The original ASIC `ONU_Offline` block48914..489ec reads `40803+4*ONU`.
+When bits31..30 are both zero and any of bits24..20 is set, it clears mask
+`01f00000` with a masked write and calls the deactivation helper479d0.
+FPGA polling479bc..47ab0 uses only bits23..20 and writes the observed word
+with mask`00f00000` cleared, then calls46c30. FPGA skips the remainder of
+that ONU's polling pass after recovery; ASIC proceeds to reread DS state
+and can release a non-permanent block in the same scan. These are the exact
+observed conditions; broader interpretations of individual error bits are
+not assumed.
+
+Native `fttrd` scans for this condition on the original backend cadence
+(FPGA100ms, ASIC8s) together with temporary block release. Deadlines start
+after the pass finishes, so slow MDIO/recovery IO cannot cause a continuous
+catch-up loop that starves OMCI/stop handling. It samples the64-row hardware
+table, checks a candidate's serial/state again, withdraws its software/FE/
+VLAN/DBA owners, and asks `onu_admin` action3 to recheck identity and the
+error under the driver's control lock before clearing and deactivating.
+An absent error or already blocked ONU returns EAGAIN without state writes;
+a changed serial returns ESTALE. Other errors stop the controller and its
+existing TX/FE cleanup. Successful recovery uses the existing temporary
+release lifecycle. An administratively permanent block is deliberately not
+converted into a temporary block by automatic recovery.
+
+`test_fttr_onu_admin.py` now executes384 original upstream-state combinations,
+compares both kernel/userspace predicates and recovery IO, and injects each
+native IO failure. Existing state/identity/timeout/readback cases still pass.
+`test_fttr_admin_lifecycle.py` covers scan/deadline boundaries, a slow IO pass,
+ASIC same-pass versus FPGA next-pass release, stale/no-longer-needed cases,
+ownership conflicts and errors. The real daemon's ASIC/FPGA1 namespace tests
+verify automatic detection, the healthy peer, port/grant withdrawal before
+recovery and permanent-block preservation. Reports:
+`artifacts/fttr/onu-upstream-{original,fpga1,asic}-20261106.json`. The native
+package and MiniOLT/BOSA modules compile/link. Physical error induction,
+latency and optical recovery have not been tested.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

@@ -1390,7 +1390,8 @@ static int open_control(struct controller *c)
 	return ret;
 }
 
-static int admin_request(struct controller *c, const struct fttr_admin_request *request, int *fatal)
+static int admin_request(struct controller *c, const struct fttr_admin_request *request,
+			 bool recovery, int *fatal)
 {
 	struct fttr_onu_state observed;
 	struct onu *u;
@@ -1405,6 +1406,9 @@ static int admin_request(struct controller *c, const struct fttr_admin_request *
 		return ret;
 	if (memcmp(observed.serial, request->serial, 8))
 		return -ESTALE;
+	if (recovery && ((observed.downstream & (1U << 16)) ||
+	    !fttr_miniolt_recovery_needed(c->backend, observed.upstream)))
+		return -EAGAIN;
 	/* A later permanent block/resume replaces this registration's timer. */
 	u->admin_pending = false;
 	/* Keep FE admission closed through port removal, grant withdrawal and
@@ -1419,8 +1423,9 @@ static int admin_request(struct controller *c, const struct fttr_admin_request *
 	}
 	u->phase = ONU_ABSENT;
 	/* The driver rechecks the serial under the same lock as state/DBA IO. */
-	ret = fttr_miniolt_admin(c->directory, request->id, request->action != FTTR_ADMIN_RESUME, request->serial);
-	if (ret && ret != -ESTALE) {
+	ret = fttr_miniolt_admin(c->directory, request->id,
+		recovery ? 3 : request->action != FTTR_ADMIN_RESUME, request->serial);
+	if (ret && ret != -ESTALE && !(recovery && ret == -EAGAIN)) {
 		*fatal = ret;
 		return ret;
 	}
@@ -1473,7 +1478,7 @@ static int receive_control(struct controller *c)
 	else if (!authorized)
 		result = -EACCES;
 	else
-		result = admin_request(c, &request, &fatal);
+		result = admin_request(c, &request, false, &fatal);
 	/* Client disappearance does not undo an already completed operation. */
 	if (sendto(c->control, &result, sizeof(result), MSG_DONTWAIT | MSG_NOSIGNAL,
 		   (struct sockaddr *)&address, message.msg_namelen) < 0)
@@ -1483,19 +1488,39 @@ static int receive_control(struct controller *c)
 
 /* Original FPGA polling: 64*1ms + 36ms between scans; ASIC offline polling
  * runs every four 2s iterations and also has a 15s deactivation callback.
- * Only outstanding temporary operations need this faster FPGA observation.
+ * Error recovery and temporary block release share that scan cadence.
  */
 static int admin_tick(struct controller *c, int64_t now)
 {
+	struct fttr_onu_state table[FTTR_ONUS];
 	bool scan = now >= c->admin_scan_due, changed = false;
 	unsigned int id;
 	int ret;
 
-	if (scan)
-		c->admin_scan_due = now + (c->backend == FTTR_ASIC9690 ? 8000 : 100);
+	if (scan) {
+		ret = fttr_miniolt_table(c->directory, table);
+		if (ret)
+			return ret;
+	}
 	for (id = 0; id < FTTR_ONUS; id++) {
 		struct onu *u = &c->onu[id];
 
+		if (scan && !u->admin_pending && !(table[id].downstream & (1U << 16)) &&
+		    fttr_miniolt_recovery_needed(c->backend, table[id].upstream)) {
+			struct fttr_admin_request request = { .version = 1, .id = id,
+				.action = FTTR_ADMIN_DEACTIVATE };
+			int fatal;
+
+			memcpy(request.serial, table[id].serial, 8);
+			ret = admin_request(c, &request, true, &fatal);
+			if (fatal || (ret && ret != -ESTALE && ret != -EAGAIN))
+				return fatal ? fatal : ret;
+			/* Original FPGA skips the remainder of this ONU's pass after
+			 * recovery. ASIC rereads DS and may release in the same pass.
+			 */
+			if (ret || c->backend != FTTR_ASIC9690)
+				continue;
+		}
 		if (!u->admin_pending || (!scan &&
 		    (c->backend != FTTR_ASIC9690 || now < u->admin_timeout)))
 			continue;
@@ -1516,6 +1541,11 @@ static int admin_tick(struct controller *c, int64_t now)
 			return ret;
 		changed = true;
 	}
+	/* MDIO and recovery writes can take longer than a poll interval. Start
+	 * the next interval after this pass, leaving time for OMCI/stop events.
+	 */
+	if (scan)
+		c->admin_scan_due = now_ms() + (c->backend == FTTR_ASIC9690 ? 8000 : 100);
 	return changed ? publish(c, "running", 0) : 0;
 }
 
@@ -1544,6 +1574,8 @@ static int run(struct controller *c)
 		}
 		now = now_ms();
 		deadline = next_refresh;
+		if (c->admin_scan_due < deadline)
+			deadline = c->admin_scan_due;
 		if (c->optical.interval && c->optical.due < deadline)
 			deadline = c->optical.due;
 		for (id = 0; id < FTTR_ONUS; id++) {

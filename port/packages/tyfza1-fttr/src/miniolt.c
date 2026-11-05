@@ -46,7 +46,7 @@ int fttr_miniolt_admin(int directory, unsigned int id, unsigned int action, cons
 	char command[40];
 	unsigned int i, length;
 
-	if (id >= FTTR_ONUS || action > 2)
+	if (id >= FTTR_ONUS || action > 3)
 		return -EINVAL;
 	length = snprintf(command, sizeof(command), "%u %u ", id, action);
 	for (i = 0; i < 8; i++)
