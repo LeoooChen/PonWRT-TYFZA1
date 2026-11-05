@@ -7,6 +7,12 @@
 struct platform_device;
 struct reset_control;
 
+struct rtl_fttr_queue_state {
+	u32 status;
+	u8 completed, failed;
+	int error, cleanup_error;
+};
+
 struct rtl_fttr_p6 {
 	struct device *dev;
 	void __iomem *ni;
@@ -16,9 +22,8 @@ struct rtl_fttr_p6 {
 	bool nway;
 	bool configured;
 	int error;
-	u32 queue_status;
-	u8 queue_completed, queue_failed;
-	int queue_error, queue_cleanup_error;
+	/* DEEPQ port14 first, then physical P6. */
+	struct rtl_fttr_queue_state l3_queue, l2_queue;
 };
 
 int rtl_fttr_p6_init(struct platform_device *pdev, struct rtl_fttr_p6 *p6, void __iomem *ni);

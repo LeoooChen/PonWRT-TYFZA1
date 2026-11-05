@@ -1371,23 +1371,36 @@ reads, overwrites its local empty result with1, clears flush enable and
 returns0. This false-success path is reproduced with the original instructions
 in`queue-stock-comparison.json`; it cannot be copied as a completion check.
 
-`rtl_fttr_p6_flush_queues` now implements this ES stage natively. Each of
-the eight queues is selected/flushed and its real empty bit polled with a
+The same trace now executes original L3 `aal_l3_tm_es_voq_flush_set` at6f120
+and status getter at6f0a0. P6 DEEPQ port14/VOQs112..119 use control63fc and
+occupancy683c with the same COS/enable/occupied bit positions. The original
+L3 function repeats the same4002-read false-success bug. Native now flushes
+this L3 stage before L2 port6, matching the configured packet path. It checks
+both existing flush owners before changing either control. A failed L3
+stage, including failed control restoration, stops before L2 writes.
+
+`rtl_fttr_p6_flush_queues` implements both ES stages natively. Each stage's
+eight queues are selected/flushed and their real empty bits polled with a
 100ms limit. An unapplied command returns`-EIO`, a stuck queue returns
 `-ETIMEDOUT`, and a final all-queue observation that has refilled returns
 `-EAGAIN`. The original COS/flush control fields are restored even after
 failure and read back. Completed-per-queue bits, failed queue number, last
-occupancy, primary error and separate restoration error remain in the P6
-state. Existing flush ownership is rejected before writes. These state
+occupancy, primary error and separate restoration error remain separately
+in P6's `l3_queue` and `l2_queue` state. After L2 completes, both occupancy
+words are checked again to catch L3 refill during the L2 stage. Other ports'
+occupancy bits are ignored and left intact. These state
 fields record an ES observation; they do not assert that the entire FTTR
 path is empty.
 
 `scripts/test_fttr_queue.py` compares the actual native function's writes
 with original execution, and covers timeout, an unapplied command, failed
-control restoration (including simultaneous timeout), refill and existing
-flush ownership. Poll time and hardware occupancy are modeled; results are
-in`queue-native-comparison.json`. The6.18 composite NI object containing the
-new function compiles and links. No full firmware/test run is used.
+control restoration (including simultaneous timeout), failed flush-disable,
+refill, cross-stage refill, neighboring ports and existing flush ownership.
+Six original traces and22 native scenarios pass. Poll time and hardware
+occupancy are modeled; current results are in
+`artifacts/fttr/p6-l3-queue-20261106.json`. P6 configuration/profile/NWAY and
+TX/loading-gate regressions pass. The6.18 Image/modules build passes with
+these sources (`p6-l3-queue-build-20261106.log`); no firmware was loaded.
 
 The function is deliberately not called from shutdown or per-service reuse
 yet: stopping software submission and clearing Hash/cache do not establish
@@ -1398,6 +1411,14 @@ software read62/hardware read2 frees62/63 after wrap. A DMA read/write-pointer
 equality therefore does not, by itself, establish downstream packet retirement.
 Integration requires that producer barrier; the existing synchronous FE/cache
 withdrawal remains in place.
+
+The retained `aal_ni_wait_dma_lso_misc_interrupts` at6450 only reads the
+per-VP interrupt word168+VP*a0, waits for the selected `txq_empty` bit and
+acknowledges it; it does not inspect AFT/PE or MiniOLT occupancy. The actual
+synchronous `__ca_ni_send_single_pkt` blockadbc8..adc28 clears that interrupt,
+publishes the producer, then compares two read-pointer queries. Neither
+routine supplies the missing end-to-end retirement evidence. They have not
+been substituted for such a barrier.
 
 The original MiniOLT diagnostic table at`libasicdrv.so:2a010` (137 entries,
 16-byte rows, selected by`Dump_FTTR_FPGA_AllReg`) names Ethernet/PON buffer

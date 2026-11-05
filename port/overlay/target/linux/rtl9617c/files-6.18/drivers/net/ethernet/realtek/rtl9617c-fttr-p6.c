@@ -15,55 +15,84 @@ static void p6_update(void __iomem *base, unsigned int reg, u32 mask, u32 value)
 	writel((readl(base + reg) & ~mask) | value, base + reg);
 }
 
-/* Caller serializes NI control and stops producers before this queue stage.
- * ES occupancy does not include DMA prefetch, PE or the peer MiniOLT buffer. */
-int rtl_fttr_p6_flush_queues(struct rtl_fttr_p6 *p6)
+static int p6_flush_stage(struct rtl_fttr_p6 *p6, struct rtl_fttr_queue_state *state,
+			 unsigned int control, unsigned int occupancy, u32 saved)
 {
 	const u32 fields = GENMASK(10, 8) | BIT(15);
-	u32 saved = readl(p6->ni + 0x234c), value;
+	u32 value;
 	unsigned int queue;
 	int ret = 0;
 
-	p6->queue_completed = 0;
-	p6->queue_failed = 0xff;
-	p6->queue_error = p6->queue_cleanup_error = 0;
-	p6->queue_status = readl(p6->ni + 0x23d8);
-	if (saved & BIT(15)) {
-		p6->queue_error = -EBUSY;
-		return -EBUSY;
-	}
 	for (queue = 0; queue < 8; queue++) {
-		p6_update(p6->ni, 0x234c, fields, (queue << 8) | BIT(15));
-		value = readl(p6->ni + 0x234c);
+		p6_update(p6->ni, control, fields, (queue << 8) | BIT(15));
+		value = readl(p6->ni + control);
 		if ((value & fields) != ((queue << 8) | BIT(15))) {
 			ret = -EIO;
 			break;
 		}
-		ret = readl_poll_timeout(p6->ni + 0x23d8, p6->queue_status,
-			!(p6->queue_status & BIT(16 + queue)), 1, 100000);
+		ret = readl_poll_timeout(p6->ni + occupancy, state->status,
+			!(state->status & BIT(16 + queue)), 1, 100000);
 		if (ret)
 			break;
-		p6->queue_completed |= BIT(queue);
-		p6_update(p6->ni, 0x234c, BIT(15), 0);
-		if (readl(p6->ni + 0x234c) & BIT(15)) {
+		state->completed |= BIT(queue);
+		p6_update(p6->ni, control, BIT(15), 0);
+		if (readl(p6->ni + control) & BIT(15)) {
 			ret = -EIO;
 			break;
 		}
 	}
 	if (ret)
-		p6->queue_failed = queue;
+		state->failed = queue;
 	/* Restore COS and flush enable even on a stuck queue, retaining the
 	 * primary timeout separately from an unsuccessful control restoration. */
-	p6_update(p6->ni, 0x234c, fields, saved & fields);
-	if ((readl(p6->ni + 0x234c) & fields) != (saved & fields))
-		p6->queue_cleanup_error = -EIO;
+	p6_update(p6->ni, control, fields, saved & fields);
+	if ((readl(p6->ni + control) & fields) != (saved & fields))
+		state->cleanup_error = -EIO;
 	if (!ret) {
-		p6->queue_status = readl(p6->ni + 0x23d8);
-		if (p6->queue_status & GENMASK(23, 16))
+		state->status = readl(p6->ni + occupancy);
+		if (state->status & GENMASK(23, 16))
 			ret = -EAGAIN;
 	}
-	p6->queue_error = ret;
-	return ret ? ret : p6->queue_cleanup_error;
+	state->error = ret;
+	return ret ? ret : state->cleanup_error;
+}
+
+/* Caller serializes NI control and stops producers before these queue stages.
+ * ES occupancy does not include DMA prefetch, PE or the peer MiniOLT buffer. */
+int rtl_fttr_p6_flush_queues(struct rtl_fttr_p6 *p6)
+{
+	u32 l3_saved = readl(p6->ni + 0x63fc), l2_saved = readl(p6->ni + 0x234c);
+	int ret;
+
+	p6->l3_queue = (struct rtl_fttr_queue_state) { .failed = 0xff };
+	p6->l2_queue = (struct rtl_fttr_queue_state) { .failed = 0xff };
+	p6->l3_queue.status = readl(p6->ni + 0x683c);
+	p6->l2_queue.status = readl(p6->ni + 0x23d8);
+	/* Reject either pre-existing owner before changing either stage. */
+	if ((l3_saved | l2_saved) & BIT(15)) {
+		if (l3_saved & BIT(15))
+			p6->l3_queue.error = -EBUSY;
+		if (l2_saved & BIT(15))
+			p6->l2_queue.error = -EBUSY;
+		return -EBUSY;
+	}
+	/* P6 DEEPQ traverses L3 ES port14 (VOQs112..119) before L2 ES port6.
+	 * Both use COS[10:8]/flush[15] and occupancy[23:16].
+	 */
+	ret = p6_flush_stage(p6, &p6->l3_queue, 0x63fc, 0x683c, l3_saved);
+	if (ret)
+		return ret;
+	ret = p6_flush_stage(p6, &p6->l2_queue, 0x234c, 0x23d8, l2_saved);
+	if (ret)
+		return ret;
+	/* A later producer may have refilled L3 while L2 was being flushed. */
+	p6->l3_queue.status = readl(p6->ni + 0x683c);
+	p6->l2_queue.status = readl(p6->ni + 0x23d8);
+	if (p6->l3_queue.status & GENMASK(23, 16))
+		p6->l3_queue.error = -EAGAIN;
+	if (p6->l2_queue.status & GENMASK(23, 16))
+		p6->l2_queue.error = -EAGAIN;
+	return p6->l3_queue.error ? p6->l3_queue.error : p6->l2_queue.error;
 }
 
 static u16 p6_ind_read(struct rtl_fttr_p6 *p6, unsigned int reg)
