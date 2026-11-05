@@ -3734,6 +3734,8 @@ the parent P6 qdisc/DMA path, retaining the original DEEPQ destination6/header.
 No second DMA owner, ring or hardware port is allocated. Hardware replication
 and remote multicast provisioning are not implemented by this transport step;
 the endpoint is not registered as a unicast FE port.
+Its TX lock has a separate lockdep class from the parent, matching the stacked
+submission order.
 
 When attached to the same live bridge as an owned ONU service VLAN, the endpoint
 receives IPv4 IGMP and IPv6 MLD131/143 from that service. The outer GEM tag is
@@ -3772,6 +3774,18 @@ The controller does not yet open/enslave `fttr-mc`. Remote GEM4095, multicast
 profiles/ACLs, verified ownership across restart, and binding each admitted ONU
 to the shared endpoint remain the next integration work. The presence of the
 kernel interface alone does not establish a complete multicast service.
+
+The subsequent original ONU table check also exposes a readback incompatibility:
+`MultiGemIwTpDrvCfg` builds its class281 IPv4 Get snapshot with a declared
+length and allocation of24 bytes per entry at`52ec..5404`, while
+`5448..547c` writes contiguous12-byte entries. Executing the real snapshot and
+`McastAddrEntry_to_network` for zero/one/two rows confirms that the unused half
+retains the allocation fixture's poison bytes. `--table-mib` on
+`trace_stock_fttr_multicast.py` records this separately from the original master
+producer. This is not evidence that every subordinate has this defect, and
+uninitialized bytes must never be accepted as real rows. Remote table
+verification and restart adoption must account for this concrete behavior
+before enabling a complete default multicast service.
 
 ### Outstanding implementation and acceptance
 

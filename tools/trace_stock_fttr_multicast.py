@@ -146,10 +146,66 @@ class Multicast:
                     result=result, events=list(self.events))
 
 
+def table_snapshot(binary):
+    """Execute the ONU's class281 table snapshot; model only MIB/list storage."""
+    allocations = []
+    def boundary(name, a):
+        uc = oracle.uc
+        if name in ('printf', 'putchar', 'free'): return 0
+        if name in ('GOS_Htons', 'GOS_Htonl'):
+            width = 2 if name.endswith('s') else 4
+            return int.from_bytes((a[0] & ((1 << (width * 8)) - 1)).to_bytes(width, 'little'), 'big')
+        if name == 'mib_FindEntry':
+            uc.mem_write(a[2], struct.pack('<Q', entry)); return 1
+        if name == 'MIB_Get':
+            if a[2] == 18:
+                uc.mem_write(a[1] + 2, struct.pack('<H', 4095)); return 0
+            assert a[2] == 40
+            return 1  # Missing upstream queue does not apply to downstream-only GEM.
+        if name == 'MIB_IsInAttrSet': return a[1] == 10
+        if name == 'malloc':
+            allocations.append(a[0])
+            uc.mem_write(buffer, b'\xa5' * a[0]); return buffer
+        raise AssertionError(('unmodeled multicast table boundary', name))
+    oracle = ElfOracle(binary, boundary)
+    p = oracle.scratch + 0x2000
+    entry, buffer, snapshots, info = (p + n for n in (0x100, 0x1000, 0x2000, 0x3000))
+    # gOmciMulGetData and gInfo are supplied by omci_app, absent in this DSO.
+    oracle.uc.mem_write(0x16f60, struct.pack('<Q', snapshots))
+    oracle.uc.mem_write(0x16fe0, struct.pack('<Q', info))
+    level = struct.unpack('<Q', oracle.uc.mem_read(0x16fd8, 8))[0]
+    oracle.uc.mem_write(level, bytes(4))
+    cases = []
+    for count in (0, 1, 2):
+        allocations.clear()
+        oracle.uc.mem_write(p, bytes(0x4000))
+        oracle.uc.mem_write(p, struct.pack('<HH', 4095, 4095))
+        oracle.uc.mem_write(entry + 50, struct.pack('<I', count))
+        oracle.uc.mem_write(entry + 58, struct.pack('<Q', p + 0x400 if count else 0))
+        expected = b''
+        for n in range(count):
+            row = struct.pack('<HHII', 4095, n, 0xe0000100 + n * 256, 0xe00001ff + n * 256)
+            next_row = p + 0x400 + (n + 1) * 32 if n + 1 < count else 0
+            oracle.uc.mem_write(p + 0x400 + n * 32, row + struct.pack('<QQ', next_row, 0))
+            expected += struct.pack('>HHII', *struct.unpack('<HHII', row))
+        assert oracle.call('MultiGemIwTpDrvCfg', 1, p, 1, 1 << 9, 0) == 0
+        attr, chunks, pointer, length, offset = struct.unpack('<IH2xQII', oracle.uc.mem_read(snapshots + 328, 24))
+        assert attr == 10 and length == count * 24 and chunks == (length + 28) // 29 and not offset
+        assert allocations == ([count * 24] if count else [])
+        if count:
+            actual = bytes(oracle.uc.mem_read(pointer, length))
+            assert actual[:count * 12] == expected and actual[count * 12:] == b'\xa5' * (count * 12)
+        cases.append(dict(rows=count, declared_bytes=length, serialized_row_bytes=count * 12,
+                          unwritten_bytes=count * 12))
+    return dict(cases=cases, sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
+        finding='Original class281 IPv4 Get snapshot allocates/reports24 bytes per row but writes12; remaining bytes retain modeled allocation poison. Do not treat padding as valid entries or fabricate a successful native readback.')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--relay', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--table-mib', type=Path, help='execute original subordinate class281 IPv4 table snapshots')
     args = parser.parse_args()
     stock = Multicast(args.relay)
     cases, failures = [], []
@@ -203,6 +259,7 @@ def main():
         defaults.append(case)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(dict(cases=cases, failures=failures, multicast_gem=gems, default_gem=defaults,
+        table_snapshot=table_snapshot(args.table_mib) if args.table_mib else None,
         relay_sha256=hashlib.sha256(args.relay.read_bytes()).hexdigest(),
         scope='Original API, multicast/flow/GEM/default-GEM producers and wire encoders; configuration/MIB storage, reported UNI/bridge IDs, allocators and OMCI replies modeled. Default-GEM execution does not exercise the full ONU startup ordering. No hardware or multicast traffic acceptance.'), indent=2) + '\n')
     print(f'PASS: {len(cases)} default multicast recipes, {len(failures)} operation/cleanup failures, {len(gems)} multicast GEM recipes/failures and {len(defaults)} default-GEM calls')
