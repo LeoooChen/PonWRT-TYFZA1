@@ -13,9 +13,8 @@
 #define NI_EPP_CONSUMERS 0x11c00
 #define NI_EPP_RETIRE_TARGETS 0x19400
 #define NI_TID_ACTIVE 0x19600
-/* Match the software PS budget: four 64-frame ACs per peer, 512 total. */
-#define NI_PS_PEER_LIMIT 256
-#define NI_PS_TOTAL_LIMIT 512
+/* Actual os_tx_enqueue_for_sleeping_sta and mib_table txq_limit=2048. */
+#define NI_PS_TOTAL_LIMIT 2048
 
 static u64 ni_tsf(volatile u32 *mailbox)
 {
@@ -109,9 +108,6 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 	 * timestamp error is this turn's processing time, not a watchdog tick. */
 	u64 now = ni_tsf(mailbox);
 	for (; count < 16 && consumer != producer; count++) {
-		/* One excess arrival lets selection evict a sleeping queue while
-		 * EPP keeps moving, rather than letting it retain the remaining EQ. */
-		if (count && queued + grouped > NI_PS_TOTAL_LIMIT) break;
 		const u32 *entry = uncached(epp + consumer);
 		u32 descriptor = *(volatile u32 *)entry;
 		if ((descriptor & 0x50) != 0x50) break;
@@ -168,8 +164,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		/* Drop excess arrivals before linking them into a sleeping queue.
 		 * The reserved discard WP retains the BID if EQ credit is absent. */
 		if (macid && *(u32 *)(memory + 0xe800 + macid * 16) &&
-		    (*(u32 *)(memory + NI_PEER_QUEUED + macid * 4) + grouped >= NI_PS_PEER_LIMIT ||
-		     queued + grouped >= NI_PS_TOTAL_LIMIT)) {
+		    queued + grouped >= NI_PS_TOTAL_LIMIT) {
 			if (grouped) ni_enqueue(mailbox, memory, group, head, tail, grouped, group_bytes, (u32)now);
 			grouped = 0; group_bytes = 0;
 			u32 id = RTL_AX_NI_DISCARD;
@@ -270,10 +265,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			u32 asleep = ps[0];
 			if (!retired && asleep && !sampled) { now = ni_tsf(mailbox); sampled = 1; }
 			u32 discard = retired || (asleep &&
-				(*(u32 *)(memory + NI_PEER_QUEUED + macid * 4) > NI_PS_PEER_LIMIT ||
-				 mailbox[38] > NI_PS_TOTAL_LIMIT ||
-				 now - ((u64)waiting[3] << 32 | waiting[2]) >=
-				 (u64)*(u32 *)(memory + RTL_AX_NI_PS_TIMEOUT + macid * 4) * 1000000));
+				now - ((u64)waiting[3] << 32 | waiting[2]) >=
+				(u64)*(u32 *)(memory + RTL_AX_NI_PS_TIMEOUT + macid * 4) * 1000000);
 			if (discard && mailbox[47]) continue;
 			if (!discard && (!ni_owner_available(memory) ||
 			    (ps[0] && (command == ps[2] || !((grant_flags >> 16) & BIT(tid)))))) continue;

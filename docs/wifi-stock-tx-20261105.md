@@ -110,3 +110,11 @@ RAM测试初始模块bf174255...：TCP30s1.429Gbps，UDP60s1.591Gbps/20.45%丢�
 NI新TID有活动时触发已有wiphy offload工作，按正常授权/能力/retry门槛启动BA。原厂issue_action_ba@906dc直接读硬件last_seq+1；native tx_peer_ssn从PE的next_seq取快照，去掉整个TID排空等待，避免持续NI流使BA启动等不到。linked分类、WMM/PS、6144所有权随机完成、聚合通过；普通BA触发测试通过。
 
 RAM stockqos SHAec0dbe5b1671d15df6ac5524c3ad91e3b8e6184fec5103f9cf1f622ef787ee6f：两条LAN下行DSCP0/32实际TID bitmap0011，TID4 BA size64在14878.494建成。第一次采样脚本误把WMM_request_quota替换成QOS_request_quota，缺配额行不能证明启用；修正后的短复测实际读到1024→0，无quota drop。两条50Mbps流第一次各7.90% loss，第二次各13.31%，同期retired_EPP增9204且sleep/wake计数增长，BA早已建成。低速丢包并非一次BA启动窗口，也非WMM拒绝；继续核对原厂PS缓存。单流TCP30s1.357Gbps/UDP60s1.458Gbps loss27.06%，无pending冻结，未提速。
+
+## 原厂休眠缓存总量
+
+实际 `os_tx_enqueue_for_sleeping_sta@1acec` 检查dvobj txq_total_len>=mib.txq_limit；实际mib_table偏移2740的默认limit=2048，未见native每peer256/总512限制。PE已移除这组自定义限制，休眠入队按总2048控制，不在后续选择时因awake队列使总量升高而驱逐既有睡眠缓存。当前PS超时仍使用Linux的listen_interval/beacon预算，未宣称原厂全部aging语义完成。
+
+144组实际ELF入队条件通过；linked PS预算/expiry/TIM、grant竞争、阻塞EQ、2048休眠帧+另一醒站实际发送、6144请求回收通过。初次PSQ双流虽零丢包，但只有一半走NI且无传输中休眠，不能用于归因。第二次同关联PSQ-RETRY：两条50Mbps流均走NI（约69000帧）、客户端sleep/wake多次增加，两条均0 loss、retired_EPP保持0，支持该修改解决已复现的QoS低速休眠丢包。WMM quota1024，drop0；长WMM timeout仍可能在采样结束时保持，未说本次20秒采样已见退出。
+
+RAM stockpsq SHA4b5a085757ccc537d615ef7217ba12673fc644049d21b92416fdef0152d075b1：TCP30s1.361Gbps、UDP60s1.482Gbps/loss25.89%，目标仍未达到，pending正常排空、RPQ failed0。所有本批额外服务器/客户端和stock_psq_probe NAT表已清理，继续保留测试基线的downlink_probe和RAM候选以便下一批。
