@@ -826,7 +826,7 @@ static int rtl_register_fttr(struct rtl_xram *priv)
 		free_netdev(dev);
 		return ret;
 	}
-	ret = register_netdev(dev);
+	ret = register_netdevice(dev);
 	if (ret) {
 		rtl_fe_remove_port(priv->fe, dev);
 		free_netdev(dev);
@@ -1197,6 +1197,11 @@ static void rtl_register_lans(struct rtl_xram *priv, struct device *parent)
 	}
 	if (!priv->lan4_phy)
 		complete_all(&priv->lan4_ready);
+	/* The first LAN open starts QM. Publish P6 before releasing RTNL so
+	 * that its ingress tables are present even if a LAN opens first. */
+	ret = rtl_register_fttr(priv);
+	if (ret)
+		dev_err(parent, "FTTR initialization failed: %d; LAN ports retained\n", ret);
 	rtnl_unlock();
 }
 
@@ -1594,9 +1599,6 @@ static int rtl_probe(struct platform_device *pdev)
 	}
 	platform_set_drvdata(pdev, netdev);
 	rtl_register_lans(priv, dev);
-	ret = rtl_register_fttr(priv);
-	if (ret)
-		dev_err(dev, "FTTR initialization failed: %d; LAN ports retained\n", ret);
 	ret = sysfs_create_groups(&dev->kobj, rtl_native_groups);
 	if (ret)
 		dev_warn(dev, "NI diagnostic attributes unavailable: %d\n", ret);

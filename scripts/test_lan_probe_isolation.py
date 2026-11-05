@@ -73,6 +73,7 @@ struct rtl_xram {
  struct {struct net_device *lan[5];} qm;
  struct phy *sgmii;struct tyfza1_led phy_led;
  bool phy_led_registered,qm_rx,native_groups_created,wifi_started;
+ bool fttr_ready;
  int tx_lock;void *fe;
 };
 static struct device_node nodes[5];
@@ -134,6 +135,7 @@ static void synchronize_net(void){}
 static int tyfza1_led_register(struct device *d,struct tyfza1_led *l,void *n){return stage==9?-EIO:0;}
 static void tyfza1_led_unregister(struct tyfza1_led *l){}
 static void *rtl_phy_led_output;
+static int rtl_register_fttr(struct rtl_xram *priv){assert(rtnl_held);priv->fttr_ready=true;return 0;}
 '''
 code = shim + '\n'.join(function(n) for n in ('rtl_unregister_lan', 'rtl_sgmii_power_off', 'rtl_lan_number', 'rtl_register_lan', 'rtl_lan4_work', 'rtl_register_lans'))
 # Run the actual post-registration probe block independently of shared DMA setup.
@@ -167,7 +169,7 @@ int main(void){
   if(board_ports==5)expected&=~BIT(3);
   if(stage>=1 && stage<=3 && board_ports==5)expected&=~BIT(4);
   if(stage>=4 && stage<=8 && !(stage==4 && fail_port==0))expected&=~BIT(fail_port);
-  assert(active==expected && priv.registered_ports==expected && fe_ports==expected);
+  assert(active==expected && priv.registered_ports==expected && fe_ports==expected && priv.fttr_ready);
   assert(!removed && !node_refs);
   assert(priv.lan4_ready.done && !!priv.lan4_phy==(board_ports==5));
   assert(s3_requests==(unsigned int)(board_ports==5));

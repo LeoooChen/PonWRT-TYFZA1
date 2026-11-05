@@ -44,6 +44,7 @@ static void flush_work(struct work_struct *work){(void)work;assert(!pthread_join
 '''
 code = shim[:start] + threading + shim[end:]
 code = code.replace('#include <assert.h>', '#include <assert.h>\n#include <pthread.h>')
+code = code.replace('assert(rtnl_held);priv->fttr_ready', 'assert(rtnl_owned);priv->fttr_ready')
 code = code.replace('unsigned int registered_ports,port;', 'unsigned int registered_ports,port,engine_users;')
 start = code.index('static int register_netdevice(')
 end = code.index('static void unregister_netdev(', start)
@@ -51,7 +52,7 @@ code = code[:start] + 'static int register_netdevice(struct net_device *d);\n' +
 code += r'''
 static unsigned int engine_ports;
 static int rtl_engine_start(struct rtl_xram *priv){
- assert(rtnl_owned);
+ assert(rtnl_owned && priv->fttr_ready);
  engine_ports=0;
  for(unsigned int i=0;i<5;i++)if(priv->ports[i])engine_ports|=BIT(i);
  /* No synchronous port may be omitted by the first scheduler/QM setup. */

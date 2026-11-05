@@ -1113,7 +1113,12 @@ The main alignment in `61d24e6` retains asynchronous LAN4 registration, optional
 NI services, current DMA/QM/PE code and the factory-storage layout. Both FTTR
 DTs now retain the required DMA AXI reorder window alongside P6/QX. FTTR BOSA
 calibration uses a package-installed symlink, matching the main read-only
-firmware layout. Main itself is not changed by this merge.
+firmware layout. FTTR registration also runs inside the LAN registration RTNL
+section: an early LAN open cannot start QM before the FTTR endpoint is published.
+The existing threaded LAN tests assert P6 publication before the first engine
+start; 90 per-port failure cases and 21 concurrent open/remove cases pass, and
+the NI composite object recompiles (`registration-build.log`). Main itself is
+not changed by this merge.
 
 Previously `fttr_accel=1` only changed the CF destination if the upstream PON
 had already enabled FE. Standalone FTTR therefore never prepared the Hash,
