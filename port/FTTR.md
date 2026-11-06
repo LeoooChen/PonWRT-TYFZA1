@@ -4060,6 +4060,16 @@ keep-source, HeaderA gating and multicast membership-enable controls; original
 membership, egress and port-DBUF setters verify the native table encodings.
 This proves register production, not physical packet scheduling.
 
+Following actual `rtk_fc_mc_delKnownGroupEntry.part.0` through
+`_rtk_fc_mc_groupToHwAsUnknown` and `rtk_8277c_flow_mcast_group_asunknown`
+adds six last-reference checks. The observed lower boundary is `aal_hash_delete`;
+there is no separate NI/MCE/PE retirement operation in these wrappers. On its
+failure, the Hash software owner remains set, but the caller still decrements
+the group reference to zero and clears the known-group flag. A second call
+does not retry. Native group withdrawal therefore retains its cookie/NI/action
+ownership on Hash/cache failure; original software unlearn is not treated as
+proof of hardware retirement.
+
 Each flow retains every replica's port owner, so removal/FTTR withdrawal also
 finds P6 when it is only a mirror. Link, topology, address and MTU events
 withdraw multicast groups. Closing `fttr-mc` synchronously attempts FE cleanup.

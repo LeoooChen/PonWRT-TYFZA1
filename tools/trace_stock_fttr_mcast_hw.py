@@ -184,6 +184,58 @@ def hash_recipes(module, ni_module):
         'Both wrappers return0 even when the modeled original Hash add/update callee returns5; success does not establish publication.'])
 
 
+def group_unlearn(module):
+    """Follow last-reference deletion through FC's real Hash-delete wrapper."""
+    events, failure = [], 0
+    def boundary(name, values):
+        if name == 'aal_hash_delete':
+            assert values[:2] == [0, 37]
+            events.append(dict(function=name, device=values[0], hash=values[1], result=failure))
+            return failure
+        if name == 'sprintf':
+            oracle.uc.mem_write(values[0], b'error\0')
+            return 5
+        if name == 'printk':
+            return 0
+        raise AssertionError(('unmodeled group unlearn boundary', name, values))
+    oracle = ModuleOracle(module, ['rtk_fc_mc_delKnownGroupEntry.part.0',
+        '_rtk_fc_mc_groupToHwAsUnknown', 'rtk_8277c_flow_mcast_group_asunknown'], boundary)
+    record, state, bitmap = oracle.scratch, oracle.scratch + 0x1000, oracle.scratch + 0x2000
+    database = oracle.symbols['fc_db'][0]
+    row = database + 0x200000 + 37 * 63
+    cases = []
+    for refs in (0, 1, 2):
+        for failure in (0, 5):
+            events.clear()
+            oracle.uc.mem_write(record, bytes(64))
+            oracle.uc.mem_write(record + 16, struct.pack('<H', refs))
+            oracle.uc.mem_write(record + 20, struct.pack('<II', 37, 0xffffffff))
+            oracle.uc.mem_write(record + 28, b'\x01')
+            oracle.uc.mem_write(database + 332, struct.pack('<I', 64))
+            oracle.word(database + 344, bitmap)
+            oracle.word(bitmap, (1 << 64) - 1)
+            oracle.word(row + 376, state)
+            oracle.uc.mem_write(state, struct.pack('<I', 1))
+            oracle.call('rtk_fc_mc_delKnownGroupEntry.part.0', record)
+            remaining = oracle.unpack(record + 16, 'H')[0]
+            known = oracle.unpack(record + 28, 'B')[0] & 1
+            hash_owned = oracle.unpack(state, 'I')[0] & 1
+            assert remaining == max(0, refs - 1)
+            assert known == (refs != 1)
+            assert hash_owned == (refs != 1 or failure != 0)
+            assert len(events) == (refs == 1)
+            if refs == 1 and failure:
+                oracle.call('rtk_fc_mc_delKnownGroupEntry.part.0', record)
+                assert len(events) == 1 and oracle.unpack(state, 'I')[0] & 1
+            cases.append(dict(references=refs, hash_delete_error=failure,
+                remaining_references=remaining, known_flag=known,
+                hash_software_owner=hash_owned, calls=list(events)))
+    return dict(cases=cases, findings=[
+        'Last-reference unlearn calls only aal_hash_delete at the observed hardware boundary; it supplies no separate NI/MCE/PE retirement fence.',
+        'If Hash delete fails, the lower wrapper preserves the Hash software owner, but the caller still decrements references to0 and clears its known-group flag. Repeating unlearn with0 references does nothing.',
+        'Native withdrawal must retain its group/cookie and retry on Hash/cache failure instead of treating original software unlearn as a resource-reuse guarantee.'])
+
+
 def replica_recipes(fc_module, ni_module):
     """Execute FC replica construction through the real arbitration producer."""
     class Published(Exception): pass
@@ -540,6 +592,7 @@ def main():
         ni_multicast_init=ni_multicast_init(args.module),
         group_lifecycle=group_lifecycle(args.module),
         hash_recipes=hash_recipes(args.fc, args.module) if args.fc else None,
+        group_unlearn=group_unlearn(args.fc) if args.fc else None,
         fc_sha256=hashlib.sha256(args.fc.read_bytes()).hexdigest() if args.fc else None,
         arbitration_init=arbitration_init(args.module, args.fc) if args.fc else None,
         replica_recipes=replica_recipes(args.fc, args.module) if args.fc else None,
