@@ -6,10 +6,12 @@
 #include "omci-association.h"
 #include "omci-gem.h"
 #include "omci-vlan.h"
+#include "omci-mcast.h"
 
 struct fttr_service_config {
 	uint16_t uni, slot, priority, vid, fixed, assured, maximum;
 	bool veip, tagged, shared;
+	uint8_t multicast; /* 0 disabled, 1 original standard, 2 original CTC profile */
 	enum fttr_backend backend;
 };
 
@@ -26,11 +28,12 @@ struct fttr_service_job {
 	struct fttr_objects_job transaction;
 	struct fttr_omci_object objects[7];
 	struct fttr_service_uni *unis;
+	struct fttr_mcast_job mcast;
 	unsigned int uni_count;
 	int uni_index;
 	struct fttr_tcont_grant previous, observed;
 	struct fttr_service_config config;
-	uint16_t tcont, queue, gem, uni_port, ani_port, previous_alloc;
+	uint16_t tcont, queue, gem, uni_port, ani_port, previous_alloc, mcast_port, mcast_uni;
 	const char *phase;
 	int error, cleanup_error;
 	bool grant_sent, grant_verified, grant_restored, grant_withdrawn, configured;
@@ -38,7 +41,8 @@ struct fttr_service_job {
 		FTTR_SERVICE_RELEASE, FTTR_SERVICE_READY, FTTR_SERVICE_FAILED,
 		FTTR_SERVICE_RELEASING_VLAN, FTTR_SERVICE_RELEASING_OBJECTS, FTTR_SERVICE_RELEASED,
 		FTTR_SERVICE_UNIS, FTTR_SERVICE_ROLLBACK_VLAN, FTTR_SERVICE_ROLLBACK_UNIS,
-		FTTR_SERVICE_RELEASING_UNIS, FTTR_SERVICE_CHECK, FTTR_SERVICE_CHECK_UNIS } stage;
+		FTTR_SERVICE_RELEASING_UNIS, FTTR_SERVICE_CHECK, FTTR_SERVICE_CHECK_UNIS,
+		FTTR_SERVICE_CHECK_MCAST, FTTR_SERVICE_MCAST, FTTR_SERVICE_RELEASE_MCAST } stage;
 };
 
 /* Select real MEs for one UNI or all reported Ethernet/VEIP UNIs on the shared bridge. */

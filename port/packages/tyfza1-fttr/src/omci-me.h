@@ -17,6 +17,7 @@ struct fttr_me_job {
 	int error;
 	bool replied;
 	uint8_t result, request[44], reply[44];
+	bool no_retry; /* A non-idempotent mutation must resolve by readback. */
 };
 
 /* Values are in wire order. GET_NEXT takes a two-byte sequence number. */

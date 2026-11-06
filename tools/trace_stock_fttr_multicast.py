@@ -201,6 +201,76 @@ def table_snapshot(binary):
         finding='Original class281 IPv4 Get snapshot allocates/reports24 bytes per row but writes12; remaining bytes retain modeled allocation poison. Do not treat padding as valid entries or fabricate a successful native readback.')
 
 
+def table_mutations(binary):
+    """Execute class281 Set/Delete with its actual list and callback behavior."""
+    events=[]
+    allocations=[]
+    callback_error=0
+    def boundary(name,a):
+        uc=oracle.uc
+        if name in ('printf','putchar'):return 0
+        if name in ('GOS_Htons','GOS_Htonl'):
+            width=2 if name.endswith('s') else 4
+            return int.from_bytes((a[0]&((1<<(width*8))-1)).to_bytes(width,'little'),'big')
+        if name=='mib_FindEntry':uc.mem_write(a[2],struct.pack('<Q',entry));return 1
+        if name=='MIB_Get':
+            if a[2]==18:
+                uc.mem_write(a[1]+2,struct.pack('<H',4095));uc.mem_write(a[1]+6,b'\2');return 0
+            assert a[2]==40
+            return 1
+        if name=='MIB_IsInAttrSet':return a[1]==10
+        if name=='memcpy':uc.mem_write(a[0],bytes(uc.mem_read(a[1],a[2])));return a[0]
+        if name=='malloc':
+            assert a[0]==28
+            pointer=p+0x8000+len(allocations)*32
+            allocations.append(pointer);uc.mem_write(pointer,bytes(32));return pointer
+        if name=='free':events.append(dict(operation='free'));return 0
+        if name=='acl':
+            row=struct.unpack('<HHII',uc.mem_read(a[2],12))
+            events.append(dict(operation='acl',action=a[0],family=a[1],row=list(row),result=callback_error))
+            return callback_error
+        if name=='filter':events.append(dict(operation='filter',value=a[0]));return 0
+        if name=='omci_wrapper_cfgGemFlow':
+            events.append(dict(operation='flow',value=bytes(uc.mem_read(a[0],76)).hex()));return 0
+        raise AssertionError(('unmodeled multicast mutation',name))
+    oracle=ElfOracle(binary,boundary)
+    p=oracle.scratch+0x2000
+    entry,info,ops=p+0x100,p+0x1000,p+0x2000
+    oracle.uc.mem_write(0x16fe0,struct.pack('<Q',info))
+    level=struct.unpack('<Q',oracle.uc.mem_read(0x16fd8,8))[0]
+    oracle.uc.mem_write(level,bytes(4))
+    oracle.hooks[p+0x6000]='acl';oracle.hooks[p+0x6010]='filter'
+    rows=[]
+    for case,sequence,error in (
+        ('add-delete',('add','delete'),0),
+        ('delete-absent',('delete',),0),
+        ('lost-delete-retry',('add','delete','delete'),0),
+        ('acl-add-failure',('add',),7),
+        ('acl-delete-failure',('add','delete'),7)):
+        oracle.uc.mem_write(p,bytes(0x9000));allocations.clear()
+        oracle.uc.mem_write(p,struct.pack('<HH',4095,4095))
+        oracle.uc.mem_write(info+376,struct.pack('<Q',ops))
+        oracle.uc.mem_write(ops+192,struct.pack('<QQ',p+0x6000,p+0x6010))
+        steps=[]
+        for operation in sequence:
+            events.clear()
+            callback_error=error if case!='acl-delete-failure' or operation=='delete' else 0
+            oracle.uc.mem_write(p+14,bytes.fromhex('0fff0000')+(bytes.fromhex('e0000100efffffff') if operation=='add' else bytes(8)))
+            result=oracle.call('MultiGemIwTpDrvCfg',1,p,0,1<<9,0)
+            count=struct.unpack('<I',oracle.uc.mem_read(entry+50,4))[0]
+            head=struct.unpack('<Q',oracle.uc.mem_read(entry+58,8))[0]
+            row=list(struct.unpack('<HHII',oracle.uc.mem_read(head,12))) if head else None
+            steps.append(dict(operation=operation,result=result,rows=count,row=row,events=list(events)))
+        rows.append(dict(case=case,steps=steps))
+    assert [s['rows'] for s in rows[0]['steps']]==[1,0]
+    assert rows[1]['steps'][0]['row']==[4095,0,0,0]
+    assert [s['rows'] for s in rows[2]['steps']]==[1,0,1]
+    assert rows[3]['steps'][0]['result']==0 and rows[3]['steps'][0]['rows']==1
+    assert rows[4]['steps'][-1]['result']==0 and rows[4]['steps'][-1]['rows']==0
+    return dict(cases=rows,sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
+        finding='An absent delete key inserts a zero-address row; lost-delete retry is not idempotent. ACL callback errors are logged but MIB list mutation and success continue, so OMCI readback alone does not prove hardware ACL installation or removal.')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--relay', required=True, type=Path)
@@ -260,6 +330,7 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(dict(cases=cases, failures=failures, multicast_gem=gems, default_gem=defaults,
         table_snapshot=table_snapshot(args.table_mib) if args.table_mib else None,
+        table_mutations=table_mutations(args.table_mib) if args.table_mib else None,
         relay_sha256=hashlib.sha256(args.relay.read_bytes()).hexdigest(),
         scope='Original API, multicast/flow/GEM/default-GEM producers and wire encoders; configuration/MIB storage, reported UNI/bridge IDs, allocators and OMCI replies modeled. Default-GEM execution does not exercise the full ONU startup ordering. No hardware or multicast traffic acceptance.'), indent=2) + '\n')
     print(f'PASS: {len(cases)} default multicast recipes, {len(failures)} operation/cleanup failures, {len(gems)} multicast GEM recipes/failures and {len(defaults)} default-GEM calls')

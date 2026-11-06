@@ -3770,10 +3770,11 @@ the edited patch hunks reverse cleanly against the build tree. Reports/logs
 are under `artifacts/fttr/multicast-*`. These are offline checks; no physical
 device or optical link was touched.
 
-The controller does not yet open/enslave `fttr-mc`. Remote GEM4095, multicast
-profiles/ACLs, verified ownership across restart, and binding each admitted ONU
-to the shared endpoint remain the next integration work. The presence of the
-kernel interface alone does not establish a complete multicast service.
+The controller does not yet open/enslave `fttr-mc`. Remote GEM4095 and the default
+multicast profile are now implemented as described below. Verified ownership
+across restart, additional profile/ACL policy and binding each admitted ONU to
+the shared endpoint remain integration work. The presence of the kernel
+interface alone does not establish a complete multicast service.
 
 The subsequent original ONU table check also exposes a readback incompatibility:
 `MultiGemIwTpDrvCfg` builds its class281 IPv4 Get snapshot with a declared
@@ -3786,6 +3787,63 @@ producer. This is not evidence that every subordinate has this defect, and
 uninitialized bytes must never be accepted as real rows. Remote table
 verification and restart adoption must account for this concrete behavior
 before enabling a complete default multicast service.
+
+### Remote default multicast transaction
+
+`omci-mcast.c` reproduces the actual standard/CTC producers: downstream-only
+GEM268/4095, IW281/4095, profile309 or65531, subscriber310, monitor311,
+shared-bridge port47 with TP type6 and pointer4095, and filter84. It sets the
+original12-byte IPv4 row for224.0.1.0..239.255.255.255. The service selects the
+first reported VEIP, otherwise Ethernet, and reserves its extra bridge port
+before any writes. Core objects, every UNI and multicast resources pass live
+read-only preflight before service application begins.
+
+CLI/service-policy kinds `shared-mcast` and `shared-ctc` add this remote recipe
+to `shared`; the existing ten fields and other kinds retain their meaning.
+These kinds configure remote multicast but do not open the local multicast
+transport. The service transaction becomes ready after every multicast object
+and table readback passes. Failures restore the multicast row/objects first,
+then prior UNI VLAN/admin, DBA and core resources. Explicit migration withdraws
+local forwarding and DBA, verifies all multicast object groups and the live
+table before any deletion, then releases multicast before shared dependencies.
+Adopted resources remain unowned; a cleanup failure retains dependent objects.
+
+Normal12-byte matching tables can be adopted without writes. Existing24-byte
+snapshots are ambiguous and return `ENOTRECOVERABLE`. Only a newly owned IW,
+a verified empty table and our one sent row permit the original doubled-length
+interpretation; only its initialized12 bytes are compared. This also applies
+when the Set took effect but its response was lost. Cancellation immediately
+after transport send retains uncertain Create/Set ownership in the journal.
+The original ONU's Set handler inserts a zero-address row when a delete key is
+absent. Rollback therefore sends no delete after proving an empty table, and
+row deletion opts out of the ME transport's usual retransmission: timeout
+resolves through a fresh table read. The executed original add/delete/lost-reply
+retry sequence produces row counts1,0,1, confirming that this callback is not
+idempotent. This does not assume that every ONU lacks a transaction cache.
+
+`test_fttr_mcast_omci.py` compares every Create/Set byte against executed original
+producers and covers each rejected write, each applied-write timeout, deferred
+preflight, table adoption, false-success Set, cancellation and object/table
+drift before release. `test_fttr_service.py` verifies full shared service and
+rollback over AF_PACKET. `test_fttr_autoprovision.py --shared --multicast
+standard|ctc --move-control ...` verifies resident authentication, journaling,
+migration and failed cleanup, including preserving a healthy peer. ASIC9690,
+FPGA1 and FPGA2 cases pass, as does the target OpenWrt package build. Reports
+are `artifacts/fttr/mcast-omci-20261106.json`, `service-mcast-20261106.json`,
+`resident-mcast-*-20261106.json` and `package-mcast-20261106.log`.
+
+Local admission is still unfinished: withdrawing an ONU's unicast grant does
+not establish that it cannot receive shared downstream GEM4095. Retained remote
+membership after cancellation/restart must be reconciled before the shared
+producer opens. Per-ONU GEM encryption in `drv_set_onu_gemport_encrypted` uses
+the unicast GEM numbering and does not prove shared multicast isolation.
+Executing original `MultiGemIwTpDrvCfg` with failing hardware ACL callbacks
+also shows that both add and delete still change the MIB list and can return
+success. `trace_stock_fttr_multicast.py --table-mib ...` now records these five
+mutation cases alongside the three snapshot cases. OMCI table readback proves
+MIB state, not successful subordinate hardware ACL programming.
+These offline results do not claim optical reception, hardware multicast
+replication, queued-packet retirement or complete FTTR acceptance.
 
 ### Outstanding implementation and acceptance
 

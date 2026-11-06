@@ -70,7 +70,7 @@ class Config(C.Structure):
 class Me(C.Structure):
     _fields_=[('state',C.c_int),('onu',C.c_ushort),('transaction',C.c_ushort),('mask',C.c_ushort),
               ('attempts',C.c_uint),('deadline',C.c_int64),('error',C.c_int),('replied',C.c_bool),
-              ('result',C.c_ubyte),('request',C.c_ubyte*44),('reply',C.c_ubyte*44)]
+              ('result',C.c_ubyte),('request',C.c_ubyte*44),('reply',C.c_ubyte*44),('no_retry',C.c_bool)]
 
 
 class Values(C.Structure):

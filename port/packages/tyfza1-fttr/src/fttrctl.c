@@ -539,7 +539,7 @@ out:
 static int service_command(int directory, unsigned int id, const uint16_t fields[8],
 			   bool tagged, const char *interface)
 {
-	struct fttr_service_config config = { .veip = fields[0] == 2, .shared = fields[0] == 3, .uni = fields[1],
+	struct fttr_service_config config = { .veip = fields[0] == 2, .shared = fields[0] >= 3, .multicast = fields[0] >= 4 ? fields[0] - 3 : 0, .uni = fields[1],
 		.slot = fields[2], .priority = fields[3], .tagged = tagged, .vid = fields[4],
 		.fixed = fields[5], .assured = fields[6], .maximum = fields[7] };
 	struct fttr_service_job job = { .phase = "inventory" };
@@ -700,7 +700,7 @@ int main(int argc, char **argv)
 			"       %s <miniolt-sysfs-directory> mapper <hardware-ID> <mapper-instance> <P-bit-mask> <GEM-IW-instance|0xffff> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> vlan-table <hardware-ID> <EVTO-instance> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> vlan <hardware-ID> <EVTO-instance> <policy:0..5> <input-VID> <output-VID> <priority:0..7> <remove:0|1> [interface=fttr0]\n"
-			"       %s <miniolt-sysfs-directory> service <hardware-ID> <UNI-kind:0|2|shared> <UNI-instance:0-if-shared> <slot:1..7> <priority:0..7> <VID|none> <fixed> <assured> <maximum> [interface=fttr0]\n"
+			"       %s <miniolt-sysfs-directory> service <hardware-ID> <UNI-kind:0|2|shared|shared-mcast|shared-ctc> <UNI-instance:0-if-shared> <slot:1..7> <priority:0..7> <VID|none> <fixed> <assured> <maximum> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> wifi <hardware-ID> <config-file> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> wait-link <NI-sysfs-directory>\n",
 			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
@@ -786,8 +786,8 @@ int main(int argc, char **argv)
 			for (i = 0; i < (service ? 8U : vlan_table ? 1U : (gem || vlan) ? 6U : profiles ? 4U : (binding || uni || ani) ? 5U : 3U); i++) {
 				unsigned long value;
 
-				if (service && !i && !strcmp(argv[4], "shared")) {
-					fields[0] = 3;
+				if (service && !i && (!strcmp(argv[4], "shared") || !strcmp(argv[4], "shared-mcast") || !strcmp(argv[4], "shared-ctc"))) {
+					fields[0] = !strcmp(argv[4], "shared") ? 3 : !strcmp(argv[4], "shared-mcast") ? 4 : 5;
 					continue;
 				}
 				if (service && i == 4 && !strcmp(argv[8], "none")) {
@@ -804,7 +804,7 @@ int main(int argc, char **argv)
 				    (mapper && i == 1 && (!value || value > 255)) ||
 				    (vlan && ((i == 1 && value > 5) || (i == 4 && value > 7) || (i == 5 && value > 1))) ||
 				    (service && ((i == 0 && value != 0 && value != 2) ||
-				                 (i == 1 && fields[0] == 3 && value) || (i == 2 && (!value || value > 7)) ||
+				                 (i == 1 && fields[0] >= 3 && value) || (i == 2 && (!value || value > 7)) ||
 				                 (i == 3 && value > 7) || (i == 4 && value > 4094))) ||
 				    (uni && ((i == 0 && value != 0 && value != 2) ||
 				             (i == 4 && value > (fields[0] == 2 ? 246U : 254U))))) {

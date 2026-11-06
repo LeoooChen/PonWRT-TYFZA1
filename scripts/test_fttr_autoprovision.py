@@ -88,11 +88,13 @@ def main():
     p.add_argument('--move-control', type=Path, help='exercise the resident SN reservation move')
     p.add_argument('--output', type=Path, required=True)
     p.add_argument("--shared", action="store_true", help="exercise shared Ethernet/VEIP services and release with --move-control")
+    p.add_argument("--multicast", choices=("standard","ctc"), help="exercise remote multicast shared provisioning and migration")
     p.add_argument("--wifi", action="store_true", help="exercise resident remote Wi-Fi policies")
     p.add_argument("--onu-policy", action="store_true", help="exercise per-ONU authentication and persistent assignment")
     p.add_argument("--auth", action="store_true", help="exercise original global LOID policy before services")
     p.add_argument("--backend", choices=("asic9690", "fpga1", "fpga2"), default="asic9690")
     args = p.parse_args()
+    assert not args.multicast or args.shared
     assert not args.shared or (args.move_control and not args.onu_policy)
 
     physical_slot = 0 if args.backend == "fpga1" else 1
@@ -119,7 +121,7 @@ def main():
     sync_request=stock.me_request(0x49,2,0,0x8000,b'\0')
     o, ptr = stock.oracle, stock.data
     widths = {}
-    for c in (2,11,45,47,84,171,256,262,266,268,272,277,329,0xff69,0xff6a,0xfffa):
+    for c in (2,11,45,47,84,171,256,262,266,268,272,277,281,309,310,311,329,65531,0xff69,0xff6a,0xfffa):
         assert o.call('plr_gponomci_medetail_get',c,ptr,ptr+8)==1
         table = struct.unpack('<Q',o.uc.mem_read(ptr+8,8))[0]
         widths[c] = {struct.unpack('<H',o.uc.mem_read(table+i*40+8,2))[0]:o.uc.mem_read(table+i*40+12,1)[0]
@@ -220,9 +222,9 @@ def main():
                 assert (c,id) not in self.pool
                 if c==266 and self.reject: status=6
                 else:
-                    if c==47: create_mask=0xfc00 if body[11] in (5,11) else 0xfe00
+                    if c==47: create_mask=0xfc00 if body[11] in (5,6,11) else 0xfe00
                     elif c==84: create_mask=0xe000 if (self.veip or args.shared) and self.pool[47,id][0x2000]==b'\5' else 0x4000
-                    else: create_mask={272:0x8000,45:0xff80,268:0xfac0,266:0xf200,171:0x8200}[c]
+                    else: create_mask={272:0x8000,45:0xff80,268:0xfac0,266:0xf200,171:0x8200,281:0xf300,309:0xfc78,65531:0xfc59,310:0xf800,311:0x8000}[c]
                     n=sum(w for bit,w in widths[c].items() if create_mask&bit)
                     self.pool[c,id]=self.fields(c,create_mask,body[8:8+n])
             elif op==0x46:
@@ -235,6 +237,10 @@ def main():
                     if row[8:]==b'\xff'*8: self.table.pop(key,None)
                     else: self.table[key]=row
                     wire=self.slave.reply(body,b''.join(row for key,row in self.table.items() if not args.shared or key[0]==id),8)
+                elif c==281 and mask==0x80:
+                    row=body[10:22]
+                    if row[4:]==bytes(8):self.table.pop(('mcast',id),None)
+                    else:self.table['mcast',id]=row
                 else:
                     if c in (0xff69,0xff6a):
                         self.wifi_sets += 1
@@ -250,6 +256,9 @@ def main():
                     wire=self.slave.reply(body,b'',8)
                 elif (c,id) not in self.pool: status=5
                 elif c==171 and mask in (0x4000,0x0400): wire=self.slave.reply(body,b''.join(row for key,row in self.table.items() if not args.shared or key[0]==id),8)
+                elif c==281 and mask==0x80:
+                    rows=self.table.get(('mcast',id),b'')
+                    content=struct.pack('>H',mask)+(struct.pack('>I',len(rows)) if op==0x49 else rows)
                 else: content=struct.pack('>H',mask)+b''.join(self.pool[c,id][bit] for bit in sorted(widths[c],reverse=True) if mask&bit)
             if op in (0x44,0x48,0x46) and not status:
                 self.counter.increment()
@@ -715,7 +724,8 @@ def main():
             print(json.dumps(checks,indent=2));return
         if args.move_control:
             if args.shared:
-                policy.write_text('* shared 0 1 3 200 50 100 200 br-fttr\n')
+                kind='shared-ctc' if args.multicast=='ctc' else 'shared-mcast' if args.multicast else 'shared'
+                policy.write_text(f'* {kind} 0 1 3 200 50 100 200 br-fttr\n')
             checks=[];nodes[7].hold=False;nodes[7].wifi_hold=False;nodes[9].fail_upload_once=False
             def move(from_id,to,serial=None,target=None,error=0):
                 client=subprocess.Popen([str(args.move_control.resolve()),str(store),'onu-move',str(from_id),
@@ -747,6 +757,12 @@ def main():
                                       (329 if uni['kind']==2 else 11,uni['instance'])}
                             if uni['kind']==0: expected.add((84,uni['port']))
                             assert {(o['class'],o['instance']) for o in uni['objects']}==expected
+                        if args.multicast:
+                            recipe=next(e for e in journal(id) if e['event']=='service_recipe')
+                            mc=next(e for e in journal(id) if e['event']=='service_multicast')
+                            assert recipe['multicast']==(2 if args.multicast=='ctc' else 1)
+                            assert mc['configured'] and not mc['error'] and not mc['cleanup_error']
+                            assert nodes[id].table['mcast',4095]==bytes.fromhex('0fff0000e0000100efffffff')
                     checks.append('shared policy configures every reported Ethernet/VEIP UNI before attaching a single GEM port through the native FE lifecycle')
                 before=len(accel_events());peer_port=datapath(9)
                 move(7,11,serial='0'*16,error=errno.ESTALE)
@@ -786,11 +802,15 @@ def main():
                 data=device.joinpath('onu_state').read_bytes()
                 assert data[7*20+12:8*20]==bytes(8) and data[11*20+12:12*20]==nodes[7].serial
                 if args.shared:
-                    assert not nodes[7].table and not any(c in (45,47,84,171,266,268,272) for c,i in nodes[7].pool)
+                    assert not nodes[7].table and not any(c in (45,47,84,171,266,268,272,281,309,310,311,65531) for c,i in nodes[7].pool)
                     assert all(nodes[7].pool[c,i][0x8000 if c==329 else 0x0800]==b'\1' for c,i in nodes[7].pool if c in (11,329))
                     uni_ledgers=[e for e in journal(7,'service-old') if e['event']=='service_uni_objects']
                     assert len(uni_ledgers)>=3 and all(not o['touched'] for e in uni_ledgers for o in e['objects'])
                     checks.append('shared migration restores all UNI VLAN/admin state and releases every owned attachment before shared GEM/T-CONT and SN mutation')
+                    if args.multicast:
+                        writes=[(op,c) for _,op,c,i in nodes[7].operations if op==0x46 or op==0x48 and c==281]
+                        assert writes.index((0x46,281))<writes.index((0x46,45))
+                        checks.append('remote multicast standard/CTC profile and original GEM4095 row are journaled and released before the shared bridge; no local multicast endpoint is admitted by this test')
                 # Registration is an external event, never synthesized by the controller.
                 node=nodes.pop(7);node.id=11;node.auth_hold=args.auth;node.held=None;nodes[11]=node
                 hardware()

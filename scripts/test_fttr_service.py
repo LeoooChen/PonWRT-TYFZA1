@@ -79,7 +79,7 @@ def main():
         assert struct.unpack('<H',tcont.uc.mem_read(tcont.symbols['gMibTcontDefRow']+2,2))[0]==expected
     o, ptr = master.oracle, master.data
     widths = {}
-    for c in (11,45,47,84,171,262,266,268,272,277,329):
+    for c in (11,45,47,84,171,262,266,268,272,277,281,309,310,311,329,65531):
         assert o.call('plr_gponomci_medetail_get', c, ptr, ptr+8) == 1
         table = struct.unpack('<Q',o.uc.mem_read(ptr+8,8))[0]
         widths[c] = {struct.unpack('<H',o.uc.mem_read(table+i*40+8,2))[0]:o.uc.mem_read(table+i*40+12,1)[0]
@@ -131,7 +131,7 @@ def main():
             with device.joinpath('tcont_state').open('r+b') as f:
                 f.seek(offset); f.write(struct.pack('<II',fixed,limits))
 
-        def run(case='normal', veip=False, tagged=False, initial=None, backend='asic9690', shared=False):
+        def run(case='normal', veip=False, tagged=False, initial=None, backend='asic9690', shared=False, multicast=0):
             nonlocal offset
             device.joinpath('backend').write_text(backend+'\n')
             physical_slot = 0 if backend == 'fpga1' else 1
@@ -177,7 +177,7 @@ def main():
                     rows.append((c,instance,mask,content))
                 return rows
 
-            query = subprocess.Popen([str(args.control.resolve()),str(device),'service','7','shared' if shared else '2' if veip else '0',
+            query = subprocess.Popen([str(args.control.resolve()),str(device),'service','7','shared-ctc' if multicast==2 else 'shared-mcast' if multicast else 'shared' if shared else '2' if veip else '0',
                 '0' if shared else '0x107','1','3','200' if tagged else 'none','50','100','200','fts-host'],
                 stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,
                 env=dict(os.environ,LD_PRELOAD=str(device/'sysfs.so'),FTTR_SERVICE_CASE=case))
@@ -208,13 +208,13 @@ def main():
                             a,b,d,v = snapshot[mask]; content = struct.pack('>HHH',a,b,d)+v.ljust(26,b'\0')
                         elif op == 0x44:
                             assert (c,instance) not in pool
-                            if (case == 'gem-reject' and c == 266) or (c == 171 and (
+                            if (case == 'mcast-reject' and c == 310) or (case == 'gem-reject' and c == 266) or (c == 171 and (
                                 case in ('shared-uni-reject','shared-cleanup-reject') and instance == 2 or
                                 case == 'shared-last-uni-reject' and instance == 4)): status = 6
                             else:
-                                if c==47: create_mask=0xfc00 if body[11] in (5,11) else 0xfe00
+                                if c==47: create_mask=0xfc00 if body[11] in (5,6,11) else 0xfe00
                                 elif c==84: create_mask=0xe000 if tagged and pool[47,instance][0x2000]==bytes([5]) else 0x4000
-                                else: create_mask={272:0x8000,45:0xff80,268:0xfac0,266:0xf200,171:0x8200}[c]
+                                else: create_mask={272:0x8000,45:0xff80,268:0xfac0,266:0xf200,171:0x8200,281:0xf300,309:0xfc78,65531:0xfc59,310:0xf800,311:0x8000}[c]
                                 n = sum(w for bit,w in widths[c].items() if create_mask&bit)
                                 pool[c,instance] = attrs(c,instance,create_mask,body[8:8+n])
                         elif op == 0x46:
@@ -231,6 +231,11 @@ def main():
                                     if row[8:] == b'\xff'*8: table.pop(key,None)
                                     else: table[key] = row
                                 wire = slave.reply(body,b''.join(row for key,row in table.items() if not shared or key[0]==instance),8,status)
+                            elif c == 281 and mask == 0x80:
+                                row = body[10:22]
+                                if case == 'mcast-table-reject' and row[4:] != bytes(8): status = 6
+                                elif row[4:] == bytes(8): table.pop(('mcast', instance), None)
+                                else: table['mcast', instance] = row
                             else:
                                 n = sum(w for bit,w in widths[c].items() if mask&bit)
                                 pool[c,instance].update(attrs(c,instance,mask,body[10:10+n]))
@@ -239,6 +244,9 @@ def main():
                             if (c,instance) not in pool or (case == 'shared-check-missing' and c == 329 and instance == 0x301): status = 5
                             elif c == 171 and mask in (0x4000,0x0400):
                                 wire = slave.reply(body,b''.join(row for key,row in table.items() if not shared or key[0]==instance),8)
+                            elif c == 281 and mask == 0x80:
+                                rows = table.get(('mcast', instance), b'')
+                                content = struct.pack('>H',mask)+(struct.pack('>I',len(rows)) if op == 0x49 else rows)
                             else:
                                 values = b''.join(pool[c,instance][bit] for bit in sorted(widths[c],reverse=True) if mask&bit)
                                 content = struct.pack('>H',mask)+values
@@ -304,6 +312,32 @@ def main():
                 assert [row for key,row in table.items() if key[0]==u['port']]==expected
             reused,_,_,_,again,writes=run(shared=True,tagged=tagged,initial=(pool,table))
             assert reused['configured'] and not writes and not any(o[0] in (0x44,0x48,0x46) for o in again)
+        for multicast in (1,2):
+            result,events,pool,table,operations,grants=run(shared=True,tagged=True,multicast=multicast)
+            assert result['configured'] and grants==[(50,100,200)]
+            mc=next(e for e in events if e['event']=='service_multicast')
+            assert mc['configured'] and not mc['error']
+            uni=next(e for e in events if e['event']=='service_uni' and e['kind']==2)
+            assert (65531 if multicast==2 else 309,uni['port']) in pool
+            assert table['mcast',4095]==bytes.fromhex('0fff0000e0000100efffffff')
+            first_write=next(i for i,o in enumerate(operations) if o[0] in (0x44,0x48,0x46))
+            checked={(c,i) for op,c,i,_ in operations[:first_write] if op==0x49}
+            assert {(268,4095),(281,4095),(310,uni['port']),(311,uni['port'])}<=checked
+            reused,_,_,_,again,writes=run(shared=True,tagged=True,multicast=multicast,initial=(pool,table))
+            assert reused['configured'] and not writes and not any(o[0] in (0x44,0x48,0x46) for o in again)
+            foreign=copy.deepcopy(pool)
+            port=next(i for (c,i),attrs in foreign.items() if c==47 and attrs[0x2000]==b'\6')
+            foreign[47,port][0x8000]=b'\x80\x81'
+            rejected,_,_,_,again,writes=run(shared=True,tagged=True,multicast=multicast,initial=(foreign,table))
+            assert rejected['error']==-errno.EEXIST and not writes and not any(o[0] in (0x44,0x48,0x46) for o in again)
+            for case in ('mcast-reject','mcast-table-reject'):
+                result,_,pool,table,_,grants=run(case=case,shared=True,tagged=True,multicast=multicast)
+                assert result['error']==-errno.EREMOTEIO and not result['cleanup_error'],result
+                assert not table and set(pool)=={(262,0x8765),(11,0x107),(11,0x101),(11,0x203),(329,0x301)},pool
+                assert pool[262,0x8765][0x8000]==b'\0\xff'
+                assert all(pool[c,i][0x8000 if c==329 else 0x0800]==b'\1' for c,i in pool if c in (11,329))
+                assert grants==[(50,100,200),(0,0,0)],grants
+        checks.append('explicit standard/CTC multicast shared service preflights every resource, selects actual first VEIP, verifies original GEM4095 table, adopts without writes and unwinds all UNI/VLAN/DBA state on multicast failure')
         # The later UNI's missing administration ME is visible only during the
         # live preflight GET, after the complete MIB snapshot was uploaded.
         result,_,_,_,operations,grants=run(case='shared-check-missing',shared=True)

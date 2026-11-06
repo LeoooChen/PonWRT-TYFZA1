@@ -93,7 +93,7 @@ def main():
     stock = Stock(args.stock)
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory)
-        sources = [source / n for n in ('miniolt.c', 'omci-wire.c', 'omci-socket.c', 'omci-mib.c', 'omci-me.c', 'omci-objects.c', 'omci-gem.c', 'omci-association.c', 'omci-vlan.c', 'omci-model.c', 'omci-service.c', 'omci-wifi.c')]
+        sources = [source / n for n in ('miniolt.c', 'omci-wire.c', 'omci-socket.c', 'omci-mib.c', 'omci-me.c', 'omci-objects.c', 'omci-gem.c', 'omci-association.c', 'omci-vlan.c', 'omci-model.c', 'omci-mcast.c', 'omci-service.c', 'omci-wifi.c')]
         flags = ['cc', '-O2', '-std=c11', '-Wall', '-Wextra', '-Werror']
         subprocess.run(flags + ['-shared', '-fPIC', '-o', str(path / 'native.so')] + list(map(str, sources)), check=True)
         subprocess.run(flags + ['-o', str(path / 'fttrctl'), str(source / 'fttrctl.c')] + list(map(str, sources)) + ['-lm'], check=True)
@@ -185,7 +185,7 @@ def main():
             _fields_ = [('state',ctypes.c_int),('onu',ctypes.c_ushort),('transaction',ctypes.c_ushort),
                         ('mask',ctypes.c_ushort),('attempts',ctypes.c_uint),('deadline',ctypes.c_int64),
                         ('error',ctypes.c_int),('replied',ctypes.c_bool),('result',ctypes.c_ubyte),
-                        ('request',ctypes.c_ubyte*44),('reply',ctypes.c_ubyte*44)]
+                        ('request',ctypes.c_ubyte*44),('reply',ctypes.c_ubyte*44),('no_retry',ctypes.c_bool)]
 
         class Message(ctypes.Structure):
             _fields_ = [('onu',ctypes.c_ushort),('body',ctypes.c_void_p),('length',ctypes.c_size_t)]

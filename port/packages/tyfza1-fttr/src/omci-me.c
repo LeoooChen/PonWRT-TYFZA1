@@ -69,7 +69,7 @@ int fttr_me_job_timeout(struct fttr_me_job *job, int fd, const struct fttr_omci_
 {
 	if (job->state != FTTR_ME_WAIT || now < job->deadline)
 		return 0;
-	if (job->attempts == 3)
+	if (job->attempts == 3 || job->no_retry)
 		return fail(job, -ETIMEDOUT);
 	return fttr_me_job_send(job, fd, link, now);
 }

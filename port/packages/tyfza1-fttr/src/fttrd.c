@@ -199,8 +199,8 @@ static int load_policies(struct controller *c, const char *path)
 		    strchr(token[9], '/') || strchr(token[9], ':') || strchr(token[9], '"') ||
 		    strchr(token[9], '\\')) { ret = -EINVAL; break; }
 		for (i = 0; i < 8; i++) {
-			if (!i && !strcmp(token[1], "shared")) {
-				value[0] = 3;
+			if (!i && (!strcmp(token[1], "shared") || !strcmp(token[1], "shared-mcast") || !strcmp(token[1], "shared-ctc"))) {
+				value[0] = !strcmp(token[1], "shared") ? 3 : !strcmp(token[1], "shared-mcast") ? 4 : 5;
 				continue;
 			}
 			if (i == 4 && !strcmp(token[i + 1], "none")) {
@@ -213,8 +213,8 @@ static int load_policies(struct controller *c, const char *path)
 		}
 		if (ret)
 			break;
-		if ((value[0] != 0 && value[0] != 2 && value[0] != 3) ||
-		    (value[0] == 3 && (strcmp(token[1], "shared") || value[1])) || !value[2] || value[2] > 7 ||
+		if ((value[0] != 0 && value[0] != 2 && value[0] != 3 && value[0] != 4 && value[0] != 5) ||
+		    (value[0] >= 3 && (strncmp(token[1], "shared", 6) || value[1])) || !value[2] || value[2] > 7 ||
 		    value[3] > 7 || value[4] > 4094) { ret = -EINVAL; break; }
 		policy = calloc(1, sizeof(*policy));
 		if (!policy) { ret = -ENOMEM; break; }
@@ -240,7 +240,8 @@ static int load_policies(struct controller *c, const char *path)
 				ret = -EEXIST;
 		if (ret) { free(policy); break; }
 		policy->config = (struct fttr_service_config) {
-			.veip = value[0] == 2, .shared = value[0] == 3, .slot = value[2], .priority = value[3],
+			.veip = value[0] == 2, .shared = value[0] >= 3,
+			.multicast = value[0] >= 4 ? value[0] - 3 : 0, .slot = value[2], .priority = value[3],
 			.tagged = strcmp(token[5], "none") != 0, .vid = value[4],
 			.fixed = value[5], .assured = value[6], .maximum = value[7]
 		};
@@ -402,8 +403,8 @@ static void journal_table(FILE *file, const struct fttr_vlan_table *table)
 
 static void journal_me(FILE *file, const struct fttr_me_job *me)
 {
-	fprintf(file, "{\"attempts\":%u,\"error\":%d,\"result\":%u,\"replied\":%s,\"request\":\"",
-		me->attempts, me->error, me->result, me->replied ? "true" : "false");
+	fprintf(file, "{\"attempts\":%u,\"error\":%d,\"result\":%u,\"replied\":%s,\"no_retry\":%s,\"request\":\"",
+		me->attempts, me->error, me->result, me->replied ? "true" : "false", me->no_retry ? "true" : "false");
 	hex(file, me->request, sizeof(me->request));
 	fputs("\",\"reply\":\"", file);
 	hex(file, me->reply, sizeof(me->reply));
@@ -477,11 +478,21 @@ static int save_service(struct controller *c, unsigned int id)
 	if (job->transaction.count)
 		fttr_objects_job_dump(&job->transaction, file, "service_objects");
 	fprintf(file, "{\"event\":\"service_recipe\",\"kind\":%u,\"uni\":%u,\"uni_ordinal\":%u,\"slot\":%u,"
-		"\"priority\":%u,\"tagged\":%s,\"vid\":%u,\"bandwidth\":[%u,%u,%u],\"objects\":[",
+		"\"priority\":%u,\"tagged\":%s,\"vid\":%u,\"multicast\":%u,\"bandwidth\":[%u,%u,%u],\"objects\":[",
 		cfg->shared ? 3 : cfg->veip ? 2 : 0, cfg->uni, c->onu[id].service_ordinal, cfg->slot, cfg->priority, cfg->tagged ? "true" : "false",
-		cfg->vid, cfg->fixed, cfg->assured, cfg->maximum);
+		cfg->vid, cfg->multicast, cfg->fixed, cfg->assured, cfg->maximum);
 	journal_objects(file, &job->transaction);
 	fputs("]}\n", file);
+	if (cfg->multicast) {
+		fprintf(file, "{\"event\":\"service_multicast_recipe\",\"port\":%u,\"uni_port\":%u,\"objects\":[",
+			job->mcast_port, job->uni_count ? job->unis[job->mcast_uni].port : 0);
+		journal_objects(file, &job->mcast.transaction);
+		fputs("],\"table\":", file);
+		journal_me(file, &job->mcast.table);
+		fputs(",\"failure\":", file);
+		journal_me(file, &job->mcast.failure);
+		fputs("}\n", file);
+	}
 	if (me) {
 		fputs("{\"event\":\"service_pending\",\"exchange\":", file);
 		journal_me(file, me);
