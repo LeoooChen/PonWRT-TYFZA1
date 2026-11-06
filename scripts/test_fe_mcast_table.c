@@ -29,7 +29,7 @@ static int indirect(void *context,unsigned int address,unsigned int command)
  unsigned int *row,count,data;
  bool fail=++m->calls==m->fail;
 
- assert(!read_reg(m,address));
+ assert(!(read_reg(m,address)&0x80000000U));
  assert(address==0xaa64 || address==0x1634);
  if(address==0xaa64) {row=m->groups[command&255];count=2;data=0xaa6c;}
  else {row=m->actions[command&63];count=3;data=0x1640;}
@@ -41,7 +41,7 @@ static int indirect(void *context,unsigned int address,unsigned int command)
   else m->reg[(data-i*4)/4]=row[i]^(m->corrupt?1U:0U);
  }
  if(fail)return -ETIMEDOUT;
- m->reg[address/4]=0;
+ m->reg[address/4]=command&~0x80000000U;
  return 0;
 }
 

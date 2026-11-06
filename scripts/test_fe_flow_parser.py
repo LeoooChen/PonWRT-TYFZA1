@@ -398,6 +398,10 @@ int main(void)
   rule.action.entries[terminal]=rule.action.entries[terminal-1];
   rule.action.num_entries++;
   assert(fe_parse(&lp,&cls,&parsed)==-EOPNOTSUPP);
+  rule.action.entries[terminal-1].dev=NULL;
+  memset(&parsed,0,sizeof(parsed));
+  assert(fe_parse(&lp,&cls,&parsed)==-EOPNOTSUPP);
+  rule.action.entries[terminal-1]=rule.action.entries[terminal];
   rule.action.entries[terminal]=(struct flow_action_entry){.id=FLOW_ACTION_CSUM};
   memset(&parsed,0,sizeof(parsed));
   assert(fe_parse(&lp,&cls,&parsed)==-EOPNOTSUPP);
@@ -452,6 +456,10 @@ int main(void)
     rule.action.num_entries=2;
     memset(&parsed,0,sizeof(parsed));
     assert(fe_parse(direction?&pp:&lp,&cls,&parsed)==-EOPNOTSUPP);
+    rule.action.entries[0].dev=NULL;
+    memset(&parsed,0,sizeof(parsed));
+    assert(fe_parse(direction?&pp:&lp,&cls,&parsed)==-EOPNOTSUPP);
+    rule.action.entries[0]=rule.action.entries[1];
     rule.action.entries[1]=(struct flow_action_entry){.id=FLOW_ACTION_VLAN_PUSH,
      .vlan={.vid=300,.proto=htons(ETH_P_8021Q),.prio=5}};
     memset(&parsed,0,sizeof(parsed));

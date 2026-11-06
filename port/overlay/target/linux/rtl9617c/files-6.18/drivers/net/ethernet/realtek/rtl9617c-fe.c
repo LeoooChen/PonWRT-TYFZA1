@@ -696,7 +696,9 @@ static int fe_parse_bridge(struct rtl_fe_port *port,struct flow_rule *rule,struc
    * own complete member set and NI/arbitration resource ownership. */
   if(output)return -EOPNOTSUPP;
   switch(act->id) {
-  case FLOW_ACTION_REDIRECT:output=act->dev;break;
+  case FLOW_ACTION_REDIRECT:
+   if(!act->dev)return -EOPNOTSUPP;
+   output=act->dev;break;
   case FLOW_ACTION_VLAN_POP:
    if(!count)return -EOPNOTSUPP;
    data->action.vlan[0]=data->action.vlan[1];known[0]=known[1];
@@ -847,7 +849,9 @@ static int fe_parse(struct rtl_fe_port *port,struct flow_cls_offload *cls,struct
    output_vlan[0]=(struct rtl_fe_vlan){.vid=act->vlan.vid,.tpid=ret,.priority=act->vlan.prio};
    vlan_known[0]=true;output_vlan_count++;vlan_changed=true;
    break;
-  case FLOW_ACTION_REDIRECT:output=act->dev;break;
+  case FLOW_ACTION_REDIRECT:
+   if(!act->dev)return -EOPNOTSUPP;
+   output=act->dev;break;
   case FLOW_ACTION_CSUM:break;
   case FLOW_ACTION_MANGLE:
    if(act->mangle.htype==FLOW_ACT_MANGLE_HDR_TYPE_ETH) {
