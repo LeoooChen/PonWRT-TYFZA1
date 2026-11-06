@@ -222,6 +222,17 @@ int main(void){
  skb=new_skb(group6,96,true);skb->dev=&dev;
  old=gro_received;wifi_receive(&receive_port.endpoint,&expected_napi,skb,false);
  assert(gro_received==old+1);
+ /* Hardware already supplied final wire tags. The ordinary wireless
+  * output receives exactly one Ethernet frame through dev_queue_xmit. */
+ for(unsigned tags=0;tags<3;tags++)for(unsigned ipv6=0;ipv6<2;ipv6++) {
+  unsigned char final[104];const unsigned char *ip=ipv6?group6:group;
+  memcpy(final,ip,12);
+  for(unsigned t=0;t<tags;t++)memcpy(final+12+t*4,"\x81\x00\xb0\x64",4);
+  memcpy(final+12+tags*4,ip+12,84);
+  skb=new_skb(final,96+tags*4,true);skb->dev=&dev;skb->ext=true;skb->saved.multicast_host_group=19;
+  old=transmitted;wifi_receive(&receive_port.endpoint,&expected_napi,skb,true);
+  assert(transmitted==old+1&&network_seen==14+tags*4&&frame_length==96+tags*4&&!memcmp(frame_seen,final,frame_length));
+ }
  for(unsigned next=0;next<3;next++) {
   skb=new_skb(group6,96,false);skb->dev=&dev;skb->data[6]=next==0?58:next==1?0:6;
   old=injected;assert(rtl_wifi_ingress(&port,skb,&state)==NF_ACCEPT&&injected==old);kfree_skb(skb);

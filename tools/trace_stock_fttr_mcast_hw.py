@@ -277,7 +277,7 @@ def cpu_receive_dispatch(module):
         scope='54 executions of actual rtk_fc_skb_rx; final receive/direct-transmit consumers and synchronous scheduling are modeled. No assertion of packet retirement or physical HeaderA generation.')
 
 
-def replica_recipes(fc_module, ni_module, destinations=(1, 6), host_copy=False, source_mac=False, pon=None):
+def replica_recipes(fc_module, ni_module, destinations=(1, 6), host_copy=False, source_mac=False, pon=None, wifi=None):
     """Execute FC replica construction through the real arbitration producer."""
     class Published(Exception): pass
     recipes, actions = [], []
@@ -299,10 +299,10 @@ def replica_recipes(fc_module, ni_module, destinations=(1, 6), host_copy=False, 
     ni = ModuleOracle(ni_module, ['_aal_arb_mc_fib_action_add'], ni_boundary)
     ni.word(ni.symbols['l2fe_arb_fib_table'][0] + 136, 1)
     def boundary(name, values):
-        if name == 'pon_replica_route':
-            assert pon and values[0] == pon[0]
-            fc.uc.mem_write(values[1], struct.pack('<I', 32+pon[2]))
-            fc.uc.mem_write(values[2], struct.pack('<I', pon[1]))
+        if name == 'wifi_replica_route':
+            assert wifi and values[0] == wifi[0]
+            fc.uc.mem_write(values[1], struct.pack('<I', wifi[1]))
+            fc.uc.mem_write(values[2], struct.pack('<I', wifi[2]))
             return 0
         if name == 'aal_sw_mcgid_alloc':
             fc.uc.mem_write(values[0], b'\0\0')
@@ -323,9 +323,17 @@ def replica_recipes(fc_module, ni_module, destinations=(1, 6), host_copy=False, 
     source, context, flow, action, member = [fc.scratch + offset for offset in (0x1000, 0x1200, 0x1400, 0x1600, 0x1800)]
     db = fc.symbols['fc_db'][0]
     fc.word(db + 0x200000 + 384, flow)
-    if pon:
+    if wifi:
+        assert not pon and 1 <= wifi[0] <= 60
         fc.word(db+72,fc.scratch+0x1a00)
-        fc.word(fc.scratch+0x1a00+160,fc.callback('pon_replica_route'))
+        fc.word(fc.scratch+0x1a00+160,fc.callback('wifi_replica_route'))
+    if pon:
+        # Bit16 in a member names a wireless VIF: helper5+160 is
+        # rtk_fc_wlanDevIdx2port, NOT a PON callback. The actual PON
+        # branch uses member7/action bit12 and this six-byte route row.
+        pon_slot = 5
+        fc.uc.mem_write(db+0x94b000+744+pon_slot*6,
+                       struct.pack('<BBBBH',1,0,32+pon[2],pon[1],pon[0]))
     # The original variable-size action parser advances four bytes per VLAN.
     size = fc.symbols['patternSizeMapping'][0]
     fc.uc.mem_write(size + 6, struct.pack('<H', 6))
@@ -342,7 +350,7 @@ def replica_recipes(fc_module, ni_module, destinations=(1, 6), host_copy=False, 
         for destination in destinations:
             recipes.clear(); actions.clear()
             fc.uc.mem_write(action, bytes(32))
-            fc.uc.mem_write(action, struct.pack('<H', (1<<11 if pon else 0) | (2 if source_mac else 0) | (4 if tags else 0) | (8 if tags == 2 else 0)))
+            fc.uc.mem_write(action, struct.pack('<H', (1<<12 if pon else 0) | (2 if source_mac else 0) | (4 if tags else 0) | (8 if tags == 2 else 0)))
             vlan_offset=6 if source_mac else 0
             if source_mac:fc.uc.mem_write(action+4,bytes.fromhex('022233445566'))
             if tags:
@@ -350,8 +358,10 @@ def replica_recipes(fc_module, ni_module, destinations=(1, 6), host_copy=False, 
             if tags == 2:
                 fc.uc.mem_write(action + 8 + vlan_offset, struct.pack('<HH', 0x8100, 100 | 3 << 13))
             if pon:
-                fc.uc.mem_write(action+4+vlan_offset+tags*4,bytes([pon[1]])+bytes(3))
-                fc.uc.mem_write(member,struct.pack('<II',pon[0]|1<<16,0))
+                fc.uc.mem_write(action+4+vlan_offset+tags*4,bytes([pon_slot])+bytes(3))
+                fc.uc.mem_write(member,struct.pack('<II',7,0))
+            elif wifi:
+                fc.uc.mem_write(member,struct.pack('<II',wifi[0]|1<<16,0))
             else:fc.uc.mem_write(member, bytes([destination]) + bytes(7))
             fc.uc.mem_write(flow + 8, bytes(4))
             fc.uc.mem_write(flow + 44, bytes([host_copy]))
@@ -370,18 +380,20 @@ def replica_recipes(fc_module, ni_module, destinations=(1, 6), host_copy=False, 
                 host=dict(recipe=recipes.pop(0),words=actions.pop(0))
                 assert host['words']==[56<<23,18<<24|1<<30,1]
             words = actions[0]
-            assert (words[1] >> 24) & 63 == (32+pon[2] if pon else destination)
+            assert (words[1] >> 24) & 63 == (32+pon[2] if pon else wifi[1] if wifi else destination)
             assert (words[1] & 3) == (1 if tags else 2)
             assert (words[0] & 3) == (1 if tags == 2 else 2)
             assert words[2] == ((0x40f if source_mac else 1) | (pon[1]<<5 if pon else 0))  # Stock also decrements TTL with MAC edit.
             if pon:
                 assert words[0]>>23==pon[0] and not (words[1]&1<<30)
+            if wifi:
+                assert words[0]>>23==wifi[0] and words[1]&1<<30
             if tags:
                 assert (words[1] >> 2) & 4095 == 4095
                 assert (words[1] >> 19) & 7 == 5 and (words[1] >> 23) & 1 == 1
             if tags == 2:
                 assert (words[0] >> 2) & 4095 == 100 and (words[0] >> 18) & 7 == 3
-            cases.append(dict(output_tags=tags, destination=destination, recipe=recipes[0], words=words,host_copy=host,source_mac=source_mac,pon=pon))
+            cases.append(dict(output_tags=tags, destination=destination, recipe=recipes[0], words=words,host_copy=host,source_mac=source_mac,pon=pon,wifi=wifi))
     return dict(cases=cases, findings=[
         'The complete FC replica producer programs both S/C tag commands: present=>tag by table(1), absent=>untag(2); it is an absolute final tag recipe, not a relative push.',
         'FC explicitly disables source-port filtering for each replica and copies priority/DEI for each present tag; unchanged source MAC leaves TTL decrement disabled.'],

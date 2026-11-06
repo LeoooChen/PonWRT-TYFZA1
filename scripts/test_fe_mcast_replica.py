@@ -19,6 +19,7 @@ parser.add_argument('--output', type=Path, required=True)
 args = parser.parse_args()
 original = replica_recipes(args.fc, args.ni)
 host_original = replica_recipes(args.fc, args.ni, (1, 6), True)
+wifi_original = replica_recipes(args.fc, args.ni, (18,), True, wifi=(17, 18, 0))
 drivers = root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek'
 source = r'''
 #include <assert.h>
@@ -38,6 +39,12 @@ int encode(unsigned int destination,unsigned int tags,unsigned int outer,unsigne
 int encode_host(unsigned int group,unsigned int *words) {
  struct rtl_dq_io io={0};
  struct rtl_fe_mc_replica replica={.destination=16,.host_group=group};
+ return rtl_fe_mc_replica_encode(&io,&replica,words);
+}
+int encode_direct(unsigned int cookie,unsigned int tags,unsigned int *tpid,unsigned int *words) {
+ struct rtl_dq_io io={.context=tpid,.read=read_tpid};
+ struct rtl_fe_mc_replica replica={.destination=16,.direct_cookie=cookie,.tags=tags,
+  .tag={{0x8100,4095|5<<13|1<<12},{0x8100,100|3<<13}}};
  return rtl_fe_mc_replica_encode(&io,&replica,words);
 }
 '''
@@ -62,6 +69,15 @@ with tempfile.TemporaryDirectory(prefix='fttr-replica-') as name:
     for group in (0, 256, 1024):
         before = list(words)
         assert native.encode_host(group, words) == -22 and list(words) == before
+    for case in wifi_original['cases']:
+        stock = case['words']
+        for cookie in range(1, 256):
+            assert native.encode_direct(cookie, case['output_tags'], tpid, words) == 0
+            assert list(words) == [(stock[0] & ~(511 << 23)) | ((256 + cookie) << 23),
+                                   (stock[1] & ~(63 << 24)) | (16 << 24), stock[2] | (1 << 11)]
+    for cookie in (0, 256, 1024):
+        before = list(words)
+        assert native.encode_direct(cookie, 0, tpid, words) == -22 and list(words) == before
     # A separately programmed L3 TPID table cannot justify a missing L2 TPID.
     before = list(words)
     assert native.encode(6, 1, 0x88a8, 0, tpid, words) == -95
@@ -81,6 +97,7 @@ with tempfile.TemporaryDirectory(prefix='fttr-replica-') as name:
         assert native.encode(destination, tags, outer, 0, tpid, words) == -95
         assert list(words) == before
 original['host_copy'] = host_original
+original['wifi_copy'] = wifi_original
 original['host_adaptation'] = 'CPU16/POL256+group/keep_o_lspid; final VLAN/COS/source MAC/TTL commands retained'
 args.output.write_text(json.dumps(original, indent=2)+'\n')
-print('Native replica words match6 FC/NI recipes; 1530 host-copy adaptations, L2 TPID selectors and unsupported outputs checked')
+print('Native replica words match6 FC/NI recipes; 1530 host and765 wireless-copy adaptations, L2 TPID selectors and unsupported outputs checked')

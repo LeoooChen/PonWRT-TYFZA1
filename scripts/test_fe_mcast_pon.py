@@ -146,5 +146,5 @@ with tempfile.TemporaryDirectory(prefix='mcast-pon-') as tmp:
     subprocess.run(['cc','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+str(DRIVERS),str(tmp/'test.c'),'-o',str(tmp/'test')],check=True)
     subprocess.run([str(tmp/'test')],check=True)
 a.output.write_text(json.dumps(dict(recipes=recipes,dbuf_ports=31,
-    scope='Executed original FC/NI action production, routing callback inputs modeled from native PON mapping; original DBUF setter and native ownership fault injection; no physical transmission.'),indent=2)+'\n')
+    scope='Executed actual member7/action-bit12 PON FC/NI production with six-byte route rows; original DBUF setter and native ownership fault injection; no physical transmission. Supersedes the earlier fixture which mislabeled the wireless helper5+160 callback as PON.'),indent=2)+'\n')
 print('Nine full FC/NI PON recipes match native words; original31 destination-DBUF setters match native routing')

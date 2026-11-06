@@ -20,7 +20,7 @@
  * GEM index and queue. PE radio replicas need their own routing/metadata.
  */
 struct rtl_fe_mc_replica {
- unsigned int destination,tags,host_group,source_index,gem,queue;
+ unsigned int destination,tags,host_group,source_index,gem,queue,direct_cookie;
  unsigned char source_set,source[6];
  struct {unsigned short protocol,tci;} tag[2];
 };
@@ -30,7 +30,7 @@ static inline int rtl_fe_mc_replica_encode(const struct rtl_dq_io *io,
 {
  unsigned int i,slot,first,tpid,result[3]={2,2,1};
 
- if(replica->destination==16) {
+ if(replica->destination==16 && !replica->direct_cookie) {
   if(!replica->host_group || replica->host_group>=RTL_FE_MC_GROUPS || replica->tags || replica->source_set || replica->gem || replica->queue)return -EINVAL;
   /* Original host copy uses POL56 on CPU18. Native CPU0 owns the Linux
    * receive pool; POL256+group gives each quarantined generation an ID.
@@ -40,7 +40,11 @@ static inline int rtl_fe_mc_replica_encode(const struct rtl_dq_io *io,
   words[2]=1U|1U<<11;
   return 0;
  }
- if((replica->destination>6 && (replica->destination<33 || replica->destination>63)) || replica->tags>2 || replica->host_group)return -EOPNOTSUPP;
+ if((replica->destination>6 && replica->destination!=16 && (replica->destination<33 || replica->destination>63)) || replica->tags>2 || replica->host_group)return -EOPNOTSUPP;
+ if(replica->direct_cookie) {
+  if(replica->destination!=16 || replica->direct_cookie>=RTL_FE_MC_GROUPS || replica->source_set || replica->gem || replica->queue)return -EINVAL;
+  result[2]|=1U<<11;
+ }
  if(replica->source_set) {
   unsigned int nonzero=0;
   for(i=0;i<6;i++)nonzero|=replica->source[i];
@@ -70,6 +74,7 @@ static inline int rtl_fe_mc_replica_encode(const struct rtl_dq_io *io,
  /* Linux has already selected the recipients. Match stock's explicit
   * source-filter disable, retaining source MAC and TTL/Hop Limit. */
  if(replica->gem)result[0]|=replica->gem<<23;
+ if(replica->direct_cookie)result[0]|=(256U+replica->direct_cookie)<<23;
  for(i=0;i<3;i++)words[i]=result[i];
  return 0;
 }

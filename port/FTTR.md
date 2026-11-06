@@ -4431,8 +4431,13 @@ and **COS=queue**. Native actions reproduce these words for GEM indices8..255,
 T-CONT1..31 and queues0..7, including all final VLAN tags. The shared FE action
 continues to select NI replication; it cannot hold a single PON GEM or COS
 for all recipients. CPU/P6/LAN actions retain their independent metadata.
-The original route callback is modeled with the native PON snapshot's selected
-values; the action producer and field packing execute original instructions.
+The original member7/action-bit12 branch reads a six-byte PON route row;
+the fixture supplies its enable, destination, queue and GEM fields from the
+selected native PON snapshot. The action producer and field packing execute
+original instructions. The earlier fixture mislabeled helper5+160 as PON;
+executed manager registration identifies it as `rtk_fc_wlanDevIdx2port`.
+The corrected PON branch still produces all nine matching native recipes
+(`artifacts/fttr/mcast-pon-route-corrected-20261107.json`).
 
 PON logical destinations must retain all four PDPID8 mappings and native
 upper-PON map0xa. A destination-specific DBUF entry sends each replica through
@@ -4524,7 +4529,7 @@ interfaces; `test_pon_host_mode.py` executes the changed receive dispatcher
 with a focused model instead. That stale aggregate check is not claimed as
 passing and no physical device was accessed.
 
-Native radio multicast replicas, EPON-specific multicast integration,
+Direct PE radio multicast, EPON-specific multicast integration,
 unknown-multicast flood offload and safe hardware resource retirement remain
 work. The existing group/action/MAC/DBUF capacity restrictions remain. Neither
 these checks nor the new generation validation prove physical PON packet
@@ -4563,12 +4568,64 @@ Image/modules built successfully in
 `artifacts/fttr/mcast-wifi-input-kernel-20261107.log`; all83 driver/header/core
 inputs match the compiled source tree.
 
-Wireless output is still pending. The present direct PE downlink uses
+AP wireless output is implemented in the following increment. The present direct PE downlink uses
 unicast peer MACIDs and discards an unmatched multicast destination. It
 cannot be used for multicast merely by removing the FE guard. The original
 CPU interface-directed replica path and normal mac80211 BCMC/key/DTIM behavior
-must be connected first. This increment does not establish safe VIF/group
+are connected through the CPU replica path below. This increment does not establish safe VIF/group
 reuse, full hardware retirement or physical traffic acceptance.
+
+### AP wireless multicast replicas through native CPU dispatch
+
+Complete learned groups now include AP VIF recipients alongside LAN, shared
+FTTR, ITU PON and local reception. Each wireless copy carries the final S/C
+tags selected by Linux and its own immutable CPU dispatch cookie. NI replicates
+the group; native QM validates the cookie's flow generation, original source,
+IP/UDP tuple, final tags, current bridge output and registered VIF endpoint,
+then uses that VIF's normal `dev_queue_xmit` path. It never re-enters bridge
+forwarding or the direct PE unicast-peer queues. Normal mac80211 AP group TX
+retains BCMC, group-key and DTIM handling, including its existing PE-assisted
+TX request path when enabled. No physical multicast, encryption or DTIM
+acceptance is claimed.
+
+Original evidence is now executed across helper registration, replica
+construction and CPU TX selection. `rtk_fc_helper_init` installs wireless
+helper5+160=`rtk_fc_wlanDevIdx2port` and+200=`rtk_fc_wlan_hard_start_xmit`.
+Member bit16 identifies a wireless VIF; its replica has POL=VIF and the
+registered destination. `rtk_fc_skb_rx` sends MCE source27 copies to the live
+VIF's saved TX callback; POL56 instead retains its reserved local-copy role.
+The native implementation adapts this to CPU16, preserved physical source and
+quarantined cookies, independently from local copies and normal misses.
+`trace_stock_fttr_mcast_wifi.py` checks30 dispatch cases and12 full replica
+recipes. Its synthetic route rows do not assert factory VIF allocation policy.
+
+Cookies share the existing255-ID quarantine with actual NI groups: a flow
+with N wireless recipients consumes N+1 IDs and N immutable wireless actions.
+Failed/retired cookies remain unavailable, including partial reservations;
+withdrawal removes all live dispatch references before Hash/cache deletion.
+An unchanged complete decision retains its cookies; a changed decision or
+failed teardown closes the learned profile. CPU MTU limits cover the final
+wireless frame with tags. AP output is supported; STA-output VLAN/QoS
+equivalence, direct PE BCMC queues and bridge multicast-to-unicast rewriting remain
+outside this path. Unsupported recipients retain whole-group software forwarding.
+
+Offline validation includes LAN/PON/ONU-to-two-VIF transactions with optional
+local copies, separate cookies/final VLANs, unchanged-decision reuse, wrong
+source/tags, interface withdrawal, failed Hash deletion, cookie pressure and
+a generation change during final parsing/allocation.384 actual QM poll cases
+cover local/direct/miss separation, both internal headers,0..2 tags and all
+eight COS values, with endpoint absence/reassignment rejection.765 native
+wireless action adaptations agree with original FC/NI output;1530 host-copy
+adaptations and existing LAN/P6/PON action tests remain valid. Six actual
+wireless-output byte cases cover IPv4/IPv6 and0..2 final tags. Existing FE/TC
+parser, bridge/gate/core,768 P6 RX,4224 PE request and PTK/GTK lifecycle
+regressions pass. Image/modules and source identity are recorded in
+`artifacts/fttr/mcast-wifi-output-kernel-final-20261107.log`.
+
+Full MCE/PE/NI/MiniOLT packet retirement is still unresolved. The final
+generation check rejects a writer during parsing, but it cannot recall copies
+already enqueued in qdisc/mac80211/driver/firmware. These queues and safe
+cookie/action/group reuse require a separate retirement implementation.
 
 ### Outstanding implementation and acceptance
 

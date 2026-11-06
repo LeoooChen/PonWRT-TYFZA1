@@ -32,6 +32,7 @@ code = r'''
 #include "rtl9617c-fe-mcast-route.h"
 #include "rtl9617c-fe-mcast-profile.h"
 typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32,__le32;typedef uint64_t u64;
+#include "linux/rtl9617c-bridge.h"
 #define ETH_ALEN 6
 #define VLAN_CFI_MASK 4096
 #define VLAN_PRIO_SHIFT 13
@@ -66,9 +67,10 @@ static void ether_addr_copy(u8 *a,const u8 *b){memcpy(a,b,6);}
 static void put_unaligned_be32(u32 v,void *p){v=__builtin_bswap32(v);memcpy(p,&v,4);}
 static unsigned long jiffies=100;
 '''
-for name in ('rtl_fe_flow','rtl_fe_rule','rtl_fe_mc_rule'):
+for name in ('rtl_fe_mc_direct','rtl_fe_flow','rtl_fe_rule','rtl_fe_mc_rule'):
     code += re.search(r'struct '+name+r' \{.*?\n\};', native, re.S)[0]+'\n'
 code += r'''
+static int fe_mcast_direct_stage(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct rtl_fe_mc_rule *mc){(void)fe;(void)flow;for(unsigned i=0;i<mc->count;i++)assert(!mc->direct[i].wifi_id);return 0;}
 struct rtl_fe {
  struct net_device *fttr_netdev,*fttr_mcast;
  bool fttr_admitted,pon_requested,enabled;
@@ -196,5 +198,5 @@ with tempfile.TemporaryDirectory(prefix='fe-mcast-') as name:
     work = Path(name)
     (work/'check.c').write_text(code)
     subprocess.run(['cc','-Wall','-Wextra','-Werror','-g','-fsanitize=address,undefined',
-                    '-I'+str(drivers),str(work/'check.c'),'-o',str(work/'check')],check=True)
+                    '-I'+str(drivers),'-I'+str(root/'port/overlay/target/linux/rtl9617c/files-6.18/include'),str(work/'check.c'),'-o',str(work/'check')],check=True)
     subprocess.run([str(work/'check')],check=True)

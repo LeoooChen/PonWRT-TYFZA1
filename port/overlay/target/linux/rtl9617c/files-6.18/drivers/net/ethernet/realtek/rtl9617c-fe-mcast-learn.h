@@ -65,13 +65,38 @@ static void fe_mcast_host_remove(struct rtl_fe *fe,struct rtl_fe_flow *flow)
 {
  struct rtl_fe_mc_host *host;
  unsigned long flags;
- if(!flow->mc_host)return;
+ if(!flow->replica_count)return;
  spin_lock_irqsave(&fe->mc_lock,flags);
+ for(unsigned int i=1;i<RTL_FE_MC_GROUPS;i++)
+  if(fe->mc_directs[i] && fe->mc_directs[i]->flow==flow)fe->mc_directs[i]->flow=NULL;
  host=flow->mc_host;
  if(fe->mc_hosts[flow->mc_group]==host)fe->mc_hosts[flow->mc_group]=NULL;
  flow->mc_host=NULL;
  spin_unlock_irqrestore(&fe->mc_lock,flags);
- put_net(host->net);kfree(host);
+ if(host){put_net(host->net);kfree(host);}
+}
+
+/* A direct CPU replica needs a distinct immutable POL cookie. Reserve it
+ * from the same quarantined namespace as local-copy groups. This consumes
+ * one group ID per wireless recipient until hardware retirement is proven. */
+static int fe_mcast_direct_stage(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct rtl_fe_mc_rule *mc)
+{
+ unsigned int i,c;
+ unsigned long flags;
+ for(i=0;i<mc->count;i++)if(mc->direct[i].wifi_id) {
+  struct rtl_fe_mc_direct *entry=kmemdup(&mc->direct[i],sizeof(*entry),GFP_KERNEL);
+  if(!entry)return -ENOMEM;
+  for(c=1;c<RTL_FE_MC_GROUPS;c++)if(fe->multicast.groups[c].state==RTL_FE_MC_FREE)break;
+  if(c==RTL_FE_MC_GROUPS){kfree(entry);return -ENOSPC;}
+  /* The numeric cookie cannot later become a host-copy group. */
+  fe->multicast.groups[c].state=RTL_FE_MC_RETIRED;
+  entry->flow=flow;
+  spin_lock_irqsave(&fe->mc_lock,flags);
+  fe->mc_directs[c]=entry;
+  spin_unlock_irqrestore(&fe->mc_lock,flags);
+  mc->replica[i].direct_cookie=c;
+ }
+ return 0;
 }
 static int fe_mcast_host_publish(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct rtl_fe_mc_host *prototype)
 {
@@ -92,13 +117,17 @@ static int fe_mcast_host_receive(void *context,struct sk_buff *skb,unsigned int 
  struct rtl_fe_bridge *bridge=context;
  struct rtl_fe *fe=bridge->fe;
  struct rtl_fe_mc_host host,*entry;
+ struct rtl_fe_mc_direct direct={};
  struct rtl9617c_bridge_frame parsed={},*saved;
  struct net_device *input,*logical,*brdev;
  unsigned long flags;
  int ret=-ESTALE;
  if(!group || group>=RTL_FE_MC_GROUPS)return -EINVAL;
  spin_lock_irqsave(&fe->mc_lock,flags);
- entry=fe->mc_hosts[group];
+ if(fe->mc_directs[group]) {
+  direct=*fe->mc_directs[group];
+  entry=direct.flow?direct.flow->mc_host:NULL;
+ } else entry=fe->mc_hosts[group];
  if(!READ_ONCE(bridge->stopping) && rtl_fe_enabled(fe) && entry &&
     fe->mc_gate.active && !fe->mc_gate.writers && entry->epoch==fe->mc_gate.epoch) {
   host=*entry;get_net(host.net);ret=0;
@@ -114,17 +143,39 @@ static int fe_mcast_host_receive(void *context,struct sk_buff *skb,unsigned int 
  skb_reset_mac_header(skb);__skb_pull(skb,ETH_HLEN);
  ret=fe_bridge_frame(skb,&parsed);__skb_push(skb,ETH_HLEN);
  if(ret)goto out;
+ if(direct.wifi_id) {
+  struct net_device *output=dev_get_by_index_rcu(host.net,direct.output);
+  struct net_device *physical=dev_get_by_index_rcu(host.net,direct.physical);
+  if(!output || !physical || !netif_running(output) || !netif_carrier_ok(output) ||
+     netdev_master_upper_dev_get_rcu(output)!=brdev || br_port_get_stp_state(output)!=BR_STATE_FORWARDING)goto stale;
+  if(parsed.tags!=direct.frame.tags || memcmp(parsed.tag,direct.frame.tag,sizeof(parsed.tag)))goto stale;
+  /* Other copies already reached their destinations. Re-enter the exact
+   * physical VIF's normal TX with the final wire tags, never bridge RX. */
+  input=physical;
+ } else if(!host.local || parsed.tags!=host.input.tags || memcmp(parsed.tag,host.input.tag,sizeof(parsed.tag)))goto stale;
  if(!ether_addr_equal(parsed.source,host.input.source) ||
     !ether_addr_equal(parsed.destination,host.input.destination) ||
     parsed.protocol!=host.input.protocol || parsed.ip_protocol!=host.input.ip_protocol ||
     parsed.source_port!=host.input.source_port || parsed.destination_port!=host.input.destination_port ||
-    parsed.tags!=host.input.tags || memcmp(parsed.tag,host.input.tag,sizeof(parsed.tag)) ||
     memcmp(parsed.ip_source,host.input.ip_source,sizeof(parsed.ip_source)) ||
     memcmp(parsed.ip_destination,host.input.ip_destination,sizeof(parsed.ip_destination)))goto stale;
  saved=skb_ext_add(skb,SKB_EXT_RTL9617C_BRIDGE);
  if(!saved){ret=-ENOMEM;goto out;}
+ if(direct.wifi_id) {
+  /* Parsing/allocation ran outside the short lock. A membership or port
+   * writer during that work must revoke direct TX before enqueue. */
+  spin_lock_irqsave(&fe->mc_lock,flags);
+  entry=fe->mc_directs[group] && fe->mc_directs[group]->flow ? fe->mc_directs[group]->flow->mc_host:NULL;
+  ret=entry && entry->owner==host.owner && entry->epoch==host.epoch &&
+   !READ_ONCE(bridge->stopping) && rtl_fe_enabled(fe) && fe->mc_gate.active &&
+   !fe->mc_gate.writers && fe->mc_gate.epoch==host.epoch ? 0:-ESTALE;
+  spin_unlock_irqrestore(&fe->mc_lock,flags);
+  if(ret)goto out;
+ }
  *saved=host.input;saved->multicast_host_group=group;saved->multicast_host_owner=host.owner;
- saved->multicast_epoch=host.epoch;skb->dev=input;skb->rtl9617c_fttr_ingress=source==6;ret=0;goto out;
+ saved->multicast_epoch=host.epoch;skb->dev=input;skb->rtl9617c_fttr_ingress=source==6;
+ if(direct.wifi_id){saved->wifi_id=direct.wifi_id;ret=1;}else ret=0;
+ goto out;
 stale:
  ret=-ESTALE;
 out:
@@ -140,7 +191,7 @@ static int fe_mcast_host_local(void *context,struct sk_buff *skb,struct net_devi
  if(!saved || !saved->multicast_host_group || saved->multicast_host_group>=RTL_FE_MC_GROUPS)return ret;
  spin_lock_irqsave(&bridge->fe->mc_lock,flags);
  host=bridge->fe->mc_hosts[saved->multicast_host_group];
- if(!READ_ONCE(bridge->stopping) && rtl_fe_enabled(bridge->fe) && host &&
+ if(!READ_ONCE(bridge->stopping) && rtl_fe_enabled(bridge->fe) && host && host->local &&
     bridge->fe->mc_gate.active && !bridge->fe->mc_gate.writers &&
     host->epoch==bridge->fe->mc_gate.epoch && host->epoch==saved->multicast_epoch &&
     (host->source!=6 || READ_ONCE(bridge->fe->fttr_admitted)) &&
@@ -399,6 +450,8 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
  }
  mc=kzalloc(sizeof(*mc),GFP_KERNEL);if(!mc)return -ENOMEM;
  data.multicast=mc;
+ host=(struct rtl_fe_mc_host){.input=packet->input,.net=packet->net,.bridge=packet->bridge,
+  .epoch=packet->epoch,.owner=packet->transaction,.source=data.input->source,.local=packet->local};
  for(i=0;i<packet->count;i++) {
   struct net_device *dev=__dev_get_by_index(packet->net,packet->output[i].port);
   struct net_device *physical=__dev_get_by_index(packet->net,packet->output[i].physical);
@@ -427,11 +480,32 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
   if(shared && physical->mtu>VLAN_HLEN && physical->mtu-VLAN_HLEN<data.mtu)
    data.mtu=physical->mtu-VLAN_HLEN;
   port=fe_port(fe,physical);
-  if(!port || (port==data.input && !shared) || port->wifi_id || (!pon && port->destination>6) || port->destination==5 ||
+  if(!port || (port==data.input && !shared) || (!pon && !port->wifi_id && port->destination>6) || port->destination==5 ||
      (physical==fe->fttr_netdev && !shared)){ret=-EOPNOTSUPP;goto out;}
   replica->destination=port->destination;replica->tags=frame->tags;
   for(j=0;j<frame->tags;j++) {
    replica->tag[j].protocol=frame->tag[j].protocol;replica->tag[j].tci=frame->tag[j].tci;
+  }
+  if(port->wifi_id) {
+   unsigned int c;
+   if(port->source!=RTL_WIFI_SOURCE || port->wifi_id>RTL_WIFI_ID_MAX || port->llid!=port->wifi_id){ret=-EOPNOTSUPP;goto out;}
+   /* AP group TX uses normal non-QoS BCMC handling. Station output needs
+    * additional VLAN-metadata/QoS equivalence before bypassing VLAN uppers. */
+   if(!physical->ieee80211_ptr || physical->ieee80211_ptr->iftype!=NL80211_IFTYPE_AP){ret=-EOPNOTSUPP;goto out;}
+   mc->direct[mc->count]=(struct rtl_fe_mc_direct){.frame=*frame,.output=dev->ifindex,
+    .physical=physical->ifindex,.wifi_id=port->wifi_id};
+   replica->destination=16;replica->direct_cookie=mc->count+1;
+   if(existing) {
+    for(c=1;c<RTL_FE_MC_GROUPS;c++) {
+     const struct rtl_fe_mc_direct *d=fe->mc_directs[c];
+     if(d && d->flow==existing && d->output==dev->ifindex && d->physical==physical->ifindex && d->wifi_id==port->wifi_id)break;
+    }
+    if(c==RTL_FE_MC_GROUPS){fe_mcast_invalidate(fe);ret=-ESTALE;goto out;}
+    replica->direct_cookie=c;
+   }
+   mc->host=&host;
+   if(data.mtu>RTL_QM_DATA_BYTES-16U-ETH_HLEN-frame->tags*VLAN_HLEN)
+    data.mtu=RTL_QM_DATA_BYTES-16U-ETH_HLEN-frame->tags*VLAN_HLEN;
   }
   if(pon) {
    ret=fe_mcast_pon_replica(fe,physical,frame,replica);
@@ -452,8 +526,6 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
  }
  if(packet->local) {
   if(mc->count==RTL_FE_MC_ACTIONS){ret=-E2BIG;goto out;}
-  host=(struct rtl_fe_mc_host){.input=packet->input,.net=packet->net,.bridge=packet->bridge,
-   .epoch=packet->epoch,.owner=packet->transaction,.source=data.input->source};
   mc->host=&host;
   mc->replica[mc->count]=(struct rtl_fe_mc_replica){.destination=16,
    .host_group=existing?existing->mc_group:1};

@@ -42,6 +42,7 @@ common = r'''
 #include "rtl9617c-fe-mcast-profile.h"
 #include "rtl9617c-pon-path.h"
 typedef uint8_t u8;typedef uint16_t u16,__be16;typedef uint32_t u32;typedef uint64_t u64;
+#include "linux/rtl9617c-bridge.h"
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 #define htons(v) __builtin_bswap16((uint16_t)(v))
 #endif
@@ -667,7 +668,8 @@ int main(void)
 }
 '''
 
-parts = [common, re.search(r'struct rtl_fe_mc_rule \{.*?\n\};', native, re.S)[0],
+parts = [common, re.search(r'struct rtl_fe_mc_direct \{.*?\n\};', native, re.S)[0],
+         re.search(r'struct rtl_fe_mc_rule \{.*?\n\};', native, re.S)[0],
          re.search(r'struct rtl_fe_rule \{.*?\n\};', native, re.S)[0]]
 parts += [function(native,n) for n in ('fe_vlan_tpid','fe_vlan_match')]
 parts += [(drivers / 'rtl9617c-fe-vlan.h').read_text()]
@@ -689,7 +691,7 @@ with tempfile.TemporaryDirectory(dir=root / 'artifacts',prefix='fe-parser-') as 
     binary = Path(work) / 'parser'
     source.write_text('\n'.join(parts))
     subprocess.run(['cc','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer',
-        '-I'+str(drivers),str(source),'-o',str(binary)],check=True)
+        '-I'+str(drivers),'-I'+str(root/'port/overlay/target/linux/rtl9617c/files-6.18/include'),str(source),'-o',str(binary)],check=True)
     subprocess.run([str(binary)],check=True)
 (root / 'logs/fe-flow-parser.json').write_text(json.dumps({
     'production_source_sha256':hashlib.sha256(native.encode()).hexdigest(),

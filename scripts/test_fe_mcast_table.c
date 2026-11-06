@@ -129,6 +129,16 @@ static void owner_lifecycle(void)
  assert(rtl_fe_mc_stage(&io,&owner,&host,1,&index)==-ENOSPC && index==65);
  assert(!rtl_fe_mc_withdraw(&io,&owner,index));
  assert(owner.groups[65].state==RTL_FE_MC_FREE && m.actions[0][0]==257U<<23);
+ /* Cold start: direct cookie1 and the temporary host-group1 placeholder
+  * are distinct recipes (final tags versus NOP). The published host ID is
+  * group2, never the reserved direct cookie. */
+ memset(&m,0,sizeof(m));memset(&owner,0,sizeof(owner));
+ owner.groups[1].state=RTL_FE_MC_RETIRED;
+ struct rtl_fe_mc_replica mixed[2]={{.destination=16,.direct_cookie=1},{.destination=16,.host_group=1}};
+ assert(!rtl_fe_mc_stage(&io,&owner,mixed,2,&index)&&index==2);
+ assert(m.actions[0][0]>>23==257 && m.actions[1][0]>>23==258);
+ assert((m.actions[0][0]&3)==2 && !(m.actions[1][0]&3));
+ assert(!rtl_fe_mc_reference(&io,&owner,index)&&!rtl_fe_mc_withdraw(&io,&owner,index));
  puts("Multicast owner: complete stage, shared refs, partial abort, quarantine and exhaustion passed");
 }
 

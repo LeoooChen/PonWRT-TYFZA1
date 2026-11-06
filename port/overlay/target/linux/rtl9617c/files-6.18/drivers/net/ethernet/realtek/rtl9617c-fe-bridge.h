@@ -2,6 +2,7 @@
 /* Linux bridge decisions feed the original MAC/VLAN Hash and packet editor. */
 #include <linux/netfilter.h>
 #include "rtl9617c-ni.h"
+#include <net/cfg80211.h>
 #include <linux/rtl9617c-qm-layout.h>
 #include <linux/netfilter_bridge.h>
 #include <linux/netfilter_netdev.h>

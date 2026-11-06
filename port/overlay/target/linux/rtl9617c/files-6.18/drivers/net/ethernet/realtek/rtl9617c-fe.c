@@ -44,6 +44,8 @@ static void fe_bridge_invalidate(struct rtl_fe *fe);
 static void fe_mcast_invalidate(struct rtl_fe *fe);
 struct rtl_fe_flow;
 struct rtl_fe_mc_host;
+struct rtl_fe_mc_rule;
+static int fe_mcast_direct_stage(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct rtl_fe_mc_rule *mc);
 static void fe_mcast_host_remove(struct rtl_fe *fe,struct rtl_fe_flow *flow);
 static int fe_mcast_host_publish(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct rtl_fe_mc_host *host);
 
@@ -82,6 +84,12 @@ struct rtl_fe_mc_host {
  struct net *net;
  u64 epoch,owner;
  unsigned int bridge,source;
+ bool local;
+};
+struct rtl_fe_mc_direct {
+ struct rtl_fe_flow *flow;
+ struct rtl9617c_bridge_frame frame;
+ unsigned int output,physical,wifi_id;
 };
 struct rtl_fe_flow {
  struct list_head list, retry;
@@ -168,6 +176,7 @@ struct rtl_fe {
  struct rtl_fe_mc_gate mc_gate;
  atomic_t mc_flush;
  struct rtl_fe_mc_host *mc_hosts[RTL_FE_MC_GROUPS];
+ struct rtl_fe_mc_direct *mc_directs[RTL_FE_MC_GROUPS];
  DECLARE_BITMAP(hashes,RTL_FE_HASH_ENTRIES);
  DECLARE_BITMAP(counters,FE_INTERFACES);
 };
@@ -667,6 +676,7 @@ struct rtl_fe_mc_rule {
  struct rtl_fe_mc_host *host;
  struct rtl_fe_mc_replica replica[RTL_FE_MC_ACTIONS];
  struct rtl_fe_port *port[RTL_FE_MC_ACTIONS];
+ struct rtl_fe_mc_direct direct[RTL_FE_MC_ACTIONS];
 };
 static int fe_vlan_tpid(__be16 protocol)
 {
@@ -1314,6 +1324,8 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
    ret=rtl_fe_mc_route_port(&io,&fe->mc_route,data.multicast->replica[i].destination);
    if(ret)goto rollback;
   }
+  ret=fe_mcast_direct_stage(fe,flow,data.multicast);
+  if(ret)goto rollback;
   ret=rtl_fe_mc_stage(&io,&fe->multicast,data.multicast->replica,
    data.multicast->count,&flow->mc_group);
   if(ret)goto rollback;
@@ -1331,7 +1343,7 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
   ret=rtl_fe_mc_reference(&io,&fe->multicast,flow->mc_group);
   if(ret)goto rollback;
  }
- if(data.multicast && data.input->wifi_id) {
+ if(data.multicast && (data.input->wifi_id || data.output->wifi_id)) {
   /* Replica POL owns PON GEM/host IDs. Clear the ingress VIF sideband so
    * CPU0 decodes each copy as Header A, not a radio direct-TX EPP. */
   rtl_fe_action_set(action,RTL_FE_MDATA_BYTE_VLD,1);
@@ -1969,6 +1981,7 @@ void rtl_fe_free(struct rtl_fe *fe)
  ret=rtl_fttr_cf_release(&io,&fe->fttr_cf);
  if(ret)dev_err(fe->device,"P6 CF restoration failed during removal: %d\n",ret);
  list_for_each_entry_safe(flow,flow_next,&fe->flows,list){fe_mcast_host_remove(fe,flow);list_del(&flow->list);kfree(flow->replica_ports);kfree(flow);}
+ for(unsigned int i=1;i<RTL_FE_MC_GROUPS;i++)kfree(fe->mc_directs[i]);
  list_for_each_entry(port,&fe->ports,list)fe_wifi_forget_port(fe,port);
  list_for_each_entry_safe(port,next,&fe->ports,list){list_del(&port->list);kfree(port);}
  dma_free_coherent(fe->device,RTL_FE_MEMORY_BYTES,fe->memory,fe->dma);
