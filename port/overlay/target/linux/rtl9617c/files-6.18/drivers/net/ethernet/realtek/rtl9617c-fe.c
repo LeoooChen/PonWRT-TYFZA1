@@ -25,6 +25,9 @@
 #include <net/pkt_cls.h>
 #include "rtl9617c-fe.h"
 #include "rtl9617c-fe-pipeline.h"
+#include "rtl9617c-fe-mcast-owner.h"
+#include "rtl9617c-fe-mcast-route.h"
+#include "rtl9617c-fttr-mcast.h"
 #include "rtl9617c-fttr-cf.h"
 #include "rtl9617c-fttr-frame.h"
 #include "rtl9617c-wifi-format.h"
@@ -71,6 +74,8 @@ struct rtl_fe_flow {
  struct rb_node cookie_node;
  unsigned long cookie, lastused;
  struct rtl_fe_port *input, *output;
+ struct rtl_fe_port **replica_ports;
+ unsigned int replica_count,mc_group;
  unsigned int hash_index, counter, source_mac, destination_index;
  unsigned int pppoe, mtu_index;
  unsigned int ingress_session;
@@ -135,10 +140,13 @@ struct rtl_fe {
  struct rtl_itu_paths *itu_paths;
  struct net_device *itu_netdev;
  struct net_device *fttr_netdev;
+ struct net_device *fttr_mcast;
  struct rtl_fttr_cf fttr_cf;
  bool fttr_live,fttr_requested,fttr_admitted;
  int fttr_cleanup_error;
  struct rtl_fe_bridge *bridge;
+ struct rtl_fe_mc_owner multicast;
+ struct rtl_fe_mc_route mc_route;
  DECLARE_BITMAP(hashes,RTL_FE_HASH_ENTRIES);
  DECLARE_BITMAP(counters,FE_INTERFACES);
 };
@@ -169,6 +177,21 @@ static struct rtl_fe_port *fe_port(struct rtl_fe *fe,struct net_device *netdev)
  list_for_each_entry(port,&fe->ports,list)
   if(!port->retired && port->netdev==netdev)return port;
  return NULL;
+}
+static bool fe_flow_port(const struct rtl_fe_flow *flow,const struct rtl_fe_port *port)
+{
+ unsigned int i;
+ if(flow->input==port || flow->output==port)return true;
+ for(i=0;i<flow->replica_count;i++)if(flow->replica_ports[i]==port)return true;
+ return false;
+}
+
+static bool fe_flow_fttr(const struct rtl_fe *fe,const struct rtl_fe_flow *flow)
+{
+ unsigned int i;
+ if(flow->input->netdev==fe->fttr_netdev || flow->output->netdev==fe->fttr_netdev)return true;
+ for(i=0;i<flow->replica_count;i++)if(flow->replica_ports[i]->netdev==fe->fttr_netdev)return true;
+ return false;
 }
 /* All cookie and retry-list operations are serialized by fe->lock. */
 static struct rtl_fe_flow *fe_flow(struct rtl_fe *fe,unsigned long cookie)
@@ -218,7 +241,7 @@ static void fe_collect_ports(struct rtl_fe *fe)
   bool owned=false;
   if(!port->retired || port->bindings)continue;
   list_for_each_entry(flow,&fe->flows,list)
-   if(flow->input==port || flow->output==port){owned=true;break;}
+   if(fe_flow_port(flow,port)){owned=true;break;}
   if(!owned){list_del(&port->list);kfree(port);}
  }
 }
@@ -377,6 +400,8 @@ static int fe_restore(struct rtl_fe *fe)
  int ret;
 
  if(!fe->prepared)return 0;
+ ret=rtl_fe_mc_route_restore(&io,&fe->mc_route);
+ if(ret)return ret;
  fe_write(fe,0x351c,fe_read(fe,0x351c)&~BIT(10));
  fe_write(fe,0x11e0,fe->wifi_ippb_saved);
  ret=fe_access(fe,0x11dc,BIT(31)|BIT(30)|RTL_WIFI_SOURCE);
@@ -600,6 +625,12 @@ struct rtl_fe_rule {
  struct rtl_fe_vlan vlan[2];
  unsigned char vlan_count,ethernet_bytes;
  u8 source[ETH_ALEN],destination[ETH_ALEN];
+ struct rtl_fe_mc_rule *multicast;
+};
+struct rtl_fe_mc_rule {
+ unsigned int count;
+ struct rtl_fe_mc_replica replica[RTL_FE_MC_ACTIONS];
+ struct rtl_fe_port *port[RTL_FE_MC_ACTIONS];
 };
 static int fe_vlan_tpid(__be16 protocol)
 {
@@ -621,6 +652,34 @@ static int fe_vlan_match(const struct flow_match_vlan *match,struct rtl_fe_vlan 
  return 0;
 }
 #include "rtl9617c-fe-vlan.h"
+
+static int fe_bridge_vlan_match(struct rtl_fe_rule *data,const struct flow_match_vlan *match,
+ bool *known)
+{
+ unsigned int index=data->vlan_count;
+ bool exact=match->mask->vlan_priority==7 && match->mask->vlan_dei==1;
+ int ret;
+
+ if(!data->multicast || !exact) {
+  ret=fe_vlan_match(match,&data->vlan[index]);
+  if(ret)return ret;
+ } else {
+  if(match->mask->vlan_id!=VLAN_VID_MASK || match->mask->vlan_tpid!=htons(0xffff))return -EOPNOTSUPP;
+  ret=fe_vlan_tpid(match->key->vlan_tpid);
+  if(ret<0)return ret;
+  data->vlan[index]=(struct rtl_fe_vlan){.vid=match->key->vlan_id,.tpid=ret,
+   .priority=match->key->vlan_priority,.dei=match->key->vlan_dei};
+ }
+ /* The existing exact bridge profile matches PCP/DEI on both tags. Mixed
+  * exact/wildcard input would narrow a TC rule, so leave that case to Linux. */
+ if(index && data->vlan_exact!=exact)return -EOPNOTSUPP;
+ data->vlan_exact=exact;
+ data->ingress_tci[index]=data->vlan[index].vid|(data->vlan[index].priority<<13)|
+  (data->vlan[index].dei<<12);
+ known[index]=exact;
+ data->vlan_count++;
+ return 0;
+}
 
 static int fe_parse_bridge(struct rtl_fe_port *port,struct flow_rule *rule,struct rtl_fe_rule *data)
 {
@@ -661,7 +720,12 @@ static int fe_parse_bridge(struct rtl_fe_port *port,struct flow_rule *rule,struc
  flow_rule_match_eth_addrs(rule,&ethernet);
  for(i=0;i<ETH_ALEN;i++)
   if(ethernet.mask->src[i]!=255 || ethernet.mask->dst[i]!=255)return -EOPNOTSUPP;
- if(!is_valid_ether_addr(ethernet.key->src) || !is_valid_ether_addr(ethernet.key->dst))return -EINVAL;
+ if(!is_valid_ether_addr(ethernet.key->src))return -EINVAL;
+ if(data->multicast) {
+  if(port->wifi_id || port->source>4 || port->llid)return -EOPNOTSUPP;
+  if(!is_multicast_ether_addr(ethernet.key->dst) || is_broadcast_ether_addr(ethernet.key->dst) ||
+     !memcmp(ethernet.key->dst,"\x01\x80\xc2",3))return -EOPNOTSUPP;
+ } else if(!is_valid_ether_addr(ethernet.key->dst))return -EINVAL;
  data->bridge=true;data->input=port;
  data->ethernet_protocol=ntohs(basic.key->n_proto);
  data->key=(struct rtl_fe_ipv4_key){.ingress=port->source,.llid=port->llid,
@@ -679,15 +743,16 @@ static int fe_parse_bridge(struct rtl_fe_port *port,struct flow_rule *rule,struc
  } else if(flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_PPPOE))return -EOPNOTSUPP;
  if(flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_VLAN)) {
   flow_rule_match_vlan(rule,&vlan);
-  ret=fe_vlan_match(&vlan,&data->vlan[data->vlan_count++]);
+  ret=fe_bridge_vlan_match(data,&vlan,known);
   if(ret)return ret;
  }
  if(flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_CVLAN)) {
   if(!data->vlan_count)return -EOPNOTSUPP;
   flow_rule_match_cvlan(rule,&vlan);
-  ret=fe_vlan_match(&vlan,&data->vlan[data->vlan_count++]);
+  ret=fe_bridge_vlan_match(data,&vlan,known);
   if(ret)return ret;
  }
+ if(data->vlan_exact)data->key.mask=59;
  count=data->vlan_count;
  memcpy(data->action.vlan,data->vlan,sizeof(data->vlan));
  flow_action_for_each(i,act,&rule->action) {
@@ -696,8 +761,44 @@ static int fe_parse_bridge(struct rtl_fe_port *port,struct flow_rule *rule,struc
    * own complete member set and NI/arbitration resource ownership. */
   if(output)return -EOPNOTSUPP;
   switch(act->id) {
+  case FLOW_ACTION_MIRRED:
+   if(!data->multicast)return -EOPNOTSUPP;
+   fallthrough;
   case FLOW_ACTION_REDIRECT:
    if(!act->dev)return -EOPNOTSUPP;
+   if(data->multicast) {
+    struct rtl_fe_mc_rule *mc=data->multicast;
+    struct rtl_fe_port *recipient=fe_port(port->fe,act->dev);
+    struct rtl_fe_mc_replica *replica;
+    bool shared=act->dev==port->fe->fttr_mcast;
+    unsigned int tag;
+    if(shared)recipient=fe_port(port->fe,port->fe->fttr_netdev);
+    if(!recipient || recipient==port || recipient->wifi_id || recipient->destination>6 ||
+       recipient->destination==5 || mc->count==RTL_FE_MC_ACTIONS)return -EOPNOTSUPP;
+    /* Multicast uses an absolute final tag recipe. Unknown PCP/DEI on
+     * retained input tags cannot be replaced by a guessed zero value. */
+    for(tag=0;tag<count;tag++)if(!known[tag])return -EOPNOTSUPP;
+    replica=&mc->replica[mc->count];
+    replica->destination=recipient->destination;replica->tags=count;
+    for(tag=0;tag<count;tag++) {
+     replica->tag[tag].protocol=data->action.vlan[tag].tpid==1?ETH_P_8021Q:ETH_P_8021AD;
+     replica->tag[tag].tci=data->action.vlan[tag].vid|(data->action.vlan[tag].priority<<13)|
+      (data->action.vlan[tag].dei<<12);
+    }
+    if(recipient->netdev==port->fe->fttr_netdev) {
+     /* Shared GEM is admitted through its native upper, whose closure must
+      * withdraw this flow too. No raw VID4095 bypass or returned-ONU SMAC
+      * rewrite is inferred from a TC destination alone. */
+     if(!shared || count==2 || port->netdev==port->fe->fttr_netdev ||
+        !rtl_fttr_mcast_ready(act->dev))return -EOPNOTSUPP;
+     replica->tag[1]=replica->tag[0];
+     replica->tag[0].protocol=ETH_P_8021Q;replica->tag[0].tci=4095;
+     replica->tags++;
+    }
+    mc->port[mc->count++]=recipient;
+    if(act->id==FLOW_ACTION_MIRRED)break;
+    output=recipient->netdev;break;
+   }
    output=act->dev;break;
   case FLOW_ACTION_VLAN_POP:
    if(!count)return -EOPNOTSUPP;
@@ -713,6 +814,7 @@ static int fe_parse_bridge(struct rtl_fe_port *port,struct flow_rule *rule,struc
   default:return -EOPNOTSUPP;
   }
  }
+ if(data->multicast && (!output || !data->multicast->count))return -EOPNOTSUPP;
  if(changed)for(i=0;i<count;i++)if(!known[i])return -EOPNOTSUPP;
  data->output=fe_port(port->fe,output);
  if(!data->output)return -EOPNOTSUPP;
@@ -757,6 +859,7 @@ static int fe_parse(struct rtl_fe_port *port,struct flow_cls_offload *cls,struct
  if(flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_ETH_ADDRS)) {
   ret=fe_parse_bridge(port,rule,data);
   if(ret)return ret;
+  if(data->multicast)return 0;
   goto itu_paths;
  }
  if(!flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_META) ||
@@ -943,6 +1046,11 @@ static int fe_delete(struct rtl_fe *fe,struct rtl_fe_flow *flow)
  }
  ((__le32 *)fe->memory)[flow->hash_index]=0;
  dma_wmb();
+ if(flow->mc_group) {
+  ret=rtl_fe_mc_withdraw(&io,&fe->multicast,flow->mc_group);
+  if(ret)goto retry;
+  flow->mc_group=0;
+ }
  if(flow->destination_owned) {
   ret=fe_destination_put(fe,flow);
   if(ret)goto retry;
@@ -964,6 +1072,7 @@ static int fe_delete(struct rtl_fe *fe,struct rtl_fe_flow *flow)
  list_del(&flow->retry);
  list_del(&flow->list);
  if(flow->installed)fe->deletes++;
+ kfree(flow->replica_ports);
  kfree(flow);
  return 0;
 retry:
@@ -995,7 +1104,7 @@ static int fe_fttr_quiesce_locked(struct rtl_fe *fe)
 
  fe_bridge_invalidate(fe);
  list_for_each_entry_safe(flow,next,&fe->flows,list)
-  if(flow->input->netdev==fe->fttr_netdev || flow->output->netdev==fe->fttr_netdev) {
+  if(fe_flow_fttr(fe,flow)) {
    result=fe_delete(fe,flow);
    if(result) {if(!ret)ret=result;break;}
   }
@@ -1029,6 +1138,12 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
  if((data.input->source==7 || data.output->source==7) && !fe->pon_requested)return -EAGAIN;
  if(!fe->enabled || !netif_running(data.input->netdev) || !netif_running(data.output->netdev) ||
     !netif_carrier_ok(data.input->netdev) || !netif_carrier_ok(data.output->netdev))return -EAGAIN;
+ if(data.multicast)for(i=0;i<data.multicast->count;i++) {
+  struct rtl_fe_port *replica=data.multicast->port[i];
+  if(replica->retired || !netif_running(replica->netdev) || !netif_carrier_ok(replica->netdev))return -EAGAIN;
+  if(replica->netdev==fe->fttr_netdev && !fe->fttr_admitted)return -EAGAIN;
+  if(replica->netdev==fe->fttr_netdev && !rtl_fttr_mcast_ready(fe->fttr_mcast))return -EAGAIN;
+ }
  if(fe_flow(fe,cookie))return -EEXIST;
  if(data.bridge)rtl_fe_bridge_key(words,data.source,data.destination,data.ethernet_protocol,
   data.key.ingress,data.key.llid,data.key.mask);
@@ -1052,6 +1167,12 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
  if(index==start+32)return -ENOSPC;
  flow=kzalloc(sizeof(*flow),GFP_KERNEL);
  if(!flow)return -ENOMEM;
+ if(data.multicast) {
+  flow->replica_ports=kmemdup(data.multicast->port,
+   data.multicast->count*sizeof(*flow->replica_ports),GFP_KERNEL);
+  if(!flow->replica_ports){kfree(flow);return -ENOMEM;}
+  flow->replica_count=data.multicast->count;
+ }
  flow->cookie=cookie;
  flow->hash_index=index;flow->crc16=crc16;
  INIT_LIST_HEAD(&flow->retry);
@@ -1097,7 +1218,34 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
    if(peer)data.action.destination=peer->destination; }
  /* P6 has its own QM port14 and must retain buffering/backpressure. */
  if(data.output->netdev==fe->fttr_netdev)data.action.deep_queue=1;
+ /* Replica recipes own every tag. Do not emit common PCP/DEI updates
+  * merely because the terminal TC output followed a VLAN edit. */
+ if(data.multicast)data.action.vlan_set=false;
  rtl_fe_ipv4_action(action,&data.action);
+ if(data.multicast) {
+  ret=rtl_fe_mc_owner_start(&io,&fe->multicast);
+  if(ret)goto rollback;
+  ret=rtl_fe_mc_route_members(&io,data.input->source,data.multicast->replica,data.multicast->count);
+  if(ret)goto rollback;
+  ret=rtl_fe_mc_route_prepare(&io,&fe->mc_route);
+  if(ret)goto rollback;
+  for(i=0;i<data.multicast->count;i++) {
+   ret=rtl_fe_mc_route_port(&io,&fe->mc_route,data.multicast->replica[i].destination);
+   if(ret)goto rollback;
+  }
+  ret=rtl_fe_mc_stage(&io,&fe->multicast,data.multicast->replica,
+   data.multicast->count,&flow->mc_group);
+  if(ret)goto rollback;
+  /* The common editor preserves the packet. Per-replica L2 actions hold
+   * the final tags. MC with DEEPQ0 names NI replication, not a PON GEM. */
+  rtl_fe_action_set(action,RTL_FE_MC,1);
+  rtl_fe_action_set(action,RTL_FE_MCGID,flow->mc_group);
+  rtl_fe_action_set(action,RTL_FE_DEEPQ,0);
+  rtl_fe_action_set(action,RTL_FE_VLAN_VLD1,0);
+  rtl_fe_action_set(action,RTL_FE_COS_UPDATE_EN,0);
+  ret=rtl_fe_mc_reference(&io,&fe->multicast,flow->mc_group);
+  if(ret)goto rollback;
+ }
  if(data.input->wifi_id || data.output->wifi_id) {
   rtl_fe_action_set(action,RTL_FE_MDATA_BYTE_VLD,1);
   rtl_fe_action_set(action,RTL_FE_MDATA_BYTE,data.output->wifi_id);
@@ -1120,9 +1268,21 @@ rollback:
 static int fe_replace(struct rtl_fe_port *port,struct flow_cls_offload *cls)
 {
  struct rtl_fe_rule data={};
- int ret=fe_parse(port,cls,&data);
+ struct flow_rule *rule=flow_cls_offload_flow_rule(cls);
+ struct flow_match_eth_addrs ethernet;
+ int ret;
 
- return ret?ret:fe_install(port,data,cls->cookie);
+ if(flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_ETH_ADDRS)) {
+  flow_rule_match_eth_addrs(rule,&ethernet);
+  if(is_multicast_ether_addr(ethernet.key->dst)) {
+   data.multicast=kzalloc(sizeof(*data.multicast),GFP_KERNEL);
+   if(!data.multicast)return -ENOMEM;
+  }
+ }
+ ret=fe_parse(port,cls,&data);
+ if(!ret)ret=fe_install(port,data,cls->cookie);
+ kfree(data.multicast);
+ return ret;
 }
 static int fe_stats(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct flow_cls_offload *cls)
 {
@@ -1255,6 +1415,11 @@ static int fe_counters_show(struct seq_file *file,void *unused)
  seq_puts(file,"hash input output pol_id dpid ingress_sid egress_sid age protocol source destination counter bytes packets drop_bytes drop_packets egress_word\n");
  list_for_each_entry(flow,&fe->flows,list) {
   if(!flow->published)continue;
+  /* Unregister can leave a failed Hash withdrawal on the retry list. The
+   * port owner remains alive, but its netdev may already have been freed. */
+  if(flow->input->retired || flow->output->retired) {
+   seq_printf(file,"%u retiring error=%d\n",flow->hash_index,fe->error);continue;
+  }
   ret=rtl_fe_main_age_read(&io,flow->hash_index,&age);
   if(!ret && flow->interface_owned)ret=fe_access(fe,0x3000,BIT(31)|flow->counter);
   if(ret){seq_printf(file,"%u error=%d\n",flow->hash_index,ret);continue;}
@@ -1361,6 +1526,30 @@ int rtl_fe_add_fttr_port(struct rtl_fe *fe,struct net_device *netdev)
  fe->fttr_netdev=netdev;
  mutex_unlock(&fe->lock);
  return 0;
+}
+
+void rtl_fe_set_fttr_mcast(struct rtl_fe *fe,struct net_device *netdev)
+{
+ if(!fe)return;
+ mutex_lock(&fe->lock);
+ fe->fttr_mcast=netdev;
+ mutex_unlock(&fe->lock);
+}
+
+int rtl_fe_flush_multicast(struct rtl_fe *fe,bool fttr_only)
+{
+ struct rtl_fe_flow *flow,*next;
+ int ret=0,result;
+ if(!fe)return 0;
+ mutex_lock(&fe->lock);
+ list_for_each_entry_safe(flow,next,&fe->flows,list)if(flow->replica_count &&
+   (!fttr_only || fe_flow_fttr(fe,flow))) {
+  result=fe_delete(fe,flow);
+  if(result && !ret)ret=result;
+ }
+ if(ret)fe->error=ret;
+ mutex_unlock(&fe->lock);
+ return ret;
 }
 
 int rtl_fe_fttr_open(struct rtl_fe *fe)
@@ -1516,7 +1705,7 @@ void rtl_fe_remove_port(struct rtl_fe *fe,struct net_device *netdev)
   fe_wifi_forget_port(fe,port);
   port->retired=true;
   list_for_each_entry_safe(flow,next,&fe->flows,list)
-   if(flow->input==port || flow->output==port) {
+   if(fe_flow_port(flow,port)) {
     int ret=fe_delete(fe,flow);
     if(ret)fe->error=ret;
    }
@@ -1536,7 +1725,7 @@ int rtl_fe_flush_port(struct rtl_fe *fe,struct net_device *netdev)
  port=fe_port(fe,netdev);
  fe_wifi_forget_port(fe,port);
  list_for_each_entry_safe(flow,next,&fe->flows,list)
-  if(flow->input==port || flow->output==port) {
+  if(fe_flow_port(flow,port)) {
    ret=fe_delete(fe,flow);
    if(ret){fe->error=ret;break;}
   }
@@ -1555,7 +1744,7 @@ int rtl_fe_set_itu_paths(struct rtl_fe *fe,struct net_device *netdev,const struc
  mutex_lock(&fe->lock);
  port=fe_port(fe,netdev);
  list_for_each_entry_safe(flow,next,&fe->flows,list)
-  if(flow->input==port || flow->output==port) {
+  if(fe_flow_port(flow,port)) {
    ret=fe_delete(fe,flow);
    if(ret)goto unlock;
   }
@@ -1679,7 +1868,7 @@ void rtl_fe_free(struct rtl_fe *fe)
  io=fe_io(fe);
  ret=rtl_fttr_cf_release(&io,&fe->fttr_cf);
  if(ret)dev_err(fe->device,"P6 CF restoration failed during removal: %d\n",ret);
- list_for_each_entry_safe(flow,flow_next,&fe->flows,list){list_del(&flow->list);kfree(flow);}
+ list_for_each_entry_safe(flow,flow_next,&fe->flows,list){list_del(&flow->list);kfree(flow->replica_ports);kfree(flow);}
  list_for_each_entry(port,&fe->ports,list)fe_wifi_forget_port(fe,port);
  list_for_each_entry_safe(port,next,&fe->ports,list){list_del(&port->list);kfree(port);}
  dma_free_coherent(fe->device,RTL_FE_MEMORY_BYTES,fe->memory,fe->dma);
@@ -1690,7 +1879,7 @@ ssize_t rtl_fe_state(struct rtl_fe *fe,char *buffer)
 {
  ssize_t length;
  struct rtl_fe_flow *flow;
- unsigned int flows=0,counted=0,bridged=0,learned=0;
+ unsigned int flows=0,counted=0,bridged=0,learned=0,multicast=0,retired=0,actions=0,i;
 
  if(!fe)return sysfs_emit(buffer,"available=0\n");
  mutex_lock(&fe->lock);
@@ -1698,10 +1887,13 @@ ssize_t rtl_fe_state(struct rtl_fe *fe,char *buffer)
   flows++;
   counted+=flow->counted;
   bridged+=flow->bridge;learned+=flow->learned;
+  multicast+=!!flow->replica_count;
  }
- length=sysfs_emit(buffer,"available=1 enabled=%u prepared=%u pon_requested=%u error=%d flows=%u hash_entries=%u counter_slots=%u counted_flows=%u activity_flows=%u installs=%llu deletes=%llu rejected=%llu bridge_rules=%u learned_bridge_rules=%u\n",
+ for(i=1;i<RTL_FE_MC_GROUPS;i++)retired+=fe->multicast.groups[i].state==RTL_FE_MC_RETIRED;
+ for(i=0;i<RTL_FE_MC_ACTIONS;i++)actions+=!!fe->multicast.actions[i].exposed;
+ length=sysfs_emit(buffer,"available=1 enabled=%u prepared=%u pon_requested=%u error=%d flows=%u hash_entries=%u counter_slots=%u counted_flows=%u activity_flows=%u installs=%llu deletes=%llu rejected=%llu bridge_rules=%u learned_bridge_rules=%u multicast_rules=%u multicast_retired_groups=%u multicast_exposed_actions=%u\n",
   fe->enabled,fe->prepared,fe->pon_requested,fe->error,flows,RTL_FE_HASH_ENTRIES,
-  FE_COUNTERS,counted,flows-counted,fe->installs,fe->deletes,fe->misses,bridged,learned);
+  FE_COUNTERS,counted,flows-counted,fe->installs,fe->deletes,fe->misses,bridged,learned,multicast,retired,actions);
  mutex_unlock(&fe->lock);
  return length;
 }

@@ -3895,9 +3895,10 @@ This admission follows observed registrations and MIB state. It does not prove
 instantaneous isolation during the interval before a new registration is
 observed, removal of already queued DMA/AFT/PE/MiniOLT packets, or successful
 subordinate hardware ACL changes when its original callback hides errors.
-GEM4095 still transmits through the native shared DMA/P6 CPU path; hardware
-multicast replication/offload remains unimplemented. These limits remain part
-of the full FTTR goal and physical acceptance is still deferred.
+GEM4095 transmits through the native shared DMA/P6 CPU path. Explicit complete
+TC multicast rules can now use the native NI/arbitration owner described below;
+the bridge does not yet produce multicast hardware rules automatically. These
+limits remain part of the full FTTR goal and physical acceptance is deferred.
 
 ### Original multicast hardware table boundary
 
@@ -4006,8 +4007,92 @@ does not establish those L2 selectors. Unsupported ports, tag counts or
 missing TPIDs return an error without publishing output words. Six complete
 FC/NI recipes match the native encoder, including GEM4095 plus inner customer
 VID100 and PCP/DEI; each L2 selector and missing TPID is also checked by
-`test_fe_mcast_replica.py` (`mcast-replica-20261106.json`). These encoder helpers
-still do not enable a live group owner or packet-retirement guarantee.
+`test_fe_mcast_replica.py` (`mcast-replica-20261106.json`). The encoder is now used
+by the native group owner below; it does not establish packet retirement.
+
+### Native multicast group ownership and explicit TC integration
+
+The existing FE flower backend now accepts complete Ethernet multicast output
+sequences: zero or more mirrors followed by a terminal redirect, with VLAN
+push/pop edits captured at each output. It uses the original MC1/NI-group/
+DEEPQ0 Hash recipe, the256-entry NI bitmap table (entry0 reserved), and the64
+immutable arbitration actions. Each action holds its complete final S/C tag
+stack. The common L3 editor preserves MACs, TTL/Hop Limit, VLANs and COS; it
+does not apply the terminal recipient's tag edits to the other replicas.
+
+Current ingress is native LAN0..4. Outputs are native LAN0..4 or the admitted
+`fttr-mc` upper. The latter resolves to P6 with an added outer0x8100/VID4095,
+and at most one customer tag. A raw P6 redirect cannot substitute for this
+upper. Exact source/destination MAC and EtherType are required. Unknown
+retained PCP/DEI, mixed exact/wildcard tag masks, mirror-only sequences,
+duplicate identical replicas, input reflection, broadcast/IEEE-reserved MACs,
+PON and radio recipients are explicitly rejected. Fully matched PCP/DEI on
+one or two input tags uses existing exact bridge profile59 and is preserved.
+These explicit rules do not represent automatic bridge/MDB membership.
+
+`rtl9617c-fe-mcast-owner.h` keeps action references before any writes, stages
+every recipient before publishing its NI bitmap, verifies the entire group,
+then marks it referenced **before** publishing the Hash. A failed write,
+including lost completion after application, retains enough ownership to retry.
+Withdrawal invalidates Hash age/cache before clearing and reading back NI;
+action references are released only after that succeeds. Identical immutable
+actions are shared. Inherited nonempty tables are rejected without clearing
+them or claiming their ownership.
+
+`rtl9617c-fe-mcast-route.h` separately snapshots the logical27/PDPID11 connector,
+its scheduler and destination maps, L2 editor configuration, and P6 destination
+deep-buffer rule. Both my-MAC mappings are checked; final P6 enters the existing
+PDPID8/QM port14 path, preserving the private/shared buffer pools. The owner
+does not overwrite occupied DBUF rows, including original FC's source17 rule.
+Conflicting egress classifier/VLAN lookup/marking policy rejects an output.
+The MCE return source27/nondeep/bypass and original source-to-POL copy must
+already match; foreign flush state rejects admission. The route enables the
+original keep-source control, removes HeaderA DBUF gating, and applies MCE
+FIFO threshold23, preserving and restoring other fields. If L2 multicast port
+membership checking is already enabled, the source/connector bitmaps must
+permit the complete path; no inherited isolation policy is widened or disabled.
+
+The original `aal_ni_init` is now executed through its multicast stage with
+three seeded MCE controls. It sets only threshold bits0..9 to23 and calls the
+NI clear API1024 times, which aliases the8-bit hardware table. Native ownership
+does not repeat that clearing. The original arbitration initializer confirms
+keep-source, HeaderA gating and multicast membership-enable controls; original
+membership, egress and port-DBUF setters verify the native table encodings.
+This proves register production, not physical packet scheduling.
+
+Each flow retains every replica's port owner, so removal/FTTR withdrawal also
+finds P6 when it is only a mirror. Link, topology, address and MTU events
+withdraw multicast groups. Closing `fttr-mc` synchronously attempts FE cleanup.
+Because Linux ignores `ndo_stop` errors, `fttrd` additionally writes
+`fttr_mcast_flush=1` after closing the upper and during startup takeover; the
+kernel refuses an open upper and propagates unfinished Hash/NI cleanup errors.
+Remote multicast release cannot treat an unacknowledged close as success.
+
+`test_fe_mcast_table.c` exercises complete ownership, sharing, inherited state,
+capacity, applied-write timeouts and every indirect route/restore fault under
+ASan/UBSan. `test_fe_mcast_integration.py` runs production install/delete against
+the same native owner, including P6-as-mirror admission, common editor
+preservation, cache failure and NI-clear retry. Parser checks cover all16
+PCP/DEI combinations on one/two tags. Existing CPU packet/gate, shared LAN/P6,
+bridge learner and callback/flow release tests pass. Actual resident
+controller/CLI/veth/bridge tests with shared multicast, authentication, Wi-Fi
+and migration pass on the three modeled backends (`mcast-fe-resident-*-20261106.json`).
+The original comparison is `mcast-hardware-original-20261106.json`, the latest
+Image/modules build is `mcast-owner-kernel-20261106.log`, and the package build
+is `mcast-integration-package-20261106.log`.
+
+**Published NI indices remain quarantined for this FE owner's lifetime.**
+Exposed action words remain immutable, although identical recipes can be shared.
+Consequently this implementation allows at most255 group publications and64
+distinct exposed action recipes before returning capacity errors. Unpublished
+aborts can reuse their entries. Re-enabling FE does not reset quarantine, and
+warm reattachment refuses nonempty action tables. This is an explicit temporary
+limit pending a proven packet-retirement barrier; table readback and queue
+clearing alone do not justify recycling indices. Automatic MDB production,
+TC replacement semantics, complete per-replica long-frame handling, returned
+ONU source-MAC rewriting, PON/radio replicas and complete DMA/AFT/FE/PE/MiniOLT
+retirement remain work. No physical forwarding or complete FTTR acceptance
+is claimed by these offline checks.
 
 ### Outstanding implementation and acceptance
 

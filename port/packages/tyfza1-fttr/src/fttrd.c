@@ -128,13 +128,25 @@ struct controller {
 	} move;
 };
 
+static int multicast_close(struct controller *c)
+{
+	int ret = fttr_net_mcast_remove(&c->net, &c->multicast);
+
+	/* Initial forwarding withdrawal precedes netlink takeover of an inherited
+	 * upper. fttr_forward already withdraws its FE; acknowledge the separate
+	 * multicast close once netlink has actually closed that upper. */
+	if (!ret && c->net.fd >= 0)
+		ret = fttr_miniolt_command(c->ni, "fttr_mcast_flush", "1\n");
+	return ret;
+}
+
 static int forwarding(struct controller *c, bool enable)
 {
 	char command[24];
 	int ret;
 
 	if (!enable) {
-		ret = fttr_net_mcast_remove(&c->net, &c->multicast);
+		ret = multicast_close(c);
 		if (ret)
 			return ret;
 		c->multicast_members = 0;
@@ -894,7 +906,7 @@ static int multicast_reconcile(struct controller *c)
 	c->multicast_members = ret ? 0 : members;
 	c->multicast_error = ret;
 	if (ret || !members || c->move.active)
-		return fttr_net_mcast_remove(&c->net, &c->multicast);
+		return multicast_close(c);
 	if (!c->multicast.index) {
 		struct fttr_onu_state current[FTTR_ONUS];
 
@@ -978,7 +990,7 @@ static int withdraw_service(struct controller *c, unsigned int id, bool accel_pa
 {
 	struct fttr_service_job *job = &c->onu[id].service;
 	bool paused = c->onu[id].port.index != 0 && !accel_paused;
-	int ret, cleanup = fttr_net_mcast_remove(&c->net, &c->multicast);
+	int ret, cleanup = multicast_close(c);
 
 	c->multicast_members = 0;
 	c->onu[id].port.configured = false;
@@ -1361,7 +1373,7 @@ static int sync_io_failed(struct controller *c, unsigned int id, int error)
 static int sync_failed(struct controller *c, unsigned int id, int error)
 {
 	struct onu *u = &c->onu[id];
-	int ret = fttr_net_mcast_remove(&c->net, &c->multicast);
+	int ret = multicast_close(c);
 
 	if (ret)
 		return ret;
@@ -2733,6 +2745,8 @@ int main(int argc, char **argv)
 	if (ret)
 		goto out;
 	ret = fttr_net_mcast_reset(&c.net);
+	if (!ret)
+		ret = fttr_miniolt_command(c.ni, "fttr_mcast_flush", "1\n");
 	if (ret)
 		goto out;
 	for (id = 0; id < FTTR_ONUS; id++) {

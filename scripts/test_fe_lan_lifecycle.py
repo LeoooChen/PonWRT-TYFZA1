@@ -37,6 +37,7 @@ common = r'''
 #include <linux/ppp_defs.h>
 #include <linux/if_ether.h>
 #include "rtl9617c-fe-pipeline.h"
+#include "rtl9617c-fe-mcast-route.h"
 #include "rtl9617c-fttr-frame.h"
 #include "rtl9617c-wifi-format.h"
 #define BIT(n) (1U<<(n))
@@ -53,6 +54,7 @@ struct rtl_fe_flow {struct rtl_fe_port *input,*output;};
 static void mutex_lock(struct mutex *m){(void)m;}
 static void mutex_unlock(struct mutex *m){(void)m;}
 struct rtl_fe {
+ struct rtl_fe_mc_route mc_route;
  void *fttr_netdev;
  bool pon_requested,fttr_live,fttr_requested;
  int fttr_cleanup_error;

@@ -47,6 +47,7 @@ def main():
         miniolt.joinpath('host_serdes').write_text('mode=9 nway=1 pll=1 error=0 link=1\n')
         ni.joinpath('fttr_link').write_text('configured=1 mode=9 nway=1 clock=1 error=0 link=1\n')
         ni.joinpath('fttr_forward').write_text('0\n')
+        ni.joinpath('fttr_mcast_flush').write_text('')
         miniolt.joinpath('tx_enable').write_text('1\n')
         (miniolt/'backend').write_text('asic9690\n')
         os.mkfifo(miniolt/'management_grant')

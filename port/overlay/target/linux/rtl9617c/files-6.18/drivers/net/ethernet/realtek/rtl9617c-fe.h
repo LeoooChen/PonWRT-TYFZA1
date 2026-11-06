@@ -12,6 +12,8 @@ void rtl_fe_free(struct rtl_fe *fe);
 int rtl_fe_add_port(struct rtl_fe *fe, struct net_device *netdev,
                     unsigned int source, unsigned int destination, unsigned int llid);
 int rtl_fe_add_fttr_port(struct rtl_fe *fe, struct net_device *netdev);
+void rtl_fe_set_fttr_mcast(struct rtl_fe *fe, struct net_device *netdev);
+int rtl_fe_flush_multicast(struct rtl_fe *fe, bool fttr_only);
 int rtl_fe_fttr_open(struct rtl_fe *fe);
 int rtl_fe_fttr_close(struct rtl_fe *fe);
 int rtl_fe_fttr_set(struct rtl_fe *fe, bool allowed);

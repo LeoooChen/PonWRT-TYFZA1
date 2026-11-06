@@ -375,8 +375,11 @@ static int fe_bridge_netdev_event(struct notifier_block *notifier,unsigned long 
  if(event==NETDEV_REGISTER || event==NETDEV_UP)fe_bridge_wire_port(bridge,dev,true);
  if(event==NETDEV_UNREGISTER)fe_bridge_wire_port(bridge,dev,false);
  switch(event) {
- case NETDEV_DOWN:case NETDEV_CHANGE:case NETDEV_CHANGEUPPER:
+ case NETDEV_DOWN:case NETDEV_CHANGE:case NETDEV_CHANGEUPPER:case NETDEV_CHANGEMTU:
  case NETDEV_PRECHANGEUPPER:case NETDEV_CHANGEINFODATA:case NETDEV_CHANGEADDR:
+  /* Explicit multicast TC rules must not survive a logical upper closing
+   * or a topology change on any replica. All group recipients are a unit. */
+  rtl_fe_flush_multicast(bridge->fe,false);
   atomic_inc(&bridge->epoch);atomic_set(&bridge->flush,1);
   mod_delayed_work(system_wq,&bridge->work,0);break;
  }

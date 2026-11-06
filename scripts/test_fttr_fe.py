@@ -11,7 +11,7 @@ source = (headers/'rtl9617c-fe.c').read_text()
 
 
 def function(name):
-    start = re.search(r'^(?:static )?int '+name+r'\([^;]*?\)\n\{', source, re.M).start()
+    start = re.search(r'^(?:static )?(?:int|bool) '+name+r'\([^;]*?\)\n\{', source, re.M).start()
     pos = source.index('{', start)+1
     depth = 1
     while depth:
@@ -33,11 +33,11 @@ shim = r'''
 struct mutex { int held; };
 struct net_device { int id; };
 struct rtl_fe_port { struct net_device *netdev; unsigned int source; bool retired; };
-struct rtl_fe_flow { struct rtl_fe_flow *next; struct rtl_fe_port *input,*output; int id; bool deleting; };
+struct rtl_fe_flow { struct rtl_fe_flow *next; struct rtl_fe_port *input,*output,**replica_ports; unsigned int replica_count; int id; bool deleting; };
 struct rtl_fe {
  struct mutex lock;
  struct rtl_fe_flow *flows;
- struct net_device *fttr_netdev;
+ struct net_device *fttr_netdev,*fttr_mcast;
  struct rtl_fttr_cf fttr_cf;
  bool fttr_live,fttr_requested,fttr_admitted,enabled,prepared,pon_requested;
  unsigned int lan_saved[5],prepares,restores;
@@ -97,10 +97,12 @@ admission = install[install.index(' if(port->retired)'):install.index(' if(fe_fl
 shim += r'''
 #define netif_running(d) ((d)!=NULL)
 #define netif_carrier_ok(d) ((d)!=NULL)
-struct rtl_fe_rule {struct rtl_fe_port *input,*output;};
+struct rtl_fe_mc_rule {unsigned int count;struct rtl_fe_port *port[64];};
+struct rtl_fe_rule {struct rtl_fe_port *input,*output;struct rtl_fe_mc_rule *multicast;};
+static bool rtl_fttr_mcast_ready(struct net_device *dev){return dev!=NULL;}
 static int admission_check(struct rtl_fe *fe,struct rtl_fe_port *input,struct rtl_fe_port *output) {
  struct rtl_fe_port *port=input;
- struct rtl_fe_rule data={input,output};
+ struct rtl_fe_rule data={.input=input,.output=output};unsigned int i;
 '''+admission+r'''
  return 0;
 }
@@ -186,7 +188,7 @@ int main(void)
 with tempfile.TemporaryDirectory(dir=root/'artifacts/fttr') as directory:
     directory = Path(directory)
     (directory/'check.c').write_text(shim+'\n'+'\n'.join(function(name) for name in
-        ['fe_fttr_route_locked','fe_fttr_quiesce_locked','fe_disable_locked','fe_enable_locked',
+        ['fe_flow_fttr','fe_fttr_route_locked','fe_fttr_quiesce_locked','fe_disable_locked','fe_enable_locked',
          'fe_pon_quiesce_locked','rtl_fe_enable','rtl_fe_disable','rtl_fe_fttr_open','rtl_fe_fttr_close','rtl_fe_fttr_set'])+'\n'+check)
     subprocess.run(['cc','-O1','-g','-fsanitize=address,undefined','-Wall','-Wextra','-Werror','-I'+str(headers),str(directory/'check.c'),'-o',str(directory/'check')],check=True)
     subprocess.run([str(directory/'check')],check=True)

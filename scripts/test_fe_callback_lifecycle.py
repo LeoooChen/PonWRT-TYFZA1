@@ -36,7 +36,7 @@ enum {FLOW_BLOCK_BIND,FLOW_BLOCK_UNBIND,FLOW_BLOCK_BINDER_TYPE_CLSACT_INGRESS};
 struct net_device {int id;};
 struct rtl_fe;
 struct rtl_fe_port {struct list_head list;struct rtl_fe *fe;struct net_device *netdev;unsigned int bindings;bool retired;};
-struct rtl_fe_flow {struct list_head list;struct rtl_fe_port *input,*output;};
+struct rtl_fe_flow {struct list_head list;struct rtl_fe_port *input,*output,**replica_ports;unsigned int replica_count;};
 struct rtl_fe {struct list_head ports,flows,blocks;int lock;};
 struct flow_block_cb {struct list_head list,driver_list;void *cb_priv;void (*release)(void *);unsigned int references;};
 struct flow_block_offload {int binder_type,command;struct list_head cb_list;struct list_head *driver_block_list;struct flow_block_cb *bound;void *block;};
@@ -87,7 +87,7 @@ int main(void){
 with tempfile.TemporaryDirectory(prefix='fe-callback-', dir=root / 'artifacts') as directory:
     p = Path(directory)
     (p / 'test.c').write_text(common + ''.join(function(n) for n in
-        ('fe_port', 'fe_collect_ports', 'fe_block_release', 'rtl_fe_setup_tc')) + test)
+        ('fe_port', 'fe_flow_port', 'fe_collect_ports', 'fe_block_release', 'rtl_fe_setup_tc')) + test)
     subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
                     str(p / 'test.c'), '-o', str(p / 'test')], check=True)
     subprocess.run([str(p / 'test')], check=True)

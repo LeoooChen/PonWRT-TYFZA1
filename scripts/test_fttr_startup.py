@@ -154,6 +154,7 @@ def main():
             monitor = bad.startswith('monitor') or bad == 'temperature'
             optical.joinpath('maintenance').write_text('supported=1 interval_ms=200\n' if monitor else 'supported=0 interval_ms=0\n')
             ni.joinpath('fttr_forward').write_text('0\n')
+            ni.joinpath('fttr_mcast_flush').write_text('')
             miniolt.joinpath('onu_table').write_text(''.join(f'{i} 00000000 00000000 00000000 0000000000000000\n' for i in range(64)))
             log=case/'commands';log.write_text('')
             env=dict(os.environ,LD_PRELOAD=str(work/'sysfs.so'),FTTR_TEST_ROOT=str(case),

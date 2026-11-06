@@ -22,6 +22,16 @@ struct rtl_fttr_mcast {
 	bool admitted;
 };
 
+bool rtl_fttr_mcast_ready(const struct net_device *dev)
+{
+	const struct rtl_fttr_mcast *mc;
+
+	if (!dev || !netif_running(dev) || !netif_carrier_ok(dev))
+		return false;
+	mc = netdev_priv(dev);
+	return READ_ONCE(mc->admitted) && netif_running(mc->parent) && netif_carrier_ok(mc->parent);
+}
+
 /* Packets here still include their Ethernet header. Inspect the outer GEM
  * independently of customer tags. Native service VLANs are created by fttrd.
  */

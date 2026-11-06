@@ -29,6 +29,7 @@ common = r'''
 #include <stddef.h>
 #include <string.h>
 #include "rtl9617c-fe-pipeline.h"
+#include "rtl9617c-fe-mcast-owner.h"
 typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;
 typedef uint32_t __le32;typedef uint64_t u64;
 #define ETH_ALEN 6
@@ -60,6 +61,7 @@ struct work_struct {int unused;};
 struct delayed_work {struct work_struct work;unsigned int queued;};
 #define to_delayed_work(w) container_of(w,struct delayed_work,work)
 struct rtl_fe {
+ struct rtl_fe_mc_owner multicast;
  struct list_head flows,ports,retries;
  struct rb_root cookies;
  void *memory;
@@ -167,7 +169,7 @@ int main(void){
 }
 '''
 parts = [common,re.search(r'struct rtl_fe_flow \{.*?\n\};',native,re.S)[0]]
-parts += [function(n) for n in ('fe_collect_ports','fe_source_put','fe_interface_put','fe_mtu_get','fe_mtu_put','fe_destination_put','fe_delete','fe_cleanup_work')]
+parts += [function(n) for n in ('fe_flow_port','fe_collect_ports','fe_source_put','fe_interface_put','fe_mtu_get','fe_mtu_put','fe_destination_put','fe_delete','fe_cleanup_work')]
 parts.append(test)
 with tempfile.TemporaryDirectory(dir=root/'artifacts',prefix='fe-release-') as work:
     source=Path(work)/'release.c';binary=Path(work)/'release'

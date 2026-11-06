@@ -157,6 +157,12 @@ int main(void){
  memcpy(mcdev.dev_addr,"\x02\0\0\0\0\x88",6);
  service=(struct net_device){.ifindex=3,.running=true,.vlan=true,.parent=&parent,.master=&bridge,
   .vid=263,.proto=htons(0x8100),.group=0x46544d55,.stp=BR_STATE_FORWARDING};other.ifindex=4;
+ assert(!rtl_fttr_mcast_ready(NULL) && !rtl_fttr_mcast_ready(&mcdev));
+ mcdev.carrier=true;assert(rtl_fttr_mcast_ready(&mcdev));
+ mc.admitted=false;assert(!rtl_fttr_mcast_ready(&mcdev));mc.admitted=true;
+ parent.carrier=false;assert(!rtl_fttr_mcast_ready(&mcdev));parent.carrier=true;
+ parent.running=false;assert(!rtl_fttr_mcast_ready(&mcdev));parent.running=true;
+ mcdev.carrier=false;
  for(unsigned tags=0;tags<3;tags++)for(unsigned ip=4;ip<=6;ip+=2)for(unsigned metadata=0;metadata<2;metadata++){
   struct sk_buff*s=packet(tags,ip,true,metadata),*plain=packet(tags,ip,false,false);
   unsigned old=delivered;assert(rtl_fttr_mcast_receive(&mcdev,&napi,s));

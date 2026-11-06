@@ -38,6 +38,7 @@ common = r'''
 #include <linux/ip.h>
 #include <linux/ppp_defs.h>
 #include "rtl9617c-fe-format.h"
+#include "rtl9617c-fe-mcast.h"
 #include "rtl9617c-pon-path.h"
 typedef uint8_t u8;typedef uint16_t u16,__be16;typedef uint32_t u32;
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
@@ -58,7 +59,8 @@ typedef uint8_t u8;typedef uint16_t u16,__be16;typedef uint32_t u32;
 #define unlikely(x) (x)
 enum {FLOW_DISSECTOR_KEY_META,FLOW_DISSECTOR_KEY_BASIC,FLOW_DISSECTOR_KEY_IPV4_ADDRS,
  FLOW_DISSECTOR_KEY_PORTS,FLOW_DISSECTOR_KEY_VLAN,FLOW_DISSECTOR_KEY_CVLAN,FLOW_DISSECTOR_KEY_ENC_CONTROL,FLOW_DISSECTOR_KEY_IPV6_ADDRS,FLOW_DISSECTOR_KEY_PPPOE,FLOW_DISSECTOR_KEY_CONTROL,FLOW_DISSECTOR_KEY_TCP,FLOW_DISSECTOR_KEY_ETH_ADDRS,FLOW_DISSECTOR_KEY_MAX};
-enum {FLOW_ACTION_REDIRECT,FLOW_ACTION_CSUM,FLOW_ACTION_MANGLE,FLOW_ACTION_VLAN_POP,FLOW_ACTION_VLAN_PUSH,FLOW_ACTION_PPPOE_PUSH};
+enum {FLOW_ACTION_REDIRECT,FLOW_ACTION_CSUM,FLOW_ACTION_MANGLE,FLOW_ACTION_VLAN_POP,FLOW_ACTION_VLAN_PUSH,FLOW_ACTION_PPPOE_PUSH,FLOW_ACTION_MIRRED};
+#define fallthrough __attribute__((fallthrough))
 enum flow_action_mangle_base {FLOW_ACT_MANGLE_HDR_TYPE_ETH,FLOW_ACT_MANGLE_HDR_TYPE_IP4,
  FLOW_ACT_MANGLE_HDR_TYPE_TCP,FLOW_ACT_MANGLE_HDR_TYPE_UDP};
 struct net_device {int ifindex;};
@@ -116,11 +118,15 @@ static struct flow_rule *flow_cls_offload_flow_rule(struct flow_cls_offload *f){
 #define flow_action_for_each(i,act,a) for(i=0;i<(int)(a)->num_entries && ((act)=&(a)->entries[i]);i++)
 static void ether_addr_copy(u8 *d,const u8 *s){memcpy(d,s,6);}
 static bool is_valid_ether_addr(const u8 *m){return !(m[0]&1) && memcmp(m,"\0\0\0\0\0\0",6);}
+static bool is_multicast_ether_addr(const u8 *m){return m[0]&1;}
+static bool is_broadcast_ether_addr(const u8 *m){return !memcmp(m,"\xff\xff\xff\xff\xff\xff",6);}
 static u32 get_unaligned(const u32 *p){u32 v;memcpy(&v,p,4);return v;}
 static void put_unaligned(u32 v,u32 *p){memcpy(p,&v,4);}
 struct rtl_fe;
 struct rtl_fe_port {struct rtl_fe *fe;struct net_device *netdev;unsigned int source,destination,llid,wifi_id;};
-struct rtl_fe {struct rtl_fe_port *ports[2];struct net_device *itu_netdev,*fttr_netdev;struct rtl_itu_paths *itu_paths;};
+struct rtl_fe {struct rtl_fe_port *ports[2];struct net_device *itu_netdev,*fttr_netdev,*fttr_mcast;struct rtl_itu_paths *itu_paths;};
+static bool mcast_ready=true;
+static bool rtl_fttr_mcast_ready(const struct net_device *dev){return dev && mcast_ready;}
 static struct rtl_fe_port *fe_port(struct rtl_fe *fe,struct net_device *dev){for(unsigned int i=0;i<2;i++)if(fe->ports[i]->netdev==dev)return fe->ports[i];return NULL;}
 struct net {};
 enum flow_offload_tuple_dir {FLOW_OFFLOAD_DIR_ORIGINAL,FLOW_OFFLOAD_DIR_REPLY};
@@ -576,14 +582,74 @@ int main(void)
   memset(&parsed,0,sizeof(parsed));assert(fe_parse(&pp,&cls,&parsed)==-EOPNOTSUPP);
   fttr_cases++;
  }
- printf("Native flow parser: %u NAT/IPv6, %u VLAN/QinQ, 8 bidirectional PPPoE, %u transparent bridge and %u P6 service routing vectors passed\n",cases,vlan_cases,bridge_cases,fttr_cases);
+ {
+  struct net_device shared={.ifindex=12};
+  struct rtl_fe_mc_rule mc={0};
+  struct rtl_fe_rule parsed={.multicast=&mc};
+  struct flow_rule rule={.used=BIT(FLOW_DISSECTOR_KEY_BASIC)|BIT(FLOW_DISSECTOR_KEY_ETH_ADDRS),
+   .basic={.n_proto=htons(ETH_P_IP)},.basic_mask={.n_proto=65535}};
+  struct flow_cls_offload cls={.rule=&rule};
+  memcpy(rule.eth.src,source,6);memcpy(rule.eth.dst,"\1\0\x5e\1\2\3",6);
+  memset(&rule.eth_mask,255,sizeof(rule.eth_mask));
+  fe.fttr_netdev=&pon;fe.fttr_mcast=&shared;pp.source=pp.destination=6;
+  rule.action.entries[0]=(struct flow_action_entry){.id=FLOW_ACTION_VLAN_PUSH,.vlan={.vid=100,.proto=htons(ETH_P_8021Q),.prio=3}};
+  rule.action.entries[1]=(struct flow_action_entry){.id=FLOW_ACTION_REDIRECT,.dev=&shared};
+  rule.action.num_entries=2;
+  assert(!fe_parse(&lp,&cls,&parsed) && mc.count==1 && mc.port[0]==&pp);
+  assert(mc.replica[0].tags==2 && mc.replica[0].tag[0].tci==4095 && mc.replica[0].tag[1].tci==(100|3<<13));
+  mcast_ready=false;mc=(struct rtl_fe_mc_rule){0};parsed=(struct rtl_fe_rule){.multicast=&mc};
+  assert(fe_parse(&lp,&cls,&parsed)==-EOPNOTSUPP);
+  mcast_ready=true;rule.action.entries[1].dev=&pon;
+  mc=(struct rtl_fe_mc_rule){0};parsed=(struct rtl_fe_rule){.multicast=&mc};
+  assert(fe_parse(&lp,&cls,&parsed)==-EOPNOTSUPP); /* Raw P6 does not authorize shared GEM. */
+  rule.action.entries[1].dev=&shared;rule.action.entries[1].id=FLOW_ACTION_MIRRED;
+  mc=(struct rtl_fe_mc_rule){0};parsed=(struct rtl_fe_rule){.multicast=&mc};
+  assert(fe_parse(&lp,&cls,&parsed)==-EOPNOTSUPP); /* Mirror-only must retain Linux continuation. */
+  rule.action.entries[2]=(struct flow_action_entry){.id=FLOW_ACTION_VLAN_POP};
+  rule.action.entries[3]=(struct flow_action_entry){.id=FLOW_ACTION_REDIRECT,.dev=&pon};
+  rule.action.num_entries=4;pp.destination=1;fe.fttr_netdev=NULL;
+  mc=(struct rtl_fe_mc_rule){0};parsed=(struct rtl_fe_rule){.multicast=&mc};
+  rule.action.entries[1].dev=&pon;
+  assert(!fe_parse(&lp,&cls,&parsed) && mc.count==2);
+  assert(mc.replica[0].tags==1 && mc.replica[1].tags==0 && mc.port[0]==mc.port[1]);
+  rule.action.entries[3].dev=&lan;
+  mc=(struct rtl_fe_mc_rule){0};parsed=(struct rtl_fe_rule){.multicast=&mc};
+  assert(fe_parse(&lp,&cls,&parsed)==-EOPNOTSUPP); /* Same input needs explicit loopback semantics. */
+  rule.action.entries[3].dev=&pon;rule.used|=BIT(FLOW_DISSECTOR_KEY_VLAN);
+  rule.vlan=(struct flow_dissector_key_vlan){.vlan_id=200,.vlan_tpid=htons(ETH_P_8021Q)};
+  rule.vlan_mask=(struct flow_dissector_key_vlan){.vlan_id=4095,.vlan_tpid=65535};
+  mc=(struct rtl_fe_mc_rule){0};parsed=(struct rtl_fe_rule){.multicast=&mc};
+  assert(fe_parse(&lp,&cls,&parsed)==-EOPNOTSUPP); /* No guessed PCP/DEI of retained input tags. */
+  /* Exact ingress PCP/DEI makes the retained final tag fully specified.
+   * Iterate every TCI priority/dei pair, including nonzero DEI. */
+  rule.action.num_entries=1;
+  rule.action.entries[0]=(struct flow_action_entry){.id=FLOW_ACTION_REDIRECT,.dev=&pon};
+  for(unsigned int tags=1;tags<=2;tags++)for(unsigned int bits=0;bits<16;bits++) {
+   rule.vlan.vlan_priority=bits>>1;rule.vlan.vlan_dei=bits&1;
+   rule.vlan_mask.vlan_priority=7;rule.vlan_mask.vlan_dei=1;
+   if(tags==2) {
+    rule.used|=BIT(FLOW_DISSECTOR_KEY_CVLAN);
+    rule.cvlan=rule.vlan;rule.cvlan.vlan_id=201;rule.cvlan_mask=rule.vlan_mask;
+   }
+   mc=(struct rtl_fe_mc_rule){0};parsed=(struct rtl_fe_rule){.multicast=&mc};
+   assert(!fe_parse(&lp,&cls,&parsed) && mc.count==1 && parsed.vlan_exact && parsed.key.mask==59);
+   assert(mc.replica[0].tags==tags && mc.replica[0].tag[0].tci==(200U|bits>>1<<13|(bits&1)<<12));
+   assert(parsed.ingress_tci[0]==mc.replica[0].tag[0].tci);
+   if(tags==2)assert(parsed.ingress_tci[1]==mc.replica[0].tag[1].tci);
+  }
+  rule.cvlan_mask.vlan_priority=rule.cvlan_mask.vlan_dei=0;
+  mc=(struct rtl_fe_mc_rule){0};parsed=(struct rtl_fe_rule){.multicast=&mc};
+  assert(fe_parse(&lp,&cls,&parsed)==-EOPNOTSUPP);
+ }
+ printf("Native flow parser: %u NAT/IPv6, %u VLAN/QinQ, 8 bidirectional PPPoE, %u transparent bridge, %u P6 and multicast replica routing vectors passed\n",cases,vlan_cases,bridge_cases,fttr_cases);
 }
 '''
 
-parts = [common, re.search(r'struct rtl_fe_rule \{.*?\n\};', native, re.S)[0]]
+parts = [common, re.search(r'struct rtl_fe_mc_rule \{.*?\n\};', native, re.S)[0],
+         re.search(r'struct rtl_fe_rule \{.*?\n\};', native, re.S)[0]]
 parts += [function(native,n) for n in ('fe_vlan_tpid','fe_vlan_match')]
 parts += [(drivers / 'rtl9617c-fe-vlan.h').read_text()]
-parts += [function(native,n) for n in ('fe_parse_bridge','fe_parse')]
+parts += [function(native,n) for n in ('fe_bridge_vlan_match','fe_parse_bridge','fe_parse')]
 for name in ('flow_action_entry_next','flow_offload_mangle','flow_offload_ipv4_snat',
              'flow_offload_l4proto','flow_offload_port_snat'):
     parts.append(function(upstream, name))

@@ -11,10 +11,46 @@ from arm64_module_oracle import ModuleOracle
 from unicorn.arm64_const import UC_ARM64_REG_X4, UC_ARM64_REG_X7
 
 
+def ni_multicast_init(module):
+    """Execute the original NI initializer; stop at the next init stage."""
+    class MulticastInitialized(Exception): pass
+    base, cleared = 0x6000000, []
+    def boundary(name, values):
+        if name == '__ni_rxmux_init':
+            return 0
+        if name == 'aal_ni_mc_lkup_set':
+            assert values[0] == 0 and values[2] == 0
+            cleared.append(values[1])
+            return 0
+        if name == 'aal_ni_pkt_len_set':
+            raise MulticastInitialized
+        raise AssertionError(('unmodeled NI init boundary', name, values))
+    ni = ModuleOracle(module, ['aal_ni_init'], boundary)
+    ni.uc.mem_map(base, 0x10000)
+    ni.word(ni.symbols['g_ne_reg_iobase'][0], base)
+    cases = []
+    for seed in (0x2f0ff, 0x12345678, 0xffffffff):
+        cleared.clear()
+        ni.uc.mem_write(base + 0xa004, struct.pack('<I', 2))
+        ni.uc.mem_write(base + 0xaa60, struct.pack('<I', seed))
+        try:
+            ni.call('aal_ni_init', 0, instruction_budget=100000)
+            raise AssertionError('NI multicast boundary was not reached')
+        except MulticastInitialized:
+            pass
+        value = ni.unpack(base + 0xaa60, 'I')[0]
+        assert cleared == list(range(1024))
+        assert value == (seed & ~1023) | 23
+        cases.append(dict(before=seed, after=value, clear_calls=len(cleared)))
+    return dict(cases=cases, findings=[
+        'Original aal_ni_init changes only MCE FIFO threshold bits0..9 to23; min size, source-to-POL copy and flush bits are inherited.',
+        'The original initializer calls the NI clear API1024 times although its command index is8 bits. Native ownership must not clear inherited entries.'])
+
+
 def arbitration_init(module, fc_module):
     """Execute original arbitration defaults and FC's subsequent overrides."""
     base = 0x6000000
-    pending, tables, events = {}, {0x164c: {}, 0x1654: {}}, []
+    pending, tables, events = {}, {0x164c: {}, 0x1654: {}, 0x1420: {}, 0x1574: {}}, []
     def boundary(name, values):
         if name == 'ca_spin_lock_init':
             ni.word(values[0], 1)
@@ -28,7 +64,9 @@ def arbitration_init(module, fc_module):
             return 0
         raise AssertionError(('unmodeled arbitration init boundary', name, values))
     ni = ModuleOracle(module, ['aal_arb_init', 'aal_arb_ctrl_set', 'aal_arb_port_dbuf_set',
-        'aal_port_arb_ldpid_pdpid_map_set', 'aal_port_arb_ldpid_pdpid_map_set.part.0'], boundary)
+        'aal_port_arb_ldpid_pdpid_map_set', 'aal_port_arb_ldpid_pdpid_map_set.part.0',
+        'aal_port_elpb_cfg_set', 'aal_port_mmshp_check_set',
+        'aal_port_mmshp_check_set.part.0'], boundary)
     ni.uc.mem_map(base, 0x10000)
     ni.word(ni.symbols['g_ne_reg_iobase'][0], base)
     # Reset ARB_CTRL from the matching register map; only producer-modified
@@ -43,7 +81,13 @@ def arbitration_init(module, fc_module):
         elif reg in pending:
             command = pending.pop(reg)
             index = command & (7 if reg == 0x164c else 255)
-            if command & (1 << 30): tables[reg][index] = ni.unpack(base + reg + 4, 'I')[0]
+            if reg in (0x1420, 0x1574):
+                data = (0x1428,0x1424) if reg == 0x1420 else (0x157c,0x1578)
+                if command & (1 << 30): tables[reg][index] = [ni.unpack(base+r,'I')[0] for r in data]
+                else:
+                    for r,v in zip(data,tables[reg].get(index,[0,0])):
+                        uc.mem_write(base+r,struct.pack('<I',v))
+            elif command & (1 << 30): tables[reg][index] = ni.unpack(base + reg + 4, 'I')[0]
             else: uc.mem_write(base + reg + 4, struct.pack('<I', tables[reg].get(index, 0)))
             uc.mem_write(address, struct.pack('<I', command & ~(1 << 31)))
     ni.uc.hook_add(UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE, mmio, begin=base, end=base + 65535)
@@ -51,6 +95,7 @@ def arbitration_init(module, fc_module):
     assert tables[0x164c] == dict.fromkeys(range(8), 0)
     arb_control = ni.unpack(base + 0x1600, 'I')[0]
     assert arb_control == (0x09c71d80 & ~(1 << 8)) | 1 << 31 | 2
+    assert ni.unpack(base + 0x160c, 'I')[0] & 1
     def fc_boundary(name, values):
         if name == 'aal_arb_port_dbuf_set':
             data = bytes(fc.uc.mem_read(values[3], 20))
@@ -66,7 +111,25 @@ def arbitration_init(module, fc_module):
     fc.call('rtk_8277c_asic_l2fe_init.isra.0')
     assert tables[0x164c] == {**dict.fromkeys(range(7), 0), 7: 1 | 1 << 8 | 17 << 9}
     assert {index: tables[0x1654][index] for index in (6, 70, 134, 198)} == {6: 6, 70: 8, 134: 6, 198: 8}
-    return dict(arb_control=hex(arb_control), port_deep_buffer_table=tables[0x164c],
+    original_dbuf=dict(tables[0x164c])
+    # Execute the exact native P6 destination-match and egress low-field
+    # recipes through the original setters; do not claim this is FC's default.
+    pointer=ni.scratch+0x1000
+    ni.uc.mem_write(pointer,struct.pack('<5I',1,1,6,0,0))
+    assert ni.call('aal_arb_port_dbuf_set',0,0,31,pointer)==0
+    assert tables[0x164c][0]==0x1b
+    ni.uc.mem_write(pointer,struct.pack('<4I',1,1,0,0)+bytes(48))
+    tables[0x1420][6]=[0x1230,0x4500]
+    assert ni.call('aal_port_elpb_cfg_set',0,6,15,pointer)==0
+    assert tables[0x1420][6]==[0x1233,0x4500]
+    for source in (0,4,6,27,63):
+        assert ni.call('aal_port_mmshp_check_set',0,source,((1<<64)-1)^(1<<source))==0
+        assert tables[0x1574][source]==[
+            (((1<<64)-1)^(1<<source))&0xffffffff,
+            (((1<<64)-1)^(1<<source))>>32]
+    return dict(arb_control=hex(arb_control), port_deep_buffer_table=original_dbuf,
+        native_p6_dbuf=0x1b,native_p6_egress=tables[0x1420][6],
+        port_membership_table=tables[0x1574],
         p6_destination_map={index: tables[0x1654][index] for index in (6, 70, 134, 198)},
         events=events, findings=[
             'Original ARB init clears all8 port deep-buffer rules, preserves original multicast source, uses flow-ID table selection and disables HeaderA deep-buffer gating.',
@@ -474,6 +537,7 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(dict(module_sha256=hashlib.sha256(args.module.read_bytes()).hexdigest(),
         descriptors=descriptors, lookup=lookup, action_recipes=action_recipes(args.module),
+        ni_multicast_init=ni_multicast_init(args.module),
         group_lifecycle=group_lifecycle(args.module),
         hash_recipes=hash_recipes(args.fc, args.module) if args.fc else None,
         fc_sha256=hashlib.sha256(args.fc.read_bytes()).hexdigest() if args.fc else None,

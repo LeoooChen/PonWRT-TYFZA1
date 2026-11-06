@@ -303,6 +303,7 @@ def main():
         device.joinpath('host_serdes').write_text('mode=9 nway=1 pll=1 error=0 link=1\n')
         ni.joinpath('fttr_link').write_text('configured=1 mode=9 nway=1 clock=1 error=0 link=1\n')
         ni.joinpath('fttr_forward').write_text('0\n')
+        ni.joinpath('fttr_mcast_flush').write_text('')
         device.joinpath('tx_enable').write_text('1\n')
         device.joinpath('backend').write_text(args.backend+'\n')
         auth_policy=root/'loid.bin'
@@ -457,6 +458,16 @@ def main():
         assert device.joinpath('tx_enable').read_text()=='0\n'
         store.joinpath('status.json').unlink();device.joinpath('tx_enable').write_text('1\n')
         ni.joinpath('fttr_forward').write_text('0\n')
+        ni.joinpath('fttr_link').write_text('configured=1 mode=9 nway=1 clock=1 error=0 link=1\n')
+        # A down netdev is not a hardware acknowledgement: the kernel ignores
+        # ndo_stop's error. Missing synchronous multicast flush must fail too.
+        ni.joinpath('fttr_mcast_flush').unlink()
+        rejected=subprocess.run([str(args.daemon.resolve()),str(device),str(ni),str(store),'fap-host'],
+            capture_output=True,text=True,timeout=2)
+        assert rejected.returncode==1 and json.loads(store.joinpath('status.json').read_text())['error']==-errno.ENOENT
+        assert device.joinpath('tx_enable').read_text()=='0\n'
+        store.joinpath('status.json').unlink();device.joinpath('tx_enable').write_text('1\n')
+        ni.joinpath('fttr_mcast_flush').write_text('')
         ni.joinpath('fttr_link').write_text('configured=1 mode=9 nway=1 clock=1 error=0 link=1\n')
         subprocess.run(['ip','link','set','dev','fap-host','up'],check=True)
         if args.auth:

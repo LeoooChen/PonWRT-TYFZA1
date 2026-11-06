@@ -62,6 +62,7 @@ static void rtl_fttr_mcast_gate(struct net_device *d,bool enabled){(void)d;asser
  assert(enabled==shared.fttr_forwarding);if(enabled)assert(fe_enabled);mc_admitted=enabled;}
 static bool rtl_fttr_mcast_receive(struct net_device *d,struct napi_struct *n,struct sk_buff *s){(void)d;(void)n;(void)s;return false;}
 static int rtl_fe_fttr_set(int fe,bool enabled){(void)fe;assert(rtnl);interleave();fe_requested=enabled;if(!failed_fe)fe_enabled=enabled;return failed_fe;}
+static int rtl_fe_flush_multicast(int fe,bool fttr_only){(void)fe;assert(rtnl && fttr_only);return failed_fe;}
 static void synchronize_net(void){assert(rtnl && !locked);synchronized++;interleave();}
 static void rtl_fttr_rx_purge(struct rtl_xram *priv){assert(priv==&shared);synchronize_net();}
 static void dev_deactivate(struct net_device *d){assert(d==&parent && rtnl && !locked);qdisc_active=false;purged++;interleave();}
@@ -71,6 +72,7 @@ if 'static bool rtl_fttr_management(' in text:
     source+=function(text,'rtl_fttr_management')
 source+=function(text,'rtl9617c_ni_transmit')+function(text,'rtl_fttr_receive')
 source+=function(text,'fttr_accel_store')
+source+=function(text,'fttr_mcast_flush_store')
 if 'static ssize_t fttr_forward_store(' in text:
     source+=function(text,'fttr_forward_store')
 else:
@@ -129,6 +131,13 @@ int main(void){
  for(unsigned i=0;i<7;i++){const char *invalid[]={"","1","1 0000","1 8100","1 88a8","2 8888","0 extra"};
   assert(fttr_forward_store(&device,NULL,invalid[i],strlen(invalid[i]))==-EINVAL);}
  assert(purged==old);
+ struct net_device mc={.running=true};shared.fttr_mc=&mc;
+ assert(fttr_mcast_flush_store(&device,NULL,"1\n",2)==-EBUSY && !rtnl);
+ mc.running=false;failed_fe=-ETIMEDOUT;
+ assert(fttr_mcast_flush_store(&device,NULL,"1\n",2)==-ETIMEDOUT && !rtnl);
+ failed_fe=0;assert(fttr_mcast_flush_store(&device,NULL,"1\n",2)==2);
+ assert(fttr_mcast_flush_store(&device,NULL,"0\n",2)==-EINVAL);
+ assert(fttr_mcast_flush_store(&device,NULL,"1 x",3)==-EINVAL);
  shared.fttr_loading=true;assert(fttr_forward_store(&device,NULL,"1 8888",6)==-EBUSY);shared.fttr_loading=false;
  shared.p6.configured=false;assert(fttr_forward_store(&device,NULL,"1 8888",6)==-ENETDOWN);shared.p6.configured=true;
  shared.fttr_tx_active=false;struct sk_buff s=packet(0x8888);

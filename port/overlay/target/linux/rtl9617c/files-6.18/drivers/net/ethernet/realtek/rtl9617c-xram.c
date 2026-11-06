@@ -919,6 +919,7 @@ static int rtl_register_fttr(struct rtl_xram *priv)
 		unregister_netdevice(dev);
 		return ret;
 	}
+	rtl_fe_set_fttr_mcast(priv->fe, priv->fttr_mc);
 	rcu_assign_pointer(priv->qm.fttr, &port->endpoint);
 	return 0;
 }
@@ -941,6 +942,7 @@ static void rtl_unregister_fttr(struct rtl_xram *priv)
 	WRITE_ONCE(priv->fttr_omci_type, 0);
 	rtl_fttr_rx_purge(priv);
 	mc = priv->fttr_mc;
+	rtl_fe_set_fttr_mcast(priv->fe, NULL);
 	WRITE_ONCE(priv->fttr_mc, NULL);
 	rtnl_unlock();
 	rtl_fttr_mcast_destroy(mc);
@@ -1633,6 +1635,29 @@ static ssize_t fttr_accel_store(struct device *dev, struct device_attribute *att
 }
 static DEVICE_ATTR_RW(fttr_accel);
 
+/* ndo_stop's return value is ignored by net/core/dev.c. The resident owner
+ * must obtain this synchronous acknowledgement after closing fttr-mc and
+ * before releasing remote GEM membership or reusing its local service. */
+static ssize_t fttr_mcast_flush_store(struct device *dev, struct device_attribute *attr,
+				    const char *buf, size_t count)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	unsigned int value;
+	char extra;
+	int ret;
+
+	if (sscanf(buf, "%u %c", &value, &extra) != 1 || value != 1)
+		return -EINVAL;
+	rtnl_lock();
+	if (priv->fttr_mc && netif_running(priv->fttr_mc))
+		ret = -EBUSY;
+	else
+		ret = rtl_fe_flush_multicast(priv->fe, true);
+	rtnl_unlock();
+	return ret ? ret : count;
+}
+static DEVICE_ATTR_WO(fttr_mcast_flush);
+
 /* GRO retains the Ethernet protocol even after eth_type_trans pulls the
  * header. In-band or metadata VLANs cannot turn business into management.
  */
@@ -1695,8 +1720,12 @@ static void rtl_fttr_rx_purge(struct rtl_xram *priv)
 void rtl_fttr_mcast_quiesce(struct net_device *parent)
 {
 	struct rtl_fttr_port *port = netdev_priv(parent);
+	int ret;
 
 	ASSERT_RTNL();
+	ret = rtl_fe_flush_multicast(port->shared->fe, true);
+	if (ret)
+		netdev_err(parent, "multicast FE withdrawal failed: %d\n", ret);
 	rtl_fttr_rx_purge(port->shared);
 	/* The DMA queue has one P6 owner. Clear its software qdisc as on a
 	 * forwarding withdrawal; other physical NI ports keep their queues.
@@ -1796,6 +1825,7 @@ static struct attribute *rtl_native_attrs[] = {
 	&dev_attr_rx_bypass.attr,
 	&dev_attr_fttr_link.attr,
 	&dev_attr_fttr_accel.attr,
+	&dev_attr_fttr_mcast_flush.attr,
 	&dev_attr_fttr_forward.attr,
 	NULL,
 };
@@ -1804,7 +1834,7 @@ static umode_t rtl_native_visible(struct kobject *kobj, struct attribute *attr, 
 	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(kobj_to_dev(kobj)));
 
 	if ((attr == &dev_attr_fttr_link.attr || attr == &dev_attr_fttr_accel.attr ||
-	     attr == &dev_attr_fttr_forward.attr) && !priv->p6.qx)
+	     attr == &dev_attr_fttr_forward.attr || attr == &dev_attr_fttr_mcast_flush.attr) && !priv->p6.qx)
 		return 0;
 	if (!priv->qm_rx &&
 	    (attr == &dev_attr_qm_pool.attr || attr == &dev_attr_pon_deepq.attr || attr == &dev_attr_qm_trace.attr ||

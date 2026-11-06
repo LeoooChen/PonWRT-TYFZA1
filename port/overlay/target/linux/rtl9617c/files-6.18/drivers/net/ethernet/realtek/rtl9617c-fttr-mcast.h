@@ -11,6 +11,7 @@ void rtl_fttr_mcast_destroy(struct net_device *dev);
 void rtl_fttr_mcast_gate(struct net_device *dev, bool admitted);
 void rtl_fttr_mcast_link(struct net_device *dev, bool up);
 void rtl_fttr_mcast_quiesce(struct net_device *parent);
+bool rtl_fttr_mcast_ready(const struct net_device *dev);
 bool rtl_fttr_mcast_receive(struct net_device *dev, struct napi_struct *napi, struct sk_buff *skb);
 bool rtl_fttr_mcast_drop(struct net_device *dev, const struct sk_buff *skb);
 
