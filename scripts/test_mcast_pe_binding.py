@@ -83,16 +83,25 @@ int main(void){
  ta.epoch=tb.epoch=11;f.lock=1;fe_mcast_invalidate(&f);f.lock=0;
  assert(!ta.epoch&&!tb.epoch);
  ta.epoch=tb.epoch=12;
+ ta.record[9].epoch=12;ta.record[9].control=123;
  assert(!rtl_fe_wifi_mcast_table(&f,&a,18,&ta,false)&&!a.refs&&!ta.epoch&&!tb.epoch);
+ assert(!ta.record[9].epoch&&ta.record[9].control==123);
  assert(!rtl_fe_wifi_mcast_table(&f,&a,18,&ta,false)&&!a.refs);
  /* Port removal revokes only its borrowed pointer; other radio stays owned. */
  assert(!rtl_fe_wifi_mcast_table(&f,&a,18,&ta,true));ta.epoch=tb.epoch=13;
+ ta.record[10].epoch=13;ta.record[10].control=124;
  f.lock=1;fe_mcast_pe_forget_port(&f,&a);f.lock=0;
  assert(!ta.epoch&&!f.mc_pe[0].table&&!a.refs&&tb.epoch==13&&b.refs==1);
+ assert(!ta.record[10].epoch&&ta.record[10].control==124);
  f.lock=1;fe_mcast_pe_forget_port(&f,&b);f.lock=0;
  assert(!tb.epoch&&!b.refs&&!f.mc_pe[1].table);
  assert(!rtl_fe_wifi_mcast_table(&f,&a,18,&ta,true));
  assert(!rtl_fe_wifi_mcast_table(&f,&b,19,&tb,true));ta.epoch=tb.epoch=14;
+ /* A retained radio table can be rebound by a fresh FE whose epoch count
+  * restarts. None of its old records may become current again. */
+ ta.epoch=0;ta.record[9].epoch=1;f.lock=1;fe_mcast_pe_forget_port(&f,&a);f.lock=0;
+ assert(!rtl_fe_wifi_mcast_table(&f,&a,18,&ta,true));ta.epoch=1;
+ assert(!ta.record[9].epoch&&ta.record[9].control==123);
  struct rtl9617c_wifi_policy policy={.qos=1,.tagged_tid=2,.noack_map=128,.flags=BIT(16)|BIT(18)};
  const u8 mac[6]={2,1,2,3,4,5};f.peers[0]=(struct rtl_fe_wifi_peer){.port=&f.ports[0],.destination=18};
  memcpy(f.peers[0].address,mac,6);

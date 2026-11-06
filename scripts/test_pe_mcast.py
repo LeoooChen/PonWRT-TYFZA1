@@ -60,6 +60,15 @@ if os.environ.get('RTL_TEST_PE_RECORD'):
     m.ingest();assert bytes(m.u.mem_read(payload+64+m.header,6))==record[8:14]
     assert m.get(base+0x15000+(8+record[16+46])*4)==payload
     vectors+=1
+if os.environ.get('RTL_TEST_STA_GROUP_RECORD'):
+    record=Path(os.environ['RTL_TEST_STA_GROUP_RECORD']).read_bytes();assert len(record)==96
+    m=Machine(client=True);epoch,control=struct.unpack_from('<II',record)
+    m.put(table,epoch);m.u.mem_write(table+16+9*96,record)
+    m.u.mem_write(base+0xe408,record[80:86]);m.put(base+0xd020+20,struct.unpack_from('<I',record,88)[0])
+    m.u.mem_write(payload+64+m.header,record[8:14]);m.ingest()
+    assert bytes(m.u.mem_read(payload+64+m.header,6))==record[8:14] and record[8]&1
+    assert m.get(base+0x15000+(8+record[16+46])*4)==payload
+    vectors+=1
 for mode in range(3):
     for ipv6 in (False,True):
         for full in (False,True):
@@ -86,7 +95,10 @@ for fault in range(20):
     if fault==3:m.put(base+0xd020+16,1<<23)
     if fault==4:m.put(table+16+9*96+4,1|7<<16)
     if fault==5:m.put(table+16+9*96+4,1|3<<11)
-    if fault==6:m.u.mem_write(table+16+9*96+8,b'\x01')
+    if fault==6:
+        m.u.mem_write(table+16+9*96+8,b'\x01')
+        m.put(base+0xd020+16,1<<24|1<<18|1<<16)
+        m.put(table+16+9*96+92,1<<18|1<<16)
     if fault==7:m.put(mb+210*4,0)
     if fault==8:m.u.mem_write(payload+64,struct.pack('>I',256<<18))
     if fault==9:
@@ -112,6 +124,17 @@ for mode in (1,2):
     m=Machine(tid=5,mode=mode)
     m.u.mem_write(table+16+9*96+16,bytes([2])*64)
     m.ingest();assert m.get(base+0x15000+10*4)==payload;vectors+=1
+# A normal STA multicast copy preserves the group DA and uses the associated
+# AP as RA. The same recipe on an AP must stay on the BCMC/DTIM path.
+for ipv6 in (False,True):
+    m=Machine(mode=2,ipv6=ipv6,client=True)
+    group_da=bytes.fromhex('333300010203') if ipv6 else group
+    m.u.mem_write(payload+64+m.header,group_da)
+    m.u.mem_write(table+16+9*96+8,group_da)
+    m.ingest()
+    assert bytes(m.u.mem_read(payload+64+m.header,6))==group_da
+    assert m.get(base+0x15000+(8+6)*4)==payload
+    vectors+=1
 # Policy no-ACK is per selected TID, clears BA and reaches the actual request.
 for tid in range(8):
     m=Machine(tid=tid,mode=1);m.u.mem_write(table+16+9*96+14,bytes([1<<tid]))
@@ -184,4 +207,7 @@ for client in (False,True):
     for lengths in ([60],[1514]*3):
         case(lengths,7935,from_epp=True,client=client,multicast=True)
         case(lengths,7935,from_epp=True,client=client,multicast=True,noack=True)
-print(f'PE multicast: {vectors} admission/revocation cases and8 full encrypted TX/RPQ/no-ACK cases passed')
+for lengths in ([60],[1514]*3):
+    for noack in (False,True):
+        case(lengths,7935,from_epp=True,client=True,multicast=True,noack=noack,preserve_group=True)
+print(f'PE multicast: {vectors} admission/revocation cases and12 full encrypted TX/RPQ/no-ACK cases passed')

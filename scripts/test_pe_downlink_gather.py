@@ -14,7 +14,7 @@ directory = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'artifacts/pe-rad
 binary = (directory / 'pe-tx.bin').read_bytes()
 
 
-def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False, multicast=False, noack=False):
+def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False, multicast=False, noack=False, preserve_group=False):
     base, mb, pages, headers, payload, ring, bar, ni, reports = (
         0x04000000, 0x04002000, 0x05100000, 0x05400000, 0x06000000,
         0x05000000, 0x12000000, 0x10000000, 0x06200000)
@@ -32,6 +32,9 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     put = lambda at, value: u.mem_write(at, struct.pack('<I', value))
     get = lambda at: struct.unpack('<I', u.mem_read(at, 4))[0]
     ap, dst = bytes.fromhex('020000000001'), bytes.fromhex('020000000002')
+    if preserve_group:
+        assert client and multicast
+        dst=bytes.fromhex('01005e010203')
     bssid = bytes.fromhex('020000009999')
     if multicast:
         u.mem_write(table+16+96*9,struct.pack('<II',7,1)+dst+bytes([1 if noack else 0,1])+bytes(64)+(bssid if client else dst)+bytes(2)+struct.pack('<II',7<<16,(1<<16)|(1<<18)|(1<<23 if client else 0)))
@@ -112,7 +115,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         assert struct.unpack_from('<I', page, 48)[0] & 0x88000000 == (0x88000000 if hw_rts else 0)
         assert struct.unpack_from('<I', page, 28)[0] >> 28 & 3 == bandwidth
         assert struct.unpack_from('<I', page, 28)[0] >> 16 & 0x1ff == rate
-        expected = bytes.fromhex('88410000' if client else '88420000') + (bssid if client else dst) + ap
+        expected = bytes.fromhex('88410000' if client else '88420000') + (bssid if client else dst) + (frames[member][6:12] if client else ap)
         expected += ((bssid if count > 1 else dst) if client else
                      (ap if count > 1 else frames[member][6:12])) + struct.pack('<H', slot << 4)
         expected += bytes([(128 if count > 1 else 0)|(32 if noack else 0), 0])

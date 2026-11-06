@@ -312,7 +312,9 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 #pragma clang loop unroll(disable)
 		for (u32 i = 0; i < 6; i++) {
 			header[4 + i] = client ? bssid[i] : ethernet[i];
-			header[10 + i] = ap_address[i];
+			/* Three-address STA TX carries Ethernet SA in addr2, including
+			 * when DA is multicast. Linux preserves it in the A-MSDU head. */
+			header[10 + i] = client ? ethernet[6 + i] : ap_address[i];
 			header[16 + i] = client ? (flags & BIT(21) ? bssid[i] : ethernet[i]) :
 				(flags & BIT(21) ? ap_address[i] : ethernet[6 + i]);
 		}

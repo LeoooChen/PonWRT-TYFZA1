@@ -136,6 +136,8 @@
 
 59. 接入完整事务的直接NI→PE逐用户复制：每个无线收件人先写独立不可变cookie记录，再安装NI动作和Hash，最后按代际开放PE与学习模板；撤销先清记录代际，失败保留tombstone不复用。MCP2记录固定peer/MACID、密钥CAM、AP/STA与QoS头模板，PE在收取、选择及TXBD发布前复核；授权/密钥/BA/地址和模板变化使策略失效，首次策略可用也撤销先前CPU规则。no-ACK写入无线头与WD并关闭该副本BA。双无线40项EQ/BID/格式/映射故障、6组目标原厂动作、实际学习记录到MIPS消费、264项准入/撤销及8组完整加密TX/RPQ/no-ACK、现有M2U/QM/桥/PS/密钥/BA/PON回归通过；固件26520字节、栈6896字节，Image/模块及96项输入核对通过。物理副本独占性仍基于MCE逐流输出与QM目的EQ分配契约，未实测；当前仅绑定VIF的AP/STA单播收件人，BCMC/DTIM、多VIF、TSPEC、完整退场与资源复用仍缺，未访问实机。详见[直接NI到PE复制](port/FTTR.md#direct-ni-to-pe-multicast-to-unicast-publication)。
 
+60. 接入STA普通组播的NI→PE直发：保留Ethernet组播DA，以关联AP的单播RA和成对密钥发送；AP普通组播仍走GTK/DTIM路径。执行目标原厂属性生产前缀及完整头生成器，确认RA选择及“原厂固定本机TA、Linux保留Ethernet SA”的差异，PE按当前Linux语义修正STA三地址与A-MSDU头。补上共享表解绑的永久记录撤销，保留tombstone，防止重绑/FE代际重启让旧记录重新有效。12组原厂头、6组实际Linux接收地址/密钥/头/聚合函数、两类实际学习记录到MIPS、267项PE准入/撤销、12组加密TX/RPQ/no-ACK及现有STA/AP/PS/M2U/QM/桥回归通过；Image/模块与96项输入核对通过。普通AP BCMC、多VIF、TSPEC、完整退场和资源复用仍待补，未访问实机。详见[STA组播与解绑撤销](port/FTTR.md#sta-group-transmission-and-detached-table-revocation)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

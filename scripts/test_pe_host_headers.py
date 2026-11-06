@@ -71,6 +71,7 @@ for client, encap, payload_bytes, smps, mode, firmware, aggregate, mesh in (
     if mesh == 2: raw=bytes.fromhex('88020000')+b'\xff'*6+ap+source+b'\x30\x12\0\x01'
     header_len=len(raw)
     expected=raw[:22]+b'\0\0'+raw[24:]
+    if client and encap:expected=expected[:10]+source+expected[16:]
     if encap:expected+=b'\xaa\xaa\x03\0\0\0\x08\0'
     u.mem_write(headers+7*128,ethernet if encap else raw)
     request=[0]*32

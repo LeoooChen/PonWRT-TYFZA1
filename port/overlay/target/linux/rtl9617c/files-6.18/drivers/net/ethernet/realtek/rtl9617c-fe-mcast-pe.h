@@ -10,14 +10,24 @@ static void fe_mcast_pe_close(struct rtl_fe *fe)
  dma_wmb();
 }
 
+/* Unlike a temporary writer gate, detachment must permanently revoke every
+ * record. The retained control word forbids cookie reuse after FE reload. */
+static void fe_mcast_pe_retire(struct rtl_mc_pe_table *table)
+{
+ unsigned int i;
+ WRITE_ONCE(table->epoch,0);
+ dma_wmb();
+ for(i=1;i<RTL_MC_PE_COOKIES;i++)WRITE_ONCE(table->record[i].epoch,0);
+ dma_wmb();
+}
+
 static void fe_mcast_pe_forget_port(struct rtl_fe *fe,struct net_device *netdev)
 {
  unsigned int i;
  unsigned long flags;
  for(i=0;i<2;i++)if(fe->mc_pe[i].netdev==netdev) {
   spin_lock_irqsave(&fe->mc_lock,flags);
-  WRITE_ONCE(fe->mc_pe[i].table->epoch,0);
-  dma_wmb();
+  fe_mcast_pe_retire(fe->mc_pe[i].table);
   fe->mc_pe[i].table=NULL;fe->mc_pe[i].netdev=NULL;
   spin_unlock_irqrestore(&fe->mc_lock,flags);
   dev_put(netdev);
@@ -59,8 +69,7 @@ int rtl_fe_wifi_mcast_table(struct rtl_fe *fe,struct net_device *netdev,
  }
  fe_mcast_invalidate(fe);
  spin_lock_irqsave(&fe->mc_lock,flags);
- WRITE_ONCE(table->epoch,0);
- dma_wmb();
+ fe_mcast_pe_retire(table);
  fe->mc_pe[slot].table=bind?table:NULL;
  fe->mc_pe[slot].netdev=bind?netdev:NULL;
  spin_unlock_irqrestore(&fe->mc_lock,flags);

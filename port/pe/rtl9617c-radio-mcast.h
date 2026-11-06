@@ -54,7 +54,9 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_mcast_admit(
 	    ((route >> 3) & 63) != 16 + (mailbox[114] - 0x7000) / 32 ||
 	    !*(volatile u32 *)(memory + 0x11a00 + macid * 4)) return 0;
 	u32 flags = *(volatile u32 *)(memory + 0xd000 + macid * 32 + 16);
-	if (!(flags & BIT(16)) || (record->destination[0] & 1)) return 0;
+	/* STA group Ethernet frames still use the associated AP as unicast RA
+	 * with its pairwise key. AP BCMC needs a different DTIM/GTK contract. */
+	if (!(flags & BIT(16)) || ((record->destination[0] & 1) && !(flags & BIT(23)))) return 0;
 	u32 nonzero = 0;
 	const u8 *peer = memory + 0xe400 + macid * 8;
 #pragma clang loop unroll(disable)

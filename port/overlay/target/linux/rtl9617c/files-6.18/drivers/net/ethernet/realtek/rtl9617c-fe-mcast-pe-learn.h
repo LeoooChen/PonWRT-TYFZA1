@@ -9,7 +9,8 @@ static int fe_mcast_pe_recipe(struct rtl_fe *fe,struct rtl_fe_port *port,
  const struct rtl9617c_wifi_policy *policy;
  unsigned int mode=RTL_MC_PE_TID_FIXED,tid=0;
 
- if(!peer || !is_valid_ether_addr(direct->frame.destination) ||
+ if(!peer || (!is_valid_ether_addr(direct->frame.destination) &&
+    !(direct->frame.destination[0]&1 && direct->iftype==NL80211_IFTYPE_STATION)) ||
     peer->destination<18 || peer->destination>19 || !peer->macid || peer->macid>127 ||
     !epoch || epoch>0xffffffffULL || !peer->policy_generation ||
     peer->policy_generation!=rtl9617c_bridge_wifi_policy_generation() ||
@@ -18,6 +19,7 @@ static int fe_mcast_pe_recipe(struct rtl_fe *fe,struct rtl_fe_port *port,
  if((policy->flags&(BIT(16)|BIT(18)))!=(BIT(16)|BIT(18)) ||
     (policy->flags&~(BIT(16)|BIT(18)|BIT(23))) || (policy->key&65535) ||
     policy->reserved)return -ESTALE;
+ if((direct->frame.destination[0]&1) && !(policy->flags&BIT(23)))return -ESTALE;
  if(!policy->qos)tid=0;
  else if(!direct->priority_from_cos && direct->priority>=256 && direct->priority<=263)
   tid=policy->priority_tid[direct->priority-256];

@@ -627,7 +627,7 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
     .physical=physical->ifindex,.wifi_id=port->wifi_id,.priority=priority,.priority_from_cos=from_cos,
     .iftype=port->wifi_id?physical->ieee80211_ptr->iftype:0};
    replica->destination=16;replica->direct_cookie=mc->count+1;
-   if(port->wifi_id && unicast &&
+   if(port->wifi_id && (unicast || physical->ieee80211_ptr->iftype==NL80211_IFTYPE_STATION) &&
       !fe_mcast_pe_recipe(fe,port,&mc->direct[mc->count],data.input->source,packet->epoch))
     replica->destination=mc->direct[mc->count].pe_destination;
    if(existing) {

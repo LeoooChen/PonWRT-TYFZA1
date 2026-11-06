@@ -5032,11 +5032,49 @@ requests, BAR, key/BA and ITU/EPON206 route-fault regressions pass. Firmware is
 26520 bytes with a conservative6896-byte stack bound. Image/modules build
 passes and96 overlay inputs match compiled sources.
 
-Direct acceleration currently covers the bound VIF's admitted AP/STA unicast
-recipients, with the existing complete software/CPU path for unsupported cases.
+Direct acceleration covers the bound VIF's admitted AP/STA unicast recipients
+and the STA group extension below, with the existing complete software/CPU path
+for unsupported cases.
 It does not implement direct BCMC/DTIM, multiple VIF bindings, TSPEC accounting
 or prove physical packet retirement. Group/cookie/action quarantine and the
 existing finite capacities remain; the overall FTTR rewrite is incomplete.
+
+### STA group transmission and detached-table revocation
+
+Ordinary STA multicast now uses the same complete NI-to-PE transaction while
+preserving its Ethernet group destination. A three-address STA sends it to the
+associated AP's unicast receiver address, so the existing admitted peer and
+pairwise key apply. AP group traffic still uses the CPU/mac80211 GTK/DTIM path.
+PE accepts a group destination only with the pinned STA template; an AP group
+record is rejected. The actual bridge learner emits both M2U and preserved-group
+records which the linked MIPS executor consumes.
+
+The target wireless module's `update_attrib` prefix and full `rtw_make_wlanhdr`
+confirm associated-AP receiver selection for group/unicast Ethernet traffic.
+They also reveal an intentional adaptation: the original producer fixes the
+local adapter as transmitter, while Linux's three-address TX keeps Ethernet SA
+in addr2. Native PE now follows Linux for STA Ethernet encapsulation, including
+the A-MSDU head; individual subframes retain their own SA/DA. The reference check
+executes actual Linux receiver lookup, pairwise-key selection, the relevant
+normal ToDS address branch and A-MSDU preparation. It does not claim the entire
+Linux TX pipeline or physical association was simulated.
+
+Table detachment now permanently clears every record epoch before releasing
+the FE pointer, retaining each nonzero control tombstone. Previously only the
+table epoch was closed, which could make an old row current if a retained radio
+table was rebound to a restarted FE generation. Port removal, explicit unbind,
+supplier stop and fresh binding all use this revocation; ordinary temporary
+writer closure still preserves records until their owning flow withdraws.
+Tests cover same-table rebind and an FE epoch restart without allowing old
+cookies to become valid. This does not release quarantined identities.
+
+Twelve original header executions, six actual Linux receiver/key/header/A-MSDU
+cases,267 linked PE admission/revocation cases (including both learner-produced
+records) and twelve complete encrypted TX/RPQ/no-ACK cases pass. The existing
+STA/AP/host-header, publication, PS, M2U,480 QM and40 bridge-delivery regressions
+pass, together with Image/modules and96 matched overlay inputs. Firmware remains
+26520 bytes and the conservative stack bound6896 bytes. No device, physical
+replication, over-the-air interoperability or throughput was tested.
 
 ### Outstanding implementation and acceptance
 

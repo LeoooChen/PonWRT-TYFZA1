@@ -703,6 +703,31 @@ int main(void){
   assert(!memcmp(pe_table.record[c].peer,test_peer.address,6));copied++;
  }
  assert(copied==2);fe_mcast_invalidate(&fe);assert(!fe_delete(&fe,fe.indexed));
+ /* STA ordinary multicast retains Ethernet DA and uses the associated AP
+  * peer. AP ordinary groups must still take the GTK/DTIM software path. */
+ for(unsigned role=0;role<2;role++) {
+  ap.iftype=role?NL80211_IFTYPE_AP:NL80211_IFTYPE_STATION;
+  test_peer.policy.flags=BIT(16)|BIT(18)|(role?0:BIT(23));
+  fe.event_count=0;fdb_source=&lan;skb.dev=&lan;skb.saved=wireless;skb.priority=0;
+  skb.saved.ingress=skb.saved.port=1;skb.saved.wifi_id=0;skb.saved.multicast_epoch=fe.mc_gate.epoch;skb.frame=wireless;
+  ticket=fe_mcast_capture_begin(&bridge,&skb,false,++fe_mcast_ticket);assert(ticket);
+  fe_mcast_capture_select(&bridge,&skb,&wifi);skb.dev=&wifi;fe_mcast_capture_output(&bridge,&skb);
+  fe_mcast_capture_end(&bridge,ticket,true);fe_mcast_process(&bridge);
+  assert(fe.indexed&&fe.indexed->replica_count==1&&fe.mc_gate.active);
+  unsigned cookie=0;
+  for(unsigned c=1;c<256;c++)if(fe.mc_directs[c]&&fe.mc_directs[c]->flow==fe.indexed)cookie=c;
+  assert(cookie&&fe.mc_directs[cookie]->pe_destination==(role?0:19));
+  if(!role) {
+   assert(!memcmp(pe_table.record[cookie].destination,wireless.destination,6));
+   assert(!memcmp(pe_table.record[cookie].peer,test_peer.address,6));
+   if(getenv("RTL_TEST_STA_GROUP_RECORD")) {
+    FILE *record=fopen(getenv("RTL_TEST_STA_GROUP_RECORD"),"wb");assert(record);
+    assert(fwrite(&pe_table.record[cookie],sizeof(pe_table.record[cookie]),1,record)==1);assert(!fclose(record));
+   }
+  }
+  fe_mcast_invalidate(&fe);assert(!fe_delete(&fe,fe.indexed));
+ }
+ ap.iftype=NL80211_IFTYPE_STATION;
  fe.mc_pe[1].table=NULL;fe.mc_pe[1].netdev=NULL;test_peer_port=NULL;
  /* EPON MAC-instance0 and31 use POL0/31 on ingress, with per-replica
   * POL0 and queues masked to the current PUC width on egress. */
