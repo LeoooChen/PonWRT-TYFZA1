@@ -5,6 +5,7 @@
 #include <linux/netdevice.h>
 #include <linux/rcupdate.h>
 #include <linux/rtnetlink.h>
+#include <linux/rtl9617c-bridge.h>
 #include "rtl9617c-pon.h"
 #include "rtl9617c-ni.h"
 #include "rtl9617c-pon-oam-format.h"
@@ -153,6 +154,11 @@ static void rtl_oam_receive(struct rtl9617c_ni_endpoint *endpoint, struct napi_s
 	struct net_device *dev;
 	struct net_device *drop_owner = endpoint->netdev;
 	unsigned int llid, offset, flow = source >> 8;
+	const struct rtl9617c_bridge_frame *host = skb_ext_find(skb, SKB_EXT_RTL9617C_BRIDGE);
+
+	/* An old ITU replica cannot acquire an EPON LLID after a mode switch. */
+	if (host && host->multicast_host_group && rtl_pon_mode_is_epon(READ_ONCE(pon->mode)))
+		goto drop;
 
 	if (!rtl_pon_mode_is_epon(READ_ONCE(pon->mode))) {
 		if (rtl_omci_receive_offset(skb->data, skb->len))

@@ -271,6 +271,17 @@ int main(void){
  fe.fttr_netdev=&pon;
  /* Changing the destination's FDB or STP still removes the P6 hairpin. */
  fdb_destination=&other;fe_bridge_work(&bridge.work.work);assert(deleted==9 && !net.references);
+ /* PON provenance keeps wire and logical tag images across both real
+  * capture callbacks; VLAN0/PVID processing must not overwrite either. */
+ skb.extension=true;skb.saved=(struct rtl9617c_bridge_frame){.pon_gem=11,.pon_generation=88,.tags=1,
+  .tag={{.protocol=0x8100,.tci=901|5<<13}}};
+ skb.frame[12]=8;skb.frame[13]=6;skb.tagged=true;skb.vlan=900|5<<13;skb.vlan_proto=htons(0x8100);skb.priority=5;
+ wire.in=&pon;input.in=&vlan;fe_bridge_wire(&bridge,&skb,&wire);
+ assert(skb.saved.tags==1&&skb.saved.tag[0].tci==(901|5<<13));
+ assert(skb.saved.pon_tags==1&&skb.saved.pon_tag[0].tci==(900|5<<13)&&skb.saved.pon_priority==5);
+ skb.tagged=false;fe_bridge_capture(&bridge,&skb,&input);
+ assert(skb.saved.pon_gem==11&&skb.saved.pon_generation==88&&skb.saved.tag[0].tci==(901|5<<13));
+ assert(skb.saved.pon_tag[0].tci==(900|5<<13)&&skb.saved.pon_priority==5);
  puts("Bridge learner: real wire/bridge hooks, VLAN subinterfaces, PCP/DEI, access VID, PPPoE preservation, FDB ageing/movement, STP and link changes passed");
 }
 '''

@@ -63,7 +63,7 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef int netdev_
 #define max(a,b) ((a)>(b)?(a):(b))
 #define cpu_to_le32(x) (x)
 #include "rtl9617c-pon-path.h"
-struct sk_buff {u8 memory[4096],*data;unsigned len,priority,protocol,vlan_proto,vlan_tci;bool tagged;};
+struct sk_buff {u8 memory[4096],*data;unsigned len,priority,protocol,vlan_proto,vlan_tci;bool tagged;struct rtl9617c_bridge_frame *extension;};
 struct net_device {bool carrier,running,stopped,bridge_port,vlan_info;struct net_device *upper,*master;unsigned vlan_proto,vlan_id;struct {unsigned tx_dropped,rx_dropped,rx_packets,rx_bytes;}stats;};
 static bool netif_is_bridge_port(struct net_device*d){return d->bridge_port;}
 static struct net_device *netdev_master_upper_dev_get_rcu(struct net_device*d){return d->master;}
@@ -74,7 +74,7 @@ static struct net_device *__vlan_find_dev_deep_rcu(struct net_device*d,unsigned 
 struct napi_struct {unsigned unused;};
 struct rtl9617c_ni_frame {u32 header_high,header_low;const u8 *prefix;unsigned prefix_length;bool raw_payload;};
 struct rtl9617c_bridge_tag {u16 tci,tpid;};
-struct rtl9617c_bridge_frame {unsigned pon_gem;unsigned long long pon_generation;unsigned tags;struct rtl9617c_bridge_tag tag[2];};
+struct rtl9617c_bridge_frame {unsigned multicast_host_group;unsigned long long multicast_host_owner;unsigned pon_gem;unsigned long long pon_generation;unsigned tags;struct rtl9617c_bridge_tag tag[2];};
 struct rtl_itu_path_state {struct rtl_itu_paths paths;};
 struct rtl9617c_pon {struct rtl_itu_path_state *itu_paths;bool itu_paths_ready;void *ni_dev;struct net_device *data_devices[1];};
 static unsigned freed,delivered;static u8 received[2048];static unsigned received_length;
@@ -111,8 +111,12 @@ static struct sk_buff *skb_clone(struct sk_buff*s,int flags){
  (void)flags;struct sk_buff*c=malloc(sizeof(*c));assert(c);*c=*s;c->data=c->memory+(s->data-s->memory);return c;
 }
 static int skb_copy_bits(struct sk_buff*s,unsigned off,void*p,unsigned n){assert(off+n<=s->len);memcpy(p,s->data+off,n);return 0;}
-static void *skb_ext_add(struct sk_buff*s,int type){(void)s;(void)type;return NULL;}
+static bool ext_fail;
+static void *skb_ext_find(struct sk_buff*s,int type){(void)type;return s->extension;}
+static void *skb_ext_add(struct sk_buff*s,int type){(void)type;return ext_fail?NULL:s->extension;}
 static u16 eth_type_trans(struct sk_buff*s,struct net_device*d){(void)d;return htons(get_unaligned_be16(s->data+12));}
+static unsigned host_delivered;
+static void netif_receive_skb(struct sk_buff*s){assert(s->extension&&s->extension->multicast_host_group==7&&s->extension->multicast_host_owner==99);host_delivered++;delivered++;received_length=s->len;memcpy(received,s->data,s->len);dev_kfree_skb_any(s);}
 static void napi_gro_receive(struct napi_struct*n,struct sk_buff*s){(void)n;delivered++;received_length=s->len;memcpy(received,s->data,s->len);dev_kfree_skb_any(s);}
 #define RTL_DMA_COUNT 64
 #define RTL_DMA_BUFFER_SIZE 2048
@@ -130,6 +134,7 @@ static netdev_tx_t rtl9617c_ni_transmit(void*d,struct net_device*n,struct sk_buf
 '''
 model += re.sub(r'^#include .*$', '', (drivers / 'rtl9617c-pon-vlan-skb.h').read_text(), flags=re.M)
 model += function('rtl9617c-pon-service.h', 'rtl_pon_itu_service_entry')
+model += function('rtl9617c-pon-service.h', 'rtl_pon_itu_receive_path')
 model += function('rtl9617c-pon-path.c', 'rtl_pon_itu_data_transmit')
 model += function('rtl9617c-pon-path.c', 'rtl_pon_itu_data_receive')
 model += r'''
@@ -311,6 +316,29 @@ int main(int argc,char**argv){
   assert(delivered==before+1 && dev.stats.rx_dropped==rx_drops && get_unaligned_be16(received+14)==900);
  }
  puts("PON bridge master: multicast GEM11 retains IPTV VLAN900 on RX");
+ /* Replicated PON host copies run the actual VLAN receive code once,
+  * preserving identity, and never reach GRO. Stale/failing copies drop. */
+ p->generation=77;profile(&p->profile[1],900,901);
+ p->profile[1].row[0][7]&=0xf0; /* UDP uses generic Ethernet EVTO, not PPPoE filter. */
+ p->path[0].vlan_profile[4]=1;
+ for(unsigned metadata=0;metadata<2;metadata++)for(unsigned fault=0;fault<6;fault++) {
+  struct rtl9617c_bridge_frame host={.multicast_host_group=7,.multicast_host_owner=99,.pon_gem=11,.pon_generation=77};
+  struct sk_buff *reply=dhcp_packet(901,metadata,true);reply->data[0]=1;reply->extension=&host;
+  unsigned before=delivered,hosts=host_delivered,rx_drops=dev.stats.rx_dropped;
+  if(fault==1)host.pon_generation=76;
+  if(fault==2)host.pon_gem=12;
+  if(fault==3)pon.itu_paths_ready=false;
+  if(fault==4)ext_fail=true;
+  if(fault==5)vlan.vlan_id=902;
+  rtl_pon_itu_data_receive(&pon,&napi,reply,7|(11<<8));
+  if(!fault)assert(delivered==before+1&&host_delivered==hosts+1&&get_unaligned_be16(received+14)==900);
+  else assert(delivered==before&&host_delivered==hosts&&dev.stats.rx_dropped==rx_drops+1);
+  assert(host.multicast_host_group==7&&host.multicast_host_owner==99);
+  pon.itu_paths_ready=true;ext_fail=false;vlan.vlan_id=900;
+ }
+ p->path[0].vlan_profile[4]=RTL_EVTO_NONE;
+ puts("PON host copies: real VLAN901-to900 restore, inline/metadata, GEM/version mismatch, stopped admission and extension failure passed");
+
  struct rtl_evto_packet service={.count=1,.tag={{0x8100,48}}};
  vlan.vlan_id=49;assert(!rtl_pon_itu_service_entry(&dev,&service));
  vlan.vlan_id=48;vlan.vlan_proto=htons(0x88a8);assert(!rtl_pon_itu_service_entry(&dev,&service));

@@ -434,21 +434,20 @@ void rtl_pon_itu_data_receive(struct rtl9617c_pon *pon, struct napi_struct *napi
 	struct rtl_itu_path_state *state = rcu_dereference(pon->itu_paths);
 	const struct rtl_itu_path *path;
 	unsigned int index = source >> 8, wire_tags;
+	const struct rtl9617c_bridge_frame *host = skb_ext_find(skb, SKB_EXT_RTL9617C_BRIDGE);
+	bool host_copy = host && host->multicast_host_group;
 	struct rtl_evto_packet input, output;
 
 	if ((source & 255) != 7 || !state || !READ_ONCE(pon->itu_paths_ready) ||
 	    !netif_running(dev) || !netif_carrier_ok(dev) || skb->len < ETH_HLEN) goto drop;
+	if (host_copy && (host->pon_gem != index || host->pon_generation != state->paths.generation)) goto drop;
 	if (rtl_evto_skb_read(&state->paths, skb, &input, &wire_tags)) goto drop;
-	input.service_entry = 1;
-	path = rtl_itu_path_receive_vlan(&state->paths, index, &input, &output);
-	if (!path || !rtl_pon_itu_service_entry(dev, &output)) {
-		input.service_entry = 0;
-		path = rtl_itu_path_receive_vlan(&state->paths, index, &input, &output);
-	}
+	path = rtl_pon_itu_receive_path(&state->paths, dev, index, &input, &output);
 	if (!path || rtl_evto_skb_write(skb, &input, &output, wire_tags)) goto drop;
 	{
 		struct rtl9617c_bridge_frame *wire = skb_ext_add(skb, SKB_EXT_RTL9617C_BRIDGE);
-		if (wire) {
+		if (!wire && host_copy) goto drop;
+		if (wire && !host_copy) {
 			memset(wire, 0, sizeof(*wire));
 			wire->pon_gem = index; wire->pon_generation = state->paths.generation;
 			wire->tags = input.count;
@@ -459,7 +458,9 @@ void rtl_pon_itu_data_receive(struct rtl9617c_pon *pon, struct napi_struct *napi
 	dev->stats.rx_packets++;
 	dev->stats.rx_bytes += skb->len;
 	skb->protocol = eth_type_trans(skb, dev);
-	napi_gro_receive(napi, skb);
+	/* A replicated host copy must retain its identity through bridge input. */
+	if (host_copy) netif_receive_skb(skb);
+	else napi_gro_receive(napi, skb);
 	return;
 drop:
 	if (dev) dev->stats.rx_dropped++;

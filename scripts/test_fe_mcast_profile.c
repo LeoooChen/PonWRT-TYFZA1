@@ -30,7 +30,7 @@ static int indirect(void *p,unsigned int reg,unsigned int command)
   unsigned int mask[8],key[11],fib[7];
   rtl_fe_mc_ip_mask(mask);rtl_fe_mc_classifier_key(key);
   rtl_fe_classify_hash(fib,1,0);rtl_fe_bits_set(fib,208,1,0);
-  assert(!memcmp(m->fib[512],fib,sizeof(fib)));
+  assert(!memcmp(m->fib[(command&255)*4],fib,sizeof(fib)));
   assert(!memcmp(m->masks[55],mask,16)&&!memcmp(m->masks[119],mask+4,16));
   rtl_fe_mc_learned_mask(mask);
   assert(!memcmp(m->masks[54],mask,16)&&!memcmp(m->masks[118],mask+4,16));
@@ -62,9 +62,10 @@ int main(void)
  unsigned int commands;
  m.reg[0x3700/4]=8;
  for(unsigned int i=0;i<8;i++)m.reg[(0x3704+i*4)/4]=(63-i)|(i<<8);
- for(unsigned int i=0;i<11;i++)m.keys[128][i]=0x12121212+i;
+ for(unsigned int i=0;i<11;i++){m.keys[128][i]=0x12121212+i;m.keys[0][i]=0x56565656+i;}
+ m.keys[0][10]&=~(15U<<27);
  m.keys[128][10]&=~(15U<<27);
- for(unsigned int i=0;i<7;i++)m.fib[512][i]=0x43434343+i;
+ for(unsigned int i=0;i<7;i++){m.fib[512][i]=0x43434343+i;m.fib[0][i]=0x98989898+i;}
  for(unsigned int i=0;i<128;i++)for(unsigned int j=0;j<4;j++)m.masks[i][j]=0x10000*i+j;
  for(unsigned int i=0;i<11;i++)m.reg[(0x372c+i*4)/4]=0xabcd0000+i*16;
  saved=m;

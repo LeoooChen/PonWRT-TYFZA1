@@ -23,4 +23,17 @@ static bool rtl_pon_itu_service_entry(struct net_device *dev, const struct rtl_e
 	return true;
 }
 
+/* PON RX and FE learning must try the same service/UNI entry points. */
+static const struct rtl_itu_path *rtl_pon_itu_receive_path(const struct rtl_itu_paths *paths,
+ struct net_device *dev,unsigned int index,struct rtl_evto_packet *input,struct rtl_evto_packet *output)
+{
+ const struct rtl_itu_path *path;
+ input->service_entry=1;
+ path=rtl_itu_path_receive_vlan(paths,index,input,output);
+ if(!path || !rtl_pon_itu_service_entry(dev,output)) {
+  input->service_entry=0;
+  path=rtl_itu_path_receive_vlan(paths,index,input,output);
+ }
+ return path;
+}
 #endif

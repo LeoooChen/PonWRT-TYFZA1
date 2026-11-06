@@ -700,8 +700,19 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				if (rtl9617c_bridge_mcast_receive(skb,host_group,source)) {
 					dev->stats.rx_dropped++;dev_kfree_skb_any(skb);rcu_read_unlock();continue;
 				}
-				input=skb->dev;skb->protocol=eth_type_trans(skb,input);
 				skb->priority=h1&7;
+				if (source==7) {
+					const struct rtl9617c_bridge_frame *saved=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
+					struct rtl9617c_ni_endpoint *endpoint=rcu_dereference(rx->pon);
+					skb->priority=0; /* Same input priority as ordinary PON RX. */
+					/* POL names the host group now. Its trusted owner recovered
+					 * the original GEM; PON RX validates its config generation. */
+					if (endpoint && saved && saved->pon_gem)
+						endpoint->receive(endpoint,napi,skb,7U|(saved->pon_gem<<8));
+					else {dev->stats.rx_dropped++;dev_kfree_skb_any(skb);}
+					rcu_read_unlock();continue;
+				}
+				input=skb->dev;skb->protocol=eth_type_trans(skb,input);
 				input->stats.rx_packets++;input->stats.rx_bytes+=length;
 				/* Do not aggregate a host-only copy with a normal miss. */
 				netif_receive_skb(skb);rcu_read_unlock();continue;

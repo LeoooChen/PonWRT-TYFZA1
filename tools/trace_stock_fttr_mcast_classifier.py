@@ -138,7 +138,11 @@ void native(unsigned int profile,unsigned int *key,unsigned int *action) {
 '''
     def boundary(name, args):
         raise AssertionError(('unmodeled original classifier call', name, args))
-    ni = ModuleOracle(ni_path, ['__l3_cls_key_entry_update.constprop.0', '__l3_cls_fib_entry_update'], boundary)
+    ni = ModuleOracle(ni_path, ['__l3_cls_key_entry_update.constprop.0', '__l3_cls_fib_entry_update', '__l3_cls_fib_idx_get.constprop.0'], boundary)
+    for row in (0,128):
+        for slot in range(4):
+            assert ni.call('__l3_cls_fib_idx_get.constprop.0',0,row,slot,ni.scratch)==0
+            assert ni.unpack(ni.scratch,'I')[0]==row*4+slot
     cases = []
     with tempfile.TemporaryDirectory(prefix='fttr-cls-') as directory:
         root = Path(directory)
@@ -175,11 +179,11 @@ def native_ip_keys(ni_path):
     ni=ModuleOracle(ni_path,['hash_value_calculate','reverse_n'],boundary)
     code=r'''
 #include "rtl9617c-fe-mcast-profile.h"
-void key(unsigned int ip6,unsigned int source,unsigned int group,unsigned int learned,unsigned int ingress,unsigned int *words,unsigned int *mask) {
+void key(unsigned int ip6,unsigned int source,unsigned int group,unsigned int learned,unsigned int ingress,unsigned int gem,unsigned int *words,unsigned int *mask) {
  const unsigned char sa[6]={2,1,2,3,4,5},da[6]={1,0,0x5e,1,2,3};
  const unsigned int ips[4]={0x20010db8,0,0,source},ipd[4]={0xff3e0000,group,0,0x10203};
  const struct rtl_fe_vlan vlan[2]={{.vid=100,.tpid=1},{.vid=200,.tpid=2}};
- rtl_fe_bridge_key(words,sa,da,ip6?0x86dd:0x800,ingress,0,RTL_FE_MC_IP_MASK);
+ rtl_fe_bridge_key(words,sa,da,ip6?0x86dd:0x800,ingress,gem,RTL_FE_MC_IP_MASK);
  rtl_fe_mc_ip_key(words,ip6?ips:&source,ip6?ipd:&group,ip6,17);
  rtl_fe_vlan_key(words,vlan,2);
  rtl_fe_bits_set(words,426,4,11);rtl_fe_bits_set(words,445,4,7);
@@ -200,14 +204,14 @@ void crc(unsigned int *key,unsigned int *c32,unsigned short *c16){rtl_fe_key_crc
         subprocess.run(['cc','-Wall','-Wextra','-Werror','-shared','-fPIC','-I'+str(DRIVERS),str(root/'key.c'),'-o',str(root/'key.so')],check=True)
         lib=ctypes.CDLL(str(root/'key.so'))
         rng=random.Random(0x9617c)
-        for ingress in (4,6):
+        for ingress,gem in ((4,0),(6,0),(7,8),(7,55),(7,255)):
             for ip6 in (0,1):
                 for case in range(128):
                     learned=case//64
                     source=0x0a000001+case//32
                     group=0xe0010203+((case%32)<<23) if not ip6 else case%32+1
                     words,mask=(ctypes.c_uint*23)(),(ctypes.c_uint*8)()
-                    lib.key(ip6,source,group,learned,ingress,words,mask)
+                    lib.key(ip6,source,group,learned,ingress,gem,words,mask)
                     # Header fields ignored by this mask must not change the key.
                     raw=int.from_bytes(words,'little')
                     for bit,width in ((10,16),(26,16),(43,32),(78,8),(95,8),(103,20),(475,6),(614,64),(706,6)):
@@ -227,7 +231,7 @@ void crc(unsigned int *key,unsigned int *c32,unsigned short *c16){rtl_fe_key_crc
                     signatures.append((c32.value,c16.value))
     assert len(set(signatures))==len(signatures)
     return dict(vectors=len(signatures),original_mask_and_crc_match=True,
-        fields='full IPv4/IPv6 source and group, protocol, LAN4/P6 ingress, SA/DA, two exact tags, template; random ignored fields')
+        fields='full IPv4/IPv6 source and group, protocol, LAN4/P6/PON7 ingress with GEM8/55/255, SA/DA, two exact tags, template; random ignored fields')
 
 
 def main():
@@ -241,7 +245,7 @@ def main():
         sha256={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (args.fc,args.ni,args.reference)},
         scope='Original ARM64 profile producer, default mask, classifier key/action converters and masked-key/CRC calculation. Profile allocator, table lookup responses and hardware IO are modeled; no physical multicast forwarding.')
     args.output.write_text(json.dumps(report,indent=2)+'\n')
-    print('PASS: original multicast profiles,8 tuple withdrawals,64 MTU vectors,12 classifier conversions and256 native source/group-IP masked keys and CRCs')
+    print(f"PASS: original multicast profiles,8 tuple withdrawals,64 MTU vectors,12 classifier conversions,8 FIB indices and{report['native_ip_keys']['vectors']} native source/group/GEM masked keys and CRCs")
 
 
 if __name__=='__main__':main()

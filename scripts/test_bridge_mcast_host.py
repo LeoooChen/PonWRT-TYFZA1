@@ -62,6 +62,9 @@ struct rtl_qm_rx {struct rtl_fttr_rx fttr_rx[8];unsigned fttr_epoch;
 code = code.replace('struct rtl9617c_ni_endpoint *pon;', 'struct rtl9617c_ni_endpoint *pon,*fttr;')
 code = code.replace('bool profile;', 'bool profile,deepq_configured;')
 code = code[:code.index('static u64 ktime_get_ns(')]+r'''
+#define SKB_EXT_RTL9617C_BRIDGE 0
+static struct rtl9617c_bridge_frame host_frame;
+static const struct rtl9617c_bridge_frame *skb_ext_find(struct sk_buff *s,int id){(void)s;assert(!id);return &host_frame;}
 static unsigned retired,host_calls,local_calls,gro_calls,radio_calls,expect_group,expect_source,expect_cos;
 static unsigned expected_length,live;
 static bool reject_host;
@@ -81,6 +84,7 @@ static unsigned eth_type_trans(struct sk_buff *s,struct net_device *d){s->dev=d;
 static int rtl9617c_bridge_mcast_receive_test(struct sk_buff *s,unsigned group,unsigned source){
  assert(group==expect_group&&source==expect_source&&active->read[expect_cos]==8&&readl(active->ni+EPP_READ+expect_cos*4)==8);
  assert(s->len==expected_length&&!memcmp(s->data,expected,s->len));host_calls++;
+ host_frame.pon_gem=source==7?55:0;
  s->dev=&input;return reject_host?-ESTALE:0;
 }
 static void netif_receive_skb(struct sk_buff *s){
@@ -88,6 +92,12 @@ static void netif_receive_skb(struct sk_buff *s){
  assert(s->len==expected_length-14&&!memcmp(s->data,expected+14,s->len));local_calls++;dev_kfree_skb_any(s);
 }
 static void napi_gro_receive(struct napi_struct *n,struct sk_buff *s){(void)n;gro_calls++;dev_kfree_skb_any(s);}
+static void pon_receive(struct rtl9617c_ni_endpoint *e,struct napi_struct *n,struct sk_buff *s,unsigned src){
+ (void)e;(void)n;assert(s->len==expected_length&&!memcmp(s->data,expected,s->len));
+ if(src==(7|55<<8)){assert(s->priority==0&&host_calls==1);local_calls++;}
+ else {assert(src==7&&!host_calls);gro_calls++;}
+ dev_kfree_skb_any(s);
+}
 static void p6_receive(struct rtl9617c_ni_endpoint *e,struct napi_struct *n,struct sk_buff *s,unsigned src){(void)e;(void)n;assert(src==6);gro_calls++;dev_kfree_skb_any(s);}
 static void radio_receive(struct rtl9617c_ni_wifi_endpoint *e,struct napi_struct *n,struct sk_buff *s,bool f){(void)e;(void)n;assert(f);radio_calls++;dev_kfree_skb_any(s);}
 '''
@@ -99,17 +109,17 @@ int main(void){
  /* Decoder domain: only native CPU0, physical LAN and nonzero group. */
  for(unsigned dst=0;dst<64;dst++)for(unsigned src=0;src<64;src++)for(unsigned pol=0;pol<512;pol++)
   assert(rtl9617c_bridge_host_group(pol<<18,dst<<3|src<<9)==
-   ((dst==16&&(src<=4||src==6)&&(pol&256))?pol&255:0));
+   ((dst==16&&(src<=4||src==6||src==7)&&(pol&256))?pol&255:0));
  for(unsigned full=0;full<2;full++)for(unsigned tags=0;tags<3;tags++)
  for(unsigned cos=0;cos<8;cos++)for(unsigned fault=0;fault<4;fault++) {
   struct net_device owner={.running=true};struct napi_struct napi={.dev=&owner};
   struct rtl9617c_ni_wifi_endpoint radio={.netdev=&input,.receive=radio_receive};
-  struct rtl9617c_ni_endpoint p6={.receive=p6_receive};
-  struct rtl_qm_rx rx={.fttr=&p6,.memory_dma=0x04000000,.ring_dma=0x06000000,.device=&owner};active=&rx;
+  struct rtl9617c_ni_endpoint p6={.receive=p6_receive},pon={.receive=pon_receive};
+  struct rtl_qm_rx rx={.pon=&pon,.fttr=&p6,.memory_dma=0x04000000,.ring_dma=0x06000000,.device=&owner};active=&rx;
   rx.memory=calloc(1,RTL_QM_MEMORY_BYTES);rx.ring_memory=calloc(1,8192);rx.ni=calloc(1,65536);
   rx.lan[0]=rx.lan[4]=&input;rx.wifi[1]=&radio;input.running=true;
   retired=host_calls=local_calls=gro_calls=radio_calls=0;reject_host=fault==1;
-  expect_source=cos%3==2?6:cos%3==1?4:0;expect_group=cos+1;expect_cos=cos;expected_length=1514+4*tags;
+  expect_source=cos%4==3?7:cos%4==2?6:cos%4==1?4:0;expect_group=cos+1;expect_cos=cos;expected_length=1514+4*tags;
   memset(expected,0x55,sizeof(expected));expected[0]=1;expected[6]=2;expected[12]=tags?0x81:8;expected[13]=0;
   for(unsigned t=0;t<tags;t++){expected[14+4*t]=0xb1;expected[15+4*t]=0x23;expected[16+4*t]=t+1<tags?0x81:8;expected[17+4*t]=0;}
   unsigned header=full?16:8,pol=fault==2?0:256+expect_group;

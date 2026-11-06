@@ -22,6 +22,8 @@ struct rtl9617c_bridge_frame {
 	u16 source_port, destination_port;
 	u8 source[6], destination[6], tags;
 	struct rtl9617c_bridge_tag tag[2];
+	u8 pon_tags, pon_priority;
+	struct rtl9617c_bridge_tag pon_tag[2];
 };
 
 struct net_device;
@@ -55,7 +57,7 @@ void rtl9617c_bridge_mcast_complete(u64 transaction, bool complete);
 static inline unsigned int rtl9617c_bridge_host_group(u32 h0,u32 h1)
 {
  unsigned int pol=(h0>>18)&511,source=(h1>>9)&63;
- return ((h1>>3)&63)==16 && (source<=4 || source==6) && (pol&256)?pol&255:0;
+ return ((h1>>3)&63)==16 && (source<=4 || source==6 || source==7) && (pol&256)?pol&255:0;
 }
 int rtl9617c_bridge_mcast_receive(struct sk_buff *skb, unsigned int group, unsigned int source);
 int rtl9617c_bridge_mcast_local(struct sk_buff *skb, struct net_device *bridge, u16 vid);

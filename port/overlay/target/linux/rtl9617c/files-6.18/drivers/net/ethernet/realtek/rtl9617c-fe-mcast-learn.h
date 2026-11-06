@@ -108,7 +108,7 @@ static int fe_mcast_host_receive(void *context,struct sk_buff *skb,unsigned int 
  input=dev_get_by_index_rcu(host.net,host.input.ingress);
  logical=dev_get_by_index_rcu(host.net,host.input.port);
  brdev=dev_get_by_index_rcu(host.net,host.bridge);
- if(source!=host.source || (source==6 && (!READ_ONCE(fe->fttr_admitted) || input!=fe->fttr_netdev)) || !input || !logical || !brdev ||
+ if(source!=host.source || (source==7 && (!READ_ONCE(fe->pon_requested) || input!=fe->itu_netdev)) || (source==6 && (!READ_ONCE(fe->fttr_admitted) || input!=fe->fttr_netdev)) || !input || !logical || !brdev ||
     !netif_running(input) || netdev_master_upper_dev_get_rcu(logical)!=brdev)goto stale;
  /* QM gives us the complete Ethernet frame before eth_type_trans. */
  skb_reset_mac_header(skb);__skb_pull(skb,ETH_HLEN);
@@ -144,6 +144,7 @@ static int fe_mcast_host_local(void *context,struct sk_buff *skb,struct net_devi
     bridge->fe->mc_gate.active && !bridge->fe->mc_gate.writers &&
     host->epoch==bridge->fe->mc_gate.epoch && host->epoch==saved->multicast_epoch &&
     (host->source!=6 || READ_ONCE(bridge->fe->fttr_admitted)) &&
+    (host->source!=7 || READ_ONCE(bridge->fe->pon_requested)) &&
     host->owner==saved->multicast_host_owner && host->net==dev_net(brdev) &&
     host->bridge==brdev->ifindex && host->input.port==skb->dev->ifindex && host->input.vid==vid)ret=1;
  spin_unlock_irqrestore(&bridge->fe->mc_lock,flags);
@@ -272,6 +273,35 @@ static void fe_mcast_purge(struct rtl_fe_bridge *bridge)
  }
 }
 
+/* PON CPU RX starts with priority0; tagged frames derive PCP in its parser.
+ * Keep the observed wire/logical images separate, checking every unkeyed DSCP
+ * variant through the very same GEM and local-service/UNI selection. */
+static int fe_mcast_pon_input(struct rtl_fe *fe,const struct rtl9617c_bridge_frame *frame)
+{
+ struct rtl_evto_packet input={.count=frame->tags,.protocol=frame->protocol},expected={.count=frame->pon_tags};
+ unsigned int i,dscps;
+ if(!fe->pon_requested || !fe->itu_paths || frame->pon_generation!=fe->itu_paths->generation ||
+    frame->pon_gem<8 || frame->pon_gem>255 || frame->tags>2 || frame->pon_tags>2)return -ESTALE;
+ for(i=0;i<frame->tags;i++)input.tag[i]=(struct rtl_evto_tag){frame->tag[i].protocol,frame->tag[i].tci};
+ for(i=0;i<frame->pon_tags;i++)expected.tag[i]=(struct rtl_evto_tag){frame->pon_tag[i].protocol,frame->pon_tag[i].tci};
+ if(input.count)input.priority=input.tag[0].tci>>13;
+ if(frame->protocol==ETH_P_IP && (frame->source_port==67 || frame->source_port==68) &&
+    (frame->destination_port==67 || frame->destination_port==68))input.criteria=1;
+ if(frame->protocol==ETH_P_IPV6 && (frame->source_port==546 || frame->source_port==547) &&
+    (frame->destination_port==546 || frame->destination_port==547))input.criteria=2;
+ dscps=(fe_evto_dependencies(fe->itu_paths)&1)?64:1;
+ for(i=0;i<dscps;i++) {
+  const struct rtl_itu_path *path;
+  struct rtl_evto_packet output;
+  input.dscp=i;
+  rcu_read_lock();
+  path=rtl_pon_itu_receive_path(fe->itu_paths,fe->itu_netdev,frame->pon_gem,&input,&output);
+  rcu_read_unlock();
+  if(!path || !fe_evto_equal(&output,&expected) || output.priority!=frame->pon_priority)return -EOPNOTSUPP;
+ }
+ return 0;
+}
+
 /* RTNL and the FE mutex pin the netdev/port owners. The short gate lock is
  * taken only for epoch and final publication; no indirect IO runs under it. */
 /* Apply the same OMCI/EVTO selection as CPU PON TX to each final replica.
@@ -326,8 +356,12 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
     netdev_master_upper_dev_get(input)!=brdev || br_port_get_stp_state(input)!=BR_STATE_FORWARDING ||
     br_fdb_find_port(brdev,packet->input.source,packet->input.vid)!=input)return -ESTALE;
  data.input=fe_port(fe,__dev_get_by_index(packet->net,packet->input.ingress));
- if(!data.input || (data.input->source>4 && data.input->netdev!=fe->fttr_netdev) ||
+ if(!data.input || (data.input->source>4 && data.input->netdev!=fe->fttr_netdev && data.input->netdev!=fe->itu_netdev) ||
     data.input->wifi_id || data.input->llid)return -EOPNOTSUPP;
+ if(data.input->netdev==fe->itu_netdev) {
+  if(data.input->source!=7)return -EOPNOTSUPP;
+  ret=fe_mcast_pon_input(fe,&packet->input);if(ret)return ret;
+ }
  if(data.input->netdev==fe->fttr_netdev) {
   if(!fe->fttr_admitted || data.input->source!=6 || !is_vlan_dev(input) ||
      vlan_dev_real_dev(input)!=fe->fttr_netdev || !packet->input.tags ||
@@ -344,7 +378,7 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
  list_for_each_entry_safe(flow,next,&fe->flows,list)if(flow->learned && flow->replica_count) {
   if(flow->deleting || flow->mc_epoch!=packet->epoch) {
    ret=fe_delete(fe,flow);if(ret)return ret;
-  } else if(flow->input==data.input && flow->bridge_index==packet->bridge &&
+  } else if(flow->input==data.input && flow->ingress_pol==packet->input.pon_gem && flow->bridge_index==packet->bridge &&
     flow->ethernet_protocol==packet->input.protocol && flow->bridge_vid==packet->input.vid &&
     ether_addr_equal(flow->ethernet_source,packet->input.source) &&
     ether_addr_equal(flow->destination,packet->input.destination) &&
@@ -461,7 +495,7 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
  data.ethernet_protocol=packet->input.protocol;
  data.key=(struct rtl_fe_ipv4_key){.source=packet->input.ip_source[0],.destination=packet->input.ip_destination[0],
   .source_port=packet->input.source_port,.destination_port=packet->input.destination_port,
-  .protocol=packet->input.ip_protocol,.ingress=data.input->source,.mask=RTL_FE_MC_LEARNED_MASK};
+  .protocol=packet->input.ip_protocol,.ingress=data.input->source,.llid=packet->input.pon_gem,.mask=RTL_FE_MC_LEARNED_MASK};
  memcpy(data.key6.source,packet->input.ip_source,sizeof(data.key6.source));
  memcpy(data.key6.destination,packet->input.ip_destination,sizeof(data.key6.destination));
  data.action.bridge=1;data.action.check_mask=RTL_FE_MC_LEARNED_MASK;

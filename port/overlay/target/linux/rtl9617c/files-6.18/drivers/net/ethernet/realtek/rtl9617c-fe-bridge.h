@@ -180,6 +180,8 @@ static unsigned int fe_bridge_wire(void *private,struct sk_buff *skb,
  received=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
  if(received && received->pon_gem) {
   frame.pon_gem=received->pon_gem;frame.pon_generation=received->pon_generation;
+  frame.pon_tags=frame.tags;frame.pon_priority=skb->priority;
+  memcpy(frame.pon_tag,frame.tag,sizeof(frame.tag));
   frame.tags=received->tags;memcpy(frame.tag,received->tag,sizeof(frame.tag));
  }
  saved=skb_ext_add(skb,SKB_EXT_RTL9617C_BRIDGE);
@@ -238,6 +240,8 @@ static unsigned int fe_bridge_capture(void *private,struct sk_buff *skb,
  frame.multicast_epoch=wire->multicast_epoch;
  if(!wire->ip_protocol)frame.ip_protocol=0;
  frame.pon_gem=wire->pon_gem;frame.pon_generation=wire->pon_generation;
+ frame.pon_tags=wire->pon_tags;frame.pon_priority=wire->pon_priority;
+ memcpy(frame.pon_tag,wire->pon_tag,sizeof(frame.pon_tag));
  frame.tags=wire->tags;
  memcpy(frame.tag,wire->tag,sizeof(frame.tag));
  saved=skb_ext_add(skb,SKB_EXT_RTL9617C_BRIDGE);

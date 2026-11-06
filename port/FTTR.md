@@ -4471,6 +4471,65 @@ new groups. Existing255-group/64-action/8-source-MAC quarantines remain.
 Unknown-multicast flood offload, safe hardware retirement and real optical/
 forwarding acceptance remain incomplete. No device was accessed.
 
+### PON-source multicast and native host receive
+
+The complete multicast learner now accepts the native ITU PON source7 with
+its received **GEM table index** and current OMCI path generation. WAN IF_ID
+row0/FIB0 joins LAN row128/FIB512 in profile1; both classifiers preserve the
+physical source and POL/GEM and default to CPU16. The profile owns/restores
+both key/action snapshots and closes learned tuple3 for both directions with
+the same gate. The original IF_ID index function confirms row0/128's four FIB
+slots, and original key/action converters confirm the profile's encoding.
+Ordinary unicast retains profile0 and its eight templates.
+
+The PON receive driver already saved original wire tags. Native ingress and
+bridge capture now also preserve the post-OMCI tag image and skb priority,
+before a local VLAN upper or bridge removes a tag. The learner runs the same
+`rtl_pon_itu_receive_path` helper as CPU RX: it first tries the configured local
+VLAN service boundary, otherwise applies the full UNI chain. It checks exact
+GEM/generation, all final tags and priority, including any unkeyed DSCP variants.
+Missing/changed service topology or a different output image rejects learning.
+The original GEM index is included in the hardware key and existing-flow
+identity, so otherwise identical packets arriving on two GEMs get independent
+rules. Downstream multicast GEMs are accepted here; their upstream use remains
+excluded by the distinct output selector.
+
+A PON host replica still preserves original wire bytes and uses POL256+group
+for its quarantined identity. The FE host owner recovers the original GEM;
+QM passes it to the existing PON endpoint without applying `eth_type_trans`
+first. PON RX rechecks GEM, active paths and configuration generation, applies
+the normal OMCI VLAN restore, preserves the host skb extension and delivers
+without GRO. The bridge then performs local eligibility checks and consumes
+the host-copy decision without forwarding again. A late ITU host copy after
+an EPON mode switch is dropped before it can be interpreted as an LLID packet.
+PON disable or path replacement invalidates these flows through the same
+whole-group ownership used for PON outputs. Source7 host MTU limits and the
+one-buffer guard use the existing complete-copy receive contract.
+
+Offline verification includes two same-tuple GEM55/56 flows present at once,
+independent hardware keys/host owners, VLAN901-to900 wire/logical capture and
+OMCI receive, multicast GEMs, actual service lookup, wrong GEM/generation,
+withdrawn admission and extension-allocation failure. The production QM poll
+and PON dispatcher checks cover source7 GEM recovery, no premature Ethernet
+pull/GRO and late EPON-mode rejection.596 profile command faults/applied
+write timeouts restore both classifier snapshots;1280 original masked-key/CRC
+cases now include source7/GEM8/55/255, with12 classifier conversions and eight
+IF_ID FIB-index executions. Existing unicast bridge, FTTR reports, complete
+multicast ownership/core/gate,109 parser byte vectors, ordinary PON PPPoE/DHCP/
+IPTV receive and768 P6 fragmented-RX cases pass. Final Image/modules and source
+identity are checked in
+`artifacts/fttr/mcast-pon-input-kernel-final-20261107.log`.
+The older `test_pon_data_path.py` fixture cannot compile the current ITU driver
+interfaces; `test_pon_host_mode.py` executes the changed receive dispatcher
+with a focused model instead. That stale aggregate check is not claimed as
+passing and no physical device was accessed.
+
+Native radio multicast input/replicas, EPON-specific multicast integration,
+unknown-multicast flood offload and safe hardware resource retirement remain
+work. The existing group/action/MAC/DBUF capacity restrictions remain. Neither
+these checks nor the new generation validation prove physical PON packet
+retirement, lossless transitions or full FTTR acceptance.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
