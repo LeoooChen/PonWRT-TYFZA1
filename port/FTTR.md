@@ -4152,6 +4152,23 @@ producer and its complete membership/filter/router/local-receive snapshot are
 still being implemented; no automatic MDB acceleration or physical hit is
 claimed by this profile work.
 
+`test_bridge_multicast_selection.py` executes this kernel's actual
+`br_multicast_flood`, `maybe_deliver`, `should_deliver` and clone-control path
+under ASan/UBSan. Fourteen cases cover member/router de-duplication,
+(*,G)/(S,G) INCLUDE/block behavior, STP/VLAN/hardware-domain/isolation/hairpin
+filtering, local receive, multicast-to-unicast dispatch, router-only miss and
+failure at each clone. The router branch can remain selected when the same
+port's member entry is blocked or INCLUDE. A late clone failure leaves only
+part of the original recipient set transmitted. Automatic learning must
+capture a complete successful forwarding transaction and retain local delivery;
+observing individual post-routing copies or simply listing MDB ports is
+insufficient. The report is `bridge-multicast-selection-20261106.json`.
+
+The current kernel also defers ordinary switchdev MDB updates, while
+`br_mdb_flag_change_notify` skips switchdev. Router deletion notifications
+coalesce the IPv4/IPv6 state. Those notifications alone cannot supply the
+complete immediate invalidation needed by an automatic source/group flow.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
