@@ -4745,6 +4745,18 @@ this reference observation alone does not lift the restriction.
 Disabled queues, failed SLA application and foreign VOQ width refuse
 admission. EPON output MTU follows the native1522-byte Ethernet limit.
 
+Queue admission now reads the actual PVT for every active instance before
+publishing the snapshot. Both the PVT row/queue enables and the global VOQ
+bitmap must permit the queue. Enabled queue IDs must match the native
+instance/queue identity; linked rows and a foreign deficit scheduler are
+rejected. Busy/timeout results revoke admission and retain withdrawal retry.
+Unchanged decoded masks keep the generation. The retained AAL PVT decoder
+agrees with960 native admission cases and7680 queue-field decodes, including
+fields spanning register words; both original mode setters/getters also pass.
+The lifecycle test covers PVT enable/remap, linked rows, read failures and
+failed flow withdrawal. Reading tables on refresh does not make uncoordinated
+foreign MMIO writes atomic with packet lookup.
+
 Validation on2026-11-07 executes the actual snapshot producer, LLID writer,
 PDC update, complete learner, FE table lifecycle, PON receive and QM poll:
 
@@ -4765,9 +4777,9 @@ PDC update, complete learner, FE table lifecycle, PON receive and QM poll:
 
 This does not prove queued-packet retirement or safe wire-LLID reuse. Ordinary
 packets already inside hardware when an LLID changes have no native snapshot
-cookie. Actual LLID/PVT queue delivery and physical traffic remain untested;
-PVT programming is owned by the existing native PUC, not independently audited
-for foreign indirect-table mutations here. The255 cumulative group/cookie IDs,
+cookie. Actual LLID/PVT queue delivery and physical traffic remain untested.
+PVT state is now checked at admission refresh; physical in-flight behavior is
+still unproven. The255 cumulative group/cookie IDs,
 64 immutable actions,8 source-MAC entries and8 shared DBUF rules retain their
 documented limits. Direct PE BCMC, unknown multicast flooding, full retirement,
 remaining service/management policies and hardware acceptance remain open.

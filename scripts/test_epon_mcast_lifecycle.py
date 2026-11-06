@@ -8,6 +8,7 @@ import tempfile
 root=Path(__file__).resolve().parents[1]
 drivers=root/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek'
 pdc=(drivers/'rtl9617c-pon-pdc.c').read_text()
+puc=(drivers/'rtl9617c-pon-puc.c').read_text()
 mpcp=(drivers/'rtl9617c-pon-mpcp.c').read_text()
 
 
@@ -38,6 +39,7 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u6
 #define LLID_RESULT 0x16c
 #define GENMASK(h,l) ((~0U<<(l))&(~0U>>(31-(h))))
 '''+ '\n'.join(re.findall(r'^#define PDC_.*$',pdc,re.M)) +r'''
+'''+ '\n'.join(re.findall(r'^#define (?:PVT_|VALID_VOQ0).*$',puc,re.M)) +r'''
 struct rtl9617c_pon {
  int lock,control_lock;void *ni_dev,*mac,*dev;bool mac_prepared,epon_paths_ready,pdc_configured,puc_configured,traffic_enabled,mpcp_enabled,fe_enabled;
  int epon_paths_error,pdc_error;u64 epon_path_epoch,epon_epoch;
@@ -51,6 +53,8 @@ static unsigned calls,withdraws,publishes,writes,pdc_writes;
 static int failure,access_failure;
 static bool admitted;
 static unsigned pdc_table[256][2];
+static unsigned pvt_table[64][5],pvt_reads;
+static int pvt_failure;
 static void mutex_lock(int *p){assert(!*p);*p=1;}
 static void mutex_unlock(int *p){assert(*p);*p=0;}
 #define dev_info(...) ((void)0)
@@ -58,6 +62,12 @@ static unsigned readl(const void *p){u32 v;memcpy(&v,p,4);return v;}
 static void writel(unsigned v,void *p){assert(!admitted&&!current->epon_paths_ready);writes++;memcpy(p,&v,4);}
 static void rtl_pon_update(void *p,unsigned mask,unsigned value){writel((readl(p)&~mask)|(value&mask),p);}
 static int rtl_pdc_itu_configure(struct rtl9617c_pon *p){(void)p;assert(0);return -EIO;}
+static int rtl_puc_access(struct rtl9617c_pon *p,unsigned reg,unsigned index,bool write){
+ assert(reg==PVT_ACCESS&&index<64&&!write&&p->lock);pvt_reads++;
+ if(pvt_failure)return pvt_failure;
+ for(unsigned i=0;i<5;i++)memcpy(p->mac+PVT_DATA0-i*4,&pvt_table[index][i],4);
+ return 0;
+}
 static int rtl9617c_ni_epon_paths(void *ni,const struct rtl_epon_paths *p){
  (void)ni;calls++;assert(!current->epon_paths_ready);admitted=false;
  if(!p)withdraws++;else publishes++;
@@ -70,16 +80,27 @@ static int rtl_pdc_access(struct rtl9617c_pon *p,unsigned index,bool write){asse
 /* Poll completion/result are the only modeled LLID hardware boundary. */
 #define readl_poll_timeout(reg,status,condition,delay,timeout) ((void)(reg),(void)(delay),(void)(timeout),(status)=0,(condition)?0:-ETIMEDOUT)
 '''
+code+=function(puc,'rtl_pon_epon_queue_snapshot')
 for name in ('rtl_pon_epon_paths_invalidate','rtl_pon_epon_paths_refresh','rtl_pon_pdc_refresh','rtl_pon_pdc_configure_locked'):
     code+=function(pdc,name)
 code+=function(mpcp,'rtl_pon_llid_update')
 code+=r'''
 static void set(unsigned reg,unsigned val){memcpy(current->mac+reg,&val,4);}
+static void queue_field(unsigned port,unsigned cos,unsigned value){
+ unsigned bit=cos*9;u64 pair=pvt_table[port][bit/32]|((u64)pvt_table[port][bit/32+1]<<32);
+ pair=(pair&~(511ULL<<(bit%32)))|((u64)value<<(bit%32));
+ pvt_table[port][bit/32]=pair;pvt_table[port][bit/32+1]=pair>>32;
+}
 static void setup(struct rtl9617c_pon *p,unsigned *memory,unsigned count){
  memset(p,0,sizeof(*p));memset(memory,0,0xa000);memset(pdc_table,0,sizeof(pdc_table));current=p;p->mac=memory;p->lock=1;p->control_lock=1;p->mac_prepared=true;
  p->mode=RTL_PON_EPON_1G;p->llid_count=count;p->registered=count==32?~0U:BIT(count)-1;
  p->pdc_configured=p->puc_configured=p->traffic_enabled=p->mpcp_enabled=p->fe_enabled=true;
  p->epon_epoch=33;set(0x10,BIT(2));set(0x2014,p->registered);
+ memset(pvt_table,0,sizeof(pvt_table));pvt_reads=0;pvt_failure=0;
+ for(unsigned p=0;p<count;p++){
+  pvt_table[p][2]=BIT(12);unsigned queues=count>16?4:8;
+  for(unsigned c=0;c<queues;c++)queue_field(p,c,BIT(8)|(p*queues+c));
+ }
  set(0x804c,count>16?1:0);for(unsigned i=0;i<8;i++){set(0x81bc-i*4,~0U);p->epon_sla_length[i]=1;}
  for(unsigned i=0;i<64;i++)p->pdc_source[i]=rtl_pon_data_source(i,0);
  admitted=false;calls=withdraws=publishes=writes=pdc_writes=0;failure=access_failure=0;
@@ -128,6 +149,29 @@ int main(void){
  setup(&pon,memory,1);failure=-ENOMEM;
  assert(rtl_pon_epon_paths_refresh(&pon)==-ENOMEM&&!pon.epon_paths_ready);
  assert(!rtl_pon_epon_paths_refresh(&pon)&&pon.epon_paths_ready&&admitted);
+ /* Actual PVT/global-enable intersection, including fields crossing words,
+  * wrong LLID queue identities, linked rows and unsuccessful reads. */
+ for(unsigned count=16;count<=32;count+=16)for(unsigned c=0;c<(count==16?8U:4U);c++) {
+  setup(&pon,memory,count);unsigned q=count==16?8:4,port=count-1;
+  assert(!rtl_pon_epon_paths_refresh(&pon));u64 generation=published.generation;
+  queue_field(port,c,port*q+c);assert(!rtl_pon_epon_paths_refresh(&pon));
+  assert(published.generation>generation&&!(published.queue_mask[port]&BIT(c)));
+  queue_field(port,c,BIT(8)|((port*q+c)^1U));
+  assert(rtl_pon_epon_paths_refresh(&pon)==-EUCLEAN&&!admitted);
+  queue_field(port,c,BIT(8)|(port*q+c));assert(!rtl_pon_epon_paths_refresh(&pon)&&admitted);
+  pvt_table[port][2]&=~BIT(12);assert(!rtl_pon_epon_paths_refresh(&pon)&&!published.queue_mask[port]);
+  pvt_table[port][2]|=BIT(12)|BIT(8);assert(rtl_pon_epon_paths_refresh(&pon)==-EOPNOTSUPP&&!admitted);
+  pvt_table[port][2]&=~BIT(8);pvt_table[port][4]|=BIT(23);
+  assert(rtl_pon_epon_paths_refresh(&pon)==-EOPNOTSUPP&&!admitted);pvt_table[port][4]=0;
+  assert(!rtl_pon_epon_paths_refresh(&pon));pvt_failure=-ETIMEDOUT;failure=-EIO;
+  assert(rtl_pon_epon_paths_refresh(&pon)==-EIO&&!admitted&&pon.epon_paths_error==-EIO);
+  assert(rtl_pon_epon_paths_refresh(&pon)==-ETIMEDOUT&&!pon.epon_paths_error);
+  pvt_failure=0;set(PVT_ACCESS,BIT(31));unsigned reads=pvt_reads;
+  assert(rtl_pon_epon_paths_refresh(&pon)==-EBUSY&&pvt_reads==reads);
+  set(PVT_ACCESS,0);assert(!rtl_pon_epon_paths_refresh(&pon)&&admitted);
+ }
+ setup(&pon,memory,32);queue_field(0,4,BIT(8)|4);
+ assert(rtl_pon_epon_paths_refresh(&pon)==-EUCLEAN&&!admitted);
  /* Reinitializing PDC while FE is enabled must not publish CPU-only data
   * rows under an enabled FE snapshot; OAM rows always remain CPU16. */
  for(unsigned mode=0;mode<3;mode++)for(unsigned enabled=0;enabled<2;enabled++) {

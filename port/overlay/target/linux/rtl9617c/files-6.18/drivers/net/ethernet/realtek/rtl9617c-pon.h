@@ -259,6 +259,7 @@ void rtl_pon_oam_remove(struct rtl9617c_pon *pon);
 void rtl_pon_oam_carrier(struct rtl9617c_pon *pon);
 int rtl_pon_epon_paths_invalidate(struct rtl9617c_pon *pon);
 int rtl_pon_epon_paths_refresh(struct rtl9617c_pon *pon);
+int rtl_pon_epon_queue_snapshot(struct rtl9617c_pon *pon, struct rtl_epon_paths *paths);
 int rtl_pon_oam_resize(struct rtl9617c_pon *pon, unsigned int count);
 void rtl_pon_oam_address(struct rtl9617c_pon *pon);
 void rtl_pon_data_address(struct rtl9617c_pon *pon);

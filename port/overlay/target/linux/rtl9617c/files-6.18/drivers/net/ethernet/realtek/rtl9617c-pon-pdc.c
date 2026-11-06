@@ -39,14 +39,12 @@ int rtl_pon_epon_paths_refresh(struct rtl9617c_pon *pon)
  paths.count=pon->llid_count;paths.queues=paths.count>16?4:8;paths.mode=pon->mode;
  if(readl(pon->mac+0x804c)!=(paths.queues==4?1U:0U))
   return rtl_pon_epon_paths_invalidate(pon)?:-EUCLEAN;
- for(unsigned int i=0;i<paths.count;i++) {
-  unsigned int q=i*paths.queues;
-  paths.queue_mask[i]=(readl(pon->mac+0x81bc-q/32*4)>>(q%32))&((1U<<paths.queues)-1);
- }
  paths.active=pon->registered&(synced?raw_registered:pon->epon_holdover_active);
  paths.active&=paths.count==32?~0U:BIT(paths.count)-1;
  for(unsigned int i=0;i<paths.count && i<8;i++)
   if(!pon->epon_sla_length[i])paths.active&=~BIT(i);
+ ret=rtl_pon_epon_queue_snapshot(pon,&paths);
+ if(ret)return rtl_pon_epon_paths_invalidate(pon)?:ret;
  paths.registration_epoch=pon->epon_epoch;
  for(unsigned int i=0;i<64;i++) {
   paths.table[i]=readl(pon->mac+0x64+i*4);

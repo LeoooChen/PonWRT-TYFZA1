@@ -69,6 +69,50 @@ static int rtl_puc_port(struct rtl9617c_pon *pon, unsigned int port,
 	return rtl_puc_access(pon, PVT_ACCESS, port, true);
 }
 
+int rtl_pon_epon_queue_snapshot(struct rtl9617c_pon *pon, struct rtl_epon_paths *paths)
+{
+	unsigned int port,cos;
+	int ret;
+
+	lockdep_assert_held(&pon->lock);
+	for (port=0;port<paths->count;port++) {
+		u32 data[5],valid;
+		unsigned int first=port*paths->queues;
+
+		if (!(paths->active&BIT(port)))
+			continue;
+		/* Never replace an unfinished indirect command. Both PVT enable
+		 * and the global VOQ bitmap must permit the native identity map. */
+		if (readl(pon->mac+PVT_ACCESS)&BIT(31))
+			return -EBUSY;
+		ret=rtl_puc_access(pon,PVT_ACCESS,port,false);
+		if (ret)
+			return ret;
+		for (cos=0;cos<5;cos++)
+			data[cos]=readl(pon->mac+PVT_DATA0-cos*4);
+		/* Native PUC owns one independent SP/WRR row per MAC instance.
+		 * A linked row or deficit scheduler is a different policy. */
+		if ((data[2]&BIT(8)) || (data[4]&BIT(23)))
+			return -EOPNOTSUPP;
+		if (!(data[2]&BIT(12)))
+			continue;
+		valid=readl(pon->mac+VALID_VOQ0-first/32*4)>>(first%32);
+		for (cos=0;cos<8;cos++) {
+			unsigned int bit=cos*9;
+			u64 pair=data[bit/32]|((u64)data[bit/32+1]<<32);
+			unsigned int field=(pair>>(bit%32))&511;
+
+			if (!(field&BIT(8)))
+				continue;
+			if (cos>=paths->queues || (field&255)!=first+cos)
+				return -EUCLEAN;
+			if (valid&BIT(cos))
+				paths->queue_mask[port]|=BIT(cos);
+		}
+	}
+	return 0;
+}
+
 static int rtl_puc_token_buckets(struct rtl9617c_pon *pon, unsigned int first)
 {
 	unsigned int queue;
