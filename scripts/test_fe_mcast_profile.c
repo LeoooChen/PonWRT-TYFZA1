@@ -32,8 +32,11 @@ static int indirect(void *p,unsigned int reg,unsigned int command)
   rtl_fe_classify_hash(fib,1,0);rtl_fe_bits_set(fib,208,1,0);
   assert(!memcmp(m->fib[512],fib,sizeof(fib)));
   assert(!memcmp(m->masks[55],mask,16)&&!memcmp(m->masks[119],mask+4,16));
+  rtl_fe_mc_learned_mask(mask);
+  assert(!memcmp(m->masks[54],mask,16)&&!memcmp(m->masks[118],mask+4,16));
   assert(read_reg(m,0x372c)==3 && read_reg(m,0x3730)==61 && read_reg(m,0x3734)==(59|1U<<8));
   assert(read_reg(m,0x3738)==(55|2U<<8) && read_reg(m,0x3750)==(RTL_FE_ACTION_GROUPS|3U<<25));
+  assert(read_reg(m,0x373c)==(54|3U<<8));
   for(unsigned int i=0;i<11;i++)assert(read_reg(m,data-4*i)==key[i]);
  }
  for(unsigned int i=0;i<count;i++) {

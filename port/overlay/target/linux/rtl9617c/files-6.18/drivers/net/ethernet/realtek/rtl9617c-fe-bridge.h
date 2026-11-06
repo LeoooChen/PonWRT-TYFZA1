@@ -9,6 +9,16 @@
 #include <net/switchdev.h>
 
 #define FE_BRIDGE_PENDING 256
+#define FE_MCAST_PENDING 16
+
+struct fe_mcast_packet {
+ struct net *net;
+ struct rtl9617c_bridge_frame input;
+ u64 transaction,epoch;
+ unsigned int bridge,count,outputs;
+ bool failed,local,complete;
+ struct {unsigned int port,physical;struct rtl9617c_bridge_frame frame;bool seen;} output[RTL_FE_MC_ACTIONS];
+};
 
 struct fe_bridge_packet {
  struct net *net;
@@ -26,6 +36,7 @@ struct rtl_fe_bridge {
  struct rtl_fe *fe;
  struct delayed_work work;
  struct notifier_block netdev, switchdev, blocking;
+ struct rtl9617c_bridge_mcast_ops multicast;
  struct pernet_operations pernet;
  struct nf_hook_ops hooks[2];
  spinlock_t pending_lock;
@@ -33,6 +44,7 @@ struct rtl_fe_bridge {
  atomic_t epoch, flush;
  struct list_head wire_ports;
  bool stopping;
+ struct fe_mcast_packet *multicast_pending[FE_MCAST_PENDING];
  struct fe_bridge_packet pending[FE_BRIDGE_PENDING];
 };
 
@@ -42,6 +54,36 @@ static struct rtl_fe_bridge *fe_bridge_owner;
 static void fe_bridge_invalidate(struct rtl_fe *fe)
 {
  atomic_inc(&fe->bridge->epoch);
+ fe_mcast_invalidate(fe);
+}
+
+static void fe_mcast_change_begin(void *context,struct net_device *dev)
+{
+ struct rtl_fe_bridge *bridge=context;
+ struct rtl_fe *fe=bridge->fe;
+ struct rtl_dq_io io=fe_io(fe);
+ unsigned long flags;
+
+ spin_lock_irqsave(&fe->mc_lock,flags);
+ rtl_fe_mc_gate_begin(&io,&fe->mc_gate);
+ atomic_set(&fe->mc_flush,1);
+ spin_unlock_irqrestore(&fe->mc_lock,flags);
+}
+static void fe_mcast_change_end(void *context)
+{
+ struct rtl_fe_bridge *bridge=context;
+ unsigned long flags;
+
+ spin_lock_irqsave(&bridge->fe->mc_lock,flags);
+ rtl_fe_mc_gate_end(&bridge->fe->mc_gate);
+ spin_unlock_irqrestore(&bridge->fe->mc_lock,flags);
+ if(!READ_ONCE(bridge->stopping))mod_delayed_work(system_wq,&bridge->work,0);
+}
+static void fe_mcast_invalidate(struct rtl_fe *fe)
+{
+ if(!fe->bridge)return;
+ fe_mcast_change_begin(fe->bridge,NULL);
+ fe_mcast_change_end(fe->bridge);
 }
 
 static struct net_device *fe_bridge_physical(struct net_device *dev,
@@ -62,11 +104,11 @@ static int fe_bridge_frame(struct sk_buff *skb,struct rtl9617c_bridge_frame *fra
 {
  struct vlan_hdr storage,*vlan;
  __be16 protocol=eth_hdr(skb)->h_proto;
- unsigned int offset=0;
+ unsigned int offset=0,payload=0;
 
  ether_addr_copy(frame->source,eth_hdr(skb)->h_source);
  ether_addr_copy(frame->destination,eth_hdr(skb)->h_dest);
- if(!is_valid_ether_addr(frame->source) || !is_valid_ether_addr(frame->destination))return -EINVAL;
+ if(!is_valid_ether_addr(frame->source) || is_zero_ether_addr(frame->destination))return -EINVAL;
  if(skb_vlan_tag_present(skb)) {
   frame->tag[0]=(struct rtl9617c_bridge_tag){.tci=skb_vlan_tag_get(skb),
    .protocol=ntohs(skb->vlan_proto)};
@@ -82,6 +124,30 @@ static int fe_bridge_frame(struct sk_buff *skb,struct rtl9617c_bridge_frame *fra
   offset+=sizeof(storage);
  }
  frame->protocol=ntohs(protocol);
+ if(is_multicast_ether_addr(frame->destination)) {
+  const u8 *ip;u8 header[40];
+  if(protocol==htons(ETH_P_IP)) {
+   ip=skb_header_pointer(skb,offset,20,header);
+   if(!ip || ip[0]!=0x45 || (get_unaligned_be16(ip+6)&0x3fff) || ip[9]!=IPPROTO_UDP)return -EOPNOTSUPP;
+   frame->ip_protocol=ip[9];frame->ip_source[0]=get_unaligned_be32(ip+12);
+   frame->ip_destination[0]=get_unaligned_be32(ip+16);
+   if(get_unaligned_be16(ip+2)<28 || get_unaligned_be16(ip+2)>skb->len-offset)return -EINVAL;
+   payload=get_unaligned_be16(ip+2)-20;offset+=20;
+  } else if(protocol==htons(ETH_P_IPV6)) {
+   ip=skb_header_pointer(skb,offset,40,header);
+   if(!ip || ip[0]>>4!=6 || ip[6]!=IPPROTO_UDP)return -EOPNOTSUPP;
+   frame->ip_protocol=ip[6];
+   for(unsigned int i=0;i<4;i++) {
+    frame->ip_source[i]=get_unaligned_be32(ip+8+i*4);
+    frame->ip_destination[i]=get_unaligned_be32(ip+24+i*4);
+   }
+   if(get_unaligned_be16(ip+4)<8 || get_unaligned_be16(ip+4)>skb->len-offset-40)return -EINVAL;
+   payload=get_unaligned_be16(ip+4);offset+=40;
+  } else return -EOPNOTSUPP;
+  ip=skb_header_pointer(skb,offset,8,header);
+  if(!ip || get_unaligned_be16(ip+4)<8 || get_unaligned_be16(ip+4)!=payload)return -EINVAL;
+  frame->source_port=get_unaligned_be16(ip);frame->destination_port=get_unaligned_be16(ip+2);
+ }
  if(protocol==htons(ETH_P_PPP_SES)) {
   u8 storage[8],*pppoe=skb_header_pointer(skb,offset,sizeof(storage),storage);
   if(!pppoe || pppoe[0]!=0x11 || pppoe[1])return -EINVAL;
@@ -102,6 +168,13 @@ static unsigned int fe_bridge_wire(void *private,struct sk_buff *skb,
 
  if(!rtl_fe_enabled(bridge->fe) || skb_is_gso(skb) || fe_bridge_frame(skb,&frame))return NF_ACCEPT;
  frame.ingress=state->in->ifindex;frame.epoch=atomic_read(&bridge->epoch);
+ if(is_multicast_ether_addr(frame.destination)) {
+  unsigned long flags;
+  spin_lock_irqsave(&bridge->fe->mc_lock,flags);
+  frame.multicast_epoch=bridge->fe->mc_gate.epoch;
+  if(bridge->fe->mc_gate.writers)frame.ip_protocol=0;
+  spin_unlock_irqrestore(&bridge->fe->mc_lock,flags);
+ }
  received=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
  if(received && received->pon_gem) {
   frame.pon_gem=received->pon_gem;frame.pon_generation=received->pon_generation;
@@ -159,6 +232,8 @@ static unsigned int fe_bridge_capture(void *private,struct sk_buff *skb,
  wire=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
  if(!wire || wire->epoch!=(u32)atomic_read(&bridge->epoch))return NF_ACCEPT;
  frame.ingress=wire->ingress;frame.epoch=wire->epoch;
+ frame.multicast_epoch=wire->multicast_epoch;
+ if(!wire->ip_protocol)frame.ip_protocol=0;
  frame.pon_gem=wire->pon_gem;frame.pon_generation=wire->pon_generation;
  frame.tags=wire->tags;
  memcpy(frame.tag,wire->tag,sizeof(frame.tag));
@@ -178,6 +253,7 @@ static unsigned int fe_bridge_forwarded(void *private,struct sk_buff *skb,
 
  if(!saved || !saved->port || !state->out || saved->epoch!=(u32)atomic_read(&bridge->epoch) ||
     fe_bridge_frame(skb,&packet.output))return NF_ACCEPT;
+ if(is_multicast_ether_addr(saved->destination))return NF_ACCEPT;
  physical=fe_bridge_physical(state->out,&packet.output,skb->priority);
  brdev=netdev_master_upper_dev_get_rcu(state->out);
  if(!physical || !brdev || !netif_is_bridge_master(brdev))return NF_ACCEPT;
@@ -315,6 +391,8 @@ static int fe_bridge_learn(struct rtl_fe_bridge *bridge,const struct fe_bridge_p
  return 0;
 }
 
+#include "rtl9617c-fe-mcast-learn.h"
+
 static void fe_bridge_work(struct work_struct *work)
 {
  struct rtl_fe_bridge *bridge=container_of(to_delayed_work(work),struct rtl_fe_bridge,work);
@@ -322,6 +400,7 @@ static void fe_bridge_work(struct work_struct *work)
  struct rtl_fe_flow *flow,*next;
  struct rtl_dq_io io=fe_io(fe);
  bool flush=atomic_xchg(&bridge->flush,0);
+ bool mc_flush=atomic_xchg(&fe->mc_flush,0);
  bool active=false;
  unsigned int budget=FE_BRIDGE_PENDING;
 
@@ -332,10 +411,24 @@ static void fe_bridge_work(struct work_struct *work)
   unsigned int age;
   unsigned long lifetime;
   if(!flow->learned)continue;
+  if(flow->replica_count && mc_flush){fe_delete(fe,flow);continue;}
   if(flow->deleting || flow->input->retired || flow->output->retired) {
    fe_delete(fe,flow);continue;
   }
   net=dev_net(flow->input->netdev);
+  if(flow->replica_count) {
+   struct net_device *brdev=__dev_get_by_index(net,flow->bridge_index);
+   if(flush || flow->mc_epoch!=READ_ONCE(fe->mc_gate.epoch) || !brdev ||
+      br_fdb_find_port(brdev,flow->ethernet_source,flow->bridge_vid)!=
+      __dev_get_by_index(net,flow->bridge_ingress)) {
+    fe_delete(fe,flow);continue;
+   }
+   if(!rtl_fe_main_age_read(&io,flow->hash_index,&age) && age>1) {
+    rtl_fe_main_age(&io,flow->hash_index,1);flow->lastused=jiffies;
+    br_fdb_refresh_offload(__dev_get_by_index(net,flow->bridge_ingress),flow->ethernet_source,flow->bridge_vid,true);
+   } else if(time_after(jiffies,flow->lastused+30*HZ))fe_delete(fe,flow);
+   continue;
+  }
   if(flush || !fe_bridge_ports(net,flow->bridge_index,flow->bridge_ingress,
       flow->bridge_egress,flow->ethernet_source,flow->destination,flow->bridge_vid)) {
    fe_delete(fe,flow);continue;
@@ -360,6 +453,7 @@ static void fe_bridge_work(struct work_struct *work)
   fe_bridge_learn(bridge,&packet);
   put_net(packet.net);
  }
+ fe_mcast_process(bridge);
  list_for_each_entry(flow,&fe->flows,list)
   if(flow->learned && flow->published){active=true;break;}
  mutex_unlock(&fe->lock);
@@ -380,6 +474,7 @@ static int fe_bridge_netdev_event(struct notifier_block *notifier,unsigned long 
   /* Explicit multicast TC rules must not survive a logical upper closing
    * or a topology change on any replica. All group recipients are a unit. */
   rtl_fe_flush_multicast(bridge->fe,false);
+  fe_mcast_invalidate(bridge->fe);
   atomic_inc(&bridge->epoch);atomic_set(&bridge->flush,1);
   mod_delayed_work(system_wq,&bridge->work,0);break;
  }
@@ -393,6 +488,7 @@ static int fe_bridge_switch_event(struct notifier_block *notifier,unsigned long 
  if(event==SWITCHDEV_FDB_ADD_TO_DEVICE || event==SWITCHDEV_FDB_DEL_TO_DEVICE ||
     event==SWITCHDEV_PORT_OBJ_ADD || event==SWITCHDEV_PORT_OBJ_DEL || event==SWITCHDEV_PORT_ATTR_SET) {
   atomic_inc(&bridge->epoch);
+  fe_mcast_invalidate(bridge->fe);
   if(event!=SWITCHDEV_FDB_ADD_TO_DEVICE && event!=SWITCHDEV_FDB_DEL_TO_DEVICE)
    atomic_set(&bridge->flush,1);
   mod_delayed_work(system_wq,&bridge->work,0);
@@ -412,6 +508,7 @@ static void fe_bridge_net_exit(struct net *net)
 static struct rtl_fe_bridge *fe_bridge_start(struct rtl_fe *fe)
 {
  struct rtl_fe_bridge *bridge=kzalloc(sizeof(*bridge),GFP_KERNEL);
+ struct fe_bridge_wire_port *port,*next;
  int ret;
 
  if(!bridge)return ERR_PTR(-ENOMEM);
@@ -436,7 +533,15 @@ static struct rtl_fe_bridge *fe_bridge_start(struct rtl_fe *fe)
  if(ret)goto switchdev;
  ret=register_netdevice_notifier(&bridge->netdev);
  if(ret)goto blocking;
+ bridge->multicast=(struct rtl9617c_bridge_mcast_ops){.context=bridge,
+  .change_begin=fe_mcast_change_begin,.change_end=fe_mcast_change_end,
+  .capture_begin=fe_mcast_capture_begin,.capture_select=fe_mcast_capture_select,
+  .capture_output=fe_mcast_capture_output,.capture_end=fe_mcast_capture_end};
+ ret=rtl9617c_bridge_mcast_register(&bridge->multicast);
+ if(ret)goto netdev;
  return bridge;
+netdev:
+ unregister_netdevice_notifier(&bridge->netdev);
 blocking:
  unregister_switchdev_blocking_notifier(&bridge->blocking);
 switchdev:
@@ -445,7 +550,14 @@ pernet:
  unregister_pernet_subsys(&bridge->pernet);
 free:
  WRITE_ONCE(bridge->stopping,true);
+ rtnl_lock();
+ list_for_each_entry_safe(port,next,&bridge->wire_ports,list) {
+  nf_unregister_net_hook(dev_net(port->hook.dev),&port->hook);
+  list_del(&port->list);kfree(port);
+ }
+ rtnl_unlock();
  cancel_delayed_work_sync(&bridge->work);
+ fe_mcast_purge(bridge);
  while(bridge->read!=bridge->write) {
   put_net(bridge->pending[bridge->read].net);
   bridge->read=(bridge->read+1)%FE_BRIDGE_PENDING;
@@ -458,6 +570,7 @@ static void fe_bridge_stop(struct rtl_fe_bridge *bridge)
  struct fe_bridge_wire_port *port,*next;
 
  WRITE_ONCE(bridge->stopping,true);
+ rtl9617c_bridge_mcast_unregister(&bridge->multicast);
  unregister_netdevice_notifier(&bridge->netdev);
  rtnl_lock();
  list_for_each_entry_safe(port,next,&bridge->wire_ports,list) {
@@ -469,6 +582,7 @@ static void fe_bridge_stop(struct rtl_fe_bridge *bridge)
  unregister_switchdev_notifier(&bridge->switchdev);
  unregister_pernet_subsys(&bridge->pernet);
  cancel_delayed_work_sync(&bridge->work);
+ fe_mcast_purge(bridge);
  while(bridge->read!=bridge->write) {
   put_net(bridge->pending[bridge->read].net);
   bridge->read=(bridge->read+1)%FE_BRIDGE_PENDING;

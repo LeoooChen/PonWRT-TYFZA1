@@ -75,7 +75,7 @@ struct rtl_fe_port {struct net_device *netdev;unsigned int source,destination,ll
 struct work_struct {int unused;};struct delayed_work {struct work_struct work;unsigned int queued;};
 #define to_delayed_work(w) container_of(w,struct delayed_work,work)
 struct rtl_dq_io {int unused;};
-struct rtl_fe {int cookies;struct list_head flows;struct rtl_fe_port *ports[2];struct net_device *itu_netdev,*fttr_netdev;struct rtl_itu_paths *itu_paths;unsigned char ppp_protocol_ids[2];bool enabled;int lock;};
+struct rtl_fe {int cookies;struct list_head flows;struct rtl_fe_port *ports[2];struct net_device *itu_netdev,*fttr_netdev;struct rtl_itu_paths *itu_paths;unsigned char ppp_protocol_ids[2];bool enabled;int lock,mc_flush,mc_lock;struct {unsigned long long epoch;unsigned int writers;} mc_gate;};
 struct fe_bridge_packet {struct net *net;struct rtl9617c_bridge_frame input,output;unsigned int bridge,ingress,egress;u16 vid;};
 struct rtl_fe_bridge {struct rtl_fe *fe;struct delayed_work work;int pending_lock;unsigned int read,write;int epoch,flush;bool stopping;struct fe_bridge_packet pending[256];};
 static struct net_device *devices[128],*fdb_source,*fdb_destination;
@@ -93,12 +93,15 @@ static struct net_device *vlan_dev_real_dev(struct net_device *d){return d->lowe
 static void ether_addr_copy(u8 *d,const u8 *s){memcpy(d,s,6);}
 static bool ether_addr_equal(const u8 *a,const u8 *b){return !memcmp(a,b,6);}
 static bool is_valid_ether_addr(const u8 *a){return !(a[0]&1) && memcmp(a,"\0\0\0\0\0\0",6);}
+static bool is_zero_ether_addr(const u8 *a){return !memcmp(a,"\0\0\0\0\0\0",6);}
+static bool is_multicast_ether_addr(const u8 *a){return a[0]&1;}
 static struct ethhdr *eth_hdr(struct sk_buff *s){return (void *)s->frame;}
 static bool eth_type_vlan(__be16 p){return p==htons(0x8100)||p==htons(0x88a8);}
 static bool skb_vlan_tag_present(struct sk_buff *s){return s->tagged;}
 static u16 skb_vlan_tag_get(struct sk_buff *s){return s->vlan;}
 static void *skb_header_pointer(struct sk_buff *s,unsigned int offset,unsigned int length,void *storage){(void)storage;return offset+14+length<=s->len?s->frame+14+offset:NULL;}
 static u16 get_unaligned_be16(const void *p){const u8 *v=p;return v[0]*256+v[1];}
+static u32 get_unaligned_be32(const void *p){const u8 *v=p;return (u32)v[0]<<24|(u32)v[1]<<16|v[2]<<8|v[3];}
 static void *skb_ext_add(struct sk_buff *s,int id){(void)id;s->extension=true;return &s->saved;}
 static const void *skb_ext_find(struct sk_buff *s,int id){(void)id;return s->extension?&s->saved:NULL;}
 static struct net_device *netdev_master_upper_dev_get_rcu(struct net_device *d){return d->master;}
@@ -109,6 +112,8 @@ static int br_vlan_get_proto(struct net_device *d,u16 *p){*p=d->protocol;return 
 static int br_vlan_get_pvid_rcu(struct net_device *d,u16 *p){*p=d->pvid;return 0;}
 static void spin_lock_bh(int *v){assert(!*v);*v=1;}
 static void spin_unlock_bh(int *v){assert(*v);*v=0;}
+#define spin_lock_irqsave(p,f) do {spin_lock_bh(p);(f)=0;} while(0)
+#define spin_unlock_irqrestore(p,f) do {(void)(f);spin_unlock_bh(p);} while(0)
 static void get_net(struct net *n){n->references++;}
 static void put_net(struct net *n){assert(n->references);n->references--;}
 static void mod_delayed_work(int q,struct delayed_work *w,unsigned int t){(void)q;(void)t;w->queued++;}
@@ -131,6 +136,7 @@ static struct rtl_dq_io fe_io(struct rtl_fe *fe){(void)fe;return (struct rtl_dq_
 static int rtl_fe_main_age_read(struct rtl_dq_io *io,unsigned int index,unsigned int *value){(void)io;(void)index;*value=age;return 0;}
 static int rtl_fe_main_age(struct rtl_dq_io *io,unsigned int index,unsigned int value){(void)io;(void)index;assert(value==1);return 0;}
 static void br_fdb_refresh_offload(struct net_device *d,const u8 *mac,u16 vid,bool source){(void)d;(void)mac;(void)vid;(void)source;refreshed++;}
+static void fe_mcast_process(struct rtl_fe_bridge *b){(void)b;}
 '''
 structs = '\n'.join(re.search(r'struct '+name+r' \{.*?\n\};',fe,re.S)[0] for name in ['rtl_fe_flow','rtl_fe_rule'])
 backend = r'''

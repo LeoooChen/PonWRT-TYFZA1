@@ -1,0 +1,894 @@
+--- a/include/net/tcx.h
++++ b/include/net/tcx.h
+@@ -5,6 +5,9 @@
+ 
+ #include <linux/bpf.h>
+ #include <linux/bpf_mprog.h>
++#ifdef CONFIG_ARCH_RTL9617C
++#include <linux/rtl9617c-bridge.h>
++#endif
+ 
+ #include <net/sch_generic.h>
+ 
+@@ -57,11 +60,20 @@
+ tcx_entry_update(struct net_device *dev, struct bpf_mprog_entry *entry,
+ 		 bool ingress)
+ {
+-	ASSERT_RTNL();
++#ifdef CONFIG_ARCH_RTL9617C
++	const struct rtl9617c_bridge_mcast_ops *native_change;
++#endif
++	ASSERT_RTNL();
++#ifdef CONFIG_ARCH_RTL9617C
++	native_change = rtl9617c_bridge_mcast_begin(NULL);
++#endif
+ 	if (ingress)
+ 		rcu_assign_pointer(dev->tcx_ingress, entry);
+ 	else
+ 		rcu_assign_pointer(dev->tcx_egress, entry);
++#ifdef CONFIG_ARCH_RTL9617C
++	rtl9617c_bridge_mcast_end(native_change);
++#endif
+ }
+ 
+ static inline struct bpf_mprog_entry *
+--- a/net/8021q/vlan_dev.c
++++ b/net/8021q/vlan_dev.c
+@@ -17,6 +17,9 @@
+ 
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ 
++#ifdef CONFIG_ARCH_RTL9617C
++#include <linux/rtl9617c-bridge.h>
++#endif
+ #include <linux/module.h>
+ #include <linux/slab.h>
+ #include <linux/skbuff.h>
+@@ -165,6 +168,13 @@
+ {
+ 	struct vlan_dev_priv *vlan = vlan_dev_priv(dev);
+ 
++#ifdef CONFIG_ARCH_RTL9617C
++	{
++		const struct rtl9617c_bridge_mcast_ops *change = rtl9617c_bridge_mcast_begin(NULL);
++		rtl9617c_bridge_mcast_end(change);
++	}
++#endif
++
+ 	if (vlan->ingress_priority_map[vlan_prio & 0x7] && !skb_prio)
+ 		vlan->nr_ingress_mappings--;
+ 	else if (!vlan->ingress_priority_map[vlan_prio & 0x7] && skb_prio)
+@@ -180,6 +190,13 @@
+ 	struct vlan_priority_tci_mapping *mp = NULL;
+ 	struct vlan_priority_tci_mapping *np;
+ 	u32 vlan_qos = (vlan_prio << VLAN_PRIO_SHIFT) & VLAN_PRIO_MASK;
++
++#ifdef CONFIG_ARCH_RTL9617C
++	{
++		const struct rtl9617c_bridge_mcast_ops *change = rtl9617c_bridge_mcast_begin(NULL);
++		rtl9617c_bridge_mcast_end(change);
++	}
++#endif
+ 
+ 	/* See if a priority mapping exists.. */
+ 	mp = vlan->egress_priority_map[skb_prio & 0xF];
+--- a/net/bridge/br_forward.c
++++ b/net/bridge/br_forward.c
+@@ -48,6 +48,9 @@
+ 		skb_set_network_header(skb, depth);
+ 	}
+ 
++#ifdef CONFIG_ARCH_RTL9617C
++	rtl9617c_bridge_mcast_output(skb);
++#endif
+ 	br_switchdev_frame_set_offload_fwd_mark(skb);
+ 
+ 	dev_queue_xmit(skb);
+@@ -183,6 +186,9 @@
+ 	if (!should_deliver(p, skb))
+ 		return prev;
+ 
++#ifdef CONFIG_ARCH_RTL9617C
++	rtl9617c_bridge_mcast_select(skb, p->dev);
++#endif
+ 	nbp_switchdev_frame_mark_tx_fwd_to_hwdom(p, skb);
+ 
+ 	if (!prev)
+@@ -304,6 +310,12 @@
+ 	struct net_bridge_port_group *p;
+ 	bool allow_mode_include = true;
+ 	struct hlist_node *rp;
++#ifdef CONFIG_ARCH_RTL9617C
++	u64 native_transaction = 0;
++	bool native_complete = true;
++	if (!local_orig)
++		native_transaction = rtl9617c_bridge_mcast_capture(skb, local_rcv);
++#endif
+ 
+ 	rp = br_multicast_get_first_rport_node(brmctx, skb);
+ 
+@@ -327,6 +339,9 @@
+ 			port = lport;
+ 
+ 			if (port->flags & BR_MULTICAST_TO_UNICAST) {
++#ifdef CONFIG_ARCH_RTL9617C
++				native_complete = false;
++#endif
+ 				maybe_deliver_addr(lport, skb, p->eth_addr,
+ 						   local_orig);
+ 				goto delivered;
+@@ -355,13 +370,25 @@
+ 	if (!prev)
+ 		goto out;
+ 
+-	if (local_rcv)
+-		deliver_clone(prev, skb, local_orig);
+-	else
++	if (local_rcv) {
++		int err = deliver_clone(prev, skb, local_orig);
++#ifdef CONFIG_ARCH_RTL9617C
++		native_complete &= !err;
++#else
++		(void)err;
++#endif
++	} else {
+ 		__br_forward(prev, skb, local_orig);
++	}
++#ifdef CONFIG_ARCH_RTL9617C
++	rtl9617c_bridge_mcast_complete(native_transaction, native_complete);
++#endif
+ 	return;
+ 
+ out:
++#ifdef CONFIG_ARCH_RTL9617C
++	rtl9617c_bridge_mcast_complete(native_transaction, false);
++#endif
+ 	if (!local_rcv)
+ 		kfree_skb_reason(skb, reason);
+ }
+--- a/net/bridge/br_mdb.c
++++ b/net/bridge/br_mdb.c
+@@ -1083,9 +1083,9 @@
+ {
+ 	int ret;
+ 
+-	spin_lock_bh(&cfg->br->multicast_lock);
++	br_multicast_write_lock_bh(cfg->br);
+ 	ret = br_mdb_add_group(cfg, extack);
+-	spin_unlock_bh(&cfg->br->multicast_lock);
++	br_multicast_write_unlock_bh(cfg->br);
+ 
+ 	return ret;
+ }
+@@ -1365,7 +1365,7 @@
+ 	struct br_ip ip = cfg->group;
+ 	int err = -EINVAL;
+ 
+-	spin_lock_bh(&br->multicast_lock);
++	br_multicast_write_lock_bh(br);
+ 	mp = br_mdb_ip_get(br, &ip);
+ 	if (!mp)
+ 		goto unlock;
+@@ -1392,7 +1392,7 @@
+ 	}
+ 
+ unlock:
+-	spin_unlock_bh(&br->multicast_lock);
++	br_multicast_write_unlock_bh(br);
+ 	return err;
+ }
+ 
+@@ -1533,7 +1533,7 @@
+ {
+ 	struct net_bridge_mdb_entry *mp;
+ 
+-	spin_lock_bh(&br->multicast_lock);
++	br_multicast_write_lock_bh(br);
+ 
+ 	/* Safe variant is not needed because entries are removed from the list
+ 	 * upon group timer expiration or bridge deletion.
+@@ -1546,7 +1546,7 @@
+ 		br_mdb_flush_pgs(br, mp, desc);
+ 	}
+ 
+-	spin_unlock_bh(&br->multicast_lock);
++	br_multicast_write_unlock_bh(br);
+ }
+ 
+ int br_mdb_del_bulk(struct net_device *dev, struct nlattr *tb[],
+--- a/net/bridge/br_multicast.c
++++ b/net/bridge/br_multicast.c
+@@ -648,7 +648,7 @@
+ 	struct net_bridge_mdb_entry *mp = timer_container_of(mp, t, timer);
+ 	struct net_bridge *br = mp->br;
+ 
+-	spin_lock(&br->multicast_lock);
++	br_multicast_write_lock(br);
+ 	if (hlist_unhashed(&mp->mdb_node) || !netif_running(br->dev) ||
+ 	    timer_pending(&mp->timer))
+ 		goto out;
+@@ -659,7 +659,7 @@
+ 		goto out;
+ 	br_multicast_del_mdb_entry(mp);
+ out:
+-	spin_unlock(&br->multicast_lock);
++	br_multicast_write_unlock(br);
+ }
+ 
+ static void br_multicast_destroy_group_src(struct net_bridge_mcast_gc *gc)
+@@ -860,7 +860,7 @@
+ 	struct hlist_node *tmp;
+ 	bool changed;
+ 
+-	spin_lock(&br->multicast_lock);
++	br_multicast_write_lock(br);
+ 	if (!netif_running(br->dev) || timer_pending(&pg->timer) ||
+ 	    hlist_unhashed(&pg->mglist) || pg->flags & MDB_PG_FLAGS_PERMANENT)
+ 		goto out;
+@@ -887,7 +887,7 @@
+ 		br_mdb_notify(br->dev, mp, pg, RTM_NEWMDB);
+ 	}
+ out:
+-	spin_unlock(&br->multicast_lock);
++	br_multicast_write_unlock(br);
+ }
+ 
+ static void br_multicast_gc(struct hlist_head *head)
+@@ -1316,7 +1316,7 @@
+ 	struct net_bridge_port_group *pg;
+ 	struct net_bridge *br = src->br;
+ 
+-	spin_lock(&br->multicast_lock);
++	br_multicast_write_lock(br);
+ 	if (hlist_unhashed(&src->node) || !netif_running(br->dev) ||
+ 	    timer_pending(&src->timer))
+ 		goto out;
+@@ -1332,7 +1332,7 @@
+ 	}
+ 
+ out:
+-	spin_unlock(&br->multicast_lock);
++	br_multicast_write_unlock(br);
+ }
+ 
+ struct net_bridge_group_src *
+@@ -1564,12 +1564,12 @@
+ 	struct net_bridge_port_group *pg;
+ 	int err;
+ 
+-	spin_lock(&brmctx->br->multicast_lock);
++	br_multicast_write_lock(brmctx->br);
+ 	pg = __br_multicast_add_group(brmctx, pmctx, group, src, filter_mode,
+ 				      igmpv2_mldv1, false);
+ 	/* NULL is considered valid for host joined groups */
+ 	err = PTR_ERR_OR_ZERO(pg);
+-	spin_unlock(&brmctx->br->multicast_lock);
++	br_multicast_write_unlock(brmctx->br);
+ 
+ 	return err;
+ }
+@@ -1652,7 +1652,7 @@
+ 	struct net_bridge *br = pmctx->port->br;
+ 	bool del;
+ 
+-	spin_lock(&br->multicast_lock);
++	br_multicast_write_lock(br);
+ 	if (pmctx->multicast_router == MDB_RTR_TYPE_DISABLED ||
+ 	    pmctx->multicast_router == MDB_RTR_TYPE_PERM ||
+ 	    timer_pending(t))
+@@ -1661,7 +1661,7 @@
+ 	del = br_multicast_rport_del(rlist);
+ 	br_multicast_rport_del_notify(pmctx, del);
+ out:
+-	spin_unlock(&br->multicast_lock);
++	br_multicast_write_unlock(br);
+ }
+ 
+ static void br_ip4_multicast_router_expired(struct timer_list *t)
+@@ -1698,7 +1698,7 @@
+ static void br_multicast_local_router_expired(struct net_bridge_mcast *brmctx,
+ 					      struct timer_list *timer)
+ {
+-	spin_lock(&brmctx->br->multicast_lock);
++	br_multicast_write_lock(brmctx->br);
+ 	if (brmctx->multicast_router == MDB_RTR_TYPE_DISABLED ||
+ 	    brmctx->multicast_router == MDB_RTR_TYPE_PERM ||
+ 	    br_ip4_multicast_is_router(brmctx) ||
+@@ -1707,7 +1707,7 @@
+ 
+ 	br_mc_router_state_change(brmctx->br, false);
+ out:
+-	spin_unlock(&brmctx->br->multicast_lock);
++	br_multicast_write_unlock(brmctx->br);
+ }
+ 
+ static void br_ip4_multicast_local_router_expired(struct timer_list *t)
+@@ -1731,7 +1731,7 @@
+ static void br_multicast_querier_expired(struct net_bridge_mcast *brmctx,
+ 					 struct bridge_mcast_own_query *query)
+ {
+-	spin_lock(&brmctx->br->multicast_lock);
++	br_multicast_write_lock(brmctx->br);
+ 	if (!netif_running(brmctx->br->dev) ||
+ 	    br_multicast_ctx_vlan_global_disabled(brmctx) ||
+ 	    !br_opt_get(brmctx->br, BROPT_MULTICAST_ENABLED))
+@@ -1740,7 +1740,7 @@
+ 	br_multicast_start_querier(brmctx, query);
+ 
+ out:
+-	spin_unlock(&brmctx->br->multicast_lock);
++	br_multicast_write_unlock(brmctx->br);
+ }
+ 
+ static void br_ip4_multicast_querier_expired(struct timer_list *t)
+@@ -1901,7 +1901,7 @@
+ 	struct net_bridge *br = pmctx->port->br;
+ 	struct net_bridge_mcast *brmctx;
+ 
+-	spin_lock(&br->multicast_lock);
++	br_multicast_write_lock(br);
+ 	if (br_multicast_port_ctx_state_stopped(pmctx))
+ 		goto out;
+ 
+@@ -1912,7 +1912,7 @@
+ 	br_multicast_send_query(brmctx, pmctx, query);
+ 
+ out:
+-	spin_unlock(&br->multicast_lock);
++	br_multicast_write_unlock(br);
+ }
+ 
+ static void br_ip4_multicast_port_query_expired(struct timer_list *t)
+@@ -1943,7 +1943,7 @@
+ 	struct net_bridge_mcast *brmctx;
+ 	bool need_rexmit = false;
+ 
+-	spin_lock(&br->multicast_lock);
++	br_multicast_write_lock(br);
+ 	if (!netif_running(br->dev) || hlist_unhashed(&pg->mglist) ||
+ 	    !br_opt_get(br, BROPT_MULTICAST_ENABLED))
+ 		goto out;
+@@ -1977,7 +1977,7 @@
+ 		mod_timer(&pg->rexmit_timer, jiffies +
+ 					     brmctx->multicast_last_member_interval);
+ out:
+-	spin_unlock(&br->multicast_lock);
++	br_multicast_write_unlock(br);
+ }
+ 
+ static int br_mc_disabled_update(struct net_device *dev, bool value,
+@@ -2034,11 +2034,11 @@
+ #endif
+ 	timer_delete_sync(&pmctx->ip4_mc_router_timer);
+ 
+-	spin_lock_bh(&br->multicast_lock);
++	br_multicast_write_lock_bh(br);
+ 	del |= br_ip6_multicast_rport_del(pmctx);
+ 	del |= br_ip4_multicast_rport_del(pmctx);
+ 	br_multicast_rport_del_notify(pmctx, del);
+-	spin_unlock_bh(&br->multicast_lock);
++	br_multicast_write_unlock_bh(br);
+ }
+ 
+ int br_multicast_add_port(struct net_bridge_port *port)
+@@ -2069,10 +2069,10 @@
+ 	struct hlist_node *n;
+ 
+ 	/* Take care of the remaining groups, only perm ones should be left */
+-	spin_lock_bh(&br->multicast_lock);
++	br_multicast_write_lock_bh(br);
+ 	hlist_for_each_entry_safe(pg, n, &port->mglist, mglist)
+ 		br_multicast_find_del_pg(br, pg);
+-	spin_unlock_bh(&br->multicast_lock);
++	br_multicast_write_unlock_bh(br);
+ 	flush_work(&br->mcast_gc_work);
+ 	br_multicast_port_ctx_deinit(&port->multicast_ctx);
+ 	free_percpu(port->mcast_stats);
+@@ -2111,14 +2111,14 @@
+ {
+ 	struct net_bridge *br = pmctx->port->br;
+ 
+-	spin_lock_bh(&br->multicast_lock);
++	br_multicast_write_lock_bh(br);
+ 	if (br_multicast_port_ctx_is_vlan(pmctx) &&
+ 	    !(pmctx->vlan->priv_flags & BR_VLFLAG_MCAST_ENABLED)) {
+-		spin_unlock_bh(&br->multicast_lock);
++		br_multicast_write_unlock_bh(br);
+ 		return;
+ 	}
+ 	__br_multicast_enable_port_ctx(pmctx);
+-	spin_unlock_bh(&br->multicast_lock);
++	br_multicast_write_unlock_bh(br);
+ }
+ 
+ static void __br_multicast_disable_port_ctx(struct net_bridge_mcast_port *pmctx)
+@@ -2148,15 +2148,15 @@
+ {
+ 	struct net_bridge *br = pmctx->port->br;
+ 
+-	spin_lock_bh(&br->multicast_lock);
++	br_multicast_write_lock_bh(br);
+ 	if (br_multicast_port_ctx_is_vlan(pmctx) &&
+ 	    !(pmctx->vlan->priv_flags & BR_VLFLAG_MCAST_ENABLED)) {
+-		spin_unlock_bh(&br->multicast_lock);
++		br_multicast_write_unlock_bh(br);
+ 		return;
+ 	}
+ 
+ 	__br_multicast_disable_port_ctx(pmctx);
+-	spin_unlock_bh(&br->multicast_lock);
++	br_multicast_write_unlock_bh(br);
+ }
+ 
+ static void br_multicast_toggle_port(struct net_bridge_port *port, bool on)
+@@ -2908,7 +2908,7 @@
+ 		if (!pmctx || igmpv2)
+ 			continue;
+ 
+-		spin_lock(&brmctx->br->multicast_lock);
++		br_multicast_write_lock(brmctx->br);
+ 		if (!br_multicast_ctx_should_use(brmctx, pmctx))
+ 			goto unlock_continue;
+ 
+@@ -2956,7 +2956,7 @@
+ 		if (changed)
+ 			br_mdb_notify(brmctx->br->dev, mdst, pg, RTM_NEWMDB);
+ unlock_continue:
+-		spin_unlock(&brmctx->br->multicast_lock);
++		br_multicast_write_unlock(brmctx->br);
+ 	}
+ 
+ 	return err;
+@@ -3046,7 +3046,7 @@
+ 		if (!pmctx || mldv1)
+ 			continue;
+ 
+-		spin_lock(&brmctx->br->multicast_lock);
++		br_multicast_write_lock(brmctx->br);
+ 		if (!br_multicast_ctx_should_use(brmctx, pmctx))
+ 			goto unlock_continue;
+ 
+@@ -3098,7 +3098,7 @@
+ 		if (changed)
+ 			br_mdb_notify(brmctx->br->dev, mdst, pg, RTM_NEWMDB);
+ unlock_continue:
+-		spin_unlock(&brmctx->br->multicast_lock);
++		br_multicast_write_unlock(brmctx->br);
+ 	}
+ 
+ 	return err;
+@@ -3498,7 +3498,7 @@
+ 	unsigned long now = jiffies;
+ 	__be32 group;
+ 
+-	spin_lock(&brmctx->br->multicast_lock);
++	br_multicast_write_lock(brmctx->br);
+ 	if (!br_multicast_ctx_should_use(brmctx, pmctx))
+ 		goto out;
+ 
+@@ -3558,7 +3558,7 @@
+ 	}
+ 
+ out:
+-	spin_unlock(&brmctx->br->multicast_lock);
++	br_multicast_write_unlock(brmctx->br);
+ }
+ 
+ #if IS_ENABLED(CONFIG_IPV6)
+@@ -3581,7 +3581,7 @@
+ 	bool is_general_query;
+ 	int err = 0;
+ 
+-	spin_lock(&brmctx->br->multicast_lock);
++	br_multicast_write_lock(brmctx->br);
+ 	if (!br_multicast_ctx_should_use(brmctx, pmctx))
+ 		goto out;
+ 
+@@ -3647,7 +3647,7 @@
+ 	}
+ 
+ out:
+-	spin_unlock(&brmctx->br->multicast_lock);
++	br_multicast_write_unlock(brmctx->br);
+ 	return err;
+ }
+ #endif
+@@ -3665,7 +3665,7 @@
+ 	unsigned long now;
+ 	unsigned long time;
+ 
+-	spin_lock(&brmctx->br->multicast_lock);
++	br_multicast_write_lock(brmctx->br);
+ 	if (!br_multicast_ctx_should_use(brmctx, pmctx))
+ 		goto out;
+ 
+@@ -3752,7 +3752,7 @@
+ 		break;
+ 	}
+ out:
+-	spin_unlock(&brmctx->br->multicast_lock);
++	br_multicast_write_unlock(brmctx->br);
+ }
+ 
+ static void br_ip4_multicast_leave_group(struct net_bridge_mcast *brmctx,
+@@ -3850,9 +3850,9 @@
+ 	    pim_hdr_type(pimhdr) != PIM_TYPE_HELLO)
+ 		return;
+ 
+-	spin_lock(&brmctx->br->multicast_lock);
++	br_multicast_write_lock(brmctx->br);
+ 	br_ip4_multicast_mark_router(brmctx, pmctx);
+-	spin_unlock(&brmctx->br->multicast_lock);
++	br_multicast_write_unlock(brmctx->br);
+ }
+ 
+ static int br_ip4_multicast_mrd_rcv(struct net_bridge_mcast *brmctx,
+@@ -3863,9 +3863,9 @@
+ 	    igmp_hdr(skb)->type != IGMP_MRDISC_ADV)
+ 		return -ENOMSG;
+ 
+-	spin_lock(&brmctx->br->multicast_lock);
++	br_multicast_write_lock(brmctx->br);
+ 	br_ip4_multicast_mark_router(brmctx, pmctx);
+-	spin_unlock(&brmctx->br->multicast_lock);
++	br_multicast_write_unlock(brmctx->br);
+ 
+ 	return 0;
+ }
+@@ -3934,9 +3934,9 @@
+ 	if (icmp6_hdr(skb)->icmp6_type != ICMPV6_MRDISC_ADV)
+ 		return;
+ 
+-	spin_lock(&brmctx->br->multicast_lock);
++	br_multicast_write_lock(brmctx->br);
+ 	br_ip6_multicast_mark_router(brmctx, pmctx);
+-	spin_unlock(&brmctx->br->multicast_lock);
++	br_multicast_write_unlock(brmctx->br);
+ }
+ 
+ static int br_multicast_ipv6_rcv(struct net_bridge_mcast *brmctx,
+@@ -4044,7 +4044,7 @@
+ static void br_multicast_query_expired(struct net_bridge_mcast *brmctx,
+ 				       struct bridge_mcast_own_query *query)
+ {
+-	spin_lock(&brmctx->br->multicast_lock);
++	br_multicast_write_lock(brmctx->br);
+ 	if (br_multicast_ctx_vlan_disabled(brmctx))
+ 		goto out;
+ 
+@@ -4053,7 +4053,7 @@
+ 
+ 	br_multicast_send_query(brmctx, NULL, query);
+ out:
+-	spin_unlock(&brmctx->br->multicast_lock);
++	br_multicast_write_unlock(brmctx->br);
+ }
+ 
+ static void br_ip4_multicast_query_expired(struct timer_list *t)
+@@ -4317,9 +4317,9 @@
+ 		     br_multicast_ctx_vlan_global_disabled(&vlan->br_mcast_ctx)))
+ 			return;
+ 
+-		spin_lock_bh(&br->multicast_lock);
++		br_multicast_write_lock_bh(br);
+ 		vlan->priv_flags ^= BR_VLFLAG_MCAST_ENABLED;
+-		spin_unlock_bh(&br->multicast_lock);
++		br_multicast_write_unlock_bh(br);
+ 
+ 		if (on)
+ 			__br_multicast_open(&vlan->br_mcast_ctx);
+@@ -4333,13 +4333,13 @@
+ 			return;
+ 
+ 		br = vlan->port->br;
+-		spin_lock_bh(&br->multicast_lock);
++		br_multicast_write_lock_bh(br);
+ 		vlan->priv_flags ^= BR_VLFLAG_MCAST_ENABLED;
+ 		if (on)
+ 			__br_multicast_enable_port_ctx(&vlan->port_mcast_ctx);
+ 		else
+ 			__br_multicast_disable_port_ctx(&vlan->port_mcast_ctx);
+-		spin_unlock_bh(&br->multicast_lock);
++		br_multicast_write_unlock_bh(br);
+ 	}
+ }
+ 
+@@ -4448,11 +4448,11 @@
+ 	HLIST_HEAD(deleted_head);
+ 	struct hlist_node *tmp;
+ 
+-	spin_lock_bh(&br->multicast_lock);
++	br_multicast_write_lock_bh(br);
+ 	hlist_for_each_entry_safe(mp, tmp, &br->mdb_list, mdb_node)
+ 		br_multicast_del_mdb_entry(mp);
+ 	hlist_move_list(&br->mcast_gc_list, &deleted_head);
+-	spin_unlock_bh(&br->multicast_lock);
++	br_multicast_write_unlock_bh(br);
+ 
+ 	br_multicast_ctx_deinit(&br->multicast_ctx);
+ 	br_multicast_gc(&deleted_head);
+@@ -4463,7 +4463,7 @@
+ {
+ 	int err = -EINVAL;
+ 
+-	spin_lock_bh(&brmctx->br->multicast_lock);
++	br_multicast_write_lock_bh(brmctx->br);
+ 
+ 	switch (val) {
+ 	case MDB_RTR_TYPE_DISABLED:
+@@ -4484,7 +4484,7 @@
+ 		break;
+ 	}
+ 
+-	spin_unlock_bh(&brmctx->br->multicast_lock);
++	br_multicast_write_unlock_bh(brmctx->br);
+ 
+ 	return err;
+ }
+@@ -4522,7 +4522,7 @@
+ 	bool del = false;
+ 
+ 	brmctx = br_multicast_port_ctx_get_global(pmctx);
+-	spin_lock_bh(&brmctx->br->multicast_lock);
++	br_multicast_write_lock_bh(brmctx->br);
+ 	if (pmctx->multicast_router == val) {
+ 		/* Refresh the temp router port timer */
+ 		if (pmctx->multicast_router == MDB_RTR_TYPE_TEMP) {
+@@ -4572,7 +4572,7 @@
+ 	}
+ 	err = 0;
+ unlock:
+-	spin_unlock_bh(&brmctx->br->multicast_lock);
++	br_multicast_write_unlock_bh(brmctx->br);
+ 
+ 	return err;
+ }
+@@ -4668,7 +4668,7 @@
+ 	bool change_snoopers = false;
+ 	int err = 0;
+ 
+-	spin_lock_bh(&br->multicast_lock);
++	br_multicast_write_lock_bh(br);
+ 	if (!!br_opt_get(br, BROPT_MULTICAST_ENABLED) == !!val)
+ 		goto unlock;
+ 
+@@ -4694,7 +4694,7 @@
+ 	change_snoopers = true;
+ 
+ unlock:
+-	spin_unlock_bh(&br->multicast_lock);
++	br_multicast_write_unlock_bh(br);
+ 
+ 	/* br_multicast_join_snoopers has the potential to cause
+ 	 * an MLD Report/Leave to be delivered to br_multicast_rcv,
+@@ -4744,7 +4744,7 @@
+ 
+ 	val = !!val;
+ 
+-	spin_lock_bh(&brmctx->br->multicast_lock);
++	br_multicast_write_lock_bh(brmctx->br);
+ 	if (brmctx->multicast_querier == val)
+ 		goto unlock;
+ 
+@@ -4769,7 +4769,7 @@
+ #endif
+ 
+ unlock:
+-	spin_unlock_bh(&brmctx->br->multicast_lock);
++	br_multicast_write_unlock_bh(brmctx->br);
+ 
+ 	return 0;
+ }
+@@ -4786,9 +4786,9 @@
+ 		return -EINVAL;
+ 	}
+ 
+-	spin_lock_bh(&brmctx->br->multicast_lock);
++	br_multicast_write_lock_bh(brmctx->br);
+ 	brmctx->multicast_igmp_version = val;
+-	spin_unlock_bh(&brmctx->br->multicast_lock);
++	br_multicast_write_unlock_bh(brmctx->br);
+ 
+ 	return 0;
+ }
+@@ -4806,9 +4806,9 @@
+ 		return -EINVAL;
+ 	}
+ 
+-	spin_lock_bh(&brmctx->br->multicast_lock);
++	br_multicast_write_lock_bh(brmctx->br);
+ 	brmctx->multicast_mld_version = val;
+-	spin_unlock_bh(&brmctx->br->multicast_lock);
++	br_multicast_write_unlock_bh(brmctx->br);
+ 
+ 	return 0;
+ }
+--- a/net/bridge/br_multicast_eht.c
++++ b/net/bridge/br_multicast_eht.c
+@@ -212,7 +212,7 @@
+ 									  timer);
+ 	struct net_bridge *br = set_h->br;
+ 
+-	spin_lock(&br->multicast_lock);
++	br_multicast_write_lock(br);
+ 	if (RB_EMPTY_NODE(&set_h->rb_node) || timer_pending(&set_h->timer))
+ 		goto out;
+ 
+@@ -220,7 +220,7 @@
+ 				       &set_h->eht_set->src_addr,
+ 				       &set_h->h_addr);
+ out:
+-	spin_unlock(&br->multicast_lock);
++	br_multicast_write_unlock(br);
+ }
+ 
+ static void br_multicast_eht_set_expired(struct timer_list *t)
+@@ -230,13 +230,13 @@
+ 								      timer);
+ 	struct net_bridge *br = eht_set->br;
+ 
+-	spin_lock(&br->multicast_lock);
++	br_multicast_write_lock(br);
+ 	if (RB_EMPTY_NODE(&eht_set->rb_node) || timer_pending(&eht_set->timer))
+ 		goto out;
+ 
+ 	br_multicast_del_eht_set(eht_set);
+ out:
+-	spin_unlock(&br->multicast_lock);
++	br_multicast_write_unlock(br);
+ }
+ 
+ static struct net_bridge_group_eht_host *
+@@ -814,9 +814,9 @@
+ 	if (!eht_hosts_limit)
+ 		return -EINVAL;
+ 
+-	spin_lock_bh(&br->multicast_lock);
++	br_multicast_write_lock_bh(br);
+ 	p->multicast_eht_hosts_limit = eht_hosts_limit;
+-	spin_unlock_bh(&br->multicast_lock);
++	br_multicast_write_unlock_bh(br);
+ 
+ 	return 0;
+ }
+--- a/net/bridge/br_private.h
++++ b/net/bridge/br_private.h
+@@ -19,6 +19,9 @@
+ #include <linux/if_vlan.h>
+ #include <linux/rhashtable.h>
+ #include <linux/refcount.h>
++#ifdef CONFIG_ARCH_RTL9617C
++#include <linux/rtl9617c-bridge.h>
++#endif
+ 
+ #define BR_HASH_BITS 8
+ #define BR_HASH_SIZE (1 << BR_HASH_BITS)
+@@ -549,6 +552,9 @@
+ 	u32				hash_max;
+ 
+ 	spinlock_t			multicast_lock;
++#ifdef CONFIG_ARCH_RTL9617C
++	const struct rtl9617c_bridge_mcast_ops *native_mcast_writer;
++#endif
+ 
+ 	struct rhashtable		mdb_hash_tbl;
+ 	struct rhashtable		sg_port_tbl;
+@@ -2349,4 +2355,24 @@
+ 		       u16 vid, struct net_bridge_port *p, struct nd_msg *msg);
+ struct nd_msg *br_is_nd_neigh_msg(const struct sk_buff *skb, struct nd_msg *m);
+ bool br_is_neigh_suppress_enabled(const struct net_bridge_port *p, u16 vid);
+-#endif
++
++/* Writers close native learned multicast lookup before changing state. The
++ * callback only performs bounded direct IO; Hash retirement runs elsewhere.
++ * Read-only multicast-lock users keep the ordinary lock operations. */
++static inline void br_multicast_write_begin(struct net_bridge *br)
++{
++#if defined(CONFIG_ARCH_RTL9617C) && defined(CONFIG_BRIDGE_IGMP_SNOOPING)
++ br->native_mcast_writer = rtl9617c_bridge_mcast_begin(br->dev);
++#endif
++}
++static inline void br_multicast_write_end(struct net_bridge *br)
++{
++#if defined(CONFIG_ARCH_RTL9617C) && defined(CONFIG_BRIDGE_IGMP_SNOOPING)
++ rtl9617c_bridge_mcast_end(br->native_mcast_writer);
++#endif
++}
++#define br_multicast_write_lock(br) do { spin_lock(&(br)->multicast_lock); br_multicast_write_begin(br); } while (0)
++#define br_multicast_write_unlock(br) do { br_multicast_write_end(br); spin_unlock(&(br)->multicast_lock); } while (0)
++#define br_multicast_write_lock_bh(br) do { spin_lock_bh(&(br)->multicast_lock); br_multicast_write_begin(br); } while (0)
++#define br_multicast_write_unlock_bh(br) do { br_multicast_write_end(br); spin_unlock_bh(&(br)->multicast_lock); } while (0)
++#endif
+--- a/net/core/Makefile
++++ b/net/core/Makefile
+@@ -49,3 +49,5 @@
+ obj-$(CONFIG_NET_DEVMEM) += devmem.o
+ obj-$(CONFIG_DEBUG_NET) += lock_debug.o
+ obj-$(CONFIG_FAIL_SKB_REALLOC) += skb_fault_injection.o
++
++obj-$(CONFIG_ARCH_RTL9617C) += rtl9617c-bridge.o
+--- a/net/netfilter/core.c
++++ b/net/netfilter/core.c
+@@ -8,6 +8,9 @@
+  */
+ #include <linux/kernel.h>
+ #include <linux/netfilter.h>
++#ifdef CONFIG_ARCH_RTL9617C
++#include <linux/rtl9617c-bridge.h>
++#endif
+ #include <net/protocol.h>
+ #include <linux/init.h>
+ #include <linux/skbuff.h>
+@@ -204,7 +207,15 @@
+ 
+ 	hooks_validate(new_hooks);
+ 
++#ifdef CONFIG_ARCH_RTL9617C
++	{
++		const struct rtl9617c_bridge_mcast_ops *native_change = rtl9617c_bridge_mcast_begin(NULL);
++		rcu_assign_pointer(*pp, new_hooks);
++		rtl9617c_bridge_mcast_end(native_change);
++	}
++#else
+ 	rcu_assign_pointer(*pp, new_hooks);
++#endif
+ 
+ 	BUG_ON(p == new_hooks);
+ 	nf_hook_entries_free(p);
+@@ -433,7 +444,15 @@
+ 
+ 	if (!IS_ERR(new_hooks)) {
+ 		hooks_validate(new_hooks);
++#ifdef CONFIG_ARCH_RTL9617C
++		{
++			const struct rtl9617c_bridge_mcast_ops *native_change = rtl9617c_bridge_mcast_begin(NULL);
++			rcu_assign_pointer(*pp, new_hooks);
++			rtl9617c_bridge_mcast_end(native_change);
++		}
++#else
+ 		rcu_assign_pointer(*pp, new_hooks);
++#endif
+ 	}
+ 
+ 	mutex_unlock(&nf_hook_mutex);
+@@ -474,8 +493,14 @@
+ 	for (i = 0; i < old->num_hook_entries; i++) {
+ 		if (orig_ops[i] != unreg)
+ 			continue;
++#ifdef CONFIG_ARCH_RTL9617C
++		const struct rtl9617c_bridge_mcast_ops *native_change = rtl9617c_bridge_mcast_begin(NULL);
++#endif
+ 		WRITE_ONCE(old->hooks[i].hook, accept_all);
+ 		WRITE_ONCE(orig_ops[i], (void *)&dummy_ops);
++#ifdef CONFIG_ARCH_RTL9617C
++		rtl9617c_bridge_mcast_end(native_change);
++#endif
+ 		return true;
+ 	}
+ 
+--- a/net/sched/sch_api.c
++++ b/net/sched/sch_api.c
+@@ -11,6 +11,9 @@
+  * Jamal Hadi Salim <hadi@nortelnetworks.com>: 990601: ingress support
+  */
+ 
++#ifdef CONFIG_ARCH_RTL9617C
++#include <linux/rtl9617c-bridge.h>
++#endif
+ #include <linux/module.h>
+ #include <linux/types.h>
+ #include <linux/kernel.h>
+@@ -1108,6 +1111,13 @@
+ {
+ 	struct Qdisc *q = old;
+ 	struct net *net = dev_net(dev);
++
++#ifdef CONFIG_ARCH_RTL9617C
++	{
++		const struct rtl9617c_bridge_mcast_ops *change = rtl9617c_bridge_mcast_begin(NULL);
++		rtl9617c_bridge_mcast_end(change);
++	}
++#endif
+ 
+ 	if (parent == NULL) {
+ 		unsigned int i, num_q, ingress;

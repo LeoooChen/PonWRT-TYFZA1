@@ -40,6 +40,8 @@ code=r'''
 #include <string.h>
 #include <errno.h>
 typedef uint8_t u8;
+typedef uint64_t u64;
+#define CONFIG_ARCH_RTL9617C 1
 #define BR_STATE_FORWARDING 3
 #define BR_HAIRPIN_MODE 1
 #define BR_MULTICAST_TO_UNICAST 2
@@ -72,6 +74,10 @@ struct net_bridge_mcast {struct hlist_node *routers;bool handle_mode;};
 struct sk_buff {struct net_device *dev,*bridge;bool cloned,miss;};
 #define BR_INPUT_SKB_CB(skb) (&(struct {struct net_device *brdev;}){(skb)->bridge})
 static unsigned int delivered[8],unicast[8],original,clones,drops,counted,fail_clone,clone_attempts;
+static unsigned int selected[8],completed,aborted;
+static u64 rtl9617c_bridge_mcast_capture(struct sk_buff *s,bool local){(void)s;(void)local;return 1;}
+static void rtl9617c_bridge_mcast_select(struct sk_buff *s,struct net_device *d){(void)s;selected[d->id]++;}
+static void rtl9617c_bridge_mcast_complete(u64 ticket,bool success){assert(ticket==1);if(success)completed++;else aborted++;}
 static struct net_bridge_vlan_group *nbp_vlan_group_rcu(const struct net_bridge_port *p){return (void *)&p->vlan;}
 static bool br_mst_is_enabled(const struct net_bridge_port *p){return p->mst;}
 static bool br_allowed_egress(struct net_bridge_vlan_group *v,const struct sk_buff *s){(void)s;return v->allowed;}
@@ -96,7 +102,7 @@ static void maybe_deliver_addr(struct net_bridge_port *p,struct sk_buff *s,const
 for name in ('should_deliver','deliver_clone','maybe_deliver','br_multicast_flood'):
     code+=function(source,name)
 code+=r'''
-static void reset(void){memset(delivered,0,sizeof(delivered));memset(unicast,0,sizeof(unicast));original=clones=drops=counted=fail_clone=clone_attempts=0;}
+static void reset(void){memset(delivered,0,sizeof(delivered));memset(unicast,0,sizeof(unicast));memset(selected,0,sizeof(selected));completed=aborted=original=clones=drops=counted=fail_clone=clone_attempts=0;}
 int main(void){
  struct net_device devices[5]={{.id=0},{.id=1},{.id=2},{.id=3},{.id=4}},bridge_dev={.id=7};
  struct net_bridge bridge={&bridge_dev};struct net_bridge_port ports[5];
@@ -113,6 +119,7 @@ int main(void){
  for(unsigned int host=0;host<2;host++) {
   reset();br_multicast_flood(&mdb,&packet,&mcast,host,false);
   assert(delivered[1]==1&&delivered[2]==1&&delivered[3]==1&&delivered[4]==1);
+  assert(!memcmp(selected,delivered,sizeof(selected))&&completed==1&&!aborted);
   assert(clones==3+host&&original==!host&&!drops&&counted==4);cases++;
  }
  /* A router remains eligible even when the same port's (*,G) membership
@@ -136,12 +143,14 @@ int main(void){
  }
  ports[4].flags=BR_MULTICAST_TO_UNICAST;reset();br_multicast_flood(&mdb,&packet,&mcast,false,false);
  assert(unicast[4]==1&&!delivered[4]&&delivered[2]==1);cases++;
+ assert(!completed&&aborted==1);
  ports[4].flags=0;
  /* The output set cannot be committed on the first successful clone: a
   * later allocation failure stops the actual traversal part way through. */
  for(unsigned int failed=1;failed<=3;failed++) {
   reset();fail_clone=failed;br_multicast_flood(&mdb,&packet,&mcast,false,false);
   assert(clones==failed-1&&drops==1&&!original);cases++;
+  assert(!completed&&aborted==1);
  }
  reset();br_multicast_flood(NULL,&packet,&mcast,true,false);
  assert(packet.miss&&delivered[2]==1&&delivered[3]==1&&!delivered[1]&&!original);cases++;

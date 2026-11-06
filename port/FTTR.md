@@ -4122,7 +4122,7 @@ family, and wildcard tag PCP/DEI are rejected. This prevents two IP groups
 sharing an Ethernet multicast address from sharing a hardware recipient set,
 and keeps UDP data rules from consuming IGMP/MLD control traffic.
 
-`rtl9617c-fe-mcast-profile.h` owns the classifier key/FIB, mask55 and profile1
+`rtl9617c-fe-mcast-profile.h` owns the classifier key/FIB, masks55/54 and profile1
 register snapshots. It verifies that profile1 is inactive, no active tuple
 references mask55, and no existing classifier key is active before taking
 ownership. All mask/profile/FIB data is written and read back before the key
@@ -4135,22 +4135,21 @@ and original mask initializer. Original profile2 has a destination-only128-bit
 IP template and a source-plus-destination128-bit template. The native mask adds
 MAC, protocol, ingress and exact-tag constraints required by Linux ownership.
 Twelve actual classifier key/action conversions match the native encoder.
-128 IPv4/IPv6 source/group cases, including different groups with the same
+256 IPv4/IPv6 source/group cases, including different groups with the same
 multicast MAC, match the original masked key and CRC16/CRC32 with randomized
 ignored fields. Original CRC input selects main-table/profile before those
 fields are masked; mask lookup responses are modeled explicitly.
 
-`test_fe_mcast_profile.c` covers554 indirect-command failures, applied-write
+`test_fe_mcast_profile.c` covers574 indirect-command failures, applied-write
 completion loss, publication order, exact restoration and foreign-state
 refusal under ASan/UBSan. Production install/delete tests now include this
 profile, and parser, namespace, LAN/P6 and bridge-learner regressions pass.
 The current Image/modules build and source consistency are verified; reports
 are `mcast-classifier-20261106.json` and `mcast-ip-profile-kernel-20261106.log`.
 
-This is the hardware entry needed for automatic bridge multicast. The bridge
-producer and its complete membership/filter/router/local-receive snapshot are
-still being implemented; no automatic MDB acceleration or physical hit is
-claimed by this profile work.
+This profile supplies the hardware entry for the complete-packet producer
+described below. It does not itself establish complete MDB semantics or a
+physical hardware hit.
 
 `test_bridge_multicast_selection.py` executes this kernel's actual
 `br_multicast_flood`, `maybe_deliver`, `should_deliver` and clone-control path
@@ -4168,6 +4167,88 @@ The current kernel also defers ordinary switchdev MDB updates, while
 `br_mdb_flag_change_notify` skips switchdev. Router deletion notifications
 coalesce the IPv4/IPv6 state. Those notifications alone cannot supply the
 complete immediate invalidation needed by an automatic source/group flow.
+
+### Complete bridge multicast transactions and native learning
+
+`222-native-bridge-multicast.patch` connects the kernel's actual
+`br_multicast_flood` decision to the native FE owner. Each received UDP
+multicast packet starts one numeric transaction, records every recipient
+selected by `should_deliver`, then records that output's final frame in
+`br_dev_queue_push_xmit` after bridge VLAN, netfilter and forwardability checks.
+Completion requires every selected copy exactly once; clone failure, missing
+or repeated outputs, modified IP/MAC/UDP identities, multicast-to-unicast,
+GSO and a concurrent generation change reject the entire transaction.
+The core allocates tickets across driver unload/reload; skb extensions do
+not retain driver pointers. There are16 pending transactions, each with at
+most64 recipients. Deferred netfilter copies cannot complete an earlier
+transaction after its final completion.
+
+The worker resolves the complete decision under RTNL and the FE mutex, checks
+source FDB ownership and all logical/physical output owners, and installs it
+through the existing Hash/NI/action/QM pipeline. The current supported input
+is a native LAN source0..4. Outputs are native LAN ports and the admitted
+shared `fttr-mc`; it adds the original outer8100/VID4095 and at most one customer
+tag. The established per-UNI duplicate suppression is preserved. An output
+outside this set, raw P6, PON, radio, hairpin, or a required local CPU copy
+keeps the entire decision in software. This is a deliberately incomplete
+hardware coverage boundary, not a claim that those FTTR functions are done.
+
+Learned mask54 includes both full IP addresses, UDP source/destination ports,
+EtherType, source/destination MAC, physical ingress and exact tag stack.
+Explicit TC templates retain slots0..2; learned traffic uses slot3. IPv4
+options/fragments and IPv6 extension headers remain outside the learner.
+The parser checks IP-declared lengths and requires the UDP length to equal
+the IP payload, so Ethernet padding cannot make a malformed UDP frame valid.
+The complete set's minimum output MTU is allocated from the existing PE MTU
+owner and the CPU16 failure destination is checked before publication.
+Oversized traffic is intended to return through the native receive path for
+Linux's per-output decision; actual failure-frame contents and absence of
+hardware replicas on that path remain physical acceptance items.
+
+A short IRQ-safe gate lock brackets36 bridge multicast writer entry points,
+including report/query handling, source/member/router expiry and MDB changes.
+The gate removes learned slot3 from the profile's active tuple count before
+those mutations, advances a generation at both ends, and cannot reopen during
+a writer. Old learned generations are withdrawn before a new generation is
+published; uncertain Hash/cache/NI cleanup keeps the gate closed. A failed
+install retains its learned/deleting identity even when its own rollback
+fails. Duplicate keys are compared against the complete immutable action
+bitmap and MTU; a changed decision closes the profile and requires a fresh
+transaction. The worker refreshes active source FDB entries and expires idle
+learned multicast flows after30 seconds.
+
+Netfilter and TCX pointer publication/removal also close the gate. The learner
+refuses foreign bridge/netdev hooks and TCX programs, and checks each VLAN
+lower and each actual TX queue. Only noqueue, pfifo_fast and fq_codel are
+accepted; classful/action qdiscs keep software forwarding. RTNL-held qdisc
+grafts and VLAN priority-map writes invalidate before mutation. Registration
+holds a writer generation across `synchronize_net()` so pre-registration
+writers with NULL tokens cannot be missed. Unregistration closes first and
+waits for all existing callback readers before freeing the driver owner.
+
+Offline checks execute the actual production callbacks, install/delete and
+MTU allocator, the actual Linux selection/writer functions, and a threaded
+RCU reader model under ASan/UBSan. They cover filter/TCX/qdisc rejection,
+partial sets, late/duplicate copies, source/group recipes, generation drift,
+failed install plus failed rollback, cleanup/relearning, and owner reload.
+`test_bridge_mcast_frames.py` supplies109 actual packet-byte vectors. Original
+ARM64 execution additionally confirms eight last-tuple removals,64 MTU
+set/get cases and CPU16 failure routing,12 classifier conversions and256
+native masked keys/CRCs. Profile IO tests cover574 command failures/lost
+completions. Unicast bridge, flow-parser, flow-release, namespace, LAN/P6 and
+CPU-DEEPQ regressions pass. The final Image/modules build is
+`artifacts/fttr/mcast-learn-kernel-20261106.log`; the new patch applies and
+reverses with zero fuzz and the built driver/header/core sources match.
+
+This still does not establish complete FTTR multicast parity. Required local
+CPU copies, PON/radio/ONU-source acceleration and safe resource reuse remain
+work. Original tuple deletion only clears a tuple and reduces its count; it
+has no explicit cache-drain wait. The native gate is therefore not a proof
+that already-selected/cache/in-flight hardware packets have retired. Published
+NI groups remain quarantined (255 cumulative publications,64 immutable action
+recipes), so membership churn eventually falls back to software. Immediate
+policy transitions, over-MTU fallback, actual FE hits and physical replication
+have not been tested on a device. No device was accessed for this change.
 
 ### Outstanding implementation and acceptance
 

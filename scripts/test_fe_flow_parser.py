@@ -41,7 +41,7 @@ common = r'''
 #include "rtl9617c-fe-mcast.h"
 #include "rtl9617c-fe-mcast-profile.h"
 #include "rtl9617c-pon-path.h"
-typedef uint8_t u8;typedef uint16_t u16,__be16;typedef uint32_t u32;
+typedef uint8_t u8;typedef uint16_t u16,__be16;typedef uint32_t u32;typedef uint64_t u64;
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 #define htons(v) __builtin_bswap16((uint16_t)(v))
 #endif

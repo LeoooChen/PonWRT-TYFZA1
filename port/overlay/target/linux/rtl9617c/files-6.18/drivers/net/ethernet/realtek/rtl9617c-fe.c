@@ -28,6 +28,7 @@
 #include "rtl9617c-fe-mcast-owner.h"
 #include "rtl9617c-fe-mcast-route.h"
 #include "rtl9617c-fe-mcast-profile.h"
+#include "rtl9617c-fe-mcast-gate.h"
 #include "rtl9617c-fttr-mcast.h"
 #include "rtl9617c-fttr-cf.h"
 #include "rtl9617c-fttr-frame.h"
@@ -39,6 +40,7 @@ struct rtl_fe_bridge;
 static struct rtl_fe_bridge *fe_bridge_start(struct rtl_fe *fe);
 static void fe_bridge_stop(struct rtl_fe_bridge *bridge);
 static void fe_bridge_invalidate(struct rtl_fe *fe);
+static void fe_mcast_invalidate(struct rtl_fe *fe);
 
 #define FE_INTERFACES 64
 #define FE_COUNTERS 32
@@ -77,6 +79,7 @@ struct rtl_fe_flow {
  struct rtl_fe_port *input, *output;
  struct rtl_fe_port **replica_ports;
  unsigned int replica_count,mc_group;
+ u64 mc_epoch;
  unsigned int hash_index, counter, source_mac, destination_index;
  unsigned int pppoe, mtu_index;
  unsigned int ingress_session;
@@ -149,6 +152,9 @@ struct rtl_fe {
  struct rtl_fe_mc_owner multicast;
  struct rtl_fe_mc_route mc_route;
  struct rtl_fe_mc_profile mc_profile;
+ spinlock_t mc_lock;
+ struct rtl_fe_mc_gate mc_gate;
+ atomic_t mc_flush;
  DECLARE_BITMAP(hashes,RTL_FE_HASH_ENTRIES);
  DECLARE_BITMAP(counters,FE_INTERFACES);
 };
@@ -402,6 +408,12 @@ static int fe_restore(struct rtl_fe *fe)
  int ret;
 
  if(!fe->prepared)return 0;
+ {
+  unsigned long flags;
+  spin_lock_irqsave(&fe->mc_lock,flags);
+  rtl_fe_mc_gate_close(&io,&fe->mc_gate);
+  spin_unlock_irqrestore(&fe->mc_lock,flags);
+ }
  ret=rtl_fe_mc_profile_restore(&io,&fe->mc_profile);
  if(ret)return ret;
  ret=rtl_fe_mc_route_restore(&io,&fe->mc_route);
@@ -617,7 +629,8 @@ static int fe_destination_put(struct rtl_fe *fe,struct rtl_fe_flow *flow)
 struct rtl_fe_rule {
  struct rtl_fe_ipv4_key key;
  struct rtl_fe_ipv6_key key6;
- bool ipv6, bridge, multicast_ip;
+ bool ipv6, bridge, multicast_ip, multicast_learned;
+ u64 mc_epoch;
  bool vlan_exact;
  u16 ingress_tci[2];
  u8 ppp_protocol_slot;
@@ -1187,6 +1200,10 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
  else rtl_fe_ipv4_key(words,&data.key);
  if(data.multicast_ip)rtl_fe_mc_ip_key(words,data.ipv6?data.key6.source:&data.key.source,
   data.ipv6?data.key6.destination:&data.key.destination,data.ipv6,data.key.protocol);
+ if(data.multicast_ip && data.key.mask==RTL_FE_MC_LEARNED_MASK) {
+  rtl_fe_key_set(words,RTL_FE_KEY_L4_SP_EXACT_RANGE,data.key.source_port);
+  rtl_fe_key_set(words,RTL_FE_KEY_L4_DP_EXACT_RANGE,data.key.destination_port);
+ }
  rtl_fe_vlan_key(words,data.vlan,data.vlan_count);
  if(data.vlan_exact)for(i=0;i<data.vlan_count;i++) {
   rtl_fe_bits_set(words,i?426:445,1,!!(data.ingress_tci[i]&VLAN_CFI_MASK));
@@ -1223,6 +1240,7 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
  ether_addr_copy(flow->ethernet_source,data.source);
  flow->protocol=data.key.protocol;flow->ipv6=data.ipv6;
  flow->bridge=data.bridge;
+ flow->learned=data.multicast_learned;flow->mc_epoch=data.mc_epoch;
  flow->source_port=data.key.source_port;flow->destination_port=data.key.destination_port;
  for(i=0;i<(data.ipv6?4:1);i++) {
   put_unaligned_be32(data.ipv6?data.key6.source[i]:data.key.source,flow->ip_source+i*4);
@@ -1512,6 +1530,7 @@ struct rtl_fe *rtl_fe_allocate(struct device *device,void __iomem *registers)
  if(!fe)return ERR_PTR(-ENOMEM);
  fe->device=device;fe->registers=registers;
  mutex_init(&fe->lock);
+ spin_lock_init(&fe->mc_lock);
  INIT_DELAYED_WORK(&fe->cleanup_work,fe_cleanup_work);
  INIT_LIST_HEAD(&fe->ports);INIT_LIST_HEAD(&fe->flows);INIT_LIST_HEAD(&fe->blocks);
  INIT_LIST_HEAD(&fe->wifi_peers);INIT_LIST_HEAD(&fe->retries);

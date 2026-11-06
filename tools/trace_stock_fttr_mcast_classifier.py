@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 
 from arm64_module_oracle import ModuleOracle
+from unicorn import UC_HOOK_MEM_WRITE
 from unicorn.arm64_const import UC_ARM64_REG_X4, UC_ARM64_REG_X5
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,6 +57,61 @@ def profile_recipes(fc_path, ni_path):
         item['source_prefix']=(mask>>67)&511
     assert [(x['destination_prefix'],x['source_prefix']) for x in multicast]==[(128,0),(128,128)]
     return events
+
+
+def profile_withdrawal(ni_path):
+    """Execute original last-tuple removal, including its bounded direct IO."""
+    writes=[]
+    def boundary(name,args):
+        raise AssertionError(('unmodeled tuple withdrawal',name,args))
+    ni=ModuleOracle(ni_path,['aal_hash_profile_tuple_del'],boundary)
+    base=0x6000000
+    ni.uc.mem_map(base,0x10000)
+    ni.word(ni.symbols['g_ne_reg_iobase'][0],base)
+    ni.uc.hook_add(UC_HOOK_MEM_WRITE,lambda uc,access,address,size,value,data:
+        writes.append((address-base,value)),begin=base,end=base+65535)
+    cases=[]
+    for count in range(1,9):
+        writes.clear()
+        seed=0x12345670|count
+        ni.uc.mem_write(base+0x372c,struct.pack('<I',seed))
+        for slot in range(count):
+            ni.uc.mem_write(base+0x3730+slot*4,struct.pack('<I',54+slot))
+        assert ni.call('aal_hash_profile_tuple_del',1,count-1)==0
+        assert writes==[(0x3730+(count-1)*4,0),(0x372c,(seed&~15)|(count-1))]
+        for slot in range(count-1):
+            assert ni.unpack(base+0x3730+slot*4,'I')[0]==54+slot
+        cases.append(dict(count=count,writes=list(writes)))
+    return dict(cases=cases,scope='Original removes the last tuple using direct tuple clear and count reduction only. This validates register ownership, not physical cache/in-flight retirement.')
+
+
+def multicast_mtu_path(ni_path):
+    """Check the original PE MTU register setters used by the native owner."""
+    def boundary(name,args):
+        raise AssertionError(('unmodeled PE MTU call',name,args))
+    ni=ModuleOracle(ni_path,['aal_l3pe_mtu_size_set','aal_l3pe_mtu_size_get',
+        'aal_l3pe_pe_mtu_failed_ldpid_set','aal_l3pe_pe_mtu_failed_cos_set'],boundary)
+    base=0x6000000
+    ni.uc.mem_map(base,0x10000)
+    ni.word(ni.symbols['g_ne_reg_iobase'][0],base)
+    count=0
+    for index in range(16):
+        for mtu in (68,1280,1400,1500):
+            address=base+0x3520+(index//2)*4
+            seed=0xabcd4567
+            ni.uc.mem_write(address,struct.pack('<I',seed))
+            assert ni.call('aal_l3pe_mtu_size_set',index,mtu)==0
+            shift=index%2*16
+            assert ni.unpack(address,'I')[0]==(seed&~(0x3fff<<shift))|(mtu<<shift)
+            assert ni.call('aal_l3pe_mtu_size_get',index,ni.scratch)==0
+            assert ni.unpack(ni.scratch,'I')[0]==mtu
+            count+=1
+    seed=0x8fffffff
+    ni.uc.mem_write(base+0x351c,struct.pack('<I',seed))
+    assert ni.call('aal_l3pe_pe_mtu_failed_ldpid_set',16)==0
+    assert ni.call('aal_l3pe_pe_mtu_failed_cos_set',0)==0
+    assert ni.unpack(base+0x351c,'I')[0]==(seed&~((63<<16)|(7<<24)))|16<<16
+    return dict(vectors=count,cpu_destination=16,scope='Actual original setters/getters confirm MTU field widths, index mapping and CPU16 failure destination. Physical over-MTU packet contents and multicast suppression remain untested.')
 
 
 def classifier_recipes(ni_path, reference):
@@ -112,14 +168,14 @@ void native(unsigned int profile,unsigned int *key,unsigned int *action) {
 def native_ip_keys(ni_path):
     def boundary(name, args):
         if name=='aal_entry_get_by_idx':
-            assert args[0] in (1,7) and args[1]==55
+            assert args[0] in (1,7) and args[1] in (54,55)
             ni.uc.mem_write(args[2],bytes(ni.uc.mem_read(ni.scratch+0x1000,32)))
             return 0
         raise AssertionError(('unmodeled original CRC call', name, args))
     ni=ModuleOracle(ni_path,['hash_value_calculate','reverse_n'],boundary)
     code=r'''
 #include "rtl9617c-fe-mcast-profile.h"
-void key(unsigned int ip6,unsigned int source,unsigned int group,unsigned int *words,unsigned int *mask) {
+void key(unsigned int ip6,unsigned int source,unsigned int group,unsigned int learned,unsigned int *words,unsigned int *mask) {
  const unsigned char sa[6]={2,1,2,3,4,5},da[6]={1,0,0x5e,1,2,3};
  const unsigned int ips[4]={0x20010db8,0,0,source},ipd[4]={0xff3e0000,group,0,0x10203};
  const struct rtl_fe_vlan vlan[2]={{.vid=100,.tpid=1},{.vid=200,.tpid=2}};
@@ -129,6 +185,12 @@ void key(unsigned int ip6,unsigned int source,unsigned int group,unsigned int *w
  rtl_fe_bits_set(words,426,4,11);rtl_fe_bits_set(words,445,4,7);
  rtl_fe_key_set(words,RTL_FE_KEY_TABLE_ID,0);
  rtl_fe_mc_ip_mask(mask);
+ if(learned) {
+  rtl_fe_mc_learned_mask(mask);
+  rtl_fe_key_set(words,RTL_FE_KEY_HKEY_ID,RTL_FE_MC_LEARNED_MASK);
+  rtl_fe_key_set(words,RTL_FE_KEY_L4_SP_EXACT_RANGE,1234);
+  rtl_fe_key_set(words,RTL_FE_KEY_L4_DP_EXACT_RANGE,5000);
+ }
 }
 void crc(unsigned int *key,unsigned int *c32,unsigned short *c16){rtl_fe_key_crc(key,c32,c16);}
 '''
@@ -139,14 +201,16 @@ void crc(unsigned int *key,unsigned int *c32,unsigned short *c16){rtl_fe_key_crc
         lib=ctypes.CDLL(str(root/'key.so'))
         rng=random.Random(0x9617c)
         for ip6 in (0,1):
-            for case in range(64):
+            for case in range(128):
+                learned=case//64
                 source=0x0a000001+case//32
                 group=0xe0010203+((case%32)<<23) if not ip6 else case%32+1
                 words,mask=(ctypes.c_uint*23)(),(ctypes.c_uint*8)()
-                lib.key(ip6,source,group,words,mask)
+                lib.key(ip6,source,group,learned,words,mask)
                 # Header fields ignored by this mask must not change the key.
                 raw=int.from_bytes(words,'little')
                 for bit,width in ((10,16),(26,16),(43,32),(78,8),(95,8),(103,20),(475,6),(614,64),(706,6)):
+                    if learned and bit in (10,26):continue
                     select=((1<<width)-1)<<bit
                     raw=(raw&~select)|(rng.getrandbits(width)<<bit)
                 # Original API selects main-table CRC from the incoming
@@ -172,11 +236,11 @@ def main():
     parser.add_argument('--reference',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
-    report=dict(profiles=profile_recipes(args.fc,args.ni),classifiers=classifier_recipes(args.ni,args.reference),native_ip_keys=native_ip_keys(args.ni),
+    report=dict(profiles=profile_recipes(args.fc,args.ni),profile_withdrawal=profile_withdrawal(args.ni),mtu_path=multicast_mtu_path(args.ni),classifiers=classifier_recipes(args.ni,args.reference),native_ip_keys=native_ip_keys(args.ni),
         sha256={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (args.fc,args.ni,args.reference)},
         scope='Original ARM64 profile producer, default mask, classifier key/action converters and masked-key/CRC calculation. Profile allocator, table lookup responses and hardware IO are modeled; no physical multicast forwarding.')
     args.output.write_text(json.dumps(report,indent=2)+'\n')
-    print('PASS: original multicast profiles,12 classifier conversions and128 native source/group-IP masked keys and CRCs')
+    print('PASS: original multicast profiles,8 tuple withdrawals,64 MTU vectors,12 classifier conversions and256 native source/group-IP masked keys and CRCs')
 
 
 if __name__=='__main__':main()

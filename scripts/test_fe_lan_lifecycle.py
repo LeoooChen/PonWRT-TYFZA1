@@ -39,6 +39,7 @@ common = r'''
 #include "rtl9617c-fe-pipeline.h"
 #include "rtl9617c-fe-mcast-route.h"
 #include "rtl9617c-fe-mcast-profile.h"
+#include "rtl9617c-fe-mcast-gate.h"
 #include "rtl9617c-fttr-frame.h"
 #include "rtl9617c-wifi-format.h"
 #define BIT(n) (1U<<(n))
@@ -48,6 +49,8 @@ common = r'''
 #define lower_32_bits(v) ((unsigned int)(v))
 #define upper_32_bits(v) ((unsigned int)((uint64_t)(v)>>32))
 struct mutex {int unused;};
+#define spin_lock_irqsave(lock,flags) do {(void)(lock);(flags)=0;} while (0)
+#define spin_unlock_irqrestore(lock,flags) do {(void)(lock);(void)(flags);} while (0)
 struct list_head {int unused;};
 struct rtl_fe_port {unsigned int source;};
 struct rtl_fe_flow {struct rtl_fe_port *input,*output;};
@@ -57,6 +60,7 @@ static void mutex_unlock(struct mutex *m){(void)m;}
 struct rtl_fe {
  struct rtl_fe_mc_route mc_route;
  struct rtl_fe_mc_profile mc_profile;
+ struct rtl_fe_mc_gate mc_gate;int mc_lock;
  void *fttr_netdev;
  bool pon_requested,fttr_live,fttr_requested;
  int fttr_cleanup_error;
