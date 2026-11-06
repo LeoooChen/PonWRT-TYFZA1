@@ -210,7 +210,8 @@ static int load_policies(struct controller *c, const char *path)
 		struct service_policy *policy, *other;
 		char *token[11], *save, *p, *end;
 		unsigned long value[8];
-		unsigned int n = 0, i;
+		unsigned int n = 0, i, total = 0;
+		bool factory;
 		bool tagged = false, filter_only = false;
 
 		number++;
@@ -222,10 +223,18 @@ static int load_policies(struct controller *c, const char *path)
 		}
 		if (!n)
 			continue;
-		if (n != 10 || !*token[9] || strlen(token[9]) >= IFNAMSIZ ||
+		factory = n >= 2 && (!strcmp(token[1], "factory") || !strcmp(token[1], "factory-ctc"));
+		if (factory && n == 4) {
+			errno = 0;
+			value[0] = strtoul(token[2], &end, 10);
+			if (errno || !*token[2] || *end || value[0] < 2 || value[0] > 8) { ret = -EINVAL; break; }
+			total = value[0];
+			token[9] = token[3];
+		}
+		if ((factory ? n != 4 : n != 10) || !*token[9] || strlen(token[9]) >= IFNAMSIZ ||
 		    strchr(token[9], '/') || strchr(token[9], ':') || strchr(token[9], '"') ||
 		    strchr(token[9], '\\')) { ret = -EINVAL; break; }
-		for (i = 0; i < 8; i++) {
+		for (i = 0; !factory && i < 8; i++) {
 			if (!i && (!strcmp(token[1], "shared") || !strcmp(token[1], "shared-mcast") || !strcmp(token[1], "shared-ctc"))) {
 				value[0] = !strcmp(token[1], "shared") ? 3 : !strcmp(token[1], "shared-mcast") ? 4 : 5;
 				continue;
@@ -244,9 +253,9 @@ static int load_policies(struct controller *c, const char *path)
 		}
 		if (ret)
 			break;
-		if ((value[0] != 0 && value[0] != 2 && value[0] != 3 && value[0] != 4 && value[0] != 5) ||
+		if (!factory && ((value[0] != 0 && value[0] != 2 && value[0] != 3 && value[0] != 4 && value[0] != 5) ||
 		    (value[0] >= 3 && (strncmp(token[1], "shared", 6) || value[1])) || !value[2] || value[2] > 7 ||
-		    value[3] > 7 || value[4] > 4094) { ret = -EINVAL; break; }
+		    value[3] > 7 || value[4] > 4094)) { ret = -EINVAL; break; }
 		policy = calloc(1, sizeof(*policy));
 		if (!policy) { ret = -ENOMEM; break; }
 		policy->wildcard = !strcmp(token[0], "*");
@@ -267,9 +276,24 @@ static int load_policies(struct controller *c, const char *path)
 		}
 		for (other = c->policies; other && !ret; other = other->next)
 			if (policy->wildcard == other->wildcard &&
-			    (policy->wildcard || !memcmp(policy->serial, other->serial, 8)) && other->config.slot == value[2])
+			    (policy->wildcard || !memcmp(policy->serial, other->serial, 8)) &&
+			    (factory || other->config.factory || other->config.slot == value[2]))
 				ret = -EEXIST;
 		if (ret) { free(policy); break; }
+		if (factory) {
+			for (i = 1; i < total; i++) {
+				struct service_policy *row = i == 1 ? policy : calloc(1, sizeof(*row));
+				if (!row) { ret = -ENOMEM; break; }
+				if (i != 1) { row->wildcard = policy->wildcard; memcpy(row->serial, policy->serial, 8); }
+				fttr_service_default(&row->config, total, i);
+				if (row->config.multicast && !strcmp(token[1], "factory-ctc")) row->config.multicast = 2;
+				if (strcmp(token[9], "-")) strcpy(row->bridge, token[9]);
+				if (row->config.multicast && row->bridge[0]) c->multicast_enabled = true;
+				row->next = c->policies; c->policies = row; c->policy_count++;
+			}
+			if (ret) break;
+			continue;
+		}
 		policy->config = (struct fttr_service_config) {
 			.veip = value[0] == 2, .shared = value[0] >= 3,
 			.multicast = value[0] >= 4 ? value[0] - 3 : 0, .slot = value[2], .priority = value[3],
@@ -300,6 +324,7 @@ static int load_policies(struct controller *c, const char *path)
 				    (!policy->wildcard && memcmp(policy->serial, other->serial, 8))) continue;
 				if (!policy->config.shared || !other->config.shared ||
 				    !policy->config.filter_only || !other->config.filter_only ||
+				    policy->config.factory != other->config.factory ||
 				    policy->config.vid == other->config.vid ||
 				    (policy->config.multicast && other->config.multicast))
 					ret = -EINVAL;
@@ -555,8 +580,8 @@ static int save_service(struct controller *c, unsigned int id)
 		if (job->transaction.count)
 			fttr_objects_job_dump(&job->transaction, file, "service_objects");
 		fprintf(file, "{\"event\":\"service_recipe\",\"kind\":%u,\"uni\":%u,\"uni_ordinal\":%u,\"slot\":%u,"
-			"\"priority\":%u,\"tagged\":%s,\"filter_only\":%s,\"vid\":%u,\"multicast\":%u,\"bandwidth\":[%u,%u,%u],\"objects\":[",
-			cfg->shared ? 3 : cfg->veip ? 2 : 0, cfg->uni, u->selected[n] ? u->selected[n]->ordinal : 0, cfg->slot, cfg->priority, cfg->tagged ? "true" : "false",
+			"\"factory\":%s,\"priority\":%u,\"tagged\":%s,\"filter_only\":%s,\"vid\":%u,\"multicast\":%u,\"bandwidth\":[%u,%u,%u],\"objects\":[",
+			cfg->shared ? 3 : cfg->veip ? 2 : 0, cfg->uni, u->selected[n] ? u->selected[n]->ordinal : 0, cfg->slot, cfg->factory ? "true" : "false", cfg->priority, cfg->tagged ? "true" : "false",
 			cfg->filter_only ? "true" : "false", cfg->vid, cfg->multicast, cfg->fixed, cfg->assured, cfg->maximum);
 		journal_objects(file, &job->transaction);
 		fputs("]}\n", file);
@@ -2794,6 +2819,7 @@ int main(int argc, char **argv)
 		const struct service_policy *policy;
 
 		for (policy = c.policies; policy; policy = policy->next) {
+			if (policy->config.factory && c.backend == FTTR_FPGA1) { ret = -EOPNOTSUPP; goto out; }
 			ret = fttr_miniolt_alloc_id(c.backend, 0, policy->config.slot);
 			if (ret < 0)
 				goto out;

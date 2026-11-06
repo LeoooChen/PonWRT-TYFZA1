@@ -5,6 +5,21 @@
 
 #include "omci-service.h"
 
+int fttr_service_default(struct fttr_service_config *config, unsigned int total, unsigned int slot)
+{
+	if (total < 2 || total > 8 || !slot || slot >= total)
+		return -EINVAL;
+	/* FTTR-100M's nominal 0/50/100 never reaches the local allocator.
+	 * onuinfo's registration callback programs 0/0/19440 in grant units.
+	 * GEM queue1 in the relay API becomes Related Port priority0. */
+	*config = (struct fttr_service_config) {
+		.slot = slot, .shared = true, .factory = true, .maximum = 19440,
+		.tagged = total > 2, .filter_only = total > 2, .vid = total > 2 ? 100 * slot : 0,
+		.multicast = slot + 1 == total,
+	};
+	return 0;
+}
+
 int fttr_service_vlan_parse(const char *text, bool *tagged, bool *filter_only, uint16_t *vid)
 {
 	char *end;
@@ -137,31 +152,81 @@ static int ports(struct fttr_service_job *job, const struct fttr_mib_model *mode
 	return 0;
 }
 
+/* Original card_write/circuit_write classify Actual/Type attributes. The
+ * producers sort cards by entity; Ethernet resolution places all PPTP UNIs
+ * in the first Ethernet card, while VEIP resolution uses the card slot. */
+static int card_kind(unsigned int type)
+{
+	switch (type) {
+	case 22: case 23: case 24: case 34: case 47: case 49: return 11;
+	case 48: return 329;
+	default: return 0;
+	}
+}
+
+static int factory_cards(const struct fttr_mib_model *model, uint16_t *ethernet, uint16_t *veip)
+{
+	const struct fttr_mib_entity *e;
+	uint32_t type;
+
+	*ethernet = *veip = 0xffff;
+	for (e = model->entities; e; e = e->next) {
+		if (e->class_id != 5 && e->class_id != 6) continue;
+		/* Missing classification is not evidence that the card is absent. */
+		if (attr(e, 0x8000, &type)) return -ENODATA;
+		if (e->instance == 0xffff) continue;
+		if (card_kind(type) == 11 && e->instance < *ethernet) *ethernet = e->instance;
+		if (card_kind(type) == 329 && e->instance < *veip) *veip = e->instance;
+	}
+	return 0;
+}
+
 static int select_unis(struct fttr_service_job *job, const struct fttr_mib_model *model)
 {
 	const struct fttr_service_config *config = &job->config;
 	const struct fttr_mib_entity *e;
-	unsigned int count = 0, i = 0;
+	uint16_t ethernet = 0xffff, veip = 0xffff;
+	unsigned int count = 0, i, eth_count, veip_count, pass;
+	int ret;
 
-	for (e = model->entities; e; e = e->next)
-		if (config->shared ? e->class_id == 11 || e->class_id == 329 :
-		    e->class_id == (config->veip ? 329 : 11) && e->instance == config->uni)
-			count++;
-	if (!count)
-		return -ENOENT;
-	/* Reserve one bridge number for the ANI and one for shared multicast. */
-	if (count > 254U - !!config->multicast)
-		return -ENOSPC;
-	job->unis = calloc(count, sizeof(*job->unis));
-	if (!job->unis)
-		return -ENOMEM;
-	job->uni_count = count;
-	for (e = model->entities; e; e = e->next)
-		if (config->shared ? e->class_id == 11 || e->class_id == 329 :
-		    e->class_id == (config->veip ? 329 : 11) && e->instance == config->uni) {
-			job->unis[i].instance = e->instance;
-			job->unis[i++].veip = e->class_id == 329;
+	if (config->factory) {
+		if (!config->shared) return -EINVAL;
+		/* FPGA1 uses a separate supervisor/profile library; do not assert
+		 * the ASIC/FPGA2 default contract for that untraced producer. */
+		if (config->backend == FTTR_FPGA1) return -EOPNOTSUPP;
+		ret = factory_cards(model, &ethernet, &veip);
+		if (ret) return ret;
+	}
+	for (pass = 0; pass < 2; pass++) {
+		i = eth_count = veip_count = 0;
+		for (e = model->entities; e; e = e->next) {
+			bool selected = config->shared ? e->class_id == 11 || e->class_id == 329 :
+				e->class_id == (config->veip ? 329 : 11) && e->instance == config->uni;
+			if (!selected) continue;
+			if (config->factory) {
+				if (e->class_id == 11) {
+					if (ethernet == 0xffff || eth_count++ >= 4) continue;
+				} else {
+					if (veip == 0xffff || e->instance >> 8 != (veip & 255) || veip_count++ >= 1) continue;
+				}
+			}
+			if (pass) {
+				job->unis[i].instance = e->instance;
+				job->unis[i].veip = e->class_id == 329;
+			}
+			i++;
 		}
+		if (pass) break;
+		count = i;
+		if (!count) return -ENOENT;
+		/* Original multicast chooses VEIP if a VEIP card exists, even when
+		 * its first UNI is absent. Do not silently retarget it to Ethernet. */
+		if (config->factory && config->multicast && veip != 0xffff && !veip_count) return -ENOENT;
+		if (count > 254U - !!config->multicast) return -ENOSPC;
+		job->unis = calloc(count, sizeof(*job->unis));
+		if (!job->unis) return -ENOMEM;
+		job->uni_count = count;
+	}
 	return 0;
 }
 

@@ -33,7 +33,8 @@ int fttr_services_start(struct fttr_services *set, uint16_t onu, uint16_t *count
 		if (count > 1 && (!configs[i].shared || !configs[i].filter_only)) goto fail;
 		if (configs[i].multicast && ++mc > 1) goto fail;
 		for (j = 0; j < i; j++)
-			if (configs[i].slot == configs[j].slot || configs[i].vid == configs[j].vid) goto fail;
+			if (configs[i].slot == configs[j].slot || configs[i].vid == configs[j].vid ||
+			    configs[i].factory != configs[j].factory) goto fail;
 	}
 	ret = fttr_mib_model_copy(&reserved, model);
 	if (ret) goto fail;

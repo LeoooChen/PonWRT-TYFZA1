@@ -5191,8 +5191,8 @@ FPGA1 keeps its actual one-slot restriction. Rows with the same serial/wildcard
 must have distinct slots and filter VIDs; they execute in ascending slot order.
 An exact serial replaces the complete wildcard collection. Multiple rows use
 `shared`/`shared-mcast`/`shared-ctc` with `filter:VID`, so one service cannot
-replace another's UNI access policy. These are explicit policies, not automatic
-import of the original `FTTR-100M`, configured card limits or default slot count.
+replace another's UNI access policy. The factory-default generator below
+also enters this collection; saved factory profile import remains separate work.
 
 The collection first copies the reported MIB into a private planning snapshot
 and reserves distinct T-CONTs with matching queues, GEMs and ANI bridge ports
@@ -5239,6 +5239,77 @@ files match build inputs (`artifacts/fttr/services-package-final-20261107.log`).
 No physical optical traffic, packet retirement, safe hardware-ID reuse or
 complete factory default restoration is established by these checks.
 
+### Factory default service generation and card limits
+
+`fttrd --services` now accepts a complete default collection in one row:
+
+```text
+serial-or-* factory total-TCONTs bridge-or--
+serial-or-* factory-ctc total-TCONTs bridge-or--
+```
+
+For example, `* factory 2 br-lan` selects the original one-data-service default
+on ASIC9690/FPGA2. The total includes management slot0; the original startup
+initializes it to2 and its runtime setter accepts2..8. Data slots1..total-1
+use queue priority0, transparent UNI mode4 and local grant units0/0/19440.
+With total2 the ANI is unfiltered; larger collections install ANI VID100*slot
+on every data GEM. The final job owns shared multicast; `factory` uses the
+standard recipe and `factory-ctc` explicitly selects the implemented CTC recipe.
+Exact serial replaces the entire wildcard collection. Mixing factory and
+explicit rows for the same selector is rejected before device ownership.
+The supplied policy file retains no active rows: local bridge selection remains
+explicit. These rows generate defaults; they do not read a saved factory XML
+or restore user-modified factory profiles. FPGA1 has a separate supervisor and
+profile library, so this generator rejects it before hardware writes while its
+existing explicit service policies remain supported.
+
+The constants follow actual original execution, not the profile labels:
+
+- `plr_pon_bw_profile_init` creates `FTTR-100M` with type3 and nominal
+  fixed/assured/maximum0/50/100. The existing wrapper oracle establishes that
+  `drv_gpon_alloc_id_config` is a no-op. `onuinfo` initializes its own rate arrays
+  and its registered-status callback sends0/0/(19440*64) for every selected
+  data slot; native DBA takes the corresponding grant units0/0/19440.
+- `plr_api_gem_add` uses API queue1. Actual service/remote adaptation subtracts1;
+  the flow composes Related Port as `(actual T-CONT << 16) | 0`. A missing
+  matching upstream queue rejects the complete collection before service IO.
+- `plr_pon_onutype_profile_init` creates `FTTR-402`. Its ONU adapter and actual
+  configured-card allocator produce one Ethernet card with four UNIs and one
+  VEIP card with one UNI. The label's2 is not the VEIP count.
+- Actual class5/class6 first attributes classify Ethernet types22/23/24/34/47/49
+  and VEIP type48. The original producers sort cards and UNIs by entity ID.
+  All Ethernet PPTP UNIs resolve onto the first Ethernet card; VEIP requires
+  `(UNI instance >> 8) == (card instance & 255)`. The generator caps selection
+  at four Ethernet UNIs and one UNI on the first VEIP card. It does not alter
+  excluded ports. Missing card classification fails with `ENODATA`; absence of
+  any eligible UNI fails with `ENOENT`. A present but empty first VEIP card
+  cannot silently retarget its required multicast service to Ethernet.
+
+Every generated job uses the existing observed-MIB reservation, live readback,
+reverse ownership cleanup, all-services-before-local-port admission and
+multicast-member/FE withdrawal paths. `service_recipe.factory` records the
+source of the recipe. Factory and explicit configurations cannot form a mixed
+collection with different shared-UNI sets.
+
+`tools/trace_stock_fttr_default.py` executes profile initialization, the
+configured-card allocator/getters, real MIB card parsing and original
+card/UNI producers/resolution, GEM queue translation, the default service
+producer and eight-slot supervisor callback. Pools/lists/platform IO are
+modeled; original dataflow and selection instructions execute. The report is
+`artifacts/fttr/default-profiles-20261107.json`.
+
+Namespace tests run the actual daemon/CLI, AF_PACKET and Linux bridge/VLAN
+ports with original OMCI encoders and modeled ONU/MiniOLT storage. Default
+single/two/seven-service collections pass, covering standard/CTC multicast,
+actual default DBA, UNI exclusions, reverse migration, missing card type,
+empty first VEIP, missing final queue and final-GEM failure rollback. Existing
+explicit multi-service and CLI regressions also pass. GCC14.4/musl package
+compilation/install passes (`artifacts/fttr/default-package-20261107.log`).
+No device access or physical traffic/acceleration acceptance was performed.
+Durable remote ownership, saved factory policy import, FPGA1 default profiles,
+AP direct NI→PE BCMC, multiple VIFs and complete physical retirement/reuse
+remain open.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
@@ -5275,8 +5346,9 @@ complete factory default restoration is established by these checks.
    implemented, with runtime journals and observed disconnect/replacement
    handling. MIB sync monitoring now also detects/reconciles same-serial MIB
    loss without an observed registration transition. Durable ownership
-   recovery of remote resources and default policy import remain work. Explicit
-   shared multi-service collections are implemented above; broader factory
+   recovery of remote resources and saved policy import remain work. The original
+   ASIC/FPGA2 default recipe and card limits now generate shared multi-service
+   collections as described above; broader factory
    capability/UNI policy combinations remain work. Explicit bridge attachment through native per-GEM
    VLAN ports, their lifecycle and kernel FDB removal are implemented.
    Native P6 CF/FE admission and synchronous Hash/cache withdrawal are

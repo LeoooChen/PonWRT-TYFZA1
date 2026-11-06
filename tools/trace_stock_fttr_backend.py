@@ -29,7 +29,7 @@ def dispatch(binary, backend):
     return dict(backend=backend,**result)
 
 
-def startup(binary, backend, mode):
+def startup(binary, backend, mode, slots=2):
     copies={}
     with binary.open('rb') as stream:
         elf=ELFFile(stream);symbols=elf.get_section_by_name('.dynsym')
@@ -79,13 +79,15 @@ def startup(binary, backend, mode):
     # Actual registered-status callback's default DBA loop. It uses the
     # OltSetting table initialized by the executed startup, not a new fixture.
     for id in (1,6,64):
+        assert oracle.uc.mem_read(0x430d08+(id-1)*136+41,1)==b'\x02'
+        oracle.uc.mem_write(0x430d08+(id-1)*136+41,bytes([slots]))
         events.clear();stack=oracle.scratch+0x1ff000
         oracle.uc.reg_write(UC_ARM64_REG_SP,stack)
         oracle.uc.mem_write(stack+60,struct.pack('<I',id))
         oracle.uc.emu_start(0x415ec4,0x415fc0,count=20000)
         assert oracle.uc.reg_read(UC_ARM64_REG_PC)==0x415fc0
         assert events==[['SetOnuTcontDba',id,0,0,3840,3840],
-                        ['SetOnuTcontDba',id,1,0,0,19440*64]],events
+                        *([ 'SetOnuTcontDba',id,n,0,0,19440*64] for n in range(1,slots))],events
         callbacks.extend(events)
     return dict(backend=backend,host_mode=mode,events=startup_events,registration_dba=callbacks)
 

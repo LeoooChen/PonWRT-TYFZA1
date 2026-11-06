@@ -247,11 +247,184 @@ def default_uni_vlan(binary):
     return dict(mode=4, rows=rows, scope='Actual configured UNI initializer and automatic mode selector; empty custom-rule list and row-install boundary are modeled. Default flow VLAN filters are independent of this transparent UNI mode.')
 
 
+def default_profiles(binary):
+    """Run profile initializers and their configured-card conversion, with pool/list IO modeled."""
+    profiles, lists, next_node = {}, {}, 0
+    recipe = None
+    def hook(name, a):
+        nonlocal next_node, recipe
+        uc = oracle.uc
+        if name == 'plr_pon_profile_add':
+            label = bytes(uc.mem_read(a[1], 32)).split(b'\0')[0].decode()
+            ptr = oracle.scratch + 0x3000 + a[0] * 256
+            uc.mem_write(ptr, bytes(256)); uc.mem_write(a[2], struct.pack('<Q', ptr))
+            profiles[label] = ptr
+            return 0
+        if name == 'plr_gponrm_cfg_onu_add':
+            recipe = bytes(uc.mem_read(a[1], 52)); return 0
+        if name == 'plr_gpon_maxpon_get': return 1
+        if name == 'plr_gpon_maxonu_get': return 63
+        if name in ('plr_gponrm_mgmt_sem_take_with_timeout', 'plr_gponrm_mgmt_sem_give'): return 0
+        if name == 'plr_gponrm_mem_pool_alloc':
+            assert a[0] in (15,16)
+            ptr = oracle.scratch + 0x8000 + next_node * 256; next_node += 1
+            uc.mem_write(ptr, bytes(256)); return ptr
+        if name == 'lstInit': lists[a[0]] = []; return 0
+        if name == 'lstCount': return len(lists.get(a[0], []))
+        if name == 'lstAdd': lists.setdefault(a[0], []).append(a[1]); return 0
+        if name == 'lstNth':
+            items = lists.get(a[0], [])
+            return items[a[1]-1] if 0 < a[1] <= len(items) else 0
+        raise AssertionError(('default profile boundary', name, a))
+    overrides = ('plr_pon_profile_add', 'plr_gponrm_cfg_onu_add', 'plr_gpon_maxpon_get',
+        'plr_gpon_maxonu_get', 'plr_gponrm_mgmt_sem_take_with_timeout', 'plr_gponrm_mgmt_sem_give',
+        'plr_gponrm_mem_pool_alloc')
+    oracle = ElfOracle(binary, hook, overrides)
+    oracle.call('plr_pon_bw_profile_init'); oracle.call('plr_pon_onutype_profile_init')
+    bw = list(struct.unpack('<4I', oracle.uc.mem_read(profiles['FTTR-100M'] + 52,16)))
+    assert bw == [3,0,50,100]
+    address, input_ptr, cfg, storage = (oracle.scratch+n for n in (0x2000,0x2100,0x4000,0x5000))
+    oracle.uc.mem_write(input_ptr, struct.pack('<HHQ',1,1,profiles['FTTR-402']))
+    assert oracle.call('plr_gponrm_onu_add_api',input_ptr) == 0
+    assert struct.unpack_from('<5H',recipe) == (1,4,1,2,0)
+    oracle.uc.mem_write(cfg,recipe); oracle.uc.mem_write(address,bytes(4))
+    oracle.uc.mem_write(0x176378,struct.pack('<Q',storage))
+    assert oracle.call('plr_gponrm_cfg_card_mgmt_add',address,cfg)==0
+    configured = {}
+    for kind, expected in (('eth',4),('veip',1)):
+        assert oracle.call('plr_gponrm_cfg_card_'+kind+'_num_get',address)==1
+        assert oracle.call('plr_gponrm_cfg_card_'+kind+'_uni_num_get',address,0,cfg+128)==0
+        count=struct.unpack('<H',oracle.uc.mem_read(cfg+128,2))[0]
+        assert count==expected; configured[kind]=[count]
+    return dict(bandwidth_profile=dict(name='FTTR-100M',type=bw[0],fixed=bw[1],assured=bw[2],maximum=bw[3]),
+        onu_type='FTTR-402',configured=configured,configuration=recipe.hex(),
+        scope='Actual initializers, ONU-type adapter, configured-card allocation and getters. Profile allocator, pools, list storage and semaphore boundaries modeled; these nominal rates are not physical DBA.')
+
+
+def reported_cards(binary):
+    """Run original card/UNI producers, resolution and getters in deliberately unordered inventories."""
+    lists, next_node = {}, 0
+    def link(head):
+        items=lists.setdefault(head,[])
+        for i,node in enumerate(items):
+            oracle.uc.mem_write(node,struct.pack('<QQ',items[i+1] if i+1<len(items) else 0,items[i-1] if i else 0))
+    def hook(name,a):
+        nonlocal next_node
+        if name=='plr_gpon_maxonu_get':return 63
+        if name in ('memcpy','memmove'):
+            oracle.uc.mem_write(a[0],bytes(oracle.uc.mem_read(a[1],a[2])));return a[0]
+        if name=='memset':oracle.uc.mem_write(a[0],bytes([a[1]&255])*a[2]);return a[0]
+        if name=='plr_gponrm_mem_pool_alloc':
+            ptr=oracle.scratch+0x10000+next_node*256;next_node+=1
+            oracle.uc.mem_write(ptr,bytes(256));return ptr
+        if name=='plr_gponrm_mem_pool_free':return 0
+        if name=='plr_log':return 0
+        if name=='lstInit':lists[a[0]]=[];return 0
+        if name=='lstCount':return len(lists.get(a[0],[]))
+        if name=='lstFirst':return next(iter(lists.get(a[0],[])),0)
+        if name=='lstNext':return struct.unpack('<Q',oracle.uc.mem_read(a[0],8))[0]
+        if name=='lstNth':
+            items=lists.get(a[0],[]);return items[a[1]-1] if 0<a[1]<=len(items) else 0
+        if name=='lstAdd':lists.setdefault(a[0],[]).append(a[1]);link(a[0]);return 0
+        if name=='lstInsert':
+            items=lists.setdefault(a[0],[]);items.insert(items.index(a[1])+1 if a[1] else 0,a[2]);link(a[0]);return 0
+        if name=='lstGet':
+            items=lists.get(a[0],[]);node=items.pop(0) if items else 0;link(a[0]);return node
+        raise AssertionError(('reported card boundary',name,a))
+    oracle=ElfOracle(binary,hook,('plr_gpon_maxonu_get','plr_gponrm_mem_pool_alloc','plr_gponrm_mem_pool_free','plr_log'))
+    address,record,storage=(oracle.scratch+n for n in (0x2000,0x3000,0x4000))
+    oracle.uc.mem_write(0x176ae0,struct.pack('<Q',storage))
+    cases=[]
+    for cards,eth,veip in (([(9,48),(6,47),(8,48),(2,22)],[0x901,0x103,0x102,0x101,0x104],[0x902,0x801,0x901]),
+                           ([(9,48),(2,22)],[0x701],[0x801]),([], [1],[0x101])):
+        lists.clear();next_node=0;oracle.uc.mem_write(storage,bytes(755))
+        for n,(instance,kind) in enumerate(cards):
+            cls=5 if n%2==0 else 6
+            wire=struct.pack('>HBBHHHHH',0x8123,0x2e,10,2,0,cls,instance,0x8000)
+            oracle.uc.mem_write(record+256,wire+bytes([kind])+bytes(25)+b'\0\0\0\x28')
+            assert oracle.call('plr_gponomci_me_uploadnext_cont_parse',cls,record+256,record,128)==0x80000000
+            assert struct.unpack('<H',oracle.uc.mem_read(record,2))[0]==instance
+            assert oracle.uc.mem_read(record+6,1)==bytes([kind])
+            assert oracle.call('plr_gponrm_'+('card' if cls==5 else 'circuit')+'_write',address,record)==0
+        for kind,ids in (('pptp_eth_uni',eth),('veip',veip)):
+            for instance in ids:
+                oracle.uc.mem_write(record,struct.pack('<H',instance)+bytes(40))
+                assert oracle.call('plr_gponrm_'+kind+'_write',address,record)==0
+        oracle.call('plr_gponrm_card_resolve',address)
+        actual={}
+        for kind in ('eth','veip'):
+            groups=[]
+            for card in range(oracle.call('plr_gponrm_card_'+kind+'_num_get',address)):
+                assert oracle.call('plr_gponrm_card_'+kind+'_uni_num_get',address,card,record)==0
+                count=struct.unpack('<H',oracle.uc.mem_read(record,2))[0]
+                group=[]
+                for uni in range(count):
+                    ptr=oracle.call('plr_gponrm_card_'+kind+'_uni_get_by_card_uni_id',address,card,uni)
+                    group.append(struct.unpack('<H',oracle.uc.mem_read(ptr+16,2))[0])
+                groups.append(group)
+            actual[kind]=groups
+        eth_cards=sorted(i for i,k in cards if k in (22,23,24,34,47,49))
+        veip_cards=sorted(i for i,k in cards if k==48)
+        assert actual==dict(eth=([sorted(eth)]+[[]]*(len(eth_cards)-1) if eth_cards else []),
+                           veip=[[i for i in sorted(veip) if i>>8==c&255] for c in veip_cards]),actual
+        cases.append(dict(cards=cards,ethernet=eth,veip=veip,resolved=actual,
+            selected=dict(eth=actual['eth'][0][:4] if actual['eth'] else [],veip=actual['veip'][0][:1] if actual['veip'] else [])))
+    return cases
+
+
+def default_queue(binary):
+    """Execute API -> service GEM -> remote adapter and its Related Port composition."""
+    from unicorn.arm64_const import UC_ARM64_REG_SP, UC_ARM64_REG_PC
+    saved=[]
+    def hook(name,a):
+        u=oracle.uc
+        if name in ('memcpy','memmove'):
+            u.mem_write(a[0],bytes(u.mem_read(a[1],a[2])));return a[0]
+        if name=='memset':u.mem_write(a[0],bytes([a[1]&255])*a[2]);return a[0]
+        if name=='strcpy':
+            value=bytes(u.mem_read(a[1],32)).split(b'\0')[0]+b'\0';u.mem_write(a[0],value);return a[0]
+        if name=='validate':u.mem_write(a[2],struct.pack('<Q',oracle.scratch+0x2000));return 0
+        if name=='plr_ponsrv_port_id_get':u.mem_write(a[3],struct.pack('<H',257));return 0
+        if name=='plr_ifmng_gemport_add_notify':saved.append(bytes(u.mem_read(a[0],1074)));return 0
+        if name=='plr_gponrm_cfg_gem_uc_op':saved.append(bytes(u.mem_read(a[1],42)));return 0
+        if name=='plr_gponrm_queue_us_me_id_get_by_related_port_id':saved.append(a[1]);return 0
+        if name in ('plr_ponsrv_cfgonu_sem_take_with_timeout','plr_ponsrv_cfgonu_sem_give',
+                    'plr_ponsrv_onu_is_authed','plr_ponsrv_gemport_data_save',
+                    'plr_gponrm_mgmt_sem_take_with_timeout','plr_gponrm_mgmt_sem_give'):return 0
+        if name=='plr_gpon_maxpon_get':return 1
+        if name=='plr_gpon_maxonu_get':return 63
+        raise AssertionError(('default queue boundary',name,a))
+    oracle=ElfOracle(binary,hook,('plr_ponsrv_port_id_get','plr_ifmng_gemport_add_notify',
+        'plr_gponrm_cfg_gem_uc_op','plr_gponrm_queue_us_me_id_get_by_related_port_id',
+        'plr_ponsrv_cfgonu_sem_take_with_timeout','plr_ponsrv_cfgonu_sem_give',
+        'plr_ponsrv_onu_is_authed','plr_ponsrv_gemport_data_save',
+        'plr_gponrm_mgmt_sem_take_with_timeout','plr_gponrm_mgmt_sem_give',
+        'plr_gpon_maxpon_get','plr_gpon_maxonu_get'))
+    oracle.hooks[0x8575c]='validate'
+    oracle.uc.mem_write(oracle.scratch+0x2010,struct.pack('<I',1))
+    assert oracle.call('plr_api_gem_add',1|(1<<32),1|(1<<32))==0
+    ptr=oracle.scratch+0x3000
+    oracle.uc.mem_write(ptr,saved[0]);assert oracle.call('plr_gponrm_gem_op_api',ptr)==0
+    assert struct.unpack_from('<2H',saved[1],6)==(0,0)
+    # Execute the real flow's Related Port composition with the just-produced priority.
+    context=oracle.scratch+0x4000;record=context+256;stack=oracle.scratch+0x1ff000
+    oracle.uc.mem_write(record+20,saved[1][6:8]);oracle.uc.mem_write(context+40,struct.pack('<Q',record))
+    oracle.uc.reg_write(UC_ARM64_REG_SP,stack)
+    oracle.uc.mem_write(stack+24,struct.pack('<Q',context));oracle.uc.mem_write(stack+40,struct.pack('<Q',ptr))
+    oracle.uc.mem_write(stack+62,bytes(2));oracle.uc.mem_write(stack+98,struct.pack('<H',0x8001))
+    oracle.uc.emu_start(0xaa164,0xaa1b8,count=1000)
+    assert oracle.uc.reg_read(UC_ARM64_REG_PC)==0xaa1b8 and saved[-1]==0x80010000
+    return dict(api_queue=1,remote_priority=0,related_port=saved[-1],
+        scope='Actual GEM API/service/remote conversion and flow Related Port composition; validation, allocation, notification delivery and IO modeled.')
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ('caller', 'relay', 'output'):
         p.add_argument('--' + name, type=Path, required=True)
     args = p.parse_args()
+    from trace_stock_fttr_backend import startup
+    supervisor = startup(args.caller, 2, 9, slots=8)
     stock = DefaultService(args.caller)
     cases = []
     for onu in (1, 6, 63):
@@ -276,6 +449,8 @@ def main():
                     for onu in (1, 6, 63) for slot in (1, 7)]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(dict(cases=cases, failures=failures, translations=translations, bridge_selection=bridge_selection(args.relay),
+        default_profiles=default_profiles(args.relay), default_queue=default_queue(args.relay),
+        supervisor_dba=supervisor['registration_dba'], reported_cards=reported_cards(args.relay),
         shared_uni_selection=shared_uni_selection(args.relay), default_uni_vlan=default_uni_vlan(args.relay),
         caller_sha256=hashlib.sha256(args.caller.read_bytes()).hexdigest(),
         relay_sha256=hashlib.sha256(args.relay.read_bytes()).hexdigest(),
@@ -285,7 +460,7 @@ def main():
                   'With the first default flow, the original selector chooses the shared bridge; it does not select Ethernet UNI ordinal0.',
                   'Original failed provisioning deletes/re-adds the ONU, preserves the initiating error and ignores cleanup results.'],
         scope='Actual original producer and flow API adaptation; allocator/remote OMCI, semaphore, configuration owner and reset IO are modeled. No complete service/topology/traffic or hardware acceptance.'), indent=2) + '\n')
-    print(f'PASS: {len(cases)} original default/multi-slot recipes, {len(failures)} failure paths, {len(translations)*2} flow adapter calls, 4 bridge selections, 3 shared-UNI enumerations and actual default transparent VLAN initialization')
+    print(f'PASS: {len(cases)} original default/multi-slot recipes, {len(failures)} failure paths, {len(translations)*2} flow adapter calls, 4 bridge selections, 3 shared-UNI enumerations and actual default transparent VLAN initialization; profiles/card resolution/default queue and eight-slot supervisor DBA also passed')
 
 
 if __name__ == '__main__': main()

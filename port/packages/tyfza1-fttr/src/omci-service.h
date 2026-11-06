@@ -10,10 +10,13 @@
 
 struct fttr_service_config {
 	uint16_t uni, slot, priority, vid, fixed, assured, maximum;
-	bool veip, tagged, shared, filter_only;
+	bool veip, tagged, shared, filter_only, factory;
 	uint8_t multicast; /* 0 disabled, 1 original standard, 2 original CTC profile */
 	enum fttr_backend backend;
 };
+
+/* Original onuinfo defaults: total includes management slot0. */
+int fttr_service_default(struct fttr_service_config *config, unsigned int total, unsigned int slot);
 
 /* none: transparent; VID: access; filter:VID: transparent UNI/ANI filter. */
 int fttr_service_vlan_parse(const char *text, bool *tagged, bool *filter_only, uint16_t *vid);
@@ -50,7 +53,7 @@ struct fttr_service_job {
 		FTTR_SERVICE_CHECK_MCAST, FTTR_SERVICE_MCAST, FTTR_SERVICE_RELEASE_MCAST } stage;
 };
 
-/* Select real MEs for one UNI or all reported Ethernet/VEIP UNIs on the shared bridge. */
+/* Select real MEs for one UNI, explicit shared inventory, or the factory card limits. */
 int fttr_service_start(struct fttr_service_job *job, uint16_t onu, uint16_t *counter,
 		const struct fttr_mib_model *model, const struct fttr_service_config *config,
 		const uint8_t serial[8]);

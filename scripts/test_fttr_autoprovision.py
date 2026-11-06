@@ -89,7 +89,8 @@ def main():
     p.add_argument('--output', type=Path, required=True)
     p.add_argument("--shared", action="store_true", help="exercise shared Ethernet/VEIP services and release with --move-control")
     p.add_argument("--filter-only", action="store_true", help="use transparent UNI mode with ANI VLAN filtering")
-    p.add_argument("--multi-services", type=int, choices=(2,7), help="exercise a complete shared multi-GEM service collection")
+    p.add_argument("--multi-services", type=int, choices=(1,2,7), help="exercise a complete shared multi-GEM service collection")
+    p.add_argument("--factory", action="store_true", help="generate original defaults for --multi-services, including card limits")
     p.add_argument("--multicast", choices=("standard","ctc"), help="exercise remote multicast shared provisioning and migration")
     p.add_argument("--wifi", action="store_true", help="exercise resident remote Wi-Fi policies")
     p.add_argument("--onu-policy", action="store_true", help="exercise per-ONU authentication and persistent assignment")
@@ -99,6 +100,8 @@ def main():
     assert not args.multicast or args.shared
     assert not args.shared or (args.move_control and not args.onu_policy)
     assert not args.filter_only or args.shared
+    assert not args.factory or (args.multi_services and args.multicast)
+    assert args.multi_services != 1 or args.factory
     assert not args.multi_services or (args.shared and args.filter_only and args.auth and args.backend!='fpga1')
 
     physical_slot = 0 if args.backend == "fpga1" else 1
@@ -125,7 +128,7 @@ def main():
     sync_request=stock.me_request(0x49,2,0,0x8000,b'\0')
     o, ptr = stock.oracle, stock.data
     widths = {}
-    for c in (2,11,45,47,84,171,256,262,266,268,272,277,281,309,310,311,329,65531,0xff69,0xff6a,0xfffa):
+    for c in (2,5,6,11,45,47,84,171,256,262,266,268,272,277,281,309,310,311,329,65531,0xff69,0xff6a,0xfffa):
         assert o.call('plr_gponomci_medetail_get',c,ptr,ptr+8)==1
         table = struct.unpack('<Q',o.uc.mem_read(ptr+8,8))[0]
         widths[c] = {struct.unpack('<H',o.uc.mem_read(table+i*40+8,2))[0]:o.uc.mem_read(table+i*40+12,1)[0]
@@ -160,6 +163,17 @@ def main():
                 for n in range(1,args.multi_services):
                     self.pool[262,self.tcont+n]={0x8000:b'\0\xff'}
                     self.pool[277,self.queue+n]={0x0400:struct.pack('>I',(self.tcont+n)<<16|3)}
+            if args.factory:
+                # First Ethernet card receives all PPTP UNIs; first VEIP
+                # card receives only its matching slot. Surplus/orphan
+                # entries must keep their initial administrative state.
+                for c,i,t in ((5,2,47),(6,5,22),(5,3,48),(6,6,48)):
+                    self.pool[c,i]={0x8000:bytes([t])}
+                for i in (0x101,0x102,0x103,0x104,0x701):
+                    self.pool[11,i]={0x8000:b'\0',0x0800:b'\1'}
+                for i in (0x301,0x302):self.pool[329,i]={0x8000:b'\1'}
+                for n in range(args.multi_services):
+                    self.pool[277,self.queue+n]={0x0400:struct.pack('>I',(self.tcont+n)<<16)}
             self.reject_gem=0
             self.drift_second=False
             self.drift_table=False
@@ -784,7 +798,7 @@ def main():
             def kind(slot):
                 return ('shared-ctc' if args.multicast=='ctc' else 'shared-mcast') if args.multicast and slot==count else 'shared'
             rows=[f'* {kind(slot)} 0 {slot} 3 filter:{100*slot} 50 100 200 br-fttr\n' for slot in range(count,0,-1)]
-            policy.write_text(''.join(rows))
+            policy.write_text(f"* {'factory-ctc' if args.multicast=='ctc' else 'factory'} {count+1} br-fttr\n" if args.factory else ''.join(rows))
             nodes[7].hold=False;nodes[9].fail_upload_once=False
             process=None
             def ready():
@@ -801,7 +815,18 @@ def main():
                         name=f'fttr-u{id}'+(f'-{n+1}' if n else '')
                         assert ports()[name]['linkinfo']['info_data']['id']==state['gem']
                         assert int(ports()[name]['group'])==(0x46544d55 if args.multicast else 0x46545452)
-                        assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),(id*8+n+1)*8)==(50,100<<16|200)
+                        assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),(id*8+n+1)*8)==((0,19440) if args.factory else (50,100<<16|200))
+                    if args.factory:
+                        recipes=[e for e in journal(id) if e['event']=='service_recipe']
+                        assert all(e['factory'] and e['priority']==0 and e['bandwidth']==[0,0,19440] for e in recipes)
+                        assert [e['vid'] for e in recipes]==([100*n for n in range(1,count+1)] if count>1 else [0])
+                        assert all(e['tagged']==(count>1) and e['filter_only']==(count>1) for e in recipes)
+                        selected={(11,i) for i in ((1,0x101,0x102,0x103) if nodes[id].veip else (0x101,0x102,0x103,0x104))}|{(329,0x301)}
+                        unis={(329 if e['kind']==2 else 11,e['instance']) for e in journal(id) if e['event']=='service_uni'}
+                        assert unis==selected
+                        for c,i in nodes[id].pool:
+                            if c in (11,329):
+                                assert nodes[id].pool[c,i][0x8000 if c==329 else 0x0800]==bytes([0 if (c,i) in selected else 1])
                     expected=master_rules(stock,0xfbeb0,0,0,0)
                     uni_ports={e['port'] for e in journal(id) if e['event']=='service_uni'}
                     for port in uni_ports:assert [row for key,row in nodes[id].table.items() if key[0]==port]==expected
@@ -828,6 +853,42 @@ def main():
                     if client.poll() is None:client.kill();client.wait()
             try:
                 good_policy=policy.read_text()
+                if args.factory:
+                    for invalid in ('* factory 1 br-fttr\n', '* factory 9 br-fttr\n',
+                                    '* factory 4294967298 br-fttr\n','* factory x br-fttr\n',
+                                    '* factory 2 br-fttr extra\n',
+                                    good_policy+'* shared 0 7 0 filter:900 0 0 19440 br-fttr\n',
+                                    '* shared 0 7 0 filter:900 0 0 19440 br-fttr\n'+good_policy):
+                        policy.write_text(invalid)
+                        rejected=launch();_,errors=rejected.communicate(timeout=3)
+                        assert rejected.returncode==1 and not store.joinpath('status.json').exists()
+                    policy.write_text('* factory 2 br-fttr\n');device.joinpath('backend').write_text('fpga1\n')
+                    rejected=launch();_,errors=rejected.communicate(timeout=3)
+                    assert rejected.returncode==1 and not store.joinpath('status.json').exists()
+                    device.joinpath('backend').write_text(args.backend+'\n');policy.write_text(good_policy)
+                    process=launch();ready();request_move();stop()
+                    assert not nodes[7].table
+                    assert not any(c in (45,47,84,171,266,268,272,281,309,310,311,65531) for c,i in nodes[7].pool)
+                    checks.append(f'factory total{count+1} generates {count} jobs with priority0, actual DBA0/0/19440, default ANI filters and last-job multicast; complete local admission and reverse migration succeed')
+                    checks.append('actual MIB card classification selects four Ethernet UNIs and first-slot VEIP only; excess, later-card and orphan ports retain admin state')
+                    for fault in ('missing-card-type','empty-first-veip','missing-queue','last-gem-reject'):
+                        reset()
+                        if fault=='missing-card-type':nodes[7].pool[5,2]={0x4000:b'\x30'}
+                        if fault=='empty-first-veip':
+                            del nodes[7].pool[329,0x301];del nodes[7].pool[329,0x302]
+                        if fault=='missing-queue':nodes[7].pool.pop((277,nodes[7].queue+count-1))
+                        if fault=='last-gem-reject':nodes[7].reject_gem=263+64*(count-1)
+                        process=launch()
+                        until(lambda s:s['onus'][7]['phase']=='service-failed' and s['onus'][9]['datapath_configured'],seconds=20)
+                        assert not any(name=='fttr-u7' or name.startswith('fttr-u7-') for name in ports())
+                        assert not nodes[7].table and not any(c in (45,47,84,171,266,268,272) for c,i in nodes[7].pool)
+                        if fault!='last-gem-reject':
+                            assert not any(op in (0x44,0x48,0x46) and c not in (256,65530) for _,op,c,_ in nodes[7].operations)
+                        for n in range(count):assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),(7*8+n+1)*8)==(0,0)
+                        stop()
+                    checks.append('missing card type, empty first VEIP and missing final queue reject before service IO; failed final GEM reverses prior members and leaves no partial local grant')
+                    args.output.write_text(json.dumps(dict(checks=checks,backend=args.backend,scope='Actual resident/CLI/OMCI/veth/bridge/VLAN with original wire encoders and modeled MiniOLT/ONU storage; no physical traffic acceptance.'),indent=2)+'\n')
+                    print(json.dumps(checks,indent=2));return
                 for invalid in (
                         '* shared 0 1 3 filter:100 50 100 200 br-fttr\n* shared 0 2 3 filter:100 50 100 200 br-fttr\n',
                         '* shared 0 1 3 100 50 100 200 br-fttr\n* shared 0 2 3 filter:200 50 100 200 br-fttr\n',

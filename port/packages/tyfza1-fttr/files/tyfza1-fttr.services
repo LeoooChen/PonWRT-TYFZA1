@@ -11,7 +11,21 @@
 # after every registered ONU is authenticated and its GEM4095 state verified.
 # All multicast policies must name the same bridge (or all use - for OMCI only).
 # An unselected ONU retaining GEM4095 prevents shared multicast admission.
-# These explicit policies do not import the full factory default configuration.
+# Factory defaults (ASIC9690/FPGA2):
+# serial factory total-TCONTs bridge
+# serial factory-ctc total-TCONTs bridge
+# total includes management slot0; original startup uses 2, supported range2..8.
+# Generates data slots1..total-1, priority0, physical DBA0/0/19440.
+# total2: transparent ANI; larger totals: ANI filter100*slot, transparent UNIs.
+# Last data slot owns standard multicast; factory-ctc selects the CTC recipe.
+# FTTR-402 limits: first Ethernet card/all PPTP UNIs capped at4;
+# first VEIP card/slot capped at1. Actual MIB card types must be present.
+# A factory row replaces its entire serial/wildcard collection; it cannot mix
+# with explicit rows for the same selector. Exact serial still replaces *.
+# This generates the traced default recipe; it does not import saved factory
+# configuration, custom bandwidth/card profiles or the FPGA1 supervisor.
+# Example (choose the local bridge before enabling):
+# * factory 2 br-lan
 # slot: ASIC9690/FPGA2 1..7, FPGA1 1
 # priority: 0..7; VID: 0..4094 for access mode, none for transparent mode,
 # or filter:VID for transparent UNIs with only the ANI/GEM VLAN filter.
