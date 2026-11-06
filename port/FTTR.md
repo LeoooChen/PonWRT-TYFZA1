@@ -4674,6 +4674,37 @@ No hardware was accessed. Direct PE BCMC, EPON-specific multicast, unknown
 flood acceleration and complete hardware/queued-packet retirement remain
 unfinished; cookie/action/group quarantine and capacity restrictions remain.
 
+### Original EPON multicast route production
+
+`trace_stock_fttr_mcast_epon.py` now executes the retained
+`ca-rtk-epon-drv.ko:us_pon_sid_mapping_adding.isra.0` through
+`fc_8277c.ko:rtk_fc_pon_sid_set`, then the multicast member/action parser and
+NI action converter. The initializer creates exactly eight SIDs0..7: enabled,
+DEEPQ1 for direct DMA, destination32+the reported MPCP software-index offset,
+COS=SID and flowId/POL0. It does not assign ITU GEM indices. The FC six-byte
+route rows retain enable/destination/COS/POL, and multicast member7/action-bit12
+consumes them with each recipient's final S/C tags. Original register-offset
+inputs0/4/15/31 and queues0/3/7 cover destination32 as well as higher ports.
+
+Replacing a valid SID first invokes flow deletion by that SID. Injected
+failures show that FC nevertheless updates its software row and returns0
+after failed deletion or LSO programming. The native integration must keep
+withdrawal errors/retry ownership.128 original SID new/replace executions
+and36 complete FC/NI replica recipes pass in
+`artifacts/fttr/mcast-epon-stock-20261107.json`. The software-index getter,
+cross-module API forwarding, allocation, actual LSO hardware writes and
+physical queue delivery remain modeled boundaries.
+
+This is evidence for the next implementation, not enabled EPON multicast.
+The current replica encoder deliberately requires ITU GEM8..255 and excludes
+destination32; EPON needs a distinct route with POL0, LLID/MAC-instance
+identity, current4/8-queue mode and registration generation. Native PDC maps
+received LLID table entries to business MAC instances; multicast LLIDs use
+the primary interface. That selection, PDC changes, registration loss,
+mode switches and LLID resizing must invalidate complete groups before new
+EPON routes are admitted. ITU host-copy metadata must remain distinct from
+EPON LLID0. No device was accessed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

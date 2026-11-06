@@ -116,6 +116,8 @@
 
 49. 接入STA无线输出并补齐软件QoS语义：按真实入站/VLAN映射恢复固定优先级，无线裸口来源保留逐包COS；QM不再覆盖已恢复的优先级。组播VLAN编译按Linux实际`reorder_hdr`规则处理，标志/接口特性变化使整组失效；COS导致输出标签变化时拒绝仅凭单包建立规则。12288组实际Linux VLAN/WME队列对比、32组原厂COS/QoS执行、LAN/PON/ONU/无线到STA完整事务、384项QM和既有回归、Image/模块及补丁零偏差重放通过。直接PE BCMC、EPON、泛洪和完整队列退场/资源复用仍未完成，无实机验证。详见[STA副本与QoS](port/FTTR.md#station-wireless-replicas-and-software-qos-equivalence)。
 
+50. 查实EPON组播路由生产链：执行原厂EPON SID初始化、FC映射存储/替换以及完整NI副本动作，确认8个SID对应队列，目的为`32+MPCP软件索引`且POL为0，不能套用ITU GEM8..255。128次新建/替换、36组完整动作通过；注入错误复现FC忽略流撤销和LSO编程失败。当前只完成实现依据，EPON原生副本、LLID/MAC实例与注册代际、PDC/模式/队列变化的同步失效仍待接入。详见[EPON组播路由依据](port/FTTR.md#original-epon-multicast-route-production)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
