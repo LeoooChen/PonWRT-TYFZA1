@@ -346,6 +346,9 @@ int fttr_vlan_change_update(struct fttr_vlan_change *change, uint16_t *counter)
 			failed_change(change, counter, ret, &read->me) : failed_restore(change, ret, &read->me);
 	switch (change->stage) {
 	case FTTR_VLAN_READ:
+		if (change->required_before && (!change->required_before->complete ||
+		    verify(change->required_before, before, &(struct fttr_vlan_plan){ 0 })))
+			return failed_change(change, counter, -ESTALE, &read->me);
 		for (offset = 0; offset < before->length; offset += 16)
 			if (find(before, before->data + offset) != before->data + offset)
 				return failed_change(change, counter, -EUCLEAN, &read->me);

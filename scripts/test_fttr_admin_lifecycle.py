@@ -21,7 +21,7 @@ enum { FTTR_ADMIN_DEACTIVATE=2 };
 struct fttr_onu_state {uint32_t downstream,upstream;unsigned char serial[8];};
 struct fttr_admin_request {uint32_t version,id,action;unsigned char serial[8];uint32_t target;};
 struct onu { bool admin_pending,service_started,grant; void *wifi;
- struct {int index;} port; unsigned char admin_serial[8]; int64_t admin_timeout;
+ struct {int index;} ports[7]; unsigned char admin_serial[8]; int64_t admin_timeout;
  int phase,hardware; };
 struct controller { int backend,directory; int64_t admin_scan_due; struct onu onu[FTTR_ONUS];
  struct {bool active;struct fttr_admin_request request;} move; };
@@ -87,7 +87,7 @@ int main(void) {
   assert(!admin_tick(&c,20000) && !calls); /* later block/resume/stop cancels it */
   for(int owner=0;owner<4;owner++) {
    reset(backend,100);
-   if(owner==0)c.onu[7].port.index=3;
+   if(owner==0)c.onu[7].ports[0].index=3;
    if(owner==1)c.onu[7].service_started=true;
    if(owner==2)c.onu[7].grant=true;
    if(owner==3)c.onu[7].wifi=&c;

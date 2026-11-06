@@ -807,7 +807,10 @@ order. Kind0 selects Ethernet; kind2 selects VEIP. Ordinals are zero-based
 within that actual MIB class. Kind`shared` selects all reported Ethernet/VEIP
 UNIs and requires ordinal0. Slot1..7, priority0..7, VID0..4094/`none` and
 hardware grant units have the same meanings as `fttrctl service`. There is
-one policy per exact serial and at most one wildcard; exact matches win.
+up to seven policies with distinct slots per exact serial or wildcard set;
+exact-serial rows replace the complete wildcard set. FPGA1 remains limited
+to its single hardware data slot. Multiple rows require shared UNIs and
+`filter:VID`, with distinct VIDs and at most one multicast-owning row.
 The final field names an existing/up Linux bridge (for example `br-lan`), or
 `-` to request only OMCI/local-grant provisioning. The bridge's MTU plus four
 outer tag bytes must fit the FTTR parent. A requested bridge failure is
@@ -5180,6 +5183,62 @@ and source-level FE checks, not physical NI/P6/ONU traffic acceptance.
 This removes the local interface collision; the controller's policy and remote
 OMCI transaction still require the multi-service owner/scheduler implementation.
 
+### Resident multi-service collections and shared ownership
+
+`fttrd` now provisions one to seven explicit shared-bridge services per ONU,
+matching the original default producer's data-slot1..7 range on ASIC/FPGA2.
+FPGA1 keeps its actual one-slot restriction. Rows with the same serial/wildcard
+must have distinct slots and filter VIDs; they execute in ascending slot order.
+An exact serial replaces the complete wildcard collection. Multiple rows use
+`shared`/`shared-mcast`/`shared-ctc` with `filter:VID`, so one service cannot
+replace another's UNI access policy. These are explicit policies, not automatic
+import of the original `FTTR-100M`, configured card limits or default slot count.
+
+The collection first copies the reported MIB into a private planning snapshot
+and reserves distinct T-CONTs with matching queues, GEMs and ANI bridge ports
+for every member. Projected values never replace the observed MIB or claim
+remote success. Every member still performs live object preflight/readback.
+Later members must find the shared GAL/bridge/UNI objects intact and compare
+the complete EVTO table against the preceding member's verified snapshot.
+They adopt these parents without deletion ownership. The first member retains
+its actual created/modified object and prior-table ledger.
+
+Failure rolls completed members back in reverse order, restoring their prior
+local grant and only their owned remote writes. A failed cleanup stops before
+earlier shared dependencies, retains the initiating/cleanup errors and closes
+all local data grants. Missing resources in the complete planning pass cause
+no business writes. Local ports are attached only after every member and the
+MIB sync checks succeed; a later port failure withdraws already-created ports
+and all grants. Netlink creation itself is sequential, so this does not promise
+an atomic, lossless physical transition.
+
+Migration preflights release rights for every member, withdraws all local
+FE/VLAN/DBA state and releases members in reverse order before changing the SN
+reservation. Restarted adoption still refuses migration without a durable
+original ownership journal. Disconnect, identity replacement, sync recovery,
+timeouts and shutdown now dispatch across the complete collection. With a
+zero MIB-sync implementation every GEM CTP is probed, including later members.
+Journals retain each service and a `service_set` aggregate; status reports
+`service_count` and whole-collection readiness.
+
+One selected job owns the remote multicast transaction. Every local GEM in its
+bridge carries the existing native multicast-member group, so the parent and
+FE learner suppress duplicate ordinary-GEM copies beside shared GEM4095.
+Shared endpoint admission still requires every registered ONU's authentication,
+sync and multicast membership/absence checks. Different bridges remain separate.
+
+Offline tests execute the real daemon/CLI/AF_PACKET/netlink in isolated
+namespaces with original OMCI encoders and modeled MiniOLT/ONU storage: two
+services on ASIC, seven with CTC multicast on FPGA2, first/last resource
+selection, complete reverse migration, last-job rejection, failed cleanup,
+missing last queue, inter-member UNI/EVTO drift, zero-sync last-GEM loss,
+exact-serial override and a failed second local bridge. Existing FPGA1 standard
+multicast, single-service CLI, temporary-ONU, FE bridge and multicast-learning
+regressions pass. GCC14.4/musl compilation/install passes;55 package source
+files match build inputs (`artifacts/fttr/services-package-final-20261107.log`).
+No physical optical traffic, packet retirement, safe hardware-ID reuse or
+complete factory default restoration is established by these checks.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
@@ -5216,8 +5275,9 @@ OMCI transaction still require the multi-service owner/scheduler implementation.
    implemented, with runtime journals and observed disconnect/replacement
    handling. MIB sync monitoring now also detects/reconciles same-serial MIB
    loss without an observed registration transition. Durable ownership
-   recovery of remote resources, default policy import and multiple services
-   per ONU remain work. Explicit bridge attachment through native per-GEM
+   recovery of remote resources and default policy import remain work. Explicit
+   shared multi-service collections are implemented above; broader factory
+   capability/UNI policy combinations remain work. Explicit bridge attachment through native per-GEM
    VLAN ports, their lifecycle and kernel FDB removal are implemented.
    Native P6 CF/FE admission and synchronous Hash/cache withdrawal are
    implemented. Physical queued-packet retirement and hardware acceptance

@@ -45,6 +45,7 @@ struct fttr_vlan_change {
 	uint8_t sent;
 	bool verified, restored;
 	struct fttr_vlan_plan plan;
+	const struct fttr_vlan_table *required_before; /* Optional live shared-owner snapshot. */
 	enum { FTTR_VLAN_READ, FTTR_VLAN_SET, FTTR_VLAN_VERIFY, FTTR_VLAN_RESTORE_READ,
 		FTTR_VLAN_RESTORE, FTTR_VLAN_RESTORE_VERIFY, FTTR_VLAN_DONE, FTTR_VLAN_FAILED } stage;
 	uint16_t onu, instance;

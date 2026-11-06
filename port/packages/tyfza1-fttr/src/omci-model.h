@@ -21,6 +21,10 @@ struct fttr_mib_model {
 
 /* A positive result preserves an entity whose wire layout is not known. */
 int fttr_mib_model_add(struct fttr_mib_model *model, const struct fttr_mib_record *record);
+/* Private planning snapshots only; projected values are not observed MIB state. */
+int fttr_mib_model_copy(struct fttr_mib_model *copy, const struct fttr_mib_model *source);
+int fttr_mib_model_project(struct fttr_mib_model *model, uint16_t class_id, uint16_t instance,
+			   uint16_t mask, const uint8_t *value, size_t size);
 const uint8_t *fttr_mib_entity_attr(const struct fttr_mib_entity *entity, uint16_t mask, size_t *size);
 int fttr_mib_model_dump(const struct fttr_mib_model *model, FILE *file);
 /* These original classes carry Wi-Fi settings or ONU authentication secrets. */

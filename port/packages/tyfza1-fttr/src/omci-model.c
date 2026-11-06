@@ -144,6 +144,56 @@ const uint8_t *fttr_mib_entity_attr(const struct fttr_mib_entity *entity, uint16
 	return NULL;
 }
 
+int fttr_mib_model_project(struct fttr_mib_model *model, uint16_t class_id, uint16_t instance,
+			   uint16_t mask, const uint8_t *value, size_t size)
+{
+	struct fttr_mib_record row = { .class_id = class_id, .instance = instance };
+	const struct fttr_mib_schema *schema = NULL;
+	size_t i, offset = 0, used = 0;
+	int ret;
+
+	for (i = 0; i < sizeof(schemas) / sizeof(schemas[0]); i++)
+		if (schemas[i].class_id == class_id) { schema = &schemas[i]; break; }
+	if (!schema) return -EOPNOTSUPP;
+	for (i = 0; i < 16; i++) {
+		size_t width = schema->width[i];
+		if (!(mask & (0x8000U >> i))) continue;
+		if (!width || width > sizeof(row.attributes) || offset + width > size)
+			return -EINVAL;
+		if (used + width > sizeof(row.attributes)) {
+			ret = fttr_mib_model_add(model, &row);
+			if (ret) return ret;
+			row.mask = 0; used = 0;
+		}
+		row.mask |= 0x8000U >> i;
+		memcpy(row.attributes + used, value + offset, width);
+		used += width; offset += width;
+	}
+	if (offset != size) return -EINVAL;
+	return row.mask ? fttr_mib_model_add(model, &row) : 0;
+}
+
+int fttr_mib_model_copy(struct fttr_mib_model *copy, const struct fttr_mib_model *source)
+{
+	const struct fttr_mib_entity *e;
+	struct fttr_mib_entity **tail = &copy->entities;
+	size_t i, size;
+
+	memset(copy, 0, sizeof(*copy));
+	for (e = source->entities; e; e = e->next) {
+		size = sizeof(*e);
+		for (i = 0; e->schema && i < 16; i++) size += e->schema->width[i];
+		*tail = malloc(size);
+		if (!*tail) { fttr_mib_model_clear(copy); return -ENOMEM; }
+		memcpy(*tail, e, size);
+		(*tail)->next = NULL;
+		tail = &(*tail)->next;
+	}
+	copy->count = source->count;
+	copy->unparsed_records = source->unparsed_records;
+	return 0;
+}
+
 int fttr_mib_model_dump(const struct fttr_mib_model *model, FILE *file)
 {
 	const struct fttr_mib_entity *entity;

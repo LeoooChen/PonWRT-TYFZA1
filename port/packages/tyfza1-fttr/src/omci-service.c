@@ -422,12 +422,10 @@ int fttr_service_release_ready(const struct fttr_service_job *job)
 	return 0;
 }
 
-int fttr_service_release(struct fttr_service_job *job, uint16_t *counter)
+static int release_start(struct fttr_service_job *job, uint16_t *counter)
 {
-	int ret = fttr_service_release_ready(job);
+	int ret;
 
-	if (ret || !job->grant_withdrawn)
-		return ret ? ret : -EBUSY;
 	if (job->config.multicast) {
 		ret = fttr_mcast_release(&job->mcast, counter);
 		if (ret < 0)
@@ -445,6 +443,28 @@ int fttr_service_release(struct fttr_service_job *job, uint16_t *counter)
 	job->phase = "release-vlan";
 	job->stage = FTTR_SERVICE_RELEASING_VLAN;
 	return ret;
+}
+
+int fttr_service_release(struct fttr_service_job *job, uint16_t *counter)
+{
+	int ret = fttr_service_release_ready(job);
+
+	if (ret || !job->grant_withdrawn) return ret ? ret : -EBUSY;
+	return release_start(job, counter);
+}
+
+int fttr_service_rollback(struct fttr_service_job *job, uint16_t *counter,
+			 int directory, const struct fttr_onu_state *identity)
+{
+	int ret;
+
+	if (job->stage != FTTR_SERVICE_READY || job->error) return -EBUSY;
+	if (job->grant_sent) {
+		ret = grant_write(job, directory, identity, &job->previous, NULL);
+		if (ret) { job->cleanup_error = ret; return ret; }
+		job->grant_restored = true;
+	}
+	return release_start(job, counter);
 }
 
 static int release_objects(struct fttr_service_job *job, uint16_t *counter,
@@ -628,6 +648,10 @@ again:
 			return service_failed(job, ret);
 		if (ret != 2)
 			return ret;
+		if (job->require_shared &&
+		    (job->objects[1].presence != FTTR_OBJECT_VERIFIED ||
+		     job->objects[2].presence != FTTR_OBJECT_VERIFIED))
+			return service_failed(job, -ESTALE);
 		job->uni_index = 0;
 		job->phase = "check-unis";
 		job->stage = FTTR_SERVICE_CHECK_UNIS;
@@ -639,6 +663,10 @@ again:
 			return service_failed(job, ret);
 		if (ret != 2)
 			return ret;
+		if (job->require_shared)
+			for (int i = 0; i < objects->count; i++)
+				if (objects->objects[i].presence != FTTR_OBJECT_VERIFIED)
+					return service_failed(job, -ESTALE);
 		/* Cross-plan dependency: an existing UNI port cannot refer to a
 		 * missing shared bridge. No configuration has been written yet.
 		 */
@@ -731,6 +759,7 @@ apply_objects:
 			fttr_vlan_plan_build(&plan, FTTR_VLAN_FORWARD_ALL, 0, 0, 0, false);
 		}
 		fttr_vlan_change_start(&job->unis[0].vlan, onu, counter, job->unis[0].port, &plan);
+		job->unis[0].vlan.required_before = job->unis[0].shared_table;
 		job->stage = FTTR_SERVICE_VLAN;
 		return 1;
 	case FTTR_SERVICE_VLAN:
@@ -753,6 +782,7 @@ apply_objects:
 			struct fttr_service_uni *uni = &job->unis[job->uni_index];
 
 			fttr_vlan_change_start(&uni->vlan, onu, counter, uni->port, &job->unis[0].vlan.plan);
+			uni->vlan.required_before = uni->shared_table;
 			return 1;
 		}
 		if (job->config.multicast) {

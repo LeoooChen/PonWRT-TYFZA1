@@ -1,5 +1,6 @@
 # TYFZA1 native FTTR service policies, loaded at controller startup.
-# One service per ONU. Exact serial matches take precedence over '*'.
+# Up to seven services per ONU (FPGA1: one). Exact serial rows replace the
+# complete wildcard set. Distinct slots execute in ascending order.
 # No active rows means inventory only. Select network policy explicitly.
 #
 # serial: 16 hexadecimal digits in vendor-first wire order, or *
@@ -15,6 +16,9 @@
 # priority: 0..7; VID: 0..4094 for access mode, none for transparent mode,
 # or filter:VID for transparent UNIs with only the ANI/GEM VLAN filter.
 # The factory shared multi-service recipe uses the latter separation.
+# Multiple rows for one serial must use shared/filter:VID with distinct
+# slots and VIDs. At most one row owns shared-mcast/shared-ctc remote objects.
+# All matching GEMs in that row's local bridge become multicast members.
 # fixed/assured/maximum: hardware grant units, as in fttrctl service
 # bridge: existing, up Linux bridge, or - for OMCI provisioning only
 # The controller creates fttr-u<ID> for GEM ordinal1, or fttr-u<ID>-<ordinal>

@@ -25,6 +25,7 @@ struct fttr_service_uni {
 	struct fttr_objects_job transaction;
 	struct fttr_omci_object objects[4];
 	struct fttr_vlan_change vlan;
+	const struct fttr_vlan_table *shared_table;
 };
 
 struct fttr_service_job {
@@ -40,6 +41,7 @@ struct fttr_service_job {
 	const char *phase;
 	int error, cleanup_error;
 	bool grant_sent, grant_verified, grant_restored, grant_withdrawn, configured;
+	bool require_shared; /* A later collection member must reuse its live parents. */
 	enum { FTTR_SERVICE_START, FTTR_SERVICE_OBJECTS, FTTR_SERVICE_VLAN,
 		FTTR_SERVICE_RELEASE, FTTR_SERVICE_READY, FTTR_SERVICE_FAILED,
 		FTTR_SERVICE_RELEASING_VLAN, FTTR_SERVICE_RELEASING_OBJECTS, FTTR_SERVICE_RELEASED,
@@ -60,6 +62,9 @@ void fttr_service_cancel(struct fttr_service_job *job, int error);
 /* Requires an intact current-process ownership recipe and withdrawn local DBA. */
 int fttr_service_release(struct fttr_service_job *job, uint16_t *counter);
 int fttr_service_release_ready(const struct fttr_service_job *job);
+/* Batch failure restores only this job's writes, including its prior DBA. */
+int fttr_service_rollback(struct fttr_service_job *job, uint16_t *counter,
+			 int directory, const struct fttr_onu_state *identity);
 int fttr_service_execute(struct fttr_omci_session *session, struct fttr_service_job *job,
 			 int directory, const struct fttr_onu_state *identity);
 int fttr_service_dump(const struct fttr_service_job *job, FILE *file);

@@ -89,6 +89,7 @@ def main():
     p.add_argument('--output', type=Path, required=True)
     p.add_argument("--shared", action="store_true", help="exercise shared Ethernet/VEIP services and release with --move-control")
     p.add_argument("--filter-only", action="store_true", help="use transparent UNI mode with ANI VLAN filtering")
+    p.add_argument("--multi-services", type=int, choices=(2,7), help="exercise a complete shared multi-GEM service collection")
     p.add_argument("--multicast", choices=("standard","ctc"), help="exercise remote multicast shared provisioning and migration")
     p.add_argument("--wifi", action="store_true", help="exercise resident remote Wi-Fi policies")
     p.add_argument("--onu-policy", action="store_true", help="exercise per-ONU authentication and persistent assignment")
@@ -98,6 +99,7 @@ def main():
     assert not args.multicast or args.shared
     assert not args.shared or (args.move_control and not args.onu_policy)
     assert not args.filter_only or args.shared
+    assert not args.multi_services or (args.shared and args.filter_only and args.auth and args.backend!='fpga1')
 
     physical_slot = 0 if args.backend == "fpga1" else 1
     downstream_length = args.backend=='fpga2'
@@ -154,6 +156,13 @@ def main():
             if args.shared:
                 self.pool[11,0x602]={0x8000:b'\0',0x0800:b'\1'}
                 self.pool[329,0x605]={0x8000:b'\1'}
+            if args.multi_services:
+                for n in range(1,args.multi_services):
+                    self.pool[262,self.tcont+n]={0x8000:b'\0\xff'}
+                    self.pool[277,self.queue+n]={0x0400:struct.pack('>I',(self.tcont+n)<<16|3)}
+            self.reject_gem=0
+            self.drift_second=False
+            self.drift_table=False
             if args.auth or args.onu_policy:
                 self.pool[0xfffa,0] = {0x4000:b'synthetic-loid'.ljust(24,b'\0'),
                     0x2000:b'synthetic-pw'.ljust(12,b'\0'),0x1000:b'\0'}
@@ -189,6 +198,13 @@ def main():
             tci,op,dev,c,id = struct.unpack('>HBBHH',body[:8])
             assert dev==10
             mask = struct.unpack('>H',body[8:10])[0]
+            if self.drift_second and op==0x49 and c==262 and id==self.tcont+1:
+                self.pool[11,self.uni][0x0800]=b'\1'
+                self.drift_second=False
+            if self.drift_table and op==0x49 and c==262 and id==self.tcont+1:
+                key=next(iter(self.table));row=self.table[key]
+                self.table[key]=row[:-1]+bytes([row[-1]^1])
+                self.drift_table=False
             if c==2 and op==0x49:assert body[2:]==sync_request[2:]
             self.operations.append((tci,op,c,id))
             if (args.auth or args.onu_policy) and c in (256,0xfffa) and op in (0x48,0x49):
@@ -222,7 +238,7 @@ def main():
                 a,b,d,v=self.snapshot[mask];content=struct.pack('>HHH',a,b,d)+v.ljust(26,b'\0')
             elif op==0x44:
                 assert (c,id) not in self.pool
-                if c==266 and self.reject: status=6
+                if c==266 and (self.reject or id==self.reject_gem): status=6
                 else:
                     if c==47: create_mask=0xfc00 if body[11] in (5,6,11) else 0xfe00
                     elif c==84: create_mask=0xe000 if (self.veip or args.shared) and self.pool[47,id][0x2000]==b'\5' else 0x4000
@@ -332,7 +348,10 @@ def main():
   if(n>=9 && !strcmp(path+n-9,"/onu_move")) {
    unsigned from,to;char sn[17],target[17],base[512],file[544],name[32],accel;
    if(sscanf(buf,"%u %u %16s %16s",&from,&to,sn,target)!=4 || from>=64 || to>=64 || from==to){errno=EINVAL;return -1;}
-   for(unsigned i=0;i<2;i++){snprintf(name,sizeof(name),"fttr-u%u",i?to:from);if(if_nametoindex(name)){errno=EBUSY;return -1;}}
+   for(unsigned i=0;i<2;i++)for(unsigned ordinal=1;ordinal<=7;ordinal++){
+    if(ordinal==1)snprintf(name,sizeof(name),"fttr-u%u",i?to:from);
+    else snprintf(name,sizeof(name),"fttr-u%u-%u",i?to:from,ordinal);
+    if(if_nametoindex(name)){errno=EBUSY;return -1;}}
    strcpy(base,path);base[n-9]=0;snprintf(file,sizeof(file),"%s/../ni/fttr_forward",base);
    int f=open(file,O_RDONLY);pread(f,&accel,1,0);close(f);if(accel!='0'){errno=EBUSY;return -1;}
    snprintf(file,sizeof(file),"%s/tcont_state",base);f=open(file,O_RDONLY);
@@ -756,6 +775,166 @@ def main():
                 peer.close();os.close(grant_fd)
             args.output.write_text(json.dumps(dict(backend=args.backend,checks=checks,
                 scope='Real controller/veth/bridge/VLAN, modeled MiniOLT and original OMCI encoders; no physical packet-retirement acceptance.'),indent=2)+'\n')
+            print(json.dumps(checks,indent=2));return
+        if args.multi_services:
+            from test_fttr_vlan import master_rules
+            count=args.multi_services
+            checks=[]
+            # Reverse file order: execution is stable by hardware slot.
+            def kind(slot):
+                return ('shared-ctc' if args.multicast=='ctc' else 'shared-mcast') if args.multicast and slot==count else 'shared'
+            rows=[f'* {kind(slot)} 0 {slot} 3 filter:{100*slot} 50 100 200 br-fttr\n' for slot in range(count,0,-1)]
+            policy.write_text(''.join(rows))
+            nodes[7].hold=False;nodes[9].fail_upload_once=False
+            process=None
+            def ready():
+                until(lambda s:all(s['onus'][id]['datapath_configured'] for id in (7,9)),seconds=20)
+                for id in (7,9):
+                    states=[e for e in journal(id) if e['event']=='service_state']
+                    assert len(states)==count and all(e['configured'] for e in states)
+                    assert [e['gem'] for e in states]==[256+id+64*n for n in range(count)]
+                    assert len({e['tcont'] for e in states})==count
+                    assert len({e['ani_port'] for e in states})==count
+                    assert len([e for e in nodes[id].pool if e[0]==45])==1
+                    assert len([o for o in nodes[id].operations if o[1:3]==(0x44,45)])<=1
+                    for n,state in enumerate(states):
+                        name=f'fttr-u{id}'+(f'-{n+1}' if n else '')
+                        assert ports()[name]['linkinfo']['info_data']['id']==state['gem']
+                        assert int(ports()[name]['group'])==(0x46544d55 if args.multicast else 0x46545452)
+                        assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),(id*8+n+1)*8)==(50,100<<16|200)
+                    expected=master_rules(stock,0xfbeb0,0,0,0)
+                    uni_ports={e['port'] for e in journal(id) if e['event']=='service_uni'}
+                    for port in uni_ports:assert [row for key,row in nodes[id].table.items() if key[0]==port]==expected
+                if args.multicast:
+                    until(lambda s:s['multicast']['configured'])
+                    assert status()['multicast']['members']==2 and multicast_up()
+            def stop():
+                process.send_signal(signal.SIGTERM);_,errors=process.communicate(timeout=3)
+                assert process.returncode==0,errors
+                assert not ports()
+            def reset():
+                nodes.clear();nodes[7]=Node(7,'5445535400000007',0x107,False)
+                nodes[9]=Node(9,'5445535400000009',0x203,True)
+                hardware();admin_log.write_text('')
+            def request_move(error=0):
+                client=subprocess.Popen([str(args.move_control.resolve()),str(store),'onu-move','7',nodes[7].serial.hex(),'11','0'*16],
+                    stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                try:
+                    until(lambda s:client.poll() is not None,seconds=20,allow_exit=bool(error))
+                    output,errors=client.communicate(timeout=1)
+                    assert client.returncode==bool(error),(output,errors)
+                    if error:assert f'({-error})' in errors,errors
+                finally:
+                    if client.poll() is None:client.kill();client.wait()
+            try:
+                good_policy=policy.read_text()
+                for invalid in (
+                        '* shared 0 1 3 filter:100 50 100 200 br-fttr\n* shared 0 2 3 filter:100 50 100 200 br-fttr\n',
+                        '* shared 0 1 3 100 50 100 200 br-fttr\n* shared 0 2 3 filter:200 50 100 200 br-fttr\n',
+                        '* shared-mcast 0 1 3 filter:100 50 100 200 br-fttr\n* shared-mcast 0 2 3 filter:200 50 100 200 br-fttr\n'):
+                    policy.write_text(invalid)
+                    rejected=launch();_,errors=rejected.communicate(timeout=3)
+                    assert rejected.returncode==1 and not store.joinpath('status.json').exists()
+                    assert ni.joinpath('fttr_forward').read_text()=='0\n'
+                policy.write_text(good_policy)
+                process=launch();ready()
+                stop()
+                checks.append(f'{count} jobs reserve distinct T-CONT/GEM/ANI, share one bridge and transparent UNI and publish all local ports')
+                # Restart adopts existing remote state and must not invent
+                # deletion rights for a later migration.
+                process=launch();ready();request_move(errno.ENODATA);stop()
+                reset()
+                process=launch();ready();request_move()
+                assert not any(name=='fttr-u7' or name.startswith('fttr-u7-') for name in ports())
+                assert len(ports())==count
+                assert not nodes[7].table
+                assert not any(c in (45,47,84,171,266,268,272,281,309,310,311,65531) for c,i in nodes[7].pool)
+                assert all(nodes[7].pool[262,nodes[7].tcont+n][0x8000]==b'\0\xff' for n in range(count))
+                deletes=[(c,i) for _,op,c,i in nodes[7].operations if op==0x46]
+                for n in range(count-1,0,-1):assert deletes.index((268,263+64*n))<deletes.index((268,263+64*(n-1)))
+                if args.multicast:assert deletes.index((281,4095))<deletes.index((268,263)) and not multicast_up()
+                stop();checks.append('whole collection migrates in reverse order, removes every source port/grant and restores shared UNI only after later GEMs; restart adoption refuses unowned deletion')
+                # Last job fails after previous jobs have completed. Those
+                # jobs must rollback; no local port is published partway.
+                reset();nodes[7].reject_gem=263+64*(count-1)
+                process=launch()
+                until(lambda s:s['onus'][7]['phase']=='service-failed' and s['onus'][9]['datapath_configured'],seconds=20)
+                collection=next(e for e in journal(7) if e['event']=='service_set')
+                assert collection['error']==-errno.EREMOTEIO and not collection['cleanup_error'],collection
+                assert not nodes[7].table and not any(c in (45,47,84,171,266,268,272) for c,i in nodes[7].pool)
+                assert not any(name=='fttr-u7' or name.startswith('fttr-u7-') for name in ports())
+                for n in range(count):assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),(7*8+n+1)*8)==(0,0)
+                stop();checks.append('last-job rejection restores earlier grants/UNI/core in reverse order without publishing partial datapath')
+                reset();nodes[7].reject_gem=263+64*(count-1);nodes[7].move_reject=True
+                process=launch()
+                until(lambda s:s['onus'][7]['phase']=='service-failed' and s['onus'][9]['datapath_configured'],seconds=20)
+                collection=next(e for e in journal(7) if e['event']=='service_set')
+                assert collection['error']==-errno.EREMOTEIO and collection['cleanup_error']==-errno.EREMOTEIO
+                assert (45,0x8080) in nodes[7].pool and (268,263) in nodes[7].pool
+                assert not any(name=='fttr-u7' or name.startswith('fttr-u7-') for name in ports())
+                for n in range(count):assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),(7*8+n+1)*8)==(0,0)
+                stop();checks.append('failed rollback preserves shared dependencies and separate initiating/cleanup errors while all local grants close')
+                reset();nodes[7].pool.pop((277,nodes[7].queue+count-1))
+                process=launch()
+                until(lambda s:s['onus'][7]['phase']=='service-failed' and s['onus'][9]['datapath_configured'],seconds=20)
+                assert next(e for e in journal(7) if e['event']=='service_set')['error']==-errno.ENOSPC
+                assert not any(op in (0x44,0x48,0x46) and c not in (256,65530) for _,op,c,_ in nodes[7].operations)
+                stop();checks.append('missing last T-CONT queue fails the complete reservation before any business write; conflicting VLAN/access/multicast policies reject at startup')
+                reset();nodes[7].drift_second=True
+                process=launch()
+                until(lambda s:s['onus'][7]['phase']=='service-failed' and s['onus'][9]['datapath_configured'],seconds=20)
+                collection=next(e for e in journal(7) if e['event']=='service_set')
+                assert collection['error']==-errno.ESTALE and collection['cleanup_error']==-errno.EUCLEAN,collection
+                assert not any(op==0x48 and c==262 and i==nodes[7].tcont+1 for _,op,c,i in nodes[7].operations)
+                assert (45,0x8080) in nodes[7].pool
+                for n in range(count):assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),(7*8+n+1)*8)==(0,0)
+                stop();checks.append('UNI drift between members rejects later writes and retains shared dependencies when checked restoration cannot prove ownership')
+                reset();nodes[7].drift_table=True
+                process=launch()
+                until(lambda s:s['onus'][7]['phase']=='service-failed' and s['onus'][9]['datapath_configured'],seconds=20)
+                collection=next(e for e in journal(7) if e['event']=='service_set')
+                assert collection['error']==-errno.ESTALE and collection['cleanup_error']==-errno.EUCLEAN,collection
+                assert (268,263) in nodes[7].pool and (268,327) not in nodes[7].pool
+                expected=master_rules(stock,0xfbeb0,0,0,0)
+                assert any(row not in expected for row in nodes[7].table.values())
+                stop();checks.append('later members compare the complete shared EVTO snapshot and preserve an intervening writer instead of restoring transparency over it')
+                reset()
+                # Model an ONU which does not maintain data-sync, including
+                # the auth result Set. Ordinary original-sync tests above
+                # execute the target's normal incrementing implementation.
+                nodes[7].counter.increment=lambda:None
+                process=launch();ready();before=status()['onus'][7]['mib_rescans']
+                assert status()['onus'][7]['mib_sync']==0
+                queried={o[3] for o in nodes[7].operations if o[1:3]==(0x49,268)}
+                assert {256+7+64*n for n in range(count)}<=queried
+                del nodes[7].pool[268,263+64*(count-1)]
+                until(lambda s:s['onus'][7]['mib_rescans']>before and s['onus'][7]['phase']=='service-failed',seconds=15)
+                assert not any(name=='fttr-u7' or name.startswith('fttr-u7-') for name in ports())
+                assert status()['onus'][9]['datapath_configured']
+                for n in range(count):assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),(7*8+n+1)*8)==(0,0)
+                stop();checks.append('loss of the last GEM with unchanged zero MIB sync withdraws every affected port/grant while the other ONU stays active')
+                reset()
+                policy.write_text(good_policy+'5445535400000007 shared 0 2 3 filter:900 50 100 200 br-fttr\n')
+                process=launch()
+                until(lambda s:all(s['onus'][id]['datapath_configured'] for id in (7,9)),seconds=20)
+                assert status()['onus'][7]['service_count']==1 and status()['onus'][9]['service_count']==count
+                assert 'fttr-u7-2' in ports() and 'fttr-u7' not in ports()
+                assert next(e for e in journal(7) if e['event']=='service_recipe')['vid']==900
+                stop();checks.append('an exact serial replaces the complete wildcard collection, including a single higher-slot service; no wildcard rows leak into it')
+                reset()
+                policy.write_text(good_policy+
+                    '5445535400000007 shared 0 1 3 filter:100 50 100 200 br-fttr\n'
+                    '5445535400000007 shared 0 2 3 filter:200 50 100 200 br-missing\n')
+                process=launch()
+                until(lambda s:s['onus'][7]['phase']=='service-failed' and s['onus'][9]['datapath_configured'],seconds=20)
+                assert status()['onus'][7]['datapath_error']==-errno.ENODEV
+                assert not any(name=='fttr-u7' or name.startswith('fttr-u7-') for name in ports())
+                for n in range(2):assert struct.unpack_from('<II',device.joinpath('tcont_state').read_bytes(),(7*8+n+1)*8)==(0,0)
+                stop();checks.append('second local bridge failure withdraws the already-created first port and every grant, preserving the healthy ONU')
+            finally:
+                if process and process.poll() is None:process.kill();process.wait()
+                peer.close();os.close(grant_fd)
+            args.output.write_text(json.dumps(dict(checks=checks,backend=args.backend,scope='Actual resident/CLI/OMCI/veth/bridge/VLAN with modeled MiniOLT/ONU storage; no physical retirement or traffic acceptance.'),indent=2)+'\n')
             print(json.dumps(checks,indent=2));return
         if args.move_control:
             if args.shared:
