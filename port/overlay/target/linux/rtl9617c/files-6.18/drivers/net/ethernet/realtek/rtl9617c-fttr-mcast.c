@@ -33,7 +33,7 @@ static struct net_device *mcast_service(struct net_device *dev, __be16 protocol,
 	if (protocol != htons(ETH_P_8021Q))
 		return NULL;
 	service = __vlan_find_dev_deep_rcu(mc->parent, protocol, vid);
-	if (!service || service->group != 0x46545452 || !netif_running(service) ||
+	if (!service || service->group != 0x46544d55 || !netif_running(service) ||
 	    br_port_get_stp_state(service) != BR_STATE_FORWARDING)
 		return NULL;
 	bridge = netdev_master_upper_dev_get_rcu(dev);
@@ -305,6 +305,8 @@ struct net_device *rtl_fttr_mcast_create(struct net_device *parent)
 	mc = netdev_priv(dev);
 	mc->parent = parent;
 	strscpy(dev->name, "fttr-mc", IFNAMSIZ);
+	/* Identify the native reserved-GEM upper to the resident controller. */
+	dev->group = 0x46544d43;
 	dev->netdev_ops = &mcast_ops;
 	dev->mtu = ETH_DATA_LEN;
 	dev->max_mtu = parent->mtu - VLAN_HLEN;

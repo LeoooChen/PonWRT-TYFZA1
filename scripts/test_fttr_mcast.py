@@ -156,7 +156,7 @@ int main(void){
  bridge.bridge=bridge.running=true;mcdev=(struct net_device){.private=&mc,.ifindex=2,.running=true,.master=&bridge};
  memcpy(mcdev.dev_addr,"\x02\0\0\0\0\x88",6);
  service=(struct net_device){.ifindex=3,.running=true,.vlan=true,.parent=&parent,.master=&bridge,
-  .vid=263,.proto=htons(0x8100),.group=0x46545452,.stp=BR_STATE_FORWARDING};other.ifindex=4;
+  .vid=263,.proto=htons(0x8100),.group=0x46544d55,.stp=BR_STATE_FORWARDING};other.ifindex=4;
  for(unsigned tags=0;tags<3;tags++)for(unsigned ip=4;ip<=6;ip+=2)for(unsigned metadata=0;metadata<2;metadata++){
   struct sk_buff*s=packet(tags,ip,true,metadata),*plain=packet(tags,ip,false,false);
   unsigned old=delivered;assert(rtl_fttr_mcast_receive(&mcdev,&napi,s));
@@ -167,7 +167,7 @@ int main(void){
   * foreign GEM must not be redirected away from the original UNI. */
  for(unsigned scenario=0;scenario<17;scenario++){
   struct sk_buff*s=packet(0,scenario>=10?6:4,true,false);unsigned old=delivered;
-  if(scenario==0)service.group=0;
+  if(scenario==0)service.group=0x46545452; /* ordinary unicast policy */
   if(scenario==1)service.master=&wrong_bridge;
   if(scenario==2)service.running=false;
   if(scenario==3)mc.admitted=false;
@@ -185,7 +185,7 @@ int main(void){
   if(scenario==15)service.stp=0;
   if(scenario==16)bridge.running=false;
   assert(!rtl_fttr_mcast_receive(&mcdev,&napi,s) && delivered==old);free(s);
-  service.group=0x46545452;service.master=&bridge;service.stp=BR_STATE_FORWARDING;
+  service.group=0x46544d55;service.master=&bridge;service.stp=BR_STATE_FORWARDING;
   service.running=mc.admitted=mcdev.running=bridge.running=true;
  }
  for(unsigned tags=0;tags<3;tags++)for(unsigned metadata=0;metadata<2;metadata++){

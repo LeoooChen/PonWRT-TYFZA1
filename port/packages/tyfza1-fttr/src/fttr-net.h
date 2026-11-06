@@ -16,7 +16,7 @@ struct fttr_net_port {
 	uint32_t mtu;
 	uint16_t gem;
 	char name[IFNAMSIZ], bridge[IFNAMSIZ], alias[64];
-	bool configured;
+	bool configured, multicast;
 };
 
 int fttr_net_open(struct fttr_net *net, const char *parent);
@@ -25,5 +25,10 @@ int fttr_net_create(struct fttr_net *net, struct fttr_net_port *port,
 		    unsigned int onu, const uint8_t serial[8], uint16_t gem, const char *bridge);
 int fttr_net_verify(struct fttr_net *net, struct fttr_net_port *port);
 int fttr_net_remove(struct fttr_net *net, struct fttr_net_port *port);
+/* Bind/close the kernel-created reserved-GEM upper; never delete it. */
+int fttr_net_mcast_reset(struct fttr_net *net);
+int fttr_net_mcast_create(struct fttr_net *net, struct fttr_net_port *port, const char *bridge);
+int fttr_net_mcast_verify(struct fttr_net *net, struct fttr_net_port *port);
+int fttr_net_mcast_remove(struct fttr_net *net, struct fttr_net_port *port);
 
 #endif

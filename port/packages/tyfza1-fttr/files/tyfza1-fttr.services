@@ -6,8 +6,10 @@
 # kind: 0=Ethernet, 2=VEIP; ordinal: zero-based within that actual MIB class
 # kind shared: attach all reported Ethernet and VEIP UNIs; ordinal must be 0
 # shared-mcast/shared-ctc also install the original remote multicast recipe.
-# Local fttr-mc admission is not enabled yet; these kinds provision OMCI only
-# for multicast, while the unicast bridge path works as for shared.
+# With a bridge, these kinds also attach the shared native fttr-mc endpoint
+# after every registered ONU is authenticated and its GEM4095 state verified.
+# All multicast policies must name the same bridge (or all use - for OMCI only).
+# An unselected ONU retaining GEM4095 prevents shared multicast admission.
 # These explicit policies do not import the full factory default configuration.
 # slot: ASIC9690/FPGA2 1..7, FPGA1 1
 # priority: 0..7; VID: 0..4094, or none for transparent mode

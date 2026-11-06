@@ -3770,11 +3770,10 @@ the edited patch hunks reverse cleanly against the build tree. Reports/logs
 are under `artifacts/fttr/multicast-*`. These are offline checks; no physical
 device or optical link was touched.
 
-The controller does not yet open/enslave `fttr-mc`. Remote GEM4095 and the default
-multicast profile are now implemented as described below. Verified ownership
-across restart, additional profile/ACL policy and binding each admitted ONU to
-the shared endpoint remain integration work. The presence of the kernel
-interface alone does not establish a complete multicast service.
+The controller now opens/enslaves `fttr-mc` after the admission checks described
+below. Remote GEM4095 and the default multicast profile are implemented.
+Verified ownership across restart, additional profile/ACL policy, hardware
+replication and packet retirement still require further work.
 
 The subsequent original ONU table check also exposes a readback incompatibility:
 `MultiGemIwTpDrvCfg` builds its class281 IPv4 Get snapshot with a declared
@@ -3800,8 +3799,9 @@ read-only preflight before service application begins.
 
 CLI/service-policy kinds `shared-mcast` and `shared-ctc` add this remote recipe
 to `shared`; the existing ten fields and other kinds retain their meaning.
-These kinds configure remote multicast but do not open the local multicast
-transport. The service transaction becomes ready after every multicast object
+With a bridge these kinds also admit the local multicast transport after the
+controller checks the full current ONU set. A bridge of `-` provisions remote
+objects only. The service transaction becomes ready after every multicast object
 and table readback passes. Failures restore the multicast row/objects first,
 then prior UNI VLAN/admin, DBA and core resources. Explicit migration withdraws
 local forwarding and DBA, verifies all multicast object groups and the live
@@ -3832,10 +3832,8 @@ FPGA1 and FPGA2 cases pass, as does the target OpenWrt package build. Reports
 are `artifacts/fttr/mcast-omci-20261106.json`, `service-mcast-20261106.json`,
 `resident-mcast-*-20261106.json` and `package-mcast-20261106.log`.
 
-Local admission is still unfinished: withdrawing an ONU's unicast grant does
-not establish that it cannot receive shared downstream GEM4095. Retained remote
-membership after cancellation/restart must be reconciled before the shared
-producer opens. Per-ONU GEM encryption in `drv_set_onu_gemport_encrypted` uses
+Withdrawing an ONU's unicast grant does not establish that it cannot receive
+shared downstream GEM4095. Per-ONU GEM encryption in `drv_set_onu_gemport_encrypted` uses
 the unicast GEM numbering and does not prove shared multicast isolation.
 Executing original `MultiGemIwTpDrvCfg` with failing hardware ACL callbacks
 also shows that both add and delete still change the MIB list and can return
@@ -3844,6 +3842,62 @@ mutation cases alongside the three snapshot cases. OMCI table readback proves
 MIB state, not successful subordinate hardware ACL programming.
 These offline results do not claim optical reception, hardware multicast
 replication, queued-packet retirement or complete FTTR acceptance.
+
+### Resident multicast admission and native bridge lifecycle
+
+`fttrd` manages the kernel-created `fttr-mc` through rtnetlink. It verifies its
+parent and dedicated group0x46544d43, applies its ownership alias and bridge MTU,
+enslaves it while down, disables bridge source learning, then opens and reads
+back the configuration. IGMP/MLD reports retain ONU source MACs; learning those
+MACs on the shared port would displace the correct unicast service FDB entries.
+Close stops the upper (invoking its existing NAPI/qdisc retirement), detaches
+it and verifies down/unmastered state without deleting the driver-owned device.
+Startup resets an owned leftover upper even when no new multicast policy is
+selected. Foreign parent/group/alias is an explicit error.
+
+All multicast policies must name the same bridge; conflicting policy rejects
+before hardware ownership. After remote configuration and sync verification,
+admission checks every currently registered ONU. Each must satisfy the selected
+authentication policy, current serial and MIB sync. Selected members additionally
+need the matching bridge, configured remote multicast and live unicast service.
+Other ONUs require live class268/281 reserved-instance absence; the inventory
+also rejects foreign alternate CTP instances using Port-ID4095 or missing that
+attribute. An unselected ONU retaining GEM4095 prevents shared admission without
+inventing deletion authority. A fresh full hardware snapshot is checked again
+before opening. Migration, observed identity loss, sync failure and FE withdrawal
+close multicast before changing service ownership. Healthy unicast peers remain
+operational while shared multicast is closed.
+
+The existing two-second sync loop now checks every multicast object group and
+the initialized IPv4 row, including when ONU Data stays zero. Nonmembers repeat
+the two live absence probes; admission changes only after both complete, while
+discovering a present GEM invalidates absence immediately. Netlink port/bridge/
+MTU/learning checks run at the registration scan cadence rather than on every
+OMCI reply. Runtime status reports shared admission, member count and reason;
+sync journals record multicast progress and proven absence. Members use service
+group0x46544d55, preserving the original group for ordinary unicast. Kernel
+report redirection and duplicate multicast suppression require the member group
+and same up/forwarding bridge, so unselected unicast ports keep their traffic.
+
+`test_fttr_autoprovision.py --shared --multicast standard|ctc --auth --wifi
+--move-control ...` now verifies actual Linux upper/bridge admission (macvlan
+models the driver's netdev), held/failed authentication, two members, migration,
+zero-sync multicast drift, recovery, restart with unselected retained GEMs,
+cross-bridge refusal and shutdown. ASIC9690/FPGA1/FPGA2 cases and existing
+unicast migration pass. `test_fttr_datapath.py` verifies native rtnetlink lifecycle,
+foreign ownership, disabled source learning and drift detection. Native packet
+callbacks with Linux VLAN helpers remain covered by `test_fttr_mcast.py` under
+ASan/UBSan. Reports use `local-mcast-*` and `mcast-netlink-20261106.json`; target
+Image/modules and package logs use `kernel-local-mcast-20261106.log` and
+`package-local-mcast-20261106.log`.
+
+This admission follows observed registrations and MIB state. It does not prove
+instantaneous isolation during the interval before a new registration is
+observed, removal of already queued DMA/AFT/PE/MiniOLT packets, or successful
+subordinate hardware ACL changes when its original callback hides errors.
+GEM4095 still transmits through the native shared DMA/P6 CPU path; hardware
+multicast replication/offload remains unimplemented. These limits remain part
+of the full FTTR goal and physical acceptance is still deferred.
 
 ### Outstanding implementation and acceptance
 

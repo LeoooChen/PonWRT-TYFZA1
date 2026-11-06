@@ -289,6 +289,11 @@ def main():
     subprocess.run(['ip','link','add','fap-host','type','veth','peer','name','fap-peer'],check=True)
     for interface,mac in [('fap-host','02:03:04:05:06:07'),('fap-peer','0a:0b:0c:0d:0e:0f')]:
         subprocess.run(['ip','link','set','dev',interface,'address',mac,'mtu','1982','up'],check=True)
+    if args.multicast:
+        # Native upper identification/lifecycle with a macvlan netdev standing
+        # in for the kernel P6 transport. Packet behavior is tested separately.
+        subprocess.run(['ip','link','add','link','fap-host','name','fttr-mc','type','macvlan','mode','bridge'],check=True)
+        subprocess.run(['ip','link','set','dev','fttr-mc','group',str(0x46544d43)],check=True)
     peer=socket.socket(socket.AF_PACKET,socket.SOCK_RAW,socket.htons(0x8888))
     peer.bind(('fap-peer',0x8888));peer.setblocking(False)
     with tempfile.TemporaryDirectory() as directory:
@@ -425,6 +430,13 @@ def main():
         subprocess.run(['ip','link','add','br-fttr','type','bridge'],check=True)
         subprocess.run(['ip','link','set','dev','br-fttr','up'],check=True)
         policy.write_text('5445535400000007 0 0 1 3 none 50 100 200 br-fttr\n* 2 0 1 3 200 50 100 200 br-fttr\n')
+        if args.multicast:
+            conflict=root/'conflicting-multicast'
+            conflict.write_text('5445535400000007 shared-mcast 0 1 3 200 50 100 200 br-fttr\n* shared-ctc 0 1 3 200 50 100 200 br-other\n')
+            rejected=subprocess.run([str(args.daemon.resolve()),str(device),str(ni),str(store),'fap-host',
+                '--services',str(conflict)],capture_output=True,text=True,timeout=2)
+            assert rejected.returncode==1 and not store.joinpath('status.json').exists()
+            assert device.joinpath('tx_enable').read_text()=='1\n'
         # Backend policy rejection precedes ownership, TX and FE mutations.
         for backend, slot in (('fpga1', 2), ('fpga2', 8)):
             device.joinpath('backend').write_text(backend+'\n')
@@ -500,6 +512,9 @@ def main():
             assert status()['onus'][id]['datapath_configured']
             assert next(x for x in journal(id) if x['event']=='service_datapath')['ifindex']==port['ifindex']
             return port['ifindex']
+        def multicast_up():
+            link=json.loads(subprocess.check_output(['ip','-j','link','show','dev','fttr-mc'],text=True))[0]
+            return 'UP' in link['flags'] and link.get('master')=='br-fttr'
         def accel_events():
             return [tuple(map(int,line.split())) for line in accel_log.read_text().splitlines()]
         def until(predicate,seconds=8,allow_exit=False):
@@ -741,9 +756,18 @@ def main():
                 if error:assert f'({-error})' in errors,errors
                 else:
                     row=json.loads(output);assert row['reservation_updated'] and not row['registration_verified']
+            if args.multicast and args.auth:nodes[7].auth_hold=True
             process=launch()
             try:
+                if args.multicast and args.auth:
+                    until(lambda s:nodes[7].held is not None and s['onus'][9]['datapath_configured'])
+                    assert not multicast_up() and not status()['multicast']['configured']
+                    nodes[7].auth_hold=False
+                    peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+nodes[7].held)
                 until(lambda s:all(s['onus'][id]['datapath_configured'] for id in (7,9)))
+                if args.multicast:
+                    until(lambda s:s.get('multicast',{}).get('configured'))
+                    assert multicast_up() and status()['multicast']['members']==2
                 if args.shared:
                     for id in (7,9):
                         unis=[e for e in journal(id) if e['event']=='service_uni']
@@ -764,6 +788,25 @@ def main():
                             assert mc['configured'] and not mc['error'] and not mc['cleanup_error']
                             assert nodes[id].table['mcast',4095]==bytes.fromhex('0fff0000e0000100efffffff')
                     checks.append('shared policy configures every reported Ethernet/VEIP UNI before attaching a single GEM port through the native FE lifecycle')
+                if args.multicast:
+                    healthy=datapath(9)
+                    # Mutate only multicast while ONU Data remains zero. The
+                    # normal unicast GEM probe cannot detect this loss.
+                    old=nodes[7].table['mcast',4095]
+                    nodes[7].counter.value=0
+                    nodes[7].table['mcast',4095]=old[:-1]+bytes([old[-1]^1])
+                    until(lambda s:not multicast_up() and s['onus'][7]['mib_sync_error'])
+                    assert datapath(9)==healthy and not multicast_up()
+                    nodes[7].table['mcast',4095]=old
+                    until(lambda s:s['onus'][7]['datapath_configured'] and s['multicast']['configured'],seconds=12)
+                    process.send_signal(signal.SIGTERM);process.communicate(timeout=3)
+                    assert not multicast_up()
+                    # Recreate fresh ownership for the existing move tests.
+                    nodes[7]=Node(7,'5445535400000007',0x107,False)
+                    nodes[9]=Node(9,'5445535400000009',0x203,True)
+                    hardware();process=launch()
+                    until(lambda s:s['multicast']['configured'])
+                    checks.append('zero-sync multicast-only drift closes the shared endpoint and withdraws the affected UNI while the healthy peer stays active; shutdown detaches the kernel-created upper')
                 before=len(accel_events());peer_port=datapath(9)
                 move(7,11,serial='0'*16,error=errno.ESTALE)
                 move(7,11,target='1'*16,error=errno.ESTALE)
@@ -783,6 +826,7 @@ def main():
                     until(lambda s:nodes[7].held is not None)
                     current=status()['onus'][7]
                     assert current['phase']=='move-release' and not current['datapath_configured'] and not current['loid_authenticated']
+                    if args.multicast:assert not multicast_up()
                     previous=len(nodes[9].operations)
                     until(lambda s:len(nodes[9].operations)>previous)
                     assert not ports().get('fttr-u7') and datapath(9)==peer_port
@@ -810,7 +854,7 @@ def main():
                     if args.multicast:
                         writes=[(op,c) for _,op,c,i in nodes[7].operations if op==0x46 or op==0x48 and c==281]
                         assert writes.index((0x46,281))<writes.index((0x46,45))
-                        checks.append('remote multicast standard/CTC profile and original GEM4095 row are journaled and released before the shared bridge; no local multicast endpoint is admitted by this test')
+                        checks.append('remote multicast standard/CTC profile and original GEM4095 row are journaled and released before the shared bridge; local multicast opens after both members verify and closes before migration')
                 # Registration is an external event, never synthesized by the controller.
                 node=nodes.pop(7);node.id=11;node.auth_hold=args.auth;node.held=None;nodes[11]=node
                 hardware()
@@ -821,6 +865,9 @@ def main():
                     peer.send(HOST+OLT+struct.pack('>HH',0x8888,11)+nodes[11].held)
                 until(lambda s:s['onus'][11]['datapath_configured'])
                 datapath(11)
+                if args.multicast:
+                    until(lambda s:s.get('multicast',{}).get('configured'))
+                    assert multicast_up()
                 until(lambda s:s['onus'][7]['phase']=='absent',seconds=17)
                 assert datapath(9)==peer_port
                 checks.append('move withdraws source FE/VLAN/DBA, reserves target, waits for registration and reauthenticates before service')
@@ -879,6 +926,32 @@ def main():
                 assert len(accel_events())==before and set(ports())=={'fttr-u7','fttr-u9'}
                 process.send_signal(signal.SIGTERM);process.communicate(timeout=3)
                 checks.append('adopted remote resources without a prior ownership recipe reject move before FE or peer writes')
+                if args.multicast:
+                    saved_policy=policy.read_text()
+                    kind='shared-ctc' if args.multicast=='ctc' else 'shared-mcast'
+                    # ONU9 has no multicast policy but retains the old shared
+                    # GEM after restart. No deletion ownership is invented.
+                    policy.write_text(f'5445535400000007 {kind} 0 1 3 200 50 100 200 br-fttr\n')
+                    process=launch(with_wifi=False)
+                    until(lambda s:s['onus'][7]['datapath_configured'] and s['onus'][9]['mib_sync_valid'])
+                    assert not multicast_up() and not status()['multicast']['configured']
+                    assert (281,4095) in nodes[9].pool
+                    # Model an external owner removing its obsolete multicast
+                    # GEM. The live absence probe can now admit the one member.
+                    nodes[9].pool.pop((281,4095));nodes[9].pool.pop((268,4095))
+                    until(lambda s:s['multicast']['configured'])
+                    assert multicast_up() and status()['multicast']['members']==1
+                    process.send_signal(signal.SIGTERM);process.communicate(timeout=3)
+                    assert not multicast_up()
+                    if args.auth:
+                        nodes[9].pool[65530,0][0x4000]=b'wrong'.ljust(24,b'\0')
+                        process=launch(with_wifi=False)
+                        until(lambda s:s['onus'][9]['phase']=='auth-failed' and s['onus'][7]['datapath_configured'])
+                        assert not multicast_up() and not status()['multicast']['configured']
+                        process.send_signal(signal.SIGTERM);process.communicate(timeout=3)
+                        nodes[9].pool[65530,0][0x4000]=b'synthetic-loid'.ljust(24,b'\0')
+                    policy.write_text(saved_policy)
+                    checks.append('cross-bridge multicast policy rejects before IO; retained GEM4095 on an unselected ONU prevents local admission without deleting foreign resources; live absence permits recovery, while failed authentication keeps multicast closed')
                 process=launch(with_policy=False,with_wifi=False)
                 until(lambda s:all(s['onus'][id]['phase']=='inventory' for id in (7,9)))
                 before=len(accel_events());move(7,11,error=errno.ENODATA)

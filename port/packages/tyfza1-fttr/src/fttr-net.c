@@ -15,6 +15,7 @@
 /* rtnl_create_link applies GROUP but does not apply IFALIAS. This marks even
  * a down port whose subsequent alias/bridge setup was interrupted. */
 static const uint32_t fttr_group = 0x46545452;
+static const uint32_t fttr_mcast_member_group = 0x46544d55;
 
 struct request {
 	struct nlmsghdr header;
@@ -27,6 +28,7 @@ struct link {
 	unsigned int flags;
 	uint32_t mtu, group;
 	uint16_t vid, protocol;
+	bool have_learning, learning;
 	char name[IFNAMSIZ], alias[64], kind[16];
 };
 
@@ -71,6 +73,16 @@ static void parse_info(struct rtattr *info, struct link *link)
 			snprintf(link->kind, sizeof(link->kind), "%s", (char *)RTA_DATA(a));
 		if (a->rta_type == IFLA_INFO_DATA)
 			data = a;
+		if (a->rta_type == IFLA_INFO_SLAVE_DATA) {
+			struct rtattr *port;
+			int remaining = RTA_PAYLOAD(a);
+
+			for (port = RTA_DATA(a); RTA_OK(port, remaining); port = RTA_NEXT(port, remaining))
+				if (port->rta_type == IFLA_BRPORT_LEARNING && RTA_PAYLOAD(port) == 1) {
+					link->have_learning = true;
+					link->learning = *(uint8_t *)RTA_DATA(port);
+				}
+		}
 	}
 	if (data && !strcmp(link->kind, "vlan"))
 		parse_vlan(data, link);
@@ -195,7 +207,8 @@ int fttr_net_reset(struct fttr_net *net, unsigned int onu)
 		return ret;
 	snprintf(prefix, sizeof(prefix), "tyfza1-fttr:%u:", onu);
 	if (link.parent != net->parent || strcmp(link.kind, "vlan") ||
-	    link.group != fttr_group || (*link.alias && strncmp(link.alias, prefix, strlen(prefix))))
+	    (link.group != fttr_group && link.group != fttr_mcast_member_group) ||
+	    (*link.alias && strncmp(link.alias, prefix, strlen(prefix))))
 		return -EEXIST;
 	return delete_link(net, link.index);
 }
@@ -203,7 +216,7 @@ int fttr_net_reset(struct fttr_net *net, unsigned int onu)
 static bool owned(const struct fttr_net *net, const struct fttr_net_port *port, const struct link *link)
 {
 	return link->parent == net->parent && !strcmp(link->kind, "vlan") &&
-		link->group == fttr_group &&
+		link->group == (port->multicast ? fttr_mcast_member_group : fttr_group) &&
 		link->vid == port->gem && link->protocol == htons(0x8100) &&
 		!strcmp(link->name, port->name) && (!*link->alias || !strcmp(link->alias, port->alias));
 }
@@ -272,7 +285,7 @@ int fttr_net_create(struct fttr_net *net, struct fttr_net_port *port,
 	attribute(&r, IFLA_IFNAME, port->name, strlen(port->name) + 1);
 	attribute(&r, IFLA_LINK, &net->parent, sizeof(net->parent));
 	attribute(&r, IFLA_MTU, &port->mtu, sizeof(port->mtu));
-	attribute(&r, IFLA_GROUP, &fttr_group, sizeof(fttr_group));
+	attribute(&r, IFLA_GROUP, port->multicast ? &fttr_mcast_member_group : &fttr_group, sizeof(fttr_group));
 	info = attribute(&r, IFLA_LINKINFO, NULL, 0);
 	attribute(&r, IFLA_INFO_KIND, "vlan", sizeof("vlan"));
 	data = attribute(&r, IFLA_INFO_DATA, NULL, 0);
@@ -294,4 +307,128 @@ int fttr_net_create(struct fttr_net *net, struct fttr_net_port *port,
 	attribute(&r, IFLA_MASTER, &port->master, sizeof(port->master));
 	ret = exchange(net, &r, NULL);
 	return ret ? ret : fttr_net_verify(net, port);
+}
+
+static bool mcast_owned(const struct fttr_net *net, const struct link *link)
+{
+	return link->parent == net->parent && link->group == 0x46544d43 &&
+		!strcmp(link->name, "fttr-mc") &&
+		(!*link->alias || !strcmp(link->alias, "tyfza1-fttr:multicast"));
+}
+
+static int mcast_close(struct fttr_net *net, const struct link *link)
+{
+	struct request r = request(RTM_NEWLINK, NLM_F_ACK, link->index);
+	struct link check;
+	int master = 0, ret;
+
+	if (!mcast_owned(net, link))
+		return -ESTALE;
+	/* Stop retires the upper qdisc, shared-NAPI reports and parent qdisc
+	 * before detaching it from the bridge. The parent remains available.
+	 */
+	r.info.ifi_change = IFF_UP;
+	ret = exchange(net, &r, NULL);
+	if (ret)
+		return ret;
+	r = request(RTM_NEWLINK, NLM_F_ACK, link->index);
+	attribute(&r, IFLA_MASTER, &master, sizeof(master));
+	ret = exchange(net, &r, NULL);
+	if (!ret)
+		ret = get_link(net, NULL, link->index, &check);
+	if (!ret && (!mcast_owned(net, &check) || check.master || (check.flags & IFF_UP)))
+		ret = -EUCLEAN;
+	return ret;
+}
+
+int fttr_net_mcast_reset(struct fttr_net *net)
+{
+	struct link link;
+	int ret = get_link(net, "fttr-mc", 0, &link);
+
+	return ret == -ENODEV ? 0 : ret ? ret : mcast_close(net, &link);
+}
+
+int fttr_net_mcast_remove(struct fttr_net *net, struct fttr_net_port *port)
+{
+	struct link link;
+	int ret;
+
+	port->configured = false;
+	if (!port->index)
+		return 0;
+	ret = get_link(net, NULL, port->index, &link);
+	if (!ret)
+		ret = mcast_close(net, &link);
+	if (ret == -ENODEV)
+		ret = 0;
+	if (!ret)
+		port->index = 0;
+	return ret;
+}
+
+int fttr_net_mcast_verify(struct fttr_net *net, struct fttr_net_port *port)
+{
+	struct link link, master;
+	int ret = get_link(net, NULL, port->index, &link);
+
+	if (!ret && (!mcast_owned(net, &link) || strcmp(link.alias, port->alias) ||
+	    link.master != port->master || link.mtu != port->mtu || !(link.flags & IFF_UP) ||
+	    !link.have_learning || link.learning))
+		ret = -ESTALE;
+	if (!ret)
+		ret = get_link(net, NULL, port->master, &master);
+	if (!ret && (strcmp(master.kind, "bridge") || strcmp(master.name, port->bridge) || !(master.flags & IFF_UP)))
+		ret = -ENETDOWN;
+	port->configured = !ret;
+	return ret;
+}
+
+int fttr_net_mcast_create(struct fttr_net *net, struct fttr_net_port *port, const char *bridge)
+{
+	struct link link, parent, master;
+	struct request r;
+	struct rtattr *settings;
+	uint8_t learning = 0;
+	int ret = get_link(net, "fttr-mc", 0, &link);
+
+	if (ret)
+		return ret;
+	if (!mcast_owned(net, &link) || link.master || (link.flags & IFF_UP))
+		return -EEXIST;
+	ret = get_link(net, bridge, 0, &master);
+	if (!ret)
+		ret = get_link(net, NULL, net->parent, &parent);
+	if (ret)
+		return ret;
+	if (strcmp(master.kind, "bridge") || !(master.flags & IFF_UP) || !(parent.flags & IFF_UP))
+		return -ENETDOWN;
+	if (master.mtu + 4 > parent.mtu)
+		return -EMSGSIZE;
+	*port = (struct fttr_net_port) { .index = link.index, .master = master.index, .mtu = master.mtu, .gem = 4095 };
+	strcpy(port->name, "fttr-mc");
+	strcpy(port->alias, "tyfza1-fttr:multicast");
+	strcpy(port->bridge, bridge);
+	r = request(RTM_NEWLINK, NLM_F_ACK, link.index);
+	attribute(&r, IFLA_MTU, &port->mtu, sizeof(port->mtu));
+	attribute(&r, IFLA_IFALIAS, port->alias, strlen(port->alias) + 1);
+	attribute(&r, IFLA_MASTER, &port->master, sizeof(port->master));
+	ret = exchange(net, &r, NULL);
+	if (ret)
+		return ret;
+	/* Reports keep their ONU source MAC. Learning that MAC on the shared
+	 * multicast port would divert later unicast away from its service GEM.
+	 */
+	r = request(RTM_SETLINK, NLM_F_ACK, link.index);
+	r.info.ifi_family = AF_BRIDGE;
+	settings = attribute(&r, IFLA_PROTINFO | NLA_F_NESTED, NULL, 0);
+	attribute(&r, IFLA_BRPORT_LEARNING, &learning, sizeof(learning));
+	end_nested(&r, settings);
+	ret = exchange(net, &r, NULL);
+	if (ret)
+		return ret;
+	r = request(RTM_NEWLINK, NLM_F_ACK, link.index);
+	r.info.ifi_flags = r.info.ifi_change = IFF_UP;
+	ret = exchange(net, &r, NULL);
+	return ret ? ret : fttr_net_mcast_verify(net, port);
 }

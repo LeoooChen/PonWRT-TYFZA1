@@ -55,6 +55,8 @@ struct mib_sync {
 	bool enabled, active, valid, recover, gem_probe;
 	struct wifi_run *wifi_probe;
 	int wifi_group;
+	int mcast_step;
+	bool mcast_absent;
 };
 
 struct service_policy {
@@ -79,7 +81,7 @@ struct onu {
 	struct wifi_run *wifi, *wifi_current;
 	unsigned int wifi_count, wifi_configured;
 	int wifi_error, wifi_cleanup_error;
-	bool service_started, service_ready;
+	bool service_started, service_ready, multicast_absent;
 	uint16_t service_ordinal;
 	struct mib_sync sync;
 	struct fttr_net_port port;
@@ -99,6 +101,11 @@ struct controller {
 	struct fttr_omci_link link;
 	enum fttr_backend backend;
 	struct fttr_net net;
+	struct fttr_net_port multicast;
+	unsigned int multicast_members;
+	bool multicast_enabled;
+	int multicast_error;
+	int64_t multicast_checked;
 	struct fttr_optical_monitor optical;
 	struct fttr_auth_config auth;
 	struct fttr_onu_policy onu_policy;
@@ -124,9 +131,15 @@ struct controller {
 static int forwarding(struct controller *c, bool enable)
 {
 	char command[24];
+	int ret;
 
-	if (!enable)
+	if (!enable) {
+		ret = fttr_net_mcast_remove(&c->net, &c->multicast);
+		if (ret)
+			return ret;
+		c->multicast_members = 0;
 		return fttr_miniolt_command(c->ni, "fttr_forward", "0\n");
+	}
 	snprintf(command, sizeof(command), "1 %04x\n", c->link.ethertype);
 	return fttr_miniolt_command(c->ni, "fttr_forward", command);
 }
@@ -245,12 +258,26 @@ static int load_policies(struct controller *c, const char *path)
 			.tagged = strcmp(token[5], "none") != 0, .vid = value[4],
 			.fixed = value[5], .assured = value[6], .maximum = value[7]
 		};
+		if (policy->config.multicast && strcmp(token[9], "-"))
+			c->multicast_enabled = true;
 		policy->ordinal = value[1];
 		if (strcmp(token[9], "-"))
 			strcpy(policy->bridge, token[9]);
 		policy->next = c->policies;
 		c->policies = policy;
 		c->policy_count++;
+	}
+	/* GEM4095 is one downstream broadcast domain. Two local bridges cannot
+	 * share it without mixing traffic at the subordinate GEM filters.
+	 */
+	if (!ret) {
+		const struct service_policy *policy, *other;
+
+		for (policy = c->policies; policy; policy = policy->next)
+			for (other = policy->next; other; other = other->next)
+				if (policy->config.multicast && other->config.multicast &&
+				    strcmp(policy->bridge, other->bridge))
+					ret = -EXDEV;
 	}
 	if (!ret && ferror(file))
 		ret = -EIO;
@@ -348,6 +375,8 @@ static int publish(struct controller *c, const char *state, int error)
 	fprintf(file, "{\"state\":\"%s\",\"pid\":%ld,\"error\":%d,\"observed_ms\":%" PRId64
 		",\"rx_errors\":%" PRIu64 ",\"service_policies\":%u,\"wifi_policies\":%u",
 		state, stopping || error ? 0L : (long)getpid(), error, c->observed_at, c->rx_errors, c->policy_count, c->wifi_policy_count);
+	fprintf(file, ",\"multicast\":{\"configured\":%s,\"members\":%u,\"error\":%d,\"bridge\":\"%s\"}",
+		c->multicast.configured ? "true" : "false", c->multicast_members, c->multicast_error, c->multicast.bridge);
 	if (c->observed) {
 		fputs(",\"onus\":[", file);
 		for (id = 0; id < FTTR_ONUS; id++) {
@@ -418,9 +447,9 @@ static void journal_sync(FILE *file, const struct onu *u, unsigned int id)
 	fprintf(file, "{\"event\":\"mib_sync\",\"id\":%u,\"serial\":\"", id);
 	hex(file, u->identity, 8);
 	fprintf(file, "\",\"active\":%s,\"valid\":%s,\"value\":%u,\"observed\":%u,"
-		"\"error\":%d,\"checked_ms\":%" PRId64 ",\"rescans\":%u,\"exchange\":",
+		"\"error\":%d,\"checked_ms\":%" PRId64 ",\"rescans\":%u,\"multicast_step\":%d,\"multicast_absent\":%s,\"exchange\":",
 		sync->active ? "true" : "false", sync->valid ? "true" : "false", sync->value,
-		sync->observed, sync->error, sync->checked, u->rescans);
+		sync->observed, sync->error, sync->checked, u->rescans, sync->mcast_step, u->multicast_absent ? "true" : "false");
 	if (sync->job.request[4] == 0xff &&
 	    (sync->job.request[5] == 0x69 || sync->job.request[5] == 0x6a))
 		fputs("{\"redacted\":true}", file);
@@ -721,8 +750,15 @@ static int start_wifi(struct controller *c, unsigned int id)
 		u->wifi_count++;
 		tail = &(*tail)->next;
 	}
-	if (!u->wifi)
-		return start_service(c, id);
+	if (!u->wifi) {
+		int ret = start_service(c, id);
+
+		if (!ret && c->multicast_enabled && u->phase != ONU_SERVICE && !u->sync.enabled) {
+			u->sync.enabled = true;
+			ret = start_sync(c, id);
+		}
+		return ret;
+	}
 	u->wifi_current = u->wifi;
 	u->phase = ONU_WIFI;
 	return wifi_drive(c, id);
@@ -796,6 +832,106 @@ static const struct service_policy *matching_policy(const struct controller *c, 
 	return match;
 }
 
+static int multicast_reconcile(struct controller *c)
+{
+	const char *bridge = NULL;
+	unsigned int id, members = 0;
+	int ret = 0;
+
+	if (!c->multicast_enabled)
+		return 0;
+	for (id = 0; id < FTTR_ONUS; id++) {
+		const struct onu *u = &c->onu[id];
+		const struct service_policy *policy;
+		const struct fttr_mib_entity *entity;
+
+		if (!(u->hardware.downstream & (1U << 18)))
+			continue;
+		/* A blocked or unidentified registered ONU may still hold the
+		 * shared GEM. Its unicast grant is not multicast isolation.
+		 */
+		if ((u->hardware.downstream & (1U << 16)) || !authenticated(c, u) ||
+		    memcmp(u->hardware.serial, u->identity, 8) || !u->sync.valid || u->sync.recover) {
+			ret = -EAGAIN;
+			break;
+		}
+		policy = matching_policy(c, u->identity);
+		if (policy && policy->config.multicast) {
+			if (!*policy->bridge || u->phase != ONU_CONFIGURED || !u->port.configured ||
+			    !u->service.configured || !u->service.mcast.configured) {
+				ret = -EAGAIN;
+				break;
+			}
+			if (bridge && strcmp(bridge, policy->bridge)) {
+				ret = -EXDEV;
+				break;
+			}
+			bridge = policy->bridge;
+			members++;
+			continue;
+		}
+		/* Exclude both ends of the shared GEM before an unrelated ONU
+		 * can coexist with this multicast domain.
+		 */
+		if (!u->multicast_absent) { ret = -EAGAIN; break; }
+		/* A foreign CTP may use a different ME instance for Port-ID4095.
+		 * The two reserved-instance probes cannot establish its absence.
+		 */
+		for (entity = u->model.entities; entity; entity = entity->next) {
+			const uint8_t *value;
+			size_t size;
+
+			if (entity->class_id != 268 || entity->instance == 4095)
+				continue;
+			value = fttr_mib_entity_attr(entity, 0x8000, &size);
+			if (!value || size != 2 || (value[0] == 15 && value[1] == 255)) {
+				ret = -EEXIST;
+				break;
+			}
+		}
+		if (ret) break;
+	}
+	c->multicast_members = ret ? 0 : members;
+	c->multicast_error = ret;
+	if (ret || !members || c->move.active)
+		return fttr_net_mcast_remove(&c->net, &c->multicast);
+	if (!c->multicast.index) {
+		struct fttr_onu_state current[FTTR_ONUS];
+
+		ret = fttr_miniolt_table(c->directory, current);
+		if (ret)
+			return ret;
+		for (id = 0; id < FTTR_ONUS; id++)
+			if (((current[id].downstream ^ c->onu[id].hardware.downstream) & ((1U << 18) | (1U << 16))) ||
+			    memcmp(current[id].serial, c->onu[id].hardware.serial, 8)) {
+				c->multicast_error = -EAGAIN;
+				c->multicast_members = 0;
+				return 0;
+			}
+	}
+	if (c->multicast.index && c->multicast_checked == c->observed_at)
+		return 0;
+	ret = c->multicast.index ? fttr_net_mcast_verify(&c->net, &c->multicast) :
+		fttr_net_mcast_create(&c->net, &c->multicast, bridge);
+	c->multicast_error = ret;
+	if (!ret)
+		c->multicast_checked = c->observed_at;
+	return ret;
+}
+
+static int multicast_update(struct controller *c)
+{
+	bool configured = c->multicast.configured;
+	unsigned int members = c->multicast_members;
+	int error = c->multicast_error;
+	int ret = multicast_reconcile(c);
+
+	if (!ret && c->observed && (configured != c->multicast.configured ||
+	    members != c->multicast_members || error != c->multicast_error))
+		ret = publish(c, "running", 0);
+	return ret;
+}
+
 static int start_service(struct controller *c, unsigned int id)
 {
 	struct onu *u = &c->onu[id];
@@ -842,10 +978,11 @@ static int withdraw_service(struct controller *c, unsigned int id, bool accel_pa
 {
 	struct fttr_service_job *job = &c->onu[id].service;
 	bool paused = c->onu[id].port.index != 0 && !accel_paused;
-	int ret, cleanup = 0;
+	int ret, cleanup = fttr_net_mcast_remove(&c->net, &c->multicast);
 
+	c->multicast_members = 0;
 	c->onu[id].port.configured = false;
-	if (paused)
+	if (!cleanup && paused)
 		cleanup = forwarding(c, false);
 	if (!cleanup)
 		cleanup = fttr_net_remove(&c->net, &c->onu[id].port);
@@ -902,7 +1039,7 @@ static int cancel(struct controller *c, unsigned int id, bool accel_paused)
 		u->wifi_count = 0;
 		u->wifi_error = u->wifi_cleanup_error = 0;
 	}
-	u->service_ready = false;
+	u->service_ready = u->multicast_absent = false;
 	if (u->dump) {
 		ret = fclose(u->dump);
 		u->dump = NULL;
@@ -1224,8 +1361,11 @@ static int sync_io_failed(struct controller *c, unsigned int id, int error)
 static int sync_failed(struct controller *c, unsigned int id, int error)
 {
 	struct onu *u = &c->onu[id];
-	int ret;
+	int ret = fttr_net_mcast_remove(&c->net, &c->multicast);
 
+	if (ret)
+		return ret;
+	c->multicast_members = 0;
 	u->sync.active = false;
 	u->sync.valid = false;
 	u->sync.error = error;
@@ -1235,6 +1375,7 @@ static int sync_failed(struct controller *c, unsigned int id, int error)
 		u->sync.failure.error = error;
 	}
 	u->sync.recover = true;
+	u->multicast_absent = false;
 	u->sync.due = now_ms() + 2000;
 	if (u->wifi) {
 		cancel_wifi(u, error);
@@ -1277,6 +1418,7 @@ static int start_sync(struct controller *c, unsigned int id)
 	sync->gem_probe = false;
 	sync->wifi_probe = NULL;
 	sync->wifi_group = 0;
+	sync->mcast_step = -1;
 	fttr_me_job_start(&sync->job, id, &c->transaction, FTTR_ME_GET, 2, 0, 0x8000, NULL, 0);
 	return sync_send(c, id);
 }
@@ -1328,6 +1470,47 @@ static int sync_wifi_next(struct controller *c, unsigned int id)
 	return 0;
 }
 
+/* Recheck the multicast objects and initialized IPv4 row even when ONU
+ * Data sync remains zero. Remote ACL hardware success is not implied by MIB.
+ */
+static int sync_mcast_next(struct controller *c, unsigned int id)
+{
+	struct onu *u = &c->onu[id];
+	struct mib_sync *sync = &u->sync;
+	bool member = u->service_ready && u->service.config.multicast;
+	const struct fttr_omci_values *values;
+	const struct fttr_omci_object *object;
+	uint8_t sequence[2] = { 0 };
+	int ret;
+
+	if (!member) {
+		if (sync->mcast_step >= 2) { u->multicast_absent = sync->mcast_absent; return 0; }
+		fttr_me_job_start(&sync->job, id, &c->transaction, FTTR_ME_GET,
+			sync->mcast_step ? 281 : 268, 4095, sync->mcast_step ? 0xf300 : 0xfac0, NULL, 0);
+	} else {
+		while (sync->mcast_step < 14) {
+			object = &u->service.mcast.objects[sync->mcast_step / 2];
+			values = sync->mcast_step & 1 ? &object->set : &object->create;
+			if (values->mask) break;
+			sync->mcast_step++;
+		}
+		if (sync->mcast_step >= 16) return 0;
+		if (sync->mcast_step < 14) {
+			object = &u->service.mcast.objects[sync->mcast_step / 2];
+			values = sync->mcast_step & 1 ? &object->set : &object->create;
+			fttr_me_job_start(&sync->job, id, &c->transaction, FTTR_ME_GET,
+				object->class_id, object->instance, values->mask, NULL, 0);
+		} else {
+			fttr_me_job_start(&sync->job, id, &c->transaction,
+				sync->mcast_step == 14 ? FTTR_ME_GET : FTTR_ME_GET_NEXT,
+				281, 4095, 0x80, sync->mcast_step == 15 ? sequence : NULL, sync->mcast_step == 15 ? 2 : 0);
+		}
+	}
+	ret = sync_send(c, id);
+
+	return ret ? ret : 1;
+}
+
 static int sync_reply(struct controller *c, unsigned int id)
 {
 	struct onu *u = &c->onu[id];
@@ -1340,7 +1523,35 @@ static int sync_reply(struct controller *c, unsigned int id)
 	if (ret)
 		return ret == -ESTALE ? sync_failed(c, id, ret) : sync_io_failed(c, id, ret);
 	sync->active = false;
-	if (sync->wifi_probe) {
+	if (sync->mcast_step >= 0) {
+		bool member = u->service_ready && u->service.config.multicast;
+		bool mismatch = false;
+
+		if (!member) {
+			if (sync->job.error && !(sync->job.error == -EREMOTEIO && sync->job.result == 5))
+				return sync_failed(c, id, sync->job.error);
+			if (!sync->job.error) u->multicast_absent = sync->mcast_absent = false;
+		} else {
+			if (sync->job.error) return sync_failed(c, id, sync->job.error);
+			if (sync->mcast_step < 14) {
+				const struct fttr_omci_object *object = &u->service.mcast.objects[sync->mcast_step / 2];
+				const struct fttr_omci_values *values = sync->mcast_step & 1 ? &object->set : &object->create;
+
+				mismatch = memcmp(sync->job.reply + 11, values->value, values->size) != 0;
+			} else if (sync->mcast_step == 14) {
+				const uint8_t *p = sync->job.reply + 11;
+				uint32_t length = (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
+
+				mismatch = length != (u->service.mcast.doubled ? 24U : 12U);
+			} else {
+				mismatch = memcmp(sync->job.reply + 11, u->service.mcast.table_row, 12) != 0;
+			}
+			if (mismatch) return sync_failed(c, id, -EUCLEAN);
+		}
+		sync->mcast_step++;
+		ret = sync_mcast_next(c, id);
+		if (ret) return ret < 0 ? ret : 0;
+	} else if (sync->wifi_probe) {
 		const struct fttr_omci_values *values =
 			&sync->wifi_probe->job.objects[sync->wifi_group].create;
 
@@ -1397,6 +1608,12 @@ static int sync_reply(struct controller *c, unsigned int id)
 				return ret < 0 ? ret : 0;
 		}
 	}
+	if (c->multicast_enabled && sync->mcast_step < 0) {
+		sync->mcast_step = 0;
+		sync->mcast_absent = true;
+		ret = sync_mcast_next(c, id);
+		if (ret) return ret < 0 ? ret : 0;
+	}
 	sync->value = sync->observed;
 	sync->valid = true;
 	sync->error = 0;
@@ -1411,6 +1628,7 @@ static int sync_reply(struct controller *c, unsigned int id)
 		const struct service_policy *policy = matching_policy(c, u->identity);
 
 		if (*policy->bridge) {
+			u->port.multicast = policy->config.multicast != 0;
 			ret = u->port.configured ? fttr_net_verify(&c->net, &u->port) :
 				fttr_net_create(&c->net, &u->port, id, u->identity, u->service.gem, policy->bridge);
 			if (ret) {
@@ -1440,6 +1658,14 @@ static int refresh(struct controller *c)
 		return ret;
 	c->observed_at = now_ms();
 	c->observed = true;
+	/* Admission sees the complete registration snapshot before cancellation
+	 * clears old ownership or starts a replacement.
+	 */
+	for (id = 0; id < FTTR_ONUS; id++)
+		c->onu[id].hardware = table[id];
+	ret = multicast_update(c);
+	if (ret)
+		return ret;
 	/* Retire the complete snapshot before selecting any new identity. A
 	 * lower hardware slot may otherwise skip a departed higher live row
 	 * and auto-learn the same serial into the wrong logical reservation.
@@ -2297,6 +2523,9 @@ static int run(struct controller *c)
 				deadline = u->job.deadline;
 			}
 		}
+		ret = multicast_update(c);
+		if (ret)
+			return ret;
 		ret = poll(descriptors, 2, deadline > now ? deadline - now : 0);
 		if (ret < 0)
 			return -errno;
@@ -2313,6 +2542,9 @@ static int run(struct controller *c)
 			if (ret)
 				return ret;
 		}
+		ret = multicast_update(c);
+		if (ret)
+			return ret;
 	}
 	return 0;
 }
@@ -2498,6 +2730,9 @@ int main(int argc, char **argv)
 	if (ret)
 		goto out;
 	ret = fttr_net_open(&c.net, c.interface);
+	if (ret)
+		goto out;
+	ret = fttr_net_mcast_reset(&c.net);
 	if (ret)
 		goto out;
 	for (id = 0; id < FTTR_ONUS; id++) {

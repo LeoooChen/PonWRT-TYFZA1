@@ -28,6 +28,7 @@ int main(void)
 {
     struct fttr_net net = { .fd = -1 };
     struct fttr_net_port port = { 0 };
+    struct fttr_net_port mc = { 0 };
     uint8_t serial[8] = { 'T', 'E', 'S', 'T', 0, 0, 0, 7 };
     char command[16];
     int ret = fttr_net_open(&net, "fttr0");
@@ -38,6 +39,10 @@ int main(void)
         else if (!strcmp(command, "remove")) ret = fttr_net_remove(&net, &port);
         else if (!strcmp(command, "reset")) ret = fttr_net_reset(&net, 7);
         else if (!strcmp(command, "verify")) ret = fttr_net_verify(&net, &port);
+        else if (!strcmp(command, "mc-open")) ret = fttr_net_mcast_create(&net, &mc, "br-test");
+        else if (!strcmp(command, "mc-close")) ret = fttr_net_mcast_remove(&net, &mc);
+        else if (!strcmp(command, "mc-reset")) ret = fttr_net_mcast_reset(&net);
+        else if (!strcmp(command, "mc-verify")) ret = fttr_net_mcast_verify(&net, &mc);
         else return 2;
         printf("%d %d %d\n", ret, port.index, port.configured);
         fflush(stdout);
@@ -207,6 +212,31 @@ def main():
             assert command('reset')[0] == -errno.EEXIST and 'fttr-u7' in links()
             run('ip', 'link', 'set', 'fttr-u7', 'alias', child['ifalias'])
             assert command('reset')[0] == 0 and 'fttr-u7' not in links()
+            # The native multicast upper exists before the controller. Model
+            # its IFLA_LINK/group using macvlan; never delete it on teardown.
+            assert command('mc-reset')[0] == 0
+            assert command('mc-open')[0] == -errno.ENODEV
+            run('ip','link','add','link','fttr0','name','fttr-mc','type','macvlan','mode','bridge')
+            assert command('mc-open')[0] == -errno.EEXIST
+            run('ip','link','set','fttr-mc','group',str(0x46544d43))
+            assert command('mc-open')[0] == 0
+            multicast = links()['fttr-mc']
+            assert multicast['master']=='br-test' and multicast['mtu']==1508 and 'UP' in multicast['flags']
+            assert command('mc-verify')[0] == 0
+            assert not multicast['linkinfo']['info_slave_data']['learning']
+            run('bridge','link','set','dev','fttr-mc','learning','on')
+            assert command('mc-verify')[0] == -errno.ESTALE
+            run('bridge','link','set','dev','fttr-mc','learning','off')
+            assert command('mc-verify')[0] == 0
+            run('ip','link','set','fttr-mc','alias','foreign')
+            assert command('mc-close')[0] == -errno.ESTALE
+            assert command('mc-reset')[0] == -errno.ESTALE
+            run('ip','link','set','fttr-mc','alias',multicast['ifalias'])
+            assert command('mc-close')[0] == 0
+            assert 'fttr-mc' in links() and 'UP' not in links()['fttr-mc']['flags'] and 'master' not in links()['fttr-mc']
+            assert command('mc-open')[0] == 0
+            assert command('mc-reset')[0] == 0
+            assert 'UP' not in links()['fttr-mc']['flags'] and 'master' not in links()['fttr-mc']
             # An interrupted create leaves a down VLAN marked by GROUP before
             # the separate RTM_NEWLINK applies its serial alias and master.
             run('ip', 'link', 'add', 'link', 'fttr0', 'name', 'fttr-u7', 'group', str(0x46545452),
@@ -224,7 +254,8 @@ def main():
             'customer VLAN and QinQ survive both directions, including a 1500-byte customer payload',
             'unmapped GEM is not bridged to LAN and no frame reflects to its ingress ONU',
             'deleting the service port removes its learned bridge FDB',
-            'ownership mismatch is exposed without deleting the reassigned device; owned warm-start cleanup deletes stale port'],
+            'ownership mismatch is exposed without deleting the reassigned device; owned warm-start cleanup deletes stale port',
+            'native multicast upper identity, alias, bridge, MTU and disabled source learning verify; foreign ownership and learning drift reject; close/restart detach the upper without deleting it'],
         'scope': 'private Linux network namespace and veth; original skb memory helpers modeled; no optical or FE/PE acceleration verification'}
     args.output.write_text(json.dumps(report, indent=2)+'\n')
     print(json.dumps(report, indent=2))
