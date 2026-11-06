@@ -3909,6 +3909,14 @@ therefore alias. The writer sends a64-bit value low/high to0xaa6c/0xaa68,
 then issues the write command. A permanently busy NI engine returns5 after5002
 reads. Do not allocate a supposedly independent1024-entry native NI table
 based only on the original parameter validation.
+The original `ni_mce_indx_table` descriptor actually limits its allocator to256
+eight-byte entries, so this is an unsafe direct-setter boundary rather than
+evidence that ordinary factory allocation overwrites other groups. The distinct
+`swMcgid` namespace contains1024 fourteen-byte software records. The
+`aal_port_forward_action_add` path builds a64-bit bitmap of arbitration-action
+indices; `aal_hw_mcgid_new` allocates a separate NI bitmap entry and retains
+current/previous hardware indices in that software record. The NI bitmap must
+therefore not be interpreted as a simple physical-port bitmap.
 
 `aal_arb_mc_fib_set` uses64 indices and three32-bit words at0x1640/0x163c/0x1638
 with command0x1634. All27 selected fields were independently exercised against

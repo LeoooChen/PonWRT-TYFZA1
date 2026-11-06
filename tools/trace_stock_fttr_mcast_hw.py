@@ -42,6 +42,15 @@ def main():
     base = 0x6000000
     oracle.uc.mem_map(base, 0x10000)
     oracle.word(oracle.symbols['g_ne_reg_iobase'][0], base)
+    descriptors = {}
+    for name in ('ni_mce_indx_table', 'l2fe_arb_fib_table'):
+        address, _ = oracle.symbols[name]
+        count = oracle.unpack(address + 16, 'I')[0]
+        size = oracle.unpack(address + 28, 'I')[0]
+        register = oracle.unpack(address + 32, 'I')[0]
+        descriptors[name] = dict(entries=count, entry_bytes=size, command_address=hex(register))
+    assert descriptors['ni_mce_indx_table'] == dict(entries=256, entry_bytes=8, command_address='0xf430aa64')
+    assert descriptors['l2fe_arb_fib_table'] == dict(entries=64, entry_bytes=12, command_address='0xf4301634')
 
     def mmio(uc, access, address, size, value, unused):
         nonlocal polls
@@ -121,9 +130,10 @@ def main():
             log_calls=len(messages), writes=list(events)))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(dict(module_sha256=hashlib.sha256(args.module.read_bytes()).hexdigest(),
-        lookup=lookup, arb_fields=[dict(mask_bit=i, offset=o, width=w) for i,(o,w) in enumerate(fields)],
+        descriptors=descriptors, lookup=lookup, arb_fields=[dict(mask_bit=i, offset=o, width=w) for i,(o,w) in enumerate(fields)],
         failures=failures, findings=[
             'NI lookup validates 0..1023 but commands retain only 8 index bits: 0/256/512/768 alias in the original writer and reader.',
+            'The original generic NI table descriptor limits allocation to256 entries, while the separate software group namespace holds1024 groups; do not confuse software IDs with hardware table indices.',
             'NI writes low/high bitmap at aa6c/aa68 then aa64 command; persistent busy returns5 after5002 reads.',
             'L2 arbitration multicast FIB is64 entries with three32-bit words at1640/163c/1638; 27 mask fields preserve unselected bits.',
             'Original arbitration setter logs both persistent read/write timeouts and still returns0; native code must propagate timeout and verify before admission.'],
