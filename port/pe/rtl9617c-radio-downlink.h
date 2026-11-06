@@ -118,8 +118,10 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		u32 buffer = descriptor & 0xffffff80, header, tid;
 		u32 length = ni_length(entry, buffer, &header, &tid);
 		u8 *ethernet = uncached(buffer + RTL_QM_HEADROOM + header);
-		u32 macid = 0;
+		u32 macid = 0, cookie = ni_mcast_cookie(buffer);
 		if (length >= 14 && length <= RTL_QM_DATA_BYTES - header) {
+			if (cookie) macid = ni_mcast_admit(mailbox, memory, buffer, ethernet, length, cookie, &tid);
+			else {
 			const u32 *destination = (const void *)ethernet;
 			u32 low = destination[0], high = destination[1] & 65535;
 			/* Cache only this batch's destination; admission can be revoked
@@ -138,6 +140,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 					}
 				}
 				cached_peer = macid; cached_low = low; cached_high = high;
+			}
 			}
 		}
 		if (!macid) {
@@ -172,6 +175,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		/* The queue link becomes the MPDU ownership chain when selected. */
 		waiting[1] = length | header << 16;
 		waiting[2] = now; waiting[3] = now >> 32;
+		waiting[4] = cookie;
 		if (grouped) *(u32 *)uncached(tail) = buffer;
 		else { head = buffer; group = queue; }
 		tail = buffer; grouped++;
@@ -258,6 +262,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				 mailbox[38] > NI_PS_TOTAL_LIMIT ||
 				 now - ((u64)waiting[3] << 32 | waiting[2]) >=
 				 (u64)*(u32 *)(memory + RTL_AX_NI_PS_TIMEOUT + macid * 4) * 1000000));
+			discard |= ni_mcast_stale(mailbox, waiting);
 			if (discard && mailbox[47]) continue;
 			if (!discard && (mailbox[30] >= 124 ||
 			    (ps[0] && (command == ps[2] || !((grant_flags >> 16) & BIT(tid)))))) continue;
@@ -303,6 +308,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 					if (((request[2] >> 16) & 63) == 26 && !(request[3] & BIT(19))) {
 						while (next && frames < 8) {
 							u32 *part = uncached(next), pad = (0U - body) & 3;
+							/* One aggregate has one immutable conversion owner. */
+							if (part[4] != waiting[4] || ni_mcast_stale(mailbox, part)) break;
 							u32 next_metadata = part[1], next_length = next_metadata & 65535;
 							if (body + pad + next_length + 8 > (caps >> 18)) break;
 							request[8 + frames * 2] = next + RTL_QM_HEADROOM + (next_metadata >> 16);

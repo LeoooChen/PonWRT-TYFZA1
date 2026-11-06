@@ -302,6 +302,7 @@ ni.put(TXMB + 24 * 4, 1)
 ni.put(TXMB + 14 * 4, PAGES)
 request = [0] * 32
 request[0] = 256
+ni.put(TX + 0xc400, PAYLOAD)
 request[2] = 7 << 24 | 26 << 16 | 878
 request[3] = 4
 request[4] = 1 << 24 | 1 << 18 | 1 << 21 | 1 << 16
@@ -374,6 +375,7 @@ assert ni.get(TXMB + 67 * 4) == activity_event + 2
 credit = Machine()
 credit.put(TXMB + 24 * 4, 1)
 credit.put(TXMB + 14 * 4, PAGES)
+credit.put(TX + 0xc400, PAYLOAD)
 credit.put(TXMB + 32 * 4, 254)
 credit.put(BAR + REGISTERS[0], 254)  # Hardware consumer0, producer254: one free.
 credit.put(TXMB + 8 * 4, 2)

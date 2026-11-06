@@ -11,6 +11,7 @@ struct packed_word { u32 value; } __attribute__((packed));
 #define TX_BURST 8
 #include "rx-geometry.h"
 #include <linux/rtl9617c-qm-layout.h>
+#include <linux/rtl9617c-mcast-pe.h>
 
 static inline void sync(void) { __asm__ volatile("sync" ::: "memory"); }
 static inline void *uncached(u32 address) { return (void *)(address | 0xa0000000U); }
@@ -448,6 +449,7 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 }
 
 #ifdef PE_UPLINK
+static u32 ni_mcast_stale(volatile u32 *mailbox, const u32 *waiting);
 static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u32 *mailbox, u32 budget, u32 requests[16][32])
 {
 	static const u32 indices[] = { 0x1058, 0x105c, 0x1060, 0x1064, 0x1078, 0x107c };
@@ -459,6 +461,22 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 	while (read != write && budget--) {
 		const u32 *request = requests[read];
 		u32 next, ring = request[1] & 7;
+		if (request[0] >= 256) {
+			u32 id = request[0] - 256;
+			u32 *owners = (void *)(memory + 0xc400);
+			if (ni_mcast_stale(mailbox, uncached(owners[id * 2]))) {
+				/* Retain the BID like a completed WP. Using the single
+				 * discard slot here would deadlock pause-drain when the
+				 * second stale request waits for a disabled recycler. */
+				u32 completed = mailbox[45];
+				owners[id * 2 + 1] |= BIT(31);
+				*(u32 *)(memory + 0xc800 + completed * 4) = id;
+				sync(); mailbox[45] = (completed + 1) & 127;
+				mailbox[63]++;
+				read = (read + 1) & 15;
+				continue;
+			}
+		}
 		/* Factory hal_get_avail_txbd checks the shared channel before a
 		 * batch: ARM and NI WP limits alone do not bound its TXBD use. */
 		if (!(checked & BIT(ring))) {
@@ -489,6 +507,7 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 }
 
 #include "rtl9617c-radio-uplink.h"
+#include "rtl9617c-radio-mcast.h"
 #include "rtl9617c-radio-downlink.h"
 #else
 static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mailbox)
@@ -600,6 +619,13 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 			contexts[slot] = control[140 + slot];
 			generations[slot] = generation;
 			commands[slot] = 0;
+#ifdef PE_UPLINK
+			if (contexts[slot]) {
+				volatile u32 *context = uncached(contexts[slot]);
+				context[RTL_MC_PE_CAP_MAILBOX] = RTL_MC_PE_CAPABILITY;
+				sync();
+			}
+#endif
 			control[144 + slot] = generation;
 		}
 		u32 context = contexts[slot];

@@ -4877,6 +4877,41 @@ one additional quarantined group/cookie ID and immutable action slot. Physical
 delivery, full queue retirement and safe resource reuse remain unverified;
 the overall FTTR service/management rewrite is still incomplete.
 
+### PE multicast recipient admission
+
+The native PE executor now recognizes the reserved POL256..511 cookie space
+before its ordinary destination lookup. A coherent, little-endian record names
+one immutable recipient, original source, peer and compiled Linux TID policy.
+Admission requires a live matching epoch, the correct radio destination, an
+admitted peer and hardware key; AP recipients must match that peer's MAC. A
+failed cookie cannot fall through to the STA catch-all. Fixed, HeaderA COS and
+IPv4/IPv6 DSCP policies are supported, but their values must come from the
+current Linux WME/ACM/reserved-TID policy rather than a guessed priority map.
+
+PE retains the cookie in BID headroom. Queued and selected unpublished copies
+are checked again after revocation, including sleeping stations. Aggregation
+never combines different cookies. Stale selected WPs enter the existing
+completion ring: using the single discard slot would deadlock a pause draining
+multiple stale requests while its recycler is disabled. BIDs remain owned until
+EQ push credit permits their return. Already published PCIe traffic still
+requires the existing peer/key drain; closing the table is not physical packet
+retirement and does not permit cookie reuse.
+
+The shared ABI asserts its80-byte record and20496-byte table size. Linked MIPS
+execution covers247 admission/revocation cases, all64 DSCP values and8 COS
+values, plus four complete encrypted TX/RPQ cases. The existing publication,
+two-peer PS isolation, queue budgets, EQ recycling, STA RX/TX and host-header
+checks pass. Firmware is26368 bytes; the conservative stack bound is6848 bytes
+within8KiB DMEM. Image/modules build passes. MMIO, DMA and hardware completion
+are modeled; this is not a radio or throughput measurement.
+
+This increment implements the PE consumer only. No FE table publisher or radio
+binding selects it yet; complete multicast-to-unicast continues through the
+owned CPU path above. Linux QoS/lifecycle publication, direct NI-to-PE replicas
+and BCMC remain unfinished. The target FC module does not contain the reference
+SDK's named `rtk_fc_abstrSwSyncToHw_WifiMcToUc` path, so that reference is not
+claimed as target instruction equivalence.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

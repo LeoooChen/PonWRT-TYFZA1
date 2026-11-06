@@ -14,7 +14,7 @@ directory = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'artifacts/pe-rad
 binary = (directory / 'pe-tx.bin').read_bytes()
 
 
-def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False):
+def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False, multicast=False):
     base, mb, pages, headers, payload, ring, bar, ni, reports = (
         0x04000000, 0x04002000, 0x05100000, 0x05400000, 0x06000000,
         0x05000000, 0x12000000, 0x10000000, 0x06200000)
@@ -24,11 +24,18 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
                      (bar, 0x10000), (ni, 0x10000), (reports, 0x80000),
                      (0x10020000, 0x1000), (0x10030000, 0x1000)]:
         u.mem_map(at, size)
+    if multicast:
+        assert from_epp
+        table=0x08000000;u.mem_map(table,0x6000)
+        u.mem_write(table,struct.pack('<I',7))
     u.mem_write(0x1fc00000, binary)
     put = lambda at, value: u.mem_write(at, struct.pack('<I', value))
     get = lambda at: struct.unpack('<I', u.mem_read(at, 4))[0]
     ap, dst = bytes.fromhex('020000000001'), bytes.fromhex('020000000002')
     bssid = bytes.fromhex('020000009999')
+    if multicast:
+        u.mem_write(table+16+80*9,struct.pack('<II',7,1)+dst+bytes(2)+bytes(64))
+        put(mb+210*4,table)
     u.mem_write(mb + 64, ap)
     u.mem_write(base + 0xe408, bssid if client else dst)
     for index, value in [(0, 0x50455744), (2, bar | 0xa0000000), (3, 1),
@@ -73,7 +80,8 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         at = payload + n * 2048
         u.mem_write(at + 64 + ni_header, frame)
         if from_epp:
-            u.mem_write(at + 64, struct.pack('>II', (1 << 31) if ni_header == 16 else 0, (length + ni_header - 8) << 15) + bytes(ni_header - 8))
+            if multicast:u.mem_write(at+64+ni_header,bytes.fromhex('01005e010203'))
+            u.mem_write(at + 64, struct.pack('>II', ((1 << 31) if ni_header == 16 else 0)|(265<<18 if multicast else 0), (length + ni_header - 8) << 15 | (19<<3 if multicast else 0)) + bytes(ni_header - 8))
             u.mem_write(0x10030000 + n * 8, struct.pack('<II', at | 0x50, (1 << 14 if compact_epp else 0) | (length + 16)))
         else:
             u.mem_write(at, struct.pack('<4I', at + 2048 if n + 1 < len(lengths) else 0,

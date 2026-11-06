@@ -128,6 +128,8 @@
 
 55. 接入逐用户组播转单播：按实际Linux选择记录端口与目的MAC，支持同一VIF多个收件人及混合本机/普通组播副本；NI复制后凭独立不可变cookie核对报文并由CPU改写目的MAC，再进入无线/以太网/PON/P6正常发送路径。目标原厂三参数动作生成器与参考SDK ABI不同，六组实际执行确认目的MAC改写；同步修复STA单播PE队列更新可能改写组播MCGID的问题。真实Linux到FE/NI事务、VLAN、重复决策、hairpin DAD、失败撤销、480项QM、129项解析、768项P6、12288项VLAN/WME及Image/模块通过。直接PE复制、完整退场和资源复用仍未完成，无实机验证。详见[逐收件人转换](port/FTTR.md#per-recipient-multicast-to-unicast-copies)。
 
+56. 补上PE逐收件人转换的接收端：保留POL cookie先于普通DA/STA匹配校验，核对代际、原来源、无线目的、peer及密钥后改写DA；支持预编译固定/COS/DSCP策略，睡眠队列和已选未发布WP撤销后丢弃，不同cookie不合入同一A-MSDU。修复多个撤销WP共用单个丢弃槽造成pause-drain死锁，改用既有完成环并等待EQ信用逐个归还BID。实际MIPS执行247项准入/撤销、4组完整加密TX/RPQ及PS/STA/发布回归通过，固件26368字节、保守栈6848字节，Image/模块通过。本项尚无FE表发布与无线绑定，仍使用前项CPU转换路径；目标FC不含参考SDK同名Wi-Fi M2U路径，不能宣称二者等价。QoS/身份生命周期、NI→PE直接复制、BCMC及完整退场仍待补齐。详见[PE收件人准入](port/FTTR.md#pe-multicast-recipient-admission)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

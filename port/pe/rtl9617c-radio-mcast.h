@@ -1,0 +1,79 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
+#include <linux/rtl9617c-mcast-pe.h>
+
+/* Metadata is read from a fresh NI buffer before any header editing. A
+ * reserved POL cannot fall through to the normal STA catch-all route. */
+static u32 ni_mcast_cookie(u32 buffer)
+{
+	const u32 *head = uncached(buffer + RTL_QM_HEADROOM);
+	u32 pol = (__builtin_bswap32(head[0]) >> 18) & 511;
+	return pol & 256 ? pol : 0;
+}
+
+static u32 ni_mcast_current(volatile u32 *mailbox, u32 cookie)
+{
+	u32 address = mailbox[RTL_MC_PE_TABLE_MAILBOX];
+	if (!address || !(cookie & 255)) return 0;
+	volatile struct rtl_mc_pe_table *table = uncached(address);
+	u32 epoch = table->epoch;
+	sync();
+	u32 record_epoch = table->record[cookie & 255].epoch;
+	sync();
+	return epoch && epoch == record_epoch && epoch == table->epoch;
+}
+
+static u32 __attribute__((section(".rxq"), noinline)) ni_mcast_admit(
+	volatile u32 *mailbox, u8 *memory, u32 buffer, u8 *ethernet,
+	u32 length, u32 cookie, u32 *tid)
+{
+	if (!ni_mcast_current(mailbox, cookie)) return 0;
+	volatile struct rtl_mc_pe_table *table = uncached(mailbox[RTL_MC_PE_TABLE_MAILBOX]);
+	const volatile struct rtl_mc_pe_record *record = &table->record[cookie & 255];
+	u32 control = record->control, macid = control & 127;
+	u32 mode = (control >> RTL_MC_PE_MODE_SHIFT) & 3;
+	const u32 *head = uncached(buffer + RTL_QM_HEADROOM);
+	u32 route = __builtin_bswap32(head[1]);
+	if (!macid || (control & ~0x003f1f7fU) || mode > RTL_MC_PE_TID_DSCP ||
+	    ((route >> 9) & 63) != (control >> RTL_MC_PE_SOURCE_SHIFT) ||
+	    ((route >> 3) & 63) != 16 + (mailbox[114] - 0x7000) / 32 ||
+	    !*(volatile u32 *)(memory + 0x11a00 + macid * 4)) return 0;
+	u32 flags = *(volatile u32 *)(memory + 0xd000 + macid * 32 + 16);
+	if (!(flags & BIT(16)) || (record->destination[0] & 1)) return 0;
+	u32 nonzero = 0;
+	const u8 *peer = memory + 0xe400 + macid * 8;
+#pragma clang loop unroll(disable)
+	for (u32 i = 0; i < 6; i++) {
+		nonzero |= record->destination[i];
+		if (!(flags & BIT(23)) && peer[i] != record->destination[i]) return 0;
+	}
+	if (!nonzero || record->reserved[0] || record->reserved[1]) return 0;
+	u32 priority = (control >> RTL_MC_PE_TID_SHIFT) & 7;
+	if (mode == RTL_MC_PE_TID_COS) priority = record->dscp_tid[*tid & 7];
+	if (mode == RTL_MC_PE_TID_DSCP) {
+		u32 protocol = ethernet[12] << 8 | ethernet[13], dscp;
+		/* VLAN QoS is compiled as fixed/header-COS by the publisher. */
+		if (protocol == 0x800 && length >= 34 && ethernet[14] == 0x45)
+			dscp = ethernet[15] >> 2;
+		else if (protocol == 0x86dd && length >= 54 && ethernet[14] >> 4 == 6)
+			dscp = ((ethernet[14] & 15) << 4 | ethernet[15] >> 4) >> 2;
+		else return 0;
+		priority = record->dscp_tid[dscp];
+	}
+	if (priority > 7 || !ni_mcast_current(mailbox, cookie) ||
+	    !*(volatile u32 *)(memory + 0x11a00 + macid * 4)) return 0;
+#pragma clang loop unroll(disable)
+	for (u32 i = 0; i < 6; i++) ethernet[i] = record->destination[i];
+	*tid = priority;
+	return macid;
+}
+
+static u32 ni_mcast_stale(volatile u32 *mailbox, const u32 *waiting)
+{
+	u32 cookie = waiting[4];
+	if (!cookie) return 0;
+	if (!ni_mcast_current(mailbox, cookie)) return 1;
+	const volatile struct rtl_mc_pe_table *table = uncached(mailbox[RTL_MC_PE_TABLE_MAILBOX]);
+	u32 macid = table->record[cookie & 255].control & 127;
+	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
+	return !macid || !*(volatile u32 *)(memory + 0x11a00 + macid * 4);
+}
