@@ -277,7 +277,7 @@ def cpu_receive_dispatch(module):
         scope='54 executions of actual rtk_fc_skb_rx; final receive/direct-transmit consumers and synchronous scheduling are modeled. No assertion of packet retirement or physical HeaderA generation.')
 
 
-def replica_recipes(fc_module, ni_module, destinations=(1, 6)):
+def replica_recipes(fc_module, ni_module, destinations=(1, 6), host_copy=False):
     """Execute FC replica construction through the real arbitration producer."""
     class Published(Exception): pass
     recipes, actions = [], []
@@ -309,7 +309,8 @@ def replica_recipes(fc_module, ni_module, destinations=(1, 6)):
         if name == 'rtk_fc_syncToHw_G3addGroupFwdHash':
             raise Published()
         raise AssertionError(('unmodeled FC replica boundary', name, values))
-    fc = ModuleOracle(fc_module, ['rtk_fc_abstrSwSyncToHw_add', 'rtk_fc_parseAbstrSwActionField'], boundary)
+    fc = ModuleOracle(fc_module, ['rtk_fc_abstrSwSyncToHw_add', 'rtk_fc_parseAbstrSwActionField',
+        'rtk_fc_parseAbstrSwPattenField'], boundary)
     source, context, flow, action, member = [fc.scratch + offset for offset in (0x1000, 0x1200, 0x1400, 0x1600, 0x1800)]
     db = fc.symbols['fc_db'][0]
     fc.word(db + 0x200000 + 384, flow)
@@ -334,6 +335,7 @@ def replica_recipes(fc_module, ni_module, destinations=(1, 6)):
                 fc.uc.mem_write(action + 8, struct.pack('<HH', 0x8100, 100 | 3 << 13))
             fc.uc.mem_write(member, bytes([destination]) + bytes(7))
             fc.uc.mem_write(flow + 8, bytes(4))
+            fc.uc.mem_write(flow + 44, bytes([host_copy]))
             fc.uc.mem_write(db + 0x200000 + 404, bytes(4))
             try:
                 fc.call('rtk_fc_abstrSwSyncToHw_add', source, context, 0)
@@ -341,7 +343,13 @@ def replica_recipes(fc_module, ni_module, destinations=(1, 6)):
                 pass
             else:
                 raise AssertionError('FC did not reach group Hash publication')
-            assert len(recipes) == len(actions) == 1
+            assert len(recipes) == len(actions) == (2 if host_copy else 1)
+            host=None
+            if host_copy:
+                # Original extra-copy producer uses CPU18 and POL56, not an
+                # ordinary CPU16 member. No VLAN pattern in this input fixture.
+                host=dict(recipe=recipes.pop(0),words=actions.pop(0))
+                assert host['words']==[56<<23,18<<24|1<<30,1]
             words = actions[0]
             assert (words[1] >> 24) & 63 == destination
             assert (words[1] & 3) == (1 if tags else 2)
@@ -352,7 +360,7 @@ def replica_recipes(fc_module, ni_module, destinations=(1, 6)):
                 assert (words[1] >> 19) & 7 == 5 and (words[1] >> 23) & 1 == 1
             if tags == 2:
                 assert (words[0] >> 2) & 4095 == 100 and (words[0] >> 18) & 7 == 3
-            cases.append(dict(output_tags=tags, destination=destination, recipe=recipes[0], words=words))
+            cases.append(dict(output_tags=tags, destination=destination, recipe=recipes[0], words=words,host_copy=host))
     return dict(cases=cases, findings=[
         'The complete FC replica producer programs both S/C tag commands: present=>tag by table(1), absent=>untag(2); it is an absolute final tag recipe, not a relative push.',
         'FC explicitly disables source-port filtering for each replica and copies priority/DEI for each present tag; unchanged source MAC leaves TTL decrement disabled.'],
@@ -640,6 +648,7 @@ def main():
         replica_recipes=replica_recipes(args.fc, args.module) if args.fc else None,
         cpu_replica_recipes=replica_recipes(args.fc, args.module, (16,)) if args.fc else None,
         cpu_receive_dispatch=cpu_receive_dispatch(args.mgr) if args.mgr else None,
+        host_copy_recipes=replica_recipes(args.fc, args.module, (1,6), True) if args.fc else None,
         arb_fields=[dict(mask_bit=i, offset=o, width=w) for i,(o,w) in enumerate(fields)],
         failures=failures, findings=[
             'NI lookup validates 0..1023 but commands retain only 8 index bits: 0/256/512/768 alias in the original writer and reader.',

@@ -4270,8 +4270,17 @@ distinguish a local CPU replica. The final consumers and scheduling boundary
 are modeled; this does not establish Linux duplicate-suppression behavior.
 The report is `artifacts/fttr/mcast-cpu-receive-original-20261106.json`.
 
+The dedicated host-copy branch is now traced back to its actual producer too.
+Setting the original abstract flow's extra-copy flag makes
+`rtk_fc_abstrSwSyncToHw_add` prepend **destination18/POL56**, followed by the
+ordinary LAN/P6 recipient actions. Six full FC/action/NI executions confirm
+this for zero/one/two egress tags. The fixture has no ingress VLAN pattern, so
+the extra action keeps both tag commands at NOP. This is distinct from merely
+placing CPU16 in the ordinary member list. Its report is
+`artifacts/fttr/mcast-host-copy-original-20261106.json`.
+
 This matters to the native integration because it deliberately preserves
-physical source0..4 across MCE, unlike that source27 predicate. A CPU replica
+physical source0..4 across MCE, unlike that source27 predicate. The native framework also uses18 as its Wi-Fi source. A CPU replica
 must retain an unambiguous indication that all other recipients were already
 forwarded, while ordinary Hash misses and PE MTU returns must still run the
 full bridge decision. Merely adding destination16 or treating every received
