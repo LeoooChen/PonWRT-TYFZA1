@@ -15,6 +15,8 @@
 #include <net/cfg80211.h>
 #include "rtl9617c-ni.h"
 #include <linux/rtl9617c-wifi.h>
+#include <linux/rtl9617c-bridge.h>
+#include <linux/rtl9617c-qm-layout.h>
 
 struct rtl_wifi_port {
 	struct list_head list;
@@ -26,7 +28,7 @@ struct rtl_wifi_port {
 static LIST_HEAD(wifi_ports);
 static struct device *wifi_ni;
 
-static unsigned int wifi_ingress(void *private, struct sk_buff *skb,
+unsigned int rtl_wifi_ingress(void *private, struct sk_buff *skb,
 				const struct nf_hook_state *state)
 {
 	struct rtl_wifi_port *port = private;
@@ -34,7 +36,12 @@ static unsigned int wifi_ingress(void *private, struct sk_buff *skb,
 	__be16 protocol = skb->protocol;
 	unsigned int offset = 0;
 	int ret;
+	const struct rtl9617c_bridge_frame *host = skb_ext_find(skb, SKB_EXT_RTL9617C_BRIDGE);
+	bool multicast = is_multicast_ether_addr(eth_hdr(skb)->h_dest);
 
+	/* Other recipients already received their copies. Never query this
+	 * host-only packet again; the owning bridge consumes its decision. */
+	if (host && host->multicast_host_group) return NF_ACCEPT;
 	/* A QM miss starts the same Linux ingress again with its original VIF.
 	 * Clear only our provenance bit; all subsequent policy hooks still run. */
 	if (skb->rtl9617c_wifi_miss) {
@@ -43,8 +50,13 @@ static unsigned int wifi_ingress(void *private, struct sk_buff *skb,
 	}
 	if (!rtl9617c_ni_wifi_enabled(wifi_ni) || skb_is_gso(skb) ||
 	    skb->ip_summed == CHECKSUM_PARTIAL || skb_mac_header_len(skb) != ETH_HLEN ||
-	    is_multicast_ether_addr(eth_hdr(skb)->h_dest)) return NF_ACCEPT;
+	    is_broadcast_ether_addr(eth_hdr(skb)->h_dest)) return NF_ACCEPT;
+	/* Multicast misses use the CPU RX pool. Keep oversized frames in
+	 * Linux until that path can retain a complete multi-buffer VIF frame. */
+	if (multicast && skb->len + ETH_HLEN + (skb_vlan_tag_present(skb) ? VLAN_HLEN : 0) > RTL_QM_DATA_BYTES - 16)
+		return NF_ACCEPT;
 	if (protocol == htons(ETH_P_PPP_SES)) {
+		if (multicast) return NF_ACCEPT;
 		u8 header[8], *pppoe = skb_header_pointer(skb, 0, sizeof(header), header);
 		unsigned int ppp;
 
@@ -56,11 +68,19 @@ static unsigned int wifi_ingress(void *private, struct sk_buff *skb,
 	}
 	if (protocol == htons(ETH_P_IP)) {
 		struct iphdr header, *ip = skb_header_pointer(skb, offset, sizeof(header), &header);
-		if (!ip || (ip->protocol != IPPROTO_TCP && ip->protocol != IPPROTO_UDP)) return NF_ACCEPT;
+		if (!ip || (ip->protocol != IPPROTO_TCP && ip->protocol != IPPROTO_UDP) ||
+		    (multicast && ip->protocol != IPPROTO_UDP)) return NF_ACCEPT;
 	} else if (protocol == htons(ETH_P_IPV6)) {
 		struct ipv6hdr header, *ip = skb_header_pointer(skb, offset, sizeof(header), &header);
-		if (!ip || (ip->nexthdr != IPPROTO_TCP && ip->nexthdr != IPPROTO_UDP)) return NF_ACCEPT;
+		if (!ip || (ip->nexthdr != IPPROTO_TCP && ip->nexthdr != IPPROTO_UDP) ||
+		    (multicast && ip->nexthdr != IPPROTO_UDP)) return NF_ACCEPT;
 	} else return NF_ACCEPT;
+	if (multicast) {
+		struct rtl9617c_bridge_frame *wire = skb_ext_add(skb, SKB_EXT_RTL9617C_BRIDGE);
+		if (!wire) return NF_ACCEPT;
+		memset(wire, 0, sizeof(*wire));
+		wire->wifi_id = port->id;
+	}
 	/* eth_type_trans() already retained this header in the skb. Restore the
 	 * data pointer for NI's copy without cloning an ordinary untagged frame. */
 	if (!skb_vlan_tag_present(skb)) {
@@ -98,6 +118,14 @@ static void wifi_receive(struct rtl9617c_ni_wifi_endpoint *endpoint,
 	} else {
 		skb->protocol = eth_type_trans(skb, endpoint->netdev);
 		skb->rtl9617c_wifi_miss = 1;
+		if (is_multicast_ether_addr(eth_hdr(skb)->h_dest)) {
+			struct rtl_wifi_port *port = container_of(endpoint, struct rtl_wifi_port, endpoint);
+			struct rtl9617c_bridge_frame *wire = skb_ext_add(skb, SKB_EXT_RTL9617C_BRIDGE);
+			if (wire) {
+				memset(wire, 0, sizeof(*wire));
+				wire->wifi_id = port->id;
+			}
+		}
 		/* NI already owns a NAPI poll. Keep its batching on FE misses too;
 		 * the original VIF and provenance survive GRO and ingress policy. */
 		napi_gro_receive(napi, skb);
@@ -131,7 +159,7 @@ static int wifi_add(struct net_device *netdev)
 	ret = rtl9617c_ni_wifi_attach(wifi_ni, &port->endpoint);
 	if (ret < 0) { kfree(port); return ret; }
 	port->id = ret;
-	port->hook = (struct nf_hook_ops){.hook = wifi_ingress, .priv = port,
+	port->hook = (struct nf_hook_ops){.hook = rtl_wifi_ingress, .priv = port,
 		.dev = netdev, .pf = NFPROTO_NETDEV, .hooknum = NF_NETDEV_INGRESS, .priority = INT_MIN};
 	ret = nf_register_net_hook(dev_net(netdev), &port->hook);
 	if (ret) {

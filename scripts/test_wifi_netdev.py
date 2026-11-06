@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Execute production Wi-Fi ingress/return functions with captured Ethernet frames."""
+import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -12,7 +13,7 @@ drivers = root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethe
 source = (drivers / 'rtl9617c-wifi.c').read_text()
 
 def function(name):
-    start = re.search(r'^static .*\b' + name + r'\(', source, re.M).start()
+    start = re.search(r'^(?:static )?.*\b' + name + r'\(', source, re.M).start()
     end = source.index('{', start) + 1
     depth = 1
     while depth:
@@ -25,6 +26,7 @@ common = r'''
 #include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,6 +35,7 @@ common = r'''
 #include <linux/ipv6.h>
 #include <linux/ppp_defs.h>
 typedef uint8_t u8;typedef uint16_t __be16;
+#define RTL_QM_DATA_BYTES 1600
 #define ETH_HLEN 14
 #define VLAN_HLEN 4
 #define ETH_P_IP 0x800
@@ -43,17 +46,20 @@ typedef uint8_t u8;typedef uint16_t __be16;
 #define GFP_ATOMIC 0
 #define NF_ACCEPT 1
 #define NF_STOLEN 2
+#define container_of(p,t,m) ((t *)((char *)(p)-offsetof(t,m)))
+#define SKB_EXT_RTL9617C_BRIDGE 0
+struct rtl9617c_bridge_frame {unsigned multicast_host_group,wifi_id;};
 struct net_device {int unused;};
 struct napi_struct {int unused;};
 struct sk_buff {
  unsigned char *head,*data;unsigned int len,mac,network,priority,ip_summed;
  unsigned short protocol,vlan;
- bool rtl9617c_wifi_miss,gso;
+ bool rtl9617c_wifi_miss,gso,ext;struct rtl9617c_bridge_frame saved;
  struct net_device *dev;
 };
 struct nf_hook_state {int unused;};
 struct rtl9617c_ni_wifi_endpoint {struct net_device *netdev;};
-struct rtl_wifi_port {unsigned int id;};
+struct rtl_wifi_port {struct rtl9617c_ni_wifi_endpoint endpoint;unsigned int id;};
 struct ethhdr {unsigned char h_dest[6],h_source[6];unsigned short h_proto;} __attribute__((packed));
 static int wifi_ni,enabled=1,busy,allocation_failure;
 static unsigned int frees,injected,transmitted,returned,id_seen,frame_length,network_seen;
@@ -72,6 +78,9 @@ static bool rtl9617c_ni_wifi_enabled(void *dev){(void)dev;return enabled;}
 static bool skb_is_gso(struct sk_buff *s){return s->gso;}
 static unsigned int skb_mac_header_len(struct sk_buff *s){return s->data-(s->head+s->mac);}
 static struct ethhdr *eth_hdr(struct sk_buff *s){return (void *)(s->head+s->mac);}
+static bool is_broadcast_ether_addr(unsigned char *a){return !memcmp(a,"\xff\xff\xff\xff\xff\xff",6);}
+static void *skb_ext_find(struct sk_buff *s,int id){(void)id;return s->ext?&s->saved:NULL;}
+static void *skb_ext_add(struct sk_buff *s,int id){(void)id;if(allocation_failure)return NULL;s->ext=true;return &s->saved;}
 static bool is_multicast_ether_addr(unsigned char *a){return *a&1;}
 static unsigned int get_unaligned_be16(const void *p){unsigned short v;memcpy(&v,p,2);return ntohs(v);}
 static void *skb_header_pointer(struct sk_buff *s,unsigned int off,unsigned int len,void *p){
@@ -111,7 +120,7 @@ static unsigned short eth_type_trans(struct sk_buff *s,struct net_device *dev){
  unsigned short p=eth_hdr(s)->h_proto;s->data+=14;s->len-=14;s->dev=dev;return p;
 }
 static void receive_check(struct sk_buff *s){
- assert(s->rtl9617c_wifi_miss && skb_mac_header_len(s)==14);returned++;
+ assert(s->rtl9617c_wifi_miss && skb_mac_header_len(s)==14);if(eth_hdr(s)->h_dest[0]&1)assert(s->ext&&s->saved.wifi_id==17);returned++;
  frame_length=s->len+14;memcpy(frame_seen,s->head+s->mac,s->len+14);kfree_skb(s);
 }
 static void __attribute__((unused)) netif_receive_skb(struct sk_buff *s){
@@ -122,9 +131,12 @@ static void __attribute__((unused)) napi_gro_receive(struct napi_struct *n,struc
 }
 '''.replace('static int wifi_ni,enabled', 'static void *wifi_ni;static int enabled')
 
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--capture', type=Path, default=root / 'logs/wifi-static-lifecycle-20261010.txt')
+args = parser.parse_args()
 records = []
 for match in re.finditer(r'phase=hit.*?frame=([0-9a-f]{120})',
-                         (root / 'logs/wifi-static-lifecycle-20261010.txt').read_text()):
+                         args.capture.read_text()):
     records.append(bytes.fromhex(match[1]))
 assert len(records) == 8
 arrays = 'static const unsigned char frames[8][60]={' + ','.join(
@@ -135,7 +147,7 @@ int main(void){
  struct rtl_wifi_port port={.id=2};struct nf_hook_state state={};
  for(unsigned int i=0;i<8;i++){
   struct sk_buff *skb=new_skb(frames[i],60,false);skb->dev=&dev;
-  assert(wifi_ingress(&port,skb,&state)==NF_STOLEN);
+  assert(rtl_wifi_ingress(&port,skb,&state)==NF_STOLEN);
   assert(id_seen==2 && frame_length==60 && !memcmp(frame_seen,frames[i],60));
   skb=new_skb(frames[i],60,true);skb->dev=&dev;wifi_receive(&endpoint,&expected_napi,skb,true);
   assert(network_seen==14 && frame_length==60 && !memcmp(frame_seen,frames[i],60));
@@ -146,14 +158,14 @@ int main(void){
  assert(gro_received==8 && immediate_received==0);
  struct sk_buff *skb=new_skb(frames[0],60,false);skb->dev=&dev;unsigned int old=injected;
  skb->rtl9617c_wifi_miss=true;
- assert(wifi_ingress(&port,skb,&state)==NF_ACCEPT && !skb->rtl9617c_wifi_miss && injected==old);
- busy=1;assert(wifi_ingress(&port,skb,&state)==NF_ACCEPT && injected==old);busy=0;
+ assert(rtl_wifi_ingress(&port,skb,&state)==NF_ACCEPT && !skb->rtl9617c_wifi_miss && injected==old);
+ busy=1;assert(rtl_wifi_ingress(&port,skb,&state)==NF_ACCEPT && injected==old);busy=0;
  assert(skb->len==46 && !memcmp(skb->head+skb->mac,frames[0],60));
- enabled=0;assert(wifi_ingress(&port,skb,&state)==NF_ACCEPT);enabled=1;
- skb->gso=true;assert(wifi_ingress(&port,skb,&state)==NF_ACCEPT);skb->gso=false;
- skb->ip_summed=3;assert(wifi_ingress(&port,skb,&state)==NF_ACCEPT);skb->ip_summed=0;
- skb->vlan=123;allocation_failure=1;assert(wifi_ingress(&port,skb,&state)==NF_ACCEPT);allocation_failure=0;
- skb->vlan=123;assert(wifi_ingress(&port,skb,&state)==NF_STOLEN);
+ enabled=0;assert(rtl_wifi_ingress(&port,skb,&state)==NF_ACCEPT);enabled=1;
+ skb->gso=true;assert(rtl_wifi_ingress(&port,skb,&state)==NF_ACCEPT);skb->gso=false;
+ skb->ip_summed=3;assert(rtl_wifi_ingress(&port,skb,&state)==NF_ACCEPT);skb->ip_summed=0;
+ skb->vlan=123;allocation_failure=1;assert(rtl_wifi_ingress(&port,skb,&state)==NF_ACCEPT);allocation_failure=0;
+ skb->vlan=123;assert(rtl_wifi_ingress(&port,skb,&state)==NF_STOLEN);
  assert(frame_length==64 && frame_seen[12]==0x81 && frame_seen[13]==0 && frame_seen[14]==0 && frame_seen[15]==123);
  assert(!memcmp(frame_seen+16,frames[0]+12,48));
  unsigned char tagged[68];memcpy(tagged,frames[0],12);
@@ -164,27 +176,70 @@ int main(void){
  memcpy(ppp+12,"\x88\x64\x11\0\x12\x34\0\x30\0\x21",10);
  memcpy(ppp+22,frames[0]+14,46);
  skb=new_skb(ppp,68,false);skb->dev=&dev;
- assert(wifi_ingress(&port,skb,&state)==NF_STOLEN);
+ assert(rtl_wifi_ingress(&port,skb,&state)==NF_STOLEN);
  assert(frame_length==68 && !memcmp(frame_seen,ppp,68));
  memset(ppp+22,0,48);ppp[22]=0x60;ppp[28]=17;ppp[19]=50;ppp[21]=0x57;
  skb=new_skb(ppp,70,false);skb->dev=&dev;
- assert(wifi_ingress(&port,skb,&state)==NF_STOLEN);
+ assert(rtl_wifi_ingress(&port,skb,&state)==NF_STOLEN);
  assert(frame_length==70 && !memcmp(frame_seen,ppp,70));
  ppp[20]=0xc0;ppp[21]=0x21;
  skb=new_skb(ppp,70,false);skb->dev=&dev;
- assert(wifi_ingress(&port,skb,&state)==NF_ACCEPT);kfree_skb(skb);
+ assert(rtl_wifi_ingress(&port,skb,&state)==NF_ACCEPT);kfree_skb(skb);
+ /* Group data enters one NI query; control and host-only copies stay
+  * in Linux. A fresh multicast miss retains the receiving VIF. */
+ unsigned char group[96]={1,0,0x5e,1,2,3,2,0,0,0,0,1,8,0,0x45};
+ group[23]=17;group[16]=0;group[17]=82;group[38]=0;group[39]=62;
+ for(unsigned tag=0;tag<2;tag++) {
+  skb=new_skb(group,96,false);skb->dev=&dev;skb->vlan=tag?100:0;
+  old=injected;assert(rtl_wifi_ingress(&port,skb,&state)==NF_STOLEN&&injected==old+1&&id_seen==2);
+ }
+ struct rtl_wifi_port receive_port={.id=17,.endpoint={.netdev=&dev}};
+ skb=new_skb(group,96,true);skb->dev=&dev;
+ old=gro_received;wifi_receive(&receive_port.endpoint,&expected_napi,skb,false);
+ assert(gro_received==old+1);
+ for(unsigned scenario=0;scenario<8;scenario++) {
+  skb=new_skb(group,96,false);skb->dev=&dev;old=injected;
+  if(scenario==0){skb->ext=true;skb->saved.multicast_host_group=7;skb->saved.wifi_id=17;}
+  if(scenario==1){skb->rtl9617c_wifi_miss=true;skb->ext=true;skb->saved.wifi_id=17;}
+  if(scenario==2)memset(eth_hdr(skb)->h_dest,255,6);
+  if(scenario==3)skb->data[9]=2;
+  if(scenario==4)skb->data[9]=6;
+  if(scenario==5)allocation_failure=1;
+  if(scenario==6)skb->len=1600;
+  if(scenario==7)busy=1;
+  assert(rtl_wifi_ingress(&port,skb,&state)==NF_ACCEPT&&injected==old);
+  if(scenario<2)assert(skb->saved.wifi_id==17);
+  allocation_failure=busy=0;kfree_skb(skb);
+ }
+ /* IPv6 UDP uses the same VIF contract. MLD, hop-by-hop control,
+  * multicast TCP and PPPoE are never sent into a group lookup. */
+ unsigned char group6[96]={0x33,0x33,0,0,0,1,2,0,0,0,0,1,0x86,0xdd,0x60};
+ group6[19]=42;group6[20]=17;group6[21]=64;group6[38]=0xff;group6[53]=1;
+ for(unsigned tag=0;tag<2;tag++) {
+  skb=new_skb(group6,96,false);skb->dev=&dev;skb->vlan=tag?100:0;
+  old=injected;assert(rtl_wifi_ingress(&port,skb,&state)==NF_STOLEN&&injected==old+1&&id_seen==2);
+ }
+ skb=new_skb(group6,96,true);skb->dev=&dev;
+ old=gro_received;wifi_receive(&receive_port.endpoint,&expected_napi,skb,false);
+ assert(gro_received==old+1);
+ for(unsigned next=0;next<3;next++) {
+  skb=new_skb(group6,96,false);skb->dev=&dev;skb->data[6]=next==0?58:next==1?0:6;
+  old=injected;assert(rtl_wifi_ingress(&port,skb,&state)==NF_ACCEPT&&injected==old);kfree_skb(skb);
+ }
+ ppp[0]=1;skb=new_skb(ppp,70,false);skb->dev=&dev;
+ old=injected;assert(rtl_wifi_ingress(&port,skb,&state)==NF_ACCEPT&&injected==old);kfree_skb(skb);
  puts("Wi-Fi netdev: FE misses use original NAPI; Ethernet/VLAN/QinQ and PPPoE bytes preserved; LCP stays with Linux");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='wifi-netdev-', dir=root / 'artifacts') as directory:
     path = Path(directory)
-    (path / 'test.c').write_text(common + function('wifi_ingress') + function('wifi_receive') + arrays + test)
+    (path / 'test.c').write_text(common + function('rtl_wifi_ingress') + function('wifi_receive') + arrays + test)
     subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter',
                     '-g', '-fsanitize=address,undefined', str(path / 'test.c'), '-o', str(path / 'test')], check=True)
     subprocess.run([str(path / 'test')], check=True)
 (root / 'logs/wifi-netdev-contract.json').write_text(json.dumps({
     'production_source_sha256': hashlib.sha256(source.encode()).hexdigest(),
-    'captured_hardware_frames': len(records), 'actual_functions': ['wifi_ingress', 'wifi_receive'],
+    'captured_hardware_frames': len(records), 'actual_functions': ['rtl_wifi_ingress', 'wifi_receive'],
     'single_miss_reinjection': True, 'full_Ethernet_TX': True, 'VLAN_QinQ': True,
     'busy_retains_original': True, 'sanitizers': ['ASan', 'UBSan'], 'real_AP_traffic_test': False,
     'FE_miss_uses_original_NAPI': True,

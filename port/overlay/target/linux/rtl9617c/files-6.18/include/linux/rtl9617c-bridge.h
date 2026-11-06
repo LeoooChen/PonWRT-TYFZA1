@@ -15,6 +15,7 @@ struct rtl9617c_bridge_frame {
 	u64 multicast_transaction;
 	u64 multicast_epoch;
 	u16 pon_gem, multicast_host_group;
+	u8 wifi_id;
 	u64 multicast_host_owner;
 	u16 protocol, session, vid, ppp_protocol;
 	u32 ip_source[4], ip_destination[4];
@@ -57,7 +58,7 @@ void rtl9617c_bridge_mcast_complete(u64 transaction, bool complete);
 static inline unsigned int rtl9617c_bridge_host_group(u32 h0,u32 h1)
 {
  unsigned int pol=(h0>>18)&511,source=(h1>>9)&63;
- return ((h1>>3)&63)==16 && (source<=4 || source==6 || source==7) && (pol&256)?pol&255:0;
+ return ((h1>>3)&63)==16 && (source<=4 || source==6 || source==7 || source==18) && (pol&256)?pol&255:0;
 }
 int rtl9617c_bridge_mcast_receive(struct sk_buff *skb, unsigned int group, unsigned int source);
 int rtl9617c_bridge_mcast_local(struct sk_buff *skb, struct net_device *bridge, u16 vid);

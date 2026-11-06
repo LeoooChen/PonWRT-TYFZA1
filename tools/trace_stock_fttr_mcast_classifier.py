@@ -204,7 +204,7 @@ void crc(unsigned int *key,unsigned int *c32,unsigned short *c16){rtl_fe_key_crc
         subprocess.run(['cc','-Wall','-Wextra','-Werror','-shared','-fPIC','-I'+str(DRIVERS),str(root/'key.c'),'-o',str(root/'key.so')],check=True)
         lib=ctypes.CDLL(str(root/'key.so'))
         rng=random.Random(0x9617c)
-        for ingress,gem in ((4,0),(6,0),(7,8),(7,55),(7,255)):
+        for ingress,gem in ((4,0),(6,0),(7,8),(7,55),(7,255),(18,1),(18,60)):
             for ip6 in (0,1):
                 for case in range(128):
                     learned=case//64
@@ -231,7 +231,7 @@ void crc(unsigned int *key,unsigned int *c32,unsigned short *c16){rtl_fe_key_crc
                     signatures.append((c32.value,c16.value))
     assert len(set(signatures))==len(signatures)
     return dict(vectors=len(signatures),original_mask_and_crc_match=True,
-        fields='full IPv4/IPv6 source and group, protocol, LAN4/P6/PON7 ingress with GEM8/55/255, SA/DA, two exact tags, template; random ignored fields')
+        fields='full IPv4/IPv6 source and group, protocol, LAN4/P6/PON7/WiFi18 ingress with GEM8/55/255 and VIF1/60, SA/DA, two exact tags, template; random ignored fields')
 
 
 def main():

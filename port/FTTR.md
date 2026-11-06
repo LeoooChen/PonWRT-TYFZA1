@@ -4524,11 +4524,51 @@ interfaces; `test_pon_host_mode.py` executes the changed receive dispatcher
 with a focused model instead. That stale aggregate check is not claimed as
 passing and no physical device was accessed.
 
-Native radio multicast input/replicas, EPON-specific multicast integration,
+Native radio multicast replicas, EPON-specific multicast integration,
 unknown-multicast flood offload and safe hardware resource retirement remain
 work. The existing group/action/MAC/DBUF capacity restrictions remain. Neither
 these checks nor the new generation validation prove physical PON packet
 retirement, lossless transitions or full FTTR acceptance.
+
+### Wireless-source multicast and VIF identity
+
+Native Wi-Fi ingress now submits plain IPv4/IPv6 UDP multicast to the same
+NI lookup used by unicast. The first miss retains its actual registered VIF
+through the QM endpoint, wire hook and bridge capture. Complete decisions
+can install LAN, shared FTTR, ITU PON and local CPU recipients with source18
+and POL/VIF1..60. The multicast mask ignores MDATA, so the stored key zeros
+that field while retaining the exact POL. The common action clears ingress
+VIF metadata before NI replication; PON and host copies must not be decoded
+as radio direct-TX EPPs.
+
+Host copies preserve their original VIF in the quarantined group owner and
+validate the live QM endpoint before returning to Linux. They bypass a second
+hardware query and use the existing bridge-only local-copy decision. Port
+withdrawal closes the learned profile before attempting Hash removal, so a
+failed removal cannot keep an old host owner usable. Broadcast, IGMP/MLD,
+multicast TCP/PPPoE, GSO and frames exceeding the complete CPU RX buffer remain
+in software. Existing foreign-hook/TCX/qdisc restrictions still apply; only
+the exact native Wi-Fi ingress hook is additionally accepted.
+
+Validation is offline. The original classifier/Hash oracle now checks1792
+keys including source18/VIF1/60 and varying ignored MDATA. Native DMA tests
+execute7200 submissions and300 comparisons against the original descriptor
+instructions. Actual Wi-Fi receive/ingress functions cover IPv4/IPv6 data,
+control exclusions, VLAN metadata, BUSY and host-copy reinjection; actual
+bridge hooks preserve VIF identity. Complete learner/table tests include
+wireless-to-LAN/FTTR/PON/local copies, wrong-VIF rejection and failed withdrawal.
+The240-case QM host-copy suite,40 bridge receive cases,768 P6 fragmented RX
+cases, gate/core and relevant unicast/FE rollback regressions pass.
+Image/modules built successfully in
+`artifacts/fttr/mcast-wifi-input-kernel-20261107.log`; all83 driver/header/core
+inputs match the compiled source tree.
+
+Wireless output is still pending. The present direct PE downlink uses
+unicast peer MACIDs and discards an unmatched multicast destination. It
+cannot be used for multicast merely by removing the FE guard. The original
+CPU interface-directed replica path and normal mac80211 BCMC/key/DTIM behavior
+must be connected first. This increment does not establish safe VIF/group
+reuse, full hardware retirement or physical traffic acceptance.
 
 ### Outstanding implementation and acceptance
 

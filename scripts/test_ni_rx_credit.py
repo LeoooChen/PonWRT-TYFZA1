@@ -53,8 +53,8 @@ struct napi_struct {struct net_device *dev;};
 struct sk_buff {u8 storage[128],*data;unsigned len,priority,protocol,ip_summed;struct net_device *dev;};
 struct rtl9617c_ni_wifi_endpoint {struct net_device *netdev;void (*receive)(struct rtl9617c_ni_wifi_endpoint *,struct napi_struct *,struct sk_buff *,bool);};
 struct rtl9617c_ni_endpoint {void (*receive)(struct rtl9617c_ni_endpoint *,struct napi_struct *,struct sk_buff *,unsigned);};
-static unsigned rtl9617c_bridge_host_group(u32 h0,u32 h1){unsigned p=(h0>>18)&511,src=(h1>>9)&63;return ((h1>>3)&63)==16&&(src<=4||src==6||src==7)&&(p&256)?p&255:0;}
-struct rtl9617c_bridge_frame {unsigned pon_gem;};
+static unsigned rtl9617c_bridge_host_group(u32 h0,u32 h1){unsigned p=(h0>>18)&511,src=(h1>>9)&63;return ((h1>>3)&63)==16&&(src<=4||src==6||src==7||src==18)&&(p&256)?p&255:0;}
+struct rtl9617c_bridge_frame {unsigned wifi_id,pon_gem;};
 #define SKB_EXT_RTL9617C_BRIDGE 0
 static const struct rtl9617c_bridge_frame *skb_ext_find(struct sk_buff*s,int id){(void)s;(void)id;return NULL;}
 static int rtl9617c_bridge_mcast_receive(struct sk_buff *s,unsigned g,unsigned src){(void)s;(void)g;(void)src;assert(0);return -1;}

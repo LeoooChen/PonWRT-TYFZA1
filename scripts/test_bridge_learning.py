@@ -282,6 +282,12 @@ int main(void){
  skb.tagged=false;fe_bridge_capture(&bridge,&skb,&input);
  assert(skb.saved.pon_gem==11&&skb.saved.pon_generation==88&&skb.saved.tag[0].tci==(901|5<<13));
  assert(skb.saved.pon_tag[0].tci==(900|5<<13)&&skb.saved.pon_priority==5);
+ /* A wireless miss carries its VIF before the wire hook. Both real
+  * capture callbacks must preserve it across bridge PVID processing. */
+ skb.saved=(struct rtl9617c_bridge_frame){.wifi_id=60};
+ wire.in=&lan;input.in=&lan;skb.tagged=false;
+ fe_bridge_wire(&bridge,&skb,&wire);assert(skb.saved.wifi_id==60&&skb.saved.ingress==1);
+ fe_bridge_capture(&bridge,&skb,&input);assert(skb.saved.wifi_id==60&&skb.saved.port==1);
  puts("Bridge learner: real wire/bridge hooks, VLAN subinterfaces, PCP/DEI, access VID, PPPoE preservation, FDB ageing/movement, STP and link changes passed");
 }
 '''

@@ -712,6 +712,14 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 					else {dev->stats.rx_dropped++;dev_kfree_skb_any(skb);}
 					rcu_read_unlock();continue;
 				}
+				if (source==RTL_WIFI_SOURCE) {
+					const struct rtl9617c_bridge_frame *saved=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
+					struct rtl9617c_ni_wifi_endpoint *endpoint=saved && saved->wifi_id && saved->wifi_id<=RTL_WIFI_ID_MAX ?
+						rcu_dereference(rx->wifi[saved->wifi_id]):NULL;
+					if (!endpoint || endpoint->netdev!=skb->dev || !netif_running(endpoint->netdev)) {
+						dev->stats.rx_dropped++;dev_kfree_skb_any(skb);rcu_read_unlock();continue;
+					}
+				}
 				input=skb->dev;skb->protocol=eth_type_trans(skb,input);
 				input->stats.rx_packets++;input->stats.rx_bytes+=length;
 				/* Do not aggregate a host-only copy with a normal miss. */

@@ -36,7 +36,7 @@ static bool fe_mcast_port_clear(struct net_device *dev)
   rcu_read_lock();
   entries=rcu_dereference(dev->nf_hooks_ingress);
   if(entries)for(i=0;i<entries->num_hook_entries;i++)
-   if(entries->hooks[i].hook!=fe_bridge_wire)clear=false;
+   if(entries->hooks[i].hook!=fe_bridge_wire && entries->hooks[i].hook!=rtl_wifi_ingress)clear=false;
   rcu_read_unlock();
   if(!clear)return false;
  }
@@ -356,8 +356,12 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
     netdev_master_upper_dev_get(input)!=brdev || br_port_get_stp_state(input)!=BR_STATE_FORWARDING ||
     br_fdb_find_port(brdev,packet->input.source,packet->input.vid)!=input)return -ESTALE;
  data.input=fe_port(fe,__dev_get_by_index(packet->net,packet->input.ingress));
- if(!data.input || (data.input->source>4 && data.input->netdev!=fe->fttr_netdev && data.input->netdev!=fe->itu_netdev) ||
-    data.input->wifi_id || data.input->llid)return -EOPNOTSUPP;
+ if(!data.input || (data.input->source>4 && data.input->netdev!=fe->fttr_netdev && data.input->netdev!=fe->itu_netdev && !data.input->wifi_id) ||
+    (data.input->llid && !data.input->wifi_id))return -EOPNOTSUPP;
+ if(data.input->wifi_id) {
+  if(data.input->source!=RTL_WIFI_SOURCE || packet->input.wifi_id!=data.input->wifi_id ||
+     data.input->llid!=data.input->wifi_id || packet->input.pon_gem)return -ESTALE;
+ }
  if(data.input->netdev==fe->itu_netdev) {
   if(data.input->source!=7)return -EOPNOTSUPP;
   ret=fe_mcast_pon_input(fe,&packet->input);if(ret)return ret;
@@ -378,7 +382,7 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
  list_for_each_entry_safe(flow,next,&fe->flows,list)if(flow->learned && flow->replica_count) {
   if(flow->deleting || flow->mc_epoch!=packet->epoch) {
    ret=fe_delete(fe,flow);if(ret)return ret;
-  } else if(flow->input==data.input && flow->ingress_pol==packet->input.pon_gem && flow->bridge_index==packet->bridge &&
+  } else if(flow->input==data.input && flow->ingress_pol==(data.input->wifi_id?packet->input.wifi_id:packet->input.pon_gem) && flow->bridge_index==packet->bridge &&
     flow->ethernet_protocol==packet->input.protocol && flow->bridge_vid==packet->input.vid &&
     ether_addr_equal(flow->ethernet_source,packet->input.source) &&
     ether_addr_equal(flow->destination,packet->input.destination) &&
@@ -495,7 +499,7 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
  data.ethernet_protocol=packet->input.protocol;
  data.key=(struct rtl_fe_ipv4_key){.source=packet->input.ip_source[0],.destination=packet->input.ip_destination[0],
   .source_port=packet->input.source_port,.destination_port=packet->input.destination_port,
-  .protocol=packet->input.ip_protocol,.ingress=data.input->source,.llid=packet->input.pon_gem,.mask=RTL_FE_MC_LEARNED_MASK};
+  .protocol=packet->input.ip_protocol,.ingress=data.input->source,.llid=data.input->wifi_id?packet->input.wifi_id:packet->input.pon_gem,.mask=RTL_FE_MC_LEARNED_MASK};
  memcpy(data.key6.source,packet->input.ip_source,sizeof(data.key6.source));
  memcpy(data.key6.destination,packet->input.ip_destination,sizeof(data.key6.destination));
  data.action.bridge=1;data.action.check_mask=RTL_FE_MC_LEARNED_MASK;

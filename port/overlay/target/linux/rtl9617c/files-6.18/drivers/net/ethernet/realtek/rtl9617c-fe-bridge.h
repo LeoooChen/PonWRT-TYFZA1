@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /* Linux bridge decisions feed the original MAC/VLAN Hash and packet editor. */
 #include <linux/netfilter.h>
+#include "rtl9617c-ni.h"
 #include <linux/rtl9617c-qm-layout.h>
 #include <linux/netfilter_bridge.h>
 #include <linux/netfilter_netdev.h>
@@ -178,6 +179,7 @@ static unsigned int fe_bridge_wire(void *private,struct sk_buff *skb,
   spin_unlock_irqrestore(&bridge->fe->mc_lock,flags);
  }
  received=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
+ if(received)frame.wifi_id=received->wifi_id;
  if(received && received->pon_gem) {
   frame.pon_gem=received->pon_gem;frame.pon_generation=received->pon_generation;
   frame.pon_tags=frame.tags;frame.pon_priority=skb->priority;
@@ -238,6 +240,7 @@ static unsigned int fe_bridge_capture(void *private,struct sk_buff *skb,
  if(!wire || wire->epoch!=(u32)atomic_read(&bridge->epoch))return NF_ACCEPT;
  frame.ingress=wire->ingress;frame.epoch=wire->epoch;
  frame.multicast_epoch=wire->multicast_epoch;
+ frame.wifi_id=wire->wifi_id;
  if(!wire->ip_protocol)frame.ip_protocol=0;
  frame.pon_gem=wire->pon_gem;frame.pon_generation=wire->pon_generation;
  frame.pon_tags=wire->pon_tags;frame.pon_priority=wire->pon_priority;

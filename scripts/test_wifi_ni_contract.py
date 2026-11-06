@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Execute native Wi-Fi NI submission and compare its ABI with stock instructions."""
+import argparse
 import ctypes
 import hashlib
 import importlib.util
@@ -11,6 +12,10 @@ import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--stock-tool', type=Path, default=root / 'evidence/wireless-study-20261010-continuation/tools/offline_instruction_tests.py')
+parser.add_argument('--ni', type=Path, default=root / 'analysis/private/live-files/lib/modules/5.10.70/extra/ca-ne.ko')
+args = parser.parse_args()
 drivers = root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek'
 source = (drivers / 'rtl9617c-dma.c').read_text()
 start = source.index('int rtl_dma_tx_wifi(')
@@ -118,11 +123,11 @@ with tempfile.TemporaryDirectory(prefix='wifi-ni-', dir=root / 'artifacts') as w
                     '-I', str(drivers), str(path / 'test.c'), '-o', str(path / 'test')], check=True)
     subprocess.run([str(path / 'test')], check=True)
     if platform.system() == 'Linux' and platform.machine() == 'aarch64':
-        tool = root / 'evidence/wireless-study-20261010-continuation/tools/offline_instruction_tests.py'
+        tool = args.stock_tool
         spec = importlib.util.spec_from_file_location('stock_fragments', tool)
         stock = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(stock)
-        elf = (root / 'analysis/private/live-files/lib/modules/5.10.70/extra/ca-ne.ko').read_bytes()
+        elf = args.ni.read_bytes()
         assert hashlib.sha256(elf).hexdigest() == stock.EXPECTED
         fragment = stock.section(elf, '.nictrx-sec')[0x2778:0x2804]
         assembly = '''.text

@@ -22,7 +22,7 @@ struct net_device {bool running,carrier;unsigned ifindex,group,flags,num_tx_queu
 code=code.replace('struct rtl_fe_flow {',re.search(r'struct rtl_fe_mc_host \{.*?\n\};',(DRIVERS/'rtl9617c-fe.c').read_text(),re.S)[0]+'\nstruct rtl_fe_flow {')
 code=code.replace('struct rtl_fe {','struct rtl_fe_mtu {unsigned users,size,saved;};\nstruct rtl_fe {struct net_device *itu_netdev;struct rtl_itu_paths *itu_paths;struct rtl_fe_mtu mtus[16];struct rtl_fe_mc_host *mc_hosts[256];')
 code=code.replace('struct rtl_fe_mc_profile mc_profile;','''struct rtl_fe_mc_profile mc_profile;
- struct rtl_fe_mc_gate mc_gate;int lock,mc_lock;struct rtl_fe_port *ports[4];''')
+ struct rtl_fe_mc_gate mc_gate;int lock,mc_lock;struct rtl_fe_port *ports[5];''')
 code=code.replace('#include "rtl9617c-fe-mcast-profile.h"','#include "rtl9617c-fe-mcast-profile.h"\n#include "rtl9617c-fe-mcast-gate.h"')
 code=code.replace('typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32,__le32;typedef uint64_t u64;',
  'typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32,__le32;typedef uint64_t u64;\n#include "linux/rtl9617c-bridge.h"')
@@ -57,6 +57,8 @@ static void rcu_read_unlock(void){}
 static void fe_bridge_capture(void){}
 static void fe_bridge_forwarded(void){}
 static void fe_bridge_wire(void){}
+static void rtl_wifi_ingress(void){}
+#define RTL_WIFI_SOURCE 18
 static void foreign_hook(void){}
 #include "linux/rtl9617c-qm-layout.h"
 #define FE_MCAST_PENDING 16
@@ -107,7 +109,7 @@ static struct net_device *__dev_get_by_index(struct net *n,unsigned i){(void)n;r
 static unsigned br_port_get_stp_state(struct net_device *d){return d->running?3:0;}
 static struct net_device *fdb_source;
 static struct net_device *br_fdb_find_port(struct net_device *b,const u8 *m,unsigned vid){(void)b;(void)m;(void)vid;return fdb_source?fdb_source:devices[1];}
-static struct rtl_fe_port *fe_port(struct rtl_fe *fe,struct net_device *d){for(unsigned i=0;i<4;i++)if(fe->ports[i]&&fe->ports[i]->netdev==d)return fe->ports[i];return NULL;}
+static struct rtl_fe_port *fe_port(struct rtl_fe *fe,struct net_device *d){for(unsigned i=0;i<5;i++)if(fe->ports[i]&&fe->ports[i]->netdev==d)return fe->ports[i];return NULL;}
 static int fe_vlan_tpid(unsigned short p){return p==__builtin_bswap16(0x8100)?1:-EOPNOTSUPP;}
 #define htons(v) __builtin_bswap16(v)
 static unsigned get_unaligned_be32(const void *p){unsigned v;memcpy(&v,p,4);return __builtin_bswap32(v);}
@@ -134,8 +136,9 @@ static void mutex_lock(int *v){assert(!*v);*v=1;}
 static void mutex_unlock(int *v){assert(*v);*v=0;}
 static void fe_bridge_invalidate(struct rtl_fe *f){fe_mcast_invalidate(f);}
 static void fe_collect_ports(struct rtl_fe *f){(void)f;}
+static void fe_wifi_forget_port(struct rtl_fe *f,struct rtl_fe_port *p){(void)f;(void)p;}
 '''
-for name in ('fe_flow_pon','fe_pon_quiesce_locked','rtl_fe_set_itu_paths'):
+for name in ('fe_flow_pon','fe_pon_quiesce_locked','rtl_fe_set_itu_paths','rtl_fe_flush_port'):
     code+=scope['function'](name)
 code+=r'''
 int main(void){
@@ -444,6 +447,45 @@ int main(void){
  wire_image.pon_tag[0].tci=900|5<<13;
  devices[11]=NULL;assert(fe_mcast_pon_input(&fe,&wire_image)==-EOPNOTSUPP);
  free(incoming);fe.itu_paths=&paths;
+ /* Wireless input uses POL/VIF identity, with metadata cleared before
+  * replication so its host copy cannot become radio direct TX. */
+ struct net_device wifi={.ifindex=12,.mtu=1500,.running=true,.carrier=true,.master=&br,.net=&net};
+ struct rtl_fe_port wp={.fe=&fe,.netdev=&wifi,.source=18,.destination=16,.wifi_id=2,.llid=2};
+ struct nf_hook_entries wh={.num_hook_entries=2,.hooks={{rtl_wifi_ingress},{fe_bridge_wire}}};
+ wifi.nf_hooks_ingress=&wh;devices[12]=&wifi;fe.ports[4]=&wp;fdb_source=&wifi;
+ struct rtl9617c_bridge_frame wireless=skb.frame;
+ wireless.ingress=wireless.port=12;wireless.wifi_id=2;wireless.pon_gem=0;
+ paths.count=1;paths.path[0].vlan=RTL_ITU_VLAN_UNTAGGED;
+ for(unsigned local=0;local<2;local++) {
+  fe.event_count=0;skb.dev=&wifi;skb.saved=wireless;skb.saved.multicast_epoch=fe.mc_gate.epoch;
+  ticket=fe_mcast_capture_begin(&bridge,&skb,local,++fe_mcast_ticket);assert(ticket);
+  fe_mcast_capture_select(&bridge,&skb,&out);fe_mcast_capture_select(&bridge,&skb,&shared);
+  fe_mcast_capture_select(&bridge,&skb,&pon);
+  skb.dev=&out;fe_mcast_capture_output(&bridge,&skb);skb.dev=&shared;fe_mcast_capture_output(&bridge,&skb);
+  skb.dev=&pon;fe_mcast_capture_output(&bridge,&skb);
+  fe_mcast_capture_end(&bridge,ticket,true);fe_mcast_process(&bridge);
+  assert(fe.indexed&&fe.indexed->input==&wp&&fe.indexed->ingress_pol==2&&fe.mc_gate.active);
+  assert(fe.indexed->replica_count==3+local&&fe.indexed->replica_ports[2]==&pp);
+  u32 *action=fe.memory+RTL_FE_ACTION_OFFSET+fe.indexed->hash_index*RTL_FE_ACTION_BYTES;
+  assert(action[0]&(1U<<19));
+  assert(!(action[0]&(255U<<20)));
+  if(local) {
+   struct sk_buff copy={.frame=skb.frame};
+   assert(!fe_mcast_host_receive(&bridge,&copy,fe.indexed->mc_group,18)&&copy.dev==&wifi&&copy.saved.wifi_id==2);
+   assert(fe_mcast_host_local(&bridge,&copy,&br,0)==1);
+  }
+  if(local) {
+   struct sk_buff delayed={.frame=skb.frame};unsigned group=fe.indexed->mc_group;
+   assert(!fe_mcast_host_receive(&bridge,&delayed,group,18));
+   fe.age_fail=1;assert(rtl_fe_flush_port(&fe,&wifi)==-ETIMEDOUT&&!fe.mc_gate.active);
+   assert(fe_mcast_host_receive(&bridge,&delayed,group,18)==-ESTALE);
+   assert(fe_mcast_host_local(&bridge,&delayed,&br,0)==-ESTALE);
+   assert(!rtl_fe_flush_port(&fe,&wifi));
+  } else {fe_mcast_invalidate(&fe);assert(!fe_delete(&fe,fe.indexed));}
+  struct fe_mcast_packet bad={.net=&net,.bridge=10,.epoch=fe.mc_gate.epoch,.input=wireless};
+  bad.input.multicast_epoch=fe.mc_gate.epoch;bad.input.wifi_id=3;
+  assert(fe_mcast_learn(&bridge,&bad)==-ESTALE);
+ }
  for(unsigned i=0;i<16;i++)assert(!fe.mtus[i].users);
  fe_mcast_purge(&bridge);assert(!net.refs);free(fe.memory);
  puts("Native bridge multicast: complete outputs, missing/duplicate rejection, CPU host copy and host-only groups, epoch changes, shared P6, duplicate learning and generation retirement passed");

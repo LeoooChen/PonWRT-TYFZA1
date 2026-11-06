@@ -1236,7 +1236,7 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
  rtl_fe_key_set(words,RTL_FE_KEY_ORIG_LSPID,0);
  rtl_fe_key_set(words,RTL_FE_KEY_CTRL_SET_ID,0);
  rtl_fe_key_set(words,RTL_FE_KEY_TABLE_ID,0);
- rtl_fe_key_set(words,RTL_FE_KEY_MDATA_BYTE,port->wifi_id);
+ rtl_fe_key_set(words,RTL_FE_KEY_MDATA_BYTE,data.multicast?0:port->wifi_id);
  rtl_fe_key_crc(words,&crc32,&crc16);
  start=rtl_fe_hash_bucket(crc16);
  for(index=start;index<start+32;index++)if(!test_bit(index,fe->hashes))break;
@@ -1331,7 +1331,12 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
   ret=rtl_fe_mc_reference(&io,&fe->multicast,flow->mc_group);
   if(ret)goto rollback;
  }
- if(data.input->wifi_id || data.output->wifi_id) {
+ if(data.multicast && data.input->wifi_id) {
+  /* Replica POL owns PON GEM/host IDs. Clear the ingress VIF sideband so
+   * CPU0 decodes each copy as Header A, not a radio direct-TX EPP. */
+  rtl_fe_action_set(action,RTL_FE_MDATA_BYTE_VLD,1);
+  rtl_fe_action_set(action,RTL_FE_MDATA_BYTE,0);
+ } else if(data.input->wifi_id || data.output->wifi_id) {
   rtl_fe_action_set(action,RTL_FE_MDATA_BYTE_VLD,1);
   rtl_fe_action_set(action,RTL_FE_MDATA_BYTE,data.output->wifi_id);
  }
@@ -1809,6 +1814,7 @@ int rtl_fe_flush_port(struct rtl_fe *fe,struct net_device *netdev)
  if(!fe)return 0;
  mutex_lock(&fe->lock);
  port=fe_port(fe,netdev);
+ fe_mcast_invalidate(fe);
  fe_wifi_forget_port(fe,port);
  list_for_each_entry_safe(flow,next,&fe->flows,list)
   if(fe_flow_port(flow,port)) {

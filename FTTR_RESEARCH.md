@@ -110,6 +110,8 @@
 
 46. 接入ITU PON入站组播：WAN与LAN分类共同使用独立profile1，保留原GEM索引、OMCI配置代际和线上/逻辑两份VLAN信息；复用实际PON接收选择器后才安装完整副本规则。同一报文经不同GEM入站保持独立Hash和本机归属。本机副本由QM恢复原GEM，经过PON VLAN还原后绕过GRO交给桥，错误GEM/旧代/EPON切换后迟到副本均拒绝。双GEM并存、真实VLAN还原/服务检查、596项分类故障、1280组原厂键CRC、现有PON/桥/P6回归及Image/模块构建通过。无线副本、EPON专用组播、未知组播泛洪和完整硬件退场仍未完成，未做实机验证。详见[PON源入口](port/FTTR.md#pon-source-multicast-and-native-host-receive)。
 
+47. 接入无线入站组播：首次NI未命中通过实际无线端点保留VIF，完整学习以source18/POL区分接口，可复制到LAN、FTTR、ITU PON和本机。共同动作清除无线直发元数据，QM本机副本复核当前VIF端点并阻止再次查询；撤销先关闭学习代际，Hash删除失败也拒绝旧副本。1792组原厂键CRC、300组原厂DMA指令、7200次原生提交、IPv4/IPv6与控制报文分流、完整混合复制/失败撤销、240项QM/40项桥接收/768项P6回归及Image/模块构建通过。无线出站仍缺原厂CPU按接口直发适配，当前PE单播队列不能承载BCMC；资源安全复用与实机验收仍未完成。详见[无线入站与VIF身份](port/FTTR.md#wireless-source-multicast-and-vif-identity)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

@@ -22,6 +22,10 @@ struct rtl9617c_ni_frame {
 	bool raw_payload;
 };
 
+struct nf_hook_state;
+/* Native ingress hook, identified by the bridge offload policy check. */
+unsigned int rtl_wifi_ingress(void *private, struct sk_buff *skb, const struct nf_hook_state *state);
+
 struct rtl9617c_ni_wifi_endpoint {
 	struct net_device *netdev;
 	void (*receive)(struct rtl9617c_ni_wifi_endpoint *endpoint, struct napi_struct *napi,
