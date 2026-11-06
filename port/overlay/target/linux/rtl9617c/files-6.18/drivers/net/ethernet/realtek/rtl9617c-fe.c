@@ -27,6 +27,7 @@
 #include "rtl9617c-fe-pipeline.h"
 #include "rtl9617c-fe-mcast-owner.h"
 #include "rtl9617c-fe-mcast-route.h"
+#include "rtl9617c-fe-mcast-profile.h"
 #include "rtl9617c-fttr-mcast.h"
 #include "rtl9617c-fttr-cf.h"
 #include "rtl9617c-fttr-frame.h"
@@ -147,6 +148,7 @@ struct rtl_fe {
  struct rtl_fe_bridge *bridge;
  struct rtl_fe_mc_owner multicast;
  struct rtl_fe_mc_route mc_route;
+ struct rtl_fe_mc_profile mc_profile;
  DECLARE_BITMAP(hashes,RTL_FE_HASH_ENTRIES);
  DECLARE_BITMAP(counters,FE_INTERFACES);
 };
@@ -400,6 +402,8 @@ static int fe_restore(struct rtl_fe *fe)
  int ret;
 
  if(!fe->prepared)return 0;
+ ret=rtl_fe_mc_profile_restore(&io,&fe->mc_profile);
+ if(ret)return ret;
  ret=rtl_fe_mc_route_restore(&io,&fe->mc_route);
  if(ret)return ret;
  fe_write(fe,0x351c,fe_read(fe,0x351c)&~BIT(10));
@@ -613,7 +617,7 @@ static int fe_destination_put(struct rtl_fe *fe,struct rtl_fe_flow *flow)
 struct rtl_fe_rule {
  struct rtl_fe_ipv4_key key;
  struct rtl_fe_ipv6_key key6;
- bool ipv6, bridge;
+ bool ipv6, bridge, multicast_ip;
  bool vlan_exact;
  u16 ingress_tci[2];
  u8 ppp_protocol_slot;
@@ -692,6 +696,8 @@ static int fe_parse_bridge(struct rtl_fe_port *port,struct flow_rule *rule,struc
  unsigned int count,key;
  int i,ret;
 
+ data->multicast_ip=data->multicast && (flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_IPV4_ADDRS) ||
+  flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_IPV6_ADDRS));
  for(key=0;key<FLOW_DISSECTOR_KEY_MAX;key++) {
   if(!flow_rule_match_key(rule,key))continue;
   switch(key) {
@@ -699,16 +705,23 @@ static int fe_parse_bridge(struct rtl_fe_port *port,struct flow_rule *rule,struc
   case FLOW_DISSECTOR_KEY_META:case FLOW_DISSECTOR_KEY_CONTROL:
   case FLOW_DISSECTOR_KEY_VLAN:case FLOW_DISSECTOR_KEY_CVLAN:
   case FLOW_DISSECTOR_KEY_PPPOE:break;
+  case FLOW_DISSECTOR_KEY_IPV4_ADDRS:case FLOW_DISSECTOR_KEY_IPV6_ADDRS:
+   if(!data->multicast_ip)return -EOPNOTSUPP;
+   break;
   default:return -EOPNOTSUPP;
   }
  }
  if(!flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_BASIC))return -EOPNOTSUPP;
  flow_rule_match_basic(rule,&basic);
- if(basic.mask->n_proto!=htons(0xffff) || basic.mask->ip_proto)return -EOPNOTSUPP;
+ if(basic.mask->n_proto!=htons(0xffff) ||
+    (data->multicast_ip?basic.mask->ip_proto!=255:basic.mask->ip_proto!=0))return -EOPNOTSUPP;
  if(flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_CONTROL)) {
   struct flow_match_control control;
   flow_rule_match_control(rule,&control);
-  if(control.mask->thoff || control.mask->addr_type || control.mask->flags)return -EOPNOTSUPP;
+  if(control.mask->thoff || control.mask->flags)return -EOPNOTSUPP;
+  if(control.mask->addr_type && (!data->multicast_ip || control.mask->addr_type!=65535 ||
+     control.key->addr_type!=(basic.key->n_proto==htons(ETH_P_IP)?FLOW_DISSECTOR_KEY_IPV4_ADDRS:
+     FLOW_DISSECTOR_KEY_IPV6_ADDRS)))return -EOPNOTSUPP;
  }
  if(flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_META)) {
   struct flow_match_meta meta;
@@ -753,6 +766,29 @@ static int fe_parse_bridge(struct rtl_fe_port *port,struct flow_rule *rule,struc
   if(ret)return ret;
  }
  if(data->vlan_exact)data->key.mask=59;
+ if(data->multicast_ip) {
+  /* A MAC maps to many IP multicast groups. Match both full IP addresses
+   * and protocol before using a group-specific recipient set. */
+  if(data->vlan_count && !data->vlan_exact)return -EOPNOTSUPP;
+  if(data->ethernet_protocol==ETH_P_IP && !flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_IPV6_ADDRS)) {
+   struct flow_match_ipv4_addrs ip;
+   flow_rule_match_ipv4_addrs(rule,&ip);
+   if(ip.mask->src!=htonl(~0U) || ip.mask->dst!=htonl(~0U) ||
+      (ntohl(ip.key->dst)&0xf0000000U)!=0xe0000000U)return -EOPNOTSUPP;
+   data->key.source=ntohl(ip.key->src);data->key.destination=ntohl(ip.key->dst);
+  } else if(data->ethernet_protocol==ETH_P_IPV6 && !flow_rule_match_key(rule,FLOW_DISSECTOR_KEY_IPV4_ADDRS)) {
+   struct flow_match_ipv6_addrs ip;
+   flow_rule_match_ipv6_addrs(rule,&ip);
+   if(ip.key->dst.s6_addr[0]!=255)return -EOPNOTSUPP;
+   for(i=0;i<4;i++) {
+    if(ip.mask->src.s6_addr32[i]!=htonl(~0U) || ip.mask->dst.s6_addr32[i]!=htonl(~0U))return -EOPNOTSUPP;
+    data->key6.source[i]=ntohl(ip.key->src.s6_addr32[i]);
+    data->key6.destination[i]=ntohl(ip.key->dst.s6_addr32[i]);
+   }
+   data->ipv6=true;
+  } else return -EOPNOTSUPP;
+  data->key.protocol=basic.key->ip_proto;data->key.mask=RTL_FE_MC_IP_MASK;
+ }
  count=data->vlan_count;
  memcpy(data->action.vlan,data->vlan,sizeof(data->vlan));
  flow_action_for_each(i,act,&rule->action) {
@@ -1149,6 +1185,8 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
   data.key.ingress,data.key.llid,data.key.mask);
  else if(data.ipv6)rtl_fe_ipv6_key(words,&data.key6);
  else rtl_fe_ipv4_key(words,&data.key);
+ if(data.multicast_ip)rtl_fe_mc_ip_key(words,data.ipv6?data.key6.source:&data.key.source,
+  data.ipv6?data.key6.destination:&data.key.destination,data.ipv6,data.key.protocol);
  rtl_fe_vlan_key(words,data.vlan,data.vlan_count);
  if(data.vlan_exact)for(i=0;i<data.vlan_count;i++) {
   rtl_fe_bits_set(words,i?426:445,1,!!(data.ingress_tci[i]&VLAN_CFI_MASK));
@@ -1223,6 +1261,10 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
  if(data.multicast)data.action.vlan_set=false;
  rtl_fe_ipv4_action(action,&data.action);
  if(data.multicast) {
+  if(data.multicast_ip) {
+   ret=rtl_fe_mc_profile_prepare(&io,&fe->mc_profile);
+   if(ret)goto rollback;
+  }
   ret=rtl_fe_mc_owner_start(&io,&fe->multicast);
   if(ret)goto rollback;
   ret=rtl_fe_mc_route_members(&io,data.input->source,data.multicast->replica,data.multicast->count);

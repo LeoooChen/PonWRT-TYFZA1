@@ -30,6 +30,7 @@ code = r'''
 #include "rtl9617c-fe-pipeline.h"
 #include "rtl9617c-fe-mcast-owner.h"
 #include "rtl9617c-fe-mcast-route.h"
+#include "rtl9617c-fe-mcast-profile.h"
 typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32,__le32;typedef uint64_t u64;
 #define ETH_ALEN 6
 #define VLAN_CFI_MASK 4096
@@ -77,9 +78,11 @@ struct rtl_fe {
  unsigned long hashes[1024];void *memory;
  struct rtl_fe_mc_owner multicast;
  struct rtl_fe_mc_route mc_route;
+ struct rtl_fe_mc_profile mc_profile;
  int error;
  unsigned long installs,deletes;
  unsigned int reg[0xb000/4],groups[256][2],actions[64][3],map[256],dbuf[8],elp[64][2];
+ unsigned int keys[256][11],fib[1040][7],masks[128][4];
  unsigned int age,age_fail,cache_fail,ni_fail,events[64],event_count;
 };
 static struct rtl_fe_flow *fe_flow(struct rtl_fe *fe,unsigned long cookie){return fe->indexed && fe->indexed->cookie==cookie?fe->indexed:NULL;}
@@ -93,7 +96,11 @@ static int indirect(void *p,unsigned reg,unsigned command){
  if(reg==0x3928){
   if(command&BIT(30)){
    f->age=read_reg(f,0x3938);f->events[f->event_count++]=f->age?1:2;
-   if(f->age)assert(f->groups[1][0] && f->multicast.groups[1].state==RTL_FE_MC_REFERENCED);
+   if(f->age) {
+    bool referenced=false;
+    for(unsigned int g=1;g<256;g++)referenced|=f->groups[g][0] && f->multicast.groups[g].state==RTL_FE_MC_REFERENCED;
+    assert(referenced);
+   }
   } else write_reg(f,0x3938,f->age);
   if(f->age_fail){f->age_fail=0;return -ETIMEDOUT;}return 0;
  }
@@ -105,6 +112,9 @@ static int indirect(void *p,unsigned reg,unsigned command){
  } else if(reg==0x1634){row=f->actions[command&63];count=3;data=0x1640;}
  else if(reg==0x1654){row=&f->map[command&255];count=1;data=0x1658;}
  else if(reg==0x164c){row=&f->dbuf[command&7];count=1;data=0x1650;}
+ else if(reg==0x3380){row=f->keys[command&255];count=11;data=0x33ac;}
+ else if(reg==0x33b0){row=f->fib[command&2047];count=7;data=0x33cc;}
+ else if(reg==0x3910){row=f->masks[command&127];count=4;data=0x3920;}
  else {assert(reg==0x1420);row=f->elp[command&63];count=2;data=0x1428;}
  for(unsigned i=0;i<count;i++){if(command&BIT(30))row[i]=read_reg(f,data-4*i);else write_reg(f,data-4*i,row[i]);}
  return 0;
@@ -163,6 +173,18 @@ int main(void){
  assert(fe_install(&input,rule,8)==-ETIMEDOUT);fe.indexed=NULL;
  assert(fe.multicast.groups[2].state==RTL_FE_MC_RETIRED && !fe.groups[2][0]);
  assert(list_empty(&fe.flows) && list_empty(&fe.retries));
+ rule.multicast_ip=true;rule.key.mask=55;rule.action.check_mask=55;
+ rule.key.source=0x0a000001;rule.key.destination=0xef010203;rule.key.protocol=17;
+ fe.event_count=0;
+ fe.keys[7][10]=1U<<27;
+ assert(fe_install(&input,rule,9)==-EBUSY);fe.indexed=NULL;
+ assert(list_empty(&fe.flows) && !fe.mc_profile.owned && fe.keys[7][10]==(1U<<27));
+ fe.keys[7][10]=0;
+ assert(!fe_install(&input,rule,9) && fe.indexed->installed && fe.mc_profile.ready);
+ assert(fe.keys[128][10]==(1U<<27) && fe.reg[0x372c/4]==3);
+ assert(!fe_delete(&fe,fe.indexed));fe.indexed=NULL;
+ assert(!rtl_fe_mc_profile_restore(&(struct rtl_dq_io){&fe,read_reg,write_reg,indirect},&fe.mc_profile));
+ assert(!fe.keys[128][10] && !fe.reg[0x372c/4]);
  assert(!rtl_fe_mc_route_restore(&(struct rtl_dq_io){&fe,read_reg,write_reg,indirect},&fe.mc_route));
  free(fe.memory);
  puts("Production FE multicast: full recipients before Hash, P6 admission, cache/NI failures and quarantine passed");

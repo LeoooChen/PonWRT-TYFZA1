@@ -20,10 +20,11 @@ common = r'''
 #include <stdbool.h>
 #include <stdio.h>
 #include "rtl9617c-fe-format.h"
+#include "rtl9617c-fe-mcast-profile.h"
 #define VLAN_CFI_MASK 0x1000
 #define VLAN_PRIO_SHIFT 13
 struct rtl_fe_rule {
- bool bridge,ipv6,vlan_exact,pppoe_input;
+ bool bridge,ipv6,vlan_exact,pppoe_input,multicast_ip;
  unsigned char source[6],destination[6],ppp_protocol_slot;
  unsigned int ethernet_protocol,vlan_count;
  unsigned short ingress_tci[2],pppoe_session;
@@ -87,5 +88,5 @@ with tempfile.TemporaryDirectory(prefix='fe-namespace-', dir=root / 'artifacts')
     tmp = Path(tmp)
     (tmp / 'rtl9617c-fe-format.h').write_text(read('rtl9617c-fe-format.h'))
     (tmp / 'test.c').write_text(common + key_code + test)
-    subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-O2', '-I', str(tmp), str(tmp / 'test.c'), '-o', str(tmp / 'test')], check=True)
+    subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-O2', '-I', str(tmp), '-I', str(drivers), str(tmp / 'test.c'), '-o', str(tmp / 'test')], check=True)
     subprocess.run([str(tmp / 'test')], check=True)

@@ -39,6 +39,7 @@ common = r'''
 #include <linux/ppp_defs.h>
 #include "rtl9617c-fe-format.h"
 #include "rtl9617c-fe-mcast.h"
+#include "rtl9617c-fe-mcast-profile.h"
 #include "rtl9617c-pon-path.h"
 typedef uint8_t u8;typedef uint16_t u16,__be16;typedef uint32_t u32;
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
@@ -638,6 +639,27 @@ int main(void)
    if(tags==2)assert(parsed.ingress_tci[1]==mc.replica[0].tag[1].tci);
   }
   rule.cvlan_mask.vlan_priority=rule.cvlan_mask.vlan_dei=0;
+  mc=(struct rtl_fe_mc_rule){0};parsed=(struct rtl_fe_rule){.multicast=&mc};
+  assert(fe_parse(&lp,&cls,&parsed)==-EOPNOTSUPP);
+  rule.used&=~BIT(FLOW_DISSECTOR_KEY_CVLAN);rule.used|=BIT(FLOW_DISSECTOR_KEY_IPV4_ADDRS);
+  rule.basic.ip_proto=17;rule.basic_mask.ip_proto=255;
+  rule.ipv4.src=htonl(0x0a000001);rule.ipv4.dst=htonl(0xef010203);
+  rule.ipv4_mask.src=rule.ipv4_mask.dst=~0U;
+  mc=(struct rtl_fe_mc_rule){0};parsed=(struct rtl_fe_rule){.multicast=&mc};
+  assert(!fe_parse(&lp,&cls,&parsed) && parsed.multicast_ip && parsed.key.mask==55);
+  assert(parsed.key.source==0x0a000001 && parsed.key.destination==0xef010203 && parsed.key.protocol==17);
+  rule.ipv4_mask.dst=htonl(0xffffff00);
+  mc=(struct rtl_fe_mc_rule){0};parsed=(struct rtl_fe_rule){.multicast=&mc};
+  assert(fe_parse(&lp,&cls,&parsed)==-EOPNOTSUPP);
+  rule.used&=~BIT(FLOW_DISSECTOR_KEY_IPV4_ADDRS);rule.used|=BIT(FLOW_DISSECTOR_KEY_IPV6_ADDRS);
+  rule.basic.n_proto=htons(ETH_P_IPV6);
+  rule.ipv6.src.s6_addr32[0]=htonl(0x20010db8);rule.ipv6.dst.s6_addr32[0]=htonl(0xff3e0000);
+  rule.ipv6.src.s6_addr32[3]=htonl(1);rule.ipv6.dst.s6_addr32[3]=htonl(123);
+  memset(&rule.ipv6_mask,255,sizeof(rule.ipv6_mask));
+  mc=(struct rtl_fe_mc_rule){0};parsed=(struct rtl_fe_rule){.multicast=&mc};
+  assert(!fe_parse(&lp,&cls,&parsed) && parsed.ipv6 && parsed.multicast_ip);
+  assert(parsed.key6.source[0]==0x20010db8 && parsed.key6.destination[3]==123);
+  rule.ipv6_mask.src.s6_addr32[2]=0;
   mc=(struct rtl_fe_mc_rule){0};parsed=(struct rtl_fe_rule){.multicast=&mc};
   assert(fe_parse(&lp,&cls,&parsed)==-EOPNOTSUPP);
  }

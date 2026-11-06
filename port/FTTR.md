@@ -4104,6 +4104,54 @@ ONU source-MAC rewriting, PON/radio replicas and complete DMA/AFT/FE/PE/MiniOLT
 retirement remain work. No physical forwarding or complete FTTR acceptance
 is claimed by these offline checks.
 
+### Source/group IP multicast Hash profile
+
+The primary Hash profile already uses all eight tuples for unicast, per-VIF,
+exact VLAN and PPPoE forwarding. IP-specific multicast rules now use a separate
+profile1 and classifier IF_ID slot0 in the LAN half (key128/FIB512). This
+classifier matches multicast MACs except broadcast, preserves the source port,
+and keeps CPU16 as the miss destination. Profile1 retains the explicit
+MAC-based templates61/59 ahead of the new IP template55. It is prepared lazily
+for the first IP-specific multicast rule; ordinary unicast keeps profile0.
+
+The new mask includes full source and group IPv4/IPv6 addresses, IP protocol,
+EtherType, source/destination MAC, ingress, LLID and two exact VLAN tags with
+PCP/DEI. Errors/fragments/options miss it. The complete replica sequence is
+still required. Partial IP prefixes, a nonmulticast group, mismatched address
+family, and wildcard tag PCP/DEI are rejected. This prevents two IP groups
+sharing an Ethernet multicast address from sharing a hardware recipient set,
+and keeps UDP data rules from consuming IGMP/MLD control traffic.
+
+`rtl9617c-fe-mcast-profile.h` owns the classifier key/FIB, mask55 and profile1
+register snapshots. It verifies that profile1 is inactive, no active tuple
+references mask55, and no existing classifier key is active before taking
+ownership. All mask/profile/FIB data is written and read back before the key
+becomes valid. Restoration first invalidates and reads back that key, then
+restores the saved profile, mask and FIB; failed operations retain ownership
+for retry. It does not reset the separate NI/action quarantine.
+
+`trace_stock_fttr_mcast_classifier.py` executes the actual FC profile producer
+and original mask initializer. Original profile2 has a destination-only128-bit
+IP template and a source-plus-destination128-bit template. The native mask adds
+MAC, protocol, ingress and exact-tag constraints required by Linux ownership.
+Twelve actual classifier key/action conversions match the native encoder.
+128 IPv4/IPv6 source/group cases, including different groups with the same
+multicast MAC, match the original masked key and CRC16/CRC32 with randomized
+ignored fields. Original CRC input selects main-table/profile before those
+fields are masked; mask lookup responses are modeled explicitly.
+
+`test_fe_mcast_profile.c` covers554 indirect-command failures, applied-write
+completion loss, publication order, exact restoration and foreign-state
+refusal under ASan/UBSan. Production install/delete tests now include this
+profile, and parser, namespace, LAN/P6 and bridge-learner regressions pass.
+The current Image/modules build and source consistency are verified; reports
+are `mcast-classifier-20261106.json` and `mcast-ip-profile-kernel-20261106.log`.
+
+This is the hardware entry needed for automatic bridge multicast. The bridge
+producer and its complete membership/filter/router/local-receive snapshot are
+still being implemented; no automatic MDB acceleration or physical hit is
+claimed by this profile work.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
