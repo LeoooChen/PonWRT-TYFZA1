@@ -4189,9 +4189,10 @@ through the existing Hash/NI/action/QM pipeline. The current supported input
 is a native LAN source0..4. Outputs are native LAN ports and the admitted
 shared `fttr-mc`; it adds the original outer8100/VID4095 and at most one customer
 tag. The established per-UNI duplicate suppression is preserved. An output
-outside this set, raw P6, PON, radio, hairpin, or a required local CPU copy
-keeps the entire decision in software. This is a deliberately incomplete
-hardware coverage boundary, not a claim that those FTTR functions are done.
+outside this set, raw P6, PON, radio or hairpin keeps the entire decision in
+software. Local CPU copies were initially excluded; the implementation below
+now supports them. These remaining paths are an incomplete hardware coverage
+boundary, not a claim that those FTTR functions are done.
 
 Learned mask54 includes both full IP addresses, UDP source/destination ports,
 EtherType, source/destination MAC, physical ingress and exact tag stack.
@@ -4240,9 +4241,9 @@ CPU-DEEPQ regressions pass. The final Image/modules build is
 `artifacts/fttr/mcast-learn-kernel-20261106.log`; the new patch applies and
 reverses with zero fuzz and the built driver/header/core sources match.
 
-This still does not establish complete FTTR multicast parity. Required local
-CPU copies, PON/radio/ONU-source acceleration and safe resource reuse remain
-work. Original tuple deletion only clears a tuple and reduces its count; it
+This still does not establish complete FTTR multicast parity. Local CPU
+copies are implemented below; PON/radio/ONU-source acceleration and safe
+resource reuse remain work. Original tuple deletion only clears a tuple and reduces its count; it
 has no explicit cache-drain wait. The native gate is therefore not a proof
 that already-selected/cache/in-flight hardware packets have retired. Published
 NI groups remain quarantined (255 cumulative publications,64 immutable action
@@ -4337,6 +4338,9 @@ host-copy recipes. The actual QM P6 regression retains all768 cases.
 The final Image/modules build is
 `artifacts/fttr/mcast-host-kernel-final-20261106.log`; patch223 replays and reverses
 with zero fuzz/offset and the compiled RTL9617C sources match the overlay.
+The worktree subsequently merged main457f1c4 (mesh and STA offload); shared
+FE unicast/multicast/peer-route regressions and the merged Image/modules build
+also pass (`artifacts/fttr/mcast-host-main-kernel-20261106.log`, mesh enabled).
 
 Resource retirement is still incomplete. Each published host generation needs
 its own immutable action (64 total action slots, shared with other recipes),
