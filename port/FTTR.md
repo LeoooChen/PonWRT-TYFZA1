@@ -799,7 +799,7 @@ command loads `/etc/tyfza1-fttr.services`; authentication and FPGA startup remai
 Service policy rows have ten fields:
 
 ```
-serial-or-* kind UNI-ordinal slot priority VID-or-none fixed assured maximum bridge-or--
+serial-or-* kind UNI-ordinal slot priority VID-or-none-or-filter:VID fixed assured maximum bridge-or--
 ```
 
 The serial is16 hexadecimal digits in the hardware inventory's vendor-first
@@ -927,7 +927,8 @@ rules, not a complete forwarding path or supported subordinate model.
 for the explicitly selected UNI. Kind0 is Ethernet; kind2 is VEIP; `shared`
 with instance0 selects all reported Ethernet/VEIP UNIs. `none`
 selects the original transparent UNI policy; a VID0..4094 selects the original
-access policy with the chosen priority. Bandwidth values are the existing
+access policy with the chosen priority. `filter:VID` retains transparent UNI
+rows and filters only the ANI/GEM bridge port by that VID. Bandwidth values are the existing
 hardware grant units, not kbit/s. It emits `service_state`, `service_objects`
 and (when reached) `service_vlan`, retaining the captured serial, actual
 resource IDs, grant observations and primary/cleanup diagnostics. It uses the
@@ -5115,6 +5116,39 @@ timing, physical PN order, queue drainage or safe resource reuse. AP ordinary
 BCMC still uses the owned CPU-dispatch path, matching the factory's wireless
 entry while using native NI/QM replication and PE-assisted TX construction.
 Direct NI-to-PE BCMC bypass and complete FTTR acceptance remain unfinished.
+
+### Independent UNI mode and ANI VLAN filtering
+
+The service CLI and resident policy accept `filter:VID` in the existing VLAN
+field. It configures the original ANI class84 filter while keeping the selected
+UNIs in transparent mode4. A numeric VID still selects access mode; `none`
+remains transparent with no ANI filter. Runtime service and ownership journals
+record `filter_only` so this distinction survives inspection and cleanup.
+
+This separation is required by the original shared multi-service recipe.
+`trace_stock_fttr_default.py` now executes
+`plr_gponrm_cfg_card_uni_init` and its automatic VLAN selector: the initialized
+UNI mode is4 and produces the transparent rule, independently of each flow's
+ANI VLAN filter. Merely generating numeric VID100/200/etc. policies would
+incorrectly replace every UNI's untagged/access behavior on each service.
+
+Actual AF_PACKET CLI tests compare ANI Create messages and transparent EVTO
+rows with the target original producers, cover single and shared Ethernet/VEIP
+attachments, read-only repeated adoption, partial failure and restoration.
+The resident two-ONU test uses the original authentication/grant-clear startup
+and checks journals, VLAN bridge attachment, migration, drift, timeout,
+replacement and restart adoption. A run without that grant-clear setup stopped
+on stale DBA after replacing the simulated ONU inventory; it is not counted as
+a passing lifecycle test. GCC14.4/musl package compilation and staging install
+pass (`artifacts/fttr/filter-package-direct-20261107.log`); the global overlay
+script encountered an existing LuCI patch conflict, so only the already-synced
+FTTR package was built directly. No full firmware image build is claimed here.
+
+The controller still permits one service per ONU. Multiple GEM plans need
+shared object ownership, per-GEM Linux ports, complete rollback and sync checks
+before importing the full default count2..8 recipe. This change supplies the
+correct VLAN behavior for that work, not complete multi-service support or
+physical traffic acceptance.
 
 ### Outstanding implementation and acceptance
 

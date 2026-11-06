@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 import time
 
-from test_fttr_association import Original
+from test_fttr_association import Original, Ani
 from test_fttr_gem import Original as OriginalGem, Config
 from arm64_elf_oracle import ElfOracle
 from test_fttr_controller import HOST, OLT
@@ -131,7 +131,7 @@ def main():
             with device.joinpath('tcont_state').open('r+b') as f:
                 f.seek(offset); f.write(struct.pack('<II',fixed,limits))
 
-        def run(case='normal', veip=False, tagged=False, initial=None, backend='asic9690', shared=False, multicast=0):
+        def run(case='normal', veip=False, tagged=False, initial=None, backend='asic9690', shared=False, multicast=0, filter_only=False):
             nonlocal offset
             device.joinpath('backend').write_text(backend+'\n')
             physical_slot = 0 if backend == 'fpga1' else 1
@@ -178,7 +178,7 @@ def main():
                 return rows
 
             query = subprocess.Popen([str(args.control.resolve()),str(device),'service','7','shared-ctc' if multicast==2 else 'shared-mcast' if multicast else 'shared' if shared else '2' if veip else '0',
-                '0' if shared else '0x107','1','3','200' if tagged else 'none','50','100','200','fts-host'],
+                '0' if shared else '0x107','1','3','filter:200' if filter_only else '200' if tagged else 'none','50','100','200','fts-host'],
                 stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,
                 env=dict(os.environ,LD_PRELOAD=str(device/'sysfs.so'),FTTR_SERVICE_CASE=case))
             try:
@@ -290,6 +290,23 @@ def main():
             assert reused['configured'] and not reused['grant_sent'] and not writes
             assert not any(o[0] in (0x44,0x48,0x46) for o in again)
         checks.append('fresh MIB chooses available real T-CONT and related upstream queue; Ethernet transparent and VEIP access paths configure/read back all objects, UNI administration, local DBA and original compound VLAN policy; repeats send no configuration writes')
+        for shared in (False,True):
+            result,events,pool,table,operations,grants=run(shared=shared,tagged=True,filter_only=True)
+            assert result['configured'] and result['filter_only'] and grants==[(50,100,200)]
+            unis=[e for e in events if e['event']=='service_uni']
+            expected=master_rules(master,0xfbeb0,0,0,0)
+            for u in unis:
+                assert [row for key,row in table.items() if not shared or key[0]==u['port']]==expected
+            ani=Ani();ani.entity=result['ani_port'];ani.bridge=0x8080;ani.pointer=result['gem']
+            ani.port=pool[47,ani.entity][0x4000][0];ani.count=1;ani.vlans[0]=200
+            assert [bytes.fromhex(o[3])[2:] for o in operations if o[0]==0x44 and o[1] in (47,84) and o[2]==ani.entity]==[b[2:] for b in master.ani(ani)]
+            reused,_,_,_,again,writes=run(shared=shared,tagged=True,filter_only=True,initial=(pool,table))
+            assert reused['configured'] and not writes and not any(o[0] in (0x44,0x48,0x46) for o in again)
+            failed,_,pool,table,_,grants=run(case='vlan-reject',shared=shared,tagged=True,filter_only=True)
+            assert failed['error']==-errno.EREMOTEIO and not failed['cleanup_error'] and not table
+            assert not any(c in (45,47,84,171,266,268,272) for c,i in pool)
+            assert grants==[(50,100,200),(0,0,0)]
+        checks.append('filter:VID uses the original ANI VLAN filter with transparent UNI rows, both single/shared attachments; original ANI Create frames agree, repeated adoption is read-only and partial failure restores UNI/DBA/core ownership')
         for tagged in (False,True):
             result,events,pool,table,operations,grants=run(shared=True,tagged=tagged)
             assert result['configured'] and result['shared'] and result['uni_count']==4

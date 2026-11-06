@@ -10,10 +10,13 @@
 
 struct fttr_service_config {
 	uint16_t uni, slot, priority, vid, fixed, assured, maximum;
-	bool veip, tagged, shared;
+	bool veip, tagged, shared, filter_only;
 	uint8_t multicast; /* 0 disabled, 1 original standard, 2 original CTC profile */
 	enum fttr_backend backend;
 };
+
+/* none: transparent; VID: access; filter:VID: transparent UNI/ANI filter. */
+int fttr_service_vlan_parse(const char *text, bool *tagged, bool *filter_only, uint16_t *vid);
 
 struct fttr_service_uni {
 	uint16_t instance, port;

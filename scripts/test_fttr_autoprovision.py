@@ -88,6 +88,7 @@ def main():
     p.add_argument('--move-control', type=Path, help='exercise the resident SN reservation move')
     p.add_argument('--output', type=Path, required=True)
     p.add_argument("--shared", action="store_true", help="exercise shared Ethernet/VEIP services and release with --move-control")
+    p.add_argument("--filter-only", action="store_true", help="use transparent UNI mode with ANI VLAN filtering")
     p.add_argument("--multicast", choices=("standard","ctc"), help="exercise remote multicast shared provisioning and migration")
     p.add_argument("--wifi", action="store_true", help="exercise resident remote Wi-Fi policies")
     p.add_argument("--onu-policy", action="store_true", help="exercise per-ONU authentication and persistent assignment")
@@ -96,6 +97,7 @@ def main():
     args = p.parse_args()
     assert not args.multicast or args.shared
     assert not args.shared or (args.move_control and not args.onu_policy)
+    assert not args.filter_only or args.shared
 
     physical_slot = 0 if args.backend == "fpga1" else 1
     downstream_length = args.backend=='fpga2'
@@ -449,6 +451,13 @@ def main():
             assert device.joinpath('tx_enable').read_text()=='1\n'
             assert ni.joinpath('fttr_forward').read_text()=='0\n'
         device.joinpath('backend').write_text(args.backend+'\n')
+        for vid in ('filter:', 'filter:none', 'filter:4095', 'filter:0x1000', 'filter:12x'):
+            rejected_policy=root/'unsupported-services'
+            rejected_policy.write_text(f'* shared 0 1 3 {vid} 50 100 200 br-fttr\n')
+            rejected=subprocess.run([str(args.daemon.resolve()),str(device),str(ni),str(store),
+                'fap-host','--services',str(rejected_policy)],capture_output=True,text=True,timeout=2)
+            assert rejected.returncode==1 and not store.joinpath('status.json').exists()
+            assert device.joinpath('tx_enable').read_text()=='1\n' and ni.joinpath('fttr_forward').read_text()=='0\n'
         # Missing forwarding withdrawal is a hard startup error, never an
         # acceleration-only fallback that still allows old CPU business TX.
         ni.joinpath('fttr_forward').unlink()
@@ -751,7 +760,8 @@ def main():
         if args.move_control:
             if args.shared:
                 kind='shared-ctc' if args.multicast=='ctc' else 'shared-mcast' if args.multicast else 'shared'
-                policy.write_text(f'* {kind} 0 1 3 200 50 100 200 br-fttr\n')
+                vid='filter:200' if args.filter_only else '200'
+                policy.write_text(f'* {kind} 0 1 3 {vid} 50 100 200 br-fttr\n')
             checks=[];nodes[7].hold=False;nodes[7].wifi_hold=False;nodes[9].fail_upload_once=False
             def move(from_id,to,serial=None,target=None,error=0):
                 client=subprocess.Popen([str(args.move_control.resolve()),str(store),'onu-move',str(from_id),
@@ -792,6 +802,15 @@ def main():
                                       (329 if uni['kind']==2 else 11,uni['instance'])}
                             if uni['kind']==0: expected.add((84,uni['port']))
                             assert {(o['class'],o['instance']) for o in uni['objects']}==expected
+                        recipe=next(e for e in journal(id) if e['event']=='service_recipe')
+                        assert recipe['filter_only']==args.filter_only and recipe['tagged'] and recipe['vid']==200
+                        if args.filter_only:
+                            from test_fttr_vlan import master_rules
+                            expected=master_rules(stock,0xfbeb0,0,0,0)
+                            for uni in unis:
+                                assert [row for key,row in nodes[id].table.items() if key[0]==uni['port']]==expected
+                            ani=journal(id)[0]['ani_port']
+                            assert nodes[id].pool[84,ani][0x8000]==b'\x00\xc8'+bytes(22)
                         if args.multicast:
                             recipe=next(e for e in journal(id) if e['event']=='service_recipe')
                             mc=next(e for e in journal(id) if e['event']=='service_multicast')

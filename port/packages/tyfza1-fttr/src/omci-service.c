@@ -5,6 +5,28 @@
 
 #include "omci-service.h"
 
+int fttr_service_vlan_parse(const char *text, bool *tagged, bool *filter_only, uint16_t *vid)
+{
+	char *end;
+	unsigned long value;
+	bool filter = !strncmp(text, "filter:", 7);
+	const char *number = filter ? text + 7 : text;
+
+	if (!strcmp(text, "none")) {
+		*tagged = *filter_only = false;
+		*vid = 0;
+		return 0;
+	}
+	errno = 0;
+	value = strtoul(number, &end, 0);
+	if (errno || !*number || *end || value > 4094)
+		return -EINVAL;
+	*tagged = true;
+	*filter_only = filter;
+	*vid = value;
+	return 0;
+}
+
 static const struct fttr_mib_entity *entity(const struct fttr_mib_model *model, uint16_t c, uint16_t id)
 {
 	const struct fttr_mib_entity *e;
@@ -174,7 +196,8 @@ int fttr_service_start(struct fttr_service_job *job, uint16_t onu, uint16_t *cou
 	job->transaction.me.onu = onu;
 	memcpy(job->transaction.serial, serial, 8);
 	job->config = *config;
-	if (config->multicast > 2 || (config->multicast && !config->shared))
+	if (config->multicast > 2 || (config->multicast && !config->shared) ||
+	    (config->filter_only && !config->tagged) || (config->tagged && config->vid > 4094))
 		return job->error = -EINVAL;
 	ret = fttr_miniolt_alloc_id(config->backend, onu, config->slot);
 	if (ret < 0)
@@ -694,7 +717,7 @@ apply_objects:
 		}
 		job->grant_verified = true;
 		job->phase = "vlan";
-		if (job->config.tagged) {
+		if (job->config.tagged && !job->config.filter_only) {
 			struct fttr_vlan_plan untagged;
 
 			/* Original access mode1 b4c10. */
@@ -703,7 +726,8 @@ apply_objects:
 				0, job->config.vid, job->config.priority, false);
 			memcpy(plan.rows[plan.count++], untagged.rows[0], 16);
 		} else {
-			/* Original transparent mode4 b5704. */
+			/* Original mode4 b5704, also the default UNI mode when
+			 * individual shared-bridge flows have ANI VLAN filters. */
 			fttr_vlan_plan_build(&plan, FTTR_VLAN_FORWARD_ALL, 0, 0, 0, false);
 		}
 		fttr_vlan_change_start(&job->unis[0].vlan, onu, counter, job->unis[0].port, &plan);
@@ -768,10 +792,11 @@ int fttr_service_dump(const struct fttr_service_job *job, FILE *file)
 	for (i = 0; i < 8; i++)
 		fprintf(file, "%02x", job->transaction.serial[i]);
 	fprintf(file, "\",\"phase\":\"%s\",\"error\":%d,\"cleanup_error\":%d,"
-		"\"shared\":%s,\"uni_count\":%u,\"configured\":%s,\"tcont\":%u,\"queue\":%u,\"gem\":%u,\"uni_port\":%u,\"ani_port\":%u,"
+		"\"shared\":%s,\"filter_only\":%s,\"uni_count\":%u,\"configured\":%s,\"tcont\":%u,\"queue\":%u,\"gem\":%u,\"uni_port\":%u,\"ani_port\":%u,"
 		"\"grant_sent\":%s,\"grant_verified\":%s,\"grant_restored\":%s,\"grant_withdrawn\":%s,"
 		"\"previous_grant\":[%u,%u],\"observed_grant\":[%u,%u],\"vlan_error\":%d,\"vlan_cleanup_error\":%d}\n",
-		job->phase, job->error, job->cleanup_error, job->config.shared ? "true" : "false", job->uni_count,
+		job->phase, job->error, job->cleanup_error, job->config.shared ? "true" : "false",
+		job->config.filter_only ? "true" : "false", job->uni_count,
 		job->configured ? "true" : "false", job->tcont, job->queue,
 		job->gem, job->uni_port, job->ani_port, job->grant_sent ? "true" : "false",
 		job->grant_verified ? "true" : "false", job->grant_restored ? "true" : "false",

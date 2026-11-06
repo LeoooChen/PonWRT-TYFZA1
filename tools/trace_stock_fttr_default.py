@@ -223,6 +223,30 @@ def shared_uni_selection(binary):
     return cases
 
 
+def default_uni_vlan(binary):
+    """Execute the initialized UNI mode and its automatic VLAN row selection."""
+    rows = []
+    def hook(name, args):
+        if name == 'lstInit':
+            oracle.uc.mem_write(args[0], bytes(24)); return 0
+        if name == 'lstFirst': return 0
+        if name == 'install':
+            rows.append(list(struct.unpack('<5H', oracle.uc.mem_read(args[1] + 40, 10))))
+            return 0
+        raise AssertionError(('unmodeled default UNI VLAN boundary', name))
+    oracle = ElfOracle(binary, hook)
+    oracle.symbols['auto_vlan'] = 0xb69bc
+    oracle.hooks[0xb4778] = 'install'
+    address, record, context = (oracle.scratch + n for n in (0x2000, 0x3000, 0x4000))
+    oracle.uc.mem_write(record, bytes(96))
+    oracle.call('plr_gponrm_cfg_card_uni_init', record)
+    assert oracle.uc.mem_read(record + 19, 1) == b'\x04'
+    oracle.uc.mem_write(context, struct.pack('<Q', record) + bytes(96))
+    assert oracle.call('auto_vlan', address, context) == 0
+    assert rows == [[0xfffe, 0xfffe, 0xfffe, 0xfffe, 0]]
+    return dict(mode=4, rows=rows, scope='Actual configured UNI initializer and automatic mode selector; empty custom-rule list and row-install boundary are modeled. Default flow VLAN filters are independent of this transparent UNI mode.')
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ('caller', 'relay', 'output'):
@@ -252,7 +276,7 @@ def main():
                     for onu in (1, 6, 63) for slot in (1, 7)]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(dict(cases=cases, failures=failures, translations=translations, bridge_selection=bridge_selection(args.relay),
-        shared_uni_selection=shared_uni_selection(args.relay),
+        shared_uni_selection=shared_uni_selection(args.relay), default_uni_vlan=default_uni_vlan(args.relay),
         caller_sha256=hashlib.sha256(args.caller.read_bytes()).hexdigest(),
         relay_sha256=hashlib.sha256(args.relay.read_bytes()).hexdigest(),
         findings=['Default two-slot ONU creates one named T-CONT/GEM/flow and enables multicast.',
@@ -261,7 +285,7 @@ def main():
                   'With the first default flow, the original selector chooses the shared bridge; it does not select Ethernet UNI ordinal0.',
                   'Original failed provisioning deletes/re-adds the ONU, preserves the initiating error and ignores cleanup results.'],
         scope='Actual original producer and flow API adaptation; allocator/remote OMCI, semaphore, configuration owner and reset IO are modeled. No complete service/topology/traffic or hardware acceptance.'), indent=2) + '\n')
-    print(f'PASS: {len(cases)} original default/multi-slot recipes, {len(failures)} failure paths, {len(translations)*2} flow adapter calls, 4 bridge selections and 3 shared-UNI enumerations')
+    print(f'PASS: {len(cases)} original default/multi-slot recipes, {len(failures)} failure paths, {len(translations)*2} flow adapter calls, 4 bridge selections, 3 shared-UNI enumerations and actual default transparent VLAN initialization')
 
 
 if __name__ == '__main__': main()

@@ -537,10 +537,10 @@ out:
 }
 
 static int service_command(int directory, unsigned int id, const uint16_t fields[8],
-			   bool tagged, const char *interface)
+			   bool tagged, bool filter_only, const char *interface)
 {
 	struct fttr_service_config config = { .veip = fields[0] == 2, .shared = fields[0] >= 3, .multicast = fields[0] >= 4 ? fields[0] - 3 : 0, .uni = fields[1],
-		.slot = fields[2], .priority = fields[3], .tagged = tagged, .vid = fields[4],
+		.slot = fields[2], .priority = fields[3], .tagged = tagged, .filter_only = filter_only, .vid = fields[4],
 		.fixed = fields[5], .assured = fields[6], .maximum = fields[7] };
 	struct fttr_service_job job = { .phase = "inventory" };
 	struct fttr_mib_model model = { 0 };
@@ -782,6 +782,7 @@ int main(int argc, char **argv)
 		} else if (query || binding || gem || profiles || uni || ani || mapper || vlan || vlan_table || service) {
 			uint16_t fields[8];
 			unsigned int i;
+			bool tagged = false, filter_only = false;
 
 			for (i = 0; i < (service ? 8U : vlan_table ? 1U : (gem || vlan) ? 6U : profiles ? 4U : (binding || uni || ani) ? 5U : 3U); i++) {
 				unsigned long value;
@@ -790,8 +791,11 @@ int main(int argc, char **argv)
 					fields[0] = !strcmp(argv[4], "shared") ? 3 : !strcmp(argv[4], "shared-mcast") ? 4 : 5;
 					continue;
 				}
-				if (service && i == 4 && !strcmp(argv[8], "none")) {
-					fields[4] = 0;
+				if (service && i == 4) {
+					if (fttr_service_vlan_parse(argv[8], &tagged, &filter_only, &fields[4])) {
+						close(directory);
+						return 2;
+					}
 					continue;
 				}
 				errno = 0;
@@ -814,7 +818,7 @@ int main(int argc, char **argv)
 				fields[i] = value;
 			}
 			if (service)
-				ret = service_command(directory, id, fields, strcmp(argv[8], "none"), argc == 13 ? argv[12] : "fttr0");
+				ret = service_command(directory, id, fields, tagged, filter_only, argc == 13 ? argv[12] : "fttr0");
 			else if (vlan || vlan_table)
 				ret = vlan_command(directory, id, fields, vlan_table,
 					vlan_table ? (argc == 6 ? argv[5] : "fttr0") : (argc == 11 ? argv[10] : "fttr0"));

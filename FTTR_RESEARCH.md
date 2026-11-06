@@ -140,6 +140,8 @@
 
 61. 按目标原厂补齐AP普通BCMC的HIQ选择：所有普通AP组播DATA统一进入DMA9/QSEL0x11，避免休眠结束后新GTK帧进入普通队列而越过HIQ旧PN。实际执行原厂PN/完整元数据/两芯片WD，确认原厂内嵌IV、原生ARM分配PN后以SW_SEC_IV交硬件插入的适配边界；不新增PE独立PN分配者。执行也纠正此前笔记：原厂48位PN溢出到0而非1。Linux真实PS决策→原生monitor/TX的90次发送、45组实际请求到MIPS描述符、96组原厂PN/元数据及192组WD通过；旧代码可复现首个非DTIM队列断言失败，密钥/BAR/STA/组播/桥回归、Image/模块和180项源码核对通过。未执行硬件DTIM调度、空口PN排序或完整退场；AP直达PE绕过CPU、资源复用和全部FTTR验收仍未完成。详见[AP高队列与PN](port/FTTR.md#ap-bcmc-high-queue-and-software-pn-ownership)。
 
+62. 补齐默认多业务所需的UNI/ANI VLAN语义分离：CLI与常驻策略接受`filter:VID`，UNI保持原厂透明mode4，仅ANI/GEM桥端口过滤该VID；原有数字VID的access语义不变。执行原厂UNI初始化及自动模式选择确认默认mode4，避免用多个access策略覆盖共享UNI。真实AF_PACKET单/共享UNI业务对比原厂ANI报文及EVTO规则、重复接管、部分失败恢复通过；带认证和授权清理的双ONU常驻迁移/撤销/漂移/超时/重启通过。无授权清理的模拟库存重建留下旧DBA，被控制器拒绝，不计通过。GCC14.4/musl包编译安装通过；全局同步遇已有LuCI补丁冲突后直接构建已同步的FTTR包。仍需多个GEM的共同所有权、逐业务网口与完整生命周期，不能据此称多业务或默认配置导入完成。详见[UNI与ANI独立过滤](port/FTTR.md#independent-uni-mode-and-ani-vlan-filtering)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

@@ -210,6 +210,7 @@ static int load_policies(struct controller *c, const char *path)
 		char *token[11], *save, *p, *end;
 		unsigned long value[8];
 		unsigned int n = 0, i;
+		bool tagged = false, filter_only = false;
 
 		number++;
 		for (p = strtok_r(line, " \t\r\n", &save); p && n < 11;
@@ -228,8 +229,12 @@ static int load_policies(struct controller *c, const char *path)
 				value[0] = !strcmp(token[1], "shared") ? 3 : !strcmp(token[1], "shared-mcast") ? 4 : 5;
 				continue;
 			}
-			if (i == 4 && !strcmp(token[i + 1], "none")) {
-				value[i] = 0;
+			if (i == 4) {
+				uint16_t vid;
+
+				ret = fttr_service_vlan_parse(token[i + 1], &tagged, &filter_only, &vid);
+				if (ret) break;
+				value[i] = vid;
 				continue;
 			}
 			errno = 0;
@@ -267,7 +272,7 @@ static int load_policies(struct controller *c, const char *path)
 		policy->config = (struct fttr_service_config) {
 			.veip = value[0] == 2, .shared = value[0] >= 3,
 			.multicast = value[0] >= 4 ? value[0] - 3 : 0, .slot = value[2], .priority = value[3],
-			.tagged = strcmp(token[5], "none") != 0, .vid = value[4],
+			.tagged = tagged, .filter_only = filter_only, .vid = value[4],
 			.fixed = value[5], .assured = value[6], .maximum = value[7]
 		};
 		if (policy->config.multicast && strcmp(token[9], "-"))
@@ -519,9 +524,9 @@ static int save_service(struct controller *c, unsigned int id)
 	if (job->transaction.count)
 		fttr_objects_job_dump(&job->transaction, file, "service_objects");
 	fprintf(file, "{\"event\":\"service_recipe\",\"kind\":%u,\"uni\":%u,\"uni_ordinal\":%u,\"slot\":%u,"
-		"\"priority\":%u,\"tagged\":%s,\"vid\":%u,\"multicast\":%u,\"bandwidth\":[%u,%u,%u],\"objects\":[",
+		"\"priority\":%u,\"tagged\":%s,\"filter_only\":%s,\"vid\":%u,\"multicast\":%u,\"bandwidth\":[%u,%u,%u],\"objects\":[",
 		cfg->shared ? 3 : cfg->veip ? 2 : 0, cfg->uni, c->onu[id].service_ordinal, cfg->slot, cfg->priority, cfg->tagged ? "true" : "false",
-		cfg->vid, cfg->multicast, cfg->fixed, cfg->assured, cfg->maximum);
+		cfg->filter_only ? "true" : "false", cfg->vid, cfg->multicast, cfg->fixed, cfg->assured, cfg->maximum);
 	journal_objects(file, &job->transaction);
 	fputs("]}\n", file);
 	if (cfg->multicast) {
