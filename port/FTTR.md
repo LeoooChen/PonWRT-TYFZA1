@@ -5150,6 +5150,36 @@ before importing the full default count2..8 recipe. This change supplies the
 correct VLAN behavior for that work, not complete multi-service support or
 physical traffic acceptance.
 
+### Multiple local GEM interfaces for one ONU
+
+The native netlink layer now names GEM ordinal1 `fttr-u<ID>` and higher
+ordinals `fttr-u<ID>-<ordinal>`. Each interface retains its own GEM VID, serial
+alias, bridge, MTU and multicast-member marker. The original formula
+`256 + hardware-ONU + (ordinal-1)*64` and Port-ID4090 ceiling are checked before
+creating the VLAN; the reserved multicast GEM cannot use this path.
+
+Controller startup already withdraws FE before local interface takeover.
+That takeover now enumerates all named GEM interfaces for each ONU and deletes
+only matching native parents/groups/802.1Q IDs and ownership prefixes. The
+unsuffixed name can still hold a higher valid GEM from an older single-service
+controller. A suffixed name must match its exact ordinal. Interrupted Create
+without an alias remains recognizable by the native group and exact VLAN.
+An ownership conflict returns an error; this enumeration is not an atomic
+all-port deletion and earlier confirmed native interfaces may already be gone.
+
+The existing real veth/bridge datapath test now creates GEM ordinals1/2/7/60
+for one ONU. It compares original tag push/pop with both directions through a
+second isolated bridge, covers no tags/VLAN/QinQ, proves that deleting the
+first service preserves the sibling's FDB, and checks all-port restart cleanup,
+foreign owners, protocol/ordinal mismatch and legacy unsuffixed recovery.
+The resident authenticated migration regression and existing actual FE bridge
+and multicast-learning tests pass. GCC14.4/musl package compilation/install
+passes (`artifacts/fttr/multi-gem-package-20261107.log`). These are local Linux
+and source-level FE checks, not physical NI/P6/ONU traffic acceptance.
+
+This removes the local interface collision; the controller's policy and remote
+OMCI transaction still require the multi-service owner/scheduler implementation.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

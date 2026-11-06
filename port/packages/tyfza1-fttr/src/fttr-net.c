@@ -188,29 +188,60 @@ failed:
 	return ret;
 }
 
-static void port_name(char name[IFNAMSIZ], unsigned int onu)
+static int gem_ordinal(unsigned int onu, uint16_t gem)
 {
-	snprintf(name, IFNAMSIZ, "fttr-u%u", onu);
+	/* Original unicast GEM: 256 + hardware ONU + (ordinal - 1) * 64. */
+	if (onu >= 64 || gem < 256 + onu || gem > 4090 || (gem - 256 - onu) % 64)
+		return -ERANGE;
+	return (gem - 256 - onu) / 64 + 1;
+}
+
+static void port_name(char name[IFNAMSIZ], unsigned int onu, unsigned int ordinal)
+{
+	if (ordinal == 1)
+		snprintf(name, IFNAMSIZ, "fttr-u%u", onu);
+	else
+		snprintf(name, IFNAMSIZ, "fttr-u%u-%u", onu, ordinal);
 }
 
 int fttr_net_reset(struct fttr_net *net, unsigned int onu)
 {
-	char name[IFNAMSIZ], prefix[32];
+	char name[IFNAMSIZ], base[IFNAMSIZ], prefix[32];
+	struct if_nameindex *interfaces, *entry;
 	struct link link;
-	int ret;
+	unsigned int ordinal;
+	int ret = 0;
 
-	port_name(name, onu);
-	ret = get_link(net, name, 0, &link);
-	if (ret == -ENODEV)
-		return 0;
-	if (ret)
-		return ret;
+	if (onu >= 64)
+		return -ERANGE;
+	interfaces = if_nameindex();
+	if (!interfaces)
+		return -errno;
+	port_name(base, onu, 1);
 	snprintf(prefix, sizeof(prefix), "tyfza1-fttr:%u:", onu);
-	if (link.parent != net->parent || strcmp(link.kind, "vlan") ||
-	    (link.group != fttr_group && link.group != fttr_mcast_member_group) ||
-	    (*link.alias && strncmp(link.alias, prefix, strlen(prefix))))
-		return -EEXIST;
-	return delete_link(net, link.index);
+	for (entry = interfaces; entry->if_index && !ret; entry++) {
+		if (strncmp(entry->if_name, base, strlen(base))) continue;
+		for (ordinal = 1; ordinal <= 60; ordinal++) {
+			port_name(name, onu, ordinal);
+			if (!strcmp(entry->if_name, name)) break;
+		}
+		if (ordinal > 60) continue;
+		ret = get_link(net, name, 0, &link);
+		if (ret == -ENODEV) { ret = 0; continue; }
+		if (ret) break;
+		/* Older controllers used the unsuffixed name for any one slot.
+		 * New suffixed names must match the precise GEM ordinal. */
+		if (link.parent != net->parent || strcmp(link.kind, "vlan") ||
+		    (link.group != fttr_group && link.group != fttr_mcast_member_group) ||
+		    link.protocol != htons(0x8100) || gem_ordinal(onu, link.vid) < 0 ||
+		    (ordinal > 1 && gem_ordinal(onu, link.vid) != (int)ordinal) ||
+		    (*link.alias && strncmp(link.alias, prefix, strlen(prefix))))
+			ret = -EEXIST;
+		else
+			ret = delete_link(net, link.index);
+	}
+	if_freenameindex(interfaces);
+	return ret;
 }
 
 static bool owned(const struct fttr_net *net, const struct fttr_net_port *port, const struct link *link)
@@ -262,10 +293,12 @@ int fttr_net_create(struct fttr_net *net, struct fttr_net_port *port,
 	struct rtattr *info, *data;
 	struct request r;
 	uint16_t protocol = htons(0x8100);
-	int ret;
+	int ret, ordinal = gem_ordinal(onu, gem);
 
+	if (ordinal < 1 || ordinal > 60)
+		return -ERANGE;
 	port->gem = gem;
-	port_name(port->name, onu);
+	port_name(port->name, onu, ordinal);
 	strcpy(port->bridge, bridge);
 	snprintf(port->alias, sizeof(port->alias), "tyfza1-fttr:%u:%02x%02x%02x%02x%02x%02x%02x%02x:%u",
 		onu, serial[0], serial[1], serial[2], serial[3], serial[4], serial[5], serial[6], serial[7], gem);

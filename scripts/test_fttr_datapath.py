@@ -29,6 +29,7 @@ int main(void)
     struct fttr_net net = { .fd = -1 };
     struct fttr_net_port port = { 0 };
     struct fttr_net_port mc = { 0 };
+    struct fttr_net_port second = { 0 }, high = { 0 }, last = { 0 };
     uint8_t serial[8] = { 'T', 'E', 'S', 'T', 0, 0, 0, 7 };
     char command[16];
     int ret = fttr_net_open(&net, "fttr0");
@@ -39,6 +40,13 @@ int main(void)
         else if (!strcmp(command, "remove")) ret = fttr_net_remove(&net, &port);
         else if (!strcmp(command, "reset")) ret = fttr_net_reset(&net, 7);
         else if (!strcmp(command, "verify")) ret = fttr_net_verify(&net, &port);
+        else if (!strcmp(command, "create2")) ret = fttr_net_create(&net, &second, 7, serial, 327, "br-second");
+        else if (!strcmp(command, "create7")) ret = fttr_net_create(&net, &high, 7, serial, 647, "br-second");
+        else if (!strcmp(command, "create60")) ret = fttr_net_create(&net, &last, 7, serial, 4039, "br-second");
+        else if (!strcmp(command, "verify2")) ret = fttr_net_verify(&net, &second);
+        else if (!strcmp(command, "remove2")) ret = fttr_net_remove(&net, &second);
+        else if (!strcmp(command, "bad-gem")) ret = fttr_net_create(&net, &last, 7, serial, 328, "br-second");
+        else if (!strcmp(command, "mc-gem")) ret = fttr_net_create(&net, &last, 7, serial, 4095, "br-second");
         else if (!strcmp(command, "mc-open")) ret = fttr_net_mcast_create(&net, &mc, "br-test");
         else if (!strcmp(command, "mc-close")) ret = fttr_net_mcast_remove(&net, &mc);
         else if (!strcmp(command, "mc-reset")) ret = fttr_net_mcast_reset(&net);
@@ -212,6 +220,56 @@ def main():
             assert command('reset')[0] == -errno.EEXIST and 'fttr-u7' in links()
             run('ip', 'link', 'set', 'fttr-u7', 'alias', child['ifalias'])
             assert command('reset')[0] == 0 and 'fttr-u7' not in links()
+            # Distinct GEMs of one ONU use separate native VLAN owners and
+            # bridge domains. Removing one must not remove the sibling/FDB.
+            run('ip','link','add','lan2','type','veth','peer','name','lan2-peer')
+            run('ip','link','add','br-second','type','bridge')
+            run('ip','link','set','lan2','master','br-second')
+            for name in ('lan2','lan2-peer','br-second'):
+                run('ip','link','set',name,'mtu','1508','up')
+            assert command('create')[0]==0 and command('create2')[0]==0
+            second=links()['fttr-u7-2']
+            assert second['linkinfo']['info_data']['id']==327 and second['master']=='br-second'
+            assert second['ifalias'].endswith(':327') and command('verify2')[0]==0
+            assert command('bad-gem')[0]==-errno.ERANGE and command('mc-gem')[0]==-errno.ERANGE
+            lan2=packet_socket('lan2-peer')
+            try:
+                for tags in (b'',bytes.fromhex('810000c8'),bytes.fromhex('88a80063810000c8')):
+                    marker=b'FTTR-second-GEM'+bytes([len(tags)])+bytes(range(48))
+                    up=bytes.fromhex('0200000000d10200000000c1')+tags+b'\x88\xb5'+marker
+                    lan2.send(up)
+                    assert receive(wire,marker)==original.transform(up,True,327)
+                    assert receive(lan,marker,0.03) is None
+                    down=up[6:12]+up[:6]+up[12:]
+                    wire.send(original.transform(down,True,327))
+                    assert receive(lan2,marker)==down and receive(lan,marker,0.03) is None
+                assert command('remove')[0]==0 and command('verify2')[0]==0
+                fdb=json.loads(subprocess.check_output(['bridge','-j','fdb','show','br','br-second'],text=True))
+                assert any(x.get('mac')=='02:00:00:00:00:d1' and x.get('ifname')=='fttr-u7-2' for x in fdb)
+                assert command('create7')[0]==0 and command('create60')[0]==0
+                assert {'fttr-u7-2','fttr-u7-7','fttr-u7-60'}<=links().keys()
+                # Stale ownership on any ordinal is still an error. Do not
+                # promise atomicity: earlier owned ports may already be gone.
+                run('ip','link','set','fttr-u7-2','alias','foreign')
+                assert command('reset')[0]==-errno.EEXIST and 'fttr-u7-2' in links()
+                run('ip','link','set','fttr-u7-2','alias',second['ifalias'])
+                assert command('reset')[0]==0
+                assert not any(n.startswith('fttr-u7') for n in links())
+                fdb=json.loads(subprocess.check_output(['bridge','-j','fdb','show','br','br-second'],text=True))
+                assert not any(x.get('mac')=='02:00:00:00:00:d1' for x in fdb)
+            finally:
+                lan2.close()
+            # Old one-service controllers used the unsuffixed name even for
+            # slot7; recognize that owner during takeover.
+            run('ip','link','add','link','fttr0','name','fttr-u7','group',str(0x46545452),'type','vlan','id','647')
+            assert command('reset')[0]==0 and 'fttr-u7' not in links()
+            for protocol,vid in (('802.1Q',328),('802.1ad',327)):
+                run('ip','link','add','link','fttr0','name','fttr-u7-2','group',str(0x46545452),
+                    'type','vlan','protocol',protocol,'id',str(vid))
+                assert command('reset')[0]==-errno.EEXIST and 'fttr-u7-2' in links()
+                run('ip','link','delete','fttr-u7-2')
+            run('ip','link','add','link','fttr0','name','fttr-u7-7','group',str(0x46545452),'type','vlan','id','647')
+            assert command('reset')[0]==0 and 'fttr-u7-7' not in links()
             # The native multicast upper exists before the controller. Model
             # its IFLA_LINK/group using macvlan; never delete it on teardown.
             assert command('mc-reset')[0] == 0
@@ -255,6 +313,7 @@ def main():
             'unmapped GEM is not bridged to LAN and no frame reflects to its ingress ONU',
             'deleting the service port removes its learned bridge FDB',
             'ownership mismatch is exposed without deleting the reassigned device; owned warm-start cleanup deletes stale port',
+            'one ONU supports distinct GEM1/2/7/60 VLAN owners; separate bridges preserve customer tags and isolate traffic, single deletion preserves sibling FDB, restart removes all owned GEM ports and rejects wrong ordinal/protocol/owner',
             'native multicast upper identity, alias, bridge, MTU and disabled source learning verify; foreign ownership and learning drift reject; close/restart detach the upper without deleting it'],
         'scope': 'private Linux network namespace and veth; original skb memory helpers modeled; no optical or FE/PE acceleration verification'}
     args.output.write_text(json.dumps(report, indent=2)+'\n')

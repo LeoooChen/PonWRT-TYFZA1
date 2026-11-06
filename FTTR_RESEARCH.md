@@ -142,6 +142,8 @@
 
 62. 补齐默认多业务所需的UNI/ANI VLAN语义分离：CLI与常驻策略接受`filter:VID`，UNI保持原厂透明mode4，仅ANI/GEM桥端口过滤该VID；原有数字VID的access语义不变。执行原厂UNI初始化及自动模式选择确认默认mode4，避免用多个access策略覆盖共享UNI。真实AF_PACKET单/共享UNI业务对比原厂ANI报文及EVTO规则、重复接管、部分失败恢复通过；带认证和授权清理的双ONU常驻迁移/撤销/漂移/超时/重启通过。无授权清理的模拟库存重建留下旧DBA，被控制器拒绝，不计通过。GCC14.4/musl包编译安装通过；全局同步遇已有LuCI补丁冲突后直接构建已同步的FTTR包。仍需多个GEM的共同所有权、逐业务网口与完整生命周期，不能据此称多业务或默认配置导入完成。详见[UNI与ANI独立过滤](port/FTTR.md#independent-uni-mode-and-ani-vlan-filtering)。
 
+63. 解除同ONU本地GEM接口撞名：首个GEM保留`fttr-u<ID>`，其他按原厂序号命名；验证GEM/ONU对应及4090上限。启动FE撤销后的接管枚举清理各业务接口，核对父口、group、802.1Q/序号和所有权，兼容旧单业务高序号的无后缀接口；遇冲突报错，不承诺整批删除原子性。真实veth/桥验证同ONU序号1/2/7/60共存、双向原厂标签一致、不同桥隔离、单项删除保留兄弟FDB、旧接口清理和错协议/错序号拒绝；常驻认证迁移、FE桥学习/组播及GCC14.4/musl包构建通过。远端多业务事务与控制器调度仍未完成，未访问实机。详见[同ONU多个GEM接口](port/FTTR.md#multiple-local-gem-interfaces-for-one-onu)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

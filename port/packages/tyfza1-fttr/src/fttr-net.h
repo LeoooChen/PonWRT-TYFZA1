@@ -20,6 +20,7 @@ struct fttr_net_port {
 };
 
 int fttr_net_open(struct fttr_net *net, const char *parent);
+/* Retire every named native GEM port for the ONU after FE withdrawal. */
 int fttr_net_reset(struct fttr_net *net, unsigned int onu);
 int fttr_net_create(struct fttr_net *net, struct fttr_net_port *port,
 		    unsigned int onu, const uint8_t serial[8], uint16_t gem, const char *bridge);
