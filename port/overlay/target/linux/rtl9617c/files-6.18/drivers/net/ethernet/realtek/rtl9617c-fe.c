@@ -90,6 +90,9 @@ struct rtl_fe_mc_direct {
  struct rtl_fe_flow *flow;
  struct rtl9617c_bridge_frame frame;
  unsigned int output,physical,wifi_id;
+ u32 priority;
+ bool priority_from_cos;
+ unsigned int iftype;
 };
 struct rtl_fe_flow {
  struct list_head list, retry;

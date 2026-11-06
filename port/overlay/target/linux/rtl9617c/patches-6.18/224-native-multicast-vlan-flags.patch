@@ -1,0 +1,18 @@
+--- a/net/8021q/vlan_dev.c
++++ b/net/8021q/vlan_dev.c
+@@ -245,7 +245,15 @@
+ 		     VLAN_FLAG_BRIDGE_BINDING))
+ 		return -EINVAL;
+ 
++#ifdef CONFIG_ARCH_RTL9617C
++	{
++		const struct rtl9617c_bridge_mcast_ops *change = rtl9617c_bridge_mcast_begin(NULL);
++		vlan->flags = (old_flags & ~mask) | (flags & mask);
++		rtl9617c_bridge_mcast_end(change);
++	}
++#else
+ 	vlan->flags = (old_flags & ~mask) | (flags & mask);
++#endif
+ 
+ 	if (netif_running(dev) && (vlan->flags ^ old_flags) & VLAN_FLAG_GVRP) {
+ 		if (vlan->flags & VLAN_FLAG_GVRP)

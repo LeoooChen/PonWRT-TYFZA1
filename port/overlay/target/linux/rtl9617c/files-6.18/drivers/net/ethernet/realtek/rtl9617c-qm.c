@@ -698,11 +698,11 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			if (host_group) {
 				int delivery;
 				rcu_read_lock();
+				skb->priority=h1&7;
 				delivery=rtl9617c_bridge_mcast_receive(skb,host_group,source);
 				if (delivery<0) {
 					dev->stats.rx_dropped++;dev_kfree_skb_any(skb);rcu_read_unlock();continue;
 				}
-				skb->priority=h1&7;
 				if (delivery>0) {
 					const struct rtl9617c_bridge_frame *saved=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
 					struct rtl9617c_ni_wifi_endpoint *endpoint=saved && saved->wifi_id && saved->wifi_id<=RTL_WIFI_ID_MAX ?

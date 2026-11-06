@@ -4627,6 +4627,53 @@ generation check rejects a writer during parsing, but it cannot recall copies
 already enqueued in qdisc/mac80211/driver/firmware. These queues and safe
 cookie/action/group reuse require a separate retirement implementation.
 
+### Station wireless replicas and software QoS equivalence
+
+The owned CPU-replica path now accepts both AP and STA destinations. It
+reconstructs the software ingress priority from the native receive path and
+the last VLAN ingress-priority map: LAN/P6 start at0, PON uses the validated
+OMCI receive priority, and raw wireless input preserves each packet's COS.
+VLAN map values such as256..263 retain their mac80211 direct-priority meaning;
+replacing262 with COS6 would incorrectly turn a DSCP0 packet from VO into BE.
+QM initializes COS before owner dispatch and does not overwrite a priority
+restored by that owner.
+
+The native radio driver advertises SG but no VLAN TX offload. The Linux core
+therefore materializes metadata tags before mac80211 chooses its queue, so
+the native final-wire-tag recipe needs no separate tag extraction. Admission
+and late receive both reject changed VLAN TX features or wireless interface
+type. The multicast VLAN compiler now follows the actual
+`vlan_dev_hard_start_xmit` reorder/protocol decision, including an existing
+same-protocol tag with `reorder_hdr` disabled. VLAN flags gain synchronous
+multicast invalidation, while existing ingress/egress priority-map invalidation
+remains in place. Feature changes also withdraw complete multicast groups.
+
+Before installing a wireless recipient, the compiler checks its observed
+priority against the derived source and reproduces its complete VLAN chain.
+For raw wireless sources all eight possible COS values must produce the same
+final tags; a COS-dependent output-tag recipe remains software. Current WME,
+DSCP, admission-control, reserved-TID and association behavior still execute
+in mac80211 for every CPU replica. These policies are not frozen by the FE
+sample. The path retains AP/STA TX and peer/association checks rather than
+constructing a wireless frame directly.
+
+`test_bridge_mcast_qos.py` executes Linux VLAN TX, software tag validation,
+ingress-priority lookup and WME/DSCP functions against native recipes:12288
+IPv4/IPv6,0..2 VLAN, all DSCP/PCP and ordinary/magic-priority cases agree on
+wire bytes, protocol, priority and queue. It also checks no-reorder behavior
+and actual VLAN flag publication invalidation. Original wireless execution
+adds32 per-copy COS/QoS cases; native STA transactions cover LAN, PON, ONU and
+wireless sources, fixed/mapped/dynamic priority, type/features drift and
+COS-dependent VLAN refusal.384 QM cases confirm restored priority survives
+dispatch. Existing AP/bridge/TC/FE rollback/core/gate and Wi-Fi byte regressions
+pass. The new224 patch applies with zero fuzz and matches the prepared kernel;
+Image/modules and83 driver/header/core source identities pass in
+`artifacts/fttr/mcast-sta-output-kernel-final-20261107.log`.
+
+No hardware was accessed. Direct PE BCMC, EPON-specific multicast, unknown
+flood acceleration and complete hardware/queued-packet retirement remain
+unfinished; cookie/action/group quarantine and capacity restrictions remain.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

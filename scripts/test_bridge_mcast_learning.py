@@ -20,9 +20,14 @@ code=code.replace('static int fe_mcast_host_publish(struct rtl_fe *f,struct rtl_
  'static int fe_mcast_host_publish(struct rtl_fe *f,struct rtl_fe_flow *v,struct rtl_fe_mc_host *h);')
 code=code.replace('struct net_device {bool running,carrier;};','''struct nf_hook_entries {unsigned num_hook_entries;struct {void (*hook)(void);} hooks[3];};
 #define NL80211_IFTYPE_AP 3
+#define NL80211_IFTYPE_STATION 2
+#define VLAN_FLAG_REORDER_HDR 1
+#define NETIF_F_HW_VLAN_CTAG_TX 1
+#define NETIF_F_HW_VLAN_STAG_TX 2
 struct wireless_dev {unsigned iftype;};
+struct vlan_dev_priv {unsigned flags,ingress_priority_map[8],egress_priority_map[8];};
 struct net {unsigned refs;struct {struct nf_hook_entries *hooks_bridge[5];} nf;};
-struct net_device {bool running,carrier;unsigned ifindex,group,flags,num_tx_queues,mtu,vid;u8 dev_addr[6];struct netdev_queue *queue;struct net_device *master,*lower;struct net *net;void *tcx_ingress,*tcx_egress;struct nf_hook_entries *nf_hooks_ingress,*nf_hooks_egress;struct wireless_dev *ieee80211_ptr;};''')
+struct net_device {bool running,carrier;unsigned ifindex,group,flags,num_tx_queues,mtu,vid,features;u8 dev_addr[6];struct netdev_queue *queue;struct net_device *master,*lower;struct net *net;void *tcx_ingress,*tcx_egress;struct nf_hook_entries *nf_hooks_ingress,*nf_hooks_egress;struct wireless_dev *ieee80211_ptr;struct vlan_dev_priv vlan;};''')
 code=code.replace('struct rtl_fe_flow {',re.search(r'struct rtl_fe_mc_host \{.*?\n\};',(DRIVERS/'rtl9617c-fe.c').read_text(),re.S)[0]+'\nstruct rtl_fe_flow {')
 code=code.replace('struct rtl_fe {','struct rtl_fe_mtu {unsigned users,size,saved;};\nstruct rtl_fe {struct net_device *itu_netdev;struct rtl_itu_paths *itu_paths;struct rtl_fe_mtu mtus[16];struct rtl_fe_mc_host *mc_hosts[256];struct rtl_fe_mc_direct *mc_directs[256];')
 code=code.replace('struct rtl_fe_mc_profile mc_profile;','''struct rtl_fe_mc_profile mc_profile;
@@ -91,13 +96,17 @@ static int atomic_read(int *p){return *p;}
 static bool rtl_fe_enabled(struct rtl_fe *f){return f->enabled;}
 static bool skb_is_gso(struct sk_buff *s){return s->gso;}
 static struct rtl_fe *ext_change;
+static void fe_mcast_invalidate(struct rtl_fe *fe);
 static struct rtl9617c_bridge_frame *skb_ext_find(struct sk_buff *s,int id){assert(!id);return &s->saved;}
-static struct rtl9617c_bridge_frame *skb_ext_add(struct sk_buff *s,int id){assert(!id);if(ext_change){ext_change->mc_gate.epoch++;ext_change->mc_gate.active=false;ext_change=NULL;}return &s->saved;}
+static struct rtl9617c_bridge_frame *skb_ext_add(struct sk_buff *s,int id){assert(!id);if(ext_change){fe_mcast_invalidate(ext_change);ext_change=NULL;}return &s->saved;}
 static bool is_multicast_ether_addr(const u8 *a){return a[0]&1;}
 static bool is_broadcast_ether_addr(const u8 *a){return !memcmp(a,"\xff\xff\xff\xff\xff\xff",6);}
 static bool ether_addr_equal(const u8 *a,const u8 *b){return !memcmp(a,b,6);}
 static struct net_device *devices[16];
 static unsigned vlan_dev_vlan_id(struct net_device *d){return d->vid;}
+static struct vlan_dev_priv *vlan_dev_priv(struct net_device *d){return &d->vlan;}
+static unsigned short vlan_dev_vlan_proto(struct net_device *d){(void)d;return __builtin_bswap16(0x8100);}
+static unsigned vlan_dev_get_egress_qos_mask(struct net_device *d,unsigned p){return d->vlan.egress_priority_map[p&7];}
 static bool netif_is_bridge_port(struct net_device *d){return d->master!=NULL;}
 static struct net_device *__vlan_find_dev_deep_rcu(struct net_device *d,unsigned short protocol,unsigned vid){
  for(unsigned i=0;i<16;i++)if(devices[i]&&devices[i]->lower==d && protocol==__builtin_bswap16(0x8100) && devices[i]->vid==vid)return devices[i];
@@ -118,6 +127,7 @@ static struct net_device *br_fdb_find_port(struct net_device *b,const u8 *m,unsi
 static struct rtl_fe_port *fe_port(struct rtl_fe *fe,struct net_device *d){for(unsigned i=0;i<6;i++)if(fe->ports[i]&&fe->ports[i]->netdev==d)return fe->ports[i];return NULL;}
 static int fe_vlan_tpid(unsigned short p){return p==__builtin_bswap16(0x8100)?1:-EOPNOTSUPP;}
 #define htons(v) __builtin_bswap16(v)
+#define ntohs(v) __builtin_bswap16(v)
 static unsigned get_unaligned_be32(const void *p){unsigned v;memcpy(&v,p,4);return __builtin_bswap32(v);}
 static void skb_reset_mac_header(struct sk_buff *s){(void)s;}
 #define dev_get_by_index_rcu __dev_get_by_index
@@ -529,9 +539,10 @@ int main(void){
   again.output[0].port=again.output[0].physical=wifi.ifindex;again.output[0].frame=wf;
   again.output[1].port=again.output[1].physical=wifi2.ifindex;again.output[1].frame=wf;
   again.output[2].port=again.output[2].physical=out.ifindex;again.output[2].frame=wireless;
+  for(unsigned i=0;i<3;i++){again.output[i].logical_tags=again.output[i].frame.tags;memcpy(again.output[i].logical_tag,again.output[i].frame.tag,sizeof(again.output[i].logical_tag));}
   failed_packet=again;
   unsigned installs=fe.installs;assert(!fe_mcast_learn(&bridge,&again)&&fe.installs==installs&&fe.indexed==learned);
-  ap.iftype=2;assert(fe_mcast_learn(&bridge,&again)==-EOPNOTSUPP&&fe.installs==installs);ap.iftype=NL80211_IFTYPE_AP;
+  ap.iftype=6;assert(fe_mcast_learn(&bridge,&again)==-EOPNOTSUPP&&fe.installs==installs);ap.iftype=NL80211_IFTYPE_AP;
   for(unsigned w=0;w<2;w++) {
    struct sk_buff copy={.frame=wf};
    assert(fe_mcast_host_receive(&bridge,&copy,cookie[w],source)==1);
@@ -554,6 +565,50 @@ int main(void){
  fe.age_fail=1;
  assert(fe_mcast_learn(&bridge,&failed_packet)==-ETIMEDOUT&&!fe.mc_gate.active&&!net.refs);
  for(unsigned c=1;c<256;c++)if(fe.mc_directs[c])assert(!fe.mc_directs[c]->flow);
+ /* STA destinations preserve actual software priority and dynamic COS.
+  * Native ingress VLAN maps may use magic 256..263 Wi-Fi priorities. */
+ ap.iftype=NL80211_IFTYPE_STATION;
+ struct net_device wifi_vlan=wifi;wifi_vlan.ifindex=14;wifi_vlan.lower=&wifi;wifi_vlan.vid=200;
+ wifi_vlan.ieee80211_ptr=NULL;wifi_vlan.vlan.flags=VLAN_FLAG_REORDER_HDR;devices[14]=&wifi_vlan;
+ for(unsigned scenario=0;scenario<5;scenario++) {
+  struct net_device *origin=scenario==0?&lan:scenario==1?&onu:scenario==2?&pon:&wifi2;
+  struct net_device *dest=scenario==4?&wifi_vlan:&wifi;
+  unsigned source=scenario==0?0:scenario==1?6:scenario==2?7:18;
+  unsigned priority=scenario==1?262:scenario==2?5:scenario>=3?6:0;
+  fe.event_count=0;fdb_source=origin;skb.dev=origin;skb.saved=wireless;skb.priority=priority;
+  skb.saved.ingress=skb.saved.port=origin->ifindex;skb.saved.wifi_id=source==18?60:0;
+  skb.saved.pon_gem=source==7?55:0;skb.saved.pon_generation=paths.generation;
+  skb.saved.pon_priority=source==7?5:0;
+  if(source==7) {
+   skb.saved.tags=skb.saved.pon_tags=1;
+   skb.saved.tag[0]=skb.saved.pon_tag[0]=(struct rtl9617c_bridge_tag){.protocol=0x8100,.tci=900|5<<13};
+   paths.path[0].vlan=RTL_ITU_VLAN_ANY;
+  }
+  if(source==6){skb.saved.ingress=6;skb.saved.tags=1;skb.saved.tag[0]=(struct rtl9617c_bridge_tag){.protocol=0x8100,.tci=100|3<<13};onu.vlan.ingress_priority_map[3]=262;}
+  skb.saved.multicast_epoch=fe.mc_gate.epoch;skb.frame=wireless;
+  ticket=fe_mcast_capture_begin(&bridge,&skb,false,++fe_mcast_ticket);assert(ticket);
+  fe_mcast_capture_select(&bridge,&skb,dest);skb.dev=dest;fe_mcast_capture_output(&bridge,&skb);
+  fe_mcast_capture_end(&bridge,ticket,true);fe_mcast_process(&bridge);
+  assert(fe.indexed&&fe.indexed->replica_count==1&&fe.mc_gate.active);
+  unsigned cookie=0;
+  for(unsigned c=1;c<256;c++)if(fe.mc_directs[c]&&fe.mc_directs[c]->flow==fe.indexed)cookie=c;
+  assert(cookie);
+  struct sk_buff copy={.frame=fe.mc_directs[cookie]->frame,.priority=2};
+  assert(fe_mcast_host_receive(&bridge,&copy,cookie,source)==1);
+  assert(copy.priority==(source==18?2:priority));
+  ap.iftype=NL80211_IFTYPE_AP;assert(fe_mcast_host_receive(&bridge,&copy,cookie,source)==-ESTALE);ap.iftype=NL80211_IFTYPE_STATION;
+  wifi.features=NETIF_F_HW_VLAN_CTAG_TX;assert(fe_mcast_host_receive(&bridge,&copy,cookie,source)==-ESTALE);wifi.features=0;
+  assert(!rtl_fe_flush_port(&fe,&wifi));
+  if(scenario==4) {
+   /* A COS-dependent output VLAN cannot be learned from COS6 alone. */
+   wifi_vlan.vlan.egress_priority_map[2]=3<<13;
+   skb.dev=origin;skb.saved.multicast_epoch=fe.mc_gate.epoch;
+   ticket=fe_mcast_capture_begin(&bridge,&skb,false,++fe_mcast_ticket);assert(ticket);
+   fe_mcast_capture_select(&bridge,&skb,dest);skb.dev=dest;fe_mcast_capture_output(&bridge,&skb);
+   fe_mcast_capture_end(&bridge,ticket,true);fe_mcast_process(&bridge);
+   assert(!fe.indexed&&!fe.mc_gate.active);wifi_vlan.vlan.egress_priority_map[2]=0;
+  }
+ }
  /* Cookie pressure must fail the whole transaction before Hash publication.
   * A partially reserved recipient retains no live flow after rollback. */
  struct rtl_fe_mc_rule exhausted={.count=2};

@@ -100,7 +100,7 @@ static int indirect(void *p,unsigned reg,unsigned command){
    f->age=read_reg(f,0x3938);f->events[f->event_count++]=f->age?1:2;
    if(f->age) {
     bool referenced=false;
-    for(unsigned int g=1;g<256;g++)referenced|=f->groups[g][0] && f->multicast.groups[g].state==RTL_FE_MC_REFERENCED;
+    for(unsigned int g=1;g<256;g++)referenced|=(f->groups[g][0] || f->groups[g][1]) && f->multicast.groups[g].state==RTL_FE_MC_REFERENCED;
     assert(referenced);
    }
   } else write_reg(f,0x3938,f->age);

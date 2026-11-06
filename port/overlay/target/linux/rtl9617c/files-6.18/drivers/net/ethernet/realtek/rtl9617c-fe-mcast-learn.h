@@ -56,6 +56,54 @@ static bool fe_mcast_path_clear(struct net_device *dev)
  }
 }
 
+/* VLAN netdevs materialize an existing metadata tag before ndo_start_xmit.
+ * Match vlan_dev_hard_start_xmit's REORDER_HDR/protocol decision, including
+ * a same-protocol tag which a no-reorder VLAN must leave in place. */
+static struct net_device *fe_mcast_physical(struct net_device *dev,
+ struct rtl9617c_bridge_frame *frame,u32 priority)
+{
+ while(is_vlan_dev(dev)) {
+  unsigned int protocol=ntohs(vlan_dev_vlan_proto(dev));
+  if(dev->features&(NETIF_F_HW_VLAN_CTAG_TX|NETIF_F_HW_VLAN_STAG_TX))return NULL;
+  if((vlan_dev_priv(dev)->flags&VLAN_FLAG_REORDER_HDR) || !frame->tags || frame->tag[0].protocol!=protocol) {
+   if(frame->tags==2)return NULL;
+   frame->tag[1]=frame->tag[0];
+   frame->tag[0]=(struct rtl9617c_bridge_tag){.protocol=protocol,
+    .tci=vlan_dev_vlan_id(dev)|vlan_dev_get_egress_qos_mask(dev,priority)};
+   frame->tags++;
+  }
+  dev=vlan_dev_real_dev(dev);
+ }
+ return dev;
+}
+
+/* RX priority is not a stored Hash key. Derive it from the actual native
+ * ingress and last consumed VLAN, not from one sample's arbitrary skb value.
+ * Raw wireless misses retain per-packet COS; their replicas preserve COS. */
+static int fe_mcast_input_priority(struct rtl_fe *fe,struct rtl_fe_port *port,
+ struct net_device *logical,const struct rtl9617c_bridge_frame *frame,u32 *priority,bool *from_cos)
+{
+ struct net_device *dev=logical;
+ const struct rtl9617c_bridge_tag *tags=frame->tag;
+ unsigned int count=frame->tags,depth=0;
+ *priority=0;*from_cos=port->wifi_id!=0;
+ if(port->netdev==fe->itu_netdev) {
+  tags=frame->pon_tag;count=frame->pon_tags;*priority=frame->pon_priority;
+ }
+ while(is_vlan_dev(dev)){depth++;dev=vlan_dev_real_dev(dev);}
+ if(dev!=port->netdev || depth>count)return -EOPNOTSUPP;
+ if(!depth)return 0;
+ dev=logical;
+ for(unsigned int i=depth;i;i--) {
+  if(tags[i-1].protocol!=ntohs(vlan_dev_vlan_proto(dev)) ||
+     (tags[i-1].tci&VLAN_VID_MASK)!=vlan_dev_vlan_id(dev))return -EOPNOTSUPP;
+  dev=vlan_dev_real_dev(dev);
+ }
+ *priority=READ_ONCE(vlan_dev_priv(logical)->ingress_priority_map[tags[depth-1].tci>>13]);
+ *from_cos=false;
+ return 0;
+}
+
 #include "rtl9617c-pon-service.h"
 
 /* Numeric group IDs are never reused while packets may still carry them.
@@ -148,6 +196,8 @@ static int fe_mcast_host_receive(void *context,struct sk_buff *skb,unsigned int 
   struct net_device *physical=dev_get_by_index_rcu(host.net,direct.physical);
   if(!output || !physical || !netif_running(output) || !netif_carrier_ok(output) ||
      netdev_master_upper_dev_get_rcu(output)!=brdev || br_port_get_stp_state(output)!=BR_STATE_FORWARDING)goto stale;
+  if(!physical->ieee80211_ptr || physical->ieee80211_ptr->iftype!=direct.iftype ||
+     (physical->features&(NETIF_F_HW_VLAN_CTAG_TX|NETIF_F_HW_VLAN_STAG_TX)))goto stale;
   if(parsed.tags!=direct.frame.tags || memcmp(parsed.tag,direct.frame.tag,sizeof(parsed.tag)))goto stale;
   /* Other copies already reached their destinations. Re-enter the exact
    * physical VIF's normal TX with the final wire tags, never bridge RX. */
@@ -174,7 +224,10 @@ static int fe_mcast_host_receive(void *context,struct sk_buff *skb,unsigned int 
  }
  *saved=host.input;saved->multicast_host_group=group;saved->multicast_host_owner=host.owner;
  saved->multicast_epoch=host.epoch;skb->dev=input;skb->rtl9617c_fttr_ingress=source==6;
- if(direct.wifi_id){saved->wifi_id=direct.wifi_id;ret=1;}else ret=0;
+ if(direct.wifi_id){saved->wifi_id=direct.wifi_id;
+  if(!direct.priority_from_cos)skb->priority=direct.priority;
+  ret=1;
+ }else ret=0;
  goto out;
 stale:
  ret=-ESTALE;
@@ -266,6 +319,8 @@ static void fe_mcast_capture_output(void *context,struct sk_buff *skb)
  struct rtl_fe_bridge *bridge=context;
  const struct rtl9617c_bridge_frame *saved=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
  struct rtl9617c_bridge_frame frame={};
+ struct rtl9617c_bridge_tag logical_tag[2];
+ unsigned int logical_tags;
  struct fe_mcast_packet *packet;
  struct net_device *physical;
  unsigned long flags;
@@ -278,7 +333,8 @@ static void fe_mcast_capture_output(void *context,struct sk_buff *skb)
  __skb_pull(skb,ETH_HLEN);
  ret=fe_bridge_frame(skb,&frame);
  __skb_push(skb,ETH_HLEN);
- physical=ret?NULL:fe_bridge_physical(skb->dev,&frame,skb->priority);
+ logical_tags=frame.tags;memcpy(logical_tag,frame.tag,sizeof(logical_tag));
+ physical=ret?NULL:fe_mcast_physical(skb->dev,&frame,skb->priority);
  spin_lock_irqsave(&bridge->fe->mc_lock,flags);
  packet=fe_mcast_pending(bridge,saved->multicast_transaction);
  if(!packet || packet->complete)goto unlock;
@@ -293,6 +349,8 @@ static void fe_mcast_capture_output(void *context,struct sk_buff *skb)
   packet->failed=true;goto unlock;
  }
  packet->output[i].frame=frame;packet->output[i].physical=physical->ifindex;
+ packet->output[i].priority=skb->priority;packet->output[i].logical_tags=logical_tags;
+ memcpy(packet->output[i].logical_tag,logical_tag,sizeof(logical_tag));
  packet->output[i].seen=true;packet->outputs++;
 unlock:
  spin_unlock_irqrestore(&bridge->fe->mc_lock,flags);
@@ -488,17 +546,30 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
   }
   if(port->wifi_id) {
    unsigned int c;
+   u32 priority;
+   bool from_cos;
    if(port->source!=RTL_WIFI_SOURCE || port->wifi_id>RTL_WIFI_ID_MAX || port->llid!=port->wifi_id){ret=-EOPNOTSUPP;goto out;}
-   /* AP group TX uses normal non-QoS BCMC handling. Station output needs
-    * additional VLAN-metadata/QoS equivalence before bypassing VLAN uppers. */
-   if(!physical->ieee80211_ptr || physical->ieee80211_ptr->iftype!=NL80211_IFTYPE_AP){ret=-EOPNOTSUPP;goto out;}
+   if(!physical->ieee80211_ptr ||
+      (physical->ieee80211_ptr->iftype!=NL80211_IFTYPE_AP && physical->ieee80211_ptr->iftype!=NL80211_IFTYPE_STATION) ||
+      (physical->features&(NETIF_F_HW_VLAN_CTAG_TX|NETIF_F_HW_VLAN_STAG_TX))){ret=-EOPNOTSUPP;goto out;}
+   ret=fe_mcast_input_priority(fe,data.input,input,&packet->input,&priority,&from_cos);
+   if(ret)goto out;
+   if(from_cos?packet->output[i].priority>7:packet->output[i].priority!=priority){ret=-EOPNOTSUPP;goto out;}
+   for(unsigned int v=0;v<(from_cos?8U:1U);v++) {
+    struct rtl9617c_bridge_frame candidate={.tags=packet->output[i].logical_tags};
+    memcpy(candidate.tag,packet->output[i].logical_tag,sizeof(candidate.tag));
+    if(fe_mcast_physical(dev,&candidate,from_cos?v:priority)!=physical || candidate.tags!=frame->tags ||
+       memcmp(candidate.tag,frame->tag,sizeof(candidate.tag))){ret=-EOPNOTSUPP;goto out;}
+   }
    mc->direct[mc->count]=(struct rtl_fe_mc_direct){.frame=*frame,.output=dev->ifindex,
-    .physical=physical->ifindex,.wifi_id=port->wifi_id};
+    .physical=physical->ifindex,.wifi_id=port->wifi_id,.priority=priority,.priority_from_cos=from_cos,
+    .iftype=physical->ieee80211_ptr->iftype};
    replica->destination=16;replica->direct_cookie=mc->count+1;
    if(existing) {
     for(c=1;c<RTL_FE_MC_GROUPS;c++) {
      const struct rtl_fe_mc_direct *d=fe->mc_directs[c];
-     if(d && d->flow==existing && d->output==dev->ifindex && d->physical==physical->ifindex && d->wifi_id==port->wifi_id)break;
+     if(d && d->flow==existing && d->output==dev->ifindex && d->physical==physical->ifindex && d->wifi_id==port->wifi_id &&
+        d->priority==priority && d->priority_from_cos==from_cos && d->iftype==physical->ieee80211_ptr->iftype)break;
     }
     if(c==RTL_FE_MC_GROUPS){fe_mcast_invalidate(fe);ret=-ESTALE;goto out;}
     replica->direct_cookie=c;

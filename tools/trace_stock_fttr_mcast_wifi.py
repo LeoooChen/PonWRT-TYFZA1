@@ -116,14 +116,36 @@ def run(fc_path, ni_path, mgr_path):
                 cases.append(dict(vif=vif, registered=active, running=running,
                                   driver_result=driver_result, events=list(events)))
 
+    qos_cases = []
+    for vif in (17, 60):
+        row = db + vif * 632
+        tx.word(row + 2672, 1 << 43)
+        tx.word(dev + 64, 1)
+        for enabled in (False, True):
+            tx.uc.mem_write(db + 0xabe4, bytes([16 if enabled else 0]))
+            tx.uc.mem_write(db + 0xabe5, bytes(reversed(range(8))))
+            for cos in range(8):
+                events.clear()
+                mgr.uc.mem_write(skb + 40, b'\x5a')
+                mgr.uc.mem_write(ha, struct.pack('<II', vif << 18,
+                    27 << 9 | 16 << 3 | 96 << 15 | cos))
+                mgr.uc.mem_write(hc, struct.pack('<II', 0, 4 << 8))
+                assert mgr.call('rtk_fc_skb_rx', 0, 0, skb, private) == 2
+                assert events == [dict(operation='direct', vif=vif),
+                                  dict(operation='driver_tx', result=driver_result)]
+                actual = tx.unpack(skb + 40, 'B')[0]
+                assert actual == (7-cos if enabled and vif <= 42 else 0x5a)
+                qos_cases.append(dict(vif=vif, enabled=enabled, cos=cos, callback_priority=actual))
+
     recipes = []
     for vif in (1, 17, 55, 60):
         recipes += replica_recipes(fc_path, ni_path, (18,), True, wifi=(vif, 18, 0))['cases']
-    return dict(registered_helpers=registered, dispatch=cases, replicas=recipes,
+    return dict(registered_helpers=registered, dispatch=cases, qos=qos_cases, replicas=recipes,
         findings=[
             'Manager helper5+160 is wlanDevIdx2port; helper5+200 is wlan_hard_start_xmit. Member bit16 selects wireless VIF lookup, not PON.',
             'The actual wireless replica producer uses the registered destination and POL=VIF, final S/C tags, source-filter disable and preserved COS.',
             'For an MCE source27 CPU copy, POL becomes the direct-TX VIF; the current live registration and running device select its saved driver TX callback.',
+            'Original optional wireless QoS mapping consumes each copy COS for VIF1..42. Native mac80211 instead needs the actual software ingress priority and its current WME/DSCP policy; a single sample cannot stand in for a per-packet value.',
             'POL56 takes the reserved local receive path. This synthetic CPU18/VIF56 route is not a claim that original registration normally allocates such a mapping.',
             'Native radio copies need distinct quarantined ownership from host copies and ordinary misses; raw reusable VIF metadata alone supplies no retirement guarantee.'],
         scope='Actual original ARM64 helper registration, member/action parsing, NI action conversion, CPU receive conversion and TX selection. Registered route rows, cross-module calls, allocation, scheduling and final wireless driver are modeled; no air transmission or retirement proof.')
@@ -138,7 +160,7 @@ def main():
     result['sha256'] = {name: hashlib.sha256(getattr(args, name).read_bytes()).hexdigest()
                         for name in ('fc', 'ni', 'mgr')}
     args.output.write_text(json.dumps(result, indent=2) + '\n')
-    print('PASS: original wireless helper registration, 30 CPU dispatch cases and 12 complete FC/NI replica recipes')
+    print('PASS: original wireless helper registration, 30 CPU dispatch cases, 32 per-copy COS/QoS cases and 12 complete FC/NI replica recipes')
 
 
 if __name__ == '__main__':

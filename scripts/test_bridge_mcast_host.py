@@ -85,6 +85,8 @@ static int rtl9617c_bridge_mcast_receive_test(struct sk_buff *s,unsigned group,u
  assert(group==expect_group&&source==expect_source&&active->read[expect_cos]==8&&readl(active->ni+EPP_READ+expect_cos*4)==8);
  assert(s->len==expected_length&&!memcmp(s->data,expected,s->len));host_calls++;
  host_frame.pon_gem=source==7?55:0;host_frame.wifi_id=(source==18||direct_copy)?1:0;
+ assert(s->priority==expect_cos);
+ if(direct_copy && (expect_cos&1))s->priority=256+expect_cos;
  s->dev=&input;return reject_host?-ESTALE:direct_copy?1:0;
 }
 static void netif_receive_skb(struct sk_buff *s){
@@ -99,7 +101,7 @@ static void pon_receive(struct rtl9617c_ni_endpoint *e,struct napi_struct *n,str
  dev_kfree_skb_any(s);
 }
 static void p6_receive(struct rtl9617c_ni_endpoint *e,struct napi_struct *n,struct sk_buff *s,unsigned src){(void)e;(void)n;assert(src==6);gro_calls++;dev_kfree_skb_any(s);}
-static void radio_receive(struct rtl9617c_ni_wifi_endpoint *e,struct napi_struct *n,struct sk_buff *s,bool f){(void)n;assert(f&&e->netdev==s->dev&&s->len==expected_length&&s->priority==expect_cos&&!memcmp(s->data,expected,s->len));assert(active->read[expect_cos]==8&&readl(active->ni+EPP_READ+expect_cos*4)==8);radio_calls++;dev_kfree_skb_any(s);}
+static void radio_receive(struct rtl9617c_ni_wifi_endpoint *e,struct napi_struct *n,struct sk_buff *s,bool f){(void)n;assert(f&&e->netdev==s->dev&&s->len==expected_length&&s->priority==(expect_cos&1?256+expect_cos:expect_cos)&&!memcmp(s->data,expected,s->len));assert(active->read[expect_cos]==8&&readl(active->ni+EPP_READ+expect_cos*4)==8);radio_calls++;dev_kfree_skb_any(s);}
 '''
 qm = (DRIVERS/'rtl9617c-qm.c').read_text()
 code += qm[qm.index('static void rtl_qm_rx_retire('):qm.index('\nssize_t rtl_qm_rx_state(')]

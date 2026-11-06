@@ -20,7 +20,8 @@ struct fe_mcast_packet {
  u64 transaction,epoch;
  unsigned int bridge,count,outputs;
  bool failed,local,complete;
- struct {unsigned int port,physical;struct rtl9617c_bridge_frame frame;bool seen;} output[RTL_FE_MC_ACTIONS];
+ struct {unsigned int port,physical,priority;struct rtl9617c_bridge_frame frame;
+  u8 logical_tags;struct rtl9617c_bridge_tag logical_tag[2];bool seen;} output[RTL_FE_MC_ACTIONS];
 };
 
 struct fe_bridge_packet {
@@ -482,6 +483,7 @@ static int fe_bridge_netdev_event(struct notifier_block *notifier,unsigned long 
  switch(event) {
  case NETDEV_DOWN:case NETDEV_CHANGE:case NETDEV_CHANGEUPPER:case NETDEV_CHANGEMTU:
  case NETDEV_PRECHANGEUPPER:case NETDEV_CHANGEINFODATA:case NETDEV_CHANGEADDR:
+ case NETDEV_FEAT_CHANGE:
   /* Explicit multicast TC rules must not survive a logical upper closing
    * or a topology change on any replica. All group recipients are a unit. */
   rtl_fe_flush_multicast(bridge->fe,false);
