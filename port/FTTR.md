@@ -4250,6 +4250,35 @@ recipes), so membership churn eventually falls back to software. Immediate
 policy transitions, over-MTU fallback, actual FE hits and physical replication
 have not been tested on a device. No device was accessed for this change.
 
+### Original CPU multicast replica and receive distinction
+
+The executed FC member/action/NI chain also accepts a CPU16 recipient for
+zero, one and two final VLAN tags. These three recipes use the same absolute
+S/C tag commands and explicit source-filter disable as LAN/P6 recipients.
+The result is recorded separately in
+`artifacts/fttr/mcast-cpu-replica-original-20261106.json`; it proves the original
+producer can encode the CPU destination, not how a returned packet is marked.
+
+`trace_stock_fttr_mcast_hw.py --mgr <fc_mgr.ko>` now executes the real
+`rtk_fc_skb_rx` receive conversion. Fifty-four cases vary physical source0/4
+versus MCE source27, POL0/55/56, multicast versus unicast, and hardware
+reason0/4/15. For multicast from source27 with POL56, original fc_mgr rewrites
+the software receive reason to17 and passes to its normal receive consumer.
+Neighboring POL55 instead becomes reason15 plus interface metadata and takes
+the direct-transmit consumer. The original hardware reason alone does not
+distinguish a local CPU replica. The final consumers and scheduling boundary
+are modeled; this does not establish Linux duplicate-suppression behavior.
+The report is `artifacts/fttr/mcast-cpu-receive-original-20261106.json`.
+
+This matters to the native integration because it deliberately preserves
+physical source0..4 across MCE, unlike that source27 predicate. A CPU replica
+must retain an unambiguous indication that all other recipients were already
+forwarded, while ordinary Hash misses and PE MTU returns must still run the
+full bridge decision. Merely adding destination16 or treating every received
+multicast as hardware-forwarded would duplicate or drop traffic. The native
+learner therefore still rejects a transaction requiring local delivery until
+that metadata producer and receiver are implemented and checked.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

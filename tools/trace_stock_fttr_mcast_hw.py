@@ -236,7 +236,48 @@ def group_unlearn(module):
         'Native withdrawal must retain its group/cookie and retry on Hash/cache failure instead of treating original software unlearn as a resource-reuse guarantee.'])
 
 
-def replica_recipes(fc_module, ni_module):
+def cpu_receive_dispatch(module):
+    """Trace the original MCE CPU distinction; do not infer it from DA alone."""
+    events=[]
+    def boundary(name,args):
+        if name in ('_rtk_fc_rx_final_process','rtk_fc_fastfwd_directXmit'):
+            pointer=args[0] if name=='_rtk_fc_rx_final_process' else args[1]
+            events.append(dict(function=name,descriptor=list(oracle.unpack(pointer,'4I'))))
+            return 0
+        raise AssertionError(('unmodeled CPU receive boundary',name,args))
+    oracle=ModuleOracle(module,['rtk_fc_skb_rx'],boundary,
+        external_symbols={'cpu_number':0x5006000})
+    skb,private,ha,hc,frame=[oracle.scratch+n for n in (0,0x1000,0x2000,0x2100,0x2200)]
+    oracle.word(private+8,ha);oracle.word(private+16,hc);oracle.word(skb+200,frame)
+    # Model synchronous dispatch (no SMP rings); the final consumer is a boundary.
+    oracle.uc.mem_write(oracle.symbols['fc_mgr_db'][0]+4,struct.pack('<I',1))
+    cases=[]
+    for source in (0,4,27):
+        for pol in (0,55,56):
+            for multicast in (False,True):
+                for reason in (0,4,15):
+                    events.clear()
+                    oracle.uc.mem_write(frame,bytes([1 if multicast else 2])+bytes(63))
+                    oracle.uc.mem_write(ha,struct.pack('<II',pol<<18,source<<9|16<<3|100<<15|2<<30))
+                    oracle.uc.mem_write(hc,struct.pack('<II',0x12345678,reason<<8|0xabcd<<16))
+                    assert oracle.call('rtk_fc_skb_rx',0,0,skb,private)==2
+                    assert len(events)==1
+                    event=events[0];converted=event['descriptor'][0]>>3&255
+                    mce=source==27 and multicast and pol!=0
+                    expected=17 if mce and pol==56 else 15 if mce else reason
+                    assert converted==expected,(source,pol,multicast,reason,event)
+                    expected_call='rtk_fc_fastfwd_directXmit' if mce and pol==55 else '_rtk_fc_rx_final_process'
+                    assert event['function']==expected_call,(source,pol,multicast,reason,event)
+                    cases.append(dict(source=source,pol=pol,multicast=multicast,
+                        input_reason=reason,**event))
+    return dict(cases=cases,sha256=hashlib.sha256(module.read_bytes()).hexdigest(),findings=[
+        'For multicast with HeaderA source27 and POL56, original fc_mgr converts the receive reason to17 and uses the normal receive consumer.',
+        'The neighboring POL55 becomes reason15 plus interface metadata and dispatches directly; original hardware reason alone does not identify a local multicast copy.',
+        'Native multicast keeps physical source0..4. It cannot borrow this source27/POL56 predicate without tracing a new unambiguous metadata producer and preserving normal misses/MTU returns.'],
+        scope='54 executions of actual rtk_fc_skb_rx; final receive/direct-transmit consumers and synchronous scheduling are modeled. No assertion of packet retirement or physical HeaderA generation.')
+
+
+def replica_recipes(fc_module, ni_module, destinations=(1, 6)):
     """Execute FC replica construction through the real arbitration producer."""
     class Published(Exception): pass
     recipes, actions = [], []
@@ -283,7 +324,7 @@ def replica_recipes(fc_module, ni_module):
     fc.word(member + 8, action + 56)
     cases = []
     for tags in range(3):
-        for destination in (1, 6):
+        for destination in destinations:
             recipes.clear(); actions.clear()
             fc.uc.mem_write(action, bytes(32))
             fc.uc.mem_write(action, struct.pack('<H', (4 if tags else 0) | (8 if tags == 2 else 0)))
@@ -470,6 +511,7 @@ def group_lifecycle(module):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--module', required=True, type=Path)
+    parser.add_argument('--mgr', type=Path, help='Original fc_mgr.ko for CPU multicast receive dispatch')
     parser.add_argument('--fc', type=Path, help='Original fc_8277c.ko for group Hash producer checks')
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args()
@@ -596,6 +638,8 @@ def main():
         fc_sha256=hashlib.sha256(args.fc.read_bytes()).hexdigest() if args.fc else None,
         arbitration_init=arbitration_init(args.module, args.fc) if args.fc else None,
         replica_recipes=replica_recipes(args.fc, args.module) if args.fc else None,
+        cpu_replica_recipes=replica_recipes(args.fc, args.module, (16,)) if args.fc else None,
+        cpu_receive_dispatch=cpu_receive_dispatch(args.mgr) if args.mgr else None,
         arb_fields=[dict(mask_bit=i, offset=o, width=w) for i,(o,w) in enumerate(fields)],
         failures=failures, findings=[
             'NI lookup validates 0..1023 but commands retain only 8 index bits: 0/256/512/768 alias in the original writer and reader.',
