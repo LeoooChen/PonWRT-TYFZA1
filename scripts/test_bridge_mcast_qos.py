@@ -175,7 +175,8 @@ int main(void){
  for(unsigned dscp=0;dscp<64;dscp++)for(unsigned magic=0;magic<2;magic++) {
   struct sk_buff sw={.dev=depth==2?&high:depth?&low:&radio,.len=78,.priority=magic?256+pcp:pcp};
   sw.data[0]=1;sw.data[6]=2;sw.protocol=htons(ipv6?ETH_P_IPV6:ETH_P_IP);memcpy(sw.data+12,&sw.protocol,2);
-  if(ipv6){sw.data[14]=0x60|(dscp>>4);sw.data[15]=(dscp&15)<<4;sw.data[20]=17;}
+  if(ipv6){sw.data[14]=0x60|(dscp>>2);sw.data[15]=(dscp&3)<<6;sw.data[20]=17;
+   assert((unsigned)((((sw.data[14]&15)<<4)|(sw.data[15]>>4))>>2)==dscp);}
   else {sw.data[14]=0x45;sw.data[15]=dscp<<2;sw.data[23]=17;}
   struct sk_buff accelerated=sw;
   struct rtl9617c_bridge_frame native={};frame_tags(&sw,&native);
