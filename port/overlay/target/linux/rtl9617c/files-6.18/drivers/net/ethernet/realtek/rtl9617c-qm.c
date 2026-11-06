@@ -8,6 +8,7 @@
  */
 #include <linux/bitfield.h>
 #include <linux/etherdevice.h>
+#include <linux/if_vlan.h>
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
@@ -702,6 +703,14 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				delivery=rtl9617c_bridge_mcast_receive(skb,host_group,source);
 				if (delivery<0) {
 					dev->stats.rx_dropped++;dev_kfree_skb_any(skb);rcu_read_unlock();continue;
+				}
+				if (delivery==2) {
+					int depth=ETH_HLEN;
+					skb_reset_mac_header(skb);
+					skb->protocol=eth_hdr(skb)->h_proto;
+					__vlan_get_protocol(skb,skb->protocol,&depth);
+					skb_set_network_header(skb,depth);
+					dev_queue_xmit(skb);rcu_read_unlock();continue;
 				}
 				if (delivery>0) {
 					const struct rtl9617c_bridge_frame *saved=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);

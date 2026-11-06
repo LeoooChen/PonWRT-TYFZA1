@@ -45,11 +45,11 @@ struct net_bridge_vlan_group {bool allowed;};
 struct net_bridge_port {struct net_bridge *br;struct net_device *dev;unsigned flags,state;struct net_bridge_vlan_group vlan;bool isolated;struct net_bridge_port *next;};
 #define list_for_each_entry_rcu(p,head,member) for((p)=*(head);(p);(p)=(p)->next)
 #define BR_INPUT_SKB_CB(s) (&(struct {bool proxyarp_replied;struct net_device *brdev;}){false,devices[10]})
-#define eth_hdr(s) (&(struct {u8 h_dest[6];}){{(s)->frame.destination[0],0,0x5e,1,2,3}})
 static struct rtl_fe_bridge *owner;
 static unsigned delivered[16],failed_clone,clone_calls,drops;
 u64 rtl9617c_bridge_mcast_capture(struct sk_buff *s,bool local){return fe_mcast_capture_begin(owner,s,local,++fe_mcast_ticket);}
 void rtl9617c_bridge_mcast_select(struct sk_buff *s,struct net_device *d){fe_mcast_capture_select(owner,s,d);}
+void rtl9617c_bridge_mcast_select_addr(struct sk_buff *s,struct net_device *d,const u8 *a){fe_mcast_capture_select_addr(owner,s,d,a);}
 void rtl9617c_bridge_mcast_complete(u64 ticket,bool success){fe_mcast_capture_end(owner,ticket,success);}
 static struct net_bridge_vlan_group *nbp_vlan_group_rcu(const struct net_bridge_port *p){return (void *)&p->vlan;}
 static bool br_mst_is_enabled(const struct net_bridge_port *p){(void)p;return false;}

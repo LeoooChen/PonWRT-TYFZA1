@@ -21,7 +21,7 @@ struct fe_mcast_packet {
  unsigned int bridge,count,outputs;
  bool failed,local,complete;
  struct {unsigned int port,physical,priority;struct rtl9617c_bridge_frame frame;
-  u8 logical_tags;struct rtl9617c_bridge_tag logical_tag[2];bool seen;} output[RTL_FE_MC_ACTIONS];
+  u8 destination[6],logical_tags;struct rtl9617c_bridge_tag logical_tag[2];bool seen;} output[RTL_FE_MC_ACTIONS];
 };
 
 struct fe_bridge_packet {
@@ -128,7 +128,9 @@ static int fe_bridge_frame(struct sk_buff *skb,struct rtl9617c_bridge_frame *fra
   offset+=sizeof(storage);
  }
  frame->protocol=ntohs(protocol);
- if(is_multicast_ether_addr(frame->destination)) {
+ /* A captured bridge MC-to-UC output still carries the original UDP
+  * datagram. Its caller explicitly requests the same full IP validation. */
+ if(is_multicast_ether_addr(frame->destination) || frame->ip_protocol==IPPROTO_UDP) {
   const u8 *ip;u8 header[40];
   if(protocol==htons(ETH_P_IP)) {
    ip=skb_header_pointer(skb,offset,20,header);
@@ -551,6 +553,7 @@ static struct rtl_fe_bridge *fe_bridge_start(struct rtl_fe *fe)
  bridge->multicast=(struct rtl9617c_bridge_mcast_ops){.context=bridge,
   .change_begin=fe_mcast_change_begin,.change_end=fe_mcast_change_end,
   .capture_begin=fe_mcast_capture_begin,.capture_select=fe_mcast_capture_select,
+  .capture_select_addr=fe_mcast_capture_select_addr,
   .capture_output=fe_mcast_capture_output,.capture_end=fe_mcast_capture_end,
   .host_receive=fe_mcast_host_receive,.host_local=fe_mcast_host_local};
  ret=rtl9617c_bridge_mcast_register(&bridge->multicast);

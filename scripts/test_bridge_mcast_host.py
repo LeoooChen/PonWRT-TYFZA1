@@ -45,6 +45,7 @@ def run(code, name):
 fixture = ast.parse((ROOT/'scripts/test_ni_rx_credit.py').read_text())
 code = next(ast.literal_eval(n.value) for n in fixture.body if isinstance(n, ast.Assign)
             and any(isinstance(t, ast.Name) and t.id == 'common' for t in n.targets))
+code = code[:code.index('static void skb_reset_mac_header')]+code[code.index('struct rtl9617c_ni_wifi_endpoint'):]
 code = code[:code.index('static unsigned rtl9617c_bridge_host_group')]+code[code.index('struct rtl_qm_rx {'):]
 code = code.replace('u8 storage[128]', 'u8 storage[2048]')
 code = code.replace('struct rtl_qm_rx {', '''
@@ -67,7 +68,7 @@ static struct rtl9617c_bridge_frame host_frame;
 static const struct rtl9617c_bridge_frame *skb_ext_find(struct sk_buff *s,int id){(void)s;assert(!id);return &host_frame;}
 static unsigned retired,host_calls,local_calls,gro_calls,radio_calls,expect_group,expect_source,expect_cos;
 static unsigned expected_length,live;
-static bool reject_host,direct_copy,epon_copy;
+static bool reject_host,direct_copy,epon_copy,ethernet_copy;
 static u8 expected[1600];
 static struct net_device input;
 static u64 ktime_get_ns(void){return 1;}
@@ -88,8 +89,13 @@ static int rtl9617c_bridge_mcast_receive_test(struct sk_buff *s,unsigned group,u
  host_frame.epon=epon_copy;host_frame.epon_llid=expect_cos&1?31:0;if(epon_copy)host_frame.pon_gem=0;
  assert(s->priority==expect_cos);
  if(direct_copy && (expect_cos&1))s->priority=256+expect_cos;
- s->dev=&input;return reject_host?-ESTALE:direct_copy?1:0;
+ s->dev=&input;return reject_host?-ESTALE:ethernet_copy?2:direct_copy?1:0;
 }
+static void skb_reset_mac_header(struct sk_buff *s){(void)s;}
+#define eth_hdr(s) ((struct {u8 da[6],sa[6];u16 h_proto;} *)(s)->data)
+static u16 __vlan_get_protocol(struct sk_buff *s,u16 protocol,int *depth){while(protocol==__builtin_bswap16(0x8100)){protocol=__builtin_bswap16(get_unaligned_be16(s->data+*depth+2));*depth+=4;}return protocol;}
+static void skb_set_network_header(struct sk_buff *s,int depth){assert((unsigned)depth==14+(expected_length-1514));(void)s;}
+static void dev_queue_xmit(struct sk_buff *s){assert(ethernet_copy&&s->dev==&input&&s->priority==expect_cos&&s->len==expected_length);assert(!memcmp(s->data,expected,s->len));radio_calls++;dev_kfree_skb_any(s);}
 static void netif_receive_skb(struct sk_buff *s){
  assert(active->read[expect_cos]==8&&s->dev==&input&&s->priority==expect_cos&&s->protocol==get_unaligned_be16(expected+12));
  assert(s->len==expected_length-14&&!memcmp(s->data,expected+14,s->len));local_calls++;dev_kfree_skb_any(s);
@@ -114,7 +120,7 @@ int main(void){
   assert(rtl9617c_bridge_host_group(pol<<18,dst<<3|src<<9)==
    ((dst==16&&(src<=4||src==6||src==7||src==18)&&(pol&256))?pol&255:0));
  for(unsigned full=0;full<2;full++)for(unsigned tags=0;tags<3;tags++)
- for(unsigned cos=0;cos<8;cos++)for(unsigned fault=0;fault<9;fault++) {
+ for(unsigned cos=0;cos<8;cos++)for(unsigned fault=0;fault<10;fault++) {
   struct net_device owner={.running=true};struct napi_struct napi={.dev=&owner};
   struct rtl9617c_ni_wifi_endpoint radio={.netdev=&input,.receive=radio_receive};
   struct rtl9617c_ni_endpoint p6={.receive=p6_receive},pon={.receive=pon_receive};
@@ -122,6 +128,7 @@ int main(void){
   rx.memory=calloc(1,RTL_QM_MEMORY_BYTES);rx.ring_memory=calloc(1,8192);rx.ni=calloc(1,65536);
   rx.lan[0]=rx.lan[4]=&input;rx.wifi[1]=&radio;input.running=true;
   retired=host_calls=local_calls=gro_calls=radio_calls=0;reject_host=fault==1;direct_copy=fault>=5&&fault<8;epon_copy=fault==8;
+  ethernet_copy=fault==9;
   expect_source=cos%5==4?18:cos%5==3?7:cos%5==2?6:cos%5==1?4:0;
   if(fault==2 && expect_source==18)expect_source=0; /* Ordinary radio misses tested by Wi-Fi RX fixture. */
   if(fault==4){expect_source=18;rx.wifi[1]=NULL;}expect_group=cos+1;expect_cos=cos;expected_length=1514+4*tags;
@@ -140,7 +147,7 @@ int main(void){
   put(fault==2?0:1<<14,rx.ring_memory+cos*1024+4);
   put(8,rx.ni+EPP_WRITE+cos*4);
   assert(rtl_qm_rx_poll(&rx,&napi,1)==1&&!live&&retired==1);
-  assert(host_calls==(fault<2||fault>=4)&&local_calls==(fault==0||fault==8)&&gro_calls==(fault==2)&&radio_calls==(fault==5));
+  assert(host_calls==(fault<2||fault>=4)&&local_calls==(fault==0||fault==8)&&gro_calls==(fault==2)&&radio_calls==(fault==5||fault==9));
   assert(owner.stats.rx_dropped==(fault==1||fault==4||fault==6||fault==7)&&owner.stats.rx_errors==(fault==3));
   free(rx.memory);free(rx.ring_memory);free(rx.ni);cases++;
  }

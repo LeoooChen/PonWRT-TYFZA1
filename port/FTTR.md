@@ -4825,8 +4825,57 @@ replay with zero fuzz and match the compiled sources.
 
 No hardware traffic or in-flight retirement was tested. Existing group,
 cookie, action and DBUF capacity/quarantine rules still apply to flood groups.
-Per-subscriber multicast-to-unicast replication, direct PE BCMC and the
-remaining EPON four-queue dynamic-COS path remain separate unfinished work.
+Direct PE BCMC and the remaining EPON four-queue dynamic-COS path remain
+separate unfinished work; per-subscriber conversion is described below.
+
+### Per-recipient multicast-to-unicast copies
+
+Linux `maybe_deliver_addr` now records each selected `(port, destination MAC)`
+before allocating its copy. The complete transaction supports multiple
+subscribers on one VIF or Ethernet port, a preserved multicast recipient from
+the broadcast-address placeholder, and mixed ordinary multicast/local copies.
+Linux still decides source/hairpin/DAD eligibility. A missing allocation or
+output, duplicate recipient or unselected destination rejects the entire
+transaction. A group containing only converted copies can complete without a
+local-host recipient; zero-recipient groups still remain in software.
+
+The retained target `rtk_fc_abstrSwFlowActGenBySkb` has a three-argument ABI,
+unlike the six-argument reference SDK version. Six actual target executions
+confirm its ingress/current-DA comparison, per-copy destination replacement
+and unchanged source MAC. NI's multicast action table has source-MAC editing,
+but no destination-MAC replacement field. Native conversion therefore uses a
+distinct quarantined CPU cookie/action per recipient. NI supplies the final
+VLAN bytes and original multicast DA; the current owner validates the full
+packet, makes the Ethernet header writable, rechecks the generation, replaces
+only the intended DA and selects normal physical-port TX. Wireless copies keep
+the current VIF endpoint validation and mac80211 key/WME handling. Ethernet,
+EPON and per-GEM P6 copies use their normal TX path after the same ownership
+checks. The shared FTTR multicast endpoint is not used for converted unicast.
+
+Final output capture explicitly parses the original UDP/IP fields even after
+DA becomes unicast. The normal unicast bridge learner keeps its existing
+parser behavior. Fixed input priority and dynamic Wi-Fi COS, output VLAN
+invariance and MTU checks remain enforced. Repeating an identical complete
+decision reuses the existing per-recipient cookies; a changed DA or tag recipe
+closes the generation. A related STA peer-route bug is fixed: its unicast PE
+queue update now skips multicast flows, whose MCGID names an NI group rather
+than a peer destination.
+
+Offline validation executes actual Linux selection/copy functions through
+production FE/NI installation and direct-copy receive: same-VIF subscribers,
+LAN, VLAN, EPON/P6 output, local/no-local copies, broadcast placeholders,
+hairpin DAD, duplicate/missing copies, writable-header failure, repeated
+decisions, failed withdrawal and late copies. Six original DA recipes,
+existing original wireless recipes,480 QM poll cases,129 actual parser byte
+vectors,768 P6 cases,12288 Linux VLAN/WME comparisons, multicast/flood/core/
+gate and FE peer-transaction regressions pass. Image/modules and patch226
+zero-fuzz replay pass, with84 driver/header/core inputs matching the build.
+
+This provides NI replication plus CPU destination editing and normal TX,
+not direct PE multicast-to-unicast or BCMC. Each converted recipient consumes
+one additional quarantined group/cookie ID and immutable action slot. Physical
+delivery, full queue retirement and safe resource reuse remain unverified;
+the overall FTTR service/management rewrite is still incomplete.
 
 ### Outstanding implementation and acceptance
 

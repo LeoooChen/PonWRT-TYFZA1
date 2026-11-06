@@ -99,6 +99,18 @@ void rtl9617c_bridge_mcast_select(struct sk_buff *skb, struct net_device *output
 }
 EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_select);
 
+void rtl9617c_bridge_mcast_select_addr(struct sk_buff *skb, struct net_device *output, const u8 *address)
+{
+	const struct rtl9617c_bridge_mcast_ops *ops;
+
+	rcu_read_lock();
+	ops = rcu_dereference(rtl_bridge_mcast);
+	if (ops && ops->capture_select_addr)
+		ops->capture_select_addr(ops->context, skb, output, address);
+	rcu_read_unlock();
+}
+EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_select_addr);
+
 void rtl9617c_bridge_mcast_output(struct sk_buff *skb)
 {
 	const struct rtl9617c_bridge_mcast_ops *ops;

@@ -1784,7 +1784,8 @@ int rtl_fe_wifi_peer_route(struct rtl_fe *fe,struct net_device *netdev,const u8 
  if(destination)peer->destination=destination;
  list_for_each_entry(flow,&fe->flows,list) {
   u32 *action;
-  if(!flow->installed || flow->deleting || flow->output!=port ||
+  /* A multicast MCGID names the complete NI group, never a peer queue. */
+  if(!flow->installed || flow->deleting || flow->replica_count || flow->output!=port ||
      (!fe_wifi_client(port) && !ether_addr_equal(flow->destination,address)))continue;
   /* Withdraw both lookup locations before changing an in-flight flow's output. */
   ret=rtl_fe_main_age(&io,flow->hash_index,0);

@@ -157,7 +157,7 @@ int main(void){
  }
  ports[4].flags=BR_MULTICAST_TO_UNICAST;reset();br_multicast_flood(&mdb,&packet,&mcast,false,false);
  assert(unicast[4]==1&&!delivered[4]&&delivered[2]==1);cases++;
- assert(!completed&&aborted==1);
+ assert(completed==1&&!aborted);
  ports[4].flags=0;
  /* The output set cannot be committed on the first successful clone: a
   * later allocation failure stops the actual traversal part way through. */
@@ -172,7 +172,7 @@ int main(void){
  br_multicast_flood(&mdb,&packet,&mcast,true,false);
  assert(completed==1&&!aborted&&!clones&&!original&&!drops);cases++;
  reset();br_multicast_flood(&mdb,&packet,&mcast,false,false);
- assert(!completed&&aborted==1&&drops==1);cases++;
+ assert(completed==1&&!aborted&&drops==1);cases++;
  /* Unknown multicast and snooping-disabled fallback use br_flood, including
   * the exact per-port flood/proxy/STP/VLAN/isolation policy. */
  bridge.port_list=ports;

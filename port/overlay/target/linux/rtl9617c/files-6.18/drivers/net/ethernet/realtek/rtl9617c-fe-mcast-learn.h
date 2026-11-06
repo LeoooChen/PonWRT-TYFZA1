@@ -133,12 +133,12 @@ static void fe_mcast_host_remove(struct rtl_fe *fe,struct rtl_fe_flow *flow)
 
 /* A direct CPU replica needs a distinct immutable POL cookie. Reserve it
  * from the same quarantined namespace as local-copy groups. This consumes
- * one group ID per wireless recipient until hardware retirement is proven. */
+ * one group ID per direct recipient until hardware retirement is proven. */
 static int fe_mcast_direct_stage(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct rtl_fe_mc_rule *mc)
 {
  unsigned int i,c;
  unsigned long flags;
- for(i=0;i<mc->count;i++)if(mc->direct[i].wifi_id) {
+ for(i=0;i<mc->count;i++)if(mc->direct[i].physical) {
   struct rtl_fe_mc_direct *entry=kmemdup(&mc->direct[i],sizeof(*entry),GFP_KERNEL);
   if(!entry)return -ENOMEM;
   for(c=1;c<RTL_FE_MC_GROUPS;c++)if(fe->multicast.groups[c].state==RTL_FE_MC_FREE)break;
@@ -201,16 +201,17 @@ static int fe_mcast_host_receive(void *context,struct sk_buff *skb,unsigned int 
  skb_reset_mac_header(skb);__skb_pull(skb,ETH_HLEN);
  ret=fe_bridge_frame(skb,&parsed);__skb_push(skb,ETH_HLEN);
  if(ret)goto out;
- if(direct.wifi_id) {
+ if(direct.physical) {
   struct net_device *output=dev_get_by_index_rcu(host.net,direct.output);
   struct net_device *physical=dev_get_by_index_rcu(host.net,direct.physical);
   if(!output || !physical || !netif_running(output) || !netif_carrier_ok(output) ||
+     !netif_running(physical) || !netif_carrier_ok(physical) ||
      netdev_master_upper_dev_get_rcu(output)!=brdev || br_port_get_stp_state(output)!=BR_STATE_FORWARDING)goto stale;
-  if(!physical->ieee80211_ptr || physical->ieee80211_ptr->iftype!=direct.iftype ||
-     (physical->features&(NETIF_F_HW_VLAN_CTAG_TX|NETIF_F_HW_VLAN_STAG_TX)))goto stale;
+  if(direct.wifi_id && (!physical->ieee80211_ptr || physical->ieee80211_ptr->iftype!=direct.iftype ||
+     (physical->features&(NETIF_F_HW_VLAN_CTAG_TX|NETIF_F_HW_VLAN_STAG_TX))))goto stale;
   if(parsed.tags!=direct.frame.tags || memcmp(parsed.tag,direct.frame.tag,sizeof(parsed.tag)))goto stale;
   /* Other copies already reached their destinations. Re-enter the exact
-   * physical VIF's normal TX with the final wire tags, never bridge RX. */
+   * physical port's normal TX with the final wire tags, never bridge RX. */
   input=physical;
  } else if(!host.local || parsed.tags!=host.input.tags || memcmp(parsed.tag,host.input.tag,sizeof(parsed.tag)))goto stale;
  if(!ether_addr_equal(parsed.source,host.input.source) ||
@@ -219,9 +220,11 @@ static int fe_mcast_host_receive(void *context,struct sk_buff *skb,unsigned int 
     parsed.source_port!=host.input.source_port || parsed.destination_port!=host.input.destination_port ||
     memcmp(parsed.ip_source,host.input.ip_source,sizeof(parsed.ip_source)) ||
     memcmp(parsed.ip_destination,host.input.ip_destination,sizeof(parsed.ip_destination)))goto stale;
+ if(direct.physical && !ether_addr_equal(direct.frame.destination,host.input.destination) &&
+    skb_cow_head(skb,0)){ret=-ENOMEM;goto out;}
  saved=skb_ext_add(skb,SKB_EXT_RTL9617C_BRIDGE);
  if(!saved){ret=-ENOMEM;goto out;}
- if(direct.wifi_id) {
+ if(direct.physical) {
   /* Parsing/allocation ran outside the short lock. A membership or port
    * writer during that work must revoke direct TX before enqueue. */
   spin_lock_irqsave(&fe->mc_lock,flags);
@@ -234,9 +237,11 @@ static int fe_mcast_host_receive(void *context,struct sk_buff *skb,unsigned int 
  }
  *saved=host.input;saved->multicast_host_group=group;saved->multicast_host_owner=host.owner;
  saved->multicast_epoch=host.epoch;skb->dev=input;skb->rtl9617c_fttr_ingress=source==6;
- if(direct.wifi_id){saved->wifi_id=direct.wifi_id;
+ if(direct.physical){saved->wifi_id=direct.wifi_id;
   if(!direct.priority_from_cos)skb->priority=direct.priority;
-  ret=1;
+  if(!ether_addr_equal(direct.frame.destination,host.input.destination))
+   ether_addr_copy(eth_hdr(skb)->h_dest,direct.frame.destination);
+  ret=direct.wifi_id?1:2;
  }else ret=0;
  goto out;
 stale:
@@ -307,7 +312,7 @@ static u64 fe_mcast_capture_begin(void *context,struct sk_buff *skb,bool local,u
  return ticket;
 }
 
-static void fe_mcast_capture_select(void *context,struct sk_buff *skb,struct net_device *output)
+static void fe_mcast_capture_select_addr(void *context,struct sk_buff *skb,struct net_device *output,const u8 *address)
 {
  struct rtl_fe_bridge *bridge=context;
  const struct rtl9617c_bridge_frame *saved=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
@@ -319,18 +324,27 @@ static void fe_mcast_capture_select(void *context,struct sk_buff *skb,struct net
  spin_lock_irqsave(&bridge->fe->mc_lock,flags);
  packet=fe_mcast_pending(bridge,saved->multicast_transaction);
  if(packet && !packet->complete) {
-  for(i=0;i<packet->count;i++)if(packet->output[i].port==output->ifindex)break;
+  if(!address || is_broadcast_ether_addr(address))address=packet->input.destination;
+  else if(!is_valid_ether_addr(address)){packet->failed=true;goto unlock;}
+  for(i=0;i<packet->count;i++)if(packet->output[i].port==output->ifindex &&
+     ether_addr_equal(packet->output[i].destination,address))break;
   if(i!=packet->count || i==RTL_FE_MC_ACTIONS)packet->failed=true;
-  else packet->output[packet->count++].port=output->ifindex;
+  else {packet->output[i].port=output->ifindex;ether_addr_copy(packet->output[i].destination,address);packet->count++;}
  }
+unlock:
  spin_unlock_irqrestore(&bridge->fe->mc_lock,flags);
+}
+
+static void fe_mcast_capture_select(void *context,struct sk_buff *skb,struct net_device *output)
+{
+ fe_mcast_capture_select_addr(context,skb,output,NULL);
 }
 
 static void fe_mcast_capture_output(void *context,struct sk_buff *skb)
 {
  struct rtl_fe_bridge *bridge=context;
  const struct rtl9617c_bridge_frame *saved=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
- struct rtl9617c_bridge_frame frame={};
+ struct rtl9617c_bridge_frame frame={.ip_protocol=IPPROTO_UDP};
  struct rtl9617c_bridge_tag logical_tag[2];
  unsigned int logical_tags;
  struct fe_mcast_packet *packet;
@@ -350,10 +364,10 @@ static void fe_mcast_capture_output(void *context,struct sk_buff *skb)
  spin_lock_irqsave(&bridge->fe->mc_lock,flags);
  packet=fe_mcast_pending(bridge,saved->multicast_transaction);
  if(!packet || packet->complete)goto unlock;
- for(i=0;i<packet->count;i++)if(packet->output[i].port==skb->dev->ifindex)break;
+ for(i=0;i<packet->count;i++)if(packet->output[i].port==skb->dev->ifindex &&
+    ether_addr_equal(packet->output[i].destination,frame.destination))break;
  if(i==packet->count || packet->output[i].seen || !physical ||
     !ether_addr_equal(frame.source,packet->input.source) ||
-    !ether_addr_equal(frame.destination,packet->input.destination) ||
     frame.protocol!=packet->input.protocol || frame.ip_protocol!=packet->input.ip_protocol ||
     frame.source_port!=packet->input.source_port || frame.destination_port!=packet->input.destination_port ||
     memcmp(frame.ip_source,packet->input.ip_source,sizeof(frame.ip_source)) ||
@@ -533,11 +547,13 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
   struct rtl_fe_port *port;
   struct rtl_fe_mc_replica *replica=&mc->replica[mc->count];
   bool shared=dev==fe->fttr_mcast,pon=physical && physical==fe->itu_netdev;
+  bool unicast=!ether_addr_equal(frame->destination,packet->input.destination);
   if(!dev || !physical || !netif_running(dev) || !netif_carrier_ok(dev) ||
      netdev_master_upper_dev_get(dev)!=brdev || br_port_get_stp_state(dev)!=BR_STATE_FORWARDING) {
    ret=-ESTALE;goto out;
   }
   if(!fe_mcast_path_clear(dev) || !fe_mcast_port_clear(physical)){ret=-EOPNOTSUPP;goto out;}
+  if(unicast && (!is_valid_ether_addr(frame->destination) || shared)){ret=-EOPNOTSUPP;goto out;}
   /* The native parent drops duplicate data sent via member UNI VLANs.
    * Preserve that established policy instead of adding a second replica. */
   if(physical==fe->fttr_netdev && dev->group==0x46544d55 &&
@@ -554,13 +570,13 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
   if(shared && physical->mtu>VLAN_HLEN && physical->mtu-VLAN_HLEN<data.mtu)
    data.mtu=physical->mtu-VLAN_HLEN;
   port=fe_port(fe,physical);
-  if(!port || (port==data.input && !shared) || (!pon && !port->wifi_id && !fe_mcast_epon_port(fe,port) && port->destination>6) || port->destination==5 ||
-     (physical==fe->fttr_netdev && !shared)){ret=-EOPNOTSUPP;goto out;}
+  if(!port || (port==data.input && !shared && !unicast) || (!pon && !port->wifi_id && !fe_mcast_epon_port(fe,port) && port->destination>6) || port->destination==5 ||
+     (physical==fe->fttr_netdev && !shared && !unicast)){ret=-EOPNOTSUPP;goto out;}
   replica->destination=port->destination;replica->tags=frame->tags;
   for(j=0;j<frame->tags;j++) {
    replica->tag[j].protocol=frame->tag[j].protocol;replica->tag[j].tci=frame->tag[j].tci;
   }
-  if(fe_mcast_epon_port(fe,port)) {
+  if(fe_mcast_epon_port(fe,port) && !unicast) {
    u32 priority;
    bool from_cos;
    ret=fe_mcast_input_priority(fe,data.input,input,&packet->input,&priority,&from_cos);if(ret)goto out;
@@ -578,14 +594,14 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
       !(fe->epon_paths.queue_mask[port->llid]&BIT(replica->queue))){ret=-EOPNOTSUPP;goto out;}
    if(data.mtu>1522U-ETH_HLEN-frame->tags*VLAN_HLEN)data.mtu=1522U-ETH_HLEN-frame->tags*VLAN_HLEN;
   }
-  if(port->wifi_id) {
+  if(port->wifi_id || unicast) {
    unsigned int c;
    u32 priority;
    bool from_cos;
-   if(port->source!=RTL_WIFI_SOURCE || port->wifi_id>RTL_WIFI_ID_MAX || port->llid!=port->wifi_id){ret=-EOPNOTSUPP;goto out;}
-   if(!physical->ieee80211_ptr ||
+   if(port->wifi_id && (port->source!=RTL_WIFI_SOURCE || port->wifi_id>RTL_WIFI_ID_MAX || port->llid!=port->wifi_id)){ret=-EOPNOTSUPP;goto out;}
+   if(port->wifi_id && (!physical->ieee80211_ptr ||
       (physical->ieee80211_ptr->iftype!=NL80211_IFTYPE_AP && physical->ieee80211_ptr->iftype!=NL80211_IFTYPE_STATION) ||
-      (physical->features&(NETIF_F_HW_VLAN_CTAG_TX|NETIF_F_HW_VLAN_STAG_TX))){ret=-EOPNOTSUPP;goto out;}
+      (physical->features&(NETIF_F_HW_VLAN_CTAG_TX|NETIF_F_HW_VLAN_STAG_TX)))){ret=-EOPNOTSUPP;goto out;}
    ret=fe_mcast_input_priority(fe,data.input,input,&packet->input,&priority,&from_cos);
    if(ret)goto out;
    if(from_cos?packet->output[i].priority>7:packet->output[i].priority!=priority){ret=-EOPNOTSUPP;goto out;}
@@ -597,13 +613,15 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
    }
    mc->direct[mc->count]=(struct rtl_fe_mc_direct){.frame=*frame,.output=dev->ifindex,
     .physical=physical->ifindex,.wifi_id=port->wifi_id,.priority=priority,.priority_from_cos=from_cos,
-    .iftype=physical->ieee80211_ptr->iftype};
+    .iftype=port->wifi_id?physical->ieee80211_ptr->iftype:0};
    replica->destination=16;replica->direct_cookie=mc->count+1;
    if(existing) {
     for(c=1;c<RTL_FE_MC_GROUPS;c++) {
      const struct rtl_fe_mc_direct *d=fe->mc_directs[c];
      if(d && d->flow==existing && d->output==dev->ifindex && d->physical==physical->ifindex && d->wifi_id==port->wifi_id &&
-        d->priority==priority && d->priority_from_cos==from_cos && d->iftype==physical->ieee80211_ptr->iftype)break;
+        d->priority==priority && d->priority_from_cos==from_cos && d->iftype==mc->direct[mc->count].iftype &&
+        ether_addr_equal(d->frame.destination,frame->destination) && d->frame.tags==frame->tags &&
+        !memcmp(d->frame.tag,frame->tag,sizeof(frame->tag)))break;
     }
     if(c==RTL_FE_MC_GROUPS){fe_mcast_invalidate(fe);ret=-ESTALE;goto out;}
     replica->direct_cookie=c;
@@ -611,8 +629,11 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
    mc->host=&host;
    if(data.mtu>RTL_QM_DATA_BYTES-16U-ETH_HLEN-frame->tags*VLAN_HLEN)
     data.mtu=RTL_QM_DATA_BYTES-16U-ETH_HLEN-frame->tags*VLAN_HLEN;
+   if(unicast && (port->source<=4 || fe_mcast_epon_port(fe,port)) &&
+      data.mtu>1522U-ETH_HLEN-frame->tags*VLAN_HLEN)
+    data.mtu=1522U-ETH_HLEN-frame->tags*VLAN_HLEN;
   }
-  if(pon) {
+  if(pon && !unicast) {
    ret=fe_mcast_pon_replica(fe,physical,frame,replica);
    if(ret)goto out;
    /* Match CPU PON TX's 2000-byte Ethernet limit after all EVTO edits. */

@@ -51,7 +51,7 @@ struct wireless_dev {int iftype;};
 struct net_device {int id;struct wireless_dev *ieee80211_ptr;};
 struct rtl_fe_port {struct list_head list;struct net_device *netdev;unsigned int wifi_id,destination;bool retired;};
 struct rtl_fe_wifi_peer {struct list_head list;struct rtl_fe_port *port;u8 address[6];unsigned int destination;};
-struct rtl_fe_flow {struct list_head list;struct rtl_fe_port *output;u8 destination[6];unsigned int hash_index,crc16;bool installed,deleting;};
+struct rtl_fe_flow {struct list_head list;struct rtl_fe_port *output;u8 destination[6];unsigned int hash_index,crc16,replica_count;bool installed,deleting;};
 struct rtl_fe {struct list_head ports,flows,wifi_peers;int lock;void *memory;};
 struct rtl_dq_io {struct rtl_fe *fe;};
 static struct rtl_dq_io fe_io(struct rtl_fe *fe){return (struct rtl_dq_io){fe};}
@@ -107,6 +107,13 @@ int main(void){
  }
  assert(!memcmp(memory[2],original[2],96));
  assert(!rtl_fe_wifi_peer_route(&fe,&a,mac,0));assert(transactions==previous+4);
+ assert(!memcmp(memory,original,sizeof(memory)));
+ /* STA peer changes match every destination, but MCGID on a multicast
+  * rule belongs to its immutable group and must never become a PE queue. */
+ flows[1].replica_count=3;previous=transactions;
+ assert(!rtl_fe_wifi_peer_route(&fe,&a,mac,19)&&transactions==previous+1);
+ assert(!memcmp(memory[1],original[1],48));
+ assert(!rtl_fe_wifi_peer_route(&fe,&a,mac,0)&&transactions==previous+2);
  assert(!memcmp(memory,original,sizeof(memory)));
  puts("FE peer route: exact peer/AP matching, NAT bytes preserved, age/cache withdrawal ordering, restore and removal passed");
 }

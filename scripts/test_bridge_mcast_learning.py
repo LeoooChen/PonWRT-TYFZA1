@@ -92,6 +92,10 @@ static void foreign_hook(void){}
 #define spin_unlock_irqrestore(p,f) do {assert(*(p));*(p)=0;(void)(f);} while(0)
 struct rtl_fe_bridge {struct rtl_fe *fe;bool stopping;int epoch;unsigned work;struct fe_mcast_packet *multicast_pending[FE_MCAST_PENDING];};
 struct sk_buff {struct net_device *dev;unsigned priority;bool gso,rtl9617c_fttr_ingress;struct rtl9617c_bridge_frame saved,frame;};
+#define eth_hdr(s) (&(s)->frame)
+#define h_dest destination
+static int cow_failure;
+static int skb_cow_head(struct sk_buff *s,unsigned n){(void)s;assert(!n);return cow_failure;}
 static u64 fe_mcast_ticket;
 static int atomic_read(int *p){return *p;}
 static bool rtl_fe_enabled(struct rtl_fe *f){return f->enabled;}
@@ -101,6 +105,7 @@ static void fe_mcast_invalidate(struct rtl_fe *fe);
 static struct rtl9617c_bridge_frame *skb_ext_find(struct sk_buff *s,int id){assert(!id);return &s->saved;}
 static struct rtl9617c_bridge_frame *skb_ext_add(struct sk_buff *s,int id){assert(!id);if(ext_change){fe_mcast_invalidate(ext_change);ext_change=NULL;}return &s->saved;}
 static bool is_multicast_ether_addr(const u8 *a){return a[0]&1;}
+static bool is_valid_ether_addr(const u8 *a){return !(a[0]&1)&&memcmp(a,"\0\0\0\0\0\0",6);}
 static bool is_broadcast_ether_addr(const u8 *a){return !memcmp(a,"\xff\xff\xff\xff\xff\xff",6);}
 static bool is_link_local_ether_addr(const u8 *a){return !memcmp(a,"\1\x80\xc2\0\0",5)&&a[5]<16;}
 static bool ether_addr_equal(const u8 *a,const u8 *b){return !memcmp(a,b,6);}
@@ -712,6 +717,7 @@ int main(void){
   * A partially reserved recipient retains no live flow after rollback. */
  struct rtl_fe_mc_rule exhausted={.count=2};
  exhausted.direct[0].wifi_id=2;exhausted.direct[1].wifi_id=60;
+ exhausted.direct[0].physical=12;exhausted.direct[1].physical=13;
  struct rtl_fe_flow incomplete={.replica_count=2};unsigned free_slot=0;
  for(unsigned c=1;c<256;c++)if(fe.multicast.groups[c].state==RTL_FE_MC_FREE) {
   if(!free_slot)free_slot=c;else fe.multicast.groups[c].state=RTL_FE_MC_RETIRED;

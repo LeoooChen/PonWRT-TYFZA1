@@ -37,6 +37,11 @@ int main(void){
   assert(f.protocol==(ipv6?0x86dd:0x800)&&f.ip_source[0]==(ipv6?0x20000000:0x0a000000));
   if(metadata)assert(f.tag[0].tci==0xb123);
   struct sk_buff valid=s;
+  /* MC-to-UC output requests full datagram validation after DA replacement. */
+  s.frame[0]=2;struct rtl9617c_bridge_frame unicast={.ip_protocol=17};vectors++;
+  assert(!fe_bridge_frame(&s,&unicast)&&unicast.destination[0]==2&&unicast.source_port==1234&&unicast.destination_port==5678);
+  ip[ipv6?6:9]=6;unicast=(struct rtl9617c_bridge_frame){.ip_protocol=17};vectors++;
+  assert(fe_bridge_frame(&s,&unicast)==-EOPNOTSUPP);s=valid;
   /* Ethernet padding cannot disguise UDP length beyond its IP datagram. */
   s.len+=6;be16(udp+4,18);check(&s,-EINVAL,tags);s=valid;
   be16(udp+4,7);check(&s,-EINVAL,tags);s=valid;

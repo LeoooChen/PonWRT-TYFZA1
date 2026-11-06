@@ -62,6 +62,7 @@ static u64 capture_begin(void *context,struct sk_buff *skb,bool local,u64 ticket
 static void select_packet(void *context,struct sk_buff *skb,struct net_device *dev){
  struct owner *o=context;(void)dev;if(skb->ticket==o->pending)o->selected++;
 }
+static void select_address(void *context,struct sk_buff *skb,struct net_device *dev,const u8 *address){assert(address[0]==2);select_packet(context,skb,dev);}
 static void output_packet(void *context,struct sk_buff *skb){struct owner *o=context;if(skb->ticket==o->pending)o->outputs++;}
 static void complete_packet(void *context,u64 ticket,bool complete){struct owner *o=context;if(ticket==o->pending&&complete)o->completed++;}
 static int host_local(void *ctx,struct sk_buff *s,struct net_device *d,u16 vid){(void)ctx;(void)s;(void)d;return vid?-ESTALE:1;}
@@ -71,7 +72,7 @@ static void *register_owner(void *unused){(void)unused;assert(!rtl9617c_bridge_m
 static void *unregister_owner(void *unused){(void)unused;rtl9617c_bridge_mcast_unregister(thread_ops);return NULL;}
 int main(void){
  struct owner first={0},second={0};pthread_t thread;
- struct rtl9617c_bridge_mcast_ops a={&first,change_begin,change_end,capture_begin,select_packet,output_packet,complete_packet,host_receive,host_local},b=a;
+ struct rtl9617c_bridge_mcast_ops a={&first,change_begin,change_end,capture_begin,select_packet,select_address,output_packet,complete_packet,host_receive,host_local},b=a;
  b.context=&second;struct sk_buff old={0},fresh={0};struct net_device dev;
  const struct rtl9617c_bridge_mcast_ops *token=rtl9617c_bridge_mcast_begin(&dev);assert(!token);
  thread_ops=&a;assert(!pthread_create(&thread,NULL,register_owner,NULL));wait_sync(1);
@@ -91,8 +92,10 @@ int main(void){
  u64 new_ticket=rtl9617c_bridge_mcast_capture(&fresh,false);assert(new_ticket>old_ticket);
  rtl9617c_bridge_mcast_select(&old,&dev);rtl9617c_bridge_mcast_output(&old);rtl9617c_bridge_mcast_complete(old_ticket,true);
  assert(!second.selected&&!second.outputs&&!second.completed);
+ const u8 address[6]={2,1,2,3,4,5};rtl9617c_bridge_mcast_select_addr(&old,&dev,address);assert(!second.selected);
  rtl9617c_bridge_mcast_select(&fresh,&dev);rtl9617c_bridge_mcast_output(&fresh);rtl9617c_bridge_mcast_complete(new_ticket,true);
  assert(second.selected==1&&second.outputs==1&&second.completed==1);
+ rtl9617c_bridge_mcast_select_addr(&fresh,&dev,address);assert(second.selected==2);
  assert(!rtl9617c_bridge_mcast_receive(&fresh,7,0));
  assert(rtl9617c_bridge_mcast_local(&fresh,&dev,1)==-ESTALE&&fresh.saved.multicast_host_group==7);
  assert(rtl9617c_bridge_mcast_local(&fresh,&dev,0)==1&&!fresh.saved.multicast_host_group);

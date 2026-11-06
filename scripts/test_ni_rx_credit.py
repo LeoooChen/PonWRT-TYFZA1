@@ -51,6 +51,11 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u6
 struct net_device {bool running;struct {u64 rx_errors,rx_dropped,rx_packets,rx_bytes;} stats;};
 struct napi_struct {struct net_device *dev;};
 struct sk_buff {u8 storage[128],*data;unsigned len,priority,protocol,ip_summed;struct net_device *dev;};
+static void skb_reset_mac_header(struct sk_buff *s){(void)s;}
+#define eth_hdr(s) ((struct {u8 da[6],sa[6];u16 h_proto;} *)(s)->data)
+static u16 __vlan_get_protocol(struct sk_buff *s,u16 proto,int *depth){(void)s;(void)depth;return proto;}
+static void skb_set_network_header(struct sk_buff *s,int depth){(void)s;(void)depth;}
+static void dev_queue_xmit(struct sk_buff *s){(void)s;assert(0);}
 struct rtl9617c_ni_wifi_endpoint {struct net_device *netdev;void (*receive)(struct rtl9617c_ni_wifi_endpoint *,struct napi_struct *,struct sk_buff *,bool);};
 struct rtl9617c_ni_endpoint {void (*receive)(struct rtl9617c_ni_endpoint *,struct napi_struct *,struct sk_buff *,unsigned);};
 static unsigned rtl9617c_bridge_host_group(u32 h0,u32 h1){unsigned p=(h0>>18)&511,src=(h1>>9)&63;return ((h1>>3)&63)==16&&(src<=4||src==6||src==7||src==18)&&(p&256)?p&255:0;}

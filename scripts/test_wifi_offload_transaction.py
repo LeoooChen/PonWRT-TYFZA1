@@ -79,7 +79,7 @@ struct wireless_dev;
 struct net_device {unsigned references;struct wireless_dev *ieee80211_ptr;};
 struct rtl_fe_port {struct list_head list;struct net_device *netdev;unsigned wifi_id,destination;bool retired;};
 struct rtl_fe_wifi_peer {struct list_head list;struct rtl_fe_port *port;u8 address[6];unsigned destination;};
-struct rtl_fe_flow {struct list_head list;struct rtl_fe_port *output;u8 destination[6];unsigned hash_index,crc16;bool installed,deleting;};
+struct rtl_fe_flow {struct list_head list;struct rtl_fe_port *output;u8 destination[6];unsigned hash_index,crc16,replica_count;bool installed,deleting;};
 struct rtl_fe {struct list_head ports,flows,wifi_peers;int lock;void *memory;};
 struct rtl_dq_io {struct rtl_fe *fe;};
 struct wiphy {int unused;};struct work_struct {int unused;};struct wiphy_work {int unused;};

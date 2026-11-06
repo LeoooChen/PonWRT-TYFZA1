@@ -40,6 +40,7 @@ struct rtl9617c_bridge_mcast_ops {
 	void (*change_end)(void *context);
 	u64 (*capture_begin)(void *context, struct sk_buff *skb, bool local, u64 transaction);
 	void (*capture_select)(void *context, struct sk_buff *skb, struct net_device *output);
+	void (*capture_select_addr)(void *context, struct sk_buff *skb, struct net_device *output, const u8 *address);
 	void (*capture_output)(void *context, struct sk_buff *skb);
 	void (*capture_end)(void *context, u64 transaction, bool complete);
 	int (*host_receive)(void *context, struct sk_buff *skb, unsigned int group, unsigned int source);
@@ -51,6 +52,7 @@ const struct rtl9617c_bridge_mcast_ops *rtl9617c_bridge_mcast_begin(struct net_d
 void rtl9617c_bridge_mcast_end(const struct rtl9617c_bridge_mcast_ops *ops);
 u64 rtl9617c_bridge_mcast_capture(struct sk_buff *skb, bool local);
 void rtl9617c_bridge_mcast_select(struct sk_buff *skb, struct net_device *output);
+void rtl9617c_bridge_mcast_select_addr(struct sk_buff *skb, struct net_device *output, const u8 *address);
 void rtl9617c_bridge_mcast_output(struct sk_buff *skb);
 void rtl9617c_bridge_mcast_complete(u64 transaction, bool complete);
 
@@ -62,7 +64,7 @@ static inline unsigned int rtl9617c_bridge_host_group(u32 h0,u32 h1)
  return ((h1>>3)&63)==16 && (source<=4 || source==6 || source==7 || source==18) && (pol&256)?pol&255:0;
 }
 /* Negative rejects a stale copy; zero selects local RX; one selects the
- * validated VIF's normal TX. The callback never consumes the skb. */
+ * validated VIF's normal TX; two selects native Ethernet TX. No consumption. */
 int rtl9617c_bridge_mcast_receive(struct sk_buff *skb, unsigned int group, unsigned int source);
 int rtl9617c_bridge_mcast_local(struct sk_buff *skb, struct net_device *bridge, u16 vid);
 #endif

@@ -9,6 +9,34 @@ import struct
 from arm64_module_oracle import ModuleOracle
 from trace_stock_fttr_mcast_hw import replica_recipes
 
+def destination_recipes(fc_path):
+    """Target module ABI has three arguments, unlike the reference SDK."""
+    def boundary(name,args):
+        if name=='memcpy':
+            fc.uc.mem_write(args[0],bytes(fc.uc.mem_read(args[1],args[2])))
+            return args[0]
+        raise AssertionError(('unmodeled destination recipe boundary',name,args))
+    fc=ModuleOracle(fc_path,['rtk_fc_abstrSwFlowActGenBySkb'],boundary)
+    hdr,skb,ingress,eth,action=[fc.scratch+i for i in (0,0x1000,0x2000,0x3000,0x4000)]
+    fc.word(hdr,eth);fc.word(skb+32,ingress)
+    # Original pattern sizes: the caller normally initializes these globals.
+    sizes=fc.symbols['patternSizeMapping'][0]
+    fc.uc.mem_write(sizes+4,struct.pack('<HH',6,6))
+    fc.uc.mem_write(sizes+40,struct.pack('<H',1))
+    source=bytes.fromhex('020000000001');cases=[]
+    for group in ('01005e010203','333300010203'):
+        before=bytes.fromhex(group)
+        fc.uc.mem_write(ingress+57,source+before)
+        for destination in (before,bytes.fromhex('020000000002'),bytes.fromhex('025566778899')):
+            fc.uc.mem_write(eth,destination+source+b'\x08\x00')
+            assert fc.call('rtk_fc_abstrSwFlowActGenBySkb',hdr,skb,action)==0
+            flags=fc.unpack(action,'H')[0]
+            assert bool(flags&1)==(destination!=before) and not flags&2
+            if flags&1:assert bytes(fc.uc.mem_read(action+4,6))==destination
+            cases.append(dict(input=before.hex(),output=destination.hex(),flags=flags,
+                              destination_action=bytes(fc.uc.mem_read(action+4,6)).hex() if flags&1 else None))
+    return dict(cases=cases,scope='Actual target three-argument software action producer compares ingress/current Ethernet addresses and emits per-copy DA replacement. Caller-provided ingress/packet metadata and initialized field sizes are modeled; replication and physical TX are not executed here.')
+
 
 def run(fc_path, ni_path, mgr_path):
     class HelpersRegistered(Exception):
@@ -157,10 +185,11 @@ def main():
         parser.add_argument('--' + name, type=Path, required=True)
     args = parser.parse_args()
     result = run(args.fc, args.ni, args.mgr)
+    result['destination_recipes']=destination_recipes(args.fc)
     result['sha256'] = {name: hashlib.sha256(getattr(args, name).read_bytes()).hexdigest()
                         for name in ('fc', 'ni', 'mgr')}
     args.output.write_text(json.dumps(result, indent=2) + '\n')
-    print('PASS: original wireless helper registration, 30 CPU dispatch cases, 32 per-copy COS/QoS cases and 12 complete FC/NI replica recipes')
+    print('PASS: original wireless registration, 30 CPU dispatch, 32 COS/QoS, 12 FC/NI replicas and 6 destination-rewrite recipes')
 
 
 if __name__ == '__main__':

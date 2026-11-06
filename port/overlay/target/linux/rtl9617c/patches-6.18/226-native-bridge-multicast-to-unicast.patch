@@ -1,0 +1,31 @@
+--- a/net/bridge/br_forward.c
++++ b/net/bridge/br_forward.c
+@@ -307,6 +307,9 @@
+ 	if (skb->dev == p->dev && ether_addr_equal(src, addr))
+ 		return;
+ 
++#ifdef CONFIG_ARCH_RTL9617C
++	rtl9617c_bridge_mcast_select_addr(skb, p->dev, addr);
++#endif
+ 	__skb_push(skb, ETH_HLEN);
+ 	nskb = pskb_copy(skb, GFP_ATOMIC);
+ 	__skb_pull(skb, ETH_HLEN);
+@@ -363,9 +366,6 @@
+ 			port = lport;
+ 
+ 			if (port->flags & BR_MULTICAST_TO_UNICAST) {
+-#ifdef CONFIG_ARCH_RTL9617C
+-				native_complete = false;
+-#endif
+ 				maybe_deliver_addr(lport, skb, p->eth_addr,
+ 						   local_orig);
+ 				goto delivered;
+@@ -393,7 +393,7 @@
+ 
+ 	if (!prev) {
+ #ifdef CONFIG_ARCH_RTL9617C
+-		rtl9617c_bridge_mcast_complete(native_transaction, native_complete && local_rcv);
++		rtl9617c_bridge_mcast_complete(native_transaction, native_complete);
+ #endif
+ 		if (!local_rcv)
+ 			kfree_skb_reason(skb, reason);
