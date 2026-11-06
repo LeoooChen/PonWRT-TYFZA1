@@ -3927,8 +3927,35 @@ The native multicast implementation must propagate those failures and retain
 ownership until withdrawal is verified. Report:
 `artifacts/fttr/mcast-hardware-original-20261106.json`. This does not establish
 bitmap destination semantics or a working FE/PE replication recipe; the
-software allocation/caller/action chain remains the next hardware integration
-step. No device IO was performed.
+software allocation/caller/action chain is additionally exercised below. No
+device IO was performed.
+
+The same check executes `_aal_arb_mc_fib_action_add` for16 destination/tag/source
+rewrite recipes. A no-edit destination uses words `[0, 0x40000000 | ldpid<<24,
+0]`; outer4095 with TPID8100 adds `1 | 4095<<2 | 1<<14` to word1. The source
+MAC input is byte-reversed before the8-entry my-MAC allocator. Its source-swap
+recipe also enables `ip_ttl_dec_cmd`; the bridge implementation must not inherit
+that routed edit accidentally. The generic action describes VLAN command1 as
+"tag by table", so packed bits alone do not prove push versus replacement for
+an already tagged packet.
+
+Executing group add/publish/change/free confirms action-index bitmaps and
+reference sharing between old/new NI entries. Original free drops action
+references before the NI entry, ignores a failed NI deletion, clears software
+ownership and returns0. Successful port-action deletion also has an unmatched
+lock callback; the lock primitive itself is modeled, not executed. Native
+ownership must survive failed withdrawal and must not reuse an index while an
+old packet may still carry it.
+
+With `--fc` pointing to the original `fc_8277c.ko`, the tool executes
+`rtk_fc_syncToHw_G3addGroupFwdHash` and `rtk_fc_syncToHw_G3updateGroupHash`,
+then the actual `convert_act_flow_nomal_mode`. Both produce MC1/MCGID=NI index,
+DPID-valid/priority/permit1 and DEEPQ0 before replication for indices1/63/255.
+Both wrappers return0 even when their Hash callee returns5. These are different
+from the PON GEM action that reuses MC/MCGID with DEEPQ1 and T-CONT fields.
+This establishes the replication-entry encoding, not physical replication or
+the downstream arbitration/deep-buffer route. Those routes and native table
+ownership remain required before enabling multicast offload.
 
 ### Outstanding implementation and acceptance
 
