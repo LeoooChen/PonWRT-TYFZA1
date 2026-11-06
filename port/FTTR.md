@@ -4695,15 +4695,71 @@ and36 complete FC/NI replica recipes pass in
 cross-module API forwarding, allocation, actual LSO hardware writes and
 physical queue delivery remain modeled boundaries.
 
-This is evidence for the next implementation, not enabled EPON multicast.
-The current replica encoder deliberately requires ITU GEM8..255 and excludes
-destination32; EPON needs a distinct route with POL0, LLID/MAC-instance
-identity, current4/8-queue mode and registration generation. Native PDC maps
-received LLID table entries to business MAC instances; multicast LLIDs use
-the primary interface. That selection, PDC changes, registration loss,
-mode switches and LLID resizing must invalidate complete groups before new
-EPON routes are admitted. ITU host-copy metadata must remain distinct from
-EPON LLID0. No device was accessed.
+This evidence drives the separate EPON path below. Native PDC maps received
+LLID table entries to business MAC instances; multicast LLIDs use the primary
+interface. ITU GEM and EPON MAC-instance identities remain distinct, including
+EPON instance0. No device was accessed.
+
+### Native EPON multicast admission and replicas
+
+The complete Linux multicast producer now accepts EPON source7/POL0..31 and
+EPON output destinations32..63. Each EPON replica uses POL0 and the native MAC
+instance, following the original SID/action semantics above rather than an
+ITU GEM index. The same transaction can include LAN, shared FTTR, AP/STA and
+CPU-local recipients; failed or unsupported recipients keep the entire group
+in software. Existing source/group/VLAN/UDP keys distinguish ingress instances.
+The ordinary PON receiver stamps EPON identity only while its published
+snapshot is admitted. QM-owned local copies restore the exact instance and
+snapshot generation, and PON RX validates the selected netdev before entering
+the bridge without GRO. Instance0 is valid and is not confused with absent GEM
+metadata or a delayed ITU packet after a mode switch.
+
+`rtl9617c-epon-path.h` records all64 LLID rows, registration epoch, current
+active instances, mode,4/8-queue width and actual queue-enable masks. PDC must
+match every row before publication. Unchanged snapshots do not consume a new
+generation. Same-MAC LLID replacement, registration changes, holdover expiry,
+RX reset, LLID resize, PUC/SLA changes, FE disable and protocol shutdown revoke
+admission and withdraw all flows touching PON, including PON as a nonterminal
+replica. A failed Hash/cache deletion retains the old snapshot and flow owners
+for retry, with admission closed. PDC refresh also retries a previous failed
+withdrawal before any subsequent mapping write. Cleanup failure still allows
+optical TX and hardware RX/TX shutdown and is returned to the caller.
+
+Fixed output priorities follow actual native TX: `priority & (queues-1)`.
+VLAN ingress mappings, including priorities256..263, are reconstructed from
+the complete input; output VLAN bytes must match Linux. Raw Wi-Fi COS is
+preserved per packet with eight enabled EPON queues, provided every COS gives
+the same final VLAN bytes. Four-queue raw Wi-Fi output is still unsupported:
+the current shared key/action cannot apply the needed per-copy COS mask.
+Disabled queues, failed SLA application and foreign VOQ width refuse
+admission. EPON output MTU follows the native1522-byte Ethernet limit.
+
+Validation on2026-11-07 executes the actual snapshot producer, LLID writer,
+PDC update, complete learner, FE table lifecycle, PON receive and QM poll:
+
+- All32 instance-count configurations, unchanged snapshots, same-instance
+  LLID changes, repeated withdrawal failures before PDC writes, failed PDC,
+  registration/holdover/mode/queue changes and publication retry.
+- Instance0/31 ingress and local copies, two simultaneous EPON outputs,
+  mixed EPON/LAN/FTTR/wireless recipients, fixed4/8-queue priorities,
+  preserved COS, disabled-queue and four-queue dynamic refusal.
+- Nine ITU and nine EPON complete original FC/NI recipes,32 original DBUF
+  destinations,206 route failures/retries and2560 original classifier keys/CRCs.
+- 432 actual QM poll cases,160 EPON host-receive cases,40 actual bridge receive
+  cases,768 P6 RX cases and12288 Linux VLAN/WME comparisons; existing FE
+  parser/ownership, unicast bridge, multicast gate/core, PON shutdown/mode
+  and management/SLA checks pass.
+- ARM64 Image/modules build passes;84 native driver/public-header/core inputs
+  match the prepared kernel, with no compiler errors or warnings.
+
+This does not prove queued-packet retirement or safe wire-LLID reuse. Ordinary
+packets already inside hardware when an LLID changes have no native snapshot
+cookie. Actual LLID/PVT queue delivery and physical traffic remain untested;
+PVT programming is owned by the existing native PUC, not independently audited
+for foreign indirect-table mutations here. The255 cumulative group/cookie IDs,
+64 immutable actions,8 source-MAC entries and8 shared DBUF rules retain their
+documented limits. Direct PE BCMC, unknown multicast flooding, full retirement,
+remaining service/management policies and hardware acceptance remain open.
 
 ### Outstanding implementation and acceptance
 

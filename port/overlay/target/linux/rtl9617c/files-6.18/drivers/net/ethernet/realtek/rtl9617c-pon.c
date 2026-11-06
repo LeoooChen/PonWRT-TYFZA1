@@ -484,11 +484,15 @@ static ssize_t llid_count_store(struct device *dev, struct device_attribute *att
 		mutex_unlock(&pon->control_lock);
 		return -EBUSY;
 	}
+	ret=rtl_pon_epon_paths_invalidate(pon);
+	if(ret){mutex_unlock(&pon->lock);mutex_unlock(&pon->control_lock);return ret;}
 	mutex_unlock(&pon->lock);
 	ret = rtl_pon_oam_resize(pon, value);
 	mutex_lock(&pon->lock);
-	if (!ret)
+	if (!ret) {
+		if(pon->llid_count!=value)pon->puc_configured=false;
 		pon->llid_count = value;
+	}
 	mutex_unlock(&pon->lock);
 	mutex_unlock(&pon->control_lock);
 	return ret ? ret : count;

@@ -356,10 +356,11 @@ int rtl_pon_epon_traffic_locked(struct rtl9617c_pon *pon, bool enable)
 	lockdep_assert_held(&pon->control_lock);
 	if (!enable) {
 		mutex_lock(&pon->lock);
+		ret=rtl_pon_epon_paths_invalidate(pon);
 		pon->traffic_enabled = false;
 		gpiod_set_value_cansleep(pon->tx_disable, 1);
 		mutex_unlock(&pon->lock);
-		if (pon->fe_enabled)
+		if (pon->fe_enabled && !ret)
 			ret = rtl_pon_fe_configure_locked(pon, false);
 	}
 	mutex_lock(&pon->lock);

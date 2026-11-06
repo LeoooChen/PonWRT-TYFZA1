@@ -82,6 +82,7 @@ static int rtl_pon_epon_crypto_forget(struct rtl9617c_pon *pon,u32 mask)
 {pon->epon_crypto_llids &= ~mask;return 0;}
 int rtl_pon_stop_locked(struct rtl9617c_pon *pon);
 static int rtl_pon_itu_paths_invalidate(struct rtl9617c_pon *pon,enum rtl_pon_mode mode){(void)mode;assert(pon->lock.held);return pon->policy_error;}
+static int rtl_pon_epon_paths_invalidate(struct rtl9617c_pon *pon){assert(pon->lock.held);return 0;}
 static int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon,bool enable) {
     lockdep_assert_held(&pon->control_lock);
     if(pon->cleanup_error)return pon->cleanup_error;

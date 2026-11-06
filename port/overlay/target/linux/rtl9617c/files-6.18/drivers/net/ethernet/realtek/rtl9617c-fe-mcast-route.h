@@ -151,7 +151,7 @@ static inline int rtl_fe_mc_route_members(const struct rtl_dq_io *io,unsigned in
  if((source>4 && source!=6 && source!=7 && source!=18) || !count || count>RTL_FE_MC_ACTIONS)return -EINVAL;
  for(i=0;i<count;i++) {
   if((replicas[i].destination>6 && replicas[i].destination!=16 &&
-      (replicas[i].destination<33 || replicas[i].destination>63)) || replicas[i].destination==5)return -EINVAL;
+      (replicas[i].destination<32 || replicas[i].destination>63)) || replicas[i].destination==5)return -EINVAL;
   required[replicas[i].destination/32]|=1U<<(replicas[i].destination%32);
  }
  /* Native TC supplies a complete member set. If a previous owner enabled
@@ -171,19 +171,19 @@ static inline int rtl_fe_mc_route_port(const struct rtl_dq_io *io,struct rtl_fe_
 {
  unsigned int words[2],i;
  int ret;
- if(!route->ready || (port>6 && port!=16 && (port<33 || port>63)) || port==5)return -EINVAL;
+ if(!route->ready || (port>6 && port!=16 && (port<32 || port>63)) || port==5)return -EINVAL;
  /* QM initializes both my-MAC map cases before native FE can be enabled.
   * Refuse a changed mapping rather than sending a replica to another port. */
- for(i=0;i<(port>=33?4:2);i++) {
-  unsigned int index=port>=33?port+(i<<6):port+(i<<7)+(port==6?64:0);
+ for(i=0;i<(port>=32?4:2);i++) {
+  unsigned int index=port>=32?port+(i<<6):port+(i<<7)+(port==6?64:0);
   ret=rtl_fe_mc_route_read(io,0x1654,0x1658,index,words,1);
   if(ret)return ret;
-  if((words[0]&15)!=(port==6 || port>=33?8:port==16?9:port))return -EUCLEAN;
+  if((words[0]&15)!=(port==6 || port>=32?8:port==16?9:port))return -EUCLEAN;
  }
  /* CPU0 uses the normal Header A/CPU path, never a radio EPP ring. */
  if(port==16 && ((io->read(io->context,0x6558)&7) ||
     (io->read(io->context,0xa1dc)&3) || (io->read(io->context,0xa1ec)&3)))return -EUCLEAN;
- if(port>=33 && (io->read(io->context,0x68f8)&15)!=10)return -EUCLEAN;
+ if(port>=32 && (io->read(io->context,0x68f8)&15)!=10)return -EUCLEAN;
  if(port==6 && ((io->read(io->context,0x1600)>>4)&15)!=8)return -EUCLEAN;
  if(!(route->ports&(1ULL<<port))) {
   ret=rtl_fe_mc_route_read(io,0x1420,0x1428,port,words,2);
@@ -198,7 +198,7 @@ static inline int rtl_fe_mc_route_port(const struct rtl_dq_io *io,struct rtl_fe_
  words[0]=(route->elp[port][0]&~15U)|3;words[1]=route->elp[port][1];
  ret=rtl_fe_mc_route_write(io,0x1420,0x1428,port,words,2);
  if(ret)return ret;
- if(port>=33) {
+ if(port>=32) {
   unsigned int free=8;
   for(i=0;i<8;i++) {
    ret=rtl_fe_mc_route_read(io,0x164c,0x1650,i,words,1);if(ret)return ret;

@@ -54,6 +54,8 @@ int rtl9617c_ni_wifi_lookup(struct device *dev, struct sk_buff *skb, unsigned in
 int rtl9617c_ni_oam_configure(struct device *dev);
 int rtl9617c_ni_fe_add_port(struct device *dev,struct net_device *netdev,unsigned int llid);
 struct rtl_itu_paths;
+struct rtl_epon_paths;
+int rtl9617c_ni_epon_paths(struct device *dev,const struct rtl_epon_paths *paths);
 int rtl9617c_ni_itu_paths(struct device *dev, struct net_device *netdev, const struct rtl_itu_paths *paths);
 void rtl9617c_ni_fe_remove_port(struct device *dev,struct net_device *netdev);
 int rtl9617c_ni_fe_setup_tc(struct device *dev,struct net_device *netdev,

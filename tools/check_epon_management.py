@@ -56,6 +56,9 @@ struct rtl9617c_pon {
 static unsigned long jiffies;
 static bool offline_timeout;
 static int gpio_error;
+static int withdraw_error;
+static unsigned withdraw_calls;
+static int rtl_pon_epon_paths_invalidate(struct rtl9617c_pon *p) {(void)p;withdraw_calls++;return withdraw_error;}
 static void mutex_lock(int *p) {assert(!*p);*p=1;}
 static void mutex_unlock(int *p) {assert(*p);*p=0;}
 static int rtl_pon_mode_is_epon(int mode) {return mode<3;}
@@ -89,6 +92,14 @@ int main(void) {
  regs[0x10/4]=1; jiffies=2000; assert(rtl_mpcp_holdover(&p,3)==3);
  jiffies=2200; assert(rtl_mpcp_holdover(&p,3)==2 && p.epon_holdover_active==2);
  assert(regs[OFFLINE/4]==1 && p.epon_holdover_work.delay==400);
+ /* Stable holdover polls keep the same forwarding generation. Expiry
+  * cannot assert OFFLINE until Hash withdrawal succeeds. */
+ unsigned old=withdraw_calls;jiffies=2400;
+ assert(rtl_mpcp_holdover(&p,2)==2 && withdraw_calls==old);
+ jiffies=2600;withdraw_error=-EIO;
+ assert(rtl_mpcp_holdover(&p,2)==2 && p.epon_holdover_error==-EIO);
+ assert(regs[OFFLINE/4]==1 && p.epon_holdover_work.pending && p.epon_holdover_work.delay==HZ);
+ withdraw_error=0;
  jiffies=2600; offline_timeout=true;
  assert(rtl_mpcp_holdover(&p,2)==2 && p.epon_holdover_error==-ETIMEDOUT && !p.epon_holdover_active);
  offline_timeout=false; assert(rtl_mpcp_holdover(&p,2)==0);

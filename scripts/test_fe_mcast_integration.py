@@ -10,7 +10,7 @@ drivers = root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethe
 native = (drivers / 'rtl9617c-fe.c').read_text()
 
 def function(name):
-    start = re.search(r'^.*\b'+name+r'\([^;]*?\)\s*\{', native, re.M).start()
+    start = re.search(r'^[\w *]+\b'+name+r'\([^;]*?\)\s*\{', native, re.M).start()
     end = native.index('{', start)+1
     depth = 1
     while depth:

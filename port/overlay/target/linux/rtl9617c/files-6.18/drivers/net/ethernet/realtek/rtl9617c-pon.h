@@ -11,6 +11,7 @@
 #include "rtl9617c-pon-mode.h"
 #include "rtl9617c-mpcp-backoff.h"
 #include "rtl9617c-pon-path.h"
+#include "rtl9617c-epon-path.h"
 #include "rtl9617c-xgtc-recovery.h"
 
 struct rtl_itu_path_state {
@@ -104,6 +105,10 @@ struct rtl9617c_pon {
 	u32 epon_crypto_llids;
 	int epon_crypto_error;
 	u64 epon_epoch;
+	struct rtl_epon_paths epon_paths;
+	u64 epon_path_epoch;
+	bool epon_paths_ready;
+	int epon_paths_error;
 	u64 epon_llid_epoch[32];
 	unsigned long epon_health_at;
 	u32 epon_sync_failures;
@@ -252,6 +257,8 @@ ssize_t rtl_pon_puc_state(struct rtl9617c_pon *pon, char *buf);
 int rtl_pon_oam_init(struct rtl9617c_pon *pon);
 void rtl_pon_oam_remove(struct rtl9617c_pon *pon);
 void rtl_pon_oam_carrier(struct rtl9617c_pon *pon);
+int rtl_pon_epon_paths_invalidate(struct rtl9617c_pon *pon);
+int rtl_pon_epon_paths_refresh(struct rtl9617c_pon *pon);
 int rtl_pon_oam_resize(struct rtl9617c_pon *pon, unsigned int count);
 void rtl_pon_oam_address(struct rtl9617c_pon *pon);
 void rtl_pon_data_address(struct rtl9617c_pon *pon);

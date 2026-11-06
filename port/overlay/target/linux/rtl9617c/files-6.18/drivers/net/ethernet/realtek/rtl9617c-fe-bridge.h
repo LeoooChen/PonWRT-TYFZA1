@@ -182,6 +182,7 @@ static unsigned int fe_bridge_wire(void *private,struct sk_buff *skb,
  }
  received=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
  if(received)frame.wifi_id=received->wifi_id;
+ if(received && received->epon){frame.epon=1;frame.epon_llid=received->epon_llid;frame.pon_generation=received->pon_generation;}
  if(received && received->pon_gem) {
   frame.pon_gem=received->pon_gem;frame.pon_generation=received->pon_generation;
   frame.pon_tags=frame.tags;frame.pon_priority=skb->priority;
@@ -243,6 +244,7 @@ static unsigned int fe_bridge_capture(void *private,struct sk_buff *skb,
  frame.ingress=wire->ingress;frame.epoch=wire->epoch;
  frame.multicast_epoch=wire->multicast_epoch;
  frame.wifi_id=wire->wifi_id;
+ frame.epon=wire->epon;frame.epon_llid=wire->epon_llid;
  if(!wire->ip_protocol)frame.ip_protocol=0;
  frame.pon_gem=wire->pon_gem;frame.pon_generation=wire->pon_generation;
  frame.pon_tags=wire->pon_tags;frame.pon_priority=wire->pon_priority;

@@ -717,9 +717,9 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 					struct rtl9617c_ni_endpoint *endpoint=rcu_dereference(rx->pon);
 					skb->priority=0; /* Same input priority as ordinary PON RX. */
 					/* POL names the host group now. Its trusted owner recovered
-					 * the original GEM; PON RX validates its config generation. */
-					if (endpoint && saved && saved->pon_gem)
-						endpoint->receive(endpoint,napi,skb,7U|(saved->pon_gem<<8));
+					 * the GEM or EPON instance; PON RX validates the generation. */
+					if (endpoint && saved && (saved->pon_gem || saved->epon))
+						endpoint->receive(endpoint,napi,skb,7U|((saved->epon?saved->epon_llid:saved->pon_gem)<<8));
 					else {dev->stats.rx_dropped++;dev_kfree_skb_any(skb);}
 					rcu_read_unlock();continue;
 				}

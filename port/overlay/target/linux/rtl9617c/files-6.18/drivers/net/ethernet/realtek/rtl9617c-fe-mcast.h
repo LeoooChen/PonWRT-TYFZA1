@@ -16,12 +16,12 @@
  * It does not use the command as a relative push. The L2 editor TPID table
  * differs from the L3 parser table: outer selects A..D, inner only C/D.
  * Read its actual values rather than assuming that L3 selectors also apply.
- * Destination0..6 covers native Ethernet/P6; 33..63 carry a checked PON
- * GEM index and queue. PE radio replicas need their own routing/metadata.
+ * Destination0..6 covers native Ethernet/P6; 32..63 carry a checked EPON
+ * MAC instance or ITU T-CONT/GEM and queue. Radio copies use owned CPU IDs.
  */
 struct rtl_fe_mc_replica {
  unsigned int destination,tags,host_group,source_index,gem,queue,direct_cookie;
- unsigned char source_set,source[6];
+ unsigned char source_set,source[6],epon,preserve_queue;
  struct {unsigned short protocol,tci;} tag[2];
 };
 
@@ -31,7 +31,7 @@ static inline int rtl_fe_mc_replica_encode(const struct rtl_dq_io *io,
  unsigned int i,slot,first,tpid,result[3]={2,2,1};
 
  if(replica->destination==16 && !replica->direct_cookie) {
-  if(!replica->host_group || replica->host_group>=RTL_FE_MC_GROUPS || replica->tags || replica->source_set || replica->gem || replica->queue)return -EINVAL;
+  if(!replica->host_group || replica->host_group>=RTL_FE_MC_GROUPS || replica->tags || replica->source_set || replica->gem || replica->queue || replica->epon || replica->preserve_queue)return -EINVAL;
   /* Original host copy uses POL56 on CPU18. Native CPU0 owns the Linux
    * receive pool; POL256+group gives each quarantined generation an ID.
    * NOP tags preserve ingress bytes; explicitly preserve original LSPID. */
@@ -40,7 +40,9 @@ static inline int rtl_fe_mc_replica_encode(const struct rtl_dq_io *io,
   words[2]=1U|1U<<11;
   return 0;
  }
- if((replica->destination>6 && replica->destination!=16 && (replica->destination<33 || replica->destination>63)) || replica->tags>2 || replica->host_group)return -EOPNOTSUPP;
+ if((replica->destination>6 && replica->destination!=16 && (replica->destination<32 || replica->destination>63)) || replica->tags>2 || replica->host_group)return -EOPNOTSUPP;
+ if(replica->destination==32 && !replica->epon)return -EOPNOTSUPP;
+ if((replica->epon && replica->destination<32) || (replica->preserve_queue && !replica->epon))return -EINVAL;
  if(replica->direct_cookie) {
   if(replica->destination!=16 || replica->direct_cookie>=RTL_FE_MC_GROUPS || replica->source_set || replica->gem || replica->queue)return -EINVAL;
   result[2]|=1U<<11;
@@ -53,9 +55,9 @@ static inline int rtl_fe_mc_replica_encode(const struct rtl_dq_io *io,
   result[2]|=2U|(replica->source_index<<2);
  }
  result[1]|=replica->destination<<24|1U<<30; /* Preserve COS on LAN/P6. */
- if(replica->destination>=33) {
-  if(replica->gem<8 || replica->gem>255 || replica->queue>7 || replica->source_set)return -EINVAL;
-  result[1]&=~(1U<<30); /* Original MCFIB COS_CMD_EN is zero. */
+ if(replica->destination>=32) {
+  if((replica->epon?replica->gem!=0:(replica->destination==32 || replica->gem<8 || replica->gem>255)) || replica->queue>7 || replica->source_set)return -EINVAL;
+  if(!replica->preserve_queue)result[1]&=~(1U<<30); /* Original MCFIB COS_CMD_EN is zero. */
   result[2]|=replica->queue<<5;
  } else if(replica->gem || replica->queue)return -EINVAL;
  for(i=0;i<replica->tags;i++) {

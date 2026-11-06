@@ -137,6 +137,8 @@ int rtl_pon_epon_sla_set(struct rtl9617c_pon *pon, const u8 *data, size_t count)
 	else if (get_unaligned_be64(data + 1) != pon->epon_llid_epoch[channel])
 		ret = -ESTALE;
 	else {
+		ret=rtl_pon_epon_paths_invalidate(pon);
+		if(ret)goto sla_unlock;
 		pon->epon_sla_length[channel] = 0;
 		ret = rtl_epon_sla_apply(&io, channel, data + 9);
 		if (!ret) {
@@ -144,6 +146,7 @@ int rtl_pon_epon_sla_set(struct rtl9617c_pon *pon, const u8 *data, size_t count)
 			pon->epon_sla_length[channel] = count - 9;
 		}
 	}
+sla_unlock:
 	pon->puc_error = ret;
 	mutex_unlock(&pon->lock);
 	mutex_unlock(&pon->control_lock);
@@ -212,6 +215,7 @@ int rtl_pon_puc_configure_locked(struct rtl9617c_pon *pon)
 		goto unlock;
 	}
 	pon->puc_configured = false;
+	ret=rtl_pon_epon_paths_invalidate(pon);if(ret)goto unlock;
 	memset(pon->epon_sla_length, 0, sizeof(pon->epon_sla_length));
 	if (!rtl_pon_mode_is_epon(pon->mode)) {
 		ret = rtl_puc_itu_configure(pon, &bp);

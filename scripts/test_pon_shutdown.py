@@ -53,6 +53,7 @@ static int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon, bool enable)
  if (!pon->cleanup_error) pon->fe_enabled = false;
  return pon->cleanup_error;
 }
+static int rtl_pon_epon_paths_invalidate(struct rtl9617c_pon *pon){assert(pon->lock);return 0;}
 static void rtl_pon_update(void *address, unsigned int mask, unsigned int value)
 { unsigned int *reg = address; *reg = (*reg & ~mask) | value; }
 static bool netif_running(void *netdev) { (void)netdev; return true; }

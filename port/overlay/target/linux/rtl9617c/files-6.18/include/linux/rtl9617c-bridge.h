@@ -16,6 +16,7 @@ struct rtl9617c_bridge_frame {
 	u64 multicast_epoch;
 	u16 pon_gem, multicast_host_group;
 	u8 wifi_id;
+	u8 epon, epon_llid; /* pon_generation names EPON snapshot when epon=1. */
 	u64 multicast_host_owner;
 	u16 protocol, session, vid, ppp_protocol;
 	u32 ip_source[4], ip_destination[4];

@@ -106,6 +106,13 @@ static int fe_mcast_input_priority(struct rtl_fe *fe,struct rtl_fe_port *port,
 
 #include "rtl9617c-pon-service.h"
 
+static bool fe_mcast_epon_port(struct rtl_fe *fe,const struct rtl_fe_port *port)
+{
+ return port && port->source==7 && port->netdev!=fe->itu_netdev &&
+  READ_ONCE(fe->epon_admitted) && port->llid<fe->epon_paths.count &&
+  (fe->epon_paths.active&BIT(port->llid)) && port->destination==32+port->llid;
+}
+
 /* Numeric group IDs are never reused while packets may still carry them.
  * The same short lock protects host lookup and withdrawal; no RX pointer
  * escapes the lock. Core tickets distinguish driver owner incarnations. */
@@ -177,7 +184,8 @@ static int fe_mcast_host_receive(void *context,struct sk_buff *skb,unsigned int 
   entry=direct.flow?direct.flow->mc_host:NULL;
  } else entry=fe->mc_hosts[group];
  if(!READ_ONCE(bridge->stopping) && rtl_fe_enabled(fe) && entry &&
-    fe->mc_gate.active && !fe->mc_gate.writers && entry->epoch==fe->mc_gate.epoch) {
+    fe->mc_gate.active && !fe->mc_gate.writers && entry->epoch==fe->mc_gate.epoch &&
+    (!entry->input.epon || (fe->epon_admitted && entry->input.pon_generation==fe->epon_paths.generation))) {
   host=*entry;get_net(host.net);ret=0;
  }
  spin_unlock_irqrestore(&fe->mc_lock,flags);
@@ -185,7 +193,9 @@ static int fe_mcast_host_receive(void *context,struct sk_buff *skb,unsigned int 
  input=dev_get_by_index_rcu(host.net,host.input.ingress);
  logical=dev_get_by_index_rcu(host.net,host.input.port);
  brdev=dev_get_by_index_rcu(host.net,host.bridge);
- if(source!=host.source || (source==7 && (!READ_ONCE(fe->pon_requested) || input!=fe->itu_netdev)) || (source==6 && (!READ_ONCE(fe->fttr_admitted) || input!=fe->fttr_netdev)) || !input || !logical || !brdev ||
+ if(source!=host.source || (source==7 && (!READ_ONCE(fe->pon_requested) ||
+    (!host.input.epon && input!=fe->itu_netdev))) ||
+    (source==6 && (!READ_ONCE(fe->fttr_admitted) || input!=fe->fttr_netdev)) || !input || !logical || !brdev ||
     !netif_running(input) || netdev_master_upper_dev_get_rcu(logical)!=brdev)goto stale;
  /* QM gives us the complete Ethernet frame before eth_type_trans. */
  skb_reset_mac_header(skb);__skb_pull(skb,ETH_HLEN);
@@ -248,7 +258,8 @@ static int fe_mcast_host_local(void *context,struct sk_buff *skb,struct net_devi
     bridge->fe->mc_gate.active && !bridge->fe->mc_gate.writers &&
     host->epoch==bridge->fe->mc_gate.epoch && host->epoch==saved->multicast_epoch &&
     (host->source!=6 || READ_ONCE(bridge->fe->fttr_admitted)) &&
-    (host->source!=7 || READ_ONCE(bridge->fe->pon_requested)) &&
+    (host->source!=7 || (READ_ONCE(bridge->fe->pon_requested) && (!host->input.epon ||
+     (READ_ONCE(bridge->fe->epon_admitted) && host->input.pon_generation==bridge->fe->epon_paths.generation)))) &&
     host->owner==saved->multicast_host_owner && host->net==dev_net(brdev) &&
     host->bridge==brdev->ifindex && host->input.port==skb->dev->ifindex && host->input.vid==vid)ret=1;
  spin_unlock_irqrestore(&bridge->fe->mc_lock,flags);
@@ -465,8 +476,12 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
     netdev_master_upper_dev_get(input)!=brdev || br_port_get_stp_state(input)!=BR_STATE_FORWARDING ||
     br_fdb_find_port(brdev,packet->input.source,packet->input.vid)!=input)return -ESTALE;
  data.input=fe_port(fe,__dev_get_by_index(packet->net,packet->input.ingress));
- if(!data.input || (data.input->source>4 && data.input->netdev!=fe->fttr_netdev && data.input->netdev!=fe->itu_netdev && !data.input->wifi_id) ||
-    (data.input->llid && !data.input->wifi_id))return -EOPNOTSUPP;
+ if(!data.input || (data.input->source>4 && data.input->netdev!=fe->fttr_netdev && data.input->netdev!=fe->itu_netdev && !data.input->wifi_id && !fe_mcast_epon_port(fe,data.input)) ||
+    (data.input->llid && !data.input->wifi_id && !packet->input.epon))return -EOPNOTSUPP;
+ if(packet->input.epon) {
+  if(!fe_mcast_epon_port(fe,data.input) || packet->input.epon_llid!=data.input->llid ||
+     packet->input.pon_generation!=fe->epon_paths.generation || packet->input.pon_gem)return -ESTALE;
+ } else if(fe_mcast_epon_port(fe,data.input))return -ESTALE;
  if(data.input->wifi_id) {
   if(data.input->source!=RTL_WIFI_SOURCE || packet->input.wifi_id!=data.input->wifi_id ||
      data.input->llid!=data.input->wifi_id || packet->input.pon_gem)return -ESTALE;
@@ -491,7 +506,7 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
  list_for_each_entry_safe(flow,next,&fe->flows,list)if(flow->learned && flow->replica_count) {
   if(flow->deleting || flow->mc_epoch!=packet->epoch) {
    ret=fe_delete(fe,flow);if(ret)return ret;
-  } else if(flow->input==data.input && flow->ingress_pol==(data.input->wifi_id?packet->input.wifi_id:packet->input.pon_gem) && flow->bridge_index==packet->bridge &&
+  } else if(flow->input==data.input && flow->ingress_pol==(data.input->wifi_id?packet->input.wifi_id:packet->input.epon?packet->input.epon_llid:packet->input.pon_gem) && flow->bridge_index==packet->bridge &&
     flow->ethernet_protocol==packet->input.protocol && flow->bridge_vid==packet->input.vid &&
     ether_addr_equal(flow->ethernet_source,packet->input.source) &&
     ether_addr_equal(flow->destination,packet->input.destination) &&
@@ -538,11 +553,29 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
   if(shared && physical->mtu>VLAN_HLEN && physical->mtu-VLAN_HLEN<data.mtu)
    data.mtu=physical->mtu-VLAN_HLEN;
   port=fe_port(fe,physical);
-  if(!port || (port==data.input && !shared) || (!pon && !port->wifi_id && port->destination>6) || port->destination==5 ||
+  if(!port || (port==data.input && !shared) || (!pon && !port->wifi_id && !fe_mcast_epon_port(fe,port) && port->destination>6) || port->destination==5 ||
      (physical==fe->fttr_netdev && !shared)){ret=-EOPNOTSUPP;goto out;}
   replica->destination=port->destination;replica->tags=frame->tags;
   for(j=0;j<frame->tags;j++) {
    replica->tag[j].protocol=frame->tag[j].protocol;replica->tag[j].tci=frame->tag[j].tci;
+  }
+  if(fe_mcast_epon_port(fe,port)) {
+   u32 priority;
+   bool from_cos;
+   ret=fe_mcast_input_priority(fe,data.input,input,&packet->input,&priority,&from_cos);if(ret)goto out;
+   if(from_cos?packet->output[i].priority>7:packet->output[i].priority!=priority){ret=-EOPNOTSUPP;goto out;}
+   if(from_cos && fe->epon_paths.queues!=8){ret=-EOPNOTSUPP;goto out;}
+   for(unsigned int v=0;v<(from_cos?8U:1U);v++) {
+    struct rtl9617c_bridge_frame candidate={.tags=packet->output[i].logical_tags};
+    memcpy(candidate.tag,packet->output[i].logical_tag,sizeof(candidate.tag));
+    if(fe_mcast_physical(dev,&candidate,from_cos?v:priority)!=physical || candidate.tags!=frame->tags ||
+       memcmp(candidate.tag,frame->tag,sizeof(candidate.tag))){ret=-EOPNOTSUPP;goto out;}
+   }
+   replica->epon=1;replica->preserve_queue=from_cos;
+   replica->queue=from_cos?0:priority&(fe->epon_paths.queues-1);
+   if(from_cos?fe->epon_paths.queue_mask[port->llid]!=255:
+      !(fe->epon_paths.queue_mask[port->llid]&BIT(replica->queue))){ret=-EOPNOTSUPP;goto out;}
+   if(data.mtu>1522U-ETH_HLEN-frame->tags*VLAN_HLEN)data.mtu=1522U-ETH_HLEN-frame->tags*VLAN_HLEN;
   }
   if(port->wifi_id) {
    unsigned int c;
@@ -642,7 +675,7 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
  data.ethernet_protocol=packet->input.protocol;
  data.key=(struct rtl_fe_ipv4_key){.source=packet->input.ip_source[0],.destination=packet->input.ip_destination[0],
   .source_port=packet->input.source_port,.destination_port=packet->input.destination_port,
-  .protocol=packet->input.ip_protocol,.ingress=data.input->source,.llid=data.input->wifi_id?packet->input.wifi_id:packet->input.pon_gem,.mask=RTL_FE_MC_LEARNED_MASK};
+  .protocol=packet->input.ip_protocol,.ingress=data.input->source,.llid=data.input->wifi_id?packet->input.wifi_id:packet->input.epon?packet->input.epon_llid:packet->input.pon_gem,.mask=RTL_FE_MC_LEARNED_MASK};
  memcpy(data.key6.source,packet->input.ip_source,sizeof(data.key6.source));
  memcpy(data.key6.destination,packet->input.ip_destination,sizeof(data.key6.destination));
  data.action.bridge=1;data.action.check_mask=RTL_FE_MC_LEARNED_MASK;

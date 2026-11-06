@@ -27,6 +27,8 @@ typedef uint32_t u32;
 #define BIT(n) (1U<<(n))
 struct rtl9617c_pon {int mode,lock,control_lock;bool fe_enabled,pdc_configured,puc_configured,traffic_enabled;void *ni_dev,*mac;unsigned char pdc_source[64];};
 static int failure,disables;
+static int rtl_pon_epon_paths_invalidate(struct rtl9617c_pon *p){(void)p;return 0;}
+static int rtl_pon_epon_paths_refresh(struct rtl9617c_pon *p){(void)p;return 0;}
 static void mutex_lock(int *lock){assert(!*lock);*lock=1;}
 static void mutex_unlock(int *lock){assert(*lock);*lock=0;}
 #define lockdep_assert_held(lock) assert(*(lock))

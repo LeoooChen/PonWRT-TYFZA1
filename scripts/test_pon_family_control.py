@@ -43,7 +43,7 @@ struct device_attribute {int unused;};
 struct rtl9617c_pon {
  int lock, control_lock, effects, cleanup_error;
  enum rtl_pon_mode mode;
- bool mpcp_enabled, fe_enabled, tx_disabled;
+ bool mpcp_enabled, fe_enabled, tx_disabled,puc_configured;
  unsigned int llid_count;
  unsigned char gpon_serial[8], xgpon_serial[8];
  unsigned int gpon_enabled, gpon_omcc_ready, gpon_omcc_onu_id, gpon_omcc_gem, gpon_ds_fec, gpon_recover;
@@ -70,6 +70,7 @@ static int kstrtouint(const char *s, int base, unsigned int *value)
 static int sysfs_emit(char *buf, const char *format, ...)
 {va_list ap; va_start(ap,format); int length=vsnprintf(buf,4096,format,ap); va_end(ap); return length;}
 static int effect(struct rtl9617c_pon *pon) {assert(pon->control_lock); pon->effects++; return 0;}
+static int rtl_pon_epon_paths_invalidate(struct rtl9617c_pon *pon){assert(pon->lock);return 0;}
 static int rtl_pon_epon_traffic_locked(struct rtl9617c_pon *pon, bool enable)
 {pon->tx_disabled=!enable; pon->fe_enabled=enable; return effect(pon);}
 static int rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon)

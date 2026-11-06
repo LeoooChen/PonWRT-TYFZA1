@@ -288,6 +288,9 @@ int main(void){
  wire.in=&lan;input.in=&lan;skb.tagged=false;
  fe_bridge_wire(&bridge,&skb,&wire);assert(skb.saved.wifi_id==60&&skb.saved.ingress==1);
  fe_bridge_capture(&bridge,&skb,&input);assert(skb.saved.wifi_id==60&&skb.saved.port==1);
+ skb.saved=(struct rtl9617c_bridge_frame){.epon=1,.epon_llid=0,.pon_generation=91};
+ fe_bridge_wire(&bridge,&skb,&wire);fe_bridge_capture(&bridge,&skb,&input);
+ assert(skb.saved.epon&&skb.saved.epon_llid==0&&skb.saved.pon_generation==91&&!skb.saved.pon_gem);
  puts("Bridge learner: real wire/bridge hooks, VLAN subinterfaces, PCP/DEI, access VID, PPPoE preservation, FDB ageing/movement, STP and link changes passed");
 }
 '''

@@ -22,6 +22,9 @@ a=p.parse_args()
 recipes=[]
 for gem,queue,tcont in ((8,0,1),(55,3,5),(255,7,31)):
     recipes+=replica_recipes(a.fc,a.ni,(7,),True,False,(gem,queue,tcont))['cases']
+epon_recipes=[]
+for llid,queue in ((0,0),(15,7),(31,3)):
+    epon_recipes+=replica_recipes(a.fc,a.ni,(7,),False,False,(0,queue,llid))['cases']
 
 # Execute the original DBUF setter, including exact field masking.
 base=0x6000000
@@ -48,7 +51,7 @@ def mmio(uc,access,address,size,value,unused):
     else:uc.mem_write(base+0x1650,struct.pack('<I',table[index]))
     uc.mem_write(address,struct.pack('<I',command&~(1<<31)))
 ni.uc.hook_add(UC_HOOK_MEM_READ|UC_HOOK_MEM_WRITE,mmio,begin=base,end=base+65535)
-for destination in range(33,64):
+for destination in range(32,64):
     table[0]=0xa5800000
     ni.uc.mem_write(ni.scratch,struct.pack('<5I',1,1,destination,0,0))
     assert ni.call('aal_arb_port_dbuf_set',0,0,31,ni.scratch)==0
@@ -60,7 +63,7 @@ code+=r'''
 static void prepare(struct model *m) {
  memset(m,0,sizeof(*m));m->reg[0xaa60/4]=0x2f0ff;m->reg[0xa1c0/4]=0x24009b;m->reg[0x1600/4]=0x80;
  m->reg[0x68f8/4]=10;
- for(unsigned port=33;port<64;port++)for(unsigned flags=0;flags<256;flags+=64)m->map[port+flags]=8;
+ for(unsigned port=32;port<64;port++)for(unsigned flags=0;flags<256;flags+=64)m->map[port+flags]=8;
  m->map[70]=m->map[198]=8;
  for(unsigned i=0;i<4;i++)m->reg[(0x1704+i*4)/4]=0x8100;
 }
@@ -72,9 +75,10 @@ int main(void) {
  assert(!rtl_fe_mc_route_port(&io,&route,6));
  assert(!rtl_fe_mc_route_port(&io,&route,37));
  assert(!rtl_fe_mc_route_port(&io,&route,63));
+ assert(!rtl_fe_mc_route_port(&io,&route,32));
  assert(m.dbuf[0]==0x1b&&m.dbuf[1]==(3|37<<2)&&m.dbuf[2]==(3|63<<2));
  assert(route.ports&(1ULL<<63));
- assert(!rtl_fe_mc_route_port(&io,&route,37)&&route.pon_dbuf==6);
+ assert(!rtl_fe_mc_route_port(&io,&route,37)&&route.pon_dbuf==14);
  assert(!rtl_fe_mc_route_restore(&io,&route));
  assert(!memcmp(m.dbuf,saved.dbuf,sizeof(m.dbuf))&&!memcmp(m.elp,saved.elp,sizeof(m.elp)));
  unsigned calls=m.calls;
@@ -84,6 +88,7 @@ int main(void) {
   if(!ret)ret=rtl_fe_mc_route_port(&io,&route,6);
   if(!ret)ret=rtl_fe_mc_route_port(&io,&route,37);
   if(!ret)ret=rtl_fe_mc_route_port(&io,&route,63);
+  if(!ret)ret=rtl_fe_mc_route_port(&io,&route,32);
   if(!ret)ret=rtl_fe_mc_route_restore(&io,&route);
   assert(!ret||ret==-ETIMEDOUT);m.fail=0;
   m.reg[0x1654/4]=m.reg[0x164c/4]=m.reg[0x1420/4]=0;
@@ -134,10 +139,10 @@ int main(void) {
 '''
 # Compare each native complete three-word action with executed original output.
 checks=[]
-for case in recipes:
+for case in recipes+epon_recipes:
     gem,queue,tcont=case['pon']
     w=case['words']
-    checks.append(f'''{{struct rtl_fe_mc_replica r={{.destination={32+tcont},.gem={gem},.queue={queue},.tags={case['output_tags']},
+    checks.append(f'''{{struct rtl_fe_mc_replica r={{.destination={32+tcont},.gem={gem},.epon={int(gem==0)},.queue={queue},.tags={case['output_tags']},
 .tag={{{{0x8100,4095|5<<13|1<<12}},{{0x8100,100|3<<13}}}}}};
 unsigned w[3];assert(!rtl_fe_mc_replica_encode(&io,&r,w));assert(w[0]=={w[0]}U&&w[1]=={w[1]}U&&w[2]=={w[2]}U);}}''')
 code=code.replace('prepare(&m);saved=m;', 'prepare(&m);saved=m;'+''.join(checks),1)
@@ -145,6 +150,6 @@ with tempfile.TemporaryDirectory(prefix='mcast-pon-') as tmp:
     tmp=Path(tmp);(tmp/'test.c').write_text(code)
     subprocess.run(['cc','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+str(DRIVERS),str(tmp/'test.c'),'-o',str(tmp/'test')],check=True)
     subprocess.run([str(tmp/'test')],check=True)
-a.output.write_text(json.dumps(dict(recipes=recipes,dbuf_ports=31,
+a.output.write_text(json.dumps(dict(recipes=recipes,epon_recipes=epon_recipes,dbuf_ports=32,
     scope='Executed actual member7/action-bit12 PON FC/NI production with six-byte route rows; original DBUF setter and native ownership fault injection; no physical transmission. Supersedes the earlier fixture which mislabeled the wireless helper5+160 callback as PON.'),indent=2)+'\n')
-print('Nine full FC/NI PON recipes match native words; original31 destination-DBUF setters match native routing')
+print('Nine ITU and nine EPON full FC/NI recipes match native words; original32 destination-DBUF setters match native routing')

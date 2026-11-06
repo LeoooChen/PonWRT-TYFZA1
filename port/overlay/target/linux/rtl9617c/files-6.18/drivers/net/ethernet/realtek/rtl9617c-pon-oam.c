@@ -155,9 +155,10 @@ static void rtl_oam_receive(struct rtl9617c_ni_endpoint *endpoint, struct napi_s
 	struct net_device *drop_owner = endpoint->netdev;
 	unsigned int llid, offset, flow = source >> 8;
 	const struct rtl9617c_bridge_frame *host = skb_ext_find(skb, SKB_EXT_RTL9617C_BRIDGE);
+	bool host_copy=host && host->multicast_host_group;
 
-	/* An old ITU replica cannot acquire an EPON LLID after a mode switch. */
-	if (host && host->multicast_host_group && rtl_pon_mode_is_epon(READ_ONCE(pon->mode)))
+	/* ITU GEM and EPON LLID0 are distinct identities across mode switches. */
+	if (host_copy && !!host->epon!=rtl_pon_mode_is_epon(READ_ONCE(pon->mode)))
 		goto drop;
 
 	if (!rtl_pon_mode_is_epon(READ_ONCE(pon->mode))) {
@@ -179,10 +180,18 @@ static void rtl_oam_receive(struct rtl9617c_ni_endpoint *endpoint, struct napi_s
 			drop_owner = dev;
 		if (!dev || !netif_running(dev) || !netif_carrier_ok(dev) || skb->len < ETH_HLEN)
 			goto drop;
+		if(host_copy) {
+			if(!smp_load_acquire(&pon->epon_paths_ready) || host->epon_llid!=llid || skb->dev!=dev ||
+			   host->pon_generation!=READ_ONCE(pon->epon_paths.generation))goto drop;
+		} else if(is_multicast_ether_addr(skb->data) && smp_load_acquire(&pon->epon_paths_ready)) {
+			struct rtl9617c_bridge_frame *wire=skb_ext_add(skb,SKB_EXT_RTL9617C_BRIDGE);
+			if(wire){memset(wire,0,sizeof(*wire));wire->epon=1;wire->epon_llid=llid;wire->pon_generation=READ_ONCE(pon->epon_paths.generation);}
+		}
 		dev->stats.rx_packets++;
 		dev->stats.rx_bytes += skb->len;
 		skb->protocol = eth_type_trans(skb, dev);
-		napi_gro_receive(napi, skb);
+		if(host_copy)netif_receive_skb(skb);
+		else napi_gro_receive(napi, skb);
 		return;
 	}
 	offset = rtl_oam_receive_offset(skb->data, skb->len, &llid);
@@ -235,6 +244,7 @@ void rtl_pon_oam_carrier(struct rtl9617c_pon *pon)
 		(status & (pon->mode == RTL_PON_EPON_1G ? BIT(2) : BIT(1)));
 	unsigned int i;
 
+	rtl_pon_epon_paths_refresh(pon);
 	rcu_read_lock();
 	for (i = 0; i < 32; i++) {
 		struct net_device *dev = rcu_dereference(pon->oam_devices[i]);

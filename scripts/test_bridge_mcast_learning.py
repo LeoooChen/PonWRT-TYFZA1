@@ -29,7 +29,7 @@ struct vlan_dev_priv {unsigned flags,ingress_priority_map[8],egress_priority_map
 struct net {unsigned refs;struct {struct nf_hook_entries *hooks_bridge[5];} nf;};
 struct net_device {bool running,carrier;unsigned ifindex,group,flags,num_tx_queues,mtu,vid,features;u8 dev_addr[6];struct netdev_queue *queue;struct net_device *master,*lower;struct net *net;void *tcx_ingress,*tcx_egress;struct nf_hook_entries *nf_hooks_ingress,*nf_hooks_egress;struct wireless_dev *ieee80211_ptr;struct vlan_dev_priv vlan;};''')
 code=code.replace('struct rtl_fe_flow {',re.search(r'struct rtl_fe_mc_host \{.*?\n\};',(DRIVERS/'rtl9617c-fe.c').read_text(),re.S)[0]+'\nstruct rtl_fe_flow {')
-code=code.replace('struct rtl_fe {','struct rtl_fe_mtu {unsigned users,size,saved;};\nstruct rtl_fe {struct net_device *itu_netdev;struct rtl_itu_paths *itu_paths;struct rtl_fe_mtu mtus[16];struct rtl_fe_mc_host *mc_hosts[256];struct rtl_fe_mc_direct *mc_directs[256];')
+code=code.replace('struct rtl_fe {','#include "rtl9617c-epon-path.h"\nstruct rtl_fe_mtu {unsigned users,size,saved;};\nstruct rtl_fe {struct rtl_epon_paths epon_paths;bool epon_admitted;struct net_device *itu_netdev;struct rtl_itu_paths *itu_paths;struct rtl_fe_mtu mtus[16];struct rtl_fe_mc_host *mc_hosts[256];struct rtl_fe_mc_direct *mc_directs[256];')
 code=code.replace('struct rtl_fe_mc_profile mc_profile;','''struct rtl_fe_mc_profile mc_profile;
  struct rtl_fe_mc_gate mc_gate;int lock,mc_lock;struct rtl_fe_port *ports[6];''')
 code=code.replace('#include "rtl9617c-fe-mcast-profile.h"','#include "rtl9617c-fe-mcast-profile.h"\n#include "rtl9617c-fe-mcast-gate.h"')
@@ -86,6 +86,7 @@ static void foreign_hook(void){}
 #define SKB_EXT_RTL9617C_BRIDGE 0
 #define GFP_ATOMIC 0
 #define READ_ONCE(v) (v)
+#define WRITE_ONCE(v,n) ((v)=(n))
 #define list_last_entry(h,t,m) container_of((h)->prev,t,m)
 #define spin_lock_irqsave(p,f) do {assert(!*(p));*(p)=1;(f)=0;} while(0)
 #define spin_unlock_irqrestore(p,f) do {assert(*(p));*(p)=0;(void)(f);} while(0)
@@ -154,7 +155,7 @@ static void fe_bridge_invalidate(struct rtl_fe *f){fe_mcast_invalidate(f);}
 static void fe_collect_ports(struct rtl_fe *f){(void)f;}
 static void fe_wifi_forget_port(struct rtl_fe *f,struct rtl_fe_port *p){(void)f;(void)p;}
 '''
-for name in ('fe_flow_pon','fe_pon_quiesce_locked','rtl_fe_set_itu_paths','rtl_fe_flush_port'):
+for name in ('fe_flow_pon','fe_pon_quiesce_locked','rtl_fe_set_itu_paths','rtl_fe_set_epon_paths','rtl_fe_flush_port'):
     code+=scope['function'](name)
 code+=r'''
 int main(void){
@@ -609,6 +610,98 @@ int main(void){
    assert(!fe.indexed&&!fe.mc_gate.active);wifi_vlan.vlan.egress_priority_map[2]=0;
   }
  }
+ /* EPON MAC-instance0 and31 use POL0/31 on ingress, with per-replica
+  * POL0 and queues masked to the current PUC width on egress. */
+ fe.itu_paths=NULL;fe.itu_netdev=NULL;paths.path[0].vlan=RTL_ITU_VLAN_ANY;
+ struct net_device ep0=pon,ep31=pon;ep0.ifindex=9;ep31.ifindex=15;devices[9]=&ep0;devices[15]=&ep31;
+ pp.netdev=&ep0;pp.llid=0;pp.destination=32;
+ struct rtl_fe_port epport31={.fe=&fe,.netdev=&ep31,.source=7,.llid=31,.destination=63};fe.ports[5]=&epport31;
+ for(unsigned p=32;p<64;p++)for(unsigned m=0;m<4;m++)fe.map[p+64*m]=8;
+ struct rtl_epon_paths epaths={.generation=101,.count=32,.queues=4,.mode=2,.active=1U|1U<<31};
+ memset(epaths.queue_mask,15,sizeof(epaths.queue_mask));
+ assert(!rtl_fe_set_epon_paths(&fe,&epaths));
+ for(unsigned scenario=0;scenario<4;scenario++) {
+  fe.event_count=0;skb.priority=0;skb.saved=wireless;skb.saved.wifi_id=0;skb.frame=wireless;
+  bool incoming=scenario<2;unsigned llid=scenario?31:0;
+  struct net_device *origin=incoming?(llid?&ep31:&ep0):&lan;fdb_source=origin;skb.dev=origin;
+  skb.saved.port=skb.saved.ingress=origin->ifindex;
+  skb.saved.epon=incoming;skb.saved.epon_llid=incoming?llid:0;skb.saved.pon_gem=0;
+  skb.saved.pon_generation=epaths.generation;skb.saved.multicast_epoch=fe.mc_gate.epoch;
+  u64 ep_ticket=fe_mcast_capture_begin(&bridge,&skb,incoming,++fe_mcast_ticket);assert(ep_ticket);
+  if(incoming){fe_mcast_capture_select(&bridge,&skb,&out);skb.dev=&out;fe_mcast_capture_output(&bridge,&skb);}
+  else {
+   fe_mcast_capture_select(&bridge,&skb,&ep0);fe_mcast_capture_select(&bridge,&skb,&ep31);
+   skb.dev=&ep0;fe_mcast_capture_output(&bridge,&skb);skb.dev=&ep31;fe_mcast_capture_output(&bridge,&skb);
+  }
+  fe_mcast_capture_end(&bridge,ep_ticket,true);fe_mcast_process(&bridge);
+  assert(fe.indexed&&fe.mc_gate.active);
+  if(incoming) {
+   assert(fe.indexed->ingress_pol==llid);
+   struct sk_buff copy={.frame=wireless};unsigned group=fe.indexed->mc_group;
+   assert(!fe_mcast_host_receive(&bridge,&copy,group,7)&&copy.dev==origin);
+   assert(copy.saved.epon&&copy.saved.epon_llid==llid&&copy.saved.pon_generation==epaths.generation);
+   assert(fe_mcast_host_local(&bridge,&copy,&br,0)==1);
+   struct rtl_epon_paths newer=epaths;newer.generation++;newer.table[0]=123;
+   fe.age_fail=1;assert(rtl_fe_set_epon_paths(&fe,&newer)==-ETIMEDOUT&&!fe.epon_admitted&&!fe.mc_gate.active);
+   assert(fe.epon_paths.generation==epaths.generation);
+   assert(fe_mcast_host_receive(&bridge,&copy,group,7)==-ESTALE);
+   assert(!rtl_fe_set_epon_paths(&fe,&newer)&&fe.epon_admitted);epaths=newer;
+  } else {
+   unsigned seen=0;
+   for(unsigned a=0;a<64;a++)if(fe.multicast.groups[fe.indexed->mc_group].bitmap[a/32]&BIT(a%32)) {
+    assert(!(fe.actions[a][0]>>23));unsigned dest=fe.actions[a][1]>>24&63;
+    assert(dest==32||dest==63);assert(!(fe.actions[a][1]&BIT(30)));seen++;
+   }
+   assert(seen==2);
+   assert(!rtl_fe_set_epon_paths(&fe,NULL)&&!fe.epon_admitted&&!fe.epon_paths.generation);
+   epaths.generation++;assert(!rtl_fe_set_epon_paths(&fe,&epaths));
+  }
+ }
+ /* Mixed Linux recipients must all be published or all stay in software.
+  * Fixed VLAN priority262 becomes queue2/6; raw Wi-Fi retains all COS only
+  * with eight enabled queues and invariant final VLAN bytes. */
+ fe.ports[5]=&wp2;
+ for(unsigned scenario=0;scenario<6;scenario++) {
+  bool dynamic=scenario>=2,disabled=scenario==1||scenario==4;
+  epaths.count=scenario==0||scenario==1||scenario==3?32:16;
+  epaths.queues=epaths.count>16?4:8;epaths.active=1;epaths.generation++;
+  memset(epaths.queue_mask,(1U<<epaths.queues)-1,sizeof(epaths.queue_mask));
+  if(disabled)epaths.queue_mask[0]&=~BIT(dynamic?2:262&(epaths.queues-1));
+  assert(!rtl_fe_set_epon_paths(&fe,&epaths));
+  struct net_device *origin=dynamic?&wifi2:&onu;
+  fdb_source=origin;fe.event_count=0;skb.dev=origin;skb.saved=wireless;skb.frame=wireless;
+  skb.priority=dynamic?6:262;skb.saved.port=origin->ifindex;
+  skb.saved.ingress=dynamic?origin->ifindex:6;skb.saved.wifi_id=dynamic?60:0;
+  if(!dynamic){skb.saved.tags=1;skb.saved.tag[0]=(struct rtl9617c_bridge_tag){.protocol=0x8100,.tci=100|3<<13};onu.vlan.ingress_priority_map[3]=262;}
+  skb.saved.multicast_epoch=fe.mc_gate.epoch;
+  /* Complete VLAN-derived fixed priority is also valid in eight-queue mode. */
+  if(scenario==5) {
+   origin=&onu;fdb_source=origin;skb.dev=origin;skb.priority=262;
+   skb.saved.port=origin->ifindex;skb.saved.ingress=6;skb.saved.wifi_id=0;
+   skb.saved.tags=1;skb.saved.tag[0]=(struct rtl9617c_bridge_tag){.protocol=0x8100,.tci=100|3<<13};
+  }
+  u64 ep_ticket=fe_mcast_capture_begin(&bridge,&skb,false,++fe_mcast_ticket);assert(ep_ticket);
+  struct net_device *destinations[]={&ep0,&out,&shared,&wifi};
+  for(unsigned i=0;i<4;i++)fe_mcast_capture_select(&bridge,&skb,destinations[i]);
+  for(unsigned i=0;i<4;i++){skb.dev=destinations[i];fe_mcast_capture_output(&bridge,&skb);}
+  fe_mcast_capture_end(&bridge,ep_ticket,true);fe_mcast_process(&bridge);
+  if(disabled||scenario==3)assert(!fe.indexed&&!fe.mc_gate.active);
+  else {
+   assert(fe.indexed&&fe.indexed->replica_count==4&&fe.mc_gate.active);
+   unsigned seen=0;
+   for(unsigned a=0;a<64;a++)if(fe.multicast.groups[fe.indexed->mc_group].bitmap[a/32]&BIT(a%32)) {
+    unsigned dest=fe.actions[a][1]>>24&63;
+    if(dest==32){
+     bool preserve=dynamic&&scenario!=5;
+     assert(!(fe.actions[a][0]>>23));assert(!!(fe.actions[a][1]&BIT(30))==preserve);
+     assert((fe.actions[a][2]>>5&7)==(preserve?0:262&(epaths.queues-1)));seen|=1;
+    }else if(dest==1)seen|=2;else if(dest==6)seen|=4;else if(dest==16)seen|=8;
+   }
+   assert(seen==15);
+  }
+  assert(!rtl_fe_set_epon_paths(&fe,NULL)&&!fe.indexed&&!fe.mc_gate.active);
+ }
+ assert(!rtl_fe_set_epon_paths(&fe,NULL));
  /* Cookie pressure must fail the whole transaction before Hash publication.
   * A partially reserved recipient retains no live flow after rollback. */
  struct rtl_fe_mc_rule exhausted={.count=2};

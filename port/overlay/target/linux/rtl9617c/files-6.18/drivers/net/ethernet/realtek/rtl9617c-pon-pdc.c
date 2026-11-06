@@ -12,6 +12,57 @@
 #define PDC_DATA1 0x9024
 #define PDC_DATA0 0x9028
 
+int rtl_pon_epon_paths_invalidate(struct rtl9617c_pon *pon)
+{
+ int ret;
+ lockdep_assert_held(&pon->lock);
+ if(!pon->epon_paths_ready && !pon->epon_paths_error)return 0;
+ smp_store_release(&pon->epon_paths_ready,false);
+ pon->epon_path_epoch++;
+ ret=rtl9617c_ni_epon_paths(pon->ni_dev,NULL);
+ pon->epon_paths_error=ret;
+ return ret;
+}
+
+int rtl_pon_epon_paths_refresh(struct rtl9617c_pon *pon)
+{
+ struct rtl_epon_paths paths={};
+ u32 status,raw_registered;
+ bool synced;
+ int ret;
+ lockdep_assert_held(&pon->lock);
+ if(!rtl_pon_mode_is_epon(pon->mode) || !pon->traffic_enabled || !pon->mpcp_enabled ||
+    !pon->puc_configured || !pon->pdc_configured || !pon->fe_enabled)
+  return rtl_pon_epon_paths_invalidate(pon);
+ status=readl(pon->mac+0x10);raw_registered=readl(pon->mac+0x2014);
+ synced=!(status&BIT(0)) && (status&(pon->mode==RTL_PON_EPON_1G?BIT(2):BIT(1)));
+ paths.count=pon->llid_count;paths.queues=paths.count>16?4:8;paths.mode=pon->mode;
+ if(readl(pon->mac+0x804c)!=(paths.queues==4?1U:0U))
+  return rtl_pon_epon_paths_invalidate(pon)?:-EUCLEAN;
+ for(unsigned int i=0;i<paths.count;i++) {
+  unsigned int q=i*paths.queues;
+  paths.queue_mask[i]=(readl(pon->mac+0x81bc-q/32*4)>>(q%32))&((1U<<paths.queues)-1);
+ }
+ paths.active=pon->registered&(synced?raw_registered:pon->epon_holdover_active);
+ paths.active&=paths.count==32?~0U:BIT(paths.count)-1;
+ for(unsigned int i=0;i<paths.count && i<8;i++)
+  if(!pon->epon_sla_length[i])paths.active&=~BIT(i);
+ paths.registration_epoch=pon->epon_epoch;
+ for(unsigned int i=0;i<64;i++) {
+  paths.table[i]=readl(pon->mac+0x64+i*4);
+  if(pon->pdc_source[i]!=rtl_pon_data_source(i,paths.table[i]))
+   return rtl_pon_epon_paths_invalidate(pon)?:-EAGAIN;
+ }
+ paths.generation=pon->epon_paths.generation;
+ if(pon->epon_paths_ready && !memcmp(&paths,&pon->epon_paths,sizeof(paths)))return 0;
+ ret=rtl_pon_epon_paths_invalidate(pon);if(ret)return ret;
+ paths.generation=++pon->epon_path_epoch;
+ ret=rtl9617c_ni_epon_paths(pon->ni_dev,&paths);
+ pon->epon_paths_error=ret;
+ if(!ret){pon->epon_paths=paths;smp_store_release(&pon->epon_paths_ready,true);}
+ return ret;
+}
+
 static int rtl_pdc_access(struct rtl9617c_pon *pon, unsigned int index, bool write)
 {
 	u32 status;
@@ -27,6 +78,19 @@ int rtl_pon_pdc_refresh(struct rtl9617c_pon *pon)
 	lockdep_assert_held(&pon->lock);
 	if (!pon->pdc_configured || !rtl_pon_mode_is_epon(pon->mode))
 		return 0;
+	/* A previous failed withdrawal revoked admission but retained FE owners.
+	 * Finish that retry before writing any newly observed PDC mapping. */
+	if (pon->epon_paths_error) {
+		ret=rtl_pon_epon_paths_invalidate(pon);if(ret)return ret;
+	}
+	/* LLID contents may change while retaining the same MAC index. Compare
+	 * the whole table before changing PDC or admitting the next snapshot. */
+	if (pon->epon_paths_ready)
+		for (index=0;index<64;index++)
+			if (pon->epon_paths.table[index]!=readl(pon->mac+0x64+index*4)) {
+				ret=rtl_pon_epon_paths_invalidate(pon);if(ret)return ret;
+				break;
+			}
 	for (index = 0; index < 64; index++) {
 		u32 source = rtl_pon_data_source(index, readl(pon->mac + 0x64 + index * 4));
 
@@ -83,6 +147,7 @@ int rtl_pon_pdc_configure_locked(struct rtl9617c_pon *pon)
 		ret = -EAGAIN;
 		goto unlock;
 	}
+	ret=rtl_pon_epon_paths_invalidate(pon);if(ret)goto unlock;
 	pon->pdc_configured = false;
 	if (!rtl_pon_mode_is_epon(pon->mode)) {
 		ret = rtl_pdc_itu_configure(pon);
@@ -126,6 +191,7 @@ int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon,bool enable)
 
  lockdep_assert_held(&pon->control_lock);
  mutex_lock(&pon->lock);
+ ret=rtl_pon_epon_paths_invalidate(pon);if(ret)goto unlock;
  if(enable && (!pon->pdc_configured || !pon->puc_configured ||
                (rtl_pon_mode_is_epon(pon->mode) && !pon->traffic_enabled))) {
   ret=-EAGAIN;
@@ -162,6 +228,7 @@ int rtl_pon_fe_configure_locked(struct rtl9617c_pon *pon,bool enable)
   if(ret)goto unlock;
  }
  pon->fe_enabled=enable;
+ if(enable && rtl_pon_mode_is_epon(pon->mode))ret=rtl_pon_epon_paths_refresh(pon);
 unlock:
  mutex_unlock(&pon->lock);
  return ret;

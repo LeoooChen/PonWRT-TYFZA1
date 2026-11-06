@@ -61,6 +61,7 @@ static void rtl_epon_link_events(struct rtl9617c_pon *pon)
 				pon->epon_link_events++;
 				/* Actual stock link-down handler pulses CORESEC RX reset. */
 				if ((flags & BIT(17)) && !(readl(pon->mac + 0x13d0) & 1)) {
+					if(rtl_pon_epon_paths_invalidate(pon))return;
 					rtl_pon_update(pon->mac + 0x14c0, BIT(7), BIT(7));
 					usleep_range(1000, 2000);
 					rtl_pon_update(pon->mac + 0x14c0, BIT(7), 0);
@@ -84,6 +85,7 @@ int rtl_pon_llid_update(struct rtl9617c_pon *pon, bool add, unsigned int index,
 	u32 status;
 	int ret;
 
+	ret=rtl_pon_epon_paths_invalidate(pon);if(ret)return ret;
 	writel(llid | (index << 16) | ((u32)multicast << 22) |
 	       ((u32)add << 23) | (mac << 24), pon->mac + LLID_DATA);
 	writel(BIT(0), pon->mac + LLID_ACCESS);
@@ -187,6 +189,8 @@ static u32 rtl_mpcp_holdover(struct rtl9617c_pon *pon, u32 registered)
 		}
 		/* Stock Holdover expiry reaches llid_entry_set(enable=0), whose
 		 * AAL asserts this per-MAC offline bit before deleting the LLID. */
+		ret=rtl_pon_epon_paths_invalidate(pon);
+		if(ret){error=ret;delay=min(delay,(unsigned long)HZ);continue;}
 		rtl_pon_update(pon->mac + OFFLINE, BIT(channel), BIT(channel));
 		ret = readl_poll_timeout(pon->mac + REGISTER_STATUS, status,
 			!(status & BIT(channel)), 1, 10000);
@@ -212,6 +216,9 @@ static void rtl_mpcp_refresh(struct rtl9617c_pon *pon)
 	unsigned int i;
 	const struct rtl_mpcp_io io = {pon, rtl_mpcp_read, rtl_mpcp_write};
 
+	if ((readl(pon->mac+REGISTER_STATUS)&rtl_pon_llid_mask(pon))!=pon->registered ||
+	    pon->epon_llid_cleanup || (flags&BIT(3)))
+		if (rtl_pon_epon_paths_invalidate(pon))return;
 	pon->last_mpcp_irq = flags;
 	if ((flags & BIT(3)) && pon->mode != RTL_PON_EPON_1G && pon->epon_crypto_llids) {
 		/* aal_epon_mpcp_gate_timeout_handler resets the active RX core. */
@@ -419,12 +426,13 @@ int rtl_pon_mpcp_init(struct rtl9617c_pon *pon, int irq)
 int rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon)
 {
 	unsigned int channel;
-	int ret;
+	int ret,withdraw;
 
 	lockdep_assert_held(&pon->control_lock);
 	cancel_delayed_work_sync(&pon->mpcp_work);
 	cancel_delayed_work_sync(&pon->epon_tx_work);
 	mutex_lock(&pon->lock);
+	withdraw=rtl_pon_epon_paths_invalidate(pon);
 	pon->epon_tx_action = 0;
 	if (pon->mpcp_enabled) {
 		pon->epon_epoch++;
@@ -458,7 +466,7 @@ int rtl_pon_mpcp_stop_locked(struct rtl9617c_pon *pon)
 	cancel_delayed_work_sync(&pon->epon_holdover_work);
 	/* Finish queued IRQ threads before changing modes or freeing the OAM netdev. */
 	synchronize_irq(pon->mpcp_irq);
-	return ret;
+	return withdraw?:ret;
 }
 
 int rtl_pon_mpcp_configure_locked(struct rtl9617c_pon *pon)
@@ -479,6 +487,7 @@ int rtl_pon_mpcp_configure_locked(struct rtl9617c_pon *pon)
 	}
 	if (pon->mpcp_enabled)
 		goto unlock;
+	ret=rtl_pon_epon_paths_invalidate(pon);if(ret)goto unlock;
 	ret = rtl_pon_epon_crypto_forget(pon, pon->epon_crypto_llids);
 	if (ret)
 		goto unlock;

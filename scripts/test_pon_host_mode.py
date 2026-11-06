@@ -12,12 +12,18 @@ start=source.index('static void rtl_oam_receive(')
 end=source.index('\nstatic void rtl_oam_wake',start)
 fixture=ast.parse((ROOT/'scripts/test_pon_data_path.py').read_text())
 code=next(ast.literal_eval(n.value) for n in fixture.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='model' for t in n.targets))
+code=code.replace('struct sk_buff {','struct sk_buff {struct net_device *dev;')
+code=code.replace('struct rtl9617c_pon {','struct rtl9617c_pon {bool epon_paths_ready;struct {uint64_t generation;} epon_paths;')
 code+=r'''
-struct rtl9617c_bridge_frame {unsigned multicast_host_group;};
+struct rtl9617c_bridge_frame {unsigned multicast_host_group,epon,epon_llid;uint64_t pon_generation;};
 #define SKB_EXT_RTL9617C_BRIDGE 0
+#define smp_load_acquire(p) (*(p))
 static struct rtl9617c_bridge_frame host;
 static const struct rtl9617c_bridge_frame *skb_ext_find(struct sk_buff *s,int id){(void)s;(void)id;return &host;}
-static unsigned itu_calls;
+static void *skb_ext_add(struct sk_buff *s,int id){(void)s;(void)id;return &host;}
+static bool is_multicast_ether_addr(const u8 *p){return p[0]&1;}
+static unsigned itu_calls,local;
+static void netif_receive_skb(struct sk_buff *s){local++;dev_kfree_skb_any(s);}
 static int rtl_omci_receive_offset(const u8 *p,unsigned n){(void)p;(void)n;return 0;}
 static void rtl_pon_omci_receive(struct rtl9617c_pon *p,struct napi_struct *n,struct sk_buff *s,unsigned src){(void)p;(void)n;(void)s;(void)src;assert(0);}
 static void rtl_pon_itu_data_receive(struct rtl9617c_pon *p,struct napi_struct *n,struct sk_buff *s,unsigned src){(void)p;(void)n;assert(src==(7|11<<8));itu_calls++;dev_kfree_skb_any(s);}
@@ -38,6 +44,22 @@ int main(void){
  host.multicast_host_group=0;
  rtl_oam_receive(&pon.oam_endpoint,&napi,packet(bytes,64),7|11<<8);
  assert(received==1&&data.stats.rx_packets==1&&retired==3);
+ for(unsigned llid=0;llid<32;llid++)for(unsigned fault=0;fault<5;fault++) {
+  pon.mode=RTL_PON_EPON_D10G;pon.data_devices[llid]=&data;
+  pon.epon_paths_ready=true;pon.epon_paths.generation=91;
+  host=(struct rtl9617c_bridge_frame){.multicast_host_group=4,.epon=1,.epon_llid=llid,.pon_generation=91};
+  struct sk_buff *skb=packet(bytes,64);skb->dev=&data;unsigned before=local;
+  if(fault==1)host.pon_generation++;
+  if(fault==2)host.epon_llid=32;
+  if(fault==3)pon.epon_paths_ready=false;
+  if(fault==4)pon.mode=RTL_PON_GPON;
+  rtl_oam_receive(&pon.oam_endpoint,&napi,skb,7|llid<<8);
+  assert(local==before+!fault&&received==1);
+ }
+ pon.mode=RTL_PON_EPON_1G;pon.epon_paths_ready=true;pon.epon_paths.generation=92;
+ host=(struct rtl9617c_bridge_frame){0};
+ rtl_oam_receive(&pon.oam_endpoint,&napi,packet(bytes,64),7);
+ assert(received==2&&host.epon&&host.epon_llid==0&&host.pon_generation==92);
  puts("PON dispatcher: ITU host owner delivery, late-copy rejection after EPON switch and normal EPON LLID RX passed");
 }
 '''

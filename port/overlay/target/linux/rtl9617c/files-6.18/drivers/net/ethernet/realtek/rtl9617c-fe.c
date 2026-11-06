@@ -36,6 +36,7 @@
 #include "rtl9617c-wifi-format.h"
 #include "rtl9617c-pon-path.h"
 #include <linux/rtl9617c-bridge.h>
+#include "rtl9617c-epon-path.h"
 
 struct rtl_fe_bridge;
 static struct rtl_fe_bridge *fe_bridge_start(struct rtl_fe *fe);
@@ -46,6 +47,7 @@ struct rtl_fe_flow;
 struct rtl_fe_mc_host;
 struct rtl_fe_mc_rule;
 static int fe_mcast_direct_stage(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct rtl_fe_mc_rule *mc);
+static bool fe_flow_pon(const struct rtl_fe_flow *flow);
 static void fe_mcast_host_remove(struct rtl_fe *fe,struct rtl_fe_flow *flow);
 static int fe_mcast_host_publish(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct rtl_fe_mc_host *host);
 
@@ -165,6 +167,8 @@ struct rtl_fe {
  struct rtl_fe_interface interfaces[FE_INTERFACES];
  struct rtl_fe_mtu mtus[16];
  struct rtl_itu_paths *itu_paths;
+ struct rtl_epon_paths epon_paths;
+ bool epon_admitted;
  struct net_device *itu_netdev;
  struct net_device *fttr_netdev;
  struct net_device *fttr_mcast;
@@ -1862,6 +1866,33 @@ int rtl_fe_set_itu_paths(struct rtl_fe *fe,struct net_device *netdev,const struc
 unlock:
  mutex_unlock(&fe->lock);
  kvfree(copy);
+ return ret;
+}
+int rtl_fe_set_epon_paths(struct rtl_fe *fe,const struct rtl_epon_paths *paths)
+{
+ struct rtl_fe_flow *flow,*next;
+ unsigned long flags;
+ int ret=0;
+ if(!fe)return paths?-EOPNOTSUPP:0;
+ if(paths && (!paths->generation || !paths->count || paths->count>32 || paths->mode>2 ||
+    paths->queues!=(paths->count>16?4:8) || (paths->count<32 && (paths->active>>paths->count))))return -EINVAL;
+ mutex_lock(&fe->lock);
+ if(!paths && !fe->epon_paths.generation && !fe->epon_admitted)goto unlock;
+ if(paths && fe->epon_admitted && !memcmp(paths,&fe->epon_paths,sizeof(*paths)))goto unlock;
+ /* Revoke admission even if Hash/cache removal fails. Retain the old
+  * snapshot and flow owners until a later caller can finish withdrawal. */
+ WRITE_ONCE(fe->epon_admitted,false);
+ fe_mcast_invalidate(fe);
+ list_for_each_entry_safe(flow,next,&fe->flows,list)if(fe_flow_pon(flow)) {
+  ret=fe_delete(fe,flow);if(ret)goto unlock;
+ }
+ if(paths && fe->itu_netdev){ret=-EBUSY;goto unlock;}
+ spin_lock_irqsave(&fe->mc_lock,flags);
+ if(paths){fe->epon_paths=*paths;WRITE_ONCE(fe->epon_admitted,true);}
+ else memset(&fe->epon_paths,0,sizeof(fe->epon_paths));
+ spin_unlock_irqrestore(&fe->mc_lock,flags);
+unlock:
+ mutex_unlock(&fe->lock);
  return ret;
 }
 static int fe_disable_locked(struct rtl_fe *fe)
