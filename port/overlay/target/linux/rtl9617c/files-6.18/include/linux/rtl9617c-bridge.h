@@ -14,7 +14,8 @@ struct rtl9617c_bridge_frame {
 	u64 pon_generation;
 	u64 multicast_transaction;
 	u64 multicast_epoch;
-	u16 pon_gem;
+	u16 pon_gem, multicast_host_group;
+	u64 multicast_host_owner;
 	u16 protocol, session, vid, ppp_protocol;
 	u32 ip_source[4], ip_destination[4];
 	u8 ip_protocol;
@@ -37,6 +38,8 @@ struct rtl9617c_bridge_mcast_ops {
 	void (*capture_select)(void *context, struct sk_buff *skb, struct net_device *output);
 	void (*capture_output)(void *context, struct sk_buff *skb);
 	void (*capture_end)(void *context, u64 transaction, bool complete);
+	int (*host_receive)(void *context, struct sk_buff *skb, unsigned int group, unsigned int source);
+	int (*host_local)(void *context, struct sk_buff *skb, struct net_device *bridge, u16 vid);
 };
 int rtl9617c_bridge_mcast_register(const struct rtl9617c_bridge_mcast_ops *ops);
 void rtl9617c_bridge_mcast_unregister(const struct rtl9617c_bridge_mcast_ops *ops);
@@ -47,4 +50,13 @@ void rtl9617c_bridge_mcast_select(struct sk_buff *skb, struct net_device *output
 void rtl9617c_bridge_mcast_output(struct sk_buff *skb);
 void rtl9617c_bridge_mcast_complete(u64 transaction, bool complete);
 
+/* POL256..511 is reserved for native quarantined host-copy group IDs.
+ * No packet bytes or externally supplied skb mark authorize this path. */
+static inline unsigned int rtl9617c_bridge_host_group(u32 h0,u32 h1)
+{
+ unsigned int pol=(h0>>18)&511;
+ return ((h1>>3)&63)==16 && ((h1>>9)&63)<=4 && (pol&256)?pol&255:0;
+}
+int rtl9617c_bridge_mcast_receive(struct sk_buff *skb, unsigned int group, unsigned int source);
+int rtl9617c_bridge_mcast_local(struct sk_buff *skb, struct net_device *bridge, u16 vid);
 #endif

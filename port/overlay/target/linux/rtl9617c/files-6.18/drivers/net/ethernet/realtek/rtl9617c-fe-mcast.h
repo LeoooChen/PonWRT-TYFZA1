@@ -20,7 +20,7 @@
  * require their own checked routing/metadata and are not represented here.
  */
 struct rtl_fe_mc_replica {
- unsigned int destination,tags;
+ unsigned int destination,tags,host_group;
  struct {unsigned short protocol,tci;} tag[2];
 };
 
@@ -29,7 +29,17 @@ static inline int rtl_fe_mc_replica_encode(const struct rtl_dq_io *io,
 {
  unsigned int i,slot,first,tpid,result[3]={2,2,1};
 
- if(replica->destination>6 || replica->tags>2)return -EOPNOTSUPP;
+ if(replica->destination==16) {
+  if(!replica->host_group || replica->host_group>=RTL_FE_MC_GROUPS || replica->tags)return -EINVAL;
+  /* Original host copy uses POL56 on CPU18. Native CPU0 owns the Linux
+   * receive pool; POL256+group gives each quarantined generation an ID.
+   * NOP tags preserve ingress bytes; explicitly preserve original LSPID. */
+  words[0]=(256U+replica->host_group)<<23;
+  words[1]=16U<<24|1U<<30;
+  words[2]=1U|1U<<11;
+  return 0;
+ }
+ if(replica->destination>6 || replica->tags>2 || replica->host_group)return -EOPNOTSUPP;
  result[1]|=replica->destination<<24|1U<<30; /* Preserve COS. */
  for(i=0;i<replica->tags;i++) {
   first=i?2:0;

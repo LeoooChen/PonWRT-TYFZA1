@@ -12,10 +12,15 @@ setup=(ROOT/'scripts/test_fe_mcast_integration.py').read_text().split("code += r
 scope={'__file__':str(ROOT/'scripts/test_fe_mcast_integration.py')}
 exec(compile(setup,'multicast-integration-fixture','exec'),scope)
 code=scope['code']
+code=code.replace('static void fe_mcast_host_remove(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;assert(!v->mc_host);}',
+ 'static void fe_mcast_host_remove(struct rtl_fe *f,struct rtl_fe_flow *v);')
+code=code.replace('static int fe_mcast_host_publish(struct rtl_fe *f,struct rtl_fe_flow *v,struct rtl_fe_mc_host *h){(void)f;(void)v;(void)h;assert(0);return -1;}',
+ 'static int fe_mcast_host_publish(struct rtl_fe *f,struct rtl_fe_flow *v,struct rtl_fe_mc_host *h);')
 code=code.replace('struct net_device {bool running,carrier;};','''struct nf_hook_entries {unsigned num_hook_entries;struct {void (*hook)(void);} hooks[3];};
 struct net {unsigned refs;struct {struct nf_hook_entries *hooks_bridge[5];} nf;};
 struct net_device {bool running,carrier;unsigned ifindex,group,flags,num_tx_queues,mtu;struct netdev_queue *queue;struct net_device *master,*lower;struct net *net;void *tcx_ingress,*tcx_egress;struct nf_hook_entries *nf_hooks_ingress,*nf_hooks_egress;};''')
-code=code.replace('struct rtl_fe {','struct rtl_fe_mtu {unsigned users,size,saved;};\nstruct rtl_fe {struct rtl_fe_mtu mtus[16];')
+code=code.replace('struct rtl_fe_flow {',re.search(r'struct rtl_fe_mc_host \{.*?\n\};',(DRIVERS/'rtl9617c-fe.c').read_text(),re.S)[0]+'\nstruct rtl_fe_flow {')
+code=code.replace('struct rtl_fe {','struct rtl_fe_mtu {unsigned users,size,saved;};\nstruct rtl_fe {struct rtl_fe_mtu mtus[16];struct rtl_fe_mc_host *mc_hosts[256];')
 code=code.replace('struct rtl_fe_mc_profile mc_profile;','''struct rtl_fe_mc_profile mc_profile;
  struct rtl_fe_mc_gate mc_gate;int mc_lock;struct rtl_fe_port *ports[3];''')
 code=code.replace('#include "rtl9617c-fe-mcast-profile.h"','#include "rtl9617c-fe-mcast-profile.h"\n#include "rtl9617c-fe-mcast-gate.h"')
@@ -93,6 +98,8 @@ static struct rtl_fe_port *fe_port(struct rtl_fe *fe,struct net_device *d){for(u
 static int fe_vlan_tpid(unsigned short p){return p==__builtin_bswap16(0x8100)?1:-EOPNOTSUPP;}
 #define htons(v) __builtin_bswap16(v)
 static unsigned get_unaligned_be32(const void *p){unsigned v;memcpy(&v,p,4);return __builtin_bswap32(v);}
+static void skb_reset_mac_header(struct sk_buff *s){(void)s;}
+#define dev_get_by_index_rcu __dev_get_by_index
 static void __skb_pull(struct sk_buff *s,unsigned n){(void)s;assert(n==14);}
 static void __skb_push(struct sk_buff *s,unsigned n){(void)s;assert(n==14);}
 /* Wire/VLAN parsing has its own native packet regression. This harness feeds
@@ -121,7 +128,7 @@ int main(void){
  fe.memory=calloc(1,RTL_FE_MEMORY_BYTES);assert(fe.memory);INIT_LIST_HEAD(&fe.flows);INIT_LIST_HEAD(&fe.retries);
  fe.reg[0x351c/4]=0x80101002;
  fe.reg[0xaa60/4]=0x2f0ff;fe.reg[0xa1c0/4]=0x24009b;fe.reg[0x1600/4]=0x80;
- fe.map[1]=fe.map[129]=1;fe.map[70]=fe.map[198]=8;
+ fe.map[16]=fe.map[144]=9;fe.map[1]=fe.map[129]=1;fe.map[70]=fe.map[198]=8;
  for(unsigned i=0;i<4;i++)fe.reg[(0x1704+i*4)/4]=0x8100;
  struct rtl_fe_bridge bridge={.fe=&fe};struct sk_buff skb={.dev=&lan};
  skb.saved=(struct rtl9617c_bridge_frame){.ingress=1,.port=1,.protocol=ETH_P_IP,.ip_protocol=17,.ip_source={0x0a000001},.ip_destination={0xef010203}};
@@ -154,7 +161,7 @@ int main(void){
  }
  for(unsigned scenario=0;scenario<6;scenario++) {
   skb.dev=&lan;skb.saved.multicast_epoch=fe.mc_gate.epoch;skb.saved.epoch=bridge.epoch;
-  u64 ticket=fe_mcast_capture_begin(&bridge,&skb,scenario==3,++fe_mcast_ticket);assert(ticket&&net.refs==1);
+  u64 ticket=fe_mcast_capture_begin(&bridge,&skb,false,++fe_mcast_ticket);assert(ticket&&net.refs==1);
   fe_mcast_capture_select(&bridge,&skb,&out);fe_mcast_capture_select(&bridge,&skb,&shared);
   skb.dev=&out;fe_mcast_capture_output(&bridge,&skb);
   if(scenario!=0){skb.dev=&shared;fe_mcast_capture_output(&bridge,&skb);}
@@ -162,7 +169,7 @@ int main(void){
   if(scenario==2){struct rtl_dq_io io=fe_io(&fe);rtl_fe_mc_gate_begin(&io,&fe.mc_gate);rtl_fe_mc_gate_end(&fe.mc_gate);}
   fe_mcast_capture_end(&bridge,ticket,true);fe_mcast_process(&bridge);
   assert(!net.refs);
-  if(scenario<4)assert(!fe.indexed&&!fe.mc_gate.active);
+  if(scenario<3)assert(!fe.indexed&&!fe.mc_gate.active);
   else {
    assert(fe.indexed&&fe.indexed->learned&&fe.indexed->replica_count==2&&fe.mc_gate.active&&fe.reg[0x372c/4]==4);
    assert(fe.indexed->mc_epoch==fe.mc_gate.epoch);
@@ -200,9 +207,39 @@ int main(void){
  fe_mcast_capture_end(&bridge,ticket,true);fe_mcast_process(&bridge);
  assert(fe.indexed&&fe.indexed->learned&&!fe.indexed->deleting&&fe.mc_gate.active);
  rtl_fe_mc_gate_close(&io,&fe.mc_gate);assert(!fe_delete(&fe,fe.indexed));
+ /* Full host+LAN/shared transaction, source guard, late generation and
+  * host-only groups exercise the actual table/lookup/withdrawal functions. */
+ for(unsigned local_only=0;local_only<2;local_only++) {
+  fe.event_count=0;skb.dev=&lan;skb.saved.multicast_epoch=fe.mc_gate.epoch;
+  ticket=fe_mcast_capture_begin(&bridge,&skb,true,++fe_mcast_ticket);assert(ticket);
+  if(!local_only){fe_mcast_capture_select(&bridge,&skb,&shared);skb.dev=&shared;fe_mcast_capture_output(&bridge,&skb);}
+  fe_mcast_capture_end(&bridge,ticket,true);fe_mcast_process(&bridge);
+  assert(fe.indexed&&fe.indexed->mc_host&&fe.mc_gate.active&&net.refs==1);
+  unsigned group=fe.indexed->mc_group,action=64;
+  assert(fe.indexed->replica_count==2-local_only);
+  for(unsigned a=0;a<64;a++)if(fe.multicast.groups[group].bitmap[a/32]&(1U<<(a%32)))
+   if((fe.actions[a][1]>>24&63)==16)action=a;
+  assert(action<64&&fe.actions[action][0]==(256U+group)<<23&&fe.actions[action][2]==0x801);
+  struct sk_buff copy={.frame=skb.frame};
+  assert(fe_mcast_host_receive(&bridge,&copy,group,1)==-ESTALE);
+  assert(!fe_mcast_host_receive(&bridge,&copy,group,0)&&copy.dev==&lan);
+  assert(copy.saved.multicast_host_group==group&&copy.saved.multicast_host_owner==ticket);
+  assert(fe_mcast_host_local(&bridge,&copy,&br,0)==1);
+  assert(!fe_mcast_capture_begin(&bridge,&copy,true,++fe_mcast_ticket));
+  copy.dev=&out;assert(fe_mcast_host_local(&bridge,&copy,&br,0)==-ESTALE);copy.dev=&lan;
+  assert(fe_mcast_host_local(&bridge,&copy,&br,1)==-ESTALE);
+  copy.frame.destination_port++;assert(fe_mcast_host_receive(&bridge,&copy,group,0)==-ESTALE);copy.frame.destination_port--;
+  fe_mcast_invalidate(&fe);
+  assert(fe_mcast_host_local(&bridge,&copy,&br,0)==-ESTALE);
+  assert(fe_mcast_host_receive(&bridge,&copy,group,0)==-ESTALE);
+  /* Even a failed Hash withdrawal revokes host delivery immediately. */
+  fe.age_fail=1;assert(fe_delete(&fe,fe.indexed)==-ETIMEDOUT&&!fe.mc_hosts[group]&&!net.refs);
+  assert(fe_mcast_host_local(&bridge,&copy,&br,0)==-ESTALE);
+  assert(!fe_delete(&fe,fe.indexed));assert(fe.multicast.groups[group].state==RTL_FE_MC_RETIRED);
+ }
  for(unsigned i=0;i<16;i++)assert(!fe.mtus[i].users);
  fe_mcast_purge(&bridge);assert(!net.refs);free(fe.memory);
- puts("Native bridge multicast: complete outputs, missing/duplicate/local rejection, epoch changes, shared P6, duplicate learning and generation retirement passed");
+ puts("Native bridge multicast: complete outputs, missing/duplicate rejection, CPU host copy and host-only groups, epoch changes, shared P6, duplicate learning and generation retirement passed");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='bridge-mcast-learn-') as name:

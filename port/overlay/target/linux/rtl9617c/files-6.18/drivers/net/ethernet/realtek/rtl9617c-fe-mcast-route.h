@@ -7,7 +7,7 @@
  * just the multicast connector and per-destination L2 editor/deep-buffer
  * selections, using the same FE mutex as Hash publication. */
 struct rtl_fe_mc_route {
- unsigned int registers[7],map[2],elp[7][2];
+ unsigned int registers[7],map[2],elp[17][2];
  unsigned int connector_elp[2];
  unsigned int dbuf_index,dbuf_saved,ports;
  unsigned char owned,dbuf_owned,ready;
@@ -59,7 +59,7 @@ static inline int rtl_fe_mc_route_restore(const struct rtl_dq_io *io,struct rtl_
   if(ret)return ret;
   route->dbuf_owned=0;
  }
- for(i=0;i<7;i++)if(route->ports&(1U<<i)) {
+ for(i=0;i<17;i++)if(route->ports&(1U<<i)) {
   ret=rtl_fe_mc_route_write(io,0x1420,0x1428,i,route->elp[i],2);
   if(ret)return ret;
   route->ports&=~(1U<<i);
@@ -143,7 +143,7 @@ static inline int rtl_fe_mc_route_members(const struct rtl_dq_io *io,unsigned in
 
  if(source>4 || !count || count>RTL_FE_MC_ACTIONS)return -EINVAL;
  for(i=0;i<count;i++) {
-  if(replicas[i].destination>6 || replicas[i].destination==5)return -EINVAL;
+  if((replicas[i].destination>6 && replicas[i].destination!=16) || replicas[i].destination==5)return -EINVAL;
   required|=1U<<replicas[i].destination;
  }
  /* Native TC supplies a complete member set. If a previous owner enabled
@@ -163,15 +163,18 @@ static inline int rtl_fe_mc_route_port(const struct rtl_dq_io *io,struct rtl_fe_
 {
  unsigned int words[2],i;
  int ret;
- if(!route->ready || port>6 || port==5)return -EINVAL;
+ if(!route->ready || (port>6 && port!=16) || port==5)return -EINVAL;
  /* QM initializes both my-MAC map cases before native FE can be enabled.
   * Refuse a changed mapping rather than sending a replica to another port. */
  for(i=0;i<2;i++) {
   unsigned int index=port+(i<<7)+(port==6?64:0);
   ret=rtl_fe_mc_route_read(io,0x1654,0x1658,index,words,1);
   if(ret)return ret;
-  if((words[0]&15)!=(port==6?8:port))return -EUCLEAN;
+  if((words[0]&15)!=(port==6?8:port==16?9:port))return -EUCLEAN;
  }
+ /* CPU0 uses the normal Header A/CPU path, never a radio EPP ring. */
+ if(port==16 && ((io->read(io->context,0x6558)&7) ||
+    (io->read(io->context,0xa1dc)&3) || (io->read(io->context,0xa1ec)&3)))return -EUCLEAN;
  if(port==6 && ((io->read(io->context,0x1600)>>4)&15)!=8)return -EUCLEAN;
  if(!(route->ports&(1U<<port))) {
   ret=rtl_fe_mc_route_read(io,0x1420,0x1428,port,words,2);

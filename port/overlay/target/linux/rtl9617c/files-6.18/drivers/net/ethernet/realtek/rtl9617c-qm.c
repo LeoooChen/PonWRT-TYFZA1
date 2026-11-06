@@ -16,6 +16,7 @@
 #include <linux/rcupdate.h>
 #include <linux/unaligned.h>
 #include "rtl9617c-qm.h"
+#include <linux/rtl9617c-bridge.h>
 #include "rtl9617c-rx-checksum.h"
 
 #define EQ_ID 4
@@ -593,7 +594,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			u64 copied = 0;
 			struct sk_buff *skb;
 			struct net_device *input;
-			unsigned int source, wifi_id;
+			unsigned int source, wifi_id, host_group;
 			bool wifi_forwarded;
 			bool refill_buffer = false;
 			int segment;
@@ -639,7 +640,8 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			length = (h1 >> 15) & 0x3fff;
 			if (h0 & BIT(31))
 				length -= 8;
-			wifi_id = rtl_wifi_epp_id(length_word);
+			host_group = rtl9617c_bridge_host_group(h0,h1);
+			wifi_id = host_group?0:rtl_wifi_epp_id(length_word);
 			wifi_forwarded = !!wifi_id;
 			if (wifi_forwarded) {
 				int payload = rtl_wifi_epp_length(length_word, RTL_QM_DATA_BYTES - RTL_WIFI_INTERNAL_BYTES);
@@ -679,7 +681,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			    rtl_rx_checksum_valid(command, skb->data, length))
 				skb->ip_summed = CHECKSUM_UNNECESSARY;
 			source = FIELD_GET(GENMASK(14, 9), h1);
-			if (!wifi_forwarded && source == RTL_WIFI_SOURCE && (h0 & BIT(31))) {
+			if (!host_group && !wifi_forwarded && source == RTL_WIFI_SOURCE && (h0 & BIT(31))) {
 				u32 metadata = get_unaligned_be32(rx->memory + offset + RTL_QM_HEADROOM + 12);
 				/* Full Header CPU reason !=15 identifies an ingress return. */
 				if (((metadata >> 8) & 15) != 15) wifi_id = metadata & 255;
@@ -687,6 +689,17 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			/* Packet bytes and metadata are private now. Return the EPP
 			 * credit before GRO or endpoint callbacks can hold up the poll. */
 			rtl_qm_rx_retire(rx, cos, command, refill_buffer);
+			if (host_group) {
+				rcu_read_lock();
+				if (rtl9617c_bridge_mcast_receive(skb,host_group,source)) {
+					dev->stats.rx_dropped++;dev_kfree_skb_any(skb);rcu_read_unlock();continue;
+				}
+				input=skb->dev;skb->protocol=eth_type_trans(skb,input);
+				skb->priority=h1&7;
+				input->stats.rx_packets++;input->stats.rx_bytes+=length;
+				/* Do not aggregate a host-only copy with a normal miss. */
+				netif_receive_skb(skb);rcu_read_unlock();continue;
+			}
 			if (wifi_id) {
 				struct rtl9617c_ni_wifi_endpoint *endpoint;
 				rcu_read_lock();

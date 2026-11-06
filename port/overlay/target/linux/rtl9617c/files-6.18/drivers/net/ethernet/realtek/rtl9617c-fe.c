@@ -41,6 +41,10 @@ static struct rtl_fe_bridge *fe_bridge_start(struct rtl_fe *fe);
 static void fe_bridge_stop(struct rtl_fe_bridge *bridge);
 static void fe_bridge_invalidate(struct rtl_fe *fe);
 static void fe_mcast_invalidate(struct rtl_fe *fe);
+struct rtl_fe_flow;
+struct rtl_fe_mc_host;
+static void fe_mcast_host_remove(struct rtl_fe *fe,struct rtl_fe_flow *flow);
+static int fe_mcast_host_publish(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct rtl_fe_mc_host *host);
 
 #define FE_INTERFACES 64
 #define FE_COUNTERS 32
@@ -72,6 +76,12 @@ struct rtl_fe_interface {
 struct rtl_fe_mtu {
  unsigned int users, size, saved;
 };
+struct rtl_fe_mc_host {
+ struct rtl9617c_bridge_frame input;
+ struct net *net;
+ u64 epoch,owner;
+ unsigned int bridge,source;
+};
 struct rtl_fe_flow {
  struct list_head list, retry;
  struct rb_node cookie_node;
@@ -79,6 +89,7 @@ struct rtl_fe_flow {
  struct rtl_fe_port *input, *output;
  struct rtl_fe_port **replica_ports;
  unsigned int replica_count,mc_group;
+ struct rtl_fe_mc_host *mc_host;
  u64 mc_epoch;
  unsigned int hash_index, counter, source_mac, destination_index;
  unsigned int pppoe, mtu_index;
@@ -155,6 +166,7 @@ struct rtl_fe {
  spinlock_t mc_lock;
  struct rtl_fe_mc_gate mc_gate;
  atomic_t mc_flush;
+ struct rtl_fe_mc_host *mc_hosts[RTL_FE_MC_GROUPS];
  DECLARE_BITMAP(hashes,RTL_FE_HASH_ENTRIES);
  DECLARE_BITMAP(counters,FE_INTERFACES);
 };
@@ -646,6 +658,7 @@ struct rtl_fe_rule {
 };
 struct rtl_fe_mc_rule {
  unsigned int count;
+ struct rtl_fe_mc_host *host;
  struct rtl_fe_mc_replica replica[RTL_FE_MC_ACTIONS];
  struct rtl_fe_port *port[RTL_FE_MC_ACTIONS];
 };
@@ -1086,6 +1099,7 @@ static int fe_delete(struct rtl_fe *fe,struct rtl_fe_flow *flow)
  int ret;
 
  flow->deleting=true;
+ fe_mcast_host_remove(fe,flow);
  if(flow->published) {
   ret=rtl_fe_main_age(&io,flow->hash_index,0);
   if(ret)goto retry;
@@ -1296,6 +1310,10 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
   ret=rtl_fe_mc_stage(&io,&fe->multicast,data.multicast->replica,
    data.multicast->count,&flow->mc_group);
   if(ret)goto rollback;
+  if(data.multicast->host) {
+   ret=fe_mcast_host_publish(fe,flow,data.multicast->host);
+   if(ret)goto rollback;
+  }
   /* The common editor preserves the packet. Per-replica L2 actions hold
    * the final tags. MC with DEEPQ0 names NI replication, not a PON GEM. */
   rtl_fe_action_set(action,RTL_FE_MC,1);
@@ -1929,7 +1947,7 @@ void rtl_fe_free(struct rtl_fe *fe)
  io=fe_io(fe);
  ret=rtl_fttr_cf_release(&io,&fe->fttr_cf);
  if(ret)dev_err(fe->device,"P6 CF restoration failed during removal: %d\n",ret);
- list_for_each_entry_safe(flow,flow_next,&fe->flows,list){list_del(&flow->list);kfree(flow->replica_ports);kfree(flow);}
+ list_for_each_entry_safe(flow,flow_next,&fe->flows,list){fe_mcast_host_remove(fe,flow);list_del(&flow->list);kfree(flow->replica_ports);kfree(flow);}
  list_for_each_entry(port,&fe->ports,list)fe_wifi_forget_port(fe,port);
  list_for_each_entry_safe(port,next,&fe->ports,list){list_del(&port->list);kfree(port);}
  dma_free_coherent(fe->device,RTL_FE_MEMORY_BYTES,fe->memory,fe->dma);

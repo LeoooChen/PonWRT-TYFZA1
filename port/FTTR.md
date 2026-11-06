@@ -4285,8 +4285,67 @@ must retain an unambiguous indication that all other recipients were already
 forwarded, while ordinary Hash misses and PE MTU returns must still run the
 full bridge decision. Merely adding destination16 or treating every received
 multicast as hardware-forwarded would duplicate or drop traffic. The native
-learner therefore still rejects a transaction requiring local delivery until
-that metadata producer and receiver are implemented and checked.
+learner previously rejected transactions requiring local delivery. The native
+producer/receiver below now implements that distinction.
+
+### Native CPU multicast host copies
+
+Complete learned LAN-input multicast transactions can now include one local
+CPU copy, including a group with no external recipients. The extra NI action
+preserves ingress VLAN bytes and COS/source MAC/TTL. Its intentional adaptations
+from the executed original CPU18/POL56 producer are CPU16 (native CPU0 receive
+pool), POL256+the quarantined NI group number, and `keep_o_lspid` (DATA2 bit11).
+CPU16's two port-map entries, CPU mapping and NI receive selection must match
+native QM configuration before publication; foreign routing is rejected.
+There is no new packet-byte marker, userspace skb mark or raw CPU18 bypass.
+
+The FE owner records the exact source/group/UDP tuple, original wire tags,
+physical and logical ingress, namespace, bridge, VLAN and generation before
+publishing Hash. QM recognizes only CPU16/physical LAN0..4/nonzero tagged group,
+copies the frame privately and returns EPP credit before owner lookup. It uses
+`netif_receive_skb` so GRO cannot merge a host-only copy with an ordinary Hash
+miss. The physical and logical VLAN receive path retains the skb extension;
+normal native capture hooks leave it intact. The bridge still runs ingress,
+MDB/local eligibility, bridge VLAN and local netfilter checks, but never floods
+or forwards a valid host copy again. The local-copy decision is consumed at
+this bridge so it cannot authorize a later stacked bridge or routed path.
+Ordinary misses and PE MTU returns have no reserved POL and retain full Linux
+forwarding. The supported learner remains complete snooped UDP transactions;
+this change does not introduce unknown-multicast flood learning.
+
+Withdrawal removes the local owner before attempting Hash/cache deletion,
+including when deletion fails. Receive and bridge-delivery checks both reject
+retired generations, stopped owners and mismatched ingress/bridge/VLAN. The
+core's monotonically increasing owner ticket survives driver reload. Promisc
+and allmulti changes now bracket the actual flag publication with learned
+profile invalidation, including calls with notifier delivery disabled. The
+callback ends before RX driver operations, so no RCU writer spans potentially
+sleeping device callbacks.
+
+`test_bridge_mcast_host.py --kernel <prepared-kernel>` executes the production
+QM poll/metadata decoder and actual Linux bridge finish/pass-up functions:
+144 QM cases, the full 64x64x512 destination/source/POL input space, 40 bridge
+cases and receive-flag reference/overflow transitions pass under ASan/UBSan.
+The DMA and VLAN/filter helpers are modeled; physical hardware and the complete
+kernel receive stack are not emulated. `test_bridge_mcast_learning.py` exercises
+production host ownership, complete/host-only learning, source/tuple mismatch,
+late generations and failed withdrawal. Core lifecycle,109 packet parser
+vectors,16 Linux member-selection cases, unicast/flow release, CPU route and
+every indirect fault/restore regression pass. Original FC/NI execution agrees
+with six ordinary replica recipes and1530 explicit native adaptations of six
+host-copy recipes. The actual QM P6 regression retains all768 cases.
+The final Image/modules build is
+`artifacts/fttr/mcast-host-kernel-final-20261106.log`; patch223 replays and reverses
+with zero fuzz/offset and the compiled RTL9617C sources match the overlay.
+
+Resource retirement is still incomplete. Each published host generation needs
+its own immutable action (64 total action slots, shared with other recipes),
+so host-bearing groups can exhaust actions before the255 cumulative NI group
+limit. Exhaustion falls back to software without reassigning old IDs. The
+tests explicitly cover this limit; neither profile closure nor Hash deletion
+proves cache/MCE/PE/NI packet retirement. PON/radio/ONU-source multicast
+acceleration, safe reuse and real hardware acceptance remain work. No device
+was accessed.
 
 ### Outstanding implementation and acceptance
 

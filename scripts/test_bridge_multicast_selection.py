@@ -154,6 +154,11 @@ int main(void){
  }
  reset();br_multicast_flood(NULL,&packet,&mcast,true,false);
  assert(packet.miss&&delivered[2]==1&&delivered[3]==1&&!delivered[1]&&!original);cases++;
+ reset();mcast.routers=NULL;mdb.ports=NULL;
+ br_multicast_flood(&mdb,&packet,&mcast,true,false);
+ assert(completed==1&&!aborted&&!clones&&!original&&!drops);cases++;
+ reset();br_multicast_flood(&mdb,&packet,&mcast,false,false);
+ assert(!completed&&aborted==1&&drops==1);cases++;
  printf("Linux multicast selection: %u complete-member, router/filter, local-copy and clone-failure cases passed\n",cases);
 }
 '''
@@ -161,5 +166,5 @@ with tempfile.TemporaryDirectory(prefix='br-mcast-selection-') as name:
     root=Path(name);(root/'test.c').write_text(code)
     subprocess.run(['cc','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',str(root/'test.c'),'-o',str(root/'test')],check=True)
     subprocess.run([str(root/'test')],check=True)
-args.output.write_text(json.dumps(dict(kernel_source=str(path),sha256=hashlib.sha256(source.encode()).hexdigest(),cases=14,
+args.output.write_text(json.dumps(dict(kernel_source=str(path),sha256=hashlib.sha256(source.encode()).hexdigest(),cases=16,
     scope='Actual Linux br_multicast_flood/maybe_deliver/should_deliver/clone control flow; topology, allocation and output sinks modeled. Does not implement or prove automatic hardware offload.'),indent=2)+'\n')

@@ -164,8 +164,9 @@ static unsigned int fe_bridge_wire(void *private,struct sk_buff *skb,
 {
  struct rtl_fe_bridge *bridge=private;
  struct rtl9617c_bridge_frame frame={},*saved;
- const struct rtl9617c_bridge_frame *received;
+ const struct rtl9617c_bridge_frame *received=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
 
+ if(received && received->multicast_host_group)return NF_ACCEPT;
  if(!rtl_fe_enabled(bridge->fe) || skb_is_gso(skb) || fe_bridge_frame(skb,&frame))return NF_ACCEPT;
  frame.ingress=state->in->ifindex;frame.epoch=atomic_read(&bridge->epoch);
  if(is_multicast_ether_addr(frame.destination)) {
@@ -215,10 +216,11 @@ static unsigned int fe_bridge_capture(void *private,struct sk_buff *skb,
 {
  struct rtl_fe_bridge *bridge=private;
  struct rtl9617c_bridge_frame frame={},*saved;
- const struct rtl9617c_bridge_frame *wire;
+ const struct rtl9617c_bridge_frame *wire=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
  struct net_device *brdev;
  u16 protocol;
 
+ if(wire && wire->multicast_host_group)return NF_ACCEPT;
  if(!rtl_fe_enabled(bridge->fe) || skb_is_gso(skb) || !state->in ||
     fe_bridge_frame(skb,&frame))return NF_ACCEPT;
  frame.port=state->in->ifindex;
@@ -536,7 +538,8 @@ static struct rtl_fe_bridge *fe_bridge_start(struct rtl_fe *fe)
  bridge->multicast=(struct rtl9617c_bridge_mcast_ops){.context=bridge,
   .change_begin=fe_mcast_change_begin,.change_end=fe_mcast_change_end,
   .capture_begin=fe_mcast_capture_begin,.capture_select=fe_mcast_capture_select,
-  .capture_output=fe_mcast_capture_output,.capture_end=fe_mcast_capture_end};
+  .capture_output=fe_mcast_capture_output,.capture_end=fe_mcast_capture_end,
+  .host_receive=fe_mcast_host_receive,.host_local=fe_mcast_host_local};
  ret=rtl9617c_bridge_mcast_register(&bridge->multicast);
  if(ret)goto netdev;
  return bridge;

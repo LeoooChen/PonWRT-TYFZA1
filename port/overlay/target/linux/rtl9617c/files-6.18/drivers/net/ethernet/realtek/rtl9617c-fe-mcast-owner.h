@@ -71,7 +71,7 @@ static inline int rtl_fe_mc_stage(const struct rtl_dq_io *io,struct rtl_fe_mc_ow
  *index=0;
  if(!count || count>RTL_FE_MC_ACTIONS)return -EINVAL;
  for(i=0;i<count;i++) {
-  ret=rtl_fe_mc_replica_encode(io,replicas+i,encoded[i]);
+  ret=rtl_fe_mc_replica_encode(io,&replicas[i],encoded[i]);
   if(ret)return ret;
   for(j=0;j<i;j++)if(rtl_fe_mc_equal(encoded[i],encoded[j],3))return -EEXIST;
  }
@@ -82,6 +82,12 @@ static inline int rtl_fe_mc_stage(const struct rtl_dq_io *io,struct rtl_fe_mc_ow
  ret=rtl_fe_mc_group_read(io,g,actual);
  if(ret)return ret;
  if(actual[0] || actual[1])return -EUCLEAN;
+ for(i=0;i<count;i++)if(replicas[i].host_group) {
+  struct rtl_fe_mc_replica replica=replicas[i];
+  replica.host_group=g;
+  ret=rtl_fe_mc_replica_encode(io,&replica,encoded[i]);
+  if(ret)return ret;
+ }
  group=&owner->groups[g];
  group->state=RTL_FE_MC_STAGED;*index=g;
  for(i=0;i<count;i++) {

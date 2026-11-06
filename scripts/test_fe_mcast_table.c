@@ -115,6 +115,20 @@ static void owner_lifecycle(void)
   assert(!rtl_fe_mc_withdraw(&io,&owner,index));
  }
  assert(rtl_fe_mc_stage(&io,&owner,replicas,2,&index)==-ENOSPC && !index);
+ /* Each host generation carries its NI group in immutable POL metadata.
+  * Exhausting the 64 action recipes must not repurpose a retired host ID. */
+ memset(&m,0,sizeof(m));memset(&owner,0,sizeof(owner));
+ struct rtl_fe_mc_replica host={.destination=16,.host_group=1};
+ for(unsigned int g=1;g<=64;g++) {
+  assert(!rtl_fe_mc_stage(&io,&owner,&host,1,&index) && index==g);
+  assert(m.actions[g-1][0]==(256U+g)<<23 && m.actions[g-1][1]==(16U<<24|1U<<30));
+  assert(m.actions[g-1][2]==0x801);
+  assert(!rtl_fe_mc_reference(&io,&owner,index));
+  assert(!rtl_fe_mc_withdraw(&io,&owner,index));
+ }
+ assert(rtl_fe_mc_stage(&io,&owner,&host,1,&index)==-ENOSPC && index==65);
+ assert(!rtl_fe_mc_withdraw(&io,&owner,index));
+ assert(owner.groups[65].state==RTL_FE_MC_FREE && m.actions[0][0]==257U<<23);
  puts("Multicast owner: complete stage, shared refs, partial abort, quarantine and exhaustion passed");
 }
 
@@ -127,8 +141,9 @@ static void route_lifecycle(void)
  for(unsigned int i=0;i<7;i++)m.reg[rtl_fe_mc_route_regs[i]/4]=0xa55a0080U+i;
  m.reg[0xaa60/4]=0x2f0ff;
  m.reg[0xa1c0/4]=0x24009b;
+ m.reg[0xa1dc/4]&=~3U;
  m.map[27]=15;m.map[155]=9;
- m.map[1]=m.map[129]=1;m.map[70]=m.map[198]=8;
+ m.map[1]=m.map[129]=1;m.map[70]=m.map[198]=8;m.map[16]=m.map[144]=9;
  m.elp[1][0]=0xaaa8;m.elp[1][1]=0x5500;
  m.elp[6][0]=0x1230;m.elp[6][1]=0x4500;
  m.dbuf[0]=0x2301;m.dbuf[1]=0xffff0000;
@@ -136,6 +151,7 @@ static void route_lifecycle(void)
  assert(!rtl_fe_mc_route_prepare(&io,&route));
  assert(!rtl_fe_mc_route_port(&io,&route,1));
  assert(!rtl_fe_mc_route_port(&io,&route,6));
+ assert(!rtl_fe_mc_route_port(&io,&route,16));
  assert(m.dbuf[0]==0x2301 && m.dbuf[1]==0xffff001b);
  assert(m.map[27]==11 && m.map[155]==11);
  assert(m.elp[6][0]==0x1233 && m.elp[6][1]==0x4500);
@@ -151,6 +167,7 @@ static void route_lifecycle(void)
   int ret=rtl_fe_mc_route_prepare(&io,&route);
   if(!ret)ret=rtl_fe_mc_route_port(&io,&route,1);
   if(!ret)ret=rtl_fe_mc_route_port(&io,&route,6);
+  if(!ret)ret=rtl_fe_mc_route_port(&io,&route,16);
   if(!ret)ret=rtl_fe_mc_route_restore(&io,&route);
   assert(!ret || ret==-ETIMEDOUT);
   m.fail=0;m.reg[0x1654/4]=m.reg[0x164c/4]=m.reg[0x1420/4]=0;
@@ -185,6 +202,16 @@ static void route_lifecycle(void)
  assert(rtl_fe_mc_route_prepare(&io,&route)==-EUCLEAN && !route.owned);
  m=saved;route=(struct rtl_fe_mc_route){0};m.reg[0xa1c0/4]^=1U<<6;
  assert(rtl_fe_mc_route_prepare(&io,&route)==-EUCLEAN && !route.owned);
+ for(unsigned int bad=0;bad<4;bad++) {
+  m=saved;route=(struct rtl_fe_mc_route){0};
+  if(bad==0)m.map[144]=10;
+  if(bad==1)m.reg[0x6558/4]=1;
+  if(bad==2)m.reg[0xa1dc/4]=1;
+  if(bad==3)m.reg[0xa1ec/4]=1;
+  assert(!rtl_fe_mc_route_prepare(&io,&route));
+  assert(rtl_fe_mc_route_port(&io,&route,16)==-EUCLEAN && !(route.ports&(1U<<16)));
+  assert(!rtl_fe_mc_route_restore(&io,&route));
+ }
  puts("Multicast route: connector, P6 deep-buffer match, every indirect fault and restoration passed");
 }
 

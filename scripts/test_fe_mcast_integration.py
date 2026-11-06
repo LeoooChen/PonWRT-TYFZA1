@@ -130,6 +130,8 @@ static int fe_interface_put(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;(voi
 static void fe_mtu_put(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;(void)v;assert(0);}
 static struct rtl_fe_wifi_peer *fe_wifi_peer(struct rtl_fe *f,struct rtl_fe_port *p,const u8 *a){(void)f;(void)p;(void)a;return NULL;}
 '''
+code += 'static void fe_mcast_host_remove(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;assert(!v->mc_host);}'
+code += 'static int fe_mcast_host_publish(struct rtl_fe *f,struct rtl_fe_flow *v,struct rtl_fe_mc_host *h){(void)f;(void)v;(void)h;assert(0);return -1;}'
 code += function('fe_flow_port')+function('fe_flow_fttr')+function('fe_delete')+function('fe_install')
 code += r'''
 int main(void){

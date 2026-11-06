@@ -6,6 +6,7 @@
 #include <linux/mutex.h>
 #include <linux/netdevice.h>
 #include <linux/rcupdate.h>
+#include <linux/skbuff.h>
 #include <linux/rtl9617c-bridge.h>
 
 static DEFINE_MUTEX(rtl_bridge_lock);
@@ -123,3 +124,38 @@ void rtl9617c_bridge_mcast_complete(u64 transaction, bool complete)
 	rcu_read_unlock();
 }
 EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_complete);
+
+/* A host copy is already replicated. Missing/retired owners must drop it;
+ * falling through as an ordinary miss would duplicate bridge forwarding. */
+int rtl9617c_bridge_mcast_receive(struct sk_buff *skb, unsigned int group, unsigned int source)
+{
+ const struct rtl9617c_bridge_mcast_ops *ops;
+ int ret=-ENODEV;
+ rcu_read_lock();
+ ops=rcu_dereference(rtl_bridge_mcast);
+ if(ops && ops->host_receive)ret=ops->host_receive(ops->context,skb,group,source);
+ rcu_read_unlock();
+ return ret;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_receive);
+
+int rtl9617c_bridge_mcast_local(struct sk_buff *skb, struct net_device *bridge, u16 vid)
+{
+ const struct rtl9617c_bridge_frame *frame=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
+ const struct rtl9617c_bridge_mcast_ops *ops;
+ int ret=-ESTALE;
+ if(!frame || !frame->multicast_host_group)return 0;
+ rcu_read_lock();
+ ops=rcu_dereference(rtl_bridge_mcast);
+ if(ops && ops->host_local)ret=ops->host_local(ops->context,skb,bridge,vid);
+ rcu_read_unlock();
+ if(ret>0) {
+  struct rtl9617c_bridge_frame *saved=skb_ext_add(skb,SKB_EXT_RTL9617C_BRIDGE);
+  if(!saved)return -ENOMEM;
+  /* This bridge consumed the local-copy decision. A stacked bridge or
+   * later routing must make its own decision, as for offload_fwd_mark. */
+  saved->multicast_host_group=0;saved->multicast_host_owner=0;
+ }
+ return ret;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_local);

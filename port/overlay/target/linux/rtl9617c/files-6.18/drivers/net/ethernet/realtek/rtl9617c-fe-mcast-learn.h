@@ -56,6 +56,97 @@ static bool fe_mcast_path_clear(struct net_device *dev)
  }
 }
 
+/* Numeric group IDs are never reused while packets may still carry them.
+ * The same short lock protects host lookup and withdrawal; no RX pointer
+ * escapes the lock. Core tickets distinguish driver owner incarnations. */
+static void fe_mcast_host_remove(struct rtl_fe *fe,struct rtl_fe_flow *flow)
+{
+ struct rtl_fe_mc_host *host;
+ unsigned long flags;
+ if(!flow->mc_host)return;
+ spin_lock_irqsave(&fe->mc_lock,flags);
+ host=flow->mc_host;
+ if(fe->mc_hosts[flow->mc_group]==host)fe->mc_hosts[flow->mc_group]=NULL;
+ flow->mc_host=NULL;
+ spin_unlock_irqrestore(&fe->mc_lock,flags);
+ put_net(host->net);kfree(host);
+}
+static int fe_mcast_host_publish(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct rtl_fe_mc_host *prototype)
+{
+ struct rtl_fe_mc_host *host=kmemdup(prototype,sizeof(*host),GFP_KERNEL);
+ unsigned long flags;
+ int ret=0;
+ if(!host)return -ENOMEM;
+ get_net(host->net);
+ spin_lock_irqsave(&fe->mc_lock,flags);
+ if(fe->mc_gate.writers || fe->mc_gate.epoch!=host->epoch || fe->mc_hosts[flow->mc_group])ret=-ESTALE;
+ else {fe->mc_hosts[flow->mc_group]=host;flow->mc_host=host;}
+ spin_unlock_irqrestore(&fe->mc_lock,flags);
+ if(ret){put_net(host->net);kfree(host);}
+ return ret;
+}
+static int fe_mcast_host_receive(void *context,struct sk_buff *skb,unsigned int group,unsigned int source)
+{
+ struct rtl_fe_bridge *bridge=context;
+ struct rtl_fe *fe=bridge->fe;
+ struct rtl_fe_mc_host host,*entry;
+ struct rtl9617c_bridge_frame parsed={},*saved;
+ struct net_device *input,*logical,*brdev;
+ unsigned long flags;
+ int ret=-ESTALE;
+ if(!group || group>=RTL_FE_MC_GROUPS)return -EINVAL;
+ spin_lock_irqsave(&fe->mc_lock,flags);
+ entry=fe->mc_hosts[group];
+ if(!READ_ONCE(bridge->stopping) && rtl_fe_enabled(fe) && entry &&
+    fe->mc_gate.active && !fe->mc_gate.writers && entry->epoch==fe->mc_gate.epoch) {
+  host=*entry;get_net(host.net);ret=0;
+ }
+ spin_unlock_irqrestore(&fe->mc_lock,flags);
+ if(ret)return ret;
+ input=dev_get_by_index_rcu(host.net,host.input.ingress);
+ logical=dev_get_by_index_rcu(host.net,host.input.port);
+ brdev=dev_get_by_index_rcu(host.net,host.bridge);
+ if(source!=host.source || !input || !logical || !brdev ||
+    !netif_running(input) || netdev_master_upper_dev_get_rcu(logical)!=brdev)goto stale;
+ /* QM gives us the complete Ethernet frame before eth_type_trans. */
+ skb_reset_mac_header(skb);__skb_pull(skb,ETH_HLEN);
+ ret=fe_bridge_frame(skb,&parsed);__skb_push(skb,ETH_HLEN);
+ if(ret)goto out;
+ if(!ether_addr_equal(parsed.source,host.input.source) ||
+    !ether_addr_equal(parsed.destination,host.input.destination) ||
+    parsed.protocol!=host.input.protocol || parsed.ip_protocol!=host.input.ip_protocol ||
+    parsed.source_port!=host.input.source_port || parsed.destination_port!=host.input.destination_port ||
+    parsed.tags!=host.input.tags || memcmp(parsed.tag,host.input.tag,sizeof(parsed.tag)) ||
+    memcmp(parsed.ip_source,host.input.ip_source,sizeof(parsed.ip_source)) ||
+    memcmp(parsed.ip_destination,host.input.ip_destination,sizeof(parsed.ip_destination)))goto stale;
+ saved=skb_ext_add(skb,SKB_EXT_RTL9617C_BRIDGE);
+ if(!saved){ret=-ENOMEM;goto out;}
+ *saved=host.input;saved->multicast_host_group=group;saved->multicast_host_owner=host.owner;
+ saved->multicast_epoch=host.epoch;skb->dev=input;ret=0;goto out;
+stale:
+ ret=-ESTALE;
+out:
+ put_net(host.net);return ret;
+}
+static int fe_mcast_host_local(void *context,struct sk_buff *skb,struct net_device *brdev,u16 vid)
+{
+ struct rtl_fe_bridge *bridge=context;
+ const struct rtl9617c_bridge_frame *saved=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
+ struct rtl_fe_mc_host *host;
+ unsigned long flags;
+ int ret=-ESTALE;
+ if(!saved || !saved->multicast_host_group || saved->multicast_host_group>=RTL_FE_MC_GROUPS)return ret;
+ spin_lock_irqsave(&bridge->fe->mc_lock,flags);
+ host=bridge->fe->mc_hosts[saved->multicast_host_group];
+ if(!READ_ONCE(bridge->stopping) && rtl_fe_enabled(bridge->fe) && host &&
+    bridge->fe->mc_gate.active && !bridge->fe->mc_gate.writers &&
+    host->epoch==bridge->fe->mc_gate.epoch && host->epoch==saved->multicast_epoch &&
+    host->owner==saved->multicast_host_owner && host->net==dev_net(brdev) &&
+    host->bridge==brdev->ifindex && host->input.port==skb->dev->ifindex && host->input.vid==vid)ret=1;
+ spin_unlock_irqrestore(&bridge->fe->mc_lock,flags);
+ return ret;
+}
+
 static struct fe_mcast_packet *fe_mcast_pending(struct rtl_fe_bridge *bridge,u64 ticket)
 {
  struct fe_mcast_packet *packet=bridge->multicast_pending[ticket%FE_MCAST_PENDING];
@@ -73,7 +164,7 @@ static u64 fe_mcast_capture_begin(void *context,struct sk_buff *skb,bool local,u
  unsigned long flags;
 
  if(READ_ONCE(bridge->stopping) || !rtl_fe_enabled(fe) || !wire || !wire->port ||
-    wire->epoch!=(u32)atomic_read(&bridge->epoch) || wire->ip_protocol!=IPPROTO_UDP ||
+    wire->epoch!=(u32)atomic_read(&bridge->epoch) || wire->multicast_host_group || wire->ip_protocol!=IPPROTO_UDP ||
     !is_multicast_ether_addr(wire->destination) || is_broadcast_ether_addr(wire->destination) ||
     skb_is_gso(skb))return 0;
  brdev=netdev_master_upper_dev_get_rcu(skb->dev);
@@ -162,7 +253,7 @@ static void fe_mcast_capture_end(void *context,u64 transaction,bool complete)
  packet=fe_mcast_pending(bridge,transaction);
  if(packet) {
   packet->complete=true;
-  packet->failed|=!complete || !packet->count || packet->outputs!=packet->count ||
+  packet->failed|=!complete || (!packet->count && !packet->local) || packet->outputs!=packet->count ||
    packet->epoch!=bridge->fe->mc_gate.epoch || bridge->fe->mc_gate.writers;
  }
  spin_unlock_irqrestore(&bridge->fe->mc_lock,flags);
@@ -185,6 +276,7 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
  struct rtl_fe *fe=bridge->fe;
  struct rtl_fe_rule data={.bridge=true,.multicast_ip=true,.multicast_learned=true,.mc_epoch=packet->epoch,.vlan_exact=true};
  struct rtl_fe_mc_rule *mc;
+ struct rtl_fe_mc_host host={};
  struct rtl_fe_flow *flow,*next,*existing=NULL;
  struct net_device *brdev,*input;
  struct rtl_dq_io io=fe_io(fe);
@@ -192,7 +284,7 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
  unsigned long flags;
  int ret=0;
 
- if(packet->failed || packet->local || packet->input.epoch!=(u32)atomic_read(&bridge->epoch))return -EOPNOTSUPP;
+ if(packet->failed || packet->input.epoch!=(u32)atomic_read(&bridge->epoch))return -EOPNOTSUPP;
  spin_lock_irqsave(&fe->mc_lock,flags);
  if(packet->epoch!=fe->mc_gate.epoch || fe->mc_gate.writers || fe->mc_gate.error)ret=-ESTALE;
  spin_unlock_irqrestore(&fe->mc_lock,flags);
@@ -201,7 +293,6 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
  input=__dev_get_by_index(packet->net,packet->input.port);
  if(!brdev || !netif_is_bridge_master(brdev) || !input ||
     netdev_master_upper_dev_get(input)!=brdev || br_port_get_stp_state(input)!=BR_STATE_FORWARDING ||
-    (brdev->flags&(IFF_PROMISC|IFF_ALLMULTI)) ||
     br_fdb_find_port(brdev,packet->input.source,packet->input.vid)!=input)return -ESTALE;
  data.input=fe_port(fe,__dev_get_by_index(packet->net,packet->input.ingress));
  if(!data.input || data.input->source>4 || data.input->wifi_id || data.input->llid)return -EOPNOTSUPP;
@@ -271,6 +362,16 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
    replica->tag[0].tci=4095;replica->tags++;
   }
   mc->port[mc->count++]=port;
+ }
+ if(packet->local) {
+  if(mc->count==RTL_FE_MC_ACTIONS){ret=-E2BIG;goto out;}
+  host=(struct rtl_fe_mc_host){.input=packet->input,.net=packet->net,.bridge=packet->bridge,
+   .epoch=packet->epoch,.owner=packet->transaction,.source=data.input->source};
+  mc->host=&host;
+  mc->replica[mc->count]=(struct rtl_fe_mc_replica){.destination=16,
+   .host_group=existing?existing->mc_group:1};
+  mc->port[mc->count++]=data.input;
+  if(!data.mtu || brdev->mtu<data.mtu)data.mtu=brdev->mtu;
  }
  if(!mc->count || !data.mtu){ret=-EOPNOTSUPP;goto out;}
  if((io.read(io.context,0x351c)&(0x80000000U|0x3fU<<16))!=(0x80000000U|16U<<16)) {

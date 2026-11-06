@@ -1,0 +1,85 @@
+--- a/net/bridge/br_input.c
++++ b/net/bridge/br_input.c
+@@ -214,6 +214,21 @@
+ 	default:
+ 		break;
+ 	}
++
++#ifdef CONFIG_ARCH_RTL9617C
++	/* A native host copy has already supplied the entire hardware set.
++	 * Retain normal ingress/MDB/local filtering, never flood it again. */
++	{
++		int host = rtl9617c_bridge_mcast_local(skb, br->dev, vid);
++		if (host < 0)
++			goto drop;
++		if (host > 0) {
++			if (!local_rcv)
++				goto drop;
++			return br_pass_frame_up(skb, promisc);
++		}
++	}
++#endif
+ 
+ 	if (dst) {
+ 		unsigned long now = jiffies;
+--- a/net/bridge/br_forward.c
++++ b/net/bridge/br_forward.c
+@@ -367,8 +367,14 @@
+ 			rp = rcu_dereference(hlist_next_rcu(rp));
+ 	}
+ 
+-	if (!prev)
+-		goto out;
++	if (!prev) {
++#ifdef CONFIG_ARCH_RTL9617C
++		rtl9617c_bridge_mcast_complete(native_transaction, native_complete && local_rcv);
++#endif
++		if (!local_rcv)
++			kfree_skb_reason(skb, reason);
++		return;
++	}
+ 
+ 	if (local_rcv) {
+ 		int err = deliver_clone(prev, skb, local_orig);
+--- a/net/core/dev.c
++++ b/net/core/dev.c
+@@ -90,6 +90,9 @@
+ #include <linux/interrupt.h>
+ #include <linux/if_ether.h>
+ #include <linux/netdevice.h>
++#ifdef CONFIG_ARCH_RTL9617C
++#include <linux/rtl9617c-bridge.h>
++#endif
+ #include <linux/etherdevice.h>
+ #include <linux/ethtool.h>
+ #include <linux/ethtool_netlink.h>
+@@ -9497,7 +9500,14 @@
+ 	}
+ 	WRITE_ONCE(dev->promiscuity, promiscuity);
+ 	if (flags != old_flags) {
++#ifdef CONFIG_ARCH_RTL9617C
++		const struct rtl9617c_bridge_mcast_ops *writer =
++			rtl9617c_bridge_mcast_begin(dev);
++#endif
+ 		WRITE_ONCE(dev->flags, flags);
++#ifdef CONFIG_ARCH_RTL9617C
++		rtl9617c_bridge_mcast_end(writer);
++#endif
+ 		netdev_info(dev, "%s promiscuous mode\n",
+ 			    dev->flags & IFF_PROMISC ? "entered" : "left");
+ 		if (audit_enabled) {
+@@ -9564,7 +9574,14 @@
+ 	}
+ 	WRITE_ONCE(dev->allmulti, allmulti);
+ 	if (flags != old_flags) {
++#ifdef CONFIG_ARCH_RTL9617C
++		const struct rtl9617c_bridge_mcast_ops *writer =
++			rtl9617c_bridge_mcast_begin(dev);
++#endif
+ 		WRITE_ONCE(dev->flags, flags);
++#ifdef CONFIG_ARCH_RTL9617C
++		rtl9617c_bridge_mcast_end(writer);
++#endif
+ 		netdev_info(dev, "%s allmulticast mode\n",
+ 			    dev->flags & IFF_ALLMULTI ? "entered" : "left");
+ 		dev_change_rx_flags(dev, IFF_ALLMULTI);
