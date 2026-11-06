@@ -121,6 +121,88 @@ def hash_recipes(module, ni_module):
         'Both wrappers return0 even when the modeled original Hash add/update callee returns5; success does not establish publication.'])
 
 
+def replica_recipes(fc_module, ni_module):
+    """Execute FC replica construction through the real arbitration producer."""
+    class Published(Exception): pass
+    recipes, actions = [], []
+    def ni_boundary(name, values):
+        if name == 'aal_l2_vlan_default_cfg_get':
+            # All four original L2 egress TPID defaults are8100.
+            ni.uc.mem_write(values[1], bytes(12) + struct.pack('<4H', *([0x8100] * 4)) + bytes(4))
+            return 0
+        if name == 'generic_entry_add':
+            assert values[0] == ni.symbols['l2fe_arb_fib_table'][0]
+            actions.append(list(ni.unpack(values[1], '3I')))
+            ni.uc.mem_write(values[2], struct.pack('<I', len(actions) - 1))
+            return 0
+        raise AssertionError(('unmodeled replica action boundary', name, values))
+    ni = ModuleOracle(ni_module, ['_aal_arb_mc_fib_action_add'], ni_boundary)
+    ni.word(ni.symbols['l2fe_arb_fib_table'][0] + 136, 1)
+    def boundary(name, values):
+        if name == 'aal_sw_mcgid_alloc':
+            fc.uc.mem_write(values[0], b'\0\0')
+            return 0
+        if name == 'aal_port_forward_action_add':
+            recipe = bytes(fc.uc.mem_read(values[1], 42))
+            recipes.append(recipe.hex())
+            ni.uc.mem_write(ni.scratch + 0x1000, recipe)
+            return ni.call('_aal_arb_mc_fib_action_add', ni.scratch + 0x1100, ni.scratch + 0x1000)
+        if name == 'aal_hw_mcgid_new':
+            fc.uc.mem_write(values[1], struct.pack('<H', 7))
+            return 0
+        if name == 'rtk_fc_syncToHw_G3addGroupFwdHash':
+            raise Published()
+        raise AssertionError(('unmodeled FC replica boundary', name, values))
+    fc = ModuleOracle(fc_module, ['rtk_fc_abstrSwSyncToHw_add', 'rtk_fc_parseAbstrSwActionField'], boundary)
+    source, context, flow, action, member = [fc.scratch + offset for offset in (0x1000, 0x1200, 0x1400, 0x1600, 0x1800)]
+    db = fc.symbols['fc_db'][0]
+    fc.word(db + 0x200000 + 384, flow)
+    # The original variable-size action parser advances four bytes per VLAN.
+    size = fc.symbols['patternSizeMapping'][0]
+    fc.uc.mem_write(size + 22, struct.pack('<H', 4))
+    fc.uc.mem_write(size + 10, struct.pack('<H', 4))
+    fc.uc.mem_write(context + 306, struct.pack('<H', 4))
+    fc.word(flow + 48, action + 40)
+    fc.word(action + 40, flow + 48)
+    fc.word(action + 56, member + 8)
+    fc.word(member + 8, action + 56)
+    cases = []
+    for tags in range(3):
+        for destination in (1, 6):
+            recipes.clear(); actions.clear()
+            fc.uc.mem_write(action, bytes(32))
+            fc.uc.mem_write(action, struct.pack('<H', (4 if tags else 0) | (8 if tags == 2 else 0)))
+            if tags:
+                fc.uc.mem_write(action + 4, struct.pack('<HH', 0x8100, 4095 | 5 << 13 | 1 << 12))
+            if tags == 2:
+                fc.uc.mem_write(action + 8, struct.pack('<HH', 0x8100, 100 | 3 << 13))
+            fc.uc.mem_write(member, bytes([destination]) + bytes(7))
+            fc.uc.mem_write(flow + 8, bytes(4))
+            fc.uc.mem_write(db + 0x200000 + 404, bytes(4))
+            try:
+                fc.call('rtk_fc_abstrSwSyncToHw_add', source, context, 0)
+            except Published:
+                pass
+            else:
+                raise AssertionError('FC did not reach group Hash publication')
+            assert len(recipes) == len(actions) == 1
+            words = actions[0]
+            assert (words[1] >> 24) & 63 == destination
+            assert (words[1] & 3) == (1 if tags else 2)
+            assert (words[0] & 3) == (1 if tags == 2 else 2)
+            assert words[2] == 1  # Explicit source-filter disable; no TTL edit.
+            if tags:
+                assert (words[1] >> 2) & 4095 == 4095
+                assert (words[1] >> 19) & 7 == 5 and (words[1] >> 23) & 1 == 1
+            if tags == 2:
+                assert (words[0] >> 2) & 4095 == 100 and (words[0] >> 18) & 7 == 3
+            cases.append(dict(output_tags=tags, destination=destination, recipe=recipes[0], words=words))
+    return dict(cases=cases, findings=[
+        'The complete FC replica producer programs both S/C tag commands: present=>tag by table(1), absent=>untag(2); it is an absolute final tag recipe, not a relative push.',
+        'FC explicitly disables source-port filtering for each replica and copies priority/DEI for each present tag; unchanged source MAC leaves TTL decrement disabled.'],
+        scope='Executed FC member iteration, variable-size VLAN action parsing and NI action producer; group/table allocation is modeled and execution stops at Hash publication, which is checked separately.')
+
+
 def action_recipes(module):
     """Run the actual port-action producer; model only its allocation boundary."""
     events = []
@@ -396,6 +478,7 @@ def main():
         hash_recipes=hash_recipes(args.fc, args.module) if args.fc else None,
         fc_sha256=hashlib.sha256(args.fc.read_bytes()).hexdigest() if args.fc else None,
         arbitration_init=arbitration_init(args.module, args.fc) if args.fc else None,
+        replica_recipes=replica_recipes(args.fc, args.module) if args.fc else None,
         arb_fields=[dict(mask_bit=i, offset=o, width=w) for i,(o,w) in enumerate(fields)],
         failures=failures, findings=[
             'NI lookup validates 0..1023 but commands retain only 8 index bits: 0/256/512/768 alias in the original writer and reader.',

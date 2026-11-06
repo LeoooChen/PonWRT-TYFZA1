@@ -3991,6 +3991,24 @@ producers, is not by itself a proof that multicast replicas traverse P6's
 deep queue. Native multicast integration must own and verify that separate
 arbitration selection rather than infer it from the unicast configuration.
 
+The actual `rtk_fc_abstrSwSyncToHw_add` member loop and
+`rtk_fc_parseAbstrSwActionField`, followed by the NI arbitration producer, now
+confirm the replica VLAN contract: each present S/C tag uses command1 with
+explicit VID/PCP/DEI/TPID, and each absent tag uses command2. FC sets
+source-port-filter-disable for every selected recipient. With no source-MAC
+replacement it leaves TTL decrement clear. This is a final tag-stack recipe;
+it is not appropriate to interpret command1 alone as a relative VLAN push.
+
+`rtl_fe_mc_replica_encode` implements that contract for Ethernet/P6 with zero
+to two final tags. It reads the actual **L2** TPID registers0x1704..0x1710:
+outer tags can use A..D, inner tags C/D only. The native L3 parser TPID table
+does not establish those L2 selectors. Unsupported ports, tag counts or
+missing TPIDs return an error without publishing output words. Six complete
+FC/NI recipes match the native encoder, including GEM4095 plus inner customer
+VID100 and PCP/DEI; each L2 selector and missing TPID is also checked by
+`test_fe_mcast_replica.py` (`mcast-replica-20261106.json`). These encoder helpers
+still do not enable a live group owner or packet-retirement guarantee.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
