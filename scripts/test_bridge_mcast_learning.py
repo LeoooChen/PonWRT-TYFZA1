@@ -102,6 +102,7 @@ static struct rtl9617c_bridge_frame *skb_ext_find(struct sk_buff *s,int id){asse
 static struct rtl9617c_bridge_frame *skb_ext_add(struct sk_buff *s,int id){assert(!id);if(ext_change){fe_mcast_invalidate(ext_change);ext_change=NULL;}return &s->saved;}
 static bool is_multicast_ether_addr(const u8 *a){return a[0]&1;}
 static bool is_broadcast_ether_addr(const u8 *a){return !memcmp(a,"\xff\xff\xff\xff\xff\xff",6);}
+static bool is_link_local_ether_addr(const u8 *a){return !memcmp(a,"\1\x80\xc2\0\0",5)&&a[5]<16;}
 static bool ether_addr_equal(const u8 *a,const u8 *b){return !memcmp(a,b,6);}
 static struct net_device *devices[16];
 static unsigned vlan_dev_vlan_id(struct net_device *d){return d->vid;}
@@ -182,6 +183,11 @@ int main(void){
  struct nf_hook_entries foreign={.num_hook_entries=1,.hooks={{foreign_hook}}};
  net.nf.hooks_bridge[0]=&ours;lan.nf_hooks_ingress=&wire;
  assert(fe_mcast_hooks_clear(&net)&&fe_mcast_port_clear(&lan));
+ /* Reserved bridge control MACs can depend on group-forward masks before
+  * flood selection and must never acquire a learned data bypass. */
+ memcpy(skb.saved.destination,"\1\x80\xc2\0\0\0",6);
+ assert(!fe_mcast_capture_begin(&bridge,&skb,true,++fe_mcast_ticket)&&!net.refs);
+ skb.saved=skb.frame;
  net.nf.hooks_bridge[1]=&foreign;
  assert(!fe_mcast_capture_begin(&bridge,&skb,false,++fe_mcast_ticket)&&!net.refs);
  net.nf.hooks_bridge[1]=NULL;

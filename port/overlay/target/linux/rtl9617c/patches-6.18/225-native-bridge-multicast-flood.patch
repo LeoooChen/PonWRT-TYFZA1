@@ -1,0 +1,140 @@
+--- a/net/bridge/br_private.h
++++ b/net/bridge/br_private.h
+@@ -2356,6 +2356,22 @@
+ struct nd_msg *br_is_nd_neigh_msg(const struct sk_buff *skb, struct nd_msg *m);
+ bool br_is_neigh_suppress_enabled(const struct net_bridge_port *p, u16 vid);
+ 
++/* RTNL serializes these flag publications with native flow installation.
++ * Keep the RCU-pinned callback only around the non-sleeping assignment. */
++static inline void br_port_flags_set(struct net_bridge_port *p, unsigned long flags)
++{
++#ifdef CONFIG_ARCH_RTL9617C
++ const struct rtl9617c_bridge_mcast_ops *writer;
++ if (p->flags == flags)
++  return;
++ writer = rtl9617c_bridge_mcast_begin(p->br->dev);
++ WRITE_ONCE(p->flags, flags);
++ rtl9617c_bridge_mcast_end(writer);
++#else
++ p->flags = flags;
++#endif
++}
++
+ /* Writers close native learned multicast lookup before changing state. The
+  * callback only performs bounded direct IO; Hash retirement runs elsewhere.
+  * Read-only multicast-lock users keep the ordinary lock operations. */
+--- a/net/bridge/br_forward.c
++++ b/net/bridge/br_forward.c
+@@ -212,6 +212,12 @@
+ 	enum skb_drop_reason reason = SKB_DROP_REASON_NO_TX_TARGET;
+ 	struct net_bridge_port *prev = NULL;
+ 	struct net_bridge_port *p;
++#ifdef CONFIG_ARCH_RTL9617C
++	u64 native_transaction = 0;
++	bool native_complete = true;
++	if (pkt_type == BR_PKT_MULTICAST && !local_orig)
++		native_transaction = rtl9617c_bridge_mcast_capture(skb, local_rcv);
++#endif
+ 
+ 	br_tc_skb_miss_set(skb, pkt_type != BR_PKT_BROADCAST);
+ 
+@@ -254,16 +260,34 @@
+ 		}
+ 	}
+ 
+-	if (!prev)
+-		goto out;
+-
+-	if (local_rcv)
+-		deliver_clone(prev, skb, local_orig);
+-	else
++	if (!prev) {
++#ifdef CONFIG_ARCH_RTL9617C
++		rtl9617c_bridge_mcast_complete(native_transaction, local_rcv);
++#endif
++		if (!local_rcv)
++			kfree_skb_reason(skb, reason);
++		return;
++	}
++
++	if (local_rcv) {
++		int err = deliver_clone(prev, skb, local_orig);
++#ifdef CONFIG_ARCH_RTL9617C
++		native_complete = !err;
++#else
++		(void)err;
++#endif
++	} else {
+ 		__br_forward(prev, skb, local_orig);
++	}
++#ifdef CONFIG_ARCH_RTL9617C
++	rtl9617c_bridge_mcast_complete(native_transaction, native_complete);
++#endif
+ 	return;
+ 
+ out:
++#ifdef CONFIG_ARCH_RTL9617C
++	rtl9617c_bridge_mcast_complete(native_transaction, false);
++#endif
+ 	if (!local_rcv)
+ 		kfree_skb_reason(skb, reason);
+ }
+--- a/net/bridge/br_multicast.c
++++ b/net/bridge/br_multicast.c
+@@ -1763,6 +1763,13 @@
+ 
+ static void br_multicast_query_delay_expired(struct timer_list *t)
+ {
++#ifdef CONFIG_ARCH_RTL9617C
++	const struct rtl9617c_bridge_mcast_ops *writer;
++
++	/* timer_pending() now permits MDB selection instead of flooding. */
++	writer = rtl9617c_bridge_mcast_begin(NULL);
++	rtl9617c_bridge_mcast_end(writer);
++#endif
+ }
+ 
+ static void br_multicast_select_own_querier(struct net_bridge_mcast *brmctx,
+--- a/net/bridge/br_netlink.c
++++ b/net/bridge/br_netlink.c
+@@ -937,9 +937,9 @@
+ 		return;
+ 
+ 	if (nla_get_u8(tb[attrtype]))
+-		p->flags |= mask;
++		br_port_flags_set(p, p->flags | mask);
+ 	else
+-		p->flags &= ~mask;
++		br_port_flags_set(p, p->flags & ~mask);
+ }
+ 
+ /* Process bridge protocol info on port */
+@@ -978,7 +978,7 @@
+ 	if ((p->flags & BR_PORT_MAB) &&
+ 	    (!(p->flags & BR_PORT_LOCKED) || !(p->flags & BR_LEARNING))) {
+ 		NL_SET_ERR_MSG(extack, "Bridge port must be locked and have learning enabled when MAB is enabled");
+-		p->flags = old_flags;
++		br_port_flags_set(p, old_flags);
+ 		return -EINVAL;
+ 	} else if (!(p->flags & BR_PORT_MAB) && (old_flags & BR_PORT_MAB)) {
+ 		struct net_bridge_fdb_flush_desc desc = {
+@@ -994,7 +994,7 @@
+ 
+ 	err = br_switchdev_set_port_flag(p, p->flags, changed_mask, extack);
+ 	if (err) {
+-		p->flags = old_flags;
++		br_port_flags_set(p, old_flags);
+ 		return err;
+ 	}
+ 
+--- a/net/bridge/br_sysfs_if.c
++++ b/net/bridge/br_sysfs_if.c
+@@ -75,7 +75,7 @@
+ 			return err;
+ 		}
+ 
+-		p->flags = flags;
++		br_port_flags_set(p, flags);
+ 		br_port_flags_change(p, mask);
+ 	}
+ 	return 0;

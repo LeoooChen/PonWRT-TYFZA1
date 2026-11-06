@@ -74,6 +74,24 @@ static void br_multicast_start_querier(struct net_bridge_mcast *m,struct bridge_
 code+=private[private.index('static inline void br_multicast_write_begin'):private.rfind('#endif')]
 code+=function(bridge,'br_multicast_set_querier')
 code+=r'''
+struct net_bridge_port {struct net_bridge *br;struct net_device *dev;unsigned long flags;};
+#undef WRITE_ONCE
+#define WRITE_ONCE(v,n) do {assert(state.mc_gate.writers==1&&state.profile==3&&rcu==1);(v)=(n);} while(0)
+'''
+code+=function(private,'br_port_flags_set')
+code+=r'''
+struct nlattr {unsigned value;};
+static unsigned nla_get_u8(struct nlattr *n){return n->value;}
+struct netlink_ext_ack {char *_msg;};
+static int flag_error;static unsigned changed;
+static int br_switchdev_set_port_flag(struct net_bridge_port *p,unsigned long f,unsigned long m,struct netlink_ext_ack *a){(void)p;(void)f;(void)m;(void)a;assert(!rcu&&!state.mc_gate.writers);return flag_error;}
+static void br_port_flags_change(struct net_bridge_port *p,unsigned long mask){assert(!rcu&&!state.mc_gate.writers);changed|=mask;(void)p;}
+#define netdev_err(...) ((void)0)
+'''
+code+=function((args.kernel/'net/bridge/br_netlink.c').read_text(),'br_set_port_flag')
+code+=function((args.kernel/'net/bridge/br_sysfs_if.c').read_text(),'store_flag')
+code+=function(bridge,'br_multicast_query_delay_expired')
+code+=r'''
 int main(void){
  struct rtl_dq_io io=fe_io(&state);struct net_device dev;
  struct net_bridge br={.dev=&dev};struct net_bridge_mcast m={.br=&br,.multicast_query_response_interval=10};
@@ -95,6 +113,22 @@ int main(void){
  assert(state.mc_gate.writers==1&&rtl_fe_mc_gate_open(&io,&state.mc_gate,state.mc_gate.epoch)==-ESTALE);
  rtl9617c_bridge_mcast_end(b);
  assert(!state.mc_gate.writers&&!rcu&&!rtl_fe_mc_gate_open(&io,&state.mc_gate,state.mc_gate.epoch));
+ /* Real netlink and sysfs flag publications close lookup before assignment,
+  * and never pin an RCU callback across the sleeping switchdev validation. */
+ struct net_bridge_port port={.br=&br,.dev=&dev,.flags=8};struct nlattr off={0},on={1};struct nlattr *tb[1]={&off};
+ epoch=state.mc_gate.epoch;br_set_port_flag(&port,tb,0,8);
+ assert(!port.flags&&state.mc_gate.epoch==epoch+2&&!state.mc_gate.active&&!rcu);
+ epoch=state.mc_gate.epoch;br_set_port_flag(&port,tb,0,8);assert(state.mc_gate.epoch==epoch);
+ assert(!rtl_fe_mc_gate_open(&io,&state.mc_gate,epoch));tb[0]=&on;br_set_port_flag(&port,tb,0,8);
+ assert(port.flags==8&&!state.mc_gate.active&&!rcu);
+ assert(!rtl_fe_mc_gate_open(&io,&state.mc_gate,state.mc_gate.epoch));
+ flag_error=-EOPNOTSUPP;epoch=state.mc_gate.epoch;assert(store_flag(&port,0,8)==-EOPNOTSUPP);
+ assert(port.flags==8&&state.mc_gate.epoch==epoch&&state.mc_gate.active);
+ flag_error=0;assert(!store_flag(&port,0,8)&&!port.flags&&changed==8&&!state.mc_gate.active);
+ assert(!rtl_fe_mc_gate_open(&io,&state.mc_gate,state.mc_gate.epoch));
+ epoch=state.mc_gate.epoch;br_multicast_query_delay_expired(NULL);
+ assert(state.mc_gate.epoch==epoch+2&&!state.mc_gate.active&&!rcu);
+ assert(!rtl_fe_mc_gate_open(&io,&state.mc_gate,state.mc_gate.epoch));
  state.lost=true;fe_mcast_change_begin(&owner,&dev);fe_mcast_change_end(&owner);
  assert(state.mc_gate.error==-EIO&&state.mc_gate.active);
  state.lost=false;rtl_fe_mc_gate_close(&io,&state.mc_gate);
@@ -128,3 +162,7 @@ for filename,names in writers.items():
         assert 'br_multicast_write_lock' in body and 'br_multicast_write_unlock' in body,name
         assert not re.search(r'spin_(?:un)?lock(?:_bh)?\(&.*multicast_lock',body),name
 print('PASS:36 multicast writer entry points use paired native invalidation')
+netlink=(args.kernel/'net/bridge/br_netlink.c').read_text()
+assert function(netlink,'br_setport').count('br_port_flags_set(p, old_flags)')==2
+assert not re.search(r'p->flags\s*[|&]?=',function(netlink,'br_setport'))
+print('PASS: netlink flags, both rollback branches and sysfs publication use the native gate')

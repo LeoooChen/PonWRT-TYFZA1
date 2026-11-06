@@ -184,6 +184,47 @@ def hash_recipes(module, ni_module):
         'Both wrappers return0 even when the modeled original Hash add/update callee returns5; success does not establish publication.'])
 
 
+def unknown_multicast_policy(module):
+    """Observe the original unknown-group policy and its error boundary."""
+    events=[]
+    locked=False
+    failure=0
+    def boundary(name,args):
+        nonlocal locked
+        if name=='lock':
+            assert not locked
+            locked=True
+        elif name=='unlock':
+            assert locked
+            locked=False
+        elif name=='rtk_8277c_flow_default_action_update':
+            assert locked
+            events.append(list(args[:2]))
+            return failure
+        else:
+            raise AssertionError((name,args))
+        return 0
+    oracle=ModuleOracle(module,['rtk_fc_igmp_unknownMulticast_action'],boundary)
+    database=oracle.symbols['fc_db'][0]
+    oracle.word(database+48,oracle.scratch)
+    oracle.word(oracle.scratch+80,oracle.callback('lock'))
+    oracle.word(oracle.scratch+88,oracle.callback('unlock'))
+    oracle.uc.mem_write(database+20,bytes(8))
+    cases=[]
+    for port in (0,6,7,18):
+        for action in (0,1):
+            for failure in (0,5):
+                events.clear()
+                oracle.uc.mem_write(database+208,b'\xa3')
+                result=oracle.call('rtk_fc_igmp_unknownMulticast_action',port|(action<<8))
+                flags=oracle.unpack(database+208,'B')[0]
+                assert result==0 and not locked and events==[[2,0 if action else 1]]
+                assert flags==(0xaf if action else 0xa3)
+                cases.append(dict(port=port,action=action,profile_update=events[0],
+                                  callee_error=failure,flags=flags,returned=result))
+    return dict(cases=cases,scope='Actual unknown multicast policy wrapper selects profile2 default action and software flags under its lock. Default-action programming and hardware forwarding are modeled; failed lower update is ignored by the original wrapper. Native Linux flood policy must still supply a complete selected set.')
+
+
 def group_unlearn(module):
     """Follow last-reference deletion through FC's real Hash-delete wrapper."""
     events, failure = [], 0
@@ -676,6 +717,7 @@ def main():
         group_lifecycle=group_lifecycle(args.module),
         hash_recipes=hash_recipes(args.fc, args.module) if args.fc else None,
         group_unlearn=group_unlearn(args.fc) if args.fc else None,
+        unknown_multicast_policy=unknown_multicast_policy(args.fc) if args.fc else None,
         fc_sha256=hashlib.sha256(args.fc.read_bytes()).hexdigest() if args.fc else None,
         arbitration_init=arbitration_init(args.module, args.fc) if args.fc else None,
         replica_recipes=replica_recipes(args.fc, args.module) if args.fc else None,

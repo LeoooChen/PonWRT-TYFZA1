@@ -4781,8 +4781,52 @@ cookie. Actual LLID/PVT queue delivery and physical traffic remain untested.
 PVT state is now checked at admission refresh; physical in-flight behavior is
 still unproven. The255 cumulative group/cookie IDs,
 64 immutable actions,8 source-MAC entries and8 shared DBUF rules retain their
-documented limits. Direct PE BCMC, unknown multicast flooding, full retirement,
+documented limits. Direct PE BCMC, full retirement,
 remaining service/management policies and hardware acceptance remain open.
+
+### Unknown multicast flood transactions
+
+The native producer now also captures received UDP multicast sent through
+Linux `br_flood`, covering unknown groups and the snooping-disabled/no-querier
+fallback. Linux still selects all recipients using multicast-flood flags,
+proxy-ARP policy, STP, VLAN, source-port/hairpin and isolation checks. The
+existing complete transaction records selected ports and successful final
+output recipes, including the CPU-local copy; a failed clone or unsupported
+recipient prevents installation of the entire set. A local-only flood can
+install the existing owned host-copy action. Broadcast, unknown unicast,
+locally originated traffic, IGMP/MLD and reserved01:80:c2 control MACs do not
+enter this producer. Membership appearance/disappearance invalidates the old
+generation before a new complete flood or MDB decision is admitted.
+
+Port flag changes now close learned lookup before the actual assignment in
+netlink/sysfs, including netlink rollback. RTNL already serializes the whole
+configuration operation with the learner; the RCU-pinned non-sleeping callback
+brackets only the flag publication, not switchdev validation or other sleeping
+work. The previously empty query-delay expiry callback now also invalidates
+learning: expiration changes `timer_pending()` and can switch a packet from
+flooding to MDB selection without another membership event.
+
+Executing retained `rtk_fc_igmp_unknownMulticast_action` confirms16 original
+policy cases: it selects profile2's default action and updates software flags
+under its lock, and ignores lower programming errors. This is policy evidence,
+not a portable original flood bitmap. Native policy remains the actual Linux
+bridge selection; it does not open all hardware ports or replace per-port
+restrictions with an inferred factory mask.
+
+`test_bridge_multicast_selection.py` now executes45 real Linux selection
+cases. `test_bridge_mcast_flood.py` joins the actual `br_flood`, selection and
+clone control flow to production capture/learn/FE/NI ownership, checking full
+LAN/P6/local copies, local-only groups, isolation/VLAN/flood flags, clone
+failure and stale-copy rejection. Actual gate/flag-publication/rollback and
+query-delay checks pass, together with complete multicast learning,432 QM
+poll cases,40 bridge receive cases,109 parser vectors and unicast/EPON
+regressions. Image/modules build passes; the five kernel files in patch225
+replay with zero fuzz and match the compiled sources.
+
+No hardware traffic or in-flight retirement was tested. Existing group,
+cookie, action and DBUF capacity/quarantine rules still apply to flood groups.
+Per-subscriber multicast-to-unicast replication, direct PE BCMC and the
+remaining EPON four-queue dynamic-COS path remain separate unfinished work.
 
 ### Outstanding implementation and acceptance
 

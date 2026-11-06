@@ -285,6 +285,7 @@ static u64 fe_mcast_capture_begin(void *context,struct sk_buff *skb,bool local,u
  if(READ_ONCE(bridge->stopping) || !rtl_fe_enabled(fe) || !wire || !wire->port ||
     wire->epoch!=(u32)atomic_read(&bridge->epoch) || wire->multicast_host_group || wire->ip_protocol!=IPPROTO_UDP ||
     !is_multicast_ether_addr(wire->destination) || is_broadcast_ether_addr(wire->destination) ||
+    is_link_local_ether_addr(wire->destination) ||
     skb_is_gso(skb))return 0;
  brdev=netdev_master_upper_dev_get_rcu(skb->dev);
  if(!brdev || !netif_is_bridge_master(brdev) || !fe_mcast_hooks_clear(dev_net(brdev)))return 0;
