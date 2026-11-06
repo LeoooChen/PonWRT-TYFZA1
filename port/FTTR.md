@@ -4725,12 +4725,23 @@ for retry, with admission closed. PDC refresh also retries a previous failed
 withdrawal before any subsequent mapping write. Cleanup failure still allows
 optical TX and hardware RX/TX shutdown and is returned to the caller.
 
+PDC reconfiguration while FE remains enabled now preserves business rows'
+FE destination24/bypass0, while both OAM banks keep CPU16/bypass1/COS7.
+Previously the reinitializer rewrote all rows for CPU16; a later POL-only
+refresh could not restore unchanged business mappings before publishing the
+next snapshot. The actual reinitializer is tested across all three EPON modes
+with FE on/off (1536 table rows), withdrawal, partial IO failure and retry.
+
 Fixed output priorities follow actual native TX: `priority & (queues-1)`.
 VLAN ingress mappings, including priorities256..263, are reconstructed from
 the complete input; output VLAN bytes must match Linux. Raw Wi-Fi COS is
 preserved per packet with eight enabled EPON queues, provided every COS gives
 the same final VLAN bytes. Four-queue raw Wi-Fi output is still unsupported:
 the current shared key/action cannot apply the needed per-copy COS mask.
+The reference AAL describes four-queue PUC indexing with COS[1:0], and the
+retained binary confirms the mode control at0x804c. The intermediate native
+NI/QM queue selection is not yet established as equivalent for COS4..7, so
+this reference observation alone does not lift the restriction.
 Disabled queues, failed SLA application and foreign VOQ width refuse
 admission. EPON output MTU follows the native1522-byte Ethernet limit.
 

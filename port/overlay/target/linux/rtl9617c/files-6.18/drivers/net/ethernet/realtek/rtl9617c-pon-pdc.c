@@ -160,8 +160,12 @@ int rtl_pon_pdc_configure_locked(struct rtl9617c_pon *pon)
 		unsigned int entry = index & 63;
 		unsigned int source = index & BIT(6) ? 7 :
 			rtl_pon_data_source(entry, readl(pon->mac + 0x64 + entry * 4));
-		u32 data0 = (16 << 3) | (7 << 9) | BIT(15);
+		bool accelerate = pon->fe_enabled && !(index & BIT(6));
+		u32 data0 = ((accelerate ? 24 : 16) << 3) | (7 << 9) |
+			(accelerate ? 0 : BIT(15));
 
+		/* Reconfiguration must retain the admitted FE destination. Source
+		 * refresh alone cannot fix CPU-only rows whose POL stayed the same. */
 		if (index & BIT(6))
 			data0 |= 7;
 		else
@@ -177,7 +181,7 @@ int rtl_pon_pdc_configure_locked(struct rtl9617c_pon *pon)
 	}
 	rtl_pon_update(pon->mac + PDC_COUNTER, GENMASK(2, 0), 0);
 	pon->pdc_configured = true;
-	dev_info(pon->dev, "PDC: 256 downstream map entries configured for native CPU16\n");
+	dev_info(pon->dev, "PDC: 256 downstream map entries configured, FE=%u\n", pon->fe_enabled);
 unlock:
 	pon->pdc_error = ret;
 	mutex_unlock(&pon->lock);
