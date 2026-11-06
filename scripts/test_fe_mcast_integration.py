@@ -33,6 +33,8 @@ code = r'''
 #include "rtl9617c-fe-mcast-profile.h"
 typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32,__le32;typedef uint64_t u64;
 #include "linux/rtl9617c-bridge.h"
+#include "linux/rtl9617c-mcast-pe.h"
+#include "linux/rtl9617c-wifi-policy.h"
 #define ETH_ALEN 6
 #define VLAN_CFI_MASK 4096
 #define VLAN_PRIO_SHIFT 13
@@ -59,7 +61,7 @@ struct rb_node {int unused;};
 struct net_device {bool running,carrier;};
 struct rtl_fe;
 struct rtl_fe_port {struct rtl_fe *fe;struct net_device *netdev;unsigned source,destination,llid,wifi_id;bool retired;};
-struct rtl_fe_wifi_peer {unsigned destination;};
+struct rtl_fe_wifi_peer {unsigned destination,macid;u64 policy_generation;u8 address[6];struct rtl9617c_wifi_policy policy;};
 static bool netif_running(struct net_device *d){return d->running;}
 static bool netif_carrier_ok(struct net_device *d){return d->carrier;}
 static bool rtl_fttr_mcast_ready(struct net_device *d){return d && d->running && d->carrier;}

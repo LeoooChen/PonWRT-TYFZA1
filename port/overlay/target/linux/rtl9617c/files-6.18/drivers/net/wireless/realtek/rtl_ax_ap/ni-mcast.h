@@ -40,6 +40,7 @@ int rtl_ax_tx_mcast_policy(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,unsign
 {
  struct rtl9617c_wifi_policy policy;
  u64 generation;
+ unsigned long flags;
  u8 address[ETH_ALEN];
  int ret;
 
@@ -54,6 +55,14 @@ int rtl_ax_tx_mcast_policy(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,unsign
   if(ret==-EOPNOTSUPP)WRITE_ONCE(tx->mcast_policy_attempt[macid],generation);
   goto out;
  }
+ spin_lock_irqsave(&tx->lock,flags);
+ policy.key=get_unaligned_le32(tx->pe.memory+0xd000+macid*32+20)&0xffff0000U;
+ policy.flags=get_unaligned_le32(tx->pe.memory+0xd000+macid*32+16)&(BIT(16)|BIT(18)|BIT(23));
+ if((policy.flags&(BIT(16)|BIT(18)))!=(BIT(16)|BIT(18)) ||
+    ((get_unaligned_le32(tx->pe.memory+0xd000+macid*32+8)>>16)&63)!=(policy.qos?26:24) ||
+    !ether_addr_equal(address,tx->pe.memory+0xe400+macid*8))ret=-ESTALE;
+ spin_unlock_irqrestore(&tx->lock,flags);
+ if(ret)goto out;
  ret=rtl9617c_wifi_mcast_policy(tx->mcast_dev,address,16+tx->ni.cpu,macid,&policy,generation);
  if(!ret)WRITE_ONCE(tx->mcast_policy_attempt[macid],generation);
 out:

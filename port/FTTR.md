@@ -4897,7 +4897,8 @@ EQ push credit permits their return. Already published PCIe traffic still
 requires the existing peer/key drain; closing the table is not physical packet
 retirement and does not permit cookie reuse.
 
-The shared ABI asserts its80-byte record and20496-byte table size. Linked MIPS
+The initial consumer ABI asserted its80-byte record and20496-byte table size;
+the direct publisher below extends this contract. Linked MIPS
 execution covers247 admission/revocation cases, all64 DSCP values and8 COS
 values, plus four complete encrypted TX/RPQ cases. The existing publication,
 two-peer PS isolation, queue budgets, EQ recycling, STA RX/TX and host-header
@@ -4936,9 +4937,8 @@ bridge local-delivery cases, callback lifetime, LAN restoration and captured
 wireless ingress regressions pass. Image/modules build passes and89 driver,
 public-header and generated-firmware inputs match the compiled sources.
 
-The bound tables remain closed: there is still no FE recipient-record publisher
-or enabled direct NI-to-PE multicast flow. Existing complete M2U uses the owned
-CPU path. The current binding belongs to the first NI VIF on each radio; other
+Binding alone leaves the tables closed; the direct publisher below opens them
+only with a complete learned transaction. The current binding belongs to the first NI VIF on each radio; other
 VIF peer setup continues normally without gaining direct multicast admission.
 The policy compilation below supplies current Linux QoS and peer identity to FE.
 Writing immutable recipient records, completing every key/template transition,
@@ -4984,11 +4984,59 @@ dispatch,32 COS/QoS,12 replica and six destination-edit cases. Image/modules
 build passes; patch227 replays seven inputs with zero fuzz/offset, and95 overlay
 inputs match compiled sources. MMIO and completion remain modeled.
 
-This completes policy calculation and FE storage, not direct multicast flow
-installation. The PE tables remain closed and the established CPU-copy path
-continues to carry M2U. Buffer exclusivity, immutable record/action publication,
-key/template lifetime, BCMC, complete retirement and hardware acceptance remain
-unfinished.
+Policy calculation and FE storage alone do not install a multicast flow. The
+following publisher integrates supported M2U recipients; the established CPU
+path still handles ordinary multicast and unavailable direct recipients.
+
+### Direct NI-to-PE multicast-to-unicast publication
+
+Complete learned transactions now select CPU18/19 for admitted wireless M2U
+recipients. Each recipient reserves an independent immutable cookie from the
+same quarantined NI namespace. Its record is written before NI actions and the
+group Hash; PE admission opens before the learned tuple becomes visible under
+the shared gate lock. Repeated identical complete decisions retain their
+cookies. Disagreement closes the generation. Withdrawal clears each owned
+record epoch before attempting Hash/cache deletion, even on failure; its
+nonzero control tombstone prevents reuse after revocation. CPU receive rejects
+cookies belonging to PE recipients.
+
+The MCP2 ABI uses96-byte records and a24592-byte coherent table. Records pin the
+actual peer MAC, MACID, key/CAM identifier, AP/STA and Ethernet-template flags,
+header QoS shape and Linux TID policy. PE verifies these at ingestion, selection
+and before TXBD publication. Key/BA retirement, authorization removal, address
+or template identity changes revoke the policy generation before reuse. First
+policy publication also withdraws existing CPU-copy rules, so acceleration can
+progress after the initial software packet creates a valid radio template.
+No-ACK policy reaches both the wireless QoS header and WD, and disables BA for
+that copy. Non-WME frames keep ordinary ACK behavior.
+
+Native destination admission checks the original four PDPID mapping cases
+(the table address is8 bits), HeaderA routing, RMU enable, per-COS profiles,
+exact radio EQ/BID allocation and packet layout, with bandwidth relocation
+disabled. Original MCE emits separately edited packet streams into QM; the
+native contract requires each RMU CPU output to allocate from that destination's
+EQ, retained until its matching RPQ/EQ return. These register and ownership
+checks support the implementation, but do not measure physical buffer
+exclusivity or hardware replication. That remains an explicit hardware
+acceptance item; no device was accessed.
+
+Offline verification executes complete LAN/local/PE installation, repeated
+decision reuse, failed withdrawal, tombstone refusal and fixed/VLAN/DSCP recipe
+selection. A record emitted by this actual learner is consumed by the linked
+MIPS program. PE checks cover264 admission/revocation cases and eight complete
+encrypted TX/RPQ/no-ACK cases, including key/peer/header changes and stale
+selected requests. Forty route/pool/header faults are rejected and six actual
+target FC/NI wireless actions agree after the intentional cookie/source
+adaptation. Existing M2U,480 QM/40 bridge delivery, PS/STA/host headers,4224 ARM
+requests, BAR, key/BA and ITU/EPON206 route-fault regressions pass. Firmware is
+26520 bytes with a conservative6896-byte stack bound. Image/modules build
+passes and96 overlay inputs match compiled sources.
+
+Direct acceleration currently covers the bound VIF's admitted AP/STA unicast
+recipients, with the existing complete software/CPU path for unsupported cases.
+It does not implement direct BCMC/DTIM, multiple VIF bindings, TSPEC accounting
+or prove physical packet retirement. Group/cookie/action quarantine and the
+existing finite capacities remain; the overall FTTR rewrite is incomplete.
 
 ### Outstanding implementation and acceptance
 

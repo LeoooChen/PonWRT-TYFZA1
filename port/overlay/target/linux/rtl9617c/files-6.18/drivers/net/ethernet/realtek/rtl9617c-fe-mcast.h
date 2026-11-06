@@ -40,11 +40,12 @@ static inline int rtl_fe_mc_replica_encode(const struct rtl_dq_io *io,
   words[2]=1U|1U<<11;
   return 0;
  }
- if((replica->destination>6 && replica->destination!=16 && (replica->destination<32 || replica->destination>63)) || replica->tags>2 || replica->host_group)return -EOPNOTSUPP;
+ if((replica->destination>6 && replica->destination!=16 && replica->destination!=18 && replica->destination!=19 && (replica->destination<32 || replica->destination>63)) || replica->tags>2 || replica->host_group)return -EOPNOTSUPP;
+ if((replica->destination==18 || replica->destination==19) && !replica->direct_cookie)return -EINVAL;
  if(replica->destination==32 && !replica->epon)return -EOPNOTSUPP;
  if((replica->epon && replica->destination<32) || (replica->preserve_queue && !replica->epon))return -EINVAL;
  if(replica->direct_cookie) {
-  if(replica->destination!=16 || replica->direct_cookie>=RTL_FE_MC_GROUPS || replica->source_set || replica->gem || replica->queue)return -EINVAL;
+  if((replica->destination!=16 && replica->destination!=18 && replica->destination!=19) || replica->direct_cookie>=RTL_FE_MC_GROUPS || replica->source_set || replica->gem || replica->queue)return -EINVAL;
   result[2]|=1U<<11;
  }
  if(replica->source_set) {

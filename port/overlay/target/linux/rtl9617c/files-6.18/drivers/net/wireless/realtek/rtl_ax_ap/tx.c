@@ -29,6 +29,7 @@ static void pe_event_release(struct rtl_ax_tx *tx);
 static void ni_route_sleep(struct rtl_ax_tx *tx, unsigned int macid);
 static void ni_state_init(struct rtl_ax_tx *tx);
 static int ni_mcast_release(struct rtl_ax_tx *tx);
+static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *tx);
 static u64 pe_event_interrupts;
 #define RTL_AX_TX_MGMT_INDEX 0x1078
 #define RTL_AX_TX_RINGS 6
@@ -419,16 +420,32 @@ static int rtl_ax_tx_map(struct rtl_ax_tx *tx, struct sk_buff *skb,
 
 void rtl_ax_tx_ap_address(struct rtl_ax_tx *tx, const u8 *address)
 {
+	if (tx->pe_active && !ether_addr_equal(tx->pe.memory + PE_PROBE_MAILBOX + 64, address))
+		rtl_ax_tx_mcast_revoke(tx);
 	if (tx->pe_active) memcpy(tx->pe.memory + PE_PROBE_MAILBOX + 64, address, 6);
+}
+static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *tx)
+{
+	const struct rtl9617c_bridge_mcast_ops *token;
+	if (!tx->mcast_table || !tx->pe_active) return;
+	/* Policy snapshots also become stale, so a same-value key/MACID reuse
+	 * cannot resurrect a cookie after the route bit is reopened. */
+	token = rtl9617c_bridge_wifi_policy_begin(NULL);
+	WRITE_ONCE(tx->mcast_table->epoch, 0);
+	dma_wmb();
+	rtl9617c_bridge_mcast_end(token);
 }
 void rtl_ax_tx_peer_client(struct rtl_ax_tx *tx, unsigned int macid, bool client, const u8 *bssid)
 {
+	if (tx->peer_client[macid] != client || (client && tx->pe_active &&
+	    !ether_addr_equal(tx->pe.memory + 0xe400 + macid * 8, bssid))) rtl_ax_tx_mcast_revoke(tx);
 	tx->peer_client[macid] = client;
 	if (client && tx->pe_active)
 		memcpy(tx->pe.memory + 0xe400 + macid * 8, bssid, ETH_ALEN);
 }
 void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos, unsigned int ps_timeout)
 {
+	rtl_ax_tx_mcast_revoke(tx);
 	tx->peer_qos[macid] = qos;
 	tx->peer_offloaded[macid] = false;
 	tx->peer_asleep[macid] = false;
@@ -460,6 +477,7 @@ void rtl_ax_tx_peer_authorized(struct rtl_ax_tx *tx, unsigned int macid, bool au
 {
 	WRITE_ONCE(tx->peer_authorized[macid], authorized);
 	if (!authorized) {
+		rtl_ax_tx_mcast_revoke(tx);
 		/* Revoke PE admission before a fallible FE withdrawal. */
 		if (tx->pe_active)
 			put_unaligned_le32(0, tx->pe.memory + 0x11a00 + macid * 4);
@@ -713,12 +731,18 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 			tx->last_eth_dma = request[8];
 			memcpy(tx->last_eth, skb->data, sizeof(tx->last_eth));
 			if (!tid) {
+				u32 *old = tx->pe.memory + 0xd000 + macid * 32;
+				if ((old[4] & (BIT(16)|BIT(18)|BIT(23))) != (request[4] & (BIT(16)|BIT(18)|BIT(23))) ||
+				    (old[5] & 0xffff0000U) != (request[5] & 0xffff0000U) ||
+				    (old[2] & 0x3f0000) != (request[2] & 0x3f0000)) rtl_ax_tx_mcast_revoke(tx);
 				memcpy(tx->pe.memory + 0xd000 + macid * 32, request, 32);
 				if (tx->peer_rates[macid] & BIT(31))
 					put_unaligned_le32(tx->peer_rates[macid] & ~BIT(31), tx->pe.memory + 0xd000 + macid * 32 + 12);
 			}
-			if (!tx->peer_client[macid])
+			if (!tx->peer_client[macid]) {
+				if (!ether_addr_equal(tx->pe.memory + 0xe400 + macid * 8, skb->data)) rtl_ax_tx_mcast_revoke(tx);
 				memcpy(tx->pe.memory + 0xe400 + macid * 8, skb->data, 6);
+			}
 		}
 		/* NI needs an Ethernet template even when mac80211 assembled A-MSDU.
 		 * Never copy the raw frame's sequence/AMSDU/PS flags into that template. */
@@ -736,6 +760,11 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 				macid << 24 | BIT(18) | BIT(16) | tx->checksum_enabled << 17 | tx->peer_client[macid] << 23,
 				aggregate | density << 8 | key, 0, 0 };
 
+			u32 *old = tx->pe.memory + 0xd000 + macid * 32;
+			if ((old[4] & (BIT(16)|BIT(18)|BIT(23))) != (peer[4] & (BIT(16)|BIT(18)|BIT(23))) ||
+			    (old[5] & 0xffff0000U) != (peer[5] & 0xffff0000U) ||
+			    (old[2] & 0x3f0000) != (peer[2] & 0x3f0000) ||
+			    !ether_addr_equal(tx->pe.memory + 0xe400 + macid * 8, header->addr1)) rtl_ax_tx_mcast_revoke(tx);
 			memcpy(tx->pe.memory + 0xd000 + macid * 32, peer, sizeof(peer));
 			memcpy(tx->pe.memory + 0xe400 + macid * 8, header->addr1, ETH_ALEN);
 			template_ready = true;

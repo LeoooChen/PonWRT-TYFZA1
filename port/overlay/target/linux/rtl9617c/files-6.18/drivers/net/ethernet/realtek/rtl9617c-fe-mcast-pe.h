@@ -81,7 +81,9 @@ int rtl_fe_wifi_mcast_policy(struct rtl_fe *fe,struct net_device *netdev,const u
  int ret=-ENOLINK;
 
  if(!fe || !policy || destination<18 || destination>19 || !macid || macid>127 || !generation ||
-    policy->qos>1 || policy->tagged_tid>7)return -EINVAL;
+    policy->qos>1 || policy->tagged_tid>7 || policy->reserved ||
+    (policy->flags&(BIT(16)|BIT(18)))!=(BIT(16)|BIT(18)) ||
+    (policy->flags&~(BIT(16)|BIT(18)|BIT(23))) || (policy->key&65535))return -EINVAL;
  for(i=0;i<64;i++)if(policy->dscp_tid[i]>7)return -EINVAL;
  for(i=0;i<8;i++)if(policy->priority_tid[i]>7)return -EINVAL;
  mutex_lock(&fe->lock);
@@ -89,7 +91,9 @@ int rtl_fe_wifi_mcast_policy(struct rtl_fe *fe,struct net_device *netdev,const u
  if(!port || !port->wifi_id || fe->mc_pe[destination-18].netdev!=netdev)goto out;
  list_for_each_entry(peer,&fe->wifi_peers,list)
   if(peer->port==port && peer->destination==destination && ether_addr_equal(peer->address,address)) {
-   if(peer->policy_generation && (peer->macid!=macid || memcmp(&peer->policy,policy,sizeof(*policy))))
+   /* First policy availability must also replace a previously learned CPU
+    * copy; that rule otherwise bypasses further bridge learning forever. */
+   if(!peer->policy_generation || peer->macid!=macid || memcmp(&peer->policy,policy,sizeof(*policy)))
     fe_mcast_invalidate(fe);
    spin_lock_irqsave(&fe->mc_lock,flags);
    if(fe->mc_gate.writers || generation!=rtl9617c_bridge_wifi_policy_generation())ret=-ESTALE;

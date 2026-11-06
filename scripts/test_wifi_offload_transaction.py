@@ -97,6 +97,8 @@ struct rtl_ax_ap {struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_
  struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[6];}security_roles[128];struct {unsigned aggregation[16],stopping,flushing;u8 address[6];}tx_ba[128];
  unsigned security_unlink[128];bool ra_registered[128];
  struct {bool deleting;unsigned macid;}rx_ba[8];struct {bool pending;}retired_stations[128];int offload_result;unsigned offload_started,chip;};
+static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *tx){(void)tx;}
+
 static struct rtl_ax_ap *active_radio;
 static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw){assert(active_radio->hw==hw);return active_radio;}
 static struct rtl_fe *active_fe;static struct rtl_ax_tx *active_tx;static int ni_test_lock;

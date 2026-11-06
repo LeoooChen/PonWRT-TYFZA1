@@ -14,7 +14,7 @@ directory = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'artifacts/pe-rad
 binary = (directory / 'pe-tx.bin').read_bytes()
 
 
-def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False, multicast=False):
+def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False, multicast=False, noack=False):
     base, mb, pages, headers, payload, ring, bar, ni, reports = (
         0x04000000, 0x04002000, 0x05100000, 0x05400000, 0x06000000,
         0x05000000, 0x12000000, 0x10000000, 0x06200000)
@@ -26,7 +26,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         u.mem_map(at, size)
     if multicast:
         assert from_epp
-        table=0x08000000;u.mem_map(table,0x6000)
+        table=0x08000000;u.mem_map(table,0x7000)
         u.mem_write(table,struct.pack('<I',7))
     u.mem_write(0x1fc00000, binary)
     put = lambda at, value: u.mem_write(at, struct.pack('<I', value))
@@ -34,7 +34,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     ap, dst = bytes.fromhex('020000000001'), bytes.fromhex('020000000002')
     bssid = bytes.fromhex('020000009999')
     if multicast:
-        u.mem_write(table+16+80*9,struct.pack('<II',7,1)+dst+bytes(2)+bytes(64))
+        u.mem_write(table+16+96*9,struct.pack('<II',7,1)+dst+bytes([1 if noack else 0,1])+bytes(64)+(bssid if client else dst)+bytes(2)+struct.pack('<II',7<<16,(1<<16)|(1<<18)|(1<<23 if client else 0)))
         put(mb+210*4,table)
     u.mem_write(mb + 64, ap)
     u.mem_write(base + 0xe408, bssid if client else dst)
@@ -115,7 +115,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         expected = bytes.fromhex('88410000' if client else '88420000') + (bssid if client else dst) + ap
         expected += ((bssid if count > 1 else dst) if client else
                      (ap if count > 1 else frames[member][6:12])) + struct.pack('<H', slot << 4)
-        expected += bytes([128 if count > 1 else 0, 0])
+        expected += bytes([(128 if count > 1 else 0)|(32 if noack else 0), 0])
         ids = []
         for n in range(count):
             frame = frames[member + n]
@@ -135,6 +135,9 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         assert gathered == expected, (lengths, count, len(gathered), len(expected))
         assert struct.unpack_from('<I', page, 8)[0] & 0x3fff == len(gathered)
         assert struct.unpack_from('<I', page, 0)[0] & (1 << 6), 'hardware PN disabled'
+        if noack:
+            assert struct.unpack_from('<I', page, 0)[0] & (1 << 31)
+            assert not(struct.unpack_from('<I', page, 12)[0] & (1 << 12)), 'no-ACK enabled BA'
         assert struct.unpack_from('<I', page, 40)[0] & 0x17f == 0x107, 'wrong CCMP CAM'
         assert len(gathered) - 26 <= cap or count == 1
         chain = get(base + 0xc400 + slot * 8)

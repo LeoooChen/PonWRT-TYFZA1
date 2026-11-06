@@ -15,6 +15,9 @@ struct rtl9617c_wifi_policy {
 	unsigned char tagged_tid;
 	unsigned char noack_map;
 	unsigned char qos;
+	unsigned char reserved;
+	/* Radio fills these after compiling Linux policy, under its TX lock. */
+	unsigned int key, flags;
 };
 
 int ieee80211_rtl9617c_mcast_policy(struct ieee80211_vif *vif,const u8 *address,

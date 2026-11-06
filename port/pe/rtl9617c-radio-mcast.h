@@ -22,6 +22,22 @@ static u32 ni_mcast_current(volatile u32 *mailbox, u32 cookie)
 	return epoch && epoch == record_epoch && epoch == table->epoch;
 }
 
+static u32 ni_mcast_peer(volatile u32 *mailbox, const volatile struct rtl_mc_pe_record *record)
+{
+	u32 macid = record->control & 127;
+	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
+	const volatile u32 *peer = (void *)(memory + 0xd000 + macid * 32);
+	if (!macid || !*(volatile u32 *)(memory + 0x11a00 + macid * 4) ||
+	    (peer[4] & (BIT(16) | BIT(18) | BIT(23))) != record->flags ||
+	    !(record->flags & BIT(16)) || !(record->flags & BIT(18)) ||
+	    (peer[5] & 0xffff0000U) != record->key || record->qos > 1 ||
+	    ((peer[2] >> 16) & 63) != (record->qos ? 26 : 24)) return 0;
+#pragma clang loop unroll(disable)
+	for (u32 i = 0; i < 6; i++)
+		if (*(volatile u8 *)(memory + 0xe400 + macid * 8 + i) != record->peer[i]) return 0;
+	return macid;
+}
+
 static u32 __attribute__((section(".rxq"), noinline)) ni_mcast_admit(
 	volatile u32 *mailbox, u8 *memory, u32 buffer, u8 *ethernet,
 	u32 length, u32 cookie, u32 *tid)
@@ -33,7 +49,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_mcast_admit(
 	u32 mode = (control >> RTL_MC_PE_MODE_SHIFT) & 3;
 	const u32 *head = uncached(buffer + RTL_QM_HEADROOM);
 	u32 route = __builtin_bswap32(head[1]);
-	if (!macid || (control & ~0x003f1f7fU) || mode > RTL_MC_PE_TID_DSCP ||
+	if (!ni_mcast_peer(mailbox, record) || (control & ~0x003f1f7fU) || mode > RTL_MC_PE_TID_DSCP ||
 	    ((route >> 9) & 63) != (control >> RTL_MC_PE_SOURCE_SHIFT) ||
 	    ((route >> 3) & 63) != 16 + (mailbox[114] - 0x7000) / 32 ||
 	    !*(volatile u32 *)(memory + 0x11a00 + macid * 4)) return 0;
@@ -59,8 +75,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_mcast_admit(
 		else return 0;
 		priority = record->dscp_tid[dscp];
 	}
-	if (priority > 7 || !ni_mcast_current(mailbox, cookie) ||
-	    !*(volatile u32 *)(memory + 0x11a00 + macid * 4)) return 0;
+	if (priority > 7 || !ni_mcast_current(mailbox, cookie) || !ni_mcast_peer(mailbox, record)) return 0;
 #pragma clang loop unroll(disable)
 	for (u32 i = 0; i < 6; i++) ethernet[i] = record->destination[i];
 	*tid = priority;
@@ -73,7 +88,12 @@ static u32 ni_mcast_stale(volatile u32 *mailbox, const u32 *waiting)
 	if (!cookie) return 0;
 	if (!ni_mcast_current(mailbox, cookie)) return 1;
 	const volatile struct rtl_mc_pe_table *table = uncached(mailbox[RTL_MC_PE_TABLE_MAILBOX]);
-	u32 macid = table->record[cookie & 255].control & 127;
-	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
-	return !macid || !*(volatile u32 *)(memory + 0x11a00 + macid * 4);
+	return !ni_mcast_peer(mailbox, &table->record[cookie & 255]);
+}
+
+static u32 ni_mcast_noack(volatile u32 *mailbox, const u32 *waiting, u32 tid)
+{
+	if (!waiting[4]) return 0;
+	const volatile struct rtl_mc_pe_table *table = uncached(mailbox[RTL_MC_PE_TABLE_MAILBOX]);
+	return (table->record[waiting[4] & 255].noack_map >> tid) & 1;
 }

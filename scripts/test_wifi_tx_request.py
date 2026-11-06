@@ -90,6 +90,8 @@ static bool ieee80211_is_data_present(unsigned fc){return (fc&0xc)==8;}
 static bool ieee80211_has_fromds(unsigned fc){return fc&0x200;}
 static bool ieee80211_has_tods(unsigned fc){return fc&0x100;}
 #define rtl_ax_tx tx
+static void rtl_ax_tx_mcast_revoke(struct tx *t){(void)t;}
+static bool ether_addr_equal(const u8 *a,const u8 *b){return !memcmp(a,b,6);}
 '''
 
 helper_start = current.index('static bool rtl_ax_tx_raw_fw_rate(')

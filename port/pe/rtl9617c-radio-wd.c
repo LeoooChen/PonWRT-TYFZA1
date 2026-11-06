@@ -318,7 +318,7 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 		}
 		header[22] = sequence << 4;
 		header[23] = sequence >> 4;
-		if (header_bytes == 26) { header[24] = tid | (flags & BIT(20) ? 0x10 : 0) | (flags & BIT(21) ? 0x80 : 0); header[25] = 0; }
+		if (header_bytes == 26) { header[24] = tid | (flags & BIT(20) ? 0x10 : 0) | (flags & BIT(21) ? 0x80 : 0) | (flags & BIT(13) ? 0x20 : 0); header[25] = 0; }
 		u8 *llc = header + header_bytes;
 		llc[0] = llc[1] = 0xaa; llc[2] = 3;
 		llc[3] = llc[4] = llc[5] = 0;

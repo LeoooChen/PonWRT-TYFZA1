@@ -293,7 +293,11 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				request[0] = 256 + id; request[1] = channels[tid];
 				request[2] = BIT(24) | (request[2] & 0x3f0000) | (length + ((request[2] >> 16) & 63) + 8 - 14);
 				request[4] = (request[4] & ~0x1fffU) | tid | indicators[tid] << 12;
+				if (waiting[4]) {
+					request[4] = (request[4] & ~BIT(13)) | ni_mcast_noack(mailbox, waiting, tid) << 13;
+				}
 				request[5] = (request[5] & ~255U) | *(u32 *)(memory + NI_PEER_BA + (macid * 8 + tid) * 4);
+				if (request[4] & BIT(13)) request[5] &= ~255U;
 				request[8] = buffer + RTL_QM_HEADROOM + (metadata >> 16); request[9] = length;
 				u32 caps = *(u32 *)(memory + 0xe200 + macid * 4);
 				if (caps & BIT(17)) request[3] |= BIT(20);

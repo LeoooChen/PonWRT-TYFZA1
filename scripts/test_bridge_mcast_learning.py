@@ -31,6 +31,7 @@ struct net_device {bool running,carrier;unsigned ifindex,group,flags,num_tx_queu
 code=code.replace('struct rtl_fe_flow {',re.search(r'struct rtl_fe_mc_host \{.*?\n\};',(DRIVERS/'rtl9617c-fe.c').read_text(),re.S)[0]+'\nstruct rtl_fe_flow {')
 code=code.replace('struct rtl_fe {','#include "rtl9617c-epon-path.h"\nstruct rtl_fe_mtu {unsigned users,size,saved;};\nstruct rtl_fe {struct rtl_epon_paths epon_paths;bool epon_admitted;struct net_device *itu_netdev;struct rtl_itu_paths *itu_paths;struct rtl_fe_mtu mtus[16];struct rtl_fe_mc_host *mc_hosts[256];struct rtl_fe_mc_direct *mc_directs[256];')
 code=code.replace('struct rtl_fe_mc_profile mc_profile;','''struct rtl_fe_mc_profile mc_profile;
+ struct {struct rtl_mc_pe_table *table;struct net_device *netdev;} mc_pe[2];
  struct rtl_fe_mc_gate mc_gate;int lock,mc_lock;struct rtl_fe_port *ports[6];''')
 code=code.replace('#include "rtl9617c-fe-mcast-profile.h"','#include "rtl9617c-fe-mcast-profile.h"\n#include "rtl9617c-fe-mcast-gate.h"')
 code=code.replace('typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32,__le32;typedef uint64_t u64;',
@@ -44,6 +45,10 @@ code=code.replace('static int fe_mtu_get(struct rtl_fe *f,struct rtl_fe_flow *v,
  +'static void fe_write(struct rtl_fe *f,unsigned r,unsigned v){write_reg(f,r,v);}'
  +scope['function']('fe_mtu_get'))
 code=code.replace('static void fe_mtu_put(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;(void)v;assert(0);}',scope['function']('fe_mtu_put'))
+code=code.replace('static struct rtl_fe_wifi_peer *fe_wifi_peer(struct rtl_fe *f,struct rtl_fe_port *p,const u8 *a){(void)f;(void)p;(void)a;return NULL;}',
+ 'static struct rtl_fe_wifi_peer test_peer;static struct rtl_fe_port *test_peer_port;static u64 test_policy_generation=1;'
+ +'u64 rtl9617c_bridge_wifi_policy_generation(void){return test_policy_generation;}'
+ +'static struct rtl_fe_wifi_peer *fe_wifi_peer(struct rtl_fe *f,struct rtl_fe_port *p,const u8 *a){(void)f;(void)a;return p==test_peer_port?&test_peer:NULL;}')
 bridge=(DRIVERS/'rtl9617c-fe-bridge.h').read_text()
 code+=re.search(r'struct fe_mcast_packet \{.*?\n\};',bridge,re.S)[0]+'\n'
 code+=r'''
@@ -148,7 +153,8 @@ static struct net_device *fe_bridge_physical(struct net_device *d,struct rtl9617
 # Capture completions queue immediately, whereas FE retry waits HZ.
 code=code.replace('assert(q==0 && d==HZ);','assert(q==0 && (d==HZ || !d));')
 code+=r'''
-static void fe_mcast_invalidate(struct rtl_fe *fe){struct rtl_dq_io io=fe_io(fe);rtl_fe_mc_gate_begin(&io,&fe->mc_gate);rtl_fe_mc_gate_end(&fe->mc_gate);}
+static void fe_mcast_pe_close(struct rtl_fe *f){for(unsigned i=0;i<2;i++)if(f->mc_pe[i].table)f->mc_pe[i].table->epoch=0;}
+static void fe_mcast_invalidate(struct rtl_fe *fe){struct rtl_dq_io io=fe_io(fe);fe_mcast_pe_close(fe);rtl_fe_mc_gate_begin(&io,&fe->mc_gate);rtl_fe_mc_gate_end(&fe->mc_gate);}
 '''
 code+=(DRIVERS/'rtl9617c-fe-vlan.h').read_text().split('static int fe_evto_upstream',1)[0]
 code+=(DRIVERS/'rtl9617c-fe-mcast-learn.h').read_text()
@@ -622,6 +628,82 @@ int main(void){
    assert(!fe.indexed&&!fe.mc_gate.active);wifi_vlan.vlan.egress_priority_map[2]=0;
   }
  }
+ /* Actual complete M2U transaction now publishes an immutable PE recipient
+  * before exposing the Hash. Closed/foreign policies keep the CPU path. */
+ struct rtl_mc_pe_table pe_table={};fe.mc_pe[1].table=&pe_table;fe.mc_pe[1].netdev=&wifi;
+ test_peer_port=&wp;test_peer=(struct rtl_fe_wifi_peer){.destination=19,.macid=1,.policy_generation=1,
+  .address={2,9,8,7,6,5},.policy={.qos=1,.key=7U<<16,.flags=BIT(16)|BIT(18)|BIT(23)}};
+ for(unsigned v=0;v<64;v++)test_peer.policy.dscp_tid[v]=v%8;
+ for(unsigned v=0;v<8;v++)test_peer.policy.priority_tid[v]=7-v;
+ struct rtl_fe_mc_direct recipe={.frame=wireless,.priority=262};
+ ether_addr_copy(recipe.frame.destination,test_peer.address);
+ assert(!fe_mcast_pe_recipe(&fe,&wp,&recipe,6,fe.mc_gate.epoch));
+ assert(((recipe.pe_record.control>>8)&7)==1&&!(recipe.pe_record.control&(3U<<11)));
+ recipe.priority=0;recipe.frame.tags=1;test_peer.policy.tagged_tid=3;
+ assert(!fe_mcast_pe_recipe(&fe,&wp,&recipe,7,fe.mc_gate.epoch)&&((recipe.pe_record.control>>8)&7)==3);
+ recipe.frame.tags=0;recipe.priority_from_cos=true;
+ assert(!fe_mcast_pe_recipe(&fe,&wp,&recipe,18,fe.mc_gate.epoch)&&((recipe.pe_record.control>>11)&3)==2);
+ test_policy_generation=2;assert(fe_mcast_pe_recipe(&fe,&wp,&recipe,0,fe.mc_gate.epoch)==-EOPNOTSUPP);test_policy_generation=1;
+ assert(fe_mcast_pe_recipe(&fe,&wp,&recipe,0,0x100000000ULL)==-EOPNOTSUPP);
+ for(unsigned v=0;v<4;v++)fe.map[19+64*v]=9;
+ fe.reg[0x6108/4]=BIT(3);fe.reg[0x6104/4]=BIT(31);
+ fe.reg[(0x6148+3*4)/4]=7;fe.reg[(0x6128+7*4)/4]=6|15U<<4;
+ fe.reg[(0x61e8+6*20)/4]=1;fe.reg[(0x61ec+6*20)/4]=2496U<<16|1536;
+ fe.reg[(0x61f0+6*20)/4]=13;fe.reg[(0x61c8+3*4)/4]=RTL_QM_PACKET_LAYOUT;
+ for(unsigned v=0;v<8;v++)fe.reg[(0x65a4+3*32+v*4)/4]=7;
+ unsigned previous_cookie=0;
+ for(unsigned repeat=0;repeat<3;repeat++) {
+  fe.event_count=0;fdb_source=&lan;skb.dev=&lan;skb.saved=wireless;skb.priority=0;
+  skb.saved.ingress=skb.saved.port=1;skb.saved.wifi_id=0;skb.saved.multicast_epoch=fe.mc_gate.epoch;
+  skb.frame=wireless;
+  ticket=fe_mcast_capture_begin(&bridge,&skb,true,++fe_mcast_ticket);assert(ticket);
+  fe_mcast_capture_select_addr(&bridge,&skb,&wifi,test_peer.address);
+  fe_mcast_capture_select(&bridge,&skb,&out);
+  skb.dev=&wifi;ether_addr_copy(skb.frame.destination,test_peer.address);fe_mcast_capture_output(&bridge,&skb);
+  skb.dev=&out;skb.frame=wireless;fe_mcast_capture_output(&bridge,&skb);
+  fe_mcast_capture_end(&bridge,ticket,true);fe_mcast_process(&bridge);
+  assert(fe.indexed&&fe.mc_gate.active&&pe_table.epoch==fe.mc_gate.epoch&&fe.indexed->replica_count==3);
+  unsigned cookie=0;
+  for(unsigned c=1;c<256;c++)if(fe.mc_directs[c]&&fe.mc_directs[c]->flow==fe.indexed)cookie=c;
+  assert(cookie&&fe.mc_directs[cookie]->pe_destination==19&&pe_table.record[cookie].epoch==pe_table.epoch);
+  assert(pe_table.record[cookie].key==7U<<16&&pe_table.record[cookie].dscp_tid[46]==6);
+  assert(!memcmp(pe_table.record[cookie].peer,test_peer.address,6));
+  if(repeat==0 && getenv("RTL_TEST_PE_RECORD")) {
+   FILE *record=fopen(getenv("RTL_TEST_PE_RECORD"),"wb");assert(record);
+   assert(fwrite(&pe_table.record[cookie],sizeof(pe_table.record[cookie]),1,record)==1);assert(!fclose(record));
+  }
+  struct sk_buff copy={.frame=wireless};assert(fe_mcast_host_receive(&bridge,&copy,cookie,0)==-ESTALE);
+  if(repeat==1)assert(cookie==previous_cookie);
+  if(repeat==2)assert(cookie!=previous_cookie&&!pe_table.record[previous_cookie].epoch);
+  previous_cookie=cookie;
+  if(repeat!=0){
+   struct rtl_fe_flow *installed=fe.indexed;
+   fe_mcast_invalidate(&fe);assert(!pe_table.epoch);
+   if(repeat==2){fe.age_fail=1;assert(fe_delete(&fe,installed)==-ETIMEDOUT&&!pe_table.record[cookie].epoch&&installed->deleting);}
+   assert(!fe_delete(&fe,installed));assert(!pe_table.record[cookie].epoch);
+   struct rtl_fe_mc_direct old=*fe.mc_directs[cookie];old.pe_record.epoch=fe.mc_gate.epoch;
+   assert(fe_mcast_pe_stage(&fe,&old,cookie)==-ESTALE);
+  }
+ }
+ /* Same STA VIF can carry multiple converted Ethernet recipients; every
+  * one keeps a different cookie/DA but pins the same associated AP key. */
+ fe.event_count=0;fdb_source=&lan;skb.dev=&lan;skb.saved=wireless;skb.priority=0;
+ skb.saved.ingress=skb.saved.port=1;skb.saved.wifi_id=0;skb.saved.multicast_epoch=fe.mc_gate.epoch;skb.frame=wireless;
+ const u8 recipients[2][6]={{2,9,8,7,6,5},{2,9,8,7,6,6}};
+ ticket=fe_mcast_capture_begin(&bridge,&skb,false,++fe_mcast_ticket);assert(ticket);
+ for(unsigned r=0;r<2;r++)fe_mcast_capture_select_addr(&bridge,&skb,&wifi,recipients[r]);
+ skb.dev=&wifi;
+ for(unsigned r=0;r<2;r++){ether_addr_copy(skb.frame.destination,recipients[r]);fe_mcast_capture_output(&bridge,&skb);}
+ fe_mcast_capture_end(&bridge,ticket,true);fe_mcast_process(&bridge);
+ assert(fe.indexed&&fe.indexed->replica_count==2&&pe_table.epoch==fe.mc_gate.epoch);
+ unsigned copied=0;
+ for(unsigned c=1;c<256;c++)if(fe.mc_directs[c]&&fe.mc_directs[c]->flow==fe.indexed){
+  assert(copied<2&&fe.mc_directs[c]->pe_destination==19);
+  assert(!memcmp(pe_table.record[c].destination,recipients[copied],6));
+  assert(!memcmp(pe_table.record[c].peer,test_peer.address,6));copied++;
+ }
+ assert(copied==2);fe_mcast_invalidate(&fe);assert(!fe_delete(&fe,fe.indexed));
+ fe.mc_pe[1].table=NULL;fe.mc_pe[1].netdev=NULL;test_peer_port=NULL;
  /* EPON MAC-instance0 and31 use POL0/31 on ingress, with per-replica
   * POL0 and queues masked to the current PUC width on egress. */
  fe.itu_paths=NULL;fe.itu_netdev=NULL;paths.path[0].vlan=RTL_ITU_VLAN_ANY;

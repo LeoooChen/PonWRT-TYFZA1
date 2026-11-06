@@ -100,6 +100,8 @@ struct rtl_fe_mc_direct {
  u32 priority;
  bool priority_from_cos;
  unsigned int iftype;
+ unsigned int pe_destination;
+ struct rtl_mc_pe_record pe_record;
 };
 struct rtl_fe_flow {
  struct list_head list, retry;

@@ -2,6 +2,7 @@
 #ifndef RTL9617C_FE_MCAST_ROUTE_H
 #define RTL9617C_FE_MCAST_ROUTE_H
 #include "rtl9617c-fe-mcast.h"
+#include "../../../../include/linux/rtl9617c-qm-layout.h"
 
 /* The table owner does not own port/queue configuration. Save and restore
  * just the multicast connector and per-destination L2 editor/deep-buffer
@@ -150,7 +151,7 @@ static inline int rtl_fe_mc_route_members(const struct rtl_dq_io *io,unsigned in
 
  if((source>4 && source!=6 && source!=7 && source!=18) || !count || count>RTL_FE_MC_ACTIONS)return -EINVAL;
  for(i=0;i<count;i++) {
-  if((replicas[i].destination>6 && replicas[i].destination!=16 &&
+  if((replicas[i].destination>6 && replicas[i].destination!=16 && replicas[i].destination!=18 && replicas[i].destination!=19 &&
       (replicas[i].destination<32 || replicas[i].destination>63)) || replicas[i].destination==5)return -EINVAL;
   required[replicas[i].destination/32]|=1U<<(replicas[i].destination%32);
  }
@@ -171,14 +172,31 @@ static inline int rtl_fe_mc_route_port(const struct rtl_dq_io *io,struct rtl_fe_
 {
  unsigned int words[2],i;
  int ret;
- if(!route->ready || (port>6 && port!=16 && (port<32 || port>63)) || port==5)return -EINVAL;
+ if(!route->ready || (port>6 && port!=16 && port!=18 && port!=19 && (port<32 || port>63)) || port==5)return -EINVAL;
  /* QM initializes both my-MAC map cases before native FE can be enabled.
   * Refuse a changed mapping rather than sending a replica to another port. */
- for(i=0;i<(port>=32?4:2);i++) {
-  unsigned int index=port>=32?port+(i<<6):port+(i<<7)+(port==6?64:0);
+ for(i=0;i<(port==18 || port==19 || port>=32?4:2);i++) {
+  unsigned int index=port==18 || port==19?port+(i<<6):port>=32?port+(i<<6):port+(i<<7)+(port==6?64:0);
   ret=rtl_fe_mc_route_read(io,0x1654,0x1658,index,words,1);
   if(ret)return ret;
-  if((words[0]&15)!=(port==6 || port>=32?8:port==16?9:port))return -EUCLEAN;
+  if((words[0]&15)!=(port==6 || port>=32?8:port>=16?9:port))return -EUCLEAN;
+ }
+ if(port==18 || port==19) {
+  unsigned int cpu=port-16,eq=9-cpu,profile=cpu+4;
+  /* RMU allocates each edited MCE output from its destination's CPU EQ.
+   * No bandwidth relocation, CPU-header bypass or shared/foreign pool. */
+  if((io->read(io->context,0x6108)&((3U<<28)|(1U<<cpu)))!=(1U<<cpu) ||
+     !(io->read(io->context,0x6104)&(1U<<31)) ||
+     (io->read(io->context,0x6148+cpu*4)&7)!=profile ||
+     (io->read(io->context,0x6128+profile*4)&255)!=(eq|15U<<4) ||
+     (io->read(io->context,0x61e8+eq*20)&1)!=1 ||
+     io->read(io->context,0x61ec+eq*20)!=(2496U<<16|(1536U+(3-cpu)*2496U)) ||
+     (io->read(io->context,0x61f0+eq*20)&255)!=13 ||
+     io->read(io->context,0x61c8+cpu*4)!=RTL_QM_PACKET_LAYOUT ||
+     (io->read(io->context,0x6558+cpu*4)&7) ||
+     ((io->read(io->context,0xa1dc)>>(cpu*2))&3) ||
+     ((io->read(io->context,0xa1ec)>>(cpu*2))&3))return -EUCLEAN;
+  for(i=0;i<8;i++)if((io->read(io->context,0x65a4+cpu*32+i*4)&7)!=profile)return -EUCLEAN;
  }
  /* CPU0 uses the normal Header A/CPU path, never a radio EPP ring. */
  if(port==16 && ((io->read(io->context,0x6558)&7) ||

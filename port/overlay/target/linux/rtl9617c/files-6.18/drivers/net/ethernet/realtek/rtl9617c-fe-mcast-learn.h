@@ -113,6 +113,8 @@ static bool fe_mcast_epon_port(struct rtl_fe *fe,const struct rtl_fe_port *port)
   (fe->epon_paths.active&BIT(port->llid)) && port->destination==32+port->llid;
 }
 
+#include "rtl9617c-fe-mcast-pe-learn.h"
+
 /* Numeric group IDs are never reused while packets may still carry them.
  * The same short lock protects host lookup and withdrawal; no RX pointer
  * escapes the lock. Core tickets distinguish driver owner incarnations. */
@@ -123,7 +125,12 @@ static void fe_mcast_host_remove(struct rtl_fe *fe,struct rtl_fe_flow *flow)
  if(!flow->replica_count)return;
  spin_lock_irqsave(&fe->mc_lock,flags);
  for(unsigned int i=1;i<RTL_FE_MC_GROUPS;i++)
-  if(fe->mc_directs[i] && fe->mc_directs[i]->flow==flow)fe->mc_directs[i]->flow=NULL;
+  if(fe->mc_directs[i] && fe->mc_directs[i]->flow==flow) {
+   unsigned int dest=fe->mc_directs[i]->pe_destination;
+   if(dest && fe->mc_pe[dest-18].table)WRITE_ONCE(fe->mc_pe[dest-18].table->record[i].epoch,0);
+   fe->mc_directs[i]->flow=NULL;
+  }
+ dma_wmb();
  host=flow->mc_host;
  if(fe->mc_hosts[flow->mc_group]==host)fe->mc_hosts[flow->mc_group]=NULL;
  flow->mc_host=NULL;
@@ -147,6 +154,10 @@ static int fe_mcast_direct_stage(struct rtl_fe *fe,struct rtl_fe_flow *flow,stru
   fe->multicast.groups[c].state=RTL_FE_MC_RETIRED;
   entry->flow=flow;
   spin_lock_irqsave(&fe->mc_lock,flags);
+  if(entry->pe_destination) {
+   int ret=fe_mcast_pe_stage(fe,entry,c);
+   if(ret){spin_unlock_irqrestore(&fe->mc_lock,flags);kfree(entry);return ret;}
+  }
   fe->mc_directs[c]=entry;
   spin_unlock_irqrestore(&fe->mc_lock,flags);
   mc->replica[i].direct_cookie=c;
@@ -181,6 +192,7 @@ static int fe_mcast_host_receive(void *context,struct sk_buff *skb,unsigned int 
  spin_lock_irqsave(&fe->mc_lock,flags);
  if(fe->mc_directs[group]) {
   direct=*fe->mc_directs[group];
+  if(direct.pe_destination){spin_unlock_irqrestore(&fe->mc_lock,flags);return -ESTALE;}
   entry=direct.flow?direct.flow->mc_host:NULL;
  } else entry=fe->mc_hosts[group];
  if(!READ_ONCE(bridge->stopping) && rtl_fe_enabled(fe) && entry &&
@@ -615,13 +627,18 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
     .physical=physical->ifindex,.wifi_id=port->wifi_id,.priority=priority,.priority_from_cos=from_cos,
     .iftype=port->wifi_id?physical->ieee80211_ptr->iftype:0};
    replica->destination=16;replica->direct_cookie=mc->count+1;
+   if(port->wifi_id && unicast &&
+      !fe_mcast_pe_recipe(fe,port,&mc->direct[mc->count],data.input->source,packet->epoch))
+    replica->destination=mc->direct[mc->count].pe_destination;
    if(existing) {
     for(c=1;c<RTL_FE_MC_GROUPS;c++) {
      const struct rtl_fe_mc_direct *d=fe->mc_directs[c];
      if(d && d->flow==existing && d->output==dev->ifindex && d->physical==physical->ifindex && d->wifi_id==port->wifi_id &&
         d->priority==priority && d->priority_from_cos==from_cos && d->iftype==mc->direct[mc->count].iftype &&
         ether_addr_equal(d->frame.destination,frame->destination) && d->frame.tags==frame->tags &&
-        !memcmp(d->frame.tag,frame->tag,sizeof(frame->tag)))break;
+        !memcmp(d->frame.tag,frame->tag,sizeof(frame->tag)) &&
+        d->pe_destination==mc->direct[mc->count].pe_destination &&
+        !memcmp(&d->pe_record,&mc->direct[mc->count].pe_record,sizeof(d->pe_record)))break;
     }
     if(c==RTL_FE_MC_GROUPS){fe_mcast_invalidate(fe);ret=-ESTALE;goto out;}
     replica->direct_cookie=c;
@@ -717,7 +734,10 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
  flow->bridge_ingress=packet->input.port;flow->bridge_tags=packet->input.tags;
  memcpy(flow->bridge_tag,packet->input.tag,sizeof(flow->bridge_tag));fe_index_flow(fe,flow);
  spin_lock_irqsave(&fe->mc_lock,flags);
+ if(!fe->mc_gate.error && !fe->mc_gate.writers && fe->mc_gate.epoch==packet->epoch)
+  fe_mcast_pe_open(fe,packet->epoch);
  ret=rtl_fe_mc_gate_open(&io,&fe->mc_gate,packet->epoch);
+ if(ret)fe_mcast_pe_close(fe);
  spin_unlock_irqrestore(&fe->mc_lock,flags);
  if(ret)fe_delete(fe,flow);
 out:

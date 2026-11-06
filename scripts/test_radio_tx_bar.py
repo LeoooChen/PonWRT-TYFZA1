@@ -146,6 +146,8 @@ static unsigned find_first_zero_bit(const unsigned *p,unsigned n){(void)p;(void)
 static void __set_bit(unsigned n,unsigned *p){p[n]=1;}
 static void ni_route_sleep(struct rtl_ax_tx *tx,unsigned id){(void)tx;(void)id;assert(0);}
 static u64 rtl9617c_bridge_wifi_policy_generation(void){return 1;}
+static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *tx){(void)tx;}
+static bool ether_addr_equal(const u8 *a,const u8 *b){return !memcmp(a,b,6);}
 static int rtl_ax_tx_map(struct rtl_ax_tx *tx,struct sk_buff *s,struct rtl_ax_tx_slot *slot,bool *linearized,bool separate){
  (void)tx;(void)linearized;assert(!separate);assert(s->len==20);slot->dma=0x09000000;maps++;return 1;}
 static void rtl_ax_tx_unmap(struct rtl_ax_tx *tx,const struct rtl_ax_tx_slot *slot){(void)tx;(void)slot;assert(0);}

@@ -35,6 +35,7 @@ typedef uint8_t u8;typedef uint32_t u32;typedef uint64_t u64;
 #define READ_ONCE(v) (v)
 #define WRITE_ONCE(v,n) ((v)=(n))
 #define dma_wmb() ((void)0)
+#define BIT(n) (1U<<(n))
 struct net_device {unsigned refs;};
 static void dev_hold(struct net_device *d){d->refs++;}
 static void dev_put(struct net_device *d){assert(d->refs);d->refs--;}
@@ -92,12 +93,13 @@ int main(void){
  assert(!tb.epoch&&!b.refs&&!f.mc_pe[1].table);
  assert(!rtl_fe_wifi_mcast_table(&f,&a,18,&ta,true));
  assert(!rtl_fe_wifi_mcast_table(&f,&b,19,&tb,true));ta.epoch=tb.epoch=14;
- struct rtl9617c_wifi_policy policy={.qos=1,.tagged_tid=2,.noack_map=128};
+ struct rtl9617c_wifi_policy policy={.qos=1,.tagged_tid=2,.noack_map=128,.flags=BIT(16)|BIT(18)};
  const u8 mac[6]={2,1,2,3,4,5};f.peers[0]=(struct rtl_fe_wifi_peer){.port=&f.ports[0],.destination=18};
  memcpy(f.peers[0].address,mac,6);
  for(unsigned i=0;i<64;i++)policy.dscp_tid[i]=i%8;
  for(unsigned i=0;i<8;i++)policy.priority_tid[i]=7-i;
  assert(!rtl_fe_wifi_mcast_policy(&f,&a,mac,18,1,&policy,1));
+ assert(!ta.epoch&&!tb.epoch);
  assert(f.peers[0].macid==1&&f.peers[0].policy_generation==1&&!memcmp(&f.peers[0].policy,&policy,sizeof(policy)));
  assert(rtl_fe_wifi_mcast_policy(&f,&b,mac,19,1,&policy,1)==-ENOLINK);
  assert(rtl_fe_wifi_mcast_policy(&f,&a,mac,19,1,&policy,1)==-ENOLINK);
@@ -125,7 +127,7 @@ tx = common + r'''
 struct ieee80211_hw {int unused;};
 struct pe_probe {void *memory;};
 struct rtl_ax_tx {struct pe_probe pe;struct {unsigned cpu;int ps_work;bool route_peers[128];}ni;
- bool pe_active,peer_authorized[128];u64 mcast_policy_attempt[128];
+ int lock;bool pe_active,peer_authorized[128];u64 mcast_policy_attempt[128];
  struct rtl_mc_pe_table *mcast_table;struct net_device *mcast_dev;void *dma_device;
  uintptr_t mcast_dma,headers_dma,pages_dma,ring_dma;void *headers,*pages,*ring;
  struct {void *skb;}slots[2];};
@@ -136,6 +138,10 @@ static u64 generation=7,seen_generation;
 static unsigned compiler_calls,publish_calls;
 static int compiler_error,publish_error;
 struct ieee80211_vif {struct {struct net_device *netdev;}wdev;};
+#define BIT(n) (1U<<(n))
+#define spin_lock_irqsave(p,f) do{assert(!*(p));*(p)=1;(f)=0;}while(0)
+#define spin_unlock_irqrestore(p,f) do{assert(*(p)&&!(f));*(p)=0;}while(0)
+#define ether_addr_equal(a,b) (!memcmp(a,b,6))
 #define ETH_ALEN 6
 #define ieee80211_vif_to_wdev(v) (&(v)->wdev)
 static void ether_addr_copy(u8 *d,const u8 *s){memcpy(d,s,6);}
@@ -183,6 +189,7 @@ int main(void){
  struct ieee80211_vif vif={.wdev={&a}};memory[0xe408]=2;
  assert(rtl_ax_tx_mcast_policy(&t,&vif,1)==-ENOLINK&&!compiler_calls);
  t.pe_active=t.ni.route_peers[1]=t.peer_authorized[1]=true;
+ u32 template[8]={0,0,24U<<16,0,BIT(16)|BIT(18),0,0,0};memcpy(memory+0xd020,template,sizeof(template));
  compiler_error=-EOPNOTSUPP;assert(rtl_ax_tx_mcast_policy(&t,&vif,1)==-EOPNOTSUPP&&!publish_calls&&t.mcast_policy_attempt[1]==7);
  generation=8;compiler_error=-ENOMEM;assert(rtl_ax_tx_mcast_policy(&t,&vif,1)==-ENOMEM&&t.mcast_policy_attempt[1]==7);
  compiler_error=0;publish_error=-ESTALE;assert(rtl_ax_tx_mcast_policy(&t,&vif,1)==-ESTALE&&t.mcast_policy_attempt[1]==7);

@@ -683,6 +683,7 @@ static int ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid, bool keep_rx
 	if (!READ_ONCE(tx->ni.route_peers[macid]) && !rtl_ax_rx_uplink_active(tx->rx, macid)) return 0;
 	if (!keep_rx) rtl_ax_rx_uplink_disable(tx->rx, macid);
 	/* Key/BA retirement must stop admission before attempting FE withdrawal. */
+	rtl_ax_tx_mcast_revoke(tx);
 	put_unaligned_le32(0, tx->pe.memory + 0x11a00 + macid * 4);
 	dma_wmb();
 	if (READ_ONCE(tx->ni.retire_quiescing)) {

@@ -11,7 +11,7 @@
  */
 #define RTL_MC_PE_TABLE_MAILBOX 210
 #define RTL_MC_PE_CAP_MAILBOX 211
-#define RTL_MC_PE_CAPABILITY 0x4d435031U
+#define RTL_MC_PE_CAPABILITY 0x4d435032U
 #define RTL_MC_PE_COOKIES 256
 #define RTL_MC_PE_TID_SHIFT 8
 #define RTL_MC_PE_MODE_SHIFT 11
@@ -25,10 +25,12 @@ struct rtl_mc_pe_record {
 	/* MACID0 is invalid. bits8..10=fixed TID,11..12=TID mode,
 	 * bits16..21=original NI source. Other bits must be zero. */
 	unsigned int control;
-	unsigned char destination[6], reserved[2];
+	unsigned char destination[6], noack_map, qos;
 	/* Already resolved through current Linux WME/ACM/reserved-TID policy.
 	 * COS mode uses entries0..7; DSCP mode uses all64 entries. */
 	unsigned char dscp_tid[64];
+	unsigned char peer[6], reserved[2];
+	unsigned int key, flags;
 };
 
 struct rtl_mc_pe_table {
@@ -36,7 +38,7 @@ struct rtl_mc_pe_table {
 	struct rtl_mc_pe_record record[RTL_MC_PE_COOKIES];
 };
 
-_Static_assert(sizeof(struct rtl_mc_pe_record) == 80, "multicast PE record ABI");
-_Static_assert(sizeof(struct rtl_mc_pe_table) == 20496, "multicast PE table ABI");
+_Static_assert(sizeof(struct rtl_mc_pe_record) == 96, "multicast PE record ABI");
+_Static_assert(sizeof(struct rtl_mc_pe_table) == 24592, "multicast PE table ABI");
 
 #endif
