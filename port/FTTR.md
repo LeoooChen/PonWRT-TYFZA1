@@ -3957,6 +3957,26 @@ This establishes the replication-entry encoding, not physical replication or
 the downstream arbitration/deep-buffer route. Those routes and native table
 ownership remain required before enabling multicast offload.
 
+`rtl9617c-fe-mcast.h` now provides the native NI/arbitration table transactions
+through the existing `rtl_dq_io` boundary. NI writes reject0 and indices256+;
+arbitration writes reject64+. Both check an already-busy engine before touching
+DATA registers, propagate completion errors, and require an exact readback.
+An applied write with a lost completion is still an error, and no subsequent
+transaction overwrites its outstanding command. These helpers do not allocate
+or release indices and are not yet called by a live multicast offload path.
+`test_fe_mcast_table.c` exercises all usable indices plus pre-existing busy,
+both write/readback timeout stages, late completion and corrupt readback under
+ASan/UBSan. Clearing a bitmap is explicitly not a packet-retirement proof.
+
+The existing FE single-output parser also now rejects every action after a
+redirect. Previously it could silently retain only the last redirect or apply
+a later VLAN edit before the first redirect. The regression fails against the
+previous production parser and passes with the fix; the1028 NAT/IPv6,288 VLAN,
+8 PPPoE,24 bridge and10 P6 vectors,30 original bridge action comparisons, and
+Image/modules build pass (`mcast-table-build-20261106.log`). Proper multi-output
+offload still requires one complete replica set, rather than accepting such
+rules through the single-output path.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

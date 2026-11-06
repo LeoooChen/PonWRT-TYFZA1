@@ -394,6 +394,15 @@ int main(void)
   const unsigned int captured[23]={0x70516c00,0x51,0,0xf0000000,0x0605400f,0,0,0xf0000000,0x0605400c,0,0,0x40000000,0x8004,0,0,0,0,0,0,0x40,0,0x400,0xf9200};
   unsigned int words[23],crc;unsigned short crc16;
   ethernet_actions(&nf,source,destination,&pon);
+  unsigned int terminal=rule.action.num_entries;
+  rule.action.entries[terminal]=rule.action.entries[terminal-1];
+  rule.action.num_entries++;
+  assert(fe_parse(&lp,&cls,&parsed)==-EOPNOTSUPP);
+  rule.action.entries[terminal]=(struct flow_action_entry){.id=FLOW_ACTION_CSUM};
+  memset(&parsed,0,sizeof(parsed));
+  assert(fe_parse(&lp,&cls,&parsed)==-EOPNOTSUPP);
+  rule.action.num_entries=terminal;
+  memset(&parsed,0,sizeof(parsed));
   lp.wifi_id=1;lp.llid=1;lp.source=18;
   assert(!fe_parse(&lp,&cls,&parsed));
   assert(parsed.key.mask==62 && parsed.action.check_mask==62);
@@ -437,6 +446,19 @@ int main(void)
     }
     assert(!fe_parse(direction?&pp:&lp,&cls,&parsed));
     assert(parsed.bridge && parsed.action.bridge && parsed.action.check_mask==61);
+    /* Never silently keep only the last redirect or move a later VLAN edit
+     * ahead of the first output. The supported single output is terminal. */
+    rule.action.entries[1]=rule.action.entries[0];
+    rule.action.num_entries=2;
+    memset(&parsed,0,sizeof(parsed));
+    assert(fe_parse(direction?&pp:&lp,&cls,&parsed)==-EOPNOTSUPP);
+    rule.action.entries[1]=(struct flow_action_entry){.id=FLOW_ACTION_VLAN_PUSH,
+     .vlan={.vid=300,.proto=htons(ETH_P_8021Q),.prio=5}};
+    memset(&parsed,0,sizeof(parsed));
+    assert(fe_parse(direction?&pp:&lp,&cls,&parsed)==-EOPNOTSUPP);
+    rule.action.num_entries=1;
+    memset(&parsed,0,sizeof(parsed));
+    assert(!fe_parse(direction?&pp:&lp,&cls,&parsed));
     assert(!memcmp(parsed.source,source,6) && !memcmp(parsed.destination,destination,6));
     assert(parsed.ethernet_protocol==ethernet_types[kind] && parsed.vlan_count==tags);
     assert(parsed.action.destination==(direction?0:32));

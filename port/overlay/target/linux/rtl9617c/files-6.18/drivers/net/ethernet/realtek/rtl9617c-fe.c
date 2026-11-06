@@ -691,6 +691,10 @@ static int fe_parse_bridge(struct rtl_fe_port *port,struct flow_rule *rule,struc
  count=data->vlan_count;
  memcpy(data->action.vlan,data->vlan,sizeof(data->vlan));
  flow_action_for_each(i,act,&rule->action) {
+  /* A redirect consumes the packet. Do not collapse another output or a
+   * later edit into this single-destination action. Replication needs its
+   * own complete member set and NI/arbitration resource ownership. */
+  if(output)return -EOPNOTSUPP;
   switch(act->id) {
   case FLOW_ACTION_REDIRECT:output=act->dev;break;
   case FLOW_ACTION_VLAN_POP:
@@ -822,6 +826,7 @@ static int fe_parse(struct rtl_fe_port *port,struct flow_cls_offload *cls,struct
   unsigned int offset=act->mangle.offset;
   u32 value;
 
+  if(output)return -EOPNOTSUPP;
   switch(act->id) {
   case FLOW_ACTION_PPPOE_PUSH:
    if(!act->pppoe.sid || !act->pppoe.mtu || act->pppoe.mtu>0x3fff)return -EOPNOTSUPP;
