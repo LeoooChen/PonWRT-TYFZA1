@@ -24,6 +24,9 @@ struct rtl9617c_ni_frame {
 
 struct nf_hook_state;
 struct rtl_mc_pe_table;
+struct rtl9617c_wifi_policy;
+int rtl9617c_ni_wifi_mcast_policy(struct device *dev,struct net_device *netdev,const u8 *address,
+ unsigned int destination,unsigned int macid,const struct rtl9617c_wifi_policy *policy,u64 generation);
 void rtl9617c_ni_wifi_mcast_detach(struct device *dev);
 int rtl9617c_ni_wifi_mcast_table(struct device *dev,struct net_device *netdev,
  unsigned int destination,struct rtl_mc_pe_table *table,bool bind);

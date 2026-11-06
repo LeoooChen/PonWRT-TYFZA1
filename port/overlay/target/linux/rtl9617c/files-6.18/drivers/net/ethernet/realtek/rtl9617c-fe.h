@@ -6,6 +6,9 @@
 
 struct rtl_fe;
 struct rtl_mc_pe_table;
+struct rtl9617c_wifi_policy;
+int rtl_fe_wifi_mcast_policy(struct rtl_fe *fe,struct net_device *netdev,const u8 *address,
+ unsigned int destination,unsigned int macid,const struct rtl9617c_wifi_policy *policy,u64 generation);
 void rtl_fe_wifi_mcast_detach(struct rtl_fe *fe);
 int rtl_fe_wifi_mcast_table(struct rtl_fe *fe,struct net_device *netdev,
  unsigned int destination,struct rtl_mc_pe_table *table,bool bind);

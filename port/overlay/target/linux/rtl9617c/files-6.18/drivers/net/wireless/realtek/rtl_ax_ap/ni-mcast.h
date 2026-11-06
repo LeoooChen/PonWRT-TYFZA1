@@ -35,3 +35,28 @@ static int ni_mcast_release(struct rtl_ax_tx *tx)
  mutex_unlock(&ni_test_lock);
  return ret;
 }
+
+int rtl_ax_tx_mcast_policy(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,unsigned int macid)
+{
+ struct rtl9617c_wifi_policy policy;
+ u64 generation;
+ u8 address[ETH_ALEN];
+ int ret;
+
+ if(!macid || macid>127)return -EINVAL;
+ mutex_lock(&ni_test_lock);
+ if(!tx->pe_active || !tx->ni.route_peers[macid] || !tx->peer_authorized[macid] ||
+    tx->mcast_dev!=ieee80211_vif_to_wdev(vif)->netdev){ret=-ENOLINK;goto out;}
+ ether_addr_copy(address,tx->pe.memory+0xe400+macid*8);
+ generation=rtl9617c_bridge_wifi_policy_generation();
+ ret=ieee80211_rtl9617c_mcast_policy(vif,address,&policy);
+ if(ret) {
+  if(ret==-EOPNOTSUPP)WRITE_ONCE(tx->mcast_policy_attempt[macid],generation);
+  goto out;
+ }
+ ret=rtl9617c_wifi_mcast_policy(tx->mcast_dev,address,16+tx->ni.cpu,macid,&policy,generation);
+ if(!ret)WRITE_ONCE(tx->mcast_policy_attempt[macid],generation);
+out:
+ mutex_unlock(&ni_test_lock);
+ return ret;
+}

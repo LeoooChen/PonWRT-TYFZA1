@@ -49,6 +49,8 @@ struct rtl9617c_bridge_mcast_ops {
 int rtl9617c_bridge_mcast_register(const struct rtl9617c_bridge_mcast_ops *ops);
 void rtl9617c_bridge_mcast_unregister(const struct rtl9617c_bridge_mcast_ops *ops);
 const struct rtl9617c_bridge_mcast_ops *rtl9617c_bridge_mcast_begin(struct net_device *bridge);
+const struct rtl9617c_bridge_mcast_ops *rtl9617c_bridge_wifi_policy_begin(struct net_device *dev);
+u64 rtl9617c_bridge_wifi_policy_generation(void);
 void rtl9617c_bridge_mcast_end(const struct rtl9617c_bridge_mcast_ops *ops);
 u64 rtl9617c_bridge_mcast_capture(struct sk_buff *skb, bool local);
 void rtl9617c_bridge_mcast_select(struct sk_buff *skb, struct net_device *output);

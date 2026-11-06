@@ -11,6 +11,8 @@
 #include <net/mac80211.h>
 #include <linux/rtl9617c-wifi.h>
 #include <linux/rtl9617c-mcast-pe.h>
+#include <linux/rtl9617c-wifi-policy.h>
+#include <linux/rtl9617c-bridge.h>
 #include "receive.h"
 #include "tx-format.h"
 #include "security.h"
@@ -61,6 +63,7 @@ struct rtl_ax_tx {
 	struct rtl_mc_pe_table *mcast_table;
 	dma_addr_t mcast_dma;
 	struct net_device *mcast_dev;
+	u64 mcast_policy_attempt[128];
 	bool pe_active;
 	u32 pe_command;
 	unsigned int pe_producer;
@@ -821,7 +824,9 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	}
 	spin_unlock_irqrestore(&tx->lock, flags);
 	if (READ_ONCE(tx->peer_asleep[macid])) ni_route_sleep(tx, macid);
-	if ((encap || template_ready) && tx->pe_active && tx->peer_ready && !READ_ONCE(tx->peer_offloaded[macid]))
+	if ((encap || template_ready) && tx->pe_active && tx->peer_ready &&
+	    (!READ_ONCE(tx->peer_offloaded[macid]) ||
+	     READ_ONCE(tx->mcast_policy_attempt[macid]) != rtl9617c_bridge_wifi_policy_generation()))
 		tx->peer_ready(tx->peer_ready_context);
 	return 0;
 unmap:

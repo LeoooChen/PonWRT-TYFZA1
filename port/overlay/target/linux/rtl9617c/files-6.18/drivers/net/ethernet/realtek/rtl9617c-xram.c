@@ -1105,6 +1105,13 @@ void rtl9617c_ni_wifi_mcast_detach(struct device *dev)
 	rtl_fe_wifi_mcast_detach(priv->fe);
 }
 
+int rtl9617c_ni_wifi_mcast_policy(struct device *dev,struct net_device *netdev,const u8 *address,
+ unsigned int destination,unsigned int macid,const struct rtl9617c_wifi_policy *policy,u64 generation)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	return rtl_fe_wifi_mcast_policy(priv->fe,netdev,address,destination,macid,policy,generation);
+}
+
 int rtl9617c_ni_oam_configure(struct device *dev)
 {
 	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));

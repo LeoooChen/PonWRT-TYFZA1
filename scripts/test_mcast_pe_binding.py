@@ -30,7 +30,8 @@ common = r'''
 #include <string.h>
 #include <errno.h>
 #include "linux/rtl9617c-mcast-pe.h"
-typedef uint32_t u32;
+typedef uint8_t u8;typedef uint32_t u32;typedef uint64_t u64;
+#include "linux/rtl9617c-wifi-policy.h"
 #define READ_ONCE(v) (v)
 #define WRITE_ONCE(v,n) ((v)=(n))
 #define dma_wmb() ((void)0)
@@ -44,7 +45,14 @@ fe = common + r'''
 static void mutex_lock(int *p){assert(!*p);*p=1;}
 static void mutex_unlock(int *p){assert(*p);*p=0;}
 struct rtl_fe_port {struct net_device *dev;unsigned wifi_id;};
+struct rtl_fe_wifi_peer {struct rtl_fe_port *port;unsigned destination,macid;u8 address[6];u64 policy_generation;struct rtl9617c_wifi_policy policy;};
+static u64 policy_generation=1;
+static u64 rtl9617c_bridge_wifi_policy_generation(void){return policy_generation;}
+#define ether_addr_equal(a,b) (!memcmp(a,b,6))
+#define list_for_each_entry(p,h,m) for(unsigned pi=0;pi<2&&((p)=&f->peers[pi]);pi++)
 struct rtl_fe {int lock,mc_lock;unsigned changes;
+ struct {unsigned writers;}mc_gate;
+ struct rtl_fe_wifi_peer peers[2];
  struct {struct rtl_mc_pe_table *table;struct net_device *netdev;}mc_pe[2];
  struct rtl_fe_port ports[2];};
 static struct rtl_fe_port *fe_port(struct rtl_fe *f,struct net_device *d){
@@ -56,6 +64,7 @@ static void fe_mcast_invalidate(struct rtl_fe *f){
 }
 '''
 fe += (ethernet / 'rtl9617c-fe-mcast-pe.h').read_text()
+fe = fe.replace('&f->peers[pi]', '&fe->peers[pi]')
 fe += r'''
 int main(void){
  struct net_device a={},b={},foreign={};struct rtl_fe f={.ports={{&a,1},{&b,2}}};
@@ -83,6 +92,24 @@ int main(void){
  assert(!tb.epoch&&!b.refs&&!f.mc_pe[1].table);
  assert(!rtl_fe_wifi_mcast_table(&f,&a,18,&ta,true));
  assert(!rtl_fe_wifi_mcast_table(&f,&b,19,&tb,true));ta.epoch=tb.epoch=14;
+ struct rtl9617c_wifi_policy policy={.qos=1,.tagged_tid=2,.noack_map=128};
+ const u8 mac[6]={2,1,2,3,4,5};f.peers[0]=(struct rtl_fe_wifi_peer){.port=&f.ports[0],.destination=18};
+ memcpy(f.peers[0].address,mac,6);
+ for(unsigned i=0;i<64;i++)policy.dscp_tid[i]=i%8;
+ for(unsigned i=0;i<8;i++)policy.priority_tid[i]=7-i;
+ assert(!rtl_fe_wifi_mcast_policy(&f,&a,mac,18,1,&policy,1));
+ assert(f.peers[0].macid==1&&f.peers[0].policy_generation==1&&!memcmp(&f.peers[0].policy,&policy,sizeof(policy)));
+ assert(rtl_fe_wifi_mcast_policy(&f,&b,mac,19,1,&policy,1)==-ENOLINK);
+ assert(rtl_fe_wifi_mcast_policy(&f,&a,mac,19,1,&policy,1)==-ENOLINK);
+ assert(rtl_fe_wifi_mcast_policy(&f,&a,mac,18,0,&policy,1)==-EINVAL);
+ policy_generation=2;assert(rtl_fe_wifi_mcast_policy(&f,&a,mac,18,1,&policy,1)==-ESTALE);
+ f.mc_gate.writers=1;assert(rtl_fe_wifi_mcast_policy(&f,&a,mac,18,1,&policy,2)==-ESTALE);f.mc_gate.writers=0;
+ assert(!rtl_fe_wifi_mcast_policy(&f,&a,mac,18,1,&policy,2));
+ policy.dscp_tid[63]=8;assert(rtl_fe_wifi_mcast_policy(&f,&a,mac,18,1,&policy,2)==-EINVAL);policy.dscp_tid[63]=7;
+ policy.priority_tid[7]=8;assert(rtl_fe_wifi_mcast_policy(&f,&a,mac,18,1,&policy,2)==-EINVAL);policy.priority_tid[7]=0;
+ ta.epoch=tb.epoch=15;policy.noack_map=1;
+ assert(!rtl_fe_wifi_mcast_policy(&f,&a,mac,18,2,&policy,2)&&!ta.epoch&&!tb.epoch);
+ assert(f.peers[0].macid==2&&f.peers[0].policy.noack_map==1);
  rtl_fe_wifi_mcast_detach(&f);
  assert(!ta.epoch&&!tb.epoch&&!a.refs&&!b.refs&&!f.mc_pe[0].table&&!f.mc_pe[1].table);
  puts("FE multicast PE binding: two radios, ownership conflicts, idempotence, invalidation and port detachment passed");
@@ -97,13 +124,28 @@ tx = common + r'''
 #define RTL_AX_TX_RINGS 2
 struct ieee80211_hw {int unused;};
 struct pe_probe {void *memory;};
-struct rtl_ax_tx {struct pe_probe pe;struct {unsigned cpu;int ps_work;}ni;
+struct rtl_ax_tx {struct pe_probe pe;struct {unsigned cpu;int ps_work;bool route_peers[128];}ni;
+ bool pe_active,peer_authorized[128];u64 mcast_policy_attempt[128];
  struct rtl_mc_pe_table *mcast_table;struct net_device *mcast_dev;void *dma_device;
  uintptr_t mcast_dma,headers_dma,pages_dma,ring_dma;void *headers,*pages,*ring;
  struct {void *skb;}slots[2];};
 static unsigned bind_calls,unbind_calls,stop_calls,dma_frees,tx_frees,pe_frees,remove_calls;
 static int fail_bind,fail_unbind,fail_remove,fail_stop;
 static bool bound,joined;
+static u64 generation=7,seen_generation;
+static unsigned compiler_calls,publish_calls;
+static int compiler_error,publish_error;
+struct ieee80211_vif {struct {struct net_device *netdev;}wdev;};
+#define ETH_ALEN 6
+#define ieee80211_vif_to_wdev(v) (&(v)->wdev)
+static void ether_addr_copy(u8 *d,const u8 *s){memcpy(d,s,6);}
+static u64 rtl9617c_bridge_wifi_policy_generation(void){return generation;}
+int ieee80211_rtl9617c_mcast_policy(struct ieee80211_vif *v,const u8 *a,struct rtl9617c_wifi_policy *p){
+ assert(v&&a[0]==2);compiler_calls++;if(compiler_error)return compiler_error;memset(p,0,sizeof(*p));p->dscp_tid[46]=5;return 0;
+}
+int rtl9617c_wifi_mcast_policy(struct net_device *d,const u8 *a,unsigned dest,unsigned id,const struct rtl9617c_wifi_policy *p,u64 g){
+ assert(d&&a[0]==2&&dest==19&&id==1&&p->dscp_tid[46]==5);seen_generation=g;publish_calls++;return publish_error;
+}
 static int ni_test_lock;
 static void mutex_lock(int *p){assert(!*p);*p=1;}
 static void mutex_unlock(int *p){assert(*p);*p=0;}
@@ -130,7 +172,7 @@ tx += (radio / 'ni-mcast.h').read_text()
 tx += function((radio / 'tx.c').read_text(), 'rtl_ax_tx_free')
 tx += r'''
 int main(void){
- unsigned char memory[16384]={};struct rtl_mc_pe_table table={};struct net_device a={},b={};
+ unsigned char memory[131072]={};struct rtl_mc_pe_table table={};struct net_device a={},b={};
  struct rtl_ax_tx t={.pe={memory},.ni={.cpu=3},.mcast_table=&table};
  assert(ni_mcast_bind(&t,&a)==-EOPNOTSUPP&&!bind_calls);
  u32 cap=RTL_MC_PE_CAPABILITY;memcpy(memory+PE_PROBE_MAILBOX+RTL_MC_PE_CAP_MAILBOX*4,&cap,4);
@@ -138,6 +180,15 @@ int main(void){
  assert(!ni_mcast_bind(&t,&a)&&bound&&a.refs==1);
  assert(!ni_mcast_bind(&t,&a)&&a.refs==1);
  unsigned before=bind_calls;assert(!ni_mcast_bind(&t,&b)&&bind_calls==before&&!b.refs);
+ struct ieee80211_vif vif={.wdev={&a}};memory[0xe408]=2;
+ assert(rtl_ax_tx_mcast_policy(&t,&vif,1)==-ENOLINK&&!compiler_calls);
+ t.pe_active=t.ni.route_peers[1]=t.peer_authorized[1]=true;
+ compiler_error=-EOPNOTSUPP;assert(rtl_ax_tx_mcast_policy(&t,&vif,1)==-EOPNOTSUPP&&!publish_calls&&t.mcast_policy_attempt[1]==7);
+ generation=8;compiler_error=-ENOMEM;assert(rtl_ax_tx_mcast_policy(&t,&vif,1)==-ENOMEM&&t.mcast_policy_attempt[1]==7);
+ compiler_error=0;publish_error=-ESTALE;assert(rtl_ax_tx_mcast_policy(&t,&vif,1)==-ESTALE&&t.mcast_policy_attempt[1]==7);
+ publish_error=0;assert(!rtl_ax_tx_mcast_policy(&t,&vif,1)&&seen_generation==8&&t.mcast_policy_attempt[1]==8);
+ vif.wdev.netdev=&b;before=compiler_calls;
+ assert(rtl_ax_tx_mcast_policy(&t,&vif,1)==-ENOLINK&&compiler_calls==before);
  table.epoch=7;fail_unbind=1;
  assert(rtl_ax_tx_free(&t,NULL)==-EIO&&!table.epoch&&bound&&a.refs==1&&!stop_calls&&!dma_frees&&!remove_calls);
  fail_unbind=0;fail_remove=1;

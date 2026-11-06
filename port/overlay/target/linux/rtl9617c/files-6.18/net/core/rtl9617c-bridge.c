@@ -12,6 +12,7 @@
 static DEFINE_MUTEX(rtl_bridge_lock);
 /* This built-in owner outlives driver unload and any queued skb extensions. */
 static atomic64_t rtl_bridge_ticket = ATOMIC64_INIT(0);
+static atomic64_t rtl_wifi_policy_generation = ATOMIC64_INIT(1);
 static const struct rtl9617c_bridge_mcast_ops __rcu *rtl_bridge_mcast;
 
 int rtl9617c_bridge_mcast_register(const struct rtl9617c_bridge_mcast_ops *ops)
@@ -58,6 +59,20 @@ const struct rtl9617c_bridge_mcast_ops *rtl9617c_bridge_mcast_begin(struct net_d
 	return ops;
 }
 EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_begin);
+
+const struct rtl9617c_bridge_mcast_ops *rtl9617c_bridge_wifi_policy_begin(struct net_device *dev)
+{
+	const struct rtl9617c_bridge_mcast_ops *ops = rtl9617c_bridge_mcast_begin(dev);
+	atomic64_inc(&rtl_wifi_policy_generation);
+	return ops;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_bridge_wifi_policy_begin);
+
+u64 rtl9617c_bridge_wifi_policy_generation(void)
+{
+	return atomic64_read(&rtl_wifi_policy_generation);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_bridge_wifi_policy_generation);
 
 void rtl9617c_bridge_mcast_end(const struct rtl9617c_bridge_mcast_ops *ops)
 {

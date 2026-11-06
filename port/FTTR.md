@@ -4940,10 +4940,55 @@ The bound tables remain closed: there is still no FE recipient-record publisher
 or enabled direct NI-to-PE multicast flow. Existing complete M2U uses the owned
 CPU path. The current binding belongs to the first NI VIF on each radio; other
 VIF peer setup continues normally without gaining direct multicast admission.
-Compiling current Linux QoS and peer identity into immutable records, revoking
-them on all policy/key changes, proving replica buffer exclusivity, publishing
-the NI actions and extending BCMC remain work. Full packet retirement and safe
+The policy compilation below supplies current Linux QoS and peer identity to FE.
+Writing immutable recipient records, completing every key/template transition,
+proving replica buffer exclusivity, publishing the NI actions and extending
+BCMC remain work. Full packet retirement and safe
 resource reuse are still unresolved; no physical-device test was performed.
+
+### Linux wireless multicast policy publication
+
+mac80211 now compiles the policy through its actual `ieee80211_select_queue`
+implementation while the radio offload worker holds the wiphy lock. It supplies
+all64 DSCP mappings, eight explicit priority overrides, the inline-VLAN result,
+WME state and the no-ACK bitmap. IPv4 and IPv6 are evaluated separately and
+must agree. Ordinary priority0..7 still uses Linux DSCP classification;
+priority256..263 retains its explicit override semantics. The existing first
+VIF binding receives the policy together with the exact peer MACID/address and
+radio destination. FE rejects a stale generation, active writer, foreign
+binding/peer or out-of-range TID. A changed recipe or MACID closes PE admission.
+
+Seventeen kernel publication sites now close old multicast admission before
+changing QoS maps, no-ACK policy, WME, ACM, TSPEC admission/deletion, reserved
+TID, or fragmentation threshold, including threshold rollback. Only bounded
+field changes hold the RCU writer token; allocation, network synchronization,
+driver calls and work scheduling run outside it. The policy generation lives
+in the built-in bridge core across driver reload. Radio callbacks queue a fresh
+snapshot, while subsequent software TX also detects an outdated attempt. Failed
+allocation/publication retries; an unsupported policy is remembered only for
+that generation. No new policy opens a PE table by itself.
+
+TSPEC airtime accounting, four-address/multi-link operation, fewer than four
+queues and software fragmentation are not represented by this direct path;
+the compiler explicitly declines them. Control-port EtherTypes that overlap
+the accelerated IP/VLAN cases are also declined. No-ACK is recorded here, but
+the future PE record encoder still has to apply it to each transmitted copy.
+
+Offline checks compare1179648 actual Linux IPv4/IPv6 classification cases,
+covering all ACM bitmaps, reserved TIDs, WME and QoS-map combinations, plus the
+existing12288 VLAN/WME cases. Actual no-ACK/QoS-map/TSPEC mutations and the17-site
+writer inventory, radio-to-FE stale-policy and ownership failures, complete
+multicast/M2U, QM/bridge delivery, peer/key/BA transactions,4224 host TX requests
+and BAR construction pass. Re-executed original modules confirm30 wireless
+dispatch,32 COS/QoS,12 replica and six destination-edit cases. Image/modules
+build passes; patch227 replays seven inputs with zero fuzz/offset, and95 overlay
+inputs match compiled sources. MMIO and completion remain modeled.
+
+This completes policy calculation and FE storage, not direct multicast flow
+installation. The PE tables remain closed and the established CPU-copy path
+continues to carry M2U. Buffer exclusivity, immutable record/action publication,
+key/template lifetime, BCMC, complete retirement and hardware acceptance remain
+unfinished.
 
 ### Outstanding implementation and acceptance
 

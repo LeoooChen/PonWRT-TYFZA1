@@ -1,0 +1,315 @@
+--- a/include/net/mac80211.h
++++ b/include/net/mac80211.h
+@@ -4624,6 +4624,11 @@
+ 				     struct ieee80211_link_sta *link_sta,
+ 				     struct dentry *dir);
+ #endif
++#ifdef CONFIG_ARCH_RTL9617C
++	/* Queues policy refresh after native multicast admission was closed. */
++	void (*rtl9617c_mcast_policy_changed)(struct ieee80211_hw *hw,
++					    struct ieee80211_vif *vif);
++#endif
+ 	void (*sta_notify)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+ 			enum sta_notify_cmd, struct ieee80211_sta *sta);
+ 	int (*sta_set_txpwr)(struct ieee80211_hw *hw,
+--- a/net/mac80211/cfg.c
++++ b/net/mac80211/cfg.c
+@@ -585,7 +585,11 @@
+ {
+ 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+ 
+-	sdata->noack_map = noack_map;
++	{
++		const struct rtl9617c_bridge_mcast_ops *token = ieee80211_mcast_policy_begin(sdata);
++		sdata->noack_map = noack_map;
++		ieee80211_mcast_policy_end(sdata, token);
++	}
+ 
+ 	ieee80211_check_fast_xmit_iface(sdata);
+ 
+@@ -2236,8 +2240,11 @@
+ 	}
+ 
+ 	if (mask & BIT(NL80211_STA_FLAG_WME) &&
+-	    local->hw.queues >= IEEE80211_NUM_ACS)
++	    local->hw.queues >= IEEE80211_NUM_ACS) {
++		const struct rtl9617c_bridge_mcast_ops *token = ieee80211_mcast_policy_begin(sdata);
+ 		sta->sta.wme = set & BIT(NL80211_STA_FLAG_WME);
++		ieee80211_mcast_policy_end(sdata, token);
++	}
+ 
+ 	/* auth flags will be set later for TDLS,
+ 	 * and for unassociated stations that move to associated */
+@@ -4750,7 +4757,11 @@
+ 	}
+ 
+ 	old_qos_map = sdata_dereference(sdata->qos_map, sdata);
+-	rcu_assign_pointer(sdata->qos_map, new_qos_map);
++	{
++		const struct rtl9617c_bridge_mcast_ops *token = ieee80211_mcast_policy_begin(sdata);
++		rcu_assign_pointer(sdata->qos_map, new_qos_map);
++		ieee80211_mcast_policy_end(sdata, token);
++	}
+ 	if (old_qos_map)
+ 		kfree_rcu(old_qos_map, rcu_head);
+ 
+@@ -4795,9 +4806,11 @@
+ 		return -EBUSY;
+ 
+ 	if (admitted_time) {
++		const struct rtl9617c_bridge_mcast_ops *token = ieee80211_mcast_policy_begin(sdata);
+ 		ifmgd->tx_tspec[ac].admitted_time = 32 * admitted_time;
+ 		ifmgd->tx_tspec[ac].tsid = tsid;
+ 		ifmgd->tx_tspec[ac].up = up;
++		ieee80211_mcast_policy_end(sdata, token);
+ 	}
+ 
+ 	return 0;
+@@ -4822,7 +4835,11 @@
+ 			continue;
+ 
+ 		/* due to this new packets will be reassigned to non-ACM ACs */
+-		tx_tspec->up = -1;
++		{
++			const struct rtl9617c_bridge_mcast_ops *token = ieee80211_mcast_policy_begin(sdata);
++			tx_tspec->up = -1;
++			ieee80211_mcast_policy_end(sdata, token);
++		}
+ 
+ 		/* Make sure that all packets have been sent to avoid to
+ 		 * restore the QoS params on packets that are still on the
+@@ -4839,7 +4856,11 @@
+ 		ieee80211_sta_handle_tspec_ac_params(sdata);
+ 
+ 		/* finally clear all the data */
+-		memset(tx_tspec, 0, sizeof(*tx_tspec));
++		{
++			const struct rtl9617c_bridge_mcast_ops *token = ieee80211_mcast_policy_begin(sdata);
++			memset(tx_tspec, 0, sizeof(*tx_tspec));
++			ieee80211_mcast_policy_end(sdata, token);
++		}
+ 
+ 		return 0;
+ 	}
+--- a/net/mac80211/mlme.c
++++ b/net/mac80211/mlme.c
+@@ -26,6 +26,7 @@
+ #include <linux/unaligned.h>
+ 
+ #include "ieee80211_i.h"
++#include "wme.h"
+ #include "driver-ops.h"
+ #include "rate.h"
+ #include "led.h"
+@@ -3686,7 +3687,11 @@
+ 
+ 	memset(&params, 0, sizeof(params));
+ 
+-	sdata->wmm_acm = 0;
++	{
++		const struct rtl9617c_bridge_mcast_ops *token = ieee80211_mcast_policy_begin(sdata);
++		sdata->wmm_acm = 0;
++		ieee80211_mcast_policy_end(sdata, token);
++	}
+ 	for (; left >= 4; left -= 4, pos += 4) {
+ 		int aci = (pos[0] >> 5) & 0x03;
+ 		int acm = (pos[0] >> 4) & 0x01;
+@@ -3695,8 +3700,11 @@
+ 		switch (aci) {
+ 		case 1: /* AC_BK */
+ 			ac = IEEE80211_AC_BK;
+-			if (acm)
++			if (acm) {
++				const struct rtl9617c_bridge_mcast_ops *token = ieee80211_mcast_policy_begin(sdata);
+ 				sdata->wmm_acm |= BIT(1) | BIT(2); /* BK/- */
++				ieee80211_mcast_policy_end(sdata, token);
++			}
+ 			if (uapsd_queues & IEEE80211_WMM_IE_STA_QOSINFO_AC_BK)
+ 				uapsd = true;
+ 			params[ac].mu_edca = !!mu_edca;
+@@ -3705,8 +3713,11 @@
+ 			break;
+ 		case 2: /* AC_VI */
+ 			ac = IEEE80211_AC_VI;
+-			if (acm)
++			if (acm) {
++				const struct rtl9617c_bridge_mcast_ops *token = ieee80211_mcast_policy_begin(sdata);
+ 				sdata->wmm_acm |= BIT(4) | BIT(5); /* CL/VI */
++				ieee80211_mcast_policy_end(sdata, token);
++			}
+ 			if (uapsd_queues & IEEE80211_WMM_IE_STA_QOSINFO_AC_VI)
+ 				uapsd = true;
+ 			params[ac].mu_edca = !!mu_edca;
+@@ -3715,8 +3726,11 @@
+ 			break;
+ 		case 3: /* AC_VO */
+ 			ac = IEEE80211_AC_VO;
+-			if (acm)
++			if (acm) {
++				const struct rtl9617c_bridge_mcast_ops *token = ieee80211_mcast_policy_begin(sdata);
+ 				sdata->wmm_acm |= BIT(6) | BIT(7); /* VO/NC */
++				ieee80211_mcast_policy_end(sdata, token);
++			}
+ 			if (uapsd_queues & IEEE80211_WMM_IE_STA_QOSINFO_AC_VO)
+ 				uapsd = true;
+ 			params[ac].mu_edca = !!mu_edca;
+@@ -3726,8 +3740,11 @@
+ 		case 0: /* AC_BE */
+ 		default:
+ 			ac = IEEE80211_AC_BE;
+-			if (acm)
++			if (acm) {
++				const struct rtl9617c_bridge_mcast_ops *token = ieee80211_mcast_policy_begin(sdata);
+ 				sdata->wmm_acm |= BIT(0) | BIT(3); /* BE/EE */
++				ieee80211_mcast_policy_end(sdata, token);
++			}
+ 			if (uapsd_queues & IEEE80211_WMM_IE_STA_QOSINFO_AC_BE)
+ 				uapsd = true;
+ 			params[ac].mu_edca = !!mu_edca;
+@@ -4241,7 +4258,11 @@
+ 	ieee80211_vif_unblock_queues_csa(sdata);
+ 
+ 	/* existing TX TSPEC sessions no longer exist */
+-	memset(ifmgd->tx_tspec, 0, sizeof(ifmgd->tx_tspec));
++	{
++		const struct rtl9617c_bridge_mcast_ops *token = ieee80211_mcast_policy_begin(sdata);
++		memset(ifmgd->tx_tspec, 0, sizeof(ifmgd->tx_tspec));
++		ieee80211_mcast_policy_end(sdata, token);
++	}
+ 	wiphy_delayed_work_cancel(local->hw.wiphy, &ifmgd->tx_tspec_wk);
+ 
+ 	sdata->vif.bss_conf.power_type = IEEE80211_REG_UNSET_AP;
+@@ -6433,8 +6454,12 @@
+ 	ieee80211_sta_set_max_amsdu_subframes(sta, elems->ext_capab,
+ 					      elems->ext_capab_len);
+ 
+-	sta->sta.wme = (elems->wmm_param || elems->s1g_capab) &&
+-		       local->hw.queues >= IEEE80211_NUM_ACS;
++	{
++		const struct rtl9617c_bridge_mcast_ops *token = ieee80211_mcast_policy_begin(sdata);
++		sta->sta.wme = (elems->wmm_param || elems->s1g_capab) &&
++			       local->hw.queues >= IEEE80211_NUM_ACS;
++		ieee80211_mcast_policy_end(sdata, token);
++	}
+ 
+ 	err = sta_info_move_state(sta, IEEE80211_STA_ASSOC);
+ 	if (!err && !(ifmgd->flags & IEEE80211_STA_CONTROL_PORT))
+--- a/net/mac80211/tx.c
++++ b/net/mac80211/tx.c
+@@ -6270,7 +6270,11 @@
+ 	queues = BIT(sdata->vif.hw_queue[ieee802_1d_to_ac[tid]]);
+ 	__ieee80211_flush_queues(local, sdata, queues, false);
+ 
+-	sta->reserved_tid = tid;
++	{
++		const struct rtl9617c_bridge_mcast_ops *token = ieee80211_mcast_policy_begin(sdata);
++		sta->reserved_tid = tid;
++		ieee80211_mcast_policy_end(sdata, token);
++	}
+ 
+ 	ieee80211_wake_vif_queues(local, sdata,
+ 				  IEEE80211_QUEUE_STOP_REASON_RESERVE_TID);
+@@ -6307,7 +6311,11 @@
+ 		return;
+ 	}
+ 
+-	sta->reserved_tid = IEEE80211_TID_UNRESERVED;
++	{
++		const struct rtl9617c_bridge_mcast_ops *token = ieee80211_mcast_policy_begin(sdata);
++		sta->reserved_tid = IEEE80211_TID_UNRESERVED;
++		ieee80211_mcast_policy_end(sdata, token);
++	}
+ }
+ EXPORT_SYMBOL(ieee80211_unreserve_tid);
+ 
+--- a/net/mac80211/wme.c
++++ b/net/mac80211/wme.c
+@@ -16,6 +16,8 @@
+ #include <net/mac80211.h>
+ #include "ieee80211_i.h"
+ #include "wme.h"
++#include <linux/ipv6.h>
++#include <linux/rtl9617c-wifi-policy.h>
+ 
+ /* Default mapping in classifier to work with default
+  * queue setup.
+@@ -244,3 +246,7 @@
+ 		*p = 0;
+ 	}
+ }
++
++#ifdef CONFIG_ARCH_RTL9617C
++#include "rtl9617c-mcast.h"
++#endif
+--- a/net/mac80211/wme.h
++++ b/net/mac80211/wme.h
+@@ -18,4 +18,25 @@
+ void ieee80211_set_qos_hdr(struct ieee80211_sub_if_data *sdata,
+ 			   struct sk_buff *skb);
+ 
++/* Only the bounded field publication is inside the native RCU writer token. */
++#include <linux/rtl9617c-bridge.h>
++static inline const struct rtl9617c_bridge_mcast_ops *
++ieee80211_mcast_policy_begin(struct ieee80211_sub_if_data *sdata)
++{
++#ifdef CONFIG_ARCH_RTL9617C
++	return rtl9617c_bridge_wifi_policy_begin(sdata->dev);
++#else
++	return NULL;
++#endif
++}
++static inline void ieee80211_mcast_policy_end(struct ieee80211_sub_if_data *sdata,
++	const struct rtl9617c_bridge_mcast_ops *token)
++{
++#ifdef CONFIG_ARCH_RTL9617C
++	rtl9617c_bridge_mcast_end(token);
++	if (sdata->local->ops->rtl9617c_mcast_policy_changed)
++		sdata->local->ops->rtl9617c_mcast_policy_changed(&sdata->local->hw, &sdata->vif);
++#endif
++}
++
+ #endif /* _WME_H */
+--- a/net/wireless/nl80211.c
++++ b/net/wireless/nl80211.c
+@@ -10,6 +10,7 @@
+ 
+ #include <linux/if.h>
+ #include <linux/module.h>
++#include <linux/rtl9617c-bridge.h>
+ #include <linux/err.h>
+ #include <linux/slab.h>
+ #include <linux/list.h>
+@@ -4191,8 +4192,15 @@
+ 			rdev->wiphy.retry_short = retry_short;
+ 		if (changed & WIPHY_PARAM_RETRY_LONG)
+ 			rdev->wiphy.retry_long = retry_long;
+-		if (changed & WIPHY_PARAM_FRAG_THRESHOLD)
++		if (changed & WIPHY_PARAM_FRAG_THRESHOLD) {
++#ifdef CONFIG_ARCH_RTL9617C
++			const struct rtl9617c_bridge_mcast_ops *token = rtl9617c_bridge_wifi_policy_begin(NULL);
++#endif
+ 			rdev->wiphy.frag_threshold = frag_threshold;
++#ifdef CONFIG_ARCH_RTL9617C
++			rtl9617c_bridge_mcast_end(token);
++#endif
++		}
+ 		if ((changed & WIPHY_PARAM_RTS_THRESHOLD) &&
+ 		    old_radio_rts_threshold) {
+ 			rdev->wiphy.rts_threshold = rts_threshold;
+@@ -4213,7 +4221,15 @@
+ 		if (result) {
+ 			rdev->wiphy.retry_short = old_retry_short;
+ 			rdev->wiphy.retry_long = old_retry_long;
+-			rdev->wiphy.frag_threshold = old_frag_threshold;
++			{
++#ifdef CONFIG_ARCH_RTL9617C
++				const struct rtl9617c_bridge_mcast_ops *token = rtl9617c_bridge_wifi_policy_begin(NULL);
++#endif
++				rdev->wiphy.frag_threshold = old_frag_threshold;
++#ifdef CONFIG_ARCH_RTL9617C
++				rtl9617c_bridge_mcast_end(token);
++#endif
++			}
+ 			rdev->wiphy.rts_threshold = old_rts_threshold;
+ 			if (old_radio_rts_threshold) {
+ 				for (i = 0 ; i < rdev->wiphy.n_radio; i++)

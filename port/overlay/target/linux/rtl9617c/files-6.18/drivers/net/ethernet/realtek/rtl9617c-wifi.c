@@ -16,6 +16,7 @@
 #include <net/cfg80211.h>
 #include "rtl9617c-ni.h"
 #include <linux/rtl9617c-wifi.h>
+#include <linux/rtl9617c-wifi-policy.h>
 #include <linux/rtl9617c-bridge.h>
 #include <linux/rtl9617c-qm-layout.h>
 
@@ -266,6 +267,17 @@ int rtl9617c_wifi_mcast_table(struct net_device *netdev,unsigned int destination
 	return ret;
 }
 EXPORT_SYMBOL_GPL(rtl9617c_wifi_mcast_table);
+
+int rtl9617c_wifi_mcast_policy(struct net_device *netdev,const u8 *address,
+ unsigned int destination,unsigned int macid,const struct rtl9617c_wifi_policy *policy,u64 generation)
+{
+	int ret;
+	mutex_lock(&wifi_mcast_lock);
+	ret = wifi_ni ? rtl9617c_ni_wifi_mcast_policy(wifi_ni,netdev,address,destination,macid,policy,generation) : -ENODEV;
+	mutex_unlock(&wifi_mcast_lock);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_wifi_mcast_policy);
 
 int rtl9617c_wifi_id(struct net_device *netdev)
 {

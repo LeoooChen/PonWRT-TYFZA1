@@ -50,7 +50,7 @@ static void list_del(struct list_head *n){n->prev->next=n->next;n->next->prev=n-
 struct wireless_dev {int iftype;};
 struct net_device {int id;struct wireless_dev *ieee80211_ptr;};
 struct rtl_fe_port {struct list_head list;struct net_device *netdev;unsigned int wifi_id,destination;bool retired;};
-struct rtl_fe_wifi_peer {struct list_head list;struct rtl_fe_port *port;u8 address[6];unsigned int destination;};
+struct rtl_fe_wifi_peer {struct list_head list;struct rtl_fe_port *port;u8 address[6];unsigned int destination;uint64_t policy_generation;};
 struct rtl_fe_flow {struct list_head list;struct rtl_fe_port *output;u8 destination[6];unsigned int hash_index,crc16,replica_count;bool installed,deleting;};
 struct rtl_fe {struct list_head ports,flows,wifi_peers;int lock;void *memory;};
 static unsigned invalidations;

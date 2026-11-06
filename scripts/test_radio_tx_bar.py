@@ -103,7 +103,7 @@ struct rtl_ax_tx_mapping {struct scatterlist sg[10];unsigned count,dma_count;};
 struct rtl_ax_tx_slot {struct sk_buff *skb;dma_addr_t dma;unsigned bytes,ring,key_index,macid,tid;bool encrypted,pe_sequence,firmware_rate;struct rtl_ax_tx_mapping *mapping;};
 struct rtl_ax_io {void *ctx;void (*write16)(void *,unsigned,unsigned);};
 struct rtl_ax_tx {bool running,dfs_blocked,pe_active,checksum_enabled,queues_stopped;
- bool peer_qos[128],peer_authorized[128],peer_asleep[128],peer_offloaded[128];u32 peer_rates[128];
+ bool peer_qos[128],peer_authorized[128],peer_asleep[128],peer_offloaded[128],peer_client[128];u32 peer_rates[128];u64 mcast_policy_attempt[128];
  int lock;struct {void *memory;}pe;u8 *pages,*headers,*ring;u32 pages_dma;
  unsigned pe_producer,producer[6],wd_producer[6],pending[256],occupied,last_sequence,last_words[14];
  struct rtl_ax_tx_slot slots[256];const struct rtl_ax_io *io;
@@ -111,7 +111,9 @@ struct rtl_ax_tx {bool running,dfs_blocked,pe_active,checksum_enabled,queues_sto
  u64 stopped,full,hardware_pn,encrypted,pe_ethernet,scatter_packets,scatter_segments,submitted,traffic_bytes;
  u64 linearized_packets,amsdu_packets,fast_xmit,prepare_ns,ampdu_submitted,submitted_ring[6],queue_stops;
  u32 last_eth_dma;u8 last_eth[14];};
-struct rtl_ax_ap {struct rtl_ax_tx *tx;unsigned chip,tx_unimplemented;struct {unsigned aggregation[16];}tx_ba[128];struct {int n_bitrates;struct {unsigned hw_value;}bitrates[12];}band;};
+#define NL80211_IFTYPE_STATION 2
+#define RTL_AX_CLIENT_MACID 1
+struct rtl_ax_ap {struct rtl_ax_tx *tx;bool sta_role;unsigned chip,tx_unimplemented;struct {unsigned aggregation[16];}tx_ba[128];struct {int n_bitrates;struct {unsigned hw_value;}bitrates[12];}band;};
 struct ieee80211_hw {struct rtl_ax_ap *radio;};
 static unsigned freed,maps,doorbells;
 static bool ieee80211_is_ctl(u16 f){return (f&12)==4;}
@@ -143,6 +145,7 @@ static unsigned rtl_ax_tx_basic_rate(struct rtl_ax_ap *r,struct ieee80211_sta *s
 static unsigned find_first_zero_bit(const unsigned *p,unsigned n){(void)p;(void)n;return 0;}
 static void __set_bit(unsigned n,unsigned *p){p[n]=1;}
 static void ni_route_sleep(struct rtl_ax_tx *tx,unsigned id){(void)tx;(void)id;assert(0);}
+static u64 rtl9617c_bridge_wifi_policy_generation(void){return 1;}
 static int rtl_ax_tx_map(struct rtl_ax_tx *tx,struct sk_buff *s,struct rtl_ax_tx_slot *slot,bool *linearized,bool separate){
  (void)tx;(void)linearized;assert(!separate);assert(s->len==20);slot->dma=0x09000000;maps++;return 1;}
 static void rtl_ax_tx_unmap(struct rtl_ax_tx *tx,const struct rtl_ax_tx_slot *slot){(void)tx;(void)slot;assert(0);}

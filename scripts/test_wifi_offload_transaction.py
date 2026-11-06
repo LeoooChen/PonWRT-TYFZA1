@@ -78,7 +78,7 @@ static void list_del(struct list_head *n){n->prev->next=n->next;n->next->prev=n-
 struct wireless_dev;
 struct net_device {unsigned references;struct wireless_dev *ieee80211_ptr;};
 struct rtl_fe_port {struct list_head list;struct net_device *netdev;unsigned wifi_id,destination;bool retired;};
-struct rtl_fe_wifi_peer {struct list_head list;struct rtl_fe_port *port;u8 address[6];unsigned destination;};
+struct rtl_fe_wifi_peer {struct list_head list;struct rtl_fe_port *port;u8 address[6];unsigned destination;uint64_t policy_generation;};
 struct rtl_fe_flow {struct list_head list;struct rtl_fe_port *output;u8 destination[6];unsigned hash_index,crc16,replica_count;bool installed,deleting;};
 struct rtl_fe {struct list_head ports,flows,wifi_peers;int lock;void *memory;};
 struct rtl_dq_io {struct rtl_fe *fe;};
@@ -100,6 +100,10 @@ struct rtl_ax_ap {struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_
 static struct rtl_ax_ap *active_radio;
 static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw){assert(active_radio->hw==hw);return active_radio;}
 static struct rtl_fe *active_fe;static struct rtl_ax_tx *active_tx;static int ni_test_lock;
+static void fe_mcast_invalidate(struct rtl_fe *f){(void)f;}
+static int ni_mcast_bind(struct rtl_ax_tx *t,struct net_device *d){(void)t;(void)d;return 0;}
+static int ni_mcast_unbind(struct rtl_ax_tx *t){(void)t;return 0;}
+static int rtl_ax_tx_mcast_policy(struct rtl_ax_tx *t,struct ieee80211_vif *v,unsigned id){(void)t;(void)v;(void)id;return 0;}
 static unsigned fail_stage,fail_index,ages[2],timers;static struct wiphy_work *queued;
 static struct rtl_dq_io fe_io(struct rtl_fe *fe){return (struct rtl_dq_io){fe};}
 static void mutex_lock(int *p){assert(!*p);*p=1;}static void mutex_unlock(int *p){assert(*p);*p=0;}

@@ -355,6 +355,10 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 		radio->offload_result = min(ret, 0);
 		if (ret < 0) radio->offload_retry = true;
 		if (ret > 0) radio->offload_started++;
+		if (ret >= 0) {
+			ret = rtl_ax_tx_mcast_policy(radio->tx, vif, macid);
+			if (ret == -ESTALE || ret == -ENOMEM) radio->offload_retry = true;
+		}
 	}
 	if (radio->offload_retry)
 		wiphy_delayed_work_queue(wiphy, &radio->cleanup_work, HZ);
@@ -364,6 +368,14 @@ static void rtl_ax_offload_ready(void *context)
 {
 	struct rtl_ax_ap *radio = context;
 	wiphy_work_queue(radio->hw->wiphy, &radio->offload_work);
+}
+
+static void rtl_ax_mcast_policy_changed(struct ieee80211_hw *hw,struct ieee80211_vif *vif)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	/* The mac80211 writer already closed every old multicast epoch. */
+	if (vif->type == NL80211_IFTYPE_AP || vif->type == NL80211_IFTYPE_STATION)
+		wiphy_work_queue(hw->wiphy, &radio->offload_work);
 }
 
 static void rtl_ax_sta_set_4addr(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
@@ -1729,6 +1741,7 @@ static const struct ieee80211_ops rtl_ax_monitor_ops = {
 	.update_vif_offload = rtl_ax_update_vif_offload,
 	.sta_set_4addr = rtl_ax_sta_set_4addr,
 	.conf_tx = rtl_ax_ap_conf_tx,
+	.rtl9617c_mcast_policy_changed = rtl_ax_mcast_policy_changed,
 	.ampdu_action = rtl_ax_ampdu_action,
 	.sta_state = rtl_ax_sta_state,
 	.sta_notify = rtl_ax_sta_notify,

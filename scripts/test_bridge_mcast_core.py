@@ -25,6 +25,8 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u6
 typedef _Atomic u64 atomic64_t;
 #define ATOMIC64_INIT(v) (v)
 static u64 atomic64_inc_return(atomic64_t *p){return atomic_fetch_add(p,1)+1;}
+static void atomic64_inc(atomic64_t *p){atomic_fetch_add(p,1);}
+static u64 atomic64_read(atomic64_t *p){return atomic_load(p);}
 #define rcu_assign_pointer(p,v) __atomic_store_n(&(p),(v),__ATOMIC_SEQ_CST)
 #define RCU_INIT_POINTER(p,v) rcu_assign_pointer(p,v)
 #define rcu_access_pointer(p) __atomic_load_n(&(p),__ATOMIC_SEQ_CST)
@@ -80,6 +82,10 @@ int main(void){
  assert(atomic_load(&first.writers)==1&&rcu_access_pointer(rtl_bridge_mcast)==&a);
  rtl9617c_bridge_mcast_end(token);assert(!pthread_join(thread,NULL));assert(!first.writers);
  assert(rtl9617c_bridge_mcast_register(&b)==-EBUSY);
+ u64 policy=rtl9617c_bridge_wifi_policy_generation();
+ token=rtl9617c_bridge_wifi_policy_begin(&dev);
+ assert(first.writers==1&&rtl9617c_bridge_wifi_policy_generation()==policy+1);
+ rtl9617c_bridge_mcast_end(token);
  u64 old_ticket=rtl9617c_bridge_mcast_capture(&old,false);assert(old_ticket);
  rtl9617c_bridge_mcast_select(&old,&dev);rtl9617c_bridge_mcast_output(&old);
  rtl9617c_bridge_mcast_complete(old_ticket,true);assert(first.completed==1&&first.outputs==1&&first.selected==1);

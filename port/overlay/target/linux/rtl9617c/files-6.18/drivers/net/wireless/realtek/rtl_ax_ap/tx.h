@@ -3,6 +3,8 @@
 #define RTL_AX_AP_TX_H
 #include <linux/types.h>
 struct rtl_ax_tx;
+struct ieee80211_vif;
+int rtl_ax_tx_mcast_policy(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,unsigned int macid);
 struct rtl_ax_rx;
 struct device;
 struct rtl_ax_io;

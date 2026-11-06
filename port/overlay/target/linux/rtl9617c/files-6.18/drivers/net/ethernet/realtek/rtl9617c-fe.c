@@ -37,6 +37,7 @@
 #include "rtl9617c-pon-path.h"
 #include <linux/rtl9617c-bridge.h>
 #include <linux/rtl9617c-mcast-pe.h>
+#include <linux/rtl9617c-wifi-policy.h>
 #include "rtl9617c-epon-path.h"
 
 struct rtl_fe_bridge;
@@ -70,6 +71,9 @@ struct rtl_fe_wifi_peer {
  struct rtl_fe_port *port;
  u8 address[ETH_ALEN];
  unsigned int destination;
+ unsigned int macid;
+ u64 policy_generation;
+ struct rtl9617c_wifi_policy policy;
 };
 struct rtl_fe_mac {
  unsigned int users, saved[5];
@@ -1783,6 +1787,7 @@ int rtl_fe_wifi_peer_route(struct rtl_fe *fe,struct net_device *netdev,const u8 
   * Revoke queued multicast cookies before changing that identity. */
  if((peer && peer->destination!=destination) || (!peer && destination))
   fe_mcast_invalidate(fe);
+ if(peer && peer->destination!=destination)peer->policy_generation=0;
  if(destination && !peer) {
   peer=kzalloc(sizeof(*peer),GFP_KERNEL);
   if(!peer){ret=-ENOMEM;goto unlock;}
