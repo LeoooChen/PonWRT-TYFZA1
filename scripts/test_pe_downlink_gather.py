@@ -14,7 +14,7 @@ directory = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'artifacts/pe-rad
 binary = (directory / 'pe-tx.bin').read_bytes()
 
 
-def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False):
+def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False):
     base, mb, pages, headers, payload, ring, bar, ni, reports = (
         0x04000000, 0x04002000, 0x05100000, 0x05400000, 0x06000000,
         0x05000000, 0x12000000, 0x10000000, 0x06200000)
@@ -28,14 +28,16 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     put = lambda at, value: u.mem_write(at, struct.pack('<I', value))
     get = lambda at: struct.unpack('<I', u.mem_read(at, 4))[0]
     ap, dst = bytes.fromhex('020000000001'), bytes.fromhex('020000000002')
+    bssid = bytes.fromhex('020000009999')
     u.mem_write(mb + 64, ap)
+    u.mem_write(base + 0xe408, bssid if client else dst)
     for index, value in [(0, 0x50455744), (2, bar | 0xa0000000), (3, 1),
                          (11, ring), (12, pages), (14, headers), (24, 1),
                          (30, 0), (38, len(lengths)), (116, 0x6380),
                          (117, 6), (140, mb | 0xa0000000), (142, 1)]:
         put(mb + index * 4, value)
     peer = [0, 0, 26 << 16, rate | bandwidth << 16 | (1 << 22 if hw_rts else 0),
-            1 << 24 | 1 << 18 | 1 << 16, 7 << 16 | 32, 0, 0]
+            1 << 24 | 1 << 18 | 1 << 16 | (1 << 23 if client else 0), 7 << 16 | 32, 0, 0]
     u.mem_write(base + 0xd020, struct.pack('<8I', *peer))
     put(base + 0xe204, cap << 18)
     put(base + 0x11a04, 1)
@@ -61,7 +63,6 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         put(base + 0x16020, 0)
         put(base + 0x18020, 0)
         put(mb + 170 * 4, 0)
-        u.mem_write(base + 0xe408, dst)
         put(ni + 0x659c, 1 << 24)
         put(ni + 0x7060, len(lengths) * 8)
     frames = []
@@ -88,6 +89,9 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     if observe:
         observe(u)
     u.emu_start(0xbfc00400, 0x9fc0fff0, count=100000)
+    # Main batches fewer than eight short frames until the 4ms TSF deadline.
+    put(bar + 0xc438, 4000)
+    u.emu_start(u.reg_read(UC_MIPS_REG_PC), 0x9fc0fff0, count=100000)
     assert get(mb + 28 * 4) == len(lengths) and get(mb + 38 * 4) == 0
     assert get(base + 0x1c020) == len(lengths)
     assert get(mb + 30 * 4) == len(submits) and not returns
@@ -97,11 +101,12 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     for slot in range(len(submits)):
         page = bytes(u.mem_read(get(ring + slot * 8 + 4), 128))
         count = struct.unpack_from('<I', page, 4)[0] >> 26
-        assert bool(struct.unpack_from('<I', page, 32)[0] & (1 << 12)) == hw_rts
+        assert struct.unpack_from('<I', page, 48)[0] & 0x88000000 == (0x88000000 if hw_rts else 0)
         assert struct.unpack_from('<I', page, 28)[0] >> 28 & 3 == bandwidth
         assert struct.unpack_from('<I', page, 28)[0] >> 16 & 0x1ff == rate
-        expected = bytes.fromhex('88420000') + dst + ap
-        expected += (ap if count > 1 else frames[member][6:12]) + struct.pack('<H', slot << 4)
+        expected = bytes.fromhex('88410000' if client else '88420000') + (bssid if client else dst) + ap
+        expected += ((bssid if count > 1 else dst) if client else
+                     (ap if count > 1 else frames[member][6:12])) + struct.pack('<H', slot << 4)
         expected += bytes([128 if count > 1 else 0, 0])
         ids = []
         for n in range(count):
@@ -121,6 +126,8 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
             gathered += bytes(u.mem_read(address, length))
         assert gathered == expected, (lengths, count, len(gathered), len(expected))
         assert struct.unpack_from('<I', page, 8)[0] & 0x3fff == len(gathered)
+        assert struct.unpack_from('<I', page, 0)[0] & (1 << 6), 'hardware PN disabled'
+        assert struct.unpack_from('<I', page, 40)[0] & 0x17f == 0x107, 'wrong CCMP CAM'
         assert len(gathered) - 26 <= cap or count == 1
         chain = get(base + 0xc400 + slot * 8)
         for n in range(count):

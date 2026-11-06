@@ -23,6 +23,7 @@
 #include <linux/workqueue.h>
 #include <net/flow_offload.h>
 #include <net/pkt_cls.h>
+#include <net/cfg80211.h>
 #include "rtl9617c-fe.h"
 #include "rtl9617c-fe-pipeline.h"
 #include "rtl9617c-fe-mcast-owner.h"
@@ -239,11 +240,16 @@ static void fe_index_flow(struct rtl_fe *fe,struct rtl_fe_flow *flow)
  rb_link_node(&flow->cookie_node,parent,link);
  rb_insert_color(&flow->cookie_node,&fe->cookies);
 }
+static bool fe_wifi_client(struct rtl_fe_port *port)
+{
+ return port->netdev->ieee80211_ptr &&
+  port->netdev->ieee80211_ptr->iftype==NL80211_IFTYPE_STATION;
+}
 static struct rtl_fe_wifi_peer *fe_wifi_peer(struct rtl_fe *fe,struct rtl_fe_port *port,const u8 *address)
 {
  struct rtl_fe_wifi_peer *peer;
  list_for_each_entry(peer,&fe->wifi_peers,list)
-  if(peer->port==port && ether_addr_equal(peer->address,address))return peer;
+  if(peer->port==port && (fe_wifi_client(port) || ether_addr_equal(peer->address,address)))return peer;
  return NULL;
 }
 static void fe_wifi_forget_port(struct rtl_fe *fe,struct rtl_fe_port *port)
@@ -1754,7 +1760,7 @@ int rtl_fe_wifi_peer_route(struct rtl_fe *fe,struct net_device *netdev,const u8 
  list_for_each_entry(flow,&fe->flows,list) {
   u32 *action;
   if(!flow->installed || flow->deleting || flow->output!=port ||
-     !ether_addr_equal(flow->destination,address))continue;
+     (!fe_wifi_client(port) && !ether_addr_equal(flow->destination,address)))continue;
   /* Withdraw both lookup locations before changing an in-flight flow's output. */
   ret=rtl_fe_main_age(&io,flow->hash_index,0);
   if(ret)goto unlock;

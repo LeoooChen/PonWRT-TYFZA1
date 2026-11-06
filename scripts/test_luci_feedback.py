@@ -3,9 +3,11 @@
 from pathlib import Path
 import subprocess
 import tempfile
+import sys
 
 root = Path(__file__).resolve().parents[1]
-feed = root / 'sources/openwrt/feeds/luci'
+tree = Path(sys.argv[1]) if len(sys.argv)>1 else root / 'sources/openwrt'
+feed = tree / 'feeds/luci'
 with tempfile.TemporaryDirectory(prefix='luci-feedback-') as directory:
     work = Path(directory)
     luci = work / 'feeds/luci'
@@ -26,7 +28,7 @@ with tempfile.TemporaryDirectory(prefix='luci-feedback-') as directory:
             subprocess.run(['node', '--check', str(luci / path)], check=True)
     start = wireless.index('results.sort(function(a, b) {')
     order = wireless[start:wireless.index('\n\t\t\t\tresults.forEach', start)]
-    start = wireless.index('function isAPOnlyRadio(')
+    start = wireless.index('function isSingleRoleRadio(')
     guard = wireless[start:wireless.index('\n}', start) + 2]
     test = r'''
 const assert = require('assert');
@@ -34,8 +36,8 @@ const uci = {get: (config, name, key) => name == 'builtin' ? 'soc/native' : 'usb
 const L = {hasSystemFeature: (feature, path) => path == 'soc/native' ? true : undefined};
 '''
     test += guard + r'''
-assert(isAPOnlyRadio('builtin'));
-assert(!isAPOnlyRadio('usb'));
+assert(isSingleRoleRadio('builtin'));
+assert(!isSingleRoleRadio('usb'));
 const results = [
  {signal:-70,quality:70,channel:1,bssid:'a'},
  {signal:-32,quality:70,channel:11,bssid:'b'},
@@ -51,14 +53,19 @@ assert.deepEqual(results.map(r=>r.bssid), ['b','c','a','unknown-zero',
  'unknown-sentinel','unknown-missing','unknown-nan']);
 '''
     subprocess.run(['node', '-e', test], check=True)
-    assert "'disabled': isAPOnlyRadio(radioDev.getName())" in wireless
+    assert "'disabled': isSingleRoleRadio" not in wireless
     for method in ['handleJoin', 'handleJoinConfirm']:
-        chunk = wireless[wireless.index('s.' + method + ' ='):]
-        assert chunk.index('isAPOnlyRadio') < chunk.index('uci.set') if 'uci.set' in chunk else True
+        chunk = wireless[wireless.index('s.' + method + ' ='):].split('\n\t\t};',1)[0]
+        assert 'Wireless client mode is not supported' not in chunk
+    assert "o.value('sta', _('Client'));\n\t\t\t\tif (singleRole)" in wireless
+    assert "if (have_mesh) mode.value('mesh', '802.11s');" in wireless
+    for mode in ('ap-wds', 'sta-wds'):
+        assert "if (!singleRole) mode.value('" + mode + "'" in wireless
+    assert "replace.default = '1';\n\t\t\t\treplace.readonly = true;" in wireless
     header = (luci / 'modules/luci-base/ucode/template/header.ut').read_text()
     assert '-tyfza1-r4' in header
     backend = (luci / 'modules/luci-base/root/usr/share/rpcd/ucode/luci').read_text()
-    start = backend.index('result.wifi_ap_only = {};')
+    start = backend.index('result.wifi_single_role = {};')
     capability = backend[start:backend.index('const wifi_features', start)]
     ucode_test = r'''
 import { basename } from 'fs';
@@ -74,12 +81,12 @@ function readlink(path) { return index(path, '/phy2/') >= 0 ? '/drivers/other' :
 function realpath(path) { return paths[replace(path, /\/device$/, '')]; }
 let result = {};
 ''' + capability + r'''
-if (length(result.wifi_ap_only) != 2 ||
-    result.wifi_ap_only['soc/4f0000000.pcie/pci0000:00/0000:00:00.0/0000:01:00.0'] != true ||
-    result.wifi_ap_only['pci0001:00/0001:01:00.0'] != true)
- die('Incorrect AP-only radio paths\n');
+if (length(result.wifi_single_role) != 2 ||
+    result.wifi_single_role['soc/4f0000000.pcie/pci0000:00/0000:00:00.0/0000:01:00.0'] != true ||
+    result.wifi_single_role['pci0001:00/0001:01:00.0'] != true)
+ die('Incorrect single-role radio paths\n');
 '''
-    subprocess.run([str(root / 'sources/openwrt/staging_dir/hostpkg/bin/ucode'),
+    subprocess.run([str(tree / 'staging_dir/hostpkg/bin/ucode'),
                     '-e', ucode_test], check=True)
     print('PASS: full patch series applies twice; JS syntax, saturated-quality RSSI sort, '
           'unknown signals, backend device paths, per-radio guard and resource cache version')

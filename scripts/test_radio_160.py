@@ -45,6 +45,7 @@ typedef uint64_t u64;
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 #define min_t(t,a,b) ((t)(a)<(t)(b)?(t)(a):(t)(b))
 #define le16_to_cpu(v) (v)
+#define __ffs(v) __builtin_ctz(v)
 #define NL80211_BAND_5GHZ 1
 #define IEEE80211_VHT_CAP_SHORT_GI_80 BIT(5)
 #define IEEE80211_VHT_CAP_SHORT_GI_160 BIT(6)
@@ -77,7 +78,9 @@ for file, names in [('channel.h', ('rtl_ax_channel_field', 'rtl_ax_channel_prima
                                    'rtl_ax_c_tssi_bw_diff', 'rtl_ax_c_tssi_slope', 'rtl_ax_c_tssi_de20'))]:
     source += ''.join(function(file, name) for name in names)
 source += '''
-struct rtl_ax_ap {struct rtl_ax_channel channel;unsigned int chip;struct {unsigned int band;}band;};
+struct ieee80211_vif {unsigned type;};
+#define NL80211_IFTYPE_MESH_POINT 7
+struct rtl_ax_ap {struct ieee80211_vif *ap_vif;struct rtl_ax_channel channel;unsigned int chip;struct {unsigned int band;}band;};
 struct ieee80211_sta_he_cap {
  bool has_he;
  struct {u16 rx_mcs_80,rx_mcs_160;} he_mcs_nss_supp;
@@ -139,7 +142,7 @@ void tssi(unsigned int bandwidth,u32 adc,u16 *out){
  memcpy(out,state.expected,sizeof(state.expected));
 }
 '''
-module = root / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
+module = Path(sys.argv[1]) if len(sys.argv)>1 else root / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
 writes = []
 adc = 0
 

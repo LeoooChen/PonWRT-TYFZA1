@@ -25,7 +25,7 @@ common=r'''
 #define dev_err(...) ((void)0)
 struct rx {bool running;};struct tx {bool netdev_reference;struct rx *rx;};
 struct io {void (*write32)(void*,unsigned,unsigned);};
-struct rtl_ax_ap {int cleanup_work,ra_work,dm_work,ra_update_work,command_mutex,command_lock,tx_tasklet;
+struct rtl_ax_ap {int mesh_sync_work,cleanup_work,ra_work,dm_work,ra_update_work,command_mutex,command_lock,tx_tasklet;
  struct {bool enabled,in_cac;int error;}dfs;bool monitor_started,beacon_enabled,radar_required;
  struct io io;struct tx *tx;struct rx *rx;};
 struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};

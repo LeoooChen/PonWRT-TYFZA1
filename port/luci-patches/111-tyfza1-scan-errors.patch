@@ -43,7 +43,7 @@
  	/**
 --- a/modules/luci-base/po/zh_Hans/base.po
 +++ b/modules/luci-base/po/zh_Hans/base.po
-@@ -16560,3 +16560,21 @@
+@@ -16560,3 +16560,18 @@
  
  #~ msgid "Set Static"
  #~ msgstr "设为静态"
@@ -60,24 +60,21 @@
 +msgid "Pause hotspot and scan"
 +msgstr "暂停热点并扫描"
 +
-+msgid "This radio driver supports AP and monitor modes only; wireless client/repeater mode is not implemented."
-+msgstr "当前无线驱动仅支持 AP 和监听模式，尚未实现无线客户端/中继模式。"
-+
-+msgid "Wireless client mode is not supported by this driver."
-+msgstr "此驱动尚不支持无线客户端模式。"
++msgid "Each radio supports one AP, client or mesh interface. Use the other radio for the downstream hotspot. WDS is not supported."
++msgstr "每个射频支持一个 AP、客户端或 Mesh 接口。中继热点请使用另一个射频。不支持 WDS。"
 --- a/modules/luci-base/root/usr/share/rpcd/ucode/luci
 +++ b/modules/luci-base/root/usr/share/rpcd/ucode/luci
 @@ -284,6 +284,16 @@
  				mptcp:      access('/proc/sys/net/mptcp/enabled'),
  			};
  
-+			// This native driver currently implements AP/monitor, not station roles.
-+			result.wifi_ap_only = {};
++			// This native driver implements one AP, STA or mesh interface per radio, plus monitor.
++			result.wifi_single_role = {};
 +			for (let phy in glob('/sys/class/ieee80211/*')) {
 +				if (basename(readlink(phy + '/device/driver') || '') == 'rtl_ax_ap') {
 +					let device = realpath(phy + '/device');
 +					if (device && index(device, '/sys/devices/') == 0)
-+						result.wifi_ap_only[replace(substr(device, 13), /^platform\//, '')] = true;
++						result.wifi_single_role[replace(substr(device, 13), /^platform\//, '')] = true;
 +				}
 +			}
 +
@@ -91,8 +88,8 @@
  
  const isReadonlyView = !L.hasViewPermission();
 +
-+function isAPOnlyRadio(name) {
-+	return L.hasSystemFeature('wifi_ap_only', uci.get('wireless', name, 'path')) === true;
++function isSingleRoleRadio(name) {
++	return L.hasSystemFeature('wifi_single_role', uci.get('wireless', name, 'path')) === true;
 +}
  
  function count_changes(section_id) {
@@ -101,46 +98,45 @@
  		s.addModalOptions = function(s) {
  			return network.getWifiNetwork(s.section).then(function(radioNet) {
  				const hwtype = uci.get('wireless', radioNet.getWifiDeviceName(), 'type');
-+				const apOnly = isAPOnlyRadio(radioNet.getWifiDeviceName());
++				const singleRole = isSingleRoleRadio(radioNet.getWifiDeviceName());
  				const have_mesh = L.hasSystemFeature('hostapd', 'mesh') || L.hasSystemFeature('wpasupplicant', 'mesh');
  				let o, ss;
  
-@@ -1079,8 +1084,12 @@
+@@ -1079,8 +1084,11 @@
  				o = ss.taboption('general', form.ListValue, 'mode', _('Mode') , !have_mesh ? '<a id="installmesh" href="%s" target="_blank" rel="noreferrer">%s</a>'
  						.format(L.url('admin/system/package-manager') + '?query=wpad-mesh', _('802.11s? Install mesh wpad') ) : '');
  				o.value('ap', _('Access Point'));
 -				o.value('sta', _('Client'));
 -				o.value('adhoc', _('Ad-Hoc'));
-+				if (apOnly)
-+					o.description = _('This radio driver supports AP and monitor modes only; wireless client/repeater mode is not implemented.');
-+				else {
-+					o.value('sta', _('Client'));
++				o.value('sta', _('Client'));
++				if (singleRole)
++					o.description = _('Each radio supports one AP, client or mesh interface. Use the other radio for the downstream hotspot. WDS is not supported.');
++				else
 +					o.value('adhoc', _('Ad-Hoc'));
-+				}
  
  				o = ss.taboption('general', form.Value, 'mesh_id', _('Mesh Id'));
  				o.depends('mode', 'mesh');
-@@ -1165,8 +1174,8 @@
+@@ -1165,8 +1173,8 @@
  					const mode = ss.children.find(obj => obj.option === 'mode');
  					const bssid = ss.children.find(obj => obj.option === 'bssid');
  
--					if (have_mesh) mode.value('mesh', '802.11s');
+ 					if (have_mesh) mode.value('mesh', '802.11s');
 -					mode.value('ahdemo', _('Pseudo Ad-Hoc (ahdemo)'));
-+					if (have_mesh && !apOnly) mode.value('mesh', '802.11s');
-+					if (!apOnly) mode.value('ahdemo', _('Pseudo Ad-Hoc (ahdemo)'));
++					if (!singleRole) mode.value('ahdemo', _('Pseudo Ad-Hoc (ahdemo)'));
  					mode.value('monitor', _('Monitor'));
  
  					bssid.depends('mode', 'adhoc');
-@@ -1196,7 +1205,7 @@
+@@ -1196,7 +1204,7 @@
  					};
  
- 					mode.value('ap-wds', '%s (%s)'.format(_('Access Point'), _('WDS')));
+-					mode.value('ap-wds', '%s (%s)'.format(_('Access Point'), _('WDS')));
++					if (!singleRole) mode.value('ap-wds', '%s (%s)'.format(_('Access Point'), _('WDS')));
 -					mode.value('sta-wds', '%s (%s)'.format(_('Client'), _('WDS')));
-+					if (!apOnly) mode.value('sta-wds', '%s (%s)'.format(_('Client'), _('WDS')));
++					if (!singleRole) mode.value('sta-wds', '%s (%s)'.format(_('Client'), _('WDS')));
  
  					mode.write = function(section_id, value) {
  						switch (value) {
-@@ -2272,8 +2281,8 @@
+@@ -2272,8 +2280,8 @@
  			poll.start();
  		};
  
@@ -151,7 +147,7 @@
  				const rows = [];
  
  				for (let r of results)
-@@ -2284,7 +2293,9 @@
+@@ -2284,7 +2292,9 @@
  						results.push(scanCache[k]);
  
  				results.sort(function(a, b) {
@@ -162,16 +158,7 @@
  
  					if (diff)
  						return diff;
-@@ -2317,6 +2328,8 @@
- 						E('span', { 'style': s }, `${network.formatWifiEncryption(res?.encryption)}`),
- 						E('div', { 'class': 'right' }, E('button', {
- 							'class': 'cbi-button cbi-button-action important',
-+							'disabled': isAPOnlyRadio(radioDev.getName()),
-+							'title': isAPOnlyRadio(radioDev.getName()) ? _('Wireless client mode is not supported by this driver.') : null,
- 							'click': ui.createHandlerFn(this, 'handleJoin', radioDev, res)
- 						}, _('Join Network')))
- 					]);
-@@ -2329,7 +2342,29 @@
+@@ -2329,7 +2339,29 @@
  				stop.disabled = false;
  				stop.style.display = '';
  				stop.classList.remove('spinning');
@@ -202,28 +189,16 @@
  		};
  
  		s.handleScanStartStop = function(ev) {
-@@ -2364,6 +2399,10 @@
- 		};
+@@ -2520,5 +2552,9 @@
  
- 		s.handleJoinConfirm = function(radioDev, bss, form, ev) {
-+			if (isAPOnlyRadio(radioDev.getName())) {
-+				ui.addNotification(null, E('p', _('Wireless client mode is not supported by this driver.')));
-+				return Promise.resolve();
+ 			replace = s2.option(form.Flag, 'replace', _('Replace wireless configuration'), _('Check this option to delete the existing networks from this radio.'));
++			if (isSingleRoleRadio(radioDev.getName())) {
++				replace.default = '1';
++				replace.readonly = true;
 +			}
- 			const nameopt = L.toArray(form.lookupOption('name', '_new_'))[0];
- 			const passopt = L.toArray(form.lookupOption('password', '_new_'))[0];
- 			const ssidopt = L.toArray(form.lookupOption('ssid', '_new_'))[0];
-@@ -2489,6 +2528,10 @@
- 		};
  
- 		s.handleJoin = function(radioDev, bss, ev) {
-+			if (isAPOnlyRadio(radioDev.getName())) {
-+				ui.addNotification(null, E('p', _('Wireless client mode is not supported by this driver.')));
-+				return Promise.resolve();
-+			}
- 			if (this.pollFn)
- 				poll.remove(this.pollFn);
- 			const m2 = new form.Map('wireless');
+ 			name = s2.option(form.Value, 'name', _('Name of the new network'),
+ 				_('Name for OpenWrt network configuration. (No relation to wireless network name/SSID)') + '<br />' +
 --- a/modules/luci-mod-network/root/usr/share/rpcd/acl.d/luci-mod-network.json
 +++ b/modules/luci-mod-network/root/usr/share/rpcd/acl.d/luci-mod-network.json
 @@ -29,7 +29,7 @@

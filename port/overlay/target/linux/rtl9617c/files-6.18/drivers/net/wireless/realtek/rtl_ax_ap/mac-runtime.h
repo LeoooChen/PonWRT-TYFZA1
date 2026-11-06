@@ -270,13 +270,15 @@ static inline int rtl_ax_receive_mode(const struct rtl_ax_io *io, unsigned int m
 	 * before selecting SCAN1/SNIFFER0 so a previous monitor bit does
 	 * not survive into a different requested operating mode. The explicit
 	 * startup MPDU11264B limit is retained, as after the original wrapper. */
-	if (mode != 0 && mode != 1 && mode != 4)
+	if (mode != 0 && mode != 1 && mode != 2 && mode != 4)
 		return -EINVAL;
 	rtl_ax_update32(io, 0xce20, 0x47ff, 0x440e);
 	if (mode == 0)
 		rtl_ax_update32(io, 0xce20, 0, 1);
 	else if (mode == 1)
 		rtl_ax_update32(io, 0xce20, 0xbe, 0x0e);
+	else if (mode == 2)
+		rtl_ax_update32(io, 0xce20, 0x47ff, 0x441e);
 	return 0;
 }
 

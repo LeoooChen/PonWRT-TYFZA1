@@ -171,7 +171,9 @@ static int wifi_event(struct notifier_block *notifier, unsigned long event, void
 	struct rtl_wifi_port *port;
 	int ret;
 
-	if (!netdev->ieee80211_ptr || netdev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP)
+	if (!netdev->ieee80211_ptr ||
+	    (netdev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP &&
+	     netdev->ieee80211_ptr->iftype != NL80211_IFTYPE_STATION))
 		return NOTIFY_DONE;
 	if (event == NETDEV_REGISTER || event == NETDEV_UP) {
 		ret = wifi_add(netdev);

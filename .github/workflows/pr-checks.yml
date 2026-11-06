@@ -25,6 +25,13 @@ jobs:
           python3 scripts/test_lan_link_mode.py
           python3 scripts/test_fe_lan_lifecycle.py
           python3 scripts/test_itu_pppoe_datapath.py
+          python3 scripts/test_sta_client_lifecycle.py
+          python3 scripts/test_radio_mesh.py
+          python3 scripts/test_sta_beacon.py
+          python3 scripts/test_sta_scan_offload.py
+          python3 scripts/test_wifi_station_release.py
+          python3 scripts/test_wifi_authorization.py
+          python3 scripts/test_fe_wifi_peer_route.py
           python3 scripts/test_package_timeout.py
           python3 scripts/test_radio_ni_retire_flush.py
           python3 scripts/test_wifi_ni_retirement.py
@@ -51,3 +58,6 @@ jobs:
           artifacts/pe-test-env/bin/python scripts/test_pe_tx_publication.py artifacts/pe-check
           artifacts/pe-test-env/bin/python scripts/test_pe_instruction_memory.py artifacts/pe-check
           artifacts/pe-test-env/bin/python scripts/test_pe_cpu_epp_gate.py artifacts/pe-check
+          artifacts/pe-test-env/bin/python scripts/test_pe_sta_rx.py artifacts/pe-check
+          artifacts/pe-test-env/bin/python scripts/test_pe_sta_tx.py artifacts/pe-check
+          artifacts/pe-test-env/bin/python scripts/test_pe_host_headers.py artifacts/pe-check/pe-tx.bin

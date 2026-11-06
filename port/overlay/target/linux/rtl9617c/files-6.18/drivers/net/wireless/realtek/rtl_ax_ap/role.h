@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Native AP self-role payloads. Original TYFZA1 ELF:
+/* Native AP/mesh self-role payloads. Original TYFZA1 ELF:
  * _hal_stainfo_to_macrinfo@1a8390 -> mac_add_role@22f1f0 ->
  * set_macid_pause@21c82c, mac_fw_role_maintain@22db0c,
  * mac_h2c_join_info@22dc7c, mac_upd_addr_cam@1e7cd8.
@@ -12,6 +12,7 @@
 
 struct rtl_ax_station {
 	u8 macid;
+	bool mesh;
 	unsigned long ba_retry[8];
 };
 
@@ -96,7 +97,7 @@ static inline void rtl_ax_station_cmac_he(u8 out[68], u8 padding)
 }
 
 static inline void rtl_ax_station_join(u8 out[4], unsigned int macid,
-	unsigned int bandwidth, const struct ieee80211_sta_he_cap *he, unsigned int nss)
+	unsigned int bandwidth, const struct ieee80211_sta_he_cap *he, unsigned int nss, bool mesh, bool client)
 {
 	u32 value = macid | 0x8b040000 | bandwidth << 14;
 
@@ -110,7 +111,40 @@ static inline void rtl_ax_station_join(u8 out[4], unsigned int macid,
 		value = macid | 0x8b003000 | bandwidth << 14 | padding << 18 |
 			((he->he_cap_elem.mac_cap_info[1] & IEEE80211_HE_MAC_CAP1_TF_MAC_PAD_DUR_MASK) >> 2) << 16;
 	}
+	/* Original mesh role6 shares AP net_type3 and self roles1/2. */
+	if (mesh) value += 4U << 26;
+	if (client) value = (value & 0xffffff) | 0x06000000;
 	rtl_ax_store32(out, value);
+}
+
+static inline void rtl_ax_station_cmac_client(u8 out[68])
+{
+	/* Factory CCTL V1 for PHL STA: client port role, no AP-only mask. */
+	rtl_ax_store32(out + 28, rtl_ax_ap_read32(out + 28) | BIT(17));
+	rtl_ax_store32(out + 52, rtl_ax_ap_read32(out + 52) & ~BIT(12));
+}
+
+static inline void rtl_ax_client_cam(u8 out[60], unsigned int macid,
+	const u8 *self, const u8 *bssid, unsigned int aid, bool associated, bool valid)
+{
+	unsigned int i, self_hash = 0, peer_hash = 0;
+
+	for (i = 0; i < ETH_ALEN; i++) {
+		self_hash ^= self[i];
+		peer_hash ^= bssid[i];
+	}
+	memset(out, 0, 60);
+	/* One role per radio: address/BSSID CAM0, independently allocated MACID. */
+	rtl_ax_store32(out + 4, 32U << 16);
+	rtl_ax_store32(out + 8, valid | (associated ? 4 : 0) |
+		self_hash << 16 | peer_hash << 24);
+	memcpy(out + 16, self, ETH_ALEN);
+	memcpy(out + 22, bssid, ETH_ALEN);
+	rtl_ax_store32(out + 32, macid);
+	rtl_ax_store32(out + 36, aid & 0xfff);
+	rtl_ax_store32(out + 48, 8U << 16);
+	out[52] = 0xfd;
+	memcpy(out + 54, bssid, ETH_ALEN);
 }
 
 static inline void rtl_ax_peer_cam(unsigned char out[60], unsigned int macid,
@@ -142,19 +176,19 @@ static inline void rtl_ax_role_unpause(unsigned char out[32], unsigned int macid
 	rtl_ax_store32(out + 16 + (macid / 32) * 4, RTL_AX_BIT(macid % 32));
 }
 
-static inline void rtl_ax_role_create(unsigned char out[4], unsigned int macid)
+static inline void rtl_ax_role_create(unsigned char out[4], unsigned int macid, bool mesh)
 {
-	/* self_role AP=1, update CREATE=0, wifi_role AP=2. */
-	rtl_ax_store32(out, macid | (1U << 8) | (2U << 13));
+	/* self_role AP=1, update CREATE=0, wifi_role AP=2 / mesh=6. */
+	rtl_ax_store32(out, macid | (1U << 8) | ((mesh ? 6U : 2U) << 13));
 }
 
 static inline void rtl_ax_role_join(unsigned char out[4], unsigned int macid,
-	unsigned int bandwidth)
+	unsigned int bandwidth, bool mesh)
 {
 	/* Original open legacy self-station creation: DISCONN=1,
 	 * SCC band0/port0, DL_T_PE1, net_type AP3, wifi AP2, self AP1.
 	 * The self role uses the chip's maximum supported bandwidth. */
-	rtl_ax_store32(out, macid | 0x4b040100 | bandwidth << 14);
+	rtl_ax_store32(out, macid | (mesh ? 0x5b040100 : 0x4b040100) | bandwidth << 14);
 }
 
 static inline void rtl_ax_role_cam(unsigned char out[60], unsigned int macid,

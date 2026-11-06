@@ -131,7 +131,9 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 				for (u32 peer = 1; peer < 128; peer++) {
 					if (!*(u32 *)(memory + NI_PEER_ROUTE + peer * 4)) continue;
 					const u32 *address = (const void *)(memory + 0xe400 + peer * 8);
-					if (address[0] == low && (address[1] & 65535) == high) {
+					/* A routed STA uses its associated AP for every Ethernet DA. */
+					if ((*(u32 *)(memory + 0xd000 + peer * 32 + 16) & BIT(23)) ||
+					    (address[0] == low && (address[1] & 65535) == high)) {
 						macid = peer; break;
 					}
 				}

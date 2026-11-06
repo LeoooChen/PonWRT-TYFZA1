@@ -37,6 +37,54 @@ static inline void rtl_ax_port0_color(const struct rtl_ax_io *io, unsigned int c
 	rtl_ax_port0_field(io, 0xc6a0, 0x3f, color);
 }
 
+/* Original mac_get_tsf@240928: port0 low/high at C438/C43C. */
+static inline u64 rtl_ax_port0_tsf(const struct rtl_ax_io *io)
+{
+	u32 high, low, next;
+
+	high = io->read32(io->ctx, 0xc43c);
+	do {
+		next = high;
+		low = io->read32(io->ctx, 0xc438);
+		high = io->read32(io->ctx, 0xc43c);
+	} while (high != next);
+	return (u64)high << 32 | low;
+}
+
+static inline int rtl_ax_tsf_sync(const struct rtl_ax_io *io,
+	unsigned int source, unsigned int target, int offset)
+{
+	u32 reg = 0xc2a0 + target * 4, last;
+	u32 value = (io->read32(io->ctx, reg) & ~0x7707ffffU) |
+		source << 24 | (offset < 0 ? BIT(18) | (u32)-offset : (u32)offset);
+
+	/* Original mac_tsf_sync@228ef0, signed 32us units. NOW is self-clearing;
+	 * the vendor mport.c offload path polls it before the next operation. */
+	io->write32(io->ctx, reg, value);
+	io->write32(io->ctx, reg, value | BIT(30));
+	return io->poll32(io->ctx, reg, BIT(30), 0, 1, 1000, &last);
+}
+
+static inline int rtl_ax_port0_offset_tsf(const struct rtl_ax_io *io, int offset)
+{
+	u32 config = io->read32(io->ctx, 0xc440);
+	u32 sync0 = io->read32(io->ctx, 0xc2a0);
+	u32 sync1 = io->read32(io->ctx, 0xc2a4);
+	int ret;
+
+	/* One AP/mesh interface owns port0. Temporarily run unused port1's
+	 * clock with beacon/RX synchronization disabled. Copy 0->1, then
+	 * 1->0 plus the drift; both clocks keep ticking during MMIO latency. */
+	io->write32(io->ctx, 0xc440, (config & ~(BIT(12) | BIT(9) | BIT(5) | BIT(3))) | BIT(2));
+	ret = rtl_ax_tsf_sync(io, 0, 1, 0);
+	if (!ret)
+		ret = rtl_ax_tsf_sync(io, 1, 0, offset);
+	io->write32(io->ctx, 0xc2a0, sync0);
+	io->write32(io->ctx, 0xc2a4, sync1);
+	io->write32(io->ctx, 0xc440, config);
+	return ret;
+}
+
 static inline int rtl_ax_port0_start(const struct rtl_ax_io *io,
 	struct rtl_ax_port0 *port, void *ctx, int (*drop_mbid)(void *, unsigned int),
 	unsigned int interval, unsigned int dtim)

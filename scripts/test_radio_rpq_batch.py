@@ -51,7 +51,11 @@ struct ieee80211_sta {int unused;};struct ieee80211_hw {int unused;};
 struct ieee80211_tx_status {struct sk_buff *skb;struct ieee80211_tx_info *info;struct ieee80211_sta *sta;};
 struct rtl_ax_tx_slot {struct sk_buff *skb;unsigned ring,macid;bool pe_sequence,firmware_rate;};
 struct rtl_ax_rx_packet {unsigned bytes;u8 *payload;bool pe_completed;};
-struct rtl_ax_tx {int lock,key_flush_wait;struct {int ps_work;}ni;struct {void *memory;}pe;u8 *headers;
+/* The EWMA arithmetic is covered by test_radio_mesh_metric; record each
+ * update here to compare RPQ dispatch ordering and ownership. */
+struct ewma_rtl_ax_success {unsigned total,calls;};
+static void ewma_rtl_ax_success_add(struct ewma_rtl_ax_success *p,unsigned value){p->total+=value;p->calls++;}
+struct rtl_ax_tx {struct ewma_rtl_ax_success peer_success[128];int lock,key_flush_wait;struct {int ps_work;}ni;struct {void *memory;}pe;u8 *headers;
  bool pe_active,running,queues_paused,queues_stopped,peer_asleep[128],pending[256];
  struct ieee80211_hw *hw;struct rtl_ax_tx_slot slots[256];
  unsigned occupied,last_report,unmatched,completed,completed_ring[6],status_count[8],polluted,queue_wakes;
@@ -89,7 +93,7 @@ static void ieee80211_tx_status_ni(struct ieee80211_hw*h,struct sk_buff*s){asser
 code+=before.replace('int rtl_ax_tx_report(', 'static int old_report(')+'\n'
 code+=after.replace('int rtl_ax_tx_report(', 'static int new_report(')+'\n'
 code+=r'''
-struct result {unsigned completed,occupied,unmatched,polluted,queue_wakes,ni_reports,ni_failed,ampdu;
+struct result {struct ewma_rtl_ax_success peer_success[128];unsigned completed,occupied,unmatched,polluted,queue_wakes,ni_reports,ni_failed,ampdu;
  unsigned completed_ring[6],status_count[8],flags[256],seq[256];
  unsigned wakes,unmaps,returns,raws,pe_done,ps_done,scheduled,waiters,lookups;};
 static struct result run(bool batching,unsigned count,unsigned mode){
@@ -122,6 +126,7 @@ static struct result run(bool batching,unsigned count,unsigned mode){
  packet.bytes=0;assert(!(batching?new_report(&t,&hw,&packet):old_report(&t,&hw,&packet)));
  struct result r={.completed=t.completed,.occupied=t.occupied,.unmatched=t.unmatched,.polluted=t.polluted,.queue_wakes=t.queue_wakes,.ni_reports=t.ni_reports,.ni_failed=t.ni_failed,.ampdu=t.ampdu_completed,
  .wakes=wakes,.unmaps=unmaps,.returns=returns,.raws=raws,.pe_done=pe_done,.ps_done=ps_done,.scheduled=scheduled,.waiters=waiters,.lookups=lookups};
+ memcpy(r.peer_success,t.peer_success,sizeof(r.peer_success));
  memcpy(r.completed_ring,t.completed_ring,sizeof(r.completed_ring));memcpy(r.status_count,t.status_count,sizeof(r.status_count));
  for(unsigned n=0;n<count;n++){r.flags[n]=skbs[n].cb.flags;r.seq[n]=((struct ieee80211_hdr*)skbs[n].data)->seq_ctrl;}
  return r;
