@@ -8,7 +8,70 @@ import struct
 
 from unicorn import UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE, UC_MEM_READ
 from arm64_module_oracle import ModuleOracle
-from unicorn.arm64_const import UC_ARM64_REG_X7
+from unicorn.arm64_const import UC_ARM64_REG_X4, UC_ARM64_REG_X7
+
+
+def arbitration_init(module, fc_module):
+    """Execute original arbitration defaults and FC's subsequent overrides."""
+    base = 0x6000000
+    pending, tables, events = {}, {0x164c: {}, 0x1654: {}}, []
+    def boundary(name, values):
+        if name == 'ca_spin_lock_init':
+            ni.word(values[0], 1)
+            return 0
+        if name in ('ca_spin_lock', 'ca_spin_unlock'):
+            return 0
+        if name == 'scfg_read':
+            ni.uc.mem_write(values[3], struct.pack('<I', 0xffffffff))
+            return 0
+        if name == 'aal_arb_non_known_pol_map_set':
+            return 0
+        raise AssertionError(('unmodeled arbitration init boundary', name, values))
+    ni = ModuleOracle(module, ['aal_arb_init', 'aal_arb_ctrl_set', 'aal_arb_port_dbuf_set',
+        'aal_port_arb_ldpid_pdpid_map_set', 'aal_port_arb_ldpid_pdpid_map_set.part.0'], boundary)
+    ni.uc.mem_map(base, 0x10000)
+    ni.word(ni.symbols['g_ne_reg_iobase'][0], base)
+    # Reset ARB_CTRL from the matching register map; only producer-modified
+    # bits are claimed by this experiment, not arbitrary inherited state.
+    ni.uc.mem_write(base + 0x1600, struct.pack('<I', 0x09c71d80))
+    def mmio(uc, access, address, size, value, unused):
+        reg = address - base
+        assert size == 4
+        if access != UC_MEM_READ:
+            events.append((reg, value))
+            if reg in tables: pending[reg] = value
+        elif reg in pending:
+            command = pending.pop(reg)
+            index = command & (7 if reg == 0x164c else 255)
+            if command & (1 << 30): tables[reg][index] = ni.unpack(base + reg + 4, 'I')[0]
+            else: uc.mem_write(base + reg + 4, struct.pack('<I', tables[reg].get(index, 0)))
+            uc.mem_write(address, struct.pack('<I', command & ~(1 << 31)))
+    ni.uc.hook_add(UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE, mmio, begin=base, end=base + 65535)
+    assert ni.call('aal_arb_init', 0) == 0
+    assert tables[0x164c] == dict.fromkeys(range(8), 0)
+    arb_control = ni.unpack(base + 0x1600, 'I')[0]
+    assert arb_control == (0x09c71d80 & ~(1 << 8)) | 1 << 31 | 2
+    def fc_boundary(name, values):
+        if name == 'aal_arb_port_dbuf_set':
+            data = bytes(fc.uc.mem_read(values[3], 20))
+            ni.uc.mem_write(ni.scratch + 0x1000, data)
+            return ni.call(name, *values[:3], ni.scratch + 0x1000)
+        if name == 'aal_port_arb_ldpid_pdpid_map_set':
+            return ni.call(name, *values, fc.uc.reg_read(UC_ARM64_REG_X4))
+        if name in ('aal_port_dpb_ctrl_set', 'aal_port_dpb_cfg_set', 'aal_fdb_lrn_fwd_ctrl_set',
+            'aal_fdb_ctrl_set', 'aal_l3pp_l2tp_sport_set', 'aal_l3pp_vxlan_dport_set'):
+            return 0
+        raise AssertionError(('unmodeled FC L2 init boundary', name, values))
+    fc = ModuleOracle(fc_module, ['rtk_8277c_asic_l2fe_init.isra.0'], fc_boundary)
+    fc.call('rtk_8277c_asic_l2fe_init.isra.0')
+    assert tables[0x164c] == {**dict.fromkeys(range(7), 0), 7: 1 | 1 << 8 | 17 << 9}
+    assert {index: tables[0x1654][index] for index in (6, 70, 134, 198)} == {6: 6, 70: 8, 134: 6, 198: 8}
+    return dict(arb_control=hex(arb_control), port_deep_buffer_table=tables[0x164c],
+        p6_destination_map={index: tables[0x1654][index] for index in (6, 70, 134, 198)},
+        events=events, findings=[
+            'Original ARB init clears all8 port deep-buffer rules, preserves original multicast source, uses flow-ID table selection and disables HeaderA deep-buffer gating.',
+            'FC adds only source17 to port deep-buffer rule7; it does not add a P6 destination rule. P6 maps to PDPID6 without dbuf and PDPID8 with dbuf.',
+            'These executed initializers do not establish that physical-port-to-deep-Q SCFG forces multicast replicas into the same queue path as unicast Hash hits.'])
 
 
 def hash_recipes(module, ni_module):
@@ -332,6 +395,7 @@ def main():
         group_lifecycle=group_lifecycle(args.module),
         hash_recipes=hash_recipes(args.fc, args.module) if args.fc else None,
         fc_sha256=hashlib.sha256(args.fc.read_bytes()).hexdigest() if args.fc else None,
+        arbitration_init=arbitration_init(args.module, args.fc) if args.fc else None,
         arb_fields=[dict(mask_bit=i, offset=o, width=w) for i,(o,w) in enumerate(fields)],
         failures=failures, findings=[
             'NI lookup validates 0..1023 but commands retain only 8 index bits: 0/256/512/768 alias in the original writer and reader.',

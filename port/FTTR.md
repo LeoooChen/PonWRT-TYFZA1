@@ -3977,6 +3977,20 @@ Image/modules build pass (`mcast-table-build-20261106.log`). Proper multi-output
 offload still requires one complete replica set, rather than accepting such
 rules through the single-output path.
 
+The oracle also executes `aal_arb_init` and the FC
+`rtk_8277c_asic_l2fe_init.isra.0` overrides, using the actual NI setters for
+port-deep-buffer and destination-map writes. With the documented reset seed,
+ARB_CTRL becomes `0x89c71c82`: original multicast source retention is enabled,
+flow-ID deep-buffer selection is used, and HeaderA deep-buffer gating is off.
+All8 port-deep-buffer rows are initially cleared; FC subsequently writes only
+row7, matching source17 with no destination restriction (`0x2301`). P6 maps to
+PDPID6 when dbuf=0 and PDPID8/QM when dbuf=1 for both my-MAC cases. No P6
+destination match is added by these actual initializers. Therefore the
+factory `CFG_ID_RTK_PHY_PORT_TO_DEEP_Q[6]=1` flag, used by ordinary Hash/CPU
+producers, is not by itself a proof that multicast replicas traverse P6's
+deep queue. Native multicast integration must own and verify that separate
+arbitration selection rather than infer it from the unicast configuration.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
