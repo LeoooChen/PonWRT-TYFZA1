@@ -5,7 +5,7 @@ import sys,struct,subprocess,tempfile,ctypes,random
 root=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(root/'tools'))
 from arm64_module_oracle import ModuleOracle
-m=root/'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
+m=Path(sys.argv[1]) if len(sys.argv)>1 else root/'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
 def cb(name,a):
  if name=='hal_mac_get_macid_num':return 128
  if name=='get_addr_cam_size':return 32
@@ -50,23 +50,23 @@ static inline void rtl_ax_store32(u8 *p,u32 v){memcpy(p,&v,4);}
 wrapper="""
 unsigned int self_join(unsigned int id,unsigned int bw,unsigned int mesh){u8 out[4];rtl_ax_role_join(out,id,bw,mesh);unsigned int v;memcpy(&v,out,4);return v;}
 unsigned int camword(unsigned int id,unsigned int he){u8 out[60];rtl_ax_peer_cam(out,id,self,peer,1,true);if(he)rtl_ax_store32(out+32,id|BIT(14));unsigned int v;memcpy(&v,out+32,4);return v;}
-unsigned int run(unsigned int id,unsigned int bw,unsigned int he,unsigned int nss,unsigned int mesh,const u8 *mac,const u8 *phy,const u8 *ppe){
+unsigned int run(unsigned int id,unsigned int bw,unsigned int he,unsigned int nss,unsigned int client,unsigned int mesh,const u8 *mac,const u8 *phy,const u8 *ppe){
  struct ieee80211_sta_he_cap cap={};u8 out[4];cap.has_he=he;
  memcpy(cap.he_cap_elem.mac_cap_info,mac,6);memcpy(cap.he_cap_elem.phy_cap_info,phy,11);memcpy(cap.ppe_thres,ppe,25);
- rtl_ax_station_join(out,id,bw,&cap,nss,mesh);unsigned int v;memcpy(&v,out,4);return v;
+ rtl_ax_station_join(out,id,bw,&cap,nss,mesh,client);unsigned int v;memcpy(&v,out,4);return v;
 }
 """
 with tempfile.TemporaryDirectory() as temp:
  c=Path(temp)/'join.c';so=Path(temp)/'join.so'
  c.write_text(prefix+function('rtl_ax_he_padding(')+function('rtl_ax_station_join(')+function('rtl_ax_peer_cam(')+function('rtl_ax_role_join(')+wrapper)
  subprocess.run(['cc','-shared','-fPIC','-Wall','-Werror','-O2',str(c),'-o',str(so)],check=True)
- lib=ctypes.CDLL(str(so));lib.run.restype=ctypes.c_uint;lib.run.argtypes=[ctypes.c_uint]*5+[ctypes.c_char_p]*3
+ lib=ctypes.CDLL(str(so));lib.run.restype=ctypes.c_uint;lib.run.argtypes=[ctypes.c_uint]*6+[ctypes.c_char_p]*3
  lib.camword.restype=ctypes.c_uint;lib.camword.argtypes=[ctypes.c_uint]*2
  lib.self_join.restype=ctypes.c_uint;lib.self_join.argtypes=[ctypes.c_uint]*3
  rng=random.Random(9617);count=0
- for test in range(1600):
-  mesh=test>=800
-  o.uc.mem_write(role+8,struct.pack('<I',6 if mesh else 2))
+ for test in range(2400):
+  client=test>=1600;mesh=800<=test<1600
+  o.uc.mem_write(role+8,struct.pack('<I',1 if client else 6 if mesh else 2))
   he=test%5!=0;nss=1+test%2;bw=test%4;macid=1+test%127
   present=he and test%4!=0;tf=test%3 if he else 0
   mask=[1,4,8,12,15][test%5];nominal=3 if present else test%3
@@ -81,14 +81,15 @@ with tempfile.TemporaryDirectory() as temp:
   o.uc.mem_write(sta+2620,struct.pack('<H',nominal<<9));o.uc.mem_write(sta+2622,bytes(32))
   o.uc.mem_write(out,ppe);o.call('rtw_he_set_asoc_cap_ppe_thre',hal,sta,out)
   o.uc.mem_write(sta+2332,struct.pack('<I',32 if he else 8));o.uc.mem_write(sta+44,struct.pack('<I',bw));o.uc.mem_write(sta+28,struct.pack('<H',macid))
-  o.uc.mem_write(info,bytes(512));o.call('_hal_stainfo_to_macrinfo',hal,sta,info,2,1);o.call('mac_h2c_join_info',hal,info)
+  o.uc.mem_write(info,bytes(512));o.call('_hal_stainfo_to_macrinfo',hal,sta,info,5 if client else 2,1);o.call('mac_h2c_join_info',hal,info)
   expected=o.unpack(out,'I')[0]
-  actual=lib.run(macid,bw,he,nss,mesh,bytes(mac),bytes(phy),ppe)
+  actual=lib.run(macid,bw,he,nss,client,mesh,bytes(mac),bytes(phy),ppe)
   assert actual==expected,(test,hex(actual),hex(expected),mask,ppe.hex())
   o.call('role_info_init',hal,info);o.uc.mem_write(out,bytes(512));o.call('fill_addr_cam_info',hal,info,out)
   assert lib.camword(macid,he)==o.unpack(out+32,'I')[0]
   count+=1
  # The original self producer overrides the channel BW with hardware BW support.
+ o.uc.mem_write(role+8,struct.pack('<I',2))
  phl=0x6060000;o.uc.mem_map(phl,0x10000)
  for chip,chip_id,mask in [('8852c',3,15),('8192xb',4,3)]:
   o.uc.mem_write(common,struct.pack('<I',chip_id))

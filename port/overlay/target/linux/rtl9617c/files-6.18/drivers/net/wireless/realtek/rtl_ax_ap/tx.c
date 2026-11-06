@@ -69,6 +69,7 @@ struct rtl_ax_tx {
 	wait_queue_head_t key_flush_wait;
 	u8 *ring, *pages, *headers;
 	bool peer_qos[128];
+	bool peer_client[128];
 	bool peer_asleep[128];
 	u32 peer_rates[128];
 	struct ewma_rtl_ax_success peer_success[128];
@@ -408,6 +409,12 @@ void rtl_ax_tx_ap_address(struct rtl_ax_tx *tx, const u8 *address)
 {
 	if (tx->pe_active) memcpy(tx->pe.memory + PE_PROBE_MAILBOX + 64, address, 6);
 }
+void rtl_ax_tx_peer_client(struct rtl_ax_tx *tx, unsigned int macid, bool client, const u8 *bssid)
+{
+	tx->peer_client[macid] = client;
+	if (client && tx->pe_active)
+		memcpy(tx->pe.memory + 0xe400 + macid * 8, bssid, ETH_ALEN);
+}
 void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos, unsigned int ps_timeout)
 {
 	tx->peer_qos[macid] = qos;
@@ -648,7 +655,8 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		unsigned int segments = slot.mapping ? slot.mapping->dma_count : 1;
 		u32 request_flags = (encap ? tid : ieee80211_is_ctl(header->frame_control) ? 0 : le16_to_cpu(header->seq_ctrl) >> 4) | tid_indicators[tid] << 12 |
 			!!(info->flags & IEEE80211_TX_CTL_NO_ACK) << 13 |
-			is_multicast_ether_addr(encap ? skb->data : header->addr1) << 14 | tx->checksum_enabled << 17 | macid << 24 | encap << 18;
+			(encap && tx->peer_client[macid] ? 0 : is_multicast_ether_addr(encap ? skb->data : header->addr1)) << 14 |
+			tx->checksum_enabled << 17 | macid << 24 | encap << 18 | tx->peer_client[macid] << 23;
 		u32 key = 0; u64 pn = 0;
 		/* A PCIe DMA cookie may alias PE MMIO. Publish the header bytes
 		 * into this WP's PE-visible buffer before transferring ownership. */
@@ -697,20 +705,23 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 				if (tx->peer_rates[macid] & BIT(31))
 					put_unaligned_le32(tx->peer_rates[macid] & ~BIT(31), tx->pe.memory + 0xd000 + macid * 32 + 12);
 			}
-			memcpy(tx->pe.memory + 0xe400 + macid * 8, skb->data, 6);
+			if (!tx->peer_client[macid])
+				memcpy(tx->pe.memory + 0xe400 + macid * 8, skb->data, 6);
 		}
 		/* NI needs an Ethernet template even when mac80211 assembled A-MSDU.
 		 * Never copy the raw frame's sequence/AMSDU/PS flags into that template. */
 		if (!encap && !tid && pe_sequence && slot.firmware_rate &&
 		    (request_flags & BIT(16)) && tx->peer_authorized[macid] &&
-		    info->control.vif && info->control.vif->type == NL80211_IFTYPE_AP &&
-		    ieee80211_has_fromds(header->frame_control) &&
-		    !ieee80211_has_tods(header->frame_control) &&
+		    info->control.vif &&
+		    ((info->control.vif->type == NL80211_IFTYPE_AP &&
+		      ieee80211_has_fromds(header->frame_control) && !ieee80211_has_tods(header->frame_control)) ||
+		     (info->control.vif->type == NL80211_IFTYPE_STATION &&
+		      ieee80211_has_tods(header->frame_control) && !ieee80211_has_fromds(header->frame_control))) &&
 		    !(info->flags & (IEEE80211_TX_CTL_NO_ACK | IEEE80211_TX_CTL_NO_PS_BUFFER)) &&
 		    !(info->control.flags & IEEE80211_TX_CTRL_PS_RESPONSE)) {
 			u32 peer[8] = { 0, 0, 26U << 16,
 				tx->peer_rates[macid] & ~BIT(31),
-				macid << 24 | BIT(18) | BIT(16) | tx->checksum_enabled << 17,
+				macid << 24 | BIT(18) | BIT(16) | tx->checksum_enabled << 17 | tx->peer_client[macid] << 23,
 				aggregate | density << 8 | key, 0, 0 };
 
 			memcpy(tx->pe.memory + 0xd000 + macid * 32, peer, sizeof(peer));

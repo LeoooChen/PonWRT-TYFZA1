@@ -33,6 +33,11 @@ typedef int64_t s64; typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t 
 #define GFP_KERNEL 0
 #define RTL_AX_8852C 3
 #define NL80211_IFTYPE_MONITOR 6
+#define NL80211_IFTYPE_STATION 2
+#define RTL_AX_CLIENT_MACID 1
+#define __ffs(x) __builtin_ctz(x)
+#define READ_ONCE(x) (x)
+#define ether_addr_equal(a,b) (!memcmp(a,b,6))
 #define NL80211_IFTYPE_AP 3
 #define NL80211_IFTYPE_MESH_POINT 7
 #define IEEE80211_NUM_ACS 4
@@ -55,10 +60,10 @@ typedef int64_t s64; typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t 
 #define dev_info(...) ((void)0)
 struct ieee80211_bss_conf {unsigned beacon_int,dtim_period; bool enable_beacon;
  struct {bool enabled; unsigned color;} he_bss_color;};
-struct ieee80211_vif {int type;struct {bool idle;}cfg; u8 addr[6]; struct ieee80211_bss_conf bss_conf;};
+struct ieee80211_vif {int type;bool use_4addr;struct {bool idle;}cfg; u8 addr[6]; struct ieee80211_bss_conf bss_conf;};
 struct port {int result;};
 struct io {int unused;}; struct tx {bool blocked;};
-struct rtl_ax_ap {s64 mesh_tsf_remainder;struct {bool queued;}mesh_sync_work;struct ieee80211_vif *ap_vif; struct io io; struct tx *tx; void *pdev,*rx;
+struct rtl_ax_ap {s64 mesh_tsf_remainder;struct {bool queued;}mesh_sync_work;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_role,sta_4addr,sta_associated;u8 sta_bssid[6];struct {bool pending;}retired_stations[128]; struct io io; struct tx *tx; void *pdev,*rx;
  bool monitor_started,ap_started,beacon_enabled,radar_required;
  struct {int error;bool enabled,detected,in_cac;}dfs;
  struct {unsigned valid;}security_roles[1];
@@ -93,7 +98,7 @@ static int rtl_ax_port0_drop_mbid(void *p,unsigned id){(void)p;(void)id;return 0
 static int rtl_ax_port0_start(struct io *io,struct port *port,void *r,int(*drop)(void*,unsigned),unsigned interval,unsigned dtim){
  (void)io;(void)port;(void)r;(void)drop;assert(interval==100&&dtim==2);return 0;
 }
-static void *ieee80211_vif_to_wdev(struct ieee80211_vif *vif){return vif;}
+static struct ieee80211_vif *ieee80211_vif_to_wdev(struct ieee80211_vif *vif){return vif;}
 static void cfg80211_stop_iface(void *wiphy,void *wdev,int gfp){(void)wiphy;(void)wdev;(void)gfp;stop_requests++;}
 static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw){return hw->radio;}
 static void rtl_ax_tx_ap_address(struct tx *tx,u8 *addr){(void)tx;(void)addr;}
@@ -156,6 +161,11 @@ struct ieee80211_link_sta {unsigned bandwidth,rx_nss,smps_mode,supp_rates[2];
  struct ieee80211_sta_he_cap he_cap;};
 struct ieee80211_sta {struct ieee80211_link_sta deflink;struct {u32 max_amsdu_len;}*cur;};
 """
+code += r"""
+static int rtl_ax_client_prepare(struct rtl_ax_ap*r,struct ieee80211_vif*v){(void)v;r->sta_role=true;return 0;}
+static void rtl_ax_client_release(struct rtl_ax_ap*r){r->sta_role=false;}
+static void rtl_ax_client_cfg_changed(struct ieee80211_hw*h,struct ieee80211_vif*v,u64 c){(void)h;(void)v;(void)c;assert(0);}
+"""
 code += function("monitor.h", "rtl_ax_ra_peer")
 code += function("monitor.h", "rtl_ax_net_setup_tc")
 code += function("monitor.h", "rtl_ax_net_fill_forward_path")
@@ -178,7 +188,9 @@ int main(void){
   reset_commands();assert(!rtl_ax_self_role_prepare(&r,ap.addr,100,2));
   assert(r.role_type==2&&r.role_stage==5&&commands==4);
   assert(command_word[1]==0x4100&&command_word[2]==(0x4b040100|bw));
-  assert(rtl_ax_monitor_add_interface(&hw,&sta)==-EOPNOTSUPP);
+  assert(!rtl_ax_monitor_add_interface(&hw,&sta)&&r.sta_role&&r.sta_vif==&sta);
+  assert(rtl_ax_monitor_add_interface(&hw,&mesh)==-EBUSY);
+  rtl_ax_monitor_remove_interface(&hw,&sta);assert(!r.sta_vif&&!r.sta_role);
   assert(!rtl_ax_monitor_add_interface(&hw,&monitor)&&!r.ap_vif);
   assert(!rtl_ax_monitor_add_interface(&hw,&mesh));
   struct ieee80211_sta peer={.deflink={.rx_nss=1,.supp_rates={0xfff,0xff}}};
@@ -187,13 +199,15 @@ int main(void){
   assert(rtl_ax_ra_peer(&r,&peer,1,ra,&rate,&caps,false));
   assert(ra[0]==(chip==3?4:6)&&rate==(chip==3?4:0));
   assert(get_unaligned_le64(ra+4)==(BIT_ULL(63)|(chip==3?0xff0:0xff5)));
-  r.ap_vif=&ap;assert(!rtl_ax_ra_peer(&r,&peer,1,ra,&rate,&caps,false));r.ap_vif=&mesh;
+  r.ap_vif=&ap;assert(rtl_ax_ra_peer(&r,&peer,1,ra,&rate,&caps,false));r.ap_vif=&mesh;
   assert(rtl_ax_monitor_add_interface(&hw,&ap)==-EBUSY);
   struct net_device dev;struct net_device_path_ctx ctx={&dev};struct net_device_path path={};
   assert(rtl_ax_net_setup_tc(&hw,&mesh,&dev,TC_SETUP_BLOCK,NULL)==-EOPNOTSUPP);
   assert(rtl_ax_net_fill_forward_path(&hw,&mesh,NULL,&ctx,&path)==-EOPNOTSUPP&&ctx.dev==&dev);
   assert(!rtl_ax_net_setup_tc(&hw,&ap,&dev,TC_SETUP_BLOCK,NULL));
   assert(!rtl_ax_net_fill_forward_path(&hw,&ap,NULL,&ctx,&path)&&!ctx.dev&&path.dev==&dev);
+  assert(!rtl_ax_net_setup_tc(&hw,&sta,&dev,TC_SETUP_BLOCK,NULL));
+  ctx.dev=&dev;assert(!rtl_ax_net_fill_forward_path(&hw,&sta,NULL,&ctx,&path)&&!ctx.dev);
   reset_commands();templates=0;
   rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON|BSS_CHANGED_BEACON_ENABLED);
   assert(r.mesh_sync_work.queued);

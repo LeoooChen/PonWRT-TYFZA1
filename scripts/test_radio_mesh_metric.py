@@ -4,10 +4,11 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import sys
 
 root=Path(__file__).resolve().parents[1]
 driver=root/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap'
-kernel=root/'artifacts/mesh/kernel'
+kernel=Path(sys.argv[1]) if len(sys.argv)>1 else root/'artifacts/mesh/kernel'
 
 def function(path,name):
     s=path.read_text();start=re.search(r'^(?:static |u32 )[^;]*?\b'+name+r'\([^;]*?\)\s*\{',s,re.M).start()

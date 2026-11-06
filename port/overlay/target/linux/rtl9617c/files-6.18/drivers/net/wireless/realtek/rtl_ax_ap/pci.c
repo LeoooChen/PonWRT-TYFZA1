@@ -143,6 +143,10 @@ struct rtl_ax_ap {
 	struct ieee80211_rate rates[12];
 	bool monitor_started;
 	struct ieee80211_vif *ap_vif;
+	struct ieee80211_vif *sta_vif;
+	bool sta_role, sta_associated, sta_4addr;
+	u32 sta_join;
+	u8 sta_bssid[ETH_ALEN];
 	struct wiphy_work beacon_work;
 	struct wiphy_delayed_work mesh_sync_work;
 	s64 mesh_tsf_remainder;
@@ -160,13 +164,14 @@ struct rtl_ax_ap {
 	bool ap_started;
 	int ap_result;
 	DECLARE_BITMAP(station_ids, 128);
-	struct { u8 self[6], peer[6]; u16 aid; bool pending, mesh; } retired_stations[128];
+	struct { u8 self[6], peer[6]; u16 aid; bool pending, mesh, client; } retired_stations[128];
 	struct { u8 address[6], aggregation[IEEE80211_NUM_TIDS]; u16 stopping, flushing; } tx_ba[128];
 	struct wiphy_delayed_work cleanup_work;
 	struct wiphy_delayed_work ra_work;
 	struct wiphy_delayed_work dm_work;
 	bool ra_sampling;
 	bool scanning;
+	int scan_offload_result;
 	struct sk_buff *scan_pending;
 	u32 scan_word0, scan_word1;
 	u64 scan_received_ns;
@@ -178,6 +183,7 @@ struct rtl_ax_ap {
 	DECLARE_BITMAP(security_aborting, RTL_AX_SECURITY_ENTRIES);
 	u8 security_unlink[RTL_AX_SECURITY_ENTRIES]; /* Pending DMAC unlink: MACID + 1. */
 	struct rtl_ax_security_role security_roles[128];
+	struct ieee80211_key_conf *security_keys[RTL_AX_SECURITY_ENTRIES];
 	u64 keys_installed, keys_removed, keys_aborted, rx_decrypted;
 	int key_result;
 	/* Software BA sessions outlive static CAM allocation; cam==8 is dynamic. */
@@ -644,6 +650,7 @@ static int rtl_ax_station_connected_table(struct rtl_ax_ap *radio, unsigned int 
 	u8 cmac[68];
 
 	rtl_ax_station_cmac_connected(cmac, macid, radio->chip == RTL_AX_8852C, 0);
+	if (radio->sta_vif) rtl_ax_station_cmac_client(cmac);
 	if (sta->deflink.he_cap.has_he)
 		rtl_ax_station_cmac_he(cmac, rtl_ax_he_padding(sta->deflink.he_cap.he_cap_elem.phy_cap_info,
 			sta->deflink.he_cap.ppe_thres, min_t(unsigned int,

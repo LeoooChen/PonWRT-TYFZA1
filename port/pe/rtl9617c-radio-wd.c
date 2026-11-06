@@ -292,6 +292,8 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 			input[2].value, ((const u8 *)input)[12] | (u32)((const u8 *)input)[13] << 8};
 		u32 ap_words[2] = {mailbox[16], mailbox[17]};
 		u8 *ethernet = (void *)ethernet_words, *ap_address = (void *)ap_words;
+		const u8 *bssid = memory + 0xe400 + macid * 8;
+		u32 client = !!(flags & BIT(23));
 		u32 *sequences = (void *)(memory +
 #ifdef PE_UPLINK
 			0x10000
@@ -304,13 +306,14 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 		sequence = sequences[macid * 8 + tid];
 		sequences[macid * 8 + tid] = (sequence + 1) & 0xfff;
 		header[0] = header_bytes == 26 ? 0x88 : 0x08;
-		header[1] = 0x02 | protected << 6 | (flags & BIT(19) ? 0x20 : 0);
+		header[1] = (client ? 0x01 : 0x02) | protected << 6 | (flags & BIT(19) ? 0x20 : 0);
 		header[2] = header[3] = 0;
 #pragma clang loop unroll(disable)
 		for (u32 i = 0; i < 6; i++) {
-			header[4 + i] = ethernet[i];
+			header[4 + i] = client ? bssid[i] : ethernet[i];
 			header[10 + i] = ap_address[i];
-			header[16 + i] = flags & BIT(21) ? ap_address[i] : ethernet[6 + i];
+			header[16 + i] = client ? (flags & BIT(21) ? bssid[i] : ethernet[i]) :
+				(flags & BIT(21) ? ap_address[i] : ethernet[6 + i]);
 		}
 		header[22] = sequence << 4;
 		header[23] = sequence >> 4;

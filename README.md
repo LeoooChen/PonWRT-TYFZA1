@@ -88,7 +88,7 @@ sysupgrade /tmp/sysupgrade.bin
 
 使用 DFS 信道时，无线会先完成 CAC 检测，再开始广播 SSID。系统日志中的 `DFS-CAC-START`、`DFS-CAC-COMPLETED` 和 `AP-ENABLED` 分别对应检测开始、检测完成和 AP 启用。
 
-内置无线驱动支持 AP / Monitor 和 802.11s mesh point，每个频段可选择一个 AP 或 mesh 接口。mesh 使用 mac80211 的组网、路径转发和软件加密，固件内置的 wpad-mbedtls 提供 SAE；AP 专用的 NI/FE 硬件卸载不用于 mesh。mesh 已接入 TSF 邻居时钟校正（硬件 32 微秒粒度并累计余数）和基于固件报告速率、真实发送成功率的 HWMP 度量，接口、角色、收发及上述逻辑已完成离线验证和模块编译；空口建链与互通待实机验收。Client / STA 无线中继仍未实现；可扫描周边网络，但不能加入上级 Wi-Fi。
+内置无线驱动支持 AP、Client / STA、Monitor 和 802.11s mesh point，每个射频可运行一个 AP、STA 或 mesh 接口。一个射频作为 STA 连接上级 Wi-Fi、另一个作为 AP，可组成路由式无线中继；不支持同射频 AP＋STA 和四地址 WDS。STA 已接入 CCMP、PE/NI/FE 硬件加速，验收范围见 [STA 实现记录](docs/sta-hardware-offload.md)。mesh 使用 mac80211 的组网、路径转发和软件加密，wpad-mbedtls 提供 SAE；NI/FE 硬件卸载不用于 mesh。mesh 保留 TSF 邻居时钟校正和基于固件速率、发送成功率的 HWMP 度量。STA 与 mesh 的空口建链、互通和吞吐仍待实机验收。
 
 两种机型的有线接口 `lan1`–`lan4` 均对应机身 LAN1–LAN4 标号；2.5G 版蓝色口为 `lan1`。PON 业务接口为 `pon0`。
 业务 MAC 在启动时从原厂 `ELAN_MAC_ADDR` 读取，自定义值在网络接口中设置。PON 管理中的 ONU MAC 用于 EPON 注册与 OAM。

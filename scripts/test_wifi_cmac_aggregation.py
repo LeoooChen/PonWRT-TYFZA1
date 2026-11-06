@@ -30,14 +30,16 @@ static u32 rtl_ax_ap_read32(const void *p) { u32 value; memcpy(&value,p,4); retu
 operational = monitor[monitor.index('\tcase IEEE80211_AMPDU_TX_OPERATIONAL:'):monitor.index('\tcase IEEE80211_AMPDU_TX_STOP_CONT:')]
 operational = operational[operational.index('\n')+1:]
 limit = re.search(r'hw->max_tx_aggregation_subframes = [^;]+;', monitor)[0]
-common += source[start:end] + r'''
+client_start = source.index('static inline void rtl_ax_station_cmac_client(')
+client_end = source.index('\nstatic inline ', client_start + 1)
+common += source[start:end] + source[client_start:client_end] + r'''
 #define min_t(type,a,b) ((type)(a)<(type)(b)?(type)(a):(type)(b))
 #define WRITE_ONCE(a,b) ((a)=(b))
 #define dev_info(...) ((void)0)
 #define RTL_AX_8852C 0x52
 #define RTL_AX_H2C_DATA 1
 struct ieee80211_hw { unsigned max_tx_aggregation_subframes; };
-struct rtl_ax_ap { unsigned chip; char io; void *tx; bool ra_registered[128];
+struct rtl_ax_ap { unsigned chip; char io; void *tx,*sta_vif; bool ra_registered[128];
  struct { unsigned aggregation[16]; } tx_ba[128]; };
 struct rtl_ax_station { unsigned macid; };
 struct ieee80211_ampdu_params { unsigned buf_size,tid; };

@@ -57,7 +57,7 @@ struct scatterlist {u32 dma,len;};
 struct mapping {unsigned dma_count;struct scatterlist sg[10];};
 struct slot {struct mapping *mapping;u32 dma;bool firmware_rate;};
 struct tx {bool pe_active,checksum_enabled;struct {void *memory;}pe;u8 *headers;unsigned pe_producer,producer[6];
- bool peer_authorized[128];u32 peer_rates[128];u64 hardware_pn,encrypted,pe_ethernet,scatter_packets,scatter_segments;
+ bool peer_authorized[128],peer_client[128];u32 peer_rates[128];u64 hardware_pn,encrypted,pe_ethernet,scatter_packets,scatter_segments;
  u32 last_eth_dma;u8 last_eth[14];};
 static unsigned get_unaligned_le32(const void*p){u32 v;memcpy(&v,p,4);return v;}
 static void put_unaligned_le32(u32 v,void*p){memcpy(p,&v,4);}
@@ -85,6 +85,7 @@ code += r'''
 #define IEEE80211_TX_CTRL_PS_RESPONSE BIT(3)
 #define IEEE80211_TX_CTL_NO_PS_BUFFER BIT(6)
 #define NL80211_IFTYPE_AP 3
+#define NL80211_IFTYPE_STATION 2
 static bool ieee80211_is_data_present(unsigned fc){return (fc&0xc)==8;}
 static bool ieee80211_has_fromds(unsigned fc){return fc&0x200;}
 static bool ieee80211_has_tods(unsigned fc){return fc&0x100;}
@@ -109,6 +110,7 @@ code += r'''
 int main(void){
  static u8 mem[2][0x20000],headers[2][256*128],payload[2048];
  unsigned vectors=0;
+ for(unsigned client=0;client<2;client++)
  for(unsigned layout=0;layout<=10;layout++)
  for(unsigned encap=0;encap<2;encap++)for(unsigned seq=0;seq<2;seq++)
  for(unsigned keytype=0;keytype<3;keytype++)for(unsigned tid=0;tid<8;tid++)for(unsigned auth=0;auth<2;auth++){
@@ -116,14 +118,15 @@ int main(void){
   struct tx b=a; b.pe.memory=mem[1];b.headers=headers[1];
   memset(mem,0xa5,sizeof(mem));memset(headers,0xa6,sizeof(headers));memset(payload,0xaa,sizeof(payload));
   struct mapping mapping={.dma_count=layout};for(unsigned n=0;n<layout;n++)mapping.sg[n]=(struct scatterlist){0x120380be + n*4096,1500+n};
-  struct slot slot={.mapping=layout?&mapping:NULL,.dma=0x11000000};
+  struct slot slot={.firmware_rate=true,.mapping=layout?&mapping:NULL,.dma=0x11000000};
   struct key ka={.flags=keytype==2,.hw_key_idx=126,.keyidx=3,.tx_pn=0xffffffffULL},kb=ka;
-  struct vif vif={.type=NL80211_IFTYPE_AP};
+  struct vif vif={.type=client?NL80211_IFTYPE_STATION:NL80211_IFTYPE_AP};
   struct info ia={.flags=tid&1,.control={.hw_key=keytype?&ka:NULL,.vif=&vif}},ib=ia;ib.control.hw_key=keytype?&kb:NULL;
-  struct hdr hdr={.frame_control=0x208,.seq_ctrl=0xffff,.addr1={tid&1}};
+  struct hdr hdr={.frame_control=client?0x108:0x208,.seq_ctrl=0xffff,.addr1={tid&1}};
   struct skb skb={payload,sizeof(payload),&ia};
   a.peer_authorized[127]=b.peer_authorized[127]=auth;
   unsigned macid=127,ring=tid%6;
+  a.peer_client[macid]=b.peer_client[macid]=client;
   a.peer_rates[macid]=b.peer_rates[macid]=(tid&1?BIT(31):0)|BIT(21)|BIT(22)|0x1ff;
   a.producer[ring]=b.producer[ring]=255;
   put_unaligned_le32(BIT(17),mem[0]+0xe200+macid*4);
@@ -133,7 +136,7 @@ int main(void){
   candidate(&b,&ib,&hdr,&skb,slot,255,ring,0,3000,26,macid,0x1ab,3,3,tid,64,7,encap,seq,encap?14:seq?26:0,payload);
   if(!encap && seq && auth && keytype==2 && tid==0) {
    assert(get_unaligned_le32(mem[1]+0xd000+macid*32+8)==26U<<16);
-   assert(get_unaligned_le32(mem[1]+0xd000+macid*32+16)==((macid<<24)|BIT(18)|BIT(16)));
+   assert(get_unaligned_le32(mem[1]+0xd000+macid*32+16)==((macid<<24)|BIT(18)|BIT(16)|(client<<23)));
    assert(!memcmp(mem[1]+0xe400+macid*8,hdr.addr1,6));
   }
   assert(!memcmp(mem[0],mem[1],sizeof(mem[0]))&&!memcmp(headers[0],headers[1],sizeof(headers[0])));

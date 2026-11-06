@@ -121,7 +121,7 @@ with tempfile.TemporaryDirectory(prefix='mesh-tsf-') as temp:
             operations.append(tuple(args[1:3]));registers[args[1]]=args[2];return 0
         if name=='log':return 0
         raise RuntimeError((name,args))
-    module=root/'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
+    module=(Path(sys.argv[1]) if len(sys.argv)>1 else root/'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko')
     oracle=ModuleOracle(module,['mac_tsf_sync'],callback)
     adapter,ops,io=0x6000000,0x6010000,0x6020000
     for addr in (adapter,ops,io):oracle.uc.mem_map(addr,0x10000)

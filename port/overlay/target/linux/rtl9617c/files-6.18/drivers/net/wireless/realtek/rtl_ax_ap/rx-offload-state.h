@@ -199,7 +199,7 @@ static void rtl_ax_rx_uplink_seed(struct rtl_ax_rx *rx, const struct rtl_ax_rx_p
 		/* BAR can advance the BA head without accepting a new data frame. */
 		tid = frame[17] >> 4;
 	} else {
-		if (packet->bytes < 54 || (fc & 0x47ff) != 0x4188 || frame[22] & 15) return;
+		if (packet->bytes < 54 || ((fc & 0x47ff) != 0x4188 && (fc & 0x47ff) != 0x4288) || frame[22] & 15) return;
 		tid = frame[24] & 15;
 	}
 	mutex_lock(&rx->uplink_lock);

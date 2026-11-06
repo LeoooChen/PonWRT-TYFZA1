@@ -97,7 +97,7 @@ static inline void rtl_ax_station_cmac_he(u8 out[68], u8 padding)
 }
 
 static inline void rtl_ax_station_join(u8 out[4], unsigned int macid,
-	unsigned int bandwidth, const struct ieee80211_sta_he_cap *he, unsigned int nss, bool mesh)
+	unsigned int bandwidth, const struct ieee80211_sta_he_cap *he, unsigned int nss, bool mesh, bool client)
 {
 	u32 value = macid | 0x8b040000 | bandwidth << 14;
 
@@ -113,7 +113,38 @@ static inline void rtl_ax_station_join(u8 out[4], unsigned int macid,
 	}
 	/* Original mesh role6 shares AP net_type3 and self roles1/2. */
 	if (mesh) value += 4U << 26;
+	if (client) value = (value & 0xffffff) | 0x06000000;
 	rtl_ax_store32(out, value);
+}
+
+static inline void rtl_ax_station_cmac_client(u8 out[68])
+{
+	/* Factory CCTL V1 for PHL STA: client port role, no AP-only mask. */
+	rtl_ax_store32(out + 28, rtl_ax_ap_read32(out + 28) | BIT(17));
+	rtl_ax_store32(out + 52, rtl_ax_ap_read32(out + 52) & ~BIT(12));
+}
+
+static inline void rtl_ax_client_cam(u8 out[60], unsigned int macid,
+	const u8 *self, const u8 *bssid, unsigned int aid, bool associated, bool valid)
+{
+	unsigned int i, self_hash = 0, peer_hash = 0;
+
+	for (i = 0; i < ETH_ALEN; i++) {
+		self_hash ^= self[i];
+		peer_hash ^= bssid[i];
+	}
+	memset(out, 0, 60);
+	/* One role per radio: address/BSSID CAM0, independently allocated MACID. */
+	rtl_ax_store32(out + 4, 32U << 16);
+	rtl_ax_store32(out + 8, valid | (associated ? 4 : 0) |
+		self_hash << 16 | peer_hash << 24);
+	memcpy(out + 16, self, ETH_ALEN);
+	memcpy(out + 22, bssid, ETH_ALEN);
+	rtl_ax_store32(out + 32, macid);
+	rtl_ax_store32(out + 36, aid & 0xfff);
+	rtl_ax_store32(out + 48, 8U << 16);
+	out[52] = 0xfd;
+	memcpy(out + 54, bssid, ETH_ALEN);
 }
 
 static inline void rtl_ax_peer_cam(unsigned char out[60], unsigned int macid,
