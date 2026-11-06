@@ -6,6 +6,7 @@
 #include <linux/ipv6.h>
 #include <linux/list.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/netfilter.h>
 #include <linux/netfilter_netdev.h>
 #include <linux/ppp_defs.h>
@@ -27,6 +28,7 @@ struct rtl_wifi_port {
 };
 static LIST_HEAD(wifi_ports);
 static struct device *wifi_ni;
+static DEFINE_MUTEX(wifi_mcast_lock);
 
 unsigned int rtl_wifi_ingress(void *private, struct sk_buff *skb,
 				const struct nf_hook_state *state)
@@ -231,7 +233,12 @@ void rtl_wifi_stop(void)
 	unregister_netdevice_notifier(&wifi_notifier);
 	rtnl_lock();
 	list_for_each_entry_safe(port, next, &wifi_ports, list) wifi_del(port);
+	mutex_lock(&wifi_mcast_lock);
+	/* Join binding callers before clearing the supplier. Radio teardown may
+	 * then free its table without a borrowed FE pointer surviving this stop. */
+	rtl9617c_ni_wifi_mcast_detach(wifi_ni);
 	wifi_ni = NULL;
+	mutex_unlock(&wifi_mcast_lock);
 	rtnl_unlock();
 }
 
@@ -248,6 +255,17 @@ int rtl9617c_wifi_peer_route(struct net_device *netdev, const u8 *address, unsig
 	return rtl9617c_ni_wifi_peer_route(wifi_ni, netdev, address, destination);
 }
 EXPORT_SYMBOL_GPL(rtl9617c_wifi_peer_route);
+
+int rtl9617c_wifi_mcast_table(struct net_device *netdev,unsigned int destination,
+ struct rtl_mc_pe_table *table,bool bind)
+{
+	int ret;
+	mutex_lock(&wifi_mcast_lock);
+	ret = wifi_ni ? rtl9617c_ni_wifi_mcast_table(wifi_ni, netdev, destination, table, bind) : bind ? -ENODEV : 0;
+	mutex_unlock(&wifi_mcast_lock);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_wifi_mcast_table);
 
 int rtl9617c_wifi_id(struct net_device *netdev)
 {

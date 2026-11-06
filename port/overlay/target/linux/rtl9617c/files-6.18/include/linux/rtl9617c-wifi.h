@@ -14,5 +14,8 @@ int rtl_wifi_start(struct device *ni);
 void rtl_wifi_stop(void);
 int rtl9617c_wifi_setup_tc(struct net_device *netdev, enum tc_setup_type type, void *data);
 int rtl9617c_wifi_peer_route(struct net_device *netdev, const u8 *address, unsigned int destination);
+struct rtl_mc_pe_table;
+int rtl9617c_wifi_mcast_table(struct net_device *netdev,unsigned int destination,
+ struct rtl_mc_pe_table *table,bool bind);
 int rtl9617c_wifi_id(struct net_device *netdev);
 #endif

@@ -11,6 +11,7 @@
 #define TEST_FRAME_BYTES 1500
 #define TEST_MEMORY_BYTES (0x4000 + RTL_AX_NI_TX_ENTRIES * 2048)
 static DEFINE_MUTEX(ni_test_lock);
+#include "ni-mcast.h"
 static void ni_route_ps(struct work_struct *work);
 #include "pe-event.h"
 
@@ -488,6 +489,8 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 	if (!tx->pe_active || macid >= 128) return -EINVAL;
 	mutex_lock(&ni_test_lock);
 	if (!macid) {
+		ret = ni_mcast_unbind(tx);
+		if (ret) goto unlock;
 		if (!tx->ni.route_dev) goto unlock;
 		/* Preserve an unfinished per-peer fence until its owner retires. */
 		if (tx->ni.retire_quiescing && tx->ni.retire_macid) {
@@ -548,6 +551,8 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 		goto unlock;
 	}
 	if (tx->ni.active || tx->ni.route_dev) { ret = -EBUSY; goto unlock; }
+	ret = ni_mcast_bind(tx, netdev);
+	if (ret) goto unlock;
 	if (!(get_unaligned_le32(tx->pe.memory + 0xd000 + macid * 32 + 16) & BIT(16))) {
 		ret = -ENOLINK; goto unlock;
 	}
@@ -597,6 +602,8 @@ int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned 
 	}
 	mutex_lock(&ni_test_lock);
 	if (tx->ni.retire_quiescing) { mutex_unlock(&ni_test_lock); return -EAGAIN; }
+	ret = ni_mcast_bind(tx, netdev);
+	if (ret) { mutex_unlock(&ni_test_lock); return ret; }
 	ret = ni_uplink_start(tx, id);
 	if (ret) { mutex_unlock(&ni_test_lock); return ret; }
 	put_unaligned_le32(1, tx->pe.memory + 0x11a00 + macid * 4);

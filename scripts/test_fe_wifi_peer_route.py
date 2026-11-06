@@ -53,6 +53,8 @@ struct rtl_fe_port {struct list_head list;struct net_device *netdev;unsigned int
 struct rtl_fe_wifi_peer {struct list_head list;struct rtl_fe_port *port;u8 address[6];unsigned int destination;};
 struct rtl_fe_flow {struct list_head list;struct rtl_fe_port *output;u8 destination[6];unsigned int hash_index,crc16,replica_count;bool installed,deleting;};
 struct rtl_fe {struct list_head ports,flows,wifi_peers;int lock;void *memory;};
+static unsigned invalidations;
+static void fe_mcast_invalidate(struct rtl_fe *f){assert(f->lock);invalidations++;}
 struct rtl_dq_io {struct rtl_fe *fe;};
 static struct rtl_dq_io fe_io(struct rtl_fe *fe){return (struct rtl_dq_io){fe};}
 static void mutex_lock(int *p){assert(!*p);*p=1;}
@@ -86,6 +88,7 @@ int main(void){
  memcpy(original,memory,sizeof(memory));
  assert(rtl_fe_wifi_peer_route(&fe,&missing,mac,19)==-ENODEV);
  assert(!rtl_fe_wifi_peer_route(&fe,&a,mac,19));assert(transactions==1);
+ assert(invalidations==1);
  memcpy(expected,original[0],48);rtl_fe_action_set(expected,RTL_FE_MCGID,19);
  assert(!memcmp(memory[0],expected,48) && !memcmp(memory[1],original[1],144));
  assert(fe_wifi_peer(&fe,&ports[0],mac) && !fe_wifi_peer(&fe,&ports[1],mac));

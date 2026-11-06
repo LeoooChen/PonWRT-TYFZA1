@@ -75,6 +75,7 @@ struct rtl_fe {
  unsigned int admission_writes,cache_ready,fail_mask,fail_mask_writes;
 };
 static unsigned int fe_read(void *ctx,unsigned int reg){struct rtl_fe *f=ctx;assert(reg<0x10000);return f->reg[reg/4];}
+static void fe_mcast_pe_close(struct rtl_fe *f){(void)f;}
 static void fe_write(void *ctx,unsigned int reg,unsigned int value){
  struct rtl_fe *f=ctx;assert(reg<0x10000);
  if(reg==0x38c4)f->cache_ready=value==0xa0000000;

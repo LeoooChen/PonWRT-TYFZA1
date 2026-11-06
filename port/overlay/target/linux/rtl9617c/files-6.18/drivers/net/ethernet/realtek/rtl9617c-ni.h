@@ -23,6 +23,10 @@ struct rtl9617c_ni_frame {
 };
 
 struct nf_hook_state;
+struct rtl_mc_pe_table;
+void rtl9617c_ni_wifi_mcast_detach(struct device *dev);
+int rtl9617c_ni_wifi_mcast_table(struct device *dev,struct net_device *netdev,
+ unsigned int destination,struct rtl_mc_pe_table *table,bool bind);
 /* Native ingress hook, identified by the bridge offload policy check. */
 unsigned int rtl_wifi_ingress(void *private, struct sk_buff *skb, const struct nf_hook_state *state);
 

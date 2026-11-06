@@ -160,6 +160,7 @@ static void mutex_unlock(int *v){assert(*v);*v=0;}
 static void fe_bridge_invalidate(struct rtl_fe *f){fe_mcast_invalidate(f);}
 static void fe_collect_ports(struct rtl_fe *f){(void)f;}
 static void fe_wifi_forget_port(struct rtl_fe *f,struct rtl_fe_port *p){(void)f;(void)p;}
+static void fe_mcast_pe_forget_port(struct rtl_fe *f,struct net_device *p){(void)f;(void)p;}
 '''
 for name in ('fe_flow_pon','fe_pon_quiesce_locked','rtl_fe_set_itu_paths','rtl_fe_set_epon_paths','rtl_fe_flush_port'):
     code+=scope['function'](name)

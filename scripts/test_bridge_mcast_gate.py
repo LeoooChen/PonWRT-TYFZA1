@@ -31,6 +31,7 @@ code=r'''
 #include <stdint.h>
 #include <string.h>
 #include "rtl9617c-fe-mcast-gate.h"
+#include "linux/rtl9617c-mcast-pe.h"
 #define CONFIG_ARCH_RTL9617C 1
 #define CONFIG_BRIDGE_IGMP_SNOOPING 1
 #include "linux/rtl9617c-bridge.h"
@@ -41,7 +42,8 @@ code=r'''
 #define system_wq 0
 struct net_device {int unused;};
 struct rtl_fe_bridge;
-struct rtl_fe {struct rtl_fe_mc_gate mc_gate;int mc_lock,mc_flush;unsigned int profile,writes;bool lost;struct rtl_fe_bridge *bridge;};
+struct rtl_fe {struct rtl_fe_mc_gate mc_gate;int mc_lock,mc_flush;unsigned int profile,writes;bool lost;struct rtl_fe_bridge *bridge;
+ struct {struct rtl_mc_pe_table *table;}mc_pe[2];};
 struct rtl_fe_bridge {struct rtl_fe *fe;bool stopping;unsigned int work;};
 static unsigned int rd(void *p,unsigned int r){assert(r==0x372c);return ((struct rtl_fe *)p)->profile;}
 static void wr(void *p,unsigned int r,unsigned int v){struct rtl_fe *f=p;assert(r==0x372c);f->writes++;if(!f->lost)f->profile=v;}
@@ -50,7 +52,9 @@ static struct rtl_dq_io fe_io(struct rtl_fe *f){return (struct rtl_dq_io){f,rd,w
 #define spin_unlock_irqrestore(p,f) do {assert(*(p)&&!(f));*(p)=0;} while(0)
 static void atomic_set(int *p,int v){*p=v;}
 static void mod_delayed_work(int q,unsigned int *w,unsigned int d){assert(!q&&!d);(*w)++;}
+static void dma_wmb(void){}
 '''
+code+=function((DRIVERS/'rtl9617c-fe-mcast-pe.h').read_text(),'fe_mcast_pe_close')
 code+=function(source,'fe_mcast_change_begin')+function(source,'fe_mcast_change_end')
 code+=r'''
 static struct rtl_fe state;
@@ -96,8 +100,10 @@ int main(void){
  struct rtl_dq_io io=fe_io(&state);struct net_device dev;
  struct net_bridge br={.dev=&dev};struct net_bridge_mcast m={.br=&br,.multicast_query_response_interval=10};
  state.profile=3;
+ struct rtl_mc_pe_table pe_table={.epoch=7};state.mc_pe[0].table=&pe_table;
  assert(!rtl_fe_mc_gate_open(&io,&state.mc_gate,0)&&state.profile==4);
  assert(!br_multicast_set_querier(&m,1));
+ assert(!pe_table.epoch);
  assert(state.profile==3&&!state.mc_gate.active&&state.mc_gate.epoch==2&&!state.mc_gate.writers&&!rcu&&!br.multicast_lock);
  assert(state.mc_flush&&owner.work==1&&m.multicast_querier);
  assert(rtl_fe_mc_gate_open(&io,&state.mc_gate,0)==-ESTALE);

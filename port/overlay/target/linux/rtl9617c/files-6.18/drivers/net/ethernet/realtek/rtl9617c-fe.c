@@ -36,6 +36,7 @@
 #include "rtl9617c-wifi-format.h"
 #include "rtl9617c-pon-path.h"
 #include <linux/rtl9617c-bridge.h>
+#include <linux/rtl9617c-mcast-pe.h>
 #include "rtl9617c-epon-path.h"
 
 struct rtl_fe_bridge;
@@ -181,6 +182,7 @@ struct rtl_fe {
  struct rtl_fe_mc_profile mc_profile;
  spinlock_t mc_lock;
  struct rtl_fe_mc_gate mc_gate;
+ struct {struct rtl_mc_pe_table *table;struct net_device *netdev;} mc_pe[2];
  atomic_t mc_flush;
  struct rtl_fe_mc_host *mc_hosts[RTL_FE_MC_GROUPS];
  struct rtl_fe_mc_direct *mc_directs[RTL_FE_MC_GROUPS];
@@ -215,6 +217,7 @@ static struct rtl_fe_port *fe_port(struct rtl_fe *fe,struct net_device *netdev)
   if(!port->retired && port->netdev==netdev)return port;
  return NULL;
 }
+#include "rtl9617c-fe-mcast-pe.h"
 static bool fe_flow_port(const struct rtl_fe_flow *flow,const struct rtl_fe_port *port)
 {
  unsigned int i;
@@ -445,6 +448,7 @@ static int fe_restore(struct rtl_fe *fe)
  {
   unsigned long flags;
   spin_lock_irqsave(&fe->mc_lock,flags);
+  fe_mcast_pe_close(fe);
   rtl_fe_mc_gate_close(&io,&fe->mc_gate);
   spin_unlock_irqrestore(&fe->mc_lock,flags);
  }
@@ -1775,6 +1779,10 @@ int rtl_fe_wifi_peer_route(struct rtl_fe *fe,struct net_device *netdev,const u8 
  port=fe_port(fe,netdev);
  if(!port || !port->wifi_id){ret=-ENODEV;goto unlock;}
  peer=fe_wifi_peer(fe,port,address);
+ /* A peer/key route may be replaced even when no unicast Hash exists.
+  * Revoke queued multicast cookies before changing that identity. */
+ if((peer && peer->destination!=destination) || (!peer && destination))
+  fe_mcast_invalidate(fe);
  if(destination && !peer) {
   peer=kzalloc(sizeof(*peer),GFP_KERNEL);
   if(!peer){ret=-ENOMEM;goto unlock;}
@@ -1813,6 +1821,8 @@ void rtl_fe_remove_port(struct rtl_fe *fe,struct net_device *netdev)
  mutex_lock(&fe->lock);
  port=fe_port(fe,netdev);
  if(port) {
+  fe_mcast_invalidate(fe);
+  fe_mcast_pe_forget_port(fe,netdev);
   fe_wifi_forget_port(fe,port);
   port->retired=true;
   list_for_each_entry_safe(flow,next,&fe->flows,list)
@@ -1835,6 +1845,7 @@ int rtl_fe_flush_port(struct rtl_fe *fe,struct net_device *netdev)
  mutex_lock(&fe->lock);
  port=fe_port(fe,netdev);
  fe_mcast_invalidate(fe);
+ fe_mcast_pe_forget_port(fe,netdev);
  fe_wifi_forget_port(fe,port);
  list_for_each_entry_safe(flow,next,&fe->flows,list)
   if(fe_flow_port(flow,port)) {
@@ -2017,6 +2028,7 @@ void rtl_fe_free(struct rtl_fe *fe)
  if(ret)dev_err(fe->device,"P6 CF restoration failed during removal: %d\n",ret);
  list_for_each_entry_safe(flow,flow_next,&fe->flows,list){fe_mcast_host_remove(fe,flow);list_del(&flow->list);kfree(flow->replica_ports);kfree(flow);}
  for(unsigned int i=1;i<RTL_FE_MC_GROUPS;i++)kfree(fe->mc_directs[i]);
+ for(unsigned int i=0;i<2;i++)if(fe->mc_pe[i].netdev)dev_put(fe->mc_pe[i].netdev);
  list_for_each_entry(port,&fe->ports,list)fe_wifi_forget_port(fe,port);
  list_for_each_entry_safe(port,next,&fe->ports,list){list_del(&port->list);kfree(port);}
  dma_free_coherent(fe->device,RTL_FE_MEMORY_BYTES,fe->memory,fe->dma);

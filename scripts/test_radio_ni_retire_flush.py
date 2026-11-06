@@ -54,6 +54,8 @@ struct rtl_ax_tx {
   unsigned route_macid,route_tim[128];int ps_work,cpu;} ni;
 };
 struct rtl_ax_ap {struct rtl_ax_tx *tx;};
+static int ni_mcast_bind(struct rtl_ax_tx *tx,struct net_device *d){(void)tx;(void)d;return 0;}
+static int ni_mcast_unbind(struct rtl_ax_tx *tx){(void)tx;return 0;}
 static struct rtl_ax_tx *current;
 static unsigned drop_mask[128],pending[128],withdrawn[128],drop_calls,pause_calls,poll_calls;
 static int ni_test_lock,fail_drop,fail_withdraw,fail_release;

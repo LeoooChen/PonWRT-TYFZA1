@@ -5,6 +5,10 @@
 #include <linux/netdevice.h>
 
 struct rtl_fe;
+struct rtl_mc_pe_table;
+void rtl_fe_wifi_mcast_detach(struct rtl_fe *fe);
+int rtl_fe_wifi_mcast_table(struct rtl_fe *fe,struct net_device *netdev,
+ unsigned int destination,struct rtl_mc_pe_table *table,bool bind);
 struct rtl_itu_paths;
 struct rtl_epon_paths;
 int rtl_fe_set_epon_paths(struct rtl_fe *fe,const struct rtl_epon_paths *paths);

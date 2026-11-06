@@ -1091,6 +1091,20 @@ int rtl9617c_ni_wifi_peer_route(struct device *dev, struct net_device *netdev,
 }
 EXPORT_SYMBOL_GPL(rtl9617c_ni_wifi_peer_route);
 
+int rtl9617c_ni_wifi_mcast_table(struct device *dev,struct net_device *netdev,
+ unsigned int destination,struct rtl_mc_pe_table *table,bool bind)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	return rtl_fe_wifi_mcast_table(priv->fe, netdev, destination, table, bind);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_ni_wifi_mcast_table);
+
+void rtl9617c_ni_wifi_mcast_detach(struct device *dev)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	rtl_fe_wifi_mcast_detach(priv->fe);
+}
+
 int rtl9617c_ni_oam_configure(struct device *dev)
 {
 	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));

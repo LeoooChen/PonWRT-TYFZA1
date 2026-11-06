@@ -4905,12 +4905,45 @@ checks pass. Firmware is26368 bytes; the conservative stack bound is6848 bytes
 within8KiB DMEM. Image/modules build passes. MMIO, DMA and hardware completion
 are modeled; this is not a radio or throughput measurement.
 
-This increment implements the PE consumer only. No FE table publisher or radio
-binding selects it yet; complete multicast-to-unicast continues through the
-owned CPU path above. Linux QoS/lifecycle publication, direct NI-to-PE replicas
-and BCMC remain unfinished. The target FC module does not contain the reference
+The target FC module does not contain the reference
 SDK's named `rtk_fc_abstrSwSyncToHw_WifiMcToUc` path, so that reference is not
 claimed as target instruction equivalence.
+
+### Radio and FE multicast table lifetime
+
+Each radio now owns a separate coherent recipient table for its complete PE
+context lifetime. ARM supplies its address before starting the context; binding
+requires the executor's capability signature. FE borrows the pointer under an
+explicit per-radio binding and holds the netdev reference. Multicast writers
+close both radio epochs under the same short lock that closes learned lookup.
+Peer-route changes close admission before updating the destination, including
+when no unicast Hash exists. Interface flush/removal also detaches its table.
+
+Binding follows the existing radio NI mutex into FE, never calls back into the
+radio and never takes a sleeping lock inside the multicast gate. A supplier
+binding mutex joins outstanding callers and detaches all FE borrowers before
+NI removal clears its public pointer. Radio teardown first detaches FE, then
+drains NI and waits for the PE context-stop acknowledgement, and only then frees
+the coherent table. Failed detachment, NI drain or context join retains storage
+and permits retry; host callbacks are still withdrawn on teardown failure.
+NI restarts retain the allocation and its cookie history.
+
+Production-function tests cover two-radio ownership conflicts, repeated binds,
+port/supplier detachment, failed binding/drain/context join and exact release
+order. The actual multicast writer test verifies that it closes a bound PE
+table. Peer/key/BA retirement, complete learning and M2U,480 QM receive and40
+bridge local-delivery cases, callback lifetime, LAN restoration and captured
+wireless ingress regressions pass. Image/modules build passes and89 driver,
+public-header and generated-firmware inputs match the compiled sources.
+
+The bound tables remain closed: there is still no FE recipient-record publisher
+or enabled direct NI-to-PE multicast flow. Existing complete M2U uses the owned
+CPU path. The current binding belongs to the first NI VIF on each radio; other
+VIF peer setup continues normally without gaining direct multicast admission.
+Compiling current Linux QoS and peer identity into immutable records, revoking
+them on all policy/key changes, proving replica buffer exclusivity, publishing
+the NI actions and extending BCMC remain work. Full packet retirement and safe
+resource reuse are still unresolved; no physical-device test was performed.
 
 ### Outstanding implementation and acceptance
 

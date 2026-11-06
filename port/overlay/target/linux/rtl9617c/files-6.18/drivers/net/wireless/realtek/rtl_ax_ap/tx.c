@@ -10,6 +10,7 @@
 #include <linux/wait.h>
 #include <net/mac80211.h>
 #include <linux/rtl9617c-wifi.h>
+#include <linux/rtl9617c-mcast-pe.h>
 #include "receive.h"
 #include "tx-format.h"
 #include "security.h"
@@ -25,6 +26,7 @@ static int ni_test_remove(struct rtl_ax_tx *tx);
 static void pe_event_release(struct rtl_ax_tx *tx);
 static void ni_route_sleep(struct rtl_ax_tx *tx, unsigned int macid);
 static void ni_state_init(struct rtl_ax_tx *tx);
+static int ni_mcast_release(struct rtl_ax_tx *tx);
 static u64 pe_event_interrupts;
 #define RTL_AX_TX_MGMT_INDEX 0x1078
 #define RTL_AX_TX_RINGS 6
@@ -56,6 +58,9 @@ struct rtl_ax_tx {
 	struct device *dma_device;
 	struct pe_probe pe;
 	struct rtl_ax_ni_state ni;
+	struct rtl_mc_pe_table *mcast_table;
+	dma_addr_t mcast_dma;
+	struct net_device *mcast_dev;
 	bool pe_active;
 	u32 pe_command;
 	unsigned int pe_producer;
@@ -175,6 +180,7 @@ static int rtl_ax_tx_pe_start(struct rtl_ax_tx *tx)
 	put_unaligned_le32(tx->ring_dma, tx->pe.memory + PE_PROBE_MAILBOX + 44);
 	put_unaligned_le32(tx->pages_dma, tx->pe.memory + PE_PROBE_MAILBOX + 48);
 	put_unaligned_le32(tx->headers_dma, tx->pe.memory + PE_PROBE_MAILBOX + 56);
+	put_unaligned_le32(tx->mcast_dma, tx->pe.memory + PE_PROBE_MAILBOX + RTL_MC_PE_TABLE_MAILBOX * 4);
 	dma_wmb();
 	ret = pe_probe_start(&tx->pe, pe_tx_program, sizeof(pe_tx_program));
 	if (ret) return ret;
@@ -206,6 +212,9 @@ struct rtl_ax_tx *rtl_ax_tx_prepare(struct pci_dev *pdev, const struct rtl_ax_io
 		/* PE owns shared descriptors/headers; payload DMA belongs to PCIe. */
 		tx->dma_device = &tx->pe.device->dev;
 	}
+	tx->mcast_table = dma_alloc_coherent(tx->dma_device, sizeof(*tx->mcast_table), &tx->mcast_dma, GFP_KERNEL);
+	if (!tx->mcast_table) { ret = -ENOMEM; goto release; }
+	memset(tx->mcast_table, 0, sizeof(*tx->mcast_table));
 	tx->ring = dma_alloc_coherent(tx->dma_device, RTL_AX_TX_RINGS * RTL_AX_TX_ENTRIES * 8, &tx->ring_dma, GFP_KERNEL);
 	tx->pages = dma_alloc_coherent(tx->dma_device, RTL_AX_TX_WD_PAGES * RTL_AX_TX_WP_BYTES,
 		&tx->pages_dma, GFP_KERNEL);
@@ -1067,7 +1076,8 @@ int rtl_ax_tx_free(struct rtl_ax_tx *tx, struct ieee80211_hw *hw)
 
 	if (!tx)
 		return 0;
-	ret = ni_test_remove(tx);
+	ret = ni_mcast_release(tx);
+	if (!ret) ret = ni_test_remove(tx);
 	/* Unsubscribe ARM callbacks even when DMA allocations must stay owned. */
 	pe_event_release(tx);
 	cancel_work_sync(&tx->ni.ps_work);
@@ -1087,6 +1097,8 @@ int rtl_ax_tx_free(struct rtl_ax_tx *tx, struct ieee80211_hw *hw)
 		dma_free_coherent(tx->dma_device, RTL_AX_TX_WD_PAGES * RTL_AX_TX_WP_BYTES, tx->pages, tx->pages_dma);
 	if (tx->ring)
 		dma_free_coherent(tx->dma_device, RTL_AX_TX_RINGS * RTL_AX_TX_ENTRIES * 8, tx->ring, tx->ring_dma);
+	if (tx->mcast_table)
+		dma_free_coherent(tx->dma_device, sizeof(*tx->mcast_table), tx->mcast_table, tx->mcast_dma);
 	if (tx->pe.memory)
 		pe_probe_free(&tx->pe);
 	kfree(tx);
