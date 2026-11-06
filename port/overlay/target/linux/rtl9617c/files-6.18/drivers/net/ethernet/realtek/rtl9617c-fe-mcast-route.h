@@ -141,7 +141,7 @@ static inline int rtl_fe_mc_route_members(const struct rtl_dq_io *io,unsigned in
  unsigned int words[2],required=0,i;
  int ret;
 
- if(source>4 || !count || count>RTL_FE_MC_ACTIONS)return -EINVAL;
+ if((source>4 && source!=6) || !count || count>RTL_FE_MC_ACTIONS)return -EINVAL;
  for(i=0;i<count;i++) {
   if((replicas[i].destination>6 && replicas[i].destination!=16) || replicas[i].destination==5)return -EINVAL;
   required|=1U<<replicas[i].destination;

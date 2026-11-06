@@ -4347,9 +4347,70 @@ its own immutable action (64 total action slots, shared with other recipes),
 so host-bearing groups can exhaust actions before the255 cumulative NI group
 limit. Exhaustion falls back to software without reassigning old IDs. The
 tests explicitly cover this limit; neither profile closure nor Hash deletion
-proves cache/MCE/PE/NI packet retirement. PON/radio/ONU-source multicast
+proves cache/MCE/PE/NI packet retirement. PON/radio multicast
 acceleration, safe reuse and real hardware acceptance remain work. No device
 was accessed.
+
+### ONU-source multicast and per-replica source MAC
+
+The original `onu_setup.sh` `.mc` TX rules push the shared GEM4095 tag and,
+when `EXT_SWITCH_EN` identifies a returned ONU packet, set its source to the
+factory LAN MAC. Per-UNI IPv4/IPv6 multicast copies are suppressed separately.
+The native complete learner now accepts physical P6/source6 through a live,
+exact802.1Q unicast GEM VLAN on `fttr0` (GEM1..4094), with source FDB/bridge
+ownership and FTTR admission checked. LAN recipients keep the ONU source MAC;
+only the shared `fttr-mc` recipient replaces it with that endpoint's MAC and
+adds outer4095. A shared P6 output may use the same physical input port because
+its logical endpoint and outer GEM differ. Ordinary same-port hairpin and raw
+P6 output remain outside this producer. IGMP/MLD still use the established
+report path; learning remains complete snooped UDP transactions.
+
+The per-copy edit uses the independent eight-entry **L2** PE MAC table at
+1714/1718+8*index, not the L3 source-MAC CAM. Original direct-write execution
+confirms byte order, all eight indices and index8 rejection. Executing the
+complete FC action/parser/NI producer with a source edit shows DATA2
+`mac_sa_cmd`, a three-bit selector and **also** `ip_ttl_dec_cmd`. The native
+bridge copy intentionally clears that TTL bit: the FTTR script requests an
+Ethernet source rewrite for loop prevention, not a routed hop. Its tags/COS
+and source-filter settings otherwise match the executed recipe. The original
+host copy remains unchanged even when its accompanying P6 copy edits the MAC.
+
+MAC words are written/read back before their actions and group become visible.
+The group owns a MAC reference even after an uncertain partial write. Abort
+withdraws group/actions first and restores an unexposed MAC last; a failed
+restore retains the dependency for retry. Foreign nonzero slots are skipped,
+reserved high bits preserved, identical native addresses shared, and hardware
+drift rejected. Exposed MAC contents remain immutable with exposed actions:
+changing the shared endpoint MAC invalidates learned flows and consumes a
+fresh address slot, never repurposing an old in-flight selector. At most eight
+distinct exposed L2 MAC values are available, in addition to existing64-action
+and255-group cumulative limits. Full safe retirement/reuse is still required.
+
+P6 host replicas carry the same quarantined group/owner metadata as LAN host
+copies; the original outer GEM/customer tags re-enter the physical/VLAN receive
+path, and the logical bridge validates the owner before local delivery.
+P6-origin metadata is preserved. FTTR business gating now invalidates the
+learned profile before its CPU RX purge and FE teardown. Ordinary P6 misses
+retain segmented RX. For a hardware host copy, the common PE MTU is capped to
+fit the complete ingress frame in one CPU buffer (including the16-byte HeaderA
+and captured tags). An unexpectedly segmented host copy is dropped instead of
+being treated as a new P6 miss. Hardware MTU-return byte fidelity still needs
+physical validation; these offline checks do not prove it.
+
+Verification: `test_fe_mcast_source.py` executes three original FC/NI source-edit
+recipes plus all eight original direct MAC writers, compares native edits
+with TTL preservation, and covers seven lost-write positions, sharing,
+restoration retry, foreign slots, drift and eight-address exhaustion.
+`test_bridge_mcast_learning.py` executes full ONU→LAN/shared-P6/CPU installation,
+exact GEM rejection, withdrawn admission, shared MAC changes, duplicate learning
+and the1566-byte host versus1978-byte non-host MTU bounds in its tagged fixture.
+The actual QM/bridge host tests now cover192 poll cases including source6 and
+malformed segmented copies.512 LAN4/P6 IPv4/IPv6 masked keys/CRCs agree with
+original ARM64 execution. Existing bridge/FE/CPU-gate/GRO, original LAN/host
+recipe and768 P6 fragmented-RX regressions pass. Image/modules build and source
+identity are recorded in `artifacts/fttr/mcast-onu-kernel-final-20261106.log`.
+No device was accessed; PON/radio replicas, unknown-multicast flood offload,
+safe hardware retirement and complete FTTR acceptance remain open.
 
 ### Outstanding implementation and acceptance
 

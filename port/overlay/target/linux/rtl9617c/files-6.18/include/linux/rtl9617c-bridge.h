@@ -54,8 +54,8 @@ void rtl9617c_bridge_mcast_complete(u64 transaction, bool complete);
  * No packet bytes or externally supplied skb mark authorize this path. */
 static inline unsigned int rtl9617c_bridge_host_group(u32 h0,u32 h1)
 {
- unsigned int pol=(h0>>18)&511;
- return ((h1>>3)&63)==16 && ((h1>>9)&63)<=4 && (pol&256)?pol&255:0;
+ unsigned int pol=(h0>>18)&511,source=(h1>>9)&63;
+ return ((h1>>3)&63)==16 && (source<=4 || source==6) && (pol&256)?pol&255:0;
 }
 int rtl9617c_bridge_mcast_receive(struct sk_buff *skb, unsigned int group, unsigned int source);
 int rtl9617c_bridge_mcast_local(struct sk_buff *skb, struct net_device *bridge, u16 vid);

@@ -20,7 +20,8 @@
  * require their own checked routing/metadata and are not represented here.
  */
 struct rtl_fe_mc_replica {
- unsigned int destination,tags,host_group;
+ unsigned int destination,tags,host_group,source_index;
+ unsigned char source_set,source[6];
  struct {unsigned short protocol,tci;} tag[2];
 };
 
@@ -30,7 +31,7 @@ static inline int rtl_fe_mc_replica_encode(const struct rtl_dq_io *io,
  unsigned int i,slot,first,tpid,result[3]={2,2,1};
 
  if(replica->destination==16) {
-  if(!replica->host_group || replica->host_group>=RTL_FE_MC_GROUPS || replica->tags)return -EINVAL;
+  if(!replica->host_group || replica->host_group>=RTL_FE_MC_GROUPS || replica->tags || replica->source_set)return -EINVAL;
   /* Original host copy uses POL56 on CPU18. Native CPU0 owns the Linux
    * receive pool; POL256+group gives each quarantined generation an ID.
    * NOP tags preserve ingress bytes; explicitly preserve original LSPID. */
@@ -40,6 +41,13 @@ static inline int rtl_fe_mc_replica_encode(const struct rtl_dq_io *io,
   return 0;
  }
  if(replica->destination>6 || replica->tags>2 || replica->host_group)return -EOPNOTSUPP;
+ if(replica->source_set) {
+  unsigned int nonzero=0;
+  for(i=0;i<6;i++)nonzero|=replica->source[i];
+  if(replica->destination!=6 || replica->source_index>=8 || !nonzero || (replica->source[0]&1))return -EINVAL;
+  /* FTTR's bridge-only SMAC loop prevention does not route/decrement TTL. */
+  result[2]|=2U|(replica->source_index<<2);
+ }
  result[1]|=replica->destination<<24|1U<<30; /* Preserve COS. */
  for(i=0;i<replica->tags;i++) {
   first=i?2:0;

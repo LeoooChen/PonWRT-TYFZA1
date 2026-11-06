@@ -18,7 +18,7 @@ code=code.replace('static int fe_mcast_host_publish(struct rtl_fe *f,struct rtl_
  'static int fe_mcast_host_publish(struct rtl_fe *f,struct rtl_fe_flow *v,struct rtl_fe_mc_host *h);')
 code=code.replace('struct net_device {bool running,carrier;};','''struct nf_hook_entries {unsigned num_hook_entries;struct {void (*hook)(void);} hooks[3];};
 struct net {unsigned refs;struct {struct nf_hook_entries *hooks_bridge[5];} nf;};
-struct net_device {bool running,carrier;unsigned ifindex,group,flags,num_tx_queues,mtu;struct netdev_queue *queue;struct net_device *master,*lower;struct net *net;void *tcx_ingress,*tcx_egress;struct nf_hook_entries *nf_hooks_ingress,*nf_hooks_egress;};''')
+struct net_device {bool running,carrier;unsigned ifindex,group,flags,num_tx_queues,mtu,vid;u8 dev_addr[6];struct netdev_queue *queue;struct net_device *master,*lower;struct net *net;void *tcx_ingress,*tcx_egress;struct nf_hook_entries *nf_hooks_ingress,*nf_hooks_egress;};''')
 code=code.replace('struct rtl_fe_flow {',re.search(r'struct rtl_fe_mc_host \{.*?\n\};',(DRIVERS/'rtl9617c-fe.c').read_text(),re.S)[0]+'\nstruct rtl_fe_flow {')
 code=code.replace('struct rtl_fe {','struct rtl_fe_mtu {unsigned users,size,saved;};\nstruct rtl_fe {struct rtl_fe_mtu mtus[16];struct rtl_fe_mc_host *mc_hosts[256];')
 code=code.replace('struct rtl_fe_mc_profile mc_profile;','''struct rtl_fe_mc_profile mc_profile;
@@ -56,6 +56,7 @@ static void fe_bridge_capture(void){}
 static void fe_bridge_forwarded(void){}
 static void fe_bridge_wire(void){}
 static void foreign_hook(void){}
+#include "linux/rtl9617c-qm-layout.h"
 #define FE_MCAST_PENDING 16
 #define ETH_HLEN 14
 #define ETH_P_IP 0x800
@@ -72,7 +73,7 @@ static void foreign_hook(void){}
 #define spin_lock_irqsave(p,f) do {assert(!*(p));*(p)=1;(f)=0;} while(0)
 #define spin_unlock_irqrestore(p,f) do {assert(*(p));*(p)=0;(void)(f);} while(0)
 struct rtl_fe_bridge {struct rtl_fe *fe;bool stopping;int epoch;unsigned work;struct fe_mcast_packet *multicast_pending[FE_MCAST_PENDING];};
-struct sk_buff {struct net_device *dev;unsigned priority;bool gso;struct rtl9617c_bridge_frame saved,frame;};
+struct sk_buff {struct net_device *dev;unsigned priority;bool gso,rtl9617c_fttr_ingress;struct rtl9617c_bridge_frame saved,frame;};
 static u64 fe_mcast_ticket;
 static int atomic_read(int *p){return *p;}
 static bool rtl_fe_enabled(struct rtl_fe *f){return f->enabled;}
@@ -83,6 +84,7 @@ static bool is_multicast_ether_addr(const u8 *a){return a[0]&1;}
 static bool is_broadcast_ether_addr(const u8 *a){return !memcmp(a,"\xff\xff\xff\xff\xff\xff",6);}
 static bool ether_addr_equal(const u8 *a,const u8 *b){return !memcmp(a,b,6);}
 static struct net_device *devices[16];
+static unsigned vlan_dev_vlan_id(struct net_device *d){return d->vid;}
 static bool is_vlan_dev(struct net_device *dev){return dev->lower!=NULL;}
 static struct net_device *vlan_dev_real_dev(struct net_device *dev){return dev->lower;}
 static struct net_device *netdev_master_upper_dev_get_rcu(struct net_device *d){return d->master;}
@@ -93,7 +95,8 @@ static struct net *get_net(struct net *n){n->refs++;return n;}
 static void put_net(struct net *n){assert(n->refs);n->refs--;}
 static struct net_device *__dev_get_by_index(struct net *n,unsigned i){(void)n;return i<16?devices[i]:NULL;}
 static unsigned br_port_get_stp_state(struct net_device *d){return d->running?3:0;}
-static struct net_device *br_fdb_find_port(struct net_device *b,const u8 *m,unsigned vid){(void)b;(void)m;(void)vid;return devices[1];}
+static struct net_device *fdb_source;
+static struct net_device *br_fdb_find_port(struct net_device *b,const u8 *m,unsigned vid){(void)b;(void)m;(void)vid;return fdb_source?fdb_source:devices[1];}
 static struct rtl_fe_port *fe_port(struct rtl_fe *fe,struct net_device *d){for(unsigned i=0;i<3;i++)if(fe->ports[i]&&fe->ports[i]->netdev==d)return fe->ports[i];return NULL;}
 static int fe_vlan_tpid(unsigned short p){return p==__builtin_bswap16(0x8100)?1:-EOPNOTSUPP;}
 #define htons(v) __builtin_bswap16(v)
@@ -236,6 +239,52 @@ int main(void){
   fe.age_fail=1;assert(fe_delete(&fe,fe.indexed)==-ETIMEDOUT&&!fe.mc_hosts[group]&&!net.refs);
   assert(fe_mcast_host_local(&bridge,&copy,&br,0)==-ESTALE);
   assert(!fe_delete(&fe,fe.indexed));assert(fe.multicast.groups[group].state==RTL_FE_MC_RETIRED);
+ }
+ /* ONU source6 enters on a specific GEM VLAN; LAN/CPU preserve the
+  * source, only shared P6 replica rewrites it without decrementing TTL. */
+ struct net_device onu={.ifindex=8,.mtu=1500,.vid=100,.lower=&p6,.master=&br,.net=&net,.running=true,.carrier=true};
+ devices[8]=&onu;fdb_source=&onu;
+ memcpy(shared.dev_addr,"\2\x22\x33\x44\x55\x66",6);
+ for(unsigned local=0;local<2;local++) {
+  out.mtu=shared.mtu=br.mtu=1982;
+  fe.event_count=0;skb.dev=&onu;
+  skb.saved.ingress=6;skb.saved.port=8;skb.saved.tags=1;skb.saved.tag[0]=(struct rtl9617c_bridge_tag){.protocol=0x8100,.tci=100};
+  skb.saved.multicast_epoch=fe.mc_gate.epoch;skb.saved.multicast_host_group=0;
+  ticket=fe_mcast_capture_begin(&bridge,&skb,local,++fe_mcast_ticket);assert(ticket);
+  fe_mcast_capture_select(&bridge,&skb,&out);fe_mcast_capture_select(&bridge,&skb,&shared);
+  skb.frame.tags=0;memset(skb.frame.tag,0,sizeof(skb.frame.tag));
+  skb.dev=&out;fe_mcast_capture_output(&bridge,&skb);
+  skb.dev=&shared;fe_mcast_capture_output(&bridge,&skb);
+  fe_mcast_capture_end(&bridge,ticket,true);fe_mcast_process(&bridge);
+  assert(fe.indexed && fe.indexed->input==&fttr && fe.indexed->replica_count==2+local && fe.mc_gate.active);
+  assert(fe.mtus[fe.indexed->mtu_index].size==(local?1566:1978));
+  unsigned group=fe.indexed->mc_group;bool p6edit=false,lanedit=false;
+  for(unsigned a=0;a<64;a++)if(fe.multicast.groups[group].bitmap[a/32]&(1U<<(a%32))) {
+   unsigned dest=fe.actions[a][1]>>24&63;
+   if(dest==6){assert(fe.actions[a][2]==3 && (fe.actions[a][1]>>2&4095)==4095);p6edit=true;}
+   if(dest==1){assert(fe.actions[a][2]==1);lanedit=true;}
+  }
+  assert(p6edit&&lanedit&&fe.multicast.macs[0].exposed);
+  assert(fe.reg[0x1714/4]==0x33445566 && (fe.reg[0x1718/4]&65535)==0x222);
+  if(local) {
+   struct sk_buff copy={.frame=skb.saved};
+   assert(!fe_mcast_host_receive(&bridge,&copy,group,6)&&copy.dev==&p6&&copy.rtl9617c_fttr_ingress);
+   copy.dev=&onu;assert(fe_mcast_host_local(&bridge,&copy,&br,0)==1);
+   fe.fttr_admitted=false;
+   assert(fe_mcast_host_receive(&bridge,&copy,group,6)==-ESTALE);
+   assert(fe_mcast_host_local(&bridge,&copy,&br,0)==-ESTALE);fe.fttr_admitted=true;
+  }
+  /* Same exact decision must reuse the flow, not consume a second MAC/group. */
+  struct fe_mcast_packet again={.net=&net,.bridge=10,.epoch=fe.mc_gate.epoch,.input=skb.saved,.local=local,.count=2};
+  again.output[0].port=again.output[0].physical=2;again.output[0].frame=skb.frame;
+  again.output[1].port=again.output[1].physical=7;again.output[1].frame=skb.frame;
+  assert(!fe_mcast_learn(&bridge,&again)&&fe.indexed->mc_group==group);
+  /* Exact ingress GEM, source admission and shared MAC changes matter. */
+  again.input.tag[0].tci=101;assert(fe_mcast_learn(&bridge,&again)==-EOPNOTSUPP);again.input.tag[0].tci=100;
+  fe.fttr_admitted=false;assert(fe_mcast_learn(&bridge,&again)==-EOPNOTSUPP);fe.fttr_admitted=true;
+  shared.dev_addr[5]++;assert(fe_mcast_learn(&bridge,&again)==-ESTALE&&!fe.mc_gate.active);shared.dev_addr[5]--;
+  assert(!fe_delete(&fe,fe.indexed));
+  assert(fe.multicast.macs[0].exposed && !fe.multicast.macs[0].users);
  }
  for(unsigned i=0;i<16;i++)assert(!fe.mtus[i].users);
  fe_mcast_purge(&bridge);assert(!net.refs);free(fe.memory);

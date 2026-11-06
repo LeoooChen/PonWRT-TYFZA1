@@ -70,6 +70,11 @@ struct sk_buff {u8 storage[4096],*data;unsigned len,skb_iif;struct net_device *d
 struct ethhdr {u8 addresses[12];__be16 h_proto;}__attribute__((packed));
 static struct net_device parent,mcdev,service,other,bridge,wrong_bridge;
 static struct napi_struct napi;
+struct rtl9617c_bridge_mcast_ops {int unused;};
+static const struct rtl9617c_bridge_mcast_ops ops;
+static unsigned writers,gate_changes;
+static const struct rtl9617c_bridge_mcast_ops *rtl9617c_bridge_mcast_begin(struct net_device *d){(void)d;assert(!writers);writers++;gate_changes++;return &ops;}
+static void rtl9617c_bridge_mcast_end(const struct rtl9617c_bridge_mcast_ops *o){assert(o==&ops&&writers==1);writers--;}
 static bool rtnl,cow_fail,pop_fail;static unsigned freed,delivered,submitted,purged;
 static u8 received[4096],sent[4096];static unsigned received_len,sent_len;
 static struct net_device *received_dev;
@@ -242,6 +247,7 @@ int main(void){
  parent.running=false;assert(mcast_open(&mcdev)==-ENETDOWN);parent.running=true;parent.carrier=true;
  assert(!mcast_open(&mcdev)&&!mcdev.stopped);assert(!mcast_stop(&mcdev)&&mcdev.stopped&&!mcdev.carrier&&quiesced==1);
  assert(mcast_iflink(&mcdev)==1);
+ assert(!writers && gate_changes>=2);
  puts("PASS: mixed VLAN/IGMP/MLD reports, GEM4095 TX, source/duplicate rules, malformed packets and forwarding gate; native callbacks with Linux VLAN helpers");
 }
 '''

@@ -53,7 +53,7 @@ struct napi_struct {struct net_device *dev;};
 struct sk_buff {u8 storage[128],*data;unsigned len,priority,protocol,ip_summed;struct net_device *dev;};
 struct rtl9617c_ni_wifi_endpoint {struct net_device *netdev;void (*receive)(struct rtl9617c_ni_wifi_endpoint *,struct napi_struct *,struct sk_buff *,bool);};
 struct rtl9617c_ni_endpoint {void (*receive)(struct rtl9617c_ni_endpoint *,struct napi_struct *,struct sk_buff *,unsigned);};
-static unsigned rtl9617c_bridge_host_group(u32 h0,u32 h1){unsigned p=(h0>>18)&511;return ((h1>>3)&63)==16&&((h1>>9)&63)<=4&&(p&256)?p&255:0;}
+static unsigned rtl9617c_bridge_host_group(u32 h0,u32 h1){unsigned p=(h0>>18)&511,src=(h1>>9)&63;return ((h1>>3)&63)==16&&(src<=4||src==6)&&(p&256)?p&255:0;}
 static int rtl9617c_bridge_mcast_receive(struct sk_buff *s,unsigned g,unsigned src){(void)s;(void)g;(void)src;assert(0);return -1;}
 static void netif_receive_skb(struct sk_buff *s){(void)s;assert(0);}
 struct rtl_qm_rx {

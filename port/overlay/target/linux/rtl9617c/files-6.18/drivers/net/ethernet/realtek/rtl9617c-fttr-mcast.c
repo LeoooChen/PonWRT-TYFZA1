@@ -9,6 +9,7 @@
 #include <linux/ip.h>
 #include <linux/ipv6.h>
 #include <linux/rtnetlink.h>
+#include <linux/rtl9617c-bridge.h>
 #include <linux/unaligned.h>
 #include <net/ip.h>
 #include <net/ipv6.h>
@@ -253,12 +254,17 @@ void rtl_fttr_mcast_link(struct net_device *dev, bool up)
 void rtl_fttr_mcast_gate(struct net_device *dev, bool admitted)
 {
 	struct rtl_fttr_mcast *mc;
+	const struct rtl9617c_bridge_mcast_ops *writer;
 
 	ASSERT_RTNL();
 	if (!dev)
 		return;
 	mc = netdev_priv(dev);
+	/* Close learned P6 host copies before the CPU business gate's RX purge.
+	 * Worker publication holds RTNL, so it cannot reopen during this change. */
+	writer = rtl9617c_bridge_mcast_begin(dev);
 	WRITE_ONCE(mc->admitted, admitted);
+	rtl9617c_bridge_mcast_end(writer);
 	if (!admitted && netif_running(dev)) {
 		dev_deactivate(dev);
 		dev_activate(dev);

@@ -277,7 +277,7 @@ def cpu_receive_dispatch(module):
         scope='54 executions of actual rtk_fc_skb_rx; final receive/direct-transmit consumers and synchronous scheduling are modeled. No assertion of packet retirement or physical HeaderA generation.')
 
 
-def replica_recipes(fc_module, ni_module, destinations=(1, 6), host_copy=False):
+def replica_recipes(fc_module, ni_module, destinations=(1, 6), host_copy=False, source_mac=False):
     """Execute FC replica construction through the real arbitration producer."""
     class Published(Exception): pass
     recipes, actions = [], []
@@ -285,6 +285,10 @@ def replica_recipes(fc_module, ni_module, destinations=(1, 6), host_copy=False):
         if name == 'aal_l2_vlan_default_cfg_get':
             # All four original L2 egress TPID defaults are8100.
             ni.uc.mem_write(values[1], bytes(12) + struct.pack('<4H', *([0x8100] * 4)) + bytes(4))
+            return 0
+        if name == 'aal_l2fe_pe_my_mac_add':
+            assert bytes(ni.uc.mem_read(values[2],6)) == bytes.fromhex('665544332202')
+            ni.uc.mem_write(values[1],struct.pack('<H',3))
             return 0
         if name == 'generic_entry_add':
             assert values[0] == ni.symbols['l2fe_arb_fib_table'][0]
@@ -316,6 +320,7 @@ def replica_recipes(fc_module, ni_module, destinations=(1, 6), host_copy=False):
     fc.word(db + 0x200000 + 384, flow)
     # The original variable-size action parser advances four bytes per VLAN.
     size = fc.symbols['patternSizeMapping'][0]
+    fc.uc.mem_write(size + 6, struct.pack('<H', 6))
     fc.uc.mem_write(size + 22, struct.pack('<H', 4))
     fc.uc.mem_write(size + 10, struct.pack('<H', 4))
     fc.uc.mem_write(context + 306, struct.pack('<H', 4))
@@ -328,11 +333,13 @@ def replica_recipes(fc_module, ni_module, destinations=(1, 6), host_copy=False):
         for destination in destinations:
             recipes.clear(); actions.clear()
             fc.uc.mem_write(action, bytes(32))
-            fc.uc.mem_write(action, struct.pack('<H', (4 if tags else 0) | (8 if tags == 2 else 0)))
+            fc.uc.mem_write(action, struct.pack('<H', (2 if source_mac else 0) | (4 if tags else 0) | (8 if tags == 2 else 0)))
+            vlan_offset=6 if source_mac else 0
+            if source_mac:fc.uc.mem_write(action+4,bytes.fromhex('022233445566'))
             if tags:
-                fc.uc.mem_write(action + 4, struct.pack('<HH', 0x8100, 4095 | 5 << 13 | 1 << 12))
+                fc.uc.mem_write(action + 4 + vlan_offset, struct.pack('<HH', 0x8100, 4095 | 5 << 13 | 1 << 12))
             if tags == 2:
-                fc.uc.mem_write(action + 8, struct.pack('<HH', 0x8100, 100 | 3 << 13))
+                fc.uc.mem_write(action + 8 + vlan_offset, struct.pack('<HH', 0x8100, 100 | 3 << 13))
             fc.uc.mem_write(member, bytes([destination]) + bytes(7))
             fc.uc.mem_write(flow + 8, bytes(4))
             fc.uc.mem_write(flow + 44, bytes([host_copy]))
@@ -354,13 +361,13 @@ def replica_recipes(fc_module, ni_module, destinations=(1, 6), host_copy=False):
             assert (words[1] >> 24) & 63 == destination
             assert (words[1] & 3) == (1 if tags else 2)
             assert (words[0] & 3) == (1 if tags == 2 else 2)
-            assert words[2] == 1  # Explicit source-filter disable; no TTL edit.
+            assert words[2] == (0x40f if source_mac else 1)  # Stock also decrements TTL with MAC edit.
             if tags:
                 assert (words[1] >> 2) & 4095 == 4095
                 assert (words[1] >> 19) & 7 == 5 and (words[1] >> 23) & 1 == 1
             if tags == 2:
                 assert (words[0] >> 2) & 4095 == 100 and (words[0] >> 18) & 7 == 3
-            cases.append(dict(output_tags=tags, destination=destination, recipe=recipes[0], words=words,host_copy=host))
+            cases.append(dict(output_tags=tags, destination=destination, recipe=recipes[0], words=words,host_copy=host,source_mac=source_mac))
     return dict(cases=cases, findings=[
         'The complete FC replica producer programs both S/C tag commands: present=>tag by table(1), absent=>untag(2); it is an absolute final tag recipe, not a relative push.',
         'FC explicitly disables source-port filtering for each replica and copies priority/DEI for each present tag; unchanged source MAC leaves TTL decrement disabled.'],

@@ -1211,7 +1211,7 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
   struct rtl_fe_port *replica=data.multicast->port[i];
   if(replica->retired || !netif_running(replica->netdev) || !netif_carrier_ok(replica->netdev))return -EAGAIN;
   if(replica->netdev==fe->fttr_netdev && !fe->fttr_admitted)return -EAGAIN;
-  if(replica->netdev==fe->fttr_netdev && !rtl_fttr_mcast_ready(fe->fttr_mcast))return -EAGAIN;
+  if(data.multicast->replica[i].destination==6 && !rtl_fttr_mcast_ready(fe->fttr_mcast))return -EAGAIN;
  }
  if(fe_flow(fe,cookie))return -EEXIST;
  if(data.bridge)rtl_fe_bridge_key(words,data.source,data.destination,data.ethernet_protocol,

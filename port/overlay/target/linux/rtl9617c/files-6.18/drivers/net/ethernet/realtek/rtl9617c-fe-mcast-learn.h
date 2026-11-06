@@ -106,7 +106,7 @@ static int fe_mcast_host_receive(void *context,struct sk_buff *skb,unsigned int 
  input=dev_get_by_index_rcu(host.net,host.input.ingress);
  logical=dev_get_by_index_rcu(host.net,host.input.port);
  brdev=dev_get_by_index_rcu(host.net,host.bridge);
- if(source!=host.source || !input || !logical || !brdev ||
+ if(source!=host.source || (source==6 && (!READ_ONCE(fe->fttr_admitted) || input!=fe->fttr_netdev)) || !input || !logical || !brdev ||
     !netif_running(input) || netdev_master_upper_dev_get_rcu(logical)!=brdev)goto stale;
  /* QM gives us the complete Ethernet frame before eth_type_trans. */
  skb_reset_mac_header(skb);__skb_pull(skb,ETH_HLEN);
@@ -122,7 +122,7 @@ static int fe_mcast_host_receive(void *context,struct sk_buff *skb,unsigned int 
  saved=skb_ext_add(skb,SKB_EXT_RTL9617C_BRIDGE);
  if(!saved){ret=-ENOMEM;goto out;}
  *saved=host.input;saved->multicast_host_group=group;saved->multicast_host_owner=host.owner;
- saved->multicast_epoch=host.epoch;skb->dev=input;ret=0;goto out;
+ saved->multicast_epoch=host.epoch;skb->dev=input;skb->rtl9617c_fttr_ingress=source==6;ret=0;goto out;
 stale:
  ret=-ESTALE;
 out:
@@ -141,6 +141,7 @@ static int fe_mcast_host_local(void *context,struct sk_buff *skb,struct net_devi
  if(!READ_ONCE(bridge->stopping) && rtl_fe_enabled(bridge->fe) && host &&
     bridge->fe->mc_gate.active && !bridge->fe->mc_gate.writers &&
     host->epoch==bridge->fe->mc_gate.epoch && host->epoch==saved->multicast_epoch &&
+    (host->source!=6 || READ_ONCE(bridge->fe->fttr_admitted)) &&
     host->owner==saved->multicast_host_owner && host->net==dev_net(brdev) &&
     host->bridge==brdev->ifindex && host->input.port==skb->dev->ifindex && host->input.vid==vid)ret=1;
  spin_unlock_irqrestore(&bridge->fe->mc_lock,flags);
@@ -295,7 +296,15 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
     netdev_master_upper_dev_get(input)!=brdev || br_port_get_stp_state(input)!=BR_STATE_FORWARDING ||
     br_fdb_find_port(brdev,packet->input.source,packet->input.vid)!=input)return -ESTALE;
  data.input=fe_port(fe,__dev_get_by_index(packet->net,packet->input.ingress));
- if(!data.input || data.input->source>4 || data.input->wifi_id || data.input->llid)return -EOPNOTSUPP;
+ if(!data.input || (data.input->source>4 && data.input->netdev!=fe->fttr_netdev) ||
+    data.input->wifi_id || data.input->llid)return -EOPNOTSUPP;
+ if(data.input->netdev==fe->fttr_netdev) {
+  if(!fe->fttr_admitted || data.input->source!=6 || !is_vlan_dev(input) ||
+     vlan_dev_real_dev(input)!=fe->fttr_netdev || !packet->input.tags ||
+     packet->input.tag[0].protocol!=ETH_P_8021Q ||
+     (packet->input.tag[0].tci&VLAN_VID_MASK)!=vlan_dev_vlan_id(input) ||
+     !vlan_dev_vlan_id(input) || vlan_dev_vlan_id(input)==4095)return -EOPNOTSUPP;
+ }
  /* This producer implements bridge forwarding. Packet-program/filter
   * offload needs an explicit TC rule and cannot be inferred from one frame. */
  if(!fe_mcast_path_clear(input) || !fe_mcast_port_clear(data.input->netdev) ||
@@ -350,7 +359,7 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
   if(shared && physical->mtu>VLAN_HLEN && physical->mtu-VLAN_HLEN<data.mtu)
    data.mtu=physical->mtu-VLAN_HLEN;
   port=fe_port(fe,physical);
-  if(!port || port==data.input || port->wifi_id || port->destination>6 || port->destination==5 ||
+  if(!port || (port==data.input && !shared) || port->wifi_id || port->destination>6 || port->destination==5 ||
      (physical==fe->fttr_netdev && !shared)){ret=-EOPNOTSUPP;goto out;}
   replica->destination=port->destination;replica->tags=frame->tags;
   for(j=0;j<frame->tags;j++) {
@@ -360,6 +369,9 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
    if(frame->tags>1 || !rtl_fttr_mcast_ready(dev)){ret=-EOPNOTSUPP;goto out;}
    replica->tag[1]=replica->tag[0];replica->tag[0].protocol=ETH_P_8021Q;
    replica->tag[0].tci=4095;replica->tags++;
+   if(data.input->netdev==fe->fttr_netdev) {
+    replica->source_set=1;ether_addr_copy(replica->source,dev->dev_addr);
+   }
   }
   mc->port[mc->count++]=port;
  }
@@ -372,6 +384,10 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
    .host_group=existing?existing->mc_group:1};
   mc->port[mc->count++]=data.input;
   if(!data.mtu || brdev->mtu<data.mtu)data.mtu=brdev->mtu;
+  /* Host copy uses the complete ingress wire frame. Larger packets must
+   * take the ordinary P6 miss/segmented RX path before any replication. */
+  if(data.mtu>RTL_QM_DATA_BYTES-16U-ETH_HLEN-packet->input.tags*VLAN_HLEN)
+   data.mtu=RTL_QM_DATA_BYTES-16U-ETH_HLEN-packet->input.tags*VLAN_HLEN;
  }
  if(!mc->count || !data.mtu){ret=-EOPNOTSUPP;goto out;}
  if((io.read(io.context,0x351c)&(0x80000000U|0x3fU<<16))!=(0x80000000U|16U<<16)) {
@@ -380,6 +396,17 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
  if(existing) {
   unsigned int bitmap[2]={},words[3],a;
   for(i=0;i<mc->count;i++) {
+   if(mc->replica[i].source_set) {
+    unsigned int m;
+    for(m=0;m<8;m++)if(fe->multicast.macs[m].ready) {
+     unsigned int lo=fe->multicast.macs[m].words[0],hi=fe->multicast.macs[m].words[1];
+     const unsigned char *mac=mc->replica[i].source;
+     if(lo==((unsigned int)mac[2]<<24|(unsigned int)mac[3]<<16|mac[4]<<8|mac[5]) &&
+        (hi&65535)==((unsigned int)mac[0]<<8|mac[1]))break;
+    }
+    if(m==8)break;
+    mc->replica[i].source_index=m;
+   }
    ret=rtl_fe_mc_replica_encode(&io,&mc->replica[i],words);if(ret)goto out;
    for(a=0;a<RTL_FE_MC_ACTIONS;a++)if(fe->multicast.actions[a].ready &&
      rtl_fe_mc_equal(words,fe->multicast.actions[a].words,3))break;

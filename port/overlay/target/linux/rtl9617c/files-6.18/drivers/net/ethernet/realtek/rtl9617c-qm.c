@@ -649,6 +649,12 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				length = payload;
 				header = RTL_WIFI_INTERNAL_BYTES;
 			}
+			if (host_group && !(command & BIT(6))) {
+				/* Host MTU admission guarantees one complete CPU buffer.
+				 * Never reinterpret a malformed/foreign copy as a P6 miss. */
+				dev->stats.rx_errors++;
+				goto consume;
+			}
 			if (!wifi_forwarded && !(command & BIT(6))) {
 				segment = rtl_fttr_rx_segment(&rx->fttr_rx[cos], napi, command,
 					rx->memory + offset + RTL_QM_HEADROOM + header, RTL_QM_DATA_BYTES - header,
