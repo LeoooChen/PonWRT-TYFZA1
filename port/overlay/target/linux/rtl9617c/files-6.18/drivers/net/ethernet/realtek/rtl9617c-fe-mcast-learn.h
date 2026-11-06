@@ -56,6 +56,8 @@ static bool fe_mcast_path_clear(struct net_device *dev)
  }
 }
 
+#include "rtl9617c-pon-service.h"
+
 /* Numeric group IDs are never reused while packets may still carry them.
  * The same short lock protects host lookup and withdrawal; no RX pointer
  * escapes the lock. Core tickets distinguish driver owner incarnations. */
@@ -272,6 +274,34 @@ static void fe_mcast_purge(struct rtl_fe_bridge *bridge)
 
 /* RTNL and the FE mutex pin the netdev/port owners. The short gate lock is
  * taken only for epoch and final publication; no indirect IO runs under it. */
+/* Apply the same OMCI/EVTO selection as CPU PON TX to each final replica.
+ * UDP keys omit DSCP and untagged skb priority: all such variants must agree. */
+static int fe_mcast_pon_replica(struct rtl_fe *fe,struct net_device *physical,
+ const struct rtl9617c_bridge_frame *frame,struct rtl_fe_mc_replica *replica)
+{
+ struct rtl_evto_packet logical={.count=frame->tags,.protocol=frame->protocol};
+ struct fe_evto_result result;
+ unsigned int i;
+ int ret;
+ if(!fe->pon_requested || !fe->itu_paths || physical!=fe->itu_netdev)return -EOPNOTSUPP;
+ for(i=0;i<frame->tags;i++)logical.tag[i]=(struct rtl_evto_tag){frame->tag[i].protocol,frame->tag[i].tci};
+ if(logical.count)logical.priority=logical.tag[0].tci>>13;
+ rcu_read_lock();
+ logical.service_entry=rtl_pon_itu_service_entry(physical,&logical);
+ rcu_read_unlock();
+ ret=fe_evto_invariant(fe->itu_paths,&logical,false,true,false,0,&result);
+ if(ret)return ret;
+ if(result.path->multicast || !result.path->tcont || result.path->tcont>31 ||
+    result.path->index<8 || result.path->queue>7)return -EOPNOTSUPP;
+ replica->destination=32+result.path->tcont;replica->gem=result.path->index;
+ replica->queue=result.path->queue;replica->tags=result.output.count;
+ for(i=0;i<replica->tags;i++) {
+  replica->tag[i].protocol=result.output.tag[i].tpid;
+  replica->tag[i].tci=result.output.tag[i].tci;
+ }
+ return 0;
+}
+
 static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_packet *packet)
 {
  struct rtl_fe *fe=bridge->fe;
@@ -337,7 +367,7 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
   const struct rtl9617c_bridge_frame *frame=&packet->output[i].frame;
   struct rtl_fe_port *port;
   struct rtl_fe_mc_replica *replica=&mc->replica[mc->count];
-  bool shared=dev==fe->fttr_mcast;
+  bool shared=dev==fe->fttr_mcast,pon=physical && physical==fe->itu_netdev;
   if(!dev || !physical || !netif_running(dev) || !netif_carrier_ok(dev) ||
      netdev_master_upper_dev_get(dev)!=brdev || br_port_get_stp_state(dev)!=BR_STATE_FORWARDING) {
    ret=-ESTALE;goto out;
@@ -359,11 +389,18 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
   if(shared && physical->mtu>VLAN_HLEN && physical->mtu-VLAN_HLEN<data.mtu)
    data.mtu=physical->mtu-VLAN_HLEN;
   port=fe_port(fe,physical);
-  if(!port || (port==data.input && !shared) || port->wifi_id || port->destination>6 || port->destination==5 ||
+  if(!port || (port==data.input && !shared) || port->wifi_id || (!pon && port->destination>6) || port->destination==5 ||
      (physical==fe->fttr_netdev && !shared)){ret=-EOPNOTSUPP;goto out;}
   replica->destination=port->destination;replica->tags=frame->tags;
   for(j=0;j<frame->tags;j++) {
    replica->tag[j].protocol=frame->tag[j].protocol;replica->tag[j].tci=frame->tag[j].tci;
+  }
+  if(pon) {
+   ret=fe_mcast_pon_replica(fe,physical,frame,replica);
+   if(ret)goto out;
+   /* Match CPU PON TX's 2000-byte Ethernet limit after all EVTO edits. */
+   if(data.mtu>2000U-ETH_HLEN-replica->tags*VLAN_HLEN)
+    data.mtu=2000U-ETH_HLEN-replica->tags*VLAN_HLEN;
   }
   if(shared) {
    if(frame->tags>1 || !rtl_fttr_mcast_ready(dev)){ret=-EOPNOTSUPP;goto out;}

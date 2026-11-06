@@ -20,9 +20,9 @@ code=code.replace('struct net_device {bool running,carrier;};','''struct nf_hook
 struct net {unsigned refs;struct {struct nf_hook_entries *hooks_bridge[5];} nf;};
 struct net_device {bool running,carrier;unsigned ifindex,group,flags,num_tx_queues,mtu,vid;u8 dev_addr[6];struct netdev_queue *queue;struct net_device *master,*lower;struct net *net;void *tcx_ingress,*tcx_egress;struct nf_hook_entries *nf_hooks_ingress,*nf_hooks_egress;};''')
 code=code.replace('struct rtl_fe_flow {',re.search(r'struct rtl_fe_mc_host \{.*?\n\};',(DRIVERS/'rtl9617c-fe.c').read_text(),re.S)[0]+'\nstruct rtl_fe_flow {')
-code=code.replace('struct rtl_fe {','struct rtl_fe_mtu {unsigned users,size,saved;};\nstruct rtl_fe {struct rtl_fe_mtu mtus[16];struct rtl_fe_mc_host *mc_hosts[256];')
+code=code.replace('struct rtl_fe {','struct rtl_fe_mtu {unsigned users,size,saved;};\nstruct rtl_fe {struct net_device *itu_netdev;struct rtl_itu_paths *itu_paths;struct rtl_fe_mtu mtus[16];struct rtl_fe_mc_host *mc_hosts[256];')
 code=code.replace('struct rtl_fe_mc_profile mc_profile;','''struct rtl_fe_mc_profile mc_profile;
- struct rtl_fe_mc_gate mc_gate;int mc_lock;struct rtl_fe_port *ports[3];''')
+ struct rtl_fe_mc_gate mc_gate;int lock,mc_lock;struct rtl_fe_port *ports[4];''')
 code=code.replace('#include "rtl9617c-fe-mcast-profile.h"','#include "rtl9617c-fe-mcast-profile.h"\n#include "rtl9617c-fe-mcast-gate.h"')
 code=code.replace('typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32,__le32;typedef uint64_t u64;',
  'typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32,__le32;typedef uint64_t u64;\n#include "linux/rtl9617c-bridge.h"')
@@ -62,6 +62,9 @@ static void foreign_hook(void){}
 #define ETH_P_IP 0x800
 #define ETH_P_IPV6 0x86dd
 #define ETH_P_8021Q 0x8100
+#define ETH_P_8021AD 0x88a8
+#define ETH_P_PPP_SES 0x8864
+#include "rtl9617c-pon-path.h"
 #define VLAN_VID_MASK 4095
 #define VLAN_HLEN 4
 #define BR_STATE_FORWARDING 3
@@ -85,6 +88,11 @@ static bool is_broadcast_ether_addr(const u8 *a){return !memcmp(a,"\xff\xff\xff\
 static bool ether_addr_equal(const u8 *a,const u8 *b){return !memcmp(a,b,6);}
 static struct net_device *devices[16];
 static unsigned vlan_dev_vlan_id(struct net_device *d){return d->vid;}
+static bool netif_is_bridge_port(struct net_device *d){return d->master!=NULL;}
+static struct net_device *__vlan_find_dev_deep_rcu(struct net_device *d,unsigned short protocol,unsigned vid){
+ for(unsigned i=0;i<16;i++)if(devices[i]&&devices[i]->lower==d && protocol==__builtin_bswap16(0x8100) && devices[i]->vid==vid)return devices[i];
+ return NULL;
+}
 static bool is_vlan_dev(struct net_device *dev){return dev->lower!=NULL;}
 static struct net_device *vlan_dev_real_dev(struct net_device *dev){return dev->lower;}
 static struct net_device *netdev_master_upper_dev_get_rcu(struct net_device *d){return d->master;}
@@ -97,7 +105,7 @@ static struct net_device *__dev_get_by_index(struct net *n,unsigned i){(void)n;r
 static unsigned br_port_get_stp_state(struct net_device *d){return d->running?3:0;}
 static struct net_device *fdb_source;
 static struct net_device *br_fdb_find_port(struct net_device *b,const u8 *m,unsigned vid){(void)b;(void)m;(void)vid;return fdb_source?fdb_source:devices[1];}
-static struct rtl_fe_port *fe_port(struct rtl_fe *fe,struct net_device *d){for(unsigned i=0;i<3;i++)if(fe->ports[i]&&fe->ports[i]->netdev==d)return fe->ports[i];return NULL;}
+static struct rtl_fe_port *fe_port(struct rtl_fe *fe,struct net_device *d){for(unsigned i=0;i<4;i++)if(fe->ports[i]&&fe->ports[i]->netdev==d)return fe->ports[i];return NULL;}
 static int fe_vlan_tpid(unsigned short p){return p==__builtin_bswap16(0x8100)?1:-EOPNOTSUPP;}
 #define htons(v) __builtin_bswap16(v)
 static unsigned get_unaligned_be32(const void *p){unsigned v;memcpy(&v,p,4);return __builtin_bswap32(v);}
@@ -115,7 +123,18 @@ code=code.replace('assert(q==0 && d==HZ);','assert(q==0 && (d==HZ || !d));')
 code+=r'''
 static void fe_mcast_invalidate(struct rtl_fe *fe){struct rtl_dq_io io=fe_io(fe);rtl_fe_mc_gate_begin(&io,&fe->mc_gate);rtl_fe_mc_gate_end(&fe->mc_gate);}
 '''
+code+=(DRIVERS/'rtl9617c-fe-vlan.h').read_text().split('static int fe_evto_upstream',1)[0]
 code+=(DRIVERS/'rtl9617c-fe-mcast-learn.h').read_text()
+code+=r'''
+#define kvmalloc(n,f) malloc(n)
+#define kvfree free
+static void mutex_lock(int *v){assert(!*v);*v=1;}
+static void mutex_unlock(int *v){assert(*v);*v=0;}
+static void fe_bridge_invalidate(struct rtl_fe *f){fe_mcast_invalidate(f);}
+static void fe_collect_ports(struct rtl_fe *f){(void)f;}
+'''
+for name in ('fe_flow_pon','fe_pon_quiesce_locked','rtl_fe_set_itu_paths'):
+    code+=scope['function'](name)
 code+=r'''
 int main(void){
  static struct rtl_fe fe;struct net net={0};
@@ -286,6 +305,95 @@ int main(void){
   assert(!fe_delete(&fe,fe.indexed));
   assert(fe.multicast.macs[0].exposed && !fe.multicast.macs[0].users);
  }
+ /* ONU/LAN to PON replica compiles each wire GEM/T-CONT/COS separately. */
+ struct net_device pon={.ifindex=9,.mtu=1500,.running=true,.carrier=true,.master=&br,.net=&net};
+ struct rtl_fe_port pp={.fe=&fe,.netdev=&pon,.source=7,.destination=32};
+ devices[9]=&pon;fe.ports[3]=&pp;fe.itu_netdev=&pon;fe.pon_requested=true;
+ struct rtl_itu_paths paths={.count=1,.generation=7,.path={{.index=55,.gem_id=1000,.tcont=5,.queue=3,.pbits=255,.vlan=RTL_ITU_VLAN_ANY}}};
+ for(unsigned s=0;s<RTL_EVTO_STAGES;s++)paths.path[0].vlan_profile[s]=RTL_EVTO_NONE;
+ fe.itu_paths=&paths;fdb_source=&lan;
+ for(unsigned i=0;i<4;i++)fe.map[37+i*64]=8;
+ fe.reg[0x68f8/4]=10;
+ for(unsigned tcont=5;tcont<=31;tcont+=26) {
+  paths.path[0].tcont=tcont;
+  for(unsigned i=0;i<4;i++)fe.map[32+tcont+i*64]=8;
+  for(unsigned local=0;local<2;local++) {
+   fe.event_count=0;skb.dev=&lan;skb.saved.ingress=skb.saved.port=1;skb.saved.tags=0;
+   memset(skb.saved.tag,0,sizeof(skb.saved.tag));skb.saved.multicast_epoch=fe.mc_gate.epoch;
+   ticket=fe_mcast_capture_begin(&bridge,&skb,local,++fe_mcast_ticket);assert(ticket);
+   fe_mcast_capture_select(&bridge,&skb,&pon);fe_mcast_capture_select(&bridge,&skb,&shared);
+   skb.dev=&pon;fe_mcast_capture_output(&bridge,&skb);skb.dev=&shared;fe_mcast_capture_output(&bridge,&skb);
+   fe_mcast_capture_end(&bridge,ticket,true);fe_mcast_process(&bridge);
+   assert(fe.indexed&&fe.indexed->replica_count==2+local&&fe.mc_gate.active);
+   unsigned group=fe.indexed->mc_group,pon_actions=0;
+   for(unsigned a=0;a<64;a++)if(fe.multicast.groups[group].bitmap[a/32]&(1U<<(a%32))) {
+    if((fe.actions[a][1]>>24&63)==32+tcont) {
+     assert((fe.actions[a][0]>>23)==55 && !(fe.actions[a][1]&(1U<<30)) && fe.actions[a][2]==97);pon_actions++;
+    }
+   }
+   assert(pon_actions==1 && (fe.mc_route.ports&(1ULL<<(32+tcont))));
+   assert(fe.indexed->input->source!=7 && fe.indexed->output->source!=7 && fe_flow_pon(fe.indexed));
+   struct fe_mcast_packet again={.net=&net,.bridge=10,.epoch=fe.mc_gate.epoch,.input=skb.saved,.local=local,.count=2};
+   again.output[0].port=again.output[0].physical=9;again.output[0].frame=skb.frame;
+   again.output[1].port=again.output[1].physical=7;again.output[1].frame=skb.frame;
+   assert(!fe_mcast_learn(&bridge,&again)&&fe.indexed->mc_group==group);
+   if(!local) {
+    paths.path[0].queue=4;assert(fe_mcast_learn(&bridge,&again)==-ESTALE&&!fe.mc_gate.active);paths.path[0].queue=3;
+    fe.age_fail=1;assert(fe_pon_quiesce_locked(&fe)==-ETIMEDOUT&&fe.indexed->deleting&&!fe.mc_gate.active);
+    assert(!fe_pon_quiesce_locked(&fe)&&!fe.indexed);
+   } else {
+    /* Snapshot replacement removes every PON replica before releasing old
+     * GEMs, including a PON recipient absent from input/terminal output. */
+    fe.itu_paths=kmemdup(&paths,sizeof(paths),0);
+    struct rtl_itu_paths *old=fe.itu_paths;
+    fe.age_fail=1;assert(rtl_fe_set_itu_paths(&fe,&pon,&paths)==-ETIMEDOUT);
+    assert(fe.itu_paths==old&&fe.indexed->deleting&&!fe.mc_gate.active&&!net.refs);
+    assert(!rtl_fe_set_itu_paths(&fe,&pon,&paths)&&!fe.indexed&&fe.itu_paths!=old);
+    free(fe.itu_paths);fe.itu_paths=&paths;
+   }
+  }
+ }
+ /* CPU PON final Ethernet budget includes all post-EVTO tags. */
+ pon.mtu=2000;
+ for(unsigned tags=0;tags<3;tags++) {
+  fe.event_count=0;skb.dev=&lan;skb.saved.multicast_epoch=fe.mc_gate.epoch;
+  ticket=fe_mcast_capture_begin(&bridge,&skb,false,++fe_mcast_ticket);assert(ticket);
+  fe_mcast_capture_select(&bridge,&skb,&pon);skb.dev=&pon;skb.frame.tags=tags;
+  for(unsigned i=0;i<tags;i++)skb.frame.tag[i]=(struct rtl9617c_bridge_tag){.protocol=0x8100,.tci=100+i};
+  fe_mcast_capture_output(&bridge,&skb);fe_mcast_capture_end(&bridge,ticket,true);fe_mcast_process(&bridge);
+  assert(fe.indexed && fe.mtus[fe.indexed->mtu_index].size==1986-tags*4);
+  fe_mcast_invalidate(&fe);assert(!fe_delete(&fe,fe.indexed));
+ }
+ skb.frame.tags=0;memset(skb.frame.tag,0,sizeof(skb.frame.tag));pon.mtu=1500;
+ /* Ambiguous and downstream-only paths cannot authorize an upstream copy. */
+ struct rtl_fe_mc_replica replica={};
+ paths.path[0].multicast=1;assert(fe_mcast_pon_replica(&fe,&pon,&skb.frame,&replica)==-EOPNOTSUPP);
+ paths.path[0].multicast=0;paths.count=2;paths.path[1]=paths.path[0];paths.path[1].index=56;
+ assert(fe_mcast_pon_replica(&fe,&pon,&skb.frame,&replica)==-EOPNOTSUPP);paths.count=1;
+ fe.pon_requested=false;assert(fe_mcast_pon_replica(&fe,&pon,&skb.frame,&replica)==-EOPNOTSUPP);fe.pon_requested=true;
+ /* A real VLAN upper skips UNI-stage treatment exactly as CPU TX does. */
+ struct net_device pvlan={.ifindex=11,.vid=41,.lower=&pon};devices[11]=&pvlan;
+ struct rtl_itu_paths *service=calloc(1,sizeof(*service)+sizeof(service->profile[0]));assert(service);
+ service->count=service->profile_count=1;service->path[0]=paths.path[0];service->path[0].vlan=41;
+ service->path[0].vlan_profile[0]=0;
+ service->profile[0]=(struct rtl_evto_profile){.input_tpid=0x8100,.output_tpid=0x8100,.downstream=8,.count=1};
+ unsigned int drop_tagged[4]={0xf8000000,0xe8000000,0xc00f0000,0x000f0000};
+ for(unsigned i=0;i<4;i++)for(unsigned b=0;b<4;b++)service->profile[0].row[0][i*4+b]=drop_tagged[i]>>(24-b*8);
+ fe.itu_paths=service;struct rtl9617c_bridge_frame tagged=skb.frame;
+ tagged.tags=1;tagged.tag[0]=(struct rtl9617c_bridge_tag){.protocol=0x8100,.tci=41};
+ assert(!fe_mcast_pon_replica(&fe,&pon,&tagged,&replica)&&replica.gem==55&&replica.tags==1);
+ devices[11]=NULL;assert(fe_mcast_pon_replica(&fe,&pon,&tagged,&replica)==-EOPNOTSUPP);
+ free(service);fe.itu_paths=&paths;
+ /* Untagged priority/DSCP cannot silently select different GEMs/queues. */
+ paths.count=2;paths.path[0].pbits=1;paths.path[1]=paths.path[0];paths.path[1].pbits=254;paths.path[1].index=56;
+ assert(fe_mcast_pon_replica(&fe,&pon,&skb.frame,&replica)==-EOPNOTSUPP);
+ paths.count=1;paths.path[0].pbits=255;
+ /* Two distinct DSCP-selected rows route to different GEM indices. */
+ paths.count=2;paths.path[0].pbits=1;paths.path[0].unmarked_mode=1;
+ memset(paths.path[0].mapper_dscp,0,sizeof(paths.path[0].mapper_dscp));paths.path[0].mapper_dscp[0]=1;
+ paths.path[1]=paths.path[0];paths.path[1].index=56;paths.path[1].pbits=254;
+ assert(fe_mcast_pon_replica(&fe,&pon,&skb.frame,&replica)==-EOPNOTSUPP);
+ paths.count=1;paths.path[0].pbits=255;paths.path[0].unmarked_mode=0;
  for(unsigned i=0;i<16;i++)assert(!fe.mtus[i].users);
  fe_mcast_purge(&bridge);assert(!net.refs);free(fe.memory);
  puts("Native bridge multicast: complete outputs, missing/duplicate rejection, CPU host copy and host-only groups, epoch changes, shared P6, duplicate learning and generation retirement passed");

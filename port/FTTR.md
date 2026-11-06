@@ -4412,6 +4412,65 @@ identity are recorded in `artifacts/fttr/mcast-onu-kernel-final-20261106.log`.
 No device was accessed; PON/radio replicas, unknown-multicast flood offload,
 safe hardware retirement and complete FTTR acceptance remain open.
 
+### PON upstream multicast replicas
+
+A complete learned LAN/ONU-source group may now include an upstream ITU PON
+recipient along with LAN, shared FTTR and local copies. Each PON replica runs
+the existing OMCI/EVTO path selector against that recipient's final frame.
+The native CPU transmitter and learner share `rtl_pon_itu_service_entry`, so
+an explicit VLAN upper skips the same UNI treatment stages in both paths;
+raw PON bridge traffic retains the OLT's UNI policy. Ambiguous GEMs, unavailable
+PON admission, downstream-only multicast GEMs, or unkeyed priority/DSCP choices
+that change GEM/queue/output tags reject the entire learned transaction.
+This is upstream transmission over a selected bidirectional business GEM;
+it is not a downstream multicast GEM used backwards.
+
+Executing `rtk_fc_abstrSwSyncToHw_add`, its action parser and the NI action
+producer confirms separate per-member **POL=GEM index**, **LDPID=32+T-CONT**,
+and **COS=queue**. Native actions reproduce these words for GEM indices8..255,
+T-CONT1..31 and queues0..7, including all final VLAN tags. The shared FE action
+continues to select NI replication; it cannot hold a single PON GEM or COS
+for all recipients. CPU/P6/LAN actions retain their independent metadata.
+The original route callback is modeled with the native PON snapshot's selected
+values; the action producer and field packing execute original instructions.
+
+PON logical destinations must retain all four PDPID8 mappings and native
+upper-PON map0xa. A destination-specific DBUF entry sends each replica through
+the existing native WAN QM pools/backpressure, as P6 uses its separate matched
+entry. The exact entries reproduce the original `aal_arb_port_dbuf_set` field
+encoding. The owner snapshots/restores entries, retains reservations across
+failed writes, and never overwrites foreign rules. Port isolation now checks
+both32-bit halves and egress ownership uses all64 bits, including T-CONT31.
+The common MTU also accounts for PON's2000-byte final Ethernet limit after
+EVTO tags, in addition to each logical output's own MTU.
+
+PON admission is checked for every recipient. PON disable now finds PON in
+any replica position, not just the input or terminal output. Replacing an OMCI
+path snapshot closes the learned profile before withdrawing its dependent
+flows; a failed Hash/cache withdrawal keeps the old snapshot and references
+for retry. This prevents a software configuration switch from silently
+publishing a new GEM mapping over retained old flows. It is not proof that
+hardware packets already in flight have retired before GEM reuse.
+
+Offline checks: nine original complete FC/NI PON recipes match native words,
+31 destination DBUF writes match the original setter, and162 native indirect
+failure/restore cases cover mixed P6/T-CONT5/T-CONT31 routing. Checks include
+four port-map variants, upper-PON configuration drift,64-bit membership,
+invalid fields, shared8-entry DBUF exhaustion and retry. Actual production
+capture/FE install/delete/path-replacement tests cover PON in the middle of a
+group, local copies, ambiguous and downstream-only GEMs, VLAN service entry,
+DSCP/priority dependencies, duplicate learning and failure-preserving cleanup.
+Existing CPU PON PPPoE/DHCP/IPTV byte-path, unicast bridge, FTTR reports,
+multicast core/gate/frame and FE ownership regressions pass. Image/modules and
+source identity are checked in
+`artifacts/fttr/mcast-pon-kernel-final-20261107.log`.
+
+This still leaves PON-source acceleration and native radio replicas to add.
+The8 DBUF entries are shared with P6 and foreign users; saturation rejects
+new groups. Existing255-group/64-action/8-source-MAC quarantines remain.
+Unknown-multicast flood offload, safe hardware retirement and real optical/
+forwarding acceptance remain incomplete. No device was accessed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

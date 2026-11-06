@@ -1209,6 +1209,7 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
     !netif_carrier_ok(data.input->netdev) || !netif_carrier_ok(data.output->netdev))return -EAGAIN;
  if(data.multicast)for(i=0;i<data.multicast->count;i++) {
   struct rtl_fe_port *replica=data.multicast->port[i];
+  if(replica->source==7 && !fe->pon_requested)return -EAGAIN;
   if(replica->retired || !netif_running(replica->netdev) || !netif_carrier_ok(replica->netdev))return -EAGAIN;
   if(replica->netdev==fe->fttr_netdev && !fe->fttr_admitted)return -EAGAIN;
   if(data.multicast->replica[i].destination==6 && !rtl_fttr_mcast_ready(fe->fttr_mcast))return -EAGAIN;
@@ -1828,6 +1829,7 @@ int rtl_fe_set_itu_paths(struct rtl_fe *fe,struct net_device *netdev,const struc
  if(copy)memcpy(copy,paths,rtl_itu_paths_bytes(paths));
  mutex_lock(&fe->lock);
  port=fe_port(fe,netdev);
+ fe_mcast_invalidate(fe);
  list_for_each_entry_safe(flow,next,&fe->flows,list)
   if(fe_flow_port(flow,port)) {
    ret=fe_delete(fe,flow);
@@ -1890,6 +1892,13 @@ static int fe_enable_locked(struct rtl_fe *fe)
 out:
  return ret;
 }
+static bool fe_flow_pon(const struct rtl_fe_flow *flow)
+{
+ unsigned int i;
+ if(flow->input->source==7 || flow->output->source==7)return true;
+ for(i=0;i<flow->replica_count;i++)if(flow->replica_ports[i]->source==7)return true;
+ return false;
+}
 static int fe_pon_quiesce_locked(struct rtl_fe *fe)
 {
  struct rtl_fe_flow *flow,*next;
@@ -1897,7 +1906,7 @@ static int fe_pon_quiesce_locked(struct rtl_fe *fe)
 
  fe_bridge_invalidate(fe);
  list_for_each_entry_safe(flow,next,&fe->flows,list)
-  if(flow->input->source==7 || flow->output->source==7) {
+  if(fe_flow_pon(flow)) {
    ret=fe_delete(fe,flow);
    if(ret)break;
   }

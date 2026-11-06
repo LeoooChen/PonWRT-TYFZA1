@@ -17,7 +17,7 @@ relative = str((drivers / 'rtl9617c-fe.c').relative_to(root))
 source = subprocess.check_output(['git', 'show', args.revision + ':' + relative], text=True) if args.revision else (drivers / 'rtl9617c-fe.c').read_text()
 
 def function(name):
-    start = re.search(r'^(?:static )?int ' + name + r'\([^;]*?\)\n\{', source, re.M).start()
+    start = re.search(r'^(?:static )?(?:int|bool) ' + name + r'\([^;]*?\)\n\{', source, re.M).start()
     end = source.index('{', start) + 1
     depth = 1
     while depth:
@@ -53,7 +53,7 @@ struct mutex {int unused;};
 #define spin_unlock_irqrestore(lock,flags) do {(void)(lock);(void)(flags);} while (0)
 struct list_head {int unused;};
 struct rtl_fe_port {unsigned int source;};
-struct rtl_fe_flow {struct rtl_fe_port *input,*output;};
+struct rtl_fe_flow {unsigned replica_count;struct rtl_fe_port **replica_ports;struct rtl_fe_port *input,*output;};
 #define list_for_each_entry_safe(p,n,h,m) for(p=NULL,n=NULL;p;p=n)
 static void mutex_lock(struct mutex *m){(void)m;}
 static void mutex_unlock(struct mutex *m){(void)m;}
@@ -246,7 +246,7 @@ functions = ['fe_prepare', 'fe_restore']
 if re.search(r'^static int fe_disable_locked\(', source, re.M):
     functions.append('fe_disable_locked')
 if re.search(r'^static int fe_enable_locked\(', source, re.M):
-    functions += ['fe_enable_locked', 'fe_pon_quiesce_locked']
+    functions += ['fe_enable_locked', 'fe_flow_pon', 'fe_pon_quiesce_locked']
 functions += ['rtl_fe_enable', 'rtl_fe_disable']
 with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='fe-lan-lifecycle-') as work:
     path = Path(work) / 'test.c'

@@ -7,9 +7,11 @@
  * just the multicast connector and per-destination L2 editor/deep-buffer
  * selections, using the same FE mutex as Hash publication. */
 struct rtl_fe_mc_route {
- unsigned int registers[7],map[2],elp[17][2];
+ unsigned int registers[7],map[2],elp[64][2];
  unsigned int connector_elp[2];
- unsigned int dbuf_index,dbuf_saved,ports;
+ unsigned int dbuf_index,dbuf_saved;
+ unsigned long long ports;
+ unsigned int pon_dbuf,pon_saved[8],pon_port[8];
  unsigned char owned,dbuf_owned,ready;
 };
 static const unsigned int rtl_fe_mc_route_regs[]={0x1600,0x1700,0x30a4,0xa1dc,0x2388,0x2300,0xaa60};
@@ -59,10 +61,15 @@ static inline int rtl_fe_mc_route_restore(const struct rtl_dq_io *io,struct rtl_
   if(ret)return ret;
   route->dbuf_owned=0;
  }
- for(i=0;i<17;i++)if(route->ports&(1U<<i)) {
+ for(i=0;i<8;i++)if(route->pon_dbuf&(1U<<i)) {
+  ret=rtl_fe_mc_route_write(io,0x164c,0x1650,i,&route->pon_saved[i],1);
+  if(ret)return ret;
+  route->pon_dbuf&=~(1U<<i);
+ }
+ for(i=0;i<64;i++)if(route->ports&(1ULL<<i)) {
   ret=rtl_fe_mc_route_write(io,0x1420,0x1428,i,route->elp[i],2);
   if(ret)return ret;
-  route->ports&=~(1U<<i);
+  route->ports&=~(1ULL<<i);
  }
  for(i=0;i<2;i++) {
   ret=rtl_fe_mc_route_write(io,0x1654,0x1658,27+(i<<7),route->map+i,1);
@@ -138,13 +145,14 @@ static inline int rtl_fe_mc_route_prepare(const struct rtl_dq_io *io,struct rtl_
 static inline int rtl_fe_mc_route_members(const struct rtl_dq_io *io,unsigned int source,
  const struct rtl_fe_mc_replica *replicas,unsigned int count)
 {
- unsigned int words[2],required=0,i;
+ unsigned int words[2],required[2]={0},i;
  int ret;
 
  if((source>4 && source!=6) || !count || count>RTL_FE_MC_ACTIONS)return -EINVAL;
  for(i=0;i<count;i++) {
-  if((replicas[i].destination>6 && replicas[i].destination!=16) || replicas[i].destination==5)return -EINVAL;
-  required|=1U<<replicas[i].destination;
+  if((replicas[i].destination>6 && replicas[i].destination!=16 &&
+      (replicas[i].destination<33 || replicas[i].destination>63)) || replicas[i].destination==5)return -EINVAL;
+  required[replicas[i].destination/32]|=1U<<(replicas[i].destination%32);
  }
  /* Native TC supplies a complete member set. If a previous owner enabled
   * the additional L2 port-isolation check, verify that it permits both
@@ -152,10 +160,10 @@ static inline int rtl_fe_mc_route_members(const struct rtl_dq_io *io,unsigned in
  if(!(io->read(io->context,0x160c)&1))return 0;
  ret=rtl_fe_mc_route_read(io,0x1574,0x157c,source,words,2);
  if(ret)return ret;
- if((words[0]&(required|(1U<<27)))!=(required|(1U<<27)))return -EOPNOTSUPP;
+ if((words[0]&(required[0]|(1U<<27)))!=(required[0]|(1U<<27)) || (words[1]&required[1])!=required[1])return -EOPNOTSUPP;
  ret=rtl_fe_mc_route_read(io,0x1574,0x157c,27,words,2);
  if(ret)return ret;
- return (words[0]&required)==required?0:-EOPNOTSUPP;
+ return (words[0]&required[0])==required[0] && (words[1]&required[1])==required[1]?0:-EOPNOTSUPP;
 }
 
 static inline int rtl_fe_mc_route_port(const struct rtl_dq_io *io,struct rtl_fe_mc_route *route,
@@ -163,32 +171,51 @@ static inline int rtl_fe_mc_route_port(const struct rtl_dq_io *io,struct rtl_fe_
 {
  unsigned int words[2],i;
  int ret;
- if(!route->ready || (port>6 && port!=16) || port==5)return -EINVAL;
+ if(!route->ready || (port>6 && port!=16 && (port<33 || port>63)) || port==5)return -EINVAL;
  /* QM initializes both my-MAC map cases before native FE can be enabled.
   * Refuse a changed mapping rather than sending a replica to another port. */
- for(i=0;i<2;i++) {
-  unsigned int index=port+(i<<7)+(port==6?64:0);
+ for(i=0;i<(port>=33?4:2);i++) {
+  unsigned int index=port>=33?port+(i<<6):port+(i<<7)+(port==6?64:0);
   ret=rtl_fe_mc_route_read(io,0x1654,0x1658,index,words,1);
   if(ret)return ret;
-  if((words[0]&15)!=(port==6?8:port==16?9:port))return -EUCLEAN;
+  if((words[0]&15)!=(port==6 || port>=33?8:port==16?9:port))return -EUCLEAN;
  }
  /* CPU0 uses the normal Header A/CPU path, never a radio EPP ring. */
  if(port==16 && ((io->read(io->context,0x6558)&7) ||
     (io->read(io->context,0xa1dc)&3) || (io->read(io->context,0xa1ec)&3)))return -EUCLEAN;
+ if(port>=33 && (io->read(io->context,0x68f8)&15)!=10)return -EUCLEAN;
  if(port==6 && ((io->read(io->context,0x1600)>>4)&15)!=8)return -EUCLEAN;
- if(!(route->ports&(1U<<port))) {
+ if(!(route->ports&(1ULL<<port))) {
   ret=rtl_fe_mc_route_read(io,0x1420,0x1428,port,words,2);
   if(ret)return ret;
   /* Preserve a foreign egress classifier, VLAN lookup or marking policy by
    * rejecting this output. Do not disable it for unrelated port users. */
   if((words[0]&0xfffc0004U) || (words[1]&255U))return -EOPNOTSUPP;
   route->elp[port][0]=words[0];route->elp[port][1]=words[1];
-  route->ports|=1U<<port;
+  route->ports|=1ULL<<port;
  }
  /* Explicit replica actions own VLAN/COS; no second egress lookup. */
  words[0]=(route->elp[port][0]&~15U)|3;words[1]=route->elp[port][1];
  ret=rtl_fe_mc_route_write(io,0x1420,0x1428,port,words,2);
- if(ret || port!=6)return ret;
+ if(ret)return ret;
+ if(port>=33) {
+  unsigned int free=8;
+  for(i=0;i<8;i++) {
+   ret=rtl_fe_mc_route_read(io,0x164c,0x1650,i,words,1);if(ret)return ret;
+   if(route->pon_dbuf&(1U<<i)) {
+    if(route->pon_port[i]==port) {
+     words[0]=(route->pon_saved[i]&~0x7fffU)|3U|(port<<2);
+     return rtl_fe_mc_route_write(io,0x164c,0x1650,i,words,1);
+    }
+   } else if(!(words[0]&1) && !(route->dbuf_owned && route->dbuf_index==i) && free==8)free=i;
+  }
+  if(free==8)return -ENOSPC;
+  ret=rtl_fe_mc_route_read(io,0x164c,0x1650,free,words,1);if(ret)return ret;
+  route->pon_saved[free]=words[0];route->pon_port[free]=port;route->pon_dbuf|=1U<<free;
+  words[0]=(words[0]&~0x7fffU)|3U|(port<<2);
+  return rtl_fe_mc_route_write(io,0x164c,0x1650,free,words,1);
+ }
+ if(port!=6)return 0;
  /* Find a free port-deep-buffer rule. Never overwrite a foreign active
   * rule, including FC's source17 rule. Matching final P6 sends it through
   * the already initialized private0/shared2 pools and QM port14. */
@@ -196,7 +223,7 @@ static inline int rtl_fe_mc_route_port(const struct rtl_dq_io *io,struct rtl_fe_
   for(i=0;i<8;i++) {
    ret=rtl_fe_mc_route_read(io,0x164c,0x1650,i,words,1);
    if(ret)return ret;
-   if(!(words[0]&1))break;
+   if(!(words[0]&1) && !(route->pon_dbuf&(1U<<i)))break;
   }
   if(i==8)return -ENOSPC;
   route->dbuf_index=i;route->dbuf_saved=words[0];route->dbuf_owned=1;

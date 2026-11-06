@@ -129,7 +129,7 @@ model += r'''
 static netdev_tx_t rtl9617c_ni_transmit(void*d,struct net_device*n,struct sk_buff*s,const struct rtl9617c_ni_frame*f){(void)d;return rtl_dma_tx_frame(&dma,s,n,f);}
 '''
 model += re.sub(r'^#include .*$', '', (drivers / 'rtl9617c-pon-vlan-skb.h').read_text(), flags=re.M)
-model += function('rtl9617c-pon-path.c', 'rtl_pon_itu_service_entry')
+model += function('rtl9617c-pon-service.h', 'rtl_pon_itu_service_entry')
 model += function('rtl9617c-pon-path.c', 'rtl_pon_itu_data_transmit')
 model += function('rtl9617c-pon-path.c', 'rtl_pon_itu_data_receive')
 model += r'''

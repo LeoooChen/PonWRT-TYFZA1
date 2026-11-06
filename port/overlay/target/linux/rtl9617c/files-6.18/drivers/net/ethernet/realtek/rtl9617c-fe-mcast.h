@@ -16,11 +16,11 @@
  * It does not use the command as a relative push. The L2 editor TPID table
  * differs from the L3 parser table: outer selects A..D, inner only C/D.
  * Read its actual values rather than assuming that L3 selectors also apply.
- * Destination0..6 covers native Ethernet/P6; PON GEM and PE radio replicas
- * require their own checked routing/metadata and are not represented here.
+ * Destination0..6 covers native Ethernet/P6; 33..63 carry a checked PON
+ * GEM index and queue. PE radio replicas need their own routing/metadata.
  */
 struct rtl_fe_mc_replica {
- unsigned int destination,tags,host_group,source_index;
+ unsigned int destination,tags,host_group,source_index,gem,queue;
  unsigned char source_set,source[6];
  struct {unsigned short protocol,tci;} tag[2];
 };
@@ -31,7 +31,7 @@ static inline int rtl_fe_mc_replica_encode(const struct rtl_dq_io *io,
  unsigned int i,slot,first,tpid,result[3]={2,2,1};
 
  if(replica->destination==16) {
-  if(!replica->host_group || replica->host_group>=RTL_FE_MC_GROUPS || replica->tags || replica->source_set)return -EINVAL;
+  if(!replica->host_group || replica->host_group>=RTL_FE_MC_GROUPS || replica->tags || replica->source_set || replica->gem || replica->queue)return -EINVAL;
   /* Original host copy uses POL56 on CPU18. Native CPU0 owns the Linux
    * receive pool; POL256+group gives each quarantined generation an ID.
    * NOP tags preserve ingress bytes; explicitly preserve original LSPID. */
@@ -40,7 +40,7 @@ static inline int rtl_fe_mc_replica_encode(const struct rtl_dq_io *io,
   words[2]=1U|1U<<11;
   return 0;
  }
- if(replica->destination>6 || replica->tags>2 || replica->host_group)return -EOPNOTSUPP;
+ if((replica->destination>6 && (replica->destination<33 || replica->destination>63)) || replica->tags>2 || replica->host_group)return -EOPNOTSUPP;
  if(replica->source_set) {
   unsigned int nonzero=0;
   for(i=0;i<6;i++)nonzero|=replica->source[i];
@@ -48,7 +48,12 @@ static inline int rtl_fe_mc_replica_encode(const struct rtl_dq_io *io,
   /* FTTR's bridge-only SMAC loop prevention does not route/decrement TTL. */
   result[2]|=2U|(replica->source_index<<2);
  }
- result[1]|=replica->destination<<24|1U<<30; /* Preserve COS. */
+ result[1]|=replica->destination<<24|1U<<30; /* Preserve COS on LAN/P6. */
+ if(replica->destination>=33) {
+  if(replica->gem<8 || replica->gem>255 || replica->queue>7 || replica->source_set)return -EINVAL;
+  result[1]&=~(1U<<30); /* Original MCFIB COS_CMD_EN is zero. */
+  result[2]|=replica->queue<<5;
+ } else if(replica->gem || replica->queue)return -EINVAL;
  for(i=0;i<replica->tags;i++) {
   first=i?2:0;
   if(replica->tag[i].protocol!=0x8100 && replica->tag[i].protocol!=0x88a8)
@@ -64,6 +69,7 @@ static inline int rtl_fe_mc_replica_encode(const struct rtl_dq_io *io,
  }
  /* Linux has already selected the recipients. Match stock's explicit
   * source-filter disable, retaining source MAC and TTL/Hop Limit. */
+ if(replica->gem)result[0]|=replica->gem<<23;
  for(i=0;i<3;i++)words[i]=result[i];
  return 0;
 }
