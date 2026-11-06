@@ -3899,6 +3899,29 @@ GEM4095 still transmits through the native shared DMA/P6 CPU path; hardware
 multicast replication/offload remains unimplemented. These limits remain part
 of the full FTTR goal and physical acceptance is still deferred.
 
+### Original multicast hardware table boundary
+
+`trace_stock_fttr_mcast_hw.py` executes original `ca-ne.ko` functions for NI
+lookup and L2 arbitration multicast FIB with explicit MMIO/indirect completion.
+`aal_ni_mc_lkup_set/get` validate indices0..1023 but insert only the low8 bits
+into command register0xaa64. The executed indices0/256/768 and255/511/1023
+therefore alias. The writer sends a64-bit value low/high to0xaa6c/0xaa68,
+then issues the write command. A permanently busy NI engine returns5 after5002
+reads. Do not allocate a supposedly independent1024-entry native NI table
+based only on the original parameter validation.
+
+`aal_arb_mc_fib_set` uses64 indices and three32-bit words at0x1640/0x163c/0x1638
+with command0x1634. All27 selected fields were independently exercised against
+nonzero prior words, confirming their actual packed bit positions and preservation
+of other fields. Both a read-engine timeout and a write-engine timeout are
+logged after10000 polls each, but the original setter continues and returns0.
+The native multicast implementation must propagate those failures and retain
+ownership until withdrawal is verified. Report:
+`artifacts/fttr/mcast-hardware-original-20261106.json`. This does not establish
+bitmap destination semantics or a working FE/PE replication recipe; the
+software allocation/caller/action chain remains the next hardware integration
+step. No device IO was performed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
