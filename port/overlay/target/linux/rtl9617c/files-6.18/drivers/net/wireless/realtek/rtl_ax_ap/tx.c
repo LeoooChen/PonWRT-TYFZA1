@@ -645,7 +645,14 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		      ieee80211_is_back_req(header->frame_control))) {
 		ring = 4;
 		qsel = 0x12;
-	} else if (info->flags & IEEE80211_TX_CTL_SEND_AFTER_DTIM) {
+	} else if ((info->flags & IEEE80211_TX_CTL_SEND_AFTER_DTIM) ||
+		   (!(info->flags & IEEE80211_TX_CTL_INJECTED) && info->control.vif &&
+		    info->control.vif->type == NL80211_IFTYPE_AP &&
+		    (encap || ieee80211_is_data(header->frame_control)) &&
+		    is_multicast_ether_addr(encap ? skb->data : header->addr1))) {
+		/* Original fill_txreq_mdata puts every AP BCMC DATA frame in HIQ.
+		 * Keep one queue across PS transitions: a new ordinary-queue GTK
+		 * frame must not overtake an older PN still waiting after DTIM. */
 		ring = 5;
 		qsel = 0x11;
 	} else {

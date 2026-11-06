@@ -5076,6 +5076,46 @@ pass, together with Image/modules and96 matched overlay inputs. Firmware remains
 26520 bytes and the conservative stack bound6896 bytes. No device, physical
 replication, over-the-air interoperability or throughput was tested.
 
+### AP BCMC high queue and software PN ownership
+
+Normal AP broadcast/multicast DATA now always uses ring5/DMA9/QSEL0x11,
+including while no station is asleep. Previously only Linux's
+`SEND_AFTER_DTIM` flag selected HIQ; after a station woke, a newer GTK frame
+could enter a normal queue while an older PN remained in HIQ. The actual
+target `fill_txreq_mdata` also always selects category9 for BCMC DATA.
+Management, injected frames, STA traffic and mesh keep their existing queue
+policies. The existing DTIM/HIQ-window programming remains in AP startup;
+current Linux AP beacon updates do not change the configured DTIM period.
+
+`trace_stock_bcmc_tx.py` executes the target PN producer, complete metadata
+producer, cipher/category helpers and both C/XB DATA encoders. Group RA uses
+the software PN and GTK lookup; unicast RA selects PTK/hardware PN. The original
+BCMC metadata clears both HW_SEC_IV and SW_SEC_IV because the IV is already in
+the packet. Native mac80211 hands down an IV-less hardware-encryption frame:
+ARM allocates the GTK PN and SW_SEC_IV supplies it through the WD while the
+chip inserts the IV. This is an explicit packet-layout adaptation, with no
+second PE-side PN allocator. Contrary to the earlier disassembly note, the
+executed original wraps a maximum48-bit PN to **zero**, not one; this observation
+does not establish a safe key-exhaustion policy.
+
+The new regression executes Linux's actual multicast PS decision followed by
+the actual monitor/TX functions, across awake/asleep/awake transitions without
+retiring earlier packets. It covers open traffic, all four GTK IDs, PN carry,
+IPv4/IPv6/broadcast destinations, and AP/STA/injected/mesh/management controls.
+The pre-fix branch fails the first awake-state HIQ assertion. Ninety native
+submissions and45 linked MIPS WD/WP/TXBD byte comparisons pass, alongside96
+original PN/metadata cases and192 C/XB encodings. Existing BAR, key lifecycle,
+STA selection, multicast admission and complete bridge learning regressions
+pass. Image/modules build passes and180 overlay C/H/build inputs match the
+kernel sources (`artifacts/fttr/bcmc-hiq-kernel-20261107.log`).
+
+These checks validate software decisions, descriptor construction and queue
+selection. They do not execute the hardware HIQ scheduler or prove DTIM air
+timing, physical PN order, queue drainage or safe resource reuse. AP ordinary
+BCMC still uses the owned CPU-dispatch path, matching the factory's wireless
+entry while using native NI/QM replication and PE-assisted TX construction.
+Direct NI-to-PE BCMC bypass and complete FTTR acceptance remain unfinished.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

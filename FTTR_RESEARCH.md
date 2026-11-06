@@ -138,6 +138,8 @@
 
 60. 接入STA普通组播的NI→PE直发：保留Ethernet组播DA，以关联AP的单播RA和成对密钥发送；AP普通组播仍走GTK/DTIM路径。执行目标原厂属性生产前缀及完整头生成器，确认RA选择及“原厂固定本机TA、Linux保留Ethernet SA”的差异，PE按当前Linux语义修正STA三地址与A-MSDU头。补上共享表解绑的永久记录撤销，保留tombstone，防止重绑/FE代际重启让旧记录重新有效。12组原厂头、6组实际Linux接收地址/密钥/头/聚合函数、两类实际学习记录到MIPS、267项PE准入/撤销、12组加密TX/RPQ/no-ACK及现有STA/AP/PS/M2U/QM/桥回归通过；Image/模块与96项输入核对通过。普通AP BCMC、多VIF、TSPEC、完整退场和资源复用仍待补，未访问实机。详见[STA组播与解绑撤销](port/FTTR.md#sta-group-transmission-and-detached-table-revocation)。
 
+61. 按目标原厂补齐AP普通BCMC的HIQ选择：所有普通AP组播DATA统一进入DMA9/QSEL0x11，避免休眠结束后新GTK帧进入普通队列而越过HIQ旧PN。实际执行原厂PN/完整元数据/两芯片WD，确认原厂内嵌IV、原生ARM分配PN后以SW_SEC_IV交硬件插入的适配边界；不新增PE独立PN分配者。执行也纠正此前笔记：原厂48位PN溢出到0而非1。Linux真实PS决策→原生monitor/TX的90次发送、45组实际请求到MIPS描述符、96组原厂PN/元数据及192组WD通过；旧代码可复现首个非DTIM队列断言失败，密钥/BAR/STA/组播/桥回归、Image/模块和180项源码核对通过。未执行硬件DTIM调度、空口PN排序或完整退场；AP直达PE绕过CPU、资源复用和全部FTTR验收仍未完成。详见[AP高队列与PN](port/FTTR.md#ap-bcmc-high-queue-and-software-pn-ownership)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
