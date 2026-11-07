@@ -30,6 +30,7 @@ jobs:
           python3 scripts/test_sta_beacon.py
           python3 scripts/test_sta_scan_offload.py
           python3 scripts/test_wifi_station_release.py
+          python3 scripts/test_wifi_notifier.py
           python3 scripts/test_wifi_authorization.py
           python3 scripts/test_fe_wifi_peer_route.py
           python3 scripts/test_package_timeout.py

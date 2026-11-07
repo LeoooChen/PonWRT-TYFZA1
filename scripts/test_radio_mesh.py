@@ -64,7 +64,7 @@ struct ieee80211_vif {int type;bool use_4addr;struct {bool idle;}cfg; u8 addr[6]
 struct port {int result;};
 struct io {int unused;}; struct tx {bool blocked;};
 struct rtl_ax_ap {s64 mesh_tsf_remainder;struct {bool queued;}mesh_sync_work;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_role,sta_4addr,sta_associated;u8 sta_bssid[6];struct {bool pending;}retired_stations[128]; struct io io; struct tx *tx; void *pdev,*rx;
- bool monitor_started,ap_started,beacon_enabled,radar_required;
+ bool monitor_started,ap_started,mesh_started,beacon_enabled,radar_required;
  struct {int error;bool enabled,detected,in_cac;}dfs;
  struct {unsigned valid;}security_roles[1];
  unsigned chip,role_stage,role_type,edca_valid;struct {unsigned bandwidth;}channel;struct {unsigned band;}band;
@@ -164,6 +164,7 @@ struct ieee80211_sta {struct ieee80211_link_sta deflink;struct {u32 max_amsdu_le
 code += r"""
 static int rtl_ax_client_prepare(struct rtl_ax_ap*r,struct ieee80211_vif*v){(void)v;r->sta_role=true;return 0;}
 static void rtl_ax_client_release(struct rtl_ax_ap*r){r->sta_role=false;}
+static int rtl_ax_station_release(struct rtl_ax_ap*r,unsigned id){assert(id==1);r->sta_role=false;return 0;}
 static void rtl_ax_client_cfg_changed(struct ieee80211_hw*h,struct ieee80211_vif*v,u64 c){(void)h;(void)v;(void)c;assert(0);}
 """
 code += function("monitor.h", "rtl_ax_ra_peer")
@@ -211,7 +212,7 @@ int main(void){
   reset_commands();templates=0;
   rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON|BSS_CHANGED_BEACON_ENABLED);
   assert(r.mesh_sync_work.queued);
-  assert(r.ap_started&&r.beacon_enabled&&templates==1&&bcn_enable==BIT(12)&&rx_mode==4);
+  assert(r.ap_started&&r.mesh_started&&r.beacon_enabled&&templates==1&&bcn_enable==BIT(12)&&rx_mode==4);
   assert(r.role_type==6);check_join(0x5b040100|bw);
   /* Scan/ROC toggles only beacon enable. The channel remains assigned. */
   reset_commands();cancellations=0;unsigned saved_templates=templates;
@@ -247,7 +248,7 @@ int main(void){
   struct sk_buff skb={.status={.flag=RX_FLAG_NO_SIGNAL_VAL}};
   r.hw=&hw;r.scan_pending=&skb;rtl_ax_scan_complete_frame(&r,NULL);
   assert(delivered_flags==RX_FLAG_NO_SIGNAL_VAL&&!r.scan_pending);
-  r.ap_vif=&ap;r.scan_pending=&skb;rtl_ax_scan_complete_frame(&r,NULL);
+  r.ap_vif=&ap;r.mesh_started=false;r.scan_pending=&skb;rtl_ax_scan_complete_frame(&r,NULL);
   assert(delivered_flags==(RX_FLAG_NO_SIGNAL_VAL|RX_FLAG_ONLY_MONITOR));
   r.ap_vif=&mesh;
   rtl_ax_ap_stop(&hw,&mesh,&conf);reset_commands();fail_template=1;
@@ -256,7 +257,7 @@ int main(void){
   /* Removal also retires an active mesh when a monitor retains a channel. */
   reset_commands();rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);
   assert(r.ap_started);rtl_ax_monitor_remove_interface(&hw,&mesh);
-  assert(!r.ap_vif&&!r.ap_started&&!r.beacon_enabled&&!r.mesh_sync_work.queued);
+  assert(!r.ap_vif&&!r.ap_started&&!r.mesh_started&&!r.beacon_enabled&&!r.mesh_sync_work.queued);
   assert(!rtl_ax_monitor_add_interface(&hw,&mesh));
   r.radar_required=true;r.dfs.error=-EIO;reset_commands();
   rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);assert(r.ap_result==-EIO&&!r.ap_started&&!commands&&stop_requests==3);stop_requests=0;

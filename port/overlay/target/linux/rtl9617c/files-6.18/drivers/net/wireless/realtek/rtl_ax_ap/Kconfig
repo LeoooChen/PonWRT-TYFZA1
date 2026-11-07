@@ -5,6 +5,7 @@ config RTL_AX_AP
 	select FW_LOADER
 	select LEDS_TYFZA1
 	select MAC80211_LEDS
+	select MAC80211_MESH
 	help
 	  Native PCI endpoint identity, AP power, calibration and channel12 WCPU
 	  firmware download for both TYFZA1 radios. Native mac80211 monitor RX
