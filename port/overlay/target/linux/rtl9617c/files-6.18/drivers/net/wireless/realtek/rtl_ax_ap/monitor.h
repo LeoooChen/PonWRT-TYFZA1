@@ -632,6 +632,11 @@ static int rtl_ax_station_release(struct rtl_ax_ap *radio, unsigned int macid)
 				radio->security_unlink[i] = 0;
 		for (i = 0; i < ARRAY_SIZE(keys->cam); i++)
 			if (keys->valid & BIT(i)) {
+				struct ieee80211_key_conf *key = radio->security_keys[keys->cam[i]];
+				if (key) {
+					ret = rtl_ax_tx_key_pn_unbind(radio->tx, key);
+					if (ret) return ret;
+				}
 				rtl_ax_security_cam(security, keys->cam[i], NULL);
 				ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 10, 1, security, sizeof(security), true);
 				if (ret)
@@ -1331,6 +1336,7 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		 * must not unlink a CAM that a subsequent association has reused. */
 		if (index >= RTL_AX_SECURITY_ENTRIES || radio->security_keys[index] != key)
 			return 0;
+		ret = rtl_ax_tx_key_pn_unbind(radio->tx, key);
 		radio->security_keys[index] = NULL;
 		role.valid &= ~BIT(slot);
 		role.keyid[slot] = 0;
@@ -1338,6 +1344,7 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		radio->security_roles[macid] = role;
 		__set_bit(index, radio->security_deleting);
 		radio->security_unlink[index] = macid + 1;
+		if (ret) goto done;
 	}
 	if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) {
 		ret = rtl_ax_tx_ni_retire_peer(radio->tx, macid);
@@ -1384,12 +1391,15 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		dctl, sizeof(dctl), false, true);
 	if (ret)
 		goto done;
-	radio->security_roles[macid] = role;
 	if (cmd == SET_KEY) {
+		unsigned int previous_index = key->hw_key_idx;
+		key->hw_key_idx = index;
+		ret = rtl_ax_tx_key_pn_bind(radio->tx, key);
+		if (ret) { key->hw_key_idx = previous_index; goto done; }
+		radio->security_roles[macid] = role;
 		__clear_bit(index, radio->security_deleting);
 		__clear_bit(index, radio->security_aborting);
 		radio->security_unlink[index] = 0;
-		key->hw_key_idx = index;
 		radio->security_keys[index] = key;
 		key->flags |= IEEE80211_KEY_FLAG_SW_MGMT_TX;
 		if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) rtl_ax_rx_key(radio->rx, macid, key);
@@ -1714,7 +1724,7 @@ static void rtl_ax_get_key_seq(struct ieee80211_hw *hw,
 	struct ieee80211_key_conf *key, struct ieee80211_key_seq *seq)
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
-	u64 pn = atomic64_read(&key->tx_pn);
+	u64 pn = rtl9617c_key_pn_read(&key->rtl9617c_pn, &key->tx_pn);
 	unsigned int macid, slot, i;
 	unsigned long flags;
 	if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE)
@@ -1728,6 +1738,8 @@ static void rtl_ax_get_key_seq(struct ieee80211_hw *hw,
 					goto found;
 				}
 found:
+	/* ieee80211_get_key copies this callback's bytes directly to nl80211;
+	 * match its software-TX-PN branch, not the RX-sequence struct comment. */
 	for (i = 0; i < 6; i++) seq->ccmp.pn[i] = pn >> (i * 8);
 }
 

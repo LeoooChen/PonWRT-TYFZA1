@@ -1,0 +1,101 @@
+--- a/net/core/Makefile
++++ b/net/core/Makefile
+@@ -50,4 +50,4 @@
+ obj-$(CONFIG_DEBUG_NET) += lock_debug.o
+ obj-$(CONFIG_FAIL_SKB_REALLOC) += skb_fault_injection.o
+ 
+-obj-$(CONFIG_ARCH_RTL9617C) += rtl9617c-bridge.o rtl9617c-fttr.o
++obj-$(CONFIG_ARCH_RTL9617C) += rtl9617c-bridge.o rtl9617c-fttr.o rtl9617c-key-pn.o
+--- a/include/net/mac80211.h
++++ b/include/net/mac80211.h
+@@ -23,6 +23,10 @@
+ #include <net/codel.h>
+ #include <net/ieee80211_radiotap.h>
+ #include <linux/unaligned.h>
++
++#ifdef CONFIG_ARCH_RTL9617C
++#include <linux/rtl9617c-key-pn.h>
++#endif
+ 
+ /**
+  * DOC: Introduction
+@@ -2242,6 +2246,9 @@
+  */
+ struct ieee80211_key_conf {
+ 	atomic64_t tx_pn;
++#ifdef CONFIG_ARCH_RTL9617C
++	struct rtl_key_pn rtl9617c_pn;
++#endif
+ 	u32 cipher;
+ 	u8 icv_len;
+ 	u8 iv_len;
+--- a/net/mac80211/wpa.c
++++ b/net/mac80211/wpa.c
+@@ -470,7 +470,12 @@
+ 
+ 	pos += hdrlen;
+ 
++#ifdef CONFIG_ARCH_RTL9617C
++	if (rtl9617c_key_pn_next(&key->conf.rtl9617c_pn, &key->conf.tx_pn, &pn64))
++		return -1;
++#else
+ 	pn64 = atomic64_inc_return(&key->conf.tx_pn);
++#endif
+ 
+ 	pn[5] = pn64;
+ 	pn[4] = pn64 >> 8;
+--- a/net/mac80211/tx.c
++++ b/net/mac80211/tx.c
+@@ -3646,7 +3646,12 @@
+ 		case WLAN_CIPHER_SUITE_CCMP_256:
+ 		case WLAN_CIPHER_SUITE_GCMP:
+ 		case WLAN_CIPHER_SUITE_GCMP_256:
++#ifdef CONFIG_ARCH_RTL9617C
++			if (rtl9617c_key_pn_next(&key->conf.rtl9617c_pn, &key->conf.tx_pn, &pn))
++				return TX_DROP;
++#else
+ 			pn = atomic64_inc_return(&key->conf.tx_pn);
++#endif
+ 			crypto_hdr[0] = pn;
+ 			crypto_hdr[1] = pn >> 8;
+ 			crypto_hdr[3] = 0x20 | (key->conf.keyidx << 6);
+--- a/net/mac80211/debugfs_key.c
++++ b/net/mac80211/debugfs_key.c
+@@ -105,7 +105,13 @@
+ 		/* PN is a 48-bit counter */
+ 		if (pn >= (1ULL << 48))
+ 			return -ERANGE;
++#ifdef CONFIG_ARCH_RTL9617C
++		ret = rtl9617c_key_pn_set(&key->conf.rtl9617c_pn, &key->conf.tx_pn, pn);
++		if (ret)
++			return ret;
++#else
+ 		atomic64_set(&key->conf.tx_pn, pn);
++#endif
+ 		return count;
+ 	default:
+ 		return 0;
+@@ -126,7 +132,11 @@
+ 		len = scnprintf(buf, sizeof(buf), "\n");
+ 		break;
+ 	case WLAN_CIPHER_SUITE_TKIP:
++#ifdef CONFIG_ARCH_RTL9617C
++		pn = rtl9617c_key_pn_read(&key->conf.rtl9617c_pn, &key->conf.tx_pn);
++#else
+ 		pn = atomic64_read(&key->conf.tx_pn);
++#endif
+ 		len = scnprintf(buf, sizeof(buf), "%08x %04x\n",
+ 				TKIP_PN_TO_IV32(pn),
+ 				TKIP_PN_TO_IV16(pn));
+@@ -139,7 +149,11 @@
+ 	case WLAN_CIPHER_SUITE_BIP_GMAC_256:
+ 	case WLAN_CIPHER_SUITE_GCMP:
+ 	case WLAN_CIPHER_SUITE_GCMP_256:
++#ifdef CONFIG_ARCH_RTL9617C
++		pn = rtl9617c_key_pn_read(&key->conf.rtl9617c_pn, &key->conf.tx_pn);
++#else
+ 		pn = atomic64_read(&key->conf.tx_pn);
++#endif
+ 		len = scnprintf(buf, sizeof(buf), "%02x%02x%02x%02x%02x%02x\n",
+ 				(u8)(pn >> 40), (u8)(pn >> 32), (u8)(pn >> 24),
+ 				(u8)(pn >> 16), (u8)(pn >> 8), (u8)pn);

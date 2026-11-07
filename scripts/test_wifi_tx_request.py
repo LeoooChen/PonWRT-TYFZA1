@@ -15,6 +15,7 @@ assert old != current
 publish = re.search(r'\t\tmemcpy\(published, request, \(8 \+ segments \* 2\) \* sizeof\(\*request\)\);\n', old, re.S)
 assert publish
 old = old[:publish.start()] + old[publish.end():]
+old = old.replace('published[', 'request[')
 (p / 'old.c').write_text(old)
 
 
@@ -48,14 +49,17 @@ typedef uint8_t u8;typedef uint32_t u32;typedef uint64_t u64;
 #define lower_32_bits(x) ((u32)(x))
 #define atomic64_inc(p) (++*(p))
 #define atomic64_inc_return(p) (++*(p))
+#define RTL_FTTR_PE_REQUEST_LOW 28
+#define RTL_FTTR_PE_REQUEST_HIGH 29
+#define RTL_KEY_PN_REQUEST 30
 struct key {unsigned flags,hw_key_idx,keyidx;u64 tx_pn;};
 struct vif {unsigned type;};
 struct info {unsigned flags;struct {struct key *hw_key;unsigned flags;struct vif *vif;}control;};
 struct hdr {uint16_t frame_control,seq_ctrl;u8 addr1[6];};
-struct skb {u8 *data;unsigned len;struct info *info;};
+struct skb {u8 *data;unsigned len;struct info *info;u64 rtl9617c_fttr_generation;};
 struct scatterlist {u32 dma,len;};
 struct mapping {unsigned dma_count;struct scatterlist sg[10];};
-struct slot {struct mapping *mapping;u32 dma;bool firmware_rate;};
+struct slot {struct mapping *mapping;u32 dma;bool firmware_rate,pe_key_pn;};
 struct tx {bool pe_active,checksum_enabled;struct {void *memory;}pe;u8 *headers;unsigned pe_producer,producer[6];
  bool peer_authorized[128],peer_client[128];u32 peer_rates[128];u64 hardware_pn,encrypted,pe_ethernet,scatter_packets,scatter_segments;
  u32 last_eth_dma;u8 last_eth[14];};
@@ -104,6 +108,7 @@ static void NAME(struct tx*tx,struct info*info,struct hdr*header,struct skb*skb,
  unsigned rate,unsigned gi,unsigned bandwidth,unsigned tid,unsigned aggregate,unsigned density,
  bool encap,bool pe_sequence,unsigned original_header_bytes,const u8*original_header){
  bool template_ready=false;
+ unsigned pn_generation=slot.pe_key_pn?123:0;
  static const u8 tid_indicators[]={0,0,1,1,0,1,0,1};
 '''
 code += signature.replace('NAME', 'old') + branch(p/'old.c') + '\n(void)template_ready;\n}\n'
@@ -120,12 +125,12 @@ int main(void){
   struct tx b=a; b.pe.memory=mem[1];b.headers=headers[1];
   memset(mem,0xa5,sizeof(mem));memset(headers,0xa6,sizeof(headers));memset(payload,0xaa,sizeof(payload));
   struct mapping mapping={.dma_count=layout};for(unsigned n=0;n<layout;n++)mapping.sg[n]=(struct scatterlist){0x120380be + n*4096,1500+n};
-  struct slot slot={.firmware_rate=true,.mapping=layout?&mapping:NULL,.dma=0x11000000};
+  struct slot slot={.firmware_rate=true,.mapping=layout?&mapping:NULL,.dma=0x11000000,.pe_key_pn=keytype==1};
   struct key ka={.flags=keytype==2,.hw_key_idx=126,.keyidx=3,.tx_pn=0xffffffffULL},kb=ka;
   struct vif vif={.type=client?NL80211_IFTYPE_STATION:NL80211_IFTYPE_AP};
   struct info ia={.flags=tid&1,.control={.hw_key=keytype?&ka:NULL,.vif=&vif}},ib=ia;ib.control.hw_key=keytype?&kb:NULL;
   struct hdr hdr={.frame_control=client?0x108:0x208,.seq_ctrl=0xffff,.addr1={tid&1}};
-  struct skb skb={payload,sizeof(payload),&ia};
+  struct skb skb={payload,sizeof(payload),&ia,0x100000002ULL};
   a.peer_authorized[127]=b.peer_authorized[127]=auth;
   unsigned macid=127,ring=tid%6;
   a.peer_client[macid]=b.peer_client[macid]=client;
@@ -145,7 +150,7 @@ int main(void){
   b.pe.memory=a.pe.memory;b.headers=a.headers;assert(!memcmp(&a,&b,sizeof(a))&&!memcmp(&ka,&kb,sizeof(ka)));vectors++;
  }
  struct info check_info={0};struct hdr check_hdr={.frame_control=0x208};
- struct skb check_skb={(u8*)&check_hdr,sizeof(check_hdr),&check_info};
+ struct skb check_skb={(u8*)&check_hdr,sizeof(check_hdr),&check_info,0};
  struct tx check_tx={.pe_active=true,.pe={mem[0]},.peer_authorized={[1]=true}};
  put_unaligned_le32(BIT(17),mem[0]+0xe200+4);
  assert(rtl_ax_tx_raw_fw_rate(&check_tx,&check_skb,1));

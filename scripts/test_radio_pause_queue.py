@@ -60,9 +60,10 @@ typedef uint32_t u32;typedef uint8_t u8;
 struct ieee80211_hw {unsigned queues;bool stopped;};
 struct rtl_ax_io {void *ctx;u32(*read32)(void*,unsigned);u8(*read8)(void*,unsigned);void(*delay_us)(void*,unsigned);};
 struct rtl_ax_tx {const struct rtl_ax_io *io;int lock;bool running,paused,queues_paused,dfs_blocked,pe_active,queues_stopped,checksum_enabled;
- void *rx;bool peer_offloaded[128];struct {bool active;}ni;
+ void *rx;int fttr_work;bool peer_offloaded[128];struct {bool active;}ni;
  struct ieee80211_hw *hw;unsigned occupied,pe_producer,pe_command,queue_stops,queue_wakes,stopped;struct {void *memory;}pe;u32 scheduler_saved;};
 struct tasklet_struct {int unused;};
+static void cancel_delayed_work_sync(int *work){(void)work;}
 struct rtl_ax_station {unsigned macid;unsigned long ba_retry[8];};
 struct ieee80211_sta {void *drv_priv;bool wme;struct {struct {bool ht_supported;}ht_cap;struct {bool vht_supported;}vht_cap;struct {bool has_he;}he_cap;}deflink;};
 struct rtl_ax_ap {struct tasklet_struct tx_tasklet;struct ieee80211_hw *hw;bool monitor_started;bool peer_authorized[128];struct {unsigned aggregation[8],stopping;}tx_ba[128];};

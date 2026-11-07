@@ -87,10 +87,13 @@ typedef u16 __le16;typedef u32 dma_addr_t;
 #define dma_wmb() ((void)0)
 #define atomic64_inc(p) (++*(p))
 #define atomic64_inc_return(p) (++*(p))
+struct rtl_key_pn {void *shared;unsigned generation;};
+static unsigned rtl9617c_key_pn_token(struct rtl_key_pn *p){return p->shared?p->generation:0;}
+#define RTL_KEY_PN_REQUEST 30
 struct ieee80211_hdr {u16 frame_control,duration_id;u8 addr1[6],addr2[6],addr3[6];u16 seq_ctrl;} __attribute__((packed));
 struct ieee80211_bar {u16 frame_control,duration;u8 ra[6],ta[6];u16 control,start_seq_num;} __attribute__((packed));
 struct ieee80211_tx_rate {int idx;unsigned flags,count;};
-struct key {unsigned flags,hw_key_idx,keyidx;u64 tx_pn;};
+struct key {unsigned flags,hw_key_idx,keyidx;u64 tx_pn;struct rtl_key_pn rtl9617c_pn;};
 struct vif {unsigned type;};
 struct ieee80211_tx_info {unsigned flags;struct {unsigned flags;struct key *hw_key;struct vif *vif;struct ieee80211_tx_rate rates[1];}control;};
 struct sk_buff {u8 *data;unsigned len,priority;struct ieee80211_tx_info info;u64 rtl9617c_fttr_generation;};
@@ -100,7 +103,7 @@ struct ieee80211_sta {void *drv_priv;struct {struct {unsigned ampdu_density;}ht_
 struct ieee80211_tx_control {struct ieee80211_sta *sta;};
 struct scatterlist {u32 dma,len;};
 struct rtl_ax_tx_mapping {struct scatterlist sg[10];unsigned count,dma_count;};
-struct rtl_ax_tx_slot {struct sk_buff *skb;u64 fttr_generation;dma_addr_t dma;unsigned bytes,ring,key_index,macid,tid;bool encrypted,pe_sequence,firmware_rate;struct rtl_ax_tx_mapping *mapping;};
+struct rtl_ax_tx_slot {struct sk_buff *skb;u64 fttr_generation;dma_addr_t dma;unsigned bytes,ring,key_index,macid,tid;bool encrypted,pe_sequence,firmware_rate,pe_key_pn;struct rtl_ax_tx_mapping *mapping;};
 struct rtl_ax_io {void *ctx;void (*write16)(void *,unsigned,unsigned);};
 struct rtl_ax_tx {bool running,dfs_blocked,pe_active,checksum_enabled,queues_stopped;
  bool peer_qos[128],peer_authorized[128],peer_asleep[128],peer_offloaded[128],peer_client[128];u32 peer_rates[128];u64 mcast_policy_attempt[128];

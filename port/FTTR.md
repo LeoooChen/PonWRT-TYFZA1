@@ -5158,6 +5158,77 @@ BCMC still uses the owned CPU-dispatch path, matching the factory's wireless
 entry while using native NI/QM replication and PE-assisted TX construction.
 Direct NI-to-PE BCMC bypass and complete FTTR acceptance remain unfinished.
 
+### Shared GTK PN across software CCMP and PE publication
+
+Before direct AP BCMC can use PE, its PN must share ownership with CPU
+transmissions. A second independent PE counter would collide with ARM's
+ordinary GTK TX and mac80211's software-encrypted management frames. The
+native GTK now binds to one shared counter per CAM generation when PE is
+active. CPU hardware-encryption requests carry the binding generation in
+request word30, after all ten DMA address pairs and the FTTR generation.
+PE assigns the PN only at final publication, after TXBD credit is available.
+Ordinary PTK/hardware-PN and non-PE descriptor behavior remain supported.
+
+`rtl9617c-key-pn.c` serializes ARM callers under an IRQ-safe lock. ARM and
+PE1 use a two-participant Peterson handshake with full barriers in coherent
+memory. PE never waits for ARM: it yields the publication turn. ARM waits
+at most1000 one-microsecond checks and returns an error if the peer does not
+release. Published counters use two banks with a commit sequence, allowing
+readback of the last committed value if a writer stops before publication.
+Per-radio records occupy0x1e900..0x1fd00 of the existing context allocation;
+the actual engine DMEM stack is a separate allocation. Firmware advertises
+`PN01` independently of the FTTR and multicast capabilities.
+
+The actual mac80211 CCMP software encryption and fast-IV paths call the same
+allocator. Binding snapshots the software PN while holding that allocator's
+lock, covering an encryption sender racing key installation. Unbinding closes
+the generation before waiting for a current allocator, transfers the final
+counter back to software on success and drops the borrowed pointer. A timeout
+also drops that pointer, because Linux may free the key despite the driver's
+error, but poisons the key's software fallback rather than risk an old PN.
+Delayed requests retain their generation and cannot consume a reused CAM's
+counter. Binding generations never wrap; exhaustion is explicit failure.
+Key install/DMAC failures keep CAM ownership and restore the prior desired
+role through existing cleanup. GTK teardown, including STA release, detaches
+the binding before CAM reuse. Already published WPs still wait for real RPQ.
+
+The existing software-discard worker now includes non-FTTR GTK requests, so
+revocation returns their DMA/skb ownership without fabricated ACK/rate/sequence
+feedback. `get_key_seq` reads the shared PN; it retains the current Linux
+`ieee80211_get_key` consumer's LSB-first TX byte order. The key-sequence struct's
+RX-oriented byte-order comment alone is not used to change that behavior.
+Debugfs reads the shared value and rejects setting a bound/poisoned counter;
+it cannot silently modify only the stale software shadow. The target factory
+48-bit wrap-to-zero behavior is retained, without claiming a safe key lifetime
+at exhaustion.
+
+Validation on2026-11-07 includes60000 concurrent ARM/PE allocations plus
+concurrent committed reads,640 carry/wrap/CAM-generation cases,32 alternating
+actual mac80211 software-CCMP/PE encryptions, real radio bind/read/unbind,
+debugfs refusal and failed-disable software rejection. Twenty-one linked MIPS
+publication cases cover zero TXBD credit, ARM contention, revocation during
+admission, paused drain and same-CAM replacement. Ninety actual BCMC monitor/TX
+submissions yield45 linked PE publisher/PN/WD/WP/TXBD comparisons matching the
+ordinary ARM descriptors. Target factory96 PN/metadata and192 C/XB WD cases
+pass. Key install/delete faults,16448 RPQ batches,257 software-discard batches,
+4224 request-copy cases,69 FTTR request generations,249 direct-NI FTTR drain
+cases,265 multicast cases plus12 encrypted TX/RPQ cases and1024 MPDU/2048 BID
+returns pass, alongside bridge, AP/mesh, BAR, pause and binding regressions.
+
+Firmware is28960 bytes, SHA256
+`daed79fc25adb012c752118d560ecdee456f2300eb5d6151a8f17ff6264061d8`;
+the conservative sum of all function stack frames is6960 of8192 bytes.
+Linux6.18.55 Image/modules build and six overlay/firmware input comparisons
+pass; patch230 replays its five kernel inputs with zero fuzz/offset and
+identical results (`artifacts/fttr/key-pn-kernel-final-20261107.log`).
+
+This completes the shared PN prerequisite, not AP direct NI-to-PE BCMC.
+Direct group admission/template/key selection and HIQ/DTIM integration are
+still required. Software-encrypted frames can already have allocated a PN
+before reaching the driver; these tests do not prove cross-queue air ordering.
+No physical CCI/PE handshake, encryption, DTIM scheduling or RF traffic was
+tested. Existing full-retirement and quarantined-resource limits remain.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN

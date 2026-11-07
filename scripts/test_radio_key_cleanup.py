@@ -60,7 +60,7 @@ struct rtl_ax_ap {struct rtl_ax_security_role security_roles[128];
  bool ra_registered[128],ra_pending[128],station_ids[128];unsigned station_removed;
 };
 struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};
-enum fault {NONE,RETIRE,FLUSH,DCTL,CAM,CAM_INSTALL};
+enum fault {NONE,RETIRE,FLUSH,DCTL,CAM,CAM_INSTALL,PN_BIND,PN_UNBIND};
 static enum fault fault;
 static unsigned failures,queued,clears,dctls,offload_ready;
 static bool apply_failed_dctl,apply_failed_cam,hardware_cam[128];
@@ -72,6 +72,8 @@ static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw){return hw
 static unsigned find_first_zero_bit(bool *p,unsigned n){unsigned i;for(i=0;i<n&&p[i];i++);return i;}
 static bool rtl_ax_tx_key_pending(int tx,unsigned index){(void)tx;assert(index<128);return fail(FLUSH)!=0;}
 static int rtl_ax_tx_flush_key(int tx,unsigned index){(void)tx;assert(index<128);return fail(FLUSH);}
+static int rtl_ax_tx_key_pn_bind(int tx,struct ieee80211_key_conf *k){(void)tx;(void)k;return fail(PN_BIND);}
+static int rtl_ax_tx_key_pn_unbind(int tx,struct ieee80211_key_conf *k){(void)tx;(void)k;return fail(PN_UNBIND);}
 static int rtl_ax_tx_ni_retire_peer(int tx,unsigned id){(void)tx;assert(id<128);return fail(RETIRE);}
 static void rtl_ax_rx_key(int rx,unsigned id,struct ieee80211_key_conf *key){(void)rx;(void)id;(void)key;}
 static void rtl_ax_offload_ready(void *r){(void)r;offload_ready++;}
@@ -154,6 +156,20 @@ int main(void){
 '''
 install_tests = r'''
 static void install_tests(void){
+ /* A PN binding error follows a successful DMAC installation. Keep the
+  * failed CAM owned until cleanup restores the prior desired role. */
+ for(unsigned removal=0;removal<2;removal++){
+  reset();struct rtl_ax_ap r={};struct ieee80211_hw hw={&r,0};
+  struct ieee80211_key_conf key=new_key(1,false);key.hw_key_idx=99;
+  if(removal)assert(!rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},0,&key));
+  fault=removal?PN_UNBIND:PN_BIND;failures=1;
+  assert(rtl_ax_set_key(&hw,removal?DISABLE_KEY:SET_KEY,&(struct ieee80211_vif){},0,&key)==-ETIMEDOUT);
+  assert(r.security_ids[0]&&r.security_deleting[0]&&r.security_unlink[0]&&!r.security_keys[0]);
+  assert(!r.security_roles[0].valid&&key.hw_key_idx==(removal?0U:99U));
+  assert(hardware_roles[0].valid&&hardware_cam[0]);
+  fault=NONE;assert(!rtl_ax_security_cleanup(&r));
+  assert(!hardware_roles[0].valid&&!hardware_cam[0]&&!r.security_ids[0]);
+ }
  for(unsigned n=0;n<4;n++){
   reset();struct rtl_ax_ap r={};struct ieee80211_hw hw={&r,0};
   struct ieee80211_sta first={{{7}}},second={{{8}}};

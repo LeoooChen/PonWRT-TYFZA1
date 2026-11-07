@@ -36,6 +36,7 @@ class Machine:
                               (TX, 0x20000), (BAR, 0x10000), (RING, 0x4000),
                               (PAGES, 0x32000), (PAYLOAD, 0x10000),
                               (TABLE, 0x1000), (RX_BUFFER, 0x4000),
+                              (0x07e00000, 0x4000),
                               (0x10000000, 0x10000), (0x10020000, 0x1000)):
             self.u.mem_map(address, size)
         self.u.mem_write(0x1fc00000, BINARY)
@@ -56,7 +57,10 @@ class Machine:
         self.contexts = {}
         for name, mailbox, allocation in (('PE1', TXMB, TX), ('PE0', RXMB, RX)):
             self.u.reg_write(UC_MIPS_REG_A0, mailbox | 0xa0000000)
-            self.u.reg_write(UC_MIPS_REG_SP, (allocation + 0x1fff0) | 0xa0000000)
+            # Production uses the separate engine allocation's private
+            # DMEM stack, not the per-radio control/context allocation.
+            stack = 0x07e02000 if name == 'PE1' else 0x07e04000
+            self.u.reg_write(UC_MIPS_REG_SP, (stack - 16) | 0xa0000000)
             self.u.reg_write(UC_MIPS_REG_PC, SYMBOLS['pe_main'])
             self.contexts[name] = self.u.context_save()
         self.actor = None

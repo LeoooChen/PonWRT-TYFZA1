@@ -69,6 +69,14 @@ int main(void){
   }
   cases++;
  }
+ /* Revoked GTK without any FTTR stamp uses the same software release. */
+ memset(memory,0,sizeof(memory));memset(skbs,0,sizeof(skbs));
+ struct rtl_ax_tx t={.pe_active=true,.running=true,.hw=&hw,.pe={memory},.occupied=1};
+ active=&t;batch=1;expected=1;bh=rcu=locks=wakes=unmaps=returns=raws=sw_freed=0;
+ requeues=barriers=fttr_puts=0;runnable=false;skbs[0].data[0]=0;
+ t.pending[0]=true;t.slots[0]=(struct rtl_ax_tx_slot){.skb=&skbs[0],.ring=5,.pe_key_pn=true};
+ put(memory+RTL_FTTR_PE_DISCARD,1);rtl_ax_tx_fttr_work(&t.fttr_work.work);
+ assert(sw_freed==1&&unmaps==1&&!returns&&!raws&&!fttr_puts&&!requeues&&!t.pending[0]);
  printf("ARM FTTR PE completion: %u partial/full batches, all WP IDs/rings, unmap/free once, no ACK/rate/sequence feedback, retry and reuse passed\n",cases);
 }
 '''

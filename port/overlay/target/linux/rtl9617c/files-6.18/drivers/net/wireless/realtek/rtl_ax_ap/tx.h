@@ -4,6 +4,9 @@
 #include <linux/types.h>
 struct rtl_ax_tx;
 struct ieee80211_vif;
+struct ieee80211_key_conf;
+int rtl_ax_tx_key_pn_bind(struct rtl_ax_tx *tx, struct ieee80211_key_conf *key);
+int rtl_ax_tx_key_pn_unbind(struct rtl_ax_tx *tx, struct ieee80211_key_conf *key);
 int rtl_ax_tx_mcast_policy(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,unsigned int macid);
 struct rtl_ax_rx;
 struct device;

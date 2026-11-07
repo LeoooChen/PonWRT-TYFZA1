@@ -35,9 +35,10 @@ for name in ('rtl_ax_tx_flush_key', 'rtl_ax_tx_key_pending', 'rtl_ax_drop_statio
     common = common.replace(function(common, name), '')
 common = common.replace(' int tx,rx,cleanup_work;', ' struct rtl_ax_tx *tx;int rx,cleanup_work;')
 common = common.replace('int tx,unsigned', 'struct rtl_ax_tx *tx,unsigned')
+common = common.replace('int tx,struct ieee80211_key_conf', 'struct rtl_ax_tx *tx,struct ieee80211_key_conf')
 common = common.replace('struct rtl_ax_ap {', 'struct rtl_ax_tx;\nstruct rtl_ax_ap {')
 common = common.replace('struct rtl_ax_security_role security_roles[128];',
-    'struct rtl_ax_security_role security_roles[128]; unsigned chip; void *ap_vif;'
+    'struct rtl_ax_security_role security_roles[128]; unsigned chip; void *ap_vif,*sta_vif;'
     'struct {unsigned stopping,flushing,aggregation[16];u8 address[6];}tx_ba[128];')
 preamble = r'''
 #define RTL_AX_TX_ENTRIES 256
@@ -46,6 +47,7 @@ preamble = r'''
 static unsigned ba_done;
 static void ieee80211_stop_tx_ba_cb_irqsafe(void *vif,u8 *address,unsigned tid){(void)vif;(void)address;(void)tid;ba_done++;}
 static void rtl_ax_station_cmac_connected(u8 *p,unsigned id,bool five,unsigned aggregate){(void)id;(void)five;(void)aggregate;memset(p,0,68);}
+static void rtl_ax_station_cmac_client(u8 *p){(void)p;}
 static int rtl_ax_tx_ni_retire_ba(struct rtl_ax_tx *tx,unsigned id){(void)tx;(void)id;return 0;}
 #define PE_PROBE_MAILBOX 0x2000
 #define spin_lock_irqsave(p,f) ((void)(p),(f)=0)
@@ -80,9 +82,10 @@ int main(void){
  reset();
  /* GTK deletion can fail without an NI peer retirement: keep the real ARM WP. */
  struct ieee80211_key_conf key=new_key(1,false);
- assert(!rtl_ax_set_key(&hw,SET_KEY,0,0,&key));
+ struct ieee80211_vif vif={};
+ assert(!rtl_ax_set_key(&hw,SET_KEY,&vif,0,&key));
  tx.pending[0]=true;tx.slots[0].encrypted=true;tx.slots[0].key_index=key.hw_key_idx;tx.slots[0].macid=7;
- assert(rtl_ax_set_key(&hw,DISABLE_KEY,0,0,&key)==-ETIMEDOUT);
+ assert(rtl_ax_set_key(&hw,DISABLE_KEY,&vif,0,&key)==-ETIMEDOUT);
  unsigned initial_waits=waits;assert(initial_waits==1 && r.security_deleting[0]);
  for(unsigned i=0;i<100;i++){
   assert(rtl_ax_security_cleanup(&r));
@@ -92,7 +95,7 @@ int main(void){
  assert(waits==initial_waits); // baseline adds 100 seconds under wiphy
  /* Neither an unrelated key nor another station is stalled by that owner. */
  struct ieee80211_key_conf next=new_key(0,true);
- assert(!rtl_ax_set_key(&hw,SET_KEY,0,&sta,&next) && next.hw_key_idx==1);
+ assert(!rtl_ax_set_key(&hw,SET_KEY,&vif,&sta,&next) && next.hw_key_idx==1);
  tx.pending[0]=false;
  assert(!rtl_ax_security_cleanup(&r) && !r.security_ids[0] && !hardware_cam[0]);
  assert(r.security_ids[1] && hardware_cam[1]);

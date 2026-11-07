@@ -12,6 +12,7 @@ struct packed_word { u32 value; } __attribute__((packed));
 #include "rx-geometry.h"
 #include <linux/rtl9617c-qm-layout.h>
 #include <linux/rtl9617c-mcast-pe.h>
+#include <linux/rtl9617c-key-pn.h>
 
 static inline void sync(void) { __asm__ volatile("sync" ::: "memory"); }
 static inline void *uncached(u32 address) { return (void *)(address | 0xa0000000U); }
@@ -470,6 +471,8 @@ static u32 pe_fttr_stale(volatile u32 *mailbox, const u32 *request)
 	return first != low || upper != high || shared->fttr.low != first;
 }
 
+#include "rtl9617c-radio-key-pn.h"
+
 static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u32 *mailbox, u32 budget, u32 requests[16][32])
 {
 	static const u32 indices[] = { 0x1058, 0x105c, 0x1060, 0x1064, 0x1078, 0x107c };
@@ -479,9 +482,16 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 	if (read == write) return;
 	/* Requests are private to PE1, not an inter-engine handoff. */
 	while (read != write && budget--) {
-		const u32 *request = requests[read];
+		u32 *request = requests[read];
 		u32 next, ring = request[1] & 7;
-		if (request[0] < 256 && pe_fttr_stale(mailbox, request)) {
+		u32 revoked = 0;
+		if (request[RTL_KEY_PN_REQUEST]) {
+			volatile struct rtl_key_pn_shared *key = (void *)(memory + RTL_KEY_PN_BASE +
+				((request[5] >> 16) & 127) * sizeof(*key));
+			revoked = key->generation != request[RTL_KEY_PN_REQUEST] ||
+				!(request[4] & BIT(15)) || (request[4] & BIT(16));
+		}
+		if (request[0] < 256 && (revoked || pe_fttr_stale(mailbox, request))) {
 			/* Never publish this WP to PCIe. ARM owns the skb/DMA mapping;
 			 * a per-WP release word also works without NI/RPQ offload. */
 			sync();
@@ -493,7 +503,7 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 		if (request[0] >= 256) {
 			u32 id = request[0] - 256;
 			u32 *owners = (void *)(memory + 0xc400);
-			if (ni_mcast_stale(mailbox, uncached(owners[id * 2])) ||
+			if (revoked || ni_mcast_stale(mailbox, uncached(owners[id * 2])) ||
 			    ni_fttr_stale(mailbox, uncached(owners[id * 2]))) {
 				/* Retain the BID like a completed WP. Using the single
 				 * discard slot here would deadlock pause-drain when the
@@ -517,6 +527,9 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 			checked |= BIT(ring);
 		}
 		if (!room[ring]) break;
+		u32 pn = pe_key_pn(memory, request);
+		if (!pn) break;
+		if (pn == 2) continue; /* Recheck withdrawal before consuming credit. */
 		room[ring]--;
 		pe_build_tx(mailbox, memory, request, &next);
 		producers[ring] = next; mask |= BIT(ring);
@@ -665,6 +678,7 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 				volatile u32 *context = uncached(contexts[slot]);
 				context[RTL_MC_PE_CAP_MAILBOX] = RTL_MC_PE_CAPABILITY;
 				context[RTL_FTTR_PE_CAP_MAILBOX] = RTL_FTTR_PE_CAPABILITY;
+				context[RTL_KEY_PN_CAP_MAILBOX] = RTL_KEY_PN_CAPABILITY;
 				sync();
 			}
 #endif
@@ -869,6 +883,7 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 					out[RTL_FTTR_PE_REQUEST_LOW] = request[RTL_FTTR_PE_REQUEST_LOW];
 					out[RTL_FTTR_PE_REQUEST_HIGH] = request[RTL_FTTR_PE_REQUEST_HIGH];
 				}
+				out[RTL_KEY_PN_REQUEST] = ni_packet ? 0 : request[RTL_KEY_PN_REQUEST];
 				mailbox[RTL_AX_TX_PUBLISH_WRITE] = (write + 1) & 15;
 			}
 #else

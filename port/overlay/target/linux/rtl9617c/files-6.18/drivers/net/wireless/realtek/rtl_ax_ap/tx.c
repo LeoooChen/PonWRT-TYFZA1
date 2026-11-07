@@ -14,6 +14,7 @@
 #include <linux/rtl9617c-mcast-pe.h>
 #include <linux/rtl9617c-wifi-policy.h>
 #include <linux/rtl9617c-bridge.h>
+#include <linux/rtl9617c-key-pn.h>
 #include "receive.h"
 #include "tx-format.h"
 #include "security.h"
@@ -53,7 +54,7 @@ struct rtl_ax_tx_slot {
 	u8 ring;
 	u8 key_index;
 	u8 macid, tid;
-	bool encrypted, pe_sequence, firmware_rate;
+	bool encrypted, pe_sequence, firmware_rate, pe_key_pn;
 	struct rtl_ax_tx_mapping *mapping;
 };
 
@@ -71,6 +72,7 @@ struct rtl_ax_tx {
 	bool fttr_registered;
 	u64 fttr_discarded;
 	u64 mcast_policy_attempt[128];
+	u32 key_pn_generation;
 	bool pe_active;
 	u32 pe_command;
 	unsigned int pe_producer;
@@ -199,6 +201,9 @@ static int rtl_ax_tx_pe_start(struct rtl_ax_tx *tx)
 		10, 100000, false, tx->pe.memory + PE_PROBE_MAILBOX);
 	if (!ret && get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX +
 		RTL_FTTR_PE_CAP_MAILBOX * 4) != RTL_FTTR_PE_CAPABILITY)
+		ret = -EPROTONOSUPPORT;
+	if (!ret && get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX +
+		RTL_KEY_PN_CAP_MAILBOX * 4) != RTL_KEY_PN_CAPABILITY)
 		ret = -EPROTONOSUPPORT;
 	if (!ret) tx->pe_active = true;
 	return ret;
@@ -501,6 +506,34 @@ void rtl_ax_tx_peer_authorized(struct rtl_ax_tx *tx, unsigned int macid, bool au
 		dma_wmb();
 	}
 }
+int rtl_ax_tx_key_pn_bind(struct rtl_ax_tx *tx, struct ieee80211_key_conf *key)
+{
+	unsigned long flags;
+	int ret = 0;
+	if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) return 0;
+	if (key->hw_key_idx >= RTL_KEY_PN_COUNT) return -EINVAL;
+	spin_lock_irqsave(&tx->lock, flags);
+	if (tx->pe_active) {
+		if (tx->key_pn_generation == ~0U) ret = -EOVERFLOW;
+		else ret = rtl9617c_key_pn_bind(&key->rtl9617c_pn,
+			tx->pe.memory + RTL_KEY_PN_BASE + key->hw_key_idx * sizeof(struct rtl_key_pn_shared),
+			++tx->key_pn_generation, &key->tx_pn);
+	}
+	spin_unlock_irqrestore(&tx->lock, flags);
+	return ret;
+}
+
+int rtl_ax_tx_key_pn_unbind(struct rtl_ax_tx *tx, struct ieee80211_key_conf *key)
+{
+	int ret;
+	/* Close before waiting for RPQ/CAM reuse. Any old PE request retains
+	 * its generation and is discarded; the key never retains a DMA pointer
+	 * after a failed disable, since mac80211 can then free it. */
+	ret = rtl9617c_key_pn_unbind(&key->rtl9617c_pn, &key->tx_pn);
+	if (ret || !(key->flags & IEEE80211_KEY_FLAG_PAIRWISE)) rtl_ax_tx_mcast_revoke(tx);
+	return ret;
+}
+
 bool rtl_ax_tx_peer_security(struct rtl_ax_tx *tx, unsigned int macid, unsigned int cam, unsigned int keyid)
 {
 	unsigned long flags;
@@ -653,6 +686,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	u8 *page;
 	int ret;
 	bool template_ready = false;
+	u32 pn_generation = 0;
 	u64 begin = READ_ONCE(rtl_ax_datapath_profile) ? ktime_get_ns() : 0;
 	/* TXQ/PS queues may outlive the ingress FTTR service generation. */
 	if (rtl9617c_fttr_stale(skb)) return -ESTALE;
@@ -700,6 +734,15 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		ret = -ENOSPC;
 		goto unmap;
 	}
+	if (info->control.hw_key && !(info->control.hw_key->flags & IEEE80211_KEY_FLAG_PAIRWISE) &&
+	    tx->pe_active) {
+		pn_generation = rtl9617c_key_pn_token(&info->control.hw_key->rtl9617c_pn);
+		if (!pn_generation) {
+			ret = -EKEYREVOKED;
+			goto unmap;
+		}
+		slot.pe_key_pn = true;
+	}
 	/* Join the closed-generation barrier after every fallible admission
 	 * check, before either PE or PCIe can observe this request. */
 	if (!rtl9617c_fttr_tx_get(slot.fttr_generation)) {
@@ -732,7 +775,10 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 				atomic64_inc(&info->control.hw_key->tx_pn); tx->hardware_pn++;
 			} else {
 				request_flags |= BIT(15);
-				pn = atomic64_inc_return(&info->control.hw_key->tx_pn);
+				/* GTK PN is assigned by the final PE publisher, in the same
+				 * shared domain as software CCMP and later direct NI copies. */
+				if (!slot.pe_key_pn)
+					pn = atomic64_inc_return(&info->control.hw_key->tx_pn);
 			}
 			tx->encrypted++;
 		}
@@ -802,6 +848,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		memcpy(published, request, (8 + segments * 2) * sizeof(*request));
 		published[RTL_FTTR_PE_REQUEST_LOW] = lower_32_bits(skb->rtl9617c_fttr_generation);
 		published[RTL_FTTR_PE_REQUEST_HIGH] = skb->rtl9617c_fttr_generation >> 32;
+		published[RTL_KEY_PN_REQUEST] = pn_generation;
 	} else {
 	memset(page, 0, RTL_AX_TX_WP_BYTES);
 	if (slot.mapping) {
@@ -874,7 +921,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		tx->pe_producer = (tx->pe_producer + 1) & 255;
 		put_unaligned_le32(tx->pe_producer, tx->pe.memory + PE_PROBE_MAILBOX + 32);
 		dma_wmb();
-		if (skb->rtl9617c_fttr_generation)
+		if (skb->rtl9617c_fttr_generation || slot.pe_key_pn)
 			queue_delayed_work(system_wq, &tx->fttr_work, 1);
 	} else
 		tx->io->write16(tx->io->ctx, rtl_ax_tx_indices[ring], next);
@@ -1070,7 +1117,7 @@ static void rtl_ax_tx_fttr_work(struct work_struct *work)
 		u32 *released = tx->pe.memory + RTL_FTTR_PE_DISCARD + id * 4;
 		unsigned int qsel = slot->ring < 4 ? slot->ring : slot->ring == 4 ? 0x12 : 0x11;
 
-		if (!slot->skb->rtl9617c_fttr_generation) continue;
+		if (!slot->skb->rtl9617c_fttr_generation && !slot->pe_key_pn) continue;
 		if (!READ_ONCE(*released)) { pending = true; continue; }
 		/* PE no longer references the request/payload once this word is
 		 * visible. Clear before the completion makes this WP reusable. */
@@ -1082,7 +1129,7 @@ static void rtl_ax_tx_fttr_work(struct work_struct *work)
 	spin_unlock_irqrestore(&tx->lock, flags);
 	packet.bytes = count * sizeof(*reports);
 	if (count) rtl_ax_tx_report(tx, tx->hw, &packet);
-	/* Only accepted FTTR WPs need polling, including radios without a
+	/* Accepted FTTR and shared-PN WPs need polling, including radios without a
 	 * PE event timer. Hardware RPQ remains their normal completion path. */
 	if (pending) queue_delayed_work(system_wq, &tx->fttr_work, 1);
 }

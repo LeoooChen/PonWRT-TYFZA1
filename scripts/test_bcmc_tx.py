@@ -64,7 +64,8 @@ int main(void){
   struct ieee80211_local local={.hw=hw};
   struct ieee80211_sub_if_data sdata={.vif={.type=NL80211_IFTYPE_AP}};
   typeof(*sdata.bss) bss={};sdata.bss=&bss;
-  struct key key={.hw_key_idx=63,.keyidx=crypto?crypto-1:0,.tx_pn=0xffffffffULL};
+  struct key key={.hw_key_idx=63,.keyidx=crypto?crypto-1:0,.tx_pn=0xffffffffULL,
+   .rtl9617c_pn={.shared=memory,.generation=123}};
   struct sk_buff skb[3]={};u8 raw[3][324]={};
   for(unsigned phase=0;phase<3;phase++){
    struct ieee80211_hdr *hdr=(void *)raw[phase];hdr->frame_control=0x0208|(crypto?0x4000:0);hdr->seq_ctrl=(phase+1)<<4;
@@ -82,13 +83,14 @@ int main(void){
    assert(freed==before&&t.submitted==phase+1&&t.submitted_ring[5]==phase+1);
    assert(t.slots[phase].ring==5&&t.slots[phase].macid==0&&!t.slots[phase].pe_sequence);
    assert(!t.hardware_pn&&!t.ampdu_submitted&&!t.pe_ethernet);
-   assert(key.tx_pn==0xffffffffULL+(crypto?phase+1:0));
+   assert(key.tx_pn==0xffffffffULL+(crypto&&!pe?phase+1:0));
    assert(!memcmp(skb[phase].data,before_frame,sizeof(before_frame)));
    if(pe){
     u32 *q=(void *)(memory+0x4000+phase*128);
     assert(q[1]==(5|phase<<8|(phase+1)<<16)&&q[2]==(324|24<<16|1<<24));
     assert(q[4]==((phase+1)|BIT(13)|BIT(14)|(crypto?BIT(15):0)));
-    assert(((u64)q[7]<<32|q[6])==(crypto?key.tx_pn:0));
+    assert(!q[6]&&!q[7]&&q[RTL_KEY_PN_REQUEST]==(crypto?123U:0));
+    assert(t.slots[phase].pe_key_pn==!!crypto);
     assert(q[RTL_FTTR_PE_REQUEST_LOW]==2&&q[RTL_FTTR_PE_REQUEST_HIGH]==1);
     assert(fwrite(q,1,128,stdout)==128);
    }else{
@@ -134,28 +136,38 @@ symbols = {fields[2]: int(fields[0], 16) for line in subprocess.check_output(
 firmware = (args.pe / 'pe-tx.bin').read_bytes()
 for recipe in range(15):
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-    base, mailbox, ring, pages = 0x04000000, 0x04002000, 0x05000000, 0x05100000
-    for address, size in ((0x1fc00000, 0x10000), (base, 0x20000), (ring, 0x10000), (pages, 0x32000)):
+    base, mailbox, ring, pages, bar = 0x04000000, 0x04002000, 0x05000000, 0x05100000, 0x12000000
+    for address, size in ((0x1fc00000, 0x10000), (base, 0x20000), (ring, 0x10000), (pages, 0x32000), (bar, 0x10000), (0x07e00000, 0x2000)):
         u.mem_map(address, size)
     u.mem_write(0x1fc00000, firmware)
     def put(address, value):
         u.mem_write(address, struct.pack('<I', value))
     put(mailbox + 11 * 4, ring)
     put(mailbox + 12 * 4, pages)
+    put(mailbox + 2 * 4, bar | 0xa0000000)
+    put(mailbox + 24 * 4, 1)
+    put(mailbox + 210 * 4, base + 0x9000)
+    put(base + 0x9004, 2); put(base + 0x9008, 1)
+    put(bar + 0x107c, 200 << 16)
+    # Actual final publisher allocates PN only when a TXBD can be written.
+    shared = base + 0x1e900 + 63 * 40
+    put(shared, 123); put(shared + 20, 0xffffffff)
     for phase in range(3):
         index = recipe * 3 + phase
         arm = output[index * 128:(index + 1) * 128]
         request = output[(index + 45) * 128:(index + 46) * 128]
         u.mem_write(base + 0x4000, request)
-        for register, value in ((UC_MIPS_REG_A0, mailbox), (UC_MIPS_REG_A1, base),
-                                (UC_MIPS_REG_A2, base + 0x4000), (UC_MIPS_REG_A3, base + 0x7000),
-                                (UC_MIPS_REG_SP, base + 0x1fff0)):
+        put(mailbox + 193 * 4, 1); put(mailbox + 194 * 4, 0)
+        for register, value in ((UC_MIPS_REG_A0, mailbox),
+                                (UC_MIPS_REG_A2, base + 0x4000),
+                                (UC_MIPS_REG_SP, 0x07e01ff0)):
             u.reg_write(register, value | 0xa0000000)
+        u.reg_write(UC_MIPS_REG_A1, 8)
         u.reg_write(UC_MIPS_REG_RA, 0x9fc01ff0)
-        u.emu_start(symbols['pe_build_tx'], 0x9fc01ff0, count=100000)
+        u.emu_start(symbols['pe_tx_publish'], 0x9fc01ff0, count=100000)
         wd = bytes(u.mem_read(pages + (5 * 264 + phase) * 128, 128))
         assert wd == arm, (recipe, phase, wd.hex(), arm.hex())
         txbd = struct.unpack('<II', u.mem_read(ring + (5 * 256 + phase) * 8, 8))
         assert txbd == (0x40000000 | 70, pages + (5 * 264 + phase) * 128)
 print('BCMC:90 actual ARM/PE submissions across PS transitions, four GTK IDs/PN carry/open, '
-      '12 AP/STA/injected/mesh/management controls and45 linked PE WD/WP/TXBD matches passed')
+      '12 AP/STA/injected/mesh/management controls and45 linked PE publication/PN/WD/WP/TXBD matches passed')
