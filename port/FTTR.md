@@ -5517,6 +5517,84 @@ not authorize group/cookie/action or wire-GEM reuse and does not yet permit
 connecting the P6 ES flush helper as a complete retirement guarantee. No
 physical-device test was performed.
 
+### Direct NI-to-PE FTTR BID and EPP-prefix drain
+
+Direct NI-to-PE packets bypass the CPU skb reference count. Their lifetime
+now carries the existing64-bit FTTR generation in BID headroom words5/6,
+below HEADER_A at byte64 and below the earliest radio header rewrite. The
+source predicate uses HEADER_A logical source6, the native P6 identity; owned
+multicast replicas already preserve original source with `keep_o_lspid`.
+It applies to ordinary peer selection and multicast-cookie selection. A
+source6 arrival while closed is marked with a nonzero closed identity and
+sent to the discard queue. Other sources receive generation0. Selection and
+final TXBD publication reject stale source6 requests, and A-MSDU gathering
+requires equal generations as well as equal cookies.
+
+Each source6 BID increments a PE-owned pending count when its EPP is consumed,
+before it enters a queue or the excess-arrival discard WP. The count persists
+through sleeping queues, selected unpublished requests, published WPs, RPQ
+completion and partial EQ recycling. PE samples the generation before PUSH,
+issues the EQ PUSH and its fence, then decrements; it never reads the BID
+after returning it. The forced ARM cleanup similarly saves link/generation
+before PUSH, reads back the port, then decrements only for returned FTTR BIDs.
+A timeout retains the unreturned suffix and count for retry. Normal NI release
+already checks queued/EPP and WP owners before switching pool geometry.
+
+The radio now registers a second borrowed coherent status pointer in its
+existing context at `0x1e800`. The layout contains ARM request, PE ACK/pending,
+last-seen request, eight EPP targets and a target mask. A fresh nonzero32-bit
+request is published **after FE withdrawal on every drain attempt**, including
+retries within the same closed generation. PE snapshots all eight producer
+positions and acknowledges only after each nonempty captured prefix has been
+consumed and the FTTR BID count is zero. The ingest loop favors unfinished
+captured COS prefixes so sustained high-COS traffic cannot starve a lower-COS
+cutoff. Invalid/not-ready EPPs do not advance the target. PE does not sample
+geometry while NI is paused; it resumes after ARM finishes the transition.
+
+The core drain now polls the two registered ACK/count pairs and the CPU radio
+reference count within one1000ms deadline. Registry locking protects borrowed
+pointers against successful radio detach/free without holding any pointer or
+NI/FE/radio lock over sleep. CPU completion uses release decrement and drain
+uses acquire read. ACKs from an earlier request or generation cannot permit
+reopen. A newly registered radio must acknowledge the current request too;
+sequence exhaustion returns an error without wrapping. Firmware capability
+is now `FTG2`, rejecting a firmware/host ABI mismatch. There is no recurring
+host poll for direct NI traffic: polling occurs during the bounded control
+operation only.
+
+Factory evidence remains the target HEADER_A/EPP64 and EQ PUSH contracts,
+original MCE source retention and final-recipient actions, and radio RPQ/WP
+ownership. `test_fe_mcast_pe_route.py` executes six target FC/NI action recipes
+and40 native pool/map/header fault cases. The new generation/request/ACK
+protocol is our integration with that contract, not a claimed factory API.
+
+`test_fttr_ni_pe_drain.py` executes249 linked-MIPS scenarios: seven source
+ports, eight COS queues, short/full HEADER_A, ordinary/cookie paths, EPP wrap
+and invalid descriptors, all-COS progress, sleeping/selected/published WPs,
+actual RPQ, EQ credit stalls,2/7/8-BID aggregate partial return, mixed-source
+aggregation exclusion, paused geometry and closed late arrivals. Core tests
+cover stale ACK, one missing radio, pending BID despite ACK, new registration,
+retry and sequence exhaustion; the256 concurrent CPU drain/admission cases
+still pass. Forced ARM teardown tests poison each returned BID and verify
+partial retries never reread it or lose FTTR counts. Existing MIPS publication,
+265 multicast admission/revocation cases plus12 encrypted TX/RPQ cases,
+69 CPU request generation cases,1024 NI MPDUs/2048 BID RPQ returns, PS budget,
+gathering, key/BA, binding, bridge, BAR and BCMC regressions pass.
+
+Firmware is28468 bytes, SHA256
+`cfa33f3919e8907551f8e4d69fca2a80c354e9cbd0cdee88c655371bd8f5cfc7`,
+with conservative6960-byte stack usage within8192-byte DMEM. Image/modules
+and source/generated-header identity checks pass
+(`artifacts/fttr/ni-pe-drain-kernel-final-20261107.log`). No device was accessed.
+
+This acknowledges already ingested source6 BIDs and the captured EPP prefix.
+It is **not an upstream MCE/NI DMA/AFT production fence**. A source6 packet
+arriving after the ACK is rejected/counts while closed, but a packet still
+upstream until after reopen can still acquire the new generation at ingest.
+The next required retirement step is to stop/prove completion of those upstream
+producers before this drain. P6 ES/MiniOLT retirement, retained WD pages and
+group/cookie/action/GEM reuse remain unresolved; hardware IDs stay quarantined.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

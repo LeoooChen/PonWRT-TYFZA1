@@ -24,7 +24,8 @@ void rtl9617c_fttr_tx_put(u64 generation);
 int rtl9617c_fttr_tx_drain(void);
 /* The two radios own coherent storage until PE has joined. Registration
  * serializes with generation changes without requiring RTNL at PCI probe. */
-int rtl9617c_fttr_pe_register(struct rtl_fttr_pe_generation *mirror);
+int rtl9617c_fttr_pe_register(struct rtl_fttr_pe_generation *mirror,
+			    struct rtl_fttr_pe_drain *drain);
 void rtl9617c_fttr_pe_unregister(struct rtl_fttr_pe_generation *mirror);
 bool rtl9617c_fttr_stamp(struct sk_buff *skb);
 bool rtl9617c_fttr_enqueue(struct sk_buff *skb, struct net_device *dev);

@@ -36,6 +36,12 @@ code = r'''
 #include <arpa/inet.h>
 typedef uint64_t u64;typedef uint8_t u8;typedef uint16_t u16;typedef uint16_t __be16;typedef uint32_t u32;
 #define U64_MAX UINT64_MAX
+#define U32_MAX UINT32_MAX
+#define le32_to_cpu(v) (v)
+#define dma_rmb() ((void)0)
+static unsigned long jiffies;
+#define time_after_eq(a,b) ((a)>=(b))
+static void usleep_range(unsigned a,unsigned b);
 #define READ_ONCE(v) (v)
 #define WRITE_ONCE(v,x) ((v)=(x))
 #define cpu_to_le32(v) (v)
@@ -43,7 +49,8 @@ typedef uint64_t u64;typedef uint8_t u8;typedef uint16_t u16;typedef uint16_t __
 #define DEFINE_SPINLOCK(v) int v
 #define spin_lock_irqsave(p,f) ((void)(p),(f)=0)
 #define spin_unlock_irqrestore(p,f) ((void)(p),(void)(f))
-struct rtl_fttr_pe_generation {u32 low,high;};
+''' + base.joinpath('include/linux/rtl9617c-fttr-pe.h').read_text() + r'''
+
 #define unlikely(v) (v)
 #define EXPORT_SYMBOL_GPL(v)
 #define ASSERT_RTNL() assert(rtnl)
@@ -51,13 +58,11 @@ struct rtl_fttr_pe_generation {u32 low,high;};
 typedef u64 atomic64_t;
 typedef unsigned atomic_t;
 #define ATOMIC_INIT(v) (v)
-#define DECLARE_WAIT_QUEUE_HEAD(v) unsigned v
 #define atomic_read(p) (*(p))
+#define atomic_read_acquire(p) (*(p))
 #define atomic_inc(p) (++*(p))
-static bool atomic_dec_and_test(atomic_t *p){assert(*p);return !--*p;}
-#define wake_up_all(p) (++*(p))
+static unsigned atomic_dec_return_release(atomic_t *p){assert(*p);return --*p;}
 #define msecs_to_jiffies(v) (v)
-#define wait_event_timeout(w,condition,t) ((void)(w),(void)(t),(condition)?1:0)
 static unsigned rtnl;
 static u64 atomic64_read_acquire(atomic64_t *p){return *p;}
 static void atomic64_set_release(atomic64_t *p,u64 v){*p=v;}
@@ -80,6 +85,11 @@ u64 rtl9617c_fttr_generation_read(void);
 '''
 code += function(header, 'rtl9617c_fttr_stale') + function(header, 'rtl9617c_fttr_differs') + function(header, 'rtl9617c_fttr_copy')
 code += re.sub(r'^#include .*\n', '', core, flags=re.M)
+code += r'''
+static unsigned blocked_ack;
+static void usleep_range(unsigned a,unsigned b){assert(a==1000&&b==2000);jiffies+=1000;for(unsigned i=0;i<2;i++)if(rtl_fttr_pe_drains[i]&&!(blocked_ack&(1U<<i)))rtl_fttr_pe_drains[i]->ack=rtl_fttr_pe_drains[i]->request;}
+static int open_generation(void){int ret=rtl9617c_fttr_generation_read()&1?rtl9617c_fttr_tx_drain():0;return ret?ret:rtl9617c_fttr_generation_set(true);}
+'''
 code += r'''
 #define NETDEV_TX_OK 0
 #define NETDEV_TX_BUSY 1
@@ -179,17 +189,17 @@ code += function(a.kernel.joinpath('net/core/gro.c').read_text(), 'gro_list_prep
 code += function(a.kernel.joinpath('net/ipv4/inet_fragment.c').read_text(), 'inet_frag_queue_insert')
 code += r'''
 int main(void){
- struct rtl_fttr_pe_generation mirrors[3]={};
- assert(!rtl9617c_fttr_pe_register(&mirrors[0])&&mirrors[0].low==1&&!mirrors[0].high);
- assert(rtl9617c_fttr_pe_register(&mirrors[0])==-EEXIST);
- assert(!rtl9617c_fttr_pe_register(&mirrors[1]));
- assert(rtl9617c_fttr_pe_register(&mirrors[2])==-ENOSPC);
+ struct rtl_fttr_pe_generation mirrors[3]={};struct rtl_fttr_pe_drain drains[3]={};
+ assert(!rtl9617c_fttr_pe_register(&mirrors[0],&drains[0])&&mirrors[0].low==1&&!mirrors[0].high);
+ assert(rtl9617c_fttr_pe_register(&mirrors[0],&drains[0])==-EEXIST);
+ assert(!rtl9617c_fttr_pe_register(&mirrors[1],&drains[1]));
+ assert(rtl9617c_fttr_pe_register(&mirrors[2],&drains[2])==-ENOSPC);
  struct net_device lan={},p6={.rtl9617c_fttr_egress=1,.rtl9617c_fttr_omci=0x8888},mc={.rtl9617c_fttr_egress=2};
  struct net_device gem={.vlan=true,.parent=&p6},customer={.vlan=true,.parent=&gem};
  struct sk_buff management={.protocol=htons(0x8888)},normal={.protocol=htons(0x800)},old={.protocol=htons(0x800)};
  assert(!rtl9617c_fttr_stale(&normal));
  assert(rtl9617c_fttr_enqueue(&management,&p6)&&!management.rtl9617c_fttr_generation);
- rtnl=1;assert(!rtl9617c_fttr_generation_set(true));rtnl=0;
+ rtnl=1;assert(!open_generation());rtnl=0;
  assert(mirrors[0].low==2&&mirrors[1].low==2);
  assert(rtl9617c_fttr_enqueue(&old,&customer)&&old.rtl9617c_fttr_generation==2);
  struct ethhdr wire={.h_proto=htons(0x8100)};struct sk_buff raw={.data=(void *)&wire,.mac_set=true,.len=14,.protocol=htons(3)};
@@ -207,7 +217,7 @@ int main(void){
  assert(!nf_queue(&held,&state,0,NF_QUEUE)&&queued==1&&held.rtl9617c_fttr_generation==2);
  rtnl=1;assert(!rtl9617c_fttr_generation_set(false));u64 closed=rtl9617c_fttr_generation_read();
  assert(!rtl9617c_fttr_generation_set(false)&&rtl9617c_fttr_generation_read()==closed);
- assert(!rtl9617c_fttr_generation_set(true));rtnl=0;
+ assert(!open_generation());rtnl=0;
  assert(rtl9617c_fttr_stale(&old)&&rtl9617c_fttr_stale(&v4)&&rtl9617c_fttr_stale(&v6));
  /* Re-enqueue cannot relabel an old packet into the new generation. */
  assert(!rtl9617c_fttr_enqueue(&held,&mc)&&held.rtl9617c_fttr_generation==2);
@@ -224,7 +234,7 @@ int main(void){
  first.len=8;second.len=8;
  assert(inet_frag_queue_insert(&fragments,&first,0,8)==IPFRAG_OK);
  assert(inet_frag_queue_insert(&fragments,&second,8,16)==IPFRAG_OK);
- rtnl=1;assert(!rtl9617c_fttr_generation_set(false));assert(!rtl9617c_fttr_generation_set(true));rtnl=0;
+ rtnl=1;assert(!rtl9617c_fttr_generation_set(false));assert(!open_generation());rtnl=0;
  struct sk_buff newer={.len=8};assert(rtl9617c_fttr_stamp(&newer));
  assert(inet_frag_queue_insert(&fragments,&newer,16,24)==IPFRAG_OVERLAP);
  fragments=(struct inet_frag_queue){};assert(inet_frag_queue_insert(&fragments,&second,0,8)==IPFRAG_OVERLAP);
@@ -246,14 +256,36 @@ int main(void){
  rtl9617c_fttr_pe_unregister(&mirrors[0]);assert(mirrors[0].low==1);
  rtl9617c_fttr_pe_unregister(&mirrors[0]);
  rtnl=1;rtl_fttr_generation=0xffffffffULL;
- assert(!rtl9617c_fttr_generation_set(true)&&mirrors[1].low==0&&mirrors[1].high==1&&mirrors[0].low==1);
- assert(!rtl9617c_fttr_pe_register(&mirrors[2])&&mirrors[2].low==0&&mirrors[2].high==1);
+ assert(!open_generation()&&mirrors[1].low==0&&mirrors[1].high==1&&mirrors[0].low==1);
+ assert(!rtl9617c_fttr_pe_register(&mirrors[2],&drains[2])&&mirrors[2].low==0&&mirrors[2].high==1);
  assert(!rtl9617c_fttr_generation_set(false)&&mirrors[1].low==1&&mirrors[2].low==1);
+ /* CPU count zero and an old ACK are insufficient. Each retry captures a
+  * new post-withdrawal prefix, and every attached radio must finish it. */
+ blocked_ack=2;u32 previous=rtl_fttr_drain_sequence;
+ assert(rtl9617c_fttr_tx_drain()==-ETIMEDOUT&&rtl_fttr_drain_sequence==previous+1);
+ assert(rtl9617c_fttr_generation_set(true)==-EBUSY);
+ blocked_ack=0;drains[1].pending=1;
+ assert(rtl9617c_fttr_tx_drain()==-ETIMEDOUT&&rtl_fttr_drain_sequence==previous+2);
+ assert(rtl9617c_fttr_generation_set(true)==-EBUSY);
+ drains[1].pending=0;assert(!rtl9617c_fttr_tx_drain());
+ assert(!rtl9617c_fttr_generation_set(true));
+ assert(!rtl9617c_fttr_generation_set(false));
+ assert(rtl9617c_fttr_generation_set(true)==-EBUSY); /* prior-generation ACK */
+ assert(!rtl9617c_fttr_tx_drain());
+ /* Registration during closed state borrows the current request but must
+  * obtain its own ACK before a previously successful close can reopen. */
+ rtl9617c_fttr_pe_unregister(&mirrors[2]);drains[2]=(struct rtl_fttr_pe_drain){};
+ assert(!rtl9617c_fttr_pe_register(&mirrors[2],&drains[2]));
+ assert(rtl9617c_fttr_generation_set(true)==-EBUSY);
+ assert(!rtl9617c_fttr_tx_drain());
+ u32 saved_sequence=rtl_fttr_drain_sequence;rtl_fttr_drain_sequence=U32_MAX;
+ assert(rtl9617c_fttr_tx_drain()==-EOVERFLOW&&rtl_fttr_drain_sequence==U32_MAX);
+ rtl_fttr_drain_sequence=saved_sequence;
  rtl9617c_fttr_pe_unregister(&mirrors[1]);rtl9617c_fttr_pe_unregister(&mirrors[2]);
  /* Both radios share the accepted-request barrier. A late sender cannot
   * acquire after close; delayed completion keeps reopen explicitly busy. */
  for(unsigned n=0;n<=512;n++) {
-  assert(!rtl9617c_fttr_generation_set(true));u64 accepted=rtl9617c_fttr_generation_read();
+  assert(!open_generation());u64 accepted=rtl9617c_fttr_generation_read();
   assert(rtl9617c_fttr_tx_drain()==-EBUSY);
   assert(rtl9617c_fttr_tx_get(0)&&!rtl_fttr_tx_pending);
   for(unsigned i=0;i<n;i++)assert(rtl9617c_fttr_tx_get(accepted));
@@ -267,7 +299,7 @@ int main(void){
    rtl9617c_fttr_tx_put(accepted);
    assert(rtl9617c_fttr_tx_drain()==(i+1<n?-ETIMEDOUT:0));
   }
-  assert(!rtl9617c_fttr_generation_set(true));
+  assert(!open_generation());
   assert(!rtl9617c_fttr_tx_get(accepted));
  }
  rtl_fttr_generation=UINT64_MAX;assert(rtl9617c_fttr_generation_set(true)==-EOVERFLOW);

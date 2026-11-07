@@ -2,20 +2,23 @@
 /* FTTR software packet lifetime, independent of FE ownership and skb marks. */
 #include <linux/atomic.h>
 #include <linux/dma-mapping.h>
+#include <linux/delay.h>
 #include <linux/export.h>
 #include <linux/errno.h>
 #include <linux/if_vlan.h>
 #include <linux/netdevice.h>
 #include <linux/rtnetlink.h>
+#include <linux/jiffies.h>
 #include <linux/rtl9617c-fttr.h>
 #include <linux/spinlock.h>
-#include <linux/wait.h>
 
 static atomic64_t rtl_fttr_generation = ATOMIC64_INIT(1);
 static DEFINE_SPINLOCK(rtl_fttr_pe_lock);
 static struct rtl_fttr_pe_generation *rtl_fttr_pe_radios[2];
+static struct rtl_fttr_pe_drain *rtl_fttr_pe_drains[2];
+static u32 rtl_fttr_drain_sequence;
+static u64 rtl_fttr_drained_generation;
 static atomic_t rtl_fttr_tx_pending = ATOMIC_INIT(0);
-static DECLARE_WAIT_QUEUE_HEAD(rtl_fttr_tx_wait);
 
 static void rtl_fttr_pe_publish(struct rtl_fttr_pe_generation *mirror, u64 generation)
 {
@@ -27,7 +30,8 @@ static void rtl_fttr_pe_publish(struct rtl_fttr_pe_generation *mirror, u64 gener
 	dma_wmb();
 }
 
-int rtl9617c_fttr_pe_register(struct rtl_fttr_pe_generation *mirror)
+int rtl9617c_fttr_pe_register(struct rtl_fttr_pe_generation *mirror,
+			    struct rtl_fttr_pe_drain *drain)
 {
 	unsigned long flags;
 	int slot, ret = -ENOSPC;
@@ -38,6 +42,9 @@ int rtl9617c_fttr_pe_register(struct rtl_fttr_pe_generation *mirror)
 	for (slot = 0; slot < 2; slot++)
 		if (!rtl_fttr_pe_radios[slot]) {
 			rtl_fttr_pe_publish(mirror, rtl9617c_fttr_generation_read());
+			WRITE_ONCE(drain->request, cpu_to_le32(rtl_fttr_drain_sequence));
+			dma_wmb();
+			rtl_fttr_pe_drains[slot] = drain;
 			rtl_fttr_pe_radios[slot] = mirror;
 			ret = 0;
 			break;
@@ -59,6 +66,7 @@ void rtl9617c_fttr_pe_unregister(struct rtl_fttr_pe_generation *mirror)
 			WRITE_ONCE(mirror->low, cpu_to_le32(1));
 			dma_wmb();
 			rtl_fttr_pe_radios[slot] = NULL;
+			rtl_fttr_pe_drains[slot] = NULL;
 		}
 	spin_unlock_irqrestore(&rtl_fttr_pe_lock, flags);
 }
@@ -69,6 +77,23 @@ u64 rtl9617c_fttr_generation_read(void)
 	return atomic64_read_acquire(&rtl_fttr_generation);
 }
 EXPORT_SYMBOL_GPL(rtl9617c_fttr_generation_read);
+
+/* Caller holds the registry lock so a joined radio cannot free its status
+ * while ARM samples it. ACK is published after the final EQ PUSH fence. */
+static bool rtl_fttr_pe_drained(u64 generation)
+{
+	int slot;
+
+	for (slot = 0; slot < 2; slot++) {
+		struct rtl_fttr_pe_drain *drain = rtl_fttr_pe_drains[slot];
+		if (!drain) continue;
+		if (rtl_fttr_drained_generation != generation) return false;
+		if (le32_to_cpu(READ_ONCE(drain->ack)) != rtl_fttr_drain_sequence) return false;
+		dma_rmb();
+		if (READ_ONCE(drain->pending)) return false;
+	}
+	return true;
+}
 
 int rtl9617c_fttr_generation_set(bool active)
 {
@@ -85,7 +110,7 @@ int rtl9617c_fttr_generation_set(bool active)
 		return -EOVERFLOW;
 	spin_lock_irqsave(&rtl_fttr_pe_lock, flags);
 	/* No old accepted radio request may cross a successful reopen. */
-	if (active && atomic_read(&rtl_fttr_tx_pending)) {
+	if (active && (atomic_read_acquire(&rtl_fttr_tx_pending) || !rtl_fttr_pe_drained(generation))) {
 		spin_unlock_irqrestore(&rtl_fttr_pe_lock, flags);
 		return -EBUSY;
 	}
@@ -116,19 +141,49 @@ EXPORT_SYMBOL_GPL(rtl9617c_fttr_tx_get);
 
 void rtl9617c_fttr_tx_put(u64 generation)
 {
-	if (generation && atomic_dec_and_test(&rtl_fttr_tx_pending))
-		wake_up_all(&rtl_fttr_tx_wait);
+	/* Keep the payload unmap/disposition before the zero seen by drain. */
+	if (generation) atomic_dec_return_release(&rtl_fttr_tx_pending);
 }
 EXPORT_SYMBOL_GPL(rtl9617c_fttr_tx_put);
 
 int rtl9617c_fttr_tx_drain(void)
 {
+	unsigned long flags, deadline = jiffies + msecs_to_jiffies(1000);
+	u64 generation;
+	int slot;
+	bool done;
+
 	ASSERT_RTNL();
 	/* RTNL keeps the generation closed throughout this sleep. tx_get uses
 	 * the same lock as closure, including a sender already mapping an skb. */
-	if (!(rtl9617c_fttr_generation_read() & 1)) return -EBUSY;
-	return wait_event_timeout(rtl_fttr_tx_wait, !atomic_read(&rtl_fttr_tx_pending),
-		msecs_to_jiffies(1000)) ? 0 : -ETIMEDOUT;
+	generation = rtl9617c_fttr_generation_read();
+	if (!(generation & 1)) return -EBUSY;
+	spin_lock_irqsave(&rtl_fttr_pe_lock, flags);
+	rtl_fttr_drained_generation = 0;
+	if (rtl_fttr_drain_sequence == U32_MAX) {
+		spin_unlock_irqrestore(&rtl_fttr_pe_lock, flags);
+		return -EOVERFLOW;
+	}
+	rtl_fttr_drain_sequence++;
+	for (slot = 0; slot < 2; slot++)
+		if (rtl_fttr_pe_drains[slot])
+			WRITE_ONCE(rtl_fttr_pe_drains[slot]->request, cpu_to_le32(rtl_fttr_drain_sequence));
+	dma_wmb();
+	spin_unlock_irqrestore(&rtl_fttr_pe_lock, flags);
+	for (;;) {
+		spin_lock_irqsave(&rtl_fttr_pe_lock, flags);
+		/* Tentatively identify this request for the shared ACK predicate;
+		 * the lock prevents reopen observing it before the result is known. */
+		rtl_fttr_drained_generation = generation;
+		done = !atomic_read_acquire(&rtl_fttr_tx_pending) && rtl_fttr_pe_drained(generation);
+		if (!done) rtl_fttr_drained_generation = 0;
+		spin_unlock_irqrestore(&rtl_fttr_pe_lock, flags);
+		if (done) return 0;
+		if (time_after_eq(jiffies, deadline)) return -ETIMEDOUT;
+		/* PE has no ARM callback. Poll only for this bounded control action;
+		 * neither NI/FE/radio locks nor borrowed pointers span the sleep. */
+		usleep_range(1000, 2000);
+	}
 }
 EXPORT_SYMBOL_GPL(rtl9617c_fttr_tx_drain);
 

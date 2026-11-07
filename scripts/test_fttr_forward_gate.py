@@ -75,7 +75,9 @@ source+=r'''
 #define U64_MAX UINT64_MAX
 static u64 rtl_fttr_generation=2;
 static unsigned rtl_fttr_tx_pending;
+static bool rtl_fttr_pe_drained(u64 generation){(void)generation;return true;}
 #define atomic_read(p) (*(p))
+#define atomic_read_acquire(p) (*(p))
 static int drain_error;
 static int rtl9617c_fttr_tx_drain(void){assert(rtnl&&!locked&&!pe_locked&&(rtl_fttr_generation&1));return drain_error;}
 #define cpu_to_le32(v) (v)

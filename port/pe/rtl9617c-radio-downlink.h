@@ -90,9 +90,16 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 	u32 available = (ni[0x659c / 4] >> ((mailbox[114] - 0x7000) / 4)) & 255;
 	if (!available) return 0;
 	u32 cos = 0;
-	if (available & 0xf0) { available >>= 4; cos = 4; }
-	if (available & 0x0c) { available >>= 2; cos += 2; }
-	if (available & 0x02) cos++;
+	struct rtl_fttr_pe_drain *drain = (void *)(memory + RTL_FTTR_PE_DRAIN);
+	/* Finish the captured prefix even under continuous higher-COS traffic. */
+	if (drain->epp_mask) {
+		u32 needed = drain->epp_mask;
+		while (!(needed & 1)) { needed >>= 1; cos++; }
+	} else {
+		if (available & 0xf0) { available >>= 4; cos = 4; }
+		if (available & 0x0c) { available >>= 2; cos += 2; }
+		if (available & 0x02) cos++;
+	}
 	volatile u32 *consumers = (void *)(memory + NI_EPP_CONSUMERS);
 	u32 consumer = consumers[cos], shift = mailbox[167], mask = (1U << shift) - 1;
 	/* Stock ca_ni_rx_napi consumes a producer snapshot before publishing RD. */
@@ -102,6 +109,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 	u32 cached_peer = 0, cached_low = 0, cached_high = 0;
 	u32 fence = mailbox[171] & BIT(cos);
 	u32 target = *(u32 *)(memory + NI_EPP_RETIRE_TARGETS + cos * 4), crossed = 0;
+	u32 fttr_crossed = 0;
 	/* PE1 owns queue counts; ARM changes EPP geometry only while paused. */
 	u32 queued = mailbox[38], epp = mailbox[25] + (cos << shift);
 	sync();
@@ -119,7 +127,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		u32 length = ni_length(entry, buffer, &header, &tid);
 		u8 *ethernet = uncached(buffer + RTL_QM_HEADROOM + header);
 		u32 macid = 0, cookie = ni_mcast_cookie(buffer);
-		if (length >= 14 && length <= RTL_QM_DATA_BYTES - header) {
+		u32 admitted = ni_fttr_receive(mailbox, memory, buffer);
+		if (admitted && length >= 14 && length <= RTL_QM_DATA_BYTES - header) {
 			if (cookie) macid = ni_mcast_admit(mailbox, memory, buffer, ethernet, length, cookie, &tid);
 			else {
 			const u32 *destination = (const void *)ethernet;
@@ -169,6 +178,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 			mailbox[30]++; mailbox[47] = id + 1; mailbox[63]++;
 			consumer = (consumer + 8) & mask;
 			if (fence && consumer == target) crossed = 1;
+			if (consumer == drain->target[cos]) fttr_crossed = 1;
 			count++; break;
 		}
 		u32 *waiting = uncached(buffer);
@@ -181,12 +191,14 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		tail = buffer; grouped++;
 		consumer = (consumer + 8) & mask;
 		if (fence && consumer == target) crossed = 1;
+		if (consumer == drain->target[cos]) fttr_crossed = 1;
 	}
 	if (grouped) ni_enqueue(mailbox, memory, group, head, tail, grouped);
 	consumers[cos] = consumer; mailbox[26] = consumers[0];
 	sync(); ni[mailbox[115] / 4 + cos] = consumer;
 	/* A batch may pass the cutoff. Publish its queues and RD before ACK. */
 	if (crossed) { sync(); mailbox[171] &= ~BIT(cos); }
+	if (fttr_crossed) { sync(); drain->epp_mask &= ~BIT(cos); }
 	return count;
 }
 
@@ -263,6 +275,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				 now - ((u64)waiting[3] << 32 | waiting[2]) >=
 				 (u64)*(u32 *)(memory + RTL_AX_NI_PS_TIMEOUT + macid * 4) * 1000000));
 			discard |= ni_mcast_stale(mailbox, waiting);
+			discard |= ni_fttr_stale(mailbox, waiting);
 			if (discard && mailbox[47]) continue;
 			if (!discard && (mailbox[30] >= 124 ||
 			    (ps[0] && (command == ps[2] || !((grant_flags >> 16) & BIT(tid)))))) continue;
@@ -313,7 +326,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 						while (next && frames < 8) {
 							u32 *part = uncached(next), pad = (0U - body) & 3;
 							/* One aggregate has one immutable conversion owner. */
-							if (part[4] != waiting[4] || ni_mcast_stale(mailbox, part)) break;
+							if (part[4] != waiting[4] || part[5] != waiting[5] || part[6] != waiting[6] ||
+							    ni_mcast_stale(mailbox, part) || ni_fttr_stale(mailbox, part)) break;
 							u32 next_metadata = part[1], next_length = next_metadata & 65535;
 							if (body + pad + next_length + 8 > (caps >> 18)) break;
 							request[8 + frames * 2] = next + RTL_QM_HEADROOM + (next_metadata >> 16);

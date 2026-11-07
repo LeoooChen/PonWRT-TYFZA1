@@ -454,6 +454,7 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 }
 
 #ifdef PE_UPLINK
+#include "rtl9617c-radio-fttr.h"
 static u32 ni_mcast_stale(volatile u32 *mailbox, const u32 *waiting);
 static u32 pe_fttr_stale(volatile u32 *mailbox, const u32 *request)
 {
@@ -492,7 +493,8 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 		if (request[0] >= 256) {
 			u32 id = request[0] - 256;
 			u32 *owners = (void *)(memory + 0xc400);
-			if (ni_mcast_stale(mailbox, uncached(owners[id * 2]))) {
+			if (ni_mcast_stale(mailbox, uncached(owners[id * 2])) ||
+			    ni_fttr_stale(mailbox, uncached(owners[id * 2]))) {
 				/* Retain the BID like a completed WP. Using the single
 				 * discard slot here would deadlock pause-drain when the
 				 * second stale request waits for a disabled recycler. */
@@ -591,9 +593,20 @@ static void __attribute__((section(".rxq"), noinline)) ni_recycle(volatile u32 *
 			if (!credit || !(push[0] & BIT(31))) break;
 			/* The owner acquire or preceding PUSH fence orders this link. */
 			u32 next = *(u32 *)uncached(buffer);
+#ifdef PE_UPLINK
+			/* Sample before PUSH transfers this allocation away. */
+			const u32 *waiting = uncached(buffer);
+			u32 fttr = waiting[5] | waiting[6];
+#endif
 			push[1] = buffer | eq;
 			buffer = next; returned++; credit--;
 			sync();
+#ifdef PE_UPLINK
+			if (fttr) {
+				struct rtl_fttr_pe_drain *drain = (void *)(memory + RTL_FTTR_PE_DRAIN);
+				drain->pending--;
+			}
+#endif
 		} while (buffer);
 		if (!returned) break;
 		owners[id * 2] = buffer;
@@ -669,6 +682,8 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 		}
 		u32 command = mailbox[3];
 #ifdef PE_UPLINK
+		/* ARM may change EPP bases and pool routing while NI is paused. */
+		if (!mailbox[80] && ((command & 1) || !mailbox[24])) ni_fttr_drain(mailbox, memory);
 		/* PE1 finishes its selected MPDUs before acknowledging a pause. */
 		if (!mailbox[80] && !(command & 1) && command != commands[slot]) {
 			pe_tx_publish(mailbox, 16, tx_requests[slot]);
