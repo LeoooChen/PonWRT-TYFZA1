@@ -157,6 +157,7 @@ static void write16(void *ctx,unsigned reg,unsigned value){(void)ctx;assert(reg=
 #define sg_dma_address(s) ((s)->dma)
 #define sg_dma_len(s) ((s)->len)
 '''
+code += 'static bool stale_fttr; static bool rtl9617c_fttr_stale(const struct sk_buff *s){(void)s;return stale_fttr;}\n'
 code += function((kernel / 'net/wireless/util.c').read_text(), 'ieee80211_hdrlen')
 wp = (driver / 'tx-format.h').read_text()
 for name in ('rtl_ax_tx_dma_channel', 'rtl_ax_tx_wp_sequence', 'rtl_ax_tx_wp_address', 'rtl_ax_tx_wp_addresses'):
@@ -184,7 +185,10 @@ int main(void){
   struct sk_buff skb={.data=malloc(20),.len=20,.priority=7,.info={.flags=ampdu?IEEE80211_TX_CTL_AMPDU:0}};
   assert(skb.data);memcpy(skb.data,original,20);
   assert(ieee80211_hdrlen(0x84)==16 && sizeof(struct ieee80211_bar)==20);
-  unsigned before=freed;rtl_ax_monitor_tx(&hw,&control,&skb);
+  unsigned before=freed;
+  stale_fttr=true;
+  assert(rtl_ax_tx_submit(&t,&hw,&skb,0,0,0,7,0,0)==-ESTALE && !t.submitted && freed==before);
+  stale_fttr=false;rtl_ax_monitor_tx(&hw,&control,&skb);
   assert(freed==before && t.submitted==1 && t.submitted_ring[4]==1);
   assert(t.slots[0].ring==4 && t.slots[0].macid==7 && t.slots[0].tid==16);
   assert(!t.slots[0].pe_sequence&&!t.slots[0].firmware_rate&&!t.ampdu_submitted);

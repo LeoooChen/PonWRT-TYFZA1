@@ -61,7 +61,7 @@ typedef uint8_t u8;typedef uint16_t u16,__be16;typedef int netdev_tx_t;
 #define unlikely(x) (x)
 #define WARN_ONCE(v,...) (v)
 #define ASSERT_RTNL() assert(rtnl)
-struct net_device {void *private;bool running,carrier,bridge,vlan,stopped;unsigned group,ifindex,mtu,stp;
+struct net_device {unsigned rtl9617c_fttr_egress;void *private;bool running,carrier,bridge,vlan,stopped;unsigned group,ifindex,mtu,stp;
  u8 dev_addr[6];struct net_device *master,*parent;unsigned vid;__be16 proto;
  struct {unsigned tx_packets,tx_bytes,tx_dropped,rx_packets,rx_bytes,rx_dropped;}stats;};
 struct napi_struct {int unused;};

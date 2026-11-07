@@ -148,12 +148,14 @@
 
 65. 按实际原厂调用链补齐ASIC/FPGA2默认业务生成：`factory total bridge`展开管理槽以外的1..7个数据业务，默认total2不做ANI VLAN过滤，更多业务为每个GEM设置VID100×slot，UNI保持透明，最后一个业务拥有组播。原厂执行确认API队列1对应Related Port优先级0；FTTR-100M名义0/50/100不写硬件，实际supervisor下发DBA为原生单位0/0/19440。FTTR-402实际配置上限为首Ethernet卡4个UNI、首VEIP卡1个UNI；执行原厂MIB解析、卡/UNI生产和分组后依实际实例选择，超额或孤立端口不修改。缺分类、空首VEIP、缺队列在业务写入前拒绝，最后GEM失败逆序恢复。单/双/七业务standard/CTC完整命名空间测试、显式多业务及CLI回归、GCC14.4/musl包构建通过；仍未导入原厂保存配置或用户修改profile，FPGA1默认生成待补，持久OMCI归属与硬件完整退场仍未完成。未访问实机。详见[原厂默认生成与卡口限制](port/FTTR.md#factory-default-service-generation-and-card-limits)。
 
+66. 将FTTR软件代际从QM片段延伸到完整skb：内建64位闭合/启用代际跨驱动卸载保留、不回绕；业务RX、GEM/共享口发送、NFQUEUE和邻居解析前记录，已有包不能重新标记。Linux RPS接收、qdisc/BUSY最终发送、NFQUEUE恢复、mac80211与原生无线最终提交及NI DMA复制前拒绝旧代际；复制/分片保留、GRO/重组/A-MSDU禁止跨代混合。组播口单独关闭也撤销旧CPU副本。真实生产函数的门控、队列、复制、GRO/重组、无线拒绝及768组QM检查通过；旧独立预取fixture缺历史分段字段，不计通过，使用完整QM用例替代。13项补丁零fuzz复现与Image/模块构建通过。仍不证明已进入DMA/AFT/PE/ES/MiniOLT的报文退场，不能解除硬件ID隔离。未访问实机。详见[跨软件队列的FTTR代际](port/FTTR.md#fttr-packet-generations-across-software-queues)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
 | --- | --- |
 | 真实数据路径验收 | 核验 P6 收发、光学就绪、ONU 注册、OMCI、业务双向通流及真实 FE 命中；记录实测从光猫型号和固件，而非宣称通用兼容。 |
-| GEM 复用前旧报文退场 | CPU 业务门控、父接口 qdisc 和 NAPI/GRO 暂存清理已接入；已交付 RPS/协议栈及 ES 队列清空尚未接入完整撤销流程。DMA 有两个预取描述符，PE/MiniOLT 缓存没有查实的完整退场依据；仅删除 Hash/cache 不能证明所有旧报文已消失。 |
+| GEM 复用前旧报文退场 | CPU 业务门控、父接口 qdisc 和 NAPI/GRO 暂存清理已接入；完整skb代际现覆盖RPS、NFQUEUE、邻居/qdisc及无线软件等待，分片/聚合保留或隔离代际。已交付应用的数据及硬件在途不属于该保证，ES清队列尚未形成完整撤销屏障。DMA 有两个预取描述符，PE/MiniOLT 缓存没有查实的完整退场依据；仅删除 Hash/cache 不能证明所有旧报文已消失。 |
 | Wi-Fi 配置联动 | 私有 OMCI 的 CLI/常驻策略已接入；独立 syncserv JSON 链已有发现、显式注册回复、回读及写入/可读字段比较，并加入绑定 MAC/自报 SN 的常驻多设备、多 SSID 策略和默认关闭的独立服务。注册、掉线或替换会取消旧事务；支持持久配置版本及发送前意图记录，重启后对已尝试配置只回读、不自动重发密码。自报 SN 核对不等于认证。下一步补齐实际从设备能力/身份、密码安装核验、实物掉电验收、真实 CWMP/WAN 就绪来源及 UCI 变更联动；显式 UCI 初始快照映射已实现。两条路径均缺实际从设备验收。 |
 | 配置恢复与服务策略 | OMCI/业务记录仍在 `/var/run`；syncserv 新增持久版本写入意图和只读恢复，但未实测闪存掉电；原厂全局 LOID、逐 ONU 五种比较/选择、SN持久绑定/自动学习与迁移已接入；PLOAM 获取、逐 ONU 原厂配置导入、ASIC/FPGA2默认业务生成及共享多业务已接入；原厂保存配置导入、用户修改profile、FPGA1默认配置与远端资源归属恢复仍待补齐。 |
 | FPGA 机型 | 已实现保留 bitstream 核验打包、P6 先于镜像加载、加载后绑定 MiniOLT、原厂 post-DONE 控制、工厂文件选择四种光学校准、UX3326 温度调节/恢复、独立启动流程及新版 FPGA1 工厂认证。FPGA2 原厂程序分派、控制器启动及业务/认证/管理已接入；下一步补齐 SFP/告警并确认实际器件与物理行为。不能按 LAN 速率猜硬件后端。 |

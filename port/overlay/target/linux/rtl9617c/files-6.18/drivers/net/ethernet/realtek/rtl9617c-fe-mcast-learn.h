@@ -299,7 +299,7 @@ static u64 fe_mcast_capture_begin(void *context,struct sk_buff *skb,bool local,u
  struct net_device *brdev;
  unsigned long flags;
 
- if(READ_ONCE(bridge->stopping) || !rtl_fe_enabled(fe) || !wire || !wire->port ||
+ if(rtl9617c_fttr_stale(skb) || READ_ONCE(bridge->stopping) || !rtl_fe_enabled(fe) || !wire || !wire->port ||
     wire->epoch!=(u32)atomic_read(&bridge->epoch) || wire->multicast_host_group || wire->ip_protocol!=IPPROTO_UDP ||
     !is_multicast_ether_addr(wire->destination) || is_broadcast_ether_addr(wire->destination) ||
     is_link_local_ether_addr(wire->destination) ||

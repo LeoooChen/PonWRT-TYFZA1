@@ -5310,6 +5310,75 @@ Durable remote ownership, saved factory policy import, FPGA1 default profiles,
 AP direct NI→PE BCMC, multiple VIFs and complete physical retirement/reuse
 remain open.
 
+### FTTR packet generations across software queues
+
+The native forwarding gate previously checked the current boolean at P6
+submission/receive and purged the parent qdisc, NAPI GRO and QM reassembly.
+An already-complete skb held in RPS, a neighbour queue, NFQUEUE, another
+netdev's qdisc or mac80211 could survive that withdrawal. Checking only the
+reopened boolean could then allow an older service packet to leave after a
+GEM reassignment. The original EXT_SWITCH_EN marker identifies origin but is
+not a packet-lifetime fence; original ES/Hash withdrawal still does not prove
+complete hardware retirement.
+
+A built-in64-bit FTTR generation now covers native CPU business packets.
+Odd generations are closed; zero in an skb means unrelated traffic. The
+counter survives native driver unload and never wraps to a previously used
+identity. RTNL serializes transitions; P6 closes the generation under its
+existing TX lock before waiting for NAPI/qdisc cleanup. Successful forwarding
+enable opens a new generation; a failed enable leaves it closed and removes
+the pending FE request. Closing the shared multicast endpoint also invalidates
+queued FTTR CPU copies while preserving an already-closed parent state.
+
+P6 business RX is stamped before report redirection/GRO, including source6
+hardware multicast copies delivered through the validated host-copy callback.
+Native per-GEM VLAN and shared-multicast egress are stamped before enqueue,
+NFQUEUE hold and routed neighbour resolution. An existing stamp is never
+replaced. The parent exempts only its configured untagged OMCI protocol;
+AF_PACKET's protocol argument cannot disguise a VLAN in its actual Ethernet
+header. Other ports' unrelated packets remain unstamped.
+
+`230-fttr-packet-generation.patch` adds checks at Linux receive-core entry
+(including RPS and repeated VLAN/virtual-device rounds), enqueue and final
+hard-start after qdisc/BUSY requeue. NFQUEUE reinjection rejects a stale skb
+before repeat hooks or its saved continuation. IPv4/IPv6 fragmentation and
+mac80211 fragmentation preserve the generation and FTTR origin; skb header
+copy/clone/GSO copies preserve it through the existing headers group. GRO,
+skb coalescing, IP fragment reassembly and software A-MSDU aggregation cannot
+mix different generations. mac80211's final driver call and native radio TX
+submission check again after software PS/TXQ waiting. NI checks again under
+its own TX lock before copying a packet into DMA-owned storage. The bridge
+wire/forwarded and multicast-capture hooks also refuse stale packets, so an
+old queued skb cannot become a fresh hardware-learning sample.
+
+`test_fttr_packet_generation.py` executes the real core helper, Linux
+hard-start/BUSY retry, NFQUEUE enqueue/reinject, metadata-copy, GRO selection,
+IP fragment insertion and mac80211 final TX functions with modeled skb/netdev
+storage. It exercises close/reopen, existing-stamp preservation, mixed valid/
+invalid TX lists, queue-bypass attempts, exact OMCI exemption, raw AF_PACKET
+VLAN headers, cross-generation aggregation/reassembly and counter exhaustion.
+Source checks cover the surrounding receive, fragment, neighbour and A-MSDU
+hook positions; they are not live-kernel queue tests. Production P6 gate tests
+also execute shared-endpoint invalidation and failure cleanup. The actual
+radio submit test rejects a stale packet before DMA or PE publication; existing
+BAR and90 BCMC submissions with45 linked-PE descriptor checks pass. The768
+QM P6 receive cases, held-RX purge, multicast endpoint and bridge learning
+regressions pass. The old isolated QM prefetch fixture lacks prior FTTR
+reassembly fields and did not compile; the complete P6 QM test supplies those
+fields and executes the actual poll instead.
+
+The new patch applies with zero fuzz and reproduces all13 changed kernel
+sources. Linux6.18.55 Image/modules compile with the actual native core,
+NFNETLINK_QUEUE, mac80211 and radio driver
+(`artifacts/fttr/generation-kernel-final-20261107.log`). These checks establish
+software metadata/admission behavior and build consistency. They do not
+purge data already delivered to application sockets, represent newly created
+application responses, or prove retirement of packets already copied into
+DMA/AFT, PE, ES or MiniOLT hardware. Direct NI→PE copies remain protected by
+their existing immutable recipient/generation records and retirement gaps.
+Hardware IDs remain quarantined; complete packet retirement and safe reuse
+are still unfulfilled requirements.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

@@ -104,6 +104,7 @@ static int skb_cow_head(struct sk_buff *s,unsigned n){(void)s;assert(!n);return 
 static u64 fe_mcast_ticket;
 static int atomic_read(int *p){return *p;}
 static bool rtl_fe_enabled(struct rtl_fe *f){return f->enabled;}
+static bool rtl9617c_fttr_stale(const struct sk_buff *s){(void)s;return false;}
 static bool skb_is_gso(struct sk_buff *s){return s->gso;}
 static struct rtl_fe *ext_change;
 static void fe_mcast_invalidate(struct rtl_fe *fe);

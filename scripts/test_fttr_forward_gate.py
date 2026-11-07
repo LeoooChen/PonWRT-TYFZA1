@@ -16,7 +16,7 @@ source=r'''
 #include <string.h>
 #include <errno.h>
 #include <sys/types.h>
-typedef uint8_t u8;typedef uint16_t u16;typedef int netdev_tx_t;
+typedef uint8_t u8;typedef uint16_t u16;typedef uint64_t u64;typedef int netdev_tx_t;
 #define NETDEV_TX_OK 0
 #define NETDEV_TX_BUSY 1
 #define ETH_HLEN 14
@@ -28,8 +28,8 @@ typedef uint8_t u8;typedef uint16_t u16;typedef int netdev_tx_t;
 #define smp_store_release(p,v) (*(p)=(v))
 #define container_of(p,t,m) ((t *)((char *)(p)-offsetof(t,m)))
 struct device {void *data;};struct device_attribute {int unused;};struct napi_struct {int unused;};
-struct net_device {void *data;bool running,stopped;struct {unsigned tx_dropped,rx_dropped,rx_packets,rx_bytes;}stats;};
-struct sk_buff {unsigned len;bool consumed,vlan,rtl9617c_fttr_ingress;unsigned protocol;u8 bytes[2100];};
+struct net_device {unsigned rtl9617c_fttr_omci;void *data;bool running,stopped;struct {unsigned tx_dropped,rx_dropped,rx_packets,rx_bytes;}stats;};
+struct sk_buff {u64 rtl9617c_fttr_generation;unsigned len;bool consumed,vlan,rtl9617c_fttr_ingress;unsigned protocol;u8 bytes[2100];};
 struct rtl9617c_ni_frame {int unused;};
 struct rtl9617c_ni_endpoint {struct net_device *netdev;};
 struct rtl_xram {struct net_device *fttr,*fttr_mc;bool fttr_tx_active,fttr_loading,fttr_forwarding;
@@ -68,11 +68,26 @@ static void rtl_fttr_rx_purge(struct rtl_xram *priv){assert(priv==&shared);synch
 static void dev_deactivate(struct net_device *d){assert(d==&parent && rtnl && !locked);qdisc_active=false;purged++;interleave();}
 static void dev_activate(struct net_device *d){assert(d==&parent && rtnl && !locked);qdisc_active=true;}
 '''
+generation=(ROOT/'port/overlay/target/linux/rtl9617c/files-6.18/net/core/rtl9617c-fttr.c').read_text()
+header=(ROOT/'port/overlay/target/linux/rtl9617c/files-6.18/include/linux/rtl9617c-fttr.h').read_text()
+source+=r'''
+#define ASSERT_RTNL() assert(rtnl)
+#define U64_MAX UINT64_MAX
+static u64 rtl_fttr_generation=2;
+static u64 atomic64_read_acquire(u64 *p){return *p;}
+static void atomic64_set_release(u64 *p,u64 v){*p=v;}
+'''
+source+=function(generation,'rtl9617c_fttr_generation_read')
+source+=function(generation,'rtl9617c_fttr_generation_set')
+source+=function(header,'rtl9617c_fttr_stale')
+source+=function(generation,'rtl9617c_fttr_stamp')
 if 'static bool rtl_fttr_management(' in text:
     source+=function(text,'rtl_fttr_management')
 source+=function(text,'rtl9617c_ni_transmit')+function(text,'rtl_fttr_receive')
 source+=function(text,'fttr_accel_store')
 source+=function(text,'fttr_mcast_flush_store')
+source+='#define netdev_err(...) ((void)0)\n'
+source+=function(text,'rtl_fttr_mcast_quiesce')
 if 'static ssize_t fttr_forward_store(' in text:
     source+=function(text,'fttr_forward_store')
 else:
@@ -104,7 +119,10 @@ int main(void){
  shared=(struct rtl_xram){.fttr=&parent,.fttr_tx_active=true,.fttr_forwarding=true,.fttr_omci_type=0x8888,.p6={true}};
  parent=(struct net_device){.data=&port,.running=true};root.data=&shared;device.data=&root;
  port=(struct rtl_fttr_port){.shared=&shared,.endpoint={&parent}};
+ struct sk_buff queued=packet(0x8100);
+ assert(rtl9617c_fttr_stamp(&queued));u64 first_generation=queued.rtl9617c_fttr_generation;
  assert(fttr_forward_store(&device,NULL,"0\n",2)==2);
+ assert(rtl9617c_fttr_stale(&queued));
  assert(!shared.fttr_forwarding && !mc_admitted && !fe_enabled && qdisc_active && purged==1 && synchronized==1);
  assert(fttr_accel_store(&device,NULL,"1",1)==-EBUSY && !fe_requested);
  assert(fttr_accel_store(&device,NULL,"0",1)==1 && !shared.fttr_forwarding);
@@ -126,6 +144,9 @@ int main(void){
  assert(!shared.fttr_forwarding && qdisc_active && !fe_requested);
  assert(shared.fttr_forward_error==-ETIMEDOUT && shared.fttr_forward_cleanup_error==-ETIMEDOUT);interleave();failed_fe=0;
  assert(fttr_forward_store(&device,NULL,"1 8888",6)==6);
+ assert(queued.rtl9617c_fttr_generation==first_generation && rtl9617c_fttr_stale(&queued));
+ unsigned before=submitted;
+ assert(!rtl9617c_ni_transmit(&device,&lan,&queued,NULL) && queued.consumed && submitted==before);
  failed_fe=-EIO;assert(fttr_forward_store(&device,NULL,"0",1)==-EIO);assert(!shared.fttr_forwarding);interleave();failed_fe=0;
  unsigned old=purged;
  for(unsigned i=0;i<7;i++){const char *invalid[]={"","1","1 0000","1 8100","1 88a8","2 8888","0 extra"};
@@ -138,10 +159,20 @@ int main(void){
  failed_fe=0;assert(fttr_mcast_flush_store(&device,NULL,"1\n",2)==2);
  assert(fttr_mcast_flush_store(&device,NULL,"0\n",2)==-EINVAL);
  assert(fttr_mcast_flush_store(&device,NULL,"1 x",3)==-EINVAL);
+ /* Closing only the shared endpoint also invalidates queued CPU copies. */
+ mc_admitted=false;shared.fttr_forwarding=false;
+ rtnl_lock();assert(!rtl9617c_fttr_generation_set(true));rtnl_unlock();
+ struct sk_buff before_close=packet(0x8100);assert(rtl9617c_fttr_stamp(&before_close));
+ rtnl_lock();rtl_fttr_mcast_quiesce(&parent);rtnl_unlock();
+ assert(rtl9617c_fttr_stale(&before_close));struct sk_buff after_close=packet(0x8100);assert(rtl9617c_fttr_stamp(&after_close));
+ rtnl_lock();rtl9617c_fttr_generation_set(false);rtl_fttr_mcast_quiesce(&parent);rtnl_unlock();
+ assert(rtl9617c_fttr_generation_read()&1);
  shared.fttr_loading=true;assert(fttr_forward_store(&device,NULL,"1 8888",6)==-EBUSY);shared.fttr_loading=false;
  shared.p6.configured=false;assert(fttr_forward_store(&device,NULL,"1 8888",6)==-ENETDOWN);shared.p6.configured=true;
  shared.fttr_tx_active=false;struct sk_buff s=packet(0x8888);
  assert(rtl9617c_ni_transmit(&device,&parent,&s,NULL)==NETDEV_TX_BUSY && !s.consumed);
+ shared.fttr_tx_active=true;rtl_fttr_generation=UINT64_MAX;
+ assert(fttr_forward_store(&device,NULL,"1 8888",6)==-EOVERFLOW && !shared.fttr_forwarding && !fe_requested);
  puts("PASS: FTTR CPU TX/RX closed before FE/qdisc withdrawal; management and LAN continue; failures cannot reopen forwarding");
 }
 '''

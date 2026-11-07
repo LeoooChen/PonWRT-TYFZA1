@@ -18,6 +18,7 @@
 #include <linux/unaligned.h>
 #include "rtl9617c-qm.h"
 #include <linux/rtl9617c-bridge.h>
+#include <linux/rtl9617c-fttr.h>
 #include "rtl9617c-rx-checksum.h"
 
 #define EQ_ID 4
@@ -701,7 +702,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				rcu_read_lock();
 				skb->priority=h1&7;
 				delivery=rtl9617c_bridge_mcast_receive(skb,host_group,source);
-				if (delivery<0) {
+				if (delivery<0 || (source == 6 && !rtl9617c_fttr_stamp(skb))) {
 					dev->stats.rx_dropped++;dev_kfree_skb_any(skb);rcu_read_unlock();continue;
 				}
 				if (delivery==2) {

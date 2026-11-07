@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /* Linux bridge decisions feed the original MAC/VLAN Hash and packet editor. */
 #include <linux/netfilter.h>
+#include <linux/rtl9617c-fttr.h>
 #include "rtl9617c-ni.h"
 #include <net/cfg80211.h>
 #include <linux/rtl9617c-qm-layout.h>
@@ -173,6 +174,7 @@ static unsigned int fe_bridge_wire(void *private,struct sk_buff *skb,
  struct rtl9617c_bridge_frame frame={},*saved;
  const struct rtl9617c_bridge_frame *received=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
 
+ if(rtl9617c_fttr_stale(skb))return NF_ACCEPT;
  if(received && received->multicast_host_group)return NF_ACCEPT;
  if(!rtl_fe_enabled(bridge->fe) || skb_is_gso(skb) || fe_bridge_frame(skb,&frame))return NF_ACCEPT;
  frame.ingress=state->in->ifindex;frame.epoch=atomic_read(&bridge->epoch);
@@ -268,6 +270,7 @@ static unsigned int fe_bridge_forwarded(void *private,struct sk_buff *skb,
  struct net_device *brdev,*physical;
  unsigned int next;
 
+ if(rtl9617c_fttr_stale(skb))return NF_ACCEPT;
  if(!saved || !saved->port || !state->out || saved->epoch!=(u32)atomic_read(&bridge->epoch) ||
     fe_bridge_frame(skb,&packet.output))return NF_ACCEPT;
  if(is_multicast_ether_addr(saved->destination))return NF_ACCEPT;

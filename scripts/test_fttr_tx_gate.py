@@ -36,6 +36,8 @@ struct rtl_fttr_port {struct rtl9617c_ni_endpoint endpoint;struct rtl_xram *shar
 #define dev_get_drvdata(d) ((struct net_device *)(d)->data)
 #define netif_running(d) ((d)->running)
 #define netif_queue_stopped(d) ((d)->stopped)
+static bool rtl9617c_fttr_stale(const struct sk_buff *s){(void)s;return false;}
+static int rtl9617c_fttr_generation_set(bool active){assert(!active);return 0;}
 static bool rtl_fttr_management(struct rtl_xram *p,const struct sk_buff *s){(void)p;(void)s;return true;}
 static void dev_kfree_skb_any(struct sk_buff *s){s->consumed=true;}
 static int locks,rtnl,submissions,failed_fe,failed_config,configured,closed,engine_refs;

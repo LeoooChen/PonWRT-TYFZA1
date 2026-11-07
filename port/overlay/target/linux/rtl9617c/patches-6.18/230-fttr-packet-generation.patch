@@ -1,0 +1,303 @@
+--- a/include/linux/netdevice.h
++++ b/include/linux/netdevice.h
+@@ -2374,6 +2374,11 @@
+ #endif
+ 	/* These may be needed for future network-power-down code. */
+ 	struct timer_list	watchdog_timer;
++#ifdef CONFIG_ARCH_RTL9617C
++	/* Native P6 and shared GEM endpoint; VLAN uppers inherit at enqueue. */
++	u8			rtl9617c_fttr_egress;
++	u16			rtl9617c_fttr_omci;
++#endif
+ 	int			watchdog_timeo;
+ 	spinlock_t		watchdog_lock;
+ 	bool			watchdog_ref_held;
+--- a/include/linux/skbuff.h
++++ b/include/linux/skbuff.h
+@@ -1090,6 +1090,10 @@
+ 	u64			kcov_handle;
+ #endif
+ 
++#ifdef CONFIG_ARCH_RTL9617C
++	/* Numeric FTTR admission generation; copied by __copy_skb_header(). */
++	u64			rtl9617c_fttr_generation;
++#endif
+ 	); /* end headers group */
+ 
+ 	/* These elements must be at the end, see alloc_skb() for details.  */
+--- a/net/core/Makefile
++++ b/net/core/Makefile
+@@ -50,4 +50,4 @@
+ obj-$(CONFIG_DEBUG_NET) += lock_debug.o
+ obj-$(CONFIG_FAIL_SKB_REALLOC) += skb_fault_injection.o
+ 
+-obj-$(CONFIG_ARCH_RTL9617C) += rtl9617c-bridge.o
++obj-$(CONFIG_ARCH_RTL9617C) += rtl9617c-bridge.o rtl9617c-fttr.o
+--- a/net/core/dev.c
++++ b/net/core/dev.c
+@@ -92,6 +92,7 @@
+ #include <linux/netdevice.h>
+ #ifdef CONFIG_ARCH_RTL9617C
+ #include <linux/rtl9617c-bridge.h>
++#include <linux/rtl9617c-fttr.h>
+ #endif
+ #include <linux/etherdevice.h>
+ #include <linux/ethtool.h>
+@@ -3897,6 +3898,13 @@
+ 		struct sk_buff *next = skb->next;
+ 
+ 		skb_mark_not_on_list(skb);
++		/* Check again after qdisc/BUSY requeue, not only at enqueue. */
++		if (unlikely(rtl9617c_fttr_stale(skb))) {
++			dev_core_stats_tx_dropped_inc(dev);
++			kfree_skb_reason(skb, SKB_DROP_REASON_DEV_READY);
++			skb = next;
++			continue;
++		}
+ 		rc = xmit_one(skb, dev, txq, next != NULL);
+ 		if (unlikely(!dev_xmit_complete(rc))) {
+ 			skb->next = next;
+@@ -4730,6 +4738,12 @@
+ 	 */
+ 	rcu_read_lock_bh();
+ 
++	if (unlikely(rtl9617c_fttr_stale(skb) || !rtl9617c_fttr_enqueue(skb, dev))) {
++		dev_core_stats_tx_dropped_inc(dev);
++		kfree_skb_reason(skb, SKB_DROP_REASON_DEV_READY);
++		rc = NET_XMIT_DROP;
++		goto out;
++	}
+ 	skb_update_prio(skb);
+ 
+ 	qdisc_pkt_len_init(skb);
+@@ -5938,6 +5952,11 @@
+ 	pt_prev = NULL;
+ 
+ another_round:
++	/* RPS and virtual-device queues may outlive a forwarding withdrawal. */
++	if (unlikely(rtl9617c_fttr_stale(skb))) {
++		drop_reason = SKB_DROP_REASON_DEV_READY;
++		goto drop;
++	}
+ 	skb->skb_iif = skb->dev->ifindex;
+ 
+ 	__this_cpu_inc(softnet_data.processed);
+--- a/net/core/gro.c
++++ b/net/core/gro.c
+@@ -1,5 +1,6 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ #include <net/psp.h>
++#include <linux/rtl9617c-fttr.h>
+ #include <net/gro.h>
+ #include <net/dst_metadata.h>
+ #include <net/busy_poll.h>
+@@ -376,6 +377,7 @@
+ 
+ 		diffs = (unsigned long)p->dev ^ (unsigned long)skb->dev;
+ 		diffs |= p->vlan_all ^ skb->vlan_all;
++		diffs |= rtl9617c_fttr_differs(p, skb);
+ 		diffs |= skb_metadata_differs(p, skb);
+ 		if (maclen == ETH_HLEN)
+ 			diffs |= compare_ether_header(skb_mac_header(p),
+--- a/net/core/skbuff.c
++++ b/net/core/skbuff.c
+@@ -35,6 +35,7 @@
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ 
+ #include <linux/module.h>
++#include <linux/rtl9617c-fttr.h>
+ #ifdef CONFIG_ARCH_RTL9617C
+ #include <linux/rtl9617c-bridge.h>
+ #endif
+@@ -1529,6 +1530,9 @@
+ 	new->queue_mapping = old->queue_mapping;
+ 
+ 	memcpy(&new->headers, &old->headers, sizeof(new->headers));
++#ifdef CONFIG_ARCH_RTL9617C
++	CHECK_SKB_FIELD(rtl9617c_fttr_generation);
++#endif
+ 	CHECK_SKB_FIELD(protocol);
+ 	CHECK_SKB_FIELD(csum);
+ 	CHECK_SKB_FIELD(hash);
+@@ -6151,6 +6155,8 @@
+ 
+ 	*fragstolen = false;
+ 
++	if (rtl9617c_fttr_differs(to, from))
++		return false;
+ 	if (skb_cloned(to))
+ 		return false;
+ 
+--- a/net/ipv4/inet_fragment.c
++++ b/net/ipv4/inet_fragment.c
+@@ -8,6 +8,7 @@
+  */
+ 
+ #include <linux/list.h>
++#include <linux/rtl9617c-fttr.h>
+ #include <linux/spinlock.h>
+ #include <linux/module.h>
+ #include <linux/timer.h>
+@@ -443,6 +444,9 @@
+ {
+ 	struct sk_buff *last = q->fragments_tail;
+ 
++	/* Never reassemble a datagram across an FTTR admission change. */
++	if (rtl9617c_fttr_stale(skb) || (last && rtl9617c_fttr_differs(last, skb)))
++		return IPFRAG_OVERLAP;
+ 	/* An IP fragment is never a GSO packet, but an untrusted source
+ 	 * (virtio_net_hdr) may have attached GSO metadata to it. Do not let
+ 	 * that reach the reassembled skb, whose head keeps the first
+--- a/net/ipv4/ip_output.c
++++ b/net/ipv4/ip_output.c
+@@ -44,6 +44,7 @@
+  */
+ 
+ #include <linux/uaccess.h>
++#include <linux/rtl9617c-fttr.h>
+ #include <linux/module.h>
+ #include <linux/types.h>
+ #include <linux/kernel.h>
+@@ -206,6 +207,12 @@
+ 	struct neighbour *neigh;
+ 	bool is_v6gw = false;
+ 
++	/* Pin the selected FTTR output before neighbour resolution queues it. */
++	if (unlikely(rtl9617c_fttr_stale(skb) || !rtl9617c_fttr_enqueue(skb, dev))) {
++		kfree_skb_reason(skb, SKB_DROP_REASON_DEV_READY);
++		return -ENETDOWN;
++	}
++
+ 	if (rt->rt_type == RTN_MULTICAST) {
+ 		IP_UPD_PO_STATS(net, IPSTATS_MIB_OUTMCAST, skb->len);
+ 	} else if (rt->rt_type == RTN_BROADCAST)
+@@ -551,6 +558,7 @@
+ 
+ static void ip_copy_metadata(struct sk_buff *to, struct sk_buff *from)
+ {
++	rtl9617c_fttr_copy(to, from);
+ 	to->pkt_type = from->pkt_type;
+ 	to->priority = from->priority;
+ 	to->protocol = from->protocol;
+--- a/net/ipv6/ip6_output.c
++++ b/net/ipv6/ip6_output.c
+@@ -23,6 +23,7 @@
+  */
+ 
+ #include <linux/errno.h>
++#include <linux/rtl9617c-fttr.h>
+ #include <linux/kernel.h>
+ #include <linux/string.h>
+ #include <linux/socket.h>
+@@ -67,6 +68,12 @@
+ 	struct ipv6hdr *hdr;
+ 	struct neighbour *neigh;
+ 	int ret;
++
++	/* Pin the selected FTTR output before neighbour resolution queues it. */
++	if (unlikely(rtl9617c_fttr_stale(skb) || !rtl9617c_fttr_enqueue(skb, dev))) {
++		kfree_skb_reason(skb, SKB_DROP_REASON_DEV_READY);
++		return -ENETDOWN;
++	}
+ 
+ 	/* Be paranoid, rather than too clever. */
+ 	if (unlikely(hh_len > skb_headroom(skb)) && dev->header_ops) {
+@@ -693,6 +700,7 @@
+ 
+ static void ip6_copy_metadata(struct sk_buff *to, struct sk_buff *from)
+ {
++	rtl9617c_fttr_copy(to, from);
+ 	to->pkt_type = from->pkt_type;
+ 	to->priority = from->priority;
+ 	to->protocol = from->protocol;
+--- a/net/mac80211/driver-ops.h
++++ b/net/mac80211/driver-ops.h
+@@ -9,6 +9,7 @@
+ #define __MAC80211_DRIVER_OPS
+ 
+ #include <linux/fips.h>
++#include <linux/rtl9617c-fttr.h>
+ #include <net/mac80211.h>
+ #include "ieee80211_i.h"
+ #include "trace.h"
+@@ -35,6 +36,10 @@
+ 			  struct ieee80211_tx_control *control,
+ 			  struct sk_buff *skb)
+ {
++	if (unlikely(rtl9617c_fttr_stale(skb))) {
++		ieee80211_free_txskb(&local->hw, skb);
++		return;
++	}
+ 	local->ops->tx(&local->hw, control, skb);
+ }
+ 
+--- a/net/mac80211/tx.c
++++ b/net/mac80211/tx.c
+@@ -11,6 +11,7 @@
+  */
+ 
+ #include <linux/kernel.h>
++#include <linux/rtl9617c-fttr.h>
+ #include <linux/jhash.h>
+ #include <net/flow_dissector.h>
+ #include <linux/slab.h>
+@@ -938,6 +939,7 @@
+ 		skb_copy_queue_mapping(tmp, skb);
+ 		tmp->priority = skb->priority;
+ 		tmp->dev = skb->dev;
++		rtl9617c_fttr_copy(tmp, skb);
+ 
+ 		/* copy header and data */
+ 		skb_put_data(tmp, skb->data, hdrlen);
+@@ -3507,7 +3509,7 @@
+ 	tin = &txqi->tin;
+ 	flow = fq_flow_classify(fq, tin, flow_idx, skb);
+ 	head = skb_peek_tail(&flow->queue);
+-	if (!head || skb_is_gso(head))
++	if (!head || skb_is_gso(head) || rtl9617c_fttr_differs(head, skb))
+ 		goto out;
+ 
+ 	orig_truesize = head->truesize;
+--- a/net/netfilter/nf_queue.c
++++ b/net/netfilter/nf_queue.c
+@@ -9,6 +9,7 @@
+ #include <linux/module.h>
+ #include <linux/proc_fs.h>
+ #include <linux/skbuff.h>
++#include <linux/rtl9617c-fttr.h>
+ #include <linux/netfilter.h>
+ #include <linux/netfilter_ipv4.h>
+ #include <linux/netfilter_ipv6.h>
+@@ -253,6 +254,13 @@
+ {
+ 	int ret;
+ 
++	/* Preserve the selected FTTR egress identity before userspace can hold
++	 * this skb across a service change (including bridge forward hooks). */
++	if (rtl9617c_fttr_stale(skb) ||
++	    (state->out && !rtl9617c_fttr_enqueue(skb, state->out))) {
++		kfree_skb(skb);
++		return 0;
++	}
+ 	ret = __nf_queue(skb, state, index, verdict >> NF_VERDICT_QBITS);
+ 	if (ret < 0) {
+ 		if (ret == -ESRCH &&
+--- a/net/netfilter/nfnetlink_queue.c
++++ b/net/netfilter/nfnetlink_queue.c
+@@ -14,6 +14,7 @@
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ 
+ #include <linux/module.h>
++#include <linux/rtl9617c-fttr.h>
+ #include <linux/skbuff.h>
+ #include <linux/init.h>
+ #include <linux/spinlock.h>
+@@ -354,7 +355,7 @@
+ 	hooks = nf_hook_entries_head(net, pf, entry->state.hook);
+ 
+ 	i = entry->hook_index;
+-	if (!hooks || i >= hooks->num_hook_entries) {
++	if (!hooks || i >= hooks->num_hook_entries || rtl9617c_fttr_stale(skb)) {
+ 		kfree_skb_reason(skb, SKB_DROP_REASON_NETFILTER_DROP);
+ 		nf_queue_entry_free(entry);
+ 		return;

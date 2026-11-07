@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Native management WP/TXBD ownership and original RPQ completion. */
 #include <linux/bitmap.h>
+#include <linux/rtl9617c-fttr.h>
 #include <linux/average.h>
 #include <linux/dma-mapping.h>
 #include <linux/pci.h>
@@ -639,6 +640,8 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	int ret;
 	bool template_ready = false;
 	u64 begin = READ_ONCE(rtl_ax_datapath_profile) ? ktime_get_ns() : 0;
+	/* TXQ/PS queues may outlive the ingress FTTR service generation. */
+	if (rtl9617c_fttr_stale(skb)) return -ESTALE;
 	if (packet_bytes > 0x3fff) return -EMSGSIZE;
 
 	if (!encap && (ieee80211_is_mgmt(header->frame_control) ||

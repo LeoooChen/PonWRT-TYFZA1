@@ -84,6 +84,7 @@ static unsigned long jiffies=100;
 static int atomic_read(int *v){return *v;}
 static int atomic_xchg(int *v,int n){int old=*v;*v=n;return old;}
 static bool rtl_fe_enabled(struct rtl_fe *f){return f->enabled;}
+static bool stale_fttr;static bool rtl9617c_fttr_stale(const struct sk_buff *s){(void)s;return stale_fttr;}
 static bool skb_is_gso(struct sk_buff *s){return s->gso;}
 static bool is_vlan_dev(struct net_device *d){return d->lower!=NULL;}
 static u16 vlan_dev_vlan_id(struct net_device *d){return d->vlan;}
@@ -169,10 +170,12 @@ int main(void){
  memcpy(skb.frame,"\x02\0\0\0\0\x02\x02\0\0\0\0\x01\x88\x64\x11\0\x12\x34\0\x26\0\x21",22);
  struct nf_hook_state wire={.net=&net,.in=&lan},input=wire,output={.net=&net,.out=&vlan};
  fdb_source=&lan;fdb_destination=&vlan;
+ stale_fttr=true;assert(fe_bridge_wire(&bridge,&skb,&wire)==NF_ACCEPT && !skb.extension);stale_fttr=false;
  assert(fe_bridge_wire(&bridge,&skb,&wire)==NF_ACCEPT);
  /* A routed/local-out packet has no bridge ingress decision. */
  fe_bridge_forwarded(&bridge,&skb,&output);assert(bridge.read==bridge.write);
  assert(fe_bridge_capture(&bridge,&skb,&input)==NF_ACCEPT && skb.saved.port==1);
+ stale_fttr=true;fe_bridge_forwarded(&bridge,&skb,&output);assert(bridge.write==0);stale_fttr=false;
  fe_bridge_forwarded(&bridge,&skb,&output);assert(net.references==1 && bridge.write==1);
  fe_bridge_work(&bridge.work.work);
  assert(!net.references && installed==1 && last.bridge && last.action.bridge);

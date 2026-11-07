@@ -323,6 +323,7 @@ struct net_device *rtl_fttr_mcast_create(struct net_device *parent)
 	strscpy(dev->name, "fttr-mc", IFNAMSIZ);
 	/* Identify the native reserved-GEM upper to the resident controller. */
 	dev->group = 0x46544d43;
+	dev->rtl9617c_fttr_egress = 2;
 	dev->netdev_ops = &mcast_ops;
 	dev->mtu = ETH_DATA_LEN;
 	dev->max_mtu = parent->mtu - VLAN_HLEN;

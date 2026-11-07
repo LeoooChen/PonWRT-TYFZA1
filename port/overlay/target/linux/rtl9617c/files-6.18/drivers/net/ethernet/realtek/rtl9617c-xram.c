@@ -739,8 +739,10 @@ static void rtl_fttr_tx_gate(struct rtl_xram *priv, bool active)
 	 */
 	spin_lock_irqsave(&priv->tx_lock, flags);
 	WRITE_ONCE(priv->fttr_tx_active, active);
-	if (!active)
+	if (!active) {
 		smp_store_release(&priv->fttr_forwarding, false);
+		rtl9617c_fttr_generation_set(false);
+	}
 	spin_unlock_irqrestore(&priv->tx_lock, flags);
 	if (!active && priv->fttr)
 		netif_tx_disable(priv->fttr);
@@ -842,6 +844,11 @@ static void rtl_fttr_receive(struct rtl9617c_ni_endpoint *endpoint, struct napi_
 		dev_kfree_skb_any(skb);
 		return;
 	}
+	if (!rtl_fttr_management(port->shared, skb) && !rtl9617c_fttr_stamp(skb)) {
+		dev->stats.rx_dropped++;
+		dev_kfree_skb_any(skb);
+		return;
+	}
 	dev->stats.rx_packets++;
 	dev->stats.rx_bytes += skb->len;
 	/* Original EXT_SWITCH_EN survives bridge/routing and skb copies. */
@@ -899,6 +906,8 @@ static int rtl_register_fttr(struct rtl_xram *priv)
 	SET_NETDEV_DEV(dev, priv->p6.dev);
 	strscpy(dev->name, "fttr0", sizeof(dev->name));
 	dev->netdev_ops = &rtl_fttr_netdev_ops;
+	dev->rtl9617c_fttr_egress = 1;
+	dev->rtl9617c_fttr_omci = priv->fttr_omci_type;
 	dev->mtu = RTL_FTTR_FRAME_BYTES - ETH_HLEN;
 	dev->max_mtu = dev->mtu;
 	eth_hw_addr_set(dev, priv->netdev->dev_addr);
@@ -968,7 +977,11 @@ netdev_tx_t rtl9617c_ni_transmit(struct device *dev, struct net_device *owner,
 	netdev_tx_t result;
 
 	spin_lock_irqsave(&priv->tx_lock, flags);
-	if (owner == priv->fttr && !priv->fttr_tx_active) {
+	if (rtl9617c_fttr_stale(skb)) {
+		owner->stats.tx_dropped++;
+		dev_kfree_skb_any(skb);
+		result = NETDEV_TX_OK;
+	} else if (owner == priv->fttr && !priv->fttr_tx_active) {
 		netif_stop_queue(owner);
 		result = NETDEV_TX_BUSY;
 	} else if (owner == priv->fttr && !priv->fttr_forwarding && !rtl_fttr_management(priv, skb)) {
@@ -1747,9 +1760,15 @@ static void rtl_fttr_rx_purge(struct rtl_xram *priv)
 void rtl_fttr_mcast_quiesce(struct net_device *parent)
 {
 	struct rtl_fttr_port *port = netdev_priv(parent);
+	unsigned long flags;
+	bool active;
 	int ret;
 
 	ASSERT_RTNL();
+	spin_lock_irqsave(&port->shared->tx_lock, flags);
+	active = !(rtl9617c_fttr_generation_read() & 1);
+	rtl9617c_fttr_generation_set(false);
+	spin_unlock_irqrestore(&port->shared->tx_lock, flags);
 	ret = rtl_fe_flush_multicast(port->shared->fe, true);
 	if (ret)
 		netdev_err(parent, "multicast FE withdrawal failed: %d\n", ret);
@@ -1761,6 +1780,8 @@ void rtl_fttr_mcast_quiesce(struct net_device *parent)
 		dev_deactivate(parent);
 		dev_activate(parent);
 	}
+	if (active && rtl9617c_fttr_generation_set(true))
+		netdev_err(parent, "FTTR packet generation exhausted\n");
 }
 
 /* Full software forwarding admission, distinct from acceleration-only mode.
@@ -1789,6 +1810,7 @@ static ssize_t fttr_forward_store(struct device *dev, struct device_attribute *a
 	if (enable && !priv->p6.configured) { ret = -ENETDOWN; goto out; }
 	spin_lock_irqsave(&priv->tx_lock, flags);
 	smp_store_release(&priv->fttr_forwarding, false);
+	rtl9617c_fttr_generation_set(false);
 	spin_unlock_irqrestore(&priv->tx_lock, flags);
 	rtl_fttr_mcast_gate(priv->fttr_mc, false);
 	WRITE_ONCE(priv->qm.fttr_epoch, priv->qm.fttr_epoch + 1);
@@ -1810,8 +1832,14 @@ static ssize_t fttr_forward_store(struct device *dev, struct device_attribute *a
 	if (running)
 		dev_activate(priv->fttr);
 	if (!ret && enable) {
+		ret = rtl9617c_fttr_generation_set(true);
+		if (ret)
+			priv->fttr_forward_cleanup_error = rtl_fe_fttr_set(priv->fe, false);
+	}
+	if (!ret && enable) {
 		spin_lock_irqsave(&priv->tx_lock, flags);
 		WRITE_ONCE(priv->fttr_omci_type, type);
+		WRITE_ONCE(priv->fttr->rtl9617c_fttr_omci, type);
 		smp_store_release(&priv->fttr_forwarding, true);
 		spin_unlock_irqrestore(&priv->tx_lock, flags);
 		rtl_fttr_mcast_gate(priv->fttr_mc, true);
