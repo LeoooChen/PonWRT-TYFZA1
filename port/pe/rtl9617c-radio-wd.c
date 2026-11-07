@@ -248,7 +248,9 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	u32 id = request[0], ring_info = request[1], packet = request[2];
 	u32 rate = request[3], flags = request[4], aggregation = request[5];
 	u32 ring = ring_info & 7, slot = (ring_info >> 8) & 255, next = (ring_info >> 16) & 255;
-	if (mailbox[24]) { slot = mailbox[32 + ring]; next = (slot + 1) & 255; }
+	if (mailbox[24] || mailbox[RTL_FTTR_PE_CAP_MAILBOX] == RTL_FTTR_PE_CAPABILITY) {
+		slot = mailbox[32 + ring]; next = (slot + 1) & 255;
+	}
 	u32 wd_slot = mailbox[RTL_AX_TX_WD_NEXT + ring];
 	u32 wd_page = ring * RTL_AX_TX_WD_PER_RING + wd_slot;
 	u32 segments = packet >> 24, count = 0, used = 64;
@@ -435,7 +437,8 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	mailbox[RTL_AX_TX_LAST_WD] = wd_page;
 	/* The batch publisher orders all DMA writes before its doorbells. */
 	*next_producer = next;
-	if (mailbox[24]) mailbox[32 + ring] = next;
+	if (mailbox[24] || mailbox[RTL_FTTR_PE_CAP_MAILBOX] == RTL_FTTR_PE_CAPABILITY)
+		mailbox[32 + ring] = next;
 	if (ni_packet) {
 		mailbox[28] += ni_frames; mailbox[56]++;
 		u32 queue = ((flags >> 24) & 127) * 8 + (flags & 7);
@@ -452,6 +455,20 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 
 #ifdef PE_UPLINK
 static u32 ni_mcast_stale(volatile u32 *mailbox, const u32 *waiting);
+static u32 pe_fttr_stale(volatile u32 *mailbox, const u32 *request)
+{
+	u32 low = request[RTL_FTTR_PE_REQUEST_LOW], high = request[RTL_FTTR_PE_REQUEST_HIGH];
+	u32 table = mailbox[RTL_MC_PE_TABLE_MAILBOX];
+	if (!(low | high)) return 0;
+	if ((low & 1) || !table) return 1;
+	volatile struct rtl_mc_pe_table *shared = uncached(table);
+	u32 first = shared->fttr.low;
+	sync();
+	u32 upper = shared->fttr.high;
+	sync();
+	return first != low || upper != high || shared->fttr.low != first;
+}
+
 static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u32 *mailbox, u32 budget, u32 requests[16][32])
 {
 	static const u32 indices[] = { 0x1058, 0x105c, 0x1060, 0x1064, 0x1078, 0x107c };
@@ -463,6 +480,15 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 	while (read != write && budget--) {
 		const u32 *request = requests[read];
 		u32 next, ring = request[1] & 7;
+		if (request[0] < 256 && pe_fttr_stale(mailbox, request)) {
+			/* Never publish this WP to PCIe. ARM owns the skb/DMA mapping;
+			 * a per-WP release word also works without NI/RPQ offload. */
+			sync();
+			*(volatile u32 *)(memory + RTL_FTTR_PE_DISCARD + request[0] * 4) = 1;
+			sync();
+			read = (read + 1) & 15;
+			continue;
+		}
 		if (request[0] >= 256) {
 			u32 id = request[0] - 256;
 			u32 *owners = (void *)(memory + 0xc400);
@@ -484,7 +510,7 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 		if (!(checked & BIT(ring))) {
 			volatile u32 *bar = (void *)mailbox[2];
 			u32 hardware = (bar[indices[ring] / 4] >> 16) & 255;
-			u32 producer = mailbox[24] ? mailbox[32 + ring] : (request[1] >> 8) & 255;
+			u32 producer = mailbox[32 + ring];
 			room[ring] = (hardware - producer - 1) & 255;
 			checked |= BIT(ring);
 		}
@@ -625,6 +651,7 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 			if (contexts[slot]) {
 				volatile u32 *context = uncached(contexts[slot]);
 				context[RTL_MC_PE_CAP_MAILBOX] = RTL_MC_PE_CAPABILITY;
+				context[RTL_FTTR_PE_CAP_MAILBOX] = RTL_FTTR_PE_CAPABILITY;
 				sync();
 			}
 #endif
@@ -823,6 +850,10 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 				u32 *out = tx_requests[slot][write];
 				if (request != out)
 					for (u32 i = 0; i < words; i++) out[i] = request[i];
+				if (!ni_packet) {
+					out[RTL_FTTR_PE_REQUEST_LOW] = request[RTL_FTTR_PE_REQUEST_LOW];
+					out[RTL_FTTR_PE_REQUEST_HIGH] = request[RTL_FTTR_PE_REQUEST_HIGH];
+				}
 				mailbox[RTL_AX_TX_PUBLISH_WRITE] = (write + 1) & 15;
 			}
 #else

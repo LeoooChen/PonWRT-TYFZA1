@@ -37,6 +37,13 @@ code = r'''
 typedef uint64_t u64;typedef uint8_t u8;typedef uint16_t u16;typedef uint16_t __be16;typedef uint32_t u32;
 #define U64_MAX UINT64_MAX
 #define READ_ONCE(v) (v)
+#define WRITE_ONCE(v,x) ((v)=(x))
+#define cpu_to_le32(v) (v)
+#define dma_wmb() ((void)0)
+#define DEFINE_SPINLOCK(v) int v
+#define spin_lock_irqsave(p,f) ((void)(p),(f)=0)
+#define spin_unlock_irqrestore(p,f) ((void)(p),(void)(f))
+struct rtl_fttr_pe_generation {u32 low,high;};
 #define unlikely(v) (v)
 #define EXPORT_SYMBOL_GPL(v)
 #define ASSERT_RTNL() assert(rtnl)
@@ -163,12 +170,18 @@ code += function(a.kernel.joinpath('net/core/gro.c').read_text(), 'gro_list_prep
 code += function(a.kernel.joinpath('net/ipv4/inet_fragment.c').read_text(), 'inet_frag_queue_insert')
 code += r'''
 int main(void){
+ struct rtl_fttr_pe_generation mirrors[3]={};
+ assert(!rtl9617c_fttr_pe_register(&mirrors[0])&&mirrors[0].low==1&&!mirrors[0].high);
+ assert(rtl9617c_fttr_pe_register(&mirrors[0])==-EEXIST);
+ assert(!rtl9617c_fttr_pe_register(&mirrors[1]));
+ assert(rtl9617c_fttr_pe_register(&mirrors[2])==-ENOSPC);
  struct net_device lan={},p6={.rtl9617c_fttr_egress=1,.rtl9617c_fttr_omci=0x8888},mc={.rtl9617c_fttr_egress=2};
  struct net_device gem={.vlan=true,.parent=&p6},customer={.vlan=true,.parent=&gem};
  struct sk_buff management={.protocol=htons(0x8888)},normal={.protocol=htons(0x800)},old={.protocol=htons(0x800)};
  assert(!rtl9617c_fttr_stale(&normal));
  assert(rtl9617c_fttr_enqueue(&management,&p6)&&!management.rtl9617c_fttr_generation);
  rtnl=1;assert(!rtl9617c_fttr_generation_set(true));rtnl=0;
+ assert(mirrors[0].low==2&&mirrors[1].low==2);
  assert(rtl9617c_fttr_enqueue(&old,&customer)&&old.rtl9617c_fttr_generation==2);
  struct ethhdr wire={.h_proto=htons(0x8100)};struct sk_buff raw={.data=(void *)&wire,.mac_set=true,.len=14,.protocol=htons(3)};
  assert(rtl9617c_fttr_enqueue(&raw,&p6)&&raw.rtl9617c_fttr_generation==2);
@@ -221,7 +234,14 @@ int main(void){
  struct sk_buff rejected={};assert(!nf_queue(&rejected,&state,0,NF_QUEUE|NF_VERDICT_FLAG_QUEUE_BYPASS));assert(rejected.consumed&&queued==1);
  struct sk_buff unrelated={};assert(rtl9617c_fttr_enqueue(&unrelated,&lan)&&!unrelated.rtl9617c_fttr_generation);
  assert(rtl9617c_fttr_enqueue(&management,&p6));
- rtnl=1;rtl_fttr_generation=UINT64_MAX;assert(rtl9617c_fttr_generation_set(true)==-EOVERFLOW);
+ rtl9617c_fttr_pe_unregister(&mirrors[0]);assert(mirrors[0].low==1);
+ rtl9617c_fttr_pe_unregister(&mirrors[0]);
+ rtnl=1;rtl_fttr_generation=0xffffffffULL;
+ assert(!rtl9617c_fttr_generation_set(true)&&mirrors[1].low==0&&mirrors[1].high==1&&mirrors[0].low==1);
+ assert(!rtl9617c_fttr_pe_register(&mirrors[2])&&mirrors[2].low==0&&mirrors[2].high==1);
+ assert(!rtl9617c_fttr_generation_set(false)&&mirrors[1].low==1&&mirrors[2].low==1);
+ rtl9617c_fttr_pe_unregister(&mirrors[1]);rtl9617c_fttr_pe_unregister(&mirrors[2]);
+ rtl_fttr_generation=UINT64_MAX;assert(rtl9617c_fttr_generation_set(true)==-EOVERFLOW);
  assert(!rtl9617c_fttr_generation_set(false)&&rtl_fttr_generation==UINT64_MAX);
  puts("PASS: native generation, actual BUSY/qdisc retry, NFQUEUE enqueue/reinject, IPv4/IPv6 metadata and mac80211 final TX; old identities never reopen");
 }

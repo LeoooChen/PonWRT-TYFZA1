@@ -3,6 +3,7 @@
 #define _LINUX_RTL9617C_FTTR_H
 
 #include <linux/skbuff.h>
+#include <linux/rtl9617c-fttr-pe.h>
 
 struct device;
 struct net_device;
@@ -16,6 +17,10 @@ void rtl9617c_ni_fttr_load_end(struct device *dev, int error);
  * Odd generations are closed. Writers are serialized by RTNL. */
 u64 rtl9617c_fttr_generation_read(void);
 int rtl9617c_fttr_generation_set(bool active);
+/* The two radios own coherent storage until PE has joined. Registration
+ * serializes with generation changes without requiring RTNL at PCI probe. */
+int rtl9617c_fttr_pe_register(struct rtl_fttr_pe_generation *mirror);
+void rtl9617c_fttr_pe_unregister(struct rtl_fttr_pe_generation *mirror);
 bool rtl9617c_fttr_stamp(struct sk_buff *skb);
 bool rtl9617c_fttr_enqueue(struct sk_buff *skb, struct net_device *dev);
 static inline bool rtl9617c_fttr_stale(const struct sk_buff *skb)

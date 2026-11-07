@@ -44,13 +44,13 @@ typedef uint8_t u8; typedef uint16_t __le16; typedef uint32_t u32; typedef uint6
 #define READ_ONCE(x) (x)
 struct rate {int idx,flags,count;};
 struct ieee80211_tx_info {unsigned flags,band; struct {struct rate rates[4];unsigned ampdu_len,ampdu_ack_len;}status;};
-struct sk_buff {u8 data[64];struct ieee80211_tx_info cb;};
+struct sk_buff {u8 data[64];struct ieee80211_tx_info cb;u64 rtl9617c_fttr_generation;};
 #define IEEE80211_SKB_CB(s) (&(s)->cb)
 struct ieee80211_hdr {__le16 fc,duration;u8 addresses[18];__le16 seq_ctrl;};
 struct ieee80211_sta {int unused;};struct ieee80211_hw {int unused;};
 struct ieee80211_tx_status {struct sk_buff *skb;struct ieee80211_tx_info *info;struct ieee80211_sta *sta;};
 struct rtl_ax_tx_slot {struct sk_buff *skb;unsigned ring,macid;bool pe_sequence,firmware_rate;};
-struct rtl_ax_rx_packet {unsigned bytes;u8 *payload;bool pe_completed;};
+struct rtl_ax_rx_packet {unsigned bytes;u8 *payload;bool pe_completed,pe_discarded;};
 /* The EWMA arithmetic is covered by test_radio_mesh_metric; record each
  * update here to compare RPQ dispatch ordering and ownership. */
 struct ewma_rtl_ax_success {unsigned total,calls;};
@@ -59,7 +59,7 @@ struct rtl_ax_tx {struct ewma_rtl_ax_success peer_success[128];int lock,key_flus
  bool pe_active,running,queues_paused,queues_stopped,peer_asleep[128],pending[256];
  struct ieee80211_hw *hw;struct rtl_ax_tx_slot slots[256];
  unsigned occupied,last_report,unmatched,completed,completed_ring[6],status_count[8],polluted,queue_wakes;
- unsigned ni_reports,ni_failed,ni_first_report_ns,ampdu_completed;};
+ unsigned ni_reports,ni_failed,ni_first_report_ns,ampdu_completed,fttr_discarded;};
 static unsigned bh,rcu,locks,wakes,unmaps,returns,raws,pe_done,ps_done,scheduled,waiters,lookups,dispatches;
 static unsigned first_dispatch_completed,expected,batch;
 static struct rtl_ax_tx *active;static bool runnable;static struct ieee80211_sta sta;
@@ -89,6 +89,8 @@ static void ieee80211_tx_info_clear_status(struct ieee80211_tx_info*i){memset(&i
 static void ieee80211_tx_status_ext(struct ieee80211_hw*h,struct ieee80211_tx_status*s){assert(h&&s->info&&s->sta&&bh&&rcu);if(s->skb){returns++;runnable=true;}}
 static void ieee80211_tx_status_skb(struct ieee80211_hw*h,struct sk_buff*s){assert(h&&s&&bh&&!locks);raws++;returns++;runnable=true;}
 static void ieee80211_tx_status_ni(struct ieee80211_hw*h,struct sk_buff*s){assert(h&&s);local_bh_disable();ieee80211_tx_status_skb(h,s);local_bh_enable();}
+static unsigned sw_freed;
+static void ieee80211_free_txskb(struct ieee80211_hw*h,struct sk_buff*s){assert(h&&s&&bh&&!locks);sw_freed++;}
 '''
 code+=before.replace('int rtl_ax_tx_report(', 'static int old_report(')+'\n'
 code+=after.replace('int rtl_ax_tx_report(', 'static int new_report(')+'\n'

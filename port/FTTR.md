@@ -5379,6 +5379,78 @@ their existing immutable recipient/generation records and retirement gaps.
 Hardware IDs remain quarantined; complete packet retirement and safe reuse
 are still unfulfilled requirements.
 
+### FTTR generation revocation inside the PE transmit queue
+
+The CPU skb generation now survives the ARM-to-PE request boundary. Previously,
+an accepted request could wait in the PE's private16-slot queue after FTTR
+closed/reopened, then reach PCIe when TXBD credit returned. ARM stores the
+original64-bit stamp in request words28/29, after the maximum ten address
+pairs. PE copies those words with the request and compares them again before
+constructing a WD/TXBD. Zero remains unrelated traffic. This applies to CPU
+unicast and BCMC requests on all six channels, with or without NI offload.
+
+The existing coherent multicast table's reserved header words4/8 now hold
+the FTTR low/high generation; cookie record offsets and allocation size stay
+unchanged. A built-in IRQ-safe registry owns two borrowed mirror pointers.
+Registration and generation publication share one lock, independent of PCI
+probe's RTNL state. ARM writes odd low, high, final low with DMA barriers;
+PE reads low/high/low with barriers and declines partial snapshots. Both
+mirrors update before the CPU generation opens. An independent capability
+`FTG1` prevents the driver from using firmware lacking the new request ABI.
+Unregister closes the mirror and removes its pointer before DMA free, after
+PE context join; failed NI withdrawal or PE join retains the allocation and
+subscription. MAC80211 unbind joins the discard worker before clearing `hw`.
+
+A stale request consumes no TXBD or WD credit. PE publishes one release word
+per ARM WP in context memory `0x1e400..0x1e7ff`; ARM polls only while accepted
+FTTR WPs remain pending. This works on radios without the NI event timer.
+ARM acquires the release, clears it before making the WP reusable, and uses
+the existing completion path with explicit software-drop status4. It releases
+the DMA mapping and skb, wakes ownership waiters/queues, and skips sequence
+readback, ACK, retry/rate and AMPDU-air feedback. The existing status file
+exposes `FTTR_PE_software_discarded`. The release is software-generated and is
+not a hardware RPQ completion or proof of transmission.
+
+PE now owns continuous TXBD producer positions before as well as after NI
+binding. Dropped ARM requests therefore cannot leave holes in the hardware
+ring; NI setup no longer overwrites those positions with ARM request counts.
+WD retention and hardware RPQ ownership of actually published packets retain
+their prior behavior.
+
+Original evidence is target `rtk_wifi6.ko`:
+`_phl_wp_rpt_statistics@0x195e68` excludes status4 from air success/failure
+counts, `_phl_wp_rpt_chk_txsts@0x196054` forwards status4 to the completion
+callback, and `phl_recycle_payload@0x196314` hands ownership back before clearing
+the WP tag. `trace_stock_radio_software_drop.py` executes the first two actual
+functions for72 age/channel/status combinations, with explicit modeled clock,
+HAL and feedback boundaries. Reference `phl_trx_def.h` names status4
+`TX_STATUS_TX_FAIL_SW_DROP`; target disassembly also branches explicitly on4.
+The native generation/release ABI integrates this ownership distinction into
+our PE framework; it is not claimed to be a factory FTTR generation API.
+
+Validation executes69 linked-MIPS main-loop scenarios: six rings, NI on/off,
+64-bit carry, partially published generations, closure during a PE read,
+ten-segment request capture, zero-credit pause drain and same-WP reuse without
+a TXBD hole. `test_fttr_pe_completion.py` executes the actual ARM worker and
+completion for257 partial/full WP batches under ASan/UBSan, checking exactly
+one unmap/free, no sequence/air feedback, retry and reuse. Core registration,
+two mirrors, duplicate/full registration, unregister, rollover and exhaustion
+tests pass. Existing complete bridge learning, original multicast actions,
+binding failure/join lifetime, key/BA retirement, dual-PE publication, late
+ARM producer acquire, BAR and90 BCMC submissions/45 linked descriptors pass.
+Firmware is26692 bytes, SHA256
+`1427f939eed52d0c661f636c51c3f232954fdda58a1e208ff1bc824b3c2d67bd`, with
+the conservative6896-byte stack bound within8192-byte DMEM. Linux6.18.55
+Image/modules build uses the same source and generated firmware header
+(`artifacts/fttr/pe-generation-kernel-final-20261107.log`).
+
+No physical device was accessed. A packet already passing the final check
+can still enter a WD/TXBD before closure; already published PCIe, NI DMA/AFT,
+ES and MiniOLT packets remain outside this revocation guarantee. Direct
+NI-to-PE copies continue to use their immutable cookie records. This increment
+does not establish a complete producer barrier for P6 ES flushing and does
+not release quarantined group/cookie/action IDs for reuse.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

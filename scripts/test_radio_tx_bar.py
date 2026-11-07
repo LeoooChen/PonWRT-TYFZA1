@@ -93,7 +93,7 @@ struct ieee80211_tx_rate {int idx;unsigned flags,count;};
 struct key {unsigned flags,hw_key_idx,keyidx;u64 tx_pn;};
 struct vif {unsigned type;};
 struct ieee80211_tx_info {unsigned flags;struct {unsigned flags;struct key *hw_key;struct vif *vif;struct ieee80211_tx_rate rates[1];}control;};
-struct sk_buff {u8 *data;unsigned len,priority;struct ieee80211_tx_info info;};
+struct sk_buff {u8 *data;unsigned len,priority;struct ieee80211_tx_info info;u64 rtl9617c_fttr_generation;};
 #define IEEE80211_SKB_CB(s) (&(s)->info)
 struct rtl_ax_station {unsigned macid;};
 struct ieee80211_sta {void *drv_priv;struct {struct {unsigned ampdu_density;}ht_cap;}deflink;};
@@ -104,7 +104,7 @@ struct rtl_ax_tx_slot {struct sk_buff *skb;dma_addr_t dma;unsigned bytes,ring,ke
 struct rtl_ax_io {void *ctx;void (*write16)(void *,unsigned,unsigned);};
 struct rtl_ax_tx {bool running,dfs_blocked,pe_active,checksum_enabled,queues_stopped;
  bool peer_qos[128],peer_authorized[128],peer_asleep[128],peer_offloaded[128],peer_client[128];u32 peer_rates[128];u64 mcast_policy_attempt[128];
- int lock;struct {void *memory;}pe;u8 *pages,*headers,*ring;u32 pages_dma;
+ int lock,fttr_work;struct {void *memory;}pe;u8 *pages,*headers,*ring;u32 pages_dma;
  unsigned pe_producer,producer[6],wd_producer[6],pending[256],occupied,last_sequence,last_words[14];
  struct rtl_ax_tx_slot slots[256];const struct rtl_ax_io *io;
  void (*peer_ready)(void *);void *peer_ready_context;
@@ -158,6 +158,8 @@ static void write16(void *ctx,unsigned reg,unsigned value){(void)ctx;assert(reg=
 #define sg_dma_len(s) ((s)->len)
 '''
 code += 'static bool stale_fttr; static bool rtl9617c_fttr_stale(const struct sk_buff *s){(void)s;return stale_fttr;}\n'
+code += '#define system_wq 0\nstatic void queue_delayed_work(int q,int *w,int delay){(void)q;(void)w;assert(delay==1);}\n'
+code += (driver.parents[4] / 'include/linux/rtl9617c-fttr-pe.h').read_text()
 code += function((kernel / 'net/wireless/util.c').read_text(), 'ieee80211_hdrlen')
 wp = (driver / 'tx-format.h').read_text()
 for name in ('rtl_ax_tx_dma_channel', 'rtl_ax_tx_wp_sequence', 'rtl_ax_tx_wp_address', 'rtl_ax_tx_wp_addresses'):
@@ -188,6 +190,7 @@ int main(void){
   unsigned before=freed;
   stale_fttr=true;
   assert(rtl_ax_tx_submit(&t,&hw,&skb,0,0,0,7,0,0)==-ESTALE && !t.submitted && freed==before);
+  skb.rtl9617c_fttr_generation=0x100000002ULL;
   stale_fttr=false;rtl_ax_monitor_tx(&hw,&control,&skb);
   assert(freed==before && t.submitted==1 && t.submitted_ring[4]==1);
   assert(t.slots[0].ring==4 && t.slots[0].macid==7 && t.slots[0].tid==16);
@@ -198,6 +201,7 @@ int main(void){
    assert(q[1]==(4|1<<16)&&q[2]==(20|16<<16|1<<24));
    assert(q[3]==4&&q[4]==7U<<24&&!q[5]&&!q[6]&&!q[7]);
    assert(q[8]==0x09000000&&q[9]==20);
+   assert(q[RTL_FTTR_PE_REQUEST_LOW]==2&&q[RTL_FTTR_PE_REQUEST_HIGH]==1);
    assert(fwrite(q,1,128,stdout)==128);
   }else{
    u8 *wd=pages+4*264*128;

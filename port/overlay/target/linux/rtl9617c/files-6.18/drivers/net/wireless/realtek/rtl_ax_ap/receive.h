@@ -13,6 +13,7 @@ struct rtl_ax_rx_packet {
 	unsigned char type, long_descriptor;
 	unsigned char crc_error, icv_error;
 	bool pe_completed;
+	bool pe_discarded;
 };
 
 static inline unsigned int rtl_ax_rx_next_tag(unsigned int tag)

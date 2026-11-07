@@ -16,7 +16,7 @@ source=r'''
 #include <string.h>
 #include <errno.h>
 #include <sys/types.h>
-typedef uint8_t u8;typedef uint16_t u16;typedef uint64_t u64;typedef int netdev_tx_t;
+typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u64;typedef int netdev_tx_t;
 #define NETDEV_TX_OK 0
 #define NETDEV_TX_BUSY 1
 #define ETH_HLEN 14
@@ -38,12 +38,12 @@ struct rtl_fttr_port {struct rtl9617c_ni_endpoint endpoint;struct rtl_xram *shar
 #define netdev_priv(d) ((d)->data)
 #define dev_get_drvdata(d) ((struct net_device *)(d)->data)
 #define netif_running(d) ((d)->running)
-static int locked,rtnl,submitted,received,failed_fe,purged,synchronized;
+static int locked,pe_locked,rtl_fttr_pe_lock,rtnl,submitted,received,failed_fe,purged,synchronized;
 static bool qdisc_active=true,fe_enabled=true,fe_requested=true,mc_admitted=true;
 static struct rtl_xram shared;static struct net_device parent,lan,root;static struct device device;
 static struct rtl_fttr_port port;static struct napi_struct napi;
-#define spin_lock_irqsave(p,f) do{(void)(p);(f)=0;assert(!locked);locked=1;}while(0)
-#define spin_unlock_irqrestore(p,f) do{(void)(p);(void)(f);assert(locked);locked=0;}while(0)
+#define spin_lock_irqsave(p,f) do{(f)=0;if((p)==&rtl_fttr_pe_lock){assert(!pe_locked);pe_locked=1;}else{assert(!locked);locked=1;}}while(0)
+#define spin_unlock_irqrestore(p,f) do{(void)(f);if((p)==&rtl_fttr_pe_lock){assert(pe_locked);pe_locked=0;}else{assert(locked);locked=0;}}while(0)
 static void rtnl_lock(void){assert(!rtnl);rtnl=1;}
 static void rtnl_unlock(void){assert(rtnl);rtnl=0;}
 static int kstrtobool(const char *s,bool *v){if(s[0]!='0' && s[0]!='1')return -EINVAL;*v=s[0]=='1';return 0;}
@@ -74,10 +74,15 @@ source+=r'''
 #define ASSERT_RTNL() assert(rtnl)
 #define U64_MAX UINT64_MAX
 static u64 rtl_fttr_generation=2;
+#define cpu_to_le32(v) (v)
+#define dma_wmb() ((void)0)
+struct rtl_fttr_pe_generation {u32 low,high;};
+static struct rtl_fttr_pe_generation *rtl_fttr_pe_radios[2];
 static u64 atomic64_read_acquire(u64 *p){return *p;}
 static void atomic64_set_release(u64 *p,u64 v){*p=v;}
 '''
 source+=function(generation,'rtl9617c_fttr_generation_read')
+source+=function(generation,'rtl_fttr_pe_publish')
 source+=function(generation,'rtl9617c_fttr_generation_set')
 source+=function(header,'rtl9617c_fttr_stale')
 source+=function(generation,'rtl9617c_fttr_stamp')

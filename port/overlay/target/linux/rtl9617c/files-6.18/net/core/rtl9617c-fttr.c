@@ -1,14 +1,65 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* FTTR software packet lifetime, independent of FE ownership and skb marks. */
 #include <linux/atomic.h>
+#include <linux/dma-mapping.h>
 #include <linux/export.h>
 #include <linux/errno.h>
 #include <linux/if_vlan.h>
 #include <linux/netdevice.h>
 #include <linux/rtnetlink.h>
 #include <linux/rtl9617c-fttr.h>
+#include <linux/spinlock.h>
 
 static atomic64_t rtl_fttr_generation = ATOMIC64_INIT(1);
+static DEFINE_SPINLOCK(rtl_fttr_pe_lock);
+static struct rtl_fttr_pe_generation *rtl_fttr_pe_radios[2];
+
+static void rtl_fttr_pe_publish(struct rtl_fttr_pe_generation *mirror, u64 generation)
+{
+	WRITE_ONCE(mirror->low, cpu_to_le32((u32)generation | 1));
+	dma_wmb();
+	WRITE_ONCE(mirror->high, cpu_to_le32(generation >> 32));
+	dma_wmb();
+	WRITE_ONCE(mirror->low, cpu_to_le32((u32)generation));
+	dma_wmb();
+}
+
+int rtl9617c_fttr_pe_register(struct rtl_fttr_pe_generation *mirror)
+{
+	unsigned long flags;
+	int slot, ret = -ENOSPC;
+
+	spin_lock_irqsave(&rtl_fttr_pe_lock, flags);
+	for (slot = 0; slot < 2; slot++)
+		if (rtl_fttr_pe_radios[slot] == mirror) { ret = -EEXIST; goto out; }
+	for (slot = 0; slot < 2; slot++)
+		if (!rtl_fttr_pe_radios[slot]) {
+			rtl_fttr_pe_publish(mirror, rtl9617c_fttr_generation_read());
+			rtl_fttr_pe_radios[slot] = mirror;
+			ret = 0;
+			break;
+		}
+out:
+	spin_unlock_irqrestore(&rtl_fttr_pe_lock, flags);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_fttr_pe_register);
+
+void rtl9617c_fttr_pe_unregister(struct rtl_fttr_pe_generation *mirror)
+{
+	unsigned long flags;
+	int slot;
+
+	spin_lock_irqsave(&rtl_fttr_pe_lock, flags);
+	for (slot = 0; slot < 2; slot++)
+		if (rtl_fttr_pe_radios[slot] == mirror) {
+			WRITE_ONCE(mirror->low, cpu_to_le32(1));
+			dma_wmb();
+			rtl_fttr_pe_radios[slot] = NULL;
+		}
+	spin_unlock_irqrestore(&rtl_fttr_pe_lock, flags);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_fttr_pe_unregister);
 
 u64 rtl9617c_fttr_generation_read(void)
 {
@@ -19,6 +70,8 @@ EXPORT_SYMBOL_GPL(rtl9617c_fttr_generation_read);
 int rtl9617c_fttr_generation_set(bool active)
 {
 	u64 generation;
+	unsigned long flags;
+	int slot;
 
 	ASSERT_RTNL();
 	generation = rtl9617c_fttr_generation_read();
@@ -27,7 +80,14 @@ int rtl9617c_fttr_generation_set(bool active)
 	/* Do not make old skb identities valid again after counter exhaustion. */
 	if (generation == U64_MAX)
 		return -EOVERFLOW;
+	spin_lock_irqsave(&rtl_fttr_pe_lock, flags);
+	/* Close PE mirrors before CPU observes closure; on open, both mirrors
+	 * must be ready before a newly stamped skb can reach either radio. */
+	for (slot = 0; slot < 2; slot++)
+		if (rtl_fttr_pe_radios[slot])
+			rtl_fttr_pe_publish(rtl_fttr_pe_radios[slot], generation + 1);
 	atomic64_set_release(&rtl_fttr_generation, generation + 1);
+	spin_unlock_irqrestore(&rtl_fttr_pe_lock, flags);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(rtl9617c_fttr_generation_set);

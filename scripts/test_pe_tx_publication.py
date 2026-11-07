@@ -139,6 +139,8 @@ class Machine:
 
     def queue(self):
         for ring in range(6):
+            self.put(TXMB + (32 + ring) * 4, (NEXT[ring] - 1) & 255)
+        for ring in range(6):
             payload = bytes([0x30 + ring]) * 80
             address = PAYLOAD + ring * 256
             self.u.mem_write(address, payload)
@@ -271,6 +273,7 @@ dual.u.mem_map(second, 0x20000)
 dual.u.mem_map(PAGES + 0x40000, 0x32000)
 dual.u.mem_map(RING + 0x10000, 0x10000)
 for index, value in ((2, BAR | 0xa0000000), (3, 1), (8, 1),
+                     (33, 6),
                      (11, RING + 0x10000), (12, PAGES + 0x40000)):
     dual.put(second_mb + index * 4, value)
 request = [0] * 32

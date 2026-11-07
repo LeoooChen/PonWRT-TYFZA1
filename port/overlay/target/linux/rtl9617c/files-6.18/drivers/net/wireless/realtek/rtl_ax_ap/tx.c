@@ -31,6 +31,7 @@ static void ni_route_sleep(struct rtl_ax_tx *tx, unsigned int macid);
 static void ni_state_init(struct rtl_ax_tx *tx);
 static int ni_mcast_release(struct rtl_ax_tx *tx);
 static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *tx);
+static void rtl_ax_tx_fttr_work(struct work_struct *work);
 static u64 pe_event_interrupts;
 #define RTL_AX_TX_MGMT_INDEX 0x1078
 #define RTL_AX_TX_RINGS 6
@@ -65,6 +66,9 @@ struct rtl_ax_tx {
 	struct rtl_mc_pe_table *mcast_table;
 	dma_addr_t mcast_dma;
 	struct net_device *mcast_dev;
+	struct delayed_work fttr_work;
+	bool fttr_registered;
+	u64 fttr_discarded;
 	u64 mcast_policy_attempt[128];
 	bool pe_active;
 	u32 pe_command;
@@ -118,6 +122,7 @@ void rtl_ax_tx_bind_hw(struct rtl_ax_tx *tx, struct ieee80211_hw *hw)
 {
 	unsigned long flags;
 
+	if (!hw) cancel_delayed_work_sync(&tx->fttr_work);
 	spin_lock_irqsave(&tx->lock, flags);
 	tx->hw = hw;
 	spin_unlock_irqrestore(&tx->lock, flags);
@@ -191,6 +196,9 @@ static int rtl_ax_tx_pe_start(struct rtl_ax_tx *tx)
 	if (ret) return ret;
 	ret = read_poll_timeout(get_unaligned_le32, status, status == 0x50455744,
 		10, 100000, false, tx->pe.memory + PE_PROBE_MAILBOX);
+	if (!ret && get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX +
+		RTL_FTTR_PE_CAP_MAILBOX * 4) != RTL_FTTR_PE_CAPABILITY)
+		ret = -EPROTONOSUPPORT;
 	if (!ret) tx->pe_active = true;
 	return ret;
 }
@@ -208,6 +216,7 @@ struct rtl_ax_tx *rtl_ax_tx_prepare(struct pci_dev *pdev, const struct rtl_ax_io
 	tx->pdev = pdev;
 	tx->dma_device = &pdev->dev;
 	init_waitqueue_head(&tx->key_flush_wait);
+	INIT_DELAYED_WORK(&tx->fttr_work, rtl_ax_tx_fttr_work);
 	ni_state_init(tx);
 	tx->io = io;
 	spin_lock_init(&tx->lock);
@@ -220,6 +229,9 @@ struct rtl_ax_tx *rtl_ax_tx_prepare(struct pci_dev *pdev, const struct rtl_ax_io
 	tx->mcast_table = dma_alloc_coherent(tx->dma_device, sizeof(*tx->mcast_table), &tx->mcast_dma, GFP_KERNEL);
 	if (!tx->mcast_table) { ret = -ENOMEM; goto release; }
 	memset(tx->mcast_table, 0, sizeof(*tx->mcast_table));
+	ret = rtl9617c_fttr_pe_register(&tx->mcast_table->fttr);
+	if (ret) goto release;
+	tx->fttr_registered = true;
 	tx->ring = dma_alloc_coherent(tx->dma_device, RTL_AX_TX_RINGS * RTL_AX_TX_ENTRIES * 8, &tx->ring_dma, GFP_KERNEL);
 	tx->pages = dma_alloc_coherent(tx->dma_device, RTL_AX_TX_WD_PAGES * RTL_AX_TX_WP_BYTES,
 		&tx->pages_dma, GFP_KERNEL);
@@ -780,6 +792,8 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 			template_ready = true;
 		}
 		memcpy(published, request, (8 + segments * 2) * sizeof(*request));
+		published[RTL_FTTR_PE_REQUEST_LOW] = lower_32_bits(skb->rtl9617c_fttr_generation);
+		published[RTL_FTTR_PE_REQUEST_HIGH] = skb->rtl9617c_fttr_generation >> 32;
 	} else {
 	memset(page, 0, RTL_AX_TX_WP_BYTES);
 	if (slot.mapping) {
@@ -852,6 +866,8 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		tx->pe_producer = (tx->pe_producer + 1) & 255;
 		put_unaligned_le32(tx->pe_producer, tx->pe.memory + PE_PROBE_MAILBOX + 32);
 		dma_wmb();
+		if (skb->rtl9617c_fttr_generation)
+			queue_delayed_work(system_wq, &tx->fttr_work, 1);
 	} else
 		tx->io->write16(tx->io->ctx, rtl_ax_tx_indices[ring], next);
 	/* WP IDs are shared by all six DMA rings. Pause mac80211 dequeue
@@ -966,7 +982,7 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 			continue;
 		}
 		slot = tx->slots[id];
-		if (slot.pe_sequence)
+		if (slot.pe_sequence && !packet->pe_discarded)
 			completed_sequence = get_unaligned((__le16 *)(tx->headers + id * 128 + 22));
 		tx->slots[id].skb = NULL;
 		__clear_bit(id, tx->pending);
@@ -985,6 +1001,13 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 		if (READ_ONCE(tx->peer_asleep[slot.macid])) ni_route_sleep(tx, slot.macid);
 		wake_up_all(&tx->key_flush_wait);
 		rtl_ax_tx_unmap(tx, &slot);
+		if (packet->pe_discarded) {
+			/* Original software-drop completion returns ownership without
+			 * claiming a transmission or feeding retry/ACK rate statistics. */
+			tx->fttr_discarded++;
+			ieee80211_free_txskb(hw, slot.skb);
+			continue;
+		}
 		if (slot.pe_sequence)
 			((struct ieee80211_hdr *)slot.skb->data)->seq_ctrl = completed_sequence;
 		info = IEEE80211_SKB_CB(slot.skb);
@@ -1020,6 +1043,38 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 	}
 	local_bh_enable();
 	return 0;
+}
+
+static void rtl_ax_tx_fttr_work(struct work_struct *work)
+{
+	struct rtl_ax_tx *tx = container_of(to_delayed_work(work), struct rtl_ax_tx, fttr_work);
+	u32 reports[RTL_AX_TX_ENTRIES];
+	struct rtl_ax_rx_packet packet = {.payload = (u8 *)reports, .pe_discarded = true};
+	unsigned int id, count = 0;
+	unsigned long flags;
+	bool pending = false;
+
+	spin_lock_irqsave(&tx->lock, flags);
+	for_each_set_bit(id, tx->pending, RTL_AX_TX_ENTRIES) {
+		struct rtl_ax_tx_slot *slot = &tx->slots[id];
+		u32 *released = tx->pe.memory + RTL_FTTR_PE_DISCARD + id * 4;
+		unsigned int qsel = slot->ring < 4 ? slot->ring : slot->ring == 4 ? 0x12 : 0x11;
+
+		if (!slot->skb->rtl9617c_fttr_generation) continue;
+		if (!READ_ONCE(*released)) { pending = true; continue; }
+		/* PE no longer references the request/payload once this word is
+		 * visible. Clear before the completion makes this WP reusable. */
+		dma_rmb();
+		WRITE_ONCE(*released, 0);
+		dma_wmb();
+		reports[count++] = cpu_to_le32(id << 16 | 4 << 13 | qsel << 8 | slot->macid);
+	}
+	spin_unlock_irqrestore(&tx->lock, flags);
+	packet.bytes = count * sizeof(*reports);
+	if (count) rtl_ax_tx_report(tx, tx->hw, &packet);
+	/* Only accepted FTTR WPs need polling, including radios without a
+	 * PE event timer. Hardware RPQ remains their normal completion path. */
+	if (pending) queue_delayed_work(system_wq, &tx->fttr_work, 1);
 }
 
 static bool rtl_ax_tx_pe_pending(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid,
@@ -1130,6 +1185,9 @@ int rtl_ax_tx_free(struct rtl_ax_tx *tx, struct ieee80211_hw *hw)
 		ret = pe_probe_stop(&tx->pe);
 		if (ret) return ret;
 	}
+	cancel_delayed_work_sync(&tx->fttr_work);
+	if (tx->fttr_registered)
+		rtl9617c_fttr_pe_unregister(&tx->mcast_table->fttr);
 	/* Caller has closed RX work and removed device DMA ownership. */
 	for (i = 0; i < RTL_AX_TX_ENTRIES; i++)
 		if (tx->slots[i].skb) {
@@ -1188,6 +1246,8 @@ int rtl_ax_tx_status(struct rtl_ax_tx *tx, char *out, size_t capacity)
 	length += scnprintf(out + length, capacity - length,
 		"queues_stopped=%u queue_stops=%llu queue_wakes=%llu\n",
 		tx->queues_stopped, tx->queue_stops, tx->queue_wakes);
+	length += scnprintf(out + length, capacity - length,
+		"FTTR_PE_software_discarded=%llu\n", tx->fttr_discarded);
 	length += scnprintf(out + length, capacity - length, "AMPDU_submitted_MPDU=%llu AMPDU_completed_MPDU=%llu\n",
 		tx->ampdu_submitted, tx->ampdu_completed);
 	length += scnprintf(out + length, capacity - length, "hardware_encrypted_MPDU=%llu\n", tx->encrypted);

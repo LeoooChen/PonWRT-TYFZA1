@@ -70,6 +70,7 @@ int main(void){
    struct ieee80211_hdr *hdr=(void *)raw[phase];hdr->frame_control=0x0208|(crypto?0x4000:0);hdr->seq_ctrl=(phase+1)<<4;
    memcpy(hdr->addr1,groups[group],6);hdr->addr2[0]=2;hdr->addr3[0]=4;
    skb[phase]=(struct sk_buff){.data=raw[phase],.len=sizeof(raw[phase]),.priority=7,
+    .rtl9617c_fttr_generation=0x100000002ULL,
     .info={.flags=IEEE80211_TX_CTL_NO_ACK,
     .control={.vif=&vif,.hw_key=crypto?&key:NULL}}};
    bss.ps.num_sta_ps=phase==1;
@@ -88,6 +89,7 @@ int main(void){
     assert(q[1]==(5|phase<<8|(phase+1)<<16)&&q[2]==(324|24<<16|1<<24));
     assert(q[4]==((phase+1)|BIT(13)|BIT(14)|(crypto?BIT(15):0)));
     assert(((u64)q[7]<<32|q[6])==(crypto?key.tx_pn:0));
+    assert(q[RTL_FTTR_PE_REQUEST_LOW]==2&&q[RTL_FTTR_PE_REQUEST_HIGH]==1);
     assert(fwrite(q,1,128,stdout)==128);
    }else{
     u8 *wd=pages+(5*264+phase)*128;

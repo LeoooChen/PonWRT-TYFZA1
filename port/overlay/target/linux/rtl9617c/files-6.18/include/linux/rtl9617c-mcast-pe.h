@@ -2,6 +2,8 @@
 #ifndef RTL9617C_MCAST_PE_H
 #define RTL9617C_MCAST_PE_H
 
+#include <linux/rtl9617c-fttr-pe.h>
+
 /* ARM publishes a coherent, little-endian table; PE1 is read-only. Cookies
  * share the NI group's quarantined 1..255 namespace and are never reused.
  * Publish immutable records before the nonzero epoch. Close epoch first on
@@ -34,7 +36,9 @@ struct rtl_mc_pe_record {
 };
 
 struct rtl_mc_pe_table {
-	unsigned int epoch, reserved[3];
+	unsigned int epoch;
+	struct rtl_fttr_pe_generation fttr;
+	unsigned int reserved;
 	struct rtl_mc_pe_record record[RTL_MC_PE_COOKIES];
 };
 
