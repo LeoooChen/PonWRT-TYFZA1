@@ -36,7 +36,7 @@ typedef uint32_t u32;
 struct ieee80211_sta {int unused;};
 struct sdata {struct {struct {unsigned beacon_int;}bss_conf;}vif;};
 struct sta_info {unsigned listen_interval;struct sdata *sdata;struct ieee80211_sta sta;};
-struct rtl_ax_tx {struct rtl_ax_traffic_flow peer_flows[128][8];bool peer_qos[128],peer_offloaded[128],peer_asleep[128],pe_active;u32 peer_rates[128];struct {void *memory;}pe;struct {u32 ps_seen[2][128];bool ps_issued[128];}ni;};
+struct rtl_ax_tx {bool peer_preload[128];struct rtl_ax_traffic_flow peer_flows[128][8];bool peer_qos[128],peer_offloaded[128],peer_asleep[128],pe_active;u32 peer_rates[128];struct {void *memory;}pe;struct {u32 ps_seen[2][128];bool ps_issued[128];}ni;};
 static void put_unaligned_le32(u32 value,void *p){memcpy(p,&value,4);}
 static u32 get(const void *p){u32 v;memcpy(&v,p,4);return v;}
 #define PE_PROBE_MAILBOX 0x2000

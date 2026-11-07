@@ -115,8 +115,8 @@ for client, encap, payload_bytes, smps, mode, firmware, aggregate, mesh in (
     second=bytes(u.mem_read(get(ring+12),128))
     assert struct.unpack_from('<I',second,12)[0]&0x3000 == (0x1000 if aggregate else 0x2000), (encap,payload_bytes,aggregate,second[:16].hex())
     if aggregate and encap and payload_bytes==1500 and mode==0x180 and not smps and firmware:
-        # Retain both existing AMPDU workarounds: a smaller next packet,
-        # then a different peer at the same length, still require BK.
+        # ARM descriptors without confirmed peer preload retain the old
+        # length/context guard; non-AMPDU traffic keeps the factory BK.
         request[2]-=1;request[9]-=1
         for slot,owner in ((2,9),(3,10)):
             if slot==3:request[4]=(request[4]&~0x7f000000)|3<<24

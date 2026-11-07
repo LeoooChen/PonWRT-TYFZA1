@@ -118,3 +118,6 @@ RAM stockqos SHAec0dbe5b1671d15df6ac5524c3ad91e3b8e6184fec5103f9cf1f622ef787ee6f
 144组实际ELF入队条件通过；linked PS预算/expiry/TIM、grant竞争、阻塞EQ、2048休眠帧+另一醒站实际发送、6144请求回收通过。初次PSQ双流虽零丢包，但只有一半走NI且无传输中休眠，不能用于归因。第二次同关联PSQ-RETRY：两条50Mbps流均走NI（约69000帧）、客户端sleep/wake多次增加，两条均0 loss、retired_EPP保持0，支持该修改解决已复现的QoS低速休眠丢包。WMM quota1024，drop0；长WMM timeout仍可能在采样结束时保持，未说本次20秒采样已见退出。
 
 RAM stockpsq SHA4b5a085757ccc537d615ef7217ba12673fc644049d21b92416fdef0152d075b1：TCP30s1.361Gbps、UDP60s1.482Gbps/loss25.89%，目标仍未达到，pending正常排空、RPQ failed0。所有本批额外服务器/客户端和stock_psq_probe NAT表已清理，继续保留测试基线的downlink_probe和RAM候选以便下一批。
+
+
+2026-11-08 integration: retained the confirmed four-peer preload lifecycle from 8ee15dc. Private preload flag uses bit22; bit23 remains STA direction from main. Historical measurements do not qualify this combined tree.

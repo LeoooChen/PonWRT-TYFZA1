@@ -626,6 +626,15 @@ static int rtl_ax_station_release(struct rtl_ax_ap *radio, unsigned int macid)
 	ret = rtl_ax_drop_station(radio, macid, IEEE80211_NUM_TIDS);
 	if (ret)
 		return ret;
+	/* Keep the reservation until all traffic is dropped and CCTL acknowledges
+	 * disable. A failed command can be retried without reusing the slot. */
+	if (test_bit(macid, radio->preload_peers)) {
+		rtl_ax_station_preload(dctl, macid, false);
+		ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 2, dctl, sizeof(dctl), true);
+		if (ret) return ret;
+		rtl_ax_tx_peer_preload(radio->tx, macid, false);
+		__clear_bit(macid, radio->preload_peers);
+	}
 	for (i = 0; i < RTL_AX_SECURITY_ENTRIES; i++)
 		if (radio->security_unlink[i] == macid + 1)
 			unlink = true;
@@ -984,6 +993,18 @@ connected:
 			sta->deflink.agg.max_rc_amsdu_len = !sta->deflink.he_cap.has_he &&
 				!sta->deflink.vht_cap.vht_supported ? min(caps >> 18, 4065U) : caps >> 18;
 		} else { ret = -EOPNOTSUPP; goto remove; }
+	}
+	/* Reserve before issuing a fallible command: completion can time out
+	 * after the hardware accepted it. Removal owns the reservation then. */
+	if (radio->chip == RTL_AX_8852C &&
+	    bitmap_weight(radio->preload_peers, 128) < 4) {
+		u8 preload[68];
+
+		__set_bit(id, radio->preload_peers);
+		rtl_ax_station_preload(preload, id, true);
+		ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 2, preload, sizeof(preload), true);
+		if (ret) goto remove;
+		rtl_ax_tx_peer_preload(radio->tx, id, true);
 	}
 	radio->station_added++;
 	dev_info(&radio->pdev->dev, "native %s peer MACID%u AID%u connected\n",

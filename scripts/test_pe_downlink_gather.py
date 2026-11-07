@@ -15,7 +15,7 @@ directory = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'artifacts/pe-rad
 binary = (directory / 'pe-tx.bin').read_bytes()
 
 
-def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False, policy=None):
+def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False, policy=None, preload=True):
     base, mb, pages, headers, payload, ring, bar, ni, reports = (
         0x04000000, 0x04002000, 0x05100000, 0x05400000, 0x06000000,
         0x05000000, 0x12000000, 0x10000000, 0x06200000)
@@ -39,7 +39,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
                          (117, 6), (140, mb | 0xa0000000), (142, 1)]:
         put(mb + index * 4, value)
     peer = [0, 0, 26 << 16, rate | bandwidth << 16 | (1 << 22 if hw_rts else 0),
-            1 << 24 | 1 << 18 | 1 << 16 | (1 << 23 if client else 0), 7 << 16 | 32, 0, 0]
+            1 << 24 | 1 << 18 | 1 << 16 | (1 << 23 if client else 0) | (1 << 22 if preload else 0), 7 << 16 | 32, 0, 0]
     u.mem_write(base + 0xd020, struct.pack('<8I', *peer))
     put(base + 0xe204, cap << 18)
     effective_policy = policy if policy is not None else 3793 if cap == 3839 else 7433 if cap == 7935 else 10896
@@ -105,6 +105,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     assert get(base + 0x18020) == len(lengths)
     member = 0
     all_ids = []
+    previous_length = 0
     for slot in range(len(submits)):
         page = bytes(u.mem_read(get(ring + slot * 8 + 4), 128))
         count = struct.unpack_from('<I', page, 4)[0] >> 26
@@ -136,6 +137,10 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         assert struct.unpack_from('<I', page, 0)[0] & (1 << 6), 'hardware PN disabled'
         assert struct.unpack_from('<I', page, 40)[0] & 0x17f == 0x107, 'wrong CCMP CAM'
         assert len(gathered) - 26 <= (cap if policy is None else min(cap,policy)) or count == 1
+        # Only preloaded peers may cross descending lengths without BK.
+        boundary = slot == 0 or (not preload and len(gathered) < previous_length)
+        assert struct.unpack_from('<I', page, 12)[0] & 0x3000 == (0x3000 if boundary else 0x1000), (lengths, slot, page[:16].hex())
+        previous_length = len(gathered)
         chain = get(base + 0x20000 + slot * 8)
         for n in range(count):
             assert chain == payload + (member + n) * 2048
@@ -184,6 +189,8 @@ if __name__ == '__main__':
         rows += [case([1514] * 4, 7935, True, True)]
         rows += [case([1514] * 7, 10896, True, ni_header=8),
                  case([1514] * 7, 10896, True, compact_epp=True)]
+    for enabled in [False, True]:
+        rows.append(case([1514] * 7 + [818, 54, 66] + [1514]*7 + [66], 10896, True, preload=enabled))
     print(json.dumps({'cases': rows, 'exact_headers_payload_padding_DMA': True,
                       'one_WP_per_aggregate': True,
                       'ownership_until_RPQ_and_EQ_credit': True}, indent=2))

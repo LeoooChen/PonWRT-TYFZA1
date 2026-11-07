@@ -47,7 +47,7 @@ for cycle in range(cycles):
   page=get(RING+(((get(MB+32*4)-1)&255)*8)+4)
   tag=get(page+56)&4095;tags.append(tag)
   assert get(B+0x40000+tag*4)==owner+1
-  assert not get(page+12)&(1<<13)
+  assert bool(get(page+12)&(1<<13)) == (cycle == 0 and i == 0)
  assert len(set(owners))==len(set(tags))==capacity and get(MB+30*4)==capacity
  enqueue(1);assert call('ni_select',MB,B,B+0x4000)==0
  put(B+0x15020,0);put(B+0x11804,0);put(B+0x13020,0);put(MB+38*4,0);put(MB+170*4,0);put(B+0x18020,capacity)

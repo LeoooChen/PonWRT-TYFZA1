@@ -45,6 +45,7 @@ int rtl_ax_tx_ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid);
 int rtl_ax_tx_ni_retire_ba(struct rtl_ax_tx *tx, unsigned int macid);
 int rtl_ax_mac_drop_peer(struct pci_dev *pdev, unsigned int macid);
 void rtl_ax_tx_peer_sleep(struct rtl_ax_tx *tx, unsigned int macid, bool asleep);
+void rtl_ax_tx_peer_preload(struct rtl_ax_tx *tx, unsigned int macid, bool enabled);
 void rtl_ax_tx_peer_authorized(struct rtl_ax_tx *tx, unsigned int macid, bool authorized);
 bool rtl_ax_tx_peer_security(struct rtl_ax_tx *tx, unsigned int macid, unsigned int cam, unsigned int keyid);
 void rtl_ax_tx_peer_ba(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid, unsigned int size);

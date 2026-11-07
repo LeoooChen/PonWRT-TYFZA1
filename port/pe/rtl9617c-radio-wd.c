@@ -464,8 +464,16 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	word(page, dw0); word(page + 4, dw1);
 	word(page + 8, (flags & 0x7f000000) | (ring < 4 ? ring : ring == 4 ? 0x12 : 0x11) << 17 |
 		((flags & BIT(12)) ? BIT(23) : 0) | (packet & 0x3fff));
-	/* Factory default A-MPDU encoding has no length/context BK heuristic. */
-	word(page + 12, sequence | (aggregate ? BIT(12) : BIT(13)));
+	/* C peer preload avoids the reproduced mixed-length stall. Without it,
+	 * retain the old length boundary guard against zero-packet TX stalls.
+	 * Record every descriptor, including ARM frames sharing this DMA ring. */
+	u32 context = (flags & 0x7f000000) | (flags & BIT(12)) << 11;
+	u32 previous = mailbox[197 + ring], bytes = packet & 0x3fff;
+	u32 boundary = (previous & ~0x3fffU) != context ||
+		(!(flags & BIT(22)) && bytes < (previous & 0x3fff));
+	mailbox[197 + ring] = context | bytes;
+	word(page + 12, sequence | (aggregate ? BIT(12) : BIT(13)) |
+		(boundary ? BIT(13) : 0));
 	word(page + 16, dw4); word(page + 20, dw5);
 	word(page + 28, (rate & BIT(20) ? 0 : BIT(31)) | ((rate >> 16) & 3) << 28 |
 		((rate >> 12) & 7) << 25 | (rate & 0x1ff) << 16);

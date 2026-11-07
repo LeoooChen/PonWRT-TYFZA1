@@ -65,7 +65,7 @@ struct rtl_ax_tx {
 	struct rtl_ax_rx *rx;
 	void (*peer_ready)(void *context);
 	void *peer_ready_context;
-	bool peer_offloaded[128], peer_authorized[128];
+	bool peer_offloaded[128], peer_authorized[128], peer_preload[128];
 	const struct rtl_ax_io *io;
 	spinlock_t lock;
 	wait_queue_head_t key_flush_wait;
@@ -430,6 +430,7 @@ void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos, unsi
 	memset(tx->peer_flows[macid], 0, sizeof(tx->peer_flows[macid]));
 	if (tx->pe_active)
 		memset(tx->pe.memory + RTL_AX_TX_PEER_FLOWS + macid * 256, 0, 256);
+	tx->peer_preload[macid] = false;
 	tx->peer_offloaded[macid] = false;
 	tx->peer_asleep[macid] = false;
 	tx->peer_rates[macid] = 0;
@@ -456,6 +457,23 @@ u32 rtl_ax_tx_success(struct rtl_ax_tx *tx, unsigned int macid)
 	return READ_ONCE(tx->peer_success[macid].internal) >> 8;
 }
 
+/* Called under the wiphy lifecycle lock, before admission or after drain.
+ * Serialize template updates with ARM submission; BIT22 is request-only. */
+void rtl_ax_tx_peer_preload(struct rtl_ax_tx *tx, unsigned int macid, bool enabled)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&tx->lock, flags);
+	tx->peer_preload[macid] = enabled;
+	if (tx->pe_active) {
+		u8 *field = tx->pe.memory + 0xd000 + macid * 32 + 16;
+		u32 value = get_unaligned_le32(field) & ~BIT(22);
+
+		put_unaligned_le32(value | (enabled ? BIT(22) : 0), field);
+		dma_wmb();
+	}
+	spin_unlock_irqrestore(&tx->lock, flags);
+}
 void rtl_ax_tx_peer_authorized(struct rtl_ax_tx *tx, unsigned int macid, bool authorized)
 {
 	WRITE_ONCE(tx->peer_authorized[macid], authorized);
@@ -713,6 +731,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		if (rtl_ax_tx_raw_fw_rate(tx, skb, macid))
 			request[3] = tx->peer_rates[macid] | BIT(20);
 		slot.firmware_rate = !!(request[3] & BIT(20));
+		if (tx->peer_preload[macid]) request_flags |= BIT(22);
 		request[4] = request_flags; request[5] = aggregate | density << 8 | key;
 		request[6] = pn; request[7] = pn >> 32;
 		if (slot.mapping) {
@@ -747,7 +766,8 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		    !(info->control.flags & IEEE80211_TX_CTRL_PS_RESPONSE)) {
 			u32 peer[8] = { 0, 0, 26U << 16,
 				tx->peer_rates[macid] & ~BIT(31),
-				macid << 24 | BIT(18) | BIT(16) | tx->checksum_enabled << 17 | tx->peer_client[macid] << 23,
+				macid << 24 | BIT(18) | BIT(16) | tx->checksum_enabled << 17 | tx->peer_client[macid] << 23 |
+				(tx->peer_preload[macid] ? BIT(22) : 0),
 				aggregate | density << 8 | key, 0, 0 };
 
 			memcpy(tx->pe.memory + 0xd000 + macid * 32, peer, sizeof(peer));

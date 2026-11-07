@@ -61,6 +61,15 @@ static inline void rtl_ax_station_cmac_connected(unsigned char out[68],
 	}
 }
 
+/* Only the per-peer preload bit: retain firmware rate and BA state. */
+static inline void rtl_ax_station_preload(u8 out[68], unsigned int macid, bool enabled)
+{
+	memset(out, 0, 68);
+	rtl_ax_store32(out, macid | 0x80);
+	rtl_ax_store32(out + 12, enabled ? BIT(15) : 0);
+	rtl_ax_store32(out + 44, BIT(15));
+}
+
 static inline u8 rtl_ax_he_padding(const u8 *phy, const u8 *ppe, unsigned int nss)
 {
 	u8 ru_mask, padding = 0x55;
