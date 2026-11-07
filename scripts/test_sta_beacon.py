@@ -51,7 +51,7 @@ struct rtl_ax_ap {
  struct sk_buff *scan_pending; u32 scan_word0, scan_word1;
  u64 scan_matched, scan_unmatched, scan_received_ns;
  u8 scan_last_bssid[6], scan_last_rpl;
- struct ieee80211_vif *ap_vif;void *sta_vif;bool sta_associated;u8 sta_bssid[6];bool ap_started; unsigned chip; struct { unsigned primary; } channel; void *hw;
+ struct ieee80211_vif *ap_vif;void *sta_vif;bool sta_associated;u8 sta_bssid[6];bool ap_started,mesh_started; unsigned chip; struct { unsigned primary; } channel; void *hw;
  u64 rx_decrypted, mac80211_packets, rx_copy_bytes, rx_prepare_ns, rx_mac80211_ns;
 };
 static bool rtl_ax_datapath_profile;
@@ -97,6 +97,16 @@ int main(void){
   assert(received.flag&RX_FLAG_NO_SIGNAL_VAL);
   assert(!!(received.flag&RX_FLAG_ONLY_MONITOR)==!(connected&&own));
  }
+ /* A delayed RX already observed the active mesh when removal cleared vif.
+  * It may still deliver this last beacon, but must never dereference vif. */
+ radio.ap_started=true;radio.mesh_started=true;radio.ap_vif=NULL;
+ radio.sta_associated=false;
+ assert(!rtl_ax_monitor_receive(&radio,&packet));rtl_ax_scan_complete_frame(&radio,NULL);
+ assert(!(received.flag&RX_FLAG_ONLY_MONITOR));
+ radio.mesh_started=false;
+ assert(!rtl_ax_monitor_receive(&radio,&packet));rtl_ax_scan_complete_frame(&radio,NULL);
+ assert(received.flag&RX_FLAG_ONLY_MONITOR);
+ radio.ap_started=false;
  frame[0]=0xb0;assert(!rtl_ax_monitor_receive(&radio,&packet));assert(!(received.flag&RX_FLAG_ONLY_MONITOR));
  radio.sta_vif=NULL;assert(!rtl_ax_monitor_receive(&radio,&packet));assert(received.flag&RX_FLAG_ONLY_MONITOR);
  puts("STA RX: own beacon without RSSI reaches link monitor; unassociated/foreign samples stay unknown; authentication allowed");

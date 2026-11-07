@@ -171,6 +171,7 @@ static int rtl_ax_monitor_get_txpower(struct ieee80211_hw *hw,
 
 #include "station.h"
 static void rtl_ax_client_release(struct rtl_ax_ap *radio);
+static int rtl_ax_station_release(struct rtl_ax_ap *radio, unsigned int macid);
 
 static void rtl_ax_update_vif_offload(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 {
@@ -188,8 +189,15 @@ static int rtl_ax_monitor_add_interface(struct ieee80211_hw *hw, struct ieee8021
 	if (vif->type != NL80211_IFTYPE_AP && vif->type != NL80211_IFTYPE_STATION &&
 	    vif->type != NL80211_IFTYPE_MESH_POINT)
 		return -EOPNOTSUPP;
-	if (radio->ap_vif || radio->sta_vif || radio->sta_role)
+	if (radio->ap_vif || radio->sta_vif)
 		return -EBUSY;
+	/* .stop cancels deferred cleanup after a failed .add_interface. RX is
+	 * running again here; finish the retired role before accepting a new vif. */
+	if (radio->sta_role) {
+		int ret = rtl_ax_station_release(radio, RTL_AX_CLIENT_MACID);
+
+		if (ret) return ret;
+	}
 	if (vif->type == NL80211_IFTYPE_STATION) {
 		int ret;
 
@@ -309,6 +317,7 @@ static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		radio->dfs.in_cac = false;
 		rtl_ax_tx_dfs_block(radio->tx, false);
 		rtl_ax_update32(&radio->io, 0xc400, BIT(12), BIT(12));
+		WRITE_ONCE(radio->mesh_started, vif->type == NL80211_IFTYPE_MESH_POINT);
 		WRITE_ONCE(radio->ap_started, true);
 		radio->beacon_enabled = true;
 	}
@@ -422,6 +431,7 @@ static void rtl_ax_ap_stop(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	spin_lock_irqsave(&radio->command_lock, flags);
 	rtl_ax_update32(&radio->io, 0xc400, BIT(12), 0);
 	radio->beacon_enabled = false;
+	WRITE_ONCE(radio->mesh_started, false);
 	WRITE_ONCE(radio->ap_started, false);
 	if (radio->dfs.enabled) {
 		radio->dfs.in_cac = true;
@@ -1809,8 +1819,8 @@ static void rtl_ax_scan_complete_frame(struct rtl_ax_ap *radio,
 		memcpy(radio->scan_last_bssid, skb->data + 16, 6);
 		radio->scan_matched++;
 	} else {
-		/* Mesh peering and the associated AP need beacons without RSSI. */
-		if ((!radio->ap_started || radio->ap_vif->type != NL80211_IFTYPE_MESH_POINT) &&
+		/* RX outlives remove_interface; use published state, not ap_vif. */
+		if (!READ_ONCE(radio->mesh_started) &&
 		    (!READ_ONCE(radio->sta_associated) ||
 		     !ether_addr_equal(skb->data + 16, radio->sta_bssid)))
 			status->flag |= RX_FLAG_ONLY_MONITOR;

@@ -42,6 +42,9 @@ typedef uint64_t u64;
 #define IEEE80211_HE_MAC_CAP1_TF_MAC_PAD_DUR_MASK 0x0c
 struct ieee80211_sta_he_cap {bool has_he;struct {u8 mac_cap_info[6],phy_cap_info[11];} he_cap_elem;u8 ppe_thres[25];};
 #define NL80211_IFTYPE_STATION 2
+#define NL80211_IFTYPE_AP 3
+#define NL80211_IFTYPE_MONITOR 6
+#define RTL_AX_CLIENT_MACID 1
 #define NL80211_IFTYPE_MESH_POINT 7
 #define clear_bit __clear_bit
 struct rtl_ax_io {void *ctx;u32(*read32)(void*,unsigned);void(*write32)(void*,unsigned,u32);};
@@ -65,11 +68,11 @@ common += r'''
 struct wiphy {int unused;};
 struct wiphy_work {int unused;};
 struct wiphy_delayed_work {struct wiphy_work work;};
-struct ieee80211_vif {u8 addr[6];int type;struct {unsigned aid;} cfg;};
+struct ieee80211_vif {u8 addr[6];int type;bool use_4addr;struct {unsigned aid;} cfg;};
 struct ieee80211_sta {struct rtl_ax_station drv_priv[1];u8 addr[6];unsigned int aid;};
 struct rtl_ax_tx {bool pending[128][17];};
 struct rtl_ax_ap {
- struct rtl_ax_tx *tx;struct ieee80211_vif *ap_vif,*sta_vif;int rx;bool sta_role,sta_associated,peer_authorized[128],ra_registered[128],offload_retry;unsigned long ra_pending[2],security_aborting[2];u8 security_unlink[128];void *security_keys[128];struct wiphy_work offload_work;unsigned keys_aborted;unsigned int chip;bool monitor_started;
+ struct rtl_ax_tx *tx;struct ieee80211_vif *ap_vif,*sta_vif;int rx;bool sta_role,sta_associated,sta_4addr,peer_authorized[128],ra_registered[128],offload_retry;unsigned long ra_pending[2],security_aborting[2];u8 security_unlink[128];void *security_keys[128];struct wiphy_work offload_work;unsigned keys_aborted;unsigned int chip;bool monitor_started;
  unsigned long station_ids[2],security_ids[2],security_deleting[2];
  struct {u8 self[6],peer[6];u16 aid;bool pending,client,mesh;} retired_stations[128];
  struct {u8 address[6],aggregation[16];u16 stopping,flushing;} tx_ba[128];
@@ -139,6 +142,13 @@ static int rtl_ax_command(struct rtl_ax_ap *r,unsigned int queue,unsigned int ca
  return 0;
 }
 '''
+common += r'''
+static int prepared;
+static int rtl_ax_client_prepare(struct rtl_ax_ap *r,struct ieee80211_vif *v){(void)v;prepared++;r->sta_role=true;return 0;}
+static void rtl_ax_client_release(struct rtl_ax_ap *r){r->sta_role=false;}
+static struct ieee80211_vif *ieee80211_vif_to_wdev(struct ieee80211_vif *v){return v;}
+static void rtl_ax_tx_ap_address(struct rtl_ax_tx *tx,const u8 *addr){(void)tx;(void)addr;}
+'''
 test = r'''
 int main(void){
  struct wiphy w={};struct ieee80211_vif vif={.addr={2,1,2,3,4,5}};
@@ -187,12 +197,28 @@ int main(void){
  rpq_complete=true;fail_class=6;fail_function=0;fail_count=1;
  rtl_ax_cleanup_work(&w,&r.cleanup_work.work);assert(r.sta_role&&test_bit(1,r.station_ids));
  rtl_ax_cleanup_work(&w,&r.cleanup_work.work);assert(!r.sta_role&&!r.sta_associated&&!test_bit(1,r.station_ids));
+ /* mac80211 .stop canceled cleanup after a failed STA open. Every new
+  * open must finish retirement before either creating STA or selecting AP. */
+ for(unsigned type=2;type<=7;type++){
+  if(type!=2&&type!=3&&type!=7)continue;
+  r.ap_vif=r.sta_vif=NULL;r.sta_role=true;r.retired_stations[1].pending=true;
+  r.retired_stations[1].client=true;set_bit(1,r.station_ids);vif.type=type;
+  fail_class=6;fail_function=0;fail_count=1;prepared=0;
+  assert(rtl_ax_monitor_add_interface(&hw,&vif)==-ETIMEDOUT);
+  assert(r.sta_role&&r.retired_stations[1].pending&&!r.ap_vif&&!r.sta_vif&&!prepared);
+  /* The failure remains explicit; once firmware responds the same open recovers. */
+  assert(!rtl_ax_monitor_add_interface(&hw,&vif));
+  assert(!r.retired_stations[1].pending&&!test_bit(1,r.station_ids));
+  assert(type==2?(r.sta_vif==&vif&&prepared==1):(r.ap_vif==&vif&&!prepared&&!r.sta_role));
+  unsigned old=role_commands;
+  assert(rtl_ax_monitor_add_interface(&hw,&vif)==-EBUSY&&role_commands==old);
+ }
  assert(r.retired_stations[7].peer[5]==77 && r.retired_stations[7].aid==27);
  puts("STA/BA lifetime: delayed RPQ gates completion and MACID reuse; firmware failures retry after STA free; 100 RX BA restarts reuse one slot");
 }
 '''
 names = ('rtl_ax_drop_station', 'rtl_ax_rx_ba_remove', 'rtl_ax_station_release',
-         'rtl_ax_tx_ba_finish', 'rtl_ax_security_cleanup', 'rtl_ax_cleanup_work', 'rtl_ax_station_remove', 'rtl_ax_ampdu_action')
+         'rtl_ax_monitor_add_interface', 'rtl_ax_tx_ba_finish', 'rtl_ax_security_cleanup', 'rtl_ax_cleanup_work', 'rtl_ax_station_remove', 'rtl_ax_ampdu_action')
 with tempfile.TemporaryDirectory(prefix='wifi-sta-release-', dir=root / 'artifacts') as directory:
     p = Path(directory)
     (p / 'test.c').write_text(common + ''.join(function(n) for n in names) + test)

@@ -26,7 +26,7 @@ def function(file, name):
     return source[start:end] + '\n'
 
 
-module = root / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
+module = Path(sys.argv[1]) if len(sys.argv) > 1 else root / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
 names = ['halbb_dfs_init', 'halbb_dfs_rgn_dmn_dflt_cnfg', 'halbb_dfs_rgn_dmn_cnfg_by_ch',
          'halbb_dfs_change_dmn', 'halbb_radar_detect', 'halbb_radar_info_processing',
          'halbb_radar_seq_inspctn', 'halbb_radar_ptrn_cmprn', 'halbb_radar_chrp_mntr',
@@ -166,20 +166,25 @@ unsigned hardware(unsigned enabled,u32 *out){
 struct rtl_ax_tx {
  const struct rtl_ax_io *io;int lock;bool running,paused,dfs_blocked,checksum_enabled,queues_stopped,queues_paused,pe_active;
  u32 scheduler_saved,pe_producer,pe_command,occupied,queue_wakes;
- struct {u8 *memory;}pe;void *hw;
+ struct {u8 *memory;}pe;void *hw,*rx;
 };
+static int rtl_ax_rx_pe_pause(void *rx){(void)rx;return 0;}
+static void rtl_ax_rx_pe_open(void *rx){(void)rx;}
 '''
 source += ''.join(function('tx.c', name) for name in ('rtl_ax_tx_pause', 'rtl_ax_tx_dfs_block', 'rtl_ax_tx_open'))
 source += r'''
 #define RTL_AX_H2C_DATA 0
 #define WRITE_ONCE(p,v) ((p)=(v))
+#define NL80211_IFTYPE_MESH_POINT 7
+#define usecs_to_jiffies(x) (x)
+#define wiphy_delayed_work_queue(w,p,d) ((void)(w),(void)(p),(void)(d))
 static unsigned dfs_region;static bool inject_radar;
 struct rtl_ax_ap {
  struct rtl_ax_dfs dfs;struct rtl_ax_io io;struct rtl_ax_tx *tx;
  struct {unsigned primary,bandwidth,center;}channel;
  struct ieee80211_hw *hw;
- unsigned dfs_domain,chip;bool radar_required,ap_started,beacon_enabled;
- int command_lock,ap_result;
+ unsigned dfs_domain,chip;bool radar_required,ap_started,mesh_started,beacon_enabled;
+ int command_lock,ap_result,mesh_sync_work;long long mesh_tsf_remainder;
  struct {unsigned valid;}security_roles[1];
 };
 #define NL80211_BAND_5GHZ 1
@@ -190,7 +195,7 @@ struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};
 static int ieee80211_channel_to_frequency(unsigned channel,unsigned band){(void)band;return 5000+channel*5;}
 static struct ieee80211_channel *ieee80211_get_channel(void *wiphy,int frequency)
 {(void)wiphy;unsigned channel=(frequency-5000)/5;return &regulatory_channels[(channel-36)/4];}
-struct ieee80211_vif {u8 addr[6];};
+struct ieee80211_vif {u8 addr[6];int type;};
 struct ieee80211_bss_conf {unsigned beacon_int,dtim_period;struct {bool enabled;unsigned color;}he_bss_color;};
 static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw){return hw->radio;}
 static int rtl_ax_self_role_prepare(struct rtl_ax_ap *r,u8 *addr,unsigned bi,unsigned dtim){(void)r;(void)addr;(void)bi;(void)dtim;return 0;}

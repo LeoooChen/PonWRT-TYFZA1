@@ -6,7 +6,7 @@ STA_OUTPUT=${1:-$STA_PROJECT/artifacts/sta-offload-check}
 cd "$STA_PROJECT"
 mkdir -p "$STA_OUTPUT"
 PE_RADIO_CFLAGS=-DPE_UPLINK sh scripts/build_pe_radio_wd.sh "$STA_OUTPUT"
-for test in test_sta_client_lifecycle test_sta_beacon test_sta_scan_offload test_wifi_station_release \
+for test in test_sta_client_lifecycle test_sta_beacon test_sta_scan_offload test_wifi_station_release test_wifi_notifier \
     test_radio_key_cleanup test_wifi_authorization test_fe_wifi_peer_route \
     test_wifi_offload_transaction test_wifi_ni_retirement test_radio_ni_retire_flush \
     test_rx_uplink_sync test_wifi_cmac_aggregation test_wifi_tx_request; do
