@@ -100,7 +100,7 @@ struct ieee80211_sta {void *drv_priv;struct {struct {unsigned ampdu_density;}ht_
 struct ieee80211_tx_control {struct ieee80211_sta *sta;};
 struct scatterlist {u32 dma,len;};
 struct rtl_ax_tx_mapping {struct scatterlist sg[10];unsigned count,dma_count;};
-struct rtl_ax_tx_slot {struct sk_buff *skb;dma_addr_t dma;unsigned bytes,ring,key_index,macid,tid;bool encrypted,pe_sequence,firmware_rate;struct rtl_ax_tx_mapping *mapping;};
+struct rtl_ax_tx_slot {struct sk_buff *skb;u64 fttr_generation;dma_addr_t dma;unsigned bytes,ring,key_index,macid,tid;bool encrypted,pe_sequence,firmware_rate;struct rtl_ax_tx_mapping *mapping;};
 struct rtl_ax_io {void *ctx;void (*write16)(void *,unsigned,unsigned);};
 struct rtl_ax_tx {bool running,dfs_blocked,pe_active,checksum_enabled,queues_stopped;
  bool peer_qos[128],peer_authorized[128],peer_asleep[128],peer_offloaded[128],peer_client[128];u32 peer_rates[128];u64 mcast_policy_attempt[128];
@@ -115,7 +115,7 @@ struct rtl_ax_tx {bool running,dfs_blocked,pe_active,checksum_enabled,queues_sto
 #define RTL_AX_CLIENT_MACID 1
 struct rtl_ax_ap {struct rtl_ax_tx *tx;bool sta_role;unsigned chip,tx_unimplemented;struct {unsigned aggregation[16];}tx_ba[128];struct {int n_bitrates;struct {unsigned hw_value;}bitrates[12];}band;};
 struct ieee80211_hw {struct rtl_ax_ap *radio;};
-static unsigned freed,maps,doorbells;
+static unsigned freed,maps,doorbells,unmaps;
 static bool ieee80211_is_ctl(u16 f){return (f&12)==4;}
 static bool ieee80211_is_data(u16 f){return (f&12)==8;}
 static bool ieee80211_is_data_present(u16 f){return ieee80211_is_data(f)&&!(f&0x40);}
@@ -150,13 +150,14 @@ static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *tx){(void)tx;}
 static bool ether_addr_equal(const u8 *a,const u8 *b){return !memcmp(a,b,6);}
 static int rtl_ax_tx_map(struct rtl_ax_tx *tx,struct sk_buff *s,struct rtl_ax_tx_slot *slot,bool *linearized,bool separate){
  (void)tx;(void)linearized;assert(!separate);assert(s->len==20);slot->dma=0x09000000;maps++;return 1;}
-static void rtl_ax_tx_unmap(struct rtl_ax_tx *tx,const struct rtl_ax_tx_slot *slot){(void)tx;(void)slot;assert(0);}
+static void rtl_ax_tx_unmap(struct rtl_ax_tx *tx,const struct rtl_ax_tx_slot *slot){(void)tx;assert(slot->dma==0x09000000);unmaps++;}
 static void rtl_ax_security_tx(u8 *page,unsigned id,unsigned key,u64 pn){(void)page;(void)id;(void)key;(void)pn;assert(0);}
 static void write16(void *ctx,unsigned reg,unsigned value){(void)ctx;assert(reg==0x1078&&value==1);doorbells++;}
 #define for_each_sg(list,sg,n,i) for((i)=0;(i)<(n)&&((sg)=&(list)[i],1);(i)++)
 #define sg_dma_address(s) ((s)->dma)
 #define sg_dma_len(s) ((s)->len)
 '''
+code += 'static unsigned acquired_fttr;static bool accept_fttr=true;static bool rtl9617c_fttr_tx_get(u64 generation){if(!accept_fttr)return false;acquired_fttr+=!!generation;return true;}\n'
 code += 'static bool stale_fttr; static bool rtl9617c_fttr_stale(const struct sk_buff *s){(void)s;return stale_fttr;}\n'
 code += '#define system_wq 0\nstatic void queue_delayed_work(int q,int *w,int delay){(void)q;(void)w;assert(delay==1);}\n'
 code += (driver.parents[4] / 'include/linux/rtl9617c-fttr-pe.h').read_text()
@@ -191,7 +192,10 @@ int main(void){
   stale_fttr=true;
   assert(rtl_ax_tx_submit(&t,&hw,&skb,0,0,0,7,0,0)==-ESTALE && !t.submitted && freed==before);
   skb.rtl9617c_fttr_generation=0x100000002ULL;
-  stale_fttr=false;rtl_ax_monitor_tx(&hw,&control,&skb);
+  stale_fttr=false;accept_fttr=false;unsigned acquired=acquired_fttr;
+  assert(rtl_ax_tx_submit(&t,&hw,&skb,0,0,0,7,0,0)==-ESTALE&&!t.submitted&&freed==before&&acquired_fttr==acquired);
+  accept_fttr=true;rtl_ax_monitor_tx(&hw,&control,&skb);
+  assert(acquired_fttr==acquired+1&&t.slots[0].fttr_generation==skb.rtl9617c_fttr_generation);
   assert(freed==before && t.submitted==1 && t.submitted_ring[4]==1);
   assert(t.slots[0].ring==4 && t.slots[0].macid==7 && t.slots[0].tid==16);
   assert(!t.slots[0].pe_sequence&&!t.slots[0].firmware_rate&&!t.ampdu_submitted);
@@ -215,7 +219,7 @@ int main(void){
   skb.len=19;before=freed;rtl_ax_monitor_tx(&hw,&control,&skb);
   assert(freed==before+1&&t.submitted==1);free(skb.data);
  }
- assert(maps==4&&doorbells==2);
+ assert(maps==8&&unmaps==4&&doorbells==2);
 }
 '''
 with tempfile.TemporaryDirectory(prefix='radio-tx-bar-') as directory:

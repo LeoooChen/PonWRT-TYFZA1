@@ -17,6 +17,11 @@ void rtl9617c_ni_fttr_load_end(struct device *dev, int error);
  * Odd generations are closed. Writers are serialized by RTNL. */
 u64 rtl9617c_fttr_generation_read(void);
 int rtl9617c_fttr_generation_set(bool active);
+/* CPU-origin radio requests retain one reference until RPQ/software-drop
+ * completion or joined device teardown has released their DMA mapping. */
+bool rtl9617c_fttr_tx_get(u64 generation);
+void rtl9617c_fttr_tx_put(u64 generation);
+int rtl9617c_fttr_tx_drain(void);
 /* The two radios own coherent storage until PE has joined. Registration
  * serializes with generation changes without requiring RTNL at PCI probe. */
 int rtl9617c_fttr_pe_register(struct rtl_fttr_pe_generation *mirror);

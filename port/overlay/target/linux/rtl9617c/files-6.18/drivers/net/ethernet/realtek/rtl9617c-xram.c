@@ -790,6 +790,9 @@ static int rtl_fttr_stop(struct net_device *dev)
 	cleanup = rtl_fe_fttr_close(port->shared->fe);
 	if (!ret)
 		ret = cleanup;
+	cleanup = rtl9617c_fttr_tx_drain();
+	if (!ret)
+		ret = cleanup;
 	rtl9617c_ni_close(port->shared->p6.dev, dev);
 	return ret;
 }
@@ -1691,6 +1694,8 @@ static ssize_t fttr_mcast_flush_store(struct device *dev, struct device_attribut
 	rtnl_lock();
 	if (priv->fttr_mc && netif_running(priv->fttr_mc))
 		ret = -EBUSY;
+	else if (priv->fttr)
+		ret = rtl_fttr_mcast_quiesce(priv->fttr);
 	else
 		ret = rtl_fe_flush_multicast(priv->fe, true);
 	rtnl_unlock();
@@ -1757,7 +1762,7 @@ static void rtl_fttr_rx_purge(struct rtl_xram *priv)
 	}
 }
 
-void rtl_fttr_mcast_quiesce(struct net_device *parent)
+int rtl_fttr_mcast_quiesce(struct net_device *parent)
 {
 	struct rtl_fttr_port *port = netdev_priv(parent);
 	unsigned long flags;
@@ -1769,6 +1774,7 @@ void rtl_fttr_mcast_quiesce(struct net_device *parent)
 	active = !(rtl9617c_fttr_generation_read() & 1);
 	rtl9617c_fttr_generation_set(false);
 	spin_unlock_irqrestore(&port->shared->tx_lock, flags);
+	port->shared->fttr_forward_cleanup_error = 0;
 	ret = rtl_fe_flush_multicast(port->shared->fe, true);
 	if (ret)
 		netdev_err(parent, "multicast FE withdrawal failed: %d\n", ret);
@@ -1780,14 +1786,25 @@ void rtl_fttr_mcast_quiesce(struct net_device *parent)
 		dev_deactivate(parent);
 		dev_activate(parent);
 	}
-	if (active && rtl9617c_fttr_generation_set(true))
-		netdev_err(parent, "FTTR packet generation exhausted\n");
+	if (!ret) ret = rtl9617c_fttr_tx_drain();
+	if (!ret && active) ret = rtl9617c_fttr_generation_set(true);
+	if (ret) {
+		/* ndo_stop cannot propagate this error; the synchronous flush
+		 * attribute retries it before the resident releases membership. */
+		WRITE_ONCE(port->shared->fttr_forwarding, false);
+		rtl_fttr_mcast_gate(port->shared->fttr_mc, false);
+		port->shared->fttr_forward_cleanup_error =
+			rtl_fe_fttr_set(port->shared->fe, false);
+	}
+	port->shared->fttr_forward_error = ret;
+	return ret;
 }
 
 /* Full software forwarding admission, distinct from acceleration-only mode.
  * 0 closes business RX/TX before FE withdrawal and purges queued CPU sends.
  * 1 <OMCI-ethertype> enables after successful FE withdrawal/reconfiguration.
- * This does not claim DMA/AFT/PE/MiniOLT queues have finished older packets.
+ * CPU radio requests must finish RPQ/software-drop recovery before return.
+ * This does not claim NI DMA/AFT, direct PE or MiniOLT queues have drained.
  */
 static ssize_t fttr_forward_store(struct device *dev, struct device_attribute *attr,
 				 const char *buf, size_t count)
@@ -1823,7 +1840,9 @@ static ssize_t fttr_forward_store(struct device *dev, struct device_attribute *a
 	if (running)
 		dev_deactivate(priv->fttr);
 	priv->fttr_forward_cleanup_error = 0;
-	ret = rtl_fe_fttr_set(priv->fe, enable);
+	ret = rtl_fe_fttr_set(priv->fe, false);
+	if (!ret) ret = rtl9617c_fttr_tx_drain();
+	if (!ret && enable) ret = rtl_fe_fttr_set(priv->fe, true);
 	if (ret && enable)
 		/* Cancel a pending enable request too: another shared FE owner
 		 * must not admit this port after the failed transition.

@@ -9,10 +9,13 @@
 #include <linux/rtnetlink.h>
 #include <linux/rtl9617c-fttr.h>
 #include <linux/spinlock.h>
+#include <linux/wait.h>
 
 static atomic64_t rtl_fttr_generation = ATOMIC64_INIT(1);
 static DEFINE_SPINLOCK(rtl_fttr_pe_lock);
 static struct rtl_fttr_pe_generation *rtl_fttr_pe_radios[2];
+static atomic_t rtl_fttr_tx_pending = ATOMIC_INIT(0);
+static DECLARE_WAIT_QUEUE_HEAD(rtl_fttr_tx_wait);
 
 static void rtl_fttr_pe_publish(struct rtl_fttr_pe_generation *mirror, u64 generation)
 {
@@ -81,6 +84,11 @@ int rtl9617c_fttr_generation_set(bool active)
 	if (generation == U64_MAX)
 		return -EOVERFLOW;
 	spin_lock_irqsave(&rtl_fttr_pe_lock, flags);
+	/* No old accepted radio request may cross a successful reopen. */
+	if (active && atomic_read(&rtl_fttr_tx_pending)) {
+		spin_unlock_irqrestore(&rtl_fttr_pe_lock, flags);
+		return -EBUSY;
+	}
 	/* Close PE mirrors before CPU observes closure; on open, both mirrors
 	 * must be ready before a newly stamped skb can reach either radio. */
 	for (slot = 0; slot < 2; slot++)
@@ -91,6 +99,38 @@ int rtl9617c_fttr_generation_set(bool active)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(rtl9617c_fttr_generation_set);
+
+bool rtl9617c_fttr_tx_get(u64 generation)
+{
+	unsigned long flags;
+	bool accepted;
+
+	if (!generation) return true;
+	spin_lock_irqsave(&rtl_fttr_pe_lock, flags);
+	accepted = !(generation & 1) && generation == rtl9617c_fttr_generation_read();
+	if (accepted) atomic_inc(&rtl_fttr_tx_pending);
+	spin_unlock_irqrestore(&rtl_fttr_pe_lock, flags);
+	return accepted;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_fttr_tx_get);
+
+void rtl9617c_fttr_tx_put(u64 generation)
+{
+	if (generation && atomic_dec_and_test(&rtl_fttr_tx_pending))
+		wake_up_all(&rtl_fttr_tx_wait);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_fttr_tx_put);
+
+int rtl9617c_fttr_tx_drain(void)
+{
+	ASSERT_RTNL();
+	/* RTNL keeps the generation closed throughout this sleep. tx_get uses
+	 * the same lock as closure, including a sender already mapping an skb. */
+	if (!(rtl9617c_fttr_generation_read() & 1)) return -EBUSY;
+	return wait_event_timeout(rtl_fttr_tx_wait, !atomic_read(&rtl_fttr_tx_pending),
+		msecs_to_jiffies(1000)) ? 0 : -ETIMEDOUT;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_fttr_tx_drain);
 
 bool rtl9617c_fttr_stamp(struct sk_buff *skb)
 {

@@ -5451,6 +5451,72 @@ NI-to-PE copies continue to use their immutable cookie records. This increment
 does not establish a complete producer barrier for P6 ES flushing and does
 not release quarantined group/cookie/action IDs for reuse.
 
+### Waiting for accepted CPU radio requests during FTTR withdrawal
+
+The generation mirror rejects requests still waiting in PE, but it cannot
+revoke a WD already published to PCIe. The FTTR control path now waits for
+all accepted CPU radio requests to return their payload ownership before it
+reports successful withdrawal or reopens a generation. This extends the CPU
+radio path through its actual completion; it does not reset the shared DMA
+engine or assume an empty hardware producer/read pointer means completion.
+
+`rtl9617c_fttr_tx_get` checks the skb's original generation and increments a
+built-in pending count under the same short lock used to close the generation.
+Radio TX calls it after mapping and every fallible admission check, before
+publishing either a PE request or a direct PCIe descriptor. A sender already
+mapping when closure occurs is rejected and unmapped without acquiring a
+reference. Unrelated generation0 packets do not contribute. Accepted slots
+retain their generation independently of skb lifetime; normal RPQ and PE
+software-drop completion decrement only after DMA unmap and skb disposition.
+Joined device teardown also releases retained references after unmap/free;
+failed NI/PE teardown keeps them. Unregistering a radio's generation mirror
+alone cannot make its unfinished requests disappear.
+
+`fttr_forward` closes the generation and FE, waits up to1000ms for the pending
+count to reach zero, then configures FE and opens business forwarding if
+requested. `rtl_fttr_stop` also waits, and multicast-only close now returns
+its error. Because Linux ignores `ndo_stop` errors, `fttr_mcast_flush` retries
+the complete multicast quiesce and wait before acknowledging the resident
+controller. Timeout returns `-ETIMEDOUT`, leaves the generation closed and
+withdraws any pending FE enable. A core-level `-EBUSY` check additionally
+prevents reopen with outstanding references. Late genuine completions permit
+an explicit retry; no timeout clears the count or fabricates a completion.
+The drain sleeps under RTNL without NI, FE or radio spinlocks; normal RPQ and
+PE discard workers do not acquire RTNL.
+
+The target factory module's `phl_recycle_payload@0x196314` supplies the
+ownership contract. Extended `trace_stock_radio_software_drop.py` executes
+the entire function for216 combinations of six DMA channels, six status
+codes, three WP IDs and callback success/failure. The real target code invokes
+the payload callback while its WP tag is still populated, retains that tag
+and its pending count on callback failure, and clears/decrements them after
+success. The oracle models the clock/HAL, absent station, feedback/payload
+callbacks and BH-enable boundary; it does not emulate physical radio DMA.
+The existing72 target status/statistics cases remain passing.
+
+Validation includes the actual core's0..512 pending-reference cases, closed
+admission, partial completion, timeout, reopen refusal and delayed retry.
+`test_fttr_radio_drain.py` executes the production helpers with pthread-backed
+locks/waits for256 concurrent dual-radio completion and sender/close races,
+plus missing completion across mirror unregister. Its timeout duration is
+shortened in the fixture. Actual ARM submission tests reject a sender after
+mapping and leave no accepted reference. The16448 existing RPQ batches and257
+PE software-discard batches verify that each accepted reference is released
+once after unmap/disposition; ownership-failure teardown retains it until join.
+Production forwarding/multicast callbacks exercise drain timeout, closed
+retry, FE cleanup and later successful retry. Linked MIPS RPQ regression still
+forwards256 ARM records and handles1024 NI MPDUs/2048 BID returns. BAR, BCMC,
+P6 gate and multicast endpoint tests pass, as does Linux6.18.55 Image/modules
+(`artifacts/fttr/radio-drain-kernel-final-20261107.log`). PE firmware is unchanged.
+
+This is a bounded completion barrier for CPU-origin FTTR radio payloads,
+including requests which raced the last PE check before closure. It does not
+cover direct NI-to-PE copies, NI DMA/AFT/ES/MiniOLT queues, packets already
+delivered to applications, or retained hardware WD pages. It therefore does
+not authorize group/cookie/action or wire-GEM reuse and does not yet permit
+connecting the P6 ES flush helper as a complete retirement guarantee. No
+physical-device test was performed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

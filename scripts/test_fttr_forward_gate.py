@@ -74,6 +74,10 @@ source+=r'''
 #define ASSERT_RTNL() assert(rtnl)
 #define U64_MAX UINT64_MAX
 static u64 rtl_fttr_generation=2;
+static unsigned rtl_fttr_tx_pending;
+#define atomic_read(p) (*(p))
+static int drain_error;
+static int rtl9617c_fttr_tx_drain(void){assert(rtnl&&!locked&&!pe_locked&&(rtl_fttr_generation&1));return drain_error;}
 #define cpu_to_le32(v) (v)
 #define dma_wmb() ((void)0)
 struct rtl_fttr_pe_generation {u32 low,high;};
@@ -90,6 +94,7 @@ if 'static bool rtl_fttr_management(' in text:
     source+=function(text,'rtl_fttr_management')
 source+=function(text,'rtl9617c_ni_transmit')+function(text,'rtl_fttr_receive')
 source+=function(text,'fttr_accel_store')
+source+='int rtl_fttr_mcast_quiesce(struct net_device *parent);\n'
 source+=function(text,'fttr_mcast_flush_store')
 source+='#define netdev_err(...) ((void)0)\n'
 source+=function(text,'rtl_fttr_mcast_quiesce')
@@ -149,6 +154,12 @@ int main(void){
  assert(!shared.fttr_forwarding && qdisc_active && !fe_requested);
  assert(shared.fttr_forward_error==-ETIMEDOUT && shared.fttr_forward_cleanup_error==-ETIMEDOUT);interleave();failed_fe=0;
  assert(fttr_forward_store(&device,NULL,"1 8888",6)==6);
+ drain_error=-ETIMEDOUT;
+ assert(fttr_forward_store(&device,NULL,"0",1)==-ETIMEDOUT);
+ assert(!shared.fttr_forwarding&&!fe_enabled&&(rtl_fttr_generation&1));
+ assert(fttr_forward_store(&device,NULL,"1 8888",6)==-ETIMEDOUT);
+ assert(!shared.fttr_forwarding&&!fe_requested&&(rtl_fttr_generation&1));
+ drain_error=0;assert(fttr_forward_store(&device,NULL,"1 8888",6)==6);
  assert(queued.rtl9617c_fttr_generation==first_generation && rtl9617c_fttr_stale(&queued));
  unsigned before=submitted;
  assert(!rtl9617c_ni_transmit(&device,&lan,&queued,NULL) && queued.consumed && submitted==before);
@@ -172,6 +183,15 @@ int main(void){
  assert(rtl9617c_fttr_stale(&before_close));struct sk_buff after_close=packet(0x8100);assert(rtl9617c_fttr_stamp(&after_close));
  rtnl_lock();rtl9617c_fttr_generation_set(false);rtl_fttr_mcast_quiesce(&parent);rtnl_unlock();
  assert(rtl9617c_fttr_generation_read()&1);
+ /* A multicast-only close must expose its ignored ndo_stop error through
+  * the synchronous acknowledgement, and must not silently reopen FTTR. */
+ rtnl_lock();assert(!rtl9617c_fttr_generation_set(true));rtnl_unlock();
+ drain_error=-ETIMEDOUT;
+ assert(fttr_mcast_flush_store(&device,NULL,"1\n",2)==-ETIMEDOUT);
+ assert(!shared.fttr_forwarding&&!fe_requested&&(rtl_fttr_generation&1));
+ assert(fttr_mcast_flush_store(&device,NULL,"1\n",2)==-ETIMEDOUT);
+ drain_error=0;assert(fttr_mcast_flush_store(&device,NULL,"1\n",2)==2);
+ assert(!shared.fttr_forwarding&&(rtl_fttr_generation&1));
  shared.fttr_loading=true;assert(fttr_forward_store(&device,NULL,"1 8888",6)==-EBUSY);shared.fttr_loading=false;
  shared.p6.configured=false;assert(fttr_forward_store(&device,NULL,"1 8888",6)==-ENETDOWN);shared.p6.configured=true;
  shared.fttr_tx_active=false;struct sk_buff s=packet(0x8888);

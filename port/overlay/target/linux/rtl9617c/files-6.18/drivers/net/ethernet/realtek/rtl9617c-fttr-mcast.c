@@ -292,8 +292,7 @@ static int mcast_stop(struct net_device *dev)
 	/* netif_running is already clear. Retire shared-NAPI reports and parent
 	 * qdisc packets before a later open can admit this upper device again.
 	 */
-	rtl_fttr_mcast_quiesce(mc->parent);
-	return 0;
+	return rtl_fttr_mcast_quiesce(mc->parent);
 }
 
 static int mcast_iflink(const struct net_device *dev)

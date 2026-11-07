@@ -49,7 +49,7 @@ struct sk_buff {u8 data[64];struct ieee80211_tx_info cb;u64 rtl9617c_fttr_genera
 struct ieee80211_hdr {__le16 fc,duration;u8 addresses[18];__le16 seq_ctrl;};
 struct ieee80211_sta {int unused;};struct ieee80211_hw {int unused;};
 struct ieee80211_tx_status {struct sk_buff *skb;struct ieee80211_tx_info *info;struct ieee80211_sta *sta;};
-struct rtl_ax_tx_slot {struct sk_buff *skb;unsigned ring,macid;bool pe_sequence,firmware_rate;};
+struct rtl_ax_tx_slot {struct sk_buff *skb;u64 fttr_generation;unsigned ring,macid;bool pe_sequence,firmware_rate;};
 struct rtl_ax_rx_packet {unsigned bytes;u8 *payload;bool pe_completed,pe_discarded;};
 /* The EWMA arithmetic is covered by test_radio_mesh_metric; record each
  * update here to compare RPQ dispatch ordering and ownership. */
@@ -89,7 +89,8 @@ static void ieee80211_tx_info_clear_status(struct ieee80211_tx_info*i){memset(&i
 static void ieee80211_tx_status_ext(struct ieee80211_hw*h,struct ieee80211_tx_status*s){assert(h&&s->info&&s->sta&&bh&&rcu);if(s->skb){returns++;runnable=true;}}
 static void ieee80211_tx_status_skb(struct ieee80211_hw*h,struct sk_buff*s){assert(h&&s&&bh&&!locks);raws++;returns++;runnable=true;}
 static void ieee80211_tx_status_ni(struct ieee80211_hw*h,struct sk_buff*s){assert(h&&s);local_bh_disable();ieee80211_tx_status_skb(h,s);local_bh_enable();}
-static unsigned sw_freed;
+static unsigned sw_freed,fttr_puts;
+static void rtl9617c_fttr_tx_put(u64 generation){if(generation){assert(unmaps==returns+sw_freed&&unmaps>fttr_puts);fttr_puts++;}}
 static void ieee80211_free_txskb(struct ieee80211_hw*h,struct sk_buff*s){assert(h&&s&&bh&&!locks);sw_freed++;}
 '''
 code+=before.replace('int rtl_ax_tx_report(', 'static int old_report(')+'\n'
@@ -103,7 +104,7 @@ static struct result run(bool batching,unsigned count,unsigned mode){
  static u32 reports[264];struct ieee80211_hw hw={};struct rtl_ax_tx t={.pe_active=true,.running=true,.queues_stopped=true,.hw=&hw,.pe={mem},.headers=headers};
  memset(mem,0,sizeof(mem));memset(headers,0,sizeof(headers));memset(skbs,0,sizeof(skbs));
  bh=rcu=locks=wakes=unmaps=returns=raws=pe_done=ps_done=scheduled=waiters=lookups=dispatches=0;
- first_dispatch_completed=0;active=&t;runnable=false;batch=batching;expected=count;
+ fttr_puts=0;sw_freed=0;first_dispatch_completed=0;active=&t;runnable=false;batch=batching;expected=count;
  u32 enabled=mode&1;memcpy(mem+PE_PROBE_MAILBOX+96,&enabled,4);
  t.occupied=count;t.queues_paused=!!(mode&2);t.running=!(mode&4);
  for(unsigned n=0;n<count;n++){
@@ -111,7 +112,7 @@ static struct result run(bool batching,unsigned count,unsigned mode){
   reports[n]=1|qsel<<8|status<<13|n<<16|((mode&16)&&n%3==0?BIT(31):0);
   skbs[n].data[0]=n;
   skbs[n].cb.flags=((mode&32)&&n%2?0:IEEE80211_TX_CTL_HW_80211_ENCAP)|((n%3)?IEEE80211_TX_CTL_AMPDU:0)|((n%5)?0:IEEE80211_TX_CTL_NO_ACK);
-  t.slots[n]=(struct rtl_ax_tx_slot){.skb=&skbs[n],.ring=ring,.macid=n%128,.pe_sequence=(n%2)==1};t.pending[n]=true;
+  t.slots[n]=(struct rtl_ax_tx_slot){.skb=&skbs[n],.fttr_generation=2,.ring=ring,.macid=n%128,.pe_sequence=(n%2)==1};t.pending[n]=true;
   t.peer_asleep[n%128]=!!(n%3);__le16 seq=0xabc0+n;memcpy(headers+n*128+22,&seq,2);
   u32 ra=BIT(17);memcpy(mem+0xe200+(n%128)*4,&ra,4);
  }
@@ -122,6 +123,7 @@ static struct result run(bool batching,unsigned count,unsigned mode){
  reports[count+3]=1|383<<16;
  struct rtl_ax_rx_packet packet={.bytes=(count+4)*4+(mode%4),.payload=(void*)reports};
  assert(!(batching?new_report(&t,&hw,&packet):old_report(&t,&hw,&packet)));
+ assert(fttr_puts==count);
  assert(!bh&&!rcu&&!locks&&t.completed==count&&t.occupied==0&&returns==count&&unmaps==count&&pe_done==1&&ps_done==1);
  packet.pe_completed=true;packet.bytes=4;packet.payload=(void*)&reports[count+3];
  assert(!(batching?new_report(&t,&hw,&packet):old_report(&t,&hw,&packet)));

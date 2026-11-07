@@ -47,6 +47,7 @@ struct rtl_ax_tx_mapping {
 
 struct rtl_ax_tx_slot {
 	struct sk_buff *skb;
+	u64 fttr_generation;
 	dma_addr_t dma;
 	unsigned int bytes;
 	u8 ring;
@@ -638,7 +639,8 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	static const u8 tid_indicators[] = { 0, 0, 1, 1, 0, 1, 0, 1 };
 	unsigned int id, next, addresses, length, ring, tid = 0, qsel;
 	unsigned long flags;
-	struct rtl_ax_tx_slot slot = {.skb = skb, .bytes = skb->len};
+	struct rtl_ax_tx_slot slot = {.skb = skb, .bytes = skb->len,
+		.fttr_generation = skb->rtl9617c_fttr_generation};
 	bool linearized = false;
 	bool encap = info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP;
 	bool pe_sequence = tx->pe_active && !encap && macid &&
@@ -696,6 +698,12 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	if (id == RTL_AX_TX_ENTRIES) {
 		tx->full++;
 		ret = -ENOSPC;
+		goto unmap;
+	}
+	/* Join the closed-generation barrier after every fallible admission
+	 * check, before either PE or PCIe can observe this request. */
+	if (!rtl9617c_fttr_tx_get(slot.fttr_generation)) {
+		ret = -ESTALE;
 		goto unmap;
 	}
 	page = tx->pages + (ring * RTL_AX_TX_WD_PER_RING + tx->wd_producer[ring]) * RTL_AX_TX_WP_BYTES;
@@ -1006,6 +1014,7 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 			 * claiming a transmission or feeding retry/ACK rate statistics. */
 			tx->fttr_discarded++;
 			ieee80211_free_txskb(hw, slot.skb);
+			rtl9617c_fttr_tx_put(slot.fttr_generation);
 			continue;
 		}
 		if (slot.pe_sequence)
@@ -1040,6 +1049,7 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 			ieee80211_tx_status_ext(hw, &status);
 			rcu_read_unlock(); local_bh_enable();
 		} else ieee80211_tx_status_ni(hw, slot.skb);
+		rtl9617c_fttr_tx_put(slot.fttr_generation);
 	}
 	local_bh_enable();
 	return 0;
@@ -1193,6 +1203,7 @@ int rtl_ax_tx_free(struct rtl_ax_tx *tx, struct ieee80211_hw *hw)
 		if (tx->slots[i].skb) {
 			rtl_ax_tx_unmap(tx, &tx->slots[i]);
 			ieee80211_free_txskb(hw, tx->slots[i].skb);
+			rtl9617c_fttr_tx_put(tx->slots[i].fttr_generation);
 		}
 	if (tx->headers) dma_free_coherent(tx->dma_device, RTL_AX_TX_PAGES * 128, tx->headers, tx->headers_dma);
 	if (tx->pages)

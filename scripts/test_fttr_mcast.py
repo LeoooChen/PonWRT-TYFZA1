@@ -138,7 +138,7 @@ static void netif_carrier_off(struct net_device*d){d->carrier=false;}
 static void dev_deactivate(struct net_device*d){assert(rtnl && d==&mcdev);purged++;}
 static void dev_activate(struct net_device*d){assert(rtnl && d==&mcdev);}
 static unsigned quiesced;
-static void rtl_fttr_mcast_quiesce(struct net_device*d){assert(rtnl && d==&parent);quiesced++;}
+static int rtl_fttr_mcast_quiesce(struct net_device*d){assert(rtnl && d==&parent);quiesced++;return 0;}
 '''
 code += function(kernel, 'skb_vlan_pop') + function(kernel, 'skb_vlan_push')
 code += source[source.index('struct rtl_fttr_mcast {'):source.index('static const struct net_device_ops')]

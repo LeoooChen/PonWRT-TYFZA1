@@ -49,6 +49,15 @@ struct rtl_fttr_pe_generation {u32 low,high;};
 #define ASSERT_RTNL() assert(rtnl)
 #define ATOMIC64_INIT(v) (v)
 typedef u64 atomic64_t;
+typedef unsigned atomic_t;
+#define ATOMIC_INIT(v) (v)
+#define DECLARE_WAIT_QUEUE_HEAD(v) unsigned v
+#define atomic_read(p) (*(p))
+#define atomic_inc(p) (++*(p))
+static bool atomic_dec_and_test(atomic_t *p){assert(*p);return !--*p;}
+#define wake_up_all(p) (++*(p))
+#define msecs_to_jiffies(v) (v)
+#define wait_event_timeout(w,condition,t) ((void)(w),(void)(t),(condition)?1:0)
 static unsigned rtnl;
 static u64 atomic64_read_acquire(atomic64_t *p){return *p;}
 static void atomic64_set_release(atomic64_t *p,u64 v){*p=v;}
@@ -241,6 +250,26 @@ int main(void){
  assert(!rtl9617c_fttr_pe_register(&mirrors[2])&&mirrors[2].low==0&&mirrors[2].high==1);
  assert(!rtl9617c_fttr_generation_set(false)&&mirrors[1].low==1&&mirrors[2].low==1);
  rtl9617c_fttr_pe_unregister(&mirrors[1]);rtl9617c_fttr_pe_unregister(&mirrors[2]);
+ /* Both radios share the accepted-request barrier. A late sender cannot
+  * acquire after close; delayed completion keeps reopen explicitly busy. */
+ for(unsigned n=0;n<=512;n++) {
+  assert(!rtl9617c_fttr_generation_set(true));u64 accepted=rtl9617c_fttr_generation_read();
+  assert(rtl9617c_fttr_tx_drain()==-EBUSY);
+  assert(rtl9617c_fttr_tx_get(0)&&!rtl_fttr_tx_pending);
+  for(unsigned i=0;i<n;i++)assert(rtl9617c_fttr_tx_get(accepted));
+  assert(rtl_fttr_tx_pending==n);
+  assert(!rtl9617c_fttr_generation_set(false));
+  assert(!rtl9617c_fttr_tx_get(accepted)&&!rtl9617c_fttr_tx_get(accepted+1));
+  assert(rtl9617c_fttr_tx_drain()==(n?-ETIMEDOUT:0));
+  if(n)assert(rtl9617c_fttr_generation_set(true)==-EBUSY);
+  rtl9617c_fttr_tx_put(0);assert(rtl_fttr_tx_pending==n);
+  for(unsigned i=0;i<n;i++) {
+   rtl9617c_fttr_tx_put(accepted);
+   assert(rtl9617c_fttr_tx_drain()==(i+1<n?-ETIMEDOUT:0));
+  }
+  assert(!rtl9617c_fttr_generation_set(true));
+  assert(!rtl9617c_fttr_tx_get(accepted));
+ }
  rtl_fttr_generation=UINT64_MAX;assert(rtl9617c_fttr_generation_set(true)==-EOVERFLOW);
  assert(!rtl9617c_fttr_generation_set(false)&&rtl_fttr_generation==UINT64_MAX);
  puts("PASS: native generation, actual BUSY/qdisc retry, NFQUEUE enqueue/reinject, IPv4/IPv6 metadata and mac80211 final TX; old identities never reopen");
