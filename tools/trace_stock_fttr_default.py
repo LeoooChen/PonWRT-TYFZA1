@@ -5,13 +5,15 @@ import hashlib
 import json
 from pathlib import Path
 import struct
+import sys
 
 from elftools.elf.elffile import ELFFile
 from arm64_elf_oracle import ElfOracle
 
 
 class DefaultService:
-    def __init__(self, binary):
+    def __init__(self, binary, fpga=False):
+        self.fpga = fpga
         copies = {}
         with binary.open('rb') as stream:
             elf = ELFFile(stream)
@@ -25,9 +27,13 @@ class DefaultService:
                         copies[symbol.name] = bytes(symbol['st_size'])
         self.events, self.fail_at, self.operations = [], 0, 0
         self.oracle = ElfOracle(binary, self.boundary, copy_symbols=copies)
-        # fpga_api_onu_init's operation table selects ctc_ponrelay_onu_init.
-        entry = struct.unpack('<Q', self.oracle.uc.mem_read(0x430bd8 + 24, 8))[0]
-        assert entry == 0x41243c
+        # Follow each retained executable's own operation table.
+        if fpga:
+            entry = struct.unpack('<Q', self.oracle.uc.mem_read(0x428818 + 24, 8))[0]
+            assert entry == 0x40e00c
+        else:
+            entry = struct.unpack('<Q', self.oracle.uc.mem_read(0x430bd8 + 24, 8))[0]
+            assert entry == 0x41243c
         self.oracle.symbols['initialize'] = entry
 
     def boundary(self, name, args):
@@ -46,7 +52,7 @@ class DefaultService:
             data = bytes(uc.mem_read(args[0], 40))
         elif name in ('plr_api_gem_add', 'plr_api_remote_flow_gem_add', 'plr_api_remote_flow_vlan_filter_add'):
             data = struct.pack('<QQ', *args[:2])[:16 if name == 'plr_api_gem_add' else 12]
-        elif name == 'plr_api_remote_onu_mcast_enable':
+        elif name in ('plr_api_remote_onu_mcast_enable', 'plr_api_remote_onu_uni_mcast_enable'):
             data = struct.pack('<I', args[0]) + struct.pack('<QQ', *args[1:3])[:12] + struct.pack('<I', args[3])
         elif name == 'plr_api_cfgonu_get':
             # Model only the failure-recovery owner's metadata. It is not a
@@ -73,7 +79,10 @@ class DefaultService:
     def run(self, onu, slots, fail_at=0):
         self.onu, self.fail_at, self.operations = onu, fail_at, 0
         self.events.clear()
-        self.oracle.uc.mem_write(0x430d08 + (onu - 1) * 136 + 41, bytes([slots]))
+        if self.fpga:
+            assert slots == 2
+        else:
+            self.oracle.uc.mem_write(0x430d08 + (onu - 1) * 136 + 41, bytes([slots]))
         result = self.oracle.call('initialize', onu)
         return dict(onu=onu, slots=slots, fail_at=fail_at, result=result, events=list(self.events))
 
@@ -247,7 +256,7 @@ def default_uni_vlan(binary):
     return dict(mode=4, rows=rows, scope='Actual configured UNI initializer and automatic mode selector; empty custom-rule list and row-install boundary are modeled. Default flow VLAN filters are independent of this transparent UNI mode.')
 
 
-def default_profiles(binary):
+def default_profiles(binary, fpga=False):
     """Run profile initializers and their configured-card conversion, with pool/list IO modeled."""
     profiles, lists, next_node = {}, {}, 0
     recipe = None
@@ -288,7 +297,7 @@ def default_profiles(binary):
     assert oracle.call('plr_gponrm_onu_add_api',input_ptr) == 0
     assert struct.unpack_from('<5H',recipe) == (1,4,1,2,0)
     oracle.uc.mem_write(cfg,recipe); oracle.uc.mem_write(address,bytes(4))
-    oracle.uc.mem_write(0x176378,struct.pack('<Q',storage))
+    oracle.uc.mem_write(0x171138 if fpga else 0x176378,struct.pack('<Q',storage))
     assert oracle.call('plr_gponrm_cfg_card_mgmt_add',address,cfg)==0
     configured = {}
     for kind, expected in (('eth',4),('veip',1)):
@@ -422,7 +431,10 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ('caller', 'relay', 'output'):
         p.add_argument('--' + name, type=Path, required=True)
+    p.add_argument('--fpga-caller', type=Path)
+    p.add_argument('--fpga-relay', type=Path)
     args = p.parse_args()
+    assert bool(args.fpga_caller) == bool(args.fpga_relay)
     from trace_stock_fttr_backend import startup
     supervisor = startup(args.caller, 2, 9, slots=8)
     stock = DefaultService(args.caller)
@@ -447,12 +459,34 @@ def main():
             failures.append(case)
     translations = [relay_translation(args.relay, onu, slot, 100 * slot)
                     for onu in (1, 6, 63) for slot in (1, 7)]
+    fpga = None
+    if args.fpga_caller:
+        factory = DefaultService(args.fpga_caller, True)
+        fpga_cases = []
+        for onu in (1, 6, 64):
+            for fail in range(5):
+                case = factory.run(onu, 2, fail)
+                want = [(name.replace('plr_api_remote_onu_mcast_enable',
+                         'plr_api_remote_onu_uni_mcast_enable'), payload)
+                        for name, payload in expected(onu, 2)]
+                if fail: want = want[:fail]
+                assert [(e['operation'], bytes.fromhex(e['payload'])) for e in case['events']] == want
+                assert case['result'] == (17 if fail else 0)
+                fpga_cases.append(case)
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+        from test_fttr_fpga_dba import relay_bandwidth
+        fpga = dict(cases=fpga_cases, profiles=default_profiles(args.fpga_relay, True),
+                    shared_unis=shared_uni_selection(args.fpga_relay),
+                    bandwidth_wrapper=relay_bandwidth(args.fpga_relay),
+                    caller_sha256=hashlib.sha256(args.fpga_caller.read_bytes()).hexdigest(),
+                    relay_sha256=hashlib.sha256(args.fpga_relay.read_bytes()).hexdigest(),
+                    scope='Actual FPGA1 one-service producer, first-error stop, profile/card conversion and shared UNI enumeration. Bandwidth wrappers perform no hardware IO; no default grant value or native default-policy support is established.')
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(dict(cases=cases, failures=failures, translations=translations, bridge_selection=bridge_selection(args.relay),
         default_profiles=default_profiles(args.relay), default_queue=default_queue(args.relay),
         supervisor_dba=supervisor['registration_dba'], reported_cards=reported_cards(args.relay),
         shared_uni_selection=shared_uni_selection(args.relay), default_uni_vlan=default_uni_vlan(args.relay),
-        caller_sha256=hashlib.sha256(args.caller.read_bytes()).hexdigest(),
+        fpga1=fpga, caller_sha256=hashlib.sha256(args.caller.read_bytes()).hexdigest(),
         relay_sha256=hashlib.sha256(args.relay.read_bytes()).hexdigest(),
         findings=['Default two-slot ONU creates one named T-CONT/GEM/flow and enables multicast.',
                   'Larger slot count adds data slots2..7 and VLAN filters100*slot on every data flow.',
@@ -461,6 +495,8 @@ def main():
                   'Original failed provisioning deletes/re-adds the ONU, preserves the initiating error and ignores cleanup results.'],
         scope='Actual original producer and flow API adaptation; allocator/remote OMCI, semaphore, configuration owner and reset IO are modeled. No complete service/topology/traffic or hardware acceptance.'), indent=2) + '\n')
     print(f'PASS: {len(cases)} original default/multi-slot recipes, {len(failures)} failure paths, {len(translations)*2} flow adapter calls, 4 bridge selections, 3 shared-UNI enumerations and actual default transparent VLAN initialization; profiles/card resolution/default queue and eight-slot supervisor DBA also passed')
+    if fpga:
+        print('PASS: 15 FPGA1 one-service/first-error cases, actual profile/card conversion, shared-UNI selection and72 no-op bandwidth wrapper calls')
 
 
 if __name__ == '__main__': main()

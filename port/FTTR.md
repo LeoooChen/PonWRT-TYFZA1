@@ -5348,6 +5348,31 @@ Durable remote ownership, saved factory policy import, FPGA1 default profiles,
 AP direct NI→PE BCMC, multiple VIFs and complete physical retirement/reuse
 remain open.
 
+Further target execution on2026-11-07 narrows the FPGA1 default gap without
+enabling an unproven policy. `onuinfo_fpga` links `libponrelay1p25g.so`; its
+operation table at0x428818+24 selects the producer at0x40e00c. It always
+creates T-CONT1/GEM1/API queue1/flow1, without an ANI filter, then requests
+`plr_api_remote_onu_uni_mcast_enable` for card1/type2/UNI1. Unlike the ASIC
+producer, it stops at the first error and does not delete/re-add the ONU.
+Fifteen actual success/failure cases cover API ONU1/6/64. Its real profile
+initializers, ONU adapter and configured-card allocator also yield nominal
+FTTR-100M0/50/100, four Ethernet UNIs and one VEIP; actual shared enumeration
+still intersects configured and reported counts.
+
+The FPGA1 bandwidth set/clear wrapper replay executes72 calls through the
+real no-op `drv_gpon_alloc_id_config@0x42c54` and
+`drv_gpon_alloc_id_clear@0x42cc0`, with no nonstack write or hardware call.
+This does not identify a usable default local grant after the native
+controller clears old authorization. The original optical-power measurement
+path temporarily changes grant words to obtain a sample and restores them;
+those measurement values are not evidence of a normal service default.
+FPGA1 `factory` remains rejected until default grant ownership and the
+backend-specific multicast/queue adaptation are established. Explicit FPGA1
+services retain their existing support. The optional `--fpga-caller` and
+`--fpga-relay` arguments to `trace_stock_fttr_default.py` produce this evidence
+alongside the ASIC regression in
+`artifacts/fttr/default-fpga-profiles-20261107.json`; no device was accessed.
+
 ### FTTR packet generations across software queues
 
 The native forwarding gate previously checked the current boolean at P6
