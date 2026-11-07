@@ -593,7 +593,6 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
    bool from_cos;
    ret=fe_mcast_input_priority(fe,data.input,input,&packet->input,&priority,&from_cos);if(ret)goto out;
    if(from_cos?packet->output[i].priority>7:packet->output[i].priority!=priority){ret=-EOPNOTSUPP;goto out;}
-   if(from_cos && fe->epon_paths.queues!=8){ret=-EOPNOTSUPP;goto out;}
    for(unsigned int v=0;v<(from_cos?8U:1U);v++) {
     struct rtl9617c_bridge_frame candidate={.tags=packet->output[i].logical_tags};
     memcpy(candidate.tag,packet->output[i].logical_tag,sizeof(candidate.tag));
@@ -602,7 +601,11 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
    }
    replica->epon=1;replica->preserve_queue=from_cos;
    replica->queue=from_cos?0:priority&(fe->epon_paths.queues-1);
-   if(from_cos?fe->epon_paths.queue_mask[port->llid]!=255:
+   /* Original PUC 4Q mode forms VoQID from LDPID[4:0],CoS[1:0];
+    * 8Q uses LDPID[3:0],CoS[2:0]. Preserve the incoming COS in this
+    * replica so other recipients keep it; the checked PUC mode folds it.
+    * Every reachable physical queue must be enabled in the snapshot. */
+   if(from_cos?fe->epon_paths.queue_mask[port->llid]!=(1U<<fe->epon_paths.queues)-1:
       !(fe->epon_paths.queue_mask[port->llid]&BIT(replica->queue))){ret=-EOPNOTSUPP;goto out;}
    if(data.mtu>1522U-ETH_HLEN-frame->tags*VLAN_HLEN)data.mtu=1522U-ETH_HLEN-frame->tags*VLAN_HLEN;
   }

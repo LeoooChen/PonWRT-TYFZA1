@@ -779,14 +779,16 @@ int main(void){
  }
  /* Mixed Linux recipients must all be published or all stay in software.
   * Fixed VLAN priority262 becomes queue2/6; raw Wi-Fi retains all COS only
-  * with eight enabled queues and invariant final VLAN bytes. */
+  * with every PUC queue enabled and invariant final VLAN bytes. PUC4Q
+  * folds COS4..7 to0..3; LAN/P6/radio replicas preserve the original COS. */
  fe.ports[5]=&wp2;
- for(unsigned scenario=0;scenario<6;scenario++) {
-  bool dynamic=scenario>=2,disabled=scenario==1||scenario==4;
-  epaths.count=scenario==0||scenario==1||scenario==3?32:16;
-  epaths.queues=epaths.count>16?4:8;epaths.active=1;epaths.generation++;
+ for(unsigned edge=0;edge<2;edge++)for(unsigned scenario=0;scenario<18;scenario++) {
+  bool dynamic=scenario>=2,disabled=scenario==1||scenario==4||scenario>=6;
+  epaths.count=scenario==0||scenario==1||scenario==3||(scenario>=6&&scenario<10)?32:16;
+  pp.llid=edge?epaths.count-1:0;pp.destination=32+pp.llid;
+  epaths.queues=epaths.count>16?4:8;epaths.active=BIT(pp.llid);epaths.generation++;
   memset(epaths.queue_mask,(1U<<epaths.queues)-1,sizeof(epaths.queue_mask));
-  if(disabled)epaths.queue_mask[0]&=~BIT(dynamic?2:262&(epaths.queues-1));
+  if(disabled)epaths.queue_mask[pp.llid]&=~BIT(scenario>=6?scenario-(scenario<10?6:10):dynamic?2:262&(epaths.queues-1));
   assert(!rtl_fe_set_epon_paths(&fe,&epaths));
   struct net_device *origin=dynamic?&wifi2:&onu;
   fdb_source=origin;fe.event_count=0;skb.dev=origin;skb.saved=wireless;skb.frame=wireless;
@@ -805,22 +807,39 @@ int main(void){
   for(unsigned i=0;i<4;i++)fe_mcast_capture_select(&bridge,&skb,destinations[i]);
   for(unsigned i=0;i<4;i++){skb.dev=destinations[i];fe_mcast_capture_output(&bridge,&skb);}
   fe_mcast_capture_end(&bridge,ep_ticket,true);fe_mcast_process(&bridge);
-  if(disabled||scenario==3)assert(!fe.indexed&&!fe.mc_gate.active);
+  if(disabled)assert(!fe.indexed&&!fe.mc_gate.active);
   else {
    assert(fe.indexed&&fe.indexed->replica_count==4&&fe.mc_gate.active);
-   unsigned seen=0;
+   unsigned seen=0,ep_action=64;
    for(unsigned a=0;a<64;a++)if(fe.multicast.groups[fe.indexed->mc_group].bitmap[a/32]&BIT(a%32)) {
     unsigned dest=fe.actions[a][1]>>24&63;
-    if(dest==32){
+    if(dest==32+pp.llid){
      bool preserve=dynamic&&scenario!=5;
      assert(!(fe.actions[a][0]>>23));assert(!!(fe.actions[a][1]&BIT(30))==preserve);
-     assert((fe.actions[a][2]>>5&7)==(preserve?0:262&(epaths.queues-1)));seen|=1;
+     assert((fe.actions[a][2]>>5&7)==(preserve?0:262&(epaths.queues-1)));seen|=1;ep_action=a;
     }else if(dest==1)seen|=2;else if(dest==6)seen|=4;else if(dest==16)seen|=8;
    }
    assert(seen==15);
+   if(dynamic&&scenario!=5) {
+    /* A second packet with another COS must reuse this complete flow,
+     * not freeze its EPON queue or publish a different recipient set. */
+    unsigned group=fe.indexed->mc_group,before=fe.installs;
+    for(unsigned cos=0;cos<8;cos++) {
+     unsigned outgoing=(fe.actions[ep_action][1]&BIT(30))?cos:fe.actions[ep_action][2]>>5&7;
+     unsigned puc_queue=outgoing&(epaths.queues-1);
+     assert(puc_queue==cos%epaths.queues&&(epaths.queue_mask[pp.llid]&BIT(puc_queue)));
+     skb.dev=origin;skb.priority=cos;skb.saved.multicast_epoch=fe.mc_gate.epoch;
+     u64 repeated=fe_mcast_capture_begin(&bridge,&skb,false,++fe_mcast_ticket);assert(repeated);
+     for(unsigned d=0;d<4;d++)fe_mcast_capture_select(&bridge,&skb,destinations[d]);
+     for(unsigned d=0;d<4;d++){skb.dev=destinations[d];fe_mcast_capture_output(&bridge,&skb);}
+     fe_mcast_capture_end(&bridge,repeated,true);fe_mcast_process(&bridge);
+     assert(fe.indexed&&fe.mc_gate.active&&fe.indexed->mc_group==group&&fe.installs==before);
+    }
+   }
   }
   assert(!rtl_fe_set_epon_paths(&fe,NULL)&&!fe.indexed&&!fe.mc_gate.active);
  }
+ pp.llid=0;pp.destination=32;
  assert(!rtl_fe_set_epon_paths(&fe,NULL));
  /* Cookie pressure must fail the whole transaction before Hash publication.
   * A partially reserved recipient retains no live flow after rollback. */

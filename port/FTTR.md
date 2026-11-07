@@ -4739,13 +4739,11 @@ with FE on/off (1536 table rows), withdrawal, partial IO failure and retry.
 Fixed output priorities follow actual native TX: `priority & (queues-1)`.
 VLAN ingress mappings, including priorities256..263, are reconstructed from
 the complete input; output VLAN bytes must match Linux. Raw Wi-Fi COS is
-preserved per packet with eight enabled EPON queues, provided every COS gives
-the same final VLAN bytes. Four-queue raw Wi-Fi output is still unsupported:
-the current shared key/action cannot apply the needed per-copy COS mask.
-The reference AAL describes four-queue PUC indexing with COS[1:0], and the
-retained binary confirms the mode control at0x804c. The intermediate native
-NI/QM queue selection is not yet established as equivalent for COS4..7, so
-this reference observation alone does not lift the restriction.
+preserved per packet with all four or eight EPON queues enabled, provided
+every COS gives the same final VLAN bytes. The PUC mode applies the queue
+width independently of the other replicas; the full three-bit COS remains
+available to LAN/P6/radio recipients. The original metadata, NI action and
+PUC contract supporting four-queue admission are detailed below.
 Disabled queues, failed SLA application and foreign VOQ width refuse
 admission. EPON output MTU follows the native1522-byte Ethernet limit.
 
@@ -4769,7 +4767,8 @@ PDC update, complete learner, FE table lifecycle, PON receive and QM poll:
   registration/holdover/mode/queue changes and publication retry.
 - Instance0/31 ingress and local copies, two simultaneous EPON outputs,
   mixed EPON/LAN/FTTR/wireless recipients, fixed4/8-queue priorities,
-  preserved COS, disabled-queue and four-queue dynamic refusal.
+  preserved COS and disabled-queue refusal; the later four-queue extension
+  also checks dynamic COS at the highest instance in each mode.
 - Nine ITU and nine EPON complete original FC/NI recipes,32 original DBUF
   destinations,206 route failures/retries and2560 original classifier keys/CRCs.
 - 432 actual QM poll cases,160 EPON host-receive cases,40 actual bridge receive
@@ -4787,6 +4786,45 @@ still unproven. The255 cumulative group/cookie IDs,
 64 immutable actions,8 source-MAC entries and8 shared DBUF rules retain their
 documented limits. Direct PE BCMC, full retirement,
 remaining service/management policies and hardware acceptance remain open.
+
+### EPON four-queue dynamic COS
+
+The previous learner rejected raw wireless priority whenever EPON used four
+queues. It now retains incoming COS in that replica and requires all reachable
+queues (`0x0f` for4Q, `0xff` for8Q) in the admitted PVT snapshot. It still
+compiles all eight possible input priorities through the actual VLAN path;
+different final tags, a missing queue, stale registration or an invalid
+recipient keep the complete set in software. No COS-specific Hash or common
+COS rewrite is added, so other recipients retain their own priority semantics.
+
+The reference `aal_puc.h` explicitly defines mode1 as
+`VoQID[6:0]={HdrA.LDPID[4:0],HdrA.CoS[1:0]}` and mode0 as
+`{HdrA.LDPID[3:0],HdrA.CoS[2:0]}`. Target `ca-ne.ko` mode setters/getters
+control PON0x804c accordingly. More than a reference comment supports this:
+target EPON `us_pon_sid_mapping_adding.isra.0` produces all eight COS values
+with destination32+software-index, including index31, and the actual FC-to-NI
+replica chain retains those values in fixed-COS actions. Our dynamic action
+produces the same Header A destination/COS for each arriving packet, using
+the original NI COS-retention command. Existing native route admission still
+checks all four PDPID8 cases, deep-buffer destination and QM0x68f8 PON offset;
+PUC publication checks mode and every enabled PVT queue identity.
+
+`test_epon_mcast_puc.py` now takes the original FC/NI modules and the cited
+PUC header explicitly. For all32 four-queue and16 eight-queue instances and
+all eight COS values, it compares768 fixed/preserved native actions with the
+actual target NI encoder, using complete target FC-generated recipes. Actual
+native CPU TX headers and target PVT decoding agree with the documented PUC
+bit slicing. Existing960 admission faults and7680 field decodes remain passing.
+The PUC bit slicing and indirect completion are modeled hardware boundaries;
+this is not a physical queue-delivery or NI/QM timing measurement.
+
+Complete capture/selection/install tests cover36 mixed EPON/LAN/P6/radio
+scenarios at instances0 and15/31, every missing4Q/8Q queue, and repeated
+COS0..7 packets reusing the same complete flow. Target EPON SID/FC/NI replay,
+206 route fault/retry cases,12288 actual Linux VLAN/WME comparisons, snapshot
+and bridge regressions pass. Linux6.18.55 Image/modules build passes
+(`artifacts/fttr/mcast-epon-cos-kernel-20261107.log`). No physical device was
+accessed; all existing retirement and resource-quarantine limits remain.
 
 ### Unknown multicast flood transactions
 
@@ -4829,7 +4867,7 @@ replay with zero fuzz and match the compiled sources.
 
 No hardware traffic or in-flight retirement was tested. Existing group,
 cookie, action and DBUF capacity/quarantine rules still apply to flood groups.
-Direct PE BCMC and the remaining EPON four-queue dynamic-COS path remain
+Direct PE BCMC remains
 separate unfinished work; per-subscriber conversion is described below.
 
 ### Per-recipient multicast-to-unicast copies
@@ -5594,6 +5632,15 @@ upstream until after reopen can still acquire the new generation at ingest.
 The next required retirement step is to stop/prove completion of those upstream
 producers before this drain. P6 ES/MiniOLT retirement, retained WD pages and
 group/cookie/action/GEM reuse remain unresolved; hardware IDs stay quarantined.
+
+The2026-11-07 upstream review did not find a sufficient empty predicate.
+MCE0xaa60 `buf_flush_en` has a register definition but no established target
+drain sequence; ingress/egress counters cannot be compared because replication
+changes packet counts. AFT0x1f1c/0x1f28 FIFO counts do not establish retirement
+of active contexts, and FE PP-ready is backpressure readiness. RXMUX empty
+bits cover only those buffers; the original DMA pointer/EMPTY checks retain
+the already documented two prefetched descriptors. None of these observations
+is used to acknowledge full retirement or release a quarantined hardware ID.
 
 ### Outstanding implementation and acceptance
 
