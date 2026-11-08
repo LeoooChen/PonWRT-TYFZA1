@@ -97,8 +97,13 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
             u.mem_write(at + 64, struct.pack('>II', ((1 << 31) if ni_header == 16 else 0)|(265<<18 if multicast else 0), (length + ni_header - 8) << 15 | (19<<3 if multicast else 0)) + bytes(ni_header - 8))
             u.mem_write(0x10030000 + n * 8, struct.pack('<II', at | 0x50, (1 << 14 if compact_epp else 0) | (length + 16)))
         else:
+            # This fixture bypasses ni_ingest. Prepare the same large-frame
+            # prefix and metadata flag; real EPP cases exercise admission.
+            if length > 1000:
+                u.mem_write(at + 64 + ni_header - 8, frame[:12] +
+                            struct.pack('>H', length - 6) + bytes.fromhex('aaaa03000000'))
             u.mem_write(at, struct.pack('<4I', at + 2048 if n + 1 < len(lengths) else 0,
-                        length | ni_header << 16, 0xdeadbeef, 0xa5a5a5a5))
+                        length | ni_header << 16 | (1 << 24 if length > 1000 else 0), 0xdeadbeef, 0xa5a5a5a5))
     submits, returns = [], []
     u.hook_add(UC_HOOK_MEM_WRITE, lambda uc, access, at, size, value, data:
                submits.extend(range(submits[-1] + 1 if submits else 1, value + 1)),

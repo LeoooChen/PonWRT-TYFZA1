@@ -9,6 +9,8 @@ struct packed_word { u32 value; } __attribute__((packed));
 #define REQUEST_BASE 0x4000
 #define MAILBOX_OFFSET 0x2000
 #define TX_BURST 8
+/* NI queue metadata and private request lengths: lower16 bits are bytes. */
+#define NI_PREFIX_READY BIT(24)
 #include "rx-geometry.h"
 #include "tx-ownership.h"
 #include "traffic-flow.h"
@@ -344,7 +346,11 @@ static u32 ni_build_payload(volatile u32 *mailbox, u8 *memory,
 		sequence = sequences[macid * 8 + tid];
 		sequences[macid * 8 + tid] = (sequence + 1) & 0xfff;
 	}
-	const u32 *ethernet = uncached(request[8]);
+	const u32 *ethernet = uncached(request[8]
+#ifdef PE_UPLINK
+		- (request[9] & NI_PREFIX_READY ? 8 : 0)
+#endif
+	);
 	u32 da0 = ethernet[0], addresses = ethernet[1], sa = ethernet[2];
 	u32 ap0 = mailbox[16], ap1 = mailbox[17];
 	u32 amsdu = !!(flags & BIT(21)), client = !!(flags & BIT(23));
@@ -369,9 +375,13 @@ static u32 ni_build_payload(volatile u32 *mailbox, u8 *memory,
 	if (amsdu) {
 		u32 pad = 0;
 		for (u32 n = 0; n < frames; n++) {
-			u32 input = request[8 + n * 2], bytes = request[9 + n * 2];
+			u32 input = request[8 + n * 2], metadata = request[9 + n * 2];
+			u32 bytes = metadata & 65535;
 			u32 output = input - (n ? 8 + pad : 34);
-			amsdu_prefix(uncached(input), bytes);
+#ifdef PE_UPLINK
+			if (!(metadata & NI_PREFIX_READY))
+#endif
+				amsdu_prefix(uncached(input), bytes);
 			if (!n) {
 				u8 *out = uncached(output);
 				/* Headroom puts the WLAN header at word offset two. */
@@ -387,7 +397,8 @@ static u32 ni_build_payload(volatile u32 *mailbox, u8 *memory,
 		u8 *llc = header + header_bytes;
 		llc[0] = llc[1] = 0xaa; llc[2] = 3;
 		llc[3] = llc[4] = llc[5] = 0;
-		llc[6] = ((const u8 *)ethernet)[12]; llc[7] = ((const u8 *)ethernet)[13];
+		const u8 *type = uncached(request[8] + 12);
+		llc[6] = type[0]; llc[7] = type[1];
 		u32 output = request[8] + 14 - header_bytes - 8;
 		header_copy(uncached(output), header, header_bytes + 8);
 		address(page + 64, output, request[2] & 0x3fff, 1);
