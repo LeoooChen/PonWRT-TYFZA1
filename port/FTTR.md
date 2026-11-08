@@ -7516,9 +7516,16 @@ business port indices and do not toggle FE admission. Existing23 upgrade cases,
 migration/admin regressions and host/aarch64-musl daemon/CLI builds pass. Evidence
 is local `artifacts/fttr/onu-optical-*-20261109.*`.
 
-No kernel or PE code changed and no device was accessed. Alarm subscription,
-other optical capability layouts and physical optical readings remain to be
-implemented or accepted within the full FTTR scope.
+The optical feature changes no kernel data path and no device was accessed.
+During final alignment, mainfbbc857 added the PE acknowledged-grant fast path.
+The combined FTTR PE was regenerated and passed acknowledged/fresh/rollover grant,
+sleep-selection, PS/peer withdrawal, CPU stamps, FTTR/multicast prefix drain and
+BCMC tests. Repeated output matches:32540 bytes, SHA256
+`65a4c8639b8c1e16964b8b420aab78fb25a1feeddd3d646febcf5eda9090a7ac`,
+conservative stack7304/8192; non-uplink remains14168 bytes. Image/modules and the
+generated kernel input match. Alarm subscription, other optical capability layouts
+and physical optical readings remain to be implemented or accepted within the full
+FTTR scope.
 
 ### Outstanding implementation and acceptance
 
