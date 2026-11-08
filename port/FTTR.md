@@ -6485,7 +6485,7 @@ an atomic, lossless physical transition.
 Migration preflights release rights for every member, withdraws all local
 FE/VLAN/DBA state and releases members in reverse order before changing the SN
 reservation. Restarted adoption still refuses migration without a durable
-original ownership journal. Disconnect, identity replacement, sync recovery,
+original ownership journal; the committed-journal recovery below now supplies it. Disconnect, identity replacement, sync recovery,
 timeouts and shutdown now dispatch across the complete collection. With a
 zero MIB-sync implementation every GEM CTP is probed, including later members.
 Journals retain each service and a `service_set` aggregate; status reports
@@ -6983,6 +6983,63 @@ bits cover only those buffers; the original DMA pointer/EMPTY checks retain
 the already documented two prefetched descriptors. None of these observations
 is used to acknowledge full retirement or release a quarantined hardware ID.
 
+### Durable remote service ownership and read-only restart recovery
+
+The resident controller now accepts `--service-state DIRECTORY`; the package
+uses `/etc/tyfza1-fttr-services` with mode0700 and a directory lease. The
+versioned, endian-defined, CRC-protected record binds ONU serial and hardware
+slot, backend, both controller envelope MACs and framing. It retains each
+service configuration, selected ME IDs, exact attribute groups, created versus
+borrowed ownership, original update-only attributes, prior DBA, full before/after
+UNI VLAN tables, changed-row bitmap and multicast ownership/table evidence.
+No process pointers, file descriptors, credentials or kernel-resource ownership
+are serialized. Records are bounded at32MiB per ONU; allocation/format errors
+stop the operation.
+
+Before the first remote service mutation, the controller fsyncs an intent file,
+renames it and fsyncs the directory. Full ownership is committed only after the
+whole service collection succeeds, before local bridge admission. An explicit
+release first persists a pending state containing the original committed recipe;
+it removes the record only after remote release completes. Repeated read-only
+sync polls do not rewrite flash. A storage failure propagates before the pending
+mutation or before admitting local data.
+
+On restart or reconnect, authentication and fresh inventory still run. A saved
+committed collection must match the selected policy and the newly planned complete
+UNI/ME selection. Recovery reads every selected create/set attribute, full VLAN
+table and multicast table without remote writes, with ONU Data sync reads before
+and after; it then checks the same registration identity, restores/readbacks local
+DBA and enters the existing MIB/FE/netdev admission checks. Original touched flags,
+previous attributes and VLAN rows survive, so a later explicit move can restore
+and release the resources it actually owns. Current values alone never grant
+delete rights to a controller without a record. The original factory service
+producers, queue adapters, attribute encoders and checked release transactions
+remain the behavior basis; the persistent journal is the native integration.
+
+A complete fresh MIB showing every saved service-created object absent and the
+update-only attributes back at their saved prior values permits retiring the old
+record and normal reprovisioning. Partial disappearance, changed attributes,
+changed policy/UNI inventory, another slot/controller/backend, corruption and
+uncertain initial/release transactions retain the record and refuse automatic
+replay. Status exposes `service_error`, `service_recovering` and
+`service_durable`. There is currently no automatic reconstruction of a partially
+applied initial transaction or partially completed release; saved release evidence
+is retained for subsequent recovery work. Removal of a policy does not implicitly
+delete remote resources.
+
+`test_fttr_service_store.py` executes the production codec under ASan/UBSan:
+824 single-byte corruptions,23 bounded dimension faults, identity/slot/backend,
+private permissions, symlinks, exclusive lease, both fsync failure points, pending
+records and preservation of a release recipe. The actual daemon/CLI namespace
+suite with original OMCI encoders covers ASIC/FPGA1/FPGA2, ordinary and shared
+Ethernet/VEIP, standard/CTC multicast and a seven-service collection: SIGKILL,
+read-only restart, drift, full MIB reset, UNI expansion, restored migration,
+interrupted Set and persistence failure. Existing19 upgrade scenarios, service
+policy and administration regressions pass. Native and aarch64-musl builds use
+`-Wall -Wextra -Werror`. Reports are local under
+`artifacts/fttr/service-store-*-20261108.*`. No device was accessed; these tests
+establish neither physical flash power-loss behavior nor queued-packet retirement.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
@@ -7018,8 +7075,7 @@ is used to acknowledge full retirement or release a quarantined hardware ID.
    provisioning from explicit policies and asynchronous per-ONU dispatch are
    implemented, with runtime journals and observed disconnect/replacement
    handling. MIB sync monitoring now also detects/reconciles same-serial MIB
-   loss without an observed registration transition. Durable ownership
-   recovery of remote resources and saved policy import remain work. The original
+   loss without an observed registration transition. Durable committed ownership recovery is implemented as described above; partial-transaction recovery and saved policy import remain work. The original
    ASIC/FPGA2 default recipe and card limits now generate shared multi-service
    collections as described above; broader factory
    capability/UNI policy combinations remain work. Explicit bridge attachment through native per-GEM

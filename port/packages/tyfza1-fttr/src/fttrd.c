@@ -31,6 +31,7 @@
 #include "omci-auth.h"
 #include "omci-upgrade.h"
 #include "upgrade-store.h"
+#include "service-store.h"
 #include "onu-policy.h"
 #include "omci-socket.h"
 
@@ -76,6 +77,8 @@ struct onu {
 	struct fttr_mib_job job;
 	struct fttr_mib_model model;
 	struct fttr_services services;
+	struct fttr_service_recovery recovery;
+	bool service_recovering, service_recorded, service_marked;
 	const struct service_policy *selected[FTTR_SERVICES];
 	struct fttr_auth_job auth;
 	struct fttr_onu_selection selection;
@@ -106,7 +109,7 @@ struct onu {
 };
 
 struct controller {
-	int directory, ni, store, socket, control, upgrade_store;
+	int directory, ni, store, socket, control, upgrade_store, service_store;
 	struct fttr_omci_link link;
 	enum fttr_backend backend;
 	struct fttr_net net;
@@ -167,6 +170,7 @@ static int forwarding(struct controller *c, bool enable)
 	return fttr_miniolt_command(c->ni, "fttr_forward", command);
 }
 
+static struct fttr_me_job *service_pending(struct onu *u);
 static int move_drive(struct controller *c);
 static int reboot_drive(struct controller *c);
 static int upgrade_drive(struct controller *c);
@@ -480,6 +484,7 @@ static int publish(struct controller *c, const char *state, int error)
 			fputs("\",\"mib_serial\":\"", file);
 			hex(file, u->identity, 8);
 			fprintf(file, "\",\"service_count\":%u,\"service_configured\":%s,\"service_cleanup_error\":%d,"
+				"\"service_error\":%d,\"service_recovering\":%s,\"service_durable\":%s,"
 				"\"mib_sync_valid\":%s,\"mib_sync\":%u,\"mib_sync_observed\":%u,"
 				"\"mib_sync_error\":%d,\"mib_sync_checked_ms\":%" PRId64 ",\"mib_rescans\":%u,"
 				"\"datapath_configured\":%s,\"datapath_error\":%d,\"datapath_cleanup_error\":%d,"
@@ -492,6 +497,7 @@ static int publish(struct controller *c, const char *state, int error)
 				"\"reboot_sent\":%s,\"reboot_accepted\":%s,\"reboot_error\":%d,\"upgrade_stage\":%u,"
 				"\"upgrade_bytes\":%u,\"upgrade_size\":%u,\"upgrade_action\":%u,\"upgrade_image\":%u,\"upgrade_accepted\":%s,\"upgrade_verified\":%s,\"upgrade_error\":%d,\"upgrade_recovery_required\":%s}",
 				u->services.count, u->services.configured ? "true" : "false", u->services.cleanup_error,
+				u->services.error, u->service_recovering ? "true" : "false", u->service_recorded ? "true" : "false",
 				u->sync.valid ? "true" : "false", u->sync.value, u->sync.observed,
 				u->sync.error, u->sync.checked, u->rescans,
 				datapath_configured(u) ? "true" : "false", u->datapath_error, u->datapath_cleanup_error,
@@ -593,7 +599,7 @@ static int save_service(struct controller *c, unsigned int id)
 	for (n = 0; n < u->services.count; n++) {
 		struct fttr_service_job *job = &u->services.job[n];
 		struct fttr_service_config *cfg = &job->config;
-		struct fttr_me_job *me = n == u->services.index ? fttr_services_pending(&u->services) : NULL;
+		struct fttr_me_job *me = n == u->services.index ? service_pending(u) : NULL;
 		fttr_service_dump(job, file);
 		fprintf(file, "{\"event\":\"service_datapath\",\"configured\":%s,\"interface\":\"%s\","
 			"\"bridge\":\"%s\",\"ifindex\":%d,\"gem\":%u,\"mtu\":%u,\"error\":%d,\"cleanup_error\":%d}\n",
@@ -862,6 +868,54 @@ static int start_wifi(struct controller *c, unsigned int id)
 	return wifi_drive(c, id);
 }
 
+static struct fttr_me_job *service_pending(struct onu *u)
+{
+	return u->service_recovering ? fttr_service_recovery_pending(&u->recovery) :
+		fttr_services_pending(&u->services);
+}
+
+static int service_record_pending(struct controller *c, unsigned int id)
+{
+	struct onu *u = &c->onu[id];
+	int ret;
+
+	if (c->service_store < 0 || u->service_marked) return 0;
+	ret = fttr_service_store_pending(c->service_store, &c->link, id, u->identity, c->backend,
+		u->service_recorded ? &u->services : NULL);
+	if (!ret) { u->service_marked = true; u->service_recorded = false; }
+	return ret;
+}
+
+static int service_recover(struct controller *c, unsigned int id)
+{
+	struct onu *u = &c->onu[id];
+	int ret = fttr_service_recovery_update(&u->recovery, &u->services, &c->transaction);
+
+	if (ret != 2) return ret;
+	/* No remote mutation during recovery. Restore local grants only after the
+	 * complete saved remote recipe has been read back under this identity. */
+	for (unsigned int n = 0; n < u->services.count; n++) {
+		struct fttr_service_job *j = &u->services.job[n];
+		struct fttr_onu_state expected = u->hardware;
+		memcpy(expected.serial, u->identity, 8);
+		ret = fttr_miniolt_same(c->directory, id, &expected);
+		if (!ret) {
+			/* A failed write may already have changed the grant. */
+			j->grant_sent = true; j->grant_withdrawn = false;
+			ret = fttr_miniolt_tcont(c->directory, id, j->config.slot,
+				j->config.fixed, j->config.assured, j->config.maximum);
+		}
+		if (!ret) ret = fttr_miniolt_tcont_read(c->directory, id, j->config.slot, &j->observed);
+		if (!ret && (j->observed.fixed != j->config.fixed ||
+		    j->observed.limits != ((uint32_t)j->config.assured << 16 | j->config.maximum))) ret = -EUCLEAN;
+		if (ret) return ret;
+		j->grant_verified = true;
+	}
+	u->service_recovering = false;
+	fttr_service_recovery_clear(&u->recovery);
+	return 2;
+}
+
 static int service_drive(struct controller *c, unsigned int id)
 {
 	struct onu *u = &c->onu[id];
@@ -879,10 +933,15 @@ static int service_drive(struct controller *c, unsigned int id)
 			u->phase = ONU_SERVICE_FAILED;
 			break;
 		}
-		action = fttr_services_update(&u->services, &c->transaction, c->directory, &expected);
+		action = u->service_recovering ? service_recover(c, id) :
+			fttr_services_update(&u->services, &c->transaction, c->directory, &expected);
 		if (action != 1) {
 			if (action < 0) {
 				bool granted = false;
+				if (u->service_recovering) {
+					u->services.error = action;
+					u->services.stage = FTTR_SERVICES_FAILED;
+				}
 				u->phase = ONU_SERVICE_FAILED;
 				/* Even a failed remote rollback must stop every local grant.
 				 * A read-only failed preflight owns no prior grant to clear. */
@@ -893,6 +952,12 @@ static int service_drive(struct controller *c, unsigned int id)
 					if (ret) return ret;
 				}
 			} else if (action == 2) {
+				if (c->service_store >= 0 && !u->service_recorded) {
+					ret = fttr_service_store_save(c->service_store, &c->link, id,
+						u->identity, c->backend, &u->services);
+					if (ret) return ret;
+					u->service_recorded = true; u->service_marked = false;
+				}
 				ret = fttr_miniolt_same(c->directory, id, &expected);
 				if (ret && ret != -ESTALE)
 					return service_transport_failed(c, id, ret);
@@ -912,7 +977,11 @@ static int service_drive(struct controller *c, unsigned int id)
 		ret = save_service(c, id);
 		if (ret)
 			return ret;
-		me = fttr_services_pending(&u->services);
+		me = service_pending(u);
+		if (me->request[2] == FTTR_ME_CREATE || me->request[2] == FTTR_ME_SET || me->request[2] == FTTR_ME_DELETE) {
+			ret = service_record_pending(c, id);
+			if (ret) return ret;
+		}
 		ret = fttr_me_job_send(me, c->socket, &c->link, now_ms());
 		if (ret)
 			return service_transport_failed(c, id, ret);
@@ -1086,6 +1155,42 @@ static int start_service(struct controller *c, unsigned int id)
 		u->phase = ONU_SERVICE_FAILED;
 		return save_service(c, id);
 	}
+	if (c->service_store >= 0) {
+		ret = fttr_service_store_load(c->service_store, &c->link, id, u->identity, c->backend, &u->services);
+		if (!ret) {
+			if (count != u->services.count) ret = -ESTALE;
+			for (unsigned int n = 0; !ret && n < count; n++) {
+				const struct fttr_service_config *a = &configs[n], *b = &u->services.job[n].config;
+				if (a->uni != b->uni || a->slot != b->slot || a->priority != b->priority ||
+				    a->vid != b->vid || a->fixed != b->fixed || a->assured != b->assured || a->maximum != b->maximum ||
+				    a->veip != b->veip || a->tagged != b->tagged || a->shared != b->shared ||
+				    a->filter_only != b->filter_only || a->factory != b->factory || a->multicast != b->multicast) ret = -ESTALE;
+			}
+			if (!ret && fttr_service_store_reset(&u->services, &u->model)) {
+				ret = fttr_service_store_remove(c->service_store, u->identity);
+				if (ret) return ret;
+				fttr_services_clear(&u->services);
+				goto fresh_service;
+			}
+			if (!ret) {
+				struct fttr_services planned;
+				ret = fttr_services_start(&planned, id, &c->transaction, &u->model, configs, count, u->identity);
+				if (!ret) ret = fttr_service_store_match(&u->services, &planned);
+				fttr_services_clear(&planned);
+			}
+			if (!ret) {
+				u->service_recorded = u->service_recovering = true;
+				u->phase = ONU_SERVICE;
+				return service_drive(c, id);
+			}
+		}
+		if (ret != -ENOENT) {
+			u->services.error = ret; u->services.stage = FTTR_SERVICES_FAILED;
+			u->phase = ONU_SERVICE_FAILED;
+			return save_service(c, id);
+		}
+	}
+fresh_service:
 	ret = fttr_services_start(&u->services, id, &c->transaction, &u->model, configs, count, u->identity);
 	if (ret) { u->phase = ONU_SERVICE_FAILED; return save_service(c, id); }
 	u->phase = ONU_SERVICE;
@@ -1181,6 +1286,12 @@ static int cancel_state(struct controller *c, unsigned int id, bool accel_paused
 		ret = archive_state(c, id, "service");
 		if (ret)
 			return ret;
+		if (c->service_store >= 0 && u->services.stage == FTTR_SERVICES_RELEASED) {
+			ret = fttr_service_store_remove(c->service_store, u->identity);
+			if (ret) return ret;
+		}
+		fttr_service_recovery_clear(&u->recovery);
+		u->service_recovering = u->service_recorded = u->service_marked = false;
 		fttr_services_clear(&u->services);
 		u->service_started = false;
 	}
@@ -1943,7 +2054,7 @@ static int receive_message(struct controller *c)
 			    ((uint16_t)message.body[0] << 8 | message.body[1]) == u->reboot.transaction)
 				return reboot_finish(c, error);
 			if (u->phase == ONU_MOVE) {
-				struct fttr_me_job *me = fttr_services_pending(&u->services);
+				struct fttr_me_job *me = service_pending(u);
 
 				if (me && ((uint16_t)message.body[0] << 8 | message.body[1]) == me->transaction) {
 					me->state = FTTR_ME_FAILED;
@@ -1966,7 +2077,7 @@ static int receive_message(struct controller *c)
 				return ret ? ret : publish(c, "running", 0);
 			}
 			if (u->phase == ONU_SERVICE) {
-				struct fttr_me_job *me = fttr_services_pending(&u->services);
+				struct fttr_me_job *me = service_pending(u);
 
 				if (((uint16_t)message.body[0] << 8 | message.body[1]) == me->transaction) {
 					me->state = FTTR_ME_FAILED;
@@ -2011,7 +2122,7 @@ static int receive_message(struct controller *c)
 		return reboot_drive(c);
 	}
 	if (u->phase == ONU_MOVE) {
-		struct fttr_me_job *me = fttr_services_pending(&u->services);
+		struct fttr_me_job *me = service_pending(u);
 
 		if (!me || !fttr_me_job_reply(me, &message))
 			return 0;
@@ -2036,7 +2147,7 @@ static int receive_message(struct controller *c)
 		return ret ? ret : publish(c, "running", 0);
 	}
 	if (u->phase == ONU_SERVICE) {
-		if (!fttr_me_job_reply(fttr_services_pending(&u->services), &message))
+		if (!fttr_me_job_reply(service_pending(u), &message))
 			return 0;
 		ret = service_drive(c, message.onu);
 		return ret ? ret : publish(c, "running", 0);
@@ -2228,7 +2339,7 @@ static int move_drive(struct controller *c)
 			return move_finish(c, ret);
 		if (ret != 2) {
 			if (ret == 1)
-				ret = fttr_me_job_send(fttr_services_pending(&u->services), c->socket, &c->link, now_ms());
+				ret = fttr_me_job_send(service_pending(u), c->socket, &c->link, now_ms());
 			if (!ret)
 				ret = save_service(c, request->id);
 			return ret ? move_finish(c, ret) : 0;
@@ -2319,7 +2430,8 @@ static int move_request(struct controller *c, const struct fttr_admin_request *r
 	if (!ret)
 		ret = cancel(c, request->target, true);
 	if (!ret && u->service_started) {
-		ret = fttr_services_release(&u->services, &c->transaction);
+		ret = service_record_pending(c, request->id);
+		if (!ret) ret = fttr_services_release(&u->services, &c->transaction);
 		if (ret > 0)
 			ret = 0;
 	}
@@ -2885,7 +2997,7 @@ static int run(struct controller *c)
 					deadline = u->auth_retry;
 			}
 			if (u->phase == ONU_MOVE) {
-				struct fttr_me_job *me = fttr_services_pending(&u->services);
+				struct fttr_me_job *me = service_pending(u);
 
 				if (me && now >= me->deadline) {
 					struct fttr_onu_state target, expected = u->hardware;
@@ -3001,7 +3113,7 @@ static int run(struct controller *c)
 				continue;
 			}
 			if (u->phase == ONU_SERVICE) {
-				struct fttr_me_job *me = fttr_services_pending(&u->services);
+				struct fttr_me_job *me = service_pending(u);
 
 				if (now >= me->deadline) {
 					struct fttr_onu_state expected = u->hardware;
@@ -3030,7 +3142,7 @@ static int run(struct controller *c)
 						return ret;
 				}
 				if (u->phase == ONU_SERVICE) {
-					me = fttr_services_pending(&u->services);
+					me = service_pending(u);
 					if (me->deadline < deadline)
 						deadline = me->deadline;
 				}
@@ -3157,7 +3269,7 @@ static int bootstrap(struct controller *c, int optical, const char *mode, const 
 	BOOT_STEP("configure OMCI envelope", fttr_miniolt_command(c->directory, "omci_link", mac));
 	if (c->backend != FTTR_FPGA1)
 		BOOT_STEP("configure DBA", fttr_miniolt_command(c->directory, "dba", "1\n"));
-	if (c->auth.enabled || c->onu_policy.enabled || c->upgrade_store >= 0)
+	if (c->auth.enabled || c->onu_policy.enabled || c->upgrade_store >= 0 || c->service_store >= 0)
 		BOOT_STEP("clear unverified data grants", clear_auth_grants(c));
 	BOOT_STEP("verify optical calibration", fttr_miniolt_calibrated(optical));
 	BOOT_STEP("initialize optical maintenance", fttr_miniolt_optical_start(&c->optical, now_ms()));
@@ -3198,16 +3310,20 @@ static int shutdown_hardware(struct controller *c)
 int main(int argc, char **argv)
 {
 	static struct controller c = { .directory = -1, .ni = -1, .store = -1, .socket = -1,
-		.control = -1, .upgrade_store = -1, .onu_policy = { .directory = -1 }, .net = { .fd = -1 }, .optical = { .directory = -1 } };
+		.control = -1, .upgrade_store = -1, .service_store = -1, .onu_policy = { .directory = -1 }, .net = { .fd = -1 }, .optical = { .directory = -1 } };
 	struct sigaction action = { .sa_handler = stop_signal };
 	bool owned = false, auth_loaded = false;
-	const char *upgrade_path = NULL;
+	const char *upgrade_path = NULL, *service_path = NULL;
 	unsigned int id;
 	int ret = 0, result;
 	uint16_t seed;
 
 	while (argc >= 3 && (!strcmp(argv[argc - 2], "--services") || !strcmp(argv[argc - 2], "--wifi") ||
-	       !strcmp(argv[argc - 2], "--loid-auth") || !strcmp(argv[argc - 2], "--onu-auth") || !strcmp(argv[argc - 2], "--upgrade-state"))) {
+	       !strcmp(argv[argc - 2], "--loid-auth") || !strcmp(argv[argc - 2], "--onu-auth") || !strcmp(argv[argc - 2], "--upgrade-state") || !strcmp(argv[argc - 2], "--service-state"))) {
+		if (!strcmp(argv[argc - 2], "--service-state")) {
+			if (service_path) { ret = -EEXIST; goto out; }
+			service_path = argv[argc - 1]; argc -= 2; continue;
+		}
 		if (!strcmp(argv[argc - 2], "--upgrade-state")) {
 			if (upgrade_path) { ret = -EEXIST; goto out; }
 			upgrade_path = argv[argc - 1]; argc -= 2; continue;
@@ -3226,7 +3342,7 @@ int main(int argc, char **argv)
 			goto out;
 	}
 	if ((argc != 5 && argc != 9) || strlen(argv[4]) >= IFNAMSIZ) {
-		fprintf(stderr, "Usage: %s <MiniOLT-dir> <NI-dir> <state-dir> <interface> [optical-dir host-mode nway pon-mode] [--services policy-file] [--wifi policy-file] [--loid-auth private-file] [--onu-auth private-json] [--upgrade-state private-directory]\n", argv[0]);
+		fprintf(stderr, "Usage: %s <MiniOLT-dir> <NI-dir> <state-dir> <interface> [optical-dir host-mode nway pon-mode] [--services policy-file] [--wifi policy-file] [--loid-auth private-file] [--onu-auth private-json] [--upgrade-state private-directory] [--service-state private-directory]\n", argv[0]);
 		ret = -EINVAL;
 		goto out;
 	}
@@ -3237,6 +3353,10 @@ int main(int argc, char **argv)
 	if (upgrade_path) {
 		c.upgrade_store = fttr_upgrade_store_open(upgrade_path);
 		if (c.upgrade_store < 0) { ret = c.upgrade_store; goto out; }
+	}
+	if (service_path) {
+		c.service_store = fttr_service_store_open(service_path);
+		if (c.service_store < 0) { ret = c.service_store; goto out; }
 	}
 	c.interface = argv[4];
 	sigaction(SIGTERM, &action, NULL);
@@ -3291,7 +3411,7 @@ int main(int argc, char **argv)
 			goto out;
 	}
 	if (unlinkat(c.store, "status.json", 0) && errno != ENOENT) { ret = -errno; goto out; }
-	if ((c.auth.enabled || c.onu_policy.enabled || c.upgrade_store >= 0) && argc == 5) {
+	if ((c.auth.enabled || c.onu_policy.enabled || c.upgrade_store >= 0 || c.service_store >= 0) && argc == 5) {
 		ret = clear_auth_grants(&c);
 		if (ret)
 			goto out;
@@ -3381,6 +3501,7 @@ out:
 		if (c.onu[id].dump && fclose(c.onu[id].dump) && !ret)
 			ret = -errno;
 		fttr_mib_model_clear(&c.onu[id].model);
+		fttr_service_recovery_clear(&c.onu[id].recovery);
 		fttr_services_clear(&c.onu[id].services);
 		while (c.onu[id].wifi) {
 			struct wifi_run *next = c.onu[id].wifi->next;
@@ -3402,6 +3523,7 @@ out:
 		c.wifi_policies = next;
 	}
 	if (c.upgrade_store >= 0) close(c.upgrade_store);
+	if (c.service_store >= 0) close(c.service_store);
 	if (c.store >= 0) {
 		close(c.store);
 	}

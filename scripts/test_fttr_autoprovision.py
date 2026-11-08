@@ -89,6 +89,7 @@ def main():
     p.add_argument('--reboot-control', type=Path, help='exercise remote single-send reboot')
     p.add_argument('--move-control', type=Path, help='exercise the resident SN reservation move')
     p.add_argument('--output', type=Path, required=True)
+    p.add_argument("--service-state", action="store_true", help="exercise durable remote service ownership across controller restart")
     p.add_argument("--shared", action="store_true", help="exercise shared Ethernet/VEIP services and release with --move-control")
     p.add_argument("--filter-only", action="store_true", help="use transparent UNI mode with ANI VLAN filtering")
     p.add_argument("--multi-services", type=int, choices=(1,2,7), help="exercise a complete shared multi-GEM service collection")
@@ -668,12 +669,17 @@ def main():
             raise AssertionError(('state timeout',current,grants))
         hardware()
         upgrade_store=root/'upgrade-store';upgrade_store.mkdir(mode=0o700)
+        service_store=root/'service-store';service_store.mkdir(mode=0o700)
         def launch(with_policy=True, with_wifi=None, grant_case='normal'):
+            while True:
+                try:peer.recv(4096)
+                except BlockingIOError:break
             subprocess.run(['ip','link','set','dev','fap-host','up'],check=True)
             ni.joinpath('fttr_link').write_text('configured=1 mode=9 nway=1 clock=1 error=0 link=1\n')
             device.joinpath('tx_enable').write_text('1\n')
             return subprocess.Popen([str(args.daemon.resolve()),str(device),str(ni),str(store),'fap-host']+
                 (['--upgrade-state',str(upgrade_store)] if args.upgrade_control else []) +
+                (['--service-state',str(service_store)] if args.service_state else []) +
                 (['--services',str(policy)] if with_policy else []) +
                 (['--loid-auth',str(auth_policy)] if args.auth or args.onu_policy else []) +
                 (['--onu-auth',str(onu_policy)] if args.onu_policy else []) +
@@ -683,6 +689,103 @@ def main():
                     FTTR_ACCEL_LOG=str(accel_log),FTTR_ACCEL_FAIL=str(accel_fault),
                     FTTR_ADMIN_FAIL=str(admin_fault),FTTR_ADMIN_HOLD=str(admin_hold),FTTR_ADMIN_LOG=str(admin_log),
                     **({'FTTR_ADMIN_FPGA':'1'} if args.backend=='fpga1' else {})))
+        if args.service_state:
+            import copy
+            assert args.move_control and not args.wifi
+            checks=[];process=None
+            nodes[7].hold=False;nodes[9].fail_upload_once=False
+            if args.shared:
+                kind='shared-ctc' if args.multicast=='ctc' else 'shared-mcast' if args.multicast else 'shared'
+                policy.write_text(f'* {kind} 0 1 3 200 50 100 200 br-fttr\n')
+                if args.multi_services:
+                    policy.write_text(''.join(f'* {kind if slot==1 else "shared"} 0 {slot} 3 filter:{100*slot} 50 100 200 br-fttr\n' for slot in range(1,args.multi_services+1)))
+            originals={i:copy.deepcopy((n.pool,n.table)) for i,n in nodes.items()}
+            def stop():
+                if process.poll() is None:process.send_signal(signal.SIGTERM)
+                out,err=process.communicate(timeout=4)
+                assert process.returncode==0,err
+            def start_ready():
+                until(lambda s:all(s['onus'][i]['datapath_configured'] for i in (7,9)))
+                if args.multicast:until(lambda s:s['multicast']['configured'])
+            def mutation(n):
+                return [(op,c,i) for _,op,c,i in n.operations if op in (0x44,0x46,0x48) and c not in (65530,256)]
+            try:
+                process=launch();start_ready()
+                saved={p.name:p.read_bytes() for p in service_store.glob('*.service')}
+                assert len(saved)==2 and all(b[26]==1 for b in saved.values())
+                counts={i:len(mutation(n)) for i,n in nodes.items()}
+                process.kill();process.wait()
+                process=launch();start_ready()
+                assert all(len(mutation(n))==counts[i] for i,n in nodes.items())
+                assert saved=={p.name:p.read_bytes() for p in service_store.glob('*.service')}
+                checks.append('SIGKILL and restart read back all remote objects/tables, restore local grants and ports without remote mutation or ownership loss')
+                stop()
+                # Same serial, changed remote selected field: no repair or delete.
+                key=next(k for k in nodes[7].pool if k[0]==268 and k[1]!=4095)
+                attr=next(iter(nodes[7].pool[key]));old=nodes[7].pool[key][attr]
+                nodes[7].pool[key][attr]=bytes([old[0]^1])+old[1:]
+                process=launch()
+                until(lambda s:s['onus'][7]['phase']=='service-failed' and s['onus'][9]['datapath_configured'])
+                assert 'fttr-u7' not in ports() and len(mutation(nodes[7]))==counts[7]
+                stop();nodes[7].pool[key][attr]=old
+                checks.append('remote drift declines recovery without overwriting the foreign change or the durable owner')
+                # Policy mismatch must not silently rewrite a committed recipe.
+                old_policy=policy.read_text();policy.write_text(old_policy.replace('50 100 200','51 100 200'))
+                process=launch();until(lambda s:all(s['onus'][i]['phase']=='service-failed' for i in (7,9)))
+                assert 'fttr-u7' not in ports() and 'fttr-u9' not in ports()
+                stop();policy.write_text(old_policy)
+                checks.append('changed policy is rejected before remote or local service installation')
+                # A complete reset to original MIB defaults is distinguishable
+                # from partial drift; it permits a fresh normal transaction.
+                nodes[7].pool,nodes[7].table=copy.deepcopy(originals[7])
+                nodes[7].counter.value=0
+                process=launch();start_ready();stop()
+                counts[7]=len(mutation(nodes[7]))
+                checks.append('complete same-serial MIB reset retires the old record and provisions a new owned service; partial drift retains it')
+                if args.shared:
+                    nodes[7].pool[11,0x777]={0x8000:b'\0',0x0800:b'\1'}
+                    process=launch();until(lambda s:s['onus'][7]['phase']=='service-failed' and s['onus'][9]['datapath_configured'])
+                    assert 'fttr-u7' not in ports() and len(mutation(nodes[7]))==counts[7]
+                    stop();del nodes[7].pool[11,0x777]
+                    checks.append('changed complete UNI inventory cannot reopen a stale shared recipe')
+                process=launch();start_ready()
+                client=subprocess.Popen([str(args.move_control.resolve()),str(store),'onu-move','7',nodes[7].serial.hex(),'11','0'*16],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                try:
+                    until(lambda s:client.poll() is not None,seconds=25)
+                    out,err=client.communicate(timeout=1);assert client.returncode==0,(out,err)
+                finally:
+                    if client.poll() is None:client.kill();client.wait()
+                assert not (service_store/(nodes[7].serial.hex()+'.service')).exists()
+                assert {k:v for k,v in nodes[7].pool.items() if k[0] not in (65530,256)}=={k:v for k,v in originals[7][0].items() if k[0] not in (65530,256)} and nodes[7].table==originals[7][1]
+                checks.append('post-restart move restores original T-CONT/UNI/VLAN state and deletes only owned shared GEM/multicast objects; durable record retires after release')
+                stop()
+                # A power loss during initial Set leaves durable uncertainty.
+                nodes[7]=Node(7,'5445535400000007',0x107,False,hold=True)
+                nodes[9]=Node(9,'5445535400000009',0x203,True);nodes[9].fail_upload_once=False
+                for p in service_store.iterdir():p.unlink()
+                hardware();process=launch()
+                until(lambda s:nodes[7].held is not None)
+                record=service_store/(nodes[7].serial.hex()+'.service')
+                assert record.read_bytes()[26]==0
+                process.kill();process.wait();nodes[7].hold=False
+                count=len(mutation(nodes[7]));process=launch()
+                until(lambda s:s['onus'][7]['phase']=='service-failed')
+                assert len(mutation(nodes[7]))==count and 'fttr-u7' not in ports() and record.read_bytes()[26]==0
+                stop()
+                checks.append('power loss after a remote write but before complete commit preserves pending state and refuses automatic replay/adoption')
+                # Cannot durably mark intent: no remote service mutation.
+                for p in service_store.iterdir():p.unlink()
+                nodes[7]=Node(7,'5445535400000007',0x107,False);nodes[9]=Node(9,'5445535400000009',0x203,True)
+                nodes[9].fail_upload_once=False;hardware()
+                (service_store/(nodes[7].serial.hex()+'.service.new')).mkdir()
+                process=launch();until(lambda s:process.poll() is not None,allow_exit=True)
+                assert process.returncode and not mutation(nodes[7])
+                checks.append('intent persistence failure stops before service Set/Create or local data admission')
+            finally:
+                if process is not None and process.poll() is None:process.kill();process.wait()
+                peer.close();os.close(grant_fd)
+            args.output.write_text(json.dumps(dict(backend=args.backend,checks=checks,scope='Real daemon/CLI and original OMCI encoders with modeled remote MIB and MiniOLT; no device access.'),indent=2)+'\n')
+            print(json.dumps(checks,indent=2));return
         if args.upgrade_control:
             checks=[];process=None
             image=root/'image.bin';image.write_bytes(bytes(i%251 for i in range(1923)))
