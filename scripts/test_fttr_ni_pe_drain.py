@@ -102,7 +102,7 @@ assert m.get(DRAIN + 4) == 1 and not m.get(DRAIN + 8); cases += 1
 # Selected, unpublished WP is revoked without TXBD credit; published WP
 # retains its BID until real RPQ AND the final EQ return.
 for published in (False, True):
-    m = machine(); m.ingest(); m.put(bar + 0xc438, 4000)
+    m = machine(); m.ingest(); m.put(bar + 0xc438, 10000)
     assert m.call('ni_select', mb, base, requests) == 1
     m.put(mb + 193 * 4, 1)
     if published: m.call('pe_tx_publish', mb, 8, requests)
@@ -147,7 +147,7 @@ for count in (2, 7, 8):
         m.u.mem_write(payload + i * 512, original)
         m.u.mem_write(epp + i * 8, struct.pack('<II', (payload + i * 512) | 0x50, 0))
     m.put(ni + 0x7060, count * 8); m.put(base + 0xe204, 7935 << 18)
-    m.call('ni_ingest', mb, base); m.put(bar + 0xc438, 4000)
+    m.call('ni_ingest', mb, base); m.put(bar + 0xc438, 10000)
     assert m.get(DRAIN + 8) == count and m.call('ni_select', mb, base, requests) == count
     m.put(mb + 193 * 4, 1); m.call('pe_tx_publish', mb, 8, requests)
     assert m.get(DRAIN + 8) == count
@@ -169,7 +169,7 @@ m.u.mem_write(payload + 512, original)
 m.u.mem_write(payload + 512 + 68, struct.pack('>I', (len(m.frame) + m.header - 8) << 15 | 19 << 3))
 m.u.mem_write(epp + 8, struct.pack('<II', (payload + 512) | 0x50, 0))
 m.put(ni + 0x7060, 16); m.put(base + 0xe204, 7935 << 18)
-m.call('ni_ingest', mb, base); m.put(bar + 0xc438, 4000)
+m.call('ni_ingest', mb, base); m.put(bar + 0xc438, 10000)
 assert m.get(DRAIN + 8) == 1 and m.call('ni_select', mb, base, requests) == 1
 assert m.get(mb + 38 * 4) == 1; cases += 1
 
@@ -195,7 +195,7 @@ for capacity in (1024, 2048):
     m.u.mem_write(base + 0x2e000, struct.pack('<H', owner))
     m.put(base + 0x34004, capacity)
     m.put(base + 0x40000, 8)  # Existing CPU request7 owns channel0/tag0.
-    m.ingest(); m.put(bar + 0xc438, 4000)
+    m.ingest(); m.put(bar + 0xc438, 10000)
     assert m.call('ni_select', mb, base, requests) == 1
     assert m.get(requests) == 256 + owner and m.get(base + 0x35000 + owner * 4) == 0xffffffff
     # Completion-ring wrap must also preserve this unpublished sentinel.

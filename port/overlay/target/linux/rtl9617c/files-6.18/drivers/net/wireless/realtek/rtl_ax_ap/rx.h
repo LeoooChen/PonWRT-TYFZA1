@@ -39,4 +39,6 @@ void rtl_ax_rx_free(struct rtl_ax_rx *rx);
 int rtl_ax_rx_status(struct rtl_ax_rx *rx, char *out, size_t capacity);
 u32 rtl_ax_rx_traffic_bytes(struct rtl_ax_rx *rx);
 int rtl_ax_rx_data_observation(struct rtl_ax_rx *rx, char *out, size_t capacity);
+u32 rtl_ax_rx_peer_bytes(struct rtl_ax_rx *rx, unsigned int macid);
+u16 rtl_ax_rx_ba_size(struct rtl_ax_rx *rx, unsigned int macid, unsigned int tid);
 #endif

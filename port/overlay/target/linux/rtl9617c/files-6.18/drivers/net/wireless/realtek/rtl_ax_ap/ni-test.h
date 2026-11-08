@@ -93,6 +93,7 @@ static void ni_tx_activity(struct rtl_ax_tx *tx, unsigned int macid)
 {
 	struct ieee80211_sta *sta;
 	unsigned int tid, changed = 0;
+	bool need_ba = false;
 
 	if (!READ_ONCE(tx->peer_authorized[macid])) return;
 	dma_rmb();
@@ -101,7 +102,10 @@ static void ni_tx_activity(struct rtl_ax_tx *tx, unsigned int macid)
 		if (packets == tx->ni.tx_activity_seen[macid][tid]) continue;
 		tx->ni.tx_activity_seen[macid][tid] = packets;
 		changed |= BIT(tid);
+		if (tid < 6 && !get_unaligned_le32(tx->pe.memory + 0x12000 + (macid * 8 + tid) * 4))
+			need_ba = true;
 	}
+	if (need_ba && tx->peer_ready) tx->peer_ready(tx->peer_ready_context);
 	if (!changed) return;
 	/* NI traffic bypasses mac80211's TX preparation and its last_tx update. */
 	local_bh_disable(); rcu_read_lock();
@@ -390,6 +394,7 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 	memset(tx->pe.memory + 0x13000, 0, 0x4000);
 	memset(tx->pe.memory + 0x19000, 0, 0x400);
 	memset(tx->pe.memory + 0x18000, 0, 0x1000);
+	memset(tx->pe.memory + RTL_AX_TX_AMSDU_QUEUES, 0, 0x4000);
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 680);
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 684);
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 152);

@@ -37,7 +37,7 @@ static inline void rtl_ax_ra_rssi_sample(struct rtl_ax_ra_rssi *state,
 }
 
 /* halbb_cmn_info_self_update selects the next period's factor, then clears
- * the qualifying PHY-report counts. Native reports remain sampled. */
+ * the qualifying PHY-report counts from continuous collection. */
 static inline void rtl_ax_ra_rssi_watchdog(struct rtl_ax_ra_rssi *state)
 {
 	u16 data = state->count[0];
@@ -174,6 +174,13 @@ static inline u8 rtl_ax_ra_rssi_mask(u8 command[16], u8 rssi, u8 previous)
 	command[3] = (command[3] & ~BIT(6)) | BIT(7);
 	put_unaligned_le64(filtered, command + 4);
 	return level;
+}
+
+/* Actual register/update/watchdog commands use background NHM ratio1..254.
+ * 0xff is the factory failed-sample value, not a noisy environment. */
+static inline void rtl_ax_ra_environment(u8 command[16], u8 nhm_ratio)
+{
+	command[15] = (command[15] & ~BIT(0)) | (nhm_ratio && nhm_ratio != 255);
 }
 
 static inline void rtl_ax_ra_legacy(u8 command[16], u8 macid, u16 legacy, bool band5g)

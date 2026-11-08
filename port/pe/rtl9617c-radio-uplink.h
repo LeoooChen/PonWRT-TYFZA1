@@ -263,6 +263,7 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	sync(); state[6]++;
 	if (!(state[3] & 1023)) pe_event(mailbox);
 	mailbox[96] += frames; mailbox[97] += total_bytes;
+	(*(u32 *)((u8 *)mailbox - MAILBOX_OFFSET + RTL_AX_RX_PEER_BYTES + macid * 4)) += length - 4;
 	if (amsdu) mailbox[113]++;
 	/* The state release also published all packet and NI descriptor writes. */
 	mailbox[90] = write + frames;

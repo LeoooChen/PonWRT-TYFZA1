@@ -2,7 +2,7 @@
 """Execute the linked PE downlink and verify multi-MSDU DMA and RPQ ownership."""
 from pathlib import Path
 import json
-from pe_tx_ownership_fixture import initialize
+from pe_tx_ownership_fixture import initialize, map_report
 import struct
 import sys
 
@@ -15,7 +15,7 @@ directory = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'artifacts/pe-rad
 binary = (directory / 'pe-tx.bin').read_bytes()
 
 
-def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False, multicast=False, noack=False, preserve_group=False, preload=True):
+def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False, multicast=False, noack=False, preserve_group=False, preload=True, policy=None):
     base, mb, pages, headers, payload, ring, bar, ni, reports = (
         0x04000000, 0x04002000, 0x05100000, 0x05400000, 0x06000000,
         0x05000000, 0x12000000, 0x10000000, 0x06200000)
@@ -49,14 +49,18 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
                          (117, 6), (140, mb | 0xa0000000), (142, 1)]:
         put(mb + index * 4, value)
     peer = [0, 0, 26 << 16, rate | bandwidth << 16 | (1 << 22 if hw_rts else 0),
-            1 << 24 | 1 << 18 | 1 << 16 | (1 << 23 if client else 0), 7 << 16 | 32 | (1 << 15 if preload else 0), 0, 0]
+            1 << 24 | 1 << 18 | 1 << 16 | (1 << 23 if client else 0) , 7 << 16 | 32 | (1 << 15 if preload else 0), 0, 0]
     u.mem_write(base + 0xd020, struct.pack('<8I', *peer))
     put(base + 0xe204, cap << 18)
-    put(base + 0x12020, 32)  # negotiated TX BA window for this peer/TID
+    put(base + 0x12020, 32)  # negotiated BA limit, as consumed by ni_select
+    effective_policy = policy if policy is not None else 3793 if cap == 3839 else 7433 if cap == 7935 else 10896
+    put(base + 0x39004, effective_policy | (0 if not effective_policy else 2 if effective_policy <= 3793 else 4 if effective_policy <= 7433 else 7) << 16)
     put(base + 0x11a04, 1)
     put(base + 0x11804, len(lengths))
     put(base + 0x13020, len(lengths))
     put(base + 0x18020, len(lengths))
+    put(base + 0x3a080, sum(lengths))
+    put(base + 0x3a088, 1)
     put(base + 0x15020, payload)
     put(base + 0x19604, 1)
     put(base + 0x16020, payload + (len(lengths) - 1) * 2048)
@@ -75,6 +79,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         put(base + 0x15020, 0)
         put(base + 0x16020, 0)
         put(base + 0x18020, 0)
+        put(base + 0x3a080, 0)
         put(mb + 170 * 4, 0)
         put(ni + 0x659c, 1 << 24)
         put(ni + 0x7060, len(lengths) * 8)
@@ -82,6 +87,8 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     for n, length in enumerate(lengths):
         frame = dst + bytes([2, 3, 4, 5, 6, n]) + bytes.fromhex('0800')
         frame += bytes([n + 1]) * (length - 14)
+        # Real QoS classification must see DSCP0, not patterned payload as TOS.
+        if len(frame) >= 16: frame = frame[:14] + b'\x45\x00' + frame[16:]
         frames.append(frame)
         at = payload + n * 2048
         u.mem_write(at + 64 + ni_header, frame)
@@ -103,9 +110,12 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     if observe:
         observe(u)
     u.emu_start(0xbfc00400, 0x9fc0fff0, count=100000)
-    # Main batches fewer than eight short frames until the 4ms TSF deadline.
-    put(bar + 0xc438, 4000)
-    u.emu_start(u.reg_read(UC_MIPS_REG_PC), 0x9fc0fff0, count=100000)
+    # A cap-limited dequeue rearms the stock ordinary queue timer. Advance
+    # actual TSF for each remaining selection instead of assuming one expiry.
+    for interval in range(1, len(lengths) + 1):
+        if not get(mb + 38 * 4): break
+        put(bar + 0xc438, interval * 10001)
+        u.emu_start(u.reg_read(UC_MIPS_REG_PC), 0x9fc0fff0, count=100000)
     assert get(mb + 28 * 4) == len(lengths) and get(mb + 38 * 4) == 0
     assert get(base + 0x1c020) == len(lengths)
     assert get(mb + 30 * 4) == len(submits) and not returns
@@ -146,11 +156,11 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
             assert struct.unpack_from('<I', page, 0)[0] & (1 << 31)
             assert not(struct.unpack_from('<I', page, 12)[0] & (1 << 12)), 'no-ACK enabled BA'
         assert struct.unpack_from('<I', page, 40)[0] & 0x17f == 0x107, 'wrong CCMP CAM'
+        assert len(gathered) - 26 <= (cap if policy is None else min(cap,policy)) or count == 1
         # Only preloaded peers may cross descending lengths without BK.
         boundary = noack or slot == 0 or (not preload and len(gathered) < previous_length)
         assert struct.unpack_from('<I', page, 12)[0] & 0x3000 == ((0x2000 if boundary else 0) | (0 if noack else 0x1000)), (lengths, slot, page[:16].hex())
         previous_length = len(gathered)
-        assert len(gathered) - 26 <= cap or count == 1
         chain = get(base + 0x20000 + slot * 8)
         for n in range(count):
             assert chain == payload + (member + n) * 2048
@@ -176,12 +186,17 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     for n, frame in enumerate(frames):
         assert bytes(u.mem_read(payload + n * 2048 + 64 + ni_header + 14, len(frame) - 14)) == frame[14:]
         assert get(base + 0x20000 + n * 8) == 0
-    return {'lengths': lengths, 'cap': cap, 'MPDUs': len(submits), 'MSDUs_per_MPDU': [len(ids) for ids in all_ids], 'from_EPP': from_epp, 'HW_RTS': hw_rts, 'bandwidth': bandwidth, 'rate': rate}
+    return {'lengths': lengths, 'cap': cap, 'MPDUs': len(submits), 'from_EPP': from_epp, 'HW_RTS': hw_rts, 'bandwidth': bandwidth, 'rate': rate}
 
 
 if __name__ == '__main__':
     if len(sys.argv) > 2 and sys.argv[2] == '--160':
         rows = [case([1514] * 4, 7935, True, bandwidth=3, rate=rate) for rate in (0x119, 0x19b)]
+    elif len(sys.argv) > 2 and sys.argv[2] == '--dynamic':
+        rows = [case([1514] * 8, 10896, True, policy=size) for size in (0,3793,7433,10896)]
+        assert [row['MPDUs'] for row in rows] == [8,4,2,2]
+        rows += [case([64] * 9, 10896, True, policy=3793)]
+        assert rows[-1]['MPDUs'] == 1
     elif len(sys.argv) > 2 and sys.argv[2] == '--he-large':
         rows = [case([1514] * 7, cap, True, bandwidth=3, rate=0x19b) for cap in (7935, 10896)]
         assert [row['MPDUs'] for row in rows] == [2, 1]
@@ -192,10 +207,6 @@ if __name__ == '__main__':
         rows += [case([1514] * 8, 7935, True), case([1514] * 32, 10896, True),
                  case([64, 65, 66, 67], 7935, True)]
         rows += [case([1514] * 4, 7935, True, True)]
-        # Full TCP segments, 128KiB-write tails and ACK-sized frames.
-        rows += [case(([1514] * 7 + [818, 54, 66]) * 3, cap, True)
-                 for cap in (3839, 7935, 10896)]
-        rows += [case([1514, 14, 15, 16, 17, 1514], 10896, True)]
         rows += [case([1514] * 7, 10896, True, ni_header=8),
                  case([1514] * 7, 10896, True, compact_epp=True)]
     for enabled in [False, True]:

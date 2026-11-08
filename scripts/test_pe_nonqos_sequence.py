@@ -29,7 +29,7 @@ def machine(start, full=True, client=False):
     m.u.mem_write(payload + 64 + m.header, env['peer'])
     m.ingest()
     assert m.get(payload + 28) == 27
-    m.put(bar + 0xc438, 4000)
+    m.put(bar + 0xc438, 10000)
     return m
 
 

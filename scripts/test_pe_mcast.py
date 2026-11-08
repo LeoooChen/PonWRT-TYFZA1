@@ -141,13 +141,13 @@ for ipv6 in (False,True):
 for tid in range(8):
     m=Machine(tid=tid,mode=1);m.u.mem_write(table+16+9*96+14,bytes([1<<tid]))
     m.put(base+0x12000+(8+tid)*4,32)
-    m.ingest();m.put(bar+0xc438,4000)
+    m.ingest();m.put(bar+0xc438,10000)
     assert m.call('ni_select',mb,base,requests)==1
     assert m.get(requests+16)&1<<13 and not(m.get(requests+20)&255)
     vectors+=1
 # Selected requests are also revoked by peer/key/template changes before TXBD.
 for mutation in range(3):
-    m=Machine();m.ingest();m.put(bar+0xc438,4000)
+    m=Machine();m.ingest();m.put(bar+0xc438,10000)
     assert m.call('ni_select',mb,base,requests)==1
     m.put(mb+193*4,1)
     if mutation==0:m.put(base+0xd020+20,7<<16)
@@ -164,7 +164,7 @@ m.put(mb+47*4,0);m.call('ni_select',mb,base,requests)
 assert m.get(mb+47*4)==2049 and not m.get(mb+38*4);vectors+=1
 # A closed generation must discard queued sleepers and already selected WPs.
 for pending in (False,True,2):
-    m=Machine();m.ingest();m.put(bar+0xc438,4000)
+    m=Machine();m.ingest();m.put(bar+0xc438,10000)
     if pending:
         assert m.call('ni_select',mb,base,requests)==1
         m.put(mb+193*4,1);m.put(mb+194*4,0)
@@ -184,6 +184,20 @@ for pending in (False,True,2):
     m.put(ni+0x6340,1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
     assert not m.get(mb+47*4) and not m.get(base+0x20000+(0 if pending else 2048*8)) and m.get(ni+0x6384)==payload|6
     vectors+=1
+# The main-branch WMM quota counts multicast recipes on their resolved TID,
+# including ARM requests. Quota drops retain the BID until EQ acknowledges.
+for tid in range(8):
+    m=Machine(tid=tid,mode=1);m.ingest();m.put(bar+0xc438,10000)
+    ac=(0,1,1,0,2,2,3,3)[tid];pending=base+0x3e000+(4+ac)*4
+    m.put(base+0x3f000,2);m.put(base+0x3e800+(4+ac)*4,2)
+    assert m.call('ni_select',mb,base,requests)==0
+    assert m.get(mb+47*4)==2049 and m.get(base+0x3f004)==1
+    assert not m.get(pending) and not m.get(mb+38*4)
+    m.put(mb+116*4,0x6380);m.put(mb+117*4,6)
+    m.call('ni_recycle',mb,base);assert m.get(base+0x20000+2048*8)==payload
+    m.put(ni+0x6340,1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
+    assert not m.get(mb+47*4) and not m.get(pending)
+    vectors+=1
 # Same peer with different owners must not enter one A-MSDU. Otherwise a
 # selected aggregate could retain a revoked second owner's packet.
 m=Machine(mode=1);m.put(base+0xe204,7935<<18)
@@ -191,15 +205,16 @@ second=payload+2048;m.u.mem_write(second+64+m.header,bytes(m.frame))
 m.u.mem_write(second+64,struct.pack('>II',1<<31|266<<18,(len(m.frame)+8)<<15|19<<3))
 m.u.mem_write(table+16+10*96,bytes(m.u.mem_read(table+16+9*96,96)))
 m.u.mem_write(epp+8,struct.pack('<II',second|0x50,0));m.put(ni+0x7060,16)
-m.call('ni_ingest',mb,base);m.put(bar+0xc438,4000)
+m.call('ni_ingest',mb,base);m.put(bar+0xc438,10000)
 assert m.call('ni_select',mb,base,requests)==1 and m.get(base+0x15020)==second
 assert m.get(requests+8)>>24==1;vectors+=1
 # Two already selected owners must drain during pause without EQ credit.
 m=Machine(mode=1);second=payload+2048
 m.u.mem_write(second+64+m.header,bytes(m.frame));m.u.mem_write(second+64,bytes(m.u.mem_read(payload+64,16)))
 m.u.mem_write(epp+8,struct.pack('<II',second|0x50,0));m.put(ni+0x7060,16)
-m.call('ni_ingest',mb,base);m.put(bar+0xc438,4000)
+m.call('ni_ingest',mb,base);m.put(bar+0xc438,10000)
 assert m.call('ni_select',mb,base,requests)==1
+m.put(bar+0xc438,20000) # The stock ordinary timer rearms after dequeue.
 assert m.call('ni_select',mb,base,requests+128)==1
 m.put(mb+193*4,2);m.put(table,0);m.call('pe_tx_publish',mb,16,requests)
 assert m.get(mb+194*4)==2 and m.get(mb+45*4)==2 and m.get(mb+30*4)==2

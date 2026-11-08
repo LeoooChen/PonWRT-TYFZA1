@@ -5,8 +5,10 @@ P=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 OUT=${1:-$P/artifacts/live-radio-pe-wd}
 LINKER=${TYFZA1_PE_LINKER:-ld.lld-18}
 mkdir -p "$OUT"
+# Size optimization keeps the combined FTTR multicast/retirement and stock
+# queue policies inside the fixed32KiB IMEM without dropping either path.
 clang-18 --target=mipsel-none-elf -march=mips32 -msoft-float -mno-abicalls -fno-pic -G0 \
-    -ffreestanding -fno-builtin -fno-stack-protector -fomit-frame-pointer -fstack-usage -O2 ${PE_RADIO_CFLAGS:-} -Wall -Wextra -Werror \
+    -ffreestanding -fno-builtin -fno-stack-protector -fomit-frame-pointer -fstack-usage -Os ${PE_RADIO_CFLAGS:-} -Wall -Wextra -Werror \
     -I "$P/port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap" \
     -I "$P/port/overlay/target/linux/rtl9617c/files-6.18/include" \
     -c "$P/port/pe/rtl9617c-radio-wd.c" -o "$OUT/pe-wd.o"

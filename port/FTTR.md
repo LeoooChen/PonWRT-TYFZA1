@@ -5850,6 +5850,53 @@ recovery combinations. Reports are
 `upgrade-admin-build-20261108/`. No physical device was accessed; complete
 hardware packet retirement and ID reuse remain unresolved.
 
+### Alignment with main 8ee9791 and combined PE policies
+
+The worktree incorporates local main8ee9791 (the factory Wi-Fi policy branch)
+without merging FTTR back to main. ARM request/AC quotas, original total2048
+sleep admission, traffic/vendor/EDCA policy, bounded64-descriptor NI ingestion,
+per-peer flow statistics and original A-MSDU queue/size/count/timer rules are
+combined with FTTR multicast actions, source6 generations, EPP drain markers,
+BCMC HIQ, shared sequence/GTK PN and per-channel pending publication.
+
+Conflict resolution preserves multicast recipes' resolved TIDs and no-ACK
+policy; only generic NI unicast is reclassified from Ethernet. Per-peer flow
+accounting sees the final converted Ethernet header. BCMC uses its dedicated
+MACID0/HIQ route and does not consume per-station WMM quota counters. Unicast
+and multicast replicas for a station share ARM/NI per-AC quota; rejected
+replicas keep BID ownership until EQ return. Gathered subframes retain the
+same immutable recipe and FTTR generation. ARM completion retains both quota
+release and the FTTR discard-aware sequence/PN handling.
+
+The combined -O2 image exceeded both the pre-mailbox region and32KiB IMEM.
+The build now uses -Os; no forwarding/lifetime features were removed to fit.
+The final PE is32572 bytes (196 bytes below32KiB), SHA256
+`478ad6037b0cc3d84c5388c38f62ddd817f8d951d5310f9d58689339022ac160`;
+conservative summed stack frames are7288/8192 bytes. The non-PE_UPLINK variant
+is14168 bytes. Both linked entry/memory/relocation checks pass and regenerating
+the tracked firmware with the build script gives identical bytes. This
+compiler choice has not been benchmarked on hardware; main's measured
+performance does not establish the combined firmware's performance.
+
+Linked MIPS checks cover273 multicast admission/revocation/quota cases plus12
+full encrypted/no-ACK TX/RPQ cases,251 FTTR EPP/BID-generation cases,98 BCMC
+cases, shared sequence/GTK PN, per-channel credit stalls and actual RPQ/EQ
+retirement, software WP ownership and stock queue/quota behavior. An isolated
+build of main8ee9791 agrees with the combined image for2048 IPv4/IPv6/PPPoE
+classification/flow-key cases and14/15/16-byte frames. Stock policy execution
+checks1920 A-MSDU decisions,82944 EDCA cases,220 vendor cases,156 WMM transitions
+and320 quota boundaries. ARM request construction passes8448 vectors;
+NI restore/uplink, station/key/mesh and userspace recovery regressions pass.
+
+Old tests that assumed16-entry ingestion,4ms ordinary timers or older DDR
+ranges now use the actual64-entry bound,10ms ordinary timer and current
+layout. The EPP observer is removed after its first-batch ordering assertion
+to avoid a Unicorn hook/re-entry exception; function calls verify return PC.
+Image/modules build and23 changed kernel-source identities pass. Evidence is
+under `artifacts/fttr/main-8ee9791-*`, with final PE in
+`main-8ee9791-pe-final-20261108/`. No device was accessed. Full MCE/NI DMA/AFT
+producer retirement and safe hardware multicast ID reuse remain open.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN
