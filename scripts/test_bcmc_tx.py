@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run actual ARM BCMC submission and feed its requests to linked PE WD code."""
 from pathlib import Path
+from pe_tx_ownership_fixture import initialize
 import struct
 import subprocess
 import sys
@@ -137,9 +138,10 @@ firmware = (args.pe / 'pe-tx.bin').read_bytes()
 for recipe in range(15):
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
     base, mailbox, ring, pages, bar = 0x04000000, 0x04002000, 0x05000000, 0x05100000, 0x12000000
-    for address, size in ((0x1fc00000, 0x10000), (base, 0x20000), (ring, 0x10000), (pages, 0x32000), (bar, 0x10000), (0x07e00000, 0x2000)):
+    for address, size in ((0x1fc00000, 0x10000), (base, 0x80000), (ring, 0x10000), (pages, 0x32000), (bar, 0x10000), (0x07e00000, 0x2000)):
         u.mem_map(address, size)
     u.mem_write(0x1fc00000, firmware)
+    initialize(u,base)
     def put(address, value):
         u.mem_write(address, struct.pack('<I', value))
     put(mailbox + 11 * 4, ring)
@@ -166,7 +168,13 @@ for recipe in range(15):
         u.reg_write(UC_MIPS_REG_RA, 0x9fc01ff0)
         u.emu_start(symbols['pe_tx_publish'], 0x9fc01ff0, count=100000)
         wd = bytes(u.mem_read(pages + (5 * 264 + phase) * 128, 128))
-        assert wd == arm, (recipe, phase, wd.hex(), arm.hex())
+        # PE now has an independent per-channel WP tag. Its map must point
+        # back to the ARM request; all remaining WD bytes still match.
+        tag = struct.unpack_from('<I',wd,56)[0] & 4095
+        assert struct.unpack('<I',u.mem_read(base+0x40000+(5*4096+tag)*4,4))[0] == phase+1
+        expected = bytearray(arm)
+        struct.pack_into('<I',expected,56,(struct.unpack_from('<I',arm,56)[0]&~4095)|tag)
+        assert wd == expected, (recipe, phase, wd.hex(), expected.hex())
         txbd = struct.unpack('<II', u.mem_read(ring + (5 * 256 + phase) * 8, 8))
         assert txbd == (0x40000000 | 70, pages + (5 * 264 + phase) * 128)
 print('BCMC:90 actual ARM/PE submissions across PS transitions, four GTK IDs/PN carry/open, '

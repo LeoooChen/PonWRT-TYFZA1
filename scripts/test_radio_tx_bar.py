@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Execute actual monitor/TX functions with an exactly 20-byte BAR allocation."""
 from pathlib import Path
+from pe_tx_ownership_fixture import initialize
 import argparse
 import re
 import struct
@@ -89,6 +90,7 @@ typedef u16 __le16;typedef u32 dma_addr_t;
 #define atomic64_inc_return(p) (++*(p))
 struct rtl_key_pn {void *shared;unsigned generation;};
 static unsigned rtl9617c_key_pn_token(struct rtl_key_pn *p){return p->shared?p->generation:0;}
+#define RTL_AX_TX_AGG_PRELOAD (1U<<15)
 #define RTL_KEY_PN_REQUEST 30
 #define RTL_SEQ_REQUEST 31
 #define RTL_SEQ_ASSIGNED 0x80000000U
@@ -110,7 +112,7 @@ struct rtl_ax_tx_mapping {struct scatterlist sg[10];unsigned count,dma_count;};
 struct rtl_ax_tx_slot {struct sk_buff *skb;u64 fttr_generation;dma_addr_t dma;unsigned bytes,ring,key_index,macid,tid;bool encrypted,pe_sequence,firmware_rate,pe_key_pn;struct rtl_ax_tx_mapping *mapping;};
 struct rtl_ax_io {void *ctx;void (*write16)(void *,unsigned,unsigned);};
 struct rtl_ax_tx {bool running,dfs_blocked,pe_active,checksum_enabled,queues_stopped;
- bool peer_qos[128],peer_authorized[128],peer_asleep[128],peer_offloaded[128],peer_client[128];u32 peer_rates[128];u64 mcast_policy_attempt[128];
+ bool peer_preload[128];bool peer_qos[128],peer_authorized[128],peer_asleep[128],peer_offloaded[128],peer_client[128];u32 peer_rates[128];u64 mcast_policy_attempt[128];
  int lock,fttr_work;struct {void *memory;}pe;u8 *pages,*headers,*ring;u32 pages_dma;
  unsigned pe_producer,producer[6],wd_producer[6],pending[256],occupied,last_sequence,last_words[14];
  struct rtl_ax_tx_slot slots[256];const struct rtl_ax_io *io;
@@ -267,9 +269,10 @@ for index in range(2):
     request = output[(index + 2) * 128:(index + 3) * 128]
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
     base, mailbox, ring, pages, data = 0x04000000, 0x04002000, 0x05000000, 0x05100000, 0x09000000
-    for address, size in ((0x1fc00000, 0x10000), (base, 0x20000), (ring, 0x10000), (pages, 0x32000), (data, 0x1000)):
+    for address, size in ((0x1fc00000, 0x10000), (base, 0x80000), (ring, 0x10000), (pages, 0x32000), (data, 0x1000)):
         u.mem_map(address, size)
     u.mem_write(0x1fc00000, (args.pe / 'pe-tx.bin').read_bytes())
+    initialize(u,base)
     u.mem_write(base + 0x4000, request)
     original = bytes.fromhex('8400000002010203040502060708090a0460c0ab')
     u.mem_write(data, original)

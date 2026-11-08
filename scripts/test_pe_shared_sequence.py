@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Execute interleaved Ethernet offload and raw QoS TX with one sequence owner."""
 from pathlib import Path
+from pe_tx_ownership_fixture import initialize
 import argparse
 import json
 import struct
@@ -36,11 +37,12 @@ directory = args.pe
 u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
 base, mailbox, pages, headers, payload, ring, bar = (
     0x04000000, 0x04002000, 0x05100000, 0x05400000, 0x06000000, 0x05000000, 0x12000000)
-for address, size in [(0x1fc00000, 0x10000), (base, 0x20000), (pages, 0x32000),
+for address, size in [(0x1fc00000, 0x10000), (base, 0x80000), (pages, 0x32000),
                       (headers, 0xc000), (payload, 0x10000), (ring, 0x4000),
                       (bar, 0x10000), (0x10020000, 0x1000), (0x07e00000, 0x4000)]:
     u.mem_map(address, size)
 u.mem_write(0x1fc00000, (directory / 'pe-tx.bin').read_bytes())
+initialize(u,base)
 
 
 def put(address, value):

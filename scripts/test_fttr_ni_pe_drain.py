@@ -114,7 +114,7 @@ for published in (False, True):
     else:
         m.call('ni_recycle', mb, base); m.call('ni_fttr_drain', mb, base)
         assert m.get(DRAIN + 8) == 1 and not m.get(DRAIN + 4)
-        raw = struct.pack('<II', 24 | 0xc000 | 1 << 16, 7 << 24 | 4) + bytes(12) + struct.pack('<I', 1 | 256 << 16)
+        raw = struct.pack('<II', 24 | 0xc000 | 1 << 16, 7 << 24 | 4) + bytes(12) + struct.pack('<I', 1 | (m.get(PAGES + 56) & 4095) << 16)
         m.u.mem_write(REPORTS, raw); m.put(bar + 0x121c, 1 << 16)
         # RPQ is inlined in this optimized firmware; execute the actual loop.
         from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_SP
@@ -152,12 +152,12 @@ for count in (2, 7, 8):
     m.put(mb + 193 * 4, 1); m.call('pe_tx_publish', mb, 8, requests)
     assert m.get(DRAIN + 8) == count
     # Isolate the actual EQ walker; real RPQ decoding is exercised above.
-    m.put(base + 0xc404, m.get(base + 0xc404) | 1 << 31)
-    m.put(base + 0xc800, 0); m.put(mb + 45 * 4, 1)
+    m.put(base + 0x20004, m.get(base + 0x20004) | 1 << 31)
+    m.put(base + 0x30000, 0); m.put(mb + 45 * 4, 1)
     m.put(table + 4, 3); drain(m)
     finish_one(m, count - 1)
     assert m.get(DRAIN + 8) == 1 and not m.get(DRAIN + 4)
-    assert m.get(base + 0xc400) == payload + (count - 1) * 512
+    assert m.get(base + 0x20000) == payload + (count - 1) * 512
     finish_one(m)
     assert not m.get(DRAIN + 8) and m.get(DRAIN + 4) == 1
     cases += 1
@@ -187,6 +187,30 @@ m.put(mb + 114 * 4, 0x7060); m.put(mb + 3 * 4, 5)
 m.put(ni + 0x6340, 10); m.put(ni + 0x6380, 1 << 31)
 m.u.emu_start(m.u.reg_read(UC_MIPS_REG_PC), 0x9fc0fff0, count=30000)
 assert m.get(DRAIN + 4) == 1 and not m.get(DRAIN + 8); cases += 1
+# An unpublished request has no hardware WP tag. After main separates
+# request IDs from tags, revoking even a high request ID must return only
+# its software credit and must not release another live request's tag0.
+for capacity in (1024, 2048):
+    m = machine(); owner = capacity - 1
+    m.u.mem_write(base + 0x2e000, struct.pack('<H', owner))
+    m.put(base + 0x34004, capacity)
+    m.put(base + 0x40000, 8)  # Existing CPU request7 owns channel0/tag0.
+    m.ingest(); m.put(bar + 0xc438, 4000)
+    assert m.call('ni_select', mb, base, requests) == 1
+    assert m.get(requests) == 256 + owner and m.get(base + 0x35000 + owner * 4) == 0xffffffff
+    # Completion-ring wrap must also preserve this unpublished sentinel.
+    m.put(mb + 45 * 4, 4095); m.put(mb + 46 * 4, 4095)
+    m.put(table + 4, 3); m.put(mb + 193 * 4, 1)
+    m.call('pe_tx_publish', mb, 8, requests)
+    assert not m.get(mb + 45 * 4) and m.get(base + 0x30000 + 4095 * 4) == owner
+    before = m.get(base + 0x3400c)
+    m.put(ni + 0x6340, 0); m.call('ni_recycle', mb, base)
+    assert m.get(DRAIN + 8) == 1 and m.get(base + 0x20000 + owner * 8) == payload
+    finish_one(m)
+    assert not m.get(DRAIN + 8) and not m.get(base + 0x20000 + owner * 8)
+    assert m.get(base + 0x40000) == 8 and m.get(base + 0x3400c) == before
+    assert m.get(base + 0x34004) == capacity + 1 and not m.get(mb + 46 * 4)
+    cases += 1
 print(f'Linked NI/PE FTTR: {cases} source/COS/header/cookie, EPP wrap/invalid descriptor, '
       'all-COS progress, sleeping/selected/published WP, actual RPQ, partial aggregate EQ return, '
       'mixed-source isolation, paused geometry and late-arrival cases passed')

@@ -164,6 +164,8 @@
 
 73. 补齐直接AP BCMC所需的共享非QoS序列号：查实原厂bank9/TID分配与Linux接口序列号域的差异，将Linux普通/快速发送、CPU以太网转换和PE非QoS转换接入同一接口计数器。NI在BID保存接口代号，选择和最终发布均复核，取得TXBD信用后才分配；GTK竞争重试保留已分配值，旧接口包不能消费新接口序号。解绑成功归还Linux下一序号，超时解除借用指针并禁止旧计数器回退；角色创建失败回滚绑定。240次原厂调用、24576次并发分配、4100次实际Linux/PE交替、32次快速路径、24组实际MIPS收发/回收/竞争/换代、8448组请求构造及既有回归通过；Image/模块、补丁重放和源码核对通过。固件29400字节、保守栈6984字节。默认GTK选择、直接BCMC模板/准入和HIQ/DTIM接入仍待补，完整退场和物理验收尚未完成，未上实机。详见[共享非QoS序列号](port/FTTR.md#shared-non-qos-sequence-across-linux-and-pe)。
 
+74. 对齐本地main `2ad19d9`的受保护preload、独立硬件WP标签/软件请求所有权、扩大请求池、64-MSDU批量接收和独立NI组帧。保留FTTR代际/cookie、共享GTK PN/序列号与STA/no-ACK语义，完整迁移回收/等待表。专项测试复现并修复两处集成缺陷：未发布NI请求误释放tag0，CPU软件丢弃回报误走硬件标签翻译。6144/5120次实际MIPS提交、2048/1024在途压力、251组FTTR退场、257批CPU丢弃、16448组ARM RPQ、16896组请求、强制回收及既有回归通过。Image/模块、66份无线源码一致性通过，PE_UPLINK30740字节/保守栈7048字节。仅将main整合进fttr-rewrite，未反向合并；未上实机，完整FTTR退场与直接AP BCMC仍待补齐。详见[独立TX所有权整合](port/FTTR.md#main-alignment-with-independent-radio-tx-ownership)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

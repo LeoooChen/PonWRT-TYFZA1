@@ -43,7 +43,6 @@
 #define RTL_AX_TX_WD_NEXT 204
 #define RTL_AX_NI_PS_CANCEL 0x19a00
 #define RTL_AX_NI_PS_VERSION 0x19e00
-#define RTL_AX_NI_PS_WP_GENERATION 0x1b800
 #define RTL_AX_NI_PS_DONE 0x1ba00
 /* PE1 publishes per-peer/TID TX activity; ARM owns its observation cursors. */
 #define RTL_AX_NI_TX_ACTIVITY 0x1c000

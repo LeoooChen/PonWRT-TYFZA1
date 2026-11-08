@@ -10,6 +10,7 @@ struct packed_word { u32 value; } __attribute__((packed));
 #define MAILBOX_OFFSET 0x2000
 #define TX_BURST 8
 #include "rx-geometry.h"
+#include "tx-ownership.h"
 #include <linux/rtl9617c-qm-layout.h>
 #include <linux/rtl9617c-mcast-pe.h>
 #include <linux/rtl9617c-key-pn.h>
@@ -146,6 +147,70 @@ static void pe_rpq_fault(u8 *memory, u32 reason, u32 info, u32 wd,
 	sync(); trace[0] = sequence;
 }
 
+static u32 ni_owner_available(u8 *memory)
+{
+	u32 *state = (void *)(memory + RTL_AX_TX_OWNER_STATE);
+	return state[0] != state[1];
+}
+static u32 ni_owner(u8 *memory)
+{
+	u32 *state = (void *)(memory + RTL_AX_TX_OWNER_STATE);
+	u32 id = ((u16 *)(memory + RTL_AX_NI_FREE))[state[0] & (RTL_AX_NI_REQUESTS - 1)];
+	state[0]++;
+	/* Selected requests can be revoked before taking a hardware tag. */
+	*(u32 *)(memory + RTL_AX_NI_COOKIES + id * 4) = ~0U;
+	return id;
+}
+
+/* Same ownership key as factory wd_ring[channel].wp_tag[sequence]. */
+static u32 pe_wp_available(u8 *memory, u32 ring)
+{
+	u32 *state = (void *)(memory + RTL_AX_TX_OWNER_STATE);
+	u32 *map = (void *)(memory + RTL_AX_WP_TAG_MAP + ring * RTL_AX_WP_TAG_STRIDE * 4);
+	if (!ring) return (state[2] + 1) % RTL_AX_WP_TAGS != state[3];
+	u32 first = state[4 + ring], tag = first;
+	do {
+		if (!map[tag]) { state[4 + ring] = tag; return 1; }
+		tag = tag + 1 == RTL_AX_WP_TAGS ? 1 : tag + 1;
+	} while (tag != first);
+	return 0;
+}
+static u32 pe_wp_take(u8 *memory, u32 ring, u32 id)
+{
+	u32 *state = (void *)(memory + RTL_AX_TX_OWNER_STATE);
+	u16 *free = (void *)(memory + RTL_AX_WP_FREE);
+	u32 tag = ring ? state[4 + ring] : free[state[2]];
+	*(u32 *)(memory + RTL_AX_WP_TAG_MAP + (ring * RTL_AX_WP_TAG_STRIDE + tag) * 4) = id + 1;
+	if (ring) state[4 + ring] = tag + 1 == RTL_AX_WP_TAGS ? 1 : tag + 1;
+	else state[2] = (state[2] + 1) % RTL_AX_WP_TAGS;
+	if (rtl_ax_tx_id_is_ni(id))
+		*(u32 *)(memory + RTL_AX_NI_COOKIES + (id - RTL_AX_NI_ID_BASE) * 4) = ring << 12 | tag;
+	return tag;
+}
+static void pe_wp_release(u8 *memory, u32 cookie)
+{
+	if (cookie == ~0U) return;
+	u32 ring = cookie >> 12, tag = cookie & 4095;
+	*(u32 *)(memory + RTL_AX_WP_TAG_MAP + (ring * RTL_AX_WP_TAG_STRIDE + tag) * 4) = 0;
+	if (!ring) {
+		u32 *state = (void *)(memory + RTL_AX_TX_OWNER_STATE);
+		((u16 *)(memory + RTL_AX_WP_FREE))[state[3]] = tag;
+		state[3] = (state[3] + 1) % RTL_AX_WP_TAGS;
+	}
+}
+static u32 pe_report_ring(u32 report)
+{
+	u32 qsel = (report >> 8) & 31;
+	return qsel < 8 ? qsel & 3 : qsel == 0x12 ? 4 : qsel == 0x11 ? 5 : 6;
+}
+static u32 pe_report_id(u8 *memory, u32 report)
+{
+	u32 ring = pe_report_ring(report), tag = (report >> 16) & 4095;
+	if (ring == 6 || tag == RTL_AX_WP_TAG_INVALID) return ~0U;
+	u32 owner = *(u32 *)(memory + RTL_AX_WP_TAG_MAP + (ring * RTL_AX_WP_TAG_STRIDE + tag) * 4);
+	return owner - 1;
+}
+
 static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 {
 	if (!mailbox[68]) return;
@@ -175,9 +240,9 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 			if (type != 7) return;
 			for (u32 i = 0; i + 4 <= bytes; i += 4) {
 				u32 report = ((const struct packed_word *)((u8 *)buffer + offset + i))->value;
-				u32 id = (report >> 16) & 4095;
-				if (id < 256 || id >= 384) return;
-				volatile u32 *owner = (void *)(memory + 0xc400 + (id - 256) * 8);
+				u32 id = pe_report_id(memory, report);
+				if (!rtl_ax_tx_id_is_ni(id)) return;
+				volatile u32 *owner = (void *)(memory + RTL_AX_NI_OWNERS + (id - RTL_AX_NI_ID_BASE) * 8);
 				u32 details = owner[1];
 				if (owner[0] && !(details & BIT(31)) &&
 				    ((details >> 8) & 127) == (report & 127) && (details & BIT(16))) return;
@@ -187,21 +252,26 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 		else if (type != 7) { header_copy(out, (const u8 *)buffer, written); forwarded = bytes; }
 		else for (u32 i = 0; i + 4 <= bytes; i += 4) {
 			u32 report = ((const struct packed_word *)((u8 *)buffer + offset + i))->value;
-			u32 id = (report >> 16) & 4095, status = (report >> 13) & 7;
-			if (id < 256 || id >= 384) {
+			u32 id = pe_report_id(memory, report), status = (report >> 13) & 7;
+			if (id == ~0U) {
+				pe_rpq_fault(memory, 2, info, wd, report, 0, 0, consumer);
+				mailbox[77]++; continue;
+			}
+			if (!rtl_ax_tx_id_is_ni(id)) {
 				if (!forwarded) header_copy(out, (const u8 *)buffer, offset);
-				unaligned_word(out + offset + forwarded, report); forwarded += 4;
+				unaligned_word(out + offset + forwarded, (report & ~0x0fff0000U) | id << 16); forwarded += 4;
+				pe_wp_release(memory, pe_report_ring(report) << 12 | ((report >> 16) & 4095));
 				continue;
 			}
-			volatile u32 *owners = (void *)(memory + 0xc400);
-			u32 member = id - 256, details = owners[member * 2 + 1];
+			volatile u32 *owners = (void *)(memory + RTL_AX_NI_OWNERS);
+			u32 member = id - RTL_AX_NI_ID_BASE, details = owners[member * 2 + 1];
 			if (!owners[member * 2] || details & BIT(31) ||
 			    ((details >> 8) & 127) != (report & 127)) {
 				pe_rpq_fault(memory, 2, info, wd, report, owners[member * 2], details, consumer);
 				mailbox[77]++; continue;
 			}
 			if (details & BIT(16)) {
-				u32 generation = *(u32 *)(memory + RTL_AX_NI_PS_WP_GENERATION + member * 4);
+				u32 generation = *(u32 *)(memory + RTL_AX_NI_GENERATIONS + member * 4);
 				volatile u32 *ps = (void *)(memory + 0xe800 + (report & 127) * 16);
 				/* A late old RPQ must not overwrite the current grant's completion. */
 				if (generation == ps[1]) {
@@ -210,11 +280,11 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 					sync(); record[1]++;
 				}
 				if (!forwarded) header_copy(out, (const u8 *)buffer, offset);
-				unaligned_word(out + offset + forwarded, report); forwarded += 4;
+				unaligned_word(out + offset + forwarded, (report & ~0x0fff0000U) | id << 16); forwarded += 4;
 			}
 			owners[member * 2 + 1] = details | BIT(31) | status;
-			*(u32 *)(memory + 0xc800 + completion_write * 4) = member;
-			completion_write = (completion_write + 1) & 127;
+			*(u32 *)(memory + RTL_AX_NI_COMPLETIONS + completion_write * 4) = member;
+			completion_write = (completion_write + 1) & RTL_AX_NI_COMPLETION_MASK;
 			reports++; failures += !!(status || (report & BIT(31)));
 		}
 		if (forwarded) {
@@ -242,11 +312,85 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 	if (mailbox[78] && mailbox[75] != completed) rpq_event(mailbox);
 }
 
+/* NI owns coherent Ethernet BIDs. Build their final wire image directly;
+ * host DMA cookies below must remain opaque to the PE CPU. */
+static u32 ni_build_payload(volatile u32 *mailbox, u8 *memory,
+	const u32 *request, u8 *page)
+{
+	u32 flags = request[4], macid = flags >> 24, tid = flags & 7;
+	u32 frames = request[2] >> 24, header_bytes = (request[2] >> 16) & 63;
+	u32 *sequences = (void *)(memory +
+#ifdef PE_UPLINK
+		0x10000
+#else
+		0x3000
+#endif
+	);
+	u32 sequence;
+	if (header_bytes == 24 && (request[RTL_SEQ_REQUEST] & RTL_SEQ_ASSIGNED))
+		sequence = request[RTL_SEQ_REQUEST] & 4095;
+	else {
+		sequence = sequences[macid * 8 + tid];
+		sequences[macid * 8 + tid] = (sequence + 1) & 0xfff;
+	}
+	const u32 *ethernet = uncached(request[8]);
+	u32 da0 = ethernet[0], addresses = ethernet[1], sa = ethernet[2];
+	u32 ap0 = mailbox[16], ap1 = mailbox[17];
+	u32 amsdu = !!(flags & BIT(21)), client = !!(flags & BIT(23));
+	const u32 *bssid = (const void *)(memory + 0xe400 + macid * 8);
+	u32 ra0 = client ? bssid[0] : da0;
+	u32 ra1 = client ? bssid[1] & 65535 : addresses & 65535;
+	u32 addr30 = client ? (amsdu ? ra0 : da0) : (amsdu ? ap0 : addresses >> 16 | sa << 16);
+	u32 addr31 = client ? (amsdu ? ra1 : addresses & 65535) : (amsdu ? ap1 & 65535 : sa >> 16);
+	u32 header_words[9];
+	u8 *header = (void *)header_words;
+	header_words[0] = (header_bytes == 26 ? 0x88 : 0x08) | (client ? 0x0100 : 0x0200) |
+		(flags & (BIT(15) | BIT(16)) ? 0x4000 : 0) |
+		(flags & BIT(19) ? 0x2000 : 0);
+	header_words[1] = ra0;
+	u32 ta0 = client ? addresses >> 16 | sa << 16 : ap0;
+	u32 ta1 = client ? sa >> 16 : ap1;
+	header_words[2] = ra1 | ta0 << 16;
+	header_words[3] = ta0 >> 16 | ta1 << 16;
+	header_words[4] = addr30;
+	header_words[5] = addr31 | sequence << 20;
+	header_words[6] = tid | (flags & BIT(20) ? 0x10 : 0) | (amsdu ? 0x80 : 0) | (flags & BIT(13) ? 0x20 : 0);
+	if (amsdu) {
+		u32 pad = 0;
+		for (u32 n = 0; n < frames; n++) {
+			u32 input = request[8 + n * 2], bytes = request[9 + n * 2];
+			u32 output = input - (n ? 8 + pad : 34);
+			amsdu_prefix(uncached(input), bytes);
+			if (!n) {
+				u8 *out = uncached(output);
+				/* Headroom puts the WLAN header at word offset two. */
+				out[0] = header[0]; out[1] = header[1];
+				for (u32 i = 2; i < 26; i += 4)
+					*(u32 *)(out + i) = ((const struct packed_word *)(header + i))->value;
+			} else for (u32 i = 0; i < pad; i++) ((u8 *)uncached(output))[i] = 0;
+			address(page + 64 + n * 6, output, bytes + (n ? 8 + pad : 34), n + 1 == frames);
+			pad = (0U - bytes - 8) & 3;
+		}
+		mailbox[57]++;
+	} else {
+		u8 *llc = header + header_bytes;
+		llc[0] = llc[1] = 0xaa; llc[2] = 3;
+		llc[3] = llc[4] = llc[5] = 0;
+		llc[6] = ((const u8 *)ethernet)[12]; llc[7] = ((const u8 *)ethernet)[13];
+		u32 output = request[8] + 14 - header_bytes - 8;
+		header_copy(uncached(output), header, header_bytes + 8);
+		address(page + 64, output, request[2] & 0x3fff, 1);
+	}
+	mailbox[18] = request[0]; mailbox[19] = flags; mailbox[20] = request[2];
+	mailbox[21] = request[8];
+	return sequence;
+}
+
 static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	volatile u32 *mailbox, u8 *memory, const u32 *request, u32 *next_producer)
 {
 	static const u32 channels[] = { 0, 1, 2, 3, 8, 9 };
-	u32 ni_packet = request[0] >= 256, ni_frames = ni_packet ? request[2] >> 24 : 1;
+	u32 ni_packet = rtl_ax_tx_id_is_ni(request[0]), ni_frames = ni_packet ? request[2] >> 24 : 1;
 	u32 id = request[0], ring_info = request[1], packet = request[2];
 	u32 rate = request[3], flags = request[4], aggregation = request[5];
 	u32 ring = ring_info & 7, slot = (ring_info >> 8) & 255, next = (ring_info >> 16) & 255;
@@ -257,7 +401,7 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	u32 wd_page = ring * RTL_AX_TX_WD_PER_RING + wd_slot;
 	u32 segments = packet >> 24, count = 0, used = 64;
 	u32 aggregate = aggregation & 255;
-	if (ni_packet) *(u32 *)(memory + 0xe000 + (id - 256) * 4) = rate;
+	if (ni_packet) *(u32 *)(memory + RTL_AX_NI_RATES + (id - RTL_AX_NI_ID_BASE) * 4) = rate;
 	/* Construct privately, then publish the final DMA image. Neither the
 	 * descriptor nor an in-place NI header needs a DDR scratch round trip. */
 	u32 page_words[32], header_words[16];
@@ -269,118 +413,93 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	 * and WP padding, preserving the original descriptor format. */
 	word(page + 24, 0); word(page + 44, 0);
 	word(page + 52, 0); word(page + 60, 0);
-	if (flags & BIT(22)) {
-		/* Original normal and shortcut TX share sta->txseq_tid[]. */
-		u32 macid = flags >> 24, tid = flags & 7;
-		u32 header_bytes = (packet >> 16) & 63;
-		u32 *sequences = (void *)(memory +
+	if (ni_packet) {
+		sequence = ni_build_payload(mailbox, memory, request, page);
+		count = ni_frames; used = 64 + count * 6;
+	} else {
+		if (flags & BIT(22)) {
+			/* Original normal and shortcut TX share sta->txseq_tid[]. */
+			u32 macid = flags >> 24, tid = flags & 7;
+			u32 header_bytes = (packet >> 16) & 63;
+			u32 *sequences = (void *)(memory +
 #ifdef PE_UPLINK
-			0x10000
+				0x10000
 #else
-			0x3000
+				0x3000
 #endif
-		);
-		sequence = sequences[macid * 8 + tid];
-		sequences[macid * 8 + tid] = (sequence + 1) & 0xfff;
-		header_copy(header, uncached(mailbox[14] + id * 128), header_bytes);
-		header[22] = sequence << 4;
-		header[23] = sequence >> 4;
-		address(page + used, mailbox[14] + id * 128, header_bytes, 0);
-		used += 6; count++;
-	}
-	if (flags & BIT(18)) {
-		u32 macid = flags >> 24, tid = flags & 7;
-		u32 header_bytes = (packet >> 16) & 63;
-		const struct packed_word *input = uncached(ni_packet ? request[8] : mailbox[14] + id * 128);
-		/* Gather addresses once; byte assembly belongs in private DMEM. */
-		u32 ethernet_words[4] = {input[0].value, input[1].value,
-			input[2].value, ((const u8 *)input)[12] | (u32)((const u8 *)input)[13] << 8};
-		u32 ap_words[2] = {mailbox[16], mailbox[17]};
-		u8 *ethernet = (void *)ethernet_words, *ap_address = (void *)ap_words;
-		const u8 *bssid = memory + 0xe400 + macid * 8;
-		u32 client = !!(flags & BIT(23));
-		u32 *sequences = (void *)(memory +
-#ifdef PE_UPLINK
-			0x10000
-#else
-			0x3000
-#endif
-		);
-		u32 protected = !!(flags & (BIT(15) | BIT(16)));
-
-		if (header_bytes == 24 && (request[RTL_SEQ_REQUEST] & RTL_SEQ_ASSIGNED))
-			sequence = request[RTL_SEQ_REQUEST] & 4095;
-		else {
+			);
 			sequence = sequences[macid * 8 + tid];
 			sequences[macid * 8 + tid] = (sequence + 1) & 0xfff;
+			header_copy(header, uncached(mailbox[14] + id * 128), header_bytes);
+			header[22] = sequence << 4;
+			header[23] = sequence >> 4;
+			address(page + used, mailbox[14] + id * 128, header_bytes, 0);
+			used += 6; count++;
 		}
-		header[0] = header_bytes == 26 ? 0x88 : 0x08;
-		header[1] = (client ? 0x01 : 0x02) | protected << 6 | (flags & BIT(19) ? 0x20 : 0);
-		header[2] = header[3] = 0;
-#pragma clang loop unroll(disable)
-		for (u32 i = 0; i < 6; i++) {
-			header[4 + i] = client ? bssid[i] : ethernet[i];
-			/* Three-address STA TX carries Ethernet SA in addr2, including
-			 * when DA is multicast. Linux preserves it in the A-MSDU head. */
-			header[10 + i] = client ? ethernet[6 + i] : ap_address[i];
-			header[16 + i] = client ? (flags & BIT(21) ? bssid[i] : ethernet[i]) :
-				(flags & BIT(21) ? ap_address[i] : ethernet[6 + i]);
-		}
-		header[22] = sequence << 4;
-		header[23] = sequence >> 4;
-		if (header_bytes == 26) { header[24] = tid | (flags & BIT(20) ? 0x10 : 0) | (flags & BIT(21) ? 0x80 : 0) | (flags & BIT(13) ? 0x20 : 0); header[25] = 0; }
-		u8 *llc = header + header_bytes;
-		llc[0] = llc[1] = 0xaa; llc[2] = 3;
-		llc[3] = llc[4] = llc[5] = 0;
-		llc[6] = ethernet[12]; llc[7] = ethernet[13];
-		address(page + used, mailbox[14] + id * 128, header_bytes + (flags & BIT(21) ? 0 : 8), 0);
-		used += 6; count++;
-		mailbox[18] = id; mailbox[19] = flags; mailbox[20] = packet;
-		mailbox[21] = request[8];
-	}
-	if (flags & BIT(21)) {
-		/* Each BID remains owned until the aggregate's RPQ completion.
-		 * Reuse NI/Ethernet header space; payloads stay in place. */
-		used = 64;
-		u32 pad = 0;
-		for (u32 n = 0; n < ni_frames; n++) {
-			u32 input = request[8 + n * 2], bytes = request[9 + n * 2];
-			u32 output = input - (n ? 8 + pad : 34);
-			amsdu_prefix(uncached(input), bytes);
-			if (!n) {
-				u8 *out = uncached(output);
-				/* NI headroom puts out at word offset2. Align DDR stores. */
-				out[0] = header[0]; out[1] = header[1];
-				for (u32 i = 2; i < 26; i += 4)
-					*(u32 *)(out + i) = ((const struct packed_word *)(header + i))->value;
-			} else for (u32 i = 0; i < pad; i++) ((u8 *)uncached(output))[i] = 0;
-			address(page + used, output, bytes + (n ? 8 + pad : 34), n + 1 == ni_frames);
-			used += 6;
-			pad = (0U - bytes - 8) & 3;
-		}
-		count = ni_frames; mailbox[57]++;
-	} else if (ni_packet) {
-		u32 length = ((packet >> 16) & 63) + 8;
-		u32 output = request[8] + 14 - length;
-		header_copy(uncached(output), header, length);
-		used = 64;
-		address(page + used, output, packet & 0x3fff, 1); used += 6;
-		count = 1;
-	} else for (u32 segment = 0; segment < segments; segment++) {
-		u32 address = request[8 + segment * 2];
-		u32 bytes = request[9 + segment * 2];
-		if (!segment && flags & BIT(18)) { address += 14; bytes -= 14; }
-		if (!segment && flags & BIT(22)) {
+		if (flags & BIT(18)) {
+			u32 macid = flags >> 24, tid = flags & 7;
 			u32 header_bytes = (packet >> 16) & 63;
-			address += header_bytes; bytes -= header_bytes;
+			const struct packed_word *input = uncached(mailbox[14] + id * 128);
+			/* Gather addresses once; byte assembly belongs in private DMEM. */
+			u32 ethernet_words[4] = {input[0].value, input[1].value,
+				input[2].value, ((const u8 *)input)[12] | (u32)((const u8 *)input)[13] << 8};
+			u32 ap_words[2] = {mailbox[16], mailbox[17]};
+			u8 *ethernet = (void *)ethernet_words, *ap_address = (void *)ap_words;
+			const u8 *bssid = memory + 0xe400 + macid * 8;
+			u32 client = !!(flags & BIT(23));
+			u32 *sequences = (void *)(memory +
+#ifdef PE_UPLINK
+				0x10000
+#else
+				0x3000
+#endif
+			);
+			u32 protected = !!(flags & (BIT(15) | BIT(16)));
+
+			if (header_bytes == 24 && (request[RTL_SEQ_REQUEST] & RTL_SEQ_ASSIGNED))
+				sequence = request[RTL_SEQ_REQUEST] & 4095;
+			else {
+				sequence = sequences[macid * 8 + tid];
+				sequences[macid * 8 + tid] = (sequence + 1) & 0xfff;
+			}
+			header[0] = header_bytes == 26 ? 0x88 : 0x08;
+			header[1] = (client ? 0x01 : 0x02) | protected << 6 | (flags & BIT(19) ? 0x20 : 0);
+			header[2] = header[3] = 0;
+#pragma clang loop unroll(disable)
+			for (u32 i = 0; i < 6; i++) {
+				header[4 + i] = client ? bssid[i] : ethernet[i];
+				header[10 + i] = client ? ethernet[6 + i] : ap_address[i];
+				header[16 + i] = client ? (flags & BIT(21) ? bssid[i] : ethernet[i]) :
+					(flags & BIT(21) ? ap_address[i] : ethernet[6 + i]);
+			}
+			header[22] = sequence << 4;
+			header[23] = sequence >> 4;
+			if (header_bytes == 26) { header[24] = tid | (flags & BIT(20) ? 0x10 : 0) | (flags & BIT(21) ? 0x80 : 0) | (flags & BIT(13) ? 0x20 : 0); header[25] = 0; }
+			u8 *llc = header + header_bytes;
+			llc[0] = llc[1] = 0xaa; llc[2] = 3;
+			llc[3] = llc[4] = llc[5] = 0;
+			llc[6] = ethernet[12]; llc[7] = ethernet[13];
+			address(page + used, mailbox[14] + id * 128, header_bytes + (flags & BIT(21) ? 0 : 8), 0);
+			used += 6; count++;
+			mailbox[18] = id; mailbox[19] = flags; mailbox[20] = packet;
+			mailbox[21] = request[8];
 		}
-		while (bytes) {
-			u32 length = bytes > 2047 ? 2047 : bytes;
-			u32 last = segment + 1 == segments && bytes == length;
-			page[used] = length;
-			page[used + 1] = length >> 8 | last << 7;
-			unaligned_word(page + used + 2, address);
-			used += 6; count++; address += length; bytes -= length;
+		for (u32 segment = 0; segment < segments; segment++) {
+			u32 address = request[8 + segment * 2];
+			u32 bytes = request[9 + segment * 2];
+			if (!segment && flags & BIT(18)) { address += 14; bytes -= 14; }
+			if (!segment && flags & BIT(22)) {
+				u32 header_bytes = (packet >> 16) & 63;
+				address += header_bytes; bytes -= header_bytes;
+			}
+			while (bytes) {
+				u32 length = bytes > 2047 ? 2047 : bytes;
+				u32 last = segment + 1 == segments && bytes == length;
+				page[used] = length;
+				page[used + 1] = length >> 8 | last << 7;
+				unaligned_word(page + used + 2, address);
+				used += 6; count++; address += length; bytes -= length;
+			}
 		}
 	}
 	/* A header-only ARM frame also needs a terminating address entry. */
@@ -405,15 +524,16 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	word(page, dw0); word(page + 4, dw1);
 	word(page + 8, (flags & 0x7f000000) | (ring < 4 ? ring : ring == 4 ? 0x12 : 0x11) << 17 |
 		((flags & BIT(12)) ? BIT(23) : 0) | (packet & 0x3fff));
-	/* C can stop completing mixed-size A-MPDUs at a large-to-small
-	 * boundary. Keep A-MSDU and break only the enclosing A-MPDU here.
-	 * A peer/TID change must not hide a decrease in an interleaved queue. */
+	/* C peer preload avoids the reproduced mixed-length stall. Without it,
+	 * retain the old length boundary guard against zero-packet TX stalls.
+	 * Record every descriptor, including ARM frames sharing this DMA ring. */
 	u32 context = (flags & 0x7f000000) | (flags & BIT(12)) << 11;
-	u32 previous = mailbox[RTL_AX_TX_LAST_PACKET + ring];
-	u32 bytes = packet & 0x3fff;
+	u32 previous = mailbox[RTL_AX_TX_LAST_PACKET + ring], bytes = packet & 0x3fff;
+	u32 boundary = (previous & ~0x3fffU) != context ||
+		(!(aggregation & RTL_AX_TX_AGG_PRELOAD) && bytes < (previous & 0x3fff));
 	mailbox[RTL_AX_TX_LAST_PACKET + ring] = context | bytes;
 	word(page + 12, sequence | (aggregate ? BIT(12) : BIT(13)) |
-		(bytes < (previous & 0x3fff) || (previous & ~0x3fffU) != context ? BIT(13) : 0));
+		(boundary ? BIT(13) : 0));
 	word(page + 16, dw4); word(page + 20, dw5);
 	word(page + 28, (rate & BIT(20) ? 0 : BIT(31)) | ((rate >> 16) & 3) << 28 |
 		((rate >> 12) & 7) << 25 | (rate & 0x1ff) << 16);
@@ -422,7 +542,7 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 		(rate & BIT(21) ? BIT(11) : 0));
 	/* Original TXSC keeps oversized MPDU retries within their PHY family. */
 	word(page + 36, ((flags & BIT(14)) ? BIT(11) : 0) | (aggregate ? (aggregate - 1) & 255 : 0) |
-		(bytes > 2300 ? (rate & 0x180U) << 16 : 0));
+		((packet & 0x3fff) > 2300 ? (rate & 0x180U) << 16 : 0));
 	word(page + 40, dw10);
 	word(page + 48, rate & BIT(22) ? BIT(27) | BIT(31) : 0);
 	if (flags & BIT(17)) {
@@ -431,7 +551,7 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 		for (u32 i = 0; i < 14; i++) checksum ^= page_words[i] ^ (page_words[i] >> 16);
 		page[16] = checksum; page[17] = checksum >> 8;
 	}
-	word(page + 56, 0x8000 | id | ((flags & BIT(12)) ? BIT(14) : 0));
+	word(page + 56, 0x8000 | pe_wp_take(memory, ring, id) | ((flags & BIT(12)) ? BIT(14) : 0));
 	if (!ni_packet && (flags & (BIT(18) | BIT(22))))
 		header_copy(uncached(mailbox[14] + id * 128), header,
 			((packet >> 16) & 63) + (flags & BIT(18) ? 8 : 0));
@@ -513,7 +633,7 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 		}
 		if (request[0] >= 256) {
 			u32 id = request[0] - 256;
-			u32 *owners = (void *)(memory + 0xc400);
+			u32 *owners = (void *)(memory + RTL_AX_NI_OWNERS);
 			if (((request[2] >> 16) & 63) == 24) {
 				const u32 *waiting = uncached(owners[id * 2]);
 				volatile struct rtl_seq_shared *s = (void *)(memory + RTL_SEQ_BASE);
@@ -526,8 +646,8 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 				 * second stale request waits for a disabled recycler. */
 				u32 completed = mailbox[45];
 				owners[id * 2 + 1] |= BIT(31);
-				*(u32 *)(memory + 0xc800 + completed * 4) = id;
-				sync(); mailbox[45] = (completed + 1) & 127;
+				*(u32 *)(memory + RTL_AX_NI_COMPLETIONS + completed * 4) = id;
+				sync(); mailbox[45] = (completed + 1) & RTL_AX_NI_COMPLETION_MASK;
 				mailbox[63]++;
 				read = (read + 1) & 15;
 				continue;
@@ -542,7 +662,7 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 			room[ring] = (hardware - producer - 1) & 255;
 			checked |= BIT(ring);
 		}
-		if (!room[ring]) break;
+		if (!room[ring] || !pe_wp_available(memory, ring)) break;
 		if (seq && !(seq & RTL_SEQ_ASSIGNED)) {
 			u32 sequence, status = pe_sequence_next(memory, seq, &sequence);
 			if (!status) break;
@@ -606,7 +726,7 @@ static void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mail
 static void __attribute__((section(".rxq"), noinline)) ni_recycle(volatile u32 *mailbox, u8 *memory)
 {
 	volatile u32 *ni = (void *)0xb0000000;
-	volatile u32 *owners = (void *)(memory + 0xc400);
+	volatile u32 *owners = (void *)(memory + RTL_AX_NI_OWNERS);
 	/* ARM changes the EQ/CPU assignment only while this radio is paused. */
 	u32 eq = mailbox[117];
 	volatile u32 *push = ni + mailbox[116] / 4;
@@ -616,7 +736,7 @@ static void __attribute__((section(".rxq"), noinline)) ni_recycle(volatile u32 *
 		u32 dropped = mailbox[47], consumer = mailbox[46];
 		if (!dropped && consumer == mailbox[45]) break;
 		sync();
-		u32 id = dropped ? dropped - 1 : *(u32 *)(memory + 0xc800 + consumer * 4);
+		u32 id = dropped ? dropped - 1 : *(u32 *)(memory + RTL_AX_NI_COMPLETIONS + consumer * 4);
 		u32 buffer = owners[id * 2], returned = 0;
 		/* PE1 alone pushes to this EQ. Carry unused credit across this
 		 * call's MPDUs; every accepted PUSH consumes one sampled BID. */
@@ -649,7 +769,7 @@ static void __attribute__((section(".rxq"), noinline)) ni_recycle(volatile u32 *
 #ifdef PE_UPLINK
 		u32 macid = (owners[id * 2 + 1] >> 8) & 127;
 		if (macid) {
-			u32 tid = *(u32 *)(memory + NI_WAIT + id * 16 + 12) & 7;
+			u32 tid = *(u32 *)(memory + RTL_AX_NI_TIDS + id * 4) & 7;
 			*(u32 *)(memory + NI_TID_PENDING + (macid * 8 + tid) * 4) -= returned;
 			ni_peer_event(mailbox, memory, macid);
 		}
@@ -658,7 +778,13 @@ static void __attribute__((section(".rxq"), noinline)) ni_recycle(volatile u32 *
 		owners[id * 2 + 1] = 0;
 		released++;
 		if (dropped) mailbox[47] = 0;
-		else mailbox[46] = (consumer + 1) & 127;
+		else {
+			pe_wp_release(memory, *(u32 *)(memory + RTL_AX_NI_COOKIES + id * 4));
+			u32 *state = (void *)(memory + RTL_AX_TX_OWNER_STATE);
+			((u16 *)(memory + RTL_AX_NI_FREE))[state[1] & (RTL_AX_NI_REQUESTS - 1)] = id;
+			state[1]++;
+			mailbox[46] = (consumer + 1) & RTL_AX_NI_COMPLETION_MASK;
+		}
 	}
 	/* PE1 alone selects/recycles WPs; flush totals before selection resumes. */
 	if (recycled) mailbox[29] += recycled;
@@ -745,7 +871,7 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 #endif
 		#ifndef PE_UPLINK
 		volatile u32 *ni = (void *)0xb0000000;
-		volatile u32 *owners = (void *)(memory + 0xc400);
+		volatile u32 *owners = (void *)(memory + RTL_AX_NI_OWNERS);
 #endif
 		if (!(command & 1)) {
 			continue;
@@ -808,9 +934,10 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 			if (consumer == arm_producer) {
 				if (!mailbox[24]) goto publish_tx;
 #ifdef PE_UPLINK
-				/* One 16-entry ingest can feed two 8-frame selections.
-				 * Refill early if the queue has run dry. */
-				if (!(burst & 1) || mailbox[38] < 8)
+				/* Admit enough MSDUs for one bounded publish turn, sharing
+				 * queue accounting and the TSF read across its MPDUs.
+				 * Refill early when this turn has consumed its input. */
+				if (!burst || mailbox[38] < 8)
 					ni_ingest(mailbox, memory);
 				ni_frames = ni_select(mailbox, memory, ni_request);
 				if (!ni_frames) goto publish_tx;
@@ -819,15 +946,13 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 				mailbox[38] = queued;
 				volatile u32 *ps = (void *)(memory + 0xe800 + mailbox[27] * 16);
 				ni_buffered_event(mailbox, queued && ps[0] && mailbox[62] != mailbox[27]);
-				if (!queued || mailbox[30] >= 124 || mailbox[47]) continue;
+				if (!queued || !ni_owner_available(memory) || mailbox[47]) continue;
 				u32 asleep = ps[0], grant = ps[1];
 				u32 retired = mailbox[62] == mailbox[27];
 				if (!asleep) ps[2] = grant;
 				if (!retired && asleep && grant == ps[2]) continue;
 				sync();
-				u32 id;
-				for (id = 0; id < 128 && owners[id * 2]; id++);
-				if (id == 128) continue;
+				u32 id = RTL_AX_NI_DISCARD;
 				const u32 *entry = uncached(mailbox[25] + mailbox[26]);
 				ni_buffer = entry[0] & 0xffffff80;
 				u32 header, length = ni_length(entry, ni_buffer, &header, 0);
@@ -845,6 +970,9 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 					if (mailbox[78]) pe_event(mailbox);
 					continue;
 				}
+				/* Reserve the tag before consuming an EPP in the direct path. */
+				if (!pe_wp_available(memory, 0)) continue;
+				id = ni_owner(memory);
 				const u32 *peer = (void *)(memory + 0xd000 + mailbox[27] * 32);
 				for (u32 i = 0; i < 8; i++) ni_request[i] = peer[i];
 				ni_request[4] &= ~0x1fffU;
@@ -852,7 +980,7 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 					ni_request[4] |= (queued > 1 || (ps[3] & 2) ? BIT(19) : 0) |
 						(ps[3] & 1 ? BIT(20) : 0);
 					ps[2] = grant;
-					*(u32 *)(memory + RTL_AX_NI_PS_WP_GENERATION + id * 4) = grant;
+					*(u32 *)(memory + RTL_AX_NI_GENERATIONS + id * 4) = grant;
 					mailbox[39]++;
 				}
 				ni_request[0] = 256 + id;
@@ -912,7 +1040,9 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 			}
 #else
 			{
-				u32 next, ring = pe_build_tx(mailbox, memory, request, &next);
+				u32 ring = request[1] & 7, next;
+				if (!ni_packet && !pe_wp_available(memory, ring)) continue;
+				pe_build_tx(mailbox, memory, request, &next);
 				producers[ring] = next; publish |= BIT(ring);
 			}
 #endif

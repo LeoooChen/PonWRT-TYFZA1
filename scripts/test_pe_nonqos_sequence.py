@@ -51,6 +51,10 @@ for start in (0, 1, 4094, 4095):
             # No TXBD credit must not consume a sequence.
             m.put(bar + 0x1058, 1 << 16); publish(m)
             assert m.get(SEQ + 16) == start and not m.get(mb + 194 * 4)
+            # Independent hardware-tag exhaustion also precedes allocation.
+            m.put(bar + 0x1058, 0); m.put(base + 0x3400c, 1); publish(m)
+            assert m.get(SEQ + 16) == start and not m.get(mb + 194 * 4)
+            m.put(base + 0x3400c, 0)
             # ARM in its allocation section: PE yields without spinning.
             m.put(bar + 0x1058, 0); m.put(SEQ + 4, 1); publish(m)
             assert m.get(SEQ + 16) == start and not m.get(SEQ + 8)
@@ -74,17 +78,17 @@ for start in (0, 1, 4094, 4095):
             assert not m.get(base + 0x10020)  # No per-TID counter consumption.
             # Actual RPQ loop marks the WP before EQ returns its BID.
             raw = struct.pack('<II', 24 | 0xc000 | 1 << 16, 7 << 24 | 4)
-            raw += bytes(12) + struct.pack('<I', 1 | 256 << 16)
+            raw += bytes(12) + struct.pack('<I', 1 | (m.get(PAGES + 56) & 4095) << 16)
             m.u.mem_write(REPORTS, raw); m.put(bar + 0x121c, 1 << 16)
             from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_SP
             m.u.mem_map(0x10020000, 0x1000)
             m.put(mb + 3 * 4, 1); m.put(mb + 140 * 4, mb | 0xa0000000); m.put(mb + 142 * 4, 1)
             m.u.reg_write(UC_MIPS_REG_A0, mb | 0xa0000000); m.u.reg_write(UC_MIPS_REG_SP, 0xa7e01ff0)
             m.u.emu_start(env['symbols']['pe_main'], 0x9fc0fff0, count=20000)
-            assert m.get(base + 0xc404) & 1 << 31 and m.get(base + 0xc400) == payload
+            assert m.get(base + 0x20004) & 1 << 31 and m.get(base + 0x20000) == payload
             m.put(ni + 0x6340, 1); m.put(ni + 0x6380, 1 << 31)
             m.call('ni_recycle', mb, base)
-            assert not m.get(base + 0xc400) and not m.get(mb + 30 * 4)
+            assert not m.get(base + 0x20000) and not m.get(mb + 30 * 4)
             assert m.get(SEQ + 16) == (start + 2) & 4095
             cases += 1
 
@@ -109,7 +113,7 @@ for phase in ('queue', 'selected', 'pn_stall', 'pn_retry'):
     m.put(SEQ, 28)
     if phase == 'queue':
         assert not m.call('ni_select', mb, base, requests)
-        assert m.get(mb + 47 * 4) == 1
+        assert m.get(mb + 47 * 4) == 2049
     else:
         publish(m)
         assert m.get(mb + 194 * 4) == 1 and m.get(mb + 45 * 4) == 1

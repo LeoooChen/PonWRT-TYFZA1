@@ -11,6 +11,7 @@ sys.path.insert(0,str(root/'analysis/python-deps'))
 from unicorn import Uc,UC_ARCH_MIPS,UC_MODE_MIPS32,UC_MODE_LITTLE_ENDIAN,UC_HOOK_MEM_READ
 from unicorn.mips_const import UC_MIPS_REG_A0,UC_MIPS_REG_SP,UC_MIPS_REG_RA,UC_MIPS_REG_V0
 from test_pe_downlink_gather import case
+from pe_tx_ownership_fixture import initialize
 
 directory=Path(sys.argv[1]);binary=(directory/'pe-tx.bin').read_bytes()
 symbols={s[2]:int(s[0],16) for line in subprocess.check_output(['llvm-nm-18',str(directory/'pe-wd.elf')],text=True).splitlines() if len(s:=line.split())==3}
@@ -19,8 +20,9 @@ peer=bytes.fromhex('020000000002');group=bytes.fromhex('01005e010203')
 class Machine:
     def __init__(self,tid=0,mode=0,ipv6=False,full=True,client=False,dscp=46):
         self.u=Uc(UC_ARCH_MIPS,UC_MODE_MIPS32|UC_MODE_LITTLE_ENDIAN)
-        for address,size in ((0x1fc00000,0x10000),(base,0x20000),(ni,0x10000),(bar,0x10000),(epp,0x10000),(payload,0x4000),(table,0x7000),(requests,0x2000),(0x07e00000,0x4000)):
+        for address,size in ((0x1fc00000,0x10000),(base,0x80000),(ni,0x10000),(bar,0x10000),(epp,0x10000),(payload,0x4000),(table,0x7000),(requests,0x2000),(0x07e00000,0x4000)):
             self.u.mem_map(address,size)
+        initialize(self.u,base)
         self.u.mem_write(0x1fc00000,binary);self.header=16 if full else 8
         self.frame=bytearray(group+bytes.fromhex('020000000001')+(b'\x86\xdd' if ipv6 else b'\x08\x00')+bytes(70))
         self.frame[14]=0x60 if ipv6 else 0x45
@@ -157,9 +159,9 @@ for mutation in range(3):
 # Never overwrite a retained discard WP when an old generation is closed.
 m=Machine();m.ingest();m.put(table,0);m.put(mb+47*4,8)
 assert not m.call('ni_select',mb,base,requests)
-assert m.get(mb+47*4)==8 and m.get(mb+38*4)==1 and not m.get(base+0xc400)
+assert m.get(mb+47*4)==8 and m.get(mb+38*4)==1 and not m.get(base+0x20000)
 m.put(mb+47*4,0);m.call('ni_select',mb,base,requests)
-assert m.get(mb+47*4)==1 and not m.get(mb+38*4);vectors+=1
+assert m.get(mb+47*4)==2049 and not m.get(mb+38*4);vectors+=1
 # A closed generation must discard queued sleepers and already selected WPs.
 for pending in (False,True,2):
     m=Machine();m.ingest();m.put(bar+0xc438,4000)
@@ -175,12 +177,12 @@ for pending in (False,True,2):
         m.put(base+0xe810,1) # No PS grant; stale copies still retire.
         m.call('ni_select',mb,base,requests)
         assert not m.get(mb+38*4)
-    assert (m.get(mb+45*4) if pending else m.get(mb+47*4)) and m.get(base+0xc404)&1<<31
+    assert (m.get(mb+45*4) if pending else m.get(mb+47*4)) and m.get(base+0x20004+(0 if pending else 2048*8))&1<<31
     # Return exactly this dropped BID after the hardware push reg gains credit.
     m.put(mb+116*4,0x6380);m.put(mb+117*4,6)
-    m.call('ni_recycle',mb,base);assert m.get(base+0xc400)==payload
+    m.call('ni_recycle',mb,base);assert m.get(base+0x20000+(0 if pending else 2048*8))==payload
     m.put(ni+0x6340,1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
-    assert not m.get(mb+47*4) and not m.get(base+0xc400) and m.get(ni+0x6384)==payload|6
+    assert not m.get(mb+47*4) and not m.get(base+0x20000+(0 if pending else 2048*8)) and m.get(ni+0x6384)==payload|6
     vectors+=1
 # Same peer with different owners must not enter one A-MSDU. Otherwise a
 # selected aggregate could retain a revoked second owner's packet.

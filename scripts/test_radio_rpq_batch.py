@@ -27,9 +27,9 @@ code=r'''
 typedef uint8_t u8; typedef uint16_t __le16; typedef uint32_t u32; typedef uint64_t u64;
 #define BIT(x) (1U<<(x))
 #define RTL_AX_TX_ENTRIES 256
-#define RTL_AX_TX_PAGES 384
+#define RTL_AX_TX_PAGES RTL_AX_NI_ID_END
 #define RTL_AX_TX_RINGS 6
-#define RTL_AX_NI_PS_WP_GENERATION 0x15000
+
 #define PE_PROBE_MAILBOX 0x2000
 #define NL80211_BAND_5GHZ 1
 #define IEEE80211_TX_CTL_HW_80211_ENCAP BIT(0)
@@ -74,6 +74,9 @@ static void rcu_read_unlock(void){assert(rcu);rcu--;}
 #define test_bit(id,p) ((p)[id])
 #define __clear_bit(id,p) ((p)[id]=false)
 static u32 get_unaligned_le32(const void*p){u32 v;memcpy(&v,p,4);return v;}
+static void put_unaligned_le32(u32 v,void *p){memcpy(p,&v,4);}
+static void put_unaligned_le16(__le16 v,void *p){memcpy(p,&v,2);}
+static void dma_wmb(void);
 static __le16 get_unaligned(const __le16*p){__le16 v;memcpy(&v,p,2);return v;}
 #define rtl_ax_ap_read32(p) get_unaligned_le32(p)
 static void schedule_work(void*p){(void)p;scheduled++;}
@@ -93,14 +96,16 @@ static unsigned sw_freed,fttr_puts;
 static void rtl9617c_fttr_tx_put(u64 generation){if(generation){assert(unmaps==returns+sw_freed&&unmaps>fttr_puts);fttr_puts++;}}
 static void ieee80211_free_txskb(struct ieee80211_hw*h,struct sk_buff*s){assert(h&&s&&bh&&!locks);sw_freed++;}
 '''
+code+=(path.parent/'tx-ownership.h').read_text()
 code+=before.replace('int rtl_ax_tx_report(', 'static int old_report(')+'\n'
 code+=after.replace('int rtl_ax_tx_report(', 'static int new_report(')+'\n'
 code+=r'''
+static void dma_wmb(void){}
 struct result {struct ewma_rtl_ax_success peer_success[128];unsigned completed,occupied,unmatched,polluted,queue_wakes,ni_reports,ni_failed,ampdu;
  unsigned completed_ring[6],status_count[8],flags[256],seq[256];
  unsigned wakes,unmaps,returns,raws,pe_done,ps_done,scheduled,waiters,lookups;};
 static struct result run(bool batching,unsigned count,unsigned mode){
- static u8 mem[0x20000],headers[256*128];static struct sk_buff skbs[256];
+ static u8 mem[0x80000],headers[256*128];static struct sk_buff skbs[256];
  static u32 reports[264];struct ieee80211_hw hw={};struct rtl_ax_tx t={.pe_active=true,.running=true,.queues_stopped=true,.hw=&hw,.pe={mem},.headers=headers};
  memset(mem,0,sizeof(mem));memset(headers,0,sizeof(headers));memset(skbs,0,sizeof(skbs));
  bh=rcu=locks=wakes=unmaps=returns=raws=pe_done=ps_done=scheduled=waiters=lookups=dispatches=0;
@@ -110,6 +115,7 @@ static struct result run(bool batching,unsigned count,unsigned mode){
  for(unsigned n=0;n<count;n++){
   unsigned ring=n%6,qsel=ring<4?ring:ring==4?18:17,status=(mode&8)?n%8:0;
   reports[n]=1|qsel<<8|status<<13|n<<16|((mode&16)&&n%3==0?BIT(31):0);
+  put_unaligned_le32(n+1,mem+RTL_AX_WP_TAG_MAP+(ring*4096+n)*4);
   skbs[n].data[0]=n;
   skbs[n].cb.flags=((mode&32)&&n%2?0:IEEE80211_TX_CTL_HW_80211_ENCAP)|((n%3)?IEEE80211_TX_CTL_AMPDU:0)|((n%5)?0:IEEE80211_TX_CTL_NO_ACK);
   t.slots[n]=(struct rtl_ax_tx_slot){.skb=&skbs[n],.fttr_generation=2,.ring=ring,.macid=n%128,.pe_sequence=(n%2)==1};t.pending[n]=true;
@@ -119,8 +125,9 @@ static struct result run(bool batching,unsigned count,unsigned mode){
  reports[count]=1|400<<16;reports[count+1]=1|7<<8|254<<16;
  reports[count+2]=count?reports[0]:1; // duplicate or empty pending ID
  unsigned member=127,meta=(3<<8)|BIT(16),generation=77,rate=BIT(20)|0x80;
- memcpy(mem+0xc400+member*8+4,&meta,4);memcpy(mem+RTL_AX_NI_PS_WP_GENERATION+member*4,&generation,4);memcpy(mem+0xe000+member*4,&rate,4);
+ memcpy(mem+RTL_AX_NI_OWNERS+member*8+4,&meta,4);memcpy(mem+RTL_AX_NI_GENERATIONS+member*4,&generation,4);memcpy(mem+RTL_AX_NI_RATES+member*4,&rate,4);
  reports[count+3]=1|383<<16;
+ put_unaligned_le32(384,mem+RTL_AX_WP_TAG_MAP+383*4);
  struct rtl_ax_rx_packet packet={.bytes=(count+4)*4+(mode%4),.payload=(void*)reports};
  assert(!(batching?new_report(&t,&hw,&packet):old_report(&t,&hw,&packet)));
  assert(fttr_puts==count);

@@ -104,11 +104,14 @@ static inline int rtl_ax_dle_scc(const struct rtl_ax_io *io)
 	return ret;
 }
 
-static inline void rtl_ax_preload_scc(const struct rtl_ax_io *io)
+static inline void rtl_ax_preload_scc(const struct rtl_ax_io *io, unsigned int chip)
 {
 	/* Original preload_init_set(BAND0,SCC). Keep both CAM entry fields. */
 	rtl_ax_update32(io, 0x9f48, 0x03ff0000, 0x82080000);
 	rtl_ax_update32(io, 0x9f4c, 0x00000fff, 0x00000134);
+	/* Four C peers, two entries each; never repartition active preload CAM. */
+	if (chip == RTL_AX_8852C)
+		rtl_ax_update32(io, 0x9f48, 0x00001f1f, 0x00000208);
 }
 
 static inline void rtl_ax_hfc_scc(const struct rtl_ax_io *io, unsigned int chip)
@@ -151,7 +154,7 @@ static inline int rtl_ax_mac_memory_start(const struct rtl_ax_io *io,
 	ret = rtl_ax_dle_scc(io);
 	if (ret)
 		return ret;
-	rtl_ax_preload_scc(io);
+	rtl_ax_preload_scc(io, chip);
 	rtl_ax_hfc_scc(io, chip);
 	return 0;
 }

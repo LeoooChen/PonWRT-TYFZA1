@@ -37,7 +37,7 @@ code += source[start:end]
 code += r'''
 static void put(void *p,u32 v){memcpy(p,&v,4);}
 int main(void){
- static u8 memory[0x20000];static struct sk_buff skbs[256];
+ static u8 memory[0x80000];static struct sk_buff skbs[256];
  struct ieee80211_hw hw={};unsigned cases=0;
  for(unsigned released=0;released<=256;released++) {
   memset(memory,0,sizeof(memory));memset(skbs,0,sizeof(skbs));
@@ -48,6 +48,8 @@ int main(void){
    skbs[id].data[0]=id;skbs[id].rtl9617c_fttr_generation=2;
    skbs[id].cb.flags=IEEE80211_TX_CTL_HW_80211_ENCAP|IEEE80211_TX_CTL_AMPDU|IEEE80211_TX_STAT_ACK;
    t.pending[id]=true;t.slots[id]=(struct rtl_ax_tx_slot){.skb=&skbs[id],.fttr_generation=2,.ring=id%6,.macid=id%128,.pe_sequence=true};
+   /* The same numeric hardware tag can belong to another live packet. */
+   put_unaligned_le32(256, memory+RTL_AX_WP_TAG_MAP+((id%6)*4096+id)*4);
    if(id<released)put(memory+RTL_FTTR_PE_DISCARD+id*4,1);
   }
   /* No headers allocation: canceled requests never produced sequence data. */
@@ -60,6 +62,7 @@ int main(void){
    assert(!get_unaligned_le32(memory+RTL_FTTR_PE_DISCARD+id*4));
    assert(t.pending[id]==(id>=released));
    assert(!t.peer_success[id%128].calls);
+   assert(get_unaligned_le32(memory+RTL_AX_WP_TAG_MAP+((id%6)*4096+id)*4)==256);
   }
   /* A completed WP reused by a non-FTTR skb must not be polled/dropped. */
   if(released) {

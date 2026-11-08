@@ -51,23 +51,23 @@ static void iounmap(void *p){(void)p;released++;}
 '''
 test = r'''
 int main(void){
- unsigned char memory[0x20000]={0},registers[0x10000]={0},dma[0x1000]={0};
+ unsigned char memory[0x80000]={0},registers[0x10000]={0},dma[0x1000]={0};
  struct rtl_ax_tx tx={.pe={memory},.ni={.active=true,.cpu=3,.regs=registers,.dma=dma}};
  put_unaligned_le32(1,memory+0x2078);
- put_unaligned_le32(0x6000000,memory+0xc400);
+ put_unaligned_le32(0x6000000,memory+0x20000);
  int ret=ni_test_release(&tx);
 #ifdef EXPECT_OLD
  assert(ret==0 && !tx.ni.active && released==2 && restored==1);
- assert(get_unaligned_le32(memory+0xc400)==0x6000000);
+ assert(get_unaligned_le32(memory+0x20000)==0x6000000);
  puts("REPRODUCED: release succeeded and unmapped NI with an unrecycled WP/BID");
 #else
  assert(ret==-EBUSY && tx.ni.active && !released && !stopped && !restored);
- assert(get_unaligned_le32(memory+0xc400)==0x6000000);
+ assert(get_unaligned_le32(memory+0x20000)==0x6000000);
  /* A completed WP whose last BID still awaits EQ credit must also remain. */
- put_unaligned_le32(BIT(31),memory+0xc404);
+ put_unaligned_le32(BIT(31),memory+0x20004);
  assert(ni_test_release(&tx)==-EBUSY && !released);
  /* Actual RPQ/EQ completion permits normal release. */
- put_unaligned_le32(0,memory+0x2078);put_unaligned_le32(0,memory+0xc400);
+ put_unaligned_le32(0,memory+0x2078);put_unaligned_le32(0,memory+0x20000);
  uplink_error=-ETIMEDOUT;
  assert(ni_test_release(&tx)==-ETIMEDOUT && tx.ni.active && !released && !restored);
  uplink_error=0;rpq_error=-ETIMEDOUT;

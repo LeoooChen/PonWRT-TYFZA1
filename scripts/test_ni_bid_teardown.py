@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess,tempfile
 ROOT=Path(__file__).resolve().parents[1]
 p=ROOT/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/ni-test.h'
-s=p.read_text();a=s.index('static int ni_test_remove(');a=s.index('\tfor (i = 0; i < 128; i++) {',a);b=s.index('\tni_restore_registers(tx);',a)
+s=p.read_text();a=s.index('static int ni_test_remove(');a=s.index('\tfor (i = 0; i < RTL_AX_NI_OWNER_SLOTS; i++) {',a);b=s.index('\tni_restore_registers(tx);',a)
 common=r'''
 #include <assert.h>
 #include <errno.h>
@@ -19,6 +19,7 @@ typedef uint32_t u32;
 #define cpu_to_le32(v) (v)
 #define le32_to_cpu(v) (v)
 #include "linux/rtl9617c-fttr-pe.h"
+#include "tx-ownership.h"
 struct rtl_ax_tx {void *dma_device;struct {void *memory;} pe;struct {void *regs;unsigned cpu,eq;} ni;};
 static unsigned char payloads[5*128];
 static unsigned returned[5],count,limit;
@@ -35,24 +36,25 @@ test=r'''
 return 0;
 }
 int main(void) {
+ for(unsigned owner=0;owner<=RTL_AX_NI_DISCARD;owner+=1024)
  for(unsigned stop=0;stop<5;stop+=(stop?3:1)) {
-  unsigned char memory[0x20000]={0},registers[0x10000]={0};
+  unsigned char memory[0x80000]={0},registers[0x10000]={0};
   struct rtl_ax_tx tx={.pe={memory},.ni={.regs=registers,.cpu=3,.eq=6}};
   memset(payloads,0,sizeof(payloads));count=0;limit=stop;
   struct rtl_fttr_pe_drain *drain=(void *)(memory+RTL_FTTR_PE_DRAIN);drain->pending=3;
   for(unsigned i=0;i<5;i+=2)put_unaligned_le32(2,phys_to_virt(0x6000000+i*128)+20);
-  put_unaligned_le32(0x6000000,memory+0xc400);
+  put_unaligned_le32(0x6000000,memory+RTL_AX_NI_OWNERS+owner*8);
   put_unaligned_le32(0x6000080,phys_to_virt(0x6000000));
   put_unaligned_le32(0x6000100,phys_to_virt(0x6000080));
   put_unaligned_le32(0x6000180,memory+0x15000);
   put_unaligned_le32(0x6000200,phys_to_virt(0x6000180));
   assert(cleanup(&tx)==-ETIMEDOUT && count==stop);assert(drain->pending==3-(stop+1)/2);
-  unsigned owned=get_unaligned_le32(memory+0xc400),queued=get_unaligned_le32(memory+0x15000);
+  unsigned owned=get_unaligned_le32(memory+RTL_AX_NI_OWNERS+owner*8),queued=get_unaligned_le32(memory+0x15000);
   assert(owned==(stop<3?0x6000000+stop*128:0));
   assert(queued==(stop<3?0x6000180:0x6000000+stop*128));
   limit=5;assert(!cleanup(&tx) && count==5&&!drain->pending);
   for(unsigned i=0;i<5;i++)assert(returned[i]==0x6000000+i*128);
-  assert(!get_unaligned_le32(memory+0xc400) && !get_unaligned_le32(memory+0x15000));
+  assert(!get_unaligned_le32(memory+RTL_AX_NI_OWNERS+owner*8) && !get_unaligned_le32(memory+0x15000));
   assert(!cleanup(&tx) && count==5);
  }
  puts("Forced NI teardown: complete aggregate and queued BID chains; EQ timeout retains the remaining head; retry never reads or returns reused BIDs");
@@ -60,5 +62,5 @@ int main(void) {
 '''
 with tempfile.TemporaryDirectory(prefix='ni-bid-teardown-',dir=ROOT/'artifacts') as tmp:
  tmp=Path(tmp);c=tmp/'test.c';c.write_text(common+s[a:b]+test)
- subprocess.run(['cc','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+str(ROOT/'port/overlay/target/linux/rtl9617c/files-6.18/include'),str(c),'-o',str(tmp/'test')],check=True)
+ subprocess.run(['cc','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+str(p.parent),'-I'+str(ROOT/'port/overlay/target/linux/rtl9617c/files-6.18/include'),str(c),'-o',str(tmp/'test')],check=True)
  subprocess.run([str(tmp/'test')],check=True)

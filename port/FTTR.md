@@ -5290,6 +5290,56 @@ required. These offline checks do not prove physical interconnect ordering,
 RF ordering or full upstream packet retirement; hardware IDs stay quarantined.
 No physical device was accessed.
 
+### Main alignment with independent radio TX ownership
+
+The worktree incorporates local main`2ad19d9` after the shared-sequence
+increment. Its guarded AP preload,2048/1024 NI request pools, per-channel
+hardware WP tags,4096-entry completion ring,512KiB TX contexts, bounded
+64-MSDU admission and separate NI payload builder are integrated. The
+original main rationale and validation limits are retained in
+`docs/wifi-downlink-retained-fixes-20261108.md`; this integration did not
+repeat or extend its physical performance claims.
+
+FTTR's generation, immutable multicast cookie, shared GTK PN and non-QoS
+sequence checks remain in front of publication. The new NI payload builder
+retains the FTTR branch's STA source/RA/DA and no-ACK semantics and uses the
+shared interface sequence for non-QoS. Hardware tag availability now precedes
+sequence/PN allocation, just like TXBD credit. All owner/rate/TID/grant and
+completion accesses, including ARM forced teardown and peer/key waits, use
+the expanded tables.
+
+Two integration errors were reproduced and fixed. A selected NI request
+withdrawn before publication has no WP tag: allocation initializes its cookie
+to an invalid sentinel, and final EQ recycling returns its software credit
+without releasing another request's tag0. CPU unpublished-discard reports
+already contain software IDs and therefore bypass hardware-tag translation;
+otherwise the FTTR worker cannot return its skb/DMA/reference ownership.
+
+Linked-MIPS checks cover6144 submissions/2048 in flight and5120/1024,
+random RPQ order, tag4094/zero wrap,4096 completion wrap and EQ credit failure.
+The251 FTTR NI cases include high request IDs, an unpublished completion
+at the wrap boundary and preservation of another CPU tag0 owner. The257 ARM
+discard batches verify that unrelated tag mappings stay untouched. Existing
+265 multicast plus12 full encrypted cases,24 non-QoS cases,21 GTK publisher
+cases,69 CPU FTTR generation cases,1024 MPDU/2048 BID RPQ cases, full payload
+and opaque host-DMA cases pass. ARM RPQ16448 cases,16896 request recipes,
+preload/STA/mesh/key/NI lifecycle, forced teardown (including the dedicated
+discard slot), bridge learner and shared PN/sequence regressions pass.
+
+The integrated PE_UPLINK firmware is30740 bytes, SHA256
+`9f5052764cfae4e98fcb36978c6a902e2533c63396f14aa6250d9ee01aed9b2a`;
+the conservative sum of all stack frames is7048 of8192 bytes. The alternate
+direct firmware also builds (14200 bytes). Image/modules build and66 radio
+source/header comparisons pass; local evidence is in
+`artifacts/fttr/main-align-kernel-final-20261108.log` and
+`artifacts/fttr/main-align-identity-20261108.json`. Ordinary kernel modpost
+MODULE_DESCRIPTION warnings remain. No physical device was accessed.
+
+This alignment preserves the pending direct AP BCMC implementation work.
+Independent radio request/tag reuse follows RPQ/EQ ownership; it does not
+prove upstream FTTR multicast/GEM retirement or justify releasing their
+quarantined hardware IDs.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN
