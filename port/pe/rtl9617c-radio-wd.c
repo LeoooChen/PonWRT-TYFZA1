@@ -201,6 +201,20 @@ static void pe_wp_release(u8 *memory, u32 cookie)
 		state[3] = (state[3] + 1) % RTL_AX_WP_TAGS;
 	}
 }
+/* A software-canceled selected request has consumed its PS grant just like
+ * a submitted WP. Complete only that generation, independent of EQ credit.
+ */
+static void __attribute__((noinline)) ni_ps_complete(
+	u8 *memory, u32 macid, u32 generation)
+{
+	volatile u32 *ps = (void *)(memory + 0xe800 + macid * 16);
+	if (generation != ps[1]) return;
+	volatile u32 *record = (void *)(memory + RTL_AX_NI_PS_DONE + macid * 8);
+	record[0] = generation;
+	sync(); record[1]++;
+	pe_event((void *)(memory + MAILBOX_OFFSET));
+}
+
 static u32 pe_report_ring(u32 report)
 {
 	u32 qsel = (report >> 8) & 31;
@@ -275,13 +289,7 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 			}
 			if (details & BIT(16)) {
 				u32 generation = *(u32 *)(memory + RTL_AX_NI_GENERATIONS + member * 4);
-				volatile u32 *ps = (void *)(memory + 0xe800 + (report & 127) * 16);
-				/* A late old RPQ must not overwrite the current grant's completion. */
-				if (generation == ps[1]) {
-					volatile u32 *record = (void *)(memory + RTL_AX_NI_PS_DONE + (report & 127) * 8);
-					record[0] = generation;
-					sync(); record[1]++;
-				}
+				ni_ps_complete(memory, report & 127, generation);
 				if (!forwarded) header_copy(out, (const u8 *)buffer, offset);
 				unaligned_word(out + offset + forwarded, (report & ~0x0fff0000U) | id << 16); forwarded += 4;
 			}
@@ -662,6 +670,9 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 				 * discard slot here would deadlock pause-drain when the
 				 * second stale request waits for a disabled recycler. */
 				u32 completed = mailbox[45];
+				if (owners[id * 2 + 1] & BIT(16))
+					ni_ps_complete(memory, macid,
+						*(u32 *)(memory + RTL_AX_NI_GENERATIONS + id * 4));
 				owners[id * 2 + 1] |= BIT(31);
 				*(u32 *)(memory + RTL_AX_NI_COMPLETIONS + completed * 4) = id;
 				sync(); mailbox[45] = (completed + 1) & RTL_AX_NI_COMPLETION_MASK;

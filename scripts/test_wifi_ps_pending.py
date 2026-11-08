@@ -51,7 +51,7 @@ struct work_struct {int value;};
 struct ieee80211_sta {unsigned id;};
 struct rtl_ax_tx;
 struct rtl_ax_ni_state {struct rtl_ax_tx *tx;bool route_peers[128];u32 route_tim[128];u32 ps_seen[2][128];bool ps_issued[128];struct work_struct ps_work;u32 tx_activity_seen[128][8];unsigned ba_refreshes;};
-struct rtl_ax_tx {int lock;void *hw;unsigned ps_releases,ps_eosp;bool pe_active;struct {void *memory;}pe;struct rtl_ax_ni_state ni;
+struct rtl_ax_tx {int lock;void *hw;void (*peer_ready)(void *);void *peer_ready_context;unsigned ps_releases,ps_eosp;bool pe_active;struct {void *memory;}pe;struct rtl_ax_ni_state ni;
  bool peer_asleep[128],peer_authorized[128],pending[256];struct {unsigned macid,tid;}slots[256];};
 static struct ieee80211_sta stations[128];static u16 masks[128];
 static void ieee80211_sta_eosp(struct ieee80211_sta *sta){(void)sta;}

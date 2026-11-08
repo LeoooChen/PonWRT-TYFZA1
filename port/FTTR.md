@@ -5943,6 +5943,53 @@ establish MCE/NI DMA/AFT producer retirement or safe reuse of quarantined
 hardware multicast IDs, and it does not claim physical throughput or timing
 acceptance. No device was accessed.
 
+### Canceled selected PS requests finish their service period
+
+A sleeping STA's NI selection consumes the ARM-published PS grant and stores
+its generation in the selected request owner. If peer/FTTR/multicast
+withdrawal cancels that request in the final publisher, no hardware RPQ will
+arrive. Previously this path queued the BID for recycling but omitted the
+PS completion record. The normal empty-queue scanner could not repair it
+because selection had already acknowledged the command, leaving mac80211's
+service period and the driver's `ps_issued` state outstanding. The original
+linked firmware reproduces the missing notification.
+
+The final publisher now completes the selected PS generation when canceling
+its request. A small shared helper checks the current generation, publishes
+the record before its producer counter and requests the existing PE-to-ARM
+event. Hardware RPQ completion and WMM quota rejection use the same helper.
+A newer grant suppresses the old notification; repeated publication or
+recycling cannot notify twice. This completion ends the software PS grant,
+not BID/PCIe ownership: quota, TIM/pending BID counts and FTTR drain still
+follow their existing RPQ/EQ lifetime. An unpublished cancellation does not
+report a successful transmission or fabricate an over-the-air EOSP frame.
+
+`test_pe_ps_withdrawal.py` executes132 PS-Poll/U-APSD cases with route,
+peer/global, FTTR-generation and multicast revocation, TXBD stalls,
+zero/wrapped/current/old grant generations, EQ stalls and real RPQ success or
+radio-discard reports. It feeds the exact generated PE records into the
+actual ARM `ni_ps_done`/`ni_ps_complete` and mac80211 generation-aware EOSP
+functions, checking service-period closure, issued-grant release and duplicate
+suppression. The existing PS generation concurrency, grant/TIM, selected peer
+withdrawal, multicast/BCMC, FTTR BID retirement, queue quotas, channel progress,
+GTK PN/sequence and station/NI lifecycle checks pass. Original PS-Poll helper
+execution still matches eight register cases and four AID/U-APSD decisions;
+the new completion is the custom mac80211/PE adaptation, not a claimed factory
+software structure.
+
+To keep the full image inside fixed IMEM, the small PS grant/completion
+helpers occupy unused pre-mailbox text; linker bank limits and boot-entry
+checks remain in force. The final image is32692 bytes, SHA256
+`e71e4f07efd3349588f1c294cc0c1e78c25d9e4ea169ad8ad3ca5dfd16683efc`,
+with conservative summed stack7296/8192. The non-PE_UPLINK build remains14168
+bytes and passes its entry/memory and retained-WD tests. Image/modules,
+repeat PE generation and kernel firmware identity pass. Evidence is under
+`artifacts/fttr/ps-withdrawal-*`. Test fixtures were updated only for current
+traffic/peer fields and DDR ranges needed by these production functions.
+No physical device was accessed. Complete upstream producer retirement,
+quarantined hardware-ID reuse and physical power-save interoperability
+remain unverified.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN

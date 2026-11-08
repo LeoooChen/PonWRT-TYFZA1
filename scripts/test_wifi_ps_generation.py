@@ -33,6 +33,8 @@ common = r'''
 #include <string.h>
 #include <stdio.h>
 #include "rx-geometry.h"
+#include "tx-ownership.h"
+#include "traffic-flow.h"
 typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;
 #define BIT(n) (1U<<(n))
 #define PE_PROBE_MAILBOX 0x2000
@@ -59,9 +61,13 @@ struct ieee80211_sta {unsigned id;};
 struct ieee80211_local {_Atomic u32 ps_generation;};
 struct sta_info {struct ieee80211_sta sta;struct ieee80211_local *local;pthread_mutex_t ps_lock;_Atomic u32 ps_generation;bool service_period;};
 struct rtl_ax_tx {bool pe_active;pthread_mutex_t lock;void *hw;unsigned ps_releases,ps_eosp;
- bool peer_qos[128],peer_offloaded[128],peer_asleep[128];u32 peer_rates[128];
+ bool peer_qos[128],peer_offloaded[128],peer_asleep[128],peer_preload[128];u32 peer_rates[128];
+ struct rtl_ax_traffic_flow peer_flows[128][8];struct {unsigned long internal;} peer_success[128];
  unsigned peer_sleep_events,peer_wake_events;
  struct {void *memory;}pe;struct {u32 ps_seen[2][128],route_tim[128];bool ps_issued[128];}ni;};
+static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *tx){(void)tx;}
+#define ewma_rtl_ax_success_init(p) ((p)->internal=0)
+#define ewma_rtl_ax_success_add(p,v) ((p)->internal=(v)<<8)
 static void ni_route_sleep(struct rtl_ax_tx *tx,unsigned macid){(void)tx;(void)macid;}
 static struct sta_info *lookup[128];
 static unsigned lookup_calls;
@@ -92,7 +98,7 @@ static void *wake_sleep(void *p){(void)p;pthread_barrier_wait(&barrier);wake(rac
  rtl_ax_tx_peer_sleep(transition_tx,1,false);rtl_ax_tx_peer_sleep(transition_tx,1,true);return NULL;}
 int main(void){
  struct ieee80211_local local={};struct sta_info sta={.sta={1},.local=&local,.ps_lock=PTHREAD_MUTEX_INITIALIZER};
- u8 memory[0x20000]={};struct rtl_ax_tx tx={.pe_active=true,.lock=PTHREAD_MUTEX_INITIALIZER,.pe={memory}};
+ static u8 memory[0x80000]={};struct rtl_ax_tx tx={.pe_active=true,.lock=PTHREAD_MUTEX_INITIALIZER,.pe={memory}};
  lookup[1]=&sta;memory[0xe408]=1;put_unaligned_le32(1,memory+0x2060);
  /* Empty slots and unchanged records must not hash PE-memory MAC addresses. */
  for(unsigned id=1;id<128;id++)ni_ps_done(&tx,id);

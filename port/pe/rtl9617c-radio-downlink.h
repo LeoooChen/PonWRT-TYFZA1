@@ -236,7 +236,9 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 
 
 /* ARM publishes the generation and TID flags as one versioned command. */
-static u32 __attribute__((section(".rxq"), noinline)) ni_ps_grant(
+/* Keep these small PS helpers in pre-mailbox text; the main RX/TX bank
+ * remains within its fixed IMEM extent. Linker assertions guard both banks. */
+static u32 __attribute__((noinline)) ni_ps_grant(
 	u8 *memory, u32 macid, u32 *generation, u32 *flags, u32 *command)
 {
 	volatile u32 *version = (void *)(memory + RTL_AX_NI_PS_VERSION + macid * 4);
@@ -414,10 +416,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				owners[id * 2 + 1] |= BIT(31);
 				mailbox[47] = id + 1;
 				(*(u32 *)(memory + RTL_AX_TX_WMM_QUOTA + 4))++;
-				if (ps[0]) {
-					volatile u32 *done = (void *)(memory + RTL_AX_NI_PS_DONE + macid * 8);
-					done[0] = generation; sync(); done[1]++; pe_event(mailbox);
-				}
+				if (asleep) ni_ps_complete(memory, macid, generation);
 			} else if (!discard && macid) {
 				(*(u32 *)(memory + RTL_AX_TX_NI_AC_PENDING + ac_index * 4))++;
 			}

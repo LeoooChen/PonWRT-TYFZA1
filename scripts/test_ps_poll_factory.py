@@ -45,7 +45,7 @@ for(unsigned int c=0;c<4;c++){reads=delays=nwrites=busy=0;packet.crc_error=c==0;
 with tempfile.TemporaryDirectory()as tmp:
  p=Path(tmp);(p/'test.c').write_text(code);subprocess.run(['cc','-O2','-Wall','-Wextra','-Werror',str(p/'test.c'),'-o',str(p/'test')],check=True)
  native=[json.loads(l)for l in subprocess.check_output([str(p/'test')],text=True).splitlines()]
-module=r/'analysis/private/live-files/lib/modules/5.10.70/kernel/drivers/net/wireless/realtek/g6_wifi_driver/rtk_wifi6.ko'
+module=Path(sys.argv[1]) if len(sys.argv)>1 else r/'analysis/private/live-files/lib/modules/5.10.70/kernel/drivers/net/wireless/realtek/g6_wifi_driver/rtk_wifi6.ko'
 for chip in ('8852c','8192xb'):
  for row in native:
   reads=[];writes=[];delays=[]

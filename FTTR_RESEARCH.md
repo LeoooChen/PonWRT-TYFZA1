@@ -192,6 +192,8 @@
 
 87. 修复PE已选中普通NI单播绕过STA撤销的窗口：生产固件复现路由关闭后待发布请求仍可写TXBD；最终发布现检查所有者MACID路由、单STA及全局撤销标记，未发布请求进入已有完成队列，保留额度/BID直到最后EQ归还，已发布请求仍必须真实RPQ完成。25组源0/6/7、信用阻塞、四AC、部分A-MSDU、其他STA隔离和BCMC/真实RPQ场景及既有组播/FTTR回收/PS/WMM/序号/PN/站点生命周期检查通过。PE32668字节、保守栈7296，重复生成、Image/模块和固件输入一致性通过；完整上游生产者退场与硬件ID安全复用仍待补，未上实机。详见[NI最终发布撤销检查](port/FTTR.md#selected-ni-requests-obey-peer-withdrawal-at-final-publication)。
 
+88. 修复已消费PS授权的NI请求在PE发布前撤销后漏完成通知：原固件可复现BID已回收但mac80211服务周期/ps_issued仍未结束；现按选中请求的代际生成PS完成记录并触发ARM事件，真实RPQ与WMM拒绝共用代际校验，旧/重复通知不结束新周期。132组PS-Poll/UAPSD、路由/全局/FTTR/组播撤销、信用/EQ阻塞及真实RPQ结果，直接接入ARM/mac80211完成处理通过；既有PS/组播/FTTR回收/配额/序号/PN/站点生命周期和原厂PS-Poll对比通过。PE32692字节、栈上界7296，入口布局、重复生成、两配置及Image/模块和固件输入一致性通过。完整上游退场和ID复用仍未完成，未上实机。详见[撤销PS请求的完成通知](port/FTTR.md#canceled-selected-ps-requests-finish-their-service-period)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
