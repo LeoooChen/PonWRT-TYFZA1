@@ -309,6 +309,73 @@ static void pe_rpq(volatile u32 *mailbox, u8 *memory)
 	if (mailbox[78] && mailbox[75] != completed) rpq_event(mailbox);
 }
 
+/* NI owns coherent Ethernet BIDs. Build their final wire image directly;
+ * host DMA cookies below must remain opaque to the PE CPU. */
+static u32 ni_build_payload(volatile u32 *mailbox, u8 *memory,
+	const u32 *request, u8 *page)
+{
+	u32 flags = request[4], macid = flags >> 24, tid = flags & 7;
+	u32 frames = request[2] >> 24, header_bytes = (request[2] >> 16) & 63;
+	u32 *sequences = (void *)(memory +
+#ifdef PE_UPLINK
+		0x10000
+#else
+		0x3000
+#endif
+	);
+	u32 sequence = sequences[macid * 8 + tid];
+	sequences[macid * 8 + tid] = (sequence + 1) & 0xfff;
+	const u32 *ethernet = uncached(request[8]);
+	u32 da0 = ethernet[0], addresses = ethernet[1], sa = ethernet[2];
+	u32 ap0 = mailbox[16], ap1 = mailbox[17];
+	u32 amsdu = !!(flags & BIT(21)), client = !!(flags & BIT(23));
+	const u32 *bssid = (const void *)(memory + 0xe400 + macid * 8);
+	u32 ra0 = client ? bssid[0] : da0;
+	u32 ra1 = client ? bssid[1] & 65535 : addresses & 65535;
+	u32 addr30 = client ? (amsdu ? ra0 : da0) : (amsdu ? ap0 : addresses >> 16 | sa << 16);
+	u32 addr31 = client ? (amsdu ? ra1 : addresses & 65535) : (amsdu ? ap1 & 65535 : sa >> 16);
+	u32 header_words[9];
+	u8 *header = (void *)header_words;
+	header_words[0] = (header_bytes == 26 ? 0x88 : 0x08) | (client ? 0x0100 : 0x0200) |
+		(flags & (BIT(15) | BIT(16)) ? 0x4000 : 0) |
+		(flags & BIT(19) ? 0x2000 : 0);
+	header_words[1] = ra0;
+	header_words[2] = ra1 | ap0 << 16;
+	header_words[3] = ap0 >> 16 | ap1 << 16;
+	header_words[4] = addr30;
+	header_words[5] = addr31 | sequence << 20;
+	header_words[6] = tid | (flags & BIT(20) ? 0x10 : 0) | (amsdu ? 0x80 : 0);
+	if (amsdu) {
+		u32 pad = 0;
+		for (u32 n = 0; n < frames; n++) {
+			u32 input = request[8 + n * 2], bytes = request[9 + n * 2];
+			u32 output = input - (n ? 8 + pad : 34);
+			amsdu_prefix(uncached(input), bytes);
+			if (!n) {
+				u8 *out = uncached(output);
+				/* Headroom puts the WLAN header at word offset two. */
+				out[0] = header[0]; out[1] = header[1];
+				for (u32 i = 2; i < 26; i += 4)
+					*(u32 *)(out + i) = ((const struct packed_word *)(header + i))->value;
+			} else for (u32 i = 0; i < pad; i++) ((u8 *)uncached(output))[i] = 0;
+			address(page + 64 + n * 6, output, bytes + (n ? 8 + pad : 34), n + 1 == frames);
+			pad = (0U - bytes - 8) & 3;
+		}
+		mailbox[57]++;
+	} else {
+		u8 *llc = header + header_bytes;
+		llc[0] = llc[1] = 0xaa; llc[2] = 3;
+		llc[3] = llc[4] = llc[5] = 0;
+		llc[6] = ((const u8 *)ethernet)[12]; llc[7] = ((const u8 *)ethernet)[13];
+		u32 output = request[8] + 14 - header_bytes - 8;
+		header_copy(uncached(output), header, header_bytes + 8);
+		address(page + 64, output, request[2] & 0x3fff, 1);
+	}
+	mailbox[18] = request[0]; mailbox[19] = flags; mailbox[20] = request[2];
+	mailbox[21] = request[8];
+	return sequence;
+}
+
 static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	volatile u32 *mailbox, u8 *memory, const u32 *request, u32 *next_producer)
 {
@@ -334,112 +401,89 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	 * and WP padding, preserving the original descriptor format. */
 	word(page + 24, 0); word(page + 44, 0);
 	word(page + 52, 0); word(page + 60, 0);
-	if (flags & BIT(22)) {
-		/* Original normal and shortcut TX share sta->txseq_tid[]. */
-		u32 macid = flags >> 24, tid = flags & 7;
-		u32 header_bytes = (packet >> 16) & 63;
-		u32 *sequences = (void *)(memory +
-#ifdef PE_UPLINK
-			0x10000
-#else
-			0x3000
-#endif
-		);
-		sequence = sequences[macid * 8 + tid];
-		sequences[macid * 8 + tid] = (sequence + 1) & 0xfff;
-		header_copy(header, uncached(mailbox[14] + id * 128), header_bytes);
-		header[22] = sequence << 4;
-		header[23] = sequence >> 4;
-		address(page + used, mailbox[14] + id * 128, header_bytes, 0);
-		used += 6; count++;
-	}
-	if (flags & BIT(18)) {
-		u32 macid = flags >> 24, tid = flags & 7;
-		u32 header_bytes = (packet >> 16) & 63;
-		const struct packed_word *input = uncached(ni_packet ? request[8] : mailbox[14] + id * 128);
-		/* Gather addresses once; byte assembly belongs in private DMEM. */
-		u32 ethernet_words[4] = {input[0].value, input[1].value,
-			input[2].value, ((const u8 *)input)[12] | (u32)((const u8 *)input)[13] << 8};
-		u32 ap_words[2] = {mailbox[16], mailbox[17]};
-		u8 *ethernet = (void *)ethernet_words, *ap_address = (void *)ap_words;
-		const u8 *bssid = memory + 0xe400 + macid * 8;
-		u32 client = !!(flags & BIT(23));
-		u32 *sequences = (void *)(memory +
-#ifdef PE_UPLINK
-			0x10000
-#else
-			0x3000
-#endif
-		);
-		u32 protected = !!(flags & (BIT(15) | BIT(16)));
-
-		sequence = sequences[macid * 8 + tid];
-		sequences[macid * 8 + tid] = (sequence + 1) & 0xfff;
-		header[0] = header_bytes == 26 ? 0x88 : 0x08;
-		header[1] = (client ? 0x01 : 0x02) | protected << 6 | (flags & BIT(19) ? 0x20 : 0);
-		header[2] = header[3] = 0;
-#pragma clang loop unroll(disable)
-		for (u32 i = 0; i < 6; i++) {
-			header[4 + i] = client ? bssid[i] : ethernet[i];
-			header[10 + i] = ap_address[i];
-			header[16 + i] = client ? (flags & BIT(21) ? bssid[i] : ethernet[i]) :
-				(flags & BIT(21) ? ap_address[i] : ethernet[6 + i]);
-		}
-		header[22] = sequence << 4;
-		header[23] = sequence >> 4;
-		if (header_bytes == 26) { header[24] = tid | (flags & BIT(20) ? 0x10 : 0) | (flags & BIT(21) ? 0x80 : 0); header[25] = 0; }
-		u8 *llc = header + header_bytes;
-		llc[0] = llc[1] = 0xaa; llc[2] = 3;
-		llc[3] = llc[4] = llc[5] = 0;
-		llc[6] = ethernet[12]; llc[7] = ethernet[13];
-		address(page + used, mailbox[14] + id * 128, header_bytes + (flags & BIT(21) ? 0 : 8), 0);
-		used += 6; count++;
-		mailbox[18] = id; mailbox[19] = flags; mailbox[20] = packet;
-		mailbox[21] = request[8];
-	}
-	if (flags & BIT(21)) {
-		/* Each BID remains owned until the aggregate's RPQ completion.
-		 * Reuse NI/Ethernet header space; payloads stay in place. */
-		used = 64;
-		u32 pad = 0;
-		for (u32 n = 0; n < ni_frames; n++) {
-			u32 input = request[8 + n * 2], bytes = request[9 + n * 2];
-			u32 output = input - (n ? 8 + pad : 34);
-			amsdu_prefix(uncached(input), bytes);
-			if (!n) {
-				u8 *out = uncached(output);
-				/* NI headroom puts out at word offset2. Align DDR stores. */
-				out[0] = header[0]; out[1] = header[1];
-				for (u32 i = 2; i < 26; i += 4)
-					*(u32 *)(out + i) = ((const struct packed_word *)(header + i))->value;
-			} else for (u32 i = 0; i < pad; i++) ((u8 *)uncached(output))[i] = 0;
-			address(page + used, output, bytes + (n ? 8 + pad : 34), n + 1 == ni_frames);
-			used += 6;
-			pad = (0U - bytes - 8) & 3;
-		}
-		count = ni_frames; mailbox[57]++;
-	} else if (ni_packet) {
-		u32 length = ((packet >> 16) & 63) + 8;
-		u32 output = request[8] + 14 - length;
-		header_copy(uncached(output), header, length);
-		used = 64;
-		address(page + used, output, packet & 0x3fff, 1); used += 6;
-		count = 1;
-	} else for (u32 segment = 0; segment < segments; segment++) {
-		u32 address = request[8 + segment * 2];
-		u32 bytes = request[9 + segment * 2];
-		if (!segment && flags & BIT(18)) { address += 14; bytes -= 14; }
-		if (!segment && flags & BIT(22)) {
+	if (ni_packet) {
+		sequence = ni_build_payload(mailbox, memory, request, page);
+		count = ni_frames; used = 64 + count * 6;
+	} else {
+		if (flags & BIT(22)) {
+			/* Original normal and shortcut TX share sta->txseq_tid[]. */
+			u32 macid = flags >> 24, tid = flags & 7;
 			u32 header_bytes = (packet >> 16) & 63;
-			address += header_bytes; bytes -= header_bytes;
+			u32 *sequences = (void *)(memory +
+#ifdef PE_UPLINK
+				0x10000
+#else
+				0x3000
+#endif
+			);
+			sequence = sequences[macid * 8 + tid];
+			sequences[macid * 8 + tid] = (sequence + 1) & 0xfff;
+			header_copy(header, uncached(mailbox[14] + id * 128), header_bytes);
+			header[22] = sequence << 4;
+			header[23] = sequence >> 4;
+			address(page + used, mailbox[14] + id * 128, header_bytes, 0);
+			used += 6; count++;
 		}
-		while (bytes) {
-			u32 length = bytes > 2047 ? 2047 : bytes;
-			u32 last = segment + 1 == segments && bytes == length;
-			page[used] = length;
-			page[used + 1] = length >> 8 | last << 7;
-			unaligned_word(page + used + 2, address);
-			used += 6; count++; address += length; bytes -= length;
+		if (flags & BIT(18)) {
+			u32 macid = flags >> 24, tid = flags & 7;
+			u32 header_bytes = (packet >> 16) & 63;
+			const struct packed_word *input = uncached(mailbox[14] + id * 128);
+			/* Gather addresses once; byte assembly belongs in private DMEM. */
+			u32 ethernet_words[4] = {input[0].value, input[1].value,
+				input[2].value, ((const u8 *)input)[12] | (u32)((const u8 *)input)[13] << 8};
+			u32 ap_words[2] = {mailbox[16], mailbox[17]};
+			u8 *ethernet = (void *)ethernet_words, *ap_address = (void *)ap_words;
+			const u8 *bssid = memory + 0xe400 + macid * 8;
+			u32 client = !!(flags & BIT(23));
+			u32 *sequences = (void *)(memory +
+#ifdef PE_UPLINK
+				0x10000
+#else
+				0x3000
+#endif
+			);
+			u32 protected = !!(flags & (BIT(15) | BIT(16)));
+
+			sequence = sequences[macid * 8 + tid];
+			sequences[macid * 8 + tid] = (sequence + 1) & 0xfff;
+			header[0] = header_bytes == 26 ? 0x88 : 0x08;
+			header[1] = (client ? 0x01 : 0x02) | protected << 6 | (flags & BIT(19) ? 0x20 : 0);
+			header[2] = header[3] = 0;
+#pragma clang loop unroll(disable)
+			for (u32 i = 0; i < 6; i++) {
+				header[4 + i] = client ? bssid[i] : ethernet[i];
+				header[10 + i] = ap_address[i];
+				header[16 + i] = client ? (flags & BIT(21) ? bssid[i] : ethernet[i]) :
+					(flags & BIT(21) ? ap_address[i] : ethernet[6 + i]);
+			}
+			header[22] = sequence << 4;
+			header[23] = sequence >> 4;
+			if (header_bytes == 26) { header[24] = tid | (flags & BIT(20) ? 0x10 : 0) | (flags & BIT(21) ? 0x80 : 0); header[25] = 0; }
+			u8 *llc = header + header_bytes;
+			llc[0] = llc[1] = 0xaa; llc[2] = 3;
+			llc[3] = llc[4] = llc[5] = 0;
+			llc[6] = ethernet[12]; llc[7] = ethernet[13];
+			address(page + used, mailbox[14] + id * 128, header_bytes + (flags & BIT(21) ? 0 : 8), 0);
+			used += 6; count++;
+			mailbox[18] = id; mailbox[19] = flags; mailbox[20] = packet;
+			mailbox[21] = request[8];
+		}
+		for (u32 segment = 0; segment < segments; segment++) {
+			u32 address = request[8 + segment * 2];
+			u32 bytes = request[9 + segment * 2];
+			if (!segment && flags & BIT(18)) { address += 14; bytes -= 14; }
+			if (!segment && flags & BIT(22)) {
+				u32 header_bytes = (packet >> 16) & 63;
+				address += header_bytes; bytes -= header_bytes;
+			}
+			while (bytes) {
+				u32 length = bytes > 2047 ? 2047 : bytes;
+				u32 last = segment + 1 == segments && bytes == length;
+				page[used] = length;
+				page[used + 1] = length >> 8 | last << 7;
+				unaligned_word(page + used + 2, address);
+				used += 6; count++; address += length; bytes -= length;
+			}
 		}
 	}
 	/* A header-only ARM frame also needs a terminating address entry. */

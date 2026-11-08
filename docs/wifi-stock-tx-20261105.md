@@ -160,3 +160,12 @@ UDP原默认socket下只有0.125G；GSO本身0.175G，GSO+4MiB达1.409G，说明
 完整linked主循环gather、publication、6144ownership、PS、RXQbackpressure和RPQ通过，IMEM26976/32768、stack6936/8176。额外旧test_pe_epp_batch直接函数测试读未映射内存，扩大DDR/更新分类/return哨兵仍未通过；停止该工具修复，原脚本恢复HEAD，失败适配在artifacts/ni-batch/epp-unqualified.py，不列入通过项。未把工具失败解释为硬件正确或错误。
 
 最终RAM恢复已刷b8cc8b8原模块rtl_ax_ap/phy4-ap0，boot2a847704保持，AP160授权、ARMpending0、unmatched/polluted0。NI feed/flow/sink全部停止卸载，主机198.18.255.1hostroute删除，普通5218iperf核对PID停止。Mac有线供网保持。批处理已实测但尚未重打固件，因此磁盘源码与已刷image6705cbfe存在这两处批处理差异，必须在后续交付中明确。当前完整目标仍未达，不以小幅进步缩减验收。
+
+
+### 2026-11-08 batch固件落盘与NI载荷构造
+
+b8245ec完整固件SHA b5a40771409b24cb3b00eb715c91f1fd56be474638fa85477c36191fb9b22adf已保留配置刷入，全千兆目标boot c0eb71c3-9fc9-4b50-9102-def584529974。Flash FIT逐字与构建一致，模块rtl_ax_ap27c4b092、mac8021187f8ca17、cfg802115d61836a全部匹配；内核本体467b7186与前一版本相同，修改仅radio/PE。
+
+从main2ad19d9移入独立ni_build_payload，只改NI报头和地址表准备分支，保留本分支原厂QoS/流统计/聚合/PS/WMM/请求生命周期。实际linked AP/STA/mesh头、gather字节/DMA/padding、sharedpublication、PS、6144ownership、RPQ/IMEM通过。候选PE1d0bcbb5，27504字节/stack6936。
+
+同拓扑A/B/A：已刷batch TCP1.234905G162retx、UDP1.454894G23.19%loss；独立NI候选TCP1.249419G0retx、UDP1.482633G20.89%loss；恢复batch UDP1.452667G21.69%loss。UDP各自发送1.897/1.876/约1.87G，接收能力约2%提高，支持保留小幅改善；仍无达标证据，不能称低丢高速完成。卸载/恢复正常、boot不变。候选仅实验副本加载，当前flash及RAM恢复batch，后续源码继续承接该构造；artifact direct-ni保存完整证据。
