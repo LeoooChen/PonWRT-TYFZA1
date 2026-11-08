@@ -2,6 +2,7 @@
 """Execute production PE queue limits, expiry and BID/TIM ownership."""
 from pathlib import Path
 import json
+from pe_tx_ownership_fixture import initialize, map_report
 import struct
 import subprocess
 import sys
@@ -33,7 +34,10 @@ typedef uint32_t u32;
 struct ieee80211_sta {int unused;};
 struct sdata {struct {struct {unsigned beacon_int;}bss_conf;}vif;};
 struct sta_info {unsigned listen_interval;struct sdata *sdata;struct ieee80211_sta sta;};
-struct rtl_ax_tx {bool peer_qos[128],peer_offloaded[128],peer_asleep[128],pe_active;u32 peer_rates[128];struct {void *memory;}pe;struct {u32 ps_seen[2][128];bool ps_issued[128];}ni;};
+struct ewma_rtl_ax_success {unsigned value;};
+static void ewma_rtl_ax_success_init(struct ewma_rtl_ax_success *p){p->value=0;}
+static void ewma_rtl_ax_success_add(struct ewma_rtl_ax_success *p,unsigned v){p->value=v;}
+struct rtl_ax_tx {struct ewma_rtl_ax_success peer_success[128];bool peer_preload[128]; bool peer_qos[128],peer_offloaded[128],peer_asleep[128],pe_active;u32 peer_rates[128];struct {void *memory;}pe;struct {u32 ps_seen[2][128];bool ps_issued[128];}ni;};
 static void put_unaligned_le32(u32 value,void *p){memcpy(p,&value,4);}
 static u32 get(const void *p){u32 v;memcpy(&v,p,4);return v;}
 #define PE_PROBE_MAILBOX 0x2000
@@ -68,11 +72,12 @@ BASE, MB, NI, BAR, EPP, PAYLOAD, RING, PAGES = (
 class Radio:
     def __init__(self, peers=1, inflight=0):
         self.u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-        for address, size in [(0x1fc00000, 0x10000), (BASE, 0x20000), (NI, 0x10000),
+        for address, size in [(0x1fc00000, 0x10000), (BASE, 0x80000), (NI, 0x10000),
                               (BAR, 0x10000), (EPP, 0x40000), (PAYLOAD, 0x600000),
                               (RING, 0x4000), (PAGES, 0x32000), (0x10020000, 0x1000)]:
             self.u.mem_map(address, size)
         self.u.mem_write(0x1fc00000, binary)
+        initialize(self.u, BASE, requests=inflight or 2048, occupied=inflight)
         for index, value in [(0, 0x50455744), (2, BAR | 0xa0000000), (3, 1),
                              (11, RING), (12, PAGES), (14, PAGES), (24, 1), (25, EPP),
                              (30, inflight), (114, 0x7060), (115, 0x7160), (116, 0x6380),
@@ -94,8 +99,8 @@ class Radio:
                 0x20100, (peer << 24) | (1 << 18) | (1 << 16), (3 << 16) | 64, 0, 0))
         # Real submitted WPs occupy their own slots; expiry must never return them.
         for index in range(inflight):
-            self.put(BASE + 0xc400 + index * 8, PAYLOAD + 0x500000 + index * 2048)
-            self.put(BASE + 0xc404 + index * 8, (1 << 15) | (1 << 8))
+            self.put(BASE + 0x20000 + index * 8, PAYLOAD + 0x500000 + index * 2048)
+            self.put(BASE + 0x20004 + index * 8, (1 << 15) | (1 << 8))
         if inflight:
             self.put(BASE + 0x18020, inflight)
         self.returns = []
@@ -166,7 +171,7 @@ r.check_returns()
 assert r.get(BASE + 0x11804) == 0 and len(r.returns) == 2491
 assert r.get(BASE + 0x18020) == 124 and r.get(BASE + 0x14004) == 1
 for index in range(124):
-    assert r.get(BASE + 0xc400 + index * 8) == PAYLOAD + 0x500000 + index * 2048
+    assert r.get(BASE + 0x20000 + index * 8) == PAYLOAD + 0x500000 + index * 2048
 
 # Multiple sleeping peers share a bounded total budget, with space for an awake peer.
 total = Radio(peers=5)
@@ -195,7 +200,7 @@ credit.packets([1] * 300)
 credit.run()
 assert not credit.returns and credit.get(MB + 47 * 4)
 held = credit.get(MB + 47 * 4) - 1
-assert credit.get(BASE + 0xc400 + held * 8)
+assert credit.get(BASE + 0x20000 + held * 8)
 credit.put(NI + 0x6380, 0x80000000)
 credit.run()
 credit.check_returns()
@@ -251,7 +256,7 @@ publication.run()
 assert publication.get(MB + 28 * 4) == 0 and publication.get(BASE + 0xe818) == 0
 publication.put(BASE + 0x19e04, 2)
 publication.run()
-assert publication.get(MB + 28 * 4) == 1 and publication.get(BASE + 0x1b800) == 5
+assert publication.get(MB + 28 * 4) == 1 and publication.get(BASE + 0x28000) == 5
 
 from unicorn import UC_HOOK_MEM_READ
 changed = Radio()
@@ -280,7 +285,7 @@ for wrapped in (False, True):
     zero.put(BASE + 0x19e04, 0 if wrapped else 2)
     zero.put(BASE + 0xe818, 0xfffffffe if wrapped else 0)
     zero.run()
-    assert zero.get(MB + 28 * 4) == 1 and zero.get(BASE + 0x1b800) == 0
+    assert zero.get(MB + 28 * 4) == 1 and zero.get(BASE + 0x28000) == 0
 
 # Actual RPQ decoding captures the grant before recycling its WP. New then
 # old completions cannot replace the current service period's notification.
@@ -290,12 +295,12 @@ rpq.run()
 rpq.put(BASE + 0x19e04, 2); rpq.put(BASE + 0xe814, 1); rpq.put(BASE + 0xe81c, 1 << 16)
 rpq.run()
 rpq.put(BASE + 0x19e04, 4); rpq.put(BASE + 0xe814, 2); rpq.run()
-assert rpq.get(BASE + 0x1b800) == 1 and rpq.get(BASE + 0x1b804) == 2
+assert rpq.get(BASE + 0x28000) == 1 and rpq.get(BASE + 0x28004) == 2
 reports, forwarded = 0x07800000, 0x07900000
 rpq.u.mem_map(reports, 0x40000);rpq.u.mem_map(forwarded, 0x40000)
 for index, value in [(68, reports), (72, forwarded), (187, BASE)]:rpq.put(MB + index * 4, value)
 rpq.put(BAR + 0x121c, 1 << 16)
-payload = struct.pack('<II', 1 | 257 << 16, 1 | 256 << 16)
+payload = struct.pack('<II', 1 | 1 << 16, 1)
 rpq.u.mem_write(reports, struct.pack('<II', 28 | 0xc000 | 1 << 16, 7 << 24 | 8) + bytes(12) + payload)
 rpq.run()
 assert rpq.get(BASE + 0x1ba08) == 2 and rpq.get(BASE + 0x1ba0c) == 1

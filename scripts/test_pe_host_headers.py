@@ -4,6 +4,7 @@ from pathlib import Path
 import struct
 import sys
 from itertools import product
+from pe_tx_ownership_fixture import initialize
 
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / 'analysis/python-deps'))
@@ -35,10 +36,11 @@ for client, encap, payload_bytes, smps, mode, firmware, aggregate, mesh in (
         (4, 0x80, 0x100, 0x180), (False, True), (0, 64))
         for mesh in ((0,) if case[0] or case[1] else (0, 1, 2))):
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-    for at, size in ((0x1fc00000,0x10000),(base,0x20000),(ring,0x10000),
+    for at, size in ((0x1fc00000,0x10000),(base,0x80000),(ring,0x10000),
                      (pages,0x32000),(headers,0x10000),(0x11000000,0x100000),
                      (0x12000000,0x100000),(0x10020000,0x1000)):
         u.mem_map(at,size)
+    initialize(u, base)
     u.mem_write(0x1fc00000,struct.pack('<%dI'%len(words),*words))
     def invalid(uc, access, address, size, value, unused):
         raise AssertionError(('unmodeled IO',hex(address),hex(uc.reg_read(UC_MIPS_REG_PC))))
@@ -115,8 +117,8 @@ for client, encap, payload_bytes, smps, mode, firmware, aggregate, mesh in (
     second=bytes(u.mem_read(get(ring+12),128))
     assert struct.unpack_from('<I',second,12)[0]&0x3000 == (0x1000 if aggregate else 0x2000), (encap,payload_bytes,aggregate,second[:16].hex())
     if aggregate and encap and payload_bytes==1500 and mode==0x180 and not smps and firmware:
-        # Retain both existing AMPDU workarounds: a smaller next packet,
-        # then a different peer at the same length, still require BK.
+        # ARM descriptors without confirmed peer preload retain the old
+        # length/context guard; non-AMPDU traffic keeps the factory BK.
         request[2]-=1;request[9]-=1
         for slot,owner in ((2,9),(3,10)):
             if slot==3:request[4]=(request[4]&~0x7f000000)|3<<24

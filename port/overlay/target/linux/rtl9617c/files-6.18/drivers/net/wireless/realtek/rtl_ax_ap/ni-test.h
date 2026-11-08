@@ -443,8 +443,8 @@ static int ni_test_remove(struct rtl_ax_tx *tx)
 	if (ret) return ret;
 	writel(tx->ni.vp_saved[3], tx->ni.vp + 0x64); writel(tx->ni.vp_saved[4], tx->ni.vp + 0x78);
 	writel((readl(tx->ni.dma + 0x14) & ~(3U << (tx->ni.vp_index * 2))) | (tx->ni.vp_saved[0] & (3U << (tx->ni.vp_index * 2))), tx->ni.dma + 0x14);
-	for (i = 0; i < 128; i++) {
-		u32 address = get_unaligned_le32(tx->pe.memory + 0xc400 + i * 8);
+	for (i = 0; i < RTL_AX_NI_OWNER_SLOTS; i++) {
+		u32 address = get_unaligned_le32(tx->pe.memory + RTL_AX_NI_OWNERS + i * 8);
 		while (address) {
 			u32 next;
 			dma_sync_single_for_cpu(tx->dma_device, address, 4, DMA_FROM_DEVICE);
@@ -452,7 +452,7 @@ static int ni_test_remove(struct rtl_ax_tx *tx)
 			ret = readl_poll_timeout(tx->ni.regs + (0x6368 + tx->ni.cpu * 8), status, status & BIT(31), 1, 100000);
 			if (ret) return ret;
 			writel(address | tx->ni.eq, tx->ni.regs + (0x636c + tx->ni.cpu * 8));
-			put_unaligned_le32(next, tx->pe.memory + 0xc400 + i * 8);
+			put_unaligned_le32(next, tx->pe.memory + RTL_AX_NI_OWNERS + i * 8);
 			address = next;
 		}
 	}
@@ -642,9 +642,9 @@ static bool ni_peer_idle(struct rtl_ax_tx *tx, unsigned int macid)
 	if (get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 684)) return false;
 	dma_rmb();
 	if (get_unaligned_le32(tx->pe.memory + 0x11800 + macid * 4)) return false;
-	for (i = 0; i < 128; i++)
-		if (get_unaligned_le32(tx->pe.memory + 0xc400 + i * 8) &&
-		    ((get_unaligned_le32(tx->pe.memory + 0xc404 + i * 8) >> 8) & 127) == macid)
+	for (i = 0; i < RTL_AX_NI_OWNER_SLOTS; i++)
+		if (get_unaligned_le32(tx->pe.memory + RTL_AX_NI_OWNERS + i * 8) &&
+		    ((get_unaligned_le32(tx->pe.memory + RTL_AX_NI_OWNERS + 4 + i * 8) >> 8) & 127) == macid)
 			return false;
 	return true;
 }

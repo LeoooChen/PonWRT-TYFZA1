@@ -164,6 +164,7 @@ struct rtl_ax_ap {
 	bool ap_started, mesh_started;
 	int ap_result;
 	DECLARE_BITMAP(station_ids, 128);
+	DECLARE_BITMAP(preload_peers, 128);
 	struct { u8 self[6], peer[6]; u16 aid; bool pending, mesh, client; } retired_stations[128];
 	struct { u8 address[6], aggregation[IEEE80211_NUM_TIDS]; u16 stopping, flushing; } tx_ba[128];
 	struct wiphy_delayed_work cleanup_work;

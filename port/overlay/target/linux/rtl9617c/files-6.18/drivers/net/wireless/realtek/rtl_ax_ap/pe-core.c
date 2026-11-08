@@ -136,12 +136,12 @@ int pe_probe_alloc(struct pe_probe *pe, unsigned int slot, unsigned int core)
  pe->device = pe_engine->device;
  pe->reset = pe_engine->reset; pe->atu = pe_engine->atu; pe->ram = pe_engine->ram;
  pe->slot = slot;
- pe->memory = dma_alloc_coherent(&pe->device->dev, PE_PROBE_BYTES, &pe->dma, GFP_KERNEL);
+ pe->memory = dma_alloc_coherent(&pe->device->dev, (core == 1 ? SZ_512K : PE_PROBE_BYTES), &pe->dma, GFP_KERNEL);
  if (!pe->memory) {
   if (!pe_engine_users[core]) { pe_probe_core_free(pe_engine); kfree(pe_engine); pe_engine = NULL; }
   pe->device = NULL; ret = -ENOMEM; goto unlock;
  }
- memset(pe->memory, 0, PE_PROBE_BYTES);
+ memset(pe->memory, 0, core == 1 ? SZ_512K : PE_PROBE_BYTES);
  pe_engine_users[core]++;
  ret = 0;
 unlock:
@@ -213,7 +213,7 @@ void pe_probe_free(struct pe_probe *pe)
  if (!pe->memory) return;
  if (pe_probe_stop(pe)) return;
  mutex_lock(&pe_engine_lock);
- dma_free_coherent(&pe->device->dev, PE_PROBE_BYTES, pe->memory, pe->dma);
+ dma_free_coherent(&pe->device->dev, pe->core == 1 ? SZ_512K : PE_PROBE_BYTES, pe->memory, pe->dma);
  if (!--pe_engine_users[pe->core]) {
   pe_probe_core_free(pe_engine);
   kfree(pe_engine); pe_engines[pe->core] = NULL;
