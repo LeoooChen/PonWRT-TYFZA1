@@ -93,7 +93,7 @@ struct wireless_dev {struct net_device *netdev;int iftype;bool use_4addr;};struc
 struct rtl_ax_tx {bool key_refresh_pending,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;int lock;bool pe_active,peer_offloaded[128],peer_authorized[128];unsigned occupied,ni_reports,ni_failed;
  struct {void *memory;}pe;void *rx,*pdev;
  struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;unsigned cpu,route_macid,route_tim[128];struct net_device *route_dev;struct work_struct ps_work;}ni;};
-struct rtl_ax_ap {bool beacon_enabled;int ap_result;struct {int error;}dfs;struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_associated,sta_4addr;int scan_offload_result;
+struct rtl_ax_ap {void *rx;bool beacon_enabled;int ap_result;struct {int error;}dfs;struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_associated,sta_4addr;int scan_offload_result;
  struct wiphy_work offload_work;struct wiphy_delayed_work cleanup_work;bool scanning,ap_started,monitor_started,offload_retry,peer_authorized[128];
  struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[6],keyid[7];}security_roles[128];struct {unsigned aggregation[16],stopping,flushing;u8 address[6];}tx_ba[128];
  struct ieee80211_key_conf *security_keys[128];unsigned security_unlink[128];bool ra_registered[128];
@@ -128,6 +128,7 @@ static struct rtl_fe *active_fe;static struct rtl_ax_tx *active_tx;static int ni
 static void fe_mcast_invalidate(struct rtl_fe *f){(void)f;}
 static int ni_mcast_bind(struct rtl_ax_tx *t,struct net_device *d){(void)t;(void)d;return 0;}
 static int ni_mcast_unbind(struct rtl_ax_tx *t){(void)t;return 0;}
+static void rtl_ax_rx_open_peer(void *rx,unsigned id,bool open){(void)rx;(void)id;(void)open;}
 static int rtl_ax_tx_mcast_policy(struct rtl_ax_tx *t,struct ieee80211_vif *v,unsigned id){(void)t;(void)v;(void)id;return 0;}
 static unsigned fail_stage,fail_index,ages[2],timers;static struct wiphy_work *queued;
 static struct rtl_dq_io fe_io(struct rtl_fe *fe){return (struct rtl_dq_io){fe};}

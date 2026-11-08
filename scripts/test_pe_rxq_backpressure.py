@@ -154,6 +154,36 @@ def reorder_peer(start=0x123,window=64):
  for j,v in ((88,VP|0xa0000000),(89,NI),(93,1),(106,ST)):r.put(MB+j*4,v)
  return r
 
+def open_frame(seq):
+ frame=bytearray(data_frame(seq,0));frame[1]&=~0x40
+ return bytes(frame[:26]+frame[34:-12]+frame[-4:])
+
+# Open peers retain the same captured-RX/BA/ARM ordering, without a PN.
+# Retry duplicates return to Linux, whose non-BA duplicate rule is narrower
+# than the encrypted PN-based rejection below.
+for start in (0,4095):
+ for kind in ('ordered','gap','retry','key-change','no-ba','arm-first'):
+  r=reorder_peer(start=start,window=0 if kind=='no-ba' else 64)
+  r.put(ST+0x10008,(1<<31)|(1<<25)|(1<<8));r.put(ST+1028,0)
+  if kind=='arm-first':r.arrive();r.capture();r.process()
+  sequence=(start+1)&4095 if kind in ('gap','no-ba') else (start-1)&4095 if kind=='retry' else start
+  frame=bytearray(open_frame(sequence))
+  if kind=='retry':frame[1]|=8
+  at,raw=r.arrive(bytes(frame),True);r.put(at+16,0)
+  if kind=='key-change':r.put(B+0x11a08,0)
+  r.capture();r.process()
+  if kind=='ordered':
+   assert r.get(MB+90*4)==1 and r.get(ST+1024)==(1<<31)|((start+1)&4095)
+  elif kind=='gap':
+   assert not r.get(MB+90*4) and not r.get(MB+94*4)
+   at,_=r.arrive(open_frame(start),True);r.put(at+16,0);r.capture()
+   for _ in range(4):r.process()
+   assert r.get(MB+90*4)==2 and r.get(ST+1024)==(1<<31)|((start+2)&4095)
+  else:
+   assert not r.get(MB+90*4) and r.get(MB+94*4)==1
+  assert not r.get(ST+1028) and not r.get(ST+1032)
+  r.inventory()
+
 # Old Retry duplicates must not serialize subsequent fresh frames through ARM.
 for start in (0x123, 0):
     for lag in (1, 32, 64):

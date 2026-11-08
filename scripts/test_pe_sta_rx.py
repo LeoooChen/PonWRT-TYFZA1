@@ -7,16 +7,16 @@ root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / 'tools'))
 from check_pe_uplink_small_udp import case
 
-for gcmp in (False,True):
+for opened,gcmp in ((False,False),(False,True),(True,False)):
  for client in (False, True):
      for slot in range(2):
          for ipv6, size in ((False, 0), (False, 1472), (True, 1452)):
              for amsdu in (False, True):
-                 assert case(sys.argv[1], slot, ipv6, size, client=client, amsdu=amsdu,gcmp=gcmp)['PE_to_NI']
+                 assert case(sys.argv[1], slot, ipv6, size, client=client, amsdu=amsdu,gcmp=gcmp,opened=opened)['PE_to_NI']
                  faults = ['receiver', 'transmitter', 'decrypt', 'replay', 'admission']
                  if amsdu: faults.append('subframe')
                  for options in [{'fe_ready': False}, {'wrong_direction': True}] + [
                          {'corrupt': fault} for fault in faults]:
                      assert not case(sys.argv[1], slot, ipv6, size, client=client,
-                                     amsdu=amsdu,gcmp=gcmp, **options)['PE_to_NI']
+                                     amsdu=amsdu,gcmp=gcmp,opened=opened, **options)['PE_to_NI']
 print('PE AP/STA CCMP/GCMP RX: both radios, IPv4/IPv6, Ethernet addresses, PN/SN, FE fallback and wrong-DS rejection passed')

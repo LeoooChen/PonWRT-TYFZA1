@@ -84,11 +84,11 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) rx_frame(
 	if ((wd >> 24 & 15) || (info & 0xc000) != 0xc000 ||
 	    written > 12288 || offset + bytes > written || bytes < 54) return 0;
 	u32 crypto = *(u32 *)(buffer + 16);
-	if (!(crypto & BIT(2)) || crypto & (BIT(1) | BIT(9) | BIT(10))) return 0;
+	if (crypto & (BIT(1) | BIT(9) | BIT(10))) return 0;
 	u8 *data = rx_prefix(prefix, buffer + offset, 10);
 	u32 fc = data[0] | (u32)data[1] << 8;
 	/* Check the DS direction against the admitted peer after MACID lookup. */
-	if ((fc & 0x44ff) != 0x4088) return 0;
+	if ((fc & 0x04ff) != 0x0088) return 0;
 	if (data[22] & 15) return 0;
 	u8 *memory = uncached(mailbox[187]);
 	u8 *states = uncached(mailbox[106]);
@@ -104,6 +104,8 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) rx_frame(
 	if (!*(volatile u32 *)(memory + 0x11a00 + macid * 4)) return 0;
 	u32 config = *(u32 *)(states + RX_PEER_CONFIG + macid * 4);
 	if (!(config & BIT(31))) return 0;
+ u32 open=!!(config & BIT(25));
+ if (open ? ((fc & BIT(14)) || (crypto & BIT(2))) : (!(fc & BIT(14)) || !(crypto & BIT(2)))) return 0;
 	u32 client = !!(*(u32 *)(memory + 0xd000 + macid * 32 + 16) & BIT(23));
 	if ((fc & 0x0300) != (client ? 0x0200 : 0x0100)) return 0;
 	u8 *peer = memory + 0xe400 + macid * 8;
@@ -119,8 +121,8 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) rx_frame(
 		mailbox[121]++;
 		return 0;
 	}
-	if (data[header + 3] != (0x20 | (config & 3) << 6)) return 0;
-	if (bytes < header + 28 + (config & BIT(24) ? 8 : 0)) return 0;
+	if (!open && data[header + 3] != (0x20 | (config & 3) << 6)) return 0;
+ if (bytes < header + (open?12:28 + (config & BIT(24) ? 8 : 0))) return 0;
 	*frame = buffer + offset; *length = bytes; *station = macid;
 	return header;
 }
@@ -151,9 +153,10 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	u32 sequence = (frame[22] | (u32)frame[23] << 8) >> 4;
 	u8 *states = uncached(mailbox[106]);
 	volatile u32 *state = (void *)(states + (macid * 16 + tid) * 32);
-	u8 *iv = frame + header, *data = wire + header + 8;
-	u32 pn_low = iv[0] | (u32)iv[1] << 8 | (u32)iv[4] << 16 | (u32)iv[5] << 24;
-	u32 pn_high = iv[6] | (u32)iv[7] << 8;
+	u32 open=!!(*(u32 *)(states + RX_PEER_CONFIG + macid * 4) & BIT(25));
+	u8 *iv = frame + header, *data = wire + header + (open?0:8);
+	u32 pn_low = open?0:iv[0] | (u32)iv[1] << 8 | (u32)iv[4] << 16 | (u32)iv[5] << 24;
+	u32 pn_high = open?0:iv[6] | (u32)iv[7] << 8;
 	if (!(state[0] & BIT(31))) { mailbox[108]++; return 0; }
 	u32 expected = state[0] & 4095, out_of_order = expected != sequence;
 	if (out_of_order) {
@@ -161,11 +164,11 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 		/* A retried MPDU already behind the BA head and accepted PN is
 		 * a duplicate. Recycle it without serializing fresh RX through ARM. */
 		if ((frame[1] & 8) && ((sequence - expected) & 4095) >= 2048 &&
-		    (pn_high < state[2] || (pn_high == state[2] && pn_low <= state[1])))
+		    (!open && (pn_high < state[2] || (pn_high == state[2] && pn_low <= state[1]))))
 			return RX_ARM_DONE;
 		if (((sequence - expected) & 4095) >= state[7]) return 0;
 	}
-	if (pn_high < state[2] || (pn_high == state[2] && pn_low <= state[1])) { mailbox[110]++; return 0; }
+	if (!open && (pn_high < state[2] || (pn_high == state[2] && pn_low <= state[1]))) { mailbox[110]++; return 0; }
 	if (out_of_order) {
 		u32 order = ((macid * 16 + tid) << 12) | expected;
 		u32 key = BIT(23) | (mailbox[RTL_AX_RX_WORK_PROCESS] << 24) | order;
@@ -187,8 +190,8 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	if (available <= 2) { mailbox[111]++; return RX_NI_BUSY; }
 	available -= 2;
 	if (available > 63) available = 63;
-	u32 body = length - header - 20 -
-		(*(u32 *)(states + RX_PEER_CONFIG + macid * 4) & BIT(24) ? 8 : 0), offset = 0, frames = 1;
+	u32 body = length - header - (open?4:20 +
+		(*(u32 *)(states + RX_PEER_CONFIG + macid * 4) & BIT(24) ? 8 : 0)), offset = 0, frames = 1;
 	if (!amsdu) {
 		/* LLC + IPv4 + UDP is 36 bytes, producing a 42-byte NI frame. */
 		const u8 *destination = frame + (client ? 4 : 16);

@@ -418,6 +418,7 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 			key ? key->hw_key_idx | ((rtl_ax_security_type(key->cipher)>=8?RTL_MC_PE_KEY_GCMP>>16:0) |
     (rtl_ax_security_type(key->cipher)&1?RTL_MC_PE_KEY_256>>16:0)) :
 			RTL_AX_SECURITY_ENTRIES, key ? key->keyidx : 0)) continue;
+		rtl_ax_rx_open_peer(radio->rx,macid,!key);
 		ret = rtl_ax_tx_ni_peer(radio->tx, ieee80211_vif_to_wdev(vif)->netdev, macid);
 		radio->offload_result = min(ret, 0);
 		if (ret < 0) radio->offload_retry = true;
@@ -728,7 +729,7 @@ static int rtl_ax_station_release(struct rtl_ax_ap *radio, unsigned int macid)
 
 	ret = rtl_ax_tx_ni_retire_peer(radio->tx, macid);
 	if (ret) return ret;
-	if (radio->retired_stations[macid].client) rtl_ax_rx_key(radio->rx, macid, NULL);
+	rtl_ax_rx_key(radio->rx, macid, NULL);
 	ret = rtl_ax_drop_station(radio, macid, IEEE80211_NUM_TIDS);
 	if (ret)
 		return ret;

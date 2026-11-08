@@ -36,12 +36,14 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;
 #define BIT(n) (1U << (n))
 #define READ_ONCE(p) (p)
 #define min_t(t,a,b) ((t)(a) < (t)(b) ? (t)(a) : (t)(b))
+struct rtl_ax_rx_packet {const u8 *payload;unsigned type,bytes;};
+static u16 get_unaligned_le16(const void *p){u16 v;memcpy(&v,p,2);return v;}
 struct ieee80211_key_conf {u16 next;u8 pn[6];};
 struct ieee80211_sta {unsigned macid;};
 struct rtl_ax_shortcut_seen {u32 frames,bytes,msdus;};
 struct rtl_ax_rx {
     struct {u8 *memory;} pe;u8 *uplink_states,*rpq_memory;void *hw;
-    struct ieee80211_key_conf *keys[128];int uplink_lock,irq_lock,work;
+    bool uplink_open[128];struct ieee80211_key_conf *keys[128];int uplink_lock,irq_lock,work;
     unsigned uplink_wifi_id;u16 uplink_pending_tids[128];
     struct rtl_ax_shortcut_seen uplink_seen[128][16];u32 uplink_forwarded_seen;
     bool running,rpq_transfer;
@@ -52,7 +54,7 @@ static unsigned bh,rcu,queued,guard_reads,snapshots,syncs[128][16],accounts[128]
 static u32 counted_frames[128][16],counted_bytes[128][16],counted_msdus[128][16];
 static u8 *racing_state;
 static bool race,snapshot_blocked;
-static bool work_pending;
+static bool work_pending;static u16 open_next=4095;
 static unsigned work_delay;
 static void *system_wq;
 static void mutex_lock(int *p){assert(!*p);*p=1;}
@@ -104,7 +106,7 @@ static bool ieee80211_rx_shortcut_snapshot(struct ieee80211_sta *sta,
         struct ieee80211_key_conf *key,unsigned tid,u16 *next,u8 pn[6]){
     (void)tid;assert(bh&&rcu&&active->uplink_lock&&key==active->keys[sta->macid]);
     if(snapshot_blocked)return false;
-    *next=key->next;memcpy(pn,key->pn,6);snapshots++;return true;
+    *next=key?key->next:open_next;if(key)memcpy(pn,key->pn,6);else memset(pn,0,6);snapshots++;return true;
 }
 static void ieee80211_rx_shortcut_sync(struct ieee80211_sta *sta,
         struct ieee80211_key_conf *key,unsigned tid,u16 next,const u8 pn[6],u16 received){
@@ -115,7 +117,7 @@ static void ieee80211_rx_shortcut_sync(struct ieee80211_sta *sta,
     assert(pn[0]==(u8)(raw(state+8)>>8)&&pn[1]==(u8)raw(state+8));
     assert(pn[2]==(u8)(raw(state+4)>>24)&&pn[3]==(u8)(raw(state+4)>>16));
     assert(pn[4]==(u8)(raw(state+4)>>8)&&pn[5]==(u8)raw(state+4));
-    assert(memcmp(pn,key->pn,6)>=0);memcpy(key->pn,pn,6);key->next=next;
+    if(key){assert(memcmp(pn,key->pn,6)>=0);memcpy(key->pn,pn,6);key->next=next;}else {assert(!memcmp(pn,(u8[6]){},6));open_next=next;}
     syncs[sta->macid][tid]++;
 }
 static void ieee80211_rx_shortcut_account(struct ieee80211_sta *sta,unsigned tid,
@@ -201,6 +203,25 @@ int main(void){
     assert(queued==3 && work_delay==1);
     work_pending=false;guard_reads=0;rtl_ax_rx_uplink_sync(&rx);
     assert(queued==4 && work_pending && work_delay==1);
+    /* Open station reports still carry SN/counts, with no PN/key object. */
+    rx.keys[7]=NULL;rx.uplink_open[7]=true;snapshot_blocked=false;
+    memset(state,0,32);put_unaligned_le32(64,state+28);rx.uplink_seen[7][3]=(struct rtl_ax_shortcut_seen){};
+    rx.uplink_pending_tids[7]=BIT(3);guard_reads=0;
+    rtl_ax_rx_uplink_sync(&rx);
+    assert(raw(state)==(BIT(31)|4095)&&!raw(state+4)&&!raw(state+8));
+    record(state,1,64,1);put_unaligned_le32(0,state+4);put_unaligned_le32(0,state+8);put_unaligned_le32(BIT(31),state);
+    put_unaligned_le32(15,memory+0x2180);guard_reads=0;rtl_ax_rx_uplink_sync(&rx);
+    assert(open_next==0&&rx.uplink_seen[7][3].frames==1);
+    /* A delivered open packet or BAR asks Linux for its accepted state. */
+    u8 frame[64]={0x88,1};frame[10]=7;frame[24]=3;
+    struct rtl_ax_rx_packet packet={frame,0,sizeof(frame)};
+    open_next=17;snapshot_blocked=false;
+    rtl_ax_rx_uplink_seed(&rx,&packet);assert(raw(state)==(BIT(31)|17)&&!rx.uplink_pending_tids[7]);
+    snapshot_blocked=true;rtl_ax_rx_uplink_seed(&rx,&packet);
+    assert(!raw(state)&&(rx.uplink_pending_tids[7]&BIT(3)));
+    snapshot_blocked=false;open_next=22;frame[0]=0x84;frame[1]=0;frame[17]=3<<4;
+    rtl_ax_rx_uplink_seed(&rx,&packet);assert(raw(state)==(BIT(31)|22));
+    rx.uplink_open[7]=false;open_next=23;rtl_ax_rx_uplink_seed(&rx,&packet);assert(raw(state)==(BIT(31)|22));
     puts("Uplink sync: stalled/torn records, deferred retry, independent TIDs, PN/SN, BA window, counter wrap and shutdown passed");
 }
 '''
@@ -208,7 +229,7 @@ int main(void){
 with tempfile.TemporaryDirectory(prefix='rx-uplink-sync-', dir=root / 'artifacts') as directory:
     directory = Path(directory)
     code = directory / 'case.c'
-    code.write_text(common + function('rtl_ax_rx_uplink_publish') + function('rtl_ax_rx_uplink_sync') + case)
+    code.write_text(common + function('rtl_ax_rx_uplink_publish') + function('rtl_ax_rx_uplink_sync') + function('rtl_ax_rx_uplink_seed') + case)
     subprocess.run(['cc', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
                     str(code), '-o', str(directory / 'case')], check=True)
     subprocess.run([str(directory / 'case')], check=True, timeout=10)

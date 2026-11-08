@@ -22,6 +22,7 @@ void rtl_ax_rx_pe_event_ack(struct rtl_ax_rx *rx);
 int rtl_ax_rx_pe_rpq_stop(struct rtl_ax_rx *rx);
 void rtl_ax_rx_pe_wake(struct rtl_ax_rx *rx);
 void rtl_ax_rx_uapsd(struct rtl_ax_rx *rx, unsigned int macid, u8 queues);
+void rtl_ax_rx_open_peer(struct rtl_ax_rx *rx, unsigned int macid, bool open);
 void rtl_ax_rx_key(struct rtl_ax_rx *rx, unsigned int macid, struct ieee80211_key_conf *key);
 void rtl_ax_rx_ba_window(struct rtl_ax_rx *rx, unsigned int macid,
  unsigned int tid, unsigned int window);

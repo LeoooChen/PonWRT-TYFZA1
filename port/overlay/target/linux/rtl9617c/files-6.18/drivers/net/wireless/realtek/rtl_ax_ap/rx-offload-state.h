@@ -26,14 +26,28 @@ void rtl_ax_rx_key(struct rtl_ax_rx *rx, unsigned int macid, struct ieee80211_ke
 	put_unaligned_le32(0, states + 0x10000 + macid * 4);
 	dma_wmb();
 	rx->keys[macid] = key;
+	rx->uplink_open[macid] = false;
 	rx->uplink_pending_tids[macid] = 0;
-	if (!key) goto unlock;
 	/* A BA session can survive rekeying; retain its negotiated window. */
 	for (unsigned int tid = 0; tid < 16; tid++)
 		memset(states + (macid * 16 + tid) * 32, 0, 28);
 	memset(rx->uplink_seen[macid], 0, sizeof(rx->uplink_seen[macid]));
-unlock:
 	mutex_unlock(&rx->uplink_lock);
+}
+
+/* Called only after wiphy-protected verification of the current open peer. */
+void rtl_ax_rx_open_peer(struct rtl_ax_rx *rx, unsigned int macid, bool open)
+{
+ mutex_lock(&rx->uplink_lock);
+ if (rx->uplink_open[macid]!=open) {
+  put_unaligned_le32(0,rx->uplink_states+0x10000+macid*4);
+  dma_wmb();
+  rx->uplink_open[macid]=open;
+  rx->uplink_pending_tids[macid]=0;
+  for(unsigned int tid=0;tid<16;tid++)
+   put_unaligned_le32(0,rx->uplink_states+(macid*16+tid)*32);
+ }
+ mutex_unlock(&rx->uplink_lock);
 }
 
 void rtl_ax_rx_ba_window(struct rtl_ax_rx *rx, unsigned int macid,
@@ -59,7 +73,7 @@ bool rtl_ax_rx_uplink_active(struct rtl_ax_rx *rx, unsigned int macid)
 void rtl_ax_rx_uplink_enable(struct rtl_ax_rx *rx, unsigned int macid)
 {
 	mutex_lock(&rx->uplink_lock);
-	if (rx->keys[macid] && rx->uplink_wifi_id) {
+	if ((rx->keys[macid] || rx->uplink_open[macid]) && rx->uplink_wifi_id) {
 		/* A withdrawn peer may have changed its BA window while ARM owned RX. */
 		if (!(get_unaligned_le32(rx->uplink_states + 0x10000 + macid * 4) & BIT(31))) {
 			for (unsigned int tid = 0; tid < 16; tid++)
@@ -67,9 +81,9 @@ void rtl_ax_rx_uplink_enable(struct rtl_ax_rx *rx, unsigned int macid)
 			rx->uplink_pending_tids[macid] = 0;
 		}
 		dma_wmb();
-		put_unaligned_le32(BIT(31) | rx->uplink_wifi_id << 8 | rx->keys[macid]->keyidx |
+		put_unaligned_le32(BIT(31) | rx->uplink_wifi_id << 8 | (rx->keys[macid]?rx->keys[macid]->keyidx:0) |
 			(u32)rx->uplink_trigger_tids[macid] << 16 |
-			(rx->keys[macid]->cipher != WLAN_CIPHER_SUITE_CCMP ? BIT(24) : 0),
+			(rx->keys[macid]?(rx->keys[macid]->cipher != WLAN_CIPHER_SUITE_CCMP ? BIT(24) : 0):BIT(25)),
 			rx->uplink_states + 0x10000 + macid * 4);
 	}
 	mutex_unlock(&rx->uplink_lock);
@@ -93,10 +107,10 @@ void rtl_ax_rx_uplink_peer(struct rtl_ax_rx *rx, unsigned int wifi_id, struct ie
 		struct ieee80211_key_conf *key = rx->keys[macid];
 		for (unsigned int tid = 0; tid < 16; tid++)
 			put_unaligned_le32(0, rx->uplink_states + (macid * 16 + tid) * 32);
-		if (key && get_unaligned_le32(rx->rpq_memory + 0x11a00 + macid * 4))
-			put_unaligned_le32(BIT(31) | wifi_id << 8 | key->keyidx |
+		if ((key || rx->uplink_open[macid]) && get_unaligned_le32(rx->rpq_memory + 0x11a00 + macid * 4))
+			put_unaligned_le32(BIT(31) | wifi_id << 8 | (key?key->keyidx:0) |
 			(u32)rx->uplink_trigger_tids[macid] << 16 |
-			(rx->keys[macid]->cipher != WLAN_CIPHER_SUITE_CCMP ? BIT(24) : 0),
+			(rx->keys[macid]?(rx->keys[macid]->cipher != WLAN_CIPHER_SUITE_CCMP ? BIT(24) : 0):BIT(25)),
 			rx->uplink_states + 0x10000 + macid * 4);
 	}
 	dma_wmb();
@@ -138,7 +152,7 @@ static void rtl_ax_rx_uplink_sync(struct rtl_ax_rx *rx)
 	for (macid = 1; macid < 128; macid++) {
 		struct ieee80211_key_conf *key = rx->keys[macid];
 		struct ieee80211_sta *sta;
-		if (!key) continue;
+		if (!key && !rx->uplink_open[macid]) continue;
 		sta = ieee80211_find_sta_by_ifaddr(rx->hw, rx->rpq_memory + 0xe400 + macid * 8, NULL);
 		for (tid = 0; sta && tid < 16; tid++) {
 			u8 *state = rx->uplink_states + (macid * 16 + tid) * 32;
@@ -206,12 +220,12 @@ static void rtl_ax_rx_uplink_seed(struct rtl_ax_rx *rx, const struct rtl_ax_rx_p
 		/* BAR can advance the BA head without accepting a new data frame. */
 		tid = frame[17] >> 4;
 	} else {
-		if (packet->bytes < 54 || ((fc & 0x47ff) != 0x4188 && (fc & 0x47ff) != 0x4288) || frame[22] & 15) return;
+		if (packet->bytes < 54 || ((fc & 0x07ff) != 0x0188 && (fc & 0x07ff) != 0x0288) || frame[22] & 15) return;
 		tid = frame[24] & 15;
 	}
 	mutex_lock(&rx->uplink_lock);
 	for (macid = 1; macid < 128; macid++)
-		if (rx->keys[macid] && !memcmp(frame + 10, memory + 0xe400 + macid * 8, 6)) break;
+		if ((rx->keys[macid] || rx->uplink_open[macid]) && !memcmp(frame + 10, memory + 0xe400 + macid * 8, 6)) break;
 	if (macid == 128) goto unlock;
 	rx->uplink_pending_tids[macid] |= BIT(tid);
 	local_bh_disable(); rcu_read_lock();

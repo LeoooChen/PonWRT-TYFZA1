@@ -13,7 +13,7 @@
  */
 #define RTL_MC_PE_TABLE_MAILBOX 210
 #define RTL_MC_PE_CAP_MAILBOX 211
-#define RTL_MC_PE_CAPABILITY 0x4d435038U
+#define RTL_MC_PE_CAPABILITY 0x4d435039U
 /* Request/recipe key: GCMP family bit27, 256-bit key bit28. */
 #define RTL_MC_PE_KEY_GCMP (1U << 27)
 #define RTL_MC_PE_KEY_256 (1U << 28)

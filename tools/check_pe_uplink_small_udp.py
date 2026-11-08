@@ -38,7 +38,7 @@ def packet(ipv6, payload_bytes):
 
 
 def case(directory, slot, ipv6, payload_bytes, fe_ready=True, client=False,
-         wrong_direction=False, amsdu=False, corrupt=None, gcmp=False):
+         wrong_direction=False, amsdu=False, corrupt=None, gcmp=False, opened=False):
     directory = Path(directory)
     symbols = subprocess.check_output(['llvm-nm-18', str(directory / 'pe-wd.elf')], text=True)
     entry = next(int(s.split()[0], 16) for s in symbols.splitlines() if s.endswith(' rx_uplink'))
@@ -59,12 +59,12 @@ def case(directory, slot, ipv6, payload_bytes, fe_ready=True, client=False,
     u.mem_write(base + 0xe410, peer)
     put(base + 0x11a08, 1)
     put(base + 0xd000 + 2 * 32 + 16, (1 << 23) if client else 0)
-    put(states + 0x10008, 1 << 31 | (slot + 1) << 8 | (1<<24 if gcmp else 0))
+    put(states + 0x10008, 1 << 31 | (slot + 1) << 8 | (1<<24 if gcmp else 0) | (1<<25 if opened else 0))
     put(states + 2 * 512, 1 << 31 | 0x123)
     for index, value in [(88, vp | 0xa0000000), (89, descriptors), (93, 1), (106, states), (187, base)]:
         put(mb + index * 4, value)
     ethertype, network = packet(ipv6, payload_bytes)
-    fc = 0x4288 if client != wrong_direction else 0x4188
+    fc = (0x4288 if client != wrong_direction else 0x4188) & (~0x4000 if opened else 0xffff)
     header = struct.pack('<HH', fc, 0) + ap + peer + dst + struct.pack('<H', 0x123 << 4) + bytes([128 if amsdu else 0, 0])
     llc = bytes.fromhex('aaaa03000000') + ethertype + network
     expected = [(ap + dst if client else dst + peer) + ethertype + network]
@@ -78,16 +78,18 @@ def case(directory, slot, ipv6, payload_bytes, fe_ready=True, client=False,
             body += ethernet[:12] + struct.pack('>H', len(llc)) + llc
     else:
         body = llc
-    frame = header + bytes.fromhex('0200002000000000') + body + bytes(20 if gcmp else 12)
+    frame = header + (b'' if opened else bytes.fromhex('0200002000000000')) + body + bytes(4 if opened else 20 if gcmp else 12)
     raw = bytearray(36) + frame
     struct.pack_into('<II', raw, 0, len(raw) | 0xc000 | 1 << 16, len(frame) | 1 << 31)
-    struct.pack_into('<I', raw, 16, 4)  # Successful hardware decrypt, no errors.
+    struct.pack_into('<I', raw, 16, 0 if opened else 4)  # Successful hardware decrypt, no errors.
     struct.pack_into('<I', raw, 24, 1 << 28 | 2 << 16)
     if corrupt == 'receiver': raw[36 + 4] ^= 4
     if corrupt == 'transmitter': raw[36 + 10] ^= 4
     if corrupt == 'decrypt': struct.pack_into('<I', raw, 16, 4 | (1 << 9))
-    if corrupt == 'replay': put(states + 2 * 512 + 4, 2)
-    if corrupt == 'subframe': raw[36 + 26 + 8 + (0 if client else 6)] ^= 4
+    if corrupt == 'replay':
+        if opened: put(states+2*512,1<<31|0x124)
+        else: put(states + 2 * 512 + 4, 2)
+    if corrupt == 'subframe': raw[36 + 26 + (0 if opened else 8) + (0 if client else 6)] ^= 4
     if corrupt == 'admission': put(base + 0x11a08, 0)
     u.mem_write(buf, bytes(raw))
     for reg, value in [(UC_MIPS_REG_A0, mb | 0xa0000000), (UC_MIPS_REG_A1, buf | 0xa0000000),
@@ -104,12 +106,12 @@ def case(directory, slot, ipv6, payload_bytes, fe_ready=True, client=False,
             assert info == 0xa5000001 | len(ethernet) << 8 | (slot + 1) << 1
             assert bytes(u.mem_read(addr, len(ethernet))) == ethernet
         assert get(states + 2 * 512) == 1 << 31 | 0x124
-        assert get(states + 2 * 512 + 4) == 2
+        assert get(states + 2 * 512 + 4) == (0 if opened else 2)
         assert get(mb + 94 * 4) == 0
     else:
         assert get(vp + 0x18) == 0 and bytes(u.mem_read(buf, len(raw))) == bytes(raw)
-        assert get(states + 2 * 512) == 1 << 31 | 0x123
-        assert get(states + 2 * 512 + 4) == (2 if corrupt == 'replay' else 0)
+        assert get(states + 2 * 512) == 1 << 31 | (0x124 if opened and corrupt=="replay" else 0x123)
+        assert get(states + 2 * 512 + 4) == (2 if corrupt == 'replay' and not opened else 0)
     return dict(slot=slot, NI_VP=9 + slot, ipv6=ipv6, UDP_payload_bytes=payload_bytes,
                 PE_to_NI=bool(result), exact_ethernet=bool(result), ARM_handoff=False if result else 'required')
 

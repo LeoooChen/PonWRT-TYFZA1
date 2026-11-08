@@ -7788,6 +7788,51 @@ build pass. That module was not loaded. No device was accessed. Full hardware
 packet retirement/ID reuse, multi-VIF, TSPEC and remaining factory-management
 capabilities remain unfinished.
 
+### Open-network PE receive forwarding
+
+Open AP/STA peers can now use PE→NI receive forwarding as well as NI→PE TX.
+The target `core_rxsc_apply_shortcut` privacy/template branch was executed for
+20 combinations: an open template accepts an unprotected frame, and mismatched
+protection is rejected. Native admission still requires the current Linux open
+peer check described above; an absent key alone is not authorization.
+
+Open receive sequence state belongs to `sta_info`, with separate per-TID valid
+and next-sequence values. A QoS, unprotected, unfragmented frame reaching the
+normal Linux RX chain after decryption checks establishes the state. Snapshot
+requires authorization, no selected PTK/default unicast key, no historical
+USES_ENCRYPTION flag, and, when BA exists, an empty reorder queue at the same
+next sequence. It never initializes from zero-filled key storage. ARM delivery
+and BAR recovery query that state before re-enabling the per-TID PE shortcut.
+
+The radio records explicit open-peer admission after the worker checks current
+keys, and clears it on key change/station teardown. PE config bit25 selects the
+open format: no IV or PN reads, no MIC, four-byte FCS removal. Protected or
+hardware-decrypted packets cannot use the open recipe. Existing MAC addresses,
+DS direction, QoS, PS/U-APSD, fragment, protocol and NI-credit checks remain.
+Contiguous sequences advance; future BA frames use the existing bounded search
+and ARM fallback. Old Retry frames return to Linux instead of using encrypted
+PN-based duplicate suppression. PN words remain zero; sequence and traffic
+counters still synchronize before ARM receives exceptions. MCP9 distinguishes
+the new receive contract from older firmware.
+
+Tests execute the actual Linux mark/snapshot/sync code for open and four AES
+configurations, including112 open authorization/key/BA cases and12 mark cases;
+radio tests cover key transitions, open packet/BAR seeding and failed snapshot
+retry. Actual MIPS tests cover both radios, AP/STA, IPv4/IPv6, single/A-MSDU,
+exact Ethernet output and privacy/address/replay errors. Twelve complete RXQ
+cases add sequence wrap, reorder gaps, no BA, Retry, key closure and preceding
+ARM barriers, retaining the existing RXBD inventory and NI-prefetch ownership
+checks. Encrypted, multicast/BCMC, PS, FTTR-generation and withdrawal regressions
+pass. These checks do not verify physical RX descriptors or hardware timing.
+
+Image/modules, six changed overlay/kernel inputs, zero-fuzz patch replay and
+repeat firmware output pass. Full PE is32112 bytes, SHA256
+`4c98aad7e73b5f16907d9847cea9b99c579813bc72552801e4ba2ee086a4aad0`,
+conservative stack7296/8192; non-uplink13880 bytes. Local artifacts are
+`artifacts/fttr/open-rx-*-20261109.*`. No device was accessed. Full upstream/
+downstream retirement and ID reuse, multi-VIF, TSPEC and remaining factory
+management still belong to the unfinished goal.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

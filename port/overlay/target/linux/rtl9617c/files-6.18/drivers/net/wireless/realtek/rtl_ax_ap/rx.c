@@ -88,6 +88,7 @@ struct rtl_ax_rx {
 	struct mutex uplink_lock;
 	unsigned int uplink_wifi_id;
 	u8 uplink_trigger_tids[128];
+	bool uplink_open[128];
 	u16 uplink_pending_tids[128];
 	struct rtl_ax_shortcut_seen uplink_seen[128][16];
 	u32 peer_bytes[128];

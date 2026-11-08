@@ -246,6 +246,8 @@
 
 114. 接入CCMP256/GCMP256双CAM密钥及完整FE/PE算法身份：原厂48组双半调用/错误、16删除对、12非相邻DCTL放置和模式边界确认两半均EXT_KEY；原生先保留两CAM，逐写检查，DCTL后才发布，任一擦除失败两半均不复用。worker按实际key-ID/主CAM查找，DCTL改为四GTK所需mode3；一扩展PTK/两扩展GTK满槽明确ENOSPC，移除可换新且保留其他密钥。bit28贯穿配方，MCP8，RX支持三种16字节MIC算法和对应PN成员。654原厂编码、72双CAM故障/释放组及资源耗尽/替换、1031密钥、67584请求、2048worker、256RX状态、128软件/PE PN交替、完整FE记录到MIPS/回收及相关回归通过；Image/模块/10输入/补丁重放/重复构建通过。PE31960字节、栈7288，非uplink13880；收尾对齐mainbfaa446，iperf校验和/尾部提交回归及测试模块编译通过（未加载），未实机；完整硬件退场/ID复用、多VIF、TSPEC与其他原厂管理缺口仍未完成。详见[扩展密钥归属](port/FTTR.md#extended-ccmp256-and-gcmp256-key-ownership)。
 
+115. 接入开放网络PE→NI接收：原厂20组privacy/模板分支确认open/open接受及错配拒绝；Linux站点保存独立每TID序号，正常RX链建立后才可快照，授权/无选中密钥/无历史加密状态/BA空且序号一致均检查。radio显式开放、key/站点清理撤销；PE无IV/PN/MIC、仅剥FCS，保留地址/DS/PS/分片/协议/信用条件；乱序沿用有界搜索，旧Retry交Linux，计数/序号仍同步。112开放状态/12建立场景、四AES及radio种子/BAR/失败重试、双无线AP/STA/IPv4/IPv6/A-MSDU和12完整RXQ回绕/缺口/无BA/密钥/ARM屏障、已有组播/PS/FTTR/回收回归通过；Image/模块/6输入/补丁重放/重复构建通过。MCP9，PE32112字节、栈7296，未实机；完整退场/ID复用、多VIF、TSPEC和原厂管理缺口继续保留。详见[开放网络接收](port/FTTR.md#open-network-pe-receive-forwarding)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

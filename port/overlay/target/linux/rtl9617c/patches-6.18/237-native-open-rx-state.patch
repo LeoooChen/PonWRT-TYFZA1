@@ -1,0 +1,100 @@
+--- a/net/mac80211/sta_info.h
++++ b/net/mac80211/sta_info.h
+@@ -747,6 +747,9 @@
+ 
+ 	/* Plus 1 for non-QoS frames */
+ 	__le16 last_seq_ctrl[IEEE80211_NUM_TIDS + 1];
++	/* Open RX shortcut state belongs to this association, not a key. */
++	u16 rtl9617c_open_next[IEEE80211_NUM_TIDS];
++	u16 rtl9617c_open_valid;
+ 
+ 	u16 tid_seq[IEEE80211_QOS_CTL_TID_MASK + 1];
+ 
+--- a/net/mac80211/rx.c
++++ b/net/mac80211/rx.c
+@@ -4142,6 +4142,17 @@
+ 				rx->key->rx_shortcut_valid_tids |= BIT(rx->security_idx);
+ 			}
+ 		}
++		if (rx->sta && !rx->key && !test_sta_flag(rx->sta, WLAN_STA_USES_ENCRYPTION)) {
++			struct ieee80211_hdr *accepted = (void *)rx->skb->data;
++			if (ieee80211_is_data_qos(accepted->frame_control) &&
++			    !ieee80211_has_protected(accepted->frame_control) &&
++			    !ieee80211_has_morefrags(accepted->frame_control) &&
++			    !(accepted->seq_ctrl & cpu_to_le16(IEEE80211_SCTL_FRAG))) {
++				rx->sta->rtl9617c_open_next[rx->security_idx] =
++					((le16_to_cpu(accepted->seq_ctrl) >> 4) + 1) & 4095;
++				rx->sta->rtl9617c_open_valid |= BIT(rx->security_idx);
++			}
++		}
+ 		CALL_RXH(ieee80211_rx_h_defragment);
+ 		CALL_RXH(ieee80211_rx_h_michael_mic_verify);
+ 		/* must be after MMIC verify so header is counted in MPDU mic */
+@@ -4390,28 +4401,40 @@
+ 				   u16 *next_seq, u8 pn[6])
+ {
+ 	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
+-	struct ieee80211_key *key = container_of(keyconf, struct ieee80211_key, conf);
++	struct ieee80211_key *key = keyconf ? container_of(keyconf, struct ieee80211_key, conf) : NULL;
+ 	struct ieee80211_local *local = sta->sdata->local;
+ 	struct tid_ampdu_rx *ba;
+ 	bool ready = false;
++	u16 next;
+ 
+ 	spin_lock_bh(&local->rx_path_lock);
++	if (!test_sta_flag(sta, WLAN_STA_AUTHORIZED)) goto out;
++	if (!key) {
++		if (test_sta_flag(sta, WLAN_STA_USES_ENCRYPTION) ||
++		    rcu_access_pointer(sta->ptk[sta->ptk_idx]) ||
++		    rcu_access_pointer(sta->sdata->default_unicast_key) ||
++		    !(sta->rtl9617c_open_valid & BIT(tid))) goto out;
++		next=sta->rtl9617c_open_next[tid];
++	} else {
+ 	if ((keyconf->cipher != WLAN_CIPHER_SUITE_CCMP && keyconf->cipher != WLAN_CIPHER_SUITE_GCMP && keyconf->cipher != WLAN_CIPHER_SUITE_CCMP_256 && keyconf->cipher != WLAN_CIPHER_SUITE_GCMP_256) || key->sta != sta ||
+ 	    !test_sta_flag(sta, WLAN_STA_AUTHORIZED) ||
+ 	    !(key->rx_shortcut_valid_tids & BIT(tid)))
+ 		goto out;
++	next=key->rx_shortcut_next_seq[tid];
++	}
+ 	ba = rcu_dereference(sta->ampdu_mlme.tid_rx[tid]);
+ 	if (ba) {
+ 		spin_lock_bh(&ba->reorder_lock);
+ 		ready = !ba->stored_mpdu_num &&
+-			ba->head_seq_num == key->rx_shortcut_next_seq[tid];
++			ba->head_seq_num == next;
+ 		if (ready) *next_seq = ba->head_seq_num;
+ 		spin_unlock_bh(&ba->reorder_lock);
+ 	} else {
+-		*next_seq = key->rx_shortcut_next_seq[tid];
++		*next_seq = next;
+ 		ready = true;
+ 	}
+-	if (ready) memcpy(pn, ((keyconf->cipher == WLAN_CIPHER_SUITE_GCMP || keyconf->cipher == WLAN_CIPHER_SUITE_GCMP_256) ? key->u.gcmp.rx_pn[tid] : key->u.ccmp.rx_pn[tid]), 6);
++	if (ready && !key) memset(pn,0,6);
++	if (ready && key) memcpy(pn, ((keyconf->cipher == WLAN_CIPHER_SUITE_GCMP || keyconf->cipher == WLAN_CIPHER_SUITE_GCMP_256) ? key->u.gcmp.rx_pn[tid] : key->u.ccmp.rx_pn[tid]), 6);
+ out:
+ 	spin_unlock_bh(&local->rx_path_lock);
+ 	return ready;
+@@ -4423,11 +4446,20 @@
+ 			       u16 next_seq, const u8 pn[6], u16 received)
+ {
+ 	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
+-	struct ieee80211_key *key = container_of(keyconf, struct ieee80211_key, conf);
++	struct ieee80211_key *key = keyconf ? container_of(keyconf, struct ieee80211_key, conf) : NULL;
+ 	struct ieee80211_local *local = sta->sdata->local;
+ 
+ 	spin_lock_bh(&local->rx_path_lock);
+-	if ((keyconf->cipher == WLAN_CIPHER_SUITE_CCMP || keyconf->cipher == WLAN_CIPHER_SUITE_GCMP || keyconf->cipher == WLAN_CIPHER_SUITE_CCMP_256 || keyconf->cipher == WLAN_CIPHER_SUITE_GCMP_256) && key->sta == sta) {
++	if (!key) {
++		if (test_sta_flag(sta, WLAN_STA_USES_ENCRYPTION) ||
++		    rcu_access_pointer(sta->ptk[sta->ptk_idx]) ||
++		    rcu_access_pointer(sta->sdata->default_unicast_key)) {
++			spin_unlock_bh(&local->rx_path_lock);return;
++		}
++		sta->last_seq_ctrl[tid] = cpu_to_le16(((next_seq-1)&4095)<<4);
++		sta->rtl9617c_open_next[tid]=next_seq;
++		sta->rtl9617c_open_valid |= BIT(tid);
++	} else if ((keyconf->cipher == WLAN_CIPHER_SUITE_CCMP || keyconf->cipher == WLAN_CIPHER_SUITE_GCMP || keyconf->cipher == WLAN_CIPHER_SUITE_CCMP_256 || keyconf->cipher == WLAN_CIPHER_SUITE_GCMP_256) && key->sta == sta) {
+ 		if (memcmp(pn, ((keyconf->cipher == WLAN_CIPHER_SUITE_GCMP || keyconf->cipher == WLAN_CIPHER_SUITE_GCMP_256) ? key->u.gcmp.rx_pn[tid] : key->u.ccmp.rx_pn[tid]), 6) > 0)
+ 			memcpy(((keyconf->cipher == WLAN_CIPHER_SUITE_GCMP || keyconf->cipher == WLAN_CIPHER_SUITE_GCMP_256) ? key->u.gcmp.rx_pn[tid] : key->u.ccmp.rx_pn[tid]), pn, 6);
+ 		sta->last_seq_ctrl[tid] = cpu_to_le16(((next_seq - 1) & 4095) << 4);
