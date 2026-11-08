@@ -857,7 +857,7 @@ static int start_wifi(struct controller *c, unsigned int id)
 	if (c->service_store >= 0) {
 		struct fttr_services saved;
 		int ret = fttr_service_store_load(c->service_store, &c->link, id, u->identity, c->backend, &saved);
-		if (ret == 1) {
+		if (ret == 1 || ret == 2) {
 			u->services = saved;
 			/* Struct copies move inline object arrays: rebind their owners. */
 			for (unsigned int n = 0; n < saved.count; n++) {
@@ -1021,7 +1021,10 @@ static int service_drive(struct controller *c, unsigned int id)
 			return ret;
 		me = service_pending(u);
 		if (me->request[2] == FTTR_ME_CREATE || me->request[2] == FTTR_ME_SET || me->request[2] == FTTR_ME_DELETE) {
-			ret = service_record_pending(c, id);
+			if (c->service_store >= 0 && !u->service_releasing && !u->service_recorded) {
+				ret = fttr_service_store_checkpoint(c->service_store, &c->link, id, u->identity, c->backend, &u->services);
+				if (!ret) u->service_marked = true;
+			} else ret = service_record_pending(c, id);
 			if (ret) return ret;
 		}
 		ret = fttr_me_job_send(me, c->socket, &c->link, now_ms());
@@ -2606,7 +2609,7 @@ static int move_recover_ready(struct controller *c, unsigned int id)
 	int ret;
 	if (c->move_record.service) {
 		ret = fttr_service_store_load(c->service_store, &c->link, id, u->identity, c->backend, &u->services);
-		if (ret < 0) return move_finish(c, ret);
+		if (ret < 0 || ret > 1) return move_finish(c, ret < 0 ? ret : -ENODATA);
 		u->service_started = true;
 		u->service_recorded = ret == 0;
 		u->service_marked = ret == 1;
@@ -3590,21 +3593,24 @@ int main(int argc, char **argv)
 	}
 	if (argc == 9) {
 		struct stat intent;
-		bool recovering = false;
+		bool recovering = false, service_recovery = false;
 		c.optical.directory = open(argv[5], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 
 		if (c.optical.directory < 0) { ret = -errno; goto out; }
 		if (c.service_store >= 0) {
 			if (!fstatat(c.service_store, "move", &intent, AT_SYMLINK_NOFOLLOW)) recovering = true;
 			else if (errno != ENOENT) { ret = -errno; goto out; }
+			ret = fttr_service_store_interrupted(c.service_store);
+			if (ret < 0) goto out;
+			service_recovery = ret > 0;
 		}
 		ret = publish(&c, "initializing", 0);
-		if (!ret && recovering) {
+		if (!ret && (recovering || service_recovery)) {
 			/* A normal bootstrap resets the reservation table we need to
 			 * reconcile. Retain a live calibrated controller; do not reset
 			 * hardware to manufacture a recoverable observation. */
 			ret = fttr_miniolt_link(c.directory, &c.link);
-			if (!ret) ret = fttr_move_store_load(c.service_store, &c.link, c.backend, &c.move_record);
+			if (!ret && recovering) ret = fttr_move_store_load(c.service_store, &c.link, c.backend, &c.move_record);
 			if (!ret) {
 				ret = fttr_miniolt_links_ready(c.directory, c.ni);
 				ret = ret > 0 ? 0 : ret ? ret : -ENOLINK;

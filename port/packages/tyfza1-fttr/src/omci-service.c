@@ -481,8 +481,8 @@ int fttr_service_release_ready(const struct fttr_service_job *job)
 	 * Without the original ownership journal, a move cannot safely reclaim
 	 * the old T-CONT and GEMs or infer their prior configuration.
 	 */
-	if (!job->objects[0].touched || !job->objects[0].have_previous ||
-	    !job->objects[3].touched || !job->objects[4].touched)
+	if (!job->recover_apply && (!job->objects[0].touched || !job->objects[0].have_previous ||
+	    !job->objects[3].touched || !job->objects[4].touched))
 		return -ENODATA;
 	return 0;
 }
@@ -507,7 +507,7 @@ static int release_start(struct fttr_service_job *job, uint16_t *counter)
 	job->configured = job->grant_verified = false;
 	job->phase = "release-vlan";
 	job->stage = FTTR_SERVICE_RELEASING_VLAN;
-	return ret;
+	return ret == 2 ? fttr_service_update(job, counter, -1, NULL) : ret;
 }
 
 int fttr_service_release(struct fttr_service_job *job, uint16_t *counter)

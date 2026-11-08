@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #define _GNU_SOURCE
 #include <errno.h>
+#include <dirent.h>
+#include <ctype.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -11,7 +13,7 @@
 #include "service-store.h"
 
 #define RECORD_LIMIT (32U * 1024 * 1024)
-struct record_io { FILE *file; bool read; int error; size_t size; };
+struct record_io { FILE *file; bool read, applying; int error; size_t size; };
 static void bytes(struct record_io *io, void *p, size_t n)
 {
 	if (io->error || !n) return;
@@ -37,6 +39,20 @@ static void values(struct record_io *io, struct fttr_omci_values *v)
 static void objects(struct record_io *io, struct fttr_objects_job *j,
 	struct fttr_omci_object *o, unsigned int max, unsigned int onu, const uint8_t serial[8])
 {
+	if (!io->read && io->applying) {
+		/* The controller checkpoints before send, so attempts may be zero.
+		 * Mark only the currently pending Create/update-only Set. */
+		if (j->index >= 0 && j->index < j->count &&
+		    (j->phase == FTTR_OBJECT_CREATE ||
+		     (j->phase == FTTR_OBJECT_CONFIGURE && o[j->index].update_only)))
+			o[j->index].touched = true;
+		/* Only an unverified created ME may lack its later Set attributes.
+		 * Keep both groups for already verified objects so foreign drift
+		 * cannot be mistaken for an unfinished initial Set. */
+		for (int i = 0; i < j->count; i++)
+			if (o[i].touched && !o[i].update_only && o[i].presence != FTTR_OBJECT_VERIFIED)
+				memset(&o[i].set, 0, sizeof(o[i].set));
+	}
 	FIELD(io, j, count, max);
 	j->objects = o; j->me.onu = onu; memcpy(j->serial, serial, 8);
 	j->phase = FTTR_OBJECT_CONFIGURED;
@@ -54,6 +70,7 @@ static void objects(struct record_io *io, struct fttr_objects_job *j,
 }
 static void table(struct record_io *io, struct fttr_vlan_table *t)
 {
+	if (!io->read && io->applying && !t->complete) *t = (struct fttr_vlan_table){0};
 	FIELD(io, t, capacity, 65535); FIELD(io, t, length, t->capacity * 16U);
 	if (t->length % 16) io->error = -EBADMSG;
 	if (io->error) return;
@@ -95,22 +112,30 @@ static void recipe(struct record_io *io, struct fttr_services *s, unsigned int o
 			struct fttr_vlan_change *v = &p->vlan;
 			FIELD(io,p,instance,65535); FIELD(io,p,port,2048); FIELD(io,p,number,255); FIELD(io,p,veip,1);
 			objects(io, &p->transaction, p->objects, 4, onu, serial);
+			if (!io->read && io->applying && v->stage == FTTR_VLAN_SET && v->plan.count &&
+			    v->index >= 0 && v->index < v->plan.count) v->sent |= 1U << v->index;
+			if (!io->read && io->applying && v->sent && !v->before.table.complete) io->error = -ENODATA;
 			FIELD(io,&v->plan,count,3); bytes(io,v->plan.rows,sizeof(v->plan.rows));
 			FIELD(io,v,sent,(1U << v->plan.count) - 1);
 			table(io,&v->before.table); table(io,&v->after.table);
 			v->onu = onu; v->instance = p->port; v->stage = FTTR_VLAN_DONE;
 			v->verified = true; v->phase = "recovered";
-			if (!p->port || !p->number || !p->transaction.count || !v->plan.count) io->error = -EBADMSG;
+			if (!p->port || !p->number || !p->transaction.count || (!v->plan.count && !io->applying)) io->error = -EBADMSG;
 		}
 		if (c->multicast) {
 			struct fttr_mcast_job *m = &j->mcast;
 			objects(io,&m->transaction,m->objects,7,onu,serial);
+			if (!io->read && io->applying && m->stage == FTTR_MCAST_SET) m->table_sent = true;
+			if (!io->read && io->applying && m->table_sent) {
+				if (!m->prior_empty) io->error = -ENODATA;
+				memcpy(m->table_row, (uint8_t[12]){15,255,0,0,224,0,1,0,239,255,255,255}, 12);
+			}
 			FIELD(io,m,prior_empty,1); FIELD(io,m,table_sent,1); FIELD(io,m,doubled,1);
 			FIELD(io,m,table_length,24); bytes(io,m->table_row,12);
-			if (m->transaction.count != 7 || m->table_length != (m->doubled ? 24U : 12U)) io->error = -EBADMSG;
-			m->stage = FTTR_MCAST_READY; m->configured = true;
+			if (m->transaction.count != 7 || (!io->applying && m->table_length != (m->doubled ? 24U : 12U))) io->error = -EBADMSG;
+			m->stage = FTTR_MCAST_READY; m->configured = true; m->recover_apply = io->applying;
 		}
-		j->stage = FTTR_SERVICE_READY; j->phase = "recovered";
+		j->stage = FTTR_SERVICE_READY; j->phase = "recovered"; j->recover_apply = io->applying;
 		/* Local grants were withdrawn during controller startup. */
 		j->configured = false; j->grant_verified = false; j->grant_withdrawn = true;
 	}
@@ -134,16 +159,45 @@ int fttr_service_store_open(const char *path)
 fail:
 	close(fd); return ret;
 }
+int fttr_service_store_interrupted(int directory)
+{
+ int fd = openat(directory, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC), ret = 0;
+ struct dirent *entry;
+ DIR *stream;
+ if (fd < 0) return -errno;
+ stream = fdopendir(fd);
+ if (!stream) { ret = -errno; close(fd); return ret; }
+ errno = 0;
+ while ((entry = readdir(stream))) {
+  uint8_t header[32]; struct stat st;
+  if (strlen(entry->d_name) != 24 || strcmp(entry->d_name + 16, ".service")) continue;
+  for (unsigned int i = 0; i < 16; i++)
+   if (!isxdigit((unsigned char)entry->d_name[i])) { ret = -EBADMSG; goto out; }
+  fd = openat(directory, entry->d_name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+  if (fd < 0) { ret = -errno; goto out; }
+  if (fstat(fd, &st)) ret = -errno;
+  else if (!S_ISREG(st.st_mode) || st.st_uid != geteuid() || (st.st_mode & 077)) ret = -EACCES;
+  else if (read(fd, header, sizeof(header)) != sizeof(header) || memcmp(header, "FTS1", 4) || header[26] > 3) ret = -EBADMSG;
+  else if (header[26] != 1) ret = 1;
+  close(fd);
+  if (ret) goto out;
+  errno = 0;
+ }
+ if (errno) ret = -errno;
+out:
+ closedir(stream); return ret;
+}
+
 static int save(int directory, const struct fttr_omci_link *link, unsigned int onu,
-	const uint8_t serial[8], enum fttr_backend backend, const struct fttr_services *set, bool pending)
+	const uint8_t serial[8], enum fttr_backend backend, const struct fttr_services *set, unsigned int state)
 {
 	char name[32], temporary[40], *data = NULL;
 	size_t size = 0;
 	uint8_t header[32] = { 'F','T','S','1' }, crc[4];
-	struct record_io io = {0};
+	struct record_io io = { .applying = state == 3 };
 	int fd = -1, ret = 0;
 	memcpy(header+4,serial,8); memcpy(header+12,link->host_mac,6); memcpy(header+18,link->olt_mac,6);
-	header[24] = backend; header[25] = onu; header[26] = set ? pending ? 2 : 1 : 0;
+	header[24] = backend; header[25] = onu; header[26] = state;
 	header[27] = link->downstream_length; header[28] = link->ethertype >> 8; header[29] = link->ethertype;
 	io.file = open_memstream(&data,&size);
 	if (!io.file) return -errno;
@@ -200,13 +254,22 @@ static bool ready(const struct fttr_services *s)
 int fttr_service_store_save(int d,const struct fttr_omci_link *l,unsigned int onu,const uint8_t sn[8],enum fttr_backend b,const struct fttr_services *s)
 {
 	if (!ready(s)) return -EINVAL;
-	return save(d,l,onu,sn,b,s,false);
+	return save(d,l,onu,sn,b,s,1);
 }
 int fttr_service_store_pending(int d,const struct fttr_omci_link *l,unsigned int onu,const uint8_t sn[8],enum fttr_backend b,const struct fttr_services *committed)
 {
 	if (committed && !ready(committed)) return -EINVAL;
-	return save(d,l,onu,sn,b,committed,true);
+	return save(d,l,onu,sn,b,committed,committed ? 2 : 0);
 }
+int fttr_service_store_checkpoint(int d, const struct fttr_omci_link *l, unsigned int onu,
+ const uint8_t sn[8], enum fttr_backend b, const struct fttr_services *s)
+{
+ if (!s->count || s->count > FTTR_SERVICES) return -EINVAL;
+ for (unsigned int n = 0; n < s->count; n++)
+  if (!s->job[n].unis || !s->job[n].uni_count || s->job[n].uni_count > 254) return -EINVAL;
+ return save(d, l, onu, sn, b, s, 3);
+}
+
 int fttr_service_store_load(int directory,const struct fttr_omci_link *link,unsigned int onu,
 	const uint8_t serial[8],enum fttr_backend backend,struct fttr_services *set)
 {
@@ -222,17 +285,18 @@ int fttr_service_store_load(int directory,const struct fttr_omci_link *link,unsi
 	if(read(fd,data,st.st_size)!=st.st_size){ret=-EIO;goto out;}
 	uint8_t *end=data+st.st_size-4;
 	uint32_t sum=(uint32_t)end[0]<<24|(uint32_t)end[1]<<16|(uint32_t)end[2]<<8|end[3];
-	if(memcmp(data,"FTS1",4)||sum!=fttr_omci_crc(data,st.st_size-4)||data[26]>2||data[30]||data[31]){ret=-EBADMSG;goto out;}
+	if(memcmp(data,"FTS1",4)||sum!=fttr_omci_crc(data,st.st_size-4)||data[26]>3||data[30]||data[31]){ret=-EBADMSG;goto out;}
 	if(memcmp(data+4,serial,8)||memcmp(data+12,link->host_mac,6)||memcmp(data+18,link->olt_mac,6)||
 	   data[24]!=backend||data[25]!=onu||data[27]!=link->downstream_length||
 	   data[28]!=(link->ethertype>>8)||data[29]!=(link->ethertype&255)){ret=-EXDEV;goto out;}
 	if(!data[26]){ret=-ENOTRECOVERABLE;goto out;}
 	io.file=fmemopen(data+32,st.st_size-36,"rb");if(!io.file){ret=-errno;goto out;}
+	io.applying = data[26] == 3;
 	recipe(&io,set,onu,serial,backend);
 	ret=io.error;
 	if(!ret && ftell(io.file)!=st.st_size-36)ret=-EBADMSG;
 	fclose(io.file);
-	if (!ret && data[26] == 2) ret = 1;
+	if (!ret && data[26] >= 2) ret = data[26] - 1;
 out:
 	close(fd);free(data);
 	if(ret < 0) {

@@ -5,16 +5,21 @@
 
 /* A committed record owns remote objects, never live local DMA/FE resources. */
 int fttr_service_store_open(const char *path);
+/* Inspect private intent headers before a bootstrap could reset their hardware. */
+int fttr_service_store_interrupted(int directory);
 int fttr_service_store_save(int directory, const struct fttr_omci_link *link,
 	unsigned int onu, const uint8_t serial[8], enum fttr_backend backend,
 	const struct fttr_services *set);
-/* Load: zero committed, one interrupted release (populates set), negative error. */
+/* Load: 0 committed, 1 interrupted release, 2 initial apply intent; negative error. */
 int fttr_service_store_load(int directory, const struct fttr_omci_link *link,
 	unsigned int onu, const uint8_t serial[8], enum fttr_backend backend,
 	struct fttr_services *set);
 bool fttr_service_store_reset(const struct fttr_services *saved, const struct fttr_mib_model *model);
 int fttr_service_store_match(const struct fttr_services *saved, const struct fttr_services *planned);
 /* Persist before the first remote mutation, and before releasing a ready set. */
+int fttr_service_store_checkpoint(int directory, const struct fttr_omci_link *link,
+	unsigned int onu, const uint8_t serial[8], enum fttr_backend backend,
+	const struct fttr_services *set);
 int fttr_service_store_pending(int directory, const struct fttr_omci_link *link,
 	unsigned int onu, const uint8_t serial[8], enum fttr_backend backend,
 	const struct fttr_services *committed);

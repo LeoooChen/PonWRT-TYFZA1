@@ -51,7 +51,9 @@ int main(int argc,char **argv){
  unsigned char sn[8]={0x54,0x45,0x53,0x54,0,0,0,7};
  struct fttr_services s,got;fixture(&s);struct fttr_service_job before=s.job[0];
  assert(fttr_service_store_load(d,&link,7,sn,3,&got)==-ENOENT);
+ assert(!fttr_service_store_interrupted(d));
  assert(!fttr_service_store_save(d,&link,7,sn,3,&s));
+ assert(!fttr_service_store_interrupted(d));
  assert(!memcmp(&s.job[0],&before,sizeof(before)) && s.job[0].unis[0].vlan.verified);
  assert(!fttr_service_store_load(d,&link,7,sn,3,&got));
  assert(!fttr_service_store_match(&got,&s));
@@ -91,6 +93,33 @@ int main(int argc,char **argv){
  assert(data[26]==2 && !memcmp(data+32,old+32,n-36));
  assert(fttr_service_store_load(d,&link,7,sn,3,&got)==1);
  assert(got.job[0].objects[0].touched && got.job[0].objects[0].previous[1]==255);
+ fttr_services_clear(&got);
+ /* Initial pre-send snapshot marks only attempted ownership in its copy;
+  * save must never mutate the live configured/borrowed object plan. */
+ s.job[0].objects[3].set=(struct fttr_omci_values){.mask=0x4000,.size=1,.value={9}};
+ s.job[0].objects[3].presence=FTTR_OBJECT_UNKNOWN;s.job[0].objects[3].touched=false;
+ s.job[0].objects[4].touched=false;
+ s.job[0].transaction.phase=FTTR_OBJECT_CREATE;s.job[0].transaction.index=3;
+ s.job[0].transaction.me.attempts=0;
+ s.job[0].unis[0].vlan.stage=FTTR_VLAN_SET;s.job[0].unis[0].vlan.index=0;s.job[0].unis[0].vlan.sent=0;
+ assert(!fttr_service_store_checkpoint(d,&link,7,sn,3,&s));
+ assert(!s.job[0].objects[3].touched && s.job[0].objects[3].set.mask==0x4000 && !s.job[0].unis[0].vlan.sent);
+ assert(fttr_service_store_load(d,&link,7,sn,3,&got)==2);
+ assert(fttr_service_store_interrupted(d)==1);
+ assert(got.job[0].recover_apply && got.job[0].objects[3].touched && !got.job[0].objects[3].set.mask);
+ assert(!got.job[0].objects[4].touched && got.job[0].unis[0].vlan.sent==1);
+ fttr_services_clear(&got);
+ /* Incomplete before-table is never accepted for an attempted VLAN write. */
+ s.job[0].unis[0].vlan.before.table.complete=false;
+ assert(fttr_service_store_checkpoint(d,&link,7,sn,3,&s)==-ENODATA);
+ assert(fttr_service_store_load(d,&link,7,sn,3,&got)==2);fttr_services_clear(&got);
+ s.job[0].unis[0].vlan.before.table.complete=true;
+ /* Verified Set attributes remain pinned in the persisted recipe. */
+ s.job[0].objects[3].touched=true;s.job[0].objects[3].presence=FTTR_OBJECT_VERIFIED;
+ s.job[0].transaction.phase=FTTR_OBJECT_CONFIGURED;
+ assert(!fttr_service_store_checkpoint(d,&link,7,sn,3,&s));
+ assert(fttr_service_store_load(d,&link,7,sn,3,&got)==2);
+ assert(got.job[0].objects[3].set.mask==0x4000 && got.job[0].objects[3].set.value[0]==9);
  fttr_services_clear(&got);
  assert(!fttr_service_store_remove(d,sn));fttr_services_clear(&s);close(d);
  assert(!chmod(argv[1],0755));assert(fttr_service_store_open(argv[1])==-EACCES);

@@ -44,6 +44,7 @@ struct fttr_service_job {
 	const char *phase;
 	int error, cleanup_error;
 	bool grant_sent, grant_verified, grant_restored, grant_withdrawn, configured;
+	bool recover_apply; /* Only a durable initial-write ledger grants partial cleanup rights. */
 	bool require_shared; /* A later collection member must reuse its live parents. */
 	enum { FTTR_SERVICE_START, FTTR_SERVICE_OBJECTS, FTTR_SERVICE_VLAN,
 		FTTR_SERVICE_RELEASE, FTTR_SERVICE_READY, FTTR_SERVICE_FAILED,

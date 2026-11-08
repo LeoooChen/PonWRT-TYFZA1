@@ -21,7 +21,7 @@ class Job(C.Structure):
     _fields_ = [('transaction',ObjectsJob),('objects',Object*7),('table',Me),('failure',Me),
         ('table_length',C.c_uint),('table_row',C.c_ubyte*12),('error',C.c_int),('cleanup_error',C.c_int),
         ('prior_empty',C.c_bool),('table_sent',C.c_bool),('doubled',C.c_bool),('configured',C.c_bool),
-        ('releasing',C.c_bool),('defer_apply',C.c_bool),('recover_release',C.c_bool),('stage',C.c_int)]
+        ('releasing',C.c_bool),('defer_apply',C.c_bool),('recover_release',C.c_bool),('recover_apply',C.c_bool),('stage',C.c_int)]
 
 
 def main():

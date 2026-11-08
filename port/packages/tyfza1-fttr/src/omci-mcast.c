@@ -116,6 +116,16 @@ static int rollback(struct fttr_mcast_job *job, uint16_t *counter, int error)
 
 static int release_check(struct fttr_mcast_job *job, uint16_t *counter)
 {
+	if (job->recover_apply) {
+		while (job->transaction.index < job->transaction.count &&
+		       !job->objects[job->transaction.index].touched) job->transaction.index++;
+		if (job->transaction.index == job->transaction.count) {
+			if (!job->table_sent || job->objects[1].presence == FTTR_OBJECT_ABSENT)
+				return release_objects(job, counter);
+			job->stage = FTTR_MCAST_RELEASE_TABLE;
+			return table_request(job, counter, false, NULL);
+		}
+	}
 	const struct fttr_omci_object *object = &job->objects[job->transaction.index];
 	const struct fttr_omci_values *values = job->transaction.group ? &object->set : &object->create;
 
@@ -254,7 +264,8 @@ again:
 		job->transaction.group = 0;
 		if (++job->transaction.index < job->transaction.count)
 			return release_check(job, counter);
-		if (job->recover_release && job->objects[1].presence == FTTR_OBJECT_ABSENT) {
+		if ((job->recover_apply && !job->table_sent) ||
+		    (job->recover_release && job->objects[1].presence == FTTR_OBJECT_ABSENT)) {
 			/* This table died with its owned IW. Never replay the original
 			 * ambiguous delete Set against an absent row or instance. */
 			job->table_sent = false;

@@ -7023,7 +7023,7 @@ changed policy/UNI inventory, another slot/controller/backend, corruption and
 uncertain initial/release transactions retain the record and refuse automatic
 replay. Status exposes `service_error`, `service_recovering` and
 `service_durable`. Partially completed releases now use the checked recovery below;
-partially applied initial transactions still require recovery work. Removal of a
+new initial-write journals support checked rollback as described below; legacy state0 records still lack that evidence. Removal of a
 policy does not implicitly delete a committed active service, but does not cancel
 an already-journaled release.
 
@@ -7259,8 +7259,67 @@ Local reports are `artifacts/fttr/partial-move-*-20261109.*`. PE firmware is unc
 No device was accessed. A persistent reservation intent authorizes finishing the
 already admitted transaction when source authentication is no longer possible
 because its SN is half-cleared; it does not authorize replacing an unrelated SN.
-Unknown hardware state, full power-loss recovery, initial provisioning crashes,
+Unknown hardware state, full power-loss recovery, legacy initial-write records,
 complete upstream/downstream packet retirement and hardware-ID reuse remain open.
+
+### Initial service-write checkpoints and interrupted provisioning cleanup
+
+Initial resident provisioning now writes a full `FTS1` state3 checkpoint before
+each remote service Create/Set/Delete, including rollback mutations. The existing
+private directory, binding, CRC, atomic rename and file/directory fsync rules are
+retained. The checkpoint contains the complete selected multi-service plan and
+only the ownership actually attempted so far, plus original update-only attributes
+and complete prior VLAN tables. The pending operation is marked in a private copy
+before send; serialization never changes live touched flags or verification state.
+A persistence failure stops before that remote mutation. No periodic sync polls
+write these records.
+
+A created ME which has not yet completed verification can lack its later Set
+group; recovery checks its exact Create attributes before deletion. Already
+verified objects retain both attribute groups and reject external Set drift.
+Update-only objects retain their actual prior attributes. VLAN intent records
+the current row before send and requires its complete prior table; unfinished
+read buffers are not serialized as evidence. Multicast table intent records the
+original IPv4 row only after its empty precondition, and skips untouched plans.
+Unattempted objects never acquire deletion rights.
+
+On restart, authentication and inventory precede the existing checked reverse
+cleanup. It restores the recorded attempted writes instead of adopting uncertain
+configuration as a working service. Objects that were never created are accepted
+only through unknown-instance readback; partially applied VLAN rows use the
+already implemented whole-table subset check. A no-write VLAN release now advances
+the service state machine synchronously. After cleanup the original state3 record
+remains, business traffic stays closed, and another restart only checks the
+already restored state. Explicit resume removes the hold after the existing
+withdrawal and locked driver identity confirmation, then starts fresh provisioning.
+An initial-apply record cannot authorize an unrelated migration.
+
+Full procd-style startup checks private service record headers before its normal
+MiniOLT reset. Any interrupted record selects retained-controller recovery with
+live link/calibration checks, avoiding destruction of the remote state needed for
+cleanup. This precheck grants no ownership; later full record loading validates
+CRC, controller/backend/serial binding and recipe bounds. Legacy state0 records
+remain unrecoverable because they never stored prior ownership. A hardware power
+loss or incompatible remote change is not treated as a successful recovery.
+
+The actual daemon/CLI/original-OMCI-encoder namespace test covers before and after
+every initial mutation:69 points in ASIC seven-service provisioning,39 in FPGA1
+shared standard multicast and15 in FPGA2 ordinary service (246 crash placements).
+Repeated recovery, removed policy, verified attribute drift, a second interruption
+during cleanup and explicit resume pass. First/last checkpoints also exercise the
+full startup argument path. Production codec ASan/UBSan checks cover824 byte
+corruptions,23 bounds, pre-send marking without live mutation, incomplete prior
+table refusal, verified Set retention and both fsync boundaries. Original standard/
+CTC multicast, partial VLAN, migration/release, admin and19 upgrade regressions,
+three normal startup suites and host/aarch64-musl daemon/CLI builds pass. Reports
+are local `artifacts/fttr/apply-recovery-*-20261109.*` and
+`apply-startup-*-20261109.*`.
+
+No kernel or PE code changed and no device was accessed. Recovery uses original
+object/VLAN/GEM operations integrated with native FE/DBA withdrawal; it does not
+prove physical flash power-loss behavior, packet retirement or hardware-ID reuse.
+Automatic continuation of interrupted provisioning to a new active service is not
+implemented: checked rollback and explicit resume are the supported recovery.
 
 ### Outstanding implementation and acceptance
 
@@ -7297,7 +7356,7 @@ complete upstream/downstream packet retirement and hardware-ID reuse remain open
    provisioning from explicit policies and asynchronous per-ONU dispatch are
    implemented, with runtime journals and observed disconnect/replacement
    handling. MIB sync monitoring now also detects/reconciles same-serial MIB
-   loss without an observed registration transition. Durable committed ownership recovery is implemented as described above; partial-transaction recovery and saved policy import remain work. The original
+   loss without an observed registration transition. Durable committed ownership, interrupted release and initial-write checked rollback are implemented as described above; automatic initial continuation, legacy-record recovery and saved policy import remain work. The original
    ASIC/FPGA2 default recipe and card limits now generate shared multi-service
    collections as described above; broader factory
    capability/UNI policy combinations remain work. Explicit bridge attachment through native per-GEM
