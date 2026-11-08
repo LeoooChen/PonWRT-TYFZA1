@@ -28,6 +28,52 @@ int fttr_sync_mac_parse(const char *text, uint8_t mac[6])
 	return !nonzero || (mac[0] & 1) ? -EINVAL : 0;
 }
 
+int fttr_sync_info_mesh(struct json_object *info, bool *enabled)
+{
+	struct json_object *field;
+	if (!info || !json_object_object_get_ex(info, "easymeshCapability", &field)) return -ENODATA;
+	if (!json_object_is_type(field, json_type_string) && !json_object_is_type(field, json_type_int)) return -EPROTO;
+	const char *text = json_object_get_string(field);
+	if (!text || (json_object_is_type(field, json_type_string) && json_object_get_string_len(field) != 1) ||
+	    (strcmp(text, "0") && strcmp(text, "1"))) return -EPROTO;
+	*enabled = text[0] == '1';
+	return 0;
+}
+
+static int info_fields(struct json_object *value, struct json_object **observed)
+{
+	/* Retained GetONUInfo parser field names. Values remain as reported;
+	 * no unproven enums or units are assigned by this reader. */
+	static const char *const names[] = {
+		"actualTime", "gatewayMac", "devType", "hdVersion", "swVersion", "sysUpTime",
+		"wifiBand", "standardCapability", "supportedWorkingMode", "supportedRfBand",
+		"supportedSsidNumber", "transmitPowerSupported", "supportedUplinkType", "supportedUniPorts",
+		"deviceStatus", "workingMode", "uplinkType", "vxd_addr", "noise", "idlePercent",
+		"InterferencePercent", "uplinkrate", "downlinkrate", "sendPackets", "sendDroppedPackets",
+		"sendFailedPackets", "recvPackets", "recvDroppedPackets", "recvErrorPackets",
+		"macFilterEnable", "macFilterPolicy", "macFilterEntries", "roamingSwitch", "ledStatus",
+		"macAddress", "accessPoint", "internetAccessMode", "wlanConfigurationEntryNum", "band",
+		"channel", "channelWidth", "standard", "antennaNumber2G4", "mimoCapability2G4",
+		"mimoParameter2G4", "antennaNumber5G", "mimoCapability5G", "mimoParameter5G",
+		"cpuUsage", "memUsage", "cpuTemp", "radarCounter", "lastRadarChannel", "lastRadarTime",
+		"swTime", "easymeshCapability"
+	};
+	struct json_object *result = json_object_new_object(), *field;
+	if (!result) return -ENOMEM;
+	for (unsigned int i = 0; i < sizeof(names) / sizeof(*names); i++) {
+		if (!json_object_object_get_ex(value, names[i], &field)) continue;
+		if ((!json_object_is_type(field, json_type_string) && !json_object_is_type(field, json_type_int)) ||
+		    (json_object_is_type(field, json_type_string) &&
+		     (json_object_get_string_len(field) > 1024 || (size_t)json_object_get_string_len(field) != strlen(json_object_get_string(field))))) {
+			json_object_put(result); return -EBADMSG;
+		}
+		json_object_object_add(result, names[i], json_object_get(field));
+	}
+	if (!json_object_object_length(result)) { json_object_put(result); return -EAGAIN; }
+	*observed = result;
+	return 0;
+}
+
 int fttr_sync_reply_decode(const struct fttr_sync_message *message, const uint8_t peer[6],
 			unsigned int settings, bool writing, bool *ack_seen,
 			struct json_object **summary, struct json_object **observed)
@@ -49,6 +95,47 @@ int fttr_sync_reply_decode(const struct fttr_sync_message *message, const uint8_
 	    json_tokener_get_parse_end(parser) != message->length ||
 	    !json_object_is_type(value, json_type_object))
 		goto out;
+	if (settings == 3) {
+		struct json_object *rpc, *fields = NULL;
+		bool result_present = false;
+		if (json_object_object_get_ex(value, "RPCMethod", &rpc)) {
+			if (!json_object_is_type(rpc, json_type_string) ||
+			    (size_t)json_object_get_string_len(rpc) != strlen(json_object_get_string(rpc))) goto out;
+			if (!strcmp(json_object_get_string(rpc), "Register")) { ret = -ESTALE; goto out; }
+			if (strcmp(json_object_get_string(rpc), "GetONUInfo")) { ret = -EAGAIN; goto out; }
+		} else rpc = NULL;
+		if (json_object_object_get_ex(value, "Result", &field)) {
+			if (!json_object_is_type(field, json_type_int)) goto out;
+			if (json_object_get_int64(field) != 1) { ret = -EREMOTEIO; goto out; }
+			*ack_seen = true;
+			result_present = true;
+		}
+		/* The original pending GetONUInfo response can omit RPCMethod.
+		 * A bare ACK is insufficient: require this message's success plus
+		 * target MAC and at least one understood data field. */
+		if (!rpc && !result_present) { ret = -EAGAIN; goto out; }
+		if (!rpc && !json_object_object_get_ex(value, "MAC", &field)) { ret = -EAGAIN; goto out; }
+		if (!json_object_object_get_ex(value, "MAC", &field) || !json_object_is_type(field, json_type_string) ||
+		    json_object_get_string_len(field) != 12) goto out;
+		for (i = 0; i < 6; i++) {
+			mac[3*i] = json_object_get_string(field)[2*i]; mac[3*i+1] = json_object_get_string(field)[2*i+1];
+			mac[3*i+2] = i == 5 ? 0 : ':';
+		}
+		if (fttr_sync_mac_parse(mac, address) || memcmp(address, peer, 6)) { ret = -ESTALE; goto out; }
+		snprintf(mac, sizeof(mac), "%02x:%02x:%02x:%02x:%02x:%02x",
+			peer[0], peer[1], peer[2], peer[3], peer[4], peer[5]);
+		ret = info_fields(value, &fields);
+		if (ret) goto out;
+		result = json_object_new_object();
+		if (!result) { json_object_put(fields); ret = -ENOMEM; goto out; }
+		json_object_object_add(result, "event", json_object_new_string("sync_onu_info"));
+		json_object_object_add(result, "peer", json_object_new_string(mac));
+		json_object_object_add(result, "slot", json_object_new_int(message->slot));
+		json_object_object_add(result, "identity_authenticated", json_object_new_boolean(0));
+		json_object_object_add(result, "reported", json_object_get(fields));
+		if (observed) *observed = json_object_get(fields);
+		json_object_put(fields); *summary = result; ret = 0; goto out;
+	}
 	if (settings == 2) {
 		struct json_object *rpc, *flag, *status;
 		bool has_rpc = json_object_object_get_ex(value, "RPCMethod", &rpc);
@@ -206,11 +293,14 @@ int fttr_sync_request(int fd, const uint8_t source[6], const uint8_t peer[6], ui
 	char payload[FTTR_SYNC_FRAME_MAX];
 	const char *content = configuration ? json_object_to_json_string_ext(configuration, JSON_C_TO_STRING_PLAIN) : "{\"act\":\"get\"}";
 	int ret, length;
-	if (settings > 2 || (settings == 2 && !configuration)) return -EINVAL;
+	if (settings > 3 || (settings == 2 && !configuration)) return -EINVAL;
 
 	length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"GetWifi\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\"}",
 		source[0], source[1], source[2], source[3], source[4], source[5]);
-	if (settings)
+	if (settings == 3)
+		length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"GetONUInfo\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\"}",
+			source[0], source[1], source[2], source[3], source[4], source[5]);
+	else if (settings)
 		length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"SetAllSetting\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\","
 			"\"DMAC\":\"%02X%02X%02X%02X%02X%02X\",\"Flag\":%u,\"content\":%s}",
 			source[0], source[1], source[2], source[3], source[4], source[5],

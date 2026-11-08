@@ -247,14 +247,15 @@ int main(int argc, char **argv)
 	bool resident = (argc == 5 || (argc == 7 && !strcmp(argv[5], "--state"))) && !strcmp(argv[2], "serve");
 	bool apply = argc == 7 && !strcmp(argv[5], "wifi-apply");
 	bool easymesh = argc == 7 && !strcmp(argv[5], "easymesh");
+	bool info = argc == 6 && !strcmp(argv[5], "onu-info");
 	bool registering = argc == 7 && !strcmp(argv[5], "register");
-	unsigned int settings = easymesh ? 2 : apply || (argc == 6 && !strcmp(argv[5], "wifi-settings"));
+	unsigned int settings = info ? 3 : easymesh ? 2 : apply || (argc == 6 && !strcmp(argv[5], "wifi-settings"));
 	bool automatic = !resident && (argc == 5 || settings || registering) && !strcmp(argv[3], "auto");
 	bool ack_seen = false;
 
 	if ((!discover && !resident && !settings && !registering && argc != 5) || strlen(argv[1]) >= IFNAMSIZ || strchr(argv[1], '/') ||
 	    (!discover && !resident && fttr_sync_mac_parse(argv[2], peer))) {
-		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [wifi-settings | wifi-apply <private-json-file> | easymesh <0|1> | register <private-policy-file>]\n"
+		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [onu-info | wifi-settings | wifi-apply <private-json-file> | easymesh <0|1> | register <private-policy-file>]\n"
 			"       %s <interface> discover <ethertype>\n"
 			"       %s <interface> serve <ethertype> <private-policy-file> [--state <private-persistent-directory>]\n", argv[0], argv[0], argv[0]);
 		return 2;
@@ -342,17 +343,36 @@ int main(int argc, char **argv)
 		goto out;
 	}
 	if (easymesh) {
+		struct json_object *observed = NULL;
+		bool enabled = false, write_ack = false;
+		int write_result, read_result;
 		ret = drain(fd);
 		if (ret) goto out;
-		ret = exchange(fd, source, peer, ethertype, slot, 2, desired, &ack_seen, &summary, NULL);
+		ret = exchange(fd, source, peer, ethertype, slot, 3, NULL, &ack_seen, &summary, &observed);
+		if (!ret) ret = fttr_sync_info_mesh(observed, &enabled);
+		json_object_put(observed); observed = NULL; json_object_put(summary); summary = NULL;
+		if (ret) goto out;
+		ret = drain(fd);
+		if (ret) goto out;
+		write_result = exchange(fd, source, peer, ethertype, slot, 2, desired, &write_ack, &summary, NULL);
+		read_result = write_result == -ESTALE ? -ESTALE : drain(fd);
+		if (!read_result)
+			read_result = exchange(fd, source, peer, ethertype, slot, 3, NULL, &ack_seen, &summary, &observed);
+		if (!read_result) read_result = fttr_sync_info_mesh(observed, &enabled);
+		if (!read_result && enabled != (argv[6][0] == '1')) read_result = -EUCLEAN;
+		json_object_put(observed); json_object_put(summary);
 		summary = json_object_new_object();
 		json_object_object_add(summary, "event", json_object_new_string("sync_easymesh"));
 		json_object_object_add(summary, "peer", json_object_new_string(argv[2]));
 		json_object_object_add(summary, "slot", json_object_new_int(slot));
 		json_object_object_add(summary, "requested_enabled", json_object_new_boolean(argv[6][0] == '1'));
-		json_object_object_add(summary, "ack_seen", json_object_new_boolean(ack_seen));
-		json_object_object_add(summary, "completion_reported", json_object_new_boolean(!ret));
+		json_object_object_add(summary, "ack_seen", json_object_new_boolean(write_ack));
+		json_object_object_add(summary, "completion_reported", json_object_new_boolean(!write_result));
+		json_object_object_add(summary, "write_result", json_object_new_int(write_result));
+		json_object_object_add(summary, "readback_result", json_object_new_int(read_result));
+		json_object_object_add(summary, "reported_state_matches", json_object_new_boolean(!read_result));
 		json_object_object_add(summary, "configuration_verified", json_object_new_boolean(0));
+		ret = write_result ? write_result : read_result;
 		json_object_object_add(summary, "error", json_object_new_int(ret));
 		goto out;
 	}
@@ -410,7 +430,7 @@ out:
 			ret = -errno;
 	}
 	if (ret)
-		fprintf(stderr, "FTTR sync %s: %s (%d)\n", resident ? "serve" : discover ? "discovery" : registering ? "register" : easymesh ? "easymesh" : apply ? "wifi-apply" : settings ? "wifi-settings" : "GetWifi", strerror(-ret), ret);
+		fprintf(stderr, "FTTR sync %s: %s (%d)\n", resident ? "serve" : discover ? "discovery" : registering ? "register" : easymesh ? "easymesh" : apply ? "wifi-apply" : info ? "onu-info" : settings ? "wifi-settings" : "GetWifi", strerror(-ret), ret);
 	json_object_put(summary);
 	json_object_put(desired);
 	if (fd >= 0) close(fd);

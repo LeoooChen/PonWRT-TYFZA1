@@ -252,6 +252,8 @@
 
 117. 接入原厂EasyMesh Flag2主端事务：执行fttrManage启停生产器、sync_controllerd构造/L2/完成分支，确认EnableEasymesh字符串、Result仅ACK、独立STATUS0报告才完成。显式easymesh0/1单发、9秒总限、错目标/标志/方法隔离与重新注册中止；常驻EasyMesh布尔策略在Ready1身份匹配及Wi-Fi完成后发送。持久v2记录含值与bit16发送意图，fsync失败不发，重启已尝试结果未知不重放，同Revision漂移拒绝，新Revision可重新尝试。14CLI/17常驻持久场景、37常驻/38持久/30Wi-Fi回归与双架构构建通过；内核/PE不变、未实机。未查实从端执行/回读，因此completion_reported不等于configuration_verified，实际Mesh/漫游和完整硬件退场等仍待补。详见[EasyMesh事务](port/FTTR.md#original-easymesh-flag2-configuration-transaction)。
 
+118. 接入GetONUInfo及EasyMesh独立回读：执行原厂查询/完整解析/待定Result分派，确认56项设备能力/状态字段；执行管理程序将MIB字节1127的easymeshCapability输出为Enableeasymesh（支持标志另列），纠正第117项尚无回读依据的限制。显式onu-info校验来源/MAC/方法，字段保留原名与值，缺项不补零；EasyMesh写前读取有效0/1、写后独立比对，缺项/非法/漂移/超时明确失败，重启持久已尝试只读恢复不重发。19CLI/12信息查询/20常驻持久场景、37常驻/38Wi-Fi持久回归及双架构构建通过；内核/PE不变、未实机。reported_state_matches仅为从端报告一致，不等于实际Mesh/漫游验证，完整退场、多VIF、TSPEC和其他管理缺口仍待补。详见[设备信息与回读](port/FTTR.md#getonuinfo-and-independent-easymesh-state-readback)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

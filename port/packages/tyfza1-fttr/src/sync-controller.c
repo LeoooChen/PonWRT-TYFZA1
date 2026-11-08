@@ -19,7 +19,7 @@
 
 /* Pending sends only run after ingress reaches EAGAIN. No protocol transaction
  * ID exists: later identical same-source reports remain indistinguishable. */
-enum phase { IDLE, PREFLIGHT_SEND, PREFLIGHT, WRITE_SEND, WRITE, READBACK_SEND, READBACK, RECOVER_SEND, RECOVER, MESH_SEND, MESH };
+enum phase { IDLE, PREFLIGHT_SEND, PREFLIGHT, WRITE_SEND, WRITE, READBACK_SEND, READBACK, RECOVER_SEND, RECOVER, MESH_SEND, MESH, INFO_SEND, INFO, MESH_READ_SEND, MESH_READ };
 #define MESH_ATTEMPTED (1U << 16)
 
 struct policy_peer {
@@ -38,6 +38,7 @@ struct session {
 	int protocol, write_result;
 	int64_t deadline;
 	bool registered, ack_seen;
+	bool mesh_state, mesh_recovery, mesh_ack;
 };
 
 static volatile sig_atomic_t stopping;
@@ -158,8 +159,11 @@ static void event(const char *name, const struct session *session, const struct 
 	}
 	if (!strcmp(name, "sync_resident_easymesh")) {
 		json_object_object_add(value, "requested_enabled", json_object_get(session->policy->mesh));
-		json_object_object_add(value, "ack_seen", json_object_new_boolean(session->ack_seen));
-		json_object_object_add(value, "completion_reported", json_object_new_boolean(!result));
+		json_object_object_add(value, "ack_seen", json_object_new_boolean(session->mesh_ack));
+		json_object_object_add(value, "completion_reported", json_object_new_boolean(!session->mesh_recovery && !session->write_result));
+		json_object_object_add(value, "readback_result", json_object_new_int(readback));
+		json_object_object_add(value, "reported_state_matches", json_object_new_boolean(!readback));
+		json_object_object_add(value, "recovered_read_only", json_object_new_boolean(session->mesh_recovery));
 		json_object_object_add(value, "write_replayed", json_object_new_boolean(0));
 	}
 	if (!strcmp(name, "sync_resident_recovery")) {
@@ -220,8 +224,9 @@ static void next_configuration(struct session *session)
 	else {
 		struct json_object *ready;
 		json_object_object_get_ex(session->policy->registration, "Ready", &ready);
-		phase(session, session->policy->mesh && json_object_get_int(ready) &&
-			!(session->policy->attempted & MESH_ATTEMPTED) ? MESH_SEND : IDLE);
+		session->mesh_recovery = session->policy->attempted & MESH_ATTEMPTED;
+		session->mesh_ack = false; session->write_result = -EINPROGRESS;
+		phase(session, session->policy->mesh && (json_object_get_int(ready) || session->mesh_recovery) ? INFO_SEND : IDLE);
 	}
 }
 
@@ -229,8 +234,20 @@ static void completed(struct session *session, const struct fttr_sync_peer *peer
 {
 	struct json_object *ready;
 
-	if (session->phase == MESH) {
-		event("sync_resident_easymesh", session, peer, slot, result, result);
+	if (session->phase == INFO) {
+		if (!result && !session->mesh_recovery) phase(session, MESH_SEND);
+		else {
+			if (!result && session->mesh_state != json_object_get_boolean(session->policy->mesh)) result = -EUCLEAN;
+			event("sync_resident_easymesh", session, peer, slot, result, result);
+			if (result) session->policy->blocked = true;
+			phase(session, IDLE);
+		}
+	} else if (session->phase == MESH) {
+		session->write_result = result; session->mesh_ack = session->ack_seen;
+		phase(session, MESH_READ_SEND);
+	} else if (session->phase == MESH_READ) {
+		if (!result && session->mesh_state != json_object_get_boolean(session->policy->mesh)) result = -EUCLEAN;
+		event("sync_resident_easymesh", session, peer, slot, session->write_result ? session->write_result : result, result);
 		if (result) session->policy->blocked = true;
 		phase(session, IDLE);
 	} else if (session->phase == RECOVER) {
@@ -310,27 +327,24 @@ static int receive_message(int fd, const uint8_t source[6], uint16_t ethertype,
 		session->configuration = 0;
 		event("sync_resident_registered", session, peer, slot, 0, 0);
 		if (!session->policy->blocked) {
-			if (session->policy->attempted & MESH_ATTEMPTED) {
-				/* No original readback contract exists for Flag2. A durable
-				 * send intent cannot be reclassified as success or replayed. */
-				event("sync_resident_easymesh", session, peer, slot, -EINPROGRESS, -EINPROGRESS);
-				session->policy->blocked = true;
-			} else if (desired(session) || session->policy->mesh)
+			if (desired(session) || session->policy->mesh)
 				next_configuration(session);
 			else
 				phase(session, PREFLIGHT_SEND);
 		}
 		return 0;
 	}
-	if (!session->registered || (session->phase != PREFLIGHT && session->phase != WRITE && session->phase != READBACK && session->phase != RECOVER && session->phase != MESH))
+	if (!session->registered || (session->phase != PREFLIGHT && session->phase != WRITE && session->phase != READBACK && session->phase != RECOVER && session->phase != MESH && session->phase != INFO && session->phase != MESH_READ))
 		return 0;
 	message.slot = slot;
-	ret = fttr_sync_reply_decode(&message, peer->mac, session->phase == MESH ? 2 : 1, session->phase == WRITE || session->phase == MESH,
+	bool info_phase = session->phase == INFO || session->phase == MESH_READ;
+	ret = fttr_sync_reply_decode(&message, peer->mac, info_phase ? 3 : session->phase == MESH ? 2 : 1, session->phase == WRITE || session->phase == MESH,
 		&session->ack_seen, &summary, &observed);
 	json_object_put(summary);
 	if (session->ack_seen)
 		session->protocol = 2;
-	if (!ret && session->phase != WRITE && session->phase != MESH && desired(session))
+	if (!ret && info_phase) ret = fttr_sync_info_mesh(observed, &session->mesh_state);
+	if (!ret && !info_phase && session->phase != WRITE && session->phase != MESH && desired(session))
 		ret = fttr_sync_wifi_check(observed, desired(session), session->phase == READBACK || session->phase == RECOVER);
 	json_object_put(observed);
 	if (ret != -EAGAIN)
@@ -398,7 +412,7 @@ int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype, st
 				revoke(session, &peers[slot], slot, -ETIMEDOUT);
 				continue;
 			}
-			if ((session->phase == PREFLIGHT || session->phase == WRITE || session->phase == READBACK || session->phase == RECOVER || session->phase == MESH) && now >= session->deadline)
+			if ((session->phase == PREFLIGHT || session->phase == WRITE || session->phase == READBACK || session->phase == RECOVER || session->phase == MESH || session->phase == INFO || session->phase == MESH_READ) && now >= session->deadline)
 				completed(session, &peers[slot], slot, -ETIMEDOUT);
 		}
 		/* Bound flood work so heartbeats, expiry and termination still run. */
@@ -444,7 +458,7 @@ int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype, st
 			struct session *session = &sessions[slot];
 			enum phase current = session->phase;
 
-			if (current == PREFLIGHT_SEND || current == WRITE_SEND || current == READBACK_SEND || current == RECOVER_SEND || current == MESH_SEND) {
+			if (current == PREFLIGHT_SEND || current == WRITE_SEND || current == READBACK_SEND || current == RECOVER_SEND || current == MESH_SEND || current == INFO_SEND || current == MESH_READ_SEND) {
 				unsigned int bit = current == MESH_SEND ? MESH_ATTEMPTED : 1u << session->configuration;
 				struct json_object *mesh_request = NULL;
 				if (session->receivers[0].count || session->receivers[1].count) {
@@ -472,14 +486,14 @@ int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype, st
 					json_object_object_add(mesh_request, "EnableEasymesh", json_object_new_string(
 						json_object_get_boolean(session->policy->mesh) ? "1" : "0"));
 				}
-				ret = fttr_sync_request(fd, source, peers[slot].mac, ethertype, slot, current == MESH_SEND ? 2 : 1,
+				ret = fttr_sync_request(fd, source, peers[slot].mac, ethertype, slot, (current == INFO_SEND || current == MESH_READ_SEND) ? 3 : current == MESH_SEND ? 2 : 1,
 					mesh_request ? mesh_request : current == WRITE_SEND ? desired(session) : NULL);
 				json_object_put(mesh_request);
 				if (ret)
 					goto restore;
 				if (current == WRITE_SEND || current == MESH_SEND)
 					session->policy->attempted |= bit;
-				phase(session, current == MESH_SEND ? MESH : current == PREFLIGHT_SEND ? PREFLIGHT : current == WRITE_SEND ? WRITE : current == RECOVER_SEND ? RECOVER : READBACK);
+				phase(session, current == INFO_SEND ? INFO : current == MESH_READ_SEND ? MESH_READ : current == MESH_SEND ? MESH : current == PREFLIGHT_SEND ? PREFLIGHT : current == WRITE_SEND ? WRITE : current == RECOVER_SEND ? RECOVER : READBACK);
 				session->deadline = now_ms() + (current == MESH_SEND ? 9000 : 3000);
 			}
 			if (session->phase != IDLE && session->deadline < wake)

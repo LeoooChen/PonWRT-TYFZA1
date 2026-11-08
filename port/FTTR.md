@@ -7878,9 +7878,9 @@ report completes it, including when received before the ACK. Other flags/methods
 are ignored; nonzero STATUS remains pending within the fixed budget. Negative
 Result, malformed messages and timeout are explicit errors. Output distinguishes
 `ack_seen` from `completion_reported`; `configuration_verified` remains false.
-No original slave readback/application handler was established from the retained
-inputs. A reported completion does not prove actual Mesh enablement, roaming,
-wireless restart, credentials or interoperation. Late identical same-source
+The original GetONUInfo readback interpretation has since been established as
+described below. A reported completion alone does not prove actual Mesh
+enablement, roaming, wireless restart, credentials or interoperation. Late identical same-source
 reports remain indistinguishable because this original envelope has no
 transaction ID.
 
@@ -7894,11 +7894,10 @@ completion; re-registration/offline/replacement cancels outstanding state.
 With `--state`, a version2 record stores the exact EasyMesh value and reserves
 attempt bit16 after file/directory fsync and before transmission. Existing
 Wi-Fi-only records remain version1. Startup refuses a changed same-Revision
-policy. An attempted Flag2 operation recovered after restart is reported as
-EINPROGRESS and is not replayed or inferred successful; a new explicit Revision
-permits a new attempt after registration. This includes previously reported
-success, since current state cannot be read back. Without `--state`, suppression
-only lasts for the process lifetime.
+policy. An attempted Flag2 operation recovered after restart is never replayed;
+the independent state query described below now checks it against the saved
+target. A new explicit Revision permits a new attempt after registration.
+Without `--state`, suppression only lasts for the process lifetime.
 
 `trace_stock_fttr_easymesh.py` executes both toggle values through the original
 manager, controller builder, L2 encoder and ACK/completion branches. Actual
@@ -7911,6 +7910,57 @@ cases pass. Host and aarch64-musl builds pass. Evidence is under
 accessed. This implements the verified host configuration transaction, while
 actual subordinate application/readback and full roaming coordination remain
 unfinished.
+
+### GetONUInfo and independent EasyMesh state readback
+
+The native client now exposes the original device-information query:
+
+```sh
+fttr-sync fttr0 02:00:00:00:00:01 auto 0x88aa onu-info
+```
+
+The request is the original `GetONUInfo` plus the master's MAC. Its result
+contains `reported` fields using the original names, covering device versions,
+supported wireless modes/bands/SSID counts, uplink/UNI descriptions, working
+state and resource/radio statistics. Unknown fields are discarded; missing
+fields stay absent. Known values accept strings or integers, preserve their
+reported representation, and reject embedded NULs or strings exceeding1024
+bytes. Enum meanings and units are not invented. Ethernet source and JSON MAC
+must match the target. An explicit other RPC method cannot complete the query.
+The target's pending reply dispatcher also accepts a response without RPCMethod;
+native accepts that only with success Result, matching MAC and known data.
+A bare ACK remains pending.
+
+The original report parser copies `easymeshCapability` to byte1127 of the
+subdevice MIB row. The retained province30 `fttrManage:get_sfu_info` block reads
+that same byte into `Enableeasymesh`, while emitting `Supporteasymesh` separately.
+Executing both stages for0/1 establishes the reported-state interpretation;
+the misleading wire name must not be used as a generic support boolean.
+`trace_stock_fttr_info.py` executes the actual query builder, full report parser,
+pending Result dispatcher and bounded manager-output block.
+
+EasyMesh CLI and resident transactions now query that field before writing and
+again after the Flag2 completion exchange. Only canonical0/1 values permit a
+write; absent state returns ENODATA, unsupported values EPROTO. Readback runs
+even after a lost ACK/completion, but stops on observed registration replacement.
+Output separates `completion_reported`, write/readback results and
+`reported_state_matches`; a successful query cannot erase an earlier write error.
+The resident state machine first completes requested Wi-Fi recovery/configuration,
+then handles EasyMesh. Restart with a durable attempted bit performs only the
+state query; matching state reports `recovered_read_only`, mismatch returns
+EUCLEAN, and neither case replays the write. Subsequent registration/offline
+events still invalidate the in-memory session.
+
+Offline tests pass19 EasyMesh CLI cases,12 standalone GetONUInfo cases and20
+resident/persistence cases: all56 known report fields, partial reports,
+fragments, missing/invalid/mismatched state, bad source/method/MAC, timeout,
+registration changes, SIGKILL recovery, policy revision and fsync failures.
+Existing37 resident and38 durable Wi-Fi recovery cases pass. Host and
+aarch64-musl builds pass; artifacts are `artifacts/fttr/onu-info-*-20261109.*`.
+These are correlated peer-reported values, not authenticated identity or physical
+Mesh/roaming validation. No slave application code or physical device was run;
+kernel/PE code is unchanged. Full hardware retirement/ID reuse, multi-VIF, TSPEC
+and remaining factory-management behavior remain open.
 
 ### Outstanding implementation and acceptance
 
