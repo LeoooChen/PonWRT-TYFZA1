@@ -85,6 +85,7 @@ def main():
     p.add_argument('--slave', type=Path, required=True)
     p.add_argument('--daemon', type=Path, required=True)
     p.add_argument('--admin-control', type=Path, help='exercise the resident ONU administration CLI')
+    p.add_argument('--upgrade-control', type=Path, help='exercise resident image download/activate/commit')
     p.add_argument('--reboot-control', type=Path, help='exercise remote single-send reboot')
     p.add_argument('--move-control', type=Path, help='exercise the resident SN reservation move')
     p.add_argument('--output', type=Path, required=True)
@@ -149,6 +150,9 @@ def main():
             self.wifi_reject_at = 3
             self.wifi_timeout = self.wifi_malformed = False
             self.wifi_lost_tci = None
+            self.upgrade_images=[(1,1,1),(0,0,0)]
+            self.upgrade_mode='ok';self.upgrade_data=bytearray();self.upgrade_window=bytearray()
+            self.upgrade_expected=b'';self.upgrade_section=0;self.upgrade_rejections=0
             self.reboot_mode="ack"
             self.drop_sync=False
             self.fail_upload_once=False
@@ -226,6 +230,46 @@ def main():
                 self.drift_table=False
             if c==2 and op==0x49:assert body[2:]==sync_request[2:]
             self.operations.append((tci,op,c,id))
+            if args.upgrade_control and c==7:
+                assert id in (0,1)
+                if op==0x49:
+                    assert mask==0xf000
+                    content=b'\xf0\0'+b'VERSION0000001'+bytes(self.upgrade_images[id])
+                elif op==0x53:
+                    assert id==1 and self.upgrade_images[id][:2]==(0,0)
+                    assert body[8]==30 and struct.unpack('>I',body[9:13])[0]==len(self.upgrade_expected)
+                    self.upgrade_data.clear();self.upgrade_window.clear();self.upgrade_section=0
+                    if self.upgrade_mode=='drop-start':return None
+                    content=b'\x1e'
+                elif op in (0x14,0x54):
+                    assert ni.joinpath('fttr_forward').read_text().startswith('0') and f'fttr-u{self.id}' not in ports()
+                    if body[8]==0:self.upgrade_window.clear();self.upgrade_section=0
+                    assert body[8]==self.upgrade_section
+                    self.upgrade_window+=body[9:40];self.upgrade_section+=1
+                    if op==0x14:return None
+                    if self.upgrade_mode=='hold':self.held=body;return None
+                    if self.upgrade_mode=='reject-window' and not self.upgrade_rejections:
+                        self.upgrade_rejections+=1
+                        return stock.frame(tci,0x34,bytes([2,body[8]]),onu=self.id,class_id=7,instance=id)[16:]
+                    remaining=len(self.upgrade_expected)-len(self.upgrade_data)
+                    self.upgrade_data+=self.upgrade_window[:remaining]
+                    assert bytes(self.upgrade_data)==self.upgrade_expected[:len(self.upgrade_data)]
+                    content=bytes([body[8]])
+                elif op==0x55:
+                    assert bytes(self.upgrade_data)==self.upgrade_expected
+                    assert struct.unpack('>II',body[8:16])==(crc(self.upgrade_expected),len(self.upgrade_expected))
+                    if self.upgrade_mode=='reject-end' and not self.upgrade_rejections:
+                        self.upgrade_rejections+=1
+                        return stock.frame(tci,0x35,b'\x06',onu=self.id,class_id=7,instance=id)[16:]
+                    self.upgrade_images[id]=(0,0,1);content=b''
+                elif op==0x56:
+                    assert self.upgrade_images[id]==(0,0,1)
+                    self.upgrade_images[0]=(1,0,1);self.upgrade_images[id]=(0,1,1);content=b''
+                elif op==0x57:
+                    assert self.upgrade_images[id]==(0,1,1)
+                    self.upgrade_images[0]=(0,0,1);self.upgrade_images[id]=(1,1,1);content=b''
+                else:raise AssertionError(('unexpected image operation',op))
+                return stock.frame(tci,(op&31)|32,b'\0'+content,onu=self.id,class_id=7,instance=id)[16:]
             if op==0x59:
                 assert args.reboot_control and c==256 and id==0
                 assert body[2:]==reboot_wire[2:44]
@@ -611,7 +655,7 @@ def main():
                         wire=nodes[id].reply(body)
                         if wire:peer.send(HOST+OLT+struct.pack('>HH',0x8888,id)+wire)
                 current=status()
-                if args.auth and not args.move_control and not args.reboot_control and not args.onu_policy and (not current.get('onus') or current['onus'][7]['mib_serial']!=nodes[7].serial.hex()):
+                if args.auth and not args.move_control and not args.reboot_control and not args.upgrade_control and not args.onu_policy and (not current.get('onus') or current['onus'][7]['mib_serial']!=nodes[7].serial.hex()):
                     continue
                 if (current.get('pid') == process.pid or (allow_exit and current.get('pid')==0 and process.poll() is not None)) and predicate(current):return current
             current=status()
@@ -632,6 +676,102 @@ def main():
                     FTTR_ACCEL_LOG=str(accel_log),FTTR_ACCEL_FAIL=str(accel_fault),
                     FTTR_ADMIN_FAIL=str(admin_fault),FTTR_ADMIN_HOLD=str(admin_hold),FTTR_ADMIN_LOG=str(admin_log),
                     **({'FTTR_ADMIN_FPGA':'1'} if args.backend=='fpga1' else {})))
+        if args.upgrade_control:
+            checks=[];process=None
+            image=root/'image.bin';image.write_bytes(bytes(i%251 for i in range(1923)))
+            def command(action='download',serial=None):
+                return subprocess.Popen([str(args.upgrade_control.resolve()),str(store),'onu-upgrade','7',
+                    nodes[7].serial.hex() if serial is None else serial,action]+([str(image)] if action=='download' else []),
+                    stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+            def finish(client,error=0,seconds=8):
+                until(lambda s:client.poll() is not None,seconds=seconds)
+                stdout,stderr=client.communicate(timeout=2)
+                assert client.returncode==bool(error),(stdout,stderr)
+                if error:assert f'({-error})' in stderr,(stdout,stderr)
+                if stdout:assert json.loads(stdout)['boot_verified'] is False
+            def stop():
+                process.send_signal(signal.SIGTERM)
+                until(lambda s:process.poll() is not None,allow_exit=True)
+                assert process.wait(timeout=2)==0,process.stderr.read()
+            try:
+                for mode in ('ok','reject-window','reject-end','abort','replace','shutdown','client-gone','peer-admin','withdraw-fail','drop-start','snapshot'):
+                    while select.select([peer],[],[],0)[0]:peer.recv(2048)
+                    nodes[7]=Node(7,'5445535400000007',0x107,False)
+                    nodes[9]=Node(9,'5445535400000009',0x203,True)
+                    nodes[7].upgrade_mode='hold' if mode in ('abort','replace','shutdown','peer-admin') else mode
+                    nodes[7].upgrade_expected=image.read_bytes()
+                    hardware();process=launch()
+                    until(lambda s:all(s['onus'][id]['phase']=='configured' for id in (7,9)))
+                    healthy=datapath(9);before=len(accel_events())
+                    finish(command(serial='00'*8),errno.ESTALE);assert len(accel_events())==before
+                    # Version3 requires one FD only for download and rejects extra descriptors.
+                    control=socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM);control.bind('');control.settimeout(2);control.connect(str(store/'control.sock'))
+                    request=struct.pack('III8sI8s',3,7,5,nodes[7].serial,0,bytes(8))
+                    control.send(request);assert struct.unpack('i',control.recv(4))[0]==-errno.EINVAL
+                    with image.open('rb') as stream:
+                        control.sendmsg([request],[(socket.SOL_SOCKET,socket.SCM_RIGHTS,struct.pack('ii',stream.fileno(),stream.fileno()))])
+                        assert struct.unpack('i',control.recv(4))[0]==-errno.EINVAL
+                    for bad in (root/'empty-image',root/'pipe-image'):
+                        if bad.name=='empty-image':bad.write_bytes(b'')
+                        else:os.mkfifo(bad)
+                        descriptor=os.open(bad,os.O_RDONLY|os.O_NONBLOCK)
+                        control.sendmsg([request],[(socket.SOL_SOCKET,socket.SCM_RIGHTS,struct.pack('i',descriptor))])
+                        os.close(descriptor)
+                        assert struct.unpack('i',control.recv(4))[0]==-errno.EINVAL
+                        bad.unlink()
+                    control.close();assert len(accel_events())==before
+                    if mode=='withdraw-fail':accel_fault.touch()
+                    client=command()
+                    if mode=='withdraw-fail':
+                        until(lambda s:process.poll() is not None,allow_exit=True)
+                        stdout,stderr=client.communicate(timeout=2)
+                        assert process.wait(timeout=2)==1 and client.returncode==1
+                        assert f'({-errno.ETIMEDOUT})' in stderr
+                        assert not any(c==7 for _,_,c,_ in nodes[7].operations)
+                        accel_fault.unlink();process=None;checks.append(mode);continue
+                    until(lambda s:any(op==0x53 for _,op,_,_ in nodes[7].operations))
+                    assert datapath(9)==healthy and 'fttr-u7' not in ports()
+                    if mode=='snapshot':image.write_bytes(b'changed after controller snapshot')
+                    if mode=='client-gone':client.kill();client.wait()
+                    if mode in ('abort','replace','shutdown','peer-admin'):
+                        until(lambda s:any(op==0x54 for _,op,_,_ in nodes[7].operations))
+                        if mode=='peer-admin':
+                            # Other ONU control may close, but must not reopen the shared gate.
+                            result=subprocess.run([str(args.upgrade_control.resolve()),str(store),'onu-admin','9',nodes[9].serial.hex(),'block'],capture_output=True,text=True,timeout=3)
+                            assert result.returncode==0,(result.stdout,result.stderr)
+                            assert ni.joinpath('fttr_forward').read_text().startswith('0')
+                            assert not any(v for v,_,_ in accel_events()[before:])
+                            finish(command('abort'));finish(client,errno.ECANCELED)
+                        elif mode=='abort':finish(command('abort'));finish(client,errno.ECANCELED)
+                        elif mode=='replace':
+                            nodes[7]=Node(7,'5445535400000077',0x307,True);hardware()
+                            finish(client,errno.ESTALE);until(lambda s:s['onus'][7]['phase']=='configured')
+                        else:
+                            process.send_signal(signal.SIGTERM);until(lambda s:process.poll() is not None,allow_exit=True)
+                            stdout,stderr=client.communicate(timeout=2)
+                            assert client.returncode==1 and f'({-errno.ECANCELED})' in stderr
+                            assert process.wait(timeout=2)==0;process=None;checks.append(mode);continue
+                    elif mode=='drop-start':
+                        finish(client,errno.ETIMEDOUT,seconds=35)
+                        assert sum(op==0x53 for _,op,_,_ in nodes[7].operations)==1
+                        assert not any(op in (0x14,0x54,0x55,0x56,0x57) for _,op,_,_ in nodes[7].operations)
+                    else:
+                        if mode!='client-gone':finish(client,seconds=12)
+                        until(lambda s:s['onus'][7]['phase']=='upgrade-wait')
+                        assert status()['onus'][7]['upgrade_verified'] and nodes[7].upgrade_data==nodes[7].upgrade_expected
+                        assert datapath(9)==healthy and 'fttr-u7' not in ports()
+                        if mode=='ok':
+                            finish(command('activate'))
+                            assert status()['onus'][7]['upgrade_accepted'] and not status()['onus'][7]['upgrade_verified']
+                            finish(command('commit'))
+                            assert status()['onus'][7]['upgrade_verified']
+                    stop();process=None;checks.append(mode)
+            finally:
+                if process is not None and process.poll() is None:process.kill();process.wait()
+                peer.close();os.close(grant_fd)
+            args.output.write_text(json.dumps(dict(checks=checks,backend=args.backend,
+                scope='Actual resident/CLI/FD handoff/veth/VLAN with modeled image storage and hardware; no flash or physical reboot.'),indent=2)+'\n')
+            print(json.dumps(checks));return
         if args.reboot_control:
             checks=[]
             def command(action='reboot',serial=None):

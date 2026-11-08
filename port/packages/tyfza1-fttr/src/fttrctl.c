@@ -598,7 +598,7 @@ static int service_command(int directory, unsigned int id, const uint16_t fields
 }
 
 static int onu_admin(int directory, const char *id, const char *serial, const char *action,
-		const char *target_id, const char *target_serial)
+		const char *target_id, const char *target_serial, const char *image_path)
 {
 	struct fttr_admin_request request = { .version = 1 };
 	struct sockaddr_un address = { .sun_family = AF_UNIX };
@@ -606,14 +606,16 @@ static int onu_admin(int directory, const char *id, const char *serial, const ch
 	unsigned long number;
 	unsigned int i;
 	char *end;
-	int fd, ret;
+	int fd, ret, image_fd = -1;
 	int32_t result;
+	bool upgrade = !strcmp(action, "download") || !strcmp(action, "activate") ||
+		!strcmp(action, "commit") || !strcmp(action, "abort");
 	ssize_t size;
 
 	errno = 0;
 	number = strtoul(id, &end, 10);
 	if (errno || !*id || *end || number >= FTTR_ONUS || strlen(serial) != 16 ||
-	    (strcmp(action, "block") && strcmp(action, "resume") && strcmp(action, "deactivate") && strcmp(action, "move") && strcmp(action, "reboot")))
+	    (strcmp(action, "block") && strcmp(action, "resume") && strcmp(action, "deactivate") && strcmp(action, "move") && strcmp(action, "reboot") && !upgrade))
 		return -EINVAL;
 	request.id = number;
 	request.action = !strcmp(action, "reboot") ? FTTR_ADMIN_REBOOT :
@@ -644,9 +646,25 @@ static int onu_admin(int directory, const char *id, const char *serial, const ch
 			request.target_serial[i] = strtoul(pair, NULL, 16);
 		}
 	}
+	if (upgrade) {
+		request.version = 3;
+		request.action = !strcmp(action, "download") ? FTTR_ADMIN_DOWNLOAD :
+			!strcmp(action, "activate") ? FTTR_ADMIN_ACTIVATE :
+			!strcmp(action, "commit") ? FTTR_ADMIN_COMMIT : FTTR_ADMIN_UPGRADE_ABORT;
+		if ((request.action == FTTR_ADMIN_DOWNLOAD) != (image_path != NULL)) return -EINVAL;
+		if (image_path) {
+			image_fd = open(image_path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+			if (image_fd < 0) return -errno;
+		}
+		/* This is only the local CLI wait, not an OMCI retry deadline. */
+		timeout.tv_sec = 3600;
+	}
 	fd = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-	if (fd < 0)
-		return -errno;
+	if (fd < 0) {
+		ret = -errno;
+		if (image_fd >= 0) close(image_fd);
+		return ret;
+	}
 	/* Linux allocates a unique abstract return address for this client. */
 	if (bind(fd, (struct sockaddr *)&address, sizeof(address.sun_family)) ||
 	    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) ||
@@ -660,14 +678,28 @@ static int onu_admin(int directory, const char *id, const char *serial, const ch
 		goto out;
 	}
 	unsigned int request_size = request.version == 1 ? offsetof(struct fttr_admin_request, target) : sizeof(request);
-	size = send(fd, &request, request_size, 0);
+	if (image_fd >= 0) {
+		struct iovec vector = { .iov_base = &request, .iov_len = request_size };
+		union { struct cmsghdr align; char bytes[CMSG_SPACE(sizeof(int))]; } rights = {0};
+		struct msghdr message = { .msg_iov = &vector, .msg_iovlen = 1,
+			.msg_control = rights.bytes, .msg_controllen = sizeof(rights.bytes) };
+		struct cmsghdr *header = CMSG_FIRSTHDR(&message);
+		header->cmsg_level = SOL_SOCKET;
+		header->cmsg_type = SCM_RIGHTS;
+		header->cmsg_len = CMSG_LEN(sizeof(int));
+		memcpy(CMSG_DATA(header), &image_fd, sizeof(image_fd));
+		size = sendmsg(fd, &message, 0);
+	} else size = send(fd, &request, request_size, 0);
 	if (size != request_size) {
 		ret = size < 0 ? -errno : -EIO;
 		goto out;
 	}
 	size = recv(fd, &result, sizeof(result), MSG_TRUNC);
 	ret = size < 0 ? -errno : size != sizeof(result) ? -EPROTO : result;
-	if (!ret && request.action == FTTR_ADMIN_MOVE)
+	if (upgrade)
+		printf("{\"event\":\"onu_upgrade\",\"id\":%u,\"action\":\"%s\",\"completed\":%s,\"error\":%d,\"boot_verified\":false}\n",
+			request.id, action, !ret ? "true" : "false", ret);
+	else if (!ret && request.action == FTTR_ADMIN_MOVE)
 		printf("{\"event\":\"onu_move\",\"from\":%u,\"to\":%u,\"reservation_updated\":true,\"registration_verified\":false}\n",
 			request.id, request.target);
 	else if (request.action == FTTR_ADMIN_REBOOT)
@@ -678,6 +710,7 @@ static int onu_admin(int directory, const char *id, const char *serial, const ch
 			request.id, serial, request.action != FTTR_ADMIN_RESUME ? "true" : "false",
 			request.action == FTTR_ADMIN_DEACTIVATE ? "true" : "false");
 out:
+	if (image_fd >= 0) close(image_fd);
 	close(fd);
 	return ret;
 }
@@ -692,7 +725,7 @@ int main(int argc, char **argv)
 	    strcmp(argv[2], "gem") && strcmp(argv[2], "profiles") && strcmp(argv[2], "uni") &&
 	    strcmp(argv[2], "ani") && strcmp(argv[2], "mapper") && strcmp(argv[2], "vlan") &&
 	    strcmp(argv[2], "vlan-table") && strcmp(argv[2], "service") && strcmp(argv[2], "wifi") &&
-	    strcmp(argv[2], "onu-admin") && strcmp(argv[2], "onu-move") && strcmp(argv[2], "optical"))) {
+	    strcmp(argv[2], "onu-upgrade") && strcmp(argv[2], "onu-admin") && strcmp(argv[2], "onu-move") && strcmp(argv[2], "optical"))) {
 		fprintf(stderr, "Usage: %s <miniolt-sysfs-directory> status\n"
 			"       %s <miniolt-sysfs-directory> mib <hardware-ID> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> get <hardware-ID> <class> <instance> <mask> [interface=fttr0]\n"
@@ -708,6 +741,7 @@ int main(int argc, char **argv)
 			"       %s <miniolt-sysfs-directory> wifi <hardware-ID> <config-file> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> wait-link <NI-sysfs-directory>\n",
 			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
+		fprintf(stderr, "       %s <controller-state-directory> onu-upgrade <hardware-ID> <serial-hex> <download image-file|activate|commit|abort>\n", argv[0]);
 		fprintf(stderr, "       %s <controller-state-directory> onu-admin <hardware-ID> <serial-hex> <block|resume|deactivate|reboot>\n", argv[0]);
 		fprintf(stderr, "       %s <controller-state-directory> onu-move <source-ID> <source-serial-hex> <target-ID> <target-serial-hex>\n", argv[0]);
 		fprintf(stderr, "       %s <optical-sysfs-directory> optical\n", argv[0]);
@@ -726,17 +760,21 @@ int main(int argc, char **argv)
 			fprintf(stderr, "FTTR optical: %s (%d)\n", strerror(-ret), ret);
 		return ret ? 1 : 0;
 	}
-	if (!strcmp(argv[2], "onu-admin") || !strcmp(argv[2], "onu-move")) {
-		bool move = !strcmp(argv[2], "onu-move");
+	if (!strcmp(argv[2], "onu-upgrade") || !strcmp(argv[2], "onu-admin") || !strcmp(argv[2], "onu-move")) {
+		bool move = !strcmp(argv[2], "onu-move"), upgrade = !strcmp(argv[2], "onu-upgrade");
 
-		if (argc != (move ? 7 : 6))
+		if (argc != (move || (upgrade && argc > 5 && !strcmp(argv[5], "download")) ? 7 : 6))
 			return 2;
-		if (!move && !strcmp(argv[5], "move"))
+		if ((!move && !strcmp(argv[5], "move")) ||
+		    (!upgrade && (!strcmp(argv[5], "download") || !strcmp(argv[5], "activate") ||
+		     !strcmp(argv[5], "commit") || !strcmp(argv[5], "abort"))) ||
+		    (upgrade && strcmp(argv[5], "download") && strcmp(argv[5], "activate") &&
+		     strcmp(argv[5], "commit") && strcmp(argv[5], "abort")))
 			return 2;
 		directory = open(argv[1], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 		if (directory < 0) { perror(argv[1]); return 1; }
 		ret = onu_admin(directory, argv[3], argv[4], move ? "move" : argv[5],
-			move ? argv[5] : NULL, move ? argv[6] : NULL);
+			move ? argv[5] : NULL, move ? argv[6] : NULL, upgrade && argc == 7 ? argv[6] : NULL);
 		close(directory);
 		if (!ret && fflush(stdout))
 			ret = -errno;

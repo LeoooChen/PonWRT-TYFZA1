@@ -1949,7 +1949,8 @@ response from the same peer cannot be distinguished by this diagnostic;
 its output must not be used as configuration-transaction acceptance. The optional
 `wifi-settings` command uses the read action described below. Explicit
 `wifi-apply` adds a single write and field readback with the limitations below;
-no reboot or upgrade command is exposed.
+this syncserv diagnostic exposes no reboot or upgrade command. The separate
+resident OMCI commands are described below.
 
 `scripts/test_fttr_sync.py` compares36 native frames against actual original
 encoding (six security cases, slots0/5/15, request/response), checks size limits,
@@ -5644,6 +5645,97 @@ builds pass. Reports: `artifacts/fttr/reboot-stock-20261108.json`,
 These use modeled ONU/MDIO/FE IO and prove no physical restart, packet drain
 or hardware-ID reuse. No device was accessed.
 
+### Resident Software Image download, activation and commit
+
+The resident controller now implements the target relay's Software Image
+(class7, slots0/1) management through separate explicit commands:
+
+```sh
+fttrctl STATE_DIRECTORY onu-upgrade ID SERIAL16 download IMAGE_FILE
+fttrctl STATE_DIRECTORY onu-upgrade ID SERIAL16 activate
+fttrctl STATE_DIRECTORY onu-upgrade ID SERIAL16 commit
+fttrctl STATE_DIRECTORY onu-upgrade ID SERIAL16 abort
+```
+
+`download` reads both image slots with mask0xf000 and chooses the first slot
+that is neither committed nor active. Start Download0x53 requests31 sections;
+the ONU may negotiate1..31. Each section contains31 image bytes, with zero
+padding only in the final partial section; sequence numbers restart at zero
+for every window. Ordinary sections use0x14, the window/final-image last
+section uses0x54 and requires a matching ACK/section. Confirmed bytes advance
+only on that ACK. An explicit rejected window retransmits the entire window
+at the same offset, at most twice; old TCI replies do not acknowledge retries.
+End Download0x55 carries the factory non-reflected CRC32 and exact image size.
+A rejected End Download waits4s before retry, at most120 times, to match the
+factory flash-write waiting path. No blocking sleep is used in the resident.
+
+Every acknowledged image request has a30s deadline, corresponding to the
+original300 ticks of the100ms timer task. Missing or malformed replies fail;
+they are not treated as remote rejections that authorize retransmission.
+After End Download succeeds, a fresh class7 read must report valid, inactive
+and uncommitted before `upgrade_verified` becomes true. `activate` independently
+rereads both slots and selects the first valid inactive image; `commit`
+selects the first valid uncommitted image. These match384 executed factory
+selection combinations across ASIC and FPGA1. Activation ACK only proves
+request acceptance; commit additionally reads back valid/committed state.
+Download never implicitly activates or commits. Native validation also
+rejects malformed booleans, oversized negotiated windows and wrong section
+ACKs rather than accepting corrupt state.
+
+Version3 of the local credential-checked Unix control protocol carries
+exactly one SCM_RIGHTS descriptor for download and none for other operations.
+The controller accepts a nonempty regular file within the32-bit wire size,
+copies it once and checks size/mtime/ctime stability; all packets and retries
+use that immutable snapshot. It never opens a path supplied in a datagram.
+Other descriptor counts, truncated messages, pipes and empty images reject
+before FE/DBA changes, and received descriptors are closed on every path.
+The CLI waits up to an hour for the local result; CLI disappearance or timeout
+does not abort the remote transaction. This wait is not a network retry.
+
+Before OMCI image selection/transmission, the owning daemon checks the live
+serial, withdraws FE admission and business VLAN/DBA, and cancels other jobs
+for that ONU while retaining management connectivity. It checks identity
+before every packet and completion, and yields between section sends to
+service other ONUs. Concurrent management of a different ONU may close but
+cannot reopen shared forwarding while an image or reboot transaction is
+pending. The current implementation holds shared FTTR acceleration closed
+for the command duration; other peers retain their VLANs. On finish it
+releases the management session, frees the snapshot and reopens shared
+forwarding only after cleanup succeeds. A cleanup error remains fatal/closed.
+
+The affected ONU stays in `upgrade-wait` with business withdrawn. Separate
+activation/commit commands can run there after fresh identity/image reads.
+Observed departure/replacement or explicit `onu-admin ... resume` starts
+normal inventory/authentication before services resume. Local `abort` stops
+further transmission and frees ownership; it does not invent an unsupported
+remote flash rollback/abort message. Status reports action, stage, selected
+image, total/confirmed bytes, accepted/verified and error. The CLI's
+`completed` describes only the requested command and always reports
+`boot_verified:false`.
+
+`trace_stock_fttr_upgrade.py` executes both original image producers, exact
+wire encoders, partial/full windows, selection, CRC,12 window failure/retry
+cases and End Download retry boundaries. `test_fttr_upgrade.py` drives the production C state machine in70
+scenarios, including all31 negotiated windows, multiwindow byte identity,
+full-window retries, all120 end retries, timeout, malformed responses,
+readback failure and cancellation. The actual daemon/CLI tests use AF_PACKET,
+veth, bridge/VLAN and descriptor passing, with modeled ONU storage/MDIO/FE:
+download/activate/commit, rejected window/end, abort, replacement, shutdown,
+client exit, concurrent peer administration, failed FE withdrawal, missing
+Start ACK, and immutable file snapshot. Native and aarch64-musl builds plus
+existing ONU administration/reboot/migration regressions pass. Local reports
+are `artifacts/fttr/upgrade-{stock,resident,resident-fpga1}-20261108.json` and
+`upgrade-{admin,reboot,move}-regression-20261108.json`.
+
+This adds the factory protocol and controller ownership path, not physical
+flash or boot acceptance. Image content is not authenticated against a known
+subordinate model/vendor signature; the operator must supply its exact
+compatible vendor image. Durable upgrade intent/restart recovery, positive
+post-activation boot/version verification and automatic coordination with
+subordinate capabilities remain work. A controller restart does not resume
+an interrupted download. Full upstream packet retirement and hardware-ID
+reuse also remain unresolved. No device was accessed or upgraded.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN
@@ -6286,8 +6378,9 @@ is used to acknowledge full retirement or release a quarantined hardware ID.
    multicast, reboot/upgrade and roaming coordination, using the connected
    ONU's actual capabilities rather than assuming one fixed subordinate model.
    The resident ONU-G reboot request is implemented as described above;
-   upgrade, gateway/roaming coordination and physical reboot verification
-   remain work. The original ff69/ff6a Wi-Fi update transaction is implemented with
+   the Software Image download/activation/commit protocol is also implemented.
+   Durable upgrade recovery, image compatibility/boot verification,
+   gateway/roaming coordination and physical reboot verification remain work. The original ff69/ff6a Wi-Fi update transaction is implemented with
    preflight/readback/restoration, explicit CLI and resident per-ONU policy;
    settings mapping and
    actual subordinate capability/behavior verification remain work.
