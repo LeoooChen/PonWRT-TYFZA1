@@ -169,3 +169,14 @@ b8245ec完整固件SHA b5a40771409b24cb3b00eb715c91f1fd56be474638fa85477c36191fb
 从main2ad19d9移入独立ni_build_payload，只改NI报头和地址表准备分支，保留本分支原厂QoS/流统计/聚合/PS/WMM/请求生命周期。实际linked AP/STA/mesh头、gather字节/DMA/padding、sharedpublication、PS、6144ownership、RPQ/IMEM通过。候选PE1d0bcbb5，27504字节/stack6936。
 
 同拓扑A/B/A：已刷batch TCP1.234905G162retx、UDP1.454894G23.19%loss；独立NI候选TCP1.249419G0retx、UDP1.482633G20.89%loss；恢复batch UDP1.452667G21.69%loss。UDP各自发送1.897/1.876/约1.87G，接收能力约2%提高，支持保留小幅改善；仍无达标证据，不能称低丢高速完成。卸载/恢复正常、boot不变。候选仅实验副本加载，当前flash及RAM恢复batch，后续源码继续承接该构造；artifact direct-ni保存完整证据。
+
+
+### NI报头读取复用（2026-11-08）
+
+沿已证实的QoS/流统计开销差异，复用每帧4个对齐以太网前缀word，普通IPv4/IPv6直接由已读word提取优先级；PPPoE保留既有分类函数。源地址+EtherType流键从同一word组合，14/15字节短帧只读实际存在EtherType字节。没有删除QoS、流统计、PS/WMM或安全检查。
+
+scripts/test_pe_ethernet_prefix.py执行旧/新实际MIPS PE，2048组IPv4/IPv6/PPPoE×全TOS×8/16字节NI头部，分类、流键、元数据相同；14/15/16短帧通过。普通IPv4 DDR读13→4。原测试借用既有ModuleMachine而非另造采集框架。gather/host headers/publication/PS/6144ownership/RXbackpressure/RPQ/IMEM通过；PE ebe3bca1107fd548f3542a24baf29f0c691805317d4f3f8511c8e7cb41f7b3a5，27592字节、保守栈6936。
+
+在directNI基础上的A/B/A：旧UDP1.482633G/20.89%loss，优化UDP1.663042G/9.505%loss，恢复旧UDP1.480962G/21.027%loss；发送分别约1.876/1.839/约1.88G，接收能力提升约12%，但远未达到2G低丢。TCP1.249419→1.249174G没有提速，重传0→62，不宣称TCP改善。优化20秒1.6G负载实收1.596633G/0.2131%loss，5903丢与QMno_buffer读数一致；上行实际send1.472765G、recv1.471077G、lost0，受Mac端单核造流限制。全程bootc0eb71c3未变，无新failed/retired。
+
+恢复direct08后完成控制组，NI工具正常停止。源码保留对齐读取改进，当前flash仍b8245ec；后续整包必须包含b19200b独立NI构造和本次读取改进。原厂完整WFO程序仍非本机来源，不把自有PE说成原厂源码。完整目标TCP1.8/UDP2.0双向低丢仍未达到。

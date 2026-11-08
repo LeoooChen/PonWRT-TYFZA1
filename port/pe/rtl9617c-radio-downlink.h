@@ -114,10 +114,12 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		u32 buffer = descriptor & 0xffffff80, header, tid;
 		u32 length = ni_length(entry, buffer, &header, &tid);
 		u8 *ethernet = uncached(buffer + RTL_QM_HEADROOM + header);
-		u32 macid = 0;
+		u32 macid = 0, ether1 = 0;
 		if (length >= 14 && length <= RTL_QM_DATA_BYTES - header) {
 			const u32 *destination = (const void *)ethernet;
-			u32 low = destination[0], high = destination[1] & 65535;
+			u32 low = destination[0];
+			ether1 = destination[1];
+			u32 high = ether1 & 65535;
 			/* Cache only this batch's destination; admission can be revoked
 			 * asynchronously and must still be checked for every packet. */
 			if (cached_peer && low == cached_low && high == cached_high &&
@@ -143,12 +145,26 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		}
 		/* FE's generic action has COS0. The original Wi-Fi OS entry
 		 * classifies the Ethernet payload again before TXSC enqueue. */
-		tid = macid && ((*(u32 *)(memory + 0xd000 + macid * 32 + 8) >> 16) & 63) == 26 ?
-			rtl_ax_ethernet_tid(ethernet, length) : 0;
+		u32 ether2 = 0, ether3 = 0;
+		if (macid) {
+			ether2 = ((const u32 *)ethernet)[2];
+			/* Only the EtherType bytes exist in a 14/15-byte frame. */
+			ether3 = length >= 16 ? ((const u32 *)ethernet)[3] :
+				ethernet[12] | (u32)ethernet[13] << 8;
+		}
+		tid = 0;
+		if (macid && length >= 16 &&
+		    ((*(u32 *)(memory + 0xd000 + macid * 32 + 8) >> 16) & 63) == 26) {
+			u32 type = ether3 & 65535;
+			if (type == 8 || type == 0xdd86) {
+				u32 up = type == 8 ? ether3 >> 29 : (ether3 >> 17) & 7;
+				tid = up < 4 ? ((up + 1) >> 1) & 1 : up & 6;
+			} else tid = rtl_ax_ethernet_tid(ethernet, length);
+		}
 		u32 queue = macid * 8 + tid;
 		if (macid) {
-			u32 low = ((const struct packed_word *)(ethernet + 6))->value;
-			u32 high = ((const struct packed_word *)(ethernet + 10))->value;
+			u32 low = ether1 >> 16 | ether2 << 16;
+			u32 high = ether2 >> 16 | ether3 << 16;
 			if (flow_packets && (macid != flow_peer || low != flow_low || high != flow_high)) {
 				rtl_ax_traffic_flow_hit((void *)(memory + RTL_AX_TX_PEER_FLOWS + flow_peer * 256),
 					flow_low, flow_high, (u32)now, flow_packets);
