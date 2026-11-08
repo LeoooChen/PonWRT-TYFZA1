@@ -497,6 +497,9 @@ static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 		if (message.bytes < 8) return -EINVAL;
 		macid = get_unaligned_le16(message.payload);
 		if (macid >= 128) return -EINVAL;
+		/* Factory halbb_get_fw_ra_rpt ignores MU updates. Preserve the
+		 * last SU rate used by dynamic A-MSDU policy and station metrics. */
+		if (message.payload[4] & BIT(7)) return 0;
 		spin_lock_irqsave(&radio->command_lock, flags);
 		memcpy(radio->ra_feedback[macid], message.payload, 8);
 		radio->ra_reports[macid]++;

@@ -227,3 +227,35 @@ UDP诊断使用 --gsro -w4M -l1448 -b2000M，实收1.672976/1.708033/1.667720G�
 不宣称默认UDP或2G低丢达标。A基线另有低流量客户端，B/A2仅Mac，跨关联仍有局限。
 保留明确减少DDR工作且无持续回退的实现；原模块已恢复，无flash写入。
 证据artifacts/ingest-qos。完整TCP1.8/UDP2.0双向目标未完成。
+
+
+### 2026-11-08 main 吞吐定位：TXBD 占用与 SU/MU 报告
+
+新目标直接从 main43dd462 定位具体 bug，不再要求整体重写原厂架构。
+复用阶段快照，临时只读模块追加 DMA0 TXBD producer/hardware；PE 为 main 的
+ e45038089786693e92e76796d38a2a3247ead13f5bc7a5fb611a3ecc9e6bca9c。
+2000M UDP 诊断（--gsro -w4M -l1448）采样/无采样实收1.707691/1.707925G，
+实际发送均约1.881G，loss9.19/9.16%。10个1Hz快照TXBD占用0..7，软件queued最高1151，
+不支持持续TXBD满环或扩大请求池；低频非原子快照不能排除短暂满环。
+默认TCP首轮0.791101G/483重传，出现PM切换、聚合策略0和醒后千帧积压；同关联复测
+1.347783G/0重传且聚合7帧。聚合关闭在原厂动态策略也存在，未把相关性认定为因果。
+首次诊断构建误用非PE_UPLINK兼容产物，关联后不通；TTL恢复并从main重建、核对hash后
+唯一重试成功。该无效轮不用于归因。证据artifacts/wifi-speed-20261108/txbd-stages。
+
+沿动态聚合的速率输入核对发现明确错误：原厂halbb_get_fw_ra_rpt@2cca00..2cca04
+检测payload[4]高位MU后直接返回，不更新SU速率、GI、BW和retry；native之前无条件覆盖
+ra_feedback，traffic_update随后将MU字段当作SU速率。pci.c在缓存写入前过滤MU，保留
+上次有效SU；后续SU仍完整更新。没有改变PE、包格式、硬件队列或无线参数。
+新测试抽取实际native C2H分支并执行原厂ELF，256组SU/MU交替状态和9组畸形边界通过；
+旧实现首个MU向量失败。既有速率/内核bitrate/HWMP调用者检查及ARM64模块构建通过。
+既有metric测试默认kernel路径不存在，传入当前build kernel后通过，未改测试框架。
+
+实机模块rtl_ax_ap_rasu08 SHA8ab42fd5a2debbe4347d9ad5ceaa5a52ca07178ee70897724e3cd5b254379710，
+boot ed5bebf0-155e-473f-8b00-2646ff6f24f0保持。默认10秒单流TCP下行首轮0.970136G/161重传，
+PM+24且no_buffer157；同关联唯一复测1.276000G/0重传。TCP上行1.497919G/0重传。
+默认UDP -b2000M 下行实发0.757699G/实收0.756974G/loss0.1006%，上行实发1.255942G/
+实收0.976419G/loss21.4902%，上行RXQ_RDU+105；端点CPU限制仍存在，不宣称低丢高速通过。
+UDP容量诊断实收1.708653G，与修复前约1.708G相同，实发1.842460G/loss7.1536%。
+未捕获首轮低谷期间的MU，不声称这处修复解释了低谷或带来提速；按原厂确认的SU状态
+正确性保留。产品修复和定位证据分开。证据artifacts/wifi-speed-20261108/ra-su-feedback，
+REA产物仅/home/leo/tyfza1-rea-wifi-stock-20261108/output。双向TCP1.8/UDP2.0目标未完成。
