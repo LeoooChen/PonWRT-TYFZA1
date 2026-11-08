@@ -65,6 +65,37 @@ static enum hrtimer_restart tick(struct hrtimer *unused)
  return HRTIMER_RESTART;
 }
 
+/* Match skb_checksum_help's input rules without copying every GSO segment
+ * into a second linear skb. Read the checksum from cached source data, then
+ * copy once to the NI slot and patch only its private checksum field. */
+static int copy_payload(struct sk_buff *skb, u8 *frame)
+{
+ unsigned int start=0,at=0;
+ __sum16 sum=0;
+ int ret;
+
+ if(!skb_frags_readable(skb))return -EFAULT;
+ if(skb->ip_summed==CHECKSUM_PARTIAL){
+  /* sendfile/splice pages can be modified outside this skb's ownership. */
+  if(skb_has_shared_frag(skb)){
+   ret=__skb_linearize(skb);
+   if(ret)return ret;
+  }
+  if(skb_checksum_start_offset(skb)<ETH_HLEN)return -EINVAL;
+  start=skb_checksum_start_offset(skb);
+  if(start>=skb_headlen(skb))return -EINVAL;
+  at=start+skb->csum_offset;
+  if(at+sizeof(sum)>skb_headlen(skb))return -EINVAL;
+  sum=csum_fold(skb_checksum(skb,start,skb->len-start,0));
+  if(!sum)sum=CSUM_MANGLED_0;
+ }
+ ret=skb_copy_bits(skb,ETH_HLEN,frame+22,skb->len-ETH_HLEN);
+ if(ret)return ret;
+ if(skb->ip_summed==CHECKSUM_PARTIAL)
+  put_unaligned(sum,(__sum16*)(frame+8+at));
+ return 0;
+}
+
 static netdev_tx_t transmit(struct sk_buff *skb,struct net_device *dev)
 {
  struct iphdr *ip=ip_hdr(skb);
@@ -93,8 +124,7 @@ static netdev_tx_t transmit(struct sk_buff *skb,struct net_device *dev)
   dev_queue_xmit(skb);
   return NETDEV_TX_OK;
  }
- if(skb->len<ETH_HLEN || skb->len>1506 || skb_is_gso(skb) ||
-    (skb->ip_summed==CHECKSUM_PARTIAL && skb_checksum_help(skb))) {
+ if(skb->len<ETH_HLEN || skb->len>1506 || skb_is_gso(skb)){
   invalid_packets++;dev_kfree_skb_any(skb);return NETDEV_TX_OK;
  }
  begin=ktime_get_ns();
@@ -117,7 +147,9 @@ static netdev_tx_t transmit(struct sk_buff *skb,struct net_device *dev)
  put_unaligned_be16(skb->len-ETH_HLEN+2,frame+18);
  put_unaligned_be16(0x21,frame+20);
  copy_begin=ktime_get_ns();
- skb_copy_bits(skb,ETH_HLEN,frame+22,skb->len-ETH_HLEN);
+ if(copy_payload(skb,frame)){
+  invalid_packets++;dev_kfree_skb_any(skb);return NETDEV_TX_OK;
+ }
  payload_copy_ns+=ktime_get_ns()-copy_begin;
  put_unaligned_le32(0x81000001U|(7U<<25)|(length<<8),memory+slot*8+4);
  producer=(producer+1)&1023;
@@ -251,6 +283,10 @@ static int __init initialize(void)
  if(!feed){ret=-ENOMEM;goto retain;}
  strscpy(feed->name,"ponfeed%d",IFNAMSIZ);
  feed->netdev_ops=&operations;feed->mtu=1492;
+ /* Software GSO may retain fragments and partial checksums. This
+  * endpoint completes both in copy_payload; it never accepts GSO skbs. */
+ feed->features |= NETIF_F_SG | NETIF_F_HW_CSUM;
+ feed->hw_features |= NETIF_F_SG | NETIF_F_HW_CSUM;
  eth_hw_addr_set(feed,(const u8 *)"\x02\x55\x46\x50\x4f\x4e");
  hrtimer_setup(&timer,tick,CLOCK_MONOTONIC,HRTIMER_MODE_REL);
  ret=register_netdev(feed);
