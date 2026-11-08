@@ -600,6 +600,9 @@ static u32 pe_fttr_stale(volatile u32 *mailbox, const u32 *request)
 {
 	u32 low = request[RTL_FTTR_PE_REQUEST_LOW], high = request[RTL_FTTR_PE_REQUEST_HIGH];
 	u32 table = mailbox[RTL_MC_PE_TABLE_MAILBOX];
+	/* ARM WP side metadata survives private FIFO compaction. */
+	u32 stamp=*(u32 *)((u8 *)mailbox-MAILBOX_OFFSET+RTL_MC_PE_CPU_STAMPS+request[0]*4);
+	if(stamp && (!table || stamp!=((volatile struct rtl_mc_pe_table *)uncached(table))->cpu_generation))return 1;
 	if (!(low | high)) return 0;
 	if ((low & 1) || !table) return 1;
 	volatile struct rtl_mc_pe_table *shared = uncached(table);

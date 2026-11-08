@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* One native NI complex owns accelerated bridge multicast on this SoC. */
 #include <linux/atomic.h>
+#include <linux/dma-mapping.h>
+#include <linux/spinlock.h>
 #include <linux/errno.h>
 #include <linux/export.h>
 #include <linux/mutex.h>
@@ -222,3 +224,67 @@ void rtl9617c_bridge_mcast_copy(struct sk_buff *to,const struct sk_buff *from)
  if(saved && saved->multicast_direct)skb_ext_copy(to,from);
 }
 EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_copy);
+
+/* Independent from FE epoch/cookie reuse and from FTTR ingress generation.
+ * All pending CPU copies expire together; policy writers cannot sleep for
+ * radio completion. Zero permanently closes stamps on counter exhaustion.
+ */
+static DEFINE_SPINLOCK(rtl_mcast_cpu_lock);
+static u32 rtl_mcast_cpu_generation = 1;
+static unsigned int *rtl_mcast_cpu_mirrors[2];
+
+void rtl9617c_bridge_mcast_invalidate(void)
+{
+ unsigned long flags;
+ spin_lock_irqsave(&rtl_mcast_cpu_lock,flags);
+ if(rtl_mcast_cpu_generation)rtl_mcast_cpu_generation++;
+ for(unsigned int i=0;i<2;i++)if(rtl_mcast_cpu_mirrors[i])
+  WRITE_ONCE(*rtl_mcast_cpu_mirrors[i],cpu_to_le32(rtl_mcast_cpu_generation));
+ dma_wmb();
+ spin_unlock_irqrestore(&rtl_mcast_cpu_lock,flags);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_invalidate);
+
+int rtl9617c_bridge_mcast_pe_register(unsigned int *mirror)
+{
+ unsigned long flags;
+ unsigned int slot=2;
+ int ret=0;
+ if(!mirror)return -EINVAL;
+ spin_lock_irqsave(&rtl_mcast_cpu_lock,flags);
+ for(unsigned int i=0;i<2;i++) {
+  if(rtl_mcast_cpu_mirrors[i]==mirror){ret=-EEXIST;goto out;}
+  if(!rtl_mcast_cpu_mirrors[i])slot=i;
+ }
+ if(slot==2){ret=-ENOSPC;goto out;}
+ rtl_mcast_cpu_mirrors[slot]=mirror;
+ WRITE_ONCE(*mirror,cpu_to_le32(rtl_mcast_cpu_generation));dma_wmb();
+out:
+ spin_unlock_irqrestore(&rtl_mcast_cpu_lock,flags);return ret;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_pe_register);
+
+void rtl9617c_bridge_mcast_pe_unregister(unsigned int *mirror)
+{
+ unsigned long flags;
+ spin_lock_irqsave(&rtl_mcast_cpu_lock,flags);
+ for(unsigned int i=0;i<2;i++)if(rtl_mcast_cpu_mirrors[i]==mirror) {
+  WRITE_ONCE(*mirror,0);dma_wmb();rtl_mcast_cpu_mirrors[i]=NULL;
+ }
+ spin_unlock_irqrestore(&rtl_mcast_cpu_lock,flags);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_pe_unregister);
+
+int rtl9617c_bridge_mcast_tx_stamp(const struct sk_buff *skb,u32 *stamp)
+{
+ const struct rtl9617c_bridge_frame *saved=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
+ u32 generation;
+ *stamp=0;
+ if(!saved || !saved->multicast_direct)return 0;
+ generation=READ_ONCE(rtl_mcast_cpu_generation);smp_rmb();
+ if(!generation || rtl9617c_bridge_mcast_stale(skb))return -ESTALE;
+ smp_rmb();
+ if(generation!=READ_ONCE(rtl_mcast_cpu_generation))return -ESTALE;
+ *stamp=generation;return 0;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_tx_stamp);

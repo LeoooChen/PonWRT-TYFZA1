@@ -107,6 +107,8 @@ static bool rtl_fe_enabled(struct rtl_fe *f){return f->enabled;}
 static bool rtl9617c_fttr_stale(const struct sk_buff *s){(void)s;return false;}
 static bool skb_is_gso(struct sk_buff *s){return s->gso;}
 static struct rtl_fe *ext_change;
+static unsigned cpu_invalidations;
+void rtl9617c_bridge_mcast_invalidate(void){cpu_invalidations++;}
 static void fe_mcast_invalidate(struct rtl_fe *fe);
 static const struct rtl9617c_bridge_frame *skb_ext_find(const struct sk_buff *s,int id){assert(!id);return &s->saved;}
 static struct rtl9617c_bridge_frame *skb_ext_add(struct sk_buff *s,int id){assert(!id);if(ext_change){fe_mcast_invalidate(ext_change);ext_change=NULL;}return &s->saved;}
@@ -583,8 +585,9 @@ int main(void){
   struct sk_buff queued={.frame=wf};
   assert(fe_mcast_host_receive(&bridge,&queued,cookie[0],source)==1 && fe_mcast_host_tx_valid(&bridge,&queued));
   if(scenario==3){ext_change=&fe;assert(fe_mcast_host_receive(&bridge,&copy,cookie[0],source)==-ESTALE&&!ext_change);}
+  unsigned invalidations=cpu_invalidations;
   fe.age_fail=1;assert(rtl_fe_flush_port(&fe,&wifi)==-ETIMEDOUT&&!fe.mc_gate.active);
-  assert(!fe_mcast_host_tx_valid(&bridge,&queued));
+  assert(cpu_invalidations>invalidations&&!fe_mcast_host_tx_valid(&bridge,&queued));
   assert(fe_mcast_host_receive(&bridge,&copy,cookie[1],source)==-ESTALE);
   assert(!rtl_fe_flush_port(&fe,&wifi));
   assert(!fe.mc_directs[cookie[0]]->flow&&!fe.mc_directs[cookie[1]]->flow);

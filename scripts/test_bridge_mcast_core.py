@@ -17,6 +17,14 @@ code=r'''
 #include <stdio.h>
 typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u64;
 #include "linux/rtl9617c-bridge.h"
+#define DEFINE_SPINLOCK(v) pthread_mutex_t v=PTHREAD_MUTEX_INITIALIZER
+#define spin_lock_irqsave(p,f) do{(f)=0;assert(!pthread_mutex_lock(p));}while(0)
+#define spin_unlock_irqrestore(p,f) do{(void)(f);assert(!pthread_mutex_unlock(p));}while(0)
+#define READ_ONCE(v) (v)
+#define WRITE_ONCE(v,x) ((v)=(x))
+#define cpu_to_le32(v) (v)
+#define dma_wmb() atomic_thread_fence(memory_order_seq_cst)
+#define smp_rmb() atomic_thread_fence(memory_order_seq_cst)
 #define __rcu
 #define EXPORT_SYMBOL_GPL(v)
 #define DEFINE_MUTEX(v) pthread_mutex_t v=PTHREAD_MUTEX_INITIALIZER
@@ -70,7 +78,9 @@ static void output_packet(void *context,struct sk_buff *skb){struct owner *o=con
 static void complete_packet(void *context,u64 ticket,bool complete){struct owner *o=context;if(ticket==o->pending&&complete)o->completed++;}
 static int host_local(void *ctx,struct sk_buff *s,struct net_device *d,u16 vid){(void)ctx;(void)s;(void)d;return vid?-ESTALE:1;}
 static int host_receive(void *ctx,struct sk_buff *s,unsigned group,unsigned source){(void)ctx;s->saved.multicast_host_group=group;return source?-ESTALE:0;}
+static bool race_stamp;
 static bool host_tx_valid(void *ctx,const struct sk_buff *skb){
+ if(race_stamp){race_stamp=false;rtl9617c_bridge_mcast_invalidate();}
  struct owner *o=ctx;return !atomic_load(&o->writers) && skb->saved.multicast_host_owner==o->pending;
 }
 static const struct rtl9617c_bridge_mcast_ops *thread_ops;
@@ -113,6 +123,20 @@ int main(void){
  fresh.saved.multicast_direct=true;fresh.saved.multicast_host_owner=second.pending;
  fresh.saved.multicast_host_group=17;fresh.saved.multicast_epoch=9;
  assert(!rtl9617c_bridge_mcast_stale(&fresh));
+ unsigned int mirrors[3]={};u32 stamp;
+ assert(!rtl9617c_bridge_mcast_pe_register(&mirrors[0]));
+ assert(!rtl9617c_bridge_mcast_pe_register(&mirrors[1]));
+ assert(rtl9617c_bridge_mcast_pe_register(&mirrors[0])==-EEXIST);
+ assert(rtl9617c_bridge_mcast_pe_register(&mirrors[2])==-ENOSPC);
+ assert(!rtl9617c_bridge_mcast_tx_stamp(&fresh,&stamp) && stamp && stamp==mirrors[0] && stamp==mirrors[1]);
+ race_stamp=true;assert(rtl9617c_bridge_mcast_tx_stamp(&fresh,&stamp)==-ESTALE && !stamp);
+ assert(!rtl9617c_bridge_mcast_tx_stamp(&fresh,&stamp) && stamp==mirrors[0]);
+ rtl9617c_bridge_mcast_pe_unregister(&mirrors[0]);assert(!mirrors[0]);
+ rtl_mcast_cpu_generation=UINT32_MAX;rtl9617c_bridge_mcast_invalidate();
+ assert(!mirrors[1] && rtl9617c_bridge_mcast_tx_stamp(&fresh,&stamp)==-ESTALE);
+ rtl9617c_bridge_mcast_invalidate();assert(!rtl_mcast_cpu_generation);
+ rtl9617c_bridge_mcast_pe_unregister(&mirrors[1]);
+ rtl_mcast_cpu_generation=1;
  struct sk_buff copy={0};assert(rtl9617c_bridge_mcast_differs(&copy,&fresh));
  rtl9617c_bridge_mcast_copy(&copy,&fresh);assert(!rtl9617c_bridge_mcast_differs(&copy,&fresh));
  copy.saved.multicast_host_group++;assert(rtl9617c_bridge_mcast_differs(&copy,&fresh));

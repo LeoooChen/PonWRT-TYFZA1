@@ -6030,12 +6030,74 @@ five changed kernel input identities pass; no kernel patch or PE firmware
 change is required. Reports are under `artifacts/fttr/mcast-queued-*`.
 
 This closes the Linux software queue window before the last submission
-check. It does not add a reference barrier or multicast generation to an
-already submitted CPU-origin PE/PCIe request, and it does not make a policy
-writer atomic with the last hardware handoff. Those in-flight CPU requests,
+check. The pending ARM-to-PE request generation is added below; a reference barrier
+and atomic policy-writer/final-hardware handoff are still absent. Published CPU requests,
 MCE/NI DMA/AFT producer retirement and hardware-ID reuse remain work. The
 existing direct NI-to-PE immutable-cookie checks are unchanged. No device was
 accessed and no physical packet-retirement claim is made.
+
+### CPU multicast stamps survive ARM-to-PE submission
+
+A direct CPU multicast replica can pass Linux's last queue check and then
+wait in the ARM request ring or PE's private pending FIFO. That pending
+request previously carried only FTTR ingress, GTK PN and sequence identities;
+a multicast-only policy change could therefore leave it publishable. The
+old linked PE reproduces this even for a CPU copy with no FTTR stamp.
+
+The built-in multicast core now owns an independent nonwrapping32-bit CPU
+copy generation and two coherent radio mirrors. FE multicast writers and
+individual learned-flow removal invalidate this generation while holding
+the same short FE lock used to validate a live copy. ARM obtains a token by
+checking the live skb owner between two generation reads; a concurrent
+invalidation fails admission. Zero after overflow permanently refuses new
+stamped copies. The mirror is registered for the radio allocation lifetime,
+including when no NI multicast table is bound, and is detached only after
+PE stop and completion-work cancellation.
+
+The radio records the token in a dedicated256-word table at DDR0x68000,
+indexed by the already-owned ARM WP ID. It writes zero on every ordinary WP
+reuse. This leaves all ten scatter/gather address pairs and the four existing
+request metadata words intact. PE reads the WP token before hardware-credit
+allocation and compares it with the mirror in the formerly reserved table
+word; mismatch or a missing/closed mirror uses the existing unpublished-WP
+release marker. Private FIFO compaction retains software WP IDs, so it cannot
+lose this check. The CPU multicast capability is nowMCP4 (`0x4d435034`);
+stamped submissions reject older firmware.
+
+The ARM completion worker now also polls multicast-only accepted requests.
+A software cancellation unmaps/frees the skb and releases its WMM quota once,
+without ACK/rate feedback or a fabricated sequence result. Hardware RPQ
+remains the normal completion source after PCIe publication. The token table
+needs no pointer in a request and cannot outlive its owning radio allocation.
+Any multicast invalidation conservatively revokes pending CPU copies on both
+radios; unrelated ordinary requests are not stamped.
+
+The core tests cover two registrations, duplicate/full registry rejection,
+a writer during token acquisition, overflow, detach and FE ownership reload.
+The actual ARM submission block runs1024 stale/ordinary/token/old-capability
+cases across all256 WP IDs, verifying no request-word overlap. Linked PE
+checks103 cases across six channels, ten-address requests, no NI binding,
+credit stalls, generation rollover, WP reuse, mixed pending entries and
+already-published packets. The original image fails the stale-publication
+case. Actual ARM software completion runs514 partial/full batches including
+multicast-only skbs and quota release. Binding teardown verifies
+join-before-unregister-before-free. All related FE, bridge, FTTR/PS, BCMC,
+GTK PN, shared sequence, queue/quota and RPQ regressions pass.
+
+The full PE image is32760 bytes, SHA256
+`db16d7b3b06129485176b83b3371f6c7653d9ea5016114f5947f510bb6f2a524`,
+with conservative summed stack7296/8192. Linker/entry bounds pass with only8
+IMEM bytes spare. The non-PE_UPLINK image remains14168 bytes and byte-identical;
+it does not advertiseMCP4 or accept stamped CPU copies. Repeat generation,
+Image/modules and seven changed kernel input identities pass. Reports are
+under `artifacts/fttr/cpu-mcast-*`.
+
+This adds cancellation while CPU requests are pending on PE. It is not an
+end-to-end completion barrier: an invalidation racing after the final PE
+check, already published PCIe payloads, MCE/NI DMA/AFT upstream producers and
+safe reuse of quarantined multicast IDs still require further work. No
+physical device was accessed and no hardware packet-retirement or performance
+claim is made.
 
 ### Independent UNI mode and ANI VLAN filtering
 

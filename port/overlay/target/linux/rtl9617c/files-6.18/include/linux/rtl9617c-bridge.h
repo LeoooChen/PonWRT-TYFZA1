@@ -71,6 +71,12 @@ static inline unsigned int rtl9617c_bridge_host_group(u32 h0,u32 h1)
  * validated VIF's normal TX; two selects native Ethernet TX. No consumption. */
 int rtl9617c_bridge_mcast_receive(struct sk_buff *skb, unsigned int group, unsigned int source);
 int rtl9617c_bridge_mcast_local(struct sk_buff *skb, struct net_device *bridge, u16 vid);
+/* Coherent CPU-copy generation mirrors survive FE bind/unbind. Caller joins
+ * PE before unregister/free; no accepted skb carries an allocation pointer. */
+int rtl9617c_bridge_mcast_pe_register(unsigned int *mirror);
+void rtl9617c_bridge_mcast_pe_unregister(unsigned int *mirror);
+void rtl9617c_bridge_mcast_invalidate(void);
+int rtl9617c_bridge_mcast_tx_stamp(const struct sk_buff *skb, u32 *stamp);
 bool rtl9617c_bridge_mcast_stale(const struct sk_buff *skb);
 bool rtl9617c_bridge_mcast_differs(const struct sk_buff *a, const struct sk_buff *b);
 void rtl9617c_bridge_mcast_copy(struct sk_buff *to, const struct sk_buff *from);

@@ -124,6 +124,8 @@ static void fe_mcast_host_remove(struct rtl_fe *fe,struct rtl_fe_flow *flow)
  unsigned long flags;
  if(!flow->replica_count)return;
  spin_lock_irqsave(&fe->mc_lock,flags);
+ /* Serialize token invalidation with the final ownership check. */
+ rtl9617c_bridge_mcast_invalidate();
  for(unsigned int i=1;i<RTL_FE_MC_GROUPS;i++)
   if(fe->mc_directs[i] && fe->mc_directs[i]->flow==flow) {
    unsigned int dest=fe->mc_directs[i]->pe_destination;

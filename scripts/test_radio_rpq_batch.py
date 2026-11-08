@@ -49,13 +49,13 @@ struct sk_buff {u8 data[64];struct ieee80211_tx_info cb;u64 rtl9617c_fttr_genera
 struct ieee80211_hdr {__le16 fc,duration;u8 addresses[18];__le16 seq_ctrl;};
 struct ieee80211_sta {int unused;};struct ieee80211_hw {int unused;};
 struct ieee80211_tx_status {struct sk_buff *skb;struct ieee80211_tx_info *info;struct ieee80211_sta *sta;};
-struct rtl_ax_tx_slot {struct sk_buff *skb;u64 fttr_generation;unsigned ring,macid;bool pe_sequence,firmware_rate,pe_key_pn;};
+struct rtl_ax_tx_slot {struct sk_buff *skb;u64 fttr_generation;unsigned ring,macid;bool pe_sequence,firmware_rate,pe_key_pn,pe_mcast,quota_counted;};
 struct rtl_ax_rx_packet {unsigned bytes;u8 *payload;bool pe_completed,pe_discarded;};
 /* The EWMA arithmetic is covered by test_radio_mesh_metric; record each
  * update here to compare RPQ dispatch ordering and ownership. */
 struct ewma_rtl_ax_success {unsigned total,calls;};
 static void ewma_rtl_ax_success_add(struct ewma_rtl_ax_success *p,unsigned value){p->total+=value;p->calls++;}
-struct rtl_ax_tx {struct ewma_rtl_ax_success peer_success[128];int lock,key_flush_wait;struct {int ps_work;}ni;struct {void *memory;}pe;u8 *headers;
+struct rtl_ax_tx {u32 ac_pending[128][4];struct ewma_rtl_ax_success peer_success[128];int lock,key_flush_wait;struct {int ps_work;}ni;struct {void *memory;}pe;u8 *headers;
  bool pe_active,running,queues_paused,queues_stopped,peer_asleep[128],pending[256];
  struct ieee80211_hw *hw;struct rtl_ax_tx_slot slots[256];
  unsigned occupied,last_report,unmatched,completed,completed_ring[6],status_count[8],polluted,queue_wakes;

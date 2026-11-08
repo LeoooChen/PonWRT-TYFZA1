@@ -70,6 +70,7 @@ static void fe_mcast_change_begin(void *context,struct net_device *dev)
  unsigned long flags;
 
  spin_lock_irqsave(&fe->mc_lock,flags);
+ rtl9617c_bridge_mcast_invalidate();
  fe_mcast_pe_close(fe);
  rtl_fe_mc_gate_begin(&io,&fe->mc_gate);
  atomic_set(&fe->mc_flush,1);

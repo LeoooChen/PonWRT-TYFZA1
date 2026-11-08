@@ -13,7 +13,9 @@
  */
 #define RTL_MC_PE_TABLE_MAILBOX 210
 #define RTL_MC_PE_CAP_MAILBOX 211
-#define RTL_MC_PE_CAPABILITY 0x4d435033U
+#define RTL_MC_PE_CAPABILITY 0x4d435034U
+/* Immutable stamp for each of the256 ARM software WP IDs, outside requests. */
+#define RTL_MC_PE_CPU_STAMPS 0x68000
 #define RTL_MC_PE_COOKIES 256
 #define RTL_MC_PE_BCMC (1U << 15)
 #define RTL_MC_PE_BCMC_ROUTE 128
@@ -52,7 +54,7 @@ struct rtl_mc_pe_record {
 struct rtl_mc_pe_table {
 	unsigned int epoch;
 	struct rtl_fttr_pe_generation fttr;
-	unsigned int reserved;
+	unsigned int cpu_generation; /* built-in core owns publication, zero closes */
 	struct rtl_mc_pe_record record[RTL_MC_PE_COOKIES];
 };
 

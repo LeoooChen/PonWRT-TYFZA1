@@ -196,6 +196,8 @@
 
 89. 补齐CPU组播直发复制在Linux队列中的撤销检查：旧逻辑只在QM复制入口复核，成员变化后qdisc/BUSY/mac80211队列仍可能发送旧复制；已用旧生产检查复现。现skb保留独立复制标志及数字owner/group/epoch，经RCU和FE短锁在现有发送前边界复核；复制共享扩展、聚合区分所有者，卸载/替换FE后拒绝旧包。完整FE/核心回调及实际Linux队列/NFQUEUE/复制/GRO、bridge主机/M2U/写者/解析/FTTR回归和Image/模块、五份输入一致性通过。此项只关闭Linux排队窗口，不涵盖最后复核后已提交PE/PCIe的CPU复制，完整上游退场与硬件ID复用继续保留，未上实机。详见[CPU复制队列撤销](port/FTTR.md#cpu-multicast-replicas-remain-revocable-in-linux-tx-queues)。
 
+90. 补齐CPU组播复制进入ARM/PE请求队列后的代际撤销：内建核心给两张无线卡发布独立代际，FE成员/策略写者及单流删除先失效；ARM核验活跃复制后在每WP侧表保存token，PE分配信用前复核，旧复制走软件完成。未覆盖十段地址或FTTR/PN/序号字段，MCP4能力检查拒绝旧固件；普通WP复用清零token。核心竞争/溢出/解除、ARM1024组提交、PE103组信用阻塞/复用/混合队列及514组CPU复制软件完成/配额释放通过，旧固件复现旧复制仍发布。完整PE32760字节、栈上界7296，相关组播/FTTR/PS/RPQ回归、重复构建、Image/模块和七份输入一致性通过。最后PE检查后已发布PCIe报文、上游生产者退场和ID复用仍待补，未上实机。详见[CPU复制进入PE后的撤销](port/FTTR.md#cpu-multicast-stamps-survive-arm-to-pe-submission)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

@@ -57,7 +57,7 @@ struct rtl_ax_tx_slot {
 	u8 ring;
 	u8 key_index;
 	u8 macid, tid;
-	bool encrypted, pe_sequence, firmware_rate, pe_key_pn, quota_counted;
+	bool encrypted, pe_sequence, firmware_rate, pe_key_pn, quota_counted, pe_mcast;
 	struct rtl_ax_tx_mapping *mapping;
 };
 
@@ -72,7 +72,7 @@ struct rtl_ax_tx {
 	dma_addr_t mcast_dma;
 	struct net_device *mcast_dev;
 	struct delayed_work fttr_work;
-	bool fttr_registered;
+	bool fttr_registered, mcast_cpu_registered;
 	u64 fttr_discarded;
 	u64 mcast_policy_attempt[128],bcmc_policy_attempt;
 	u32 key_pn_generation;
@@ -252,6 +252,9 @@ struct rtl_ax_tx *rtl_ax_tx_prepare(struct pci_dev *pdev, const struct rtl_ax_io
 	ret = rtl9617c_fttr_pe_register(&tx->mcast_table->fttr, tx->pe.memory + RTL_FTTR_PE_DRAIN);
 	if (ret) goto release;
 	tx->fttr_registered = true;
+	ret = rtl9617c_bridge_mcast_pe_register(&tx->mcast_table->cpu_generation);
+	if (ret) goto release;
+	tx->mcast_cpu_registered = true;
 	tx->ring = dma_alloc_coherent(tx->dma_device, RTL_AX_TX_RINGS * RTL_AX_TX_ENTRIES * 8, &tx->ring_dma, GFP_KERNEL);
 	tx->pages = dma_alloc_coherent(tx->dma_device, RTL_AX_TX_WD_PAGES * RTL_AX_TX_WP_BYTES,
 		&tx->pages_dma, GFP_KERNEL);
@@ -768,7 +771,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	u8 *page;
 	int ret;
 	bool template_ready = false;
-	u32 pn_generation = 0;
+	u32 pn_generation = 0, mcast_stamp = 0;
 	u16 sequence = 0;
 	u64 begin = READ_ONCE(rtl_ax_datapath_profile) ? ktime_get_ns() : 0;
 	/* TXQ/PS queues may outlive the ingress FTTR service generation. */
@@ -837,6 +840,17 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 			goto unmap;
 		}
 		slot.pe_key_pn = true;
+	}
+	if (tx->pe_active) {
+		ret = rtl9617c_bridge_mcast_tx_stamp(skb, &mcast_stamp);
+		if (ret) goto unmap;
+		if (mcast_stamp && get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + RTL_MC_PE_CAP_MAILBOX * 4) != RTL_MC_PE_CAPABILITY) {
+			ret = -EOPNOTSUPP; goto unmap;
+		}
+		slot.pe_mcast = mcast_stamp != 0;
+		/* Each software WP remains owned until hardware/software completion.
+		 * This side table does not alias the ten request address pairs. */
+		put_unaligned_le32(mcast_stamp, tx->pe.memory + RTL_MC_PE_CPU_STAMPS + id * 4);
 	}
 	/* Join the closed-generation barrier after every fallible admission
 	 * check, before either PE or PCIe can observe this request. */
@@ -1042,7 +1056,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		tx->pe_producer = (tx->pe_producer + 1) & 255;
 		put_unaligned_le32(tx->pe_producer, tx->pe.memory + PE_PROBE_MAILBOX + 32);
 		dma_wmb();
-		if (skb->rtl9617c_fttr_generation || slot.pe_key_pn)
+		if (skb->rtl9617c_fttr_generation || slot.pe_key_pn || slot.pe_mcast)
 			queue_delayed_work(system_wq, &tx->fttr_work, 1);
 	} else
 		tx->io->write16(tx->io->ctx, rtl_ax_tx_indices[ring], next);
@@ -1268,7 +1282,7 @@ static void rtl_ax_tx_fttr_work(struct work_struct *work)
 		u32 *released = tx->pe.memory + RTL_FTTR_PE_DISCARD + id * 4;
 		unsigned int qsel = slot->ring < 4 ? slot->ring : slot->ring == 4 ? 0x12 : 0x11;
 
-		if (!slot->skb->rtl9617c_fttr_generation && !slot->pe_key_pn) continue;
+		if (!slot->skb->rtl9617c_fttr_generation && !slot->pe_key_pn && !slot->pe_mcast) continue;
 		if (!READ_ONCE(*released)) { pending = true; continue; }
 		/* PE no longer references the request/payload once this word is
 		 * visible. Clear before the completion makes this WP reusable. */
@@ -1394,6 +1408,8 @@ int rtl_ax_tx_free(struct rtl_ax_tx *tx, struct ieee80211_hw *hw)
 		if (ret) return ret;
 	}
 	cancel_delayed_work_sync(&tx->fttr_work);
+	if (tx->mcast_cpu_registered)
+		rtl9617c_bridge_mcast_pe_unregister(&tx->mcast_table->cpu_generation);
 	if (tx->fttr_registered)
 		rtl9617c_fttr_pe_unregister(&tx->mcast_table->fttr);
 	/* Caller has closed RX work and removed device DMA ownership. */

@@ -53,6 +53,8 @@ static struct rtl_dq_io fe_io(struct rtl_fe *f){return (struct rtl_dq_io){f,rd,w
 static void atomic_set(int *p,int v){*p=v;}
 static void mod_delayed_work(int q,unsigned int *w,unsigned int d){assert(!q&&!d);(*w)++;}
 static void dma_wmb(void){}
+static unsigned cpu_invalidations;
+void rtl9617c_bridge_mcast_invalidate(void){cpu_invalidations++;}
 '''
 code+=function((DRIVERS/'rtl9617c-fe-mcast-pe.h').read_text(),'fe_mcast_pe_close')
 code+=function(source,'fe_mcast_change_begin')+function(source,'fe_mcast_change_end')
