@@ -2133,11 +2133,6 @@ static int admin_request(struct controller *c, const struct fttr_admin_request *
 		return ret;
 	if (memcmp(observed.serial, request->serial, 8))
 		return -ESTALE;
-	if (request->action == FTTR_ADMIN_RESUME && c->upgrade_store >= 0) {
-		ret = fttr_upgrade_store_remove(c->upgrade_store, request->serial);
-		if (ret) return ret;
-		u->upgrade_held = u->upgrade_marked = false;
-	}
 	if (recovery && ((observed.downstream & (1U << 16)) ||
 	    !fttr_miniolt_recovery_needed(c->backend, observed.upstream)))
 		return -EAGAIN;
@@ -2163,9 +2158,18 @@ static int admin_request(struct controller *c, const struct fttr_admin_request *
 	}
 	if (!ret) {
 		ret = fttr_miniolt_one(c->directory, request->id, &u->hardware);
+		if (!ret && memcmp(u->hardware.serial, request->serial, 8)) ret = -ESTALE;
 		if (ret) {
 			*fatal = ret;
 			return ret;
+		}
+		/* Keep the durable hold through FE/VLAN/DBA withdrawal and the
+		 * driver's locked identity check. A failed resume must not lose it.
+		 */
+		if (request->action == FTTR_ADMIN_RESUME && c->upgrade_store >= 0) {
+			ret = fttr_upgrade_store_remove(c->upgrade_store, request->serial);
+			if (ret) { *fatal = ret; return ret; }
+			u->upgrade_held = u->upgrade_marked = false;
 		}
 		u->phase = request->action != FTTR_ADMIN_RESUME ? ONU_BLOCKED : ONU_ABSENT;
 		if (request->action == FTTR_ADMIN_DEACTIVATE) {
@@ -2742,7 +2746,7 @@ static int admin_tick(struct controller *c, int64_t now)
 
 		if (c->move.active && (id == c->move.request.id || id == c->move.request.target))
 			continue;
-		if (u->upgrade_held || u->phase == ONU_REBOOT || u->phase == ONU_REBOOT_WAIT ||
+		if ((u->upgrade_held && !u->admin_pending) || u->phase == ONU_REBOOT || u->phase == ONU_REBOOT_WAIT ||
 		    u->phase == ONU_UPGRADE || u->phase == ONU_UPGRADE_WAIT)
 			continue;
 		if (scan && !u->admin_pending && !(table[id].downstream & (1U << 16)) &&

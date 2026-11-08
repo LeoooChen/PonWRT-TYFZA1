@@ -5813,6 +5813,43 @@ are `artifacts/fttr/upgrade-store-{stock,resident,resident-fpga1,noauth}-2026110
 and `upgrade-store-{admin,reboot}-20261108.json`; build identities are under
 `upgrade-store-build-20261108/`. No device was accessed.
 
+### Upgrade hold release follows confirmed administration
+
+An explicit `onu-admin ... resume` previously removed its durable upgrade
+record before closing FE admission, removing business ports/grants or
+executing the driver's serial-guarded operation. A later IO failure could
+therefore leave no record for the next controller to consult. The record now
+remains until local withdrawal, the driver operation and a same-serial
+hardware readback all succeed. A replacement discovered in that readback
+fails closed. Only then is the record removed and its directory synced,
+before shared admission reopens. An unlink/directory-sync failure also stops
+the controller; because unlink may already have happened, such a sync failure
+is not a claim that the old file necessarily remains on disk. At that point
+the explicit hardware resume has already been confirmed.
+
+The upgrade hold also used to prevent the release timer of an explicitly
+requested temporary deactivation from running. The timer may now release
+registration blocking while retaining the independent upgrade hold. Automatic
+error recovery remains disabled for held ONUs. Subsequent refresh reloads the
+record and keeps business VLAN/DBA withdrawn; only explicit successful resume
+clears it. ASIC's scan/15s handling and FPGA1's offline-only release still use
+the existing original-verified driver paths.
+
+Both defects were reproduced with actual production functions before the
+fix. `test_fttr_upgrade_admin.py` checks each withdrawal/driver/readback error,
+post-operation serial replacement, record-removal failure and successful
+ordering; `test_fttr_admin_lifecycle.py` checks held temporary release across
+all three backend selectors. Real daemon/CLI/veth tests cover IO/stale resume
+failure, restart with the retained record, held deactivation release and later
+successful resume on ASIC/FPGA1. Existing76 upgrade transaction/store checks,
+ordinary administration and native/aarch64-musl builds pass. The original
+administration oracle still passes18 state operations and384 upstream error
+recovery combinations. Reports are
+`artifacts/fttr/upgrade-admin-{resident,resident-fpga1,stock}-20261108.json`,
+`upgrade-admin-regression-20261108.json`, with build identities under
+`upgrade-admin-build-20261108/`. No physical device was accessed; complete
+hardware packet retirement and ID reuse remain unresolved.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN

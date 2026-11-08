@@ -701,7 +701,7 @@ def main():
                 until(lambda s:process.poll() is not None,allow_exit=True)
                 assert process.wait(timeout=2)==0,process.stderr.read()
             try:
-                for mode in ('ok','reject-window','reject-end','abort','replace','shutdown','client-gone','peer-admin','withdraw-fail','drop-start','snapshot','crash-download','crash-activate','crash-commit','store-fail','verify-store-fail'):
+                for mode in ('ok','reject-window','reject-end','abort','replace','shutdown','client-gone','peer-admin','withdraw-fail','drop-start','snapshot','crash-download','crash-activate','crash-commit','store-fail','verify-store-fail','resume-io','resume-stale','held-deactivate'):
                     while select.select([peer],[],[],0)[0]:peer.recv(2048)
                     nodes[7]=Node(7,'5445535400000007',0x107,False)
                     nodes[9]=Node(9,'5445535400000009',0x203,True)
@@ -796,6 +796,31 @@ def main():
                         until(lambda s:s['onus'][7]['phase']=='upgrade-wait')
                         assert status()['onus'][7]['upgrade_verified'] and nodes[7].upgrade_data==nodes[7].upgrade_expected
                         assert datapath(9)==healthy and 'fttr-u7' not in ports()
+                        if mode in ('resume-io','resume-stale','held-deactivate'):
+                            receipt=upgrade_store/(nodes[7].serial.hex()+'.upgrade');saved=receipt.read_bytes()
+                            def admin(action):
+                                return subprocess.run([str(args.upgrade_control.resolve()),str(store),'onu-admin','7',nodes[7].serial.hex(),action],capture_output=True,text=True,timeout=3)
+                            if mode=='held-deactivate':
+                                result=admin('deactivate');assert result.returncode==0,(result.stdout,result.stderr)
+                                until(lambda s:not s['onus'][7]['temporary_deactivation'],seconds=18)
+                                if args.backend=='fpga1':hardware()
+                                until(lambda s:s['onus'][7]['phase']=='upgrade-wait')
+                                assert receipt.read_bytes()==saved and 'fttr-u7' not in ports()
+                            else:
+                                admin_fault.write_text('io' if mode=='resume-io' else 'stale')
+                                result=admin('resume');expected=errno.EIO if mode=='resume-io' else errno.ESTALE
+                                assert result.returncode==1 and f'({-expected})' in result.stderr,(result.stdout,result.stderr)
+                                assert receipt.read_bytes()==saved
+                                admin_fault.unlink()
+                                if mode=='resume-io':
+                                    until(lambda s:process.poll() is not None,allow_exit=True);assert process.wait()==1
+                                    process=launch()
+                                until(lambda s:s['onus'][7]['phase']=='upgrade-wait')
+                                assert 'fttr-u7' not in ports()
+                            result=admin('resume');assert result.returncode==0,(result.stdout,result.stderr)
+                            if args.backend=='fpga1':hardware()
+                            until(lambda s:s['onus'][7]['phase']=='configured')
+                            assert not receipt.exists()
                         if mode in ('ok','crash-activate','crash-commit'):
                             if mode.startswith('crash-'):nodes[7].upgrade_lost='activate'
                         if mode=='ok':

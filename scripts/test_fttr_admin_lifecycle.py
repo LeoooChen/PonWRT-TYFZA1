@@ -110,6 +110,8 @@ int main(void) {
   if(backend==1)assert(c.onu[7].admin_pending); /* release in next pass */
   reset(backend,100);c.onu[7].admin_pending=false;samples[7].upstream=0x100000;samples[7].downstream=0x10000;
   assert(!admin_tick(&c,100) && !recoveries && !calls);
+  reset(backend,100);c.onu[7].upgrade_held=true;
+  assert(!admin_tick(&c,100) && calls==1 && !c.onu[7].admin_pending && c.onu[7].upgrade_held);
   reset(backend,100);c.onu[7].admin_pending=false;samples[7].upstream=0x100000;
   upgrade_record_error=0;assert(!admin_tick(&c,100) && !recoveries && c.onu[7].upgrade_held);
   reset(backend,100);c.onu[7].admin_pending=false;samples[7].upstream=0x100000;
