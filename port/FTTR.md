@@ -6168,6 +6168,60 @@ and five changed kernel input identities. Local evidence is
 `artifacts/fttr/main-43dd462-*`. No device was accessed and main's physical
 performance measurements are not measurements of this combined FTTR image.
 
+### CPU multicast DMA copies retain references through descriptor retirement
+
+CPU Ethernet/PON/FTTR transmission copies an skb into a coherent NI DMA-LSO
+buffer and consumes the skb immediately. That consumption previously left
+no multicast reference even though the copied payload could still be queued
+or prefetched by DMA. `rtl_dma_tx_frame` now validates the direct-copy token,
+performs the skb copy, then joins the same built-in multicast admission count
+before publishing its descriptor. A writer racing the copy fails admission;
+copy failure consumes/drops the skb without publishing or acquiring a
+reference. Ring-full BUSY retains the caller's skb and takes no reference.
+
+A per-descriptor boolean holds the reference independently of netdev
+statistics ownership. `rtl_dma_tx_forget` still removes a disappearing
+interface pointer but cannot complete its payload. Normal completion releases
+only the descriptors behind the original two-descriptor prefetch holdback,
+and does so once before their ring slots may be reused. Equality of hardware
+read/write pointers does not release the last two payload references. A
+shared-engine stop/start uses the existing VP-disable and paired DMA+AFT
+reset sequence, then releases any remaining references; this is the same
+reset boundary already used before reusing/freeing the coherent ring memory.
+It does not claim that downstream NI/ES queues have retired.
+
+The existing closed learned-multicast gate now sees these DMA references
+alongside radio references. Subsequent ordinary CPU traffic can move the DMA
+consumer beyond the two held descriptors; otherwise those final references
+remain until engine reset, leaving new learned acceleration closed and the
+complete software forwarding path available. No artificial descriptors or
+packets are generated to force completion. Direct XRAM mode and downstream
+packet retirement remain outside this DMA ownership proof.
+
+`trace_stock_dma_completion.py` executes the target module's actual
+`ca_dma_tx_complete_easy` for4096 reclaim/read-pointer combinations. Normal
+states agree with the two-descriptor holdback. Four synthetic short-distance
+states at slots62/63 expose the factory wrapped-comparison defect (including
+no pointer progress causing releases); native modulo-distance accounting
+retains those slots instead. These synthetic states are not evidence of an
+observed factory runtime failure. Original asynchronous publication and
+paired DMA/AFT reset instruction comparisons also pass.
+
+`test_dma_mcast_reference.py` executes836 wrap/prefetch/reset/owner-forget,
+stale admission, copy failure, mid-copy invalidation, BUSY and ordinary-
+traffic-progress cases. Running the prior DMA source fails the reference
+assertion. Mixed LAN/OMCI/Wi-Fi DMA tests,300 original Wi-Fi submission
+contracts, PON PPPoE, FTTR CPU DEEPQ, bridge/core lifetime, DMA reorder/reset
+and queue admission regressions pass. Image/modules and both changed kernel
+input identities pass; PE firmware is unchanged. Evidence is under
+`artifacts/fttr/dma-mcast-*`.
+
+This accounts for native CPU DMA payload ownership before learned-group
+reopening. It is not an end-to-end link-delivery barrier, does not cancel a
+packet already beyond DMA/AFT, and does not cover direct NI/MCE replication.
+The full upstream producer fence and safe hardware-ID reuse remain work;
+no physical device was accessed.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN

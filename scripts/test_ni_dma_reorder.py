@@ -92,6 +92,7 @@ static u32 readl(void *p){
  if(p==dma+(0x100+8*0xa0+4)/4&&!fail_access)*(u32 *)p&=~BIT(31);
  return *(u32 *)p;
 }
+static void rtl9617c_bridge_mcast_tx_put(bool held){assert(!held);}
 static void udelay(unsigned n){assert(n==10);}
 #define readl_poll_timeout(a,v,c,d,t) ({(void)(d);(void)(t);v=readl(a);(c)?0:-ETIMEDOUT;})
 '''

@@ -52,10 +52,13 @@ def original(binary, control, aft):
 
 SHIM = r'''
 #include <stdint.h>
+#include <stdbool.h>
+#define RTL_DMA_COUNT 64
+static void rtl9617c_bridge_mcast_tx_put(bool held){(void)held;}
 #define __iomem
 #define BIT(n) (1U << (n))
 typedef uint32_t u32;
-struct rtl_dma_tx { void *registers; unsigned int vp; };
+struct rtl_dma_tx { void *registers; unsigned int vp; bool multicast_held[64]; };
 static u32 reg[0x1000/4],events[16][2],count;
 static u32 readl(void *p) { return *(u32 *)p; }
 static void writel(u32 value,void *p) {

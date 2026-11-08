@@ -116,7 +116,7 @@ typedef uint32_t u32,__le32;typedef uint64_t u64;typedef uintptr_t dma_addr_t;ty
 #define VP_WRITE 0x18
 #define VP_READ 0x1c
 #define VP_MISC_IRQ 0x68
-struct net_device {bool stopped;struct {u64 tx_packets,tx_bytes;}stats;};
+struct net_device {bool stopped;struct {u64 tx_packets,tx_bytes,tx_dropped;}stats;};
 struct sk_buff {unsigned len,ip_summed;bool consumed,gso,vlan;unsigned char data[2048];};
 struct rtl9617c_ni_frame {unsigned prefix_length,header_high,header_low;bool raw_payload;const void *prefix;};
 static unsigned char regs[0x1000];
@@ -132,8 +132,13 @@ static void writel(u32 v,void *p){
  }else{assert(offset==0x668 && v==1);empty_acks++;put_unaligned_le32(load(p)&~v,p);}
 }
 #define dma_wmb() (barriers++)
+
+static int rtl9617c_bridge_mcast_tx_stamp(const struct sk_buff *s,u32 *stamp){(void)s;*stamp=0;return 0;}
+static bool rtl9617c_bridge_mcast_tx_get(u32 stamp){assert(!stamp);return true;}
+static void rtl9617c_bridge_mcast_tx_put(bool held){assert(!held);}
 static int skb_copy_bits(struct sk_buff *s,unsigned off,void *p,unsigned n){assert(off+n<=s->len);memcpy(p,s->data+off,n);return 0;}
 static void dev_consume_skb_any(struct sk_buff *s){assert(!s->consumed);s->consumed=true;}
+static void dev_kfree_skb_any(struct sk_buff *s){s->consumed=true;}
 static bool netif_queue_stopped(struct net_device *d){return d->stopped;}
 static void netif_stop_queue(struct net_device *d){d->stopped=true;}
 static void netif_wake_queue(struct net_device *d){d->stopped=false;}

@@ -110,6 +110,9 @@ static void dev_consume_skb_any(struct sk_buff*s){dev_kfree_skb_any(s);}
 static struct sk_buff *skb_clone(struct sk_buff*s,int flags){
  (void)flags;struct sk_buff*c=malloc(sizeof(*c));assert(c);*c=*s;c->data=c->memory+(s->data-s->memory);return c;
 }
+
+static int rtl9617c_bridge_mcast_tx_stamp(const struct sk_buff *s,u32 *stamp){(void)s;*stamp=0;return 0;}
+static bool rtl9617c_bridge_mcast_tx_get(u32 stamp){assert(!stamp);return true;}
 static int skb_copy_bits(struct sk_buff*s,unsigned off,void*p,unsigned n){assert(off+n<=s->len);memcpy(p,s->data+off,n);return 0;}
 static bool ext_fail;
 static void *skb_ext_find(struct sk_buff*s,int type){(void)type;return s->extension;}
@@ -121,7 +124,7 @@ static void napi_gro_receive(struct napi_struct*n,struct sk_buff*s){(void)n;deli
 #define RTL_DMA_COUNT 64
 #define RTL_DMA_BUFFER_SIZE 2048
 struct rtl_dma_descriptor {u32 address,control;};
-struct rtl_dma_tx {void *memory,*registers;u32 memory_dma;struct rtl_dma_descriptor *descriptors;unsigned read,write,vp,port,lengths[64];struct net_device*owners[64];};
+struct rtl_dma_tx {void *memory,*registers;u32 memory_dma;struct rtl_dma_descriptor *descriptors;unsigned read,write,vp,port,lengths[64];struct net_device*owners[64];bool multicast_held[64];};
 static struct rtl_dma_tx dma;
 static void rtl_dma_tx_complete(struct rtl_dma_tx*t,struct net_device*d){(void)t;(void)d;}
 '''

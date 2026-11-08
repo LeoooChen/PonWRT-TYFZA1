@@ -202,6 +202,8 @@
 
 92. 对齐main43dd462的NI关联QoS批内缓存：普通单播复用关联头类型，但逐包检查路由，FTTR组播保持独立TID配方；1024报文前后状态/载荷一致，固定64包批次QoS读取64→1、路由检查仍64，另2048协议分类/流量键对比通过。将小型RX调度包装移入邮箱前空闲代码区后PE32716字节；完整PE/FTTR/组播/PS/配额/序号/PN/RPQ回归、两构建配置、Image/模块与五份输入一致性通过。未上实机、未合回main。详见[main QoS缓存对齐](port/FTTR.md#alignment-with-main-43dd462-qos-admission-cache)。
 
+93. 将CPU以太网/PON/FTTR DMA副本接入组播引用：skb复制完成、代际再次准入后才持有描述符引用；消费skb或注销端口不释放，原厂两描述符预取保留后的真实回收才归还，配对DMA/AFT复位后处理尾部引用。无后续流量时最后两个引用保持等待，不伪造完成。原厂4096指针对比查实正常保留并记录4组合成回绕缺陷；836组原生生命周期、原厂发布/复位、Wi-Fi接口、PPPoE/DEEPQ/桥接等回归及Image/模块/两份输入一致性通过。PE不变，完整下游NI/ES和直接MCE退场、ID复用仍未完成，未上实机。详见[CPU DMA复制引用](port/FTTR.md#cpu-multicast-dma-copies-retain-references-through-descriptor-retirement)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

@@ -27,6 +27,7 @@ struct rtl_dma_tx {
 	unsigned int write;
 	unsigned int lengths[RTL_DMA_COUNT];
 	struct net_device *owners[RTL_DMA_COUNT];
+	bool multicast_held[RTL_DMA_COUNT]; /* Payload copy outlives its skb. */
 	unsigned int port;
 	unsigned int vp;
 };

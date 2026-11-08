@@ -100,6 +100,10 @@ static void put_unaligned_le32(u32 v,void *p){memcpy(p,&v,4);}
 static u32 readl(void *p){u32 v;memcpy(&v,p,4);return v;}
 static void writel(u32 v,void *p){memcpy(p,&v,4);}
 #define dma_wmb() ((void)0)
+
+static int rtl9617c_bridge_mcast_tx_stamp(const struct sk_buff *s,u32 *stamp){(void)s;*stamp=0;return 0;}
+static bool rtl9617c_bridge_mcast_tx_get(u32 stamp){assert(!stamp);return true;}
+static void rtl9617c_bridge_mcast_tx_put(bool held){assert(!held);}
 static int skb_copy_bits(struct sk_buff *s,unsigned off,void *p,unsigned n){assert(off+n<=s->len);memcpy(p,s->data+off,n);return 0;}
 static void dev_consume_skb_any(struct sk_buff *s){assert(!s->consumed);s->consumed=true;}
 static bool netif_queue_stopped(struct net_device *d){return d->stopped;}

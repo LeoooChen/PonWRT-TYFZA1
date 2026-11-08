@@ -15,6 +15,7 @@
 #include <linux/iopoll.h>
 #include <linux/ktime.h>
 #include <linux/slab.h>
+#include <linux/rtl9617c-bridge.h>
 #include <linux/unaligned.h>
 
 #include "rtl9617c-dma.h"
@@ -60,6 +61,13 @@ static void rtl_dma_tx_reset(struct rtl_dma_tx *tx)
 	writel(readl(base + CTRL) & ~CTRL_RESET, base + CTRL);
 	writel(readl(base + AFT_CTRL) & ~AFT_RESET, base + AFT_CTRL);
 	readl(base + AFT_CTRL);
+	/* The paired reset ends descriptor/payload ownership, including the
+	 * two prefetched slots. It is not a downstream NI/ES retirement proof. */
+	for (unsigned int i = 0; i < RTL_DMA_COUNT; i++) {
+		bool held = tx->multicast_held[i];
+		tx->multicast_held[i] = false;
+		rtl9617c_bridge_mcast_tx_put(held);
+	}
 }
 
 int rtl_dma_tx_alloc(struct device *dev, struct rtl_dma_tx *tx)
@@ -148,8 +156,11 @@ void rtl_dma_tx_complete(struct rtl_dma_tx *tx, struct net_device *dev)
 			owner->stats.tx_packets++;
 			owner->stats.tx_bytes += tx->lengths[tx->read];
 		}
+		bool held = tx->multicast_held[tx->read];
+		tx->multicast_held[tx->read] = false;
 		tx->owners[tx->read] = NULL;
 		tx->read = (tx->read + 1) & (RTL_DMA_COUNT - 1);
+		rtl9617c_bridge_mcast_tx_put(held);
 	}
 	if (netif_queue_stopped(dev) && rtl_dma_tx_available(tx))
 		netif_wake_queue(dev);
@@ -173,6 +184,7 @@ netdev_tx_t rtl_dma_tx_frame(struct rtl_dma_tx *tx, struct sk_buff *skb,
 			      tx->write * RTL_DMA_BUFFER_SIZE;
 	unsigned int prefix = frame ? frame->prefix_length : 0;
 	unsigned int length = (frame && frame->raw_payload ? skb->len : max(skb->len, 60U)) + prefix;
+	u32 stamp;
 	u32 high = frame ? frame->header_high : BIT(13);
 	u32 low = frame ? frame->header_low : (16 << 9) | (tx->port << 3) | BIT(29);
 
@@ -181,6 +193,10 @@ netdev_tx_t rtl_dma_tx_frame(struct rtl_dma_tx *tx, struct sk_buff *skb,
 		netif_stop_queue(dev);
 		return NETDEV_TX_BUSY;
 	}
+	/* A CPU direct replica may have waited after the last qdisc check.
+	 * Pin its owner now, then join admission only after the copy succeeds. */
+	if (rtl9617c_bridge_mcast_tx_stamp(skb, &stamp))
+		goto drop;
 	/* Native LSO parameters + Header A, with both checksum engines disabled. */
 	memset(tx->memory + offset, 0, length + 16);
 	put_unaligned_le32(0, tx->memory + offset);
@@ -191,7 +207,11 @@ netdev_tx_t rtl_dma_tx_frame(struct rtl_dma_tx *tx, struct sk_buff *skb,
 	put_unaligned_le32(low, tx->memory + offset + 12);
 	if (prefix)
 		memcpy(tx->memory + offset + 16, frame->prefix, prefix);
-	skb_copy_bits(skb, 0, tx->memory + offset + 16 + prefix, skb->len);
+	if (skb_copy_bits(skb, 0, tx->memory + offset + 16 + prefix, skb->len))
+		goto drop;
+	if (!rtl9617c_bridge_mcast_tx_get(stamp))
+		goto drop;
+	tx->multicast_held[tx->write] = stamp != 0;
 	tx->descriptors[tx->write].address = cpu_to_le32(tx->memory_dma + offset);
 	tx->descriptors[tx->write].control = cpu_to_le32(0x61000002U | ((length + 16) << 8));
 	tx->lengths[tx->write] = skb->len;
@@ -200,6 +220,10 @@ netdev_tx_t rtl_dma_tx_frame(struct rtl_dma_tx *tx, struct sk_buff *skb,
 	tx->write = next;
 	writel(next, rtl_dma_vp(tx) + VP_WRITE);
 	dev_consume_skb_any(skb);
+	return NETDEV_TX_OK;
+drop:
+	dev->stats.tx_dropped++;
+	dev_kfree_skb_any(skb);
 	return NETDEV_TX_OK;
 }
 
