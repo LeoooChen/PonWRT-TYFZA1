@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 #ifndef RTL_AX_TX_OWNERSHIP_H
 #define RTL_AX_TX_OWNERSHIP_H
+/* Request word5 bit15 is independent of word4 bit23 (STA addressing). */
+#define RTL_AX_TX_AGG_PRELOAD (1U << 15)
 /* PE-visible DDR tables. Software request IDs and PCIe WP tags are separate. */
 #define RTL_AX_NI_REQUESTS 2048
 #define RTL_AX_NI_DISCARD RTL_AX_NI_REQUESTS

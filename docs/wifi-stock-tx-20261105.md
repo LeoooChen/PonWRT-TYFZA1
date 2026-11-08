@@ -120,4 +120,21 @@ RAM stockqos SHAec0dbe5b1671d15df6ac5524c3ad91e3b8e6184fec5103f9cf1f622ef787ee6f
 RAM stockpsq SHA4b5a085757ccc537d615ef7217ba12673fc644049d21b92416fdef0152d075b1：TCP30s1.361Gbps、UDP60s1.482Gbps/loss25.89%，目标仍未达到，pending正常排空、RPQ failed0。所有本批额外服务器/客户端和stock_psq_probe NAT表已清理，继续保留测试基线的downlink_probe和RAM候选以便下一批。
 
 
-2026-11-08 integration: retained the confirmed four-peer preload lifecycle from 8ee15dc. Private preload flag uses bit22; bit23 remains STA direction from main. Historical measurements do not qualify this combined tree.
+2026-11-08 integration: retained the confirmed four-peer preload lifecycle from 8ee15dc. Preload uses word5 bit15 (RTL_AX_TX_AGG_PRELOAD), matching main 2ad19d9; word4 bit22 remains raw sequencing and bit23 remains STA direction. Historical measurements do not qualify this combined tree.
+
+
+## 2026-11-08 全千兆设备：本机造流与 ARM 请求额度
+
+当前目标全千兆设备 MAC98:1e:89:61:68:d0、flash0.8.3-beta；Mac en5维持外部运营商供网，en0连接临时WPA2网络TYFZA1-Stock08，192.168.1.171。它不同于之前d0:5b的2.5G设备；不要把两者启动失败或吞吐混为一组。TTL1120必须每次打开明确115200，9600时空输出不能作为设备死机证据。
+
+同一构建cfg80211/mac80211/候选radio热加载成功；更换cfg80211后需重启wpad清除旧nl80211 family状态，未修改hostap脚本。初始候选保留原厂RPQ121，但ARM请求仍沿用旧PE96上限。单关联12→121对照：TCP1.282492→0.411254Gbps均0重传，UDP0.369013→0.124303Gbps均0报告丢包，原配置121恢复。该不匹配是明确回收等待问题，不能将原厂121独立套进旧请求额度。
+
+最小修正仅tx.c三个门槛：ARM已有256请求池用224停止、128恢复；保留32余量，NI2048请求/硬件tag独立、PE共享TXBD检查不变。没有更改PE二进制、WD/密钥/序号/回报超时。ARM模块编译、PE共享环full/pause/双radio publication、6144随机所有权回收和preload生命周期通过。modpost仅原有缺MODULE_DESCRIPTION警告。
+
+最终host-credit224.ko(去debug)SHA91e88c962a7734fdfaa1b5a70614ad1991e75f3e808990e71d4316696369114d，PE2124b3ff5f4b0a7b0fbc12f3cbdd7c4289c2c49b069b3f04e122543255030667不变。RAM加载rtl_ax_ap_stock08/phy2-ap0，bootcff17fbb-76bc-4dce-8616-2cbbe4fdb544，原厂RPQ00ff0079。30秒本机单流TCP下行1.356628G/0retrans，上行1.055346G/249retrans；UDP下行使用GSO+4MiB socket，1.376314G、lost0、sender1.376349G，CPU接近1核。三个方向提交/回收增量一致，unmatched/polluted/full/RXQ_RDU增量0。持续低负载背景ARM pending2，不谎称全局pending0。
+
+UDP原默认socket下只有0.125G；GSO本身0.175G，GSO+4MiB达1.409G，说明待回收socket缓冲也影响原厂批量策略。4流并行未解决目标：TCP下1.095G/up0.851G9052retx，UDP下1.569G4.23%loss/up0.951G17.20%loss，不能用于验收。全部数据文件位于artifacts/gigabit-*、rpq-credit-ab.json、credit224-*。
+
+现有VP11NI注入工具尝试一次50M反向TCP超时并伴随后续确认的设备重启；无连续崩溃日志/pstore，不归因具体驱动。重启清掉所有注入模块，Mac198.18.255.1临时路由已删除。该工具停止使用，不能把这轮算成吞吐。之后普通本机候选测试boot保持cff17fbb；未写flash。
+
+总目标仍未达：原厂策略候选+224额度只构成进展；本机峰值受CPU/旧内核路径限制仍需定位，完整Wi-Fi原厂对齐与TCP1.8/UDP2.0双向低丢验收都未完成。下一步核对目标0.8.3内核的NI/miss/GRO实现与现main差异，避免用新驱动覆盖旧内核而假设全栈已一致。

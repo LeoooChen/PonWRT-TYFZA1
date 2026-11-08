@@ -357,7 +357,7 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 			u8 tids = rtl_ax_tx_active_tids(radio->tx, macid);
 			struct ieee80211_sta *sta;
 			rcu_read_lock();
-			sta = ieee80211_find_sta_by_ifaddr(radio->hw, radio->tx_ba[macid].address, radio->ap_vif->addr);
+			sta = ieee80211_find_sta_by_ifaddr(radio->hw, radio->tx_ba[macid].address, vif->addr);
 			if (sta && sta->wme && (sta->deflink.ht_cap.ht_supported ||
 			    sta->deflink.vht_cap.vht_supported || sta->deflink.he_cap.has_he)) {
 				struct rtl_ax_station *station = (void *)sta->drv_priv;
@@ -996,7 +996,7 @@ connected:
 	}
 	/* Reserve before issuing a fallible command: completion can time out
 	 * after the hardware accepted it. Removal owns the reservation then. */
-	if (radio->chip == RTL_AX_8852C &&
+	if (vif->type == NL80211_IFTYPE_AP && radio->chip == RTL_AX_8852C &&
 	    bitmap_weight(radio->preload_peers, 128) < 4) {
 		u8 preload[68];
 
@@ -1696,7 +1696,7 @@ static void rtl_ax_dm_work(struct wiphy *wiphy, struct wiphy_work *work)
 			radio->chip == RTL_AX_8852C ? rtl_ax_environment_loss(
 				radio->channel.external_loss[0], radio->channel.external_loss[1]) : 0);
 	}
-	if (radio->ap_started) rtl_ax_traffic_update(radio);
+	if (radio->ap_started && !radio->mesh_started) rtl_ax_traffic_update(radio);
 	mutex_unlock(&radio->command_mutex);
 	wiphy_delayed_work_queue(wiphy, &radio->dm_work, 2 * HZ);
 }

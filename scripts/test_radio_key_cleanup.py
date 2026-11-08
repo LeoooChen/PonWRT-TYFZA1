@@ -50,14 +50,14 @@ struct ieee80211_sta {struct rtl_ax_station drv_priv[1];};
 #define NL80211_IFTYPE_MESH_POINT 7
 #define RTL_AX_CLIENT_MACID 1
 struct ieee80211_vif {int type;};
-struct rtl_ax_ap {struct rtl_ax_security_role security_roles[128];
+struct rtl_ax_ap {unsigned traffic_peer;struct rtl_ax_security_role security_roles[128];
  struct ieee80211_key_conf *security_keys[128];
  bool sta_role,sta_associated;int io;
  bool security_ids[128],security_deleting[128],security_aborting[128];u8 security_unlink[128];
  int tx,rx,cleanup_work;unsigned keys_installed,keys_removed,keys_aborted;int key_result;
  struct {bool valid;unsigned macid;} rx_ba[8];
  struct {u8 self[6],peer[6];unsigned aid;bool pending,client,mesh;} retired_stations[128];
- bool ra_registered[128],ra_pending[128],station_ids[128];unsigned station_removed;
+ bool ra_registered[128],ra_pending[128],station_ids[128],preload_peers[128];unsigned station_removed;
 };
 struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};
 enum fault {NONE,RETIRE,FLUSH,DCTL,CAM,CAM_INSTALL};
@@ -111,6 +111,7 @@ static int rtl_ax_drop_station(struct rtl_ax_ap *r,unsigned id,unsigned tid){(vo
 static int rtl_ax_rx_ba_remove(struct rtl_ax_ap *r,unsigned i){r->rx_ba[i].valid=false;return 0;}
 static void rtl_ax_peer_cam(u8 *out,unsigned id,const u8 *self,const u8 *peer,unsigned aid,bool valid){
  (void)out;(void)id;(void)self;(void)peer;(void)aid;(void)valid;}
+static void rtl_ax_tx_peer_preload(int tx,unsigned id,bool enable){(void)tx;(void)id;(void)enable;}
 static void rtl_ax_tx_peer_qos(int tx,unsigned id,bool qos,unsigned timeout){(void)tx;(void)id;(void)qos;(void)timeout;}
 static void rtl_ax_client_cam(u8 *out,unsigned id,const u8 *self,const u8 *peer,unsigned aid,bool assoc,bool valid){
  (void)assoc;rtl_ax_peer_cam(out,id,self,peer,aid,valid);}
@@ -123,6 +124,10 @@ static struct ieee80211_key_conf new_key(unsigned idx,bool pairwise){
  struct ieee80211_key_conf k={.cipher=WLAN_CIPHER_SUITE_CCMP,.keyidx=idx,.key={1},.tx_pn=1234};
  if(pairwise)k.flags=IEEE80211_KEY_FLAG_PAIRWISE;return k;}
 '''
+role=(driver/'role.h').read_text()
+a=role.index('static inline void rtl_ax_station_preload');b=role.index('static inline ',a+1)
+common += role[a:b]
+
 reproduce = r'''
 int main(void){
  reset();struct rtl_ax_ap r={};struct ieee80211_hw hw={&r,0};struct ieee80211_sta sta={{{7}}};

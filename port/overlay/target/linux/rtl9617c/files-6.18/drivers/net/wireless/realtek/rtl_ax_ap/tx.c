@@ -351,7 +351,7 @@ void rtl_ax_tx_open(struct rtl_ax_tx *tx)
 		dma_wmb();
 	}
 	if (tx->queues_stopped && tx->occupied <=
-	    (tx->pe_active && get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 96) ? 48 : RTL_AX_TX_ENTRIES / 2)) {
+	    (RTL_AX_TX_ENTRIES / 2)) {
 		tx->queues_stopped = false;
 		tx->queue_wakes++;
 	}
@@ -458,7 +458,7 @@ u32 rtl_ax_tx_success(struct rtl_ax_tx *tx, unsigned int macid)
 }
 
 /* Called under the wiphy lifecycle lock, before admission or after drain.
- * Serialize template updates with ARM submission; BIT22 is request-only. */
+ * Serialize template updates with ARM submission; the preload bit is request-only. */
 void rtl_ax_tx_peer_preload(struct rtl_ax_tx *tx, unsigned int macid, bool enabled)
 {
 	unsigned long flags;
@@ -466,10 +466,10 @@ void rtl_ax_tx_peer_preload(struct rtl_ax_tx *tx, unsigned int macid, bool enabl
 	spin_lock_irqsave(&tx->lock, flags);
 	tx->peer_preload[macid] = enabled;
 	if (tx->pe_active) {
-		u8 *field = tx->pe.memory + 0xd000 + macid * 32 + 16;
-		u32 value = get_unaligned_le32(field) & ~BIT(22);
+		u8 *field = tx->pe.memory + 0xd000 + macid * 32 + 20;
+		u32 value = get_unaligned_le32(field) & ~RTL_AX_TX_AGG_PRELOAD;
 
-		put_unaligned_le32(value | (enabled ? BIT(22) : 0), field);
+		put_unaligned_le32(value | (enabled ? RTL_AX_TX_AGG_PRELOAD : 0), field);
 		dma_wmb();
 	}
 	spin_unlock_irqrestore(&tx->lock, flags);
@@ -731,8 +731,8 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		if (rtl_ax_tx_raw_fw_rate(tx, skb, macid))
 			request[3] = tx->peer_rates[macid] | BIT(20);
 		slot.firmware_rate = !!(request[3] & BIT(20));
-		if (tx->peer_preload[macid]) request_flags |= BIT(22);
-		request[4] = request_flags; request[5] = aggregate | density << 8 | key;
+		request[4] = request_flags; request[5] = aggregate | density << 8 | key |
+			(tx->peer_preload[macid] ? RTL_AX_TX_AGG_PRELOAD : 0);
 		request[6] = pn; request[7] = pn >> 32;
 		if (slot.mapping) {
 			struct scatterlist *sg; unsigned int i;
@@ -766,9 +766,9 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		    !(info->control.flags & IEEE80211_TX_CTRL_PS_RESPONSE)) {
 			u32 peer[8] = { 0, 0, 26U << 16,
 				tx->peer_rates[macid] & ~BIT(31),
-				macid << 24 | BIT(18) | BIT(16) | tx->checksum_enabled << 17 | tx->peer_client[macid] << 23 |
-				(tx->peer_preload[macid] ? BIT(22) : 0),
-				aggregate | density << 8 | key, 0, 0 };
+				macid << 24 | BIT(18) | BIT(16) | tx->checksum_enabled << 17 | tx->peer_client[macid] << 23,
+				aggregate | density << 8 | key |
+				(tx->peer_preload[macid] ? RTL_AX_TX_AGG_PRELOAD : 0), 0, 0 };
 
 			memcpy(tx->pe.memory + 0xd000 + macid * 32, peer, sizeof(peer));
 			memcpy(tx->pe.memory + 0xe400 + macid * 8, header->addr1, ETH_ALEN);
@@ -872,9 +872,11 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		dma_wmb();
 	} else
 		tx->io->write16(tx->io->ctx, rtl_ax_tx_indices[ring], next);
-	/* WP IDs are shared by all six DMA rings. Pause mac80211 dequeue
-	 * before exhausting them; RPQ release owns the matching wake. */
-	if (tx->occupied >= (tx->pe_active && get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 96) ? 96 : RTL_AX_TX_ENTRIES - 32) && !tx->queues_stopped) {
+	/* ARM request IDs are shared by all six rings but independent of NI
+	 * owners and hardware tags. Leave 32 slots for in-flight submitters.
+	 * The old PE limit96 stalls before the factory121-report batch fills.
+	 * RPQ release owns the matching wake after half the pool is free. */
+	if (tx->occupied >= (RTL_AX_TX_ENTRIES - 32) && !tx->queues_stopped) {
 		tx->queues_stopped = true;
 		tx->queue_stops++;
 		ieee80211_stop_queues(hw);
@@ -1019,7 +1021,7 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 		tx->status_count[status]++;
 		tx->polluted += !!(report & BIT(31));
 		if (tx->queues_stopped && tx->running && !tx->queues_paused && tx->hw && tx->occupied <=
-		    (tx->pe_active && get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 96) ? 48 : RTL_AX_TX_ENTRIES / 2)) {
+		    (RTL_AX_TX_ENTRIES / 2)) {
 			tx->queues_stopped = false;
 			tx->queue_wakes++;
 			ieee80211_wake_queues(hw);

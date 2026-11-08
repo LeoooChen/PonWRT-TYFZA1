@@ -39,9 +39,10 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
                          (117, 6), (140, mb | 0xa0000000), (142, 1)]:
         put(mb + index * 4, value)
     peer = [0, 0, 26 << 16, rate | bandwidth << 16 | (1 << 22 if hw_rts else 0),
-            1 << 24 | 1 << 18 | 1 << 16 | (1 << 23 if client else 0) | (1 << 22 if preload else 0), 7 << 16 | 32, 0, 0]
+            1 << 24 | 1 << 18 | 1 << 16 | (1 << 23 if client else 0) , 7 << 16 | 32 | (1 << 15 if preload else 0), 0, 0]
     u.mem_write(base + 0xd020, struct.pack('<8I', *peer))
     put(base + 0xe204, cap << 18)
+    put(base + 0x12020, 32)  # negotiated BA limit, as consumed by ni_select
     effective_policy = policy if policy is not None else 3793 if cap == 3839 else 7433 if cap == 7935 else 10896
     put(base + 0x39004, effective_policy | (0 if not effective_policy else 2 if effective_policy <= 3793 else 4 if effective_policy <= 7433 else 7) << 16)
     put(base + 0x11a04, 1)
@@ -76,6 +77,8 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     for n, length in enumerate(lengths):
         frame = dst + bytes([2, 3, 4, 5, 6, n]) + bytes.fromhex('0800')
         frame += bytes([n + 1]) * (length - 14)
+        # Real QoS classification must see DSCP0, not patterned payload as TOS.
+        if len(frame) >= 16: frame = frame[:14] + b'\x45\x00' + frame[16:]
         frames.append(frame)
         at = payload + n * 2048
         u.mem_write(at + 64 + ni_header, frame)

@@ -71,9 +71,9 @@ struct wiphy_delayed_work {struct wiphy_work work;};
 struct ieee80211_vif {u8 addr[6];int type;bool use_4addr;struct {unsigned aid;} cfg;};
 struct ieee80211_sta {struct rtl_ax_station drv_priv[1];u8 addr[6];unsigned int aid;};
 struct rtl_ax_tx {bool pending[128][17];};
-struct rtl_ax_ap {
+struct rtl_ax_ap {unsigned traffic_peer;
  struct rtl_ax_tx *tx;struct ieee80211_vif *ap_vif,*sta_vif;int rx;bool sta_role,sta_associated,sta_4addr,peer_authorized[128],ra_registered[128],offload_retry;unsigned long ra_pending[2],security_aborting[2];u8 security_unlink[128];void *security_keys[128];struct wiphy_work offload_work;unsigned keys_aborted;unsigned int chip;bool monitor_started;
- unsigned long station_ids[2],security_ids[2],security_deleting[2];
+ unsigned long station_ids[2],security_ids[2],security_deleting[2],preload_peers[2];
  struct {u8 self[6],peer[6];u16 aid;bool pending,client,mesh;} retired_stations[128];
  struct {u8 address[6],aggregation[16];u16 stopping,flushing;} tx_ba[128];
  struct {u8 macid,tid,cam;bool valid,deleting;} rx_ba[32];
@@ -99,6 +99,7 @@ static bool rtl_ax_tx_key_pending(struct rtl_ax_tx *t,unsigned id){(void)t;(void
 static int rtl_ax_tx_ni_cleanup(struct rtl_ax_tx *t){(void)t;return 0;}
 static void rtl_ax_rx_ba_window(int rx,unsigned id,unsigned tid,unsigned window){(void)rx;(void)id;(void)tid;(void)window;}
 static void rtl_ax_rx_key(int rx,unsigned id,void *key){(void)rx;(void)id;(void)key;}
+static void rtl_ax_tx_peer_preload(struct rtl_ax_tx *t,unsigned id,bool enable){(void)t;(void)id;(void)enable;}
 static void rtl_ax_tx_peer_qos(struct rtl_ax_tx *t,unsigned id,bool qos,unsigned timeout){(void)t;(void)id;(void)qos;(void)timeout;}
 static void rtl_ax_tx_peer_client(struct rtl_ax_tx *t,unsigned id,bool client,const u8 *bssid){(void)t;(void)id;(void)client;(void)bssid;}
 static void rtl_ax_tx_peer_authorized(struct rtl_ax_tx *t,unsigned id,bool authorized){(void)t;(void)id;(void)authorized;}

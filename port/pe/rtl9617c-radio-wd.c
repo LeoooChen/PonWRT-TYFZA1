@@ -470,7 +470,7 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	u32 context = (flags & 0x7f000000) | (flags & BIT(12)) << 11;
 	u32 previous = mailbox[197 + ring], bytes = packet & 0x3fff;
 	u32 boundary = (previous & ~0x3fffU) != context ||
-		(!(flags & BIT(22)) && bytes < (previous & 0x3fff));
+		(!(aggregation & RTL_AX_TX_AGG_PRELOAD) && bytes < (previous & 0x3fff));
 	mailbox[197 + ring] = context | bytes;
 	word(page + 12, sequence | (aggregate ? BIT(12) : BIT(13)) |
 		(boundary ? BIT(13) : 0));
