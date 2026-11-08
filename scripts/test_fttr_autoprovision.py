@@ -86,6 +86,7 @@ def main():
     p.add_argument('--daemon', type=Path, required=True)
     p.add_argument('--admin-control', type=Path, help='exercise the resident ONU administration CLI')
     p.add_argument('--upgrade-control', type=Path, help='exercise resident image download/activate/commit')
+    p.add_argument('--optical-control', type=Path, help='exercise resident ONU optical diagnostic')
     p.add_argument('--reboot-control', type=Path, help='exercise remote single-send reboot')
     p.add_argument('--move-control', type=Path, help='exercise the resident SN reservation move')
     p.add_argument('--output', type=Path, required=True)
@@ -117,6 +118,10 @@ def main():
     if args.reboot_control:
         from trace_stock_fttr_reboot import Reboot
         reboot_wire=bytes.fromhex(Reboot(args.master).run()['wire'])
+    if args.optical_control:
+        from trace_stock_fttr_onu_optical import Optical,SlaveOptical
+        optical_master=Optical(args.master)
+        optical_slave=SlaveOptical(args.slave.parent.parent/'lib/omci/mib_Anig.so')
     stock = Original(args.master)
     original_sync=OriginalSync(args.slave)
     for initial,expected in [(0,1),(1,2),(254,255),(255,1)]:
@@ -137,7 +142,7 @@ def main():
     sync_request=stock.me_request(0x49,2,0,0x8000,b'\0')
     o, ptr = stock.oracle, stock.data
     widths = {}
-    for c in (2,5,6,11,45,47,84,171,256,262,266,268,272,277,281,309,310,311,329,65531,0xff69,0xff6a,0xfffa):
+    for c in (2,5,6,11,45,47,84,171,256,262,263,266,268,272,277,281,309,310,311,329,65531,0xff69,0xff6a,0xfffa):
         assert o.call('plr_gponomci_medetail_get',c,ptr,ptr+8)==1
         table = struct.unpack('<Q',o.uc.mem_read(ptr+8,8))[0]
         widths[c] = {struct.unpack('<H',o.uc.mem_read(table+i*40+8,2))[0]:o.uc.mem_read(table+i*40+12,1)[0]
@@ -159,6 +164,7 @@ def main():
             self.upgrade_mode='ok';self.upgrade_data=bytearray();self.upgrade_window=bytearray()
             self.upgrade_expected=b'';self.upgrade_section=0;self.upgrade_rejections=0
             self.reboot_mode="ack"
+            self.optical_mode="ok";self.optical_ack=None;self.optical_result=None
             self.drop_sync=False
             self.fail_upload_once=False
             self.auth_hold = self.auth_drop = self.auth_bad_result = self.auth_reject_result = False
@@ -181,6 +187,9 @@ def main():
                 for n in range(1,args.multi_services):
                     self.pool[262,self.tcont+n]={0x8000:b'\0\xff'}
                     self.pool[277,self.queue+n]={0x0400:struct.pack('>I',(self.tcont+n)<<16|3)}
+            if args.optical_control:
+                self.pool[263,0x8000]={0x8000:b'\0'}
+                self.pool[263,0x8001]={0x8000:b'\0'}
             if args.factory:
                 # First Ethernet card receives all PPTP UNIs; first VEIP
                 # card receives only its matching slot. Surplus/orphan
@@ -286,6 +295,20 @@ def main():
                     if self.upgrade_lost=='commit':return None
                 else:raise AssertionError(('unexpected image operation',op))
                 return stock.frame(tci,(op&31)|32,b'\0'+content,onu=self.id,class_id=7,instance=id)[16:]
+            if op==0x52:
+                assert args.optical_control and c==263 and id==0x8000
+                assert body==optical_master.request(id,tci)
+                self.optical_ack=stock.frame(tci,0x32,bytes([2 if self.optical_mode=='reject' else 0]),onu=self.id,class_id=263,instance=id)[16:]
+                result=optical_slave.result(body,missing=(8,) if self.optical_mode=='missing' else ())
+                if self.optical_mode=='malformed':result=result[:8]+b'\2'+result[9:]
+                self.optical_result=result+struct.pack('>I',crc(result))
+                if self.optical_mode in ('hold','drop'):return None
+                if self.optical_mode=='reverse':
+                    peer.send(HOST+OLT+struct.pack('>HH',0x8888,self.id)+self.optical_result)
+                    return self.optical_ack
+                peer.send(HOST+OLT+struct.pack('>HH',0x8888,self.id)+self.optical_ack)
+                if self.optical_mode in ('reject','missing-result'):return None
+                return self.optical_result
             if op==0x59:
                 assert args.reboot_control and c==256 and id==0
                 assert body[2:]==reboot_wire[2:44]
@@ -780,6 +803,69 @@ static int recovery_run(const char *path,const char *command) {
                     FTTR_ACCEL_LOG=str(accel_log),FTTR_ACCEL_FAIL=str(accel_fault),
                     FTTR_ADMIN_FAIL=str(admin_fault),FTTR_ADMIN_HOLD=str(admin_hold),FTTR_ADMIN_LOG=str(admin_log),FTTR_MOVE_CRASH=str(root/'move-crash'),
                     **({'FTTR_ADMIN_FPGA':'1'} if args.backend=='fpga1' else {})))
+        if args.optical_control:
+            checks=[];process=None
+            def command(serial=None):
+                return subprocess.Popen([str(args.optical_control.resolve()),str(store),'onu-optical','7',nodes[7].serial.hex() if serial is None else serial],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+            def finish(client,error=0):
+                until(lambda s:client.poll() is not None,seconds=8,allow_exit=True)
+                output,errors=client.communicate(timeout=1)
+                assert client.returncode==bool(error),(output,errors)
+                if error:assert f'({-error})' in errors,(output,errors)
+                else:
+                    result=json.loads(output);assert result['id']==7 and result['instance']==0x8000 and result['serial']==nodes[7].serial.hex()
+                    assert result['voltage_v']==3.3 and result['tx_power_dbm']==3.0 and result['bias_ma']==10.0 and result['temperature_c']==25.0
+                    assert result['rx_power_dbm']==(None if nodes[7].optical_mode=='missing' else -3.0)
+            try:
+                for mode in ('ok','reverse','missing','reject','malformed','missing-result','drop','busy','replace','peer-admin','same-admin','shutdown','client-gone','missing-ani','unauthenticated'):
+                    nodes[7]=Node(7,'5445535400000007',0x107,False);nodes[9]=Node(9,'5445535400000009',0x203,True)
+                    nodes[9].fail_upload_once=False
+                    if mode=='missing-ani':
+                        del nodes[7].pool[263,0x8000];del nodes[7].pool[263,0x8001]
+                    nodes[7].optical_mode='hold' if mode in ('busy','replace','peer-admin','same-admin','shutdown','client-gone') else mode
+                    if mode=='unauthenticated':nodes[7].pool[65530,0][0x4000]=b'wrong'.ljust(24,b'\0')
+                    hardware();process=launch()
+                    if mode=='unauthenticated':
+                        until(lambda s:s['onus'][7]['phase']=='auth-failed' and s['onus'][9]['datapath_configured'])
+                        finish(command(),errno.EACCES)
+                        assert not any(op==0x52 for _,op,c,i in nodes[7].operations)
+                        process.send_signal(signal.SIGTERM);until(lambda s:process.poll() is not None,allow_exit=True);assert process.wait()==0
+                        checks.append(mode);continue
+                    until(lambda s:all(s['onus'][i]['datapath_configured'] for i in (7,9)))
+                    before=len(accel_events());healthy=datapath(9);local=datapath(7)
+                    finish(command('00'*8),errno.ESTALE)
+                    assert len(accel_events())==before
+                    client=command()
+                    if mode=='missing-ani':finish(client,errno.ENOENT)
+                    else:
+                        until(lambda s:nodes[7].optical_ack is not None)
+                        assert datapath(7)==local and datapath(9)==healthy and len(accel_events())==before
+                        if mode=='busy':finish(command(),errno.EBUSY)
+                        if mode in ('peer-admin','same-admin'):
+                            target=9 if mode=='peer-admin' else 7
+                            admin=subprocess.run([str(args.optical_control.resolve()),str(store),'onu-admin',str(target),nodes[target].serial.hex(),'block'],capture_output=True,text=True,timeout=3)
+                            assert admin.returncode==0,(admin.stdout,admin.stderr)
+                        if mode in ('busy','peer-admin'):
+                            peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+nodes[7].optical_result)
+                            peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+nodes[7].optical_ack)
+                            finish(client)
+                        elif mode=='same-admin':finish(client,errno.ESTALE)
+                        elif mode=='replace':
+                            nodes[7]=Node(7,'5445535400000077',0x307,False);hardware();finish(client,errno.ESTALE)
+                        elif mode=='shutdown':
+                            process.send_signal(signal.SIGTERM);finish(client,errno.ECANCELED)
+                            until(lambda s:process.poll() is not None,allow_exit=True);assert process.wait()==0
+                        elif mode=='client-gone':client.kill();client.wait()
+                        else:finish(client,errno.EREMOTEIO if mode=='reject' else errno.EPROTO if mode=='malformed' else errno.ETIMEDOUT if mode in ('drop','missing-result') else 0)
+                        if mode!='replace':assert sum(op==0x52 for _,op,c,i in nodes[7].operations)==1
+                    if process.poll() is None:
+                        process.send_signal(signal.SIGTERM);until(lambda s:process.poll() is not None,allow_exit=True);assert process.wait()==0,process.stderr.read()
+                    checks.append(mode)
+            finally:
+                if process is not None and process.poll() is None:process.kill();process.wait()
+                peer.close();os.close(grant_fd)
+            args.output.write_text(json.dumps(dict(backend=args.backend,checks=checks,scope='Actual daemon/CLI with target Test encoders and ONU result handler; sensor/register/network storage modeled, no device access.'),indent=2)+'\n')
+            print(json.dumps(checks));return
         if args.service_state:
             import copy
             assert args.move_control and not args.wifi

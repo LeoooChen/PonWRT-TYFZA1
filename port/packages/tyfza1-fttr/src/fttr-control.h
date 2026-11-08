@@ -20,6 +20,12 @@ struct fttr_admin_request {
 };
 
 enum fttr_admin_action { FTTR_ADMIN_RESUME, FTTR_ADMIN_BLOCK, FTTR_ADMIN_DEACTIVATE, FTTR_ADMIN_MOVE, FTTR_ADMIN_REBOOT,
-	FTTR_ADMIN_DOWNLOAD, FTTR_ADMIN_ACTIVATE, FTTR_ADMIN_COMMIT, FTTR_ADMIN_UPGRADE_ABORT, FTTR_ADMIN_UPGRADE_CHECK };
+	FTTR_ADMIN_DOWNLOAD, FTTR_ADMIN_ACTIVATE, FTTR_ADMIN_COMMIT, FTTR_ADMIN_UPGRADE_ABORT, FTTR_ADMIN_UPGRADE_CHECK, FTTR_ADMIN_OPTICAL };
 
+struct fttr_optical_reply {
+ int32_t error;
+ uint16_t instance, valid;
+ uint16_t raw[5], reserved;
+};
+_Static_assert(sizeof(struct fttr_optical_reply) == 20, "optical control reply");
 #endif

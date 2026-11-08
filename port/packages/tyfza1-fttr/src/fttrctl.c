@@ -16,6 +16,7 @@
 
 #include "miniolt.h"
 #include "fttr-control.h"
+#include "omci-optical.h"
 #include "omci-mib.h"
 #include "omci-me.h"
 #include "omci-gem.h"
@@ -607,7 +608,7 @@ static int onu_admin(int directory, const char *id, const char *serial, const ch
 	unsigned int i;
 	char *end;
 	int fd, ret, image_fd = -1;
-	int32_t result;
+	union { int32_t error; struct fttr_optical_reply optical; } result;
 	bool upgrade = !strcmp(action, "download") || !strcmp(action, "activate") ||
 		!strcmp(action, "commit") || !strcmp(action, "abort") || !strcmp(action, "check");
 	ssize_t size;
@@ -615,10 +616,10 @@ static int onu_admin(int directory, const char *id, const char *serial, const ch
 	errno = 0;
 	number = strtoul(id, &end, 10);
 	if (errno || !*id || *end || number >= FTTR_ONUS || strlen(serial) != 16 ||
-	    (strcmp(action, "block") && strcmp(action, "resume") && strcmp(action, "deactivate") && strcmp(action, "move") && strcmp(action, "reboot") && !upgrade))
+	    (strcmp(action, "block") && strcmp(action, "resume") && strcmp(action, "deactivate") && strcmp(action, "move") && strcmp(action, "reboot") && strcmp(action, "optical") && !upgrade))
 		return -EINVAL;
 	request.id = number;
-	request.action = !strcmp(action, "reboot") ? FTTR_ADMIN_REBOOT :
+	request.action = !strcmp(action, "optical") ? FTTR_ADMIN_OPTICAL : !strcmp(action, "reboot") ? FTTR_ADMIN_REBOOT :
 		!strcmp(action, "deactivate") ? FTTR_ADMIN_DEACTIVATE :
 		!strcmp(action, "block") ? FTTR_ADMIN_BLOCK : FTTR_ADMIN_RESUME;
 	for (i = 0; i < 8; i++) {
@@ -696,7 +697,18 @@ static int onu_admin(int directory, const char *id, const char *serial, const ch
 		goto out;
 	}
 	size = recv(fd, &result, sizeof(result), MSG_TRUNC);
-	ret = size < 0 ? -errno : size != sizeof(result) ? -EPROTO : result;
+	ret = size < 0 ? -errno : size != sizeof(int32_t) &&
+  !(request.action==FTTR_ADMIN_OPTICAL && size==sizeof(result.optical)) ? -EPROTO : result.error;
+ if(request.action==FTTR_ADMIN_OPTICAL && !ret) {
+  static const char *names[]={"voltage_v","rx_power_dbm","tx_power_dbm","bias_ma","temperature_c"};
+  if(size!=sizeof(result.optical) || result.optical.reserved || (result.optical.valid&~31U)) {ret=-EPROTO;goto out;}
+  printf("{\"event\":\"onu_optical\",\"id\":%u,\"serial\":\"%s\",\"instance\":%u",request.id,serial,result.optical.instance);
+  for(unsigned n=0;n<5;n++) {
+   printf(",\"%s\":",names[n]);
+   if(result.optical.valid&(1U<<n))printf("%.2f",fttr_optical_value(n,result.optical.raw[n])/100.0);else fputs("null",stdout);
+  }
+  puts("}");goto out;
+ }
 	if (upgrade)
 		printf("{\"event\":\"onu_upgrade\",\"id\":%u,\"action\":\"%s\",\"completed\":%s,\"error\":%d,\"boot_verified\":false}\n",
 			request.id, action, !ret ? "true" : "false", ret);
@@ -726,7 +738,7 @@ int main(int argc, char **argv)
 	    strcmp(argv[2], "gem") && strcmp(argv[2], "profiles") && strcmp(argv[2], "uni") &&
 	    strcmp(argv[2], "ani") && strcmp(argv[2], "mapper") && strcmp(argv[2], "vlan") &&
 	    strcmp(argv[2], "vlan-table") && strcmp(argv[2], "service") && strcmp(argv[2], "wifi") &&
-	    strcmp(argv[2], "onu-upgrade") && strcmp(argv[2], "onu-admin") && strcmp(argv[2], "onu-move") && strcmp(argv[2], "optical"))) {
+	    strcmp(argv[2], "onu-upgrade") && strcmp(argv[2], "onu-admin") && strcmp(argv[2], "onu-move") && strcmp(argv[2], "optical") && strcmp(argv[2], "onu-optical"))) {
 		fprintf(stderr, "Usage: %s <miniolt-sysfs-directory> status\n"
 			"       %s <miniolt-sysfs-directory> mib <hardware-ID> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> get <hardware-ID> <class> <instance> <mask> [interface=fttr0]\n"
@@ -746,8 +758,18 @@ int main(int argc, char **argv)
 		fprintf(stderr, "       %s <controller-state-directory> onu-admin <hardware-ID> <serial-hex> <block|resume|deactivate|reboot>\n", argv[0]);
 		fprintf(stderr, "       %s <controller-state-directory> onu-move <source-ID> <source-serial-hex> <target-ID> <target-serial-hex>\n", argv[0]);
 		fprintf(stderr, "       %s <optical-sysfs-directory> optical\n", argv[0]);
+  fprintf(stderr, "       %s <controller-state-directory> onu-optical <hardware-ID> <serial-hex>\n", argv[0]);
 		return 2;
 	}
+ if(!strcmp(argv[2],"onu-optical")) {
+  if(argc!=5)return 2;
+  directory=open(argv[1],O_RDONLY|O_DIRECTORY|O_CLOEXEC);
+  if(directory<0){perror(argv[1]);return 1;}
+  ret=onu_admin(directory,argv[3],argv[4],"optical",NULL,NULL,NULL);close(directory);
+  if(!ret && fflush(stdout))ret=-errno;
+  if(ret)fprintf(stderr,"FTTR ONU optical: %s (%d)\n",strerror(-ret),ret);
+  return ret?1:0;
+ }
 	if (!strcmp(argv[2], "optical")) {
 		if (argc != 3)
 			return 2;

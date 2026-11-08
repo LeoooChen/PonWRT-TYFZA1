@@ -30,6 +30,7 @@
 #include "omci-wifi.h"
 #include "omci-auth.h"
 #include "omci-upgrade.h"
+#include "omci-optical.h"
 #include "upgrade-store.h"
 #include "service-store.h"
 #include "move-store.h"
@@ -110,6 +111,13 @@ struct onu {
 };
 
 struct controller {
+ struct {
+  bool active;
+  struct fttr_optical_job job;
+  uint8_t serial[8];
+  struct sockaddr_un client;
+  socklen_t client_length;
+ } optical_test;
 	struct fttr_move_record move_record;
 	bool move_recorded, move_recovering;
 	int directory, ni, store, socket, control, upgrade_store, service_store;
@@ -142,6 +150,18 @@ struct controller {
 		socklen_t client_length;
 	} move, reboot, upgrade;
 };
+
+static void optical_finish(struct controller *c, int error)
+{
+ struct fttr_optical_job *j=&c->optical_test.job;
+ struct fttr_optical_reply reply={.error=error};
+ if(!c->optical_test.active)return;
+ if(!error){reply.instance=(uint16_t)j->me.request[6]<<8|j->me.request[7];reply.valid=j->valid;memcpy(reply.raw,j->raw,sizeof(reply.raw));}
+ if(c->optical_test.client_length && sendto(c->control,&reply,sizeof(reply),MSG_DONTWAIT|MSG_NOSIGNAL,
+    (struct sockaddr *)&c->optical_test.client,c->optical_test.client_length)<0)
+  fprintf(stderr,"FTTR optical reply failed: %s\n",strerror(errno));
+ memset(&c->optical_test,0,sizeof(c->optical_test));
+}
 
 static int multicast_close(struct controller *c)
 {
@@ -1284,6 +1304,8 @@ static int cancel_state(struct controller *c, unsigned int id, bool accel_paused
 	struct onu *u = &c->onu[id];
 	int ret;
 
+ if(c->optical_test.active && c->optical_test.job.me.onu==id)optical_finish(c,-ESTALE);
+
 	fttr_auth_cancel(&u->auth, -ESTALE);
 	u->policy_authenticated = u->policy_move = false;
 	u->auth_retry = 0;
@@ -2110,7 +2132,7 @@ static int complete(struct controller *c, unsigned int id)
 
 static int receive_message(struct controller *c)
 {
-	struct fttr_omci_message message;
+	struct fttr_omci_message message = {0};
 	struct fttr_mib_record record;
 	uint8_t frame[1996];
 	struct onu *u;
@@ -2119,6 +2141,16 @@ static int receive_message(struct controller *c)
 
 	if (ret == -EAGAIN)
 		return 0;
+ if(c->optical_test.active && message.body && message.onu==c->optical_test.job.me.onu &&
+    !memcmp(message.body,c->optical_test.job.me.request,2)) {
+  struct fttr_onu_state expected=c->onu[message.onu].hardware;
+  memcpy(expected.serial,c->optical_test.serial,8);
+  int valid=fttr_miniolt_same(c->directory,message.onu,&expected);
+  if(valid || ret)optical_finish(c,valid?valid:ret);
+  else if(fttr_optical_reply(&c->optical_test.job,&message) && c->optical_test.job.done)
+   optical_finish(c,c->optical_test.job.error);
+  return 0;
+ }
 	if (ret == -EMSGSIZE || ret == -EBADMSG || ret == -EPROTO || ret == -EOPNOTSUPP) {
 		int error = ret;
 
@@ -2967,6 +2999,31 @@ static int upgrade_request(struct controller *c, const struct fttr_admin_request
 	return -EINPROGRESS;
 }
 
+static int optical_request(struct controller *c,const struct fttr_admin_request *request)
+{
+ struct onu *u;
+ struct fttr_onu_state expected;
+ const struct fttr_mib_entity *e;
+ unsigned int instance=65536;
+ int ret;
+ if(request->version!=1 || request->id>=FTTR_ONUS || request->action!=FTTR_ADMIN_OPTICAL)return -EINVAL;
+ if(c->optical_test.active || c->move.active || c->reboot.active || c->upgrade.active)return -EBUSY;
+ u=&c->onu[request->id];
+ if(!authenticated(c,u) || (u->phase!=ONU_CONFIGURED && u->phase!=ONU_INVENTORY) || u->admin_pending || u->upgrade_held)return -EACCES;
+ if(memcmp(u->identity,request->serial,8))return -ESTALE;
+ expected=u->hardware;memcpy(expected.serial,request->serial,8);
+ ret=fttr_miniolt_same(c->directory,request->id,&expected);if(ret)return ret;
+ for(e=u->model.entities;e;e=e->next)if(e->class_id==263 && e->instance<instance)instance=e->instance;
+ if(instance==65536)return -ENOENT;
+ fttr_optical_start(&c->optical_test.job,request->id,instance,&c->transaction);
+ memcpy(c->optical_test.serial,request->serial,8);
+ ret=fttr_me_job_send(&c->optical_test.job.me,c->socket,&c->link,now_ms());
+ if(ret)return ret;
+ /* One original ANI test, no periodic polling or automatic retransmit. */
+ c->optical_test.active=true;
+ return -EINPROGRESS;
+}
+
 static int receive_control(struct controller *c)
 {
 	struct fttr_admin_request request = { 0 };
@@ -3012,11 +3069,17 @@ static int receive_control(struct controller *c)
 		result = upgrade_request(c, &request, image_fd, &fatal);
 	else if (request.version == 2)
 		result = move_request(c, &request, &fatal);
+	else if (request.action == FTTR_ADMIN_OPTICAL)
+  result = optical_request(c, &request);
 	else if (request.action == FTTR_ADMIN_REBOOT)
 		result = reboot_request(c, &request, &fatal);
 	else
 		result = admin_request(c, &request, false, &fatal);
 	if (image_fd >= 0) close(image_fd);
+ if(result==-EINPROGRESS && request.action==FTTR_ADMIN_OPTICAL) {
+  c->optical_test.client=address;c->optical_test.client_length=message.msg_namelen;
+  return 0;
+ }
 	if (result == -EINPROGRESS && request.version == 3) {
 		c->upgrade.client = address;
 		c->upgrade.client_length = message.msg_namelen;
@@ -3139,6 +3202,15 @@ static int run(struct controller *c)
 		}
 		now = now_ms();
 		deadline = next_refresh;
+  if(c->optical_test.active) {
+   unsigned int target=c->optical_test.job.me.onu;
+   struct fttr_onu_state expected=c->onu[target].hardware;
+   memcpy(expected.serial,c->optical_test.serial,8);
+   ret=fttr_miniolt_same(c->directory,target,&expected);
+   if(ret)optical_finish(c,ret);
+   else if(fttr_optical_tick(&c->optical_test.job,now))optical_finish(c,c->optical_test.job.error);
+   if(c->optical_test.active && c->optical_test.job.me.deadline<deadline)deadline=c->optical_test.job.me.deadline;
+  }
 		if (c->admin_scan_due < deadline)
 			deadline = c->admin_scan_due;
 		if (c->optical.interval && c->optical.due < deadline)
@@ -3670,6 +3742,7 @@ int main(int argc, char **argv)
 		goto out;
 	ret = run(&c);
 out:
+ optical_finish(&c,stopping?-ECANCELED:ret?ret:-ECANCELED);
 	if (stopping && ret == -EINTR)
 		ret = 0;
 	if (owned) {

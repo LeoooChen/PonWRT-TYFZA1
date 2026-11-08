@@ -7472,6 +7472,54 @@ and admin tests, host and aarch64-musl daemon builds pass. Local evidence is
 code changed. Matching an ONU-reported version is not a firmware signature,
 model-compatibility or physical boot verification; those remain open.
 
+### Resident remote ONU optical diagnostics
+
+`fttrctl STATE-DIRECTORY onu-optical HARDWARE-ID SERIAL-HEX` now requests a
+fresh remote ONU optical diagnostic through the resident controller. It uses the
+reported ANI-G instance (lowest ME ID in the current inventory), not a hard-coded
+instance or a guessed subordinate model. The ONU must be authenticated and have
+completed inventory or service configuration. Missing ANI, stale registration,
+an administrative/upgrade hold or an overlapping disruptive transaction refuses
+the request. The test itself does not close business ports, withdraw FE or change
+DBA; other ONUs and normal MIB sync continue while it is pending.
+
+Actual target ASIC/FPGA1 relay encoders produce the same baseline class263 Test:
+operation0x52, selected ANI and test selector7. The original ONU `mib_Anig.so`
+test handler emits a separate0x1b Test Result with five numbered fields:1 voltage,
+3 receive power,5 transmit power,9 laser bias and12 temperature. The native
+transaction requires both matching0x32 acknowledgement and Test Result, accepts
+either arrival order and validates ONU/TCI/class/instance/device-ID/trailer and
+field IDs. It sends once with a2-second transaction deadline; missing ACK/result,
+remote rejection, conflicting results and malformed fields are errors. A sensor
+whose original handler emitted an all-zero triplet is absent, not a zero reading.
+All missing sensors return ENODATA. Registration replacement, same-ONU teardown
+or controller exit cancels the query. No old result is retained for a new caller.
+
+The CLI returns JSON fields `voltage_v`, `rx_power_dbm`, `tx_power_dbm`, `bias_ma`
+and `temperature_c`; unavailable individual fields are null. Conversion follows
+the executed target relay's centi-unit formulas, including signed fixed-point
+power/temperature. Native32-bit presentation avoids the original16-bit voltage
+overflow. The original higher-level getter uses dummy sentinels after a failed
+test and returns success; the native interface reports the failure instead.
+Neither an OMCI result nor the two-message handshake proves physical sensor
+accuracy or an optical alarm state.
+
+`trace_stock_fttr_onu_optical.py` executes both target request encoders, result
+parser/conversion and the actual ONU result generator with explicit sensor/MIB
+boundaries. `test_fttr_onu_optical.py` runs112 original-wire, conversion, missing
+sensor, message-order, malformed/stale/timeout/cancellation cases. Actual daemon/
+CLI/AF_PACKET tests pass15 cases on each ASIC/FPGA1/FPGA2 backend: normal/reversed
+responses, absent sensor, rejection, missing result, timeout, concurrent request,
+replacement, other/same-ONU administration, shutdown, vanished client, missing ANI
+and failed authentication. They verify that diagnostic requests preserve live
+business port indices and do not toggle FE admission. Existing23 upgrade cases,
+migration/admin regressions and host/aarch64-musl daemon/CLI builds pass. Evidence
+is local `artifacts/fttr/onu-optical-*-20261109.*`.
+
+No kernel or PE code changed and no device was accessed. Alarm subscription,
+other optical capability layouts and physical optical readings remain to be
+implemented or accepted within the full FTTR scope.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
