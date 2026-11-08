@@ -17,6 +17,8 @@ struct rtl_dma_descriptor {
 
 struct rtl_dma_tx {
 	bool profile;
+	bool hardware_owned; /* May remain true after a failed stop/reset. */
+	int reset_error;
 	u64 wifi_packets, wifi_copy_bytes, wifi_prepare_ns;
 	void __iomem *registers;
 	void __iomem *axi_reorder;

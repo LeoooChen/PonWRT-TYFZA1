@@ -124,7 +124,7 @@ static void napi_gro_receive(struct napi_struct*n,struct sk_buff*s){(void)n;deli
 #define RTL_DMA_COUNT 64
 #define RTL_DMA_BUFFER_SIZE 2048
 struct rtl_dma_descriptor {u32 address,control;};
-struct rtl_dma_tx {void *memory,*registers;u32 memory_dma;struct rtl_dma_descriptor *descriptors;unsigned read,write,vp,port,lengths[64];struct net_device*owners[64];bool multicast_held[64];};
+struct rtl_dma_tx {int reset_error;void *memory,*registers;u32 memory_dma;struct rtl_dma_descriptor *descriptors;unsigned read,write,vp,port,lengths[64];struct net_device*owners[64];bool multicast_held[64];};
 static struct rtl_dma_tx dma;
 static void rtl_dma_tx_complete(struct rtl_dma_tx*t,struct net_device*d){(void)t;(void)d;}
 '''

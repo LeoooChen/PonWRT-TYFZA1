@@ -43,7 +43,7 @@ struct net_device {int unused;};
 struct sk_buff {unsigned int len,ip_summed; bool gso,vlan,copy_error; unsigned char data[2048];};
 struct descriptor {uint32_t address,control;};
 struct rtl_dma_tx {
- bool profile;uint64_t wifi_packets,wifi_copy_bytes,wifi_prepare_ns;
+ int reset_error;bool profile;uint64_t wifi_packets,wifi_copy_bytes,wifi_prepare_ns;
  void *memory;unsigned int memory_dma,read,write;
  struct descriptor *descriptors;
  struct net_device *owners[64];
@@ -94,6 +94,7 @@ int main(void){
  skb.vlan=true;assert(rtl_dma_tx_wifi(&tx,&dev,&skb,1)==-EOPNOTSUPP);skb.vlan=false;
  skb.ip_summed=3;assert(rtl_dma_tx_wifi(&tx,&dev,&skb,1)==-EOPNOTSUPP);skb.ip_summed=0;
  skb.copy_error=true;assert(rtl_dma_tx_wifi(&tx,&dev,&skb,1)==-EFAULT);
+ skb.copy_error=false;tx.reset_error=-EIO;assert(rtl_dma_tx_wifi(&tx,&dev,&skb,1)==-EIO);
  assert(tx.write==old && consumed==c && writes==w);
  unsigned int mask[8],original[8],key[23]={};
  rtl_fe_ipv6_mask(mask);memcpy(original,mask,sizeof(mask));rtl_fe_wifi_mask(mask);

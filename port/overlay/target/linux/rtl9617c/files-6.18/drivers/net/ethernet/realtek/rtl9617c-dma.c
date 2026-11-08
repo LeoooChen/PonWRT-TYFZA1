@@ -51,16 +51,27 @@ static void __iomem *rtl_dma_vp(struct rtl_dma_tx *tx)
 
 /* Stock ca_ni_dma_lso_reset resets both DMA and its AFT packet context.
  * The shared engine owner has disabled descriptor submission first. */
-static void rtl_dma_tx_reset(struct rtl_dma_tx *tx)
+static int rtl_dma_tx_reset(struct rtl_dma_tx *tx)
 {
 	void __iomem *base = tx->registers;
 
+	/* A posted disable or reset write is not a completed ownership transfer.
+	 * On any mismatch retain payloads and all accepted multicast references.
+	 * A later start/stop retries the complete paired reset before reuse. */
+	tx->reset_error = -EIO;
+	if ((readl(rtl_dma_vp(tx) + VP_ENABLE) & BIT(0)) ||
+	    (readl(base + CTRL) & CTRL_ENABLE)) return tx->reset_error;
 	writel(readl(base + CTRL) | CTRL_RESET, base + CTRL);
 	writel(readl(base + AFT_CTRL) | AFT_RESET, base + AFT_CTRL);
+	if (!(readl(base + CTRL) & CTRL_RESET) || !(readl(base + AFT_CTRL) & AFT_RESET))
+		return tx->reset_error;
 	udelay(10);
 	writel(readl(base + CTRL) & ~CTRL_RESET, base + CTRL);
 	writel(readl(base + AFT_CTRL) & ~AFT_RESET, base + AFT_CTRL);
-	readl(base + AFT_CTRL);
+	if ((readl(base + CTRL) & (CTRL_ENABLE | CTRL_RESET)) ||
+	    (readl(base + AFT_CTRL) & AFT_RESET)) return tx->reset_error;
+	tx->hardware_owned = false;
+	tx->reset_error = 0;
 	/* The paired reset ends descriptor/payload ownership, including the
 	 * two prefetched slots. It is not a downstream NI/ES retirement proof. */
 	for (unsigned int i = 0; i < RTL_DMA_COUNT; i++) {
@@ -68,6 +79,7 @@ static void rtl_dma_tx_reset(struct rtl_dma_tx *tx)
 		tx->multicast_held[i] = false;
 		rtl9617c_bridge_mcast_tx_put(held);
 	}
+	return 0;
 }
 
 int rtl_dma_tx_alloc(struct device *dev, struct rtl_dma_tx *tx)
@@ -91,9 +103,13 @@ int rtl_dma_tx_start(struct rtl_dma_tx *tx)
 	u32 value;
 	int ret;
 
+	tx->hardware_owned = true;
 	writel(0, vp + VP_ENABLE);
 	writel(readl(base + CTRL) & ~CTRL_ENABLE, base + CTRL);
-	rtl_dma_tx_reset(tx);
+	ret = rtl_dma_tx_reset(tx);
+	if (ret) return ret;
+	/* Queue programming can expose coherent RAM before the final enable. */
+	tx->hardware_owned = true;
 	writel(0, vp + VP_IRQ_ENABLE);
 	writel(0, vp + VP_WRITE);
 	memset(tx->memory, 0, MEMORY_BYTES);
@@ -134,6 +150,7 @@ void rtl_dma_tx_stop(struct rtl_dma_tx *tx)
 {
 	void __iomem *base = tx->registers;
 
+	tx->hardware_owned = true;
 	writel(0, rtl_dma_vp(tx) + VP_ENABLE);
 	writel(readl(base + CTRL) & ~CTRL_ENABLE, base + CTRL);
 	rtl_dma_tx_reset(tx);
@@ -141,12 +158,23 @@ void rtl_dma_tx_stop(struct rtl_dma_tx *tx)
 
 void rtl_dma_tx_free(struct device *dev, struct rtl_dma_tx *tx)
 {
+	if (tx->hardware_owned) {
+		rtl_dma_tx_stop(tx);
+		if (tx->reset_error) {
+			dev_err(dev, "TX DMA/AFT reset unconfirmed (%d); retaining coherent DMA memory\n", tx->reset_error);
+			return;
+		}
+	}
 	dma_free_coherent(dev, MEMORY_BYTES, tx->memory, tx->memory_dma);
+	tx->memory = NULL;
 }
 
 void rtl_dma_tx_complete(struct rtl_dma_tx *tx, struct net_device *dev)
 {
-	unsigned int hardware_read = readl(rtl_dma_vp(tx) + VP_READ) & (RTL_DMA_COUNT - 1);
+	unsigned int hardware_read;
+
+	if (tx->reset_error) return;
+	hardware_read = readl(rtl_dma_vp(tx) + VP_READ) & (RTL_DMA_COUNT - 1);
 
 	/* Taurus prefetches descriptors; the stock completion path retains two. */
 	while (((hardware_read - tx->read) & (RTL_DMA_COUNT - 1)) > 2) {
@@ -188,6 +216,7 @@ netdev_tx_t rtl_dma_tx_frame(struct rtl_dma_tx *tx, struct sk_buff *skb,
 	u32 high = frame ? frame->header_high : BIT(13);
 	u32 low = frame ? frame->header_low : (16 << 9) | (tx->port << 3) | BIT(29);
 
+	if (tx->reset_error) goto drop;
 	rtl_dma_tx_complete(tx, dev);
 	if (!rtl_dma_tx_available(tx)) {
 		netif_stop_queue(dev);
@@ -235,6 +264,7 @@ int rtl_dma_tx_wifi(struct rtl_dma_tx *tx, struct net_device *dev,
 	unsigned int offset, length = max(skb->len, 60U);
 	u64 begin = READ_ONCE(tx->profile) ? ktime_get_ns() : 0;
 
+	if (tx->reset_error) return tx->reset_error;
 	if (!id || id > RTL_WIFI_ID_MAX || skb->len < ETH_HLEN ||
 	    length > RTL_DMA_BUFFER_SIZE)
 		return -EINVAL;
@@ -269,9 +299,9 @@ ssize_t rtl_dma_tx_state(struct rtl_dma_tx *tx, char *buf)
 	void __iomem *base = tx->registers;
 	void __iomem *vp = rtl_dma_vp(tx);
 
-	return sysfs_emit(buf, "vp=%u port=%u desc=%pad sw=%u/%u hw=%u/%u ctrl=%08x vpctl=%08x ss=%08x misc=%08x base_hi=%08x axistat=%08x\n",
+	return sysfs_emit(buf, "vp=%u port=%u desc=%pad sw=%u/%u hw=%u/%u ctrl=%08x vpctl=%08x ss=%08x misc=%08x base_hi=%08x axistat=%08x reset_error=%d owned=%u\n",
 		tx->vp, tx->port, &tx->memory_dma, tx->read, tx->write,
 		readl(vp + VP_READ), readl(vp + VP_WRITE), readl(base + CTRL),
 		readl(vp + VP_ENABLE), readl(base + SS_CTRL), readl(vp + VP_MISC_IRQ),
-		readl(vp + VP_BASE_HIGH), readl(base + 0xd88));
+		readl(vp + VP_BASE_HIGH), readl(base + 0xd88), tx->reset_error, tx->hardware_owned);
 }

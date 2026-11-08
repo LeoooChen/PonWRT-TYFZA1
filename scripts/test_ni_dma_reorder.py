@@ -78,8 +78,9 @@ typedef uint32_t u32,__le32;typedef uint64_t u64;typedef uintptr_t dma_addr_t;
 #define lower_32_bits(v) ((u32)(v))
 static u32 dma[1024],reo[1024];
 static bool fail_access;
-static unsigned reo_writes,reo_reads;
+static unsigned reo_writes,reo_reads,reset_writes,drop_reset;
 static void writel(u32 v,void *p){
+ if(++reset_writes==drop_reset)return;
  uintptr_t a=(uintptr_t)p;
  if(a>=(uintptr_t)reo&&a<(uintptr_t)(reo+1024)){
   unsigned off=a-(uintptr_t)reo;
@@ -120,6 +121,18 @@ int main(void){
   assert(rtl_dma_tx_start(&tx)==-ETIMEDOUT);assert(!(dma[0]&1)&&!reo_writes);
   free(tx.memory);
  }
+#ifndef EXPECT_BEFORE
+ for(unsigned failure=1;failure<=6;failure++) {
+  struct rtl_dma_tx tx={.vp=8,.port=0,.registers=dma,.axi_reorder=reo,.memory_dma=0x04000000};
+  tx.memory=malloc(MEMORY_BYTES);assert(tx.memory);memset(tx.memory,0xa5,MEMORY_BYTES);
+  memset(dma,0,sizeof(dma));dma[0]=1;dma[(0x100+8*0xa0)/4]=1;
+  reset_writes=0;drop_reset=failure;reo_writes=reo_reads=0;fail_access=false;
+  assert(rtl_dma_tx_start(&tx)==-EIO&&tx.reset_error==-EIO&&tx.hardware_owned&&!reo_writes);
+  for(unsigned i=0;i<MEMORY_BYTES;i++)assert(((unsigned char*)tx.memory)[i]==0xa5);
+  drop_reset=0;assert(!rtl_dma_tx_start(&tx)&&!tx.reset_error&&tx.hardware_owned);
+  free(tx.memory);
+ }
+#endif
 #ifdef EXPECT_BEFORE
  puts("parent: all five DMA reorder registers remain inherited; no initialization");
 #else
@@ -127,7 +140,7 @@ int main(void){
 #endif
 }
 '''
-reset = function(source, "rtl_dma_tx_reset") if re.search(r"static void rtl_dma_tx_reset\(", source) else ""
+reset = function(source, "rtl_dma_tx_reset") if re.search(r"static (?:void|int) rtl_dma_tx_reset\(", source) else ""
 data = common + types + defines + function(source, "rtl_dma_vp") + reset + function(source, "rtl_dma_tx_start") + cases
 with tempfile.TemporaryDirectory(prefix="ni-dma-reorder-") as directory:
     work = Path(directory)

@@ -228,6 +228,8 @@
 
 105. 纠正自动单播桥学习接管ARP/RARP：实际执行目标ca-ne特殊报文初始化，确认WAN ARP保留原包送CPU16、Hash bypass15/COS7，CAM/分类写入失败向上传递。Linux真实代理/邻居抑制函数12组执行证明同MAC/VLAN键下目标IP/操作码不同会改变回复和转发，当前Hash不能表达该策略。自动采集与安装双重拒绝ARP/RARP，后台撤销已有同类学习规则而不刷新；旧代码已复现误入学习队列。桥/PPPoE/非控制以太帧/ONU VLAN、组播/广播/本机副本/FE生命周期回归、Image/模块及输入一致性通过，PE不变、未实机。此项为控制路径正确性修复，不是新增ARP加速；显式TC行为未变，完整硬件退场/ID复用等仍待补。详见[ARP控制路径](port/FTTR.md#arp-and-rarp-remain-on-the-bridge-control-path)。
 
+106. 修复CPU DMA/AFT复位失败仍提前归还组播引用：现在读回确认VP/引擎关闭、两复位位置位及清除后才释放payload引用；失败start返回EIO，dma_state记录错误/归属，完成轮询与新提交停止，后续start/stop重试。最终free再次失败则保留coherent内存和引用并报错，不把硬件可能访问的地址归还分配器。旧生产代码已复现；842生命周期用例含六写故障/失败free/重试，六start故障、原厂复位写序、Wi-Fi7200/原厂300描述符、PON/DEEPQ/收发/组播回归、Image/模块及两份输入一致性通过。PE不变、未实机；正常最后两预取描述符仍保留，完整上游/下游屏障及ID复用仍未完成。详见[DMA失败归属](port/FTTR.md#dma-reset-failures-retain-payload-ownership)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

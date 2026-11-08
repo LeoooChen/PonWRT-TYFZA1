@@ -51,6 +51,7 @@ def original(binary, control, aft):
 
 
 SHIM = r'''
+#include <errno.h>
 #include <stdint.h>
 #include <stdbool.h>
 #define RTL_DMA_COUNT 64
@@ -58,7 +59,7 @@ static void rtl9617c_bridge_mcast_tx_put(bool held){(void)held;}
 #define __iomem
 #define BIT(n) (1U << (n))
 typedef uint32_t u32;
-struct rtl_dma_tx { void *registers; unsigned int vp; bool multicast_held[64]; };
+struct rtl_dma_tx { void *registers; unsigned int vp; bool multicast_held[64],hardware_owned;int reset_error; };
 static u32 reg[0x1000/4],events[16][2],count;
 static u32 readl(void *p) { return *(u32 *)p; }
 static void writel(u32 value,void *p) {
@@ -87,7 +88,7 @@ def main():
     source = (root/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-dma.c').read_text()
     definitions = '\n'.join(line for line in source.splitlines() if line.startswith('#define ') and 'MEMORY_BYTES' not in line)
     names = ['rtl_dma_vp','rtl_dma_tx_stop']
-    if re.search(r'^static void rtl_dma_tx_reset\(',source,re.M):names.insert(1,'rtl_dma_tx_reset')
+    if re.search(r'^static int rtl_dma_tx_reset\(',source,re.M):names.insert(1,'rtl_dma_tx_reset')
     records = []
     with tempfile.TemporaryDirectory(dir=root/'artifacts/fttr') as directory:
         directory = Path(directory)

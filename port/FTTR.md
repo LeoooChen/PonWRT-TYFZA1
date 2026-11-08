@@ -7398,6 +7398,46 @@ This is a control-path correctness fix, not added ARP acceleration. Any future
 ARP acceleration must preserve those dynamic control decisions and their
 invalidation; it cannot be enabled by broadening the UDP multicast template.
 
+### DMA reset failures retain payload ownership
+
+The shared CPU DMA/AFT reset now checks that VP submission and the DMA engine
+are disabled, both original reset bits asserted, and both reset bits cleared
+before returning accepted multicast payload references. The original target
+`ca_ni_dma_lso_reset` reset write order is unchanged; native readback establishes
+whether the requested reset state was observed. An unapplied disable, assertion
+or deassertion returns `-EIO` from start and is retained in `dma_state.reset_error`.
+The state output also reports whether coherent memory may still be hardware-owned.
+A later start/stop repeats the complete paired reset before clearing or reusing
+that memory.
+
+Completion polling does not advance software ownership after a reset failure.
+Ordinary TX drops instead of publishing new descriptors, and Wi-Fi reinjection
+returns the reset error without consuming its skb. Start refuses to zero coherent
+buffers until reset succeeds. Final free retries an unconfirmed stop; if it still
+fails, it reports the error and retains the coherent allocation and accepted
+references rather than returning memory whose addresses hardware may retain.
+This failed-removal case deliberately retains resources; it does not provide a
+new post-unbind recovery mechanism or pretend that the retired references drained.
+The existing shared engine owner stops its timer, RX and submission before reset.
+
+`test_dma_mcast_reference.py` reproduces the old premature release when a reset
+write is ignored. Its842 production-function cases now include each of the six
+disable/assert/deassert write failures, reference retention despite an advanced
+RPTR, rejected submissions, failed-free retention and successful retry with
+exactly-once release. Start tests cover the same six failures without clearing RAM
+or programming AXI reorder, then successful restart; the original16 initialization
+cases remain. Wi-Fi7200 submissions/300 original descriptor comparisons, PON
+PPPoE/DHCP, TX publication, RX shutdown, P6 DEEPQ, bridge multicast and FE ownership
+regressions pass. Actual original DMA/AFT reset instruction replay still matches
+the normal native write sequence. Image/modules and both changed kernel inputs
+match (`artifacts/fttr/dma-reset-kernel-20261109.log` and corresponding identity
+report); PE firmware did not change. No device was accessed.
+
+Readback does not establish physical reset timing or downstream retirement. The
+last two prefetched descriptors are still retained during normal completion;
+RPTR equality and TXQ-empty are not used to release them. Full upstream MCE/NI/AFT
+producer fencing, P6 ES/MiniOLT drain and safe hardware-ID reuse remain open.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
