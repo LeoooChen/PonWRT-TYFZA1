@@ -10,7 +10,8 @@ from arm64_elf_oracle import ElfOracle
 
 
 class Multicast:
-    def __init__(self, binary):
+    def __init__(self, binary, fpga=False):
+        self.fpga = fpga
         self.events = []
         overrides = ('plr_log', 'plr_gponrm_card_veip_num_get', 'plr_gpon_maxpon_get',
             'plr_gpon_maxonu_get', 'plr_gponrm_mgmt_sem_take_with_timeout',
@@ -34,6 +35,11 @@ class Multicast:
         self.base = self.oracle.scratch + 0x2000
         self.oracle.symbols.update(stock_create=0x6535c, stock_set=0x64f8c, stock_delete=0x659c0,
                                    multicast_gem=0xe09d4)
+        if fpga:
+            self.oracle.symbols.update(stock_create=0x62900, stock_set=0x62530, stock_delete=0x62f64,
+                                       multicast_gem=0xdd1a0)
+        for name in ('stock_create','stock_set','stock_delete','multicast_gem'):
+            assert struct.unpack('<I',self.oracle.uc.mem_read(self.oracle.symbols[name],4))[0] & 0xffc07fff == 0xa9807bfd, name
         self.extended_flag = self.oracle.symbols['g_plrGponrmCtcDebug']
 
     def boundary(self, name, a):
@@ -45,14 +51,14 @@ class Multicast:
                     'plr_gponrm_mgmt_sem_give', 'plr_gponrm_pon_protect_is_standby_port'):
             return 0
         if name == 'plr_gpon_maxpon_get': return 1
-        if name == 'plr_gpon_maxonu_get': return 63
+        if name == 'plr_gpon_maxonu_get': return 64 if self.fpga else 63
         if name == 'plr_gponrm_card_veip_num_get': return self.veip_count
         if name == 'plr_gponrm_cfg_state_get': return 3
         if name == 'plr_gponrm_cfg_bridge_mode_get': return self.bridge_mode
         if name.startswith('plr_gponrm_cfg_card_') and name.endswith('_uni_get_by_card_uni_id'):
             self.events.append(dict(operation='select', kind='veip' if '_veip_' in name else 'ethernet',
                 address=bytes(uc.mem_read(a[0], 4)).hex(), card=a[1], uni=a[2]))
-            return p
+            return 0 if self.missing_uni else p
         if name == 'plr_gponrm_mem_pool_alloc':
             assert a[0] == 22
             return p + 0x100
@@ -108,25 +114,27 @@ class Multicast:
             assert oracle.call(name, *args) == 0x80000000
             event['wire'] = self.frame.hex()
 
-    def run(self, veip_count=1, extended=False, bridge_mode=1, references=0, fail_at=0, fail_cleanup=False):
+    def run(self, veip_count=1, extended=False, bridge_mode=1, references=0, fail_at=0, fail_cleanup=False, uni_type=None, onu=6, missing_uni=False):
         self.events.clear()
-        self.onu, self.veip_count, self.bridge_mode, self.references = 6, veip_count, bridge_mode, references
+        self.missing_uni = missing_uni
+        self.onu, self.veip_count, self.bridge_mode, self.references = onu, veip_count, bridge_mode, references
         self.requests, self.fail_at, self.fail_cleanup = 0, fail_at, fail_cleanup
         uc, p = self.oracle.uc, self.base
         uc.mem_write(p, bytes(0x1000))
         # Use the actual pool initializer, including the original IGMP defaults.
         self.oracle.call('plr_gponrm_cfg_card_uni_mul_init', p + 0x100)
         # Only the selected reported UNI's bridge port and ownership slots are modeled.
-        uc.mem_write(p + 0x200 + (52 if veip_count else 55), struct.pack('<H', 9 if veip_count else 1))
-        uc.mem_write(p + 0x200 + (57 if veip_count else 60), b'\xff' * 4)
-        uc.mem_write(p + 0x200 + (61 if veip_count else 64), b'\xff\xff')
+        selected_veip = (uni_type == 2 if uni_type is not None else True) if self.fpga else bool(veip_count)
+        uc.mem_write(p + 0x200 + (52 if selected_veip else 55), struct.pack('<H', 9 if selected_veip else 1))
+        uc.mem_write(p + 0x200 + (57 if selected_veip else 60), b'\xff' * 4)
+        uc.mem_write(p + 0x200 + (61 if selected_veip else 64), b'\xff\xff')
         uc.mem_write(p + 0x800 + 24, b'\xff\xff')
         uc.mem_write(self.extended_flag, bytes([extended]))
-        value = struct.pack('<H2xIH2x', 1, 2, 1)
+        value = struct.pack('<H2xIH2x', 1, 2 if uni_type is None else uni_type, 1)
         first, second = struct.unpack('<QQ', value.ljust(16, b'\0'))
-        result = self.oracle.call('plr_api_remote_onu_mcast_enable', self.onu, first, second, 1)
+        result = self.oracle.call('plr_api_remote_onu_uni_mcast_enable' if self.fpga else 'plr_api_remote_onu_mcast_enable', self.onu, first, second, 1)
         self.encode()
-        return dict(veip_cards=veip_count, extended=extended, bridge_mode=bridge_mode,
+        return dict(onu=onu,uni_type=uni_type,missing_uni=missing_uni,veip_cards=veip_count, extended=extended, bridge_mode=bridge_mode,
                     initial_references=references, fail_at=fail_at, fail_cleanup=fail_cleanup,
                     result=result, events=list(self.events))
 
@@ -271,10 +279,59 @@ def table_mutations(binary):
         finding='An absent delete key inserts a zero-address row; lost-delete retry is not idempotent. ACL callback errors are logged but MIB list mutation and success continue, so OMCI readback alone does not prove hardware ACL installation or removal.')
 
 
+def fpga_comparison(asic, binary):
+    """FPGA API selects an explicit UNI; ASIC wrapper auto-selects by card count."""
+    fpga = Multicast(binary, True)
+    rows = []
+    for onu in (1, 6, 64):
+        for kind in (0, 2):
+            for cards in (0, 3):
+                for extended in (False, True):
+                    for bridge, refs in ((1, 0), (1, 1), (0, 0)):
+                        result = fpga.run(veip_count=cards, extended=extended,
+                            bridge_mode=bridge, references=refs, uni_type=kind, onu=onu)
+                        reference = asic.run(veip_count=int(kind == 2), extended=extended,
+                            bridge_mode=bridge, references=refs)
+                        assert result['result'] == 0
+                        assert result['events'][0] == dict(operation='select',
+                            kind='veip' if kind == 2 else 'ethernet', address=struct.pack('<HH',0,onu-1).hex(),card=0,uni=0)
+                        frames = [e['wire'] for e in result['events'] if e['operation']=='omci']
+                        assert frames == [e['wire'] for e in reference['events'] if e['operation']=='omci']
+                        rows.append(dict(onu=onu,uni_type=kind,veip_cards=cards,extended=extended,
+                            bridge=bridge,references=refs,wire_match=True))
+    failures = []
+    for kind in (0, 2):
+        for extended in (False, True):
+            for at in range(1, 7):
+                for cleanup in (False, True):
+                    result = fpga.run(extended=extended, uni_type=kind,fail_at=at,fail_cleanup=cleanup)
+                    reference = asic.run(veip_count=int(kind==2),extended=extended,fail_at=at,fail_cleanup=cleanup)
+                    assert result['result']==reference['result']
+                    frames=[e['wire'] for e in result['events'] if e['operation']=='omci']
+                    assert frames==[e['wire'] for e in reference['events'] if e['operation']=='omci']
+                    failures.append(dict(uni_type=kind,extended=extended,fail_at=at,
+                        cleanup_failure=cleanup,result=result['result'],wire_match=True))
+    missing=[]
+    for kind in (0,2):
+        result=fpga.run(veip_count=0,uni_type=kind,missing_uni=True)
+        assert result['result']==18 and len(result['events'])==1
+        missing.append(result)
+    gems=[]
+    for at in range(4):
+        for cleanup in (False, True):
+            result,reference=fpga.gem(at,cleanup),asic.gem(at,cleanup)
+            assert result==reference
+            gems.append(result)
+    return dict(sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),cases=rows,failures=failures,gems=gems,missing_uni=missing,
+        finding='FPGA1 explicit UNI selection ignores VEIP-card auto-choice; default caller type2 targets VEIP. Selected standard/CTC profiles and GEM4095 frames match ASIC producers. Original ignored Set failure and incorrect CTC cleanup also persist.',
+        scope='Actual relay API, configuration/profile/GEM producers and baseline encoders; inventory, remote responses and resource storage modeled. No default local grant or physical queue delivery is established.')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--relay', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--fpga-relay', type=Path, help='also compare the target FPGA1 explicit UNI API')
     parser.add_argument('--table-mib', type=Path, help='execute original subordinate class281 IPv4 table snapshots')
     args = parser.parse_args()
     stock = Multicast(args.relay)
@@ -328,11 +385,13 @@ def main():
         assert case['result'] == (13 if error == 13 else 0) and not case['events']
         defaults.append(case)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(dict(cases=cases, failures=failures, multicast_gem=gems, default_gem=defaults,
+    fpga = fpga_comparison(stock,args.fpga_relay) if args.fpga_relay else None
+    args.output.write_text(json.dumps(dict(fpga=fpga,cases=cases, failures=failures, multicast_gem=gems, default_gem=defaults,
         table_snapshot=table_snapshot(args.table_mib) if args.table_mib else None,
         table_mutations=table_mutations(args.table_mib) if args.table_mib else None,
         relay_sha256=hashlib.sha256(args.relay.read_bytes()).hexdigest(),
         scope='Original API, multicast/flow/GEM/default-GEM producers and wire encoders; configuration/MIB storage, reported UNI/bridge IDs, allocators and OMCI replies modeled. Default-GEM execution does not exercise the full ONU startup ordering. No hardware or multicast traffic acceptance.'), indent=2) + '\n')
+    if fpga: print(f'PASS: {len(fpga["cases"])} FPGA1 UNI/profile selections, {len(fpga["failures"])} failure paths and {len(fpga["gems"])} GEM comparisons')
     print(f'PASS: {len(cases)} default multicast recipes, {len(failures)} operation/cleanup failures, {len(gems)} multicast GEM recipes/failures and {len(defaults)} default-GEM calls')
 
 

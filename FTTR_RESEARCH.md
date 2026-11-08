@@ -174,6 +174,8 @@
 
 78. 按原厂逐DMA通道调度补齐PE待发进展：执行目标phl_tx_pcie十通道缺信用用例，复现原生共用FIFO队首堵塞导致其他通道不发送。现有15槽内按通道保持FIFO，缺TXBD/tag/PN信用仅阻塞本通道，撤销项仍可回收，完整32字请求向后压紧；每普通轮最多完成8项。暂停排空同时消费RPQ和EQ回收，避免耗尽标签后跳过释放来源；NI仍到最终EQ归还才释放标签。32组实际MIPS跨通道/回绕/撤销/PN及暂停RPQ/EQ场景与既有组播、FTTR代际/回收、PS/所有权回归通过，Image/模块及固件一致性通过。固件31964字节、保守栈7208字节；单阻塞通道填满全部暂存槽仍会背压，完整上游退场和物理验收未完成，未上实机。详见[PE逐通道发布](port/FTTR.md#per-channel-pe-publication-and-pause-time-completion-progress)。
 
+79. 查实FPGA1默认队列与UNI组播适配：实际GEM API→服务通知→远端适配及flow指令确认queue1对应priority0；FPGA通知布局1147字节，不能复用ASIC的1074字节边界。FPGA专用UNI组播API按显式type0/2选择Ethernet/VEIP，不依VEIP数量自动选择，默认调用type2，缺目标返回18且不写OMCI。72组原厂选择、48组失败、8组GEM、2组缺UNI与原生双UNI标准/CTC完整事务比较通过，既有ASIC回归通过。现有重写的队列/OMCI布局无需产品修改；FPGA1 factory默认本地授权来源仍未查实，保留限制，不采用测光临时授权。本项是原厂证据和验证覆盖补齐，不是新增完整默认业务支持，未上实机。详见[原厂默认业务与FPGA1后续核验](port/FTTR.md#factory-default-service-generation-and-card-limits)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

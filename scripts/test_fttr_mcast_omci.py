@@ -28,8 +28,9 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--stock',required=True,type=Path)
     p.add_argument('--output',required=True,type=Path)
+    p.add_argument('--fpga',action='store_true',help='use the target FPGA1 relay producers')
     args=p.parse_args()
-    original,wire=Multicast(args.stock),Stock(args.stock)
+    original,wire=Multicast(args.stock,args.fpga),Stock(args.stock)
     cases=[]
     with tempfile.TemporaryDirectory() as directory:
         src=ROOT/'port/packages/tyfza1-fttr/src'
@@ -48,7 +49,7 @@ def main():
 
         def start(extended=False,defer=False):
             job,counter=Job(),C.c_ushort(0x8122)
-            lib.fttr_mcast_start(C.byref(job),5,C.byref(counter),1,10,10,extended,b'TEST\0\0\0\5')
+            lib.fttr_mcast_start(C.byref(job),5,C.byref(counter),uni_port,10,10,extended,b'TEST\0\0\0\5')
             job.defer_apply=defer
             return job,counter
 
@@ -109,67 +110,68 @@ def main():
                 action=lib.fttr_mcast_update(C.byref(job),C.byref(counter))
             return action,pool,table,frames,writes
 
-        for extended in (False,True):
-            for doubled in (False,True):
-                job,counter=start(extended,defer=True)
-                result,pool,table,frames,writes=drive(job,counter,doubled=doubled)
-                assert result==2 and not job.configured and not writes and not pool and not table
-                assert not lib.fttr_mcast_pending(C.byref(job))
-                assert lib.fttr_mcast_apply(C.byref(job),C.byref(counter))==1
-                result,pool,table,frames,writes=drive(job,counter,doubled=doubled)
-                assert result==2 and job.configured and job.doubled==doubled and table==row
-                expected=original.gem()['events']+[e for e in original.run(veip_count=0,extended=extended)['events'] if e['operation']=='omci']
-                actual=sorted(b[2:] for b in frames if b[2] in (0x44,0x48))
-                assert actual==sorted(bytes.fromhex(e['wire'])[2:] for e in expected),(extended,actual)
-                reused,rc=start(extended)
-                r,_,_,reads,changed=drive(reused,rc,initial=(pool,table),doubled=doubled)
-                assert not changed
-                assert r==(-errno.ENOTRECOVERABLE if doubled else 2)
-                result,empty,table,_,_=drive(job,counter,initial=(pool,table),doubled=doubled,release=True)
-                assert result==2 and not empty and not table and not any(o.touched for o in job.objects)
-                job,counter=start(extended)
-                result,pool,table,_,_=drive(job,counter,doubled=doubled)
-                result,empty,table,frames,_=drive(job,counter,initial=(pool,table),doubled=doubled,release=True,timeout=1)
-                assert result==2 and not empty and not table and not job.cleanup_error
-                assert sum(b[2]==0x48 and b[4:6]==b'\x01\x19' for b in frames)==1
-                job,counter=start(extended)
-                result,pool,table,_,_=drive(job,counter,doubled=doubled)
-                result,remaining,_,frames,_=drive(job,counter,initial=(pool,table),doubled=doubled,
-                    release=True,timeout=1,false_set=True)
-                assert result==-errno.EUCLEAN and job.cleanup_error and remaining==pool
-                assert not any(b[2]==0x46 for b in frames)
-                cases.append(dict(extended=extended,doubled=doubled,wire_match=True,release=True))
-                for fail in range(1,writes+1):
+        for uni_port in ((1,9) if args.fpga else (1,)):
+            for extended in (False,True):
+                for doubled in (False,True):
+                    job,counter=start(extended,defer=True)
+                    result,pool,table,frames,writes=drive(job,counter,doubled=doubled)
+                    assert result==2 and not job.configured and not writes and not pool and not table
+                    assert not lib.fttr_mcast_pending(C.byref(job))
+                    assert lib.fttr_mcast_apply(C.byref(job),C.byref(counter))==1
+                    result,pool,table,frames,writes=drive(job,counter,doubled=doubled)
+                    assert result==2 and job.configured and job.doubled==doubled and table==row
+                    expected=original.gem()['events']+[e for e in original.run(veip_count=int(uni_port==9),extended=extended,uni_type=(2 if uni_port==9 else 0) if args.fpga else None)['events'] if e['operation']=='omci']
+                    actual=sorted(b[2:] for b in frames if b[2] in (0x44,0x48))
+                    assert actual==sorted(bytes.fromhex(e['wire'])[2:] for e in expected),(extended,actual)
+                    reused,rc=start(extended)
+                    r,_,_,reads,changed=drive(reused,rc,initial=(pool,table),doubled=doubled)
+                    assert not changed
+                    assert r==(-errno.ENOTRECOVERABLE if doubled else 2)
+                    result,empty,table,_,_=drive(job,counter,initial=(pool,table),doubled=doubled,release=True)
+                    assert result==2 and not empty and not table and not any(o.touched for o in job.objects)
                     job,counter=start(extended)
-                    result,pool,table,_,_=drive(job,counter,doubled=doubled,fail=fail)
-                    assert result==-errno.EREMOTEIO and not job.configured and not job.cleanup_error,(extended,doubled,fail,result,job.cleanup_error)
-                    assert not pool and not table,(fail,pool,table)
-                for timeout in range(1,writes+1):
+                    result,pool,table,_,_=drive(job,counter,doubled=doubled)
+                    result,empty,table,frames,_=drive(job,counter,initial=(pool,table),doubled=doubled,release=True,timeout=1)
+                    assert result==2 and not empty and not table and not job.cleanup_error
+                    assert sum(b[2]==0x48 and b[4:6]==b'\x01\x19' for b in frames)==1
                     job,counter=start(extended)
-                    result,pool,table,_,_=drive(job,counter,doubled=doubled,timeout=timeout)
-                    assert result==-errno.ETIMEDOUT and not job.cleanup_error and not pool and not table,(extended,doubled,timeout,result,job.cleanup_error,pool,table)
-                for cancel in (1,writes):
+                    result,pool,table,_,_=drive(job,counter,doubled=doubled)
+                    result,remaining,_,frames,_=drive(job,counter,initial=(pool,table),doubled=doubled,
+                        release=True,timeout=1,false_set=True)
+                    assert result==-errno.EUCLEAN and job.cleanup_error and remaining==pool
+                    assert not any(b[2]==0x46 for b in frames)
+                    cases.append(dict(uni_port=uni_port,extended=extended,doubled=doubled,wire_match=True,release=True))
+                    for fail in range(1,writes+1):
+                        job,counter=start(extended)
+                        result,pool,table,_,_=drive(job,counter,doubled=doubled,fail=fail)
+                        assert result==-errno.EREMOTEIO and not job.configured and not job.cleanup_error,(extended,doubled,fail,result,job.cleanup_error)
+                        assert not pool and not table,(fail,pool,table)
+                    for timeout in range(1,writes+1):
+                        job,counter=start(extended)
+                        result,pool,table,_,_=drive(job,counter,doubled=doubled,timeout=timeout)
+                        assert result==-errno.ETIMEDOUT and not job.cleanup_error and not pool and not table,(extended,doubled,timeout,result,job.cleanup_error,pool,table)
+                    for cancel in (1,writes):
+                        job,counter=start(extended)
+                        result,_,_,_,_=drive(job,counter,doubled=doubled,cancel=cancel)
+                        assert result==-errno.ESTALE and not job.configured and not lib.fttr_mcast_pending(C.byref(job))
+                        assert job.objects[0].touched if cancel==1 else job.table_sent
                     job,counter=start(extended)
-                    result,_,_,_,_=drive(job,counter,doubled=doubled,cancel=cancel)
-                    assert result==-errno.ESTALE and not job.configured and not lib.fttr_mcast_pending(C.byref(job))
-                    assert job.objects[0].touched if cancel==1 else job.table_sent
-                job,counter=start(extended)
-                result,pool,table,_,_=drive(job,counter,doubled=doubled,false_set=True)
-                assert result==-errno.EUCLEAN and not pool and not table and not job.cleanup_error
-                job,counter=start(extended)
-                result,pool,table,_,_=drive(job,counter,doubled=doubled)
-                result,remaining,_,frames,_=drive(job,counter,initial=(pool,table),doubled=doubled,release=True,drift=True)
-                assert result==-errno.EUCLEAN and job.cleanup_error and remaining==pool
-                assert not any(b[2] in (0x44,0x48,0x46) for b in frames)
-                job,counter=start(extended)
-                result,pool,table,_,_=drive(job,counter,doubled=doubled,fail=writes,cleanup_fail=True)
-                assert result==-errno.EREMOTEIO and job.cleanup_error and pool
-                assert not job.configured
+                    result,pool,table,_,_=drive(job,counter,doubled=doubled,false_set=True)
+                    assert result==-errno.EUCLEAN and not pool and not table and not job.cleanup_error
+                    job,counter=start(extended)
+                    result,pool,table,_,_=drive(job,counter,doubled=doubled)
+                    result,remaining,_,frames,_=drive(job,counter,initial=(pool,table),doubled=doubled,release=True,drift=True)
+                    assert result==-errno.EUCLEAN and job.cleanup_error and remaining==pool
+                    assert not any(b[2] in (0x44,0x48,0x46) for b in frames)
+                    job,counter=start(extended)
+                    result,pool,table,_,_=drive(job,counter,doubled=doubled,fail=writes,cleanup_fail=True)
+                    assert result==-errno.EREMOTEIO and job.cleanup_error and pool
+                    assert not job.configured
         job,counter=start()
         result,pool,table,_,_=drive(job,counter)
         result,remaining,remaining_table,frames,writes=drive(job,counter,initial=(pool,table),release=True,object_drift=True)
         assert result==-errno.EUCLEAN and job.cleanup_error and not writes and remaining==pool and remaining_table==table
-        args.output.write_text(json.dumps(dict(cases=cases,checks=[
+        args.output.write_text(json.dumps(dict(backend="fpga1" if args.fpga else "asic/fpga2",cases=cases,checks=[
             'Native ordinary/extended profile, subscriber, GEM/bridge/filter and IPv4 Set bytes match actual original producers',
             'Deferred preflight sends no writes; each mutation refusal, applied-write timeout and false-success Set restores owned objects and tables; failed cleanup retains dependencies',
             'Transport cancellation immediately after send retains uncertain object/table ownership and exposes no pending request',

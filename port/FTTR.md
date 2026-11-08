@@ -5761,6 +5761,47 @@ services retain their existing support. The optional `--fpga-caller` and
 alongside the ASIC regression in
 `artifacts/fttr/default-fpga-profiles-20261107.json`; no device was accessed.
 
+Further FPGA1 execution on2026-11-08 resolves the queue and multicast
+adapter uncertainty. Its `plr_api_gem_add`→`plr_ponsrv_gemport_add`→remote
+GEM adapter uses API queue1 as priority0; the actual flow instruction range
+`a6a28..a6a7c` composes Related Port`0x80010000` for T-CONT`0x8001`.
+The service notification has a1147-byte FPGA layout, distinct from the
+1074-byte ASIC layout, and the comparison uses the target-specific entry.
+
+`plr_api_remote_onu_uni_mcast_enable` preserves the caller's UNI type:
+type0 selects Ethernet and type2 selects VEIP regardless of the VEIP-card
+count. The FPGA1 default producer explicitly passes type2. A missing
+configured target returns18 before any OMCI write; it does not fall back to
+Ethernet. This differs from the ASIC default wrapper's card-count selection.
+After selecting the port, the actual FPGA profile/GEM producers and baseline
+encoders generate the same standard309 or CTC65531, subscriber310,
+monitor311, bridge47/filter84 and GEM268/281 frames as the current native
+transaction. The original ignored standard Set error and incorrect CTC
+failure cleanup also exist on FPGA1; the native transaction keeps its
+stricter checked rollback.
+
+The extended original comparison covers72 UNI/profile/reference/bridge
+selections for API ONU1/6/64,48 operation/cleanup failures,8 multicast-GEM
+cases and two missing-UNI cases. `test_fttr_mcast_omci.py --fpga` executes
+both Ethernet and VEIP native transactions against that target's own
+encoders, covering standard/CTC, table readback/adoption, ambiguous doubled
+tables, mutation refusal, applied-write timeout, cancellation and drift.
+ASIC regressions and the default producer/profile/queue oracle also pass.
+Local evidence: `artifacts/fttr/fpga1-mcast-comparison-20261108.json`,
+`artifacts/fttr/fpga1-mcast-native-20261108.json`,
+`artifacts/fttr/fpga1-default-queue-20261108.json` and
+`artifacts/fttr/asic-mcast-regression-20261108.json`.
+
+This is original-implementation verification, not newly enabled FPGA1
+`factory` support. The default local grant remains unresolved: the retained
+FPGA supervisor has no `SetOnuTcontDba` import, its service bandwidth and
+ONU-enable driver wrappers are no-ops, and the inspected initialization does
+not establish normal service grant values. Measurement-only temporary
+writes remain excluded. Queue/OMCI equivalence does not prove physical
+bandwidth, and no guessed grant or preserved foreign authorization is used.
+No device was accessed.
+
+
 ### FTTR packet generations across software queues
 
 The native forwarding gate previously checked the current boolean at P6

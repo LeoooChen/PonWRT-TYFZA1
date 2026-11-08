@@ -381,7 +381,7 @@ def reported_cards(binary):
     return cases
 
 
-def default_queue(binary):
+def default_queue(binary, fpga=False):
     """Execute API -> service GEM -> remote adapter and its Related Port composition."""
     from unicorn.arm64_const import UC_ARM64_REG_SP, UC_ARM64_REG_PC
     saved=[]
@@ -394,7 +394,7 @@ def default_queue(binary):
             value=bytes(u.mem_read(a[1],32)).split(b'\0')[0]+b'\0';u.mem_write(a[0],value);return a[0]
         if name=='validate':u.mem_write(a[2],struct.pack('<Q',oracle.scratch+0x2000));return 0
         if name=='plr_ponsrv_port_id_get':u.mem_write(a[3],struct.pack('<H',257));return 0
-        if name=='plr_ifmng_gemport_add_notify':saved.append(bytes(u.mem_read(a[0],1074)));return 0
+        if name=='plr_ifmng_gemport_add_notify':saved.append(bytes(u.mem_read(a[0],1147 if fpga else 1074)));return 0
         if name=='plr_gponrm_cfg_gem_uc_op':saved.append(bytes(u.mem_read(a[1],42)));return 0
         if name=='plr_gponrm_queue_us_me_id_get_by_related_port_id':saved.append(a[1]);return 0
         if name in ('plr_ponsrv_cfgonu_sem_take_with_timeout','plr_ponsrv_cfgonu_sem_give',
@@ -409,7 +409,7 @@ def default_queue(binary):
         'plr_ponsrv_onu_is_authed','plr_ponsrv_gemport_data_save',
         'plr_gponrm_mgmt_sem_take_with_timeout','plr_gponrm_mgmt_sem_give',
         'plr_gpon_maxpon_get','plr_gpon_maxonu_get'))
-    oracle.hooks[0x8575c]='validate'
+    oracle.hooks[0x826ac if fpga else 0x8575c]='validate'
     oracle.uc.mem_write(oracle.scratch+0x2010,struct.pack('<I',1))
     assert oracle.call('plr_api_gem_add',1|(1<<32),1|(1<<32))==0
     ptr=oracle.scratch+0x3000
@@ -421,8 +421,8 @@ def default_queue(binary):
     oracle.uc.reg_write(UC_ARM64_REG_SP,stack)
     oracle.uc.mem_write(stack+24,struct.pack('<Q',context));oracle.uc.mem_write(stack+40,struct.pack('<Q',ptr))
     oracle.uc.mem_write(stack+62,bytes(2));oracle.uc.mem_write(stack+98,struct.pack('<H',0x8001))
-    oracle.uc.emu_start(0xaa164,0xaa1b8,count=1000)
-    assert oracle.uc.reg_read(UC_ARM64_REG_PC)==0xaa1b8 and saved[-1]==0x80010000
+    oracle.uc.emu_start(0xa6a28 if fpga else 0xaa164,0xa6a7c if fpga else 0xaa1b8,count=1000)
+    assert oracle.uc.reg_read(UC_ARM64_REG_PC)==(0xa6a7c if fpga else 0xaa1b8) and saved[-1]==0x80010000
     return dict(api_queue=1,remote_priority=0,related_port=saved[-1],
         scope='Actual GEM API/service/remote conversion and flow Related Port composition; validation, allocation, notification delivery and IO modeled.')
 
@@ -478,9 +478,10 @@ def main():
         fpga = dict(cases=fpga_cases, profiles=default_profiles(args.fpga_relay, True),
                     shared_unis=shared_uni_selection(args.fpga_relay),
                     bandwidth_wrapper=relay_bandwidth(args.fpga_relay),
+                    default_queue=default_queue(args.fpga_relay,True),
                     caller_sha256=hashlib.sha256(args.fpga_caller.read_bytes()).hexdigest(),
                     relay_sha256=hashlib.sha256(args.fpga_relay.read_bytes()).hexdigest(),
-                    scope='Actual FPGA1 one-service producer, first-error stop, profile/card conversion and shared UNI enumeration. Bandwidth wrappers perform no hardware IO; no default grant value or native default-policy support is established.')
+                    scope='Actual FPGA1 one-service producer, first-error stop, profile/card conversion, shared UNI enumeration and default queue composition. Bandwidth wrappers perform no hardware IO; no default grant value or native default-policy support is established.')
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(dict(cases=cases, failures=failures, translations=translations, bridge_selection=bridge_selection(args.relay),
         default_profiles=default_profiles(args.relay), default_queue=default_queue(args.relay),
@@ -496,7 +497,7 @@ def main():
         scope='Actual original producer and flow API adaptation; allocator/remote OMCI, semaphore, configuration owner and reset IO are modeled. No complete service/topology/traffic or hardware acceptance.'), indent=2) + '\n')
     print(f'PASS: {len(cases)} original default/multi-slot recipes, {len(failures)} failure paths, {len(translations)*2} flow adapter calls, 4 bridge selections, 3 shared-UNI enumerations and actual default transparent VLAN initialization; profiles/card resolution/default queue and eight-slot supervisor DBA also passed')
     if fpga:
-        print('PASS: 15 FPGA1 one-service/first-error cases, actual profile/card conversion, shared-UNI selection and72 no-op bandwidth wrapper calls')
+        print('PASS: 15 FPGA1 one-service/first-error cases, actual profile/card conversion, shared-UNI selection, API queue1 to priority0 and72 no-op bandwidth wrapper calls')
 
 
 if __name__ == '__main__': main()
