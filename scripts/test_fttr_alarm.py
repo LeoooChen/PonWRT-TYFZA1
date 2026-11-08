@@ -2,7 +2,7 @@
 """Production alarm synchronization against original ONU snapshot/notification wire."""
 import argparse,ctypes as C,errno,subprocess,tempfile
 from pathlib import Path
-from trace_stock_fttr_alarm import AlarmSlave,request
+from trace_stock_fttr_alarm import AlarmSlave,AlarmRelay,request
 p=argparse.ArgumentParser(description=__doc__)
 for n in ('relay','fpga-relay','slave'):p.add_argument('--'+n,type=Path,required=True)
 a=p.parse_args();root=Path(__file__).resolve().parents[1];src=root/'port/packages/tyfza1-fttr/src'
@@ -23,11 +23,27 @@ with tempfile.TemporaryDirectory() as folder:
  f=Path(folder);(f/'shim.c').write_text(shim)
  subprocess.run(['cc','-shared','-fPIC','-Wall','-Wextra','-Werror','-I'+str(src),str(f/'shim.c'),*[str(src/(n+'.c')) for n in ('omci-alarm','omci-me','omci-socket','omci-wire','miniolt')],'-o',str(f/'native.so')],check=True)
  lib=C.CDLL(str(f/'native.so'));lib.start.restype=lib.pending.restype=C.c_void_p
+ lib.fttr_alarm_name.argtypes=[C.c_uint16,C.c_uint];lib.fttr_alarm_name.restype=C.c_char_p
  lib.response.argtypes=lib.notify.argtypes=[C.c_void_p,C.c_uint]
  def frame():return C.string_at(lib.pending(),44)
  def respond(slave,rows):return lib.response(slave.reply_alarm(frame(),rows)[:44],44)
  checks=0
  for binary in (a.relay,a.fpga_relay):
+  relay=AlarmRelay(binary);names=relay.names()
+  for cls in (11,256,263,65535):
+   for bit in range(224):
+    expected=names.get((cls,bit))
+    assert lib.fttr_alarm_name(cls,bit)==(expected.encode() if expected else None)
+    if cls==65535:continue
+    bitmap=bytearray(28);bitmap[bit//8]=0x80>>(bit%8)
+    report=relay.report(cls,bytes(bitmap))
+    if report is not None:
+     count,shift=(16,1) if cls==256 else (7,0)
+     raised=(1<<(bit+shift)) if bit<count else 0
+     assert report==(raised,((1<<count)-1)<<shift ^ raised),(cls,bit,report)
+  for cls,count,shift in ((256,16,1),(263,7,0)):
+   assert relay.report(cls,bytes(28))==(0,((1<<count)-1)<<shift)
+   assert relay.report(cls,bytes([255])*28)==(((1<<count)-1)<<shift,0)
   slave=AlarmSlave(a.slave)
   for count in (0,1,3,32):
    rows=[(263,0x8000+i,bytes([i+1])+bytes(27)) for i in range(count)]
@@ -71,4 +87,4 @@ with tempfile.TemporaryDirectory() as folder:
     assert lib.notify(slave.notify(263,0x8000,b'\x80'+bytes(27),1)[:44],44)==1 and lib.error()==-errno.EPROTO
    assert not lib.valid();checks+=1
   lib.clear()
- print(f'Alarm state: {checks} snapshot/race/error groups, 2056 original updates with duplicate/replay and sequence wrap passed')
+ print(f'Alarm state: {checks} snapshot/race/error groups, 2056 original updates; both relay converters across 224 bits, 20 names and unknown-class/bit preservation passed')

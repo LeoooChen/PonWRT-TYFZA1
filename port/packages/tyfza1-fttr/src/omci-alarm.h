@@ -17,6 +17,7 @@ struct fttr_alarm_state {
 void fttr_alarm_clear(struct fttr_alarm_state *state);
 void fttr_alarm_invalidate(struct fttr_alarm_state *state,int error,int64_t now);
 void fttr_alarm_start(struct fttr_alarm_state *state,uint16_t onu,uint16_t *counter,int64_t now);
+const char *fttr_alarm_name(uint16_t class_id,unsigned int bit);
 /* 0 unrelated, 1 state changed, 2 another request prepared. */
 int fttr_alarm_reply(struct fttr_alarm_state *state,const struct fttr_omci_message *message,uint16_t *counter,int64_t now);
 int fttr_alarm_notify(struct fttr_alarm_state *state,const struct fttr_omci_message *message,int64_t now);

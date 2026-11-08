@@ -2,7 +2,7 @@
 
 本分支 `fttr-rewrite` 用于协作开发 TYFZA1 的原生 OpenWrt FTTR 支持。
 代码最初从 `dcf470f`（`0.7.0-alpha` 时期）分出，保留了逐步实现和修正的提交记录。
-已通过 `61d24e6` 合入最新 `main` 的 `9331c6e`，继续在 `fttr-rewrite` 开发。
+已通过 `1d82c21` 合入当前 `main` 的 `632c19c`，继续在 `fttr-rewrite` 开发。
 这不是新的发布版本，也不是已经完成验收的固件。
 
 本次目标是完整补齐原厂 FTTR 功能，并接入项目自创的 NI/QM/DMA/FE/PE
@@ -237,6 +237,8 @@
 109. 接入常驻ONU全量告警与通知同步：认证/MIB完成后按原厂class2 mode0快照逐项读28字节位图；通知1..255序号、精确重复忽略、缺口/冲突/畸形重取，快照期间增量最后合并。状态失效不展示旧表，2秒重取/60秒刷新/55秒总限/4096条上限；MIB异常、身份替换和退出撤销旧状态，告警不直接改FE/业务授权。原厂快照/序号/序列化514通知、原生22组/2056通知、分配故障/上限ASan/UBSan、三后端实际控制器与光学/升级/迁移/恢复回归、双架构编译通过。未实机；告警语义命名/动作策略、实际告警与完整硬件退场仍待补。详见[告警同步](port/FTTR.md#resident-onu-alarm-snapshot-and-notification-synchronization)。
 
 110. 对齐main632c19c的大帧NI预制头及有效模板字段复制：FTTR组播在准入改写DA后重新取地址，保留cookie/代际/共享序列号和BCMC路径，所有长度/偏移剔除前缀标志。完整镜像在-Os下超出32KiB，改用-Oz后31876字节、栈上界7288，非uplink13848字节；未删减功能，不宣称吞吐等价。12组入口、8组混合聚合、24组组播/source6/双HeaderA/AP/STA及64组TID/顺序、密钥/发布/PS/撤销/回收/STA收发/RXQ回归通过；Image/模块与生成头/overlay/内核一致性通过。无实机；完整硬件退场和ID复用仍未完成。详见[main前缀整合](port/FTTR.md#main-ni-prefix-and-request-template-integration)。
+
+111. 补齐已核实告警语义：有效行增加active位号/名称，按原厂MSB顺序解码；ONU-G12项、ANI-G7项和Ethernet UNI1项使用目标名称，未知类/位保留null且无效快照不显示。执行双relay完整位图转换/报告序列化，224逐位和清零/全置位、20名称及既有22组/2056通知/分配故障通过；三后端实际控制器验证命名raise/clear、未知bit223、缺口重取、重启/替换及业务准入不变，双架构编译通过。原厂UNI包装未发送报告，未据此添加业务控制；告警层级/trap回调、其他厂商语义与实机断言仍待补。详见[告警名称与位号](port/FTTR.md#native-alarm-names-and-active-bit-identities)。
 
 ## 建议接着做的工作
 

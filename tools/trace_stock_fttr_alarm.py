@@ -56,6 +56,39 @@ def request(binary,next=False,index=0,tci=0x8123):
  if next:body[8:10]=struct.pack('>H',index)
  return bytes(body)
 
+class AlarmRelay:
+ """Actual bitmap converters through their original report serializer."""
+ def __init__(self,binary):
+  self.messages=[]
+  self.oracle=ElfOracle(binary,self.boundary,('plr_gpon_wn_msg_send',))
+ def boundary(self,name,a):
+  o=self.oracle
+  if name=='memset':o.uc.mem_write(a[0],bytes([a[1]&255])*a[2]);return a[0]
+  if name=='plr_gpon_wn_msg_send':
+   assert a[0]==9 and a[2]==31
+   self.messages.append(bytes(o.uc.mem_read(a[1],31)));return 0
+  raise AssertionError((name,a))
+ def report(self,cls,bitmap):
+  o=self.oracle;p=o.scratch+0x2000;self.messages=[]
+  o.uc.mem_write(p,struct.pack('<HH',0,7))
+  o.uc.mem_write(p+256,struct.pack('<H',0x8001)+bitmap)
+  assert o.call('plr_gponrm_'+{256:'onug',263:'anig',11:'pptp_eth_uni'}[cls]+'_alarm',p,p+256)==0
+  if cls==11:
+   assert not self.messages # This target's PPTP wrapper never reports it.
+   return None
+  assert len(self.messages)==1
+  msg=self.messages[0]
+  assert struct.unpack_from('<IHH',msg)==(1 if cls==256 else 2,0,7)
+  return struct.unpack_from('<II',msg,23)
+ def names(self):
+  o=self.oracle;table=o.symbols['sp_plrWnOltPonInfo']
+  result={}
+  for cls,start,count in ((256,2,12),(263,14,7),(11,22,1)):
+   for bit in range(count):
+    ptr=int.from_bytes(o.uc.mem_read(table+(start+bit)*8,8),'little')
+    result[cls,bit]=bytes(o.uc.mem_read(ptr,80)).split(b'\0',1)[0].decode('ascii')
+  return result
+
 if __name__=='__main__':
  p=argparse.ArgumentParser(description=__doc__)
  for n in ('relay','fpga-relay','slave','output'):p.add_argument('--'+n,type=Path,required=True)

@@ -550,7 +550,15 @@ static int publish(struct controller *c, const char *state, int error)
    for(unsigned n=0;u->alarms.valid && n<u->alarms.count;n++) {
     const struct fttr_alarm_row *row=&u->alarms.rows[n];
     fprintf(file,"%s{\"class\":%u,\"instance\":%u,\"bitmap\":\"",n?",":"",row->class_id,row->instance);
-    hex(file,row->bitmap,28);fputs("\"}",file);
+    hex(file,row->bitmap,28);fputs("\",\"active\":[",file);
+    bool comma=false;
+    for(unsigned bit=0;bit<224;bit++)if(row->bitmap[bit/8]&(0x80U>>(bit%8))) {
+     const char *name=fttr_alarm_name(row->class_id,bit);
+     fprintf(file,"%s{\"bit\":%u,\"name\":",comma?",":"",bit);
+     if(name)fprintf(file,"\"%s\"",name);else fputs("null",file);
+     fputc('}',file);comma=true;
+    }
+    fputs("]}",file);
    }
    fputs("]}}",file);
 		}

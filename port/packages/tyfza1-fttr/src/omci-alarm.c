@@ -4,6 +4,20 @@
 #include <string.h>
 #include "omci-alarm.h"
 static uint16_t be16(const uint8_t *p){return (uint16_t)p[0]<<8|p[1];}
+const char *fttr_alarm_name(uint16_t class_id,unsigned int bit)
+{
+ /* Target relay warning names and its ONU-G/ANI-G bitmap converters.
+  * Vendor/reserved bits retain their numeric identity without guessed names. */
+ static const char *const onug[]={"Equipment alarm","Powering alarm","Battery missing",
+  "Battery failure","Battery low","Physical intrusion","ONT self test failure",
+  "Dying gasp","Temperature yellow","Temperature red","Voltage yellow","Voltage red"};
+ static const char *const anig[]={"Low received optical power","High received optical power",
+  "SF","SD","Low transmit optical power","High transmit optical power","Laser bias current"};
+ if(class_id==256 && bit<sizeof(onug)/sizeof(*onug))return onug[bit];
+ if(class_id==263 && bit<sizeof(anig)/sizeof(*anig))return anig[bit];
+ if(class_id==11 && !bit)return "LAN-LOS";
+ return NULL;
+}
 static bool body_valid(const struct fttr_omci_message *m)
 {
  return m->length==44 && m->body[3]==10 && !memcmp(m->body+40,"\0\0\0\x28",4);

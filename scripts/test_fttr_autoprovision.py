@@ -822,8 +822,8 @@ static int recovery_run(const char *path,const char *command) {
                     **({'FTTR_ADMIN_FPGA':'1'} if args.backend=='fpga1' else {})))
         if args.alarms:
             checks=[];process=None
-            def send_alarm(node,seq,bitmap,instance=0x8000):
-                body=node.alarm_slave.notify(263,instance,bitmap,seq)
+            def send_alarm(node,seq,bitmap,instance=0x8000,cls=263):
+                body=node.alarm_slave.notify(cls,instance,bitmap,seq)
                 peer.send(HOST+OLT+struct.pack('>HH',0x8888,node.id)+body)
             def alarm(id=7):return status()['onus'][id]['alarms']
             def stop():
@@ -836,15 +836,22 @@ static int recovery_run(const char *path,const char *command) {
                 until(lambda s:all(s['onus'][i]['datapath_configured'] and s['onus'][i]['alarms']['valid'] for i in (7,9)))
                 local=datapath(7);healthy=datapath(9);before=len(accel_events())
                 assert alarm()['rows'][0]['bitmap']=='80'+'00'*27 and len(alarm()['rows'])==2
+                assert alarm()['rows'][0]['active']==[{'bit':0,'name':'Low received optical power'}]
+                assert alarm()['rows'][1]['active']==[]
                 assert nodes[7].alarm_reads==3 and nodes[9].alarm_reads==1
                 send_alarm(nodes[7],1,b'\x40'+bytes(27));until(lambda s:s['onus'][7]['alarms']['sequence']==1)
                 assert alarm()['rows'][0]['bitmap']=='40'+'00'*27
+                assert alarm()['rows'][0]['active']==[{'bit':1,'name':'High received optical power'}]
                 send_alarm(nodes[7],1,b'\x40'+bytes(27));send_alarm(nodes[7],2,bytes(28))
                 until(lambda s:s['onus'][7]['alarms']['sequence']==2);assert alarm()['rows'][0]['bitmap']=='00'*28
+                assert alarm()['rows'][0]['active']==[]
+                send_alarm(nodes[7],3,bytes(27)+b'\1',instance=42,cls=65535)
+                until(lambda s:s['onus'][7]['alarms']['sequence']==3)
+                assert alarm()['rows'][-1]['active']==[{'bit':223,'name':None}]
                 assert local==datapath(7) and healthy==datapath(9) and len(accel_events())==before
                 checks.append('authenticated initial snapshot and raise/clear/duplicate notifications preserve business/FE admission')
                 nodes[7].alarm_mode='hold-next';nodes[7].alarm_rows=[(263,0x8000,b'\x10'+bytes(27)),(256,0,bytes(28))]
-                send_alarm(nodes[7],4,b'\x20'+bytes(27));until(lambda s:not s['onus'][7]['alarms']['valid'])
+                send_alarm(nodes[7],5,b'\x20'+bytes(27));until(lambda s:not s['onus'][7]['alarms']['valid'])
                 assert not alarm()['rows']
                 until(lambda s:nodes[7].alarm_held is not None,seconds=8)
                 send_alarm(nodes[7],1,b'\x08'+bytes(27))
@@ -874,7 +881,8 @@ static int recovery_run(const char *path,const char *command) {
                 nodes[7]=Node(7,'5445535400000077',0x307,False)
                 nodes[7].alarm_rows=[(263,0x8001,b'\x02'+bytes(27))];hardware()
                 until(lambda s:s['onus'][7]['mib_serial']==nodes[7].serial.hex() and s['onus'][7]['alarms']['valid'],seconds=10)
-                assert alarm()['rows']==[dict(**{'class':263,'instance':0x8001,'bitmap':'02'+'00'*27})]
+                assert alarm()['rows']==[dict(**{'class':263,'instance':0x8001,'bitmap':'02'+'00'*27,
+                    'active':[{'bit':6,'name':'Laser bias current'}]})]
                 stop()
                 nodes[7].pool[65530,0][0x4000]=b'wrong'.ljust(24,b'\0');prior=nodes[7].alarm_reads
                 process=launch();until(lambda s:s['onus'][7]['phase']=='auth-failed')

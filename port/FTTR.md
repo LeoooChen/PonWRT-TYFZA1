@@ -7576,6 +7576,35 @@ No device was accessed. These tests model alarm storage, timers and transport;
 they do not verify physical alarm assertions, vendor alarm naming or a policy to
 act on alarms. Those policies and full packet-retirement acceptance remain open.
 
+### Native alarm names and active bit identities
+
+Every valid alarm row now also exposes `active`, an array of zero-based bit
+indices and names. Bits use the actual original MSB-first wire ordering; an
+empty array means the valid bitmap is clear. Unknown classes and reserved bits
+remain visible with `name:null`, including bit223. Invalid snapshots still expose
+no rows. There is no separate cached interpretation which could survive a reset.
+
+Names follow the retained relay's warning string table: ONU-G256 bits0..11
+(equipment, powering, battery, intrusion, self-test, dying gasp, temperature and
+voltage), ANI-G263 bits0..6 (receive/transmit optical power, SF/SD and laser bias)
+and Ethernet UNI11 bit0 (LAN-LOS). Other ONU-G bits are not labeled from adjacent
+strings. The target's ONU-G converter places its16 input bits at report bits1..16;
+ANI-G preserves its seven bit indices. Both distinguish asserted and restored
+bits. The inspected Ethernet UNI wrapper computes the bit but never calls the
+report sender; native status still preserves the actual received bitmap.
+
+`AlarmRelay` executes both original relay converters and the report serializer
+with only the message queue modeled. `test_fttr_alarm.py` compares every one of
+224 possible input bits, zero/all-set states and all20 names, alongside the
+existing snapshot/race tests. Actual daemon tests on ASIC/FPGA1/FPGA2 verify named
+raise/clear, unknown-class bit223, resynchronization, restart and replacement,
+without changing business/FE admission. Host and aarch64-musl builds and allocation
+fault tests pass. Reports live under `artifacts/fttr/alarm-names-*-20261109.*`.
+
+This completes names for these verified classes, not the original warning
+hierarchy/trap callbacks or a hardware action policy. Actual alarm assertions,
+other/vendor class meanings and physical acceptance remain open.
+
 ### Main NI prefix and request-template integration
 
 The branch includes main `632c19c`, including large NI frame prefixes and
