@@ -475,7 +475,8 @@ int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *tx)
 {
  int ret;
  rtl_ax_tx_bcmc_close(tx);
- if(!tx->pe_active || !tx->bcmc_owned)return 0;
+ if(!tx->pe_active || (!tx->bcmc_owned && !tx->bcmc_retiring &&
+    !rtl_ax_tx_station_pending(tx,0,IEEE80211_NUM_TIDS)))return 0;
  tx->bcmc_retiring=true;
  /* Join any final publisher before PKT_DROP, then allow stale BIDs to recycle. */
  ret=rtl_ax_tx_pause(tx);if(ret)return ret;

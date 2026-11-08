@@ -5467,6 +5467,37 @@ physical crypto/DTIM/air ordering and full upstream packet retirement remain
 unverified or incomplete. In particular this does not permit reuse of the
 quarantined FTTR multicast groups/actions/cookies or GEM identities.
 
+### AP GTK deletion drains HIQ before unlink
+
+A follow-up lifecycle test reproduced a remaining gap: AP GTK deletion
+waited for key ownership without sending the HIQ drop command. A packet
+waiting for DTIM could therefore keep deletion and deferred cleanup retrying.
+Both normal GTK deletion and failed/aborted MACID0 key cleanup now close the
+BCMC template, join PE publication, issue the original MBID0/selector8 drop,
+and wait for MACID0 completion before changing the DMAC key map or releasing
+CAM. CPU-only HIQ traffic takes the same path even if direct BCMC was never
+admitted. A late completion after timeout does not skip clearing the retained
+retirement state on retry.
+
+While any MACID0 key unlink remains pending, the AP offload worker keeps
+BCMC closed; it cannot republish the newer default GTK over an unresolved
+hardware key map. Successful synchronous deletion or deferred DMAC unlink
+queues a fresh snapshot, including deletion of a non-default GTK. Failed
+operations retain the old CAM allocation and current desired role, so a newer
+installed GTK survives cleanup.
+
+The actual native key callbacks reproduce the pre-fix HIQ stall and pass
+successful deletion, drop failure, repeated cleanup failure and newer-key
+preservation. Actual template stop tests cover CPU-only traffic and timeout
+followed by late completion; worker tests verify publication is suppressed
+until unlink completes. Existing key/STA/mesh/NI, shared PN,257 ARM discard
+batches and98 linked-MIPS BCMC cases pass; native HIQ command still matches
+the target original producer. Image/modules and changed-source identity
+checks pass (`artifacts/fttr/gtk-hiq-kernel-final-20261108.log`,
+`artifacts/fttr/gtk-hiq-identity-20261108.json`). PE firmware is unchanged.
+The tests model firmware response and RPQ completion; physical DTIM/crypto
+and upstream packet retirement remain unverified. No device was accessed.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN

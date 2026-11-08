@@ -241,6 +241,11 @@ int main(void){
   radio.scan_offload_result=-ETIMEDOUT;bcmc_error=-ETIMEDOUT;rtl_ax_offload_work(&w,&radio.offload_work);
   assert(bcmc_calls==2&&radio.offload_retry&&radio.scan_offload_result==-ETIMEDOUT);
   bcmc_error=0;rtl_ax_offload_work(&w,&radio.offload_work);assert(bcmc_calls==3&&!radio.scan_offload_result);
+  radio.security_unlink[7]=1;unsigned before=bcmc_calls,closed=bcmc_closes;
+  rtl_ax_offload_work(&w,&radio.offload_work);
+  assert(bcmc_calls==before&&bcmc_closes==closed+1&&radio.offload_retry);
+  radio.security_unlink[7]=0;rtl_ax_offload_work(&w,&radio.offload_work);assert(bcmc_calls==before+1);
+
  }
  puts("FE transaction: initial/existing NI, four partial failures, prepared admission, scheduled retry and cancellation/withdrawal passed.");
 }

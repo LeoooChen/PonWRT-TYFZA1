@@ -50,6 +50,7 @@ static void ether_addr_copy(u8 *a,const u8 *b){memcpy(a,b,6);}
 #define ieee80211_vif_to_wdev(v) (&(v)->wdev)
 struct rtl_ax_tx {u64 bcmc_policy_attempt;bool pe_active,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;unsigned bcmc_generation;
  struct {void *memory;}pe;struct {bool active,retire_quiescing;unsigned cpu;struct net_device *route_dev;}ni;void *pdev;};
+static bool cpu_pending;
 static int ni_test_lock,fail_bind,fail_pause,fail_prepare,fail_release,fail_publish,fail_drop,fail_wait;
 static unsigned pauses,opens,prepares,releases,publishes,revokes,drops;static u64 policy_epoch=1;
 static struct rtl9617c_wifi_policy last;
@@ -64,6 +65,7 @@ static void rtl_ax_tx_open(struct rtl_ax_tx *t){(void)t;opens++;}
 static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *t){(void)t;revokes++;policy_epoch++;}
 static u64 rtl9617c_bridge_wifi_policy_generation(void){return policy_epoch;}
 static int rtl_ax_mac_drop_bcmc(void *p){(void)p;assert(pauses);drops++;return fail_drop;}
+static bool rtl_ax_tx_station_pending(struct rtl_ax_tx *t,unsigned id,unsigned tid){(void)t;assert(!id&&tid==16);return cpu_pending;}
 static int rtl_ax_tx_wait_station(struct rtl_ax_tx *t,unsigned id,unsigned tid){assert(t&&id==0&&tid==16&&drops);return fail_wait;}
 static int ni_mcast_bind(struct rtl_ax_tx *t,struct net_device *n){assert(ni_test_lock&&n&&t);return fail_bind;}
 static int ni_test_prepare(struct rtl_ax_tx *t,unsigned id){assert(ni_test_lock&&!id&&pauses);prepares++;t->ni.active=true;return fail_prepare;}
@@ -113,6 +115,12 @@ int main(void){
  fail_prepare=0;fail_release=-EAGAIN;unsigned count=prepares;
  assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EAGAIN&&prepares==count&&dev.refs==1);
  fail_release=0;assert(!rtl_ax_tx_bcmc(&t,&s.vif,key,4)&&!t.bcmc_prepare_failed&&dev.refs==1&&prepares==count+1);
+ t.bcmc_owned=false;cpu_pending=true;unsigned prior=drops;
+ fail_wait=-ETIMEDOUT;
+ assert(rtl_ax_tx_bcmc_stop(&t)==-ETIMEDOUT&&drops==prior+1&&t.bcmc_retiring);
+ cpu_pending=false;fail_wait=0;
+ assert(!rtl_ax_tx_bcmc_stop(&t)&&drops==prior+2&&!t.bcmc_retiring);
+ assert(!rtl_ax_tx_bcmc_stop(&t)&&drops==prior+2);
  puts("BCMC template: actual Linux default GTK selection, open/CCMP, unchanged templates, change/publish failure, stop/pause/drop errors, generation exhaustion and partial NI restart passed");
 }
 '''

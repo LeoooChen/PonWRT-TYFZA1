@@ -72,6 +72,7 @@ struct ieee80211_vif {u8 addr[6];int type;bool use_4addr;struct {unsigned aid;} 
 struct ieee80211_sta {struct rtl_ax_station drv_priv[1];u8 addr[6];unsigned int aid;};
 struct rtl_ax_tx {bool pending[128][17];};
 struct ieee80211_key_conf;
+static int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *tx){(void)tx;return 0;}
 static int rtl_ax_tx_key_pn_unbind(struct rtl_ax_tx *tx,struct ieee80211_key_conf *key){(void)tx;(void)key;return 0;}
 struct rtl_ax_ap {
  struct rtl_ax_tx *tx;struct ieee80211_vif *ap_vif,*sta_vif;int rx;bool sta_role,sta_associated,sta_4addr,peer_authorized[128],ra_registered[128],offload_retry;unsigned long ra_pending[2],security_aborting[2];u8 security_unlink[128];void *security_keys[128];struct wiphy_work offload_work;unsigned keys_aborted;unsigned int chip;bool monitor_started;

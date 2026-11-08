@@ -170,6 +170,8 @@
 
 76. 接通单AP VIF的组播直达NI→PE：读取Linux当前默认GTK及基本速率，发布带接口/模板/密钥代号的不可变记录，以MACID0、非QoS头和HIQ DMA9/QSEL0x11发送，使用共享PN/序列号并经RPQ/EQ回收。支持无单播peer/BA的组播专用NI启动、部分失败清理重试、最后单播peer离开后保留组播；组播转单播开关先撤销再发布并回到软件复制。AP停用/重启和扫描使用原厂HIQ-MBSSID selector8/MBID0丢弃、等待MACID0完成，未误用普通AC丢弃命令。98组实际MIPS组播、完整FE记录串接、原厂96 PN/192 WD及HIQ命令比对、密钥/模板/PS/生命周期与既有回归通过。最终固件31832字节、保守栈7120字节，Image/模块、87份源码一致性和补丁重放通过。单VIF开放网络/CCMP路径已实现；实际DTIM/加密/空口、多VIF、完整退场与资源复用仍未验收，未上实机。详见[AP组播直达NI/PE](port/FTTR.md#direct-ap-bcmc-through-native-ni-and-pe)。
 
+77. 补上AP GTK删除与失败清理的HIQ退场：专项测试复现旧代码只等RPQ、不发HIQ丢弃导致DTIM等待包长期持有密钥。正常删除及MACID0失败清理现复用原厂MBID0/selector8，先关闭模板、等待PE发布完成，再丢弃HIQ并等待MACID0完成，随后修改DMAC/CAM；CPU-only HIQ同样处理，超时后迟到完成可解除退场状态。未完成的GTK unlink阻止新模板发布，成功删除/清理重新调度默认密钥快照，保留后来安装的GTK。密钥故障/重复清理、模板/worker及既有共享PN、98组MIPS BCMC回归、Image/模块和源码一致性通过，PE固件不变。物理DTIM/加密与完整退场仍未验收，未上实机。详见[GTK删除前HIQ退场](port/FTTR.md#ap-gtk-deletion-drains-hiq-before-unlink)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

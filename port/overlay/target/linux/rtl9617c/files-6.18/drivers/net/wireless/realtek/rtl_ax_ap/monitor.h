@@ -386,6 +386,15 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 			if (ret == -ESTALE || ret == -ENOMEM) radio->offload_retry = true;
 		}
 	}
+ if(vif->type==NL80211_IFTYPE_AP) {
+  /* Failed GTK unlink may have left the old CAM map in hardware. */
+  for(index=0;index<RTL_AX_SECURITY_ENTRIES;index++)
+   if(radio->security_unlink[index]==1)break;
+  if(index!=RTL_AX_SECURITY_ENTRIES) {
+   rtl_ax_tx_bcmc_close(radio->tx);radio->offload_retry=true;
+   wiphy_delayed_work_queue(wiphy,&radio->cleanup_work,HZ);return;
+  }
+ }
  if(vif->type==NL80211_IFTYPE_AP && radio->beacon_enabled && !radio->ap_result && !radio->dfs.error) {
   struct ieee80211_key_conf *key;
   struct ieee80211_tx_info info={.control={.vif=vif}};
@@ -788,7 +797,8 @@ static bool rtl_ax_security_cleanup(struct rtl_ax_ap *radio)
 		if (radio->security_unlink[index]) {
 			unsigned int macid = radio->security_unlink[index] - 1;
 
-			if ((macid && rtl_ax_tx_ni_retire_peer(radio->tx, macid)) ||
+			if ((macid ? rtl_ax_tx_ni_retire_peer(radio->tx, macid) :
+			     rtl_ax_tx_bcmc_stop(radio->tx)) ||
 			    rtl_ax_tx_key_pending(radio->tx, index)) {
 				retry = true;
 				continue;
@@ -800,7 +810,7 @@ static bool rtl_ax_security_cleanup(struct rtl_ax_ap *radio)
 				continue;
 			}
 			radio->security_unlink[index] = 0;
-			if (macid && (radio->security_roles[macid].valid & 3))
+			if (!macid || (radio->security_roles[macid].valid & 3))
 				rtl_ax_offload_ready(radio);
 		}
 		rtl_ax_security_cam(cam, index, NULL);
@@ -1433,6 +1443,12 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE)
 			role.tx_keyid = key->keyidx;
 	} else {
+		/* AP GTK packets wait in HIQ, outside the four per-peer ACs.
+		 * Retire them before changing the DMAC key map or freeing CAM. */
+		if (!macid) {
+			ret = rtl_ax_tx_bcmc_stop(radio->tx);
+			if (ret) goto done;
+		}
 		ret = rtl_ax_tx_flush_key(radio->tx, index);
 		if (ret)
 			goto done;
@@ -1479,6 +1495,7 @@ done:
 	if (ret && test_bit(index, radio->security_deleting))
 		wiphy_delayed_work_queue(hw->wiphy, &radio->cleanup_work, HZ);
 	radio->key_result = ret;
+	if (!ret && cmd == DISABLE_KEY && !macid) rtl_ax_offload_ready(radio);
 	dev_info(&radio->pdev->dev, "native CCMP key %s MACID%u slot%u CAM%u result=%d\n",
 		cmd == SET_KEY ? "install" : "remove", macid, slot, index, ret);
 	return ret;

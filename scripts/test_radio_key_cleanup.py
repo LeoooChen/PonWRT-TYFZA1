@@ -60,8 +60,9 @@ struct rtl_ax_ap {struct rtl_ax_security_role security_roles[128];
  bool ra_registered[128],ra_pending[128],station_ids[128],preload_peers[128];unsigned station_removed;
 };
 struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};
-enum fault {NONE,RETIRE,FLUSH,DCTL,CAM,CAM_INSTALL,PN_BIND,PN_UNBIND};
+enum fault {NONE,RETIRE,FLUSH,DCTL,CAM,CAM_INSTALL,PN_BIND,PN_UNBIND,HIQ_STOP};
 static enum fault fault;
+static bool hiq_pending;static unsigned hiq_stops;
 static unsigned failures,queued,clears,dctls,offload_ready;
 static bool apply_failed_dctl,apply_failed_cam,hardware_cam[128];
 static u8 hardware_key_tag[128];
@@ -70,10 +71,13 @@ static struct rtl_ax_security_role hardware_roles[128];
 static int fail(enum fault point){if(fault!=point||!failures)return 0;failures--;return -ETIMEDOUT;}
 static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw){return hw->radio;}
 static unsigned find_first_zero_bit(bool *p,unsigned n){unsigned i;for(i=0;i<n&&p[i];i++);return i;}
-static bool rtl_ax_tx_key_pending(int tx,unsigned index){(void)tx;assert(index<128);return fail(FLUSH)!=0;}
-static int rtl_ax_tx_flush_key(int tx,unsigned index){(void)tx;assert(index<128);return fail(FLUSH);}
+static bool rtl_ax_tx_key_pending(int tx,unsigned index){(void)tx;assert(index<128);return hiq_pending||fail(FLUSH)!=0;}
+static int rtl_ax_tx_flush_key(int tx,unsigned index){(void)tx;assert(index<128);return hiq_pending?-ETIMEDOUT:fail(FLUSH);}
 static int rtl_ax_tx_key_pn_bind(int tx,struct ieee80211_key_conf *k){(void)tx;(void)k;return fail(PN_BIND);}
 static int rtl_ax_tx_key_pn_unbind(int tx,struct ieee80211_key_conf *k){(void)tx;(void)k;return fail(PN_UNBIND);}
+static int rtl_ax_tx_bcmc_stop(int tx){
+ (void)tx;hiq_stops++;int ret=fail(HIQ_STOP);if(!ret)hiq_pending=false;return ret;
+}
 static int rtl_ax_tx_ni_retire_peer(int tx,unsigned id){(void)tx;assert(id<128);return fail(RETIRE);}
 static void rtl_ax_rx_key(int rx,unsigned id,struct ieee80211_key_conf *key){(void)rx;(void)id;(void)key;}
 static void rtl_ax_offload_ready(void *r){(void)r;offload_ready++;}
@@ -119,7 +123,7 @@ static void rtl_ax_client_cam(u8 *out,unsigned id,const u8 *self,const u8 *peer,
  (void)assoc;rtl_ax_peer_cam(out,id,self,peer,aid,valid);}
 static void rtl_ax_tx_peer_client(int tx,unsigned id,bool client,const u8 *bssid){(void)tx;(void)id;(void)client;(void)bssid;}
 static void rtl_ax_port0_field(int *io,unsigned reg,unsigned mask,unsigned value){(void)io;(void)reg;(void)mask;(void)value;}
-static void reset(void){fault=NONE;failures=queued=clears=dctls=offload_ready=0;apply_failed_dctl=apply_failed_cam=false;
+static void reset(void){hiq_pending=false;hiq_stops=0;fault=NONE;failures=queued=clears=dctls=offload_ready=0;apply_failed_dctl=apply_failed_cam=false;
  memset(hardware_pn,0,sizeof(hardware_pn));memset(hardware_key_tag,0,sizeof(hardware_key_tag));
  memset(hardware_cam,0,sizeof(hardware_cam));memset(hardware_roles,0,sizeof(hardware_roles));}
 static struct ieee80211_key_conf new_key(unsigned idx,bool pairwise){
@@ -230,6 +234,23 @@ int main(void){
   fault=NONE;assert(!rtl_ax_security_cleanup(&r));
   assert(!r.security_ids[0]&&!r.security_deleting[0]&&!r.security_unlink[0]&&!hardware_cam[0]&&!hardware_roles[7].valid);
  }
+ /* An AP GTK cannot unlink while its old packets are retained in HIQ.
+  * Linux may destroy the key after DISABLE_KEY fails: cleanup owns retry. */
+ for(unsigned failed=0;failed<2;failed++) {
+  reset();struct rtl_ax_ap r={};struct ieee80211_hw hw={&r,0};
+  struct ieee80211_key_conf old=new_key(1,false),next=new_key(2,false);
+  assert(!rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},NULL,&old));
+  hiq_pending=true;if(failed){fault=HIQ_STOP;failures=1;}
+  int ret=rtl_ax_set_key(&hw,DISABLE_KEY,&(struct ieee80211_vif){},NULL,&old);
+  assert(ret==(failed?-ETIMEDOUT:0)&&hiq_stops==1);
+  if(failed) {
+   assert(hiq_pending&&r.security_unlink[0]==1&&r.security_ids[0]&&hardware_cam[0]&&!r.security_keys[0]);
+   fault=NONE;assert(!rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},NULL,&next)&&next.hw_key_idx==1);
+   fault=HIQ_STOP;failures=1;assert(rtl_ax_security_cleanup(&r)&&hiq_pending&&hardware_cam[0]);
+   fault=NONE;assert(!rtl_ax_security_cleanup(&r)&&!hiq_pending&&!hardware_cam[0]);
+   assert(hardware_roles[0].cam[4]==1&&hardware_cam[1]);
+  } else assert(!hiq_pending&&!hardware_cam[0]&&!r.security_ids[0]&&offload_ready==1);
+ }
  /* New keys in the same MACID survive an older failed unlink. */
  for(unsigned id=0;id<=127;id+=127){
   reset();struct rtl_ax_ap r={};struct ieee80211_hw hw={&r,0};struct ieee80211_sta sta={{{id}}};
@@ -241,7 +262,7 @@ int main(void){
   assert(!rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},peer,&next)&&next.hw_key_idx==1);
   assert(!rtl_ax_security_cleanup(&r));unsigned slot=id?1:3;
   assert(hardware_roles[id].valid==BIT(slot)&&hardware_roles[id].cam[slot]==1&&hardware_cam[1]);
-  assert(offload_ready==(id?1U:0U));
+  assert(offload_ready==1);
  }
  /* Station release resolves pending unlinks before MACID reuse. */
  reset();struct rtl_ax_ap r={};struct ieee80211_hw hw={&r,0};struct ieee80211_sta sta={{{7}}};
