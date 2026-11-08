@@ -26,7 +26,9 @@ policy = r'''
 #include <stdbool.h>
 #include <string.h>
 #include "rx-geometry.h"
+#include "tx-ownership.h"
 typedef uint32_t u32;
+#include "traffic-flow.h"
 #define HZ 100
 #define STA_TX_BUFFER_EXPIRE (10*HZ)
 #define max_t(t,a,b) ((t)(a)>(t)(b)?(t)(a):(t)(b))
@@ -34,10 +36,9 @@ typedef uint32_t u32;
 struct ieee80211_sta {int unused;};
 struct sdata {struct {struct {unsigned beacon_int;}bss_conf;}vif;};
 struct sta_info {unsigned listen_interval;struct sdata *sdata;struct ieee80211_sta sta;};
-struct ewma_rtl_ax_success {unsigned value;};
-static void ewma_rtl_ax_success_init(struct ewma_rtl_ax_success *p){p->value=0;}
-static void ewma_rtl_ax_success_add(struct ewma_rtl_ax_success *p,unsigned v){p->value=v;}
-struct rtl_ax_tx {struct ewma_rtl_ax_success peer_success[128];bool peer_preload[128]; bool peer_qos[128],peer_offloaded[128],peer_asleep[128],pe_active;u32 peer_rates[128];struct {void *memory;}pe;struct {u32 ps_seen[2][128];bool ps_issued[128];}ni;};
+struct rtl_ax_tx {struct {unsigned long internal;} peer_success[128];bool peer_preload[128];struct rtl_ax_traffic_flow peer_flows[128][8];bool peer_qos[128],peer_offloaded[128],peer_asleep[128],pe_active;u32 peer_rates[128];struct {void *memory;}pe;struct {u32 ps_seen[2][128];bool ps_issued[128];}ni;};
+#define ewma_rtl_ax_success_init(p) ((p)->internal=0)
+#define ewma_rtl_ax_success_add(p,v) ((p)->internal=(v)<<8)
 static void put_unaligned_le32(u32 value,void *p){memcpy(p,&value,4);}
 static u32 get(const void *p){u32 v;memcpy(&v,p,4);return v;}
 #define PE_PROBE_MAILBOX 0x2000
@@ -47,13 +48,13 @@ arm = ''
 for name in ('rtl_ax_tx_peer_qos',):
     at = tx.index('void ' + name + '(')
     arm += tx[at:tx.index('\n}\n', at) + 3]
-with tempfile.TemporaryDirectory(prefix='wifi-ps-policy-') as directory:
+with tempfile.TemporaryDirectory(prefix='wifi-ps-policy-',dir=root/'artifacts') as directory:
     c, exe = Path(directory) / 'policy.c', Path(directory) / 'policy'
     c.write_text(policy + source[start:end] + arm + r'''
 int main(void){struct sdata s={.vif={.bss_conf={100}}};struct sta_info sta={.sdata=&s,.listen_interval=1};
  assert(ieee80211_sta_ps_buffer_timeout(&sta.sta)==1000);
  sta.listen_interval=128;assert(ieee80211_sta_ps_buffer_timeout(&sta.sta)==2600);
- unsigned char memory[0x20000]={};struct rtl_ax_tx tx={.pe_active=true,.pe={memory}};
+ unsigned char memory[0x80000]={};struct rtl_ax_tx tx={.pe_active=true,.pe={memory}};
  rtl_ax_tx_peer_qos(&tx,1,true,ieee80211_sta_ps_buffer_timeout(&sta.sta)/HZ);
  assert(get(memory+0x19804)==26);
  sta.listen_interval=65535;assert(ieee80211_sta_ps_buffer_timeout(&sta.sta)==1342100);
@@ -89,6 +90,7 @@ class Radio:
         self.put(BAR + 0x1058, 255 << 16)
         self.clock(100)
         for peer in range(1, peers + 1):
+            self.put(BASE + 0x39000 + peer * 4, 0)
             mac = bytes([2, 0, 0, 0, 0, peer])
             self.u.mem_write(BASE + 0xe400 + peer * 8, mac)
             self.put(BASE + 0x11a00 + peer * 4, 1)
@@ -158,15 +160,15 @@ r.put(BASE + 0xe820, 0)  # Peer2 remains awake.
 r.run(3000000)
 r.check_returns()
 assert r.get(NI + 0x7160) == 2492 * 8
-assert r.get(BASE + 0x11804) == 256
-assert r.peer_peak <= 256
-assert len(r.returns) == 2491 - 256
+assert r.get(BASE + 0x11804) == 2048
+assert r.peer_peak <= 2048
+assert len(r.returns) == 2491 - 2048
 assert r.get(BASE + 0x11808) == 1  # Pending normal WP credit, not discarded.
 assert r.get(MB + 30 * 4) == 124
-assert r.get(BASE + 0x18020) == 256 + 124
+assert r.get(BASE + 0x18020) == 2048 + 124
 # Expiry can reclaim unsent frames even when all 124 transmit credits are held.
 r.clock(110)
-r.run(1000000)
+r.run(4000000)
 r.check_returns()
 assert r.get(BASE + 0x11804) == 0 and len(r.returns) == 2491
 assert r.get(BASE + 0x18020) == 124 and r.get(BASE + 0x14004) == 1
@@ -180,31 +182,31 @@ total.put(BASE + 0xe850, 0)
 total.run(4000000)
 total.check_returns()
 assert total.get(NI + 0x7160) == 2401 * 8
-assert sum(total.get(BASE + 0x11800 + peer * 4) for peer in range(1, 5)) <= 512
+assert sum(total.get(BASE + 0x11800 + peer * 4) for peer in range(1, 5)) <= 2048
 assert total.get(MB + 28 * 4) == 1  # Awake peer actually submitted.
 
 # Excess arrivals must not delay an already queued awake peer until the flood stops.
 stream = Radio(peers=2)
-stream.packets([1] * 256 + [2] + [1] * 2000)
+stream.packets([1] * 2048 + [2] + [1] * 200)
 stream.put(BASE + 0xe820, 0)
 stream.run(4000000)
 stream.check_returns()
-assert stream.peer_peak <= 256 and stream.get(MB + 28 * 4) == 1
-assert stream.get(BASE + 0x11804) == 256 and len(stream.returns) == 2000
-assert stream.tx_consumers and stream.tx_consumers[0] < 2257 * 8
+assert stream.peer_peak <= 2048 and stream.get(MB + 28 * 4) == 1
+assert stream.get(BASE + 0x11804) == 2048 and len(stream.returns) == 200
+assert stream.tx_consumers and stream.tx_consumers[0] < 2249 * 8
 
 # A blocked EQ push retains the discard owner and retries without releasing an in-flight WP.
 credit = Radio()
 credit.put(NI + 0x6380, 0)
-credit.packets([1] * 300)
-credit.run()
+credit.packets([1] * 2092)
+credit.run(3000000)
 assert not credit.returns and credit.get(MB + 47 * 4)
 held = credit.get(MB + 47 * 4) - 1
 assert credit.get(BASE + 0x20000 + held * 8)
 credit.put(NI + 0x6380, 0x80000000)
-credit.run()
+credit.run(3000000)
 credit.check_returns()
-assert len(credit.returns) == 44 and credit.get(BASE + 0x11804) == 256
+assert len(credit.returns) == 44 and credit.get(BASE + 0x11804) == 2048
 assert credit.get(MB + 47 * 4) == 0 and credit.get(MB + 30 * 4) == 0
 
 # Queued expiry keeps TIM set for a granted, submitted frame until its RPQ.
@@ -307,7 +309,7 @@ assert rpq.get(BASE + 0x1ba08) == 2 and rpq.get(BASE + 0x1ba0c) == 1
 assert len(rpq.returns) == 2 and rpq.get(MB + 30 * 4) == 0
 
 print(json.dumps({'scope': 'Linked production PE instructions; synthetic EPP, EQ credit and RPQ ownership.',
-                  'per_peer_bound': 256, 'total_waiting_bound': 512,
+                  'per_peer_bound': None, 'total_sleep_admission_bound': 2048,
                   'sleep_pool_reclaimed': True, 'awake_peer_submitted': True,
                   'expiry_preserves_submitted_WPs_and_TIM': True,
                   'blocked_EQ_push_retries_exactly_once': True}, indent=2))

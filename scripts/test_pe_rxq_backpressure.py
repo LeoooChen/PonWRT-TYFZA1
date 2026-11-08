@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Execute linked PE capture/refill, ARM ordering, NI tail and RDU accounting."""
 from pathlib import Path
+from pe_tx_ownership_fixture import initialize,map_report
 import hashlib,json,random,struct,subprocess,sys
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'analysis/python-deps'))
@@ -14,7 +15,7 @@ IDS,IDLE,MAP,STATUS,TAIL=0x1a000,0x1a400,0x17400,0xf000,0x17810
 class Machine:
  def __init__(self):
   self.u=Uc(UC_ARCH_MIPS,UC_MODE_MIPS32|UC_MODE_LITTLE_ENDIAN)
-  for a,n in ((0x1fc00000,0x10000),(B,0x20000),(BAR,0x10000),(RX,514*16384),(BD,4096),(ST,0x20000),(VP,4096),(NI,8192),(TABLE,4096),(0x10000000,0x10000)):self.u.mem_map(a,n)
+  for a,n in ((0x1fc00000,0x10000),(B,0x80000),(BAR,0x10000),(RX,514*16384),(BD,4096),(ST,0x20000),(VP,4096),(NI,8192),(TABLE,4096),(0x10000000,0x10000)):self.u.mem_map(a,n)
   self.put(0x10002300,(1<<31)|(1<<13));self.put(0x100038c4,0xa0000000)
   self.u.mem_write(0x1fc00000,binary);self.tag=8190;self.slot=254;self.pending_w1c=None;self.isr=0;self.acks=[]
   for i,v in ((2,BAR|0xa0000000),(187,B),(80,TABLE),(81,254),(82,8190),(83,254),(134,BD),(177,258),(182,254)):self.put(MB+i*4,v)
@@ -673,7 +674,7 @@ for j,v in ((88,VP|0xa0000000),(89,NI),(93,1),(106,ST)):pipeline.put(MB+j*4,v)
 pipeline.arrive(data_frame(0x123,2),True);pipeline.capture()
 assert pipeline.get(MB+81*4)==pipeline.slot and pipeline.get(MB+90*4)==0
 assert pipeline.get(ST+1024)==1<<31|0x123
-tx=0x04500000;pipeline.u.mem_map(tx,0x20000);pipeline.u.mem_map(0x10020000,4096);txmb=tx+0x2000
+tx=0x04500000;pipeline.u.mem_map(tx,0x80000);pipeline.u.mem_map(0x10020000,4096);txmb=tx+0x2000
 for j,v in ((0,0x50455744),(3,1),(140,txmb|0xa0000000),(142,1),(188,MB)):pipeline.put(txmb+j*4,v)
 pipeline.u.reg_write(UC_MIPS_REG_A0,txmb|0xa0000000)
 pipeline.u.reg_write(UC_MIPS_REG_SP,(B+0x1fff0)|0xa0000000)
@@ -717,7 +718,9 @@ rpq=0x07500000;pipeline.u.mem_map(rpq,4096);eq_returns=[]
 pipeline.put(MB+187*4,tx)
 for j,v in ((0,0x50455744),(3,1),(140,MB|0xa0000000),(142,1)):pipeline.put(MB+j*4,v)
 for j,v in ((3,1),(2,BAR|0xa0000000),(30,1),(68,rpq),(72,rpq+1024),(78,1),(116,0x6380),(117,6)):pipeline.put(txmb+j*4,v)
-pipeline.put(tx+0xc400,rpq+2048);pipeline.put(tx+0xc404,1<<15|1<<8)
+initialize(pipeline.u,tx)
+map_report(pipeline.u,tx,256<<16|1)
+pipeline.put(tx+0x20000,rpq+2048);pipeline.put(tx+0x20004,1<<15|1<<8)
 pipeline.put(tx+0x18000+8*4,1)
 pipeline.put(rpq,24|0xc000|1<<16);pipeline.put(rpq+4,7<<24|4);pipeline.put(rpq+20,256<<16|1)
 pipeline.put(BAR+0x121c,1<<16)
@@ -845,7 +848,7 @@ r.u.reg_write(UC_MIPS_REG_A0,MB|0xa0000000);r.u.reg_write(UC_MIPS_REG_SP,(B+0x1f
 r.u.emu_start(0xbfc00400,0xbfc0fff0,count=10000)
 assert r.get(MB+70*4)==0 and r.get(MB+81*4)==254
 assert r.get(MB+178*4)==1 and r.get(MB+179*4)==1 and r.isr==1<<7
-r.u.mem_map(tx,0x20000)
+r.u.mem_map(tx,0x80000)
 for i,v in ((0,0x50455744),(2,BAR|0xa0000000),(3,1),(68,BD),(72,ST),
             (140,txmb|0xa0000000),(142,1)):r.put(txmb+i*4,v)
 r.u.reg_write(UC_MIPS_REG_A0,txmb|0xa0000000)

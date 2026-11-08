@@ -50,7 +50,7 @@ struct ieee80211_sta {struct rtl_ax_station drv_priv[1];};
 #define NL80211_IFTYPE_MESH_POINT 7
 #define RTL_AX_CLIENT_MACID 1
 struct ieee80211_vif {int type;};
-struct rtl_ax_ap {struct rtl_ax_security_role security_roles[128];
+struct rtl_ax_ap {unsigned traffic_peer;struct rtl_ax_security_role security_roles[128];
  struct ieee80211_key_conf *security_keys[128];
  bool sta_role,sta_associated;int io;
  bool security_ids[128],security_deleting[128],security_aborting[128];u8 security_unlink[128];

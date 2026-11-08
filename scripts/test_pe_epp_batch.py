@@ -5,14 +5,12 @@ import sys,struct,subprocess,json
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/"analysis/python-deps"))
 from unicorn import UC_HOOK_MEM_READ,UC_HOOK_MEM_WRITE,Uc,UC_ARCH_MIPS,UC_MODE_MIPS32,UC_MODE_LITTLE_ENDIAN
 from unicorn.mips_const import UC_MIPS_REG_A0,UC_MIPS_REG_A1,UC_MIPS_REG_A2,UC_MIPS_REG_SP,UC_MIPS_REG_RA,UC_MIPS_REG_V0
-from pe_tx_ownership_fixture import initialize
 p=Path(sys.argv[1])
 symbols={x[2]:int(x[0],16) for l in subprocess.check_output(["llvm-nm-18",str(p/"pe-wd.elf")],text=True).splitlines() if len(x:=l.split())==3}
 u=Uc(UC_ARCH_MIPS,UC_MODE_MIPS32|UC_MODE_LITTLE_ENDIAN)
 BASE,MB,NI,PAYLOAD,EPP=0x04000000,0x04002000,0x10000000,0x06000000,0x05000000
-for a,n in [(0x1fc00000,0x10000),(BASE,0x80000),(NI,0x10000),(PAYLOAD,0x200000),(0x12000000,0x10000),(EPP,0x80000),(0x10020000,0x1000)]:u.mem_map(a,n)
+for a,n in [(0x1fc00000,0x10000),(BASE,0x20000),(NI,0x10000),(PAYLOAD,0x200000),(0x12000000,0x10000),(EPP,0x80000),(0x10020000,0x1000)]:u.mem_map(a,n)
 u.mem_write(0x1fc00000,(p/"pe-tx.bin").read_bytes())
-initialize(u,BASE)
 def put(a,v):u.mem_write(a,struct.pack("<I",v))
 def get(a):return struct.unpack("<I",u.mem_read(a,4))[0]
 for i,v in [(2,0xb2000000),(25,EPP),(114,0x7060),(115,0x7160),(167,15)]:put(MB+i*4,v)
@@ -28,7 +26,7 @@ def call(name):
  u.emu_start(symbols[name],0x9fc01ff0,count=100000)
 
 # Wrapped EPP batch: consecutive groups, interleaved peers/TIDs and compact EPP.
-rows=[(1,0),(1,0),(2,3),(1,0),(2,3),(2,3),(1,7),(1,7),(2,0)] + [(1,0),(2,3)] * 28
+rows=[(1,0),(1,0),(2,3),(1,0),(2,3),(2,3),(1,7),(1,7),(2,0)] + [(1,0),(2,3)] * 4
 start=32752
 for n,(peer,tid) in enumerate(rows):
  at=PAYLOAD+n*2048
@@ -41,9 +39,9 @@ put(MB+171*4,1);put(BASE+0x19400,(start+3*8)&32767)
 writes=[]
 watch=u.hook_add(UC_HOOK_MEM_WRITE,lambda uc,access,at,size,value,data:writes.append((at,value)))
 call("ni_ingest")
-assert get(NI+0x7160)==496 and get(MB+171*4)==0
+assert get(NI+0x7160)==112 and get(MB+171*4)==0
 assert next(i for i,(at,v) in enumerate(writes) if at==NI+0x7160)<next(i for i,(at,v) in enumerate(writes) if at==MB+171*4)
-assert get(MB+38*4)==64 and get(BASE+0x11804)==sum(peer==1 for peer,tid in rows[:64]) and get(BASE+0x11808)==sum(peer==2 for peer,tid in rows[:64])
+assert get(MB+38*4)==16 and get(BASE+0x11804)==sum(peer==1 for peer,tid in rows[:16]) and get(BASE+0x11808)==sum(peer==2 for peer,tid in rows[:16])
 call("ni_ingest")
 for peer,tid in set(rows):
  queue=peer*8+tid
@@ -57,7 +55,7 @@ for peer,tid in set(rows):
  assert get(BASE+0x16000+queue*4)==expected[-1]
 # COS selection and an invalid next entry must not publish an unconsumed BID.
 put(NI+0x659c,0x81<<24);put(NI+0x707c,8)
-at=PAYLOAD+100*2048
+at=PAYLOAD+20*2048
 u.mem_write(at+64,struct.pack(">II",0x80000000,72<<15|2)+bytes(8)+mac[1]+bytes.fromhex("0200000000030800")+bytes(50))
 u.mem_write(EPP+(7<<15),struct.pack("<II",at|0x50,80))
 call("ni_ingest"); assert get(NI+0x717c)==8
@@ -140,4 +138,4 @@ else:
  assert repeated['EPP_head']==8 and repeated['EPP_base']==1 and repeated['clock']==0, repeated
  assert repeated['TSF_low']==1 and repeated['TSF_high']==2, repeated
  assert repeated['header1']==normal['header1']==8, (repeated,normal)
-print(json.dumps(dict(batch_budget=64,wrapped_ring=True,mixed_peer_TID_FIFO=True,compact_EPP=True,retire_fence_after_queue_and_consumer=True,COS_priority=True,invalid_entry_not_consumed=True,active_TID_round_robin=True,stale_active_mask_reset=True,repeated_peer_DDR_reads=repeated,withdrawn_peer_DDR_reads=withdrawn,mid_batch_admission_withdrawal_preserved=True)))
+print(json.dumps(dict(batch_budget=16,wrapped_ring=True,mixed_peer_TID_FIFO=True,compact_EPP=True,retire_fence_after_queue_and_consumer=True,COS_priority=True,invalid_entry_not_consumed=True,active_TID_round_robin=True,stale_active_mask_reset=True,repeated_peer_DDR_reads=repeated,withdrawn_peer_DDR_reads=withdrawn,mid_batch_admission_withdrawal_preserved=True)))

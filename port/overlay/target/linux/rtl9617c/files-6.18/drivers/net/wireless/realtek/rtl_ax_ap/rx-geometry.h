@@ -33,8 +33,6 @@
 #define RTL_AX_TX_PUBLISH_READ 194
 #define RTL_AX_NI_PS_TIMEOUT 0x19800
 #define RTL_AX_NI_PS_SCAN 196
-/* Six PE1-owned words, one per published TX DMA channel. */
-#define RTL_AX_TX_LAST_PACKET 197
 /* PCIe retains eight consumed WDs per channel (factory txbd_multi_tag).
  * Keep 256 ring slots plus those eight pages, independent of RPQ WP IDs. */
 #define RTL_AX_TX_WD_PER_RING 264
@@ -48,6 +46,7 @@
 #define RTL_AX_NI_TX_ACTIVITY 0x1c000
 #define RTL_AX_NI_TX_NOTIFY_TIME 0x1d000
 /* PE1 publishes the last sixteen rejected RPQ records, without payloads. */
+#define RTL_AX_RX_PEER_BYTES 0x1d800
 #define RTL_AX_RPQ_FAULT_TRACE 0x1e000
 #define RTL_AX_RPQ_FAULT_SLOTS 16
 #define RTL_AX_RPQ_FAULT_WORDS 8

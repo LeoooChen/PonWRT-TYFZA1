@@ -51,10 +51,11 @@ static void put_unaligned_le64(u64 v,void *p){memcpy(p,&v,8);}
 """
 with tempfile.TemporaryDirectory() as temp:
  c=Path(temp)/'test.c';lib=Path(temp)/'test.so'
- c.write_text(prefix+(root/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rate.h').read_text()+"\nu8 run(u8 *c,u8 r,u8 p){return rtl_ax_ra_rssi_mask(c,r,p); }\n")
+ c.write_text(prefix+(root/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/rate.h').read_text()+"\nu8 run(u8 *c,u8 r,u8 p){return rtl_ax_ra_rssi_mask(c,r,p); }\nvoid noise(u8 *c,u8 n){rtl_ax_ra_environment(c,n);}\n")
  import subprocess
  subprocess.run(['cc','-shared','-fPIC','-O2','-Wall','-Werror',str(c),'-o',str(lib)],check=True)
  native=ctypes.CDLL(str(lib)).run;native.argtypes=[ctypes.c_void_p,ctypes.c_uint8,ctypes.c_uint8];native.restype=ctypes.c_uint8
+ noise=ctypes.CDLL(str(lib)).noise;noise.argtypes=[ctypes.c_void_p,ctypes.c_uint8]
  count=0
  for chip,band in [(8,1),(32,0)]:
   for mode,wm,mask in [('HE',0x24 if band else 0x23,0xffffff010 if band else 0xffffff015),('VHT',0x14,0x3ff3ff010),('HT',0xc if band else 0xb,0x0ff0ff010 if band else 0xff0ff015),('OFDM',4,0xff0),('CCK',1,15),('BG',3,0xff5)]:
@@ -75,4 +76,16 @@ with tempfile.TemporaryDirectory() as temp:
       assert out.raw==want,(chip,mode,width,rssi,previous,out.raw.hex(),want.hex())
       assert level==oracle.unpack(bb+0xd6a+33,'B')[0]
       count+=1
+ # Registration, capability update and watchdog all consume the same NHM byte.
+ for chip in (8,32):
+  oracle.uc.mem_write(bb+3092,struct.pack('<I',chip))
+  for ratio in (0,1,2,100,254,255):
+   oracle.uc.mem_write(bb+0x234a,bytes([ratio]))
+   for name in ('rtw_halbb_raregistered','rtw_halbb_raupdate','halbb_ra_update_mask_watchdog'):
+    commands.clear();oracle.call(name,bb,sta)
+    original=bytes.fromhex(commands[-1]['payload'])
+    seed=bytearray(original);seed[15]^=1
+    out=ctypes.create_string_buffer(bytes(seed),16);noise(out,ratio)
+    assert out.raw==original,(chip,ratio,name,out.raw.hex(),original.hex())
+ print('Native NHM: 36 registration/update/watchdog commands match original, including failed ratio255')
  print('Native RSSI watchdog:',count,'complete 16-byte commands and hysteresis states match original C/XB ARM64')

@@ -11,6 +11,9 @@ struct packed_word { u32 value; } __attribute__((packed));
 #define TX_BURST 8
 #include "rx-geometry.h"
 #include "tx-ownership.h"
+#include "traffic-flow.h"
+#include "amsdu-queue.h"
+#include "qos.h"
 #include <linux/rtl9617c-qm-layout.h>
 
 static inline void sync(void) { __asm__ volatile("sync" ::: "memory"); }
@@ -509,10 +512,10 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	 * retain the old length boundary guard against zero-packet TX stalls.
 	 * Record every descriptor, including ARM frames sharing this DMA ring. */
 	u32 context = (flags & 0x7f000000) | (flags & BIT(12)) << 11;
-	u32 previous = mailbox[RTL_AX_TX_LAST_PACKET + ring], bytes = packet & 0x3fff;
+	u32 previous = mailbox[197 + ring], bytes = packet & 0x3fff;
 	u32 boundary = (previous & ~0x3fffU) != context ||
 		(!(aggregation & RTL_AX_TX_AGG_PRELOAD) && bytes < (previous & 0x3fff));
-	mailbox[RTL_AX_TX_LAST_PACKET + ring] = context | bytes;
+	mailbox[197 + ring] = context | bytes;
 	word(page + 12, sequence | (aggregate ? BIT(12) : BIT(13)) |
 		(boundary ? BIT(13) : 0));
 	word(page + 16, dw4); word(page + 20, dw5);
@@ -547,6 +550,9 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	if (mailbox[24]) mailbox[32 + ring] = next;
 	if (ni_packet) {
 		mailbox[28] += ni_frames; mailbox[56]++;
+		u32 *stats = (void *)(memory + RTL_AX_TX_PEER_STATS + ((flags >> 24) & 127) * 8);
+		stats[0] += (packet & 0x3fff) - ((packet >> 16) & 63) - 8;
+		stats[1] += ni_frames;
 		u32 queue = ((flags >> 24) & 127) * 8 + (flags & 7);
 		(*(u32 *)(memory + RTL_AX_NI_TX_ACTIVITY + queue * 4)) += ni_frames;
 		/* Flush the last sparse packet too, without waiting for another TX. */
@@ -672,6 +678,13 @@ static void __attribute__((section(".rxq"), noinline)) ni_recycle(volatile u32 *
 		}
 #endif
 		if (buffer) break;
+#ifdef PE_UPLINK
+		if (!dropped && macid) {
+			static const u8 ac[8] = {0, 1, 1, 0, 2, 2, 3, 3};
+			u32 tid = *(u32 *)(memory + RTL_AX_NI_TIDS + id * 4) & 7;
+			(*(u32 *)(memory + RTL_AX_TX_NI_AC_PENDING + (macid * 4 + ac[tid]) * 4))--;
+		}
+#endif
 		owners[id * 2 + 1] = 0;
 		released++;
 		if (dropped) mailbox[47] = 0;
@@ -819,9 +832,8 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 			if (consumer == arm_producer) {
 				if (!mailbox[24]) goto publish_tx;
 #ifdef PE_UPLINK
-				/* Admit enough MSDUs for one bounded publish turn, sharing
-				 * queue accounting and the TSF read across its MPDUs.
-				 * Refill early when this turn has consumed its input. */
+				/* Share admission work across this bounded publish turn;
+				 * refill early if selections consume the queued input. */
 				if (!burst || mailbox[38] < 8)
 					ni_ingest(mailbox, memory);
 				ni_frames = ni_select(mailbox, memory, ni_request);
