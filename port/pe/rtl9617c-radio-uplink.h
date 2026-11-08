@@ -120,7 +120,7 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) rx_frame(
 		return 0;
 	}
 	if (data[header + 3] != (0x20 | (config & 3) << 6)) return 0;
-	if (bytes < header + 28) return 0;
+	if (bytes < header + 28 + (config & BIT(24) ? 8 : 0)) return 0;
 	*frame = buffer + offset; *length = bytes; *station = macid;
 	return header;
 }
@@ -187,7 +187,8 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	if (available <= 2) { mailbox[111]++; return RX_NI_BUSY; }
 	available -= 2;
 	if (available > 63) available = 63;
-	u32 body = length - header - 20, offset = 0, frames = 1;
+	u32 body = length - header - 20 -
+		(*(u32 *)(states + RX_PEER_CONFIG + macid * 4) & BIT(24) ? 8 : 0), offset = 0, frames = 1;
 	if (!amsdu) {
 		/* LLC + IPv4 + UDP is 36 bytes, producing a 42-byte NI frame. */
 		const u8 *destination = frame + (client ? 4 : 16);

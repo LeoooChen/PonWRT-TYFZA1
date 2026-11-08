@@ -534,7 +534,7 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	u32 dw10 = aggregate ? ((aggregation >> 8) & 7) << 18 : 0;
 	if (flags & (BIT(15) | BIT(16))) {
 		dw0 |= 1U << 24; /* Eight-byte CCMP IV inserted by the chip. */
-		dw1 |= 6 | ((aggregation >> 24) & 3) << 4;
+		dw1 |= (aggregation & RTL_MC_PE_KEY_GCMP ? 8 : 6) | ((aggregation >> 24) & 3) << 4;
 		dw10 |= BIT(8) | ((aggregation >> 16) & 127);
 		if (flags & BIT(16)) dw0 |= BIT(6);
 		else {

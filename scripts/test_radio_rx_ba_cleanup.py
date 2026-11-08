@@ -74,7 +74,9 @@ static void wiphy_work_queue(struct wiphy *w,struct wiphy_work *work){(void)w;(v
 static bool rtl_ax_security_cleanup(struct rtl_ax_ap *r){(void)r;return false;}
 static int rtl_ax_station_release(struct rtl_ax_ap *r,unsigned id){(void)r;(void)id;assert(0);return 0;}
 static int rtl_ax_tx_ba_finish(struct rtl_ax_ap *r,unsigned id,unsigned tid){(void)r;(void)id;(void)tid;assert(0);return 0;}
-struct ieee80211_key_conf {unsigned hw_key_idx,keyidx;};
+struct ieee80211_key_conf {unsigned hw_key_idx,keyidx,cipher;};
+#define WLAN_CIPHER_SUITE_GCMP 8
+#define RTL_MC_PE_KEY_GCMP (1U<<27)
 #define time_after_eq(a,b) ((long)((a)-(b))>=0)
 static unsigned long jiffies;
 static void rcu_read_lock(void){}static void rcu_read_unlock(void){}

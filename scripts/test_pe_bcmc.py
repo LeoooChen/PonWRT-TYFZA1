@@ -10,7 +10,7 @@ Machine,base,mb,ni,bar,payload,table,requests=(e[n] for n in ('Machine','base','
 RING,PAGES,REPORTS,FWD=0x5000000,0x5100000,0x5200000,0x5300000
 SEQ,BCMC=base+0x1fd00,base+0x1fd40
 
-def machine(cam=63,keyid=2,rate=4,group=None,length=84,full=True):
+def machine(cam=63,keyid=2,rate=4,group=None,length=84,full=True,gcmp=False):
  m=Machine(full=full)
  m.frame=m.frame[:14]+bytes([0xa5])*(length-14)
  m.u.mem_write(payload+64+m.header,bytes(m.frame))
@@ -20,7 +20,7 @@ def machine(cam=63,keyid=2,rate=4,group=None,length=84,full=True):
   m.put(mb+i*4,v)
  ap=bytes.fromhex('020000000001');group=group or e['group']
  m.u.mem_write(mb+64,ap);m.u.mem_write(payload+64+m.header,group)
- key=(cam<<16|keyid<<24) if cam is not None else 0
+ key=(cam<<16|keyid<<24|(1<<27 if gcmp else 0)) if cam is not None else 0
  generation=11 if cam is not None else 0
  m.put(SEQ,23);m.put(SEQ+16,4095)
  m.u.mem_write(BCMC,struct.pack('<5I',29,23,generation,rate,key)+ap+bytes(2))
@@ -57,7 +57,7 @@ def finish(m):
  assert not m.get(base+0x40000+(5*4096+tag)*4)
 
 if os.environ.get('RTL_TEST_AP_GROUP_RECORD'):
- m=machine();record=Path(os.environ['RTL_TEST_AP_GROUP_RECORD']).read_bytes();assert len(record)==96
+ m=machine(gcmp=True);record=Path(os.environ['RTL_TEST_AP_GROUP_RECORD']).read_bytes();assert len(record)==96
  epoch,control=struct.unpack_from('<II',record);m.put(table,epoch)
  m.u.mem_write(table+16+9*96,record);m.u.mem_write(payload+64+m.header,record[8:14]);m.u.mem_write(mb+64,record[80:86]);m.u.mem_write(BCMC+20,record[80:86])
  # Feed the exact NI source and packet size captured by the complete learner.
@@ -66,25 +66,27 @@ if os.environ.get('RTL_TEST_AP_GROUP_RECORD'):
  print('Complete bridge/FE record reached direct BCMC HIQ and real RPQ/EQ')
 
 cases=0
-for cam in (None,0,63,127):
- for keyid in range(4):
-  for group in (e['group'],bytes.fromhex('333300010203'),bytes([255])*6):
-   m=machine(cam,keyid,group=group);choose(m);publish(m)
-   assert m.get(mb+194*4)==1 and m.get(SEQ+16)==0
-   wd=PAGES+5*264*128
-   assert (m.get(wd)>>16)&15==9 and (m.get(wd+8)>>17)&63==0x11
-   assert not m.get(wd)&1<<6 and not m.get(wd+12)&1<<12
-   assert m.get(wd+12)&4095==4095 and m.get(wd+8)>>24==0
-   length,address=struct.unpack('<HI',m.u.mem_read(wd+64,6))
-   frame=bytes(m.u.mem_read(address,length&2047))
-   expected=bytes.fromhex('08420000' if cam is not None else '08020000')+group+bytes.fromhex('020000000001')+bytes(m.frame[6:12])+bytes.fromhex('f0ffaaaa030000000800')+bytes(m.frame[14:])
-   assert frame==expected
-   if cam is not None:
-    assert m.get(wd+4)&64 and m.get(wd+20)==65536
-    assert (m.get(wd+40)&511)==256|cam and m.get(wd+4)&0x30==keyid<<4
-   finish(m);cases+=1
+for gcmp in (False,True):
+ for cam in (None,0,63,127):
+  for keyid in range(4):
+   for group in (e['group'],bytes.fromhex('333300010203'),bytes([255])*6):
+    m=machine(cam,keyid,group=group,gcmp=gcmp);choose(m);publish(m)
+    assert m.get(mb+194*4)==1 and m.get(SEQ+16)==0
+    wd=PAGES+5*264*128
+    assert (m.get(wd)>>16)&15==9 and (m.get(wd+8)>>17)&63==0x11
+    assert not m.get(wd)&1<<6 and not m.get(wd+12)&1<<12
+    assert m.get(wd+12)&4095==4095 and m.get(wd+8)>>24==0
+    length,address=struct.unpack('<HI',m.u.mem_read(wd+64,6))
+    frame=bytes(m.u.mem_read(address,length&2047))
+    expected=bytes.fromhex('08420000' if cam is not None else '08020000')+group+bytes.fromhex('020000000001')+bytes(m.frame[6:12])+bytes.fromhex('f0ffaaaa030000000800')+bytes(m.frame[14:])
+    assert frame==expected
+    if cam is not None:
+     assert m.get(wd+4)&15==(8 if gcmp else 6)
+     assert m.get(wd+4)&64 and m.get(wd+20)==65536
+     assert (m.get(wd+40)&511)==256|cam and m.get(wd+4)&0x30==keyid<<4
+    finish(m);cases+=1
 for stage in ('ingress','queued','selected'):
- for fault in range(7):
+ for fault in range(8):
   m=machine()
   if stage!='ingress':m.ingest()
   if stage=='selected':
@@ -96,6 +98,7 @@ for stage in ('ingress','queued','selected'):
   if fault==4:m.put(base+0x1e900+63*40,12)
   if fault==5:m.put(BCMC+12,7)
   if fault==6:m.u.mem_write(mb+64,bytes.fromhex('020000000003'))
+  if fault==7:m.put(BCMC+16,m.get(BCMC+16)^(1<<27))
   if stage=='ingress':m.ingest()
   if stage=='selected':publish(m)
   else:assert not m.call('ni_select',mb,base,requests)

@@ -15,7 +15,7 @@ directory = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'artifacts/pe-rad
 binary = (directory / 'pe-tx.bin').read_bytes()
 
 
-def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False, multicast=False, noack=False, preserve_group=False, preload=True, policy=None, source=0, prepare_prefix=True, encrypted=True):
+def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False, multicast=False, noack=False, preserve_group=False, preload=True, policy=None, source=0, prepare_prefix=True, encrypted=True, gcmp=False):
     base, mb, pages, headers, payload, ring, bar, ni, reports = (
         0x04000000, 0x04002000, 0x05100000, 0x05400000, 0x06000000,
         0x05000000, 0x12000000, 0x10000000, 0x06200000)
@@ -39,7 +39,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         dst=bytes.fromhex('01005e010203')
     bssid = bytes.fromhex('020000009999')
     if multicast:
-        u.mem_write(table+16+96*9,struct.pack('<II',7,1|source<<16)+dst+bytes([1 if noack else 0,1])+bytes(64)+(bssid if client else dst)+bytes(2)+struct.pack('<II',(7<<16 if encrypted else 0),(1<<16 if encrypted else 0)|(1<<18)|(1<<23 if client else 0)))
+        u.mem_write(table+16+96*9,struct.pack('<II',7,1|source<<16)+dst+bytes([1 if noack else 0,1])+bytes(64)+(bssid if client else dst)+bytes(2)+struct.pack('<II',((7<<16)|(1<<27 if gcmp else 0) if encrypted else 0),(1<<16 if encrypted else 0)|(1<<18)|(1<<23 if client else 0)))
         put(mb+210*4,table)
     u.mem_write(mb + 64, ap)
     u.mem_write(base + 0xe408, bssid if client else dst)
@@ -49,7 +49,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
                          (117, 6), (140, mb | 0xa0000000), (142, 1)]:
         put(mb + index * 4, value)
     peer = [0, 0, 26 << 16, rate | bandwidth << 16 | (1 << 22 if hw_rts else 0),
-            1 << 24 | 1 << 18 | (1 << 16 if encrypted else 0) | (1 << 23 if client else 0) , (7 << 16 if encrypted else 0) | 32 | (1 << 15 if preload else 0), 0, 0]
+            1 << 24 | 1 << 18 | (1 << 16 if encrypted else 0) | (1 << 23 if client else 0) , ((7 << 16)|(1<<27 if gcmp else 0) if encrypted else 0) | 32 | (1 << 15 if preload else 0), 0, 0]
     u.mem_write(base + 0xd020, struct.pack('<8I', *peer))
     put(base + 0xe204, cap << 18)
     put(base + 0x12020, 32)  # negotiated BA limit, as consumed by ni_select
@@ -161,6 +161,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
             gathered += bytes(u.mem_read(address, length))
         assert gathered == expected, (lengths, count, len(gathered), len(expected))
         assert struct.unpack_from('<I', page, 8)[0] & 0x3fff == len(gathered)
+        assert struct.unpack_from('<I', page, 4)[0]&15 == ((8 if gcmp else 6) if encrypted else 0)
         assert bool(struct.unpack_from('<I', page, 0)[0] & (1 << 6)) == encrypted, 'incorrect hardware PN'
         assert bool(struct.unpack_from('<I', page, 0)[0] & (1 << 24)) == encrypted, 'incorrect security enable'
         if noack:

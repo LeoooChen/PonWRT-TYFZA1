@@ -29,12 +29,12 @@ struct rtl_ax_security_role {
 
 /* Original C/XB SEC_CAM H2C: index/length plus a 20-byte cipher/key entry. */
 static inline void rtl_ax_security_cam(u8 out[24], unsigned int index,
-	const u8 *key)
+	const u8 *key, unsigned int cipher)
 {
 	memset(out, 0, 24);
 	rtl_ax_store32(out, index | 20U << 16);
 	if (key) {
-		rtl_ax_store32(out + 4, 6); /* CCMP128 */
+		rtl_ax_store32(out + 4, cipher); /* Original CCMP128=6, GCMP128=8. */
 		memcpy(out + 8, key, 16);
 	}
 }
@@ -62,11 +62,11 @@ static inline void rtl_ax_security_dctl(u8 out[68], unsigned int macid,
 }
 
 static inline void rtl_ax_security_tx(u8 *descriptor, unsigned int index,
-	unsigned int keyid, u64 pn)
+	unsigned int keyid, u64 pn, unsigned int cipher)
 {
 	/* SW_SEC_IV selects this descriptor's PN; the chip inserts the IV. */
 	rtl_ax_store32(descriptor + 4, rtl_ax_ap_read32(descriptor + 4) |
-		RTL_AX_BIT(6) | 6 | keyid << 4);
+		RTL_AX_BIT(6) | cipher | keyid << 4);
 	rtl_ax_store32(descriptor + 16, (u32)(pn & 0xffff) << 16);
 	rtl_ax_store32(descriptor + 20, pn >> 16);
 	rtl_ax_store32(descriptor + 40, rtl_ax_ap_read32(descriptor + 40) |

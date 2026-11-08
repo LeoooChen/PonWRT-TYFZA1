@@ -18,7 +18,7 @@ code = env['code']
 code = code.replace('assert(separate?s->len==84:s->len==20);', 'assert(!separate&&s->len>=24);')
 code = code.replace('static unsigned find_first_zero_bit(const unsigned *p,unsigned n){(void)p;(void)n;return 0;}',
                     'static unsigned find_first_zero_bit(const unsigned *p,unsigned n){for(unsigned i=0;i<n;i++)if(!p[i])return i;return n;}')
-code = code.replace('static void rtl_ax_security_tx(u8 *page,unsigned id,unsigned key,u64 pn){(void)page;(void)id;(void)key;(void)pn;assert(0);}',
+code = code.replace('static void rtl_ax_security_tx(u8 *page,unsigned id,unsigned key,u64 pn,unsigned cipher){(void)page;(void)id;(void)key;(void)pn;(void)cipher;assert(0);}',
                     function((driver / 'security.h').read_text(), 'rtl_ax_security_tx'))
 code = code.replace('assert(reg==0x1078&&value==1);', 'assert(reg>=0x1058&&reg<=0x107c&&value<=3);')
 code = code.replace('struct ieee80211_tx_info {unsigned flags;',
@@ -53,7 +53,7 @@ linux = (env['kernel'] / 'net/mac80211/tx.c').read_text()
 code += 'static ieee80211_tx_result\n' + function(linux, 'ieee80211_tx_h_multicast_ps_buf')
 code += r'''
 int main(void){
- static u8 memory[0x20000],pages[6*264*128],headers[384*128],ring[6*256*8];
+ static u8 memory[0x80000],pages[6*264*128],headers[384*128],ring[6*256*8];
  const struct rtl_ax_io io={.write16=write16};
  const u8 groups[3][6]={{1,0,0x5e,1,2,3},{0x33,0x33,0,1,2,3},{255,255,255,255,255,255}};
  for(unsigned pe=0;pe<2;pe++)for(unsigned group=0;group<3;group++)
@@ -65,7 +65,7 @@ int main(void){
   struct ieee80211_local local={.hw=hw};
   struct ieee80211_sub_if_data sdata={.vif={.type=NL80211_IFTYPE_AP}};
   typeof(*sdata.bss) bss={};sdata.bss=&bss;
-  struct key key={.hw_key_idx=63,.keyidx=crypto?crypto-1:0,.tx_pn=0xffffffffULL,
+  struct key key={.cipher=getenv("RTL_TEST_GCMP")?8:4,.hw_key_idx=63,.keyidx=crypto?crypto-1:0,.tx_pn=0xffffffffULL,
    .rtl9617c_pn={.shared=memory,.generation=123}};
   struct sk_buff skb[3]={};u8 raw[3][324]={};
   for(unsigned phase=0;phase<3;phase++){

@@ -904,7 +904,8 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		if (pe_sequence)
 			request_flags = (request_flags & ~0xfffU) | tid | BIT(22);
 		if (info->control.hw_key) {
-			key = info->control.hw_key->hw_key_idx << 16 | info->control.hw_key->keyidx << 24;
+			key = info->control.hw_key->hw_key_idx << 16 | info->control.hw_key->keyidx << 24 |
+				(info->control.hw_key->cipher == WLAN_CIPHER_SUITE_GCMP ? RTL_MC_PE_KEY_GCMP : 0);
 			if ((info->control.hw_key->flags & IEEE80211_KEY_FLAG_PAIRWISE) &&
 			    (encap || ieee80211_is_data(header->frame_control))) {
 				request_flags |= BIT(16);
@@ -1013,7 +1014,8 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		if ((info->control.hw_key->flags & IEEE80211_KEY_FLAG_PAIRWISE) &&
 		    (encap || ieee80211_is_data(header->frame_control))) {
 			rtl_ax_store32(page, rtl_ax_ap_read32(page) | BIT(6));
-			rtl_ax_store32(page + 4, rtl_ax_ap_read32(page + 4) | 6 |
+			rtl_ax_store32(page + 4, rtl_ax_ap_read32(page + 4) |
+				(info->control.hw_key->cipher == WLAN_CIPHER_SUITE_GCMP ? 8 : 6) |
 				info->control.hw_key->keyidx << 4);
 			rtl_ax_store32(page + 40, rtl_ax_ap_read32(page + 40) | BIT(8) |
 				info->control.hw_key->hw_key_idx);
@@ -1021,7 +1023,8 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 			tx->hardware_pn++;
 		} else
 			rtl_ax_security_tx(page, info->control.hw_key->hw_key_idx,
-				info->control.hw_key->keyidx, atomic64_inc_return(&info->control.hw_key->tx_pn));
+				info->control.hw_key->keyidx, atomic64_inc_return(&info->control.hw_key->tx_pn),
+				info->control.hw_key->cipher == WLAN_CIPHER_SUITE_GCMP ? 8 : 6);
 		tx->encrypted++;
 	}
 	if (tx->checksum_enabled)

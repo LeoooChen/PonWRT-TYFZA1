@@ -40,6 +40,13 @@ code = r'''
 #include <string.h>
 typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u64;
 typedef u16 __le16;typedef u32 dma_addr_t;
+#define WLAN_CIPHER_SUITE_GCMP 8
+#define RTL_MC_PE_KEY_GCMP (1U<<27)
+#define RTL_MC_PE_CAP_MAILBOX 211
+#define RTL_MC_PE_CAPABILITY 0x4d435037U
+#define RTL_MC_PE_CPU_STAMPS 0x68000
+#define RTL_AX_TX_NI_AC_PENDING 0x3e000
+#define RTL_AX_TX_ARM_AC_PENDING 0x3e800
 #define BIT(n) (1U<<(n))
 #define RTL_AX_BIT BIT
 #define READ_ONCE(x) (x)
@@ -97,7 +104,7 @@ static unsigned rtl9617c_key_pn_token(struct rtl_key_pn *p){return p->shared?p->
 struct ieee80211_hdr {u16 frame_control,duration_id;u8 addr1[6],addr2[6],addr3[6];u16 seq_ctrl;} __attribute__((packed));
 struct ieee80211_bar {u16 frame_control,duration;u8 ra[6],ta[6];u16 control,start_seq_num;} __attribute__((packed));
 struct ieee80211_tx_rate {int idx;unsigned flags,count;};
-struct key {unsigned flags,hw_key_idx,keyidx;u64 tx_pn;struct rtl_key_pn rtl9617c_pn;};
+struct key {unsigned cipher,flags,hw_key_idx,keyidx,iv_len;u64 tx_pn;struct rtl_key_pn rtl9617c_pn;};
 struct vif {unsigned type;};
 static unsigned sequence_calls;static int sequence_error;
 static int ieee80211_rtl9617c_next_sequence(struct vif *v,u16 *s){assert(v);sequence_calls++;*s=0xabc0;return sequence_error;}
@@ -109,9 +116,10 @@ struct ieee80211_sta {void *drv_priv;struct {struct {unsigned ampdu_density;}ht_
 struct ieee80211_tx_control {struct ieee80211_sta *sta;};
 struct scatterlist {u32 dma,len;};
 struct rtl_ax_tx_mapping {struct scatterlist sg[10];unsigned count,dma_count;};
-struct rtl_ax_tx_slot {struct sk_buff *skb;u64 fttr_generation;dma_addr_t dma;unsigned bytes,ring,key_index,macid,tid;bool encrypted,pe_sequence,firmware_rate,pe_key_pn;struct rtl_ax_tx_mapping *mapping;};
+struct rtl_ax_tx_slot {struct sk_buff *skb;u64 fttr_generation;dma_addr_t dma;unsigned bytes,ring,key_index,macid,tid;bool encrypted,pe_sequence,firmware_rate,pe_key_pn,pe_mcast,quota_counted;struct rtl_ax_tx_mapping *mapping;};
 struct rtl_ax_io {void *ctx;void (*write16)(void *,unsigned,unsigned);};
 struct rtl_ax_tx {u64 bcmc_policy_attempt;bool bcmc_enabled;bool running,dfs_blocked,pe_active,checksum_enabled,queues_stopped;
+ unsigned wmm_quota,ac_pending[128][4],wmm_dropped,peer_bytes[128],peer_packets[128],ac_packets[4];unsigned peer_flows[128][64];
  bool peer_preload[128];bool peer_qos[128],peer_authorized[128],peer_asleep[128],peer_offloaded[128],peer_client[128];u32 peer_rates[128];u64 mcast_policy_attempt[128];
  int lock,fttr_work;struct {void *memory;}pe;u8 *pages,*headers,*ring;u32 pages_dma;
  unsigned pe_producer,producer[6],wd_producer[6],pending[256],occupied,last_sequence,last_words[14];
@@ -137,11 +145,19 @@ static bool ieee80211_has_order(u16 f){return f&0x8000;}
 static bool ieee80211_has_morefrags(u16 f){return f&0x400;}
 static bool ieee80211_has_fromds(u16 f){return f&0x200;}
 static bool ieee80211_has_tods(u16 f){return f&0x100;}
+static bool ieee80211_has_protected(u16 f){return f&0x4000;}
 static u8 *ieee80211_get_qos_ctl(struct ieee80211_hdr *h){return (u8 *)h+24;}
 static unsigned ieee80211_rate_get_vht_nss(const struct ieee80211_tx_rate *r){return ((unsigned)r->idx>>4)+1;}
 static unsigned ieee80211_rate_get_vht_mcs(const struct ieee80211_tx_rate *r){return r->idx&15;}
 static bool is_multicast_ether_addr(const u8 *p){return *p&1;}
 static u32 get_unaligned_le32(const void *p){u32 v;memcpy(&v,p,4);return v;}
+static u16 get_unaligned_le16(const void *p){u16 v;memcpy(&v,p,2);return v;}
+#define skb_walk_frags(s,p) for((p)=NULL;(p);)
+static unsigned skb_headlen(struct sk_buff *s){return s->len;}
+static void rtl_ax_traffic_flow_hit(void *flows,unsigned low,unsigned high,unsigned now,unsigned count){(void)flows;(void)low;(void)high;(void)now;(void)count;}
+static int rtl9617c_bridge_mcast_tx_stamp(const struct sk_buff *s,u32 *stamp){(void)s;*stamp=0;return 0;}
+static bool rtl9617c_bridge_mcast_tx_get(u32 stamp){assert(!stamp);return true;}
+static void rtl9617c_bridge_mcast_tx_put(bool held){assert(!held);}
 static void put_unaligned_le32(u32 v,void *p){memcpy(p,&v,4);}
 static void rtl_ax_store32(void *p,u32 v){memcpy(p,&v,4);}
 #define rtl_ax_ap_read32 get_unaligned_le32
@@ -160,7 +176,7 @@ static bool ether_addr_equal(const u8 *a,const u8 *b){return !memcmp(a,b,6);}
 static int rtl_ax_tx_map(struct rtl_ax_tx *tx,struct sk_buff *s,struct rtl_ax_tx_slot *slot,bool *linearized,bool separate){
  (void)tx;(void)linearized;assert(separate?s->len==84:s->len==20);slot->dma=0x09000000;maps++;return 1;}
 static void rtl_ax_tx_unmap(struct rtl_ax_tx *tx,const struct rtl_ax_tx_slot *slot){(void)tx;assert(slot->dma==0x09000000);unmaps++;}
-static void rtl_ax_security_tx(u8 *page,unsigned id,unsigned key,u64 pn){(void)page;(void)id;(void)key;(void)pn;assert(0);}
+static void rtl_ax_security_tx(u8 *page,unsigned id,unsigned key,u64 pn,unsigned cipher){(void)page;(void)id;(void)key;(void)pn;(void)cipher;assert(0);}
 static void write16(void *ctx,unsigned reg,unsigned value){(void)ctx;assert(reg==0x1078&&value==1);doorbells++;}
 #define for_each_sg(list,sg,n,i) for((i)=0;(i)<(n)&&((sg)=&(list)[i],1);(i)++)
 #define sg_dma_address(s) ((s)->dma)
@@ -184,7 +200,7 @@ for name in ('rtl_ax_tx_wd', 'rtl_ax_tx_checksum', 'rtl_ax_tx_raw_fw_rate', 'rtl
 code += function(monitor, 'rtl_ax_monitor_tx')
 code += r'''
 int main(void){
- static u8 memory[0x20000],pages[6*264*128],headers[384*128],ring[6*256*8];
+ static u8 memory[0x80000],pages[6*264*128],headers[384*128],ring[6*256*8];
  const u8 original[20]={0x84,0,0,0,2,1,2,3,4,5,2,6,7,8,9,10,4,0x60,0xc0,0xab};
  struct rtl_ax_station private={7};struct ieee80211_sta sta={.drv_priv=&private,.deflink={.ht_cap={7}}};
  const struct rtl_ax_io io={.write16=write16};

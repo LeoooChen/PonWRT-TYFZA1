@@ -7688,6 +7688,52 @@ remains outstanding; no guessed microsecond charge or new TSPEC admission is
 introduced here. Non-QoS software forwarding/sequence support remains separate
 from the original QoS/AMPDU TXSC gate.
 
+### GCMP128 across native key and accelerated packet paths
+
+The native driver now accepts GCMP128 as well as CCMP128. Executing the target
+C/XB Security CAM and DATA descriptor encoders confirms GCMP type8 (CCMP type6),
+one16-byte key entry, unchanged DCTL slot ownership and the same48-bit packet
+number fields. The extended `trace_stock_security.py --module PATH` compares590
+CAM/DCTL/TX/drop cases. The256-bit variants need separate extended-key ownership
+and remain unsupported by native hardware offload.
+
+Algorithm identity is part of each cached peer template and immutable FE/PE
+recipe (key bit27); the worker checks it with the selected Linux key/CAM/index.
+PTK and GTK ARM descriptors and PE WD builders select the actual cipher type.
+Direct AP BCMC keeps HIQ, shared GTK PN and interface sequence handling; both
+CCMP/GCMP transitions revoke old recipes even when their CAM index is unchanged.
+MCP7 capability prevents mixing these recipes with older PE firmware.
+
+Software GCMP's real `gcmp_encrypt_skb` now allocates from the existing shared
+PN domain, including software management frames sharing a GTK with PE. The
+mac80211 RX snapshot/sync path uses the correct GCMP PN member, and successful
+protected GCMP QoS reception can establish shortcut state. Native RX publishes
+the selected cipher with peer admission; PE validates the longer minimum frame
+and removes16 MIC bytes for GCMP (eight for CCMP), preserving IV/PN and all
+existing address, BA, replay, PS and error checks. Software fallback continues
+to receive the original IV/MIC and verify receive PN through mac80211.
+
+Validation covers519 selected-key cases,33792 ARM request combinations,1024
+worker failure/retry combinations, both cipher CAM installation/cleanup faults,
+60000 concurrent shared PN allocations and64 actual software-cipher/PE
+alternations. Actual Linux RX snapshot/sync passes128 PN/BA/authorization cases
+plus native cipher transitions. Actual linked PE tests exercise both radios,
+AP/STA, IPv4/IPv6, single/A-MSDU, exact Ethernet bytes, replay/decrypt/address
+rejection, GCMP M2U and BCMC, and complete learner records through real RPQ/EQ
+recycling. Two full ARM/PE BCMC runs compare90 submissions and45 linked WD
+publications per cipher, including all four GTK IDs, PN carry and PS transitions.
+Existing open/CCMP, FTTR generation, PS/withdrawal, prefix, PN/sequence and
+multicast policy tests pass. Hardware encryption/decryption effects remain
+modeled in these offline tests; no physical cryptographic/airtime claim is made.
+
+Image/modules build, nine changed overlay/kernel inputs, zero-fuzz patch
+reverse/replay and repeat firmware output pass. Combined PE is31948 bytes,
+SHA256 `32b0a853fbc990618c359326995fac4256d19b28060d6a9b99082ff31d944fff`,
+conservative stack7288/8192; non-uplink13868 bytes. Local artifacts use
+`artifacts/fttr/gcmp-*-20261109.*`. No device was accessed. Full hardware
+retirement/ID reuse, multiple VIFs, TSPEC and remaining factory-management
+capabilities stay within the unfinished full goal.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

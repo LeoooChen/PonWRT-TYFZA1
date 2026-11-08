@@ -23,6 +23,7 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u6
 #define WRITE_ONCE(v,x) ((v)=(x))
 #define NL80211_IFTYPE_AP 3
 #define WLAN_CIPHER_SUITE_CCMP 4
+#define WLAN_CIPHER_SUITE_GCMP 8
 #define KEY_FLAG_UPLOADED_TO_HARDWARE 1
 #define KEY_FLAG_TAINTED 2
 #define IEEE80211_KEY_FLAG_PAIRWISE 1
@@ -80,13 +81,13 @@ int main(void){
  struct wiphy w={.frag_threshold=~0U};struct ieee80211_local l={.hw={&w}};struct net_device dev={},other={};
  struct ieee80211_sub_if_data s={.vif={.type=3,.addr={2,0,0,0,0,1},.wdev={&dev}},.local=&l,.control_port_protocol=0x888e};
  struct ieee80211_key keys[4];struct ieee80211_key_conf *key;
- for(unsigned i=0;i<4;i++)keys[i]=(struct ieee80211_key){.flags=1,.conf={.cipher=4,.hw_key_idx=60+i,.keyidx=i,.rtl9617c_pn=10+i}};
+ for(unsigned i=0;i<4;i++)keys[i]=(struct ieee80211_key){.flags=1,.conf={.cipher=(i&1)?8:4,.hw_key_idx=60+i,.keyidx=i,.rtl9617c_pn=10+i}};
  static u8 memory[0x80000];struct rtl_ax_tx t={.pe_active=true,.pe={memory},.ni={.cpu=3}};
  struct rtl_mc_pe_bcmc *b=(void*)(memory+RTL_MC_PE_BCMC_BASE);struct rtl_seq_shared *seq=(void*)(memory+RTL_SEQ_BASE);seq->generation=23;
  for(unsigned i=0;i<4;i++){
   s.deflink.default_multicast_key=&keys[i];assert(!ieee80211_rtl9617c_bcmc_key(&s.vif,&key)&&key==&keys[i].conf);
   assert(!rtl_ax_tx_bcmc(&t,&s.vif,key,4)&&b->generation&&last.bcmc_generation==b->generation);
-  assert(last.key==((60+i)<<16|i<<24));assert(last.key_generation==10+i&&last.sequence==23);
+  assert(last.key==((60+i)<<16|i<<24|((i&1)?RTL_MC_PE_KEY_GCMP:0)));assert(last.key_generation==10+i&&last.sequence==23);
   unsigned before=revokes,g=b->generation;assert(!rtl_ax_tx_bcmc(&t,&s.vif,key,4)&&revokes==before&&b->generation==g);
  }
  assert(prepares==1&&dev.refs==1&&t.bcmc_enabled);
@@ -121,7 +122,7 @@ int main(void){
  cpu_pending=false;fail_wait=0;
  assert(!rtl_ax_tx_bcmc_stop(&t)&&drops==prior+2&&!t.bcmc_retiring);
  assert(!rtl_ax_tx_bcmc_stop(&t)&&drops==prior+2);
- puts("BCMC template: actual Linux default GTK selection, open/CCMP, unchanged templates, change/publish failure, stop/pause/drop errors, generation exhaustion and partial NI restart passed");
+ puts("BCMC template: actual Linux default GTK selection, open/CCMP/GCMP, unchanged templates, change/publish failure, stop/pause/drop errors, generation exhaustion and partial NI restart passed");
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:

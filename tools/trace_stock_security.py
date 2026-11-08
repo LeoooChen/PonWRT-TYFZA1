@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Execute the original C/XB Security CAM, DCTL and encrypted TX encoders."""
 from pathlib import Path
+import argparse
 import struct
 import ctypes
 import subprocess
@@ -9,6 +10,9 @@ from arm64_module_oracle import ModuleOracle
 
 root = Path(__file__).resolve().parents[1]
 module = root / 'analysis/private/live-files/lib/modules/5.10.70/kernel/drivers/net/wireless/realtek/g6_wifi_driver/rtk_wifi6.ko'
+parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--module',type=Path,default=module)
+options=parser.parse_args();module=options.module
 names = [base + '_' + chip for chip in ('8852c', '8192xb')
          for base in ('fill_sec_cam_info', 'upt_dctl_secinfo_entry',
                       'mac_upd_dctl_info', 'txdes_proc_data', 'mac_txdesc_len')]
@@ -66,6 +70,7 @@ header = root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wirel
 typedef uint8_t u8;
 typedef uint32_t u32;
 typedef uint64_t u64;
+struct rtl_ax_io {void *ctx;u32(*read32)(void*,unsigned);void(*write32)(void*,unsigned,u32);};
 #define RTL_AX_AP_TRANSPORT_H
 #define RTL_AX_BIT(n) (1U << (n))
 #define BIT(n) RTL_AX_BIT(n)
@@ -73,9 +78,9 @@ typedef uint64_t u64;
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 static unsigned int rtl_ax_ap_read32(const u8 *p) { unsigned int x; memcpy(&x,p,4); return x; }
 static void rtl_ax_store32(u8 *p, unsigned int x) { memcpy(p,&x,4); }
-''' + '#include "' + str(header) + '"\n' + '#include "' + str(header.with_name('role.h')) + '"\n' + '''
-void native_cam(u8 *out, unsigned int index, const u8 *key) { rtl_ax_security_cam(out,index,key); }
-void native_tx(u8 *out, unsigned int index, unsigned int keyid, u64 pn) { rtl_ax_security_tx(out,index,keyid,pn); }
+''' + '#include "' + str(header) + '"\n' + ('static inline void rtl_ax_station_drop' + header.with_name('role.h').read_text().split('static inline void rtl_ax_station_drop',1)[1].split('\n}',1)[0] + '\n}\n') + '''
+void native_cam(u8 *out, unsigned int index, const u8 *key, unsigned cipher) { rtl_ax_security_cam(out,index,key,cipher); }
+void native_tx(u8 *out, unsigned int index, unsigned int keyid, u64 pn, unsigned cipher) { rtl_ax_security_tx(out,index,keyid,pn,cipher); }
 void native_dctl(u8 *out, unsigned int slot) {
  struct rtl_ax_security_role role = {.valid=1U << slot,.tx_keyid=1};
  role.keyid[slot]=1;role.cam[slot]=63;rtl_ax_security_dctl(out,7,&role);
@@ -85,36 +90,37 @@ void native_drop(u8 *out, unsigned int macid, unsigned int ac) { rtl_ax_station_
 subprocess.run(['cc', '-shared', '-fPIC', '-Wall', '-Wextra', '-Werror',
                 str(native_path / 'native.c'), '-o', str(native_path / 'native.so')], check=True)
 native = ctypes.CDLL(str(native_path / 'native.so'))
-native.native_tx.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint64]
+native.native_tx.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint64, ctypes.c_uint]
 native_output = ctypes.create_string_buffer(68)
 checks = 0
 for chip in ('8852c', '8192xb'):
-    for index in (0, 1, 63, 127):
-        oracle.uc.mem_write(info, bytes([index, 0, 20, 6]) + key)
-        assert oracle.call('fill_sec_cam_info_' + chip, adapter, info, output, 0) == 0
-        assert bytes(oracle.uc.mem_read(output, 24)) == struct.pack('<II', index | 20 << 16, 6) + key
-        native.native_cam(native_output, index, key)
-        assert native_output.raw[:24] == bytes(oracle.uc.mem_read(output, 24))
-        for keyid in range(4):
-            data = bytearray(96)
-            struct.pack_into('<H', data, 8, 1500)
-            struct.pack_into('<H', data, 14, 7)
-            data[20], data[21], data[24] = 13, 56, 6 << 4 | keyid << 1 | 9
-            data[32], data[33], data[34] = index, 0x30, 1
-            data[26:32] = bytes.fromhex('010203040506')
-            oracle.uc.mem_write(info, bytes(data))
-            length = oracle.call('mac_txdesc_len_' + chip, adapter, info)
-            assert oracle.call('txdes_proc_data_' + chip, adapter, info, output, length) == 0
-            words = oracle.unpack(output, '14I')
-            assert words[1] & 0x7f == 64 | 6 | keyid << 4, (chip, words)
-            assert words[10] & 0x1ff == 256 | index, (chip, words)
-            assert words[4] >> 16 == 0x0201 and words[5] == 0x06050403
-            ctypes.memset(native_output, 0, 68)
-            native.native_tx(native_output, index, keyid, 0x060504030201)
-            built = struct.unpack('<17I', native_output.raw)
-            assert built[1] == words[1] & 0x7f
-            assert all(built[w] == words[w] for w in (4, 5, 10)), (chip, built, words)
-            checks += 1
+    for cipher in (6,8):
+        for index in (0, 1, 63, 127):
+            oracle.uc.mem_write(info, bytes([index, 0, 20, cipher]) + key)
+            assert oracle.call('fill_sec_cam_info_' + chip, adapter, info, output, 0) == 0
+            assert bytes(oracle.uc.mem_read(output, 24)) == struct.pack('<II', index | 20 << 16, cipher) + key
+            native.native_cam(native_output, index, key, cipher)
+            assert native_output.raw[:24] == bytes(oracle.uc.mem_read(output, 24))
+            for keyid in range(4):
+                data = bytearray(96)
+                struct.pack_into('<H', data, 8, 1500)
+                struct.pack_into('<H', data, 14, 7)
+                data[20], data[21], data[24] = 13, 56, cipher << 4 | keyid << 1 | 9
+                data[32], data[33], data[34] = index, 0x30, 1
+                data[26:32] = bytes.fromhex('010203040506')
+                oracle.uc.mem_write(info, bytes(data))
+                length = oracle.call('mac_txdesc_len_' + chip, adapter, info)
+                assert oracle.call('txdes_proc_data_' + chip, adapter, info, output, length) == 0
+                words = oracle.unpack(output, '14I')
+                assert words[1] & 0x7f == 64 | cipher | keyid << 4, (chip, words)
+                assert words[10] & 0x1ff == 256 | index, (chip, words)
+                assert words[4] >> 16 == 0x0201 and words[5] == 0x06050403
+                ctypes.memset(native_output, 0, 68)
+                native.native_tx(native_output, index, keyid, 0x060504030201, cipher)
+                built = struct.unpack('<17I', native_output.raw)
+                assert built[1] == words[1] & 0x7f
+                assert all(built[w] == words[w] for w in (4, 5, 10)), (chip, built, words)
+                checks += 1
     for slot in range(7):
         data = bytearray(32)
         data[8], data[10], data[11 + slot], data[18 + slot] = 1, 1 << slot, 1, 63

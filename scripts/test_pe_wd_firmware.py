@@ -49,7 +49,7 @@ void expected(u8 *page,const u32 *r){
  rtl_ax_tx_wd(page,r[2]&65535,count,r[3]&511,(r[3]>>12)&7,(r[3]>>16)&3,flags&4095,
  (r[2]>>16)&63,!!(flags&BIT(13)),!!(flags&BIT(14)),channels[ring],ring<4?ring:ring==4?0x12:0x11,
  !!(flags&BIT(12)),flags>>24,ag,(r[5]>>8)&7);
- if(flags&BIT(15))rtl_ax_security_tx(page,(r[5]>>16)&127,(r[5]>>24)&3,(u64)r[7]<<32|r[6]);
+ if(flags&BIT(15))rtl_ax_security_tx(page,(r[5]>>16)&127,(r[5]>>24)&3,(u64)r[7]<<32|r[6],(r[5]&(1U<<27))?8:6);
  if(flags&BIT(16)){rtl_ax_store32(page,rtl_ax_ap_read32(page)|BIT(6));rtl_ax_store32(page+4,rtl_ax_ap_read32(page+4)|6|((r[5]>>24)&3)<<4);rtl_ax_store32(page+40,rtl_ax_ap_read32(page+40)|BIT(8)|((r[5]>>16)&127));}
  if(flags&BIT(17))rtl_ax_tx_checksum(page);
  rtl_ax_tx_wp_sequence(page+56, r[0]|(flags&BIT(12)?BIT(14):0));

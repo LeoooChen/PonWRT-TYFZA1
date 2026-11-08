@@ -38,7 +38,7 @@ def packet(ipv6, payload_bytes):
 
 
 def case(directory, slot, ipv6, payload_bytes, fe_ready=True, client=False,
-         wrong_direction=False, amsdu=False, corrupt=None):
+         wrong_direction=False, amsdu=False, corrupt=None, gcmp=False):
     directory = Path(directory)
     symbols = subprocess.check_output(['llvm-nm-18', str(directory / 'pe-wd.elf')], text=True)
     entry = next(int(s.split()[0], 16) for s in symbols.splitlines() if s.endswith(' rx_uplink'))
@@ -59,7 +59,7 @@ def case(directory, slot, ipv6, payload_bytes, fe_ready=True, client=False,
     u.mem_write(base + 0xe410, peer)
     put(base + 0x11a08, 1)
     put(base + 0xd000 + 2 * 32 + 16, (1 << 23) if client else 0)
-    put(states + 0x10008, 1 << 31 | (slot + 1) << 8)
+    put(states + 0x10008, 1 << 31 | (slot + 1) << 8 | (1<<24 if gcmp else 0))
     put(states + 2 * 512, 1 << 31 | 0x123)
     for index, value in [(88, vp | 0xa0000000), (89, descriptors), (93, 1), (106, states), (187, base)]:
         put(mb + index * 4, value)
@@ -78,7 +78,7 @@ def case(directory, slot, ipv6, payload_bytes, fe_ready=True, client=False,
             body += ethernet[:12] + struct.pack('>H', len(llc)) + llc
     else:
         body = llc
-    frame = header + bytes.fromhex('0200002000000000') + body + bytes(12)
+    frame = header + bytes.fromhex('0200002000000000') + body + bytes(20 if gcmp else 12)
     raw = bytearray(36) + frame
     struct.pack_into('<II', raw, 0, len(raw) | 0xc000 | 1 << 16, len(frame) | 1 << 31)
     struct.pack_into('<I', raw, 16, 4)  # Successful hardware decrypt, no errors.

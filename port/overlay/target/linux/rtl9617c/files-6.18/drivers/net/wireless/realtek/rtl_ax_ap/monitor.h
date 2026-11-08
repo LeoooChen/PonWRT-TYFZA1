@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 #include <linux/rtl9617c-wifi-policy.h>
+#include <linux/rtl9617c-mcast-pe.h>
 /* Linux receive integration for the native C 5GHz and XB2.4GHz paths.
  * Hardware channel and filters reuse the original-backed native controls. */
 #ifndef RTL_AX_AP_MONITOR_H
@@ -414,7 +415,8 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 			if (radio->security_unlink[index] == macid + 1) break;
 		if (index != RTL_AX_SECURITY_ENTRIES ||
 		    !rtl_ax_tx_peer_security(radio->tx, macid,
-			key ? role->cam[role->tx_keyid] : RTL_AX_SECURITY_ENTRIES, key ? role->tx_keyid : 0)) continue;
+			key ? role->cam[role->tx_keyid] | (key->cipher == WLAN_CIPHER_SUITE_GCMP ? RTL_MC_PE_KEY_GCMP >> 16 : 0) :
+			RTL_AX_SECURITY_ENTRIES, key ? role->tx_keyid : 0)) continue;
 		ret = rtl_ax_tx_ni_peer(radio->tx, ieee80211_vif_to_wdev(vif)->netdev, macid);
 		radio->offload_result = min(ret, 0);
 		if (ret < 0) radio->offload_retry = true;
@@ -736,7 +738,7 @@ static int rtl_ax_station_release(struct rtl_ax_ap *radio, unsigned int macid)
 					ret = rtl_ax_tx_key_pn_unbind(radio->tx, key);
 					if (ret) return ret;
 				}
-				rtl_ax_security_cam(security, keys->cam[i], NULL);
+				rtl_ax_security_cam(security, keys->cam[i], NULL, 0);
 				ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 10, 1, security, sizeof(security), true);
 				if (ret)
 					return ret;
@@ -858,7 +860,7 @@ static bool rtl_ax_security_cleanup(struct rtl_ax_ap *radio)
 			if (!macid || (radio->security_roles[macid].valid & 3))
 				rtl_ax_offload_ready(radio);
 		}
-		rtl_ax_security_cam(cam, index, NULL);
+		rtl_ax_security_cam(cam, index, NULL, 0);
 		if (rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 10, 1, cam, sizeof(cam), true)) {
 			retry = true;
 			continue;
@@ -1459,7 +1461,7 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	/* Mesh GTKs are per transmitter; mac80211 owns mesh encryption and PN. */
 	if (vif->type == NL80211_IFTYPE_MESH_POINT)
 		return -EOPNOTSUPP;
-	if (key->cipher != WLAN_CIPHER_SUITE_CCMP) {
+	if (key->cipher != WLAN_CIPHER_SUITE_CCMP && key->cipher != WLAN_CIPHER_SUITE_GCMP) {
 		/* Linux may install this key in software. Close any earlier NI
 		 * template before returning, including Extended Key ID changes. */
 		if (sta && (key->flags & IEEE80211_KEY_FLAG_PAIRWISE)) {
@@ -1503,7 +1505,7 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		__set_bit(index, radio->security_ids);
 		__set_bit(index, radio->security_deleting);
 		__set_bit(index, radio->security_aborting);
-		rtl_ax_security_cam(cam, index, key->key);
+		rtl_ax_security_cam(cam, index, key->key, key->cipher == WLAN_CIPHER_SUITE_GCMP ? 8 : 6);
 		ret = rtl_ax_command_flags(radio, RTL_AX_H2C_CMD, 1, 10, 1,
 			cam, sizeof(cam), false, true);
 		if (ret)
@@ -1553,7 +1555,7 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		radio->keys_installed++;
 	} else {
 		radio->security_unlink[index] = 0;
-		rtl_ax_security_cam(cam, index, NULL);
+		rtl_ax_security_cam(cam, index, NULL, 0);
 		ret = rtl_ax_command_flags(radio, RTL_AX_H2C_CMD, 1, 10, 1,
 			cam, sizeof(cam), false, true);
 		if (!ret) {
@@ -1567,7 +1569,7 @@ done:
 		wiphy_delayed_work_queue(hw->wiphy, &radio->cleanup_work, HZ);
 	radio->key_result = ret;
 	if (!ret && cmd == DISABLE_KEY && !macid) rtl_ax_offload_ready(radio);
-	dev_info(&radio->pdev->dev, "native CCMP key %s MACID%u slot%u CAM%u result=%d\n",
+	dev_info(&radio->pdev->dev, "native data key %s MACID%u slot%u CAM%u result=%d\n",
 		cmd == SET_KEY ? "install" : "remove", macid, slot, index, ret);
 	return ret;
 }

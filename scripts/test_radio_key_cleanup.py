@@ -31,6 +31,7 @@ static void rtl_ax_store32(u8 *p,u32 v){memcpy(p,&v,4);}
 #define RTL_AX_H2C_DATA 1
 #define HZ 100
 #define WLAN_CIPHER_SUITE_CCMP 4
+#define WLAN_CIPHER_SUITE_GCMP 8
 #define IEEE80211_KEY_FLAG_PAIRWISE BIT(0)
 #define IEEE80211_KEY_FLAG_SW_MGMT_TX BIT(4)
 #define IEEE80211_NUM_TIDS 16
@@ -65,7 +66,8 @@ static enum fault fault;
 static bool hiq_pending;static unsigned hiq_stops;
 static unsigned failures,queued,clears,dctls,offload_ready;
 static bool apply_failed_dctl,apply_failed_cam,hardware_cam[128];
-static u8 hardware_key_tag[128];
+static u8 hardware_key_tag[128],hardware_cipher[128];
+static unsigned key_cipher=4;
 static u64 hardware_pn[128];
 static struct rtl_ax_security_role hardware_roles[128];
 static int fail(enum fault point){if(fault!=point||!failures)return 0;failures--;return -ETIMEDOUT;}
@@ -109,7 +111,7 @@ static int rtl_ax_command_flags(struct rtl_ax_ap *r,unsigned queue,unsigned cat,
   hardware_cam[index]=false;
  } else {
   int ret=fail(CAM_INSTALL);
-  if(!ret||apply_failed_cam){hardware_cam[index]=true;hardware_key_tag[index]=data[8];}
+  if(!ret||apply_failed_cam){hardware_cam[index]=true;hardware_key_tag[index]=data[8];hardware_cipher[index]=data[4];assert(data[4]==(key_cipher==8?8:6));}
   return ret;
  }
  return 0;
@@ -130,7 +132,7 @@ static void reset(void){hiq_pending=false;hiq_stops=0;fault=NONE;failures=queued
  memset(hardware_pn,0,sizeof(hardware_pn));memset(hardware_key_tag,0,sizeof(hardware_key_tag));
  memset(hardware_cam,0,sizeof(hardware_cam));memset(hardware_roles,0,sizeof(hardware_roles));}
 static struct ieee80211_key_conf new_key(unsigned idx,bool pairwise){
- struct ieee80211_key_conf k={.cipher=WLAN_CIPHER_SUITE_CCMP,.keyidx=idx,.key={1},.tx_pn=1234};
+ struct ieee80211_key_conf k={.cipher=key_cipher,.keyidx=idx,.key={1},.tx_pn=1234};
  if(pairwise)k.flags=IEEE80211_KEY_FLAG_PAIRWISE;return k;}
 '''
 role=(driver/'role.h').read_text()
@@ -168,10 +170,11 @@ int main(void){
 '''
 install_tests = r'''
 static void install_tests(void){
+ for(unsigned alg=0;alg<2;alg++){key_cipher=alg?8:4;
  /* An unsupported software PTK still retires the previous NI template. */
  for(unsigned failure=0;failure<2;failure++)for(unsigned pairwise=0;pairwise<2;pairwise++) {
   reset();struct rtl_ax_ap r={};struct ieee80211_hw hw={&r,0};struct ieee80211_sta sta={{{7}}};
-  struct ieee80211_key_conf key=new_key(0,pairwise);key.cipher=8;
+  struct ieee80211_key_conf key=new_key(0,pairwise);key.cipher=9;
   fault=RETIRE;failures=failure?2:1;
   assert(rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},pairwise?&sta:NULL,&key)==-ETIMEDOUT);
   assert(failures==failure&&!r.security_ids[0]);
@@ -228,6 +231,7 @@ static void install_tests(void){
  assert(!rtl_ax_security_cleanup(&r)&&hardware_roles[0].valid==(BIT(3)|BIT(4)));
  assert(hardware_roles[0].cam[3]==0&&hardware_roles[0].cam[4]==2&&!hardware_cam[1]);
  assert(hardware_pn[0]==0x123456789abcULL&&r.keys_installed==2&&r.keys_removed==0&&r.keys_aborted==1);
+ }key_cipher=4;
  puts("key install: CAM/DMAC ACK both outcomes, reserved CAM ownership, failed retry, PTK/GTK replacement PN and abort accounting passed");
 }
 '''

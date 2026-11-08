@@ -38,6 +38,8 @@ code = r'''
 #include <stdio.h>
 #include <string.h>
 typedef uint8_t u8;typedef uint32_t u32;typedef uint64_t u64;
+#define WLAN_CIPHER_SUITE_GCMP 8
+#define RTL_MC_PE_KEY_GCMP (1U<<27)
 #define BIT(n) (1U<<(n))
 #define RTL_AX_TX_WP_ADDRESS_MAX 10
 #define RTL_AX_TX_AGG_PRELOAD (1U<<15)
@@ -55,7 +57,7 @@ typedef uint8_t u8;typedef uint32_t u32;typedef uint64_t u64;
 #define RTL_KEY_PN_REQUEST 30
 #define RTL_SEQ_REQUEST 31
 #define RTL_SEQ_ASSIGNED 0x80000000U
-struct key {unsigned flags,hw_key_idx,keyidx;u64 tx_pn;};
+struct key {unsigned flags,hw_key_idx,keyidx,cipher;u64 tx_pn;};
 struct vif {unsigned type;};
 struct info {unsigned flags;struct {struct key *hw_key;unsigned flags;struct vif *vif;}control;};
 struct hdr {uint16_t frame_control,seq_ctrl;u8 addr1[6];};
@@ -122,7 +124,7 @@ code += r'''
 int main(void){
  static u8 mem[2][0x20000],headers[2][256*128],payload[2048];
  unsigned vectors=0;
- for(unsigned header_bytes=24;header_bytes<=26;header_bytes+=2)
+ for(unsigned cipher=4;cipher<=8;cipher+=4)for(unsigned header_bytes=24;header_bytes<=26;header_bytes+=2)
  for(unsigned client=0;client<2;client++)
  for(unsigned layout=0;layout<=10;layout++)
  for(unsigned encap=0;encap<2;encap++)for(unsigned seq=0;seq<2;seq++)
@@ -132,7 +134,7 @@ int main(void){
   memset(mem,0xa5,sizeof(mem));memset(headers,0xa6,sizeof(headers));memset(payload,0xaa,sizeof(payload));
   struct mapping mapping={.dma_count=layout};for(unsigned n=0;n<layout;n++)mapping.sg[n]=(struct scatterlist){0x120380be + n*4096,1500+n};
   struct slot slot={.firmware_rate=true,.mapping=layout?&mapping:NULL,.dma=0x11000000,.pe_key_pn=keytype==1};
-  struct key ka={.flags=keytype==2,.hw_key_idx=126,.keyidx=3,.tx_pn=0xffffffffULL},kb=ka;
+  struct key ka={.flags=keytype==2,.hw_key_idx=126,.keyidx=3,.cipher=cipher,.tx_pn=0xffffffffULL},kb=ka;
   struct vif vif={.type=client?NL80211_IFTYPE_STATION:NL80211_IFTYPE_AP};
   struct info ia={.flags=tid&1,.control={.hw_key=keytype?&ka:NULL,.vif=&vif}},ib=ia;ib.control.hw_key=keytype?&kb:NULL;
   struct hdr hdr={.frame_control=(client?0x108:0x208)|(protected?0x4000:0),.seq_ctrl=0xffff,.addr1={tid&1}};

@@ -13,7 +13,9 @@
  */
 #define RTL_MC_PE_TABLE_MAILBOX 210
 #define RTL_MC_PE_CAP_MAILBOX 211
-#define RTL_MC_PE_CAPABILITY 0x4d435036U
+#define RTL_MC_PE_CAPABILITY 0x4d435037U
+/* Request/recipe key bit27 distinguishes GCMP128 from CCMP128. */
+#define RTL_MC_PE_KEY_GCMP (1U << 27)
 /* Independent direct-cookie BID count and post-close EPP-prefix ACK. */
 #define RTL_MC_PE_DRAIN 0x1e840
 _Static_assert(RTL_FTTR_PE_DRAIN + sizeof(struct rtl_fttr_pe_drain) <= RTL_MC_PE_DRAIN, "drain separation");

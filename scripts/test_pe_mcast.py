@@ -236,21 +236,25 @@ for client in (False,True):
 for lengths in ([60],[1514]*3):
     for noack in (False,True):
         case(lengths,7935,from_epp=True,client=True,multicast=True,noack=noack,preserve_group=True)
-for header in (8,16):
- for source in (0,6):
-  for client,preserve in ((False,False),(True,False),(True,True)):
-   for lengths in ([60],[1000,1001,64,1514]):
-    case(lengths,10896,from_epp=True,client=client,multicast=True,preserve_group=preserve,
-         encrypted=False,ni_header=header,source=source,policy=10896)
+for gcmp in (False,True):
+ for header in (8,16):
+  for source in (0,6):
+   for client,preserve in ((False,False),(True,False),(True,True)):
+    for lengths in ([60],[1000,1001,64,1514]):
+     case(lengths,10896,from_epp=True,client=client,multicast=True,preserve_group=preserve,
+          encrypted=gcmp,gcmp=gcmp,ni_header=header,source=source,policy=10896)
 # Open records and encrypted templates cannot substitute for each other.
 for phase in ('ingress','queued','selected'):
- for change in ('encrypted','key_without_flag'):
+ for change in ('encrypted','key_without_flag','cipher'):
   m=Machine();m.put(base+0xd020+16,1<<24|1<<18)
   m.put(table+16+9*96+92,1<<18)
+  if change=='cipher':
+   m.put(base+0xd020+16,1<<24|1<<18|1<<16);m.put(table+16+9*96+92,1<<18|1<<16)
   if phase!='ingress':m.ingest();m.put(bar+0xc438,10000)
   if phase=='selected':assert m.call('ni_select',mb,base,requests)==1
   if change=='encrypted':m.put(base+0xd020+16,1<<24|1<<18|1<<16)
-  else:m.put(table+16+9*96+88,7<<16)
+  elif change=='key_without_flag':m.put(table+16+9*96+88,7<<16)
+  else:m.put(base+0xd020+20,1<<27)
   if phase=='ingress':m.ingest();assert not m.get(base+0x11804)
   elif phase=='queued':m.call('ni_select',mb,base,requests);assert m.get(mb+47*4)==2049
   else:

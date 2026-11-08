@@ -65,11 +65,14 @@ code += r'''
 #define IEEE80211_KEY_FLAG_GENERATE_IV_MGMT BIT(3)
 #define IEEE80211_KEY_FLAG_SPP_AMSDU BIT(4)
 #define IEEE80211_CCMP_HDR_LEN 8
+#define IEEE80211_GCMP_HDR_LEN 8
+#define IEEE80211_GCMP_MIC_LEN 16
+#define GCM_AAD_LEN 32
 #define CCM_AAD_LEN 32
 #define AES_BLOCK_SIZE 16
 #define WARN_ON(x) (x)
 struct ieee80211_key_conf {atomic64_t tx_pn;struct rtl_key_pn rtl9617c_pn;unsigned flags,keyidx,hw_key_idx;};
-struct ieee80211_key {struct ieee80211_key_conf conf;struct {struct {void *tfm;}ccmp;}u;};
+struct ieee80211_key {struct ieee80211_key_conf conf;struct {struct {void *tfm;}ccmp,gcmp;}u;};
 struct ieee80211_hdr {uint16_t frame_control;};
 struct ieee80211_tx_info {struct {struct ieee80211_key_conf *hw_key;}control;};
 struct sk_buff {u8 storage[128],*data;unsigned len;struct ieee80211_tx_info info;};
@@ -86,7 +89,13 @@ static int ieee80211_aes_ccm_encrypt(void *tfm,u8 *b,u8 *aad,u8 *pos,unsigned le
 static void *skb_put(struct sk_buff *s,unsigned n){void *p=s->data+s->len;s->len+=n;return p;}
 '''
 code=code.replace('#include <stdint.h>', '#include <stdint.h>\n#include <stdbool.h>')
-code += function(linux,'ccmp_pn2hdr')+function(linux,'ccmp_encrypt_skb')
+code += '''
+static void skb_set_network_header(struct sk_buff *s,unsigned n){(void)s;(void)n;}
+static unsigned skb_network_offset(struct sk_buff *s){(void)s;return 24;}
+#define gcmp_special_blocks ccmp_special_blocks
+#define ieee80211_aes_gcm_encrypt ieee80211_aes_ccm_encrypt
+'''
+code += function(linux,'ccmp_pn2hdr')+function(linux,'ccmp_encrypt_skb')+function(linux,'gcmp_pn2hdr')+function(linux,'gcmp_encrypt_skb')
 radio=overlay/'drivers/net/wireless/realtek/rtl_ax_ap'
 code += r'''
 struct rtl_ax_tx {pthread_mutex_t lock;bool pe_active;struct {void *memory;}pe;unsigned key_pn_generation;};
@@ -101,7 +110,7 @@ code += function((radio/'tx.c').read_text(),'rtl_ax_tx_key_pn_bind')
 code += function((radio/'tx.c').read_text(),'rtl_ax_tx_key_pn_unbind')
 code += function((radio/'monitor.h').read_text(),'rtl_ax_get_key_seq')
 code += r'''
-static void software_ccmp(void){
+static void software_ccmp(bool gcmp){
  static u8 memory[0x20000] __attribute__((aligned(64)));
  struct rtl_ax_tx tx={.lock=PTHREAD_MUTEX_INITIALIZER,.pe_active=true,.pe={memory}};
  struct ieee80211_key key={.conf={.keyidx=2,.hw_key_idx=63,.tx_pn=0xffffffffULL}};
@@ -113,7 +122,7 @@ static void software_ccmp(void){
  for(unsigned i=0;i<32;i++) {
   assert(pe_key_pn(memory,request)==1);
   struct sk_buff s={.len=32};s.data=s.storage+32; /* Software-encrypted management frame. */
-  assert(!ccmp_encrypt_skb(&t,&s,8));u8 *iv=s.data+24;
+  assert(!(gcmp?gcmp_encrypt_skb(&t,&s):ccmp_encrypt_skb(&t,&s,8)));u8 *iv=s.data+24;
   u64 expected=0xffffffffULL+i*2+2;
   assert(iv[0]==(u8)expected&&iv[1]==(u8)(expected>>8)&&iv[2]==0&&iv[3]==0xa0);
   for(unsigned b=2;b<6;b++)assert(iv[b+2]==(u8)(expected>>(b*8)));
@@ -129,7 +138,7 @@ static void software_ccmp(void){
  tx.key_pn_generation=9;assert(!rtl_ax_tx_key_pn_bind(&tx,&key.conf));s->pe=1;s->turn=1;
  assert(rtl_ax_tx_key_pn_unbind(&tx,&key.conf)==-ETIMEDOUT);
  struct sk_buff frame={.len=32};frame.data=frame.storage+32;
- assert(ccmp_encrypt_skb(&t,&frame,8)==-1);s->pe=0;
+ assert((gcmp?gcmp_encrypt_skb(&t,&frame):ccmp_encrypt_skb(&t,&frame,8))==-1);s->pe=0;
 }
 #define COUNT 20000
 static u8 memory[0x20000] __attribute__((aligned(64)));
@@ -157,7 +166,7 @@ static void *sender(void *argument){
  return NULL;
 }
 int main(void){
- software_ccmp();
+ software_ccmp(false);software_ccmp(true);
  struct rtl_key_pn_shared *s=(void *)(memory+RTL_KEY_PN_BASE+127*sizeof(*s));
  assert(!rtl9617c_key_pn_bind(&binding,s,1,&fallback));
  assert(rtl9617c_key_pn_token(&binding)==1);
@@ -191,7 +200,7 @@ int main(void){
  assert(rtl9617c_key_pn_unbind(&binding,&fallback)==-ETIMEDOUT&&!binding.shared&&!s->generation);
  assert(rtl9617c_key_pn_next(&binding,&fallback,&pn)==-EKEYREVOKED);
  assert(!rtl9617c_key_pn_token(&binding));s->pe=0;
- puts("Shared GTK PN: 60000 concurrent ARM/PE allocations and stable reads,640 carry/wrap/CAM generations,32 actual software-CCMP/PE alternations, radio bind/read/unbind, debugfs refusal and poisoned software fallback passed");
+ puts("Shared GTK PN: 60000 concurrent ARM/PE allocations and stable reads,640 carry/wrap/CAM generations,64 actual software-CCMP/GCMP and PE alternations, radio bind/read/unbind, debugfs refusal and poisoned software fallback passed");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='shared-key-pn-') as tmp:

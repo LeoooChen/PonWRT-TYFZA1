@@ -242,6 +242,8 @@
 
 112. 接入开放网络NI/PE逐用户转发并修复当前密钥归属：原厂64组TXSC入口确认未加密QoS/AMPDU数据可缓存；worker读取Linux实际PTK/默认单播密钥，开放网要求无密钥/无历史加密状态/无残留PTK，CCMP要求当前指针/CAM/索引完全匹配。原始软件加密帧不生产开放模板，FE/PE开放副本不置加密/PN且不占CAM引用，MCP6拒绝旧固件。PTK替换/发送索引/默认单播发布前同步关闭NI，worker先完成撤销再重查，失败保持关闭；共享NI启动不再顺带准入其他站。旧worker复现错误，263密钥状态、106发布、512worker组合、16896请求、完整learner→MIPS开放记录、24组开放帧及279/280准入撤销、现有加密/BCMC/PS/FTTR/回收回归、Image/模块/11输入一致和补丁重放通过。PE31908字节、栈7288，未实机。TSPEC研究确认目标CCX解析不读累计时间、WMM action为空，不能推断微秒计费；完整退场/ID复用、多VIF、其他密码算法仍未完成。详见[开放网络与当前密钥归属](port/FTTR.md#open-network-ni-peers-and-current-linux-key-ownership)。
 
+113. 补齐GCMP128原生硬件加速链：目标C/XB编码器590项确认CAM/TX类型8、单16字节密钥、DCTL和48位PN；算法身份贯穿当前Linux密钥/模板/FE不可变记录及ARM/PE描述符，MCP7拒绝旧固件。GCMP软件加密接入共享PN，RX快照/同步使用GCMP成员，PE按16字节MIC剥离且保留重放/地址/BA检查，支持逐用户和HIQ/GTK副本。519密钥、33792请求、1024worker组合、双算法CAM故障、共享PN60000并发/64交替、128RX状态、双无线AP/STA/IPv4/IPv6/聚合、完整learner记录到MIPS与RPQ/EQ、每算法90ARM/PE提交及45描述符对照、现有FTTR/开放网/CCMP回归通过；Image/模块/9输入/补丁重放/重复构建通过。PE31948字节、栈7288，非uplink13868；未实机，256位扩展密钥、多VIF、TSPEC、完整退场和ID复用仍待补。详见[GCMP128加速](port/FTTR.md#gcmp128-across-native-key-and-accelerated-packet-paths)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
