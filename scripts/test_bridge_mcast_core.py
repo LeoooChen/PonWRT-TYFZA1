@@ -48,7 +48,8 @@ static void wait_sync(unsigned n){
 code+=r'''
 #define SKB_EXT_RTL9617C_BRIDGE 0
 struct net_device {int unused;};struct sk_buff {u64 ticket;struct rtl9617c_bridge_frame saved;};
-static void *skb_ext_find(struct sk_buff *s,int id){assert(!id);return &s->saved;}
+static void *skb_ext_find(const struct sk_buff *s,int id){assert(!id);return (void *)&s->saved;}
+static void skb_ext_copy(struct sk_buff *to,const struct sk_buff *from){to->saved=from->saved;}
 static void *skb_ext_add(struct sk_buff *s,int id){return skb_ext_find(s,id);}
 '''
 code+=re.sub(r'^#include .*\n','',source,flags=re.M)
@@ -69,12 +70,15 @@ static void output_packet(void *context,struct sk_buff *skb){struct owner *o=con
 static void complete_packet(void *context,u64 ticket,bool complete){struct owner *o=context;if(ticket==o->pending&&complete)o->completed++;}
 static int host_local(void *ctx,struct sk_buff *s,struct net_device *d,u16 vid){(void)ctx;(void)s;(void)d;return vid?-ESTALE:1;}
 static int host_receive(void *ctx,struct sk_buff *s,unsigned group,unsigned source){(void)ctx;s->saved.multicast_host_group=group;return source?-ESTALE:0;}
+static bool host_tx_valid(void *ctx,const struct sk_buff *skb){
+ struct owner *o=ctx;return !atomic_load(&o->writers) && skb->saved.multicast_host_owner==o->pending;
+}
 static const struct rtl9617c_bridge_mcast_ops *thread_ops;
 static void *register_owner(void *unused){(void)unused;assert(!rtl9617c_bridge_mcast_register(thread_ops));return NULL;}
 static void *unregister_owner(void *unused){(void)unused;rtl9617c_bridge_mcast_unregister(thread_ops);return NULL;}
 int main(void){
  struct owner first={0},second={0};pthread_t thread;
- struct rtl9617c_bridge_mcast_ops a={&first,change_begin,change_end,capture_begin,select_packet,select_address,output_packet,complete_packet,host_receive,host_local},b=a;
+ struct rtl9617c_bridge_mcast_ops a={&first,change_begin,change_end,capture_begin,select_packet,select_address,output_packet,complete_packet,host_receive,host_local,host_tx_valid},b=a;
  b.context=&second;struct sk_buff old={0},fresh={0};struct net_device dev;
  const struct rtl9617c_bridge_mcast_ops *token=rtl9617c_bridge_mcast_begin(&dev);assert(!token);
  thread_ops=&a;assert(!pthread_create(&thread,NULL,register_owner,NULL));wait_sync(1);
@@ -106,8 +110,18 @@ int main(void){
  assert(rtl9617c_bridge_mcast_local(&fresh,&dev,1)==-ESTALE&&fresh.saved.multicast_host_group==7);
  assert(rtl9617c_bridge_mcast_local(&fresh,&dev,0)==1&&!fresh.saved.multicast_host_group);
  assert(rtl9617c_bridge_mcast_local(&fresh,&dev,0)==0);
+ fresh.saved.multicast_direct=true;fresh.saved.multicast_host_owner=second.pending;
+ fresh.saved.multicast_host_group=17;fresh.saved.multicast_epoch=9;
+ assert(!rtl9617c_bridge_mcast_stale(&fresh));
+ struct sk_buff copy={0};assert(rtl9617c_bridge_mcast_differs(&copy,&fresh));
+ rtl9617c_bridge_mcast_copy(&copy,&fresh);assert(!rtl9617c_bridge_mcast_differs(&copy,&fresh));
+ copy.saved.multicast_host_group++;assert(rtl9617c_bridge_mcast_differs(&copy,&fresh));
+ copy.saved=fresh.saved;copy.saved.multicast_host_owner--;assert(rtl9617c_bridge_mcast_stale(&copy));
+ token=rtl9617c_bridge_mcast_begin(&dev);assert(rtl9617c_bridge_mcast_stale(&fresh));rtl9617c_bridge_mcast_end(token);
  rtl9617c_bridge_mcast_unregister(&a);assert(rcu_access_pointer(rtl_bridge_mcast)==&b);
  rtl9617c_bridge_mcast_unregister(&b);assert(!second.writers&&!rcu_access_pointer(rtl_bridge_mcast));
+ assert(rtl9617c_bridge_mcast_stale(&fresh));
+ assert(!rtl9617c_bridge_mcast_register(&a));assert(rtl9617c_bridge_mcast_stale(&fresh));rtl9617c_bridge_mcast_unregister(&a);
  puts("Native multicast core: pre-registration writers, owner exclusion, concurrent detach, delayed old skb and unique tickets passed");
 }
 '''

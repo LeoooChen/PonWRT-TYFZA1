@@ -247,7 +247,7 @@ static int fe_mcast_host_receive(void *context,struct sk_buff *skb,unsigned int 
   spin_unlock_irqrestore(&fe->mc_lock,flags);
   if(ret)goto out;
  }
- *saved=host.input;saved->multicast_host_group=group;saved->multicast_host_owner=host.owner;
+ *saved=host.input;saved->multicast_direct=!!direct.physical;saved->multicast_host_group=group;saved->multicast_host_owner=host.owner;
  saved->multicast_epoch=host.epoch;skb->dev=input;skb->rtl9617c_fttr_ingress=source==6;
  if(direct.physical){saved->wifi_id=direct.wifi_id;
   if(!direct.priority_from_cos)skb->priority=direct.priority;
@@ -261,6 +261,35 @@ stale:
 out:
  put_net(host.net);return ret;
 }
+/* Software TX queues may outlive the complete recipient decision. Validate
+ * numeric ownership again; no pointer from the RX snapshot survives the lock.
+ */
+static bool fe_mcast_host_tx_valid(void *context,const struct sk_buff *skb)
+{
+ struct rtl_fe_bridge *bridge=context;
+ struct rtl_fe *fe=bridge->fe;
+ const struct rtl9617c_bridge_frame *saved=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
+ const struct rtl_fe_mc_direct *direct;
+ const struct rtl_fe_mc_host *host;
+ unsigned long flags;
+ bool valid=false;
+ if(!saved || !saved->multicast_direct || !saved->multicast_host_group ||
+    saved->multicast_host_group>=RTL_FE_MC_GROUPS)return false;
+ spin_lock_irqsave(&fe->mc_lock,flags);
+ direct=fe->mc_directs[saved->multicast_host_group];
+ host=direct && direct->flow?direct->flow->mc_host:NULL;
+ if(!READ_ONCE(bridge->stopping) && rtl_fe_enabled(fe) && host &&
+    !direct->pe_destination && direct->physical && fe->mc_gate.active &&
+    !fe->mc_gate.error && !fe->mc_gate.writers && host->epoch==fe->mc_gate.epoch &&
+    host->epoch==saved->multicast_epoch && host->owner==saved->multicast_host_owner &&
+    (host->source!=6 || READ_ONCE(fe->fttr_admitted)) &&
+    (host->source!=7 || (READ_ONCE(fe->pon_requested) && (!host->input.epon ||
+     (READ_ONCE(fe->epon_admitted) && host->input.pon_generation==fe->epon_paths.generation)))))
+  valid=true;
+ spin_unlock_irqrestore(&fe->mc_lock,flags);
+ return valid;
+}
+
 static int fe_mcast_host_local(void *context,struct sk_buff *skb,struct net_device *brdev,u16 vid)
 {
  struct rtl_fe_bridge *bridge=context;

@@ -4,6 +4,7 @@
 
 #include <linux/skbuff.h>
 #include <linux/rtl9617c-fttr-pe.h>
+#include <linux/rtl9617c-bridge.h>
 
 struct device;
 struct net_device;
@@ -32,16 +33,19 @@ bool rtl9617c_fttr_enqueue(struct sk_buff *skb, struct net_device *dev);
 static inline bool rtl9617c_fttr_stale(const struct sk_buff *skb)
 {
 	u64 generation = skb->rtl9617c_fttr_generation;
-	return generation && ((generation & 1) || generation != rtl9617c_fttr_generation_read());
+	return (generation && ((generation & 1) || generation != rtl9617c_fttr_generation_read())) ||
+		rtl9617c_bridge_mcast_stale(skb);
 }
 static inline bool rtl9617c_fttr_differs(const struct sk_buff *a, const struct sk_buff *b)
 {
-	return a->rtl9617c_fttr_generation != b->rtl9617c_fttr_generation;
+	return a->rtl9617c_fttr_generation != b->rtl9617c_fttr_generation ||
+		rtl9617c_bridge_mcast_differs(a,b);
 }
 static inline void rtl9617c_fttr_copy(struct sk_buff *to, const struct sk_buff *from)
 {
 	to->rtl9617c_fttr_generation = from->rtl9617c_fttr_generation;
 	to->rtl9617c_fttr_ingress = from->rtl9617c_fttr_ingress;
+	rtl9617c_bridge_mcast_copy(to,from);
 }
 #else
 static inline bool rtl9617c_fttr_stale(const struct sk_buff *skb) { return false; }

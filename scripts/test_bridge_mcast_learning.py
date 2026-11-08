@@ -108,7 +108,7 @@ static bool rtl9617c_fttr_stale(const struct sk_buff *s){(void)s;return false;}
 static bool skb_is_gso(struct sk_buff *s){return s->gso;}
 static struct rtl_fe *ext_change;
 static void fe_mcast_invalidate(struct rtl_fe *fe);
-static struct rtl9617c_bridge_frame *skb_ext_find(struct sk_buff *s,int id){assert(!id);return &s->saved;}
+static const struct rtl9617c_bridge_frame *skb_ext_find(const struct sk_buff *s,int id){assert(!id);return &s->saved;}
 static struct rtl9617c_bridge_frame *skb_ext_add(struct sk_buff *s,int id){assert(!id);if(ext_change){fe_mcast_invalidate(ext_change);ext_change=NULL;}return &s->saved;}
 static bool is_multicast_ether_addr(const u8 *a){return a[0]&1;}
 static bool is_valid_ether_addr(const u8 *a){return !(a[0]&1)&&memcmp(a,"\0\0\0\0\0\0",6);}
@@ -567,6 +567,12 @@ int main(void){
    struct sk_buff copy={.frame=wf};
    assert(fe_mcast_host_receive(&bridge,&copy,cookie[w],source)==1);
    assert(copy.dev==(w?&wifi2:&wifi)&&copy.saved.wifi_id==(w?60:2));
+   assert(copy.saved.multicast_direct && fe_mcast_host_tx_valid(&bridge,&copy));
+   copy.saved.multicast_host_owner++;assert(!fe_mcast_host_tx_valid(&bridge,&copy));copy.saved.multicast_host_owner--;
+   fe.mc_gate.writers++;assert(!fe_mcast_host_tx_valid(&bridge,&copy));fe.mc_gate.writers--;
+   fe.mc_gate.error=-EIO;assert(!fe_mcast_host_tx_valid(&bridge,&copy));fe.mc_gate.error=0;
+   if(source==6){fe.fttr_admitted=false;assert(!fe_mcast_host_tx_valid(&bridge,&copy));fe.fttr_admitted=true;}
+   assert(fe_mcast_host_tx_valid(&bridge,&copy));
    assert(fe_mcast_host_local(&bridge,&copy,&br,0)==-ESTALE);
    copy.frame.tag[0].tci++;assert(fe_mcast_host_receive(&bridge,&copy,cookie[w],source)==-ESTALE);
    copy.frame=wf;assert(fe_mcast_host_receive(&bridge,&copy,cookie[w],source==7?0:7)==-ESTALE);
@@ -574,8 +580,11 @@ int main(void){
   struct sk_buff copy={.frame=again.input};
   assert(fe_mcast_host_receive(&bridge,&copy,learned->mc_group,source)==(scenario==1?-ESTALE:0));
   wifi.running=false;copy.frame=wf;assert(fe_mcast_host_receive(&bridge,&copy,cookie[0],source)==-ESTALE);wifi.running=true;
+  struct sk_buff queued={.frame=wf};
+  assert(fe_mcast_host_receive(&bridge,&queued,cookie[0],source)==1 && fe_mcast_host_tx_valid(&bridge,&queued));
   if(scenario==3){ext_change=&fe;assert(fe_mcast_host_receive(&bridge,&copy,cookie[0],source)==-ESTALE&&!ext_change);}
   fe.age_fail=1;assert(rtl_fe_flush_port(&fe,&wifi)==-ETIMEDOUT&&!fe.mc_gate.active);
+  assert(!fe_mcast_host_tx_valid(&bridge,&queued));
   assert(fe_mcast_host_receive(&bridge,&copy,cookie[1],source)==-ESTALE);
   assert(!rtl_fe_flush_port(&fe,&wifi));
   assert(!fe.mc_directs[cookie[0]]->flow&&!fe.mc_directs[cookie[1]]->flow);

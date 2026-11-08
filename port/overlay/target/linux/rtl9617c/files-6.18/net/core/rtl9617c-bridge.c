@@ -186,3 +186,39 @@ int rtl9617c_bridge_mcast_local(struct sk_buff *skb, struct net_device *bridge, 
  return ret;
 }
 EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_local);
+
+/* A copy may wait in qdisc/mac80211 after host_receive returned. Keep its
+ * original complete-set decision attached until TX consumes the packet.
+ */
+bool rtl9617c_bridge_mcast_stale(const struct sk_buff *skb)
+{
+ const struct rtl9617c_bridge_frame *saved=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
+ const struct rtl9617c_bridge_mcast_ops *ops;
+ bool valid=false;
+ if(!saved || !saved->multicast_direct)return false;
+ rcu_read_lock();
+ ops=rcu_dereference(rtl_bridge_mcast);
+ if(ops && ops->host_tx_valid)valid=ops->host_tx_valid(ops->context,skb);
+ rcu_read_unlock();
+ return !valid;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_stale);
+
+bool rtl9617c_bridge_mcast_differs(const struct sk_buff *a,const struct sk_buff *b)
+{
+ const struct rtl9617c_bridge_frame *x=skb_ext_find(a,SKB_EXT_RTL9617C_BRIDGE);
+ const struct rtl9617c_bridge_frame *y=skb_ext_find(b,SKB_EXT_RTL9617C_BRIDGE);
+ bool xd=x && x->multicast_direct,yd=y && y->multicast_direct;
+ if(xd!=yd)return true;
+ return xd && (x->multicast_host_owner!=y->multicast_host_owner ||
+  x->multicast_host_group!=y->multicast_host_group || x->multicast_epoch!=y->multicast_epoch);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_differs);
+
+void rtl9617c_bridge_mcast_copy(struct sk_buff *to,const struct sk_buff *from)
+{
+ const struct rtl9617c_bridge_frame *saved=skb_ext_find(from,SKB_EXT_RTL9617C_BRIDGE);
+ /* Sharing extensions is reference-counted and cannot fail allocation. */
+ if(saved && saved->multicast_direct)skb_ext_copy(to,from);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_copy);

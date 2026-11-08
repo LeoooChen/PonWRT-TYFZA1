@@ -5990,6 +5990,53 @@ No physical device was accessed. Complete upstream producer retirement,
 quarantined hardware-ID reuse and physical power-save interoperability
 remain unverified.
 
+### CPU multicast replicas remain revocable in Linux TX queues
+
+The CPU-direct multicast fallback previously validated its complete-set
+owner in `fe_mcast_host_receive`, then handed the skb to ordinary Ethernet or
+mac80211 TX. A membership/policy change after that validation could leave an
+old replica in qdisc, BUSY requeue or a mac80211 queue. The existing FTTR skb
+generation did not cover this independent multicast decision, particularly
+for LAN/PON-origin traffic with no FTTR generation. Executing the old
+production TX gate reproduces an old replica being transmitted after its
+multicast epoch changed.
+
+Direct CPU replicas now retain an explicit direct-copy flag together with
+the existing numeric group/owner/epoch skb extension. The built-in multicast
+core calls the current FE owner under RCU; FE rechecks the direct record,
+live host ownership, gate/writer/error state and FTTR/PON ingress admission
+under its short multicast lock. Missing or replaced FE owners reject the old
+copy; no driver pointer is stored in the skb. Local-only bridge RX copies
+continue to use their existing local-delivery check.
+
+The existing shared packet-staleness checks now include this direct-copy
+validation at qdisc enqueue and BUSY/dequeue, mac80211's driver handoff and
+native radio submission, plus the existing netfilter/reassembly boundaries.
+Metadata copies share the refcounted extension without allocation. Aggregation
+and reassembly distinguish direct-copy owner/group/epoch from each other and
+from ordinary packets, so an old copy cannot borrow another packet's valid
+decision. The extension remains attached through mac80211 fragmentation and
+normal skb clones/copies.
+
+The complete learner/FE test checks live copies, writer/error closure,
+ingress admission and failed flow withdrawal; the core test covers concurrent
+owner detach, copy identity and reload. `test_fttr_packet_generation.py`
+executes actual Linux BUSY/qdisc retry, driver handoff, NFQUEUE, IPv4/IPv6
+metadata and GRO discrimination with multicast callbacks, including a
+LAN-origin copy with no FTTR generation. Its old-header run fails the stale
+queue test and the new run passes. Existing bridge host/selection/M2U/writer,
+parser, normal learning and FTTR admission tests pass. Image/modules and all
+five changed kernel input identities pass; no kernel patch or PE firmware
+change is required. Reports are under `artifacts/fttr/mcast-queued-*`.
+
+This closes the Linux software queue window before the last submission
+check. It does not add a reference barrier or multicast generation to an
+already submitted CPU-origin PE/PCIe request, and it does not make a policy
+writer atomic with the last hardware handoff. Those in-flight CPU requests,
+MCE/NI DMA/AFT producer retirement and hardware-ID reuse remain work. The
+existing direct NI-to-PE immutable-cookie checks are unchanged. No device was
+accessed and no physical packet-retirement claim is made.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN

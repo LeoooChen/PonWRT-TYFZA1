@@ -83,6 +83,27 @@ static const void *skb_mac_header(const struct sk_buff *s){return s->mac_set ? s
 static const void *skb_header_pointer(const struct sk_buff *s,int o,unsigned len,void *b){(void)b;return o+len<=s->len?s->data+o:NULL;}
 u64 rtl9617c_fttr_generation_read(void);
 '''
+bridge_header = base.joinpath('include/linux/rtl9617c-bridge.h').read_text()
+bridge_core = base.joinpath('net/core/rtl9617c-bridge.c').read_text()
+code = code.replace('struct sk_buff {u8 *data;', 'struct sk_buff {bool ext;struct rtl9617c_bridge_frame saved;u8 *data;')
+code = code.replace('struct net_device {unsigned', re.sub(r'^#include .*\n', '', bridge_header, flags=re.M) + '\nstruct net_device {unsigned', 1)
+code += r'''
+#define SKB_EXT_RTL9617C_BRIDGE 0
+static void *skb_ext_find(const struct sk_buff *s,int id){assert(!id);return s->ext?(void *)&s->saved:NULL;}
+static void skb_ext_copy(struct sk_buff *to,const struct sk_buff *from){to->ext=from->ext;to->saved=from->saved;}
+static unsigned mc_readers;
+static void rcu_read_lock(void){mc_readers++;}
+static void rcu_read_unlock(void){assert(mc_readers);mc_readers--;}
+#define rcu_dereference(p) (p)
+static u64 mc_owner=1,mc_epoch=2;
+static bool mc_active=true;
+static bool host_tx_valid(void *ctx,const struct sk_buff *s){(void)ctx;assert(mc_readers);
+ return mc_active && s->saved.multicast_host_owner==mc_owner && s->saved.multicast_epoch==mc_epoch;}
+static const struct rtl9617c_bridge_mcast_ops mc_ops={.host_tx_valid=host_tx_valid};
+static const struct rtl9617c_bridge_mcast_ops *rtl_bridge_mcast=&mc_ops;
+'''
+for name in ('rtl9617c_bridge_mcast_stale','rtl9617c_bridge_mcast_differs','rtl9617c_bridge_mcast_copy'):
+ code += function(bridge_core,name)
 code += function(header, 'rtl9617c_fttr_stale') + function(header, 'rtl9617c_fttr_differs') + function(header, 'rtl9617c_fttr_copy')
 code += re.sub(r'^#include .*\n', '', core, flags=re.M)
 code += r'''
@@ -145,7 +166,6 @@ code += r'''
 #define dst_clone(s) (s)
 #define skb_copy_hash(a,b) ((void)(a),(void)(b))
 #define nf_copy(a,b) ((void)(a),(void)(b))
-#define skb_ext_copy(a,b) ((void)(a),(void)(b))
 #define skb_copy_secmark(a,b) ((void)(a),(void)(b))
 #define IS_ENABLED(v) 0
 '''
@@ -304,6 +324,37 @@ int main(void){
  }
  rtl_fttr_generation=UINT64_MAX;assert(rtl9617c_fttr_generation_set(true)==-EOVERFLOW);
  assert(!rtl9617c_fttr_generation_set(false)&&rtl_fttr_generation==UINT64_MAX);
+ /* CPU-direct multicast can have no FTTR generation (LAN/PON ingress).
+  * Its copied extension must independently survive queues and reject expiry.
+  */
+ unsigned saved_sent=sent,saved_freed=freed;
+ struct sk_buff replica={.ext=true,.busy=true,.saved={.multicast_direct=true,
+  .multicast_host_owner=1,.multicast_host_group=7,.multicast_epoch=2}};
+ assert(!rtl9617c_fttr_stale(&replica));
+ assert(dev_hard_start_xmit(&replica,&lan,&q,&rc)==&replica && rc==NETDEV_TX_BUSY);
+ mc_epoch=4;replica.busy=false;
+ assert(!dev_hard_start_xmit(&replica,&lan,&q,&rc));
+ assert(replica.consumed && sent==saved_sent && freed==saved_freed+1);
+ struct sk_buff valid={.ext=true,.saved={.multicast_direct=true,.multicast_host_owner=1,
+  .multicast_host_group=8,.multicast_epoch=4}},clone={};
+ rtl9617c_fttr_copy(&clone,&valid);assert(clone.ext && !rtl9617c_fttr_differs(&valid,&clone));
+ struct sk_buff ordinary={};assert(rtl9617c_fttr_differs(&ordinary,&valid));
+ clone.saved.multicast_host_group++;assert(rtl9617c_fttr_differs(&valid,&clone));
+ clone.saved=valid.saved;
+ ip_copy_metadata(&v4,&valid);ip6_copy_metadata(&v6,&valid);
+ assert(v4.ext && v6.ext && !rtl9617c_fttr_differs(&v4,&v6));
+ aggregate=v4;incoming=v6;aggregate.dev=incoming.dev=&lan;
+ aggregate.list.next=&list;list.next=&aggregate.list;
+ gro_list_prepare(&list,&incoming);assert(aggregate.gro.same_flow);
+ incoming.saved.multicast_host_owner++;gro_list_prepare(&list,&incoming);assert(!aggregate.gro.same_flow);
+ mc_active=false;drv_tx(&radio,NULL,&clone);assert(clone.consumed && sent==saved_sent);
+ valid.consumed=false;entry=(struct nf_queue_entry){.skb=&valid,.state=state};
+ nf_reinject(&entry,NF_ACCEPT);assert(entry.released && valid.consumed && delivered==1);
+ mc_active=true;rtl_bridge_mcast=NULL;replica.consumed=false;replica.saved.multicast_epoch=4;
+ assert(rtl9617c_fttr_stale(&replica));
+ rtl_bridge_mcast=&mc_ops;mc_owner=2;assert(rtl9617c_fttr_stale(&replica));
+ assert(!rtl9617c_fttr_stale(&ordinary));
+ puts("CPU multicast: queued/BUSY, driver, NFQUEUE, extension copy, GRO isolation and owner reload checks passed");
  puts("PASS: native generation, actual BUSY/qdisc retry, NFQUEUE enqueue/reinject, IPv4/IPv6 metadata and mac80211 final TX; old identities never reopen");
 }
 '''

@@ -559,7 +559,7 @@ static struct rtl_fe_bridge *fe_bridge_start(struct rtl_fe *fe)
   .capture_begin=fe_mcast_capture_begin,.capture_select=fe_mcast_capture_select,
   .capture_select_addr=fe_mcast_capture_select_addr,
   .capture_output=fe_mcast_capture_output,.capture_end=fe_mcast_capture_end,
-  .host_receive=fe_mcast_host_receive,.host_local=fe_mcast_host_local};
+  .host_receive=fe_mcast_host_receive,.host_local=fe_mcast_host_local,.host_tx_valid=fe_mcast_host_tx_valid};
  ret=rtl9617c_bridge_mcast_register(&bridge->multicast);
  if(ret)goto netdev;
  return bridge;

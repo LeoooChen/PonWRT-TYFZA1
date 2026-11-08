@@ -194,6 +194,8 @@
 
 88. 修复已消费PS授权的NI请求在PE发布前撤销后漏完成通知：原固件可复现BID已回收但mac80211服务周期/ps_issued仍未结束；现按选中请求的代际生成PS完成记录并触发ARM事件，真实RPQ与WMM拒绝共用代际校验，旧/重复通知不结束新周期。132组PS-Poll/UAPSD、路由/全局/FTTR/组播撤销、信用/EQ阻塞及真实RPQ结果，直接接入ARM/mac80211完成处理通过；既有PS/组播/FTTR回收/配额/序号/PN/站点生命周期和原厂PS-Poll对比通过。PE32692字节、栈上界7296，入口布局、重复生成、两配置及Image/模块和固件输入一致性通过。完整上游退场和ID复用仍未完成，未上实机。详见[撤销PS请求的完成通知](port/FTTR.md#canceled-selected-ps-requests-finish-their-service-period)。
 
+89. 补齐CPU组播直发复制在Linux队列中的撤销检查：旧逻辑只在QM复制入口复核，成员变化后qdisc/BUSY/mac80211队列仍可能发送旧复制；已用旧生产检查复现。现skb保留独立复制标志及数字owner/group/epoch，经RCU和FE短锁在现有发送前边界复核；复制共享扩展、聚合区分所有者，卸载/替换FE后拒绝旧包。完整FE/核心回调及实际Linux队列/NFQUEUE/复制/GRO、bridge主机/M2U/写者/解析/FTTR回归和Image/模块、五份输入一致性通过。此项只关闭Linux排队窗口，不涵盖最后复核后已提交PE/PCIe的CPU复制，完整上游退场与硬件ID复用继续保留，未上实机。详见[CPU复制队列撤销](port/FTTR.md#cpu-multicast-replicas-remain-revocable-in-linux-tx-queues)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

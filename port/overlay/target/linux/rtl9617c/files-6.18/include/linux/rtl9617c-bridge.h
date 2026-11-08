@@ -16,6 +16,7 @@ struct rtl9617c_bridge_frame {
 	u64 multicast_epoch;
 	u16 pon_gem, multicast_host_group;
 	u8 wifi_id;
+	bool multicast_direct; /* CPU replica bypassing bridge RX. */
 	u8 epon, epon_llid; /* pon_generation names EPON snapshot when epon=1. */
 	u64 multicast_host_owner;
 	u16 protocol, session, vid, ppp_protocol;
@@ -45,6 +46,7 @@ struct rtl9617c_bridge_mcast_ops {
 	void (*capture_end)(void *context, u64 transaction, bool complete);
 	int (*host_receive)(void *context, struct sk_buff *skb, unsigned int group, unsigned int source);
 	int (*host_local)(void *context, struct sk_buff *skb, struct net_device *bridge, u16 vid);
+	bool (*host_tx_valid)(void *context, const struct sk_buff *skb);
 };
 int rtl9617c_bridge_mcast_register(const struct rtl9617c_bridge_mcast_ops *ops);
 void rtl9617c_bridge_mcast_unregister(const struct rtl9617c_bridge_mcast_ops *ops);
@@ -69,4 +71,7 @@ static inline unsigned int rtl9617c_bridge_host_group(u32 h0,u32 h1)
  * validated VIF's normal TX; two selects native Ethernet TX. No consumption. */
 int rtl9617c_bridge_mcast_receive(struct sk_buff *skb, unsigned int group, unsigned int source);
 int rtl9617c_bridge_mcast_local(struct sk_buff *skb, struct net_device *bridge, u16 vid);
+bool rtl9617c_bridge_mcast_stale(const struct sk_buff *skb);
+bool rtl9617c_bridge_mcast_differs(const struct sk_buff *a, const struct sk_buff *b);
+void rtl9617c_bridge_mcast_copy(struct sk_buff *to, const struct sk_buff *from);
 #endif

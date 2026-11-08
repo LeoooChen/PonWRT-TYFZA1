@@ -90,6 +90,7 @@ static void atomic64_set_release(u64 *p,u64 v){*p=v;}
 source+=function(generation,'rtl9617c_fttr_generation_read')
 source+=function(generation,'rtl_fttr_pe_publish')
 source+=function(generation,'rtl9617c_fttr_generation_set')
+source += 'static bool rtl9617c_bridge_mcast_stale(const struct sk_buff *s){(void)s;return false;}\n'
 source+=function(header,'rtl9617c_fttr_stale')
 source+=function(generation,'rtl9617c_fttr_stamp')
 if 'static bool rtl_fttr_management(' in text:
