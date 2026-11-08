@@ -1,0 +1,15 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+
+# Migrate OpenWrt's untouched UTC default to the board's local timezone.
+# Keep explicit user timezones and all time-server settings.
+zone=$(uci -q get 'system.@system[0].zonename')
+timezone=$(uci -q get 'system.@system[0].timezone')
+case "$zone" in ''|UTC|Asia/Shanghai) ;; *) exit 0;; esac
+case "$timezone" in ''|GMT0|UTC0|CST-8) ;; *) exit 0;; esac
+[ "$zone:$timezone" = 'Asia/Shanghai:CST-8' ] && exit 0
+uci batch <<'EOF'
+set system.@system[0].timezone='CST-8'
+set system.@system[0].zonename='Asia/Shanghai'
+commit system
+EOF
