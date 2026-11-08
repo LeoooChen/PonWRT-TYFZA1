@@ -26,7 +26,7 @@ typedef uint8_t u8; typedef uint32_t u32;
 #define read_poll_timeout(op,val,cond,delay,timeout,sleep,args...) ({(void)(delay);(void)(timeout);(void)(sleep);(val)=op(args);(cond)?0:-ETIMEDOUT;})
 #define readl_poll_timeout(address,val,cond,delay,timeout) ({(void)(address);(void)(delay);(void)(timeout);(val)=0;(cond)?0:-ETIMEDOUT;})
 struct rx_state {bool active[128];};
-struct rtl_ax_tx {struct rx_state *rx;struct {void *memory;}pe;struct {bool retire_quiescing,route_peers[128];u8 retire_macid;void *route_dev,*vp;unsigned route_tim[128];}ni;bool peer_offloaded[128];void *pdev;};
+struct rtl_ax_tx {struct rx_state *rx;struct {void *memory;}pe;struct {bool retire_quiescing,route_peers[128];u8 retire_macid;void *route_dev,*vp;unsigned route_tim[128];}ni;bool peer_offloaded[128],bcmc_enabled;void *pdev;};
 static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *tx){(void)tx;}
 
 static bool rtl_ax_rx_uplink_active(struct rx_state *rx,unsigned id){return rx->active[id];}

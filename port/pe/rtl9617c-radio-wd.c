@@ -643,6 +643,14 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 		if (request[0] >= 256) {
 			u32 id = request[0] - 256;
 			u32 *owners = (void *)(memory + RTL_AX_NI_OWNERS);
+			u32 macid = (owners[id * 2 + 1] >> 8) & 127;
+			/* Selection can precede ARM's route withdrawal or pause. The
+			 * per-peer/global fence also covers ordinary non-cookie NI TX.
+			 * BCMC has MACID0 and its own immutable admission contract.
+			 */
+			u32 fence = mailbox[62];
+			revoked |= fence == 128 || (macid && (fence == macid ||
+				!*(volatile u32 *)(memory + 0x11a00 + macid * 4)));
 			if (((request[2] >> 16) & 63) == 24) {
 				const u32 *waiting = uncached(owners[id * 2]);
 				volatile struct rtl_seq_shared *s = (void *)(memory + RTL_SEQ_BASE);

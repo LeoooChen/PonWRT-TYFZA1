@@ -5897,6 +5897,52 @@ under `artifacts/fttr/main-8ee9791-*`, with final PE in
 `main-8ee9791-pe-final-20261108/`. No device was accessed. Full MCE/NI DMA/AFT
 producer retirement and safe hardware multicast ID reuse remain open.
 
+### Selected NI requests obey peer withdrawal at final publication
+
+The custom PE staging FIFO can retain an ordinary unicast request after
+`ni_select` has admitted it, including while its TXBD or hardware WP credit is
+unavailable. ARM key/BA/STA teardown already clears the peer route before
+withdrawing FE and asking PE to pause. The final publisher checked immutable
+multicast recipes and FTTR generations, but neither covers ordinary NI
+unicast from LAN/PON with no multicast cookie. Such a selected request could
+still be published after its peer route was cleared. The linked production
+image reproduced this behavior before the fix.
+
+`pe_tx_publish` now checks the software owner's MACID against the current
+route bit, the per-peer retirement marker and the global retirement marker
+before hardware-credit allocation or descriptor construction. A revoked
+request joins the existing completion FIFO; it does not consume a hardware
+WP tag or claim a transmission. It retains its admitted per-AC quota and
+whole BID chain until the final EQ return. Partial A-MSDU returns decrement
+only the returned BID/TID/FTTR count and leave the single MPDU quota held
+until the last BID. MACID0 BCMC remains governed by its immutable HIQ/GTK
+contract and global retirement; a different station's retirement does not
+block it. Already published packets still require a real hardware RPQ and
+EQ return, and this change does not attempt to reclaim them by inspecting a
+software route bit.
+
+`test_pe_peer_withdrawal.py` executes25 linked-MIPS scenarios across NI
+source0/6/7, ordinary route removal, per-peer/global fences, zero TXBD credit,
+all four ACs, two-BID partial aggregate retirement, another peer's fence,
+BCMC and actual RPQ completion. It verifies zero publication for withdrawn
+requests, exact quota/BID release and no foreign tag release for an
+unpublished request. Existing multicast, FTTR drain, BCMC, PS/WMM, shared
+sequence/GTK PN, stock WP ownership, channel progress, RX and ARM station/key
+retirement tests pass. The ARM retirement test also verifies that a failed
+FE withdrawal has already closed the peer route; its fixture now includes
+the existing BCMC lifetime field.
+
+The final PE is32668 bytes, SHA256
+`18e52bdffdaebbbc94bcbe4e62684644e02384fb2ffc761a562e8b6bb9eeebfa`,
+with conservative summed stack7296/8192 bytes. The repeat build matches the
+tracked header, the non-PE_UPLINK image remains14168 bytes and byte-identical,
+and Image/modules plus kernel firmware-input identity pass. Local reports
+are `artifacts/fttr/peer-withdrawal-*`, including the memory and build identity
+JSON files. This closes a software staging/peer teardown window. It does not
+establish MCE/NI DMA/AFT producer retirement or safe reuse of quarantined
+hardware multicast IDs, and it does not claim physical throughput or timing
+acceptance. No device was accessed.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN

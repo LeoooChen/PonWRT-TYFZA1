@@ -190,6 +190,8 @@
 
 86. 对齐本地main8ee9791原厂Wi-Fi策略更新：整合ARM/NI WMM配额、原厂2048休眠总预算、流量/EDCA/聚合队列策略及64描述符批处理，同时保留FTTR组播TID/no-ACK配方、源6代际/EPP屏障、BCMC HIQ、共享序号/GTK PN和跨通道发布。完整PE在-O2下超出32KiB，改用-Os后32572字节、保守栈7288字节，功能未删减；硬件性能未测。273组组播+12加密TX、251FTTR回收、98BCMC、main对照2048分类/流量键、原厂流量/配额及ARM8448请求等通过；Image/模块和23份变更源码一致性通过。未上实机、未合回main；完整上游退场与ID复用仍未完成。详见[main对齐与PE策略整合](port/FTTR.md#alignment-with-main-8ee9791-and-combined-pe-policies)。
 
+87. 修复PE已选中普通NI单播绕过STA撤销的窗口：生产固件复现路由关闭后待发布请求仍可写TXBD；最终发布现检查所有者MACID路由、单STA及全局撤销标记，未发布请求进入已有完成队列，保留额度/BID直到最后EQ归还，已发布请求仍必须真实RPQ完成。25组源0/6/7、信用阻塞、四AC、部分A-MSDU、其他STA隔离和BCMC/真实RPQ场景及既有组播/FTTR回收/PS/WMM/序号/PN/站点生命周期检查通过。PE32668字节、保守栈7296，重复生成、Image/模块和固件输入一致性通过；完整上游生产者退场与硬件ID安全复用仍待补，未上实机。详见[NI最终发布撤销检查](port/FTTR.md#selected-ni-requests-obey-peer-withdrawal-at-final-publication)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
