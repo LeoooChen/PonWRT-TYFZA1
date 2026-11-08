@@ -19,11 +19,12 @@
 
 /* Pending sends only run after ingress reaches EAGAIN. No protocol transaction
  * ID exists: later identical same-source reports remain indistinguishable. */
-enum phase { IDLE, PREFLIGHT_SEND, PREFLIGHT, WRITE_SEND, WRITE, READBACK_SEND, READBACK, RECOVER_SEND, RECOVER };
+enum phase { IDLE, PREFLIGHT_SEND, PREFLIGHT, WRITE_SEND, WRITE, READBACK_SEND, READBACK, RECOVER_SEND, RECOVER, MESH_SEND, MESH };
+#define MESH_ATTEMPTED (1U << 16)
 
 struct policy_peer {
 	uint8_t mac[6];
-	struct json_object *registration, *wifi;
+	struct json_object *registration, *wifi, *mesh;
 	struct json_object *input, *record;
 	unsigned int attempted;
 	bool blocked;
@@ -57,7 +58,7 @@ static int64_t now_ms(void)
 
 static int policies(struct json_object *value, struct policy_peer peers[FTTR_SYNC_PEERS])
 {
-	struct json_object *list, *entry, *mac, *registration, *wifi, *revision;
+	struct json_object *list, *entry, *mac, *registration, *wifi, *revision, *mesh;
 	size_t i, j, k, count;
 	uint8_t address[6];
 
@@ -92,6 +93,11 @@ static int policies(struct json_object *value, struct policy_peer peers[FTTR_SYN
 			}
 		}
 		j = wifi ? 3 : 2;
+		mesh = NULL;
+		if (json_object_object_get_ex(entry, "EasyMesh", &mesh)) {
+			if (!json_object_is_type(mesh, json_type_boolean)) return -EINVAL;
+			j++;
+		}
 		if (json_object_object_get_ex(entry, "Revision", &revision)) {
 			if (fttr_sync_store_revision(entry))
 				return -EINVAL;
@@ -105,6 +111,7 @@ static int policies(struct json_object *value, struct policy_peer peers[FTTR_SYN
 		memcpy(peers[i].mac, address, 6);
 		peers[i].registration = registration;
 		peers[i].wifi = wifi;
+		peers[i].mesh = mesh;
 		peers[i].input = entry;
 	}
 	return 0;
@@ -148,6 +155,12 @@ static void event(const char *name, const struct session *session, const struct 
 		json_object_object_get_ex(session->policy->registration, "Ready", &ready);
 		json_object_object_add(value, "advertised_ready", json_object_get(ready));
 		json_object_object_add(value, "peer_acceptance_verified", json_object_new_boolean(0));
+	}
+	if (!strcmp(name, "sync_resident_easymesh")) {
+		json_object_object_add(value, "requested_enabled", json_object_get(session->policy->mesh));
+		json_object_object_add(value, "ack_seen", json_object_new_boolean(session->ack_seen));
+		json_object_object_add(value, "completion_reported", json_object_new_boolean(!result));
+		json_object_object_add(value, "write_replayed", json_object_new_boolean(0));
 	}
 	if (!strcmp(name, "sync_resident_recovery")) {
 		struct json_object *index;
@@ -202,17 +215,25 @@ static struct json_object *desired(struct session *session)
 
 static void next_configuration(struct session *session)
 {
-	if (!desired(session))
-		phase(session, IDLE);
-	else
+	if (desired(session))
 		phase(session, session->policy->attempted & (1u << session->configuration) ? RECOVER_SEND : PREFLIGHT_SEND);
+	else {
+		struct json_object *ready;
+		json_object_object_get_ex(session->policy->registration, "Ready", &ready);
+		phase(session, session->policy->mesh && json_object_get_int(ready) &&
+			!(session->policy->attempted & MESH_ATTEMPTED) ? MESH_SEND : IDLE);
+	}
 }
 
 static void completed(struct session *session, const struct fttr_sync_peer *peer, int slot, int result)
 {
 	struct json_object *ready;
 
-	if (session->phase == RECOVER) {
+	if (session->phase == MESH) {
+		event("sync_resident_easymesh", session, peer, slot, result, result);
+		if (result) session->policy->blocked = true;
+		phase(session, IDLE);
+	} else if (session->phase == RECOVER) {
 		event("sync_resident_recovery", session, peer, slot, result, result);
 		if (result) {
 			session->policy->blocked = true;
@@ -289,22 +310,27 @@ static int receive_message(int fd, const uint8_t source[6], uint16_t ethertype,
 		session->configuration = 0;
 		event("sync_resident_registered", session, peer, slot, 0, 0);
 		if (!session->policy->blocked) {
-			if (desired(session))
+			if (session->policy->attempted & MESH_ATTEMPTED) {
+				/* No original readback contract exists for Flag2. A durable
+				 * send intent cannot be reclassified as success or replayed. */
+				event("sync_resident_easymesh", session, peer, slot, -EINPROGRESS, -EINPROGRESS);
+				session->policy->blocked = true;
+			} else if (desired(session) || session->policy->mesh)
 				next_configuration(session);
 			else
 				phase(session, PREFLIGHT_SEND);
 		}
 		return 0;
 	}
-	if (!session->registered || (session->phase != PREFLIGHT && session->phase != WRITE && session->phase != READBACK && session->phase != RECOVER))
+	if (!session->registered || (session->phase != PREFLIGHT && session->phase != WRITE && session->phase != READBACK && session->phase != RECOVER && session->phase != MESH))
 		return 0;
 	message.slot = slot;
-	ret = fttr_sync_reply_decode(&message, peer->mac, true, session->phase == WRITE,
+	ret = fttr_sync_reply_decode(&message, peer->mac, session->phase == MESH ? 2 : 1, session->phase == WRITE || session->phase == MESH,
 		&session->ack_seen, &summary, &observed);
 	json_object_put(summary);
 	if (session->ack_seen)
 		session->protocol = 2;
-	if (!ret && session->phase != WRITE && desired(session))
+	if (!ret && session->phase != WRITE && session->phase != MESH && desired(session))
 		ret = fttr_sync_wifi_check(observed, desired(session), session->phase == READBACK || session->phase == RECOVER);
 	json_object_put(observed);
 	if (ret != -EAGAIN)
@@ -335,7 +361,7 @@ int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype, st
 		for (slot = 0; slot < FTTR_SYNC_PEERS; slot++) {
 			struct policy_peer *peer = &configured[slot];
 
-			if (!peer->wifi || !json_object_array_length(peer->wifi))
+			if ((!peer->wifi || !json_object_array_length(peer->wifi)) && !peer->mesh)
 				continue;
 			ret = fttr_sync_store_load(store, source, peer->mac, ethertype, peer->input, &peer->record, &peer->attempted);
 			if (ret)
@@ -372,7 +398,7 @@ int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype, st
 				revoke(session, &peers[slot], slot, -ETIMEDOUT);
 				continue;
 			}
-			if ((session->phase == PREFLIGHT || session->phase == WRITE || session->phase == READBACK || session->phase == RECOVER) && now >= session->deadline)
+			if ((session->phase == PREFLIGHT || session->phase == WRITE || session->phase == READBACK || session->phase == RECOVER || session->phase == MESH) && now >= session->deadline)
 				completed(session, &peers[slot], slot, -ETIMEDOUT);
 		}
 		/* Bound flood work so heartbeats, expiry and termination still run. */
@@ -418,33 +444,43 @@ int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype, st
 			struct session *session = &sessions[slot];
 			enum phase current = session->phase;
 
-			if (current == PREFLIGHT_SEND || current == WRITE_SEND || current == READBACK_SEND || current == RECOVER_SEND) {
+			if (current == PREFLIGHT_SEND || current == WRITE_SEND || current == READBACK_SEND || current == RECOVER_SEND || current == MESH_SEND) {
+				unsigned int bit = current == MESH_SEND ? MESH_ATTEMPTED : 1u << session->configuration;
+				struct json_object *mesh_request = NULL;
 				if (session->receivers[0].count || session->receivers[1].count) {
 					for (i = 0; i < 2; i++)
 						if (session->receivers[i].count && session->receivers[i].deadline < wake)
 							wake = session->receivers[i].deadline;
 					continue;
 				}
-				if (current == WRITE_SEND && store >= 0 &&
-				    !(session->policy->attempted & (1u << session->configuration))) {
+				if ((current == WRITE_SEND || current == MESH_SEND) && store >= 0 &&
+				    !(session->policy->attempted & bit)) {
 					ret = fttr_sync_store_mark(store, peers[slot].mac, session->policy->record,
-						session->policy->attempted | (1u << session->configuration));
+						session->policy->attempted | bit);
 					if (ret)
 						goto restore;
 					/* fsync can take time. Revisit ingress/liveness before
 					 * sending; a queued replacement must cancel this write. */
-					session->policy->attempted |= 1u << session->configuration;
+					session->policy->attempted |= bit;
 					wake = 0;
 					break;
 				}
-				ret = fttr_sync_request(fd, source, peers[slot].mac, ethertype, slot, true,
-					current == WRITE_SEND ? desired(session) : NULL);
+				if (current == MESH_SEND) {
+					mesh_request = json_object_new_object();
+					if (!mesh_request) { ret = -ENOMEM; goto restore; }
+					json_object_object_add(mesh_request, "act", json_object_new_string("config"));
+					json_object_object_add(mesh_request, "EnableEasymesh", json_object_new_string(
+						json_object_get_boolean(session->policy->mesh) ? "1" : "0"));
+				}
+				ret = fttr_sync_request(fd, source, peers[slot].mac, ethertype, slot, current == MESH_SEND ? 2 : 1,
+					mesh_request ? mesh_request : current == WRITE_SEND ? desired(session) : NULL);
+				json_object_put(mesh_request);
 				if (ret)
 					goto restore;
-				if (current == WRITE_SEND)
-					session->policy->attempted |= 1u << session->configuration;
-				phase(session, current == PREFLIGHT_SEND ? PREFLIGHT : current == WRITE_SEND ? WRITE : current == RECOVER_SEND ? RECOVER : READBACK);
-				session->deadline = now_ms() + 3000;
+				if (current == WRITE_SEND || current == MESH_SEND)
+					session->policy->attempted |= bit;
+				phase(session, current == MESH_SEND ? MESH : current == PREFLIGHT_SEND ? PREFLIGHT : current == WRITE_SEND ? WRITE : current == RECOVER_SEND ? RECOVER : READBACK);
+				session->deadline = now_ms() + (current == MESH_SEND ? 9000 : 3000);
 			}
 			if (session->phase != IDLE && session->deadline < wake)
 				wake = session->deadline;

@@ -61,7 +61,8 @@ static void filename(const uint8_t peer[6], struct json_object *record, char nam
 int fttr_sync_store_load(int directory, const uint8_t source[6], const uint8_t peer[6],
 	uint16_t ethertype, struct json_object *policy, struct json_object **record, unsigned int *attempted)
 {
-	struct json_object *value, *registration, *copy, *wifi, *revision, *stored = NULL, *mask;
+	struct json_object *value, *registration, *copy, *wifi = NULL, *mesh = NULL, *revision, *stored = NULL, *mask;
+	unsigned int allowed;
 	char name[64], mac[13];
 	int fd, ret;
 
@@ -71,17 +72,20 @@ int fttr_sync_store_load(int directory, const uint8_t source[6], const uint8_t p
 		return -EINVAL;
 	json_object_object_get_ex(policy, "Registration", &registration);
 	json_object_object_get_ex(policy, "WiFi", &wifi);
+	json_object_object_get_ex(policy, "EasyMesh", &mesh);
+	allowed = (1U << (wifi ? json_object_array_length(wifi) : 0)) - 1;
+	if (mesh) allowed |= 1U << 16;
 	json_object_object_get_ex(policy, "Revision", &revision);
 	copy = json_object_new_object();
-	/* Ready can change with operator-supplied WAN/CWMP state. Identity and all
-	 * desired Wi-Fi fields are immutable within a revision, including PWD. */
+	/* Ready can change with operator-supplied WAN/CWMP state. Identity and
+	 * desired Wi-Fi/EasyMesh fields are immutable within a revision. */
 	json_object_object_foreach(registration, key, field) {
 		if (strcmp(key, "Ready"))
 			json_object_object_add(copy, key, json_object_get(field));
 	}
 	value = json_object_new_object();
 	snprintf(mac, sizeof(mac), "%02X%02X%02X%02X%02X%02X", source[0], source[1], source[2], source[3], source[4], source[5]);
-	json_object_object_add(value, "version", json_object_new_int(1));
+	json_object_object_add(value, "version", json_object_new_int(mesh ? 2 : 1));
 	json_object_object_add(value, "source", json_object_new_string(mac));
 	snprintf(mac, sizeof(mac), "%02X%02X%02X%02X%02X%02X", peer[0], peer[1], peer[2], peer[3], peer[4], peer[5]);
 	json_object_object_add(value, "peer", json_object_new_string(mac));
@@ -89,6 +93,7 @@ int fttr_sync_store_load(int directory, const uint8_t source[6], const uint8_t p
 	json_object_object_add(value, "revision", json_object_get(revision));
 	json_object_object_add(value, "registration", copy);
 	json_object_object_add(value, "wifi", json_object_get(wifi));
+	if (mesh) json_object_object_add(value, "easymesh", json_object_get(mesh));
 	json_object_object_add(value, "attempted", json_object_new_int(0));
 	filename(peer, value, name);
 	fd = openat(directory, name, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
@@ -102,7 +107,7 @@ int fttr_sync_store_load(int directory, const uint8_t source[6], const uint8_t p
 		goto out;
 	if (!json_object_object_get_ex(stored, "attempted", &mask) || !json_object_is_type(mask, json_type_int) ||
 	    json_object_get_int64(mask) < 0 ||
-	    json_object_get_int64(mask) >= (1LL << json_object_array_length(wifi))) {
+	    json_object_get_int64(mask) > allowed || (json_object_get_int64(mask) & ~allowed)) {
 		ret = -EBADMSG;
 		goto out;
 	}

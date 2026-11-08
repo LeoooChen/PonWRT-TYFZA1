@@ -29,7 +29,7 @@ int fttr_sync_mac_parse(const char *text, uint8_t mac[6])
 }
 
 int fttr_sync_reply_decode(const struct fttr_sync_message *message, const uint8_t peer[6],
-			bool settings, bool writing, bool *ack_seen,
+			unsigned int settings, bool writing, bool *ack_seen,
 			struct json_object **summary, struct json_object **observed)
 {
 	struct json_tokener *parser = json_tokener_new();
@@ -49,6 +49,30 @@ int fttr_sync_reply_decode(const struct fttr_sync_message *message, const uint8_
 	    json_tokener_get_parse_end(parser) != message->length ||
 	    !json_object_is_type(value, json_type_object))
 		goto out;
+	if (settings == 2) {
+		struct json_object *rpc, *flag, *status;
+		bool has_rpc = json_object_object_get_ex(value, "RPCMethod", &rpc);
+		bool has_flag = json_object_object_get_ex(value, "Flag", &flag);
+		if (has_rpc && (!json_object_is_type(rpc, json_type_string) ||
+		    json_object_get_string_len(rpc) != (int)strlen(json_object_get_string(rpc)))) goto out;
+		if (has_rpc && !strcmp(json_object_get_string(rpc), "Register")) { ret = -ESTALE; goto out; }
+		if (has_rpc && strcmp(json_object_get_string(rpc), "SetAllSetting")) { ret = -EAGAIN; goto out; }
+		if (has_flag && !json_object_is_type(flag, json_type_int)) goto out;
+		if (has_flag && json_object_get_int64(flag) != 2) { ret = -EAGAIN; goto out; }
+		if (json_object_object_get_ex(value, "Result", &field)) {
+			if (!json_object_is_type(field, json_type_int)) goto out;
+			if (json_object_get_int64(field) != 1) { ret = -EREMOTEIO; goto out; }
+			*ack_seen = true;
+		}
+		/* Result acknowledges transport. Only the separately identified
+		 * Flag2 STATUS0 report completes the original setting operation. */
+		if (!has_rpc || !has_flag || !json_object_object_get_ex(value, "STATUS", &status)) {
+			ret = -EAGAIN; goto out;
+		}
+		if (!json_object_is_type(status, json_type_int)) goto out;
+		ret = json_object_get_int64(status) == 0 ? 0 : -EAGAIN;
+		goto out;
+	}
 	if (json_object_object_get_ex(value, "RPCMethod", &field) &&
 	    (!json_object_is_type(field, json_type_string) ||
 	     (size_t)json_object_get_string_len(field) != strlen(method) || strcmp(json_object_get_string(field), method))) {
@@ -176,20 +200,21 @@ out:
 }
 
 int fttr_sync_request(int fd, const uint8_t source[6], const uint8_t peer[6], uint16_t ethertype,
-		uint8_t slot, bool settings, struct json_object *configuration)
+		uint8_t slot, unsigned int settings, struct json_object *configuration)
 {
 	uint8_t frame[FTTR_SYNC_FRAME_MAX];
 	char payload[FTTR_SYNC_FRAME_MAX];
 	const char *content = configuration ? json_object_to_json_string_ext(configuration, JSON_C_TO_STRING_PLAIN) : "{\"act\":\"get\"}";
 	int ret, length;
+	if (settings > 2 || (settings == 2 && !configuration)) return -EINVAL;
 
 	length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"GetWifi\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\"}",
 		source[0], source[1], source[2], source[3], source[4], source[5]);
 	if (settings)
 		length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"SetAllSetting\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\","
-			"\"DMAC\":\"%02X%02X%02X%02X%02X%02X\",\"Flag\":1,\"content\":%s}",
+			"\"DMAC\":\"%02X%02X%02X%02X%02X%02X\",\"Flag\":%u,\"content\":%s}",
 			source[0], source[1], source[2], source[3], source[4], source[5],
-			peer[0], peer[1], peer[2], peer[3], peer[4], peer[5], content);
+			peer[0], peer[1], peer[2], peer[3], peer[4], peer[5], settings, content);
 	if (length < 0 || (size_t)length >= sizeof(payload))
 		return -E2BIG;
 	ret = fttr_sync_pack(source, fttr_sync_slave_group, ethertype, slot, FTTR_SYNC_REQUEST,

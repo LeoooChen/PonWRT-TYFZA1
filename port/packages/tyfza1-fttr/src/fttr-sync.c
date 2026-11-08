@@ -33,7 +33,7 @@ static int64_t now_ms(void)
 }
 
 static int exchange(int fd, const uint8_t source[6], const uint8_t peer[6], uint16_t ethertype,
-		    uint8_t slot, bool settings, struct json_object *configuration, bool *ack_seen,
+		    uint8_t slot, unsigned int settings, struct json_object *configuration, bool *ack_seen,
 		    struct json_object **summary, struct json_object **observed)
 {
 	struct fttr_sync_receiver receivers[2] = { 0 };
@@ -48,7 +48,7 @@ static int exchange(int fd, const uint8_t source[6], const uint8_t peer[6], uint
 	if (ret)
 		return ret;
 	/* Fixed per-exchange budget, not an asserted original retry policy. */
-	deadline = now_ms() + 3000;
+	deadline = now_ms() + (settings == 2 ? 9000 : 3000);
 	for (;;) {
 		int64_t remaining = deadline - now_ms();
 		ssize_t received;
@@ -63,7 +63,8 @@ static int exchange(int fd, const uint8_t source[6], const uint8_t peer[6], uint
 			return -EIO;
 		received = recv(fd, frame, sizeof(frame), MSG_TRUNC);
 		if (received < 0) { if (errno == EAGAIN) continue; return -errno; }
-		if (received < 16 || !fttr_sync_destination(frame, source) || memcmp(frame + 6, peer, 6) ||
+		if (received < 16 || received > (ssize_t)sizeof(frame) ||
+		    !fttr_sync_destination(frame, source) || memcmp(frame + 6, peer, 6) ||
 		    ((frame[14] & 15) != FTTR_SYNC_RESPONSE &&
 		     (!settings || (frame[14] & 15) != FTTR_SYNC_REQUEST)))
 			continue;
@@ -245,14 +246,15 @@ int main(int argc, char **argv)
 	bool discover = argc == 4 && !strcmp(argv[2], "discover");
 	bool resident = (argc == 5 || (argc == 7 && !strcmp(argv[5], "--state"))) && !strcmp(argv[2], "serve");
 	bool apply = argc == 7 && !strcmp(argv[5], "wifi-apply");
+	bool easymesh = argc == 7 && !strcmp(argv[5], "easymesh");
 	bool registering = argc == 7 && !strcmp(argv[5], "register");
-	bool settings = apply || (argc == 6 && !strcmp(argv[5], "wifi-settings"));
+	unsigned int settings = easymesh ? 2 : apply || (argc == 6 && !strcmp(argv[5], "wifi-settings"));
 	bool automatic = !resident && (argc == 5 || settings || registering) && !strcmp(argv[3], "auto");
 	bool ack_seen = false;
 
 	if ((!discover && !resident && !settings && !registering && argc != 5) || strlen(argv[1]) >= IFNAMSIZ || strchr(argv[1], '/') ||
 	    (!discover && !resident && fttr_sync_mac_parse(argv[2], peer))) {
-		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [wifi-settings | wifi-apply <private-json-file> | register <private-policy-file>]\n"
+		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [wifi-settings | wifi-apply <private-json-file> | easymesh <0|1> | register <private-policy-file>]\n"
 			"       %s <interface> discover <ethertype>\n"
 			"       %s <interface> serve <ethertype> <private-policy-file> [--state <private-persistent-directory>]\n", argv[0], argv[0], argv[0]);
 		return 2;
@@ -264,6 +266,13 @@ int main(int argc, char **argv)
 		if (ret)
 			goto out;
 		ret = -EINVAL;
+	}
+	if (easymesh) {
+		if (strcmp(argv[6], "0") && strcmp(argv[6], "1")) goto out;
+		desired = json_object_new_object();
+		if (!desired) { ret = -ENOMEM; goto out; }
+		json_object_object_add(desired, "act", json_object_new_string("config"));
+		json_object_object_add(desired, "EnableEasymesh", json_object_new_string(argv[6]));
 	}
 	if (apply) {
 		ret = fttr_sync_wifi_load(argv[6], &desired);
@@ -332,6 +341,21 @@ int main(int argc, char **argv)
 		ret = registration(fd, source, peer, ethertype, slot, desired, &summary);
 		goto out;
 	}
+	if (easymesh) {
+		ret = drain(fd);
+		if (ret) goto out;
+		ret = exchange(fd, source, peer, ethertype, slot, 2, desired, &ack_seen, &summary, NULL);
+		summary = json_object_new_object();
+		json_object_object_add(summary, "event", json_object_new_string("sync_easymesh"));
+		json_object_object_add(summary, "peer", json_object_new_string(argv[2]));
+		json_object_object_add(summary, "slot", json_object_new_int(slot));
+		json_object_object_add(summary, "requested_enabled", json_object_new_boolean(argv[6][0] == '1'));
+		json_object_object_add(summary, "ack_seen", json_object_new_boolean(ack_seen));
+		json_object_object_add(summary, "completion_reported", json_object_new_boolean(!ret));
+		json_object_object_add(summary, "configuration_verified", json_object_new_boolean(0));
+		json_object_object_add(summary, "error", json_object_new_int(ret));
+		goto out;
+	}
 	if (apply) {
 		struct json_object *observed = NULL;
 		int write_result = 0, read_result = 0;
@@ -386,7 +410,7 @@ out:
 			ret = -errno;
 	}
 	if (ret)
-		fprintf(stderr, "FTTR sync %s: %s (%d)\n", resident ? "serve" : discover ? "discovery" : registering ? "register" : apply ? "wifi-apply" : settings ? "wifi-settings" : "GetWifi", strerror(-ret), ret);
+		fprintf(stderr, "FTTR sync %s: %s (%d)\n", resident ? "serve" : discover ? "discovery" : registering ? "register" : easymesh ? "easymesh" : apply ? "wifi-apply" : settings ? "wifi-settings" : "GetWifi", strerror(-ret), ret);
 	json_object_put(summary);
 	json_object_put(desired);
 	if (fd >= 0) close(fd);

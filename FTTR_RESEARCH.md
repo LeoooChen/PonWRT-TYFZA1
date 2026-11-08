@@ -250,6 +250,8 @@
 
 116. 补齐协商SPP A-MSDU的CAM参数：Linux密钥SPP标志写入原厂bit5，四种AES与256位双半均携带，旧安装函数已复现遗漏。原厂782编码/96双半传递及32删除对、实际Linux384认证数据组合、144双CAM失败/清理组和8组普通↔SPP擦除失败后重装通过；Image/模块及两份输入一致，PE不变。未实机，物理SPP互通、完整退场、多VIF及其余管理目标仍未完成。详见[SPP密钥参数](port/FTTR.md#negotiated-spp-a-msdu-in-security-cam)。
 
+117. 接入原厂EasyMesh Flag2主端事务：执行fttrManage启停生产器、sync_controllerd构造/L2/完成分支，确认EnableEasymesh字符串、Result仅ACK、独立STATUS0报告才完成。显式easymesh0/1单发、9秒总限、错目标/标志/方法隔离与重新注册中止；常驻EasyMesh布尔策略在Ready1身份匹配及Wi-Fi完成后发送。持久v2记录含值与bit16发送意图，fsync失败不发，重启已尝试结果未知不重放，同Revision漂移拒绝，新Revision可重新尝试。14CLI/17常驻持久场景、37常驻/38持久/30Wi-Fi回归与双架构构建通过；内核/PE不变、未实机。未查实从端执行/回读，因此completion_reported不等于configuration_verified，实际Mesh/漫游和完整硬件退场等仍待补。详见[EasyMesh事务](port/FTTR.md#original-easymesh-flag2-configuration-transaction)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

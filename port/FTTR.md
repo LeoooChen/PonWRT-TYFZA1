@@ -7854,6 +7854,64 @@ descriptor bit is invented because SPP is stored in CAM. Local artifacts are
 `artifacts/fttr/spp-*-20261109.*`. Physical SPP interoperability and cryptographic
 hardware behavior remain unverified; no device was accessed.
 
+### Original EasyMesh Flag2 configuration transaction
+
+The syncserv client now supports the original EasyMesh enable/disable request:
+
+```sh
+fttr-sync fttr0 02:00:00:00:00:01 auto 0x88aa easymesh 1
+fttr-sync fttr0 02:00:00:00:00:01 auto 0x88aa easymesh 0
+```
+
+Use the interface/EtherType for the actual downstream syncserv topology.
+`auto` discovers the peer's current local slot; an explicit0..15 slot is also
+accepted. The native frame retains the existing slave multicast destination,
+with the target MAC pinned in JSON `DMAC`. `SetAllSetting`, Flag2 and
+`content:{"act":"config","EnableEasymesh":"0"|"1"}` match the executed
+`fttrManage:set_fu_easymesh_info` and `sync_controllerd` producer. There is one
+send and a nine-second total completion budget. A re-registration message from
+the peer cancels the explicit transaction.
+
+The actual original reply handler confirms `Result:1` only acknowledges the
+request. A separate `RPCMethod:SetAllSetting`, `Flag:2`, integer `STATUS:0`
+report completes it, including when received before the ACK. Other flags/methods
+are ignored; nonzero STATUS remains pending within the fixed budget. Negative
+Result, malformed messages and timeout are explicit errors. Output distinguishes
+`ack_seen` from `completion_reported`; `configuration_verified` remains false.
+No original slave readback/application handler was established from the retained
+inputs. A reported completion does not prove actual Mesh enablement, roaming,
+wireless restart, credentials or interoperation. Late identical same-source
+reports remain indistinguishable because this original envelope has no
+transaction ID.
+
+Resident `serve` policies accept optional `"EasyMesh":true` or `false` per peer,
+alongside its existing MAC/Registration/Revision/WiFi entries. After a matched
+registration with Ready1, all requested Wi-Fi rows must finish before Flag2 is
+sent. Ready0 does not send it. Independent peers continue while one waits. The
+resident event `sync_resident_easymesh` reports the requested value and observed
+completion; re-registration/offline/replacement cancels outstanding state.
+
+With `--state`, a version2 record stores the exact EasyMesh value and reserves
+attempt bit16 after file/directory fsync and before transmission. Existing
+Wi-Fi-only records remain version1. Startup refuses a changed same-Revision
+policy. An attempted Flag2 operation recovered after restart is reported as
+EINPROGRESS and is not replayed or inferred successful; a new explicit Revision
+permits a new attempt after registration. This includes previously reported
+success, since current state cannot be read back. Without `--state`, suppression
+only lasts for the process lifetime.
+
+`trace_stock_fttr_easymesh.py` executes both toggle values through the original
+manager, controller builder, L2 encoder and ACK/completion branches. Actual
+AF_PACKET/veth tests pass14 CLI and17 resident/persistence cases, including
+fragments, incorrect source/method/flag, ACK-only timeout, registration change,
+Wi-Fi-before-Mesh ordering, Ready0, fsync failure, SIGKILL/restart, policy drift
+and revision changes. Existing37 resident,38 durable-recovery and30 Wi-Fi CLI
+cases pass. Host and aarch64-musl builds pass. Evidence is under
+`artifacts/fttr/easymesh-*-20261109.*`; kernel/PE are unchanged and no device was
+accessed. This implements the verified host configuration transaction, while
+actual subordinate application/readback and full roaming coordination remain
+unfinished.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
