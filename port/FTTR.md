@@ -7155,8 +7155,67 @@ with `-Wall -Wextra -Werror`. Evidence is local under
 
 No kernel or PE image changed. No device was accessed, and the tests do not prove
 physical flash failure behavior, ONU interoperability or packet retirement. Initial
-provisioning crash recovery, persisted move-target replay, complete upstream and
-downstream retirement and hardware-ID reuse remain open.
+provisioning crash recovery, partial hardware reservation recovery, complete upstream
+and downstream retirement and hardware-ID reuse remain open. Persisted move-target
+recovery for an intact or fully completed reservation is described below.
+
+### Durable migration targets and reservation reconciliation
+
+The resident controller now persists each accepted migration in the existing
+private service-state directory as a64-byte `FTM1` record. It binds source/target
+slots and both serials, whether remote service ownership is required, backend,
+controller MACs and OMCI framing, with a version marker and CRC. The file is
+fsynced, atomically renamed and its directory fsynced before any remote cleanup;
+a second durable stage is written after remote release and before the original
+MiniOLT reservation operation. One controller lease serializes migrations.
+Neither record contains credentials or process pointers.
+
+Recovery checks the original hardware order already established by
+`test_fttr_onu_move.py`: reserve target SN (vendor then serial word), deactivate
+source, clear source SN. An intact original source/target pair resumes the saved
+target after fresh source authentication and MIB inventory. With prior services,
+the original committed or release-state journal remains required and its checked
+cleanup runs again; already completed remote operations are skipped. Without
+services, the existing inventory-only migration check still rejects foreign GEMs
+or assigned T-CONTs. Removal of a current service policy does not erase an already
+accepted migration target. Authentication failure retains both reservations and
+journals without performing service cleanup or a move.
+
+If the source SN is empty and its registration is inactive or blocked, while the
+target has the requested SN and is not blocked, the reservation stage is complete:
+recovery removes obsolete service ownership and then the move record without
+reissuing the command. The normal successful path now performs this same readback
+before dropping durable intent. A target/source half-write, target conflict,
+changed identity or missing required ownership fails and retains evidence. No
+partial hardware repair is inferred from an ambiguous state. A failed stage fsync
+prevents the reservation command. Status exposes `move_recovery` with recorded
+state, phase and the two slots; reservation completion is not registration proof.
+
+A full procd-style startup normally resets MiniOLT. With pending move intent,
+it instead validates that record against the existing OMCI envelope, requires
+live host/peer link and valid retained optical calibration, clears inherited
+business grants and opens management on the retained controller. This preserves
+the reservation evidence needed by recovery. Lost link/calibration or an invalid
+record stops startup without using reset to manufacture a known state. Power
+loss that loses those hardware conditions still needs explicit recovery work.
+
+Actual daemon/CLI/AF_PACKET/bridge tests run15 scenarios on ASIC, FPGA1 and FPGA2:
+release interruption, policy removal, the gap between move intent and release
+journal, driver-before-write and completed-write/lost-reply crashes, partial target
+write, occupied target, authentication failure in both stages, missing ownership,
+stage/initial storage failure, inventory-only before/after crashes and lost link.
+The complete startup arguments are exercised on retained hardware models, and
+all three normal factory-import/startup regression suites pass. Original relocation
+write/fault comparisons,64 record byte corruptions, both fsync failure points,
+separate vendor/serial partial observations, permissions and symlinks pass; existing
+move/release and19 upgrade scenarios pass. Host and aarch64-musl daemon builds use
+`-Wall -Wextra -Werror`. Local evidence is
+`artifacts/fttr/move-recovery-*-20261109.*` and `move-startup-*-20261109.*`.
+
+This is control-state recovery integrated with native FE/VLAN/DBA withdrawal;
+it does not establish complete packet retirement or safe GEM/action/group reuse.
+No device was accessed and no kernel or PE code changed. The worktree includes
+local mainda681f8 (release notes); nothing was merged back to main.
 
 ### Outstanding implementation and acceptance
 

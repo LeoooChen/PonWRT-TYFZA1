@@ -89,6 +89,7 @@ def main():
     p.add_argument('--reboot-control', type=Path, help='exercise remote single-send reboot')
     p.add_argument('--move-control', type=Path, help='exercise the resident SN reservation move')
     p.add_argument('--output', type=Path, required=True)
+    p.add_argument("--move-recovery", action="store_true", help="recover durable migration target across process crash")
     p.add_argument("--release-cuts", action="store_true", help="crash at every remote release mutation and resume checked cleanup")
     p.add_argument("--service-state", action="store_true", help="exercise durable remote service ownership across controller restart")
     p.add_argument("--shared", action="store_true", help="exercise shared Ethernet/VEIP services and release with --move-control")
@@ -456,6 +457,10 @@ def main():
    for(unsigned i=0;i<8;i++)snprintf(actual+2*i,3,"%02x",dest[12+i]);
    if(strcmp(actual,target)){close(f);errno=ESTALE;return -1;}
    uint32_t state;memcpy(&state,dest,4);if(state&0x50000){close(f);errno=EBUSY;return -1;}
+   const char *move_fault=getenv("FTTR_MOVE_CRASH");
+   int crash=0;if(move_fault){int test=open(move_fault,O_RDONLY);if(test>=0){char byte=0;read(test,&byte,1);close(test);crash=byte-'0';}}
+   if(crash==1){kill(getpid(),SIGSTOP);}
+   if(crash==3){memcpy(dest+12,source+12,8);pwrite(f,dest,20,to*20);kill(getpid(),SIGSTOP);}
    memcpy(dest+12,source+12,8);memset(source+12,0,8);
    memcpy(&state,source,4);state=first?(state|0x10000):0x10000;memcpy(source,&state,4);
    if(!first)memset(source+4,0,4);
@@ -467,6 +472,7 @@ def main():
     fputc('\n',table);}
    fclose(table);close(f);
    FILE *trace=fopen(getenv("FTTR_ADMIN_LOG"),"a");fprintf(trace,"move %u %u\n",from,to);fclose(trace);
+   if(crash==2)kill(getpid(),SIGSTOP);
   }
   if(n>=13 && !strcmp(path+n-13,"/fttr_forward")) {
    unsigned enabled,type;char extra;
@@ -531,7 +537,7 @@ def main():
    fclose(table);close(fd);
   }
 '''
-        shim=root/'sysfs.c';shim.write_text(SYSFS_WRITE_SHIM.replace('#include <fcntl.h>',
+        shim=root/'sysfs.c';shim.write_text(('#include <signal.h>\n'+SYSFS_WRITE_SHIM).replace('#include <fcntl.h>',
             '#include <fcntl.h>\n#include <errno.h>\n#include <net/if.h>').replace('  path[n]=0;', '  path[n]=0;'+accel_shim))
         subprocess.run(['cc','-shared','-fPIC','-Wall','-Wextra','-Werror','-o',str(root/'sysfs.so'),str(shim),'-ldl'],check=True)
         policy=root/'services'
@@ -675,14 +681,21 @@ def main():
         hardware()
         upgrade_store=root/'upgrade-store';upgrade_store.mkdir(mode=0o700)
         service_store=root/'service-store';service_store.mkdir(mode=0o700)
-        def launch(with_policy=True, with_wifi=None, grant_case='normal'):
+        def launch(with_policy=True, with_wifi=None, grant_case='normal', warm_move=False):
             while True:
                 try:peer.recv(4096)
                 except BlockingIOError:break
             subprocess.run(['ip','link','set','dev','fap-host','up'],check=True)
             ni.joinpath('fttr_link').write_text('configured=1 mode=9 nway=1 clock=1 error=0 link=1\n')
             device.joinpath('tx_enable').write_text('1\n')
+            optical=root/'optical'
+            if warm_move:
+                optical.mkdir(exist_ok=True)
+                (optical/'calibration').write_text('configured=1 model=GN25L99 marker=b0 writes=128 error=0\n')
+                (optical/'maintenance').write_text('supported=0 interval_ms=0\n')
+                if warm_move=='lost-link':ni.joinpath('fttr_link').write_text('configured=0 mode=0 nway=0 clock=0 error=0 link=0\n')
             return subprocess.Popen([str(args.daemon.resolve()),str(device),str(ni),str(store),'fap-host']+
+                ([str(optical),'9','1','3'] if warm_move else []) +
                 (['--upgrade-state',str(upgrade_store)] if args.upgrade_control else []) +
                 (['--service-state',str(service_store)] if args.service_state else []) +
                 (['--services',str(policy)] if with_policy else []) +
@@ -692,7 +705,7 @@ def main():
                 stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True,
                 env=dict(os.environ,LD_PRELOAD=str(root/'sysfs.so'),FTTR_SERVICE_CASE=grant_case,
                     FTTR_ACCEL_LOG=str(accel_log),FTTR_ACCEL_FAIL=str(accel_fault),
-                    FTTR_ADMIN_FAIL=str(admin_fault),FTTR_ADMIN_HOLD=str(admin_hold),FTTR_ADMIN_LOG=str(admin_log),
+                    FTTR_ADMIN_FAIL=str(admin_fault),FTTR_ADMIN_HOLD=str(admin_hold),FTTR_ADMIN_LOG=str(admin_log),FTTR_MOVE_CRASH=str(root/'move-crash'),
                     **({'FTTR_ADMIN_FPGA':'1'} if args.backend=='fpga1' else {})))
         if args.service_state:
             import copy
@@ -714,6 +727,88 @@ def main():
                 if args.multicast:until(lambda s:s['multicast']['configured'])
             def mutation(n):
                 return [(op,c,i) for _,op,c,i in n.operations if op in (0x44,0x46,0x48) and c not in (65530,256)]
+            if args.move_recovery:
+                def snapshot():
+                    return {i:copy.deepcopy((n.pool,n.table)) for i,n in nodes.items()}
+                def crash_wait():
+                    deadline=time.monotonic()+5
+                    while time.monotonic()<deadline:
+                        if Path(f'/proc/{process.pid}/status').read_text().split('State:')[1].lstrip().startswith('T'):return
+                        until(lambda s:Path(f'/proc/{process.pid}/status').read_text().split('State:')[1].lstrip().startswith('T'),seconds=1)
+                    raise AssertionError('driver crash point not reached')
+                try:
+                    process=launch();start_ready();remote=snapshot()
+                    ledgers={p.name:p.read_bytes() for p in service_store.iterdir()}
+                    stop()
+                    for mode in ('release','removed-policy','intent','before','after','partial','target-conflict','auth-fail','auth-before','missing-owner','stage-fail','store-fail','inventory-before','inventory-after','lost-link'):
+                        for i,n in nodes.items():n.pool,n.table=copy.deepcopy(remote[i]);n.move_hold=False;n.held=None
+                        for p in service_store.iterdir():
+                            if p.is_dir():p.rmdir()
+                            else:p.unlink()
+                        for name,data in ledgers.items():
+                            p=service_store/name;p.write_bytes(data);p.chmod(0o600)
+                        inventory=mode.startswith('inventory-')
+                        if inventory:
+                            for i,n in nodes.items():n.pool,n.table=copy.deepcopy(originals[i])
+                            for p in service_store.iterdir():p.unlink()
+                        hardware();admin_log.write_text('');process=launch(with_policy=not inventory)
+                        if inventory:until(lambda s:len(s.get('onus',[]))>9 and all(s['onus'][i]['phase']=='inventory' for i in (7,9)))
+                        else:start_ready()
+                        count=len(mutation(nodes[7]));nodes[7].move_hold=mode in ('release','removed-policy','intent','target-conflict','auth-fail','missing-owner','stage-fail','lost-link')
+                        crash=root/'move-crash'
+                        if mode in ('before','after','partial','auth-before','inventory-before','inventory-after'):crash.write_text({'before':'1','after':'2','partial':'3','auth-before':'1','inventory-before':'1','inventory-after':'2'}[mode])
+                        if mode=='store-fail':(service_store/'move.new').mkdir()
+                        client=subprocess.Popen([str(args.move_control.resolve()),str(store),'onu-move','7',nodes[7].serial.hex(),'11','0'*16],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                        try:
+                            if mode=='store-fail':
+                                until(lambda s:process.poll() is not None,allow_exit=True)
+                                assert not (service_store/'move').exists() and len(mutation(nodes[7]))==count
+                                checks.append('move intent persistence failure precedes remote cleanup and driver mutation');continue
+                            if nodes[7].move_hold:until(lambda s:nodes[7].held is not None)
+                            else:crash_wait()
+                            assert (service_store/'move').exists()
+                            process.kill();process.wait()
+                            if mode=='intent':
+                                # Crash after move intent persisted but before
+                                # release journal publication: no remote write.
+                                for i,n in nodes.items():n.pool,n.table=copy.deepcopy(remote[i])
+                                for name,data in ledgers.items():(service_store/name).write_bytes(data)
+                        finally:
+                            if client.poll() is None:client.kill();client.wait()
+                        if crash.exists():crash.unlink()
+                        nodes[7].move_hold=False
+                        if mode=='target-conflict':
+                            data=bytearray(device.joinpath('onu_state').read_bytes());struct.pack_into('<I',data,11*20,1<<18);data[11*20+12:12*20]=b'OTHER011';device.joinpath('onu_state').write_bytes(data)
+                        if mode in ('auth-fail','auth-before'):nodes[7].pool[65530,0][0x4000]=b'wrong'.ljust(24,b'\0')
+                        if mode=='stage-fail':(service_store/'move.new').mkdir()
+                        if mode=='missing-owner':(service_store/(nodes[7].serial.hex()+'.service')).unlink()
+                        count=len(mutation(nodes[7]));process=launch(with_policy=mode!='removed-policy' and not inventory,warm_move='lost-link' if mode=='lost-link' else mode in ('before','after','auth-before','inventory-before','inventory-after'))
+                        if mode in ('auth-fail','auth-before'):
+                            until(lambda s:len(s.get('onus',[]))>7 and s['onus'][7]['phase']=='auth-failed')
+                            assert (service_store/'move').exists() and len(mutation(nodes[7]))==count and 'move ' not in admin_log.read_text()
+                            stop()
+                        elif mode=='stage-fail':
+                            until(lambda s:process.poll() is not None,allow_exit=True)
+                            assert process.returncode and (service_store/'move').read_bytes()[20]==1 and 'move ' not in admin_log.read_text()
+                        elif mode in ('partial','target-conflict','missing-owner','lost-link'):
+                            until(lambda s:process.poll() is not None,allow_exit=True)
+                            assert process.returncode and (service_store/'move').exists() and len(mutation(nodes[7]))==count
+                            assert 'move ' not in admin_log.read_text()
+                        else:
+                            until(lambda s:'move 7 11' in admin_log.read_text() and not (service_store/'move').exists())
+                            assert admin_log.read_text().count('move 7 11')==1
+                            assert not (service_store/(nodes[7].serial.hex()+'.service')).exists()
+                            data=device.joinpath('onu_state').read_bytes()
+                            assert data[7*20+12:8*20]==bytes(8) and data[11*20+12:12*20]==nodes[7].serial
+                            assert 'fttr-u7' not in ports() and 'fttr-u11' not in ports()
+                            if mode in ('before','after') or inventory:assert len(mutation(nodes[7]))==count
+                            stop()
+                        checks.append('durable migration '+mode)
+                finally:
+                    if process is not None and process.poll() is None:process.kill();process.wait()
+                    peer.close();os.close(grant_fd)
+                args.output.write_text(json.dumps(dict(backend=args.backend,checks=checks,scope='Actual daemon/CLI and Linux network namespace; original OMCI encoders, modeled MiniOLT and remote MIB. No device or flash power-loss acceptance.'),indent=2)+'\n')
+                print(json.dumps(checks,indent=2));return
             try:
                 process=launch();start_ready()
                 saved={p.name:p.read_bytes() for p in service_store.glob('*.service')}
@@ -782,6 +877,8 @@ def main():
                     process.kill();process.wait()
                 finally:
                     if interrupted.poll() is None:interrupted.kill();interrupted.wait()
+                # Exercise compatibility with older standalone release records.
+                (service_store/'move').unlink()
                 nodes[7].move_hold=False;before_partial=len(mutation(nodes[7]))
                 partial_remote=copy.deepcopy((nodes[7].pool,nodes[7].table))
                 foreign_key=(268,4095) if args.multicast else (262,nodes[7].tcont)
@@ -834,6 +931,7 @@ def main():
                             process.kill();process.wait()
                         finally:
                             if client.poll() is None:client.kill();client.wait()
+                        (service_store/'move').unlink()
                         nodes[7].release_cut=0
                         process=launch(with_policy=cut!=writes)
                         until(lambda s:s['onus'][7]['phase']=='service-released')

@@ -56,7 +56,7 @@ define Build/Compile
 		$(PKG_BUILD_DIR)/omci-objects.c $(PKG_BUILD_DIR)/omci-gem.c \
 		$(PKG_BUILD_DIR)/omci-association.c $(PKG_BUILD_DIR)/omci-vlan.c \
 		$(PKG_BUILD_DIR)/omci-mcast.c $(PKG_BUILD_DIR)/omci-service.c $(PKG_BUILD_DIR)/omci-services.c $(PKG_BUILD_DIR)/omci-wifi.c \
-		$(PKG_BUILD_DIR)/service-store.c $(PKG_BUILD_DIR)/upgrade-store.c $(PKG_BUILD_DIR)/omci-upgrade.c $(PKG_BUILD_DIR)/omci-auth.c $(PKG_BUILD_DIR)/onu-policy.c $(PKG_BUILD_DIR)/sync-json.c \
+		$(PKG_BUILD_DIR)/move-store.c $(PKG_BUILD_DIR)/service-store.c $(PKG_BUILD_DIR)/upgrade-store.c $(PKG_BUILD_DIR)/omci-upgrade.c $(PKG_BUILD_DIR)/omci-auth.c $(PKG_BUILD_DIR)/onu-policy.c $(PKG_BUILD_DIR)/sync-json.c \
 		$(PKG_BUILD_DIR)/fttr-net.c $(TARGET_LDFLAGS) -ljson-c
 	$(TARGET_CC) $(TARGET_CPPFLAGS) $(TARGET_CFLAGS) -std=c11 -Wall -Wextra \
 		-o $(PKG_BUILD_DIR)/fttr-sync $(PKG_BUILD_DIR)/fttr-sync.c \

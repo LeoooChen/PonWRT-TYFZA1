@@ -32,6 +32,7 @@
 #include "omci-upgrade.h"
 #include "upgrade-store.h"
 #include "service-store.h"
+#include "move-store.h"
 #include "onu-policy.h"
 #include "omci-socket.h"
 
@@ -109,6 +110,8 @@ struct onu {
 };
 
 struct controller {
+	struct fttr_move_record move_record;
+	bool move_recorded, move_recovering;
 	int directory, ni, store, socket, control, upgrade_store, service_store;
 	struct fttr_omci_link link;
 	enum fttr_backend backend;
@@ -172,6 +175,8 @@ static int forwarding(struct controller *c, bool enable)
 
 static struct fttr_me_job *service_pending(struct onu *u);
 static int move_drive(struct controller *c);
+static int move_recover_ready(struct controller *c, unsigned int id);
+static int move_recover_start(struct controller *c);
 static int reboot_drive(struct controller *c);
 static int upgrade_drive(struct controller *c);
 static int upgrade_record_load(struct controller *c, const uint8_t serial[8], struct fttr_upgrade_record *record);
@@ -468,6 +473,9 @@ static int publish(struct controller *c, const char *state, int error)
 	fprintf(file, "{\"state\":\"%s\",\"pid\":%ld,\"error\":%d,\"observed_ms\":%" PRId64
 		",\"rx_errors\":%" PRIu64 ",\"service_policies\":%u,\"wifi_policies\":%u",
 		state, stopping || error ? 0L : (long)getpid(), error, c->observed_at, c->rx_errors, c->policy_count, c->wifi_policy_count);
+	fprintf(file, ",\"move_recovery\":{\"recorded\":%s,\"stage\":%u,\"source\":%u,\"target\":%u}",
+		c->move_recorded ? "true" : "false", c->move_recorded ? c->move_record.stage : 0,
+		c->move_recorded ? c->move_record.request.id : 0, c->move_recorded ? c->move_record.request.target : 0);
 	fprintf(file, ",\"multicast\":{\"configured\":%s,\"members\":%u,\"error\":%d,\"bridge\":\"%s\"}",
 		c->multicast.configured ? "true" : "false", c->multicast_members, c->multicast_error, c->multicast.bridge);
 	if (c->observed) {
@@ -844,6 +852,8 @@ static int start_wifi(struct controller *c, unsigned int id)
 
 	if (!authenticated(c, u))
 		return -EACCES;
+	if (c->move_recovering && id == c->move.request.id)
+		return move_recover_ready(c, id);
 	if (c->service_store >= 0) {
 		struct fttr_services saved;
 		int ret = fttr_service_store_load(c->service_store, &c->link, id, u->identity, c->backend, &saved);
@@ -1944,6 +1954,13 @@ static int refresh(struct controller *c)
 	ret = multicast_update(c);
 	if (ret)
 		return ret;
+	if (c->move_recovering && c->onu[c->move.request.id].phase == ONU_ABSENT) {
+		struct onu *source = &c->onu[c->move.request.id];
+		ret = fttr_move_observe(&c->move_record, &source->hardware, &c->onu[c->move.request.target].hardware);
+		if (ret) return ret < 0 ? ret : -EUCLEAN;
+		ret = start_mib(c, c->move.request.id);
+		if (ret) return ret;
+	}
 	/* Retire the complete snapshot before selecting any new identity. A
 	 * lower hardware slot may otherwise skip a departed higher live row
 	 * and auto-learn the same serial into the wrong logical reservation.
@@ -2055,6 +2072,11 @@ static int complete(struct controller *c, unsigned int id)
 		return -errno;
 	u->phase = ONU_INVENTORY;
 	memset(&u->sync, 0, sizeof(u->sync));
+	if (c->move_recovering && id == c->move.request.id) {
+		if (!authenticated(c, u) && !(u->policy_move && !c->move_record.service &&
+		    u->selection.id == c->move.request.target)) return -EACCES;
+		return move_recover_ready(c, id);
+	}
 	return u->policy_move ? policy_move(c, id) : start_wifi(c, id);
 }
 
@@ -2354,6 +2376,52 @@ static int move_finish(struct controller *c, int result)
 	return result;
 }
 
+static int move_record_finish(struct controller *c)
+{
+	int ret;
+	if (!c->move_recorded) return 0;
+	if (c->move_record.service) {
+		ret = fttr_service_store_remove(c->service_store, c->move_record.request.serial);
+		if (ret) return ret;
+	}
+	ret = fttr_move_store_remove(c->service_store);
+	if (!ret) c->move_recorded = c->move_recovering = false;
+	return ret;
+}
+
+/* Startup runs after local ports/grants were withdrawn, before forwarding.
+ * Never repeat a move after observing its complete original write sequence. */
+static int move_recover_start(struct controller *c)
+{
+	struct fttr_onu_state source, target;
+	int ret;
+	if (c->service_store < 0) return 0;
+	ret = fttr_move_store_load(c->service_store, &c->link, c->backend, &c->move_record);
+	if (ret == -ENOENT) return 0;
+	if (ret) return ret;
+	c->move_recorded = true;
+	c->move.request = c->move_record.request;
+	ret = fttr_miniolt_one(c->directory, c->move.request.id, &source);
+	if (!ret) ret = fttr_miniolt_one(c->directory, c->move.request.target, &target);
+	if (!ret) ret = fttr_move_observe(&c->move_record, &source, &target);
+	if (ret < 0) return ret;
+	if (ret == 1) {
+		ret = move_record_finish(c);
+		if (ret) return ret;
+		struct onu *u = &c->onu[c->move.request.id];
+		u->phase = ONU_BLOCKED; u->admin_pending = true;
+		memset(u->admin_serial, 0, 8); u->admin_timeout = now_ms() + 15000;
+		return 0;
+	}
+	c->move.active = true;
+	struct onu *u = &c->onu[c->move.request.id];
+	u->hardware = source; memcpy(u->identity, source.serial, 8);
+	/* Even a reservation-stage retry authenticates and inventories the
+	 * still-original source again: policy or its MIB may have changed. */
+	c->move_recovering = true;
+	return 0;
+}
+
 static int move_drive(struct controller *c)
 {
 	const struct fttr_admin_request *request = &c->move.request;
@@ -2374,7 +2442,9 @@ static int move_drive(struct controller *c)
 	if (ret)
 		return move_finish(c, ret);
 	if (u->service_started) {
-		ret = fttr_services_update(&u->services, &c->transaction, c->directory, &expected);
+		struct fttr_me_job *me = service_pending(u);
+		ret = me && me->request[2] && me->state == FTTR_ME_WAIT && !me->attempts ? 1 :
+			fttr_services_update(&u->services, &c->transaction, c->directory, &expected);
 		if (ret < 0)
 			return move_finish(c, ret);
 		if (ret != 2) {
@@ -2384,6 +2454,11 @@ static int move_drive(struct controller *c)
 				ret = save_service(c, request->id);
 			return ret ? move_finish(c, ret) : 0;
 		}
+	}
+	if (c->move_recorded && c->move_record.stage != FTTR_MOVE_RESERVATION) {
+		c->move_record.stage = FTTR_MOVE_RESERVATION;
+		ret = fttr_move_store_save(c->service_store, &c->link, c->backend, &c->move_record);
+		if (ret) return move_finish(c, ret);
 	}
 	ret = forwarding(c, false);
 	if (!ret)
@@ -2399,8 +2474,17 @@ static int move_drive(struct controller *c)
 	}
 	ret = fttr_miniolt_move(c->directory, request->id, request->target, request->serial, request->target_serial);
 	/* Only pre-write stale/busy may resume FE. A partial reservation stops TX. */
-	if (ret && ret != -ESTALE && ret != -EBUSY)
+	if (ret && (c->move_recorded || (ret != -ESTALE && ret != -EBUSY)))
 		return move_finish(c, ret);
+	if (!ret && c->move_recorded) {
+		struct fttr_onu_state source;
+		ret = fttr_miniolt_one(c->directory, request->id, &source);
+		if (!ret) ret = fttr_miniolt_one(c->directory, request->target, &target);
+		if (!ret) ret = fttr_move_observe(&c->move_record, &source, &target);
+		if (ret != 1) return move_finish(c, ret < 0 ? ret : -EUCLEAN);
+		ret = move_record_finish(c);
+		if (ret) return move_finish(c, ret);
+	}
 	if (!ret) {
 		u->phase = ONU_BLOCKED;
 		u->admin_pending = true;
@@ -2464,6 +2548,13 @@ static int move_request(struct controller *c, const struct fttr_admin_request *r
 				return -ENODATA;
 		}
 	}
+	if (c->service_store >= 0 && !c->move_recorded) {
+		c->move_record = (struct fttr_move_record){ .request = *request,
+			.stage = FTTR_MOVE_RELEASE, .service = u->service_started };
+		ret = fttr_move_store_save(c->service_store, &c->link, c->backend, &c->move_record);
+		if (ret) { *fatal = ret; return ret; }
+		c->move_recorded = true;
+	}
 	ret = forwarding(c, false);
 	if (!ret)
 		ret = withdraw_service(c, request->id, true);
@@ -2472,6 +2563,7 @@ static int move_request(struct controller *c, const struct fttr_admin_request *r
 	if (!ret && u->service_started) {
 		ret = service_record_pending(c, request->id);
 		if (!ret) ret = fttr_services_release(&u->services, &c->transaction);
+		if (ret >= 0 && c->move_recorded) u->service_releasing = true;
 		if (ret > 0)
 			ret = 0;
 	}
@@ -2495,6 +2587,35 @@ static int move_request(struct controller *c, const struct fttr_admin_request *r
 		return ret;
 	}
 	return -EINPROGRESS;
+}
+
+static int move_recover_ready(struct controller *c, unsigned int id)
+{
+	struct onu *u = &c->onu[id];
+	int ret;
+	if (c->move_record.service) {
+		ret = fttr_service_store_load(c->service_store, &c->link, id, u->identity, c->backend, &u->services);
+		if (ret < 0) return move_finish(c, ret);
+		u->service_started = true;
+		u->service_recorded = ret == 0;
+		u->service_marked = ret == 1;
+		ret = service_record_pending(c, id);
+		if (!ret) ret = withdraw_service(c, id, false);
+		if (!ret) ret = fttr_services_recover_release(&u->services, &c->transaction);
+		if (ret < 0) return move_finish(c, ret);
+		u->service_releasing = true;
+		u->phase = ONU_MOVE;
+		c->move_recovering = false;
+		return move_drive(c);
+	}
+	/* Inventory-only migrations still prove that no remote data resources
+	 * need cleanup; reuse the normal inventory and identity preflight. */
+	struct fttr_admin_request request = c->move.request;
+	int fatal;
+	c->move.active = c->move_recovering = false;
+	ret = move_request(c, &request, &fatal);
+	if (fatal) return fatal;
+	return ret == -EINPROGRESS ? move_drive(c) : ret;
 }
 
 static int policy_move(struct controller *c, unsigned int id)
@@ -3457,12 +3578,34 @@ int main(int argc, char **argv)
 			goto out;
 	}
 	if (argc == 9) {
+		struct stat intent;
+		bool recovering = false;
 		c.optical.directory = open(argv[5], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 
 		if (c.optical.directory < 0) { ret = -errno; goto out; }
+		if (c.service_store >= 0) {
+			if (!fstatat(c.service_store, "move", &intent, AT_SYMLINK_NOFOLLOW)) recovering = true;
+			else if (errno != ENOENT) { ret = -errno; goto out; }
+		}
 		ret = publish(&c, "initializing", 0);
-		if (!ret)
+		if (!ret && recovering) {
+			/* A normal bootstrap resets the reservation table we need to
+			 * reconcile. Retain a live calibrated controller; do not reset
+			 * hardware to manufacture a recoverable observation. */
+			ret = fttr_miniolt_link(c.directory, &c.link);
+			if (!ret) ret = fttr_move_store_load(c.service_store, &c.link, c.backend, &c.move_record);
+			if (!ret) {
+				ret = fttr_miniolt_links_ready(c.directory, c.ni);
+				ret = ret > 0 ? 0 : ret ? ret : -ENOLINK;
+			}
+			if (!ret) ret = fttr_miniolt_calibrated(c.optical.directory);
+			if (!ret) ret = clear_auth_grants(&c);
+			if (!ret) ret = fttr_miniolt_optical_start(&c.optical, now_ms());
+			if (!ret) ret = interface_state(&c, true, 1982);
+			if (!ret) ret = fttr_miniolt_command(c.directory, "tx_enable", "1\n");
+		} else if (!ret) {
 			ret = bootstrap(&c, c.optical.directory, argv[6], argv[7], argv[8]);
+		}
 		if (ret)
 			goto out;
 	}
@@ -3471,6 +3614,8 @@ int main(int argc, char **argv)
 		goto out;
 	if (getrandom(&seed, sizeof(seed), 0) < 0) { ret = -errno; goto out; }
 	c.transaction = seed | 0x8000;
+	ret = move_recover_start(&c);
+	if (ret) goto out;
 	ret = forwarding(&c, true);
 	if (ret)
 		goto out;
