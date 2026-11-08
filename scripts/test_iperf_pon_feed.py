@@ -28,6 +28,10 @@ prefix = r'''
 #include <string.h>
 typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u64;
 typedef int netdev_tx_t;
+typedef uint16_t __sum16;
+#define EINVAL 22
+#define EFAULT 14
+#define CSUM_MANGLED_0 ((__sum16)0xffff)
 #define ETH_P_IP 0x800
 #define ETH_P_PPP_SES 0x8864
 #define ETH_ALEN 6
@@ -41,7 +45,7 @@ typedef int netdev_tx_t;
 enum hrtimer_restart {HRTIMER_NORESTART,HRTIMER_RESTART};
 struct hrtimer {int armed;};
 struct net_device {u8 dev_addr[6];bool stopped;struct {u64 tx_packets,tx_bytes;} stats;};
-struct sk_buff {u16 protocol;unsigned len;u8 *data;struct net_device *dev;bool consumed,gso;int ip_summed;};
+struct sk_buff {u16 protocol;unsigned len;u8 *data;struct net_device *dev;bool consumed,gso;int ip_summed;unsigned csum_start,csum_offset,headlen;bool shared,unreadable;};
 struct iphdr {int protocol;};
 struct tcphdr {u16 source,dest;bool syn,fin,rst;};
 struct udphdr {u16 source,dest;};
@@ -63,7 +67,19 @@ static struct iphdr *ip_hdr(struct sk_buff *s){return &ip;}
 static struct tcphdr *tcp_hdr(struct sk_buff *s){return &tcp;}
 static struct udphdr *udp_hdr(struct sk_buff *s){return &udp_header;}
 static bool skb_is_gso(struct sk_buff *s){return s->gso;}
-static int skb_checksum_help(struct sk_buff *s){s->ip_summed=0;return 0;}
+static unsigned checksum_reads,linearizations;
+static bool skb_frags_readable(struct sk_buff *s){return !s->unreadable;}
+static bool skb_has_shared_frag(struct sk_buff *s){return s->shared;}
+static unsigned skb_headlen(struct sk_buff *s){return s->headlen?s->headlen:s->len;}
+static int skb_checksum_start_offset(struct sk_buff *s){return s->csum_start;}
+static int __skb_linearize(struct sk_buff *s){s->headlen=s->len;s->shared=false;linearizations++;return 0;}
+static u32 skb_checksum(struct sk_buff *s,unsigned start,unsigned length,u32 seed){
+ assert(start+length<=s->len);checksum_reads++;u32 sum=seed;
+ for(unsigned i=0;i<length;i+=2)sum+=(unsigned)s->data[start+i]<<8 | (i+1<length?s->data[start+i+1]:0);
+ return sum;
+}
+static __sum16 csum_fold(u32 sum){while(sum>>16)sum=(sum&65535)+(sum>>16);return htons((u16)~sum);}
+static void put_unaligned(__sum16 sum,void *p){memcpy(p,&sum,2);}
 static void dev_kfree_skb_any(struct sk_buff *s){s->consumed=true;}
 static u32 readl(const void *p){u32 x;memcpy(&x,p,4);return x;}
 static void writel(u32 x,void *p){memcpy(p,&x,4);}
@@ -75,7 +91,7 @@ static void netif_stop_queue(struct net_device *d){d->stopped=true;}
 static void netif_wake_queue(struct net_device *d){d->stopped=false;}
 static bool netdev_xmit_more(void){return true;}
 static void dma_wmb(void){}
-static void skb_copy_bits(struct sk_buff *s,unsigned at,void *out,unsigned n){assert(at+n<=s->len);memcpy(out,s->data+at,n);}
+static int skb_copy_bits(struct sk_buff *s,unsigned at,void *out,unsigned n){assert(at+n<=s->len);memcpy(out,s->data+at,n);return 0;}
 static void skb_set_queue_mapping(struct sk_buff *s,unsigned n){assert(n==0);}
 static void dev_queue_xmit(struct sk_buff *s){assert(s->dev==radio);assert(readl(vp+0x18)==producer);control_transmits++;}
 static void dev_consume_skb_any(struct sk_buff *s){s->consumed=true;}
@@ -139,10 +155,14 @@ int main(void){
   writel(producer,vp+0x1c);
  }
  udp=true;ip.protocol=17;udp_header.source=htons(5206);udp_header.dest=htons(55002);
- struct sk_buff datagram={.protocol=htons(ETH_P_IP),.len=sizeof(packet),.data=packet,.ip_summed=CHECKSUM_PARTIAL};
+ struct sk_buff datagram={.protocol=htons(ETH_P_IP),.len=sizeof(packet),.data=packet,.ip_summed=CHECKSUM_PARTIAL,.csum_start=34,.csum_offset=6};
  u64 before=stream_packets[2];
  assert(transmit(&datagram,feed)==NETDEV_TX_OK && datagram.consumed);
- assert(datagram.ip_summed==0 && stream_packets[2]==before+1);
+ assert(datagram.ip_summed==CHECKSUM_PARTIAL && stream_packets[2]==before+1);
+ unsigned sent_slot=(producer-1)&1023;
+ __sum16 expected=csum_fold(skb_checksum(&datagram,34,sizeof(packet)-34,0));
+ if(!expected)expected=CSUM_MANGLED_0;
+ assert(!memcmp(memory+8192+sent_slot*1536+8+40,&expected,2));
  struct sk_buff oversized={.protocol=htons(ETH_P_IP),.len=1507,.data=packet};
  assert(transmit(&oversized,feed)==NETDEV_TX_OK && oversized.consumed && invalid_packets==1);
  struct sk_buff gso={.protocol=htons(ETH_P_IP),.len=sizeof(packet),.data=packet,.gso=true};
@@ -168,13 +188,42 @@ int main(void){
   assert(tick(&timer)==HRTIMER_NORESTART && room()==1);
  }
  eq_monitor=NULL;assert(room()==61);
+ // A rejected final skb must publish accepted descriptors from this batch.
+ udp=false;ip.protocol=6;tcp.syn=tcp.fin=tcp.rst=false;
+ for(unsigned failure=0;failure<3;failure++){
+  writel(producer,vp+0x1c);u64 before=doorbells;
+  struct sk_buff good={.protocol=htons(ETH_P_IP),.len=sizeof(packet),.data=packet};
+  assert(transmit(&good,feed)==NETDEV_TX_OK && pending && good.consumed);
+  u32 accepted=producer;
+  struct sk_buff bad={.protocol=htons(ETH_P_IP),.len=sizeof(packet),.data=packet};
+  if(failure==0)bad.len=1507;
+  if(failure==1)bad.gso=true;
+  if(failure==2){bad.ip_summed=CHECKSUM_PARTIAL;bad.csum_start=12;bad.csum_offset=6;}
+  assert(transmit(&bad,feed)==NETDEV_TX_OK && bad.consumed);
+  assert(producer==accepted && readl(vp+0x18)==accepted);
+  assert(!pending && doorbells==before+1);
+ }
+ // Shared fragments are stabilized; odd payload length and zero result survive.
+ u8 odd[101],out[1600],input[101];memset(odd,0x5a,sizeof(odd));memcpy(input,odd,sizeof(odd));
+ struct sk_buff fragment={.len=101,.data=odd,.headlen=55,.shared=true,
+  .ip_summed=CHECKSUM_PARTIAL,.csum_start=34,.csum_offset=6};
+ assert(!copy_payload(&fragment,out) && linearizations==1);
+ assert(!memcmp(input,odd,sizeof(odd)));
+ memset(odd,0,sizeof(odd));odd[34]=odd[35]=255;
+ assert(!copy_payload(&fragment,out));assert(out[48]==255 && out[49]==255);
+ unsigned prior=checksum_reads;
+ fragment.csum_start=12;assert(copy_payload(&fragment,out)==-EINVAL);
+ fragment.csum_start=101;assert(copy_payload(&fragment,out)==-EINVAL);
+ fragment.csum_start=34;fragment.csum_offset=66;assert(copy_payload(&fragment,out)==-EINVAL);
+ fragment.csum_offset=6;fragment.unreadable=true;assert(copy_payload(&fragment,out)==-EFAULT);
+ assert(checksum_reads==prior);
  free(memory);
 }
 '''
 
 with tempfile.TemporaryDirectory(prefix='pon-tcp-feed-') as directory:
     path = Path(directory)
-    program = prefix + '\n'.join(function(n) for n in ('room', 'tick', 'transmit')) + checks
+    program = prefix + '\n'.join(function(n) for n in ('room', 'tick', 'copy_payload', 'transmit')) + checks
     (path / 'test.c').write_text(program)
     subprocess.run(['cc', '-std=gnu11', '-O1', '-g', '-fsanitize=address,undefined',
                     str(path / 'test.c'), '-o', str(path / 'test')], check=True)
