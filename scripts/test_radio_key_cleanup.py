@@ -32,6 +32,8 @@ static void rtl_ax_store32(u8 *p,u32 v){memcpy(p,&v,4);}
 #define HZ 100
 #define WLAN_CIPHER_SUITE_CCMP 4
 #define WLAN_CIPHER_SUITE_GCMP 8
+#define WLAN_CIPHER_SUITE_CCMP_256 10
+#define WLAN_CIPHER_SUITE_GCMP_256 9
 #define IEEE80211_KEY_FLAG_PAIRWISE BIT(0)
 #define IEEE80211_KEY_FLAG_SW_MGMT_TX BIT(4)
 #define IEEE80211_NUM_TIDS 16
@@ -44,14 +46,14 @@ static void rtl_ax_store32(u8 *p,u32 v){memcpy(p,&v,4);}
 #define test_bit(i,p) ((p)[i])
 #define atomic64_read(p) (*(p))
 enum set_key_cmd {SET_KEY,DISABLE_KEY};
-struct ieee80211_key_conf {unsigned cipher,flags,keyidx,hw_key_idx;u8 key[16];u64 tx_pn;};
+struct ieee80211_key_conf {unsigned cipher,flags,keyidx,hw_key_idx;u8 key[32];u64 tx_pn;};
 struct rtl_ax_station {unsigned macid;};
 struct ieee80211_sta {struct rtl_ax_station drv_priv[1];};
 #define NL80211_IFTYPE_STATION 2
 #define NL80211_IFTYPE_MESH_POINT 7
 #define RTL_AX_CLIENT_MACID 1
 struct ieee80211_vif {int type;};
-struct rtl_ax_ap {unsigned traffic_peer;struct rtl_ax_security_role security_roles[128];
+struct rtl_ax_ap {u8 security_ext[128];unsigned traffic_peer;struct rtl_ax_security_role security_roles[128];
  struct ieee80211_key_conf *security_keys[128];
  bool sta_role,sta_associated;int io;
  bool security_ids[128],security_deleting[128],security_aborting[128];u8 security_unlink[128];
@@ -64,13 +66,13 @@ struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};
 enum fault {NONE,RETIRE,FLUSH,DCTL,CAM,CAM_INSTALL,PN_BIND,PN_UNBIND,HIQ_STOP};
 static enum fault fault;
 static bool hiq_pending;static unsigned hiq_stops;
-static unsigned failures,queued,clears,dctls,offload_ready;
+static unsigned failures,queued,clears,dctls,offload_ready,fault_skip;
 static bool apply_failed_dctl,apply_failed_cam,hardware_cam[128];
 static u8 hardware_key_tag[128],hardware_cipher[128];
 static unsigned key_cipher=4;
 static u64 hardware_pn[128];
 static struct rtl_ax_security_role hardware_roles[128];
-static int fail(enum fault point){if(fault!=point||!failures)return 0;failures--;return -ETIMEDOUT;}
+static int fail(enum fault point){if(fault!=point||!failures)return 0;if(fault_skip){fault_skip--;return 0;}failures--;return -ETIMEDOUT;}
 static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw){return hw->radio;}
 static unsigned find_first_zero_bit(bool *p,unsigned n){unsigned i;for(i=0;i<n&&p[i];i++);return i;}
 static bool rtl_ax_tx_key_pending(int tx,unsigned index){(void)tx;assert(index<128);return hiq_pending||fail(FLUSH)!=0;}
@@ -111,7 +113,7 @@ static int rtl_ax_command_flags(struct rtl_ax_ap *r,unsigned queue,unsigned cat,
   hardware_cam[index]=false;
  } else {
   int ret=fail(CAM_INSTALL);
-  if(!ret||apply_failed_cam){hardware_cam[index]=true;hardware_key_tag[index]=data[8];hardware_cipher[index]=data[4];assert(data[4]==(key_cipher==8?8:6));}
+  if(!ret||apply_failed_cam){hardware_cam[index]=true;hardware_key_tag[index]=data[8];hardware_cipher[index]=data[4];assert(data[4]==(rtl_ax_security_type(key_cipher)|((key_cipher==9||key_cipher==10)?16:0)));}
   return ret;
  }
  return 0;
@@ -128,7 +130,7 @@ static void rtl_ax_client_cam(u8 *out,unsigned id,const u8 *self,const u8 *peer,
  (void)assoc;rtl_ax_peer_cam(out,id,self,peer,aid,valid);}
 static void rtl_ax_tx_peer_client(int tx,unsigned id,bool client,const u8 *bssid){(void)tx;(void)id;(void)client;(void)bssid;}
 static void rtl_ax_port0_field(int *io,unsigned reg,unsigned mask,unsigned value){(void)io;(void)reg;(void)mask;(void)value;}
-static void reset(void){hiq_pending=false;hiq_stops=0;fault=NONE;failures=queued=clears=dctls=offload_ready=0;apply_failed_dctl=apply_failed_cam=false;
+static void reset(void){hiq_pending=false;hiq_stops=0;fault=NONE;fault_skip=0;failures=queued=clears=dctls=offload_ready=0;apply_failed_dctl=apply_failed_cam=false;
  memset(hardware_pn,0,sizeof(hardware_pn));memset(hardware_key_tag,0,sizeof(hardware_key_tag));
  memset(hardware_cam,0,sizeof(hardware_cam));memset(hardware_roles,0,sizeof(hardware_roles));}
 static struct ieee80211_key_conf new_key(unsigned idx,bool pairwise){
@@ -174,7 +176,7 @@ static void install_tests(void){
  /* An unsupported software PTK still retires the previous NI template. */
  for(unsigned failure=0;failure<2;failure++)for(unsigned pairwise=0;pairwise<2;pairwise++) {
   reset();struct rtl_ax_ap r={};struct ieee80211_hw hw={&r,0};struct ieee80211_sta sta={{{7}}};
-  struct ieee80211_key_conf key=new_key(0,pairwise);key.cipher=9;
+  struct ieee80211_key_conf key=new_key(0,pairwise);key.cipher=12;
   fault=RETIRE;failures=failure?2:1;
   assert(rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},pairwise?&sta:NULL,&key)==-ETIMEDOUT);
   assert(failures==failure&&!r.security_ids[0]);
@@ -235,9 +237,79 @@ static void install_tests(void){
  puts("key install: CAM/DMAC ACK both outcomes, reserved CAM ownership, failed retry, PTK/GTK replacement PN and abort accounting passed");
 }
 '''
+extended_tests = r'''
+static void extended_tests(void){
+ for(unsigned alg=9;alg<=10;alg++)for(unsigned pairwise=0;pairwise<2;pairwise++)
+ for(unsigned keyid=0;keyid<(pairwise?2U:4U);keyid++)for(unsigned failure=0;failure<6;failure++) {
+  reset();key_cipher=alg;struct rtl_ax_ap r={};struct ieee80211_hw hw={&r,0};struct ieee80211_sta sta={{{7}}};
+  unsigned macid=pairwise?7:0;
+  /* Force two nonadjacent free CAMs. */
+  for(unsigned i=0;i<128;i++)r.security_ids[i]=true;
+  r.security_ids[7]=r.security_ids[63]=false;
+  struct ieee80211_key_conf key=new_key(keyid,pairwise);key.hw_key_idx=99;
+  for(unsigned i=0;i<32;i++)key.key[i]=i+1;
+  if(failure==1||failure==2){fault=CAM_INSTALL;failures=1;fault_skip=failure-1;apply_failed_cam=true;}
+  if(failure==3){fault=DCTL;failures=1;apply_failed_dctl=true;}
+  if(failure==4){fault=PN_BIND;failures=1;}
+  int ret=rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},pairwise?&sta:NULL,&key);
+  assert(r.security_ids[7]&&r.security_ids[63]&&r.security_ext[7]==64);
+  if(failure>=1&&failure<=4) {
+   assert(ret==-ETIMEDOUT&&key.hw_key_idx==99&&r.security_deleting[7]&&!r.security_keys[7]);
+   fault=CAM;failures=1;fault_skip=1;
+   assert(rtl_ax_security_cleanup(&r)&&r.security_ids[7]&&r.security_ids[63]&&r.security_ext[7]==64);
+   fault=NONE;assert(!rtl_ax_security_cleanup(&r));
+  } else {
+   assert(!ret&&key.hw_key_idx==7&&r.security_keys[7]==&key);
+   unsigned seen=0;
+   for(unsigned slot=0;slot<7;slot++)if(r.security_roles[macid].valid&BIT(slot)) {
+    assert(r.security_roles[macid].keyid[slot]==keyid);
+    seen|=r.security_roles[macid].cam[slot]==7?1:r.security_roles[macid].cam[slot]==63?2:0;
+   }
+   assert(seen==3&&hardware_key_tag[7]==1&&hardware_key_tag[63]==17);
+   if(failure==5) {
+    r.retired_stations[macid].pending=true;
+    assert(!rtl_ax_station_release(&r,macid));
+   } else {
+    fault=CAM;failures=1;fault_skip=1;
+    assert(rtl_ax_set_key(&hw,DISABLE_KEY,&(struct ieee80211_vif){},pairwise?&sta:NULL,&key)==-ETIMEDOUT);
+    assert(r.security_ids[7]&&r.security_ids[63]&&r.security_ext[7]==64);
+    fault=NONE;assert(!rtl_ax_security_cleanup(&r));
+   }
+  }
+  assert(!r.security_ids[7]&&!r.security_ids[63]&&!r.security_ext[7]&&!hardware_cam[7]&&!hardware_cam[63]);
+  for(unsigned i=0;i<128;i++)if(i!=7&&i!=63)assert(r.security_ids[i]);
+ }
+ for(unsigned alg=9;alg<=10;alg++) {
+  reset();key_cipher=alg;struct rtl_ax_ap r={};struct ieee80211_hw hw={&r,0};struct ieee80211_sta sta={{{7}}};
+  struct ieee80211_key_conf first=new_key(0,true),same=new_key(0,true),second=new_key(1,true);
+  for(unsigned i=0;i<128;i++)r.security_ids[i]=true;r.security_ids[127]=false;
+  assert(rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},&sta,&first)==-ENOSPC);
+  assert(!r.security_ids[127]&&!r.security_deleting[127]&&!r.security_ext[127]);
+  memset(r.security_ids,0,sizeof(r.security_ids));
+  assert(!rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},&sta,&first));
+  unsigned before=dctls;
+  assert(rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},&sta,&same)==-ENOSPC);
+  assert(rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},&sta,&second)==-ENOSPC&&dctls==before);
+  assert(!rtl_ax_set_key(&hw,DISABLE_KEY,&(struct ieee80211_vif){},&sta,&first));
+  assert(!rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},&sta,&second));
+  assert(r.security_roles[7].valid==3&&r.security_roles[7].keyid[0]==1&&r.security_roles[7].keyid[1]==1);
+  assert(!rtl_ax_set_key(&hw,DISABLE_KEY,&(struct ieee80211_vif){},&sta,&second));
+  struct ieee80211_key_conf a=new_key(0,false),b=new_key(1,false),c=new_key(2,false);
+  assert(!rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},NULL,&a));
+  assert(!rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},NULL,&b));
+  assert(r.security_roles[0].valid==0x3c);
+  assert(rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},NULL,&c)==-ENOSPC);
+  assert(!rtl_ax_set_key(&hw,DISABLE_KEY,&(struct ieee80211_vif){},NULL,&a));
+  assert(!rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},NULL,&c));
+  assert(r.security_keys[b.hw_key_idx]==&b&&r.security_roles[0].valid==0x3c);
+ }
+ key_cipher=4;
+ puts("Extended keys:72 nonadjacent dual-CAM install/first-half/second-half/DCTL/PN/erase/station-release groups passed");
+}
+'''
 test = r'''
 int main(void){
- install_tests();
+ install_tests();extended_tests();
  for(unsigned n=0;n<5;n++){
   reset();struct rtl_ax_ap r={};struct ieee80211_hw hw={&r,0};struct ieee80211_sta sta={{{7}}};
   struct ieee80211_key_conf key=new_key(0,true);
@@ -308,7 +380,7 @@ with tempfile.TemporaryDirectory(prefix='radio-key-cleanup-') as directory:
     path = Path(directory)
     source = (args.monitor or driver / 'monitor.h').read_text()
     functions = ''
-    for prefix, name in (('static int ', 'rtl_ax_station_release'),
+    for prefix, name in (('static int ', 'rtl_ax_security_clear'), ('static int ', 'rtl_ax_station_release'),
                          ('static bool ', 'rtl_ax_security_cleanup'), ('static int ', 'rtl_ax_set_key')):
         start = re.search(r'^' + prefix + name + r'\([^;]*?\)\s*\{', source, re.M).start()
         end = source.index('\n}\n', start) + 3
@@ -316,7 +388,7 @@ with tempfile.TemporaryDirectory(prefix='radio-key-cleanup-') as directory:
     before, after = common.split('enum set_key_cmd', 1)
     c, binary = path / 'key.c', path / 'key'
     c.write_text(before + '#include "' + str(driver / 'security.h') + '"\n' +
-                 'enum set_key_cmd' + after + functions + install_tests + (reproduce_install if args.reproduce_install else reproduce if args.reproduce else test))
+                 'enum set_key_cmd' + after + functions + install_tests + extended_tests + (reproduce_install if args.reproduce_install else reproduce if args.reproduce else test))
     subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter',
                     '-Wno-unused-function', '-Wno-misleading-indentation',
                     '-fsanitize=address,undefined', str(c), '-o', str(binary)], check=True)

@@ -40,6 +40,8 @@ code = r'''
 typedef uint8_t u8;typedef uint32_t u32;typedef uint64_t u64;
 #define WLAN_CIPHER_SUITE_GCMP 8
 #define RTL_MC_PE_KEY_GCMP (1U<<27)
+#define RTL_MC_PE_KEY_256 (1U<<28)
+static unsigned rtl_ax_security_type(unsigned c){return c==9?9:c==10?7:c==8?8:6;}
 #define BIT(n) (1U<<(n))
 #define RTL_AX_TX_WP_ADDRESS_MAX 10
 #define RTL_AX_TX_AGG_PRELOAD (1U<<15)
@@ -124,11 +126,12 @@ code += r'''
 int main(void){
  static u8 mem[2][0x20000],headers[2][256*128],payload[2048];
  unsigned vectors=0;
- for(unsigned cipher=4;cipher<=8;cipher+=4)for(unsigned header_bytes=24;header_bytes<=26;header_bytes+=2)
+ for(unsigned alg=0;alg<4;alg++)for(unsigned header_bytes=24;header_bytes<=26;header_bytes+=2)
  for(unsigned client=0;client<2;client++)
  for(unsigned layout=0;layout<=10;layout++)
  for(unsigned encap=0;encap<2;encap++)for(unsigned seq=0;seq<2;seq++)
  for(unsigned keytype=0;keytype<3;keytype++)for(unsigned tid=0;tid<8;tid++)for(unsigned auth=0;auth<2;auth++)for(unsigned protected=0;protected<2;protected++){
+  unsigned cipher=(unsigned[]){4,8,9,10}[alg];
   struct tx a={.pe_active=true,.checksum_enabled=tid&1,.pe={mem[0]},.headers=headers[0],.pe_producer=255};
   struct tx b=a; b.pe.memory=mem[1];b.headers=headers[1];
   memset(mem,0xa5,sizeof(mem));memset(headers,0xa6,sizeof(headers));memset(payload,0xaa,sizeof(payload));

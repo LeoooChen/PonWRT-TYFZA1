@@ -69,7 +69,7 @@ void rtl_ax_rx_uplink_enable(struct rtl_ax_rx *rx, unsigned int macid)
 		dma_wmb();
 		put_unaligned_le32(BIT(31) | rx->uplink_wifi_id << 8 | rx->keys[macid]->keyidx |
 			(u32)rx->uplink_trigger_tids[macid] << 16 |
-			(rx->keys[macid]->cipher == WLAN_CIPHER_SUITE_GCMP ? BIT(24) : 0),
+			(rx->keys[macid]->cipher != WLAN_CIPHER_SUITE_CCMP ? BIT(24) : 0),
 			rx->uplink_states + 0x10000 + macid * 4);
 	}
 	mutex_unlock(&rx->uplink_lock);
@@ -96,7 +96,7 @@ void rtl_ax_rx_uplink_peer(struct rtl_ax_rx *rx, unsigned int wifi_id, struct ie
 		if (key && get_unaligned_le32(rx->rpq_memory + 0x11a00 + macid * 4))
 			put_unaligned_le32(BIT(31) | wifi_id << 8 | key->keyidx |
 			(u32)rx->uplink_trigger_tids[macid] << 16 |
-			(rx->keys[macid]->cipher == WLAN_CIPHER_SUITE_GCMP ? BIT(24) : 0),
+			(rx->keys[macid]->cipher != WLAN_CIPHER_SUITE_CCMP ? BIT(24) : 0),
 			rx->uplink_states + 0x10000 + macid * 4);
 	}
 	dma_wmb();

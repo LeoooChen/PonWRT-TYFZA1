@@ -7734,6 +7734,58 @@ conservative stack7288/8192; non-uplink13868 bytes. Local artifacts use
 retirement/ID reuse, multiple VIFs, TSPEC and remaining factory-management
 capabilities stay within the unfinished full goal.
 
+### Extended CCMP256 and GCMP256 key ownership
+
+The native key path now supports CCMP256/type7 and GCMP256/type9. Actual target
+`rtw_hal_set_key` sends two16-byte halves, both marked EXT_KEY, through independent
+CAM allocation and two same-key-ID DCTL slots. The target first-half error is
+overwritten by the second call's result; native code instead reserves both CAMs
+before writing, checks each completion, and publishes the role only after both
+halves and DCTL succeed. No adjacency assumption is made.
+
+A primary CAM owns its optional second CAM until both erase acknowledgments
+arrive. A failed second erase retains both reservations and is retried; station
+release, key deletion and failed-install cleanup use that same ownership rule.
+The software key pointer and PN domain belong to the primary only. Failed DCTL
+publication retains unlink state so cleanup restores the current desired role
+before either half can be reused. Existing key IDs are not silently overwritten.
+
+DCTL slots are selected from the actual available class range, while preserving
+the prior single-key placement where possible. The worker locates the selected
+PTK by its current Linux key ID and primary CAM, rather than treating key ID as
+a physical slot index. DCTL now uses the original mode3 contract (two PTK/four
+GTK/one BIP slots); mode2 only covers three GTK slots and was inconsistent with
+the native fourth GTK slot. An extended PTK consumes both PTK slots, and two
+extended GTKs consume all four GTK slots. Exhaustion returns ENOSPC without a
+partial reservation; removal frees the pair for a later key. Extended-key-ID
+overlap requiring more than two PTK slots cannot be hardware-offloaded.
+
+Key bit28 carries the256-bit identity beside GCMP bit27 throughout ARM requests,
+FE immutable records, PE descriptors and current-key validation. BCMC continues
+to use HIQ and one shared48-bit PN sequence. All three16-byte-MIC algorithms
+(CCMP256/GCMP128/GCMP256) use the longer receive trailer; Linux RX snapshot/sync
+uses the matching CCM/GCM PN member. MCP8 rejects older PE firmware.
+
+`trace_stock_extended_keys.py` executes48 original half-producer/failure cases,
+16 deletion pairs,12 nonadjacent DCTL placements and the mode2/3 slot boundaries.
+The four-algorithm CAM/DCTL/TX comparison passes654 cases. Native tests cover72
+dual-CAM fault/retry/teardown groups, CAM and DCTL exhaustion, duplicate IDs and
+replacement preserving another GTK;1031 key-selection states,67584 actual ARM
+requests,2048 worker combinations and256 Linux PN/BA cases pass. Complete FE
+records reach actual MIPS M2U/BCMC and RPQ/EQ; both256-bit algorithms pass full
+ARM-vs-PE WD comparisons and existing PS/FTTR/PN/sequence/receive regressions.
+The shared-PN test includes128 software-CCMP/GCMP and PE alternations across
+all four configurations. These tests model hardware cryptographic effects;
+physical encryption and interoperability remain unverified.
+
+Image/modules, ten changed kernel inputs, exact patch reverse/replay and repeated
+firmware output pass. Combined PE is31960 bytes, SHA256
+`50c9ba7e6d9ea24e29fc3b8609dece8eb0670caaadcfaf5d598bbd7b298fdb4d`,
+stack bound7288/8192; non-uplink13880 bytes. Evidence is under
+`artifacts/fttr/extended-key*-20261109.*`. No device was accessed. Full hardware
+packet retirement/ID reuse, multi-VIF, TSPEC and remaining factory-management
+capabilities remain unfinished.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

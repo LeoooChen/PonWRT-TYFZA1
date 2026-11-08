@@ -94,12 +94,12 @@ native.native_tx.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint, ctyp
 native_output = ctypes.create_string_buffer(68)
 checks = 0
 for chip in ('8852c', '8192xb'):
-    for cipher in (6,8):
+    for cipher in (6,7,8,9):
         for index in (0, 1, 63, 127):
-            oracle.uc.mem_write(info, bytes([index, 0, 20, cipher]) + key)
+            oracle.uc.mem_write(info, bytes([index, 0, 20, cipher | (16 if cipher&1 else 0)]) + key)
             assert oracle.call('fill_sec_cam_info_' + chip, adapter, info, output, 0) == 0
-            assert bytes(oracle.uc.mem_read(output, 24)) == struct.pack('<II', index | 20 << 16, cipher) + key
-            native.native_cam(native_output, index, key, cipher)
+            assert bytes(oracle.uc.mem_read(output, 24)) == struct.pack('<II', index | 20 << 16, cipher | (16 if cipher&1 else 0)) + key
+            native.native_cam(native_output, index, key, cipher | (16 if cipher&1 else 0))
             assert native_output.raw[:24] == bytes(oracle.uc.mem_read(output, 24))
             for keyid in range(4):
                 data = bytearray(96)
@@ -133,7 +133,7 @@ for chip in ('8852c', '8192xb'):
         assert bytes(oracle.uc.mem_read(payload + 25 + slot, 1)) == b'\x3f'
         native.native_dctl(native_output, slot)
         built = struct.unpack('<17I', native_output.raw)
-        assert built[0] == words[0] and built[5] == words[5] | 2 << 16
+        assert built[0] == words[0] and built[5] == words[5] | 3 << 16
         assert built[6:8] == words[6:8]
         checks += 1
 for macid in range(128):

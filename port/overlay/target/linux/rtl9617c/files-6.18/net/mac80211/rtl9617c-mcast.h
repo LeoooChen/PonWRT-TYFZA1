@@ -40,7 +40,8 @@ int ieee80211_rtl9617c_bcmc_key(struct ieee80211_vif *vif,struct ieee80211_key_c
     sdata->control_port_protocol==htons(ETH_P_8021Q) || sdata->control_port_protocol==htons(ETH_P_8021AD))return -EOPNOTSUPP;
  key=wiphy_dereference(sdata->local->hw.wiphy,sdata->deflink.default_multicast_key);
  if(key && (!(key->flags&KEY_FLAG_UPLOADED_TO_HARDWARE) || (key->flags&KEY_FLAG_TAINTED) ||
-    (key->conf.cipher!=WLAN_CIPHER_SUITE_CCMP && key->conf.cipher!=WLAN_CIPHER_SUITE_GCMP) || (key->conf.flags&IEEE80211_KEY_FLAG_PAIRWISE) ||
+    (key->conf.cipher!=WLAN_CIPHER_SUITE_CCMP && key->conf.cipher!=WLAN_CIPHER_SUITE_GCMP &&
+     key->conf.cipher!=WLAN_CIPHER_SUITE_CCMP_256 && key->conf.cipher!=WLAN_CIPHER_SUITE_GCMP_256) || (key->conf.flags&IEEE80211_KEY_FLAG_PAIRWISE) ||
     key->conf.keyidx<0 || key->conf.keyidx>3 || !rtl9617c_key_pn_token(&key->conf.rtl9617c_pn)))return -EOPNOTSUPP;
  *result=key?&key->conf:NULL;
  return 0;
@@ -67,7 +68,8 @@ int ieee80211_rtl9617c_unicast_key(struct ieee80211_vif *vif,const u8 *address,
 	if (!key) {
 		if (test_sta_flag(sta,WLAN_STA_USES_ENCRYPTION)) goto out;
 	} else if (!(key->flags&KEY_FLAG_UPLOADED_TO_HARDWARE) ||
-		   (key->flags&KEY_FLAG_TAINTED) || (key->conf.cipher!=WLAN_CIPHER_SUITE_CCMP && key->conf.cipher!=WLAN_CIPHER_SUITE_GCMP) ||
+		   (key->flags&KEY_FLAG_TAINTED) || (key->conf.cipher!=WLAN_CIPHER_SUITE_CCMP && key->conf.cipher!=WLAN_CIPHER_SUITE_GCMP &&
+     key->conf.cipher!=WLAN_CIPHER_SUITE_CCMP_256 && key->conf.cipher!=WLAN_CIPHER_SUITE_GCMP_256) ||
 		   !(key->conf.flags&IEEE80211_KEY_FLAG_PAIRWISE)) goto out;
 	*result=key?&key->conf:NULL;
 	ret=0;

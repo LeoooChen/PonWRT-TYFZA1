@@ -22,6 +22,8 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;
 #define BIT(n) (1U<<(n))
 #define WLAN_CIPHER_SUITE_CCMP 4
 #define WLAN_CIPHER_SUITE_GCMP 8
+#define WLAN_CIPHER_SUITE_CCMP_256 10
+#define WLAN_CIPHER_SUITE_GCMP_256 9
 #define WLAN_STA_AUTHORIZED 1
 #define container_of(p,t,m) ((t*)((char*)(p)-offsetof(t,m)))
 #define rcu_dereference(p) (p)
@@ -64,13 +66,14 @@ code+=r'''
 int main(void){
  struct ieee80211_local l={};struct ieee80211_sub_if_data s={&l};struct sta_info sta={.sdata=&s,.authorized=true};
  unsigned cases=0;
- for(unsigned alg=4;alg<=8;alg+=4)for(unsigned tid=0;tid<16;tid++)for(unsigned ba_mode=0;ba_mode<4;ba_mode++) {
+ for(unsigned family=0;family<4;family++)for(unsigned tid=0;tid<16;tid++)for(unsigned ba_mode=0;ba_mode<4;ba_mode++) {
+  unsigned alg=(unsigned[]){4,8,9,10}[family];
   struct ieee80211_key key={.conf={alg,2},.sta=&sta,.rx_shortcut_valid_tids=BIT(tid)};
   struct tid_ampdu_rx ba={.head_seq_num=4095};sta.ampdu_mlme.tid_rx[tid]=ba_mode?&ba:NULL;
   if(ba_mode==2)ba.stored_mpdu_num=1;if(ba_mode==3)ba.head_seq_num=0;
   key.rx_shortcut_next_seq[tid]=4095;
-  u8 *pn=alg==8?key.u.gcmp.rx_pn[tid]:key.u.ccmp.rx_pn[tid];
-  u8 *other=alg==8?key.u.ccmp.rx_pn[tid]:key.u.gcmp.rx_pn[tid];
+  u8 *pn=(alg==8||alg==9)?key.u.gcmp.rx_pn[tid]:key.u.ccmp.rx_pn[tid];
+  u8 *other=(alg==8||alg==9)?key.u.ccmp.rx_pn[tid]:key.u.gcmp.rx_pn[tid];
   memset(other,0xa5,6);pn[5]=10;u8 out[6];u16 next=123;
   bool ready=ieee80211_rx_shortcut_snapshot(&sta.sta,&key.conf,tid,&next,out);
   assert(ready==(ba_mode<2)&&!l.rx_path_lock&&!ba.reorder_lock);
@@ -85,10 +88,10 @@ int main(void){
  static u8 states[0x10200],tx[0x20000];struct rtl_ax_rx rx={.uplink_states=states,.rpq_memory=tx,.uplink_wifi_id=7};
  struct ieee80211_key_conf key={4,2};
  for(unsigned i=0;i<4;i++) {
-  key.cipher=i%2?8:4;rtl_ax_rx_key(&rx,7,&key);
+  key.cipher=(unsigned[]){4,8,9,10}[i];rtl_ax_rx_key(&rx,7,&key);
   assert(!get_unaligned_le32(states+0x1001c));
   rx.uplink_trigger_tids[7]=0xa5;rtl_ax_rx_uplink_enable(&rx,7);
-  assert(get_unaligned_le32(states+0x1001c)==(BIT(31)|7<<8|2|0xa5<<16|(i%2?BIT(24):0)));
+  assert(get_unaligned_le32(states+0x1001c)==(BIT(31)|7<<8|2|0xa5<<16|(i?BIT(24):0)));
  }
  printf("RX cipher state: %u actual Linux PN/BA/authorization cases and four native cipher transitions passed\n",cases);
 }

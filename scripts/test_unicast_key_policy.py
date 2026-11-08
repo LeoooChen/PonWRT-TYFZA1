@@ -22,6 +22,8 @@ code = r'''
 #define KEY_FLAG_TAINTED 2
 #define WLAN_CIPHER_SUITE_CCMP 4
 #define WLAN_CIPHER_SUITE_GCMP 8
+#define WLAN_CIPHER_SUITE_CCMP_256 10
+#define WLAN_CIPHER_SUITE_GCMP_256 9
 #define IEEE80211_KEY_FLAG_PAIRWISE 1
 typedef uint8_t u8;
 struct ieee80211_key_conf {unsigned cipher,flags;};
@@ -47,8 +49,9 @@ int main(void){
  struct ieee80211_local local={.hw={1}};
  struct ieee80211_sub_if_data s={.vif={3},.local=&local};
  struct ieee80211_key keys[3];const u8 address[6]={2};unsigned cases=0;
- for(unsigned cipher=4;cipher<=8;cipher+=4)for(unsigned type=2;type<=3;type++)for(unsigned selected=0;selected<4;selected++)
+ for(unsigned alg=0;alg<4;alg++)for(unsigned type=2;type<=3;type++)for(unsigned selected=0;selected<4;selected++)
  for(unsigned ptk=0;ptk<4;ptk++)for(unsigned def=0;def<4;def++)for(unsigned used=0;used<2;used++) {
+  unsigned cipher=(unsigned[]){4,8,9,10}[alg];
   keys[0]=(struct ieee80211_key){1,{cipher,1}}; /* current uploaded CCMP */
   keys[1]=(struct ieee80211_key){0,{8,1}}; /* software GCMP */
   keys[2]=(struct ieee80211_key){3,{4,1}}; /* tainted old CCMP */

@@ -973,12 +973,14 @@ int rtl_ax_tx_bcmc(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,
  next.sequence=READ_ONCE(((struct rtl_seq_shared *)(tx->pe.memory+RTL_SEQ_BASE))->generation);
  if(!next.sequence)return -ESTALE;
  if(key) {
-  if((key->cipher!=WLAN_CIPHER_SUITE_CCMP && key->cipher!=WLAN_CIPHER_SUITE_GCMP) || (key->flags&IEEE80211_KEY_FLAG_PAIRWISE) ||
+  if((key->cipher!=WLAN_CIPHER_SUITE_CCMP && key->cipher!=WLAN_CIPHER_SUITE_GCMP &&
+      key->cipher!=WLAN_CIPHER_SUITE_CCMP_256 && key->cipher!=WLAN_CIPHER_SUITE_GCMP_256) || (key->flags&IEEE80211_KEY_FLAG_PAIRWISE) ||
      key->hw_key_idx>=128 || key->keyidx<0 || key->keyidx>3)return -EOPNOTSUPP;
   next.key_generation=rtl9617c_key_pn_token(&key->rtl9617c_pn);
   if(!next.key_generation)return -EKEYREVOKED;
   next.key=key->hw_key_idx<<16|key->keyidx<<24|
-   (key->cipher==WLAN_CIPHER_SUITE_GCMP?RTL_MC_PE_KEY_GCMP:0);
+   ((rtl_ax_security_type(key->cipher)>=8?RTL_MC_PE_KEY_GCMP:0) |
+   (rtl_ax_security_type(key->cipher)&1?RTL_MC_PE_KEY_256:0));
  }
  next.rate=rate;ether_addr_copy(next.address,vif->addr);
  mutex_lock(&ni_test_lock);

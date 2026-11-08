@@ -192,6 +192,7 @@ struct rtl_ax_ap {
 	DECLARE_BITMAP(security_deleting, RTL_AX_SECURITY_ENTRIES);
 	DECLARE_BITMAP(security_aborting, RTL_AX_SECURITY_ENTRIES);
 	u8 security_unlink[RTL_AX_SECURITY_ENTRIES]; /* Pending DMAC unlink: MACID + 1. */
+	u8 security_ext[RTL_AX_SECURITY_ENTRIES]; /* Primary CAM owns optional second CAM + 1. */
 	struct rtl_ax_security_role security_roles[128];
 	struct ieee80211_key_conf *security_keys[RTL_AX_SECURITY_ENTRIES];
 	u64 keys_installed, keys_removed, keys_aborted, rx_decrypted;

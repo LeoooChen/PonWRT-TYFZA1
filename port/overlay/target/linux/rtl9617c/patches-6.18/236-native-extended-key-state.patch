@@ -1,0 +1,42 @@
+--- a/net/mac80211/rx.c
++++ b/net/mac80211/rx.c
+@@ -4130,7 +4130,7 @@
+ 		CALL_RXH(ieee80211_rx_h_uapsd_and_pspoll);
+ 		CALL_RXH(ieee80211_rx_h_sta_process);
+ 		CALL_RXH(ieee80211_rx_h_decrypt);
+-		if (rx->sta && rx->key && (rx->key->conf.cipher == WLAN_CIPHER_SUITE_CCMP || rx->key->conf.cipher == WLAN_CIPHER_SUITE_GCMP)) {
++		if (rx->sta && rx->key && (rx->key->conf.cipher == WLAN_CIPHER_SUITE_CCMP || rx->key->conf.cipher == WLAN_CIPHER_SUITE_GCMP || rx->key->conf.cipher == WLAN_CIPHER_SUITE_CCMP_256 || rx->key->conf.cipher == WLAN_CIPHER_SUITE_GCMP_256)) {
+ 			struct ieee80211_hdr *accepted = (void *)rx->skb->data;
+ 			/* Plaintext can retain a PTK without accepting a new CCMP PN. */
+ 			if (ieee80211_is_data_qos(accepted->frame_control) &&
+@@ -4396,7 +4396,7 @@
+ 	bool ready = false;
+ 
+ 	spin_lock_bh(&local->rx_path_lock);
+-	if ((keyconf->cipher != WLAN_CIPHER_SUITE_CCMP && keyconf->cipher != WLAN_CIPHER_SUITE_GCMP) || key->sta != sta ||
++	if ((keyconf->cipher != WLAN_CIPHER_SUITE_CCMP && keyconf->cipher != WLAN_CIPHER_SUITE_GCMP && keyconf->cipher != WLAN_CIPHER_SUITE_CCMP_256 && keyconf->cipher != WLAN_CIPHER_SUITE_GCMP_256) || key->sta != sta ||
+ 	    !test_sta_flag(sta, WLAN_STA_AUTHORIZED) ||
+ 	    !(key->rx_shortcut_valid_tids & BIT(tid)))
+ 		goto out;
+@@ -4411,7 +4411,7 @@
+ 		*next_seq = key->rx_shortcut_next_seq[tid];
+ 		ready = true;
+ 	}
+-	if (ready) memcpy(pn, (keyconf->cipher == WLAN_CIPHER_SUITE_GCMP ? key->u.gcmp.rx_pn[tid] : key->u.ccmp.rx_pn[tid]), 6);
++	if (ready) memcpy(pn, ((keyconf->cipher == WLAN_CIPHER_SUITE_GCMP || keyconf->cipher == WLAN_CIPHER_SUITE_GCMP_256) ? key->u.gcmp.rx_pn[tid] : key->u.ccmp.rx_pn[tid]), 6);
+ out:
+ 	spin_unlock_bh(&local->rx_path_lock);
+ 	return ready;
+@@ -4427,9 +4427,9 @@
+ 	struct ieee80211_local *local = sta->sdata->local;
+ 
+ 	spin_lock_bh(&local->rx_path_lock);
+-	if ((keyconf->cipher == WLAN_CIPHER_SUITE_CCMP || keyconf->cipher == WLAN_CIPHER_SUITE_GCMP) && key->sta == sta) {
+-		if (memcmp(pn, (keyconf->cipher == WLAN_CIPHER_SUITE_GCMP ? key->u.gcmp.rx_pn[tid] : key->u.ccmp.rx_pn[tid]), 6) > 0)
+-			memcpy((keyconf->cipher == WLAN_CIPHER_SUITE_GCMP ? key->u.gcmp.rx_pn[tid] : key->u.ccmp.rx_pn[tid]), pn, 6);
++	if ((keyconf->cipher == WLAN_CIPHER_SUITE_CCMP || keyconf->cipher == WLAN_CIPHER_SUITE_GCMP || keyconf->cipher == WLAN_CIPHER_SUITE_CCMP_256 || keyconf->cipher == WLAN_CIPHER_SUITE_GCMP_256) && key->sta == sta) {
++		if (memcmp(pn, ((keyconf->cipher == WLAN_CIPHER_SUITE_GCMP || keyconf->cipher == WLAN_CIPHER_SUITE_GCMP_256) ? key->u.gcmp.rx_pn[tid] : key->u.ccmp.rx_pn[tid]), 6) > 0)
++			memcpy(((keyconf->cipher == WLAN_CIPHER_SUITE_GCMP || keyconf->cipher == WLAN_CIPHER_SUITE_GCMP_256) ? key->u.gcmp.rx_pn[tid] : key->u.ccmp.rx_pn[tid]), pn, 6);
+ 		sta->last_seq_ctrl[tid] = cpu_to_le16(((next_seq - 1) & 4095) << 4);
+ 		key->rx_shortcut_next_seq[tid] = next_seq;
+ 		key->rx_shortcut_valid_tids |= BIT(tid);

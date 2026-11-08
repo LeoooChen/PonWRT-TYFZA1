@@ -42,8 +42,10 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u6
 typedef u16 __le16;typedef u32 dma_addr_t;
 #define WLAN_CIPHER_SUITE_GCMP 8
 #define RTL_MC_PE_KEY_GCMP (1U<<27)
+#define RTL_MC_PE_KEY_256 (1U<<28)
+static unsigned rtl_ax_security_type(unsigned c){return c==9?9:c==10?7:c==8?8:6;}
 #define RTL_MC_PE_CAP_MAILBOX 211
-#define RTL_MC_PE_CAPABILITY 0x4d435037U
+#define RTL_MC_PE_CAPABILITY 0x4d435038U
 #define RTL_MC_PE_CPU_STAMPS 0x68000
 #define RTL_AX_TX_NI_AC_PENDING 0x3e000
 #define RTL_AX_TX_ARM_AC_PENDING 0x3e800

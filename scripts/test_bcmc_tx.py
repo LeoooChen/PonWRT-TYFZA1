@@ -65,7 +65,7 @@ int main(void){
   struct ieee80211_local local={.hw=hw};
   struct ieee80211_sub_if_data sdata={.vif={.type=NL80211_IFTYPE_AP}};
   typeof(*sdata.bss) bss={};sdata.bss=&bss;
-  struct key key={.cipher=getenv("RTL_TEST_GCMP")?8:4,.hw_key_idx=63,.keyidx=crypto?crypto-1:0,.tx_pn=0xffffffffULL,
+  struct key key={.cipher=getenv("RTL_TEST_CIPHER")?atoi(getenv("RTL_TEST_CIPHER")):4,.hw_key_idx=63,.keyidx=crypto?crypto-1:0,.tx_pn=0xffffffffULL,
    .rtl9617c_pn={.shared=memory,.generation=123}};
   struct sk_buff skb[3]={};u8 raw[3][324]={};
   for(unsigned phase=0;phase<3;phase++){

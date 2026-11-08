@@ -93,7 +93,7 @@ int rtl_fe_wifi_mcast_policy(struct rtl_fe *fe,struct net_device *netdev,const u
   unsigned int slot=destination-18;
   if(!policy->bcmc_generation || !policy->sequence || policy->qos || policy->reserved ||
      policy->flags!=(BIT(18)|BIT(13)|BIT(14)|(policy->key_generation?BIT(15):0)) ||
-     (policy->key&~(0x037f0000U|RTL_MC_PE_KEY_GCMP)) || (!policy->key_generation && policy->key) || policy->rate>11)return -EINVAL;
+     (policy->key&~(0x037f0000U|RTL_MC_PE_KEY_GCMP|RTL_MC_PE_KEY_256)) || (!policy->key_generation && policy->key) || policy->rate>11)return -EINVAL;
   mutex_lock(&fe->lock);
   port=fe_port(fe,netdev);
   if(!port || !port->wifi_id || fe->mc_pe[slot].netdev!=netdev)goto out;

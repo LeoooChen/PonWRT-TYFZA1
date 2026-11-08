@@ -236,13 +236,14 @@ for client in (False,True):
 for lengths in ([60],[1514]*3):
     for noack in (False,True):
         case(lengths,7935,from_epp=True,client=True,multicast=True,noack=noack,preserve_group=True)
-for gcmp in (False,True):
- for header in (8,16):
-  for source in (0,6):
-   for client,preserve in ((False,False),(True,False),(True,True)):
-    for lengths in ([60],[1000,1001,64,1514]):
-     case(lengths,10896,from_epp=True,client=client,multicast=True,preserve_group=preserve,
-          encrypted=gcmp,gcmp=gcmp,ni_header=header,source=source,policy=10896)
+for extended in (False,True):
+ for gcmp in (False,True):
+  for header in (8,16):
+   for source in (0,6):
+    for client,preserve in ((False,False),(True,False),(True,True)):
+     for lengths in ([60],[1000,1001,64,1514]):
+      case(lengths,10896,from_epp=True,client=client,multicast=True,preserve_group=preserve,
+           encrypted=gcmp or extended,gcmp=gcmp,extended=extended,ni_header=header,source=source,policy=10896)
 # Open records and encrypted templates cannot substitute for each other.
 for phase in ('ingress','queued','selected'):
  for change in ('encrypted','key_without_flag','cipher'):

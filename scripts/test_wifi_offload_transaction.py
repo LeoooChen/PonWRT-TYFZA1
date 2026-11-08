@@ -95,12 +95,14 @@ struct rtl_ax_tx {bool key_refresh_pending,bcmc_enabled,bcmc_owned,bcmc_prepare_
  struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;unsigned cpu,route_macid,route_tim[128];struct net_device *route_dev;struct work_struct ps_work;}ni;};
 struct rtl_ax_ap {bool beacon_enabled;int ap_result;struct {int error;}dfs;struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_associated,sta_4addr;int scan_offload_result;
  struct wiphy_work offload_work;struct wiphy_delayed_work cleanup_work;bool scanning,ap_started,monitor_started,offload_retry,peer_authorized[128];
- struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[6];}security_roles[128];struct {unsigned aggregation[16],stopping,flushing;u8 address[6];}tx_ba[128];
+ struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[6],keyid[7];}security_roles[128];struct {unsigned aggregation[16],stopping,flushing;u8 address[6];}tx_ba[128];
  struct ieee80211_key_conf *security_keys[128];unsigned security_unlink[128];bool ra_registered[128];
  struct {bool deleting;unsigned macid;}rx_ba[8];struct {bool pending;}retired_stations[128];int offload_result;unsigned offload_started,chip;};
 struct ieee80211_key_conf {unsigned id,hw_key_idx,keyidx,cipher;};
 #define WLAN_CIPHER_SUITE_GCMP 8
 #define RTL_MC_PE_KEY_GCMP (1U<<27)
+#define RTL_MC_PE_KEY_256 (1U<<28)
+static unsigned rtl_ax_security_type(unsigned c){return c==9?9:c==10?7:c==8?8:6;}
 static struct ieee80211_key_conf active_key;
 static int key_error;static bool open_key;
 static int ieee80211_rtl9617c_unicast_key(struct ieee80211_vif *v,const u8 *a,struct ieee80211_key_conf **key){(void)v;(void)a;*key=open_key?NULL:&active_key;return key_error;}
@@ -177,7 +179,7 @@ static void rtl_ax_tx_peer_ba(struct rtl_ax_tx *tx,unsigned id,unsigned tid,unsi
 '''
 cases = r'''
 int main(void){
- for(unsigned client=0;client<2;client++)for(unsigned initial=0;initial<2;initial++)for(unsigned failure=0;failure<4;failure++)for(unsigned cancel=0;cancel<4;cancel++)for(unsigned key_change=0;key_change<4;key_change++)for(unsigned opened=0;opened<2;opened++)for(unsigned gcmp=0;gcmp<2;gcmp++){
+ for(unsigned client=0;client<2;client++)for(unsigned initial=0;initial<2;initial++)for(unsigned failure=0;failure<4;failure++)for(unsigned cancel=0;cancel<4;cancel++)for(unsigned key_change=0;key_change<4;key_change++)for(unsigned opened=0;opened<2;opened++)for(unsigned gcmp=0;gcmp<4;gcmp++){
   struct rtl_fe fe={};struct net_device dev={};struct rtl_fe_port port={.netdev=&dev,.wifi_id=1,.destination=16};
   struct rtl_fe_flow flows[2]={};u32 actions[2][12]={};u8 memory[0x20000]={};
   struct rtl_ax_tx tx={.pe_active=true,.pe={memory},.ni={.active=initial,.cpu=3}};
@@ -190,7 +192,7 @@ int main(void){
   for(unsigned i=0;i<2;i++){flows[i].output=&port;flows[i].installed=true;flows[i].hash_index=i;flows[i].crc16=i+100;
    memcpy(flows[i].destination,mac,6);list_add_tail(&flows[i].list,&fe.flows);ages[i]=1;rtl_fe_action_set(actions[i],RTL_FE_MCGID,16);}
   memcpy(memory+0xe408,mac,6);put_unaligned_le32((1<<16)|(1<<18),memory+0xd020+16);
-  tx.peer_authorized[1]=radio.peer_authorized[1]=true;radio.tx_ba[1].aggregation[0]=64;radio.security_roles[1].valid=1;active_key=(struct ieee80211_key_conf){.cipher=gcmp?8:4};put_unaligned_le32(gcmp?RTL_MC_PE_KEY_GCMP:0,memory+0xd020+20);radio.security_keys[0]=&active_key;if(opened){radio.security_roles[1].valid=0;put_unaligned_le32(1<<18,memory+0xd020+16);put_unaligned_le32(0,memory+0xd020+20);}
+  tx.peer_authorized[1]=radio.peer_authorized[1]=true;radio.tx_ba[1].aggregation[0]=64;radio.security_roles[1].valid=1;active_key=(struct ieee80211_key_conf){.cipher=(unsigned[]){4,8,9,10}[gcmp]};put_unaligned_le32(((gcmp==1||gcmp==2)?RTL_MC_PE_KEY_GCMP:0)|(gcmp>=2?RTL_MC_PE_KEY_256:0),memory+0xd020+20);radio.security_keys[0]=&active_key;if(opened){radio.security_roles[1].valid=0;put_unaligned_le32(1<<18,memory+0xd020+16);put_unaligned_le32(0,memory+0xd020+20);}
   tx.peer_authorized[2]=true;put_unaligned_le32((1<<16)|(1<<18),memory+0xd050);
   if(client){
    radio.scanning=true;rtl_ax_offload_work(&wiphy,&radio.offload_work);
@@ -233,7 +235,7 @@ int main(void){
    /* New DCTL role is committed, but the last TID0 template still names the old CAM. */
    radio.security_roles[1].cam[0]=7;active_key.hw_key_idx=7;radio.security_keys[7]=&active_key;rtl_ax_offload_work(&wiphy,&radio.offload_work);
    assert(!get_unaligned_le32(memory+0x11a04) && !radio.offload_retry);
-   put_unaligned_le32(7<<16|(gcmp?RTL_MC_PE_KEY_GCMP:0),memory+0xd020+20);rtl_ax_offload_ready(&radio);
+   put_unaligned_le32(7<<16|(((gcmp==1||gcmp==2)?RTL_MC_PE_KEY_GCMP:0)|(gcmp>=2?RTL_MC_PE_KEY_256:0)),memory+0xd020+20);rtl_ax_offload_ready(&radio);
   }
   rtl_ax_cleanup_work(&wiphy,&radio.cleanup_work.work);
   if(cancel==2)assert(!radio.tx_ba[1].stopping && ba_callbacks==1);

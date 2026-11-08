@@ -754,7 +754,7 @@ int main(void){
  for(unsigned v=0;v<8;v++)fe.reg[(0x65a4+3*32+v*4)/4]=7;
  unsigned previous_cookie=0;
  for(unsigned repeat=0;repeat<3;repeat++) {
-  test_peer.policy.key=repeat==2?0:(7U<<16|RTL_MC_PE_KEY_GCMP);
+  test_peer.policy.key=repeat==2?0:(7U<<16|RTL_MC_PE_KEY_GCMP|RTL_MC_PE_KEY_256);
   test_peer.policy.flags=BIT(18)|BIT(23)|(repeat==2?0:BIT(16));
   fe.event_count=0;fdb_source=&lan;skb.dev=&lan;skb.saved=wireless;skb.priority=0;
   skb.saved.ingress=skb.saved.port=1;skb.saved.wifi_id=0;skb.saved.multicast_epoch=fe.mc_gate.epoch;
@@ -801,7 +801,7 @@ int main(void){
   unsigned cookie=0;
   for(unsigned c=1;c<256;c++)if(fe.mc_directs[c]&&fe.mc_directs[c]->flow==fe.indexed)cookie=c;
   assert(cookie&&fe.mc_directs[cookie]->pe_destination==19&&pe_table.record[cookie].epoch==pe_table.epoch);
-  assert(pe_table.record[cookie].key==(repeat==2?0:(7U<<16|RTL_MC_PE_KEY_GCMP))&&pe_table.record[cookie].dscp_tid[46]==6);
+  assert(pe_table.record[cookie].key==(repeat==2?0:(7U<<16|RTL_MC_PE_KEY_GCMP|RTL_MC_PE_KEY_256))&&pe_table.record[cookie].dscp_tid[46]==6);
   assert(!memcmp(pe_table.record[cookie].peer,test_peer.address,6));
   if((repeat==0 && getenv("RTL_TEST_PE_RECORD")) || (repeat==2 && getenv("RTL_TEST_OPEN_PE_RECORD"))) {
    FILE *record=fopen(getenv(repeat==2?"RTL_TEST_OPEN_PE_RECORD":"RTL_TEST_PE_RECORD"),"wb");assert(record);
@@ -851,7 +851,7 @@ int main(void){
   fe.mc_pe[1].bcmc_policy_generation=0;
   if(role==2) {
    fe.mc_pe[1].bcmc_policy_generation=test_policy_generation;
-   fe.mc_pe[1].bcmc=(struct rtl9617c_wifi_policy){.flags=BIT(18)|BIT(13)|BIT(14)|BIT(15),.key=63<<16|2<<24|RTL_MC_PE_KEY_GCMP,.bcmc_generation=29,.sequence=23,.key_generation=11,.rate=4};
+   fe.mc_pe[1].bcmc=(struct rtl9617c_wifi_policy){.flags=BIT(18)|BIT(13)|BIT(14)|BIT(15),.key=63<<16|2<<24|RTL_MC_PE_KEY_GCMP|RTL_MC_PE_KEY_256,.bcmc_generation=29,.sequence=23,.key_generation=11,.rate=4};
    memcpy(wifi.dev_addr,"\2\0\0\0\0\1",6);
   }
   fe.event_count=0;fdb_source=&lan;skb.dev=&lan;skb.saved=wireless;skb.priority=0;

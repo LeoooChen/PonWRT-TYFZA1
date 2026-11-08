@@ -43,7 +43,7 @@ struct ieee80211_vif {int type;u8 addr[6];};
 #define container_of(p,t,m) ((t *)((char *)(p)-offsetof(t,m)))
 struct wiphy {int unused;};struct wiphy_work {int unused;};
 struct wiphy_delayed_work {struct wiphy_work work;};
-struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[2];};
+struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[2],keyid[7];};
 struct rtl_ax_station {unsigned macid;unsigned long ba_retry[8];};
 struct ieee80211_sta {struct rtl_ax_station drv_priv[1];bool wme;struct {struct {bool ht_supported;}ht_cap;struct {bool vht_supported;}vht_cap;struct {bool has_he;}he_cap;}deflink;};
 struct rtl_ax_ap {
@@ -77,6 +77,8 @@ static int rtl_ax_tx_ba_finish(struct rtl_ax_ap *r,unsigned id,unsigned tid){(vo
 struct ieee80211_key_conf {unsigned hw_key_idx,keyidx,cipher;};
 #define WLAN_CIPHER_SUITE_GCMP 8
 #define RTL_MC_PE_KEY_GCMP (1U<<27)
+#define RTL_MC_PE_KEY_256 (1U<<28)
+static unsigned rtl_ax_security_type(unsigned c){return c==9?9:c==10?7:c==8?8:6;}
 #define time_after_eq(a,b) ((long)((a)-(b))>=0)
 static unsigned long jiffies;
 static void rcu_read_lock(void){}static void rcu_read_unlock(void){}

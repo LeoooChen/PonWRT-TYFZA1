@@ -110,7 +110,7 @@ code += function((radio/'tx.c').read_text(),'rtl_ax_tx_key_pn_bind')
 code += function((radio/'tx.c').read_text(),'rtl_ax_tx_key_pn_unbind')
 code += function((radio/'monitor.h').read_text(),'rtl_ax_get_key_seq')
 code += r'''
-static void software_ccmp(bool gcmp){
+static void software_ccmp(bool gcmp,bool extended){
  static u8 memory[0x20000] __attribute__((aligned(64)));
  struct rtl_ax_tx tx={.lock=PTHREAD_MUTEX_INITIALIZER,.pe_active=true,.pe={memory}};
  struct ieee80211_key key={.conf={.keyidx=2,.hw_key_idx=63,.tx_pn=0xffffffffULL}};
@@ -122,7 +122,7 @@ static void software_ccmp(bool gcmp){
  for(unsigned i=0;i<32;i++) {
   assert(pe_key_pn(memory,request)==1);
   struct sk_buff s={.len=32};s.data=s.storage+32; /* Software-encrypted management frame. */
-  assert(!(gcmp?gcmp_encrypt_skb(&t,&s):ccmp_encrypt_skb(&t,&s,8)));u8 *iv=s.data+24;
+  assert(!(gcmp?gcmp_encrypt_skb(&t,&s):ccmp_encrypt_skb(&t,&s,extended?16:8)));u8 *iv=s.data+24;
   u64 expected=0xffffffffULL+i*2+2;
   assert(iv[0]==(u8)expected&&iv[1]==(u8)(expected>>8)&&iv[2]==0&&iv[3]==0xa0);
   for(unsigned b=2;b<6;b++)assert(iv[b+2]==(u8)(expected>>(b*8)));
@@ -138,7 +138,7 @@ static void software_ccmp(bool gcmp){
  tx.key_pn_generation=9;assert(!rtl_ax_tx_key_pn_bind(&tx,&key.conf));s->pe=1;s->turn=1;
  assert(rtl_ax_tx_key_pn_unbind(&tx,&key.conf)==-ETIMEDOUT);
  struct sk_buff frame={.len=32};frame.data=frame.storage+32;
- assert((gcmp?gcmp_encrypt_skb(&t,&frame):ccmp_encrypt_skb(&t,&frame,8))==-1);s->pe=0;
+ assert((gcmp?gcmp_encrypt_skb(&t,&frame):ccmp_encrypt_skb(&t,&frame,extended?16:8))==-1);s->pe=0;
 }
 #define COUNT 20000
 static u8 memory[0x20000] __attribute__((aligned(64)));
@@ -166,7 +166,7 @@ static void *sender(void *argument){
  return NULL;
 }
 int main(void){
- software_ccmp(false);software_ccmp(true);
+ software_ccmp(false,false);software_ccmp(true,false);software_ccmp(false,true);software_ccmp(true,true);
  struct rtl_key_pn_shared *s=(void *)(memory+RTL_KEY_PN_BASE+127*sizeof(*s));
  assert(!rtl9617c_key_pn_bind(&binding,s,1,&fallback));
  assert(rtl9617c_key_pn_token(&binding)==1);
@@ -200,7 +200,7 @@ int main(void){
  assert(rtl9617c_key_pn_unbind(&binding,&fallback)==-ETIMEDOUT&&!binding.shared&&!s->generation);
  assert(rtl9617c_key_pn_next(&binding,&fallback,&pn)==-EKEYREVOKED);
  assert(!rtl9617c_key_pn_token(&binding));s->pe=0;
- puts("Shared GTK PN: 60000 concurrent ARM/PE allocations and stable reads,640 carry/wrap/CAM generations,64 actual software-CCMP/GCMP and PE alternations, radio bind/read/unbind, debugfs refusal and poisoned software fallback passed");
+ puts("Shared GTK PN: 60000 concurrent ARM/PE allocations and stable reads,640 carry/wrap/CAM generations,128 actual software-CCMP/GCMP and PE alternations, radio bind/read/unbind, debugfs refusal and poisoned software fallback passed");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='shared-key-pn-') as tmp:

@@ -5,6 +5,12 @@
 
 #define RTL_AX_SECURITY_ENTRIES 128
 
+/* Linux cipher identifiers: CCMP128=4, GCMP128=8, GCMP256=9, CCMP256=10. */
+static inline unsigned int rtl_ax_security_type(unsigned int cipher)
+{
+ return (cipher&255)==9?9:(cipher&255)==10?7:(cipher&255)==8?8:6;
+}
+
 static inline u64 rtl_ax_security_read_pn(const struct rtl_ax_io *io,
 	unsigned int macid)
 {
@@ -27,6 +33,36 @@ struct rtl_ax_security_role {
 	u8 valid, keyid[7], cam[7], tx_keyid;
 };
 
+/* A 256-bit key occupies two same-key-ID DCTL slots, with independent CAMs.
+ * Prefer the historical single-key slot where possible, then free slots in
+ * that key class. All slots are reserved before any CAM command is sent. */
+static inline unsigned int rtl_ax_security_slots(const struct rtl_ax_security_role *role,
+	unsigned int keyid, bool pairwise, bool extended, unsigned int slots[2])
+{
+	unsigned int first=pairwise?0:2, end=pairwise?2:6, count=0;
+	unsigned int preferred=first+keyid;
+	/* mac80211 removes the old key before replacing a live key ID. */
+	for(unsigned int i=first;i<end;i++)
+		if((role->valid&(1U<<i)) && role->keyid[i]==keyid)return 0;
+	if (preferred<end && !(role->valid & (1U<<preferred))) slots[count++]=preferred;
+	for (unsigned int i=first;i<end && count<(extended?2U:1U);i++)
+		if (i!=preferred && !(role->valid & (1U<<i))) slots[count++]=i;
+	if (count==2 && slots[1]<slots[0]) {
+		unsigned int temp=slots[0];slots[0]=slots[1];slots[1]=temp;
+	}
+	return count;
+}
+
+static inline void rtl_ax_security_unlink(struct rtl_ax_security_role *role,
+	unsigned int primary, unsigned int extension)
+{
+	for (unsigned int i=0;i<7;i++)
+		if ((role->valid & (1U<<i)) && (role->cam[i]==primary ||
+		    (extension && role->cam[i]==extension-1))) {
+			role->valid &= ~(1U<<i);role->cam[i]=role->keyid[i]=0;
+		}
+}
+
 /* Original C/XB SEC_CAM H2C: index/length plus a 20-byte cipher/key entry. */
 static inline void rtl_ax_security_cam(u8 out[24], unsigned int index,
 	const u8 *key, unsigned int cipher)
@@ -39,12 +75,14 @@ static inline void rtl_ax_security_cam(u8 out[24], unsigned int index,
 	}
 }
 
-/* Original upt_dctl_secinfo_entry -> C/XB DCTL V1. Slots0/1 are PTK,
+/* Original C/XB DCTL V1 mode3: two PTK, four GTK, one BIP slot.
+ * Mode2 has only three GTK slots and cannot represent our slot5.
+ * Slots0/1 are PTK,
  * slots2..5 are GTK. Each TX descriptor supplies its own packet number. */
 static inline void rtl_ax_security_dctl(u8 out[68], unsigned int macid,
 	const struct rtl_ax_security_role *role)
 {
-	u32 ids = 2U << 16 | (u32)role->tx_keyid << 9;
+	u32 ids = 3U << 16 | (u32)role->tx_keyid << 9;
 	unsigned int i;
 
 	memset(out, 0, 68);
