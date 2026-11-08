@@ -97,7 +97,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 	u32 producer = ni[mailbox[114] / 4 + cos] & mask;
 	if (producer == consumer) return 0;
 	u32 count = 0, group = 0, head = 0, tail = 0, grouped = 0, group_bytes = 0;
-	u32 cached_peer = 0, cached_low = 0, cached_high = 0;
+	u32 cached_peer = 0, cached_low = 0, cached_high = 0, cached_qos = 0;
 	u32 flow_peer = 0, flow_low = 0, flow_high = 0, flow_packets = 0;
 	u32 fence = mailbox[171] & BIT(cos);
 	u32 target = *(u32 *)(memory + NI_EPP_RETIRE_TARGETS + cos * 4), crossed = 0;
@@ -114,7 +114,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		u32 buffer = descriptor & 0xffffff80, header, tid;
 		u32 length = ni_length(entry, buffer, &header, &tid);
 		u8 *ethernet = uncached(buffer + RTL_QM_HEADROOM + header);
-		u32 macid = 0, ether1 = 0;
+		u32 macid = 0, ether1 = 0, qos = 0;
 		if (length >= 14 && length <= RTL_QM_DATA_BYTES - header) {
 			const u32 *destination = (const void *)ethernet;
 			u32 low = destination[0];
@@ -123,9 +123,9 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 			/* Cache only this batch's destination; admission can be revoked
 			 * asynchronously and must still be checked for every packet. */
 			if (cached_peer && low == cached_low && high == cached_high &&
-			    *(volatile u32 *)(memory + NI_PEER_ROUTE + cached_peer * 4))
-				macid = cached_peer;
-			else {
+			    *(volatile u32 *)(memory + NI_PEER_ROUTE + cached_peer * 4)) {
+				macid = cached_peer; qos = cached_qos;
+			} else {
 				for (u32 peer = 1; peer < 128; peer++) {
 					if (!*(u32 *)(memory + NI_PEER_ROUTE + peer * 4)) continue;
 					const u32 *address = (const void *)(memory + 0xe400 + peer * 8);
@@ -135,7 +135,11 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 						macid = peer; break;
 					}
 				}
-				cached_peer = macid; cached_low = low; cached_high = high;
+				/* QoS header shape is fixed for this admitted association.
+				 * ARM withdraws and drains the peer before MACID reuse;
+				 * authorization remains checked on every cache hit. */
+				if (macid) qos = ((*(u32 *)(memory + 0xd000 + macid * 32 + 8) >> 16) & 63) == 26;
+				cached_peer = macid; cached_low = low; cached_high = high; cached_qos = qos;
 			}
 		}
 		if (!macid) {
@@ -153,8 +157,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 				ethernet[12] | (u32)ethernet[13] << 8;
 		}
 		tid = 0;
-		if (macid && length >= 16 &&
-		    ((*(u32 *)(memory + 0xd000 + macid * 32 + 8) >> 16) & 63) == 26) {
+		if (macid && length >= 16 && qos) {
 			u32 type = ether3 & 65535;
 			if (type == 8 || type == 0xdd86) {
 				u32 up = type == 8 ? ether3 >> 29 : (ether3 >> 17) & 7;
