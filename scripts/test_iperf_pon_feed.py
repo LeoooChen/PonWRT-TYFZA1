@@ -188,6 +188,21 @@ int main(void){
   assert(tick(&timer)==HRTIMER_NORESTART && room()==1);
  }
  eq_monitor=NULL;assert(room()==61);
+ // A rejected final skb must publish accepted descriptors from this batch.
+ udp=false;ip.protocol=6;tcp.syn=tcp.fin=tcp.rst=false;
+ for(unsigned failure=0;failure<3;failure++){
+  writel(producer,vp+0x1c);u64 before=doorbells;
+  struct sk_buff good={.protocol=htons(ETH_P_IP),.len=sizeof(packet),.data=packet};
+  assert(transmit(&good,feed)==NETDEV_TX_OK && pending && good.consumed);
+  u32 accepted=producer;
+  struct sk_buff bad={.protocol=htons(ETH_P_IP),.len=sizeof(packet),.data=packet};
+  if(failure==0)bad.len=1507;
+  if(failure==1)bad.gso=true;
+  if(failure==2){bad.ip_summed=CHECKSUM_PARTIAL;bad.csum_start=12;bad.csum_offset=6;}
+  assert(transmit(&bad,feed)==NETDEV_TX_OK && bad.consumed);
+  assert(producer==accepted && readl(vp+0x18)==accepted);
+  assert(!pending && doorbells==before+1);
+ }
  // Shared fragments are stabilized; odd payload length and zero result survive.
  u8 odd[101],out[1600],input[101];memset(odd,0x5a,sizeof(odd));memcpy(input,odd,sizeof(odd));
  struct sk_buff fragment={.len=101,.data=odd,.headlen=55,.shared=true,

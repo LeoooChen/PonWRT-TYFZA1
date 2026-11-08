@@ -125,6 +125,10 @@ static netdev_tx_t transmit(struct sk_buff *skb,struct net_device *dev)
   return NETDEV_TX_OK;
  }
  if(skb->len<ETH_HLEN || skb->len>1506 || skb_is_gso(skb)){
+  /* A failed tail must not strand an earlier deferred DMA prefix. */
+  if(pending){
+   dma_wmb();writel(producer,vp+0x18);writel(1,vp+0x68);doorbells++;pending=false;
+  }
   invalid_packets++;dev_kfree_skb_any(skb);return NETDEV_TX_OK;
  }
  begin=ktime_get_ns();
@@ -148,6 +152,10 @@ static netdev_tx_t transmit(struct sk_buff *skb,struct net_device *dev)
  put_unaligned_be16(0x21,frame+20);
  copy_begin=ktime_get_ns();
  if(copy_payload(skb,frame)){
+  /* A failed tail must not strand an earlier deferred DMA prefix. */
+  if(pending){
+   dma_wmb();writel(producer,vp+0x18);writel(1,vp+0x68);doorbells++;pending=false;
+  }
   invalid_packets++;dev_kfree_skb_any(skb);return NETDEV_TX_OK;
  }
  payload_copy_ns+=ktime_get_ns()-copy_begin;
