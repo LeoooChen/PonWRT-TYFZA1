@@ -73,6 +73,7 @@ struct rtl_ax_tx {
 	struct net_device *mcast_dev;
 	struct delayed_work fttr_work;
 	bool fttr_registered, mcast_cpu_registered;
+	bool key_refresh_pending;
 	u64 fttr_discarded;
 	u64 mcast_policy_attempt[128],bcmc_policy_attempt;
 	u32 key_pn_generation;
@@ -471,6 +472,28 @@ static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *tx)
 	dma_wmb();
 	rtl9617c_bridge_mcast_end(token);
 }
+void rtl_ax_tx_key_changed(struct rtl_ax_tx *tx)
+{
+	unsigned long flags;
+	if (!tx->pe_active) return;
+	spin_lock_irqsave(&tx->lock, flags);
+	/* Called under wiphy before publishing ANY Linux data-key selection,
+	 * including software keys which never reach the driver's set_key. */
+	WRITE_ONCE(tx->key_refresh_pending, true);
+	for (unsigned int i=1;i<128;i++)
+		put_unaligned_le32(0, tx->pe.memory + 0x11a00 + i * 4);
+	dma_wmb();
+	spin_unlock_irqrestore(&tx->lock, flags);
+	rtl_ax_tx_mcast_revoke(tx);
+}
+int rtl_ax_tx_key_refresh(struct rtl_ax_tx *tx)
+{
+	int ret;
+	if (!READ_ONCE(tx->key_refresh_pending)) return 0;
+	ret=rtl_ax_tx_ni_route(tx,tx->ni.route_dev,0);
+	if (!ret) WRITE_ONCE(tx->key_refresh_pending,false);
+	return ret;
+}
 void rtl_ax_tx_bcmc_close(struct rtl_ax_tx *tx)
 {
  if(!tx->pe_active)return;
@@ -623,6 +646,9 @@ bool rtl_ax_tx_peer_security(struct rtl_ax_tx *tx, unsigned int macid, unsigned 
 		key = get_unaligned_le32(tx->pe.memory + 0xd000 + macid * 32 + 20);
 	}
 	spin_unlock_irqrestore(&tx->lock, flags);
+	/* CAM sentinel represents an explicitly checked open mac80211 peer. */
+	if (cam == RTL_AX_SECURITY_ENTRIES)
+		return (packet & (BIT(15) | BIT(16) | BIT(18))) == BIT(18) && !(key >> 16);
 	return (packet & BIT(16)) && (key >> 16) == (cam | keyid << 8);
 }
 void rtl_ax_tx_peer_ba(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid, unsigned int size)
@@ -934,7 +960,8 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		/* NI needs an Ethernet template even when mac80211 assembled A-MSDU.
 		 * Never copy the raw frame's sequence/AMSDU/PS flags into that template. */
 		if (!encap && !tid && pe_sequence && slot.firmware_rate &&
-		    (request_flags & BIT(16)) && tx->peer_authorized[macid] &&
+		    ((request_flags & BIT(16)) || (!info->control.hw_key &&
+		     !ieee80211_has_protected(header->frame_control))) && tx->peer_authorized[macid] &&
 		    info->control.vif &&
 		    ((info->control.vif->type == NL80211_IFTYPE_AP &&
 		      ieee80211_has_fromds(header->frame_control) && !ieee80211_has_tods(header->frame_control)) ||
@@ -944,7 +971,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		    !(info->control.flags & IEEE80211_TX_CTRL_PS_RESPONSE)) {
 			u32 peer[8] = { 0, 0, 26U << 16,
 				tx->peer_rates[macid] & ~BIT(31),
-				macid << 24 | BIT(18) | BIT(16) | tx->checksum_enabled << 17 | tx->peer_client[macid] << 23,
+				macid << 24 | BIT(18) | (request_flags & BIT(16)) | tx->checksum_enabled << 17 | tx->peer_client[macid] << 23,
 				aggregate | density << 8 | key |
 				(tx->peer_preload[macid] ? RTL_AX_TX_AGG_PRELOAD : 0), 0, 0 };
 

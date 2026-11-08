@@ -36,27 +36,31 @@ typedef uint8_t u8;typedef uint32_t u32;
 #define IEEE80211_NUM_TIDS 16
 #define RTL_AX_CLIENT_MACID 1
 #define NL80211_IFTYPE_MESH_POINT 7
-struct ieee80211_vif {int type;};
+struct ieee80211_vif {int type;u8 addr[6];};
+#define NL80211_IFTYPE_AP 3
 #define min(a,b) ((a)<(b)?(a):(b))
 #define dev_info(...) ((void)0)
 #define container_of(p,t,m) ((t *)((char *)(p)-offsetof(t,m)))
 struct wiphy {int unused;};struct wiphy_work {int unused;};
 struct wiphy_delayed_work {struct wiphy_work work;};
 struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[2];};
-struct rtl_ax_station {unsigned macid;};
+struct rtl_ax_station {unsigned macid;unsigned long ba_retry[8];};
+struct ieee80211_sta {struct rtl_ax_station drv_priv[1];bool wme;struct {struct {bool ht_supported;}ht_cap;struct {bool vht_supported;}vht_cap;struct {bool has_he;}he_cap;}deflink;};
 struct rtl_ax_ap {
+ struct ieee80211_hw *hw;bool beacon_enabled;int ap_result;struct {int error;}dfs;
  struct {unsigned macid,tid,cam;bool valid,deleting;}rx_ba[128*8];
  unsigned rx_ba_stopped;int rx_ba_result,tx,rx;
  bool ap_started,monitor_started,offload_retry,peer_authorized[128],scanning,sta_associated,sta_4addr;
- struct {unsigned aggregation[16],stopping;}tx_ba[128];
+ struct {unsigned aggregation[16],stopping;u8 address[6];}tx_ba[128];
  struct {bool pending;}retired_stations[128];
- struct rtl_ax_security_role security_roles[128];unsigned security_unlink[128];
+ struct ieee80211_key_conf *security_keys[128];struct rtl_ax_security_role security_roles[128];unsigned security_unlink[128];
  struct ieee80211_vif *ap_vif,*sta_vif;int offload_result,scan_offload_result;unsigned offload_started;
  struct wiphy_work offload_work;struct wiphy_delayed_work cleanup_work;
 };
 struct ieee80211_hw {struct wiphy *wiphy;};
 struct params {unsigned tid;};
 static int retire_error,command_error,cleanup_error;static unsigned cleanup_calls;
+static int rtl_ax_tx_key_refresh(int tx){(void)tx;return 0;}
 static int rtl_ax_tx_ni_cleanup(int tx){(void)tx;cleanup_calls++;return cleanup_error;}static unsigned retired,commands,queued,ready,admitted,window;
 static void rtl_ax_store32(u8 *p,u32 v){(void)p;(void)v;}
 static int rtl_ax_tx_rx_retire(int tx,unsigned macid){(void)tx;assert(macid==7);retired++;return retire_error;}
@@ -70,6 +74,21 @@ static void wiphy_work_queue(struct wiphy *w,struct wiphy_work *work){(void)w;(v
 static bool rtl_ax_security_cleanup(struct rtl_ax_ap *r){(void)r;return false;}
 static int rtl_ax_station_release(struct rtl_ax_ap *r,unsigned id){(void)r;(void)id;assert(0);return 0;}
 static int rtl_ax_tx_ba_finish(struct rtl_ax_ap *r,unsigned id,unsigned tid){(void)r;(void)id;(void)tid;assert(0);return 0;}
+struct ieee80211_key_conf {unsigned hw_key_idx,keyidx;};
+#define time_after_eq(a,b) ((long)((a)-(b))>=0)
+static unsigned long jiffies;
+static void rcu_read_lock(void){}static void rcu_read_unlock(void){}
+static u8 rtl_ax_tx_active_tids(int t,unsigned id){(void)t;(void)id;return 0;}
+static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(struct ieee80211_hw *h,const u8 *a,const u8 *b){(void)h;(void)a;(void)b;return NULL;}
+static int ieee80211_start_tx_ba_session(struct ieee80211_sta *s,unsigned tid,unsigned t){(void)s;(void)tid;(void)t;assert(0);return 0;}
+struct ieee80211_tx_info {struct {struct ieee80211_vif *vif;}control;};
+static int rtl_ax_tx_bcmc_stop(int t){(void)t;assert(0);return 0;}
+static void rtl_ax_tx_bcmc_close(int t){(void)t;assert(0);}
+static int ieee80211_rtl9617c_bcmc_key(struct ieee80211_vif *v,struct ieee80211_key_conf **k){(void)v;(void)k;assert(0);return 0;}
+static unsigned rtl_ax_tx_basic_rate(struct rtl_ax_ap *r,struct ieee80211_sta *s,struct ieee80211_tx_info *i){(void)r;(void)s;(void)i;return 0;}
+static int rtl_ax_tx_bcmc(int t,struct ieee80211_vif *v,struct ieee80211_key_conf *k,unsigned r){(void)t;(void)v;(void)k;(void)r;assert(0);return 0;}
+static struct ieee80211_key_conf active_key;
+static int ieee80211_rtl9617c_unicast_key(struct ieee80211_vif *v,const u8 *a,struct ieee80211_key_conf **key){(void)v;(void)a;*key=&active_key;return 0;}
 static bool rtl_ax_tx_peer_security(int tx,unsigned id,unsigned cam,unsigned key){(void)tx;(void)cam;(void)key;assert(id==7);return true;}
 struct wdev {int netdev;bool use_4addr;};static struct wdev wdev;
 static struct wdev *ieee80211_vif_to_wdev(struct ieee80211_vif *vif){(void)vif;return &wdev;}
@@ -83,11 +102,11 @@ common += "\nstatic int stop(struct rtl_ax_ap *radio,struct ieee80211_hw *hw,str
 common += function("rtl_ax_cleanup_work") + function("rtl_ax_offload_work")
 common += r"""
 int main(void){
- struct wiphy w={0};struct ieee80211_hw hw={&w};struct rtl_ax_station sta={7};struct params p={3};
+ struct wiphy w={0};struct ieee80211_hw hw={&w};struct rtl_ax_station sta={.macid=7};struct params p={3};
  struct ieee80211_vif vif={};
  struct rtl_ax_ap r={.ap_vif=&vif,.ap_started=true,.monitor_started=true};
  r.rx_ba[0].valid=true;r.rx_ba[0].macid=7;r.rx_ba[0].tid=3;window=64;
- r.peer_authorized[7]=true;r.tx_ba[7].aggregation[0]=64;r.security_roles[7].valid=1;
+ r.peer_authorized[7]=true;r.tx_ba[7].aggregation[0]=64;r.security_roles[7].valid=1;r.security_keys[0]=&active_key;
  retire_error=-ETIMEDOUT;
  assert(stop(&r,&hw,&sta,&p)==-ETIMEDOUT);
  assert(r.rx_ba[0].valid&&r.rx_ba[0].deleting&&queued==1&&!commands&&window==64);

@@ -23,6 +23,8 @@ struct rtl9617c_wifi_policy {
 };
 
 int ieee80211_rtl9617c_bcmc_key(struct ieee80211_vif *vif,struct ieee80211_key_conf **key);
+int ieee80211_rtl9617c_unicast_key(struct ieee80211_vif *vif,const u8 *address,
+	struct ieee80211_key_conf **key);
 int ieee80211_rtl9617c_mcast_policy(struct ieee80211_vif *vif,const u8 *address,
 	struct rtl9617c_wifi_policy *policy);
 int rtl9617c_wifi_mcast_policy(struct net_device *netdev,const u8 *address,

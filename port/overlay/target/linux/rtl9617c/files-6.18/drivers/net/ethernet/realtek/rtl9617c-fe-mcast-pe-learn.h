@@ -31,7 +31,7 @@ static int fe_mcast_pe_recipe(struct rtl_fe *fe,struct rtl_fe_port *port,
     peer->policy_generation!=rtl9617c_bridge_wifi_policy_generation() ||
     fe->mc_pe[peer->destination-18].netdev!=port->netdev)return -EOPNOTSUPP;
  policy=&peer->policy;
- if((policy->flags&(BIT(16)|BIT(18)))!=(BIT(16)|BIT(18)) ||
+ if(!(policy->flags&BIT(18)) || (!(policy->flags&BIT(16)) && policy->key) ||
     (policy->flags&~(BIT(16)|BIT(18)|BIT(23))) || (policy->key&65535) ||
     policy->reserved)return -ESTALE;
  if((direct->frame.destination[0]&1) && !(policy->flags&BIT(23)))return -ESTALE;

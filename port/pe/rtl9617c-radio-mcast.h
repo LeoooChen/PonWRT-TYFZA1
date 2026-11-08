@@ -50,7 +50,7 @@ static u32 ni_mcast_peer(volatile u32 *mailbox, const volatile struct rtl_mc_pe_
 	const volatile u32 *peer = (void *)(memory + 0xd000 + macid * 32);
 	if (!macid || !*(volatile u32 *)(memory + 0x11a00 + macid * 4) ||
 	    (peer[4] & (BIT(16) | BIT(18) | BIT(23))) != record->flags ||
-	    !(record->flags & BIT(16)) || !(record->flags & BIT(18)) ||
+	    !(record->flags & BIT(18)) || (!(record->flags & BIT(16)) && record->key) ||
 	    (peer[5] & 0xffff0000U) != record->key || record->qos > 1 ||
 	    ((peer[2] >> 16) & 63) != (record->qos ? 26 : 24)) return 0;
 #pragma clang loop unroll(disable)
@@ -84,7 +84,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_mcast_admit(
 	u32 flags = *(volatile u32 *)(memory + 0xd000 + macid * 32 + 16);
 	/* STA group Ethernet frames still use the associated AP as unicast RA
 	 * with its pairwise key. AP BCMC needs a different DTIM/GTK contract. */
-	if (!(flags & BIT(16)) || ((record->destination[0] & 1) && !(flags & BIT(23)))) return 0;
+	if ((record->destination[0] & 1) && !(flags & BIT(23))) return 0;
 	u32 nonzero = 0;
 	const u8 *peer = memory + 0xe400 + macid * 8;
 #pragma clang loop unroll(disable)

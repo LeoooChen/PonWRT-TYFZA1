@@ -22,7 +22,7 @@ old = old.replace('published[', 'request[')
 def branch(path):
     source = path.read_text()
     start = source.index('int rtl_ax_tx_submit(')
-    start = source.index('\tif (tx->pe_active) {', start)
+    start = source.index('\tif (tx->pe_active) {', source.index('page = tx->pages', start))
     end = source.index('{', start) + 1
     depth = 1
     while depth:
@@ -96,6 +96,7 @@ code += r'''
 static bool ieee80211_is_data_present(unsigned fc){return (fc&0xc)==8;}
 static bool ieee80211_has_fromds(unsigned fc){return fc&0x200;}
 static bool ieee80211_has_tods(unsigned fc){return fc&0x100;}
+static bool ieee80211_has_protected(unsigned fc){return fc&0x4000;}
 #define rtl_ax_tx tx
 static void rtl_ax_tx_mcast_revoke(struct tx *t){(void)t;}
 static bool ether_addr_equal(const u8 *a,const u8 *b){return !memcmp(a,b,6);}
@@ -125,7 +126,7 @@ int main(void){
  for(unsigned client=0;client<2;client++)
  for(unsigned layout=0;layout<=10;layout++)
  for(unsigned encap=0;encap<2;encap++)for(unsigned seq=0;seq<2;seq++)
- for(unsigned keytype=0;keytype<3;keytype++)for(unsigned tid=0;tid<8;tid++)for(unsigned auth=0;auth<2;auth++){
+ for(unsigned keytype=0;keytype<3;keytype++)for(unsigned tid=0;tid<8;tid++)for(unsigned auth=0;auth<2;auth++)for(unsigned protected=0;protected<2;protected++){
   struct tx a={.pe_active=true,.checksum_enabled=tid&1,.pe={mem[0]},.headers=headers[0],.pe_producer=255};
   struct tx b=a; b.pe.memory=mem[1];b.headers=headers[1];
   memset(mem,0xa5,sizeof(mem));memset(headers,0xa6,sizeof(headers));memset(payload,0xaa,sizeof(payload));
@@ -134,7 +135,7 @@ int main(void){
   struct key ka={.flags=keytype==2,.hw_key_idx=126,.keyidx=3,.tx_pn=0xffffffffULL},kb=ka;
   struct vif vif={.type=client?NL80211_IFTYPE_STATION:NL80211_IFTYPE_AP};
   struct info ia={.flags=tid&1,.control={.hw_key=keytype?&ka:NULL,.vif=&vif}},ib=ia;ib.control.hw_key=keytype?&kb:NULL;
-  struct hdr hdr={.frame_control=client?0x108:0x208,.seq_ctrl=0xffff,.addr1={tid&1}};
+  struct hdr hdr={.frame_control=(client?0x108:0x208)|(protected?0x4000:0),.seq_ctrl=0xffff,.addr1={tid&1}};
   struct skb skb={payload,sizeof(payload),&ia,0x100000002ULL};
   a.peer_authorized[127]=b.peer_authorized[127]=auth;
   unsigned macid=127,ring=tid%6;
@@ -148,11 +149,12 @@ int main(void){
   candidate(&b,&ib,&hdr,&skb,slot,255,ring,0,3000,header_bytes,macid,0x1ab,3,3,tid,64,7,encap,seq,encap?14:seq?26:0,payload);
   assert(get_unaligned_le32(mem[1]+0x4000+255*128+RTL_SEQ_REQUEST*4)==
    (encap&&header_bytes==24?(RTL_SEQ_ASSIGNED|0xabc):0));
-  if(header_bytes==26 && !encap && seq && auth && keytype==2 && tid==0) {
+  if(header_bytes==26 && !encap && seq && auth && (keytype==2 || (keytype==0 && !protected)) && tid==0) {
    assert(get_unaligned_le32(mem[1]+0xd000+macid*32+8)==26U<<16);
-   assert(get_unaligned_le32(mem[1]+0xd000+macid*32+16)==((macid<<24)|BIT(18)|BIT(16)|(client<<23)));
+   assert(get_unaligned_le32(mem[1]+0xd000+macid*32+16)==((macid<<24)|BIT(18)|(keytype==2?BIT(16):0)|(client<<23)));
    assert(!memcmp(mem[1]+0xe400+macid*8,hdr.addr1,6));
   }
+  if(!encap && keytype==0 && protected)assert(get_unaligned_le32(mem[1]+0xd000+macid*32+16)==0xa5a5a5a5);
   assert(!memcmp(mem[0],mem[1],sizeof(mem[0]))&&!memcmp(headers[0],headers[1],sizeof(headers[0])));
   b.pe.memory=a.pe.memory;b.headers=a.headers;assert(!memcmp(&a,&b,sizeof(a))&&!memcmp(&ka,&kb,sizeof(ka)));vectors++;
  }

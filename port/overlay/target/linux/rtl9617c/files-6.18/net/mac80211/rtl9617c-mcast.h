@@ -47,6 +47,36 @@ int ieee80211_rtl9617c_bcmc_key(struct ieee80211_vif *vif,struct ieee80211_key_c
 }
 EXPORT_SYMBOL_GPL(ieee80211_rtl9617c_bcmc_key);
 
+/* Match the current mac80211 unicast key, not a cached driver CAM role.
+ * The wiphy lock pins the returned key through the caller's validation. */
+int ieee80211_rtl9617c_unicast_key(struct ieee80211_vif *vif,const u8 *address,
+	struct ieee80211_key_conf **result)
+{
+	struct ieee80211_sub_if_data *sdata=vif_to_sdata(vif);
+	struct sta_info *sta;
+	struct ieee80211_key *key;
+	int ret=-EOPNOTSUPP;
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+	if ((vif->type!=NL80211_IFTYPE_AP && vif->type!=NL80211_IFTYPE_STATION) ||
+	    ieee80211_vif_is_mld(vif) || sdata->wdev.use_4addr) return ret;
+	rcu_read_lock();
+	sta=sta_info_get(sdata,address);
+	if (!sta || !sta->uploaded || !test_sta_flag(sta,WLAN_STA_AUTHORIZED)) goto out;
+	key=rcu_dereference(sta->ptk[sta->ptk_idx]);
+	if (!key) key=rcu_dereference(sdata->default_unicast_key);
+	if (!key) {
+		if (test_sta_flag(sta,WLAN_STA_USES_ENCRYPTION)) goto out;
+	} else if (!(key->flags&KEY_FLAG_UPLOADED_TO_HARDWARE) ||
+		   (key->flags&KEY_FLAG_TAINTED) || key->conf.cipher!=WLAN_CIPHER_SUITE_CCMP ||
+		   !(key->conf.flags&IEEE80211_KEY_FLAG_PAIRWISE)) goto out;
+	*result=key?&key->conf:NULL;
+	ret=0;
+out:
+	rcu_read_unlock();
+	return ret;
+}
+EXPORT_SYMBOL_GPL(ieee80211_rtl9617c_unicast_key);
+
 int ieee80211_rtl9617c_mcast_policy(struct ieee80211_vif *vif,const u8 *address,
 	struct rtl9617c_wifi_policy *policy)
 {

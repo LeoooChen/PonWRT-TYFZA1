@@ -240,6 +240,8 @@
 
 111. 补齐已核实告警语义：有效行增加active位号/名称，按原厂MSB顺序解码；ONU-G12项、ANI-G7项和Ethernet UNI1项使用目标名称，未知类/位保留null且无效快照不显示。执行双relay完整位图转换/报告序列化，224逐位和清零/全置位、20名称及既有22组/2056通知/分配故障通过；三后端实际控制器验证命名raise/clear、未知bit223、缺口重取、重启/替换及业务准入不变，双架构编译通过。原厂UNI包装未发送报告，未据此添加业务控制；告警层级/trap回调、其他厂商语义与实机断言仍待补。详见[告警名称与位号](port/FTTR.md#native-alarm-names-and-active-bit-identities)。
 
+112. 接入开放网络NI/PE逐用户转发并修复当前密钥归属：原厂64组TXSC入口确认未加密QoS/AMPDU数据可缓存；worker读取Linux实际PTK/默认单播密钥，开放网要求无密钥/无历史加密状态/无残留PTK，CCMP要求当前指针/CAM/索引完全匹配。原始软件加密帧不生产开放模板，FE/PE开放副本不置加密/PN且不占CAM引用，MCP6拒绝旧固件。PTK替换/发送索引/默认单播发布前同步关闭NI，worker先完成撤销再重查，失败保持关闭；共享NI启动不再顺带准入其他站。旧worker复现错误，263密钥状态、106发布、512worker组合、16896请求、完整learner→MIPS开放记录、24组开放帧及279/280准入撤销、现有加密/BCMC/PS/FTTR/回收回归、Image/模块/11输入一致和补丁重放通过。PE31908字节、栈7288，未实机。TSPEC研究确认目标CCX解析不读累计时间、WMM action为空，不能推断微秒计费；完整退场/ID复用、多VIF、其他密码算法仍未完成。详见[开放网络与当前密钥归属](port/FTTR.md#open-network-ni-peers-and-current-linux-key-ownership)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

@@ -612,7 +612,7 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 	if (tx->ni.active || tx->ni.route_dev) { ret = -EBUSY; goto unlock; }
 	ret = ni_mcast_bind(tx, netdev);
 	if (ret) goto unlock;
-	if (!(get_unaligned_le32(tx->pe.memory + 0xd000 + macid * 32 + 16) & BIT(16))) {
+	if (!(get_unaligned_le32(tx->pe.memory + 0xd000 + macid * 32 + 16) & BIT(18))) {
 		ret = -ENOLINK; goto unlock;
 	}
 	ret = wait_event_timeout(tx->key_flush_wait, READ_ONCE(tx->occupied) <= 96, msecs_to_jiffies(1000)) ? 0 : -ETIMEDOUT;
@@ -632,8 +632,10 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 	rtl_ax_tx_open(tx);
 	schedule_work(&tx->ni.ps_work);
 	for (i = 1; i < 128; i++) {
-		if (!tx->peer_authorized[i] ||
-		    !(get_unaligned_le32(tx->pe.memory + 0xd000 + i * 32 + 16) & BIT(16))) continue;
+		/* Each peer's current Linux key is checked by the offload worker.
+		 * Starting the shared NI rings does not authorize other templates. */
+		if (i != macid || !tx->peer_authorized[i] ||
+		    !(get_unaligned_le32(tx->pe.memory + 0xd000 + i * 32 + 16) & BIT(18))) continue;
 		put_unaligned_le32(1, tx->pe.memory + 0x11a00 + i * 4);
 		dma_wmb();
 		WRITE_ONCE(tx->ni.route_peers[i], true);
@@ -649,10 +651,11 @@ int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned 
 {
 	int id, ret;
 	/* Preserve the active retirement fence; existing peers keep their routes. */
-	if (READ_ONCE(tx->ni.retire_quiescing) || READ_ONCE(tx->bcmc_prepare_failed)) return -EAGAIN;
+	if (READ_ONCE(tx->ni.retire_quiescing) || READ_ONCE(tx->bcmc_prepare_failed) ||
+	    READ_ONCE(tx->key_refresh_pending)) return -EAGAIN;
 	if (!tx->pe_active || (READ_ONCE(tx->peer_offloaded[macid]) &&
 	    READ_ONCE(tx->ni.route_peers[macid]))) return 0;
-	if (!(get_unaligned_le32(tx->pe.memory + 0xd000 + macid * 32 + 16) & BIT(16))) return -ENOLINK;
+	if (!(get_unaligned_le32(tx->pe.memory + 0xd000 + macid * 32 + 16) & BIT(18))) return -ENOLINK;
 	id = rtl9617c_wifi_id(netdev);
 	if (id < 0) return id;
 	if (!tx->ni.active) {

@@ -215,6 +215,12 @@ int main(void){
  generation=8;compiler_error=-ENOMEM;assert(rtl_ax_tx_mcast_policy(&t,&vif,1)==-ENOMEM&&t.mcast_policy_attempt[1]==7);
  compiler_error=0;publish_error=-ESTALE;assert(rtl_ax_tx_mcast_policy(&t,&vif,1)==-ESTALE&&t.mcast_policy_attempt[1]==7);
  publish_error=0;assert(!rtl_ax_tx_mcast_policy(&t,&vif,1)&&seen_generation==8&&t.mcast_policy_attempt[1]==8);
+ template[4]=BIT(18);memcpy(memory+0xd020,template,sizeof(template));
+ assert(!rtl_ax_tx_mcast_policy(&t,&vif,1));
+ template[5]=7U<<16;memcpy(memory+0xd020,template,sizeof(template));
+ assert(rtl_ax_tx_mcast_policy(&t,&vif,1)==-ESTALE);
+ template[4]|=BIT(16);memcpy(memory+0xd020,template,sizeof(template));
+ assert(!rtl_ax_tx_mcast_policy(&t,&vif,1));
  vif.wdev.netdev=&b;before=compiler_calls;
  assert(rtl_ax_tx_mcast_policy(&t,&vif,1)==-ENOLINK&&compiler_calls==before);
  t.slots[0].skb=memory;t.slots[0].fttr_generation=2;t.slots[0].pe_mcast=true;

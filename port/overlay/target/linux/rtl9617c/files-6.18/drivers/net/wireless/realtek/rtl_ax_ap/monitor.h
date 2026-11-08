@@ -351,6 +351,12 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 	if (radio->scanning || (!radio->ap_started && !radio->sta_associated)) return;
 	if (vif->type == NL80211_IFTYPE_MESH_POINT) return;
 	if (radio->sta_vif && (radio->sta_4addr || ieee80211_vif_to_wdev(vif)->use_4addr)) return;
+	radio->offload_result=rtl_ax_tx_key_refresh(radio->tx);
+	if (radio->offload_result) {
+		radio->offload_retry=true;
+		wiphy_delayed_work_queue(wiphy,&radio->cleanup_work,HZ);
+		return;
+	}
 	if (radio->sta_vif && radio->scan_offload_result) {
 		radio->scan_offload_result = rtl_ax_tx_ni_retire_peer(radio->tx, RTL_AX_CLIENT_MACID);
 		if (radio->scan_offload_result) {
@@ -368,6 +374,7 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 	for (macid = 1; macid < 128; macid++) {
 		int ret;
 		struct rtl_ax_security_role *role = &radio->security_roles[macid];
+		struct ieee80211_key_conf *key;
 		/* NI bypasses wake_tx_queue; its active TIDs need the same BA
 		 * request policy while data transmission continues normally. */
 		if (radio->peer_authorized[macid]) {
@@ -389,14 +396,25 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 			rcu_read_unlock();
 		}
 		if (!radio->peer_authorized[macid] || !radio->tx_ba[macid].aggregation[0] ||
-		    radio->tx_ba[macid].stopping || !(role->valid & BIT(role->tx_keyid))) continue;
+		    radio->tx_ba[macid].stopping) continue;
+		ret = ieee80211_rtl9617c_unicast_key(vif, radio->tx_ba[macid].address, &key);
+		if (ret || (key && (!(role->valid & BIT(role->tx_keyid)) ||
+		    role->cam[role->tx_keyid] >= RTL_AX_SECURITY_ENTRIES ||
+		    radio->security_keys[role->cam[role->tx_keyid]] != key ||
+		    key->hw_key_idx != role->cam[role->tx_keyid] || key->keyidx != role->tx_keyid)) ||
+		    (!key && (role->valid & 3))) {
+			ret = rtl_ax_tx_ni_retire_peer(radio->tx, macid);
+			if (ret) radio->offload_retry = true;
+			continue;
+		}
 		for (index = 0; index < ARRAY_SIZE(radio->rx_ba); index++)
 			if (radio->rx_ba[index].deleting && radio->rx_ba[index].macid == macid) break;
 		if (index != ARRAY_SIZE(radio->rx_ba)) continue;
 		for (index = 0; index < RTL_AX_SECURITY_ENTRIES; index++)
 			if (radio->security_unlink[index] == macid + 1) break;
 		if (index != RTL_AX_SECURITY_ENTRIES ||
-		    !rtl_ax_tx_peer_security(radio->tx, macid, role->cam[role->tx_keyid], role->tx_keyid)) continue;
+		    !rtl_ax_tx_peer_security(radio->tx, macid,
+			key ? role->cam[role->tx_keyid] : RTL_AX_SECURITY_ENTRIES, key ? role->tx_keyid : 0)) continue;
 		ret = rtl_ax_tx_ni_peer(radio->tx, ieee80211_vif_to_wdev(vif)->netdev, macid);
 		radio->offload_result = min(ret, 0);
 		if (ret < 0) radio->offload_retry = true;
@@ -441,6 +459,12 @@ static void rtl_ax_mcast_policy_changed(struct ieee80211_hw *hw,struct ieee80211
 	/* The mac80211 writer already closed every old multicast epoch. */
 	if (vif->type == NL80211_IFTYPE_AP || vif->type == NL80211_IFTYPE_STATION)
 		wiphy_work_queue(hw->wiphy, &radio->offload_work);
+}
+static void rtl_ax_key_changed(struct ieee80211_hw *hw,struct ieee80211_vif *vif)
+{
+	struct rtl_ax_ap *radio=rtl_ax_monitor_radio(hw);
+	rtl_ax_tx_key_changed(radio->tx);
+	rtl_ax_mcast_policy_changed(hw,vif);
 }
 
 static void rtl_ax_sta_set_4addr(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
@@ -1435,8 +1459,18 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	/* Mesh GTKs are per transmitter; mac80211 owns mesh encryption and PN. */
 	if (vif->type == NL80211_IFTYPE_MESH_POINT)
 		return -EOPNOTSUPP;
-	if (key->cipher != WLAN_CIPHER_SUITE_CCMP)
+	if (key->cipher != WLAN_CIPHER_SUITE_CCMP) {
+		/* Linux may install this key in software. Close any earlier NI
+		 * template before returning, including Extended Key ID changes. */
+		if (sta && (key->flags & IEEE80211_KEY_FLAG_PAIRWISE)) {
+			ret = rtl_ax_tx_ni_retire_peer(radio->tx, macid);
+			if (ret) return ret;
+		} else if (!sta && cmd == SET_KEY) {
+			ret = rtl_ax_tx_ni_route(radio->tx, ieee80211_vif_to_wdev(vif)->netdev, 0);
+			if (ret) return ret;
+		}
 		return -EOPNOTSUPP;
+	}
 	if (cmd == DISABLE_KEY) {
 		index = key->hw_key_idx;
 		/* STA teardown may precede the interface GTK callback. An old key
@@ -1917,6 +1951,7 @@ found:
 }
 
 static const struct ieee80211_ops rtl_ax_monitor_ops = {
+	.rtl9617c_key_changed = rtl_ax_key_changed,
 	.set_rts_threshold = rtl_ax_set_rts_threshold,
 	.tx = rtl_ax_monitor_tx,
 	.wake_tx_queue = rtl_ax_wake_tx_queue,

@@ -46,7 +46,7 @@ static void rtl_ax_store32(void *p,u32 v) {memcpy(p,&v,4);}
 struct net_device {int unused;};
 struct pci_dev {void *radio;};
 struct rtl_ax_tx {
- bool bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;bool pe_active,paused,peer_authorized[128],peer_offloaded[128];
+ bool key_refresh_pending,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;bool pe_active,paused,peer_authorized[128],peer_offloaded[128];
  unsigned occupied,ni_reports,ni_failed;
  struct pci_dev *pdev;
  void *rx;
@@ -234,7 +234,7 @@ int main(void) {
   memset(registers,0,sizeof(registers));
   tx.ni.route_peers[1]=tx.peer_offloaded[1]=rx_active[1]=true;
   rx_active[2]=other_rx;memory[0xe408]=1;memory[0xe410]=2;
-  put_unaligned_le32(1,memory+0x11a04);put_unaligned_le32(BIT(16),memory+0xd030);
+  put_unaligned_le32(1,memory+0x11a04);put_unaligned_le32(BIT(16)|BIT(18),memory+0xd030);
   pending[1]=5;tick();
   assert(!rtl_ax_tx_ni_retire_ba(&tx,1));
   assert(rx_active[1] && !rx_retired[1] && tx.peer_offloaded[1]);

@@ -78,6 +78,9 @@ static int rtl_ax_tx_key_pn_unbind(int tx,struct ieee80211_key_conf *k){(void)tx
 static int rtl_ax_tx_bcmc_stop(int tx){
  (void)tx;hiq_stops++;int ret=fail(HIQ_STOP);if(!ret)hiq_pending=false;return ret;
 }
+struct key_wdev {void *netdev;};static struct key_wdev key_wdev;
+#define ieee80211_vif_to_wdev(v) ((void)(v),&key_wdev)
+static int rtl_ax_tx_ni_route(int tx,void *dev,unsigned id){(void)tx;(void)dev;assert(!id);return fail(RETIRE);}
 static int rtl_ax_tx_ni_retire_peer(int tx,unsigned id){(void)tx;assert(id<128);return fail(RETIRE);}
 static void rtl_ax_rx_key(int rx,unsigned id,struct ieee80211_key_conf *key){(void)rx;(void)id;(void)key;}
 static void rtl_ax_offload_ready(void *r){(void)r;offload_ready++;}
@@ -165,6 +168,16 @@ int main(void){
 '''
 install_tests = r'''
 static void install_tests(void){
+ /* An unsupported software PTK still retires the previous NI template. */
+ for(unsigned failure=0;failure<2;failure++)for(unsigned pairwise=0;pairwise<2;pairwise++) {
+  reset();struct rtl_ax_ap r={};struct ieee80211_hw hw={&r,0};struct ieee80211_sta sta={{{7}}};
+  struct ieee80211_key_conf key=new_key(0,pairwise);key.cipher=8;
+  fault=RETIRE;failures=failure?2:1;
+  assert(rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},pairwise?&sta:NULL,&key)==-ETIMEDOUT);
+  assert(failures==failure&&!r.security_ids[0]);
+  fault=NONE;
+  assert(rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},pairwise?&sta:NULL,&key)==-EOPNOTSUPP&&!r.security_ids[0]);
+ }
  /* A PN binding error follows a successful DMAC installation. Keep the
   * failed CAM owned until cleanup restores the prior desired role. */
  for(unsigned removal=0;removal<2;removal++){

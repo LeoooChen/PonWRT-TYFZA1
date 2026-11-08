@@ -382,7 +382,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
     key_generation=record->bcmc.key_generation;peer=bcmc_peer;
    }
 			u32 key = peer[5];
-			u32 details = macid << 8 | ((key >> 16) & 127) << 17 | BIT(15);
+			u32 details = macid << 8 | ((key >> 16) & 127) << 17 |
+				(peer[4] & (BIT(15) | BIT(16)) ? BIT(15) : 0);
 			owners[id * 2] = buffer;
 			owners[id * 2 + 1] = details;
 			*(u32 *)(memory + RTL_AX_NI_TIDS + id * 4) = tid;

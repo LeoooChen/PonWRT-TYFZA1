@@ -71,6 +71,15 @@ if os.environ.get('RTL_TEST_STA_GROUP_RECORD'):
     assert bytes(m.u.mem_read(payload+64+m.header,6))==record[8:14] and record[8]&1
     assert m.get(base+0x15000+(8+record[16+46])*4)==payload
     vectors+=1
+if os.environ.get('RTL_TEST_OPEN_PE_RECORD'):
+    record=Path(os.environ['RTL_TEST_OPEN_PE_RECORD']).read_bytes();assert len(record)==96
+    m=Machine(client=True);epoch,control=struct.unpack_from('<II',record)
+    m.put(table,epoch);m.u.mem_write(table+16+9*96,record)
+    m.put(base+0xd020+16,1<<24|struct.unpack_from('<I',record,92)[0])
+    assert struct.unpack_from('<I',record,88)[0]==0
+    m.u.mem_write(base+0xe408,record[80:86]);m.ingest()
+    assert bytes(m.u.mem_read(payload+64+m.header,6))==record[8:14]
+    assert m.get(base+0x15000+(8+record[16+46])*4)==payload;vectors+=1
 for mode in range(3):
     for ipv6 in (False,True):
         for full in (False,True):
@@ -227,4 +236,25 @@ for client in (False,True):
 for lengths in ([60],[1514]*3):
     for noack in (False,True):
         case(lengths,7935,from_epp=True,client=True,multicast=True,noack=noack,preserve_group=True)
+for header in (8,16):
+ for source in (0,6):
+  for client,preserve in ((False,False),(True,False),(True,True)):
+   for lengths in ([60],[1000,1001,64,1514]):
+    case(lengths,10896,from_epp=True,client=client,multicast=True,preserve_group=preserve,
+         encrypted=False,ni_header=header,source=source,policy=10896)
+# Open records and encrypted templates cannot substitute for each other.
+for phase in ('ingress','queued','selected'):
+ for change in ('encrypted','key_without_flag'):
+  m=Machine();m.put(base+0xd020+16,1<<24|1<<18)
+  m.put(table+16+9*96+92,1<<18)
+  if phase!='ingress':m.ingest();m.put(bar+0xc438,10000)
+  if phase=='selected':assert m.call('ni_select',mb,base,requests)==1
+  if change=='encrypted':m.put(base+0xd020+16,1<<24|1<<18|1<<16)
+  else:m.put(table+16+9*96+88,7<<16)
+  if phase=='ingress':m.ingest();assert not m.get(base+0x11804)
+  elif phase=='queued':m.call('ni_select',mb,base,requests);assert m.get(mb+47*4)==2049
+  else:
+   m.put(mb+193*4,1);m.call('pe_tx_publish',mb,8,requests)
+   assert m.get(mb+194*4)==1 and not m.get(mb+10*4) and m.get(mb+45*4)==1
+  vectors+=1
 print(f'PE multicast: {vectors} admission/revocation cases and12 full encrypted TX/RPQ/no-ACK cases passed')

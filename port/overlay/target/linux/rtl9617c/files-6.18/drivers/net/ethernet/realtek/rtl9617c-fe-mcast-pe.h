@@ -107,7 +107,7 @@ int rtl_fe_wifi_mcast_policy(struct rtl_fe *fe,struct net_device *netdev,const u
  }
  if(!fe || !policy || destination<18 || destination>19 || !macid || macid>127 || !generation ||
     policy->qos>1 || policy->tagged_tid>7 || policy->reserved ||
-    (policy->flags&(BIT(16)|BIT(18)))!=(BIT(16)|BIT(18)) ||
+    !(policy->flags&BIT(18)) || (!(policy->flags&BIT(16)) && policy->key) ||
     (policy->flags&~(BIT(16)|BIT(18)|BIT(23))) || (policy->key&65535))return -EINVAL;
  for(i=0;i<64;i++)if(policy->dscp_tid[i]>7)return -EINVAL;
  for(i=0;i<8;i++)if(policy->priority_tid[i]>7)return -EINVAL;

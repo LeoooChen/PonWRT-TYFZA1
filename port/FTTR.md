@@ -7631,6 +7631,63 @@ PS/withdrawal, multicast/BCMC, CPU/EPP gates, source6 drain, STA TX/RX and RXQ
 backpressure regressions pass. Image/modules build and generated/overlay/kernel
 header identity pass. No physical device was accessed.
 
+### Open-network NI peers and current Linux key ownership
+
+The native NI path now admits an explicitly verified open AP/STA peer, alongside
+the existing CCMP peer. The actual target `txsc_add_sc_cache_entry` accepts
+unencrypted IPv4/IPv6/PPPoE data when QoS and AMPDU are enabled, with a unicast RA,
+no software encryption and no fragmentation. Its64 admission cases are recorded
+by `trace_stock_fttr_tx_admission.py`. This is the cache admission prefix; actual
+radio transmission and the rest of original TXSC are not claimed by that oracle.
+
+Before exposing a route, the offload worker obtains the actual mac80211-selected
+PTK or default unicast key under wiphy. Missing/unauthorized stations, software
+keys, tainted keys and a station marked as using encryption without a usable key
+are rejected. An open peer must have neither a selected key nor a residual driver
+PTK role, and its Ethernet template must have no encryption flags or CAM value.
+An encrypted peer must match the exact current key pointer, CAM and key index.
+Starting shared NI rings only admits the peer which passed this check; other
+peers are checked separately.
+
+Raw unprotected QoS traffic can seed an open Ethernet template; raw software-
+encrypted traffic cannot. Open FE/PE recipes retain a zero key, omit Protected and
+WD encryption/PN fields, and do not take a CAM reference. AP converted copies and
+STA group copies keep their existing address/sequence/PS contracts. Firmware
+capability is MCP6, preventing an older PE from accepting these new recipes.
+
+This also fixes stale key admission. The previous worker could retain/reopen an
+old NI route after Linux selected a software/different key, because it checked
+only its cached driver role. Tests reproduce the failure on `b1c9c7a`. A new
+non-sleeping mac80211 callback closes all PE peer route bits before PTK
+installation/removal, TX-index selection or default-unicast publication; the
+multicast writer closes the matching FE/PE generations before publication too.
+The worker completes existing NI withdrawal before reevaluating current keys.
+Failure retains the pending state and closed routes for retry. Unsupported
+pairwise/default cipher installation also withdraws the old native route.
+This closes admission but does not prove upstream MCE or already-published
+wireless packet retirement, so the existing hardware-ID quarantine remains.
+
+Validation includes263 current-key states,106 actual Linux key-publication
+cases with native FE/PE gates,512 worker failure/retry combinations,16896 actual
+ARM request cases, complete learner-produced open records consumed by MIPS,
+24 full open AP/STA/source6/HeaderA/length combinations and279 MIPS admission/
+revocation cases (280 with the exported learner record). Existing encrypted,
+BCMC/GTK, PS, FTTR generations, EPP/RPQ/EQ, PN, sequence, prefix and policy
+regressions pass. Full PE is31908 bytes, SHA256
+`dbec1147fcd0b0733154857c803d141ea19a62f5d65d14bfeaa1d6c75b3dee3e`,
+stack bound7288/8192; non-uplink13848 bytes. Image/modules,11 kernel inputs and
+zero-fuzz patch reverse/replay pass. Local evidence is
+`artifacts/fttr/open-peer-*-20261109.*`; no device was accessed.
+
+The same research rules out treating current RPQ as TSPEC airtime: its4-byte
+record contains ownership/status only. Although the reference CCX layout has an
+8-bit accumulated-time field, the target `mac_ccxrpt_parsing` ignores it (four
+distinct values produce identical output), and `OnAction_wmm` is a no-op. Unit,
+granularity and complete report delivery are unproven. Native TSPEC accounting
+remains outstanding; no guessed microsecond charge or new TSPEC admission is
+introduced here. Non-QoS software forwarding/sequence support remains separate
+from the original QoS/AMPDU TXSC gate.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
