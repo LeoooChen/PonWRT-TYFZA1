@@ -15,7 +15,7 @@ int fttr_move_store_save(int directory, const struct fttr_omci_link *link,
 int fttr_move_store_load(int directory, const struct fttr_omci_link *link,
  enum fttr_backend backend, struct fttr_move_record *record);
 int fttr_move_store_remove(int directory);
-/* 0 original eligible pair, 1 complete reservation, negative partial/conflict. */
+/* 0 original eligible pair, 1 complete, 2 recoverable prefix, negative conflict. */
 int fttr_move_observe(const struct fttr_move_record *record,
  const struct fttr_onu_state *source, const struct fttr_onu_state *target);
 #endif

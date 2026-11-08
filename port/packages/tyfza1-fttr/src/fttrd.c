@@ -2405,6 +2405,17 @@ static int move_recover_start(struct controller *c)
 	if (!ret) ret = fttr_miniolt_one(c->directory, c->move.request.target, &target);
 	if (!ret) ret = fttr_move_observe(&c->move_record, &source, &target);
 	if (ret < 0) return ret;
+	if (ret == 2) {
+		/* Durable reservation stage proves remote cleanup and prior
+		 * admission. A blocked/half-cleared source cannot run OMCI auth;
+		 * only the driver's strict original-prefix recovery may finish it. */
+		ret = fttr_miniolt_move_recover(c->directory, c->move.request.id, c->move.request.target,
+			c->move.request.serial, c->move.request.target_serial);
+		if (!ret) ret = fttr_miniolt_one(c->directory, c->move.request.id, &source);
+		if (!ret) ret = fttr_miniolt_one(c->directory, c->move.request.target, &target);
+		if (!ret) ret = fttr_move_observe(&c->move_record, &source, &target);
+		if (ret != 1) return ret < 0 ? ret : -EUCLEAN;
+	}
 	if (ret == 1) {
 		ret = move_record_finish(c);
 		if (ret) return ret;

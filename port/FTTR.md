@@ -7155,7 +7155,7 @@ with `-Wall -Wextra -Werror`. Evidence is local under
 
 No kernel or PE image changed. No device was accessed, and the tests do not prove
 physical flash failure behavior, ONU interoperability or packet retirement. Initial
-provisioning crash recovery, partial hardware reservation recovery, complete upstream
+provisioning crash recovery, arbitrary hardware reservation repair, complete upstream
 and downstream retirement and hardware-ID reuse remain open. Persisted move-target
 recovery for an intact or fully completed reservation is described below.
 
@@ -7186,8 +7186,9 @@ target has the requested SN and is not blocked, the reservation stage is complet
 recovery removes obsolete service ownership and then the move record without
 reissuing the command. The normal successful path now performs this same readback
 before dropping durable intent. A target/source half-write, target conflict,
-changed identity or missing required ownership fails and retains evidence. No
-partial hardware repair is inferred from an ambiguous state. A failed stage fsync
+changed identity or missing required ownership fails and retains evidence. The
+original write-prefix recovery described below handles specific partial states;
+ambiguous states are still rejected. A failed stage fsync
 prevents the reservation command. Status exposes `move_recovery` with recorded
 state, phase and the two slots; reservation completion is not registration proof.
 
@@ -7216,6 +7217,50 @@ This is control-state recovery integrated with native FE/VLAN/DBA withdrawal;
 it does not establish complete packet retirement or safe GEM/action/group reuse.
 No device was accessed and no kernel or PE code changed. The worktree includes
 local mainda681f8 (release notes); nothing was merged back to main.
+
+### Recovering original partial MiniOLT reservation writes
+
+The native MiniOLT driver now exposes `onu_move_recover`, separate from ordinary
+`onu_move`, and the controller calls it only for a bound durable reservation-stage
+record after local FE/ports/business DBA have been withdrawn. Its accepted states
+are prefixes of the target original write order: target vendor word written while
+its serial word is still old; target fully reserved with source identity intact;
+or source administratively blocked with only its vendor word cleared. The complete
+source-cleared/target-reserved state needs no writes. An entirely unchanged pair,
+including a target which already had the same reserved SN, continues through fresh
+source authentication/inventory rather than this recovery-only entry.
+
+The driver checks both source and target identities, rejects a registered or
+blocked target for partial repair, reads every data grant for both slots, then
+rereads both identities/downstream states under the existing control mutex. A
+conflict or grant prevents writes. It finishes a partial target with only the
+remaining serial word and its readback. Before source deletion it rereads the pair
+and repeats the original deactivation sequence if the full source SN still exists:
+the block bit alone cannot prove that the PLOAM mailbox command was sent. FPGA1
+still clears upstream state after its original delay. An already half-cleared
+source only needs its remaining serial word cleared and verified. Errors preserve
+the durable intent for retry; no ID-reuse or packet-drain claim follows from a
+successful reservation update.
+
+`test_fttr_onu_move.py` executes the original relocation implementation, creates
+all prefixes from its actual non-read IO sequence, and tests6321 native prefix,
+IO-failure and retry cases across three backends and source/target edge IDs. It
+also checks user/kernel state interpretation, read-only repeat, stale identities,
+occupied targets, outstanding DBA, source changes during the grant scan and after
+target writes, and false-success readback. The existing ordinary move's original
+write sequence remains unchanged. The full daemon namespace test now invokes the
+actual native recovery function behind modeled registers, covering19 scenarios
+per ASIC/FPGA1/FPGA2, including all four partial/conflict extensions. Migration,
+standalone release recovery and19 upgrade regressions pass.
+
+Image/modules compilation, two changed kernel-input identities, host/aarch64-musl
+daemon builds,64-byte record corruption/fsync tests and admin lifecycle tests pass.
+Local reports are `artifacts/fttr/partial-move-*-20261109.*`. PE firmware is unchanged.
+No device was accessed. A persistent reservation intent authorizes finishing the
+already admitted transaction when source authentication is no longer possible
+because its SN is half-cleared; it does not authorize replacing an unrelated SN.
+Unknown hardware state, full power-loss recovery, initial provisioning crashes,
+complete upstream/downstream packet retirement and hardware-ID reuse remain open.
 
 ### Outstanding implementation and acceptance
 

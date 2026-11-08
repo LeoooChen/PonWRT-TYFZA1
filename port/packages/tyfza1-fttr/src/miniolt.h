@@ -41,6 +41,8 @@ int fttr_miniolt_command(int directory, const char *name, const char *value);
 int fttr_miniolt_admin(int directory, unsigned int id, unsigned int action, const uint8_t serial[8]);
 int fttr_miniolt_move(int directory, unsigned int from, unsigned int to,
 		const uint8_t serial[8], const uint8_t target[8]);
+int fttr_miniolt_move_recover(int directory, unsigned int from, unsigned int to,
+	const uint8_t serial[8], const uint8_t previous[8]);
 int fttr_miniolt_wait_links(int directory, int ni);
 int fttr_miniolt_calibrated(int optical);
 

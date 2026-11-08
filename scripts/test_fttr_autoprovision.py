@@ -426,13 +426,71 @@ def main():
         device.joinpath('tcont_state').write_bytes(bytes(4096))
         device.joinpath('onu_admin').write_text('')
         device.joinpath('onu_move').write_text('')
+        device.joinpath('onu_move_recover').write_text('')
         admin_fault=root/'admin.fail'
         admin_hold,admin_log=root/'admin.hold',root/'admin.log'
         admin_log.write_text('')
         os.mkfifo(device/'tcont');grant_fd=os.open(device/'tcont',os.O_RDWR|os.O_NONBLOCK)
         accel_log,accel_fault=root/'accel.log',root/'accel.fail'
         accel_log.write_text('')
+        recovery_shim = r'''
+#include <stdbool.h>
+#define BIT(n) (1U<<(n))
+#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
+#include "rtl9617c-fttr-move.h"
+struct recovery_io {int state,grants;bool fpga;};
+static int recovery_read(void *ctx,unsigned reg,unsigned *value) {
+ struct recovery_io *r=ctx;unsigned index,offset;uint32_t data=0;
+ if(reg==0x40007){*value=0;return 0;}
+ if(reg>=0x40400&&reg<0x40480){
+  index=(reg-0x40400)/2;
+  if(reg&1)pread(r->state,&data,4,index*20);
+  else pread(r->grants,&data,4,index*64+4);
+ }else if(reg>=0x40800&&reg<0x40900){
+  index=(reg-0x40800)/4;offset=(reg-0x40800)%4;
+  if(offset<2){unsigned char bytes[4];pread(r->state,bytes,4,index*20+12+(offset?0:4));for(unsigned i=0;i<4;i++)data=data<<8|bytes[i];}
+  else pread(r->state,&data,4,index*20+(offset==2?8:4));
+ }else if(reg>=0x41000&&reg<0x41800){
+  index=(reg-0x41000)/32;unsigned slot=(reg-0x41000)%32/4;offset=(reg-0x41000)%4;
+  if(offset>1)return -EINVAL;
+  pread(r->grants,&data,4,index*64+slot*8+(offset?0:4));
+ }else return -EINVAL;
+ *value=data;return 0;
+}
+static int recovery_write(void *ctx,unsigned reg,unsigned value) {
+ struct recovery_io *r=ctx;
+ if(reg>=0x40007&&reg<=0x4000a)return 0;
+ if(reg>=0x40401&&reg<0x40480&&(reg&1))pwrite(r->state,&value,4,((reg-0x40401)/2)*20);
+ else if(reg>=0x40800&&reg<0x40900){
+  unsigned id=(reg-0x40800)/4,offset=(reg-0x40800)%4;
+  if(offset<2){unsigned char bytes[4]={value>>24,value>>16,value>>8,value};pwrite(r->state,bytes,4,id*20+12+(offset?0:4));}
+  else if(offset==3)pwrite(r->state,&value,4,id*20+4);
+  else return -EINVAL;
+ }else return -EINVAL;
+ return 0;
+}
+static void recovery_delay(void *ctx,unsigned delay){(void)ctx;(void)delay;}
+static int recovery_run(const char *path,const char *command) {
+ char base[512],file[544],sn[17],prior[17],extra;unsigned from,to;unsigned char serial[8],previous[8];
+ if(sscanf(command,"%u %u %16s %16s %c",&from,&to,sn,prior,&extra)!=4||from>=64||to>=64)return -EINVAL;
+ for(unsigned i=0;i<8;i++){unsigned v;sscanf(sn+2*i,"%2x",&v);serial[i]=v;sscanf(prior+2*i,"%2x",&v);previous[i]=v;}
+ strcpy(base,path);*strrchr(base,'/')=0;
+ snprintf(file,sizeof(file),"%s/../ni/fttr_forward",base);int fd=open(file,O_RDONLY);char active=0;pread(fd,&active,1,0);close(fd);if(active!='0')return -EBUSY;
+ struct recovery_io state={.fpga=getenv("FTTR_ADMIN_FPGA")!=NULL};
+ snprintf(file,sizeof(file),"%s/onu_state",base);state.state=open(file,O_RDWR);
+ snprintf(file,sizeof(file),"%s/tcont_state",base);state.grants=open(file,O_RDONLY);
+ struct rtl_fttr_reg_io io={&state,recovery_read,recovery_write,recovery_delay};
+ int ret=rtl_fttr_onu_move_recover(&io,state.fpga?RTL_FTTR_FPGA1:RTL_FTTR_ASIC9690,from,to,serial,previous);
+ snprintf(file,sizeof(file),"%s/onu_table",base);FILE *table=fopen(file,"w");
+ for(unsigned i=0;i<64;i++){unsigned char row[20];uint32_t words[3];pread(state.state,row,20,i*20);memcpy(words,row,12);
+  fprintf(table,"%u %08x %08x %08x ",i,words[0],words[1],words[2]);for(unsigned j=0;j<8;j++)fprintf(table,"%02x",row[12+j]);fputc('\n',table);}
+ fclose(table);close(state.state);close(state.grants);
+ if(!ret){FILE *trace=fopen(getenv("FTTR_ADMIN_LOG"),"a");fprintf(trace,"move %u %u\n",from,to);fclose(trace);}
+ return ret;
+}
+'''
         accel_shim = r'''
+  if(n>=17&&!strcmp(path+n-17,"/onu_move_recover")){int ret=recovery_run(path,buf);if(ret){errno=-ret;return -1;}}
   if(n>=9 && !strcmp(path+n-9,"/onu_move")) {
    unsigned from,to;char sn[17],target[17],base[512],file[544],name[32],accel;
    if(sscanf(buf,"%u %u %16s %16s",&from,&to,sn,target)!=4 || from>=64 || to>=64 || from==to){errno=EINVAL;return -1;}
@@ -460,7 +518,11 @@ def main():
    const char *move_fault=getenv("FTTR_MOVE_CRASH");
    int crash=0;if(move_fault){int test=open(move_fault,O_RDONLY);if(test>=0){char byte=0;read(test,&byte,1);close(test);crash=byte-'0';}}
    if(crash==1){kill(getpid(),SIGSTOP);}
-   if(crash==3){memcpy(dest+12,source+12,8);pwrite(f,dest,20,to*20);kill(getpid(),SIGSTOP);}
+   if(crash>=3){
+    memcpy(dest+12,source+12,crash==4?4:8);pwrite(f,dest,20,to*20);
+    if(crash>=5){uint32_t blocked=first?0x50000:0x10000;memcpy(source,&blocked,4);if(!first)memset(source+4,0,4);if(crash>=6)memset(source+12,0,4);pwrite(f,source,20,from*20);}
+    kill(getpid(),SIGSTOP);
+   }
    memcpy(dest+12,source+12,8);memset(source+12,0,8);
    memcpy(&state,source,4);state=first?(state|0x10000):0x10000;memcpy(source,&state,4);
    if(!first)memset(source+4,0,4);
@@ -538,8 +600,8 @@ def main():
   }
 '''
         shim=root/'sysfs.c';shim.write_text(('#include <signal.h>\n'+SYSFS_WRITE_SHIM).replace('#include <fcntl.h>',
-            '#include <fcntl.h>\n#include <errno.h>\n#include <net/if.h>').replace('  path[n]=0;', '  path[n]=0;'+accel_shim))
-        subprocess.run(['cc','-shared','-fPIC','-Wall','-Wextra','-Werror','-o',str(root/'sysfs.so'),str(shim),'-ldl'],check=True)
+            '#include <fcntl.h>\n#include <errno.h>\n#include <net/if.h>').replace('ssize_t write(int fd',recovery_shim+'ssize_t write(int fd').replace('  path[n]=0;', '  path[n]=0;'+accel_shim))
+        subprocess.run(['cc','-shared','-fPIC','-Wall','-Wextra','-Werror','-I'+str(Path(__file__).resolve().parents[1]/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek'),'-o',str(root/'sysfs.so'),str(shim),'-ldl'],check=True)
         policy=root/'services'
         subprocess.run(['ip','link','set','dev','fap-host','mtu','1982'],check=True)
         subprocess.run(['ip','link','add','br-fttr','type','bridge'],check=True)
@@ -740,7 +802,7 @@ def main():
                     process=launch();start_ready();remote=snapshot()
                     ledgers={p.name:p.read_bytes() for p in service_store.iterdir()}
                     stop()
-                    for mode in ('release','removed-policy','intent','before','after','partial','target-conflict','auth-fail','auth-before','missing-owner','stage-fail','store-fail','inventory-before','inventory-after','lost-link'):
+                    for mode in ('release','removed-policy','intent','before','after','partial','target-conflict','auth-fail','auth-before','missing-owner','stage-fail','store-fail','inventory-before','inventory-after','lost-link','half-target','blocked-source','half-source','partial-conflict'):
                         for i,n in nodes.items():n.pool,n.table=copy.deepcopy(remote[i]);n.move_hold=False;n.held=None
                         for p in service_store.iterdir():
                             if p.is_dir():p.rmdir()
@@ -756,7 +818,7 @@ def main():
                         else:start_ready()
                         count=len(mutation(nodes[7]));nodes[7].move_hold=mode in ('release','removed-policy','intent','target-conflict','auth-fail','missing-owner','stage-fail','lost-link')
                         crash=root/'move-crash'
-                        if mode in ('before','after','partial','auth-before','inventory-before','inventory-after'):crash.write_text({'before':'1','after':'2','partial':'3','auth-before':'1','inventory-before':'1','inventory-after':'2'}[mode])
+                        if mode in ('before','after','partial','auth-before','inventory-before','inventory-after','half-target','blocked-source','half-source','partial-conflict'):crash.write_text({'before':'1','after':'2','partial':'3','auth-before':'1','inventory-before':'1','inventory-after':'2','half-target':'4','blocked-source':'5','half-source':'6','partial-conflict':'6'}[mode])
                         if mode=='store-fail':(service_store/'move.new').mkdir()
                         client=subprocess.Popen([str(args.move_control.resolve()),str(store),'onu-move','7',nodes[7].serial.hex(),'11','0'*16],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
                         try:
@@ -777,7 +839,7 @@ def main():
                             if client.poll() is None:client.kill();client.wait()
                         if crash.exists():crash.unlink()
                         nodes[7].move_hold=False
-                        if mode=='target-conflict':
+                        if mode in ('target-conflict','partial-conflict'):
                             data=bytearray(device.joinpath('onu_state').read_bytes());struct.pack_into('<I',data,11*20,1<<18);data[11*20+12:12*20]=b'OTHER011';device.joinpath('onu_state').write_bytes(data)
                         if mode in ('auth-fail','auth-before'):nodes[7].pool[65530,0][0x4000]=b'wrong'.ljust(24,b'\0')
                         if mode=='stage-fail':(service_store/'move.new').mkdir()
@@ -790,7 +852,7 @@ def main():
                         elif mode=='stage-fail':
                             until(lambda s:process.poll() is not None,allow_exit=True)
                             assert process.returncode and (service_store/'move').read_bytes()[20]==1 and 'move ' not in admin_log.read_text()
-                        elif mode in ('partial','target-conflict','missing-owner','lost-link'):
+                        elif mode in ('target-conflict','partial-conflict','missing-owner','lost-link'):
                             until(lambda s:process.poll() is not None,allow_exit=True)
                             assert process.returncode and (service_store/'move').exists() and len(mutation(nodes[7]))==count
                             assert 'move ' not in admin_log.read_text()
@@ -801,7 +863,7 @@ def main():
                             data=device.joinpath('onu_state').read_bytes()
                             assert data[7*20+12:8*20]==bytes(8) and data[11*20+12:12*20]==nodes[7].serial
                             assert 'fttr-u7' not in ports() and 'fttr-u11' not in ports()
-                            if mode in ('before','after') or inventory:assert len(mutation(nodes[7]))==count
+                            if mode in ('before','after','partial','half-target','blocked-source','half-source') or inventory:assert len(mutation(nodes[7]))==count
                             stop()
                         checks.append('durable migration '+mode)
                 finally:

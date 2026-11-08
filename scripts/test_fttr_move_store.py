@@ -35,19 +35,22 @@ int main(int argc,char **argv){
  struct fttr_onu_state source={.downstream=1U<<18},target={0};
  memcpy(source.serial,r.request.serial,8);memcpy(target.serial,r.request.target_serial,8);
  assert(!fttr_move_observe(&r,&source,&target));
+ struct fttr_move_record equal=r;memcpy(equal.request.target_serial,r.request.serial,8);
+ memcpy(target.serial,r.request.serial,8);assert(!fttr_move_observe(&equal,&source,&target));
+ memcpy(target.serial,r.request.target_serial,8);
  for(unsigned state=0;state<4;state++){
   target.downstream=(state&1?1U<<18:0)|(state&2?1U<<16:0);
   assert(fttr_move_observe(&r,&source,&target)==(state?-EBUSY:0));
  }
  target.downstream=0;memcpy(target.serial,source.serial,8);
- assert(fttr_move_observe(&r,&source,&target)==-ESTALE); /* target written, source not retired */
- source.downstream|=1U<<16;assert(fttr_move_observe(&r,&source,&target)==-ESTALE);
+ assert(fttr_move_observe(&r,&source,&target)==2); /* target written, source not retired */
+ source.downstream|=1U<<16;assert(fttr_move_observe(&r,&source,&target)==2);
  /* Original writes vendor and serial halves separately. Neither a half
   * target reservation nor half source clear proves a complete move. */
  memcpy(target.serial,r.request.target_serial,8);memcpy(target.serial,r.request.serial,4);
  assert(fttr_move_observe(&r,&source,&target)==-ESTALE);
  memcpy(target.serial,r.request.serial,8);memset(source.serial,0,4);
- assert(fttr_move_observe(&r,&source,&target)==-ESTALE);
+ assert(fttr_move_observe(&r,&source,&target)==2);
  memset(source.serial,0,8);assert(fttr_move_observe(&r,&source,&target)==1);
  target.downstream=1U<<18;assert(fttr_move_observe(&r,&source,&target)==1);
  target.downstream|=1U<<16;assert(fttr_move_observe(&r,&source,&target)==-ESTALE);

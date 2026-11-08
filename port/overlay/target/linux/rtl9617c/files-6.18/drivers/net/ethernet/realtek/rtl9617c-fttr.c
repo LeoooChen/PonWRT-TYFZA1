@@ -475,6 +475,25 @@ static ssize_t onu_move_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_WO(onu_move);
 
+static ssize_t onu_move_recover_store(struct device *dev, struct device_attribute *attr,
+ const char *buf, size_t count)
+{
+ struct rtl_fttr *fttr = dev_get_drvdata(dev);
+ unsigned int from, to;
+ unsigned char serial[8], previous[8];
+ char hex[17], prior_hex[17], extra;
+ int ret;
+ if (sscanf(buf, "%u %u %16s %16s %c", &from, &to, hex, prior_hex, &extra) != 4 ||
+     from >= RTL_FTTR_ONUS || to >= RTL_FTTR_ONUS || from == to ||
+     strlen(hex) != 16 || strlen(prior_hex) != 16 ||
+     hex2bin(serial, hex, 8) || hex2bin(previous, prior_hex, 8)) return -EINVAL;
+ mutex_lock(&fttr->control_lock);
+ ret = rtl_fttr_onu_move_recover(&fttr->reg_io, fttr->backend, from, to, serial, previous);
+ mutex_unlock(&fttr->control_lock);
+ return ret ? ret : count;
+}
+static DEVICE_ATTR_WO(onu_move_recover);
+
 static ssize_t ploam_store(struct device *dev, struct device_attribute *attr,
 			   const char *buf, size_t count)
 {
@@ -638,6 +657,7 @@ static struct attribute *rtl_fttr_attrs[] = {
 	&dev_attr_optical_init.attr,
 	&dev_attr_onu_admin.attr,
 	&dev_attr_onu_move.attr,
+	&dev_attr_onu_move_recover.attr,
 	NULL,
 };
 
@@ -655,7 +675,7 @@ static umode_t rtl_fttr_attr_visible(struct kobject *kobj, struct attribute *att
 		return fttr->backend == RTL_FTTR_ASIC9690 ? 0 : attr->mode;
 	if (attr == &dev_attr_omci_link.attr || attr == &dev_attr_onu_table.attr ||
 	    attr == &dev_attr_tx_enable.attr || attr == &dev_attr_tcont.attr ||
-	    attr == &dev_attr_onu_admin.attr || attr == &dev_attr_onu_move.attr)
+	    attr == &dev_attr_onu_admin.attr || attr == &dev_attr_onu_move.attr || attr == &dev_attr_onu_move_recover.attr)
 		return attr->mode;
 	if (n >= 2 && fttr->backend != RTL_FTTR_ASIC9690)
 		return 0;

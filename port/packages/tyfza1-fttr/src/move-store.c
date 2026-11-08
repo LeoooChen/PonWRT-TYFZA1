@@ -70,6 +70,21 @@ int fttr_move_observe(const struct fttr_move_record *r,
  if(r->stage==FTTR_MOVE_RESERVATION && !memcmp(source->serial,(uint8_t[8]){0},8) &&
     (!(source->downstream&(1U<<18)) || (source->downstream&(1U<<16))) &&
     !memcmp(target->serial,r->request.serial,8) && !(target->downstream&(1U<<16)))return 1;
+ /* An unchanged reservation (including an already equal target SN) must
+  * still take fresh authentication, not the recovery-only driver path. */
+ if (!memcmp(source->serial,r->request.serial,8) && !memcmp(target->serial,r->request.target_serial,8) &&
+     (source->downstream&(1U<<18)) && !(source->downstream&(1U<<16)) &&
+     !(target->downstream&((1U<<18)|(1U<<16)))) return 0;
+ if (r->stage == FTTR_MOVE_RESERVATION && !(target->downstream & ((1U<<18)|(1U<<16)))) {
+  bool same = !memcmp(source->serial,r->request.serial,8);
+  bool reserved = !memcmp(target->serial,r->request.serial,8);
+  bool half_target = !memcmp(target->serial,r->request.serial,4) && !memcmp(target->serial+4,r->request.target_serial+4,4);
+  bool half_clear = !memcmp(source->serial,(uint8_t[4]){0},4) && !memcmp(source->serial+4,r->request.serial+4,4);
+  if ((same && reserved && (source->downstream & ((1U<<18)|(1U<<16)))) ||
+      (same && half_target && (source->downstream & (1U<<18)) && !(source->downstream & (1U<<16)) &&
+       memcmp(target->serial,r->request.target_serial,8)) ||
+      (half_clear && reserved && (source->downstream & (1U<<16)))) return 2;
+ }
  if(memcmp(source->serial,r->request.serial,8) || memcmp(target->serial,r->request.target_serial,8))return -ESTALE;
  if(!(source->downstream&(1U<<18)) || source->downstream&(1U<<16))return -ESTALE;
  if(target->downstream&((1U<<18)|(1U<<16)))return -EBUSY;
