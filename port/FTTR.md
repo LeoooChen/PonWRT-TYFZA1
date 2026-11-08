@@ -7034,11 +7034,17 @@ records and preservation of a release recipe. The actual daemon/CLI namespace
 suite with original OMCI encoders covers ASIC/FPGA1/FPGA2, ordinary and shared
 Ethernet/VEIP, standard/CTC multicast and a seven-service collection: SIGKILL,
 read-only restart, drift, full MIB reset, UNI expansion, restored migration,
-interrupted Set and persistence failure. Existing19 upgrade scenarios, service
+interrupted Set/release, planner ENOENT, partial local DBA failure and persistence failure. Existing19 upgrade scenarios, service
 policy and administration regressions pass. Native and aarch64-musl builds use
 `-Wall -Wextra -Werror`. Reports are local under
 `artifacts/fttr/service-store-*-20261108.*`. No device was accessed; these tests
 establish neither physical flash power-loss behavior nor queued-packet retirement.
+
+The branch also incorporates local main953cf7c CPU EQ credit batching. Its729
+credit/FIFO/resume cases, original P6 QM register/18 fault-cutoff comparison and
+complete multicast learner regression pass. Image/modules compilation and both
+changed kernel input identities pass
+(`artifacts/fttr/service-store-main-kernel-20261108.log`). No PE firmware changed.
 
 ### Outstanding implementation and acceptance
 

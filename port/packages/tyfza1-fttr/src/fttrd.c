@@ -1157,6 +1157,7 @@ static int start_service(struct controller *c, unsigned int id)
 	}
 	if (c->service_store >= 0) {
 		ret = fttr_service_store_load(c->service_store, &c->link, id, u->identity, c->backend, &u->services);
+		if (ret == -ENOENT) goto fresh_service;
 		if (!ret) {
 			if (count != u->services.count) ret = -ESTALE;
 			for (unsigned int n = 0; !ret && n < count; n++) {
@@ -1184,11 +1185,9 @@ static int start_service(struct controller *c, unsigned int id)
 				return service_drive(c, id);
 			}
 		}
-		if (ret != -ENOENT) {
-			u->services.error = ret; u->services.stage = FTTR_SERVICES_FAILED;
-			u->phase = ONU_SERVICE_FAILED;
-			return save_service(c, id);
-		}
+		u->services.error = ret; u->services.stage = FTTR_SERVICES_FAILED;
+		u->phase = ONU_SERVICE_FAILED;
+		return save_service(c, id);
 	}
 fresh_service:
 	ret = fttr_services_start(&u->services, id, &c->transaction, &u->model, configs, count, u->identity);

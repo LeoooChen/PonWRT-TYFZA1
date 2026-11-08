@@ -748,6 +748,43 @@ def main():
                     assert 'fttr-u7' not in ports() and len(mutation(nodes[7]))==counts[7]
                     stop();del nodes[7].pool[11,0x777]
                     checks.append('changed complete UNI inventory cannot reopen a stale shared recipe')
+                    saved_unis={k:v for k,v in nodes[7].pool.items() if k[0] in (11,329)}
+                    for k in saved_unis:del nodes[7].pool[k]
+                    original_record=(service_store/(nodes[7].serial.hex()+'.service')).read_bytes()
+                    process=launch();until(lambda s:s['onus'][7]['phase']=='service-failed')
+                    assert status()['onus'][7]['service_error']==-errno.ENOENT and 'fttr-u7' not in ports()
+                    assert (service_store/(nodes[7].serial.hex()+'.service')).read_bytes()==original_record
+                    stop();nodes[7].pool.update(saved_unis)
+                    checks.append('planner ENOENT cannot be mistaken for an absent journal or overwrite existing ownership')
+                process=launch(grant_case='grant-false-success')
+                until(lambda s:s['onus'][7]['phase']=='service-failed')
+                assert 'fttr-u7' not in ports()
+                stop()
+                checks.append('failed local grant restoration withdraws partial grants and keeps the committed remote ledger')
+                process=launch();start_ready()
+                # A release that crashes must retain its complete original
+                # recipe but cannot be advertised as a fully active commit.
+                old_owner=(service_store/(nodes[7].serial.hex()+'.service')).read_bytes()
+                old_remote=copy.deepcopy((nodes[7].pool,nodes[7].table))
+                nodes[7].move_hold=True;nodes[7].held=None
+                interrupted=subprocess.Popen([str(args.move_control.resolve()),str(store),'onu-move','7',nodes[7].serial.hex(),'11','0'*16],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                try:
+                    until(lambda s:nodes[7].held is not None)
+                    pending=(service_store/(nodes[7].serial.hex()+'.service')).read_bytes()
+                    assert pending[26]==2 and pending[32:-4]==old_owner[32:-4]
+                    process.kill();process.wait()
+                finally:
+                    if interrupted.poll() is None:interrupted.kill();interrupted.wait()
+                nodes[7].move_hold=False;before_partial=len(mutation(nodes[7]))
+                process=launch();until(lambda s:s['onus'][7]['phase']=='service-failed')
+                assert len(mutation(nodes[7]))==before_partial and 'fttr-u7' not in ports()
+                assert (service_store/(nodes[7].serial.hex()+'.service')).read_bytes()==pending
+                stop()
+                # Restore the test's remote/ledger snapshot to independently
+                # exercise a complete release; production never rewrites this.
+                nodes[7].pool,nodes[7].table=old_remote
+                (service_store/(nodes[7].serial.hex()+'.service')).write_bytes(old_owner)
+                checks.append('crash during release retains the complete prior ownership recipe and refuses automatic delete replay')
                 process=launch();start_ready()
                 client=subprocess.Popen([str(args.move_control.resolve()),str(store),'onu-move','7',nodes[7].serial.hex(),'11','0'*16],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
                 try:
