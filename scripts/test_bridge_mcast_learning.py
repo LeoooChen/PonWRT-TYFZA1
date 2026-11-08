@@ -12,6 +12,7 @@ setup=(ROOT/'scripts/test_fe_mcast_integration.py').read_text().split("code += r
 scope={'__file__':str(ROOT/'scripts/test_fe_mcast_integration.py')}
 exec(compile(setup,'multicast-integration-fixture','exec'),scope)
 code=scope['code']
+code=code.replace('static void fe_mcast_hw_withdrawn(struct rtl_fe *f){assert(!f->age && !f->groups[1][0] && !f->groups[1][1]);f->drain_requests++;}', 'static void fe_mcast_hw_withdrawn(struct rtl_fe *f);')
 code=code.replace('static int fe_mcast_direct_stage(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct rtl_fe_mc_rule *mc){(void)fe;(void)flow;for(unsigned i=0;i<mc->count;i++)assert(!mc->direct[i].wifi_id);return 0;}',
  'static int fe_mcast_direct_stage(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct rtl_fe_mc_rule *mc);')
 code=code.replace('static void fe_mcast_host_remove(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;assert(!v->mc_host);}',
@@ -313,9 +314,13 @@ int main(void){
   assert(fe_mcast_host_local(&bridge,&copy,&br,0)==-ESTALE);
   assert(fe_mcast_host_receive(&bridge,&copy,group,0)==-ESTALE);
   /* Even a failed Hash withdrawal revokes host delivery immediately. */
+  unsigned old_requests=cpu_invalidations;
   fe.age_fail=1;assert(fe_delete(&fe,fe.indexed)==-ETIMEDOUT&&!fe.mc_hosts[group]&&!net.refs);
+  assert(cpu_invalidations==old_requests+1);
+  fe.age_fail=1;assert(fe_delete(&fe,fe.indexed)==-ETIMEDOUT&&cpu_invalidations==old_requests+1);
   assert(fe_mcast_host_local(&bridge,&copy,&br,0)==-ESTALE);
   assert(!fe_delete(&fe,fe.indexed));assert(fe.multicast.groups[group].state==RTL_FE_MC_RETIRED);
+  assert(cpu_invalidations==old_requests+2);
  }
  /* ONU source6 enters on a specific GEM VLAN; LAN/CPU preserve the
   * source, only shared P6 replica rewrites it without decrementing TTL. */
@@ -893,7 +898,12 @@ int main(void){
  }
  assert(free_slot&&fe_mcast_direct_stage(&fe,&incomplete,&exhausted)==-ENOSPC);
  assert(fe.mc_directs[free_slot]->flow==&incomplete);
+ unsigned before_revoke=cpu_invalidations;
  fe_mcast_host_remove(&fe,&incomplete);assert(!fe.mc_directs[free_slot]->flow);
+ assert(cpu_invalidations==before_revoke+1);
+ fe_mcast_host_remove(&fe,&incomplete);assert(cpu_invalidations==before_revoke+1);
+ struct rtl_fe_flow never_published={.replica_count=1};
+ fe_mcast_host_remove(&fe,&never_published);assert(cpu_invalidations==before_revoke+1);
  for(unsigned i=1;i<256;i++)free(fe.mc_directs[i]);
  for(unsigned i=0;i<16;i++)assert(!fe.mtus[i].users);
  fe_mcast_purge(&bridge);assert(!net.refs);free(fe.memory);

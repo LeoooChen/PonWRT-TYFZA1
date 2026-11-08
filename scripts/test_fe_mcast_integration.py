@@ -87,7 +87,7 @@ struct rtl_fe {
  unsigned long installs,deletes;
  unsigned int reg[0xb000/4],groups[256][2],actions[64][3],map[256],dbuf[8],elp[64][2];
  unsigned int keys[256][11],fib[1040][7],masks[128][4];
- unsigned int age,age_fail,cache_fail,ni_fail,events[64],event_count;
+ unsigned int age,age_fail,cache_fail,ni_fail,events[64],event_count,drain_requests,late_fail;
 };
 static struct rtl_fe_flow *fe_flow(struct rtl_fe *fe,unsigned long cookie){return fe->indexed && fe->indexed->cookie==cookie?fe->indexed:NULL;}
 static void fe_index_flow(struct rtl_fe *fe,struct rtl_fe_flow *flow){assert(!fe->indexed);fe->indexed=flow;}
@@ -129,11 +129,12 @@ static int fe_destination_get(struct rtl_fe *f,struct rtl_fe_flow *v,const u8 *a
 static int fe_interface_get(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;(void)v;assert(0);return -1;}
 static int fe_mtu_get(struct rtl_fe *f,struct rtl_fe_flow *v,unsigned n){(void)f;(void)v;(void)n;assert(0);return -1;}
 static int fe_source_put(struct rtl_fe *f,unsigned i){(void)f;(void)i;assert(0);return -1;}
-static int fe_destination_put(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;(void)v;assert(0);return -1;}
+static int fe_destination_put(struct rtl_fe *f,struct rtl_fe_flow *v){(void)v;assert(f->drain_requests);if(f->late_fail){f->late_fail--;return -EIO;}return 0;}
 static int fe_interface_put(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;(void)v;assert(0);return -1;}
 static void fe_mtu_put(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;(void)v;assert(0);}
 static struct rtl_fe_wifi_peer *fe_wifi_peer(struct rtl_fe *f,struct rtl_fe_port *p,const u8 *a){(void)f;(void)p;(void)a;return NULL;}
 '''
+code += 'static void fe_mcast_hw_withdrawn(struct rtl_fe *f){assert(!f->age && !f->groups[1][0] && !f->groups[1][1]);f->drain_requests++;}'
 code += 'static void fe_mcast_host_remove(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;assert(!v->mc_host);}'
 code += 'static int fe_mcast_host_publish(struct rtl_fe *f,struct rtl_fe_flow *v,struct rtl_fe_mc_host *h){(void)f;(void)v;(void)h;assert(0);return -1;}'
 code += function('fe_flow_port')+function('fe_flow_fttr')+function('fe_delete')+function('fe_install')
@@ -162,14 +163,19 @@ int main(void){
  assert((a[0]&0x7ffff)==(1U<<18|1U<<8|0x70));
  assert(!a[4] && !(a[5]&31)); /* No common final-VLAN/priority edits. */
  assert(fe.dbuf[0]==0x1b && fe.groups[1][0]==3 && flow->replica_count==2);
+ fe.event_count=0;fe.age_fail=1;
+ assert(fe_delete(&fe,flow)==-ETIMEDOUT && !fe.drain_requests && flow->published && flow->mc_group==1);
  fe.event_count=0;fe.cache_fail=1;
- assert(fe_delete(&fe,flow)==-ETIMEDOUT && flow->published && fe.groups[1][0]==3);
+ assert(fe_delete(&fe,flow)==-ETIMEDOUT && !fe.drain_requests && flow->published && fe.groups[1][0]==3);
  assert(fe.event_count==2 && fe.events[0]==2 && fe.events[1]==3);
  fe.ni_fail=1;fe.event_count=0;
- assert(fe_delete(&fe,flow)==-ETIMEDOUT && !flow->published && flow->mc_group==1);
+ assert(fe_delete(&fe,flow)==-ETIMEDOUT && !fe.drain_requests && !flow->published && flow->mc_group==1);
  assert(fe.multicast.actions[0].users==1 && fe.groups[1][0]==3);
  assert(fe.events[0]==2 && fe.events[1]==3 && fe.events[2]==5);
- assert(!fe_delete(&fe,flow));fe.indexed=NULL;
+ flow->destination_owned=true;fe.late_fail=2;
+ assert(fe_delete(&fe,flow)==-EIO && fe.drain_requests==1 && !flow->mc_group);
+ assert(fe_delete(&fe,flow)==-EIO && fe.drain_requests==1);
+ assert(!fe_delete(&fe,flow)&&fe.drain_requests==1);fe.indexed=NULL;
  assert(fe.multicast.groups[1].state==RTL_FE_MC_RETIRED && !fe.groups[1][0]);
  assert(fe.multicast.actions[0].exposed && !fe.multicast.actions[0].users && fe.actions[0][1]);
  assert(list_empty(&fe.flows) && list_empty(&fe.retries));
@@ -199,6 +205,6 @@ int main(void){
 with tempfile.TemporaryDirectory(prefix='fe-mcast-') as name:
     work = Path(name)
     (work/'check.c').write_text(code)
-    subprocess.run(['cc','-Wall','-Wextra','-Werror','-g','-fsanitize=address,undefined',
+    subprocess.run(['cc','-Wall','-Wextra','-Werror','-Wno-unused-function','-g','-fsanitize=address,undefined',
                     '-I'+str(drivers),'-I'+str(root/'port/overlay/target/linux/rtl9617c/files-6.18/include'),str(work/'check.c'),'-o',str(work/'check')],check=True)
     subprocess.run([str(work/'check')],check=True)

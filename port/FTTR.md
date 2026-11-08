@@ -6282,6 +6282,41 @@ An old late cookie stays permanently retired, but this work does not prove
 that every upstream packet has disappeared or permit any quarantined group,
 action, cookie or GEM ID reuse. No physical device was accessed.
 
+### Multicast withdrawal refreshes the prefix after hardware cleanup
+
+The first close of a host/direct record protects CPU/PE consumers, but its
+EPP snapshot could be acknowledged before `fe_delete` finished removing the
+Hash/cache and NI group. Cleanup now requests another multicast generation
+and EPP prefix only after all those hardware withdrawals succeed. The
+existing `mc_group` ownership transition to zero makes this request occur
+exactly once even when later MAC/interface restoration fails and retries.
+Hash-age, cache or NI-group failure retains ownership and cannot issue this
+post-withdrawal request. The next closed-gate learning pass must wait for its
+new ACK, rather than accepting the earlier close's ACK.
+
+Host/direct record removal is now idempotent: its first live ownership
+removal still invalidates CPU/PE copies immediately, but retries after those
+records are already detached do not advance the request number again. An
+unpublished rollback with no live host/direct record does not invent a new
+close event. A partially staged direct record is still revoked exactly once.
+
+The old production teardown fails the post-hardware-request assertion. Tests
+now cover age/cache/group failures, repeated failures before hardware
+withdrawal, two later MAC restoration failures, exactly one successful
+post-withdrawal request, host-only and partial direct rollback. The actual
+learner still waits for the new prefix before allocating a replacement group.
+The target FC last-reference unlearn path was executed again; it confirms
+Hash-delete ordering but provides no native MCE/PE completion fence and loses
+its own retry after a lower delete failure. Native retained ownership and
+retry semantics are preserved. Eleven related FE/bridge/multicast/flow tests,
+Image/modules and two changed kernel input identities pass. PE firmware is
+unchanged; reports are `artifacts/fttr/mcast-withdraw-*`.
+
+A later EPP snapshot is stronger than an early one, but is still not proof
+that every MCE/NI DMA/AFT upstream producer is empty. In-flight downstream
+packets and safe hardware group/action/cookie/GEM reuse remain unresolved.
+No device was accessed.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN

@@ -51,6 +51,7 @@ struct rtl_fe_mc_rule;
 static int fe_mcast_direct_stage(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct rtl_fe_mc_rule *mc);
 static bool fe_flow_pon(const struct rtl_fe_flow *flow);
 static void fe_mcast_host_remove(struct rtl_fe *fe,struct rtl_fe_flow *flow);
+static void fe_mcast_hw_withdrawn(struct rtl_fe *fe);
 static int fe_mcast_host_publish(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct rtl_fe_mc_host *host);
 
 #define FE_INTERFACES 64
@@ -1147,6 +1148,9 @@ static int fe_delete(struct rtl_fe *fe,struct rtl_fe_flow *flow)
   ret=rtl_fe_mc_withdraw(&io,&fe->multicast,flow->mc_group);
   if(ret)goto retry;
   flow->mc_group=0;
+  /* A prior close may already have an ACK. Capture a new EPP prefix
+   * only after Hash/cache and the NI group have actually withdrawn. */
+  fe_mcast_hw_withdrawn(fe);
  }
  if(flow->destination_owned) {
   ret=fe_destination_put(fe,flow);

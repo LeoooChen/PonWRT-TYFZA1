@@ -122,6 +122,7 @@ static void fe_mcast_host_remove(struct rtl_fe *fe,struct rtl_fe_flow *flow)
 {
  struct rtl_fe_mc_host *host;
  unsigned long flags;
+ bool changed=false;
  if(!flow->replica_count)return;
  spin_lock_irqsave(&fe->mc_lock,flags);
 
@@ -130,14 +131,26 @@ static void fe_mcast_host_remove(struct rtl_fe *fe,struct rtl_fe_flow *flow)
    unsigned int dest=fe->mc_directs[i]->pe_destination;
    if(dest && fe->mc_pe[dest-18].table)WRITE_ONCE(fe->mc_pe[dest-18].table->record[i].epoch,0);
    fe->mc_directs[i]->flow=NULL;
+   changed=true;
   }
  dma_wmb();
  host=flow->mc_host;
  if(fe->mc_hosts[flow->mc_group]==host)fe->mc_hosts[flow->mc_group]=NULL;
  flow->mc_host=NULL;
- rtl9617c_bridge_mcast_invalidate();
+ if(host || changed)rtl9617c_bridge_mcast_invalidate();
  spin_unlock_irqrestore(&fe->mc_lock,flags);
  if(host){put_net(host->net);kfree(host);}
+}
+
+/* The hardware publication owner is released exactly once, even if
+ * later MAC/interface restoration must retry. Keep the request after the
+ * successful indirect withdrawals, serialized with CPU stamp admission. */
+static void fe_mcast_hw_withdrawn(struct rtl_fe *fe)
+{
+ unsigned long flags;
+ spin_lock_irqsave(&fe->mc_lock,flags);
+ rtl9617c_bridge_mcast_invalidate();
+ spin_unlock_irqrestore(&fe->mc_lock,flags);
 }
 
 /* A direct CPU replica needs a distinct immutable POL cookie. Reserve it

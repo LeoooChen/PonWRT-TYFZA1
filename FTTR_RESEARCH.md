@@ -206,6 +206,8 @@
 
 94. 补齐直接NI→PE组播BID计数及EPP前缀确认：所有cookie复制（含无效/关闭/休眠溢出）从接管到EQ归还保留计数，源6同时计入独立FTTR域；关闭学习tuple/PE epoch后请求8-COS快照，两域未完前缀共同优先处理，当前ACK且pending=0才允许FE继续。旧流删除会产生新请求，分配新组前再次检查。125组直接组播/BCMC/真实RPQ/部分EQ/晚到/重试和原有251FTTR、CPU/PS/配额/序号/PN等回归通过；核心双卡ACK、强制清理及1024/2048分类对比、Image/模块/八份一致性通过。PE32544字节、栈上界7304，MCP5；该前缀仍不证明MCE/DMA/AFT上游生产者已停止，硬件ID继续隔离，未上实机。详见[直接组播排空范围](port/FTTR.md#direct-multicast-bid-accounting-and-epp-prefix-completion)。
 
+95. 修正组播排空请求的硬件撤销顺序：首次复制记录关闭的ACK可能早于Hash/cache/NI组清理，现三者成功后再请求一次新前缀；mc_group归属置零保证后续MAC/接口恢复重试不反复换请求号。host/direct首次撤销仍立即失效，已脱离记录的重试幂等，部分未发布复制同样处理。旧生产函数复现缺失后置请求；age/cache/NI故障、后续连续恢复失败、单次新请求和完整learner等待等及11组相关测试、原厂unlearn执行、Image/模块/两份一致性通过。PE不变，完整上游生产者屏障与ID复用仍未完成，未上实机。详见[硬件撤销后的新前缀](port/FTTR.md#multicast-withdrawal-refreshes-the-prefix-after-hardware-cleanup)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

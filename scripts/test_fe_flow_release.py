@@ -169,7 +169,7 @@ int main(void){
 }
 '''
 parts = [common,re.search(r'struct rtl_fe_flow \{.*?\n\};',native,re.S)[0]]
-parts += ['static void fe_mcast_host_remove(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;assert(!v->mc_host);}' ]
+parts += ['static void fe_mcast_hw_withdrawn(struct rtl_fe *f){(void)f;assert(0);}\nstatic void fe_mcast_host_remove(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;assert(!v->mc_host);}' ]
 parts += [function(n) for n in ('fe_flow_port','fe_collect_ports','fe_source_put','fe_interface_put','fe_mtu_get','fe_mtu_put','fe_destination_put','fe_delete','fe_cleanup_work')]
 parts.append(test)
 with tempfile.TemporaryDirectory(dir=root/'artifacts',prefix='fe-release-') as work:
