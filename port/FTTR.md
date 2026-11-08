@@ -7527,6 +7527,55 @@ generated kernel input match. Alarm subscription, other optical capability layou
 and physical optical readings remain to be implemented or accepted within the full
 FTTR scope.
 
+### Resident ONU alarm snapshot and notification synchronization
+
+After successful authentication and MIB inventory, the controller now obtains a
+baseline Get All Alarms snapshot (class2/instance0, mode0) and reads its entries
+sequentially. The target ONU emits28-byte alarm bitmaps identified by class/ME
+instance, and resets its notification sequence to1. Native state is exposed in
+each ONU's `status.json` row as `alarms`: validity, synchronization state, error,
+check time, last notification sequence and raw class/instance/bitmap rows. An
+invalid or incomplete state exposes no rows; it is not reported as zero alarms.
+Raw bitmaps preserve unsupported/vendor classes without guessing alarm meanings.
+
+The controller accepts ordered baseline0x10 notifications only for a currently
+authenticated registration with the same serial. Sequence1..255 wraps to1. Exact
+last-message duplicates are ignored; conflicting duplicates, gaps and malformed
+messages invalidate the state and schedule a new full snapshot. Notifications
+after the snapshot header are collected separately and overlaid after all snapshot
+rows arrive, so older snapshot rows cannot overwrite a newer notification. A
+notification before the header makes the reset/snapshot boundary uncertain and
+forces a retry. Duplicate snapshot objects, oversized counts, allocation failure
+and expiry also leave the state unknown. Requests are not individually retried
+against an uncertain remote snapshot; a new snapshot starts after2s. A periodic
+60s refresh bounds a lost final notification; each collection has a55s total
+limit and the existing2s exchange deadline. At most4096 objects are retained.
+
+Alarm observation is separate from business admission: it does not withdraw FE,
+ports or DBA on a raw alarm bit or a diagnostic error. Configured, inventory-only
+and authenticated service-failed ONUs can synchronize. Same-serial MIB failure,
+registration replacement, administrative teardown and controller exit invalidate
+old alarm state; subsequent fresh inventory enables collection again. The entire
+raw table is reconstructed after restart, rather than trusting runtime files.
+The wire format contains no serial, so registration pinning cannot prove that a
+very late same-slot unsolicited packet came from the current physical ONU.
+
+`trace_stock_fttr_alarm.py` executes target ONU snapshot/reply/notification and
+serializer functions, notification sequence reset and both relay header encoders:
+514 notifications prove the original1..255 wrap. `test_fttr_alarm.py` covers22
+snapshot/race/error groups and2056 target-generated notifications plus duplicates;
+ASan/UBSan fault tests cover snapshot/delta/merge allocation failures, total expiry,
+4096-row overflow and clear/free. Actual daemon/AF_PACKET tests pass on ASIC,
+FPGA1 and FPGA2 for initial state, raise/clear, gap recovery with interleaved update,
+conflicting duplicate, timeout, oversize response, same-serial MIB rescan, restart,
+replacement and failed authentication. Optical/upgrade/migration/rebuild/admin
+regressions and host/aarch64-musl daemon builds pass. Local evidence is
+`artifacts/fttr/alarm-*-20261109.*` and `alarms-resident-20261109.*`.
+
+No device was accessed. These tests model alarm storage, timers and transport;
+they do not verify physical alarm assertions, vendor alarm naming or a policy to
+act on alarms. Those policies and full packet-retirement acceptance remain open.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

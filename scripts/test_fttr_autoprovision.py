@@ -97,6 +97,7 @@ def main():
     p.add_argument("--shared", action="store_true", help="exercise shared Ethernet/VEIP services and release with --move-control")
     p.add_argument("--filter-only", action="store_true", help="use transparent UNI mode with ANI VLAN filtering")
     p.add_argument("--multi-services", type=int, choices=(1,2,7), help="exercise a complete shared multi-GEM service collection")
+    p.add_argument("--alarms", action="store_true", help="verify resident full alarm snapshots and notification recovery")
     p.add_argument("--factory", action="store_true", help="generate original defaults for --multi-services, including card limits")
     p.add_argument("--multicast", choices=("standard","ctc"), help="exercise remote multicast shared provisioning and migration")
     p.add_argument("--wifi", action="store_true", help="exercise resident remote Wi-Fi policies")
@@ -122,6 +123,8 @@ def main():
         from trace_stock_fttr_onu_optical import Optical,SlaveOptical
         optical_master=Optical(args.master)
         optical_slave=SlaveOptical(args.slave.parent.parent/'lib/omci/mib_Anig.so')
+    if args.alarms:
+        from trace_stock_fttr_alarm import AlarmSlave
     stock = Original(args.master)
     original_sync=OriginalSync(args.slave)
     for initial,expected in [(0,1),(1,2),(254,255),(255,1)]:
@@ -154,6 +157,8 @@ def main():
             self.tcont,self.queue = 0x8700+uni,0x8a00+uni
             self.slave,self.hold,self.reject = SyncSlave(args.slave),hold,reject
             self.counter=OriginalSync(args.slave)
+            self.alarm_rows=[];self.alarm_mode='normal';self.alarm_reads=0;self.alarm_held=None
+            if args.alarms:self.alarm_slave=AlarmSlave(args.slave)
             self.wifi_hold = self.wifi_reject = self.wifi_restore_hold = self.wifi_drop = False
             self.wifi_sets = 0
             self.wifi_reject_at = 3
@@ -251,6 +256,18 @@ def main():
             if self.apply_before and self.release_cut and op in (0x44,0x46,0x48) and c not in (65530,256):
                 self.release_writes+=1
                 if self.release_writes>=self.release_cut:self.held=body;return None
+            if op in (0x4b,0x4c):
+                assert c==2 and id==0
+                self.alarm_reads+=1
+                if self.alarm_mode=='drop':return None
+                if not args.alarms:
+                    assert op==0x4b
+                    return stock.frame(tci,0x2b,bytes(2),onu=self.id,class_id=2,instance=0)[16:]
+                response=self.alarm_slave.reply_alarm(body,self.alarm_rows)
+                if self.alarm_mode=='hold-next' and op==0x4c:self.alarm_held=response;return None
+                if self.alarm_mode=='bad-count' and op==0x4b:
+                    response=stock.frame(tci,0x2b,b'\x10\x01',onu=self.id,class_id=2,instance=0)[16:]
+                return response
             if args.upgrade_control and c==7:
                 assert id in (0,1)
                 if op==0x49:
@@ -803,6 +820,72 @@ static int recovery_run(const char *path,const char *command) {
                     FTTR_ACCEL_LOG=str(accel_log),FTTR_ACCEL_FAIL=str(accel_fault),
                     FTTR_ADMIN_FAIL=str(admin_fault),FTTR_ADMIN_HOLD=str(admin_hold),FTTR_ADMIN_LOG=str(admin_log),FTTR_MOVE_CRASH=str(root/'move-crash'),
                     **({'FTTR_ADMIN_FPGA':'1'} if args.backend=='fpga1' else {})))
+        if args.alarms:
+            checks=[];process=None
+            def send_alarm(node,seq,bitmap,instance=0x8000):
+                body=node.alarm_slave.notify(263,instance,bitmap,seq)
+                peer.send(HOST+OLT+struct.pack('>HH',0x8888,node.id)+body)
+            def alarm(id=7):return status()['onus'][id]['alarms']
+            def stop():
+                process.send_signal(signal.SIGTERM);until(lambda s:process.poll() is not None,allow_exit=True)
+                assert process.wait()==0,process.stderr.read()
+            try:
+                nodes[7].hold=False;nodes[9].fail_upload_once=False
+                nodes[7].alarm_rows=[(263,0x8000,b'\x80'+bytes(27)),(256,0,bytes(28))]
+                hardware();process=launch()
+                until(lambda s:all(s['onus'][i]['datapath_configured'] and s['onus'][i]['alarms']['valid'] for i in (7,9)))
+                local=datapath(7);healthy=datapath(9);before=len(accel_events())
+                assert alarm()['rows'][0]['bitmap']=='80'+'00'*27 and len(alarm()['rows'])==2
+                assert nodes[7].alarm_reads==3 and nodes[9].alarm_reads==1
+                send_alarm(nodes[7],1,b'\x40'+bytes(27));until(lambda s:s['onus'][7]['alarms']['sequence']==1)
+                assert alarm()['rows'][0]['bitmap']=='40'+'00'*27
+                send_alarm(nodes[7],1,b'\x40'+bytes(27));send_alarm(nodes[7],2,bytes(28))
+                until(lambda s:s['onus'][7]['alarms']['sequence']==2);assert alarm()['rows'][0]['bitmap']=='00'*28
+                assert local==datapath(7) and healthy==datapath(9) and len(accel_events())==before
+                checks.append('authenticated initial snapshot and raise/clear/duplicate notifications preserve business/FE admission')
+                nodes[7].alarm_mode='hold-next';nodes[7].alarm_rows=[(263,0x8000,b'\x10'+bytes(27)),(256,0,bytes(28))]
+                send_alarm(nodes[7],4,b'\x20'+bytes(27));until(lambda s:not s['onus'][7]['alarms']['valid'])
+                assert not alarm()['rows']
+                until(lambda s:nodes[7].alarm_held is not None,seconds=8)
+                send_alarm(nodes[7],1,b'\x08'+bytes(27))
+                nodes[7].alarm_mode='normal';peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+nodes[7].alarm_held)
+                until(lambda s:s['onus'][7]['alarms']['valid'])
+                assert alarm()['rows'][0]['bitmap']=='08'+'00'*27 and alarm()['sequence']==1
+                checks.append('gap withdraws incomplete state; full snapshot merges newer ordered notifications without reverting them')
+                # Duplicate sequence with different contents is not ignored.
+                nodes[7].alarm_mode='drop';send_alarm(nodes[7],1,b'\x04'+bytes(27))
+                until(lambda s:s['onus'][7]['alarms']['error']==-errno.EPROTO)
+                until(lambda s:s['onus'][7]['alarms']['error']==-errno.ETIMEDOUT,seconds=8)
+                assert 'fttr-u7' in ports() and 'fttr-u9' in ports()
+                nodes[7].alarm_mode='bad-count';until(lambda s:s['onus'][7]['alarms']['error']==-errno.E2BIG,seconds=8)
+                nodes[7].alarm_mode='normal';nodes[7].alarm_rows=[]
+                until(lambda s:s['onus'][7]['alarms']['valid'],seconds=8);assert alarm()['rows']==[]
+                checks.append('conflicting duplicate, timeout and oversized snapshot stay unknown; retry recovers empty snapshot')
+                nodes[7].counter.value=(nodes[7].counter.value+1)%255 or 1
+                nodes[7].mib_hold=True;nodes[7].held=None
+                until(lambda s:nodes[7].held is not None,seconds=10)
+                assert not alarm()['valid'] and not alarm()['rows']
+                nodes[7].mib_hold=False;peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+nodes[7].held)
+                until(lambda s:s['onus'][7]['alarms']['valid'],seconds=10)
+                checks.append('same-serial MIB rescan invalidates old alarm state before new inventory completes')
+                stop();process=launch()
+                until(lambda s:all(s['onus'][i]['alarms']['valid'] for i in (7,9)))
+                assert alarm()['sequence']==0 and not alarm()['rows']
+                nodes[7]=Node(7,'5445535400000077',0x307,False)
+                nodes[7].alarm_rows=[(263,0x8001,b'\x02'+bytes(27))];hardware()
+                until(lambda s:s['onus'][7]['mib_serial']==nodes[7].serial.hex() and s['onus'][7]['alarms']['valid'],seconds=10)
+                assert alarm()['rows']==[dict(**{'class':263,'instance':0x8001,'bitmap':'02'+'00'*27})]
+                stop()
+                nodes[7].pool[65530,0][0x4000]=b'wrong'.ljust(24,b'\0');prior=nodes[7].alarm_reads
+                process=launch();until(lambda s:s['onus'][7]['phase']=='auth-failed')
+                send_alarm(nodes[7],1,b'\x80'+bytes(27));until(lambda s:s['onus'][9]['alarms']['valid'])
+                assert not alarm()['valid'] and nodes[7].alarm_reads==prior
+                stop();checks.append('restart/serial replacement rebuild snapshots; failed authentication neither polls nor accepts notifications')
+            finally:
+                if process is not None and process.poll() is None:process.kill();process.wait()
+                peer.close();os.close(grant_fd)
+            args.output.write_text(json.dumps(dict(backend=args.backend,checks=checks),indent=2)+'\n')
+            print(json.dumps(checks,indent=2));return
         if args.optical_control:
             checks=[];process=None
             def command(serial=None):

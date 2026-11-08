@@ -31,6 +31,7 @@
 #include "omci-auth.h"
 #include "omci-upgrade.h"
 #include "omci-optical.h"
+#include "omci-alarm.h"
 #include "upgrade-store.h"
 #include "service-store.h"
 #include "move-store.h"
@@ -75,6 +76,7 @@ struct service_policy {
 };
 
 struct onu {
+ struct fttr_alarm_state alarms;
 	struct fttr_onu_state hardware;
 	struct fttr_mib_job job;
 	struct fttr_mib_model model;
@@ -525,7 +527,7 @@ static int publish(struct controller *c, const char *state, int error)
 				"\"onu_auth_required\":%s,\"onu_authenticated\":%s,\"onu_auth_action\":%u,"
 				"\"onu_auth_logical_id\":%u,\"onu_auth_method\":%u,\"onu_auth_error\":%d,"
 				"\"reboot_sent\":%s,\"reboot_accepted\":%s,\"reboot_error\":%d,\"upgrade_stage\":%u,"
-				"\"upgrade_bytes\":%u,\"upgrade_size\":%u,\"upgrade_action\":%u,\"upgrade_image\":%u,\"upgrade_accepted\":%s,\"upgrade_verified\":%s,\"upgrade_error\":%d,\"upgrade_recovery_required\":%s}",
+				"\"upgrade_bytes\":%u,\"upgrade_size\":%u,\"upgrade_action\":%u,\"upgrade_image\":%u,\"upgrade_accepted\":%s,\"upgrade_verified\":%s,\"upgrade_error\":%d,\"upgrade_recovery_required\":%s",
 				u->services.count, u->services.configured ? "true" : "false", u->services.cleanup_error,
 				u->services.error, u->service_recovering ? "true" : "false", u->service_recorded ? "true" : "false",
 				u->sync.valid ? "true" : "false", u->sync.value, u->sync.observed,
@@ -543,6 +545,14 @@ static int publish(struct controller *c, const char *state, int error)
 				u->reboot.replied && u->reboot.result ? "false" : "null", u->reboot_error, u->upgrade.stage,
 				u->upgrade.confirmed, u->upgrade.size, u->upgrade.action, u->upgrade.image, u->upgrade.accepted ? "true" : "false",
 				u->upgrade.verified ? "true" : "false", u->upgrade.error, u->upgrade_held ? "true" : "false");
+   fprintf(file, ",\"alarms\":{\"valid\":%s,\"syncing\":%s,\"error\":%d,\"checked_ms\":%" PRId64 ",\"sequence\":%u,\"rows\":[",
+    u->alarms.valid?"true":"false",u->alarms.active?"true":"false",u->alarms.error,u->alarms.checked,u->alarms.sequence);
+   for(unsigned n=0;u->alarms.valid && n<u->alarms.count;n++) {
+    const struct fttr_alarm_row *row=&u->alarms.rows[n];
+    fprintf(file,"%s{\"class\":%u,\"instance\":%u,\"bitmap\":\"",n?",":"",row->class_id,row->instance);
+    hex(file,row->bitmap,28);fputs("\"}",file);
+   }
+   fputs("]}}",file);
 		}
 		fputc(']', file);
 	}
@@ -1305,6 +1315,7 @@ static int cancel_state(struct controller *c, unsigned int id, bool accel_paused
 	int ret;
 
  if(c->optical_test.active && c->optical_test.job.me.onu==id)optical_finish(c,-ESTALE);
+ fttr_alarm_clear(&u->alarms);
 
 	fttr_auth_cancel(&u->auth, -ESTALE);
 	u->policy_authenticated = u->policy_move = false;
@@ -1666,6 +1677,8 @@ static int sync_io_failed(struct controller *c, unsigned int id, int error)
 {
 	struct mib_sync *sync = &c->onu[id].sync;
 
+ fttr_alarm_invalidate(&c->onu[id].alarms,error,now_ms());
+ c->onu[id].alarms.enabled=false;
 	sync->active = false;
 	sync->valid = false;
 	sync->error = error;
@@ -1688,6 +1701,8 @@ static int sync_failed(struct controller *c, unsigned int id, int error)
 	struct onu *u = &c->onu[id];
 	int ret = multicast_close(c);
 
+ fttr_alarm_invalidate(&u->alarms,error,now_ms());
+ u->alarms.enabled=false;
 	if (ret)
 		return ret;
 	c->multicast_members = 0;
@@ -2121,6 +2136,7 @@ static int complete(struct controller *c, unsigned int id)
 	if (renameat(c->store, pending, c->store, destination))
 		return -errno;
 	u->phase = ONU_INVENTORY;
+ u->alarms.enabled=true;
 	memset(&u->sync, 0, sizeof(u->sync));
 	if (c->move_recovering && id == c->move.request.id) {
 		if (!authenticated(c, u) && !(u->policy_move && !c->move_record.service &&
@@ -2141,6 +2157,23 @@ static int receive_message(struct controller *c)
 
 	if (ret == -EAGAIN)
 		return 0;
+ if(message.body && message.onu<FTTR_ONUS &&
+    (message.body[2]==0x10 || (c->onu[message.onu].alarms.active &&
+     !memcmp(message.body,c->onu[message.onu].alarms.me.request,2)))) {
+  struct onu *owner=&c->onu[message.onu];
+  struct fttr_alarm_state *alarm=&owner->alarms;
+  if(!alarm->enabled || !authenticated(c,owner))return 0;
+  struct fttr_onu_state expected=owner->hardware;
+  memcpy(expected.serial,owner->identity,8);
+  int valid=fttr_miniolt_same(c->directory,message.onu,&expected),changed;
+  if(valid || ret){fttr_alarm_invalidate(alarm,valid?valid:ret,now_ms());changed=1;}
+  else if(message.body[2]==0x10)changed=fttr_alarm_notify(alarm,&message,now_ms());
+  else {
+   changed=fttr_alarm_reply(alarm,&message,&c->transaction,now_ms());
+   if(changed==2){int sent=fttr_me_job_send(&alarm->me,c->socket,&c->link,now_ms());if(sent)fttr_alarm_invalidate(alarm,sent,now_ms());}
+  }
+  return changed?publish(c,"running",0):0;
+ }
  if(c->optical_test.active && message.body && message.onu==c->optical_test.job.me.onu &&
     !memcmp(message.body,c->optical_test.job.me.request,2)) {
   struct fttr_onu_state expected=c->onu[message.onu].hardware;
@@ -3217,6 +3250,23 @@ static int run(struct controller *c)
 			deadline = c->optical.due;
 		for (id = 0; id < FTTR_ONUS; id++) {
 			struct onu *u = &c->onu[id];
+   struct fttr_alarm_state *alarm=&u->alarms;
+   if(alarm->enabled && authenticated(c,u)) {
+    bool changed=false;
+    if(alarm->active && (now>=alarm->me.deadline || now>=alarm->expires)) {
+     fttr_alarm_invalidate(alarm,-ETIMEDOUT,now);changed=true;
+    }
+    if(!alarm->active && now>=alarm->due && (u->phase==ONU_CONFIGURED || u->phase==ONU_INVENTORY || u->phase==ONU_SERVICE_FAILED)) {
+     struct fttr_onu_state expected=u->hardware;memcpy(expected.serial,u->identity,8);
+     int same=fttr_miniolt_same(c->directory,id,&expected);
+     if(same)fttr_alarm_invalidate(alarm,same,now);
+     else {fttr_alarm_start(alarm,id,&c->transaction,now);same=fttr_me_job_send(&alarm->me,c->socket,&c->link,now);if(same)fttr_alarm_invalidate(alarm,same,now);}
+     changed=true;
+    }
+    if(changed){ret=publish(c,"running",0);if(ret)return ret;}
+    if(alarm->active && alarm->me.deadline<deadline)deadline=alarm->me.deadline;
+    else if(!alarm->active && alarm->due>now && alarm->due<deadline)deadline=alarm->due;
+   }
 
 			if (u->phase == ONU_UPGRADE) {
 				ret = upgrade_drive(c);
@@ -3742,6 +3792,7 @@ int main(int argc, char **argv)
 		goto out;
 	ret = run(&c);
 out:
+ for(id=0;id<FTTR_ONUS;id++)if(c.onu[id].alarms.enabled)fttr_alarm_invalidate(&c.onu[id].alarms,ret?ret:-ECANCELED,now_ms());
  optical_finish(&c,stopping?-ECANCELED:ret?ret:-ECANCELED);
 	if (stopping && ret == -EINTR)
 		ret = 0;
@@ -3803,6 +3854,7 @@ out:
 		if (c.onu[id].dump && fclose(c.onu[id].dump) && !ret)
 			ret = -errno;
 		fttr_mib_model_clear(&c.onu[id].model);
+		fttr_alarm_clear(&c.onu[id].alarms);
 		fttr_service_recovery_clear(&c.onu[id].recovery);
 		fttr_services_clear(&c.onu[id].services);
 		while (c.onu[id].wifi) {

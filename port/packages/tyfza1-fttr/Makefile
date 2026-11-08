@@ -52,7 +52,7 @@ define Build/Compile
 		-o $(PKG_BUILD_DIR)/fttrd $(PKG_BUILD_DIR)/fttrd.c \
 		$(PKG_BUILD_DIR)/miniolt.c $(PKG_BUILD_DIR)/omci-wire.c \
 		$(PKG_BUILD_DIR)/omci-socket.c $(PKG_BUILD_DIR)/omci-mib.c \
-		$(PKG_BUILD_DIR)/omci-model.c $(PKG_BUILD_DIR)/omci-optical.c $(PKG_BUILD_DIR)/omci-me.c \
+		$(PKG_BUILD_DIR)/omci-model.c $(PKG_BUILD_DIR)/omci-alarm.c $(PKG_BUILD_DIR)/omci-optical.c $(PKG_BUILD_DIR)/omci-me.c \
 		$(PKG_BUILD_DIR)/omci-objects.c $(PKG_BUILD_DIR)/omci-gem.c \
 		$(PKG_BUILD_DIR)/omci-association.c $(PKG_BUILD_DIR)/omci-vlan.c \
 		$(PKG_BUILD_DIR)/omci-mcast.c $(PKG_BUILD_DIR)/omci-service.c $(PKG_BUILD_DIR)/omci-services.c $(PKG_BUILD_DIR)/omci-wifi.c \
