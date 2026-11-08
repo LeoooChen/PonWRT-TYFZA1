@@ -80,13 +80,17 @@ static int rtl_qm_push(struct rtl_qm_rx *rx, u32 address, unsigned int eqid)
 static int rtl_qm_try_push(void *context, unsigned int address, unsigned int eqid)
 {
 	struct rtl_qm_rx *rx = context;
+	unsigned int *credit = &rx->refill.credit[eqid - EQ_ID];
 
-	/* NAPI retains busy buffers; it never waits 10ms per buffer. The engine's
-	 * 1ms timer schedules another poll even if every RX buffer is pending. */
-	if (!(readl(rx->ni + 0x6328 + eqid * 4) & GENMASK(13, 0)) ||
-	    !(readl(rx->ni + CPU_READY) & BIT(31)))
+	/* NAPI alone returns these EQs. Reuse a conservative credit snapshot
+	 * within this drain; every accepted PUSH consumes one released BID. */
+	if (!*credit)
+		*credit = readl(rx->ni + 0x6328 + eqid * 4) & GENMASK(13, 0);
+	/* Keep the per-buffer FIFO check. Busy buffers wait for the next poll. */
+	if (!*credit || !(readl(rx->ni + CPU_READY) & BIT(31)))
 		return -EAGAIN;
 	writel(address | eqid, rx->ni + CPU_PUSH);
+	(*credit)--;
 	return 0;
 }
 

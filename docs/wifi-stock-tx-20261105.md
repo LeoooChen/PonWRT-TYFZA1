@@ -259,3 +259,36 @@ UDP容量诊断实收1.708653G，与修复前约1.708G相同，实发1.842460G/l
 未捕获首轮低谷期间的MU，不声称这处修复解释了低谷或带来提速；按原厂确认的SU状态
 正确性保留。产品修复和定位证据分开。证据artifacts/wifi-speed-20261108/ra-su-feedback，
 REA产物仅/home/leo/tyfza1-rea-wifi-stock-20261108/output。双向TCP1.8/UDP2.0目标未完成。
+
+
+### 2026-11-08 CPU EQ 回收额度按批复用
+
+基线main6380aa3，CPU NI每个PUSH前都重新读取inactive BID额度；NAPI是EQ4/5唯一
+运行期归还者。原厂ca_ni_rx_napi在13fc读取inactive计数，1414按该计数调用补池，
+ca_ni_refill_eq_buf_pool_with_rule_zero按数量循环PUSH。native改为每次drain入口清空
+两EQ的credit，额度为0时重读，每次接受PUSH后减1；逐缓冲FIFOready、忙时保留suffix、
+EQ4/5公平性及EPP退休顺序不变，不跨poll复用额度。只减少冗余MMIO，不去掉同步。
+
+实际C函数测试729组额度/两EQ/FIFO停顿/恢复及跨drain额度失效通过，64PUSH额度读64→1，
+FIFO检查64次保留。129帧callback到达、36组只读RX、17024组cachedEPP和重开通过。
+旧test_native_rx_modes的qm夹具缺round_up/down，失败未用于产品结论；其他实际poll
+测试完整通过，未扩展修复该旧工具。16MiB随机载荷WiFi双向SSH传输逐字节一致。
+
+完整0.8.5-beta候选SHA1e79212bb65d6ddc77e6e0995a6a8b1871b2fde63d16504d54ad0ee64f7f39fb，
+FIT kernel66e497600133ae8d80e5236f4bedc9a3f8b4e330a59891169423daabb8d2f6ee，
+radio5627b1a079c880859276b81a59deaf722f30bd716e4017a3f3d5970caf13a0cd，mac80211/cfg80211
+与旧镜像相同；包括main已有QoS批内复用、时区和SU/MU修复。保留配置刷入，新boot
+432015ed-8f7e-4c44-89b0-58bc6fcf95d9，FIT和rootfs逐字节等于ubi0_6/7，模块hash一致。
+当前运行新完整固件；旧local-0.8.5-beta-latest交付包未覆盖，候选在本节artifact目录。
+
+默认10秒单流前/后：TCPdown1.366548/1.344199G，重传66/0；TCPup1.498059/1.453831G，
+均0重传。UDP -b2000M down0.739313/0.767519G，loss0.2535/0%；up1.106554/1.034487G，
+loss14.4078/20.719%，实际发送1.301653/1.316239G。未证明吞吐改善。RXQ_RDU上传前107/
+后56；refill_retry/pending、failed/unmatched/polluted、L3taildrop均无增长。
+
+接收进程CPU0仅诊断前/后：UDPup实收1.313228/1.442636G，实发1.317076/1.454072G，
+loss0.02028/0.08695%，不把发送端变化当内核提升。1200M负载profile实际发1.118203/
+1.199997G，平均每poll7.885/7.890帧，每包hostpoll3945.66/3827.60ns，copy672.85/671.22ns，
+dispatch1016.84/1004.70ns。与减少MMIO方向一致但非同速跨启动因果证明。保留明确减负
+及已有契约依据，不声称默认双向TCP1.8/UDP2.0已达标。所有临时测速模块和profile已关闭。
+证据artifacts/wifi-speed-20261108/cpu-refill-credit；REA产物仍仅VM独立目录。
