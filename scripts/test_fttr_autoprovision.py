@@ -1157,7 +1157,7 @@ static int recovery_run(const char *path,const char *command) {
                 until(lambda s:process.poll() is not None,allow_exit=True)
                 assert process.wait(timeout=2)==0,process.stderr.read()
             try:
-                for mode in ('ok','reject-window','reject-end','abort','replace','shutdown','client-gone','peer-admin','withdraw-fail','drop-start','snapshot','crash-download','crash-activate','crash-commit','store-fail','verify-store-fail','resume-io','resume-stale','held-deactivate'):
+                for mode in ('ok','reject-window','reject-end','abort','replace','shutdown','client-gone','peer-admin','withdraw-fail','drop-start','snapshot','crash-download','crash-activate','crash-commit','store-fail','verify-store-fail','resume-io','resume-stale','held-deactivate','pinned-selection','pinned-version','pinned-flags','pinned-commit-version'):
                     while select.select([peer],[],[],0)[0]:peer.recv(2048)
                     nodes[7]=Node(7,'5445535400000007',0x107,False)
                     nodes[9]=Node(9,'5445535400000009',0x203,True)
@@ -1252,6 +1252,30 @@ static int recovery_run(const char *path,const char *command) {
                         until(lambda s:s['onus'][7]['phase']=='upgrade-wait')
                         assert status()['onus'][7]['upgrade_verified'] and nodes[7].upgrade_data==nodes[7].upgrade_expected
                         assert datapath(9)==healthy and 'fttr-u7' not in ports()
+                        if mode.startswith('pinned-'):
+                            receipt=upgrade_store/(nodes[7].serial.hex()+'.upgrade');saved=receipt.read_bytes()
+                            assert saved[26]==1 and not saved[42]
+                            stop();process=launch()
+                            until(lambda s:s['onus'][7]['phase']=='upgrade-wait' and s['onus'][9]['phase']=='configured')
+                            before_ops=len(nodes[7].operations)
+                            nodes[7].upgrade_images[0]=(0,0,1) # Original selector would choose0.
+                            if mode=='pinned-version':nodes[7].upgrade_version=b'OTHER-VERSION!'
+                            if mode=='pinned-flags':nodes[7].upgrade_images[1]=(0,1,1)
+                            if mode in ('pinned-version','pinned-flags'):
+                                finish(command('activate'),errno.ESTALE)
+                                assert not any(op==0x56 for _,op,_,_ in nodes[7].operations[before_ops:])
+                                assert receipt.read_bytes()==saved
+                            else:
+                                finish(command('activate'));finish(command('check'))
+                                assert [(op,i) for _,op,c,i in nodes[7].operations[before_ops:] if op==0x56]==[(0x56,1)]
+                                before_ops=len(nodes[7].operations);saved=receipt.read_bytes()
+                                nodes[7].upgrade_images[0]=(0,0,1) # Both valid/uncommitted, still pin1.
+                                if mode=='pinned-commit-version':nodes[7].upgrade_version=b'OTHER-VERSION!'
+                                finish(command('commit'),errno.ESTALE if mode=='pinned-commit-version' else 0)
+                                writes=[(op,i) for _,op,c,i in nodes[7].operations[before_ops:] if op==0x57]
+                                assert writes==([] if mode=='pinned-commit-version' else [(0x57,1)])
+                                if mode=='pinned-commit-version':assert receipt.read_bytes()==saved
+                            assert 'fttr-u7' not in ports()
                         if mode in ('resume-io','resume-stale','held-deactivate'):
                             receipt=upgrade_store/(nodes[7].serial.hex()+'.upgrade');saved=receipt.read_bytes()
                             def admin(action):

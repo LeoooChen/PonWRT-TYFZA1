@@ -92,6 +92,17 @@ int fttr_upgrade_start(struct fttr_upgrade_job *job, uint16_t onu, uint16_t *cou
 	return 0;
 }
 
+int fttr_upgrade_pin(struct fttr_upgrade_job *job, uint16_t image, const uint8_t version[14])
+{
+	if (job->stage != FTTR_UPGRADE_SELECT0 || job->waiting || job->me.attempts ||
+	    job->action == FTTR_UPGRADE_DOWNLOAD || job->checking || image > 1 || !version)
+		return -EINVAL;
+	job->image = image;
+	memcpy(job->expected_version, version, 14);
+	job->pinned = true;
+	return 0;
+}
+
 int fttr_upgrade_check(struct fttr_upgrade_job *job, uint16_t onu, uint16_t *counter,
 		       enum fttr_upgrade_action action, uint16_t image, const uint8_t version[14])
 {
@@ -138,11 +149,14 @@ static int selected(struct fttr_upgrade_job *job, uint16_t *counter)
 	}
 	for (i = 0; i < 2; i++) {
 		const uint8_t *a = job->attributes[i];
+		if (job->pinned && i != job->image) continue;
 		bool eligible = job->action == FTTR_UPGRADE_DOWNLOAD ? !a[14] && !a[15] :
 			job->action == FTTR_UPGRADE_ACTIVATE ? a[16] && !a[15] : a[16] && !a[14];
 		if (eligible) break;
 	}
-	if (i == 2) return fail(job, -ENOENT);
+	if (i == 2) return fail(job, job->pinned ? -ESTALE : -ENOENT);
+	if (job->pinned && memcmp(job->attributes[i], job->expected_version, 14))
+		return fail(job, -ESTALE);
 	job->image = i;
 	job->stage = job->action == FTTR_UPGRADE_DOWNLOAD ? FTTR_UPGRADE_START :
 		job->action == FTTR_UPGRADE_ACTIVATE ? FTTR_UPGRADE_ACTIVATING : FTTR_UPGRADE_COMMITTING;
@@ -209,7 +223,7 @@ int fttr_upgrade_reply(struct fttr_upgrade_job *job, uint16_t *counter,
 		return 1;
 	case FTTR_UPGRADE_VERIFY:
 		if (job->me.reply[25] > 1 || job->me.reply[26] > 1 || job->me.reply[27] != 1 ||
-		    (job->checking && memcmp(job->me.reply + 11, job->expected_version, 14)) ||
+		    ((job->checking || job->pinned) && memcmp(job->me.reply + 11, job->expected_version, 14)) ||
 		    (job->action == FTTR_UPGRADE_COMMIT ? job->me.reply[25] != 1 :
 		     job->action == FTTR_UPGRADE_ACTIVATE ? job->me.reply[26] != 1 :
 		     job->me.reply[25] || job->me.reply[26]))

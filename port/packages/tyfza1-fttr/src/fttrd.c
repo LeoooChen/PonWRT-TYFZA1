@@ -2958,6 +2958,8 @@ static int upgrade_request(struct controller *c, const struct fttr_admin_request
 			u->upgrade_record.image, u->upgrade_record.version) :
 		fttr_upgrade_start(&u->upgrade, request->id, &c->transaction,
 			request->action - FTTR_ADMIN_DOWNLOAD, data, size);
+	if (!ret && u->upgrade_held && (request->action == FTTR_ADMIN_ACTIVATE || request->action == FTTR_ADMIN_COMMIT))
+		ret = fttr_upgrade_pin(&u->upgrade, u->upgrade_record.image, u->upgrade_record.version);
 	if (ret) { free(data); *fatal = ret; return ret; }
 	u->phase = ONU_UPGRADE;
 	c->upgrade.active = true;

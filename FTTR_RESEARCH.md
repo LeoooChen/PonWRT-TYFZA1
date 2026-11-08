@@ -230,6 +230,8 @@
 
 106. 修复CPU DMA/AFT复位失败仍提前归还组播引用：现在读回确认VP/引擎关闭、两复位位置位及清除后才释放payload引用；失败start返回EIO，dma_state记录错误/归属，完成轮询与新提交停止，后续start/stop重试。最终free再次失败则保留coherent内存和引用并报错，不把硬件可能访问的地址归还分配器。旧生产代码已复现；842生命周期用例含六写故障/失败free/重试，六start故障、原厂复位写序、Wi-Fi7200/原厂300描述符、PON/DEEPQ/收发/组播回归、Image/模块及两份输入一致性通过。PE不变、未实机；正常最后两预取描述符仍保留，完整上游/下游屏障及ID复用仍未完成。详见[DMA失败归属](port/FTTR.md#dma-reset-failures-retain-payload-ownership)。
 
+107. 将升级activate/commit固定到已确认持久记录的镜像槽和14字节版本：仍按原厂class7读两槽，但另一槽先满足条件不会改选；目标标志/版本漂移在写前失败且保留原记录，commit后再核对版本。旧选择代码已复现失败，94状态机/原厂报文场景、三后端各23组实际守护进程/CLI、记录/管理回归及双架构编译通过。原厂check_ver_exist实际执行证实为空操作恒成功，附近文件读取不验证机型/签名；profile保存调用仍未给出通用落盘格式，未编造导入器。内核/PE不变、未实机；镜像兼容/签名、原厂保存策略及完整硬件退场/ID复用等仍待补。详见[升级目标绑定](port/FTTR.md#upgrade-activation-and-commit-retain-the-recorded-image-identity)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

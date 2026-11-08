@@ -11,6 +11,7 @@ from trace_stock_fttr_upgrade import Upgrade
 
 ROOT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser(description=__doc__);p.add_argument('--relay',type=Path,required=True);p.add_argument('--fpga-relay',type=Path,required=True)
+p.add_argument('--source',type=Path,help='alternate production upgrade source for regression reproduction')
 a=p.parse_args()
 shim=r'''
 #include <errno.h>
@@ -36,6 +37,7 @@ int fttr_miniolt_same(int fd,unsigned int id,const struct fttr_onu_state *identi
 int begin(int action,const void *data,size_t size){sends=0;send_error=0;return fttr_upgrade_start(&job,7,&counter,action,data,size);}
 int check(int action,int image,const unsigned char *version){sends=0;send_error=0;
  return fttr_upgrade_check(&job,7,&counter,action,image,version);}
+int pin(int image,const unsigned char *version){return fttr_upgrade_pin(&job,image,version);}
 int transmit(long now){return fttr_upgrade_send(&job,&counter,-1,0,now);}
 int reply(const unsigned char *body,int size,long now){struct fttr_omci_message m={.onu=7,.body=body,.length=size};return fttr_upgrade_reply(&job,&counter,&m,now);}
 int tick(long now){return fttr_upgrade_tick(&job,&counter,now);}
@@ -53,7 +55,7 @@ int error(void){return job.error;}
 with tempfile.TemporaryDirectory() as d:
     d=Path(d);(d/'shim.c').write_text(shim)
     src=ROOT/'port/packages/tyfza1-fttr/src'
-    subprocess.run(['cc','-shared','-fPIC','-O2','-std=c11','-Wall','-Wextra','-Werror','-ffunction-sections','-Wl,--gc-sections','-I'+str(src),str(d/'shim.c'),str(src/'omci-upgrade.c'),str(src/'omci-me.c'),str(src/'omci-wire.c'),'-o',str(d/'native.so')],check=True)
+    subprocess.run(['cc','-shared','-fPIC','-O2','-std=c11','-Wall','-Wextra','-Werror','-ffunction-sections','-Wl,--gc-sections','-I'+str(src),str(d/'shim.c'),str(a.source or src/'omci-upgrade.c'),str(src/'omci-me.c'),str(src/'omci-wire.c'),'-o',str(d/'native.so')],check=True)
     lib=C.CDLL(str(d/'native.so'));lib.frame.restype=C.c_void_p
     lib.begin.argtypes=[C.c_int,C.c_void_p,C.c_size_t]
     def frame():return C.string_at(lib.frame(),44)
@@ -112,6 +114,37 @@ with tempfile.TemporaryDirectory() as d:
             assert lib.count()==1
             assert not lib.accepted() and lib.verified()==(not changed)
             checks+=1
+    # A confirmed prior download binds subsequent operations to its image,
+    # even when the original first-eligible selector would prefer slot0.
+    for action in (1,2):
+        for target in (0,1):
+            for drift in ('none','version','invalid','ineligible','post-commit'):
+                if drift=='post-commit' and action!=2:continue
+                assert lib.begin(action,None,0)==0
+                assert lib.pin(target,b'VERSION0000001')==0
+                for slot in (0,1):
+                    assert lib.transmit(0)==0
+                    flags=(0,0,1) if action==1 else (0,1,1)
+                    if slot==target and drift=='invalid':flags=(0,0,0)
+                    if slot==target and drift=='ineligible':flags=(0,1,1) if action==1 else (1,1,1)
+                    version=b'OTHER-VERSION!' if slot==target and drift=='version' else b'VERSION0000001'
+                    ret=response(payload=b'\xf0\0'+version+bytes(flags))
+                if drift in ('version','invalid','ineligible'):
+                    assert ret==-errno.ESTALE and lib.count()==2 and not lib.accepted()
+                else:
+                    assert ret==1 and lib.transmit(0)==0
+                    assert frame()[2]==(0x56 if action==1 else 0x57) and frame()[7]==target
+                    assert response()==1 and lib.accepted()
+                    if action==2:
+                        lib.transmit(0)
+                        version=b'OTHER-VERSION!' if drift=='post-commit' else b'VERSION0000001'
+                        ret=response(payload=b'\xf0\0'+version+b'\1\1\1')
+                        assert ret==(-errno.EUCLEAN if drift=='post-commit' else 1)
+                        assert lib.verified()==(drift!='post-commit')
+                checks+=1
+    assert lib.begin(0,b'x',1)==0 and lib.pin(1,b'VERSION0000001')==-errno.EINVAL
+    assert lib.begin(1,None,0)==0 and lib.pin(2,b'VERSION0000001')==-errno.EINVAL
+    lib.transmit(0);assert lib.pin(1,b'VERSION0000001')==-errno.EINVAL
     data=b'x'*100
     # Rejected window retransmits the complete same offset, at most twice.
     assert select(0,data)==1;lib.transmit(0);response(payload=b'\x01')

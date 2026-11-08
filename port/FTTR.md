@@ -7438,6 +7438,40 @@ last two prefetched descriptors are still retained during normal completion;
 RPTR equality and TXQ-empty are not used to release them. Full upstream MCE/NI/AFT
 producer fencing, P6 ES/MiniOLT drain and safe hardware-ID reuse remain open.
 
+### Upgrade activation and commit retain the recorded image identity
+
+After a confirmed download, the resident controller now pins activate/commit to
+the persisted Software Image instance and14-byte version. It still reads both
+remote class7 records using the original attribute map, but cannot silently pick
+another first-eligible slot. Missing eligibility, invalid flags or version drift
+fail before the mutation and leave the prior durable record unchanged. Commit
+readback also compares the pinned version, so an unrelated valid/committed image
+cannot be reported as verified. A standalone action without a prior record keeps
+the original first-eligible selection contract. Download selection and the
+independent read-only `check` behavior remain as previously implemented.
+
+The target relay's exported `plr_gponrm_swimg_dld_check_ver_exist` was executed
+on both backend libraries with empty, missing and non-image names: it returns1
+without inspecting any input. The nearby file reader loads bytes; it does not
+establish a header/model/signature check. This narrows the evidence boundary but
+does not implement image compatibility verification. Similarly, the examined
+profile save calls still establish in-memory storage, not a known saved-service
+file format; no speculative factory-import converter was added.
+
+The production upgrade state machine now passes94 factory-wire, timeout, retry,
+selection and verification scenarios, including both slots, another earlier
+eligible image, version/flag drift, post-commit version change and invalid pin
+requests. The old selection/verification source fails these pin-contract tests.
+Actual daemon/CLI tests pass23 scenarios on each of ASIC/FPGA1/FPGA2, with download,
+controller restart, competing eligible slot, failed activation/commit preflight,
+unchanged durable receipts, existing crash recovery and administrative interactions.
+Original target producer/window/encoder/image-selection comparisons, durable-record
+and admin tests, host and aarch64-musl daemon builds pass. Local evidence is
+`artifacts/fttr/upgrade-pin-*-20261109.*` and
+`upgrade-pinned-original-20261109.json`. No device was accessed and no kernel/PE
+code changed. Matching an ONU-reported version is not a firmware signature,
+model-compatibility or physical boot verification; those remain open.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

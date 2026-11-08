@@ -96,6 +96,17 @@ class Upgrade:
         ret=o.call('plr_gponrm_cfg_swimg_dld_'+action,p,p+0x100)
         return ret,self.selection
 
+    def version_probe(self):
+        # The exported "check version exists" function is a constant-success
+        # stub in these retained relays; it does not validate file contents.
+        cases=[]
+        for value in (b'',b'missing.bin',b'wrong-model.bin',b'not-an-image'):
+            self.oracle.uc.mem_write(self.base+0x1600,value+b'\0')
+            result=self.oracle.call('plr_gponrm_swimg_dld_check_ver_exist',self.base+0x1600)
+            assert result==1
+            cases.append(dict(input=value.decode(),result=result))
+        return cases
+
     def inventory(self,attributes):
         self.image_attributes=attributes;self.read_instances=[]
         o=self.oracle;p=self.base
@@ -168,7 +179,7 @@ def main():
         p0=stock.base+0x1000;stock.oracle.uc.mem_write(p0,b'123456789')
         crc=stock.oracle.call('plr_gponrm_ver_crc32_get',p0,9)
         assert crc==0xfc891918,hex(crc)
-        reports.append(dict(file=binary.name,sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),cases=cases,crc=crc,selection_cases=selection_cases,inventories=inventories))
+        reports.append(dict(file=binary.name,sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),cases=cases,crc=crc,selection_cases=selection_cases,inventories=inventories,version_probe=stock.version_probe()))
     args.output.write_text(json.dumps(dict(reports=reports,scope='Executed factory image producers/window/encoder/retry code. Memory, async dispatch and transport are modeled; no flash write or physical activation.'),indent=2)+'\n')
     print('Factory upgrade: both backends, 40 wire/window cases, 384 image selections, 16 version/flag inventories, 12 window-failure/retry cases, 8 end-retry boundaries and image CRC passed')
 
