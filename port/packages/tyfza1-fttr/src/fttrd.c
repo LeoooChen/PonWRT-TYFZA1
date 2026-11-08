@@ -79,7 +79,7 @@ struct onu {
 	struct fttr_mib_model model;
 	struct fttr_services services;
 	struct fttr_service_recovery recovery;
-	bool service_recovering, service_recorded, service_marked, service_releasing;
+	bool service_recovering, service_recorded, service_marked, service_releasing, service_rebuild;
 	const struct service_policy *selected[FTTR_SERVICES];
 	struct fttr_auth_job auth;
 	struct fttr_onu_selection selection;
@@ -185,6 +185,7 @@ static int reboot_finish(struct controller *c, int result);
 static int policy_move(struct controller *c, unsigned int id);
 static int auth_drive(struct controller *c, unsigned int id);
 static int service_drive(struct controller *c, unsigned int id);
+static int service_rebuild(struct controller *c, unsigned int id);
 
 static bool authenticated(const struct controller *c, const struct onu *u)
 {
@@ -858,6 +859,7 @@ static int start_wifi(struct controller *c, unsigned int id)
 		struct fttr_services saved;
 		int ret = fttr_service_store_load(c->service_store, &c->link, id, u->identity, c->backend, &saved);
 		if (ret == 1 || ret == 2) {
+			u->service_rebuild = ret == 2;
 			u->services = saved;
 			/* Struct copies move inline object arrays: rebind their owners. */
 			for (unsigned int n = 0; n < saved.count; n++) {
@@ -989,6 +991,7 @@ static int service_drive(struct controller *c, unsigned int id)
 				}
 			} else if (action == 2) {
 				if (u->service_releasing) {
+					if (u->service_rebuild) return service_rebuild(c, id);
 					/* The interrupted move's target was not journaled. Keep
 					 * service closed until explicit administration resumes it. */
 					u->phase = ONU_SERVICE_RELEASED;
@@ -1335,7 +1338,7 @@ static int cancel_state(struct controller *c, unsigned int id, bool accel_paused
 			if (ret) return ret;
 		}
 		fttr_service_recovery_clear(&u->recovery);
-		u->service_recovering = u->service_recorded = u->service_marked = u->service_releasing = false;
+		u->service_recovering = u->service_recorded = u->service_marked = u->service_releasing = u->service_rebuild = false;
 		fttr_services_clear(&u->services);
 		u->service_started = false;
 	}
@@ -1487,6 +1490,28 @@ static int start_mib(struct controller *c, unsigned int id)
 	}
 	fttr_mib_job_start(&u->job, id, &c->transaction);
 	return fttr_mib_job_send(&u->job, c->socket, &c->link, now_ms());
+}
+
+static int service_rebuild(struct controller *c, unsigned int id)
+{
+	struct onu *u = &c->onu[id];
+	struct fttr_onu_state expected = u->hardware;
+	int ret;
+
+	if (u->services.stage != FTTR_SERVICES_RELEASED || !u->service_rebuild)
+		return -EINVAL;
+	memcpy(expected.serial, u->identity, 8);
+	/* Keep the initial-write journal until remote rollback, local FE/VLAN/
+	 * DBA/management withdrawal and the final registration check finish.
+	 * A crash before removal retries cleanup; after removal it starts fresh. */
+	ret = cancel(c, id, false);
+	if (!ret) ret = fttr_miniolt_same(c->directory, id, &expected);
+	if (ret) return ret;
+	if (stopping) return -EINTR;
+	ret = fttr_service_store_remove(c->service_store, expected.serial);
+	if (ret) return ret;
+	u->phase = ONU_ABSENT;
+	return start_mib(c, id);
 }
 
 static int auth_failed(struct controller *c, unsigned int id, int error)

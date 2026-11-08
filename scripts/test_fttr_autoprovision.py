@@ -165,6 +165,8 @@ def main():
             self.auth_malformed = False
             self.move_hold = self.move_drop = self.move_reject = self.move_false = False
             self.mib_hold = False
+            self.rebuild_hold = self.rebuild_uploads = 0
+            self.fail_rebuild_auth = False
             self.release_cut = self.release_writes = 0
             self.apply_before = False
             self.auth_ctc_fail = self.auth_onug_fail = 0
@@ -308,6 +310,8 @@ def main():
                     content=b''
                 else:
                     value=self.pool[c,id][mask]
+                    if self.fail_rebuild_auth and not (service_store/(self.serial.hex()+'.service')).exists() and mask in (0x4000,0x40):
+                        value=b'wrong-after-cleanup'.ljust(len(value),b'\0')[:len(value)]
                     if mask==0x1000 and self.auth_bad_result:value=b'\0'
                     content=struct.pack('>H',mask)+value
                 wire=stock.frame(tci,(op&31)|32,bytes([status])+content,onu=self.id,class_id=c,instance=id)[16:]
@@ -376,7 +380,9 @@ def main():
             if self.release_cut and not self.apply_before and op in (0x44,0x46,0x48) and c not in (65530,256):
                 self.release_writes+=1
                 if self.release_writes>=self.release_cut:self.held=wire;return None
-            if op==0x4d and self.mib_hold:self.held=wire;return None
+            if op==0x4d:
+                self.rebuild_uploads+=1
+                if self.mib_hold or (self.rebuild_hold and self.rebuild_uploads==self.rebuild_hold):self.held=wire;return None
             if op==0x46 and self.move_drop:return None
             if op==0x46 and self.move_hold:self.held=wire;return None
             if self.wifi_timeout and c in (0xff69,0xff6a) and op==0x48:
@@ -813,24 +819,37 @@ static int recovery_run(const char *path,const char *command) {
                         intent=record.read_bytes();assert intent[26]==3
                         process.kill();process.wait();nodes[7].release_cut=0
                         if not before and cut in (1,writes):initial_ledgers[cut]=(intent,copy.deepcopy((nodes[7].pool,nodes[7].table)))
+                        nodes[7].rebuild_hold=2;nodes[7].rebuild_uploads=0;nodes[7].held=None
                         process=launch(with_policy=cut!=writes,warm_move=cut in (1,writes))
-                        until(lambda s:len(s.get('onus',[]))>7 and s['onus'][7]['phase']=='service-released',seconds=25)
-                        assert 'fttr-u7' not in ports() and record.read_bytes()==intent
+                        until(lambda s:nodes[7].held is not None,seconds=25)
+                        assert nodes[7].rebuild_uploads==2 and 'fttr-u7' not in ports() and not record.exists()
                         assert {k:v for k,v in nodes[7].pool.items() if k[0] not in (65530,256)}=={k:v for k,v in saved_original[7][0].items() if k[0] not in (65530,256)},cut
                         assert nodes[7].table==saved_original[7][1],cut
+                        nodes[7].rebuild_hold=0
+                        peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+nodes[7].held)
+                        if cut!=writes:
+                            until(lambda s:s['onus'][7]['datapath_configured'],seconds=25)
+                            assert record.read_bytes()[26]==1
+                        else:
+                            until(lambda s:s['onus'][7]['phase']=='inventory',seconds=25)
+                            assert not record.exists() and 'fttr-u7' not in ports()
                         stop()
                         count=len(mutation(nodes[7]));process=launch(with_policy=False)
-                        until(lambda s:s['onus'][7]['phase']=='service-released',seconds=25)
+                        until(lambda s:s['onus'][7]['phase']=='inventory',seconds=25)
                         assert len(mutation(nodes[7]))==count
                         stop()
-                    checks.append(f'all {writes} initial Create/Set before-and-after-write crash points restore prior objects/tables; repeated recovery is read-only and policy removal does not lose cleanup')
+                    checks.append(f'all {writes} initial Create/Set before-and-after-write crash points roll back, reauthenticate/reinventory and automatically reprovision; removed policy stays inventory-only')
                     # Saved snapshot comes from an applied final write, not
                     # the before-send pass, so all earlier owners are verified.
                     intent,partial=initial_ledgers[writes]
                     record=service_store/(nodes[7].serial.hex()+'.service')
-                    for mode in ('foreign','cancel-cleanup','resume'):
+                    for mode in ('foreign','cancel-cleanup','rebuild','second-auth','changed-policy','second-crash'):
                         nodes[7].pool,nodes[7].table=copy.deepcopy(partial)
                         nodes[7].release_cut=nodes[7].release_writes=0;nodes[7].apply_before=False;nodes[7].held=None
+                        nodes[7].rebuild_hold=0;nodes[7].rebuild_uploads=0;nodes[7].fail_rebuild_auth=mode=='second-auth'
+                        old_policy=policy.read_text()
+                        if mode=='changed-policy':policy.write_text(old_policy.replace('50 100 200','51 100 200'))
+                        if mode=='second-crash':nodes[7].rebuild_hold=2
                         record.write_bytes(intent);record.chmod(0o600)
                         if mode=='foreign':
                             key=next(k for k in nodes[7].pool if k[0]==171)
@@ -848,20 +867,21 @@ static int recovery_run(const char *path,const char *command) {
                             until(lambda s:nodes[7].held is not None,seconds=25)
                             process.kill();process.wait();nodes[7].release_cut=0
                             process=launch()
-                        until(lambda s:s['onus'][7]['phase']=='service-released',seconds=25)
-                        assert record.read_bytes()==intent and 'fttr-u7' not in ports()
-                        if mode=='resume':
-                            client=subprocess.Popen([str(args.move_control.resolve()),str(store),'onu-admin','7',nodes[7].serial.hex(),'resume'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
-                            try:
-                                until(lambda s:client.poll() is not None)
-                                out,err=client.communicate(timeout=1);assert client.returncode==0,(out,err)
-                            finally:
-                                if client.poll() is None:client.kill();client.wait()
-                            assert not record.exists()
-                            if args.backend!='asic9690':hardware()
+                        if mode=='second-auth':
+                            until(lambda s:s['onus'][7]['phase']=='auth-failed',seconds=25)
+                            assert not record.exists() and 'fttr-u7' not in ports()
+                        else:
+                            if mode=='second-crash':
+                                until(lambda s:nodes[7].held is not None,seconds=25)
+                                assert not record.exists() and 'fttr-u7' not in ports()
+                                process.kill();process.wait();nodes[7].rebuild_hold=0
+                                process=launch()
                             until(lambda s:s['onus'][7]['datapath_configured'],seconds=25)
                             assert record.read_bytes()[26]==1
-                        stop();checks.append('initial-write recovery '+mode)
+                            if mode=='changed-policy':
+                                recipes=[r for r in journal(7) if r['event']=='service_recipe']
+                                assert all(r['bandwidth'][0]==51 for r in recipes)
+                        stop();policy.write_text(old_policy);checks.append('automatic initial-write recovery '+mode)
 
                 finally:
                     if process is not None and process.poll() is None:process.kill();process.wait()
@@ -1102,11 +1122,10 @@ static int recovery_run(const char *path,const char *command) {
                 assert record.read_bytes()[26]==3
                 process.kill();process.wait();nodes[7].hold=False
                 count=len(mutation(nodes[7]));process=launch()
-                until(lambda s:s['onus'][7]['phase']=='service-released')
-                assert len(mutation(nodes[7]))==count+1 and 'fttr-u7' not in ports() and record.read_bytes()[26]==3
-                assert nodes[7].pool[262,nodes[7].tcont][0x8000]==b'\0\xff'
+                until(lambda s:s['onus'][7]['datapath_configured'],seconds=25)
+                assert len(mutation(nodes[7]))>count+1 and record.read_bytes()[26]==1
                 stop()
-                checks.append('initial Set crash restores the journaled prior attribute and holds service closed instead of adopting uncertain work')
+                checks.append('initial Set crash restores its prior attribute before fresh authentication and automatic reprovisioning')
                 # Cannot durably mark intent: no remote service mutation.
                 for p in service_store.iterdir():p.unlink()
                 nodes[7]=Node(7,'5445535400000007',0x107,False);nodes[9]=Node(9,'5445535400000009',0x203,True)

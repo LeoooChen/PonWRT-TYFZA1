@@ -7288,11 +7288,10 @@ cleanup. It restores the recorded attempted writes instead of adopting uncertain
 configuration as a working service. Objects that were never created are accepted
 only through unknown-instance readback; partially applied VLAN rows use the
 already implemented whole-table subset check. A no-write VLAN release now advances
-the service state machine synchronously. After cleanup the original state3 record
-remains, business traffic stays closed, and another restart only checks the
-already restored state. Explicit resume removes the hold after the existing
-withdrawal and locked driver identity confirmation, then starts fresh provisioning.
-An initial-apply record cannot authorize an unrelated migration.
+the service state machine synchronously. After cleanup the state3 record now
+retires only after local withdrawal and a same-identity check, then automatic
+rebuilding starts fresh authentication and inventory as described below. An
+initial-apply record cannot authorize an unrelated migration.
 
 Full procd-style startup checks private service record headers before its normal
 MiniOLT reset. Any interrupted record selects retained-controller recovery with
@@ -7318,8 +7317,52 @@ are local `artifacts/fttr/apply-recovery-*-20261109.*` and
 No kernel or PE code changed and no device was accessed. Recovery uses original
 object/VLAN/GEM operations integrated with native FE/DBA withdrawal; it does not
 prove physical flash power-loss behavior, packet retirement or hardware-ID reuse.
-Automatic continuation of interrupted provisioning to a new active service is not
-implemented: checked rollback and explicit resume are the supported recovery.
+Automatic return to active service now follows checked rollback, fresh authentication
+and inventory as described below; it never resumes an unverified partial stage.
+
+### Automatic rebuilding after initial provisioning rollback
+
+The resident controller distinguishes state3 initial-write checkpoints from state2
+explicit release records. Only the former requests automatic rebuilding after its
+checked cleanup succeeds. It completes local FE/VLAN/DBA/management withdrawal,
+rechecks the same registered serial, removes and synchronizes the old checkpoint,
+and starts fresh authentication and MIB inventory. The normal policy selection,
+remote preflight, all-service completion, MIB sync and FE/netdev admission then
+run again. A removed service policy leaves inventory only; a changed policy is
+selected from the new configuration. Explicit releases remain closed and migration
+records retain their separate target-driven recovery.
+
+A crash before record removal retries checked cleanup; a crash after removal
+starts ordinary discovery/provisioning. Cleanup, identity or persistence failures
+prevent new provisioning, and stop requests keep the checkpoint until withdrawal
+is complete. A failure in the second authentication never opens business traffic.
+No automatic loop retries a newly failed provisioning within this process: it
+retains the existing failure state and checkpoint for the established recovery
+path. This is a fresh transaction after proven rollback, not adoption of an
+uncertain earlier write.
+
+Actual factory executable replay confirms that the ASIC default service producer
+calls cfgonu_get/onu_del/onu_add after each failed service step; FPGA1 instead
+returns on its first error. Both preserve the initiating error. The native durable
+restart mechanism is our integration with the original service transactions, not
+a claim that the factory FPGA implementation already provided it. Evidence:
+`artifacts/fttr/apply-rebuild-original-20261109.json` (eight original failure cases).
+
+The real daemon/CLI namespace suite covers all246 before/after initial-write crash
+placements across the ASIC seven-service set and FPGA1/FPGA2 services. It holds the
+second MIB upload to verify complete rollback, closed ports and removed old intent,
+then releases it and verifies automatic reprovisioning. Policy removal, foreign
+attribute drift and a second cleanup interruption also pass. Additional FPGA1/2
+cases cover second-authentication refusal, changed bandwidth policy and a second
+process crash after cleanup. Actual rebuild-function ASan/UBSan checks inject
+teardown, identity, unlink/fsync boundary and restart failures, plus cancellation
+and refusal to rebuild an explicit release. Migration/explicit-release/19 upgrade,
+record and admin regressions and host/aarch64-musl builds pass. Reports are local
+`artifacts/fttr/apply-rebuild-*-20261109.*`.
+
+No kernel or PE code changed; no device was accessed. Unknown old state0 records,
+full hardware power-loss recovery, saved factory policy import, remaining radio
+capabilities and complete packet retirement/hardware-ID reuse remain unfinished.
 
 ### Outstanding implementation and acceptance
 
@@ -7356,7 +7399,7 @@ implemented: checked rollback and explicit resume are the supported recovery.
    provisioning from explicit policies and asynchronous per-ONU dispatch are
    implemented, with runtime journals and observed disconnect/replacement
    handling. MIB sync monitoring now also detects/reconciles same-serial MIB
-   loss without an observed registration transition. Durable committed ownership, interrupted release and initial-write checked rollback are implemented as described above; automatic initial continuation, legacy-record recovery and saved policy import remain work. The original
+   loss without an observed registration transition. Durable committed ownership, interrupted release and initial-write checked rollback are implemented as described above; legacy-record recovery and saved policy import remain work; state3 cleanup now rebuilds automatically after fresh authentication. The original
    ASIC/FPGA2 default recipe and card limits now generate shared multi-service
    collections as described above; broader factory
    capability/UNI policy combinations remain work. Explicit bridge attachment through native per-GEM
