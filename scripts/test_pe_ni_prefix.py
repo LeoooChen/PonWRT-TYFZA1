@@ -44,18 +44,38 @@ for lengths in ([54, 1500, 64, 1514, 66], [1000, 1001, 999, 1002], [1500], [64])
                           policy=10896 if len(lengths) > 1 else 0))
 
 memory = []
-for lengths, expected in (([1514] * 7, (67, 84)), ([64], (15, 71)), ([64] * 7, (88, 72))):
-    counts = {'read': 0, 'write': 0}
+for lengths in ([1514] * 7, [64], [64] * 7):
+    variants = []
+    for prepared in (False, True):
+        counts = {'read': 0, 'write': 0}
 
-    def observe(machine):
-        def record(uc, access, address, size, value, operation):
-            counts[operation] += 1
-        machine.hook_add(UC_HOOK_MEM_READ, record, begin=PAYLOAD, end=PAYLOAD + 0xffff,
-                         user_data='read')
-        machine.hook_add(UC_HOOK_MEM_WRITE, record, begin=PAYLOAD, end=PAYLOAD + 0xffff,
-                         user_data='write')
+        def observe(machine):
+            def record(uc, access, address, size, value, operation):
+                counts[operation] += 1
+            machine.hook_add(UC_HOOK_MEM_READ, record, begin=PAYLOAD, end=PAYLOAD + 0xffff,
+                             user_data='read')
+            machine.hook_add(UC_HOOK_MEM_WRITE, record, begin=PAYLOAD, end=PAYLOAD + 0xffff,
+                             user_data='write')
 
-    case(lengths, 10896, True, observe=observe, policy=10896 if len(lengths) > 1 else 0)
-    assert (counts['read'], counts['write']) == expected, counts
-    memory.append({'lengths': lengths, **counts})
-print(json.dumps({'ingress': rows, 'mixed': mixed, 'payload_memory_operations': memory}, indent=2))
+        # Compare the same linked FTTR image with queued prefixes present or
+        # absent. Main's absolute counts omit FTTR ownership/generation checks.
+        case(lengths, 10896, observe=observe, prepare_prefix=prepared,
+             policy=10896 if len(lengths) > 1 else 0)
+        variants.append(counts)
+    if lengths[0] > 1000:
+        assert variants[1]['read'] < variants[0]['read'], variants
+        assert variants[1]['write'] < variants[0]['write'], variants
+    else:
+        assert variants[0] == variants[1], variants
+    memory.append({'lengths': lengths, 'unprepared': variants[0], 'prepared': variants[1]})
+
+multicast = []
+for header in (8, 16):
+    for source in (0, 6):
+        for client, preserve in ((False, False), (True, False), (True, True)):
+            for lengths in ([1000, 1001, 64, 1514], [1500]):
+                multicast.append(case(lengths, 10896, True, ni_header=header,
+                    client=client, multicast=True, preserve_group=preserve, source=source,
+                    policy=10896 if len(lengths) > 1 else 0))
+print(json.dumps({'ingress': rows, 'mixed': mixed, 'multicast': multicast,
+                  'payload_memory_operations': memory}, indent=2))

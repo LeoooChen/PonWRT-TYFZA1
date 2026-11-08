@@ -391,8 +391,11 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				mailbox[47] = id + 1; mailbox[63]++;
 			} else {
 				u32 metadata = waiting[1], length = metadata & 65535;
-#pragma clang loop unroll(disable)
-				for (u32 i = 0; i < 8; i++) request[i] = peer[i];
+				/* Owner and channel are selected locally. Copy only live template
+				 * fields; fixed assignments expose their reuse to the compiler. */
+				request[2] = peer[2]; request[3] = peer[3];
+				request[4] = peer[4]; request[5] = peer[5];
+				request[6] = peer[6]; request[7] = peer[7];
 				request[0] = 256 + id; request[1] = bcmc?5:channels[tid];
     request[RTL_KEY_PN_REQUEST]=key_generation;
 				request[RTL_SEQ_REQUEST] = ((request[2] >> 16) & 63) == 24 ? waiting[7] : 0;

@@ -15,7 +15,7 @@ directory = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'artifacts/pe-rad
 binary = (directory / 'pe-tx.bin').read_bytes()
 
 
-def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False, multicast=False, noack=False, preserve_group=False, preload=True, policy=None):
+def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False, multicast=False, noack=False, preserve_group=False, preload=True, policy=None, source=0, prepare_prefix=True):
     base, mb, pages, headers, payload, ring, bar, ni, reports = (
         0x04000000, 0x04002000, 0x05100000, 0x05400000, 0x06000000,
         0x05000000, 0x12000000, 0x10000000, 0x06200000)
@@ -28,7 +28,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     if multicast:
         assert from_epp
         table=0x08000000;u.mem_map(table,0x7000)
-        u.mem_write(table,struct.pack('<I',7))
+        u.mem_write(table,struct.pack('<II',7,2))
     u.mem_write(0x1fc00000, binary)
     initialize(u, base)
     put = lambda at, value: u.mem_write(at, struct.pack('<I', value))
@@ -39,7 +39,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         dst=bytes.fromhex('01005e010203')
     bssid = bytes.fromhex('020000009999')
     if multicast:
-        u.mem_write(table+16+96*9,struct.pack('<II',7,1)+dst+bytes([1 if noack else 0,1])+bytes(64)+(bssid if client else dst)+bytes(2)+struct.pack('<II',7<<16,(1<<16)|(1<<18)|(1<<23 if client else 0)))
+        u.mem_write(table+16+96*9,struct.pack('<II',7,1|source<<16)+dst+bytes([1 if noack else 0,1])+bytes(64)+(bssid if client else dst)+bytes(2)+struct.pack('<II',7<<16,(1<<16)|(1<<18)|(1<<23 if client else 0)))
         put(mb+210*4,table)
     u.mem_write(mb + 64, ap)
     u.mem_write(base + 0xe408, bssid if client else dst)
@@ -94,16 +94,16 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         u.mem_write(at + 64 + ni_header, frame)
         if from_epp:
             if multicast:u.mem_write(at+64+ni_header,bytes.fromhex('01005e010203'))
-            u.mem_write(at + 64, struct.pack('>II', ((1 << 31) if ni_header == 16 else 0)|(265<<18 if multicast else 0), (length + ni_header - 8) << 15 | (19<<3 if multicast else 0)) + bytes(ni_header - 8))
+            u.mem_write(at + 64, struct.pack('>II', ((1 << 31) if ni_header == 16 else 0)|(265<<18 if multicast else 0), (length + ni_header - 8) << 15 | source<<9 | (19<<3 if multicast else 0)) + bytes(ni_header - 8))
             u.mem_write(0x10030000 + n * 8, struct.pack('<II', at | 0x50, (1 << 14 if compact_epp else 0) | (length + 16)))
         else:
             # This fixture bypasses ni_ingest. Prepare the same large-frame
             # prefix and metadata flag; real EPP cases exercise admission.
-            if length > 1000:
+            if prepare_prefix and length > 1000:
                 u.mem_write(at + 64 + ni_header - 8, frame[:12] +
                             struct.pack('>H', length - 6) + bytes.fromhex('aaaa03000000'))
             u.mem_write(at, struct.pack('<4I', at + 2048 if n + 1 < len(lengths) else 0,
-                        length | ni_header << 16 | (1 << 24 if length > 1000 else 0), 0xdeadbeef, 0xa5a5a5a5))
+                        length | ni_header << 16 | (1 << 24 if prepare_prefix and length > 1000 else 0), 0xdeadbeef, 0xa5a5a5a5))
     submits, returns = [], []
     u.hook_add(UC_HOOK_MEM_WRITE, lambda uc, access, at, size, value, data:
                submits.extend(range(submits[-1] + 1 if submits else 1, value + 1)),
@@ -125,6 +125,11 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     assert get(base + 0x1c020) == len(lengths)
     assert get(mb + 30 * 4) == len(submits) and not returns
     assert get(base + 0x18020) == len(lengths)
+    if source == 6:
+        assert get(base + 0x1e808) == len(lengths)
+        for n in range(len(lengths)):
+            assert get(payload + n * 2048 + 20) == 2
+            assert get(payload + n * 2048 + 24) == 0
     member = 0
     all_ids = []
     previous_length = 0
@@ -188,6 +193,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     assert returns == [payload + n * 2048 | 6 for n in range(len(lengths))]
     assert get(mb + 30 * 4) == 0 and get(mb + 29 * 4) == len(lengths)
     assert get(base + 0x18020) == 0
+    if source == 6: assert not get(base + 0x1e808)
     for n, frame in enumerate(frames):
         assert bytes(u.mem_read(payload + n * 2048 + 64 + ni_header + 14, len(frame) - 14)) == frame[14:]
         assert get(base + 0x20000 + n * 8) == 0

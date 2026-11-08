@@ -7576,6 +7576,32 @@ No device was accessed. These tests model alarm storage, timers and transport;
 they do not verify physical alarm assertions, vendor alarm naming or a policy to
 act on alarms. Those policies and full packet-retirement acceptance remain open.
 
+### Main NI prefix and request-template integration
+
+The branch includes main `632c19c`, including large NI frame prefixes and
+copying only live peer-template fields. FTTR cookie admission can rewrite the
+Ethernet destination, so its prepared prefix uses the admitted address after
+that rewrite. BCMC remains on its distinct header path. Prefix metadata is
+masked out of header offsets and lengths; source6 generation, immutable cookie,
+shared sequence and key ownership remain attached through selection/publication.
+
+The combined image exceeded the fixed32KiB IMEM under `-Os`; the production
+build now uses `-Oz` and retains all admission and retirement checks. The linked
+uplink image is31876 bytes, SHA256
+`d23a06d0d2c9ed9da75c294feb9e4b9a1d8e160a89bec11b90d6f18946ed564b`,
+with conservative stack bound7288/8192 bytes. The non-uplink image is13848 bytes.
+This is a capacity fix; instruction-count/throughput equivalence is not claimed.
+
+Actual linked tests cover12 ingress length/header combinations, eight mixed
+gathers and24 multicast/source6/header/AP/STA combinations, exact emitted bytes,
+preserved generations and final EQ return. A same-image comparison verifies
+that prebuilt prefixes reduce payload accesses for large aggregates and leave
+short-frame access counts unchanged; main's absolute counts do not include the
+FTTR ownership checks. All64 TID/order request cases, publication/key PN,
+PS/withdrawal, multicast/BCMC, CPU/EPP gates, source6 drain, STA TX/RX and RXQ
+backpressure regressions pass. Image/modules build and generated/overlay/kernel
+header identity pass. No physical device was accessed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
