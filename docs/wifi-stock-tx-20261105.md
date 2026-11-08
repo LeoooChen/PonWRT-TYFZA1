@@ -180,3 +180,16 @@ scripts/test_pe_ethernet_prefix.py执行旧/新实际MIPS PE，2048组IPv4/IPv6/
 在directNI基础上的A/B/A：旧UDP1.482633G/20.89%loss，优化UDP1.663042G/9.505%loss，恢复旧UDP1.480962G/21.027%loss；发送分别约1.876/1.839/约1.88G，接收能力提升约12%，但远未达到2G低丢。TCP1.249419→1.249174G没有提速，重传0→62，不宣称TCP改善。优化20秒1.6G负载实收1.596633G/0.2131%loss，5903丢与QMno_buffer读数一致；上行实际send1.472765G、recv1.471077G、lost0，受Mac端单核造流限制。全程bootc0eb71c3未变，无新failed/retired。
 
 恢复direct08后完成控制组，NI工具正常停止。源码保留对齐读取改进，当前flash仍b8245ec；后续整包必须包含b19200b独立NI构造和本次读取改进。原厂完整WFO程序仍非本机来源，不把自有PE说成原厂源码。完整目标TCP1.8/UDP2.0双向低丢仍未达到。
+
+
+### 6a864f8完整固件复测与ACK候选边界
+
+完整固件463a8e53acfb74148cf8bc0288c42766179b19f25dc09784ae492071d3020bda已保留配置刷入；模块38ac2252与构建一致，FIT与实际ubi0_6逐字相同，boote76da191-6ec1-4990-9b45-766d006b251e。30秒真实本机造流经FE/PE：TCPdown1.326143G/42retx、up1.354062G/1549retx；UDPdownsend1.921166G/recv1.666140G13.1966%loss、upsend1.436848G/recv1.430056G.2426%loss。目标仍未达。TCPdown42QMno_buffer与42retx相符，PE回收一致、无failed/retired；上传无RXQRDU/PE回收错，但未定位全部重传。
+
+只在既有NI造流工具中启用EQ_BACKPRESSURE（补当前phy0-ap0名称对应EQ6），bfifo16MiB：TCP30s1.334374G0retx、QMno_buffer0、3次sourcepause；UDP30s1.500134G0loss，实际sender1.502311G。该结果是测试源限速抑制突发，不是驱动吞吐提升，也不用于2G验收。工具stop后所有模块和临时Mac路由已清理。无生产改动。
+
+REA进一步取得实际txsc_amsdu_enqueue全调用链，确认默认tcp_ack_drop_dup1、调用pureIPv4ACK分类后先替换最新匹配旧ACK、保留最旧项。隔离artifacts/ack-queue/source适配NI链表：队列2..128且聚合开启/非休眠才合并；保留最旧、排队byte正确更新；旧BID走reserveddiscard直到EQ可回收。原厂不比较ACK序号/选项，候选也未声称更一般TCP语义；分类补必要长度验证。packet flags512组合/选项与实际ELF一致，linked主循环最新/最旧/中间/尾/EQ堵塞重试/恰好一次回收/PS/非ACK及通用gather/publication/PS/owners/RXQ/RPQ/IMEM通过。测试夹具一次包长错误、一次PS超时初值缺失已修正，不当作产品故障。
+
+ACK实机候选20秒上行1.276333G0retx，替换229738ACK、NI发送4007/recycle233745、pending0；之前base1.347062G0retx，恢复控制1.424347G0retx。减少ACK没有提高吞吐，约5–10%回退。未推广到正式源码、未刷入，隔离代码与日志保留；不能因“原厂有此函数”就硬并有回退的局部实现。全原厂ACK排队/计时与当前PE配合仍未完成；下一轮不能重复同一局部策略或宣称ACK缺失为唯一瓶颈。
+
+最终恢复持久6a864f8、phy4-ap0、boote76da191不变。所有NI测试模块/server停止，Mac198.18.255.1hostroute删除，临时ACK ko/加载脚本删除，TTL无持有进程。Macen5继续外部供网，en0测试AP授权。已保留directNI和alignedprefix修正；完整原厂WiFi重写与TCP1.8/UDP2.0双向低丢目标仍active/unmet。
