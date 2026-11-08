@@ -147,7 +147,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 			mailbox[130] = length; mailbox[131] = header;
 			mailbox[132] = big_word(ethernet); mailbox[133] = big_word(ethernet + 4); mailbox[40]++;
 		}
-		if (!macid) tid = 0;
+		if (!macid) {tid=0;if(cookie)cookie=256;}
+		if(macid==RTL_MC_PE_BCMC_ROUTE)macid=0;
 		u32 queue = macid * 8 + tid;
 		/* Link BIDs locally; update the shared peer/TID counts once per group. */
 		if (grouped && queue != group) {
@@ -245,11 +246,11 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 	do {
 		u32 macid = node - 1;
 		volatile u32 *ps = (void *)(memory + 0xe800 + macid * 16);
-		u32 retired = !macid || (mailbox[62] == 128 || mailbox[62] == macid) ||
-			!*(volatile u32 *)(memory + NI_PEER_ROUTE + macid * 4);
+		u32 retired = mailbox[62] == 128 || (macid && (mailbox[62] == macid ||
+			!*(volatile u32 *)(memory + NI_PEER_ROUTE + macid * 4)));
 		u32 *active = (void *)(memory + NI_TID_ACTIVE + macid * 4), tids = *active;
 		u32 generation = 0, grant_flags = 0, command = 0;
-		if (!retired && !ni_ps_grant(memory, macid, &generation, &grant_flags, &command)) {
+		if (macid && !retired && !ni_ps_grant(memory, macid, &generation, &grant_flags, &command)) {
 			node = next_peer[macid]; continue;
 		}
 		u32 tid = mailbox[112];
@@ -259,34 +260,48 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			if (!(tids & 1)) continue;
 			u32 *head = (void *)(memory + NI_TID_HEAD + (macid * 8 + tid) * 4);
 			u32 buffer = *head, *waiting = uncached(buffer);
-			u32 asleep = ps[0];
+			u32 asleep = macid?ps[0]:0;
+   u32 bcmc=!macid && waiting[4] && ni_mcast_current(mailbox,waiting[4]);
+   if(bcmc) {
+    const volatile struct rtl_mc_pe_table *table=uncached(mailbox[RTL_MC_PE_TABLE_MAILBOX]);
+    bcmc=!!(table->record[waiting[4]&255].control&RTL_MC_PE_BCMC);
+   }
+   u32 invalid=!macid&&!bcmc;
 			if (!retired && asleep && !sampled) { now = ni_tsf(mailbox); sampled = 1; }
-			u32 discard = retired || (asleep &&
+			u32 discard = retired || invalid || (asleep &&
 				(*(u32 *)(memory + NI_PEER_QUEUED + macid * 4) > NI_PS_PEER_LIMIT ||
 				 mailbox[38] > NI_PS_TOTAL_LIMIT ||
 				 now - ((u64)waiting[3] << 32 | waiting[2]) >=
 				 (u64)*(u32 *)(memory + RTL_AX_NI_PS_TIMEOUT + macid * 4) * 1000000));
 			discard |= ni_mcast_stale(mailbox, waiting);
 			discard |= ni_fttr_stale(mailbox, waiting);
-			if (((*(u32 *)(memory + 0xd000 + macid * 32 + 8) >> 16) & 63) == 24) {
+			if (!macid || ((*(u32 *)(memory + 0xd000 + macid * 32 + 8) >> 16) & 63) == 24) {
 				volatile struct rtl_seq_shared *sequence = (void *)(memory + RTL_SEQ_BASE);
 				discard |= !waiting[7] || sequence->generation != waiting[7];
 			}
 			if (discard && mailbox[47]) continue;
 			if (!discard && (!ni_owner_available(memory) ||
-			    (ps[0] && (command == ps[2] || !((grant_flags >> 16) & BIT(tid)))))) continue;
+			    (asleep && (command == ps[2] || !((grant_flags >> 16) & BIT(tid)))))) continue;
 			/* Stock TXSC batches short frames with a timeout. Give ACKs the
 			 * same opportunity; a full A-MSDU or an expired head sends now. */
-			if (!discard && !ps[0] && (waiting[1] & 65535) <= 128 &&
+			if (!discard && macid && !ps[0] && (waiting[1] & 65535) <= 128 &&
 			    *(u32 *)(memory + NI_TID_QUEUED + (macid * 8 + tid) * 4) < 8 &&
 			    (u32)(*(volatile u32 *)(mailbox[2] + 0xc438) - waiting[2]) < 4000) {
 				continue;
 			}
 			/* Commit this selection only while its grant snapshot is current. */
-			if (!discard && command != *(volatile u32 *)(memory + RTL_AX_NI_PS_VERSION + macid * 4)) continue;
+			if (macid && !discard && command != *(volatile u32 *)(memory + RTL_AX_NI_PS_VERSION + macid * 4)) continue;
 			u32 id = discard ? RTL_AX_NI_DISCARD : ni_owner(memory), frames = 1;
 			u32 tail_buffer = buffer, next_buffer = waiting[0];
 			const u32 *peer = (void *)(memory + 0xd000 + macid * 32);
+   u32 bcmc_peer[8],key_generation=0;
+   if(bcmc && !discard) {
+    const volatile struct rtl_mc_pe_table *table=uncached(mailbox[RTL_MC_PE_TABLE_MAILBOX]);
+    const volatile struct rtl_mc_pe_record *record=&table->record[waiting[4]&255];
+    bcmc_peer[0]=bcmc_peer[1]=bcmc_peer[6]=bcmc_peer[7]=0;
+    bcmc_peer[2]=24U<<16;bcmc_peer[3]=record->bcmc.rate;bcmc_peer[4]=record->flags;bcmc_peer[5]=record->key;
+    key_generation=record->bcmc.key_generation;peer=bcmc_peer;
+   }
 			u32 key = peer[5];
 			u32 details = macid << 8 | ((key >> 16) & 127) << 17 | BIT(15);
 			owners[id * 2] = buffer;
@@ -299,11 +314,12 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				u32 metadata = waiting[1], length = metadata & 65535;
 #pragma clang loop unroll(disable)
 				for (u32 i = 0; i < 8; i++) request[i] = peer[i];
-				request[0] = 256 + id; request[1] = channels[tid];
+				request[0] = 256 + id; request[1] = bcmc?5:channels[tid];
+    request[RTL_KEY_PN_REQUEST]=key_generation;
 				request[RTL_SEQ_REQUEST] = ((request[2] >> 16) & 63) == 24 ? waiting[7] : 0;
 				request[2] = BIT(24) | (request[2] & 0x3f0000) | (length + ((request[2] >> 16) & 63) + 8 - 14);
 				request[4] = (request[4] & ~0x1fffU) | tid | indicators[tid] << 12;
-				if (waiting[4]) {
+				if (waiting[4] && !bcmc) {
 					request[4] = (request[4] & ~BIT(13)) | ni_mcast_noack(mailbox, waiting, tid) << 13;
 				}
 				request[5] = (request[5] & ~255U) | *(u32 *)(memory + NI_PEER_BA + (macid * 8 + tid) * 4);
@@ -311,7 +327,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				request[8] = buffer + RTL_QM_HEADROOM + (metadata >> 16); request[9] = length;
 				u32 caps = *(u32 *)(memory + 0xe200 + macid * 4);
 				if (caps & BIT(17)) request[3] |= BIT(20);
-				if (ps[0]) {
+				if (asleep) {
 					request[4] |= (*(u32 *)(memory + NI_PEER_QUEUED + macid * 4) > 1 || (grant_flags & 2) ? BIT(19) : 0) | (grant_flags & 1 ? BIT(20) : 0);
 					owners[id * 2 + 1] |= BIT(16);
 					*(u32 *)(memory + RTL_AX_NI_GENERATIONS + id * 4) = generation;

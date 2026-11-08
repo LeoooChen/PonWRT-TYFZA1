@@ -501,9 +501,15 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 	if (!tx->pe_active || macid >= 128) return -EINVAL;
 	mutex_lock(&ni_test_lock);
 	if (!macid) {
+  rtl_ax_tx_bcmc_close(tx);
 		ret = ni_mcast_unbind(tx);
 		if (ret) goto unlock;
 		if (!tx->ni.route_dev) goto unlock;
+  if(tx->bcmc_prepare_failed) {
+   ret=ni_test_release(tx);if(ret)goto unlock;
+   tx->bcmc_prepare_failed=false;dev_put(tx->ni.route_dev);tx->ni.route_dev=NULL;
+   goto unlock;
+  }
 		/* Preserve an unfinished per-peer fence until its owner retires. */
 		if (tx->ni.retire_quiescing && tx->ni.retire_macid) {
 			ret = -EAGAIN;
@@ -535,6 +541,7 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 		dma_wmb();
 		rtl_ax_tx_open(tx);
 		/* Sleeping MAC queues retain submitted WPs until PKT_DROP releases them. */
+  if(tx->bcmc_owned) {ret=rtl_ax_mac_drop_bcmc(tx->pdev);if(ret)goto unlock;}
 		for (i = 1; i < 128; i++) {
 			if (!tx->ni.route_peers[i]) continue;
 			ret = rtl_ax_mac_drop_peer(tx->pdev, i);
@@ -558,6 +565,7 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 			put_unaligned_le32(0, tx->pe.memory + 0x11a00 + i * 4);
 		}
 		WRITE_ONCE(tx->ni.route_macid, 0);
+  tx->bcmc_owned=tx->bcmc_retiring=false;
 		dev_put(tx->ni.route_dev); tx->ni.route_dev = NULL;
 		WRITE_ONCE(tx->ni.retire_quiescing, false);
 		goto unlock;
@@ -602,7 +610,7 @@ int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned 
 {
 	int id, ret;
 	/* Preserve the active retirement fence; existing peers keep their routes. */
-	if (READ_ONCE(tx->ni.retire_quiescing)) return -EAGAIN;
+	if (READ_ONCE(tx->ni.retire_quiescing) || READ_ONCE(tx->bcmc_prepare_failed)) return -EAGAIN;
 	if (!tx->pe_active || (READ_ONCE(tx->peer_offloaded[macid]) &&
 	    READ_ONCE(tx->ni.route_peers[macid]))) return 0;
 	if (!(get_unaligned_le32(tx->pe.memory + 0xd000 + macid * 32 + 16) & BIT(16))) return -ENOLINK;
@@ -725,7 +733,7 @@ static int ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid, bool keep_rx
 	for (i = 1; i < 128; i++)
 		if (i != macid && (READ_ONCE(tx->ni.route_peers[i]) ||
 		    rtl_ax_rx_uplink_active(tx->rx, i))) break;
-	if (!keep_rx && i == 128) return rtl_ax_tx_ni_route(tx, tx->ni.route_dev, 0);
+	if (!keep_rx && i == 128 && !READ_ONCE(tx->bcmc_enabled)) return rtl_ax_tx_ni_route(tx, tx->ni.route_dev, 0);
 	mutex_lock(&ni_test_lock);
 	ret = rtl9617c_wifi_peer_route(tx->ni.route_dev, tx->pe.memory + 0xe400 + macid * 8, false);
 	if (ret) goto unlock;
@@ -758,7 +766,7 @@ unlock:
 	if (!ret && !keep_rx) {
 		for (i = 1; i < 128; i++)
 			if (READ_ONCE(tx->ni.route_peers[i]) || rtl_ax_rx_uplink_active(tx->rx, i)) break;
-		if (i == 128) ret = rtl_ax_tx_ni_route(tx, tx->ni.route_dev, 0);
+		if (i == 128 && !READ_ONCE(tx->bcmc_enabled)) ret = rtl_ax_tx_ni_route(tx, tx->ni.route_dev, 0);
 	}
 	return ret;
 }
@@ -909,3 +917,60 @@ unlock:
 	return ret;
 }
 
+
+/* Called with wiphy held: the selected key cannot disappear during snapshot. */
+int rtl_ax_tx_bcmc(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,
+ struct ieee80211_key_conf *key,unsigned int rate)
+{
+ struct rtl_mc_pe_bcmc next={},*shared;
+ struct rtl9617c_wifi_policy policy={};
+ struct net_device *dev=ieee80211_vif_to_wdev(vif)->netdev;
+ u64 generation;
+ int ret=0;
+ if(vif->type!=NL80211_IFTYPE_AP || !tx->pe_active || rate>11)return -EOPNOTSUPP;
+ next.sequence=READ_ONCE(((struct rtl_seq_shared *)(tx->pe.memory+RTL_SEQ_BASE))->generation);
+ if(!next.sequence)return -ESTALE;
+ if(key) {
+  if(key->cipher!=WLAN_CIPHER_SUITE_CCMP || (key->flags&IEEE80211_KEY_FLAG_PAIRWISE) ||
+     key->hw_key_idx>=128 || key->keyidx<0 || key->keyidx>3)return -EOPNOTSUPP;
+  next.key_generation=rtl9617c_key_pn_token(&key->rtl9617c_pn);
+  if(!next.key_generation)return -EKEYREVOKED;
+  next.key=key->hw_key_idx<<16|key->keyidx<<24;
+ }
+ next.rate=rate;ether_addr_copy(next.address,vif->addr);
+ mutex_lock(&ni_test_lock);
+ if(tx->bcmc_prepare_failed) {
+  ret=ni_test_release(tx);if(ret)goto out;
+  tx->bcmc_prepare_failed=false;
+  dev_put(tx->ni.route_dev);tx->ni.route_dev=NULL;
+ }
+ if(tx->bcmc_retiring || tx->ni.retire_quiescing || (tx->ni.route_dev && tx->ni.route_dev!=dev)){ret=-EAGAIN;goto out;}
+ ret=ni_mcast_bind(tx,dev);if(ret)goto out;
+ if(!tx->ni.active) {
+  ret=rtl_ax_tx_pause(tx);if(ret)goto out;
+  dev_hold(dev);tx->ni.route_dev=dev;
+  ret=ni_test_prepare(tx,0);
+  if(ret){tx->bcmc_prepare_failed=true;rtl_ax_tx_open(tx);goto out;}
+  put_unaligned_le32(0,tx->pe.memory+PE_PROBE_MAILBOX+248);
+  rtl_ax_tx_open(tx);
+ }
+ shared=tx->pe.memory+RTL_MC_PE_BCMC_BASE;
+ if(!shared->generation || memcmp((u8 *)shared+4,(u8 *)&next+4,sizeof(next)-4)) {
+  rtl_ax_tx_bcmc_close(tx);
+  if(tx->bcmc_generation==~0U){ret=-EOVERFLOW;goto out;}
+  next.generation=++tx->bcmc_generation;
+  memcpy((u8 *)shared+4,(u8 *)&next+4,sizeof(next)-4);
+  dma_wmb();WRITE_ONCE(shared->generation,next.generation);dma_wmb();
+ }
+ tx->bcmc_owned=true;WRITE_ONCE(tx->bcmc_enabled,true);
+ policy.flags=BIT(18)|BIT(13)|BIT(14)|(key?BIT(15):0);policy.key=next.key;
+ policy.bcmc_generation=shared->generation;policy.sequence=next.sequence;
+ policy.key_generation=next.key_generation;policy.rate=rate;
+ generation=rtl9617c_bridge_wifi_policy_generation();
+ ret=rtl9617c_wifi_mcast_policy(dev,vif->addr,16+tx->ni.cpu,0,&policy,generation);
+ if(ret)rtl_ax_tx_bcmc_close(tx);
+ else WRITE_ONCE(tx->bcmc_policy_attempt,generation);
+out:
+ mutex_unlock(&ni_test_lock);
+ return ret;
+}

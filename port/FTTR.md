@@ -5377,6 +5377,96 @@ still snapshot/validate that selected GTK, publish its immutable template,
 and implement group admission and HIQ/DTIM lifecycle. No direct group
 producer or physical validation is claimed by this patch.
 
+### Direct AP BCMC through native NI and PE
+
+The complete multicast learner can now publish AP group recipients to the
+bound radio's NI/PE path for the existing IPv4/IPv6 UDP multicast learner.
+The PE encoder also handles broadcast DA in its offline vectors; the current
+FE classifier/learner still excludes broadcast ingress, so automatic broadcast
+offload is not claimed. It remains a
+single AP VIF per radio: a group recipient uses MACID0, a non-QoS three-address
+FromDS header, the current default GTK (or open-network mode), basic rate,
+DMA9/QSEL0x11 and HIQ. It does not borrow a station's PTK, BA session or
+per-station power-save grant. Existing AP/STA per-user copies keep their
+separate behavior.
+
+mac80211 exports a wiphy-locked snapshot of its actual
+`deflink.default_multicast_key`; it rejects unsupported ciphers, tainted or
+software-only keys and unbound PN state. No key pointer is retained after
+snapshot. The radio publishes a28-byte template at context`0x1fd40`, including
+nonwrapping template generation, interface sequence generation, GTK CAM/key
+index and PN generation, basic rate and AP address. The existing96-byte
+immutable replica record uses control bit15 to name BCMC and stores its
+captured template identity in the otherwise unused DSCP area. Capability
+advances to MCP3 (`0x4d435033`). A record is accepted only if its source,
+destination radio, group DA, template, key, interface and MAC identity match.
+
+NI ingress retains the immutable cookie and interface/FTTR generations in
+BID headroom. Accepted BCMC shares queue node0 with the discard queue, but
+requires an explicit valid BCMC record; failed ingress is permanently marked
+invalid and cannot revive when a template reopens. Selection creates a
+MACID0/HIQ request and carries word30 GTK generation through PE's actual
+publish queue. The final publisher obtains the common interface sequence and
+GTK PN only after TXBD/tag credit, reusing an assigned sequence across PN
+contention. No A-MSDU or A-MPDU is formed for this recipient. A real RPQ
+releases the WP, and EQ PUSH returns each BID; FTTR source6 accounting still
+spans that final return.
+
+Group-only traffic can initialize the NI supplier without a unicast peer or
+BA session. Partial initialization retains the netdev/resources and retries
+cleanup before another attempt. A last unicast peer's withdrawal preserves
+an enabled BCMC supplier; full interface withdrawal still closes and drains
+both. Default GTK, basic-rate/beacon changes and policy writers invalidate
+old recipes. mac80211's multicast-to-unicast switch is now also bracketed by
+the writer token (patch232), and direct BCMC is declined while that switch is
+enabled so its software replication policy remains effective.
+
+AP stop/start and software scanning close the template, join the PE
+publisher, issue the original HIQ-MBSSID drop selector8 for MBID0, then wait
+for MACID0 completion before reuse or RF movement. The ordinary four-AC
+`drop_peer` command does not drain HIQ and is not used for this step. A
+failed pause/drop/completion keeps BCMC retirement closed and blocks a new
+template; AP start retries before role reconfiguration. HIQ window50,
+port0 DTIM registers, beacon template and hardware broadcast buffering come
+from the existing original-backed AP port setup. This change adds the
+hardware recipient and its lifecycle; it does not establish physical DTIM
+or on-air ordering.
+
+Offline validation executes the exact record emitted by the complete
+bridge/FE learner in linked MIPS EPP→HIQ→RPQ→EQ code. The98 BCMC cases cover
+open/CCMP, all four key IDs, low/high CAM slots, IPv4/IPv6/broadcast DA, all
+input COS, compact/full HEADER_A, exact QM capacity and one-byte overflow,
+invalid source/destination/flags, stale epochs/templates/keys/interfaces,
+PN contention, PS-grant exclusion and refusal followed by reopen. Actual
+Linux/radio template functions cover snapshot and publication failures,
+unchanged-template idempotence, partial NI restart, retirement timeout and
+generation exhaustion. AP/STA scan, AP/mesh lifecycle, group-only worker,
+last-peer and global release tests cover the integration boundaries.
+
+The target factory96 PN/metadata and192 C/XB descriptor cases pass;
+`test_bcmc_drop.py` compares the real native MBID0 command byte-for-byte with
+original `h2c_pkt_drop`, including no receive/done ACK. Existing multicast265
+plus12 encrypted cases,251 FTTR NI drain cases,69 CPU PE-generation cases,
+24 non-QoS cases,21 PN-publication cases,6144 submissions/2048 in-flight
+ownership stress,257 ARM discard batches,16448 ARM RPQ and16896 request
+recipes pass, with shared PN, key, policy, binding and lifecycle regressions.
+
+Final PE_UPLINK firmware is31832 bytes, SHA256
+`2adb0ca855e300917f9f29686a596b0ac1f7afa751e0ad7ff8bdb0c9bb3e7345`;
+conservative stack sum is7120 of8192 bytes. Alternate direct firmware builds
+at14200 bytes. Image/modules build,87 relevant source/header comparisons and
+zero-offset/fuzz patch replay pass. Local evidence is in
+`artifacts/fttr/bcmc-kernel-final-20261108.log`,
+`artifacts/fttr/bcmc-identity-20261108.json` and
+`artifacts/fttr/bcmc-stock-20261108.json`. Ordinary modpost missing
+MODULE_DESCRIPTION warnings remain. No device was accessed or flashed.
+
+Direct AP BCMC implementation is now present for this supported single-VIF
+open/CCMP path. Multi-VIF, broader cipher/policy support, TSPEC accounting,
+physical crypto/DTIM/air ordering and full upstream packet retirement remain
+unverified or incomplete. In particular this does not permit reuse of the
+quarantined FTTR multicast groups/actions/cookies or GEM identities.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN
@@ -5564,8 +5654,8 @@ explicit multi-service and CLI regressions also pass. GCC14.4/musl package
 compilation/install passes (`artifacts/fttr/default-package-20261107.log`).
 No device access or physical traffic/acceleration acceptance was performed.
 Durable remote ownership, saved factory policy import, FPGA1 default profiles,
-AP direct NI→PE BCMC, multiple VIFs and complete physical retirement/reuse
-remain open.
+multiple VIFs and complete physical retirement/reuse remain open. Direct AP
+NI→PE BCMC has since been implemented within the scope described above.
 
 Further target execution on2026-11-07 narrows the FPGA1 default gap without
 enabling an unproven policy. `onuinfo_fpga` links `libponrelay1p25g.so`; its

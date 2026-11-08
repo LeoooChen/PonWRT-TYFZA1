@@ -111,7 +111,7 @@ struct scatterlist {u32 dma,len;};
 struct rtl_ax_tx_mapping {struct scatterlist sg[10];unsigned count,dma_count;};
 struct rtl_ax_tx_slot {struct sk_buff *skb;u64 fttr_generation;dma_addr_t dma;unsigned bytes,ring,key_index,macid,tid;bool encrypted,pe_sequence,firmware_rate,pe_key_pn;struct rtl_ax_tx_mapping *mapping;};
 struct rtl_ax_io {void *ctx;void (*write16)(void *,unsigned,unsigned);};
-struct rtl_ax_tx {bool running,dfs_blocked,pe_active,checksum_enabled,queues_stopped;
+struct rtl_ax_tx {u64 bcmc_policy_attempt;bool bcmc_enabled;bool running,dfs_blocked,pe_active,checksum_enabled,queues_stopped;
  bool peer_preload[128];bool peer_qos[128],peer_authorized[128],peer_asleep[128],peer_offloaded[128],peer_client[128];u32 peer_rates[128];u64 mcast_policy_attempt[128];
  int lock,fttr_work;struct {void *memory;}pe;u8 *pages,*headers,*ring;u32 pages_dma;
  unsigned pe_producer,producer[6],wd_producer[6],pending[256],occupied,last_sequence,last_words[14];

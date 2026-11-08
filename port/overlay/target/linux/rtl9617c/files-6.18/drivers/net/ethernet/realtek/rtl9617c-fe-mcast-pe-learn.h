@@ -9,6 +9,21 @@ static int fe_mcast_pe_recipe(struct rtl_fe *fe,struct rtl_fe_port *port,
  const struct rtl9617c_wifi_policy *policy;
  unsigned int mode=RTL_MC_PE_TID_FIXED,tid=0;
 
+ if(direct->iftype==NL80211_IFTYPE_AP && (direct->frame.destination[0]&1)) {
+  unsigned int slot;
+  if(!epoch || epoch>0xffffffffULL)return -ESTALE;
+  for(slot=0;slot<2;slot++)if(fe->mc_pe[slot].netdev==port->netdev)break;
+  if(slot==2 || !fe->mc_pe[slot].bcmc_policy_generation ||
+     fe->mc_pe[slot].bcmc_policy_generation!=rtl9617c_bridge_wifi_policy_generation())return -EOPNOTSUPP;
+  policy=&fe->mc_pe[slot].bcmc;
+  record.epoch=epoch;record.control=RTL_MC_PE_BCMC|(source<<RTL_MC_PE_SOURCE_SHIFT);
+  ether_addr_copy(record.destination,direct->frame.destination);
+  ether_addr_copy(record.peer,port->netdev->dev_addr);
+  record.key=policy->key;record.flags=policy->flags;
+  record.bcmc.generation=policy->bcmc_generation;record.bcmc.sequence=policy->sequence;
+  record.bcmc.key_generation=policy->key_generation;record.bcmc.rate=policy->rate;
+  direct->pe_destination=slot+18;direct->pe_record=record;return 0;
+ }
  if(!peer || (!is_valid_ether_addr(direct->frame.destination) &&
     !(direct->frame.destination[0]&1 && direct->iftype==NL80211_IFTYPE_STATION)) ||
     peer->destination<18 || peer->destination>19 || !peer->macid || peer->macid>127 ||

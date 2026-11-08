@@ -769,6 +769,12 @@ static int rtl_ax_port0_drop_mbid(void *ctx, unsigned int mbid)
 			     packet, sizeof(packet), false);
 }
 
+int rtl_ax_mac_drop_bcmc(struct pci_dev *pdev)
+{
+ /* The AP self role owns HIQ MBID0, outside the four unicast AC queues. */
+ return rtl_ax_port0_drop_mbid(pci_get_drvdata(pdev),0);
+}
+
 static int rtl_ax_self_role_prepare(struct rtl_ax_ap *radio, const u8 *address,
 	unsigned int interval, unsigned int dtim)
 {

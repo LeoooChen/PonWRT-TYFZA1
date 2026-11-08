@@ -28,7 +28,7 @@ static void fe_mcast_pe_forget_port(struct rtl_fe *fe,struct net_device *netdev)
  for(i=0;i<2;i++)if(fe->mc_pe[i].netdev==netdev) {
   spin_lock_irqsave(&fe->mc_lock,flags);
   fe_mcast_pe_retire(fe->mc_pe[i].table);
-  fe->mc_pe[i].table=NULL;fe->mc_pe[i].netdev=NULL;
+  fe->mc_pe[i].table=NULL;fe->mc_pe[i].netdev=NULL;fe->mc_pe[i].bcmc_policy_generation=0;
   spin_unlock_irqrestore(&fe->mc_lock,flags);
   dev_put(netdev);
  }
@@ -71,7 +71,7 @@ int rtl_fe_wifi_mcast_table(struct rtl_fe *fe,struct net_device *netdev,
  spin_lock_irqsave(&fe->mc_lock,flags);
  fe_mcast_pe_retire(table);
  fe->mc_pe[slot].table=bind?table:NULL;
- fe->mc_pe[slot].netdev=bind?netdev:NULL;
+ fe->mc_pe[slot].netdev=bind?netdev:NULL;fe->mc_pe[slot].bcmc_policy_generation=0;
  spin_unlock_irqrestore(&fe->mc_lock,flags);
  if(bind)dev_hold(netdev);
  else dev_put(netdev);
@@ -89,6 +89,22 @@ int rtl_fe_wifi_mcast_policy(struct rtl_fe *fe,struct net_device *netdev,const u
  unsigned long flags;
  int ret=-ENOLINK;
 
+ if(fe && policy && !macid && destination>=18 && destination<=19 && generation) {
+  unsigned int slot=destination-18;
+  if(!policy->bcmc_generation || !policy->sequence || policy->qos || policy->reserved ||
+     policy->flags!=(BIT(18)|BIT(13)|BIT(14)|(policy->key_generation?BIT(15):0)) ||
+     (policy->key&~0x037f0000U) || (!policy->key_generation && policy->key) || policy->rate>11)return -EINVAL;
+  mutex_lock(&fe->lock);
+  port=fe_port(fe,netdev);
+  if(!port || !port->wifi_id || fe->mc_pe[slot].netdev!=netdev)goto out;
+  if(!fe->mc_pe[slot].bcmc_policy_generation || memcmp(&fe->mc_pe[slot].bcmc,policy,sizeof(*policy)))
+   fe_mcast_invalidate(fe);
+  spin_lock_irqsave(&fe->mc_lock,flags);
+  if(fe->mc_gate.writers || generation!=rtl9617c_bridge_wifi_policy_generation())ret=-ESTALE;
+  else {fe->mc_pe[slot].bcmc=*policy;fe->mc_pe[slot].bcmc_policy_generation=generation;ret=0;}
+  spin_unlock_irqrestore(&fe->mc_lock,flags);
+  goto out;
+ }
  if(!fe || !policy || destination<18 || destination>19 || !macid || macid>127 || !generation ||
     policy->qos>1 || policy->tagged_tid>7 || policy->reserved ||
     (policy->flags&(BIT(16)|BIT(18)))!=(BIT(16)|BIT(18)) ||

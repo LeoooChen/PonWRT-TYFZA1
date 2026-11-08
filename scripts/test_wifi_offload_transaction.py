@@ -74,6 +74,7 @@ struct list_head {struct list_head *next,*prev;};
 static void init(struct list_head *h){h->next=h->prev=h;}
 static void list_add_tail(struct list_head *n,struct list_head *h){n->prev=h->prev;n->next=h;h->prev->next=n;h->prev=n;}
 static void list_del(struct list_head *n){n->prev->next=n->next;n->next->prev=n->prev;}
+#define NL80211_IFTYPE_AP 3
 #define NL80211_IFTYPE_STATION 2
 struct wireless_dev;
 struct net_device {unsigned references;struct wireless_dev *ieee80211_ptr;};
@@ -89,14 +90,23 @@ struct rtl_ax_station {unsigned macid;};struct ieee80211_sta {struct rtl_ax_stat
 enum {IEEE80211_AMPDU_TX_STOP_CONT,IEEE80211_AMPDU_TX_STOP_FLUSH,IEEE80211_AMPDU_TX_STOP_FLUSH_CONT};
 struct ieee80211_ampdu_params {struct ieee80211_sta *sta;unsigned action,tid;};
 struct wireless_dev {struct net_device *netdev;int iftype;bool use_4addr;};struct ieee80211_vif {struct wireless_dev wdev;int type;};
-struct rtl_ax_tx {int lock;bool pe_active,peer_offloaded[128],peer_authorized[128];unsigned occupied,ni_reports,ni_failed;
+struct rtl_ax_tx {bool bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;int lock;bool pe_active,peer_offloaded[128],peer_authorized[128];unsigned occupied,ni_reports,ni_failed;
  struct {void *memory;}pe;void *rx,*pdev;
  struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;unsigned cpu,route_macid,route_tim[128];struct net_device *route_dev;struct work_struct ps_work;}ni;};
-struct rtl_ax_ap {struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_associated,sta_4addr;int scan_offload_result;
+struct rtl_ax_ap {bool beacon_enabled;int ap_result;struct {int error;}dfs;struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_associated,sta_4addr;int scan_offload_result;
  struct wiphy_work offload_work;struct wiphy_delayed_work cleanup_work;bool scanning,ap_started,monitor_started,offload_retry,peer_authorized[128];
  struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[6];}security_roles[128];struct {unsigned aggregation[16],stopping,flushing;u8 address[6];}tx_ba[128];
  unsigned security_unlink[128];bool ra_registered[128];
  struct {bool deleting;unsigned macid;}rx_ba[8];struct {bool pending;}retired_stations[128];int offload_result;unsigned offload_started,chip;};
+struct ieee80211_key_conf {unsigned id;};
+struct ieee80211_tx_info {struct {struct ieee80211_vif *vif;}control;};
+static unsigned bcmc_calls,bcmc_closes;static int bcmc_error;static struct ieee80211_key_conf gtk;
+static void rtl_ax_tx_bcmc_close(struct rtl_ax_tx *t){t->bcmc_enabled=false;bcmc_closes++;}
+static int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *t){rtl_ax_tx_bcmc_close(t);return bcmc_error;}
+static int ieee80211_rtl9617c_bcmc_key(struct ieee80211_vif *v,struct ieee80211_key_conf **key){assert(v->type==3);*key=&gtk;return 0;}
+static unsigned rtl_ax_tx_basic_rate(struct rtl_ax_ap *r,struct ieee80211_sta *sta,struct ieee80211_tx_info *i){assert(r&&!sta&&i->control.vif);return 4;}
+static int rtl_ax_tx_bcmc(struct rtl_ax_tx *t,struct ieee80211_vif *v,struct ieee80211_key_conf *key,unsigned rate){assert(t&&v&&key==&gtk&&rate==4);bcmc_calls++;return bcmc_error;}
+static int rtl_ax_mac_drop_bcmc(void *p){(void)p;return 0;}
 static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *tx){(void)tx;}
 
 static struct rtl_ax_ap *active_radio;
@@ -217,6 +227,20 @@ int main(void){
   assert(!radio.offload_retry && timers==(cancel==2?2:1));
   assert(tx.peer_offloaded[1]==(cancel!=1) && get_unaligned_le32(memory+0x11a04)==(cancel!=1));
   if(cancel!=1){rtl_ax_tx_peer_authorized(&tx,1,false);assert(!rtl_ax_tx_ni_retire_peer(&tx,1));assert(!dev.references);}
+ }
+ /* Exercise the actual worker's group-only entry and retry gates. */
+ {
+  struct rtl_ax_tx tx={};struct wiphy w={};struct ieee80211_hw hw={&w};
+  struct ieee80211_vif vif={.type=3};struct rtl_ax_ap radio={.tx=&tx,.hw=&hw,.ap_vif=&vif,.ap_started=true,.beacon_enabled=true};
+  active_radio=&radio;active_tx=&tx;bcmc_calls=bcmc_closes=timers=0;
+  bcmc_error=-ESTALE;rtl_ax_offload_work(&w,&radio.offload_work);
+  assert(bcmc_calls==1&&bcmc_closes==1&&radio.offload_retry&&timers==1);
+  bcmc_error=0;rtl_ax_offload_work(&w,&radio.offload_work);assert(bcmc_calls==2&&!radio.offload_retry);
+  radio.scanning=true;rtl_ax_offload_work(&w,&radio.offload_work);assert(bcmc_calls==2);radio.scanning=false;
+  radio.ap_result=-EIO;rtl_ax_offload_work(&w,&radio.offload_work);assert(bcmc_calls==2);radio.ap_result=0;
+  radio.scan_offload_result=-ETIMEDOUT;bcmc_error=-ETIMEDOUT;rtl_ax_offload_work(&w,&radio.offload_work);
+  assert(bcmc_calls==2&&radio.offload_retry&&radio.scan_offload_result==-ETIMEDOUT);
+  bcmc_error=0;rtl_ax_offload_work(&w,&radio.offload_work);assert(bcmc_calls==3&&!radio.scan_offload_result);
  }
  puts("FE transaction: initial/existing NI, four partial failures, prepared admission, scheduled retry and cancellation/withdrawal passed.");
 }

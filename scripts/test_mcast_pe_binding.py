@@ -54,7 +54,7 @@ static u64 rtl9617c_bridge_wifi_policy_generation(void){return policy_generation
 struct rtl_fe {int lock,mc_lock;unsigned changes;
  struct {unsigned writers;}mc_gate;
  struct rtl_fe_wifi_peer peers[2];
- struct {struct rtl_mc_pe_table *table;struct net_device *netdev;}mc_pe[2];
+ struct {struct rtl_mc_pe_table *table;struct net_device *netdev;struct rtl9617c_wifi_policy bcmc;u64 bcmc_policy_generation;}mc_pe[2];
  struct rtl_fe_port ports[2];};
 static struct rtl_fe_port *fe_port(struct rtl_fe *f,struct net_device *d){
  for(unsigned i=0;i<2;i++)if(f->ports[i].dev==d)return &f->ports[i];return NULL;
@@ -121,6 +121,12 @@ int main(void){
  ta.epoch=tb.epoch=15;policy.noack_map=1;
  assert(!rtl_fe_wifi_mcast_policy(&f,&a,mac,18,2,&policy,2)&&!ta.epoch&&!tb.epoch);
  assert(f.peers[0].macid==2&&f.peers[0].policy.noack_map==1);
+ struct rtl9617c_wifi_policy group={.flags=BIT(18)|BIT(13)|BIT(14)|BIT(15),.key=63<<16|2<<24,.bcmc_generation=29,.sequence=23,.key_generation=11,.rate=4};
+ assert(!rtl_fe_wifi_mcast_policy(&f,&a,mac,18,0,&group,2));
+ assert(f.mc_pe[0].bcmc_policy_generation==2&&!memcmp(&f.mc_pe[0].bcmc,&group,sizeof(group)));
+ group.sequence=0;assert(rtl_fe_wifi_mcast_policy(&f,&a,mac,18,0,&group,2)==-EINVAL);group.sequence=23;
+ assert(rtl_fe_wifi_mcast_policy(&f,&b,mac,18,0,&group,2)==-ENOLINK);
+ assert(rtl_fe_wifi_mcast_policy(&f,&a,mac,18,0,&group,1)==-ESTALE);
  rtl_fe_wifi_mcast_detach(&f);
  assert(!ta.epoch&&!tb.epoch&&!a.refs&&!b.refs&&!f.mc_pe[0].table&&!f.mc_pe[1].table);
  puts("FE multicast PE binding: two radios, ownership conflicts, idempotence, invalidation and port detachment passed");

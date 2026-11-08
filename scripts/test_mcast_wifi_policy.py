@@ -15,6 +15,7 @@ code = code.replace('#define CONFIG_ARCH_RTL9617C 1', '#define CONFIG_ARCH_RTL96
 code = code.replace('struct ieee80211_if_managed {', 'struct wiphy {u32 frag_threshold;};\nstruct ieee80211_local {struct {unsigned queues;struct wiphy *wiphy;}hw;};\nstruct ieee80211_vif {unsigned type;u8 addr[6];bool mld;};\nstruct ieee80211_if_managed {')
 code = code.replace('struct {unsigned admitted_time,up;}tx_tspec', 'struct {unsigned admitted_time,up,tsid;}tx_tspec')
 code = code.replace('struct {unsigned type;}vif;unsigned wmm_acm;', 'struct ieee80211_vif vif;struct ieee80211_local *local;struct {bool use_4addr;}wdev;struct net_device *dev;unsigned noack_map;unsigned wmm_acm;')
+code = code.replace('struct ieee80211_if_managed mgd;', 'struct ieee80211_if_managed mgd;struct {bool multicast_to_unicast;}ap;')
 code = code.replace('struct sta_info {struct {bool wme;}sta;', 'struct sta_info {bool uploaded,authorized;struct {bool wme;}sta;')
 code += r'''
 #include "linux/rtl9617c-wifi-policy.h"
@@ -61,6 +62,7 @@ static void ieee80211_flush_queues(struct ieee80211_local *l,struct ieee80211_su
 static void ieee80211_sta_handle_tspec_ac_params(struct ieee80211_sub_if_data *s){assert(!writer&&s==writing);}
 '''
 cfg = (args.kernel / 'net/mac80211/cfg.c').read_text()
+code += function(cfg, 'ieee80211_set_multicast_to_unicast')
 code += function(cfg, 'ieee80211_set_qos_map') + function(cfg, 'ieee80211_set_noack_map')
 code = code.replace('struct {unsigned admitted_time,up,tsid;}tx_tspec', 'struct ieee80211_sta_tx_tspec {unsigned admitted_time,up,tsid,action;bool downgraded;}tx_tspec')
 code += function(cfg, 'ieee80211_add_tx_ts') + function(cfg, 'ieee80211_del_tx_ts')
@@ -108,6 +110,10 @@ int main(void){
  assert(s.u.mgd.tx_tspec[0].admitted_time==640&&s.u.mgd.tx_tspec[0].up==6);
  assert(ieee80211_rtl9617c_mcast_policy(&s.vif,address,&out)==-EOPNOTSUPP);
  assert(!ieee80211_del_tx_ts(&w,NULL,1,address)&&notified==notices+3&&!s.u.mgd.tx_tspec[0].admitted_time&&!writer);
+ unsigned prior=notified;
+ assert(!ieee80211_set_multicast_to_unicast(&w,NULL,true)&&s.u.ap.multicast_to_unicast&&notified==prior+1);
+ assert(!ieee80211_set_multicast_to_unicast(&w,NULL,true)&&notified==prior+1);
+ assert(!ieee80211_set_multicast_to_unicast(&w,NULL,false)&&!s.u.ap.multicast_to_unicast&&notified==prior+2);
  printf("mac80211 multicast policy: %u IPv4/IPv6/COS comparisons, all ACM/reserved TID/mapping combinations, rejection and actual noack/QoS writers passed\n",cases);
 }
 '''
@@ -122,7 +128,7 @@ with tempfile.TemporaryDirectory(prefix='mcast-wifi-policy-') as folder:
 # Every mutable input used by the compiler must close admission before write.
 # Check bounded production statements, not allocation/synchronize_net regions.
 writers = {
-    'net/mac80211/cfg.c': ('sdata->noack_map = noack_map;', 'rcu_assign_pointer(sdata->qos_map, new_qos_map);',
+    'net/mac80211/cfg.c': ('sdata->u.ap.multicast_to_unicast = enabled;', 'sdata->noack_map = noack_map;', 'rcu_assign_pointer(sdata->qos_map, new_qos_map);',
         'sta->sta.wme = set & BIT(NL80211_STA_FLAG_WME);', 'ifmgd->tx_tspec[ac].admitted_time = 32 * admitted_time;',
         'tx_tspec->up = -1;', 'memset(tx_tspec, 0, sizeof(*tx_tspec));'),
     'net/mac80211/mlme.c': ('sdata->wmm_acm = 0;', 'sdata->wmm_acm |= BIT(1) | BIT(2);',

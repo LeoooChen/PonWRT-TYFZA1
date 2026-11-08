@@ -9,6 +9,9 @@ int rtl_ax_tx_sequence_bind(struct rtl_ax_tx *tx, struct ieee80211_vif *vif);
 int rtl_ax_tx_sequence_unbind(struct rtl_ax_tx *tx, struct ieee80211_vif *vif);
 int rtl_ax_tx_key_pn_bind(struct rtl_ax_tx *tx, struct ieee80211_key_conf *key);
 int rtl_ax_tx_key_pn_unbind(struct rtl_ax_tx *tx, struct ieee80211_key_conf *key);
+int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *tx);
+void rtl_ax_tx_bcmc_close(struct rtl_ax_tx *tx);
+int rtl_ax_tx_bcmc(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,struct ieee80211_key_conf *key,unsigned int rate);
 int rtl_ax_tx_mcast_policy(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,unsigned int macid);
 struct rtl_ax_rx;
 struct device;
@@ -50,6 +53,7 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 int rtl_ax_tx_rx_retire(struct rtl_ax_tx *tx, unsigned int macid);
 int rtl_ax_tx_ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid);
 int rtl_ax_tx_ni_retire_ba(struct rtl_ax_tx *tx, unsigned int macid);
+int rtl_ax_mac_drop_bcmc(struct pci_dev *pdev);
 int rtl_ax_mac_drop_peer(struct pci_dev *pdev, unsigned int macid);
 void rtl_ax_tx_peer_sleep(struct rtl_ax_tx *tx, unsigned int macid, bool asleep);
 void rtl_ax_tx_peer_preload(struct rtl_ax_tx *tx, unsigned int macid, bool enabled);

@@ -188,7 +188,8 @@ struct rtl_fe {
  struct rtl_fe_mc_profile mc_profile;
  spinlock_t mc_lock;
  struct rtl_fe_mc_gate mc_gate;
- struct {struct rtl_mc_pe_table *table;struct net_device *netdev;} mc_pe[2];
+ struct {struct rtl_mc_pe_table *table;struct net_device *netdev;
+ struct rtl9617c_wifi_policy bcmc;u64 bcmc_policy_generation;} mc_pe[2];
  atomic_t mc_flush;
  struct rtl_fe_mc_host *mc_hosts[RTL_FE_MC_GROUPS];
  struct rtl_fe_mc_direct *mc_directs[RTL_FE_MC_GROUPS];

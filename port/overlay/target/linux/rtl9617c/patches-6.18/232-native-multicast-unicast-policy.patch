@@ -1,0 +1,15 @@
+--- a/net/mac80211/cfg.c
++++ b/net/mac80211/cfg.c
+@@ -4931,7 +4931,11 @@
+ {
+ 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+ 
+-	sdata->u.ap.multicast_to_unicast = enabled;
++	if (sdata->u.ap.multicast_to_unicast != enabled) {
++		const struct rtl9617c_bridge_mcast_ops *token = ieee80211_mcast_policy_begin(sdata);
++		sdata->u.ap.multicast_to_unicast = enabled;
++		ieee80211_mcast_policy_end(sdata, token);
++	}
+ 
+ 	return 0;
+ }

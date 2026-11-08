@@ -1034,7 +1034,7 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 					out[RTL_FTTR_PE_REQUEST_LOW] = request[RTL_FTTR_PE_REQUEST_LOW];
 					out[RTL_FTTR_PE_REQUEST_HIGH] = request[RTL_FTTR_PE_REQUEST_HIGH];
 				}
-				out[RTL_KEY_PN_REQUEST] = ni_packet ? 0 : request[RTL_KEY_PN_REQUEST];
+				if (!ni_packet) out[RTL_KEY_PN_REQUEST] = request[RTL_KEY_PN_REQUEST];
 				if (!ni_packet) out[RTL_SEQ_REQUEST] = request[RTL_SEQ_REQUEST];
 				mailbox[RTL_AX_TX_PUBLISH_WRITE] = (write + 1) & 15;
 			}

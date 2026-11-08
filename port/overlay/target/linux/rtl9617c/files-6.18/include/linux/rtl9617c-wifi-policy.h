@@ -4,6 +4,7 @@
 #include <linux/types.h>
 struct ieee80211_vif;
 struct net_device;
+struct ieee80211_key_conf;
 
 /* Compiled by mac80211 under its wiphy lock through the actual Ethernet
  * classifier and WME downgrade path. Ordinary priorities0..7 use DSCP;
@@ -18,8 +19,10 @@ struct rtl9617c_wifi_policy {
 	unsigned char reserved;
 	/* Radio fills these after compiling Linux policy, under its TX lock. */
 	unsigned int key, flags;
+ unsigned int bcmc_generation, sequence, key_generation, rate;
 };
 
+int ieee80211_rtl9617c_bcmc_key(struct ieee80211_vif *vif,struct ieee80211_key_conf **key);
 int ieee80211_rtl9617c_mcast_policy(struct ieee80211_vif *vif,const u8 *address,
 	struct rtl9617c_wifi_policy *policy);
 int rtl9617c_wifi_mcast_policy(struct net_device *netdev,const u8 *address,

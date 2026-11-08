@@ -13,8 +13,19 @@
  */
 #define RTL_MC_PE_TABLE_MAILBOX 210
 #define RTL_MC_PE_CAP_MAILBOX 211
-#define RTL_MC_PE_CAPABILITY 0x4d435032U
+#define RTL_MC_PE_CAPABILITY 0x4d435033U
 #define RTL_MC_PE_COOKIES 256
+#define RTL_MC_PE_BCMC (1U << 15)
+#define RTL_MC_PE_BCMC_ROUTE 128
+#define RTL_MC_PE_BCMC_BASE 0x1fd40
+
+/* Single AP interface, published generation last; zero closes admission. */
+struct rtl_mc_pe_bcmc {
+ unsigned int generation, sequence, key_generation, rate, key;
+ unsigned char address[6], reserved[2];
+};
+_Static_assert(sizeof(struct rtl_mc_pe_bcmc) == 28, "BCMC template ABI");
+_Static_assert(RTL_MC_PE_BCMC_BASE + sizeof(struct rtl_mc_pe_bcmc) <= 0x20000, "BCMC context bounds");
 #define RTL_MC_PE_TID_SHIFT 8
 #define RTL_MC_PE_MODE_SHIFT 11
 #define RTL_MC_PE_TID_FIXED 0
@@ -24,13 +35,16 @@
 
 struct rtl_mc_pe_record {
 	unsigned int epoch;
-	/* MACID0 is invalid. bits8..10=fixed TID,11..12=TID mode,
-	 * bits16..21=original NI source. Other bits must be zero. */
+	/* MACID0 requires BCMC bit15. bits8..10=fixed TID,11..12=TID mode,
+	 * bits16..21=original NI source. Other bits must be zero. BCMC has no TID/mode bits. */
 	unsigned int control;
 	unsigned char destination[6], noack_map, qos;
 	/* Already resolved through current Linux WME/ACM/reserved-TID policy.
 	 * COS mode uses entries0..7; DSCP mode uses all64 entries. */
-	unsigned char dscp_tid[64];
+	union {
+  unsigned char dscp_tid[64];
+  struct {unsigned int generation, sequence, key_generation, rate;} bcmc;
+ };
 	unsigned char peer[6], reserved[2];
 	unsigned int key, flags;
 };

@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
+#include <linux/rtl9617c-wifi-policy.h>
 /* Linux receive integration for the native C 5GHz and XB2.4GHz paths.
  * Hardware channel and filters reuse the original-backed native controls. */
 #ifndef RTL_AX_AP_MONITOR_H
@@ -299,6 +300,10 @@ static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	if (radio->radar_required &&
 	    (radio->dfs.error || !radio->dfs.enabled || radio->dfs.detected))
 		return radio->dfs.error ? radio->dfs.error : -EBUSY;
+ if(vif->type==NL80211_IFTYPE_AP) {
+  ret=rtl_ax_tx_bcmc_stop(radio->tx);
+  if(ret)return ret;
+ }
 	ret = rtl_ax_self_role_prepare(radio, vif->addr, conf->beacon_int, conf->dtim_period);
 	if (!ret && radio->security_roles[0].valid) {
 		u8 dctl[68];
@@ -333,6 +338,7 @@ static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		wiphy_delayed_work_queue(hw->wiphy, &radio->mesh_sync_work,
 			usecs_to_jiffies(conf->beacon_int * 1024));
 	}
+	if(!ret && vif->type==NL80211_IFTYPE_AP)wiphy_work_queue(hw->wiphy,&radio->offload_work);
 	return ret;
 }
 
@@ -353,6 +359,12 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 			return;
 		}
 	}
+ if(vif->type==NL80211_IFTYPE_AP && radio->scan_offload_result) {
+  radio->scan_offload_result=rtl_ax_tx_bcmc_stop(radio->tx);
+  if(radio->scan_offload_result) {
+   radio->offload_retry=true;wiphy_delayed_work_queue(wiphy,&radio->cleanup_work,HZ);return;
+  }
+ }
 	for (macid = 1; macid < 128; macid++) {
 		int ret;
 		struct rtl_ax_security_role *role = &radio->security_roles[macid];
@@ -374,6 +386,16 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 			if (ret == -ESTALE || ret == -ENOMEM) radio->offload_retry = true;
 		}
 	}
+ if(vif->type==NL80211_IFTYPE_AP && radio->beacon_enabled && !radio->ap_result && !radio->dfs.error) {
+  struct ieee80211_key_conf *key;
+  struct ieee80211_tx_info info={.control={.vif=vif}};
+  int ret=ieee80211_rtl9617c_bcmc_key(vif,&key);
+  if(!ret)ret=rtl_ax_tx_bcmc(radio->tx,vif,key,rtl_ax_tx_basic_rate(radio,NULL,&info));
+  if(ret) {
+   rtl_ax_tx_bcmc_close(radio->tx);
+   if(ret!=-EOPNOTSUPP && ret!=-EOVERFLOW)radio->offload_retry=true;
+  }
+ }
 	if (radio->offload_retry)
 		wiphy_delayed_work_queue(wiphy, &radio->cleanup_work, HZ);
 }
@@ -433,6 +455,10 @@ static void rtl_ax_ap_stop(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
 	unsigned long flags;
 
+ if(vif->type==NL80211_IFTYPE_AP) {
+  int ret=rtl_ax_tx_bcmc_stop(radio->tx);
+  if(ret)dev_err(&radio->pdev->dev,"BCMC retirement failed: %d\n",ret);
+ }
 	spin_lock_irqsave(&radio->command_lock, flags);
 	rtl_ax_update32(&radio->io, 0xc400, BIT(12), 0);
 	radio->beacon_enabled = false;
@@ -501,6 +527,10 @@ static void rtl_ax_ap_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
 	unsigned int ac;
+ if(vif->type==NL80211_IFTYPE_AP && (changed&(BSS_CHANGED_BASIC_RATES|BSS_CHANGED_BEACON|BSS_CHANGED_BEACON_ENABLED|BSS_CHANGED_BEACON_INT))) {
+  rtl_ax_tx_bcmc_close(radio->tx);
+  wiphy_work_queue(hw->wiphy,&radio->offload_work);
+ }
 
 	if (vif->type == NL80211_IFTYPE_STATION) {
 		rtl_ax_client_cfg_changed(hw, vif, changed);
@@ -1199,8 +1229,9 @@ static void rtl_ax_sw_scan_start(struct ieee80211_hw *hw,
 
 	/* NI bypasses mac80211's off-channel queue stop. Drain it before RF moves. */
 	radio->scanning = true;
-	radio->scan_offload_result = radio->sta_associated ?
-		rtl_ax_tx_ni_retire_peer(radio->tx, RTL_AX_CLIENT_MACID) : 0;
+ radio->scan_offload_result = radio->sta_associated ?
+		rtl_ax_tx_ni_retire_peer(radio->tx, RTL_AX_CLIENT_MACID) :
+  radio->ap_vif && radio->ap_vif->type==NL80211_IFTYPE_AP ? rtl_ax_tx_bcmc_stop(radio->tx) : 0;
 	mutex_lock(&radio->command_mutex);
 	/* Include foreign beacons, not only address-1 matches. */
 	rtl_ax_update32(&radio->io, 0xce40, BIT(4), BIT(0));
@@ -1215,6 +1246,7 @@ static void rtl_ax_sw_scan_complete(struct ieee80211_hw *hw,
 
 	mutex_lock(&radio->command_mutex);
 	radio->scanning = false;
+ if(radio->ap_vif && radio->ap_vif->type==NL80211_IFTYPE_AP)wiphy_work_queue(hw->wiphy,&radio->offload_work);
 	/* mac80211 restores hw.conf before this callback but ignores a failed
 	 * channel transaction. Retry that restore before admitting NI traffic. */
 	if (radio->sta_associated && !radio->scan_offload_result && radio->dfs.error)

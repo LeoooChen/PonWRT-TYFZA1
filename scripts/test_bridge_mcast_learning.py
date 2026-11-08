@@ -31,7 +31,7 @@ struct net_device {bool running,carrier;unsigned ifindex,group,flags,num_tx_queu
 code=code.replace('struct rtl_fe_flow {',re.search(r'struct rtl_fe_mc_host \{.*?\n\};',(DRIVERS/'rtl9617c-fe.c').read_text(),re.S)[0]+'\nstruct rtl_fe_flow {')
 code=code.replace('struct rtl_fe {','#include "rtl9617c-epon-path.h"\nstruct rtl_fe_mtu {unsigned users,size,saved;};\nstruct rtl_fe {struct rtl_epon_paths epon_paths;bool epon_admitted;struct net_device *itu_netdev;struct rtl_itu_paths *itu_paths;struct rtl_fe_mtu mtus[16];struct rtl_fe_mc_host *mc_hosts[256];struct rtl_fe_mc_direct *mc_directs[256];')
 code=code.replace('struct rtl_fe_mc_profile mc_profile;','''struct rtl_fe_mc_profile mc_profile;
- struct {struct rtl_mc_pe_table *table;struct net_device *netdev;} mc_pe[2];
+ struct {struct rtl_mc_pe_table *table;struct net_device *netdev;struct rtl9617c_wifi_policy bcmc;u64 bcmc_policy_generation;} mc_pe[2];
  struct rtl_fe_mc_gate mc_gate;int lock,mc_lock;struct rtl_fe_port *ports[6];''')
 code=code.replace('#include "rtl9617c-fe-mcast-profile.h"','#include "rtl9617c-fe-mcast-profile.h"\n#include "rtl9617c-fe-mcast-gate.h"')
 code=code.replace('typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32,__le32;typedef uint64_t u64;',
@@ -706,9 +706,14 @@ int main(void){
  assert(copied==2);fe_mcast_invalidate(&fe);assert(!fe_delete(&fe,fe.indexed));
  /* STA ordinary multicast retains Ethernet DA and uses the associated AP
   * peer. AP ordinary groups must still take the GTK/DTIM software path. */
- for(unsigned role=0;role<2;role++) {
+ for(unsigned role=0;role<3;role++) {
   ap.iftype=role?NL80211_IFTYPE_AP:NL80211_IFTYPE_STATION;
   test_peer.policy.flags=BIT(16)|BIT(18)|(role?0:BIT(23));
+  if(role==2) {
+   fe.mc_pe[1].bcmc_policy_generation=test_policy_generation;
+   fe.mc_pe[1].bcmc=(struct rtl9617c_wifi_policy){.flags=BIT(18)|BIT(13)|BIT(14)|BIT(15),.key=63<<16|2<<24,.bcmc_generation=29,.sequence=23,.key_generation=11,.rate=4};
+   memcpy(wifi.dev_addr,"\2\0\0\0\0\1",6);
+  }
   fe.event_count=0;fdb_source=&lan;skb.dev=&lan;skb.saved=wireless;skb.priority=0;
   skb.saved.ingress=skb.saved.port=1;skb.saved.wifi_id=0;skb.saved.multicast_epoch=fe.mc_gate.epoch;skb.frame=wireless;
   ticket=fe_mcast_capture_begin(&bridge,&skb,false,++fe_mcast_ticket);assert(ticket);
@@ -717,7 +722,15 @@ int main(void){
   assert(fe.indexed&&fe.indexed->replica_count==1&&fe.mc_gate.active);
   unsigned cookie=0;
   for(unsigned c=1;c<256;c++)if(fe.mc_directs[c]&&fe.mc_directs[c]->flow==fe.indexed)cookie=c;
-  assert(cookie&&fe.mc_directs[cookie]->pe_destination==(role?0:19));
+  assert(cookie&&fe.mc_directs[cookie]->pe_destination==(role==1?0:19));
+  if(role==2) {
+   assert(pe_table.record[cookie].control&RTL_MC_PE_BCMC);
+   assert(pe_table.record[cookie].bcmc.generation==29 && pe_table.record[cookie].bcmc.key_generation==11);
+   if(getenv("RTL_TEST_AP_GROUP_RECORD")) {
+    FILE *record=fopen(getenv("RTL_TEST_AP_GROUP_RECORD"),"wb");assert(record);
+    assert(fwrite(&pe_table.record[cookie],96,1,record)==1);assert(!fclose(record));
+   }
+  }
   if(!role) {
    assert(!memcmp(pe_table.record[cookie].destination,wireless.destination,6));
    assert(!memcmp(pe_table.record[cookie].peer,test_peer.address,6));

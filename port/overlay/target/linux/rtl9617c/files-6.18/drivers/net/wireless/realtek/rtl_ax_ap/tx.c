@@ -73,9 +73,11 @@ struct rtl_ax_tx {
 	struct delayed_work fttr_work;
 	bool fttr_registered;
 	u64 fttr_discarded;
-	u64 mcast_policy_attempt[128];
+	u64 mcast_policy_attempt[128],bcmc_policy_attempt;
 	u32 key_pn_generation;
 	u32 sequence_generation;
+ u32 bcmc_generation;
+ bool bcmc_owned,bcmc_enabled,bcmc_prepare_failed,bcmc_retiring;
 	bool pe_active;
 	u32 pe_command;
 	unsigned int pe_producer;
@@ -460,6 +462,28 @@ static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *tx)
 	WRITE_ONCE(tx->mcast_table->epoch, 0);
 	dma_wmb();
 	rtl9617c_bridge_mcast_end(token);
+}
+void rtl_ax_tx_bcmc_close(struct rtl_ax_tx *tx)
+{
+ if(!tx->pe_active)return;
+ WRITE_ONCE(tx->bcmc_enabled,false);
+ WRITE_ONCE(((struct rtl_mc_pe_bcmc *)(tx->pe.memory+RTL_MC_PE_BCMC_BASE))->generation,0);
+ dma_wmb();
+ rtl_ax_tx_mcast_revoke(tx);
+}
+int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *tx)
+{
+ int ret;
+ rtl_ax_tx_bcmc_close(tx);
+ if(!tx->pe_active || !tx->bcmc_owned)return 0;
+ tx->bcmc_retiring=true;
+ /* Join any final publisher before PKT_DROP, then allow stale BIDs to recycle. */
+ ret=rtl_ax_tx_pause(tx);if(ret)return ret;
+ ret=rtl_ax_mac_drop_bcmc(tx->pdev);
+ rtl_ax_tx_open(tx);
+ if(!ret)ret=rtl_ax_tx_wait_station(tx,0,IEEE80211_NUM_TIDS);
+ if(!ret)tx->bcmc_retiring=false;
+ return ret;
 }
 void rtl_ax_tx_peer_client(struct rtl_ax_tx *tx, unsigned int macid, bool client, const u8 *bssid)
 {
@@ -983,7 +1007,8 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	}
 	spin_unlock_irqrestore(&tx->lock, flags);
 	if (READ_ONCE(tx->peer_asleep[macid])) ni_route_sleep(tx, macid);
-	if ((encap || template_ready) && tx->pe_active && tx->peer_ready &&
+	if (((encap || template_ready) || (!macid && tx->bcmc_enabled &&
+      tx->bcmc_policy_attempt!=rtl9617c_bridge_wifi_policy_generation())) && tx->pe_active && tx->peer_ready &&
 	    (!READ_ONCE(tx->peer_offloaded[macid]) ||
 	     READ_ONCE(tx->mcast_policy_attempt[macid]) != rtl9617c_bridge_wifi_policy_generation()))
 		tx->peer_ready(tx->peer_ready_context);

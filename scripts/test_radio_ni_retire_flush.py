@@ -46,7 +46,7 @@ static void rtl_ax_store32(void *p,u32 v) {memcpy(p,&v,4);}
 struct net_device {int unused;};
 struct pci_dev {void *radio;};
 struct rtl_ax_tx {
- bool pe_active,paused,peer_authorized[128],peer_offloaded[128];
+ bool bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;bool pe_active,paused,peer_authorized[128],peer_offloaded[128];
  unsigned occupied,ni_reports,ni_failed;
  struct pci_dev *pdev;
  void *rx;
@@ -55,6 +55,7 @@ struct rtl_ax_tx {
   unsigned route_macid,route_tim[128];int ps_work,cpu;} ni;
 };
 struct rtl_ax_ap {struct rtl_ax_tx *tx;};
+static void rtl_ax_tx_bcmc_close(struct rtl_ax_tx *tx){tx->bcmc_enabled=false;}
 static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *tx){(void)tx;}
 
 static int ni_mcast_bind(struct rtl_ax_tx *tx,struct net_device *d){(void)tx;(void)d;return 0;}
@@ -62,7 +63,7 @@ static int ni_mcast_unbind(struct rtl_ax_tx *tx){(void)tx;return 0;}
 static struct rtl_ax_tx *current;
 static unsigned drop_mask[128],pending[128],withdrawn[128],drop_calls,pause_calls,poll_calls;
 static int ni_test_lock,fail_drop,fail_withdraw,fail_release;
-static unsigned release_calls;
+static unsigned release_calls,bcmc_drops;
 static bool withhold_rpq,withhold_fence,rx_active[128];
 static unsigned rx_retired[128],published;
 static u32 registers[0x10000/4];
@@ -139,6 +140,7 @@ static int ni_test_release(struct rtl_ax_tx *tx) {
 static int rtl_ax_tx_rx_retire(struct rtl_ax_tx *tx,unsigned id) {
  assert(!rx_active[id]);rtl_ax_tx_pause(tx);rtl_ax_rx_uplink_retire(tx->rx,id);rtl_ax_tx_open(tx);return 0;
 }
+static int rtl_ax_mac_drop_bcmc(struct pci_dev *p){(void)p;assert(!current->bcmc_enabled);bcmc_drops++;return fail_drop?-EIO:0;}
 int rtl_ax_mac_drop_peer(struct pci_dev *pdev,unsigned macid);
 '''
 
@@ -297,6 +299,20 @@ int main(void) {
   assert(release_calls==failures+1 && drop_calls==(rx_only?0:4) && pause_calls==1 && poll_calls==1);
   assert(!tx.ni.retire_quiescing && !tx.ni.route_dev && !tx.ni.active && !tx.ni.route_peers[1]);
   assert(!rtl_ax_tx_ni_retire_peer(&tx,1) && release_calls==failures+1);
+ }
+ /* Last unicast peer retirement must retain the AP-wide BCMC supplier. */
+ {
+  u8 memory[0x80000]={};struct net_device dev={};struct pci_dev pdev={};
+  struct rtl_ax_tx tx={.pe_active=true,.pe={memory},.pdev=&pdev,.bcmc_owned=true,.bcmc_enabled=true};
+  struct rtl_ax_ap radio={.tx=&tx};pdev.radio=&radio;current=&tx;
+  memset(pending,0,sizeof(pending));memset(drop_mask,0,sizeof(drop_mask));memset(rx_active,0,sizeof(rx_active));memset(registers,0,sizeof(registers));
+  fail_drop=fail_release=fail_withdraw=withhold_rpq=withhold_fence=0;release_calls=bcmc_drops=0;
+  tx.ni.active=true;tx.ni.route_dev=&dev;tx.ni.route_macid=1;tx.ni.regs=tx.ni.vp=registers;tx.ni.cpu=3;
+  tx.ni.route_peers[1]=tx.peer_offloaded[1]=true;memory[0xe408]=1;put_unaligned_le32(1,memory+0x11a04);
+  pending[1]=1;tick();assert(!rtl_ax_tx_ni_retire_peer(&tx,1));
+  assert(tx.ni.active&&tx.ni.route_dev==&dev&&tx.bcmc_enabled&&!release_calls&&!bcmc_drops);
+  fail_drop=1;assert(rtl_ax_tx_ni_route(&tx,&dev,0)==-EIO&&!tx.bcmc_enabled&&tx.bcmc_owned&&!release_calls);
+  fail_drop=0;assert(!rtl_ax_tx_ni_route(&tx,&dev,0)&&!tx.bcmc_owned&&!tx.ni.route_dev&&release_calls==1&&bcmc_drops==2);
  }
  puts("BA-to-STA transition and final-release failure retries preserve ownership and complete without repeated DROP");
  puts("TX BA retirement preserves RX and NI lifetime; TX re-admission works; full retirement preserves other RX-only peers");

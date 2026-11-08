@@ -22,9 +22,30 @@ static u32 ni_mcast_current(volatile u32 *mailbox, u32 cookie)
 	return epoch && epoch == record_epoch && epoch == table->epoch;
 }
 
+static u32 ni_bcmc_current(volatile u32 *mailbox,const volatile struct rtl_mc_pe_record *record)
+{
+ u8 *memory=(u8 *)mailbox-MAILBOX_OFFSET;
+ const volatile struct rtl_mc_pe_bcmc *b=(void *)(memory+RTL_MC_PE_BCMC_BASE);
+ const volatile struct rtl_seq_shared *sequence=(void *)(memory+RTL_SEQ_BASE);
+ u32 generation=b->generation;
+ sync();
+ if(!generation || record->bcmc.generation!=generation || !sequence->generation ||
+    record->bcmc.sequence!=sequence->generation || record->bcmc.sequence!=b->sequence ||
+    record->bcmc.key_generation!=b->key_generation || record->bcmc.rate!=b->rate || record->key!=b->key ||
+    record->qos || record->noack_map || (record->control&~(RTL_MC_PE_BCMC|0x3f0000U)) ||
+    !(record->destination[0]&1) || record->flags!=(BIT(18)|BIT(13)|BIT(14)|(b->key_generation?BIT(15):0)))return 0;
+ if(b->key_generation) {
+  const volatile struct rtl_key_pn_shared *key=(void *)(memory+RTL_KEY_PN_BASE+((b->key>>16)&127)*sizeof(*key));
+  if(key->generation!=b->key_generation)return 0;
+ }
+ for(u32 i=0;i<6;i++)if(record->peer[i]!=b->address[i] || record->peer[i]!=((volatile u8 *)mailbox)[64+i])return 0;
+ sync();return b->generation==generation;
+}
+
 static u32 ni_mcast_peer(volatile u32 *mailbox, const volatile struct rtl_mc_pe_record *record)
 {
 	u32 macid = record->control & 127;
+ if(record->control&RTL_MC_PE_BCMC)return ni_bcmc_current(mailbox,record)?RTL_MC_PE_BCMC_ROUTE:0;
 	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
 	const volatile u32 *peer = (void *)(memory + 0xd000 + macid * 32);
 	if (!macid || !*(volatile u32 *)(memory + 0x11a00 + macid * 4) ||
@@ -49,6 +70,13 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_mcast_admit(
 	u32 mode = (control >> RTL_MC_PE_MODE_SHIFT) & 3;
 	const u32 *head = uncached(buffer + RTL_QM_HEADROOM);
 	u32 route = __builtin_bswap32(head[1]);
+	if(control&RTL_MC_PE_BCMC) {
+  if(!ni_bcmc_current(mailbox,record) || ((route>>9)&63)!=(control>>16) ||
+     ((route>>3)&63)!=16+(mailbox[114]-0x7000)/32 || record->reserved[0] || record->reserved[1] ||
+     !ni_mcast_current(mailbox,cookie))return 0;
+  for(u32 i=0;i<6;i++)if(ethernet[i]!=record->destination[i])return 0;
+  *tid=0;return RTL_MC_PE_BCMC_ROUTE;
+ }
 	if (!ni_mcast_peer(mailbox, record) || (control & ~0x003f1f7fU) || mode > RTL_MC_PE_TID_DSCP ||
 	    ((route >> 9) & 63) != (control >> RTL_MC_PE_SOURCE_SHIFT) ||
 	    ((route >> 3) & 63) != 16 + (mailbox[114] - 0x7000) / 32 ||

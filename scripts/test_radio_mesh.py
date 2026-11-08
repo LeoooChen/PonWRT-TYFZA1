@@ -45,6 +45,7 @@ typedef int64_t s64; typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t 
 #define BSS_CHANGED_HE_BSS_COLOR BIT(1)
 #define BSS_CHANGED_BEACON BIT(2)
 #define BSS_CHANGED_BEACON_ENABLED BIT(3)
+#define BSS_CHANGED_BASIC_RATES BIT(6)
 #define BSS_CHANGED_IDLE BIT(4)
 #define BSS_CHANGED_BEACON_INT BIT(5)
 #define WRITE_ONCE(x,v) ((x)=(v))
@@ -55,6 +56,7 @@ typedef int64_t s64; typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t 
 #define usecs_to_jiffies(x) (x)
 #define wiphy_delayed_work_queue(w,p,d) ((void)(w),(void)(d),(p)->queued=true)
 #define wiphy_delayed_work_cancel(w,p) ((void)(w),(p)->queued=false)
+#define wiphy_work_queue(w,p) ((void)(w),(void)(p))
 #define wiphy_work_cancel(w,p) ((void)(w),(void)(p),cancellations++)
 #define dev_err(...) ((void)0)
 #define dev_info(...) ((void)0)
@@ -162,6 +164,9 @@ struct ieee80211_link_sta {unsigned bandwidth,rx_nss,smps_mode,supp_rates[2];
 struct ieee80211_sta {struct ieee80211_link_sta deflink;struct {u32 max_amsdu_len;}*cur;};
 """
 code += r"""
+static void rtl_ax_tx_bcmc_close(struct tx *tx){(void)tx;}
+static int bcmc_stop_error;static unsigned bcmc_stops;
+static int rtl_ax_tx_bcmc_stop(struct tx *tx){(void)tx;bcmc_stops++;return bcmc_stop_error;}
 static int rtl_ax_tx_sequence_bind(struct tx *tx,struct ieee80211_vif *v){(void)tx;(void)v;return 0;}
 static int rtl_ax_tx_sequence_unbind(struct tx *tx,struct ieee80211_vif *v){(void)tx;(void)v;return 0;}
 static int rtl_ax_client_prepare(struct rtl_ax_ap*r,struct ieee80211_vif*v){(void)v;r->sta_role=true;return 0;}
@@ -188,6 +193,9 @@ int main(void){
   struct ieee80211_hw hw={&r};struct ieee80211_vif ap={.type=NL80211_IFTYPE_AP},mesh={.type=NL80211_IFTYPE_MESH_POINT},monitor={.type=NL80211_IFTYPE_MONITOR},sta={.type=2};
   struct ieee80211_bss_conf conf={.beacon_int=100,.dtim_period=2,.enable_beacon=true};
   unsigned bw=(chip==3?3:1)<<14;
+  reset_commands();bcmc_stop_error=-ETIMEDOUT;unsigned stops=bcmc_stops;
+  assert(rtl_ax_ap_start(&hw,&ap,&conf)==-ETIMEDOUT&&bcmc_stops==stops+1&&!r.ap_started&&!commands);
+  bcmc_stop_error=0;
   reset_commands();assert(!rtl_ax_self_role_prepare(&r,ap.addr,100,2));
   assert(r.role_type==2&&r.role_stage==5&&commands==4);
   assert(command_word[1]==0x4100&&command_word[2]==(0x4b040100|bw));

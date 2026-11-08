@@ -28,6 +28,25 @@ int ieee80211_rtl9617c_next_sequence(struct ieee80211_vif *vif, u16 *sequence)
 }
 EXPORT_SYMBOL_GPL(ieee80211_rtl9617c_next_sequence);
 
+/* Caller holds wiphy through use of the returned key; no pointer is retained. */
+int ieee80211_rtl9617c_bcmc_key(struct ieee80211_vif *vif,struct ieee80211_key_conf **result)
+{
+ struct ieee80211_sub_if_data *sdata=vif_to_sdata(vif);
+ struct ieee80211_key *key;
+ lockdep_assert_wiphy(sdata->local->hw.wiphy);
+ if(vif->type!=NL80211_IFTYPE_AP || sdata->u.ap.multicast_to_unicast || ieee80211_vif_is_mld(vif) || sdata->wdev.use_4addr ||
+    sdata->local->hw.wiphy->frag_threshold!=(u32)-1 ||
+    sdata->control_port_protocol==htons(ETH_P_IP) || sdata->control_port_protocol==htons(ETH_P_IPV6) ||
+    sdata->control_port_protocol==htons(ETH_P_8021Q) || sdata->control_port_protocol==htons(ETH_P_8021AD))return -EOPNOTSUPP;
+ key=wiphy_dereference(sdata->local->hw.wiphy,sdata->deflink.default_multicast_key);
+ if(key && (!(key->flags&KEY_FLAG_UPLOADED_TO_HARDWARE) || (key->flags&KEY_FLAG_TAINTED) ||
+    key->conf.cipher!=WLAN_CIPHER_SUITE_CCMP || (key->conf.flags&IEEE80211_KEY_FLAG_PAIRWISE) ||
+    key->conf.keyidx<0 || key->conf.keyidx>3 || !rtl9617c_key_pn_token(&key->conf.rtl9617c_pn)))return -EOPNOTSUPP;
+ *result=key?&key->conf:NULL;
+ return 0;
+}
+EXPORT_SYMBOL_GPL(ieee80211_rtl9617c_bcmc_key);
+
 int ieee80211_rtl9617c_mcast_policy(struct ieee80211_vif *vif,const u8 *address,
 	struct rtl9617c_wifi_policy *policy)
 {
