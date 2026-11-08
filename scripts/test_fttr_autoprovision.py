@@ -85,6 +85,7 @@ def main():
     p.add_argument('--slave', type=Path, required=True)
     p.add_argument('--daemon', type=Path, required=True)
     p.add_argument('--admin-control', type=Path, help='exercise the resident ONU administration CLI')
+    p.add_argument('--reboot-control', type=Path, help='exercise remote single-send reboot')
     p.add_argument('--move-control', type=Path, help='exercise the resident SN reservation move')
     p.add_argument('--output', type=Path, required=True)
     p.add_argument("--shared", action="store_true", help="exercise shared Ethernet/VEIP services and release with --move-control")
@@ -108,6 +109,9 @@ def main():
     downstream_length = args.backend=='fpga2'
     if args.backend == "fpga1": OLT = bytes.fromhex("001111111111")
     assert {x['ifname'] for x in json.loads(subprocess.check_output(['ip','-j','link','show'],text=True))} == {'lo'}
+    if args.reboot_control:
+        from trace_stock_fttr_reboot import Reboot
+        reboot_wire=bytes.fromhex(Reboot(args.master).run()['wire'])
     stock = Original(args.master)
     original_sync=OriginalSync(args.slave)
     for initial,expected in [(0,1),(1,2),(254,255),(255,1)]:
@@ -145,6 +149,7 @@ def main():
             self.wifi_reject_at = 3
             self.wifi_timeout = self.wifi_malformed = False
             self.wifi_lost_tci = None
+            self.reboot_mode="ack"
             self.drop_sync=False
             self.fail_upload_once=False
             self.auth_hold = self.auth_drop = self.auth_bad_result = self.auth_reject_result = False
@@ -221,6 +226,19 @@ def main():
                 self.drift_table=False
             if c==2 and op==0x49:assert body[2:]==sync_request[2:]
             self.operations.append((tci,op,c,id))
+            if op==0x59:
+                assert args.reboot_control and c==256 and id==0
+                assert body[2:]==reboot_wire[2:44]
+                assert not ni.joinpath('fttr_forward').read_text().startswith('1')
+                assert f'fttr-u{self.id}' not in ports()
+                if args.backend!='fpga1':
+                    assert device.joinpath('management_grant').read_bytes()==management_snapshot
+                if self.reboot_mode=='drop':return None
+                wire=stock.frame(tci,0x39,bytes([2 if self.reboot_mode=='reject' else 0]),onu=self.id,class_id=256,instance=0)[16:]
+                if self.reboot_mode=='malformed':
+                    wire=bytearray(wire);wire[3]=11;wire[44:]=struct.pack('>I',crc(wire[:44]));wire=bytes(wire)
+                if self.reboot_mode=='hold':self.held=wire;return None
+                return wire
             if (args.auth or args.onu_policy) and c in (256,0xfffa) and op in (0x48,0x49):
                 if self.auth_drop:return None
                 failure=(c==0xfffa and mask==self.auth_ctc_fail) or (c==256 and mask==self.auth_onug_fail)
@@ -593,7 +611,7 @@ def main():
                         wire=nodes[id].reply(body)
                         if wire:peer.send(HOST+OLT+struct.pack('>HH',0x8888,id)+wire)
                 current=status()
-                if args.auth and not args.move_control and not args.onu_policy and (not current.get('onus') or current['onus'][7]['mib_serial']!=nodes[7].serial.hex()):
+                if args.auth and not args.move_control and not args.reboot_control and not args.onu_policy and (not current.get('onus') or current['onus'][7]['mib_serial']!=nodes[7].serial.hex()):
                     continue
                 if (current.get('pid') == process.pid or (allow_exit and current.get('pid')==0 and process.poll() is not None)) and predicate(current):return current
             current=status()
@@ -614,6 +632,122 @@ def main():
                     FTTR_ACCEL_LOG=str(accel_log),FTTR_ACCEL_FAIL=str(accel_fault),
                     FTTR_ADMIN_FAIL=str(admin_fault),FTTR_ADMIN_HOLD=str(admin_hold),FTTR_ADMIN_LOG=str(admin_log),
                     **({'FTTR_ADMIN_FPGA':'1'} if args.backend=='fpga1' else {})))
+        if args.reboot_control:
+            checks=[]
+            def command(action='reboot',serial=None):
+                return subprocess.Popen([str(args.reboot_control.resolve()),str(store),'onu-admin','7',
+                    nodes[7].serial.hex() if serial is None else serial,action],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+            def result(client,error=0):
+                until(lambda s:client.poll() is not None)
+                stdout,stderr=client.communicate(timeout=2)
+                assert client.returncode==bool(error),(stdout,stderr)
+                if error:assert f'({-error})' in stderr,(error,stdout,stderr)
+                return json.loads(stdout) if stdout else None
+            def stop():
+                process.send_signal(signal.SIGTERM)
+                until(lambda s:process.poll() is not None,allow_exit=True)
+                assert process.wait(timeout=2)==0,process.stderr.read()
+            process=None
+            try:
+                for mode in ('ack','drop','reject','malformed','replace','client-gone','shutdown','finish-fail','withdraw-fail'):
+                    while select.select([peer],[],[],0)[0]:peer.recv(2048)
+                    nodes[7]=Node(7,'5445535400000007',0x107,False)
+                    nodes[9]=Node(9,'5445535400000009',0x203,True)
+                    nodes[7].reboot_mode='hold' if mode in ('replace','client-gone','shutdown','finish-fail') else mode
+                    hardware();process=launch()
+                    until(lambda s:all(s['onus'][id]['phase']=='configured' for id in (7,9)))
+                    old_port=datapath(7);peer_port=datapath(9);before=len(accel_events())
+                    result(command(serial='00'*8),errno.ESTALE)
+                    assert len(accel_events())==before
+                    if mode=='withdraw-fail':accel_fault.touch()
+                    management_snapshot=device.joinpath('management_grant').read_bytes() if args.backend!='fpga1' else None
+                    client=command()
+                    if mode=='withdraw-fail':
+                        until(lambda s:process.poll() is not None,allow_exit=True)
+                        assert process.wait(timeout=2)==1
+                        stdout,stderr=client.communicate(timeout=3)
+                        assert client.returncode==1 and f'({-errno.ETIMEDOUT})' in stderr
+                        assert not any(op==0x59 for _,op,_,_ in nodes[7].operations)
+                        assert not any(v for v,_,_ in accel_events()[before:])
+                        accel_fault.unlink();process=None;continue
+                    until(lambda s:any(op==0x59 for _,op,_,_ in nodes[7].operations))
+                    assert datapath(9)==peer_port and 'fttr-u7' not in ports()
+                    if mode=='replace':
+                        result(command('block'),errno.EBUSY)
+                        result(command(),errno.EBUSY)
+                        nodes[7]=Node(7,'5445535400000077',0x307,True);hardware()
+                        result(client,errno.ESTALE)
+                        until(lambda s:s['onus'][7]['phase']=='configured')
+                    elif mode=='client-gone':
+                        client.kill();client.wait()
+                        # Wrong TCI is unrelated; the original request stays pending.
+                        wire=bytearray(nodes[7].held)
+                        wire[1]^=1;wire[44:]=struct.pack('>I',crc(wire[:44]))
+                        peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+wire)
+                        nodes[7].reboot_mode='drop'
+                        until(lambda s:s['onus'][7]['phase']=='reboot-wait')
+                        assert status()['onus'][7]['reboot_error']==-errno.ETIMEDOUT
+                        # A valid but late ACK cannot reopen service after timeout.
+                        peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+nodes[7].held)
+                        peer_before=len(nodes[9].operations)
+                        until(lambda s:len(nodes[9].operations)>peer_before)
+                        assert status()['onus'][7]['phase']=='reboot-wait'
+                        assert sum(op==0x59 for _,op,_,_ in nodes[7].operations)==1
+                        result(command('resume'))
+                        if args.backend=='fpga1':hardware()
+                        until(lambda s:s['onus'][7]['phase']=='configured')
+                    elif mode=='finish-fail':
+                        attribute='backend' if args.backend=='fpga1' else 'management_grant'
+                        device.joinpath(attribute).rename(device/(attribute+'.saved'))
+                        peer.send(HOST+OLT+struct.pack('>HH',0x8888,7)+nodes[7].held)
+                        until(lambda s:process.poll() is not None,allow_exit=True)
+                        stdout,stderr=client.communicate(timeout=2)
+                        assert client.returncode==1 and f'({-errno.ENOENT})' in stderr
+                        assert process.wait(timeout=2)==1
+                        assert not any(v for v,_,_ in accel_events()[before:])
+                        device.joinpath(attribute+'.saved').rename(device/attribute)
+                        process=None;continue
+                    elif mode=='shutdown':
+                        process.send_signal(signal.SIGTERM)
+                        until(lambda s:process.poll() is not None,allow_exit=True)
+                        stdout,stderr=client.communicate(timeout=2)
+                        assert client.returncode==1 and f'({-errno.ECANCELED})' in stderr
+                        assert process.wait(timeout=2)==0,process.stderr.read()
+                        assert not any(v for v,_,_ in accel_events()[before:])
+                        process=None;continue
+                    else:
+                        error={'ack':0,'drop':errno.ETIMEDOUT,'reject':errno.EREMOTEIO,'malformed':errno.EPROTO}[mode]
+                        row=result(client,error)
+                        assert row['restart_verified'] is False
+                        assert row['command_accepted']==(True if mode=='ack' else False if mode=='reject' else None)
+                        assert sum(op==0x59 for _,op,_,_ in nodes[7].operations)==1
+                        if mode=='reject':until(lambda s:s['onus'][7]['phase']=='configured')
+                        else:
+                            until(lambda s:s['onus'][7]['phase']=='reboot-wait')
+                            result(command(),errno.EBUSY)
+                            peer_before=len(nodes[9].operations)
+                            until(lambda s:len(nodes[9].operations)>peer_before)
+                            assert sum(op==0x59 for _,op,_,_ in nodes[7].operations)==1
+                            assert 'fttr-u7' not in ports() and datapath(9)==peer_port
+                            if mode=='ack':
+                                # Observe departure before allowing fresh inventory/authentication.
+                                saved=nodes.pop(7);hardware()
+                                until(lambda s:s['onus'][7]['phase']=='absent')
+                                nodes[7]=Node(7,saved.serial.hex(),0x107,False);hardware()
+                            else:
+                                result(command('resume'))
+                                if args.backend=='fpga1':hardware()
+                            until(lambda s:s['onus'][7]['phase']=='configured')
+                            datapath(7)
+                    stop();process=None
+                    checks.append(mode)
+                checks += ['shutdown','finish-fail','withdraw-fail']
+            finally:
+                if process is not None and process.poll() is None:process.kill();process.wait()
+                peer.close();os.close(grant_fd)
+            args.output.write_text(json.dumps(dict(checks=checks,backend=args.backend,auth=args.auth,
+                scope='Actual resident, CLI, veth, bridge/VLAN and original reboot encoder; modeled ONU/MDIO/FE IO, no physical restart.'),indent=2)+'\n')
+            print(json.dumps(checks));return
         if args.onu_policy:
             checks=[]
             auth_policy.write_bytes(b'TFL1'+bytes(38))

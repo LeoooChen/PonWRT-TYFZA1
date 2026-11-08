@@ -6,7 +6,7 @@
 #include "miniolt.h"
 
 enum fttr_me_operation { FTTR_ME_CREATE = 0x44, FTTR_ME_DELETE = 0x46,
-	FTTR_ME_SET = 0x48, FTTR_ME_GET = 0x49, FTTR_ME_GET_NEXT = 0x5a };
+	FTTR_ME_SET = 0x48, FTTR_ME_GET = 0x49, FTTR_ME_REBOOT = 0x59, FTTR_ME_GET_NEXT = 0x5a };
 enum fttr_me_state { FTTR_ME_WAIT, FTTR_ME_DONE, FTTR_ME_FAILED };
 
 struct fttr_me_job {

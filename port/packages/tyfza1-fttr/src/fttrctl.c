@@ -613,10 +613,11 @@ static int onu_admin(int directory, const char *id, const char *serial, const ch
 	errno = 0;
 	number = strtoul(id, &end, 10);
 	if (errno || !*id || *end || number >= FTTR_ONUS || strlen(serial) != 16 ||
-	    (strcmp(action, "block") && strcmp(action, "resume") && strcmp(action, "deactivate") && strcmp(action, "move")))
+	    (strcmp(action, "block") && strcmp(action, "resume") && strcmp(action, "deactivate") && strcmp(action, "move") && strcmp(action, "reboot")))
 		return -EINVAL;
 	request.id = number;
-	request.action = !strcmp(action, "deactivate") ? FTTR_ADMIN_DEACTIVATE :
+	request.action = !strcmp(action, "reboot") ? FTTR_ADMIN_REBOOT :
+		!strcmp(action, "deactivate") ? FTTR_ADMIN_DEACTIVATE :
 		!strcmp(action, "block") ? FTTR_ADMIN_BLOCK : FTTR_ADMIN_RESUME;
 	for (i = 0; i < 8; i++) {
 		char pair[3] = { serial[i * 2], serial[i * 2 + 1], 0 };
@@ -669,6 +670,9 @@ static int onu_admin(int directory, const char *id, const char *serial, const ch
 	if (!ret && request.action == FTTR_ADMIN_MOVE)
 		printf("{\"event\":\"onu_move\",\"from\":%u,\"to\":%u,\"reservation_updated\":true,\"registration_verified\":false}\n",
 			request.id, request.target);
+	else if (request.action == FTTR_ADMIN_REBOOT)
+		printf("{\"event\":\"onu_reboot\",\"id\":%u,\"serial\":\"%s\",\"command_accepted\":%s,\"restart_verified\":false,\"error\":%d}\n",
+			request.id, serial, !ret ? "true" : ret == -EREMOTEIO ? "false" : "null", ret);
 	else if (!ret)
 		printf("{\"event\":\"onu_admin\",\"id\":%u,\"serial\":\"%s\",\"blocked\":%s,\"temporary\":%s}\n",
 			request.id, serial, request.action != FTTR_ADMIN_RESUME ? "true" : "false",
@@ -704,7 +708,7 @@ int main(int argc, char **argv)
 			"       %s <miniolt-sysfs-directory> wifi <hardware-ID> <config-file> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> wait-link <NI-sysfs-directory>\n",
 			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
-		fprintf(stderr, "       %s <controller-state-directory> onu-admin <hardware-ID> <serial-hex> <block|resume|deactivate>\n", argv[0]);
+		fprintf(stderr, "       %s <controller-state-directory> onu-admin <hardware-ID> <serial-hex> <block|resume|deactivate|reboot>\n", argv[0]);
 		fprintf(stderr, "       %s <controller-state-directory> onu-move <source-ID> <source-serial-hex> <target-ID> <target-serial-hex>\n", argv[0]);
 		fprintf(stderr, "       %s <optical-sysfs-directory> optical\n", argv[0]);
 		return 2;

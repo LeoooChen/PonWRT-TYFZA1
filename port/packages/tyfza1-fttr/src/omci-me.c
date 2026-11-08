@@ -41,6 +41,8 @@ int fttr_me_job_start(struct fttr_me_job *job, uint16_t onu, uint16_t *counter,
 	job->transaction = *counter;
 	job->onu = onu;
 	job->mask = mask;
+	/* A lost reply must not cause another remote reboot. */
+	job->no_retry = operation == FTTR_ME_REBOOT;
 	write_be16(job->request, job->transaction);
 	job->request[2] = operation;
 	job->request[3] = 0x0a;

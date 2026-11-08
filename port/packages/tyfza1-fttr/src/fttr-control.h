@@ -16,6 +16,6 @@ struct fttr_admin_request {
 	uint8_t target_serial[8];
 };
 
-enum fttr_admin_action { FTTR_ADMIN_RESUME, FTTR_ADMIN_BLOCK, FTTR_ADMIN_DEACTIVATE, FTTR_ADMIN_MOVE };
+enum fttr_admin_action { FTTR_ADMIN_RESUME, FTTR_ADMIN_BLOCK, FTTR_ADMIN_DEACTIVATE, FTTR_ADMIN_MOVE, FTTR_ADMIN_REBOOT };
 
 #endif

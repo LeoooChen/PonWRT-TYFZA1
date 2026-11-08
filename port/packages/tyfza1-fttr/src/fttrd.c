@@ -33,7 +33,7 @@
 #include "omci-socket.h"
 
 enum onu_phase { ONU_ABSENT, ONU_BLOCKED, ONU_MIB, ONU_INVENTORY, ONU_FAILED,
-	ONU_SERVICE, ONU_CONFIGURED, ONU_SERVICE_FAILED, ONU_SYNC, ONU_WIFI, ONU_AUTH, ONU_AUTH_FAILED, ONU_MOVE };
+	ONU_SERVICE, ONU_CONFIGURED, ONU_SERVICE_FAILED, ONU_SYNC, ONU_WIFI, ONU_AUTH, ONU_AUTH_FAILED, ONU_MOVE, ONU_REBOOT, ONU_REBOOT_WAIT };
 
 struct wifi_policy {
 	struct wifi_policy *next;
@@ -91,6 +91,8 @@ struct onu {
 	enum onu_phase phase;
 	uint8_t identity[8];
 	bool grant;
+	struct fttr_me_job reboot;
+	int reboot_error;
 	bool admin_pending;
 	uint8_t admin_serial[8];
 	int64_t admin_timeout;
@@ -126,7 +128,7 @@ struct controller {
 		struct fttr_admin_request request;
 		struct sockaddr_un client;
 		socklen_t client_length;
-	} move;
+	} move, reboot;
 };
 
 static int multicast_close(struct controller *c)
@@ -158,6 +160,8 @@ static int forwarding(struct controller *c, bool enable)
 }
 
 static int move_drive(struct controller *c);
+static int reboot_drive(struct controller *c);
+static int reboot_finish(struct controller *c, int result);
 static int policy_move(struct controller *c, unsigned int id);
 static int auth_drive(struct controller *c, unsigned int id);
 
@@ -431,7 +435,7 @@ static struct fttr_service_job *multicast_service(struct onu *u)
 static int publish(struct controller *c, const char *state, int error)
 {
 	static const char * const phases[] = { "absent", "blocked", "mib", "inventory", "failed",
-		"provision", "configured", "service-failed", "sync", "wifi", "authentication", "auth-failed", "move-release" };
+		"provision", "configured", "service-failed", "sync", "wifi", "authentication", "auth-failed", "move-release", "reboot", "reboot-wait" };
 	int fd = openat(c->store, "status.json.new", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
 	FILE *file;
 	unsigned int id;
@@ -473,7 +477,8 @@ static int publish(struct controller *c, const char *state, int error)
 				"\"loid_acquired\":%s,\"loid_result\":%u,\"loid_result_verified\":%s,"
 				"\"loid_authenticated\":%s,\"loid_auth_error\":%d,\"loid_fallback_error\":%d,"
 				"\"onu_auth_required\":%s,\"onu_authenticated\":%s,\"onu_auth_action\":%u,"
-				"\"onu_auth_logical_id\":%u,\"onu_auth_method\":%u,\"onu_auth_error\":%d}",
+				"\"onu_auth_logical_id\":%u,\"onu_auth_method\":%u,\"onu_auth_error\":%d,"
+				"\"reboot_sent\":%s,\"reboot_accepted\":%s,\"reboot_error\":%d}",
 				u->services.count, u->services.configured ? "true" : "false", u->services.cleanup_error,
 				u->sync.valid ? "true" : "false", u->sync.value, u->sync.observed,
 				u->sync.error, u->sync.checked, u->rescans,
@@ -485,7 +490,9 @@ static int publish(struct controller *c, const char *state, int error)
 				u->auth.error, u->auth.fallback_error, c->onu_policy.enabled ? "true" : "false",
 				u->policy_authenticated ? "true" : "false", u->selection.action,
 				c->onu_policy.enabled && u->selection.method ? u->selection.id + 1 : 0,
-				u->selection.method, u->policy_error);
+				u->selection.method, u->policy_error, u->reboot.attempts ? "true" : "false",
+				u->reboot.replied && !u->reboot_error ? "true" :
+				u->reboot.replied && u->reboot.result ? "false" : "null", u->reboot_error);
 		}
 		fputc(']', file);
 	}
@@ -1106,7 +1113,7 @@ static int withdraw_service(struct controller *c, unsigned int id, bool accel_pa
 	return cleanup;
 }
 
-static int cancel(struct controller *c, unsigned int id, bool accel_paused)
+static int cancel_state(struct controller *c, unsigned int id, bool accel_paused, bool keep_management)
 {
 	struct onu *u = &c->onu[id];
 	int ret;
@@ -1172,7 +1179,7 @@ static int cancel(struct controller *c, unsigned int id, bool accel_paused)
 	ret = remove_file(c->store, id, "mib");
 	if (ret)
 		return ret;
-	if (u->grant) {
+	if (u->grant && !keep_management) {
 		ret = fttr_miniolt_management(c->directory, id, false);
 		if (ret)
 			return ret;
@@ -1191,6 +1198,11 @@ static int cancel(struct controller *c, unsigned int id, bool accel_paused)
 	fttr_mib_model_clear(&u->model);
 	memset(&u->auth, 0, sizeof(u->auth));
 	return 0;
+}
+
+static int cancel(struct controller *c, unsigned int id, bool accel_paused)
+{
+	return cancel_state(c, id, accel_paused, false);
 }
 
 static int failed(struct controller *c, unsigned int id, int error)
@@ -1269,6 +1281,8 @@ static int start_mib(struct controller *c, unsigned int id)
 	char name[24];
 	int fd, ret;
 
+	memset(&u->reboot, 0, sizeof(u->reboot));
+	u->reboot_error = 0;
 	memcpy(u->identity, u->hardware.serial, 8);
 	if (!memcmp(u->identity, empty, 8))
 		return failed(c, id, -EPROTO);
@@ -1797,6 +1811,13 @@ static int refresh(struct controller *c)
 		enum onu_phase inactive = table[id].downstream & (1U << 16) ? ONU_BLOCKED : ONU_ABSENT;
 
 		u->hardware = table[id];
+		if (c->reboot.active && id == c->reboot.request.id) {
+			if ((table[id].downstream & (1U << 18)) && inactive != ONU_BLOCKED &&
+			    !memcmp(c->reboot.request.serial, table[id].serial, 8))
+				continue;
+			ret = reboot_finish(c, -ESTALE);
+			if (ret) return ret;
+		}
 		if (c->move.active && (id == c->move.request.id || id == c->move.request.target))
 			continue;
 		if (u->admin_pending) {
@@ -1875,6 +1896,10 @@ static int receive_message(struct controller *c)
 		fprintf(stderr, "FTTR OMCI receive error: %d, ONU=%u\n", error, message.onu);
 		if (message.onu < FTTR_ONUS && message.body) {
 			u = &c->onu[message.onu];
+			if (u->phase == ONU_REBOOT_WAIT) return 0;
+			if (u->phase == ONU_REBOOT &&
+			    ((uint16_t)message.body[0] << 8 | message.body[1]) == u->reboot.transaction)
+				return reboot_finish(c, error);
 			if (u->phase == ONU_MOVE) {
 				struct fttr_me_job *me = fttr_services_pending(&u->services);
 
@@ -1933,6 +1958,11 @@ static int receive_message(struct controller *c)
 	if (message.onu >= FTTR_ONUS)
 		return 0;
 	u = &c->onu[message.onu];
+	if (u->phase == ONU_REBOOT_WAIT) return 0;
+	if (u->phase == ONU_REBOOT) {
+		if (!fttr_me_job_reply(&u->reboot, &message)) return 0;
+		return reboot_drive(c);
+	}
 	if (u->phase == ONU_MOVE) {
 		struct fttr_me_job *me = fttr_services_pending(&u->services);
 
@@ -2045,6 +2075,8 @@ static int admin_request(struct controller *c, const struct fttr_admin_request *
 	*fatal = 0;
 	if (request->version != 1 || request->id >= FTTR_ONUS || request->action > FTTR_ADMIN_DEACTIVATE)
 		return -EINVAL;
+	if (c->reboot.active && request->id == c->reboot.request.id)
+		return -EBUSY;
 	if (c->move.active && (request->id == c->move.request.id || request->id == c->move.request.target))
 		return -EBUSY;
 	u = &c->onu[request->id];
@@ -2182,7 +2214,8 @@ static int move_request(struct controller *c, const struct fttr_admin_request *r
 	if (request->version != 2 || request->action != FTTR_ADMIN_MOVE ||
 	    request->id >= FTTR_ONUS || request->target >= FTTR_ONUS || request->id == request->target)
 		return -EINVAL;
-	if (c->move.active)
+	if (c->move.active || (c->reboot.active &&
+	    (request->id == c->reboot.request.id || request->target == c->reboot.request.id)))
 		return -EBUSY;
 	ret = fttr_miniolt_one(c->directory, request->id, &source);
 	if (!ret)
@@ -2286,6 +2319,92 @@ static int policy_move(struct controller *c, unsigned int id)
 	return auth_failed(c, id, ret);
 }
 
+/* The command is sent once. An ACK proves acceptance, not a restart. Keep
+ * service admission withdrawn until departure/replacement is observed or
+ * an explicit administrator resume starts fresh inventory/authentication.
+ */
+static int reboot_finish(struct controller *c, int result)
+{
+	unsigned int id = c->reboot.request.id;
+	struct onu *u = &c->onu[id];
+	int32_t reply = result;
+	int ret = 0;
+
+	u->reboot_error = result;
+	if (result) {
+		u->reboot.state = FTTR_ME_FAILED;
+		u->reboot.error = result;
+	}
+	u->phase = u->reboot.attempts && !(u->reboot.replied && u->reboot.result) ?
+		ONU_REBOOT_WAIT : ONU_ABSENT;
+	if (u->grant) {
+		ret = fttr_miniolt_management(c->directory, id, false);
+		if (!ret) u->grant = false;
+	}
+	if (!ret && !stopping) ret = forwarding(c, true);
+	if (ret) reply = ret;
+	if (c->reboot.client_length && sendto(c->control, &reply, sizeof(reply), MSG_DONTWAIT | MSG_NOSIGNAL,
+	    (struct sockaddr *)&c->reboot.client, c->reboot.client_length) < 0)
+		fprintf(stderr, "FTTR reboot reply failed: %s\n", strerror(errno));
+	memset(&c->reboot, 0, sizeof(c->reboot));
+	if (!ret && !stopping) ret = publish(c, "running", 0);
+	return ret;
+}
+
+static int reboot_drive(struct controller *c)
+{
+	unsigned int id = c->reboot.request.id;
+	struct onu *u = &c->onu[id];
+	struct fttr_onu_state expected = u->hardware;
+	int ret;
+
+	memcpy(expected.serial, c->reboot.request.serial, 8);
+	ret = fttr_miniolt_same(c->directory, id, &expected);
+	if (ret) return reboot_finish(c, ret);
+	if (u->reboot.state != FTTR_ME_WAIT)
+		return reboot_finish(c, u->reboot.error);
+	if (!u->reboot.attempts)
+		ret = fttr_me_job_send(&u->reboot, c->socket, &c->link, now_ms());
+	else
+		ret = fttr_me_job_timeout(&u->reboot, c->socket, &c->link, now_ms());
+	return ret ? reboot_finish(c, ret) : 0;
+}
+
+static int reboot_request(struct controller *c, const struct fttr_admin_request *request, int *fatal)
+{
+	struct fttr_onu_state observed;
+	struct onu *u;
+	int ret;
+
+	*fatal = 0;
+	if (request->version != 1 || request->action != FTTR_ADMIN_REBOOT || request->id >= FTTR_ONUS)
+		return -EINVAL;
+	if (c->reboot.active || (c->move.active &&
+	    (request->id == c->move.request.id || request->id == c->move.request.target)))
+		return -EBUSY;
+	u = &c->onu[request->id];
+	if (u->phase == ONU_REBOOT_WAIT || u->admin_pending) return -EBUSY;
+	ret = fttr_miniolt_one(c->directory, request->id, &observed);
+	if (ret) return ret;
+	if (memcmp(observed.serial, request->serial, 8) || memcmp(u->identity, request->serial, 8) ||
+	    !(observed.downstream & (1U << 18)) || (observed.downstream & (1U << 16)))
+		return -ESTALE;
+	if (!u->grant) return -ENOLINK;
+	ret = forwarding(c, false);
+	if (!ret) ret = cancel_state(c, request->id, true, true);
+	if (ret) { *fatal = ret; return ret; }
+	u->hardware = observed;
+	u->phase = ONU_REBOOT;
+	u->reboot_error = 0;
+	/* Factory ASIC and FPGA1 both use ONU-G 256/0, operation 0x59,
+	 * zero condition/body. omci-me marks this operation non-retryable.
+	 */
+	fttr_me_job_start(&u->reboot, request->id, &c->transaction, FTTR_ME_REBOOT, 256, 0, 0, NULL, 0);
+	c->reboot.active = true;
+	c->reboot.request = *request;
+	return -EINPROGRESS;
+}
+
 static int receive_control(struct controller *c)
 {
 	struct fttr_admin_request request = { 0 };
@@ -2319,8 +2438,15 @@ static int receive_control(struct controller *c)
 		result = -EACCES;
 	else if (request.version == 2)
 		result = move_request(c, &request, &fatal);
+	else if (request.action == FTTR_ADMIN_REBOOT)
+		result = reboot_request(c, &request, &fatal);
 	else
 		result = admin_request(c, &request, false, &fatal);
+	if (result == -EINPROGRESS && request.action == FTTR_ADMIN_REBOOT) {
+		c->reboot.client = address;
+		c->reboot.client_length = message.msg_namelen;
+		return reboot_drive(c);
+	}
 	if (result == -EINPROGRESS && request.version == 2) {
 		c->move.client = address;
 		c->move.client_length = message.msg_namelen;
@@ -2353,6 +2479,8 @@ static int admin_tick(struct controller *c, int64_t now)
 		struct onu *u = &c->onu[id];
 
 		if (c->move.active && (id == c->move.request.id || id == c->move.request.target))
+			continue;
+		if (u->phase == ONU_REBOOT || u->phase == ONU_REBOOT_WAIT)
 			continue;
 		if (scan && !u->admin_pending && !(table[id].downstream & (1U << 16)) &&
 		    fttr_miniolt_recovery_needed(c->backend, table[id].upstream)) {
@@ -2430,6 +2558,14 @@ static int run(struct controller *c)
 		for (id = 0; id < FTTR_ONUS; id++) {
 			struct onu *u = &c->onu[id];
 
+			if (u->phase == ONU_REBOOT) {
+				ret = reboot_drive(c);
+				if (ret) return ret;
+				if (c->reboot.active && u->reboot.deadline < deadline)
+					deadline = u->reboot.deadline;
+				continue;
+			}
+			if (u->phase == ONU_REBOOT_WAIT) continue;
 			if (u->admin_pending) {
 				if (c->admin_scan_due < deadline)
 					deadline = c->admin_scan_due;
@@ -2894,6 +3030,10 @@ out:
 	if (stopping && ret == -EINTR)
 		ret = 0;
 	if (owned) {
+		if (c.reboot.active) {
+			result = reboot_finish(&c, ret ? ret : -ECANCELED);
+			if (!ret) ret = result;
+		}
 		if (c.move.active)
 			move_finish(&c, ret ? ret : -ECANCELED);
 		if (c.control >= 0) {

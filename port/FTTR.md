@@ -5585,6 +5585,65 @@ MODULE_DESCRIPTION warnings remain. Local evidence is in
 The IO model does not prove physical drain, and full upstream retirement and
 quarantined FTTR ID reuse remain unresolved. No device was accessed.
 
+### Resident remote ONU reboot
+
+`fttrctl STATE_DIRECTORY onu-admin ID SERIAL16 reboot` now sends the factory
+ONU-G reboot through the owning `fttrd` control socket. ASIC and FPGA1 target
+libraries execute `plr_gponrm_onu_reboot` → `plr_gponrm_pr_onug_reboot` →
+`plr_gponomci_onug_reboot` → `plr_gponomci_reboot_meadapter`: internal action15,
+class256/instance0, baseline operation0x59 with a zero condition/body. The
+factory encoder submits48 bytes including the CRC reservation; native OMCI
+uses the same first44 bytes and its existing link framing/CRC implementation.
+`trace_stock_fttr_reboot.py` executes both factories, including failed
+transaction allocation/transmission, and compares exact bodies at three ONU
+IDs and three transaction IDs.
+
+The actual factory ACK functions expose a result bug: their common parser
+only copies the status byte for selected response opcodes0x24..0x32. Reboot
+0x39 leaves its caller's zero-initialized result untouched, reporting success
+even for a nonzero response status. Fourteen executed ACK cases confirm this
+in both libraries. Native `omci-me` checks byte8 and reports a remote rejection
+as `EREMOTEIO`; this defect is deliberately not reproduced.
+
+The controller validates local credentials, the supplied serial and the live
+registration, closes FE admission, removes local business VLANs and withdraws
+business DBA. It cancels prior per-ONU jobs while retaining the management
+grant needed to transmit OMCI. FPGA1 has global OMCI setup and its per-ONU
+management close performs no DBA IO; the common session ownership still
+tracks that lifetime. The shared event loop sends exactly once,
+checks identity before send and completion, and handles ACK, malformed reply,
+two-second timeout, replacement and shutdown. The generic job marks reboot
+non-retryable. A pending reboot excludes conflicting local administration and
+migration; a second reboot while awaiting departure is rejected. Client
+exit does not cancel or repeat a transmitted request. Wrong-TCI and late ACKs
+cannot complete a different transaction or reopen service.
+
+On completion the controller withdraws the management grant before reopening
+shared forwarding for other ONUs. An unconfirmed withdrawal is fatal and keeps
+forwarding closed. An accepted or uncertain request remains `reboot-wait`
+with no business port/grant until observed departure/replacement or explicit
+`onu-admin ... resume`. Departure starts the normal inventory/authentication
+and full service validation before admission. A definite remote rejection or
+unsent request can return to fresh inventory. The CLI reports
+`command_accepted:true`, `false` for a definite remote rejection, or `null`
+when no acceptance can be established, and always `restart_verified:false`.
+Runtime status adds `reboot_sent`, `reboot_accepted` and `reboot_error`; fresh
+inventory clears this previous registration's result. If registration drops
+and returns between polls, the wait deliberately requires explicit resume;
+there is no claimed positive restart detection or durable reboot receipt.
+
+The actual daemon/CLI AF_PACKET/veth tests cover ACK, timeout with one send,
+rejection, malformed ACK, wrong/late TCI, serial replacement, disconnected
+client, shutdown, FE withdrawal failure and management cleanup failure.
+The healthy peer retains its VLAN, and departure/resume goes through fresh
+LOID authentication before service. ASIC and FPGA1 framing are covered;
+existing ONU-admin, dispatch and migration regressions and native/aarch64-musl
+builds pass. Reports: `artifacts/fttr/reboot-stock-20261108.json`,
+`reboot-resident-20261108.json`, `reboot-resident-fpga1-20261108.json` and
+`reboot-{admin,move}-regression-20261108.json` in the same local directory.
+These use modeled ONU/MDIO/FE IO and prove no physical restart, packet drain
+or hardware-ID reuse. No device was accessed.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN
@@ -6226,7 +6285,9 @@ is used to acknowledge full retirement or release a quarantined hardware ID.
 5. Original subordinate gateway configuration, Wi-Fi synchronization,
    multicast, reboot/upgrade and roaming coordination, using the connected
    ONU's actual capabilities rather than assuming one fixed subordinate model.
-   The original ff69/ff6a Wi-Fi update transaction is implemented with
+   The resident ONU-G reboot request is implemented as described above;
+   upgrade, gateway/roaming coordination and physical reboot verification
+   remain work. The original ff69/ff6a Wi-Fi update transaction is implemented with
    preflight/readback/restoration, explicit CLI and resident per-ONU policy;
    settings mapping and
    actual subordinate capability/behavior verification remain work.

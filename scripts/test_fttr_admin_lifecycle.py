@@ -16,7 +16,7 @@ source = r'''
 #include <stdio.h>
 #define FTTR_ONUS 64
 enum { FTTR_FPGA1=1,FTTR_FPGA2,FTTR_ASIC9690 };
-enum { ONU_ABSENT,ONU_BLOCKED };
+enum { ONU_ABSENT,ONU_BLOCKED,ONU_REBOOT,ONU_REBOOT_WAIT };
 enum { FTTR_ADMIN_DEACTIVATE=2 };
 struct fttr_onu_state {uint32_t downstream,upstream;unsigned char serial[8];};
 struct fttr_admin_request {uint32_t version,id,action;unsigned char serial[8];uint32_t target;};
