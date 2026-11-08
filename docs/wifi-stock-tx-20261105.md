@@ -193,3 +193,14 @@ REA进一步取得实际txsc_amsdu_enqueue全调用链，确认默认tcp_ack_dro
 ACK实机候选20秒上行1.276333G0retx，替换229738ACK、NI发送4007/recycle233745、pending0；之前base1.347062G0retx，恢复控制1.424347G0retx。减少ACK没有提高吞吐，约5–10%回退。未推广到正式源码、未刷入，隔离代码与日志保留；不能因“原厂有此函数”就硬并有回退的局部实现。全原厂ACK排队/计时与当前PE配合仍未完成；下一轮不能重复同一局部策略或宣称ACK缺失为唯一瓶颈。
 
 最终恢复持久6a864f8、phy4-ap0、boote76da191不变。所有NI测试模块/server停止，Mac198.18.255.1hostroute删除，临时ACK ko/加载脚本删除，TTL无持有进程。Macen5继续外部供网，en0测试AP授权。已保留directNI和alignedprefix修正；完整原厂WiFi重写与TCP1.8/UDP2.0双向低丢目标仍active/unmet。
+
+
+### 2026-11-08 阶段占用、批次WD缓存和失败的时钟诊断
+
+6a864f8/boote76da191基线。只读stage模块未改PE二进制，15秒1300M/1900M每秒一采：低载接收1.2996G/loss0，高载1.6497G/loss12.37%。活动样本中位数：1300M queued47/EPP20/在途MSDU651/complete0；1900M queued1270/EPP52/在途MSDU931/complete0。快照前后sent最多差7，仍非原子；complete为MPDU，queued为MSDU，不混用计数。说明主要软件待选队列和无线持有占用，未发现持续已完成回收堆积；不支持重复旧备用缓冲方案，也不证明无线空口是唯一瓶颈。observer已卸载，原固件恢复。
+
+REA原厂_phl_txsc_apply_shortcut确认WD缓存复用，证据output/stock-txsc-wd.json。隔离wd-batch-cache候选在一个pe_tx_publish内保存14wordWD，输入rate/flags/aggregation/headerlen/ring/sizeclass逐项匹配，软件PN不缓存，sequence/length/checksum/wp-owner始终更新。192向量含相同/速率/密钥/长度/单聚合/客户端/加密方式连续变化，WD/TXBD/payload/sequence逐字节相同；命中典型7MSDU约1024→993MIPS指令。构建、gather/publication/IMEM通过，stack7016/8176。实机UDPbase1.669495G，ON1.668538G11.30%loss，无收益，候选未合入，已恢复原模块。
+
+随后为区分PE核心执行与无线服务尝试只降低PE核心频率、按厂商时钟树保持AXI：GLOBAL_PEDIV40404→20408。gp3000rtl8277C时钟驱动的divider为field>>1（ONE_BASED），offload_sel0选FPLL，PEAXI再分频；但这只支持静态树解释，不证明可在运行期间原子切换。实际devmem写后SSH超时，无有效半速样本，不能用于性能归因。预置25s恢复和TTL均写回40404，读回确认；PE仍停止进展。NI造流模块经TTL正常stop卸载，随后radio卸载出现H2C/drain超时并卡unregister_netdevice usage2。串口shell被前台rmmod占住，后输入sync/sysrqb没有执行；Ctrl-C/Z也未返回。
+
+1130继电器两轮：一次saved9600直接写，一次4字节OFF/ON分别tcdrain、4秒间隔；无新启动日志。最后1120意外保留9600，明确重设115200仍输出同一uptime约3895秒的unregister等待，证明没有成功电源重启。不能声称已恢复设备；当前需用户手动断电重启。clock原值已恢复，未刷flash、不再重复时钟或继电器实验。Mac198.18.255.1hostroute已删除，供网en5保持。TTL及继电器fd均已关闭；底层device RAM运行仍卡住，需在后续答复明确。
