@@ -1,0 +1,11 @@
+--- a/net/bridge/br_forward.c
++++ b/net/bridge/br_forward.c
+@@ -215,7 +215,7 @@
+ #ifdef CONFIG_ARCH_RTL9617C
+ 	u64 native_transaction = 0;
+ 	bool native_complete = true;
+-	if (pkt_type == BR_PKT_MULTICAST && !local_orig)
++	if ((pkt_type == BR_PKT_MULTICAST || pkt_type == BR_PKT_BROADCAST) && !local_orig)
+ 		native_transaction = rtl9617c_bridge_mcast_capture(skb, local_rcv);
+ #endif
+ 

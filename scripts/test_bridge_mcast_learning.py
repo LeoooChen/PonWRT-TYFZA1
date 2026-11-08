@@ -124,7 +124,6 @@ static const struct rtl9617c_bridge_frame *skb_ext_find(const struct sk_buff *s,
 static struct rtl9617c_bridge_frame *skb_ext_add(struct sk_buff *s,int id){assert(!id);if(ext_change){fe_mcast_invalidate(ext_change);ext_change=NULL;}return &s->saved;}
 static bool is_multicast_ether_addr(const u8 *a){return a[0]&1;}
 static bool is_valid_ether_addr(const u8 *a){return !(a[0]&1)&&memcmp(a,"\0\0\0\0\0\0",6);}
-static bool is_broadcast_ether_addr(const u8 *a){return !memcmp(a,"\xff\xff\xff\xff\xff\xff",6);}
 static bool is_link_local_ether_addr(const u8 *a){return !memcmp(a,"\1\x80\xc2\0\0",5)&&a[5]<16;}
 static bool ether_addr_equal(const u8 *a,const u8 *b){return !memcmp(a,b,6);}
 static struct net_device *devices[16];
@@ -839,9 +838,14 @@ int main(void){
  assert(copied==2);fe_mcast_invalidate(&fe);assert(!fe_delete(&fe,fe.indexed));
  /* STA ordinary multicast retains Ethernet DA and uses the associated AP
   * peer. AP ordinary groups must still take the GTK/DTIM software path. */
+ struct rtl9617c_bridge_frame multicast_wireless=wireless;
  for(unsigned role=0;role<3;role++) {
+  bool broadcast=getenv("RTL_TEST_BROADCAST")!=NULL;
+  wireless=multicast_wireless;
+  if(broadcast){memset(wireless.destination,255,6);wireless.ip_destination[0]=0xffffffffU;wireless.source_port=68;wireless.destination_port=67;}
   ap.iftype=role?NL80211_IFTYPE_AP:NL80211_IFTYPE_STATION;
   test_peer.policy.flags=BIT(16)|BIT(18)|(role?0:BIT(23));
+  fe.mc_pe[1].bcmc_policy_generation=0;
   if(role==2) {
    fe.mc_pe[1].bcmc_policy_generation=test_policy_generation;
    fe.mc_pe[1].bcmc=(struct rtl9617c_wifi_policy){.flags=BIT(18)|BIT(13)|BIT(14)|BIT(15),.key=63<<16|2<<24,.bcmc_generation=29,.sequence=23,.key_generation=11,.rate=4};
@@ -874,6 +878,7 @@ int main(void){
   }
   fe_mcast_invalidate(&fe);assert(!fe_delete(&fe,fe.indexed));
  }
+ wireless=multicast_wireless;
  ap.iftype=NL80211_IFTYPE_STATION;
  fe.mc_pe[1].table=NULL;fe.mc_pe[1].netdev=NULL;test_peer_port=NULL;
  /* EPON MAC-instance0 and31 use POL0/31 on ingress, with per-replica

@@ -205,7 +205,7 @@ int main(void){
  for(unsigned kind=BR_PKT_UNICAST;kind<=BR_PKT_BROADCAST;kind++) {
   reset();br_flood(&bridge,&packet,kind,true,true,100);
   assert(!captured&&!completed&&!aborted);cases++;
-  if(kind!=BR_PKT_MULTICAST){reset();br_flood(&bridge,&packet,kind,true,false,100);assert(!captured);cases++;}
+  if(kind!=BR_PKT_MULTICAST){reset();br_flood(&bridge,&packet,kind,true,false,100);assert(captured==(kind==BR_PKT_BROADCAST));cases++;}
  }
  printf("Linux multicast selection: %u complete-member, router/filter, local-copy and clone-failure cases passed\n",cases);
 }

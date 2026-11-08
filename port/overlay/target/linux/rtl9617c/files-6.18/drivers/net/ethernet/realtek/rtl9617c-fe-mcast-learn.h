@@ -345,7 +345,7 @@ static u64 fe_mcast_capture_begin(void *context,struct sk_buff *skb,bool local,u
 
  if(rtl9617c_fttr_stale(skb) || READ_ONCE(bridge->stopping) || !rtl_fe_enabled(fe) || !wire || !wire->port ||
     wire->epoch!=(u32)atomic_read(&bridge->epoch) || wire->multicast_host_group || wire->ip_protocol!=IPPROTO_UDP ||
-    !is_multicast_ether_addr(wire->destination) || is_broadcast_ether_addr(wire->destination) ||
+    !is_multicast_ether_addr(wire->destination) ||
     is_link_local_ether_addr(wire->destination) ||
     skb_is_gso(skb))return 0;
  brdev=netdev_master_upper_dev_get_rcu(skb->dev);
@@ -636,12 +636,16 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
   struct rtl_fe_mc_replica *replica=&mc->replica[mc->count];
   bool shared=dev==fe->fttr_mcast,pon=physical && physical==fe->itu_netdev;
   bool unicast=!ether_addr_equal(frame->destination,packet->input.destination);
+  bool broadcast=is_broadcast_ether_addr(packet->input.destination);
   if(!dev || !physical || !netif_running(dev) || !netif_carrier_ok(dev) ||
      netdev_master_upper_dev_get(dev)!=brdev || br_port_get_stp_state(dev)!=BR_STATE_FORWARDING) {
    ret=-ESTALE;goto out;
   }
   if(!fe_mcast_path_clear(dev) || !fe_mcast_port_clear(physical)){ret=-EOPNOTSUPP;goto out;}
   if(unicast && (!is_valid_ether_addr(frame->destination) || shared)){ret=-EOPNOTSUPP;goto out;}
+  /* The original shared .mc endpoint drops broadcast. Its per-ONU GEM
+   * VLANs keep those copies; do not turn a dropped shared copy into TX. */
+  if(shared && broadcast)continue;
   /* The native parent drops duplicate data sent via member UNI VLANs.
    * Preserve that established policy instead of adding a second replica. */
   if(physical==fe->fttr_netdev && dev->group==0x46544d55 &&
@@ -658,8 +662,14 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
   if(shared && physical->mtu>VLAN_HLEN && physical->mtu-VLAN_HLEN<data.mtu)
    data.mtu=physical->mtu-VLAN_HLEN;
   port=fe_port(fe,physical);
-  if(!port || (port==data.input && !shared && !unicast) || (!pon && !port->wifi_id && !fe_mcast_epon_port(fe,port) && port->destination>6) || port->destination==5 ||
-     (physical==fe->fttr_netdev && !shared && !unicast)){ret=-EOPNOTSUPP;goto out;}
+  if(!port || (port==data.input && !shared && !unicast && !(broadcast && physical==fe->fttr_netdev && dev!=input)) || (!pon && !port->wifi_id && !fe_mcast_epon_port(fe,port) && port->destination>6) || port->destination==5 ||
+     (physical==fe->fttr_netdev && !shared && !unicast && !broadcast)){ret=-EOPNOTSUPP;goto out;}
+  if(physical==fe->fttr_netdev && !shared && broadcast) {
+   if(!fe->fttr_admitted || !is_vlan_dev(dev) || vlan_dev_real_dev(dev)!=physical ||
+      !vlan_dev_vlan_id(dev) || vlan_dev_vlan_id(dev)==4095 || !frame->tags ||
+      frame->tag[0].protocol!=ETH_P_8021Q ||
+      (frame->tag[0].tci&VLAN_VID_MASK)!=vlan_dev_vlan_id(dev)){ret=-EOPNOTSUPP;goto out;}
+  }
   replica->destination=port->destination;replica->tags=frame->tags;
   for(j=0;j<frame->tags;j++) {
    replica->tag[j].protocol=frame->tag[j].protocol;replica->tag[j].tci=frame->tag[j].tci;

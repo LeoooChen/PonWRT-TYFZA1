@@ -71,28 +71,37 @@ initial=learning.split("code+=r'''\nint main(void){",1)[1].split(' struct nf_hoo
 code+='int main(void){'+initial+r'''
  owner=&bridge;fdb_source=&lan;
  struct net_bridge linux_bridge={.dev=&br};
- struct net_bridge_port ports[3];linux_bridge.port_list=ports;
- struct net_device *outputs[]={&lan,&out,&shared};
- for(unsigned i=0;i<3;i++)ports[i]=(struct net_bridge_port){.br=&linux_bridge,.dev=outputs[i],.state=BR_STATE_FORWARDING,.flags=BR_MCAST_FLOOD,.vlan={true},.next=i<2?&ports[i+1]:NULL};
+ struct net_device onu=shared;onu.ifindex=8;onu.lower=&p6;onu.vid=301;onu.group=0x46544d55;
+ onu.vlan.flags=VLAN_FLAG_REORDER_HDR;devices[8]=&onu;
+ struct net_bridge_port ports[4];linux_bridge.port_list=ports;
+ struct net_device *outputs[]={&lan,&out,&shared,&onu};
+ for(unsigned i=0;i<4;i++)ports[i]=(struct net_bridge_port){.br=&linux_bridge,.dev=outputs[i],.state=BR_STATE_FORWARDING,.flags=BR_MCAST_FLOOD,.vlan={true},.next=i<3?&ports[i+1]:NULL};
  struct rtl9617c_bridge_frame frame=skb.saved;
- for(unsigned scenario=0;scenario<8;scenario++) {
+ for(unsigned broadcast=0;broadcast<2;broadcast++)for(unsigned scenario=0;scenario<10;scenario++) {
+  unsigned flood=broadcast?BR_BCAST_FLOOD:BR_MCAST_FLOOD;
   fe.event_count=0;memset(delivered,0,sizeof(delivered));clone_calls=failed_clone=drops=0;
-  ports[1].flags=ports[2].flags=BR_MCAST_FLOOD;ports[1].isolated=false;ports[1].vlan.allowed=true;
+  ports[1].flags=ports[2].flags=ports[3].flags=flood;ports[1].isolated=false;ports[1].vlan.allowed=true;
   if(scenario==1)ports[1].flags=0;
   if(scenario==2)ports[1].isolated=true;
   if(scenario==3)ports[1].vlan.allowed=false;
-  if(scenario==4)ports[1].flags=ports[2].flags=0;
+  if(scenario==4)ports[1].flags=ports[2].flags=ports[3].flags=0;
   if(scenario==5)failed_clone=1;
   if(scenario==6)failed_clone=2;
+  if(scenario==8)ports[1].flags=BR_PROXYARP|flood;
+  if(scenario==9)ports[1].flags=broadcast?BR_MCAST_FLOOD:BR_BCAST_FLOOD;
+  if(broadcast){memset(frame.destination,255,6);frame.ip_destination[0]=0xffffffffU;frame.source_port=68;frame.destination_port=67;}
   skb=(struct sk_buff){.dev=&lan,.saved=frame,.frame=frame};skb.saved.multicast_epoch=fe.mc_gate.epoch;
-  br_flood(&linux_bridge,&skb,BR_PKT_MULTICAST,true,false,0);fe_mcast_process(&bridge);
+  br_flood(&linux_bridge,&skb,broadcast?BR_PKT_BROADCAST:BR_PKT_MULTICAST,true,false,0);fe_mcast_process(&bridge);
   if(failed_clone)assert(!fe.indexed&&!fe.mc_gate.active);
   else {
-   unsigned expected=1+delivered[2]+delivered[7];
+   unsigned expected=1+delivered[2]+(broadcast?delivered[8]:delivered[7]);
    assert(fe.indexed&&fe.indexed->replica_count==expected&&fe.mc_gate.active);
+   assert(delivered[2]==(scenario==0||scenario==7));
+   assert(delivered[7]==(scenario!=4));
    unsigned group=fe.indexed->mc_group,bitmap=0;
    for(unsigned a=0;a<64;a++)if(fe.multicast.groups[group].bitmap[a/32]&BIT(a%32)) {
     unsigned d=fe.actions[a][1]>>24&63;assert(d==1||d==6||d==16);bitmap|=BIT(d);
+    if(d==6)assert((fe.actions[a][1]>>2&4095)==(broadcast?301:4095));
    }
    assert(bitmap==(BIT(16)|(delivered[2]?BIT(1):0)|(delivered[7]?BIT(6):0)));
    struct sk_buff copy={.frame=frame};assert(!fe_mcast_host_receive(&bridge,&copy,group,0));
@@ -102,8 +111,41 @@ code+='int main(void){'+initial+r'''
   }
   assert(!net.refs);
  }
+ /* ONU-origin broadcast keeps SA and uses the OTHER UNI GEM, never4095.
+  * The same physical P6 may be ingress and egress only through distinct
+  * validated business VLANs. Local host receives the original input tag. */
+ struct net_device other=onu;other.ifindex=9;other.vid=302;devices[9]=&other;
+ frame.ingress=6;frame.port=8;frame.tags=1;
+ frame.tag[0]=(struct rtl9617c_bridge_tag){.protocol=0x8100,.tci=301};
+ for(unsigned available=0;available<2;available++) {
+  fe.event_count=0;clone_calls=failed_clone=0;fdb_source=&onu;shared.running=false;
+  fe.fttr_admitted=available;
+  skb=(struct sk_buff){.dev=&onu,.saved=frame,.frame=frame};skb.saved.multicast_epoch=fe.mc_gate.epoch;
+  skb.frame.tags=0;memset(skb.frame.tag,0,sizeof(skb.frame.tag));
+  u64 ticket=fe_mcast_capture_begin(&bridge,&skb,true,++fe_mcast_ticket);assert(ticket);
+  fe_mcast_capture_select(&bridge,&skb,&out);fe_mcast_capture_select(&bridge,&skb,&other);
+  skb.dev=&out;fe_mcast_capture_output(&bridge,&skb);skb.dev=&other;fe_mcast_capture_output(&bridge,&skb);
+  fe_mcast_capture_end(&bridge,ticket,true);fe_mcast_process(&bridge);
+  if(!available){assert(!fe.indexed);continue;}
+  assert(fe.indexed&&fe.indexed->replica_count==3);
+  unsigned group=fe.indexed->mc_group,p6_count=0;
+  for(unsigned a=0;a<64;a++)if(fe.multicast.groups[group].bitmap[a/32]&BIT(a%32)) {
+   if((fe.actions[a][1]>>24&63)!=6)continue;
+   assert((fe.actions[a][1]>>2&4095)==302 && !(fe.actions[a][2]&2));p6_count++;
+  }
+  assert(p6_count==1);
+  struct sk_buff copy={.frame=frame};assert(!fe_mcast_host_receive(&bridge,&copy,group,6));
+  assert(copy.saved.tags==1&&copy.saved.tag[0].tci==301);
+  fe_mcast_invalidate(&fe);assert(!fe_delete(&fe,fe.indexed));
+ }
+ shared.running=true;fe.fttr_admitted=true;fdb_source=&lan;
+ /* Bridge-local transmission is never learned as native ingress. */
+ skb=(struct sk_buff){.dev=&lan,.saved=frame,.frame=frame};skb.saved.multicast_epoch=fe.mc_gate.epoch;
+ br_flood(&linux_bridge,&skb,BR_PKT_BROADCAST,true,true,0);fe_mcast_process(&bridge);assert(!fe.indexed);
+ /* ARP and non-UDP broadcasts have no matching learned template. */
+ skb.saved.ip_protocol=0;assert(!fe_mcast_capture_begin(&bridge,&skb,true,++fe_mcast_ticket));
  fe_mcast_purge(&bridge);free(fe.memory);
- puts("Unknown multicast: actual Linux flood selection through complete capture, FE/NI publication, CPU local copy, port/VLAN/isolation, host-only, clone failures and withdrawal passed");
+ puts("Unknown multicast and UDP broadcast: actual Linux flood selection through complete capture, FE/NI publication, CPU local copy, port/VLAN/isolation, host-only, clone failures and withdrawal passed");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='bridge-mcast-flood-') as name:

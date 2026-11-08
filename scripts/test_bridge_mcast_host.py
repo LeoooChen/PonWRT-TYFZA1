@@ -281,9 +281,10 @@ for name in ('br_netif_receive_skb','br_pass_frame_up','br_handle_frame_finish')
 code += r'''
 int main(void){
  unsigned cases=0;
- for(unsigned host=0;host<2;host++)for(unsigned mode=0;mode<10;mode++)for(vid=0;vid<2;vid++) {
+ for(unsigned broadcast=0;broadcast<2;broadcast++)for(unsigned host=0;host<2;host++)for(unsigned mode=0;mode<10;mode++)for(vid=0;vid<2;vid++) {
   struct net_device input={0},dev={0};struct net_bridge br={.dev=&dev,.vg={true}};dev.priv=&br;
   struct sk_buff s={.dev=&input,.eth={.h_dest={1},.h_source={2}},.len=64};
+  if(broadcast)memset(s.eth.h_dest,255,6);
   port=(struct net_bridge_port){.br=&br,.state=BR_STATE_FORWARDING};
   s.frame.multicast_host_group=host?7:0;s.frame.multicast_host_owner=42;
   mdb.host_joined=have_mdb=querier=ingress=filter=true;router=stale=allocation_fail=false;
@@ -301,12 +302,12 @@ int main(void){
   assert(!forwarded);
   if(host) {
    assert(!selected&&!flooded);
-   bool pass=mode==0||mode==2||mode==3||mode==9;
+   bool pass=broadcast?(mode<4||mode==9):(mode==0||mode==2||mode==3||mode==9);
    assert(delivered==pass&&drops==!pass);
    assert(validated==(mode!=4));
    assert(vlan_calls==(pass||mode==6)&&local_hooks==vlan_calls);
   } else {
-   assert(selected==(mode!=4&&mode!=9)&&flooded==(mode==9));
+   assert(selected==(!broadcast&&mode!=4&&mode!=9)&&flooded==(broadcast?mode!=4:mode==9));
    assert(!validated);
   }
   cases++;

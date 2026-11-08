@@ -10,11 +10,11 @@
 #define RTL_FE_MC_CLASSIFIER 128
 
 /* Separate from profile0's eight unicast/bridge/PPPoE templates. WAN0 and
- * LAN128 classify multicast (except broadcast), preserving source and GEM.
+ * LAN128 classify multicast and broadcast in separate slots, preserving source and GEM.
  * Its default remains CPU16. MAC-only explicit multicast rules retain their
  * templates alongside the full source/group-IP key used by snooping. */
 struct rtl_fe_mc_profile {
- unsigned int key[2][11],fib[2][7],mask[2][8],registers[11];
+ unsigned int key[2][11],fib[2][2][7],mask[2][8],registers[11];
  unsigned char owned,ready;
 };
 
@@ -57,10 +57,12 @@ static inline void rtl_fe_mc_classifier_key(unsigned int words[11])
 {
  unsigned int i;
  for(i=0;i<11;i++)words[i]=0;
- /* Original __l3_cls_key_entry_update, IF_ID slot0: all83 bits ignored
-  * except MAC multicast=1 and broadcast=0. Unused slots stay invalid. */
- words[0]=~0U;words[1]=0xcbffffffU;words[2]=0x7ffffU;
- words[10]=1U<<27;
+ /* Original __l3_cls_key_entry_update: slot0 matches MC=1/BC=0;
+  * slot1 matches BC=1 with MC ignored (the parser may distinguish BC).
+  * Both use profile1, whose miss remains CPU16. Slots2/3 stay invalid. */
+ words[0]=~0U;words[1]=0xcbffffffU;words[2]=~0U;
+ words[3]=~0U;words[4]=0xffff7fffU;words[5]=0x3fU;
+ words[10]=3U<<27;
 }
 
 static inline int rtl_fe_mc_profile_read(const struct rtl_dq_io *io,unsigned int reg,
@@ -104,7 +106,7 @@ static inline int rtl_fe_mc_profile_mask(const struct rtl_dq_io *io,unsigned int
  * key readback comes first; a lost completion keeps the original snapshots. */
 static inline int rtl_fe_mc_profile_restore(const struct rtl_dq_io *io,struct rtl_fe_mc_profile *p)
 {
- unsigned int i,side,words[11];
+ unsigned int i,side,slot,words[11];
  int ret;
  if(!p->owned)return 0;
  p->ready=0;
@@ -123,8 +125,10 @@ static inline int rtl_fe_mc_profile_restore(const struct rtl_dq_io *io,struct rt
   if(ret)return ret;
  }
  for(side=0;side<2;side++) {
-  ret=rtl_fe_mc_profile_write(io,0x33b0,0x33cc,side*RTL_FE_MC_CLASSIFIER*4,p->fib[side],7);
-  if(ret)return ret;
+  for(slot=0;slot<2;slot++) {
+   ret=rtl_fe_mc_profile_write(io,0x33b0,0x33cc,side*RTL_FE_MC_CLASSIFIER*4+slot,p->fib[side][slot],7);
+   if(ret)return ret;
+  }
   ret=rtl_fe_mc_profile_write(io,0x3380,0x33ac,side*RTL_FE_MC_CLASSIFIER,p->key[side],11);
   if(ret)return ret;
  }
@@ -134,7 +138,7 @@ static inline int rtl_fe_mc_profile_restore(const struct rtl_dq_io *io,struct rt
 
 static inline int rtl_fe_mc_profile_prepare(const struct rtl_dq_io *io,struct rtl_fe_mc_profile *p)
 {
- unsigned int words[11],i,j,side,value;
+ unsigned int words[11],i,j,side,slot,value;
  int ret;
  if(p->ready)return 0;
  if(!p->owned) {
@@ -156,8 +160,8 @@ static inline int rtl_fe_mc_profile_prepare(const struct rtl_dq_io *io,struct rt
    if(words[10]&(15U<<27))return -EBUSY;
    if(i==0 || i==RTL_FE_MC_CLASSIFIER)for(j=0;j<11;j++)p->key[i/RTL_FE_MC_CLASSIFIER][j]=words[j];
   }
-  for(side=0;side<2;side++) {
-   ret=rtl_fe_mc_profile_read(io,0x33b0,0x33cc,side*RTL_FE_MC_CLASSIFIER*4,p->fib[side],7);
+  for(side=0;side<2;side++)for(slot=0;slot<2;slot++) {
+   ret=rtl_fe_mc_profile_read(io,0x33b0,0x33cc,side*RTL_FE_MC_CLASSIFIER*4+slot,p->fib[side][slot],7);
    if(ret)return ret;
   }
   for(i=0;i<4;i++) {
@@ -182,8 +186,8 @@ static inline int rtl_fe_mc_profile_prepare(const struct rtl_dq_io *io,struct rt
  }
  rtl_fe_classify_hash(words,RTL_FE_MC_PROFILE,0);
  rtl_fe_bits_set(words,208,1,0);
- for(side=0;side<2;side++) {
-  ret=rtl_fe_mc_profile_write(io,0x33b0,0x33cc,side*RTL_FE_MC_CLASSIFIER*4,words,7);
+ for(side=0;side<2;side++)for(slot=0;slot<2;slot++) {
+  ret=rtl_fe_mc_profile_write(io,0x33b0,0x33cc,side*RTL_FE_MC_CLASSIFIER*4+slot,words,7);
   if(ret)return ret;
  }
  rtl_fe_mc_classifier_key(words);

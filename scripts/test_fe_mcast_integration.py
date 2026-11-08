@@ -65,6 +65,7 @@ struct rtl_fe_wifi_peer {unsigned destination,macid;u64 policy_generation;u8 add
 static bool netif_running(struct net_device *d){return d->running;}
 static bool netif_carrier_ok(struct net_device *d){return d->carrier;}
 static bool rtl_fttr_mcast_ready(struct net_device *d){return d && d->running && d->carrier;}
+static bool is_broadcast_ether_addr(const u8 *a){return !memcmp(a,"\xff\xff\xff\xff\xff\xff",6);}
 static void ether_addr_copy(u8 *a,const u8 *b){memcpy(a,b,6);}
 static void put_unaligned_be32(u32 v,void *p){v=__builtin_bswap32(v);memcpy(p,&v,4);}
 static unsigned long jiffies=100;
@@ -193,7 +194,7 @@ int main(void){
  assert(list_empty(&fe.flows) && !fe.mc_profile.owned && fe.keys[7][10]==(1U<<27));
  fe.keys[7][10]=0;
  assert(!fe_install(&input,rule,9) && fe.indexed->installed && fe.mc_profile.ready);
- assert(fe.keys[128][10]==(1U<<27) && fe.reg[0x372c/4]==3);
+ assert(fe.keys[128][10]==(3U<<27) && fe.reg[0x372c/4]==3);
  assert(!fe_delete(&fe,fe.indexed));fe.indexed=NULL;
  assert(!rtl_fe_mc_profile_restore(&(struct rtl_dq_io){&fe,read_reg,write_reg,indirect},&fe.mc_profile));
  assert(!fe.keys[128][10] && !fe.reg[0x372c/4]);

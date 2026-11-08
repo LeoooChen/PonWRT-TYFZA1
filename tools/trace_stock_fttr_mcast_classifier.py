@@ -125,7 +125,7 @@ def classifier_recipes(ni_path, reference):
 void input(unsigned int slot,unsigned int profile,unsigned char *rule,unsigned char *action) {
  cls_key_t k; cls_action_t a={0};
  memset(&k,255,sizeof(k));
- k.msk_mac_da_mc=0;k.mac_da_mc=1;k.msk_mac_da_bc=0;k.mac_da_bc=0;
+ k.msk_mac_da_mc=slot==1?1:0;k.mac_da_mc=1;k.msk_mac_da_bc=0;k.mac_da_bc=slot==1;
  memset(rule,0,8);memcpy(rule+8,&k,sizeof(k));
  a.dpid_vld=1;a.dpid_pri=1;a.permit=1;a.mcgid=16;
  a.stage2_ctrl_vld=1;a.t2_ctrl_vld=1;a.t2_ctrl=profile;
@@ -164,7 +164,21 @@ void native(unsigned int profile,unsigned int *key,unsigned int *action) {
                 nk,na=(ctypes.c_uint*11)(),(ctypes.c_uint*7)()
                 lib.native(profile,nk,na)
                 assert action_words==list(na)
-                if slot==0:assert key_words==list(nk)
+                if slot==0: original_mc=key_words
+                if slot==1:
+                    combined=[a|b for a,b in zip(original_mc,key_words)]
+                    assert combined==list(nk)
+                    # Slot0 excludes BC; slot1 ignores MC and requires BC.
+                    # Test both parser encodings of BC and unrelated unicast.
+                    for mc,bc in ((0,0),(1,0),(0,1),(1,1)):
+                        selected=[]
+                        bits=sum(w<<(32*i) for i,w in enumerate(combined))
+                        for entry in range(2):
+                            key=(bits>>(83*entry))&((1<<83)-1)
+                            match=all(((key>>mask)&1) or ((key>>value)&1)==actual
+                                      for mask,value,actual in ((58,59,mc),(60,61,bc)))
+                            if match:selected.append(entry)
+                        assert selected==([1] if bc else [0] if mc else []), (mc,bc,selected)
                 cases.append(dict(slot=slot,profile=profile,key=key_words,action=action_words))
     return cases
 
@@ -180,7 +194,9 @@ def native_ip_keys(ni_path):
     code=r'''
 #include "rtl9617c-fe-mcast-profile.h"
 void key(unsigned int ip6,unsigned int source,unsigned int group,unsigned int learned,unsigned int ingress,unsigned int gem,unsigned int *words,unsigned int *mask) {
- const unsigned char sa[6]={2,1,2,3,4,5},da[6]={1,0,0x5e,1,2,3};
+ const unsigned char sa[6]={2,1,2,3,4,5};
+ unsigned char da[6]={1,0,0x5e,1,2,3};
+ if(!ip6 && group==0xffffffffU)for(unsigned i=0;i<6;i++)da[i]=255;
  const unsigned int ips[4]={0x20010db8,0,0,source},ipd[4]={0xff3e0000,group,0,0x10203};
  const struct rtl_fe_vlan vlan[2]={{.vid=100,.tpid=1},{.vid=200,.tpid=2}};
  rtl_fe_bridge_key(words,sa,da,ip6?0x86dd:0x800,ingress,gem,RTL_FE_MC_IP_MASK);
@@ -210,6 +226,7 @@ void crc(unsigned int *key,unsigned int *c32,unsigned short *c16){rtl_fe_key_crc
                     learned=case//64
                     source=0x0a000001+case//32
                     group=0xe0010203+((case%32)<<23) if not ip6 else case%32+1
+                    if not ip6 and case%32==31:group=0xffffffff
                     words,mask=(ctypes.c_uint*23)(),(ctypes.c_uint*8)()
                     lib.key(ip6,source,group,learned,ingress,gem,words,mask)
                     # Header fields ignored by this mask must not change the key.
@@ -231,7 +248,7 @@ void crc(unsigned int *key,unsigned int *c32,unsigned short *c16){rtl_fe_key_crc
                     signatures.append((c32.value,c16.value))
     assert len(set(signatures))==len(signatures)
     return dict(vectors=len(signatures),original_mask_and_crc_match=True,
-        fields='full IPv4/IPv6 source and group, protocol, LAN4/P6/PON7/WiFi18 ingress with GEM8/55/255 and VIF1/60, SA/DA, two exact tags, template; random ignored fields')
+        fields='UDP broadcast and full IPv4/IPv6 source and group, protocol, LAN4/P6/PON7/WiFi18 ingress with GEM8/55/255 and VIF1/60, SA/DA, two exact tags, template; random ignored fields')
 
 
 def main():

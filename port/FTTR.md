@@ -7046,6 +7046,59 @@ complete multicast learner regression pass. Image/modules compilation and both
 changed kernel input identities pass
 (`artifacts/fttr/service-store-main-kernel-20261108.log`). No PE firmware changed.
 
+### Automatic UDP broadcast replication
+
+The complete bridge transaction now includes received Ethernet broadcast UDP
+frames from `br_flood`, using Linux's actual `BR_BCAST_FLOOD`, proxy-ARP,
+VLAN and port-isolation selection. It still requires complete successful copies,
+a source FDB match, no incompatible packet hooks/qdiscs, exact source/destination
+MAC/IP/UDP ports/tags and current admission generations. ARP, non-UDP, fragmented
+and locally originated frames remain on their existing software path; this is
+not a claim of complete broadcast-protocol acceleration.
+
+The original `__l3_cls_key_entry_update` execution confirms two independent
+IF_ID slots: slot0 requires MC=1/BC=0; slot1 requires BC=1 and ignores MC. Both
+WAN0 and LAN128 now own both associated FIB entries, selecting native profile1.
+The second slot does not assume that the parser marks broadcast as multicast.
+Default misses remain CPU16, including non-UDP broadcasts with no learned key.
+Profile ownership snapshots/restores both FIB entries and publishes the valid
+classifier only after their readback. Existing explicit TC restrictions are
+unchanged.
+
+FTTR broadcast follows its existing original transport policy: shared
+`fttr-mc` drops broadcast, while per-ONU business GEM VLANs carry it. The learner
+therefore skips the already-dropped shared output and validates each selected
+business VLAN before generating its P6 replica. It preserves the source MAC,
+never inserts VID4095 for broadcast, and permits a P6 ingress to reach a different
+selected ONU VLAN on the same physical P6. Full FTTR admission is required; shared
+multicast admission is not substituted for business-VLAN authorization. CPU-local
+copies retain their original ingress tags and pass through normal bridge-local
+checks without another flood. The existing direct AP BCMC and STA peer paths
+accept the resulting complete broadcast records with their key/generation rules.
+
+Offline validation includes20 actual Linux flood-selection/capture/FE/NI scenarios,
+ONU301-to-302 broadcast/closed-admission cases, independent BC/MC classifier
+truth tables converted by the original module,616 profile fault/applied-timeout
+cases and2560 source/group/GEM masked-key CRC comparisons including broadcast.
+The complete broadcast FE record executes in the linked PE through HIQ/GTK/shared
+sequence and actual software RPQ/EQ handling, with98 BCMC regressions.139 parser
+byte cases,480 production QM poll cases,80 bridge-host cases,45 Linux selection
+cases, existing learner/TC/CPU generation/multicast gate and core tests,18 original
+ITU/EPON action recipes and206 route failures pass. Image/modules and five changed
+build-input identities pass; patch233 reverse/replay is byte-identical. Reports
+are local `artifacts/fttr/broadcast-*-20261108.*`. Hardware IO/completion are modeled;
+no device was accessed and no physical broadcast or DHCP acceptance is claimed.
+
+The branch also incorporates mainf08ad1c's NI sleep snapshot fix while retaining
+FTTR BCMC MACID0 treatment and generation-aware canceled-PS completion. Linked
+selection race, PS/peer withdrawal, FTTR and multicast prefix-drain, CPU stamps,
+multicast/BCMC and IMEM tests pass. Repeated PE builds are identical:32540 bytes,
+SHA256 `e7c00be968237405ed2d69f32fe79589115925df9c75001056edcc7ef5647656`,
+conservative stack7304/8192; the non-uplink build is14168 bytes. Hardware IDs remain
+quarantined; this change does not establish the missing upstream/downstream
+production fence or permit their reuse. Multi-VIF remains unsupported by the
+underlying single-role wireless driver and TSPEC accounting remains open.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
