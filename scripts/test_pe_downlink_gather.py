@@ -22,7 +22,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     for at, size in [(0x1fc00000, 0x10000), (base, 0x20000), (pages, 0x32000),
                      (headers, 0xc000), (payload, 0x10000), (ring, 0x4000),
                      (bar, 0x10000), (ni, 0x10000), (reports, 0x80000),
-                     (0x10020000, 0x1000), (0x10030000, 0x1000)]:
+                     (0x10020000, 0x1000), (0x10030000, 0x1000), (0x07e00000, 0x4000)]:
         u.mem_map(at, size)
     if multicast:
         assert from_epp
@@ -96,7 +96,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     u.hook_add(UC_HOOK_MEM_WRITE, lambda uc, access, at, size, value, data:
                returns.append(value), begin=ni + 0x6384, end=ni + 0x6387)
     u.reg_write(UC_MIPS_REG_A0, mb | 0xa0000000)
-    u.reg_write(UC_MIPS_REG_SP, (base + 0x1fff0) | 0xa0000000)
+    u.reg_write(UC_MIPS_REG_SP, 0xa7e01ff0)
     if observe:
         observe(u)
     u.emu_start(0xbfc00400, 0x9fc0fff0, count=100000)

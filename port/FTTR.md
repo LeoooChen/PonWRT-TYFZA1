@@ -5229,6 +5229,67 @@ before reaching the driver; these tests do not prove cross-queue air ordering.
 No physical CCI/PE handshake, encryption, DTIM scheduling or RF traffic was
 tested. Existing full-retirement and quarantined-resource limits remain.
 
+### Shared non-QoS sequence across Linux and PE
+
+The target `rtk_wifi6.ko:rtw_get_sw_seq` uses station bank9 for non-QoS
+(including a null attribute) and the selected TID bank for QoS, incrementing
+and masking to12 bits. Native mac80211 instead owns the next interface
+sequence: normal non-QoS, management and group-QoS frames use
+`sdata->sequence_number`; unicast QoS keeps its per-TID allocator. The PE's
+previous per-peer/TID non-QoS allocation would split that Linux sequence
+space when direct AP BCMC is added.
+
+The native single AP/STA interface now binds a20-byte shared record at radio
+context`0x1fd00`. ARM serializes software senders and uses the same bounded
+ARM/PE Peterson handshake as the shared GTK PN implementation. Both actual
+Linux assignment sites (normal TX before fragmentation and fast TX) use it.
+CPU Ethernet conversion obtains a sequence from that interface before
+mapping and carries the assigned value in request word31. Raw Linux frames
+retain their already assigned sequence; QoS per-TID operation is unchanged.
+
+NI ingestion stamps the interface generation in BID word7, before header
+editing. Selection and final publication reject withdrawn generations. The
+publisher allocates only after TXBD credit is available; if GTK PN contention
+delays publication, it retains the assigned sequence and checks the BID
+generation again on retry. Request word31 survives the main-loop CPU copy;
+NI constructs its request directly in that publish slot. Header conversion
+preserves BID metadata at bytes28..31. The12-bit sequence wraps as on Linux;
+the31-bit interface generation never wraps. Firmware advertises SEQ1 in
+mailbox214, which ARM requires before enabling this path.
+
+Unbind revokes direct multicast admission and the shared generation, then
+returns the next sequence to Linux after the peer leaves its critical
+section. Timeout detaches the borrowed allocation and poisons software
+fallback for that interface; a stale Linux counter must not resume sending.
+Interface creation failures detach a successfully bound record, and a
+failed bind does not proceed to role creation. No multi-VIF support is
+implied by the single per-radio record.
+
+Offline checks execute240 target original sequence calls,24576 concurrent
+ARM/PE allocations,4100 actual normal-Linux/PE alternations and32 fast-path
+iterations; they cover wrap, exclusions, radio bind/unbind, timeout and
+generation exhaustion. `test_pe_nonqos_sequence.py` executes24 linked-MIPS
+EPP/header/RPQ/EQ, CPU request-copy, credit/ARM/PN stall and withdrawal cases.
+The existing QoS sequence/offset test is retained with an explicit original
+module input; request construction covers8448 raw/encap/layout/key cases.
+The multicast, GTK PN, FTTR generation/drain, BCMC, BAR and interface
+lifecycle regressions pass. Test emulators now use the production's separate
+PE stack rather than placing it over the radio context's new shared record.
+
+Firmware is29400 bytes, SHA256
+`a799e92e714506dfa6669e68cd3176f3edbfbc00a214149cec45f8cdd273b0a0`;
+the conservative sum of all function frames is6984 of8192 bytes. Image/modules
+build, seven overlay input comparisons and zero-fuzz/offset replay of the
+three patched kernel inputs pass. Local evidence is in
+`artifacts/fttr/sequence-kernel-20261108.log` and
+`artifacts/fttr/sequence-source-identity-20261108.json`.
+
+This resolves another prerequisite for direct AP BCMC. Default-GTK selection,
+immutable group template/admission and direct HIQ/DTIM integration are still
+required. These offline checks do not prove physical interconnect ordering,
+RF ordering or full upstream packet retirement; hardware IDs stay quarantined.
+No physical device was accessed.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN

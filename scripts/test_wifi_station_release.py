@@ -146,7 +146,10 @@ static int rtl_ax_command(struct rtl_ax_ap *r,unsigned int queue,unsigned int ca
 '''
 common += r'''
 static int prepared;
-static int rtl_ax_client_prepare(struct rtl_ax_ap *r,struct ieee80211_vif *v){(void)v;prepared++;r->sta_role=true;return 0;}
+static unsigned sequence_binds,sequence_unbinds;static int sequence_error,prepare_error;
+static int rtl_ax_tx_sequence_bind(struct rtl_ax_tx *tx,struct ieee80211_vif *v){(void)tx;(void)v;sequence_binds++;return sequence_error;}
+static int rtl_ax_tx_sequence_unbind(struct rtl_ax_tx *tx,struct ieee80211_vif *v){(void)tx;(void)v;sequence_unbinds++;return 0;}
+static int rtl_ax_client_prepare(struct rtl_ax_ap *r,struct ieee80211_vif *v){(void)v;prepared++;r->sta_role=true;return prepare_error;}
 static void rtl_ax_client_release(struct rtl_ax_ap *r){r->sta_role=false;}
 static struct ieee80211_vif *ieee80211_vif_to_wdev(struct ieee80211_vif *v){return v;}
 static void rtl_ax_tx_ap_address(struct rtl_ax_tx *tx,const u8 *addr){(void)tx;(void)addr;}
@@ -215,6 +218,16 @@ int main(void){
   unsigned old=role_commands;
   assert(rtl_ax_monitor_add_interface(&hw,&vif)==-EBUSY&&role_commands==old);
  }
+ /* Bind failure must not create a role; a later role failure must detach
+  * the borrowed sequence before mac80211 can destroy its interface. */
+ r.ap_vif=r.sta_vif=NULL;r.sta_role=false;vif.type=NL80211_IFTYPE_STATION;
+ sequence_error=-ETIMEDOUT;unsigned binds=sequence_binds,unbinds=sequence_unbinds;int tries=prepared;
+ assert(rtl_ax_monitor_add_interface(&hw,&vif)==-ETIMEDOUT);
+ assert(sequence_binds==binds+1&&sequence_unbinds==unbinds&&prepared==tries&&!r.sta_vif);
+ sequence_error=0;prepare_error=-ETIMEDOUT;
+ assert(rtl_ax_monitor_add_interface(&hw,&vif)==-ETIMEDOUT);
+ assert(sequence_unbinds==unbinds+1&&!r.sta_vif);
+ prepare_error=0;
  assert(r.retired_stations[7].peer[5]==77 && r.retired_stations[7].aid==27);
  puts("STA/BA lifetime: delayed RPQ gates completion and MACID reuse; firmware failures retry after STA free; 100 RX BA restarts reuse one slot");
 }

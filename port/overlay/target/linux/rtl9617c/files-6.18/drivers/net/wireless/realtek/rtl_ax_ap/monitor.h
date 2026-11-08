@@ -183,6 +183,7 @@ static void rtl_ax_update_vif_offload(struct ieee80211_hw *hw, struct ieee80211_
 static int rtl_ax_monitor_add_interface(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	int ret;
 
 	if (vif->type == NL80211_IFTYPE_MONITOR)
 		return 0;
@@ -198,16 +199,20 @@ static int rtl_ax_monitor_add_interface(struct ieee80211_hw *hw, struct ieee8021
 
 		if (ret) return ret;
 	}
+	ret = rtl_ax_tx_sequence_bind(radio->tx, vif);
+	if (ret) return ret;
 	if (vif->type == NL80211_IFTYPE_STATION) {
-		int ret;
-
-		if (ieee80211_vif_to_wdev(vif)->use_4addr) return -EOPNOTSUPP;
+		if (ieee80211_vif_to_wdev(vif)->use_4addr) {
+			rtl_ax_tx_sequence_unbind(radio->tx, vif);
+			return -EOPNOTSUPP;
+		}
 		radio->sta_4addr = false;
 		radio->sta_vif = vif;
 		ret = rtl_ax_client_prepare(radio, vif);
 		if (ret) {
 			rtl_ax_client_release(radio);
 			radio->sta_vif = NULL;
+			rtl_ax_tx_sequence_unbind(radio->tx, vif);
 			return ret;
 		}
 	} else radio->ap_vif = vif;
@@ -448,6 +453,8 @@ static void rtl_ax_ap_stop(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 static void rtl_ax_monitor_remove_interface(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	int ret = rtl_ax_tx_sequence_unbind(radio->tx, vif);
+	if (ret) dev_err(&radio->pdev->dev, "sequence withdrawal failed: %d\n", ret);
 
 	if (radio->sta_vif == vif) {
 		rtl_ax_client_release(radio);

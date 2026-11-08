@@ -19,7 +19,7 @@ peer=bytes.fromhex('020000000002');group=bytes.fromhex('01005e010203')
 class Machine:
     def __init__(self,tid=0,mode=0,ipv6=False,full=True,client=False,dscp=46):
         self.u=Uc(UC_ARCH_MIPS,UC_MODE_MIPS32|UC_MODE_LITTLE_ENDIAN)
-        for address,size in ((0x1fc00000,0x10000),(base,0x20000),(ni,0x10000),(bar,0x10000),(epp,0x10000),(payload,0x4000),(table,0x7000),(requests,0x2000)):
+        for address,size in ((0x1fc00000,0x10000),(base,0x20000),(ni,0x10000),(bar,0x10000),(epp,0x10000),(payload,0x4000),(table,0x7000),(requests,0x2000),(0x07e00000,0x4000)):
             self.u.mem_map(address,size)
         self.u.mem_write(0x1fc00000,binary);self.header=16 if full else 8
         self.frame=bytearray(group+bytes.fromhex('020000000001')+(b'\x86\xdd' if ipv6 else b'\x08\x00')+bytes(70))
@@ -40,7 +40,7 @@ class Machine:
     def get(self,address):return struct.unpack('<I',self.u.mem_read(address,4))[0]
     def call(self,name,*args):
         for i,value in enumerate(args):self.u.reg_write(UC_MIPS_REG_A0+i,value|0xa0000000 if value>=0x04000000 else value)
-        self.u.reg_write(UC_MIPS_REG_SP,(base+0x1fff0)|0xa0000000);self.u.reg_write(UC_MIPS_REG_RA,0x9fc0fff0)
+        self.u.reg_write(UC_MIPS_REG_SP,0xa7e01ff0);self.u.reg_write(UC_MIPS_REG_RA,0x9fc0fff0)
         self.u.emu_start(symbols[name],0x9fc0fff0,count=100000)
         return self.u.reg_read(UC_MIPS_REG_V0)
     def ingest(self):

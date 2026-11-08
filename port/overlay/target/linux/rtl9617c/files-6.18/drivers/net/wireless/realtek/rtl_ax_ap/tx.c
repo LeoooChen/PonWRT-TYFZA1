@@ -15,6 +15,7 @@
 #include <linux/rtl9617c-wifi-policy.h>
 #include <linux/rtl9617c-bridge.h>
 #include <linux/rtl9617c-key-pn.h>
+#include <linux/rtl9617c-seq.h>
 #include "receive.h"
 #include "tx-format.h"
 #include "security.h"
@@ -73,6 +74,7 @@ struct rtl_ax_tx {
 	u64 fttr_discarded;
 	u64 mcast_policy_attempt[128];
 	u32 key_pn_generation;
+	u32 sequence_generation;
 	bool pe_active;
 	u32 pe_command;
 	unsigned int pe_producer;
@@ -204,6 +206,9 @@ static int rtl_ax_tx_pe_start(struct rtl_ax_tx *tx)
 		ret = -EPROTONOSUPPORT;
 	if (!ret && get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX +
 		RTL_KEY_PN_CAP_MAILBOX * 4) != RTL_KEY_PN_CAPABILITY)
+		ret = -EPROTONOSUPPORT;
+	if (!ret && get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX +
+		RTL_SEQ_CAP_MAILBOX * 4) != RTL_SEQ_CAPABILITY)
 		ret = -EPROTONOSUPPORT;
 	if (!ret) tx->pe_active = true;
 	return ret;
@@ -506,6 +511,21 @@ void rtl_ax_tx_peer_authorized(struct rtl_ax_tx *tx, unsigned int macid, bool au
 		dma_wmb();
 	}
 }
+int rtl_ax_tx_sequence_bind(struct rtl_ax_tx *tx, struct ieee80211_vif *vif)
+{
+	if (vif->type != NL80211_IFTYPE_AP && vif->type != NL80211_IFTYPE_STATION) return 0;
+	if (!tx->pe_active) return 0;
+	if (tx->sequence_generation == RTL_SEQ_ASSIGNED - 1) return -EOVERFLOW;
+	return ieee80211_rtl9617c_seq_bind(vif, tx->pe.memory + RTL_SEQ_BASE, ++tx->sequence_generation);
+}
+
+int rtl_ax_tx_sequence_unbind(struct rtl_ax_tx *tx, struct ieee80211_vif *vif)
+{
+	if (vif->type != NL80211_IFTYPE_AP && vif->type != NL80211_IFTYPE_STATION) return 0;
+	rtl_ax_tx_mcast_revoke(tx);
+	return ieee80211_rtl9617c_seq_unbind(vif);
+}
+
 int rtl_ax_tx_key_pn_bind(struct rtl_ax_tx *tx, struct ieee80211_key_conf *key)
 {
 	unsigned long flags;
@@ -687,6 +707,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	int ret;
 	bool template_ready = false;
 	u32 pn_generation = 0;
+	u16 sequence = 0;
 	u64 begin = READ_ONCE(rtl_ax_datapath_profile) ? ktime_get_ns() : 0;
 	/* TXQ/PS queues may outlive the ingress FTTR service generation. */
 	if (rtl9617c_fttr_stale(skb)) return -ESTALE;
@@ -712,6 +733,11 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 			tid = *ieee80211_get_qos_ctl(header) & 7;
 		ring = rtl_ax_tx_dma_channel(tid, 0);
 		qsel = ring;
+	}
+	if (tx->pe_active && encap && header_bytes == 24) {
+		/* Header conversion bypassed mac80211's normal sequence handler. */
+		ret = ieee80211_rtl9617c_next_sequence(info->control.vif, &sequence);
+		if (ret) return ret;
 	}
 	if (original_header_bytes) memcpy(original_header, skb->data, original_header_bytes);
 	ret = rtl_ax_tx_map(tx, skb, &slot, &linearized, encap || pe_sequence);
@@ -849,6 +875,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		published[RTL_FTTR_PE_REQUEST_LOW] = lower_32_bits(skb->rtl9617c_fttr_generation);
 		published[RTL_FTTR_PE_REQUEST_HIGH] = skb->rtl9617c_fttr_generation >> 32;
 		published[RTL_KEY_PN_REQUEST] = pn_generation;
+		published[RTL_SEQ_REQUEST] = encap && header_bytes == 24 ? RTL_SEQ_ASSIGNED | (sequence >> 4) : 0;
 	} else {
 	memset(page, 0, RTL_AX_TX_WP_BYTES);
 	if (slot.mapping) {

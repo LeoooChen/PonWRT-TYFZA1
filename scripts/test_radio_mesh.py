@@ -162,6 +162,8 @@ struct ieee80211_link_sta {unsigned bandwidth,rx_nss,smps_mode,supp_rates[2];
 struct ieee80211_sta {struct ieee80211_link_sta deflink;struct {u32 max_amsdu_len;}*cur;};
 """
 code += r"""
+static int rtl_ax_tx_sequence_bind(struct tx *tx,struct ieee80211_vif *v){(void)tx;(void)v;return 0;}
+static int rtl_ax_tx_sequence_unbind(struct tx *tx,struct ieee80211_vif *v){(void)tx;(void)v;return 0;}
 static int rtl_ax_client_prepare(struct rtl_ax_ap*r,struct ieee80211_vif*v){(void)v;r->sta_role=true;return 0;}
 static void rtl_ax_client_release(struct rtl_ax_ap*r){r->sta_role=false;}
 static int rtl_ax_station_release(struct rtl_ax_ap*r,unsigned id){assert(id==1);r->sta_role=false;return 0;}

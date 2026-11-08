@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Execute interleaved Ethernet offload and raw QoS TX with one sequence owner."""
 from pathlib import Path
+import argparse
 import json
 import struct
 import sys
@@ -13,7 +14,12 @@ from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_SP, UC_MIPS_REG_PC
 sys.path.insert(0, str(root / 'tools'))
 from arm64_module_oracle import ModuleOracle
 
-oracle = ModuleOracle(root / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko',
+parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument('pe',type=Path)
+parser.add_argument('--wifi',type=Path,required=True)
+parser.add_argument('--legacy',action='store_true')
+args=parser.parse_args()
+oracle = ModuleOracle(args.wifi,
                       ['mac_get_wp_offset_8852c', 'mac_get_wp_offset_8192xb'], lambda name, args: 0)
 offsets = {}
 for crypto in (0, 15, 16):
@@ -26,13 +32,13 @@ for crypto in (0, 15, 16):
         assert offset == bool(crypto)
         offsets[crypto] = offset
 
-directory = Path(sys.argv[1])
+directory = args.pe
 u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
 base, mailbox, pages, headers, payload, ring, bar = (
     0x04000000, 0x04002000, 0x05100000, 0x05400000, 0x06000000, 0x05000000, 0x12000000)
 for address, size in [(0x1fc00000, 0x10000), (base, 0x20000), (pages, 0x32000),
                       (headers, 0xc000), (payload, 0x10000), (ring, 0x4000),
-                      (bar, 0x10000), (0x10020000, 0x1000)]:
+                      (bar, 0x10000), (0x10020000, 0x1000), (0x07e00000, 0x4000)]:
     u.mem_map(address, size)
 u.mem_write(0x1fc00000, (directory / 'pe-tx.bin').read_bytes())
 
@@ -55,7 +61,7 @@ put(base + 0x10000 + 9 * 4, 100)
 sequences = {0: 4095, 1: 100}
 pc = 0xbfc00400
 u.reg_write(UC_MIPS_REG_A0, mailbox | 0xa0000000)
-u.reg_write(UC_MIPS_REG_SP, (base + 0x1fff0) | 0xa0000000)
+u.reg_write(UC_MIPS_REG_SP, 0xa7e01ff0)
 rows = []
 for number, (encap, tid, scatter, crypto) in enumerate([
         (True, 0, False, 0), (False, 0, False, 0), (True, 0, True, 0),

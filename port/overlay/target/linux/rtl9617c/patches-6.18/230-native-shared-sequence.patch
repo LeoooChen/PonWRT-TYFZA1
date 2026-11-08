@@ -1,0 +1,66 @@
+--- a/net/core/Makefile
++++ b/net/core/Makefile
+@@ -50,4 +50,4 @@
+ obj-$(CONFIG_DEBUG_NET) += lock_debug.o
+ obj-$(CONFIG_FAIL_SKB_REALLOC) += skb_fault_injection.o
+ 
+-obj-$(CONFIG_ARCH_RTL9617C) += rtl9617c-bridge.o rtl9617c-fttr.o rtl9617c-key-pn.o
++obj-$(CONFIG_ARCH_RTL9617C) += rtl9617c-bridge.o rtl9617c-fttr.o rtl9617c-key-pn.o rtl9617c-seq.o
+--- a/net/mac80211/ieee80211_i.h
++++ b/net/mac80211/ieee80211_i.h
+@@ -20,6 +20,7 @@
+ #include <linux/skbuff.h>
+ #include <linux/workqueue.h>
+ #include <linux/types.h>
++#include <linux/rtl9617c-seq.h>
+ #include <linux/spinlock.h>
+ #include <linux/etherdevice.h>
+ #include <linux/leds.h>
+@@ -1155,6 +1156,9 @@
+ 	struct ieee80211_key __rcu *default_unicast_key;
+ 
+ 	u16 sequence_number;
++#ifdef CONFIG_ARCH_RTL9617C
++	struct rtl_seq_binding rtl9617c_sequence;
++#endif
+ 	u16 mld_mcast_seq;
+ 	__be16 control_port_protocol;
+ 	bool control_port_no_encrypt;
+--- a/net/mac80211/tx.c
++++ b/net/mac80211/tx.c
+@@ -868,8 +868,17 @@
+ 		/* driver should assign sequence number */
+ 		info->flags |= IEEE80211_TX_CTL_ASSIGN_SEQ;
+ 		/* for pure STA mode without beacons, we can do it */
++#ifdef CONFIG_ARCH_RTL9617C
++		{
++			u16 sequence;
++			if (rtl9617c_seq_next(&tx->sdata->rtl9617c_sequence, &tx->sdata->sequence_number, &sequence))
++				return TX_DROP;
++			hdr->seq_ctrl = cpu_to_le16(sequence);
++		}
++#else
+ 		hdr->seq_ctrl = cpu_to_le16(tx->sdata->sequence_number);
+ 		tx->sdata->sequence_number += 0x10;
++#endif
+ 		if (tx->sta)
+ 			tx->sta->deflink.tx_stats.msdu[IEEE80211_NUM_TIDS]++;
+ 		return TX_CONTINUE;
+@@ -3619,8 +3628,17 @@
+ 		hdr->seq_ctrl = ieee80211_tx_next_seq(sta, tid);
+ 	} else {
+ 		info->flags |= IEEE80211_TX_CTL_ASSIGN_SEQ;
++#ifdef CONFIG_ARCH_RTL9617C
++		{
++			u16 sequence;
++			if (rtl9617c_seq_next(&sdata->rtl9617c_sequence, &sdata->sequence_number, &sequence))
++				return TX_DROP;
++			hdr->seq_ctrl = cpu_to_le16(sequence);
++		}
++#else
+ 		hdr->seq_ctrl = cpu_to_le16(sdata->sequence_number);
+ 		sdata->sequence_number += 0x10;
++#endif
+ 	}
+ 
+ 	if (skb_shinfo(skb)->gso_size)

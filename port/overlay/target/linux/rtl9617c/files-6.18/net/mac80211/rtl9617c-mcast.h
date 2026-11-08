@@ -1,5 +1,33 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /* Included by wme.c, so policy snapshots execute the same classifier as TX. */
+int ieee80211_rtl9617c_seq_bind(struct ieee80211_vif *vif, struct rtl_seq_shared *shared,
+	unsigned int generation)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+	if ((vif->type != NL80211_IFTYPE_AP && vif->type != NL80211_IFTYPE_STATION) ||
+	    ieee80211_vif_is_mld(vif)) return -EOPNOTSUPP;
+	return rtl9617c_seq_bind(&sdata->rtl9617c_sequence, shared, generation, &sdata->sequence_number);
+}
+EXPORT_SYMBOL_GPL(ieee80211_rtl9617c_seq_bind);
+
+int ieee80211_rtl9617c_seq_unbind(struct ieee80211_vif *vif)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+	return rtl9617c_seq_unbind(&sdata->rtl9617c_sequence, &sdata->sequence_number);
+}
+EXPORT_SYMBOL_GPL(ieee80211_rtl9617c_seq_unbind);
+
+int ieee80211_rtl9617c_next_sequence(struct ieee80211_vif *vif, u16 *sequence)
+{
+	struct ieee80211_sub_if_data *sdata;
+	if (!vif) return -EINVAL;
+	sdata = vif_to_sdata(vif);
+	return rtl9617c_seq_next(&sdata->rtl9617c_sequence, &sdata->sequence_number, sequence);
+}
+EXPORT_SYMBOL_GPL(ieee80211_rtl9617c_next_sequence);
+
 int ieee80211_rtl9617c_mcast_policy(struct ieee80211_vif *vif,const u8 *address,
 	struct rtl9617c_wifi_policy *policy)
 {

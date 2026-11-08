@@ -90,11 +90,15 @@ typedef u16 __le16;typedef u32 dma_addr_t;
 struct rtl_key_pn {void *shared;unsigned generation;};
 static unsigned rtl9617c_key_pn_token(struct rtl_key_pn *p){return p->shared?p->generation:0;}
 #define RTL_KEY_PN_REQUEST 30
+#define RTL_SEQ_REQUEST 31
+#define RTL_SEQ_ASSIGNED 0x80000000U
 struct ieee80211_hdr {u16 frame_control,duration_id;u8 addr1[6],addr2[6],addr3[6];u16 seq_ctrl;} __attribute__((packed));
 struct ieee80211_bar {u16 frame_control,duration;u8 ra[6],ta[6];u16 control,start_seq_num;} __attribute__((packed));
 struct ieee80211_tx_rate {int idx;unsigned flags,count;};
 struct key {unsigned flags,hw_key_idx,keyidx;u64 tx_pn;struct rtl_key_pn rtl9617c_pn;};
 struct vif {unsigned type;};
+static unsigned sequence_calls;static int sequence_error;
+static int ieee80211_rtl9617c_next_sequence(struct vif *v,u16 *s){assert(v);sequence_calls++;*s=0xabc0;return sequence_error;}
 struct ieee80211_tx_info {unsigned flags;struct {unsigned flags;struct key *hw_key;struct vif *vif;struct ieee80211_tx_rate rates[1];}control;};
 struct sk_buff {u8 *data;unsigned len,priority;struct ieee80211_tx_info info;u64 rtl9617c_fttr_generation;};
 #define IEEE80211_SKB_CB(s) (&(s)->info)
@@ -152,7 +156,7 @@ static u64 rtl9617c_bridge_wifi_policy_generation(void){return 1;}
 static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *tx){(void)tx;}
 static bool ether_addr_equal(const u8 *a,const u8 *b){return !memcmp(a,b,6);}
 static int rtl_ax_tx_map(struct rtl_ax_tx *tx,struct sk_buff *s,struct rtl_ax_tx_slot *slot,bool *linearized,bool separate){
- (void)tx;(void)linearized;assert(!separate);assert(s->len==20);slot->dma=0x09000000;maps++;return 1;}
+ (void)tx;(void)linearized;assert(separate?s->len==84:s->len==20);slot->dma=0x09000000;maps++;return 1;}
 static void rtl_ax_tx_unmap(struct rtl_ax_tx *tx,const struct rtl_ax_tx_slot *slot){(void)tx;assert(slot->dma==0x09000000);unmaps++;}
 static void rtl_ax_security_tx(u8 *page,unsigned id,unsigned key,u64 pn){(void)page;(void)id;(void)key;(void)pn;assert(0);}
 static void write16(void *ctx,unsigned reg,unsigned value){(void)ctx;assert(reg==0x1078&&value==1);doorbells++;}
@@ -223,6 +227,23 @@ int main(void){
   assert(freed==before+1&&t.submitted==1);free(skb.data);
  }
  assert(maps==8&&unmaps==4&&doorbells==2);
+ /* HW header conversion bypassed the Linux handler. Only non-QoS calls
+  * the interface allocator, and a closed binding fails before DMA mapping. */
+ for(unsigned qos=0;qos<2;qos++){
+  memset(memory,0,sizeof(memory));
+  struct rtl_ax_tx t={.running=true,.pe_active=true,.pe={memory},.pages=pages,.headers=headers,.ring=ring,.pages_dma=0x08000000,.io=&io};
+  struct ieee80211_hw hw={};struct vif vif={.type=NL80211_IFTYPE_AP};
+  u8 frame[84]={2};struct sk_buff skb={.data=frame,.len=84,.info={.flags=IEEE80211_TX_CTL_HW_80211_ENCAP,.control={.vif=&vif}}};
+  t.peer_qos[7]=qos;unsigned calls=sequence_calls,before=maps;
+  sequence_error=-ESTALE;
+  if(!qos){
+   assert(rtl_ax_tx_submit(&t,&hw,&skb,4,0,0,7,0,0)==-ESTALE);
+   assert(maps==before&&!t.submitted&&sequence_calls==calls+1);calls++;
+  }
+  sequence_error=0;assert(!rtl_ax_tx_submit(&t,&hw,&skb,4,0,0,7,0,0));
+  assert(sequence_calls==calls+!qos&&maps==before+1);
+  assert(get_unaligned_le32(memory+0x4000+124)==(qos?0:RTL_SEQ_ASSIGNED|0xabc));
+ }
 }
 '''
 with tempfile.TemporaryDirectory(prefix='radio-tx-bar-') as directory:

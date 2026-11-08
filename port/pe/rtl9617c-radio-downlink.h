@@ -182,6 +182,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 			count++; break;
 		}
 		u32 *waiting = uncached(buffer);
+		volatile struct rtl_seq_shared *sequence = (void *)(memory + RTL_SEQ_BASE);
+		waiting[7] = sequence->generation;
 		/* The queue link becomes the MPDU ownership chain when selected. */
 		waiting[1] = length | header << 16;
 		waiting[2] = now; waiting[3] = now >> 32;
@@ -276,6 +278,10 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				 (u64)*(u32 *)(memory + RTL_AX_NI_PS_TIMEOUT + macid * 4) * 1000000));
 			discard |= ni_mcast_stale(mailbox, waiting);
 			discard |= ni_fttr_stale(mailbox, waiting);
+			if (((*(u32 *)(memory + 0xd000 + macid * 32 + 8) >> 16) & 63) == 24) {
+				volatile struct rtl_seq_shared *sequence = (void *)(memory + RTL_SEQ_BASE);
+				discard |= !waiting[7] || sequence->generation != waiting[7];
+			}
 			if (discard && mailbox[47]) continue;
 			if (!discard && (mailbox[30] >= 124 ||
 			    (ps[0] && (command == ps[2] || !((grant_flags >> 16) & BIT(tid)))))) continue;
@@ -304,6 +310,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 #pragma clang loop unroll(disable)
 				for (u32 i = 0; i < 8; i++) request[i] = peer[i];
 				request[0] = 256 + id; request[1] = channels[tid];
+				request[RTL_SEQ_REQUEST] = ((request[2] >> 16) & 63) == 24 ? waiting[7] : 0;
 				request[2] = BIT(24) | (request[2] & 0x3f0000) | (length + ((request[2] >> 16) & 63) + 8 - 14);
 				request[4] = (request[4] & ~0x1fffU) | tid | indicators[tid] << 12;
 				if (waiting[4]) {

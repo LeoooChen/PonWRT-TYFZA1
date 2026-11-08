@@ -37,7 +37,7 @@ static void kfree_skb(struct sk_buff *s){assert(!rcu&&allocations);allocations--
 static int dev_queue_xmit(struct sk_buff *s){(void)s;abort();}
 '''
 overlay = root / 'port/overlay/target/linux/rtl9617c/files-6.18'
-code += (overlay / 'net/mac80211/rtl9617c-mcast.h').read_text()
+code += function((overlay / 'net/mac80211/rtl9617c-mcast.h').read_text(), 'ieee80211_rtl9617c_mcast_policy')
 code += r'''
 static struct ieee80211_sub_if_data *writing;
 static unsigned old_noack,old_tid;

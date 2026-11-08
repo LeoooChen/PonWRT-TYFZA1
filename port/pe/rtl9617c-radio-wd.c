@@ -13,6 +13,7 @@ struct packed_word { u32 value; } __attribute__((packed));
 #include <linux/rtl9617c-qm-layout.h>
 #include <linux/rtl9617c-mcast-pe.h>
 #include <linux/rtl9617c-key-pn.h>
+#include <linux/rtl9617c-seq.h>
 
 static inline void sync(void) { __asm__ volatile("sync" ::: "memory"); }
 static inline void *uncached(u32 address) { return (void *)(address | 0xa0000000U); }
@@ -307,8 +308,12 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 		);
 		u32 protected = !!(flags & (BIT(15) | BIT(16)));
 
-		sequence = sequences[macid * 8 + tid];
-		sequences[macid * 8 + tid] = (sequence + 1) & 0xfff;
+		if (header_bytes == 24 && (request[RTL_SEQ_REQUEST] & RTL_SEQ_ASSIGNED))
+			sequence = request[RTL_SEQ_REQUEST] & 4095;
+		else {
+			sequence = sequences[macid * 8 + tid];
+			sequences[macid * 8 + tid] = (sequence + 1) & 0xfff;
+		}
 		header[0] = header_bytes == 26 ? 0x88 : 0x08;
 		header[1] = (client ? 0x01 : 0x02) | protected << 6 | (flags & BIT(19) ? 0x20 : 0);
 		header[2] = header[3] = 0;
@@ -472,6 +477,7 @@ static u32 pe_fttr_stale(volatile u32 *mailbox, const u32 *request)
 }
 
 #include "rtl9617c-radio-key-pn.h"
+#include "rtl9617c-radio-seq.h"
 
 static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u32 *mailbox, u32 budget, u32 requests[16][32])
 {
@@ -485,10 +491,15 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 		u32 *request = requests[read];
 		u32 next, ring = request[1] & 7;
 		u32 revoked = 0;
+		u32 seq = request[RTL_SEQ_REQUEST];
+		if (seq && !(seq & RTL_SEQ_ASSIGNED)) {
+			volatile struct rtl_seq_shared *s = (void *)(memory + RTL_SEQ_BASE);
+			revoked = s->generation != seq;
+		}
 		if (request[RTL_KEY_PN_REQUEST]) {
 			volatile struct rtl_key_pn_shared *key = (void *)(memory + RTL_KEY_PN_BASE +
 				((request[5] >> 16) & 127) * sizeof(*key));
-			revoked = key->generation != request[RTL_KEY_PN_REQUEST] ||
+			revoked |= key->generation != request[RTL_KEY_PN_REQUEST] ||
 				!(request[4] & BIT(15)) || (request[4] & BIT(16));
 		}
 		if (request[0] < 256 && (revoked || pe_fttr_stale(mailbox, request))) {
@@ -503,6 +514,11 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 		if (request[0] >= 256) {
 			u32 id = request[0] - 256;
 			u32 *owners = (void *)(memory + 0xc400);
+			if (((request[2] >> 16) & 63) == 24) {
+				const u32 *waiting = uncached(owners[id * 2]);
+				volatile struct rtl_seq_shared *s = (void *)(memory + RTL_SEQ_BASE);
+				revoked |= !waiting[7] || s->generation != waiting[7];
+			}
 			if (revoked || ni_mcast_stale(mailbox, uncached(owners[id * 2])) ||
 			    ni_fttr_stale(mailbox, uncached(owners[id * 2]))) {
 				/* Retain the BID like a completed WP. Using the single
@@ -527,6 +543,12 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 			checked |= BIT(ring);
 		}
 		if (!room[ring]) break;
+		if (seq && !(seq & RTL_SEQ_ASSIGNED)) {
+			u32 sequence, status = pe_sequence_next(memory, seq, &sequence);
+			if (!status) break;
+			if (status == 2) continue;
+			request[RTL_SEQ_REQUEST] = RTL_SEQ_ASSIGNED | sequence;
+		}
 		u32 pn = pe_key_pn(memory, request);
 		if (!pn) break;
 		if (pn == 2) continue; /* Recheck withdrawal before consuming credit. */
@@ -679,6 +701,7 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 				context[RTL_MC_PE_CAP_MAILBOX] = RTL_MC_PE_CAPABILITY;
 				context[RTL_FTTR_PE_CAP_MAILBOX] = RTL_FTTR_PE_CAPABILITY;
 				context[RTL_KEY_PN_CAP_MAILBOX] = RTL_KEY_PN_CAPABILITY;
+				context[RTL_SEQ_CAP_MAILBOX] = RTL_SEQ_CAPABILITY;
 				sync();
 			}
 #endif
@@ -884,6 +907,7 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 					out[RTL_FTTR_PE_REQUEST_HIGH] = request[RTL_FTTR_PE_REQUEST_HIGH];
 				}
 				out[RTL_KEY_PN_REQUEST] = ni_packet ? 0 : request[RTL_KEY_PN_REQUEST];
+				if (!ni_packet) out[RTL_SEQ_REQUEST] = request[RTL_SEQ_REQUEST];
 				mailbox[RTL_AX_TX_PUBLISH_WRITE] = (write + 1) & 15;
 			}
 #else

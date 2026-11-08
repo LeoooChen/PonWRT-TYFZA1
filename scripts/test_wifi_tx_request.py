@@ -52,6 +52,8 @@ typedef uint8_t u8;typedef uint32_t u32;typedef uint64_t u64;
 #define RTL_FTTR_PE_REQUEST_LOW 28
 #define RTL_FTTR_PE_REQUEST_HIGH 29
 #define RTL_KEY_PN_REQUEST 30
+#define RTL_SEQ_REQUEST 31
+#define RTL_SEQ_ASSIGNED 0x80000000U
 struct key {unsigned flags,hw_key_idx,keyidx;u64 tx_pn;};
 struct vif {unsigned type;};
 struct info {unsigned flags;struct {struct key *hw_key;unsigned flags;struct vif *vif;}control;};
@@ -108,6 +110,7 @@ static void NAME(struct tx*tx,struct info*info,struct hdr*header,struct skb*skb,
  unsigned rate,unsigned gi,unsigned bandwidth,unsigned tid,unsigned aggregate,unsigned density,
  bool encap,bool pe_sequence,unsigned original_header_bytes,const u8*original_header){
  bool template_ready=false;
+ unsigned sequence=0xabc0;
  unsigned pn_generation=slot.pe_key_pn?123:0;
  static const u8 tid_indicators[]={0,0,1,1,0,1,0,1};
 '''
@@ -117,6 +120,7 @@ code += r'''
 int main(void){
  static u8 mem[2][0x20000],headers[2][256*128],payload[2048];
  unsigned vectors=0;
+ for(unsigned header_bytes=24;header_bytes<=26;header_bytes+=2)
  for(unsigned client=0;client<2;client++)
  for(unsigned layout=0;layout<=10;layout++)
  for(unsigned encap=0;encap<2;encap++)for(unsigned seq=0;seq<2;seq++)
@@ -138,10 +142,12 @@ int main(void){
   a.producer[ring]=b.producer[ring]=255;
   put_unaligned_le32(BIT(17),mem[0]+0xe200+macid*4);
   put_unaligned_le32(BIT(17),mem[1]+0xe200+macid*4);
-  old(&a,&ia,&hdr,&skb,slot,255,ring,0,3000,26,macid,0x1ab,3,3,tid,64,7,encap,seq,encap?14:seq?26:0,payload);
+  old(&a,&ia,&hdr,&skb,slot,255,ring,0,3000,header_bytes,macid,0x1ab,3,3,tid,64,7,encap,seq,encap?14:seq?26:0,payload);
   skb.info=&ib;
-  candidate(&b,&ib,&hdr,&skb,slot,255,ring,0,3000,26,macid,0x1ab,3,3,tid,64,7,encap,seq,encap?14:seq?26:0,payload);
-  if(!encap && seq && auth && keytype==2 && tid==0) {
+  candidate(&b,&ib,&hdr,&skb,slot,255,ring,0,3000,header_bytes,macid,0x1ab,3,3,tid,64,7,encap,seq,encap?14:seq?26:0,payload);
+  assert(get_unaligned_le32(mem[1]+0x4000+255*128+RTL_SEQ_REQUEST*4)==
+   (encap&&header_bytes==24?(RTL_SEQ_ASSIGNED|0xabc):0));
+  if(header_bytes==26 && !encap && seq && auth && keytype==2 && tid==0) {
    assert(get_unaligned_le32(mem[1]+0xd000+macid*32+8)==26U<<16);
    assert(get_unaligned_le32(mem[1]+0xd000+macid*32+16)==((macid<<24)|BIT(18)|BIT(16)|(client<<23)));
    assert(!memcmp(mem[1]+0xe400+macid*8,hdr.addr1,6));

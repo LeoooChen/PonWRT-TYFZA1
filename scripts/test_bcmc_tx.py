@@ -14,7 +14,7 @@ env = {'__file__': str(fixture), '__name__': 'bcmc_fixture'}
 exec(compile(setup, str(fixture), 'exec'), env)
 args, function, driver = (env[n] for n in ('args', 'function', 'driver'))
 code = env['code']
-code = code.replace('assert(s->len==20);', 'assert(s->len>=24);')
+code = code.replace('assert(separate?s->len==84:s->len==20);', 'assert(!separate&&s->len>=24);')
 code = code.replace('static unsigned find_first_zero_bit(const unsigned *p,unsigned n){(void)p;(void)n;return 0;}',
                     'static unsigned find_first_zero_bit(const unsigned *p,unsigned n){for(unsigned i=0;i<n;i++)if(!p[i])return i;return n;}')
 code = code.replace('static void rtl_ax_security_tx(u8 *page,unsigned id,unsigned key,u64 pn){(void)page;(void)id;(void)key;(void)pn;assert(0);}',
