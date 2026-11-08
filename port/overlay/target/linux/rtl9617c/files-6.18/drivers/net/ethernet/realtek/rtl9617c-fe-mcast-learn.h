@@ -757,7 +757,13 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
   }
   if(i==mc->count && existing->replica_count==mc->count && existing->mtu_owned &&
      fe->mtus[existing->mtu_index].size==data.mtu &&
-     rtl_fe_mc_equal(bitmap,fe->multicast.groups[existing->mc_group].bitmap,2))goto out;
+     rtl_fe_mc_equal(bitmap,fe->multicast.groups[existing->mc_group].bitmap,2)) {
+   if(fe->mc_gate.active)goto out;
+   /* Installed behind the closed gate during an earlier drain race.
+    * The complete recipe was just revalidated; publish that same owner. */
+   flow=existing;
+   goto publish;
+  }
   /* A complete packet disagreed despite the same key/generation. Close
    * the learned profile, retire it and require another complete decision. */
   fe_mcast_invalidate(fe);ret=-ESTALE;goto out;
@@ -785,19 +791,23 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
  flow->bridge_index=packet->bridge;flow->bridge_vid=packet->input.vid;
  flow->bridge_ingress=packet->input.port;flow->bridge_tags=packet->input.tags;
  memcpy(flow->bridge_tag,packet->input.tag,sizeof(flow->bridge_tag));fe_index_flow(fe,flow);
+publish:
  spin_lock_irqsave(&fe->mc_lock,flags);
  /* A closed generation cannot reopen while a CPU copy still owns a
   * radio request/payload, even if its PCIe descriptor was already published.
   */
- if(!fe->mc_gate.active && !rtl9617c_bridge_mcast_tx_idle())ret=-EAGAIN;
+ if(fe->mc_gate.error)ret=fe->mc_gate.error;
+ else if(fe->mc_gate.writers || fe->mc_gate.epoch!=packet->epoch)ret=-ESTALE;
+ else if(!fe->mc_gate.active && !rtl9617c_bridge_mcast_tx_idle())ret=-EAGAIN;
  else {
-  if(!fe->mc_gate.error && !fe->mc_gate.writers && fe->mc_gate.epoch==packet->epoch)
-   fe_mcast_pe_open(fe,packet->epoch);
+  fe_mcast_pe_open(fe,packet->epoch);
   ret=rtl_fe_mc_gate_open(&io,&fe->mc_gate,packet->epoch);
  }
  if(ret)fe_mcast_pe_close(fe);
  spin_unlock_irqrestore(&fe->mc_lock,flags);
- if(ret)fe_delete(fe,flow);
+ /* A late old copy delays opening; preserve the valid immutable group
+  * until another complete packet revalidates it. Real changes/errors retire. */
+ if(ret && ret!=-EAGAIN)fe_delete(fe,flow);
 out:
  kfree(mc);return ret;
 }

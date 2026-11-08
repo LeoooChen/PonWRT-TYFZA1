@@ -208,6 +208,8 @@
 
 95. 修正组播排空请求的硬件撤销顺序：首次复制记录关闭的ACK可能早于Hash/cache/NI组清理，现三者成功后再请求一次新前缀；mc_group归属置零保证后续MAC/接口恢复重试不反复换请求号。host/direct首次撤销仍立即失效，已脱离记录的重试幂等，部分未发布复制同样处理。旧生产函数复现缺失后置请求；age/cache/NI故障、后续连续恢复失败、单次新请求和完整learner等待等及11组相关测试、原厂unlearn执行、Image/模块/两份一致性通过。PE不变，完整上游生产者屏障与ID复用仍未完成，未上实机。详见[硬件撤销后的新前缀](port/FTTR.md#multicast-withdrawal-refreshes-the-prefix-after-hardware-cleanup)。
 
+96. 修复安装末尾排空竞争导致组号白白隔离：旧learner在新Hash/NI组已安装、迟到旧包使最终检查返回EAGAIN时立即删除新规则；现仅在同代际排空等待时保留未开放安装，八次等待不再分配/刷新请求，后续不同事务号的完整Linux复制决策重新核验后开放同一组。混合host/LAN/PE与共享P6场景保持cookie/动作数量，MTU/代际变化仍拒绝并撤销。旧代码复现、14组相关测试、Image/模块和输入一致性通过，PE不变。这里保留的是活跃安装，不是复用已退休ID；上游屏障和安全ID复用仍待补，未上实机。详见[保留待开放组播规则](port/FTTR.md#a-drain-race-retains-the-unopened-multicast-rule)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

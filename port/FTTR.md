@@ -6317,6 +6317,40 @@ that every MCE/NI DMA/AFT upstream producer is empty. In-flight downstream
 packets and safe hardware group/action/cookie/GEM reuse remain unresolved.
 No device was accessed.
 
+### A drain race retains the unopened multicast rule
+
+A late old-cookie arrival can become visible after a new learned rule has
+finished Hash/NI installation but before its final gate-opening check. The
+previous code deleted that valid new rule on `EAGAIN`, permanently retiring
+its group/cookies and forcing another allocation on the next attempt. The
+old production learner reproduces this avoidable quarantine consumption.
+
+For a pure drain wait in the same generation, the installed rule now remains
+behind the closed tuple/PE gate. Repeated busy observations allocate nothing
+and do not refresh the drain request. A later complete Linux packet decision
+rechecks the actual recipient actions, direct recipes, tags, peer policy and
+MTU against the retained rule before opening that same group. It may carry
+a different transaction ID; numeric live ownership remains with the original
+immutable installation. Host/direct copies are not accepted while the gate
+is closed. A membership generation change, writer or gate error still uses
+normal withdrawal; MTU/recipient differences invalidate rather than reviving
+the pending rule. Normal worker idle expiry also remains in force.
+
+Tests inject an old-copy count when the production Hash becomes valid, then
+exercise eight busy retries and a later fresh transaction. Shared-P6 and
+mixed local-host/LAN/direct-PE groups retain the same flow, group/action and
+cookie counts. The PE table stays closed until revalidation succeeds. MTU
+and generation changes reject pending state and preserve existing quarantine
+semantics. Fourteen related FE/bridge/CPU-DMA/reference tests pass, as do
+Image/modules and changed-input identity. No PE firmware change is needed.
+Evidence is `artifacts/fttr/mcast-pending-*`; the old-header run fails the
+retained-owner assertion.
+
+This reuses an existing live installation, not a retired hardware ID. It
+does not add an upstream producer fence or prove that late MCE/NI DMA/AFT
+packets have disappeared. Full retirement and hardware-ID reuse remain
+unresolved, and no physical device was accessed.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN
