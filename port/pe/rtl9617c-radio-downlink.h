@@ -344,7 +344,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				}
 				if (policy & RTL_AX_AMSDU_BATCH) batch[3] = 1;
 			}
-			/* Commit this selection only while its grant snapshot is current. */
+			/* Retain the admitted sleep decision for this in-flight frame;
+			 * a later transition cannot create or consume another PS grant. */
 			if (macid && !discard && command != *(volatile u32 *)(memory + RTL_AX_NI_PS_VERSION + macid * 4)) continue;
 			u32 quota = *(volatile u32 *)(memory + RTL_AX_TX_WMM_QUOTA);
 			u32 ac_index = macid * 4 + channels[tid];
@@ -444,7 +445,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			(*(u32 *)(memory + NI_TID_QUEUED + queue * 4)) -= frames;
 			batch[0] -= selected_bytes;
 			if (!(policy & RTL_AX_AMSDU_BATCH) || !num ||
-			    *(u32 *)(memory + NI_TID_QUEUED + queue * 4) < num || discard || ps[0]) batch[3] = 0;
+			    *(u32 *)(memory + NI_TID_QUEUED + queue * 4) < num || discard || asleep) batch[3] = 0;
 			if (retired && !*head) batch[1] = batch[2] = 0;
 			mailbox[170] = next_peer[macid];
 			if (!*queued) {
