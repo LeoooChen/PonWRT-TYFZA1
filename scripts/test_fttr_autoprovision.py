@@ -89,6 +89,7 @@ def main():
     p.add_argument('--reboot-control', type=Path, help='exercise remote single-send reboot')
     p.add_argument('--move-control', type=Path, help='exercise the resident SN reservation move')
     p.add_argument('--output', type=Path, required=True)
+    p.add_argument("--release-cuts", action="store_true", help="crash at every remote release mutation and resume checked cleanup")
     p.add_argument("--service-state", action="store_true", help="exercise durable remote service ownership across controller restart")
     p.add_argument("--shared", action="store_true", help="exercise shared Ethernet/VEIP services and release with --move-control")
     p.add_argument("--filter-only", action="store_true", help="use transparent UNI mode with ANI VLAN filtering")
@@ -162,6 +163,7 @@ def main():
             self.auth_malformed = False
             self.move_hold = self.move_drop = self.move_reject = self.move_false = False
             self.mib_hold = False
+            self.release_cut = self.release_writes = 0
             self.auth_ctc_fail = self.auth_onug_fail = 0
             self.pool = {(262,self.tcont):{0x8000:b'\0\xff'},
                 (277,self.queue):{0x0400:struct.pack('>I',self.tcont<<16|3)},
@@ -365,6 +367,9 @@ def main():
             if wire is None:
                 wire=stock.frame(tci,(op&0x1f)|0x20,content if op in (0x4d,0x4e) else bytes([status])+content,
                                  onu=self.id,class_id=c,instance=id)[16:]
+            if self.release_cut and op in (0x46,0x48) and c not in (65530,256):
+                self.release_writes+=1
+                if self.release_writes>=self.release_cut:self.held=wire;return None
             if op==0x4d and self.mib_hold:self.held=wire;return None
             if op==0x46 and self.move_drop:return None
             if op==0x46 and self.move_hold:self.held=wire;return None
@@ -757,9 +762,11 @@ def main():
                     stop();nodes[7].pool.update(saved_unis)
                     checks.append('planner ENOENT cannot be mistaken for an absent journal or overwrite existing ownership')
                 process=launch(grant_case='grant-false-success')
-                until(lambda s:s['onus'][7]['phase']=='service-failed')
-                assert 'fttr-u7' not in ports()
-                stop()
+                until(lambda s:process.poll() is not None or s['onus'][7]['phase']=='service-failed',allow_exit=True)
+                assert 'fttr-u7' not in ports() and (service_store/(nodes[7].serial.hex()+'.service')).read_bytes()[26]==1
+                if process.poll() is None:stop()
+                else:
+                    out,err=process.communicate(timeout=1);assert process.returncode==1 and '(-117)' in err,err
                 checks.append('failed local grant restoration withdraws partial grants and keeps the committed remote ledger')
                 process=launch();start_ready()
                 # A release that crashes must retain its complete original
@@ -776,16 +783,32 @@ def main():
                 finally:
                     if interrupted.poll() is None:interrupted.kill();interrupted.wait()
                 nodes[7].move_hold=False;before_partial=len(mutation(nodes[7]))
+                partial_remote=copy.deepcopy((nodes[7].pool,nodes[7].table))
+                foreign_key=(268,4095) if args.multicast else (262,nodes[7].tcont)
+                foreign_attr=next(iter(nodes[7].pool[foreign_key]))
+                foreign_value=nodes[7].pool[foreign_key][foreign_attr]
+                foreign_value=bytes([foreign_value[0]^1])+foreign_value[1:]
+                nodes[7].pool[foreign_key][foreign_attr]=foreign_value
                 process=launch();until(lambda s:s['onus'][7]['phase']=='service-failed')
-                assert len(mutation(nodes[7]))==before_partial and 'fttr-u7' not in ports()
+                assert nodes[7].pool[foreign_key][foreign_attr]==foreign_value and 'fttr-u7' not in ports()
+                assert (service_store/(nodes[7].serial.hex()+'.service')).read_bytes()==pending
+                stop();nodes[7].pool,nodes[7].table=partial_remote
+                checks.append('foreign attributes during interrupted release stop cleanup without overwriting the foreign value or losing persistent ownership')
+                process=launch();until(lambda s:s['onus'][7]['phase']=='service-released')
+                assert 'fttr-u7' not in ports()
+                assert {k:v for k,v in nodes[7].pool.items() if k[0] not in (65530,256)}=={k:v for k,v in originals[7][0].items() if k[0] not in (65530,256)} and nodes[7].table==originals[7][1]
                 assert (service_store/(nodes[7].serial.hex()+'.service')).read_bytes()==pending
                 stop()
-                # Restore the test's remote/ledger snapshot to independently
-                # exercise a complete release; production never rewrites this.
-                nodes[7].pool,nodes[7].table=old_remote
+                count=len(mutation(nodes[7]))
+                process=launch();until(lambda s:s['onus'][7]['phase']=='service-released')
+                assert len(mutation(nodes[7]))==count and 'fttr-u7' not in ports()
+                stop()
+                # Restore the fixture only to test ordinary complete migration.
+                nodes[7].pool,nodes[7].table=copy.deepcopy(old_remote)
                 (service_store/(nodes[7].serial.hex()+'.service')).write_bytes(old_owner)
-                checks.append('crash during release retains the complete prior ownership recipe and refuses automatic delete replay')
+                checks.append('crash during release resumes checked cleanup, preserves closed hold and repeats read-only after completion')
                 process=launch();start_ready()
+                release_start=len(mutation(nodes[7]))
                 client=subprocess.Popen([str(args.move_control.resolve()),str(store),'onu-move','7',nodes[7].serial.hex(),'11','0'*16],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
                 try:
                     until(lambda s:client.poll() is not None,seconds=25)
@@ -795,7 +818,41 @@ def main():
                 assert not (service_store/(nodes[7].serial.hex()+'.service')).exists()
                 assert {k:v for k,v in nodes[7].pool.items() if k[0] not in (65530,256)}=={k:v for k,v in originals[7][0].items() if k[0] not in (65530,256)} and nodes[7].table==originals[7][1]
                 checks.append('post-restart move restores original T-CONT/UNI/VLAN state and deletes only owned shared GEM/multicast objects; durable record retires after release')
+                writes=len(mutation(nodes[7]))-release_start
                 stop()
+                if args.release_cuts:
+                    for cut in range(1,writes+1):
+                        nodes[7].pool,nodes[7].table=copy.deepcopy(old_remote)
+                        nodes[7].release_cut=nodes[7].release_writes=0;nodes[7].held=None
+                        (service_store/(nodes[7].serial.hex()+'.service')).write_bytes(old_owner)
+                        (service_store/(nodes[7].serial.hex()+'.service')).chmod(0o600)
+                        hardware();process=launch();start_ready()
+                        nodes[7].release_cut=cut
+                        client=subprocess.Popen([str(args.move_control.resolve()),str(store),'onu-move','7',nodes[7].serial.hex(),'11','0'*16],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                        try:
+                            until(lambda s:nodes[7].held is not None)
+                            process.kill();process.wait()
+                        finally:
+                            if client.poll() is None:client.kill();client.wait()
+                        nodes[7].release_cut=0
+                        process=launch(with_policy=cut!=writes)
+                        until(lambda s:s['onus'][7]['phase']=='service-released')
+                        assert 'fttr-u7' not in ports()
+                        assert {k:v for k,v in nodes[7].pool.items() if k[0] not in (65530,256)}=={k:v for k,v in originals[7][0].items() if k[0] not in (65530,256)} and nodes[7].table==originals[7][1],cut
+                        stop()
+                    checks.append(f'every one of {writes} applied Set/Delete crash points recovers original objects/VLANs, including policy removal; no automatic service reopen')
+                    # Only explicit resume after completed cleanup releases hold.
+                    process=launch();until(lambda s:s['onus'][7]['phase']=='service-released')
+                    client=subprocess.Popen([str(args.move_control.resolve()),str(store),'onu-admin','7',nodes[7].serial.hex(),'resume'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                    try:
+                        until(lambda s:client.poll() is not None)
+                        out,err=client.communicate(timeout=1);assert client.returncode==0,(out,err)
+                    finally:
+                        if client.poll() is None:client.kill();client.wait()
+                    assert not (service_store/(nodes[7].serial.hex()+'.service')).exists()
+                    if args.backend!='asic9690':hardware() # FPGA resume releases registration; model its new discovery.
+                    start_ready();stop()
+                    checks.append('explicit resume after cleanup removes hold only after locked driver identity confirmation and reprovisions normally')
                 # A power loss during initial Set leaves durable uncertainty.
                 nodes[7]=Node(7,'5445535400000007',0x107,False,hold=True)
                 nodes[9]=Node(9,'5445535400000009',0x203,True);nodes[9].fail_upload_once=False

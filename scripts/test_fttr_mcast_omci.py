@@ -21,7 +21,7 @@ class Job(C.Structure):
     _fields_ = [('transaction',ObjectsJob),('objects',Object*7),('table',Me),('failure',Me),
         ('table_length',C.c_uint),('table_row',C.c_ubyte*12),('error',C.c_int),('cleanup_error',C.c_int),
         ('prior_empty',C.c_bool),('table_sent',C.c_bool),('doubled',C.c_bool),('configured',C.c_bool),
-        ('releasing',C.c_bool),('defer_apply',C.c_bool),('stage',C.c_int)]
+        ('releasing',C.c_bool),('defer_apply',C.c_bool),('recover_release',C.c_bool),('stage',C.c_int)]
 
 
 def main():
@@ -123,6 +123,23 @@ def main():
                     expected=original.gem()['events']+[e for e in original.run(veip_count=int(uni_port==9),extended=extended,uni_type=(2 if uni_port==9 else 0) if args.fpga else None)['events'] if e['operation']=='omci']
                     actual=sorted(b[2:] for b in frames if b[2] in (0x44,0x48))
                     assert actual==sorted(bytes.fromhex(e['wire'])[2:] for e in expected),(extended,actual)
+                    # Reload the committed recipe after an interrupted release.
+                    # The target's delete-when-empty defect is modeled in drive;
+                    # correct recovery must never send that Set a second time.
+                    for removed in range(9):
+                        recovered=Job.from_buffer_copy(bytes(job))
+                        recovered.transaction.objects=C.cast(recovered.objects,C.POINTER(Object))
+                        recovered.recover_release=True
+                        recovered.transaction.recover_release=True
+                        partial=copy.deepcopy(pool);remaining_table=table
+                        if removed:
+                            remaining_table=b''
+                            for o in list(recovered.objects)[::-1][:removed-1]:partial.pop((o.class_id,o.instance),None)
+                        r,after,after_table,sent,changed=drive(recovered,C.c_ushort(counter.value),initial=(partial,remaining_table),doubled=doubled,release=True)
+                        assert r==2 and not after and not after_table,(removed,r)
+                        deletes=sum(b[2]==0x48 and b[4:6]==b'\x01\x19' for b in sent)
+                        assert deletes==(removed==0)
+                        assert changed==8 if removed==0 else changed==8-removed
                     reused,rc=start(extended)
                     r,_,_,reads,changed=drive(reused,rc,initial=(pool,table),doubled=doubled)
                     assert not changed
@@ -177,7 +194,8 @@ def main():
             'Transport cancellation immediately after send retains uncertain object/table ownership and exposes no pending request',
             'Original non-idempotent IPv4 row deletion is never sent for an empty table; a lost reply causes readback without retransmitting the Set',
             'Standard table adoption is read-only; ambiguous doubled existing table rejects; newly owned empty-to-one doubled table verifies only initialized bytes',
-            'Release checks all object groups and the live table before removing its row and owned objects; foreign object/table drift performs no cleanup writes'],
+            'Release checks all object groups and the live table before removing its row and owned objects; foreign object/table drift performs no cleanup writes',
+            'Nine partial-release snapshots per ordinary/CTC and single/doubled table recover without replaying delete against an empty table'],
             scope='Actual original producers/encoders and native asynchronous transactions with modeled ONU storage; no optical traffic'),indent=2)+'\n')
         print('PASS: native multicast original-wire matching, all mutation failures, table readback/adoption, cleanup and drift')
 

@@ -16,14 +16,15 @@ source=r'''
 #define FTTR_ONUS 64
 #define FTTR_ASIC9690 3
 enum {ONU_ABSENT,ONU_BLOCKED};
+#define FTTR_SERVICES_RELEASED 4
 struct fttr_onu_state {uint32_t downstream,upstream;uint8_t serial[8];};
-struct onu {struct fttr_onu_state hardware;bool admin_pending,upgrade_held,upgrade_marked;
+struct onu {struct fttr_onu_state hardware;bool admin_pending,upgrade_held,upgrade_marked,service_releasing;struct {int stage;}services;
  int phase;uint8_t admin_serial[8];int64_t admin_timeout;};
-struct controller {int directory,upgrade_store,backend;struct onu onu[64];
+struct controller {int directory,upgrade_store,backend,service_store;struct onu onu[64];
  struct {bool active;struct fttr_admin_request request;} upgrade,reboot,move;};
 static struct controller c;
 static int events[16],count,reads,fail_at;
-static bool receipt,replace_after_driver;
+static bool receipt,replace_after_driver,service_receipt;
 static int event(int kind){assert(count<16);events[count++]=kind;return kind==fail_at?-EIO:0;}
 static int fttr_miniolt_one(int directory,unsigned id,struct fttr_onu_state *s){
  (void)directory;assert(id==7);int ret=event(++reads==1?1:5);memset(s,0,sizeof(*s));
@@ -31,6 +32,9 @@ static int fttr_miniolt_one(int directory,unsigned id,struct fttr_onu_state *s){
 }
 static int fttr_upgrade_store_remove(int directory,const uint8_t *serial){
  (void)directory;assert(!memcmp(serial,"TEST0007",8));int ret=event(6);if(!ret)receipt=false;return ret;
+}
+static int fttr_service_store_remove(int directory,const uint8_t *serial){
+ (void)directory;assert(!memcmp(serial,"TEST0007",8));int ret=event(9);if(!ret)service_receipt=false;return ret;
 }
 static bool fttr_miniolt_recovery_needed(int backend,uint32_t upstream){(void)backend;(void)upstream;return true;}
 static int forwarding(struct controller *ctl,bool enable){assert(ctl==&c);return event(enable?7:2);}
@@ -64,6 +68,17 @@ int main(void){
   reset(0);r.action=action;assert(!admin_request(&c,&r,false,&fatal));assert(receipt && c.onu[7].upgrade_held);
   assert(c.onu[7].admin_pending==(action==FTTR_ADMIN_DEACTIVATE));
  }
+ r.action=FTTR_ADMIN_RESUME;
+ for(int failure=0;failure<=9;failure++){
+  if(failure==6||failure==7||failure==8)continue;
+  reset(failure);c.onu[7].service_releasing=true;c.onu[7].services.stage=FTTR_SERVICES_RELEASED;service_receipt=true;
+  int ret=admin_request(&c,&r,false,&fatal);
+  assert(ret==(failure?-EIO:0));assert(service_receipt==(failure!=0));
+  if(failure)for(int n=0;n<count;n++)assert(events[n]!=6&&events[n]!=7);
+  else {assert(count==9&&events[5]==9&&events[6]==6&&events[7]==7);}
+ }
+ reset(0);c.onu[7].service_releasing=true;c.onu[7].services.stage=FTTR_SERVICES_RELEASED;
+ service_receipt=true;replace_after_driver=true;assert(admin_request(&c,&r,false,&fatal)==-ESTALE&&service_receipt);
  puts("Upgrade admin: failed teardown/driver/readback and replacement retain record; successful resume releases after hardware confirmation");
 }
 '''

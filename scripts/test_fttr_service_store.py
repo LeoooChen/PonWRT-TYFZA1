@@ -89,7 +89,9 @@ int main(int argc,char **argv){
  assert(!fttr_service_store_pending(d,&link,7,sn,3,&s));
  fd=openat(d,name,O_RDONLY);assert(read(fd,data,sizeof(data))==n);close(fd);
  assert(data[26]==2 && !memcmp(data+32,old+32,n-36));
- assert(fttr_service_store_load(d,&link,7,sn,3,&got)==-ENOTRECOVERABLE);
+ assert(fttr_service_store_load(d,&link,7,sn,3,&got)==1);
+ assert(got.job[0].objects[0].touched && got.job[0].objects[0].previous[1]==255);
+ fttr_services_clear(&got);
  assert(!fttr_service_store_remove(d,sn));fttr_services_clear(&s);close(d);
  assert(!chmod(argv[1],0755));assert(fttr_service_store_open(argv[1])==-EACCES);
  printf("Durable service codec: %zd single-byte corruption cases, 23 bounded dimensions, ownership/lease/fsync/identity/permissions passed\n",n);

@@ -190,7 +190,8 @@ again:
 	case FTTR_MCAST_CHECK:
 	case FTTR_MCAST_APPLY:
 	case FTTR_MCAST_RELEASE:
-		if (job->transaction.me.state == FTTR_ME_WAIT && !job->transaction.me.attempts)
+		if (job->transaction.phase != FTTR_OBJECT_RELEASED && job->transaction.phase != FTTR_OBJECT_FAILED &&
+		    job->transaction.me.state == FTTR_ME_WAIT && !job->transaction.me.attempts)
 			return 1;
 		ret = fttr_objects_job_update(&job->transaction, counter);
 		if (ret < 0) {
@@ -221,7 +222,9 @@ again:
 		job->table_sent = true;
 	if (job->table.state == FTTR_ME_WAIT)
 		return job->table.attempts ? 0 : 1;
-	if (job->table.error) {
+	if (job->table.error && !(job->recover_release && job->stage == FTTR_MCAST_RELEASE_CHECK &&
+	    !job->transaction.group && job->objects[job->transaction.index].touched &&
+	    job->table.error == -EREMOTEIO && job->table.result == 5)) {
 		if (job->stage == FTTR_MCAST_DELETE_ROW && job->table.error == -ETIMEDOUT) {
 			/* Retrying this Set against an already absent original row would
 			 * add a zero-address ACL entry. Resolve the one send by readback.
@@ -236,18 +239,27 @@ again:
 		return rollback(job, counter, job->table.error);
 	}
 	if (job->stage == FTTR_MCAST_RELEASE_CHECK) {
-		const struct fttr_omci_object *object = &job->objects[job->transaction.index];
+		struct fttr_omci_object *object = &job->objects[job->transaction.index];
 		const struct fttr_omci_values *values = job->transaction.group ? &object->set : &object->create;
 
-		if (memcmp(job->table.reply + 11, values->value, values->size))
+		bool absent = job->table.error == -EREMOTEIO && job->table.result == 5;
+		if (absent) {
+			object->presence = FTTR_OBJECT_ABSENT; object->touched = false;
+		} else if (memcmp(job->table.reply + 11, values->value, values->size))
 			return failed(job, -EUCLEAN, true);
-		if (!job->transaction.group && object->set.mask) {
+		if (!absent && !job->transaction.group && object->set.mask) {
 			job->transaction.group = 1;
 			return release_check(job, counter);
 		}
 		job->transaction.group = 0;
 		if (++job->transaction.index < job->transaction.count)
 			return release_check(job, counter);
+		if (job->recover_release && job->objects[1].presence == FTTR_OBJECT_ABSENT) {
+			/* This table died with its owned IW. Never replay the original
+			 * ambiguous delete Set against an absent row or instance. */
+			job->table_sent = false;
+			return release_objects(job, counter);
+		}
 		job->stage = FTTR_MCAST_RELEASE_TABLE;
 		return table_request(job, counter, false, NULL);
 	}
@@ -295,7 +307,7 @@ again:
 		job->stage = FTTR_MCAST_SET;
 		return table_request(job, counter, false, ipv4_row);
 	}
-	if (job->stage == FTTR_MCAST_RELEASE_TABLE && job->error && !length) {
+	if (job->stage == FTTR_MCAST_RELEASE_TABLE && (job->error || (job->recover_release && job->prior_empty && job->table_sent)) && !length) {
 		/* The original ONU inserts a zero-address entry for a delete key
 		 * which is already absent. A proven empty table needs no Set.
 		 */

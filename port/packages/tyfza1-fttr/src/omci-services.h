@@ -19,6 +19,7 @@ struct fttr_me_job *fttr_services_pending(struct fttr_services *set);
 int fttr_services_update(struct fttr_services *set, uint16_t *counter, int directory,
 	const struct fttr_onu_state *identity);
 int fttr_services_release_ready(const struct fttr_services *set);
+int fttr_services_recover_release(struct fttr_services *set, uint16_t *counter);
 int fttr_services_release(struct fttr_services *set, uint16_t *counter);
 void fttr_services_cancel(struct fttr_services *set, int error);
 void fttr_services_clear(struct fttr_services *set);

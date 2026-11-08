@@ -160,6 +160,15 @@ int fttr_objects_job_update(struct fttr_objects_job *job, uint16_t *counter)
 		return 0;
 	switch (job->phase) {
 	case FTTR_OBJECT_RELEASE_CHECK:
+		if (job->recover_release && !job->group &&
+		    ((absent && !object->update_only) ||
+		     (!error && object->update_only && object->have_previous &&
+		      !memcmp(job->me.reply + 11, object->previous, values->size)))) {
+			object->touched = false;
+			object->presence = absent ? FTTR_OBJECT_ABSENT : FTTR_OBJECT_RESTORED;
+			job->index++;
+			return release_check(job, counter);
+		}
 		if (error || memcmp(job->me.reply + 11, values->value, values->size))
 			return cleanup_failure(job, error ? error : -EUCLEAN);
 		if (!job->group && object->set.mask) {

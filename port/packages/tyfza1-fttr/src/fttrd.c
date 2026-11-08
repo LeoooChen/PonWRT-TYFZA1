@@ -36,7 +36,7 @@
 #include "omci-socket.h"
 
 enum onu_phase { ONU_ABSENT, ONU_BLOCKED, ONU_MIB, ONU_INVENTORY, ONU_FAILED,
-	ONU_SERVICE, ONU_CONFIGURED, ONU_SERVICE_FAILED, ONU_SYNC, ONU_WIFI, ONU_AUTH, ONU_AUTH_FAILED, ONU_MOVE, ONU_REBOOT, ONU_REBOOT_WAIT, ONU_UPGRADE, ONU_UPGRADE_WAIT };
+	ONU_SERVICE, ONU_CONFIGURED, ONU_SERVICE_FAILED, ONU_SYNC, ONU_WIFI, ONU_AUTH, ONU_AUTH_FAILED, ONU_MOVE, ONU_REBOOT, ONU_REBOOT_WAIT, ONU_UPGRADE, ONU_UPGRADE_WAIT, ONU_SERVICE_RELEASED };
 
 struct wifi_policy {
 	struct wifi_policy *next;
@@ -78,7 +78,7 @@ struct onu {
 	struct fttr_mib_model model;
 	struct fttr_services services;
 	struct fttr_service_recovery recovery;
-	bool service_recovering, service_recorded, service_marked;
+	bool service_recovering, service_recorded, service_marked, service_releasing;
 	const struct service_policy *selected[FTTR_SERVICES];
 	struct fttr_auth_job auth;
 	struct fttr_onu_selection selection;
@@ -179,6 +179,7 @@ static int upgrade_finish(struct controller *c, int result);
 static int reboot_finish(struct controller *c, int result);
 static int policy_move(struct controller *c, unsigned int id);
 static int auth_drive(struct controller *c, unsigned int id);
+static int service_drive(struct controller *c, unsigned int id);
 
 static bool authenticated(const struct controller *c, const struct onu *u)
 {
@@ -450,7 +451,7 @@ static struct fttr_service_job *multicast_service(struct onu *u)
 static int publish(struct controller *c, const char *state, int error)
 {
 	static const char * const phases[] = { "absent", "blocked", "mib", "inventory", "failed",
-		"provision", "configured", "service-failed", "sync", "wifi", "authentication", "auth-failed", "move-release", "reboot", "reboot-wait", "upgrade", "upgrade-wait" };
+		"provision", "configured", "service-failed", "sync", "wifi", "authentication", "auth-failed", "move-release", "reboot", "reboot-wait", "upgrade", "upgrade-wait", "service-released" };
 	int fd = openat(c->store, "status.json.new", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
 	FILE *file;
 	unsigned int id;
@@ -843,6 +844,29 @@ static int start_wifi(struct controller *c, unsigned int id)
 
 	if (!authenticated(c, u))
 		return -EACCES;
+	if (c->service_store >= 0) {
+		struct fttr_services saved;
+		int ret = fttr_service_store_load(c->service_store, &c->link, id, u->identity, c->backend, &saved);
+		if (ret == 1) {
+			u->services = saved;
+			/* Struct copies move inline object arrays: rebind their owners. */
+			for (unsigned int n = 0; n < saved.count; n++) {
+				u->services.job[n].transaction.objects = u->services.job[n].objects;
+				u->services.job[n].mcast.transaction.objects = u->services.job[n].mcast.objects;
+			}
+			u->service_started = u->service_releasing = u->service_marked = true;
+			ret = withdraw_service(c, id, false);
+			if (!ret) ret = fttr_services_recover_release(&u->services, &c->transaction);
+			if (ret < 0) {
+				u->services.error = ret; u->services.stage = FTTR_SERVICES_FAILED;
+				u->phase = ONU_SERVICE_FAILED; return save_service(c, id);
+			}
+			u->phase = ONU_SERVICE;
+			return service_drive(c, id);
+		}
+		if (!ret) fttr_services_clear(&saved);
+		/* The regular service entry reports non-release record failures. */
+	}
 	for (policy = c->wifi_policies; policy; policy = policy->next) {
 		if (!wifi_policy_matches(c, policy, u->identity))
 			continue;
@@ -933,7 +957,9 @@ static int service_drive(struct controller *c, unsigned int id)
 			u->phase = ONU_SERVICE_FAILED;
 			break;
 		}
-		action = u->service_recovering ? service_recover(c, id) :
+		me = service_pending(u);
+		action = u->service_releasing && me && me->request[2] && me->state == FTTR_ME_WAIT && !me->attempts ? 1 :
+			u->service_recovering ? service_recover(c, id) :
 			fttr_services_update(&u->services, &c->transaction, c->directory, &expected);
 		if (action != 1) {
 			if (action < 0) {
@@ -952,6 +978,12 @@ static int service_drive(struct controller *c, unsigned int id)
 					if (ret) return ret;
 				}
 			} else if (action == 2) {
+				if (u->service_releasing) {
+					/* The interrupted move's target was not journaled. Keep
+					 * service closed until explicit administration resumes it. */
+					u->phase = ONU_SERVICE_RELEASED;
+					return save_service(c, id);
+				}
 				if (c->service_store >= 0 && !u->service_recorded) {
 					ret = fttr_service_store_save(c->service_store, &c->link, id,
 						u->identity, c->backend, &u->services);
@@ -1285,12 +1317,12 @@ static int cancel_state(struct controller *c, unsigned int id, bool accel_paused
 		ret = archive_state(c, id, "service");
 		if (ret)
 			return ret;
-		if (c->service_store >= 0 && u->services.stage == FTTR_SERVICES_RELEASED) {
+		if (c->service_store >= 0 && u->services.stage == FTTR_SERVICES_RELEASED && !u->service_releasing) {
 			ret = fttr_service_store_remove(c->service_store, u->identity);
 			if (ret) return ret;
 		}
 		fttr_service_recovery_clear(&u->recovery);
-		u->service_recovering = u->service_recorded = u->service_marked = false;
+		u->service_recovering = u->service_recorded = u->service_marked = u->service_releasing = false;
 		fttr_services_clear(&u->services);
 		u->service_started = false;
 	}
@@ -2228,6 +2260,7 @@ static int admin_request(struct controller *c, const struct fttr_admin_request *
 	struct fttr_onu_state observed;
 	struct onu *u;
 	int ret;
+	bool released;
 
 	*fatal = 0;
 	if (request->version != 1 || request->id >= FTTR_ONUS || request->action > FTTR_ADMIN_DEACTIVATE)
@@ -2238,6 +2271,7 @@ static int admin_request(struct controller *c, const struct fttr_admin_request *
 	if (c->move.active && (request->id == c->move.request.id || request->id == c->move.request.target))
 		return -EBUSY;
 	u = &c->onu[request->id];
+	released = u->service_releasing && u->services.stage == FTTR_SERVICES_RELEASED;
 	ret = fttr_miniolt_one(c->directory, request->id, &observed);
 	if (ret)
 		return ret;
@@ -2276,6 +2310,13 @@ static int admin_request(struct controller *c, const struct fttr_admin_request *
 		/* Keep the durable hold through FE/VLAN/DBA withdrawal and the
 		 * driver's locked identity check. A failed resume must not lose it.
 		 */
+		if (released && request->action == FTTR_ADMIN_RESUME && c->service_store >= 0) {
+			/* This process completed remote cleanup before cancel(), and
+			 * the locked driver operation plus readback confirmed identity. */
+			ret = fttr_service_store_remove(c->service_store, request->serial);
+			if (ret) { *fatal = ret; return ret; }
+		}
+
 		if (request->action == FTTR_ADMIN_RESUME && c->upgrade_store >= 0) {
 			ret = fttr_upgrade_store_remove(c->upgrade_store, request->serial);
 			if (ret) { *fatal = ret; return ret; }

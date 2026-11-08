@@ -7022,10 +7022,10 @@ record and normal reprovisioning. Partial disappearance, changed attributes,
 changed policy/UNI inventory, another slot/controller/backend, corruption and
 uncertain initial/release transactions retain the record and refuse automatic
 replay. Status exposes `service_error`, `service_recovering` and
-`service_durable`. There is currently no automatic reconstruction of a partially
-applied initial transaction or partially completed release; saved release evidence
-is retained for subsequent recovery work. Removal of a policy does not implicitly
-delete remote resources.
+`service_durable`. Partially completed releases now use the checked recovery below;
+partially applied initial transactions still require recovery work. Removal of a
+policy does not implicitly delete a committed active service, but does not cancel
+an already-journaled release.
 
 `test_fttr_service_store.py` executes the production codec under ASan/UBSan:
 824 single-byte corruptions,23 bounded dimension faults, identity/slot/backend,
@@ -7098,6 +7098,65 @@ conservative stack7304/8192; the non-uplink build is14168 bytes. Hardware IDs re
 quarantined; this change does not establish the missing upstream/downstream
 production fence or permit their reuse. Multi-VIF remains unsupported by the
 underlying single-role wireless driver and TSPEC accounting remains open.
+
+### Recovering an interrupted remote service release
+
+A bound `FTS1` record with state2 now loads its original committed ownership and
+continues the interrupted release after authentication and fresh MIB inventory.
+This happens before Wi-Fi or new service provisioning, even if the service policy
+was removed. Local FE/VLAN/DBA withdrawal completes first. The saved recipe still
+must carry release authority; ordinary adoption without original ownership does
+not gain permission to delete. State0 initial-apply uncertainty remains blocked.
+
+The existing reverse service/UNI/object dependency order is retained. Before
+removing an owned ME, checked recovery accepts either its exact configured
+attributes or an unknown-instance reply; before restoring an update-only ME, it
+accepts either the configured value or the saved prior value. Already completed
+operations lose their in-memory touched flag and are skipped. Any other value
+or failed Get retains the persistent intent and stops further dependent cleanup.
+Borrowed objects are preserved. These are target original baseline Get/Set/Delete
+operations, not MIB reset or unconditional object deletion.
+
+UNI VLAN recovery reads the complete current table and accepts only the original
+prior table plus a subset of the at most three rules still awaiting restoration.
+Unchanged rows must match and foreign additions/edits reject recovery. Only the
+remaining changed rows are restored, with the existing final full-table readback.
+An absent class171 instance is acceptable only if its original journal identifies
+an owned instance (including the earlier owner in a shared collection). A later
+service which never changed its borrowed table does not rewrite it. Synchronous
+completion of these skipped tables now advances the service dispatcher correctly.
+
+Multicast recovery checks its attributes before removing the IPv4 row. An already
+empty table or already deleted owned IW skips the delete Set. This matters because
+the original ONU inserts a zero-address ACL when a delete is repeated against an
+empty table. Existing no-retry/readback behavior remains active for a lost delete
+reply. A fully absent multicast plan no longer emits an uninitialized request.
+
+Completion is reported as `service-released` with local business traffic closed.
+The original interrupted move's target is not stored in this record, so recovery
+does not guess a target or silently reprovision. The release record remains across
+shutdown/disconnect and another restart verifies completion without remote writes.
+Explicit `onu-admin ID SERIAL resume` may remove it only after this controller has
+completed remote cleanup and the existing local withdrawal, locked driver action
+and same-serial readback succeed. A failed resume retains the hold. FPGA resume
+can release registration; a new discovery is required, not inferred from its ACK.
+
+The actual daemon/CLI/namespace suite covers every applied remote release write:
+65 cuts in an ASIC seven-service collection,35 in FPGA1 shared standard multicast,
+14 in an FPGA2 ordinary service and35 in ASIC shared CTC. It also covers foreign
+attribute drift, repeated recovery, removed policies and explicit resume. The
+original encoder comparison tests nine partial multicast states for every
+standard/CTC and single/doubled-table combination (both ASIC and FPGA1), including
+its delete-empty behavior. Nine ASan/UBSan VLAN partial/foreign-table cases,
+original GEM/ownership and VLAN CLI regressions, durable codec, admin failure and
+19 upgrade scenarios pass. Daemon and CLI compile for the host and aarch64-musl
+with `-Wall -Wextra -Werror`. Evidence is local under
+`artifacts/fttr/release-recovery-*-20261109.*`.
+
+No kernel or PE image changed. No device was accessed, and the tests do not prove
+physical flash failure behavior, ONU interoperability or packet retirement. Initial
+provisioning crash recovery, persisted move-target replay, complete upstream and
+downstream retirement and hardware-ID reuse remain open.
 
 ### Outstanding implementation and acceptance
 

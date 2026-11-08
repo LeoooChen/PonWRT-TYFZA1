@@ -612,6 +612,7 @@ again:
 		job->stage = FTTR_SERVICE_RELEASING_VLAN;
 		ret = fttr_vlan_change_release(&job->unis[job->uni_index].vlan, counter);
 		if (ret < 0) { job->cleanup_error = ret; return service_failed(job, ret); }
+		if (ret == 2) goto again;
 		return ret;
 	case FTTR_SERVICE_ROLLBACK_VLAN:
 	case FTTR_SERVICE_RELEASING_VLAN:
@@ -632,6 +633,7 @@ again:
 				job->cleanup_error = ret;
 				return service_failed(job, ret);
 			}
+			if (ret == 2) goto again;
 			return 1;
 		}
 		job->uni_index = job->uni_count - 1;

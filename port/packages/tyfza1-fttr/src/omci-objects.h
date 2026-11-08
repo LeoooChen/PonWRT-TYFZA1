@@ -35,7 +35,7 @@ struct fttr_objects_job {
 	uint8_t serial[8];
 	enum fttr_objects_phase phase;
 	int count, index, group, error, cleanup_error;
-	bool defer_apply;
+	bool defer_apply, recover_release;
 };
 
 /* The caller owns the fixed, ordered plan (at most 32 objects) for the job lifetime. */

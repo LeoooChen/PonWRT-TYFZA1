@@ -8,6 +8,7 @@ int fttr_service_store_open(const char *path);
 int fttr_service_store_save(int directory, const struct fttr_omci_link *link,
 	unsigned int onu, const uint8_t serial[8], enum fttr_backend backend,
 	const struct fttr_services *set);
+/* Load: zero committed, one interrupted release (populates set), negative error. */
 int fttr_service_store_load(int directory, const struct fttr_omci_link *link,
 	unsigned int onu, const uint8_t serial[8], enum fttr_backend backend,
 	struct fttr_services *set);

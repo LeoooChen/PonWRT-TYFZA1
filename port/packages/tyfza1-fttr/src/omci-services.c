@@ -141,6 +141,34 @@ int fttr_services_release(struct fttr_services *set, uint16_t *counter)
 	return fttr_service_release(&set->job[set->index], counter);
 }
 
+int fttr_services_recover_release(struct fttr_services *set, uint16_t *counter)
+{
+	/* Only the bound, CRC-checked committed release journal can enter here.
+	 * Keep original touched/previous rights; probes retire already-done work. */
+	int ret = fttr_services_release_ready(set);
+	if (ret) return ret;
+	for (unsigned int n = 0; n < set->count; n++) {
+		struct fttr_service_job *j = &set->job[n];
+		j->transaction.recover_release = true;
+		j->mcast.recover_release = true;
+		j->mcast.transaction.recover_release = true;
+		for (unsigned int u = 0; u < j->uni_count; u++) {
+			struct fttr_service_uni *uni = &j->unis[u];
+			uni->transaction.recover_release = true;
+			uni->vlan.recover_release = true;
+			for (unsigned int owner = 0; owner <= n; owner++)
+				for (unsigned int v = 0; v < set->job[owner].uni_count; v++) {
+					const struct fttr_service_uni *prior = &set->job[owner].unis[v];
+					if (prior->port != uni->port) continue;
+					for (int i = 0; i < prior->transaction.count; i++)
+						if (prior->objects[i].class_id == 171 && prior->objects[i].touched)
+							uni->vlan.allow_absent = true;
+				}
+		}
+	}
+	return fttr_services_release(set, counter);
+}
+
 void fttr_services_cancel(struct fttr_services *set, int error)
 {
 	unsigned int i;

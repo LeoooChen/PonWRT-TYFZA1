@@ -43,7 +43,7 @@ struct fttr_vlan_change {
 	const char *phase;
 	int error, cleanup_error;
 	uint8_t sent;
-	bool verified, restored;
+	bool verified, restored, recover_release, allow_absent;
 	struct fttr_vlan_plan plan;
 	const struct fttr_vlan_table *required_before; /* Optional live shared-owner snapshot. */
 	enum { FTTR_VLAN_READ, FTTR_VLAN_SET, FTTR_VLAN_VERIFY, FTTR_VLAN_RESTORE_READ,

@@ -226,15 +226,16 @@ int fttr_service_store_load(int directory,const struct fttr_omci_link *link,unsi
 	if(memcmp(data+4,serial,8)||memcmp(data+12,link->host_mac,6)||memcmp(data+18,link->olt_mac,6)||
 	   data[24]!=backend||data[25]!=onu||data[27]!=link->downstream_length||
 	   data[28]!=(link->ethertype>>8)||data[29]!=(link->ethertype&255)){ret=-EXDEV;goto out;}
-	if(data[26]!=1){ret=-ENOTRECOVERABLE;goto out;}
+	if(!data[26]){ret=-ENOTRECOVERABLE;goto out;}
 	io.file=fmemopen(data+32,st.st_size-36,"rb");if(!io.file){ret=-errno;goto out;}
 	recipe(&io,set,onu,serial,backend);
 	ret=io.error;
 	if(!ret && ftell(io.file)!=st.st_size-36)ret=-EBADMSG;
 	fclose(io.file);
+	if (!ret && data[26] == 2) ret = 1;
 out:
 	close(fd);free(data);
-	if(ret) {
+	if(ret < 0) {
 		for(unsigned int n=0;n<FTTR_SERVICES;n++) {
 			if(!set->job[n].unis) set->job[n].uni_count=0;
 			fttr_service_clear(&set->job[n]);

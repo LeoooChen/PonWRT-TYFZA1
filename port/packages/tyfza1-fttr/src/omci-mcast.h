@@ -11,7 +11,7 @@ struct fttr_mcast_job {
 	uint32_t table_length;
 	uint8_t table_row[12];
 	int error, cleanup_error;
-	bool prior_empty, table_sent, doubled, configured, releasing, defer_apply;
+	bool prior_empty, table_sent, doubled, configured, releasing, defer_apply, recover_release;
 	enum { FTTR_MCAST_CHECK, FTTR_MCAST_PRETABLE, FTTR_MCAST_APPLY,
 		FTTR_MCAST_EMPTY, FTTR_MCAST_SET, FTTR_MCAST_READ, FTTR_MCAST_RELEASE_CHECK,
 		FTTR_MCAST_READY, FTTR_MCAST_RELEASE_TABLE, FTTR_MCAST_DELETE_ROW,

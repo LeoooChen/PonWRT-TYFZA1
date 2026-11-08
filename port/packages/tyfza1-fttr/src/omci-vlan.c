@@ -202,6 +202,26 @@ static int verify(const struct fttr_vlan_table *before, const struct fttr_vlan_t
 	return 0;
 }
 
+/* A committed release may have restored any subset of its at most three
+ * rows before power loss. Every other row must still equal the prior table.
+ * Match complete tables, not just the changed keys, before writing again. */
+static int recover_rows(struct fttr_vlan_change *change)
+{
+	unsigned int sent = change->sent;
+	for (unsigned int subset = 0; subset < (1U << change->plan.count); subset++) {
+		struct fttr_vlan_plan remaining = {0};
+		if (subset & ~sent) continue;
+		for (unsigned int i = 0; i < change->plan.count; i++)
+			if (subset & (1U << i))
+				memcpy(remaining.rows[remaining.count++], change->plan.rows[i], 16);
+		if (!verify(&change->before.table, &change->after.table, &remaining)) {
+			change->sent = subset;
+			return 0;
+		}
+	}
+	return -EUCLEAN;
+}
+
 static int begin_read(struct fttr_vlan_change *change, uint16_t *counter, bool before)
 {
 	struct fttr_vlan_read_job *job = before ? &change->before : &change->after;
@@ -259,6 +279,12 @@ int fttr_vlan_change_release(struct fttr_vlan_change *change, uint16_t *counter)
 {
 	if (change->stage != FTTR_VLAN_DONE || !change->verified || change->error || !change->before.table.complete)
 		return -EINVAL;
+	if (change->recover_release && !change->sent) {
+		/* Borrowed tables belong to the earlier collection member, which
+		 * may already have restored them before the interrupted release. */
+		change->restored = true; change->phase = "released";
+		return 2;
+	}
 	change->verified = false;
 	change->stage = FTTR_VLAN_RESTORE_READ;
 	change->phase = "release-read";
@@ -341,6 +367,14 @@ int fttr_vlan_change_update(struct fttr_vlan_change *change, uint16_t *counter)
 	ret = fttr_vlan_read_update(read, counter);
 	if (ret == 1)
 		return read->me.attempts ? 0 : 1;
+	if (ret < 0 && change->stage == FTTR_VLAN_RESTORE_READ && change->recover_release &&
+	    change->allow_absent && read->phase == FTTR_VLAN_READ_FAILED &&
+	    read->me.request[2] == FTTR_ME_GET && read->me.mask == 0x4000 &&
+	    read->me.error == -EREMOTEIO && read->me.result == 5) {
+		change->sent = 0; change->restored = true;
+		change->stage = FTTR_VLAN_DONE; change->phase = "released";
+		return 2;
+	}
 	if (ret < 0)
 		return change->stage == FTTR_VLAN_READ || change->stage == FTTR_VLAN_VERIFY ?
 			failed_change(change, counter, ret, &read->me) : failed_restore(change, ret, &read->me);
@@ -375,7 +409,7 @@ int fttr_vlan_change_update(struct fttr_vlan_change *change, uint16_t *counter)
 		/* An explicit release may restore only the still-verified recipe.
 		 * Another writer's changed table is not ours to overwrite.
 		 */
-		if (!change->error && (ret = verify(before, after, &change->plan)))
+		if (!change->error && (ret = change->recover_release ? recover_rows(change) : verify(before, after, &change->plan)))
 			return failed_restore(change, ret, &read->me);
 		change->stage = FTTR_VLAN_RESTORE;
 		change->index = change->plan.count - 1;
