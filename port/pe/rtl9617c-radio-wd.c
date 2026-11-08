@@ -604,11 +604,14 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 	static const u32 indices[] = { 0x1058, 0x105c, 0x1060, 0x1064, 0x1078, 0x107c };
 	u32 read = mailbox[RTL_AX_TX_PUBLISH_READ], write = mailbox[RTL_AX_TX_PUBLISH_WRITE];
 	u32 mask = 0, producers[6], checked = 0, room[6];
+	u32 scan = read, retired = 0, blocked = 0;
 	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
 	if (read == write) return;
 	/* Requests are private to PE1, not an inter-engine handoff. */
-	while (read != write && budget--) {
-		u32 *request = requests[read];
+	while (scan != write && budget) {
+		u32 cursor = scan;
+		scan = (scan + 1) & 15;
+		u32 *request = requests[cursor];
 		u32 next, ring = request[1] & 7;
 		u32 revoked = 0;
 		u32 seq = request[RTL_SEQ_REQUEST];
@@ -628,7 +631,7 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 			sync();
 			*(volatile u32 *)(memory + RTL_FTTR_PE_DISCARD + request[0] * 4) = 1;
 			sync();
-			read = (read + 1) & 15;
+			retired |= BIT(cursor); budget--;
 			continue;
 		}
 		if (request[0] >= 256) {
@@ -649,10 +652,11 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 				*(u32 *)(memory + RTL_AX_NI_COMPLETIONS + completed * 4) = id;
 				sync(); mailbox[45] = (completed + 1) & RTL_AX_NI_COMPLETION_MASK;
 				mailbox[63]++;
-				read = (read + 1) & 15;
+				retired |= BIT(cursor); budget--;
 				continue;
 			}
 		}
+		if (blocked & BIT(ring)) continue;
 		/* Factory hal_get_avail_txbd checks the shared channel before a
 		 * batch: ARM and NI WP limits alone do not bound its TXBD use. */
 		if (!(checked & BIT(ring))) {
@@ -662,20 +666,38 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 			room[ring] = (hardware - producer - 1) & 255;
 			checked |= BIT(ring);
 		}
-		if (!room[ring] || !pe_wp_available(memory, ring)) break;
+		if (!room[ring] || !pe_wp_available(memory, ring)) {
+			blocked |= BIT(ring);
+			continue;
+		}
 		if (seq && !(seq & RTL_SEQ_ASSIGNED)) {
 			u32 sequence, status = pe_sequence_next(memory, seq, &sequence);
-			if (!status) break;
-			if (status == 2) continue;
+			if (status != 1) { blocked |= BIT(ring); continue; }
 			request[RTL_SEQ_REQUEST] = RTL_SEQ_ASSIGNED | sequence;
 		}
 		u32 pn = pe_key_pn(memory, request);
-		if (!pn) break;
-		if (pn == 2) continue; /* Recheck withdrawal before consuming credit. */
+		/* Retry withdrawal or contention before consuming hardware credit. */
+		if (pn != 1) { blocked |= BIT(ring); continue; }
 		room[ring]--;
 		pe_build_tx(mailbox, memory, request, &next);
 		producers[ring] = next; mask |= BIT(ring);
-		read = (read + 1) & 15;
+		retired |= BIT(cursor); budget--;
+	}
+	/* Preserve surviving per-channel FIFOs without adding a second queue.
+	 * Move backwards to pack live requests against the original write cursor;
+	 * the producer remains unchanged and read advances only by completions. */
+	if (retired) {
+		u32 dest = write, cursor = write;
+		while (cursor != read) {
+			cursor = (cursor - 1) & 15;
+			if (retired & BIT(cursor)) continue;
+			dest = (dest - 1) & 15;
+			if (dest != cursor) {
+#pragma clang loop unroll(disable)
+				for (u32 word = 0; word < 32; word++) requests[dest][word] = requests[cursor][word];
+			}
+		}
+		read = dest;
 	}
 	/* Stock update_txbd finishes the WD and ownership before trigger_txdma. */
 	sync();
@@ -849,6 +871,10 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 		if (!mailbox[80] && ((command & 1) || !mailbox[24])) ni_fttr_drain(mailbox, memory);
 		/* PE1 finishes its selected MPDUs before acknowledging a pause. */
 		if (!mailbox[80] && !(command & 1) && command != commands[slot]) {
+			/* TXBD fetch and RPQ delivery are independent. Consume completions
+			 * while draining, so held tags/BIDs cannot deadlock pause acknowledgement. */
+			pe_rpq(mailbox, memory);
+			if (mailbox[30]) ni_recycle(mailbox, memory);
 			pe_tx_publish(mailbox, 16, tx_requests[slot]);
 			if (mailbox[RTL_AX_TX_PUBLISH_READ] != mailbox[RTL_AX_TX_PUBLISH_WRITE]) continue;
 		}

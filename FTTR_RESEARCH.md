@@ -172,6 +172,8 @@
 
 77. 补上AP GTK删除与失败清理的HIQ退场：专项测试复现旧代码只等RPQ、不发HIQ丢弃导致DTIM等待包长期持有密钥。正常删除及MACID0失败清理现复用原厂MBID0/selector8，先关闭模板、等待PE发布完成，再丢弃HIQ并等待MACID0完成，随后修改DMAC/CAM；CPU-only HIQ同样处理，超时后迟到完成可解除退场状态。未完成的GTK unlink阻止新模板发布，成功删除/清理重新调度默认密钥快照，保留后来安装的GTK。密钥故障/重复清理、模板/worker及既有共享PN、98组MIPS BCMC回归、Image/模块和源码一致性通过，PE固件不变。物理DTIM/加密与完整退场仍未验收，未上实机。详见[GTK删除前HIQ退场](port/FTTR.md#ap-gtk-deletion-drains-hiq-before-unlink)。
 
+78. 按原厂逐DMA通道调度补齐PE待发进展：执行目标phl_tx_pcie十通道缺信用用例，复现原生共用FIFO队首堵塞导致其他通道不发送。现有15槽内按通道保持FIFO，缺TXBD/tag/PN信用仅阻塞本通道，撤销项仍可回收，完整32字请求向后压紧；每普通轮最多完成8项。暂停排空同时消费RPQ和EQ回收，避免耗尽标签后跳过释放来源；NI仍到最终EQ归还才释放标签。32组实际MIPS跨通道/回绕/撤销/PN及暂停RPQ/EQ场景与既有组播、FTTR代际/回收、PS/所有权回归通过，Image/模块及固件一致性通过。固件31964字节、保守栈7208字节；单阻塞通道填满全部暂存槽仍会背压，完整上游退场和物理验收未完成，未上实机。详见[PE逐通道发布](port/FTTR.md#per-channel-pe-publication-and-pause-time-completion-progress)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

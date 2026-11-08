@@ -5498,6 +5498,54 @@ checks pass (`artifacts/fttr/gtk-hiq-kernel-final-20261108.log`,
 The tests model firmware response and RPQ completion; physical DTIM/crypto
 and upstream packet retirement remain unverified. No device was accessed.
 
+### Per-channel PE publication and pause-time completion progress
+
+The target `rtk_wifi6.ko:phl_tx_pcie` processes separate pending WD rings
+per DMA channel and continues to other channels when one has no TXBD credit.
+Executing its complete scheduler with explicit resource-query and WD-handler
+boundaries confirms this for each of ten channels. The native PE instead
+stopped at the first blocked entry in its shared15-request staging queue;
+HIQ waiting for DTIM or a contended GTK allocator could prevent ready ordinary
+channels from publishing. The linked-MIPS pre-fix reproduction fails with
+channel0 blocked and channel1 still idle despite available credit.
+
+The native publisher now scans the bounded staging prefix, retains FIFO
+order within each channel, and allows other channels to use available
+TXBD/tag credit. Sequence/PN contention blocks only that channel for the
+current turn. Stale requests are still checked and returned even behind an
+older blocked request. After publication, live requests are packed backwards
+against the original write cursor, copying all32 words including FTTR,
+GTK and already assigned non-QoS sequence metadata. No second queue or new
+shared ABI is introduced; normal turns still complete at most eight entries
+and the scan remains bounded by the15 pending slots.
+
+The pause-drain path also processes actual RPQ and EQ recycling before
+retrying publication. Previously it skipped both while waiting for its
+staged requests, so tag exhaustion could prevent consuming the very report
+needed to complete a pause. RPQ completion does not prematurely free an NI
+tag: the existing recycler still waits for the last BID's EQ PUSH.
+
+`test_pe_channel_progress.py` covers the ten target scheduler cases and32
+linked-MIPS cases: six blocked native channels at three wrap positions,
+per-channel order and queue compaction, real CPU RPQ tag release during
+pause, stale entries behind blocked channels, a compacted NI BCMC request
+with PN contention and retained sequence, and NI RPQ followed by withheld
+then restored EQ credit during pause. Existing main-loop publication,
+98 BCMC,21 GTK PN,24 non-QoS,69 FTTR CPU-generation,251 FTTR NI-drain,
+265 multicast plus12 encrypted cases, PS, ownership stress and retained-WD
+checks pass. IO, resources and completion arrival are modeled; no physical
+throughput, latency or RF behavior is inferred from these checks.
+
+Final firmware is31964 bytes, SHA256
+`8303c7f4fe2995a92d67e38ada3bcc5ac9b9e267dd5bf96eaa588cf11c049052`;
+conservative stack sum is7208 of8192 bytes. Image/modules build and firmware
+header identity pass (`artifacts/fttr/channel-progress-kernel-20261108.log`,
+`artifacts/fttr/channel-progress-identity-20261108.json`). The alternate
+non-PE_UPLINK firmware remains14200 bytes. A finite staging queue filled
+entirely with one blocked channel still backpressures new arrivals; this is
+not a claim of unlimited per-channel buffering. Full upstream FTTR retirement
+and physical acceptance remain incomplete. No device was accessed.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN
