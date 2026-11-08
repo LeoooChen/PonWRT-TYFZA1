@@ -7,6 +7,7 @@ struct rtl_qm_refill {
 	unsigned int address[2][RTL_QM_REFILL_SIZE];
 	unsigned int head[2], count[2], pending;
 	unsigned int retries, returned, peak;
+	unsigned int credit[2];
 };
 
 /* Each queue holds at most its hardware pool's 256 buffers. The caller checks
@@ -28,6 +29,8 @@ static inline void rtl_qm_refill_drain(struct rtl_qm_refill *queue, void *contex
 {
 	unsigned int eq, attempted = 0;
 
+	/* Credit is valid only within this serialized drain, never across polls. */
+	queue->credit[0] = queue->credit[1] = 0;
 	/* A stalled EQ4 must not prevent EQ5 from returning its buffers. */
 	for (eq = 0; eq < 2; eq++) {
 		unsigned int limit = budget - attempted;
