@@ -292,3 +292,31 @@ loss0.02028/0.08695%，不把发送端变化当内核提升。1200M负载profile
 dispatch1016.84/1004.70ns。与减少MMIO方向一致但非同速跨启动因果证明。保留明确减负
 及已有契约依据，不声称默认双向TCP1.8/UDP2.0已达标。所有临时测速模块和profile已关闭。
 证据artifacts/wifi-speed-20261108/cpu-refill-credit；REA产物仍仅VM独立目录。
+
+
+### 2026-11-08 单次 NI 选择的休眠状态一致性
+
+main953cf7c之后核对PE选帧发现可复现竞态：ni_select多次独立读取ps[0]，先按awake
+通过准入，若第3/4次读前ARM设置asleep，之后分支会设置PSowner、递增授权发送计数，
+即使version==ack且没有任何PS授权。实际linked旧PE注入此切换即复现。原厂stop_sta_xmit
+在发送锁内设置睡眠状态并修改队列；native必须保持一次选择的决策一致，不能将异步
+重读当作新授权。REA证据output/stock-stop-sta-xmit.json仍在VM独立目录。
+
+首候选使用快照并新增提交前sleep重读，离线通过但TCP基线1.350995G、候选首轮
+1.050876G/5重传（尾段PM低谷）、同关联复测1.246930G/131重传、恢复1.353920G/0。
+UDP各约1.711G，没有收益。未推广该版本；不忽略其TCP回退。
+
+最终缩小为所有选择分支使用已有asleep快照，保留原command版本检查，不新增sleep
+MMIO重读。提交后的状态切换按已在途帧处理，不能生成PS授权；下次选择读取新状态。
+18组无授权/额度拒绝切换、4组提交后切换（含真实授权和EOSP）、聚合帧切换、两组
+wake/sleep版本回绕、一授权一帧均通过；旧实现第3读即失败。完整PS预算、gather字节/
+DMA、共享publication、6144随机RPQ所有权、稳定WD/payload逐字节对照及IMEM通过。
+PE5681ec528e32311be3e35b01d6912f87a9ebf5a1f853b07b77d50ba81b134483，27588B，stack6936。
+
+RAM最终rtl_ax_ap_psselect08 SHA1ef74baa458999569709ee19706e9e037aa0fe3325cfb0bc39b3dd0938d55178，
+phy6-ap0，boot432015ed-8f7e-4c44-89b0-58bc6fcf95d9不变。默认TCPdown1.338607G/up1.506131G，
+均0重传；UDP诊断GSO4M1448下行1.722613G/loss8.3675%，实发1.882782G。默认UDP2G下行
+实收0.778174G/0loss，上行1.146451G/loss17.5213%，实发1.401129G。未证明提速，未达
+双向TCP1.8/UDP2.0；已消除的竞态尚未在现场捕获，不能据此声称低谷根因解决。
+最终源码/生成PE头同步；当前RAM保留最终修复，flash仍953cf7c完整固件。测速模块、
+进程、设备临时文件已清理。证据artifacts/wifi-speed-20261108/ps-selection-race。

@@ -288,12 +288,12 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				(u64)*(u32 *)(memory + RTL_AX_NI_PS_TIMEOUT + macid * 4) * 1000000);
 			if (discard && mailbox[47]) continue;
 			if (!discard && (!ni_owner_available(memory) ||
-			    (ps[0] && (command == ps[2] || !((grant_flags >> 16) & BIT(tid)))))) continue;
+			    (asleep && (command == ps[2] || !((grant_flags >> 16) & BIT(tid)))))) continue;
 			u32 queue = macid * 8 + tid;
 			u32 *batch = (void *)(memory + RTL_AX_TX_AMSDU_QUEUES + queue * 16);
 			u32 policy = *(u32 *)(memory + RTL_AX_TX_PEER_AMSDU + macid * 4);
 			u32 num = policy >> 16 & 255;
-			if (!discard && !ps[0] && num) {
+			if (!discard && !asleep && num) {
 				u32 count = *(u32 *)(memory + NI_TID_QUEUED + queue * 4);
 				if (!batch[3] && !rtl_ax_amsdu_queue_ready(policy, count, batch[0])) {
 					u32 stamp = *(volatile u32 *)(mailbox[2] + 0xc438);
@@ -302,7 +302,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				}
 				if (policy & RTL_AX_AMSDU_BATCH) batch[3] = 1;
 			}
-			/* Commit this selection only while its grant snapshot is current. */
+			/* Retain the admitted sleep decision for this in-flight frame;
+			 * a later transition cannot create or consume another PS grant. */
 			if (!discard && command != *(volatile u32 *)(memory + RTL_AX_NI_PS_VERSION + macid * 4)) continue;
 			u32 quota = *(volatile u32 *)(memory + RTL_AX_TX_WMM_QUOTA);
 			u32 ac_index = macid * 4 + channels[tid];
@@ -332,7 +333,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				request[8] = buffer + RTL_QM_HEADROOM + (metadata >> 16); request[9] = length;
 				u32 caps = *(u32 *)(memory + 0xe200 + macid * 4);
 				if (caps & BIT(17)) request[3] |= BIT(20);
-				if (ps[0]) {
+				if (asleep) {
 					request[4] |= (*(u32 *)(memory + NI_PEER_QUEUED + macid * 4) > 1 || (grant_flags & 2) ? BIT(19) : 0) | (grant_flags & 1 ? BIT(20) : 0);
 					owners[id * 2 + 1] |= BIT(16);
 					*(u32 *)(memory + RTL_AX_NI_GENERATIONS + id * 4) = generation;
@@ -367,7 +368,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				owners[id * 2 + 1] |= BIT(31);
 				mailbox[47] = id + 1;
 				(*(u32 *)(memory + RTL_AX_TX_WMM_QUOTA + 4))++;
-				if (ps[0]) {
+				if (asleep) {
 					volatile u32 *done = (void *)(memory + RTL_AX_NI_PS_DONE + macid * 8);
 					done[0] = generation; sync(); done[1]++; pe_event(mailbox);
 				}
@@ -388,7 +389,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			(*(u32 *)(memory + NI_TID_QUEUED + queue * 4)) -= frames;
 			batch[0] -= selected_bytes;
 			if (!(policy & RTL_AX_AMSDU_BATCH) || !num ||
-			    *(u32 *)(memory + NI_TID_QUEUED + queue * 4) < num || discard || ps[0]) batch[3] = 0;
+			    *(u32 *)(memory + NI_TID_QUEUED + queue * 4) < num || discard || asleep) batch[3] = 0;
 			if (retired && !*head) batch[1] = batch[2] = 0;
 			mailbox[170] = next_peer[macid];
 			if (!*queued) {
