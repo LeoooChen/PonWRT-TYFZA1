@@ -5802,6 +5802,49 @@ bandwidth, and no guessed grant or preserved foreign authorization is used.
 No device was accessed.
 
 
+### Retained ONU status is not a saved service recipe
+
+The target configd descriptor identifies MIB chain3209 as
+`FTTR_MASTER_ONU_TBL`, with107-byte records and a16-entry limit. Its13 fields
+are ONU ID, MAC, serial text, online/rule state, internal VID/interface,
+down-cause/timestamps and SFU ID; it contains no authentication method,
+PLOAM/LOID credential, T-CONT/GEM definition or bandwidth profile.
+The complete `onuinfo` status loader at`0x406208` converts those records to
+its in-memory observation table, skips failed record reads and stops at16;
+no ONU/service configuration API is called in that path.
+
+The separate `onuinfo reset` path calls`0x4062a4`. For active records it
+invokes `onu_setup.sh` action2 (inactive-interface cleanup), then clears
+ONU ID/active/VID/interface/rule fields. Executing the target function with
+command results0,1 and127 shows that it clears the record even after command
+failure. That is not proof that old forwarding has retired. Native startup
+continues to close forwarding, verify local port cleanup, archive prior
+journals, authenticate and obtain fresh MIB state; it does not import these
+operational fields as authorization or recreate the old interface from XML.
+
+`plr_ponsrv_tcont_data_save` also does not establish on-flash service
+persistence:12 complete target calls, plus successful-case duplicate calls,
+execute the real ordered-list, profile-reference, used-bandwidth and Alloc-ID
+bitmap helpers. They retain a profile pointer in an allocated34-byte
+in-memory node; missing ONU/allocation and duplicate-node cases fail without
+file or MIB writes. This bounds only these inspected paths, not every possible
+external configuration source. A general saved XML service/profile format
+has not been identified, so no invented converter is added. Evidence is
+reproducible with `tools/trace_stock_fttr_saved_state.py`; the local report is
+`artifacts/fttr/saved-status-20261108.json`.
+
+While checking the native policy restoration boundary, a concrete parser
+failure was reproduced: `--services` accepted a valid row followed by an
+embedded NUL and ignored the rest of that line. It now rejects embedded NUL
+bytes as the existing Wi-Fi policy parser already does. Focused tests execute
+the actual service parser for valid explicit/default rows and corrupt rows,
+including a corrupt line after an earlier valid policy. Full-daemon tests
+verify rejection before backend/configuration work and preserve all supplied
+MiniOLT/NI/state sentinels. Native and OpenWrt-musl daemon builds pass with
+`-Wall -Wextra -Werror`; no kernel/firmware change or device access was needed.
+This fixes corrupt native policy handling and narrows the factory-import
+research gap; durable remote OMCI ownership recovery remains incomplete.
+
 ### FTTR packet generations across software queues
 
 The native forwarding gate previously checked the current boolean at P6

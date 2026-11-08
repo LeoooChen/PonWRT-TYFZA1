@@ -201,12 +201,13 @@ static int load_policies(struct controller *c, const char *path)
 	FILE *file = fopen(path, "r");
 	char *line = NULL;
 	size_t capacity = 0;
+	ssize_t length;
 	unsigned int number = 0;
 	int ret = 0;
 
 	if (!file)
 		return -errno;
-	while (getline(&line, &capacity, file) >= 0) {
+	while ((length = getline(&line, &capacity, file)) >= 0) {
 		struct service_policy *policy, *other;
 		char *token[11], *save, *p, *end;
 		unsigned long value[8];
@@ -215,6 +216,7 @@ static int load_policies(struct controller *c, const char *path)
 		bool tagged = false, filter_only = false;
 
 		number++;
+		if (memchr(line, '\0', length)) { ret = -EINVAL; break; }
 		for (p = strtok_r(line, " \t\r\n", &save); p && n < 11;
 		     p = strtok_r(NULL, " \t\r\n", &save)) {
 			if (*p == '#')

@@ -176,6 +176,8 @@
 
 79. 查实FPGA1默认队列与UNI组播适配：实际GEM API→服务通知→远端适配及flow指令确认queue1对应priority0；FPGA通知布局1147字节，不能复用ASIC的1074字节边界。FPGA专用UNI组播API按显式type0/2选择Ethernet/VEIP，不依VEIP数量自动选择，默认调用type2，缺目标返回18且不写OMCI。72组原厂选择、48组失败、8组GEM、2组缺UNI与原生双UNI标准/CTC完整事务比较通过，既有ASIC回归通过。现有重写的队列/OMCI布局无需产品修改；FPGA1 factory默认本地授权来源仍未查实，保留限制，不采用测光临时授权。本项是原厂证据和验证覆盖补齐，不是新增完整默认业务支持，未上实机。详见[原厂默认业务与FPGA1后续核验](port/FTTR.md#factory-default-service-generation-and-card-limits)。
 
+80. 查明原厂保存记录与业务意图的区别：configd的chain3209是107字节/16项ONU运行状态表，13个字段不含认证或T-CONT/GEM配方；实际loader只恢复观测值。`onuinfo reset`的清理分支在shell失败后仍清零active/VID等字段，不能用记录清零证明硬件退场。实际T-CONT data_save及链表/引用/带宽/Alloc-ID辅助函数的12组执行只保存内存profile指针，尚未发现可直接导入的通用业务XML格式。另复现并修复原生--services嵌入NUL导致静默截断，实际解析器和完整daemon确认在设备操作前拒绝，native及musl编译通过。此项包含原厂证据进展和损坏策略文件修复，不宣称已完成原厂配置导入或持久OMCI恢复；未上实机。详见[保存状态与业务配方边界](port/FTTR.md#retained-onu-status-is-not-a-saved-service-recipe)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
