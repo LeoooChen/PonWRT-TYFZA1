@@ -138,3 +138,25 @@ UDP原默认socket下只有0.125G；GSO本身0.175G，GSO+4MiB达1.409G，说明
 现有VP11NI注入工具尝试一次50M反向TCP超时并伴随后续确认的设备重启；无连续崩溃日志/pstore，不归因具体驱动。重启清掉所有注入模块，Mac198.18.255.1临时路由已删除。该工具停止使用，不能把这轮算成吞吐。之后普通本机候选测试boot保持cff17fbb；未写flash。
 
 总目标仍未达：原厂策略候选+224额度只构成进展；本机峰值受CPU/旧内核路径限制仍需定位，完整Wi-Fi原厂对齐与TCP1.8/UDP2.0双向低丢验收都未完成。下一步核对目标0.8.3内核的NI/miss/GRO实现与现main差异，避免用新驱动覆盖旧内核而假设全栈已一致。
+
+
+### 完整固件与硬件路径（2026-11-08）
+
+独立OpenWrt构建目录/home/leo/PonWRT-TYFZA1-wifi-stock-build-20261108，从现有构建复制并修正1103个绝对软链接及48份生成pkg-config/libtool路径；仅副本LuCI旧补丁恢复后重应用当前补丁。宿主APK首轮因两份endian.h包含路径产生未展开字节序宏，清理该host包后成功。构建绑定b8cc8b8，镜像SHA6705cbfef3ef48f24b83c73c5dc5e2944b7b95205ffbb80256bf0879b022bc59，设备sysupgrade-T通过后保留配置刷入。
+
+当前运行boot2a847704-b124-454e-aabf-ad4f9d359168、flash0.8.5-beta。校验闪存ubi0_6的FIT与新镜像逐字相等，FIT解压kernel等于KDIR/vmlinux二进制467b7186；运行wifi_receive、rtl9617c_ni_wifi_lookup、napi_complete_done及gic_handle_irq地址匹配KDIR/vmlinux.debug。/sys/kernel/notes为84个零字节（objcopy剥离），原先用其hash核对是不适用的工具检查，已纠正，不称启动旧内核。linux-6.18.55/vmlinux最终为initramfs构建，也不能代替KDIR/vmlinux.debug比对。rootfs模块rtl_ax_apa801914e、mac8021187f8ca17、cfg802115d61836a与构建代码数据段一致，打包去build-id；sysupgrade root尾部10字节0填充已确认。
+
+全栈普通本机10秒默认TCPdown1.337001G/up1.350001G，均0retx。UDP默认socket仍不足，GSO+4MiB下行1.385415G/0loss，上行GRO+DF+4MiB1.342158G/.5903%loss，两端单核约100%。sendfile下行.337G/0无收益，不保留此测试选择。
+
+重新按完整运行内核编译既有NI工具后，50Mbps低速冒烟13250包全部PE发出/回收，0retrans，boot不变。这套工具与此前旧内核试验区分。它用本机真实iperf报文经VP11PON-source模拟进入FE/PE，再到真实Wi-Fi；不测试光口。
+
+15秒硬件路径TCPdown1.180584G/32retx，up1.392157G/0retx；UDPdown实际send1.887205G、recv1.375163G/loss27.0207%，upsend1.466223G、recv1.462758G/loss0（发送端受限）。低高负载边界：1.3G发送1124236包、PE/recycled同数、loss0；1.9G实际1.888G、发送1633501包，PE1192954包全回收、recv1.377690G/loss26.8932%，QMno_buffer读清计数饱和65535，failed/retired/fe_drop/l3te_tail_drop0。不能把65535当确切全部丢包数，但入口缓冲耗尽与PE发送前缺失有直接证据。
+
+候选补回main dc6c808的64入口/每发送turn一次批量，仍保留本分支原厂QoS/动态聚合/WMM/PS2048。两PE源文件变更，gather/sharedTXBD/PS/6144ownership/IMEM均通过，尚未完成实测，不宣称提高吞吐。当前RAMrtl_ax_ap_batch08 SHA09c77bccc00fc28f609228a946dfca6b05021e024187409f222d6aa0bc824f5c，phy2-ap0等待CAC；flash仍b8cc8b8。NI工具已停止以便reload，Mac198.18.255.1hostroute仍在，需后续清理。生成overlayPE头未替换候选前不得构建正式固件。
+
+
+批处理A/B/A结束：baseTCP1.180584G32retx/UDP1.375163G27.02%loss；batchTCP1.233945G218retx/UDP1.456170G22.016%loss；restoredTCP1.174191G131retx/UDP1.379901G25.8505%loss。UDP sender分别1.887/1.870/1.863G；不能当作低丢验收，但同拓扑恢复后吞吐回落，支持约5–6%容量改善。保留有界批处理修正，不丢弃此前原厂规则。生成PE头已同步候选。
+
+完整linked主循环gather、publication、6144ownership、PS、RXQbackpressure和RPQ通过，IMEM26976/32768、stack6936/8176。额外旧test_pe_epp_batch直接函数测试读未映射内存，扩大DDR/更新分类/return哨兵仍未通过；停止该工具修复，原脚本恢复HEAD，失败适配在artifacts/ni-batch/epp-unqualified.py，不列入通过项。未把工具失败解释为硬件正确或错误。
+
+最终RAM恢复已刷b8cc8b8原模块rtl_ax_ap/phy4-ap0，boot2a847704保持，AP160授权、ARMpending0、unmatched/polluted0。NI feed/flow/sink全部停止卸载，主机198.18.255.1hostroute删除，普通5218iperf核对PID停止。Mac有线供网保持。批处理已实测但尚未重打固件，因此磁盘源码与已刷image6705cbfe存在这两处批处理差异，必须在后续交付中明确。当前完整目标仍未达，不以小幅进步缩减验收。

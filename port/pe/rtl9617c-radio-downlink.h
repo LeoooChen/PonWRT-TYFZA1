@@ -104,10 +104,10 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 	/* PE1 owns queue counts; ARM changes EPP geometry only while paused. */
 	u32 queued = mailbox[38], epp = mailbox[25] + (cos << shift);
 	sync();
-	/* One admission turn handles at most16 EPPs without waiting. Its
-	 * timestamp error is this turn's processing time, not a watchdog tick. */
+	/* Bound admission to one publish turn, amortizing the producer
+	 * snapshot and per-peer accounting without waiting for arrivals. */
 	u64 now = ni_tsf(mailbox);
-	for (; count < 16 && consumer != producer; count++) {
+	for (; count < TX_BURST * 8 && consumer != producer; count++) {
 		const u32 *entry = uncached(epp + consumer);
 		u32 descriptor = *(volatile u32 *)entry;
 		if ((descriptor & 0x50) != 0x50) break;

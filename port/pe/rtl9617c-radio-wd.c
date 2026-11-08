@@ -788,9 +788,9 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 			if (consumer == arm_producer) {
 				if (!mailbox[24]) goto publish_tx;
 #ifdef PE_UPLINK
-				/* One 16-entry ingest can feed two 8-frame selections.
-				 * Refill early if the queue has run dry. */
-				if (!(burst & 1) || mailbox[38] < 8)
+				/* Share admission work across this bounded publish turn;
+				 * refill early if selections consume the queued input. */
+				if (!burst || mailbox[38] < 8)
 					ni_ingest(mailbox, memory);
 				ni_frames = ni_select(mailbox, memory, ni_request);
 				if (!ni_frames) goto publish_tx;
