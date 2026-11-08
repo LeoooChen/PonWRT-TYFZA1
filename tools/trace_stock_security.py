@@ -95,32 +95,33 @@ native_output = ctypes.create_string_buffer(68)
 checks = 0
 for chip in ('8852c', '8192xb'):
     for cipher in (6,7,8,9):
-        for index in (0, 1, 63, 127):
-            oracle.uc.mem_write(info, bytes([index, 0, 20, cipher | (16 if cipher&1 else 0)]) + key)
-            assert oracle.call('fill_sec_cam_info_' + chip, adapter, info, output, 0) == 0
-            assert bytes(oracle.uc.mem_read(output, 24)) == struct.pack('<II', index | 20 << 16, cipher | (16 if cipher&1 else 0)) + key
-            native.native_cam(native_output, index, key, cipher | (16 if cipher&1 else 0))
-            assert native_output.raw[:24] == bytes(oracle.uc.mem_read(output, 24))
-            for keyid in range(4):
-                data = bytearray(96)
-                struct.pack_into('<H', data, 8, 1500)
-                struct.pack_into('<H', data, 14, 7)
-                data[20], data[21], data[24] = 13, 56, cipher << 4 | keyid << 1 | 9
-                data[32], data[33], data[34] = index, 0x30, 1
-                data[26:32] = bytes.fromhex('010203040506')
-                oracle.uc.mem_write(info, bytes(data))
-                length = oracle.call('mac_txdesc_len_' + chip, adapter, info)
-                assert oracle.call('txdes_proc_data_' + chip, adapter, info, output, length) == 0
-                words = oracle.unpack(output, '14I')
-                assert words[1] & 0x7f == 64 | cipher | keyid << 4, (chip, words)
-                assert words[10] & 0x1ff == 256 | index, (chip, words)
-                assert words[4] >> 16 == 0x0201 and words[5] == 0x06050403
-                ctypes.memset(native_output, 0, 68)
-                native.native_tx(native_output, index, keyid, 0x060504030201, cipher)
-                built = struct.unpack('<17I', native_output.raw)
-                assert built[1] == words[1] & 0x7f
-                assert all(built[w] == words[w] for w in (4, 5, 10)), (chip, built, words)
-                checks += 1
+        for spp in (False, True):
+            for index in (0, 1, 63, 127):
+                oracle.uc.mem_write(info, bytes([index, 0, 20, cipher | (16 if cipher&1 else 0) | (32 if spp else 0)]) + key)
+                assert oracle.call('fill_sec_cam_info_' + chip, adapter, info, output, 0) == 0
+                assert bytes(oracle.uc.mem_read(output, 24)) == struct.pack('<II', index | 20 << 16, cipher | (16 if cipher&1 else 0) | (32 if spp else 0)) + key
+                native.native_cam(native_output, index, key, cipher | (16 if cipher&1 else 0) | (32 if spp else 0))
+                assert native_output.raw[:24] == bytes(oracle.uc.mem_read(output, 24))
+                for keyid in range(4):
+                    data = bytearray(96)
+                    struct.pack_into('<H', data, 8, 1500)
+                    struct.pack_into('<H', data, 14, 7)
+                    data[20], data[21], data[24] = 13, 56, cipher << 4 | keyid << 1 | 9
+                    data[32], data[33], data[34] = index, 0x30, 1
+                    data[26:32] = bytes.fromhex('010203040506')
+                    oracle.uc.mem_write(info, bytes(data))
+                    length = oracle.call('mac_txdesc_len_' + chip, adapter, info)
+                    assert oracle.call('txdes_proc_data_' + chip, adapter, info, output, length) == 0
+                    words = oracle.unpack(output, '14I')
+                    assert words[1] & 0x7f == 64 | cipher | keyid << 4, (chip, words)
+                    assert words[10] & 0x1ff == 256 | index, (chip, words)
+                    assert words[4] >> 16 == 0x0201 and words[5] == 0x06050403
+                    ctypes.memset(native_output, 0, 68)
+                    native.native_tx(native_output, index, keyid, 0x060504030201, cipher)
+                    built = struct.unpack('<17I', native_output.raw)
+                    assert built[1] == words[1] & 0x7f
+                    assert all(built[w] == words[w] for w in (4, 5, 10)), (chip, built, words)
+                    checks += 1
     for slot in range(7):
         data = bytearray(32)
         data[8], data[10], data[11 + slot], data[18 + slot] = 1, 1 << slot, 1, 63

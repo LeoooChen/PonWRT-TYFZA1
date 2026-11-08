@@ -36,6 +36,7 @@ static void rtl_ax_store32(u8 *p,u32 v){memcpy(p,&v,4);}
 #define WLAN_CIPHER_SUITE_GCMP_256 9
 #define IEEE80211_KEY_FLAG_PAIRWISE BIT(0)
 #define IEEE80211_KEY_FLAG_SW_MGMT_TX BIT(4)
+#define IEEE80211_KEY_FLAG_SPP_AMSDU BIT(5)
 #define IEEE80211_NUM_TIDS 16
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 #define dev_info(...) ((void)0)
@@ -69,7 +70,7 @@ static bool hiq_pending;static unsigned hiq_stops;
 static unsigned failures,queued,clears,dctls,offload_ready,fault_skip;
 static bool apply_failed_dctl,apply_failed_cam,hardware_cam[128];
 static u8 hardware_key_tag[128],hardware_cipher[128];
-static unsigned key_cipher=4;
+static unsigned key_cipher=4,key_spp;
 static u64 hardware_pn[128];
 static struct rtl_ax_security_role hardware_roles[128];
 static int fail(enum fault point){if(fault!=point||!failures)return 0;if(fault_skip){fault_skip--;return 0;}failures--;return -ETIMEDOUT;}
@@ -110,10 +111,10 @@ static int rtl_ax_command_flags(struct rtl_ax_ap *r,unsigned queue,unsigned cat,
   clears++;int ret=fail(CAM);if(ret)return ret;
   for(unsigned id=0;id<128;id++)for(unsigned slot=0;slot<7;slot++)
    assert(!(hardware_roles[id].valid&BIT(slot))||hardware_roles[id].cam[slot]!=index);
-  hardware_cam[index]=false;
+  hardware_cam[index]=false;hardware_cipher[index]=0;
  } else {
   int ret=fail(CAM_INSTALL);
-  if(!ret||apply_failed_cam){hardware_cam[index]=true;hardware_key_tag[index]=data[8];hardware_cipher[index]=data[4];assert(data[4]==(rtl_ax_security_type(key_cipher)|((key_cipher==9||key_cipher==10)?16:0)));}
+  if(!ret||apply_failed_cam){hardware_cam[index]=true;hardware_key_tag[index]=data[8];hardware_cipher[index]=data[4];assert(data[4]==(rtl_ax_security_type(key_cipher)|((key_cipher==9||key_cipher==10)?16:0)|(key_spp?32:0)));}
   return ret;
  }
  return 0;
@@ -135,7 +136,8 @@ static void reset(void){hiq_pending=false;hiq_stops=0;fault=NONE;fault_skip=0;fa
  memset(hardware_cam,0,sizeof(hardware_cam));memset(hardware_roles,0,sizeof(hardware_roles));}
 static struct ieee80211_key_conf new_key(unsigned idx,bool pairwise){
  struct ieee80211_key_conf k={.cipher=key_cipher,.keyidx=idx,.key={1},.tx_pn=1234};
- if(pairwise)k.flags=IEEE80211_KEY_FLAG_PAIRWISE;return k;}
+ if(pairwise)k.flags=IEEE80211_KEY_FLAG_PAIRWISE;
+ if(key_spp)k.flags|=IEEE80211_KEY_FLAG_SPP_AMSDU;return k;}
 '''
 role=(driver/'role.h').read_text()
 a=role.index('static inline void rtl_ax_station_preload');b=role.index('static inline ',a+1)
@@ -172,7 +174,7 @@ int main(void){
 '''
 install_tests = r'''
 static void install_tests(void){
- for(unsigned alg=0;alg<2;alg++){key_cipher=alg?8:4;
+ for(unsigned spp=0;spp<2;spp++)for(unsigned alg=0;alg<2;alg++){key_cipher=alg?8:4;key_spp=spp;
  /* An unsupported software PTK still retires the previous NI template. */
  for(unsigned failure=0;failure<2;failure++)for(unsigned pairwise=0;pairwise<2;pairwise++) {
   reset();struct rtl_ax_ap r={};struct ieee80211_hw hw={&r,0};struct ieee80211_sta sta={{{7}}};
@@ -233,15 +235,15 @@ static void install_tests(void){
  assert(!rtl_ax_security_cleanup(&r)&&hardware_roles[0].valid==(BIT(3)|BIT(4)));
  assert(hardware_roles[0].cam[3]==0&&hardware_roles[0].cam[4]==2&&!hardware_cam[1]);
  assert(hardware_pn[0]==0x123456789abcULL&&r.keys_installed==2&&r.keys_removed==0&&r.keys_aborted==1);
- }key_cipher=4;
+ }key_cipher=4;key_spp=0;
  puts("key install: CAM/DMAC ACK both outcomes, reserved CAM ownership, failed retry, PTK/GTK replacement PN and abort accounting passed");
 }
 '''
 extended_tests = r'''
 static void extended_tests(void){
- for(unsigned alg=9;alg<=10;alg++)for(unsigned pairwise=0;pairwise<2;pairwise++)
+ for(unsigned spp=0;spp<2;spp++)for(unsigned alg=9;alg<=10;alg++)for(unsigned pairwise=0;pairwise<2;pairwise++)
  for(unsigned keyid=0;keyid<(pairwise?2U:4U);keyid++)for(unsigned failure=0;failure<6;failure++) {
-  reset();key_cipher=alg;struct rtl_ax_ap r={};struct ieee80211_hw hw={&r,0};struct ieee80211_sta sta={{{7}}};
+  reset();key_cipher=alg;key_spp=spp;struct rtl_ax_ap r={};struct ieee80211_hw hw={&r,0};struct ieee80211_sta sta={{{7}}};
   unsigned macid=pairwise?7:0;
   /* Force two nonadjacent free CAMs. */
   for(unsigned i=0;i<128;i++)r.security_ids[i]=true;
@@ -303,8 +305,28 @@ static void extended_tests(void){
   assert(!rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},NULL,&c));
   assert(r.security_keys[b.hw_key_idx]==&b&&r.security_roles[0].valid==0x3c);
  }
- key_cipher=4;
- puts("Extended keys:72 nonadjacent dual-CAM install/first-half/second-half/DCTL/PN/erase/station-release groups passed");
+ key_cipher=4;key_spp=0;
+ for(unsigned alg=0;alg<4;alg++)for(unsigned initial=0;initial<2;initial++) {
+  reset();key_cipher=(unsigned[]){4,8,9,10}[alg];key_spp=initial;
+  struct rtl_ax_ap r={};struct ieee80211_hw hw={&r,0};struct ieee80211_sta sta={{{7}}};
+  struct ieee80211_key_conf old=new_key(0,true);
+  assert(!rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},&sta,&old));
+  unsigned primary=old.hw_key_idx,ext=r.security_ext[primary];
+  assert(!!(hardware_cipher[primary]&32)==initial);
+  if(ext)assert(!!(hardware_cipher[ext-1]&32)==initial);
+  fault=CAM;failures=1;fault_skip=!!ext;
+  assert(rtl_ax_set_key(&hw,DISABLE_KEY,&(struct ieee80211_vif){},&sta,&old)==-ETIMEDOUT);
+  assert(r.security_ids[primary]&&(!ext||r.security_ids[ext-1]));
+  fault=NONE;assert(!rtl_ax_security_cleanup(&r));
+  assert(!hardware_cipher[primary]&&(!ext||!hardware_cipher[ext-1]));
+  key_spp=!initial;struct ieee80211_key_conf next=new_key(0,true);
+  assert(!rtl_ax_set_key(&hw,SET_KEY,&(struct ieee80211_vif){},&sta,&next));
+  assert(next.hw_key_idx==primary&&r.security_ext[primary]==ext);
+  assert(!!(hardware_cipher[primary]&32)==!initial);
+  if(ext)assert(!!(hardware_cipher[ext-1]&32)==!initial);
+ }
+ key_cipher=4;key_spp=0;
+ puts("Extended keys:144 nonadjacent dual-CAM install/first-half/second-half/DCTL/PN/erase/station-release groups passed");
 }
 '''
 test = r'''

@@ -7833,6 +7833,27 @@ conservative stack7296/8192; non-uplink13880 bytes. Local artifacts are
 downstream retirement and ID reuse, multi-VIF, TSPEC and remaining factory
 management still belong to the unfinished goal.
 
+### Negotiated SPP A-MSDU in Security CAM
+
+The native installer now passes mac80211's `IEEE80211_KEY_FLAG_SPP_AMSDU` to
+Security CAM bit5, alongside type[3:0] and extended-key bit4. Both halves of a
+256-bit key carry the same negotiated SPP value. The target C/XB encoder and
+HAL producer confirm this layout and propagation. The previous installer
+silently omitted SPP even when Linux had negotiated it, causing the hardware
+authentication mode to differ from the software key.
+
+`test_spp_amsdu.py` executes Linux's actual shared CCM/GCM AAD builder in384
+QoS/TID/address/SPP/A-MSDU combinations. With SPP the A-MSDU-present bit is
+included; unrelated Retry/PS flags stay masked. The original CAM/DCTL/TX
+comparison passes782 cases, and the extended-key producer passes96 cases plus
+32 deletion pairs. Native tests reproduce the old omission, then pass144
+dual-CAM fault/cleanup groups and eight ordinary↔SPP replacement cases, including
+erase failure followed by same-CAM reuse. Existing key tests, Image/modules and
+the two changed kernel inputs pass. PE binary remains unchanged; no additional
+descriptor bit is invented because SPP is stored in CAM. Local artifacts are
+`artifacts/fttr/spp-*-20261109.*`. Physical SPP interoperability and cryptographic
+hardware behavior remain unverified; no device was accessed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

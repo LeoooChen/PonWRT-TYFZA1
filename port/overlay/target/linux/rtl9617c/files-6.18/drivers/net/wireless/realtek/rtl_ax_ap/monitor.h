@@ -1533,8 +1533,10 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
   __set_bit(index,radio->security_deleting);__set_bit(index,radio->security_aborting);
   for(unsigned int half=0;half<count;half++) {
    unsigned int cam_index=half?extension-1:index;
-   /* Target marks both independent halves EXT_KEY; slot order joins them. */
-   rtl_ax_security_cam(cam,cam_index,key->key+half*16,cipher|(extended?16:0));
+   /* Both halves carry the negotiated SPP mode as well as EXT_KEY.
+    * SPP authenticates the QoS A-MSDU-present bit; it is a key property. */
+   rtl_ax_security_cam(cam,cam_index,key->key+half*16,cipher|(extended?16:0)|
+    (key->flags&IEEE80211_KEY_FLAG_SPP_AMSDU?32:0));
    ret=rtl_ax_command_flags(radio,RTL_AX_H2C_CMD,1,10,1,cam,sizeof(cam),false,true);
    if(ret)goto done;
    role.valid|=BIT(slots[half]);role.keyid[slots[half]]=key->keyidx;role.cam[slots[half]]=cam_index;

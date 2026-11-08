@@ -70,7 +70,8 @@ static inline void rtl_ax_security_cam(u8 out[24], unsigned int index,
 	memset(out, 0, 24);
 	rtl_ax_store32(out, index | 20U << 16);
 	if (key) {
-		rtl_ax_store32(out + 4, cipher); /* Original CCMP128=6, GCMP128=8. */
+		/* Original type[3:0], extended-key[4], SPP A-MSDU[5]. */
+		rtl_ax_store32(out + 4, cipher);
 		memcpy(out + 8, key, 16);
 	}
 }

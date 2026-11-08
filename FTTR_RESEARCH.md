@@ -248,6 +248,8 @@
 
 115. 接入开放网络PE→NI接收：原厂20组privacy/模板分支确认open/open接受及错配拒绝；Linux站点保存独立每TID序号，正常RX链建立后才可快照，授权/无选中密钥/无历史加密状态/BA空且序号一致均检查。radio显式开放、key/站点清理撤销；PE无IV/PN/MIC、仅剥FCS，保留地址/DS/PS/分片/协议/信用条件；乱序沿用有界搜索，旧Retry交Linux，计数/序号仍同步。112开放状态/12建立场景、四AES及radio种子/BAR/失败重试、双无线AP/STA/IPv4/IPv6/A-MSDU和12完整RXQ回绕/缺口/无BA/密钥/ARM屏障、已有组播/PS/FTTR/回收回归通过；Image/模块/6输入/补丁重放/重复构建通过。MCP9，PE32112字节、栈7296，未实机；完整退场/ID复用、多VIF、TSPEC和原厂管理缺口继续保留。详见[开放网络接收](port/FTTR.md#open-network-pe-receive-forwarding)。
 
+116. 补齐协商SPP A-MSDU的CAM参数：Linux密钥SPP标志写入原厂bit5，四种AES与256位双半均携带，旧安装函数已复现遗漏。原厂782编码/96双半传递及32删除对、实际Linux384认证数据组合、144双CAM失败/清理组和8组普通↔SPP擦除失败后重装通过；Image/模块及两份输入一致，PE不变。未实机，物理SPP互通、完整退场、多VIF及其余管理目标仍未完成。详见[SPP密钥参数](port/FTTR.md#negotiated-spp-a-msdu-in-security-cam)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
