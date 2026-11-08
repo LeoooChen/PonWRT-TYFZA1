@@ -5,7 +5,7 @@ from pathlib import Path
 p=Path(__file__).resolve().parents[1]
 a=argparse.ArgumentParser(); a.add_argument('mode',choices=('receive','send'));a.add_argument('--label',default='lan');a.add_argument('--file',type=Path,default=p/'artifacts/lan-tcp/payload.bin');args=a.parse_args()
 f=args.file;f.parent.mkdir(parents=True,exist_ok=True)
-s=socket.socket();s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);s.bind(('192.0.2.82',18080));s.listen(1)
+s=socket.socket();s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);s.bind(('192.168.1.170',18080));s.listen(1)
 print('Listening',args.mode,flush=True)
 conn,peer=s.accept();start=time.monotonic();size=0
 with conn:

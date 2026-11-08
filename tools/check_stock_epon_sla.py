@@ -11,7 +11,7 @@ from unicorn import UC_HOOK_MEM_READ
 
 root = Path(__file__).resolve().parents[1]
 drivers = root / "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek"
-stock = Path("/path/to/user/rea-analysis-20261016-work/rootfs/lib/modules/5.10.70/extra")
+stock = Path("/home/leo/rea-analysis-20261016-work/rootfs/lib/modules/5.10.70/extra")
 base = 0x6000000
 buckets = {}
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Native management WP/TXBD ownership and original RPQ completion. */
 #include <linux/bitmap.h>
+#include <linux/average.h>
 #include <linux/dma-mapping.h>
 #include <linux/pci.h>
 #include <linux/scatterlist.h>
@@ -11,6 +12,8 @@
 #include <linux/rtl9617c-wifi.h>
 #include "receive.h"
 #include "tx-format.h"
+#include "tx-ownership.h"
+#include "traffic-flow.h"
 #include "security.h"
 #include "tx.h"
 #include "rx.h"
@@ -19,7 +22,7 @@
 #include "ni-state.h"
 
 #define RTL_AX_TX_ENTRIES 256
-#define RTL_AX_TX_PAGES 384
+#define RTL_AX_TX_PAGES RTL_AX_NI_ID_END
 static int ni_test_remove(struct rtl_ax_tx *tx);
 static void pe_event_release(struct rtl_ax_tx *tx);
 static void ni_route_sleep(struct rtl_ax_tx *tx, unsigned int macid);
@@ -44,9 +47,11 @@ struct rtl_ax_tx_slot {
 	u8 ring;
 	u8 key_index;
 	u8 macid, tid;
-	bool encrypted, pe_sequence;
+	bool encrypted, pe_sequence, firmware_rate, quota_counted;
 	struct rtl_ax_tx_mapping *mapping;
 };
+
+DECLARE_EWMA(rtl_ax_success, 8, 8);
 
 struct rtl_ax_tx {
 	struct pci_dev *pdev;
@@ -60,14 +65,16 @@ struct rtl_ax_tx {
 	struct rtl_ax_rx *rx;
 	void (*peer_ready)(void *context);
 	void *peer_ready_context;
-	bool peer_offloaded[128], peer_authorized[128];
+	bool peer_offloaded[128], peer_authorized[128], peer_preload[128];
 	const struct rtl_ax_io *io;
 	spinlock_t lock;
 	wait_queue_head_t key_flush_wait;
 	u8 *ring, *pages, *headers;
 	bool peer_qos[128];
+	bool peer_client[128];
 	bool peer_asleep[128];
 	u32 peer_rates[128];
+	struct ewma_rtl_ax_success peer_success[128];
 	u64 peer_sleep_events, peer_wake_events;
 	u64 ps_releases, ps_eosp;
 	u64 pe_ethernet;
@@ -91,6 +98,10 @@ struct rtl_ax_tx {
 	u32 scheduler_saved, last_words[14], last_report, last_sequence;
 	u64 submitted, completed, status_count[8], polluted, unmatched, stopped, full;
 	u32 traffic_bytes;
+	u32 peer_bytes[128], peer_packets[128], ac_packets[4];
+	u32 ac_pending[128][4], wmm_quota;
+	u64 wmm_dropped;
+	struct rtl_ax_traffic_flow peer_flows[128][8];
 	u64 encrypted, hardware_pn;
 	u64 prepare_ns;
 	u64 fast_xmit;
@@ -138,12 +149,14 @@ static void rtl_ax_tx_wd(u8 *out, unsigned int bytes,
 		(no_ack ? BIT(31) : 0));
 	rtl_ax_store32(out + 4, (addresses & 63) << 26);
 	rtl_ax_store32(out + 8, macid << 24 | qsel << 17 | (tid_ind ? BIT(23) : 0) | (bytes & 0x3fff));
-	rtl_ax_store32(out + 12, (sequence & 0xfff) | (aggregate ? BIT(12) : 0));
+	rtl_ax_store32(out + 12, (sequence & 0xfff) | (aggregate ? BIT(12) : BIT(13)));
 	/* Actual C/XB DATA-WD@2525ac: GI[27:25], rate[24:16], fixed-rate[31]. */
 	rtl_ax_store32(out + 28, BIT(31) | (bandwidth & 3) << 28 | (gi & 7) << 25 | (rate & 0x1ff) << 16);
-	rtl_ax_store32(out + 32, BIT(9) | BIT(10) | (rate & BIT(22) ? BIT(12) : 0));
-	rtl_ax_store32(out + 36, (multicast ? BIT(11) : 0) | (aggregate ? (aggregate - 1) & 0xff : 0));
+	rtl_ax_store32(out + 32, BIT(9) | BIT(10));
+	rtl_ax_store32(out + 36, (multicast ? BIT(11) : 0) | (aggregate ? (aggregate - 1) & 0xff : 0) |
+		(bytes > 2300 ? (rate & 0x180U) << 16 : 0));
 	rtl_ax_store32(out + 40, aggregate ? (density & 7) << 18 : 0);
+	rtl_ax_store32(out + 48, rate & BIT(22) ? BIT(27) | BIT(31) : 0);
 }
 
 static void rtl_ax_tx_checksum(u8 *descriptor)
@@ -168,6 +181,7 @@ static int rtl_ax_tx_pe_start(struct rtl_ax_tx *tx)
 	put_unaligned_le32(tx->ring_dma, tx->pe.memory + PE_PROBE_MAILBOX + 44);
 	put_unaligned_le32(tx->pages_dma, tx->pe.memory + PE_PROBE_MAILBOX + 48);
 	put_unaligned_le32(tx->headers_dma, tx->pe.memory + PE_PROBE_MAILBOX + 56);
+	rtl_ax_tx_ownership_init(tx->pe.memory, tx->pe.slot ? 1024 : 2048);
 	dma_wmb();
 	ret = pe_probe_start(&tx->pe, pe_tx_program, sizeof(pe_tx_program));
 	if (ret) return ret;
@@ -222,8 +236,10 @@ struct rtl_ax_tx *rtl_ax_tx_prepare(struct pci_dev *pdev, const struct rtl_ax_io
 		ret = io->poll32(io->ctx, rtl_ax_tx_indices[ring], 0x3ff03ff, 0, 10, 100000, &last);
 		if (ret)
 			goto release;
+		/* PE publishes TXBDs in DDR, just like RXBDs. Fetch through the
+		 * raw alias; CCI ReadOnce can return a previous ARM cache line. */
 		io->write32(io->ctx, 0x1230 + channel * 8,
-			lower_32_bits(tx->ring_dma + ring * RTL_AX_TX_ENTRIES * 8));
+			lower_32_bits(tx->ring_dma + ring * RTL_AX_TX_ENTRIES * 8) | 0x80000000U);
 		io->write32(io->ctx, 0x1234 + channel * 8, 0);
 		rtl_ax_update16(io, 0x1024 + channel * 2, 0x3ff, RTL_AX_TX_ENTRIES);
 		rtl_ax_update32(io, 0x1300 + channel * 4, 0x3f3f3f,
@@ -335,7 +351,7 @@ void rtl_ax_tx_open(struct rtl_ax_tx *tx)
 		dma_wmb();
 	}
 	if (tx->queues_stopped && tx->occupied <=
-	    (tx->pe_active && get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 96) ? 48 : RTL_AX_TX_ENTRIES / 2)) {
+	    (RTL_AX_TX_ENTRIES / 2)) {
 		tx->queues_stopped = false;
 		tx->queue_wakes++;
 	}
@@ -400,16 +416,26 @@ void rtl_ax_tx_ap_address(struct rtl_ax_tx *tx, const u8 *address)
 {
 	if (tx->pe_active) memcpy(tx->pe.memory + PE_PROBE_MAILBOX + 64, address, 6);
 }
-void rtl_ax_tx_ps_clock(struct rtl_ax_tx *tx, u32 seconds)
+void rtl_ax_tx_peer_client(struct rtl_ax_tx *tx, unsigned int macid, bool client, const u8 *bssid)
 {
-	if (tx->pe_active) put_unaligned_le32(seconds, tx->pe.memory + PE_PROBE_MAILBOX + RTL_AX_NI_PS_NOW * 4);
+	tx->peer_client[macid] = client;
+	if (client && tx->pe_active)
+		memcpy(tx->pe.memory + 0xe400 + macid * 8, bssid, ETH_ALEN);
 }
 void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos, unsigned int ps_timeout)
 {
 	tx->peer_qos[macid] = qos;
+	memset(tx->pe.memory + RTL_AX_TX_AMSDU_QUEUES + macid * 128, 0, 128);
+	/* Called with the peer path withdrawn; MACID reuse gets fresh TXSC keys. */
+	memset(tx->peer_flows[macid], 0, sizeof(tx->peer_flows[macid]));
+	if (tx->pe_active)
+		memset(tx->pe.memory + RTL_AX_TX_PEER_FLOWS + macid * 256, 0, 256);
+	tx->peer_preload[macid] = false;
 	tx->peer_offloaded[macid] = false;
 	tx->peer_asleep[macid] = false;
 	tx->peer_rates[macid] = 0;
+	ewma_rtl_ax_success_init(&tx->peer_success[macid]);
+	ewma_rtl_ax_success_add(&tx->peer_success[macid], 100);
 	if (tx->pe_active) {
 		memset(tx->pe.memory + 0x10000 + macid * 8 * 4, 0, 8 * 4);
 		memset(tx->pe.memory + 0xd000 + macid * 32, 0, 32);
@@ -425,6 +451,28 @@ void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos, unsi
 		memset(tx->pe.memory + 0x18000 + macid * 32, 0, 32);
 		put_unaligned_le32(0, tx->pe.memory + 0xe200 + macid * 4);
 	}
+}
+u32 rtl_ax_tx_success(struct rtl_ax_tx *tx, unsigned int macid)
+{
+	return READ_ONCE(tx->peer_success[macid].internal) >> 8;
+}
+
+/* Called under the wiphy lifecycle lock, before admission or after drain.
+ * Serialize template updates with ARM submission; the preload bit is request-only. */
+void rtl_ax_tx_peer_preload(struct rtl_ax_tx *tx, unsigned int macid, bool enabled)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&tx->lock, flags);
+	tx->peer_preload[macid] = enabled;
+	if (tx->pe_active) {
+		u8 *field = tx->pe.memory + 0xd000 + macid * 32 + 20;
+		u32 value = get_unaligned_le32(field) & ~RTL_AX_TX_AGG_PRELOAD;
+
+		put_unaligned_le32(value | (enabled ? RTL_AX_TX_AGG_PRELOAD : 0), field);
+		dma_wmb();
+	}
+	spin_unlock_irqrestore(&tx->lock, flags);
 }
 void rtl_ax_tx_peer_authorized(struct rtl_ax_tx *tx, unsigned int macid, bool authorized)
 {
@@ -471,13 +519,29 @@ void rtl_ax_tx_peer_rate(struct rtl_ax_tx *tx, unsigned int macid, u32 rate, u32
 }
 void rtl_ax_tx_peer_sleep(struct rtl_ax_tx *tx, unsigned int macid, bool asleep)
 {
+	unsigned long flags;
+
+	spin_lock_irqsave(&tx->lock, flags);
 	WRITE_ONCE(tx->peer_asleep[macid], asleep);
 	if (tx->pe_active) {
-		put_unaligned_le32(asleep, tx->pe.memory + 0xe800 + macid * 16);
+		u32 *ps = tx->pe.memory + 0xe800 + macid * 16;
+		u32 *version = tx->pe.memory + RTL_AX_NI_PS_VERSION + macid * 4;
+
+		/* Revoke an unconsumed grant before the next sleep, even if PE
+		 * never selects an awake packet between the two transitions. */
+		if (!asleep) {
+			put_unaligned_le32(get_unaligned_le32(version) + 1, version);
+			dma_wmb();
+			put_unaligned_le32(0, ps + 3);
+		}
+		put_unaligned_le32(asleep, ps);
 		dma_wmb();
+		if (!asleep)
+			put_unaligned_le32(get_unaligned_le32(version) + 1, version);
 	}
 	if (asleep) tx->peer_sleep_events++;
 	else tx->peer_wake_events++;
+	spin_unlock_irqrestore(&tx->lock, flags);
 	/* mac80211 clears driver-buffered TIDs whenever the peer wakes. */
 	WRITE_ONCE(tx->ni.route_tim[macid], ~0U);
 	ni_route_sleep(tx, macid);
@@ -528,9 +592,28 @@ void rtl_ax_tx_ps_release(struct rtl_ax_tx *tx, struct ieee80211_sta *sta,
 }
 int rtl_ax_tx_peer_ssn(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid)
 {
-	int ret = rtl_ax_tx_wait_station(tx, macid, tid);
-	if (ret) return ret;
+	/* issue_action_ba@906dc snapshots the next sequence without draining
+	 * traffic. PE stores the next value; original HW stores the last one. */
 	return tx->pe_active ? get_unaligned_le32(tx->pe.memory + 0x10000 + (macid * 8 + tid) * 4) : 0;
+}
+
+static bool rtl_ax_tx_raw_fw_rate(struct rtl_ax_tx *tx, struct sk_buff *skb,
+	unsigned int macid)
+{
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+	struct ieee80211_hdr *hdr = (void *)skb->data;
+
+	if (!tx->pe_active || !macid ||
+	    !READ_ONCE(tx->peer_authorized[macid]) ||
+	    info->flags & (IEEE80211_TX_CTL_HW_80211_ENCAP | IEEE80211_TX_CTL_INJECTED |
+		IEEE80211_TX_CTL_RATE_CTRL_PROBE | IEEE80211_TX_CTL_USE_MINRATE |
+		IEEE80211_TX_CTL_TX_OFFCHAN) ||
+	    info->control.flags & (IEEE80211_TX_CTRL_RATE_INJECT |
+		IEEE80211_TX_CTRL_PORT_CTRL_PROTO | IEEE80211_TX_CTRL_DONT_USE_RATE_MASK))
+		return false;
+	return ieee80211_is_data_present(hdr->frame_control) &&
+		!is_multicast_ether_addr(hdr->addr1) &&
+		(get_unaligned_le32(tx->pe.memory + 0xe200 + macid * 4) & BIT(17));
 }
 
 int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
@@ -552,12 +635,21 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	unsigned int packet_bytes = encap ? skb->len + header_bytes + 8 - 14 : skb->len;
 	u8 original_header[36];
 	unsigned int original_header_bytes = encap ? ETH_HLEN : pe_sequence ? header_bytes : 0;
+	unsigned int data_packets = 1;
+	bool data_frame = encap || ieee80211_is_data_present(header->frame_control);
+	if (!encap && ieee80211_is_data_qos(header->frame_control) &&
+	    (*ieee80211_get_qos_ctl(header) & IEEE80211_QOS_CTL_A_MSDU_PRESENT)) {
+		struct sk_buff *part;
+		skb_walk_frags(skb, part) data_packets++;
+	}
 	u8 *page;
 	int ret;
+	bool template_ready = false;
 	u64 begin = READ_ONCE(rtl_ax_datapath_profile) ? ktime_get_ns() : 0;
 	if (packet_bytes > 0x3fff) return -EMSGSIZE;
 
-	if (!encap && ieee80211_is_mgmt(header->frame_control)) {
+	if (!encap && (ieee80211_is_mgmt(header->frame_control) ||
+		      ieee80211_is_back_req(header->frame_control))) {
 		ring = 4;
 		qsel = 0x12;
 	} else if (info->flags & IEEE80211_TX_CTL_SEND_AFTER_DTIM) {
@@ -582,6 +674,13 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		ret = -ENETDOWN;
 		goto unmap;
 	}
+	/* Original _txreq_lmt_check counts accepted requests, one per MPDU.
+	 * Each execution side publishes its own outstanding count. */
+	if (macid && data_frame && ring < 4 && tx->wmm_quota &&
+	    tx->ac_pending[macid][ring] + get_unaligned_le32(tx->pe.memory +
+	    RTL_AX_TX_NI_AC_PENDING + (macid * 4 + ring) * 4) >= tx->wmm_quota) {
+		tx->wmm_dropped++; ret = -ENOSPC; goto unmap;
+	}
 	id = find_first_zero_bit(tx->pending, RTL_AX_TX_ENTRIES);
 	next = (tx->producer[ring] + 1) & (RTL_AX_TX_ENTRIES - 1);
 	/* Every RPQ release follows consumption of its TXBD. The shared WP
@@ -595,11 +694,13 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	if (encap || ieee80211_is_data(header->frame_control))
 		rate |= tx->peer_rates[macid] & BIT(22);
 	if (tx->pe_active) {
-		u32 *request = tx->pe.memory + 0x4000 + tx->pe_producer * 128;
+		u32 request[8 + RTL_AX_TX_WP_ADDRESS_MAX * 2];
+		u32 *published = tx->pe.memory + 0x4000 + tx->pe_producer * 128;
 		unsigned int segments = slot.mapping ? slot.mapping->dma_count : 1;
-		u32 request_flags = (encap ? tid : le16_to_cpu(header->seq_ctrl) >> 4) | tid_indicators[tid] << 12 |
+		u32 request_flags = (encap ? tid : ieee80211_is_ctl(header->frame_control) ? 0 : le16_to_cpu(header->seq_ctrl) >> 4) | tid_indicators[tid] << 12 |
 			!!(info->flags & IEEE80211_TX_CTL_NO_ACK) << 13 |
-			is_multicast_ether_addr(encap ? skb->data : header->addr1) << 14 | tx->checksum_enabled << 17 | macid << 24 | encap << 18;
+			(encap && tx->peer_client[macid] ? 0 : is_multicast_ether_addr(encap ? skb->data : header->addr1)) << 14 |
+			tx->checksum_enabled << 17 | macid << 24 | encap << 18 | tx->peer_client[macid] << 23;
 		u32 key = 0; u64 pn = 0;
 		/* A PCIe DMA cookie may alias PE MMIO. Publish the header bytes
 		 * into this WP's PE-visible buffer before transferring ownership. */
@@ -627,7 +728,11 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		if (encap) request[3] |= tx->peer_rates[macid] & (BIT(21) | BIT(22));
 		if (encap && (get_unaligned_le32(tx->pe.memory + 0xe200 + macid * 4) & BIT(17)))
 			request[3] |= BIT(20);
-		request[4] = request_flags; request[5] = aggregate | density << 8 | key;
+		if (rtl_ax_tx_raw_fw_rate(tx, skb, macid))
+			request[3] = tx->peer_rates[macid] | BIT(20);
+		slot.firmware_rate = !!(request[3] & BIT(20));
+		request[4] = request_flags; request[5] = aggregate | density << 8 | key |
+			(tx->peer_preload[macid] ? RTL_AX_TX_AGG_PRELOAD : 0);
 		request[6] = pn; request[7] = pn >> 32;
 		if (slot.mapping) {
 			struct scatterlist *sg; unsigned int i;
@@ -645,8 +750,31 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 				if (tx->peer_rates[macid] & BIT(31))
 					put_unaligned_le32(tx->peer_rates[macid] & ~BIT(31), tx->pe.memory + 0xd000 + macid * 32 + 12);
 			}
-			memcpy(tx->pe.memory + 0xe400 + macid * 8, skb->data, 6);
+			if (!tx->peer_client[macid])
+				memcpy(tx->pe.memory + 0xe400 + macid * 8, skb->data, 6);
 		}
+		/* NI needs an Ethernet template even when mac80211 assembled A-MSDU.
+		 * Never copy the raw frame's sequence/AMSDU/PS flags into that template. */
+		if (!encap && !tid && pe_sequence && slot.firmware_rate &&
+		    (request_flags & BIT(16)) && tx->peer_authorized[macid] &&
+		    info->control.vif &&
+		    ((info->control.vif->type == NL80211_IFTYPE_AP &&
+		      ieee80211_has_fromds(header->frame_control) && !ieee80211_has_tods(header->frame_control)) ||
+		     (info->control.vif->type == NL80211_IFTYPE_STATION &&
+		      ieee80211_has_tods(header->frame_control) && !ieee80211_has_fromds(header->frame_control))) &&
+		    !(info->flags & (IEEE80211_TX_CTL_NO_ACK | IEEE80211_TX_CTL_NO_PS_BUFFER)) &&
+		    !(info->control.flags & IEEE80211_TX_CTRL_PS_RESPONSE)) {
+			u32 peer[8] = { 0, 0, 26U << 16,
+				tx->peer_rates[macid] & ~BIT(31),
+				macid << 24 | BIT(18) | BIT(16) | tx->checksum_enabled << 17 | tx->peer_client[macid] << 23,
+				aggregate | density << 8 | key |
+				(tx->peer_preload[macid] ? RTL_AX_TX_AGG_PRELOAD : 0), 0, 0 };
+
+			memcpy(tx->pe.memory + 0xd000 + macid * 32, peer, sizeof(peer));
+			memcpy(tx->pe.memory + 0xe400 + macid * 8, header->addr1, ETH_ALEN);
+			template_ready = true;
+		}
+		memcpy(published, request, (8 + segments * 2) * sizeof(*request));
 	} else {
 	memset(page, 0, RTL_AX_TX_WP_BYTES);
 	if (slot.mapping) {
@@ -663,7 +791,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		rtl_ax_tx_wp_addresses(page + 56 + RTL_AX_TX_WP_SEQUENCE_BYTES, lower_32_bits(slot.dma), skb->len, true);
 	length = 56 + RTL_AX_TX_WP_SEQUENCE_BYTES + addresses * RTL_AX_TX_WP_ADDRESS_BYTES;
 	rtl_ax_tx_wd(page, skb->len, addresses, rate, gi, bandwidth,
-		le16_to_cpu(header->seq_ctrl) >> 4, ieee80211_hdrlen(header->frame_control),
+		ieee80211_is_ctl(header->frame_control) ? 0 : le16_to_cpu(header->seq_ctrl) >> 4, header_bytes,
 		info->flags & IEEE80211_TX_CTL_NO_ACK, is_multicast_ether_addr(header->addr1),
 		rtl_ax_tx_channels[ring], qsel, tid_indicators[tid], macid, aggregate, density);
 	if (info->control.hw_key) {
@@ -686,6 +814,12 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		rtl_ax_tx_checksum(page);
 	rtl_ax_tx_wp_sequence(page + 56, id | (tid_indicators[tid] ? BIT(14) : 0));
 	}
+	slot.quota_counted = macid && data_frame && ring < 4;
+	if (slot.quota_counted) {
+		tx->ac_pending[macid][ring]++;
+		put_unaligned_le32(tx->ac_pending[macid][ring], tx->pe.memory +
+			RTL_AX_TX_ARM_AC_PENDING + (macid * 4 + ring) * 4);
+	}
 	slot.ring = ring;
 	slot.pe_sequence = pe_sequence;
 	slot.macid = macid;
@@ -702,6 +836,23 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	tx->producer[ring] = next;
 	tx->submitted++;
 	if (!tx->pe_active) tx->traffic_bytes += packet_bytes;
+	if (macid && data_frame) {
+		tx->peer_bytes[macid] += encap ? skb->len - ETH_HLEN :
+			packet_bytes - header_bytes - 8 - (info->control.hw_key ? info->control.hw_key->iv_len : 0);
+		tx->peer_packets[macid] += data_packets;
+		tx->ac_packets[rtl_ax_tx_dma_channel(tid, 0)] += data_packets;
+		/* Flow statistics require the complete data header and LLC. The
+		 * packet itself still follows the normal transmit path. */
+		unsigned int iv = info->control.hw_key ? info->control.hw_key->iv_len : 0;
+		bool amsdu = !encap && ieee80211_is_data_qos(header->frame_control) &&
+			(*ieee80211_get_qos_ctl(header) & IEEE80211_QOS_CTL_A_MSDU_PRESENT);
+		if (encap || skb_headlen(skb) >= header_bytes + iv + (amsdu ? 22 : 8)) {
+			const u8 *source = encap ? skb->data + 6 : amsdu ? skb->data + header_bytes + iv + 6 : header->addr3;
+			u16 protocol = get_unaligned_le16(skb->data + (encap ? 12 : header_bytes + iv + (amsdu ? 20 : 6)));
+			rtl_ax_traffic_flow_hit(tx->peer_flows[macid], get_unaligned_le32(source),
+				get_unaligned_le16(source + 4) | (u32)protocol << 16, (u32)(ktime_get_ns() / 1000), data_packets);
+		}
+	}
 	tx->linearized_packets += linearized;
 	tx->amsdu_packets += !encap && ieee80211_is_data_qos(header->frame_control) &&
 		(*ieee80211_get_qos_ctl(header) & IEEE80211_QOS_CTL_A_MSDU_PRESENT);
@@ -721,16 +872,18 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		dma_wmb();
 	} else
 		tx->io->write16(tx->io->ctx, rtl_ax_tx_indices[ring], next);
-	/* WP IDs are shared by all six DMA rings. Pause mac80211 dequeue
-	 * before exhausting them; RPQ release owns the matching wake. */
-	if (tx->occupied >= (tx->pe_active && get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 96) ? 96 : RTL_AX_TX_ENTRIES - 32) && !tx->queues_stopped) {
+	/* ARM request IDs are shared by all six rings but independent of NI
+	 * owners and hardware tags. Leave 32 slots for in-flight submitters.
+	 * The old PE limit96 stalls before the factory121-report batch fills.
+	 * RPQ release owns the matching wake after half the pool is free. */
+	if (tx->occupied >= (RTL_AX_TX_ENTRIES - 32) && !tx->queues_stopped) {
 		tx->queues_stopped = true;
 		tx->queue_stops++;
 		ieee80211_stop_queues(hw);
 	}
 	spin_unlock_irqrestore(&tx->lock, flags);
 	if (READ_ONCE(tx->peer_asleep[macid])) ni_route_sleep(tx, macid);
-	if (encap && tx->pe_active && tx->peer_ready && !READ_ONCE(tx->peer_offloaded[macid]))
+	if ((encap || template_ready) && tx->pe_active && tx->peer_ready && !READ_ONCE(tx->peer_offloaded[macid]))
 		tx->peer_ready(tx->peer_ready_context);
 	return 0;
 unmap:
@@ -743,11 +896,11 @@ static void rtl_ax_tx_pe_complete(struct rtl_ax_tx *tx, unsigned int id, unsigne
 {
 	unsigned int member = id - 256;
 
-	void *entry = tx->pe.memory + 0xc400 + member * 8;
+	void *entry = tx->pe.memory + RTL_AX_NI_OWNERS + member * 8;
 	u32 details = get_unaligned_le32(entry + 4);
 	put_unaligned_le32(details | BIT(31) | status, entry + 4);
-	put_unaligned_le32(member, tx->pe.memory + 0xc800 + tx->ni_rpq_producer * 4);
-	tx->ni_rpq_producer = (tx->ni_rpq_producer + 1) & 127;
+	put_unaligned_le32(member, tx->pe.memory + RTL_AX_NI_COMPLETIONS + tx->ni_rpq_producer * 4);
+	tx->ni_rpq_producer = (tx->ni_rpq_producer + 1) & RTL_AX_NI_COMPLETION_MASK;
 	dma_wmb();
 	put_unaligned_le32(tx->ni_rpq_producer, tx->pe.memory + PE_PROBE_MAILBOX + 180);
 }
@@ -769,6 +922,9 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 	unsigned int offset;
 	unsigned long flags;
 
+	/* Defer local TX re-entry until every record in this report is consumed. */
+	local_bh_disable();
+
 	/* Original handle_rx_report@27c1a4: four-byte release records,
 	 * qsel8:12, status13:15, WPseq16:30 (ID low12), polluted31. */
 	for (offset = 0; offset + 4 <= packet->bytes; offset += 4) {
@@ -780,15 +936,26 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 		struct rtl_ax_tx_slot slot;
 		struct ieee80211_tx_info *info;
 		__le16 completed_sequence = 0;
+		u32 *tag_owner = NULL;
+		/* PE-forwarded reports already carry a software request ID. During
+		 * RPQ handoff, decode a direct hardware report through the same map. */
+		if (tx->pe_active && !packet->pe_completed) {
+			if (ring == RTL_AX_TX_RINGS || id == RTL_AX_WP_TAG_INVALID) {
+				tx->unmatched++; continue;
+			}
+			tag_owner = tx->pe.memory + RTL_AX_WP_TAG_MAP + (ring * RTL_AX_WP_TAG_STRIDE + id) * 4;
+			id = get_unaligned_le32(tag_owner) - 1;
+			if (id >= RTL_AX_TX_PAGES) { tx->unmatched++; continue; }
+		}
 		if (packet->pe_completed && id >= 256 && id < RTL_AX_TX_PAGES) {
 			schedule_work(&tx->ni.ps_work);
 			continue;
 		}
 		if (tx->pe_active && id >= 256 && id < RTL_AX_TX_PAGES) {
-			void *owner = tx->pe.memory + 0xc400 + (id - 256) * 8;
+			void *owner = tx->pe.memory + RTL_AX_NI_OWNERS + (id - 256) * 8;
 			u32 meta = get_unaligned_le32(owner + 4);
-			u32 generation = get_unaligned_le32(tx->pe.memory + RTL_AX_NI_PS_WP_GENERATION + (id - 256) * 4);
-			u32 rate = get_unaligned_le32(tx->pe.memory + 0xe000 + (id - 256) * 4);
+			u32 generation = get_unaligned_le32(tx->pe.memory + RTL_AX_NI_GENERATIONS + (id - 256) * 4);
+			u32 rate = get_unaligned_le32(tx->pe.memory + RTL_AX_NI_RATES + (id - 256) * 4);
 			unsigned int macid = (meta >> 8) & 127;
 			struct ieee80211_tx_info feedback = {.band = NL80211_BAND_5GHZ};
 			struct ieee80211_tx_status feedback_status = {.info = &feedback};
@@ -827,7 +994,23 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 			spin_unlock_irqrestore(&tx->lock, flags);
 			continue;
 		}
+		if (tag_owner) {
+			u32 tag = (report >> 16) & 4095;
+			put_unaligned_le32(0, tag_owner);
+			if (!ring) {
+				u32 *state = tx->pe.memory + RTL_AX_TX_OWNER_STATE;
+				u32 write = get_unaligned_le32(state + 3);
+				put_unaligned_le16(tag, tx->pe.memory + RTL_AX_WP_FREE + write * 2);
+				dma_wmb(); put_unaligned_le32((write + 1) % RTL_AX_WP_TAGS, state + 3);
+			}
+		}
 		slot = tx->slots[id];
+		if (slot.quota_counted) {
+			tx->ac_pending[slot.macid][ring]--;
+			put_unaligned_le32(tx->ac_pending[slot.macid][ring], tx->pe.memory +
+				RTL_AX_TX_ARM_AC_PENDING + (slot.macid * 4 + ring) * 4);
+			dma_wmb();
+		}
 		if (slot.pe_sequence)
 			completed_sequence = get_unaligned((__le16 *)(tx->headers + id * 128 + 22));
 		tx->slots[id].skb = NULL;
@@ -838,7 +1021,7 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 		tx->status_count[status]++;
 		tx->polluted += !!(report & BIT(31));
 		if (tx->queues_stopped && tx->running && !tx->queues_paused && tx->hw && tx->occupied <=
-		    (tx->pe_active && get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 96) ? 48 : RTL_AX_TX_ENTRIES / 2)) {
+		    (RTL_AX_TX_ENTRIES / 2)) {
 			tx->queues_stopped = false;
 			tx->queue_wakes++;
 			ieee80211_wake_queues(hw);
@@ -851,13 +1034,15 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 			((struct ieee80211_hdr *)slot.skb->data)->seq_ctrl = completed_sequence;
 		info = IEEE80211_SKB_CB(slot.skb);
 		ieee80211_tx_info_clear_status(info);
-		if ((info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP) &&
-		    (get_unaligned_le32(tx->pe.memory + 0xe200 + slot.macid * 4) & BIT(17)))
+		if (slot.firmware_rate)
 			info->status.rates[0].idx = -1;
 		if (!status && !(report & BIT(31)))
 			info->flags |= info->flags & IEEE80211_TX_CTL_NO_ACK ?
 				IEEE80211_TX_STAT_NOACK_TRANSMITTED : IEEE80211_TX_STAT_ACK;
 		info->status.rates[0].count = 1;
+		if (slot.macid && !(info->flags & IEEE80211_TX_CTL_NO_ACK))
+			ewma_rtl_ax_success_add(&tx->peer_success[slot.macid],
+				info->flags & IEEE80211_TX_STAT_ACK ? 100 : 0);
 		if (info->flags & IEEE80211_TX_CTL_AMPDU) {
 			/* RPQ returns one WP/MPDU at a time, not a PPDU aggregate count.
 			 * Account the actual completed MPDU and its individual result. */
@@ -878,6 +1063,7 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 			rcu_read_unlock(); local_bh_enable();
 		} else ieee80211_tx_status_ni(hw, slot.skb);
 	}
+	local_bh_enable();
 	return 0;
 }
 
@@ -891,19 +1077,19 @@ static bool rtl_ax_tx_pe_pending(struct rtl_ax_tx *tx, unsigned int macid, unsig
 		for (i = 0; i < 8; i++)
 			if ((tid == IEEE80211_NUM_TIDS || tid == i) &&
 			    get_unaligned_le32(tx->pe.memory + 0x13000 + (macid * 8 + i) * 4)) return true;
-	/* NI_WAIT retains the submitted TID; RPQ done ends the MAC/key wait. */
-	for (i = 0; i < 128; i++) {
-		void *owner = tx->pe.memory + 0xc400 + i * 8;
+	/* The request retains its TID; RPQ done ends the MAC/key wait. */
+	for (i = 0; i < RTL_AX_NI_OWNER_SLOTS; i++) {
+		void *owner = tx->pe.memory + RTL_AX_NI_OWNERS + i * 8;
 		u32 meta = get_unaligned_le32(owner + 4);
 		if (!get_unaligned_le32(owner) || (meta & BIT(31))) continue;
 		if (by_key ? ((meta >> 17) & 127) == key :
 		    ((meta >> 8) & 127) == macid && (tid == IEEE80211_NUM_TIDS ||
-		    (get_unaligned_le32(tx->pe.memory + 0x11000 + i * 16 + 12) & 7) == tid)) return true;
+		    (get_unaligned_le32(tx->pe.memory + RTL_AX_NI_TIDS + i * 4) & 7) == tid)) return true;
 	}
 	return false;
 }
 
-static bool rtl_ax_tx_key_pending(struct rtl_ax_tx *tx, unsigned int index)
+bool rtl_ax_tx_key_pending(struct rtl_ax_tx *tx, unsigned int index)
 {
 	unsigned long flags;
 	unsigned int id;
@@ -1005,6 +1191,76 @@ int rtl_ax_tx_free(struct rtl_ax_tx *tx, struct ieee80211_hw *hw)
 	return 0;
 }
 
+void rtl_ax_tx_peer_counters(struct rtl_ax_tx *tx, unsigned int macid, u32 *bytes, u32 *packets)
+{
+	unsigned long flags;
+	spin_lock_irqsave(&tx->lock, flags);
+	*bytes = tx->peer_bytes[macid];
+	*packets = tx->peer_packets[macid];
+	spin_unlock_irqrestore(&tx->lock, flags);
+	if (tx->pe_active) {
+		*bytes += get_unaligned_le32(tx->pe.memory + RTL_AX_TX_PEER_STATS + macid * 8);
+		*packets += get_unaligned_le32(tx->pe.memory + RTL_AX_TX_PEER_STATS + macid * 8 + 4);
+	}
+}
+
+void rtl_ax_tx_ac_counters(struct rtl_ax_tx *tx, u32 packets[4])
+{
+	static const u8 ac[8] = {0, 1, 1, 0, 2, 2, 3, 3};
+	unsigned long flags;
+	spin_lock_irqsave(&tx->lock, flags);
+	memcpy(packets, tx->ac_packets, sizeof(tx->ac_packets));
+	spin_unlock_irqrestore(&tx->lock, flags);
+	if (tx->pe_active)
+		for (unsigned int macid = 1; macid < 128; macid++)
+			for (unsigned int tid = 0; tid < 8; tid++)
+				packets[ac[tid]] += get_unaligned_le32(tx->pe.memory +
+					RTL_AX_NI_TX_ACTIVITY + (macid * 8 + tid) * 4);
+}
+
+unsigned int rtl_ax_tx_peer_flows(struct rtl_ax_tx *tx, unsigned int macid)
+{
+	struct rtl_ax_traffic_flow flows[16];
+	unsigned long flags;
+	unsigned int active = 0;
+	spin_lock_irqsave(&tx->lock, flags);
+	memcpy(flows, tx->peer_flows[macid], 8 * sizeof(*flows));
+	spin_unlock_irqrestore(&tx->lock, flags);
+	memset(flows + 8, 0, 8 * sizeof(*flows));
+	if (tx->pe_active)
+		memcpy(flows + 8, tx->pe.memory + RTL_AX_TX_PEER_FLOWS + macid * 256, 8 * sizeof(*flows));
+	for (unsigned int i = 0; i < 16; i++) {
+		if (!flows[i].valid) continue;
+		for (unsigned int j = i + 1; j < 16; j++)
+			if (flows[j].valid && flows[i].key[0] == flows[j].key[0] && flows[i].key[1] == flows[j].key[1]) {
+				flows[i].average += flows[j].average; flows[j].valid = 0;
+			}
+		active += flows[i].average > 50;
+	}
+	return active;
+}
+
+u8 rtl_ax_tx_active_tids(struct rtl_ax_tx *tx, unsigned int macid)
+{
+	return get_unaligned_le32(tx->pe.memory + 0x17200 + macid * 4);
+}
+
+void rtl_ax_tx_wmm(struct rtl_ax_tx *tx, unsigned int quota)
+{
+	unsigned long flags;
+	spin_lock_irqsave(&tx->lock, flags);
+	tx->wmm_quota = quota;
+	put_unaligned_le32(tx->wmm_quota, tx->pe.memory + RTL_AX_TX_WMM_QUOTA);
+	dma_wmb();
+	spin_unlock_irqrestore(&tx->lock, flags);
+}
+
+void rtl_ax_tx_peer_amsdu(struct rtl_ax_tx *tx, unsigned int macid, unsigned int policy)
+{
+	put_unaligned_le32(policy, tx->pe.memory + RTL_AX_TX_PEER_AMSDU + macid * 4);
+	dma_wmb();
+}
+
 u32 rtl_ax_tx_traffic_bytes(struct rtl_ax_tx *tx)
 {
 	return tx->pe_active ? get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX +
@@ -1029,6 +1285,10 @@ int rtl_ax_tx_status(struct rtl_ax_tx *tx, char *out, size_t capacity)
 		tx->running, tx->submitted, tx->completed, bitmap_weight(tx->pending, RTL_AX_TX_ENTRIES),
 		tx->last_sequence, tx->last_report, tx->polluted, tx->unmatched, tx->full, tx->stopped,
 		tx->io->read32(tx->io->ctx, 0xc398), tx->io->read32(tx->io->ctx, 0x1010), tx->io->read32(tx->io->ctx, 0x8830));
+	length += scnprintf(out + length, capacity - length,
+		"WMM_request_quota=%u ARM_dropped=%llu NI_dropped=%u\n",
+		tx->wmm_quota, tx->wmm_dropped,
+		get_unaligned_le32(tx->pe.memory + RTL_AX_TX_WMM_QUOTA + 4));
 	report_config = tx->io->read32(tx->io->ctx, 0x9414);
 	length += scnprintf(out + length, capacity - length,
 		"RPQ_release_config=%08x aggregate_reports=%u timeout_code=%u\n",

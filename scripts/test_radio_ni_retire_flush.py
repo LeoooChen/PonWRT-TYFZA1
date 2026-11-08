@@ -28,6 +28,7 @@ common = r'''
 #include <string.h>
 typedef uint8_t u8;
 typedef uint32_t u32;
+#include "tx-ownership.h"
 #define BIT(n) (1U << (n))
 #define PE_PROBE_MAILBOX 0x2000
 #define RING_BYTES 32768
@@ -93,8 +94,8 @@ static void tick(void) {
  put_unaligned_le32(total,current->pe.memory+0x2078);
  if(drop_mask[1]==15 && !withhold_fence) put_unaligned_le32(0,current->pe.memory+0x22ac);
  for(unsigned id=1;id<128;id++) {
-  put_unaligned_le32(pending[id]?0x06000000:0,current->pe.memory+0xc400+(id-1)*8);
-  put_unaligned_le32(id<<8,current->pe.memory+0xc404+(id-1)*8);
+  put_unaligned_le32(pending[id]?0x06000000:0,current->pe.memory+0x20000+(id-1)*8);
+  put_unaligned_le32(id<<8,current->pe.memory+0x20004+(id-1)*8);
  }
 }
 #define read_poll_timeout(op,val,cond,delay,timeout,sleep,args...) ({ \
@@ -140,7 +141,7 @@ int rtl_ax_mac_drop_peer(struct pci_dev *pdev,unsigned macid);
 test = r'''
 int main(void) {
  for(unsigned other=0;other<2;other++) for(unsigned failure=0;failure<4+other;failure++) {
-  u8 memory[0x20000]={0};
+  u8 memory[0x80000]={0};
   struct net_device dev={0};struct pci_dev pdev={0};
   struct rtl_ax_tx tx={.pe_active=true,.pe={memory},.pdev=&pdev};
   struct rtl_ax_ap radio={.tx=&tx};pdev.radio=&radio;current=&tx;
@@ -217,7 +218,7 @@ int main(void) {
  }
 
  for(unsigned other_rx=0;other_rx<2;other_rx++){
-  u8 memory[0x20000]={0};struct net_device dev={0};struct pci_dev pdev={0};
+  u8 memory[0x80000]={0};struct net_device dev={0};struct pci_dev pdev={0};
   struct rtl_ax_tx tx={.pe_active=true,.pe={memory},.pdev=&pdev};
   struct rtl_ax_ap radio={.tx=&tx};pdev.radio=&radio;current=&tx;
   memset(pending,0,sizeof(pending));memset(drop_mask,0,sizeof(drop_mask));memset(withdrawn,0,sizeof(withdrawn));
@@ -245,7 +246,7 @@ int main(void) {
 
  /* BA timeout -> station removal, including an RX-only companion. */
  for(unsigned other=0;other<3;other++) {
-  u8 memory[0x20000]={0};struct net_device dev={0};struct pci_dev pdev={0};
+  u8 memory[0x80000]={0};struct net_device dev={0};struct pci_dev pdev={0};
   struct rtl_ax_tx tx={.pe_active=true,.pe={memory},.pdev=&pdev};
   struct rtl_ax_ap radio={.tx=&tx};pdev.radio=&radio;current=&tx;
   memset(pending,0,sizeof(pending));memset(drop_mask,0,sizeof(drop_mask));memset(withdrawn,0,sizeof(withdrawn));
@@ -271,7 +272,7 @@ int main(void) {
  }
  /* Final release can fail after draining; retry without restarting withdrawal. */
  for(unsigned rx_only=0;rx_only<2;rx_only++) for(unsigned failures=1;failures<=3;failures++) {
-  u8 memory[0x20000]={0};struct net_device dev={0};struct pci_dev pdev={0};
+  u8 memory[0x80000]={0};struct net_device dev={0};struct pci_dev pdev={0};
   struct rtl_ax_tx tx={.pe_active=true,.pe={memory},.pdev=&pdev};
   struct rtl_ax_ap radio={.tx=&tx};pdev.radio=&radio;current=&tx;
   memset(pending,0,sizeof(pending));memset(drop_mask,0,sizeof(drop_mask));memset(withdrawn,0,sizeof(withdrawn));
@@ -310,5 +311,5 @@ with tempfile.TemporaryDirectory(prefix='ni-retire-flush-') as directory:
                       function(ni, 'rtl_ax_tx_ni_retire_ba') + function(ni, 'rtl_ax_tx_ni_peer') +
                       function(ni, 'rtl_ax_tx_ni_cleanup') + test)
     subprocess.run(['cc', '-std=gnu11', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function',
-                    '-fsanitize=address,undefined', str(source), '-o', str(binary)], check=True)
+                    '-fsanitize=address,undefined', '-I'+str(root/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap'), str(source), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True, timeout=10)

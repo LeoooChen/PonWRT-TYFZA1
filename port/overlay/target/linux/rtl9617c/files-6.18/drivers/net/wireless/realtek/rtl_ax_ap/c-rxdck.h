@@ -95,11 +95,11 @@ static inline int rtl_ax_c_rxdck_offsets(const struct rtl_ax_io *io,
 	unsigned int group, index, slot;
 	int ret;
 
-	/* Actual read_offset@30be50 reads first,first+1,second,second+1;
-	 * checks second,then rereads second+1 and checks that separately. */
+	/* Actual read_offset@30be50 reads first,first+1,second;
+	 * checks second,then reads second+1 and checks that separately. */
 	for (group = 0; group < 2; group++) {
 		slot = group * 4;
-		for (index = 0; index < 4; index++) {
+		for (index = 0; index < 3; index++) {
 			u8 gain = index < 2 ? first[group] + index : second[group] + index - 2;
 
 			ret = rtl_ax_c_rxdck_read_gain(io, path, gain, state->offsets[path][slot + index]);
@@ -121,8 +121,70 @@ static inline int rtl_ax_c_rxdck_offsets(const struct rtl_ax_io *io,
 	return 0;
 }
 
+/* Actual thermal reK check@30b9b8: stop at the first I/Q delta>10. */
+static inline int rtl_ax_c_rxdck_rek_check(const struct rtl_ax_io *io, unsigned int path)
+{
+	static const u8 gain[] = { 0, 1, 16, 17 };
+	u8 first[2], second[2];
+	int ret;
+
+	for (unsigned int i = 0; i < ARRAY_SIZE(gain); i++) {
+		ret = rtl_ax_c_rxdck_read_gain(io, path, gain[i], first);
+		if (ret) return ret;
+		ret = rtl_ax_c_rxdck_read_gain(io, path, gain[i] + 12, second);
+		if (ret) return ret;
+		if (abs((int)first[0] - second[0]) > 10 ||
+		    abs((int)first[1] - second[1]) > 10) return 1;
+	}
+	return 0;
+}
+
+static inline int rtl_ax_c_rxdck_shot(const struct rtl_ax_io *io,
+	unsigned int path, struct rtl_ax_rxdck *state)
+{
+	u32 value;
+	int ret;
+
+	ret = rtl_ax_phy_rf_write_masked(io, path, 0x93, 15, 0);
+	if (ret)
+		return ret;
+	ret = rtl_ax_c_rxdck_toggle(io, path, 0, state);
+	if (ret)
+		return ret;
+	if (state->rek_enabled) {
+		ret = rtl_ax_phy_rf_read(io, path, 0x92, &value);
+		if (ret)
+		return ret;
+		value = (value >> 5) & 7;
+		if (value > 1) {
+		ret = rtl_ax_phy_rf_write_masked(io, path, 0x8f, 0xe00, value);
+		if (ret)
+			return ret;
+		ret = rtl_ax_c_rxdck_toggle(io, path, 1, state);
+		if (ret)
+			return ret;
+		ret = rtl_ax_phy_rf_write_masked(io, path, 0x8f, 0xe00, 1);
+		if (ret)
+			return ret;
+		}
+	}
+	return 0;
+}
+
+enum rtl_ax_c_rxdck_mode {
+	RTL_AX_RXDCK_NORMAL, RTL_AX_RXDCK_CHANNEL, RTL_AX_RXDCK_THERMAL,
+};
+
+static inline bool rtl_ax_c_rxdck_track(const struct rtl_ax_rxdck *state,
+	unsigned int band, const u8 thermal[2])
+{
+	return state->ready && band &&
+		(abs((int)thermal[0] - state->thermal[0]) >= 12 ||
+		 abs((int)thermal[1] - state->thermal[1]) >= 12);
+}
+
 static inline int rtl_ax_c_rxdck_start(const struct rtl_ax_io *io,
-	struct rtl_ax_rxdck *state, bool tssi_running)
+	struct rtl_ax_rxdck *state, bool tssi_running, enum rtl_ax_c_rxdck_mode mode)
 {
 	u32 value, rf0 = 0;
 	unsigned int path, i;
@@ -131,10 +193,11 @@ static inline int rtl_ax_c_rxdck_start(const struct rtl_ax_io *io,
 
 	/* Original RX_DCK initializer@2f69ec enables the extra reK from
 	 * pathA RF95[3]. Normal MP=0,DBCC=0 path of rx_dck@30c310. */
-	ret = rtl_ax_phy_rf_read(io, 0, 0x95, &value);
-	if (ret)
-		return ret;
-	state->rek_enabled = !!(value & BIT(3));
+	if (mode != RTL_AX_RXDCK_THERMAL) {
+		ret = rtl_ax_phy_rf_read(io, 0, 0x95, &value);
+		if (ret) return ret;
+		state->rek_enabled = !!(value & BIT(3));
+	}
 	for (path = 0; path < 2; path++) {
 		ret = rtl_ax_phy_rf_read(io, path, 5, &value);
 		if (ret)
@@ -156,32 +219,31 @@ static inline int rtl_ax_c_rxdck_start(const struct rtl_ax_io *io,
 		ret = rtl_ax_phy_rf_write_masked(io, path, 0, 2, 0);
 		if (ret)
 			return ret;
-		ret = rtl_ax_phy_rf_write_masked(io, path, 0x93, 15, 0);
-		if (ret)
-			return ret;
-		ret = rtl_ax_c_rxdck_toggle(io, path, 0, state);
-		if (ret)
-			return ret;
-		if (state->rek_enabled) {
-			ret = rtl_ax_phy_rf_read(io, path, 0x92, &value);
-			if (ret)
-				return ret;
-			value = (value >> 5) & 7;
-			if (value > 1) {
-				ret = rtl_ax_phy_rf_write_masked(io, path, 0x8f, 0xe00, value);
-				if (ret)
-					return ret;
-				ret = rtl_ax_c_rxdck_toggle(io, path, 1, state);
-				if (ret)
-					return ret;
-				ret = rtl_ax_phy_rf_write_masked(io, path, 0x8f, 0xe00, 1);
-				if (ret)
-					return ret;
+		ret = rtl_ax_c_rxdck_shot(io, path, state);
+		if (ret) return ret;
+		if (mode == RTL_AX_RXDCK_THERMAL) {
+			state->retries[path] = 0;
+			ret = rtl_ax_c_rxdck_rek_check(io, path);
+			if (ret < 0) return ret;
+			while (ret && state->retries[path] < 3) {
+				ret = rtl_ax_c_rxdck_shot(io, path, state);
+				if (ret) return ret;
+				state->retries[path]++;
+				ret = rtl_ax_c_rxdck_rek_check(io, path);
+				if (ret < 0) return ret;
+			}
+			if (ret) {
+				ret = rtl_ax_c_rxdck_offsets(io, path, state);
+				if (ret) return ret;
 			}
 		}
-		ret = rtl_ax_c_rxdck_offsets(io, path, state);
-		if (ret)
-			return ret;
+		/* Actual rx_dck@30c44c skips offset correction during channel RFK,
+		 * including the repeated post-DPK RX_DCK in that same RFK. */
+		if (mode == RTL_AX_RXDCK_NORMAL) {
+			ret = rtl_ax_c_rxdck_offsets(io, path, state);
+			if (ret)
+				return ret;
+		}
 		for (i = 0; i < 3; i++) {
 			ret = rtl_ax_phy_rf_write_masked(io, path, 0x42, BIT(19), i == 1 ? 0 : 1);
 			if (ret)

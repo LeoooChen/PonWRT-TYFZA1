@@ -25,12 +25,28 @@ jobs:
           python3 scripts/test_lan_link_mode.py
           python3 scripts/test_fe_lan_lifecycle.py
           python3 scripts/test_itu_pppoe_datapath.py
+          python3 scripts/test_sta_client_lifecycle.py
+          python3 scripts/test_radio_mesh.py
+          python3 scripts/test_sta_beacon.py
+          python3 scripts/test_sta_scan_offload.py
+          python3 scripts/test_wifi_station_release.py
+          python3 scripts/test_wifi_notifier.py
+          python3 scripts/test_wifi_authorization.py
+          python3 scripts/test_fe_wifi_peer_route.py
+          python3 scripts/test_package_timeout.py
           python3 scripts/test_radio_ni_retire_flush.py
           python3 scripts/test_wifi_ni_retirement.py
           python3 scripts/test_radio_rx_ba_cleanup.py
+          python3 tools/test_wifi_rx_ba_sessions.py
           python3 scripts/test_wifi_offload_transaction.py
           python3 scripts/test_radio_key_cleanup.py
           python3 scripts/test_ni_release_inflight.py
+          python3 scripts/test_radio_basic_control.py
+          python3 scripts/test_radio_ba_trigger.py
+          python3 scripts/test_radio_rpq_batch.py
+          python3 scripts/test_radio_txbd_dma.py
+          python3 scripts/test_wifi_packet_steering.py
+          python3 scripts/test_wifi_tx_request.py
       - name: Verify PE completion records and publication
         run: |
           sudo apt-get update
@@ -42,3 +58,7 @@ jobs:
           artifacts/pe-test-env/bin/python scripts/test_pe_rpq_firmware.py artifacts/pe-check/pe-tx.bin
           artifacts/pe-test-env/bin/python scripts/test_pe_tx_publication.py artifacts/pe-check
           artifacts/pe-test-env/bin/python scripts/test_pe_instruction_memory.py artifacts/pe-check
+          artifacts/pe-test-env/bin/python scripts/test_pe_cpu_epp_gate.py artifacts/pe-check
+          artifacts/pe-test-env/bin/python scripts/test_pe_sta_rx.py artifacts/pe-check
+          artifacts/pe-test-env/bin/python scripts/test_pe_sta_tx.py artifacts/pe-check
+          artifacts/pe-test-env/bin/python scripts/test_pe_host_headers.py artifacts/pe-check/pe-tx.bin

@@ -111,7 +111,7 @@ sys.argv = saved_argv
 embedded = b''.join(struct.pack('<I', int(word, 16)) for word in re.findall(r'^0x([0-9a-fA-F]+),', (driver / 'pe-tx-code.h').read_text(), re.M))
 assert ns['binary'] == embedded
 B, MB, ST, VP, NI = (ns[n] for n in ('B', 'MB', 'ST', 'VP', 'NI'))
-peer, ap, dst = (bytes.fromhex(s) for s in ('02000000004e', '020000000042', '020000000065'))
+peer, ap, dst = (bytes.fromhex(s) for s in ('067afb78b287', '02e04c076805', '0050c2010200'))
 functions = ''.join(function(linux_rx, n) for n in ('ieee80211_release_reorder_frame', 'ieee80211_release_reorder_frames', 'ieee80211_rx_shortcut_snapshot'))
 functions += ''.join(function(source, n) for n in ('rtl_ax_rx_uplink_publish', 'rtl_ax_rx_uplink_seed'))
 rows = []

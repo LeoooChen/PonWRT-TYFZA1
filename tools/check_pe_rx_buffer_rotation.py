@@ -100,7 +100,7 @@ for end in (2, 64, 1 << 30, 0, 1):
     assert len(set(ids)) == 256 and set(ids).isdisjoint({0, 1})
     # A new encrypted frame in the replacement buffer must become an NI
     # descriptor for that address, rather than the old fixed slot address.
-    peer, ap, dst = bytes.fromhex('02000000004e'), bytes.fromhex('020000000042'), bytes.fromhex('020000000065')
+    peer, ap, dst = bytes.fromhex('067afb78b287'), bytes.fromhex('02e04c076805'), bytes.fromhex('0050c2010200')
     u.mem_write(mb + 64, ap)
     u.mem_write(base + 0xe410, peer)
     put(base + 0x11a08, 1)

@@ -1,7 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0-only
 set -u
-P=/path/to/user/PonWRT-TYFZA1
+P=/home/leo/PonWRT-TYFZA1
 cd "$P"
 export TZ=Asia/Shanghai
 export TYFZA1_PROXY=http://host.orb.internal:7897
@@ -9,7 +9,7 @@ status() {
     python3 - "$1" "${2:-0}" <<'STATUS'
 import sys,json,datetime,os
 from pathlib import Path
-p=Path('/path/to/user/PonWRT-TYFZA1/logs/background-status.json')
+p=Path('/home/leo/PonWRT-TYFZA1/logs/background-status.json')
 m={'state':sys.argv[1],'exit_code':int(sys.argv[2]),'updated_at':datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).isoformat(),'service':'ponwrt-tyfza1-build','log':'logs/background-build.log','openwrt_commit':'79bc56cb7483bc716da07c369530b792631904b4','kernel':'6.18.55'}
 p.with_suffix('.tmp').write_text(json.dumps(m,indent=2)+'\n'); p.with_suffix('.tmp').replace(p)
 STATUS

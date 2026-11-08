@@ -35,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix='rx-ba-reenable-',dir=ROOT/'artifacts') 
  tmp=Path(tmp);(tmp/'case.c').write_text(common+source[a:b]+wrapper)
  subprocess.run(['cc','-Wall','-Wextra','-Werror','-shared','-fPIC',str(tmp/'case.c'),'-o',str(tmp/'case.so')],check=True)
  lib=ctypes.CDLL(str(tmp/'case.so'));lib.native_enable.argtypes=[ctypes.c_void_p];lib.native_enable.restype=ctypes.c_uint
- m=Machine();peer=bytes.fromhex('02000000004e');ap=bytes.fromhex('020000000042');dst=bytes.fromhex('020000000065')
+ m=Machine();peer=bytes.fromhex('067afb78b287');ap=bytes.fromhex('02e04c076805');dst=bytes.fromhex('0050c2010200')
  m.u.mem_write(MB+64,ap);m.u.mem_write(B+0xe410,peer);m.put(B+0x11a08,1)
  for i,v in ((88,VP|0xa0000000),(89,NI),(93,1),(106,ST)):m.put(MB+i*4,v)
  # Old cache is ahead of the new BA head by three; it must be delivered to

@@ -69,7 +69,7 @@ static const struct flow_dissector_key keys[]={
  {FLOW_DISSECTOR_KEY_IPV4_ADDRS,offsetof(struct sink_key,ipv4)},
  {FLOW_DISSECTOR_KEY_PORTS,offsetof(struct sink_key,ports)},
 };
-static void receive(struct rtl9617c_ni_wifi_endpoint *ep,struct sk_buff *skb,bool forwarded)
+static void receive(struct rtl9617c_ni_wifi_endpoint *ep,struct napi_struct *napi,struct sk_buff *skb,bool forwarded)
 {
  if(!received)memcpy(first,skb->data,min_t(unsigned int,sizeof(first),skb->len));
  received++;received_bytes+=skb->len;
@@ -90,7 +90,7 @@ static void receive(struct rtl9617c_ni_wifi_endpoint *ep,struct sk_buff *skb,boo
  /* Default UDP sockets benefit from RPS before checksum work. With --gsro,
   * use the NI GRO context so the socket receives aggregated datagrams. */
  if(udp && !udp_gro)netif_receive_skb(skb);
- else napi_gro_receive(ni_napi,skb);
+ else napi_gro_receive(napi,skb);
 }
 static netdev_tx_t discard(struct sk_buff *skb,struct net_device *dev)
 {dev_kfree_skb_any(skb);return NETDEV_TX_OK;}

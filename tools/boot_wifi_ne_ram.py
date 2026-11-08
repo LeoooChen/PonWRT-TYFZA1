@@ -77,7 +77,7 @@ def command(line, response=b'TAURUS#', seconds=10):
 
 try:
     event('Verified FIT and current configurations; UART/TFTP RAM boot starting.')
-    # The host already has en5 address192.0.2.82 and the project TFTP daemon.
+    # The host already has en5 address192.168.1.170 and the project TFTP daemon.
     if args.at_uboot:
         os.write(fd, b'\x03')
         wait_for(b'TAURUS#', 10)
@@ -99,7 +99,7 @@ try:
     elif args.stock_console:
         # Use the existing backup collector's authenticated console account.
         import ast
-        collector = Path('/path/to/user/Documents/Codex项目/TYFZA1/串口记录&备份/scripts/device_link.py')
+        collector = Path('/Users/leo/Documents/Codex项目/TYFZA1/串口记录&备份/scripts/device_link.py')
         calls = [node for node in ast.walk(ast.parse(collector.read_text()))
                  if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'send']
         user = next(ast.literal_eval(node.args[0]) for node in calls
@@ -136,7 +136,7 @@ try:
         os.write(fd, b'\x03')
         wait_for(b'TAURUS#', 10)
     event('U-Boot stopped; loading the signed RAM FIT.')
-    command('setenv serverip 192.0.2.82')
+    command('setenv serverip 192.168.1.170')
     command('setenv ipaddr 192.168.1.2')
     command('tftpboot 0x05000000 ' + tftp_name, b'Bytes transferred =', 120)
     wait_for(b'TAURUS#', 5)

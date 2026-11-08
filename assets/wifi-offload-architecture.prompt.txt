@@ -1,0 +1,23 @@
+Generator: built-in image_gen
+
+Use case: infographic-diagram
+Input image 1 is an edit target. Rebuild its layout into a rigorously aligned BLACK-AND-WHITE engineering figure for a README. Preserve the factual architecture, but change the layout and styling as specified below. No overall title or subtitle.
+Strict appearance: pure white background and white block fills, black outlines, black text and black arrows only. No colors, gradients, shadows, textures, grey tinted panels, 3D effects, icons, or decorative elements. Square or barely rounded rectangular corners. Uniform stroke weights. Clean academic typography.
+Use a wide landscape grid with five columns and two precisely aligned data rows. ALL upper-row data arrows share EXACTLY the same horizontal centerline; ALL lower-row data arrows share EXACTLY a second horizontal centerline. Every connector segment is perfectly horizontal or perfectly vertical; no slanted lines, no diagonal arrowheads. Arrowheads have identical size and sit flush at block edges.
+Five columns, left to right:
+1. One tall shared block labeled "Wi-Fi clients", spanning both rows.
+2. One tall shared group labeled "PCIe Wi-Fi", spanning both rows, containing the two neat equal-width radio labels "RTL8852C · 5 GHz" and "RTL8192XB · 2.4 GHz". Both radios share PE0 and PE1.
+3. Two equal-width, equal-height blocks, aligned vertically. Upper block "PE0", smaller lines "RXQ · RXBD", "Reorder · PN/SN", "NI submission · RX recycle". Lower block "PE1", smaller lines "EPP · A-MSDU", "WD · TXBD", "RPQ · BID/EQ recycle".
+4. One tall shared block spanning both rows, labeled "NI · FE · QM", smaller line "NAT · VLAN · PPPoE".
+5. One tall shared block spanning both rows, labeled "PON / LAN".
+Upper solid arrows ALL point LEFT TO RIGHT, on one common horizontal line: Wi-Fi clients → PCIe Wi-Fi → PE0 → NI · FE · QM → PON / LAN. A small plain label "Uplink" sits over this row's whitespace.
+Lower solid arrows ALL point RIGHT TO LEFT, on one common horizontal line: PON / LAN → NI · FE · QM → PE1 → PCIe Wi-Fi → Wi-Fi clients. A small plain label "Downlink" sits over this row's whitespace.
+A second, thinner horizontal return arrow below the lower data centerline goes from PCIe Wi-Fi RIGHT into PE1, labeled only "RPQ". Keep this feedback line parallel to the data lines and separate from all text.
+Above the grid, put one restrained control block labeled "ARM Cortex-A55 ×4", with smaller lines "OpenWrt / mac80211" and "Peers · keys · flow rules · exceptions".
+Use thin dashed BLACK orthogonal connectors from ARM separately to PE0, PE1, and NI · FE · QM. Route the PE1 control connector around the LEFT side of the PE column; it must NOT pass through PE0 or create a PE0-to-PE1 connection. No data or control arrow may directly connect PE0 to PE1.
+The four shared tall blocks have identical top and bottom edges. PE0 and PE1 are centered exactly on their corresponding data-arrow rows. Keep modules generously spaced, texts centered, and arrow entry/exit ports aligned to the common row centerlines. Retain ample margins, no title, no caption, no watermark.
+
+Targeted correction:
+Precise correction to the supplied black-and-white architecture diagram. Keep the entire layout, alignment, fonts, text, sizes, linework, and black-and-white styling unchanged.
+Fix ONLY the solid horizontal connector on the lower "Downlink" row BETWEEN the PE1 block and PCIe Wi-Fi group. It currently has arrowheads at both ends. Remove the RIGHT-POINTING arrowhead where this line touches the LEFT edge of PE1. This downlink connector must be a SINGLE left-pointing arrow: PE1 → PCIe Wi-Fi, with its only arrowhead at the RIGHT edge of the PCIe Wi-Fi group. Keep the connector perfectly horizontal on the exact existing lower-row centerline.
+The separate thinner RPQ feedback arrow immediately below it must continue pointing RIGHT into PE1; do not change it. Do not add or remove any other arrows, labels, blocks, or dashed control links. No title or colors.

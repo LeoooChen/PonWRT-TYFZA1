@@ -2,6 +2,7 @@
 """Exercise actual STA/BA callbacks with delayed RPQ and failed firmware ACKs."""
 from pathlib import Path
 import subprocess
+import re
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
@@ -10,7 +11,7 @@ source = (driver / 'monitor.h').read_text()
 
 def function(name):
     prefix = 'static void ' if name == 'rtl_ax_cleanup_work' else 'static bool ' if name == 'rtl_ax_security_cleanup' else 'static int '
-    start = source.index(prefix + name + '(')
+    start = re.search(r'^' + prefix + name + r'\([^;]*?\)\s*\{', source, re.M).start()
     end = source.index('{', start) + 1
     depth = 1
     while depth:
@@ -35,6 +36,18 @@ typedef uint64_t u64;
 #define RTL_AX_BIT(n) BIT(n)
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 #define IEEE80211_NUM_TIDS 16
+#define ETH_ALEN 6
+#define IEEE80211_HE_PHY_CAP6_PPE_THRESHOLD_PRESENT 128
+#define IEEE80211_HE_PHY_CAP9_NOMINAL_PKT_PADDING_POS 6
+#define IEEE80211_HE_MAC_CAP1_TF_MAC_PAD_DUR_MASK 0x0c
+struct ieee80211_sta_he_cap {bool has_he;struct {u8 mac_cap_info[6],phy_cap_info[11];} he_cap_elem;u8 ppe_thres[25];};
+#define NL80211_IFTYPE_STATION 2
+#define NL80211_IFTYPE_AP 3
+#define NL80211_IFTYPE_MONITOR 6
+#define RTL_AX_CLIENT_MACID 1
+#define NL80211_IFTYPE_MESH_POINT 7
+#define clear_bit __clear_bit
+struct rtl_ax_io {void *ctx;u32(*read32)(void*,unsigned);void(*write32)(void*,unsigned,u32);};
 #define RTL_AX_8852C 0x52
 #define RTL_AX_H2C_CMD 0
 #define RTL_AX_H2C_DATA 1
@@ -55,21 +68,21 @@ common += r'''
 struct wiphy {int unused;};
 struct wiphy_work {int unused;};
 struct wiphy_delayed_work {struct wiphy_work work;};
-struct ieee80211_vif {u8 addr[6];};
+struct ieee80211_vif {u8 addr[6];int type;bool use_4addr;struct {unsigned aid;} cfg;};
 struct ieee80211_sta {struct rtl_ax_station drv_priv[1];u8 addr[6];unsigned int aid;};
 struct rtl_ax_tx {bool pending[128][17];};
-struct rtl_ax_ap {
- struct rtl_ax_tx *tx;struct ieee80211_vif *ap_vif;unsigned int chip;bool monitor_started;
- unsigned long station_ids[2],security_ids[2],security_deleting[2];
- struct {u8 self[6],peer[6];u16 aid;bool pending;} retired_stations[128];
+struct rtl_ax_ap {unsigned traffic_peer;
+ struct rtl_ax_tx *tx;struct ieee80211_vif *ap_vif,*sta_vif;int rx;bool sta_role,sta_associated,sta_4addr,peer_authorized[128],ra_registered[128],offload_retry;unsigned long ra_pending[2],security_aborting[2];u8 security_unlink[128];void *security_keys[128];struct wiphy_work offload_work;unsigned keys_aborted;unsigned int chip;bool monitor_started;
+ unsigned long station_ids[2],security_ids[2],security_deleting[2],preload_peers[2];
+ struct {u8 self[6],peer[6];u16 aid;bool pending,client,mesh;} retired_stations[128];
  struct {u8 address[6],aggregation[16];u16 stopping,flushing;} tx_ba[128];
- struct {u8 macid,tid;bool valid,deleting;} rx_ba[8];
+ struct {u8 macid,tid,cam;bool valid,deleting;} rx_ba[32];
  struct rtl_ax_security_role security_roles[128];
  struct wiphy_delayed_work cleanup_work;
  unsigned int station_removed,keys_removed,rx_ba_started,rx_ba_stopped;int rx_ba_result;
  struct {int unused;} io;
 };
-struct ieee80211_hw {struct rtl_ax_ap *radio;struct wiphy *wiphy;};
+struct ieee80211_hw {struct rtl_ax_ap *radio;struct wiphy *wiphy;unsigned max_tx_aggregation_subframes;};
 enum {IEEE80211_AMPDU_RX_START,IEEE80211_AMPDU_RX_STOP,IEEE80211_AMPDU_TX_START,
  IEEE80211_AMPDU_TX_STOP_CONT,IEEE80211_AMPDU_TX_STOP_FLUSH,
  IEEE80211_AMPDU_TX_STOP_FLUSH_CONT,IEEE80211_AMPDU_TX_OPERATIONAL};
@@ -78,6 +91,23 @@ struct ieee80211_ampdu_params {struct ieee80211_sta *sta;unsigned int tid,action
 static unsigned int queued,callbacks,drop_commands,role_commands,cam_commands,security_commands;
 static unsigned int fail_class,fail_function,fail_count;
 static bool rpq_complete;
+static void rtl_ax_offload_ready(struct rtl_ax_ap *r){(void)r;}
+static int rtl_ax_tx_rx_retire(struct rtl_ax_tx *t,unsigned id){(void)t;(void)id;return 0;}
+static int rtl_ax_tx_ni_retire_peer(struct rtl_ax_tx *t,unsigned id){(void)t;(void)id;return 0;}
+static int rtl_ax_tx_ni_retire_ba(struct rtl_ax_tx *t,unsigned id){(void)t;(void)id;return 0;}
+static bool rtl_ax_tx_key_pending(struct rtl_ax_tx *t,unsigned id){(void)t;(void)id;return 0;}
+static int rtl_ax_tx_ni_cleanup(struct rtl_ax_tx *t){(void)t;return 0;}
+static void rtl_ax_rx_ba_window(int rx,unsigned id,unsigned tid,unsigned window){(void)rx;(void)id;(void)tid;(void)window;}
+static void rtl_ax_rx_key(int rx,unsigned id,void *key){(void)rx;(void)id;(void)key;}
+static void rtl_ax_tx_peer_preload(struct rtl_ax_tx *t,unsigned id,bool enable){(void)t;(void)id;(void)enable;}
+static void rtl_ax_tx_peer_qos(struct rtl_ax_tx *t,unsigned id,bool qos,unsigned timeout){(void)t;(void)id;(void)qos;(void)timeout;}
+static void rtl_ax_tx_peer_client(struct rtl_ax_tx *t,unsigned id,bool client,const u8 *bssid){(void)t;(void)id;(void)client;(void)bssid;}
+static void rtl_ax_tx_peer_authorized(struct rtl_ax_tx *t,unsigned id,bool authorized){(void)t;(void)id;(void)authorized;}
+static void rtl_ax_tx_peer_ba(struct rtl_ax_tx *t,unsigned id,unsigned tid,unsigned size){(void)t;(void)id;(void)tid;(void)size;}
+static int rtl_ax_tx_peer_ssn(struct rtl_ax_tx *t,unsigned id,unsigned tid){(void)t;(void)id;(void)tid;return 0;}
+static void rtl_ax_port0_field(void *io,unsigned reg,unsigned mask,unsigned value){(void)io;(void)reg;(void)mask;(void)value;}
+static void wiphy_work_queue(struct wiphy *w,struct wiphy_work *work){(void)w;(void)work;}
+
 static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *h){return h->radio;}
 static void ether_addr_copy(u8 *a,const u8 *b){memcpy(a,b,6);}
 static void __clear_bit(unsigned int bit,unsigned long *ids){ids[bit/64]&=~(1UL<<(bit%64));}
@@ -89,12 +119,9 @@ static unsigned int rtl_ax_tx_dma_channel(unsigned int tid,unsigned int band){
  static const u8 channel[]={0,1,1,0,2,2,3,3};assert(!band && tid<8);return channel[tid];
 }
 static bool rtl_ax_tx_station_pending(struct rtl_ax_tx *tx,unsigned int id,unsigned int tid){
+ if(rpq_complete)for(unsigned int i=0;i<17;i++)if(tid==16 || i==tid)tx->pending[id][i]=false;
  for(unsigned int i=0;i<17;i++)if(tx->pending[id][i] && (tid==16 || i==tid))return true;
  return false;
-}
-static int rtl_ax_tx_wait_station(struct rtl_ax_tx *tx,unsigned int id,unsigned int tid){
- if(rpq_complete)for(unsigned int i=0;i<17;i++)if(tid==16 || i==tid)tx->pending[id][i]=false;
- return rtl_ax_tx_station_pending(tx,id,tid)?-ETIMEDOUT:0;
 }
 static void ieee80211_stop_tx_ba_cb_irqsafe(struct ieee80211_vif *v,u8 *addr,unsigned int tid){
  assert(v && addr[0]==2 && tid<16);callbacks++;
@@ -116,11 +143,18 @@ static int rtl_ax_command(struct rtl_ax_ap *r,unsigned int queue,unsigned int ca
  return 0;
 }
 '''
+common += r'''
+static int prepared;
+static int rtl_ax_client_prepare(struct rtl_ax_ap *r,struct ieee80211_vif *v){(void)v;prepared++;r->sta_role=true;return 0;}
+static void rtl_ax_client_release(struct rtl_ax_ap *r){r->sta_role=false;}
+static struct ieee80211_vif *ieee80211_vif_to_wdev(struct ieee80211_vif *v){return v;}
+static void rtl_ax_tx_ap_address(struct rtl_ax_tx *tx,const u8 *addr){(void)tx;(void)addr;}
+'''
 test = r'''
 int main(void){
  struct wiphy w={};struct ieee80211_vif vif={.addr={2,1,2,3,4,5}};
  struct rtl_ax_tx tx={};struct rtl_ax_ap r={.tx=&tx,.ap_vif=&vif,.chip=0x52,.monitor_started=true};
- struct ieee80211_hw hw={&r,&w};
+ struct ieee80211_hw hw={&r,&w,128};
  struct ieee80211_sta *sta=calloc(1,sizeof(*sta));assert(sta);
  sta->drv_priv[0].macid=7;sta->addr[0]=2;sta->addr[5]=77;sta->aid=27;set_bit(7,r.station_ids);
  memcpy(r.tx_ba[7].address,sta->addr,6);
@@ -157,12 +191,35 @@ int main(void){
  assert(!r.rx_ba[0].valid && !r.security_roles[7].valid && !test_bit(42,r.security_ids));
  rtl_ax_cleanup_work(&w,&r.cleanup_work.work);
  assert(!r.retired_stations[7].pending && !test_bit(7,r.station_ids) && r.station_removed==1);
+ struct ieee80211_sta client={.drv_priv={{1}},.addr={2,0,0,0,0,8}};
+ vif.type=NL80211_IFTYPE_STATION;vif.cfg.aid=42;r.sta_vif=&vif;r.ap_vif=NULL;r.sta_role=r.sta_associated=true;
+ set_bit(1,r.station_ids);tx.pending[1][0]=true;rpq_complete=false;
+ assert(!rtl_ax_station_remove(&hw,&vif,&client)&&r.retired_stations[1].pending&&r.sta_role);
+ rpq_complete=true;fail_class=6;fail_function=0;fail_count=1;
+ rtl_ax_cleanup_work(&w,&r.cleanup_work.work);assert(r.sta_role&&test_bit(1,r.station_ids));
+ rtl_ax_cleanup_work(&w,&r.cleanup_work.work);assert(!r.sta_role&&!r.sta_associated&&!test_bit(1,r.station_ids));
+ /* mac80211 .stop canceled cleanup after a failed STA open. Every new
+  * open must finish retirement before either creating STA or selecting AP. */
+ for(unsigned type=2;type<=7;type++){
+  if(type!=2&&type!=3&&type!=7)continue;
+  r.ap_vif=r.sta_vif=NULL;r.sta_role=true;r.retired_stations[1].pending=true;
+  r.retired_stations[1].client=true;set_bit(1,r.station_ids);vif.type=type;
+  fail_class=6;fail_function=0;fail_count=1;prepared=0;
+  assert(rtl_ax_monitor_add_interface(&hw,&vif)==-ETIMEDOUT);
+  assert(r.sta_role&&r.retired_stations[1].pending&&!r.ap_vif&&!r.sta_vif&&!prepared);
+  /* The failure remains explicit; once firmware responds the same open recovers. */
+  assert(!rtl_ax_monitor_add_interface(&hw,&vif));
+  assert(!r.retired_stations[1].pending&&!test_bit(1,r.station_ids));
+  assert(type==2?(r.sta_vif==&vif&&prepared==1):(r.ap_vif==&vif&&!prepared&&!r.sta_role));
+  unsigned old=role_commands;
+  assert(rtl_ax_monitor_add_interface(&hw,&vif)==-EBUSY&&role_commands==old);
+ }
  assert(r.retired_stations[7].peer[5]==77 && r.retired_stations[7].aid==27);
  puts("STA/BA lifetime: delayed RPQ gates completion and MACID reuse; firmware failures retry after STA free; 100 RX BA restarts reuse one slot");
 }
 '''
 names = ('rtl_ax_drop_station', 'rtl_ax_rx_ba_remove', 'rtl_ax_station_release',
-         'rtl_ax_tx_ba_finish', 'rtl_ax_security_cleanup', 'rtl_ax_cleanup_work', 'rtl_ax_station_remove', 'rtl_ax_ampdu_action')
+         'rtl_ax_monitor_add_interface', 'rtl_ax_tx_ba_finish', 'rtl_ax_security_cleanup', 'rtl_ax_cleanup_work', 'rtl_ax_station_remove', 'rtl_ax_ampdu_action')
 with tempfile.TemporaryDirectory(prefix='wifi-sta-release-', dir=root / 'artifacts') as directory:
     p = Path(directory)
     (p / 'test.c').write_text(common + ''.join(function(n) for n in names) + test)

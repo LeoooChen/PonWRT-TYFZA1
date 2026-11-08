@@ -51,6 +51,7 @@ typedef uint8_t u8;typedef int8_t s8;typedef uint16_t u16;typedef uint32_t u32;t
 #define rtl_ax_dfs_start_locked(...) 0
 #define rtl_ax_rx_dfs_epoch(...) ((void)0)
 #define rtl_ax_power_apply(...) 0
+#define rtl_ax_xb_op5k_channel(...) ((void)0)
 #define rtl_ax_xb_rxdck_start(...) 0
 #define rtl_ax_c_rxdck_start(...) 0
 #define rtl_ax_gapk_channel(...) 0

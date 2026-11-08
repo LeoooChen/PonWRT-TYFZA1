@@ -1,0 +1,22 @@
+--- a/applications/luci-app-package-manager/htdocs/luci-static/resources/view/package-manager.js
++++ b/applications/luci-app-package-manager/htdocs/luci-static/resources/view/package-manager.js
+@@ -1139,8 +1139,10 @@
+ 					}, this, res)
+ 				}, _('Dismiss'))));
+ 		}).catch(function(err) {
++			ui.addNotification(null, E('p', _('The package operation result could not be read. It may still be running. Refresh the package lists and check the system log before retrying.')));
+ 			ui.addNotification(null, E('p', _('Unable to execute <em>%s %s</em> command: %s').format(L.hasSystemFeature('apk') ? 'apk' : 'opkg', cmd, err)));
+ 			ui.hideModal();
++			rejectFn(err);
+ 		});
+ 	});
+ }
+--- a/applications/luci-app-package-manager/po/zh_Hans/package-manager.po
++++ b/applications/luci-app-package-manager/po/zh_Hans/package-manager.po
+@@ -413,3 +413,6 @@
+ #: applications/luci-app-package-manager/htdocs/luci-static/resources/view/package-manager.js:1034
+ msgid "~%1024mB installed"
+ msgstr "~%1024mB 已安装"
++
++msgid "The package operation result could not be read. It may still be running. Refresh the package lists and check the system log before retrying."
++msgstr "无法读取软件包操作结果，操作可能仍在进行。再次尝试前，请刷新软件包列表并检查系统日志。"

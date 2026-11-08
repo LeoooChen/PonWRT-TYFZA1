@@ -1,8 +1,6 @@
-diff --git a/modules/luci-base/htdocs/luci-static/resources/network.js b/modules/luci-base/htdocs/luci-static/resources/network.js
-index b5e4c2b..ba5bee2 100644
 --- a/modules/luci-base/htdocs/luci-static/resources/network.js
 +++ b/modules/luci-base/htdocs/luci-static/resources/network.js
-@@ -79,9 +79,19 @@ const callIwinfoAssoclist = rpc.declare({
+@@ -79,9 +79,19 @@
  const callIwinfoScan = rpc.declare({
  	object: 'iwinfo',
  	method: 'scan',
@@ -23,7 +21,7 @@ index b5e4c2b..ba5bee2 100644
  });
  
  const callNetworkInterfaceDump = rpc.declare({
-@@ -3565,8 +3575,17 @@ WifiDevice = baseclass.extend(/** @lends LuCI.network.WifiDevice.prototype */ {
+@@ -3565,8 +3575,17 @@
  	 * Returns a promise resolving to an array of scan result objects
  	 * describing the networks found in the vicinity.
  	 */
@@ -43,11 +41,9 @@ index b5e4c2b..ba5bee2 100644
  	},
  
  	/**
-diff --git a/modules/luci-base/po/zh_Hans/base.po b/modules/luci-base/po/zh_Hans/base.po
-index 54ca930..9728129 100644
 --- a/modules/luci-base/po/zh_Hans/base.po
 +++ b/modules/luci-base/po/zh_Hans/base.po
-@@ -16560,3 +16560,15 @@ msgstr "… 及另外 %d 个。"
+@@ -16560,3 +16560,18 @@
  
  #~ msgid "Set Static"
  #~ msgstr "设为静态"
@@ -63,11 +59,84 @@ index 54ca930..9728129 100644
 +
 +msgid "Pause hotspot and scan"
 +msgstr "暂停热点并扫描"
-diff --git a/modules/luci-mod-network/htdocs/luci-static/resources/view/network/wireless.js b/modules/luci-mod-network/htdocs/luci-static/resources/view/network/wireless.js
-index 593a800..50bfcfd 100644
++
++msgid "Each radio supports one AP, client or mesh interface. Use the other radio for the downstream hotspot. WDS is not supported."
++msgstr "每个射频支持一个 AP、客户端或 Mesh 接口。中继热点请使用另一个射频。不支持 WDS。"
+--- a/modules/luci-base/root/usr/share/rpcd/ucode/luci
++++ b/modules/luci-base/root/usr/share/rpcd/ucode/luci
+@@ -284,6 +284,16 @@
+ 				mptcp:      access('/proc/sys/net/mptcp/enabled'),
+ 			};
+ 
++			// This native driver implements one AP, STA or mesh interface per radio, plus monitor.
++			result.wifi_single_role = {};
++			for (let phy in glob('/sys/class/ieee80211/*')) {
++				if (basename(readlink(phy + '/device/driver') || '') == 'rtl_ax_ap') {
++					let device = realpath(phy + '/device');
++					if (device && index(device, '/sys/devices/') == 0)
++						result.wifi_single_role[replace(substr(device, 13), /^platform\//, '')] = true;
++				}
++			}
++
+ 			const wifi_features = [ 
+ 				'11ac',
+ 				'11ax',
 --- a/modules/luci-mod-network/htdocs/luci-static/resources/view/network/wireless.js
 +++ b/modules/luci-mod-network/htdocs/luci-static/resources/view/network/wireless.js
-@@ -2272,8 +2272,8 @@ return view.extend({
+@@ -13,6 +13,10 @@
+ 'require uqr';
+ 
+ const isReadonlyView = !L.hasViewPermission();
++
++function isSingleRoleRadio(name) {
++	return L.hasSystemFeature('wifi_single_role', uci.get('wireless', name, 'path')) === true;
++}
+ 
+ function count_changes(section_id) {
+ 	const changes = ui.changes.changes?.wireless;
+@@ -994,6 +998,7 @@
+ 		s.addModalOptions = function(s) {
+ 			return network.getWifiNetwork(s.section).then(function(radioNet) {
+ 				const hwtype = uci.get('wireless', radioNet.getWifiDeviceName(), 'type');
++				const singleRole = isSingleRoleRadio(radioNet.getWifiDeviceName());
+ 				const have_mesh = L.hasSystemFeature('hostapd', 'mesh') || L.hasSystemFeature('wpasupplicant', 'mesh');
+ 				let o, ss;
+ 
+@@ -1079,8 +1084,11 @@
+ 				o = ss.taboption('general', form.ListValue, 'mode', _('Mode') , !have_mesh ? '<a id="installmesh" href="%s" target="_blank" rel="noreferrer">%s</a>'
+ 						.format(L.url('admin/system/package-manager') + '?query=wpad-mesh', _('802.11s? Install mesh wpad') ) : '');
+ 				o.value('ap', _('Access Point'));
+-				o.value('sta', _('Client'));
+-				o.value('adhoc', _('Ad-Hoc'));
++				o.value('sta', _('Client'));
++				if (singleRole)
++					o.description = _('Each radio supports one AP, client or mesh interface. Use the other radio for the downstream hotspot. WDS is not supported.');
++				else
++					o.value('adhoc', _('Ad-Hoc'));
+ 
+ 				o = ss.taboption('general', form.Value, 'mesh_id', _('Mesh Id'));
+ 				o.depends('mode', 'mesh');
+@@ -1165,8 +1173,8 @@
+ 					const mode = ss.children.find(obj => obj.option === 'mode');
+ 					const bssid = ss.children.find(obj => obj.option === 'bssid');
+ 
+ 					if (have_mesh) mode.value('mesh', '802.11s');
+-					mode.value('ahdemo', _('Pseudo Ad-Hoc (ahdemo)'));
++					if (!singleRole) mode.value('ahdemo', _('Pseudo Ad-Hoc (ahdemo)'));
+ 					mode.value('monitor', _('Monitor'));
+ 
+ 					bssid.depends('mode', 'adhoc');
+@@ -1196,7 +1204,7 @@
+ 					};
+ 
+-					mode.value('ap-wds', '%s (%s)'.format(_('Access Point'), _('WDS')));
++					if (!singleRole) mode.value('ap-wds', '%s (%s)'.format(_('Access Point'), _('WDS')));
+-					mode.value('sta-wds', '%s (%s)'.format(_('Client'), _('WDS')));
++					if (!singleRole) mode.value('sta-wds', '%s (%s)'.format(_('Client'), _('WDS')));
+ 
+ 					mode.write = function(section_id, value) {
+ 						switch (value) {
+@@ -2272,8 +2280,8 @@
  			poll.start();
  		};
  
@@ -78,7 +147,18 @@ index 593a800..50bfcfd 100644
  				const rows = [];
  
  				for (let r of results)
-@@ -2329,7 +2329,29 @@ return view.extend({
+@@ -2284,7 +2292,9 @@
+ 						results.push(scanCache[k]);
+ 
+ 				results.sort(function(a, b) {
+-					const diff = (b.quality - a.quality) || (a.channel - b.channel);
++					const signal = r => (typeof r.signal == 'number' && r.signal > -256 && r.signal < 0)
++						? r.signal : -Infinity;
++					const diff = (signal(b) - signal(a)) || (a.channel - b.channel);
+ 
+ 					if (diff)
+ 						return diff;
+@@ -2329,7 +2339,29 @@
  				stop.disabled = false;
  				stop.style.display = '';
  				stop.classList.remove('spinning');
@@ -109,8 +189,16 @@ index 593a800..50bfcfd 100644
  		};
  
  		s.handleScanStartStop = function(ev) {
-diff --git a/modules/luci-mod-network/root/usr/share/rpcd/acl.d/luci-mod-network.json b/modules/luci-mod-network/root/usr/share/rpcd/acl.d/luci-mod-network.json
-index 3bcec4a..95f4284 100644
+@@ -2520,5 +2552,9 @@
+ 
+ 			replace = s2.option(form.Flag, 'replace', _('Replace wireless configuration'), _('Check this option to delete the existing networks from this radio.'));
++			if (isSingleRoleRadio(radioDev.getName())) {
++				replace.default = '1';
++				replace.readonly = true;
++			}
+ 
+ 			name = s2.option(form.Value, 'name', _('Name of the new network'),
+ 				_('Name for OpenWrt network configuration. (No relation to wireless network name/SSID)') + '<br />' +
 --- a/modules/luci-mod-network/root/usr/share/rpcd/acl.d/luci-mod-network.json
 +++ b/modules/luci-mod-network/root/usr/share/rpcd/acl.d/luci-mod-network.json
 @@ -29,7 +29,7 @@
@@ -122,11 +210,9 @@ index 3bcec4a..95f4284 100644
  			},
  			"uci": [ "dhcp", "firewall", "luci", "network", "wireless" ]
  		}
-diff --git a/modules/luci-mod-status/htdocs/luci-static/resources/view/status/channel_analysis.js b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/channel_analysis.js
-index 30dc22f..f7d311c 100644
 --- a/modules/luci-mod-status/htdocs/luci-static/resources/view/status/channel_analysis.js
 +++ b/modules/luci-mod-status/htdocs/luci-static/resources/view/status/channel_analysis.js
-@@ -193,7 +193,7 @@ return view.extend({
+@@ -193,7 +193,7 @@
  		}, this));
  	},
  
@@ -135,7 +221,7 @@ index 30dc22f..f7d311c 100644
  		if (!this.active_tab)
  			return;
  
-@@ -201,7 +201,7 @@ return view.extend({
+@@ -201,7 +201,7 @@
  		let q;
  
  		return Promise.all([
@@ -144,7 +230,7 @@ index 30dc22f..f7d311c 100644
  			this.callInfo(radio.dev.getName())
  		]).then(L.bind(function([results, local_wifi]) {
  			const table = radio.table;
-@@ -389,7 +389,23 @@ return view.extend({
+@@ -389,7 +389,23 @@
  				radio.loadedOnce = true;
  				poll.stop();
  			}
@@ -169,8 +255,6 @@ index 30dc22f..f7d311c 100644
  	},
  
  	radios: {},
-diff --git a/modules/luci-mod-status/root/usr/share/rpcd/acl.d/luci-mod-status.json b/modules/luci-mod-status/root/usr/share/rpcd/acl.d/luci-mod-status.json
-index b1d2b8f..bd5bf22 100644
 --- a/modules/luci-mod-status/root/usr/share/rpcd/acl.d/luci-mod-status.json
 +++ b/modules/luci-mod-status/root/usr/share/rpcd/acl.d/luci-mod-status.json
 @@ -81,6 +81,9 @@

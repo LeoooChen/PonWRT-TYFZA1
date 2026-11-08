@@ -87,8 +87,8 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) rx_frame(
 	if (!(crypto & BIT(2)) || crypto & (BIT(1) | BIT(9) | BIT(10))) return 0;
 	u8 *data = rx_prefix(prefix, buffer + offset, 10);
 	u32 fc = data[0] | (u32)data[1] << 8;
-	/* Protected ToDS QoS DATA; fragments use the full RX path. */
-	if ((fc & 0x47ff) != 0x4188) return 0;
+	/* Check the DS direction against the admitted peer after MACID lookup. */
+	if ((fc & 0x44ff) != 0x4088) return 0;
 	if (data[22] & 15) return 0;
 	u8 *memory = uncached(mailbox[187]);
 	u8 *states = uncached(mailbox[106]);
@@ -104,6 +104,8 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) rx_frame(
 	if (!*(volatile u32 *)(memory + 0x11a00 + macid * 4)) return 0;
 	u32 config = *(u32 *)(states + RX_PEER_CONFIG + macid * 4);
 	if (!(config & BIT(31))) return 0;
+	u32 client = !!(*(u32 *)(memory + 0xd000 + macid * 32 + 16) & BIT(23));
+	if ((fc & 0x0300) != (client ? 0x0200 : 0x0100)) return 0;
 	u8 *peer = memory + 0xe400 + macid * 8;
 	u8 *ap = memory + MAILBOX_OFFSET + 64;
 	if (!mac_equal(data + 4, ap) || !mac_equal(data + 10, peer)) return 0;
@@ -113,7 +115,7 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) rx_frame(
 	u32 sleeping = !!(fc & BIT(12));
 	u32 old_sleeping = !!*(u32 *)(memory + 0xe800 + macid * 16);
 	u32 trigger_tids = (config >> 16) & 255;
-	if (sleeping != old_sleeping || (sleeping && (trigger_tids & BIT(data[24] & 15)))) {
+	if (!client && (sleeping != old_sleeping || (sleeping && (trigger_tids & BIT(data[24] & 15))))) {
 		mailbox[121]++;
 		return 0;
 	}
@@ -144,6 +146,7 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	u32 header = rx_frame(mailbox, buffer, &wire, &length, &macid, prefix);
 	if (!header) { mailbox[107]++; return 0; }
 	u8 *frame = (u8 *)prefix + ((u32)wire & 3);
+	u32 client = !!(frame[1] & 2);
 	u32 tid = frame[24] & 15, amsdu = frame[24] & 0x80;
 	u32 sequence = (frame[22] | (u32)frame[23] << 8) >> 4;
 	u8 *states = uncached(mailbox[106]);
@@ -187,10 +190,11 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	u32 body = length - header - 20, offset = 0, frames = 1;
 	if (!amsdu) {
 		/* LLC + IPv4 + UDP is 36 bytes, producing a 42-byte NI frame. */
-		if (body < 36 || body + 6 > 2048 || (frame[16] & 1) ||
+		const u8 *destination = frame + (client ? 4 : 16);
+		if (body < 36 || body + 6 > 2048 || (destination[0] & 1) ||
 		    !rx_protocol(rx_prefix(sub_prefix, data, 5))) return 0;
-		header_copy(plan[0].addresses, frame + 16, 6);
-		header_copy(plan[0].addresses + 6, frame + 10, 6);
+		header_copy(plan[0].addresses, destination, 6);
+		header_copy(plan[0].addresses + 6, frame + (client ? 16 : 10), 6);
 		plan[0].range = (u32)(data - 6 - buffer) | (body + 6) << 16;
 	} else {
 		frames = 0;
@@ -203,7 +207,8 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 			u8 *sub = rx_prefix(sub_prefix, data + offset, 9);
 			u32 bytes = (u32)sub[12] << 8 | sub[13];
 			if (bytes < 36 || bytes + 6 > 2048 || bytes > body - offset - 14 || (sub[0] & 1) || !rx_protocol(sub + 14)) return 0;
-			if (!mac_equal(sub + 6, frame + 10)) return 0;
+			/* Three-address STA receives sources behind the AP, addressed to self. */
+			if (client ? !mac_equal(sub, frame + 4) : !mac_equal(sub + 6, frame + 10)) return 0;
 			header_copy(plan[frames].addresses, sub, 12);
 			plan[frames].range = (u32)(data + offset + 8 - buffer) | (bytes + 6) << 16;
 			frames++;
@@ -216,6 +221,25 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	if (out_of_order) {
 		*reorder = ((macid * 16 + tid) << 12) | expected;
 		return 0;
+	}
+	/* The CPU EPP can fill before CB occupancy asserts NI backpressure.
+	 * Count published EPPs and this VP's in-flight descriptors before
+	 * modifying payload/PN/SN. Leave 32 entries for fabric/other ingress. */
+	{
+		u32 peak = 0;
+		/* Stock ca_ni_rx_poll uses STATUS0's CPU0 byte to skip empty
+		 * COS queues. Take a fresh snapshot for each complete MPDU. */
+		u32 active = ni[0x659c / 4] & 255;
+#pragma clang loop unroll(disable)
+		for (u32 cos = 0; cos < 8; cos++) {
+			if (!(active & BIT(cos))) continue;
+			u32 wr = ni[0x7000 / 4 + cos];
+			u32 rd = ni[0x7100 / 4 + cos];
+			u32 used = ((wr - rd) & 1023) / 8;
+			if (used > peak) peak = used;
+		}
+		if (peak + ((write - read) & RTL_AX_NI_TX_MASK) + frames > 96)
+			return RX_NI_BUSY;
 	}
 	u32 config = *(u32 *)(states + RX_PEER_CONFIG + macid * 4);
 	u32 total_bytes = 0;
@@ -239,6 +263,7 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	sync(); state[6]++;
 	if (!(state[3] & 1023)) pe_event(mailbox);
 	mailbox[96] += frames; mailbox[97] += total_bytes;
+	(*(u32 *)((u8 *)mailbox - MAILBOX_OFFSET + RTL_AX_RX_PEER_BYTES + macid * 4)) += length - 4;
 	if (amsdu) mailbox[113]++;
 	/* The state release also published all packet and NI descriptor writes. */
 	mailbox[90] = write + frames;

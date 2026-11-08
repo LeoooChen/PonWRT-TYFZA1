@@ -45,6 +45,11 @@ void rtl_ax_rx_ba_window(struct rtl_ax_rx *rx, unsigned int macid,
 	mutex_unlock(&rx->uplink_lock);
 }
 
+u16 rtl_ax_rx_ba_size(struct rtl_ax_rx *rx, unsigned int macid, unsigned int tid)
+{
+	return get_unaligned_le32(rx->uplink_states + (macid * 16 + tid) * 32 + 28);
+}
+
 bool rtl_ax_rx_uplink_active(struct rtl_ax_rx *rx, unsigned int macid)
 {
 	return rx->uplink_wifi_id &&
@@ -199,7 +204,7 @@ static void rtl_ax_rx_uplink_seed(struct rtl_ax_rx *rx, const struct rtl_ax_rx_p
 		/* BAR can advance the BA head without accepting a new data frame. */
 		tid = frame[17] >> 4;
 	} else {
-		if (packet->bytes < 54 || (fc & 0x47ff) != 0x4188 || frame[22] & 15) return;
+		if (packet->bytes < 54 || ((fc & 0x47ff) != 0x4188 && (fc & 0x47ff) != 0x4288) || frame[22] & 15) return;
 		tid = frame[24] & 15;
 	}
 	mutex_lock(&rx->uplink_lock);

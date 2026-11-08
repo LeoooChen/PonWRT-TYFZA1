@@ -1,0 +1,216 @@
+Subject: [PATCH] mtd: spinand: support TYFZA1 2025 NAND alternatives
+
+DS35Q2GBS (e5:b2) and FM25G02D (a1:f2) appear in OEM 11DXF30002.
+Use their own geometry, ECC status and OOB layouts. FM25G02D switches
+ECC at feature 90h; B0h remains the QE/OTP register. See docs/plain-2p5g.md.
+
+--- /dev/null
++++ b/drivers/mtd/nand/spi/dosilicon.c
+@@ -0,0 +1,89 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/* DS35Q2GBS: DS35X2GBSXXX Rev.02, sections 3.11, 3.12 and 4.1. */
++#include <linux/device.h>
++#include <linux/kernel.h>
++#include <linux/mtd/spinand.h>
++
++static SPINAND_OP_VARIANTS(read_cache_variants,
++		SPINAND_PAGE_READ_FROM_CACHE_1S_1S_4S_OP(0, 1, NULL, 0, 0),
++		SPINAND_PAGE_READ_FROM_CACHE_1S_1S_2S_OP(0, 1, NULL, 0, 0),
++		SPINAND_PAGE_READ_FROM_CACHE_FAST_1S_1S_1S_OP(0, 1, NULL, 0, 0),
++		SPINAND_PAGE_READ_FROM_CACHE_1S_1S_1S_OP(0, 1, NULL, 0, 0));
++
++static SPINAND_OP_VARIANTS(write_cache_variants,
++		SPINAND_PROG_LOAD_1S_1S_4S_OP(true, 0, NULL, 0),
++		SPINAND_PROG_LOAD_1S_1S_1S_OP(true, 0, NULL, 0));
++
++static SPINAND_OP_VARIANTS(update_cache_variants,
++		SPINAND_PROG_LOAD_1S_1S_4S_OP(false, 0, NULL, 0),
++		SPINAND_PROG_LOAD_1S_1S_1S_OP(false, 0, NULL, 0));
++
++static int ds35q2gbs_ooblayout_ecc(struct mtd_info *mtd, int section,
++				struct mtd_oob_region *region)
++{
++	if (section)
++		return -ERANGE;
++
++	region->offset = 64;
++	region->length = 64;
++	return 0;
++}
++
++static int ds35q2gbs_ooblayout_free(struct mtd_info *mtd, int section,
++				 struct mtd_oob_region *region)
++{
++	if (section)
++		return -ERANGE;
++
++	/* Reserve the bad-block marker and its adjacent byte. */
++	region->offset = 2;
++	region->length = 62;
++	return 0;
++}
++
++static const struct mtd_ooblayout_ops ds35q2gbs_ooblayout = {
++	.ecc = ds35q2gbs_ooblayout_ecc,
++	.free = ds35q2gbs_ooblayout_free,
++};
++
++static int ds35q2gbs_ecc_get_status(struct spinand_device *spinand, u8 status)
++{
++	switch (status & GENMASK(6, 4)) {
++	case 0x00:
++		return 0;
++	case 0x10:
++		return 3;
++	case 0x20:
++		return -EBADMSG;
++	case 0x30:
++		return 6;
++	case 0x50:
++		return 8;
++	default:
++		return -EINVAL;
++	}
++}
++
++static const struct spinand_info dosilicon_spinand_table[] = {
++	SPINAND_INFO("DS35Q2GBS",
++		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0xb2),
++		     NAND_MEMORG(1, 2048, 128, 64, 2048, 40, 1, 1, 1),
++		     NAND_ECCREQ(8, 512),
++		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants,
++					      &write_cache_variants,
++					      &update_cache_variants),
++		     SPINAND_HAS_QE_BIT,
++		     SPINAND_ECCINFO(&ds35q2gbs_ooblayout,
++				     ds35q2gbs_ecc_get_status)),
++};
++
++static const struct spinand_manufacturer_ops dosilicon_spinand_manuf_ops = {
++};
++
++const struct spinand_manufacturer dosilicon_spinand_manufacturer = {
++	.id = 0xe5,
++	.name = "Dosilicon",
++	.chips = dosilicon_spinand_table,
++	.nchips = ARRAY_SIZE(dosilicon_spinand_table),
++	.ops = &dosilicon_spinand_manuf_ops,
++};
+--- a/drivers/mtd/nand/spi/Makefile
++++ b/drivers/mtd/nand/spi/Makefile
+@@ -1,5 +1,5 @@
+ # SPDX-License-Identifier: GPL-2.0
+ spinand-objs := core.o otp.o
+-spinand-objs += alliancememory.o ato.o esmt.o etron.o fmsh.o foresee.o gigadevice.o heyangtek.o
++spinand-objs += alliancememory.o ato.o dosilicon.o esmt.o etron.o fmsh.o foresee.o gigadevice.o heyangtek.o
+ spinand-objs += macronix.o micron.o paragon.o skyhigh.o toshiba.o winbond.o xtx.o
+ obj-$(CONFIG_MTD_SPI_NAND) += spinand.o
+--- a/include/linux/mtd/spinand.h
++++ b/include/linux/mtd/spinand.h
+@@ -363,6 +363,7 @@
+ extern const struct spinand_manufacturer esmt_8c_spinand_manufacturer;
+ extern const struct spinand_manufacturer esmt_c8_spinand_manufacturer;
+ extern const struct spinand_manufacturer etron_spinand_manufacturer;
++extern const struct spinand_manufacturer dosilicon_spinand_manufacturer;
+ extern const struct spinand_manufacturer fmsh_spinand_manufacturer;
+ extern const struct spinand_manufacturer foresee_spinand_manufacturer;
+ extern const struct spinand_manufacturer gigadevice_spinand_manufacturer;
+@@ -418,6 +419,8 @@
+ #define SPINAND_HAS_PROG_PLANE_SELECT_BIT		BIT(2)
+ #define SPINAND_HAS_READ_PLANE_SELECT_BIT		BIT(3)
+ #define SPINAND_NO_RAW_ACCESS				BIT(4)
++/* ECC enable is bit 4 of feature 90h, separate from REG_CFG. */
++#define SPINAND_ECC_REG_90				BIT(5)
+ 
+ /**
+  * struct spinand_ondie_ecc_conf - private SPI-NAND on-die ECC engine structure
+--- a/drivers/mtd/nand/spi/core.c
++++ b/drivers/mtd/nand/spi/core.c
+@@ -187,6 +187,18 @@
+ static int spinand_ecc_enable(struct spinand_device *spinand,
+ 			      bool enable)
+ {
++	if (spinand->flags & SPINAND_ECC_REG_90) {
++		u8 cfg;
++		int ret;
++
++		ret = spinand_read_reg_op(spinand, 0x90, &cfg);
++		if (ret)
++			return ret;
++		cfg &= ~CFG_ECC_ENABLE;
++		cfg |= enable ? CFG_ECC_ENABLE : 0;
++		return spinand_write_reg_op(spinand, 0x90, cfg);
++	}
++
+ 	return spinand_upd_cfg(spinand, CFG_ECC_ENABLE,
+ 			       enable ? CFG_ECC_ENABLE : 0);
+ }
+@@ -1229,6 +1241,7 @@
+ 	&esmt_8c_spinand_manufacturer,
+ 	&esmt_c8_spinand_manufacturer,
+ 	&etron_spinand_manufacturer,
++	&dosilicon_spinand_manufacturer,
+ 	&fmsh_spinand_manufacturer,
+ 	&foresee_spinand_manufacturer,
+ 	&gigadevice_spinand_manufacturer,
+--- a/drivers/mtd/nand/spi/fmsh.c
++++ b/drivers/mtd/nand/spi/fmsh.c
+@@ -195,7 +195,58 @@
+ 	.free = fm25s01bi3_ooblayout_free,
+ };
+ 
++/* FM25G02 (ID a1:f2) V0.4, sections 9 and 12; not the 8-bit FM25G02B. */
++static int fm25g02d_ooblayout_ecc(struct mtd_info *mtd, int section,
++				struct mtd_oob_region *region)
++{
++	if (section > 3)
++		return -ERANGE;
++
++	region->offset = 16 * section + 8;
++	region->length = 8;
++	return 0;
++}
++
++static int fm25g02d_ooblayout_free(struct mtd_info *mtd, int section,
++				 struct mtd_oob_region *region)
++{
++	if (section > 3)
++		return -ERANGE;
++
++	/* Match the vendor layout, reserving two bytes in each spare segment. */
++	region->offset = 16 * section + 2;
++	region->length = 6;
++	return 0;
++}
++
++static const struct mtd_ooblayout_ops fm25g02d_ooblayout = {
++	.ecc = fm25g02d_ooblayout_ecc,
++	.free = fm25g02d_ooblayout_free,
++};
++
++static int fm25g02d_ecc_get_status(struct spinand_device *spinand, u8 status)
++{
++	u8 ecc = (status & GENMASK(6, 4)) >> 4;
++
++	if (ecc <= 4)
++		return ecc;
++	if (ecc == 7)
++		return -EBADMSG;
++	return -EINVAL;
++}
++
++
+ static const struct spinand_info fmsh_spinand_table[] = {
++	SPINAND_INFO("FM25G02D",
++		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0xf2),
++		     NAND_MEMORG(1, 2048, 64, 64, 2048, 41, 1, 1, 1),
++		     NAND_ECCREQ(4, 512),
++		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants,
++					      &write_cache_variants,
++					      &update_cache_variants),
++		     SPINAND_HAS_QE_BIT | SPINAND_ECC_REG_90,
++		     SPINAND_ECCINFO(&fm25g02d_ooblayout,
++				     fm25g02d_ecc_get_status)),
+ 	SPINAND_INFO("FM25G01B",
+ 		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0xd1),
+ 		     NAND_MEMORG(1, 2048, 128, 64, 1024, 21, 1, 1, 1),

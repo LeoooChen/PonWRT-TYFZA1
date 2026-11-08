@@ -15,6 +15,7 @@
 #include <net/mac80211.h>
 #include "receive.h"
 #include "rx.h"
+#include "role.h"
 #include "pe_probe.h"
 
 extern bool rtl_ax_datapath_profile;
@@ -89,6 +90,7 @@ struct rtl_ax_rx {
 	u8 uplink_trigger_tids[128];
 	u16 uplink_pending_tids[128];
 	struct rtl_ax_shortcut_seen uplink_seen[128][16];
+	u32 peer_bytes[128];
 	u32 uplink_forwarded_seen, pe_rdu_seen[2], pe_capture_seen;
 	u64 pe_rdu[2], pe_rx_delivered, pe_rx_malformed, pe_captured;
 	bool pool_initialized;
@@ -133,6 +135,14 @@ void rtl_ax_rx_dfs_epoch(struct rtl_ax_rx *rx)
 static int rtl_ax_rx_dispatch(struct rtl_ax_rx *rx, bool old, const struct rtl_ax_rx_packet *packet)
 {
 	if (packet->type == 8 && old) return 0;
+	if (!packet->type && !packet->crc_error && !packet->icv_error && packet->bytes >= 28 &&
+	    ieee80211_is_data_present(get_unaligned((const __le16 *)packet->payload)) && rx->hw) {
+		struct ieee80211_sta *sta;
+		rcu_read_lock();
+		sta = ieee80211_find_sta_by_ifaddr(rx->hw, packet->payload + 10, packet->payload + 4);
+		if (sta) rx->peer_bytes[((struct rtl_ax_station *)sta->drv_priv)->macid] += packet->bytes - 4;
+		rcu_read_unlock();
+	}
 	return rx->handler(rx->handler_ctx, packet);
 }
 
@@ -324,7 +334,8 @@ static void rtl_ax_rx_pe_drain(struct rtl_ax_rx *rx)
 		if (!rtl_ax_receive_packet(rx->pe_forward + consumer * RTL_AX_RPQ_BUFFER_BYTES, RTL_AX_RPQ_BUFFER_BYTES, &packet))
 			rtl_ax_rx_dispatch(rx, old, &packet);
 		consumer = (consumer + 1) & 255;
-		dma_wmb();
+		/* Finish reading the report before PE can reuse its shared slot. */
+		dma_mb();
 		put_unaligned_le32(consumer, mailbox + 296);
 	}
 }
@@ -898,6 +909,12 @@ struct rtl_ax_rx *rtl_ax_rx_prepare(struct pci_dev *pdev, const struct rtl_ax_io
 free:
 	rtl_ax_rx_free(rx);
 	return ERR_PTR(ret);
+}
+
+u32 rtl_ax_rx_peer_bytes(struct rtl_ax_rx *rx, unsigned int macid)
+{
+	return READ_ONCE(rx->peer_bytes[macid]) +
+		get_unaligned_le32(rx->pe.memory + RTL_AX_RX_PEER_BYTES + macid * 4);
 }
 
 u32 rtl_ax_rx_traffic_bytes(struct rtl_ax_rx *rx)

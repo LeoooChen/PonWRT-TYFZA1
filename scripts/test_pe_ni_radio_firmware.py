@@ -65,7 +65,7 @@ for batch in range(64):
     expected = []
     for i in range(8):
         number = batch * 8 + i
-        frame = bytes.fromhex('0200000000630257464e450188b5') + b'TYFPE-NI' + struct.pack('>I', number) + bytes([number & 255]) * 34
+        frame = bytes.fromhex('aa6c681fe0d00257464e450188b5') + b'TYFPE-NI' + struct.pack('>I', number) + bytes([number & 255]) * 34
         address = payload + i * 2048
         compact = batch & 1
         header = struct.pack('>II', 0x80000000, (60 + 8) << 15) + bytes(8)
@@ -156,7 +156,7 @@ for n, number in enumerate((512, 544)):
 for padding in range(4):
     frames = []
     for n, length in enumerate((64 - padding, 67 + padding)):
-        ethernet = bytes.fromhex('0200000000630257464e45010800') + bytes([padding * 2 + n]) * (length - 14)
+        ethernet = bytes.fromhex('aa6c681fe0d00257464e45010800') + bytes([padding * 2 + n]) * (length - 14)
         frames.append(ethernet)
         at = payload + n * 2048
         u.mem_write(at, bytes(32) + struct.pack('>II', 0x80000000, (length + 8) << 15) + bytes(8) + ethernet)

@@ -37,6 +37,7 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;
 #define BIT(n) (1U<<(n))
 #define PE_PROBE_MAILBOX 0x2000
 #define READ_ONCE(v) (v)
+#define WRITE_ONCE(v,x) ((v)=(x))
 #define dma_wmb() atomic_thread_fence(memory_order_seq_cst)
 #define dma_rmb() atomic_thread_fence(memory_order_seq_cst)
 #define EXPORT_SYMBOL_GPL(n)
@@ -56,13 +57,16 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;
 #define atomic_inc_return(p) (atomic_fetch_add(p,1)+1)
 struct ieee80211_sta {unsigned id;};
 struct ieee80211_local {_Atomic u32 ps_generation;};
-struct sta_info {struct ieee80211_sta sta;struct ieee80211_local *local;pthread_mutex_t ps_lock;u32 ps_generation;bool service_period;};
+struct sta_info {struct ieee80211_sta sta;struct ieee80211_local *local;pthread_mutex_t ps_lock;_Atomic u32 ps_generation;bool service_period;};
 struct rtl_ax_tx {bool pe_active;pthread_mutex_t lock;void *hw;unsigned ps_releases,ps_eosp;
  bool peer_qos[128],peer_offloaded[128],peer_asleep[128];u32 peer_rates[128];
- struct {void *memory;}pe;struct {u32 ps_seen[2][128];bool ps_issued[128];}ni;};
+ unsigned peer_sleep_events,peer_wake_events;
+ struct {void *memory;}pe;struct {u32 ps_seen[2][128],route_tim[128];bool ps_issued[128];}ni;};
+static void ni_route_sleep(struct rtl_ax_tx *tx,unsigned macid){(void)tx;(void)macid;}
 static struct sta_info *lookup[128];
+static unsigned lookup_calls;
 static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *mac,void *vif){
- (void)hw;(void)vif;return lookup[mac[0]]?&lookup[mac[0]]->sta:NULL;}
+ (void)hw;(void)vif;lookup_calls++;return lookup[mac[0]]?&lookup[mac[0]]->sta:NULL;}
 static u32 get_unaligned_le32(const void *p){u32 v;memcpy(&v,p,4);return v;}
 static void put_unaligned_le32(u32 v,void *p){memcpy(p,&v,4);}
 '''
@@ -73,7 +77,7 @@ start = response[response.index('\tspin_lock_bh(&sta->ps_lock);'):response.index
 wakeup = function(mac, 'ieee80211_sta_ps_deliver_wakeup')
 wake = wakeup[wakeup.index('\tspin_lock_bh(&sta->ps_lock);'):wakeup.index('\n\tBUILD_BUG_ON')]
 code = common + function(mac, 'ieee80211_sta_ps_generation') + function(mac, 'ieee80211_sta_eosp_generation')
-code += function(tx, 'rtl_ax_tx_peer_qos') + function(tx, 'rtl_ax_tx_ni_buffered') + function(tx, 'rtl_ax_tx_ps_release')
+code += function(tx, 'rtl_ax_tx_peer_qos') + function(tx, 'rtl_ax_tx_peer_sleep') + function(tx, 'rtl_ax_tx_ni_buffered') + function(tx, 'rtl_ax_tx_ps_release')
 code += function(tx, 'ni_ps_complete') + function(ni, 'ni_ps_done') + function(ni, 'ni_ps_retire')
 code += 'static u32 start(struct sta_info *sta){struct ieee80211_local *local=sta->local;u32 generation;\n' + start + '\nreturn generation;}\n'
 code += 'static void wake(struct sta_info *sta){struct ieee80211_local *local=sta->local;\n' + wake + '\n}\n'
@@ -81,31 +85,54 @@ code += r'''
 static pthread_barrier_t barrier;static struct sta_info *racing;static u32 old_generation;
 static void *new_period(void *p){(void)p;pthread_barrier_wait(&barrier);start(racing);return NULL;}
 static void *old_completion(void *p){(void)p;pthread_barrier_wait(&barrier);ieee80211_sta_eosp_generation(&racing->sta,old_generation);return NULL;}
+static struct rtl_ax_tx *transition_tx;
+static void *old_release(void *p){(void)p;pthread_barrier_wait(&barrier);
+ rtl_ax_tx_ps_release(transition_tx,&racing->sta,1,BIT(0),true,false,old_generation);return NULL;}
+static void *wake_sleep(void *p){(void)p;pthread_barrier_wait(&barrier);wake(racing);
+ rtl_ax_tx_peer_sleep(transition_tx,1,false);rtl_ax_tx_peer_sleep(transition_tx,1,true);return NULL;}
 int main(void){
  struct ieee80211_local local={};struct sta_info sta={.sta={1},.local=&local,.ps_lock=PTHREAD_MUTEX_INITIALIZER};
  u8 memory[0x20000]={};struct rtl_ax_tx tx={.pe_active=true,.lock=PTHREAD_MUTEX_INITIALIZER,.pe={memory}};
  lookup[1]=&sta;memory[0xe408]=1;put_unaligned_le32(1,memory+0x2060);
+ /* Empty slots and unchanged records must not hash PE-memory MAC addresses. */
+ for(unsigned id=1;id<128;id++)ni_ps_done(&tx,id);
+ assert(lookup_calls==0);
  put_unaligned_le32(1,memory+0x11804);put_unaligned_le32(1,memory+0x13020);
  u32 first=start(&sta);
  rtl_ax_tx_ps_release(&tx,&sta.sta,1,BIT(0),false,false,first);
  assert(get_unaligned_le32(memory+0xe814)==first && tx.ni.ps_issued[1]);
  assert(!(get_unaligned_le32(memory+RTL_AX_NI_PS_VERSION+4)&1));
+ /* PE has not consumed this grant when the STA wakes and sleeps again. */
+ u32 version=get_unaligned_le32(memory+RTL_AX_NI_PS_VERSION+4);
+ wake(&sta);rtl_ax_tx_peer_sleep(&tx,1,false);rtl_ax_tx_peer_sleep(&tx,1,true);
+ assert(!get_unaligned_le32(memory+0xe81c));
+ assert(get_unaligned_le32(memory+RTL_AX_NI_PS_VERSION+4)!=version);
+ assert(!(get_unaligned_le32(memory+RTL_AX_NI_PS_VERSION+4)&1));
+ assert(get_unaligned_le32(memory+0xe810)==1 && get_unaligned_le32(memory+0xe818)==0);
+ u32 renewed=start(&sta);
+ rtl_ax_tx_ps_release(&tx,&sta.sta,1,BIT(0),true,false,renewed);
+ rtl_ax_tx_ps_release(&tx,&sta.sta,1,BIT(0),false,false,first);
+ assert(get_unaligned_le32(memory+0xe814)==renewed && get_unaligned_le32(memory+0xe81c)==(BIT(0)<<16|1));
+ put_unaligned_le32(first,memory+RTL_AX_NI_PS_DONE+8);put_unaligned_le32(1,memory+RTL_AX_NI_PS_DONE+12);
+ ni_ps_done(&tx,1);assert(sta.service_period && tx.ni.ps_issued[1]);
+ first=renewed;
  /* Last queued packet expires before submission. */
  put_unaligned_le32(0,memory+0x11804);put_unaligned_le32(0,memory+0x13020);
  put_unaligned_le32(first,memory+RTL_AX_NI_PS_CANCEL+8);
  put_unaligned_le32(1,memory+RTL_AX_NI_PS_CANCEL+12);
  ni_ps_done(&tx,1);
  assert(!sta.service_period && tx.ps_eosp==1 && !tx.ni.ps_issued[1]);
- ni_ps_done(&tx,1);assert(tx.ps_eosp==1);
+ unsigned lookups=lookup_calls;
+ ni_ps_done(&tx,1);assert(tx.ps_eosp==1 && lookup_calls==lookups);
  /* Waking invalidates the old period. A late completion cannot close its successor. */
  wake(&sta);u32 second=start(&sta);
  put_unaligned_le32(1,memory+0x11804);put_unaligned_le32(1,memory+0x13020);
  rtl_ax_tx_ps_release(&tx,&sta.sta,1,BIT(0),true,false,second);
  rtl_ax_tx_ps_release(&tx,&sta.sta,1,BIT(0),false,false,first);
  assert(get_unaligned_le32(memory+0xe814)==second && (get_unaligned_le32(memory+0xe81c)&1));
- put_unaligned_le32(first,memory+RTL_AX_NI_PS_DONE+8);put_unaligned_le32(1,memory+RTL_AX_NI_PS_DONE+12);
+ put_unaligned_le32(first,memory+RTL_AX_NI_PS_DONE+8);put_unaligned_le32(2,memory+RTL_AX_NI_PS_DONE+12);
  ni_ps_done(&tx,1);assert(sta.service_period && tx.ni.ps_issued[1]);
- put_unaligned_le32(second,memory+RTL_AX_NI_PS_DONE+8);put_unaligned_le32(2,memory+RTL_AX_NI_PS_DONE+12);
+ put_unaligned_le32(second,memory+RTL_AX_NI_PS_DONE+8);put_unaligned_le32(3,memory+RTL_AX_NI_PS_DONE+12);
  ni_ps_done(&tx,1);assert(!sta.service_period && !tx.ni.ps_issued[1]);
  /* Shutdown finishes a real issued grant; it does not end a new software period. */
  u32 third=start(&sta);rtl_ax_tx_ps_release(&tx,&sta.sta,1,BIT(0),false,false,third);
@@ -132,12 +159,23 @@ int main(void){
   assert(!pthread_join(a,NULL));assert(!pthread_join(b,NULL));
   assert(racing->service_period && racing->ps_generation!=old_generation);
  }
+ /* A publisher racing with wake is either revoked or rejected by its epoch. */
+ transition_tx=&tx;
+ put_unaligned_le32(1,memory+0x11804);put_unaligned_le32(1,memory+0x13020);
+ for(unsigned i=0;i<256;i++){
+  old_generation=start(racing);pthread_t a,b;
+  assert(!pthread_create(&a,NULL,old_release,NULL));assert(!pthread_create(&b,NULL,wake_sleep,NULL));
+  assert(!pthread_join(a,NULL));assert(!pthread_join(b,NULL));
+  assert(!get_unaligned_le32(memory+0xe81c));
+  assert(!(get_unaligned_le32(memory+RTL_AX_NI_PS_VERSION+4)&1));
+  assert(get_unaligned_le32(memory+0xe810)==1);
+ }
  pthread_barrier_destroy(&barrier);
  /* A removed STA cannot receive EOSP, but quiesced NI still relinquishes its grant. */
  put_unaligned_le32(1,memory+0x11804);put_unaligned_le32(1,memory+0x13020);
  u32 gone=start(&next);rtl_ax_tx_ps_release(&tx,&next.sta,1,BIT(0),false,false,gone);
  assert(tx.ni.ps_issued[1]);lookup[1]=NULL;ni_ps_retire(&tx);assert(!tx.ni.ps_issued[1]);
- puts("PS generation: expiry -> exact completion, wake/late RPQ, stale publication, shutdown, MACID/counter wrap and concurrent new period passed.");
+ puts("PS generation: expiry -> exact completion, wake/sleep grant revocation, late RPQ, stale publication, shutdown, MACID/counter wrap and concurrent publication/new period passed.");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='wifi-ps-generation-') as directory:

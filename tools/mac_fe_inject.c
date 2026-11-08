@@ -82,6 +82,6 @@ int main(int argc,char **argv)
  sent=pcap_inject(pcap,frame,size);
  if(sent!=(int)size){fprintf(stderr,"%s\n",pcap_geterr(pcap));pcap_close(pcap);return 1;}
  pcap_close(pcap);
- printf("Injected %u-byte fixed UDP frame on %s:192.0.2.86:53000 ->192.168.1.1:18082\n",size,argv[1]);
+ printf("Injected %u-byte fixed UDP frame on %s:10.23.42.1:53000 ->192.168.1.1:18082\n",size,argv[1]);
  return 0;
 }

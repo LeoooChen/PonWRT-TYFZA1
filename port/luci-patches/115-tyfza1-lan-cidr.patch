@@ -1,0 +1,51 @@
+From: TYFZA1 native port
+Subject: [PATCH] luci: require explicit masks in IPv4 lists and detect address-list connectivity changes
+
+A bare address in list mode has no visible netmask control and netifd uses
+/32 when network.lan.netmask is absent. Require CIDR or dotted-mask notation
+there; preserve the traditional address plus separate netmask form.
+
+--- a/modules/luci-base/htdocs/luci-static/resources/protocol/static.js
++++ b/modules/luci-base/htdocs/luci-static/resources/protocol/static.js
+@@ -96,7 +96,7 @@
+ 			if (prefix == null)
+ 				return;
+ 
+-			this.datatype = 'or(cidr4,ipmask4)';
++			this.datatype = 'or(cidr4,ipnet4)';
+ 
+ 			let parent = L.dom.parent(ev.target, '.cbi-value-field');
+ 			L.dom.content(parent, form.DynamicList.prototype.renderWidget.apply(this, [
+@@ -116,7 +116,7 @@
+ 			const widget = isCIDR(cfgvalue) ? 'DynamicList' : 'Value';
+ 
+ 			if (widget == 'DynamicList') {
+-				this.datatype = 'or(cidr4,ipmask4)';
++				this.datatype = 'or(cidr4,ipnet4)';
+ 				this.placeholder = _('Add IPv4 address…');
+ 			}
+ 			else {
+--- a/modules/luci-base/htdocs/luci-static/resources/ui.js
++++ b/modules/luci-base/htdocs/luci-static/resources/ui.js
+@@ -5321,8 +5321,9 @@
+ 						for (let j = 0; this.changes && this.changes.network && j < this.changes.network.length; j++) {
+ 							const chg = this.changes.network[j];
+ 
+-							if (chg[0] == 'set' && chg[1] == iif &&
+-								((chg[2] == 'disabled' && chg[3] == '1') || chg[2] == 'proto' || chg[2] == 'ipaddr' || chg[2] == 'netmask'))
++							if (chg[1] == iif &&
++								((chg[0] == 'set' && ((chg[2] == 'disabled' && chg[3] == '1') || chg[2] == 'proto' || chg[2] == 'ipaddr' || chg[2] == 'netmask')) ||
++								 (['list-add', 'list-del', 'remove'].includes(chg[0]) && chg[2] == 'ipaddr')))
+ 								return iif;
+ 						}
+ 					}
+--- a/modules/luci-base/ucode/template/header.ut
++++ b/modules/luci-base/ucode/template/header.ut
+@@ -5,6 +5,7 @@
+ -#}
+ 
+ {%
++	pkgs_update_time += '-lan-cidr1';
+ 	include(`themes/${theme}/header`);
+ -%}
+ 

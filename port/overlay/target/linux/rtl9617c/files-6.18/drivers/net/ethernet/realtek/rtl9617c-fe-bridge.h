@@ -289,7 +289,9 @@ static int fe_bridge_learn(struct rtl_fe_bridge *bridge,const struct fe_bridge_p
  ret=fe_install(data.input,data,0);
  if(ret)return ret;
  flow=list_last_entry(&fe->flows,struct rtl_fe_flow,list);
+ rb_erase(&flow->cookie_node,&fe->cookies);
  flow->cookie=(unsigned long)flow;flow->learned=true;
+ fe_index_flow(fe,flow);
  flow->bridge_index=packet->bridge;flow->bridge_vid=packet->vid;
  flow->bridge_ingress=packet->ingress;flow->bridge_egress=packet->output.port;
  flow->bridge_tags=packet->input.tags;

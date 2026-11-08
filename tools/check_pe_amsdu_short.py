@@ -40,7 +40,7 @@ def replay(directory, networks, slot):
     get = lambda at: struct.unpack('<I', u.mem_read(at, 4))[0]
     put(0x10002300, 1 << 31 | 1 << 13)
     put(0x100038c4, 0xa0000000)
-    peer, ap, dst = [bytes.fromhex(x) for x in ('02000000004e', '020000000042', '020000000065')]
+    peer, ap, dst = [bytes.fromhex(x) for x in ('067afb78b287', '02e04c076805', '0050c2010200')]
     u.mem_write(mb + 64, ap)
     u.mem_write(base + 0xe410, peer)
     put(base + 0x11a08, 1)

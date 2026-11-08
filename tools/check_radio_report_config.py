@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from arm64_module_oracle import ModuleOracle
 
-module = ROOT / 'analysis/private/live-files/lib/modules/5.10.70/kernel/drivers/net/wireless/realtek/g6_wifi_driver/rtk_wifi6.ko'
+module = ROOT / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
 registers, writes = {}, []
 
 
@@ -38,10 +38,10 @@ oracle.uc.mem_write(env + 8, struct.pack('<I', 2))
 oracle.word(intf + 32, oracle.callback('report_read32'))
 oracle.word(intf + 40, oracle.callback('report_write32'))
 results = []
-for aggregate in (121, 30):
+for aggregate, defaults in ((121, True), (30, False)):
     registers = {0x9408: 0x4003, 0x9410: 0x00070001, 0x9414: 0xa5125a08}
     writes = []
-    oracle.uc.mem_write(cfg, struct.pack('<BBBB4I', aggregate, 255, 0, 0, 1, 1, 1, 1))
+    oracle.uc.mem_write(cfg, struct.pack('<BBBB4I', 0 if defaults else aggregate, 0 if defaults else 255, 3 if defaults else 0, 0, *([2 if defaults else 1] * 4)))
     assert oracle.call('set_host_rpr', adapter, cfg) == 0
     assert registers == {0x9408: 0x4000, 0x9410: 0x0f070001, 0x9414: 0xa5ff5a00 | aggregate}
     count = len(writes)
@@ -50,8 +50,8 @@ for aggregate in (121, 30):
                         writes=writes, repeated_call_no_write=True))
 
 native = ROOT / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap'
-out = ROOT / 'artifacts/report-credit63'
-out.mkdir(exist_ok=True)
+out = ROOT / 'artifacts/stock-alignment/report-config'
+out.mkdir(parents=True, exist_ok=True)
 (out / 'config.c').write_text(r'''
 #include <stdbool.h>
 #include <stdint.h>
@@ -75,6 +75,6 @@ subprocess.run(['cc', '-O2', '-shared', '-fPIC', '-I', str(native), str(out / 'c
 library = ctypes.CDLL(str(out / 'config.so'))
 library.native_config.restype = ctypes.c_uint
 native_result = library.native_config(0xa5125a08)
-assert native_result == int(results[1]['register_9414'], 16)
+assert native_result == int(results[0]['register_9414'], 16)
 print(json.dumps(dict(scope='Actual stock AArch64 set_host_rpr with explicit MMIO callbacks; native init compiled from its header. Two report sizes, not a radio test.',
                       stock=results, native_register_9414=hex(native_result)), indent=2))

@@ -20,6 +20,10 @@ fixture = ast.parse((root / 'scripts/test_ni_rx_credit.py').read_text())
 common = next(ast.literal_eval(node.value) for node in fixture.body
               if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and
               t.id == 'common' for t in node.targets))
+if 'endpoint->receive(endpoint, napi, skb, wifi_forwarded)' not in source:
+    common = common.replace('struct napi_struct *,struct sk_buff *,bool', 'struct sk_buff *,bool')
+    common = common.replace('struct napi_struct *n,struct sk_buff *s,bool f', 'struct sk_buff *s,bool f')
+    common = common.replace('assert(n && n->dev==active->device);', '')
 common = common.replace('static bool seen[129];',
                         'static bool seen[129];\nstatic bool status_pending;')
 common = common.replace('if(r==0x659c)return producer!=consumer;',

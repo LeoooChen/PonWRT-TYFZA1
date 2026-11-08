@@ -13,6 +13,7 @@
 #include <linux/ipv6.h>
 #include <linux/ppp_defs.h>
 #include <linux/list.h>
+#include <linux/rbtree.h>
 #include <linux/mutex.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
@@ -22,6 +23,7 @@
 #include <linux/workqueue.h>
 #include <net/flow_offload.h>
 #include <net/pkt_cls.h>
+#include <net/cfg80211.h>
 #include "rtl9617c-fe.h"
 #include "rtl9617c-fe-pipeline.h"
 #include "rtl9617c-wifi-format.h"
@@ -63,7 +65,8 @@ struct rtl_fe_mtu {
  unsigned int users, size, saved;
 };
 struct rtl_fe_flow {
- struct list_head list;
+ struct list_head list, retry;
+ struct rb_node cookie_node;
  unsigned long cookie, lastused;
  struct rtl_fe_port *input, *output;
  unsigned int hash_index, counter, source_mac, destination_index;
@@ -109,7 +112,8 @@ struct rtl_fe {
  void __iomem *registers;
  struct mutex lock;
  struct delayed_work cleanup_work;
- struct list_head ports, flows, blocks, wifi_peers;
+ struct list_head ports, flows, blocks, wifi_peers, retries;
+ struct rb_root cookies;
  void *memory;
  dma_addr_t dma;
  bool enabled, prepared;
@@ -160,18 +164,42 @@ static struct rtl_fe_port *fe_port(struct rtl_fe *fe,struct net_device *netdev)
   if(!port->retired && port->netdev==netdev)return port;
  return NULL;
 }
+/* All cookie and retry-list operations are serialized by fe->lock. */
 static struct rtl_fe_flow *fe_flow(struct rtl_fe *fe,unsigned long cookie)
 {
- struct rtl_fe_flow *flow;
- list_for_each_entry(flow,&fe->flows,list)
-  if(flow->cookie==cookie)return flow;
+ struct rb_node *node=fe->cookies.rb_node;
+
+ while(node) {
+  struct rtl_fe_flow *flow=rb_entry(node,struct rtl_fe_flow,cookie_node);
+  if(cookie<flow->cookie)node=node->rb_left;
+  else if(cookie>flow->cookie)node=node->rb_right;
+  else return flow;
+ }
  return NULL;
+}
+static void fe_index_flow(struct rtl_fe *fe,struct rtl_fe_flow *flow)
+{
+ struct rb_node **link=&fe->cookies.rb_node,*parent=NULL;
+
+ while(*link) {
+  struct rtl_fe_flow *other=rb_entry(*link,struct rtl_fe_flow,cookie_node);
+  parent=*link;
+  if(flow->cookie<other->cookie)link=&parent->rb_left;
+  else link=&parent->rb_right;
+ }
+ rb_link_node(&flow->cookie_node,parent,link);
+ rb_insert_color(&flow->cookie_node,&fe->cookies);
+}
+static bool fe_wifi_client(struct rtl_fe_port *port)
+{
+ return port->netdev->ieee80211_ptr &&
+  port->netdev->ieee80211_ptr->iftype==NL80211_IFTYPE_STATION;
 }
 static struct rtl_fe_wifi_peer *fe_wifi_peer(struct rtl_fe *fe,struct rtl_fe_port *port,const u8 *address)
 {
  struct rtl_fe_wifi_peer *peer;
  list_for_each_entry(peer,&fe->wifi_peers,list)
-  if(peer->port==port && ether_addr_equal(peer->address,address))return peer;
+  if(peer->port==port && (fe_wifi_client(port) || ether_addr_equal(peer->address,address)))return peer;
  return NULL;
 }
 static void fe_wifi_forget_port(struct rtl_fe *fe,struct rtl_fe_port *port)
@@ -902,11 +930,15 @@ static int fe_delete(struct rtl_fe *fe,struct rtl_fe_flow *flow)
  }
  if(flow->mtu_owned)fe_mtu_put(fe,flow);
  __clear_bit(flow->hash_index,fe->hashes);
+ rb_erase(&flow->cookie_node,&fe->cookies);
+ list_del(&flow->retry);
  list_del(&flow->list);
  if(flow->installed)fe->deletes++;
  kfree(flow);
  return 0;
 retry:
+ /* Keep the cookie reserved until every hardware owner is released. */
+ if(list_empty(&flow->retry))list_add_tail(&flow->retry,&fe->retries);
  mod_delayed_work(system_wq,&fe->cleanup_work,HZ);
  return ret;
 }
@@ -916,8 +948,8 @@ static void fe_cleanup_work(struct work_struct *work)
  struct rtl_fe_flow *flow,*next;
 
  mutex_lock(&fe->lock);
- list_for_each_entry_safe(flow,next,&fe->flows,list)
-  if(flow->deleting)fe_delete(fe,flow);
+ list_for_each_entry_safe(flow,next,&fe->retries,retry)
+  fe_delete(fe,flow);
  fe_collect_ports(fe);
  mutex_unlock(&fe->lock);
 }
@@ -956,7 +988,9 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
  if(index==start+32)return -ENOSPC;
  flow=kzalloc(sizeof(*flow),GFP_KERNEL);
  if(!flow)return -ENOMEM;
- flow->cookie=cookie;flow->hash_index=index;flow->crc16=crc16;
+ flow->cookie=cookie;
+ flow->hash_index=index;flow->crc16=crc16;
+ INIT_LIST_HEAD(&flow->retry);
  flow->input=data.input;flow->output=data.output;flow->lastused=jiffies;
  flow->ethernet_bytes=data.ethernet_bytes;
  flow->pppoe=data.egress_pppoe;
@@ -973,6 +1007,7 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
  }
  __set_bit(index,fe->hashes);
  list_add_tail(&flow->list,&fe->flows);
+ fe_index_flow(fe,flow);
  if(!data.bridge) {
   ret=fe_source_get(fe,data.source,&flow->source_mac);
   if(ret)goto rollback;
@@ -1066,11 +1101,10 @@ static int fe_block_callback(enum tc_setup_type type,void *data,void *private)
 
  if(type!=TC_SETUP_CLSFLOWER || cls->common.chain_index)return -EOPNOTSUPP;
  mutex_lock(&fe->lock);
- list_for_each_entry_safe(flow,next,&fe->flows,list)
-  if(!flow->installed || flow->deleting) {
-   ret=fe_delete(fe,flow);
-   if(ret)goto unlock;
-  }
+ list_for_each_entry_safe(flow,next,&fe->retries,retry) {
+  ret=fe_delete(fe,flow);
+  if(ret)goto unlock;
+ }
  flow=fe_flow(fe,cls->cookie);
  switch(cls->command) {
  case FLOW_CLS_REPLACE:ret=fe_replace(port,cls);break;
@@ -1207,7 +1241,8 @@ struct rtl_fe *rtl_fe_allocate(struct device *device,void __iomem *registers)
  mutex_init(&fe->lock);
  INIT_DELAYED_WORK(&fe->cleanup_work,fe_cleanup_work);
  INIT_LIST_HEAD(&fe->ports);INIT_LIST_HEAD(&fe->flows);INIT_LIST_HEAD(&fe->blocks);
- INIT_LIST_HEAD(&fe->wifi_peers);
+ INIT_LIST_HEAD(&fe->wifi_peers);INIT_LIST_HEAD(&fe->retries);
+ fe->cookies=RB_ROOT;
  fe->memory=dma_alloc_coherent(device,RTL_FE_MEMORY_BYTES,&fe->dma,GFP_KERNEL);
  if(!fe->memory){kfree(fe);return ERR_PTR(-ENOMEM);}
  defaults=fe->memory+RTL_FE_DEFAULT_OFFSET;
@@ -1295,7 +1330,7 @@ int rtl_fe_wifi_peer_route(struct rtl_fe *fe,struct net_device *netdev,const u8 
  list_for_each_entry(flow,&fe->flows,list) {
   u32 *action;
   if(!flow->installed || flow->deleting || flow->output!=port ||
-     !ether_addr_equal(flow->destination,address))continue;
+     (!fe_wifi_client(port) && !ether_addr_equal(flow->destination,address)))continue;
   /* Withdraw both lookup locations before changing an in-flight flow's output. */
   ret=rtl_fe_main_age(&io,flow->hash_index,0);
   if(ret)goto unlock;

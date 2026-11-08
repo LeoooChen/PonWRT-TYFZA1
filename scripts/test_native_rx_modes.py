@@ -73,6 +73,8 @@ typedef uint64_t u64;
 static uint64_t ktime_get_ns(void){return 100;}
 #define lower_32_bits(x) ((u32)(x))
 #define NAPI_POLL_WEIGHT 64
+#define L1_CACHE_BYTES 64
+#define prefetch(p) ((void)(p))
 #define ETH_HLEN 14
 #define ETH_P_IP 0x800
 #define CHECKSUM_UNNECESSARY 1
@@ -89,7 +91,7 @@ struct sk_buff {unsigned char *data; unsigned int protocol,priority,ip_summed; s
 struct rtl9617c_ni_endpoint {
     void (*receive)(struct rtl9617c_ni_endpoint *,struct napi_struct *,struct sk_buff *,unsigned int);
 };
-struct rtl9617c_ni_wifi_endpoint {struct net_device *netdev;void (*receive)(struct rtl9617c_ni_wifi_endpoint *,struct sk_buff *,bool);};
+struct rtl9617c_ni_wifi_endpoint {struct net_device *netdev;void (*receive)(struct rtl9617c_ni_wifi_endpoint *,struct napi_struct *,struct sk_buff *,bool);};
 #define DMA_FROM_DEVICE 2
 struct device;
 static unsigned int synced_cpu[512],synced_device[512];
@@ -121,7 +123,10 @@ static void writel(u32 value,void *address) {
     if (offset==0x636c) {
         unsigned int buffer=((value & 0xffffff80U)-0x10002000U)/2048;
         assert(buffer<512 && !owned[buffer]);
-        assert(synced_device[buffer] && !synced_cpu[buffer]);
+        /* Both explicit sync and documented read-only FROM_DEVICE reuse work.
+         * The separate mprotect regression forbids writes to RX storage. */
+        assert(synced_device[buffer] || synced_cpu[buffer]);
+        synced_cpu[buffer]=0;
         assert((value & 15)==4+buffer/256);
         owned[buffer]=1; returned++;
     }
@@ -204,7 +209,9 @@ static void check(unsigned int packets,int budget,bool blocked,int flow) {
     free(rx.memory);free(registers);
 }
 static bool expected_wifi_forwarded;
-static void wifi_receive(struct rtl9617c_ni_wifi_endpoint *endpoint,struct sk_buff *skb,bool forwarded) {
+static struct napi_struct *expected_wifi_napi;
+static void wifi_receive(struct rtl9617c_ni_wifi_endpoint *endpoint,struct napi_struct *napi,struct sk_buff *skb,bool forwarded) {
+    assert(napi==expected_wifi_napi);
     assert(skb->dev==endpoint->netdev && forwarded==expected_wifi_forwarded);
     for(unsigned int i=0;i<60;i++)assert(skb->data[i]==(unsigned char)(i^0x5a));
     delivered++;dev_kfree_skb_any(skb);
@@ -227,13 +234,15 @@ static void check_wifi(unsigned int epp_id,unsigned int source,unsigned int meta
     for(unsigned int i=0;i<60;i++)((unsigned char *)rx.memory)[offset+RTL_QM_HEADROOM+16+i]=i^0x5a;
     if(attached)rx.wifi[2]=&endpoint;
     expected_wifi_forwarded=!!epp_id;
+    expected_wifi_napi=&napi;
     assert(rtl_qm_rx_poll(&rx,&napi,64)==1);
     assert(delivered==expected && returned==1 && !rx.refill.pending);
     if(!expected)assert(dev.stats.rx_errors+dev.stats.rx_dropped==1);
     free(rx.memory);free(registers);
 }
 static unsigned int checksum_expected;
-static void checksum_receive(struct rtl9617c_ni_wifi_endpoint *ep,struct sk_buff *skb,bool forwarded) {
+static void checksum_receive(struct rtl9617c_ni_wifi_endpoint *ep,struct napi_struct *napi,struct sk_buff *skb,bool forwarded) {
+    assert(napi==expected_wifi_napi);
     assert(forwarded==expected_wifi_forwarded && skb->dev==ep->netdev && skb->ip_summed==checksum_expected);
     delivered++;dev_kfree_skb_any(skb);
 }
@@ -264,6 +273,7 @@ static void check_checksum_delivery(bool enabled,bool bad,bool ppp,bool hit) {
     }
     expected_wifi_forwarded=hit;
     checksum_expected=enabled&&!bad&&(!ppp||hit)?CHECKSUM_UNNECESSARY:0;
+    expected_wifi_napi=&napi;
     assert(rtl_qm_rx_poll(&rx,&napi,64)==1 && delivered==1 && returned==1);
     free(rx.memory);free(registers);
 }
@@ -455,6 +465,10 @@ with tempfile.TemporaryDirectory(prefix='native-rx-tests-', dir=root / 'artifact
                 visibility = function(xram, 'rtl_native_visible') if 'static umode_t rtl_native_visible' in xram else 'static umode_t rtl_native_visible(struct kobject *kobj,struct attribute *attr,int index) {(void)kobj;(void)index;return attr->mode;}\n'
                 model, main = diagnostics_model.split('int main(void)', 1)
                 source = common + constants + '\n' + rx_structure + '\n' + function(qm, 'rtl_qm_indirect') + function(qm, 'rtl_qm_rx_pool') + model + visibility + function(xram, 'qm_pool_show') + 'int main(void)' + main
+        if 'endpoint->receive(endpoint, napi, skb, wifi_forwarded)' not in qm:
+            source = source.replace('struct napi_struct *,struct sk_buff *,bool', 'struct sk_buff *,bool')
+            source = source.replace('struct napi_struct *napi,struct sk_buff *skb,bool forwarded', 'struct sk_buff *skb,bool forwarded')
+            source = source.replace('assert(napi==expected_wifi_napi);', '')
         path = directory / f'{case}.c'
         binary = directory / case
         path.write_text(source)

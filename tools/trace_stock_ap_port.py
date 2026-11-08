@@ -20,13 +20,15 @@ from unicorn.arm64_const import (UC_ARM64_REG_X1, UC_ARM64_REG_X2,
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--client', action='store_true', help='trace single STA role with MACID1')
+parser.add_argument('--module', type=Path)
 parser.add_argument('--role-address', default='020000961701')
 parser.add_argument('--output', type=Path, default=root / 'manifests/radio-stock-AP-port.json')
 parser.add_argument('--io-snapshot', type=Path)
 args = parser.parse_args()
 io_snapshot = json.loads(args.io_snapshot.read_text()) if args.io_snapshot else {}
-module = root / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
-names = ['mac_port_init', 'mac_port_cfg', '_get_port_cfg', 'is_curr_dbcc',
+module = args.module or root / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
+names = ['port0_mbid_set', 'mac_port_init', 'mac_port_cfg', '_get_port_cfg', 'is_curr_dbcc',
          'is_chip_id', 'check_mac_en', 'dly_port_us', '_patch_tbtt_shift_setval',
          'chk_patch_tbtt_shift_setval', 'mac_wde_pkt_drop', 'hiq_drop_ctrl',
          'h2c_pkt_drop', 'chk_patch_cmac_hiq_drop',
@@ -146,7 +148,7 @@ def record_cfg(uc, address, size, user_data):
 oracle.uc.hook_add(UC_HOOK_CODE, record_cfg)
 programs = []
 for chip in ('8852c', '8192xb'):
-    for mbssid in (0, 7):
+    for mbssid in ((0,) if args.client else (0, 7)):
         state.clear()
         state.update(registers={}, operations=[], time_us=0, phase='port_init')
         for address, value in io_snapshot.get(chip, {}).items():
@@ -158,7 +160,7 @@ for chip in ('8852c', '8192xb'):
         # Same AP/band0/port0 role as original rtw_hal_mac_port_init;
         # rtw_phl_wifi_role_alloc@13af14..13af28 initializes AP interval100,
         # HIQ window50. rtw_hal_mac_port_init@1aa14c copies role+1268.
-        oracle.uc.mem_write(params, struct.pack('<IIIBBBxH2xI', 0, 0, 3, 1, mbssid, 0, 100, 50))
+        oracle.uc.mem_write(params, struct.pack('<IIIBBBxH2xI', 0, 0, 2 if args.client else 3, 1, mbssid, 0, 100, 50))
         status = oracle.call('mac_port_init', adapter, params)
         if status:
             raise RuntimeError((chip, mbssid, status, state['operations'][-6:]))
@@ -192,9 +194,10 @@ for chip in ('8852c', '8192xb'):
     oracle.word(node + 8, pool)
     oracle.word(hal + 8, hal_common)
     oracle.word(station + 16, role)
-    oracle.uc.mem_write(role + 8, struct.pack('<I', 2))  # original PHL AP enum
+    oracle.uc.mem_write(role + 8, struct.pack('<I', 1 if args.client else 2))  # PHL STA1/AP2
     oracle.uc.mem_write(role + 28, ap_address)
-    oracle.uc.mem_write(station + 28, bytes(2))
+    oracle.uc.mem_write(role + 16, bytes(4))
+    oracle.uc.mem_write(station + 26, struct.pack('<HH', 0, 1 if args.client else 0))
     oracle.uc.mem_write(station + 30, ap_address)
     oracle.uc.mem_write(station + 2656, struct.pack('<Q', 1 << 20))
     oracle.uc.mem_write(role_info, bytes(512))
@@ -203,10 +206,27 @@ for chip in ('8852c', '8192xb'):
     status = oracle.call('mac_add_role', adapter, role_info)
     if status:
         raise RuntimeError((chip, 'AP_self_role', status, state['operations'][-6:]))
-    role_programs.append({'chip': chip, 'scope': 'open legacy AP self-station, MACID0, SCC band0/port0, specified MAC input',
+    role_programs.append({'chip': chip, 'scope': 'open legacy STA MACID1' if args.client else 'open legacy AP MACID0',
                          'role_address': ap_address.hex(),
                          'original_status': status, 'original_HAL_role_input': raw_role,
                          'operations': list(state['operations'])})
+    if args.client:
+        oracle.uc.mem_write(station + 30, bytes.fromhex('020000961702'))
+        oracle.uc.mem_write(station + 26, struct.pack('<H', 42))
+        for operation, connected in (('connect', 1), ('disconnect', 0)):
+            state['operations'] = []
+            oracle.uc.mem_write(role + 16, struct.pack('<I', 2 if connected else 0))
+            oracle.call('_hal_stainfo_to_macrinfo', hal, station, role_info, 5, connected)
+            status = oracle.call('_change_role', adapter, role_info)
+            if status: raise RuntimeError((chip, operation, status))
+            role_programs.append({'chip': chip, 'operation': operation, 'original_status': status,
+                                  'operations': list(state['operations'])})
+        state['operations'] = []
+        status = oracle.call('mac_remove_role', adapter, 1)
+        if status: raise RuntimeError((chip, 'remove', status))
+        role_programs.append({'chip': chip, 'operation': 'remove', 'original_status': status,
+                              'operations': list(state['operations'])})
+        continue
     peer_node = head + 1024
     oracle.word(pool, peer_node)
     oracle.word(pool + 8, peer_node)
@@ -234,7 +254,7 @@ for chip in ('8852c', '8192xb'):
                              'operation': operation, 'role_address': ap_address.hex(),
                              'peer_address': peer_address.hex(), 'original_status': status,
                              'operations': list(state['operations'])})
-report = {'scope': 'actual original ELF AP port configuration and HIQ-drop payloads; initial IO specified below, TSF advances with delays; not a board test',
+report = {'scope': 'actual original ELF AP/STA port configuration and HIQ-drop payloads; initial IO specified below, TSF advances with delays; not a board test',
     'initial_IO': str(args.io_snapshot) if args.io_snapshot else 'zero',
     'original_host_sha256': hashlib.sha256(module.read_bytes()).hexdigest(),
     'executed_original_functions': names,

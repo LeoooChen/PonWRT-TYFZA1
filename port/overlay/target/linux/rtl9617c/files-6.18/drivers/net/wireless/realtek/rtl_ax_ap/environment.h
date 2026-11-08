@@ -32,7 +32,7 @@ static const struct rtl_ax_environment_write rtl_ax_environment_start[] = {
 };
 
 struct rtl_ax_environment {
-	bool initialized, ccx_ongoing, fahm_ongoing, manual_control;
+	bool initialized, ccx_ongoing, fahm_ongoing, manual_control, is_c;
 	u8 ccx_unit, clm_input, nhm_include_cca;
 	bool clm_nav, clm_rssi, nhm_nav, nhm_rssi;
 	u8 clm_rssi_threshold, nhm_rssi_threshold;
@@ -41,7 +41,7 @@ struct rtl_ax_environment {
 	bool background_started, nhm_ready;
 	s8 external_loss;
 	u16 nhm_period, nhm_bins[12], nhm_tx, nhm_cca, nhm_idle;
-	u8 nhm_idle_ratio, nhm_noise_ratio;
+	u8 nhm_idle_ratio, nhm_noise_ratio, nhm_cca_ratio;
 	u32 false_alarms, throughput, traffic_previous;
 	u64 samples, not_ready;
 	u64 traffic_time_ms;
@@ -54,6 +54,7 @@ static inline void rtl_ax_environment_initialize(const struct rtl_ax_io *io,
 	static const u8 thresholds[11] = { 18, 21, 24, 27, 30, 35, 40, 45, 50, 55, 60 };
 	unsigned int i;
 
+	environment->is_c = chip == RTL_AX_8852C;
 	environment->ccx_ongoing = environment->fahm_ongoing = false;
 	environment->manual_control = false;
 	environment->ccx_unit = 3;
@@ -117,13 +118,13 @@ static inline u16 rtl_ax_environment_ratio(u16 count, u16 period)
 	return ratio == 100 ? 99 : ratio;
 }
 
-/* Real NHM bins and TX/CCA/idle counters, nhm_get_result@2a66a4 and
- * nhm_get_utility@2a6138. The 8852C's last raw bin belongs in bin10. */
+/* Actual nhm_get_result@2a66a4 and nhm_get_utility@2a6138. C folds
+ * raw bin11 into bin0; XB keeps all twelve bins independently. */
 static inline bool rtl_ax_environment_sample(const struct rtl_ax_io *io,
 	struct rtl_ax_environment *env, unsigned int bandwidth)
 {
 	u16 bins[12], total = 0, noise;
-	u8 weight[12];
+	u8 weight[12], threshold[11];
 	unsigned int i, first = 255, value;
 	unsigned int limit = bandwidth == 3 || bandwidth == 4 ? 70 : 60;
 
@@ -137,16 +138,20 @@ static inline bool rtl_ax_environment_sample(const struct rtl_ax_io *io,
 		env->nhm_bins[i * 2] = value;
 		env->nhm_bins[i * 2 + 1] = value >> 16;
 	}
+	/* Utility uses the same loss-adjusted thresholds programmed by nhm_set. */
+	for (i = 0; i < 11; i++)
+		threshold[i] = env->nhm_threshold[i] - (env->is_c && i == 10 ? 0 : env->external_loss);
 	for (i = 0; i < 12; i++) {
 		bins[i] = env->nhm_bins[i];
 		total += bins[i];
-		weight[i] = !i ? env->nhm_threshold[0] - 2 : i == 11 ?
-			env->nhm_threshold[9] + 2 :
-			(env->nhm_threshold[i - 1] + env->nhm_threshold[i]) / 2;
+		weight[i] = !i ? (threshold[0] > 2 ? threshold[0] - 2 : 0) : i == 11 ?
+			threshold[10] + 2 : (threshold[i - 1] + threshold[i]) / 2;
 	}
-	weight[10] = weight[11];
-	bins[10] += bins[11];
-	bins[11] = 0;
+	if (env->is_c) {
+		weight[10] = weight[11] = threshold[9] + 2;
+		bins[0] += bins[11];
+		bins[11] = 0;
+	}
 	for (i = 0; i < 12; i++)
 		if (rtl_ax_environment_ratio(bins[i], env->nhm_period)) {
 			first = i;
@@ -161,6 +166,7 @@ static inline bool rtl_ax_environment_sample(const struct rtl_ax_io *io,
 	env->nhm_idle = io->read32(io->ctx, 0x11aa4);
 	env->nhm_idle_ratio = rtl_ax_environment_ratio(env->nhm_idle, env->nhm_period);
 	env->nhm_noise_ratio = rtl_ax_environment_ratio(noise, env->nhm_period);
+	env->nhm_cca_ratio = rtl_ax_environment_ratio(env->nhm_cca, env->nhm_period);
 	env->samples++;
 	return true;
 }
@@ -186,7 +192,7 @@ static inline void rtl_ax_environment_trigger(const struct rtl_ax_io *io,
 			shift = i ? ((i - 1) % 4) * 8 : 24;
 			/* Factory keeps the terminal encoded threshold218 unchanged. */
 			rtl_ax_update32(io, address, 255U << shift,
-				(u32)(u8)(env->nhm_threshold[i] - (i == 10 ? 0 : loss)) << shift);
+				(u32)(u8)(env->nhm_threshold[i] - (env->is_c && i == 10 ? 0 : loss)) << shift);
 		}
 		env->external_loss = loss;
 	}

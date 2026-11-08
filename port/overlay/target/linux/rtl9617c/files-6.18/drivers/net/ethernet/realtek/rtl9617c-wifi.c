@@ -86,7 +86,7 @@ static unsigned int wifi_ingress(void *private, struct sk_buff *skb,
 }
 
 static void wifi_receive(struct rtl9617c_ni_wifi_endpoint *endpoint,
-			 struct sk_buff *skb, bool forwarded)
+			 struct napi_struct *napi, struct sk_buff *skb, bool forwarded)
 {
 	skb_reset_mac_header(skb);
 	if (forwarded) {
@@ -98,7 +98,9 @@ static void wifi_receive(struct rtl9617c_ni_wifi_endpoint *endpoint,
 	} else {
 		skb->protocol = eth_type_trans(skb, endpoint->netdev);
 		skb->rtl9617c_wifi_miss = 1;
-		netif_receive_skb(skb);
+		/* NI already owns a NAPI poll. Keep its batching on FE misses too;
+		 * the original VIF and provenance survive GRO and ingress policy. */
+		napi_gro_receive(napi, skb);
 	}
 }
 
@@ -167,17 +169,26 @@ static int wifi_event(struct notifier_block *notifier, unsigned long event, void
 {
 	struct net_device *netdev = netdev_notifier_info_to_dev(ptr);
 	struct rtl_wifi_port *port;
+	bool supported;
 	int ret;
 
-	if (!netdev->ieee80211_ptr || netdev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP)
+	if (!netdev->ieee80211_ptr)
 		return NOTIFY_DONE;
-	if (event == NETDEV_REGISTER || event == NETDEV_UP) {
-		ret = wifi_add(netdev);
-		if (ret) netdev_err(netdev, "native NE Wi-Fi registration failed: %d\n", ret);
-	} else if (event == NETDEV_DOWN || event == NETDEV_UNREGISTER) {
+	supported = netdev->ieee80211_ptr->iftype == NL80211_IFTYPE_AP ||
+		netdev->ieee80211_ptr->iftype == NL80211_IFTYPE_STATION;
+	/* A down vif can change type without unregistering. Retire its old NI
+	 * ownership on removal, and before a mesh/monitor vif starts receiving. */
+	if (event == NETDEV_DOWN || event == NETDEV_UNREGISTER ||
+	    (event == NETDEV_UP && !supported)) {
 		port = wifi_port(netdev);
 		if (port) wifi_del(port);
-		if (event == NETDEV_UNREGISTER) rtl9617c_ni_fe_remove_port(wifi_ni, netdev);
+		/* A retained NI endpoint needs its FE port if AP/STA is reopened. */
+		if (event == NETDEV_UNREGISTER ||
+		    (event == NETDEV_UP && !wifi_port(netdev)))
+			rtl9617c_ni_fe_remove_port(wifi_ni, netdev);
+	} else if (supported && (event == NETDEV_REGISTER || event == NETDEV_UP)) {
+		ret = wifi_add(netdev);
+		if (ret) netdev_err(netdev, "native NE Wi-Fi registration failed: %d\n", ret);
 	}
 	return NOTIFY_DONE;
 }

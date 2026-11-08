@@ -138,7 +138,8 @@ for (let raw in [null, 0, 1000]) {
         path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(installed / name, path)
     database = (sandbox / 'lib/apk/db/installed').read_text()
-    protected = ['luci-mod-status', 'luci-mod-network', 'libiwinfo20230701', 'wifi-scripts',
+    protected = ['luci-mod-status', 'luci-mod-network', 'luci-app-package-manager',
+                 'rpcd-mod-iwinfo', 'libiwinfo20230701', 'wifi-scripts',
                  'luci-base', 'luci-compat', 'luci-lua-runtime', 'luci-lib-base',
                  'luci-lib-ip', 'luci-lib-jsonc', 'luci-lib-nixio', 'ucode',
                  'libucode20230711']

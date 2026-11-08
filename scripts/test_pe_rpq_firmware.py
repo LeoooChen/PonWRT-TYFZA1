@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run the linked MIPS RPQ consumer against mixed ARM/PE completions."""
 import json
+from pe_tx_ownership_fixture import initialize, map_report
 from pathlib import Path
 import struct
 import subprocess
@@ -15,11 +16,12 @@ binary = (Path(sys.argv[1]) if len(sys.argv) > 1 else root / 'artifacts/pe-radio
 base, mailbox, ring, payload, bar, ni = (0x04000000, 0x04002000, 0x05000000,
                                       0x06000000, 0x12000000, 0x10000000)
 u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-for at, size in ((0x1fc00000, 0x10000), (base, 0x20000), (ring, 0x4000),
+for at, size in ((0x1fc00000, 0x10000), (base, 0x80000), (ring, 0x4000),
                  (payload, 0x10000), (bar, 0x10000), (ni, 0x10000),
                  (0x10020000, 0x1000), (0x10029000, 0x1000)):
     u.mem_map(at, size)
 u.mem_write(0x1fc00000, binary)
+initialize(u, base)
 
 
 def put(at, value): u.mem_write(at, struct.pack('<I', value))
@@ -79,6 +81,9 @@ u.hook_add(UC_HOOK_MEM_WRITE,
 
 def packet(data, kind=7, wd_extra=0, wrong_tag=False):
     global tag
+    if kind == 7:
+        for report in struct.unpack('<' + 'I' * (len(data) // 4), data):
+            map_report(u, base, report)
     tag = 1 if tag == 8191 else tag + 1
     offset = 4 + (32 if wd_extra & (1 << 31) else 16) + ((wd_extra >> 14) & 3) * 2 + ((wd_extra >> 28) & 7) * 16
     if wd_extra & (1 << 23) and kind != 1:
@@ -99,8 +104,8 @@ for batch in range(64):
         meta = 1 << 8 | 42 << 17
         if n == 0:
             meta |= 1 << 16
-        put(base + 0xc400 + member * 8, payload + member * 128)
-        put(base + 0xc404 + member * 8, meta | 1 << 15)
+        put(base + 0x20000 + member * 8, payload + member * 128)
+        put(base + 0x20004 + member * 8, meta | 1 << 15)
         put(payload + member * 128, payload + (member + 1) * 128)
         put(payload + (member + 1) * 128, 0)
         status, polluted = (n + batch) & 7, (n + batch) & 1
@@ -117,7 +122,12 @@ for batch in range(64):
             expected.append(report)
     put(mailbox + 120, 16)
     put(ni + 0x6340, 0)
-    raw, offset = packet(struct.pack('<%dI' % len(reports), *reports))
+    # Hardware WP tags are independent of ARM/NI software request IDs.
+    wire_reports = [(report & ~0x0fff0000) | (((report >> 16) & 4095) + 1536) << 16
+                    for report in reports]
+    raw, offset = packet(struct.pack('<%dI' % len(wire_reports), *wire_reports))
+    for wire, report in zip(wire_reports, reports):
+        map_report(u, base, wire, (report >> 16) & 4095)
     old_returns = len(returns)
     counter_writes.clear()
     run()
@@ -126,6 +136,11 @@ for batch in range(64):
     assert get(mailbox + 300) == ni_reports and get(mailbox + 304) == failed
     assert counter_writes == [(mailbox + 300, ni_reports), (mailbox + 304, failed)]
     assert get(mailbox + 120) == 16 and len(returns) == old_returns
+    for wire, report in zip(wire_reports, reports):
+        wp = (wire >> 16) & 4095
+        software = (report >> 16) & 4095
+        ring = 4 if (wire >> 8) & 31 == 0x12 else 0
+        assert get(base + 0x40000 + (ring * 4096 + wp) * 4) == (software + 1 if software >= 256 else 0)
     slot = (batch + 255) & 255
     out = bytes(u.mem_read(forward + slot * 1024, offset + len(expected) * 4))
     assert out[:4] == raw[:4]
@@ -139,7 +154,7 @@ for batch in range(64):
         run()
         assert returns[old_returns:] == buffers[:1]
         assert get(mailbox + 120) == 16
-        assert get(base + 0xc400) == payload + 128
+        assert get(base + 0x20000) == payload + 128
         # The returned first BID may already be reused by NI.
         put(payload, 0xdeadbeef)
         stop_after = None
@@ -150,7 +165,7 @@ for batch in range(64):
     run()
     assert get(mailbox + 120) == 0 and returns[old_returns:] == buffers
     assert recycle_writes == [(mailbox + 116, len(returns)), (mailbox + 120, 0)]
-    assert len(credit_reads) == 16
+    assert len(credit_reads) == 1, len(credit_reads)
     rpq_consumer = (rpq_consumer + 1) & 255
 
 # Model the ARM reader while PE overwrites one of the sixteen retained records.
@@ -188,15 +203,15 @@ trace_code_hook = u.hook_add(UC_HOOK_CODE, trace_instruction)
 # A rejected report must retain the real owner and preserve the raw evidence.
 member, bad_report = 50, (306 << 16) | 2
 owner, owner_meta = payload + 0x2000, 0x48100
-put(base + 0xc400 + member * 8, owner)
-put(base + 0xc404 + member * 8, owner_meta)
+put(base + 0x20000 + member * 8, owner)
+put(base + 0x20004 + member * 8, owner_meta)
 put(mailbox + 120, 1)
 for seq in range(1, 21):
     raw, offset = packet(struct.pack('<I', bad_report))
     run()
     assert get(mailbox + 280) == (rpq_consumer + 1) & 255
-    assert get(mailbox + 120) == 1 and get(base + 0xc400 + member * 8) == owner
-    assert get(base + 0xc404 + member * 8) == owner_meta
+    assert get(mailbox + 120) == 1 and get(base + 0x20000 + member * 8) == owner
+    assert get(base + 0x20004 + member * 8) == owner_meta
     trace = base + 0x1e000
     record = trace + 4 + ((seq - 1) & 15) * 32
     assert get(trace) == seq and get(record) == seq
@@ -220,8 +235,8 @@ assert get(trace) == 21 and get(record) == 21
 assert [get(record + i * 4) for i in range(1, 8)] == [
     1, bad_info, struct.unpack_from('<I', raw, 4)[0], 0, 0, 0, rpq_consumer]
 assert get(mailbox + 308) == 21
-put(base + 0xc400 + member * 8, 0)
-put(base + 0xc404 + member * 8, 0)
+put(base + 0x20000 + member * 8, 0)
+put(base + 0x20004 + member * 8, 0)
 put(mailbox + 120, 0)
 rpq_consumer = (rpq_consumer + 1) & 255
 
@@ -310,6 +325,7 @@ result = dict(linked_MIPS_C_firmware=True, NI_MPDU=1024, BID_returns=2048,
               recycle_totals_written_once_per_batch=True,
               completion_totals_written_once_per_RPQ=True,
               ARM_reports_forwarded=256, EOSP_reports_forwarded=64,
+              hardware_tags_translated_to_software_requests=True,
               C2H_shift_and_MAC_info_preserved=True, RPQ_and_handoff_wrap=True,
               tag_8191_to_1=True, no_BID_return_without_EQ_credit=True,
               one_WP_per_aggregate=True, partial_EQ_resume_without_duplicate_BID=True,

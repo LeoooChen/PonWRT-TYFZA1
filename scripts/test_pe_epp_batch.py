@@ -13,7 +13,7 @@ for a,n in [(0x1fc00000,0x10000),(BASE,0x20000),(NI,0x10000),(PAYLOAD,0x200000),
 u.mem_write(0x1fc00000,(p/"pe-tx.bin").read_bytes())
 def put(a,v):u.mem_write(a,struct.pack("<I",v))
 def get(a):return struct.unpack("<I",u.mem_read(a,4))[0]
-for i,v in [(25,EPP),(114,0x7060),(115,0x7160),(167,15)]:put(MB+i*4,v)
+for i,v in [(2,0xb2000000),(25,EPP),(114,0x7060),(115,0x7160),(167,15)]:put(MB+i*4,v)
 put(NI+0x659c,1<<24)
 mac=[bytes.fromhex("020000000001"),bytes.fromhex("020000000002")]
 for peer in [1,2]:
@@ -74,6 +74,7 @@ while peers:
  peer=peers.pop(0)
  tid=next((cursor+i)&7 for i in range(8) if pending.get((peer,(cursor+i)&7)))
  expected=pending[peer,tid].pop(0)
+ put(0x1200c438,4000)
  call('ni_select')
  assert u.reg_read(UC_MIPS_REG_V0)==1
  assert get(BASE+0x7000+32)==expected+80
@@ -86,7 +87,7 @@ assert get(MB+38*4)==0
 
 def lookup_probe(withdraw, compact=True):
  u.mem_write(BASE,bytes(0x20000));u.mem_write(EPP,bytes(64))
- for i,v in [(25,EPP),(114,0x7060),(115,0x7160),(167,15)]:put(MB+i*4,v)
+ for i,v in [(2,0xb2000000),(25,EPP),(114,0x7060),(115,0x7160),(167,15)]:put(MB+i*4,v)
  put(NI+0x659c,1<<24);put(NI+0x7060,64)
  for peer in (1,2):
   put(BASE+0x11a00+peer*4,1);u.mem_write(BASE+0xe400+peer*8,mac[peer-1])
@@ -97,7 +98,7 @@ def lookup_probe(withdraw, compact=True):
   put(at,0xdeadbe80)
   frames.append(frame);u.mem_write(at+64,struct.pack('>II',0x80000000,72<<15)+bytes(8)+frame)
   u.mem_write(EPP+n*8,struct.pack('<II',at|0x50,(1<<14 if compact else 0)|80))
- reads={'route':0,'address':0,'EPP_head':0,'EPP_base':0,'clock':0,'header1':0};revoked=False
+ reads={'route':0,'address':0,'EPP_head':0,'EPP_base':0,'clock':0,'TSF_low':0,'TSF_high':0,'header1':0};revoked=False
  def observe(uc,access,at,size,value,data):
   nonlocal revoked
   at&=0x1fffffff
@@ -106,6 +107,8 @@ def lookup_probe(withdraw, compact=True):
   if EPP<=at<EPP+64 and not (at-EPP)%8:reads['EPP_head']+=1
   if at==MB+25*4:reads['EPP_base']+=1
   if at==MB+195*4:reads['clock']+=1
+  if at==0x1200c438:reads['TSF_low']+=1
+  if at==0x1200c43c:reads['TSF_high']+=1
   if PAYLOAD<=at<PAYLOAD+8*2048 and (at-PAYLOAD)%2048==68:reads['header1']+=1
   # Admission can be withdrawn before ARM has paused the PE.
   if withdraw and at==EPP+32 and not revoked:
@@ -132,6 +135,7 @@ normal=lookup_probe(False,False)
 if '--before' in sys.argv:assert repeated['address']>=24
 else:
  assert repeated['address']<=4
- assert repeated['EPP_head']==8 and repeated['EPP_base']==1 and repeated['clock']==1, repeated
+ assert repeated['EPP_head']==8 and repeated['EPP_base']==1 and repeated['clock']==0, repeated
+ assert repeated['TSF_low']==1 and repeated['TSF_high']==2, repeated
  assert repeated['header1']==normal['header1']==8, (repeated,normal)
 print(json.dumps(dict(batch_budget=16,wrapped_ring=True,mixed_peer_TID_FIFO=True,compact_EPP=True,retire_fence_after_queue_and_consumer=True,COS_priority=True,invalid_entry_not_consumed=True,active_TID_round_robin=True,stale_active_mask_reset=True,repeated_peer_DDR_reads=repeated,withdrawn_peer_DDR_reads=withdrawn,mid_batch_admission_withdrawal_preserved=True)))

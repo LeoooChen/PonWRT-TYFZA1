@@ -11,7 +11,7 @@ parser.add_argument("--count", type=int, default=10000)
 parser.add_argument("--pps", type=int, default=1000)
 args = parser.parse_args()
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.bind(("192.0.2.82", 0))
+sock.bind(("192.168.1.170", 0))
 start = time.monotonic()
 for sequence in range(args.count):
     sock.sendto(struct.pack("!I", sequence) * 350, ("192.168.1.1", 18081))

@@ -9,6 +9,10 @@ cd "$P"
 exec 9>artifacts/openwrt-world.lock
 flock 9
 KERNEL=$(python3 port/tools/project_paths.py --kernel-directory "$P/sources/openwrt")
+grep -qx 'CONFIG_MAC80211_MESH=y' "$KERNEL/.config" || {
+    echo 'The radio requires mac80211 with CONFIG_MAC80211_MESH=y. Rebuild the Wi-Fi stack from the current overlay first.' >&2
+    exit 1
+}
 OVERLAY=$P/port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap
 mkdir -p "$OUT"
 cp "$OVERLAY"/*.[ch] "$OUT/"

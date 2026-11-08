@@ -37,7 +37,8 @@ def packet(ipv6, payload_bytes):
     return bytes.fromhex('86dd' if ipv6 else '0800'), header + udp
 
 
-def case(directory, slot, ipv6, payload_bytes, fe_ready=True):
+def case(directory, slot, ipv6, payload_bytes, fe_ready=True, client=False,
+         wrong_direction=False, amsdu=False, corrupt=None):
     directory = Path(directory)
     symbols = subprocess.check_output(['llvm-nm-18', str(directory / 'pe-wd.elf')], text=True)
     entry = next(int(s.split()[0], 16) for s in symbols.splitlines() if s.endswith(' rx_uplink'))
@@ -53,21 +54,41 @@ def case(directory, slot, ipv6, payload_bytes, fe_ready=True):
     get = lambda at: struct.unpack('<I', u.mem_read(at, 4))[0]
     put(0x10002300, (1 << 31 | 1 << 13) if fe_ready else 1 << 31)
     put(0x100038c4, 0xa0000000 if fe_ready else 0)
-    peer, ap, dst = bytes.fromhex('02000000004e'), bytes.fromhex('020000000042'), bytes.fromhex('020000000065')
+    peer, ap, dst = bytes.fromhex('067afb78b287'), bytes.fromhex('02e04c076805'), bytes.fromhex('0050c2010200')
     u.mem_write(mb + 64, ap)
     u.mem_write(base + 0xe410, peer)
     put(base + 0x11a08, 1)
+    put(base + 0xd000 + 2 * 32 + 16, (1 << 23) if client else 0)
     put(states + 0x10008, 1 << 31 | (slot + 1) << 8)
     put(states + 2 * 512, 1 << 31 | 0x123)
     for index, value in [(88, vp | 0xa0000000), (89, descriptors), (93, 1), (106, states), (187, base)]:
         put(mb + index * 4, value)
     ethertype, network = packet(ipv6, payload_bytes)
-    header = struct.pack('<HH', 0x4188, 0) + ap + peer + dst + struct.pack('<H', 0x123 << 4) + bytes(2)
-    frame = header + bytes.fromhex('0200002000000000aaaa03000000') + ethertype + network + bytes(12)
+    fc = 0x4288 if client != wrong_direction else 0x4188
+    header = struct.pack('<HH', fc, 0) + ap + peer + dst + struct.pack('<H', 0x123 << 4) + bytes([128 if amsdu else 0, 0])
+    llc = bytes.fromhex('aaaa03000000') + ethertype + network
+    expected = [(ap + dst if client else dst + peer) + ethertype + network]
+    if amsdu:
+        second_source = bytes.fromhex('020000556677') if client else peer
+        expected.append((ap if client else dst) + second_source + ethertype + network)
+        body = b''
+        for ethernet in expected:
+            if body:
+                body += bytes((-len(body)) & 3)
+            body += ethernet[:12] + struct.pack('>H', len(llc)) + llc
+    else:
+        body = llc
+    frame = header + bytes.fromhex('0200002000000000') + body + bytes(12)
     raw = bytearray(36) + frame
     struct.pack_into('<II', raw, 0, len(raw) | 0xc000 | 1 << 16, len(frame) | 1 << 31)
     struct.pack_into('<I', raw, 16, 4)  # Successful hardware decrypt, no errors.
     struct.pack_into('<I', raw, 24, 1 << 28 | 2 << 16)
+    if corrupt == 'receiver': raw[36 + 4] ^= 4
+    if corrupt == 'transmitter': raw[36 + 10] ^= 4
+    if corrupt == 'decrypt': struct.pack_into('<I', raw, 16, 4 | (1 << 9))
+    if corrupt == 'replay': put(states + 2 * 512 + 4, 2)
+    if corrupt == 'subframe': raw[36 + 26 + 8 + (0 if client else 6)] ^= 4
+    if corrupt == 'admission': put(base + 0x11a08, 0)
     u.mem_write(buf, bytes(raw))
     for reg, value in [(UC_MIPS_REG_A0, mb | 0xa0000000), (UC_MIPS_REG_A1, buf | 0xa0000000),
                        (UC_MIPS_REG_A2, buf), (UC_MIPS_REG_A3, (base + 0x1d000) | 0xa0000000), (UC_MIPS_REG_SP, (base + 0x17ff0) | 0xa0000000),
@@ -77,18 +98,18 @@ def case(directory, slot, ipv6, payload_bytes, fe_ready=True):
     assert u.reg_read(UC_MIPS_REG_PC) == 0x9fc0fff0
     result = u.reg_read(UC_MIPS_REG_V0)
     if result:
-        addr, info = get(descriptors), get(descriptors + 4)
-        expected = dst + peer + ethertype + network
-        assert result == 0x80000001 and get(vp + 0x18) == 1
-        assert info == 0xa5000001 | len(expected) << 8 | (slot + 1) << 1
-        assert bytes(u.mem_read(addr, len(expected))) == expected
+        assert result == 0x80000000 | len(expected) and get(vp + 0x18) == len(expected)
+        for i, ethernet in enumerate(expected):
+            addr, info = get(descriptors + i * 8), get(descriptors + i * 8 + 4)
+            assert info == 0xa5000001 | len(ethernet) << 8 | (slot + 1) << 1
+            assert bytes(u.mem_read(addr, len(ethernet))) == ethernet
         assert get(states + 2 * 512) == 1 << 31 | 0x124
         assert get(states + 2 * 512 + 4) == 2
         assert get(mb + 94 * 4) == 0
     else:
         assert get(vp + 0x18) == 0 and bytes(u.mem_read(buf, len(raw))) == bytes(raw)
         assert get(states + 2 * 512) == 1 << 31 | 0x123
-        assert get(states + 2 * 512 + 4) == 0
+        assert get(states + 2 * 512 + 4) == (2 if corrupt == 'replay' else 0)
     return dict(slot=slot, NI_VP=9 + slot, ipv6=ipv6, UDP_payload_bytes=payload_bytes,
                 PE_to_NI=bool(result), exact_ethernet=bool(result), ARM_handoff=False if result else 'required')
 

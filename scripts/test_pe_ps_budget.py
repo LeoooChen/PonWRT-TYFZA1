@@ -2,6 +2,7 @@
 """Execute production PE queue limits, expiry and BID/TIM ownership."""
 from pathlib import Path
 import json
+from pe_tx_ownership_fixture import initialize, map_report
 import struct
 import subprocess
 import sys
@@ -25,7 +26,9 @@ policy = r'''
 #include <stdbool.h>
 #include <string.h>
 #include "rx-geometry.h"
+#include "tx-ownership.h"
 typedef uint32_t u32;
+#include "traffic-flow.h"
 #define HZ 100
 #define STA_TX_BUFFER_EXPIRE (10*HZ)
 #define max_t(t,a,b) ((t)(a)>(t)(b)?(t)(a):(t)(b))
@@ -33,27 +36,30 @@ typedef uint32_t u32;
 struct ieee80211_sta {int unused;};
 struct sdata {struct {struct {unsigned beacon_int;}bss_conf;}vif;};
 struct sta_info {unsigned listen_interval;struct sdata *sdata;struct ieee80211_sta sta;};
-struct rtl_ax_tx {bool peer_qos[128],peer_offloaded[128],peer_asleep[128],pe_active;u32 peer_rates[128];struct {void *memory;}pe;struct {u32 ps_seen[2][128];bool ps_issued[128];}ni;};
+struct rtl_ax_tx {struct {unsigned long internal;} peer_success[128];bool peer_preload[128];struct rtl_ax_traffic_flow peer_flows[128][8];bool peer_qos[128],peer_offloaded[128],peer_asleep[128],pe_active;u32 peer_rates[128];struct {void *memory;}pe;struct {u32 ps_seen[2][128];bool ps_issued[128];}ni;};
+#define ewma_rtl_ax_success_init(p) ((p)->internal=0)
+#define ewma_rtl_ax_success_add(p,v) ((p)->internal=(v)<<8)
 static void put_unaligned_le32(u32 value,void *p){memcpy(p,&value,4);}
 static u32 get(const void *p){u32 v;memcpy(&v,p,4);return v;}
 #define PE_PROBE_MAILBOX 0x2000
 '''
 tx = (root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx.c').read_text()
 arm = ''
-for name in ('rtl_ax_tx_ps_clock', 'rtl_ax_tx_peer_qos'):
+for name in ('rtl_ax_tx_peer_qos',):
     at = tx.index('void ' + name + '(')
     arm += tx[at:tx.index('\n}\n', at) + 3]
-with tempfile.TemporaryDirectory(prefix='wifi-ps-policy-') as directory:
+with tempfile.TemporaryDirectory(prefix='wifi-ps-policy-',dir=root/'artifacts') as directory:
     c, exe = Path(directory) / 'policy.c', Path(directory) / 'policy'
     c.write_text(policy + source[start:end] + arm + r'''
 int main(void){struct sdata s={.vif={.bss_conf={100}}};struct sta_info sta={.sdata=&s,.listen_interval=1};
  assert(ieee80211_sta_ps_buffer_timeout(&sta.sta)==1000);
  sta.listen_interval=128;assert(ieee80211_sta_ps_buffer_timeout(&sta.sta)==2600);
- unsigned char memory[0x20000]={};struct rtl_ax_tx tx={.pe_active=true,.pe={memory}};
+ unsigned char memory[0x80000]={};struct rtl_ax_tx tx={.pe_active=true,.pe={memory}};
  rtl_ax_tx_peer_qos(&tx,1,true,ieee80211_sta_ps_buffer_timeout(&sta.sta)/HZ);
- rtl_ax_tx_ps_clock(&tx,100);
- assert(get(memory+0x19804)==26 && get(memory+0x230c)==100);
- sta.listen_interval=65535;assert(ieee80211_sta_ps_buffer_timeout(&sta.sta)==1342100);}
+ assert(get(memory+0x19804)==26);
+ sta.listen_interval=65535;assert(ieee80211_sta_ps_buffer_timeout(&sta.sta)==1342100);
+ s.vif.bss_conf.beacon_int=65535;
+ assert(ieee80211_sta_ps_buffer_timeout(&sta.sta)==879582400UL);}
 ''')
     subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
                     '-I' + str(root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap'),
@@ -67,21 +73,24 @@ BASE, MB, NI, BAR, EPP, PAYLOAD, RING, PAGES = (
 class Radio:
     def __init__(self, peers=1, inflight=0):
         self.u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-        for address, size in [(0x1fc00000, 0x10000), (BASE, 0x20000), (NI, 0x10000),
+        for address, size in [(0x1fc00000, 0x10000), (BASE, 0x80000), (NI, 0x10000),
                               (BAR, 0x10000), (EPP, 0x40000), (PAYLOAD, 0x600000),
                               (RING, 0x4000), (PAGES, 0x32000), (0x10020000, 0x1000)]:
             self.u.mem_map(address, size)
         self.u.mem_write(0x1fc00000, binary)
+        initialize(self.u, BASE, requests=inflight or 2048, occupied=inflight)
         for index, value in [(0, 0x50455744), (2, BAR | 0xa0000000), (3, 1),
                              (11, RING), (12, PAGES), (14, PAGES), (24, 1), (25, EPP),
                              (30, inflight), (114, 0x7060), (115, 0x7160), (116, 0x6380),
-                             (117, 6), (140, MB | 0xa0000000), (142, 1), (167, 15), (195, 100)]:
+                             (117, 6), (140, MB | 0xa0000000), (142, 1), (167, 15)]:
             self.put(MB + index * 4, value)
         self.put(NI + 0x659c, 1 << 24)
         self.put(NI + 0x6340, 0x8000007c)
         self.put(NI + 0x6380, 0x80000000)
         self.put(BAR + 0x1058, 255 << 16)
+        self.clock(100)
         for peer in range(1, peers + 1):
+            self.put(BASE + 0x39000 + peer * 4, 0)
             mac = bytes([2, 0, 0, 0, 0, peer])
             self.u.mem_write(BASE + 0xe400 + peer * 8, mac)
             self.put(BASE + 0x11a00 + peer * 4, 1)
@@ -92,8 +101,8 @@ class Radio:
                 0x20100, (peer << 24) | (1 << 18) | (1 << 16), (3 << 16) | 64, 0, 0))
         # Real submitted WPs occupy their own slots; expiry must never return them.
         for index in range(inflight):
-            self.put(BASE + 0xc400 + index * 8, PAYLOAD + 0x500000 + index * 2048)
-            self.put(BASE + 0xc404 + index * 8, (1 << 15) | (1 << 8))
+            self.put(BASE + 0x20000 + index * 8, PAYLOAD + 0x500000 + index * 2048)
+            self.put(BASE + 0x20004 + index * 8, (1 << 15) | (1 << 8))
         if inflight:
             self.put(BASE + 0x18020, inflight)
         self.returns = []
@@ -119,6 +128,11 @@ class Radio:
 
     def get(self, address):
         return struct.unpack('<I', self.u.mem_read(address, 4))[0]
+
+    def clock(self, seconds):
+        now = seconds * 1000000
+        self.put(BAR + 0xc438, now & 0xffffffff)
+        self.put(BAR + 0xc43c, now >> 32)
 
     def packets(self, peers):
         self.expected = set()
@@ -146,20 +160,20 @@ r.put(BASE + 0xe820, 0)  # Peer2 remains awake.
 r.run(3000000)
 r.check_returns()
 assert r.get(NI + 0x7160) == 2492 * 8
-assert r.get(BASE + 0x11804) == 256
-assert r.peer_peak <= 256
-assert len(r.returns) == 2491 - 256
+assert r.get(BASE + 0x11804) == 2048
+assert r.peer_peak <= 2048
+assert len(r.returns) == 2491 - 2048
 assert r.get(BASE + 0x11808) == 1  # Pending normal WP credit, not discarded.
 assert r.get(MB + 30 * 4) == 124
-assert r.get(BASE + 0x18020) == 256 + 124
+assert r.get(BASE + 0x18020) == 2048 + 124
 # Expiry can reclaim unsent frames even when all 124 transmit credits are held.
-r.put(MB + 195 * 4, 110)
-r.run(1000000)
+r.clock(110)
+r.run(4000000)
 r.check_returns()
 assert r.get(BASE + 0x11804) == 0 and len(r.returns) == 2491
 assert r.get(BASE + 0x18020) == 124 and r.get(BASE + 0x14004) == 1
 for index in range(124):
-    assert r.get(BASE + 0xc400 + index * 8) == PAYLOAD + 0x500000 + index * 2048
+    assert r.get(BASE + 0x20000 + index * 8) == PAYLOAD + 0x500000 + index * 2048
 
 # Multiple sleeping peers share a bounded total budget, with space for an awake peer.
 total = Radio(peers=5)
@@ -168,31 +182,31 @@ total.put(BASE + 0xe850, 0)
 total.run(4000000)
 total.check_returns()
 assert total.get(NI + 0x7160) == 2401 * 8
-assert sum(total.get(BASE + 0x11800 + peer * 4) for peer in range(1, 5)) <= 512
+assert sum(total.get(BASE + 0x11800 + peer * 4) for peer in range(1, 5)) <= 2048
 assert total.get(MB + 28 * 4) == 1  # Awake peer actually submitted.
 
 # Excess arrivals must not delay an already queued awake peer until the flood stops.
 stream = Radio(peers=2)
-stream.packets([1] * 256 + [2] + [1] * 2000)
+stream.packets([1] * 2048 + [2] + [1] * 200)
 stream.put(BASE + 0xe820, 0)
 stream.run(4000000)
 stream.check_returns()
-assert stream.peer_peak <= 256 and stream.get(MB + 28 * 4) == 1
-assert stream.get(BASE + 0x11804) == 256 and len(stream.returns) == 2000
-assert stream.tx_consumers and stream.tx_consumers[0] < 2257 * 8
+assert stream.peer_peak <= 2048 and stream.get(MB + 28 * 4) == 1
+assert stream.get(BASE + 0x11804) == 2048 and len(stream.returns) == 200
+assert stream.tx_consumers and stream.tx_consumers[0] < 2249 * 8
 
 # A blocked EQ push retains the discard owner and retries without releasing an in-flight WP.
 credit = Radio()
 credit.put(NI + 0x6380, 0)
-credit.packets([1] * 300)
-credit.run()
+credit.packets([1] * 2092)
+credit.run(3000000)
 assert not credit.returns and credit.get(MB + 47 * 4)
 held = credit.get(MB + 47 * 4) - 1
-assert credit.get(BASE + 0xc400 + held * 8)
+assert credit.get(BASE + 0x20000 + held * 8)
 credit.put(NI + 0x6380, 0x80000000)
-credit.run()
+credit.run(3000000)
 credit.check_returns()
-assert len(credit.returns) == 44 and credit.get(BASE + 0x11804) == 256
+assert len(credit.returns) == 44 and credit.get(BASE + 0x11804) == 2048
 assert credit.get(MB + 47 * 4) == 0 and credit.get(MB + 30 * 4) == 0
 
 # Queued expiry keeps TIM set for a granted, submitted frame until its RPQ.
@@ -201,7 +215,7 @@ age.put(BASE + 0x19804, 26)
 age.packets([1] * 3)
 age.run()
 assert age.get(BASE + 0x11804) == 3 and not age.returns
-age.put(MB + 195 * 4, 125)
+age.clock(125)
 age.run()
 assert not age.returns
 age.put(BASE + 0x19e04, 2)
@@ -209,7 +223,7 @@ age.put(BASE + 0xe814, 1)
 age.put(BASE + 0xe81c, 1 << 16)
 age.run()
 assert age.get(MB + 28 * 4) == 1 and age.get(BASE + 0x11804) == 2
-age.put(MB + 195 * 4, 126)
+age.clock(126)
 age.run()
 age.check_returns()
 assert len(age.returns) == 2 and age.get(BASE + 0x18020) == 1
@@ -225,7 +239,7 @@ for late, generation in [(False, 1), (True, 1), (False, 0), (True, 0)]:
         empty.put(BASE + 0x19e04, 2)
         empty.put(BASE + 0xe814, generation)
         empty.put(BASE + 0xe81c, 1 << 16)
-    empty.put(MB + 195 * 4, 110)
+    empty.clock(110)
     empty.run()
     if late:
         empty.put(BASE + 0x19e04, 2)
@@ -244,7 +258,7 @@ publication.run()
 assert publication.get(MB + 28 * 4) == 0 and publication.get(BASE + 0xe818) == 0
 publication.put(BASE + 0x19e04, 2)
 publication.run()
-assert publication.get(MB + 28 * 4) == 1 and publication.get(BASE + 0x1b800) == 5
+assert publication.get(MB + 28 * 4) == 1 and publication.get(BASE + 0x28000) == 5
 
 from unicorn import UC_HOOK_MEM_READ
 changed = Radio()
@@ -273,7 +287,7 @@ for wrapped in (False, True):
     zero.put(BASE + 0x19e04, 0 if wrapped else 2)
     zero.put(BASE + 0xe818, 0xfffffffe if wrapped else 0)
     zero.run()
-    assert zero.get(MB + 28 * 4) == 1 and zero.get(BASE + 0x1b800) == 0
+    assert zero.get(MB + 28 * 4) == 1 and zero.get(BASE + 0x28000) == 0
 
 # Actual RPQ decoding captures the grant before recycling its WP. New then
 # old completions cannot replace the current service period's notification.
@@ -283,19 +297,19 @@ rpq.run()
 rpq.put(BASE + 0x19e04, 2); rpq.put(BASE + 0xe814, 1); rpq.put(BASE + 0xe81c, 1 << 16)
 rpq.run()
 rpq.put(BASE + 0x19e04, 4); rpq.put(BASE + 0xe814, 2); rpq.run()
-assert rpq.get(BASE + 0x1b800) == 1 and rpq.get(BASE + 0x1b804) == 2
+assert rpq.get(BASE + 0x28000) == 1 and rpq.get(BASE + 0x28004) == 2
 reports, forwarded = 0x07800000, 0x07900000
 rpq.u.mem_map(reports, 0x40000);rpq.u.mem_map(forwarded, 0x40000)
 for index, value in [(68, reports), (72, forwarded), (187, BASE)]:rpq.put(MB + index * 4, value)
 rpq.put(BAR + 0x121c, 1 << 16)
-payload = struct.pack('<II', 1 | 257 << 16, 1 | 256 << 16)
+payload = struct.pack('<II', 1 | 1 << 16, 1)
 rpq.u.mem_write(reports, struct.pack('<II', 28 | 0xc000 | 1 << 16, 7 << 24 | 8) + bytes(12) + payload)
 rpq.run()
 assert rpq.get(BASE + 0x1ba08) == 2 and rpq.get(BASE + 0x1ba0c) == 1
 assert len(rpq.returns) == 2 and rpq.get(MB + 30 * 4) == 0
 
 print(json.dumps({'scope': 'Linked production PE instructions; synthetic EPP, EQ credit and RPQ ownership.',
-                  'per_peer_bound': 256, 'total_waiting_bound': 512,
+                  'per_peer_bound': None, 'total_sleep_admission_bound': 2048,
                   'sleep_pool_reclaimed': True, 'awake_peer_submitted': True,
                   'expiry_preserves_submitted_WPs_and_TIM': True,
                   'blocked_EQ_push_retries_exactly_once': True}, indent=2))

@@ -66,8 +66,8 @@ struct test_mac_state {
 };
 static struct test_mac_state mac_states[2];
 static u8 source_mac[6],destination_mac[6];
-static char *source_mac_text="02:00:00:00:00:5a";
-static char *destination_mac_text="02:00:00:00:00:5c";
+static char *source_mac_text="02:66:55:44:33:22";
+static char *destination_mac_text="02:77:66:55:44:33";
 module_param(source_mac_text,charp,0600);
 module_param(destination_mac_text,charp,0600);
 static unsigned int test_destination=0xc0a80101,nat_source=0xc6336401;
@@ -77,7 +77,7 @@ module_param(nat_source,uint,0600);
 module_param(test_port,uint,0600);
 static bool reverse_test;
 module_param(reverse_test,bool,0600);
-static char *reverse_mac_text="02:00:00:00:00:4b";
+static char *reverse_mac_text="00:e0:4c:16:74:b0";
 module_param(reverse_mac_text,charp,0600);
 static struct rtl9617c_pon *pon;
 static struct device *pon_device;
@@ -305,7 +305,7 @@ static int configure_reverse(const struct rtl_dq_io *io)
   ret=pdc_access(i*128,true);
   if(ret)goto unlock;
  }
- pr_info("TYFZA1 FE reverse static flow:index=%u CRC=%08x/%04x PON LLID0->L3WAN24->LAN0 DNAT=192.0.2.86:53000\n",index,crc32,crc16);
+ pr_info("TYFZA1 FE reverse static flow:index=%u CRC=%08x/%04x PON LLID0->L3WAN24->LAN0 DNAT=10.23.42.1:53000\n",index,crc32,crc16);
 unlock:
  mutex_unlock(&pon->lock);
  mutex_unlock(&pon->control_lock);

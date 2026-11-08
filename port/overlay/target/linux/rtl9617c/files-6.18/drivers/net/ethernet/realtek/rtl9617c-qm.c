@@ -12,6 +12,7 @@
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/ktime.h>
+#include <linux/prefetch.h>
 #include <linux/rcupdate.h>
 #include <linux/unaligned.h>
 #include "rtl9617c-qm.h"
@@ -79,13 +80,17 @@ static int rtl_qm_push(struct rtl_qm_rx *rx, u32 address, unsigned int eqid)
 static int rtl_qm_try_push(void *context, unsigned int address, unsigned int eqid)
 {
 	struct rtl_qm_rx *rx = context;
+	unsigned int *credit = &rx->refill.credit[eqid - EQ_ID];
 
-	/* NAPI retains busy buffers; it never waits 10ms per buffer. The engine's
-	 * 1ms timer schedules another poll even if every RX buffer is pending. */
-	if (!(readl(rx->ni + 0x6328 + eqid * 4) & GENMASK(13, 0)) ||
-	    !(readl(rx->ni + CPU_READY) & BIT(31)))
+	/* NAPI alone returns these EQs. Reuse a conservative credit snapshot
+	 * within this drain; every accepted PUSH consumes one released BID. */
+	if (!*credit)
+		*credit = readl(rx->ni + 0x6328 + eqid * 4) & GENMASK(13, 0);
+	/* Keep the per-buffer FIFO check. Busy buffers wait for the next poll. */
+	if (!*credit || !(readl(rx->ni + CPU_READY) & BIT(31)))
 		return -EAGAIN;
 	writel(address | eqid, rx->ni + CPU_PUSH);
+	(*credit)--;
 	return 0;
 }
 
@@ -187,13 +192,13 @@ int rtl_qm_rx_alloc(struct device *dev, struct rtl_qm_rx *rx)
 		DMA_FROM_DEVICE, GFP_KERNEL);
 	if (!rx->memory)
 		return -ENOMEM;
-	rx->ring_memory = dma_alloc_coherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS,
-		&rx->ring_dma, GFP_KERNEL);
+	rx->ring_memory = dma_alloc_noncoherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS,
+		&rx->ring_dma, DMA_FROM_DEVICE, GFP_KERNEL);
 	if (!rx->ring_memory)
 		goto free_payload;
 	rx->deepq_memory = dma_alloc_coherent(dev, RTL_DQ_MEMORY_BYTES, &rx->deepq_dma, GFP_KERNEL);
 	if (!rx->deepq_memory) {
-		dma_free_coherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS, rx->ring_memory, rx->ring_dma);
+		dma_free_noncoherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS, rx->ring_memory, rx->ring_dma, DMA_FROM_DEVICE);
 		rx->ring_memory = NULL;
 		goto free_payload;
 	}
@@ -362,6 +367,8 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	readl(ni + EPP_READ);
 	rtl_qm_axi_reorder(rx);
 	memset(rx->ring_memory, 0, RTL_QM_RING_BYTES * RTL_QM_VOQS);
+	dma_sync_single_for_device(rx->device, rx->ring_dma,
+		RTL_QM_RING_BYTES * RTL_QM_VOQS, DMA_FROM_DEVICE);
 	dma_sync_single_for_device(rx->device, rx->memory_dma, RTL_QM_MEMORY_BYTES, DMA_FROM_DEVICE);
 	rx->trace_count = 0;
 	/* Unused bootloader EQs must not retain overlapping BID ownership. */
@@ -508,7 +515,7 @@ void rtl_qm_rx_free(struct device *dev, struct rtl_qm_rx *rx)
 				dma_free_coherent(dev, rtl_qm_wifi_chunk_bytes(chunk),
 					rx->wifi_memory[pool][chunk], rx->wifi_dma[pool][chunk]);
 	dma_free_coherent(dev, RTL_DQ_MEMORY_BYTES, rx->deepq_memory, rx->deepq_dma);
-	dma_free_coherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS, rx->ring_memory, rx->ring_dma);
+	dma_free_noncoherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS, rx->ring_memory, rx->ring_dma, DMA_FROM_DEVICE);
 	dma_free_noncoherent(dev, RTL_QM_MEMORY_BYTES, rx->memory, rx->memory_dma, DMA_FROM_DEVICE);
 }
 
@@ -519,9 +526,9 @@ static void rtl_qm_rx_retire(struct rtl_qm_rx *rx, unsigned int cos,
 	mb();
 	writel(rx->read[cos], rx->ni + EPP_READ + cos * 4);
 	if (refill) {
-		u32 offset = (command & 0xffffff80) - lower_32_bits(rx->memory_dma);
-		dma_sync_single_for_device(rx->device, rx->memory_dma + offset,
-			RTL_QM_BUFFER_BYTES, DMA_FROM_DEVICE);
+		/* CPU only reads this DMA_FROM_DEVICE buffer and delivers a copy.
+		 * No device sync is needed on reuse (dma-api-howto); the next
+		 * receive still synchronizes for CPU before reading any bytes. */
 		rtl_qm_refill_add(&rx->refill, command);
 	}
 }
@@ -540,6 +547,23 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 		/* Stock ca_ni_rx_napi consumes only the published pointer interval.
 		 * Queue status can precede DDR publication and does not republish EPPs. */
 		unsigned int wr = readl(rx->ni + EPP_WRITE + cos * 4) & 0xffffff;
+
+		/* Only published commands are CPU-owned. The ring is CPU read-only
+		 * after startup; invalidate again for each newly sampled interval,
+		 * including a shared cache line that hardware extended since then. */
+		unsigned int rd = round_down(rx->read[cos], L1_CACHE_BYTES);
+		unsigned int end = round_up(wr, L1_CACHE_BYTES);
+		if (rx->read[cos] != wr) {
+			unsigned int base = cos * RTL_QM_RING_BYTES;
+			if (wr < rx->read[cos]) {
+				dma_sync_single_for_cpu(rx->device, rx->ring_dma + base + rd,
+					RTL_QM_RING_BYTES - rd, DMA_FROM_DEVICE);
+				rd = 0;
+			}
+			if (end > rd)
+				dma_sync_single_for_cpu(rx->device, rx->ring_dma + base + rd,
+					end - rd, DMA_FROM_DEVICE);
+		}
 
 		while (rx->read[cos] != wr && count < budget) {
 			unsigned int read = rx->read[cos];
@@ -596,6 +620,9 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				dev->stats.rx_errors++;
 				goto consume;
 			}
+			/* Warm only validated, CPU-owned bytes while allocating the skb. */
+			for (unsigned int i = 0; i < length; i += L1_CACHE_BYTES)
+				prefetch(rx->memory + offset + RTL_QM_HEADROOM + header + i);
 			skb = napi_alloc_skb(napi, length);
 			if (!skb) {
 				dev->stats.rx_dropped++;
@@ -628,7 +655,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 					rx->wifi_copy_bytes += length;
 					skb->dev = endpoint->netdev;
 					skb->priority = h1 & 7;
-					endpoint->receive(endpoint, skb, wifi_forwarded);
+					endpoint->receive(endpoint, napi, skb, wifi_forwarded);
 					if (begin) rx->wifi_dispatch_ns += ktime_get_ns() - dispatch;
 				} else {
 					dev->stats.rx_dropped++;

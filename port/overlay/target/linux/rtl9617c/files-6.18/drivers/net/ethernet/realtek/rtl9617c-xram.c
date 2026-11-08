@@ -28,6 +28,7 @@
 #include <linux/unaligned.h>
 #include <linux/tyfza1-led.h>
 #include <linux/workqueue.h>
+#include <net/gro.h>
 
 #include "rtl9617c-xram-format.h"
 #include "rtl9617c-dma.h"
@@ -324,11 +325,13 @@ static int rtl_poll(struct napi_struct *napi, int budget)
 		unsigned long flags;
 
 		packets = rtl_qm_rx_poll(&priv->qm, napi, budget);
-		/* Complete and rearm form one critical section with engine shutdown. */
-		spin_lock_irqsave(&priv->rx_lock, flags);
-		if (packets < budget && napi_complete_done(napi, packets) && priv->rx_active)
-			rtl_update(priv, 0x6110, 0xff, 0xff);
-		spin_unlock_irqrestore(&priv->rx_lock, flags);
+		/* Completion can deliver GRO packets; keep IRQs enabled for the stack. */
+		if (packets < budget && napi_complete_done(napi, packets)) {
+			spin_lock_irqsave(&priv->rx_lock, flags);
+			if (priv->rx_active)
+				rtl_update(priv, 0x6110, 0xff, 0xff);
+			spin_unlock_irqrestore(&priv->rx_lock, flags);
+		}
 		return packets;
 	}
 
@@ -561,10 +564,10 @@ static void rtl_engine_stop(struct rtl_xram *priv)
 	}
 	napi_disable(&priv->napi);
 	if (priv->qm_rx) {
-		/* A completing poll may release NAPI ownership before dropping rx_lock. */
-		spin_lock_irqsave(&priv->rx_lock, flags);
+		/* Completion releases NAPI ownership before the final rearm check.
+		 * Wait for the BH-disabled poll tail before stopping or reopening QM. */
+		synchronize_net();
 		rtl_qm_rx_stop(&priv->qm);
-		spin_unlock_irqrestore(&priv->rx_lock, flags);
 	}
 	if (priv->dma_tx)
 		rtl_dma_tx_stop(&priv->dma);
@@ -763,6 +766,10 @@ int rtl9617c_ni_wifi_detach(struct device *dev, unsigned int id)
 	napi_disable(&priv->napi);
 	local_bh_disable();
 	rtl_qm_rx_poll(&priv->qm, &priv->napi, 1024);
+	/* The manual drain has no NAPI completion to flush held VIF packets. */
+	napi_gro_flush(&priv->napi, false);
+	netif_receive_skb_list(&priv->napi.gro.rx_list);
+	priv->napi.gro.rx_count = 0;
 	local_bh_enable();
 	rcu_assign_pointer(priv->qm.wifi[id], NULL);
 	napi_enable(&priv->napi);

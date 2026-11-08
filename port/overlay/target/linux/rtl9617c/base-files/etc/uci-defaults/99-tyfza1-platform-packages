@@ -5,7 +5,7 @@ set -eu
 constraints=$(awk '
 BEGIN {
 	RS = ""; FS = "\n"
-	split("luci-mod-status luci-mod-network libiwinfo20230701 wifi-scripts luci-base luci-compat luci-lua-runtime luci-lib-base luci-lib-ip luci-lib-jsonc luci-lib-nixio ucode libucode20230711 ucode-mod-lua", names, " ")
+	split("luci-mod-status luci-mod-network luci-app-package-manager rpcd-mod-iwinfo libiwinfo20230701 wifi-scripts luci-base luci-compat luci-lua-runtime luci-lib-base luci-lib-ip luci-lib-jsonc luci-lib-nixio ucode libucode20230711 ucode-mod-lua", names, " ")
 	for (i in names) required[names[i]] = 1
 }
 {

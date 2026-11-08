@@ -39,15 +39,16 @@ typedef unsigned int u32;
 #define rcu_assign_pointer(p,v) ((p)=(v))
 struct net_device {unsigned int refs;};
 struct rtl9617c_ni_wifi_endpoint {struct net_device *netdev;};
-struct rtl_fe_port {struct net_device *netdev;unsigned int wifi_id;};
+struct rtl_fe_port {struct net_device *netdev;unsigned int wifi_id,llid;};
 struct rtl_fe {int lock,flush_error;struct rtl_fe_port ports[64];unsigned int count,flushes;};
 struct rtl_qm_rx {struct rtl9617c_ni_wifi_endpoint *wifi[61];};
+struct napi_struct {unsigned int enabled;struct {unsigned int held,rx_count,rx_list;} gro;};
 struct rtl_dma {void *registers;unsigned int vp,write;};
 struct rtl_xram {bool dma_tx,qm_rx,removing;struct rtl_fe *fe;struct rtl_qm_rx qm;
- struct rtl_dma dma;unsigned int napi,engine_users,drained;int tx_lock;};
+ struct rtl_dma dma;struct napi_struct napi;unsigned int engine_users,drained;int tx_lock;};
 struct device {struct rtl_xram *private;};
 static struct rtl_xram *current;
-static unsigned int locked,bh_disabled,waited,syncs,rescheduled;
+static unsigned int locked,bh_disabled,waited,syncs,rescheduled,gro_flushes;
 static bool irq_masked;
 static void mutex_lock(int *lock){(void)lock;}
 static void mutex_unlock(int *lock){(void)lock;}
@@ -55,32 +56,42 @@ static struct rtl_fe_port *fe_port(struct rtl_fe *f,struct net_device *d){
  for(unsigned int i=0;i<f->count;i++)if(f->ports[i].netdev==d)return &f->ports[i];return NULL;
 }
 static int rtl_fe_add_port(struct rtl_fe *f,struct net_device *d,unsigned int source,unsigned int dest,unsigned int llid){
- assert(f->count<64 && source==18 && dest==16 && !llid);f->ports[f->count++].netdev=d;return 0;
+ assert(f->count<64 && source==18 && dest==16 && llid>=1 && llid<=60);
+ f->ports[f->count].llid=llid;f->ports[f->count++].netdev=d;return 0;
 }
 static int rtl_engine_get(struct rtl_xram *p){p->engine_users++;return 0;}
 static void rtl_engine_put(struct rtl_xram *p){assert(p->engine_users);p->engine_users--;}
 static void dev_hold(struct net_device *d){d->refs++;}
-static void dev_put(struct net_device *d){assert(d->refs>1);d->refs--;}
+static void dev_put(struct net_device *d){assert(d->refs>1 && !current->napi.gro.held && !current->napi.gro.rx_count);d->refs--;}
 static int rtl_fe_flush_port(struct rtl_fe *f,struct net_device *d){assert(fe_port(f,d));f->flushes++;return f->flush_error;}
 #define spin_lock_irqsave(lock,flags) do{(void)(lock);(flags)=0;assert(!locked);locked=1;}while(0)
 #define spin_unlock_irqrestore(lock,flags) do{(void)(lock);(void)(flags);assert(locked);locked=0;}while(0)
 static u32 readl(void *p){u32 v;memcpy(&v,p,4);assert(locked);return v;}
 #define readl_poll_timeout_atomic(addr,status,cond,delay,timeout) ({status=readl(addr);(cond)?0:-ETIMEDOUT;})
 static void usleep_range(unsigned int a,unsigned int b){assert(a==1000 && b==2000);waited++;}
-static void napi_disable(unsigned int *n){assert(*n==1);*n=0;irq_masked=true;}
-static void napi_enable(unsigned int *n){assert(!*n);*n=1;}
-static void napi_schedule(unsigned int *n){assert(*n==1 && irq_masked);rescheduled++;irq_masked=false;}
+static void napi_disable(struct napi_struct *n){assert(n->enabled==1);n->enabled=0;irq_masked=true;}
+static void napi_enable(struct napi_struct *n){assert(!n->enabled && !n->gro.held && !n->gro.rx_count);n->enabled=1;}
+static void napi_schedule(struct napi_struct *n){assert(n->enabled==1 && irq_masked);rescheduled++;irq_masked=false;}
 static void local_bh_disable(void){assert(!bh_disabled);bh_disabled=1;}
 static void local_bh_enable(void){assert(bh_disabled);bh_disabled=0;}
-static void rtl_qm_rx_poll(struct rtl_qm_rx *q,unsigned int *n,unsigned int budget){
- (void)q;assert(!*n && bh_disabled && budget==1024 && waited);current->drained++;
+static void rtl_qm_rx_poll(struct rtl_qm_rx *q,struct napi_struct *n,unsigned int budget){
+ (void)q;assert(!n->enabled && bh_disabled && budget==1024 && waited);current->drained++;
+ n->gro.held=2;n->gro.rx_count=1;
+}
+static void napi_gro_flush(struct napi_struct *n,bool old){
+ assert(n==&current->napi && !n->enabled && bh_disabled && !old);
+ n->gro.rx_count+=n->gro.held;n->gro.held=0;gro_flushes++;
+}
+static void netif_receive_skb_list(unsigned int *list){
+ assert(list==&current->napi.gro.rx_list && !current->napi.enabled && bh_disabled);
+ assert(!current->napi.gro.held && current->napi.gro.rx_count==3);
 }
 static void synchronize_net(void){assert(!locked && !bh_disabled);syncs++;}
 '''
 test = r'''
 int main(void){
  unsigned int registers[1024]={};struct rtl_fe f={};
- struct rtl_xram p={.dma_tx=true,.qm_rx=true,.fe=&f,.napi=1};
+ struct rtl_xram p={.dma_tx=true,.qm_rx=true,.fe=&f,.napi={.enabled=1}};
  struct device ni={&p};struct net_device dev[60]={};struct rtl9617c_ni_wifi_endpoint ep[60];
  current=&p;p.dma.registers=registers;p.dma.vp=8;p.dma.write=7;registers[(0x100+8*0xa0+0x1c)/4]=7;
  for(unsigned int i=0;i<60;i++){dev[i].refs=1;ep[i].netdev=&dev[i];}
@@ -103,7 +114,7 @@ int main(void){
  assert(rtl9617c_ni_wifi_attach(&ni,&ep[0])==-ENOSPC);
  for(unsigned int i=0;i<60;i++)assert(!rtl9617c_ni_wifi_detach(&ni,i+1));
  assert(!p.engine_users && p.drained==63 && syncs==63 && f.count==60);
- assert(rescheduled==63 && !irq_masked);
+ assert(rescheduled==63 && gro_flushes==63 && !irq_masked);
  for(unsigned int i=0;i<60;i++)assert(dev[i].refs==1 && !p.qm.wifi[i+1]);
  p.dma_tx=false;assert(rtl9617c_ni_wifi_attach(&ni,&ep[0])==-EOPNOTSUPP && !p.engine_users);
  puts("Wi-Fi lifetime: 60 IDs/capacity; queue timeout retains ID/ref; retry drains before reuse; DOWN/UP preserves flow-block owner");
@@ -124,5 +135,6 @@ with tempfile.TemporaryDirectory(prefix='wifi-lifetime-', dir=root / 'artifacts'
     'interfaces': 60, 'NI_drains_and_RCU_grace_periods': 63,
     'queue_timeout_retains_ID_and_netdev': True, 'DOWN_UP_preserves_flow_block': True,
     'IRQ_during_NAPI_disable_followed_by_rescheduled_poll': True,
+    'held_GRO_and_normal_list_flushed_before_VIF_release': True,
     'sanitizers': ['ASan', 'UBSan'], 'real_AP_teardown_test': False,
 }, indent=2) + '\n')

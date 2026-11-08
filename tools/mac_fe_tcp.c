@@ -96,14 +96,14 @@ int main(int argc,char **argv)
  if(!pcap){fprintf(stderr,"%s\n",error);return 1;}
  pcap_set_snaplen(pcap,2048);pcap_set_timeout(pcap,20);pcap_set_immediate_mode(pcap,1);
  if(pcap_activate(pcap)<0){fprintf(stderr,"%s\n",pcap_geterr(pcap));return 1;}
- if(pcap_compile(pcap,&filter,"tcp and src host 1.1.1.1 and dst host 192.0.2.86 and src port 80 and dst port 53123",1,PCAP_NETMASK_UNKNOWN) || pcap_setfilter(pcap,&filter)) {
+ if(pcap_compile(pcap,&filter,"tcp and src host 1.1.1.1 and dst host 10.23.42.1 and src port 80 and dst port 53123",1,PCAP_NETMASK_UNKNOWN) || pcap_setfilter(pcap,&filter)) {
   fprintf(stderr,"%s\n",pcap_geterr(pcap));return 1;
  }
  pcap_freecode(&filter);
  if(send_tcp(pcap,2,NULL,0))return 1;
  usleep(10000);
  if(send_arp(pcap) || receive_tcp(pcap,1,&replies))return 1;
- puts("Raw en5 TCP established:192.0.2.86:53123 ->1.1.1.1:80");fflush(stdout);
+ puts("Raw en5 TCP established:10.23.42.1:53123 ->1.1.1.1:80");fflush(stdout);
  const char request[]="GET / HTTP/1.1\r\nHost:1.1.1.1\r\nConnection:keep-alive\r\n\r\n";
  for(unsigned int i=0;i<30;i++) {
   if(send_tcp(pcap,24,request,sizeof(request)-1))return 1;

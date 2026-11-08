@@ -51,6 +51,11 @@ static void ni_ps_done(struct rtl_ax_tx *tx, unsigned int macid)
 	static const u32 tables[] = { RTL_AX_NI_PS_CANCEL, RTL_AX_NI_PS_DONE };
 	unsigned int i;
 
+	/* Most event passes have no PS completion, including unused MACIDs.
+	 * Avoid hashing an uncached PE MAC address until a record changes. */
+	if (get_unaligned_le32(tx->pe.memory + RTL_AX_NI_PS_CANCEL + macid * 8 + 4) == tx->ni.ps_seen[0][macid] &&
+	    get_unaligned_le32(tx->pe.memory + RTL_AX_NI_PS_DONE + macid * 8 + 4) == tx->ni.ps_seen[1][macid])
+		return;
 	local_bh_disable(); rcu_read_lock();
 	sta = ieee80211_find_sta_by_ifaddr(tx->hw, tx->pe.memory + 0xe400 + macid * 8, NULL);
 	for (i = 0; sta && i < 2; i++) {
@@ -87,6 +92,7 @@ static void ni_tx_activity(struct rtl_ax_tx *tx, unsigned int macid)
 {
 	struct ieee80211_sta *sta;
 	unsigned int tid, changed = 0;
+	bool need_ba = false;
 
 	if (!READ_ONCE(tx->peer_authorized[macid])) return;
 	dma_rmb();
@@ -95,7 +101,10 @@ static void ni_tx_activity(struct rtl_ax_tx *tx, unsigned int macid)
 		if (packets == tx->ni.tx_activity_seen[macid][tid]) continue;
 		tx->ni.tx_activity_seen[macid][tid] = packets;
 		changed |= BIT(tid);
+		if (tid < 6 && !get_unaligned_le32(tx->pe.memory + 0x12000 + (macid * 8 + tid) * 4))
+			need_ba = true;
 	}
+	if (need_ba && tx->peer_ready) tx->peer_ready(tx->peer_ready_context);
 	if (!changed) return;
 	/* NI traffic bypasses mac80211's TX preparation and its last_tx update. */
 	local_bh_disable(); rcu_read_lock();
@@ -230,8 +239,10 @@ static int ni_uplink_start(struct rtl_ax_tx *tx, unsigned int wifi_id)
 	writel(BIT(31) | BIT(30), tx->ni.vp + 4);
 	ret = readl_poll_timeout(tx->ni.vp + 4, status, !(status & BIT(31)), 1, 100000);
 	if (ret) { ni_uplink_stop(tx); return ret; }
-	writel((tx->ni.vp_saved[0] & ~(3U << (tx->ni.vp_index * 2))) |
-		(1U << (tx->ni.vp_index * 2)), tx->ni.dma + 0x14);
+	/* PE rewrites RX Ethernet headers in DDR without updating ARM caches.
+	 * Pattern 1 ReadOnce can return the old A-MSDU prefix to NI. Pattern 0
+	 * reads this PE-owned queue without snooping; other VPs keep their mode. */
+	writel(tx->ni.vp_saved[0] & ~(3U << (tx->ni.vp_index * 2)), tx->ni.dma + 0x14);
 	writel(0, tx->ni.vp + 0x78);
 	put_unaligned_le32(tx->ni.uplink_dma, mailbox + 356);
 	uplink_counter_start(tx, readl(tx->ni.vp + 0x1c) & RTL_AX_NI_TX_MASK);
@@ -357,11 +368,11 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 		tx->ni.attrs[i][0] = readl(tx->ni.regs + 0x66ac); tx->ni.attrs[i][1] = readl(tx->ni.regs + 0x66a8);
 	}
 	tx->ni.active = true;
-	rtl_ax_tx_ps_clock(tx, ktime_get_boottime_seconds());
 	memset(tx->pe.memory + 0x11000, 0, 0xc00);
 	memset(tx->pe.memory + 0x13000, 0, 0x4000);
 	memset(tx->pe.memory + 0x19000, 0, 0x400);
 	memset(tx->pe.memory + 0x18000, 0, 0x1000);
+	memset(tx->pe.memory + RTL_AX_TX_AMSDU_QUEUES, 0, 0x4000);
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 680);
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 684);
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 152);
@@ -437,8 +448,8 @@ static int ni_test_remove(struct rtl_ax_tx *tx)
 	if (ret) return ret;
 	writel(tx->ni.vp_saved[3], tx->ni.vp + 0x64); writel(tx->ni.vp_saved[4], tx->ni.vp + 0x78);
 	writel((readl(tx->ni.dma + 0x14) & ~(3U << (tx->ni.vp_index * 2))) | (tx->ni.vp_saved[0] & (3U << (tx->ni.vp_index * 2))), tx->ni.dma + 0x14);
-	for (i = 0; i < 128; i++) {
-		u32 address = get_unaligned_le32(tx->pe.memory + 0xc400 + i * 8);
+	for (i = 0; i < RTL_AX_NI_OWNER_SLOTS; i++) {
+		u32 address = get_unaligned_le32(tx->pe.memory + RTL_AX_NI_OWNERS + i * 8);
 		while (address) {
 			u32 next;
 			dma_sync_single_for_cpu(tx->dma_device, address, 4, DMA_FROM_DEVICE);
@@ -446,7 +457,7 @@ static int ni_test_remove(struct rtl_ax_tx *tx)
 			ret = readl_poll_timeout(tx->ni.regs + (0x6368 + tx->ni.cpu * 8), status, status & BIT(31), 1, 100000);
 			if (ret) return ret;
 			writel(address | tx->ni.eq, tx->ni.regs + (0x636c + tx->ni.cpu * 8));
-			put_unaligned_le32(next, tx->pe.memory + 0xc400 + i * 8);
+			put_unaligned_le32(next, tx->pe.memory + RTL_AX_NI_OWNERS + i * 8);
 			address = next;
 		}
 	}
@@ -636,9 +647,9 @@ static bool ni_peer_idle(struct rtl_ax_tx *tx, unsigned int macid)
 	if (get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 684)) return false;
 	dma_rmb();
 	if (get_unaligned_le32(tx->pe.memory + 0x11800 + macid * 4)) return false;
-	for (i = 0; i < 128; i++)
-		if (get_unaligned_le32(tx->pe.memory + 0xc400 + i * 8) &&
-		    ((get_unaligned_le32(tx->pe.memory + 0xc404 + i * 8) >> 8) & 127) == macid)
+	for (i = 0; i < RTL_AX_NI_OWNER_SLOTS; i++)
+		if (get_unaligned_le32(tx->pe.memory + RTL_AX_NI_OWNERS + i * 8) &&
+		    ((get_unaligned_le32(tx->pe.memory + RTL_AX_NI_OWNERS + 4 + i * 8) >> 8) & 127) == macid)
 			return false;
 	return true;
 }

@@ -5,6 +5,7 @@ CAM creation and BB host-list insertion are explicit external boundaries.
 The actual HAL table initialization, antenna selection and MAC H2C encoders
 execute from the original ELF. No hardware access or RF claim is made.
 """
+import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -14,7 +15,12 @@ from unicorn import UC_HOOK_MEM_INVALID
 from unicorn.arm64_const import UC_ARM64_REG_PC, UC_ARM64_REG_X4, UC_ARM64_REG_X5, UC_ARM64_REG_X6, UC_ARM64_REG_X7
 
 root = Path(__file__).resolve().parents[1]
-module = root / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--client', action='store_true')
+parser.add_argument('--module', type=Path)
+parser.add_argument('--output', type=Path, default=root / 'manifests/radio-stock-station-tables.json')
+args = parser.parse_args()
+module = args.module or root / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
 names = ['rtw_hal_add_sta_entry', 'rtw_hal_update_cctrl_tbl', '_hal_sta_set_default_value', '_hal_update_dctrl_tbl',
          'rtw_hal_cmc_tbl_cfg', 'rtw_hal_dmc_tbl_cfg', 'mac_upd_cctl_info_8852c', 'mac_upd_cctl_info_8192xb', 'mac_upd_dctl_info_8852c', 'mac_upd_dctl_info_8192xb',
          'rtw_hal_bb_cfg_cmac_tx_ant', 'halbb_cfg_cmac_tx_ant',
@@ -69,7 +75,7 @@ oracle.word(platform+48, oracle.callback('platform_TX'))
 role, dvobj, rf = 0x60a0000, 0x60b0000, 0x7000000
 oracle.uc.mem_map(role,0x10000);oracle.uc.mem_map(dvobj,0x10000);oracle.uc.mem_map(rf,0x100000)
 oracle.word(sta+16,role)
-oracle.uc.mem_write(role+8,struct.pack('<I',2))
+oracle.uc.mem_write(role+8,struct.pack('<I',1 if args.client else 2))
 oracle.uc.mem_write(role+204,b'\xff\xff')
 oracle.word(common+1896,dvobj);oracle.word(dvobj+176,rf)
 def invalid(uc,access,address,size,value,data):
@@ -107,7 +113,7 @@ for chip in ('8852c','8192xb'):
     for macid in (0,1):
         operations.clear();oracle.uc.mem_write(sta+28,struct.pack('<H',macid))
         status=oracle.call('rtw_hal_update_cctrl_tbl',hal,sta)
-        updates.append({'chip':chip,'MACID':macid,'status':status,'parameters':'legacy AP, no aggregation, default RTS/data retry limits255, port0/MBID0, no forced HE rate', 'operations':list(operations)})
+        updates.append({'chip':chip,'MACID':macid,'status':status,'parameters':('legacy STA, ' if args.client else 'legacy AP, ') + ' no aggregation, default RTS/data retry limits255, port0/MBID0, no forced HE rate', 'operations':list(operations)})
 aggregation=[]
 for chip in ('8852c','8192xb'):
     oracle.word(adapter+88,oracle.symbols['mac'+chip+'_hw_info'][0])
@@ -116,13 +122,13 @@ for chip in ('8852c','8192xb'):
     oracle.uc.mem_write(sta+40,struct.pack('<I',chip=='8852c'))
     oracle.uc.mem_write(sta+28,struct.pack('<H',1))
     oracle.uc.mem_write(sta+2332,struct.pack('<I',8))  # WLAN_MD_11N
-    for number in (4,16,64):
+    for number in (4,16,32,64,128):
         oracle.uc.mem_write(sta+2506,struct.pack('<H',number))
         operations.clear()
         status=oracle.call('rtw_hal_update_cctrl_tbl',hal,sta)
         aggregation.append({'chip':chip,'MACID':1,'maximum_aggregation':number,'status':status,
                             'operations':list(operations)})
-output=root/'manifests/radio-stock-station-tables.json'
+output=args.output
 output.write_text(json.dumps({'scope':__doc__,'original_sha256':hashlib.sha256(module.read_bytes()).hexdigest(),
     'executed_original_functions':names,'records':records,'legacy_updates':updates,
     'HT_aggregation_updates':aggregation},indent=2)+'\n')

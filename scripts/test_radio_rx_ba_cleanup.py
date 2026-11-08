@@ -34,6 +34,9 @@ typedef uint8_t u8;typedef uint32_t u32;
 #define RTL_AX_H2C_CMD 0
 #define RTL_AX_SECURITY_ENTRIES 128
 #define IEEE80211_NUM_TIDS 16
+#define RTL_AX_CLIENT_MACID 1
+#define NL80211_IFTYPE_MESH_POINT 7
+struct ieee80211_vif {int type;};
 #define min(a,b) ((a)<(b)?(a):(b))
 #define dev_info(...) ((void)0)
 #define container_of(p,t,m) ((t *)((char *)(p)-offsetof(t,m)))
@@ -42,13 +45,13 @@ struct wiphy_delayed_work {struct wiphy_work work;};
 struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[2];};
 struct rtl_ax_station {unsigned macid;};
 struct rtl_ax_ap {
- struct {unsigned macid,tid;bool valid,deleting;}rx_ba[8];
+ struct {unsigned macid,tid,cam;bool valid,deleting;}rx_ba[128*8];
  unsigned rx_ba_stopped;int rx_ba_result,tx,rx;
- bool ap_started,monitor_started,offload_retry,peer_authorized[128];
+ bool ap_started,monitor_started,offload_retry,peer_authorized[128],scanning,sta_associated,sta_4addr;
  struct {unsigned aggregation[16],stopping;}tx_ba[128];
  struct {bool pending;}retired_stations[128];
  struct rtl_ax_security_role security_roles[128];unsigned security_unlink[128];
- int ap_vif,offload_result;unsigned offload_started;
+ struct ieee80211_vif *ap_vif,*sta_vif;int offload_result,scan_offload_result;unsigned offload_started;
  struct wiphy_work offload_work;struct wiphy_delayed_work cleanup_work;
 };
 struct ieee80211_hw {struct wiphy *wiphy;};
@@ -68,8 +71,9 @@ static bool rtl_ax_security_cleanup(struct rtl_ax_ap *r){(void)r;return false;}
 static int rtl_ax_station_release(struct rtl_ax_ap *r,unsigned id){(void)r;(void)id;assert(0);return 0;}
 static int rtl_ax_tx_ba_finish(struct rtl_ax_ap *r,unsigned id,unsigned tid){(void)r;(void)id;(void)tid;assert(0);return 0;}
 static bool rtl_ax_tx_peer_security(int tx,unsigned id,unsigned cam,unsigned key){(void)tx;(void)cam;(void)key;assert(id==7);return true;}
-struct wdev {int netdev;};static struct wdev wdev;
-static struct wdev *ieee80211_vif_to_wdev(int vif){(void)vif;return &wdev;}
+struct wdev {int netdev;bool use_4addr;};static struct wdev wdev;
+static struct wdev *ieee80211_vif_to_wdev(struct ieee80211_vif *vif){(void)vif;return &wdev;}
+static int rtl_ax_tx_ni_retire_peer(int tx,unsigned id){(void)tx;(void)id;return 0;}
 static int rtl_ax_tx_ni_peer(int tx,int dev,unsigned id){(void)tx;(void)dev;assert(id==7);admitted++;return 1;}
 """
 stop = source.split("case IEEE80211_AMPDU_RX_STOP:\n", 1)[1].split("\n\t}\n", 1)[0]
@@ -79,7 +83,8 @@ common += function("rtl_ax_cleanup_work") + function("rtl_ax_offload_work")
 common += r"""
 int main(void){
  struct wiphy w={0};struct ieee80211_hw hw={&w};struct rtl_ax_station sta={7};struct params p={3};
- struct rtl_ax_ap r={.ap_started=true,.monitor_started=true};
+ struct ieee80211_vif vif={};
+ struct rtl_ax_ap r={.ap_vif=&vif,.ap_started=true,.monitor_started=true};
  r.rx_ba[0].valid=true;r.rx_ba[0].macid=7;r.rx_ba[0].tid=3;window=64;
  r.peer_authorized[7]=true;r.tx_ba[7].aggregation[0]=64;r.security_roles[7].valid=1;
  retire_error=-ETIMEDOUT;

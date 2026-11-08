@@ -46,7 +46,9 @@ struct list_head {struct list_head *next,*prev;};
 static void init(struct list_head *h){h->next=h->prev=h;}
 static void list_add_tail(struct list_head *n,struct list_head *h){n->prev=h->prev;n->next=h;h->prev->next=n;h->prev=n;}
 static void list_del(struct list_head *n){n->prev->next=n->next;n->next->prev=n->prev;}
-struct net_device {int id;};
+#define NL80211_IFTYPE_STATION 2
+struct wireless_dev {int iftype;};
+struct net_device {int id;struct wireless_dev *ieee80211_ptr;};
 struct rtl_fe_port {struct list_head list;struct net_device *netdev;unsigned int wifi_id,destination;bool retired;};
 struct rtl_fe_wifi_peer {struct list_head list;struct rtl_fe_port *port;u8 address[6];unsigned int destination;};
 struct rtl_fe_flow {struct list_head list;struct rtl_fe_port *output;u8 destination[6];unsigned int hash_index,crc16;bool installed,deleting;};
@@ -94,13 +96,25 @@ int main(void){
  assert(!memcmp(memory[0],expected,48) && fe_wifi_peer(&fe,&ports[0],mac)->destination==18);
  fe_wifi_forget_port(&fe,&ports[0]);
  assert(!fe_wifi_peer(&fe,&ports[0],mac));
+ struct wireless_dev station={.iftype=NL80211_IFTYPE_STATION};
+ a.ieee80211_ptr=&station;
+ unsigned int previous=transactions;
+ assert(!rtl_fe_wifi_peer_route(&fe,&a,mac,19));assert(transactions==previous+2);
+ assert(fe_wifi_peer(&fe,&ports[0],other)->destination==19);
+ for(unsigned int i=0;i<2;i++){
+  memcpy(expected,original[i],48);rtl_fe_action_set(expected,RTL_FE_MCGID,19);
+  assert(!memcmp(memory[i],expected,48));
+ }
+ assert(!memcmp(memory[2],original[2],96));
+ assert(!rtl_fe_wifi_peer_route(&fe,&a,mac,0));assert(transactions==previous+4);
+ assert(!memcmp(memory,original,sizeof(memory)));
  puts("FE peer route: exact peer/AP matching, NAT bytes preserved, age/cache withdrawal ordering, restore and removal passed");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='fe-peer-route-', dir=root / 'artifacts') as directory:
     work = Path(directory)
     (work / 'test.c').write_text(common + ''.join(function(n) for n in
-        ('fe_port', 'fe_wifi_peer', 'fe_wifi_forget_port', 'rtl_fe_wifi_peer_route')) + test)
+        ('fe_port', 'fe_wifi_client', 'fe_wifi_peer', 'fe_wifi_forget_port', 'rtl_fe_wifi_peer_route')) + test)
     subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
                     '-I', str(driver), str(work / 'test.c'), '-o', str(work / 'test')], check=True)
     subprocess.run([str(work / 'test')], check=True)

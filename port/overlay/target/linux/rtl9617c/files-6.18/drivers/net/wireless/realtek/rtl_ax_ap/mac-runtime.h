@@ -104,11 +104,14 @@ static inline int rtl_ax_dle_scc(const struct rtl_ax_io *io)
 	return ret;
 }
 
-static inline void rtl_ax_preload_scc(const struct rtl_ax_io *io)
+static inline void rtl_ax_preload_scc(const struct rtl_ax_io *io, unsigned int chip)
 {
 	/* Original preload_init_set(BAND0,SCC). Keep both CAM entry fields. */
 	rtl_ax_update32(io, 0x9f48, 0x03ff0000, 0x82080000);
 	rtl_ax_update32(io, 0x9f4c, 0x00000fff, 0x00000134);
+	/* Four C peers, two entries each; never repartition active preload CAM. */
+	if (chip == RTL_AX_8852C)
+		rtl_ax_update32(io, 0x9f48, 0x00001f1f, 0x00000208);
 }
 
 static inline void rtl_ax_hfc_scc(const struct rtl_ax_io *io, unsigned int chip)
@@ -151,7 +154,7 @@ static inline int rtl_ax_mac_memory_start(const struct rtl_ax_io *io,
 	ret = rtl_ax_dle_scc(io);
 	if (ret)
 		return ret;
-	rtl_ax_preload_scc(io);
+	rtl_ax_preload_scc(io, chip);
 	rtl_ax_hfc_scc(io, chip);
 	return 0;
 }
@@ -270,13 +273,15 @@ static inline int rtl_ax_receive_mode(const struct rtl_ax_io *io, unsigned int m
 	 * before selecting SCAN1/SNIFFER0 so a previous monitor bit does
 	 * not survive into a different requested operating mode. The explicit
 	 * startup MPDU11264B limit is retained, as after the original wrapper. */
-	if (mode != 0 && mode != 1 && mode != 4)
+	if (mode != 0 && mode != 1 && mode != 2 && mode != 4)
 		return -EINVAL;
 	rtl_ax_update32(io, 0xce20, 0x47ff, 0x440e);
 	if (mode == 0)
 		rtl_ax_update32(io, 0xce20, 0, 1);
 	else if (mode == 1)
 		rtl_ax_update32(io, 0xce20, 0xbe, 0x0e);
+	else if (mode == 2)
+		rtl_ax_update32(io, 0xce20, 0x47ff, 0x441e);
 	return 0;
 }
 
@@ -381,6 +386,10 @@ static inline int rtl_ax_mac_cmac_start(const struct rtl_ax_io *io,
 	if (ret)
 		return ret;
 	rtl_ax_cmac_protocol(io, firmware_tx);
+	/* C/XB hal_trx_init disables NAV padding; its disabled branch leaves
+	 * the upper protocol fields and NAV_OVER_TXOP_EN untouched. */
+	io->write16(io->ctx, 0xc674, 0);
+	io->write16(io->ctx, 0xc678, 0);
 	return 0;
 }
 
@@ -431,9 +440,8 @@ static inline void rtl_ax_mac_trx_registers(const struct rtl_ax_io *io)
 	/* mac_err_imr_ctrl(1),SCC has no CMAC1. */
 	io->write32(io->ctx, 0x8520, 0xffffffff);
 	io->write32(io->ctx, 0xc160, 0xffffffff);
-	/* set_host_rpr: PCIe SCC's POH profile enables all four WP outcomes.
-	 * Eight-MSDU aggregates reduce 124 BIDs to 15 WPs. Report after 12
-	 * WPs so recycling starts before the BID pool fills. */
+	/* set_host_rpr: actual PCIe SCC POH defaults enable all four WP
+	 * outcomes, aggregate121 and timeout255. Requests stay owned until RPQ. */
 	value = io->read32(io->ctx, 0x9408);
 	next = value & ~3U;
 	if (value != next)
@@ -443,7 +451,7 @@ static inline void rtl_ax_mac_trx_registers(const struct rtl_ax_io *io)
 	if (value != next)
 		io->write32(io->ctx, 0x9410, next);
 	value = io->read32(io->ctx, 0x9414);
-	next = (value & 0xff00ff00) | 0x00ff000c;
+	next = (value & 0xff00ff00) | 0x00ff0079;
 	if (value != next)
 		io->write32(io->ctx, 0x9414, next);
 	/* set_l2_status changes a host state byte,not a hardware register.

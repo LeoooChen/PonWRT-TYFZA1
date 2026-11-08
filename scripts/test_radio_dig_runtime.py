@@ -56,18 +56,14 @@ typedef uint32_t u32;typedef uint64_t u64;
 #include "dig-runtime.h"
 static u32 registers[0x20000/4];
 static struct rtl_ax_dig dig;
-static struct rtl_ax_dig_rssi rssi;
 static u32 read32(void *ctx,unsigned int reg){return registers[reg/4];}
 static void write32(void *ctx,unsigned int reg,u32 value){registers[reg/4]=value;}
 static struct rtl_ax_io io={.read32=read32,.write32=write32};
-void native_clear(void){memset(registers,0,sizeof(registers));memset(&dig,0,sizeof(dig));memset(&rssi,0,sizeof(rssi));}
+void native_clear(void){memset(registers,0,sizeof(registers));memset(&dig,0,sizeof(dig));}
 void native_set(unsigned reg,u32 value){registers[(reg|0x10000)/4]=value;}
 u32 native_get(unsigned reg){return registers[(reg|0x10000)/4];}
 void native_init(unsigned width){rtl_ax_dig_initialize(&io,&dig);rtl_ax_dig_bandwidth(&io,&dig,width);}
 void native_update(unsigned chip,bool linked,u8 rssi,s8 loss,u32 now){rtl_ax_dig_update(&io,&dig,chip,linked,rssi,loss,now);}
-void native_rssi_sample(u8 value){rtl_ax_dig_rssi_sample(&rssi,value);}
-unsigned native_rssi_tick(void){return rtl_ax_dig_rssi_update(&rssi);}
-unsigned native_rssi_average(void){return rssi.average;}
 unsigned native_state(unsigned field){
  switch(field){
  case 0:return dig.unit[0].igi;case 1:return dig.igi_rssi;
@@ -133,27 +129,6 @@ with tempfile.TemporaryDirectory(prefix='dig-runtime-') as tmp:
             assert actual==expected,(chip,width,step,actual,expected)
             damped+=bool(actual[3])
             cases+=1
-    # Replay actual station smoothing and the common-state watchdog that
-    # consumes packet counts and chooses its next averaging factor.
-    o.uc.mem_write(bb,bytes(0x20000));o.word(bb,phl);o.word(bb+8,hal)
-    sta,rssi_addr,descriptor=bb+0x10000,bb+0x11000,bb+0x12000
-    o.word(bb+24,sta);o.word(sta+0xa80,rssi_addr)
-    put(0x411,1,'B');put(0x491,1,'B')
-    o.uc.mem_write(sta+0x18,bytes([1]));o.uc.mem_write(sta+0x1c,bytes([1,0]))
-    o.uc.mem_write(hal+0x62d,bytes([1]));o.uc.mem_write(phl+0x58fa,bytes([54]))
-    o.uc.mem_write(descriptor+4,bytes([1]))
-    native.native_clear()
-    samples=0
-    for count in [1,0,5,6,20,21,100,101,200]*8:
-        for _ in range(count):
-            value=rng.randrange(1,200)
-            put(0x3390,value,'B')
-            o.call('halbb_rx_pkt_su_store_in_sta_info',bb,descriptor)
-            native.native_rssi_sample(value)
-            assert native.native_rssi_average()==o.unpack(rssi_addr+6,'H')[0]
-            samples+=1
-        o.call('halbb_cmn_info_self_update',bb)
-        assert native.native_rssi_tick()==get(0x4290)
 print(f'PASS: {cases} factory ARM64 origin DIG/FAHM watchdog steps, C/XB initialization and 20/40/80/160 MHz register/state parity')
-print(f'PASS: {samples} factory station RSSI samples and packet-count smoothing transitions; damping active in {damped} watchdog steps')
+print(f'PASS: damping active in {damped} watchdog steps; shared RSSI state is covered by test_radio_rssi_ma.py')
 

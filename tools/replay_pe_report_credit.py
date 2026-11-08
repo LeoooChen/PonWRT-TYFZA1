@@ -46,7 +46,7 @@ def replay(report_batch):
     for index, value in [(2, bar | 0xa0000000), (25, base + 0x18000), (68, rpq),
                          (72, forward), (114, 0x7060), (115, 0x7160), (116, 0x6380), (117, 6)]:
         put(mailbox + index * 4, value)
-    mac = bytes.fromhex('02000000004e')
+    mac = bytes.fromhex('067afb78b287')
     u.mem_write(base + 0xe410, mac)
     put(base + 0x11a08, 1)
     put(base + 0xe208, 3839 << 18 | 1 << 17)
@@ -57,7 +57,7 @@ def replay(report_batch):
     put(ni + 0x6380, 0x80000000)
     total = 248
     for n in range(total):
-        frame = mac + bytes.fromhex('0200000000650800') + struct.pack('>I', n) + bytes(1496)
+        frame = mac + bytes.fromhex('0050c20102000800') + struct.pack('>I', n) + bytes(1496)
         address = payload + n * 2048
         u.mem_write(address, bytes(32) + struct.pack('>II', 0x80000000, 1522 << 15) + bytes(8) + frame)
         u.mem_write(base + 0x18000 + n * 8, struct.pack('<II', address | 0x50, 1530 | 1 << 14))

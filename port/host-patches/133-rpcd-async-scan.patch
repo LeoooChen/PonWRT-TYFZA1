@@ -1,0 +1,134 @@
+--- a/iwinfo.c
++++ b/iwinfo.c
+@@ -507,9 +507,7 @@
+ }
+ 
+ static int
+-rpc_iwinfo_scan(struct ubus_context *ctx, struct ubus_object *obj,
+-                struct ubus_request_data *req, const char *method,
+-                struct blob_attr *msg)
++rpc_iwinfo_scan_run(const char *method, struct blob_attr *msg)
+ {
+ 	int i, rv, len = 0, band, mode;
+ 	bool restore_failed = false;
+@@ -603,12 +601,119 @@
+ 			mode == IWINFO_OPMODE_MASTER);
+ 	}
+ 
+-	ubus_send_reply(ctx, req, buf.head);
+ 
+ 	rpc_iwinfo_close();
+ 
+ 	return UBUS_STATUS_OK;
+ }
++
++
++/* A scan can wait seconds in libiwinfo. Never stall session ACLs or other RPCs. */
++struct rpc_scan_context {
++	struct ubus_context *ctx;
++	struct ubus_request_data req;
++	struct uloop_process process;
++	struct uloop_timeout timeout;
++	FILE *result;
++	bool timed_out;
++};
++
++static struct rpc_scan_context *rpc_scan_active;
++
++static void
++rpc_scan_complete(struct uloop_process *process, int status)
++{
++	struct rpc_scan_context *scan = container_of(process, struct rpc_scan_context, process);
++	struct blob_attr *reply = NULL;
++	long length;
++	int rv = UBUS_STATUS_UNKNOWN_ERROR;
++
++	uloop_timeout_cancel(&scan->timeout);
++	if (scan->timed_out)
++		rv = UBUS_STATUS_TIMEOUT;
++	else if (WIFEXITED(status))
++		rv = WEXITSTATUS(status);
++	if (!rv) {
++		/* The private, unlinked file avoids pipe backpressure on large scans. */
++		if (fseek(scan->result, 0, SEEK_END) ||
++		    (length = ftell(scan->result)) < (long)sizeof(*reply) ||
++		    length > 512 * 1024 || fseek(scan->result, 0, SEEK_SET))
++			rv = UBUS_STATUS_NO_DATA;
++		else if (!(reply = malloc(length)))
++			rv = UBUS_STATUS_NO_MEMORY;
++		else if (fread(reply, 1, length, scan->result) != (size_t)length ||
++		         blob_pad_len(reply) != (size_t)length)
++			rv = UBUS_STATUS_NO_DATA;
++		else
++			ubus_send_reply(scan->ctx, &scan->req, reply);
++	}
++	ubus_complete_deferred_request(scan->ctx, &scan->req, rv);
++	free(reply);
++	fclose(scan->result);
++	rpc_scan_active = NULL;
++	free(scan);
++}
++
++static void
++rpc_scan_timeout(struct uloop_timeout *timeout)
++{
++	struct rpc_scan_context *scan = container_of(timeout, struct rpc_scan_context, timeout);
++
++	scan->timed_out = true;
++	kill(scan->process.pid, SIGKILL);
++	/* Reap through the process callback; the pause guard restores the AP. */
++}
++
++static int
++rpc_iwinfo_scan(struct ubus_context *ctx, struct ubus_object *obj,
++                struct ubus_request_data *req, const char *method,
++                struct blob_attr *msg)
++{
++	struct rpc_scan_context *scan;
++	pid_t pid;
++	int rv;
++
++	/* Serialize scans, but keep the event loop serving all other requests. */
++	if (rpc_scan_active)
++		return UBUS_STATUS_UNKNOWN_ERROR;
++	rv = rpc_iwinfo_open(msg);
++	if (rv)
++		return rv;
++	rpc_iwinfo_close();
++	scan = calloc(1, sizeof(*scan));
++	if (!scan)
++		return UBUS_STATUS_NO_MEMORY;
++	scan->result = tmpfile();
++	if (!scan->result) {
++		free(scan);
++		return UBUS_STATUS_SYSTEM_ERROR;
++	}
++	pid = fork();
++	if (pid < 0) {
++		fclose(scan->result);
++		free(scan);
++		return UBUS_STATUS_SYSTEM_ERROR;
++	}
++	if (!pid) {
++		uloop_done();
++		close(ctx->sock.fd);
++		rv = rpc_iwinfo_scan_run(method, msg);
++		if (!rv && (fwrite(buf.head, 1, blob_pad_len(buf.head), scan->result) !=
++		            blob_pad_len(buf.head) || fflush(scan->result)))
++			rv = UBUS_STATUS_SYSTEM_ERROR;
++		_exit(rv);
++	}
++	scan->ctx = ctx;
++	scan->process.pid = pid;
++	scan->process.cb = rpc_scan_complete;
++	scan->timeout.cb = rpc_scan_timeout;
++	ubus_defer_request(ctx, req, &scan->req);
++	rpc_scan_active = scan;
++	uloop_process_add(&scan->process);
++	uloop_timeout_set(&scan->timeout, 30000);
++	return UBUS_STATUS_OK;
++}
++
+ 
+ static void
+ rpc_iwinfo_add_rateinfo(struct iwinfo_rate_entry *r)

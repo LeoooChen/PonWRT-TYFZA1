@@ -46,6 +46,8 @@ typedef uint8_t u8;typedef uint32_t u32;
 #define HZ 100
 #define RTL_AX_SECURITY_ENTRIES 128
 #define RTL_AX_H2C_DATA 1
+#define RTL_AX_CLIENT_MACID 1
+#define NL80211_IFTYPE_MESH_POINT 7
 #define max_t(t,a,b) ((t)(a)>(t)(b)?(t)(a):(t)(b))
 #define PE_PROBE_MAILBOX 0x2000
 #define RTL_FE_ACTION_OFFSET 0
@@ -72,7 +74,9 @@ struct list_head {struct list_head *next,*prev;};
 static void init(struct list_head *h){h->next=h->prev=h;}
 static void list_add_tail(struct list_head *n,struct list_head *h){n->prev=h->prev;n->next=h;h->prev->next=n;h->prev=n;}
 static void list_del(struct list_head *n){n->prev->next=n->next;n->next->prev=n->prev;}
-struct net_device {unsigned references;};
+#define NL80211_IFTYPE_STATION 2
+struct wireless_dev;
+struct net_device {unsigned references;struct wireless_dev *ieee80211_ptr;};
 struct rtl_fe_port {struct list_head list;struct net_device *netdev;unsigned wifi_id,destination;bool retired;};
 struct rtl_fe_wifi_peer {struct list_head list;struct rtl_fe_port *port;u8 address[6];unsigned destination;};
 struct rtl_fe_flow {struct list_head list;struct rtl_fe_port *output;u8 destination[6];unsigned hash_index,crc16;bool installed,deleting;};
@@ -84,12 +88,12 @@ struct ieee80211_hw {struct wiphy *wiphy;};
 struct rtl_ax_station {unsigned macid;};struct ieee80211_sta {struct rtl_ax_station drv_priv[1];};
 enum {IEEE80211_AMPDU_TX_STOP_CONT,IEEE80211_AMPDU_TX_STOP_FLUSH,IEEE80211_AMPDU_TX_STOP_FLUSH_CONT};
 struct ieee80211_ampdu_params {struct ieee80211_sta *sta;unsigned action,tid;};
-struct wireless_dev {struct net_device *netdev;};struct ieee80211_vif {struct wireless_dev wdev;};
+struct wireless_dev {struct net_device *netdev;int iftype;bool use_4addr;};struct ieee80211_vif {struct wireless_dev wdev;int type;};
 struct rtl_ax_tx {int lock;bool pe_active,peer_offloaded[128],peer_authorized[128];unsigned occupied,ni_reports,ni_failed;
  struct {void *memory;}pe;void *rx,*pdev;
  struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;unsigned cpu,route_macid,route_tim[128];struct net_device *route_dev;struct work_struct ps_work;}ni;};
-struct rtl_ax_ap {struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_vif *ap_vif;
- struct wiphy_work offload_work;struct wiphy_delayed_work cleanup_work;bool ap_started,monitor_started,offload_retry,peer_authorized[128];
+struct rtl_ax_ap {struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_associated,sta_4addr;int scan_offload_result;
+ struct wiphy_work offload_work;struct wiphy_delayed_work cleanup_work;bool scanning,ap_started,monitor_started,offload_retry,peer_authorized[128];
  struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[6];}security_roles[128];struct {unsigned aggregation[16],stopping,flushing;u8 address[6];}tx_ba[128];
  unsigned security_unlink[128];bool ra_registered[128];
  struct {bool deleting;unsigned macid;}rx_ba[8];struct {bool pending;}retired_stations[128];int offload_result;unsigned offload_started,chip;};
@@ -133,8 +137,9 @@ static int rtl_ax_rx_ba_remove(struct rtl_ax_ap *r,unsigned id){(void)r;(void)id
 static int rtl_ax_station_release(struct rtl_ax_ap *r,unsigned id){(void)r;(void)id;assert(0);return 0;}
 static unsigned ba_callbacks;
 static int rtl_ax_drop_station(struct rtl_ax_ap *r,unsigned id,unsigned tid){(void)r;(void)id;(void)tid;assert(!active_tx->ni.route_peers[1]);return 0;}
-static int rtl_ax_tx_wait_station(struct rtl_ax_tx *tx,unsigned id,unsigned tid){(void)tx;(void)id;(void)tid;assert(!active_tx->ni.route_peers[1]);return 0;}
+static bool rtl_ax_tx_station_pending(struct rtl_ax_tx *tx,unsigned id,unsigned tid){(void)tx;(void)id;(void)tid;assert(!active_tx->ni.route_peers[1]);return 0;}
 static void rtl_ax_station_cmac_connected(u8 *data,unsigned id,bool five,unsigned aggregate){(void)id;(void)five;(void)aggregate;memset(data,0,68);}
+static void rtl_ax_station_cmac_client(u8 *data){(void)data;}
 static void rtl_ax_store32(u8 *p,u32 value){put_unaligned_le32(value,p);}
 static u32 rtl_ax_ap_read32(const u8 *p){return get_unaligned_le32(p);}
 #define RTL_AX_8852C 0x52
@@ -145,12 +150,13 @@ static void rtl_ax_tx_peer_ba(struct rtl_ax_tx *tx,unsigned id,unsigned tid,unsi
 '''
 cases = r'''
 int main(void){
- for(unsigned initial=0;initial<2;initial++)for(unsigned failure=0;failure<4;failure++)for(unsigned cancel=0;cancel<4;cancel++){
+ for(unsigned client=0;client<2;client++)for(unsigned initial=0;initial<2;initial++)for(unsigned failure=0;failure<4;failure++)for(unsigned cancel=0;cancel<4;cancel++){
   struct rtl_fe fe={};struct net_device dev={};struct rtl_fe_port port={.netdev=&dev,.wifi_id=1,.destination=16};
   struct rtl_fe_flow flows[2]={};u32 actions[2][12]={};u8 memory[0x20000]={};
   struct rtl_ax_tx tx={.pe_active=true,.pe={memory},.ni={.active=initial,.cpu=3}};
-  struct wiphy wiphy={};struct ieee80211_hw hw={&wiphy};struct ieee80211_vif vif={.wdev={&dev}};
+  struct wiphy wiphy={};struct ieee80211_hw hw={&wiphy};struct ieee80211_vif vif={.wdev={.netdev=&dev}};
   struct rtl_ax_ap radio={.tx=&tx,.hw=&hw,.ap_vif=&vif,.ap_started=true,.monitor_started=true};
+  if(client){vif.wdev.iftype=2;dev.ieee80211_ptr=&vif.wdev;radio.sta_vif=&vif;radio.ap_vif=NULL;radio.ap_started=false;radio.sta_associated=true;}
   const u8 mac[6]={2,1,2,3,4,5};active_radio=&radio;active_fe=&fe;active_tx=&tx;timers=ba_callbacks=0;queued=NULL;
   init(&fe.ports);init(&fe.flows);init(&fe.wifi_peers);fe.memory=actions;list_add_tail(&port.list,&fe.ports);
   if(initial){dev_hold(&dev);tx.ni.route_dev=&dev;}
@@ -158,6 +164,12 @@ int main(void){
    memcpy(flows[i].destination,mac,6);list_add_tail(&flows[i].list,&fe.flows);ages[i]=1;rtl_fe_action_set(actions[i],RTL_FE_MCGID,16);}
   memcpy(memory+0xe408,mac,6);put_unaligned_le32(1<<16,memory+0xd020+16);
   tx.peer_authorized[1]=radio.peer_authorized[1]=true;radio.tx_ba[1].aggregation[0]=64;radio.security_roles[1].valid=1;
+  if(client){
+   radio.scanning=true;rtl_ax_offload_work(&wiphy,&radio.offload_work);
+   assert(!tx.ni.route_peers[1]&&!get_unaligned_le32(memory+0x11a04));radio.scanning=false;
+   radio.sta_4addr=true;rtl_ax_offload_work(&wiphy,&radio.offload_work);
+   assert(!tx.ni.route_peers[1]);radio.sta_4addr=false;
+  }
   fail_index=failure==3;fail_stage=failure==3?2:failure+1;
   rtl_ax_offload_work(&wiphy,&radio.offload_work);
   assert(radio.offload_result==-ETIMEDOUT && radio.offload_retry && timers==1);
@@ -207,7 +219,7 @@ fe = read('ethernet/realtek/rtl9617c-fe.c')
 ni = read('wireless/realtek/rtl_ax_ap/ni-test.h')
 monitor = read('wireless/realtek/rtl_ax_ap/monitor.h')
 tx = read('wireless/realtek/rtl_ax_ap/tx.c')
-code = common + ''.join(function(fe, n) for n in ('fe_port', 'fe_wifi_peer', 'rtl_fe_wifi_peer_route'))
+code = common + ''.join(function(fe, n) for n in ('fe_port', 'fe_wifi_client', 'fe_wifi_peer', 'rtl_fe_wifi_peer_route'))
 code += r'''
 static int rtl9617c_wifi_peer_route(struct net_device *dev,const u8 *mac,unsigned route){
  assert(get_unaligned_le32(active_tx->pe.memory+0x11a04)==!!route);

@@ -122,8 +122,9 @@ print('RX DMA cursors, address directory, separate PE0/PE1 contexts, NI tail ret
 monitor=(driver/'monitor.h').read_text()
 assert 'ieee80211_hw_set(hw, RX_INLINE)' in monitor
 start=monitor.index('case IEEE80211_AMPDU_RX_START:');end=monitor.index('\n\treturn -EOPNOTSUPP;\n}',start)
-assert monitor[start:end].count('rtl_ax_tx_rx_retire')==1
-remove=monitor[monitor.index('static int rtl_ax_rx_ba_remove('):monitor.index('static int rtl_ax_station_release(')]
+assert monitor[start:end].count('rtl_ax_tx_rx_retire')==2
+remove_start=monitor.index('static int rtl_ax_rx_ba_remove(')
+remove=monitor[remove_start:monitor.index('static int rtl_ax_station_release(',remove_start)]
 assert remove.index('rtl_ax_tx_rx_retire') < remove.index('rtl_ax_command(')
 assert 'rtl_ax_rx_ba_remove(radio, i)' in monitor[start:end]
 assert 'rtl_ax_tx_ni_retire_peer' not in monitor[start:end]

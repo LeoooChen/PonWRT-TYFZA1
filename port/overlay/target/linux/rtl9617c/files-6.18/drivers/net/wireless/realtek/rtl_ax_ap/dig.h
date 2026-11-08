@@ -10,11 +10,6 @@ struct rtl_ax_dig_unit {
 	u16 fa_threshold[4];
 };
 
-struct rtl_ax_dig_rssi {
-	u16 average, packets;
-	u8 factor;
-};
-
 struct rtl_ax_dig {
 	bool initialized, damping_enabled, damping_active, fahm_triggered;
 	u8 mode, previous_mode, igi_rssi, damping_count_limit;

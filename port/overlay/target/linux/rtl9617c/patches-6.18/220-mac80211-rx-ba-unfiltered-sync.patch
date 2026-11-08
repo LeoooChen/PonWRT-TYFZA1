@@ -1,0 +1,44 @@
+--- a/net/mac80211/rx.c
++++ b/net/mac80211/rx.c
+@@ -4317,7 +4317,7 @@
+ 	sta = container_of(pubsta, struct sta_info, sta);
+ 
+ 	local = sta->sdata->local;
+-	WARN_ONCE(local->hw.max_rx_aggregation_subframes > 64,
++	WARN_ONCE(filtered && local->hw.max_rx_aggregation_subframes > 64,
+ 		  "RX BA marker can't support max_rx_aggregation_subframes %u > 64\n",
+ 		  local->hw.max_rx_aggregation_subframes);
+ 
+@@ -4353,6 +4353,12 @@
+ 		tid_agg_rx->reorder_buf_filtered = 0;
+ 		goto release;
+ 	}
++	/* PE shortcut synchronization advances the window without marking
++	 * filtered slots. It also serves BA windows larger than the bitmap. */
++	if (!filtered) {
++		tid_agg_rx->reorder_buf_filtered = 0;
++		goto bitmap_done;
++	}
+ 	filtered = filtered >> diff;
+ 	ssn += diff;
+ 
+@@ -4365,6 +4371,7 @@
+ 			tid_agg_rx->reorder_buf_filtered |= BIT_ULL(index);
+ 	}
+ 
++bitmap_done:
+ 	/* now process also frames that the filter marking released */
+ 	ieee80211_sta_reorder_release(sta->sdata, tid_agg_rx, &frames);
+ 
+--- a/include/net/mac80211.h
++++ b/include/net/mac80211.h
+@@ -6933,7 +6933,8 @@
+  * marks frames marked in the bitmap as having been filtered. Afterwards, it
+  * checks if any frames in the window starting from @ssn can now be released
+  * (in case they were only waiting for frames that were filtered.)
+- * (Only work correctly if @max_rx_aggregation_subframes <= 64 frames)
++ * A nonzero @filtered bitmap requires max_rx_aggregation_subframes <= 64.
++ * A zero bitmap can advance larger BA windows without marking filtered slots.
+  */
+ void ieee80211_mark_rx_ba_filtered_frames(struct ieee80211_sta *pubsta, u8 tid,
+ 					  u16 ssn, u64 filtered,

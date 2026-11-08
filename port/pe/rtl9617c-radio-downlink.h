@@ -1,5 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-#define NI_WAIT 0x11000
 #define NI_PEER_QUEUED 0x11800
 #define NI_PEER_ROUTE 0x11a00
 #define NI_PEER_BA 0x12000
@@ -14,9 +13,20 @@
 #define NI_EPP_CONSUMERS 0x11c00
 #define NI_EPP_RETIRE_TARGETS 0x19400
 #define NI_TID_ACTIVE 0x19600
-/* Match the software PS budget: four 64-frame ACs per peer, 512 total. */
-#define NI_PS_PEER_LIMIT 256
-#define NI_PS_TOTAL_LIMIT 512
+/* Actual os_tx_enqueue_for_sleeping_sta and mib_table txq_limit=2048. */
+#define NI_PS_TOTAL_LIMIT 2048
+
+static u64 ni_tsf(volatile u32 *mailbox)
+{
+	volatile u32 *bar = (void *)mailbox[2];
+	u32 high, low;
+
+	do {
+		high = bar[0xc43c / 4];
+		low = bar[0xc438 / 4];
+	} while (high != bar[0xc43c / 4]);
+	return (u64)high << 32 | low;
+}
 
 static void __attribute__((noinline)) ni_peer_event(volatile u32 *mailbox, u8 *memory, u32 macid)
 {
@@ -44,8 +54,17 @@ static void ni_peer_add(volatile u32 *mailbox, u8 *memory, u32 macid)
 }
 
 static void __attribute__((noinline)) ni_enqueue(
-	volatile u32 *mailbox, u8 *memory, u32 queue, u32 head, u32 tail, u32 count)
+	volatile u32 *mailbox, u8 *memory, u32 queue, u32 head, u32 tail, u32 count, u32 bytes, u32 now)
 {
+	u32 *batch = (void *)(memory + RTL_AX_TX_AMSDU_QUEUES + queue * 16);
+	u32 policy = *(u32 *)(memory + RTL_AX_TX_PEER_AMSDU + (queue >> 3) * 4);
+	/* A timer persists across an early dequeue, as in the original SWQ.
+	 * An empty queue whose timer has fired starts a new interval. */
+	if (!batch[2] || (!*(u32 *)(memory + NI_TID_QUEUED + queue * 4) &&
+	    (u32)(now - batch[1]) >= rtl_ax_amsdu_queue_timeout(policy))) {
+		batch[1] = now; batch[2] = 1;
+	}
+	batch[0] += bytes;
 	u32 macid = queue >> 3, *old_tail = (void *)(memory + NI_TID_TAIL + queue * 4);
 	/* Interior links were filled while gathering; terminate only the tail. */
 	*(u32 *)uncached(tail) = 0;
@@ -60,15 +79,6 @@ static void __attribute__((noinline)) ni_enqueue(
 	*(u32 *)(memory + NI_TID_QUEUED + queue * 4) += count;
 	if (macid) *(u32 *)(memory + NI_TID_PENDING + queue * 4) += count;
 	ni_peer_event(mailbox, memory, macid);
-}
-
-static u32 ni_owner(volatile u32 *mailbox, u8 *memory)
-{
-	volatile u32 *owners = (void *)(memory + 0xc400);
-	u32 id = mailbox[166];
-	while (owners[id * 2]) id = (id + 1) & 127;
-	mailbox[166] = (id + 1) & 127;
-	return id;
 }
 
 static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *mailbox, u8 *memory)
@@ -86,42 +96,50 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 	/* Stock ca_ni_rx_napi consumes a producer snapshot before publishing RD. */
 	u32 producer = ni[mailbox[114] / 4 + cos] & mask;
 	if (producer == consumer) return 0;
-	u32 count = 0, group = 0, head = 0, tail = 0, grouped = 0;
-	u32 cached_peer = 0, cached_low = 0, cached_high = 0;
+	u32 count = 0, group = 0, head = 0, tail = 0, grouped = 0, group_bytes = 0;
+	u32 cached_peer = 0, cached_low = 0, cached_high = 0, cached_qos = 0;
+	u32 flow_peer = 0, flow_low = 0, flow_high = 0, flow_packets = 0;
 	u32 fence = mailbox[171] & BIT(cos);
 	u32 target = *(u32 *)(memory + NI_EPP_RETIRE_TARGETS + cos * 4), crossed = 0;
 	/* PE1 owns queue counts; ARM changes EPP geometry only while paused. */
 	u32 queued = mailbox[38], epp = mailbox[25] + (cos << shift);
-	u32 now = mailbox[RTL_AX_NI_PS_NOW];
 	sync();
-	for (; count < 16 && consumer != producer; count++) {
-		/* One excess arrival lets selection evict a sleeping queue while
-		 * EPP keeps moving, rather than letting it retain the remaining EQ. */
-		if (count && queued + grouped > NI_PS_TOTAL_LIMIT) break;
+	/* Bound admission to one publish turn, amortizing the producer
+	 * snapshot and per-peer accounting without waiting for arrivals. */
+	u64 now = ni_tsf(mailbox);
+	for (; count < TX_BURST * 8 && consumer != producer; count++) {
 		const u32 *entry = uncached(epp + consumer);
 		u32 descriptor = *(volatile u32 *)entry;
 		if ((descriptor & 0x50) != 0x50) break;
 		u32 buffer = descriptor & 0xffffff80, header, tid;
 		u32 length = ni_length(entry, buffer, &header, &tid);
 		u8 *ethernet = uncached(buffer + RTL_QM_HEADROOM + header);
-		u32 macid = 0;
+		u32 macid = 0, ether1 = 0, qos = 0;
 		if (length >= 14 && length <= RTL_QM_DATA_BYTES - header) {
 			const u32 *destination = (const void *)ethernet;
-			u32 low = destination[0], high = destination[1] & 65535;
+			u32 low = destination[0];
+			ether1 = destination[1];
+			u32 high = ether1 & 65535;
 			/* Cache only this batch's destination; admission can be revoked
 			 * asynchronously and must still be checked for every packet. */
 			if (cached_peer && low == cached_low && high == cached_high &&
-			    *(volatile u32 *)(memory + NI_PEER_ROUTE + cached_peer * 4))
-				macid = cached_peer;
-			else {
+			    *(volatile u32 *)(memory + NI_PEER_ROUTE + cached_peer * 4)) {
+				macid = cached_peer; qos = cached_qos;
+			} else {
 				for (u32 peer = 1; peer < 128; peer++) {
 					if (!*(u32 *)(memory + NI_PEER_ROUTE + peer * 4)) continue;
 					const u32 *address = (const void *)(memory + 0xe400 + peer * 8);
-					if (address[0] == low && (address[1] & 65535) == high) {
+					/* A routed STA uses its associated AP for every Ethernet DA. */
+					if ((*(u32 *)(memory + 0xd000 + peer * 32 + 16) & BIT(23)) ||
+					    (address[0] == low && (address[1] & 65535) == high)) {
 						macid = peer; break;
 					}
 				}
-				cached_peer = macid; cached_low = low; cached_high = high;
+				/* QoS header shape is fixed for this admitted association.
+				 * ARM withdraws and drains the peer before MACID reuse;
+				 * authorization remains checked on every cache hit. */
+				if (macid) qos = ((*(u32 *)(memory + 0xd000 + macid * 32 + 8) >> 16) & 63) == 26;
+				cached_peer = macid; cached_low = low; cached_high = high; cached_qos = qos;
 			}
 		}
 		if (!macid) {
@@ -129,22 +147,47 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 			mailbox[130] = length; mailbox[131] = header;
 			mailbox[132] = big_word(ethernet); mailbox[133] = big_word(ethernet + 4); mailbox[40]++;
 		}
-		if (!macid) tid = 0;
+		/* FE's generic action has COS0. The original Wi-Fi OS entry
+		 * classifies the Ethernet payload again before TXSC enqueue. */
+		u32 ether2 = 0, ether3 = 0;
+		if (macid) {
+			ether2 = ((const u32 *)ethernet)[2];
+			/* Only the EtherType bytes exist in a 14/15-byte frame. */
+			ether3 = length >= 16 ? ((const u32 *)ethernet)[3] :
+				ethernet[12] | (u32)ethernet[13] << 8;
+		}
+		tid = 0;
+		if (macid && length >= 16 && qos) {
+			u32 type = ether3 & 65535;
+			if (type == 8 || type == 0xdd86) {
+				u32 up = type == 8 ? ether3 >> 29 : (ether3 >> 17) & 7;
+				tid = up < 4 ? ((up + 1) >> 1) & 1 : up & 6;
+			} else tid = rtl_ax_ethernet_tid(ethernet, length);
+		}
 		u32 queue = macid * 8 + tid;
+		if (macid) {
+			u32 low = ether1 >> 16 | ether2 << 16;
+			u32 high = ether2 >> 16 | ether3 << 16;
+			if (flow_packets && (macid != flow_peer || low != flow_low || high != flow_high)) {
+				rtl_ax_traffic_flow_hit((void *)(memory + RTL_AX_TX_PEER_FLOWS + flow_peer * 256),
+					flow_low, flow_high, (u32)now, flow_packets);
+				flow_packets = 0;
+			}
+			flow_peer = macid; flow_low = low; flow_high = high; flow_packets++;
+		}
 		/* Link BIDs locally; update the shared peer/TID counts once per group. */
 		if (grouped && queue != group) {
 			queued += grouped;
-			ni_enqueue(mailbox, memory, group, head, tail, grouped); grouped = 0;
+			ni_enqueue(mailbox, memory, group, head, tail, grouped, group_bytes, (u32)now); grouped = 0; group_bytes = 0;
 		}
 		/* Drop excess arrivals before linking them into a sleeping queue.
 		 * The reserved discard WP retains the BID if EQ credit is absent. */
 		if (macid && *(u32 *)(memory + 0xe800 + macid * 16) &&
-		    (*(u32 *)(memory + NI_PEER_QUEUED + macid * 4) + grouped >= NI_PS_PEER_LIMIT ||
-		     queued + grouped >= NI_PS_TOTAL_LIMIT)) {
-			if (grouped) ni_enqueue(mailbox, memory, group, head, tail, grouped);
-			grouped = 0;
-			u32 id = ni_owner(mailbox, memory);
-			u32 *owners = (void *)(memory + 0xc400);
+		    queued + grouped >= NI_PS_TOTAL_LIMIT) {
+			if (grouped) ni_enqueue(mailbox, memory, group, head, tail, grouped, group_bytes, (u32)now);
+			grouped = 0; group_bytes = 0;
+			u32 id = RTL_AX_NI_DISCARD;
+			u32 *owners = (void *)(memory + RTL_AX_NI_OWNERS);
 			*(u32 *)uncached(buffer) = 0;
 			owners[id * 2] = buffer; owners[id * 2 + 1] = BIT(31);
 			mailbox[30]++; mailbox[47] = id + 1; mailbox[63]++;
@@ -155,14 +198,17 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		u32 *waiting = uncached(buffer);
 		/* The queue link becomes the MPDU ownership chain when selected. */
 		waiting[1] = length | header << 16;
-		waiting[2] = now;
+		waiting[2] = now; waiting[3] = now >> 32;
 		if (grouped) *(u32 *)uncached(tail) = buffer;
 		else { head = buffer; group = queue; }
-		tail = buffer; grouped++;
+		tail = buffer; grouped++; group_bytes += length;
 		consumer = (consumer + 8) & mask;
 		if (fence && consumer == target) crossed = 1;
 	}
-	if (grouped) ni_enqueue(mailbox, memory, group, head, tail, grouped);
+	if (grouped) ni_enqueue(mailbox, memory, group, head, tail, grouped, group_bytes, (u32)now);
+	if (flow_packets)
+		rtl_ax_traffic_flow_hit((void *)(memory + RTL_AX_TX_PEER_FLOWS + flow_peer * 256),
+			flow_low, flow_high, (u32)now, flow_packets);
 	consumers[cos] = consumer; mailbox[26] = consumers[0];
 	sync(); ni[mailbox[115] / 4 + cos] = consumer;
 	/* A batch may pass the cutoff. Publish its queues and RD before ACK. */
@@ -191,6 +237,11 @@ static void __attribute__((section(".rxq"), noinline)) ni_ps_scan(volatile u32 *
 	u32 macid = mailbox[RTL_AX_NI_PS_SCAN] + 1, generation, flags, command;
 	if (macid == 128) macid = 1;
 	mailbox[RTL_AX_NI_PS_SCAN] = macid;
+	volatile u32 *version = (void *)(memory + RTL_AX_NI_PS_VERSION + macid * 4);
+	volatile u32 *ack = (void *)(memory + 0xe800 + macid * 16 + 8);
+	/* No command content is consumed on this path. A new publication
+	 * is acquired by ni_ps_grant here or on the next scan. */
+	if (*version == *ack) return;
 	if (!ni_ps_grant(memory, macid, &generation, &flags, &command)) return;
 	volatile u32 *ps = (void *)(memory + 0xe800 + macid * 16);
 	if (command == ps[2]) return;
@@ -207,11 +258,12 @@ static void __attribute__((section(".rxq"), noinline)) ni_ps_scan(volatile u32 *
 static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *mailbox, u8 *memory, u32 *request)
 {
 	if (!mailbox[38]) return 0;
-	volatile u32 *owners = (void *)(memory + 0xc400);
+	volatile u32 *owners = (void *)(memory + RTL_AX_NI_OWNERS);
 	static const u8 channels[8] = {0, 1, 1, 0, 2, 2, 3, 3};
 	static const u8 indicators[8] = {0, 0, 1, 1, 0, 1, 0, 1};
 	u32 *next_peer = (void *)(memory + NI_PEER_NEXT), *prev_peer = (void *)(memory + NI_PEER_PREV);
-	u32 first = mailbox[170], node = first;
+	u32 first = mailbox[170], node = first, sampled = 0;
+	u64 now = 0;
 	do {
 		u32 macid = node - 1;
 		volatile u32 *ps = (void *)(memory + 0xe800 + macid * 16);
@@ -229,22 +281,44 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			if (!(tids & 1)) continue;
 			u32 *head = (void *)(memory + NI_TID_HEAD + (macid * 8 + tid) * 4);
 			u32 buffer = *head, *waiting = uncached(buffer);
-			u32 discard = retired || (ps[0] &&
-				(*(u32 *)(memory + NI_PEER_QUEUED + macid * 4) > NI_PS_PEER_LIMIT ||
-				 mailbox[38] > NI_PS_TOTAL_LIMIT ||
-				 (int)(mailbox[RTL_AX_NI_PS_NOW] - waiting[2]) >=
-				 (int)*(u32 *)(memory + RTL_AX_NI_PS_TIMEOUT + macid * 4)));
+			u32 asleep = ps[0];
+			if (!retired && asleep && !sampled) { now = ni_tsf(mailbox); sampled = 1; }
+			u32 discard = retired || (asleep &&
+				now - ((u64)waiting[3] << 32 | waiting[2]) >=
+				(u64)*(u32 *)(memory + RTL_AX_NI_PS_TIMEOUT + macid * 4) * 1000000);
 			if (discard && mailbox[47]) continue;
-			if (!discard && (mailbox[30] >= 124 ||
-			    (ps[0] && (command == ps[2] || !((grant_flags >> 16) & BIT(tid)))))) continue;
-			u32 id = ni_owner(mailbox, memory), frames = 1;
-			u32 tail_buffer = buffer, next_buffer = waiting[0];
+			if (!discard && (!ni_owner_available(memory) ||
+			    (asleep && (command == ps[2] || !((grant_flags >> 16) & BIT(tid)))))) continue;
+			u32 queue = macid * 8 + tid;
+			u32 *batch = (void *)(memory + RTL_AX_TX_AMSDU_QUEUES + queue * 16);
+			u32 policy = *(u32 *)(memory + RTL_AX_TX_PEER_AMSDU + macid * 4);
+			u32 num = policy >> 16 & 255;
+			if (!discard && !asleep && num) {
+				u32 count = *(u32 *)(memory + NI_TID_QUEUED + queue * 4);
+				if (!batch[3] && !rtl_ax_amsdu_queue_ready(policy, count, batch[0])) {
+					u32 stamp = *(volatile u32 *)(mailbox[2] + 0xc438);
+					if (!batch[2] || (u32)(stamp - batch[1]) < rtl_ax_amsdu_queue_timeout(policy)) continue;
+					batch[1] = stamp;
+				}
+				if (policy & RTL_AX_AMSDU_BATCH) batch[3] = 1;
+			}
+			/* Retain the admitted sleep decision for this in-flight frame;
+			 * a later transition cannot create or consume another PS grant. */
+			if (!discard && command != *(volatile u32 *)(memory + RTL_AX_NI_PS_VERSION + macid * 4)) continue;
+			u32 quota = *(volatile u32 *)(memory + RTL_AX_TX_WMM_QUOTA);
+			u32 ac_index = macid * 4 + channels[tid];
+			u32 limited = !discard && quota &&
+				*(u32 *)(memory + RTL_AX_TX_NI_AC_PENDING + ac_index * 4) +
+				*(volatile u32 *)(memory + RTL_AX_TX_ARM_AC_PENDING + ac_index * 4) >= quota;
+			if (limited && mailbox[47]) continue;
+			u32 id = discard || limited ? RTL_AX_NI_DISCARD : ni_owner(memory), frames = 1;
+			u32 tail_buffer = buffer, next_buffer = waiting[0], selected_bytes = waiting[1] & 65535;
 			const u32 *peer = (void *)(memory + 0xd000 + macid * 32);
 			u32 key = peer[5];
 			u32 details = macid << 8 | ((key >> 16) & 127) << 17 | BIT(15);
 			owners[id * 2] = buffer;
 			owners[id * 2 + 1] = details;
-			*(u32 *)(memory + NI_WAIT + id * 16 + 12) = tid;
+			*(u32 *)(memory + RTL_AX_NI_TIDS + id * 4) = tid;
 			if (discard) {
 				owners[id * 2 + 1] |= BIT(31);
 				mailbox[47] = id + 1; mailbox[63]++;
@@ -259,19 +333,24 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				request[8] = buffer + RTL_QM_HEADROOM + (metadata >> 16); request[9] = length;
 				u32 caps = *(u32 *)(memory + 0xe200 + macid * 4);
 				if (caps & BIT(17)) request[3] |= BIT(20);
-				if (ps[0]) {
+				if (asleep) {
 					request[4] |= (*(u32 *)(memory + NI_PEER_QUEUED + macid * 4) > 1 || (grant_flags & 2) ? BIT(19) : 0) | (grant_flags & 1 ? BIT(20) : 0);
 					owners[id * 2 + 1] |= BIT(16);
-					*(u32 *)(memory + RTL_AX_NI_PS_WP_GENERATION + id * 4) = generation;
+					*(u32 *)(memory + RTL_AX_NI_GENERATIONS + id * 4) = generation;
 					ps[2] = command; mailbox[39]++;
 				} else {
 					ps[2] = command;
 					u32 next = next_buffer, body = length + 8;
+					u32 size = policy & 65535, max_big = num;
+					u32 selected = length, big = length > 1000;
 					if (((request[2] >> 16) & 63) == 26 && !(request[3] & BIT(19))) {
-						while (next && frames < 8) {
+						while (next && frames < 9) {
 							u32 *part = uncached(next), pad = (0U - body) & 3;
 							u32 next_metadata = part[1], next_length = next_metadata & 65535;
-							if (body + pad + next_length + 8 > (caps >> 18)) break;
+							if (selected + next_length > size ||
+							    body + pad + next_length + 8 > (caps >> 18) ||
+							    (big == max_big && next_length > 1000)) break;
+							selected += next_length; selected_bytes += next_length; big += next_length > 1000;
 							request[8 + frames * 2] = next + RTL_QM_HEADROOM + (next_metadata >> 16);
 							request[9 + frames * 2] = next_length;
 							body += pad + next_length + 8;
@@ -285,6 +364,17 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 					}
 				}
 			}
+			if (limited) {
+				owners[id * 2 + 1] |= BIT(31);
+				mailbox[47] = id + 1;
+				(*(u32 *)(memory + RTL_AX_TX_WMM_QUOTA + 4))++;
+				if (asleep) {
+					volatile u32 *done = (void *)(memory + RTL_AX_NI_PS_DONE + macid * 8);
+					done[0] = generation; sync(); done[1]++; pe_event(mailbox);
+				}
+			} else if (!discard) {
+				(*(u32 *)(memory + RTL_AX_TX_NI_AC_PENDING + ac_index * 4))++;
+			}
 			/* Detach the existing FIFO prefix; no per-subframe relinking. */
 			*(u32 *)uncached(tail_buffer) = 0;
 			*head = next_buffer;
@@ -296,7 +386,11 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			u32 *queued = (void *)(memory + NI_PEER_QUEUED + macid * 4);
 			/* Admission counts WPs, not the number of gathered MSDUs. */
 			*queued -= frames; mailbox[38] -= frames; mailbox[30]++;
-			(*(u32 *)(memory + NI_TID_QUEUED + (macid * 8 + tid) * 4)) -= frames;
+			(*(u32 *)(memory + NI_TID_QUEUED + queue * 4)) -= frames;
+			batch[0] -= selected_bytes;
+			if (!(policy & RTL_AX_AMSDU_BATCH) || !num ||
+			    *(u32 *)(memory + NI_TID_QUEUED + queue * 4) < num || discard || asleep) batch[3] = 0;
+			if (retired && !*head) batch[1] = batch[2] = 0;
 			mailbox[170] = next_peer[macid];
 			if (!*queued) {
 				if (next_peer[macid] == node) mailbox[170] = 0;
@@ -307,7 +401,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			}
 			ni_peer_event(mailbox, memory, macid);
 			if (discard && mailbox[78]) pe_event(mailbox);
-			if (!discard) {
+			if (!discard && !limited) {
 				(*(u32 *)(memory + 0x17000 + macid * 4)) += frames;
 				(*(u32 *)(memory + 0x17200 + macid * 4)) |= BIT(tid);
 				return frames;
