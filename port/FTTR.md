@@ -5340,6 +5340,43 @@ Independent radio request/tag reuse follows RPQ/EQ ownership; it does not
 prove upstream FTTR multicast/GEM retirement or justify releasing their
 quarantined hardware IDs.
 
+### Default GTK selection invalidates native multicast
+
+The target `rtk_wifi6.ko:update_attrib` inlines the security selection:
+802.1X group recipients use `dot118021XGrpKeyid`, while unicast uses key0;
+legacy authentication modes use the configured default index. The bounded
+original instruction range`e343c..e3960` is executed for32 combinations
+with different group and legacy default indices. Authentication, packet
+parsing and encryption are outside that range and are not claimed here.
+
+Linux selects group DATA from the current link's `default_multicast_key`.
+Selecting an already installed GTK does not call the driver's `set_key`, so
+installation/removal callbacks alone cannot revoke a cached TX identity.
+Patch231 brackets changes to that pointer with the existing native Wi-Fi
+policy writer: both radio PE epochs and learned FE admission close before
+publication, and the radio receives its policy-change callback after the RCU
+writer token ends. Selecting the identical pointer does not churn the gate.
+Clearing the default, selecting a different installed slot, and replacing a
+key in the same selected slot all change pointer identity and invalidate.
+
+`test_mcast_default_key.py` executes66 actual Linux setter/selector cases
+through the real core dispatch and native FE/PE change callbacks. It checks
+all four indices, explicit links and the default link, legacy interface-key
+precedence, unicast-only selection, clear/missing keys and same-slot pointer
+replacement. At the publication instruction it asserts both PE tables are
+closed, the FE tuple count is3 and the writer is active; the callback runs
+afterward. The1,179,648 policy classifications, key install/cleanup and60,000
+shared-PN concurrency regressions pass. Image/modules build and zero-fuzz,
+zero-offset patch replay match the prepared kernel; ordinary modpost
+MODULE_DESCRIPTION warnings remain. Evidence:
+`artifacts/fttr/default-gtk-kernel-20261108.log` and
+`artifacts/fttr/default-gtk-identity-20261108.json`.
+
+This closes the default-key notification gap. A direct AP BCMC producer must
+still snapshot/validate that selected GTK, publish its immutable template,
+and implement group admission and HIQ/DTIM lifecycle. No direct group
+producer or physical validation is claimed by this patch.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN

@@ -1,0 +1,26 @@
+--- a/net/mac80211/key.c
++++ b/net/mac80211/key.c
+@@ -21,6 +21,7 @@
+ #include <linux/unaligned.h>
+ #include "ieee80211_i.h"
+ #include "driver-ops.h"
++#include "wme.h"
+ #include "debugfs_key.h"
+ #include "aes_ccm.h"
+ #include "aes_cmac.h"
+@@ -367,8 +368,14 @@
+ 			drv_set_default_unicast_key(sdata->local, sdata, idx);
+ 	}
+ 
+-	if (multi)
++	if (multi && key != wiphy_dereference(sdata->local->hw.wiphy,
++					    link->default_multicast_key)) {
++		/* Selecting an installed GTK does not call the driver set_key op.
++		 * Revoke old NI/PE recipes before publishing its new TX identity. */
++		const struct rtl9617c_bridge_mcast_ops *token = ieee80211_mcast_policy_begin(sdata);
+ 		rcu_assign_pointer(link->default_multicast_key, key);
++		ieee80211_mcast_policy_end(sdata, token);
++	}
+ 
+ 	ieee80211_debugfs_key_update_default(sdata);
+ }

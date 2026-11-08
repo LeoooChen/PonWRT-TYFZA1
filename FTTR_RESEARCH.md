@@ -166,6 +166,8 @@
 
 74. 对齐本地main `2ad19d9`的受保护preload、独立硬件WP标签/软件请求所有权、扩大请求池、64-MSDU批量接收和独立NI组帧。保留FTTR代际/cookie、共享GTK PN/序列号与STA/no-ACK语义，完整迁移回收/等待表。专项测试复现并修复两处集成缺陷：未发布NI请求误释放tag0，CPU软件丢弃回报误走硬件标签翻译。6144/5120次实际MIPS提交、2048/1024在途压力、251组FTTR退场、257批CPU丢弃、16448组ARM RPQ、16896组请求、强制回收及既有回归通过。Image/模块、66份无线源码一致性通过，PE_UPLINK30740字节/保守栈7048字节。仅将main整合进fttr-rewrite，未反向合并；未上实机，完整FTTR退场与直接AP BCMC仍待补齐。详见[独立TX所有权整合](port/FTTR.md#main-alignment-with-independent-radio-tx-ownership)。
 
+75. 补齐默认GTK切换时的硬件转发撤销通知：已安装密钥之间切换不触发驱动set_key，现于Linux默认组播指针改变前关闭FE学习入口和双无线PE表，发布后再通知无线策略更新；重复选择同一指针不反复撤销。目标原厂内联选择分支32组确认802.1X组播使用当前组密钥号，66组实际Linux setter/selector经原生门控验证不同槽、同槽替换、清空及单播分离。策略分类、密钥安装/清理、共享PN回归及Image/模块构建通过，补丁零偏移/零fuzz重放一致。此项完成切换通知，当前默认GTK的直接BCMC模板/准入与HIQ/DTIM仍待接入，未上实机。详见[默认GTK切换撤销](port/FTTR.md#default-gtk-selection-invalidates-native-multicast)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
