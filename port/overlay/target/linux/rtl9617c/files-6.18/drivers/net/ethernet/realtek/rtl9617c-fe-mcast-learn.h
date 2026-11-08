@@ -526,6 +526,7 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
  if(packet->failed || packet->input.epoch!=(u32)atomic_read(&bridge->epoch))return -EOPNOTSUPP;
  spin_lock_irqsave(&fe->mc_lock,flags);
  if(packet->epoch!=fe->mc_gate.epoch || fe->mc_gate.writers || fe->mc_gate.error)ret=-ESTALE;
+ else if(!fe->mc_gate.active && !rtl9617c_bridge_mcast_tx_idle())ret=-EAGAIN;
  spin_unlock_irqrestore(&fe->mc_lock,flags);
  if(ret)return ret;
  brdev=__dev_get_by_index(packet->net,packet->bridge);
@@ -768,9 +769,15 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
  flow->bridge_ingress=packet->input.port;flow->bridge_tags=packet->input.tags;
  memcpy(flow->bridge_tag,packet->input.tag,sizeof(flow->bridge_tag));fe_index_flow(fe,flow);
  spin_lock_irqsave(&fe->mc_lock,flags);
- if(!fe->mc_gate.error && !fe->mc_gate.writers && fe->mc_gate.epoch==packet->epoch)
-  fe_mcast_pe_open(fe,packet->epoch);
- ret=rtl_fe_mc_gate_open(&io,&fe->mc_gate,packet->epoch);
+ /* A closed generation cannot reopen while a CPU copy still owns a
+  * radio request/payload, even if its PCIe descriptor was already published.
+  */
+ if(!fe->mc_gate.active && !rtl9617c_bridge_mcast_tx_idle())ret=-EAGAIN;
+ else {
+  if(!fe->mc_gate.error && !fe->mc_gate.writers && fe->mc_gate.epoch==packet->epoch)
+   fe_mcast_pe_open(fe,packet->epoch);
+  ret=rtl_fe_mc_gate_open(&io,&fe->mc_gate,packet->epoch);
+ }
  if(ret)fe_mcast_pe_close(fe);
  spin_unlock_irqrestore(&fe->mc_lock,flags);
  if(ret)fe_delete(fe,flow);

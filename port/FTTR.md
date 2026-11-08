@@ -6099,6 +6099,53 @@ safe reuse of quarantined multicast IDs still require further work. No
 physical device was accessed and no hardware packet-retirement or performance
 claim is made.
 
+### Learned multicast reopening waits for accepted CPU radio copies
+
+Generation invalidation alone could cancel pending PE requests but did not
+prevent a new learned multicast generation from opening while a previous
+CPU-origin replica still owned a radio DMA mapping. The old production
+learner reproduces reopening with outstanding CPU-copy ownership.
+
+The built-in multicast core now counts accepted stamped radio submissions.
+Admission checks the token and increments the count under the same short
+spinlock as generation invalidation; either the old request is counted or
+it is refused. Ordinary unstamped packets take no reference. Submission
+rollback drops the reference after unmapping, and normal RPQ, unpublished PE
+cancellation and joined device teardown drop it only after unmap and skb
+disposition. Removing a radio mirror or unloading FE does not reset this
+built-in count. Overflow refuses admission, and underflow warns instead of
+pretending the owner is idle.
+
+A closed learned gate checks this count before allocating another group and
+again before publishing PE/profile state. While any accepted CPU copy
+remains, learning returns `EAGAIN`, leaving complete software forwarding in
+place. It retries on a later complete packet after the final release; it does
+not wait under the multicast writer/FE lock. Same-generation traffic can
+continue using an already active group. The existing FE-lock → core-lock
+order pairs the idle check with closed-gate admission, so an old token cannot
+join after invalidation. This is one conservative count across both radios,
+not a per-flow resource reuse claim.
+
+Tests execute256 concurrent token-admission/invalidation races,512 accepted
+requests across detach/rebind and final-reference release,1536 actual ARM
+submission/rollback cases,514 partial software-completion batches and16448
+RPQ report comparisons. Actual learner tests verify that two outstanding
+copies, and then one, prevent installation/reopen without consuming another
+group; zero permits a fresh complete rule, while the active same generation
+remains usable. Device teardown tests require PE join and skb/DMA disposal
+before reference release. Existing bridge/multicast/FTTR and station lifecycle
+checks pass. Image/modules and four changed kernel-input identities pass;
+PE code/ABI is unchanged by this reference change. Reports are under
+`artifacts/fttr/cpu-mcast-reference-*`.
+
+This waits for accepted CPU radio copies before learned acceleration reopens,
+including copies already published to PCIe. It does not stop an already
+published radio packet from reaching its old recipient during a concurrent
+policy change, does not cover direct NI/MCE hardware copies or CPU Ethernet
+DMA, and does not establish the full MCE/NI DMA/AFT producer fence. Hardware
+IDs remain quarantined and physical packet-retirement acceptance remains
+outstanding. No device was accessed.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN

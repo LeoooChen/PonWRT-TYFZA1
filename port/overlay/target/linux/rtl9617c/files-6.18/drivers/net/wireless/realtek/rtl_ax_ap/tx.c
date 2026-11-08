@@ -847,6 +847,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		if (mcast_stamp && get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + RTL_MC_PE_CAP_MAILBOX * 4) != RTL_MC_PE_CAPABILITY) {
 			ret = -EOPNOTSUPP; goto unmap;
 		}
+		if (!rtl9617c_bridge_mcast_tx_get(mcast_stamp)) { ret = -ESTALE; goto unmap; }
 		slot.pe_mcast = mcast_stamp != 0;
 		/* Each software WP remains owned until hardware/software completion.
 		 * This side table does not alias the ten request address pairs. */
@@ -1080,6 +1081,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 unmap:
 	spin_unlock_irqrestore(&tx->lock, flags);
 	rtl_ax_tx_unmap(tx, &slot);
+	rtl9617c_bridge_mcast_tx_put(slot.pe_mcast);
 	return ret;
 }
 
@@ -1227,6 +1229,7 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 			tx->fttr_discarded++;
 			ieee80211_free_txskb(hw, slot.skb);
 			rtl9617c_fttr_tx_put(slot.fttr_generation);
+			rtl9617c_bridge_mcast_tx_put(slot.pe_mcast);
 			continue;
 		}
 		if (slot.pe_sequence)
@@ -1262,6 +1265,7 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 			rcu_read_unlock(); local_bh_enable();
 		} else ieee80211_tx_status_ni(hw, slot.skb);
 		rtl9617c_fttr_tx_put(slot.fttr_generation);
+		rtl9617c_bridge_mcast_tx_put(slot.pe_mcast);
 	}
 	local_bh_enable();
 	return 0;
@@ -1418,6 +1422,7 @@ int rtl_ax_tx_free(struct rtl_ax_tx *tx, struct ieee80211_hw *hw)
 			rtl_ax_tx_unmap(tx, &tx->slots[i]);
 			ieee80211_free_txskb(hw, tx->slots[i].skb);
 			rtl9617c_fttr_tx_put(tx->slots[i].fttr_generation);
+			rtl9617c_bridge_mcast_tx_put(tx->slots[i].pe_mcast);
 		}
 	if (tx->headers) dma_free_coherent(tx->dma_device, RTL_AX_TX_PAGES * 128, tx->headers, tx->headers_dma);
 	if (tx->pages)

@@ -77,6 +77,11 @@ int rtl9617c_bridge_mcast_pe_register(unsigned int *mirror);
 void rtl9617c_bridge_mcast_pe_unregister(unsigned int *mirror);
 void rtl9617c_bridge_mcast_invalidate(void);
 int rtl9617c_bridge_mcast_tx_stamp(const struct sk_buff *skb, u32 *stamp);
+/* Admission serializes with invalidation. Release only after the accepted
+ * skb/DMA mapping is disposed, including unpublished software completion. */
+bool rtl9617c_bridge_mcast_tx_get(u32 stamp);
+void rtl9617c_bridge_mcast_tx_put(bool held);
+bool rtl9617c_bridge_mcast_tx_idle(void);
 bool rtl9617c_bridge_mcast_stale(const struct sk_buff *skb);
 bool rtl9617c_bridge_mcast_differs(const struct sk_buff *a, const struct sk_buff *b);
 void rtl9617c_bridge_mcast_copy(struct sk_buff *to, const struct sk_buff *from);

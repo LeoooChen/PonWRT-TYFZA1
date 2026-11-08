@@ -231,6 +231,7 @@ EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_copy);
  */
 static DEFINE_SPINLOCK(rtl_mcast_cpu_lock);
 static u32 rtl_mcast_cpu_generation = 1;
+static u32 rtl_mcast_cpu_inflight;
 static unsigned int *rtl_mcast_cpu_mirrors[2];
 
 void rtl9617c_bridge_mcast_invalidate(void)
@@ -288,3 +289,41 @@ int rtl9617c_bridge_mcast_tx_stamp(const struct sk_buff *skb,u32 *stamp)
  *stamp=generation;return 0;
 }
 EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_tx_stamp);
+
+/* No callback or wait under this lock. The FE caller keeps its learned gate
+ * closed while sampling idle, so no new valid stamp can join that interval.
+ */
+bool rtl9617c_bridge_mcast_tx_get(u32 stamp)
+{
+ unsigned long flags;
+ bool accepted=false;
+ if(!stamp)return true;
+ spin_lock_irqsave(&rtl_mcast_cpu_lock,flags);
+ if(stamp==rtl_mcast_cpu_generation && rtl_mcast_cpu_inflight!=~0U) {
+  rtl_mcast_cpu_inflight++;accepted=true;
+ }
+ spin_unlock_irqrestore(&rtl_mcast_cpu_lock,flags);
+ return accepted;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_tx_get);
+
+void rtl9617c_bridge_mcast_tx_put(bool held)
+{
+ unsigned long flags;
+ if(!held)return;
+ spin_lock_irqsave(&rtl_mcast_cpu_lock,flags);
+ if(!WARN_ON_ONCE(!rtl_mcast_cpu_inflight))rtl_mcast_cpu_inflight--;
+ spin_unlock_irqrestore(&rtl_mcast_cpu_lock,flags);
+}
+EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_tx_put);
+
+bool rtl9617c_bridge_mcast_tx_idle(void)
+{
+ unsigned long flags;
+ bool idle;
+ spin_lock_irqsave(&rtl_mcast_cpu_lock,flags);
+ idle=!rtl_mcast_cpu_inflight;
+ spin_unlock_irqrestore(&rtl_mcast_cpu_lock,flags);
+ return idle;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_tx_idle);

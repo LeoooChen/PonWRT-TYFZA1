@@ -145,7 +145,7 @@ struct rtl_ax_tx {struct pe_probe pe;struct {unsigned cpu;int ps_work;bool route
  int lock,fttr_work;bool fttr_registered,mcast_cpu_registered,pe_active,peer_authorized[128];u64 mcast_policy_attempt[128];
  struct rtl_mc_pe_table *mcast_table;struct net_device *mcast_dev;void *dma_device;
  uintptr_t mcast_dma,headers_dma,pages_dma,ring_dma;void *headers,*pages,*ring;
- struct {void *skb;u64 fttr_generation;}slots[2];};
+ struct {void *skb;u64 fttr_generation;bool pe_mcast;}slots[2];};
 static unsigned bind_calls,unbind_calls,stop_calls,dma_frees,tx_frees,pe_frees,remove_calls;
 static int fail_bind,fail_unbind,fail_remove,fail_stop;
 static bool bound,joined;static unsigned canceled,unregistered,cpu_unregistered;
@@ -184,7 +184,8 @@ static void cancel_delayed_work_sync(int *p){(void)p;assert(joined);canceled++;}
 static void rtl9617c_fttr_pe_unregister(struct rtl_fttr_pe_generation *p){assert(joined&&canceled&&p);unregistered++;}
 static void rtl9617c_bridge_mcast_pe_unregister(unsigned int *p){assert(joined&&canceled&&p);cpu_unregistered++;}
 static int pe_probe_stop(struct pe_probe *p){assert(p->memory&&!bound);stop_calls++;if(fail_stop)return -ETIMEDOUT;joined=true;return 0;}
-static unsigned payload_unmapped,payload_freed,fttr_puts;
+static unsigned payload_unmapped,payload_freed,fttr_puts,mcast_puts;
+static void rtl9617c_bridge_mcast_tx_put(bool held){assert(held&&joined&&payload_freed==1&&payload_unmapped==1);mcast_puts++;}
 static void rtl9617c_fttr_tx_put(u64 generation){assert(joined&&generation==2&&payload_freed==1&&payload_unmapped==1);fttr_puts++;}
 static void rtl_ax_tx_unmap(struct rtl_ax_tx *t,void *p){assert(joined&&canceled&&p==&t->slots[0]&&!payload_unmapped);payload_unmapped++;}
 static void ieee80211_free_txskb(struct ieee80211_hw *h,void *p){(void)h;assert(p&&payload_unmapped&&!payload_freed);payload_freed++;}
@@ -216,14 +217,14 @@ int main(void){
  publish_error=0;assert(!rtl_ax_tx_mcast_policy(&t,&vif,1)&&seen_generation==8&&t.mcast_policy_attempt[1]==8);
  vif.wdev.netdev=&b;before=compiler_calls;
  assert(rtl_ax_tx_mcast_policy(&t,&vif,1)==-ENOLINK&&compiler_calls==before);
- t.slots[0].skb=memory;t.slots[0].fttr_generation=2;
+ t.slots[0].skb=memory;t.slots[0].fttr_generation=2;t.slots[0].pe_mcast=true;
  table.epoch=7;fail_unbind=1;
  assert(rtl_ax_tx_free(&t,NULL)==-EIO&&!table.epoch&&bound&&a.refs==1&&!stop_calls&&!dma_frees&&!remove_calls);
  fail_unbind=0;fail_remove=1;
  assert(rtl_ax_tx_free(&t,NULL)==-EIO&&!bound&&!a.refs&&!stop_calls&&!dma_frees);
  fail_remove=0;fail_stop=1;
  assert(rtl_ax_tx_free(&t,NULL)==-ETIMEDOUT&&!dma_frees&&!tx_frees&&!canceled&&!unregistered&&!cpu_unregistered&&!fttr_puts&&!payload_unmapped);
- fail_stop=0;assert(!rtl_ax_tx_free(&t,NULL)&&dma_frees==1&&tx_frees==1&&pe_frees==1&&fttr_puts==1);
+ fail_stop=0;assert(!rtl_ax_tx_free(&t,NULL)&&dma_frees==1&&tx_frees==1&&pe_frees==1&&fttr_puts==1&&mcast_puts==1);
  puts("Radio multicast PE binding: capability, failed ownership/NI drain/context join retain DMA; detach-before-join-before-free passed");
 }
 '''

@@ -107,7 +107,8 @@ static bool rtl_fe_enabled(struct rtl_fe *f){return f->enabled;}
 static bool rtl9617c_fttr_stale(const struct sk_buff *s){(void)s;return false;}
 static bool skb_is_gso(struct sk_buff *s){return s->gso;}
 static struct rtl_fe *ext_change;
-static unsigned cpu_invalidations;
+static unsigned cpu_invalidations,cpu_pending;
+bool rtl9617c_bridge_mcast_tx_idle(void){return !cpu_pending;}
 void rtl9617c_bridge_mcast_invalidate(void){cpu_invalidations++;}
 static void fe_mcast_invalidate(struct rtl_fe *fe);
 static const struct rtl9617c_bridge_frame *skb_ext_find(const struct sk_buff *s,int id){assert(!id);return &s->saved;}
@@ -254,7 +255,16 @@ int main(void){
  skb.dev=&lan;skb.saved.multicast_epoch=fe.mc_gate.epoch;
  u64 ticket=fe_mcast_capture_begin(&bridge,&skb,false,++fe_mcast_ticket);assert(ticket);
  fe_mcast_capture_select(&bridge,&skb,&shared);skb.dev=&shared;fe_mcast_capture_output(&bridge,&skb);
- fe_mcast_capture_end(&bridge,ticket,true);fe.event_count=0;fe_mcast_process(&bridge);
+ fe_mcast_capture_end(&bridge,ticket,true);fe.event_count=0;
+ struct fe_mcast_packet *reopen=bridge.multicast_pending[ticket%FE_MCAST_PENDING];
+ assert(reopen&&reopen->complete);
+ /* Two radios still own old CPU payloads; one completion is insufficient.
+  * Relearning must not consume a new hardware group while either remains. */
+ for(cpu_pending=2;cpu_pending;cpu_pending--) {
+  assert(fe_mcast_learn(&bridge,reopen)==-EAGAIN);
+  assert(!fe.mc_gate.active&&fe.reg[0x372c/4]==3&&fe.installs==installed);
+ }
+ fe_mcast_process(&bridge);
  assert(fe.indexed&&fe.indexed->replica_count==1&&fe.installs==installed+1&&fe.mc_gate.active);
  assert(fe.mtus[fe.indexed->mtu_index].size==1500);
  rtl_fe_mc_gate_close(&io,&fe.mc_gate);assert(!fe_delete(&fe,fe.indexed));
@@ -563,7 +573,8 @@ int main(void){
   again.output[2].port=again.output[2].physical=out.ifindex;again.output[2].frame=wireless;
   for(unsigned i=0;i<3;i++){again.output[i].logical_tags=again.output[i].frame.tags;memcpy(again.output[i].logical_tag,again.output[i].frame.tag,sizeof(again.output[i].logical_tag));}
   failed_packet=again;
-  unsigned installs=fe.installs;assert(!fe_mcast_learn(&bridge,&again)&&fe.installs==installs&&fe.indexed==learned);
+  unsigned installs=fe.installs;cpu_pending=2;
+  assert(!fe_mcast_learn(&bridge,&again)&&fe.installs==installs&&fe.indexed==learned);cpu_pending=0;
   ap.iftype=6;assert(fe_mcast_learn(&bridge,&again)==-EOPNOTSUPP&&fe.installs==installs);ap.iftype=NL80211_IFTYPE_AP;
   for(unsigned w=0;w<2;w++) {
    struct sk_buff copy={.frame=wf};

@@ -25,6 +25,7 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u6
 #define cpu_to_le32(v) (v)
 #define dma_wmb() atomic_thread_fence(memory_order_seq_cst)
 #define smp_rmb() atomic_thread_fence(memory_order_seq_cst)
+#define WARN_ON_ONCE(v) ({bool bad=!!(v);assert(!bad);bad;})
 #define __rcu
 #define EXPORT_SYMBOL_GPL(v)
 #define DEFINE_MUTEX(v) pthread_mutex_t v=PTHREAD_MUTEX_INITIALIZER
@@ -83,6 +84,11 @@ static bool host_tx_valid(void *ctx,const struct sk_buff *skb){
  if(race_stamp){race_stamp=false;rtl9617c_bridge_mcast_invalidate();}
  struct owner *o=ctx;return !atomic_load(&o->writers) && skb->saved.multicast_host_owner==o->pending;
 }
+static pthread_barrier_t admission_barrier;
+static bool admitted;
+static u32 racing_stamp;
+static void *submit_copy(void *p){(void)p;pthread_barrier_wait(&admission_barrier);admitted=rtl9617c_bridge_mcast_tx_get(racing_stamp);return NULL;}
+static void *revoke_copy(void *p){(void)p;pthread_barrier_wait(&admission_barrier);rtl9617c_bridge_mcast_invalidate();return NULL;}
 static const struct rtl9617c_bridge_mcast_ops *thread_ops;
 static void *register_owner(void *unused){(void)unused;assert(!rtl9617c_bridge_mcast_register(thread_ops));return NULL;}
 static void *unregister_owner(void *unused){(void)unused;rtl9617c_bridge_mcast_unregister(thread_ops);return NULL;}
@@ -137,6 +143,28 @@ int main(void){
  rtl9617c_bridge_mcast_invalidate();assert(!rtl_mcast_cpu_generation);
  rtl9617c_bridge_mcast_pe_unregister(&mirrors[1]);
  rtl_mcast_cpu_generation=1;
+ assert(rtl9617c_bridge_mcast_tx_idle() && rtl9617c_bridge_mcast_tx_get(0));
+ for(unsigned n=0;n<256;n++) {
+  pthread_t sender,writer;racing_stamp=rtl_mcast_cpu_generation;
+  assert(!pthread_barrier_init(&admission_barrier,NULL,2));
+  assert(!pthread_create(&sender,NULL,submit_copy,NULL));
+  assert(!pthread_create(&writer,NULL,revoke_copy,NULL));
+  assert(!pthread_join(sender,NULL)&&!pthread_join(writer,NULL));
+  pthread_barrier_destroy(&admission_barrier);
+  assert(rtl9617c_bridge_mcast_tx_idle()==!admitted);
+  assert(!rtl9617c_bridge_mcast_tx_get(racing_stamp));
+  rtl9617c_bridge_mcast_tx_put(admitted);assert(rtl9617c_bridge_mcast_tx_idle());
+ }
+ assert(!rtl9617c_bridge_mcast_pe_register(&mirrors[0]));
+ for(unsigned n=0;n<512;n++)assert(rtl9617c_bridge_mcast_tx_get(rtl_mcast_cpu_generation));
+ rtl9617c_bridge_mcast_pe_unregister(&mirrors[0]);
+ assert(!rtl9617c_bridge_mcast_tx_idle()); /* Pointer detachment is not payload completion. */
+ assert(!rtl9617c_bridge_mcast_pe_register(&mirrors[1]) && !rtl9617c_bridge_mcast_tx_idle());
+ rtl9617c_bridge_mcast_invalidate();
+ for(unsigned n=0;n<512;n++){assert(!rtl9617c_bridge_mcast_tx_idle());rtl9617c_bridge_mcast_tx_put(true);}
+ assert(rtl9617c_bridge_mcast_tx_idle());
+ rtl9617c_bridge_mcast_pe_unregister(&mirrors[1]);
+ rtl_mcast_cpu_inflight=UINT32_MAX;assert(!rtl9617c_bridge_mcast_tx_get(rtl_mcast_cpu_generation));rtl_mcast_cpu_inflight=0;
  struct sk_buff copy={0};assert(rtl9617c_bridge_mcast_differs(&copy,&fresh));
  rtl9617c_bridge_mcast_copy(&copy,&fresh);assert(!rtl9617c_bridge_mcast_differs(&copy,&fresh));
  copy.saved.multicast_host_group++;assert(rtl9617c_bridge_mcast_differs(&copy,&fresh));

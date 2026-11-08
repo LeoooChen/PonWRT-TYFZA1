@@ -43,7 +43,7 @@ int main(void){
   memset(memory,0,sizeof(memory));memset(skbs,0,sizeof(skbs));
   struct rtl_ax_tx t={.pe_active=true,.running=true,.queues_stopped=true,.hw=&hw,.pe={memory},.occupied=256};
   active=&t;batch=1;expected=released;bh=rcu=locks=wakes=unmaps=returns=raws=sw_freed=0;
-  requeues=barriers=fttr_puts=0;runnable=false;
+  requeues=barriers=fttr_puts=mcast_puts=0;runnable=false;
   for(unsigned id=0;id<256;id++) {
    skbs[id].data[0]=id;skbs[id].rtl9617c_fttr_generation=kind?0:2;
    skbs[id].cb.flags=IEEE80211_TX_CTL_HW_80211_ENCAP|IEEE80211_TX_CTL_AMPDU|IEEE80211_TX_STAT_ACK;
@@ -59,6 +59,7 @@ int main(void){
   /* No headers allocation: canceled requests never produced sequence data. */
   rtl_ax_tx_fttr_work(&t.fttr_work.work);
   assert(t.fttr_discarded==released&&sw_freed==released&&unmaps==released&&fttr_puts==(kind?0:released));
+  assert(mcast_puts==(kind?released:0));
   assert(t.completed==released&&t.occupied==256-released&&t.status_count[4]==released);
   assert(!returns&&!raws&&!lookups&&!t.ampdu_completed&&!t.unmatched);
   unsigned quota_releases=0;
@@ -88,7 +89,7 @@ int main(void){
  memset(memory,0,sizeof(memory));memset(skbs,0,sizeof(skbs));
  struct rtl_ax_tx t={.pe_active=true,.running=true,.hw=&hw,.pe={memory},.occupied=1};
  active=&t;batch=1;expected=1;bh=rcu=locks=wakes=unmaps=returns=raws=sw_freed=0;
- requeues=barriers=fttr_puts=0;runnable=false;skbs[0].data[0]=0;
+ requeues=barriers=fttr_puts=mcast_puts=0;runnable=false;skbs[0].data[0]=0;
  t.pending[0]=true;t.slots[0]=(struct rtl_ax_tx_slot){.skb=&skbs[0],.ring=5,.pe_key_pn=true};
  put(memory+RTL_FTTR_PE_DISCARD,1);rtl_ax_tx_fttr_work(&t.fttr_work.work);
  assert(sw_freed==1&&unmaps==1&&!returns&&!raws&&!fttr_puts&&!requeues&&!t.pending[0]);
