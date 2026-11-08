@@ -7782,7 +7782,9 @@ Image/modules, ten changed kernel inputs, exact patch reverse/replay and repeate
 firmware output pass. Combined PE is31960 bytes, SHA256
 `50c9ba7e6d9ea24e29fc3b8609dece8eb0670caaadcfaf5d598bbd7b298fdb4d`,
 stack bound7288/8192; non-uplink13880 bytes. Evidence is under
-`artifacts/fttr/extended-key*-20261109.*`. No device was accessed. Full hardware
+`artifacts/fttr/extended-key*-20261109.*`. Final alignment includes main
+`bfaa446`; its iperf checksum/tail-publication regression and real-skb test module
+build pass. That module was not loaded. No device was accessed. Full hardware
 packet retirement/ID reuse, multi-VIF, TSPEC and remaining factory-management
 capabilities remain unfinished.
 

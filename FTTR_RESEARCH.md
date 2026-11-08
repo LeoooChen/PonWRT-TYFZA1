@@ -2,7 +2,7 @@
 
 本分支 `fttr-rewrite` 用于协作开发 TYFZA1 的原生 OpenWrt FTTR 支持。
 代码最初从 `dcf470f`（`0.7.0-alpha` 时期）分出，保留了逐步实现和修正的提交记录。
-已通过 `1d82c21` 合入当前 `main` 的 `632c19c`，继续在 `fttr-rewrite` 开发。
+已通过 `f9b6417` 合入当前 `main` 的 `bfaa446`，继续在 `fttr-rewrite` 开发。
 这不是新的发布版本，也不是已经完成验收的固件。
 
 本次目标是完整补齐原厂 FTTR 功能，并接入项目自创的 NI/QM/DMA/FE/PE
@@ -244,7 +244,7 @@
 
 113. 补齐GCMP128原生硬件加速链：目标C/XB编码器590项确认CAM/TX类型8、单16字节密钥、DCTL和48位PN；算法身份贯穿当前Linux密钥/模板/FE不可变记录及ARM/PE描述符，MCP7拒绝旧固件。GCMP软件加密接入共享PN，RX快照/同步使用GCMP成员，PE按16字节MIC剥离且保留重放/地址/BA检查，支持逐用户和HIQ/GTK副本。519密钥、33792请求、1024worker组合、双算法CAM故障、共享PN60000并发/64交替、128RX状态、双无线AP/STA/IPv4/IPv6/聚合、完整learner记录到MIPS与RPQ/EQ、每算法90ARM/PE提交及45描述符对照、现有FTTR/开放网/CCMP回归通过；Image/模块/9输入/补丁重放/重复构建通过。PE31948字节、栈7288，非uplink13868；未实机，256位扩展密钥、多VIF、TSPEC、完整退场和ID复用仍待补。详见[GCMP128加速](port/FTTR.md#gcmp128-across-native-key-and-accelerated-packet-paths)。
 
-114. 接入CCMP256/GCMP256双CAM密钥及完整FE/PE算法身份：原厂48组双半调用/错误、16删除对、12非相邻DCTL放置和模式边界确认两半均EXT_KEY；原生先保留两CAM，逐写检查，DCTL后才发布，任一擦除失败两半均不复用。worker按实际key-ID/主CAM查找，DCTL改为四GTK所需mode3；一扩展PTK/两扩展GTK满槽明确ENOSPC，移除可换新且保留其他密钥。bit28贯穿配方，MCP8，RX支持三种16字节MIC算法和对应PN成员。654原厂编码、72双CAM故障/释放组及资源耗尽/替换、1031密钥、67584请求、2048worker、256RX状态、128软件/PE PN交替、完整FE记录到MIPS/回收及相关回归通过；Image/模块/10输入/补丁重放/重复构建通过。PE31960字节、栈7288，非uplink13880，未实机；完整硬件退场/ID复用、多VIF、TSPEC与其他原厂管理缺口仍未完成。详见[扩展密钥归属](port/FTTR.md#extended-ccmp256-and-gcmp256-key-ownership)。
+114. 接入CCMP256/GCMP256双CAM密钥及完整FE/PE算法身份：原厂48组双半调用/错误、16删除对、12非相邻DCTL放置和模式边界确认两半均EXT_KEY；原生先保留两CAM，逐写检查，DCTL后才发布，任一擦除失败两半均不复用。worker按实际key-ID/主CAM查找，DCTL改为四GTK所需mode3；一扩展PTK/两扩展GTK满槽明确ENOSPC，移除可换新且保留其他密钥。bit28贯穿配方，MCP8，RX支持三种16字节MIC算法和对应PN成员。654原厂编码、72双CAM故障/释放组及资源耗尽/替换、1031密钥、67584请求、2048worker、256RX状态、128软件/PE PN交替、完整FE记录到MIPS/回收及相关回归通过；Image/模块/10输入/补丁重放/重复构建通过。PE31960字节、栈7288，非uplink13880；收尾对齐mainbfaa446，iperf校验和/尾部提交回归及测试模块编译通过（未加载），未实机；完整硬件退场/ID复用、多VIF、TSPEC与其他原厂管理缺口仍未完成。详见[扩展密钥归属](port/FTTR.md#extended-ccmp256-and-gcmp256-key-ownership)。
 
 ## 建议接着做的工作
 
