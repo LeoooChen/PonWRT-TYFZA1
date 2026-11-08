@@ -114,10 +114,11 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		u32 buffer = descriptor & 0xffffff80, header, tid;
 		u32 length = ni_length(entry, buffer, &header, &tid);
 		u8 *ethernet = uncached(buffer + RTL_QM_HEADROOM + header);
-		u32 macid = 0, ether1 = 0, qos = 0;
+		u32 macid = 0, ether0 = 0, ether1 = 0, qos = 0;
 		if (length >= 14 && length <= RTL_QM_DATA_BYTES - header) {
 			const u32 *destination = (const void *)ethernet;
 			u32 low = destination[0];
+			ether0 = low;
 			ether1 = destination[1];
 			u32 high = ether1 & 65535;
 			/* Cache only this batch's destination; admission can be revoked
@@ -195,9 +196,19 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 			if (fence && consumer == target) crossed = 1;
 			count++; break;
 		}
+		/* Reuse words already read for peer and flow classification. The
+		 * Ethernet payload and EtherType remain in place; NI HeaderA is no
+		 * longer consumed after this EPP was admitted. Short single frames
+		 * keep the original path instead of paying for an unused prefix. */
+		if (macid && length > 1000) {
+			u32 *prefix = (void *)(ethernet - 8), body = length - 6;
+			prefix[0] = ether0; prefix[1] = ether1; prefix[2] = ether2;
+			prefix[3] = 0xaaaa0000U | (body & 255) << 8 | body >> 8;
+			prefix[4] = 3;
+		}
 		u32 *waiting = uncached(buffer);
 		/* The queue link becomes the MPDU ownership chain when selected. */
-		waiting[1] = length | header << 16;
+		waiting[1] = length | header << 16 | (macid && length > 1000 ? NI_PREFIX_READY : 0);
 		waiting[2] = now; waiting[3] = now >> 32;
 		if (grouped) *(u32 *)uncached(tail) = buffer;
 		else { head = buffer; group = queue; }
@@ -336,7 +347,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				request[2] = BIT(24) | (request[2] & 0x3f0000) | (length + ((request[2] >> 16) & 63) + 8 - 14);
 				request[4] = (request[4] & ~0x1fffU) | tid | indicators[tid] << 12;
 				request[5] = (request[5] & ~255U) | *(u32 *)(memory + NI_PEER_BA + (macid * 8 + tid) * 4);
-				request[8] = buffer + RTL_QM_HEADROOM + (metadata >> 16); request[9] = length;
+				request[8] = buffer + RTL_QM_HEADROOM + ((metadata >> 16) & 255);
+				request[9] = length | (metadata & NI_PREFIX_READY);
 				u32 caps = *(u32 *)(memory + 0xe200 + macid * 4);
 				if (caps & BIT(17)) request[3] |= BIT(20);
 				if (asleep) {
@@ -357,8 +369,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 							    body + pad + next_length + 8 > (caps >> 18) ||
 							    (big == max_big && next_length > 1000)) break;
 							selected += next_length; selected_bytes += next_length; big += next_length > 1000;
-							request[8 + frames * 2] = next + RTL_QM_HEADROOM + (next_metadata >> 16);
-							request[9 + frames * 2] = next_length;
+							request[8 + frames * 2] = next + RTL_QM_HEADROOM + ((next_metadata >> 16) & 255);
+							request[9 + frames * 2] = next_length | (next_metadata & NI_PREFIX_READY);
 							body += pad + next_length + 8;
 							tail_buffer = next; next = part[0]; frames++;
 						}
