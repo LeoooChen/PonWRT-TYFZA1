@@ -255,6 +255,12 @@ static u32 __attribute__((noinline)) ni_ps_grant(
 	volatile u32 *ps = (void *)(memory + 0xe800 + macid * 16);
 	u32 before = *version;
 	if (before & 1) return 0;
+	/* An acknowledged command has no unconsumed grant content. Selection
+	 * still samples sleep and validates this version before taking ownership. */
+	if (before == ps[2]) {
+		*generation = 0; *flags = 0; *command = before;
+		return 1;
+	}
 	sync();
 	*generation = ps[1]; *flags = ps[3]; *command = before;
 	sync();
