@@ -44,7 +44,7 @@ static int rtl_ax_rx_pe_rpq_stop(void *rx){(void)rx;return rpq_error;}
 static void pe_event_release(struct rtl_ax_tx *tx){(void)tx;}
 static void cancel_work_sync(void *work){(void)work;}
 static void dma_wmb(void){}
-static void ni_restore_registers(struct rtl_ax_tx *tx){(void)tx;restored++;}
+static int ni_restore_registers(struct rtl_ax_tx *tx){(void)tx;restored++;return 0;}
 static void rtl_ax_tx_open(struct rtl_ax_tx *tx){(void)tx;}
 static void dma_free_coherent(void *dev,unsigned size,void *memory,unsigned dma){(void)dev;(void)size;(void)memory;(void)dma;released++;}
 static void iounmap(void *p){(void)p;released++;}

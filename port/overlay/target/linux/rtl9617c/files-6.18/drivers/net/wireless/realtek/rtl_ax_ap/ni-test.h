@@ -182,6 +182,8 @@ static int ni_uplink_stop(struct rtl_ax_tx *tx)
 	put_unaligned_le32(0, memory + PE_PROBE_MAILBOX + 352);
 	put_unaligned_le32(get_unaligned_le32(memory + PE_PROBE_MAILBOX + 360),
 		memory + PE_PROBE_MAILBOX + 364);
+	ret = readl_poll_timeout(tx->ni.vp + 4, status, !(status & BIT(31)), 1, 100000);
+	if (ret) { rtl_ax_tx_open(tx); return ret; }
 	writel(tx->ni.vp_saved[1], tx->ni.vp + 8);
 	writel(tx->ni.vp_saved[2], tx->ni.vp + 12);
 	writel(BIT(31) | BIT(30), tx->ni.vp + 4);
@@ -261,26 +263,39 @@ static bool ni_epps_empty(struct rtl_ax_tx *tx)
 	return true;
 }
 
-static void ni_restore_registers(struct rtl_ax_tx *tx)
+static int ni_restore_registers(struct rtl_ax_tx *tx)
 {
 	unsigned int i;
+	u32 status;
+	int ret;
+
+	/* A timeout leaves the indirect operation owned by hardware. Do not
+	 * replace its staging words until both engines finish the old request. */
+	ret = readl_poll_timeout(tx->ni.regs + 0x1654, status, !(status & BIT(31)), 1, 100000);
+	if (ret) return ret;
+	ret = readl_poll_timeout(tx->ni.regs + 0x66a4, status, !(status & BIT(31)), 1, 100000);
+	if (ret) return ret;
 	for (i = 0; i < 14; i++)
 		if (tx->ni.registers[i] != 0x6108)
 			writel(tx->ni.registers[i] == tx->ni.registers[11] ? readl(tx->ni.regs + (0x7000 + tx->ni.cpu * 32)) : tx->ni.saved[i], tx->ni.regs + tx->ni.registers[i]);
 	for (i = 0; i < 8; i++) {
 		writel(tx->ni.arb[i], tx->ni.regs + 0x1658);
-		ni_access(tx, 0x1654, BIT(31) | BIT(30) | (i * 64 + 16 + tx->ni.cpu));
+		ret = ni_access(tx, 0x1654, BIT(31) | BIT(30) | (i * 64 + 16 + tx->ni.cpu));
+		if (ret) return ret;
 	}
 	for (i = 0; i < 8; i++) {
 		writel(tx->ni.epp_bases[i], tx->ni.regs + tx->ni.registers[12] + i * 4);
 		writel(tx->ni.epp_eq[i], tx->ni.regs + tx->ni.registers[10] + i * 4);
 		writel(readl(tx->ni.regs + (0x7000 + tx->ni.cpu * 32) + i * 4), tx->ni.regs + tx->ni.registers[11] + i * 4);
 	}
-	attr_write(tx, tx->ni.eq, tx->ni.attrs[0]);
-	attr_write(tx, 48 + tx->ni.cpu, tx->ni.attrs[1]);
+	ret = attr_write(tx, tx->ni.eq, tx->ni.attrs[0]);
+	if (ret) return ret;
+	ret = attr_write(tx, 48 + tx->ni.cpu, tx->ni.attrs[1]);
+	if (ret) return ret;
 	/* ES_CTRL also owns CPU0/LAN/PON. Restore only this radio's CPU enable bit. */
 	writel((readl(tx->ni.regs + 0x6108) & ~BIT(tx->ni.cpu)) |
 		(tx->ni.saved[13] & BIT(tx->ni.cpu)), tx->ni.regs + 0x6108);
+	return 0;
 }
 
 static int ni_test_release(struct rtl_ax_tx *tx)
@@ -304,10 +319,13 @@ static int ni_test_release(struct rtl_ax_tx *tx)
 		writel(0, tx->ni.vp);
 		ret = readl_poll_timeout(tx->ni.vp + 0x1c, status, readl(tx->ni.vp + 0x18) == status, 1, 100000);
 		if (ret) return ret;
+		ret = readl_poll_timeout(tx->ni.vp + 4, status, !(status & BIT(31)), 1, 100000);
+		if (ret) return ret;
 		writel(tx->ni.vp_saved[1], tx->ni.vp + 8);
 		writel(tx->ni.vp_saved[2], tx->ni.vp + 12);
 		writel(BIT(31) | BIT(30), tx->ni.vp + 4);
-		readl_poll_timeout(tx->ni.vp + 4, status, !(status & BIT(31)), 1, 100000);
+		ret = readl_poll_timeout(tx->ni.vp + 4, status, !(status & BIT(31)), 1, 100000);
+		if (ret) return ret;
 		writel(tx->ni.vp_saved[3], tx->ni.vp + 0x64);
 		writel(tx->ni.vp_saved[4], tx->ni.vp + 0x78);
 		writel((readl(tx->ni.dma + 0x14) & ~(3U << (tx->ni.vp_index * 2))) |
@@ -326,7 +344,10 @@ static int ni_test_release(struct rtl_ax_tx *tx)
 		put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 96);
 	}
 	dma_wmb();
-	if (tx->ni.active) ni_restore_registers(tx);
+	if (tx->ni.active) {
+		ret = ni_restore_registers(tx);
+		if (ret) return ret;
+	}
 	rtl_ax_tx_open(tx);
 	if (tx->ni.test_memory) dma_free_coherent(tx->dma_device, TEST_MEMORY_BYTES, tx->ni.test_memory, tx->ni.test_dma);
 	if (tx->ni.dma) iounmap(tx->ni.dma);
@@ -438,6 +459,8 @@ static int ni_test_remove(struct rtl_ax_tx *tx)
 	cancel_work_sync(&tx->ni.ps_work);
 	ret = rtl_ax_rx_pe_rpq_stop(tx->rx);
 	if (ret) return ret;
+	ret = readl_poll_timeout(tx->ni.vp + 4, status, !(status & BIT(31)), 1, 100000);
+	if (ret) return ret;
 	writel(tx->ni.vp_saved[1], tx->ni.vp + 8); writel(tx->ni.vp_saved[2], tx->ni.vp + 12);
 	writel(BIT(31) | BIT(30), tx->ni.vp + 4);
 	ret = readl_poll_timeout(tx->ni.vp + 4, status, !(status & BIT(31)), 1, 100000);
@@ -483,7 +506,8 @@ static int ni_test_remove(struct rtl_ax_tx *tx)
 			address = next;
 		}
 	}
-	ni_restore_registers(tx);
+	ret = ni_restore_registers(tx);
+	if (ret) return ret;
 	if (tx->ni.route_dev) { dev_put(tx->ni.route_dev); tx->ni.route_dev = NULL; }
 	if (tx->ni.test_memory) dma_free_coherent(tx->dma_device, TEST_MEMORY_BYTES, tx->ni.test_memory, tx->ni.test_dma);
 	iounmap(tx->ni.dma); iounmap(tx->ni.regs);

@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess,tempfile
 ROOT=Path(__file__).resolve().parents[1]
 p=ROOT/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/ni-test.h'
-s=p.read_text();a=s.index('static int ni_test_remove(');a=s.index('\tfor (i = 0; i < RTL_AX_NI_OWNER_SLOTS; i++) {',a);b=s.index('\tni_restore_registers(tx);',a)
+s=p.read_text();a=s.index('static int ni_test_remove(');a=s.index('\tfor (i = 0; i < RTL_AX_NI_OWNER_SLOTS; i++) {',a);b=s.index('\tret = ni_restore_registers(tx);',a)
 common=r'''
 #include <assert.h>
 #include <errno.h>

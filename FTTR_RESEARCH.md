@@ -178,6 +178,8 @@
 
 80. 查明原厂保存记录与业务意图的区别：configd的chain3209是107字节/16项ONU运行状态表，13个字段不含认证或T-CONT/GEM配方；实际loader只恢复观测值。`onuinfo reset`的清理分支在shell失败后仍清零active/VID等字段，不能用记录清零证明硬件退场。实际T-CONT data_save及链表/引用/带宽/Alloc-ID辅助函数的12组执行只保存内存profile指针，尚未发现可直接导入的通用业务XML格式。另复现并修复原生--services嵌入NUL导致静默截断，实际解析器和完整daemon确认在设备操作前拒绝，native及musl编译通过。此项包含原厂证据进展和损坏策略文件修复，不宣称已完成原厂配置导入或持久OMCI恢复；未上实机。详见[保存状态与业务配方边界](port/FTTR.md#retained-onu-status-is-not-a-saved-service-recipe)。
 
+81. 修复NI恢复寄存器时忽略错误的生命周期缺口：正常/强制退出现在检查8个仲裁表和2个EQ/EPP属性写入结果，全部完成后才恢复ES使能、开放并释放映射；失败保留归属，重试先等待旧间接访问结束。普通、强制及上行VP恢复同样避免在旧队列重载仍忙时改基址，重载失败不释放分配。42组原生故障/重复重试、16组目标原厂访问位轮询和8组上行生命周期检查通过，相关BID/RPQ、组播绑定、NI/STA回归与Image/模块、源码一致性通过。PE固件不变；访问完成不等于报文退场，完整上游屏障与FTTR ID复用仍待补，未上实机。详见[NI恢复失败保留归属](port/FTTR.md#ni-restoration-failures-retain-ownership)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

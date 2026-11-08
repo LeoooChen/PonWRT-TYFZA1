@@ -23,12 +23,12 @@ typedef uint32_t u32;typedef unsigned char u8;
 #define GFP_KERNEL 0
 #define lower_32_bits(n) ((u32)(n))
 struct rtl_ax_tx {void *dma_device,*rx,*hw;struct {void *uplink_memory,*vp,*dma;u32 uplink_dma,vp_saved[5],vp_index;}ni;};
-static u8 memory[0x20000],regs[0x1000];static bool paused;static unsigned allocations,releases;
+static u8 memory[0x20000],regs[0x1000];static bool paused;static unsigned allocations,releases;static bool load_fail;static unsigned base_writes;
 static void *rtl_ax_rx_pe_memory(void *p){assert(p==memory);return p;}
 static u32 get_unaligned_le32(const void*p){u32 v;memcpy(&v,p,4);return v;}
 static void put_unaligned_le32(u32 v,void*p){memcpy(p,&v,4);}
-static u32 readl(void*p){u32 v=get_unaligned_le32(p);if((u8*)p==regs+0x104)v&=~(BIT(31)|BIT(30));return v;}
-static void writel(u32 v,void*p){put_unaligned_le32(v,p);}
+static u32 readl(void*p){u32 v=get_unaligned_le32(p);if((u8*)p==regs+0x104&&!load_fail)v&=~(BIT(31)|BIT(30));return v;}
+static void writel(u32 v,void*p){if((u8*)p==regs+0x108||(u8*)p==regs+0x10c)base_writes++;put_unaligned_le32(v,p);}
 #define readl_poll_timeout(a,v,c,d,t) ({v=readl(a);(c)?0:-ETIMEDOUT;})
 static void dma_wmb(void){}
 static int rtl_ax_tx_pause(struct rtl_ax_tx*t){(void)t;paused=true;return 0;}
@@ -57,6 +57,11 @@ int main(void){
  /* The other radio may change its selector before this radio stops. */
  u32 other=3U<<((vp==9?10:9)*2), updated=selected^other;
  writel(updated,regs+0x14);
+ /* A previous reload still owns its queue-base registers on timeout. */
+ load_fail=true;put_unaligned_le32(BIT(31),regs+0x104);unsigned writes=base_writes,frees=releases;
+ assert(ni_uplink_stop(&t)==-ETIMEDOUT&&t.ni.uplink_memory&&releases==frees&&base_writes==writes);
+ assert(!get_unaligned_le32(memory+PE_PROBE_MAILBOX+352)&&!get_unaligned_le32(memory+PE_PROBE_MAILBOX+372));
+ load_fail=false;put_unaligned_le32(0,regs+0x104);
  assert(!ni_uplink_stop(&t)&&!paused&&!t.ni.uplink_memory);
  assert(readl(regs+0x14)==((updated&~mask)|(saved&mask))&&readl(regs+0x108)==7&&readl(regs+0x10c)==0x1234);
  }

@@ -5546,6 +5546,45 @@ entirely with one blocked channel still backpressures new arrivals; this is
 not a claim of unlimited per-channel buffering. Full upstream FTTR retirement
 and physical acceptance remain incomplete. No device was accessed.
 
+### NI restoration failures retain ownership
+
+The radio NI restore path previously discarded the return values of all
+eight arbitration-table writes and both EQ/EPP AXI-attribute writes. It could
+restore the ES enable bit, reopen TX and unmap state despite an indirect
+access remaining busy. The test-only VP release path likewise ignored its
+queue-base reload timeout. The actual production release function reproduces
+this failure under injected IO stalls.
+
+Restoration now returns the first error, including the normal and forced
+radio-teardown callers. The ES enable bit is restored only after all indirect
+writes complete. Failed cleanup keeps NI ownership and MMIO mappings for
+retry and leaves admission closed. Before retrying, both indirect engines
+must finish their old access before any staging data is overwritten. Normal,
+forced and upstream VP restore paths also wait for an earlier queue-base
+reload before modifying its bases; a failed reload does not release its
+allocation. These checks do not interpret an access-complete bit as packet
+retirement: EPP, WP/RPQ and BID/EQ ownership checks remain separate.
+
+`test_ni_restore.py` executes42 native normal/forced teardown scenarios across
+both radios: each of ten indirect writes, an applied-but-unacknowledged
+write, repeated still-busy retry and VP reload failure. Successful retry
+restores the captured arbitration/attribute/EPP state while preserving the
+other CPU/LAN/PON ES bits. Optional target `ca-ne.ko` execution covers16 AXI
+attribute entry/completion cases and confirms data/access ordering and its
+300-read timeout; the original helper only logs that timeout and has no
+error result, whereas native cleanup propagates failure. Eight actual uplink
+start/stop cases additionally check withheld reload completion and unchanged
+base words until retry succeeds.
+
+BID partial teardown, unrecycled-WP release, BCMC template, FE/radio binding,
+NI retirement, offload transaction and STA lifetime regressions pass.
+Image/modules build and changed-source identity pass; ordinary modpost
+MODULE_DESCRIPTION warnings remain. Local evidence is in
+`artifacts/fttr/ni-restore-kernel-20261108.log` and
+`artifacts/fttr/ni-restore-identity-20261108.json`. PE firmware is unchanged.
+The IO model does not prove physical drain, and full upstream retirement and
+quarantined FTTR ID reuse remain unresolved. No device was accessed.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN
