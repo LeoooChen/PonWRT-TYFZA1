@@ -108,8 +108,9 @@ static bool rtl9617c_fttr_stale(const struct sk_buff *s){(void)s;return false;}
 static bool skb_is_gso(struct sk_buff *s){return s->gso;}
 static struct rtl_fe *ext_change;
 static unsigned cpu_invalidations,cpu_pending;
+static bool pending_on_remove;
 bool rtl9617c_bridge_mcast_tx_idle(void){return !cpu_pending;}
-void rtl9617c_bridge_mcast_invalidate(void){cpu_invalidations++;}
+void rtl9617c_bridge_mcast_invalidate(void){cpu_invalidations++;if(pending_on_remove){cpu_pending=1;pending_on_remove=false;}}
 static void fe_mcast_invalidate(struct rtl_fe *fe);
 static const struct rtl9617c_bridge_frame *skb_ext_find(const struct sk_buff *s,int id){assert(!id);return &s->saved;}
 static struct rtl9617c_bridge_frame *skb_ext_add(struct sk_buff *s,int id){assert(!id);if(ext_change){fe_mcast_invalidate(ext_change);ext_change=NULL;}return &s->saved;}
@@ -264,6 +265,10 @@ int main(void){
   assert(fe_mcast_learn(&bridge,reopen)==-EAGAIN);
   assert(!fe.mc_gate.active&&fe.reg[0x372c/4]==3&&fe.installs==installed);
  }
+ pending_on_remove=true;
+ assert(fe_mcast_learn(&bridge,reopen)==-EAGAIN && cpu_pending==1 && !pending_on_remove);
+ assert(!fe.mc_gate.active && fe.installs==installed); /* post-withdrawal prefix ACK is new */
+ cpu_pending=0;
  fe_mcast_process(&bridge);
  assert(fe.indexed&&fe.indexed->replica_count==1&&fe.installs==installed+1&&fe.mc_gate.active);
  assert(fe.mtus[fe.indexed->mtu_index].size==1500);

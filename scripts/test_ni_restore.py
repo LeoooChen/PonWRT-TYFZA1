@@ -47,7 +47,7 @@ code=r'''
 #include <string.h>
 typedef uint32_t u32;
 #include "tx-ownership.h"
-#include "linux/rtl9617c-fttr-pe.h"
+#include "linux/rtl9617c-mcast-pe.h"
 #define BIT(n) (1U<<(n))
 #define PE_PROBE_MAILBOX 0x2000
 #define RTL_AX_TX_RINGS 6

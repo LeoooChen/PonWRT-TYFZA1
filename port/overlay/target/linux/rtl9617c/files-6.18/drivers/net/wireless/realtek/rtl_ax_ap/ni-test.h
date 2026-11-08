@@ -476,10 +476,11 @@ static int ni_test_remove(struct rtl_ax_tx *tx)
 		u32 address = get_unaligned_le32(tx->pe.memory + RTL_AX_NI_OWNERS + i * 8);
 		while (address) {
 			u32 next;
-			bool fttr;
+			bool fttr, multicast;
 			struct rtl_fttr_pe_drain *drain = tx->pe.memory + RTL_FTTR_PE_DRAIN;
 			dma_sync_single_for_cpu(tx->dma_device, address, 28, DMA_FROM_DEVICE);
 			next = get_unaligned_le32(phys_to_virt(address));
+			multicast = get_unaligned_le32(phys_to_virt(address) + 16);
 			fttr = get_unaligned_le32(phys_to_virt(address) + 20) ||
 				get_unaligned_le32(phys_to_virt(address) + 24);
 			ret = readl_poll_timeout(tx->ni.regs + (0x6368 + tx->ni.cpu * 8), status, status & BIT(31), 1, 100000);
@@ -487,6 +488,10 @@ static int ni_test_remove(struct rtl_ax_tx *tx)
 			writel(address | tx->ni.eq, tx->ni.regs + (0x636c + tx->ni.cpu * 8));
 			readl(tx->ni.regs + (0x6368 + tx->ni.cpu * 8));
 			if (fttr) WRITE_ONCE(drain->pending, cpu_to_le32(le32_to_cpu(drain->pending) - 1));
+			if (multicast) {
+				drain = tx->pe.memory + RTL_MC_PE_DRAIN;
+				WRITE_ONCE(drain->pending, cpu_to_le32(le32_to_cpu(drain->pending) - 1));
+			}
 			put_unaligned_le32(next, tx->pe.memory + RTL_AX_NI_OWNERS + i * 8);
 			address = next;
 		}
@@ -496,10 +501,11 @@ static int ni_test_remove(struct rtl_ax_tx *tx)
 		u32 address = get_unaligned_le32(tx->pe.memory + 0x15000 + i * 4);
 		while (address) {
 			u32 next;
-			bool fttr;
+			bool fttr, multicast;
 			struct rtl_fttr_pe_drain *drain = tx->pe.memory + RTL_FTTR_PE_DRAIN;
 			dma_sync_single_for_cpu(tx->dma_device, address, 28, DMA_FROM_DEVICE);
 			next = get_unaligned_le32(phys_to_virt(address));
+			multicast = get_unaligned_le32(phys_to_virt(address) + 16);
 			fttr = get_unaligned_le32(phys_to_virt(address) + 20) ||
 				get_unaligned_le32(phys_to_virt(address) + 24);
 			ret = readl_poll_timeout(tx->ni.regs + (0x6368 + tx->ni.cpu * 8), status, status & BIT(31), 1, 100000);
@@ -507,6 +513,10 @@ static int ni_test_remove(struct rtl_ax_tx *tx)
 			writel(address | tx->ni.eq, tx->ni.regs + (0x636c + tx->ni.cpu * 8));
 			readl(tx->ni.regs + (0x6368 + tx->ni.cpu * 8));
 			if (fttr) WRITE_ONCE(drain->pending, cpu_to_le32(le32_to_cpu(drain->pending) - 1));
+			if (multicast) {
+				drain = tx->pe.memory + RTL_MC_PE_DRAIN;
+				WRITE_ONCE(drain->pending, cpu_to_le32(le32_to_cpu(drain->pending) - 1));
+			}
 			put_unaligned_le32(next, tx->pe.memory + 0x15000 + i * 4);
 			address = next;
 		}

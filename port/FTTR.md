@@ -6222,6 +6222,66 @@ packet already beyond DMA/AFT, and does not cover direct NI/MCE replication.
 The full upstream producer fence and safe hardware-ID reuse remain work;
 no physical device was accessed.
 
+### Direct multicast BID accounting and EPP-prefix completion
+
+Direct NI-to-PE multicast copies now have an independent drain record at
+DDR0x1e840, separate from the source6 FTTR record at0x1e800 and below the GTK
+PN table. Both use the same prefix algorithm but keep distinct request/ACK,
+seen, pending-BID and eight-COS target/mask fields. MCP5 (`0x4d435035`)
+identifies this capability. The two radio allocations register these records
+with their CPU-copy generation mirrors for the entire PE lifetime.
+
+PE increments the multicast count for every incoming reserved multicast
+cookie before any admission decision, including invalid/stale recipes,
+closed arrivals and sleeping-queue overflow. The cookie is retained in BID
+headroom even on the early overflow path. Queued, selected and published
+copies retain ownership until EQ accepts each BID; partial aggregates release
+only returned members. Metadata is sampled before PUSH and the counter is
+decremented after its fence. Forced ARM cleanup also samples the cookie before
+PUSH and preserves the unreturned suffix/count on failure. Ordinary non-cookie
+traffic is not included, while source6 multicast belongs to both independent
+counters.
+
+The FE closes the learned tuple and PE epochs before requesting a new
+multicast EPP snapshot. PE captures all eight producer positions and services
+the union of FTTR/multicast unfinished COS prefixes, so high-priority traffic
+cannot indefinitely starve a lower-COS boundary. It ACKs only after that
+prefix and all currently owned cookie BIDs are complete. NI-disabled state
+has no ring geometry to sample; a paused enabled NI waits until its geometry
+is stable again. A new request invalidates the old ACK. The shared core idle
+check now requires CPU references zero and both radios' current request ACKs
+with zero pending BIDs. It does not borrow the FTTR ACK or silently ignore a
+new radio. Individual old-flow deletion triggers a new request, and the
+learner checks again after deleting old flows before allocating another
+hardware group.
+
+Linked MIPS tests cover125 source/COS/full/compact-header, prefix wrap,
+malformed EPP, invalid-cookie, sleeping-pool overflow, mixed FTTR/multicast
+priority, actual RPQ, partial EQ, late closed arrival, retry, disabled geometry
+and direct BCMC cases. The real PE main loop updates the two independent
+ACKs. Existing251 FTTR cases, CPU multicast/PS/peer withdrawal, quotas,
+sequence/PN, RPQ/WD ownership, channel progress and RX checks pass. Core tests
+require both ACKs and reject pending-after-ACK; FE tests require another wait
+when deleting old flows creates a fresh prefix. Forced teardown/restore tests
+cover cookie metadata overwritten immediately at EQ handoff. The1024 QoS
+cache and2048 protocol/flow-key old/new comparisons pass.
+
+To fit the full firmware, only `ni_ingest` uses the compiler's minsize
+attribute and the queue helper moves to the RX/TX bank. Linker limits remain
+unchanged. Final PE is32544 bytes, SHA256
+`5652f74d23081629faeaa3e94bc031659c81ba26b9df926b8814765c682a11b9`,
+conservative summed stack7304/8192. The non-PE_UPLINK image remains14168 bytes
+and byte-identical. Repeat generation, Image/modules and eight changed
+kernel-input identities pass. Evidence is under
+`artifacts/fttr/mcast-prefix-*`.
+
+This covers already-ingested multicast BIDs and the captured EPP prefix.
+Packets still in MCE/NI DMA/AFT may arrive later, including after an idle
+sample; ACK/count observations are not an atomic upstream producer fence.
+An old late cookie stays permanently retired, but this work does not prove
+that every upstream packet has disappeared or permit any quarantined group,
+action, cookie or GEM ID reuse. No physical device was accessed.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN

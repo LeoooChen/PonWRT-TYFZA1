@@ -18,7 +18,7 @@ typedef uint32_t u32;
 #define WRITE_ONCE(v,x) ((v)=(x))
 #define cpu_to_le32(v) (v)
 #define le32_to_cpu(v) (v)
-#include "linux/rtl9617c-fttr-pe.h"
+#include "linux/rtl9617c-mcast-pe.h"
 #include "tx-ownership.h"
 struct rtl_ax_tx {void *dma_device;struct {void *memory;} pe;struct {void *regs;unsigned cpu,eq;} ni;};
 static unsigned char payloads[5*128];
@@ -42,17 +42,19 @@ int main(void) {
   struct rtl_ax_tx tx={.pe={memory},.ni={.regs=registers,.cpu=3,.eq=6}};
   memset(payloads,0,sizeof(payloads));count=0;limit=stop;
   struct rtl_fttr_pe_drain *drain=(void *)(memory+RTL_FTTR_PE_DRAIN);drain->pending=3;
+  struct rtl_fttr_pe_drain *mc=(void *)(memory+RTL_MC_PE_DRAIN);mc->pending=3;
+  for(unsigned i=1;i<4;i++)put_unaligned_le32(265,phys_to_virt(0x6000000+i*128)+16);
   for(unsigned i=0;i<5;i+=2)put_unaligned_le32(2,phys_to_virt(0x6000000+i*128)+20);
   put_unaligned_le32(0x6000000,memory+RTL_AX_NI_OWNERS+owner*8);
   put_unaligned_le32(0x6000080,phys_to_virt(0x6000000));
   put_unaligned_le32(0x6000100,phys_to_virt(0x6000080));
   put_unaligned_le32(0x6000180,memory+0x15000);
   put_unaligned_le32(0x6000200,phys_to_virt(0x6000180));
-  assert(cleanup(&tx)==-ETIMEDOUT && count==stop);assert(drain->pending==3-(stop+1)/2);
+  assert(cleanup(&tx)==-ETIMEDOUT && count==stop);assert(drain->pending==3-(stop+1)/2);assert(mc->pending==3-(stop>1?(stop>4?3:stop-1):0));
   unsigned owned=get_unaligned_le32(memory+RTL_AX_NI_OWNERS+owner*8),queued=get_unaligned_le32(memory+0x15000);
   assert(owned==(stop<3?0x6000000+stop*128:0));
   assert(queued==(stop<3?0x6000180:0x6000000+stop*128));
-  limit=5;assert(!cleanup(&tx) && count==5&&!drain->pending);
+  limit=5;assert(!cleanup(&tx) && count==5&&!drain->pending&&!mc->pending);
   for(unsigned i=0;i<5;i++)assert(returned[i]==0x6000000+i*128);
   assert(!get_unaligned_le32(memory+RTL_AX_NI_OWNERS+owner*8) && !get_unaligned_le32(memory+0x15000));
   assert(!cleanup(&tx) && count==5);

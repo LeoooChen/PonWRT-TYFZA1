@@ -10,6 +10,7 @@
 #include <linux/rcupdate.h>
 #include <linux/skbuff.h>
 #include <linux/rtl9617c-bridge.h>
+#include <linux/rtl9617c-fttr-pe.h>
 
 static DEFINE_MUTEX(rtl_bridge_lock);
 /* This built-in owner outlives driver unload and any queued skb extensions. */
@@ -233,32 +234,36 @@ static DEFINE_SPINLOCK(rtl_mcast_cpu_lock);
 static u32 rtl_mcast_cpu_generation = 1;
 static u32 rtl_mcast_cpu_inflight;
 static unsigned int *rtl_mcast_cpu_mirrors[2];
+static struct rtl_fttr_pe_drain *rtl_mcast_drains[2];
 
 void rtl9617c_bridge_mcast_invalidate(void)
 {
  unsigned long flags;
  spin_lock_irqsave(&rtl_mcast_cpu_lock,flags);
  if(rtl_mcast_cpu_generation)rtl_mcast_cpu_generation++;
- for(unsigned int i=0;i<2;i++)if(rtl_mcast_cpu_mirrors[i])
+ for(unsigned int i=0;i<2;i++)if(rtl_mcast_cpu_mirrors[i]) {
   WRITE_ONCE(*rtl_mcast_cpu_mirrors[i],cpu_to_le32(rtl_mcast_cpu_generation));
+  WRITE_ONCE(rtl_mcast_drains[i]->request,cpu_to_le32(rtl_mcast_cpu_generation));
+ }
  dma_wmb();
  spin_unlock_irqrestore(&rtl_mcast_cpu_lock,flags);
 }
 EXPORT_SYMBOL_GPL(rtl9617c_bridge_mcast_invalidate);
 
-int rtl9617c_bridge_mcast_pe_register(unsigned int *mirror)
+int rtl9617c_bridge_mcast_pe_register(unsigned int *mirror,struct rtl_fttr_pe_drain *drain)
 {
  unsigned long flags;
  unsigned int slot=2;
  int ret=0;
- if(!mirror)return -EINVAL;
+ if(!mirror || !drain)return -EINVAL;
  spin_lock_irqsave(&rtl_mcast_cpu_lock,flags);
  for(unsigned int i=0;i<2;i++) {
   if(rtl_mcast_cpu_mirrors[i]==mirror){ret=-EEXIST;goto out;}
   if(!rtl_mcast_cpu_mirrors[i])slot=i;
  }
  if(slot==2){ret=-ENOSPC;goto out;}
- rtl_mcast_cpu_mirrors[slot]=mirror;
+ rtl_mcast_cpu_mirrors[slot]=mirror;rtl_mcast_drains[slot]=drain;
+ WRITE_ONCE(drain->request,cpu_to_le32(rtl_mcast_cpu_generation));
  WRITE_ONCE(*mirror,cpu_to_le32(rtl_mcast_cpu_generation));dma_wmb();
 out:
  spin_unlock_irqrestore(&rtl_mcast_cpu_lock,flags);return ret;
@@ -270,7 +275,7 @@ void rtl9617c_bridge_mcast_pe_unregister(unsigned int *mirror)
  unsigned long flags;
  spin_lock_irqsave(&rtl_mcast_cpu_lock,flags);
  for(unsigned int i=0;i<2;i++)if(rtl_mcast_cpu_mirrors[i]==mirror) {
-  WRITE_ONCE(*mirror,0);dma_wmb();rtl_mcast_cpu_mirrors[i]=NULL;
+  WRITE_ONCE(*mirror,0);dma_wmb();rtl_mcast_cpu_mirrors[i]=NULL;rtl_mcast_drains[i]=NULL;
  }
  spin_unlock_irqrestore(&rtl_mcast_cpu_lock,flags);
 }
@@ -322,7 +327,14 @@ bool rtl9617c_bridge_mcast_tx_idle(void)
  unsigned long flags;
  bool idle;
  spin_lock_irqsave(&rtl_mcast_cpu_lock,flags);
- idle=!rtl_mcast_cpu_inflight;
+ idle=!rtl_mcast_cpu_inflight && rtl_mcast_cpu_generation;
+ for(unsigned int i=0;idle && i<2;i++)if(rtl_mcast_drains[i]) {
+  struct rtl_fttr_pe_drain *d=rtl_mcast_drains[i];
+  u32 request=le32_to_cpu(READ_ONCE(d->request));
+  if(!request || le32_to_cpu(READ_ONCE(d->ack))!=request)idle=false;
+  dma_rmb();
+  if(READ_ONCE(d->pending))idle=false;
+ }
  spin_unlock_irqrestore(&rtl_mcast_cpu_lock,flags);
  return idle;
 }

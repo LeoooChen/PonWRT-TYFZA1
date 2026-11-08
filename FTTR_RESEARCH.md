@@ -204,6 +204,8 @@
 
 93. 将CPU以太网/PON/FTTR DMA副本接入组播引用：skb复制完成、代际再次准入后才持有描述符引用；消费skb或注销端口不释放，原厂两描述符预取保留后的真实回收才归还，配对DMA/AFT复位后处理尾部引用。无后续流量时最后两个引用保持等待，不伪造完成。原厂4096指针对比查实正常保留并记录4组合成回绕缺陷；836组原生生命周期、原厂发布/复位、Wi-Fi接口、PPPoE/DEEPQ/桥接等回归及Image/模块/两份输入一致性通过。PE不变，完整下游NI/ES和直接MCE退场、ID复用仍未完成，未上实机。详见[CPU DMA复制引用](port/FTTR.md#cpu-multicast-dma-copies-retain-references-through-descriptor-retirement)。
 
+94. 补齐直接NI→PE组播BID计数及EPP前缀确认：所有cookie复制（含无效/关闭/休眠溢出）从接管到EQ归还保留计数，源6同时计入独立FTTR域；关闭学习tuple/PE epoch后请求8-COS快照，两域未完前缀共同优先处理，当前ACK且pending=0才允许FE继续。旧流删除会产生新请求，分配新组前再次检查。125组直接组播/BCMC/真实RPQ/部分EQ/晚到/重试和原有251FTTR、CPU/PS/配额/序号/PN等回归通过；核心双卡ACK、强制清理及1024/2048分类对比、Image/模块/八份一致性通过。PE32544字节、栈上界7304，MCP5；该前缀仍不证明MCE/DMA/AFT上游生产者已停止，硬件ID继续隔离，未上实机。详见[直接组播排空范围](port/FTTR.md#direct-multicast-bid-accounting-and-epp-prefix-completion)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

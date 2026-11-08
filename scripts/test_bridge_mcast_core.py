@@ -17,12 +17,15 @@ code=r'''
 #include <stdio.h>
 typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u64;
 #include "linux/rtl9617c-bridge.h"
+#include "linux/rtl9617c-fttr-pe.h"
 #define DEFINE_SPINLOCK(v) pthread_mutex_t v=PTHREAD_MUTEX_INITIALIZER
 #define spin_lock_irqsave(p,f) do{(f)=0;assert(!pthread_mutex_lock(p));}while(0)
 #define spin_unlock_irqrestore(p,f) do{(void)(f);assert(!pthread_mutex_unlock(p));}while(0)
 #define READ_ONCE(v) (v)
 #define WRITE_ONCE(v,x) ((v)=(x))
 #define cpu_to_le32(v) (v)
+#define le32_to_cpu(v) (v)
+#define dma_rmb() atomic_thread_fence(memory_order_seq_cst)
 #define dma_wmb() atomic_thread_fence(memory_order_seq_cst)
 #define smp_rmb() atomic_thread_fence(memory_order_seq_cst)
 #define WARN_ON_ONCE(v) ({bool bad=!!(v);assert(!bad);bad;})
@@ -129,11 +132,17 @@ int main(void){
  fresh.saved.multicast_direct=true;fresh.saved.multicast_host_owner=second.pending;
  fresh.saved.multicast_host_group=17;fresh.saved.multicast_epoch=9;
  assert(!rtl9617c_bridge_mcast_stale(&fresh));
- unsigned int mirrors[3]={};u32 stamp;
- assert(!rtl9617c_bridge_mcast_pe_register(&mirrors[0]));
- assert(!rtl9617c_bridge_mcast_pe_register(&mirrors[1]));
- assert(rtl9617c_bridge_mcast_pe_register(&mirrors[0])==-EEXIST);
- assert(rtl9617c_bridge_mcast_pe_register(&mirrors[2])==-ENOSPC);
+ unsigned int mirrors[3]={};struct rtl_fttr_pe_drain drains[3]={};u32 stamp;
+ assert(!rtl9617c_bridge_mcast_pe_register(&mirrors[0],&drains[0]));
+ assert(!rtl9617c_bridge_mcast_pe_register(&mirrors[1],&drains[1]));
+ assert(rtl9617c_bridge_mcast_pe_register(&mirrors[0],&drains[0])==-EEXIST);
+ assert(rtl9617c_bridge_mcast_pe_register(&mirrors[2],&drains[2])==-ENOSPC);
+ assert(!rtl9617c_bridge_mcast_tx_idle());
+ drains[0].ack=drains[0].request;assert(!rtl9617c_bridge_mcast_tx_idle());
+ drains[1].ack=drains[1].request;assert(rtl9617c_bridge_mcast_tx_idle());
+ drains[1].pending=1;assert(!rtl9617c_bridge_mcast_tx_idle());drains[1].pending=0;
+ rtl9617c_bridge_mcast_invalidate();assert(!rtl9617c_bridge_mcast_tx_idle());
+ drains[0].ack=drains[0].request;drains[1].ack=drains[1].request;assert(rtl9617c_bridge_mcast_tx_idle());
  assert(!rtl9617c_bridge_mcast_tx_stamp(&fresh,&stamp) && stamp && stamp==mirrors[0] && stamp==mirrors[1]);
  race_stamp=true;assert(rtl9617c_bridge_mcast_tx_stamp(&fresh,&stamp)==-ESTALE && !stamp);
  assert(!rtl9617c_bridge_mcast_tx_stamp(&fresh,&stamp) && stamp==mirrors[0]);
@@ -155,13 +164,14 @@ int main(void){
   assert(!rtl9617c_bridge_mcast_tx_get(racing_stamp));
   rtl9617c_bridge_mcast_tx_put(admitted);assert(rtl9617c_bridge_mcast_tx_idle());
  }
- assert(!rtl9617c_bridge_mcast_pe_register(&mirrors[0]));
+ assert(!rtl9617c_bridge_mcast_pe_register(&mirrors[0],&drains[0]));
  for(unsigned n=0;n<512;n++)assert(rtl9617c_bridge_mcast_tx_get(rtl_mcast_cpu_generation));
  rtl9617c_bridge_mcast_pe_unregister(&mirrors[0]);
  assert(!rtl9617c_bridge_mcast_tx_idle()); /* Pointer detachment is not payload completion. */
- assert(!rtl9617c_bridge_mcast_pe_register(&mirrors[1]) && !rtl9617c_bridge_mcast_tx_idle());
+ assert(!rtl9617c_bridge_mcast_pe_register(&mirrors[1],&drains[1]) && !rtl9617c_bridge_mcast_tx_idle());
  rtl9617c_bridge_mcast_invalidate();
  for(unsigned n=0;n<512;n++){assert(!rtl9617c_bridge_mcast_tx_idle());rtl9617c_bridge_mcast_tx_put(true);}
+ assert(!rtl9617c_bridge_mcast_tx_idle());drains[1].ack=drains[1].request;
  assert(rtl9617c_bridge_mcast_tx_idle());
  rtl9617c_bridge_mcast_pe_unregister(&mirrors[1]);
  rtl_mcast_cpu_inflight=UINT32_MAX;assert(!rtl9617c_bridge_mcast_tx_get(rtl_mcast_cpu_generation));rtl_mcast_cpu_inflight=0;

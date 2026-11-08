@@ -124,8 +124,7 @@ static void fe_mcast_host_remove(struct rtl_fe *fe,struct rtl_fe_flow *flow)
  unsigned long flags;
  if(!flow->replica_count)return;
  spin_lock_irqsave(&fe->mc_lock,flags);
- /* Serialize token invalidation with the final ownership check. */
- rtl9617c_bridge_mcast_invalidate();
+
  for(unsigned int i=1;i<RTL_FE_MC_GROUPS;i++)
   if(fe->mc_directs[i] && fe->mc_directs[i]->flow==flow) {
    unsigned int dest=fe->mc_directs[i]->pe_destination;
@@ -136,6 +135,7 @@ static void fe_mcast_host_remove(struct rtl_fe *fe,struct rtl_fe_flow *flow)
  host=flow->mc_host;
  if(fe->mc_hosts[flow->mc_group]==host)fe->mc_hosts[flow->mc_group]=NULL;
  flow->mc_host=NULL;
+ rtl9617c_bridge_mcast_invalidate();
  spin_unlock_irqrestore(&fe->mc_lock,flags);
  if(host){put_net(host->net);kfree(host);}
 }
@@ -580,6 +580,10 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
    }
   }
  }
+ spin_lock_irqsave(&fe->mc_lock,flags);
+ if(!fe->mc_gate.active && !rtl9617c_bridge_mcast_tx_idle())ret=-EAGAIN;
+ spin_unlock_irqrestore(&fe->mc_lock,flags);
+ if(ret)return ret;
  mc=kzalloc(sizeof(*mc),GFP_KERNEL);if(!mc)return -ENOMEM;
  data.multicast=mc;
  host=(struct rtl_fe_mc_host){.input=packet->input,.net=packet->net,.bridge=packet->bridge,

@@ -29,13 +29,13 @@ def machine(source=6, cos=0, full=True, cookie=True):
 
 def drain(m, sequence=1):
     m.put(DRAIN, sequence)
-    m.call('ni_fttr_drain', mb, base)
+    m.call('ni_prefix_drain', mb, base, DRAIN)
 
 
 def finish_one(m, count=1):
     m.put(ni + 0x6340, count); m.put(ni + 0x6380, 1 << 31)
     m.call('ni_recycle', mb, base)
-    m.call('ni_fttr_drain', mb, base)
+    m.call('ni_prefix_drain', mb, base, DRAIN)
 
 
 cases = 0
@@ -73,7 +73,7 @@ for cos in range(8):
         assert m.get(DRAIN + 16) == 1 << cos and m.get(DRAIN + 4) == 8
         # Invalid EPP cannot be counted as consumed.
         m.put(epp + cos * 4096 + initial, payload)
-        m.call('ni_ingest', mb, base); m.call('ni_fttr_drain', mb, base)
+        m.call('ni_ingest', mb, base); m.call('ni_prefix_drain', mb, base, DRAIN)
         assert m.get(DRAIN + 16) == 1 << cos and not m.get(DRAIN + 8)
         m.put(epp + cos * 4096 + initial, payload | 0x50)
         m.call('ni_ingest', mb, base)
@@ -112,7 +112,7 @@ for published in (False, True):
         m.call('pe_tx_publish', mb, 8, requests)
         assert not m.get(mb + 10 * 4)
     else:
-        m.call('ni_recycle', mb, base); m.call('ni_fttr_drain', mb, base)
+        m.call('ni_recycle', mb, base); m.call('ni_prefix_drain', mb, base, DRAIN)
         assert m.get(DRAIN + 8) == 1 and not m.get(DRAIN + 4)
         raw = struct.pack('<II', 24 | 0xc000 | 1 << 16, 7 << 24 | 4) + bytes(12) + struct.pack('<I', 1 | (m.get(PAGES + 56) & 4095) << 16)
         m.u.mem_write(REPORTS, raw); m.put(bar + 0x121c, 1 << 16)

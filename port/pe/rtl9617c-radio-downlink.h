@@ -53,7 +53,7 @@ static void ni_peer_add(volatile u32 *mailbox, u8 *memory, u32 macid)
 	}
 }
 
-static void __attribute__((noinline)) ni_enqueue(
+static void __attribute__((section(".rxq"), noinline)) ni_enqueue(
 	volatile u32 *mailbox, u8 *memory, u32 queue, u32 head, u32 tail, u32 count, u32 bytes, u32 now)
 {
 	u32 *batch = (void *)(memory + RTL_AX_TX_AMSDU_QUEUES + queue * 16);
@@ -81,7 +81,8 @@ static void __attribute__((noinline)) ni_enqueue(
 	ni_peer_event(mailbox, memory, macid);
 }
 
-static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *mailbox, u8 *memory)
+/* Keep shared ingress classification/accounting inside the fixed IMEM. */
+static u32 __attribute__((section(".rxq"), noinline, minsize)) ni_ingest(volatile u32 *mailbox, u8 *memory)
 {
 	if (mailbox[47]) return 0;
 	volatile u32 *ni = (void *)0xb0000000;
@@ -89,9 +90,10 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 	if (!available) return 0;
 	u32 cos = 0;
 	struct rtl_fttr_pe_drain *drain = (void *)(memory + RTL_FTTR_PE_DRAIN);
+ struct rtl_fttr_pe_drain *mc_drain = (void *)(memory + RTL_MC_PE_DRAIN);
 	/* Finish the captured prefix even under continuous higher-COS traffic. */
-	if (drain->epp_mask) {
-		u32 needed = drain->epp_mask;
+	if (drain->epp_mask | mc_drain->epp_mask) {
+		u32 needed = drain->epp_mask | mc_drain->epp_mask;
 		while (!(needed & 1)) { needed >>= 1; cos++; }
 	} else {
 		if (available & 0xf0) { available >>= 4; cos = 4; }
@@ -108,7 +110,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 	u32 flow_peer = 0, flow_low = 0, flow_high = 0, flow_packets = 0;
 	u32 fence = mailbox[171] & BIT(cos);
 	u32 target = *(u32 *)(memory + NI_EPP_RETIRE_TARGETS + cos * 4), crossed = 0;
-	u32 fttr_crossed = 0;
+	u32 fttr_crossed = 0, mc_crossed = 0;
 	/* PE1 owns queue counts; ARM changes EPP geometry only while paused. */
 	u32 queued = mailbox[38], epp = mailbox[25] + (cos << shift);
 	sync();
@@ -124,6 +126,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		u8 *ethernet = uncached(buffer + RTL_QM_HEADROOM + header);
 		u32 macid = 0, ether1 = 0, qos = 0, cookie = ni_mcast_cookie(buffer);
 		u32 admitted = ni_fttr_receive(mailbox, memory, buffer);
+  ((u32 *)uncached(buffer))[4]=cookie;
+  if(cookie)mc_drain->pending++;
 		if (admitted && length >= 14 && length <= RTL_QM_DATA_BYTES - header) {
 			if (cookie) macid = ni_mcast_admit(mailbox, memory, buffer, ethernet, length, cookie, &tid);
 			else {
@@ -209,6 +213,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 			consumer = (consumer + 8) & mask;
 			if (fence && consumer == target) crossed = 1;
 			if (consumer == drain->target[cos]) fttr_crossed = 1;
+		if (consumer == mc_drain->target[cos]) mc_crossed = 1;
 			count++; break;
 		}
 		u32 *waiting = uncached(buffer);
@@ -224,6 +229,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 		consumer = (consumer + 8) & mask;
 		if (fence && consumer == target) crossed = 1;
 		if (consumer == drain->target[cos]) fttr_crossed = 1;
+		if (consumer == mc_drain->target[cos]) mc_crossed = 1;
 	}
 	if (grouped) ni_enqueue(mailbox, memory, group, head, tail, grouped, group_bytes, (u32)now);
 	if (flow_packets)
@@ -234,6 +240,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_ingest(volatile u32 *ma
 	/* A batch may pass the cutoff. Publish its queues and RD before ACK. */
 	if (crossed) { sync(); mailbox[171] &= ~BIT(cos); }
 	if (fttr_crossed) { sync(); drain->epp_mask &= ~BIT(cos); }
+ if (mc_crossed) { sync(); mc_drain->epp_mask &= ~BIT(cos); }
 	return count;
 }
 

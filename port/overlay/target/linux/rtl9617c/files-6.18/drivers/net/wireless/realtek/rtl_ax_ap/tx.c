@@ -252,7 +252,7 @@ struct rtl_ax_tx *rtl_ax_tx_prepare(struct pci_dev *pdev, const struct rtl_ax_io
 	ret = rtl9617c_fttr_pe_register(&tx->mcast_table->fttr, tx->pe.memory + RTL_FTTR_PE_DRAIN);
 	if (ret) goto release;
 	tx->fttr_registered = true;
-	ret = rtl9617c_bridge_mcast_pe_register(&tx->mcast_table->cpu_generation);
+	ret = rtl9617c_bridge_mcast_pe_register(&tx->mcast_table->cpu_generation, tx->pe.memory + RTL_MC_PE_DRAIN);
 	if (ret) goto release;
 	tx->mcast_cpu_registered = true;
 	tx->ring = dma_alloc_coherent(tx->dma_device, RTL_AX_TX_RINGS * RTL_AX_TX_ENTRIES * 8, &tx->ring_dma, GFP_KERNEL);

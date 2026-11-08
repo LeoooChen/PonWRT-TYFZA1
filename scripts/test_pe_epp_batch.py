@@ -39,12 +39,12 @@ put(BASE+0x19604,255)
 put(BASE+0x34004,2048)
 put(MB+171*4,1);put(BASE+0x19400,(start+3*8)&32767)
 writes=[]
-watch=u.hook_add(UC_HOOK_MEM_WRITE,lambda uc,access,at,size,value,data:writes.append((at,value)))
+watch=[u.hook_add(UC_HOOK_MEM_WRITE,lambda uc,access,at,size,value,data:writes.append((at,value)),begin=address,end=address+3) for address in (NI+0x7160,MB+171*4)]
 call("ni_ingest")
 assert get(NI+0x7160)==496 and get(MB+171*4)==0
 assert next(i for i,(at,v) in enumerate(writes) if at==NI+0x7160)<next(i for i,(at,v) in enumerate(writes) if at==MB+171*4)
 assert get(MB+38*4)==64 and get(BASE+0x11804)==sum(peer==1 for peer,tid in rows[:64]) and get(BASE+0x11808)==sum(peer==2 for peer,tid in rows[:64])
-u.hook_del(watch) # RD/fence ordering was observed in the first batch.
+for hook in watch:u.hook_del(hook) # Observe only RD/fence, not optimized stack/control flow.
 call("ni_ingest")
 for peer,tid in set(rows):
  queue=peer*8+tid

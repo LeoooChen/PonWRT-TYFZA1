@@ -801,12 +801,16 @@ static void __attribute__((section(".rxq"), noinline)) ni_recycle(volatile u32 *
 #ifdef PE_UPLINK
 			/* Sample before PUSH transfers this allocation away. */
 			const u32 *waiting = uncached(buffer);
-			u32 fttr = waiting[5] | waiting[6];
+			u32 fttr = waiting[5] | waiting[6], multicast=waiting[4];
 #endif
 			push[1] = buffer | eq;
 			buffer = next; returned++; credit--;
 			sync();
 #ifdef PE_UPLINK
+			if(multicast) {
+    struct rtl_fttr_pe_drain *drain=(void *)(memory+RTL_MC_PE_DRAIN);
+    drain->pending--;
+   }
 			if (fttr) {
 				struct rtl_fttr_pe_drain *drain = (void *)(memory + RTL_FTTR_PE_DRAIN);
 				drain->pending--;

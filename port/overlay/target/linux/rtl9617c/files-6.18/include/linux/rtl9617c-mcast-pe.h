@@ -13,7 +13,11 @@
  */
 #define RTL_MC_PE_TABLE_MAILBOX 210
 #define RTL_MC_PE_CAP_MAILBOX 211
-#define RTL_MC_PE_CAPABILITY 0x4d435034U
+#define RTL_MC_PE_CAPABILITY 0x4d435035U
+/* Independent direct-cookie BID count and post-close EPP-prefix ACK. */
+#define RTL_MC_PE_DRAIN 0x1e840
+_Static_assert(RTL_FTTR_PE_DRAIN + sizeof(struct rtl_fttr_pe_drain) <= RTL_MC_PE_DRAIN, "drain separation");
+_Static_assert(RTL_MC_PE_DRAIN + sizeof(struct rtl_fttr_pe_drain) <= 0x1e900, "drain before GTK PN");
 /* Immutable stamp for each of the256 ARM software WP IDs, outside requests. */
 #define RTL_MC_PE_CPU_STAMPS 0x68000
 #define RTL_MC_PE_COOKIES 256

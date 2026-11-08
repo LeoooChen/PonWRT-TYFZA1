@@ -35,10 +35,9 @@ static u32 ni_fttr_receive(volatile u32 *mailbox, u8 *memory, u32 buffer)
 	return !(generation & 1);
 }
 
-static void __attribute__((section(".rxq"), noinline)) ni_fttr_drain(
-	volatile u32 *mailbox, u8 *memory)
+static void __attribute__((section(".rxq"), noinline)) ni_prefix_drain(
+	volatile u32 *mailbox, u8 *memory, volatile struct rtl_fttr_pe_drain *drain)
 {
-	volatile struct rtl_fttr_pe_drain *drain = (void *)(memory + RTL_FTTR_PE_DRAIN);
 	u32 request = drain->request;
 	if (!request) return;
 	sync();
@@ -65,4 +64,10 @@ static void __attribute__((section(".rxq"), noinline)) ni_fttr_drain(
 		sync();
 		drain->ack = request;
 	}
+}
+
+static void ni_fttr_drain(volatile u32 *mailbox,u8 *memory)
+{
+ ni_prefix_drain(mailbox,memory,(void *)(memory+RTL_FTTR_PE_DRAIN));
+ ni_prefix_drain(mailbox,memory,(void *)(memory+RTL_MC_PE_DRAIN));
 }
