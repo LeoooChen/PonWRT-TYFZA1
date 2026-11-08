@@ -40,6 +40,8 @@ typedef uint8_t u8;typedef uint16_t u16,__be16;typedef uint32_t u32;typedef uint
 #define ETH_HLEN 14
 #define ETH_P_PPP_SES 0x8864
 #define ETH_P_IP 0x0800
+#define ETH_P_ARP 0x0806
+#define ETH_P_RARP 0x8035
 #define ETH_P_IPV6 0x86dd
 #define ETH_P_8021Q 0x8100
 #define ETH_P_8021AD 0x88a8
@@ -188,6 +190,33 @@ int main(void){
  /* Destination movement removes the old rule before another frame is learned. */
  fdb_destination=&other;fe_bridge_work(&bridge.work.work);assert(deleted==1);
  assert(fe.flows.next==&fe.flows);
+ /* ARP/RARP cannot acquire a MAC/VLAN bypass. Exercise real capture and
+  * forwarding callbacks plus the install boundary for delayed snapshots. */
+ for(unsigned int protocol=0;protocol<2;protocol++) {
+  struct sk_buff control=skb;
+  unsigned int ethertype=protocol?ETH_P_RARP:ETH_P_ARP;
+  control.frame[12]=ethertype>>8;control.frame[13]=ethertype;control.extension=false;
+  fdb_destination=&vlan;
+  unsigned int before=installed,queued=bridge.write,refs=net.references;
+  fe_bridge_wire(&bridge,&control,&wire);fe_bridge_capture(&bridge,&control,&input);
+  assert(control.saved.protocol==ethertype);
+  fe_bridge_forwarded(&bridge,&control,&output);
+  assert(bridge.write==queued&&net.references==refs);
+  struct fe_bridge_packet pending={.net=&net,.input=control.saved,.output=control.saved,
+   .bridge=10,.ingress=1,.egress=7};pending.output.port=70;
+  assert(fe_bridge_learn(&bridge,&pending)==-EOPNOTSUPP&&installed==before);
+  /* Old queued snapshots are rejected, and old learned Hashes withdraw
+   * before aging can refresh them. No changes to explicit TC ownership. */
+  struct rtl_fe_flow *old=calloc(1,sizeof(*old));assert(old);
+  old->learned=old->bridge=true;old->input=&lp;old->output=&pp;
+  old->ethernet_protocol=ethertype;old->bridge_index=10;old->bridge_ingress=1;old->bridge_egress=70;
+  old->ethernet_source[5]=1;old->destination[5]=2;list_add_tail(&old->list,&fe.flows);
+  unsigned int prior_deleted=deleted,reads=age_reads;
+  fe_bridge_work(&bridge.work.work);
+  assert(deleted==prior_deleted+1&&age_reads==reads&&fe.flows.next==&fe.flows);
+  deleted--; /* Keep independent prior numeric assertions scoped to their fixture. */
+ }
+ fdb_destination=&other;
  /* VLAN-aware access egress takes its VID from ingress, not the egress PVID. */
  br.filtering=true;lan.pvid=100;vlan.pvid=200;
  skb.extension=false;fe_bridge_wire(&bridge,&skb,&wire);fe_bridge_capture(&bridge,&skb,&input);
@@ -220,7 +249,7 @@ int main(void){
  /* FTTR GEM tag removal must select the stock non-IP PE edit mode. */
  pon.carrier=true;
  for(unsigned int p=0;p<4;p++) {
-  const unsigned int protocols[]={0x0806,0x8888,0x0800,0x86dd};
+  const unsigned int protocols[]={0x88b5,0x8888,0x0800,0x86dd};
   unsigned int words[RTL_FE_ACTION_WORDS];
   skb.frame[12]=protocols[p]>>8;skb.frame[13]=protocols[p];
   skb.extension=false;skb.tagged=true;skb.vlan=263;
@@ -240,7 +269,7 @@ int main(void){
  pp.source=pp.destination=6;fe.fttr_netdev=&pon;
  lan.state=3;fdb_source=&vlan;fdb_destination=&onu2;
  wire.in=&pon;input.in=&vlan;output.out=&onu2;
- skb.frame[12]=8;skb.frame[13]=6;skb.extension=false;skb.tagged=true;skb.vlan=263|0xb000;
+ skb.frame[12]=0x88;skb.frame[13]=0xb5;skb.extension=false;skb.tagged=true;skb.vlan=263|0xb000;
  fe_bridge_wire(&bridge,&skb,&wire);skb.tagged=false;skb.vlan=0;
  fe_bridge_capture(&bridge,&skb,&input);fe_bridge_forwarded(&bridge,&skb,&output);
  fe_bridge_work(&bridge.work.work);
@@ -310,7 +339,7 @@ int main(void){
  puts("Bridge learner: real wire/bridge hooks, VLAN subinterfaces, PCP/DEI, access VID, PPPoE preservation, FDB ageing/movement, STP and link changes passed");
 }
 '''
-functions = ''.join(function(name) for name in ['fe_bridge_physical','fe_bridge_frame','fe_bridge_wire','fe_bridge_capture','fe_bridge_forwarded','fe_bridge_ports','fe_bridge_learn','fe_bridge_work'])
+functions = ''.join(function(name) for name in ['fe_bridge_physical','fe_bridge_frame','fe_bridge_wire','fe_bridge_capture','fe_bridge_control','fe_bridge_forwarded','fe_bridge_ports','fe_bridge_learn','fe_bridge_work'])
 with tempfile.TemporaryDirectory(dir=root/'artifacts',prefix='bridge-learning-') as directory:
     directory=Path(directory)
     (directory/'bridge.c').write_text(common+structs+backend+(drivers/'rtl9617c-fe-vlan.h').read_text()+functions+test)

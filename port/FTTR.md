@@ -7364,6 +7364,40 @@ No kernel or PE code changed; no device was accessed. Unknown old state0 records
 full hardware power-loss recovery, saved factory policy import, remaining radio
 capabilities and complete packet retirement/hardware-ID reuse remain unfinished.
 
+### ARP and RARP remain on the bridge control path
+
+Review of non-UDP broadcast support found a pre-existing unicast-learning error:
+`fe_bridge_forwarded` could learn a unicast ARP using only source/destination MAC,
+EtherType and VLANs. The target original `ca-ne.ko:aal_l3_spcl_pkt_init` explicitly
+creates a WAN ARP rule with CPU16, keep-original-packet, Hash bypass15 and COS7.
+`trace_stock_fttr_arp.py` now executes that producer, its real key cleaner and FIB
+converter; both CAM-allocation and classifier-add errors propagate. The reference
+struct declarations decode the actual target-produced rule, rather than supplying
+a guessed rule. This proves the WAN initialization contract, not a universal
+factory LAN ARP policy or physical ingress behavior.
+
+Linux `br_do_proxy_suppress_arp` handles ARP/RARP before bridge forwarding and
+can choose a proxy reply or suppress flooding based on operation, target protocol
+address and current neighbour/FDB state. The current learned MAC/VLAN Hash key
+contains none of those fields. Actual Linux-function execution demonstrates that
+two packets with identical native keys but different ARP targets have different
+reply/suppression decisions. Therefore the automatic bridge producer now excludes
+ARP/RARP, including unicast traffic; delayed snapshots are rejected again at the
+installation boundary, and the worker withdraws any old learned control rule
+before refreshing its hardware age. Software bridge forwarding remains available.
+Existing explicit TC behavior is unchanged by this correction.
+
+The committed old learner reproduces the unexpected ARP queue insertion. The new
+real ingress/capture/forward/install/worker tests pass for ARP and RARP, together
+with12 actual Linux proxy/suppression/opcode cases and native Hash-key collisions.
+PPPoE, IPv4/IPv6, non-control Ethernet editing, ONU VLAN hairpin, multicast/broadcast,
+CPU-local copy and FE lifecycle regressions pass. Image/modules and the changed
+kernel input identity pass. Local evidence is `artifacts/fttr/arp-*-20261109.*` and
+`arp-control-*-20261109.*`; PE firmware did not change. No device was accessed.
+This is a control-path correctness fix, not added ARP acceleration. Any future
+ARP acceleration must preserve those dynamic control decisions and their
+invalidation; it cannot be enabled by broadening the UDP multicast template.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

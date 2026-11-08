@@ -263,6 +263,14 @@ static unsigned int fe_bridge_capture(void *private,struct sk_buff *skb,
  return NF_ACCEPT;
 }
 
+/* Original WAN ARP classification preserves the packet and bypasses Hash.
+ * Native bridge ARP/RARP decisions also depend on operation, target address
+ * and current neighbour/proxy state, none of which this MAC/VLAN key holds. */
+static bool fe_bridge_control(unsigned int protocol)
+{
+ return protocol==ETH_P_ARP || protocol==ETH_P_RARP;
+}
+
 static unsigned int fe_bridge_forwarded(void *private,struct sk_buff *skb,
                                        const struct nf_hook_state *state)
 {
@@ -275,7 +283,7 @@ static unsigned int fe_bridge_forwarded(void *private,struct sk_buff *skb,
  if(rtl9617c_fttr_stale(skb))return NF_ACCEPT;
  if(!saved || !saved->port || !state->out || saved->epoch!=(u32)atomic_read(&bridge->epoch) ||
     fe_bridge_frame(skb,&packet.output))return NF_ACCEPT;
- if(is_multicast_ether_addr(saved->destination))return NF_ACCEPT;
+ if(is_multicast_ether_addr(saved->destination) || fe_bridge_control(saved->protocol))return NF_ACCEPT;
  physical=fe_bridge_physical(state->out,&packet.output,skb->priority);
  brdev=netdev_master_upper_dev_get_rcu(state->out);
  if(!physical || !brdev || !netif_is_bridge_master(brdev))return NF_ACCEPT;
@@ -324,6 +332,7 @@ static int fe_bridge_learn(struct rtl_fe_bridge *bridge,const struct fe_bridge_p
  unsigned int i;
  int ret;
 
+ if(fe_bridge_control(packet->input.protocol))return -EOPNOTSUPP;
  if(packet->input.epoch!=(u32)atomic_read(&bridge->epoch) ||
     !fe_bridge_ports(packet->net,packet->bridge,packet->ingress,
       packet->output.port,packet->input.source,packet->input.destination,packet->vid))
@@ -451,7 +460,7 @@ static void fe_bridge_work(struct work_struct *work)
    } else if(time_after(jiffies,flow->lastused+30*HZ))fe_delete(fe,flow);
    continue;
   }
-  if(flush || !fe_bridge_ports(net,flow->bridge_index,flow->bridge_ingress,
+  if(flush || fe_bridge_control(flow->ethernet_protocol) || !fe_bridge_ports(net,flow->bridge_index,flow->bridge_ingress,
       flow->bridge_egress,flow->ethernet_source,flow->destination,flow->bridge_vid)) {
    fe_delete(fe,flow);continue;
   }
