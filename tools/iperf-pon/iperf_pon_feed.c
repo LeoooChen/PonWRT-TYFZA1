@@ -4,6 +4,7 @@
  */
 #include <linux/module.h>
 #include <linux/netdevice.h>
+#include <linux/pci.h>
 #include <linux/etherdevice.h>
 #include <linux/dma-mapping.h>
 #include <linux/io.h>
@@ -193,9 +194,9 @@ static const struct net_device_ops operations={
 static int show_stats(char *buffer,const struct kernel_param *param)
 {
  return scnprintf(buffer,PAGE_SIZE,
-  "data_packets=%llu data_bytes=%llu control_packets=%llu invalid_packets=%llu stops=%llu wakes=%llu doorbells=%llu data_prepare_ns=%llu payload_copy_ns=%llu producer=%u consumer=%u room=%u stream_packets=%llu,%llu,%llu,%llu eq_backpressure=%u\n",
+  "data_packets=%llu data_bytes=%llu control_packets=%llu invalid_packets=%llu stops=%llu wakes=%llu doorbells=%llu data_prepare_ns=%llu payload_copy_ns=%llu producer=%u consumer=%u room=%u stream_packets=%llu,%llu,%llu,%llu eq_backpressure=%u output_eq=%u\n",
   data_packets,data_bytes,control_packets,invalid_packets,stops,wakes,doorbells,data_prepare_ns,payload_copy_ns,producer,readl(vp+0x1c)&1023,room(),
-  stream_packets[0],stream_packets[1],stream_packets[2],stream_packets[3],eq_backpressure);
+  stream_packets[0],stream_packets[1],stream_packets[2],stream_packets[3],eq_backpressure,output_eq);
 }
 static const struct kernel_param_ops stats_ops={.get=show_stats};
 module_param_cb(stats,&stats_ops,NULL,0400);
@@ -253,6 +254,24 @@ static int release_set(const char *value,const struct kernel_param *param)
 static const struct kernel_param_ops release_ops={.set=release_set};
 module_param_cb(release,&release_ops,NULL,0200);
 
+/* Match the radio driver's hardware-based PE slot assignment. Interface
+ * names are supplied by netifd and change after hot reloads. */
+static int radio_eq(const struct net_device *dev)
+{
+ const struct device *parent=dev->dev.parent;
+
+ for(;parent;parent=parent->parent){
+  if(dev_is_pci(parent)){
+   const struct pci_dev *pci=to_pci_dev(parent);
+   if(pci->vendor!=PCI_VENDOR_ID_REALTEK)return -EOPNOTSUPP;
+   if(pci->device==0xc852)return 6;
+   if(pci->device==0x0192)return 7;
+   return -EOPNOTSUPP;
+  }
+ }
+ return -EOPNOTSUPP;
+}
+
 static int __init initialize(void)
 {
  u32 status;
@@ -262,9 +281,9 @@ static int __init initialize(void)
  bridge=dev_get_by_name(&init_net,"br-lan");
  if(!lan || !radio || !bridge){ret=-ENODEV;goto put;}
  if(eq_backpressure){
-  if(!strcmp(output,"ap5"))output_eq=6;
-  else if(!strcmp(output,"ap2"))output_eq=7;
-  else {ret=-EINVAL;goto put;}
+  ret=radio_eq(radio);
+  if(ret<0)goto put;
+  output_eq=ret;
   eq_monitor=ioremap(0x4f43066dcULL,16*16);
   if(!eq_monitor){ret=-ENOMEM;goto put;}
  }
