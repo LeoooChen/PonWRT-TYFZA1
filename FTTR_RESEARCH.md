@@ -200,6 +200,8 @@
 
 91. 补齐学习组播重开前的CPU无线复制引用屏障：取token与失效在同一锁下竞争，已接受请求计数覆盖提交回滚、真实RPQ、PE软件取消及设备停止清理，解除DMA映射/处理skb后才归还。关闭代际在分配组和最终发布前检查两无线卡全部CPU复制已完成；旧生产learner可复现未完成就重开，新版两引用/一引用均等待、零引用才恢复，同代不阻塞。256组并发、512请求解除/重绑、ARM1536组提交回滚、514软件批次和16448RPQ及相关回归、Image/模块/四份输入一致性通过。此项不证明直接NI/MCE或CPU以太网DMA退场，也不阻止已发布无线报文在策略切换过程中抵达；ID隔离继续保留，未上实机。详见[CPU复制引用屏障](port/FTTR.md#learned-multicast-reopening-waits-for-accepted-cpu-radio-copies)。
 
+92. 对齐main43dd462的NI关联QoS批内缓存：普通单播复用关联头类型，但逐包检查路由，FTTR组播保持独立TID配方；1024报文前后状态/载荷一致，固定64包批次QoS读取64→1、路由检查仍64，另2048协议分类/流量键对比通过。将小型RX调度包装移入邮箱前空闲代码区后PE32716字节；完整PE/FTTR/组播/PS/配额/序号/PN/RPQ回归、两构建配置、Image/模块与五份输入一致性通过。未上实机、未合回main。详见[main QoS缓存对齐](port/FTTR.md#alignment-with-main-43dd462-qos-admission-cache)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

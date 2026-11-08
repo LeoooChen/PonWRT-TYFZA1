@@ -204,3 +204,26 @@ REA原厂_phl_txsc_apply_shortcut确认WD缓存复用，证据output/stock-txsc-
 随后为区分PE核心执行与无线服务尝试只降低PE核心频率、按厂商时钟树保持AXI：GLOBAL_PEDIV40404→20408。gp3000rtl8277C时钟驱动的divider为field>>1（ONE_BASED），offload_sel0选FPLL，PEAXI再分频；但这只支持静态树解释，不证明可在运行期间原子切换。实际devmem写后SSH超时，无有效半速样本，不能用于性能归因。预置25s恢复和TTL均写回40404，读回确认；PE仍停止进展。NI造流模块经TTL正常stop卸载，随后radio卸载出现H2C/drain超时并卡unregister_netdevice usage2。串口shell被前台rmmod占住，后输入sync/sysrqb没有执行；Ctrl-C/Z也未返回。
 
 1130继电器两轮：一次saved9600直接写，一次4字节OFF/ON分别tcdrain、4秒间隔；无新启动日志。最后1120意外保留9600，明确重设115200仍输出同一uptime约3895秒的unregister等待，证明没有成功电源重启。不能声称已恢复设备；当前需用户手动断电重启。clock原值已恢复，未刷flash、不再重复时钟或继电器实验。Mac198.18.255.1hostroute已删除，供网en5保持。TTL及继电器fd均已关闭；底层device RAM运行仍卡住，需在后续答复明确。
+
+
+### 2026-11-08 关联内 QoS 元数据批内复用
+
+从 main b7663c6 建立 perf/wifi-stock-ingest-20261108。ni_ingest 原每帧读取
+peer 模板的 QoS header shape；该值在已授权关联内固定。现随已有目标站点缓存保存，
+仅在本次 ni_ingest 内复用，授权状态和 PS 仍逐帧读取；MACID 重用前沿用撤销/排空。
+实际原厂 QoS 分类不变，不缓存动态速率、密钥或休眠状态。
+
+1024 个 linked PE 报文覆盖 QoS/非 QoS、交替站点、14/15/16 短帧、两种 NI header、
+批中撤销授权，队列/流统计/载荷一致；同站64帧QoS读取64→1，授权检查64次不变。
+2048分类/flow keys、gather、PS、6144所有权、publication、IMEM通过；直接PE也可构建。
+PE27600字节，栈6936/8176；模块SHA21aa862f5aac5db0cb5904b032e68b12c17657e96113102df8889c57b7ac30a4。
+新worktree的PS测试首次缺build-tree链接，补齐已有构建路径后通过，不作产品故障证据。
+
+实际全千兆设备boot ed5bebf0（完整ID见artifact），默认TCP下行A/B/A=
+1.344995/0.774359/1.382472Gbps；B首轮明显PM低谷、573重传及retired137，保留该样本。
+B同关联唯一复测1.361121G/0重传，未证实持续退步或TCP提速。
+UDP诊断使用 --gsro -w4M -l1448 -b2000M，实收1.672976/1.708033/1.667720G，
+实际发送1.883399/1.882970/1.835742G，丢11.048/9.188/9.026%。支持小幅容量改善，
+不宣称默认UDP或2G低丢达标。A基线另有低流量客户端，B/A2仅Mac，跨关联仍有局限。
+保留明确减少DDR工作且无持续回退的实现；原模块已恢复，无flash写入。
+证据artifacts/ingest-qos。完整TCP1.8/UDP2.0双向目标未完成。

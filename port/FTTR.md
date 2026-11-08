@@ -6146,6 +6146,28 @@ DMA, and does not establish the full MCE/NI DMA/AFT producer fence. Hardware
 IDs remain quarantined and physical packet-retirement acceptance remains
 outstanding. No device was accessed.
 
+### Alignment with main 43dd462 QoS admission cache
+
+The worktree incorporates main43dd462's NI association QoS cache. Generic
+unicast reuses the immutable association header shape inside each bounded
+EPP batch while rereading the peer route on every packet. FTTR multicast
+cookies retain their separately compiled TID policy. The old/new linked
+images agree for1024 packets across mixed/QoS/non-QoS peers, compact/full
+headers, short frames and mid-batch route withdrawal; an unchanged64-packet
+peer batch reduces QoS-template reads from64 to1 while all64 route checks
+remain. A further2048 IPv4/IPv6/PPPoE classification/flow-key comparison passes.
+
+A small RX work-dispatch wrapper is placed in unused pre-mailbox text to fit
+the combined image; both linker limits remain checked. The final PE is32716
+bytes, SHA256 `0220760d8898eab9a7f9a579b5d31a0c5c73a3d7237f516b5c947af5da4a4b10`, conservative
+summed stack7288/8192 bytes. The non-PE_UPLINK
+image remains14168 bytes and byte-identical. CPU multicast, PS/peer withdrawal,
+BCMC, FTTR EPP/BID, queue/quota, sequence/PN, RPQ ownership, channel progress,
+RX and memory-layout regressions pass, as do Image/modules, repeat generation
+and five changed kernel input identities. Local evidence is
+`artifacts/fttr/main-43dd462-*`. No device was accessed and main's physical
+performance measurements are not measurements of this combined FTTR image.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN

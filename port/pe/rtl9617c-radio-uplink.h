@@ -486,7 +486,9 @@ advance:
 	mailbox[RTL_AX_RX_WORK_PROCESS] = (read + 1) & 255;
 }
 
-static void __attribute__((section(".rxq"), noinline)) pe_rx_work_batch(volatile u32 *mailbox)
+/* Small dispatch wrapper uses available pre-mailbox text; the fixed
+ * RX/TX code bank stays below32KiB. Both limits are linker-checked. */
+static void __attribute__((noinline)) pe_rx_work_batch(volatile u32 *mailbox)
 {
 	/* A queued packet checks the ARM acknowledgement before use. */
 	if (mailbox[RTL_AX_RX_WORK_PROCESS] == mailbox[RTL_AX_RX_WORK_WRITE]) return;
